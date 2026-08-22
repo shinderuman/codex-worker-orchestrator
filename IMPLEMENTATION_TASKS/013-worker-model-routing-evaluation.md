@@ -28,6 +28,14 @@ Task 013やblocked A/B等に、既存schema上の意味が明確でないmetric�
 名前だけから新しい観測機能を実装しないでください。
 ````
 
+- 2026-08-23 cross-repository telemetry baseline:
+
+````text
+codex-configのcurrent raw telemetryではworker/reviewer aliasはopus 35 call / sonnet 23 callだがresolved modelは全call treeがGLM-5.3で、alias比較だけではmodel品質差を評価できない。media-backupではGLM-4.7を含むhaiku reviewer 3 callが全てPASSだが、低risk中心の3 sampleだけである。
+
+model routing評価ではrepository、role、risk、convergence deltaを分離し、この3 sampleをdowngrade根拠にしない。same-snapshot / verification-only / doc-changeのreview縮小可能性はTask 106へ渡し、本taskだけでrouting変更しない。
+````
+
 ## Purpose
 
 Codex/GLM costとQuality Deltaを実データで比較できるようにする。
@@ -63,4 +71,4 @@ none
 
 ## Current boundary
 
-依存data待ち。
+依存data待ち。media-backupのGLM-4.7 reviewer 3 PASSは小標本かつrisk構成差があり、routing変更根拠には不足。

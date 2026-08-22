@@ -20,7 +20,15 @@ hard capは証拠なしに導入しない。
 
 ## Amendments
 
-none
+- 2026-08-23 telemetry baseline:
+
+````text
+codex-configの保存済みtelemetryではworkerがmodel時間の約81%を占め、task累積400 turn超のoutlierが複数存在する。一方、task難易度と分割有無の対応は現在のtelemetryだけでは確定できない。
+
+Task 009でoutlierを再現可能に特定した後、該当taskのtask責務・milestone・resume境界と照合すること。turn数だけを原因として分割せず、分割による追加review callと品質結果を併記すること。
+
+分割によってGLM消費が減ってもCodex側touchpoint・review量が増える可能性がある。採否はCodex ReductionとQuality Deltaを上位に置き、GLM消費削減だけで採用しないこと。
+````
 
 ## Purpose
 
@@ -55,4 +63,4 @@ none
 
 ## Current boundary
 
-Task 009待ち。
+Task 009待ち。2026-08-23 baselineはworker時間比率約81%と複数の累積400 turn超taskを示すが、分割効果は未確定。
