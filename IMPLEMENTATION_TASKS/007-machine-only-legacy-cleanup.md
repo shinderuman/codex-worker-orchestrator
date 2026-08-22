@@ -1,9 +1,5 @@
 # Task: machine-only backward compatibilityとlegacy migrationを棚卸し・削減
 
-## Status
-
-planned
-
 ## Original instruction
 
 ````text

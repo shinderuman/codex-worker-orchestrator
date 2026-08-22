@@ -1,9 +1,5 @@
 # Task: worker call outlierを可視化
 
-## Status
-
-planned
-
 ## Original instruction
 
 ````text

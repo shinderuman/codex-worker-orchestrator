@@ -1,9 +1,5 @@
 # Task: worker repo-search integration
 
-## Status
-
-planned
-
 ## Original instruction
 
 ````text

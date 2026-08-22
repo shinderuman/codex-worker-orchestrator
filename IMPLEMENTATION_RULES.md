@@ -65,7 +65,7 @@ parent-managed metadataを扱うguard、self-protection、production wiring自�
 
 ## task file必須構造
 
-全task fileは最低限、`Status`、lossless sourceである`Original instruction`、append-onlyの`Amendments`、必要時の`Resolved references`、derived informationである`Purpose`、`Contract`、`Must not`、`Acceptance criteria`、および`Historical invariants`、`Dependencies`、未解決時の`Review findings`、`Current boundary`を持つ。
+全task fileは最低限、lossless sourceである`Original instruction`、append-onlyの`Amendments`、必要時の`Resolved references`、derived informationである`Purpose`、`Contract`、`Must not`、`Acceptance criteria`、および`Historical invariants`、`Dependencies`、未解決時の`Review findings`、`Current boundary`を持つ。schedule stateはPlanだけを正とし、task fileへ`Status`を持たせない。
 
 ## task filename
 

@@ -1,9 +1,5 @@
 # Task: task事前分割とsemantic milestoneを運用評価
 
-## Status
-
-planned
-
 ## Original instruction
 
 ````text

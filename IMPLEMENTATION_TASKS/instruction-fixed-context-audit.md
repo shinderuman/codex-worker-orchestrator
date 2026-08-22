@@ -1,9 +1,5 @@
 # Task: Codex/GLM instruction固定contextを監査・削減
 
-## Status
-
-planned
-
 ## Original instruction
 
 ````text

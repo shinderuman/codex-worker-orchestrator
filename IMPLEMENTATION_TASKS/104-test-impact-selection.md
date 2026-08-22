@@ -1,9 +1,5 @@
 # Task: test impactによるtest省略
 
-## Status
-
-blocked-user-permission
-
 ## Original instruction
 
 ````text

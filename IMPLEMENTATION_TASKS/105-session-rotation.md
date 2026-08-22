@@ -1,9 +1,5 @@
 # Task: session rotation
 
-## Status
-
-blocked-user-permission
-
 ## Original instruction
 
 ````text

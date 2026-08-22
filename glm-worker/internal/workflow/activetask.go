@@ -69,7 +69,11 @@ func resolveActiveTaskPath(repoRoot string) (string, bool, error) {
 }
 
 // activeSectionEntriesはplan本文の`## ACTIVE`節からlist項目を取り出す。節の終わりは次の
-// `## `見出し行で、項目はRULESが定めるunordered marker `-`だけを対象にする。
+// `## `見出し行で、schedule listはRULESが定めるunordered marker `-`のbulletとblank行だけを
+// 受理する。`*`・`+`・番号付きmarker等のtask-like list記法や説明文などの非bullet行を黙って
+// 無視すると未知のschedule記述を隠したまま解決が進むfail openになるため、fail closedに
+// 拒否する。installer gateのplan_bullet_pathsと同じ規則であり、受理集合の一致は
+// TestPlanFinalHeadBulletExtractionMatchesRuntimeが固定する。
 func activeSectionEntries(planContent string) ([]string, error) {
 	lines := strings.Split(planContent, "\n")
 	inSection := false
@@ -86,8 +90,11 @@ func activeSectionEntries(planContent string) ([]string, error) {
 			continue
 		}
 		trimmed := strings.TrimSpace(line)
-		if !strings.HasPrefix(trimmed, "- ") {
+		if trimmed == "" {
 			continue
+		}
+		if !strings.HasPrefix(trimmed, "- ") {
+			return nil, fmt.Errorf("%sのACTIVE欄の行 %qがschedule list記法(`- `bulletとblank行のみ)へ違反しています", implementationPlanFile, trimmed)
 		}
 		path, err := activeEntryPath(strings.TrimSpace(strings.TrimPrefix(trimmed, "- ")))
 		if err != nil {
@@ -150,25 +157,50 @@ func (w *Workflow) activeTaskStateSet() bool {
 	return w.state.Exists(activeTaskStateKey)
 }
 
-// ensureActiveTaskPathは継続呼出(decision・fix・reviewer・auto-fix)開始時に現在taskの
-// ACTIVE task file pathを確定させる。設定済みならその値をそのまま使い、planの無いrepoの
-// 空値も再解決しない。PlanのACTIVE欄は停止中に親Codexが切り替え得るため設定済み値の
-// 再解決は実行中taskの要求正本を別taskへすり替えるだけである。未設定はACTIVE解決fail
-// closed後の同一task再開だけを意味するためPlanから再解決して固定し、再解決にも失敗する
-// 場合はmodel呼出前に再度fail closedする。
-func (w *Workflow) ensureActiveTaskPath(phase string) (string, error) {
+// resolveAndPinActiveTaskは現在taskのACTIVE task file pathを確定させる。設定済みならその
+// 値をそのまま使い、planの無いrepoの空値も再解決しない。PlanのACTIVE欄は停止中に親Codexが
+// 切り替え得るため設定済み値の再解決は実行中taskの要求正本を別taskへすり替えるだけである。
+// 未設定はACTIVE解決fail closed後の同一task再開だけを意味するためPlanから再解決して固定する。
+// 解決errorの停止semanticsは呼出元が決める。
+func (w *Workflow) resolveAndPinActiveTask() (string, error) {
 	if w.activeTaskStateSet() {
 		return w.readActiveTaskState(), nil
 	}
 	activeTaskPath, wired, err := resolveActiveTaskPath(w.config.RepoRoot)
 	if err != nil {
-		return "", w.failClosedActiveTaskResolution(phase, err)
+		return "", err
 	}
 	if !wired {
 		activeTaskPath = ""
 	}
 	if err := w.state.Write(activeTaskStateKey, activeTaskPath); err != nil {
 		return "", err
+	}
+	return activeTaskPath, nil
+}
+
+// ensureActiveTaskPathは継続呼出(fix・reviewer・auto-fix)開始時に現在taskのACTIVE task
+// file pathを確定させ、解決失敗はmodel呼出前にfail closedする。--decisionはdecision消費前に
+// 拒否するgateDecisionActiveTaskを使い、こちらを通らない。
+func (w *Workflow) ensureActiveTaskPath(phase string) (string, error) {
+	activeTaskPath, err := w.resolveAndPinActiveTask()
+	if err != nil {
+		return "", w.failClosedActiveTaskResolution(phase, err)
+	}
+	return activeTaskPath, nil
+}
+
+// gateDecisionActiveTaskは--decisionのdecision消費前ACTIVE gate。resolveAndPinActiveTaskと
+// 同じ固定・再解決規則で要求正本を確定させ、固定済みpathの実在も確認する。ACTIVE不正は
+// decisionを消費する前に拒否し、停止はtask.statusをwaiting-decisionのまま残すため、親Codexが
+// Plan・task fileを修復すれば同じdecisionをそのまま再実行できる。
+func (w *Workflow) gateDecisionActiveTask() (string, error) {
+	activeTaskPath, err := w.resolveAndPinActiveTask()
+	if err != nil {
+		return "", w.failClosedDecisionRejection("worker-decision", parentMetadataGuardSurface.activeUnresolvableOutcome(), "PlanのACTIVE欄からACTIVE task fileを一意に解決できなかったためdecisionを消費していません", err)
+	}
+	if activeTaskPath != "" && !activeTaskFileExists(w.config.RepoRoot, activeTaskPath) {
+		return "", w.failClosedDecisionRejection("worker-decision", parentMetadataGuardSurface.missingOutcome(), "ACTIVE task file "+activeTaskPath+"がworking treeへ存在しないためdecisionを消費していません", nil)
 	}
 	return activeTaskPath, nil
 }

@@ -2323,7 +2323,9 @@
      "index": 1,
      "contains": [
       "ACTIVE_TASK_FILE: IMPLEMENTATION_TASKS/001-scenario.md",
-      "Acceptance criteria"
+      "Original instruction",
+      "Acceptance criteria",
+      "Implementation vs Contract"
      ]
     }
    ],

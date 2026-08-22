@@ -1,9 +1,5 @@
 # Task: exhaustive search gate
 
-## Status
-
-planned
-
 ## Original instruction
 
 ````text

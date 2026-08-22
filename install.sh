@@ -242,19 +242,24 @@ plan_section() {
     '
 }
 
-# plan_bullet_pathsはstdinのplan本文から全unordered bulletを1行1項目で取り出す。
-# bullet検出とpath抽出はruntime activeSectionEntries/activeEntryPathと同じ規則で、行両端の
+# plan_bullet_pathsはstdinのplan本文から全schedule list項目を1行1項目で取り出す。
+# 検出とpath抽出はruntime activeSectionEntries/activeEntryPathと同じ規則で、行両端の
 # 空白を除去してから`- `markerを判定し、逆引用符は項目全体を1組で囲む場合だけpath区切りとして
-# 扱う。逆引用符なしの直書きは行全体をpath候補とする。閉じ欠損・前後の余分なtext・複数組の
-# malformed bulletと認識できないpath候補を黙って捨てるとfail openになるため、malformedは
-# 先頭marker `!` 、path候補は `+` を付けて呼出側へ渡す。
+# 扱う。逆引用符なしの直書きは行全体をpath候補とする。blank行だけを無視し、`*`・`+`・番号付き
+# marker等のtask-like list行や説明文などの非bullet行、閉じ欠損・前後の余分なtext・複数組の
+# malformed bulletを黙って捨てるとfail openになるため、どちらも先頭marker `!` で呼出側へ
+# 渡し、path候補は `+` を付けて区別する。
 plan_bullet_paths() {
     awk '
         {
             line = $0
             sub(/^[[:space:]]+/, "", line)
             sub(/[[:space:]]+$/, "", line)
+            if (line == "") {
+                next
+            }
             if (substr(line, 1, 2) != "- ") {
+                printf "!%s\n", line
                 next
             }
             line = substr(line, 3)
@@ -336,24 +341,44 @@ verify_plan_final_head() {
         return 0
     fi
 
-    active_entries=$(printf '%s\n' "$plan_head" | plan_section '^## ACTIVE[[:space:]]*$' | grep -c '^[[:space:]]*- ' || true)
-    if [ "$active_entries" -eq 0 ]; then
+    # ACTIVE欄はschedule list記法(`- `bulletとblank行のみ)で検証する。plan_bullet_pathsが
+    # `!`markerを返した行は`*`等の未知list記法・説明文・malformed bulletのどれであっても
+    # 黙って無視せずfail closedにする。違反行は一意性判定より先に報告し、runtime
+    # activeSectionEntriesがscan中に最初の違反行でerrorを返す順序と揃える。
+    active_entries=$(printf '%s\n' "$plan_head" | plan_section '^## ACTIVE[[:space:]]*$' | plan_bullet_paths)
+    active_count=0
+    active_path=''
+    active_violation=''
+    while IFS= read -r active_entry; do
+        [ -n "$active_entry" ] || continue
+        active_count=$((active_count + 1))
+        case $active_entry in
+            '!'*)
+                if [ -z "$active_violation" ]; then
+                    active_violation=${active_entry#!}
+                fi
+                continue
+                ;;
+        esac
+        if [ -z "$active_path" ]; then
+            active_path=${active_entry#+}
+        fi
+    done <<EOF
+$active_entries
+EOF
+    if [ -n "$active_violation" ]; then
+        # 逆引用符を含む固定文はcommand substitutionへ解釈されないよう単引用符で結合する。
+        plan_final_head_fail 'HEADのplanのACTIVE欄にschedule list記法(`- `bulletとblank行のみ、逆引用符は項目全体を1組で囲むか逆引用符なしの直書き)へ違反している行があります: '"$active_violation"
+        return 1
+    fi
+    if [ "$active_count" -eq 0 ]; then
         plan_final_head_fail "HEADのIMPLEMENTATION_PLAN.local.mdのACTIVE欄にtask fileがありません"
         return 1
     fi
-    if [ "$active_entries" -gt 1 ]; then
-        plan_final_head_fail "HEADのIMPLEMENTATION_PLAN.local.mdのACTIVE欄が一意ではありません(${active_entries}件)"
+    if [ "$active_count" -gt 1 ]; then
+        plan_final_head_fail "HEADのIMPLEMENTATION_PLAN.local.mdのACTIVE欄が一意ではありません(${active_count}件)"
         return 1
     fi
-
-    active_path=$(printf '%s\n' "$plan_head" | plan_section '^## ACTIVE[[:space:]]*$' | plan_bullet_paths)
-    case $active_path in
-        '!'*)
-            plan_final_head_fail "HEADのplanのACTIVE欄にbullet構文(逆引用符1組で囲まれた単一task path、または逆引用符なしの直書き)へ違反している項目があります: ${active_path#!}"
-            return 1
-            ;;
-    esac
-    active_path=${active_path#+}
     if ! validate_plan_task_path "$active_path"; then
         plan_final_head_fail "HEADのplanのACTIVE欄がtask path契約(IMPLEMENTATION_TASKS/配下の.md・配置契約準拠)へ違反しています: ${active_path:-(解決できません)}"
         return 1
@@ -361,8 +386,9 @@ verify_plan_final_head() {
     require_head_task_file "$active_path" || return 1
 
     # NEXT/BLOCKEDは空sectionを許容するが、bulletが存在するなら全てvalid task pathへ
-    # 解決されることを検証する。認識できないbulletを無視するとinvalid entryがgateを
-    # 通過するため、path検証はbullet単位でfail closedする。
+    # 解決されることを検証する。認識できないbulletや`*`等の非bullet行を無視すると
+    # invalid entryがgateを通過するため、schedule list記法とpath検証は行単位でfail
+    # closedする。
     scheduled_tasks=$(
         printf '%s\n' "$plan_head" | plan_section '^## NEXT' | plan_bullet_paths
         printf '%s\n' "$plan_head" | plan_section '^## BLOCKED' | plan_bullet_paths
@@ -372,7 +398,8 @@ verify_plan_final_head() {
         [ -n "$scheduled_entry" ] || continue
         case $scheduled_entry in
             '!'*)
-                plan_final_head_fail "HEADのplanのNEXT/BLOCKED欄にbullet構文(逆引用符1組で囲まれた単一task path、または逆引用符なしの直書き)へ違反している項目があります: ${scheduled_entry#!}"
+                # 逆引用符を含む固定文はcommand substitutionへ解釈されないよう単引用符で結合する。
+                plan_final_head_fail 'HEADのplanのNEXT/BLOCKED欄にschedule list記法(`- `bulletとblank行のみ、逆引用符は項目全体を1組で囲むか逆引用符なしの直書き)へ違反している行があります: '"${scheduled_entry#!}"
                 return 1
                 ;;
         esac

@@ -8,11 +8,10 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/post-integration-contract-consistency.md`
+- `IMPLEMENTATION_TASKS/004-self-contained-stdin-pty.md`
 
 ## NEXT（優先順）
 
-- `IMPLEMENTATION_TASKS/004-self-contained-stdin-pty.md`
 - `IMPLEMENTATION_TASKS/instruction-fixed-context-audit.md`
 - `IMPLEMENTATION_TASKS/005-multi-repository-isolation.md`
 - `IMPLEMENTATION_TASKS/006-codex-facing-compact-result.md`
@@ -45,14 +44,14 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 ## 現在のGit境界
 
 - branch: `main`
-- implementation baseline: Task 003 completion commit（current HEAD）
-- metadata boundary: Task 003をHistoryへ移行してtask fileを削除。割り込み要求を`post-integration-contract-consistency.md`へlosslessに固定してACTIVEとし、Task 004はNEXT先頭を維持。TARGETS element正規形・status横断受理集合・dispatch前補正をcurrent HEADへ収録し、final HEAD gate・本配置・installed/source一致・status smoke確認済み
+- implementation baseline: Task 001/002 post-integration contract consistency completion commit（current HEAD）
+- metadata boundary: post-integration contract consistency taskをHistoryへ移行してtask fileを削除し、Task 004をACTIVEへ昇格。decision retry、要求source、schedule parser、Plan単独schedule stateの収束をcurrent HEADへ収録し、final HEAD gate・本配置・installed/source一致・status smoke確認済み
 - push: 禁止
 
 ## 現在の停止理由
 
-Task 003は完了。Task 001/002 production integration後の不整合修正taskを割り込みACTIVEとして固定済みで未着手。
+Task 001/002 production integration後の不整合修正は完了。Task 004はACTIVEへ昇格済みで未着手。
 
 ## 次の親Codex操作
 
-`post-integration-contract-consistency.md`のlossless sourceとderived contractを再読し、production/state/task lifecycle contractの収束作業を開始する。
+Task 004のOriginal instruction・Amendments・参照Historyを再読し、caller-side stty不要のstdin/PTY transport実装を開始する。

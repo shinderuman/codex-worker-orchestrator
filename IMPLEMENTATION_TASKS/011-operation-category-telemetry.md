@@ -1,9 +1,5 @@
 # Task: allowlist operation category telemetryを追加
 
-## Status
-
-planned
-
 ## Original instruction
 
 ````text

@@ -1,9 +1,5 @@
 # Task: stdin transportをcaller-side stty不要の自己完結CLIへする
 
-## Status
-
-planned
-
 ## Original instruction
 
 ````text
@@ -175,10 +171,11 @@ caller recipe込みの輸送成功ではなく、CLI単体でpayload transport c
 
 - Historyの「stdin PTY transportのcaller-side stty依存」
 - commit `1dbfda5`と`3c263a6`
+- Task 001で成立したACTIVE task fileを要求正本とするtask lifecycle
 
 ## Dependencies
 
-- `IMPLEMENTATION_TASKS/001-requirement-task-lifecycle.md`
+none
 
 ## Review findings
 

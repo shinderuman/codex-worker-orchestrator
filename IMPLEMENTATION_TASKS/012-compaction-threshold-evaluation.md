@@ -1,9 +1,5 @@
 # Task: compaction thresholdを評価可能にする
 
-## Status
-
-planned
-
 ## Original instruction
 
 ````text
@@ -109,7 +105,6 @@ Task 012の目的は、
 
 ## Dependencies
 
-- `IMPLEMENTATION_TASKS/001-requirement-task-lifecycle.md`
 - `IMPLEMENTATION_TASKS/011-operation-category-telemetry.md`
 
 ## Review findings

@@ -1,9 +1,5 @@
 # Task: 全体verification
 
-## Status
-
-planned
-
 ## Original instruction
 
 ````text

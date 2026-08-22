@@ -40,8 +40,10 @@ USER_REQUEST・会話要約・過去session記憶ではなくtask file本文か�
 `, activeTaskPath)
 }
 
-// reviewerActiveTaskBlockはreviewer用の要求正本読み込み指示。実装指示ではなく、Acceptance criteria・
-// Contract・Must not・Historical invariantsを判定基準としてtask file本文から確認させる。
+// reviewerActiveTaskBlockはreviewer用の要求正本読み込み指示。実装指示ではなく、task file全文を
+// 判定基準として確認させる。Derived Contract vs Original instruction(workerの実装前提とした要求契約が
+// Original instruction・Amendments・Resolved referencesと一致するか)とImplementation vs Contract
+// (実装がContract・Must not・Acceptance criteriaを満たすか)の二段比較を毎回のreviewer呼出へ保証する。
 func reviewerActiveTaskBlock(activeTaskPath string) string {
 	if activeTaskPath == "" {
 		return ""
@@ -49,8 +51,9 @@ func reviewerActiveTaskBlock(activeTaskPath string) string {
 	return fmt.Sprintf(`ACTIVE_TASK_FILE: %s
 
 判定基準の正は親Codex専有のこのACTIVE task fileです。判定の前に全文を読んでください。
-Acceptance criteria・Contract・Must not・Historical invariantsをUSER_REQUEST・WORKER_REPORT・
-過去session記憶ではなくtask file本文から確認し、判定にもれがないか独立に検証してください。
+Original instruction・Amendments・Resolved references・Contract・Must not・Acceptance criteria・
+Historical invariantsをUSER_REQUEST・WORKER_REPORT・過去session記憶ではなくtask file本文から
+確認し、Derived Contract vs Original instructionとImplementation vs Contractの両方を独立に検証してください。
 このfileとIMPLEMENTATION_RULES.md・IMPLEMENTATION_PLAN.local.md・IMPLEMENTATION_HISTORY.mdは
 親Codex専有のため編集・生成・復元・削除を行わないでください。
 `, activeTaskPath)

@@ -1,9 +1,5 @@
 # Task: compaction threshold変更
 
-## Status
-
-blocked-user-permission
-
 ## Original instruction
 
 ````text

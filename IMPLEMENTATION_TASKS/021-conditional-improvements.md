@@ -1,9 +1,5 @@
 # Task: conditional review/tool output改善
 
-## Status
-
-planned
-
 ## Original instruction
 
 ````text

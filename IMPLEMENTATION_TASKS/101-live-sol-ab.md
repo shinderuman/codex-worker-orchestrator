@@ -1,9 +1,5 @@
 # Task: 実Sol High Direct baseline対orchestrated本番A/B
 
-## Status
-
-blocked-user-permission
-
 ## Original instruction
 
 ````text

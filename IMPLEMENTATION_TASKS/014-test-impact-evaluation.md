@@ -1,9 +1,5 @@
 # Task: test impact selectionを評価可能にする
 
-## Status
-
-planned
-
 ## Original instruction
 
 ````text

@@ -1,9 +1,5 @@
 # Task: repo-search telemetryとEval hooks
 
-## Status
-
-planned
-
 ## Original instruction
 
 ````text

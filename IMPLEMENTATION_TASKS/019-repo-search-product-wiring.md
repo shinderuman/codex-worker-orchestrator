@@ -1,9 +1,5 @@
 # Task: repo-search feature flag、CLI、install integration
 
-## Status
-
-planned
-
 ## Original instruction
 
 ````text

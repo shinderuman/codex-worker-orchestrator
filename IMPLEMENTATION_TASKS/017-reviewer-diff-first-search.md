@@ -1,9 +1,5 @@
 # Task: reviewer diff-first impact expansionと独立search
 
-## Status
-
-planned
-
 ## Original instruction
 
 ````text

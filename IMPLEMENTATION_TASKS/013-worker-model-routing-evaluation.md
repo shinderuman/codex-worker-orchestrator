@@ -1,9 +1,5 @@
 # Task: worker model routingを評価可能にする
 
-## Status
-
-planned
-
 ## Original instruction
 
 ````text

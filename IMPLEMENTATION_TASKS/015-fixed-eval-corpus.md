@@ -1,9 +1,5 @@
 # Task: fixed Eval harness/corpusの未実装部分を統合
 
-## Status
-
-planned
-
 ## Original instruction
 
 ````text
@@ -51,10 +47,11 @@ none
 ## Historical invariants
 
 - `e79e1ab`、`6d8d278`、`fc5f740`、`6257133`
+- Task 001で成立したACTIVE task fileを要求正本とするtask lifecycle
 
 ## Dependencies
 
-- `IMPLEMENTATION_TASKS/001-requirement-task-lifecycle.md`
+none
 
 ## Review findings
 

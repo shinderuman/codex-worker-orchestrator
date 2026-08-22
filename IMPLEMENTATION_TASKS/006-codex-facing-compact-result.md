@@ -1,9 +1,5 @@
 # Task: result field auditとCodex-facing compact structured output
 
-## Status
-
-planned
-
 ## Original instruction
 
 ````text
@@ -158,10 +154,11 @@ Codexの再解釈tokenとprotocol correctionを削減し、最上位Codex Reduct
 ## Historical invariants
 
 - structured output移行`22c1d0b`、status契約修正`ce86313`
+- Task 003で成立したTARGETS要素の意味契約とstatus横断受理集合
 
 ## Dependencies
 
-- `IMPLEMENTATION_TASKS/003-targets-element-semantics.md`
+none
 
 ## Review findings
 

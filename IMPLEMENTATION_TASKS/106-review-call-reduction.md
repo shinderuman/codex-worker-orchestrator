@@ -1,9 +1,5 @@
 # Task: review/fix model call縮小
 
-## Status
-
-blocked-user-permission
-
 ## Original instruction
 
 ````text

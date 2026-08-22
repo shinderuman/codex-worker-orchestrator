@@ -1,9 +1,5 @@
 # Task: multi-repository process concurrencyとshared resource isolationを固定
 
-## Status
-
-planned
-
 ## Original instruction
 
 ````text

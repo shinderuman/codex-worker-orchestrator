@@ -1,9 +1,5 @@
 # Task: machine protocol変更前後のmeasurement
 
-## Status
-
-planned
-
 ## Original instruction
 
 ````text

@@ -176,6 +176,13 @@ func (w *Workflow) ExecuteDecision(decision string) error {
 		if err != nil {
 			return fmt.Errorf("STATUS: WORKER_ERROR\nERROR: original request is missing")
 		}
+		// ACTIVE不正はdecision消費・state mutationより前に拒否する。拒否はwaiting-decisionと
+		// pending decisionを残すため、親CodexがPlan・task fileを修復すれば同じdecisionを
+		// そのまま再実行できる。
+		activeTaskPath, err := w.gateDecisionActiveTask()
+		if err != nil {
+			return err
+		}
 		if err := w.state.Write("last-decision", decision); err != nil {
 			return err
 		}
@@ -184,12 +191,6 @@ func (w *Workflow) ExecuteDecision(decision string) error {
 		}
 		w.state.RecordDecision()
 
-		// ACTIVE解決fail closed後に親がPlan・task fileを修復してdecisionで再開する場合、
-		// state未設定を検出してからpromptを作る。固定済みなら現在taskを維持する。
-		activeTaskPath, err := w.ensureActiveTaskPath("worker-decision")
-		if err != nil {
-			return err
-		}
 		prompt := decisionPrompt(request, decision, activeTaskPath)
 		checkpoint := state.ResumeCheckpoint{
 			Stage:          state.ResumeStageWorker,

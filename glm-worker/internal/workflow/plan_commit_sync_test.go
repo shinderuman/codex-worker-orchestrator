@@ -64,6 +64,7 @@ func TestPlanCommitSyncContractWiring(t *testing.T) {
 		{"codex/instructions/git.md", "task path契約はruntime配置契約(`validateActiveTaskPath`)と同じである"},
 		{"codex/instructions/git.md", "bullet構文はruntime ACTIVE解決(`activeSectionEntries`/`activeEntryPath`)と同じである"},
 		{"codex/instructions/git.md", "閉じbacktick欠損・前後の余分なtext・複数backtick組はmalformedとしてACTIVE/NEXT/BLOCKEDすべてでfail closedに拒否する"},
+		{"codex/instructions/git.md", "schedule欄のlist記法は`- `bulletとblank行だけを許容し、`*`・`+`・番号付きmarker等のtask-like list行や説明文などの非bullet行も黙って無視せずACTIVE/NEXT/BLOCKEDすべてでfail closedに拒否する"},
 		{"codex/instructions/git.md", "`TestPlanFinalHeadTaskPathValidatorMatchesRuntime`が固定する"},
 		{"codex/instructions/git.md", "`TestPlanFinalHeadBulletExtractionMatchesRuntime`が固定する"},
 		{"codex/instructions/git.md", "完了済み操作に続く正当な現在task記述(「amend後のpostconditionを実装する」等)で使う「amend後」は対象外とする"},
@@ -120,6 +121,7 @@ func TestPlanCommitSyncContractWiring(t *testing.T) {
 		{"`TestPlanFinalHeadTaskPathValidatorMatchesRuntime`がshell/runtimeの受理集合差分を固定する", "`TestPlanFinalHeadTaskPathValidatorMatchesRuntime`が固定する"},
 		{"`TestPlanFinalHeadBulletExtractionMatchesRuntime`がshell/runtimeの抽出規約差分を", "`TestPlanFinalHeadBulletExtractionMatchesRuntime`が固定する"},
 		{"runtime側ACTIVE解決も同じbullet構文違反をerrorに強めた", "閉じbacktick欠損・前後の余分なtext・複数backtick組はmalformedとしてACTIVE/NEXT/BLOCKEDすべてでfail closedに拒否する"},
+		{"blank行だけを無視対象としてruntime`activeSectionEntries`とinstaller`plan_bullet_paths`が同じ受理集合でfail closedに拒否する", "schedule欄のlist記法は`- `bulletとblank行だけを許容し、`*`・`+`・番号付きmarker等のtask-like list行や説明文などの非bullet行も黙って無視せずACTIVE/NEXT/BLOCKEDすべてでfail closedに拒否する"},
 		{"過渡表現から`amend後`を除外し正当な現在task記述を許容し", "完了済み操作に続く正当な現在task記述(「amend後のpostconditionを実装する」等)で使う「amend後」は対象外とする"},
 		{"非Git・commitなし・untracked plan・HEAD未収録planはskipし、dirty working treeではなくHEADだけを判定する", "gateは`git show HEAD:IMPLEMENTATION_PLAN.local.md`の内容だけを判定し、dirty working treeのplanを判定に使わない"},
 		{"amend失敗後の同一commit復旧をproduction install.sh経由で固定する", "amend失敗でobsolete HEADが残っている間もgateは拒否し続ける"},
@@ -262,7 +264,8 @@ func TestPlanFinalHeadTaskPathValidatorMatchesRuntime(t *testing.T) {
 // runtime activeSectionEntries/activeEntryPathと同じbullet抽出規則を持つことを固定する。
 // 閉じbacktick欠損・前後の余分なtext・複数backtick組をshellだけ緩く受けると、runtimeが
 // 拒否するACTIVE欄をinstaller gateが通すfail openになるため、path validatorだけでなく
-// 抽出規約の差分もfailする。
+// 抽出規約の差分もfailする。`*`・`+`・番号付きmarker・説明文などの非bullet行はblank行と
+// 区別して双方がfail closed扱いにすることも本testが固定する。
 func TestPlanFinalHeadBulletExtractionMatchesRuntime(t *testing.T) {
 	root := scenarioRepoRoot(t)
 	installerBytes, err := os.ReadFile(filepath.Join(root, "install.sh"))
@@ -296,7 +299,13 @@ func TestPlanFinalHeadBulletExtractionMatchesRuntime(t *testing.T) {
 		{"- `IMPLEMENTATION_TASKS/x.md`   ", "行末空白"},
 		{"- garbage", "非task path項目"},
 		{"- ", "空項目"},
-		{"plain text", "bullet以外の行"},
+		{"plain text", "説明文の非bullet行"},
+		{"* `IMPLEMENTATION_TASKS/b.md`", "未知markerのtask-like list行"},
+		{"+ `IMPLEMENTATION_TASKS/b.md`", "`+`markerのlist行"},
+		{"1. `IMPLEMENTATION_TASKS/b.md`", "番号付きmarkerのlist行"},
+		{"-x", "`- `でないmarker行"},
+		{"", "blank行"},
+		{"   ", "空白のみの行"},
 		{"  - `IMPLEMENTATION_TASKS/x.md`", "字下げbullet"},
 	}
 	for _, b := range bullets {

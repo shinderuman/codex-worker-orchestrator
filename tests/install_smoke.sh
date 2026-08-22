@@ -615,9 +615,9 @@ fi
 # tracked canonical planのfinal HEAD postcondition gate。
 # 同期amendを飛ばした4cedc91型stale HEAD plan・削除済み/欠損ACTIVE task file参照・NEXTの
 # 削除済み参照・NEXT/ACTIVEのtask path契約違反・閉じbacktick欠損等のmalformed bullet・
-# ACTIVE重複・Git境界branch不一致は、go test/build・binary配置・managed files配置よりも
-# 前にfail closedし、呼出・配置が一切起きないことを固定する。過渡表現の正当な
-# amend後/uninstall前記述は通過させる。
+# `*`marker等の未知list記法・ACTIVE重複・Git境界branch不一致は、go test/build・binary配置・
+# managed files配置よりも前にfail closedし、呼出・配置が一切起きないことを固定する。
+# 過渡表現の正当なamend後/uninstall前記述は通過させる。
 make_plan_gate_repo() {
     source_dir=$1
     copy_source "$source_dir"
@@ -856,7 +856,7 @@ make_go_shim "$active_unclosed_shim" ''
 expect_plan_gate_failure 'ACTIVE閉じbacktick欠損' \
     "$active_unclosed_source" "$active_unclosed_case" "$active_unclosed_shim" \
     "$test_root/plan-gate-active-unclosed.log" \
-    'ACTIVE欄にbullet構文(逆引用符1組で囲まれた単一task path、または逆引用符なしの直書き)へ違反している項目があります'
+    'ACTIVE欄にschedule list記法(`- `bulletとblank行のみ、逆引用符は項目全体を1組で囲むか逆引用符なしの直書き)へ違反している行があります'
 
 # 閉じbacktickの後ろに余分なtextがあればmalformedとして拒否する。
 active_suffix_source="$test_root/plan-gate-active-suffix-source"
@@ -874,7 +874,7 @@ make_go_shim "$active_suffix_shim" ''
 expect_plan_gate_failure 'ACTIVE余分なsuffix' \
     "$active_suffix_source" "$active_suffix_case" "$active_suffix_shim" \
     "$test_root/plan-gate-active-suffix.log" \
-    'ACTIVE欄にbullet構文(逆引用符1組で囲まれた単一task path、または逆引用符なしの直書き)へ違反している項目があります'
+    'ACTIVE欄にschedule list記法(`- `bulletとblank行のみ、逆引用符は項目全体を1組で囲むか逆引用符なしの直書き)へ違反している行があります'
 
 # 複数backtick組もmalformedとして拒否する。
 active_multi_source="$test_root/plan-gate-active-multi-source"
@@ -892,7 +892,47 @@ make_go_shim "$active_multi_shim" ''
 expect_plan_gate_failure 'ACTIVE複数backtick組' \
     "$active_multi_source" "$active_multi_case" "$active_multi_shim" \
     "$test_root/plan-gate-active-multi.log" \
-    'ACTIVE欄にbullet構文(逆引用符1組で囲まれた単一task path、または逆引用符なしの直書き)へ違反している項目があります'
+    'ACTIVE欄にschedule list記法(`- `bulletとblank行のみ、逆引用符は項目全体を1組で囲むか逆引用符なしの直書き)へ違反している行があります'
+
+# `*`marker等の未知list記法のACTIVE行はbulletとして数えず、schedule list違反として
+# 拒否する。runtime側の受理集合ともTestPlanFinalHeadBulletExtractionMatchesRuntimeで一致させる。
+active_star_source="$test_root/plan-gate-active-star-source"
+active_star_case="$test_root/plan-gate-active-star-case"
+active_star_shim="$test_root/plan-gate-active-star-shim"
+make_plan_gate_repo "$active_star_source"
+write_plan_gate_plan "$active_star_source" \
+    'IMPLEMENTATION_TASKS/next-task.md' \
+    '- `IMPLEMENTATION_TASKS/future-task.md`' \
+    'main' \
+    '前taskは完了。next-taskの開始前。' \
+    'next-taskの要件を確認してGLM workerへ委譲する。'
+sed -e 's/^- `IMPLEMENTATION_TASKS\/next-task.md`$/\* `IMPLEMENTATION_TASKS\/next-task.md`/' \
+    "$active_star_source/IMPLEMENTATION_PLAN.local.md" >"$active_star_source/plan.tmp"
+mv "$active_star_source/plan.tmp" "$active_star_source/IMPLEMENTATION_PLAN.local.md"
+commit_plan_gate_repo "$active_star_source"
+make_go_shim "$active_star_shim" ''
+expect_plan_gate_failure 'ACTIVE未知list記法' \
+    "$active_star_source" "$active_star_case" "$active_star_shim" \
+    "$test_root/plan-gate-active-star.log" \
+    'ACTIVE欄にschedule list記法(`- `bulletとblank行のみ、逆引用符は項目全体を1組で囲むか逆引用符なしの直書き)へ違反している行があります: * `IMPLEMENTATION_TASKS/next-task.md`'
+
+# NEXT欄の`*`marker行も同じschedule list違反としてfail closedする。
+next_star_source="$test_root/plan-gate-next-star-source"
+next_star_case="$test_root/plan-gate-next-star-case"
+next_star_shim="$test_root/plan-gate-next-star-shim"
+make_plan_gate_repo "$next_star_source"
+write_plan_gate_plan "$next_star_source" \
+    'IMPLEMENTATION_TASKS/next-task.md' \
+    '* `IMPLEMENTATION_TASKS/future-task.md`' \
+    'main' \
+    '前taskは完了。next-taskの開始前。' \
+    'next-taskの要件を確認してGLM workerへ委譲する。'
+commit_plan_gate_repo "$next_star_source"
+make_go_shim "$next_star_shim" ''
+expect_plan_gate_failure 'NEXT未知list記法' \
+    "$next_star_source" "$next_star_case" "$next_star_shim" \
+    "$test_root/plan-gate-next-star.log" \
+    'NEXT/BLOCKED欄にschedule list記法(`- `bulletとblank行のみ、逆引用符は項目全体を1組で囲むか逆引用符なしの直書き)へ違反している行があります: * `IMPLEMENTATION_TASKS/future-task.md`'
 
 # NEXTの閉じbacktick欠損も同じmalformed拒否へ流れる。
 next_unclosed_source="$test_root/plan-gate-next-unclosed-source"
@@ -910,7 +950,7 @@ make_go_shim "$next_unclosed_shim" ''
 expect_plan_gate_failure 'NEXT閉じbacktick欠損' \
     "$next_unclosed_source" "$next_unclosed_case" "$next_unclosed_shim" \
     "$test_root/plan-gate-next-unclosed.log" \
-    'NEXT/BLOCKED欄にbullet構文(逆引用符1組で囲まれた単一task path、または逆引用符なしの直書き)へ違反している項目があります'
+    'NEXT/BLOCKED欄にschedule list記法(`- `bulletとblank行のみ、逆引用符は項目全体を1組で囲むか逆引用符なしの直書き)へ違反している行があります'
 
 # BLOCKED欄の閉じbacktick欠損も同じmalformed拒否へ流れる。
 blocked_unclosed_source="$test_root/plan-gate-blocked-unclosed-source"
@@ -930,7 +970,7 @@ make_go_shim "$blocked_unclosed_shim" ''
 expect_plan_gate_failure 'BLOCKED閉じbacktick欠損' \
     "$blocked_unclosed_source" "$blocked_unclosed_case" "$blocked_unclosed_shim" \
     "$test_root/plan-gate-blocked-unclosed.log" \
-    'NEXT/BLOCKED欄にbullet構文(逆引用符1組で囲まれた単一task path、または逆引用符なしの直書き)へ違反している項目があります'
+    'NEXT/BLOCKED欄にschedule list記法(`- `bulletとblank行のみ、逆引用符は項目全体を1組で囲むか逆引用符なしの直書き)へ違反している行があります'
 
 # NEXT昇格を忘れて完了済みACTIVE taskをNEXTへ残す重複記載。
 active_dup_source="$test_root/plan-gate-active-dup-source"

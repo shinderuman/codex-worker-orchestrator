@@ -412,6 +412,24 @@ func (w *Workflow) failClosedActiveTaskResolution(phase string, cause error) err
 	return w.failClosedParentFileGuard(phase, parentMetadataGuardSurface, parentMetadataGuardSurface.activeUnresolvableOutcome(), "PlanのACTIVE欄からACTIVE task fileを一意に解決できません", cause)
 }
 
+// failClosedDecisionRejectionは--decisionの消費前ACTIVE gate失敗時の停止semantics。decisionを
+// 消費していないためtask.statusのwaiting-decisionとpending decisionをそのまま残し、親Codexが
+// Plan・task fileを修復すれば同じdecisionを正規経路で再実行できる。telemetry eventとfail
+// closed packetは他の親管理metadata停止と同じ経路へ載せる。
+func (w *Workflow) failClosedDecisionRejection(phase string, outcome string, reason string, cause error) error {
+	w.recordParentFileEvent(phase, parentMetadataGuardSurface, outcome, reason, cause)
+	if err := w.state.ClearResumeCheckpoint(); err != nil {
+		return err
+	}
+	if cause != nil {
+		reason = fmt.Sprintf("%s: %v", reason, cause)
+	}
+	if err := w.emitResult(parentFileFailClosedResult(phase, parentMetadataGuardSurface, reason)); err != nil {
+		return err
+	}
+	return errParentFileGuardStopped
+}
+
 // recordParentFileEventは親管理metadata不変性確認失敗をtelemetryへ記録する。token消費は持たない
 // (best-effort)。task呼出自身の記録はverifyParentFileAfterCallがviolation/unavailable outcomeで
 // 残すため、二重計上しない。

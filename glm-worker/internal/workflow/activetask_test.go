@@ -71,12 +71,38 @@ func TestResolveActiveTaskPathMatrix(t *testing.T) {
 			plan: func(t *testing.T, repoRoot string) {},
 		},
 		{
-			name: "active section empty fails",
+			name: "active section blank only fails",
+			plan: func(t *testing.T, repoRoot string) {
+				writePlanWithActive(t, repoRoot, "## ACTIVE\n\n\n")
+			},
+			wantWired:   true,
+			wantErrPart: "ACTIVE欄にtask fileがありません",
+		},
+		{
+			name: "prose line in active section rejected",
 			plan: func(t *testing.T, repoRoot string) {
 				writePlanWithActive(t, repoRoot, "## ACTIVE\n\n(なし)\n")
 			},
 			wantWired:   true,
-			wantErrPart: "ACTIVE欄にtask fileがありません",
+			wantErrPart: "schedule list記法",
+		},
+		{
+			name: "unknown list marker rejected",
+			plan: func(t *testing.T, repoRoot string) {
+				writePlanWithActive(t, repoRoot, "## ACTIVE\n\n* `IMPLEMENTATION_TASKS/001-a.md`\n")
+				writeTaskFileAtPath(t, repoRoot, "IMPLEMENTATION_TASKS/001-a.md")
+			},
+			wantWired:   true,
+			wantErrPart: "schedule list記法",
+		},
+		{
+			name: "prose after bullet rejected",
+			plan: func(t *testing.T, repoRoot string) {
+				writePlanWithActive(t, repoRoot, "## ACTIVE\n\n- `IMPLEMENTATION_TASKS/001-a.md`\n(次taskは001-a)\n")
+				writeTaskFileAtPath(t, repoRoot, "IMPLEMENTATION_TASKS/001-a.md")
+			},
+			wantWired:   true,
+			wantErrPart: "schedule list記法",
 		},
 		{
 			name: "two entries are ambiguous",
@@ -222,6 +248,130 @@ func TestResolveActiveTaskPathMatrix(t *testing.T) {
 				t.Fatalf("resolve = (%q,%v) want (%q,%v)", path, wired, tt.wantPath, tt.wantWired)
 			}
 		})
+	}
+}
+
+// TestDecisionRejectsInvalidActiveThenSameDecisionResumesは「ACTIVE不正 → decision拒否 →
+// 親修復 → 同じdecisionで正常resume」をproduction pathで固定する。拒否はdecision消費前に
+// 行われるためwaiting-decisionとpending decisionが残り、修復後に同じdecisionを正規経路で
+// 再実行できる。旧実装はdecision反映後のACTIVE解決fail closedでstatusがwaiting-sol-reviewへ
+// 変わるため--decisionも--fixも拒否され、--reset以外の再開経路が無くなっていた。
+func TestDecisionRejectsInvalidActiveThenSameDecisionResumes(t *testing.T) {
+	repoRoot := initMutationRepo(t)
+	writePlanFileContent(t, repoRoot, planGuardSeed)
+	decision := "同じ判断本文"
+	w, r, out, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
+		{output: needsSolDecisionPacket()},
+		{output: implementedPacket("decision applied")},
+		{output: passPacket()},
+		{output: needsSolReviewPacket()},
+	}, "", 0, nil)
+
+	if err := w.ExecuteNewTask("request"); err != nil {
+		t.Fatal(err)
+	}
+	if st.TaskStatus() != state.TaskStatusWaitingDecision || !st.Exists("pending-decision") {
+		t.Fatalf("NEEDS_SOL_DECISION後 = %q/pending=%v want waiting-decision/pending", st.TaskStatus(), st.Exists("pending-decision"))
+	}
+
+	// 親Codexが停止中にACTIVE task fileを欠損させた状態を再現する。
+	if err := os.Remove(filepath.Join(repoRoot, activeTaskGuardPath)); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.ExecuteDecision(decision); err != nil {
+		t.Fatal(err)
+	}
+	if len(r.prompts) != 1 {
+		t.Fatalf("decision拒否時はmodel呼出前に停止すべき: %d", len(r.prompts))
+	}
+	if st.TaskStatus() != state.TaskStatusWaitingDecision {
+		t.Fatalf("decision拒否後のtask status = %q want waiting-decision(拒否がstatusを消費していません)", st.TaskStatus())
+	}
+	if !st.Exists("pending-decision") {
+		t.Fatal("decision拒否後にpending decisionが残っていません")
+	}
+	if got := st.ReadOr("last-decision", ""); got != "" {
+		t.Fatalf("decision拒否後にlast-decisionが消費されています: %q", got)
+	}
+	stats, err := st.CurrentTaskStats()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.DecisionCommands != 0 {
+		t.Fatalf("decision拒否はdecision呼出として計上されない: %d", stats.DecisionCommands)
+	}
+	if !strings.Contains(out.String(), "decisionを消費していません") {
+		t.Fatalf("decision拒否理由が出力されていません:\n%s", out.String())
+	}
+	events := 0
+	for _, l := range taskLogs(t, st) {
+		if l.CallType == state.CallTypeEvent && l.Outcome == parentMetadataGuardSurface.missingOutcome() && l.Phase == "worker-decision-parent-metadata-check" {
+			events++
+		}
+	}
+	if events != 1 {
+		t.Fatalf("decision拒否のmissing event = %d want 1", events)
+	}
+
+	// 親CodexがACTIVE task fileを修復し、同じdecisionを再実行する。decision後のreviewは
+	// risk floorでHIGH固定のため、reviewer PASSは再出力のNEEDS_SOL_REVIEWへ差し替わる。
+	writeActiveTaskFileContent(t, repoRoot)
+	if err := w.ExecuteDecision(decision); err != nil {
+		t.Fatal(err)
+	}
+	if st.TaskStatus() != state.TaskStatusWaitingSolReview {
+		t.Fatalf("修復後の同じdecision再実行でreviewまで到達すべき: %q", st.TaskStatus())
+	}
+	if got := st.ReadOr("last-decision", ""); got != decision {
+		t.Fatalf("再実行後のlast-decision = %q want %q", got, decision)
+	}
+	if len(r.prompts) != 4 {
+		t.Fatalf("再実行はdecision worker・reviewer・risk floor再出力の3呼出を追加すべき: %d", len(r.prompts))
+	}
+	for i, prompt := range r.prompts[1:3] {
+		if !strings.Contains(prompt, "ACTIVE_TASK_FILE: "+activeTaskGuardPath) {
+			t.Fatalf("再実行prompt %dが要求源blockを欠いています:\n%s", i, prompt)
+		}
+	}
+	stats, err = st.CurrentTaskStats()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.DecisionCommands != 1 {
+		t.Fatalf("再実行後のdecision呼出 = %d want 1(拒否は計上しない)", stats.DecisionCommands)
+	}
+}
+
+// TestDecisionGateUnresolvablePlanRejectsWithoutStatusChangeはdecision消費前gateがPlanの
+// ACTIVE欄を解決できない場合も、waiting-sol-reviewへのstatus書換なく拒否することを固定する。
+func TestDecisionGateUnresolvablePlanRejectsWithoutStatusChange(t *testing.T) {
+	repoRoot := initMutationRepo(t)
+	writePlanFileContent(t, repoRoot, "# plan without active\n")
+	w, _, out, st := newPlanFileWorkflow(t, repoRoot, nil, "", 0, nil)
+	if err := st.SetTaskStatus(state.TaskStatusWaitingDecision); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := w.gateDecisionActiveTask(); err == nil {
+		t.Fatal("ACTIVE解決不能は拒否されるべき")
+	}
+	if st.TaskStatus() != state.TaskStatusWaitingDecision {
+		t.Fatalf("拒否後のtask status = %q want waiting-decision", st.TaskStatus())
+	}
+	if _, err := st.LoadResumeCheckpoint(); err == nil {
+		t.Fatal("decision拒否後にresume checkpointが残っています")
+	}
+	if !strings.Contains(out.String(), "decisionを消費していません") {
+		t.Fatalf("decision拒否理由が出力されていません:\n%s", out.String())
+	}
+	events := 0
+	for _, l := range taskLogs(t, st) {
+		if l.CallType == state.CallTypeEvent && l.Outcome == parentMetadataGuardSurface.activeUnresolvableOutcome() {
+			events++
+		}
+	}
+	if events != 1 {
+		t.Fatalf("active_unresolvable event = %d want 1", events)
 	}
 }
 

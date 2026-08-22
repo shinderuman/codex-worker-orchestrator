@@ -1,9 +1,5 @@
 # Task: GLM-5-Turbo等model routing再設計
 
-## Status
-
-blocked-user-permission
-
 ## Original instruction
 
 ````text
