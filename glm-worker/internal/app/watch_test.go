@@ -20,6 +20,18 @@ func writeTaskEventLines(t *testing.T, st *state.StateStore, taskID string, reco
 	}
 }
 
+// watchTestOptionsは既存動作と同じ間隔のtest用options。verboseだけを明示的に切替える。
+func watchTestOptions(verbose bool, followInterval time.Duration, stop <-chan struct{}) watchOptions {
+	return watchOptions{
+		verbose:        verbose,
+		followInterval: followInterval,
+		statusInterval: defaultWatchStatusInterval,
+		changeInterval: defaultWatchChangeInterval,
+		now:            time.Now,
+		stop:           stop,
+	}
+}
+
 func watchTestStore(t *testing.T) (*state.StateStore, config.AppConfig) {
 	t.Helper()
 	cfg := config.AppConfig{
@@ -60,7 +72,7 @@ func TestWatchRendersSavedEventsWithoutSideEffects(t *testing.T) {
 	stop := make(chan struct{})
 	close(stop)
 	out := &bytes.Buffer{}
-	if err := printWatch(st, out, time.Millisecond, stop); err != nil {
+	if err := printWatch(st, out, watchTestOptions(false, time.Millisecond, stop)); err != nil {
 		t.Fatal(err)
 	}
 	rendered := out.String()
@@ -122,7 +134,7 @@ func TestWatchSkipsCorruptLines(t *testing.T) {
 	stop := make(chan struct{})
 	close(stop)
 	out := &bytes.Buffer{}
-	if err := printWatch(st, out, time.Millisecond, stop); err != nil {
+	if err := printWatch(st, out, watchTestOptions(false, time.Millisecond, stop)); err != nil {
 		t.Fatal(err)
 	}
 	rendered := out.String()
@@ -146,7 +158,7 @@ func TestWatchFollowsAppendedEvents(t *testing.T) {
 	out := &bytes.Buffer{}
 	rendered := make(chan string, 1)
 	go func() {
-		err := printWatch(st, out, 5*time.Millisecond, stop)
+		err := printWatch(st, out, watchTestOptions(false, 5*time.Millisecond, stop))
 		if err != nil {
 			t.Error(err)
 		}
@@ -176,7 +188,7 @@ func TestWatchWithoutTaskOrLog(t *testing.T) {
 	stop := make(chan struct{})
 	close(stop)
 	out := &bytes.Buffer{}
-	if err := printWatch(state.AttachStateStore(cfg), out, time.Millisecond, stop); err != nil {
+	if err := printWatch(state.AttachStateStore(cfg), out, watchTestOptions(false, time.Millisecond, stop)); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "EVENT_LOG: none") {
@@ -185,7 +197,7 @@ func TestWatchWithoutTaskOrLog(t *testing.T) {
 
 	st, _ := watchTestStore(t)
 	out = &bytes.Buffer{}
-	if err := printWatch(st, out, time.Millisecond, stop); err != nil {
+	if err := printWatch(st, out, watchTestOptions(false, time.Millisecond, stop)); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "EVENT_LOG_STATUS: empty") {
@@ -232,7 +244,7 @@ func runWatchUntilExit(t *testing.T, st *state.StateStore, followInterval time.D
 	out := &bytes.Buffer{}
 	done := make(chan error, 1)
 	go func() {
-		done <- printWatch(st, out, followInterval, nil)
+		done <- printWatch(st, out, watchTestOptions(false, followInterval, nil))
 	}()
 	select {
 	case err := <-done:
@@ -295,7 +307,7 @@ func TestWatchFollowsUntilStatusLeavesActive(t *testing.T) {
 	out := &bytes.Buffer{}
 	done := make(chan error, 1)
 	go func() {
-		done <- printWatch(st, out, 5*time.Millisecond, nil)
+		done <- printWatch(st, out, watchTestOptions(false, 5*time.Millisecond, nil))
 	}()
 	time.Sleep(20 * time.Millisecond)
 	writeTaskEventLines(t, st, taskID,
@@ -340,7 +352,7 @@ func TestWatchExitsWhenTaskIDSwitches(t *testing.T) {
 	out := &bytes.Buffer{}
 	done := make(chan error, 1)
 	go func() {
-		done <- printWatch(st, out, 5*time.Millisecond, nil)
+		done <- printWatch(st, out, watchTestOptions(false, 5*time.Millisecond, nil))
 	}()
 	time.Sleep(20 * time.Millisecond)
 	if err := st.Write("task.id", "12345678-eeee-ffff-0000-111111111111"); err != nil {
@@ -373,7 +385,7 @@ func TestWatchExitsWhenEventLogRemoved(t *testing.T) {
 	out := &bytes.Buffer{}
 	done := make(chan error, 1)
 	go func() {
-		done <- printWatch(st, out, 5*time.Millisecond, nil)
+		done <- printWatch(st, out, watchTestOptions(false, 5*time.Millisecond, nil))
 	}()
 	time.Sleep(20 * time.Millisecond)
 	if err := os.Remove(st.TaskEventLogPath(taskID)); err != nil {

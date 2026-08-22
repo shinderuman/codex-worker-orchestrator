@@ -8,11 +8,10 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/watch-verbose-tool-observability.md`
+- `IMPLEMENTATION_TASKS/instruction-fixed-context-audit.md`
 
 ## NEXT（優先順）
 
-- `IMPLEMENTATION_TASKS/instruction-fixed-context-audit.md`
 - `IMPLEMENTATION_TASKS/005-multi-repository-isolation.md`
 - `IMPLEMENTATION_TASKS/006-codex-facing-compact-result.md`
 - `IMPLEMENTATION_TASKS/007-machine-only-legacy-cleanup.md`
@@ -44,14 +43,14 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 ## 現在のGit境界
 
 - branch: `main`
-- implementation baseline: Task 004 self-contained stdin PTY completion commit（current HEAD）
-- metadata boundary: Task 004をHistoryへ移行してtask fileを削除し、`watch-verbose-tool-observability.md`をACTIVEへ昇格。caller-side stty不要のTTY raw化・全path復元・unsupported platform fail-closed境界をcurrent HEADへ収録し、fulfilled dependency移行・final HEAD gate・本配置・installed/source一致・status smoke確認済み
+- implementation baseline: watch verbose tool observability completion commit（current HEAD）
+- metadata boundary: watch verbose taskをHistoryへ移行してtask fileを削除し、`instruction-fixed-context-audit.md`をACTIVEへ昇格。plain watch/event JSONL不変のlive tool snapshot・verbose表示をcurrent HEADへ収録し、final HEAD gate・本配置・installed/source一致・status smoke確認済み
 - push: 禁止
 
 ## 現在の停止理由
 
-Task 004は完了。watch verbose tool observability taskはACTIVEへ昇格済みで未着手。
+watch verbose tool observabilityは完了。instruction fixed-context auditはACTIVEへ昇格済みで未着手。
 
 ## 次の親Codex操作
 
-`watch-verbose-tool-observability.md`のOriginal instruction・derived contract・`--watch`終端Historyを再読し、live tool observability実装を開始する。
+`instruction-fixed-context-audit.md`のOriginal instruction・derived contract・関連Historyを再読し、通常経路の固定context bytes/token proxy監査を開始する。

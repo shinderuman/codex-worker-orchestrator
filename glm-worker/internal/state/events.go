@@ -2,10 +2,12 @@ package state
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -129,8 +131,9 @@ func (s *StateStore) TaskEventLogPath(taskID string) string {
 const retainedTaskEventLogs = 10
 
 // PruneTaskEventLogsは旧taskのevent logを新しい順にkeep件だけ残して削除する。
-// 現taskのlogはmtimeに関係なく削除しない。telemetry・stats履歴・checkpoint・sessionは
-// 対象外で、失敗はwarningだけ出し呼出元のtask成否へ影響させない。
+// 現taskのlogはmtimeに関係なく削除しない。削除したlogと同じtaskのlive status snapshotも
+// 一緒に削除する。telemetry・stats履歴・checkpoint・sessionは対象外で、失敗はwarningだけ
+// 出し呼出元のtask成否へ影響させない。
 func (s *StateStore) PruneTaskEventLogs(keep int, currentTaskID string) {
 	paths, err := filepath.Glob(s.Path(filepath.Join("events", "*.jsonl")))
 	if err != nil {
@@ -160,6 +163,10 @@ func (s *StateStore) PruneTaskEventLogs(keep int, currentTaskID string) {
 			continue
 		}
 		if err := os.Remove(item.path); err != nil {
+			WarnTaskEventPrune(err)
+		}
+		livePath := strings.TrimSuffix(item.path, ".jsonl") + ".live.json"
+		if err := os.Remove(livePath); err != nil && !errors.Is(err, os.ErrNotExist) {
 			WarnTaskEventPrune(err)
 		}
 	}

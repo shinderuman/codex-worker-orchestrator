@@ -38,6 +38,8 @@ const (
 type Command struct {
 	Mode    CommandMode
 	Payload string
+	// WatchVerboseは--watch --verboseの明示的詳細表示指定。--watch単体の表示は不変。
+	WatchVerbose bool
 	// StdinBytesはdecision/fix payloadをstdinから読み取るbyte数。
 	// 0は従来のargv payload modeを意味する。
 	StdinBytes int64
@@ -54,7 +56,7 @@ type VerifyArgs struct {
 
 func ParseCommand(args []string) (Command, error) {
 	if len(args) == 0 {
-		return Command{}, fmt.Errorf("usage: glm-worker <instruction> | --decision <decision> | --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix <instruction> | --fix-stdin <payload-bytes> [--sha256 <hex>] | --resume | --status | --watch | --timeline [task-id] | --convergence [task-id] | --stats | --reset | --eval-ab <run-dir>")
+		return Command{}, fmt.Errorf("usage: glm-worker <instruction> | --decision <decision> | --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix <instruction> | --fix-stdin <payload-bytes> [--sha256 <hex>] | --resume | --status | --watch [--verbose] | --timeline [task-id] | --convergence [task-id] | --stats | --reset | --eval-ab <run-dir>")
 	}
 
 	switch args[0] {
@@ -77,8 +79,11 @@ func ParseCommand(args []string) (Command, error) {
 		}
 		return Command{Mode: ModeStatus}, nil
 	case "--watch":
+		if len(args) == 2 && args[1] == "--verbose" {
+			return Command{Mode: ModeWatch, WatchVerbose: true}, nil
+		}
 		if len(args) != 1 {
-			return Command{}, fmt.Errorf("usage: glm-worker --watch")
+			return Command{}, fmt.Errorf("usage: glm-worker --watch [--verbose]")
 		}
 		return Command{Mode: ModeWatch}, nil
 	case "--timeline":
@@ -249,7 +254,7 @@ func Execute(cmd Command, cfg config.AppConfig, rf RunnerFactory, stdout, stderr
 		return fmt.Errorf("stdin payload mode requires the payload to be read before execute")
 	}
 	if cmd.Mode == ModeWatch {
-		return printWatch(state.AttachStateStore(cfg), stdout, defaultWatchFollowInterval, nil)
+		return printWatch(state.AttachStateStore(cfg), stdout, defaultWatchOptions(cmd.WatchVerbose))
 	}
 	if cmd.Mode == ModeTimeline {
 		return printTimeline(state.AttachStateStore(cfg), cmd.Payload, stdout)

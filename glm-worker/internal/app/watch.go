@@ -15,13 +15,34 @@ import (
 // provider/workerへの問い合わせは行わないため、この間隔での外部影響はない。
 const defaultWatchFollowInterval = 500 * time.Millisecond
 
+// watchOptionsは--watch表示の実行要素。verbose以外は従来動作と同じ既定値を使う。
+type watchOptions struct {
+	verbose        bool
+	followInterval time.Duration
+	statusInterval time.Duration
+	changeInterval time.Duration
+	now            func() time.Time
+	stop           <-chan struct{}
+}
+
+func defaultWatchOptions(verbose bool) watchOptions {
+	return watchOptions{
+		verbose:        verbose,
+		followInterval: defaultWatchFollowInterval,
+		statusInterval: defaultWatchStatusInterval,
+		changeInterval: defaultWatchChangeInterval,
+		now:            time.Now,
+	}
+}
+
 // printWatchは現在taskの受動event logを読み取り専用で表示する。state書換・repo lock・
 // AI call・provider/workerへの問い合わせを行わない。event logがまだ無いtaskはその旨を
 // 表示して即座に終了し、存在すれば既存行を表示した後追記をfollowする。followはfollow対象
 // taskのauthoritative task.statusがactiveを離れた時点・別taskへの切替時に残eventを表示して
 // WATCH_EXIT行を出力し終了する。event log消失時は従来どおりremoved表示のみで終了する。
-// stopはtest用の打ち切り信号で、nilでも上記終端で必ず終了する。
-func printWatch(st *state.StateStore, stdout io.Writer, followInterval time.Duration, stop <-chan struct{}) error {
+// verbose指定時は既存表示に加えてlive tool状態(LIVE行)を表示する。stopはtest用の打ち切り
+// 信号で、nilでも上記終端で必ず終了する。
+func printWatch(st *state.StateStore, stdout io.Writer, opts watchOptions) error {
 	taskID := st.ReadOr("task.id", "none")
 	fmt.Fprintf(stdout, "TASK_ID: %s\n", taskID)
 	if taskID == "none" {
@@ -37,7 +58,7 @@ func printWatch(st *state.StateStore, stdout io.Writer, followInterval time.Dura
 	}
 	defer file.Close()
 	fmt.Fprintln(stdout, "EVENT_LOG_STATUS: following")
-	return watchTaskEvents(st, taskID, file, path, stdout, followInterval, stop)
+	return watchTaskEvents(st, taskID, file, path, stdout, opts)
 }
 
 // watchTerminalはfollow対象taskの終端をauthoritative stateから判定する。task.idが別taskへ
@@ -57,31 +78,36 @@ func watchTerminal(st *state.StateStore, taskID string) (string, bool) {
 // watchTaskEventsはevent logの追記を表示し、follow対象taskの終端で復帰する。event logへの
 // 書込みは必ずtask.statusがactiveの間に行われ、non-activeへの遷移は当該呼出の最終event
 // 追記より後かつ以後の追記より前に行われるため、stateを読んだ後にdrainすれば終端eventを
-// 取りこぼさない。この順序をsleep・retry・出力停止観測で代替しない。
-func watchTaskEvents(st *state.StateStore, taskID string, file *os.File, path string, stdout io.Writer, followInterval time.Duration, stop <-chan struct{}) error {
-	pending, err := drainTaskEvents(file, stdout, nil)
+// 取りこぼさない。この順序をsleep・retry・出力停止観測で代替しない。verbose時はdrainした
+// recordでtool状態を組み立て、LIVE行を間欠的に再表示する。
+func watchTaskEvents(st *state.StateStore, taskID string, file *os.File, path string, stdout io.Writer, opts watchOptions) error {
+	tracker := newWatchToolTracker()
+	pending, err := drainTaskEvents(file, stdout, nil, tracker.observe)
 	if err != nil {
 		return err
 	}
+	status := watchLiveStatus{st: st, taskID: taskID, stdout: stdout, tracker: tracker, opts: opts}
+	status.refresh(true)
 	if exitLine, terminal := watchTerminal(st, taskID); terminal {
 		fmt.Fprintln(stdout, exitLine)
 		return nil
 	}
 	for {
 		select {
-		case <-stop:
+		case <-opts.stop:
 			return nil
-		case <-time.After(followInterval):
+		case <-time.After(opts.followInterval):
 		}
 		if _, err := os.Stat(path); err != nil {
 			fmt.Fprintln(stdout, "EVENT_LOG_STATUS: removed")
 			return nil
 		}
 		exitLine, terminal := watchTerminal(st, taskID)
-		pending, err = drainTaskEvents(file, stdout, pending)
+		pending, err = drainTaskEvents(file, stdout, pending, tracker.observe)
 		if err != nil {
 			return err
 		}
+		status.refresh(false)
 		if terminal {
 			fmt.Fprintln(stdout, exitLine)
 			return nil
@@ -90,8 +116,9 @@ func watchTaskEvents(st *state.StateStore, taskID string, file *os.File, path st
 }
 
 // drainTaskEventsは読み取り位置以降の新規bytesを行ごとに表示する。改行で終端しない
-// 末尾部分は次回へ持ち越し、書き込み途中の行を破損表示にしない。
-func drainTaskEvents(file *os.File, stdout io.Writer, pending []byte) ([]byte, error) {
+// 末尾部分は次回へ持ち越し、書き込み途中の行を破損表示にしない。onRecordは表示できた
+// recordをverbose tool状態の組立へ渡す。
+func drainTaskEvents(file *os.File, stdout io.Writer, pending []byte, onRecord func(state.TaskEventRecord)) ([]byte, error) {
 	buffer := make([]byte, 32*1024)
 	for {
 		read, err := file.Read(buffer)
@@ -102,7 +129,7 @@ func drainTaskEvents(file *os.File, stdout io.Writer, pending []byte) ([]byte, e
 				if index < 0 {
 					break
 				}
-				renderTaskEventLine(pending[:index], stdout)
+				renderTaskEventLine(pending[:index], stdout, onRecord)
 				pending = pending[index+1:]
 			}
 		}
@@ -115,7 +142,7 @@ func drainTaskEvents(file *os.File, stdout io.Writer, pending []byte) ([]byte, e
 	}
 }
 
-func renderTaskEventLine(line []byte, stdout io.Writer) {
+func renderTaskEventLine(line []byte, stdout io.Writer, onRecord func(state.TaskEventRecord)) {
 	trimmed := bytes.TrimSpace(line)
 	if len(trimmed) == 0 {
 		return
@@ -124,6 +151,9 @@ func renderTaskEventLine(line []byte, stdout io.Writer) {
 	if err != nil {
 		fmt.Fprintf(stdout, "EVENT_SKIPPED: unparseable line: %v\n", err)
 		return
+	}
+	if onRecord != nil {
+		onRecord(record)
 	}
 	fmt.Fprintln(stdout, formatTaskEvent(record))
 }
