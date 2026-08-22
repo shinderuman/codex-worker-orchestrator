@@ -255,6 +255,51 @@ func TestRunFixStdinFailsClosedOnShortRead(t *testing.T) {
 	}
 }
 
+// TestRunDecisionStdinEmitsNoReadyMarkerForNonTTYはpipe(*os.File)と非file readerの
+// 両stdinでREADY markerがstderrへ出力されないことを固定する。markerはTTY stdinの
+// raw適用成功直後にだけ出すtransport controlであり、非TTY輸送は無markerの従来契約。
+func TestRunDecisionStdinEmitsNoReadyMarkerForNonTTY(t *testing.T) {
+	payload := stdinTestPayload()
+	args := []string{"--decision-stdin", fmt.Sprint(len(payload)), "--sha256", stdinPayloadSHA(payload)}
+
+	pipeCfg := newAppConfig(t)
+	prepareWaitingDecisionState(t, pipeCfg)
+	pipeRunner := &fakeRunner{steps: []fakeStep{
+		{output: implementedPacketApp("decision applied")},
+		{output: needsSolReviewPacketApp()},
+	}}
+	pipeReader, pipeWriter, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pipeReader.Close()
+	go func() {
+		_, _ = pipeWriter.Write([]byte(payload))
+		_ = pipeWriter.Close()
+	}()
+	pipeStderr := &strings.Builder{}
+	if err := run(args, func() (config.AppConfig, error) { return pipeCfg, nil }, pipeRunner.factory(), pipeReader, io.Discard, pipeStderr); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(pipeStderr.String(), stdinReadyMarker) {
+		t.Fatalf("pipe stdinでREADY markerが出力されています: %q", pipeStderr.String())
+	}
+
+	readerCfg := newAppConfig(t)
+	prepareWaitingDecisionState(t, readerCfg)
+	readerRunner := &fakeRunner{steps: []fakeStep{
+		{output: implementedPacketApp("decision applied")},
+		{output: needsSolReviewPacketApp()},
+	}}
+	readerStderr := &strings.Builder{}
+	if err := run(args, func() (config.AppConfig, error) { return readerCfg, nil }, readerRunner.factory(), strings.NewReader(payload), io.Discard, readerStderr); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(readerStderr.String(), stdinReadyMarker) {
+		t.Fatalf("非file stdinでREADY markerが出力されています: %q", readerStderr.String())
+	}
+}
+
 // TestRunDecisionStdinPreservesNULBytesOverPipeFileはstdinが実*os.File pipeのときに
 // termios変更を行わない経路のまま、NUL byteを含む本文がargvを通らず全byte保存されることを
 // run()の全経路で検証する。

@@ -203,6 +203,20 @@ func readStdinPayload(in io.Reader, want int64, expectedSHA string) (string, err
 	return string(payload), nil
 }
 
+// stdinReadyMarkerはTTY stdinのpayload読み取り開始可能をcallerへ知らせる固定transport marker。
+// raw適用成功直後にstderrへ1回だけ出し、pipe/file等の非TTY stdinでは出さない。
+const stdinReadyMarker = "GLM_STDIN_READY"
+
+// emitStdinReadyMarkerはmarker行をstderrへ1回だけ書く。出力時点でraw modeのためOPOSTが
+// 無効で、行末LFはwriter経路で確定観測できる。書込み失敗はcallerが本文を送れず永続待機
+// するため、呼び出し元は復元を実行してfail closedする。
+func emitStdinReadyMarker(w io.Writer) error {
+	if _, err := fmt.Fprintf(w, "%s\n", stdinReadyMarker); err != nil {
+		return fmt.Errorf("stdin ready marker write failed: %w", err)
+	}
+	return nil
+}
+
 // テストでModelRunnerを差し替えるためのfactory。
 type RunnerFactory func(cfg config.AppConfig, st *state.StateStore) workflow.ModelRunner
 
@@ -227,9 +241,14 @@ func run(
 		return err
 	}
 	if cmd.StdinBytes > 0 {
-		restore, err := enterStdinRawMode(stdin)
+		restore, rawApplied, err := enterStdinRawMode(stdin)
 		if err != nil {
 			return err
+		}
+		if rawApplied {
+			if markerErr := emitStdinReadyMarker(stderr); markerErr != nil {
+				return errors.Join(markerErr, restore())
+			}
 		}
 		payload, readErr := readStdinPayload(stdin, cmd.StdinBytes, cmd.SHA256)
 		if err := errors.Join(readErr, restore()); err != nil {

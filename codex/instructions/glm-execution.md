@@ -25,7 +25,8 @@
 - `--decision`・`--fix`へ渡す判断本文・修正指示本文を、`JSON.stringify`等でshell command文字列へ埋め込むことを禁止する。shellの二重引用符内ではbacktickと`$`がcommand substitution・展開され、本文の一部が失われたりcommand出力が本文へ混入した上で最初のNUL byteで切断されたりする。
 - 本文はstdin modeで送る。exec_commandは`tty: true`で起動する。`tty: false`のprocessはstdinが即時EOFとなり本文送信前にbyte数不足でfail closedするため、`tty: false`へのfallbackを禁止する。
 - 起動commandは本文を含まない固定形`glm-worker --decision-stdin <payload-bytes>`（fixは`--fix-stdin`）とし、shell interpolationを使わない固定文字列だけを構築する。terminal mode設定はglm-workerのinvocation内責務で、callerは`stty`・raw mode・echo等のterminal設定を一切行わない。command文字列へ入れてよい本文由来の情報はUTF-8 byte長と任意のSHA-256だけに限る。`<payload-bytes>`は本文のUTF-8 byte長で、tool orchestration内で`TextEncoder`相当から送信前に計算する。
-- 呼び出しがsession化してsession IDを返した場合は、末尾改行の有無に依存せず非emptyの`write_stdin`で本文全体を1回だけ送る。改行だけの追加writeを行わない。byte数が不足する入力はglm-workerがstate変更・model呼出前にfail closedする。
+- 本文送信の開始条件は、glm-workerがstderrへ出す固定marker行`GLM_STDIN_READY`の確認だけである。markerはglm-workerがTTY stdinのterminal設定適用に成功した直後に1回だけ出し、pipe/file等の非TTY stdinでは出ない。marker未観測・marker行の重複・processの先行終了では本文を未送信のままfail closedとし、marker待ちの間に本文を先行writeしない。
+- marker確認後、呼び出しがsession化してsession IDを返した場合は、末尾改行の有無に依存せず非emptyの`write_stdin`で本文全体を1回だけ送る。改行だけの追加writeを行わない。byte数が不足する入力はglm-workerがstate変更・model呼出前にfail closedする。
 - 送信前に本文のSHA-256を計算できる場合は`--sha256 <hex>`を併せ指定し、同じく送信前に照合させる。
 - 本文中のbacktick、dollar、single quote、double quote、NUL、改行を無変換で保持する。shell向けのescape・encode・quoteをやり直さない。
 - glm-workerがbyte数不足・sha256不一致で非zero終了した場合、本文の分割再送・短文化・`--decision`/`--fix`へのargv埋込みfallbackを行わない。byte長・hashと送信内容の整合だけを確認し、同じstdin modeで再送する。
@@ -59,6 +60,7 @@
 - terminal payload二面表示の原因層はglm-worker内部emitではなく親Codex orchestrationである。glm-workerの主呼出は受理したterminal resultをstdoutへ1回だけ出力する。Codex desktopがbackground `functions.exec`の完了outputと後続`functions.wait`のresult cardで同じraw terminal payloadを二面描画するため、境界はcaller側で解消する。structured JSON移行後も結果object全体が同じ境界で二度描画され得る前提を維持し、JSON化を解決根拠にしない。
 - 単一postconditionは「1 accepted terminal resultにつき、親tool orchestration全体でユーザー可視payloadは1回」である。repo内emitの再調査・原因境界の特定だけでこの症状を解消扱いしない。
 - 長時間cell(主`glm-worker`呼出)では、`functions.exec`のorchestration内でnested `exec_command`・`write_stdin`の各outputを変数へ蓄積し、raw stdout・packetをtext・notify・image等の即時描画経路へ一切出さない。
+- 蓄積した出力に`GLM_STDIN_READY` marker行が含まれていてもtransport controlであり、受理対象のterminal payload・machine result・単一描画の本文へ含めない。
 - cell終端では、蓄積したraw terminal payloadをFunctionsのstoreへtask固有keyで保存し、cellの返り値は短いcaptured marker(`GLM_TERMINAL_CAPTURED <key>`)だけにする。
 - `functions.wait`でcell終端を受け取った後、別の短い同期`functions.exec`でstoreのload(key)を読み、text(raw)として1回だけ親へ渡す。この同期callで追加AI call・追加のglm-worker実行を行わない。
 - background cellの完了outputと`functions.wait`の双方へ同じraw payloadを流す運用は禁止する。repo側のPACKET/JSON blind dedupeと正当な別terminal resultの抑止も行わない。

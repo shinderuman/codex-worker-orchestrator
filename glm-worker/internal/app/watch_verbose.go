@@ -49,13 +49,14 @@ type watchToolError struct {
 
 // watchToolTrackerは表示済みevent recordから--watch --verbose表示用のtool状態を組立る。
 // tool_use/tool_resultをtool IDで対応付け、未対応のresult eventで同一callのpendingを
-// 除く(呼出終端後も実行し続けているとは限らないため)。
+// 除く(呼出終端後も実行し続けているとは限らないため)。model activity時刻は
+// assistant側のthinking/text/tool_use観測だけを基準に更新する。
 type watchToolTracker struct {
-	pending      map[string]watchPendingTool
-	lastLongTool *watchCompletedTool
-	lastError    *watchToolError
-	lastEventAt  time.Time
-	firstEventAt time.Time
+	pending             map[string]watchPendingTool
+	lastLongTool        *watchCompletedTool
+	lastError           *watchToolError
+	lastModelActivityAt time.Time
+	firstEventAt        time.Time
 }
 
 func newWatchToolTracker() *watchToolTracker {
@@ -66,8 +67,8 @@ func (t *watchToolTracker) observe(record state.TaskEventRecord) {
 	if t.firstEventAt.IsZero() {
 		t.firstEventAt = record.Timestamp
 	}
-	if record.Timestamp.After(t.lastEventAt) {
-		t.lastEventAt = record.Timestamp
+	if watchModelActivityRecord(record) && record.Timestamp.After(t.lastModelActivityAt) {
+		t.lastModelActivityAt = record.Timestamp
 	}
 	for index := range record.Blocks {
 		t.observeBlock(record, &record.Blocks[index])
@@ -79,6 +80,23 @@ func (t *watchToolTracker) observe(record state.TaskEventRecord) {
 			}
 		}
 	}
+}
+
+// watchModelActivityRecordはrecordがmodel activityの観測かを判定する。MODEL_IDLEは
+// 「最後のmodel activityからの経過時間」のため、assistant側のthinking・text・tool_use
+// blockだけを基準にし、system tool_progress・task_notification・user tool_result・
+// background task状態通知では増え続ける経過を止めない。
+func watchModelActivityRecord(record state.TaskEventRecord) bool {
+	if record.Kind != "assistant" {
+		return false
+	}
+	for _, block := range record.Blocks {
+		switch block.Type {
+		case "thinking", "text", "tool_use":
+			return true
+		}
+	}
+	return false
 }
 
 func (t *watchToolTracker) observeBlock(record state.TaskEventRecord, block *state.TaskBlockSummary) {
@@ -209,8 +227,8 @@ func renderWatchLiveStatus(st *state.StateStore, taskID string, stdout io.Writer
 		fmt.Fprintf(stdout, "LIVE TASK_AGE %s\n", formatWatchAge(now.Sub(startedAt)))
 	}
 	details := liveToolDetails(st, taskID, tracker)
-	if !details.idleBase.IsZero() {
-		fmt.Fprintf(stdout, "LIVE MODEL_IDLE %s\n", formatWatchElapsed(now.Sub(details.idleBase)))
+	if !details.modelIdleAt.IsZero() {
+		fmt.Fprintf(stdout, "LIVE MODEL_IDLE %s\n", formatWatchElapsed(now.Sub(details.modelIdleAt)))
 	}
 	pending := tracker.pendingTools()
 	if len(pending) == 0 {
@@ -243,25 +261,23 @@ func renderWatchLiveStatus(st *state.StateStore, taskID string, stdout io.Writer
 	}
 }
 
-// liveToolDetailsはlive snapshotを読み、idle基準時刻とtool ID対応の詳細を返す。
-// snapshotのlast_event_atはlogへ抑止された進捗event観測も含むため、log最終recordより
-// 新しければidle基準として採る。読めないときは詳細無しで復帰する。
+// liveToolDetailsはlive snapshotを読み、MODEL_IDLE基準のmodel activity時刻とtool ID対応の
+// 詳細を返す。snapshotのlast_event_atはtool_progress等の非model event観測でも進むため
+// MODEL_IDLEの基準には使わない。model activity eventはevent logへ必ず記録されるため、
+// 基準時刻はlog側のtrackerだけで組立てる。読めないときは詳細無しで復帰する。
 type watchLiveDetails struct {
-	tools    map[string]state.TaskLiveTool
-	idleBase time.Time
+	tools       map[string]state.TaskLiveTool
+	modelIdleAt time.Time
 }
 
 func liveToolDetails(st *state.StateStore, taskID string, tracker *watchToolTracker) watchLiveDetails {
-	details := watchLiveDetails{tools: map[string]state.TaskLiveTool{}, idleBase: tracker.lastEventAt}
+	details := watchLiveDetails{tools: map[string]state.TaskLiveTool{}, modelIdleAt: tracker.lastModelActivityAt}
 	status, err := st.ReadTaskLiveStatus(taskID)
 	if err != nil {
 		return details
 	}
 	for _, tool := range status.Tools {
 		details.tools[tool.ToolID] = tool
-	}
-	if status.LastEventAt.After(details.idleBase) {
-		details.idleBase = status.LastEventAt
 	}
 	return details
 }

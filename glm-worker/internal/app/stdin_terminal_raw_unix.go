@@ -11,29 +11,29 @@ import (
 )
 
 // setStdinFileRawはstdin fdがterminalのときだけtermiosをcfmakeraw相当へ変更する。
-// termios取得ioctlはENOTTY(fdがterminalでない)のときだけpipe/fileとしてno-op復元を返し、
-// その他の失敗はTTYでないと黙って解釈せずfail closedする。
+// termios取得ioctlはENOTTY(fdがterminalでない)のときだけpipe/fileとしてapplied=falseの
+// no-op復元を返し、その他の失敗はTTYでないと黙って解釈せずfail closedする。
 // 復元は呼び出し元の責務で、読み取り成功・不足・sha256不一致を含む全pathで実行する。
-func setStdinFileRaw(file *os.File) (restore func() error, err error) {
+func setStdinFileRaw(file *os.File) (restore func() error, applied bool, err error) {
 	var saved syscall.Termios
 	if err := getTerminalAttrs(file.Fd(), &saved); err != nil {
 		if errors.Is(err, syscall.ENOTTY) {
-			return noopStdinRestore, nil
+			return noopStdinRestore, false, nil
 		}
-		return nil, fmt.Errorf("stdin terminal state probe failed: %w", err)
+		return nil, false, fmt.Errorf("stdin terminal state probe failed: %w", err)
 	}
 
 	raw := saved
 	makeTermiosRaw(&raw)
 	if err := setTerminalAttrs(file.Fd(), &raw); err != nil {
-		return nil, fmt.Errorf("stdin terminal raw mode setup failed: %w", err)
+		return nil, false, fmt.Errorf("stdin terminal raw mode setup failed: %w", err)
 	}
 	return func() error {
 		if err := setTerminalAttrs(file.Fd(), &saved); err != nil {
 			return fmt.Errorf("stdin terminal state restore failed: %w", err)
 		}
 		return nil
-	}, nil
+	}, true, nil
 }
 
 // makeTermiosRawは`stty raw -echo`相当の設定。input/output processing・canonical・

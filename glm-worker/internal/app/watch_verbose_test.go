@@ -141,6 +141,77 @@ func TestWatchPlainOutputUnchangedByVerboseData(t *testing.T) {
 	}
 }
 
+// TestWatchModelActivityRecordClassifiesModelEventsはmodel activity分類がassistant側の
+// thinking・text・tool_use blockだけを基準にすることを検証する。system tool_progress・
+// thinking_tokens・task_notification、user tool_result、background通知、result、
+// assistantでも3種以外のblockだけのeventはMODEL_IDLEを更新しない。
+func TestWatchModelActivityRecordClassifiesModelEvents(t *testing.T) {
+	modelActivity := []state.TaskEventRecord{
+		{Kind: "assistant", Blocks: []state.TaskBlockSummary{{Type: "thinking", Bytes: 10}}},
+		{Kind: "assistant", Blocks: []state.TaskBlockSummary{{Type: "text", Bytes: 10}}},
+		{Kind: "assistant", Blocks: []state.TaskBlockSummary{{Type: "tool_use", Name: "Bash", ToolID: "toolu_1"}}},
+		{Kind: "assistant", Blocks: []state.TaskBlockSummary{{Type: "text", Bytes: 5}, {Type: "tool_result", ToolID: "toolu_1"}}},
+	}
+	for _, record := range modelActivity {
+		if !watchModelActivityRecord(record) {
+			t.Fatalf("model activityとして扱われるべきrecordです: %#v", record)
+		}
+	}
+
+	nonModelActivity := []state.TaskEventRecord{
+		{Kind: "system", Subtype: "init"},
+		{Kind: "system", Subtype: "thinking_tokens"},
+		{Kind: "system", Subtype: "tool_progress"},
+		{Kind: "system", Subtype: "task_notification"},
+		{Kind: "user", Blocks: []state.TaskBlockSummary{{Type: "tool_result", ToolID: "toolu_1"}}},
+		{Kind: "result", Subtype: "success"},
+		{Kind: "assistant"},
+		{Kind: "assistant", Blocks: []state.TaskBlockSummary{{Type: "server_tool_use", Name: "WebSearch"}}},
+	}
+	for _, record := range nonModelActivity {
+		if watchModelActivityRecord(record) {
+			t.Fatalf("model activityとして扱うべきでないrecordです: %#v", record)
+		}
+	}
+}
+
+// TestWatchVerboseModelIdleGrowsDuringToolProgressは長時間Bash中に30秒ごとの
+// tool_progress等の非model eventが流れてもMODEL_IDLEが最後のassistant activityから
+// 増え続けることを検証する。snapshotのlast_event_atが進んでいても基準にしない。
+func TestWatchVerboseModelIdleGrowsDuringToolProgress(t *testing.T) {
+	st, _ := watchTestStore(t)
+	taskID := "12345678-aaaa-bbbb-cccc-dddddddddddd"
+	base := time.Date(2026, 8, 23, 9, 0, 0, 0, time.UTC)
+	tracker := newWatchToolTracker()
+	tracker.observe(state.TaskEventRecord{CallID: "call-1", Kind: "assistant", Timestamp: base, Blocks: []state.TaskBlockSummary{{Type: "tool_use", Name: "Bash", ToolID: "toolu_1"}}})
+	for seconds := 30; seconds <= 120; seconds += 30 {
+		tracker.observe(state.TaskEventRecord{CallID: "call-1", Kind: "system", Subtype: "tool_progress", Timestamp: base.Add(time.Duration(seconds) * time.Second)})
+	}
+	if err := st.WriteTaskLiveStatus(taskID, state.TaskLiveStatus{
+		UpdatedAt:   base.Add(120 * time.Second),
+		LastEventAt: base.Add(120 * time.Second),
+		Tools:       []state.TaskLiveTool{{ToolID: "toolu_1", Command: "sleep 295"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	afterTwoMinutes := &bytes.Buffer{}
+	renderWatchLiveStatus(st, taskID, afterTwoMinutes, tracker, base.Add(2*time.Minute))
+	if !strings.Contains(afterTwoMinutes.String(), "LIVE MODEL_IDLE 2:00") {
+		t.Fatalf("tool_progress中のMODEL_IDLE = %q", afterTwoMinutes.String())
+	}
+
+	afterFourMinutes := &bytes.Buffer{}
+	renderWatchLiveStatus(st, taskID, afterFourMinutes, tracker, base.Add(4*time.Minute))
+	rendered := afterFourMinutes.String()
+	if !strings.Contains(rendered, "LIVE MODEL_IDLE 4:00") {
+		t.Fatalf("MODEL_IDLEが増え続けていません: %q", rendered)
+	}
+	if !strings.Contains(rendered, "LIVE CURRENT Bash 4:00 elapsed") || !strings.Contains(rendered, "LIVE COMMAND sleep 295") {
+		t.Fatalf("非model eventでtool表示が失われています: %q", rendered)
+	}
+}
+
 // TestWatchVerboseToolLifecycleTransitionsはtool完了でCURRENTから外れてLASTへ遷移し、
 // 経過時間が観測時刻とともに更新されること、未対応のresult eventで同一callのpendingが
 // 除かれることを検証する。

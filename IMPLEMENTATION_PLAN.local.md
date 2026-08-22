@@ -8,11 +8,10 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/review-followup-correctness-fixes.md`
+- `IMPLEMENTATION_TASKS/workflow-telemetry-improvement-analysis.md`
 
 ## NEXT（優先順）
 
-- `IMPLEMENTATION_TASKS/workflow-telemetry-improvement-analysis.md`
 - `IMPLEMENTATION_TASKS/parent-review-outcome-telemetry.md`
 - `IMPLEMENTATION_TASKS/005-multi-repository-isolation.md`
 - `IMPLEMENTATION_TASKS/006-codex-facing-compact-result.md`
@@ -45,14 +44,14 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 ## 現在のGit境界
 
 - branch: `main`
-- implementation baseline: instruction fixed-context audit completion commit（current HEAD）
-- metadata boundary: instruction auditをHistoryへ移行してtask fileを削除し、review follow-up correctness fixesをACTIVEへ昇格。通常固定contextを3 role合計1,140 bytes・token proxy 322削減した境界をcurrent HEADへ収録し、final HEAD gate・本配置・installed/source一致・status smoke確認済み
+- implementation baseline: review follow-up correctness fixes completion commit（current HEAD）
+- metadata boundary: READY handshake・task corpus section限定・MODEL_IDLE分類の完了証跡とescaped原因をHistoryへ移行し、完了task fileを削除。workflow telemetry improvement analysisをACTIVEへ昇格したfinal HEAD同期境界
 - push: 禁止
 
 ## 現在の停止理由
 
-instruction fixed-context auditは完了。review follow-up correctness fixesはACTIVEへ昇格済みで未着手。
+review follow-up correctness fixesは完了。workflow telemetry improvement analysisは両repositoryの初回stats/convergence計測と改善候補tracked化まで進み、Codex Reduction / Quality Deltaを最上位に置く最終評価が未完了。
 
 ## 次の親Codex操作
 
-`review-followup-correctness-fixes.md`のOriginal instruction・derived contractを再読し、PTY即feed・section判定・MODEL_IDLEの3修正を開始する。
+final HEAD gateと本配置・installed/source一致・marker-aware stdin smokeを確認後、workflow telemetry improvement analysisを要求正本から再読して最終評価する。
