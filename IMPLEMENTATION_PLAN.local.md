@@ -8,7 +8,7 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/004-self-contained-stdin-pty.md`
+- `IMPLEMENTATION_TASKS/watch-verbose-tool-observability.md`
 
 ## NEXT（優先順）
 
@@ -44,14 +44,14 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 ## 現在のGit境界
 
 - branch: `main`
-- implementation baseline: Task 001/002 post-integration contract consistency completion commit（current HEAD）
-- metadata boundary: post-integration contract consistency taskをHistoryへ移行してtask fileを削除し、Task 004をACTIVEへ昇格。decision retry、要求source、schedule parser、Plan単独schedule stateの収束をcurrent HEADへ収録し、final HEAD gate・本配置・installed/source一致・status smoke確認済み
+- implementation baseline: Task 004 self-contained stdin PTY completion commit（current HEAD）
+- metadata boundary: Task 004をHistoryへ移行してtask fileを削除し、`watch-verbose-tool-observability.md`をACTIVEへ昇格。caller-side stty不要のTTY raw化・全path復元・unsupported platform fail-closed境界をcurrent HEADへ収録し、fulfilled dependency移行・final HEAD gate・本配置・installed/source一致・status smoke確認済み
 - push: 禁止
 
 ## 現在の停止理由
 
-Task 001/002 production integration後の不整合修正は完了。Task 004はACTIVEへ昇格済みで未着手。
+Task 004は完了。watch verbose tool observability taskはACTIVEへ昇格済みで未着手。
 
 ## 次の親Codex操作
 
-Task 004のOriginal instruction・Amendments・参照Historyを再読し、caller-side stty不要のstdin/PTY transport実装を開始する。
+`watch-verbose-tool-observability.md`のOriginal instruction・derived contract・`--watch`終端Historyを再読し、live tool observability実装を開始する。

@@ -120,10 +120,11 @@ Task 005がPTY A/Bの実integrationをacceptanceに含むため、Task 004への
 ## Historical invariants
 
 - repository単位生存判定とrepo-search cache namespaceの完了証跡
+- Task 004で成立した1 invocation内の自己完結stdin PTY transportとprocess start→feed境界
 
 ## Dependencies
 
-- `IMPLEMENTATION_TASKS/004-self-contained-stdin-pty.md`
+none
 
 ## Review findings
 

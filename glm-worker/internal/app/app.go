@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -221,8 +222,12 @@ func run(
 		return err
 	}
 	if cmd.StdinBytes > 0 {
-		payload, err := readStdinPayload(stdin, cmd.StdinBytes, cmd.SHA256)
+		restore, err := enterStdinRawMode(stdin)
 		if err != nil {
+			return err
+		}
+		payload, readErr := readStdinPayload(stdin, cmd.StdinBytes, cmd.SHA256)
+		if err := errors.Join(readErr, restore()); err != nil {
 			return err
 		}
 		cmd.Payload = payload
@@ -237,8 +242,8 @@ func run(
 // Executeはcmdをcfg配下で実行する。runner/workflowはrf経由で注入可能で、
 // --watch・--timeline・--convergence・--eval-abはstateへ書き込まないread-only参照、
 // --status/--statsはロック取得前に、それ以外はプロセス間ロック後に処理する。
-// stdin payload modeの読み取り・照合はrun()がstate初期化前に完了しており、
-// 不足・不一致時はここへ到達しない。
+// stdin payload modeの読み取り・照合とTTY/PTYのtermios復元はrun()がstate初期化前に
+// 完了しており、不足・不一致時はここへ到達しない。
 func Execute(cmd Command, cfg config.AppConfig, rf RunnerFactory, stdout, stderr io.Writer) error {
 	if cmd.StdinBytes > 0 && cmd.Payload == "" {
 		return fmt.Errorf("stdin payload mode requires the payload to be read before execute")

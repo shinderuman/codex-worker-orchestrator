@@ -255,6 +255,39 @@ func TestRunFixStdinFailsClosedOnShortRead(t *testing.T) {
 	}
 }
 
+// TestRunDecisionStdinPreservesNULBytesOverPipeFileはstdinが実*os.File pipeのときに
+// termios変更を行わない経路のまま、NUL byteを含む本文がargvを通らず全byte保存されることを
+// run()の全経路で検証する。
+func TestRunDecisionStdinPreservesNULBytesOverPipeFile(t *testing.T) {
+	cfg := newAppConfig(t)
+	prepareWaitingDecisionState(t, cfg)
+	payload := "NUL先頭\x00中間\x00末尾\n2行目 `backtick` $HOME \"double\" 'single' 日本語\x00"
+	r := &fakeRunner{steps: []fakeStep{
+		{output: implementedPacketApp("decision applied")},
+		{output: needsSolReviewPacketApp()},
+	}}
+
+	pipeReader, pipeWriter, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pipeReader.Close()
+	go func() {
+		_, _ = pipeWriter.Write([]byte(payload))
+		_ = pipeWriter.Close()
+	}()
+
+	args := []string{"--decision-stdin", fmt.Sprint(len(payload)), "--sha256", stdinPayloadSHA(payload)}
+	if err := runStdinPayload(t, cfg, r, args, pipeReader); err != nil {
+		t.Fatal(err)
+	}
+
+	decision := promptSection(t, r.prompts[0], "\nSOL_DECISION:\n", "\n\n直前の同一タスクの調査文脈を利用し")
+	if decision != payload {
+		t.Fatalf("NUL混在payloadが全byte保存されていません: %q", decision)
+	}
+}
+
 func TestReadStdinPayloadReturnsWithoutEOF(t *testing.T) {
 	payload := stdinTestPayload()
 	reader, writer := io.Pipe()

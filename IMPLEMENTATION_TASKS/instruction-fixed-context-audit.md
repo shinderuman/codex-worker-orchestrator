@@ -70,10 +70,11 @@ none
 - `IMPLEMENTATION_HISTORY.md`の「stdin PTY transportのcaller-side `stty raw -echo`依存」
 - `IMPLEMENTATION_HISTORY.md`の「実運用PACKET二重表示再現」
 - `IMPLEMENTATION_HISTORY.md`の「複雑性の責任評価」
+- Task 004で成立したcaller-side `stty`不要の自己完結stdin PTY transportとmanaged recipe撤去
 
 ## Dependencies
 
-- `IMPLEMENTATION_TASKS/004-self-contained-stdin-pty.md`
+none
 
 ## Review findings
 
