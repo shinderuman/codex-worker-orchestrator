@@ -8,11 +8,10 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/workflow-telemetry-improvement-analysis.md`
+- `IMPLEMENTATION_TASKS/parent-review-outcome-telemetry.md`
 
 ## NEXT（優先順）
 
-- `IMPLEMENTATION_TASKS/parent-review-outcome-telemetry.md`
 - `IMPLEMENTATION_TASKS/005-multi-repository-isolation.md`
 - `IMPLEMENTATION_TASKS/006-codex-facing-compact-result.md`
 - `IMPLEMENTATION_TASKS/007-machine-only-legacy-cleanup.md`
@@ -44,14 +43,14 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 ## 現在のGit境界
 
 - branch: `main`
-- implementation baseline: review follow-up correctness fixes completion commit（current HEAD）
-- metadata boundary: READY handshake・task corpus section限定・MODEL_IDLE分類の完了証跡とescaped原因をHistoryへ移行し、完了task fileを削除。workflow telemetry improvement analysisをACTIVEへ昇格したfinal HEAD同期境界
+- implementation baseline: workflow telemetry improvement analysis completion commit（current HEAD）
+- metadata boundary: codex-config / media-backupの追加AI callなし基準値・Codex actual usage unknown・採用/保留判断をHistoryへ移行し、完了task fileを削除。parent review outcome telemetryをACTIVEへ昇格したsource-only境界
 - push: 禁止
 
 ## 現在の停止理由
 
-review follow-up correctness fixesは完了。workflow telemetry improvement analysisは両repositoryの初回stats/convergence計測と改善候補tracked化まで進み、Codex Reduction / Quality Deltaを最上位に置く最終評価が未完了。
+workflow telemetry improvement analysisは完了。parent review outcome telemetryは未着手。
 
 ## 次の親Codex操作
 
-final HEAD gateと本配置・installed/source一致・marker-aware stdin smokeを確認後、workflow telemetry improvement analysisを要求正本から再読して最終評価する。
+`parent-review-outcome-telemetry.md`のOriginal instruction・Amendments・Contractを再読し、Codex差し戻しと他originを分離する低cardinality観測を開始する。
