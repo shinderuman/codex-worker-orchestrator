@@ -47,8 +47,6 @@ func TestTerminalPayloadSingleRenderContractWiring(t *testing.T) {
 		"repo側のPACKET/JSON blind dedupeと正当な別terminal resultの抑止も行わない",
 		"structured JSON移行後も結果object全体が同じ境界で二度描画され得る前提を維持し、JSON化を解決根拠にしない",
 		"境界検証は追加AI callなしのdelayed markerと実`glm-worker` terminal resultを同じbackground exec→wait→同期取得境界で行う",
-		"2026-08-21の本契約適用taskで",
-		"同期load後にterminal result全文が1回だけユーザー可視表示されたことを実機確認済みである",
 	} {
 		if !strings.Contains(glmExecution, wire) {
 			t.Errorf("glm-execution.md lacks terminal payload wiring: %q", wire)
@@ -95,7 +93,6 @@ func TestTerminalPayloadSingleRenderContractWiring(t *testing.T) {
 		{"同一raw payloadをbackground cellの完了outputと`functions.wait`双方へ流す実装・運用、repo側PACKET/JSON blind dedupe、正当な別terminal resultの抑止", "repo側のPACKET/JSON blind dedupeと正当な別terminal resultの抑止も行わない"},
 		{"structured JSON object全体も同じ境界で二度描画され得る前提を維持し、JSON化を解決根拠にしない", "structured JSON移行後も結果object全体が同じ境界で二度描画され得る前提を維持し、JSON化を解決根拠にしない"},
 		{"追加AI callなしのdelayed markerと実`glm-worker` binaryのterminal resultを同じbackground exec→wait→同期取得境界で検証する", "境界検証は追加AI callなしのdelayed markerと実`glm-worker` terminal resultを同じbackground exec→wait→同期取得境界で行う"},
-		{"raw payloadはlong cellとwait result cardへ表示されず`GLM_TERMINAL_CAPTURED` markerだけが表示され", "raw payloadがlong cellとwaitへ表示されず`GLM_TERMINAL_CAPTURED` markerだけになり"},
 	}
 	for _, g := range evalGrounds {
 		if !strings.Contains(glmExecution, g.guidance) {

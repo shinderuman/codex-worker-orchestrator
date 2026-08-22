@@ -8,7 +8,7 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/instruction-fixed-context-audit.md`
+- `IMPLEMENTATION_TASKS/review-followup-correctness-fixes.md`
 
 ## NEXT（優先順）
 
@@ -43,14 +43,14 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 ## 現在のGit境界
 
 - branch: `main`
-- implementation baseline: watch verbose tool observability completion commit（current HEAD）
-- metadata boundary: watch verbose taskをHistoryへ移行してtask fileを削除し、`instruction-fixed-context-audit.md`をACTIVEへ昇格。plain watch/event JSONL不変のlive tool snapshot・verbose表示をcurrent HEADへ収録し、final HEAD gate・本配置・installed/source一致・status smoke確認済み
+- implementation baseline: instruction fixed-context audit completion commit（current HEAD）
+- metadata boundary: instruction auditをHistoryへ移行してtask fileを削除し、review follow-up correctness fixesをACTIVEへ昇格。通常固定contextを3 role合計1,140 bytes・token proxy 322削減した境界をcurrent HEADへ収録し、final HEAD gate・本配置・installed/source一致・status smoke確認済み
 - push: 禁止
 
 ## 現在の停止理由
 
-watch verbose tool observabilityは完了。instruction fixed-context auditはACTIVEへ昇格済みで未着手。
+instruction fixed-context auditは完了。review follow-up correctness fixesはACTIVEへ昇格済みで未着手。
 
 ## 次の親Codex操作
 
-`instruction-fixed-context-audit.md`のOriginal instruction・derived contract・関連Historyを再読し、通常経路の固定context bytes/token proxy監査を開始する。
+`review-followup-correctness-fixes.md`のOriginal instruction・derived contractを再読し、PTY即feed・section判定・MODEL_IDLEの3修正を開始する。

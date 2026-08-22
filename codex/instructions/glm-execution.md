@@ -18,13 +18,13 @@
 - `AGENTS.md`や既存規約にある一般品質ゲートを依頼文へ列挙し直さず、タスク固有の完了条件・対象・除外事項・必要テストだけを明記する。
 - 正確な長い一覧や監査報告がpacket上限へ収まらない場合は、実行時に渡される`REPORT_ARTIFACT_DIR`へ保存させ、packetでは`ARTIFACTS`の絶対パスだけを受け取る。
 - 同一taskがSol判断待ち・review fix・rate limit中なら分割や新規起動へ切り替えず、保存済みtaskとsessionを継続する。
-- モデル配分・token節約・品質バランスの調整を依頼された場合だけ`glm-worker --stats`を実行し、出力の`TELEMETRY_DIR`にあるタスク別JSONLを対象に、phase・role・effort・alias・実モデル・tree usage・top-level usage・prompt・response・結果を比較する。総消費量にはsubagentを含むtree usageを使う。通常作業では調整目的のためだけに詳細ログを読まない。
+- モデル配分・token節約・品質バランスの調整を依頼された場合だけ`glm-worker --stats`を実行し、出力の`TELEMETRY_DIR`にあるタスク別JSONLで呼出別のusage・実モデル・結果を比較する。総消費量にはsubagentを含むtree usageを使う。通常作業では調整目的のためだけに詳細ログを読まない。
 
 ## decision/fix本文の送信
 
-- `--decision`・`--fix`へ渡す判断本文・修正指示本文を、`JSON.stringify`等でshell command文字列へ埋め込むことを禁止する。shellの二重引用符内ではbacktickと`$`がcommand substitution・展開され、本文の一部が失われたりcommand出力が本文へ混入した上で最初のNUL byteで切断されたりする。2026-08-20のBM25 taskではこの経路でdecision本文の過半が静かに喪失した。
+- `--decision`・`--fix`へ渡す判断本文・修正指示本文を、`JSON.stringify`等でshell command文字列へ埋め込むことを禁止する。shellの二重引用符内ではbacktickと`$`がcommand substitution・展開され、本文の一部が失われたりcommand出力が本文へ混入した上で最初のNUL byteで切断されたりする。
 - 本文はstdin modeで送る。exec_commandは`tty: true`で起動する。`tty: false`のprocessはstdinが即時EOFとなり本文送信前にbyte数不足でfail closedするため、`tty: false`へのfallbackを禁止する。
-- 起動commandは本文を含まない固定形`glm-worker --decision-stdin <payload-bytes>`（fixは`--fix-stdin`）とし、shell interpolationを使わない固定文字列だけを構築する。terminal mode設定はglm-workerのinvocation内責務で、stdinがTTY/PTYならglm-worker自身が読み取り前にraw/noecho相当（canonical・signals・flow control・CR/NL置換・echo・stdout側加工の無効化）へ切り替え、読み取り後に元のterminal stateへ復元する。callerは`stty`・raw mode・echo等のterminal設定を一切行わない。stdinがpipe/fileならglm-workerはtermiosへ触れず宣言byte数だけ読み取る。command文字列へ入れてよい本文由来の情報はUTF-8 byte長と任意のSHA-256だけに限る。`<payload-bytes>`は本文のUTF-8 byte長で、tool orchestration内で`TextEncoder`相当から送信前に計算する。
+- 起動commandは本文を含まない固定形`glm-worker --decision-stdin <payload-bytes>`（fixは`--fix-stdin`）とし、shell interpolationを使わない固定文字列だけを構築する。terminal mode設定はglm-workerのinvocation内責務で、callerは`stty`・raw mode・echo等のterminal設定を一切行わない。command文字列へ入れてよい本文由来の情報はUTF-8 byte長と任意のSHA-256だけに限る。`<payload-bytes>`は本文のUTF-8 byte長で、tool orchestration内で`TextEncoder`相当から送信前に計算する。
 - 呼び出しがsession化してsession IDを返した場合は、末尾改行の有無に依存せず非emptyの`write_stdin`で本文全体を1回だけ送る。改行だけの追加writeを行わない。byte数が不足する入力はglm-workerがstate変更・model呼出前にfail closedする。
 - 送信前に本文のSHA-256を計算できる場合は`--sha256 <hex>`を併せ指定し、同じく送信前に照合させる。
 - 本文中のbacktick、dollar、single quote、double quote、NUL、改行を無変換で保持する。shell向けのescape・encode・quoteをやり直さない。
@@ -56,13 +56,13 @@
 
 ## 親tool orchestrationのterminal payload単一描画
 
-- 実運用で3回再現したterminal payload二面表示の原因層はglm-worker内部emitではなく親Codex orchestrationである。glm-workerの主呼出は受理したterminal resultをstdoutへ1回だけ出力する。Codex desktopがbackground `functions.exec`の完了outputと後続`functions.wait`のresult cardで同じraw terminal payloadを二面描画するため、境界はcaller側で解消する。structured JSON移行後も結果object全体が同じ境界で二度描画され得る前提を維持し、JSON化を解決根拠にしない。
+- terminal payload二面表示の原因層はglm-worker内部emitではなく親Codex orchestrationである。glm-workerの主呼出は受理したterminal resultをstdoutへ1回だけ出力する。Codex desktopがbackground `functions.exec`の完了outputと後続`functions.wait`のresult cardで同じraw terminal payloadを二面描画するため、境界はcaller側で解消する。structured JSON移行後も結果object全体が同じ境界で二度描画され得る前提を維持し、JSON化を解決根拠にしない。
 - 単一postconditionは「1 accepted terminal resultにつき、親tool orchestration全体でユーザー可視payloadは1回」である。repo内emitの再調査・原因境界の特定だけでこの症状を解消扱いしない。
 - 長時間cell(主`glm-worker`呼出)では、`functions.exec`のorchestration内でnested `exec_command`・`write_stdin`の各outputを変数へ蓄積し、raw stdout・packetをtext・notify・image等の即時描画経路へ一切出さない。
 - cell終端では、蓄積したraw terminal payloadをFunctionsのstoreへtask固有keyで保存し、cellの返り値は短いcaptured marker(`GLM_TERMINAL_CAPTURED <key>`)だけにする。
 - `functions.wait`でcell終端を受け取った後、別の短い同期`functions.exec`でstoreのload(key)を読み、text(raw)として1回だけ親へ渡す。この同期callで追加AI call・追加のglm-worker実行を行わない。
 - background cellの完了outputと`functions.wait`の双方へ同じraw payloadを流す運用は禁止する。repo側のPACKET/JSON blind dedupeと正当な別terminal resultの抑止も行わない。
-- 境界検証は追加AI callなしのdelayed markerと実`glm-worker` terminal resultを同じbackground exec→wait→同期取得境界で行う。2026-08-21の本契約適用taskで、raw payloadがlong cellとwaitへ表示されず`GLM_TERMINAL_CAPTURED` markerだけになり、同期load後にterminal result全文が1回だけユーザー可視表示されたことを実機確認済みである。将来のCodex desktop変更で同一境界の二面表示が再発した場合は本契約の手順へ戻す。
+- 境界検証は追加AI callなしのdelayed markerと実`glm-worker` terminal resultを同じbackground exec→wait→同期取得境界で行う。将来のCodex desktop変更で同一境界の二面表示が再発した場合は本契約の手順へ戻す。
 
 ## `STATUS: RATE_LIMITED`
 
