@@ -12,6 +12,7 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## NEXT（優先順）
 
+- `IMPLEMENTATION_TASKS/completion-detection-false-negative-incident.md`
 - `IMPLEMENTATION_TASKS/008-machine-protocol-measurement.md`
 - `IMPLEMENTATION_TASKS/009-worker-call-outliers.md`
 - `IMPLEMENTATION_TASKS/010-task-splitting-milestones.md`
@@ -30,6 +31,7 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## BLOCKED / USER_PERMISSION_WAIT
 
+- `IMPLEMENTATION_TASKS/desktop-terminal-payload-double-render-boundary.md`
 - `IMPLEMENTATION_TASKS/claude-cli-runtime-preflight-reevaluation.md`
 - `IMPLEMENTATION_TASKS/101-live-sol-ab.md`
 - `IMPLEMENTATION_TASKS/102-model-routing-redesign.md`
@@ -42,13 +44,13 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 - branch: `main`
 - implementation baseline: `sol_question` status contract follow-up commit（current HEAD）
-- metadata boundary: follow-upをHistoryへ移行して完了task fileを削除し、Task 007をACTIVEへ復帰した完了同期境界。Task 007の未コミット実装はstash 2件で保全中
+- metadata boundary: follow-upをHistoryへ移行して完了task fileを削除し、Task 007をACTIVEへ復帰。task固有stash 2件をfollow-up後HEADへ自動mergeで復元したworking tree境界
 - push: 禁止
 
 ## 現在の停止理由
 
-`sol_question` status contract follow-upは本配置とinstalled-state検証まで完了。Task 007のstash復元と再開を残す。
+Task 007はrate-limitから同一session/checkpointで再開し、v4 `report_only` key存在検証fix・独立review・Sol最終採否を完了。実装commit前の親同期境界。
 
 ## 次の親Codex操作
 
-Task 007のstash 2件を復元し、follow-up変更との重複を同task内で収束して作業を再開する。
+Task 007と独立してincident/保持metadataをcommitした後、Task 007の実装commit-ready Planを作成し、commit・完了同期amend・installへ進む。
