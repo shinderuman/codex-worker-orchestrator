@@ -369,4 +369,4 @@ none
 
 ## Current boundary
 
-前段のmachine-only legacy削減はcommit `029c6f8`で局所完了したが、ユーザーが同一Task 007へ外部出力全体のJSON/JSONL統一を追加したため再open。既存task file identityを復元し、completion detection incidentより優先してACTIVE化する。新要件のproduction実装は未着手。
+前段のmachine-only legacy削減はcommit `029c6f8`で局所完了したが、ユーザーが同一Task 007へ外部出力全体のJSON/JSONL統一を追加したため再open。task ID `820e121c-4a18-4c41-b644-86d18a850896`のworker-new開始後にZ.ai 5h rate limit停止し、同一session/checkpointをautomation `glm-worker-resume-4b1083bd6f6e-820e121c`で`2026-08-24T06:15:56+08:00`へ自動再開する。

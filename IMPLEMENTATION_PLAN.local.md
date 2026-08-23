@@ -13,6 +13,7 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 ## NEXT（優先順）
 
 - `IMPLEMENTATION_TASKS/completion-detection-false-negative-incident.md`
+- `IMPLEMENTATION_TASKS/zai-five-hour-limit-immediate-stop.md`
 - `IMPLEMENTATION_TASKS/008-machine-protocol-measurement.md`
 - `IMPLEMENTATION_TASKS/009-worker-call-outliers.md`
 - `IMPLEMENTATION_TASKS/010-task-splitting-milestones.md`
@@ -44,13 +45,13 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 - branch: `main`
 - implementation baseline: Task 007 external output JSON/JSONL再open metadata commit（current HEAD）
-- metadata boundary: ユーザー追加要件を同じTask 007へlosslessに追記してtask fileを復元し、completion detection incidentをNEXTへ戻した再open境界
+- metadata boundary: ユーザー追加要件を同じTask 007へlosslessに追記してtask fileを復元し、new task ID `820e121c-4a18-4c41-b644-86d18a850896`でworker-newを開始した境界
 - push: 禁止
 
 ## 現在の停止理由
 
-blockerなし。Task 007前段は完了し、同一taskへ追加された外部出力JSON/JSONL統一のproduction実装は未着手。
+Task 007の外部出力JSON/JSONL統一をworker-newで開始後、Z.ai 5h rate limit停止。working tree・task state・session・checkpointを保持し、自動再開automationを実体検証済み。
 
 ## 次の親Codex操作
 
-Task 007再open metadataをcommitし、復元した同じtask fileを要求正本として新しいGLM taskを開始する。
+`2026-08-24T06:15:56+08:00`のheartbeatでtask ID・rate-limited・resume可を確認し、同一checkout/session/checkpointから`glm-worker --resume`する。固定間隔pollingは行わない。
