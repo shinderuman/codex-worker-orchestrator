@@ -50,9 +50,10 @@ type streamEventIngester struct {
 	now        func() time.Time
 	// live snapshotは--watch --verbose表示のための瞬間状態。event logのmachine-only
 	// 縮約方針を変えずに、tool入力の表示要素だけを別fileへ出す。
-	liveLastEventAt time.Time
-	liveLastWrite   time.Time
-	liveBroken      bool
+	liveLastEventAt         time.Time
+	liveLastModelActivityAt time.Time
+	liveLastWrite           time.Time
+	liveBroken              bool
 }
 
 // toolUseObservationはtool_use blockを出したeventの観測時刻とtool名。
@@ -141,9 +142,10 @@ func (g *streamEventIngester) ingestLine(line []byte) {
 		return
 	}
 	record := reduceStreamEvent(line, g.base, g.seq+1, g.now().UTC())
+	modelActivity := state.IsModelActivityEvent(record)
 	if progressOnlyStreamEvent(record) {
 		// 抑止eventもmodel活動の観測なのでidle計算の基準時刻へは反映する。
-		g.noteLiveActivity(record.Timestamp, false)
+		g.noteLiveActivity(record.Timestamp, modelActivity, false)
 		return
 	}
 	toolsChanged := g.observeToolBlocks(&record, toolUseInputs(line))
@@ -153,7 +155,7 @@ func (g *streamEventIngester) ingestLine(line []byte) {
 		return
 	}
 	g.seq++
-	g.noteLiveActivity(record.Timestamp, toolsChanged)
+	g.noteLiveActivity(record.Timestamp, modelActivity, toolsChanged)
 }
 
 // progressOnlyStreamEventは内容を持たず到着間隔だけが情報の進捗eventを記録対象から
@@ -211,13 +213,18 @@ func (g *streamEventIngester) observeToolBlocks(record *state.TaskEventRecord, i
 	return changed
 }
 
-// noteLiveActivityはlive snapshotの最終event観測時刻を進め、tool状態変化または書込み間隔
-// 経過時にsnapshotを書き替える。判定もsnapshot時刻もevent観測時刻だけを使い、ここで
-// clockを追加呼び出さない(観測時刻のtest決定性を保つ)。書込み失敗はwatch表示の詳細行欠落
+// noteLiveActivityはlive snapshotの最終event観測時刻とmodel activity専用観測時刻を進め、
+// tool状態変化または書込み間隔経過時にsnapshotを書き替える。model activity判定は
+// state.IsModelActivityEventの共有契約に従い、tool_progress等の非model eventでは
+// MODEL_IDLE基準時刻を進めない。判定もsnapshot時刻もevent観測時刻だけを使い、ここで
+// clockを追加呼び出しない(観測時刻のtest決定性を保つ)。書込み失敗はwatch表示の詳細行欠落
 // だけで済むためwarning 1回だけ出し、このcallのlive snapshot更新を止める。
-func (g *streamEventIngester) noteLiveActivity(at time.Time, toolsChanged bool) {
+func (g *streamEventIngester) noteLiveActivity(at time.Time, modelActivity bool, toolsChanged bool) {
 	if at.After(g.liveLastEventAt) {
 		g.liveLastEventAt = at
+	}
+	if modelActivity && at.After(g.liveLastModelActivityAt) {
+		g.liveLastModelActivityAt = at
 	}
 	if g.liveBroken || g.closed {
 		return
@@ -226,9 +233,10 @@ func (g *streamEventIngester) noteLiveActivity(at time.Time, toolsChanged bool) 
 		return
 	}
 	status := state.TaskLiveStatus{
-		UpdatedAt:   at.UTC(),
-		LastEventAt: g.liveLastEventAt.UTC(),
-		Tools:       liveToolsSnapshot(g.tools),
+		UpdatedAt:           at.UTC(),
+		LastEventAt:         g.liveLastEventAt.UTC(),
+		LastModelActivityAt: g.liveLastModelActivityAt.UTC(),
+		Tools:               liveToolsSnapshot(g.tools),
 	}
 	if err := g.state.WriteTaskLiveStatus(g.base.TaskID, status); err != nil {
 		state.WarnTaskLiveSkip(err)

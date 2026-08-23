@@ -29,9 +29,36 @@ type TaskLiveTool struct {
 // 上書きし、追記・履歴化は行わない。本文は書込み時の上限boundsで切詰め、retention整理では
 // 同一taskのevent logと一緒に削除される。watchは欠損・破損を表示要素の欠落として扱う。
 type TaskLiveStatus struct {
-	UpdatedAt   time.Time      `json:"updated_at"`
-	LastEventAt time.Time      `json:"last_event_at"`
-	Tools       []TaskLiveTool `json:"tools,omitempty"`
+	UpdatedAt   time.Time `json:"updated_at"`
+	LastEventAt time.Time `json:"last_event_at"`
+	// LastModelActivityAtはIsModelActivityEventが受理するeventだけの最終観測時刻。
+	// LastEventAtがtool_progress等の非model eventでも進む汎用時刻であるのに対し、こちらは
+	// MODEL_IDLE基準専用で、event logへ保存されないsystem/thinking_tokensの観測もここへ
+	// 残る。新field導入前の旧snapshotでは欠損し、zeroとして読める。
+	LastModelActivityAt time.Time      `json:"last_model_activity_at"`
+	Tools               []TaskLiveTool `json:"tools,omitempty"`
+}
+
+// IsModelActivityEventはrecordがmodel activity観測かを判定する。live snapshotの
+// LastModelActivityAtを書くrunner(producer)とMODEL_IDLEを計算するwatch(consumer)が
+// 同一の受理集合を共有するための単一契約で、assistant側のthinking・text・tool_use blockと
+// event logへ保存しないsystem/thinking_tokensだけを受理する。system/tool_progress・
+// task notification・user tool_result・background通知・resultでは
+// MODEL_IDLEが誤ってリセットされない。
+func IsModelActivityEvent(record TaskEventRecord) bool {
+	if record.Kind == "system" {
+		return record.Subtype == "thinking_tokens"
+	}
+	if record.Kind != "assistant" {
+		return false
+	}
+	for _, block := range record.Blocks {
+		switch block.Type {
+		case "thinking", "text", "tool_use":
+			return true
+		}
+	}
+	return false
 }
 
 func (s *StateStore) TaskLiveStatusPath(taskID string) string {

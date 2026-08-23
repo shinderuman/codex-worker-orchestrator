@@ -50,7 +50,8 @@ type watchToolError struct {
 // watchToolTrackerは表示済みevent recordから--watch --verbose表示用のtool状態を組立る。
 // tool_use/tool_resultをtool IDで対応付け、未対応のresult eventで同一callのpendingを
 // 除く(呼出終端後も実行し続けているとは限らないため)。model activity時刻は
-// assistant側のthinking/text/tool_use観測だけを基準に更新する。
+// state.IsModelActivityEventの共有契約に従い、event logへ現れるassistant側の
+// thinking/text/tool_use観測を基準に更新する。
 type watchToolTracker struct {
 	pending             map[string]watchPendingTool
 	lastLongTool        *watchCompletedTool
@@ -67,7 +68,7 @@ func (t *watchToolTracker) observe(record state.TaskEventRecord) {
 	if t.firstEventAt.IsZero() {
 		t.firstEventAt = record.Timestamp
 	}
-	if watchModelActivityRecord(record) && record.Timestamp.After(t.lastModelActivityAt) {
+	if state.IsModelActivityEvent(record) && record.Timestamp.After(t.lastModelActivityAt) {
 		t.lastModelActivityAt = record.Timestamp
 	}
 	for index := range record.Blocks {
@@ -80,23 +81,6 @@ func (t *watchToolTracker) observe(record state.TaskEventRecord) {
 			}
 		}
 	}
-}
-
-// watchModelActivityRecordはrecordがmodel activityの観測かを判定する。MODEL_IDLEは
-// 「最後のmodel activityからの経過時間」のため、assistant側のthinking・text・tool_use
-// blockだけを基準にし、system tool_progress・task_notification・user tool_result・
-// background task状態通知では増え続ける経過を止めない。
-func watchModelActivityRecord(record state.TaskEventRecord) bool {
-	if record.Kind != "assistant" {
-		return false
-	}
-	for _, block := range record.Blocks {
-		switch block.Type {
-		case "thinking", "text", "tool_use":
-			return true
-		}
-	}
-	return false
 }
 
 func (t *watchToolTracker) observeBlock(record state.TaskEventRecord, block *state.TaskBlockSummary) {
@@ -262,9 +246,12 @@ func renderWatchLiveStatus(st *state.StateStore, taskID string, stdout io.Writer
 }
 
 // liveToolDetailsはlive snapshotを読み、MODEL_IDLE基準のmodel activity時刻とtool ID対応の
-// 詳細を返す。snapshotのlast_event_atはtool_progress等の非model event観測でも進むため
-// MODEL_IDLEの基準には使わない。model activity eventはevent logへ必ず記録されるため、
-// 基準時刻はlog側のtrackerだけで組立てる。読めないときは詳細無しで復帰する。
+// 詳細を返す。MODEL_IDLE基準はevent log側trackerのmodel activity時刻とsnapshotの
+// last_model_activity_atの新しい方で、event logへ保存されないsystem/thinking_tokensの
+// 観測はsnapshot側だけが持つ。snapshotのlast_event_atはtool_progress等の非model event
+// 観測でも進むため基準には使わない。新field導入前の旧snapshotではlast_model_activity_atが
+// zeroとして読め、tracker側の時刻へ落ちる(未知はassistant観測基準の安全側扱い)。読めない
+// ときは詳細無しで復帰する。
 type watchLiveDetails struct {
 	tools       map[string]state.TaskLiveTool
 	modelIdleAt time.Time
@@ -275,6 +262,9 @@ func liveToolDetails(st *state.StateStore, taskID string, tracker *watchToolTrac
 	status, err := st.ReadTaskLiveStatus(taskID)
 	if err != nil {
 		return details
+	}
+	if status.LastModelActivityAt.After(details.modelIdleAt) {
+		details.modelIdleAt = status.LastModelActivityAt
 	}
 	for _, tool := range status.Tools {
 		details.tools[tool.ToolID] = tool

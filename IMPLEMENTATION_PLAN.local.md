@@ -8,11 +8,10 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/model-idle-activity-contract-followup.md`
+- `IMPLEMENTATION_TASKS/005-multi-repository-isolation.md`
 
 ## NEXT（優先順）
 
-- `IMPLEMENTATION_TASKS/005-multi-repository-isolation.md`
 - `IMPLEMENTATION_TASKS/claude-cli-compatibility-preflight-poc.md`
 - `IMPLEMENTATION_TASKS/006-codex-facing-compact-result.md`
 - `IMPLEMENTATION_TASKS/007-machine-only-legacy-cleanup.md`
@@ -44,14 +43,14 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 ## 現在のGit境界
 
 - branch: `main`
-- implementation baseline: parent review outcome telemetry implementation commit（current HEAD）
-- metadata boundary: parent review outcome telemetryをHistoryへ移行し完了task fileを削除。MODEL_IDLE activity contract follow-upをACTIVEへ昇格したcommit同期境界
+- implementation baseline: MODEL_IDLE activity contract follow-up implementation commit（current HEAD）
+- metadata boundary: MODEL_IDLE follow-upをHistoryへ移行し完了task fileを削除。multi-repository isolationをACTIVEへ昇格したcommit同期境界
 - push: 禁止
 
 ## 現在の停止理由
 
-MODEL_IDLE activity contract follow-upは未着手。parent review outcome telemetryは本配置とinstalled/source binary一致確認まで完了。
+multi-repository isolationは未着手。MODEL_IDLE activity contract follow-upは本配置とinstalled/source binary一致確認まで完了。
 
 ## 次の親Codex操作
 
-ACTIVE taskのOriginal instruction・Amendments・Resolved references・Contractを再読し、新sessionでMODEL_IDLE activity contract follow-upを開始する。
+ACTIVE taskのOriginal instruction・Amendments・Resolved references・Contractを再読し、新sessionでmulti-repository isolationを開始する。

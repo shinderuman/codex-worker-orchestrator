@@ -13,8 +13,9 @@ func TestTaskLiveStatusRoundtripAndPermissions(t *testing.T) {
 	st := newEventTestStore(t)
 	updatedAt := time.Date(2026, 8, 23, 10, 0, 0, 0, time.UTC)
 	status := TaskLiveStatus{
-		UpdatedAt:   updatedAt,
-		LastEventAt: updatedAt.Add(-time.Minute),
+		UpdatedAt:           updatedAt,
+		LastEventAt:         updatedAt.Add(-time.Minute),
+		LastModelActivityAt: updatedAt.Add(-2 * time.Minute),
 		Tools: []TaskLiveTool{{
 			ToolID:     "toolu_1",
 			Command:    "sleep 295",
@@ -37,7 +38,7 @@ func TestTaskLiveStatusRoundtripAndPermissions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !read.UpdatedAt.Equal(updatedAt) || !read.LastEventAt.Equal(updatedAt.Add(-time.Minute)) {
+	if !read.UpdatedAt.Equal(updatedAt) || !read.LastEventAt.Equal(updatedAt.Add(-time.Minute)) || !read.LastModelActivityAt.Equal(updatedAt.Add(-2*time.Minute)) {
 		t.Fatalf("roundtrip時刻 = %#v", read)
 	}
 	if len(read.Tools) != 1 || read.Tools[0].ToolID != "toolu_1" || read.Tools[0].Command != "sleep 295" || read.Tools[0].Purpose != "Check fourth run at gate section" {
@@ -86,6 +87,66 @@ func TestTaskLiveStatusMissingAndCorruptReturnError(t *testing.T) {
 	}
 	if _, err := st.ReadTaskLiveStatus("task-1"); err == nil || !strings.Contains(err.Error(), "task live statusを読めません") {
 		t.Fatalf("破損snapshot読み = %v", err)
+	}
+}
+
+// TestIsModelActivityEventAcceptanceSetはrunner(producer)とwatch(consumer)が共有する
+// model activity受理集合を固定する。assistant側のthinking・text・tool_useと
+// event logへ保存されないsystem/thinking_tokensだけを受理し、tool_progress・
+// task notification・user tool_result・result・block種別が違うだけのassistantは
+// MODEL_IDLE基準を進めない。
+func TestIsModelActivityEventAcceptanceSet(t *testing.T) {
+	modelActivity := []TaskEventRecord{
+		{Kind: "assistant", Blocks: []TaskBlockSummary{{Type: "thinking", Bytes: 10}}},
+		{Kind: "assistant", Blocks: []TaskBlockSummary{{Type: "text", Bytes: 10}}},
+		{Kind: "assistant", Blocks: []TaskBlockSummary{{Type: "tool_use", Name: "Bash", ToolID: "toolu_1"}}},
+		{Kind: "assistant", Blocks: []TaskBlockSummary{{Type: "text", Bytes: 5}, {Type: "tool_result", ToolID: "toolu_1"}}},
+		{Kind: "system", Subtype: "thinking_tokens"},
+	}
+	for _, record := range modelActivity {
+		if !IsModelActivityEvent(record) {
+			t.Fatalf("model activityとして扱われるべきrecordです: %#v", record)
+		}
+	}
+
+	nonModelActivity := []TaskEventRecord{
+		{Kind: "system", Subtype: "init"},
+		{Kind: "system", Subtype: "tool_progress"},
+		{Kind: "system", Subtype: "task_notification"},
+		{Kind: "user", Blocks: []TaskBlockSummary{{Type: "tool_result", ToolID: "toolu_1"}}},
+		{Kind: "result", Subtype: "success"},
+		{Kind: "assistant"},
+		{Kind: "assistant", Blocks: []TaskBlockSummary{{Type: "server_tool_use", Name: "WebSearch"}}},
+	}
+	for _, record := range nonModelActivity {
+		if IsModelActivityEvent(record) {
+			t.Fatalf("model activityとして扱うべきでないrecordです: %#v", record)
+		}
+	}
+}
+
+// TestTaskLiveStatusWithoutModelActivityFieldParsesZeroはlast_model_activity_atを
+// 持たない新field導入前の旧snapshot JSONをzero値として読めることを固定する。
+// migrationや意味推定を挟まず、consumer側はzeroを安全側扱いする。
+func TestTaskLiveStatusWithoutModelActivityFieldParsesZero(t *testing.T) {
+	st := newEventTestStore(t)
+	legacy := `{"updated_at":"2026-08-23T09:10:00Z","last_event_at":"2026-08-23T09:10:00Z","tools":[{"tool_id":"toolu_1","command":"sleep 295"}]}`
+	if err := os.MkdirAll(st.Path("events"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(st.TaskLiveStatusPath("task-1"), []byte(legacy+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	read, err := st.ReadTaskLiveStatus("task-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !read.LastModelActivityAt.IsZero() {
+		t.Fatalf("旧snapshotのlast_model_activity_at = %v", read.LastModelActivityAt)
+	}
+	if read.LastEventAt.IsZero() || len(read.Tools) != 1 {
+		t.Fatalf("旧snapshotの既存fieldが読めていません: %#v", read)
 	}
 }
 

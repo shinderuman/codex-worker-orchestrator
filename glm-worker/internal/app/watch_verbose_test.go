@@ -2,12 +2,17 @@ package app
 
 import (
 	"bytes"
+	"fmt"
+	"io"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -141,41 +146,128 @@ func TestWatchPlainOutputUnchangedByVerboseData(t *testing.T) {
 	}
 }
 
-// TestWatchModelActivityRecordClassifiesModelEventsはmodel activity分類がassistant側の
-// thinking・text・tool_use blockだけを基準にすることを検証する。system tool_progress・
-// thinking_tokens・task_notification、user tool_result、background通知、result、
-// assistantでも3種以外のblockだけのeventはMODEL_IDLEを更新しない。
-func TestWatchModelActivityRecordClassifiesModelEvents(t *testing.T) {
-	modelActivity := []state.TaskEventRecord{
-		{Kind: "assistant", Blocks: []state.TaskBlockSummary{{Type: "thinking", Bytes: 10}}},
-		{Kind: "assistant", Blocks: []state.TaskBlockSummary{{Type: "text", Bytes: 10}}},
-		{Kind: "assistant", Blocks: []state.TaskBlockSummary{{Type: "tool_use", Name: "Bash", ToolID: "toolu_1"}}},
-		{Kind: "assistant", Blocks: []state.TaskBlockSummary{{Type: "text", Bytes: 5}, {Type: "tool_result", ToolID: "toolu_1"}}},
-	}
-	for _, record := range modelActivity {
-		if !watchModelActivityRecord(record) {
-			t.Fatalf("model activityとして扱われるべきrecordです: %#v", record)
-		}
-	}
+// watchModelActivityResultLineはproducer/consumer統合testでcallを正常終端させる
+// result event行。structured_outputまで本物の形へ合わせる。
+const watchModelActivityResultLine = `{"type":"result","subtype":"success","is_error":false,"result":"{\"status\":\"IMPLEMENTED\",\"risk\":\"LOW\",\"summary\":\"done\",\"requirement_coverage\":\"covered\",\"tests\":\"pass\",\"unverified\":\"none\"}","structured_output":{"status":"IMPLEMENTED","risk":"LOW","summary":"done","requirement_coverage":"covered","tests":"pass","unverified":"none"}}`
 
-	nonModelActivity := []state.TaskEventRecord{
-		{Kind: "system", Subtype: "init"},
-		{Kind: "system", Subtype: "thinking_tokens"},
-		{Kind: "system", Subtype: "tool_progress"},
-		{Kind: "system", Subtype: "task_notification"},
-		{Kind: "user", Blocks: []state.TaskBlockSummary{{Type: "tool_result", ToolID: "toolu_1"}}},
-		{Kind: "result", Subtype: "success"},
-		{Kind: "assistant"},
-		{Kind: "assistant", Blocks: []state.TaskBlockSummary{{Type: "server_tool_use", Name: "WebSearch"}}},
-	}
-	for _, record := range nonModelActivity {
-		if watchModelActivityRecord(record) {
-			t.Fatalf("model activityとして扱うべきでないrecordです: %#v", record)
+// runWatchModelActivityProducerは行間1秒のfake claude scriptで本物のClaudeRunnerを
+// 1 call実行し、watch対象storeと同じstate dirへevent logとlive snapshotを書かせる。
+func runWatchModelActivityProducer(t *testing.T, st *state.StateStore, lines ...string) {
+	t.Helper()
+	dir := t.TempDir()
+	script := "#!/bin/sh\n"
+	for index, line := range lines {
+		if index > 0 {
+			script += "sleep 1\n"
 		}
+		script += fmt.Sprintf("printf '%%s\\n' '%s'\n", line)
+	}
+	commandPath := filepath.Join(dir, "fake-claude")
+	if err := os.WriteFile(commandPath, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	promptDir := filepath.Join(dir, "prompts")
+	if err := os.MkdirAll(promptDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"WORKER.md", "REVIEWER.md"} {
+		if err := os.WriteFile(filepath.Join(promptDir, name), []byte("system"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	r := runner.NewClaudeRunner(config.AppConfig{
+		RepoRoot:  dir,
+		RepoShort: "abcdef123456",
+		PromptDir: promptDir,
+		ClaudeBin: commandPath,
+	}, st)
+	if _, err := r.Run(state.WorkerRole, "worker-new", "worker-model", false, "high", "prompt", filepath.Join(dir, "out.log")); err != nil {
+		t.Fatal(err)
 	}
 }
 
-// TestWatchVerboseModelIdleGrowsDuringToolProgressは長時間Bash中に30秒ごとの
+// TestWatchVerboseModelIdleUsesLiveModelActivityはassistant activity → thinking_tokens →
+// tool_progressの順で発生したstreamを本物のrunnerで摄取し、watchのMODEL_IDLE基準が
+// event logへ保存されないthinking_tokens観測時刻(live snapshotのmodel activity専用時刻)
+// になることを検証する。assistant基準なら2:31以上、tool_progress/result基準なら
+// 2:29以下になる時刻で判定する。
+func TestWatchVerboseModelIdleUsesLiveModelActivity(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fixtureはUnix系環境向け")
+	}
+	st, _ := watchTestStore(t)
+	taskID := "12345678-aaaa-bbbb-cccc-dddddddddddd"
+	runWatchModelActivityProducer(t, st,
+		`{"type":"assistant","message":{"model":"glm-5.3","content":[{"type":"tool_use","id":"toolu_1","name":"Bash","input":{"command":"sleep 295"}}]}}`,
+		`{"type":"system","subtype":"thinking_tokens"}`,
+		`{"type":"system","subtype":"tool_progress"}`,
+		watchModelActivityResultLine,
+	)
+
+	file, err := os.Open(st.TaskEventLogPath(taskID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	tracker := newWatchToolTracker()
+	if _, err := drainTaskEvents(file, io.Discard, nil, tracker.observe); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := st.ReadTaskLiveStatus(taskID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !snapshot.LastModelActivityAt.After(tracker.lastModelActivityAt) {
+		t.Fatalf("snapshotのmodel activity時刻(%v)がevent log側(%v)を追い抜いていません", snapshot.LastModelActivityAt, tracker.lastModelActivityAt)
+	}
+	if !snapshot.LastEventAt.After(snapshot.LastModelActivityAt) {
+		t.Fatalf("generic時刻(%v)がmodel activity時刻(%v)より後であるべきです", snapshot.LastEventAt, snapshot.LastModelActivityAt)
+	}
+
+	now := snapshot.LastModelActivityAt.Add(150 * time.Second)
+	out := &bytes.Buffer{}
+	renderWatchLiveStatus(st, taskID, out, tracker, now)
+	rendered := out.String()
+	if !strings.Contains(rendered, "LIVE MODEL_IDLE 2:30") {
+		t.Fatalf("thinking_tokens基準のMODEL_IDLE = %q", rendered)
+	}
+	later := &bytes.Buffer{}
+	renderWatchLiveStatus(st, taskID, later, tracker, snapshot.LastModelActivityAt.Add(240*time.Second))
+	if !strings.Contains(later.String(), "LIVE MODEL_IDLE 4:00") {
+		t.Fatalf("tool_progress/result後もMODEL_IDLEが増え続けていません: %q", later.String())
+	}
+}
+
+// TestWatchVerboseLegacySnapshotFallsBackToTrackerはlast_model_activity_atを持たない
+// 旧live snapshotで、MODEL_IDLE基準がevent log側trackerのmodel activity時刻へ落ちる
+// ことを検証する。migrationやgeneric last_event_atからの意味推定を挟まない安全側挙動。
+func TestWatchVerboseLegacySnapshotFallsBackToTracker(t *testing.T) {
+	st, _ := watchTestStore(t)
+	taskID := "12345678-aaaa-bbbb-cccc-dddddddddddd"
+	base := time.Date(2026, 8, 23, 9, 0, 0, 0, time.UTC)
+	tracker := newWatchToolTracker()
+	tracker.observe(state.TaskEventRecord{CallID: "call-1", Kind: "assistant", Timestamp: base, Blocks: []state.TaskBlockSummary{{Type: "tool_use", Name: "Bash", ToolID: "toolu_1"}}})
+
+	legacy := `{"updated_at":"` + base.Add(90*time.Second).Format(time.RFC3339Nano) + `","last_event_at":"` + base.Add(90*time.Second).Format(time.RFC3339Nano) + `","tools":[{"tool_id":"toolu_1","command":"sleep 295"}]}` + "\n"
+	if err := os.MkdirAll(st.Path("events"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(st.TaskLiveStatusPath(taskID), []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	out := &bytes.Buffer{}
+	renderWatchLiveStatus(st, taskID, out, tracker, base.Add(150*time.Second))
+	rendered := out.String()
+	if !strings.Contains(rendered, "LIVE MODEL_IDLE 2:30") {
+		t.Fatalf("旧snapshotでのMODEL_IDLE = %q(generic last_event_at基準なら1:00)", rendered)
+	}
+	if !strings.Contains(rendered, "LIVE COMMAND sleep 295") {
+		t.Fatalf("旧snapshotの詳細行が落ちています: %q", rendered)
+	}
+}
+
+// TestWatchVerboseModelIdleGrowsDuringToolProgressは長時間Bash中に30秒ごつの
 // tool_progress等の非model eventが流れてもMODEL_IDLEが最後のassistant activityから
 // 増え続けることを検証する。snapshotのlast_event_atが進んでいても基準にしない。
 func TestWatchVerboseModelIdleGrowsDuringToolProgress(t *testing.T) {
