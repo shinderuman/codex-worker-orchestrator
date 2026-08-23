@@ -784,75 +784,19 @@ func TestReportOnlyResumeWithoutStartSnapshotFailsClosedBeforeCalls(t *testing.T
 	}
 }
 
-// report-only推定は厳格な生成形式"worker-report-only-<十進数>"(packet圧縮suffix付きを
-// 含む)の全体一致のみを認め、類似phase・前後追加・異種工程へ誤適用しない。
-func TestReportOnlyFromPhaseStrict(t *testing.T) {
-	for _, phase := range []string{
-		"worker-report-only-1",
-		"worker-report-only-2",
-		"worker-report-only-10",
-		"worker-report-only-1-packet-compact",
-		"worker-report-only-10-packet-compact",
-	} {
-		if !reportOnlyFromPhase(phase) {
-			t.Fatalf("phase %q はreport-onlyとして推定されるべき", phase)
-		}
-	}
-	for _, phase := range []string{
-		"",
-		"worker-report-only-",
-		"worker-report-only-x",
-		"worker-report-only-1x",
-		"worker-report-only-1-extra",
-		"worker-report-only-1.5",
-		"xworker-report-only-1",
-		"WORKER-REPORT-ONLY-1",
-		"worker-auto-fix-1",
-		"worker-auto-fix-1-packet-compact",
-		"worker-report-only--packet-compact",
-		"worker-report-only-packet-compact",
-		"worker-report-only-1-packet-compact-x",
-		"worker-report-only-1-packet-compacted",
-		"worker-report-only-1-packet-compact-packet-compact",
-		"worker-new",
-		"worker-decision",
-		"worker-explicit-fix",
-		"reviewer-1",
-	} {
-		if reportOnlyFromPhase(phase) {
-			t.Fatalf("phase %q をreport-onlyへ誤適用しています", phase)
-		}
-	}
-}
-
-// 旧binary保存のreport-only checkpoint(ReportOnly field無し)を厳格phaseから推定し、
-// 基準snapshot欠損時はrate-limit resumeでもworker/probe呼出前にfail closedする。
-// packet圧縮で末尾へ"-packet-compact"が付いた保存形式も同じ推定へ含める。
-func TestReportOnlyRateLimitResumeLegacyCheckpointWithoutSnapshotStopsBeforeCalls(t *testing.T) {
-	for _, phase := range []string{"worker-report-only-1", "worker-report-only-1-packet-compact"} {
+// 旧version(v3) resume checkpoint(report_only欠落・phase推定前提)はphase文字列に関係なく
+// version gateでrouting前にresume不能として拒否する。report-only工程のcheckpointを通常の
+// auto-fix resumeへ落とさず、worker/probe呼出・report-only baseline作成へ進まない。
+func TestReportOnlyLegacyVersionCheckpointRejectedBeforeRouting(t *testing.T) {
+	for _, phase := range []string{"worker-report-only-1", "worker-report-only-1-packet-compact", "worker-auto-fix-1"} {
 		t.Run(phase, func(t *testing.T) {
 			repoRoot := initMutationRepo(t)
 			st := newStateStoreT(t)
 			if err := st.Write("last-request", "req"); err != nil {
 				t.Fatal(err)
 			}
-			if err := st.Write("worker.id", "legacy-worker-session"); err != nil {
-				t.Fatal(err)
-			}
-			if err := st.SaveResumeCheckpoint(state.ResumeCheckpoint{
-				Stage:          state.ResumeStageAutoFix,
-				Phase:          phase,
-				Role:           state.WorkerRole,
-				Model:          "opus",
-				ReadOnly:       true,
-				Effort:         "high",
-				Prompt:         "report only",
-				OriginalPrompt: "report only",
-				Request:        "req",
-				ReviewNumber:   1,
-				AutoFixes:      1,
-				RateLimited:    true,
-			}); err != nil {
+			legacy := `{"version":3,"stage":"auto-fix","phase":"` + phase + `","role":"worker","model":"opus","read_only":true,"effort":"high","prompt":"p","original_prompt":"p","request":"req","rate_limited":true}`
+			if err := os.WriteFile(st.Path("resume-state.json"), []byte(legacy), 0o600); err != nil {
 				t.Fatal(err)
 			}
 			if err := st.SetTaskStatus(state.TaskStatusRateLimited); err != nil {
@@ -866,77 +810,59 @@ func TestReportOnlyRateLimitResumeLegacyCheckpointWithoutSnapshotStopsBeforeCall
 			w.config.RepoRoot = repoRoot
 			w.captureSnapshot = state.CaptureGitSnapshot
 
-			if err := w.ExecuteResume(); err != nil {
-				t.Fatal(err)
+			err := w.ExecuteResume()
+			if err == nil || !strings.Contains(err.Error(), "unsupported resume state version: 3") {
+				t.Fatalf("v3 checkpointの拒否error = %v", err)
 			}
-			requireReportOnlyFailClosed(t, w, out, "")
 			if len(r.prompts) != 0 || len(r.probes) != 0 {
-				t.Fatalf("旧checkpoint欠損時はworker/probeを1件も呼ばない: prompts=%d probes=%d", len(r.prompts), len(r.probes))
-			}
-			if !strings.Contains(out.String(), "resume再開前にreport-only開始前snapshotが欠損") {
-				t.Fatalf("旧checkpoint欠損の原因が出力されていません: %q", out.String())
+				t.Fatalf("routing前に拒否しworker/probeを呼ばない: prompts=%d probes=%d", len(r.prompts), len(r.probes))
 			}
 			if _, err := st.LoadReportOnlyStartSnapshot(); err == nil {
-				t.Fatal("resumeが旧checkpointへ新baselineを作成しています")
-			}
-			if got, err := st.Read("worker.id"); err != nil || got != "legacy-worker-session" {
-				t.Fatalf("診断証拠のworker session IDが保持されていません: %q %v", got, err)
+				t.Fatal("拒否したcheckpointへreport-only baselineを作成しています")
 			}
 		})
 	}
 }
 
-// provider-unavailable停止の旧checkpointも同じくprobeより前のgateで停止し、
-// 基準snapshot欠損を新baseline撮影で隠さない。
-func TestReportOnlyProviderUnavailableResumeLegacyCheckpointWithoutSnapshotStopsBeforeCalls(t *testing.T) {
-	repoRoot := initMutationRepo(t)
-	st := newStateStoreT(t)
-	if err := st.Write("last-request", "req"); err != nil {
-		t.Fatal(err)
-	}
-	if err := st.Write("worker.id", "legacy-worker-session"); err != nil {
-		t.Fatal(err)
-	}
-	if err := st.SaveResumeCheckpoint(state.ResumeCheckpoint{
-		Stage:                             state.ResumeStageAutoFix,
-		Phase:                             "worker-report-only-1",
-		Role:                              state.WorkerRole,
-		Model:                             "opus",
-		ReadOnly:                          true,
-		Effort:                            "high",
-		Prompt:                            "report only",
-		OriginalPrompt:                    "report only",
-		Request:                           "req",
-		ReviewNumber:                      1,
-		AutoFixes:                         1,
-		ProviderUnavailable:               true,
-		ProviderUnavailableClassification: "http-503",
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if err := st.SetTaskStatus(state.TaskStatusProviderUnavailable); err != nil {
-		t.Fatal(err)
-	}
-	r := &mutatingRunner{repoRoot: repoRoot}
-	out := &bytes.Buffer{}
-	w := newMutationWorkflowShell(t, st)
-	w.runner = r
-	w.output = out
-	w.config.RepoRoot = repoRoot
-	w.captureSnapshot = state.CaptureGitSnapshot
+// v4でもreport_only keyが欠落したcheckpointは、bool zero value falseの通常auto-fixとして
+// 受理しない。routing・status変更前にfail closedする。
+func TestReportOnlyV4MissingReportOnlyKeyRejectedBeforeRouting(t *testing.T) {
+	for _, phase := range []string{"worker-report-only-1", "worker-auto-fix-1"} {
+		t.Run(phase, func(t *testing.T) {
+			repoRoot := initMutationRepo(t)
+			st := newStateStoreT(t)
+			if err := st.Write("last-request", "req"); err != nil {
+				t.Fatal(err)
+			}
+			missing := `{"version":4,"stage":"auto-fix","phase":"` + phase + `","role":"worker","model":"opus","read_only":true,"effort":"high","prompt":"p","original_prompt":"p","request":"req","rate_limited":true}`
+			if err := os.WriteFile(st.Path("resume-state.json"), []byte(missing), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := st.SetTaskStatus(state.TaskStatusRateLimited); err != nil {
+				t.Fatal(err)
+			}
+			r := &mutatingRunner{repoRoot: repoRoot}
+			out := &bytes.Buffer{}
+			w := newMutationWorkflowShell(t, st)
+			w.runner = r
+			w.output = out
+			w.config.RepoRoot = repoRoot
+			w.captureSnapshot = state.CaptureGitSnapshot
 
-	if err := w.ExecuteResume(); err != nil {
-		t.Fatal(err)
-	}
-	requireReportOnlyFailClosed(t, w, out, "")
-	if len(r.prompts) != 0 || len(r.probes) != 0 {
-		t.Fatalf("旧checkpoint欠損時はprobeより前に停止しworker/probeを呼ばない: prompts=%d probes=%d", len(r.prompts), len(r.probes))
-	}
-	if !strings.Contains(out.String(), "resume再開前にreport-only開始前snapshotが欠損") {
-		t.Fatalf("旧checkpoint欠損の原因が出力されていません: %q", out.String())
-	}
-	if _, err := st.LoadReportOnlyStartSnapshot(); err == nil {
-		t.Fatal("resumeが旧checkpointへ新baselineを作成しています")
+			err := w.ExecuteResume()
+			if err == nil || !strings.Contains(err.Error(), "report_only keyがありません") {
+				t.Fatalf("v4 report_only欠落checkpointの拒否error = %v", err)
+			}
+			if len(r.prompts) != 0 || len(r.probes) != 0 {
+				t.Fatalf("routing前に拒否しworker/probeを呼ばない: prompts=%d probes=%d", len(r.prompts), len(r.probes))
+			}
+			if _, err := st.LoadReportOnlyStartSnapshot(); err == nil {
+				t.Fatal("拒否したcheckpointへreport-only baselineを作成しています")
+			}
+			if got := st.TaskStatus(); got != state.TaskStatusRateLimited {
+				t.Fatalf("拒否時もstatusをrate-limitedのまま保つ: %s", got)
+			}
+		})
 	}
 }
 

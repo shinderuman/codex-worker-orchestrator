@@ -12,7 +12,7 @@ import (
 
 const (
 	resumeStateFile    = "resume-state.json"
-	resumeStateVersion = 3
+	resumeStateVersion = 4
 )
 
 type ResumeStage string
@@ -36,8 +36,7 @@ type ResumeCheckpoint struct {
 	OriginalPrompt string      `json:"original_prompt,omitempty"`
 	Request        string      `json:"request"`
 	Decision       string      `json:"decision,omitempty"`
-	// WorkerResultはworker工程のtyped結果。v2までは表示行list(WorkerPacket)で保持し、
-	// 読込時にpacket.FromDisplayLinesで等価なtyped結果へ変換する。
+	// WorkerResultはworker工程のtyped結果。
 	WorkerResult   *packet.Result `json:"worker_result,omitempty"`
 	ReviewNumber   int            `json:"review_number,omitempty"`
 	AutoFixes      int            `json:"auto_fixes,omitempty"`
@@ -45,13 +44,14 @@ type ResumeCheckpoint struct {
 	ResetAtCST     string         `json:"reset_at_cst,omitempty"`
 	ResetAtRFC3339 string         `json:"reset_at_rfc3339,omitempty"`
 	// ResultCorrectionは意味検証不合格後の修正再依頼を同一sessionで1回だけ実行する工程を表す。
-	// v2のPacketCompacted(構造欠陥再圧縮)を読込時に同じ1回制限へ読み替える。
 	ResultCorrection bool `json:"result_correction,omitempty"`
 	// RiskFloorReemitは同一reviewer sessionへNEEDS_SOL_REVIEW/HIGH再出力を依頼中の工程を表す。
 	RiskFloorReemit bool `json:"risk_floor_reemit,omitempty"`
 	// ReportOnlyはTARGETS: PACKETの報告再出力専用工程であることを表す。ReadOnly capabilityで
 	// 実行し、resume後もsnapshot-report-only-start.jsonを再撮影せず同じ基準として使う。
-	ReportOnly bool `json:"report_only,omitempty"`
+	// v4からfalseでも明示保存し、report_only欠落checkpointをphase等から推定せずversion gateで
+	// 拒否できるようにする。
+	ReportOnly bool `json:"report_only"`
 	// EffectiveRiskはwrapperがworker原文riskと区別して決定した実効risk("HIGH"/"LOW")。
 	// 空文字は旧checkpointなど未計算を表し、resume時に現在stateから安全側へ決定論的に再構成する。
 	EffectiveRisk       string `json:"effective_risk,omitempty"`
@@ -99,49 +99,27 @@ func (s *StateStore) LoadResumeCheckpoint() (ResumeCheckpoint, error) {
 	if err := json.Unmarshal(data, &checkpoint); err != nil {
 		return ResumeCheckpoint{}, fmt.Errorf("resume stateを読めません: %w", err)
 	}
-	switch checkpoint.Version {
-	case resumeStateVersion:
-	case resumeStateVersion - 1:
-		// v2のworker_packet表示行をtyped結果へ読み替える。変換できないcheckpointは
-		// resume継続の入力にならないため、ここで失敗させる(fail closed)。
-		converted, convertErr := convertLegacyCheckpoint(data)
-		if convertErr != nil {
-			return ResumeCheckpoint{}, convertErr
-		}
-		checkpoint = converted
-	default:
+	// 現versionだけをresume可能入力とする。旧version checkpoint(v3以下・report_only欠落を
+	// 含む)のupgrade・推定は行わず、routing前にresume不能として明示終了させる
+	// (machine-only dataは恒久migrationの対象にしない)。
+	if checkpoint.Version != resumeStateVersion {
 		return ResumeCheckpoint{}, fmt.Errorf("unsupported resume state version: %d", checkpoint.Version)
+	}
+	// v4はreport_only keyの明示存在を要求する。bool zero value falseはkey欠落と区別できない
+	// ため、欠落checkpointを通常auto-fix resumeへ誤routingしないよう*boolで存在検証して
+	// fail closedとする。非bool値は最初のUnmarshalの型検証で同じく失敗する。
+	var explicitReportOnly struct {
+		ReportOnly *bool `json:"report_only"`
+	}
+	if err := json.Unmarshal(data, &explicitReportOnly); err != nil {
+		return ResumeCheckpoint{}, fmt.Errorf("resume stateを読めません: %w", err)
+	}
+	if explicitReportOnly.ReportOnly == nil {
+		return ResumeCheckpoint{}, fmt.Errorf("resume state v4にreport_only keyがありません")
 	}
 	if checkpoint.Model == "" {
 		return ResumeCheckpoint{}, fmt.Errorf("resume state model is required")
 	}
-	return checkpoint, nil
-}
-
-// convertLegacyCheckpointはv2 checkpoint(worker_packet表示行・packet_compacted)を
-// v3表現(worker_result・result_correction)へ等価変換する。表示行はKEY: value形式で
-// typed結果へ復元でき、field順は表示契約上固定のため一意に戻せる。
-func convertLegacyCheckpoint(data []byte) (ResumeCheckpoint, error) {
-	var legacy struct {
-		WorkerPacket    []string `json:"worker_packet"`
-		PacketCompacted bool     `json:"packet_compacted"`
-	}
-	if err := json.Unmarshal(data, &legacy); err != nil {
-		return ResumeCheckpoint{}, fmt.Errorf("resume state v2を読めません: %w", err)
-	}
-	checkpoint := ResumeCheckpoint{}
-	if err := json.Unmarshal(data, &checkpoint); err != nil {
-		return ResumeCheckpoint{}, fmt.Errorf("resume stateを読めません: %w", err)
-	}
-	if len(legacy.WorkerPacket) > 0 {
-		workerResult, err := packet.FromDisplayLines(legacy.WorkerPacket)
-		if err != nil {
-			return ResumeCheckpoint{}, fmt.Errorf("resume state v2のworker_packetを変換できません: %w", err)
-		}
-		checkpoint.WorkerResult = &workerResult
-	}
-	checkpoint.ResultCorrection = legacy.PacketCompacted
-	checkpoint.Version = resumeStateVersion
 	return checkpoint, nil
 }
 

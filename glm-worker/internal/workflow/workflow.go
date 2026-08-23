@@ -293,10 +293,9 @@ func (w *Workflow) ExecuteResume() error {
 		}
 		w.state.RecordResume()
 		w.currentResumeSource = resumeSourceOf(checkpoint)
-		// 旧binary保存のreport-only checkpoint(ReportOnly field無し)は厳格なphase形式から
-		// report-onlyを推定する。基準snapshotが無ければ不変性を確認する基準自体が存在しないため、
+		// report-only resumeは基準snapshotが無ければ不変性を確認する基準自体が存在しないため、
 		// probe・worker呼出を1件も実行する前にfail closedし、新baseline撮影で欠損を隠さない。
-		if checkpoint.Stage == state.ResumeStageAutoFix && isReportOnlyResume(checkpoint) {
+		if checkpoint.Stage == state.ResumeStageAutoFix && checkpoint.ReportOnly {
 			if stopped, err := w.gateReportOnlyResumeSnapshot(); err != nil {
 				return err
 			} else if stopped {
@@ -444,8 +443,7 @@ func (w *Workflow) ExecuteResume() error {
 		case state.ResumeStageAutoFix:
 			// report-only resumeは初回開始前に保存した基準snapshotへ再照合する。停止期間中の
 			// 変化も含めて同一性を強制し、resume時に新baselineを取り直して隠さない。
-			// 旧checkpointもphase推定で同じ検証へ載せる。
-			if isReportOnlyResume(checkpoint) {
+			if checkpoint.ReportOnly {
 				if stopped, err := w.verifyReportOnlyEndSnapshot(); err != nil {
 					return err
 				} else if stopped {
@@ -720,42 +718,8 @@ func isReportOnlyFix(reviewResult packet.Result) bool {
 }
 
 // resultCorrectionPhaseSuffixは意味検証不合格の修正再依頼時にrunModelがphase末尾へ付与する
-// 固定suffix。reportOnlyFromPhaseが修正済みcheckpointもreport-only推定へ含めるため共有する。
-// legacyPacketCompactPhaseSuffixは旧テキストPACKET protocolの構造欠陥再圧縮suffixで、
-// 旧binaryが保存したcheckpointのresume推定のためだけ残す。
-const (
-	resultCorrectionPhaseSuffix    = "-result-correct"
-	legacyPacketCompactPhaseSuffix = "-packet-compact"
-)
-
-// isReportOnlyResumeはresume checkpointがreport-only PACKET再出力工程かを判定する。
-// 新checkpointはReportOnly fieldを第一判定とし、旧binaryが保存したcheckpointは
-// ReportOnly fieldを持たないため厳格なphase生成形式"worker-report-only-<十進数>"(修正再依頼・
-// 旧圧縮suffix付きを含む)の全体一致から推定する。部分一致や類似phase(worker-auto-fix-N等)
-// へ誤適用しない。
-func isReportOnlyResume(checkpoint state.ResumeCheckpoint) bool {
-	return checkpoint.ReportOnly || reportOnlyFromPhase(checkpoint.Phase)
-}
-
-func reportOnlyFromPhase(phase string) bool {
-	if !strings.HasPrefix(phase, "worker-report-only-") {
-		return false
-	}
-	suffix := strings.TrimPrefix(phase, "worker-report-only-")
-	// 修正再依頼・旧圧縮再実行は一度だけしか付与されない(ResultCorrectionで再依頼を禁止)ため、
-	// この固定suffix 1回だけを除去して残りが十進数かを見る。
-	suffix = strings.TrimSuffix(suffix, resultCorrectionPhaseSuffix)
-	suffix = strings.TrimSuffix(suffix, legacyPacketCompactPhaseSuffix)
-	if suffix == "" {
-		return false
-	}
-	for _, r := range suffix {
-		if r < '0' || r > '9' {
-			return false
-		}
-	}
-	return true
-}
+// 固定suffix。
+const resultCorrectionPhaseSuffix = "-result-correct"
 
 // effectiveRiskはworker原文risk・既存floor信号(auto-fix/decision/prior-review)・自己保護を統合したwrapperの実効risk。
 // workerのLOW自己申告を実際の変更対象でHIGHへ昇格できる。
@@ -1751,7 +1715,7 @@ func (w *Workflow) gateReportOnlyResumeSnapshot() (bool, error) {
 			state.SnapshotStageReportOnlyStart,
 			state.GitSnapshot{},
 			state.GitSnapshot{},
-			"resume再開前にreport-only開始前snapshotが欠損しているため不変性の基準を確認できません(旧形式checkpointを含む)",
+			"resume再開前にreport-only開始前snapshotが欠損しているため不変性の基準を確認できません",
 			err,
 		)
 	}

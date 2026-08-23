@@ -46,6 +46,45 @@ func recordCoverageTaskCall(st *state.StateStore, taskID string) {
 	})
 }
 
+// PacketCompactionsはstructured output移行前に計上されたhistorical metric。旧v3 archiveの
+// decode・集計・--stats出力を保持し、Task 008の旧protocol比較に使う。現行binaryに記録
+// 経路はなく、新規taskのmirrorは常に0のまま出力される。
+func TestPrintStatsKeepsHistoricalPacketCompactions(t *testing.T) {
+	cfg := newAppConfig(t)
+	st, err := state.NewStateStore(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	archivedAt := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	stats := state.TaskStats{
+		Version:           3,
+		TaskID:            "legacy-compaction-task",
+		StartedAt:         archivedAt,
+		ArchivedAt:        &archivedAt,
+		Status:            state.TaskStatusComplete,
+		PacketCompactions: 2,
+	}
+	data, err := json.MarshalIndent(stats, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(st.Path("stats"), "legacy-compaction-task.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, append(data, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var out bytes.Buffer
+	if err := printStats(st, &out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "PACKET_COMPACTIONS: 2\n") {
+		t.Fatalf("旧archiveのpacket_compactions集計が出力されていません: %s", out.String())
+	}
+}
+
 func TestPrintStatsTelemetryCoverageHistoricalGapAndCurrentTask(t *testing.T) {
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)

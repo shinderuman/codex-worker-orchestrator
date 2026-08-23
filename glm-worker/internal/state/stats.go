@@ -339,12 +339,6 @@ func (s *StateStore) RecordProviderUnavailable(model string) {
 	})
 }
 
-func (s *StateStore) RecordPacketCompaction() {
-	s.UpdateTaskStats(func(stats *TaskStats) {
-		stats.PacketCompactions++
-	})
-}
-
 // RecordResultCorrectionは意味検証不合格後の修正再依頼1回を計上する。
 func (s *StateStore) RecordResultCorrection() {
 	s.UpdateTaskStats(func(stats *TaskStats) {

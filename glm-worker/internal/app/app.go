@@ -42,7 +42,6 @@ type Command struct {
 	// WatchVerboseは--watch --verboseの明示的詳細表示指定。--watch単体の表示は不変。
 	WatchVerbose bool
 	// StdinBytesはdecision/fix payloadをstdinから読み取るbyte数。
-	// 0は従来のargv payload modeを意味する。
 	StdinBytes int64
 	// SHA256はstdin payloadの送信元が計算した期待値。空なら照合しない。
 	SHA256 string
@@ -63,16 +62,16 @@ const fixOriginUsage = "[--origin codex-review|glm-reviewer|user-amendment|exter
 
 func ParseCommand(args []string) (Command, error) {
 	if len(args) == 0 {
-		return Command{}, fmt.Errorf("usage: glm-worker <instruction> | --decision <decision> | --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix <instruction> %s | --fix-stdin <payload-bytes> [--sha256 <hex>] %s | --accept | --resume | --status | --watch [--verbose] | --timeline [task-id] | --convergence [task-id] | --stats | --reset | --eval-ab <run-dir>", fixOriginUsage, fixOriginUsage)
+		return Command{}, fmt.Errorf("usage: glm-worker <instruction> | --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix-stdin <payload-bytes> [--sha256 <hex>] %s | --accept | --resume | --status | --watch [--verbose] | --timeline [task-id] | --convergence [task-id] | --stats | --reset | --eval-ab <run-dir>", fixOriginUsage)
 	}
 
 	switch args[0] {
-	case "--decision":
-		return payloadCommand(ModeDecision, args, "usage: glm-worker --decision <decision>")
+	// 廃止したargv埋込みmodeを新規task本文へ誤routingさせないため、専用のusage errorで
+	// fail closedする。
+	case "--decision", "--fix":
+		return Command{}, fmt.Errorf("usage: glm-worker --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix-stdin <payload-bytes> [--sha256 <hex>] %s", fixOriginUsage)
 	case "--decision-stdin":
 		return stdinPayloadCommand(ModeDecision, args, "usage: glm-worker --decision-stdin <payload-bytes> [--sha256 <hex>]", false)
-	case "--fix":
-		return fixCommand(args)
 	case "--fix-stdin":
 		return stdinPayloadCommand(ModeFix, args, fmt.Sprintf("usage: glm-worker --fix-stdin <payload-bytes> [--sha256 <hex>] %s", fixOriginUsage), true)
 	case "--accept":
@@ -144,39 +143,6 @@ func ParseCommand(args []string) (Command, error) {
 	default:
 		return Command{Mode: ModeNewTask, Payload: strings.Join(args, " ")}, nil
 	}
-}
-
-func payloadCommand(mode CommandMode, args []string, usage string) (Command, error) {
-	if len(args) < 2 {
-		return Command{}, fmt.Errorf("%s", usage)
-	}
-
-	payload := strings.TrimSpace(strings.Join(args[1:], " "))
-	if payload == "" {
-		return Command{}, fmt.Errorf("%s", usage)
-	}
-
-	return Command{Mode: mode, Payload: payload}, nil
-}
-
-// fixCommandはargv modeの--fixを解析する。--originはinstructionより前の固定位置だけを
-// 受け付け、集合外値・instruction欠落はusage errorへfail closedする。
-func fixCommand(args []string) (Command, error) {
-	usage := fmt.Sprintf("usage: glm-worker --fix <instruction> %s", fixOriginUsage)
-	rest := args[1:]
-	origin := ""
-	if len(rest) > 0 && rest[0] == "--origin" {
-		if len(rest) < 2 || !state.ValidParentOrigin(rest[1]) {
-			return Command{}, fmt.Errorf("%s", usage)
-		}
-		origin = rest[1]
-		rest = rest[2:]
-	}
-	payload := strings.TrimSpace(strings.Join(rest, " "))
-	if payload == "" {
-		return Command{}, fmt.Errorf("%s", usage)
-	}
-	return Command{Mode: ModeFix, Payload: payload, Origin: origin}, nil
 }
 
 func stdinPayloadCommand(mode CommandMode, args []string, usage string, allowOrigin bool) (Command, error) {

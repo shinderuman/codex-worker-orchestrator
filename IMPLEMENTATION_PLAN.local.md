@@ -8,11 +8,10 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/007-machine-only-legacy-cleanup.md`
+- `IMPLEMENTATION_TASKS/completion-detection-false-negative-incident.md`
 
 ## NEXT（優先順）
 
-- `IMPLEMENTATION_TASKS/completion-detection-false-negative-incident.md`
 - `IMPLEMENTATION_TASKS/008-machine-protocol-measurement.md`
 - `IMPLEMENTATION_TASKS/009-worker-call-outliers.md`
 - `IMPLEMENTATION_TASKS/010-task-splitting-milestones.md`
@@ -43,14 +42,14 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 ## 現在のGit境界
 
 - branch: `main`
-- implementation baseline: `sol_question` status contract follow-up commit（current HEAD）
-- metadata boundary: follow-upをHistoryへ移行して完了task fileを削除し、Task 007をACTIVEへ復帰。task固有stash 2件をfollow-up後HEADへ自動mergeで復元したworking tree境界
+- implementation baseline: Task 007 machine-only legacy削減commit（current HEAD）
+- metadata boundary: Task 007をHistoryへ移行してtask fileを削除し、completion detection incidentをACTIVEへ昇格した完了同期境界
 - push: 禁止
 
 ## 現在の停止理由
 
-Task 007はrate-limitから同一session/checkpointで再開し、v4 `report_only` key存在検証fix・独立review・Sol最終採否を完了。実装commit前の親同期境界。
+blockerなし。Task 007の実装・review・Sol採否・commit・完了同期を完了し、installed-state検証後にcompletion detection incidentへ進む境界。
 
 ## 次の親Codex操作
 
-Task 007と独立してincident/保持metadataをcommitした後、Task 007の実装commit-ready Planを作成し、commit・完了同期amend・installへ進む。
+`install.sh`でTask 007の本配置とinstalled/source一致を検証し、ACTIVEのcompletion detection incidentを開始する。

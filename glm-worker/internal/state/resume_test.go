@@ -36,6 +36,17 @@ func TestResumeCheckpointPersists(t *testing.T) {
 	if got.Phase != checkpoint.Phase || got.ResetAtRFC3339 != checkpoint.ResetAtRFC3339 || got.Effort != "high" || got.Model != "sonnet" {
 		t.Fatalf("unexpected checkpoint: %#v", got)
 	}
+	if got.ReportOnly {
+		t.Fatalf("report_only既定はfalse: %#v", got)
+	}
+	// v4はreport_onlyをfalseでも明示保存し、field有無の推定を不要にする。
+	data, err := os.ReadFile(st.Path(resumeStateFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "\"report_only\": false") {
+		t.Fatalf("report_only=falseが明示保存されていません: %s", data)
+	}
 
 	checkpoint.Stage = ResumeStageAutoFix
 	checkpoint.Phase = "worker-report-only-1"
@@ -89,7 +100,7 @@ func TestResumeCheckpointRequiresModel(t *testing.T) {
 		t.Fatalf("save error = %v", err)
 	}
 
-	if err := os.WriteFile(st.Path(resumeStateFile), []byte("{\"version\":2,\"stage\":\"worker\"}"), 0o600); err != nil {
+	if err := os.WriteFile(st.Path(resumeStateFile), []byte("{\"version\":4,\"stage\":\"worker\",\"report_only\":false}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := st.LoadResumeCheckpoint(); err == nil || !strings.Contains(err.Error(), "model is required") {
@@ -97,34 +108,65 @@ func TestResumeCheckpointRequiresModel(t *testing.T) {
 	}
 }
 
-// v2 checkpoint(worker_packet表示行・packet_compacted)はv3表現へ等価変換してresumeさせる。
-// 5h上限中断中のtaskがprotocol移行でresume不能にならないことの保証。
-func TestLoadResumeCheckpointConvertsLegacyV2(t *testing.T) {
+// 旧version resume checkpointのupgrade互換は持たない。v2(worker_packet表示行・
+// packet_compacted)・v3(report_only欠落・phase推定前提)は内容の健全さに関係なく
+// version gateでresume不能として明示終了する。report_only欠落checkpointを通常の
+// auto-fix resumeへ落とさない。進行taskの保護は現在binaryが書く現version checkpointの
+// 読込だけで保証する。
+func TestLoadResumeCheckpointRejectsLegacyVersions(t *testing.T) {
 	st := &StateStore{dir: t.TempDir()}
-	legacy := `{"version":2,"stage":"reviewer","phase":"reviewer-1","model":"sonnet","request":"req","worker_packet":["STATUS: IMPLEMENTED","RISK: LOW","SUMMARY: s","TESTS: t"],"packet_compacted":true}`
-	if err := os.WriteFile(st.Path(resumeStateFile), []byte(legacy), 0o600); err != nil {
-		t.Fatal(err)
+	for name, legacy := range map[string]string{
+		"v2 convertible":           `{"version":2,"stage":"reviewer","phase":"reviewer-1","model":"sonnet","request":"req","worker_packet":["STATUS: IMPLEMENTED","RISK: LOW","SUMMARY: s","TESTS: t"],"packet_compacted":true}`,
+		"v2 broken":                `{"version":2,"stage":"worker","model":"opus","worker_packet":["plain text"]}`,
+		"v3 report-only no field":  `{"version":3,"stage":"auto-fix","phase":"worker-report-only-1","role":"worker","model":"opus","request":"req","rate_limited":true}`,
+		"v3 packet-compact suffix": `{"version":3,"stage":"auto-fix","phase":"worker-report-only-1-packet-compact","role":"worker","model":"opus","request":"req","rate_limited":true}`,
+		"v3 ordinary auto-fix":     `{"version":3,"stage":"auto-fix","phase":"worker-auto-fix-1","role":"worker","model":"opus","request":"req","rate_limited":true}`,
+	} {
+		if err := os.WriteFile(st.Path(resumeStateFile), []byte(legacy), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		_, err := st.LoadResumeCheckpoint()
+		want := "unsupported resume state version: "
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Fatalf("%s error = %v", name, err)
+		}
 	}
-	got, err := st.LoadResumeCheckpoint()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.WorkerResult == nil || got.WorkerResult.Status != "IMPLEMENTED" || got.WorkerResult.Summary != "s" {
-		t.Fatalf("worker result変換 = %#v", got.WorkerResult)
-	}
-	if !got.ResultCorrection {
-		t.Fatal("packet_compactedはresult_correctionへ読み替える")
-	}
-	if got.Version != resumeStateVersion {
-		t.Fatalf("version = %d", got.Version)
-	}
+}
 
-	broken := `{"version":2,"stage":"worker","model":"opus","worker_packet":["plain text"]}`
-	if err := os.WriteFile(st.Path(resumeStateFile), []byte(broken), 0o600); err != nil {
-		t.Fatal(err)
+// v4はreport_only keyの明示存在とbool型を要求する。key欠落をbool zero value falseの
+// 通常auto-fixとして受理せず、phaseがreport-only風でも通常auto-fixでもrouting前に
+// fail closedする。明示false(通常auto-fix)・明示true(report-only)は従来どおり受理する。
+func TestLoadResumeCheckpointV4RequiresExplicitReportOnly(t *testing.T) {
+	st := &StateStore{dir: t.TempDir()}
+	rejected := map[string]struct{ name, want string }{
+		`{"version":4,"stage":"auto-fix","phase":"worker-report-only-1","role":"worker","model":"opus","request":"req","rate_limited":true}`:                    {"v4 report-only風phase key欠落", "report_only keyがありません"},
+		`{"version":4,"stage":"auto-fix","phase":"worker-auto-fix-1","role":"worker","model":"opus","request":"req","rate_limited":true}`:                       {"v4 通常auto-fix key欠落", "report_only keyがありません"},
+		`{"version":4,"stage":"auto-fix","phase":"worker-auto-fix-1","role":"worker","model":"opus","request":"req","rate_limited":true,"report_only":"false"}`: {"v4 report_only非bool", "resume stateを読めません"},
 	}
-	if _, err := st.LoadResumeCheckpoint(); err == nil || !strings.Contains(err.Error(), "worker_packetを変換できません") {
-		t.Fatalf("broken v2 error = %v", err)
+	for doc, tc := range rejected {
+		if err := os.WriteFile(st.Path(resumeStateFile), []byte(doc), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		_, err := st.LoadResumeCheckpoint()
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Fatalf("%s error = %v", tc.name, err)
+		}
+	}
+	accepted := map[string]bool{
+		`{"version":4,"stage":"auto-fix","phase":"worker-auto-fix-1","role":"worker","model":"opus","request":"req","rate_limited":true,"report_only":false}`:   false,
+		`{"version":4,"stage":"auto-fix","phase":"worker-report-only-1","role":"worker","model":"opus","request":"req","rate_limited":true,"report_only":true}`: true,
+	}
+	for doc, wantReportOnly := range accepted {
+		if err := os.WriteFile(st.Path(resumeStateFile), []byte(doc), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		checkpoint, err := st.LoadResumeCheckpoint()
+		if err != nil {
+			t.Fatalf("明示report_only=%vの受理が必要: %v", wantReportOnly, err)
+		}
+		if checkpoint.ReportOnly != wantReportOnly {
+			t.Fatalf("report_only = %v, want %v", checkpoint.ReportOnly, wantReportOnly)
+		}
 	}
 }
 
@@ -154,10 +196,14 @@ func TestResumeCheckpointStopParentFilesRoundTrip(t *testing.T) {
 	}
 }
 
-func TestResumeCheckpointLegacyWithoutStopParentFiles(t *testing.T) {
+func TestResumeCheckpointWithoutStopParentFiles(t *testing.T) {
 	st := &StateStore{dir: t.TempDir()}
-	legacy := `{"version":3,"stage":"reviewer","phase":"reviewer-1","role":"reviewer","model":"sonnet","prompt":"p","request":"r","rate_limited":true}`
-	if err := os.WriteFile(st.Path(resumeStateFile), []byte(legacy), 0o600); err != nil {
+	if err := st.SaveResumeCheckpoint(ResumeCheckpoint{
+		Stage:       ResumeStageReview,
+		Phase:       "reviewer-1",
+		Model:       "sonnet",
+		RateLimited: true,
+	}); err != nil {
 		t.Fatal(err)
 	}
 	got, err := st.LoadResumeCheckpoint()
@@ -165,19 +211,19 @@ func TestResumeCheckpointLegacyWithoutStopParentFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got.StopParentFiles != nil {
-		t.Fatalf("旧binary checkpointのstop_parent_filesはnil: %#v", got.StopParentFiles)
+		t.Fatalf("stop_parent_files未設定時はnil: %#v", got.StopParentFiles)
 	}
 }
 
-// 旧binaryの2file形式stop_parent_files(object)は現形式(list)へunmarshalできないため、
+// 2file形式stop_parent_files(object)は現形式(list)へunmarshalできないため、
 // 停止期間中の親更新を機械識別できないcheckpointをresume前提へ使わせない(fail closed)。
-func TestResumeCheckpointLegacyTwoFileStopParentFilesFailsClosed(t *testing.T) {
+func TestResumeCheckpointTwoFileStopParentFilesFailsClosed(t *testing.T) {
 	st := &StateStore{dir: t.TempDir()}
-	legacy := `{"version":3,"stage":"reviewer","phase":"reviewer-1","role":"reviewer","model":"sonnet","prompt":"p","request":"r","rate_limited":true,"stop_parent_files":{"plan":{"sha256":"a"},"history":{"sha256":"b"}}}`
+	legacy := `{"version":4,"stage":"reviewer","phase":"reviewer-1","role":"reviewer","model":"sonnet","prompt":"p","request":"r","rate_limited":true,"report_only":false,"stop_parent_files":{"plan":{"sha256":"a"},"history":{"sha256":"b"}}}`
 	if err := os.WriteFile(st.Path(resumeStateFile), []byte(legacy), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := st.LoadResumeCheckpoint(); err == nil || !strings.Contains(err.Error(), "resume stateを読めません") {
-		t.Fatalf("旧2file形式stop_parent_filesは読込失敗が必要: %v", err)
+		t.Fatalf("2file形式stop_parent_filesは読込失敗が必要: %v", err)
 	}
 }

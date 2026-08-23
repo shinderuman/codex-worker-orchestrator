@@ -22,37 +22,6 @@ func TestParseCommandAccept(t *testing.T) {
 	}
 }
 
-func TestParseCommandFixOrigin(t *testing.T) {
-	for _, origin := range []string{"codex-review", "glm-reviewer"} {
-		command, err := ParseCommand([]string{"--fix", "--origin", origin, "指摘を修正"})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if command.Mode != ModeFix || command.Payload != "指摘を修正" || command.Origin != origin {
-			t.Fatalf("command = %#v", command)
-		}
-	}
-
-	command, err := ParseCommand([]string{"--fix", "指摘を修正"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if command.Origin != "" {
-		t.Fatalf("未宣言originは空のまま: %#v", command)
-	}
-
-	for _, args := range [][]string{
-		{"--fix", "--origin", "codex-review"},
-		{"--fix", "--origin", "vibe-check", "指摘を修正"},
-		{"--fix", "--origin", "reviewer", "指摘を修正"},
-		{"--fix", "--origin"},
-	} {
-		if _, err := ParseCommand(args); err == nil {
-			t.Fatalf("不正な--fix引数を拒否する必要があります: %#v", args)
-		}
-	}
-}
-
 func TestParseCommandFixStdinOrigin(t *testing.T) {
 	digest := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
@@ -83,6 +52,8 @@ func TestParseCommandFixStdinOrigin(t *testing.T) {
 	for _, args := range [][]string{
 		{"--fix-stdin", "1", "--origin", "codex-review", "--origin", "user-amendment"},
 		{"--fix-stdin", "1", "--origin"},
+		{"--fix-stdin", "1", "--origin", "vibe-check"},
+		{"--fix-stdin", "1", "--origin", "reviewer"},
 		{"--fix-stdin", "1", "--sha256"},
 		{"--decision-stdin", "1", "--origin", "codex-review"},
 	} {

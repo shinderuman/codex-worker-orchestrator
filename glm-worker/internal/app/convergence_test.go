@@ -58,6 +58,7 @@ func TestConvergenceRendersRoundsCostsAndSummary(t *testing.T) {
 		TreeUsage:      state.TokenUsage{InputTokens: 100, OutputTokens: 40},
 		WallDurationMS: 5000, TopLevelTurns: 3,
 	})
+	// 旧protocolのpacket圧縮suffix phase recordはround生成呼出へ対応付けない。
 	st.RecordModelCallLog(state.ModelCallLog{
 		TaskID: taskID, CallType: state.CallTypeTask, Role: state.WorkerRole, Phase: "worker-new-packet-compact",
 		StartedAt: base.Add(5 * time.Second), CompletedAt: base.Add(6 * time.Second),
@@ -96,7 +97,7 @@ func TestConvergenceRendersRoundsCostsAndSummary(t *testing.T) {
 		"ROUND #1 SNAPSHOT: head=head1 index=index1 worktree=worktree",
 		"ROUND #1 REVIEW: calls=1 outcome=PASS risk=LOW reported=LOW reemit=no unresolved=no snapshot=matched",
 		"ROUND #1 REVIEWER_COST: calls=1 in=250 out=10 turns=2 dur=5000ms",
-		"ROUND #1 WORKER_COST: calls=2 in=120 out=45 turns=4 dur=6000ms",
+		"ROUND #1 WORKER_COST: calls=1 in=100 out=40 turns=3 dur=5000ms",
 		"SUMMARY delta=verification-only rounds=1 reviewer_calls=1 reviewer_in=250 reviewer_out=10 reviewer_dur_ms=5000",
 		"UNRESOLVED_ISSUE_ROUNDS: 0",
 		"HIGH_ROUNDS: 0",

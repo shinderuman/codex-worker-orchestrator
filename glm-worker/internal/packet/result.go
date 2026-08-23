@@ -234,9 +234,7 @@ func (r Result) DisplayLines() []string {
 
 // Displayは人間向け診断projectionの表示行を改行接続した文字列を返す。
 // machine protocol(MachineJSON)とは分離されており、最終stdout・prompt埋め込み・
-// state保存の機械経路では使わない。旧text PACKET形式のencoderとして
-// FromDisplayLines(v2 resume checkpoint読込)の対で保持し、形式の対応関係を
-// 往復検証可能に保つ。
+// state保存の機械経路では使わない。
 func (r Result) Display() string {
 	return strings.Join(r.DisplayLines(), "\n")
 }
@@ -281,27 +279,27 @@ func (r Result) ByteSize() int {
 	return len(data)
 }
 
-// FromDisplayLinesは旧text PACKET形式で保存されたresume checkpointのworker報告を
-// typed結果へ変換する。v2 checkpointのupgrade互換のためだけに存在し、
-// model出力の受理経路には使わない。
+// FromDisplayLinesは表示行形式(KEY: value)のworker報告をtyped結果へ変換する。
+// scenario corpusのrunner step表記と表示projectionの往復検証だけに使い、
+// model出力の受理経路・productionの状態読込には使わない。
 func FromDisplayLines(lines []string) (Result, error) {
 	fields := make(map[string]string, len(lines))
 	for _, line := range lines {
 		key, value, ok := strings.Cut(line, ":")
 		if !ok {
-			return Result{}, fmt.Errorf("旧packet行をKEY: value形式へ解析できません: %q", line)
+			return Result{}, fmt.Errorf("表示行をKEY: value形式へ解析できません: %q", line)
 		}
 		key = strings.TrimSpace(key)
 		if key == "" {
-			return Result{}, fmt.Errorf("旧packet行のKEYが空です: %q", line)
+			return Result{}, fmt.Errorf("表示行のKEYが空です: %q", line)
 		}
 		if _, exists := fields[key]; exists {
-			return Result{}, fmt.Errorf("旧packet field %sが重複しています", key)
+			return Result{}, fmt.Errorf("表示field %sが重複しています", key)
 		}
 		fields[key] = strings.TrimSpace(value)
 	}
 	if fields["STATUS"] == "" {
-		return Result{}, fmt.Errorf("旧packetにSTATUSがありません")
+		return Result{}, fmt.Errorf("表示行にSTATUSがありません")
 	}
 	result := Result{
 		Status:              Status(fields["STATUS"]),

@@ -22,14 +22,14 @@
 
 ## decision/fix本文の送信
 
-- `--decision`・`--fix`へ渡す判断本文・修正指示本文を、`JSON.stringify`等でshell command文字列へ埋め込むことを禁止する。shellの二重引用符内ではbacktickと`$`がcommand substitution・展開され、本文の一部が失われたりcommand出力が本文へ混入した上で最初のNUL byteで切断されたりする。
+- `--decision-stdin`・`--fix-stdin`で送る判断本文・修正指示本文を、`JSON.stringify`等でshell command文字列へ埋め込むことを禁止する。shellの二重引用符内ではbacktickと`$`がcommand substitution・展開され、本文の一部が失われたりcommand出力が本文へ混入した上で最初のNUL byteで切断されたりする。
 - 本文はstdin modeで送る。exec_commandは`tty: true`で起動する。`tty: false`のprocessはstdinが即時EOFとなり本文送信前にbyte数不足でfail closedするため、`tty: false`へのfallbackを禁止する。
 - 起動commandは本文を含まない固定形`glm-worker --decision-stdin <payload-bytes>`（fixは`--fix-stdin`）とし、shell interpolationを使わない固定文字列だけを構築する。terminal mode設定はglm-workerのinvocation内責務で、callerは`stty`・raw mode・echo等のterminal設定を一切行わない。command文字列へ入れてよい本文由来の情報はUTF-8 byte長と任意のSHA-256だけに限る。`<payload-bytes>`は本文のUTF-8 byte長で、tool orchestration内で`TextEncoder`相当から送信前に計算する。
 - 本文送信の開始条件は、glm-workerがstderrへ出す固定marker行`GLM_STDIN_READY`の確認だけである。markerはglm-workerがTTY stdinのterminal設定適用に成功した直後に1回だけ出し、pipe/file等の非TTY stdinでは出ない。marker未観測・marker行の重複・processの先行終了では本文を未送信のままfail closedとし、marker待ちの間に本文を先行writeしない。
 - marker確認後、呼び出しがsession化してsession IDを返した場合は、末尾改行の有無に依存せず非emptyの`write_stdin`で本文全体を1回だけ送る。改行だけの追加writeを行わない。byte数が不足する入力はglm-workerがstate変更・model呼出前にfail closedする。
 - 送信前に本文のSHA-256を計算できる場合は`--sha256 <hex>`を併せ指定し、同じく送信前に照合させる。
 - 本文中のbacktick、dollar、single quote、double quote、NUL、改行を無変換で保持する。shell向けのescape・encode・quoteをやり直さない。
-- glm-workerがbyte数不足・sha256不一致で非zero終了した場合、本文の分割再送・短文化・`--decision`/`--fix`へのargv埋込みfallbackを行わない。byte長・hashと送信内容の整合だけを確認し、同じstdin modeで再送する。
+- glm-workerがbyte数不足・sha256不一致で非zero終了した場合、本文の分割再送・短文化・`--decision`/`--fix`へのargv埋込みfallbackを行わない。argv埋込みmodeは廃止済みでusage errorによりfail closedするため、byte長・hashと送信内容の整合だけを確認し、同じstdin modeで再送する。
 - この固定wrapper command自体はCodex tool側でsandbox外実行する。glm-workerが既存task state/checkpoint/sessionを更新するためである。ただし毎回の再承認要求を本契約へ含めない。
 - 本文送信後は短時間pollingを挟まず、最大待機時間のblocking waitで完了を待つ。
 
@@ -37,7 +37,7 @@
 
 - terminal packet(PASS・`NEEDS_SOL_REVIEW`・`NEEDS_SOL_DECISION`・fail closed結果)を受理して追加操作なしで当該taskを完了させるとき、次の作業へ移る前に`glm-worker --accept`を1回だけ実行する。`--accept`は観測記録専用でmodel呼出・Git操作を行わず、open opportunityがないときの再実行はno-opである。
 - `NEEDS_SOL_DECISION`待ちへ`--accept`を使わない。判断は`--decision-stdin`で渡し、decision outcomeはglm-workerが自動確定する。
-- `--fix`では差戻しの実際の起点に合わせて`--origin codex-review|glm-reviewer|user-amendment|external-review|metadata-repair`を申告する。glm-worker reviewerのterminal result(`NEEDS_SOL_REVIEW`等)へ既に記載された指摘をそのまま差し戻すときは`glm-reviewer`、親Codex自身がterminal packet受領後の最終reviewで新たに検出した指摘のときだけ`codex-review`とする。userの修正要求・追加指示は`user-amendment`、repo外の外部reviewは`external-review`、`parent_metadata_*`等の親管理metadata修復は`metadata-repair`である。新規検出かreviewer既記載か確定できないときだけ申告を省略し、`unknown`として計上される。`codex-review`への推定fallbackは行わない。
+- `--fix-stdin`では差戻しの実際の起点に合わせて`--origin codex-review|glm-reviewer|user-amendment|external-review|metadata-repair`を申告する。glm-worker reviewerのterminal result(`NEEDS_SOL_REVIEW`等)へ既に記載された指摘をそのまま差し戻すときは`glm-reviewer`、親Codex自身がterminal packet受領後の最終reviewで新たに検出した指摘のときだけ`codex-review`とする。userの修正要求・追加指示は`user-amendment`、repo外の外部reviewは`external-review`、`parent_metadata_*`等の親管理metadata修復は`metadata-repair`である。新規検出かreviewer既記載か確定できないときだけ申告を省略し、`unknown`として計上される。`codex-review`への推定fallbackは行わない。
 - stdin modeでは`--fix-stdin <payload-bytes> --sha256 <hex> --origin <値>`の対形式で渡す。`--origin`は観測申告であり、fix本文の内容・範囲を替わってはならない。
 
 ## 対象repoの生存判定

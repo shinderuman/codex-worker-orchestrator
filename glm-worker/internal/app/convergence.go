@@ -245,8 +245,8 @@ func reviewerCallsInBucket(entries []state.ModelCallLog, reviewNumber int, misma
 }
 
 // producingWorkerCallsはround生成呼出のtelemetry記録を取り出す。WorkerPhaseと一致
-// (結果修正再依頼と旧packet圧縮のsuffix付きを含む)するworker呼出のうち、
-// IMPLEMENTED以外の結果を返した呼出(Sol decisionへ向かった試行)は対象から外す。
+// (結果修正再依頼suffix付きを含む)するworker呼出のうち、IMPLEMENTED以外の結果を返した
+// 呼出(Sol decisionへ向かった試行)は対象から外す。
 // 結果status空欄の呼出はtransient再試行・invalid resultなど当該呼出の消費なので残す。
 func producingWorkerCalls(entries []state.ModelCallLog, workerPhase string) []state.ModelCallLog {
 	result := make([]state.ModelCallLog, 0, len(entries))
@@ -254,7 +254,7 @@ func producingWorkerCalls(entries []state.ModelCallLog, workerPhase string) []st
 		if entry.Role != state.WorkerRole {
 			continue
 		}
-		if entry.Phase != workerPhase && entry.Phase != workerPhase+"-result-correct" && entry.Phase != workerPhase+"-packet-compact" {
+		if entry.Phase != workerPhase && entry.Phase != workerPhase+"-result-correct" {
 			continue
 		}
 		if entry.PacketStatus != "" && entry.PacketStatus != "IMPLEMENTED" {

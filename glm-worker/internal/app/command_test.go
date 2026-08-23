@@ -13,8 +13,6 @@ func TestParseCommandModes(t *testing.T) {
 		payload string
 	}{
 		{name: "new task", args: []string{"調査して", "実装する"}, mode: ModeNewTask, payload: "調査して 実装する"},
-		{name: "decision", args: []string{"--decision", "A案で", "進める"}, mode: ModeDecision, payload: "A案で 進める"},
-		{name: "fix", args: []string{"--fix", "指摘を修正"}, mode: ModeFix, payload: "指摘を修正"},
 		{name: "resume", args: []string{"--resume"}, mode: ModeResume},
 		{name: "status", args: []string{"--status"}, mode: ModeStatus},
 		{name: "stats", args: []string{"--stats"}, mode: ModeStats},
@@ -101,6 +99,29 @@ func TestParseCommandRejectsInvalidStdinArguments(t *testing.T) {
 	for _, args := range tests {
 		if _, err := ParseCommand(args); err == nil {
 			t.Fatalf("invalid argsを受理しました: %#v", args)
+		}
+	}
+}
+
+// 廃止したargv埋込みmodeはusage errorへfail closedし、payload本文を新規taskへ
+// 誤routingしない。errorはstdin modeへの移行先を示す。
+func TestParseCommandRejectsArgvDecisionFix(t *testing.T) {
+	for _, args := range [][]string{
+		{"--decision", "A案で進める"},
+		{"--decision"},
+		{"--fix", "指摘を修正"},
+		{"--fix"},
+		{"--fix", "--origin", "codex-review", "指摘を修正"},
+	} {
+		command, err := ParseCommand(args)
+		if err == nil {
+			t.Fatalf("argv埋込みを受理しました: %#v", args)
+		}
+		if command.Payload != "" {
+			t.Fatalf("argv埋込み本文をcommandへ解釈しています: %#v", command)
+		}
+		if !strings.Contains(err.Error(), "--decision-stdin") || !strings.Contains(err.Error(), "--fix-stdin") {
+			t.Fatalf("stdin modeへの案内がありません: %v", err)
 		}
 	}
 }
