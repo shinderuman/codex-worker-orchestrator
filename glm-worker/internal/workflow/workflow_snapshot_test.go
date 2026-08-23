@@ -76,7 +76,7 @@ func TestSnapshotCaptureFailureFailsClosedBeforeReviewer(t *testing.T) {
 	if len(r.prompts) != 1 {
 		t.Fatalf("reviewerを呼ばず停止すべき: calls=%d", len(r.prompts))
 	}
-	if !strings.Contains(out.String(), "STATUS: NEEDS_SOL_REVIEW") || !strings.Contains(out.String(), "RISK: HIGH") {
+	if !strings.Contains(out.String(), `"status":"NEEDS_SOL_REVIEW"`) || !strings.Contains(out.String(), `"risk":"HIGH"`) {
 		t.Fatalf("fail closed packetが出力されていません: %q", out.String())
 	}
 	if !strings.Contains(out.String(), "worker-end snapshot取得失敗") {

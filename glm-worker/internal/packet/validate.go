@@ -61,7 +61,7 @@ func ValidateWorkerResult(result Result) error {
 		if result.Risk != RiskLow && result.Risk != RiskHigh {
 			return &constraintError{reason: fmt.Sprintf("riskはLOWまたはHIGHで指定してください: %q", string(result.Risk))}
 		}
-		if err := validateFields(result, workerImplementedFields); err != nil {
+		if err := validateFields(result, implementedContractFields); err != nil {
 			return err
 		}
 		return validateTargets(result)
@@ -69,7 +69,7 @@ func ValidateWorkerResult(result Result) error {
 		if result.Risk != RiskHigh {
 			return &constraintError{reason: "NEEDS_SOL_DECISIONのriskはHIGHにしてください"}
 		}
-		if err := validateFields(result, needsSolDecisionFields); err != nil {
+		if err := validateFields(result, needsSolDecisionContractFields); err != nil {
 			return err
 		}
 		return validateTargets(result)
@@ -86,7 +86,7 @@ func ValidateReviewerResult(result Result) error {
 		if result.Risk != RiskLow {
 			return &constraintError{reason: "PASSのriskはLOWにしてください。高リスクならNEEDS_SOL_REVIEWを返してください"}
 		}
-		if err := validateFields(result, reviewerFields); err != nil {
+		if err := validateFields(result, reviewerContractFields); err != nil {
 			return err
 		}
 		return validateTargets(result)
@@ -94,7 +94,7 @@ func ValidateReviewerResult(result Result) error {
 		if result.Risk != RiskLow && result.Risk != RiskHigh {
 			return &constraintError{reason: fmt.Sprintf("riskはLOWまたはHIGHで指定してください: %q", string(result.Risk))}
 		}
-		if err := validateFields(result, reviewerFields); err != nil {
+		if err := validateFields(result, reviewerContractFields); err != nil {
 			return err
 		}
 		return validateTargets(result)
@@ -102,7 +102,7 @@ func ValidateReviewerResult(result Result) error {
 		if result.Risk != RiskHigh {
 			return &constraintError{reason: "NEEDS_SOL_REVIEWのriskはHIGHにしてください"}
 		}
-		if err := validateFields(result, reviewerFields); err != nil {
+		if err := validateFields(result, reviewerContractFields); err != nil {
 			return err
 		}
 		if strings.TrimSpace(result.SolQuestion) == "" {
@@ -112,36 +112,6 @@ func ValidateReviewerResult(result Result) error {
 	default:
 		// status enumはrole別schemaが保証するため、ここへの到達はschema違反でありfail closed対象。
 		return &mismatchError{reason: fmt.Sprintf("reviewer結果のstatusとして許容されません: %q", string(result.Status))}
-	}
-}
-
-func workerImplementedFields(result Result) []displayField {
-	return []displayField{
-		{key: "SUMMARY", value: result.Summary},
-		{key: "REQUIREMENT_COVERAGE", value: result.RequirementCoverage},
-		{key: "TESTS", value: result.Tests},
-		{key: "UNVERIFIED", value: result.Unverified},
-	}
-}
-
-func needsSolDecisionFields(result Result) []displayField {
-	return []displayField{
-		{key: "DECISION", value: result.Decision},
-		{key: "EVIDENCE", value: result.Evidence},
-		{key: "OPTIONS", value: result.Options},
-		{key: "RECOMMENDATION", value: result.Recommendation},
-		{key: "TEST_OBLIGATIONS", value: result.TestObligations},
-	}
-}
-
-func reviewerFields(result Result) []displayField {
-	return []displayField{
-		{key: "SUMMARY", value: result.Summary},
-		{key: "REQUIREMENT_COVERAGE", value: result.RequirementCoverage},
-		{key: "INVARIANTS", value: result.Invariants},
-		{key: "TEST_EVIDENCE", value: result.TestEvidence},
-		{key: "ISSUES", value: result.Issues},
-		{key: "RESIDUAL_RISK", value: result.ResidualRisk},
 	}
 }
 
@@ -199,17 +169,18 @@ func validateTargets(result Result) error {
 }
 
 // validateFieldsはstatus別必須fieldの非空・改行なし・byte上限を検証する。
-// 改行は表示の1 field 1行契約を壊すため意味検証で拒否する。
-func validateFields(result Result, fields func(Result) []displayField) error {
-	for _, field := range fields(result) {
-		if strings.TrimSpace(field.value) == "" {
-			return &constraintError{reason: fmt.Sprintf("結果に必須field %sがありません", field.key)}
+// 改行はmachine protocolの1行契約を壊すため意味検証で拒否する。
+func validateFields(result Result, fields []contractField) error {
+	for _, field := range fields {
+		value := field.value(result)
+		if strings.TrimSpace(value) == "" {
+			return &constraintError{reason: fmt.Sprintf("結果に必須field %sがありません", field.display)}
 		}
-		if strings.ContainsAny(field.value, "\n\r") {
-			return &constraintError{reason: fmt.Sprintf("field %sに改行を含められません: 複数事項は同じvalue内でセミコロン区切りにしてください", field.key)}
+		if strings.ContainsAny(value, "\n\r") {
+			return &constraintError{reason: fmt.Sprintf("field %sに改行を含められません: 複数事項は同じvalue内でセミコロン区切りにしてください", field.display)}
 		}
-		if len(field.value) > MaxFieldBytes {
-			return &constraintError{reason: fmt.Sprintf("field %sは%d bytes以内にしてください", field.key, MaxFieldBytes)}
+		if len(value) > MaxFieldBytes {
+			return &constraintError{reason: fmt.Sprintf("field %sは%d bytes以内にしてください", field.display, MaxFieldBytes)}
 		}
 	}
 	for _, value := range append(append([]string(nil), result.Targets...), result.Artifacts...) {
@@ -221,7 +192,7 @@ func validateFields(result Result, fields func(Result) []displayField) error {
 		}
 	}
 	if size := result.ByteSize(); size > MaxPacketBytes {
-		return &constraintError{reason: fmt.Sprintf("結果全体は%d bytes以内にしてください: %d bytes", MaxPacketBytes, size)}
+		return &constraintError{reason: fmt.Sprintf("結果全体はmachine JSONで%d bytes以内にしてください: %d bytes", MaxPacketBytes, size)}
 	}
 	return nil
 }

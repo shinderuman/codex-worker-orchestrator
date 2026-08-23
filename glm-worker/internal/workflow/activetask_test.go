@@ -6,7 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -477,17 +476,17 @@ func TestActiveTaskFileDeletionFailsClosedBeforeCall(t *testing.T) {
 // promptも同じ要求正本blockを保つことを固定する。経路ごとに要求源が失われるとreviewerだけが
 // task契約を読む非対称状態になる。
 func TestDecisionAndFixPromptsCarryActiveTaskBlock(t *testing.T) {
-	review := packet.Result{Status: packet.StatusImplemented, Risk: packet.RiskLow, Summary: "done"}
+	reviewReport := `{"risk":"LOW","status":"IMPLEMENTED","summary":"done"}`
 	if got := decisionPrompt("r", "d", activeTaskGuardPath); !strings.Contains(got, "ACTIVE_TASK_FILE: "+activeTaskGuardPath) {
 		t.Fatalf("decisionPromptが要求源blockを欠いています:\n%s", got)
 	}
 	if got := explicitFixPrompt("r", "d", "prev", "fix", activeTaskGuardPath); !strings.Contains(got, "ACTIVE_TASK_FILE: "+activeTaskGuardPath) {
 		t.Fatalf("explicitFixPromptが要求源blockを欠いています:\n%s", got)
 	}
-	if got := automaticFixPrompt("r", "d", review, activeTaskGuardPath); !strings.Contains(got, "ACTIVE_TASK_FILE: "+activeTaskGuardPath) {
+	if got := automaticFixPrompt("r", "d", reviewReport, activeTaskGuardPath); !strings.Contains(got, "ACTIVE_TASK_FILE: "+activeTaskGuardPath) {
 		t.Fatalf("automaticFixPromptが要求源blockを欠いています:\n%s", got)
 	}
-	if got := reportOnlyFixPrompt("r", "d", review, activeTaskGuardPath); !strings.Contains(got, "ACTIVE_TASK_FILE: "+activeTaskGuardPath) {
+	if got := reportOnlyFixPrompt("r", "d", reviewReport, activeTaskGuardPath); !strings.Contains(got, "ACTIVE_TASK_FILE: "+activeTaskGuardPath) {
 		t.Fatalf("reportOnlyFixPromptが要求源blockを欠いています:\n%s", got)
 	}
 	if got := decisionPrompt("r", "d", ""); strings.Contains(got, "ACTIVE_TASK_FILE") {

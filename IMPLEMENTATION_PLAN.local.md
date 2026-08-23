@@ -8,11 +8,10 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/006-codex-facing-compact-result.md`
+- `IMPLEMENTATION_TASKS/007-machine-only-legacy-cleanup.md`
 
 ## NEXT（優先順）
 
-- `IMPLEMENTATION_TASKS/007-machine-only-legacy-cleanup.md`
 - `IMPLEMENTATION_TASKS/008-machine-protocol-measurement.md`
 - `IMPLEMENTATION_TASKS/009-worker-call-outliers.md`
 - `IMPLEMENTATION_TASKS/010-task-splitting-milestones.md`
@@ -31,6 +30,7 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## BLOCKED / USER_PERMISSION_WAIT
 
+- `IMPLEMENTATION_TASKS/claude-cli-runtime-preflight-reevaluation.md`
 - `IMPLEMENTATION_TASKS/101-live-sol-ab.md`
 - `IMPLEMENTATION_TASKS/102-model-routing-redesign.md`
 - `IMPLEMENTATION_TASKS/103-compaction-threshold-change.md`
@@ -41,14 +41,14 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 ## 現在のGit境界
 
 - branch: `main`
-- implementation baseline: Claude CLI compatibility preflight PoC commit（current HEAD）
-- metadata boundary: preflight PoCとSol最小採用判断をHistoryへ移行し完了task fileを削除。Codex-facing compact structured resultをACTIVEへ昇格したcommit同期境界
+- implementation baseline: Codex-facing compact structured result commit（current HEAD）
+- metadata boundary: Task 006をHistoryへ移行して完了task fileを削除し、fulfilled dependencyを後続taskから除去。machine-only legacy cleanupをACTIVEへ昇格した完了同期境界
 - push: 禁止
 
 ## 現在の停止理由
 
-Codex-facing compact structured resultは未着手。先行preflight PoCはtest-onlyでruntime install対象外。
+Codex-facing compact structured resultの本配置とinstalled-state検証まで完了。machine-only legacy cleanupは未着手。
 
 ## 次の親Codex操作
 
-ACTIVE taskのOriginal instruction・Amendments・Resolved references・Contractを再読し、新sessionでCodex-facing compact structured resultを開始する。
+ACTIVE taskのOriginal instruction・Amendments・Resolved references・Contractを再読し、machine-only legacy cleanupを新sessionで開始する。

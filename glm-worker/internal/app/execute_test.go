@@ -340,7 +340,7 @@ func TestRunUsesInjectedDependencies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "STATUS: PASS") {
+	if !strings.Contains(out.String(), `"status":"PASS"`) {
 		t.Fatalf("packetが指定stdoutへ出力されていません: %q", out.String())
 	}
 }

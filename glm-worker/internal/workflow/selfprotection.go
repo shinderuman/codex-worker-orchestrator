@@ -97,6 +97,8 @@ func IsCriticalPath(path string) (bool, string) {
 		return true, "implementation-tasks"
 	case strings.HasSuffix(path, "_test.go"):
 		return false, "test"
+	case strings.Contains(path, "testdata/"):
+		return false, "test-fixture"
 	case strings.HasPrefix(path, "tests/"), strings.HasPrefix(path, "glm-worker/scripts/"):
 		return false, "test-harness"
 	}

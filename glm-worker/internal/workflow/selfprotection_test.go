@@ -81,6 +81,7 @@ func TestIsCriticalPath(t *testing.T) {
 		{"gitignore repo metadata", ".gitignore", false, "repo-metadata"},
 		{"install smoke harness", "tests/install_smoke.sh", false, "test-harness"},
 		{"isolation smoke harness", "glm-worker/scripts/isolation-smoke.sh", false, "test-harness"},
+		{"runner testdata fixture excluded", "glm-worker/internal/runner/testdata/claude-help-2.1.226.txt", false, "test-fixture"},
 		{"nested AGENTS outside repo root contract", "docs/AGENTS.md", false, ""},
 		{"unclassified future tool stays low until classified", "tools/newtool/main.go", false, ""},
 		{"empty path", "", false, ""},
@@ -310,7 +311,7 @@ func TestSelfProtectionEscalatesLowWorkerToHighRiskReviewer(t *testing.T) {
 		t.Fatalf("初回reviewerはHighRiskReviewerModelへ昇格すべき: %#v", r.models)
 	}
 	review := st.ReadOr("last-review", "")
-	if !strings.Contains(review, "STATUS: NEEDS_SOL_REVIEW") || !strings.Contains(review, "RISK: HIGH") {
+	if !strings.Contains(review, `"status":"NEEDS_SOL_REVIEW"`) || !strings.Contains(review, `"risk":"HIGH"`) {
 		t.Fatalf("risk floor強制packetでない: %s", review)
 	}
 }
@@ -511,7 +512,7 @@ func TestSelfProtectionResumePreservesSavedHighFloor(t *testing.T) {
 		t.Fatalf("保存HIGHはresume後もPASSを拒否すべき: status=%q", st.TaskStatus())
 	}
 	review := st.ReadOr("last-review", "")
-	if !strings.Contains(review, "STATUS: NEEDS_SOL_REVIEW") || !strings.Contains(review, "RISK: HIGH") {
+	if !strings.Contains(review, `"status":"NEEDS_SOL_REVIEW"`) || !strings.Contains(review, `"risk":"HIGH"`) {
 		t.Fatalf("risk floor強制packetでない: %s", review)
 	}
 	if strings.Join(r.models, ",") != "sonnet,sonnet" {

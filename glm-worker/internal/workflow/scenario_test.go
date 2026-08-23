@@ -829,30 +829,25 @@ func validateTypedResult(result packet.Result) error {
 	return packet.ValidateReviewerResult(result)
 }
 
-// lastPacketFromOutputはwrapper stdoutの表示行(KEY: value)からtyped結果を復元する。
-// 表示の`TARGETS: none`は空配列と予約値none sentinel(旧protocolの`TARGETS: none`値)の
-// どちらにも同じ文字列でrenderされるため、契約検証ではsentinelへ読み替える。
-// sentinel不許容のNEEDS_SOL_REVIEWはこの表示で受理されないため読み替えは無害。
+// lastPacketFromOutputはwrapper stdoutのmachine protocol 1行(compact JSON)から
+// typed結果を復元する。emitResultだけがstdoutへ書くため、最終の空でない行が結果本体。
+// 旧表示形式の`TARGETS: none`読み替えは、空配列がkey省略で表現されるmachine JSONでは不要。
 func lastPacketFromOutput(t *testing.T, out string) packet.Result {
 	t.Helper()
 	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
-	emitted := make([]string, 0, len(lines))
-	for _, ln := range lines {
-		if strings.TrimSpace(ln) != "" {
-			emitted = append(emitted, ln)
+	emitted := ""
+	for i := len(lines) - 1; i >= 0; i-- {
+		if strings.TrimSpace(lines[i]) != "" {
+			emitted = strings.TrimSpace(lines[i])
+			break
 		}
 	}
-	if len(emitted) == 0 {
+	if emitted == "" {
 		t.Fatalf("no emitted result in output:\n%s", out)
 	}
-	value, err := packet.FromDisplayLines(emitted)
+	value, err := packet.ParseStructured([]byte(emitted))
 	if err != nil {
-		t.Fatalf("emitted result is not display lines: %v:\n%s", err, out)
-	}
-	for _, ln := range emitted {
-		if ln == "TARGETS: none" && value.Targets == nil {
-			value.Targets = []string{"none"}
-		}
+		t.Fatalf("emitted result is not machine JSON: %v:\n%s", err, out)
 	}
 	return value
 }

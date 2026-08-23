@@ -88,7 +88,7 @@ func TestMultiRepositoryProcessIsolation(t *testing.T) {
 
 	env.setStubMode(t, env.stubA, "success")
 	resumed := env.run(t, env.repoA, "--resume")
-	if resumed.code != 0 || !strings.Contains(resumed.stdout, "STATUS: PASS") {
+	if resumed.code != 0 || !strings.Contains(resumed.stdout, `"status":"PASS"`) {
 		t.Fatalf("rate-limit resumeが完結しません: code=%d stdout=%s stderr=%s", resumed.code, resumed.stdout, resumed.stderr)
 	}
 	taskA2 := readStateFile(t, stateA, "task.id")
@@ -456,7 +456,7 @@ func (e *multiRepoEnv) run(t *testing.T, repo string, args ...string) multiRepoR
 func (e *multiRepoEnv) runTaskToPass(t *testing.T, repo string, instruction string) string {
 	t.Helper()
 	result := e.run(t, repo, instruction)
-	if result.code != 0 || !strings.Contains(result.stdout, "STATUS: PASS") {
+	if result.code != 0 || !strings.Contains(result.stdout, `"status":"PASS"`) {
 		t.Fatalf("repo %sのtaskがPASS完結しません: code=%d stdout=%s stderr=%s", repo, result.code, result.stdout, result.stderr)
 	}
 	return readStateFile(t, e.waitStateDir(t, repo, nil), "task.id")

@@ -2,6 +2,7 @@ package packet
 
 import (
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -299,6 +300,125 @@ func TestResultDisplayLines(t *testing.T) {
 	reviewDisplay := review.DisplayLines()
 	if reviewDisplay[len(reviewDisplay)-1] != "SOL_QUESTION: q" {
 		t.Fatalf("SOL_QUESTION must render last: %v", reviewDisplay)
+	}
+}
+
+// TestMachineJSONIsCompactStatusScopedLineはmachine protocolの契約を固定する。
+// 契約fieldだけを1行compact JSONへ出し、契約外field・空field・空配列key・HTML escape・
+// 末尾改行を出さない。schema語彙と同じkeyのためParseStructuredでroundtripする。
+func TestMachineJSONIsCompactStatusScopedLine(t *testing.T) {
+	result := implementedResult()
+	result.Targets = []string{"a.go:f", "b.go:g"}
+	result.Artifacts = []string{"/tmp/report.md"}
+	data, err := result.MachineJSON()
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	want := `{"artifacts":["/tmp/report.md"],"requirement_coverage":"c","risk":"LOW","status":"IMPLEMENTED","summary":"s","targets":["a.go:f","b.go:g"],"tests":"t","unverified":"none"}`
+	if string(data) != want {
+		t.Fatalf("machine JSON =\n%s\nwant\n%s", data, want)
+	}
+	if strings.Contains(string(data), "\n") {
+		t.Fatalf("machine JSON must be single line: %s", data)
+	}
+	if result.ByteSize() != len(data) {
+		t.Fatalf("ByteSize = %d want %d", result.ByteSize(), len(data))
+	}
+
+	// 契約外statusのfield・空配列・sol_question(worker status)はkeyごと出さない。
+	noise := implementedResult()
+	noise.Decision = "none"
+	noise.Evidence = "n/a"
+	noise.Options = "https://claude.ai/null"
+	noise.Recommendation = "r"
+	noise.TestObligations = "t"
+	noise.SolQuestion = "q"
+	data, err = noise.MachineJSON()
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if strings.Contains(string(data), "decision") || strings.Contains(string(data), "sol_question") ||
+		strings.Contains(string(data), "targets") || strings.Contains(string(data), "artifacts") {
+		t.Fatalf("契約外field・空配列keyがmachine JSONへ混入: %s", data)
+	}
+
+	// reviewer statusのsol_questionだけ出す。HTML escape無効で<>&をそのまま保つ。
+	review := passResult()
+	review.Status = StatusNeedsSolReview
+	review.Risk = RiskHigh
+	review.SolQuestion = "a<b & c>"
+	data, err = review.MachineJSON()
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if !strings.Contains(string(data), `"sol_question":"a<b & c>"`) {
+		t.Fatalf("sol_questionがHTML escape無しで出力されていない: %s", data)
+	}
+}
+
+// TestSolQuestionIsNeedsSolReviewOnlyはsol_questionをNEEDS_SOL_REVIEWだけの契約fieldへ
+// 固定する。PASS/FIX_REQUIREDへmodelが混入させた値はmachine JSON・人間向けprojectionの
+// 両面でkeyごと除外される(field audit実測: PASS 10件中1件の混入)。
+func TestSolQuestionIsNeedsSolReviewOnly(t *testing.T) {
+	for _, status := range []Status{StatusPass, StatusFixRequired} {
+		result := passResult()
+		result.Status = status
+		if status == StatusFixRequired {
+			result.Risk = RiskHigh
+		}
+		result.SolQuestion = "injected question"
+		data, err := result.MachineJSON()
+		if err != nil {
+			t.Fatalf("%s: err = %v", status, err)
+		}
+		if strings.Contains(string(data), "sol_question") {
+			t.Fatalf("%s: 混入sol_questionがmachine JSONへ流出: %s", status, data)
+		}
+		for _, line := range result.DisplayLines() {
+			if strings.HasPrefix(line, "SOL_QUESTION") {
+				t.Fatalf("%s: 混入sol_questionがprojectionへ流出: %s", status, line)
+			}
+		}
+	}
+}
+
+// TestMachineJSONRoundTripはmachine protocol行がParseStructuredで同一のtyped結果へ
+// 戻ることを保証する。親Codex・次のmodel呼出・state保存が同じ形式を対称に扱える根拠。
+func TestMachineJSONRoundTrip(t *testing.T) {
+	for name, result := range map[string]Result{
+		"implemented": implementedResult(),
+		"decision": {
+			Status:          StatusNeedsSolDecision,
+			Risk:            RiskHigh,
+			Decision:        "d",
+			Evidence:        "e",
+			Options:         "o",
+			Recommendation:  "r",
+			TestObligations: "t",
+			Targets:         []string{"none"},
+		},
+		"pass":   passResult(),
+		"review": {Status: StatusNeedsSolReview, Risk: RiskHigh, Summary: "s", RequirementCoverage: "c", Invariants: "i", TestEvidence: "e", Issues: "n", ResidualRisk: "r", Targets: []string{"a.go"}, SolQuestion: "q"},
+	} {
+		data, err := result.MachineJSON()
+		if err != nil {
+			t.Fatalf("%s: err = %v", name, err)
+		}
+		parsed, err := ParseStructured(data)
+		if err != nil {
+			t.Fatalf("%s: parse err = %v", name, err)
+		}
+		original, err := json.Marshal(result)
+		if err != nil {
+			t.Fatalf("%s: marshal err = %v", name, err)
+		}
+		reparsed, err := ParseStructured(original)
+		if err != nil {
+			t.Fatalf("%s: baseline parse err = %v", name, err)
+		}
+		if !reflect.DeepEqual(parsed, reparsed) {
+			t.Fatalf("%s: roundtrip mismatch:\nmachine=%s\nstruct=%s", name, data, original)
+		}
 	}
 }
 

@@ -68,7 +68,10 @@ type TaskStats struct {
 	// PacketCompactionsは旧テキストPACKET protocolの構造欠陥再圧縮回数。structured output
 	// 移行後は新規に計上されず、旧archive読込と時系列比較のためだけ残す。
 	PacketCompactions int `json:"packet_compactions"`
-	SolPacketBytes    int `json:"sol_packet_bytes"`
+	// SolPacketBytesは親Solへ実際にemitした受理結果payloadの累積byte数。format非依存の
+	// stable semanticで、旧KEY行表示からmachine JSONへの切替後は実際の新payloadを計る。
+	// 縦断比較はprotocol切替commit境界を区別すること。
+	SolPacketBytes int `json:"sol_packet_bytes"`
 	// ResultCorrectionsはtyped結果の意味検証不合格後に同一sessionで1回だけ実行した
 	// 修正再依頼回数。StructuredRetryExhaustedはCLI内部のschema適合retry枯渇回数。
 	ResultCorrections          int            `json:"result_corrections,omitempty"`
@@ -401,6 +404,12 @@ func (s *StateStore) RecordProbeOutcome(outcome string) {
 	})
 }
 
+// RecordSolResultは親Solへ実際にemitした受理結果payloadの観測を記録する。
+// SolPacketBytesはformat非依存のstable semantic「親Solへ実際にemitした受理結果
+// payloadのbyte数」であり、emit形式が旧KEY行表示からmachine JSON 1行へ変わっても
+// 計測対象を実際の新payloadへ追随させるだけ(導入時9e49dc4のemitPacket/ByteSizeと
+// 同じ契約)。両形式の縦断比較はprotocol切替commit境界を区別して行う。既存fieldの
+// 意味は変わらないためTaskStats versionは維持する。
 func (s *StateStore) RecordSolResult(value packet.Result, producer ParentReviewProducer) {
 	s.UpdateTaskStats(func(stats *TaskStats) {
 		stats.SolPacketBytes += value.ByteSize()

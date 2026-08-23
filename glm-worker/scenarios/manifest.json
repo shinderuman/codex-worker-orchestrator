@@ -184,7 +184,7 @@
     },
     {
       "path": "codex/instructions/glm-packets.md",
-      "sha256": "73b3f12ba818db5ae45615f395cb0a7f2774348bb312d9f14df8d817df325305",
+      "sha256": "9ba1ae0ad7c9f054d0753c6802224bf2effb552052319c62c2242ca9b8e0c001",
       "scenarios": [
         "failure-evidence-minimal-sanitized-evidence-packet-returns-to-sol",
         "failure-evidence-unobtainable-evidence-returns-undecidable-to-sol",

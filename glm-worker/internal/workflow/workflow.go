@@ -399,7 +399,7 @@ func (w *Workflow) ExecuteResume() error {
 					return nil
 				}
 				reviewResult := resolveRiskFloorReemit(result)
-				if err := w.state.Write("last-review", reviewResult.Display()); err != nil {
+				if err := w.writeLastReview(reviewResult); err != nil {
 					return err
 				}
 				return w.handleReviewResult(
@@ -431,7 +431,7 @@ func (w *Workflow) ExecuteResume() error {
 			if reemitStopped {
 				return nil
 			}
-			if err := w.state.Write("last-review", reviewResult.Display()); err != nil {
+			if err := w.writeLastReview(reviewResult); err != nil {
 				return err
 			}
 			return w.handleReviewResult(
@@ -534,10 +534,14 @@ func (w *Workflow) reviewUntilStable(
 	if err != nil {
 		return err
 	}
+	workerReport, err := machineReport(workerResult)
+	if err != nil {
+		return err
+	}
 	prompt := reviewerPrompt(
 		request,
 		decision,
-		workerResult,
+		workerReport,
 		reviewNumber,
 		w.state.BaselineDescription(),
 		activeTaskPath,
@@ -590,7 +594,7 @@ func (w *Workflow) reviewUntilStable(
 	if reemitStopped {
 		return nil
 	}
-	if err := w.state.Write("last-review", reviewResult.Display()); err != nil {
+	if err := w.writeLastReview(reviewResult); err != nil {
 		return err
 	}
 
@@ -639,7 +643,11 @@ func (w *Workflow) handleReviewResult(
 		if err != nil {
 			return err
 		}
-		prompt := automaticFixPrompt(request, decision, reviewResult, activeTaskPath)
+		reviewReport, err := machineReport(reviewResult)
+		if err != nil {
+			return err
+		}
+		prompt := automaticFixPrompt(request, decision, reviewReport, activeTaskPath)
 		reportOnly := isReportOnlyFix(reviewResult)
 		// TARGETS: PACKETはreviewerがコード・diffを正しいと確認しPACKET/reportの意味情報だけを
 		// 不足と指摘した予約marker。実装修正へ流さず報告再出力専用promptへ分岐する。
@@ -647,7 +655,7 @@ func (w *Workflow) handleReviewResult(
 		// report-only workerはReadOnly capabilityで実行し、開始前3軸snapshotを基準とした
 		// 前後同一性をprompt遵守ではなくwrapper側で強制する。
 		if reportOnly {
-			prompt = reportOnlyFixPrompt(request, decision, reviewResult, activeTaskPath)
+			prompt = reportOnlyFixPrompt(request, decision, reviewReport, activeTaskPath)
 			phase = fmt.Sprintf("worker-report-only-%d", nextAutoFixes)
 		}
 		checkpoint := state.ResumeCheckpoint{
@@ -1602,9 +1610,32 @@ func workerError(phase string, outputPath string, runErr error) error {
 	)
 }
 
+// machineReportはmachine protocol 1行をrenderする。最終stdout・reviewer/auto-fix
+// prompt埋め込み・state保存の機械経路は全てこれを通し、Display()の人間向けdiagnostic
+// projectionを機械経路へ混ぜない。
+func machineReport(value packet.Result) (string, error) {
+	data, err := value.MachineJSON()
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+func (w *Workflow) writeLastReview(value packet.Result) error {
+	report, err := machineReport(value)
+	if err != nil {
+		return err
+	}
+	return w.state.Write("last-review", report)
+}
+
 func (w *Workflow) emitResult(value packet.Result) error {
+	report, err := machineReport(value)
+	if err != nil {
+		return err
+	}
 	w.state.RecordSolResult(value, w.lastProducer)
-	fmt.Fprintln(w.output, value.Display())
+	fmt.Fprintln(w.output, report)
 	return nil
 }
 

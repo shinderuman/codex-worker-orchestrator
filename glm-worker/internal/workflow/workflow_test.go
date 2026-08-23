@@ -587,10 +587,10 @@ func TestExecuteEmitsAcceptedResultExactlyOnce(t *testing.T) {
 	if err := w.ExecuteNewTask("request"); err != nil {
 		t.Fatal(err)
 	}
-	if got := strings.Count(buf.String(), "STATUS: "); got != 1 {
+	if got := strings.Count(buf.String(), `"status":"`); got != 1 {
 		t.Fatalf("受理結果の出力回数 = %d\n%s", got, buf.String())
 	}
-	if strings.Contains(buf.String(), "STATUS: PASS") || strings.Contains(buf.String(), "SUMMARY: done") {
+	if strings.Contains(buf.String(), `"status":"PASS"`) || strings.Contains(buf.String(), `"summary":"done"`) {
 		t.Fatalf("旧応答が最終stdoutへ混入しています: %s", buf.String())
 	}
 	if st.TaskStatus() != state.TaskStatusWaitingSolReview {
@@ -601,6 +601,31 @@ func TestExecuteEmitsAcceptedResultExactlyOnce(t *testing.T) {
 	}
 	if strings.Join(r.models, ",") != "opus,opus,sonnet,sonnet" {
 		t.Fatalf("models = %#v", r.models)
+	}
+}
+
+// TestEmitResultRecordsEmittedPayloadBytesはSolPacketBytesのstable semantic
+// 「親Solへ実際にemitした受理結果payloadのbyte数」をproduction経路で固定する。
+// 計測対象はstdoutへ出した受理結果payloadそのものであり、protocol形式が旧KEY行から
+// machine JSONへ変わってもこの等式だけは保たれる(縦断比較はprotocol境界を区別)。
+func TestEmitResultRecordsEmittedPayloadBytes(t *testing.T) {
+	st := newStateStoreT(t)
+	r := &scriptedRunner{steps: []runnerStep{
+		{output: implementedPacket("done")},
+		{output: passPacket()},
+	}}
+	var out bytes.Buffer
+	w := newWorkflowTWithOutput(t, st, r, &out)
+
+	if err := w.ExecuteNewTask("request"); err != nil {
+		t.Fatal(err)
+	}
+	emitted := strings.TrimRight(out.String(), "\n")
+	if !strings.Contains(emitted, `"status":"PASS"`) {
+		t.Fatalf("受理結果がstdoutへ出ていません: %s", out.String())
+	}
+	if stats := currentStats(t, st); stats.SolPacketBytes != len(emitted) {
+		t.Fatalf("SolPacketBytes = %d want %d(stdout payload bytes):\n%s", stats.SolPacketBytes, len(emitted), out.String())
 	}
 }
 
@@ -1657,7 +1682,7 @@ func TestFixRequiredWithoutTargetsCorrectsBeforeAutoFix(t *testing.T) {
 		t.Fatalf("修正再依頼promptが選ばれていません: %s", r.prompts[2])
 	}
 	autoFix := r.prompts[3]
-	if !strings.Contains(autoFix, "TARGETS: glm-worker/internal/state/store.go:Read") {
+	if !strings.Contains(autoFix, `"targets":["glm-worker/internal/state/store.go:Read"]`) {
 		t.Fatalf("auto-fix promptへ修正対象targetsが伝わっていません: %s", autoFix)
 	}
 	for i, prompt := range r.prompts {
@@ -1705,7 +1730,7 @@ func TestNeedsSolDecisionWithoutTargetsCorrectsBeforeParentDispatch(t *testing.T
 	if st.TaskStatus() != state.TaskStatusWaitingDecision || !st.Exists("pending-decision") {
 		t.Fatalf("decision待ち状態へ遷移していません: status=%q pending=%v", st.TaskStatus(), st.Exists("pending-decision"))
 	}
-	if !strings.Contains(emitted.String(), "STATUS: NEEDS_SOL_DECISION") || !strings.Contains(emitted.String(), "TARGETS: t") {
+	if !strings.Contains(emitted.String(), `"status":"NEEDS_SOL_DECISION"`) || !strings.Contains(emitted.String(), `"targets":["t"]`) {
 		t.Fatalf("親境界の結果packetへ修正後targetsが伝わっていません: %s", emitted.String())
 	}
 	taskID, _ := st.TaskID()
@@ -1747,7 +1772,7 @@ func TestFixRequiredBlankTargetsElementCorrectsBeforeAutoFix(t *testing.T) {
 		t.Fatalf("修正再依頼promptへ要素違反が伝わっていません: %s", r.prompts[2])
 	}
 	autoFix := r.prompts[3]
-	if !strings.Contains(autoFix, "TARGETS: glm-worker/internal/state/store.go:Read") {
+	if !strings.Contains(autoFix, `"targets":["glm-worker/internal/state/store.go:Read"]`) {
 		t.Fatalf("auto-fix promptへ修正対象targetsが伝わっていません: %s", autoFix)
 	}
 	for i, prompt := range r.prompts {
@@ -1791,10 +1816,10 @@ func TestNeedsSolDecisionMixedNoneTargetsCorrectsBeforeParentDispatch(t *testing
 	if st.TaskStatus() != state.TaskStatusWaitingDecision || !st.Exists("pending-decision") {
 		t.Fatalf("decision待ち状態へ遷移していません: status=%q pending=%v", st.TaskStatus(), st.Exists("pending-decision"))
 	}
-	if !strings.Contains(emitted.String(), "STATUS: NEEDS_SOL_DECISION") || !strings.Contains(emitted.String(), "TARGETS: t") {
+	if !strings.Contains(emitted.String(), `"status":"NEEDS_SOL_DECISION"`) || !strings.Contains(emitted.String(), `"targets":["t"]`) {
 		t.Fatalf("親境界の結果packetへ修正後targetsが伝わっていません: %s", emitted.String())
 	}
-	if strings.Contains(emitted.String(), "TARGETS: none;") {
+	if strings.Contains(emitted.String(), `"none"`) {
 		t.Fatalf("none混在targetsが親境界へ流出しています: %s", emitted.String())
 	}
 	taskID, _ := st.TaskID()
@@ -1834,7 +1859,7 @@ func TestNeedsSolReviewNoneElementCorrectsBeforeSolReviewDispatch(t *testing.T) 
 		t.Fatalf("status = %q want waiting-sol-review", st.TaskStatus())
 	}
 	review := st.ReadOr("last-review", "")
-	if !strings.Contains(review, "TARGETS: t") || strings.Contains(review, "TARGETS: none") {
+	if !strings.Contains(review, `"targets":["t"]`) || strings.Contains(review, "none") {
 		t.Fatalf("Sol境界のreview packetへ正規targetsだけが伝わっていません: %s", review)
 	}
 	taskID, _ := st.TaskID()
@@ -1866,13 +1891,13 @@ func TestRiskFloorRejectsPassOnHighRiskWorker(t *testing.T) {
 		t.Fatalf("HIGH risk workerへのreviewer PASSを拒否すべき: status=%q", st.TaskStatus())
 	}
 	review := st.ReadOr("last-review", "")
-	if !strings.Contains(review, "STATUS: NEEDS_SOL_REVIEW") || !strings.Contains(review, "RISK: HIGH") {
+	if !strings.Contains(review, `"status":"NEEDS_SOL_REVIEW"`) || !strings.Contains(review, `"risk":"HIGH"`) {
 		t.Fatalf("risk floor強制packetでない: %s", review)
 	}
 	if strings.Contains(review, "STATUS: PASS") {
 		t.Fatalf("PASSが通っている: %s", review)
 	}
-	if !strings.Contains(review, "SUMMARY: review") {
+	if !strings.Contains(review, `"summary":"review"`) {
 		t.Fatalf("reviewer自身の再出力NEEDS_SOL_REVIEWを採用すべき(捏造でない): %s", review)
 	}
 	if len(r.prompts) != 3 || !strings.Contains(r.prompts[2], "NEEDS_SOL_REVIEW (RISK: HIGH) だけ") {
@@ -1908,10 +1933,10 @@ func TestRiskFloorRejectsPassAfterDecision(t *testing.T) {
 		t.Fatalf("decision後のreviewer PASSを拒否すべき: status=%q", st.TaskStatus())
 	}
 	review := st.ReadOr("last-review", "")
-	if !strings.Contains(review, "STATUS: NEEDS_SOL_REVIEW") || !strings.Contains(review, "RISK: HIGH") {
+	if !strings.Contains(review, `"status":"NEEDS_SOL_REVIEW"`) || !strings.Contains(review, `"risk":"HIGH"`) {
 		t.Fatalf("risk floor強制packetでない: %s", review)
 	}
-	if !strings.Contains(review, "SUMMARY: review") {
+	if !strings.Contains(review, `"summary":"review"`) {
 		t.Fatalf("reviewer自身の再出力を採用すべき: %s", review)
 	}
 	if strings.Join(r.models, ",") != "opus,sonnet,sonnet" {
@@ -1937,10 +1962,10 @@ func TestRiskFloorRejectsPassAfterAutoFix(t *testing.T) {
 		t.Fatalf("auto-fix後のreviewer PASSを拒否すべき: status=%q", st.TaskStatus())
 	}
 	review := st.ReadOr("last-review", "")
-	if !strings.Contains(review, "STATUS: NEEDS_SOL_REVIEW") || !strings.Contains(review, "RISK: HIGH") {
+	if !strings.Contains(review, `"status":"NEEDS_SOL_REVIEW"`) || !strings.Contains(review, `"risk":"HIGH"`) {
 		t.Fatalf("risk floor強制packetでない: %s", review)
 	}
-	if !strings.Contains(review, "SUMMARY: review") {
+	if !strings.Contains(review, `"summary":"review"`) {
 		t.Fatalf("reviewer自身の再出力を採用すべき: %s", review)
 	}
 	if strings.Join(r.models, ",") != "opus,haiku,opus,sonnet,sonnet" {
@@ -1973,10 +1998,10 @@ func TestRiskFloorRejectsPassAfterExplicitFix(t *testing.T) {
 		t.Fatalf("explicit fix後のreviewer PASSを拒否すべき: status=%q", st.TaskStatus())
 	}
 	review := st.ReadOr("last-review", "")
-	if !strings.Contains(review, "STATUS: NEEDS_SOL_REVIEW") || !strings.Contains(review, "RISK: HIGH") {
+	if !strings.Contains(review, `"status":"NEEDS_SOL_REVIEW"`) || !strings.Contains(review, `"risk":"HIGH"`) {
 		t.Fatalf("risk floor強制packetでない: %s", review)
 	}
-	if !strings.Contains(review, "SUMMARY: review") {
+	if !strings.Contains(review, `"summary":"review"`) {
 		t.Fatalf("reviewer自身の再出力を採用すべき: %s", review)
 	}
 	if strings.Join(r.models, ",") != "opus,sonnet,sonnet" {
@@ -2030,10 +2055,10 @@ func TestRiskFloorRejectsPassAfterResume(t *testing.T) {
 		t.Fatalf("resume後のreviewer PASSを拒否すべき: status=%q", st.TaskStatus())
 	}
 	review := st.ReadOr("last-review", "")
-	if !strings.Contains(review, "STATUS: NEEDS_SOL_REVIEW") || !strings.Contains(review, "RISK: HIGH") {
+	if !strings.Contains(review, `"status":"NEEDS_SOL_REVIEW"`) || !strings.Contains(review, `"risk":"HIGH"`) {
 		t.Fatalf("risk floor強制packetでない: %s", review)
 	}
-	if !strings.Contains(review, "SUMMARY: review") {
+	if !strings.Contains(review, `"summary":"review"`) {
 		t.Fatalf("reviewer自身の再出力を採用すべき: %s", review)
 	}
 	if strings.Join(r.models, ",") != "sonnet,sonnet" {
@@ -2056,7 +2081,7 @@ func TestRiskFloorAllowsLowRiskPass(t *testing.T) {
 		t.Fatalf("LOW risk通常PASSは完遂すべき: status=%q", st.TaskStatus())
 	}
 	review := st.ReadOr("last-review", "")
-	if !strings.Contains(review, "STATUS: PASS") || !strings.Contains(review, "RISK: LOW") {
+	if !strings.Contains(review, `"status":"PASS"`) || !strings.Contains(review, `"risk":"LOW"`) {
 		t.Fatalf("PASS/LOWが保持されるべき: %s", review)
 	}
 	if strings.Join(r.models, ",") != "opus,haiku" {
@@ -2080,13 +2105,13 @@ func TestRiskFloorReemitFailClosedOnRepeatedPass(t *testing.T) {
 		t.Fatalf("再違反時はfail closedでSol確認待ちへ: status=%q", st.TaskStatus())
 	}
 	review := st.ReadOr("last-review", "")
-	if !strings.Contains(review, "STATUS: NEEDS_SOL_REVIEW") || !strings.Contains(review, "RISK: HIGH") {
+	if !strings.Contains(review, `"status":"NEEDS_SOL_REVIEW"`) || !strings.Contains(review, `"risk":"HIGH"`) {
 		t.Fatalf("fail closed packetでない: %s", review)
 	}
 	if !strings.Contains(review, "PASS") {
 		t.Fatalf("再違反のfail closed summaryは非許容STATUSを明示すべき: %s", review)
 	}
-	if strings.Contains(review, "REQUIREMENT_COVERAGE: covered") {
+	if strings.Contains(review, `"requirement_coverage":"covered"`) {
 		t.Fatalf("reviewerのPASS内容を捏造してはいけない: %s", review)
 	}
 	if len(r.prompts) != 3 {
@@ -2133,7 +2158,7 @@ func TestRiskFloorReemitResumeCompliant(t *testing.T) {
 		t.Fatalf("再出力resumeの準拠結果はSol確認待ちへ: status=%q", st.TaskStatus())
 	}
 	review := st.ReadOr("last-review", "")
-	if !strings.Contains(review, "SUMMARY: review") {
+	if !strings.Contains(review, `"summary":"review"`) {
 		t.Fatalf("reviewer自身の再出力NEEDS_SOL_REVIEWを採用すべき: %s", review)
 	}
 	if len(r.prompts) != 1 || !strings.Contains(r.prompts[0], "再開") {
@@ -2180,10 +2205,10 @@ func TestRiskFloorReemitResumeFailClosed(t *testing.T) {
 		t.Fatalf("再出力resumeの再違反もfail closedでSol確認待ちへ: status=%q", st.TaskStatus())
 	}
 	review := st.ReadOr("last-review", "")
-	if !strings.Contains(review, "STATUS: NEEDS_SOL_REVIEW") || !strings.Contains(review, "PASS") {
+	if !strings.Contains(review, `"status":"NEEDS_SOL_REVIEW"`) || !strings.Contains(review, "PASS") {
 		t.Fatalf("fail closed packetでない: %s", review)
 	}
-	if strings.Contains(review, "REQUIREMENT_COVERAGE: covered") {
+	if strings.Contains(review, `"requirement_coverage":"covered"`) {
 		t.Fatalf("reviewerのPASS内容を捏造してはいけない: %s", review)
 	}
 	if len(r.prompts) != 1 {

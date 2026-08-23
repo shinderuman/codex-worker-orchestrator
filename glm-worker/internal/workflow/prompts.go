@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -100,7 +99,7 @@ REVIEW_FEEDBACK:
 `, request, decision, previousReview, instruction, activeTaskPromptBlock(activeTaskPath))
 }
 
-func reviewerPrompt(request string, decision string, workerResult packet.Result, reviewNumber int, baseline string, activeTaskPath string) string {
+func reviewerPrompt(request string, decision string, workerReport string, reviewNumber int, baseline string, activeTaskPath string) string {
 	return fmt.Sprintf(`REVIEW_MODE: INDEPENDENT_REVIEW
 
 USER_REQUEST:
@@ -120,10 +119,10 @@ PRE_TASK_BASELINE:
 %s現在のworking treeを実際に独立確認して判定してください。
 過去sessionの記憶より現在のコードを優先してください。
 PRE_TASK_BASELINEのファイルはworker開始前の状態です。既存未コミット変更と今回変更を区別する必要がある場合に参照してください。
-`, request, decision, workerResult.Display(), reviewNumber, baseline, reviewerActiveTaskBlock(activeTaskPath))
+`, request, decision, workerReport, reviewNumber, baseline, reviewerActiveTaskBlock(activeTaskPath))
 }
 
-func automaticFixPrompt(request string, decision string, reviewResult packet.Result, activeTaskPath string) string {
+func automaticFixPrompt(request string, decision string, reviewReport string, activeTaskPath string) string {
 	return fmt.Sprintf(`MODE: APPLY_REVIEW_FIX
 
 ORIGINAL_USER_REQUEST:
@@ -138,13 +137,13 @@ INDEPENDENT_REVIEW:
 %s独立reviewerの指摘を修正してください。
 新しい要求を追加せず、元要求・既存Sol判断・レビュー指摘の範囲だけを変更してください。
 修正後に必要なテスト・lint・build・自己レビューまで行ってください。
-`, request, decision, reviewResult.Display(), activeTaskPromptBlock(activeTaskPath))
+`, request, decision, reviewReport, activeTaskPromptBlock(activeTaskPath))
 }
 
 // reportOnlyFixPromptはreviewerがコード・diffを正しいと確認し報告の意味情報だけを
 // 不足と指摘した場合の専用prompt。実装修正・調査・検証の再実行を禁止し、現在の結果とdiffに基づく
 // 報告の再出力だけを求める。通常のimplementation fix文言を含めない。
-func reportOnlyFixPrompt(request string, decision string, reviewResult packet.Result, activeTaskPath string) string {
+func reportOnlyFixPrompt(request string, decision string, reviewReport string, activeTaskPath string) string {
 	return fmt.Sprintf(`MODE: APPLY_REVIEW_FIX
 
 ORIGINAL_USER_REQUEST:
@@ -158,7 +157,7 @@ INDEPENDENT_REVIEW:
 
 %s独立reviewerはコードとdiffを正しいと確認し、報告へ圧縮された意味情報だけを不足と指摘しています。
 実装・working tree変更・追加調査・test/lint/build/self-reviewをやり直さず、現在の作業結果とdiffに基づいて報告だけを再出力してください。
-`, request, decision, reviewResult.Display(), activeTaskPromptBlock(activeTaskPath))
+`, request, decision, reviewReport, activeTaskPromptBlock(activeTaskPath))
 }
 
 // resultCorrectionPromptは意味検証不合格時の修正再依頼。schemaが構造を保証するため、

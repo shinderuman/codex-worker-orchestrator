@@ -15,7 +15,7 @@ const (
 	terminalPayloadHelperEnv     = "GLM_WORKER_TERMINAL_PAYLOAD_HELPER"
 	terminalPayloadRequestEnv    = "GLM_WORKER_TERMINAL_PAYLOAD_REQUEST"
 	terminalPayloadMarker        = "GLMTERM DELAYED MARKER PAYLOAD"
-	terminalPayloadPacketHead    = "STATUS: NEEDS_SOL_DECISION"
+	terminalPayloadPacketHead    = `"status":"NEEDS_SOL_DECISION"`
 	terminalPayloadCapturePrefix = "GLM_TERMINAL_CAPTURED"
 )
 
