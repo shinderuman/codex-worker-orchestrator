@@ -746,7 +746,7 @@ func TestExecuteExplicitFixRejectsCompletedTask(t *testing.T) {
 	}
 
 	w := newWorkflowT(t, st, &scriptedRunner{})
-	err := w.ExecuteExplicitFix("fix")
+	err := w.ExecuteExplicitFix("fix", "")
 	if err == nil || !strings.Contains(err.Error(), "only available after NEEDS_SOL_REVIEW") {
 		t.Fatalf("completed taskの--fixを拒否する必要があります: %v", err)
 	}
@@ -894,7 +894,7 @@ func TestExecuteExplicitFixContinuesSolReviewTask(t *testing.T) {
 	}}
 	w := newWorkflowT(t, st, r)
 
-	if err := w.ExecuteExplicitFix("境界値を修正する"); err != nil {
+	if err := w.ExecuteExplicitFix("境界値を修正する", ""); err != nil {
 		t.Fatal(err)
 	}
 	if st.TaskStatus() != state.TaskStatusWaitingSolReview {
@@ -1966,7 +1966,7 @@ func TestRiskFloorRejectsPassAfterExplicitFix(t *testing.T) {
 	}}
 	w := newWorkflowT(t, st, r)
 
-	if err := w.ExecuteExplicitFix("境界値を修正する"); err != nil {
+	if err := w.ExecuteExplicitFix("境界値を修正する", ""); err != nil {
 		t.Fatal(err)
 	}
 	if st.TaskStatus() != state.TaskStatusWaitingSolReview {

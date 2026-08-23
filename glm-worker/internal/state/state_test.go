@@ -136,9 +136,9 @@ func TestTaskStatsRecordCounters(t *testing.T) {
 	st.RecordRateLimit("haiku")
 	st.RecordResultCorrection()
 	st.RecordStructuredRetryExhausted()
-	st.RecordSolResult(packet.Result{Status: packet.StatusPass, Risk: packet.RiskLow})
-	st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolDecision, Risk: packet.RiskHigh})
-	st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolReview, Risk: packet.RiskHigh})
+	st.RecordSolResult(packet.Result{Status: packet.StatusPass, Risk: packet.RiskLow}, ParentReviewProducer{})
+	st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolDecision, Risk: packet.RiskHigh}, ParentReviewProducer{})
+	st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolReview, Risk: packet.RiskHigh}, ParentReviewProducer{})
 
 	stats, err := st.loadTaskStats()
 	if err != nil {

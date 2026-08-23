@@ -88,6 +88,9 @@ type ModelCallLog struct {
 	RetryElapsedMS         int64               `json:"retry_elapsed_ms,omitempty"`
 	ResumeSource           string              `json:"resume_source,omitempty"`
 	Snapshot               *SnapshotDiagnostic `json:"snapshot,omitempty"`
+	// ParentOriginはparent fix outcome event(record)の--origin宣言値。fix以外のeventと
+	// task/probe呼出recordでは空のまま(未観測)。
+	ParentOrigin string `json:"parent_origin,omitempty"`
 }
 
 // RecordModelCallLogは詳細ログを追記し、token集計をmirrorへ反映する。

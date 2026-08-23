@@ -44,6 +44,9 @@ type Workflow struct {
 	// currentResumeSourceはExecuteResumeが設定する再開理由(rate-limit/provider-unavailable)。
 	// resume直後のrunModel記録へ付与して使う。1コマンド実行で1回だけ設定される。
 	currentResumeSource string
+	// lastProducerは直近に成功したTask Work Callの識別。emitResultがterminal packetの
+	// parent review opportunityへ生成呼出を対応付けるために使う。
+	lastProducer state.ParentReviewProducer
 }
 
 // callDiagnosticsは1回のmodel呼出記録へ付与する診断情報。recordModelCallへ渡す。
@@ -190,6 +193,11 @@ func (w *Workflow) ExecuteDecision(decision string) error {
 			return err
 		}
 		w.state.RecordDecision()
+		// pending decision packetへの親回答をoutcome 1件へ確定する。gate前の再実行や
+		// 二重実行は未確定opportunityが既に無ければ計上しない(exactly-once)。
+		if _, err := w.state.RecordParentOutcome(state.ParentOutcomeDecision, ""); err != nil {
+			return err
+		}
 
 		prompt := decisionPrompt(request, decision, activeTaskPath)
 		checkpoint := state.ResumeCheckpoint{
@@ -213,7 +221,7 @@ func (w *Workflow) ExecuteDecision(decision string) error {
 	}))
 }
 
-func (w *Workflow) ExecuteExplicitFix(instruction string) error {
+func (w *Workflow) ExecuteExplicitFix(instruction, origin string) error {
 	return quietWhenParentFileGuardStopped(w.withTemp(func() error {
 		if w.state.Exists("pending-decision") {
 			return fmt.Errorf("STATUS: WORKER_ERROR\nERROR: task is waiting for Sol decision; resolve it before --fix")
@@ -233,6 +241,12 @@ func (w *Workflow) ExecuteExplicitFix(instruction string) error {
 			return err
 		}
 		w.state.RecordFix()
+		// 親reviewの差し戻しをoutcome 1件へ確定する。originは親が--originで宣言した値だけで、
+		// 未宣言はunknownに倒し本文や状況からの推定を行わない。同一fixの再実行は未確定
+		// opportunityが既に無ければ計上しない(exactly-once)。
+		if _, err := w.state.RecordParentOutcome(state.ParentOutcomeFix, origin); err != nil {
+			return err
+		}
 		// decision同様、ACTIVE解決fail closed後の修復再開ではstate未設定を検出して再解決する。
 		activeTaskPath, err := w.ensureActiveTaskPath("worker-explicit-fix")
 		if err != nil {
@@ -1030,6 +1044,7 @@ func (w *Workflow) runModel(checkpoint state.ResumeCheckpoint) (packet.Result, e
 		)
 	}
 	w.recordModelCall(checkpoint, runResult, startedAt, completedAt, "success", string(result.Status), nil, outputPath, callDiagnostics{reportedRisk: string(result.Risk)})
+	w.lastProducer = state.ParentReviewProducer{Role: string(checkpoint.Role), Model: checkpoint.Model}
 	return result, nil
 }
 
@@ -1588,7 +1603,7 @@ func workerError(phase string, outputPath string, runErr error) error {
 }
 
 func (w *Workflow) emitResult(value packet.Result) error {
-	w.state.RecordSolResult(value)
+	w.state.RecordSolResult(value, w.lastProducer)
 	fmt.Fprintln(w.output, value.Display())
 	return nil
 }

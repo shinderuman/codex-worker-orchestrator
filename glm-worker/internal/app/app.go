@@ -24,6 +24,7 @@ const (
 	ModeNewTask CommandMode = iota
 	ModeDecision
 	ModeFix
+	ModeAccept
 	ModeResume
 	ModeStatus
 	ModeWatch
@@ -45,6 +46,9 @@ type Command struct {
 	StdinBytes int64
 	// SHA256はstdin payloadの送信元が計算した期待値。空なら照合しない。
 	SHA256 string
+	// Originは--fix/--fix-stdinの--origin宣言値。fix originの有限集合のどれかで、
+	// 空は未宣言(unknown origin)を意味する。
+	Origin string
 	Verify VerifyArgs
 }
 
@@ -54,20 +58,28 @@ type VerifyArgs struct {
 	ThreadID string
 }
 
+// fixOriginUsageは--originが受け付けるfix origin有限集合の表示。
+const fixOriginUsage = "[--origin codex-review|glm-reviewer|user-amendment|external-review|metadata-repair]"
+
 func ParseCommand(args []string) (Command, error) {
 	if len(args) == 0 {
-		return Command{}, fmt.Errorf("usage: glm-worker <instruction> | --decision <decision> | --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix <instruction> | --fix-stdin <payload-bytes> [--sha256 <hex>] | --resume | --status | --watch [--verbose] | --timeline [task-id] | --convergence [task-id] | --stats | --reset | --eval-ab <run-dir>")
+		return Command{}, fmt.Errorf("usage: glm-worker <instruction> | --decision <decision> | --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix <instruction> %s | --fix-stdin <payload-bytes> [--sha256 <hex>] %s | --accept | --resume | --status | --watch [--verbose] | --timeline [task-id] | --convergence [task-id] | --stats | --reset | --eval-ab <run-dir>", fixOriginUsage, fixOriginUsage)
 	}
 
 	switch args[0] {
 	case "--decision":
 		return payloadCommand(ModeDecision, args, "usage: glm-worker --decision <decision>")
 	case "--decision-stdin":
-		return stdinPayloadCommand(ModeDecision, args, "usage: glm-worker --decision-stdin <payload-bytes> [--sha256 <hex>]")
+		return stdinPayloadCommand(ModeDecision, args, "usage: glm-worker --decision-stdin <payload-bytes> [--sha256 <hex>]", false)
 	case "--fix":
-		return payloadCommand(ModeFix, args, "usage: glm-worker --fix <instruction>")
+		return fixCommand(args)
 	case "--fix-stdin":
-		return stdinPayloadCommand(ModeFix, args, "usage: glm-worker --fix-stdin <payload-bytes> [--sha256 <hex>]")
+		return stdinPayloadCommand(ModeFix, args, fmt.Sprintf("usage: glm-worker --fix-stdin <payload-bytes> [--sha256 <hex>] %s", fixOriginUsage), true)
+	case "--accept":
+		if len(args) != 1 {
+			return Command{}, fmt.Errorf("usage: glm-worker --accept")
+		}
+		return Command{Mode: ModeAccept}, nil
 	case "--resume":
 		if len(args) != 1 {
 			return Command{}, fmt.Errorf("usage: glm-worker --resume")
@@ -147,8 +159,28 @@ func payloadCommand(mode CommandMode, args []string, usage string) (Command, err
 	return Command{Mode: mode, Payload: payload}, nil
 }
 
-func stdinPayloadCommand(mode CommandMode, args []string, usage string) (Command, error) {
-	if len(args) != 2 && len(args) != 4 {
+// fixCommandはargv modeの--fixを解析する。--originはinstructionより前の固定位置だけを
+// 受け付け、集合外値・instruction欠落はusage errorへfail closedする。
+func fixCommand(args []string) (Command, error) {
+	usage := fmt.Sprintf("usage: glm-worker --fix <instruction> %s", fixOriginUsage)
+	rest := args[1:]
+	origin := ""
+	if len(rest) > 0 && rest[0] == "--origin" {
+		if len(rest) < 2 || !state.ValidParentOrigin(rest[1]) {
+			return Command{}, fmt.Errorf("%s", usage)
+		}
+		origin = rest[1]
+		rest = rest[2:]
+	}
+	payload := strings.TrimSpace(strings.Join(rest, " "))
+	if payload == "" {
+		return Command{}, fmt.Errorf("%s", usage)
+	}
+	return Command{Mode: ModeFix, Payload: payload, Origin: origin}, nil
+}
+
+func stdinPayloadCommand(mode CommandMode, args []string, usage string, allowOrigin bool) (Command, error) {
+	if len(args) < 2 {
 		return Command{}, fmt.Errorf("%s", usage)
 	}
 
@@ -158,15 +190,34 @@ func stdinPayloadCommand(mode CommandMode, args []string, usage string) (Command
 	}
 
 	command := Command{Mode: mode, StdinBytes: payloadBytes}
-	if len(args) == 4 {
-		if args[2] != "--sha256" {
+	options := args[2:]
+	if len(options)%2 != 0 {
+		return Command{}, fmt.Errorf("%s", usage)
+	}
+	seenSHA256 := false
+	for index := 0; index < len(options); index += 2 {
+		switch options[index] {
+		case "--sha256":
+			if seenSHA256 {
+				return Command{}, fmt.Errorf("%s", usage)
+			}
+			digest, err := parsePayloadSHA256(options[index+1])
+			if err != nil {
+				return Command{}, fmt.Errorf("%s", usage)
+			}
+			command.SHA256 = digest
+			seenSHA256 = true
+		case "--origin":
+			if !allowOrigin || command.Origin != "" {
+				return Command{}, fmt.Errorf("%s", usage)
+			}
+			if !state.ValidParentOrigin(options[index+1]) {
+				return Command{}, fmt.Errorf("%s", usage)
+			}
+			command.Origin = options[index+1]
+		default:
 			return Command{}, fmt.Errorf("%s", usage)
 		}
-		digest, err := parsePayloadSHA256(args[3])
-		if err != nil {
-			return Command{}, fmt.Errorf("%s", usage)
-		}
-		command.SHA256 = digest
 	}
 	return command, nil
 }
@@ -309,6 +360,10 @@ func Execute(cmd Command, cfg config.AppConfig, rf RunnerFactory, stdout, stderr
 		return resetState(st, stdout)
 	}
 
+	if cmd.Mode == ModeAccept {
+		return parentAccept(st, stdout)
+	}
+
 	r := rf(cfg, st)
 	wf := workflow.NewWorkflow(cfg, st, r, stdout)
 
@@ -318,7 +373,7 @@ func Execute(cmd Command, cfg config.AppConfig, rf RunnerFactory, stdout, stderr
 	case ModeDecision:
 		return wf.ExecuteDecision(cmd.Payload)
 	case ModeFix:
-		return wf.ExecuteExplicitFix(cmd.Payload)
+		return wf.ExecuteExplicitFix(cmd.Payload, cmd.Origin)
 	case ModeResume:
 		return wf.ExecuteResume()
 	default:

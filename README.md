@@ -129,8 +129,9 @@ package間の依存は`app`から各機能へ向け、状態永続化とworkflow
 glm-worker "<新規タスク>"
 glm-worker --decision "<Sol判断>"
 glm-worker --decision-stdin <判断本文のUTF-8 byte数> [--sha256 <sha256 hex>]
-glm-worker --fix "<NEEDS_SOL_REVIEWへの修正指示>"
-glm-worker --fix-stdin <指示本文のUTF-8 byte数> [--sha256 <sha256 hex>]
+glm-worker --fix [--origin codex-review|glm-reviewer|user-amendment|external-review|metadata-repair] "<NEEDS_SOL_REVIEWへの修正指示>"
+glm-worker --fix-stdin <指示本文のUTF-8 byte数> [--sha256 <sha256 hex>] [--origin codex-review|glm-reviewer|user-amendment|external-review|metadata-repair]
+glm-worker --accept
 glm-worker --resume
 glm-worker --status
 glm-worker --watch "[--verbose]"
@@ -143,7 +144,8 @@ glm-worker --eval-ab "<A/B run dir>"
 
 - `--decision`は`NEEDS_SOL_DECISION`で停止した同一タスクを継続する。
 - `--decision-stdin`・`--fix-stdin`は本文をstdinから宣言byte数だけ読み取り、同じ継続・差戻し経路へ渡す。stdinがTTY/PTYのときはglm-worker自身が読み取り前にraw/noecho相当へ切り替え読み取り後に元のterminal stateへ復元するため、caller側の`stty`等の事前設定は不要。切り替え成功直後に固定marker行`GLM_STDIN_READY`をstderrへ1回だけ出すため、callerはこのmarker行を確認した直後に本文を1回だけ書く。marker未観測・marker行の重複・process先行終了では本文を送らずfail closedとする。marker行はtransport controlであり受理対象のtask本文へ含めない。stdinがpipe/fileのときはtermiosへ触れずmarkerも出さない。読み取り不足・`--sha256`不一致はstate変更・model呼出前にfail closedする。長文decision/fix本文の伝達はshell quotingを通さないこの経路を使い、`--decision`/`--fix`のargv埋込みは後方互換の短文用に残す。
-- `--fix`は`NEEDS_SOL_REVIEW`後だけ利用できる。
+- `--fix`は`NEEDS_SOL_REVIEW`後だけ利用できる。`--origin`は差戻し元の申告で、有限集合`codex-review`(親Codexがterminal packet受領後の最終reviewで新たに検出した差戻し)・`glm-reviewer`(GLM reviewerのterminal resultに既に記載された指摘を親が差し戻す場合)・`user-amendment`(user修正要求)・`external-review`(repo外review)・`metadata-repair`(parent管理metadata修復)のどれかを`--fix`/`--fix-stdin`に先行または対で渡す。集合外値はusage errorへfail closedし、未申告の`--fix`単独は新規検出かreviewer既記載か確定できない場合だけが該当し、推定せず`unknown` originとして計上して`codex-review`へ倒さない。
+- `--accept`はparent Codexがterminal packet(PASS・NEEDS_SOL_REVIEW等)を採用したときの観測記録専用commandで、model呼出・stateの実行状態変更・Git操作を行わない。対応するopportunityがopenしているときだけ`accepted` outcomeを1回だけ確定し、未open・再実行はno-op、`NEEDS_SOL_DECISION`待ちへの適用はfail closedする。
 - `--resume`はZ.ai 5時間上限またはprovider一時障害で停止した同一phase・session・checkpointを再開する。
 - `--status`と`--stats`は参照専用、`--reset`は現在の統計をarchiveして実行状態を消去する。
 - `--watch`は現在taskの受動event log(`events/<task ID>.jsonl`)を保存済み内容のread・tailだけで表示する参照専用command。provider/workerへの問い合わせ・AI呼出・repo lock・state書換を行わない。follow対象taskのauthoritative `task.status`が`active`を離れた時点(`waiting-decision`・`waiting-sol-review`・`complete`・`rate-limited`・`provider-unavailable`)・別taskへの切替時に残eventを表示して`WATCH_EXIT: task=<task ID> status=<status>`行を出力しexit 0する。event log消失時は従来どおり`EVENT_LOG_STATUS: removed`表示のみで終了する。`--verbose`を併用したときだけ既存表示に加えてlive tool状態(`LIVE`行)を表示する。task全体の経過時間・最後のmodel activityからの経過・現在実行中tool名とその経過・Bashなら実行command・tool入力のdescription/purpose・background task待機状態・直前に完了した長時間toolの種類と所要時間・直近のtool errorを、表示中のevent logとrunnerがlive受信stream eventから組み立てた瞬間snapshot(`events/<task ID>.live.json`)から定期的に再表示する。command等の長い本文はこの表示時だけtruncateし、event logのschema・retention・本文非保存方針は変更しない。Claude Code内部session JSONLは参照しない。
@@ -305,9 +307,12 @@ glm-worker --stats
 - model alias別provider-unavailable件数
 - risk floor件数(category別)、snapshot mismatch件数(軸別)、packet reject件数(reason別)、probe成功失敗
 - probe呼出数(`PROBE_CALLS`)、total AI call数(`TOTAL_AI_CALLS` = task呼出+probe呼出)、transient retry数
+- parent review outcome(`PARENT_OUTCOMES`: accepted・fix・decision・unknown)とfix origin(`PARENT_FIX_ORIGINS`: codex-review・glm-reviewer・user-amendment・external-review・metadata-repair・unknown)、outcomeのmodel alias別(`PARENT_OUTCOMES_BY_MODEL`)・risk別(`PARENT_OUTCOMES_BY_RISK`)内訳
+- fix outcomeの差し戻し後rework(`PARENT_FIX_REWORK`: origin別の呼出数・worker/reviewer呼出数・turn数・tree token・wall時間)とcoverage(`PARENT_FIX_REWORK_COVERAGE`)
 - 現在taskのartifact保存先
 
 新規タスク開始時に前タスクの統計をarchiveし、`--reset`時も現在値を破棄せずarchiveする。
+parent review観測はglm-worker側で観測できたparent操作の記録にすぎず、Codex本体のactual token usageでもDirect/orchestratedのA/B比較metricでもない。`--stats`の`PARENT_REVIEW_NOTE`行がこの限定を常時表示する。reviewer省略判断・model downgrade判断の根拠としてこの観測を単独では使わない。outcome確定境界はparentの明示操作(`--accept`・`--fix --origin`・`--decision`)とtask closeだけに限り、未観測のterminal packetをacceptedへ推定しない。各terminal packetはopportunityとしてopenし、outcome確定かtask close(unknown)で閉じるため、新binaryで実行したtaskでは`PASS`+`NEEDS_SOL_REVIEW`+`NEEDS_SOL_DECISION` packet総数とresolved outcome+open opportunityの総数が一致する。旧binary時代のarchiveはparent outcomeを持たず、補完も書き換えも行わない。
 `--stats`の`TELEMETRY_DIR`配下には、各呼出しのphase、role、alias、実モデル、effort、session、prompt、最終response、top-level usage、subagentを含むtree usage、所要時間、結果をJSONLで保持する。alias別token集計にはtree usageを用い、top-level turn数は別名で表示する。promptとresponse本文を保存したくない環境では`GLM_WORKER_TELEMETRY_CONTENT=false`を指定し、byte数とSHA-256、usageだけを残す。
 Task Work Call(worker/reviewerの本task呼出。transient障害からの本task再開実行を含む)とProvider Probe Callは`call_type`(task/probe/event)で区別する。task call数・実行時間・token/cost集計へprobeを混ぜず、probeは呼出数を`probe_outcome`/`PROBE_CALLS`へ別計上する。probeもClaude CLIが返すinput/output/cache token・cost・resolved model・API/wall durationをJSONL telemetryへ記録し、取得不能値は未観測(零値)のまま推測しない。
 statsとtelemetryのschemaはversion 3で、top-level集計だったversion 1に加え、model_callsへprobeを混ぜていたversion 2 statsとcall_typeを持たないversion 2 telemetryも`--stats`とtelemetry読込から除外する。旧値の移行・書き換え・混在は行わない。versionは既存fieldの意味やJSON名を変更するときだけ上げ、上げ時は旧version recordをfail-closedで読み飛ばす。新fieldのomitempty追加は後方互換のためversionを維持し、旧recordでの新field欠落は「未観測/not captured」(0件・一致・LOW等の意味値とは区別)として扱う。telemetry各recordはworker/reviewer報告risk、実効risk、risk floor source/category、worker_end/review_start/review_endのGit snapshot digest(HEAD・index・worktree。生diffやfile内容は保存しない)、snapshot mismatch軸、packet reject理由、provider障害分類、probe/retry試行と経過時間、resume source(rate-limit/provider-unavailable)を同じ呼出へ紐付けて記録し、`--stats`はrisk floor・snapshot mismatch・packet reject・probe outcomeの少数集計を表示する。

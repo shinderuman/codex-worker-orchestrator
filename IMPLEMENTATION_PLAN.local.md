@@ -8,11 +8,12 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/parent-review-outcome-telemetry.md`
+- `IMPLEMENTATION_TASKS/model-idle-activity-contract-followup.md`
 
 ## NEXT（優先順）
 
 - `IMPLEMENTATION_TASKS/005-multi-repository-isolation.md`
+- `IMPLEMENTATION_TASKS/claude-cli-compatibility-preflight-poc.md`
 - `IMPLEMENTATION_TASKS/006-codex-facing-compact-result.md`
 - `IMPLEMENTATION_TASKS/007-machine-only-legacy-cleanup.md`
 - `IMPLEMENTATION_TASKS/008-machine-protocol-measurement.md`
@@ -43,14 +44,14 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 ## 現在のGit境界
 
 - branch: `main`
-- implementation baseline: workflow telemetry improvement analysis completion commit（current HEAD）
-- metadata boundary: codex-config / media-backupの追加AI callなし基準値・Codex actual usage unknown・採用/保留判断をHistoryへ移行し、完了task fileを削除。parent review outcome telemetryをACTIVEへ昇格したsource-only境界
+- implementation baseline: parent review outcome telemetry implementation commit（current HEAD）
+- metadata boundary: parent review outcome telemetryをHistoryへ移行し完了task fileを削除。MODEL_IDLE activity contract follow-upをACTIVEへ昇格したcommit同期境界
 - push: 禁止
 
 ## 現在の停止理由
 
-workflow telemetry improvement analysisは完了。parent review outcome telemetryは未着手。
+MODEL_IDLE activity contract follow-upは未着手。parent review outcome telemetryは本配置とinstalled/source binary一致確認まで完了。
 
 ## 次の親Codex操作
 
-`parent-review-outcome-telemetry.md`のOriginal instruction・Amendments・Contractを再読し、Codex差し戻しと他originを分離する低cardinality観測を開始する。
+ACTIVE taskのOriginal instruction・Amendments・Resolved references・Contractを再読し、新sessionでMODEL_IDLE activity contract follow-upを開始する。

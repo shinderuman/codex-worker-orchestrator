@@ -40,6 +40,7 @@ func printStatus(st *state.StateStore, stdout io.Writer) error {
 	} else {
 		fmt.Fprintln(stdout, "PENDING_DECISION: no")
 	}
+	fmt.Fprintf(stdout, "PARENT_REVIEW_OPEN: %s\n", st.OpenParentReviewLabel())
 
 	logs, logErr := readStatusTelemetry(st, taskID)
 	printTaskDetail(st, taskID, stdout)
@@ -297,6 +298,10 @@ func printStats(st *state.StateStore, stdout io.Writer) error {
 		mergeIntMap(&aggregate.PacketRejectByCategory, stats.PacketRejectByCategory)
 		mergeIntMap(&aggregate.ProbeOutcome, stats.ProbeOutcome)
 		aggregate.TransientRetries += stats.TransientRetries
+		mergeIntMap(&aggregate.ParentOutcomes, stats.ParentOutcomes)
+		mergeIntMap(&aggregate.ParentFixOrigins, stats.ParentFixOrigins)
+		mergeIntMap(&aggregate.ParentOutcomesByModel, stats.ParentOutcomesByModel)
+		mergeIntMap(&aggregate.ParentOutcomesByRisk, stats.ParentOutcomesByRisk)
 	}
 
 	probeCalls := 0
@@ -348,6 +353,7 @@ func printStats(st *state.StateStore, stdout io.Writer) error {
 	fmt.Fprintf(stdout, "SNAPSHOT_MISMATCH_BY_AXIS: %s\n", formatIntMap(aggregate.SnapshotMismatchByAxis))
 	fmt.Fprintf(stdout, "PACKET_REJECT_BY_CATEGORY: %s\n", formatIntMap(aggregate.PacketRejectByCategory))
 	fmt.Fprintf(stdout, "PROBE_OUTCOME: %s\n", formatIntMap(aggregate.ProbeOutcome))
+	printParentReviewStats(st, all, aggregate, stdout)
 	fmt.Fprintf(stdout, "SOL_PACKET_BYTES: %d\n", aggregate.SolPacketBytes)
 	fmt.Fprintf(stdout, "TELEMETRY_DIR: %s\n", st.Path("telemetry"))
 	fmt.Fprintf(stdout, "CURRENT_TASK_ID: %s\n", st.ReadOr("task.id", "none"))
@@ -359,6 +365,41 @@ func printStats(st *state.StateStore, stdout io.Writer) error {
 		fmt.Fprintln(stdout, "CURRENT_ARTIFACT_DIR: none")
 	}
 	return nil
+}
+
+// printParentReviewStatsはparent review opportunity outcome観測を表示する。opportunity種別は
+// 既存PASS/NEEDS_SOL_REVIEW/NEEDS_SOL_DECISION packet計数と同値であり、本task binaryで記録された
+// taskではoutcome総数(+未確定1件)と一致する。旧archiveはoutcome未観測のまま補完しない。
+// rework増分はtelemetry JSONLの親行動eventで区切った部分合計で、record欠損時はcoverageを
+// unknownへ出す。本観測はglm-worker側の親行動観測でありCodex actual usageの代替ではない。
+func printParentReviewStats(st *state.StateStore, all []state.TaskStats, aggregate state.TaskStats, stdout io.Writer) {
+	fmt.Fprintf(stdout, "PARENT_OUTCOMES: %s\n", formatIntMap(aggregate.ParentOutcomes))
+	fmt.Fprintf(stdout, "PARENT_FIX_ORIGINS: %s\n", formatIntMap(aggregate.ParentFixOrigins))
+	fmt.Fprintf(stdout, "PARENT_OUTCOMES_BY_MODEL: %s\n", formatIntMap(aggregate.ParentOutcomesByModel))
+	fmt.Fprintf(stdout, "PARENT_OUTCOMES_BY_RISK: %s\n", formatIntMap(aggregate.ParentOutcomesByRisk))
+	rework := st.ComputeParentRework(all)
+	origins := make([]string, 0, len(rework.ByOrigin))
+	for origin := range rework.ByOrigin {
+		origins = append(origins, origin)
+	}
+	sort.Strings(origins)
+	for _, origin := range origins {
+		entry := rework.ByOrigin[origin]
+		fmt.Fprintf(
+			stdout,
+			"PARENT_FIX_REWORK: origin=%s calls=%d worker_calls=%d reviewer_calls=%d turns=%d tree_in=%d tree_out=%d wall_ms=%d\n",
+			origin,
+			entry.Calls,
+			entry.WorkerCalls,
+			entry.ReviewerCalls,
+			entry.Turns,
+			entry.TreeInputTokens,
+			entry.TreeOutputTokens,
+			entry.WallDurationMS,
+		)
+	}
+	fmt.Fprintf(stdout, "PARENT_FIX_REWORK_COVERAGE: %s\n", rework.Coverage)
+	fmt.Fprintln(stdout, "PARENT_REVIEW_NOTE: glm-worker-side parent action observation only; not Codex actual token usage and not a Direct/orchestrated A/B substitute metric")
 }
 
 // printTelemetryCoverageはTaskStats model_callsとraw JSONL task record数の対応を表示する。
@@ -486,6 +527,21 @@ func resetState(st *state.StateStore, stdout io.Writer) error {
 
 	fmt.Fprintln(stdout, "STATUS: RESET")
 	fmt.Fprintf(stdout, "REPO: %s\n", st.ReadOr("repo-root", "unknown"))
+	return nil
+}
+
+// parentAcceptは--acceptで、修正なし採用したterminal resultの親review outcomeを確定する。
+// 未確定opportunityが無い再実行は二重計上せずno-op表示へ収める。
+func parentAccept(st *state.StateStore, stdout io.Writer) error {
+	resolved, err := st.RecordParentOutcome(state.ParentOutcomeAccepted, "")
+	if err != nil {
+		return fmt.Errorf("STATUS: WORKER_ERROR\nERROR: %v", err)
+	}
+	if resolved {
+		fmt.Fprintln(stdout, "PARENT_REVIEW: accepted")
+	} else {
+		fmt.Fprintln(stdout, "PARENT_REVIEW: no open terminal result")
+	}
 	return nil
 }
 

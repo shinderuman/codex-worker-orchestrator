@@ -74,13 +74,12 @@ reviewer省略を先行導入しない。
 
 ## Historical invariants
 
-reviewer FIX_REQUIRED率、risk floor。
+reviewer FIX_REQUIRED率、risk floor。完了済みparent review outcome telemetryにより、Codex新規検出とGLM reviewer既記載の差戻しを分離したorigin別outcome / reworkを追加AI callなしで観測できる。
 
 ## Dependencies
 
 - `IMPLEMENTATION_TASKS/008-machine-protocol-measurement.md`
 - `IMPLEMENTATION_TASKS/009-worker-call-outliers.md`
-- `IMPLEMENTATION_TASKS/parent-review-outcome-telemetry.md`
 
 ## Review findings
 

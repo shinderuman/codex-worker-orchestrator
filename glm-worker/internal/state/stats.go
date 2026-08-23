@@ -85,6 +85,15 @@ type TaskStats struct {
 	// TransientRetriesはtransient障害後にprobe成功を経て再実行した本task呼出回数。
 	// ModelCallsは初回呼出とこの再試行の両方を含む(重複なく数えるため)。
 	TransientRetries int `json:"transient_retries,omitempty"`
+	// parent review観測(v3のままomitempty追加)。ParentReviewOpenはterminal packet emit毎に
+	// 1件だけ開く未確定opportunityで、--accept/--fix/--decisionまたはtask closeでoutcome 1件へ
+	// 確定する。Codex actual token usageではなくglm-worker側の親行動観測であり、旧archiveは
+	// これらfield欠落=未観測(unknownへは補完しない)として扱う。
+	ParentReviewOpen      *ParentReviewOpenState `json:"parent_review_open,omitempty"`
+	ParentOutcomes        map[string]int         `json:"parent_outcomes,omitempty"`
+	ParentFixOrigins      map[string]int         `json:"parent_fix_origins,omitempty"`
+	ParentOutcomesByModel map[string]int         `json:"parent_outcomes_by_model,omitempty"`
+	ParentOutcomesByRisk  map[string]int         `json:"parent_outcomes_by_risk,omitempty"`
 }
 
 func warnStatsFailure(operation string, err error) {
@@ -161,6 +170,10 @@ func (s *StateStore) ArchiveCurrentStats() {
 
 	now := time.Now().UTC()
 	stats.ArchivedAt = &now
+	// task close時点で未確定のparent review opportunityはunknownとして確定する。
+	// 新task開始・resetをacceptedやCodex差し戻しへfail-open推定せず、opportunity総数と
+	// outcome総数の加法整合をarchive内へ閉じる。
+	resolved, hadOpen, _ := stats.resolveParentOutcome(ParentOutcomeUnknown, "")
 	data, err := json.MarshalIndent(stats, "", "  ")
 	if err != nil {
 		warnStatsFailure("archive JSON化", err)
@@ -170,6 +183,9 @@ func (s *StateStore) ArchiveCurrentStats() {
 	if err := writeFileAtomic(historyPath, append(data, '\n'), 0o600); err != nil {
 		warnStatsFailure("archive書き込み", err)
 		return
+	}
+	if hadOpen {
+		s.appendParentOutcomeEvent(stats.TaskID, ParentPhaseClose, ParentOutcomeUnknown, "", resolved)
 	}
 	if err := s.Remove(currentStatsFile); err != nil {
 		warnStatsFailure("archive後削除", err)
@@ -385,7 +401,7 @@ func (s *StateStore) RecordProbeOutcome(outcome string) {
 	})
 }
 
-func (s *StateStore) RecordSolResult(value packet.Result) {
+func (s *StateStore) RecordSolResult(value packet.Result, producer ParentReviewProducer) {
 	s.UpdateTaskStats(func(stats *TaskStats) {
 		stats.SolPacketBytes += value.ByteSize()
 		switch value.Status {
@@ -396,6 +412,7 @@ func (s *StateStore) RecordSolResult(value packet.Result) {
 		case packet.StatusPass:
 			stats.PassPackets++
 		}
+		stats.openParentReview(string(value.Status), string(value.Risk), producer)
 	})
 }
 

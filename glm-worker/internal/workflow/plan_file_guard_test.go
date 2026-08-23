@@ -361,7 +361,7 @@ func TestPlanFileExplicitFixMutationFailsClosed(t *testing.T) {
 	}
 	w, r, out := planFileDecisionWorkflow(t, st, repoRoot, "worker-explicit-fix", mutatePlanFile)
 
-	if err := w.ExecuteExplicitFix("fix instruction"); err != nil {
+	if err := w.ExecuteExplicitFix("fix instruction", ""); err != nil {
 		t.Fatal(err)
 	}
 	requirePlanFileFailClosed(t, st, r, out, "内容が変化", 1)
