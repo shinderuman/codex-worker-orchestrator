@@ -177,6 +177,41 @@ reviewer呼出しの前後でGit状態を3軸(HEAD・index・worktree/untracked)
 呼出単位の詳細は`telemetry/<task ID>.jsonl`へ`0600`で保存する。stats・telemetryの破損や書き込み失敗はwarningを出してworkflowを継続し、明示的な`--stats`だけはstats読み込みエラーを返す。
 
 
+## 複数リポジトリの並列利用と共有資源
+
+異なるrepositoryでglm-workerを同時に利用できることを通常contractとする
+(`Codex A → PTY A → glm-worker A`と`Codex B → PTY B → glm-worker B`の並列)。全体を
+直列化するglobal lock・daemon・socket・scheduler・queue・coordinatorは持たない。
+
+repository分離の設計:
+
+- state dir・repo lockは`GLM_WORKER_HOME/sessions/<repo SHA-256>/`単位
+- session・checkpoint・telemetry・event log・artifactはすべて当該repoのstate dir配下
+- model子processのcwdは当該repo root
+- repo-search cacheは`GLM_WORKER_HOME/search/<repo canonical path SHA-256>/`単位
+- task ID・session IDはrepo間で混入しない
+- 同一repoの2本目の起動だけflock拒否され、他repoの起動・実行はblockしない
+
+共有資源の分類(concrete collision evidenceがない限り直列化を追加しない):
+
+| 資源 | 分類 | 根拠 |
+|---|---|---|
+| `GLM_WORKER_HOME` | repo/task namespace済み | `sessions/`・`search/`配下はrepo hash単位で分離。dir自体は共有するがglm-workerが書く内容は全てnamespace内 |
+| prompt dir(`GLM_WORKER_PROMPT_DIR`) | read-only shared | runnerが`WORKER.md`/`REVIEWER.md`を読むだけ。glm-workerは書かない |
+| Claude config dir(`CLAUDE_CONFIG_DIR`) | read-only shared(glm-workerから)。配下のsession state書込みはupstream管理 | glm-workerはsettings.jsonのenv allowlist読取とexclude path解決だけ。config dir配下へのsession書込みはClaude CLI自身がsession ID単位で行う |
+| Claude settings override(`CODEX_CONFIG_CLAUDE_SETTINGS_OVERRIDE`) | read-only shared | env set/deleteのpatchを読むだけ。書き込みは`install.sh`/`tools/merge-json`側 |
+| Codex automation TOML/SQLite(`CODEX_CONFIG_DIR`) | read-only shared | `--verify-auto-resume`がTOML読取とSQLite読取(`sqlite3` CLIのSELECT)だけ行う。automationの作成・更新は親Codexの責務 |
+| provider/Z.ai quota | upstream管理・repo stateとは分離 | account単位の上限。同一provider quotaを2 repoが消費すること自体はbugではなく、rate-limit判定・停止・resumeは各repoのstateだけへ反映される |
+| temp dir(TMPDIR) | per-process | 実行ごとに`os.MkdirTemp`の一意dir(`glm-worker-*`)を作り、終了時に削除 |
+| install済みglm-worker binary | read-only shared | 全repoが同じbinaryを実行する。実行中の上書きはinstallerの適用契約(`install.sh`)が管理 |
+
+このcontractは`glm-worker/internal/app/multirepo_process_test.go`(独立2 Git repositoryでの
+実binary並列実行・lock意味・state/session/checkpoint/telemetry/event log非混入・reset/resume/
+rate-limit recovery/status非干渉。実claudeの代わりの動作固定stubで追加AI callなし)、
+`multirepo_reposearch_test.go`(共有cache rootでのrepo-search cache分離を独立processで)、
+`multirepo_pty_test.go`(2実PTYのmode・payload非干渉)で固定する。
+
+
 ## 自己保護 (self-protection)
 
 glm-workerはこの配布repo自身を作業対象にした変更について、wrapper側のcritical surface判定で実効riskをHIGHへ固定し、workerのLOW自己申告やreviewerのPASSだけでは完結させずSol確認へ昇格する。判定はfile種別ではなく「委譲・model routing・prompt/instruction・PACKET・session/resume・provider recovery/autoresume・権限/隔離・managed settings/installer適用意味を変更できるproduction surfaceか」の意味で行う。

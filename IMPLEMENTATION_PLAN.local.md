@@ -8,11 +8,10 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/005-multi-repository-isolation.md`
+- `IMPLEMENTATION_TASKS/claude-cli-compatibility-preflight-poc.md`
 
 ## NEXT（優先順）
 
-- `IMPLEMENTATION_TASKS/claude-cli-compatibility-preflight-poc.md`
 - `IMPLEMENTATION_TASKS/006-codex-facing-compact-result.md`
 - `IMPLEMENTATION_TASKS/007-machine-only-legacy-cleanup.md`
 - `IMPLEMENTATION_TASKS/008-machine-protocol-measurement.md`
@@ -43,14 +42,14 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 ## 現在のGit境界
 
 - branch: `main`
-- implementation baseline: MODEL_IDLE activity contract follow-up implementation commit（current HEAD）
-- metadata boundary: MODEL_IDLE follow-upをHistoryへ移行し完了task fileを削除。multi-repository isolationをACTIVEへ昇格したcommit同期境界
+- implementation baseline: multi-repository isolation contract/test commit（current HEAD）
+- metadata boundary: multi-repository isolationをHistoryへ移行し完了task fileを削除。Claude CLI compatibility preflight PoCをACTIVEへ昇格したcommit同期境界
 - push: 禁止
 
 ## 現在の停止理由
 
-multi-repository isolationは未着手。MODEL_IDLE activity contract follow-upは本配置とinstalled/source binary一致確認まで完了。
+Claude CLI compatibility preflight PoCは未着手。先行multi-repository isolationはtest/docのみでruntime install対象外。
 
 ## 次の親Codex操作
 
-ACTIVE taskのOriginal instruction・Amendments・Resolved references・Contractを再読し、新sessionでmulti-repository isolationを開始する。
+ACTIVE taskのOriginal instruction・Amendments・Resolved references・Contractを再読し、新sessionでClaude CLI compatibility preflight PoCを開始する。
