@@ -8,10 +8,11 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/007-machine-only-legacy-cleanup.md`
+- `IMPLEMENTATION_TASKS/sol-question-status-contract.md`
 
 ## NEXT（優先順）
 
+- `IMPLEMENTATION_TASKS/007-machine-only-legacy-cleanup.md`
 - `IMPLEMENTATION_TASKS/008-machine-protocol-measurement.md`
 - `IMPLEMENTATION_TASKS/009-worker-call-outliers.md`
 - `IMPLEMENTATION_TASKS/010-task-splitting-milestones.md`
@@ -42,13 +43,13 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 - branch: `main`
 - implementation baseline: Codex-facing compact structured result commit（current HEAD）
-- metadata boundary: Task 006をHistoryへ移行して完了task fileを削除し、fulfilled dependencyを後続taskから除去。machine-only legacy cleanupをACTIVEへ昇格した完了同期境界
+- metadata boundary: Task 007を中断し、Task 006外部review follow-upを独立ACTIVEへ切り替える境界。Task 007の未コミット実装は別境界で保全する
 - push: 禁止
 
 ## 現在の停止理由
 
-Codex-facing compact structured resultの本配置とinstalled-state検証まで完了。machine-only legacy cleanupは未着手。
+Task 007はtask ID `f8c9e583-b4ba-4452-8534-bb1b4bff3056`のworker実装中に中断。未コミット変更をtask固有stash 2件へ保全し、`sol_question` contract修正を先行する。
 
 ## 次の親Codex操作
 
-ACTIVE taskのOriginal instruction・Amendments・Resolved references・Contractを再読し、machine-only legacy cleanupを新sessionで開始する。
+ACTIVE taskのOriginal instruction・Resolved references・Contractを再読し、review follow-upを新sessionで開始する。

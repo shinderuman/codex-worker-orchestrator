@@ -147,4 +147,4 @@ none
 
 ## Current boundary
 
-未着手。実在legacy候補の網羅確認前。
+task ID `f8c9e583-b4ba-4452-8534-bb1b4bff3056`で実装開始後、Task 006外部review follow-upを先行するためworkerをCtrl-Cで中断。未コミット変更は`Task 007 interrupted for sol_question review follow-up`と`Task 007 interrupted follow-up remainder`のtask固有stashへ、session情報はstateへ保全し、follow-up完了後に再開する。
