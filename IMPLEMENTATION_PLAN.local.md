@@ -8,10 +8,11 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/completion-detection-false-negative-incident.md`
+- `IMPLEMENTATION_TASKS/007-machine-only-legacy-cleanup.md`
 
 ## NEXT（優先順）
 
+- `IMPLEMENTATION_TASKS/completion-detection-false-negative-incident.md`
 - `IMPLEMENTATION_TASKS/008-machine-protocol-measurement.md`
 - `IMPLEMENTATION_TASKS/009-worker-call-outliers.md`
 - `IMPLEMENTATION_TASKS/010-task-splitting-milestones.md`
@@ -42,14 +43,14 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 ## 現在のGit境界
 
 - branch: `main`
-- implementation baseline: Task 007 machine-only legacy削減commit（current HEAD）
-- metadata boundary: Task 007をHistoryへ移行してtask fileを削除し、completion detection incidentをACTIVEへ昇格した完了同期境界
+- implementation baseline: Task 007 external output JSON/JSONL再open metadata commit（current HEAD）
+- metadata boundary: ユーザー追加要件を同じTask 007へlosslessに追記してtask fileを復元し、completion detection incidentをNEXTへ戻した再open境界
 - push: 禁止
 
 ## 現在の停止理由
 
-blockerなし。Task 007の実装・review・Sol採否・commit・完了同期を完了し、installed-state検証後にcompletion detection incidentへ進む境界。
+blockerなし。Task 007前段は完了し、同一taskへ追加された外部出力JSON/JSONL統一のproduction実装は未着手。
 
 ## 次の親Codex操作
 
-`install.sh`でTask 007の本配置とinstalled/source一致を検証し、ACTIVEのcompletion detection incidentを開始する。
+Task 007再open metadataをcommitし、復元した同じtask fileを要求正本として新しいGLM taskを開始する。
