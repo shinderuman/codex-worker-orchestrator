@@ -287,19 +287,33 @@ func TestResultDisplayLines(t *testing.T) {
 	}
 
 	review := Result{
-		Status:       StatusNeedsSolReview,
-		Risk:         RiskHigh,
-		Summary:      "s",
-		TestEvidence: "e",
-		Targets:      []string{"a.go"},
-		SolQuestion:  "q",
-		Invariants:   "i",
-		Issues:       "n",
-		ResidualRisk: "n",
+		Status:              StatusNeedsSolReview,
+		Risk:                RiskHigh,
+		Summary:             "s",
+		RequirementCoverage: "c",
+		TestEvidence:        "e",
+		Targets:             []string{"a.go"},
+		SolQuestion:         "q",
+		Invariants:          "i",
+		Issues:              "n",
+		ResidualRisk:        "n",
 	}
 	reviewDisplay := review.DisplayLines()
-	if reviewDisplay[len(reviewDisplay)-1] != "SOL_QUESTION: q" {
-		t.Fatalf("SOL_QUESTION must render last: %v", reviewDisplay)
+	wantReview := []string{
+		"STATUS: NEEDS_SOL_REVIEW",
+		"RISK: HIGH",
+		"SUMMARY: s",
+		"REQUIREMENT_COVERAGE: c",
+		"INVARIANTS: i",
+		"TEST_EVIDENCE: e",
+		"ISSUES: n",
+		"RESIDUAL_RISK: n",
+		"SOL_QUESTION: q",
+		"TARGETS: a.go",
+		"ARTIFACTS: none",
+	}
+	if strings.Join(reviewDisplay, "|") != strings.Join(wantReview, "|") {
+		t.Fatalf("review display = %v, want %v", reviewDisplay, wantReview)
 	}
 }
 
@@ -357,8 +371,9 @@ func TestMachineJSONIsCompactStatusScopedLine(t *testing.T) {
 }
 
 // TestSolQuestionIsNeedsSolReviewOnlyはsol_questionをNEEDS_SOL_REVIEWだけの契約fieldへ
-// 固定する。PASS/FIX_REQUIREDへmodelが混入させた値はmachine JSON・人間向けprojectionの
-// 両面でkeyごと除外される(field audit実測: PASS 10件中1件の混入)。
+// 固定する。PASS/FIX_REQUIREDへmodelが混入させた値はvalidation対象にならず、
+// machine JSON・人間向けprojectionの両面でkeyごと除外される
+// (field audit実測: PASS 10件中1件の混入)。
 func TestSolQuestionIsNeedsSolReviewOnly(t *testing.T) {
 	for _, status := range []Status{StatusPass, StatusFixRequired} {
 		result := passResult()
@@ -366,7 +381,11 @@ func TestSolQuestionIsNeedsSolReviewOnly(t *testing.T) {
 		if status == StatusFixRequired {
 			result.Risk = RiskHigh
 		}
-		result.SolQuestion = "injected question"
+		// 契約外fieldは制約違反内容でもvalidation対象にしない。
+		result.SolQuestion = "line1\nline2" + strings.Repeat("x", MaxFieldBytes)
+		if err := ValidateReviewerResult(result); err != nil {
+			t.Fatalf("%s: 混入sol_questionがvalidation対象になっています: %v", status, err)
+		}
 		data, err := result.MachineJSON()
 		if err != nil {
 			t.Fatalf("%s: err = %v", status, err)
@@ -379,6 +398,183 @@ func TestSolQuestionIsNeedsSolReviewOnly(t *testing.T) {
 				t.Fatalf("%s: 混入sol_questionがprojectionへ流出: %s", status, line)
 			}
 		}
+	}
+}
+
+// TestValidateSolQuestionFieldConstraintsはNEEDS_SOL_REVIEWのsol_questionが
+// 他の必須text fieldと同じ空・改行・byte上限制約へ従うことを境界値で固定する。
+func TestValidateSolQuestionFieldConstraints(t *testing.T) {
+	base := func(question string) Result {
+		review := passResult()
+		review.Status = StatusNeedsSolReview
+		review.Risk = RiskHigh
+		review.SolQuestion = question
+		return review
+	}
+	if err := ValidateReviewerResult(base(strings.Repeat("q", MaxFieldBytes))); err != nil {
+		t.Fatalf("MaxFieldBytesちょうどのsol_questionは受理されるべき: %v", err)
+	}
+	cases := []struct {
+		name     string
+		question string
+		want     string
+	}{
+		{"newline", "line1\nline2", "field SOL_QUESTIONに改行"},
+		{"carriage return", "line1\rline2", "field SOL_QUESTIONに改行"},
+		{"oversize", strings.Repeat("q", MaxFieldBytes+1), "field SOL_QUESTIONは1536 bytes以内"},
+		{"empty", "", "必須field SOL_QUESTION"},
+		{"whitespace only", " \t ", "必須field SOL_QUESTION"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			err := ValidateReviewerResult(base(c.question))
+			if err == nil {
+				t.Fatal("expected validation error")
+			}
+			if !IsConstraintError(err) {
+				t.Fatalf("error must be constraint, got %v", err)
+			}
+			if !strings.Contains(err.Error(), c.want) {
+				t.Fatalf("err = %q, want substring %q", err.Error(), c.want)
+			}
+		})
+	}
+}
+
+// textFieldSetterはResultの契約text fieldへ検証用値を差し込む。testだけの全field表で、
+// contractFieldsのmachine keyと対応する。
+var textFieldSetters = map[string]func(*Result, string){
+	"summary":              func(r *Result, v string) { r.Summary = v },
+	"requirement_coverage": func(r *Result, v string) { r.RequirementCoverage = v },
+	"tests":                func(r *Result, v string) { r.Tests = v },
+	"unverified":           func(r *Result, v string) { r.Unverified = v },
+	"decision":             func(r *Result, v string) { r.Decision = v },
+	"evidence":             func(r *Result, v string) { r.Evidence = v },
+	"options":              func(r *Result, v string) { r.Options = v },
+	"recommendation":       func(r *Result, v string) { r.Recommendation = v },
+	"test_obligations":     func(r *Result, v string) { r.TestObligations = v },
+	"invariants":           func(r *Result, v string) { r.Invariants = v },
+	"test_evidence":        func(r *Result, v string) { r.TestEvidence = v },
+	"issues":               func(r *Result, v string) { r.Issues = v },
+	"residual_risk":        func(r *Result, v string) { r.ResidualRisk = v },
+	"sol_question":         func(r *Result, v string) { r.SolQuestion = v },
+}
+
+// fullyPopulatedResultは全text field・targets・artifactsへ区別できる値を設定した正例。
+func fullyPopulatedResult(status Status) Result {
+	result := Result{
+		Status:              status,
+		Summary:             "summary-value",
+		RequirementCoverage: "coverage-value",
+		Tests:               "tests-value",
+		Unverified:          "unverified-value",
+		Decision:            "decision-value",
+		Evidence:            "evidence-value",
+		Options:             "options-value",
+		Recommendation:      "recommendation-value",
+		TestObligations:     "obligations-value",
+		Invariants:          "invariants-value",
+		TestEvidence:        "test-evidence-value",
+		Issues:              "issues-value",
+		ResidualRisk:        "residual-value",
+		SolQuestion:         "question-value",
+		Targets:             []string{"a.go:f"},
+		Artifacts:           []string{"/tmp/x"},
+	}
+	switch status {
+	case StatusNeedsSolDecision, StatusNeedsSolReview:
+		result.Risk = RiskHigh
+	default:
+		result.Risk = RiskLow
+	}
+	return result
+}
+
+// TestContractFieldsSingleSourceはstatus別契約field集合を正として、validatorの必須集合と
+// MachineJSON・Displayの出力集合が一致することを全statusで直接照合する。
+//   - 契約fieldを空にするとvalidatorはそのfieldの必須errorを返す
+//   - 契約外fieldへ改行・上限超の値を混入してもvalidation対象にならず、
+//     machine JSON・projectionのどちらにも出ない
+//   - machine JSONのtext key集合・DisplayのKEY順序はcontractFieldsと完全一致する
+func TestContractFieldsSingleSource(t *testing.T) {
+	cases := map[Status]func(Result) error{
+		StatusImplemented:      ValidateWorkerResult,
+		StatusNeedsSolDecision: ValidateWorkerResult,
+		StatusPass:             ValidateReviewerResult,
+		StatusFixRequired:      ValidateReviewerResult,
+		StatusNeedsSolReview:   ValidateReviewerResult,
+	}
+	for status, validate := range cases {
+		t.Run(string(status), func(t *testing.T) {
+			result := fullyPopulatedResult(status)
+			if err := validate(result); err != nil {
+				t.Fatalf("全契約fieldを満たす正例が拒否されました: %v", err)
+			}
+			contract := result.contractFields()
+			contractKeys := make(map[string]bool, len(contract))
+			for _, field := range contract {
+				contractKeys[field.machine] = true
+				setter, ok := textFieldSetters[field.machine]
+				if !ok {
+					t.Fatalf("contractFieldsにtextFieldSetters未対応のfieldがあります: %s", field.machine)
+				}
+				blanked := fullyPopulatedResult(status)
+				setter(&blanked, " ")
+				err := validate(blanked)
+				if err == nil || !IsConstraintError(err) || !strings.Contains(err.Error(), "必須field "+field.display) {
+					t.Fatalf("%sを空にした場合の必須field errorが出ていません: %v", field.machine, err)
+				}
+			}
+			for machine, setter := range textFieldSetters {
+				if contractKeys[machine] {
+					continue
+				}
+				noisy := fullyPopulatedResult(status)
+				setter(&noisy, "noise("+string(status)+")\n"+strings.Repeat("x", MaxFieldBytes))
+				if err := validate(noisy); err != nil {
+					t.Fatalf("契約外field %sがvalidation対象になっています: %v", machine, err)
+				}
+				data, err := noisy.MachineJSON()
+				if err != nil {
+					t.Fatalf("err = %v", err)
+				}
+				if strings.Contains(string(data), `"`+machine+`"`) {
+					t.Fatalf("契約外field %sがmachine JSONへ流出: %s", machine, data)
+				}
+				for _, line := range noisy.DisplayLines() {
+					if strings.Contains(line, "noise("+string(status)+")") {
+						t.Fatalf("契約外field %sがprojectionへ流出: %s", machine, line)
+					}
+				}
+			}
+			data, err := result.MachineJSON()
+			if err != nil {
+				t.Fatalf("err = %v", err)
+			}
+			var object map[string]any
+			if err := json.Unmarshal(data, &object); err != nil {
+				t.Fatalf("machine JSON parse: %v", err)
+			}
+			wantKeys := map[string]bool{"status": true, "risk": true, "targets": true, "artifacts": true}
+			for _, field := range contract {
+				wantKeys[field.machine] = true
+			}
+			gotKeys := make(map[string]bool, len(object))
+			for key := range object {
+				gotKeys[key] = true
+			}
+			if !reflect.DeepEqual(gotKeys, wantKeys) {
+				t.Fatalf("machine JSON key集合がcontractFieldsと一致しません: got %v want %v", gotKeys, wantKeys)
+			}
+			wantLines := []string{"STATUS: " + string(status), "RISK: " + string(result.Risk)}
+			for _, field := range contract {
+				wantLines = append(wantLines, field.display+": "+field.value(result))
+			}
+			wantLines = append(wantLines, "TARGETS: a.go:f", "ARTIFACTS: /tmp/x")
+			if got := result.DisplayLines(); strings.Join(got, "|") != strings.Join(wantLines, "|") {
+				t.Fatalf("display = %v, want %v", got, wantLines)
+			}
+		})
 	}
 }
 

@@ -61,22 +61,18 @@ func ValidateWorkerResult(result Result) error {
 		if result.Risk != RiskLow && result.Risk != RiskHigh {
 			return &constraintError{reason: fmt.Sprintf("riskはLOWまたはHIGHで指定してください: %q", string(result.Risk))}
 		}
-		if err := validateFields(result, implementedContractFields); err != nil {
-			return err
-		}
-		return validateTargets(result)
 	case StatusNeedsSolDecision:
 		if result.Risk != RiskHigh {
 			return &constraintError{reason: "NEEDS_SOL_DECISIONのriskはHIGHにしてください"}
 		}
-		if err := validateFields(result, needsSolDecisionContractFields); err != nil {
-			return err
-		}
-		return validateTargets(result)
 	default:
 		// status enumはrole別schemaが保証するため、ここへの到達はschema違反でありfail closed対象。
 		return &mismatchError{reason: fmt.Sprintf("worker結果のstatusとして許容されません: %q", string(result.Status))}
 	}
+	if err := validateFields(result, result.contractFields()); err != nil {
+		return err
+	}
+	return validateTargets(result)
 }
 
 // ValidateReviewerResultはreviewer role結果の意味契約を検証する。
@@ -86,33 +82,22 @@ func ValidateReviewerResult(result Result) error {
 		if result.Risk != RiskLow {
 			return &constraintError{reason: "PASSのriskはLOWにしてください。高リスクならNEEDS_SOL_REVIEWを返してください"}
 		}
-		if err := validateFields(result, reviewerContractFields); err != nil {
-			return err
-		}
-		return validateTargets(result)
 	case StatusFixRequired:
 		if result.Risk != RiskLow && result.Risk != RiskHigh {
 			return &constraintError{reason: fmt.Sprintf("riskはLOWまたはHIGHで指定してください: %q", string(result.Risk))}
 		}
-		if err := validateFields(result, reviewerContractFields); err != nil {
-			return err
-		}
-		return validateTargets(result)
 	case StatusNeedsSolReview:
 		if result.Risk != RiskHigh {
 			return &constraintError{reason: "NEEDS_SOL_REVIEWのriskはHIGHにしてください"}
 		}
-		if err := validateFields(result, reviewerContractFields); err != nil {
-			return err
-		}
-		if strings.TrimSpace(result.SolQuestion) == "" {
-			return &constraintError{reason: "結果に必須field SOL_QUESTIONがありません"}
-		}
-		return validateTargets(result)
 	default:
 		// status enumはrole別schemaが保証するため、ここへの到達はschema違反でありfail closed対象。
 		return &mismatchError{reason: fmt.Sprintf("reviewer結果のstatusとして許容されません: %q", string(result.Status))}
 	}
+	if err := validateFields(result, result.contractFields()); err != nil {
+		return err
+	}
+	return validateTargets(result)
 }
 
 // validateTargetsはTARGETS要素の正規形を強制する唯一のpredicateで、worker/reviewer

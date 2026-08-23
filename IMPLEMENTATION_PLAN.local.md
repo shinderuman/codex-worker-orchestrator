@@ -8,11 +8,10 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/sol-question-status-contract.md`
+- `IMPLEMENTATION_TASKS/007-machine-only-legacy-cleanup.md`
 
 ## NEXT（優先順）
 
-- `IMPLEMENTATION_TASKS/007-machine-only-legacy-cleanup.md`
 - `IMPLEMENTATION_TASKS/008-machine-protocol-measurement.md`
 - `IMPLEMENTATION_TASKS/009-worker-call-outliers.md`
 - `IMPLEMENTATION_TASKS/010-task-splitting-milestones.md`
@@ -42,14 +41,14 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 ## 現在のGit境界
 
 - branch: `main`
-- implementation baseline: Codex-facing compact structured result commit（current HEAD）
-- metadata boundary: Task 007を中断し、Task 006外部review follow-upを独立ACTIVEへ切り替える境界。Task 007の未コミット実装は別境界で保全する
+- implementation baseline: `sol_question` status contract follow-up commit（current HEAD）
+- metadata boundary: follow-upをHistoryへ移行して完了task fileを削除し、Task 007をACTIVEへ復帰した完了同期境界。Task 007の未コミット実装はstash 2件で保全中
 - push: 禁止
 
 ## 現在の停止理由
 
-Task 007はtask ID `f8c9e583-b4ba-4452-8534-bb1b4bff3056`のworker実装中に中断。未コミット変更をtask固有stash 2件へ保全し、`sol_question` contract修正を先行する。
+`sol_question` status contract follow-upは本配置とinstalled-state検証まで完了。Task 007のstash復元と再開を残す。
 
 ## 次の親Codex操作
 
-ACTIVE taskのOriginal instruction・Resolved references・Contractを再読し、review follow-upを新sessionで開始する。
+Task 007のstash 2件を復元し、follow-up変更との重複を同task内で収束して作業を再開する。

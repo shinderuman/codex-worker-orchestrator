@@ -161,22 +161,32 @@ var reviewerContractFields = []contractField{
 	{"residual_risk", "RESIDUAL_RISK", func(r Result) string { return r.ResidualRisk }},
 }
 
-// contractFieldsはstatus別の契約text field集合。
+// needsSolReviewContractFieldsはreviewer共通fieldへsol_questionを加えた集合。
+// sol_questionはNEEDS_SOL_REVIEWだけの契約fieldで、PASS/FIX_REQUIREDへmodelが混入させた
+// 値は検証対象にならずmachine JSON・projectionのどちらにも出ない
+// (field audit実測: PASS 10件中1件の混入)。reviewerContractFieldsへ直接appendすると
+// 共用backing arrayを伸ばすため、複製へ足す。
+var needsSolReviewContractFields = append(append([]contractField{}, reviewerContractFields...),
+	contractField{"sol_question", "SOL_QUESTION", func(r Result) string { return r.SolQuestion }})
+
+// contractFieldsはstatus別の契約text field集合。validator・machine protocol・
+// 人間向けprojectionが参照する唯一のstatus→field対応。
 func (r Result) contractFields() []contractField {
 	switch r.Status {
 	case StatusImplemented:
 		return implementedContractFields
 	case StatusNeedsSolDecision:
 		return needsSolDecisionContractFields
+	case StatusNeedsSolReview:
+		return needsSolReviewContractFields
 	default:
 		return reviewerContractFields
 	}
 }
 
-// displayFieldsはstatus別の表示field順。旧PACKET表示の順序と意味を保持し、
-// 空fieldは行を出さず、targets/artifactsは配列をセミコロン区切りへ直す。
-// sol_questionは契約どおりNEEDS_SOL_REVIEWだけで表示し、PASS/FIX_REQUIREDへ
-// modelが混入させた値はmachine protocolと同じくprojectionからも出さない。
+// displayFieldsはstatus別の表示field順。契約text fieldはcontractFieldsの集合・順序で
+// 並べ、targets/artifactsは配列をセミコロン区切りへ直す。IMPLEMENTEDだけ旧表示どおり
+// 空targetsの行を出さない。
 func (r Result) displayFields() []displayField {
 	fields := []displayField{
 		{key: "STATUS", value: string(r.Status)},
@@ -191,13 +201,6 @@ func (r Result) displayFields() []displayField {
 			fields = append(fields, r.targetsField())
 		}
 		fields = append(fields, r.artifactsField())
-	case StatusNeedsSolDecision:
-		fields = append(fields, r.targetsField(), r.artifactsField())
-	case StatusNeedsSolReview:
-		fields = append(fields, r.targetsField(), r.artifactsField())
-		if r.SolQuestion != "" {
-			fields = append(fields, displayField{key: "SOL_QUESTION", value: r.SolQuestion})
-		}
 	default:
 		fields = append(fields, r.targetsField(), r.artifactsField())
 	}
@@ -251,11 +254,6 @@ func (r Result) MachineJSON() ([]byte, error) {
 		if value := field.value(r); value != "" {
 			object[field.machine] = value
 		}
-	}
-	// sol_questionはNEEDS_SOL_REVIEWだけの契約field。PASS/FIX_REQUIREDへmodelが
-	// 混入させた値はkeyごと出さない(field audit実測: PASS 10件中1件の混入)。
-	if r.Status == StatusNeedsSolReview && r.SolQuestion != "" {
-		object["sol_question"] = r.SolQuestion
 	}
 	if len(r.Targets) > 0 {
 		object["targets"] = r.Targets
