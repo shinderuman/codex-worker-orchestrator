@@ -12,6 +12,7 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## NEXT（優先順）
 
+- `IMPLEMENTATION_TASKS/interrupted-task-checkout-isolation.md`
 - `IMPLEMENTATION_TASKS/external-feasibility-dispatch-gate.md`
 - `IMPLEMENTATION_TASKS/015-fixed-eval-corpus.md`
 - `IMPLEMENTATION_TASKS/009-worker-call-outliers.md`
@@ -42,15 +43,15 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 ## 現在のGit境界
 
 - branch: `main`
-- implementation baseline: task status machine enum follow-up完了commit（current HEAD）
-- implementation boundary: status/stats/timeline/convergenceのtask statusを現行6値+nullへ統一し、全品質gate・parent accept・task lifecycle同期を完了
+- implementation baseline: 実Claude interrupt feasibility完了commit（current HEAD）
+- implementation boundary: process safe-stopと別task checkout/state隔離を分離。実Claude CLI 2.1.226のprocess group cleanup・partial session同一ID resumeを確認し、safe-stop production実装へSol Go判断済み
 - preserved boundary: external feasibility gateの中断diffはmessage identity付きstash 2件へ可逆保全し、orphan process group終了済み
 - push: 禁止
 
 ## 現在の停止理由
 
-blockerなし。安全なprocess停止と、別task実行中の元task state保持が同一能力か別能力かは未確定であり、実装前の親調査・Sol設計判断が必要。
+blockerなし。safe-stopの外部critical assumptionは解消済みで、taskにproduction最小設計・禁止事項・test境界を固定済み。
 
 ## 次の親Codex操作
 
-ACTIVE taskのOriginal instruction・Amendments・Resolved referencesを再読し、現行process/state/checkpoint/lock境界と保全済みincident evidenceをread-only調査する。安全停止とtask suspend/restoreを同一実装へ束ねるか分離するかをSolが判断し、外部Claude CLI成立性が前提ならimplementation dispatch前に実producer/process tree PoCを行う。pushしない。
+ACTIVE safe interruption taskを要求正本として、単一目的local `--stop` handshake、Claude process-group cleanup、interrupted checkpoint/status、同一session resume、machine contract・test・instruction更新をGLMへ委譲する。別task checkout隔離は混ぜない。pushしない。

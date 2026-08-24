@@ -50,7 +50,33 @@ Codex→GLMへの任意message injectionには拡張しない。
 
 ## Amendments
 
-none
+### 2026-08-24: 親read-only調査と責務分離
+
+````text
+親Codexが現行productionを調査し、ClaudeRunnerはexec.Command(...).Run()でClaude CLIを通常の子processとして起動し、signal handler・context cancellation・process group設定を持たないことを確認した。repo lock fileのPIDは診断値に留まり、停止authorityではない。実incidentでは親PIDだけへのSIGINT後にClaude childがPPID 1へreparentされ、元process groupで書込みを継続した。
+
+StateStoreはrepositoryごとに単一のcurrent task slotを持ち、StartNewTaskがtask.id、worker/reviewer session、status、snapshot等を置換する。working treeも同一checkoutで共有される。このため「現在processを安全停止する能力」と「停止taskを保持したまま別taskを同じrepositoryで実行する能力」は別責務である。
+
+本taskは正式なsafe-stop machine interface、process tree cleanup、停止用checkpoint/session保持、非成功終端、停止完了確認までに限定する。別task実行中の元task state/working tree隔離と復帰はIMPLEMENTATION_TASKS/interrupted-task-checkout-isolation.mdへ分離する。
+
+safe-stop production実装は実Claude CLIのprocess group停止・descendant消滅・partial session resume成立性に依存するため、IMPLEMENTATION_TASKS/claude-interrupt-feasibility.mdの実producer PoCと親Go判断を先行させる。
+````
+
+### 2026-08-24: external feasibility Go後のproduction設計
+
+````text
+実Claude CLI 2.1.226でprocess group停止後のdescendant消滅・後続書込みなし・同一partial session IDの--resume成功を確認し、production safe-stopへGoとする。
+
+最小設計:
+
+- machine commandはglm-worker --stopとし、repo lockを待たずrunning ownerの単一目的local control endpointへ固定stop requestを送る。任意message injectionやgeneric control planeにはしない
+- endpoint接続とowner側ackを停止authorityとし、lock file PIDは引き続き診断値に限定する。stale endpoint・owner不在・既にterminalのcaseをtyped JSONで区別する
+- ownerはClaude CLIを独立process groupで起動し、stop request時にgroupへTERM、bounded cleanup後も残る場合だけKILLし、direct child waitとgroup非残存を確認してからackする
+- workflowはmodel call前に保存済みのcheckpoint、role session ID、要求正本、snapshotを保持し、generic worker errorのcheckpoint/session clearへ流さない。初回call途中でも同一sessionをresumableとしてmarkする
+- checkpointへuser interruptionを表す明示field、task statusへinterruptedを追加し、既存rate-limited/provider-unavailableと混同しない。--resumeはinterrupted checkpointを同一stage/phase/sessionから再開する
+- external task status enumは既存6値+nullからinterruptedを含む7値+nullへ意図的に更新し、status/stats/timeline/convergenceを単一helperで同期する。resume_availableもinterruptedでtrueとする
+- stop requesterはcleanup完了後にtask_id、status=interrupted、resume_available=trueをJSONで受ける。停止された元invocationはkind=interruptedのstructured error + non-zeroで終端し、PASS/completeを出さない
+````
 
 ## Resolved references
 
@@ -64,12 +90,12 @@ none
 
 ## Contract
 
-- 実装前に、process停止能力とtask stateのsuspend/resume・別task隔離能力が同一問題か別問題かを現architectureから判定する
-- 親Codexの実中断事例、repo lock、Claude child/process group、task/session/checkpoint、working tree、snapshot guard、StartNewTaskの破壊境界を一次証拠で調査する
+- process停止能力とtask stateのsuspend/resume・別task隔離能力は別問題として扱い、本taskは前者へ限定する
+- 親Codexの実中断事例、repo lock、Claude child/process group、task/session/checkpoint、snapshot guardの一次証拠を設計入力にする
 - 安全停止はchild/orphanを残さず、terminal成功へ誤遷移せず、停止完了をtyped machine outputとauthoritative stateで確認可能にする
-- 別task実行が元task stateを上書きするなら、停止interfaceへ無理に混ぜず独立したsuspend/restore contractとして最小設計する
-- 元taskのworking tree・session・checkpoint・要求正本・snapshotを別taskから隔離し、復帰時に要求とGit stateを取り違えない
-- parent orchestration instructionとproduction CLI/state/testを同時に更新し、手動PID killを正式手順として残さない
+- 停止要求のauthorityをlock file PID単独へ置かず、running invocation自身が要求を受理してClaude process treeを終了し、cleanup後にackする最小local control境界を設計する
+- 停止時点のpre-call checkpoint、session ID、要求正本、Git snapshotを保持し、generic worker error経路でclearしない。再開可否は実PoCで確認したClaude session semanticsに従う
+- parent orchestration instructionとproduction CLI/state/testを同時に更新し、手動PID/process-group killを正式手順として残さない
 
 ## Must not
 
@@ -84,8 +110,10 @@ none
 - 親Codexが実際に行った外側cell terminate＋lock PID SIGINTでchild書込みが継続した原因をprocess/state境界で確定
 - 安全停止と別task中の元task保持が同一または別能力かをSolが実装前に判断
 - running worker/reviewer、tool実行中、停止race、停止後status、orphan非残存、成功誤遷移なしをproduction-pathで検証
-- 元taskを保持したまま別taskを完了し、元要求・session/checkpoint・working treeを復元して継続できることを検証。単一interfaceで成立しないなら分離設計を明示
-- external Claude CLI成立性が前提なら実producer/process treeの最小PoCと親Go/No-Goを実装前に完了
+- 実producer PoCで確認したprocess group cleanupとpartial session resumeをproduction pathへ接続し、fixtureはerror/race境界の決定論的testに限定
+- `--stop` request/ack、停止された元invocationのstructured error、`--status`のinterrupted/resume_available、`--resume`の同一stage/phase/session継続を一連のprocess testで確認
+- stop endpoint不在・stale、停止requestと自然terminalのrace、TERM無視childのbounded KILL、初回worker/reviewer/tool実行中を確認
+- task statusの7値+nullをstatus/stats/timeline/convergence、README、raw JSON testで同期
 - 関連test、全test/race/vet/build/gofmt、独立review、必要なSol gate、親Codex commit/install/source一致/smoke
 
 ## Historical invariants
@@ -104,4 +132,4 @@ none
 
 ## Current boundary
 
-task-status machine enum follow-up完了直後、external feasibility dispatch gate再開より前にACTIVE化する。最初は親Codexのread-only調査とSol設計判断であり、設計前にGLM implementationへdispatchしない。
+親read-only調査・責務分離・実Claude feasibility PoC・Sol Go判断を完了。PoC task lifecycle完了後にACTIVEへ復帰し、このAmendmentの最小設計を要求正本としてGLMへproduction実装を委譲する。
