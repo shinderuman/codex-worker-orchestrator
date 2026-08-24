@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -167,7 +168,11 @@ func NewClaudeRunner(cfg config.AppConfig, st *state.StateStore) *ClaudeRunner {
 // typed structured output単一であり、成功時にstructured_outputが得られなければ
 // fail closedのStructuredOutputErrorを返す。JSON eventとして解釈できないplain stdout行だけは
 // 旧raw fallbackの分類 semanticsを保つため既存classifierへ読ませ、5h上限・transient
-// の構造値だけをRunResult.PlainFailureへ渡す。event追記失敗はtask成否へ影響させない。
+// の構造値だけをRunResult.PlainFailureへ渡す。Z.ai 5h上限のexact signalを受信済みのstdout行
+// (JSON event・plain行)またはstderrで最初に観測した時点でchild processを終了させ、CLI内部
+// retryの完了を待たずに既存の終端分類・RATE_LIMITED停止へ渡す。limitを検出したrunだけが
+// pipe解放のbounded待機へ移り、非limit runのwait/pipe semanticsは変わらない。event追記失敗は
+// task成否へ影響させない。
 func (r *ClaudeRunner) Run(
 	role state.SessionRole,
 	phase string,
@@ -265,20 +270,61 @@ func (r *ClaudeRunner) Run(
 
 	ingester := r.newTaskEventIngester(taskID, role, phase, model, sessionID, ready)
 
+	// stdout/stderrはrunner管理のos.Pipeへ直接接続する。*os.File渡しではexecは内部copy
+	// goroutineを作らずWaitはprocess終了だけで返るため、pipeのdrain待機をrunner側で制御
+	// できる。drainはlimitを検出したrunだけbounded解放へ移り、非limit runはEOFまで無制限に
+	// 待つ(exec管理pipeと同じwait semantics)。
+	// stdoutはingesterだけが受け、非result eventのraw本文をdiskへ書かない。ingesterは行ごとに
+	// metadataへ縮約し、最終result event行だけboundedに保持する。stderrはfileへの記録を変えずに
+	// 同じ本文で5h上限の早期観測へ渡す。
+	stdoutReader, stdoutWriter, err := os.Pipe()
+	if err != nil {
+		stderr.Close()
+		return result, err
+	}
+	stderrReader, stderrWriter, err := os.Pipe()
+	if err != nil {
+		stdoutReader.Close()
+		stdoutWriter.Close()
+		stderr.Close()
+		return result, err
+	}
+
 	command := exec.Command(r.config.ClaudeBin, args...)
 	command.Dir = r.config.RepoRoot
 	command.Stdin = devNull
-	// stdoutはingesterだけが受け、非result eventのraw本文をdiskへ書かない。
-	// ingesterは行ごとにmetadataへ縮約し、最終result event行だけboundedに保持する。
-	command.Stdout = ingester
-	command.Stderr = stderr
+	command.Stdout = stdoutWriter
+	command.Stderr = stderrWriter
 	command.Env = buildChildEnv(r.config.EnvAllowlist, settingEnv, map[string]string{
 		"CLAUDE_CONFIG_DIR":                r.config.ClaudeConfigDir,
 		"CLAUDE_CODE_AUTO_COMPACT_WINDOW":  "500000",
 		"CLAUDE_CODE_ALWAYS_ENABLE_EFFORT": "1",
 	}, envDeletes)
 
-	runErr := command.Run()
+	limitStop := newZaiLimitStopper(func() { _ = command.Process.Kill() })
+	ingester.limitStop = limitStop
+
+	if startErr := command.Start(); startErr != nil {
+		stdoutReader.Close()
+		stdoutWriter.Close()
+		stderrReader.Close()
+		stderrWriter.Close()
+		stderr.Close()
+		return result, startErr
+	}
+	// 親側write endは即座に閉じ、EOFをchild側fdの解放だけへ依存させる。
+	stdoutWriter.Close()
+	stderrWriter.Close()
+
+	stderrSink := io.MultiWriter(stderr, &zaiLimitStderrWatch{stopper: limitStop})
+	drainErrors := make(chan error, 2)
+	go func() { drainErrors <- drainPipe(stdoutReader, ingester) }()
+	go func() { drainErrors <- drainPipe(stderrReader, stderrSink) }()
+
+	runErr := command.Wait()
+	if drainErr := waitPipeDrain(stdoutReader, stderrReader, drainErrors, limitStop.stopped); runErr == nil {
+		runErr = drainErr
+	}
 	ingester.flush()
 	stderrCloseErr := stderr.Close()
 	if runErr == nil && stderrCloseErr != nil {

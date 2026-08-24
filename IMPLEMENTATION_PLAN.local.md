@@ -8,11 +8,10 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/zai-five-hour-limit-immediate-stop.md`
+- `IMPLEMENTATION_TASKS/008-machine-protocol-measurement.md`
 
 ## NEXT（優先順）
 
-- `IMPLEMENTATION_TASKS/008-machine-protocol-measurement.md`
 - `IMPLEMENTATION_TASKS/009-worker-call-outliers.md`
 - `IMPLEMENTATION_TASKS/010-task-splitting-milestones.md`
 - `IMPLEMENTATION_TASKS/011-operation-category-telemetry.md`
@@ -42,14 +41,14 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 ## 現在のGit境界
 
 - branch: `main`
-- implementation baseline: completion detection authority是正commit（current HEAD）
-- metadata boundary: incidentの独立review・Sol採否・完了証跡・task削除を同一commitへ同期し、5時間Usage Limit即時停止taskをACTIVEへ昇格した境界
+- implementation baseline: Z.ai 5時間Usage Limit即時停止commit（current HEAD）
+- metadata boundary: 5時間limit taskの独立review・Sol差戻し後再review・完了証跡・task削除を同一commitへ同期し、Task 008をACTIVEへ昇格した境界
 - push: 禁止
 
 ## 現在の停止理由
 
-blockerなし。completion detection incidentのfinal HEAD gate、本配置、managed instruction source/installed hash一致を完了。5時間Usage Limit即時停止taskを開始できる。
+blockerなし。5時間Usage Limit即時停止taskのfinal HEAD gate、本配置、installed binary/source一致、status JSON smokeを完了。Task 008を開始できる。
 
 ## 次の親Codex操作
 
-ACTIVEの5時間Usage Limit即時停止taskを要求正本として新しいGLM taskを開始する。pushしない。
+ACTIVE Task 008を要求正本としてmachine protocol measurementを開始する。pushしない。
