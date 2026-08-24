@@ -1,11 +1,9 @@
 package app
 
 import (
-	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -76,12 +74,9 @@ func TestPrintStatsKeepsHistoricalPacketCompactions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var out bytes.Buffer
-	if err := printStats(st, &out); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(out.String(), "PACKET_COMPACTIONS: 2\n") {
-		t.Fatalf("旧archiveのpacket_compactions集計が出力されていません: %s", out.String())
+	output := executeStatsOutput(t, st)
+	if output.PacketCompactions != 2 {
+		t.Fatalf("旧archiveのpacket_compactions集計 = %d: %#v", output.PacketCompactions, output)
 	}
 }
 
@@ -103,26 +98,23 @@ func TestPrintStatsTelemetryCoverageHistoricalGapAndCurrentTask(t *testing.T) {
 	recordCoverageTaskCall(st, current)
 	recordCoverageTaskCall(st, current)
 
-	var out bytes.Buffer
-	if err := printStats(st, &out); err != nil {
-		t.Fatal(err)
+	output := executeStatsOutput(t, st)
+	if output.ModelCalls != 3 {
+		t.Fatalf("model_calls = %d", output.ModelCalls)
 	}
-	for _, value := range []string{
-		"MODEL_CALLS: 3",
-		"TELEMETRY_COVERAGE: incomplete",
-		"TELEMETRY_COVERAGE_MODEL_CALLS: 3",
-		"TELEMETRY_COVERAGE_RAW_RECORDS: 2",
-		"TELEMETRY_COVERAGE_MISSING_CALLS: 1",
-		"TELEMETRY_COVERAGE_EXCESS_RECORDS: 0",
-		"USAGE_TOTALS_COVERAGE: unknown",
-		"TELEMETRY_COVERAGE_HISTORICAL_GAP: task=" + gapTask + " stats_calls=1 raw_records=0 missing=1 usage=unknown",
-	} {
-		if !strings.Contains(out.String(), value+"\n") {
-			t.Fatalf("coverage出力に%qがありません: %s", value, out.String())
-		}
+	coverage := output.TelemetryCoverage
+	if coverage.Status != "incomplete" || coverage.StatsCalls != 3 || coverage.RawRecords != 2 || coverage.MissingCalls != 1 || coverage.ExcessRecords != 0 {
+		t.Fatalf("coverage = %#v", coverage)
 	}
-	if strings.Contains(out.String(), "TELEMETRY_COVERAGE_INCOMPLETE_TASK") {
-		t.Fatalf("完全一致の現在taskをincomplete行へ出力しません: %s", out.String())
+	if coverage.UsageKnown {
+		t.Fatalf("gapがあるのにusage_totals_known = true: %#v", coverage)
+	}
+	if len(coverage.Tasks) != 1 {
+		t.Fatalf("coverage.tasks = %#v", coverage.Tasks)
+	}
+	gap := coverage.Tasks[0]
+	if gap.TaskID != gapTask || gap.Classification != "historical-gap" || gap.StatsCalls != 1 || gap.RawRecords != 0 || gap.MissingCalls != 1 {
+		t.Fatalf("historical gap明細 = %#v", gap)
 	}
 }
 
@@ -139,29 +131,16 @@ func TestPrintStatsTelemetryCoverageComplete(t *testing.T) {
 	st.RecordModelCall(state.WorkerRole, "opus")
 	recordCoverageTaskCall(st, current)
 
-	var out bytes.Buffer
-	if err := printStats(st, &out); err != nil {
-		t.Fatal(err)
+	output := executeStatsOutput(t, st)
+	coverage := output.TelemetryCoverage
+	if coverage.Status != "complete" || coverage.StatsCalls != 1 || coverage.RawRecords != 1 || coverage.MissingCalls != 0 {
+		t.Fatalf("complete時のcoverage = %#v", coverage)
 	}
-	for _, value := range []string{
-		"TELEMETRY_COVERAGE: complete",
-		"TELEMETRY_COVERAGE_MODEL_CALLS: 1",
-		"TELEMETRY_COVERAGE_RAW_RECORDS: 1",
-		"TELEMETRY_COVERAGE_MISSING_CALLS: 0",
-		"USAGE_TOTALS_COVERAGE: complete",
-	} {
-		if !strings.Contains(out.String(), value+"\n") {
-			t.Fatalf("complete時のcoverage出力に%qがありません: %s", value, out.String())
-		}
+	if !coverage.UsageKnown {
+		t.Fatalf("complete時のusage_totals_known = false: %#v", coverage)
 	}
-	for _, forbidden := range []string{
-		"TELEMETRY_COVERAGE_HISTORICAL_GAP",
-		"TELEMETRY_COVERAGE_INCOMPLETE_TASK",
-		"TELEMETRY_COVERAGE_UNREADABLE_TASK",
-	} {
-		if strings.Contains(out.String(), forbidden) {
-			t.Fatalf("complete時に%qを出力しません: %s", forbidden, out.String())
-		}
+	if len(coverage.Tasks) != 0 {
+		t.Fatalf("complete時にtask明細 = %#v", coverage.Tasks)
 	}
 }
 
@@ -189,20 +168,28 @@ func TestPrintStatsTelemetryCoverageCurrentTaskShortageAndUnreadable(t *testing.
 		t.Fatal(err)
 	}
 
-	var out bytes.Buffer
-	if err := printStats(st, &out); err != nil {
-		t.Fatal(err)
+	output := executeStatsOutput(t, st)
+	coverage := output.TelemetryCoverage
+	if coverage.Status != "unreadable" || coverage.MissingCalls != 1 {
+		t.Fatalf("coverage = %#v", coverage)
 	}
-	for _, value := range []string{
-		"TELEMETRY_COVERAGE: unreadable",
-		"TELEMETRY_COVERAGE_MISSING_CALLS: 1",
-		"TELEMETRY_COVERAGE_INCOMPLETE_TASK: task=" + current + " stats_calls=2 raw_records=1 missing=1 excess=0 usage=unknown",
-		"TELEMETRY_COVERAGE_UNREADABLE_TASK: task=" + brokenTask + " stats_calls=1",
-		"USAGE_TOTALS_COVERAGE: unknown",
-	} {
-		if !strings.Contains(out.String(), value+"\n") {
-			t.Fatalf("coverage出力に%qがありません: %s", value, out.String())
-		}
+	if coverage.UsageKnown {
+		t.Fatalf("unreadableがあるのにusage_totals_known = true: %#v", coverage)
+	}
+	details := map[string]statsCoverageTask{}
+	for _, task := range coverage.Tasks {
+		details[task.TaskID] = task
+	}
+	if len(details) != 2 {
+		t.Fatalf("coverage.tasks = %#v", coverage.Tasks)
+	}
+	incomplete := details[current]
+	if incomplete.Classification != "incomplete" || incomplete.StatsCalls != 2 || incomplete.RawRecords != 1 || incomplete.MissingCalls != 1 || incomplete.ExcessRecords != 0 {
+		t.Fatalf("現在task明細 = %#v", incomplete)
+	}
+	unreadable := details[brokenTask]
+	if unreadable.Classification != "unreadable" || unreadable.StatsCalls != 1 {
+		t.Fatalf("unreadable task明細 = %#v", unreadable)
 	}
 }
 
@@ -222,31 +209,19 @@ func TestPrintStatsTelemetryCoverageOrphanOnlyIsIncomplete(t *testing.T) {
 	orphanTask := "orphan0001-1111-4222-8333-444444444444"
 	recordCoverageTaskCall(st, orphanTask)
 
-	var out bytes.Buffer
-	if err := printStats(st, &out); err != nil {
-		t.Fatal(err)
+	output := executeStatsOutput(t, st)
+	coverage := output.TelemetryCoverage
+	if coverage.Status != "incomplete" || coverage.StatsCalls != 1 || coverage.RawRecords != 1 || coverage.MissingCalls != 0 || coverage.ExcessRecords != 0 {
+		t.Fatalf("orphanのみ時のcoverage = %#v", coverage)
 	}
-	for _, value := range []string{
-		"TELEMETRY_COVERAGE: incomplete",
-		"TELEMETRY_COVERAGE_MODEL_CALLS: 1",
-		"TELEMETRY_COVERAGE_RAW_RECORDS: 1",
-		"TELEMETRY_COVERAGE_MISSING_CALLS: 0",
-		"TELEMETRY_COVERAGE_EXCESS_RECORDS: 0",
-		"TELEMETRY_COVERAGE_ORPHAN_FILES: 1",
-		"USAGE_TOTALS_COVERAGE: unknown",
-	} {
-		if !strings.Contains(out.String(), value+"\n") {
-			t.Fatalf("orphanのみ時のcoverage出力に%qがありません: %s", value, out.String())
-		}
+	if coverage.OrphanFiles != 1 {
+		t.Fatalf("orphan_files = %d", coverage.OrphanFiles)
 	}
-	for _, forbidden := range []string{
-		"TELEMETRY_COVERAGE_HISTORICAL_GAP",
-		"TELEMETRY_COVERAGE_INCOMPLETE_TASK",
-		"TELEMETRY_COVERAGE_UNREADABLE_TASK",
-	} {
-		if strings.Contains(out.String(), forbidden) {
-			t.Fatalf("集計task自体が完全一致ならtask行は出しません(%q): %s", forbidden, out.String())
-		}
+	if coverage.UsageKnown {
+		t.Fatalf("orphanがあるのにusage_totals_known = true: %#v", coverage)
+	}
+	if len(coverage.Tasks) != 0 {
+		t.Fatalf("集計task自体が完全一致ならtask明細は出しません: %#v", coverage.Tasks)
 	}
 }
 
@@ -264,19 +239,19 @@ func TestPrintStatsTelemetryCoverageExcessOnlyTaskLineHasUsageUnknown(t *testing
 	recordCoverageTaskCall(st, current)
 	recordCoverageTaskCall(st, current)
 
-	var out bytes.Buffer
-	if err := printStats(st, &out); err != nil {
-		t.Fatal(err)
+	output := executeStatsOutput(t, st)
+	coverage := output.TelemetryCoverage
+	if coverage.Status != "incomplete" || coverage.MissingCalls != 0 || coverage.ExcessRecords != 1 {
+		t.Fatalf("過剰のみ時のcoverage = %#v", coverage)
 	}
-	for _, value := range []string{
-		"TELEMETRY_COVERAGE: incomplete",
-		"TELEMETRY_COVERAGE_MISSING_CALLS: 0",
-		"TELEMETRY_COVERAGE_EXCESS_RECORDS: 1",
-		"TELEMETRY_COVERAGE_INCOMPLETE_TASK: task=" + current + " stats_calls=1 raw_records=2 missing=0 excess=1 usage=unknown",
-		"USAGE_TOTALS_COVERAGE: unknown",
-	} {
-		if !strings.Contains(out.String(), value+"\n") {
-			t.Fatalf("過剰のみ時のcoverage出力に%qがありません: %s", value, out.String())
-		}
+	if coverage.UsageKnown {
+		t.Fatalf("過剰があるのにusage_totals_known = true: %#v", coverage)
+	}
+	if len(coverage.Tasks) != 1 {
+		t.Fatalf("coverage.tasks = %#v", coverage.Tasks)
+	}
+	excess := coverage.Tasks[0]
+	if excess.TaskID != current || excess.Classification != "incomplete" || excess.StatsCalls != 1 || excess.RawRecords != 2 || excess.MissingCalls != 0 || excess.ExcessRecords != 1 {
+		t.Fatalf("過剰のみ時のtask明細 = %#v", excess)
 	}
 }

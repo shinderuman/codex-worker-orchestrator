@@ -10,20 +10,20 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-// defaultWatchStatusIntervalはverbose LIVE表示の定期再表示間隔。follow tickより長く、
-// 長時間toolのelapsed更新を人間が追える鮮度に保つ。
+// defaultWatchStatusIntervalはverbose live eventの定期再出力間隔。follow tickより長く、
+// 長時間toolのelapsed更新を追える鮮度に保つ。
 const defaultWatchStatusInterval = 5 * time.Second
 
-// defaultWatchChangeIntervalは現在tool集合の変化を検出した際の再表示最小間隔。busyな
-// stream中にLIVE blockがevent行へ割り込み続けないための下限。
+// defaultWatchChangeIntervalは現在tool集合の変化を検出した際の再出力最小間隔。busyな
+// stream中にlive eventが割り込み続けないための下限。
 const defaultWatchChangeInterval = time.Second
 
-// watchVerboseLastToolMinDurationは「直前に完了した長時間tool」としてLAST表示する最小
-// 所要時間。短いtoolの連続でLASTが意味を失わないための閾値。
+// watchVerboseLastToolMinDurationは「直前に完了した長時間tool」としてlastに載せる最小
+// 所要時間。短いtoolの連続でlastが意味を失わないための閾値。
 const watchVerboseLastToolMinDuration = 10 * time.Second
 
-// watchDetailMaxRunesはLIVE行へ出すcommand・purpose本文の表示上限。切詰めはこの表示時
-// だけに行い、event log・live snapshot側の保存内容を変更しない。
+// watchDetailMaxRunesはlive eventへ出すcommand・purpose本文の出力上限。切詰めはこの
+// 出力時だけに行い、event log・live snapshot側の保存内容を変更しない。
 const watchDetailMaxRunes = 200
 
 // watchPendingToolはevent logのtool_use blockから組立中の実行中tool。
@@ -34,7 +34,7 @@ type watchPendingTool struct {
 	startedAt time.Time
 }
 
-// watchCompletedToolは測定済み所要時間を持つ完了tool。LAST表示の対象。
+// watchCompletedToolは測定済み所要時間を持つ完了tool。last表示の対象。
 type watchCompletedTool struct {
 	name       string
 	duration   time.Duration
@@ -47,7 +47,7 @@ type watchToolError struct {
 	at   time.Time
 }
 
-// watchToolTrackerは表示済みevent recordから--watch --verbose表示用のtool状態を組立る。
+// watchToolTrackerは流したevent recordから--watch --verbose用のtool状態を組立る。
 // tool_use/tool_resultをtool IDで対応付け、未対応のresult eventで同一callのpendingを
 // 除く(呼出終端後も実行し続けているとは限らないため)。model activity時刻は
 // state.IsModelActivityEventの共有契約に従い、event logへ現れるassistant側の
@@ -149,8 +149,8 @@ func (t *watchToolTracker) pendingTools() []watchPendingTool {
 	return tools
 }
 
-// signatureはLIVE再表示要否判定用の現在状態要約。表示対象の変化(pending集合・LAST・
-// ERROR)だけを含め、経過時間の変化だけで再表示しない。
+// signatureはlive event再出力要否判定用の現在状態要約。表示対象の変化(pending集合・last・
+// error)だけを含め、経過時間の変化だけで再出力しない。
 func (t *watchToolTracker) signature() string {
 	tools := t.pendingTools()
 	parts := make([]string, 0, len(tools)+2)
@@ -166,7 +166,7 @@ func (t *watchToolTracker) signature() string {
 	return strings.Join(parts, ",")
 }
 
-// watchLiveStatusはverbose LIVE blockの出力間隔を制御する。state・live snapshotは毎回
+// watchLiveStatusはverbose live eventの出力間隔を制御する。state・live snapshotは毎回
 // 読み取り専用で参照し、watch側から何も書き込まない。
 type watchLiveStatus struct {
 	st            *state.StateStore
@@ -179,11 +179,11 @@ type watchLiveStatus struct {
 	lastSignature string
 }
 
-// refreshは表示条件を満たすときLIVE blockを出す。statusInterval経過、または表示対象の
-// 変化をchangeInterval経過後に検出したときに出す。forceは初回表示の呼出。
-func (w *watchLiveStatus) refresh(force bool) {
+// refreshは出力条件を満たすときlive eventを出す。statusInterval経過、または出力対象の
+// 変化をchangeInterval経過後に検出したときに出す。forceは初回出力の呼出。
+func (w *watchLiveStatus) refresh(force bool) error {
 	if !w.opts.verbose {
-		return
+		return nil
 	}
 	now := w.opts.now()
 	signature := w.tracker.signature()
@@ -194,55 +194,94 @@ func (w *watchLiveStatus) refresh(force bool) {
 			due = true
 		}
 		if !due {
-			return
+			return nil
 		}
 	}
-	renderWatchLiveStatus(w.st, w.taskID, w.stdout, w.tracker, now)
+	if err := writeWatchLiveStatus(w.st, w.taskID, w.stdout, w.tracker, now); err != nil {
+		return err
+	}
 	w.printed = true
 	w.lastPrint = now
 	w.lastSignature = signature
+	return nil
 }
 
-// renderWatchLiveStatusは現時点のlive tool状態をLIVE行へ出す。tool種別・経過・LASTは
+// watchLiveEventはverbose時のlive tool観測1件。実行中tool・直前の長時間tool・直近の
+// tool errorを1つの型付きeventへ載せる。
+type watchLiveEvent struct {
+	Type        string             `json:"type"`
+	TaskAgeMS   *int64             `json:"task_age_ms,omitempty"`
+	ModelIdleMS *int64             `json:"model_idle_ms,omitempty"`
+	Current     []watchLiveTool    `json:"current"`
+	Last        *watchLiveLastTool `json:"last,omitempty"`
+	ToolError   *watchLiveToolErr  `json:"tool_error,omitempty"`
+}
+
+type watchLiveTool struct {
+	Name       string `json:"name"`
+	ElapsedMS  int64  `json:"elapsed_ms"`
+	Command    string `json:"command,omitempty"`
+	Purpose    string `json:"purpose,omitempty"`
+	Background bool   `json:"background,omitempty"`
+	WaitTaskID string `json:"wait_task_id,omitempty"`
+}
+
+type watchLiveLastTool struct {
+	Name       string `json:"name"`
+	DurationMS int64  `json:"duration_ms"`
+}
+
+type watchLiveToolErr struct {
+	Name  string `json:"name"`
+	AgeMS int64  `json:"age_ms"`
+}
+
+// writeWatchLiveStatusは現時点のlive tool状態をlive eventへ出す。tool種別・経過・lastは
 // event logのrecordから、command・purpose・background待ちはrunnerが書いたlive snapshot
-// からtool ID対応で取り、snapshot欠損時はそれらの行を省く(表示全体は失敗させない)。
-func renderWatchLiveStatus(st *state.StateStore, taskID string, stdout io.Writer, tracker *watchToolTracker, now time.Time) {
+// からtool ID対応で取り、snapshot欠損時はそれらのfieldを省く(出力全体は失敗させない)。
+func writeWatchLiveStatus(st *state.StateStore, taskID string, stdout io.Writer, tracker *watchToolTracker, now time.Time) error {
+	event := watchLiveEvent{Type: "live", Current: []watchLiveTool{}}
 	if startedAt, ok := watchTaskStartedAt(st, tracker); ok {
-		fmt.Fprintf(stdout, "LIVE TASK_AGE %s\n", formatWatchAge(now.Sub(startedAt)))
+		event.TaskAgeMS = msPtr(now.Sub(startedAt))
 	}
 	details := liveToolDetails(st, taskID, tracker)
 	if !details.modelIdleAt.IsZero() {
-		fmt.Fprintf(stdout, "LIVE MODEL_IDLE %s\n", formatWatchElapsed(now.Sub(details.modelIdleAt)))
+		event.ModelIdleMS = msPtr(now.Sub(details.modelIdleAt))
 	}
-	pending := tracker.pendingTools()
-	if len(pending) == 0 {
-		fmt.Fprintln(stdout, "LIVE CURRENT none")
-	}
-	for _, tool := range pending {
-		fmt.Fprintf(stdout, "LIVE CURRENT %s %s elapsed\n", tool.name, formatWatchElapsed(now.Sub(tool.startedAt)))
-		detail, ok := details.tools[tool.toolID]
-		if !ok {
-			continue
+	for _, tool := range tracker.pendingTools() {
+		liveTool := watchLiveTool{
+			Name:      tool.name,
+			ElapsedMS: elapsedMS(now.Sub(tool.startedAt)),
 		}
-		if detail.Command != "" {
-			fmt.Fprintf(stdout, "LIVE COMMAND %s\n", truncateWatchDetail(detail.Command))
+		if detail, ok := details.tools[tool.toolID]; ok {
+			liveTool.Command = truncateWatchDetail(detail.Command)
+			liveTool.Purpose = truncateWatchDetail(detail.Purpose)
+			liveTool.WaitTaskID = detail.WaitTaskID
+			liveTool.Background = detail.Background
 		}
-		if detail.Purpose != "" {
-			fmt.Fprintf(stdout, "LIVE PURPOSE %s\n", truncateWatchDetail(detail.Purpose))
-		}
-		if detail.WaitTaskID != "" {
-			fmt.Fprintf(stdout, "LIVE BACKGROUND_WAIT task=%s\n", detail.WaitTaskID)
-		}
-		if detail.Background {
-			fmt.Fprintln(stdout, "LIVE BACKGROUND starting")
-		}
+		event.Current = append(event.Current, liveTool)
 	}
 	if tracker.lastLongTool != nil {
-		fmt.Fprintf(stdout, "LIVE LAST %s completed %s\n", tracker.lastLongTool.name, formatWatchLastDuration(tracker.lastLongTool.duration))
+		event.Last = &watchLiveLastTool{
+			Name:       tracker.lastLongTool.name,
+			DurationMS: tracker.lastLongTool.duration.Milliseconds(),
+		}
 	}
 	if tracker.lastError != nil {
-		fmt.Fprintf(stdout, "LIVE TOOL_ERROR %s %s ago\n", tracker.lastError.name, formatWatchElapsed(now.Sub(tracker.lastError.at)))
+		event.ToolError = &watchLiveToolErr{
+			Name:  tracker.lastError.name,
+			AgeMS: elapsedMS(now.Sub(tracker.lastError.at)),
+		}
 	}
+	return writeWatchEvent(stdout, event)
+}
+
+// elapsedMSは経過durationをmillisecond整数へ寄せる。負値は観測境界の揺れとして0にする。
+func elapsedMS(d time.Duration) int64 {
+	if d < 0 {
+		return 0
+	}
+	return d.Milliseconds()
 }
 
 // liveToolDetailsはlive snapshotを読み、MODEL_IDLE基準のmodel activity時刻とtool ID対応の
@@ -273,7 +312,7 @@ func liveToolDetails(st *state.StateStore, taskID string, tracker *watchToolTrac
 }
 
 // watchTaskStartedAtはtask年齢の基準時刻を観測用stats mirrorから、無ければ先頭eventから
-// 取る。どちらも無いときはTASK_AGE行を出さない。
+// 取る。どちらも無いときはtask_age_msを出さない。
 func watchTaskStartedAt(st *state.StateStore, tracker *watchToolTracker) (time.Time, bool) {
 	if stats, err := st.CurrentTaskStats(); err == nil && !stats.StartedAt.IsZero() {
 		return stats.StartedAt, true
@@ -284,8 +323,8 @@ func watchTaskStartedAt(st *state.StateStore, tracker *watchToolTracker) (time.T
 	return time.Time{}, false
 }
 
-// truncateWatchDetailはlive詳細本文を表示上限runesへ切詰める。改行は1行表示へ収まる
-// ようescapeする。保存側ではなく表示時だけのtruncateである。
+// truncateWatchDetailはlive詳細本文を出力上限runesへ切詰める。改行は1 event本文へ
+// 収まるようescapeする。保存側ではなく出力時だけのtruncateである。
 func truncateWatchDetail(text string) string {
 	single := strings.ReplaceAll(text, "\r", "")
 	single = strings.ReplaceAll(single, "\n", "\\n")
@@ -294,33 +333,4 @@ func truncateWatchDetail(text string) string {
 		return single
 	}
 	return string(runes[:watchDetailMaxRunes]) + "..."
-}
-
-// formatWatchAgeはtask年齢のH:MM:SS形式。
-func formatWatchAge(d time.Duration) string {
-	if d < 0 {
-		d = 0
-	}
-	total := int64(d.Seconds())
-	return fmt.Sprintf("%d:%02d:%02d", total/3600, (total%3600)/60, total%60)
-}
-
-// formatWatchElapsedは経過時間のM:SS形式。1時間以上はH:MM:SSへ切り替える。
-func formatWatchElapsed(d time.Duration) string {
-	if d >= time.Hour {
-		return formatWatchAge(d)
-	}
-	if d < 0 {
-		d = 0
-	}
-	total := int64(d.Seconds())
-	return fmt.Sprintf("%d:%02d", total/60, total%60)
-}
-
-// formatWatchLastDurationは完了toolの所要時間。1時間未満は秒表示、以上はH:MM:SS。
-func formatWatchLastDuration(d time.Duration) string {
-	if d < time.Hour {
-		return fmt.Sprintf("%.1fs", d.Seconds())
-	}
-	return formatWatchAge(d)
 }

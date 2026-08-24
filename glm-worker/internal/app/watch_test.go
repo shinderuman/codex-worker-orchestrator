@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"strings"
 	"testing"
@@ -52,8 +53,66 @@ func watchTestStore(t *testing.T) (*state.StateStore, config.AppConfig) {
 	return st, cfg
 }
 
-// TestWatchRendersSavedEventsWithoutSideEffectsは保存済みevent logだけを読んで表示し、
-// state書換・repo lockを行わないことを検証する。
+// parseWatchEventsはwatch出力の全行をJSON objectへdecodeする。JSONLでない行が1つでも
+// あれば契約違反として失敗する。
+func parseWatchEvents(t *testing.T, rendered string) []map[string]any {
+	t.Helper()
+	events := []map[string]any{}
+	for _, line := range strings.Split(strings.TrimRight(rendered, "\n"), "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		var event map[string]any
+		if err := json.Unmarshal([]byte(line), &event); err != nil {
+			t.Fatalf("watch出力にJSONLでない行があります: %v: %q", err, line)
+		}
+		events = append(events, event)
+	}
+	return events
+}
+
+// watchEventIndexは指定typeのevent位置を返す。無い場合は-1。
+func watchEventIndex(events []map[string]any, eventType string) int {
+	for i, event := range events {
+		if event["type"] == eventType {
+			return i
+		}
+	}
+	return -1
+}
+
+// requireWatchEventは指定typeの最初のeventを返す。
+func requireWatchEvent(t *testing.T, events []map[string]any, eventType string) map[string]any {
+	t.Helper()
+	index := watchEventIndex(events, eventType)
+	if index < 0 {
+		t.Fatalf("watch streamに%q eventがありません: %v", eventType, events)
+	}
+	return events[index]
+}
+
+// watchFloatはJSON number fieldをfloat64として取り出す。
+func watchFloat(t *testing.T, event map[string]any, key string) float64 {
+	t.Helper()
+	value, ok := event[key].(float64)
+	if !ok {
+		t.Fatalf("event %vの%qがJSON numberではありません: %#v", event["type"], key, event[key])
+	}
+	return value
+}
+
+// watchStringはJSON string fieldを取り出す。
+func watchString(t *testing.T, event map[string]any, key string) string {
+	t.Helper()
+	value, ok := event[key].(string)
+	if !ok {
+		t.Fatalf("event %vの%qがJSON stringではありません: %#v", event["type"], key, event[key])
+	}
+	return value
+}
+
+// TestWatchRendersSavedEventsWithoutSideEffectsは保存済みevent logだけをJSONL passthroughで
+// 流し、state書換・repo lockを行わないことを検証する。
 func TestWatchRendersSavedEventsWithoutSideEffects(t *testing.T) {
 	st, _ := watchTestStore(t)
 	taskID := "12345678-aaaa-bbbb-cccc-dddddddddddd"
@@ -75,26 +134,35 @@ func TestWatchRendersSavedEventsWithoutSideEffects(t *testing.T) {
 	if err := printWatch(st, out, watchTestOptions(false, time.Millisecond, stop)); err != nil {
 		t.Fatal(err)
 	}
-	rendered := out.String()
-	for _, want := range []string{
-		"TASK_ID: " + taskID,
-		"EVENT_LOG: " + st.TaskEventLogPath(taskID),
-		"worker-new worker system init model=glm-5.3",
-		"thinking:456b",
-		"tool_use(Bash):88b",
-		"in=100 out=7",
-		"reviewer-1 reviewer resumed result success",
-		"turns=3",
-		"cost=0.2500",
-		"dur=1500ms",
-		"tool_result(Read):814b/456ms",
-	} {
-		if !strings.Contains(rendered, want) {
-			t.Fatalf("watch表示に%qがありません: %s", want, rendered)
-		}
+	events := parseWatchEvents(t, out.String())
+	start := requireWatchEvent(t, events, "watch_start")
+	if watchString(t, start, "task_id") != taskID || watchString(t, start, "event_log") != st.TaskEventLogPath(taskID) {
+		t.Fatalf("watch_start = %#v", start)
 	}
-	if strings.Contains(rendered, "GLM_WORKER_PROBE_OK") || strings.Count(rendered, "\n") != 7 {
-		t.Fatalf("watch表示 = %q", rendered)
+	if watchString(t, start, "event_log_status") != "following" {
+		t.Fatalf("event_log_status = %v", start["event_log_status"])
+	}
+	// 保存済みrecordは保存行そのままpassthroughされる。数値・boolはJSON型のまま現れる。
+	if len(events) != 5 {
+		t.Fatalf("watch stream = %d events: %v", len(events), events)
+	}
+	assistant := events[2]
+	if watchString(t, assistant, "kind") != "assistant" || watchString(t, assistant, "message_model") != "glm-5.3" {
+		t.Fatalf("assistant record = %#v", assistant)
+	}
+	usage := assistant["usage"].(map[string]any)
+	if usage["input_tokens"] != float64(100) || usage["output_tokens"] != float64(7) {
+		t.Fatalf("assistant usage = %#v", usage)
+	}
+	result := events[3]
+	if resumed, _ := result["resumed"].(bool); !resumed {
+		t.Fatalf("result recordのresumed = %#v", result["resumed"])
+	}
+	if result["num_turns"] != float64(3) || result["total_cost_usd"] != float64(0.25) || result["duration_ms"] != float64(1500) {
+		t.Fatalf("result record観測値 = %#v", result)
+	}
+	if strings.Contains(out.String(), "GLM_WORKER_PROBE_OK") {
+		t.Fatalf("watch表示 = %q", out.String())
 	}
 
 	entriesAfter, err := os.ReadDir(st.Path("."))
@@ -109,7 +177,8 @@ func TestWatchRendersSavedEventsWithoutSideEffects(t *testing.T) {
 	}
 }
 
-// TestWatchSkipsCorruptLinesはevent logの部分破損行をskipして以後の行を表示する。
+// TestWatchSkipsCorruptLinesはevent logの部分破損行をevent_skippedへ置き換え、以後の行を
+// 流す。
 func TestWatchSkipsCorruptLines(t *testing.T) {
 	st, _ := watchTestStore(t)
 	taskID := "12345678-aaaa-bbbb-cccc-dddddddddddd"
@@ -137,16 +206,20 @@ func TestWatchSkipsCorruptLines(t *testing.T) {
 	if err := printWatch(st, out, watchTestOptions(false, time.Millisecond, stop)); err != nil {
 		t.Fatal(err)
 	}
-	rendered := out.String()
-	if !strings.Contains(rendered, "EVENT_SKIPPED") || strings.Count(rendered, "EVENT_SKIPPED") != 1 {
-		t.Fatalf("破損行skip表示 = %q", rendered)
+	events := parseWatchEvents(t, out.String())
+	skipped := requireWatchEvent(t, events, "event_skipped")
+	if watchString(t, skipped, "error") == "" {
+		t.Fatalf("event_skippedのerrorが空です: %#v", skipped)
 	}
-	if !strings.Contains(rendered, "result success") {
-		t.Fatalf("破損行以後の表示がありません: %q", rendered)
+	if watchEventIndex(events, "event_skipped") != 2 {
+		t.Fatalf("破損行のskip位置が不正です: %v", events)
+	}
+	if watchString(t, events[3], "kind") != "result" || watchString(t, events[3], "subtype") != "success" {
+		t.Fatalf("破損行以後のrecordが流れていません: %#v", events[3])
 	}
 }
 
-// TestWatchFollowsAppendedEventsはfollow中の追記を表示する。
+// TestWatchFollowsAppendedEventsはfollow中の追記もpassthroughする。
 func TestWatchFollowsAppendedEvents(t *testing.T) {
 	st, _ := watchTestStore(t)
 	taskID := "12345678-aaaa-bbbb-cccc-dddddddddddd"
@@ -171,13 +244,15 @@ func TestWatchFollowsAppendedEvents(t *testing.T) {
 	)
 	time.Sleep(30 * time.Millisecond)
 	close(stop)
-	followOut := <-rendered
+	events := parseWatchEvents(t, <-rendered)
 
-	if !strings.Contains(followOut, "system init") {
-		t.Fatalf("既存行表示がありません: %q", followOut)
+	init := events[1]
+	if watchString(t, init, "kind") != "system" || watchString(t, init, "subtype") != "init" {
+		t.Fatalf("既存行が流れていません: %#v", init)
 	}
-	if !strings.Contains(followOut, "result success turns=2") {
-		t.Fatalf("追記行のfollow表示がありません: %q", followOut)
+	appended := events[2]
+	if watchString(t, appended, "kind") != "result" || appended["num_turns"] != float64(2) {
+		t.Fatalf("追記行のfollow表示がありません: %#v", appended)
 	}
 }
 
@@ -191,8 +266,13 @@ func TestWatchWithoutTaskOrLog(t *testing.T) {
 	if err := printWatch(state.AttachStateStore(cfg), out, watchTestOptions(false, time.Millisecond, stop)); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "EVENT_LOG: none") {
-		t.Fatalf("task不在表示 = %q", out.String())
+	events := parseWatchEvents(t, out.String())
+	start := requireWatchEvent(t, events, "watch_start")
+	if start["task_id"] != nil || start["event_log"] != nil {
+		t.Fatalf("task不在時のwatch_start = %#v", start)
+	}
+	if watchString(t, start, "event_log_status") != "none" {
+		t.Fatalf("task不在時のevent_log_status = %v", start["event_log_status"])
 	}
 
 	st, _ := watchTestStore(t)
@@ -200,8 +280,10 @@ func TestWatchWithoutTaskOrLog(t *testing.T) {
 	if err := printWatch(st, out, watchTestOptions(false, time.Millisecond, stop)); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "EVENT_LOG_STATUS: empty") {
-		t.Fatalf("log不在表示 = %q", out.String())
+	events = parseWatchEvents(t, out.String())
+	start = requireWatchEvent(t, events, "watch_start")
+	if watchString(t, start, "event_log_status") != "empty" {
+		t.Fatalf("log不在時のevent_log_status = %v", start["event_log_status"])
 	}
 }
 
@@ -220,8 +302,9 @@ func TestExecuteWatchDoesNotCreateState(t *testing.T) {
 	if err := Execute(cmd, cfg, nil, out, &bytes.Buffer{}); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "EVENT_LOG: none") {
-		t.Fatalf("watch出力 = %q", out.String())
+	events := parseWatchEvents(t, out.String())
+	if watchString(t, requireWatchEvent(t, events, "watch_start"), "event_log_status") != "none" {
+		t.Fatalf("watch出力 = %v", events)
 	}
 	entries, err := os.ReadDir(base)
 	if err != nil {
@@ -258,7 +341,7 @@ func runWatchUntilExit(t *testing.T, st *state.StateStore, followInterval time.D
 }
 
 // TestWatchExitsImmediatelyWhenTaskAlreadyNonActiveはattach時点でtask.statusが
-// active以外の全状態にある場合、保存済みeventを表示して即座に終了することを検証する。
+// active以外の全状態にある場合、保存済みeventを流して即座にwatch_exitで終了する。
 func TestWatchExitsImmediatelyWhenTaskAlreadyNonActive(t *testing.T) {
 	for _, status := range []state.TaskStatus{
 		state.TaskStatusWaitingDecision,
@@ -277,24 +360,23 @@ func TestWatchExitsImmediatelyWhenTaskAlreadyNonActive(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			rendered := runWatchUntilExit(t, st, time.Millisecond)
-			for _, want := range []string{
-				"result success",
-				"WATCH_EXIT: task=" + taskID + " status=" + string(status),
-			} {
-				if !strings.Contains(rendered, want) {
-					t.Fatalf("watch表示に%qがありません: %s", want, rendered)
-				}
+			events := parseWatchEvents(t, runWatchUntilExit(t, st, time.Millisecond))
+			exit := requireWatchEvent(t, events, "watch_exit")
+			if watchString(t, exit, "task_id") != taskID || watchString(t, exit, "status") != string(status) {
+				t.Fatalf("watch_exit = %#v", exit)
 			}
-			if strings.Index(rendered, "result success") > strings.Index(rendered, "WATCH_EXIT") {
-				t.Fatalf("終了行が残eventより先に出力されています: %s", rendered)
+			if watchEventIndex(events, "watch_exit") != len(events)-1 {
+				t.Fatalf("終端eventより後に出力があります: %v", events)
+			}
+			if watchEventIndex(events, "watch_exit") < watchEventIndex(events, "watch_start")+1 {
+				t.Fatalf("保存済みeventより先に終端eventが出ています: %v", events)
 			}
 		})
 	}
 }
 
 // TestWatchFollowsUntilStatusLeavesActiveはfollow中に最終event追記より後にtask.statusが
-// non-activeへ遷移した場合、当該eventを取りこぼさず終了行より前に表示して終了する。
+// non-activeへ遷移した場合、当該eventを取りこぼさずwatch_exitより前に流して終了する。
 // producer側の書込み順(event append→status write)を再現し、読取り側のstate読み→drain順の
 // 取りこぼし防止を固定する。
 func TestWatchFollowsUntilStatusLeavesActive(t *testing.T) {
@@ -325,23 +407,25 @@ func TestWatchFollowsUntilStatusLeavesActive(t *testing.T) {
 		t.Fatal("watchがnon-active遷移後に終了しません")
 	}
 
-	rendered := out.String()
-	for _, want := range []string{
-		"system init",
-		"reviewer-1 reviewer result success",
-		"WATCH_EXIT: task=" + taskID + " status=waiting-sol-review",
-	} {
-		if !strings.Contains(rendered, want) {
-			t.Fatalf("watch表示に%qがありません: %s", want, rendered)
-		}
+	events := parseWatchEvents(t, out.String())
+	if watchString(t, events[1], "kind") != "system" {
+		t.Fatalf("既存行が流れていません: %#v", events[1])
 	}
-	if strings.Index(rendered, "reviewer-1 reviewer result success") > strings.Index(rendered, "WATCH_EXIT") {
-		t.Fatalf("終了行が最終eventより先に出力されています: %s", rendered)
+	reviewer := events[2]
+	if watchString(t, reviewer, "phase") != "reviewer-1" || watchString(t, reviewer, "kind") != "result" {
+		t.Fatalf("追記resultが流れていません: %#v", reviewer)
+	}
+	exit := requireWatchEvent(t, events, "watch_exit")
+	if watchString(t, exit, "status") != string(state.TaskStatusWaitingSolReview) {
+		t.Fatalf("watch_exit = %#v", exit)
+	}
+	if watchEventIndex(events, "watch_exit") < watchEventIndex(events, "watch_start")+2 {
+		t.Fatalf("終端eventが最終recordより先に出ています: %v", events)
 	}
 }
 
 // TestWatchExitsWhenTaskIDSwitchesはfollow中に現在taskが別taskへ切替わった場合、
-// 切替を終了理由に出して終了する。
+// 切替をnew_task_id付きのwatch_exitへ出して終了する。
 func TestWatchExitsWhenTaskIDSwitches(t *testing.T) {
 	st, _ := watchTestStore(t)
 	taskID := "12345678-aaaa-bbbb-cccc-dddddddddddd"
@@ -367,14 +451,15 @@ func TestWatchExitsWhenTaskIDSwitches(t *testing.T) {
 		t.Fatal("watchがtask切替後に終了しません")
 	}
 
-	rendered := out.String()
-	want := "WATCH_EXIT: task=" + taskID + " status=task-switched new-task=12345678-eeee-ffff-0000-111111111111"
-	if !strings.Contains(rendered, want) {
-		t.Fatalf("task切替の終了行がありません: %s", rendered)
+	events := parseWatchEvents(t, out.String())
+	exit := requireWatchEvent(t, events, "watch_exit")
+	if watchString(t, exit, "status") != "task-switched" || watchString(t, exit, "new_task_id") != "12345678-eeee-ffff-0000-111111111111" {
+		t.Fatalf("task切替のwatch_exit = %#v", exit)
 	}
 }
 
-// TestWatchExitsWhenEventLogRemovedはfollow中のevent log削除で従来どおり終了する。
+// TestWatchExitsWhenEventLogRemovedはfollow中のevent log削除でremoved status eventだけを
+// 出して終了する。
 func TestWatchExitsWhenEventLogRemoved(t *testing.T) {
 	st, _ := watchTestStore(t)
 	taskID := "12345678-aaaa-bbbb-cccc-dddddddddddd"
@@ -399,16 +484,17 @@ func TestWatchExitsWhenEventLogRemoved(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("watchがevent log削除後に終了しません")
 	}
-	if !strings.Contains(out.String(), "EVENT_LOG_STATUS: removed") {
-		t.Fatalf("log削除表示がありません: %s", out.String())
+	events := parseWatchEvents(t, out.String())
+	if watchString(t, requireWatchEvent(t, events, "event_log_status"), "status") != "removed" {
+		t.Fatalf("log削除のstatus eventがありません: %v", events)
 	}
-	if strings.Contains(out.String(), "WATCH_EXIT") {
-		t.Fatalf("log削除終了にWATCH_EXIT行が出力されています: %s", out.String())
+	if watchEventIndex(events, "watch_exit") >= 0 {
+		t.Fatalf("log削除終了にwatch_exitが出力されています: %v", events)
 	}
 }
 
 // TestExecuteWatchReturnsAtNonActiveStatusはproduction経路(Execute)で--watchがstateへ
-// 書き込まず、authoritative task.statusのnon-active遷移で終了行を出して復帰する。
+// 書き込まず、authoritative task.statusのnon-active遷移でwatch_exitを出して復帰する。
 func TestExecuteWatchReturnsAtNonActiveStatus(t *testing.T) {
 	base := t.TempDir()
 	cfg := config.AppConfig{StateBase: base, RepoHash: "watchhash", RepoRoot: "/repo"}
@@ -449,15 +535,17 @@ func TestExecuteWatchReturnsAtNonActiveStatus(t *testing.T) {
 		t.Fatal("production経路のwatchがnon-active遷移後に終了しません")
 	}
 
-	rendered := out.String()
-	for _, want := range []string{
-		"TASK_ID: " + taskID,
-		"result success",
-		"WATCH_EXIT: task=" + taskID + " status=waiting-sol-review",
-	} {
-		if !strings.Contains(rendered, want) {
-			t.Fatalf("watch出力に%qがありません: %s", want, rendered)
-		}
+	events := parseWatchEvents(t, out.String())
+	start := requireWatchEvent(t, events, "watch_start")
+	if watchString(t, start, "task_id") != taskID {
+		t.Fatalf("watch_start = %#v", start)
+	}
+	if watchString(t, events[1], "kind") != "result" {
+		t.Fatalf("保存済みrecordが流れていません: %#v", events[1])
+	}
+	exit := requireWatchEvent(t, events, "watch_exit")
+	if watchString(t, exit, "status") != string(state.TaskStatusWaitingSolReview) {
+		t.Fatalf("watch_exit = %#v", exit)
 	}
 	if st.ReadOr("task.status", "") != string(state.TaskStatusWaitingSolReview) {
 		t.Fatalf("watchがtask.statusを変更しました: %s", st.ReadOr("task.status", ""))

@@ -60,33 +60,56 @@ type VerifyArgs struct {
 // fixOriginUsageは--originが受け付けるfix origin有限集合の表示。
 const fixOriginUsage = "[--origin codex-review|glm-reviewer|user-amendment|external-review|metadata-repair]"
 
+// UsageErrorは引数・task ID等の呼出形式の不正。process errorのkind usageへ対応する。
+type UsageError struct {
+	Message string
+}
+
+func (e *UsageError) Error() string {
+	return e.Message
+}
+
+// NotFoundErrorは明示指定の対象(log・run dir等)が存在しない失敗。process errorのkind
+// not_foundへ対応する。
+type NotFoundError struct {
+	Message string
+}
+
+func (e *NotFoundError) Error() string {
+	return e.Message
+}
+
+func usageError(format string, args ...any) *UsageError {
+	return &UsageError{Message: fmt.Sprintf(format, args...)}
+}
+
 func ParseCommand(args []string) (Command, error) {
 	if len(args) == 0 {
-		return Command{}, fmt.Errorf("usage: glm-worker <instruction> | --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix-stdin <payload-bytes> [--sha256 <hex>] %s | --accept | --resume | --status | --watch [--verbose] | --timeline [task-id] | --convergence [task-id] | --stats | --reset | --eval-ab <run-dir>", fixOriginUsage)
+		return Command{}, usageError("usage: glm-worker <instruction> | --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix-stdin <payload-bytes> [--sha256 <hex>] %s | --accept | --resume | --status | --watch [--verbose] | --timeline [task-id] | --convergence [task-id] | --stats | --reset | --eval-ab <run-dir>", fixOriginUsage)
 	}
 
 	switch args[0] {
 	// 廃止したargv埋込みmodeを新規task本文へ誤routingさせないため、専用のusage errorで
 	// fail closedする。
 	case "--decision", "--fix":
-		return Command{}, fmt.Errorf("usage: glm-worker --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix-stdin <payload-bytes> [--sha256 <hex>] %s", fixOriginUsage)
+		return Command{}, usageError("usage: glm-worker --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix-stdin <payload-bytes> [--sha256 <hex>] %s", fixOriginUsage)
 	case "--decision-stdin":
 		return stdinPayloadCommand(ModeDecision, args, "usage: glm-worker --decision-stdin <payload-bytes> [--sha256 <hex>]", false)
 	case "--fix-stdin":
 		return stdinPayloadCommand(ModeFix, args, fmt.Sprintf("usage: glm-worker --fix-stdin <payload-bytes> [--sha256 <hex>] %s", fixOriginUsage), true)
 	case "--accept":
 		if len(args) != 1 {
-			return Command{}, fmt.Errorf("usage: glm-worker --accept")
+			return Command{}, usageError("usage: glm-worker --accept")
 		}
 		return Command{Mode: ModeAccept}, nil
 	case "--resume":
 		if len(args) != 1 {
-			return Command{}, fmt.Errorf("usage: glm-worker --resume")
+			return Command{}, usageError("usage: glm-worker --resume")
 		}
 		return Command{Mode: ModeResume}, nil
 	case "--status":
 		if len(args) != 1 {
-			return Command{}, fmt.Errorf("usage: glm-worker --status")
+			return Command{}, usageError("usage: glm-worker --status")
 		}
 		return Command{Mode: ModeStatus}, nil
 	case "--watch":
@@ -94,12 +117,12 @@ func ParseCommand(args []string) (Command, error) {
 			return Command{Mode: ModeWatch, WatchVerbose: true}, nil
 		}
 		if len(args) != 1 {
-			return Command{}, fmt.Errorf("usage: glm-worker --watch [--verbose]")
+			return Command{}, usageError("usage: glm-worker --watch [--verbose]")
 		}
 		return Command{Mode: ModeWatch}, nil
 	case "--timeline":
 		if len(args) > 2 {
-			return Command{}, fmt.Errorf("usage: glm-worker --timeline [task-id]")
+			return Command{}, usageError("usage: glm-worker --timeline [task-id]")
 		}
 		if len(args) == 2 {
 			return Command{Mode: ModeTimeline, Payload: args[1]}, nil
@@ -107,7 +130,7 @@ func ParseCommand(args []string) (Command, error) {
 		return Command{Mode: ModeTimeline}, nil
 	case "--convergence":
 		if len(args) > 2 {
-			return Command{}, fmt.Errorf("usage: glm-worker --convergence [task-id]")
+			return Command{}, usageError("usage: glm-worker --convergence [task-id]")
 		}
 		if len(args) == 2 {
 			return Command{Mode: ModeConvergence, Payload: args[1]}, nil
@@ -115,17 +138,17 @@ func ParseCommand(args []string) (Command, error) {
 		return Command{Mode: ModeConvergence}, nil
 	case "--stats":
 		if len(args) != 1 {
-			return Command{}, fmt.Errorf("usage: glm-worker --stats")
+			return Command{}, usageError("usage: glm-worker --stats")
 		}
 		return Command{Mode: ModeStats}, nil
 	case "--reset":
 		if len(args) != 1 {
-			return Command{}, fmt.Errorf("usage: glm-worker --reset")
+			return Command{}, usageError("usage: glm-worker --reset")
 		}
 		return Command{Mode: ModeReset}, nil
 	case "--verify-auto-resume":
 		if len(args) != 4 {
-			return Command{}, fmt.Errorf("usage: glm-worker --verify-auto-resume <automation-key> <auto-resume-at-rfc3339> <thread-id>")
+			return Command{}, usageError("usage: glm-worker --verify-auto-resume <automation-key> <auto-resume-at-rfc3339> <thread-id>")
 		}
 		return Command{
 			Mode: ModeVerifyAutoResume,
@@ -137,7 +160,7 @@ func ParseCommand(args []string) (Command, error) {
 		}, nil
 	case "--eval-ab":
 		if len(args) != 2 {
-			return Command{}, fmt.Errorf("usage: glm-worker --eval-ab <run-dir>")
+			return Command{}, usageError("usage: glm-worker --eval-ab <run-dir>")
 		}
 		return Command{Mode: ModeEvalAB, Payload: args[1]}, nil
 	default:
@@ -147,42 +170,42 @@ func ParseCommand(args []string) (Command, error) {
 
 func stdinPayloadCommand(mode CommandMode, args []string, usage string, allowOrigin bool) (Command, error) {
 	if len(args) < 2 {
-		return Command{}, fmt.Errorf("%s", usage)
+		return Command{}, usageError("%s", usage)
 	}
 
 	payloadBytes, err := strconv.ParseInt(args[1], 10, 64)
 	if err != nil || payloadBytes <= 0 {
-		return Command{}, fmt.Errorf("%s", usage)
+		return Command{}, usageError("%s", usage)
 	}
 
 	command := Command{Mode: mode, StdinBytes: payloadBytes}
 	options := args[2:]
 	if len(options)%2 != 0 {
-		return Command{}, fmt.Errorf("%s", usage)
+		return Command{}, usageError("%s", usage)
 	}
 	seenSHA256 := false
 	for index := 0; index < len(options); index += 2 {
 		switch options[index] {
 		case "--sha256":
 			if seenSHA256 {
-				return Command{}, fmt.Errorf("%s", usage)
+				return Command{}, usageError("%s", usage)
 			}
 			digest, err := parsePayloadSHA256(options[index+1])
 			if err != nil {
-				return Command{}, fmt.Errorf("%s", usage)
+				return Command{}, usageError("%s", usage)
 			}
 			command.SHA256 = digest
 			seenSHA256 = true
 		case "--origin":
 			if !allowOrigin || command.Origin != "" {
-				return Command{}, fmt.Errorf("%s", usage)
+				return Command{}, usageError("%s", usage)
 			}
 			if !state.ValidParentOrigin(options[index+1]) {
-				return Command{}, fmt.Errorf("%s", usage)
+				return Command{}, usageError("%s", usage)
 			}
 			command.Origin = options[index+1]
 		default:
-			return Command{}, fmt.Errorf("%s", usage)
+			return Command{}, usageError("%s", usage)
 		}
 	}
 	return command, nil
@@ -200,13 +223,23 @@ func parsePayloadSHA256(value string) (string, error) {
 	return strings.ToLower(value), nil
 }
 
+// StdinPayloadErrorはstdin payloadの読み取り不足・sha256不一致。process errorのkind
+// stdin_payloadへ対応し、state変更・model呼出前にfail closedする。
+type StdinPayloadError struct {
+	Message string
+}
+
+func (e *StdinPayloadError) Error() string {
+	return e.Message
+}
+
 // readStdinPayloadは宣言byte数だけstdinから読み取り、期待sha256と照合する。
 // 呼び出し元のexec sessionがstdin pipeを開いたまま保つため、EOFまで読む過剰byte検知は行えない。
 func readStdinPayload(in io.Reader, want int64, expectedSHA string) (string, error) {
 	var buf bytes.Buffer
 	written, err := io.CopyN(&buf, in, want)
 	if err != nil {
-		return "", fmt.Errorf("stdin payload read failed after %d of %d bytes: %w", written, want, err)
+		return "", &StdinPayloadError{Message: fmt.Sprintf("stdin payload read failed after %d of %d bytes: %v", written, want, err)}
 	}
 
 	payload := buf.Bytes()
@@ -214,22 +247,32 @@ func readStdinPayload(in io.Reader, want int64, expectedSHA string) (string, err
 		sum := sha256.Sum256(payload)
 		actual := hex.EncodeToString(sum[:])
 		if !strings.EqualFold(actual, expectedSHA) {
-			return "", fmt.Errorf("stdin payload sha256 mismatch: expected %s, got %s", expectedSHA, actual)
+			return "", &StdinPayloadError{Message: fmt.Sprintf("stdin payload sha256 mismatch: expected %s, got %s", expectedSHA, actual)}
 		}
 	}
 	return string(payload), nil
 }
 
-// stdinReadyMarkerはTTY stdinのpayload読み取り開始可能をcallerへ知らせる固定transport marker。
-// raw適用成功直後にstderrへ1回だけ出し、pipe/file等の非TTY stdinでは出さない。
-const stdinReadyMarker = "GLM_STDIN_READY"
+// stdinReadyControlEventはTTY stdinのpayload読み取り開始可能をcallerへ知らせる
+// transport control event。raw適用成功直後にstderrへ1回だけ出し、pipe/file等の
+// 非TTY stdinでは出さない。
+type stdinReadyControlEvent struct {
+	Type  string `json:"type"`
+	Event string `json:"event"`
+}
 
-// emitStdinReadyMarkerはmarker行をstderrへ1回だけ書く。出力時点でraw modeのためOPOSTが
-// 無効で、行末LFはwriter経路で確定観測できる。書込み失敗はcallerが本文を送れず永続待機
-// するため、呼び出し元は復元を実行してfail closedする。
-func emitStdinReadyMarker(w io.Writer) error {
-	if _, err := fmt.Fprintf(w, "%s\n", stdinReadyMarker); err != nil {
-		return fmt.Errorf("stdin ready marker write failed: %w", err)
+// emitStdinReadyControlEventはcontrol event行をstderrへ1回だけ書く。このevent観測が
+// caller側の本文write開始条件(READY-before-write)であり、event出力はpayload読み取りの
+// 前に完了する。出力時点でraw modeのためOPOSTが無効で、行末LFはwriter経路で確定観測
+// できる。書込み失敗はcallerが本文を送れず永続待機するため、呼び出し元は復元を実行して
+// fail closedする。
+func emitStdinReadyControlEvent(w io.Writer) error {
+	line, err := marshalEventLine(stdinReadyControlEvent{Type: "control", Event: "stdin_ready"})
+	if err != nil {
+		return fmt.Errorf("stdin ready control event encode failed: %w", err)
+	}
+	if _, err := w.Write(line); err != nil {
+		return fmt.Errorf("stdin ready control event write failed: %w", err)
 	}
 	return nil
 }
@@ -263,7 +306,7 @@ func run(
 			return err
 		}
 		if rawApplied {
-			if markerErr := emitStdinReadyMarker(stderr); markerErr != nil {
+			if markerErr := emitStdinReadyControlEvent(stderr); markerErr != nil {
 				return errors.Join(markerErr, restore())
 			}
 		}

@@ -158,7 +158,7 @@ func assertPTYParallelIsolated(t *testing.T, transport *ptyParallelTransport, ow
 			t.Fatalf("%s: NUL/CR/Ctrl-C相当byteが失っています: %q", own, received)
 		}
 	}
-	if strings.Count(transport.outputText, stdinReadyMarker) != 1 {
+	if strings.Count(transport.outputText, stdinReadyMarker()) != 1 {
 		t.Fatalf("%s: READY markerがexactly onceではありません: %q", own, transport.outputText)
 	}
 	if strings.Contains(transport.outputText, own) {

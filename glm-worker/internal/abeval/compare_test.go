@@ -1,9 +1,11 @@
 package abeval
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 )
 
 func compareFixture() Comparison {
@@ -80,68 +82,118 @@ func TestCodexReductionReportsNegativeWhenOrchestratedUsesMore(t *testing.T) {
 	}
 }
 
-func TestFormatKeepsCodexReductionQualityTimeAndGLMSeparate(t *testing.T) {
-	out := Format(compareFixture())
+func TestBuildReportCarriesMachineContractFields(t *testing.T) {
+	report := BuildReport(compareFixture())
 
-	expectedKeys := []string{
-		"SPEC: ",
-		"MODES: ",
-		"COMPARISON_METADATA: ",
-		"MEASUREMENT_BOUNDARY: ",
-		"ISOLATION: ",
-		"CODEX_REDUCTION: ",
-		"QUALITY_DELTA: ",
-		"TIME: ",
-		"CODEX_USAGE: ",
-		"GLM_USAGE: ",
-		"PROXY_METRICS: ",
-		"NOTES: ",
+	if report.SpecID != "fixed-eval-example" {
+		t.Fatalf("spec_id = %q", report.SpecID)
 	}
-	actualKeys := make([]string, 0, len(expectedKeys))
-	for _, line := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
-		key, _, _ := strings.Cut(line, ":")
-		actualKeys = append(actualKeys, key+": ")
+	if fmt.Sprint(report.Modes) != fmt.Sprint([]string{"direct", "orchestrated"}) {
+		t.Fatalf("modes = %v", report.Modes)
 	}
-	if fmt.Sprint(actualKeys) != fmt.Sprint(expectedKeys) {
-		t.Fatalf("出力KEY構成 = %v want %v\n%s", actualKeys, expectedKeys, out)
+	if report.MeasurementBoundary != CanonicalMeasurementBoundary {
+		t.Fatalf("measurement_boundary = %q", report.MeasurementBoundary)
 	}
-	if !strings.Contains(out, "CODEX_REDUCTION: input=60.0%, output=53.3% (actual usage") {
-		t.Fatalf("CODEX_REDUCTION表示がactual usage基準ではありません:\n%s", out)
+	if !report.Isolation.IndependentSession || !report.Isolation.IndependentWorktree {
+		t.Fatalf("isolation = %+v", report.Isolation)
 	}
-	if !strings.Contains(out, "TIME: direct=1h32m0s; orchestrated=58m0s; delta=-34m0s") {
-		t.Fatalf("TIME表示が計測境界導出と一致しません:\n%s", out)
+	if report.CodexReduction.Status != codexReductionActual {
+		t.Fatalf("codex_reduction.status = %q", report.CodexReduction.Status)
 	}
-	if !strings.Contains(out, "GLM_USAGE: direct=not-used(direct modeはglm-worker委譲なし)") {
-		t.Fatalf("direct modeのGLM未使用が表示されていません:\n%s", out)
+	if report.CodexReduction.InputPercent == nil || *report.CodexReduction.InputPercent != 60.0 {
+		t.Fatalf("codex_reduction.input_percent = %+v", report.CodexReduction.InputPercent)
 	}
-	if !strings.Contains(out, "合算値は算出しない") {
-		t.Fatalf("GLM/Codex token非合算の方針が表示されていません:\n%s", out)
+	if report.CodexReduction.OutputPercent == nil || *report.CodexReduction.OutputPercent != 53.333333333333336 {
+		t.Fatalf("codex_reduction.output_percent = %+v", report.CodexReduction.OutputPercent)
+	}
+	if report.CodexReduction.DirectSource != CodexUsageSourceAppExport || report.CodexReduction.OrchestratedSource != CodexUsageSourceAppExport {
+		t.Fatalf("codex_reduction sources = %q/%q", report.CodexReduction.DirectSource, report.CodexReduction.OrchestratedSource)
+	}
+	if report.Time.DirectMS != 92*time.Minute.Milliseconds() || report.Time.OrchestratedMS != 58*time.Minute.Milliseconds() ||
+		report.Time.DeltaMS != -34*time.Minute.Milliseconds() {
+		t.Fatalf("time = %+v", report.Time)
+	}
+	if report.QualityDelta.Direct.TestsRun != 246 || report.QualityDelta.Orchestrated.TestsRun != 246 {
+		t.Fatalf("quality_delta = %+v", report.QualityDelta)
 	}
 }
 
-func TestFormatKeepsProxyMetricsLabeledAndSeparateFromCodexUsage(t *testing.T) {
-	out := Format(compareFixture())
-	if !strings.Contains(out, "PROXY_METRICS: direct=none; orchestrated=sol-packet-bytes=812") {
-		t.Fatalf("proxy指標がactual usageと区別された表示になっていません:\n%s", out)
+func TestBuildReportKeepsProxyMetricsSeparateFromCodexUsage(t *testing.T) {
+	report := BuildReport(compareFixture())
+
+	if report.CodexUsage.Direct == nil || report.CodexUsage.Direct.InputTokens != 1200000 || report.CodexUsage.Direct.OutputTokens != 90000 {
+		t.Fatalf("codex_usage.direct = %+v", report.CodexUsage.Direct)
 	}
-	if !strings.Contains(out, "CODEX_USAGE: direct=actual(source=codex-app-usage-export, input=1200000, output=90000); orchestrated=actual(source=codex-app-usage-export, input=480000, output=42000)") {
-		t.Fatalf("CODEX_USAGEのactual/unknown区別が崩れています:\n%s", out)
+	if report.CodexUsage.Orchestrated == nil || report.CodexUsage.Orchestrated.InputTokens != 480000 || report.CodexUsage.Orchestrated.OutputTokens != 42000 {
+		t.Fatalf("codex_usage.orchestrated = %+v", report.CodexUsage.Orchestrated)
+	}
+	if report.ProxyMetrics.Direct != nil {
+		t.Fatalf("direct modeのproxy観測はない: %+v", report.ProxyMetrics.Direct)
+	}
+	if report.ProxyMetrics.Orchestrated == nil || report.ProxyMetrics.Orchestrated.SolPacketBytes != 812 {
+		t.Fatalf("proxy_metrics.orchestrated = %+v", report.ProxyMetrics.Orchestrated)
 	}
 }
 
-func TestFormatShowsUnknownReductionWithoutFabricatedPercent(t *testing.T) {
+func TestBuildReportDirectGLMUsageIsNullAndOrchestratedKeepsActuals(t *testing.T) {
+	report := BuildReport(compareFixture())
+
+	if report.GLMUsage.Direct != nil {
+		t.Fatalf("direct modeはglm-worker委譲なしのためnull: %+v", report.GLMUsage.Direct)
+	}
+	orchestrated := report.GLMUsage.Orchestrated
+	if orchestrated == nil || orchestrated.Source != GLMUsageSourceTaskStats || orchestrated.InputTokens != 850000 || orchestrated.ModelCalls != 5 {
+		t.Fatalf("glm_usage.orchestrated = %+v", orchestrated)
+	}
+}
+
+func TestBuildReportShowsUnknownReductionWithoutFabricatedPercent(t *testing.T) {
 	spec := validSpec()
 	direct := validDirectRecord(spec)
 	direct.CodexUsage = CodexUsage{}
 	orchestrated := validOrchestratedRecord(spec)
-	out := Format(Compare(spec, direct, orchestrated))
-	if !strings.Contains(out, "CODEX_REDUCTION: unknown (") {
-		t.Fatalf("unknown削減率が推出力されていません:\n%s", out)
+	report := BuildReport(Compare(spec, direct, orchestrated))
+
+	if report.CodexReduction.Status != codexReductionUnknown || report.CodexReduction.UnknownReason == "" {
+		t.Fatalf("unknown削減率の根拠が出ていません: %+v", report.CodexReduction)
 	}
-	if strings.Contains(out, "input=%") {
-		t.Fatalf("actual usageがないのに削減率percentが出力されています:\n%s", out)
+	if report.CodexReduction.InputPercent != nil || report.CodexReduction.OutputPercent != nil {
+		t.Fatalf("actual usageがないのに削減率percentが出ています: %+v", report.CodexReduction)
 	}
-	if !strings.Contains(out, "CODEX_USAGE: direct=unknown") {
-		t.Fatalf("direct usage unknownが表示されていません:\n%s", out)
+	if report.CodexUsage.Direct != nil {
+		t.Fatalf("direct usage unknownはnull: %+v", report.CodexUsage.Direct)
+	}
+}
+
+// TestBuildReportJSONKeysAreStableは--eval-ab成功JSONのtop-level key集合を固定する。
+func TestBuildReportJSONKeysAreStable(t *testing.T) {
+	data, err := json.Marshal(BuildReport(compareFixture()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(data, &object); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"spec_id", "modes", "metadata", "measurement_boundary", "isolation",
+		"codex_reduction", "quality_delta", "time", "codex_usage", "glm_usage", "proxy_metrics",
+	}
+	if len(object) != len(want) {
+		t.Fatalf("key数 = %d want %d: %v", len(object), len(want), object)
+	}
+	for _, key := range want {
+		if _, ok := object[key]; !ok {
+			t.Fatalf("key %qがありません: %s", key, data)
+		}
+	}
+	var metadata struct {
+		UserRequestSHA256 string `json:"user_request_sha256"`
+	}
+	if err := json.Unmarshal(object["metadata"], &metadata); err != nil {
+		t.Fatal(err)
+	}
+	if len(metadata.UserRequestSHA256) != 64 {
+		t.Fatalf("user_request_sha256は全文hash: %q", metadata.UserRequestSHA256)
 	}
 }

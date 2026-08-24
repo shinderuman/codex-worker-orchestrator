@@ -38,10 +38,10 @@ func statusContracts() []statusContract {
 			required: []requiredFieldCase{
 				{"STATUS", func(r *Result) { r.Status = "" }, "worker結果のstatus", true},
 				{"RISK", func(r *Result) { r.Risk = "" }, "LOWまたはHIGH", false},
-				{"SUMMARY", func(r *Result) { r.Summary = " " }, "必須field SUMMARY", false},
-				{"REQUIREMENT_COVERAGE", func(r *Result) { r.RequirementCoverage = "" }, "必須field REQUIREMENT_COVERAGE", false},
-				{"TESTS", func(r *Result) { r.Tests = "" }, "必須field TESTS", false},
-				{"UNVERIFIED", func(r *Result) { r.Unverified = "" }, "必須field UNVERIFIED", false},
+				{"SUMMARY", func(r *Result) { r.Summary = " " }, "必須field summary", false},
+				{"REQUIREMENT_COVERAGE", func(r *Result) { r.RequirementCoverage = "" }, "必須field requirement_coverage", false},
+				{"TESTS", func(r *Result) { r.Tests = "" }, "必須field tests", false},
+				{"UNVERIFIED", func(r *Result) { r.Unverified = "" }, "必須field unverified", false},
 			},
 		},
 		{
@@ -60,11 +60,11 @@ func statusContracts() []statusContract {
 			required: []requiredFieldCase{
 				{"STATUS", func(r *Result) { r.Status = "" }, "worker結果のstatus", true},
 				{"RISK", func(r *Result) { r.Risk = RiskLow }, "NEEDS_SOL_DECISIONのrisk", false},
-				{"DECISION", func(r *Result) { r.Decision = "" }, "必須field DECISION", false},
-				{"EVIDENCE", func(r *Result) { r.Evidence = "" }, "必須field EVIDENCE", false},
-				{"OPTIONS", func(r *Result) { r.Options = "" }, "必須field OPTIONS", false},
-				{"RECOMMENDATION", func(r *Result) { r.Recommendation = "" }, "必須field RECOMMENDATION", false},
-				{"TEST_OBLIGATIONS", func(r *Result) { r.TestObligations = "" }, "必須field TEST_OBLIGATIONS", false},
+				{"DECISION", func(r *Result) { r.Decision = "" }, "必須field decision", false},
+				{"EVIDENCE", func(r *Result) { r.Evidence = "" }, "必須field evidence", false},
+				{"OPTIONS", func(r *Result) { r.Options = "" }, "必須field options", false},
+				{"RECOMMENDATION", func(r *Result) { r.Recommendation = "" }, "必須field recommendation", false},
+				{"TEST_OBLIGATIONS", func(r *Result) { r.TestObligations = "" }, "必須field test_obligations", false},
 				{"TARGETS", func(r *Result) { r.Targets = nil }, "NEEDS_SOL_DECISIONのTARGETSは空", false},
 			},
 		},
@@ -75,12 +75,12 @@ func statusContracts() []statusContract {
 			required: []requiredFieldCase{
 				{"STATUS", func(r *Result) { r.Status = "" }, "reviewer結果のstatus", true},
 				{"RISK", func(r *Result) { r.Risk = RiskHigh }, "PASSのrisk", false},
-				{"SUMMARY", func(r *Result) { r.Summary = "" }, "必須field SUMMARY", false},
-				{"REQUIREMENT_COVERAGE", func(r *Result) { r.RequirementCoverage = "" }, "必須field REQUIREMENT_COVERAGE", false},
-				{"INVARIANTS", func(r *Result) { r.Invariants = "" }, "必須field INVARIANTS", false},
-				{"TEST_EVIDENCE", func(r *Result) { r.TestEvidence = "" }, "必須field TEST_EVIDENCE", false},
-				{"ISSUES", func(r *Result) { r.Issues = "" }, "必須field ISSUES", false},
-				{"RESIDUAL_RISK", func(r *Result) { r.ResidualRisk = "" }, "必須field RESIDUAL_RISK", false},
+				{"SUMMARY", func(r *Result) { r.Summary = "" }, "必須field summary", false},
+				{"REQUIREMENT_COVERAGE", func(r *Result) { r.RequirementCoverage = "" }, "必須field requirement_coverage", false},
+				{"INVARIANTS", func(r *Result) { r.Invariants = "" }, "必須field invariants", false},
+				{"TEST_EVIDENCE", func(r *Result) { r.TestEvidence = "" }, "必須field test_evidence", false},
+				{"ISSUES", func(r *Result) { r.Issues = "" }, "必須field issues", false},
+				{"RESIDUAL_RISK", func(r *Result) { r.ResidualRisk = "" }, "必須field residual_risk", false},
 				{"TARGETS", func(r *Result) { r.Targets = nil }, "PASSのTARGETSは空", false},
 			},
 		},
@@ -96,12 +96,12 @@ func statusContracts() []statusContract {
 			required: []requiredFieldCase{
 				{"STATUS", func(r *Result) { r.Status = "" }, "reviewer結果のstatus", true},
 				{"RISK", func(r *Result) { r.Risk = "" }, "LOWまたはHIGH", false},
-				{"SUMMARY", func(r *Result) { r.Summary = "" }, "必須field SUMMARY", false},
-				{"REQUIREMENT_COVERAGE", func(r *Result) { r.RequirementCoverage = "" }, "必須field REQUIREMENT_COVERAGE", false},
-				{"INVARIANTS", func(r *Result) { r.Invariants = "" }, "必須field INVARIANTS", false},
-				{"TEST_EVIDENCE", func(r *Result) { r.TestEvidence = "" }, "必須field TEST_EVIDENCE", false},
-				{"ISSUES", func(r *Result) { r.Issues = "" }, "必須field ISSUES", false},
-				{"RESIDUAL_RISK", func(r *Result) { r.ResidualRisk = "" }, "必須field RESIDUAL_RISK", false},
+				{"SUMMARY", func(r *Result) { r.Summary = "" }, "必須field summary", false},
+				{"REQUIREMENT_COVERAGE", func(r *Result) { r.RequirementCoverage = "" }, "必須field requirement_coverage", false},
+				{"INVARIANTS", func(r *Result) { r.Invariants = "" }, "必須field invariants", false},
+				{"TEST_EVIDENCE", func(r *Result) { r.TestEvidence = "" }, "必須field test_evidence", false},
+				{"ISSUES", func(r *Result) { r.Issues = "" }, "必須field issues", false},
+				{"RESIDUAL_RISK", func(r *Result) { r.ResidualRisk = "" }, "必須field residual_risk", false},
 				{"TARGETS", func(r *Result) { r.Targets = nil }, "FIX_REQUIREDのTARGETSは空", false},
 			},
 		},
@@ -118,14 +118,14 @@ func statusContracts() []statusContract {
 			required: []requiredFieldCase{
 				{"STATUS", func(r *Result) { r.Status = "" }, "reviewer結果のstatus", true},
 				{"RISK", func(r *Result) { r.Risk = RiskLow }, "NEEDS_SOL_REVIEWのrisk", false},
-				{"SUMMARY", func(r *Result) { r.Summary = "" }, "必須field SUMMARY", false},
-				{"REQUIREMENT_COVERAGE", func(r *Result) { r.RequirementCoverage = "" }, "必須field REQUIREMENT_COVERAGE", false},
-				{"INVARIANTS", func(r *Result) { r.Invariants = "" }, "必須field INVARIANTS", false},
-				{"TEST_EVIDENCE", func(r *Result) { r.TestEvidence = "" }, "必須field TEST_EVIDENCE", false},
-				{"ISSUES", func(r *Result) { r.Issues = "" }, "必須field ISSUES", false},
-				{"RESIDUAL_RISK", func(r *Result) { r.ResidualRisk = "" }, "必須field RESIDUAL_RISK", false},
+				{"SUMMARY", func(r *Result) { r.Summary = "" }, "必須field summary", false},
+				{"REQUIREMENT_COVERAGE", func(r *Result) { r.RequirementCoverage = "" }, "必須field requirement_coverage", false},
+				{"INVARIANTS", func(r *Result) { r.Invariants = "" }, "必須field invariants", false},
+				{"TEST_EVIDENCE", func(r *Result) { r.TestEvidence = "" }, "必須field test_evidence", false},
+				{"ISSUES", func(r *Result) { r.Issues = "" }, "必須field issues", false},
+				{"RESIDUAL_RISK", func(r *Result) { r.ResidualRisk = "" }, "必須field residual_risk", false},
 				{"TARGETS", func(r *Result) { r.Targets = nil }, "TARGETSは空", false},
-				{"SOL_QUESTION", func(r *Result) { r.SolQuestion = "" }, "必須field SOL_QUESTION", false},
+				{"SOL_QUESTION", func(r *Result) { r.SolQuestion = "" }, "必須field sol_question", false},
 			},
 		},
 	}
@@ -450,8 +450,12 @@ func TestParseStructuredIgnoresSchemaPermittedUnknownFields(t *testing.T) {
 			if err := c.validate(result); err != nil {
 				t.Fatalf("意味検証不合格: %v", err)
 			}
-			if strings.Contains(result.Display(), "untracked_field") || strings.Contains(result.Display(), "value") {
-				t.Fatalf("未知fieldが表示へ伝播しています: %s", result.Display())
+			emitted, err := result.MachineJSON()
+			if err != nil {
+				t.Fatalf("err = %v", err)
+			}
+			if strings.Contains(string(emitted), "untracked_field") {
+				t.Fatalf("未知fieldがmachine JSONへ伝播しています: %s", emitted)
 			}
 		})
 	}

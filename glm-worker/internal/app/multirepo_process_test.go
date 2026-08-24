@@ -71,11 +71,13 @@ func TestMultiRepositoryProcessIsolation(t *testing.T) {
 
 	env.setStubMode(t, env.stubA, "ratelimit")
 	rateLimited := env.run(t, env.repoA, "repo A second task after recovery marker MRISOA2")
-	if rateLimited.code != 1 || !strings.Contains(rateLimited.stderr, "STATUS: RATE_LIMITED") {
+	if rateLimited.code != 1 || !strings.Contains(rateLimited.stderr, `"kind":"rate_limited"`) {
 		t.Fatalf("rate-limit停止になりません: code=%d stderr=%s", rateLimited.code, rateLimited.stderr)
 	}
-	if status := env.status(t, env.repoA); statusField(status, "RATE_LIMITED") != "yes" {
-		t.Fatalf("repo Aがrate-limited stateになっていません: %s", status)
+	statusA := env.status(t, env.repoA)
+	rateLimitedStatus, ok := statusJSONField(t, statusA, "rate_limited").(map[string]any)
+	if !ok || rateLimitedStatus["limited"] != true {
+		t.Fatalf("repo Aがrate-limited stateになっていません: %s", statusA)
 	}
 	checkpointA := parseStateJSON(t, stateA, "resume-state.json")
 	if checkpointA["rate_limited"] != true || !strings.Contains(fmt.Sprint(checkpointA["request"]), "MRISOA2") {
@@ -97,7 +99,7 @@ func TestMultiRepositoryProcessIsolation(t *testing.T) {
 	assertRepoLocalObservability(t, stateB, taskB, "MRISOB")
 
 	reset := env.run(t, env.repoA, "--reset")
-	if reset.code != 0 || !strings.Contains(reset.stdout, "STATUS: RESET") {
+	if reset.code != 0 || !strings.Contains(reset.stdout, `"status":"reset"`) {
 		t.Fatalf("repo Aのresetが失敗しました: code=%d stdout=%s stderr=%s", reset.code, reset.stdout, reset.stderr)
 	}
 	assertStateDirUnchanged(t, stateB, snapshotB)
@@ -131,20 +133,20 @@ func assertRepoLockSemantics(t *testing.T, env *multiRepoEnv, stateA string, sta
 		"A": {statusA, env.repoA, "held", taskA1},
 		"B": {statusB, env.repoB, "free", taskB},
 	} {
-		if statusField(want.status, "REPO") != want.repo {
-			t.Fatalf("repo %sのstatusが別repoを指しています: want %s got %s", name, want.repo, statusField(want.status, "REPO"))
+		if got := statusJSONField(t, want.status, "repo_root"); got != want.repo {
+			t.Fatalf("repo %sのstatusが別repoを指しています: want %s got %v", name, want.repo, got)
 		}
-		if statusField(want.status, "REPOSITORY_LOCK") != want.lock {
-			t.Fatalf("repo %sのlock状態が期待と違います: want %s got %s", name, want.lock, statusField(want.status, "REPOSITORY_LOCK"))
+		if got := statusJSONField(t, want.status, "repository_lock"); got != want.lock {
+			t.Fatalf("repo %sのlock状態が期待と違います: want %s got %v", name, want.lock, got)
 		}
-		if statusField(want.status, "TASK_ID") != want.task {
-			t.Fatalf("repo %sのtask IDが期待と違います: want %s got %s", name, want.task, statusField(want.status, "TASK_ID"))
+		if got := statusJSONField(t, want.status, "task_id"); got != want.task {
+			t.Fatalf("repo %sのtask IDが期待と違います: want %s got %v", name, want.task, got)
 		}
 	}
-	if statusField(statusA, "WORKER_SESSION") == statusField(statusB, "WORKER_SESSION") {
-		t.Fatalf("worker sessionが両repoで同一です: %s", statusField(statusA, "WORKER_SESSION"))
+	if statusJSONField(t, statusA, "worker_session") == statusJSONField(t, statusB, "worker_session") {
+		t.Fatalf("worker sessionが両repoで同一です: %v", statusJSONField(t, statusA, "worker_session"))
 	}
-	if statusField(statusB, "REVIEWER_SESSION") == "none" {
+	if statusJSONField(t, statusB, "reviewer_session") == nil {
 		t.Fatalf("repo B完了後にreviewer sessionが記録されていません: %s", statusB)
 	}
 }
@@ -606,11 +608,17 @@ func assertStateDirUnchanged(t *testing.T, stateDir string, snapshot map[string]
 	}
 }
 
-func statusField(output string, key string) string {
-	for _, line := range strings.Split(output, "\n") {
-		if value, ok := strings.CutPrefix(line, key+": "); ok {
-			return value
-		}
+// statusJSONFieldは--status出力1行のmachine JSONからfield値を取り出す。
+// JSONでない出力はmachine contract違反として失敗する。
+func statusJSONField(t *testing.T, output string, key string) any {
+	t.Helper()
+	var status map[string]any
+	if err := json.Unmarshal([]byte(strings.TrimSpace(output)), &status); err != nil {
+		t.Fatalf("--status出力がmachine JSONではありません: %v: %q", err, output)
 	}
-	return ""
+	value, ok := status[key]
+	if !ok {
+		t.Fatalf("status出力に%qがありません: %q", key, output)
+	}
+	return value
 }

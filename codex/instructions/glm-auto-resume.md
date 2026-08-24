@@ -1,10 +1,10 @@
 # GLM rate limit自動再開
 
-`glm-worker`が`STATUS: RATE_LIMITED`かつ`LIMIT: ZAI_GLM_CODING_PLAN_5H`を返した場合だけ適用する。
+`glm-worker`がstderr error JSON(`{"error":{"kind":"rate_limited",...}}`、exit 1)の`detail.limit: ZAI_GLM_CODING_PLAN_5H`で停止した場合だけ適用する。
 
 ## 予約
 
-- `AUTO_RESUME_AVAILABLE: true`、`AUTO_RESUME_AT_RFC3339`、`AUTO_RESUME_KEY`、`TASK_ID`、`REPO_ROOT`が揃っていることを確認する。
+- error JSONの`detail`に`auto_resume_available: true`・`auto_resume_at_rfc3339`・`auto_resume_key`・`task_id`・`repo_root`が揃っていることを確認する。
 - Codex appの`automation_update`を使い、現在のローカルタスクへ紐づくheartbeat automationを作成または更新する。standalone taskやworktree automationは使わない。
 - automation名は`AUTO_RESUME_KEY`を使い、同名があれば新規作成せず更新する。
 - 実行時刻は`AUTO_RESUME_AT_RFC3339`が表す絶対時刻とする。offsetを捨てずUTCへ変換し、時刻前の固定間隔pollingは行わない。
@@ -40,17 +40,17 @@
 
 - 候補成功後、ただちに同じtool orchestration内で`REPO_ROOT`において`glm-worker --verify-auto-resume <AUTO_RESUME_KEY> <AUTO_RESUME_AT_RFC3339> <現在のCodex task thread ID>`を実行する。thread IDは現在のCodexタスクのIDを使う。
 - この検証は保存済みautomation TOML実体(`~/.codex/automations/<key>/automation.toml`)のid・name・status ACTIVE・target_thread_id・rrule完全契約(UTC DTSTART + 改行 + `RRULE:FREQ=DAILY;COUNT=1`の正確な2行)と、`~/.codex/sqlite/codex-dev.db`の`automations.next_run_at`・id・status・rruleを期待ID・対象thread・status ACTIVE・絶対時刻で照合する。Codex appのSQLite automations表にthread_id列はなく、対象threadはTOMLのtarget_thread_idでのみ検証する。
-- `VERIFICATION: PASS`だけが予約成功の根拠となる。この時点で初めてrate limit停止を報告してよい。
-- `VERIFICATION: FAIL`の場合、予約済みと報告しない。検証理由からschema引数の誤りを特定し、引数を修正して`automation_update`のupdate(二段階作成の場合は第二段階)を再試行する。再試行は最大1回まで。再試行後もFAILの場合、新規作成分のautomationを削除または停止し、作成不能として手動`glm-worker --resume`fallbackを明示する。
-- `VERIFICATION: UNAVAILABLE`の場合(sqlite3不在・DB/schema読取不能)、Codex app上のautomation表示で同じautomation ID・対象task・次回実行時刻が意図したJST時刻と一致することを確認した場合だけ予約成功とする。確認不能な場合は作成失敗とし、手動`glm-worker --resume`fallbackを明示する。
+- 検証成功(exit 0と`--verify-auto-resume`結果JSON)だけが予約成功の根拠となる。この時点で初めてrate limit停止を報告してよい。
+- 検証失敗(stderr error JSON `kind: verification_failed`、exit 1)の場合、予約済みと報告しない。検証理由からschema引数の誤りを特定し、引数を修正して`automation_update`のupdate(二段階作成の場合は第二段階)を再試行する。再試行は最大1回まで。再試行後も失敗の場合、新規作成分のautomationを削除または停止し、作成不能として手動`glm-worker --resume`fallbackを明示する。
+- 検証不可(stderr error JSON `kind: verification_unavailable`、exit 1)の場合(sqlite3不在・DB/schema読取不能)、Codex app上のautomation表示で同じautomation ID・対象task・次回実行時刻が意図したJST時刻と一致することを確認した場合だけ予約成功とする。確認不能な場合は作成失敗とし、手動`glm-worker --resume`fallbackを明示する。
 
 ## wake時
 
 1. `REPO_ROOT`で`glm-worker --status`を実行する。
-2. 出力の`TASK_ID`が予約時の値と一致し、`TASK_STATUS: rate-limited`、`RESUME_AVAILABLE: yes`であることを確認する。
+2. 出力JSONの`task_id`が予約時の値と一致し、`task_status: rate-limited`、`resume_available: true`であることを確認する。
 3. task ID不一致、reset済み、rate limit以外のstatusなら`glm-worker --resume`を実行せず、該当automationを削除または停止する。
 4. 条件が一致した場合だけ、同じcheckoutで`glm-worker --resume`をsandbox外実行する。
-5. 再び`STATUS: RATE_LIMITED`になった場合は、新しい`AUTO_RESUME_AT_RFC3339`で同じ`AUTO_RESUME_KEY`のautomationを更新する。
+5. 再びrate limit停止(error JSON `kind: rate_limited`)になった場合は、新しい`detail.auto_resume_at_rfc3339`で同じ`detail.auto_resume_key`のautomationを更新する。
 6. `PASS`、`NEEDS_SOL_DECISION`、`NEEDS_SOL_REVIEW`、`WORKER_ERROR`のいずれかへ進んだらautomationを削除または停止し、通常のGLM packet処理を同じCodexタスクで継続する。
 
 ## 不変条件

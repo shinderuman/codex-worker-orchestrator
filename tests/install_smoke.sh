@@ -250,20 +250,20 @@ grep -Fq '"LOCAL_ENV": "keep"' "$success_case/claude/settings.json"
 grep -Fq 'model = "local-model"' "$success_case/codex/config.toml"
 grep -Fq 'background_terminal_max_timeout = 21600000' "$success_case/codex/config.toml"
 grep -Fq '初回低リスクreviewはGLM-4.7 / high' "$success_case/codex/AGENTS.md"
-grep -Fq 'packetまたは`STATUS: WORKER_ERROR`を含む結果' "$success_case/codex/AGENTS.md"
-grep -Fq 'packetまたは`STATUS: WORKER_ERROR`を含む結果' "$success_case/codex/instructions/glm-packets.md"
+grep -Fq 'packetまたはstderr error JSON' "$success_case/codex/AGENTS.md"
+grep -Fq 'packet(stdoutのmachine JSON 1行)またはprocess失敗' "$success_case/codex/instructions/glm-packets.md"
 (
     cd "$success_source"
     GLM_WORKER_HOME="$success_case/glm-home" \
         "$success_case/bin/glm-worker" --status \
-        | grep -Fq 'ARTIFACT_DIR: none'
+        | grep -Fq '"artifact_dir":null'
 )
 
 (
     cd "$success_source"
     GLM_WORKER_HOME="$success_case/glm-home" \
         "$success_case/bin/glm-worker" --status \
-        | grep -Fq 'REPOSITORY_LOCK: free'
+        | grep -Fq '"repository_lock":"free"'
 )
 
 "$success_case/bin/glm-worker" --verify-auto-resume 2>&1 \

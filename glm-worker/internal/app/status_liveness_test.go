@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"strings"
 	"testing"
@@ -12,16 +13,12 @@ import (
 // statusは対象repo lockと独立に、別repoのstate/lockの影響を受けない。
 func TestExecuteStatusShowsRepositoryLockFreeByDefault(t *testing.T) {
 	cfg := newAppConfig(t)
-	var out bytes.Buffer
-	if err := Execute(Command{Mode: ModeStatus}, cfg, nil, &out, io.Discard); err != nil {
-		t.Fatal(err)
+	output := executeStatusOutput(t, cfg)
+	if output.RepositoryLock != "free" {
+		t.Fatalf("空状態のrepository_lock = %q", output.RepositoryLock)
 	}
-	body := out.String()
-	if !strings.Contains(body, "REPOSITORY_LOCK: free") {
-		t.Fatalf("空状態でREPOSITORY_LOCK: freeが必要です:\n%s", body)
-	}
-	if strings.Contains(body, "TASK_LIVENESS") {
-		t.Fatalf("TASK_STATUSがactiveでない状態でTASK_LIVENESSが出てはいけません:\n%s", body)
+	if output.TaskLiveness != "" {
+		t.Fatalf("task_statusがactiveでない状態でtask_liveness = %q", output.TaskLiveness)
 	}
 }
 
@@ -35,20 +32,18 @@ func TestExecuteStatusActiveWithoutLockIsStaleCandidate(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var out bytes.Buffer
-	if err := Execute(Command{Mode: ModeStatus}, cfg, nil, &out, io.Discard); err != nil {
-		t.Fatal(err)
+	output := executeStatusOutput(t, cfg)
+	if output.TaskStatus != string(state.TaskStatusActive) {
+		t.Fatalf("task_status = %q", output.TaskStatus)
 	}
-	body := out.String()
-	for _, want := range []string{
-		"TASK_STATUS: active",
-		"REPOSITORY_LOCK: free",
-		"TASK_LIVENESS: stale",
-		"RESUME_AVAILABLE: no",
-	} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("status出力に%qがありません:\n%s", want, body)
-		}
+	if output.RepositoryLock != "free" {
+		t.Fatalf("repository_lock = %q", output.RepositoryLock)
+	}
+	if output.TaskLiveness != "stale" {
+		t.Fatalf("task_liveness = %q", output.TaskLiveness)
+	}
+	if output.ResumeAvailable {
+		t.Fatal("停止理由がないのにresume_availableです")
 	}
 }
 
@@ -68,18 +63,12 @@ func TestExecuteStatusActiveWithLockHeldIsRunning(t *testing.T) {
 	}
 	defer lock.Close()
 
-	var out bytes.Buffer
-	if err := Execute(Command{Mode: ModeStatus}, cfg, nil, &out, io.Discard); err != nil {
-		t.Fatal(err)
+	output := executeStatusOutput(t, cfg)
+	if output.RepositoryLock != "held" {
+		t.Fatalf("repository_lock = %q", output.RepositoryLock)
 	}
-	body := out.String()
-	for _, want := range []string{
-		"REPOSITORY_LOCK: held",
-		"TASK_LIVENESS: running",
-	} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("status出力に%qがありません:\n%s", want, body)
-		}
+	if output.TaskLiveness != "running" {
+		t.Fatalf("task_liveness = %q", output.TaskLiveness)
 	}
 }
 
@@ -91,11 +80,7 @@ func TestExecuteStatusRaceConvergesOnNextCommandLock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	var statusOut bytes.Buffer
-	if err := Execute(Command{Mode: ModeStatus}, cfg, nil, &statusOut, io.Discard); err != nil {
-		t.Fatal(err)
-	}
+	_ = executeStatusOutput(t, cfg)
 
 	otherCfg := cfg
 	otherCfg.RepoHash = cfg.RepoHash + "-other"
@@ -114,13 +99,17 @@ func TestExecuteStatusRaceConvergesOnNextCommandLock(t *testing.T) {
 	if err := Execute(Command{Mode: ModeReset}, cfg, nil, &resetOut, io.Discard); err != nil {
 		t.Fatalf("別repo lock保持中に対象repoの次commandが失敗しました: %v", err)
 	}
-	if !strings.Contains(resetOut.String(), "STATUS: RESET") {
-		t.Fatalf("reset出力が想定外です: %q", resetOut.String())
+	var reset map[string]any
+	if err := json.Unmarshal([]byte(strings.TrimSpace(resetOut.String())), &reset); err != nil {
+		t.Fatalf("reset出力がmachine JSONではありません: %v: %q", err, resetOut.String())
+	}
+	if reset["status"] != "reset" {
+		t.Fatalf("reset出力 = %v", reset)
 	}
 	_ = st
 }
 
-// TASK_STATUSがactive以外ではTASK_LIVENESSを表示しない。
+// TASK_STATUSがactive以外ではtask_livenessを出さない。
 func TestExecuteStatusHidesLivenessForNonActiveTask(t *testing.T) {
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
@@ -134,15 +123,12 @@ func TestExecuteStatusHidesLivenessForNonActiveTask(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var out bytes.Buffer
-	if err := Execute(Command{Mode: ModeStatus}, cfg, nil, &out, io.Discard); err != nil {
-		t.Fatal(err)
+	output := executeStatusOutput(t, cfg)
+	if output.TaskLiveness != "" {
+		t.Fatalf("非active taskでtask_liveness = %q", output.TaskLiveness)
 	}
-	if strings.Contains(out.String(), "TASK_LIVENESS") {
-		t.Fatalf("非active taskでTASK_LIVENESSが出ています:\n%s", out.String())
-	}
-	if !strings.Contains(out.String(), "REPOSITORY_LOCK: free") {
-		t.Fatalf("REPOSITORY_LOCKは常に表示が必要です:\n%s", out.String())
+	if output.RepositoryLock != "free" {
+		t.Fatalf("repository_lock = %q", output.RepositoryLock)
 	}
 }
 
@@ -173,21 +159,17 @@ func TestExecuteStatusRateLimitedResumeFieldsUnchanged(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var out bytes.Buffer
-	if err := Execute(Command{Mode: ModeStatus}, cfg, nil, &out, io.Discard); err != nil {
-		t.Fatal(err)
+	output := executeStatusOutput(t, cfg)
+	if output.TaskStatus != string(state.TaskStatusRateLimited) {
+		t.Fatalf("task_status = %q", output.TaskStatus)
 	}
-	body := out.String()
-	for _, want := range []string{
-		"TASK_STATUS: rate-limited",
-		"RATE_LIMITED: yes",
-		"RESUME_AVAILABLE: yes",
-	} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("rate-limited status出力に%qがありません:\n%s", want, body)
-		}
+	if !output.RateLimited.Limited {
+		t.Fatalf("rate_limited = %#v", output.RateLimited)
 	}
-	if strings.Contains(body, "TASK_LIVENESS") {
-		t.Fatalf("rate-limited taskでTASK_LIVENESSが出ています:\n%s", body)
+	if !output.ResumeAvailable {
+		t.Fatal("rate-limited taskはresume_availableが必要です")
+	}
+	if output.TaskLiveness != "" {
+		t.Fatalf("rate-limited taskでtask_liveness = %q", output.TaskLiveness)
 	}
 }

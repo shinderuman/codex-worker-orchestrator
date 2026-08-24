@@ -86,11 +86,14 @@ func (s *StateStore) SaveResumeCheckpoint(checkpoint ResumeCheckpoint) error {
 	return nil
 }
 
+// ErrNoResumeCheckpointは--resume対象の再開可能checkpointが存在しない失敗。
+var ErrNoResumeCheckpoint = errors.New("resumable task is not available")
+
 func (s *StateStore) LoadResumeCheckpoint() (ResumeCheckpoint, error) {
 	data, err := os.ReadFile(s.Path(resumeStateFile))
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return ResumeCheckpoint{}, fmt.Errorf("STATUS: WORKER_ERROR\nERROR: resumable task is not available")
+			return ResumeCheckpoint{}, ErrNoResumeCheckpoint
 		}
 		return ResumeCheckpoint{}, err
 	}

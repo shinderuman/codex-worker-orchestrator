@@ -3,7 +3,6 @@
 package main
 
 import (
-	"fmt"
 	"os"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/app"
@@ -11,7 +10,9 @@ import (
 
 func main() {
 	if err := app.Run(os.Args[1:]); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		// 失敗はstderrのJSON 1行とnon-zero exitで示す。stderrへの書込み自体が失敗した
+		// 時候補の出力先がないため、exit codeだけが失敗の通知になる。
+		_ = app.WriteProcessError(os.Stderr, err)
 		os.Exit(1)
 	}
 }

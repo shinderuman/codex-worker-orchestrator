@@ -92,7 +92,7 @@ func classifyResponse(text string) (responseClass, string) {
 	return responseSuccess, m[1]
 }
 
-// VERIFICATION UNAVAILABLEはCodex app表示確認済みの場合だけ成功(instruction L45)。
+// 検証不可(verification_unavailable)はCodex app表示確認済みの場合だけ成功(instruction L45)。
 func orchestrateReservation(env reservationEnv, key, resumeAtRFC3339, existingAutomationID string) reservationResult {
 	_, dtStart, _, err := expectedFromRFC3339(resumeAtRFC3339)
 	if err != nil {
@@ -159,9 +159,9 @@ func verificationOutcome(v verification) (reserved bool, reason string, isFail b
 		if v.ManualAppConfirmed {
 			return true, "", false
 		}
-		return false, "VERIFICATION: UNAVAILABLE without Codex app confirmation", false
+		return false, "verification_unavailable without Codex app confirmation", false
 	default:
-		return false, "VERIFICATION: FAIL", true
+		return false, "verification_failed", true
 	}
 }
 

@@ -81,7 +81,7 @@ func TestClockDeviationScenarioPinnedInEscapedCorpus(t *testing.T) {
 // initial Task Work呼出のtelemetry timestamp/durationとstats集計が注入clockに従う。
 func TestRunModelTelemetryTimestampsFollowInjectedClock(t *testing.T) {
 	st := newStateStoreT(t)
-	r := &scriptedRunner{steps: []runnerStep{{output: implementedPacket("done")}}}
+	r := &scriptedRunner{steps: []runnerStep{{structured: implementedPacket("done")}}}
 	w, clock := newRecoveryWorkflowT(t, st, r)
 	w.temp = t.TempDir()
 	taskRun := 7 * time.Minute
@@ -194,8 +194,8 @@ func TestResumeTelemetryTimestampsFollowInjectedClock(t *testing.T) {
 	st := newStateStoreT(t)
 	seedProviderUnavailableCheckpoint(t, st)
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacket("resumed")},
-		{output: passPacket()},
+		{structured: implementedPacket("resumed")},
+		{structured: passPacket()},
 	}}
 	w, clock := newRecoveryWorkflowT(t, st, r)
 	taskRun := 7 * time.Minute

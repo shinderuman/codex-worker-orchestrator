@@ -21,7 +21,7 @@ func AcquireRepoLock(path string) (*RepoLock, error) {
 
 	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		file.Close()
-		return nil, fmt.Errorf("STATUS: WORKER_ERROR\nERROR: another glm-worker is already running for this repository")
+		return nil, ErrRepoLockHeld
 	}
 
 	if err := file.Truncate(0); err == nil {

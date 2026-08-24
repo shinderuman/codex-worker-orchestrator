@@ -16,7 +16,7 @@ type RepoLock struct {
 func AcquireRepoLock(path string) (*RepoLock, error) {
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
-		return nil, fmt.Errorf("STATUS: WORKER_ERROR\nERROR: another glm-worker is already running for this repository")
+		return nil, ErrRepoLockHeld
 	}
 	file.Close()
 	return &RepoLock{path: path}, nil

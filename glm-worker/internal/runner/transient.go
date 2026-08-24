@@ -135,14 +135,13 @@ type ProviderUnavailableError struct {
 	RepoShort      string
 }
 
+// Errorは人間が読む1行message。probes・classification・elapsed等の機械fieldは
+// app層のprocess error detailへ構造化して載るため、ここでは重複させない。
 func (e *ProviderUnavailableError) Error() string {
 	return fmt.Sprintf(
-		"STATUS: PROVIDER_UNAVAILABLE\nPHASE: %s\nTASK_ID: %s\nREPO_ROOT: %s\nCLASSIFICATION: %s\nPROBES: %d\nELAPSED: %s\nRESUME_AVAILABLE: true\nRESUME_COMMAND: glm-worker --resume",
-		valueOrUnknown(e.Phase),
-		valueOrUnknown(e.TaskID),
-		valueOrUnknown(e.RepoRoot),
-		valueOrUnknown(e.Classification),
+		"provider stayed unavailable after %d probes (classification %s) at phase %s; task stopped, resumable via glm-worker --resume",
 		e.Probes,
-		e.Elapsed.Truncate(time.Second),
+		e.Classification,
+		e.Phase,
 	)
 }

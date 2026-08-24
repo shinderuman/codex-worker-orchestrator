@@ -149,7 +149,7 @@ func (s *StateStore) ReadRoundRecords(taskID string) ([]RoundRecord, error) {
 }
 
 func warnRoundRecordFailure(operation string, err error) {
-	fmt.Fprintf(statsWarnOut, "WARNING: round記録の%sに失敗しました（観測用のためtask本体へ影響しません）: %v\n", operation, err)
+	writeStatsWarningEvent("round_log", fmt.Sprintf("round記録の%sに失敗しました（観測用のためtask本体へ影響しません）", operation), err)
 }
 
 // ClassifyRoundPathsは変更対象path集合をworktree観測へ変換する。path順で安定させ、

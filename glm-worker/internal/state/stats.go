@@ -31,6 +31,29 @@ var errUnsupportedTaskStatsVersion = errors.New("unsupported task stats version"
 // mirrorの失敗はworkflowを止めずこのwriterへwarningを出す。
 var statsWarnOut io.Writer = os.Stderr
 
+// statsWarningEventは観測用mirror・event logのbest-effort失敗を伝えるJSONL event行。
+// task本体は続行するため、単発JSON結果とは別のstderr診断streamへ出る。
+type statsWarningEvent struct {
+	Type    string `json:"type"`
+	Scope   string `json:"scope"`
+	Message string `json:"message"`
+	Error   string `json:"error,omitempty"`
+}
+
+// writeStatsWarningEventはwarning event 1行をstatsWarnOutへ書く。warning出力の失敗で
+// task本体を止めないため、encode・write失敗は破棄する。
+func writeStatsWarningEvent(scope, message string, err error) {
+	event := statsWarningEvent{Type: "warning", Scope: scope, Message: message}
+	if err != nil {
+		event.Error = err.Error()
+	}
+	data, marshalErr := json.Marshal(event)
+	if marshalErr != nil {
+		return
+	}
+	statsWarnOut.Write(append(data, '\n'))
+}
+
 // TaskStatsは観測用のタスク統計mirror。
 type TaskStats struct {
 	Version    int        `json:"version"`
@@ -100,7 +123,7 @@ type TaskStats struct {
 }
 
 func warnStatsFailure(operation string, err error) {
-	fmt.Fprintf(statsWarnOut, "WARNING: task statsの%sに失敗しました（観測用mirrorのため続行します）: %v\n", operation, err)
+	writeStatsWarningEvent("task_stats", fmt.Sprintf("task statsの%sに失敗しました（観測用mirrorのため続行します）", operation), err)
 }
 
 // InitializeTaskStatsは新規taskの観測用mirrorを初期化する。

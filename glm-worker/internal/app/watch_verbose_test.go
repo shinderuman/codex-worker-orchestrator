@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
@@ -33,6 +35,65 @@ func verboseRenderStore(t *testing.T) *state.StateStore {
 		t.Fatal(err)
 	}
 	return st
+}
+
+// renderWatchLiveはwriteWatchLiveStatusでlive event 1行を出し、typed eventへ復元する。
+func renderWatchLive(t *testing.T, st *state.StateStore, taskID string, tracker *watchToolTracker, now time.Time) watchLiveEvent {
+	t.Helper()
+	out := &bytes.Buffer{}
+	if err := writeWatchLiveStatus(st, taskID, out, tracker, now); err != nil {
+		t.Fatal(err)
+	}
+	return parseWatchLiveLine(t, out.String())
+}
+
+// parseWatchLiveLineはlive event 1行をtyped eventへparseする。
+func parseWatchLiveLine(t *testing.T, line string) watchLiveEvent {
+	t.Helper()
+	var event watchLiveEvent
+	if err := json.Unmarshal([]byte(strings.TrimSpace(line)), &event); err != nil {
+		t.Fatalf("live eventがmachine JSONLではありません: %v: %q", err, line)
+	}
+	if event.Type != "live" {
+		t.Fatalf("live eventのtype = %q", event.Type)
+	}
+	return event
+}
+
+// liveEventsFromStreamはwatch出力全体からlive eventだけを取り出す。
+func liveEventsFromStream(t *testing.T, rendered string) []watchLiveEvent {
+	t.Helper()
+	var lives []watchLiveEvent
+	for _, line := range strings.Split(strings.TrimRight(rendered, "\n"), "\n") {
+		if !strings.Contains(line, `"type":"live"`) && !strings.Contains(line, `"type": "live"`) {
+			continue
+		}
+		lives = append(lives, parseWatchLiveLine(t, line))
+	}
+	return lives
+}
+
+// requireModelIdleMSはlive eventのmodel_idle_msを検査する。
+func requireModelIdleMS(t *testing.T, event watchLiveEvent, wantMS int64) {
+	t.Helper()
+	if event.ModelIdleMS == nil {
+		t.Fatalf("model_idle_msがありません: %#v", event)
+	}
+	if *event.ModelIdleMS != wantMS {
+		t.Fatalf("model_idle_ms = %d want %d", *event.ModelIdleMS, wantMS)
+	}
+}
+
+// liveToolOfは実行中tool一覧から指定nameの要素を返す。
+func liveToolOf(t *testing.T, event watchLiveEvent, name string) watchLiveTool {
+	t.Helper()
+	for _, tool := range event.Current {
+		if tool.Name == name {
+			return tool
+		}
+	}
+	t.Fatalf("live eventのcurrentに%qがありません: %#v", name, event)
+	return watchLiveTool{}
 }
 
 // setupVerboseWatchTaskはstats mirrorの開始時刻・event log・live snapshotを固定時刻で
@@ -88,7 +149,7 @@ func TestParseCommandWatchVerbose(t *testing.T) {
 }
 
 // TestWatchVerboseRendersLiveToolStatusはverbose指定でtask年齢・model idle・実行中Bashの
-// command・purpose・経過がLIVE行に出ることを検証する。
+// command・purpose・経過が型付きlive eventへ出ることを検証する。
 func TestWatchVerboseRendersLiveToolStatus(t *testing.T) {
 	st, _, base := setupVerboseWatchTask(t)
 	now := base.Add(2*time.Hour + 50*time.Minute + 46*time.Second)
@@ -105,17 +166,23 @@ func TestWatchVerboseRendersLiveToolStatus(t *testing.T) {
 	if err := printWatch(st, out, opts); err != nil {
 		t.Fatal(err)
 	}
-	rendered := out.String()
-	for _, want := range []string{
-		"LIVE TASK_AGE 2:50:46",
-		"LIVE MODEL_IDLE 2:40:46",
-		"LIVE CURRENT Bash 2:40:46 elapsed",
-		"LIVE COMMAND sleep 295; grep -c 'GATE-START' /tmp/instr4_full.log",
-		"LIVE PURPOSE Check fourth run at gate section",
-	} {
-		if !strings.Contains(rendered, want) {
-			t.Fatalf("verbose表示に%qがありません: %s", want, rendered)
-		}
+	lives := liveEventsFromStream(t, out.String())
+	if len(lives) != 1 {
+		t.Fatalf("live event = %d件: %s", len(lives), out.String())
+	}
+	live := lives[0]
+	if live.TaskAgeMS == nil || *live.TaskAgeMS != int64((2*3600+50*60+46)*1000) {
+		t.Fatalf("task_age_ms = %#v", live.TaskAgeMS)
+	}
+	if live.ModelIdleMS == nil || *live.ModelIdleMS != int64((2*3600+40*60+46)*1000) {
+		t.Fatalf("model_idle_ms = %#v", live.ModelIdleMS)
+	}
+	bash := liveToolOf(t, live, "Bash")
+	if bash.ElapsedMS != int64((2*3600+40*60+46)*1000) {
+		t.Fatalf("Bash elapsed_ms = %d", bash.ElapsedMS)
+	}
+	if bash.Command != "sleep 295; grep -c 'GATE-START' /tmp/instr4_full.log" || bash.Purpose != "Check fourth run at gate section" {
+		t.Fatalf("Bash詳細 = %#v", bash)
 	}
 	entriesAfter, err := os.ReadDir(st.Path("."))
 	if err != nil {
@@ -127,7 +194,7 @@ func TestWatchVerboseRendersLiveToolStatus(t *testing.T) {
 }
 
 // TestWatchPlainOutputUnchangedByVerboseDataは--watch単体がlive snapshot・statsを読んで
-// いてもLIVE行を出さないことを検証する。
+// いてもlive eventを出さないことを検証する。
 func TestWatchPlainOutputUnchangedByVerboseData(t *testing.T) {
 	st, _, _ := setupVerboseWatchTask(t)
 
@@ -137,18 +204,36 @@ func TestWatchPlainOutputUnchangedByVerboseData(t *testing.T) {
 	if err := printWatch(st, out, watchTestOptions(false, time.Millisecond, stop)); err != nil {
 		t.Fatal(err)
 	}
-	rendered := out.String()
-	if strings.Contains(rendered, "LIVE ") {
-		t.Fatalf("--watch単体にLIVE行が出ています: %s", rendered)
-	}
-	if strings.Count(rendered, "\n") != 5 {
-		t.Fatalf("--watch単体の表示行数が変わっています: %q", rendered)
+	events := parseWatchEvents(t, out.String())
+	if watchEventIndex(events, "live") >= 0 {
+		t.Fatalf("--watch単体にlive eventが出ています: %v", events)
 	}
 }
 
 // watchModelActivityResultLineはproducer/consumer統合testでcallを正常終端させる
-// result event行。structured_outputまで本物の形へ合わせる。
-const watchModelActivityResultLine = `{"type":"result","subtype":"success","is_error":false,"result":"{\"status\":\"IMPLEMENTED\",\"risk\":\"LOW\",\"summary\":\"done\",\"requirement_coverage\":\"covered\",\"tests\":\"pass\",\"unverified\":\"none\"}","structured_output":{"status":"IMPLEMENTED","risk":"LOW","summary":"done","requirement_coverage":"covered","tests":"pass","unverified":"none"}}`
+// result event行。structured_outputはpacket.Resultのmachine JSONをそのまま埋め、
+// 手書きescapeのJSON破損を構造的に排除する。
+func watchModelActivityResultLine() string {
+	structured := appPacketBody(packet.Result{
+		Status:              packet.StatusImplemented,
+		Risk:                packet.RiskLow,
+		Summary:             "done",
+		RequirementCoverage: "covered",
+		Tests:               "pass",
+		Unverified:          "none",
+	})
+	data, err := json.Marshal(map[string]any{
+		"type":              "result",
+		"subtype":           "success",
+		"is_error":          false,
+		"result":            structured,
+		"structured_output": json.RawMessage(structured),
+	})
+	if err != nil {
+		panic(err)
+	}
+	return string(data)
+}
 
 // runWatchModelActivityProducerは行間1秒のfake claude scriptで本物のClaudeRunnerを
 // 1 call実行し、watch対象storeと同じstate dirへevent logとlive snapshotを書かせる。
@@ -181,16 +266,19 @@ func runWatchModelActivityProducer(t *testing.T, st *state.StateStore, lines ...
 		PromptDir: promptDir,
 		ClaudeBin: commandPath,
 	}, st)
-	if _, err := r.Run(state.WorkerRole, "worker-new", "worker-model", false, "high", "prompt", filepath.Join(dir, "out.log")); err != nil {
-		t.Fatal(err)
+	outPath := filepath.Join(dir, "out.log")
+	if _, err := r.Run(state.WorkerRole, "worker-new", "worker-model", false, "high", "prompt", outPath); err != nil {
+		runOut, _ := os.ReadFile(outPath)
+		runErrText, _ := os.ReadFile(outPath + ".stderr")
+		t.Fatalf("producer Run: %v out=%q stderr=%q", err, runOut, runErrText)
 	}
 }
 
 // TestWatchVerboseModelIdleUsesLiveModelActivityはassistant activity → thinking_tokens →
 // tool_progressの順で発生したstreamを本物のrunnerで摄取し、watchのMODEL_IDLE基準が
 // event logへ保存されないthinking_tokens観測時刻(live snapshotのmodel activity専用時刻)
-// になることを検証する。assistant基準なら2:31以上、tool_progress/result基準なら
-// 2:29以下になる時刻で判定する。
+// になることを検証する。assistant基準なら+1分以上、tool_progress/result基準なら-1分以下に
+// なる観測間隔で判定する。
 func TestWatchVerboseModelIdleUsesLiveModelActivity(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixtureはUnix系環境向け")
@@ -201,7 +289,7 @@ func TestWatchVerboseModelIdleUsesLiveModelActivity(t *testing.T) {
 		`{"type":"assistant","message":{"model":"glm-5.3","content":[{"type":"tool_use","id":"toolu_1","name":"Bash","input":{"command":"sleep 295"}}]}}`,
 		`{"type":"system","subtype":"thinking_tokens"}`,
 		`{"type":"system","subtype":"tool_progress"}`,
-		watchModelActivityResultLine,
+		watchModelActivityResultLine(),
 	)
 
 	file, err := os.Open(st.TaskEventLogPath(taskID))
@@ -224,18 +312,8 @@ func TestWatchVerboseModelIdleUsesLiveModelActivity(t *testing.T) {
 		t.Fatalf("generic時刻(%v)がmodel activity時刻(%v)より後であるべきです", snapshot.LastEventAt, snapshot.LastModelActivityAt)
 	}
 
-	now := snapshot.LastModelActivityAt.Add(150 * time.Second)
-	out := &bytes.Buffer{}
-	renderWatchLiveStatus(st, taskID, out, tracker, now)
-	rendered := out.String()
-	if !strings.Contains(rendered, "LIVE MODEL_IDLE 2:30") {
-		t.Fatalf("thinking_tokens基準のMODEL_IDLE = %q", rendered)
-	}
-	later := &bytes.Buffer{}
-	renderWatchLiveStatus(st, taskID, later, tracker, snapshot.LastModelActivityAt.Add(240*time.Second))
-	if !strings.Contains(later.String(), "LIVE MODEL_IDLE 4:00") {
-		t.Fatalf("tool_progress/result後もMODEL_IDLEが増え続けていません: %q", later.String())
-	}
+	requireModelIdleMS(t, renderWatchLive(t, st, taskID, tracker, snapshot.LastModelActivityAt.Add(150*time.Second)), 150000)
+	requireModelIdleMS(t, renderWatchLive(t, st, taskID, tracker, snapshot.LastModelActivityAt.Add(240*time.Second)), 240000)
 }
 
 // TestWatchVerboseLegacySnapshotFallsBackToTrackerはlast_model_activity_atを持たない
@@ -256,14 +334,10 @@ func TestWatchVerboseLegacySnapshotFallsBackToTracker(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	out := &bytes.Buffer{}
-	renderWatchLiveStatus(st, taskID, out, tracker, base.Add(150*time.Second))
-	rendered := out.String()
-	if !strings.Contains(rendered, "LIVE MODEL_IDLE 2:30") {
-		t.Fatalf("旧snapshotでのMODEL_IDLE = %q(generic last_event_at基準なら1:00)", rendered)
-	}
-	if !strings.Contains(rendered, "LIVE COMMAND sleep 295") {
-		t.Fatalf("旧snapshotの詳細行が落ちています: %q", rendered)
+	live := renderWatchLive(t, st, taskID, tracker, base.Add(150*time.Second))
+	requireModelIdleMS(t, live, 150000)
+	if bash := liveToolOf(t, live, "Bash"); bash.Command != "sleep 295" {
+		t.Fatalf("旧snapshotの詳細が落ちています: %#v", bash)
 	}
 }
 
@@ -287,24 +361,15 @@ func TestWatchVerboseModelIdleGrowsDuringToolProgress(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	afterTwoMinutes := &bytes.Buffer{}
-	renderWatchLiveStatus(st, taskID, afterTwoMinutes, tracker, base.Add(2*time.Minute))
-	if !strings.Contains(afterTwoMinutes.String(), "LIVE MODEL_IDLE 2:00") {
-		t.Fatalf("tool_progress中のMODEL_IDLE = %q", afterTwoMinutes.String())
-	}
-
-	afterFourMinutes := &bytes.Buffer{}
-	renderWatchLiveStatus(st, taskID, afterFourMinutes, tracker, base.Add(4*time.Minute))
-	rendered := afterFourMinutes.String()
-	if !strings.Contains(rendered, "LIVE MODEL_IDLE 4:00") {
-		t.Fatalf("MODEL_IDLEが増え続けていません: %q", rendered)
-	}
-	if !strings.Contains(rendered, "LIVE CURRENT Bash 4:00 elapsed") || !strings.Contains(rendered, "LIVE COMMAND sleep 295") {
-		t.Fatalf("非model eventでtool表示が失われています: %q", rendered)
+	requireModelIdleMS(t, renderWatchLive(t, st, taskID, tracker, base.Add(2*time.Minute)), 120000)
+	fourMinutes := renderWatchLive(t, st, taskID, tracker, base.Add(4*time.Minute))
+	requireModelIdleMS(t, fourMinutes, 240000)
+	if bash := liveToolOf(t, fourMinutes, "Bash"); bash.ElapsedMS != 240000 || bash.Command != "sleep 295" {
+		t.Fatalf("非model eventでtool観測が失われています: %#v", bash)
 	}
 }
 
-// TestWatchVerboseToolLifecycleTransitionsはtool完了でCURRENTから外れてLASTへ遷移し、
+// TestWatchVerboseToolLifecycleTransitionsはtool完了でcurrentから外れてlastへ遷移し、
 // 経過時間が観測時刻とともに更新されること、未対応のresult eventで同一callのpendingが
 // 除かれることを検証する。
 func TestWatchVerboseToolLifecycleTransitions(t *testing.T) {
@@ -312,40 +377,31 @@ func TestWatchVerboseToolLifecycleTransitions(t *testing.T) {
 	tracker := newWatchToolTracker()
 	tracker.observe(state.TaskEventRecord{CallID: "call-1", Kind: "assistant", Timestamp: base, Blocks: []state.TaskBlockSummary{{Type: "tool_use", Name: "Bash", ToolID: "toolu_1"}}})
 
-	running := &bytes.Buffer{}
-	renderWatchLiveStatus(verboseRenderStore(t), "", running, tracker, base.Add(5*time.Minute))
-	if !strings.Contains(running.String(), "LIVE CURRENT Bash 5:00 elapsed") {
-		t.Fatalf("実行中表示 = %q", running.String())
+	if bash := liveToolOf(t, renderWatchLive(t, verboseRenderStore(t), "", tracker, base.Add(5*time.Minute)), "Bash"); bash.ElapsedMS != 300000 {
+		t.Fatalf("実行中elapsed_ms = %d", bash.ElapsedMS)
 	}
-
-	updated := &bytes.Buffer{}
-	renderWatchLiveStatus(verboseRenderStore(t), "", updated, tracker, base.Add(6*time.Minute))
-	if !strings.Contains(updated.String(), "LIVE CURRENT Bash 6:00 elapsed") {
-		t.Fatalf("elapsed更新表示 = %q", updated.String())
+	if bash := liveToolOf(t, renderWatchLive(t, verboseRenderStore(t), "", tracker, base.Add(6*time.Minute)), "Bash"); bash.ElapsedMS != 360000 {
+		t.Fatalf("elapsed更新 = %d", bash.ElapsedMS)
 	}
 
 	tracker.observe(state.TaskEventRecord{CallID: "call-1", Kind: "user", Timestamp: base.Add(10 * time.Minute), Blocks: []state.TaskBlockSummary{{Type: "tool_result", Name: "Bash", ToolID: "toolu_1", DurationMS: 295100}}})
-	completed := &bytes.Buffer{}
-	renderWatchLiveStatus(verboseRenderStore(t), "", completed, tracker, base.Add(11*time.Minute))
-	rendered := completed.String()
-	if strings.Contains(rendered, "LIVE CURRENT Bash") || !strings.Contains(rendered, "LIVE CURRENT none") {
-		t.Fatalf("完了後のCURRENT = %q", rendered)
+	completed := renderWatchLive(t, verboseRenderStore(t), "", tracker, base.Add(11*time.Minute))
+	if len(completed.Current) != 0 {
+		t.Fatalf("完了後のcurrent = %#v", completed.Current)
 	}
-	if !strings.Contains(rendered, "LIVE LAST Bash completed 295.1s") {
-		t.Fatalf("LAST表示 = %q", rendered)
+	if completed.Last == nil || completed.Last.Name != "Bash" || completed.Last.DurationMS != 295100 {
+		t.Fatalf("last = %#v", completed.Last)
 	}
 
 	tracker.observe(state.TaskEventRecord{CallID: "call-2", Kind: "assistant", Timestamp: base.Add(12 * time.Minute), Blocks: []state.TaskBlockSummary{{Type: "tool_use", Name: "Bash", ToolID: "toolu_2"}}})
 	tracker.observe(state.TaskEventRecord{CallID: "call-2", Kind: "result", Subtype: "success", Timestamp: base.Add(13 * time.Minute)})
-	abandoned := &bytes.Buffer{}
-	renderWatchLiveStatus(verboseRenderStore(t), "", abandoned, tracker, base.Add(14*time.Minute))
-	if !strings.Contains(abandoned.String(), "LIVE CURRENT none") {
-		t.Fatalf("result event後のpending清除 = %q", abandoned.String())
+	if abandoned := renderWatchLive(t, verboseRenderStore(t), "", tracker, base.Add(14*time.Minute)); len(abandoned.Current) != 0 {
+		t.Fatalf("result event後のpending清除 = %#v", abandoned.Current)
 	}
 }
 
-// TestWatchVerboseShortToolCompletionStaysOffCurrentは短いtoolの完了でLAST表示が
-// 置き換わらず、CURRENTだけが外れることを検証する。
+// TestWatchVerboseShortToolCompletionStaysOffCurrentは短いtoolの完了でlastが置き換わらず、
+// currentだけが外れることを検証する。
 func TestWatchVerboseShortToolCompletionStaysOffCurrent(t *testing.T) {
 	base := time.Date(2026, 8, 23, 9, 0, 0, 0, time.UTC)
 	tracker := newWatchToolTracker()
@@ -353,19 +409,18 @@ func TestWatchVerboseShortToolCompletionStaysOffCurrent(t *testing.T) {
 	tracker.observe(state.TaskEventRecord{CallID: "call-1", Kind: "assistant", Timestamp: base, Blocks: []state.TaskBlockSummary{{Type: "tool_use", Name: "Bash", ToolID: "toolu_2"}}})
 	tracker.observe(state.TaskEventRecord{CallID: "call-1", Kind: "user", Timestamp: base.Add(300 * time.Millisecond), Blocks: []state.TaskBlockSummary{{Type: "tool_result", ToolID: "toolu_1", DurationMS: 300}}})
 
-	out := &bytes.Buffer{}
-	renderWatchLiveStatus(verboseRenderStore(t), "", out, tracker, base.Add(time.Second))
-	rendered := out.String()
-	if !strings.Contains(rendered, "LIVE CURRENT Bash") || strings.Contains(rendered, "LIVE CURRENT Read") {
-		t.Fatalf("短いtool完了後のCURRENT = %q", rendered)
+	live := renderWatchLive(t, verboseRenderStore(t), "", tracker, base.Add(time.Second))
+	liveToolOf(t, live, "Bash")
+	if len(live.Current) != 1 {
+		t.Fatalf("短いtool完了後のcurrent = %#v", live.Current)
 	}
-	if strings.Contains(rendered, "LIVE LAST Read") {
-		t.Fatalf("短時間toolがLASTへ出ています: %q", rendered)
+	if live.Last != nil {
+		t.Fatalf("短時間toolがlastへ出ています: %#v", live.Last)
 	}
 }
 
-// TestWatchVerboseBackgroundWaitAndErrorはbackground待ちと直近tool errorをverbose表示で
-// 確認できることを検証する。待機中toolはCURRENTとBACKGROUND_WAITで停止と誤認しない。
+// TestWatchVerboseBackgroundWaitAndErrorはbackground待ちと直近tool errorをlive eventで
+// 確認できることを検証する。待機中toolはcurrentとwait_task_idで停止と誤認しない。
 func TestWatchVerboseBackgroundWaitAndError(t *testing.T) {
 	st, _ := watchTestStore(t)
 	taskID := "12345678-aaaa-bbbb-cccc-dddddddddddd"
@@ -384,23 +439,21 @@ func TestWatchVerboseBackgroundWaitAndError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	out := &bytes.Buffer{}
-	renderWatchLiveStatus(st, taskID, out, tracker, base.Add(2*time.Minute))
-	rendered := out.String()
-	for _, want := range []string{
-		"LIVE CURRENT TaskOutput 2:00 elapsed",
-		"LIVE BACKGROUND_WAIT task=bash_7",
-		"LIVE LAST Bash completed 65.0s",
-		"LIVE TOOL_ERROR Bash 1:00 ago",
-	} {
-		if !strings.Contains(rendered, want) {
-			t.Fatalf("verbose表示に%qがありません: %s", want, rendered)
-		}
+	live := renderWatchLive(t, st, taskID, tracker, base.Add(2*time.Minute))
+	wait := liveToolOf(t, live, "TaskOutput")
+	if wait.ElapsedMS != 120000 || wait.WaitTaskID != "bash_7" {
+		t.Fatalf("background待ちtool = %#v", wait)
+	}
+	if live.Last == nil || live.Last.Name != "Bash" || live.Last.DurationMS != 65000 {
+		t.Fatalf("last = %#v", live.Last)
+	}
+	if live.ToolError == nil || live.ToolError.Name != "Bash" || live.ToolError.AgeMS != 60000 {
+		t.Fatalf("tool_error = %#v", live.ToolError)
 	}
 }
 
-// TestWatchVerboseTruncatesLongDetailAtDisplayは長いcommand・改行入りcommandの表示時
-// 切詰めを検証する。保存側(snapshot)の本文は変更しない。
+// TestWatchVerboseTruncatesLongDetailAtDisplayは長いcommand・改行入りcommandのlive event
+// 出力時切詰めを検証する。保存側(snapshot)の本文は変更しない。
 func TestWatchVerboseTruncatesLongDetailAtDisplay(t *testing.T) {
 	st, _ := watchTestStore(t)
 	taskID := "12345678-aaaa-bbbb-cccc-dddddddddddd"
@@ -416,19 +469,8 @@ func TestWatchVerboseTruncatesLongDetailAtDisplay(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	out := &bytes.Buffer{}
-	renderWatchLiveStatus(st, taskID, out, tracker, base.Add(time.Minute))
-	lines := strings.Split(strings.TrimRight(out.String(), "\n"), "\n")
-	var commandLines []string
-	for _, line := range lines {
-		if strings.HasPrefix(line, "LIVE COMMAND ") {
-			commandLines = append(commandLines, line)
-		}
-	}
-	if len(commandLines) != 1 {
-		t.Fatalf("COMMAND行 = %d件: %q", len(commandLines), out.String())
-	}
-	command := strings.TrimPrefix(commandLines[0], "LIVE COMMAND ")
+	live := renderWatchLive(t, st, taskID, tracker, base.Add(time.Minute))
+	command := liveToolOf(t, live, "Bash").Command
 	if !strings.HasSuffix(command, "...") || len([]rune(command)) > watchDetailMaxRunes+3 {
 		t.Fatalf("表示切詰め = %d runes", len([]rune(command)))
 	}
@@ -443,7 +485,7 @@ func TestWatchVerboseTruncatesLongDetailAtDisplay(t *testing.T) {
 }
 
 // TestWatchVerboseWithoutLiveSnapshotDegradesはlive snapshotが無い・壊れていてもtool種別
-// と経過の表示を続けることを検証する。
+// と経過の観測を続けることを検証する。
 func TestWatchVerboseWithoutLiveSnapshotDegrades(t *testing.T) {
 	st, taskID, _ := setupVerboseWatchTask(t)
 	if err := os.Remove(st.TaskLiveStatusPath(taskID)); err != nil {
@@ -459,17 +501,18 @@ func TestWatchVerboseWithoutLiveSnapshotDegrades(t *testing.T) {
 	if err := printWatch(st, out, opts); err != nil {
 		t.Fatal(err)
 	}
-	rendered := out.String()
-	if !strings.Contains(rendered, "LIVE CURRENT Bash") {
-		t.Fatalf("snapshot欠損でCURRENT表示が落ちました: %s", rendered)
+	lives := liveEventsFromStream(t, out.String())
+	if len(lives) == 0 {
+		t.Fatalf("snapshot欠損でlive eventが落ちました: %s", out.String())
 	}
-	if strings.Contains(rendered, "LIVE COMMAND") || strings.Contains(rendered, "LIVE PURPOSE") {
-		t.Fatalf("snapshot欠損時に詳細行が出ています: %s", rendered)
+	bash := liveToolOf(t, lives[0], "Bash")
+	if bash.Command != "" || bash.Purpose != "" {
+		t.Fatalf("snapshot欠損時に詳細fieldが出ています: %#v", bash)
 	}
 }
 
-// TestWatchVerboseFollowReprintsOnToolCompletionはfollow中のtool完了でLIVE表示が
-// CURRENT noneへ更新されることを検証する。
+// TestWatchVerboseFollowReprintsOnToolCompletionはfollow中のtool完了でlive eventが
+// current空へ更新されることを検証する。
 func TestWatchVerboseFollowReprintsOnToolCompletion(t *testing.T) {
 	st, taskID, _ := setupVerboseWatchTask(t)
 	base := time.Date(2026, 8, 23, 9, 10, 0, 0, time.UTC)
@@ -498,15 +541,17 @@ func TestWatchVerboseFollowReprintsOnToolCompletion(t *testing.T) {
 		t.Fatal("verbose watchがnon-active遷移後に終了しません")
 	}
 
-	rendered := out.String()
-	if !strings.Contains(rendered, "LIVE CURRENT Bash") {
-		t.Fatalf("実行中LIVE表示がありません: %s", rendered)
+	events := parseWatchEvents(t, out.String())
+	lives := liveEventsFromStream(t, out.String())
+	if len(lives) == 0 || len(lives[0].Current) != 1 || lives[0].Current[0].Name != "Bash" {
+		t.Fatalf("実行中live eventがありません: %v", lives)
 	}
-	if !strings.Contains(rendered, "LIVE CURRENT none") || !strings.Contains(rendered, "LIVE LAST Bash completed 295.1s") {
-		t.Fatalf("完了後のLIVE表示がありません: %s", rendered)
+	final := lives[len(lives)-1]
+	if len(final.Current) != 0 || final.Last == nil || final.Last.Name != "Bash" || final.Last.DurationMS != 295100 {
+		t.Fatalf("完了後のlive event = %#v", final)
 	}
-	if strings.Index(rendered, "LIVE LAST Bash") > strings.Index(rendered, "WATCH_EXIT") {
-		t.Fatalf("LIVE表示が終了行より後に出ています: %s", rendered)
+	if liveIndex := watchEventIndex(events, "live"); liveIndex < 0 || liveIndex > watchEventIndex(events, "watch_exit") {
+		t.Fatalf("live eventが終端eventより後に出ています: %v", events)
 	}
 }
 
@@ -523,8 +568,9 @@ func TestExecuteWatchVerboseDoesNotCreateState(t *testing.T) {
 	if err := Execute(cmd, cfg, nil, out, &bytes.Buffer{}); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "EVENT_LOG: none") {
-		t.Fatalf("verbose watch出力 = %q", out.String())
+	events := parseWatchEvents(t, out.String())
+	if watchString(t, requireWatchEvent(t, events, "watch_start"), "event_log_status") != "none" {
+		t.Fatalf("verbose watch出力 = %v", events)
 	}
 	entries, err := os.ReadDir(base)
 	if err != nil {

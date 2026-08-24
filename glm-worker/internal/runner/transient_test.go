@@ -104,35 +104,22 @@ func TestClassifyProviderFailureTextExclusive(t *testing.T) {
 	}
 }
 
-func TestProviderUnavailableErrorFormat(t *testing.T) {
+func TestProviderUnavailableErrorMessage(t *testing.T) {
 	err := &ProviderUnavailableError{
 		Phase:          "worker-new",
 		Classification: "http-503",
 		Probes:         4,
 		Elapsed:        51 * time.Minute,
-		TaskID:         "12345678-aaaa-bbbb-cccc-dddddddddddd",
-		RepoRoot:       "/repo",
-		RepoShort:      "abcdef123456",
 	}
 	msg := err.Error()
-	for _, want := range []string{
-		"STATUS: PROVIDER_UNAVAILABLE",
-		"PHASE: worker-new",
-		"TASK_ID: 12345678-aaaa-bbbb-cccc-dddddddddddd",
-		"REPO_ROOT: /repo",
-		"CLASSIFICATION: http-503",
-		"PROBES: 4",
-		"ELAPSED: 51m0s",
-		"RESUME_AVAILABLE: true",
-		"RESUME_COMMAND: glm-worker --resume",
-	} {
+	for _, want := range []string{"worker-new", "http-503", "4"} {
 		if !strings.Contains(msg, want) {
-			t.Fatalf("ProviderUnavailableErrorに%qがありません:\n%s", want, msg)
+			t.Fatalf("ProviderUnavailableErrorのmessageに%qがありません:\n%s", want, msg)
 		}
 	}
-	for _, forbidden := range []string{"RATE_LIMITED", "AUTO_RESUME"} {
+	for _, forbidden := range []string{"STATUS:", "RATE_LIMITED", "AUTO_RESUME", "\n"} {
 		if strings.Contains(msg, forbidden) {
-			t.Fatalf("provider-unavailableは5h上限の%s fieldを含まない: %s", forbidden, msg)
+			t.Fatalf("provider-unavailableのmessageは単行machine前の旧形式 %qを含まない: %s", forbidden, msg)
 		}
 	}
 }

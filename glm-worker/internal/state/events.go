@@ -113,13 +113,13 @@ func ParseTaskEventLine(data []byte) (TaskEventRecord, error) {
 // WarnTaskEventSkipは受動event記録をbest-effortで諦めた旨を観測用warningとして出す。
 // event logは観測資料であり、正規workflow・task成否へ影響させない。
 func WarnTaskEventSkip(operation string, err error) {
-	fmt.Fprintf(statsWarnOut, "WARNING: passive event logの%sに失敗したためevent記録をskipします（task本体へ影響しません）: %v\n", operation, err)
+	writeStatsWarningEvent("event_log", fmt.Sprintf("passive event logの%sに失敗したためevent記録をskipします（task本体へ影響しません）", operation), err)
 }
 
 // WarnTaskEventCapは1 callのevent記録が上限に到達し以後の追記をskipした旨を出す。
 // result event捕捉・task本体へは影響しない。
 func WarnTaskEventCap(limit int) {
-	fmt.Fprintf(statsWarnOut, "WARNING: passive event logの追記がcall当たり上限%d件に到達したため以後のevent記録をskipします（task本体へ影響しません）\n", limit)
+	writeStatsWarningEvent("event_log", fmt.Sprintf("passive event logの追記がcall当たり上限%d件に到達したため以後のevent記録をskipします（task本体へ影響しません）", limit), nil)
 }
 
 func (s *StateStore) TaskEventLogPath(taskID string) string {
@@ -175,5 +175,5 @@ func (s *StateStore) PruneTaskEventLogs(keep int, currentTaskID string) {
 // WarnTaskEventPruneは旧event logのretention整理失敗を観測用warningとして出す。
 // event logは観測資料のため、整理失敗でtask本体を失敗させない。
 func WarnTaskEventPrune(err error) {
-	fmt.Fprintf(statsWarnOut, "WARNING: 旧task event logのretention整理に失敗しました（task本体へ影響しません）: %v\n", err)
+	writeStatsWarningEvent("event_log", "旧task event logのretention整理に失敗しました（task本体へ影響しません）", err)
 }

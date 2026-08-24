@@ -4,7 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
+
 	"testing"
 	"time"
 )
@@ -213,28 +213,6 @@ func TestParseBasicStringRejectsMalformed(t *testing.T) {
 	dangling := string([]byte{'"', 'a', '\\'})
 	if _, err := parseBasicString(dangling); err == nil {
 		t.Fatal("dangling escape without close should error")
-	}
-}
-
-func TestWriteResult(t *testing.T) {
-	var sb strings.Builder
-	WriteResult(&sb, Result{Outcome: Pass, AutomationKey: "k", TargetThread: "t",
-		ExpectedUTC: "2026-08-12T11:01:20Z", TOMLDTStart: "20260812T110120", DBNextRunUTC: "2026-08-12T11:01:20Z"})
-	out := sb.String()
-	if !strings.Contains(out, "VERIFICATION: PASS") || !strings.Contains(out, "AUTOMATION_KEY: k") {
-		t.Fatalf("pass output = %q", out)
-	}
-
-	sb.Reset()
-	WriteResult(&sb, Result{Outcome: Fail, Reason: "missing"})
-	if !strings.Contains(sb.String(), "VERIFICATION: FAIL") || !strings.Contains(sb.String(), "REASON: missing") {
-		t.Fatalf("fail output = %q", sb.String())
-	}
-
-	sb.Reset()
-	WriteResult(&sb, Result{Outcome: Unavailable, Reason: "no sqlite3"})
-	if !strings.Contains(sb.String(), "VERIFICATION: UNAVAILABLE") {
-		t.Fatalf("unavailable output = %q", sb.String())
 	}
 }
 

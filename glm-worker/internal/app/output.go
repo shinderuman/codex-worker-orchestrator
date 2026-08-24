@@ -1,14 +1,14 @@
 package app
 
 import (
-	"bufio"
+	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/abeval"
@@ -17,85 +17,234 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
+// writeJSONは単発結果のmachine JSON 1行をwへ出す。HTML escapeを無効化し、
+// 改行はencoderが付与する末尾1つだけとする。
+func writeJSON(w io.Writer, value any) error {
+	var buf bytes.Buffer
+	encoder := json.NewEncoder(&buf)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(value); err != nil {
+		return err
+	}
+	_, err := w.Write(buf.Bytes())
+	return err
+}
+
+// stringPtrは空文字列をnilへ対応付ける。観測できない文字列値をJSON nullへ出すため。
+func stringPtr(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
+}
+
+// msPtrはdurationをmillisecond整数へ対応付ける。負値は観測境界の揺れとして0へ寄せる。
+func msPtr(d time.Duration) *int64 {
+	if d < 0 {
+		d = 0
+	}
+	ms := d.Milliseconds()
+	return &ms
+}
+
+// statusOutputは--statusのmachine contract。観測できない値はnull/ omissionで出し、
+// "unknown"/"none"のようなpresentation文字列へ落とさない。
+type statusOutput struct {
+	RepoRoot            *string                   `json:"repo_root"`
+	RepositoryLock      string                    `json:"repository_lock"`
+	LockPID             *string                   `json:"lock_pid"`
+	TaskID              *string                   `json:"task_id"`
+	ArtifactDir         *string                   `json:"artifact_dir"`
+	TaskStatus          string                    `json:"task_status"`
+	TaskLiveness        string                    `json:"task_liveness,omitempty"`
+	WorkerSession       *string                   `json:"worker_session"`
+	ReviewerSession     *string                   `json:"reviewer_session"`
+	PendingDecision     bool                      `json:"pending_decision"`
+	ParentReviewOpen    *string                   `json:"parent_review_open"`
+	TaskStartedAt       *time.Time                `json:"task_started_at"`
+	TaskElapsedMS       *int64                    `json:"task_elapsed_ms"`
+	LastEvent           *state.TaskEventRecord    `json:"last_event"`
+	LastEventAgeMS      *int64                    `json:"last_event_age_ms"`
+	CurrentPhase        *string                   `json:"current_phase"`
+	CurrentRole         *string                   `json:"current_role"`
+	CurrentModel        *string                   `json:"current_model"`
+	Probes              *statusProbes             `json:"probes"`
+	RateLimited         statusRateLimit           `json:"rate_limited"`
+	ProviderUnavailable statusProviderUnavailable `json:"provider_unavailable"`
+	ResumeAvailable     bool                      `json:"resume_available"`
+	Telemetry           *string                   `json:"telemetry"`
+	SessionAging        []state.SessionAging      `json:"session_aging"`
+}
+
+type statusProbes struct {
+	Count       int        `json:"count"`
+	LastAt      *time.Time `json:"last_at"`
+	LastAgeMS   *int64     `json:"last_age_ms"`
+	LastOutcome *string    `json:"last_outcome"`
+	LastAttempt int        `json:"last_attempt"`
+}
+
+type statusRateLimit struct {
+	Limited        bool    `json:"limited"`
+	Phase          string  `json:"phase,omitempty"`
+	ResetAtCST     string  `json:"reset_at_cst,omitempty"`
+	ResetAtRFC3339 *string `json:"reset_at_rfc3339,omitempty"`
+}
+
+type statusProviderUnavailable struct {
+	Unavailable    bool    `json:"unavailable"`
+	Phase          string  `json:"phase,omitempty"`
+	Classification *string `json:"classification,omitempty"`
+	Probes         int     `json:"probes,omitempty"`
+	ElapsedMS      *int64  `json:"elapsed_ms,omitempty"`
+}
+
 func printStatus(st *state.StateStore, stdout io.Writer) error {
-	fmt.Fprintf(stdout, "REPO: %s\n", st.ReadOr("repo-root", "unknown"))
-	probe := ProbeRepoLock(st.LockPath())
-	fmt.Fprintf(stdout, "REPOSITORY_LOCK: %s\n", probe.State)
-	fmt.Fprintf(stdout, "LOCK_PID: %s\n", probe.PID)
-	taskID := st.ReadOr("task.id", "none")
-	fmt.Fprintf(stdout, "TASK_ID: %s\n", taskID)
-	if taskID != "none" {
-		fmt.Fprintf(stdout, "ARTIFACT_DIR: %s\n", st.ArtifactDir(taskID))
-	} else {
-		fmt.Fprintln(stdout, "ARTIFACT_DIR: none")
-	}
-	fmt.Fprintf(stdout, "TASK_STATUS: %s\n", st.TaskStatus())
-	if st.TaskStatus() == state.TaskStatusActive {
-		fmt.Fprintf(stdout, "TASK_LIVENESS: %s\n", taskLiveness(probe))
-	}
-	fmt.Fprintf(stdout, "WORKER_SESSION: %s\n", st.ReadOr("worker.id", "none"))
-	fmt.Fprintf(stdout, "REVIEWER_SESSION: %s\n", st.ReadOr("reviewer.id", "none"))
-	if st.Exists("pending-decision") {
-		fmt.Fprintln(stdout, "PENDING_DECISION: yes")
-	} else {
-		fmt.Fprintln(stdout, "PENDING_DECISION: no")
-	}
-	fmt.Fprintf(stdout, "PARENT_REVIEW_OPEN: %s\n", st.OpenParentReviewLabel())
-
+	taskID := st.ReadOr("task.id", "")
 	logs, logErr := readStatusTelemetry(st, taskID)
-	printTaskDetail(st, taskID, stdout)
+	output := buildStatusOutput(st, taskID, logs, logErr)
+	return writeJSON(stdout, output)
+}
 
+func buildStatusOutput(st *state.StateStore, taskID string, logs []state.ModelCallLog, logErr error) statusOutput {
+	probe := ProbeRepoLock(st.LockPath())
+	output := statusOutput{
+		RepoRoot:        stringPtr(st.ReadOr("repo-root", "")),
+		RepositoryLock:  string(probe.State),
+		LockPID:         lockPIDPtr(probe.PID),
+		TaskID:          stringPtr(taskID),
+		TaskStatus:      string(st.TaskStatus()),
+		WorkerSession:   stringPtr(st.ReadOr("worker.id", "")),
+		ReviewerSession: stringPtr(st.ReadOr("reviewer.id", "")),
+		PendingDecision: st.Exists("pending-decision"),
+	}
+	if taskID != "" {
+		output.ArtifactDir = stringPtr(st.ArtifactDir(taskID))
+	}
+	if output.TaskStatus == string(state.TaskStatusActive) {
+		output.TaskLiveness = taskLiveness(probe)
+	}
+	if label := st.OpenParentReviewLabel(); label != "none" {
+		output.ParentReviewOpen = stringPtr(label)
+	}
+
+	fillStatusTaskDetail(st, taskID, &output)
+	fillStatusCheckpoint(st, &output)
+	output.Probes = statusProbesDetail(logs, time.Now())
+	output.ResumeAvailable = output.RateLimited.Limited || output.ProviderUnavailable.Unavailable
+	fillStatusTelemetry(taskID, logErr, logs, &output)
+	return output
+}
+
+// lockPIDPtrはlock fileに残っていたPID診断値を対応付ける。"none"はJSON nullへ出す。
+func lockPIDPtr(pid string) *string {
+	if pid == "" || pid == "none" {
+		return nil
+	}
+	return &pid
+}
+
+// fillStatusTaskDetailは現在taskの実行観測(開始時刻・経過・最終event・現在呼出識別)を
+// 既存stateだけから埋める。AI call・provider requestは行わず、取得できない項目は
+// nullのままにする(推測補完はしない)。
+func fillStatusTaskDetail(st *state.StateStore, taskID string, output *statusOutput) {
+	if stats, err := st.CurrentTaskStats(); err == nil && !stats.StartedAt.IsZero() {
+		startedAt := stats.StartedAt
+		output.TaskStartedAt = &startedAt
+		output.TaskElapsedMS = msPtr(time.Since(startedAt))
+	}
+
+	current := currentCallView{}
+	if last, ok := lastTaskEvent(st, taskID); ok {
+		current = currentCallView{phase: last.Phase, role: last.Role, model: last.ModelAlias}
+		if current.model == "" {
+			current.model = last.MessageModel
+		}
+		output.LastEvent = &last
+		if !last.Timestamp.IsZero() {
+			output.LastEventAgeMS = msPtr(time.Since(last.Timestamp))
+		}
+	} else if checkpoint, err := st.LoadResumeCheckpoint(); err == nil {
+		current = currentCallView{phase: checkpoint.Phase, role: string(checkpoint.Role), model: checkpoint.Model}
+	}
+	output.CurrentPhase = stringPtr(current.phase)
+	output.CurrentRole = stringPtr(current.role)
+	output.CurrentModel = stringPtr(current.model)
+}
+
+func fillStatusCheckpoint(st *state.StateStore, output *statusOutput) {
 	checkpoint, err := st.LoadResumeCheckpoint()
-	rateLimited := err == nil && checkpoint.RateLimited
-	providerUnavailable := err == nil && checkpoint.ProviderUnavailable
-
-	if rateLimited {
-		fmt.Fprintln(stdout, "RATE_LIMITED: yes")
-		fmt.Fprintf(stdout, "RATE_LIMIT_PHASE: %s\n", checkpoint.Phase)
-		fmt.Fprintf(stdout, "RESET_AT_CST: %s\n", checkpoint.ResetAtCST)
-		if checkpoint.ResetAtRFC3339 != "" {
-			fmt.Fprintf(stdout, "RESET_AT_RFC3339: %s\n", checkpoint.ResetAtRFC3339)
-		}
-		fmt.Fprintln(stdout, "RESET_TIMEZONE: CST (China Standard Time, UTC+8)")
-	} else {
-		fmt.Fprintln(stdout, "RATE_LIMITED: no")
+	if err != nil {
+		return
 	}
-
-	if providerUnavailable {
-		fmt.Fprintln(stdout, "PROVIDER_UNAVAILABLE: yes")
-		fmt.Fprintf(stdout, "PROVIDER_PHASE: %s\n", checkpoint.Phase)
-		classification := checkpoint.ProviderUnavailableClassification
-		if classification == "" {
-			classification = "unknown"
+	if checkpoint.RateLimited {
+		output.RateLimited = statusRateLimit{
+			Limited:        true,
+			Phase:          checkpoint.Phase,
+			ResetAtCST:     checkpoint.ResetAtCST,
+			ResetAtRFC3339: stringPtr(checkpoint.ResetAtRFC3339),
 		}
-		fmt.Fprintf(stdout, "PROVIDER_CLASSIFICATION: %s\n", classification)
-		fmt.Fprintf(stdout, "PROVIDER_PROBES: %d\n", checkpoint.ProviderUnavailableProbes)
+	}
+	if checkpoint.ProviderUnavailable {
+		elapsed := (*int64)(nil)
 		if !checkpoint.ProviderUnavailableStartedAt.IsZero() {
-			fmt.Fprintf(stdout, "PROVIDER_ELAPSED: %s\n", time.Since(checkpoint.ProviderUnavailableStartedAt).Truncate(time.Second))
-		} else {
-			fmt.Fprintln(stdout, "PROVIDER_ELAPSED: unknown")
+			elapsed = msPtr(time.Since(checkpoint.ProviderUnavailableStartedAt))
 		}
-		fmt.Fprintln(stdout, "PROVIDER_RESUME_PLAN: --resume re-probes the provider before continuing this phase")
-	} else {
-		fmt.Fprintln(stdout, "PROVIDER_UNAVAILABLE: no")
+		output.ProviderUnavailable = statusProviderUnavailable{
+			Unavailable:    true,
+			Phase:          checkpoint.Phase,
+			Classification: stringPtr(checkpoint.ProviderUnavailableClassification),
+			Probes:         checkpoint.ProviderUnavailableProbes,
+			ElapsedMS:      elapsed,
+		}
 	}
+}
 
-	printProbeDetail(logs, stdout)
-
-	if rateLimited || providerUnavailable {
-		fmt.Fprintln(stdout, "RESUME_AVAILABLE: yes")
-	} else {
-		fmt.Fprintln(stdout, "RESUME_AVAILABLE: no")
+// statusProbesDetailはprovider probe呼出の観測(実行回数と最終probe)をtelemetryだけから
+// 組み立てる。probe記録がないときは何も出さない(null)。
+func statusProbesDetail(logs []state.ModelCallLog, now time.Time) *statusProbes {
+	probes := make([]state.ModelCallLog, 0)
+	for _, log := range logs {
+		if log.CallType == state.CallTypeProbe {
+			probes = append(probes, log)
+		}
 	}
+	if len(probes) == 0 {
+		return nil
+	}
+	last := probes[len(probes)-1]
+	detail := statusProbes{
+		Count:       len(probes),
+		LastOutcome: stringPtr(last.Outcome),
+		LastAttempt: last.ProbeAttempt,
+	}
+	if !last.CompletedAt.IsZero() {
+		completedAt := last.CompletedAt
+		detail.LastAt = &completedAt
+		detail.LastAgeMS = msPtr(now.Sub(completedAt))
+	}
+	return &detail
+}
 
-	printSessionAging(taskID, logErr, logs, stdout)
-	return nil
+func fillStatusTelemetry(taskID string, logErr error, logs []state.ModelCallLog, output *statusOutput) {
+	if taskID == "" {
+		return
+	}
+	if logErr != nil {
+		unreadable := "unreadable"
+		output.Telemetry = &unreadable
+		return
+	}
+	ok := "ok"
+	output.Telemetry = &ok
+	output.SessionAging = state.AgingFromModelCallLogs(logs)
 }
 
 // readStatusTelemetryは現在taskのtelemetry呼出記録を読む。file不在は空扱いとし、
-// corruption等の読み取り失敗は表示側でunreadable表示へ使う(status自体は失敗させない)。
+// corruption等の読み取り失敗はtelemetry status側でunreadable表示へ使う(status自体は
+// 失敗させない)。
 func readStatusTelemetry(st *state.StateStore, taskID string) ([]state.ModelCallLog, error) {
-	if taskID == "none" {
+	if taskID == "" {
 		return nil, nil
 	}
 	logs, err := st.ReadModelCallLogs(taskID)
@@ -106,99 +255,6 @@ func readStatusTelemetry(st *state.StateStore, taskID string) ([]state.ModelCall
 		return nil, err
 	}
 	return logs, nil
-}
-
-// printTaskDetailは既存stateだけから現在taskの実行観測(current phase/role/model・開始
-// 経過時間・最終event)を表示する。AI call・provider requestは行わず、読み取れた値だけを
-// 出し、取得できない項目はunknown/noneとする(推測補完はしない)。
-func printTaskDetail(st *state.StateStore, taskID string, stdout io.Writer) {
-	if stats, err := st.CurrentTaskStats(); err != nil || stats.StartedAt.IsZero() {
-		fmt.Fprintln(stdout, "TASK_STARTED_AT: unknown")
-		fmt.Fprintln(stdout, "TASK_ELAPSED: unknown")
-	} else {
-		fmt.Fprintf(stdout, "TASK_STARTED_AT: %s\n", stats.StartedAt.Format(time.RFC3339))
-		fmt.Fprintf(stdout, "TASK_ELAPSED: %s\n", time.Since(stats.StartedAt).Truncate(time.Second))
-	}
-
-	current := currentCallView{}
-	if last, ok := lastTaskEvent(st, taskID); ok {
-		current = currentCallView{phase: last.Phase, role: last.Role, model: last.ModelAlias}
-		if current.model == "" {
-			current.model = last.MessageModel
-		}
-		fmt.Fprintln(stdout, "LAST_EVENT: "+formatTaskEvent(last))
-		if last.Timestamp.IsZero() {
-			fmt.Fprintln(stdout, "LAST_EVENT_AGE: unknown")
-		} else {
-			fmt.Fprintf(stdout, "LAST_EVENT_AGE: %s\n", time.Since(last.Timestamp).Truncate(time.Second))
-		}
-	} else {
-		fmt.Fprintln(stdout, "LAST_EVENT: none")
-		fmt.Fprintln(stdout, "LAST_EVENT_AGE: unknown")
-		if checkpoint, err := st.LoadResumeCheckpoint(); err == nil {
-			current = currentCallView{phase: checkpoint.Phase, role: string(checkpoint.Role), model: checkpoint.Model}
-		}
-	}
-	fmt.Fprintf(stdout, "CURRENT_PHASE: %s\n", orUnknown(current.phase))
-	fmt.Fprintf(stdout, "CURRENT_ROLE: %s\n", orUnknown(current.role))
-	fmt.Fprintf(stdout, "CURRENT_MODEL: %s\n", orUnknown(current.model))
-}
-
-// printProbeDetailはprovider probe呼出の観測(実行回数と最終probe)をtelemetryだけから
-// 表示する。in-process backoff中の状況観測に使い、probe記録がないときは何も出さない。
-func printProbeDetail(logs []state.ModelCallLog, stdout io.Writer) {
-	probes := make([]state.ModelCallLog, 0)
-	for _, log := range logs {
-		if log.CallType == state.CallTypeProbe {
-			probes = append(probes, log)
-		}
-	}
-	if len(probes) == 0 {
-		return
-	}
-	last := probes[len(probes)-1]
-	fmt.Fprintf(stdout, "PROBES: %d\n", len(probes))
-	fmt.Fprintf(stdout, "PROBE_LAST_AT: %s\n", last.CompletedAt.Format(time.RFC3339))
-	fmt.Fprintf(stdout, "PROBE_LAST_AGE: %s\n", time.Since(last.CompletedAt).Truncate(time.Second))
-	fmt.Fprintf(stdout, "PROBE_LAST_OUTCOME: %s\n", orUnknown(last.Outcome))
-	fmt.Fprintf(stdout, "PROBE_LAST_ATTEMPT: %d\n", last.ProbeAttempt)
-}
-
-// printSessionAgingは現在taskのsession別aging要約(role/model・session内call index相当の
-// latency列・累積turn/token)を既存telemetryだけから表示する。
-func printSessionAging(taskID string, logErr error, logs []state.ModelCallLog, stdout io.Writer) {
-	if taskID == "none" {
-		fmt.Fprintln(stdout, "SESSION_AGING: none")
-		return
-	}
-	if logErr != nil {
-		fmt.Fprintln(stdout, "SESSION_AGING: unreadable")
-		return
-	}
-	sessions := state.AgingFromModelCallLogs(logs)
-	if len(sessions) == 0 {
-		fmt.Fprintln(stdout, "SESSION_AGING: none")
-		return
-	}
-	for _, session := range sessions {
-		latencies := make([]string, 0, len(session.CallLatencyMS))
-		for _, latency := range session.CallLatencyMS {
-			latencies = append(latencies, fmt.Sprintf("%d", latency))
-		}
-		fmt.Fprintf(
-			stdout,
-			"SESSION_AGING: role=%s model=%s id=%s calls=%d resumed=%d turns=%d in=%d out=%d lat_ms=%s\n",
-			session.Role,
-			strings.Join(session.Models, "+"),
-			session.SessionID,
-			session.Calls,
-			session.ResumedCalls,
-			session.CumulativeTurns,
-			session.CumulativeInputTokens,
-			session.CumulativeOutputTokens,
-			strings.Join(latencies, ","),
-		)
-	}
 }
 
 // currentCallViewは--status表示用の現在呼出識別。event log最終recordを優先し、
@@ -212,38 +268,14 @@ type currentCallView struct {
 // lastTaskEventはtask event logの最終parse可能recordを返す。書き込み途中の末尾部分行は
 // parse失敗として無視される。
 func lastTaskEvent(st *state.StateStore, taskID string) (state.TaskEventRecord, bool) {
-	if taskID == "none" {
+	if taskID == "" {
 		return state.TaskEventRecord{}, false
 	}
-	file, err := os.Open(st.TaskEventLogPath(taskID))
-	if err != nil {
-		return state.TaskEventRecord{}, false
-	}
-	defer file.Close()
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
-	var last state.TaskEventRecord
-	found := false
-	for scanner.Scan() {
-		record, err := state.ParseTaskEventLine(scanner.Bytes())
-		if err != nil {
-			continue
-		}
-		last = record
-		found = true
-	}
-	return last, found
+	return readLastTaskEvent(st.TaskEventLogPath(taskID))
 }
 
-func orUnknown(value string) string {
-	if value == "" {
-		return "unknown"
-	}
-	return value
-}
-
-// taskLivenessはTASK_STATUS=active時のrepo lock実保持による生存表示。
-// lock heldなら現在のglm-worker processが同一repo taskを実行中、freeはstale候補、
+// taskLivenessはtask_status=active時のrepo lock実保持による生存値。
+// heldは現在のglm-worker processが同一repo taskを実行中、freeはstale候補、
 // unknownは判定不能。lock file内PIDは権威にせずstale PID・PID reuseでrunning扱いしない。
 func taskLiveness(probe LockProbe) string {
 	switch probe.State {
@@ -256,12 +288,106 @@ func taskLiveness(probe LockProbe) string {
 	}
 }
 
+// statsOutputは--statsのmachine contract。集計値は数値・map objectのまま出し、
+// mapの文字列化・note行のようなpresentationは持たない。
+type statsOutput struct {
+	Tasks                                   int                 `json:"tasks"`
+	ModelCalls                              int                 `json:"model_calls"`
+	ModelCallsByAlias                       map[string]int      `json:"model_calls_by_alias"`
+	ProbeCalls                              int                 `json:"probe_calls"`
+	TotalAICalls                            int                 `json:"total_ai_calls"`
+	TelemetryCoverage                       statsCoverage       `json:"telemetry_coverage"`
+	ModelDurationMSByAlias                  map[string]int64    `json:"model_duration_ms_by_alias"`
+	InputTokensByAlias                      map[string]int64    `json:"input_tokens_by_alias"`
+	CacheCreationInputTokensByAlias         map[string]int64    `json:"cache_creation_input_tokens_by_alias"`
+	CacheReadInputTokensByAlias             map[string]int64    `json:"cache_read_input_tokens_by_alias"`
+	TotalPromptTokensByAlias                map[string]int64    `json:"total_prompt_tokens_by_alias"`
+	OutputTokensByAlias                     map[string]int64    `json:"output_tokens_by_alias"`
+	TopLevelTurnsByAlias                    map[string]int      `json:"top_level_turns_by_alias"`
+	CallTreesByResolvedModel                map[string]int      `json:"call_trees_by_resolved_model"`
+	InputTokensByResolvedModel              map[string]int64    `json:"input_tokens_by_resolved_model"`
+	CacheCreationInputTokensByResolvedModel map[string]int64    `json:"cache_creation_input_tokens_by_resolved_model"`
+	CacheReadInputTokensByResolvedModel     map[string]int64    `json:"cache_read_input_tokens_by_resolved_model"`
+	OutputTokensByResolvedModel             map[string]int64    `json:"output_tokens_by_resolved_model"`
+	WorkerCalls                             int                 `json:"worker_calls"`
+	ReviewerCalls                           int                 `json:"reviewer_calls"`
+	DecisionCommands                        int                 `json:"decision_commands"`
+	FixCommands                             int                 `json:"fix_commands"`
+	ResumeCommands                          int                 `json:"resume_commands"`
+	TransientRetries                        int                 `json:"transient_retries"`
+	AutoFixRounds                           int                 `json:"auto_fix_rounds"`
+	NeedsSolDecisionPackets                 int                 `json:"needs_sol_decision_packets"`
+	NeedsSolReviewPackets                   int                 `json:"needs_sol_review_packets"`
+	PassPackets                             int                 `json:"pass_packets"`
+	RateLimits                              int                 `json:"rate_limits"`
+	RateLimitsByAlias                       map[string]int      `json:"rate_limits_by_alias"`
+	ProviderUnavailable                     int                 `json:"provider_unavailable"`
+	ProviderUnavailableByAlias              map[string]int      `json:"provider_unavailable_by_alias"`
+	PacketCompactions                       int                 `json:"packet_compactions"`
+	RiskFloorByCategory                     map[string]int      `json:"risk_floor_by_category"`
+	SnapshotMismatches                      int                 `json:"snapshot_mismatches"`
+	SnapshotMismatchByAxis                  map[string]int      `json:"snapshot_mismatch_by_axis"`
+	PacketRejectByCategory                  map[string]int      `json:"packet_reject_by_category"`
+	ProbeOutcome                            map[string]int      `json:"probe_outcome"`
+	ParentOutcomes                          map[string]int      `json:"parent_outcomes"`
+	ParentFixOrigins                        map[string]int      `json:"parent_fix_origins"`
+	ParentOutcomesByModel                   map[string]int      `json:"parent_outcomes_by_model"`
+	ParentOutcomesByRisk                    map[string]int      `json:"parent_outcomes_by_risk"`
+	ParentFixRework                         []statsParentRework `json:"parent_fix_rework"`
+	ParentFixReworkCoverage                 string              `json:"parent_fix_rework_coverage"`
+	SolPacketBytes                          int                 `json:"sol_packet_bytes"`
+	TelemetryDir                            string              `json:"telemetry_dir"`
+	CurrentTask                             statsCurrentTask    `json:"current_task"`
+}
+
+type statsCoverage struct {
+	Status        string              `json:"status"`
+	StatsCalls    int                 `json:"stats_calls"`
+	RawRecords    int                 `json:"raw_records"`
+	MissingCalls  int                 `json:"missing_calls"`
+	ExcessRecords int                 `json:"excess_records"`
+	OrphanFiles   int                 `json:"orphan_files"`
+	UsageKnown    bool                `json:"usage_totals_known"`
+	Tasks         []statsCoverageTask `json:"tasks"`
+}
+
+// statsCoverageTaskはcoverageがcompleteでないtaskの明細。complete taskは一覧へ出さない。
+type statsCoverageTask struct {
+	TaskID         string `json:"task_id"`
+	Classification string `json:"classification"`
+	StatsCalls     int    `json:"stats_calls"`
+	RawRecords     int    `json:"raw_records"`
+	MissingCalls   int    `json:"missing_calls"`
+	ExcessRecords  int    `json:"excess_records"`
+}
+
+type statsParentRework struct {
+	Origin           string `json:"origin"`
+	Calls            int    `json:"calls"`
+	WorkerCalls      int    `json:"worker_calls"`
+	ReviewerCalls    int    `json:"reviewer_calls"`
+	Turns            int    `json:"turns"`
+	TreeInputTokens  int64  `json:"tree_input_tokens"`
+	TreeOutputTokens int64  `json:"tree_output_tokens"`
+	WallDurationMS   int64  `json:"wall_duration_ms"`
+}
+
+type statsCurrentTask struct {
+	ID          *string `json:"id"`
+	Status      string  `json:"status"`
+	ArtifactDir *string `json:"artifact_dir"`
+}
+
 func printStats(st *state.StateStore, stdout io.Writer) error {
 	all, err := st.AllTaskStats()
 	if err != nil {
 		return err
 	}
+	output := buildStatsOutput(st, all)
+	return writeJSON(stdout, output)
+}
 
+func buildStatsOutput(st *state.StateStore, all []state.TaskStats) statsOutput {
 	aggregate := state.TaskStats{}
 	for _, stats := range all {
 		aggregate.ModelCalls += stats.ModelCalls
@@ -309,74 +435,102 @@ func printStats(st *state.StateStore, stdout io.Writer) error {
 		probeCalls += count
 	}
 
-	fmt.Fprintf(stdout, "TASKS: %d\n", len(all))
-	// MODEL_CALLSはTask Work Callのみ。probeはPROBE_CALLS(probe_outcome総計)へ別計上し、
-	// TOTAL_AI_CALLS = MODEL_CALLS + PROBE_CALLS で重複・欠落なく導出できる。
-	fmt.Fprintf(stdout, "MODEL_CALLS: %d\n", aggregate.ModelCalls)
-	fmt.Fprintf(stdout, "MODEL_CALLS_BY_ALIAS: %s\n", formatIntMap(aggregate.ModelCallsByAlias))
-	fmt.Fprintf(stdout, "PROBE_CALLS: %d\n", probeCalls)
-	fmt.Fprintf(stdout, "TOTAL_AI_CALLS: %d\n", aggregate.ModelCalls+probeCalls)
-	printTelemetryCoverage(st, all, stdout)
-	fmt.Fprintf(stdout, "MODEL_DURATION_MS_BY_ALIAS: %s\n", formatInt64Map(aggregate.ModelDurationMSByAlias))
-	fmt.Fprintf(stdout, "INPUT_TOKENS_BY_ALIAS: %s\n", formatInt64Map(aggregate.InputTokensByAlias))
-	fmt.Fprintf(stdout, "CACHE_CREATION_INPUT_TOKENS_BY_ALIAS: %s\n", formatInt64Map(aggregate.CacheCreationInputTokensByAlias))
-	fmt.Fprintf(stdout, "CACHE_READ_INPUT_TOKENS_BY_ALIAS: %s\n", formatInt64Map(aggregate.CacheReadInputTokensByAlias))
-	fmt.Fprintf(stdout, "TOTAL_PROMPT_TOKENS_BY_ALIAS: %s\n", formatInt64Map(sumInt64Maps(
-		aggregate.InputTokensByAlias,
-		aggregate.CacheCreationInputTokensByAlias,
-		aggregate.CacheReadInputTokensByAlias,
-	)))
-	fmt.Fprintf(stdout, "OUTPUT_TOKENS_BY_ALIAS: %s\n", formatInt64Map(aggregate.OutputTokensByAlias))
-	fmt.Fprintf(stdout, "TOP_LEVEL_TURNS_BY_ALIAS: %s\n", formatIntMap(aggregate.TopLevelTurnsByAlias))
-	fmt.Fprintf(stdout, "CALL_TREES_BY_RESOLVED_MODEL: %s\n", formatIntMap(aggregate.CallTreesByResolvedModel))
-	fmt.Fprintf(stdout, "INPUT_TOKENS_BY_RESOLVED_MODEL: %s\n", formatInt64Map(aggregate.InputTokensByResolvedModel))
-	fmt.Fprintf(stdout, "CACHE_CREATION_INPUT_TOKENS_BY_RESOLVED_MODEL: %s\n", formatInt64Map(aggregate.CacheCreationInputTokensByResolvedModel))
-	fmt.Fprintf(stdout, "CACHE_READ_INPUT_TOKENS_BY_RESOLVED_MODEL: %s\n", formatInt64Map(aggregate.CacheReadInputTokensByResolvedModel))
-	fmt.Fprintf(stdout, "OUTPUT_TOKENS_BY_RESOLVED_MODEL: %s\n", formatInt64Map(aggregate.OutputTokensByResolvedModel))
-	fmt.Fprintf(stdout, "WORKER_CALLS: %d\n", aggregate.WorkerCalls)
-	fmt.Fprintf(stdout, "REVIEWER_CALLS: %d\n", aggregate.ReviewerCalls)
-	fmt.Fprintf(stdout, "DECISION_COMMANDS: %d\n", aggregate.DecisionCommands)
-	fmt.Fprintf(stdout, "FIX_COMMANDS: %d\n", aggregate.FixCommands)
-	fmt.Fprintf(stdout, "RESUME_COMMANDS: %d\n", aggregate.ResumeCommands)
-	fmt.Fprintf(stdout, "TRANSIENT_RETRIES: %d\n", aggregate.TransientRetries)
-	fmt.Fprintf(stdout, "AUTO_FIX_ROUNDS: %d\n", aggregate.AutoFixRounds)
-	fmt.Fprintf(stdout, "NEEDS_SOL_DECISION_PACKETS: %d\n", aggregate.NeedsSolDecisionPackets)
-	fmt.Fprintf(stdout, "NEEDS_SOL_REVIEW_PACKETS: %d\n", aggregate.NeedsSolReviewPackets)
-	fmt.Fprintf(stdout, "PASS_PACKETS: %d\n", aggregate.PassPackets)
-	fmt.Fprintf(stdout, "RATE_LIMITS: %d\n", aggregate.RateLimits)
-	fmt.Fprintf(stdout, "RATE_LIMITS_BY_ALIAS: %s\n", formatIntMap(aggregate.RateLimitsByAlias))
-	fmt.Fprintf(stdout, "PROVIDER_UNAVAILABLE: %d\n", aggregate.ProviderUnavailable)
-	fmt.Fprintf(stdout, "PROVIDER_UNAVAILABLE_BY_ALIAS: %s\n", formatIntMap(aggregate.ProviderUnavailableByAlias))
-	fmt.Fprintf(stdout, "PACKET_COMPACTIONS: %d\n", aggregate.PacketCompactions)
-	fmt.Fprintf(stdout, "RISK_FLOOR_BY_CATEGORY: %s\n", formatIntMap(aggregate.RiskFloorByCategory))
-	fmt.Fprintf(stdout, "SNAPSHOT_MISMATCHES: %d\n", aggregate.SnapshotMismatches)
-	fmt.Fprintf(stdout, "SNAPSHOT_MISMATCH_BY_AXIS: %s\n", formatIntMap(aggregate.SnapshotMismatchByAxis))
-	fmt.Fprintf(stdout, "PACKET_REJECT_BY_CATEGORY: %s\n", formatIntMap(aggregate.PacketRejectByCategory))
-	fmt.Fprintf(stdout, "PROBE_OUTCOME: %s\n", formatIntMap(aggregate.ProbeOutcome))
-	printParentReviewStats(st, all, aggregate, stdout)
-	fmt.Fprintf(stdout, "SOL_PACKET_BYTES: %d\n", aggregate.SolPacketBytes)
-	fmt.Fprintf(stdout, "TELEMETRY_DIR: %s\n", st.Path("telemetry"))
-	fmt.Fprintf(stdout, "CURRENT_TASK_ID: %s\n", st.ReadOr("task.id", "none"))
-	fmt.Fprintf(stdout, "CURRENT_TASK_STATUS: %s\n", st.TaskStatus())
-	currentTaskID := st.ReadOr("task.id", "none")
-	if currentTaskID != "none" {
-		fmt.Fprintf(stdout, "CURRENT_ARTIFACT_DIR: %s\n", st.ArtifactDir(currentTaskID))
-	} else {
-		fmt.Fprintln(stdout, "CURRENT_ARTIFACT_DIR: none")
+	// MODEL_CALLSはTask Work Callのみ。probeはProbeCalls(probe_outcome総計)へ別計上し、
+	// TotalAICalls = ModelCalls + ProbeCalls で重複・欠落なく導出できる。
+	output := statsOutput{
+		Tasks:                           len(all),
+		ModelCalls:                      aggregate.ModelCalls,
+		ModelCallsByAlias:               aggregate.ModelCallsByAlias,
+		ProbeCalls:                      probeCalls,
+		TotalAICalls:                    aggregate.ModelCalls + probeCalls,
+		ModelDurationMSByAlias:          aggregate.ModelDurationMSByAlias,
+		InputTokensByAlias:              aggregate.InputTokensByAlias,
+		CacheCreationInputTokensByAlias: aggregate.CacheCreationInputTokensByAlias,
+		CacheReadInputTokensByAlias:     aggregate.CacheReadInputTokensByAlias,
+		TotalPromptTokensByAlias: sumInt64Maps(
+			aggregate.InputTokensByAlias,
+			aggregate.CacheCreationInputTokensByAlias,
+			aggregate.CacheReadInputTokensByAlias,
+		),
+		OutputTokensByAlias:                     aggregate.OutputTokensByAlias,
+		TopLevelTurnsByAlias:                    aggregate.TopLevelTurnsByAlias,
+		CallTreesByResolvedModel:                aggregate.CallTreesByResolvedModel,
+		InputTokensByResolvedModel:              aggregate.InputTokensByResolvedModel,
+		CacheCreationInputTokensByResolvedModel: aggregate.CacheCreationInputTokensByResolvedModel,
+		CacheReadInputTokensByResolvedModel:     aggregate.CacheReadInputTokensByResolvedModel,
+		OutputTokensByResolvedModel:             aggregate.OutputTokensByResolvedModel,
+		WorkerCalls:                             aggregate.WorkerCalls,
+		ReviewerCalls:                           aggregate.ReviewerCalls,
+		DecisionCommands:                        aggregate.DecisionCommands,
+		FixCommands:                             aggregate.FixCommands,
+		ResumeCommands:                          aggregate.ResumeCommands,
+		TransientRetries:                        aggregate.TransientRetries,
+		AutoFixRounds:                           aggregate.AutoFixRounds,
+		NeedsSolDecisionPackets:                 aggregate.NeedsSolDecisionPackets,
+		NeedsSolReviewPackets:                   aggregate.NeedsSolReviewPackets,
+		PassPackets:                             aggregate.PassPackets,
+		RateLimits:                              aggregate.RateLimits,
+		RateLimitsByAlias:                       aggregate.RateLimitsByAlias,
+		ProviderUnavailable:                     aggregate.ProviderUnavailable,
+		ProviderUnavailableByAlias:              aggregate.ProviderUnavailableByAlias,
+		PacketCompactions:                       aggregate.PacketCompactions,
+		RiskFloorByCategory:                     aggregate.RiskFloorByCategory,
+		SnapshotMismatches:                      aggregate.SnapshotMismatches,
+		SnapshotMismatchByAxis:                  aggregate.SnapshotMismatchByAxis,
+		PacketRejectByCategory:                  aggregate.PacketRejectByCategory,
+		ProbeOutcome:                            aggregate.ProbeOutcome,
+		ParentOutcomes:                          aggregate.ParentOutcomes,
+		ParentFixOrigins:                        aggregate.ParentFixOrigins,
+		ParentOutcomesByModel:                   aggregate.ParentOutcomesByModel,
+		ParentOutcomesByRisk:                    aggregate.ParentOutcomesByRisk,
+		SolPacketBytes:                          aggregate.SolPacketBytes,
+		TelemetryDir:                            st.Path("telemetry"),
 	}
-	return nil
+	output.TelemetryCoverage = statsCoverageDetail(st.ComputeTelemetryCoverage(all))
+	fillStatsParentReview(st, all, aggregate, &output)
+	output.CurrentTask = statsCurrentTaskDetail(st)
+	return output
 }
 
-// printParentReviewStatsはparent review opportunity outcome観測を表示する。opportunity種別は
-// 既存PASS/NEEDS_SOL_REVIEW/NEEDS_SOL_DECISION packet計数と同値であり、本task binaryで記録された
-// taskではoutcome総数(+未確定1件)と一致する。旧archiveはoutcome未観測のまま補完しない。
-// rework増分はtelemetry JSONLの親行動eventで区切った部分合計で、record欠損時はcoverageを
-// unknownへ出す。本観測はglm-worker側の親行動観測でありCodex actual usageの代替ではない。
-func printParentReviewStats(st *state.StateStore, all []state.TaskStats, aggregate state.TaskStats, stdout io.Writer) {
-	fmt.Fprintf(stdout, "PARENT_OUTCOMES: %s\n", formatIntMap(aggregate.ParentOutcomes))
-	fmt.Fprintf(stdout, "PARENT_FIX_ORIGINS: %s\n", formatIntMap(aggregate.ParentFixOrigins))
-	fmt.Fprintf(stdout, "PARENT_OUTCOMES_BY_MODEL: %s\n", formatIntMap(aggregate.ParentOutcomesByModel))
-	fmt.Fprintf(stdout, "PARENT_OUTCOMES_BY_RISK: %s\n", formatIntMap(aggregate.ParentOutcomesByRisk))
+// statsCoverageDetailはTaskStats model_callsとraw JSONL task record数の対応を組み立てる。
+// 欠損callのusageは既知historical gapを含め推測せず、token集計が捕まえたrecordだけの
+// 部分合計であることをusage_totals_knownで明示する。
+func statsCoverageDetail(coverage state.TelemetryCoverage) statsCoverage {
+	detail := statsCoverage{
+		Status:        coverage.Status,
+		StatsCalls:    coverage.StatsCalls,
+		RawRecords:    coverage.RawRecords,
+		MissingCalls:  coverage.MissingCalls,
+		ExcessRecords: coverage.ExcessRecords,
+		OrphanFiles:   coverage.OrphanFiles,
+		UsageKnown:    coverage.UsageKnown,
+		Tasks:         make([]statsCoverageTask, 0, len(coverage.Tasks)),
+	}
+	for _, entry := range coverage.Tasks {
+		classification := entry.Classification()
+		if classification == state.CoverageComplete {
+			continue
+		}
+		detail.Tasks = append(detail.Tasks, statsCoverageTask{
+			TaskID:         entry.TaskID,
+			Classification: classification,
+			StatsCalls:     entry.StatsCalls,
+			RawRecords:     entry.RawRecords,
+			MissingCalls:   entry.MissingCalls(),
+			ExcessRecords:  entry.ExcessRecords(),
+		})
+	}
+	return detail
+}
+
+// fillStatsParentReviewはparent review opportunity outcome観測を埋める。opportunity種別は
+// 既存PASS/NEEDS_SOL_REVIEW/NEEDS_SOL_DECISION packet計数と同値であり、本task binaryで
+// 記録されたtaskではoutcome総数(+未確定1件)と一致する。旧archiveはoutcome未観測のまま
+// 補完しない。rework増分はtelemetry JSONLの親行動eventで区切った部分合計で、record欠損時は
+// coverageをunknownへ出す。本観測はglm-worker側の親行動観測でありCodex actual usageの
+// 代替ではない。
+func fillStatsParentReview(st *state.StateStore, all []state.TaskStats, aggregate state.TaskStats, output *statsOutput) {
+	output.ParentFixRework = make([]statsParentRework, 0)
 	rework := st.ComputeParentRework(all)
 	origins := make([]string, 0, len(rework.ByOrigin))
 	for origin := range rework.ByOrigin {
@@ -385,61 +539,27 @@ func printParentReviewStats(st *state.StateStore, all []state.TaskStats, aggrega
 	sort.Strings(origins)
 	for _, origin := range origins {
 		entry := rework.ByOrigin[origin]
-		fmt.Fprintf(
-			stdout,
-			"PARENT_FIX_REWORK: origin=%s calls=%d worker_calls=%d reviewer_calls=%d turns=%d tree_in=%d tree_out=%d wall_ms=%d\n",
-			origin,
-			entry.Calls,
-			entry.WorkerCalls,
-			entry.ReviewerCalls,
-			entry.Turns,
-			entry.TreeInputTokens,
-			entry.TreeOutputTokens,
-			entry.WallDurationMS,
-		)
+		output.ParentFixRework = append(output.ParentFixRework, statsParentRework{
+			Origin:           origin,
+			Calls:            entry.Calls,
+			WorkerCalls:      entry.WorkerCalls,
+			ReviewerCalls:    entry.ReviewerCalls,
+			Turns:            entry.Turns,
+			TreeInputTokens:  entry.TreeInputTokens,
+			TreeOutputTokens: entry.TreeOutputTokens,
+			WallDurationMS:   entry.WallDurationMS,
+		})
 	}
-	fmt.Fprintf(stdout, "PARENT_FIX_REWORK_COVERAGE: %s\n", rework.Coverage)
-	fmt.Fprintln(stdout, "PARENT_REVIEW_NOTE: glm-worker-side parent action observation only; not Codex actual token usage and not a Direct/orchestrated A/B substitute metric")
+	output.ParentFixReworkCoverage = rework.Coverage
 }
 
-// printTelemetryCoverageはTaskStats model_callsとraw JSONL task record数の対応を表示する。
-// 欠損callのusageは既知historical gapを含め推測せず、token集計が捕まえたrecordだけの
-// 部分合計であることをUSAGE_TOTALS_COVERAGEで明示する。
-func printTelemetryCoverage(st *state.StateStore, all []state.TaskStats, stdout io.Writer) {
-	coverage := st.ComputeTelemetryCoverage(all)
-	fmt.Fprintf(stdout, "TELEMETRY_COVERAGE: %s\n", coverage.Status)
-	fmt.Fprintf(stdout, "TELEMETRY_COVERAGE_MODEL_CALLS: %d\n", coverage.StatsCalls)
-	fmt.Fprintf(stdout, "TELEMETRY_COVERAGE_RAW_RECORDS: %d\n", coverage.RawRecords)
-	fmt.Fprintf(stdout, "TELEMETRY_COVERAGE_MISSING_CALLS: %d\n", coverage.MissingCalls)
-	fmt.Fprintf(stdout, "TELEMETRY_COVERAGE_EXCESS_RECORDS: %d\n", coverage.ExcessRecords)
-	fmt.Fprintf(stdout, "TELEMETRY_COVERAGE_ORPHAN_FILES: %d\n", coverage.OrphanFiles)
-	if coverage.UsageKnown {
-		fmt.Fprintln(stdout, "USAGE_TOTALS_COVERAGE: complete")
-	} else {
-		fmt.Fprintln(stdout, "USAGE_TOTALS_COVERAGE: unknown")
+func statsCurrentTaskDetail(st *state.StateStore) statsCurrentTask {
+	current := statsCurrentTask{Status: string(st.TaskStatus())}
+	if id := st.ReadOr("task.id", ""); id != "" {
+		current.ID = stringPtr(id)
+		current.ArtifactDir = stringPtr(st.ArtifactDir(id))
 	}
-	for _, entry := range coverage.Tasks {
-		switch entry.Classification() {
-		case state.CoverageHistoricalGap:
-			fmt.Fprintf(
-				stdout,
-				"TELEMETRY_COVERAGE_HISTORICAL_GAP: task=%s stats_calls=%d raw_records=%d missing=%d usage=unknown\n",
-				entry.TaskID, entry.StatsCalls, entry.RawRecords, entry.MissingCalls(),
-			)
-		case state.CoverageIncomplete:
-			fmt.Fprintf(
-				stdout,
-				"TELEMETRY_COVERAGE_INCOMPLETE_TASK: task=%s stats_calls=%d raw_records=%d missing=%d excess=%d usage=unknown\n",
-				entry.TaskID, entry.StatsCalls, entry.RawRecords, entry.MissingCalls(), entry.ExcessRecords(),
-			)
-		case state.CoverageUnreadable:
-			fmt.Fprintf(
-				stdout,
-				"TELEMETRY_COVERAGE_UNREADABLE_TASK: task=%s stats_calls=%d\n",
-				entry.TaskID, entry.StatsCalls,
-			)
-		}
-	}
+	return current
 }
 
 func mergeIntMap(target *map[string]int, source map[string]int) {
@@ -460,30 +580,6 @@ func mergeInt64Map(target *map[string]int64, source map[string]int64) {
 	}
 }
 
-func formatIntMap(values map[string]int) string {
-	items := make([]string, 0, len(values))
-	for key, value := range values {
-		items = append(items, fmt.Sprintf("%s=%d", key, value))
-	}
-	sort.Strings(items)
-	if len(items) == 0 {
-		return "none"
-	}
-	return strings.Join(items, ",")
-}
-
-func formatInt64Map(values map[string]int64) string {
-	items := make([]string, 0, len(values))
-	for key, value := range values {
-		items = append(items, fmt.Sprintf("%s=%d", key, value))
-	}
-	sort.Strings(items)
-	if len(items) == 0 {
-		return "none"
-	}
-	return strings.Join(items, ",")
-}
-
 func sumInt64Maps(values ...map[string]int64) map[string]int64 {
 	result := make(map[string]int64)
 	for _, items := range values {
@@ -496,8 +592,8 @@ func sumInt64Maps(values ...map[string]int64) map[string]int64 {
 
 // printEvalABはdirect/orchestrated A/B run dir(spec.json・direct.json・orchestrated.json)を
 // 読み込み、glm_usage.sourceがglm-worker-task-statsの記録だけを既存stats履歴から解決し、
-// 比較前提を検証してから結果を表示する。明示commandのため読み込み・解決・検証失敗は
-// errorとして返す。AI呼出は行わない。
+// 比較前提を検証してから結果をmachine JSONで出す。明示commandのため読み込み・解決・検証
+// 失敗はerrorとして返す。AI呼出は行わない。
 func printEvalAB(st *state.StateStore, dir string, stdout io.Writer) error {
 	spec, direct, orchestrated, err := abeval.LoadPair(dir)
 	if err != nil {
@@ -516,33 +612,58 @@ func printEvalAB(st *state.StateStore, dir string, stdout io.Writer) error {
 	if err := abeval.ValidatePair(spec, direct, orchestrated); err != nil {
 		return err
 	}
-	fmt.Fprint(stdout, abeval.Format(abeval.Compare(spec, direct, orchestrated)))
-	return nil
+	return writeJSON(stdout, abeval.BuildReport(abeval.Compare(spec, direct, orchestrated)))
 }
 
 func resetState(st *state.StateStore, stdout io.Writer) error {
 	if err := st.Reset(); err != nil {
 		return err
 	}
+	return writeJSON(stdout, resetOutput{
+		Status:   "reset",
+		RepoRoot: stringPtr(st.ReadOr("repo-root", "")),
+	})
+}
 
-	fmt.Fprintln(stdout, "STATUS: RESET")
-	fmt.Fprintf(stdout, "REPO: %s\n", st.ReadOr("repo-root", "unknown"))
-	return nil
+type resetOutput struct {
+	Status   string  `json:"status"`
+	RepoRoot *string `json:"repo_root"`
 }
 
 // parentAcceptは--acceptで、修正なし採用したterminal resultの親review outcomeを確定する。
-// 未確定opportunityが無い再実行は二重計上せずno-op表示へ収める。
+// 未確定opportunityが無い再実行は二重計上せずaccepted=falseへ収める。
 func parentAccept(st *state.StateStore, stdout io.Writer) error {
 	resolved, err := st.RecordParentOutcome(state.ParentOutcomeAccepted, "")
 	if err != nil {
-		return fmt.Errorf("STATUS: WORKER_ERROR\nERROR: %v", err)
+		return err
 	}
-	if resolved {
-		fmt.Fprintln(stdout, "PARENT_REVIEW: accepted")
-	} else {
-		fmt.Fprintln(stdout, "PARENT_REVIEW: no open terminal result")
-	}
-	return nil
+	return writeJSON(stdout, acceptOutput{Accepted: resolved})
+}
+
+type acceptOutput struct {
+	Accepted bool `json:"accepted"`
+}
+
+// VerificationErrorは--verify-auto-resumeが検証に失敗したことをprocess errorへ伝える
+// typed error。Reasonは検証不合格の機械理由。
+type VerificationError struct {
+	Outcome autoresume.Outcome
+	Reason  string
+}
+
+func (e *VerificationError) Error() string {
+	return fmt.Sprintf("verification %s: %s", outcomeLabel(e.Outcome), e.Reason)
+}
+
+// verifyAutoResumeOutputは--verify-auto-resume成功時のmachine contract。検証できた
+// automation実体(TOML・DB row)の対応fieldをそのまま載せる。失敗・検証不可は
+// process errorのkind verification_failed/verification_unavailableへ出る。
+type verifyAutoResumeOutput struct {
+	AutomationKey  string `json:"automation_key"`
+	TargetThread   string `json:"target_thread"`
+	ExpectedAtUTC  string `json:"expected_at_utc"`
+	TOMLDTStart    string `json:"toml_dtstart"`
+	DBNextRunAtUTC string `json:"db_next_run_at_utc"`
 }
 
 func printVerifyAutoResume(cmd Command, cfg config.AppConfig, stdout io.Writer) error {
@@ -554,12 +675,16 @@ func printVerifyAutoResume(cmd Command, cfg config.AppConfig, stdout io.Writer) 
 		DBPath:           filepath.Join(cfg.CodexConfigDir, "sqlite", "codex-dev.db"),
 	}
 	result := autoresume.Verify(params, autoresume.ReadDBRowSqlite3)
-	autoresume.WriteResult(stdout, result)
-
-	if result.Outcome == autoresume.Pass {
-		return nil
+	if result.Outcome != autoresume.Pass {
+		return &VerificationError{Outcome: result.Outcome, Reason: result.Reason}
 	}
-	return fmt.Errorf("verification %s: %s", outcomeLabel(result.Outcome), result.Reason)
+	return writeJSON(stdout, verifyAutoResumeOutput{
+		AutomationKey:  result.AutomationKey,
+		TargetThread:   result.TargetThread,
+		ExpectedAtUTC:  result.ExpectedUTC,
+		TOMLDTStart:    result.TOMLDTStart,
+		DBNextRunAtUTC: result.DBNextRunUTC,
+	})
 }
 
 func outcomeLabel(o autoresume.Outcome) string {

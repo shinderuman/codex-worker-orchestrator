@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -19,7 +20,7 @@ func parentOutcomeTotal(stats state.TaskStats) int {
 func TestWorkerDecisionOpportunityCarriesProducer(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: needsSolDecisionPacket()},
+		{structured: needsSolDecisionPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 
@@ -42,8 +43,8 @@ func TestWorkerDecisionOpportunityCarriesProducer(t *testing.T) {
 func TestReviewerOpportunityCarriesProducer(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacket("done")},
-		{output: needsSolReviewPacket()},
+		{structured: implementedPacket("done")},
+		{structured: needsSolReviewPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 
@@ -60,10 +61,10 @@ func TestReviewerOpportunityCarriesProducer(t *testing.T) {
 func TestAutoFixRoundsDoNotRecordParentOutcome(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacket("done")},
-		{output: fixRequiredPacket()},
-		{output: implementedPacket("fix")},
-		{output: fixRequiredPacket()},
+		{structured: implementedPacket("done")},
+		{structured: fixRequiredPacket()},
+		{structured: implementedPacket("fix")},
+		{structured: fixRequiredPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 	w.config.MaxAutoFixRounds = 1
@@ -86,13 +87,14 @@ func TestAutoFixRoundsDoNotRecordParentOutcome(t *testing.T) {
 func TestExplicitFixRecordsOutcomeOnceDespiteReexecution(t *testing.T) {
 	st := newStateStoreT(t)
 	setup := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacket("done")},
-		{output: fixRequiredPacket()},
-		{output: implementedPacket("fix")},
-		{output: fixRequiredPacket()},
+		{structured: implementedPacket("done")},
+		{structured: fixRequiredPacket()},
+		{structured: implementedPacket("fix")},
+		{structured: fixRequiredPacket()},
 	}}
 	w := newWorkflowT(t, st, setup)
 	w.config.MaxAutoFixRounds = 1
+	var workerErr *WorkerError
 	if err := w.ExecuteNewTask("request"); err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +103,7 @@ func TestExplicitFixRecordsOutcomeOnceDespiteReexecution(t *testing.T) {
 	wf := newWorkflowT(t, st, failed)
 	// reviewer terminal resultの非収束指摘をそのまま差し戻すためglm-reviewer。
 	err := wf.ExecuteExplicitFix("境界値を修正する", state.ParentOriginGLMReviewer)
-	if err == nil || !strings.Contains(err.Error(), "STATUS: WORKER_ERROR") {
+	if err == nil || !errors.As(err, &workerErr) {
 		t.Fatalf("fix実行中の失敗を伝播する必要があります: %v", err)
 	}
 	stats := currentStats(t, st)
@@ -133,7 +135,8 @@ func TestRateLimitStopAndResumeDoNotRecordParentOutcome(t *testing.T) {
 	w := newWorkflowT(t, st, stopped)
 	w.config.RepoRoot = "/repo"
 	w.config.RepoShort = "testrepo1234"
-	if err := w.ExecuteNewTask("request"); err == nil || !strings.Contains(err.Error(), "STATUS: RATE_LIMITED") {
+	var limitErr runner.ZaiRateLimitError
+	if err := w.ExecuteNewTask("request"); err == nil || !errors.As(err, &limitErr) {
 		t.Fatalf("rate limit errorを期待: %v", err)
 	}
 	stats := currentStats(t, st)
@@ -142,8 +145,8 @@ func TestRateLimitStopAndResumeDoNotRecordParentOutcome(t *testing.T) {
 	}
 
 	resumed := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacket("resumed")},
-		{output: passPacket()},
+		{structured: implementedPacket("resumed")},
+		{structured: passPacket()},
 	}}
 	wf := newWorkflowT(t, st, resumed)
 	wf.config.RepoRoot = "/repo"

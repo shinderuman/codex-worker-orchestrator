@@ -292,9 +292,9 @@ func TestCollectChangedPathsEmptyTreeFallbackIsConservative(t *testing.T) {
 func TestSelfProtectionEscalatesLowWorkerToHighRiskReviewer(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacket("done")},
-		{output: passPacket()},
-		{output: needsSolReviewPacket()},
+		{structured: implementedPacket("done")},
+		{structured: passPacket()},
+		{structured: needsSolReviewPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 	w.collectChangedPaths = func(string, string) ([]string, error) {
@@ -319,9 +319,9 @@ func TestSelfProtectionEscalatesLowWorkerToHighRiskReviewer(t *testing.T) {
 func TestSelfProtectionManagedPromptMarkdownIsHigh(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacket("done")},
-		{output: passPacket()},
-		{output: needsSolReviewPacket()},
+		{structured: implementedPacket("done")},
+		{structured: passPacket()},
+		{structured: needsSolReviewPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 	w.collectChangedPaths = func(string, string) ([]string, error) {
@@ -342,9 +342,9 @@ func TestSelfProtectionManagedPromptMarkdownIsHigh(t *testing.T) {
 func TestSelfProtectionCmdEntrypointChangeIsHigh(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacket("done")},
-		{output: passPacket()},
-		{output: needsSolReviewPacket()},
+		{structured: implementedPacket("done")},
+		{structured: passPacket()},
+		{structured: needsSolReviewPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 	w.collectChangedPaths = func(string, string) ([]string, error) {
@@ -369,8 +369,8 @@ func TestSelfProtectionCmdEntrypointChangeIsHigh(t *testing.T) {
 func TestSelfProtectionNonCriticalKeepsLowRiskPass(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacket("done")},
-		{output: passPacket()},
+		{structured: implementedPacket("done")},
+		{structured: passPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 	w.collectChangedPaths = func(string, string) ([]string, error) {
@@ -391,8 +391,8 @@ func TestSelfProtectionNonCriticalKeepsLowRiskPass(t *testing.T) {
 func TestSelfProtectionTestOnlyChangeStaysLow(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacket("done")},
-		{output: passPacket()},
+		{structured: implementedPacket("done")},
+		{structured: passPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 	w.collectChangedPaths = func(string, string) ([]string, error) {
@@ -416,9 +416,9 @@ func TestSelfProtectionTestOnlyChangeStaysLow(t *testing.T) {
 func TestSelfProtectionClassifyErrorFailsSafeHigh(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacket("done")},
-		{output: passPacket()},
-		{output: needsSolReviewPacket()},
+		{structured: implementedPacket("done")},
+		{structured: passPacket()},
+		{structured: needsSolReviewPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 	w.collectChangedPaths = func(string, string) ([]string, error) {
@@ -487,7 +487,7 @@ func TestSelfProtectionResumePreservesSavedHighFloor(t *testing.T) {
 		Prompt:              "review",
 		OriginalPrompt:      "review",
 		Request:             "request",
-		WorkerResult:        workerResultFromLines("STATUS: IMPLEMENTED", "RISK: LOW", "SUMMARY: done", "REQUIREMENT_COVERAGE: covered", "TESTS: pass", "UNVERIFIED: none", "ARTIFACTS: none"),
+		WorkerResult:        workerResultFromBody(workerPacket()),
 		ReviewNumber:        1,
 		RateLimited:         true,
 		EffectiveRisk:       "HIGH",
@@ -499,8 +499,8 @@ func TestSelfProtectionResumePreservesSavedHighFloor(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: passPacket()},
-		{output: needsSolReviewPacket()},
+		{structured: passPacket()},
+		{structured: needsSolReviewPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 	w.collectChangedPaths = func(string, string) ([]string, error) { return nil, nil }
@@ -536,7 +536,7 @@ func TestSelfProtectionResumeSavedLowReEscalatesOnCriticalChange(t *testing.T) {
 		Prompt:              "review",
 		OriginalPrompt:      "review",
 		Request:             "request",
-		WorkerResult:        workerResultFromLines("STATUS: IMPLEMENTED", "RISK: LOW", "SUMMARY: done", "REQUIREMENT_COVERAGE: covered", "TESTS: pass", "UNVERIFIED: none", "ARTIFACTS: none"),
+		WorkerResult:        workerResultFromBody(workerPacket()),
 		ReviewNumber:        1,
 		RateLimited:         true,
 		EffectiveRisk:       "LOW",
@@ -548,8 +548,8 @@ func TestSelfProtectionResumeSavedLowReEscalatesOnCriticalChange(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: passPacket()},
-		{output: needsSolReviewPacket()},
+		{structured: passPacket()},
+		{structured: needsSolReviewPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 	w.collectChangedPaths = func(string, string) ([]string, error) {
@@ -583,7 +583,7 @@ func TestSelfProtectionResumeLegacyCheckpointReconstructsToSafeSide(t *testing.T
 		Prompt:         "review",
 		OriginalPrompt: "review",
 		Request:        "request",
-		WorkerResult:   workerResultFromLines("STATUS: IMPLEMENTED", "RISK: LOW", "SUMMARY: done", "REQUIREMENT_COVERAGE: covered", "TESTS: pass", "UNVERIFIED: none", "ARTIFACTS: none"),
+		WorkerResult:   workerResultFromBody(workerPacket()),
 		ReviewNumber:   1,
 		RateLimited:    true,
 	}); err != nil {
@@ -593,8 +593,8 @@ func TestSelfProtectionResumeLegacyCheckpointReconstructsToSafeSide(t *testing.T
 		t.Fatal(err)
 	}
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: passPacket()},
-		{output: needsSolReviewPacket()},
+		{structured: passPacket()},
+		{structured: needsSolReviewPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 	w.collectChangedPaths = func(string, string) ([]string, error) {
@@ -621,9 +621,9 @@ func TestSelfProtectionDecisionFloorStaysHighWithoutCriticalPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacketWithRisk("decision applied", "LOW")},
-		{output: passPacket()},
-		{output: needsSolReviewPacket()},
+		{structured: implementedPacketWithRisk("decision applied", "LOW")},
+		{structured: passPacket()},
+		{structured: needsSolReviewPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 	w.collectChangedPaths = func(string, string) ([]string, error) {
@@ -644,5 +644,5 @@ func TestSelfProtectionDecisionFloorStaysHighWithoutCriticalPath(t *testing.T) {
 var errSelfProtectionSentinel = errors.New("classify io failure")
 
 func packetOfRisk(risk string) packet.Result {
-	return resultFromLines("STATUS: IMPLEMENTED", "RISK: "+risk)
+	return packet.Result{Status: packet.StatusImplemented, Risk: packet.Risk(risk), Summary: "done", RequirementCoverage: "covered", Tests: "pass", Unverified: "none"}
 }

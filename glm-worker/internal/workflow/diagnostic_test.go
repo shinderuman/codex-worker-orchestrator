@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
@@ -48,9 +49,9 @@ func phasesOf(logs []state.ModelCallLog) []string {
 func TestDiagnosticRecordsRiskFloorOnHighRiskReviewer(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacketWithRisk("high risk work", "HIGH")},
-		{output: passPacket()},
-		{output: needsSolReviewPacket()},
+		{structured: implementedPacketWithRisk("high risk work", "HIGH")},
+		{structured: passPacket()},
+		{structured: needsSolReviewPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 
@@ -94,8 +95,8 @@ func TestDiagnosticRecordsRiskFloorOnHighRiskReviewer(t *testing.T) {
 func TestDiagnosticNoRiskFloorOnLowRiskPass(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacket("done")},
-		{output: passPacket()},
+		{structured: implementedPacket("done")},
+		{structured: passPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 
@@ -122,8 +123,8 @@ func TestDiagnosticNoRiskFloorOnLowRiskPass(t *testing.T) {
 func TestDiagnosticRecordsSnapshotMismatch(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacket("done")},
-		{output: passPacket()},
+		{structured: implementedPacket("done")},
+		{structured: passPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 	workerEnd := state.GitSnapshot{Head: "a", IndexDigest: "a", WorktreeDigest: "a"}
@@ -175,8 +176,8 @@ func TestDiagnosticRecordsSnapshotMismatch(t *testing.T) {
 func TestDiagnosticSnapshotCaptureFailureNotCountedAsMismatch(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacket("done")},
-		{output: passPacket()},
+		{structured: implementedPacket("done")},
+		{structured: passPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 	w.captureSnapshot = func(string) (state.GitSnapshot, error) {
@@ -210,8 +211,8 @@ func TestDiagnosticSnapshotCaptureFailureNotCountedAsMismatch(t *testing.T) {
 func TestDiagnosticRecordsPacketReject(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: "PACKET_BEGIN\nSTATUS: IMPLEMENTED\nRISK: LOW\nSUMMARY: " + strings.Repeat("x", 5000) + "\nREQUIREMENT_COVERAGE: covered\nTESTS: pass\nUNVERIFIED: none\nARTIFACTS: none\nPACKET_END\n"},
-		{output: implementedPacket("ok")},
+		{structured: packetBody(packet.Result{Status: packet.StatusImplemented, Risk: packet.RiskLow, Summary: strings.Repeat("x", 5000), RequirementCoverage: "covered", Tests: "pass", Unverified: "none"})},
+		{structured: implementedPacket("ok")},
 	}}
 	w := newWorkflowT(t, st, r)
 	w.temp = t.TempDir()
@@ -279,7 +280,7 @@ func TestDiagnosticRecordsProbeAttempt(t *testing.T) {
 	r := &scriptedRunner{
 		steps: []runnerStep{
 			{output: "API Error: 503 Service Unavailable", runErr: errors.New("exit status 1")},
-			{output: implementedPacket("recovered")},
+			{structured: implementedPacket("recovered")},
 		},
 		probeErrs: []error{errProbeTransient, nil},
 	}
@@ -318,8 +319,8 @@ func TestDiagnosticRecordsResumeSourceRateLimit(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacket("done")},
-		{output: passPacket()},
+		{structured: implementedPacket("done")},
+		{structured: passPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 
@@ -354,8 +355,8 @@ func TestDiagnosticRecordsResumeSourceProviderUnavailable(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacket("done")},
-		{output: passPacket()},
+		{structured: implementedPacket("done")},
+		{structured: passPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 
@@ -386,7 +387,7 @@ func TestDiagnosticResumePreservesSavedHighRiskFloor(t *testing.T) {
 		Prompt:              "review",
 		OriginalPrompt:      "review",
 		Request:             "request",
-		WorkerResult:        workerResultFromLines(workerPacketLines()...),
+		WorkerResult:        workerResultFromBody(workerPacket()),
 		ReviewNumber:        1,
 		RateLimited:         true,
 		EffectiveRisk:       "HIGH",
@@ -398,7 +399,7 @@ func TestDiagnosticResumePreservesSavedHighRiskFloor(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: needsSolReviewPacket()},
+		{structured: needsSolReviewPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 
@@ -427,9 +428,9 @@ func TestDiagnosticResumePreservesSavedHighRiskFloor(t *testing.T) {
 func TestDiagnosticRiskFloorReemitCallHasNoFloorDiagnostics(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacketWithRisk("risky", "HIGH")},
-		{output: passPacket()},
-		{output: passPacket()},
+		{structured: implementedPacketWithRisk("risky", "HIGH")},
+		{structured: passPacket()},
+		{structured: passPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 
@@ -462,9 +463,9 @@ func TestDiagnosticRiskFloorReemitCallHasNoFloorDiagnostics(t *testing.T) {
 func TestDiagnosticPersistsWhenTelemetryContentDisabled(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacketWithRisk("secret work", "HIGH")},
-		{output: passPacket()},
-		{output: needsSolReviewPacket()},
+		{structured: implementedPacketWithRisk("secret work", "HIGH")},
+		{structured: passPacket()},
+		{structured: needsSolReviewPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 	w.config.TelemetryContent = false

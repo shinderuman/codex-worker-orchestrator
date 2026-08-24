@@ -11,7 +11,7 @@ import (
 // WarnTaskLiveSkipはlive snapshot書込みをbest-effortで諦めた旨を観測用warningとして出す。
 // 欠けるのはwatch表示の詳細行だけで、task本体・event logへ影響しない。
 func WarnTaskLiveSkip(err error) {
-	fmt.Fprintf(statsWarnOut, "WARNING: live status snapshotの書込みに失敗したため以後のlive表示更新をskipします（task本体へ影響しません）: %v\n", err)
+	writeStatsWarningEvent("live_status", "live status snapshotの書込みに失敗したため以後のlive表示更新をskipします（task本体へ影響しません）", err)
 }
 
 // TaskLiveToolは現在実行中のtool 1件のlive観測詳細。event logのmachine-only縮約方針に

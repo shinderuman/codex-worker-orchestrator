@@ -34,7 +34,7 @@ func TestFailureEvidenceContractWiring(t *testing.T) {
 		{"codex/AGENTS.md", "原因不明runtime failureの最小evidence保存"},
 		{"codex/AGENTS.md", "~/.codex/instructions/failure-evidence.md"},
 		{"codex/instructions/glm-execution.md", "外部取得・parser・integration failureの原因診断にstatus・size・error分類だけでは足りない依頼は、`~/.codex/instructions/failure-evidence.md`を読んでから委譲内容を構成する"},
-		{"codex/instructions/glm-packets.md", "`ARTIFACTS`参照先を`~/.codex/instructions/failure-evidence.md`の受理条件で必要範囲だけ確認する"},
+		{"codex/instructions/glm-packets.md", "`artifacts`参照先を`~/.codex/instructions/failure-evidence.md`の受理条件で必要範囲だけ確認する"},
 		{"codex/instructions/failure-evidence.md", "根本原因または再現条件を判定できず、response本文・header・payload断片・parser入力等の実物が診断に必要な場合だけ"},
 		{"codex/instructions/failure-evidence.md", "通常の十分診断可能なerror、成功応答、局所bugへ形式的なartifact保存を要求しない"},
 		{"codex/instructions/failure-evidence.md", "全response・全成功応答の無条件保存はしない"},
@@ -43,13 +43,13 @@ func TestFailureEvidenceContractWiring(t *testing.T) {
 		{"codex/instructions/failure-evidence.md", "秘密情報を生のまま保存させない"},
 		{"codex/instructions/failure-evidence.md", "容量上限・retention/削除時期・access範囲を対象リスクに応じて明示する"},
 		{"codex/instructions/failure-evidence.md", "診断に不要な長期保存をさせない"},
-		{"codex/instructions/failure-evidence.md", "既存のtask artifact(`REPORT_ARTIFACT_DIR`・`ARTIFACTS`)だけとし、新しいstorageやtelemetry schemaを作らない"},
+		{"codex/instructions/failure-evidence.md", "既存のtask artifact(`REPORT_ARTIFACT_DIR`・packetの`artifacts` field)だけとし、新しいstorageやtelemetry schemaを作らない"},
 		{"codex/instructions/failure-evidence.md", "telemetryへ本文を混入させない"},
 		{"codex/instructions/failure-evidence.md", "必要証拠・sanitization・保存先・retentionをtask固有条件としてUSER_REQUESTへ構成する"},
 		{"codex/instructions/failure-evidence.md", "一般checklistをworker/reviewer promptへ追加しない"},
 		{"codex/instructions/failure-evidence.md", "best-effort warningとしてpacketへ残させ、それだけでは本taskを失敗させない"},
 		{"codex/instructions/failure-evidence.md", "「判定不能」としてSol/ユーザーへ戻し、推測で修正を重ねさせない"},
-		{"codex/instructions/failure-evidence.md", "`ARTIFACTS`参照先を診断に必要な範囲だけ確認し、全内容をpacketや会話へ転載しない"},
+		{"codex/instructions/failure-evidence.md", "`artifacts`参照先を診断に必要な範囲だけ確認し、全内容をpacketや会話へ転載しない"},
 	}
 	contents := make(map[string]string, 4)
 	for _, c := range cases {
@@ -70,7 +70,7 @@ func TestFailureEvidenceContractWiring(t *testing.T) {
 		guidance string
 	}{
 		{"status/size/error分類だけでは原因判定不能な外部取得・parser・integration failure依頼へ、委譲前に必要証拠・sanitization・保存先・retentionをtask固有条件としてUSER_REQUESTへ構成する", "委譲前に、必要証拠・sanitization・保存先・retentionをtask固有条件としてUSER_REQUESTへ構成する"},
-		{"受理時に`ARTIFACTS`参照先を診断に必要な範囲だけ確認する", "packet受理時は`ARTIFACTS`参照先を診断に必要な範囲だけ確認し"},
+		{"受理時に`artifacts`参照先を診断に必要な範囲だけ確認する", "packet受理時は`artifacts`参照先を診断に必要な範囲だけ確認し"},
 		{"原因判定に本文等が必要なのにstatus/sizeだけを残して推測修正を重ねる完了報告を成立の根拠として受領せず、必要evidenceの保存または「判定不能」への差戻しを要求する", "原因判定に証拠が必須なのに取得不能な場合は「判定不能」としてSol/ユーザーへ戻し、推測で修正を重ねさせない"},
 		{"evidence取得不能時は判定不能としてSol/ユーザーへ戻し、推測修正を続けさせない", "原因判定に証拠が必須なのに取得不能な場合は「判定不能」としてSol/ユーザーへ戻し、推測で修正を重ねさせない"},
 		{"十分診断可能なerror・成功応答・局所bugへ形式的artifact保存を要求せず", "通常の十分診断可能なerror、成功応答、局所bugへ形式的なartifact保存を要求しない"},

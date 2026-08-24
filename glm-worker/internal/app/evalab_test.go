@@ -152,28 +152,47 @@ func writeEvalABRunDir(t *testing.T, spec abeval.Spec, direct, orchestrated abev
 	return dir
 }
 
+// executeEvalABReportは--eval-ab実行の出力1行をabeval.Reportへdecodeする。
+// JSONでない出力はmachine contract違反として失敗する。
+func executeEvalABReport(t *testing.T, cfg config.AppConfig, dir string) abeval.Report {
+	t.Helper()
+	var stdout bytes.Buffer
+	if err := Execute(Command{Mode: ModeEvalAB, Payload: dir}, cfg, nil, &stdout, &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	var report abeval.Report
+	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout.String())), &report); err != nil {
+		t.Fatalf("--eval-ab出力がmachine JSONではありません: %v: %q", err, stdout.String())
+	}
+	return report
+}
+
 func TestExecuteEvalABPrintsComparisonFromRunDir(t *testing.T) {
 	cfg := evalABTestConfig(t)
 	spec := evalABSpec()
 	dir := writeEvalABRunDir(t, spec, evalABDirectRecord(spec), evalABOrchestratedRecord(spec))
 	writeABStatsArchive(t, cfg, abFakeTaskStats("task-ab-1"))
 
-	var stdout bytes.Buffer
-	if err := Execute(Command{Mode: ModeEvalAB, Payload: dir}, cfg, nil, &stdout, &bytes.Buffer{}); err != nil {
-		t.Fatal(err)
+	report := executeEvalABReport(t, cfg, dir)
+	if report.CodexReduction.Status != "actual" || report.CodexReduction.InputPercent == nil || *report.CodexReduction.InputPercent != 50 ||
+		report.CodexReduction.OutputPercent == nil || *report.CodexReduction.OutputPercent != 50 {
+		t.Fatalf("actual usage基準のcodex_reduction = %#v", report.CodexReduction)
 	}
-	out := stdout.String()
-	if !strings.Contains(out, "CODEX_REDUCTION: input=50.0%, output=50.0% (actual usage") {
-		t.Fatalf("actual usage基準のCODEX_REDUCTIONが出力されていません:\n%s", out)
+	if report.QualityDelta.Direct.TestsRun != 10 || report.QualityDelta.Direct.TestFailures != 0 ||
+		report.QualityDelta.Orchestrated.TestsRun != 10 || report.QualityDelta.Orchestrated.TestFailures != 0 {
+		t.Fatalf("quality_delta = %#v", report.QualityDelta)
 	}
-	if !strings.Contains(out, "QUALITY_DELTA: tests direct=0fail/10run orchestrated=0fail/10run") {
-		t.Fatalf("QUALITY_DELTAが出力されていません:\n%s", out)
+	if report.Time.DirectMS != 3600000 || report.Time.OrchestratedMS != 2400000 || report.Time.DeltaMS != -1200000 {
+		t.Fatalf("time = %#v", report.Time)
 	}
-	if !strings.Contains(out, "TIME: direct=1h0m0s; orchestrated=40m0s; delta=-20m0s") {
-		t.Fatalf("TIMEが出力されていません:\n%s", out)
+	glm := report.GLMUsage.Orchestrated
+	if glm == nil || glm.Source != abeval.GLMUsageSourceTaskStats || glm.TaskID != "task-ab-1" ||
+		glm.InputTokens != 400000 || glm.CacheCreationInputTokens != 0 || glm.CacheReadInputTokens != 0 ||
+		glm.OutputTokens != 50000 || glm.ModelCalls != 3 {
+		t.Fatalf("task stats解決済みGLM usage = %#v", glm)
 	}
-	if !strings.Contains(out, "orchestrated=input=400000, cache-creation=0, cache-read=0, output=50000, model-calls=3 (source=glm-worker-task-stats)") {
-		t.Fatalf("task stats解決済みGLM usageが出力されていません:\n%s", out)
+	if report.GLMUsage.Direct != nil {
+		t.Fatalf("direct modeのglm_usage = %#v", report.GLMUsage.Direct)
 	}
 }
 
@@ -197,16 +216,15 @@ func TestExecuteEvalABResolvesGLMUsageFromTaskStats(t *testing.T) {
 		SolPacketBytes: 700,
 	})
 
-	var stdout bytes.Buffer
-	if err := Execute(Command{Mode: ModeEvalAB, Payload: dir}, cfg, nil, &stdout, &bytes.Buffer{}); err != nil {
-		t.Fatal(err)
+	report := executeEvalABReport(t, cfg, dir)
+	glm := report.GLMUsage.Orchestrated
+	if glm == nil || glm.Source != abeval.GLMUsageSourceTaskStats || glm.TaskID != "task-ab-resolve" ||
+		glm.InputTokens != 500000 || glm.OutputTokens != 60000 || glm.ModelCalls != 4 {
+		t.Fatalf("task stats解決済みGLM usage = %#v", glm)
 	}
-	out := stdout.String()
-	if !strings.Contains(out, "orchestrated=input=500000, cache-creation=0, cache-read=0, output=60000, model-calls=4 (source=glm-worker-task-stats)") {
-		t.Fatalf("task stats解決済みGLM usageが出力されていません:\n%s", out)
-	}
-	if !strings.Contains(out, "orchestrated=sol-packet-bytes=700") {
-		t.Fatalf("task stats解決済みproxy指標が出力されていません:\n%s", out)
+	proxy := report.ProxyMetrics.Orchestrated
+	if proxy == nil || proxy.SolPacketBytes != 700 {
+		t.Fatalf("task stats解決済みproxy指標 = %#v", proxy)
 	}
 }
 
@@ -372,8 +390,12 @@ func TestExecuteEvalABKeepsExistingStateUnchanged(t *testing.T) {
 	if err := Execute(Command{Mode: ModeEvalAB, Payload: dir}, cfg, unusedRunnerFactory(&runnerCalls), &stdout, &bytes.Buffer{}); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(stdout.String(), "CODEX_REDUCTION:") {
-		t.Fatalf("比較結果が出力されていません: %s", stdout.String())
+	var report abeval.Report
+	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout.String())), &report); err != nil {
+		t.Fatalf("比較結果が出力されていません: %v: %s", err, stdout.String())
+	}
+	if report.CodexReduction.Status != "actual" && report.CodexReduction.Status != "unknown" {
+		t.Fatalf("codex_reduction.status = %q", report.CodexReduction.Status)
 	}
 
 	afterContent, err := os.ReadFile(repoRootPath)

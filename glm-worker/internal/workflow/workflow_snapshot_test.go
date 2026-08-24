@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -43,23 +44,22 @@ func newSnapshotWorkflow(st *state.StateStore, r *scriptedRunner, out io.Writer)
 	}, st, r, out)
 }
 
-func workerPacketLines() []string {
-	return []string{
-		"STATUS: IMPLEMENTED",
-		"RISK: LOW",
-		"SUMMARY: done",
-		"REQUIREMENT_COVERAGE: covered",
-		"TESTS: pass",
-		"UNVERIFIED: none",
-		"ARTIFACTS: none",
-	}
+func workerPacket() string {
+	return packetBody(packet.Result{
+		Status:              packet.StatusImplemented,
+		Risk:                packet.RiskLow,
+		Summary:             "done",
+		RequirementCoverage: "covered",
+		Tests:               "pass",
+		Unverified:          "none",
+	})
 }
 
 func TestSnapshotCaptureFailureFailsClosedBeforeReviewer(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacket("done")},
-		{output: passPacket()},
+		{structured: implementedPacket("done")},
+		{structured: passPacket()},
 	}}
 	var out bytes.Buffer
 	w := newSnapshotWorkflow(st, r, &out)
@@ -90,8 +90,8 @@ func TestSnapshotCaptureFailureFailsClosedBeforeReviewer(t *testing.T) {
 func TestSnapshotReviewStartCaptureFailureFailsClosed(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacket("done")},
-		{output: passPacket()},
+		{structured: implementedPacket("done")},
+		{structured: passPacket()},
 	}}
 	var out bytes.Buffer
 	w := newSnapshotWorkflow(st, r, &out)
@@ -119,8 +119,8 @@ func TestSnapshotReviewStartCaptureFailureFailsClosed(t *testing.T) {
 func TestSnapshotWorkerEndReviewStartMismatchFailsClosed(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacket("done")},
-		{output: passPacket()},
+		{structured: implementedPacket("done")},
+		{structured: passPacket()},
 	}}
 	var out bytes.Buffer
 	w := newSnapshotWorkflow(st, r, &out)
@@ -202,8 +202,8 @@ func TestSnapshotComparisonSaveFailureFailsClosed(t *testing.T) {
 func TestSnapshotMatchReachesReviewer(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacket("done")},
-		{output: passPacket()},
+		{structured: implementedPacket("done")},
+		{structured: passPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 
@@ -251,7 +251,7 @@ func TestSnapshotReviewResumeDriftFailsClosed(t *testing.T) {
 		Prompt:         "review",
 		OriginalPrompt: "review",
 		Request:        "request",
-		WorkerResult:   workerResultFromLines(workerPacketLines()...),
+		WorkerResult:   workerResultFromBody(workerPacket()),
 		ReviewNumber:   1,
 		RateLimited:    true,
 	}); err != nil {
@@ -260,7 +260,7 @@ func TestSnapshotReviewResumeDriftFailsClosed(t *testing.T) {
 	if err := st.SetTaskStatus(state.TaskStatusRateLimited); err != nil {
 		t.Fatal(err)
 	}
-	r := &scriptedRunner{steps: []runnerStep{{output: passPacket()}}}
+	r := &scriptedRunner{steps: []runnerStep{{structured: passPacket()}}}
 	var out bytes.Buffer
 	w := newSnapshotWorkflow(st, r, &out)
 	w.captureSnapshot = func(string) (state.GitSnapshot, error) {
@@ -299,7 +299,7 @@ func TestSnapshotReviewResumeMatchResumesReviewer(t *testing.T) {
 		Prompt:         "review",
 		OriginalPrompt: "review",
 		Request:        "request",
-		WorkerResult:   workerResultFromLines(workerPacketLines()...),
+		WorkerResult:   workerResultFromBody(workerPacket()),
 		ReviewNumber:   1,
 		RateLimited:    true,
 	}); err != nil {
@@ -308,7 +308,7 @@ func TestSnapshotReviewResumeMatchResumesReviewer(t *testing.T) {
 	if err := st.SetTaskStatus(state.TaskStatusRateLimited); err != nil {
 		t.Fatal(err)
 	}
-	r := &scriptedRunner{steps: []runnerStep{{output: passPacket()}}}
+	r := &scriptedRunner{steps: []runnerStep{{structured: passPacket()}}}
 	w := newWorkflowT(t, st, r)
 
 	if err := w.ExecuteResume(); err != nil {
@@ -341,8 +341,8 @@ func TestSnapshotCapturedOnDecisionPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacketWithRisk("decision applied", "HIGH")},
-		{output: needsSolReviewPacket()},
+		{structured: implementedPacketWithRisk("decision applied", "HIGH")},
+		{structured: needsSolReviewPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 
@@ -364,10 +364,10 @@ func TestSnapshotCapturedOnDecisionPath(t *testing.T) {
 func TestSnapshotCapturedOnAutoFixPath(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacket("done")},
-		{output: fixRequiredPacket()},
-		{output: implementedPacket("fixed")},
-		{output: needsSolReviewPacket()},
+		{structured: implementedPacket("done")},
+		{structured: fixRequiredPacket()},
+		{structured: implementedPacket("fixed")},
+		{structured: needsSolReviewPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 
@@ -395,8 +395,8 @@ func TestSnapshotCapturedOnExplicitFixPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacketWithRisk("explicit fix", "HIGH")},
-		{output: needsSolReviewPacket()},
+		{structured: implementedPacketWithRisk("explicit fix", "HIGH")},
+		{structured: needsSolReviewPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 
@@ -434,8 +434,8 @@ func TestSnapshotCapturedOnWorkerResumePath(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacket("resumed")},
-		{output: passPacket()},
+		{structured: implementedPacket("resumed")},
+		{structured: passPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 

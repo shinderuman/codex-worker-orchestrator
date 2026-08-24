@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
@@ -81,8 +82,8 @@ func (r *mutatingRunner) Run(
 	if result.SessionID == "" {
 		result.SessionID = "test-session"
 	}
-	if result.StructuredOutput == nil {
-		result.StructuredOutput = structuredFromScriptedOutput(step.output)
+	if result.StructuredOutput == nil && step.structured != "" {
+		result.StructuredOutput = json.RawMessage(step.structured)
 	}
 	if result.Response == "" {
 		// productionと同じくresult文字列はstructured outputのJSON表現とする。
@@ -164,8 +165,8 @@ func mismatchEvent(t *testing.T, st *state.StateStore) state.ModelCallLog {
 func TestReviewEndWorktreeMutationRejectsPass(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	w, r, out := newMutationWorkflow(t, repoRoot, []runnerStep{
-		{output: implementedPacket("done")},
-		{output: passPacket()},
+		{structured: implementedPacket("done")},
+		{structured: passPacket()},
 	}, func(root string) error {
 		return os.WriteFile(filepath.Join(root, "tracked.txt"), []byte("mutated\n"), 0o644)
 	})
@@ -191,8 +192,8 @@ func TestReviewEndWorktreeMutationRejectsPass(t *testing.T) {
 func TestReviewEndUntrackedMutationRejectsPass(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	w, r, out := newMutationWorkflow(t, repoRoot, []runnerStep{
-		{output: implementedPacket("done")},
-		{output: passPacket()},
+		{structured: implementedPacket("done")},
+		{structured: passPacket()},
 	}, func(root string) error {
 		return os.WriteFile(filepath.Join(root, "generated.go"), []byte("package x\n"), 0o644)
 	})
@@ -213,8 +214,8 @@ func TestReviewEndUntrackedMutationRejectsPass(t *testing.T) {
 func TestReviewEndIndexMutationRejectsPass(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	w, r, out := newMutationWorkflow(t, repoRoot, []runnerStep{
-		{output: implementedPacket("done")},
-		{output: passPacket()},
+		{structured: implementedPacket("done")},
+		{structured: passPacket()},
 	}, func(root string) error {
 		if err := os.WriteFile(filepath.Join(root, "tracked.txt"), []byte("staged\n"), 0o644); err != nil {
 			return err
@@ -240,8 +241,8 @@ func TestReviewEndIndexMutationRejectsPass(t *testing.T) {
 func TestReviewEndHeadMutationRejectsPass(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	w, r, out := newMutationWorkflow(t, repoRoot, []runnerStep{
-		{output: implementedPacket("done")},
-		{output: passPacket()},
+		{structured: implementedPacket("done")},
+		{structured: passPacket()},
 	}, func(root string) error {
 		if err := os.WriteFile(filepath.Join(root, "tracked.txt"), []byte("committed\n"), 0o644); err != nil {
 			return err
@@ -267,9 +268,9 @@ func TestReviewEndHeadMutationRejectsPass(t *testing.T) {
 func TestReviewEndMutationRejectsFixRequired(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	w, r, out := newMutationWorkflow(t, repoRoot, []runnerStep{
-		{output: implementedPacket("done")},
-		{output: fixRequiredPacket()},
-		{output: implementedPacket("auto fixed")},
+		{structured: implementedPacket("done")},
+		{structured: fixRequiredPacket()},
+		{structured: implementedPacket("auto fixed")},
 	}, func(root string) error {
 		return os.WriteFile(filepath.Join(root, "tracked.txt"), []byte("mutated\n"), 0o644)
 	})
@@ -287,8 +288,8 @@ func TestReviewEndMutationRejectsFixRequired(t *testing.T) {
 func TestReviewEndMutationRejectsNeedsSolReview(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	w, r, out := newMutationWorkflow(t, repoRoot, []runnerStep{
-		{output: implementedPacket("done")},
-		{output: needsSolReviewPacket()},
+		{structured: implementedPacket("done")},
+		{structured: needsSolReviewPacket()},
 	}, func(root string) error {
 		return os.WriteFile(filepath.Join(root, "tracked.txt"), []byte("mutated\n"), 0o644)
 	})
@@ -306,8 +307,8 @@ func TestReviewEndMutationRejectsNeedsSolReview(t *testing.T) {
 func TestReviewEndMatchProceedsToPass(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	w, _, out := newMutationWorkflow(t, repoRoot, []runnerStep{
-		{output: implementedPacket("done")},
-		{output: passPacket()},
+		{structured: implementedPacket("done")},
+		{structured: passPacket()},
 	}, nil)
 
 	if err := w.ExecuteNewTask("request"); err != nil {
@@ -334,11 +335,11 @@ func TestReviewEndMatchProceedsToPass(t *testing.T) {
 func TestReviewEndMatchOnAutoFixLoop(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	w, _, out := newMutationWorkflow(t, repoRoot, []runnerStep{
-		{output: implementedPacket("done")},
-		{output: fixRequiredPacket()},
-		{output: implementedPacket("fixed")},
-		{output: passPacket()},
-		{output: needsSolReviewPacket()},
+		{structured: implementedPacket("done")},
+		{structured: fixRequiredPacket()},
+		{structured: implementedPacket("fixed")},
+		{structured: passPacket()},
+		{structured: needsSolReviewPacket()},
 	}, nil)
 
 	if err := w.ExecuteNewTask("request"); err != nil {
@@ -383,7 +384,7 @@ func TestReviewEndMutationAfterRateLimitResumeRejectsPass(t *testing.T) {
 		Prompt:         "review",
 		OriginalPrompt: "review",
 		Request:        "request",
-		WorkerResult:   workerResultFromLines(workerPacketLines()...),
+		WorkerResult:   workerResultFromBody(workerPacket()),
 		ReviewNumber:   1,
 		RateLimited:    true,
 	}); err != nil {
@@ -392,7 +393,7 @@ func TestReviewEndMutationAfterRateLimitResumeRejectsPass(t *testing.T) {
 	if err := st.SetTaskStatus(state.TaskStatusRateLimited); err != nil {
 		t.Fatal(err)
 	}
-	r := &mutatingRunner{repoRoot: repoRoot, steps: []runnerStep{{output: passPacket()}}, mutate: func(root string) error {
+	r := &mutatingRunner{repoRoot: repoRoot, steps: []runnerStep{{structured: passPacket()}}, mutate: func(root string) error {
 		return os.WriteFile(filepath.Join(root, "tracked.txt"), []byte("mutated\n"), 0o644)
 	}}
 	out := &bytes.Buffer{}
@@ -423,9 +424,9 @@ func TestReviewEndMutationOnRiskFloorReemitRejects(t *testing.T) {
 	r := &mutatingRunner{
 		repoRoot: repoRoot,
 		steps: []runnerStep{
-			{output: implementedPacketWithRisk("high risk work", "HIGH")},
-			{output: passPacket()},
-			{output: needsSolReviewPacket()},
+			{structured: implementedPacketWithRisk("high risk work", "HIGH")},
+			{structured: passPacket()},
+			{structured: needsSolReviewPacket()},
 		},
 	}
 	r.mutate = func(root string) error {
@@ -462,8 +463,8 @@ func TestReviewEndMutationOnRiskFloorReemitRejects(t *testing.T) {
 func TestReviewEndCaptureFailureFailsClosedNotMismatch(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacket("done")},
-		{output: passPacket()},
+		{structured: implementedPacket("done")},
+		{structured: passPacket()},
 	}}
 	var out bytes.Buffer
 	w := newSnapshotWorkflow(st, r, &out)

@@ -71,34 +71,21 @@ type ZaiRateLimitError struct {
 	ArtifactWarning string
 }
 
+// Errorは人間が読む1行message。reset時刻・auto-resume予定等の機械fieldは
+// app層のprocess error detailへ構造化して載るため、ここでは重複させない。
 func (e ZaiRateLimitError) Error() string {
-	resetAtCST := e.Limit.ResetAtCST
-	if resetAtCST == "" {
-		resetAtCST = "unknown"
-	}
+	return fmt.Sprintf("Z.ai Coding Plan 5h limit reached at phase %s; task stopped, resumable via glm-worker --resume", e.Phase)
+}
 
-	resetAtRFC3339 := e.Limit.ResetAtRFC3339
-	if resetAtRFC3339 == "" {
-		resetAtRFC3339 = "unknown"
-	}
-	autoResumeAvailable, autoResumeAt := autoResumeSchedule(e.Limit.ResetAtRFC3339)
-	autoResumeKey := autoResumeKey(e.RepoShort, e.TaskID)
+// AutoResumeScheduleはreset時刻からgrace後の自動再開予定。reset時刻がparse不能な
+// 場合はfalseを返し、自動再開なし(利用者の--resume待ち)を意味する。
+func (e ZaiRateLimitError) AutoResumeSchedule() (bool, string) {
+	return autoResumeSchedule(e.Limit.ResetAtRFC3339)
+}
 
-	message := fmt.Sprintf(
-		"STATUS: RATE_LIMITED\nLIMIT: ZAI_GLM_CODING_PLAN_5H\nPHASE: %s\nTASK_ID: %s\nREPO_ROOT: %s\nRESET_AT_CST: %s\nRESET_TIMEZONE: CST (China Standard Time, UTC+8)\nRESET_AT_RFC3339: %s\nAUTO_RESUME_AVAILABLE: %t\nAUTO_RESUME_AT_RFC3339: %s\nAUTO_RESUME_KEY: %s\nRESUME_AVAILABLE: true\nRESUME_COMMAND: glm-worker --resume",
-		e.Phase,
-		valueOrUnknown(e.TaskID),
-		valueOrUnknown(e.RepoRoot),
-		resetAtCST,
-		resetAtRFC3339,
-		autoResumeAvailable,
-		autoResumeAt,
-		autoResumeKey,
-	)
-	if e.ArtifactWarning != "" {
-		message += "\nARTIFACT_WARNING: " + strings.ReplaceAll(e.ArtifactWarning, "\n", " ")
-	}
-	return message
+// AutoResumeKeyはこの停止に対応するCodex automation keyの期待値。
+func (e ZaiRateLimitError) AutoResumeKey() string {
+	return autoResumeKey(e.RepoShort, e.TaskID)
 }
 
 func autoResumeSchedule(resetAtRFC3339 string) (bool, string) {
@@ -119,11 +106,4 @@ func autoResumeKey(repoShort string, taskID string) string {
 		taskID = taskID[:8]
 	}
 	return fmt.Sprintf("glm-worker-resume-%s-%s", repoShort, taskID)
-}
-
-func valueOrUnknown(value string) string {
-	if value == "" {
-		return "unknown"
-	}
-	return value
 }

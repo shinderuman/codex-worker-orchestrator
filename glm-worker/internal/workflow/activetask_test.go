@@ -260,10 +260,10 @@ func TestDecisionRejectsInvalidActiveThenSameDecisionResumes(t *testing.T) {
 	writePlanFileContent(t, repoRoot, planGuardSeed)
 	decision := "同じ判断本文"
 	w, r, out, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
-		{output: needsSolDecisionPacket()},
-		{output: implementedPacket("decision applied")},
-		{output: passPacket()},
-		{output: needsSolReviewPacket()},
+		{structured: needsSolDecisionPacket()},
+		{structured: implementedPacket("decision applied")},
+		{structured: passPacket()},
+		{structured: needsSolReviewPacket()},
 	}, "", 0, nil)
 
 	if err := w.ExecuteNewTask("request"); err != nil {
@@ -381,8 +381,8 @@ func TestExecuteNewTaskRecordsActiveTaskAndPromptBlock(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
 	w, r, _, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
-		{output: implementedPacket("done")},
-		{output: passPacket()},
+		{structured: implementedPacket("done")},
+		{structured: passPacket()},
 	}, "", 0, nil)
 
 	if err := w.ExecuteNewTask("request"); err != nil {
@@ -411,7 +411,7 @@ func TestPlanWithoutActiveFailsClosedBeforeCall(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, "# plan without active\n")
 	w, r, out, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
-		{output: implementedPacket("done")},
+		{structured: implementedPacket("done")},
 	}, "", 0, nil)
 
 	if err := w.ExecuteNewTask("request"); err != nil {
@@ -511,8 +511,8 @@ func TestResumePromptCarriesOriginalActiveTaskBlock(t *testing.T) {
 func TestExecuteNewTaskClearsStaleActiveTaskState(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	w, r, _, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
-		{output: implementedPacket("done")},
-		{output: passPacket()},
+		{structured: implementedPacket("done")},
+		{structured: passPacket()},
 	}, "", 0, nil)
 	if err := st.Write(activeTaskStateKey, "IMPLEMENTATION_TASKS/999-stale.md"); err != nil {
 		t.Fatal(err)
@@ -540,7 +540,7 @@ func TestActiveResolutionFailureClearsStaleActiveTaskState(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, "# plan without active\n")
 	w, r, _, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
-		{output: implementedPacket("done")},
+		{structured: implementedPacket("done")},
 	}, "", 0, nil)
 	if err := st.Write(activeTaskStateKey, "IMPLEMENTATION_TASKS/999-stale.md"); err != nil {
 		t.Fatal(err)
@@ -574,7 +574,7 @@ func TestActiveTaskNonRegularFileFailsClosedBeforeCall(t *testing.T) {
 	}
 	writePlanFileContent(t, repoRoot, "# plan\n\n## ACTIVE\n\n- `IMPLEMENTATION_TASKS/link.md`\n")
 	w, r, out, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
-		{output: implementedPacket("done")},
+		{structured: implementedPacket("done")},
 	}, "", 0, nil)
 
 	if err := w.ExecuteNewTask("request"); err != nil {
@@ -607,8 +607,8 @@ func TestExplicitFixAfterParentRepairResolvesActiveTask(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, "# plan without active\n")
 	w, r, _, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
-		{output: implementedPacket("fixed")},
-		{output: passPacket()},
+		{structured: implementedPacket("fixed")},
+		{structured: passPacket()},
 	}, "", 0, nil)
 
 	if err := w.ExecuteNewTask("request"); err != nil {
@@ -642,7 +642,7 @@ func TestExplicitFixStillUnresolvableFailsClosedAgain(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, "# plan without active\n")
 	w, r, out, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
-		{output: implementedPacket("done")},
+		{structured: implementedPacket("done")},
 	}, "", 0, nil)
 
 	if err := w.ExecuteNewTask("request"); err != nil {

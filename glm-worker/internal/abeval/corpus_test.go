@@ -141,7 +141,7 @@ func TestABEvalCorpusContractRejectsInvalid(t *testing.T) {
 	}
 }
 
-// TestABEvalCorpusDrivenThroughComparisonはcorpusの全pairを比較・表示まで通し、
+// TestABEvalCorpusDrivenThroughComparisonはcorpusの全pairを比較・Report組立まで通し、
 // expected_codex_reductionの両経路(actual/unknown)と最重要出力の構成を検証する。
 func TestABEvalCorpusDrivenThroughComparison(t *testing.T) {
 	corpus := loadCorpus(t)
@@ -150,41 +150,32 @@ func TestABEvalCorpusDrivenThroughComparison(t *testing.T) {
 	}
 	covered := map[string]bool{}
 	for _, pair := range corpus.Pairs {
-		out := Format(Compare(pair.Spec, pair.Direct, pair.Orchestrated))
-		reductionLine := lineWithKey(t, out, "CODEX_REDUCTION")
+		report := BuildReport(Compare(pair.Spec, pair.Direct, pair.Orchestrated))
 		switch pair.ExpectedCodexReduction {
 		case codexReductionActual:
-			if !strings.Contains(reductionLine, "input=") || !strings.Contains(reductionLine, "(actual usage") {
-				t.Fatalf("pair %sのCODEX_REDUCTIONがactual usage基準ではありません: %s", pair.Spec.ID, reductionLine)
+			if report.CodexReduction.InputPercent == nil || report.CodexReduction.OutputPercent == nil {
+				t.Fatalf("pair %sのcodex_reductionがactual usage基準ではありません: %+v", pair.Spec.ID, report.CodexReduction)
+			}
+			if report.CodexUsage.Direct == nil || report.CodexUsage.Orchestrated == nil {
+				t.Fatalf("pair %sのactual codex_usageが欠けています: %+v", pair.Spec.ID, report.CodexUsage)
 			}
 		case codexReductionUnknown:
-			if !strings.HasPrefix(reductionLine, "CODEX_REDUCTION: unknown (") {
-				t.Fatalf("pair %sのCODEX_REDUCTIONがunknown保持ではありません: %s", pair.Spec.ID, reductionLine)
+			if report.CodexReduction.InputPercent != nil || report.CodexReduction.OutputPercent != nil {
+				t.Fatalf("pair %sのunknown経路で削減率percentが出ています: %+v", pair.Spec.ID, report.CodexReduction)
 			}
-			if strings.Contains(reductionLine, "input=") || strings.Contains(reductionLine, "output=") {
-				t.Fatalf("pair %sのunknown経路で削減率percentが出力されています: %s", pair.Spec.ID, reductionLine)
+			if report.CodexReduction.UnknownReason == "" {
+				t.Fatalf("pair %sのunknown理由がありません: %+v", pair.Spec.ID, report.CodexReduction)
 			}
+		}
+		if report.GLMUsage.Direct != nil {
+			t.Fatalf("pair %sのdirect mode GLM使用はnullのべき: %+v", pair.Spec.ID, report.GLMUsage.Direct)
+		}
+		if report.Time.DirectMS == 0 || report.Time.OrchestratedMS == 0 {
+			t.Fatalf("pair %sのtime導出がありません: %+v", pair.Spec.ID, report.Time)
 		}
 		covered[pair.ExpectedCodexReduction] = true
-		for _, key := range []string{"QUALITY_DELTA", "TIME", "CODEX_USAGE", "GLM_USAGE", "PROXY_METRICS", "MEASUREMENT_BOUNDARY", "ISOLATION"} {
-			lineWithKey(t, out, key)
-		}
-		if !strings.Contains(out, "合算値は算出しない") {
-			t.Fatalf("pair %sのNOTESへGLM/Codex token非合算方針がありません", pair.Spec.ID)
-		}
 	}
 	if !covered[codexReductionActual] || !covered[codexReductionUnknown] {
 		t.Fatalf("corpusはactual/unknown両経路をcoverする必要があります: %v", covered)
 	}
-}
-
-func lineWithKey(t *testing.T, out string, key string) string {
-	t.Helper()
-	for _, line := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
-		if strings.HasPrefix(line, key+":") {
-			return line
-		}
-	}
-	t.Fatalf("出力へ%s行がありません:\n%s", key, out)
-	return ""
 }

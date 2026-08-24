@@ -29,7 +29,7 @@ var convergenceMutatingTools = map[string]bool{
 
 var convergenceReviewerPhase = regexp.MustCompile(`^reviewer-(\d+)(-risk-floor)?$`)
 
-// convergenceRoundは表示1行分のround観測。recordはround log、reviewer/workerは時間窓で
+// convergenceRoundは集計1行分のround観測。recordはround log、reviewer/workerは時間窓で
 // 対応付けたtelemetry呼出。gapはreviewer番号不一致かseq不連続でrecord欠落が疑われるround。
 type convergenceRound struct {
 	record   state.RoundRecord
@@ -40,59 +40,168 @@ type convergenceRound struct {
 	worker   []state.ModelCallLog
 }
 
+type convergenceOutput struct {
+	TaskID        string                `json:"task_id"`
+	TaskStatus    string                `json:"task_status"`
+	RoundsLog     convergenceLog        `json:"rounds_log"`
+	SkippedRounds int                   `json:"skipped_rounds,omitempty"`
+	Telemetry     string                `json:"telemetry"`
+	EventLog      string                `json:"event_log"`
+	Baseline      *convergenceBaseline  `json:"baseline"`
+	Rounds        []convergenceRoundOut `json:"rounds"`
+	Summary       convergenceSummaryOut `json:"summary"`
+}
+
+// convergenceLogはround logの所在と読み取り状態。statusはok・none(まだ無い)・
+// unreadable(読み取り失敗)で、okのときだけpathが載る。
+type convergenceLog struct {
+	Status string  `json:"status"`
+	Path   *string `json:"path,omitempty"`
+}
+
+type convergenceBaseline struct {
+	CapturedAt    *time.Time           `json:"captured_at"`
+	Paths         int                  `json:"paths"`
+	Snapshot      state.SnapshotDigest `json:"snapshot"`
+	SnapshotKnown bool                 `json:"snapshot_known"`
+	CaptureError  string               `json:"capture_error,omitempty"`
+}
+
+type convergenceRoundOut struct {
+	Number       int                  `json:"number"`
+	Seq          int                  `json:"seq"`
+	ReviewNumber int                  `json:"review_number"`
+	AutoFixes    int                  `json:"autofixes"`
+	WorkerPhase  string               `json:"worker_phase"`
+	Delta        convergenceDeltaOut  `json:"delta"`
+	Snapshot     state.SnapshotDigest `json:"snapshot"`
+	Review       convergenceReviewOut `json:"review"`
+	ReviewerCost *convergenceCost     `json:"reviewer_cost"`
+	WorkerCost   *convergenceCost     `json:"worker_cost"`
+}
+
+type convergenceDeltaOut struct {
+	Class              string `json:"class"`
+	ChangedPaths       int    `json:"changed_paths"`
+	NonSemanticPaths   int    `json:"nonsemantic_paths"`
+	DocPaths           int    `json:"doc_paths"`
+	Gap                bool   `json:"gap,omitempty"`
+	MismatchedReviewer bool   `json:"mismatched_reviewer,omitempty"`
+	CaptureError       string `json:"capture_error,omitempty"`
+}
+
+type convergenceReviewOut struct {
+	Calls           int     `json:"calls"`
+	Outcome         *string `json:"outcome"`
+	Risk            *string `json:"risk"`
+	ReportedRisk    *string `json:"reported_risk"`
+	RiskFloorReemit bool    `json:"risk_floor_reemit"`
+	Unresolved      bool    `json:"unresolved"`
+	Snapshot        string  `json:"snapshot"`
+}
+
+type convergenceCost struct {
+	Calls        int     `json:"calls"`
+	InputTokens  int64   `json:"input_tokens"`
+	OutputTokens int64   `json:"output_tokens"`
+	Turns        int     `json:"turns"`
+	DurationMS   int64   `json:"duration_ms"`
+	TotalCostUSD float64 `json:"total_cost_usd,omitempty"`
+}
+
+type convergenceSummaryOut struct {
+	ByClass               []convergenceClassSummary `json:"by_class"`
+	UnresolvedIssueRounds int                       `json:"unresolved_issue_rounds"`
+	HighRounds            int                       `json:"high_rounds"`
+}
+
+type convergenceClassSummary struct {
+	Class                string `json:"class"`
+	Rounds               int    `json:"rounds"`
+	ReviewerCalls        int    `json:"reviewer_calls"`
+	ReviewerInputTokens  int64  `json:"reviewer_input_tokens"`
+	ReviewerOutputTokens int64  `json:"reviewer_output_tokens"`
+	ReviewerDurationMS   int64  `json:"reviewer_duration_ms"`
+}
+
 // printConvergenceはround log・telemetry・event logだけからreview/fix convergenceを
-// 表示する。state書換・repo lock・AI call・provider/workerへの問い合わせを行わない。
-// telemetryの呼出結果・token・durationとround logのsnapshot・path分類をrecordの
-// CapturedAt時間窓とWorkerPhaseで対応付け、対応付け不能な値はunknownとして推測しない。
+// machine JSONで出す。state書換・repo lock・AI call・provider/workerへの問い合わせを
+// 行わない。telemetryの呼出結果・token・durationとround logのsnapshot・path分類をrecordの
+// CapturedAt時間窓とWorkerPhaseで対応付け、対応付け不能な値はnullとして推測しない。
 // taskIDArgが空なら現在task、指定されればそのtaskの保存済みlogを読む。task ID検証は
-// --timelineと同じUUID v4境界を使う。明示指定taskのround log不在・読込失敗はerrorと
-// し、現在taskの不在は正常終了する。
+// --timelineと同じUUID v4境界を使う。明示指定taskのround log不在はnot_found error、
+// 読込失敗はinternal errorとし、現在taskの不在は正常終了する。
 func printConvergence(st *state.StateStore, taskIDArg string, stdout io.Writer) error {
 	explicit := taskIDArg != ""
 	taskID := taskIDArg
 	if taskID == "" {
-		taskID = st.ReadOr("task.id", "none")
+		taskID = st.ReadOr("task.id", "")
 	}
 	if !validTimelineTaskID(taskID, explicit) {
-		return fmt.Errorf("task IDが生成されるUUID v4形式と一致しません: %q", taskID)
+		return &UsageError{Message: fmt.Sprintf("task IDが生成されるUUID v4形式と一致しません: %q", taskID)}
 	}
-	fmt.Fprintf(stdout, "TASK_ID: %s\n", taskID)
-	fmt.Fprintf(stdout, "TASK_STATUS: %s\n", timelineTaskStatus(st, taskID, explicit))
 
 	records, skipped, recordsErr := readRoundRecords(st, taskID)
+	var logStatus convergenceLog
 	switch {
 	case errors.Is(recordsErr, os.ErrNotExist):
 		if explicit {
-			return fmt.Errorf("task %sのround logがありません: %w", taskID, recordsErr)
+			return &NotFoundError{Message: fmt.Sprintf("task %sのround logがありません: %v", taskID, recordsErr)}
 		}
-		fmt.Fprintln(stdout, "ROUNDS_LOG: none")
-		return nil
+		logStatus = convergenceLog{Status: "none"}
 	case recordsErr != nil:
 		if explicit {
 			return fmt.Errorf("task %sのround logを読めません: %w", taskID, recordsErr)
 		}
-		fmt.Fprintln(stdout, "ROUNDS_LOG: unreadable")
-		return nil
+		logStatus = convergenceLog{Status: "unreadable"}
+	default:
+		logStatus = convergenceLog{Status: "ok", Path: stringPtr(st.RoundLogPath(taskID))}
 	}
-	fmt.Fprintf(stdout, "ROUNDS_LOG: %s\n", st.RoundLogPath(taskID))
-	if skipped > 0 {
-		fmt.Fprintf(stdout, "SKIPPED_ROUNDS: %d\n", skipped)
+
+	output := convergenceOutput{
+		TaskID:        taskID,
+		TaskStatus:    timelineTaskStatus(st, taskID, explicit),
+		RoundsLog:     logStatus,
+		SkippedRounds: skipped,
+	}
+	if logStatus.Status != "ok" {
+		return writeJSON(stdout, output)
 	}
 
 	logs, logErr := readStatusTelemetry(st, taskID)
-	printConvergenceTelemetryState(logErr, stdout)
-	events := readConvergenceEvents(st, taskID, stdout)
+	if logErr != nil {
+		output.Telemetry = "unreadable"
+	} else {
+		output.Telemetry = "ok"
+	}
+	events, _, eventsErr := readTaskEventRecords(st, taskID)
+	output.EventLog = taskRecordsStatus(taskID, eventsErr)
 
 	rounds, baseline := buildConvergenceRounds(records, logs)
 	refineConvergenceDeltas(rounds, events)
-	printConvergenceRounds(stdout, baseline, rounds)
-	printConvergenceSummary(stdout, rounds)
-	return nil
+	output.Baseline = convergenceBaselineOut(baseline)
+	output.Rounds = convergenceRoundOuts(rounds)
+	output.Summary = buildConvergenceSummary(rounds)
+	return writeJSON(stdout, output)
+}
+
+// taskRecordsStatusはevent logの読み取り結果をok・none・unreadableへ分類する。
+func taskRecordsStatus(taskID string, err error) string {
+	if taskID == "" {
+		return "none"
+	}
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		return "none"
+	case err != nil:
+		return "unreadable"
+	default:
+		return "ok"
+	}
 }
 
 // refineConvergenceDeltasはsame-snapshot roundをevent logのtool観測で
-// verification-onlyへ細分化する。DELTA行とSUMMARY行が同じ分類を共有するため
-// ここでdelta.Class自体を書き替える。
+// verification-onlyへ細分化する。delta.Class自体を書き替える。
 func refineConvergenceDeltas(rounds []convergenceRound, events []state.TaskEventRecord) {
 	for i := range rounds {
 		if rounds[i].delta.Class != state.RoundDeltaSameSnapshot {
@@ -105,36 +214,8 @@ func refineConvergenceDeltas(rounds []convergenceRound, events []state.TaskEvent
 	}
 }
 
-func printConvergenceTelemetryState(logErr error, stdout io.Writer) {
-	if logErr != nil {
-		fmt.Fprintln(stdout, "TELEMETRY: unreadable")
-		return
-	}
-	fmt.Fprintln(stdout, "TELEMETRY: ok")
-}
-
-// readConvergenceEventsはverification-only細分化用のevent logを読む。event logは
-// best-effort観測のため、不在はnone・読込失敗はunreadableとして扱いerrorにしない。
-func readConvergenceEvents(st *state.StateStore, taskID string, stdout io.Writer) []state.TaskEventRecord {
-	if taskID == "none" {
-		fmt.Fprintln(stdout, "EVENT_LOG: none")
-		return nil
-	}
-	records, _, err := readTaskEventRecords(st, taskID)
-	switch {
-	case errors.Is(err, os.ErrNotExist):
-		fmt.Fprintln(stdout, "EVENT_LOG: none")
-	case err != nil:
-		fmt.Fprintln(stdout, "EVENT_LOG: unreadable")
-	default:
-		fmt.Fprintln(stdout, "EVENT_LOG: ok")
-		return records
-	}
-	return nil
-}
-
 // readRoundRecordsはround logを行ごとに読む。破損行・旧version行はskipしてその件数を
-// 返し、log全体の読込失敗(不在含む)だけをerrorとして返す。
+// 返し、log全体の読込失敗(不在含む)だけをerrorとする。
 func readRoundRecords(st *state.StateStore, taskID string) ([]state.RoundRecord, int, error) {
 	file, err := os.Open(st.RoundLogPath(taskID))
 	if err != nil {
@@ -159,7 +240,7 @@ func readRoundRecords(st *state.StateStore, taskID string) ([]state.RoundRecord,
 	return records, skipped, nil
 }
 
-// buildConvergenceRoundsはround record列を表示単位へ組み立てる。baseline recordは
+// buildConvergenceRoundsはround record列を集計単位へ組み立てる。baseline recordは
 // 先頭に高々1つだけ分離し、以降をreview roundとして前recordとの差分を分類する。
 // telemetry呼出は各recordのCapturedAtを境界とする時間窓へ配る。round iのreviewer呼出は
 // [CapturedAt_i, CapturedAt_{i+1})へ、round iを生成したworker呼出は直前の境界からの
@@ -282,64 +363,54 @@ func prevRoundRecord(records []state.RoundRecord, recordIndex int) *state.RoundR
 	return &prev
 }
 
-func printConvergenceRounds(stdout io.Writer, baseline *state.RoundRecord, rounds []convergenceRound) {
-	if baseline != nil {
-		fmt.Fprintf(
-			stdout,
-			"BASELINE: captured=%s paths=%d snapshot=%s\n",
-			convergenceTime(baseline.CapturedAt),
-			len(baseline.Paths),
-			convergenceSnapshotState(baseline),
-		)
-		if baseline.CaptureError != "" {
-			fmt.Fprintf(stdout, "BASELINE_ERROR: %s\n", baseline.CaptureError)
-		}
-	} else {
-		fmt.Fprintln(stdout, "BASELINE: none")
+func convergenceBaselineOut(baseline *state.RoundRecord) *convergenceBaseline {
+	if baseline == nil {
+		return nil
 	}
-	fmt.Fprintf(stdout, "ROUNDS: %d\n", len(rounds))
-	for index, round := range rounds {
-		printConvergenceRound(stdout, index+1, round)
+	out := convergenceBaseline{
+		Paths:         len(baseline.Paths),
+		Snapshot:      baseline.Snapshot,
+		SnapshotKnown: baseline.Snapshot.IndexDigest != "" && baseline.Snapshot.WorktreeDigest != "",
+		CaptureError:  baseline.CaptureError,
 	}
+	if !baseline.CapturedAt.IsZero() {
+		capturedAt := baseline.CapturedAt
+		out.CapturedAt = &capturedAt
+	}
+	return &out
 }
 
-func printConvergenceRound(stdout io.Writer, number int, round convergenceRound) {
+func convergenceRoundOuts(rounds []convergenceRound) []convergenceRoundOut {
+	result := make([]convergenceRoundOut, 0, len(rounds))
+	for index, round := range rounds {
+		result = append(result, convergenceRoundOutDetail(index+1, round))
+	}
+	return result
+}
+
+func convergenceRoundOutDetail(number int, round convergenceRound) convergenceRoundOut {
 	record := round.record
-	fmt.Fprintf(
-		stdout,
-		"ROUND #%d seq=%d review=%d autofixes=%d worker=%s\n",
-		number, record.Seq, record.ReviewNumber, record.AutoFixes, record.WorkerPhase,
-	)
-	deltaClass := round.delta.Class
-	notes := []string{}
-	if round.gap {
-		notes = append(notes, "gap=yes")
+	out := convergenceRoundOut{
+		Number:       number,
+		Seq:          record.Seq,
+		ReviewNumber: record.ReviewNumber,
+		AutoFixes:    record.AutoFixes,
+		WorkerPhase:  record.WorkerPhase,
+		Delta: convergenceDeltaOut{
+			Class:              round.delta.Class,
+			ChangedPaths:       round.delta.ChangedPaths,
+			NonSemanticPaths:   round.delta.ChangedPaths - round.delta.SemanticPaths - round.delta.DocPaths,
+			DocPaths:           round.delta.DocPaths,
+			Gap:                round.gap,
+			MismatchedReviewer: round.mismatch,
+			CaptureError:       record.CaptureError,
+		},
+		Snapshot:     record.Snapshot,
+		Review:       convergenceReviewOutDetail(round),
+		ReviewerCost: convergenceCostOut(round.reviewer),
+		WorkerCost:   convergenceCostOut(round.worker),
 	}
-	if round.mismatch {
-		notes = append(notes, "mismatched_reviewer=yes")
-	}
-	if record.CaptureError != "" {
-		notes = append(notes, "capture_error="+convergenceNoteText(record.CaptureError))
-	}
-	note := ""
-	if len(notes) > 0 {
-		note = " " + strings.Join(notes, " ")
-	}
-	fmt.Fprintf(
-		stdout,
-		"ROUND #%d DELTA: class=%s changed=%d nonsemantic=%d doc=%d%s\n",
-		number, deltaClass, round.delta.ChangedPaths,
-		round.delta.ChangedPaths-round.delta.SemanticPaths-round.delta.DocPaths, round.delta.DocPaths, note,
-	)
-	snapshot := record.Snapshot
-	fmt.Fprintf(
-		stdout,
-		"ROUND #%d SNAPSHOT: head=%s index=%s worktree=%s\n",
-		number, shortDigest(snapshot.Head), shortDigest(snapshot.IndexDigest), shortDigest(snapshot.WorktreeDigest),
-	)
-	printConvergenceReview(stdout, number, round)
-	printConvergenceCost(stdout, "REVIEWER", number, round.reviewer)
-	printConvergenceCost(stdout, "WORKER", number, round.worker)
+	return out
 }
 
 // convergenceWorkerToolUseは当該phaseのworker eventからtool_use観測数とfile変更tool
@@ -364,96 +435,69 @@ func convergenceWorkerToolUse(events []state.TaskEventRecord, workerPhase string
 	return uses, mutating
 }
 
-func printConvergenceReview(stdout io.Writer, number int, round convergenceRound) {
-	outcome := "none"
-	risk := "unknown"
-	reported := "unknown"
-	reemit := "no"
-	unresolved := "no"
-	snapshot := "unknown"
+func convergenceReviewOutDetail(round convergenceRound) convergenceReviewOut {
+	out := convergenceReviewOut{
+		Calls:    len(round.reviewer),
+		Snapshot: "unknown",
+	}
 	for _, entry := range round.reviewer {
 		if strings.HasSuffix(entry.Phase, "-risk-floor") {
-			reemit = "yes"
+			out.RiskFloorReemit = true
 		}
 		if entry.PacketStatus != "" {
-			outcome = entry.PacketStatus
+			out.Outcome = stringPtr(entry.PacketStatus)
 		}
 		if entry.EffectiveRisk != "" {
-			risk = entry.EffectiveRisk
+			out.Risk = stringPtr(entry.EffectiveRisk)
 		}
 		if entry.ReviewerReportedRisk != "" {
-			reported = entry.ReviewerReportedRisk
+			out.ReportedRisk = stringPtr(entry.ReviewerReportedRisk)
 		}
 		if entry.Snapshot != nil && entry.Snapshot.Matched != nil && *entry.Snapshot.Matched {
-			snapshot = "matched"
+			out.Snapshot = "matched"
 		}
 	}
-	if outcome == "FIX_REQUIRED" {
-		unresolved = "yes"
+	if out.Outcome != nil && *out.Outcome == "FIX_REQUIRED" {
+		out.Unresolved = true
 	}
-	fmt.Fprintf(
-		stdout,
-		"ROUND #%d REVIEW: calls=%d outcome=%s risk=%s reported=%s reemit=%s unresolved=%s snapshot=%s\n",
-		number, len(round.reviewer), outcome, risk, reported, reemit, unresolved, snapshot,
-	)
+	return out
 }
 
-func printConvergenceCost(stdout io.Writer, label string, number int, entries []state.ModelCallLog) {
+func convergenceCostOut(entries []state.ModelCallLog) *convergenceCost {
 	if len(entries) == 0 {
-		fmt.Fprintf(stdout, "ROUND #%d %s_COST: none\n", number, label)
-		return
+		return nil
 	}
-	var usage state.TokenUsage
-	turns := 0
-	durationMS := int64(0)
-	costUSD := 0.0
+	cost := convergenceCost{Calls: len(entries)}
 	for _, entry := range entries {
-		usage.InputTokens += entry.TreeUsage.InputTokens
-		usage.CacheCreationInputTokens += entry.TreeUsage.CacheCreationInputTokens
-		usage.CacheReadInputTokens += entry.TreeUsage.CacheReadInputTokens
-		usage.OutputTokens += entry.TreeUsage.OutputTokens
-		turns += entry.TopLevelTurns
-		durationMS += entry.WallDurationMS
-		costUSD += entry.TotalCostUSD
+		cost.InputTokens += entry.TreeUsage.InputTokens +
+			entry.TreeUsage.CacheCreationInputTokens +
+			entry.TreeUsage.CacheReadInputTokens
+		cost.OutputTokens += entry.TreeUsage.OutputTokens
+		cost.Turns += entry.TopLevelTurns
+		cost.DurationMS += entry.WallDurationMS
+		cost.TotalCostUSD += entry.TotalCostUSD
 	}
-	line := fmt.Sprintf(
-		"ROUND #%d %s_COST: calls=%d in=%d out=%d turns=%d dur=%dms",
-		number, label, len(entries),
-		usage.InputTokens+usage.CacheCreationInputTokens+usage.CacheReadInputTokens,
-		usage.OutputTokens, turns, durationMS,
-	)
-	if costUSD != 0 {
-		line += fmt.Sprintf(" cost=%.4f", costUSD)
-	}
-	fmt.Fprintln(stdout, line)
+	return &cost
 }
 
-type convergenceSummary struct {
-	rounds        int
-	reviewerCalls int
-	reviewerIn    int64
-	reviewerOut   int64
-	reviewerDurMS int64
-}
-
-func printConvergenceSummary(stdout io.Writer, rounds []convergenceRound) {
-	byClass := make(map[string]*convergenceSummary)
+func buildConvergenceSummary(rounds []convergenceRound) convergenceSummaryOut {
+	byClass := make(map[string]*convergenceClassSummary)
 	unresolved := 0
 	high := 0
 	for _, round := range rounds {
 		class := round.delta.Class
 		if _, ok := byClass[class]; !ok {
-			byClass[class] = &convergenceSummary{}
+			byClass[class] = &convergenceClassSummary{Class: class}
 		}
 		summary := byClass[class]
-		summary.rounds++
-		summary.reviewerCalls += len(round.reviewer)
+		summary.Rounds++
+		summary.ReviewerCalls += len(round.reviewer)
 		for _, entry := range round.reviewer {
-			summary.reviewerIn += entry.TreeUsage.InputTokens +
+			summary.ReviewerInputTokens += entry.TreeUsage.InputTokens +
 				entry.TreeUsage.CacheCreationInputTokens +
 				entry.TreeUsage.CacheReadInputTokens
-			summary.reviewerOut += entry.TreeUsage.OutputTokens
-			summary.reviewerDurMS += entry.WallDurationMS
+			summary.ReviewerOutputTokens += entry.TreeUsage.OutputTokens
+			summary.ReviewerDurationMS += entry.WallDurationMS
 		}
 		if roundOutcomeUnresolved(round) {
 			unresolved++
@@ -462,19 +506,18 @@ func printConvergenceSummary(stdout io.Writer, rounds []convergenceRound) {
 			high++
 		}
 	}
-	for _, class := range orderedSummaryClasses(byClass) {
-		summary := byClass[class]
-		fmt.Fprintf(
-			stdout,
-			"SUMMARY delta=%s rounds=%d reviewer_calls=%d reviewer_in=%d reviewer_out=%d reviewer_dur_ms=%d\n",
-			class, summary.rounds, summary.reviewerCalls, summary.reviewerIn, summary.reviewerOut, summary.reviewerDurMS,
-		)
+	summary := convergenceSummaryOut{
+		ByClass:               make([]convergenceClassSummary, 0, len(byClass)),
+		UnresolvedIssueRounds: unresolved,
+		HighRounds:            high,
 	}
-	fmt.Fprintf(stdout, "UNRESOLVED_ISSUE_ROUNDS: %d\n", unresolved)
-	fmt.Fprintf(stdout, "HIGH_ROUNDS: %d\n", high)
+	for _, class := range orderedSummaryClasses(byClass) {
+		summary.ByClass = append(summary.ByClass, *byClass[class])
+	}
+	return summary
 }
 
-func orderedSummaryClasses(byClass map[string]*convergenceSummary) []string {
+func orderedSummaryClasses(byClass map[string]*convergenceClassSummary) []string {
 	order := []string{
 		state.RoundDeltaSameSnapshot,
 		convergenceDeltaVerificationOnly,
@@ -525,33 +568,4 @@ func roundRiskHigh(round convergenceRound) bool {
 		}
 	}
 	return false
-}
-
-// convergenceNoteTextはnote欄へ埋め込むerror文字列を1行へ押し潰す。
-func convergenceNoteText(value string) string {
-	return strings.Join(strings.Fields(value), " ")
-}
-
-func convergenceTime(value time.Time) string {
-	if value.IsZero() {
-		return "unknown"
-	}
-	return value.UTC().Format(time.RFC3339)
-}
-
-func convergenceSnapshotState(record *state.RoundRecord) string {
-	if record.Snapshot.IndexDigest == "" || record.Snapshot.WorktreeDigest == "" {
-		return "unknown"
-	}
-	return "ok"
-}
-
-func shortDigest(value string) string {
-	if value == "" {
-		return "none"
-	}
-	if len(value) > 8 {
-		return value[:8]
-	}
-	return value
 }

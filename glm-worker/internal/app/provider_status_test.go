@@ -2,13 +2,28 @@ package app
 
 import (
 	"bytes"
-	"io"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
+
+// executeStatsOutputはprintStatsの出力1行をstatsOutputへdecodeする。
+// JSONでない出力はmachine contract違反として失敗する。
+func executeStatsOutput(t *testing.T, st *state.StateStore) statsOutput {
+	t.Helper()
+	var out bytes.Buffer
+	if err := printStats(st, &out); err != nil {
+		t.Fatal(err)
+	}
+	var output statsOutput
+	if err := json.Unmarshal([]byte(strings.TrimSpace(out.String())), &output); err != nil {
+		t.Fatalf("--stats出力がmachine JSONではありません: %v: %q", err, out.String())
+	}
+	return output
+}
 
 func TestExecuteStatusShowsProviderUnavailable(t *testing.T) {
 	cfg := newAppConfig(t)
@@ -39,39 +54,36 @@ func TestExecuteStatusShowsProviderUnavailable(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var out bytes.Buffer
-	if err := Execute(Command{Mode: ModeStatus}, cfg, nil, &out, io.Discard); err != nil {
-		t.Fatal(err)
+	output := executeStatusOutput(t, cfg)
+	if output.TaskStatus != string(state.TaskStatusProviderUnavailable) {
+		t.Fatalf("task_status = %q", output.TaskStatus)
 	}
-	body := out.String()
-	for _, want := range []string{
-		"TASK_STATUS: provider-unavailable",
-		"PROVIDER_UNAVAILABLE: yes",
-		"PROVIDER_PHASE: worker-new",
-		"PROVIDER_CLASSIFICATION: http-503",
-		"PROVIDER_PROBES: 4",
-		"RESUME_AVAILABLE: yes",
-	} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("status出力に%qがありません:\n%s", want, body)
-		}
+	if !output.ProviderUnavailable.Unavailable {
+		t.Fatalf("provider_unavailable = %#v", output.ProviderUnavailable)
 	}
-	if strings.Contains(body, "RATE_LIMITED: yes") {
-		t.Fatalf("provider-unavailable時にRATE_LIMITED: yesが出てはいけない:\n%s", body)
+	statusString(t, "provider_unavailable.phase", &output.ProviderUnavailable.Phase, "worker-new")
+	if output.ProviderUnavailable.Classification == nil || *output.ProviderUnavailable.Classification != "http-503" {
+		t.Fatalf("provider_unavailable.classification = %#v", output.ProviderUnavailable.Classification)
+	}
+	if output.ProviderUnavailable.Probes != 4 {
+		t.Fatalf("provider_unavailable.probes = %d", output.ProviderUnavailable.Probes)
+	}
+	if !output.ResumeAvailable {
+		t.Fatal("provider停止中はresume_availableが必要です")
+	}
+	if output.RateLimited.Limited {
+		t.Fatalf("provider-unavailable時にrate_limited.limited = true: %#v", output.RateLimited)
 	}
 }
 
 func TestExecuteStatusReportsProviderUnavailableNoWhenClean(t *testing.T) {
 	cfg := newAppConfig(t)
-	var out bytes.Buffer
-	if err := Execute(Command{Mode: ModeStatus}, cfg, nil, &out, io.Discard); err != nil {
-		t.Fatal(err)
+	output := executeStatusOutput(t, cfg)
+	if output.ProviderUnavailable.Unavailable {
+		t.Fatalf("空状態のprovider_unavailable = %#v", output.ProviderUnavailable)
 	}
-	if !strings.Contains(out.String(), "PROVIDER_UNAVAILABLE: no") {
-		t.Fatalf("空状態でPROVIDER_UNAVAILABLE: noが出るべき: %q", out.String())
-	}
-	if !strings.Contains(out.String(), "RESUME_AVAILABLE: no") {
-		t.Fatalf("空状態でRESUME_AVAILABLE: noが出るべき: %q", out.String())
+	if output.ResumeAvailable {
+		t.Fatal("空状態でresume_availableです")
 	}
 }
 
@@ -88,21 +100,17 @@ func TestPrintStatsAggregatesProviderUnavailable(t *testing.T) {
 	st.RecordProviderUnavailable("opus")
 	st.RecordProviderUnavailable("haiku")
 
-	var out bytes.Buffer
-	if err := printStats(st, &out); err != nil {
-		t.Fatal(err)
+	output := executeStatsOutput(t, st)
+	if output.ProviderUnavailable != 3 {
+		t.Fatalf("provider_unavailable = %d", output.ProviderUnavailable)
 	}
-	body := out.String()
-	if !strings.Contains(body, "PROVIDER_UNAVAILABLE: 3") {
-		t.Fatalf("provider-unavailable集計がありません: %q", body)
-	}
-	if !strings.Contains(body, "PROVIDER_UNAVAILABLE_BY_ALIAS: haiku=1,opus=2") {
-		t.Fatalf("model別provider-unavailable集計がありません: %q", body)
+	if len(output.ProviderUnavailableByAlias) != 2 || output.ProviderUnavailableByAlias["haiku"] != 1 || output.ProviderUnavailableByAlias["opus"] != 2 {
+		t.Fatalf("provider_unavailable_by_alias = %#v", output.ProviderUnavailableByAlias)
 	}
 }
 
 // 新診断集計(risk floor / snapshot mismatch axis / packet reject / probe outcome)が
-// --statsへ少数表示される。空ならnone。
+// --statsへ少数表示される。空なら空object。
 func TestPrintStatsReportsDiagnosticAggregates(t *testing.T) {
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
@@ -122,24 +130,30 @@ func TestPrintStatsReportsDiagnosticAggregates(t *testing.T) {
 	st.RecordProbeOutcome("probe_success")
 	st.RecordTransientRetry()
 
-	var out bytes.Buffer
-	if err := printStats(st, &out); err != nil {
-		t.Fatal(err)
+	output := executeStatsOutput(t, st)
+	if len(output.RiskFloorByCategory) != 2 || output.RiskFloorByCategory["self-protection"] != 1 || output.RiskFloorByCategory["worker-declared"] != 2 {
+		t.Fatalf("risk_floor_by_category = %#v", output.RiskFloorByCategory)
 	}
-	body := out.String()
-	for _, want := range []string{
-		"RISK_FLOOR_BY_CATEGORY: self-protection=1,worker-declared=2",
-		"SNAPSHOT_MISMATCHES: 1",
-		"SNAPSHOT_MISMATCH_BY_AXIS: head=1,index=1",
-		"PACKET_REJECT_BY_CATEGORY: malformed=1,size=1",
-		"PROBE_OUTCOME: probe_failure=1,probe_success=1",
-		"PROBE_CALLS: 2",
-		"TOTAL_AI_CALLS: 2",
-		"TRANSIENT_RETRIES: 1",
-	} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("stats出力に%qがありません:\n%s", want, body)
-		}
+	if output.SnapshotMismatches != 1 {
+		t.Fatalf("snapshot_mismatches = %d", output.SnapshotMismatches)
+	}
+	if len(output.SnapshotMismatchByAxis) != 2 || output.SnapshotMismatchByAxis["head"] != 1 || output.SnapshotMismatchByAxis["index"] != 1 {
+		t.Fatalf("snapshot_mismatch_by_axis = %#v", output.SnapshotMismatchByAxis)
+	}
+	if len(output.PacketRejectByCategory) != 2 || output.PacketRejectByCategory["malformed"] != 1 || output.PacketRejectByCategory["size"] != 1 {
+		t.Fatalf("packet_reject_by_category = %#v", output.PacketRejectByCategory)
+	}
+	if len(output.ProbeOutcome) != 2 || output.ProbeOutcome["probe_failure"] != 1 || output.ProbeOutcome["probe_success"] != 1 {
+		t.Fatalf("probe_outcome = %#v", output.ProbeOutcome)
+	}
+	if output.ProbeCalls != 2 {
+		t.Fatalf("probe_calls = %d", output.ProbeCalls)
+	}
+	if output.TotalAICalls != 2 {
+		t.Fatalf("total_ai_calls = %d", output.TotalAICalls)
+	}
+	if output.TransientRetries != 1 {
+		t.Fatalf("transient_retries = %d", output.TransientRetries)
 	}
 }
 
@@ -152,23 +166,20 @@ func TestPrintStatsReportsDiagnosticAggregatesEmpty(t *testing.T) {
 	if _, err := st.StartNewTask(); err != nil {
 		t.Fatal(err)
 	}
-	var out bytes.Buffer
-	if err := printStats(st, &out); err != nil {
-		t.Fatal(err)
+	output := executeStatsOutput(t, st)
+	if len(output.RiskFloorByCategory) != 0 {
+		t.Fatalf("risk_floor_by_category = %#v", output.RiskFloorByCategory)
 	}
-	body := out.String()
-	for _, want := range []string{
-		"RISK_FLOOR_BY_CATEGORY: none",
-		"SNAPSHOT_MISMATCHES: 0",
-		"SNAPSHOT_MISMATCH_BY_AXIS: none",
-		"PACKET_REJECT_BY_CATEGORY: none",
-		"PROBE_OUTCOME: none",
-		"PROBE_CALLS: 0",
-		"TOTAL_AI_CALLS: 0",
-		"TRANSIENT_RETRIES: 0",
-	} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("空状態のstats出力に%qがありません:\n%s", want, body)
-		}
+	if output.SnapshotMismatches != 0 || len(output.SnapshotMismatchByAxis) != 0 {
+		t.Fatalf("snapshot_mismatch = %d %#v", output.SnapshotMismatches, output.SnapshotMismatchByAxis)
+	}
+	if len(output.PacketRejectByCategory) != 0 {
+		t.Fatalf("packet_reject_by_category = %#v", output.PacketRejectByCategory)
+	}
+	if len(output.ProbeOutcome) != 0 {
+		t.Fatalf("probe_outcome = %#v", output.ProbeOutcome)
+	}
+	if output.ProbeCalls != 0 || output.TotalAICalls != 0 || output.TransientRetries != 0 {
+		t.Fatalf("空状態の計数 = probe=%d total=%d transient=%d", output.ProbeCalls, output.TotalAICalls, output.TransientRetries)
 	}
 }

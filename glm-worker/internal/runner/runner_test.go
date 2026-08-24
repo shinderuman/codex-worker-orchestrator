@@ -353,49 +353,39 @@ func TestBuildChildEnvSettingEnvOverridesParent(t *testing.T) {
 	}
 }
 
-func TestZaiRateLimitErrorIncludesResumeMetadata(t *testing.T) {
-	err := ZaiRateLimitError{
-		Phase:           "reviewer-1",
-		TaskID:          "12345678-aaaa-bbbb-cccc-dddddddddddd",
-		RepoRoot:        "/repo",
-		RepoShort:       "abcdef123456",
-		ArtifactWarning: "artifactを保護できません",
-		Limit: ZaiFiveHourLimit{
-			ResetAtCST:     "2026-08-09 22:35:58",
-			ResetAtRFC3339: "2026-08-09T22:35:58+08:00",
-		},
-	}.Error()
-
-	for _, value := range []string{
-		"STATUS: RATE_LIMITED",
-		"PHASE: reviewer-1",
-		"TASK_ID: 12345678-aaaa-bbbb-cccc-dddddddddddd",
-		"REPO_ROOT: /repo",
-		"RESET_AT_CST: 2026-08-09 22:35:58",
-		"AUTO_RESUME_AVAILABLE: true",
-		"AUTO_RESUME_AT_RFC3339: 2026-08-09T22:37:58+08:00",
-		"AUTO_RESUME_KEY: glm-worker-resume-abcdef123456-12345678",
-		"RESUME_COMMAND: glm-worker --resume",
-		"ARTIFACT_WARNING: artifactを保護できません",
-	} {
-		if !strings.Contains(err, value) {
-			t.Fatalf("rate limit errorに%qがありません: %s", value, err)
-		}
+func TestZaiRateLimitErrorMessageMentionsPhase(t *testing.T) {
+	err := ZaiRateLimitError{Phase: "reviewer-1"}.Error()
+	if !strings.Contains(err, "reviewer-1") {
+		t.Fatalf("rate limit errorのmessageにphaseがありません: %s", err)
 	}
 }
 
-func TestZaiRateLimitErrorDisablesAutoResumeWithoutResetTime(t *testing.T) {
-	err := ZaiRateLimitError{Phase: "worker-new"}.Error()
-	for _, value := range []string{
-		"TASK_ID: unknown",
-		"REPO_ROOT: unknown",
-		"AUTO_RESUME_AVAILABLE: false",
-		"AUTO_RESUME_AT_RFC3339: unknown",
-		"AUTO_RESUME_KEY: glm-worker-resume-unknown-repo-unknown-task",
-	} {
-		if !strings.Contains(err, value) {
-			t.Fatalf("rate limit fallbackに%qがありません: %s", value, err)
-		}
+func TestZaiRateLimitErrorAutoResumeSchedule(t *testing.T) {
+	limit := ZaiRateLimitError{
+		Limit: ZaiFiveHourLimit{ResetAtRFC3339: "2026-08-09T22:35:58+08:00"},
+	}
+	available, at := limit.AutoResumeSchedule()
+	if !available {
+		t.Fatalf("reset時刻があるのにauto resume不可: %v", limit)
+	}
+	if at != "2026-08-09T22:37:58+08:00" {
+		t.Fatalf("auto resume予定時刻がgrace反映後と違います: %s", at)
+	}
+
+	withoutReset := ZaiRateLimitError{}
+	if available, _ := withoutReset.AutoResumeSchedule(); available {
+		t.Fatalf("reset時刻がないのにauto resume可: %v", withoutReset)
+	}
+}
+
+func TestZaiRateLimitErrorAutoResumeKey(t *testing.T) {
+	key := ZaiRateLimitError{RepoShort: "abcdef123456", TaskID: "12345678-aaaa-bbbb-cccc-dddddddddddd"}.AutoResumeKey()
+	if key != "glm-worker-resume-abcdef123456-12345678" {
+		t.Fatalf("auto resume keyが違います: %s", key)
+	}
+	fallback := ZaiRateLimitError{}.AutoResumeKey()
+	if fallback != "glm-worker-resume-unknown-repo-unknown-task" {
+		t.Fatalf("fallback keyが違います: %s", fallback)
 	}
 }
 

@@ -1,12 +1,12 @@
 # GLM結果処理
 
-`glm-worker`からpacketまたは`STATUS: WORKER_ERROR`を含む結果を受け取った場合に適用する。
+`glm-worker`からpacket(stdoutのmachine JSON 1行)またはprocess失敗(stderrのerror JSON 1行とnon-zero exit)を受け取った場合に適用する。
 
 ## 共通
 
 - 受理結果のmachine protocolはcompact 1行JSONで、keyは`status`・`risk`・status別契約field(`summary`・`decision`等のschemaと同じ語彙)・`targets`・`artifacts`・`sol_question`。空field・空配列のkeyは省かれる(`artifacts`key欠落=none、`targets`の`["none"]`=対象なしsentinel)。契約外のfieldは機械出力へ混入しない。
 - `artifacts`のkeyがあるなら、要求・判断・報告に必要な成果物だけを記載パスから確認し、packetへ全内容を転載しない。
-- 原因不明runtime failureの診断に必要なevidenceを求めた依頼では、`ARTIFACTS`参照先を`~/.codex/instructions/failure-evidence.md`の受理条件で必要範囲だけ確認する。
+- 原因不明runtime failureの診断に必要なevidenceを求めた依頼では、`artifacts`参照先を`~/.codex/instructions/failure-evidence.md`の受理条件で必要範囲だけ確認する。
 
 ## `"status":"NEEDS_SOL_DECISION"`
 
@@ -25,7 +25,7 @@
 - `targets`と`sol_question`に限定して実コードまたはdiffを確認する。
 - 修正が必要ならCodex自身で編集せず、修正方針本文を`~/.codex/instructions/glm-execution.md`のstdin mode（`--fix-stdin <payload-bytes>`）で同じworker sessionへ差し戻す。修正後は独立reviewerまで自動再実行される。
 
-## `STATUS: WORKER_ERROR`
+## `{"error":{"kind":"worker_error",...}}`
 
-- エラー要約を確認し、無関係なリポジトリ調査をSol Highが代行しない。
+- stderrのerror JSON(`kind`・`message`・`detail{phase,exit_code,output_tail}`)とnon-zero exitで示される。エラー要約を確認し、無関係なリポジトリ調査をSol Highが代行しない。
 - session破損が明示されている場合だけ`glm-worker --reset`後に再実行する。

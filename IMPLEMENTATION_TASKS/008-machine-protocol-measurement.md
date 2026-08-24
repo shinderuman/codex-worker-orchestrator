@@ -59,10 +59,11 @@ protocol簡素化が見た目ではなくCodex Reductionとmaintenance costへ�
 ## Historical invariants
 
 - 2026-08-21 telemetry分析、fixed Eval基盤
+- Task 007でmachine-only legacy cleanupと外部machine contractのJSON/JSONL単一化を完了。旧text parser/projection/dual outputは削除し、Task 008の旧protocol比較に必要なstats v3 `PacketCompactions` historical decode/aggregate/outputだけを保持する
 
 ## Dependencies
 
-- `IMPLEMENTATION_TASKS/007-machine-only-legacy-cleanup.md`
+none
 
 ## Review findings
 

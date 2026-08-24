@@ -2,13 +2,52 @@ package app
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
+
+// executeStatusOutputは--statusを実行し、出力1行をstatusOutputへdecodeする。
+// JSONでない出力はmachine contract違反として失敗する。
+func executeStatusOutput(t *testing.T, cfg config.AppConfig) statusOutput {
+	t.Helper()
+	var out bytes.Buffer
+	if err := Execute(Command{Mode: ModeStatus}, cfg, nil, &out, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	var output statusOutput
+	if err := json.Unmarshal([]byte(strings.TrimSpace(out.String())), &output); err != nil {
+		t.Fatalf("--status出力がmachine JSONではありません: %v: %q", err, out.String())
+	}
+	return output
+}
+
+// statusStringはnullable string fieldの値を検査する。
+func statusString(t *testing.T, name string, value *string, want string) {
+	t.Helper()
+	if value == nil {
+		t.Fatalf("status出力の%sがnullです", name)
+	}
+	if *value != want {
+		t.Fatalf("status出力の%s = %q want %q", name, *value, want)
+	}
+}
+
+// statusInt64MSはnullable数値fieldが存在し指定値であることを検査する。
+func statusInt64MS(t *testing.T, name string, value *int64, want int64) {
+	t.Helper()
+	if value == nil {
+		t.Fatalf("status出力の%sがnullです", name)
+	}
+	if *value != want {
+		t.Fatalf("status出力の%s = %d want %d", name, *value, want)
+	}
+}
 
 // TestExecuteStatusShowsDetailFromEventLogAndTelemetryは--statusが既存event logと
 // telemetryだけからcurrent phase/role/model・開始経過・最終event・session aging・
@@ -77,40 +116,54 @@ func TestExecuteStatusShowsDetailFromEventLogAndTelemetry(t *testing.T) {
 		WallDurationMS: 1500,
 	})
 
-	var out bytes.Buffer
-	if err := Execute(Command{Mode: ModeStatus}, cfg, nil, &out, io.Discard); err != nil {
-		t.Fatal(err)
+	output := executeStatusOutput(t, cfg)
+	statusString(t, "current_phase", output.CurrentPhase, "worker-new")
+	statusString(t, "current_role", output.CurrentRole, "worker")
+	statusString(t, "current_model", output.CurrentModel, "opus")
+	if output.TaskStartedAt == nil || output.TaskElapsedMS == nil || output.LastEventAgeMS == nil {
+		t.Fatalf("観測できる値がnullです: %#v", output)
 	}
-	body := out.String()
-	for _, want := range []string{
-		"CURRENT_PHASE: worker-new",
-		"CURRENT_ROLE: worker",
-		"CURRENT_MODEL: opus",
-		"LAST_EVENT: ",
-		"tool_result(Bash):123b/456ms",
-		"SESSION_AGING: role=worker model=opus id=sess-worker calls=2 resumed=1 turns=22 in=450 out=50 lat_ms=8000,9000",
-		"PROBES: 1",
-		"PROBE_LAST_OUTCOME: probe_failure",
-		"PROBE_LAST_ATTEMPT: 2",
-	} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("status出力に%qがありません:\n%s", want, body)
-		}
+	if output.LastEvent == nil || len(output.LastEvent.Blocks) != 1 {
+		t.Fatalf("last_event = %#v", output.LastEvent)
 	}
-	if strings.Contains(body, "TASK_STARTED_AT: unknown") || strings.Contains(body, "TASK_ELAPSED: unknown") || strings.Contains(body, "LAST_EVENT_AGE: unknown") {
-		t.Fatalf("観測できる値がunknown表示です:\n%s", body)
+	block := output.LastEvent.Blocks[0]
+	if block.Type != "tool_result" || block.Name != "Bash" || block.Bytes != 123 || block.DurationMS != 456 {
+		t.Fatalf("last_eventのblock = %#v", block)
+	}
+	if len(output.SessionAging) != 1 {
+		t.Fatalf("session_aging = %#v", output.SessionAging)
+	}
+	aging := output.SessionAging[0]
+	if aging.SessionID != "sess-worker" || aging.Role != state.WorkerRole || aging.Calls != 2 || aging.ResumedCalls != 1 ||
+		aging.CumulativeTurns != 22 || aging.CumulativeInputTokens != 450 || aging.CumulativeOutputTokens != 50 {
+		t.Fatalf("session_aging = %#v", aging)
+	}
+	if len(aging.Models) != 1 || aging.Models[0] != "opus" {
+		t.Fatalf("session_agingのmodels = %#v", aging.Models)
+	}
+	if len(aging.CallLatencyMS) != 2 || aging.CallLatencyMS[0] != 8000 || aging.CallLatencyMS[1] != 9000 {
+		t.Fatalf("session_agingのcall_latency_ms = %#v", aging.CallLatencyMS)
+	}
+	if output.Probes == nil || output.Probes.Count != 1 {
+		t.Fatalf("probes = %#v", output.Probes)
+	}
+	if output.Probes.LastOutcome == nil || *output.Probes.LastOutcome != "probe_failure" {
+		t.Fatalf("probes.last_outcome = %#v", output.Probes.LastOutcome)
+	}
+	if output.Probes.LastAttempt != 2 {
+		t.Fatalf("probes.last_attempt = %d", output.Probes.LastAttempt)
 	}
 }
 
 // TestExecuteStatusDetailFallsBackToCheckpointはevent logがないtaskでresume checkpoint
-// からcurrent表示を補い、停止理由ごとの再開情報(RFC3339 reset・probe gate resume plan)を
+// からcurrent表示を補い、停止理由ごとの再開情報(RFC3339 reset・provider観測)を
 // 既存stateだけから表示することを検証する。
 func TestExecuteStatusDetailFallsBackToCheckpoint(t *testing.T) {
 	cases := []struct {
 		name   string
 		seed   func(st *state.StateStore)
 		status state.TaskStatus
-		wants  []string
+		check  func(t *testing.T, output statusOutput)
 	}{
 		{
 			name: "provider unavailable",
@@ -131,9 +184,21 @@ func TestExecuteStatusDetailFallsBackToCheckpoint(t *testing.T) {
 				}
 			},
 			status: state.TaskStatusProviderUnavailable,
-			wants: []string{
-				"PROVIDER_RESUME_PLAN: --resume re-probes the provider before continuing this phase",
-				"PROVIDER_PROBES: 3",
+			check: func(t *testing.T, output statusOutput) {
+				t.Helper()
+				if !output.ProviderUnavailable.Unavailable {
+					t.Fatalf("provider_unavailable = %#v", output.ProviderUnavailable)
+				}
+				statusString(t, "provider_unavailable.phase", &output.ProviderUnavailable.Phase, "worker-new")
+				if output.ProviderUnavailable.Classification == nil || *output.ProviderUnavailable.Classification != "http-503" {
+					t.Fatalf("provider_unavailable.classification = %#v", output.ProviderUnavailable.Classification)
+				}
+				if output.ProviderUnavailable.Probes != 3 {
+					t.Fatalf("provider_unavailable.probes = %d", output.ProviderUnavailable.Probes)
+				}
+				if !output.ResumeAvailable {
+					t.Fatal("provider停止中はresume_availableが必要です")
+				}
 			},
 		},
 		{
@@ -154,8 +219,18 @@ func TestExecuteStatusDetailFallsBackToCheckpoint(t *testing.T) {
 				}
 			},
 			status: state.TaskStatusRateLimited,
-			wants: []string{
-				"RESET_AT_RFC3339: 2026-08-16T14:06:34+08:00",
+			check: func(t *testing.T, output statusOutput) {
+				t.Helper()
+				if !output.RateLimited.Limited {
+					t.Fatalf("rate_limited = %#v", output.RateLimited)
+				}
+				statusString(t, "rate_limited.phase", &output.RateLimited.Phase, "reviewer-1")
+				if output.RateLimited.ResetAtRFC3339 == nil || *output.RateLimited.ResetAtRFC3339 != "2026-08-16T14:06:34+08:00" {
+					t.Fatalf("rate_limited.reset_at_rfc3339 = %#v", output.RateLimited.ResetAtRFC3339)
+				}
+				if !output.ResumeAvailable {
+					t.Fatal("rate limit中はresume_availableが必要です")
+				}
 			},
 		},
 	}
@@ -174,47 +249,39 @@ func TestExecuteStatusDetailFallsBackToCheckpoint(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			var out bytes.Buffer
-			if err := Execute(Command{Mode: ModeStatus}, cfg, nil, &out, io.Discard); err != nil {
-				t.Fatal(err)
+			output := executeStatusOutput(t, cfg)
+			if output.LastEvent != nil {
+				t.Fatalf("event logがないのにlast_event = %#v", output.LastEvent)
 			}
-			body := out.String()
-			wants := append([]string{"LAST_EVENT: none", "SESSION_AGING: none"}, c.wants...)
-			for _, want := range wants {
-				if !strings.Contains(body, want) {
-					t.Fatalf("status出力に%qがありません:\n%s", want, body)
-				}
+			if len(output.SessionAging) != 0 {
+				t.Fatalf("呼出記録がないのにsession_aging = %#v", output.SessionAging)
 			}
-			if strings.Contains(body, "CURRENT_PHASE: unknown") {
-				t.Fatalf("checkpointがあるのにcurrent表示がunknownです:\n%s", body)
+			if output.CurrentPhase == nil {
+				t.Fatal("checkpointがあるのにcurrent_phaseがnullです")
 			}
+			c.check(t, output)
 		})
 	}
 }
 
 // TestExecuteStatusEmptyTaskDetailIsExplicitUnknownはtaskがない状態で観測できない項目を
-// unknown/none表示し、probe/session表示を出さないことを検証する。
+// nullで出し、probe/session表示を出さないことを検証する。
 func TestExecuteStatusEmptyTaskDetailIsExplicitUnknown(t *testing.T) {
 	cfg := newAppConfig(t)
-	var out bytes.Buffer
-	if err := Execute(Command{Mode: ModeStatus}, cfg, nil, &out, io.Discard); err != nil {
-		t.Fatal(err)
+	output := executeStatusOutput(t, cfg)
+	if output.TaskStartedAt != nil || output.TaskElapsedMS != nil {
+		t.Fatalf("空状態の開始観測 = %#v", output)
 	}
-	body := out.String()
-	for _, want := range []string{
-		"TASK_STARTED_AT: unknown",
-		"TASK_ELAPSED: unknown",
-		"CURRENT_PHASE: unknown",
-		"CURRENT_ROLE: unknown",
-		"CURRENT_MODEL: unknown",
-		"LAST_EVENT: none",
-		"SESSION_AGING: none",
-	} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("空状態のstatus出力に%qがありません:\n%s", want, body)
-		}
+	if output.CurrentPhase != nil || output.CurrentRole != nil || output.CurrentModel != nil {
+		t.Fatalf("空状態のcurrent表示 = %#v", output)
 	}
-	if strings.Contains(body, "PROBES:") || strings.Contains(body, "PROBE_LAST") {
-		t.Fatalf("probe記録がないのにprobe表示が出ています:\n%s", body)
+	if output.LastEvent != nil {
+		t.Fatalf("空状態のlast_event = %#v", output.LastEvent)
+	}
+	if output.SessionAging != nil {
+		t.Fatalf("空状態のsession_aging = %#v", output.SessionAging)
+	}
+	if output.Probes != nil {
+		t.Fatalf("probe記録がないのにprobe表示 = %#v", output.Probes)
 	}
 }

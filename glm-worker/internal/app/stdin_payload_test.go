@@ -11,11 +11,23 @@ import (
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
 func needsSolReviewPacketApp() string {
-	return "PACKET_BEGIN\nSTATUS: NEEDS_SOL_REVIEW\nRISK: HIGH\nSUMMARY: review\nREQUIREMENT_COVERAGE: covered\nINVARIANTS: preserved\nTEST_EVIDENCE: ev\nISSUES: i\nRESIDUAL_RISK: r\nTARGETS: t\nARTIFACTS: none\nSOL_QUESTION: q\nPACKET_END\n"
+	return appPacketBody(packet.Result{
+		Status:              packet.StatusNeedsSolReview,
+		Risk:                packet.RiskHigh,
+		Summary:             "review",
+		RequirementCoverage: "covered",
+		Invariants:          "preserved",
+		TestEvidence:        "ev",
+		Issues:              "i",
+		ResidualRisk:        "r",
+		Targets:             []string{"t"},
+		SolQuestion:         "q",
+	})
 }
 
 func stdinTestPayload() string {
@@ -150,8 +162,8 @@ func TestRunDecisionStdinPreservesPayloadBytes(t *testing.T) {
 	prepareWaitingDecisionState(t, cfg)
 	payload := stdinTestPayload()
 	r := &fakeRunner{steps: []fakeStep{
-		{output: implementedPacketApp("decision applied")},
-		{output: needsSolReviewPacketApp()},
+		{structured: implementedPacketApp("decision applied")},
+		{structured: needsSolReviewPacketApp()},
 	}}
 
 	args := []string{"--decision-stdin", fmt.Sprint(len(payload)), "--sha256", stdinPayloadSHA(payload)}
@@ -180,7 +192,7 @@ func TestRunDecisionStdinFailsClosedOnShortRead(t *testing.T) {
 	cfg := newAppConfig(t)
 	prepareWaitingDecisionState(t, cfg)
 	payload := stdinTestPayload()
-	r := &fakeRunner{steps: []fakeStep{{output: implementedPacketApp("done")}}}
+	r := &fakeRunner{steps: []fakeStep{{structured: implementedPacketApp("done")}}}
 	before := snapshotStateFiles(t, cfg)
 
 	short := strings.NewReader(payload[:40])
@@ -200,7 +212,7 @@ func TestRunDecisionStdinFailsClosedOnSHAMismatch(t *testing.T) {
 	cfg := newAppConfig(t)
 	prepareWaitingDecisionState(t, cfg)
 	payload := stdinTestPayload()
-	r := &fakeRunner{steps: []fakeStep{{output: implementedPacketApp("done")}}}
+	r := &fakeRunner{steps: []fakeStep{{structured: implementedPacketApp("done")}}}
 	before := snapshotStateFiles(t, cfg)
 
 	other := stdinPayloadSHA(payload + "corrupted")
@@ -217,8 +229,8 @@ func TestRunFixStdinPreservesPayloadBytes(t *testing.T) {
 	prepareWaitingSolReviewState(t, cfg)
 	payload := stdinTestPayload()
 	r := &fakeRunner{steps: []fakeStep{
-		{output: implementedPacketApp("fix applied")},
-		{output: needsSolReviewPacketApp()},
+		{structured: implementedPacketApp("fix applied")},
+		{structured: needsSolReviewPacketApp()},
 	}}
 
 	args := []string{"--fix-stdin", fmt.Sprint(len(payload)), "--sha256", stdinPayloadSHA(payload)}
@@ -240,7 +252,7 @@ func TestRunFixStdinFailsClosedOnShortRead(t *testing.T) {
 	cfg := newAppConfig(t)
 	prepareWaitingSolReviewState(t, cfg)
 	payload := stdinTestPayload()
-	r := &fakeRunner{steps: []fakeStep{{output: implementedPacketApp("done")}}}
+	r := &fakeRunner{steps: []fakeStep{{structured: implementedPacketApp("done")}}}
 	before := snapshotStateFiles(t, cfg)
 
 	short := strings.NewReader(payload[:15])
@@ -265,8 +277,8 @@ func TestRunDecisionStdinEmitsNoReadyMarkerForNonTTY(t *testing.T) {
 	pipeCfg := newAppConfig(t)
 	prepareWaitingDecisionState(t, pipeCfg)
 	pipeRunner := &fakeRunner{steps: []fakeStep{
-		{output: implementedPacketApp("decision applied")},
-		{output: needsSolReviewPacketApp()},
+		{structured: implementedPacketApp("decision applied")},
+		{structured: needsSolReviewPacketApp()},
 	}}
 	pipeReader, pipeWriter, err := os.Pipe()
 	if err != nil {
@@ -281,21 +293,21 @@ func TestRunDecisionStdinEmitsNoReadyMarkerForNonTTY(t *testing.T) {
 	if err := run(args, func() (config.AppConfig, error) { return pipeCfg, nil }, pipeRunner.factory(), pipeReader, io.Discard, pipeStderr); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(pipeStderr.String(), stdinReadyMarker) {
+	if strings.Contains(pipeStderr.String(), stdinReadyMarker()) {
 		t.Fatalf("pipe stdinでREADY markerが出力されています: %q", pipeStderr.String())
 	}
 
 	readerCfg := newAppConfig(t)
 	prepareWaitingDecisionState(t, readerCfg)
 	readerRunner := &fakeRunner{steps: []fakeStep{
-		{output: implementedPacketApp("decision applied")},
-		{output: needsSolReviewPacketApp()},
+		{structured: implementedPacketApp("decision applied")},
+		{structured: needsSolReviewPacketApp()},
 	}}
 	readerStderr := &strings.Builder{}
 	if err := run(args, func() (config.AppConfig, error) { return readerCfg, nil }, readerRunner.factory(), strings.NewReader(payload), io.Discard, readerStderr); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(readerStderr.String(), stdinReadyMarker) {
+	if strings.Contains(readerStderr.String(), stdinReadyMarker()) {
 		t.Fatalf("非file stdinでREADY markerが出力されています: %q", readerStderr.String())
 	}
 }
@@ -308,8 +320,8 @@ func TestRunDecisionStdinPreservesNULBytesOverPipeFile(t *testing.T) {
 	prepareWaitingDecisionState(t, cfg)
 	payload := "NUL先頭\x00中間\x00末尾\n2行目 `backtick` $HOME \"double\" 'single' 日本語\x00"
 	r := &fakeRunner{steps: []fakeStep{
-		{output: implementedPacketApp("decision applied")},
-		{output: needsSolReviewPacketApp()},
+		{structured: implementedPacketApp("decision applied")},
+		{structured: needsSolReviewPacketApp()},
 	}}
 
 	pipeReader, pipeWriter, err := os.Pipe()

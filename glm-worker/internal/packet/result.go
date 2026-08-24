@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 )
 
 // 表示・検証契約の上限。structured outputでは物理行数は意味を持たないため、
@@ -52,7 +51,7 @@ const noneTargetsSentinel = "none"
 // statusenumと意味検証でrole契約を強制する。未知の意味問題は各free text fieldへ
 // 残り、構造はschemaとこの型が固定する。
 //
-// status別契約(machine protocol・検証・人間向けprojectionの共通table):
+// status別契約(machine protocol・検証の共通table):
 //
 //	status              role      risk      必須text field                                                         targets受理
 //	IMPLEMENTED         worker    LOW/HIGH  summary, requirement_coverage, tests, unverified                       空配列可 / none可 / PACKET不可
@@ -122,55 +121,47 @@ func ParseStructured(data []byte) (Result, error) {
 	return result, nil
 }
 
-// displayFieldはtyped field名を表示KEYへ対応付ける。表示順はrender順で固定する。
-type displayField struct {
-	key   string
-	value string
-}
-
-// contractFieldはstatus別契約text fieldの共通定義。machineはschema語彙と同じJSON key、
-// displayは旧PACKET表示のKEY。意味検証・machine protocol・人間向けprojectionの3面が
-// 同一のstatus別集合を共有し、契約外fieldの機械出力混入を構造的に防ぐ。
+// contractFieldはstatus別契約text fieldの共通定義。machine keyはschema語彙と同じ
+// JSON key。意味検証とmachine protocolが同一のstatus別集合を共有し、契約外fieldの
+// 機械出力混入を構造的に防ぐ。
 type contractField struct {
 	machine string
-	display string
 	value   func(Result) string
 }
 
 var implementedContractFields = []contractField{
-	{"summary", "SUMMARY", func(r Result) string { return r.Summary }},
-	{"requirement_coverage", "REQUIREMENT_COVERAGE", func(r Result) string { return r.RequirementCoverage }},
-	{"tests", "TESTS", func(r Result) string { return r.Tests }},
-	{"unverified", "UNVERIFIED", func(r Result) string { return r.Unverified }},
+	{"summary", func(r Result) string { return r.Summary }},
+	{"requirement_coverage", func(r Result) string { return r.RequirementCoverage }},
+	{"tests", func(r Result) string { return r.Tests }},
+	{"unverified", func(r Result) string { return r.Unverified }},
 }
 
 var needsSolDecisionContractFields = []contractField{
-	{"decision", "DECISION", func(r Result) string { return r.Decision }},
-	{"evidence", "EVIDENCE", func(r Result) string { return r.Evidence }},
-	{"options", "OPTIONS", func(r Result) string { return r.Options }},
-	{"recommendation", "RECOMMENDATION", func(r Result) string { return r.Recommendation }},
-	{"test_obligations", "TEST_OBLIGATIONS", func(r Result) string { return r.TestObligations }},
+	{"decision", func(r Result) string { return r.Decision }},
+	{"evidence", func(r Result) string { return r.Evidence }},
+	{"options", func(r Result) string { return r.Options }},
+	{"recommendation", func(r Result) string { return r.Recommendation }},
+	{"test_obligations", func(r Result) string { return r.TestObligations }},
 }
 
 var reviewerContractFields = []contractField{
-	{"summary", "SUMMARY", func(r Result) string { return r.Summary }},
-	{"requirement_coverage", "REQUIREMENT_COVERAGE", func(r Result) string { return r.RequirementCoverage }},
-	{"invariants", "INVARIANTS", func(r Result) string { return r.Invariants }},
-	{"test_evidence", "TEST_EVIDENCE", func(r Result) string { return r.TestEvidence }},
-	{"issues", "ISSUES", func(r Result) string { return r.Issues }},
-	{"residual_risk", "RESIDUAL_RISK", func(r Result) string { return r.ResidualRisk }},
+	{"summary", func(r Result) string { return r.Summary }},
+	{"requirement_coverage", func(r Result) string { return r.RequirementCoverage }},
+	{"invariants", func(r Result) string { return r.Invariants }},
+	{"test_evidence", func(r Result) string { return r.TestEvidence }},
+	{"issues", func(r Result) string { return r.Issues }},
+	{"residual_risk", func(r Result) string { return r.ResidualRisk }},
 }
 
 // needsSolReviewContractFieldsはreviewer共通fieldへsol_questionを加えた集合。
 // sol_questionはNEEDS_SOL_REVIEWだけの契約fieldで、PASS/FIX_REQUIREDへmodelが混入させた
-// 値は検証対象にならずmachine JSON・projectionのどちらにも出ない
-// (field audit実測: PASS 10件中1件の混入)。reviewerContractFieldsへ直接appendすると
-// 共用backing arrayを伸ばすため、複製へ足す。
+// 値は検証対象にならずmachine JSONへ出ない(field audit実測: PASS 10件中1件の混入)。
+// reviewerContractFieldsへ直接appendすると共用backing arrayを伸ばすため、複製へ足す。
 var needsSolReviewContractFields = append(append([]contractField{}, reviewerContractFields...),
-	contractField{"sol_question", "SOL_QUESTION", func(r Result) string { return r.SolQuestion }})
+	contractField{"sol_question", func(r Result) string { return r.SolQuestion }})
 
-// contractFieldsはstatus別の契約text field集合。validator・machine protocol・
-// 人間向けprojectionが参照する唯一のstatus→field対応。
+// contractFieldsはstatus別の契約text field集合。validatorとmachine protocolが
+// 参照する唯一のstatus→field対応。
 func (r Result) contractFields() []contractField {
 	switch r.Status {
 	case StatusImplemented:
@@ -182,61 +173,6 @@ func (r Result) contractFields() []contractField {
 	default:
 		return reviewerContractFields
 	}
-}
-
-// displayFieldsはstatus別の表示field順。契約text fieldはcontractFieldsの集合・順序で
-// 並べ、targets/artifactsは配列をセミコロン区切りへ直す。IMPLEMENTEDだけ旧表示どおり
-// 空targetsの行を出さない。
-func (r Result) displayFields() []displayField {
-	fields := []displayField{
-		{key: "STATUS", value: string(r.Status)},
-		{key: "RISK", value: string(r.Risk)},
-	}
-	for _, field := range r.contractFields() {
-		fields = append(fields, displayField{key: field.display, value: field.value(r)})
-	}
-	switch r.Status {
-	case StatusImplemented:
-		if len(r.Targets) > 0 {
-			fields = append(fields, r.targetsField())
-		}
-		fields = append(fields, r.artifactsField())
-	default:
-		fields = append(fields, r.targetsField(), r.artifactsField())
-	}
-	return fields
-}
-
-func (r Result) targetsField() displayField {
-	return displayField{key: "TARGETS", value: joinDisplayList(r.Targets)}
-}
-
-func (r Result) artifactsField() displayField {
-	return displayField{key: "ARTIFACTS", value: joinDisplayList(r.Artifacts)}
-}
-
-func joinDisplayList(values []string) string {
-	if len(values) == 0 {
-		return "none"
-	}
-	return strings.Join(values, ";")
-}
-
-// DisplayLinesはSolへ出力する表示行を返す。
-func (r Result) DisplayLines() []string {
-	fields := r.displayFields()
-	lines := make([]string, 0, len(fields))
-	for _, field := range fields {
-		lines = append(lines, field.key+": "+field.value)
-	}
-	return lines
-}
-
-// Displayは人間向け診断projectionの表示行を改行接続した文字列を返す。
-// machine protocol(MachineJSON)とは分離されており、最終stdout・prompt埋め込み・
-// state保存の機械経路では使わない。
-func (r Result) Display() string {
-	return strings.Join(r.DisplayLines(), "\n")
 }
 
 // MachineJSONは親Codexと次のmodel呼出へ出すcompact machine protocol。status別契約
@@ -277,68 +213,4 @@ func (r Result) ByteSize() int {
 		return 0
 	}
 	return len(data)
-}
-
-// FromDisplayLinesは表示行形式(KEY: value)のworker報告をtyped結果へ変換する。
-// scenario corpusのrunner step表記と表示projectionの往復検証だけに使い、
-// model出力の受理経路・productionの状態読込には使わない。
-func FromDisplayLines(lines []string) (Result, error) {
-	fields := make(map[string]string, len(lines))
-	for _, line := range lines {
-		key, value, ok := strings.Cut(line, ":")
-		if !ok {
-			return Result{}, fmt.Errorf("表示行をKEY: value形式へ解析できません: %q", line)
-		}
-		key = strings.TrimSpace(key)
-		if key == "" {
-			return Result{}, fmt.Errorf("表示行のKEYが空です: %q", line)
-		}
-		if _, exists := fields[key]; exists {
-			return Result{}, fmt.Errorf("表示field %sが重複しています", key)
-		}
-		fields[key] = strings.TrimSpace(value)
-	}
-	if fields["STATUS"] == "" {
-		return Result{}, fmt.Errorf("表示行にSTATUSがありません")
-	}
-	result := Result{
-		Status:              Status(fields["STATUS"]),
-		Risk:                Risk(fields["RISK"]),
-		Summary:             fields["SUMMARY"],
-		RequirementCoverage: fields["REQUIREMENT_COVERAGE"],
-		Tests:               fields["TESTS"],
-		Unverified:          fields["UNVERIFIED"],
-		Decision:            fields["DECISION"],
-		Evidence:            fields["EVIDENCE"],
-		Options:             fields["OPTIONS"],
-		Recommendation:      fields["RECOMMENDATION"],
-		TestObligations:     fields["TEST_OBLIGATIONS"],
-		Invariants:          fields["INVARIANTS"],
-		TestEvidence:        fields["TEST_EVIDENCE"],
-		Issues:              fields["ISSUES"],
-		ResidualRisk:        fields["RESIDUAL_RISK"],
-		SolQuestion:         fields["SOL_QUESTION"],
-	}
-	if targets := splitDisplayList(fields["TARGETS"]); len(targets) > 0 {
-		result.Targets = targets
-	}
-	if artifacts := splitDisplayList(fields["ARTIFACTS"]); len(artifacts) > 0 {
-		result.Artifacts = artifacts
-	}
-	return result, nil
-}
-
-// splitDisplayListは表示のセミコロン区切りを配列へ戻す。"none"・空は要素なし扱い。
-func splitDisplayList(value string) []string {
-	if value == "" || value == noneTargetsSentinel {
-		return nil
-	}
-	parts := strings.Split(value, ";")
-	result := make([]string, 0, len(parts))
-	for _, part := range parts {
-		if trimmed := strings.TrimSpace(part); trimmed != "" {
-			result = append(result, trimmed)
-		}
-	}
-	return result
 }

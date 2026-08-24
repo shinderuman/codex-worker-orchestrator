@@ -103,17 +103,33 @@ func (w *Workflow) withTemp(fn func() error) error {
 	return fn()
 }
 
+// WorkerErrorはworker/workflow実行のfail closed失敗。process errorのkind worker_errorへ
+// 対応し、Phase・ExitCode・Tailは診識別の機械fieldとして分離して載る。
+type WorkerError struct {
+	Phase    string
+	ExitCode int
+	Tail     string
+	Message  string
+}
+
+func (e *WorkerError) Error() string {
+	if e.Message == "" {
+		return "worker error"
+	}
+	return e.Message
+}
+
 func (w *Workflow) ExecuteNewTask(request string) error {
 	return quietWhenParentFileGuardStopped(w.withTemp(func() error {
 		if w.state.Exists("pending-decision") {
-			return fmt.Errorf("STATUS: WORKER_ERROR\nERROR: previous task is waiting for Sol decision; use --decision or --reset")
+			return &WorkerError{Message: "previous task is waiting for Sol decision; use --decision or --reset"}
 		}
 		if checkpoint, err := w.state.LoadResumeCheckpoint(); err == nil {
 			switch {
 			case checkpoint.RateLimited:
-				return fmt.Errorf("STATUS: WORKER_ERROR\nERROR: previous task is rate-limited; use --resume or --reset")
+				return &WorkerError{Message: "previous task is rate-limited; use --resume or --reset"}
 			case checkpoint.ProviderUnavailable:
-				return fmt.Errorf("STATUS: WORKER_ERROR\nERROR: previous task is provider-unavailable; use --resume or --reset")
+				return &WorkerError{Message: "previous task is provider-unavailable; use --resume or --reset"}
 			}
 		}
 
@@ -172,12 +188,12 @@ func (w *Workflow) ExecuteNewTask(request string) error {
 func (w *Workflow) ExecuteDecision(decision string) error {
 	return quietWhenParentFileGuardStopped(w.withTemp(func() error {
 		if w.state.TaskStatus() != state.TaskStatusWaitingDecision || !w.state.Exists("pending-decision") {
-			return fmt.Errorf("STATUS: WORKER_ERROR\nERROR: no pending Sol decision for this repository")
+			return &WorkerError{Message: "no pending Sol decision for this repository"}
 		}
 
 		request, err := w.state.Read("last-request")
 		if err != nil {
-			return fmt.Errorf("STATUS: WORKER_ERROR\nERROR: original request is missing")
+			return &WorkerError{Message: "original request is missing"}
 		}
 		// ACTIVE不正はdecision消費・state mutationより前に拒否する。拒否はwaiting-decisionと
 		// pending decisionを残すため、親CodexがPlan・task fileを修復すれば同じdecisionを
@@ -224,15 +240,15 @@ func (w *Workflow) ExecuteDecision(decision string) error {
 func (w *Workflow) ExecuteExplicitFix(instruction, origin string) error {
 	return quietWhenParentFileGuardStopped(w.withTemp(func() error {
 		if w.state.Exists("pending-decision") {
-			return fmt.Errorf("STATUS: WORKER_ERROR\nERROR: task is waiting for Sol decision; resolve it before --fix")
+			return &WorkerError{Message: "task is waiting for Sol decision; resolve it before --fix"}
 		}
 		if w.state.TaskStatus() != state.TaskStatusWaitingSolReview {
-			return fmt.Errorf("STATUS: WORKER_ERROR\nERROR: --fix is only available after NEEDS_SOL_REVIEW; start a new task after PASS")
+			return &WorkerError{Message: "--fix is only available after NEEDS_SOL_REVIEW; start a new task after PASS"}
 		}
 
 		request, err := w.state.Read("last-request")
 		if err != nil {
-			return fmt.Errorf("STATUS: WORKER_ERROR\nERROR: no previous task for this repository")
+			return &WorkerError{Message: "no previous task for this repository"}
 		}
 
 		decision := w.state.ReadOr("last-decision", "none")
@@ -281,10 +297,10 @@ func (w *Workflow) ExecuteResume() error {
 			return err
 		}
 		if !checkpoint.RateLimited && !checkpoint.ProviderUnavailable {
-			return fmt.Errorf("STATUS: WORKER_ERROR\nERROR: saved task is not stopped by Z.ai 5h limit or provider unavailability")
+			return &WorkerError{Message: "saved task is not stopped by Z.ai 5h limit or provider unavailability"}
 		}
 		if !isKnownResumeStage(checkpoint.Stage) {
-			return fmt.Errorf("STATUS: WORKER_ERROR\nERROR: unknown resume stage: %s", checkpoint.Stage)
+			return &WorkerError{Message: fmt.Sprintf("unknown resume stage: %s", checkpoint.Stage)}
 		}
 
 		previousCheckpoint := checkpoint
@@ -317,8 +333,8 @@ func (w *Workflow) ExecuteResume() error {
 				}
 				_ = w.state.ClearResumeCheckpoint()
 				_ = w.state.RemoveUnreadySession(checkpoint.Role)
-				// gate上のfatal(auth/config・state異常等)は本task再開せず従来のWORKER_ERROR終端へ出す。
-				return fmt.Errorf("STATUS: WORKER_ERROR\nPHASE: %s\nERROR: %v", checkpoint.Phase, err)
+				// gate上のfatal(auth/config・state異常等)は本task再開せずfail closed終端へ出す。
+				return &WorkerError{Phase: checkpoint.Phase, Message: err.Error()}
 			}
 		}
 		// review工程resume時は5h上限の時間経過を挟んでreview-start snapshotと現在状態を再照合する。
@@ -387,7 +403,7 @@ func (w *Workflow) ExecuteResume() error {
 			return w.handleWorkerResult(checkpoint.Request, result, checkpoint.Phase)
 		case state.ResumeStageReview:
 			if checkpoint.WorkerResult == nil {
-				return fmt.Errorf("STATUS: WORKER_ERROR\nPHASE: %s\nERROR: resume checkpoint has no worker result", checkpoint.Phase)
+				return &WorkerError{Phase: checkpoint.Phase, Message: "resume checkpoint has no worker result"}
 			}
 			workerResult := *checkpoint.WorkerResult
 			decision := w.state.ReadOr("last-decision", "none")
@@ -458,7 +474,7 @@ func (w *Workflow) ExecuteResume() error {
 				checkpoint.Phase,
 			)
 		default:
-			return fmt.Errorf("STATUS: WORKER_ERROR\nERROR: unknown resume stage: %s", checkpoint.Stage)
+			return &WorkerError{Phase: checkpoint.Phase, Message: fmt.Sprintf("unknown resume stage: %s", checkpoint.Stage)}
 		}
 	}))
 }
@@ -503,7 +519,7 @@ func (w *Workflow) handleWorkerResult(request string, workerResult packet.Result
 		}
 		return w.reviewUntilStable(request, workerResult, 1, 0, workerPhase)
 	default:
-		return fmt.Errorf("STATUS: WORKER_ERROR\nPHASE: worker-format\nERROR: worker did not return a valid STATUS")
+		return &WorkerError{Phase: "worker-format", Message: "worker did not return a valid STATUS"}
 	}
 }
 
@@ -703,7 +719,7 @@ func (w *Workflow) handleReviewResult(
 		)
 
 	default:
-		return fmt.Errorf("STATUS: WORKER_ERROR\nPHASE: reviewer-format\nERROR: reviewer did not return a valid STATUS")
+		return &WorkerError{Phase: "reviewer-format", Message: "reviewer did not return a valid STATUS"}
 	}
 }
 
@@ -821,7 +837,7 @@ func (w *Workflow) handleAutoFixResult(
 		)
 
 	default:
-		return fmt.Errorf("STATUS: WORKER_ERROR\nPHASE: auto-fix-format\nERROR: worker did not return a valid STATUS after review fix")
+		return &WorkerError{Phase: "auto-fix-format", Message: "worker did not return a valid STATUS after review fix"}
 	}
 }
 
@@ -842,7 +858,7 @@ func (w *Workflow) runModel(checkpoint state.ResumeCheckpoint) (packet.Result, e
 		checkpoint.OriginalPrompt = checkpoint.Prompt
 	}
 	if checkpoint.Model == "" {
-		return packet.Result{}, fmt.Errorf("STATUS: WORKER_ERROR\nPHASE: %s\nERROR: checkpoint model is missing", checkpoint.Phase)
+		return packet.Result{}, &WorkerError{Phase: checkpoint.Phase, Message: "checkpoint model is missing"}
 	}
 	if checkpoint.Effort == "" {
 		checkpoint.Effort = w.config.RoutineEffort
@@ -905,12 +921,11 @@ func (w *Workflow) runModel(checkpoint state.ResumeCheckpoint) (packet.Result, e
 		w.recordModelCall(checkpoint, runResult, startedAt, completedAt, "invalid_packet", "", runErr, outputPath, callDiagnostics{})
 		_ = w.state.ClearResumeCheckpoint()
 		_ = w.state.RemoveUnreadySession(checkpoint.Role)
-		return packet.Result{}, fmt.Errorf(
-			"STATUS: WORKER_ERROR\nPHASE: %s-structured-output\nERROR: %v\nOUTPUT_TAIL_BEGIN\n%s\nOUTPUT_TAIL_END",
-			checkpoint.Phase,
-			runErr,
-			packet.Tail(outputPath, 20),
-		)
+		return packet.Result{}, &WorkerError{
+			Phase:   checkpoint.Phase + "-structured-output",
+			Message: runErr.Error(),
+			Tail:    packet.Tail(outputPath, 20),
+		}
 	}
 
 	// Z.ai 5h上限以外の一時障害(502/503/504/529・明確な一時network障害)は同じsession/checkpointと
@@ -1008,12 +1023,11 @@ func (w *Workflow) runModel(checkpoint state.ResumeCheckpoint) (packet.Result, e
 			correctCheckpoint.ResultCorrection = true
 			return w.runModel(correctCheckpoint)
 		}
-		return packet.Result{}, fmt.Errorf(
-			"STATUS: WORKER_ERROR\nPHASE: %s-format\nERROR: %v\nOUTPUT_TAIL_BEGIN\n%s\nOUTPUT_TAIL_END",
-			checkpoint.Phase,
-			err,
-			packet.Tail(outputPath, 20),
-		)
+		return packet.Result{}, &WorkerError{
+			Phase:   checkpoint.Phase + "-format",
+			Message: err.Error(),
+			Tail:    packet.Tail(outputPath, 20),
+		}
 	}
 	w.recordModelCall(checkpoint, runResult, startedAt, completedAt, "success", string(result.Status), nil, outputPath, callDiagnostics{reportedRisk: string(result.Risk)})
 	w.lastProducer = state.ParentReviewProducer{Role: string(checkpoint.Role), Model: checkpoint.Model}
@@ -1566,17 +1580,16 @@ func workerError(phase string, outputPath string, runErr error) error {
 		exitCode = value.ExitCode()
 	}
 
-	return fmt.Errorf(
-		"STATUS: WORKER_ERROR\nPHASE: %s\nEXIT_CODE: %d\nERROR_TAIL_BEGIN\n%s\nERROR_TAIL_END",
-		phase,
-		exitCode,
-		packet.Tail(outputPath, 30),
-	)
+	return &WorkerError{
+		Phase:    phase,
+		ExitCode: exitCode,
+		Tail:     packet.Tail(outputPath, 30),
+		Message:  runErr.Error(),
+	}
 }
 
 // machineReportはmachine protocol 1行をrenderする。最終stdout・reviewer/auto-fix
-// prompt埋め込み・state保存の機械経路は全てこれを通し、Display()の人間向けdiagnostic
-// projectionを機械経路へ混ぜない。
+// prompt埋め込み・state保存の機械経路は全てこれを通す。
 func machineReport(value packet.Result) (string, error) {
 	data, err := value.MachineJSON()
 	if err != nil {

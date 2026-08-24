@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -69,10 +70,10 @@ func requireReportOnlyFailClosed(t *testing.T, w *Workflow, out *bytes.Buffer, w
 func TestReportOnlyDispatchCapabilityAndBaselineOrdering(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacketWithRisk("high risk work", "HIGH")},
-		{output: fixRequiredPacketWithTargets("PACKET")},
-		{output: implementedPacketWithRisk("report re-emitted", "HIGH")},
-		{output: needsSolReviewPacket()},
+		{structured: implementedPacketWithRisk("high risk work", "HIGH")},
+		{structured: fixRequiredPacketWithTargets("PACKET")},
+		{structured: implementedPacketWithRisk("report re-emitted", "HIGH")},
+		{structured: needsSolReviewPacket()},
 	}}
 	r.onRun = func() {
 		if len(r.prompts) != 3 {
@@ -121,10 +122,10 @@ func TestReportOnlyDispatchCapabilityAndBaselineOrdering(t *testing.T) {
 func TestImplementationAutoFixKeepsWriteCapabilityAndBaselineFlow(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacketWithRisk("high risk work", "HIGH")},
-		{output: fixRequiredPacketWithTargets("glm-worker/internal/state/store.go:Read")},
-		{output: implementedPacketWithRisk("fixed implementation", "HIGH")},
-		{output: needsSolReviewPacket()},
+		{structured: implementedPacketWithRisk("high risk work", "HIGH")},
+		{structured: fixRequiredPacketWithTargets("glm-worker/internal/state/store.go:Read")},
+		{structured: implementedPacketWithRisk("fixed implementation", "HIGH")},
+		{structured: needsSolReviewPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 
@@ -150,10 +151,10 @@ func TestImplementationAutoFixKeepsWriteCapabilityAndBaselineFlow(t *testing.T) 
 func TestReportOnlyWorktreeMutationFailsClosedBeforeReview(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	w, r, out := newReportOnlyWorkflow(t, repoRoot, []runnerStep{
-		{output: implementedPacketWithRisk("high risk work", "HIGH")},
-		{output: fixRequiredPacketWithTargets("PACKET")},
-		{output: implementedPacketWithRisk("report re-emitted", "HIGH")},
-		{output: needsSolReviewPacket()},
+		{structured: implementedPacketWithRisk("high risk work", "HIGH")},
+		{structured: fixRequiredPacketWithTargets("PACKET")},
+		{structured: implementedPacketWithRisk("report re-emitted", "HIGH")},
+		{structured: needsSolReviewPacket()},
 	}, func(root string) error {
 		return os.WriteFile(filepath.Join(root, "tracked.txt"), []byte("mutated\n"), 0o644)
 	})
@@ -200,10 +201,10 @@ func TestReportOnlyWorktreeMutationFailsClosedBeforeReview(t *testing.T) {
 func TestReportOnlyIndexMutationFailsClosedBeforeReview(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	w, r, out := newReportOnlyWorkflow(t, repoRoot, []runnerStep{
-		{output: implementedPacketWithRisk("high risk work", "HIGH")},
-		{output: fixRequiredPacketWithTargets("PACKET")},
-		{output: implementedPacketWithRisk("report re-emitted", "HIGH")},
-		{output: needsSolReviewPacket()},
+		{structured: implementedPacketWithRisk("high risk work", "HIGH")},
+		{structured: fixRequiredPacketWithTargets("PACKET")},
+		{structured: implementedPacketWithRisk("report re-emitted", "HIGH")},
+		{structured: needsSolReviewPacket()},
 	}, func(root string) error {
 		if err := os.WriteFile(filepath.Join(root, "tracked.txt"), []byte("staged\n"), 0o644); err != nil {
 			return err
@@ -228,10 +229,10 @@ func TestReportOnlyIndexMutationFailsClosedBeforeReview(t *testing.T) {
 func TestReportOnlyHeadMutationFailsClosedBeforeReview(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	w, _, out := newReportOnlyWorkflow(t, repoRoot, []runnerStep{
-		{output: implementedPacketWithRisk("high risk work", "HIGH")},
-		{output: fixRequiredPacketWithTargets("PACKET")},
-		{output: implementedPacketWithRisk("report re-emitted", "HIGH")},
-		{output: needsSolReviewPacket()},
+		{structured: implementedPacketWithRisk("high risk work", "HIGH")},
+		{structured: fixRequiredPacketWithTargets("PACKET")},
+		{structured: implementedPacketWithRisk("report re-emitted", "HIGH")},
+		{structured: needsSolReviewPacket()},
 	}, func(root string) error {
 		if err := os.WriteFile(filepath.Join(root, "tracked.txt"), []byte("committed\n"), 0o644); err != nil {
 			return err
@@ -254,10 +255,10 @@ func TestReportOnlyHeadMutationFailsClosedBeforeReview(t *testing.T) {
 func TestReportOnlyNoMutationMaintainsReviewRestartAndRiskFloor(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	w, r, out := newReportOnlyWorkflow(t, repoRoot, []runnerStep{
-		{output: implementedPacketWithRisk("high risk work", "HIGH")},
-		{output: fixRequiredPacketWithTargets("PACKET")},
-		{output: implementedPacketWithRisk("report re-emitted", "HIGH")},
-		{output: needsSolReviewPacket()},
+		{structured: implementedPacketWithRisk("high risk work", "HIGH")},
+		{structured: fixRequiredPacketWithTargets("PACKET")},
+		{structured: implementedPacketWithRisk("report re-emitted", "HIGH")},
+		{structured: needsSolReviewPacket()},
 	}, nil)
 
 	if err := w.ExecuteNewTask("request"); err != nil {
@@ -304,10 +305,10 @@ func TestReportOnlyNoMutationMaintainsReviewRestartAndRiskFloor(t *testing.T) {
 func TestReportOnlyStartSnapshotCaptureFailureStopsBeforeWorkerRun(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	w, r, out := newReportOnlyWorkflow(t, repoRoot, []runnerStep{
-		{output: implementedPacketWithRisk("high risk work", "HIGH")},
-		{output: fixRequiredPacketWithTargets("PACKET")},
-		{output: implementedPacketWithRisk("report re-emitted", "HIGH")},
-		{output: needsSolReviewPacket()},
+		{structured: implementedPacketWithRisk("high risk work", "HIGH")},
+		{structured: fixRequiredPacketWithTargets("PACKET")},
+		{structured: implementedPacketWithRisk("report re-emitted", "HIGH")},
+		{structured: needsSolReviewPacket()},
 	}, nil)
 	realCapture := w.captureSnapshot
 	calls := 0
@@ -350,20 +351,9 @@ func TestReportOnlyStartSnapshotSaveFailureStopsBeforeWorkerRun(t *testing.T) {
 	w.output = out
 	w.config.RepoRoot = repoRoot
 	w.captureSnapshot = state.CaptureGitSnapshot
-	reviewPacket := resultFromLines(
-		"STATUS: FIX_REQUIRED",
-		"RISK: HIGH",
-		"SUMMARY: fix",
-		"REQUIREMENT_COVERAGE: covered",
-		"INVARIANTS: preserved",
-		"TEST_EVIDENCE: ev",
-		"ISSUES: i",
-		"RESIDUAL_RISK: r",
-		"TARGETS: PACKET",
-		"ARTIFACTS: none",
-	)
+	reviewPacket := resultFromBody(`{"status":"FIX_REQUIRED","risk":"HIGH","summary":"fix","requirement_coverage":"covered","invariants":"preserved","test_evidence":"ev","issues":"i","residual_risk":"r","targets":["PACKET"]}`)
 
-	if err := w.handleReviewResult("request", resultFromLines(workerPacketLines()...), reviewPacket, 1, 0); err != nil {
+	if err := w.handleReviewResult("request", resultFromBody(workerPacket()), reviewPacket, 1, 0); err != nil {
 		t.Fatal(err)
 	}
 	if w.state.TaskStatus() != state.TaskStatusWaitingSolReview {
@@ -389,7 +379,7 @@ func TestReportOnlyComparisonSaveFailureFailsClosed(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := &mutatingRunner{repoRoot: repoRoot, steps: []runnerStep{
-		{output: implementedPacketWithRisk("report re-emitted", "HIGH")},
+		{structured: implementedPacketWithRisk("report re-emitted", "HIGH")},
 	}}
 	out := &bytes.Buffer{}
 	w := newMutationWorkflowShell(t, st)
@@ -398,20 +388,9 @@ func TestReportOnlyComparisonSaveFailureFailsClosed(t *testing.T) {
 	w.config.RepoRoot = repoRoot
 	w.temp = t.TempDir()
 	w.captureSnapshot = state.CaptureGitSnapshot
-	reviewPacket := resultFromLines(
-		"STATUS: FIX_REQUIRED",
-		"RISK: HIGH",
-		"SUMMARY: fix",
-		"REQUIREMENT_COVERAGE: covered",
-		"INVARIANTS: preserved",
-		"TEST_EVIDENCE: ev",
-		"ISSUES: i",
-		"RESIDUAL_RISK: r",
-		"TARGETS: PACKET",
-		"ARTIFACTS: none",
-	)
+	reviewPacket := resultFromBody(`{"status":"FIX_REQUIRED","risk":"HIGH","summary":"fix","requirement_coverage":"covered","invariants":"preserved","test_evidence":"ev","issues":"i","residual_risk":"r","targets":["PACKET"]}`)
 
-	if err := w.handleReviewResult("request", resultFromLines(workerPacketLines()...), reviewPacket, 1, 0); err != nil {
+	if err := w.handleReviewResult("request", resultFromBody(workerPacket()), reviewPacket, 1, 0); err != nil {
 		t.Fatal(err)
 	}
 	if st.TaskStatus() != state.TaskStatusWaitingSolReview {
@@ -436,7 +415,7 @@ func TestReportOnlyEndSnapshotCaptureFailureFailsClosedNotMismatch(t *testing.T)
 	repoRoot := initMutationRepo(t)
 	st := newStateStoreT(t)
 	r := &mutatingRunner{repoRoot: repoRoot, steps: []runnerStep{
-		{output: implementedPacketWithRisk("report re-emitted", "HIGH")},
+		{structured: implementedPacketWithRisk("report re-emitted", "HIGH")},
 	}}
 	out := &bytes.Buffer{}
 	w := newMutationWorkflowShell(t, st)
@@ -453,20 +432,9 @@ func TestReportOnlyEndSnapshotCaptureFailureFailsClosedNotMismatch(t *testing.T)
 		}
 		return realCapture(root)
 	}
-	reviewPacket := resultFromLines(
-		"STATUS: FIX_REQUIRED",
-		"RISK: HIGH",
-		"SUMMARY: fix",
-		"REQUIREMENT_COVERAGE: covered",
-		"INVARIANTS: preserved",
-		"TEST_EVIDENCE: ev",
-		"ISSUES: i",
-		"RESIDUAL_RISK: r",
-		"TARGETS: PACKET",
-		"ARTIFACTS: none",
-	)
+	reviewPacket := resultFromBody(`{"status":"FIX_REQUIRED","risk":"HIGH","summary":"fix","requirement_coverage":"covered","invariants":"preserved","test_evidence":"ev","issues":"i","residual_risk":"r","targets":["PACKET"]}`)
 
-	if err := w.handleReviewResult("request", resultFromLines(workerPacketLines()...), reviewPacket, 1, 0); err != nil {
+	if err := w.handleReviewResult("request", resultFromBody(workerPacket()), reviewPacket, 1, 0); err != nil {
 		t.Fatal(err)
 	}
 	if st.TaskStatus() != state.TaskStatusWaitingSolReview {
@@ -501,12 +469,13 @@ func TestReportOnlyEndSnapshotCaptureFailureFailsClosedNotMismatch(t *testing.T)
 func TestReportOnlyRateLimitResumeVerifiesAgainstSameStartSnapshot(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	w, _, _ := newReportOnlyWorkflow(t, repoRoot, []runnerStep{
-		{output: implementedPacketWithRisk("high risk work", "HIGH")},
-		{output: fixRequiredPacketWithTargets("PACKET")},
+		{structured: implementedPacketWithRisk("high risk work", "HIGH")},
+		{structured: fixRequiredPacketWithTargets("PACKET")},
 		{output: zaiFiveHourLog, runErr: errors.New("exit status 1")},
 	}, nil)
 
-	if err := w.ExecuteNewTask("request"); err == nil || !strings.Contains(err.Error(), "STATUS: RATE_LIMITED") {
+	var limitErr runner.ZaiRateLimitError
+	if err := w.ExecuteNewTask("request"); err == nil || !errors.As(err, &limitErr) {
 		t.Fatalf("rate limit errorを期待: %v", err)
 	}
 	cp, err := w.state.LoadResumeCheckpoint()
@@ -525,8 +494,8 @@ func TestReportOnlyRateLimitResumeVerifiesAgainstSameStartSnapshot(t *testing.T)
 		t.Fatal(err)
 	}
 	resumeRunner := &mutatingRunner{repoRoot: repoRoot, steps: []runnerStep{
-		{output: implementedPacketWithRisk("report re-emitted", "HIGH")},
-		{output: needsSolReviewPacket()},
+		{structured: implementedPacketWithRisk("report re-emitted", "HIGH")},
+		{structured: needsSolReviewPacket()},
 	}}
 	resumeRunner.mutatePhase = "worker-report-only-1"
 	out := &bytes.Buffer{}
@@ -565,8 +534,8 @@ func TestReportOnlyRateLimitResumeVerifiesAgainstSameStartSnapshot(t *testing.T)
 func TestReportOnlyRateLimitResumeWithoutDriftProceedsToReview(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	w, _, _ := newReportOnlyWorkflow(t, repoRoot, []runnerStep{
-		{output: implementedPacketWithRisk("high risk work", "HIGH")},
-		{output: fixRequiredPacketWithTargets("PACKET")},
+		{structured: implementedPacketWithRisk("high risk work", "HIGH")},
+		{structured: fixRequiredPacketWithTargets("PACKET")},
 		{output: zaiFiveHourLog, runErr: errors.New("exit status 1")},
 	}, nil)
 
@@ -574,8 +543,8 @@ func TestReportOnlyRateLimitResumeWithoutDriftProceedsToReview(t *testing.T) {
 		t.Fatal("rate limit errorを期待")
 	}
 	resumeRunner := &mutatingRunner{repoRoot: repoRoot, steps: []runnerStep{
-		{output: implementedPacketWithRisk("report re-emitted", "HIGH")},
-		{output: needsSolReviewPacket()},
+		{structured: implementedPacketWithRisk("report re-emitted", "HIGH")},
+		{structured: needsSolReviewPacket()},
 	}}
 	resumeRunner.mutatePhase = "worker-report-only-1"
 	out := &bytes.Buffer{}
@@ -612,11 +581,11 @@ func TestReportOnlyRateLimitResumeWithoutDriftProceedsToReview(t *testing.T) {
 func TestReportOnlyTransientRecoveryStillEnforcesInvariant(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	w, r, out := newReportOnlyWorkflow(t, repoRoot, []runnerStep{
-		{output: implementedPacketWithRisk("high risk work", "HIGH")},
-		{output: fixRequiredPacketWithTargets("PACKET")},
+		{structured: implementedPacketWithRisk("high risk work", "HIGH")},
+		{structured: fixRequiredPacketWithTargets("PACKET")},
 		{output: "API Error: 503 Service Unavailable", runErr: errors.New("exit status 1")},
-		{output: implementedPacketWithRisk("report re-emitted", "HIGH")},
-		{output: needsSolReviewPacket()},
+		{structured: implementedPacketWithRisk("report re-emitted", "HIGH")},
+		{structured: needsSolReviewPacket()},
 	}, func(root string) error {
 		return os.WriteFile(filepath.Join(root, "tracked.txt"), []byte("mutated\n"), 0o644)
 	})
@@ -672,8 +641,8 @@ func TestReportOnlyProviderUnavailableResumeVerifiesAgainstStartSnapshot(t *test
 		t.Fatal(err)
 	}
 	r := &mutatingRunner{repoRoot: repoRoot, steps: []runnerStep{
-		{output: implementedPacketWithRisk("report re-emitted", "HIGH")},
-		{output: needsSolReviewPacket()},
+		{structured: implementedPacketWithRisk("report re-emitted", "HIGH")},
+		{structured: needsSolReviewPacket()},
 	}}
 	out := &bytes.Buffer{}
 	w := newMutationWorkflowShell(t, st)
@@ -734,8 +703,8 @@ func TestReportOnlyResumeWithoutStartSnapshotFailsClosedBeforeCalls(t *testing.T
 		t.Fatal(err)
 	}
 	r := &mutatingRunner{repoRoot: repoRoot, steps: []runnerStep{
-		{output: implementedPacketWithRisk("report re-emitted", "HIGH")},
-		{output: needsSolReviewPacket()},
+		{structured: implementedPacketWithRisk("report re-emitted", "HIGH")},
+		{structured: needsSolReviewPacket()},
 	}}
 	out := &bytes.Buffer{}
 	w := newMutationWorkflowShell(t, st)
@@ -926,8 +895,8 @@ func TestAutoFixResumeWithoutReportOnlyPhaseKeepsLegacyFlow(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := &mutatingRunner{repoRoot: repoRoot, steps: []runnerStep{
-		{output: implementedPacketWithRisk("fixed implementation", "LOW")},
-		{output: needsSolReviewPacket()},
+		{structured: implementedPacketWithRisk("fixed implementation", "LOW")},
+		{structured: needsSolReviewPacket()},
 	}}
 	out := &bytes.Buffer{}
 	w := newMutationWorkflowShell(t, st)

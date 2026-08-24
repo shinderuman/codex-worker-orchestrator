@@ -7,7 +7,6 @@ package autoresume
 import (
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -206,23 +205,4 @@ func validateRrule(rrule string, expectedDTStart string) string {
 		return fmt.Sprintf("RRULE line: got %q want %q", lines[1], "RRULE:FREQ=DAILY;COUNT=1")
 	}
 	return ""
-}
-
-func WriteResult(w io.Writer, r Result) {
-	switch r.Outcome {
-	case Pass:
-		fmt.Fprintln(w, "VERIFICATION: PASS")
-		fmt.Fprintf(w, "AUTOMATION_KEY: %s\n", r.AutomationKey)
-		fmt.Fprintf(w, "TARGET_THREAD: %s\n", r.TargetThread)
-		fmt.Fprintf(w, "EXPECTED_AT_UTC: %s\n", r.ExpectedUTC)
-		fmt.Fprintf(w, "TOML_DTSTART: %s\n", r.TOMLDTStart)
-		fmt.Fprintf(w, "DB_NEXT_RUN_AT_UTC: %s\n", r.DBNextRunUTC)
-		fmt.Fprintln(w, "STATUS: ACTIVE")
-	case Fail:
-		fmt.Fprintln(w, "VERIFICATION: FAIL")
-		fmt.Fprintf(w, "REASON: %s\n", r.Reason)
-	case Unavailable:
-		fmt.Fprintln(w, "VERIFICATION: UNAVAILABLE")
-		fmt.Fprintf(w, "REASON: %s\n", r.Reason)
-	}
 }

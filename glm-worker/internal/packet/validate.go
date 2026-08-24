@@ -159,13 +159,13 @@ func validateFields(result Result, fields []contractField) error {
 	for _, field := range fields {
 		value := field.value(result)
 		if strings.TrimSpace(value) == "" {
-			return &constraintError{reason: fmt.Sprintf("結果に必須field %sがありません", field.display)}
+			return &constraintError{reason: fmt.Sprintf("結果に必須field %sがありません", field.machine)}
 		}
 		if strings.ContainsAny(value, "\n\r") {
-			return &constraintError{reason: fmt.Sprintf("field %sに改行を含められません: 複数事項は同じvalue内でセミコロン区切りにしてください", field.display)}
+			return &constraintError{reason: fmt.Sprintf("field %sに改行を含められません: 複数事項は同じvalue内でセミコロン区切りにしてください", field.machine)}
 		}
 		if len(value) > MaxFieldBytes {
-			return &constraintError{reason: fmt.Sprintf("field %sは%d bytes以内にしてください", field.display, MaxFieldBytes)}
+			return &constraintError{reason: fmt.Sprintf("field %sは%d bytes以内にしてください", field.machine, MaxFieldBytes)}
 		}
 	}
 	for _, value := range append(append([]string(nil), result.Targets...), result.Artifacts...) {

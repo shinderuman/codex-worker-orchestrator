@@ -30,6 +30,33 @@ func appendConvergenceRound(t *testing.T, st *state.StateStore, record state.Rou
 	}
 }
 
+// executeConvergenceOutputはprintConvergenceの出力1行をconvergenceOutputへdecodeする。
+// JSONでない出力はmachine contract違反として失敗する。
+func executeConvergenceOutput(t *testing.T, st *state.StateStore, taskID string) convergenceOutput {
+	t.Helper()
+	var out bytes.Buffer
+	if err := printConvergence(st, taskID, &out); err != nil {
+		t.Fatal(err)
+	}
+	var output convergenceOutput
+	if err := json.Unmarshal([]byte(strings.TrimSpace(out.String())), &output); err != nil {
+		t.Fatalf("convergence出力がmachine JSONではありません: %v: %q", err, out.String())
+	}
+	return output
+}
+
+// convergenceSummaryOfはsummary.by_classから指定classの要素を返す。
+func convergenceSummaryOf(t *testing.T, output convergenceOutput, class string) convergenceClassSummary {
+	t.Helper()
+	for _, summary := range output.Summary.ByClass {
+		if summary.Class == class {
+			return summary
+		}
+	}
+	t.Fatalf("summary.by_classに%qがありません: %#v", class, output.Summary.ByClass)
+	return convergenceClassSummary{}
+}
+
 // TestConvergenceRendersRoundsCostsAndSummaryはround log・telemetry・event logだけ
 // からround単位の分類・reviewer/worker cost・summaryを表示することを検証する。
 func TestConvergenceRendersRoundsCostsAndSummary(t *testing.T) {
@@ -80,31 +107,55 @@ func TestConvergenceRendersRoundsCostsAndSummary(t *testing.T) {
 		}},
 	)
 
-	var out bytes.Buffer
-	if err := printConvergence(st, "", &out); err != nil {
-		t.Fatal(err)
+	output := executeConvergenceOutput(t, st, "")
+	if output.TaskID != taskID {
+		t.Fatalf("task_id = %q", output.TaskID)
 	}
-	body := out.String()
-	for _, want := range []string{
-		"TASK_ID: " + taskID,
-		"ROUNDS_LOG: " + st.RoundLogPath(taskID),
-		"TELEMETRY: ok",
-		"EVENT_LOG: ok",
-		"BASELINE: captured=2026-08-20T09:00:00Z paths=0 snapshot=ok",
-		"ROUNDS: 1",
-		"ROUND #1 seq=2 review=1 autofixes=0 worker=worker-new",
-		"ROUND #1 DELTA: class=verification-only changed=0 nonsemantic=0 doc=0",
-		"ROUND #1 SNAPSHOT: head=head1 index=index1 worktree=worktree",
-		"ROUND #1 REVIEW: calls=1 outcome=PASS risk=LOW reported=LOW reemit=no unresolved=no snapshot=matched",
-		"ROUND #1 REVIEWER_COST: calls=1 in=250 out=10 turns=2 dur=5000ms",
-		"ROUND #1 WORKER_COST: calls=1 in=100 out=40 turns=3 dur=5000ms",
-		"SUMMARY delta=verification-only rounds=1 reviewer_calls=1 reviewer_in=250 reviewer_out=10 reviewer_dur_ms=5000",
-		"UNRESOLVED_ISSUE_ROUNDS: 0",
-		"HIGH_ROUNDS: 0",
-	} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("convergence表示に%qがありません:\n%s", want, body)
-		}
+	if output.RoundsLog.Status != "ok" || output.RoundsLog.Path == nil || *output.RoundsLog.Path != st.RoundLogPath(taskID) {
+		t.Fatalf("rounds_log = %#v", output.RoundsLog)
+	}
+	if output.Telemetry != "ok" || output.EventLog != "ok" {
+		t.Fatalf("telemetry/event_log = %q/%q", output.Telemetry, output.EventLog)
+	}
+	if output.Baseline == nil || output.Baseline.CapturedAt == nil || !output.Baseline.CapturedAt.Equal(base) ||
+		output.Baseline.Paths != 0 || !output.Baseline.SnapshotKnown || output.Baseline.CaptureError != "" {
+		t.Fatalf("baseline = %#v", output.Baseline)
+	}
+	if output.Baseline.Snapshot.Head != "head1" || output.Baseline.Snapshot.IndexDigest != "index1" || output.Baseline.Snapshot.WorktreeDigest != "worktree1" {
+		t.Fatalf("baseline snapshot = %#v", output.Baseline.Snapshot)
+	}
+	if len(output.Rounds) != 1 {
+		t.Fatalf("rounds = %#v", output.Rounds)
+	}
+	round := output.Rounds[0]
+	if round.Number != 1 || round.Seq != 2 || round.ReviewNumber != 1 || round.AutoFixes != 0 || round.WorkerPhase != "worker-new" {
+		t.Fatalf("round #1 = %#v", round)
+	}
+	if round.Delta.Class != "verification-only" || round.Delta.ChangedPaths != 0 || round.Delta.NonSemanticPaths != 0 || round.Delta.DocPaths != 0 {
+		t.Fatalf("round #1 delta = %#v", round.Delta)
+	}
+	if round.Snapshot.Head != "head1" || round.Snapshot.IndexDigest != "index1" || round.Snapshot.WorktreeDigest != "worktree1" {
+		t.Fatalf("round #1 snapshot = %#v", round.Snapshot)
+	}
+	if round.Review.Calls != 1 || round.Review.Outcome == nil || *round.Review.Outcome != "PASS" ||
+		round.Review.Risk == nil || *round.Review.Risk != "LOW" || round.Review.ReportedRisk == nil || *round.Review.ReportedRisk != "LOW" ||
+		round.Review.RiskFloorReemit || round.Review.Unresolved || round.Review.Snapshot != "matched" {
+		t.Fatalf("round #1 review = %#v", round.Review)
+	}
+	if round.ReviewerCost == nil || round.ReviewerCost.Calls != 1 || round.ReviewerCost.InputTokens != 250 || round.ReviewerCost.OutputTokens != 10 ||
+		round.ReviewerCost.Turns != 2 || round.ReviewerCost.DurationMS != 5000 {
+		t.Fatalf("round #1 reviewer_cost = %#v", round.ReviewerCost)
+	}
+	if round.WorkerCost == nil || round.WorkerCost.Calls != 1 || round.WorkerCost.InputTokens != 100 || round.WorkerCost.OutputTokens != 40 ||
+		round.WorkerCost.Turns != 3 || round.WorkerCost.DurationMS != 5000 {
+		t.Fatalf("round #1 worker_cost = %#v", round.WorkerCost)
+	}
+	summary := convergenceSummaryOf(t, output, "verification-only")
+	if summary.Rounds != 1 || summary.ReviewerCalls != 1 || summary.ReviewerInputTokens != 250 || summary.ReviewerOutputTokens != 10 || summary.ReviewerDurationMS != 5000 {
+		t.Fatalf("summary = %#v", summary)
+	}
+	if output.Summary.UnresolvedIssueRounds != 0 || output.Summary.HighRounds != 0 {
+		t.Fatalf("summary counters = %#v", output.Summary)
 	}
 }
 
@@ -143,21 +194,22 @@ func TestConvergenceRendersDocChangeRound(t *testing.T) {
 		EffectiveRisk: "LOW", ReviewerReportedRisk: "LOW",
 	})
 
-	var out bytes.Buffer
-	if err := printConvergence(st, "", &out); err != nil {
-		t.Fatal(err)
+	output := executeConvergenceOutput(t, st, "")
+	if len(output.Rounds) != 1 {
+		t.Fatalf("rounds = %#v", output.Rounds)
 	}
-	body := out.String()
-	for _, want := range []string{
-		"ROUND #1 DELTA: class=doc-change changed=1 nonsemantic=0 doc=1",
-		"SUMMARY delta=doc-change rounds=1 reviewer_calls=1 reviewer_in=200 reviewer_out=10 reviewer_dur_ms=5000",
-	} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("convergence表示に%qがありません:\n%s", want, body)
+	if output.Rounds[0].Delta.Class != "doc-change" || output.Rounds[0].Delta.ChangedPaths != 1 ||
+		output.Rounds[0].Delta.NonSemanticPaths != 0 || output.Rounds[0].Delta.DocPaths != 1 {
+		t.Fatalf("round #1 delta = %#v", output.Rounds[0].Delta)
+	}
+	summary := convergenceSummaryOf(t, output, "doc-change")
+	if summary.Rounds != 1 || summary.ReviewerCalls != 1 || summary.ReviewerInputTokens != 200 || summary.ReviewerOutputTokens != 10 || summary.ReviewerDurationMS != 5000 {
+		t.Fatalf("summary = %#v", summary)
+	}
+	for _, classSummary := range output.Summary.ByClass {
+		if classSummary.Class == "comment-format-only" {
+			t.Fatalf("doc変更roundがcomment/format-onlyへ集計されています: %#v", classSummary)
 		}
-	}
-	if strings.Contains(body, "comment-format-only") {
-		t.Fatalf("doc変更roundがcomment/format-onlyへ表示されています:\n%s", body)
 	}
 }
 
@@ -188,16 +240,14 @@ func TestConvergenceMutatingToolUseStaysSameSnapshot(t *testing.T) {
 		}},
 	)
 
-	var out bytes.Buffer
-	if err := printConvergence(st, "", &out); err != nil {
-		t.Fatal(err)
+	output := executeConvergenceOutput(t, st, "")
+	if len(output.Rounds) != 1 || output.Rounds[0].Delta.Class != "same-snapshot" {
+		t.Fatalf("rounds = %#v", output.Rounds)
 	}
-	body := out.String()
-	if !strings.Contains(body, "DELTA: class=same-snapshot") {
-		t.Fatalf("file変更tool観測roundがverification-onlyへ細分化されています:\n%s", body)
-	}
-	if strings.Contains(body, "class=verification-only") {
-		t.Fatalf("verification-only表示が残っています:\n%s", body)
+	for _, classSummary := range output.Summary.ByClass {
+		if classSummary.Class == "verification-only" {
+			t.Fatalf("file変更tool観測roundがverification-onlyへ細分化されています: %#v", classSummary)
+		}
 	}
 }
 
@@ -252,22 +302,26 @@ func TestConvergenceGapAndMismatchFallToUnknown(t *testing.T) {
 		PacketStatus: "PASS", WallDurationMS: 1000,
 	})
 
-	var out bytes.Buffer
-	if err := printConvergence(st, "", &out); err != nil {
-		t.Fatal(err)
+	output := executeConvergenceOutput(t, st, "")
+	if len(output.Rounds) != 2 {
+		t.Fatalf("rounds = %#v", output.Rounds)
 	}
-	body := out.String()
-	if !strings.Contains(body, "ROUND #1 DELTA: class=same-snapshot changed=0 nonsemantic=0 doc=0 mismatched_reviewer=yes") {
-		t.Fatalf("round 1のmismatch表示がありません:\n%s", body)
+	first := output.Rounds[0]
+	if first.Delta.Class != "same-snapshot" || first.Delta.ChangedPaths != 0 || first.Delta.NonSemanticPaths != 0 || first.Delta.DocPaths != 0 || !first.Delta.MismatchedReviewer {
+		t.Fatalf("round 1 delta = %#v", first.Delta)
 	}
-	if !strings.Contains(body, "ROUND #2 seq=5") || !strings.Contains(body, "ROUND #2 DELTA: class=unknown") || !strings.Contains(body, "gap=yes") {
-		t.Fatalf("不連続roundがunknown/gap表示になっていません:\n%s", body)
+	second := output.Rounds[1]
+	if second.Number != 2 || second.Seq != 5 || second.Delta.Class != "unknown" || !second.Delta.Gap {
+		t.Fatalf("round 2 = %#v", second)
 	}
-	if strings.Contains(body, "class=comment-format-only") {
-		t.Fatalf("欠落疑いroundの分類がunknownへ倒されていません:\n%s", body)
+	for _, classSummary := range output.Summary.ByClass {
+		if classSummary.Class == "comment-format-only" {
+			t.Fatalf("欠落疑いroundの分類がunknownへ倒されていません: %#v", classSummary)
+		}
 	}
-	if !strings.Contains(body, "SUMMARY delta=unknown rounds=1") {
-		t.Fatalf("unknown summaryがありません:\n%s", body)
+	summary := convergenceSummaryOf(t, output, "unknown")
+	if summary.Rounds != 1 {
+		t.Fatalf("unknown summary = %#v", summary)
 	}
 }
 
@@ -298,21 +352,28 @@ func TestConvergenceUnresolvedAndHighCounters(t *testing.T) {
 		EffectiveRisk: "HIGH", ReviewerReportedRisk: "LOW", WallDurationMS: 1000,
 	})
 
-	var out bytes.Buffer
-	if err := printConvergence(st, "", &out); err != nil {
-		t.Fatal(err)
+	output := executeConvergenceOutput(t, st, "")
+	if len(output.Rounds) != 1 {
+		t.Fatalf("rounds = %#v", output.Rounds)
 	}
-	body := out.String()
-	for _, want := range []string{
-		"ROUND #1 DELTA: class=initial changed=0 nonsemantic=0 doc=0",
-		"ROUND #1 REVIEW: calls=1 outcome=FIX_REQUIRED risk=HIGH reported=LOW reemit=no unresolved=yes snapshot=unknown",
-		"SUMMARY delta=initial rounds=1 reviewer_calls=1",
-		"UNRESOLVED_ISSUE_ROUNDS: 1",
-		"HIGH_ROUNDS: 1",
-	} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("convergence表示に%qがありません:\n%s", want, body)
-		}
+	round := output.Rounds[0]
+	if round.Delta.Class != "initial" || round.Delta.ChangedPaths != 0 || round.Delta.NonSemanticPaths != 0 || round.Delta.DocPaths != 0 {
+		t.Fatalf("round #1 delta = %#v", round.Delta)
+	}
+	if round.Review.Calls != 1 || round.Review.Outcome == nil || *round.Review.Outcome != "FIX_REQUIRED" ||
+		round.Review.Risk == nil || *round.Review.Risk != "HIGH" || round.Review.ReportedRisk == nil || *round.Review.ReportedRisk != "LOW" ||
+		round.Review.RiskFloorReemit || !round.Review.Unresolved || round.Review.Snapshot != "unknown" {
+		t.Fatalf("round #1 review = %#v", round.Review)
+	}
+	summary := convergenceSummaryOf(t, output, "initial")
+	if summary.Rounds != 1 || summary.ReviewerCalls != 1 {
+		t.Fatalf("summary = %#v", summary)
+	}
+	if output.Summary.UnresolvedIssueRounds != 1 {
+		t.Fatalf("unresolved_issue_rounds = %d", output.Summary.UnresolvedIssueRounds)
+	}
+	if output.Summary.HighRounds != 1 {
+		t.Fatalf("high_rounds = %d", output.Summary.HighRounds)
 	}
 }
 
@@ -348,16 +409,13 @@ func TestConvergenceSkipsCorruptRoundLines(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var out bytes.Buffer
-	if err := printConvergence(st, "", &out); err != nil {
-		t.Fatal(err)
+	output := executeConvergenceOutput(t, st, "")
+	if output.SkippedRounds != 1 {
+		t.Fatalf("skipped_rounds = %d", output.SkippedRounds)
 	}
-	body := out.String()
-	if !strings.Contains(body, "SKIPPED_ROUNDS: 1") {
-		t.Fatalf("skip件数表示がありません:\n%s", body)
-	}
-	if !strings.Contains(body, "ROUND #1 seq=2 review=1 autofixes=0 worker=worker-new") {
-		t.Fatalf("破損行以前のrecord表示がありません:\n%s", body)
+	if len(output.Rounds) != 1 || output.Rounds[0].Number != 1 || output.Rounds[0].Seq != 2 || output.Rounds[0].ReviewNumber != 1 ||
+		output.Rounds[0].AutoFixes != 0 || output.Rounds[0].WorkerPhase != "worker-new" {
+		t.Fatalf("破損行以前のrecord表示がありません: %#v", output.Rounds)
 	}
 }
 
@@ -373,16 +431,12 @@ func TestConvergenceCurrentTaskWithoutRecords(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var out bytes.Buffer
-	if err := printConvergence(st, "", &out); err != nil {
-		t.Fatal(err)
+	output := executeConvergenceOutput(t, st, "")
+	if output.RoundsLog.Status != "none" || output.RoundsLog.Path != nil {
+		t.Fatalf("rounds_log = %#v", output.RoundsLog)
 	}
-	body := out.String()
-	if !strings.Contains(body, "ROUNDS_LOG: none") {
-		t.Fatalf("無round log表示 = %q", body)
-	}
-	if strings.Contains(body, "ROUND #") {
-		t.Fatalf("round logがないのにround表示が出ています:\n%s", body)
+	if output.Rounds != nil {
+		t.Fatalf("round logがないのにround表示 = %#v", output.Rounds)
 	}
 }
 
@@ -458,8 +512,12 @@ func TestExecuteConvergenceDoesNotCreateState(t *testing.T) {
 	if err := Execute(cmd, cfg, nil, out, io.Discard); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "TASK_ID: none") || !strings.Contains(out.String(), "ROUNDS_LOG: none") {
-		t.Fatalf("convergence出力 = %q", out.String())
+	var output convergenceOutput
+	if err := json.Unmarshal([]byte(strings.TrimSpace(out.String())), &output); err != nil {
+		t.Fatalf("convergence出力がmachine JSONではありません: %v: %q", err, out.String())
+	}
+	if output.TaskID != "" || output.RoundsLog.Status != "none" {
+		t.Fatalf("convergence出力 = %#v", output)
 	}
 	entries, err := os.ReadDir(base)
 	if err != nil {

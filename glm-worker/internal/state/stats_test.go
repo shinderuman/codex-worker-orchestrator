@@ -2,6 +2,7 @@ package state
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,6 +15,41 @@ func captureStatsWarnings(t *testing.T) (*bytes.Buffer, func()) {
 	previous := statsWarnOut
 	statsWarnOut = &buf
 	return &buf, func() { statsWarnOut = previous }
+}
+
+// capturedWarningsはstatsWarnOutへ出たJSONL warning event行を型付きで読む。
+// 旧"WARNING: "text形式の行が混ざったら失敗する。
+func capturedWarnings(t *testing.T, buf *bytes.Buffer) []statsWarningEvent {
+	t.Helper()
+	var events []statsWarningEvent
+	for _, line := range strings.Split(strings.TrimRight(buf.String(), "\n"), "\n") {
+		if line == "" {
+			continue
+		}
+		var event statsWarningEvent
+		if err := json.Unmarshal([]byte(line), &event); err != nil {
+			t.Fatalf("warning行がJSON eventとして読めません: %q: %v", line, err)
+		}
+		if event.Type != "warning" {
+			t.Fatalf("warning行のtypeが違います: %q", line)
+		}
+		if event.Message == "" {
+			t.Fatalf("warning行にmessageがありません: %q", line)
+		}
+		events = append(events, event)
+	}
+	return events
+}
+
+// requireStatsWarningは指定scopeのwarning eventが最低1件出たことを検証する。
+func requireStatsWarning(t *testing.T, buf *bytes.Buffer, scope string) {
+	t.Helper()
+	for _, event := range capturedWarnings(t, buf) {
+		if event.Scope == scope {
+			return
+		}
+	}
+	t.Fatalf("scope %qのwarningが出ませんでした: %q", scope, buf.String())
 }
 
 func writeCorruptedTaskStats(t *testing.T, st *StateStore) {
@@ -44,9 +80,7 @@ func TestStartNewTaskContinuesWithCorruptedStats(t *testing.T) {
 	if st.TaskStatus() != TaskStatusActive {
 		t.Fatalf("task.status = %q", st.TaskStatus())
 	}
-	if !strings.Contains(warn.String(), "WARNING") {
-		t.Fatalf("破損mirrorの警告が出ませんでした: %q", warn.String())
-	}
+	requireStatsWarning(t, warn, "task_stats")
 }
 
 func TestSetTaskStatusContinuesWithCorruptedStats(t *testing.T) {
@@ -65,9 +99,7 @@ func TestSetTaskStatusContinuesWithCorruptedStats(t *testing.T) {
 	if st.TaskStatus() != TaskStatusComplete {
 		t.Fatalf("正規状態 task.status = %q", st.TaskStatus())
 	}
-	if !strings.Contains(warn.String(), "WARNING") {
-		t.Fatalf("破損mirrorの警告が出ませんでした: %q", warn.String())
-	}
+	requireStatsWarning(t, warn, "task_stats")
 }
 
 func TestResetContinuesWithCorruptedStats(t *testing.T) {
@@ -83,9 +115,7 @@ func TestResetContinuesWithCorruptedStats(t *testing.T) {
 	if err := st.Reset(); err != nil {
 		t.Fatalf("Resetが破損mirrorで停止しました: %v", err)
 	}
-	if !strings.Contains(warn.String(), "WARNING") {
-		t.Fatalf("破損mirrorの警告が出ませんでした: %q", warn.String())
-	}
+	requireStatsWarning(t, warn, "task_stats")
 	if st.TaskStatus() != TaskStatus("none") {
 		t.Fatalf("reset後の task.status = %q", st.TaskStatus())
 	}
@@ -103,9 +133,7 @@ func TestRecordModelCallContinuesWithCorruptedStats(t *testing.T) {
 
 	st.RecordModelCall(WorkerRole, "opus")
 
-	if !strings.Contains(warn.String(), "WARNING") {
-		t.Fatalf("破損mirrorの警告が出ませんでした: %q", warn.String())
-	}
+	requireStatsWarning(t, warn, "task_stats")
 	if st.TaskStatus() != TaskStatusActive {
 		t.Fatalf("正規状態 task.status = %q", st.TaskStatus())
 	}
@@ -139,9 +167,7 @@ func TestStartNewTaskContinuesWhenArchiveWriteFails(t *testing.T) {
 	if st.TaskStatus() != TaskStatusActive {
 		t.Fatalf("task.status = %q", st.TaskStatus())
 	}
-	if !strings.Contains(warn.String(), "WARNING") {
-		t.Fatalf("archive書き込み失敗の警告が出ませんでした: %q", warn.String())
-	}
+	requireStatsWarning(t, warn, "task_stats")
 }
 
 func TestUpdateTaskStatsToleratesWriteFailure(t *testing.T) {
@@ -159,9 +185,7 @@ func TestUpdateTaskStatsToleratesWriteFailure(t *testing.T) {
 
 	st.RecordModelCall(WorkerRole, "opus")
 
-	if !strings.Contains(warn.String(), "WARNING") {
-		t.Fatalf("書き込み失敗の警告が出ませんでした: %q", warn.String())
-	}
+	requireStatsWarning(t, warn, "task_stats")
 	if st.TaskStatus() != TaskStatusActive {
 		t.Fatalf("正規状態 task.status = %q", st.TaskStatus())
 	}

@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/autoresume"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
@@ -20,8 +21,11 @@ import (
 )
 
 type fakeStep struct {
-	output string
-	runErr error
+	// structuredはmodel structured_output JSON本文。packet stepはここへmachine JSONを
+	// 指定し、outputはprovider障害signal等の生text(出力file本文)だけに使う。
+	structured string
+	output     string
+	runErr     error
 }
 
 type fakeRunner struct {
@@ -50,30 +54,8 @@ func (r *fakeRunner) Run(
 			return runner.RunResult{}, err
 		}
 	}
-	structured := structuredFromAppOutput(step.output)
+	structured := json.RawMessage(step.structured)
 	return runner.RunResult{SessionID: "test-session", StructuredOutput: structured, Response: string(structured)}, step.runErr
-}
-
-// structuredFromAppOutputはfake stepの表示行textをtyped結果JSONへ変換する。
-// workflow testのstructuredFromScriptedOutputと同じ変換規則で、変換できない原文は
-// そのまま返しschema-mismatch経路へ流す。
-func structuredFromAppOutput(output string) json.RawMessage {
-	if output == "" {
-		return nil
-	}
-	var body []string
-	for _, line := range strings.Split(strings.TrimRight(output, "\n"), "\n") {
-		if strings.TrimSpace(line) == "PACKET_BEGIN" || strings.TrimSpace(line) == "PACKET_END" {
-			continue
-		}
-		body = append(body, line)
-	}
-	if value, err := packet.FromDisplayLines(body); err == nil {
-		if data, err := json.Marshal(value); err == nil {
-			return data
-		}
-	}
-	return json.RawMessage(output)
 }
 
 func (r *fakeRunner) Probe(model string) (runner.ProbeResult, error) {
@@ -93,12 +75,38 @@ func (r *fakeRunner) factory() RunnerFactory {
 	return func(_ config.AppConfig, _ *state.StateStore) workflow.ModelRunner { return r }
 }
 
+// appPacketBodyはtyped結果からmachine JSON 1行を組み立てるtest helper。
+func appPacketBody(result packet.Result) string {
+	data, err := json.Marshal(result)
+	if err != nil {
+		panic(err)
+	}
+	return string(data)
+}
+
 func implementedPacketApp(summary string) string {
-	return "PACKET_BEGIN\nSTATUS: IMPLEMENTED\nRISK: LOW\nSUMMARY: " + summary + "\nREQUIREMENT_COVERAGE: covered\nTESTS: pass\nUNVERIFIED: none\nARTIFACTS: none\nPACKET_END\n"
+	return appPacketBody(packet.Result{
+		Status:              packet.StatusImplemented,
+		Risk:                packet.RiskLow,
+		Summary:             summary,
+		RequirementCoverage: "covered",
+		Tests:               "pass",
+		Unverified:          "none",
+	})
 }
 
 func passPacketApp() string {
-	return "PACKET_BEGIN\nSTATUS: PASS\nRISK: LOW\nSUMMARY: pass\nREQUIREMENT_COVERAGE: covered\nINVARIANTS: preserved\nTEST_EVIDENCE: ev\nISSUES: none\nRESIDUAL_RISK: none\nTARGETS: final diff\nARTIFACTS: none\nPACKET_END\n"
+	return appPacketBody(packet.Result{
+		Status:              packet.StatusPass,
+		Risk:                packet.RiskLow,
+		Summary:             "pass",
+		RequirementCoverage: "covered",
+		Invariants:          "preserved",
+		TestEvidence:        "ev",
+		Issues:              "none",
+		ResidualRisk:        "none",
+		Targets:             []string{"final diff"},
+	})
 }
 
 func newAppConfig(t *testing.T) config.AppConfig {
@@ -133,14 +141,12 @@ func TestExecuteStatusReportsEmptyState(t *testing.T) {
 	if err := Execute(Command{Mode: ModeStatus}, cfg, nil, &out, io.Discard); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "TASK_ID: none") {
-		t.Fatalf("空状態のstatus出力がありません: %q", out.String())
+	output := executeStatusOutput(t, cfg)
+	if output.TaskID != nil || output.ArtifactDir != nil {
+		t.Fatalf("空状態のstatus出力 = %#v: %q", output, out.String())
 	}
-	if !strings.Contains(out.String(), "ARTIFACT_DIR: none") {
-		t.Fatalf("空状態のartifact出力がありません: %q", out.String())
-	}
-	if !strings.Contains(out.String(), "PENDING_DECISION: no") {
-		t.Fatalf("空状態のpending decision出力がありません: %q", out.String())
+	if output.PendingDecision {
+		t.Fatalf("空状態のpending_decision = true: %q", out.String())
 	}
 }
 
@@ -151,17 +157,21 @@ func TestExecuteStatsReportsEmptyState(t *testing.T) {
 	if err := Execute(Command{Mode: ModeStats}, cfg, nil, &out, io.Discard); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "TASKS: 0") {
-		t.Fatalf("空状態のstats出力がありません: %q", out.String())
+	var output statsOutput
+	if err := json.Unmarshal([]byte(strings.TrimSpace(out.String())), &output); err != nil {
+		t.Fatalf("stats出力がmachine JSONではありません: %v: %q", err, out.String())
 	}
-	if !strings.Contains(out.String(), "MODEL_CALLS_BY_ALIAS: none") || !strings.Contains(out.String(), "RATE_LIMITS_BY_ALIAS: none") {
-		t.Fatalf("空状態のmodel別stats出力がありません: %q", out.String())
+	if output.Tasks != 0 || output.ModelCalls != 0 {
+		t.Fatalf("空状態のstats出力 = %#v: %q", output, out.String())
 	}
-	if !strings.Contains(out.String(), "TELEMETRY_DIR:") {
+	if len(output.ModelCallsByAlias) != 0 || len(output.RateLimitsByAlias) != 0 {
+		t.Fatalf("空状態のmodel別stats出力 = %#v: %q", output, out.String())
+	}
+	if output.TelemetryDir == "" {
 		t.Fatalf("telemetry保存先がありません: %q", out.String())
 	}
-	if !strings.Contains(out.String(), "CURRENT_ARTIFACT_DIR: none") {
-		t.Fatalf("artifact保存先がありません: %q", out.String())
+	if output.CurrentTask.ID != nil || output.CurrentTask.ArtifactDir != nil {
+		t.Fatalf("空状態のcurrent_task = %#v: %q", output.CurrentTask, out.String())
 	}
 }
 
@@ -195,31 +205,32 @@ func TestPrintStatsAggregatesAndSortsModelAliases(t *testing.T) {
 		TopLevelTurns: 2,
 	})
 
-	var out bytes.Buffer
-	if err := printStats(st, &out); err != nil {
-		t.Fatal(err)
+	output := executeStatsOutput(t, st)
+	if len(output.ModelCallsByAlias) != 3 || output.ModelCallsByAlias["haiku"] != 1 || output.ModelCallsByAlias["opus"] != 1 || output.ModelCallsByAlias["sonnet"] != 1 {
+		t.Fatalf("model別stats = %#v", output.ModelCallsByAlias)
 	}
-	if !strings.Contains(out.String(), "MODEL_CALLS_BY_ALIAS: haiku=1,opus=1,sonnet=1") {
-		t.Fatalf("model別statsが安定順で集計されていません: %q", out.String())
+	if len(output.RateLimitsByAlias) != 1 || output.RateLimitsByAlias["opus"] != 1 {
+		t.Fatalf("model別rate limit = %#v", output.RateLimitsByAlias)
 	}
-	if !strings.Contains(out.String(), "RATE_LIMITS_BY_ALIAS: opus=1") {
-		t.Fatalf("model別rate limitが集計されていません: %q", out.String())
+	if len(output.ModelDurationMSByAlias) != 1 || output.ModelDurationMSByAlias["sonnet"] != 2000 {
+		t.Fatalf("model別実行時間 = %#v", output.ModelDurationMSByAlias)
 	}
-	if !strings.Contains(out.String(), "MODEL_DURATION_MS_BY_ALIAS: sonnet=2000") {
-		t.Fatalf("model別実行時間が集計されていません: %q", out.String())
+	if output.InputTokensByAlias["opus"] != 15 ||
+		output.CacheCreationInputTokensByAlias["opus"] != 20 ||
+		output.CacheReadInputTokensByAlias["opus"] != 37 ||
+		output.TotalPromptTokensByAlias["opus"] != 72 ||
+		output.OutputTokensByAlias["opus"] != 48 ||
+		output.TopLevelTurnsByAlias["opus"] != 2 {
+		t.Fatalf("token stats = %#v", output)
 	}
-	for _, value := range []string{
-		"INPUT_TOKENS_BY_ALIAS: opus=15",
-		"CACHE_CREATION_INPUT_TOKENS_BY_ALIAS: opus=20",
-		"CACHE_READ_INPUT_TOKENS_BY_ALIAS: opus=37",
-		"TOTAL_PROMPT_TOKENS_BY_ALIAS: opus=72",
-		"OUTPUT_TOKENS_BY_ALIAS: opus=48",
-		"TOP_LEVEL_TURNS_BY_ALIAS: opus=2",
-		"CALL_TREES_BY_RESOLVED_MODEL: glm-4.7=1,glm-5.3=1",
-	} {
-		if !strings.Contains(out.String(), value) {
-			t.Fatalf("token statsに%qがありません: %q", value, out.String())
-		}
+	if len(output.CallTreesByResolvedModel) != 2 || output.CallTreesByResolvedModel["glm-4.7"] != 1 || output.CallTreesByResolvedModel["glm-5.3"] != 1 {
+		t.Fatalf("resolved model別call trees = %#v", output.CallTreesByResolvedModel)
+	}
+	if output.InputTokensByResolvedModel["glm-5.3"] != 10 || output.InputTokensByResolvedModel["glm-4.7"] != 5 ||
+		output.CacheCreationInputTokensByResolvedModel["glm-5.3"] != 20 ||
+		output.CacheReadInputTokensByResolvedModel["glm-5.3"] != 30 || output.CacheReadInputTokensByResolvedModel["glm-4.7"] != 7 ||
+		output.OutputTokensByResolvedModel["glm-5.3"] != 40 || output.OutputTokensByResolvedModel["glm-4.7"] != 8 {
+		t.Fatalf("resolved model別token stats = %#v", output)
 	}
 }
 
@@ -242,7 +253,11 @@ func TestExecuteResetClearsTask(t *testing.T) {
 	if err := Execute(Command{Mode: ModeReset}, cfg, nil, &out, io.Discard); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "STATUS: RESET") {
+	var reset map[string]any
+	if err := json.Unmarshal([]byte(strings.TrimSpace(out.String())), &reset); err != nil {
+		t.Fatalf("reset出力がmachine JSONではありません: %v: %q", err, out.String())
+	}
+	if reset["status"] != "reset" {
 		t.Fatalf("RESET出力がありません: %q", out.String())
 	}
 	if st.Exists("task.id") {
@@ -266,8 +281,8 @@ func TestExecuteResumeRejectsNonRateLimited(t *testing.T) {
 func TestExecuteNewTaskReachesPass(t *testing.T) {
 	cfg := newAppConfig(t)
 	r := &fakeRunner{steps: []fakeStep{
-		{output: implementedPacketApp("done")},
-		{output: passPacketApp()},
+		{structured: implementedPacketApp("done")},
+		{structured: passPacketApp()},
 	}}
 
 	if err := Execute(Command{Mode: ModeNewTask, Payload: "request"}, cfg, r.factory(), io.Discard, io.Discard); err != nil {
@@ -287,8 +302,8 @@ func TestExecuteAcquiresAndReleasesLock(t *testing.T) {
 	cfg := newAppConfig(t)
 
 	first := &fakeRunner{steps: []fakeStep{
-		{output: implementedPacketApp("done")},
-		{output: passPacketApp()},
+		{structured: implementedPacketApp("done")},
+		{structured: passPacketApp()},
 	}}
 	if err := Execute(Command{Mode: ModeNewTask, Payload: "request"}, cfg, first.factory(), io.Discard, io.Discard); err != nil {
 		t.Fatal(err)
@@ -303,8 +318,8 @@ func TestExecuteAcquiresAndReleasesLock(t *testing.T) {
 	}
 
 	second := &fakeRunner{steps: []fakeStep{
-		{output: implementedPacketApp("done")},
-		{output: passPacketApp()},
+		{structured: implementedPacketApp("done")},
+		{structured: passPacketApp()},
 	}}
 	if err := Execute(Command{Mode: ModeNewTask, Payload: "request2"}, cfg, second.factory(), io.Discard, io.Discard); err != nil {
 		t.Fatalf("前回実行のロック解放後も2回目の実行が失敗しました: %v", err)
@@ -316,16 +331,20 @@ func TestExecutePropagatesWorkerFailure(t *testing.T) {
 	r := &fakeRunner{steps: []fakeStep{{runErr: errors.New("boom")}}}
 
 	err := Execute(Command{Mode: ModeNewTask, Payload: "request"}, cfg, r.factory(), io.Discard, io.Discard)
-	if err == nil || !strings.Contains(err.Error(), "STATUS: WORKER_ERROR") {
-		t.Fatalf("worker失敗を伝播する必要があります: %v", err)
+	var workerErr *workflow.WorkerError
+	if err == nil || !errors.As(err, &workerErr) {
+		t.Fatalf("worker失敗をtyped errorで伝播する必要があります: %v", err)
+	}
+	if workerErr.Message != "boom" {
+		t.Fatalf("worker失敗のmessage = %q", workerErr.Message)
 	}
 }
 
 func TestRunUsesInjectedDependencies(t *testing.T) {
 	cfg := newAppConfig(t)
 	r := &fakeRunner{steps: []fakeStep{
-		{output: implementedPacketApp("done")},
-		{output: passPacketApp()},
+		{structured: implementedPacketApp("done")},
+		{structured: passPacketApp()},
 	}}
 	var out bytes.Buffer
 
@@ -376,8 +395,28 @@ func TestExecuteVerifyAutoResumeFailsWhenTOMLMissing(t *testing.T) {
 	if err == nil {
 		t.Fatal("missing TOML should return error")
 	}
-	if !strings.Contains(out.String(), "VERIFICATION: FAIL") {
-		t.Fatalf("output = %q", out.String())
+	var verification *VerificationError
+	if !errors.As(err, &verification) || verification.Outcome != autoresume.Fail {
+		t.Fatalf("verification fail typed errorを期待: %v", err)
+	}
+	if out.String() != "" {
+		t.Fatalf("失敗時のstdoutは空のまま: %q", out.String())
+	}
+	var errOut bytes.Buffer
+	if err := WriteProcessError(&errOut, err); err != nil {
+		t.Fatal(err)
+	}
+	var envelope struct {
+		Error struct {
+			Kind    string `json:"kind"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(errOut.Bytes(), &envelope); err != nil {
+		t.Fatalf("process errorがJSON 1行として読めません: %v: %q", err, errOut.String())
+	}
+	if envelope.Error.Kind != "verification_failed" {
+		t.Fatalf("process error kind = %q: %s", envelope.Error.Kind, errOut.String())
 	}
 }
 
@@ -437,7 +476,16 @@ created_at = 1
 	if err != nil {
 		t.Fatalf("expected pass, got error: %v output=%s", err, out.String())
 	}
-	if !strings.Contains(out.String(), "VERIFICATION: PASS") {
-		t.Fatalf("output = %q", out.String())
+	var output verifyAutoResumeOutput
+	if err := json.Unmarshal(out.Bytes(), &output); err != nil {
+		t.Fatalf("成功出力がmachine JSON 1行として読めません: %v: %q", err, out.String())
+	}
+	if output.AutomationKey != key || output.TargetThread != thread ||
+		output.ExpectedAtUTC != "2026-08-12T11:01:20Z" || output.TOMLDTStart != "20260812T110120" ||
+		output.DBNextRunAtUTC != "2026-08-12T11:01:20Z" {
+		t.Fatalf("verify output = %+v", output)
+	}
+	if strings.Count(out.String(), "\n") != 1 {
+		t.Fatalf("出力はJSON 1行だけ: %q", out.String())
 	}
 }

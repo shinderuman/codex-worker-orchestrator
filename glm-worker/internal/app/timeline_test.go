@@ -18,9 +18,48 @@ func timelineBaseTime() time.Time {
 	return time.Date(2026, 8, 16, 12, 0, 0, 0, time.UTC)
 }
 
+// executeTimelineOutputはprintTimelineの出力1行をtimelineOutputへdecodeする。
+// JSONでない出力はmachine contract違反として失敗する。
+func executeTimelineOutput(t *testing.T, st *state.StateStore, taskID string) timelineOutput {
+	t.Helper()
+	var out bytes.Buffer
+	if err := printTimeline(st, taskID, &out); err != nil {
+		t.Fatal(err)
+	}
+	var output timelineOutput
+	if err := json.Unmarshal([]byte(strings.TrimSpace(out.String())), &output); err != nil {
+		t.Fatalf("timeline出力がmachine JSONではありません: %v: %q", err, out.String())
+	}
+	return output
+}
+
+// timelineToolOfはtool集計一覧から指定nameの要素を返す。
+func timelineToolOf(t *testing.T, tools []timelineTool, name string) timelineTool {
+	t.Helper()
+	for _, tool := range tools {
+		if tool.Name == name {
+			return tool
+		}
+	}
+	t.Fatalf("tool集計に%qがありません: %#v", name, tools)
+	return timelineTool{}
+}
+
+// timelineAgingOfはsession aging一覧から指定sessionの要素を返す。
+func timelineAgingOf(t *testing.T, agings []state.SessionAging, sessionID string) state.SessionAging {
+	t.Helper()
+	for _, aging := range agings {
+		if aging.SessionID == sessionID {
+			return aging
+		}
+	}
+	t.Fatalf("session_agingに%qがありません: %#v", sessionID, agings)
+	return state.SessionAging{}
+}
+
 // TestTimelineRendersCallsToolsGraphAndAgingは保存済みevent logとtelemetryだけから
 // call単位のrole/phase/session番号・観測窓・結果観測・tool種別別測定済みduration・
-// 相対graph・session agingを表示することを検証する。
+// session agingを表示することを検証する。
 func TestTimelineRendersCallsToolsGraphAndAging(t *testing.T) {
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
@@ -60,34 +99,93 @@ func TestTimelineRendersCallsToolsGraphAndAging(t *testing.T) {
 		TreeUsage: state.TokenUsage{InputTokens: 50, OutputTokens: 5}, WallDurationMS: 3000,
 	})
 
-	var out bytes.Buffer
-	if err := printTimeline(st, "", &out); err != nil {
-		t.Fatal(err)
+	output := executeTimelineOutput(t, st, "")
+	if output.TaskID != taskID {
+		t.Fatalf("task_id = %q", output.TaskID)
 	}
-	body := out.String()
-	for _, want := range []string{
-		"TASK_ID: " + taskID,
-		"TASK_STATUS: active",
-		"EVENT_LOG: " + st.TaskEventLogPath(taskID),
-		"CALLS: 2",
-		"CALL #1/2 role=worker phase=worker-new session=sess-a#1 model=opus(glm-5.3)",
-		"CALL #1/2 WINDOW start=2026-08-16T12:00:00Z end=2026-08-16T12:00:09Z span=9000ms events=4",
-		"CALL #1/2 RESULT status=success dur=9000ms api=8000ms turns=4 in=120 out=30 cost=0.5000",
-		"CALL #1/2 TOOLS Bash uses=2 results=2 measured=2 sum=1200ms max=700ms errors=1; Read uses=1; unknown uses=0 results=1 unmeasured=1",
-		"CALL #2/2 role=reviewer phase=reviewer-1 session=sess-b#1 resumed=true model=sonnet(glm-4.7)",
-		"CALL #2/2 WINDOW start=2026-08-16T12:05:00Z end=2026-08-16T12:05:03Z span=3000ms events=2",
-		"CALL #2/2 RESULT none",
-		"CALL #2/2 TOOLS none",
-		"TOOL_TOTALS: Bash uses=2 results=2 measured=2 sum=1200ms max=700ms errors=1; Read uses=1; unknown uses=0 results=1 unmeasured=1",
-		"GRAPH_SPAN_MAX: 9000ms",
-		"GRAPH #1 span=9000ms [" + strings.Repeat("#", 40) + "]",
-		"GRAPH #2 span=3000ms [" + strings.Repeat("#", 13) + "]",
-		"SESSION_AGING: role=worker model=opus id=sess-a calls=1 resumed=0 turns=4 in=120 out=30 lat_ms=9000",
-		"SESSION_AGING: role=reviewer model=sonnet id=sess-b calls=1 resumed=0 turns=0 in=50 out=5 lat_ms=3000",
-	} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("timeline表示に%qがありません:\n%s", want, body)
-		}
+	if output.TaskStatus != string(state.TaskStatusActive) {
+		t.Fatalf("task_status = %q", output.TaskStatus)
+	}
+	if output.EventLog.Status != "ok" || output.EventLog.Path == nil || *output.EventLog.Path != st.TaskEventLogPath(taskID) {
+		t.Fatalf("event_log = %#v", output.EventLog)
+	}
+	if len(output.Calls) != 2 {
+		t.Fatalf("calls = %#v", output.Calls)
+	}
+
+	first := output.Calls[0]
+	if first.Index != 1 || first.Role == nil || *first.Role != "worker" || first.Phase == nil || *first.Phase != "worker-new" ||
+		first.SessionID == nil || *first.SessionID != "sess-a" || first.SessionCallIndex != 1 ||
+		first.ModelAlias == nil || *first.ModelAlias != "opus" || first.MessageModel == nil || *first.MessageModel != "glm-5.3" || first.Resumed {
+		t.Fatalf("call#1 = %#v", first)
+	}
+	if first.FirstAt == nil || !first.FirstAt.Equal(base) || first.LastAt == nil || !first.LastAt.Equal(base.Add(9*time.Second)) {
+		t.Fatalf("call#1の観測窓 = %#v", first)
+	}
+	if first.SpanMS == nil || *first.SpanMS != 9000 || first.Events != 4 {
+		t.Fatalf("call#1の窓数値 = %#v", first)
+	}
+	if !first.Result.Observed || first.Result.Subtype == nil || *first.Result.Subtype != "success" ||
+		first.Result.DurationMS == nil || *first.Result.DurationMS != 9000 || first.Result.APIDurationMS == nil || *first.Result.APIDurationMS != 8000 ||
+		first.Result.Turns != 4 || first.Result.TotalCostUSD != 0.5 {
+		t.Fatalf("call#1のresult = %#v", first.Result)
+	}
+	if first.Result.Usage == nil || first.Result.Usage.InputTokens != 100 || first.Result.Usage.CacheReadInputTokens != 20 || first.Result.Usage.OutputTokens != 30 {
+		t.Fatalf("call#1のusage = %#v", first.Result.Usage)
+	}
+	bash := timelineToolOf(t, first.Tools, "Bash")
+	if bash.Uses != 2 || bash.Results != 2 || bash.Measured != 2 || bash.MeasuredSumMS != 1200 || bash.MeasuredMaxMS != 700 || bash.Errors != 1 {
+		t.Fatalf("call#1のBash集計 = %#v", bash)
+	}
+	if read := timelineToolOf(t, first.Tools, "Read"); read.Uses != 1 || read.Results != 0 {
+		t.Fatalf("call#1のRead集計 = %#v", read)
+	}
+	if unknown := timelineToolOf(t, first.Tools, "unknown"); unknown.Uses != 0 || unknown.Results != 1 || unknown.Unmeasured != 1 {
+		t.Fatalf("call#1のunknown集計 = %#v", unknown)
+	}
+
+	second := output.Calls[1]
+	if second.Index != 2 || second.Role == nil || *second.Role != "reviewer" || second.Phase == nil || *second.Phase != "reviewer-1" ||
+		second.SessionID == nil || *second.SessionID != "sess-b" || !second.Resumed ||
+		second.ModelAlias == nil || *second.ModelAlias != "sonnet" || second.MessageModel == nil || *second.MessageModel != "glm-4.7" {
+		t.Fatalf("call#2 = %#v", second)
+	}
+	if second.SpanMS == nil || *second.SpanMS != 3000 || second.Events != 2 {
+		t.Fatalf("call#2の窓数値 = %#v", second)
+	}
+	if second.Result.Observed {
+		t.Fatalf("call#2のresult = %#v", second.Result)
+	}
+	if len(second.Tools) != 0 {
+		t.Fatalf("call#2のtools = %#v", second.Tools)
+	}
+
+	bashTotal := timelineToolOf(t, output.ToolTotals, "Bash")
+	if bashTotal.Uses != 2 || bashTotal.Results != 2 || bashTotal.Measured != 2 || bashTotal.MeasuredSumMS != 1200 || bashTotal.MeasuredMaxMS != 700 || bashTotal.Errors != 1 {
+		t.Fatalf("tool_totalsのBash = %#v", bashTotal)
+	}
+	if unknownTotal := timelineToolOf(t, output.ToolTotals, "unknown"); unknownTotal.Results != 1 || unknownTotal.Unmeasured != 1 {
+		t.Fatalf("tool_totalsのunknown = %#v", unknownTotal)
+	}
+
+	workerAging := timelineAgingOf(t, output.SessionAging, "sess-a")
+	if workerAging.Role != state.WorkerRole || workerAging.Calls != 1 || workerAging.ResumedCalls != 0 ||
+		workerAging.CumulativeTurns != 4 || workerAging.CumulativeInputTokens != 120 || workerAging.CumulativeOutputTokens != 30 {
+		t.Fatalf("sess-a aging = %#v", workerAging)
+	}
+	if len(workerAging.Models) != 1 || workerAging.Models[0] != "opus" {
+		t.Fatalf("sess-a agingのmodels = %#v", workerAging.Models)
+	}
+	if len(workerAging.CallLatencyMS) != 1 || workerAging.CallLatencyMS[0] != 9000 {
+		t.Fatalf("sess-a agingのlatency = %#v", workerAging.CallLatencyMS)
+	}
+	reviewerAging := timelineAgingOf(t, output.SessionAging, "sess-b")
+	if reviewerAging.Role != state.ReviewerRole || reviewerAging.Calls != 1 || reviewerAging.ResumedCalls != 0 ||
+		reviewerAging.CumulativeTurns != 0 || reviewerAging.CumulativeInputTokens != 50 || reviewerAging.CumulativeOutputTokens != 5 {
+		t.Fatalf("sess-b aging = %#v", reviewerAging)
+	}
+	if len(reviewerAging.CallLatencyMS) != 1 || reviewerAging.CallLatencyMS[0] != 3000 {
+		t.Fatalf("sess-b agingのlatency = %#v", reviewerAging.CallLatencyMS)
 	}
 }
 
@@ -122,16 +220,16 @@ func TestTimelineSkipsCorruptLines(t *testing.T) {
 		state.TaskEventRecord{TaskID: taskID, CallID: "call-1", Role: "worker", Phase: "worker-new", Timestamp: base.Add(time.Second), Kind: "result", Subtype: "success", DurationMS: 1000},
 	)
 
-	var out bytes.Buffer
-	if err := printTimeline(st, "", &out); err != nil {
-		t.Fatal(err)
+	output := executeTimelineOutput(t, st, "")
+	if output.SkippedEvents != 1 {
+		t.Fatalf("skipped_events = %d", output.SkippedEvents)
 	}
-	body := out.String()
-	if !strings.Contains(body, "SKIPPED_EVENTS: 1") {
-		t.Fatalf("skip件数表示がありません:\n%s", body)
+	if len(output.Calls) != 1 {
+		t.Fatalf("calls = %#v", output.Calls)
 	}
-	if !strings.Contains(body, "CALL #1/1 RESULT status=success dur=1000ms") {
-		t.Fatalf("破損行以後の表示がありません:\n%s", body)
+	result := output.Calls[0].Result
+	if !result.Observed || result.Subtype == nil || *result.Subtype != "success" || result.DurationMS == nil || *result.DurationMS != 1000 {
+		t.Fatalf("破損行以後のresult = %#v", result)
 	}
 }
 
@@ -153,22 +251,19 @@ func TestTimelineCurrentTaskWithoutEvents(t *testing.T) {
 		WallDurationMS: 1000,
 	})
 
-	var out bytes.Buffer
-	if err := printTimeline(st, "", &out); err != nil {
-		t.Fatal(err)
+	output := executeTimelineOutput(t, st, "")
+	if output.TaskID != taskID {
+		t.Fatalf("task_id = %q", output.TaskID)
 	}
-	body := out.String()
-	for _, want := range []string{
-		"TASK_ID: " + taskID,
-		"EVENT_LOG: none",
-		"SESSION_AGING: role=worker model=opus id=sess-a calls=1",
-	} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("無event log表示に%qがありません:\n%s", want, body)
-		}
+	if output.EventLog.Status != "none" || output.EventLog.Path != nil {
+		t.Fatalf("event_log = %#v", output.EventLog)
 	}
-	if strings.Contains(body, "CALL #") || strings.Contains(body, "TOOL_TOTALS") {
-		t.Fatalf("event logがないのにcall表示が出ています:\n%s", body)
+	aging := timelineAgingOf(t, output.SessionAging, "sess-a")
+	if aging.Role != state.WorkerRole || aging.Calls != 1 {
+		t.Fatalf("sess-a aging = %#v", aging)
+	}
+	if output.Calls != nil || output.ToolTotals != nil {
+		t.Fatalf("event logがないのにcall表示 = %#v", output)
 	}
 }
 
@@ -199,25 +294,31 @@ func TestTimelineExplicitTask(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var out bytes.Buffer
-	if err := printTimeline(st, oldTaskID, &out); err != nil {
-		t.Fatal(err)
+	output := executeTimelineOutput(t, st, oldTaskID)
+	if output.TaskID != oldTaskID {
+		t.Fatalf("task_id = %q", output.TaskID)
 	}
-	body := out.String()
-	for _, want := range []string{
-		"TASK_ID: " + oldTaskID,
-		"TASK_STATUS: complete",
-		"CALL #1/1 role=worker phase=worker-new session=sess-old#1",
-		"CALL #1/1 RESULT status=success dur=4000ms",
-		"SESSION_AGING: role=worker model=opus id=sess-old calls=1",
-	} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("明示task表示に%qがありません:\n%s", want, body)
-		}
+	if output.TaskStatus != string(state.TaskStatusComplete) {
+		t.Fatalf("task_status = %q", output.TaskStatus)
+	}
+	if len(output.Calls) != 1 {
+		t.Fatalf("calls = %#v", output.Calls)
+	}
+	call := output.Calls[0]
+	if call.Role == nil || *call.Role != "worker" || call.Phase == nil || *call.Phase != "worker-new" ||
+		call.SessionID == nil || *call.SessionID != "sess-old" || call.SessionCallIndex != 1 {
+		t.Fatalf("call = %#v", call)
+	}
+	if !call.Result.Observed || call.Result.Subtype == nil || *call.Result.Subtype != "success" || call.Result.DurationMS == nil || *call.Result.DurationMS != 4000 {
+		t.Fatalf("result = %#v", call.Result)
+	}
+	aging := timelineAgingOf(t, output.SessionAging, "sess-old")
+	if aging.Role != state.WorkerRole || aging.Calls != 1 {
+		t.Fatalf("sess-old aging = %#v", aging)
 	}
 
-	out.Reset()
-	if err := printTimeline(st, "12345678-1234-4234-8123-123456789abc", &out); err == nil {
+	out := &bytes.Buffer{}
+	if err := printTimeline(st, "12345678-1234-4234-8123-123456789abc", out); err == nil {
 		t.Fatalf("存在しないtask IDがerrorになりません: %s", out.String())
 	}
 }
@@ -330,8 +431,12 @@ func TestExecuteTimelineDoesNotCreateState(t *testing.T) {
 	if err := Execute(cmd, cfg, nil, out, io.Discard); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "TASK_ID: none") || !strings.Contains(out.String(), "EVENT_LOG: none") {
-		t.Fatalf("timeline出力 = %q", out.String())
+	var output timelineOutput
+	if err := json.Unmarshal([]byte(strings.TrimSpace(out.String())), &output); err != nil {
+		t.Fatalf("timeline出力がmachine JSONではありません: %v: %q", err, out.String())
+	}
+	if output.TaskID != "" || output.EventLog.Status != "none" {
+		t.Fatalf("timeline出力 = %#v", output)
 	}
 	entries, err := os.ReadDir(base)
 	if err != nil {

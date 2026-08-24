@@ -59,6 +59,11 @@ func (c exactOnceCase) run(t *testing.T) {
 
 	err := c.entry(w)
 	switch {
+	case c.wantEntryErr == "*WorkerError":
+		var workerErr *WorkerError
+		if err == nil || !errors.As(err, &workerErr) {
+			t.Fatalf("entry error = %v want *WorkerError", err)
+		}
 	case c.wantEntryErr != "":
 		if err == nil || !strings.Contains(err.Error(), c.wantEntryErr) {
 			t.Fatalf("entry error = %v want %qを含む", err, c.wantEntryErr)
@@ -139,7 +144,7 @@ func TestGuardTerminalPathsRecordExecutedCallsExactlyOnce(t *testing.T) {
 					t.Fatal(err)
 				}
 			},
-			steps:             []runnerStep{{output: implementedPacket("done")}, {output: passPacket()}},
+			steps:             []runnerStep{{structured: implementedPacket("done")}, {structured: passPacket()}},
 			entry:             newTask,
 			wantRunnerCalls:   0,
 			wantTaskOutcomes:  nil,
@@ -154,7 +159,7 @@ func TestGuardTerminalPathsRecordExecutedCallsExactlyOnce(t *testing.T) {
 					t.Fatal(err)
 				}
 			},
-			steps:             []runnerStep{{output: implementedPacket("done")}, {output: passPacket()}},
+			steps:             []runnerStep{{structured: implementedPacket("done")}, {structured: passPacket()}},
 			entry:             newTask,
 			wantRunnerCalls:   0,
 			wantTaskOutcomes:  nil,
@@ -163,7 +168,7 @@ func TestGuardTerminalPathsRecordExecutedCallsExactlyOnce(t *testing.T) {
 		{
 			name:              "plan mismatch on initial call records executed call once",
 			setup:             seedPlan,
-			steps:             []runnerStep{{output: implementedPacket("done")}, {output: passPacket()}},
+			steps:             []runnerStep{{structured: implementedPacket("done")}, {structured: passPacket()}},
 			entry:             newTask,
 			mutatePhase:       "worker-new",
 			mutate:            mutatePlanFile,
@@ -174,7 +179,7 @@ func TestGuardTerminalPathsRecordExecutedCallsExactlyOnce(t *testing.T) {
 		{
 			name:              "history mismatch on initial call records executed call once",
 			setup:             seedPlanAndHistory,
-			steps:             []runnerStep{{output: implementedPacket("done")}, {output: passPacket()}},
+			steps:             []runnerStep{{structured: implementedPacket("done")}, {structured: passPacket()}},
 			entry:             newTask,
 			mutatePhase:       "worker-new",
 			mutate:            mutateHistoryFile,
@@ -185,7 +190,7 @@ func TestGuardTerminalPathsRecordExecutedCallsExactlyOnce(t *testing.T) {
 		{
 			name:              "plan after-read failure on initial call records executed call once",
 			setup:             seedPlan,
-			steps:             []runnerStep{{output: implementedPacket("done")}, {output: passPacket()}},
+			steps:             []runnerStep{{structured: implementedPacket("done")}, {structured: passPacket()}},
 			entry:             newTask,
 			mutatePhase:       "worker-new",
 			mutate:            removeAndDirGuardFile(implementationPlanFile),
@@ -196,7 +201,7 @@ func TestGuardTerminalPathsRecordExecutedCallsExactlyOnce(t *testing.T) {
 		{
 			name:              "history after-read failure on initial call records executed call once",
 			setup:             seedPlanAndHistory,
-			steps:             []runnerStep{{output: implementedPacket("done")}, {output: passPacket()}},
+			steps:             []runnerStep{{structured: implementedPacket("done")}, {structured: passPacket()}},
 			entry:             newTask,
 			mutatePhase:       "worker-new",
 			mutate:            removeAndDirGuardFile(implementationHistoryFile),
@@ -207,7 +212,7 @@ func TestGuardTerminalPathsRecordExecutedCallsExactlyOnce(t *testing.T) {
 		{
 			name:             "ordinary success records worker and reviewer once each",
 			setup:            seedPlan,
-			steps:            []runnerStep{{output: implementedPacket("done")}, {output: passPacket()}},
+			steps:            []runnerStep{{structured: implementedPacket("done")}, {structured: passPacket()}},
 			entry:            newTask,
 			wantRunnerCalls:  2,
 			wantTaskOutcomes: []string{"success", "success"},
@@ -217,7 +222,7 @@ func TestGuardTerminalPathsRecordExecutedCallsExactlyOnce(t *testing.T) {
 			setup:            seedPlan,
 			steps:            []runnerStep{{runErr: errors.New("exit status 1")}},
 			entry:            newTask,
-			wantEntryErr:     "WORKER_ERROR",
+			wantEntryErr:     "*WorkerError",
 			wantRunnerCalls:  1,
 			wantTaskOutcomes: []string{"error"},
 		},
@@ -227,7 +232,7 @@ func TestGuardTerminalPathsRecordExecutedCallsExactlyOnce(t *testing.T) {
 				seedPlan(t, repoRoot, st)
 				seedRateLimitedWorkerCheckpoint(t, st, "request")
 			},
-			steps:            []runnerStep{{output: implementedPacket("resumed")}, {output: passPacket()}},
+			steps:            []runnerStep{{structured: implementedPacket("resumed")}, {structured: passPacket()}},
 			entry:            func(w *Workflow) error { return w.ExecuteResume() },
 			wantRunnerCalls:  2,
 			wantTaskOutcomes: []string{"success", "success"},
@@ -235,7 +240,7 @@ func TestGuardTerminalPathsRecordExecutedCallsExactlyOnce(t *testing.T) {
 		{
 			name:             "provider recovery records initial transient and resumed success separately",
 			setup:            seedPlan,
-			steps:            []runnerStep{transientFirstStep, {output: implementedPacket("resumed")}, {output: passPacket()}},
+			steps:            []runnerStep{transientFirstStep, {structured: implementedPacket("resumed")}, {structured: passPacket()}},
 			entry:            newTask,
 			wantRunnerCalls:  3,
 			wantTaskOutcomes: []string{"transient_error", "success", "success"},
@@ -245,7 +250,7 @@ func TestGuardTerminalPathsRecordExecutedCallsExactlyOnce(t *testing.T) {
 		{
 			name:              "provider recovery after-read failure on resumed task records both calls",
 			setup:             seedPlan,
-			steps:             []runnerStep{transientFirstStep, {output: implementedPacket("resumed")}, {output: passPacket()}},
+			steps:             []runnerStep{transientFirstStep, {structured: implementedPacket("resumed")}, {structured: passPacket()}},
 			entry:             newTask,
 			mutatePhase:       "worker-new",
 			mutate:            removeAndDirGuardFile(implementationPlanFile),

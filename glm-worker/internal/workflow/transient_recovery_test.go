@@ -103,7 +103,7 @@ func TestRecoveryProbeSuccessThenResumeCompletes(t *testing.T) {
 	r := &scriptedRunner{
 		steps: []runnerStep{
 			{output: "API Error: 503 Service Unavailable", runErr: errors.New("exit status 1")},
-			{output: implementedPacket("recovered")},
+			{structured: implementedPacket("recovered")},
 		},
 		probeErrs: []error{errProbeTransient, nil},
 	}
@@ -139,7 +139,7 @@ func TestRecoveryFromPlainStdoutTransientSignal(t *testing.T) {
 					Detail: "http-503",
 				}},
 			},
-			{output: implementedPacket("recovered")},
+			{structured: implementedPacket("recovered")},
 		},
 		probeErrs: []error{errProbeTransient, nil},
 	}
@@ -168,7 +168,7 @@ func TestRecoveryAccountingSeparatesTaskAndProbeCalls(t *testing.T) {
 	r := &scriptedRunner{
 		steps: []runnerStep{
 			{output: "API Error: 503 Service Unavailable", runErr: errors.New("exit status 1")},
-			{output: implementedPacket("recovered")},
+			{structured: implementedPacket("recovered")},
 		},
 		probeErrs: []error{errProbeTransient, nil},
 	}
@@ -223,7 +223,7 @@ func TestRecoveryResumeTransientRetriesNextBackoff(t *testing.T) {
 		steps: []runnerStep{
 			{output: "API Error: 503 Service Unavailable", runErr: errors.New("exit status 1")},
 			{output: "API Error: 504 Gateway Timeout", runErr: errors.New("exit status 1")},
-			{output: implementedPacket("recovered")},
+			{structured: implementedPacket("recovered")},
 		},
 		probeErrs: []error{nil, nil},
 	}
@@ -344,11 +344,12 @@ func TestRecoveryResumeNonTransientFatalRecordsExecutedCall(t *testing.T) {
 	w.temp = t.TempDir()
 
 	_, err := w.runModel(workerCheckpoint())
-	if err == nil || !strings.Contains(err.Error(), "STATUS: WORKER_ERROR") {
+	var workerErr *WorkerError
+	if err == nil || !errors.As(err, &workerErr) {
 		t.Fatalf("WORKER_ERRORを期待: %v", err)
 	}
-	if !strings.Contains(err.Error(), "401 Unauthorized") {
-		t.Fatalf("fatal応答本文がerror終端に無い: %v", err)
+	if !strings.Contains(workerErr.Tail, "401 Unauthorized") {
+		t.Fatalf("fatal応答本文がerror終端に無い: %q", workerErr.Tail)
 	}
 	if len(r.prompts) != 2 || len(r.probes) != 1 {
 		t.Fatalf("runner Run呼出=%d probe=%d want 2/1", len(r.prompts), len(r.probes))
@@ -528,8 +529,8 @@ func TestResumeFromProviderUnavailableRetriesSameSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacket("done")},
-		{output: passPacket()},
+		{structured: implementedPacket("done")},
+		{structured: passPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 
@@ -577,7 +578,8 @@ func TestResumeFromProviderUnavailableRestoresStatusAfterRunnerError(t *testing.
 	w := newWorkflowT(t, st, r)
 
 	err := w.ExecuteResume()
-	if err == nil || !strings.Contains(err.Error(), "boom fatal session error") {
+	var fatalErr *WorkerError
+	if err == nil || !errors.As(err, &fatalErr) || !strings.Contains(fatalErr.Tail, "boom fatal session error") {
 		t.Fatalf("runner errorを期待: %v", err)
 	}
 	if st.TaskStatus() != state.TaskStatusProviderUnavailable {
@@ -704,7 +706,7 @@ func TestResumeProbeGateProviderStillDownZeroFullRuns(t *testing.T) {
 	st := newStateStoreT(t)
 	seedProviderUnavailableCheckpoint(t, st)
 	r := &scriptedRunner{
-		steps:     []runnerStep{{output: implementedPacket("never used")}},
+		steps:     []runnerStep{{structured: implementedPacket("never used")}},
 		probeErrs: []error{errProbeTransient, errProbeTransient, errProbeTransient, errProbeTransient},
 	}
 	w, _ := newRecoveryWorkflowT(t, st, r)
@@ -729,7 +731,7 @@ func TestResumeProbeGateFailClosedOnNonTransientProbe(t *testing.T) {
 	st := newStateStoreT(t)
 	seedProviderUnavailableCheckpoint(t, st)
 	r := &scriptedRunner{
-		steps:     []runnerStep{{output: implementedPacket("never used")}},
+		steps:     []runnerStep{{structured: implementedPacket("never used")}},
 		probeErrs: []error{errProbeNonTransient},
 	}
 	w, _ := newRecoveryWorkflowT(t, st, r)
@@ -766,7 +768,8 @@ func TestRecoveryHitsFiveHourLimitSavesRateLimited(t *testing.T) {
 	w.config.RepoShort = "testrepo1234"
 
 	_, err := w.runModel(workerCheckpoint())
-	if err == nil || !strings.Contains(err.Error(), "STATUS: RATE_LIMITED") {
+	var limitErr runner.ZaiRateLimitError
+	if err == nil || !errors.As(err, &limitErr) {
 		t.Fatalf("RATE_LIMITEDを期待: %v", err)
 	}
 	var pErr *runner.ProviderUnavailableError
@@ -832,7 +835,7 @@ func TestRecoveryProbeContractFailureThenSuccessResumes(t *testing.T) {
 	r := &scriptedRunner{
 		steps: []runnerStep{
 			{output: "API Error: 503 Service Unavailable", runErr: errors.New("exit status 1")},
-			{output: implementedPacket("recovered")},
+			{structured: implementedPacket("recovered")},
 		},
 		probeResponses: []string{""},
 	}
@@ -903,7 +906,7 @@ func TestResumeProbeGateBlankResponseNotRecovered(t *testing.T) {
 	st := newStateStoreT(t)
 	seedProviderUnavailableCheckpoint(t, st)
 	r := &scriptedRunner{
-		steps:              []runnerStep{{output: implementedPacket("never used")}},
+		steps:              []runnerStep{{structured: implementedPacket("never used")}},
 		probeBlankResponse: true,
 	}
 	w, _ := newRecoveryWorkflowT(t, st, r)
@@ -980,7 +983,8 @@ func TestResumeFromProviderUnavailableHitsFiveHourLimit(t *testing.T) {
 	w.config.RepoShort = "testrepo1234"
 
 	err := w.ExecuteResume()
-	if err == nil || !strings.Contains(err.Error(), "STATUS: RATE_LIMITED") {
+	var limitErr runner.ZaiRateLimitError
+	if err == nil || !errors.As(err, &limitErr) {
 		t.Fatalf("RATE_LIMITEDを期待: %v", err)
 	}
 	cp, cerr := st.LoadResumeCheckpoint()
@@ -1006,7 +1010,8 @@ func TestRecoveryProbeFiveHourSignatureSavesRateLimited(t *testing.T) {
 	w.config.RepoShort = "testrepo1234"
 
 	_, err := w.runModel(workerCheckpoint())
-	if err == nil || !strings.Contains(err.Error(), "STATUS: RATE_LIMITED") {
+	var limitErr runner.ZaiRateLimitError
+	if err == nil || !errors.As(err, &limitErr) {
 		t.Fatalf("RATE_LIMITEDを期待: %v", err)
 	}
 	var pErr *runner.ProviderUnavailableError
@@ -1034,7 +1039,7 @@ func TestResumeProbeGateFiveHourSignatureSavesRateLimited(t *testing.T) {
 	st := newStateStoreT(t)
 	seedProviderUnavailableCheckpoint(t, st)
 	r := &scriptedRunner{
-		steps:          []runnerStep{{output: implementedPacket("never used")}},
+		steps:          []runnerStep{{structured: implementedPacket("never used")}},
 		probeResponses: []string{zaiFiveHourLog},
 		probeIsError:   true,
 	}
@@ -1043,7 +1048,8 @@ func TestResumeProbeGateFiveHourSignatureSavesRateLimited(t *testing.T) {
 	w.config.RepoShort = "testrepo1234"
 
 	err := w.ExecuteResume()
-	if err == nil || !strings.Contains(err.Error(), "STATUS: RATE_LIMITED") {
+	var limitErr runner.ZaiRateLimitError
+	if err == nil || !errors.As(err, &limitErr) {
 		t.Fatalf("RATE_LIMITEDを期待: %v", err)
 	}
 	cp, cerr := st.LoadResumeCheckpoint()
@@ -1074,14 +1080,16 @@ func TestRecoveryProbeAuthSignalFailsClosed(t *testing.T) {
 	w.temp = t.TempDir()
 
 	_, err := w.runModel(workerCheckpoint())
-	if err == nil || !strings.Contains(err.Error(), "STATUS: WORKER_ERROR") {
+	var workerErr *WorkerError
+	if err == nil || !errors.As(err, &workerErr) {
 		t.Fatalf("WORKER_ERRORを期待: %v", err)
 	}
 	var pErr *runner.ProviderUnavailableError
+	var limitErr runner.ZaiRateLimitError
 	if errors.As(err, &pErr) {
 		t.Fatalf("auth信号はprovider-unavailableでない: %v", err)
 	}
-	if strings.Contains(err.Error(), "STATUS: RATE_LIMITED") {
+	if errors.As(err, &limitErr) {
 		t.Fatalf("auth信号がrate-limitedへ誤分類: %v", err)
 	}
 	if len(r.probes) != 1 || len(r.prompts) != 1 {
@@ -1098,7 +1106,7 @@ func TestResumeProbeGateAuthSignalFailsClosed(t *testing.T) {
 	st := newStateStoreT(t)
 	seedProviderUnavailableCheckpoint(t, st)
 	r := &scriptedRunner{
-		steps: []runnerStep{{output: implementedPacket("never used")}},
+		steps: []runnerStep{{structured: implementedPacket("never used")}},
 		probeResponses: []string{
 			"401 Unauthorized: invalid api key",
 			"API Error: 503 Service Unavailable",
@@ -1108,7 +1116,8 @@ func TestResumeProbeGateAuthSignalFailsClosed(t *testing.T) {
 	w := newWorkflowT(t, st, r)
 
 	err := w.ExecuteResume()
-	if err == nil || !strings.Contains(err.Error(), "STATUS: WORKER_ERROR") {
+	var workerErr *WorkerError
+	if err == nil || !errors.As(err, &workerErr) {
 		t.Fatalf("WORKER_ERRORを期待: %v", err)
 	}
 	var pErr *runner.ProviderUnavailableError
@@ -1169,7 +1178,7 @@ func TestRecoveryProbeMixedTransientAuthWordRetriesAsTransient(t *testing.T) {
 	r := &scriptedRunner{
 		steps: []runnerStep{
 			{output: "API Error: 503 Service Unavailable", runErr: errors.New("exit status 1")},
-			{output: implementedPacket("recovered")},
+			{structured: implementedPacket("recovered")},
 		},
 		probeResponses: []string{"API Error: 503 Service Unavailable · authentication failed"},
 	}
@@ -1242,7 +1251,7 @@ func TestResumeProbeGateBareAuthWordStaysUnavailable(t *testing.T) {
 	st := newStateStoreT(t)
 	seedProviderUnavailableCheckpoint(t, st)
 	r := &scriptedRunner{
-		steps: []runnerStep{{output: implementedPacket("never used")}},
+		steps: []runnerStep{{structured: implementedPacket("never used")}},
 		probeResponses: []string{
 			"This request is unauthorized for the current account",
 			"Access to this model is forbidden during maintenance",
@@ -1287,7 +1296,8 @@ func TestRecoveryProbeStatusAuthPhraseFailsClosed(t *testing.T) {
 	w.temp = t.TempDir()
 
 	_, err := w.runModel(workerCheckpoint())
-	if err == nil || !strings.Contains(err.Error(), "STATUS: WORKER_ERROR") {
+	var workerErr *WorkerError
+	if err == nil || !errors.As(err, &workerErr) {
 		t.Fatalf("WORKER_ERRORを期待: %v", err)
 	}
 	var pErr *runner.ProviderUnavailableError

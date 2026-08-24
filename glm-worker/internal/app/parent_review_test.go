@@ -2,10 +2,12 @@ package app
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"strings"
 	"testing"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -65,19 +67,39 @@ func TestParseCommandFixStdinOrigin(t *testing.T) {
 
 // reviewFixPacketAppはreviewerがSol確認へ昇格するpacket。
 func reviewFixPacketApp() string {
-	return "PACKET_BEGIN\nSTATUS: NEEDS_SOL_REVIEW\nRISK: HIGH\nSUMMARY: review\nREQUIREMENT_COVERAGE: covered\nINVARIANTS: preserved\nTEST_EVIDENCE: ev\nISSUES: i\nRESIDUAL_RISK: r\nTARGETS: t\nARTIFACTS: none\nSOL_QUESTION: q\nPACKET_END\n"
+	return appPacketBody(packet.Result{
+		Status:              packet.StatusNeedsSolReview,
+		Risk:                packet.RiskHigh,
+		Summary:             "review",
+		RequirementCoverage: "covered",
+		Invariants:          "preserved",
+		TestEvidence:        "ev",
+		Issues:              "i",
+		ResidualRisk:        "r",
+		Targets:             []string{"t"},
+		SolQuestion:         "q",
+	})
 }
 
 // needsSolDecisionPacketAppはworkerがSol判断を要求するpacket。
 func needsSolDecisionPacketApp() string {
-	return "PACKET_BEGIN\nSTATUS: NEEDS_SOL_DECISION\nRISK: HIGH\nDECISION: d\nEVIDENCE: e\nOPTIONS: o\nRECOMMENDATION: r\nTEST_OBLIGATIONS: tests\nTARGETS: t\nARTIFACTS: none\nPACKET_END\n"
+	return appPacketBody(packet.Result{
+		Status:          packet.StatusNeedsSolDecision,
+		Risk:            packet.RiskHigh,
+		Decision:        "d",
+		Evidence:        "e",
+		Options:         "o",
+		Recommendation:  "r",
+		TestObligations: "tests",
+		Targets:         []string{"t"},
+	})
 }
 
 func TestExecuteParentReviewFixThenAcceptFlow(t *testing.T) {
 	cfg := newAppConfig(t)
 	review := &fakeRunner{steps: []fakeStep{
-		{output: implementedPacketApp("done")},
-		{output: reviewFixPacketApp()},
+		{structured: implementedPacketApp("done")},
+		{structured: reviewFixPacketApp()},
 	}}
 	if err := Execute(Command{Mode: ModeNewTask, Payload: "request"}, cfg, review.factory(), io.Discard, io.Discard); err != nil {
 		t.Fatal(err)
@@ -100,14 +122,15 @@ func TestExecuteParentReviewFixThenAcceptFlow(t *testing.T) {
 	if err := Execute(Command{Mode: ModeStatus}, cfg, nil, &statusOut, io.Discard); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(statusOut.String(), "PARENT_REVIEW_OPEN: NEEDS_SOL_REVIEW") {
-		t.Fatalf("status出力 = %q", statusOut.String())
+	status := executeStatusOutput(t, cfg)
+	if status.ParentReviewOpen == nil || *status.ParentReviewOpen != "NEEDS_SOL_REVIEW" {
+		t.Fatalf("status出力のparent_review_open = %#v: %q", status.ParentReviewOpen, statusOut.String())
 	}
 
 	fix := &fakeRunner{steps: []fakeStep{
-		{output: implementedPacketApp("fixed")},
-		{output: passPacketApp()},
-		{output: passPacketApp()},
+		{structured: implementedPacketApp("fixed")},
+		{structured: passPacketApp()},
+		{structured: passPacketApp()},
 	}}
 	// reviewer terminal resultのNEEDS_SOL_REVIEW指摘をそのまま差し戻すためglm-reviewer。
 	if err := Execute(Command{Mode: ModeFix, Payload: "指摘を修正", Origin: "glm-reviewer"}, cfg, fix.factory(), io.Discard, io.Discard); err != nil {
@@ -118,7 +141,11 @@ func TestExecuteParentReviewFixThenAcceptFlow(t *testing.T) {
 	if err := Execute(Command{Mode: ModeAccept}, cfg, nil, &acceptOut, io.Discard); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(acceptOut.String(), "PARENT_REVIEW: accepted") {
+	var accept acceptOutput
+	if err := json.Unmarshal([]byte(strings.TrimSpace(acceptOut.String())), &accept); err != nil {
+		t.Fatalf("accept出力がmachine JSONではありません: %v: %q", err, acceptOut.String())
+	}
+	if !accept.Accepted {
 		t.Fatalf("accept出力 = %q", acceptOut.String())
 	}
 
@@ -126,7 +153,11 @@ func TestExecuteParentReviewFixThenAcceptFlow(t *testing.T) {
 	if err := Execute(Command{Mode: ModeAccept}, cfg, nil, &retryOut, io.Discard); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(retryOut.String(), "PARENT_REVIEW: no open terminal result") {
+	var retry acceptOutput
+	if err := json.Unmarshal([]byte(strings.TrimSpace(retryOut.String())), &retry); err != nil {
+		t.Fatalf("accept再実行出力がmachine JSONではありません: %v: %q", err, retryOut.String())
+	}
+	if retry.Accepted {
 		t.Fatalf("accept再実行 = %q", retryOut.String())
 	}
 
@@ -156,18 +187,28 @@ func TestExecuteParentReviewFixThenAcceptFlow(t *testing.T) {
 	if err := Execute(Command{Mode: ModeStats}, cfg, nil, &statsOut, io.Discard); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{
-		"PARENT_OUTCOMES: accepted=1,fix=1",
-		"PARENT_FIX_ORIGINS: glm-reviewer=1",
-		"PARENT_OUTCOMES_BY_MODEL: haiku=1,sonnet=1",
-		"PARENT_OUTCOMES_BY_RISK: HIGH=2",
-		"PARENT_FIX_REWORK: origin=glm-reviewer calls=3 worker_calls=1 reviewer_calls=2",
-		"PARENT_FIX_REWORK_COVERAGE: complete",
-		"PARENT_REVIEW_NOTE: glm-worker-side parent action observation only",
-	} {
-		if !strings.Contains(statsOut.String(), want) {
-			t.Fatalf("stats出力に%qがありません: %q", want, statsOut.String())
-		}
+	output := executeStatsOutput(t, st)
+	if output.ParentOutcomes[state.ParentOutcomeAccepted] != 1 || output.ParentOutcomes[state.ParentOutcomeFix] != 1 {
+		t.Fatalf("parent_outcomes = %#v: %q", output.ParentOutcomes, statsOut.String())
+	}
+	if output.ParentFixOrigins[state.ParentOriginGLMReviewer] != 1 {
+		t.Fatalf("parent_fix_origins = %#v", output.ParentFixOrigins)
+	}
+	if output.ParentOutcomesByModel["haiku"] != 1 || output.ParentOutcomesByModel["sonnet"] != 1 {
+		t.Fatalf("parent_outcomes_by_model = %#v", output.ParentOutcomesByModel)
+	}
+	if output.ParentOutcomesByRisk["HIGH"] != 2 {
+		t.Fatalf("parent_outcomes_by_risk = %#v", output.ParentOutcomesByRisk)
+	}
+	if len(output.ParentFixRework) != 1 {
+		t.Fatalf("parent_fix_rework = %#v", output.ParentFixRework)
+	}
+	rework := output.ParentFixRework[0]
+	if rework.Origin != state.ParentOriginGLMReviewer || rework.Calls != 3 || rework.WorkerCalls != 1 || rework.ReviewerCalls != 2 {
+		t.Fatalf("parent_fix_rework = %#v", rework)
+	}
+	if output.ParentFixReworkCoverage != "complete" {
+		t.Fatalf("parent_fix_rework_coverage = %q", output.ParentFixReworkCoverage)
 	}
 }
 
@@ -178,7 +219,11 @@ func TestExecuteAcceptWithoutOpenOpportunityIsNoOp(t *testing.T) {
 	if err := Execute(Command{Mode: ModeAccept}, cfg, nil, &out, io.Discard); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "PARENT_REVIEW: no open terminal result") {
+	var accept acceptOutput
+	if err := json.Unmarshal([]byte(strings.TrimSpace(out.String())), &accept); err != nil {
+		t.Fatalf("accept出力がmachine JSONではありません: %v: %q", err, out.String())
+	}
+	if accept.Accepted {
 		t.Fatalf("accept出力 = %q", out.String())
 	}
 }
@@ -186,16 +231,16 @@ func TestExecuteAcceptWithoutOpenOpportunityIsNoOp(t *testing.T) {
 func TestExecuteNewTaskClosesOpenOpportunityAsUnknown(t *testing.T) {
 	cfg := newAppConfig(t)
 	first := &fakeRunner{steps: []fakeStep{
-		{output: implementedPacketApp("done")},
-		{output: passPacketApp()},
+		{structured: implementedPacketApp("done")},
+		{structured: passPacketApp()},
 	}}
 	if err := Execute(Command{Mode: ModeNewTask, Payload: "request"}, cfg, first.factory(), io.Discard, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 
 	second := &fakeRunner{steps: []fakeStep{
-		{output: implementedPacketApp("next")},
-		{output: passPacketApp()},
+		{structured: implementedPacketApp("next")},
+		{structured: passPacketApp()},
 	}}
 	if err := Execute(Command{Mode: ModeNewTask, Payload: "request2"}, cfg, second.factory(), io.Discard, io.Discard); err != nil {
 		t.Fatal(err)
@@ -226,14 +271,14 @@ func TestExecuteNewTaskClosesOpenOpportunityAsUnknown(t *testing.T) {
 func TestExecuteAcceptRejectsPendingDecisionOpportunity(t *testing.T) {
 	cfg := newAppConfig(t)
 	decision := &fakeRunner{steps: []fakeStep{
-		{output: needsSolDecisionPacketApp()},
+		{structured: needsSolDecisionPacketApp()},
 	}}
 	if err := Execute(Command{Mode: ModeNewTask, Payload: "request"}, cfg, decision.factory(), io.Discard, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 
 	err := Execute(Command{Mode: ModeAccept}, cfg, nil, io.Discard, io.Discard)
-	if err == nil || !strings.Contains(err.Error(), "STATUS: WORKER_ERROR") {
+	if err == nil || !strings.Contains(err.Error(), "--decision") {
 		t.Fatalf("decision待ちへの--acceptを拒否する必要があります: %v", err)
 	}
 
@@ -253,15 +298,15 @@ func TestExecuteAcceptRejectsPendingDecisionOpportunity(t *testing.T) {
 func TestExecuteDecisionRecordsParentOutcome(t *testing.T) {
 	cfg := newAppConfig(t)
 	decisionWait := &fakeRunner{steps: []fakeStep{
-		{output: needsSolDecisionPacketApp()},
+		{structured: needsSolDecisionPacketApp()},
 	}}
 	if err := Execute(Command{Mode: ModeNewTask, Payload: "request"}, cfg, decisionWait.factory(), io.Discard, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 
 	answer := &fakeRunner{steps: []fakeStep{
-		{output: implementedPacketApp("resolved")},
-		{output: reviewFixPacketApp()},
+		{structured: implementedPacketApp("resolved")},
+		{structured: reviewFixPacketApp()},
 	}}
 	if err := Execute(Command{Mode: ModeDecision, Payload: "A案で進める"}, cfg, answer.factory(), io.Discard, io.Discard); err != nil {
 		t.Fatal(err)
@@ -286,17 +331,17 @@ func TestExecuteDecisionRecordsParentOutcome(t *testing.T) {
 func TestExecuteFixWithoutOriginRecordsUnknownOrigin(t *testing.T) {
 	cfg := newAppConfig(t)
 	review := &fakeRunner{steps: []fakeStep{
-		{output: implementedPacketApp("done")},
-		{output: reviewFixPacketApp()},
+		{structured: implementedPacketApp("done")},
+		{structured: reviewFixPacketApp()},
 	}}
 	if err := Execute(Command{Mode: ModeNewTask, Payload: "request"}, cfg, review.factory(), io.Discard, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 
 	fix := &fakeRunner{steps: []fakeStep{
-		{output: implementedPacketApp("fixed")},
-		{output: passPacketApp()},
-		{output: passPacketApp()},
+		{structured: implementedPacketApp("fixed")},
+		{structured: passPacketApp()},
+		{structured: passPacketApp()},
 	}}
 	if err := Execute(Command{Mode: ModeFix, Payload: "直したい"}, cfg, fix.factory(), io.Discard, io.Discard); err != nil {
 		t.Fatal(err)
@@ -328,17 +373,17 @@ func TestExecuteFixOriginValuesRecorded(t *testing.T) {
 	} {
 		cfg := newAppConfig(t)
 		review := &fakeRunner{steps: []fakeStep{
-			{output: implementedPacketApp("done")},
-			{output: reviewFixPacketApp()},
+			{structured: implementedPacketApp("done")},
+			{structured: reviewFixPacketApp()},
 		}}
 		if err := Execute(Command{Mode: ModeNewTask, Payload: "request"}, cfg, review.factory(), io.Discard, io.Discard); err != nil {
 			t.Fatal(err)
 		}
 
 		fix := &fakeRunner{steps: []fakeStep{
-			{output: implementedPacketApp("fixed")},
-			{output: passPacketApp()},
-			{output: passPacketApp()},
+			{structured: implementedPacketApp("fixed")},
+			{structured: passPacketApp()},
+			{structured: passPacketApp()},
 		}}
 		if err := Execute(Command{Mode: ModeFix, Payload: "直したい", Origin: origin}, cfg, fix.factory(), io.Discard, io.Discard); err != nil {
 			t.Fatal(err)

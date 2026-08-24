@@ -137,7 +137,7 @@
     },
     {
       "path": "codex/AGENTS.md",
-      "sha256": "e630426526656cb4cd4292574689f5f1a90bbb8e9b0921076ba3549a5bcfcb74",
+      "sha256": "225040511bcce19790bb3a8d07becac54b4d4f1986fcd2969b788e3f05679f76",
       "scenarios": [
         "feasibility-gate-production-beyond-unverified-viability-returns-to-sol",
         "feasibility-gate-premise-collapse-stops-further-implementation",
@@ -156,7 +156,7 @@
     },
     {
       "path": "codex/instructions/glm-execution.md",
-      "sha256": "e2def840e20d88be26ac5583c3e5747a972eb0595f23eb6842084cf3020fb1a0",
+      "sha256": "4e9a69280512e45f0fb6028e7077e618c431def08cfdedad303bc225e6b2a11a",
       "scenarios": [
         "feasibility-gate-production-beyond-unverified-viability-returns-to-sol",
         "feasibility-gate-premise-collapse-stops-further-implementation",
@@ -184,7 +184,7 @@
     },
     {
       "path": "codex/instructions/glm-packets.md",
-      "sha256": "9ba1ae0ad7c9f054d0753c6802224bf2effb552052319c62c2242ca9b8e0c001",
+      "sha256": "6e6999381aa21f76a0d63a2de236baff7a852f00a18b0bb9d2bba4c6ce550346",
       "scenarios": [
         "failure-evidence-minimal-sanitized-evidence-packet-returns-to-sol",
         "failure-evidence-unobtainable-evidence-returns-undecidable-to-sol",
@@ -193,7 +193,7 @@
     },
     {
       "path": "codex/instructions/failure-evidence.md",
-      "sha256": "0d633a3b9492896dbbdf97d18d3f22755a3a594d236e0efdc287390489238d18",
+      "sha256": "eed5369f349b4eb057342501920df66c65a886c001a5632e05b3e2b0dc7015c0",
       "scenarios": [
         "failure-evidence-minimal-sanitized-evidence-packet-returns-to-sol",
         "failure-evidence-unobtainable-evidence-returns-undecidable-to-sol",

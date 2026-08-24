@@ -22,8 +22,8 @@ type runnerStep struct {
 	output string
 	runErr error
 	result runner.RunResult
-	// structuredは明示的に指定するstructured_output JSON。空ならoutputの表示行textから
-	// 変換する(test前提: どのstepも表示行または生textのどちらかで意図を表現する)。
+	// structuredはstructured_output JSON本文。packet stepはここへmachine JSONを指定し、
+	// outputはprovider障害signal等の生text(出力file本文)だけに使う。
 	structured string
 }
 
@@ -69,7 +69,7 @@ func (r *scriptedRunner) Run(
 		r.onRun()
 	}
 	step := r.steps[index]
-	if r.taskArtifactDir != nil && strings.Contains(step.output, scenarioArtifactDirToken) {
+	if r.taskArtifactDir != nil && (strings.Contains(step.structured, scenarioArtifactDirToken) || strings.Contains(step.output, scenarioArtifactDirToken)) {
 		dir, err := r.taskArtifactDir()
 		if err != nil {
 			return runner.RunResult{}, err
@@ -79,6 +79,7 @@ func (r *scriptedRunner) Run(
 				return runner.RunResult{}, err
 			}
 		}
+		step.structured = strings.ReplaceAll(step.structured, scenarioArtifactDirToken, dir)
 		step.output = strings.ReplaceAll(step.output, scenarioArtifactDirToken, dir)
 	}
 	if step.output != "" {
@@ -92,35 +93,12 @@ func (r *scriptedRunner) Run(
 	}
 	if step.structured != "" {
 		result.StructuredOutput = json.RawMessage(step.structured)
-	} else {
-		result.StructuredOutput = structuredFromScriptedOutput(step.output)
 	}
 	if result.Response == "" {
 		// productionと同じくresult文字列はstructured outputのJSON表現とする。
 		result.Response = string(result.StructuredOutput)
 	}
 	return result, step.runErr
-}
-
-// structuredFromScriptedOutputはscripted stepの表示行textをtyped結果JSONへ変換する。
-// 変換できない原文(構造破綻の再現用)はそのまま返し、ParseStructuredのschema-mismatch経路へ流す。
-func structuredFromScriptedOutput(output string) json.RawMessage {
-	if output == "" {
-		return nil
-	}
-	var body []string
-	for _, line := range strings.Split(strings.TrimRight(output, "\n"), "\n") {
-		if strings.TrimSpace(line) == "PACKET_BEGIN" || strings.TrimSpace(line) == "PACKET_END" {
-			continue
-		}
-		body = append(body, line)
-	}
-	if value, err := packet.FromDisplayLines(body); err == nil {
-		if data, err := json.Marshal(value); err == nil {
-			return data
-		}
-	}
-	return json.RawMessage(output)
 }
 
 func (r *scriptedRunner) Probe(model string) (runner.ProbeResult, error) {
@@ -155,11 +133,29 @@ func implementedPacket(summary string) string {
 }
 
 func implementedPacketWithArtifacts(summary string, artifacts string) string {
-	return "PACKET_BEGIN\nSTATUS: IMPLEMENTED\nRISK: LOW\nSUMMARY: " + summary + "\nREQUIREMENT_COVERAGE: covered\nTESTS: pass\nUNVERIFIED: none\nARTIFACTS: " + artifacts + "\nPACKET_END\n"
+	result := packet.Result{
+		Status:              packet.StatusImplemented,
+		Risk:                packet.RiskLow,
+		Summary:             summary,
+		RequirementCoverage: "covered",
+		Tests:               "pass",
+		Unverified:          "none",
+	}
+	if artifacts != "none" && artifacts != "" {
+		result.Artifacts = []string{artifacts}
+	}
+	return packetBody(result)
 }
 
 func implementedPacketWithRisk(summary string, risk string) string {
-	return "PACKET_BEGIN\nSTATUS: IMPLEMENTED\nRISK: " + risk + "\nSUMMARY: " + summary + "\nREQUIREMENT_COVERAGE: covered\nTESTS: pass\nUNVERIFIED: none\nARTIFACTS: none\nPACKET_END\n"
+	return packetBody(packet.Result{
+		Status:              packet.StatusImplemented,
+		Risk:                packet.Risk(risk),
+		Summary:             summary,
+		RequirementCoverage: "covered",
+		Tests:               "pass",
+		Unverified:          "none",
+	})
 }
 
 func duplicatedImplementedPacket() string {
@@ -167,27 +163,67 @@ func duplicatedImplementedPacket() string {
 }
 
 func passPacket() string {
-	return "PACKET_BEGIN\nSTATUS: PASS\nRISK: LOW\nSUMMARY: pass\nREQUIREMENT_COVERAGE: covered\nINVARIANTS: preserved\nTEST_EVIDENCE: ev\nISSUES: none\nRESIDUAL_RISK: none\nTARGETS: final diff\nARTIFACTS: none\nPACKET_END\n"
+	return packetBody(packet.Result{
+		Status:              packet.StatusPass,
+		Risk:                packet.RiskLow,
+		Summary:             "pass",
+		RequirementCoverage: "covered",
+		Invariants:          "preserved",
+		TestEvidence:        "ev",
+		Issues:              "none",
+		ResidualRisk:        "none",
+		Targets:             []string{"final diff"},
+	})
 }
 
 func needsSolReviewPacket() string {
-	return "PACKET_BEGIN\nSTATUS: NEEDS_SOL_REVIEW\nRISK: HIGH\nSUMMARY: review\nREQUIREMENT_COVERAGE: covered\nINVARIANTS: preserved\nTEST_EVIDENCE: ev\nISSUES: i\nRESIDUAL_RISK: r\nTARGETS: t\nARTIFACTS: none\nSOL_QUESTION: q\nPACKET_END\n"
+	return packetBody(packet.Result{
+		Status:              packet.StatusNeedsSolReview,
+		Risk:                packet.RiskHigh,
+		Summary:             "review",
+		RequirementCoverage: "covered",
+		Invariants:          "preserved",
+		TestEvidence:        "ev",
+		Issues:              "i",
+		ResidualRisk:        "r",
+		Targets:             []string{"t"},
+		SolQuestion:         "q",
+	})
 }
 
 func needsSolDecisionPacket() string {
-	return "PACKET_BEGIN\nSTATUS: NEEDS_SOL_DECISION\nRISK: HIGH\nDECISION: d\nEVIDENCE: e\nOPTIONS: o\nRECOMMENDATION: r\nTEST_OBLIGATIONS: tests\nTARGETS: t\nARTIFACTS: none\nPACKET_END\n"
+	return packetBody(packet.Result{
+		Status:          packet.StatusNeedsSolDecision,
+		Risk:            packet.RiskHigh,
+		Decision:        "d",
+		Evidence:        "e",
+		Options:         "o",
+		Recommendation:  "r",
+		TestObligations: "tests",
+		Targets:         []string{"t"},
+	})
 }
 
 func fixRequiredPacket() string {
-	return "PACKET_BEGIN\nSTATUS: FIX_REQUIRED\nRISK: HIGH\nSUMMARY: fix\nREQUIREMENT_COVERAGE: covered\nINVARIANTS: preserved\nTEST_EVIDENCE: ev\nISSUES: i\nRESIDUAL_RISK: r\nTARGETS: t\nARTIFACTS: none\nPACKET_END\n"
+	return fixRequiredPacketWithTargets("t")
 }
 
 func fixRequiredPacketWithTargets(targets string) string {
-	return "PACKET_BEGIN\nSTATUS: FIX_REQUIRED\nRISK: HIGH\nSUMMARY: fix\nREQUIREMENT_COVERAGE: covered\nINVARIANTS: preserved\nTEST_EVIDENCE: ev\nISSUES: i\nRESIDUAL_RISK: r\nTARGETS: " + targets + "\nARTIFACTS: none\nPACKET_END\n"
+	return packetBody(packet.Result{
+		Status:              packet.StatusFixRequired,
+		Risk:                packet.RiskHigh,
+		Summary:             "fix",
+		RequirementCoverage: "covered",
+		Invariants:          "preserved",
+		TestEvidence:        "ev",
+		Issues:              "i",
+		ResidualRisk:        "r",
+		Targets:             []string{targets},
+	})
 }
 
 func unknownStatusPacket() string {
-	return "PACKET_BEGIN\nSTATUS: UNKNOWN\nRISK: LOW\nSUMMARY: x\nPACKET_END\n"
+	return packetBody(packet.Result{Status: packet.Status("UNKNOWN"), Risk: packet.RiskLow, Summary: "x"})
 }
 
 const zaiFiveHourLog = "API Error: Request rejected (429) · [1308][Usage limit reached for 5 hour. Your limit will reset at 2026-07-22 14:06:34]\n"
@@ -273,7 +309,7 @@ func identityJitter(base time.Duration) time.Duration { return base }
 func TestRunModelRecordsPromptResponseAndUsage(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{{
-		output: implementedPacket("done"),
+		structured: implementedPacket("done"),
 		result: runner.RunResult{
 			SessionID: "worker-session",
 			TopLevelUsage: runner.TokenUsage{
@@ -317,7 +353,7 @@ func TestRunModelRecordsPromptResponseAndUsage(t *testing.T) {
 		t.Fatalf("telemetry logs = %#v", logs)
 	}
 	got := logs[0]
-	wantResponse := string(structuredFromScriptedOutput(implementedPacket("done")))
+	wantResponse := implementedPacket("done")
 	if !strings.HasPrefix(got.Prompt, "implementation instruction\n\nREPORT_ARTIFACT_DIR: ") || got.SystemPrompt != "worker system instruction" || got.Response != wantResponse {
 		t.Fatalf("telemetry content = %#v", got)
 	}
@@ -338,7 +374,7 @@ func TestRunModelRecordsPromptResponseAndUsage(t *testing.T) {
 
 func TestRunModelCanOmitTelemetryContent(t *testing.T) {
 	st := newStateStoreT(t)
-	r := &scriptedRunner{steps: []runnerStep{{output: implementedPacket("done")}}}
+	r := &scriptedRunner{steps: []runnerStep{{structured: implementedPacket("done")}}}
 	w := newWorkflowT(t, st, r)
 	w.config.TelemetryContent = false
 	w.temp = t.TempDir()
@@ -383,36 +419,70 @@ func currentStats(t *testing.T, st *state.StateStore) state.TaskStats {
 	return state.TaskStats{}
 }
 
-// resultFromLinesは表示行からtyped結果を組み立てるtest helper。
-func resultFromLines(lines ...string) packet.Result {
-	value, err := packet.FromDisplayLines(lines)
+// packetBodyはtyped結果からmodel structured_output本文(machine JSON 1行)を組み立てる。
+func packetBody(result packet.Result) string {
+	data, err := json.Marshal(result)
+	if err != nil {
+		panic(err)
+	}
+	return string(data)
+}
+
+// resultFromBodyはmachine JSON本文からtyped結果を組み立てるtest helper。
+func resultFromBody(body string) packet.Result {
+	value, err := packet.ParseStructured([]byte(body))
 	if err != nil {
 		panic(err)
 	}
 	return value
 }
 
-// workerResultFromLinesはresume checkpoint用のworker結果pointerを組み立てる。
-func workerResultFromLines(lines ...string) *packet.Result {
-	value := resultFromLines(lines...)
+// workerResultFromBodyはresume checkpoint用のworker結果pointerを組み立てる。
+func workerResultFromBody(body string) *packet.Result {
+	value := resultFromBody(body)
 	return &value
+}
+
+// workerPacketWithRiskはriskだけ指定したIMPLEMENTED worker packet本文を返す。
+func workerPacketWithRisk(risk string) string {
+	return packetBody(packet.Result{
+		Status:              packet.StatusImplemented,
+		Risk:                packet.Risk(risk),
+		Summary:             "done",
+		RequirementCoverage: "covered",
+		Tests:               "pass",
+		Unverified:          "none",
+	})
 }
 
 // constraintViolatingImplementedPacketはschema適合・意味検証不合格(必須field欠落)を再現する。
 func constraintViolatingImplementedPacket() string {
-	return "PACKET_BEGIN\nSTATUS: IMPLEMENTED\nRISK: LOW\nSUMMARY: done\nTESTS: pass\nUNVERIFIED: none\nARTIFACTS: none\nPACKET_END\n"
+	return packetBody(packet.Result{
+		Status:     packet.StatusImplemented,
+		Risk:       packet.RiskLow,
+		Summary:    "done",
+		Tests:      "pass",
+		Unverified: "none",
+	})
 }
 
 // oversizeImplementedPacketはschema適合・意味検証不合格(size)を再現する。
 func oversizeImplementedPacket() string {
-	return "PACKET_BEGIN\nSTATUS: IMPLEMENTED\nRISK: LOW\nSUMMARY: " + strings.Repeat("x", packet.MaxFieldBytes+1) + "\nREQUIREMENT_COVERAGE: covered\nTESTS: pass\nUNVERIFIED: none\nARTIFACTS: none\nPACKET_END\n"
+	return packetBody(packet.Result{
+		Status:              packet.StatusImplemented,
+		Risk:                packet.RiskLow,
+		Summary:             strings.Repeat("x", packet.MaxFieldBytes+1),
+		RequirementCoverage: "covered",
+		Tests:               "pass",
+		Unverified:          "none",
+	})
 }
 
 func TestRunModelCorrectsInvalidResultInSameRunner(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: oversizeImplementedPacket()},
-		{output: implementedPacket("implemented")},
+		{structured: oversizeImplementedPacket()},
+		{structured: implementedPacket("implemented")},
 	}}
 	w := newWorkflowT(t, st, r)
 	w.temp = t.TempDir()
@@ -466,12 +536,13 @@ func TestRunModelFailsClosedOnStructuredMismatch(t *testing.T) {
 		{name: "worker", role: state.WorkerRole, stage: state.ResumeStageWorker, phase: "worker-new"},
 		{name: "reviewer", role: state.ReviewerRole, stage: state.ResumeStageReview, readOnly: true, phase: "reviewer-1"},
 	}
+	var workerErr *WorkerError
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			st := newStateStoreT(t)
 			r := &scriptedRunner{steps: []runnerStep{
-				{output: duplicatedImplementedPacket()},
-				{output: implementedPacket("unreachable")},
+				{structured: duplicatedImplementedPacket()},
+				{structured: implementedPacket("unreachable")},
 			}}
 			w := newWorkflowT(t, st, r)
 			w.temp = t.TempDir()
@@ -486,7 +557,7 @@ func TestRunModelFailsClosedOnStructuredMismatch(t *testing.T) {
 				Prompt:   "original",
 				Request:  "request",
 			})
-			if err == nil || !strings.Contains(err.Error(), "STATUS: WORKER_ERROR") {
+			if err == nil || !errors.As(err, &workerErr) {
 				t.Fatalf("mismatch fail closedを期待: %v", err)
 			}
 			if len(r.prompts) != 1 {
@@ -524,12 +595,13 @@ func TestRunModelFailsClosedOnStructuredOutputError(t *testing.T) {
 		{"retry exhausted", &runner.StructuredOutputError{Subtype: "error_max_structured_output_retries", TerminalReason: "gave up after 3 attempts"}, "error_max_structured_output_retries", 1},
 		{"missing on success", &runner.StructuredOutputError{}, "result eventにstructured_outputがありません", 0},
 	}
+	var workerErr *WorkerError
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			st := newStateStoreT(t)
 			r := &scriptedRunner{steps: []runnerStep{
 				{output: "", runErr: c.runErr},
-				{output: implementedPacket("unreachable")},
+				{structured: implementedPacket("unreachable")},
 			}}
 			w := newWorkflowT(t, st, r)
 			w.temp = t.TempDir()
@@ -545,7 +617,7 @@ func TestRunModelFailsClosedOnStructuredOutputError(t *testing.T) {
 				Prompt:  "p",
 				Request: "req",
 			})
-			if err == nil || !strings.Contains(err.Error(), "STATUS: WORKER_ERROR") || !strings.Contains(err.Error(), c.want) {
+			if err == nil || !errors.As(err, &workerErr) || !strings.Contains(err.Error(), c.want) {
 				t.Fatalf("structured output fail closedを期待: %v", err)
 			}
 			if len(r.prompts) != 1 {
@@ -575,10 +647,10 @@ func TestRunModelFailsClosedOnStructuredOutputError(t *testing.T) {
 func TestExecuteEmitsAcceptedResultExactlyOnce(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: constraintViolatingImplementedPacket()},
-		{output: implementedPacketWithRisk("done", "HIGH")},
-		{output: passPacket()},
-		{output: needsSolReviewPacket()},
+		{structured: constraintViolatingImplementedPacket()},
+		{structured: implementedPacketWithRisk("done", "HIGH")},
+		{structured: passPacket()},
+		{structured: needsSolReviewPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 	buf := &bytes.Buffer{}
@@ -611,8 +683,8 @@ func TestExecuteEmitsAcceptedResultExactlyOnce(t *testing.T) {
 func TestEmitResultRecordsEmittedPayloadBytes(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacket("done")},
-		{output: passPacket()},
+		{structured: implementedPacket("done")},
+		{structured: passPacket()},
 	}}
 	var out bytes.Buffer
 	w := newWorkflowTWithOutput(t, st, r, &out)
@@ -632,8 +704,8 @@ func TestEmitResultRecordsEmittedPayloadBytes(t *testing.T) {
 func TestRunModelStopsAfterRepeatedConstraintViolations(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: constraintViolatingImplementedPacket()},
-		{output: constraintViolatingImplementedPacket()},
+		{structured: constraintViolatingImplementedPacket()},
+		{structured: constraintViolatingImplementedPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 	w.temp = t.TempDir()
@@ -647,7 +719,8 @@ func TestRunModelStopsAfterRepeatedConstraintViolations(t *testing.T) {
 		Prompt:  "original",
 		Request: "request",
 	})
-	if err == nil || !strings.Contains(err.Error(), "STATUS: WORKER_ERROR") || !strings.Contains(err.Error(), "必須field REQUIREMENT_COVERAGE") {
+	var workerErr *WorkerError
+	if err == nil || !errors.As(err, &workerErr) || !strings.Contains(err.Error(), "必須field requirement_coverage") {
 		t.Fatalf("修正再依頼後の不合格停止を期待: %v", err)
 	}
 	if len(r.prompts) != 2 {
@@ -658,7 +731,7 @@ func TestRunModelStopsAfterRepeatedConstraintViolations(t *testing.T) {
 func TestRunModelPreservesResultCorrectionAcrossRateLimit(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: constraintViolatingImplementedPacket()},
+		{structured: constraintViolatingImplementedPacket()},
 		{output: zaiFiveHourLog, runErr: errors.New("exit status 1")},
 	}}
 	w := newWorkflowT(t, st, r)
@@ -674,7 +747,8 @@ func TestRunModelPreservesResultCorrectionAcrossRateLimit(t *testing.T) {
 		OriginalPrompt: "original implementation prompt",
 		Request:        "request",
 	})
-	if err == nil || !strings.Contains(err.Error(), "STATUS: RATE_LIMITED") {
+	var limitErr runner.ZaiRateLimitError
+	if err == nil || !errors.As(err, &limitErr) {
 		t.Fatalf("修正再依頼中のrate limit errorを期待: %v", err)
 	}
 
@@ -694,8 +768,8 @@ func TestRunModelCorrectsArtifactOutsideTaskDir(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacketWithArtifacts("invalid artifact", outside)},
-		{output: implementedPacket("corrected")},
+		{structured: implementedPacketWithArtifacts("invalid artifact", outside)},
+		{structured: implementedPacket("corrected")},
 	}}
 	w := newWorkflowT(t, st, r)
 	w.temp = t.TempDir()
@@ -728,7 +802,7 @@ func TestRunModelCorrectsArtifactOutsideTaskDir(t *testing.T) {
 func TestRunModelPreservesResultCorrectionPromptAcrossRateLimit(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: oversizeImplementedPacket()},
+		{structured: oversizeImplementedPacket()},
 		{output: zaiFiveHourLog, runErr: errors.New("exit status 1")},
 	}}
 	w := newWorkflowT(t, st, r)
@@ -744,7 +818,8 @@ func TestRunModelPreservesResultCorrectionPromptAcrossRateLimit(t *testing.T) {
 		OriginalPrompt: "original implementation prompt",
 		Request:        "request",
 	})
-	if err == nil || !strings.Contains(err.Error(), "STATUS: RATE_LIMITED") {
+	var limitErr runner.ZaiRateLimitError
+	if err == nil || !errors.As(err, &limitErr) {
 		t.Fatalf("修正再依頼中のrate limit errorを期待: %v", err)
 	}
 
@@ -795,8 +870,8 @@ func TestResumePromptUsesOriginalPrompt(t *testing.T) {
 func TestExecuteNewTaskReachesPass(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacket("done")},
-		{output: passPacket()},
+		{structured: implementedPacket("done")},
+		{structured: passPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 
@@ -820,9 +895,9 @@ func TestExecuteNewTaskReachesPass(t *testing.T) {
 func TestHighRiskWorkerUsesHighRiskReviewer(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacketWithRisk("done", "HIGH")},
-		{output: passPacket()},
-		{output: needsSolReviewPacket()},
+		{structured: implementedPacketWithRisk("done", "HIGH")},
+		{structured: passPacket()},
+		{structured: needsSolReviewPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 
@@ -837,7 +912,7 @@ func TestHighRiskWorkerUsesHighRiskReviewer(t *testing.T) {
 func TestExecuteNewTaskNeedsSolDecision(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: needsSolDecisionPacket()},
+		{structured: needsSolDecisionPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 
@@ -855,8 +930,8 @@ func TestExecuteNewTaskNeedsSolDecision(t *testing.T) {
 func TestExecuteNewTaskNeedsSolReview(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacket("done")},
-		{output: needsSolReviewPacket()},
+		{structured: implementedPacket("done")},
+		{structured: needsSolReviewPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 
@@ -880,8 +955,8 @@ func TestExecuteDecisionContinuesPendingTask(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacket("decision applied")},
-		{output: needsSolReviewPacket()},
+		{structured: implementedPacket("decision applied")},
+		{structured: needsSolReviewPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 
@@ -914,8 +989,8 @@ func TestExecuteExplicitFixContinuesSolReviewTask(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacket("explicit fix")},
-		{output: needsSolReviewPacket()},
+		{structured: implementedPacket("explicit fix")},
+		{structured: needsSolReviewPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 
@@ -939,10 +1014,10 @@ func TestExecuteExplicitFixContinuesSolReviewTask(t *testing.T) {
 func TestAutoFixNonConvergence(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacket("done")},
-		{output: fixRequiredPacket()},
-		{output: implementedPacket("fix")},
-		{output: fixRequiredPacket()},
+		{structured: implementedPacket("done")},
+		{structured: fixRequiredPacket()},
+		{structured: implementedPacket("fix")},
+		{structured: fixRequiredPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 	w.config.MaxAutoFixRounds = 1
@@ -961,9 +1036,9 @@ func TestAutoFixNonConvergence(t *testing.T) {
 func TestAutoFixCanRequestSolDecision(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacket("done")},
-		{output: fixRequiredPacket()},
-		{output: needsSolDecisionPacket()},
+		{structured: implementedPacket("done")},
+		{structured: fixRequiredPacket()},
+		{structured: needsSolDecisionPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 
@@ -978,16 +1053,17 @@ func TestAutoFixCanRequestSolDecision(t *testing.T) {
 func TestAutoFixRejectsReviewerStatus(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacket("done")},
-		{output: fixRequiredPacket()},
-		{output: passPacket()},
+		{structured: implementedPacket("done")},
+		{structured: fixRequiredPacket()},
+		{structured: passPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 
 	// auto-fix workerがreviewer statusを返すのはrole別schema違反のため、修正再依頼なしの
 	// fail closed停止になる。
 	err := w.ExecuteNewTask("request")
-	if err == nil || !strings.Contains(err.Error(), "STATUS: WORKER_ERROR") || !strings.Contains(err.Error(), "worker結果のstatus") {
+	var workerErr *WorkerError
+	if err == nil || !errors.As(err, &workerErr) || !strings.Contains(err.Error(), "worker結果のstatus") {
 		t.Fatalf("auto-fix role status error = %v", err)
 	}
 	if len(r.prompts) != 3 {
@@ -997,7 +1073,7 @@ func TestAutoFixRejectsReviewerStatus(t *testing.T) {
 
 func TestWorkerRejectsReviewerStatus(t *testing.T) {
 	st := newStateStoreT(t)
-	r := &scriptedRunner{steps: []runnerStep{{output: passPacket()}}}
+	r := &scriptedRunner{steps: []runnerStep{{structured: passPacket()}}}
 	w := newWorkflowT(t, st, r)
 
 	err := w.ExecuteNewTask("request")
@@ -1029,23 +1105,23 @@ func TestRunModelSurfacesZaiFiveHourLimit(t *testing.T) {
 		Prompt:  "p",
 		Request: "req",
 	})
-	if err == nil || !strings.Contains(err.Error(), "STATUS: RATE_LIMITED") {
+	var limitErr runner.ZaiRateLimitError
+	if err == nil || !errors.As(err, &limitErr) {
 		t.Fatalf("rate limit errorを期待: %v", err)
 	}
 	taskID, taskErr := st.TaskID()
 	if taskErr != nil {
 		t.Fatal(taskErr)
 	}
-	for _, value := range []string{
-		"TASK_ID: " + taskID,
-		"REPO_ROOT: /repo",
-		"AUTO_RESUME_AVAILABLE: true",
-		"AUTO_RESUME_AT_RFC3339: 2026-07-22T14:08:34+08:00",
-		"AUTO_RESUME_KEY: glm-worker-resume-testrepo1234-" + taskID[:8],
-	} {
-		if !strings.Contains(err.Error(), value) {
-			t.Fatalf("rate limit errorに%qがありません: %v", value, err)
-		}
+	if limitErr.TaskID != taskID || limitErr.RepoRoot != "/repo" {
+		t.Fatalf("rate limit errorのtask/repo = %q/%q want %q//repo", limitErr.TaskID, limitErr.RepoRoot, taskID)
+	}
+	available, resumeAt := limitErr.AutoResumeSchedule()
+	if !available || resumeAt != "2026-07-22T14:08:34+08:00" {
+		t.Fatalf("auto-resume schedule = %v/%q", available, resumeAt)
+	}
+	if key := limitErr.AutoResumeKey(); key != "glm-worker-resume-testrepo1234-"+taskID[:8] {
+		t.Fatalf("auto-resume key = %q", key)
 	}
 
 	cp, cerr := st.LoadResumeCheckpoint()
@@ -1089,7 +1165,8 @@ func TestRunModelSurfacesPlainStdoutFiveHourLimit(t *testing.T) {
 		Prompt:  "p",
 		Request: "req",
 	})
-	if err == nil || !strings.Contains(err.Error(), "STATUS: RATE_LIMITED") {
+	var limitErr runner.ZaiRateLimitError
+	if err == nil || !errors.As(err, &limitErr) {
 		t.Fatalf("rate limit errorを期待: %v", err)
 	}
 	if st.TaskStatus() != state.TaskStatusRateLimited {
@@ -1155,7 +1232,8 @@ func TestRateLimitStateSurvivesArtifactProtectionError(t *testing.T) {
 		Prompt:  "p",
 		Request: "req",
 	})
-	if err == nil || !strings.Contains(err.Error(), "STATUS: RATE_LIMITED") || !strings.Contains(err.Error(), "ARTIFACT_WARNING:") {
+	var limitErr runner.ZaiRateLimitError
+	if err == nil || !errors.As(err, &limitErr) || limitErr.ArtifactWarning == "" {
 		t.Fatalf("artifact警告付きrate limit errorを期待: %v", err)
 	}
 	checkpoint, loadErr := st.LoadResumeCheckpoint()
@@ -1192,8 +1270,8 @@ func TestExecuteResumeContinuesAfterRateLimit(t *testing.T) {
 	}
 
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacket("done")},
-		{output: passPacket()},
+		{structured: implementedPacket("done")},
+		{structured: passPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 
@@ -1233,7 +1311,8 @@ func TestExecuteResumeRestoresRateLimitedStatusAfterRunnerError(t *testing.T) {
 	}}}
 	w := newWorkflowT(t, st, r)
 	err := w.ExecuteResume()
-	if err == nil || !strings.Contains(err.Error(), "boom fatal session error") {
+	var fatalErr *WorkerError
+	if err == nil || !errors.As(err, &fatalErr) || !strings.Contains(fatalErr.Tail, "boom fatal session error") {
 		t.Fatalf("runner errorを期待: %v", err)
 	}
 	if st.TaskStatus() != state.TaskStatusRateLimited {
@@ -1261,24 +1340,16 @@ func TestExecuteResumeContinuesReviewerStage(t *testing.T) {
 		Prompt:         "review",
 		OriginalPrompt: "review",
 		Request:        "request",
-		WorkerResult: workerResultFromLines(
-			"STATUS: IMPLEMENTED",
-			"RISK: LOW",
-			"SUMMARY: done",
-			"REQUIREMENT_COVERAGE: covered",
-			"TESTS: pass",
-			"UNVERIFIED: none",
-			"ARTIFACTS: none",
-		),
-		ReviewNumber: 1,
-		RateLimited:  true,
+		WorkerResult:   workerResultFromBody(`{"status":"IMPLEMENTED","risk":"LOW","summary":"done","requirement_coverage":"covered","tests":"pass","unverified":"none"}`),
+		ReviewNumber:   1,
+		RateLimited:    true,
 	}); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.SetTaskStatus(state.TaskStatusRateLimited); err != nil {
 		t.Fatal(err)
 	}
-	r := &scriptedRunner{steps: []runnerStep{{output: passPacket()}}}
+	r := &scriptedRunner{steps: []runnerStep{{structured: passPacket()}}}
 	w := newWorkflowT(t, st, r)
 
 	if err := w.ExecuteResume(); err != nil {
@@ -1313,8 +1384,8 @@ func TestExecuteResumeContinuesAutoFixStage(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacket("fixed")},
-		{output: needsSolReviewPacket()},
+		{structured: implementedPacket("fixed")},
+		{structured: needsSolReviewPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 
@@ -1342,7 +1413,7 @@ func TestExecuteResumeRejectsUnknownStage(t *testing.T) {
 	if err := st.SetTaskStatus(state.TaskStatusRateLimited); err != nil {
 		t.Fatal(err)
 	}
-	r := &scriptedRunner{steps: []runnerStep{{output: implementedPacket("done")}}}
+	r := &scriptedRunner{steps: []runnerStep{{structured: implementedPacket("done")}}}
 	w := newWorkflowT(t, st, r)
 
 	err := w.ExecuteResume()
@@ -1402,7 +1473,8 @@ func TestRunModelSurfacesWorkerError(t *testing.T) {
 		Prompt:  "p",
 		Request: "req",
 	})
-	if err == nil || !strings.Contains(err.Error(), "STATUS: WORKER_ERROR") {
+	var workerErr *WorkerError
+	if err == nil || !errors.As(err, &workerErr) {
 		t.Fatalf("worker errorを期待: %v", err)
 	}
 	if _, cerr := st.LoadResumeCheckpoint(); cerr == nil {
@@ -1433,8 +1505,8 @@ func TestRunModelRejectsMissingModelBeforeRunnerCall(t *testing.T) {
 func TestReviewerFormatError(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacket("done")},
-		{output: needsSolDecisionPacket()},
+		{structured: implementedPacket("done")},
+		{structured: needsSolDecisionPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 
@@ -1450,13 +1522,14 @@ func TestReviewerFormatError(t *testing.T) {
 func TestReviewerUnknownStatusFailsClosedWithoutCorrection(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacket("done")},
-		{output: unknownStatusPacket()},
+		{structured: implementedPacket("done")},
+		{structured: unknownStatusPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 
 	err := w.ExecuteNewTask("request")
-	if err == nil || !strings.Contains(err.Error(), "STATUS: WORKER_ERROR") {
+	var workerErr *WorkerError
+	if err == nil || !errors.As(err, &workerErr) {
 		t.Fatalf("未知STATUSのfail closed停止を期待: %v", err)
 	}
 	if len(r.prompts) != 2 {
@@ -1465,8 +1538,8 @@ func TestReviewerUnknownStatusFailsClosedWithoutCorrection(t *testing.T) {
 }
 
 func TestReviewNeedsHighRiskFloor(t *testing.T) {
-	lowWorker := resultFromLines("STATUS: IMPLEMENTED", "RISK: LOW")
-	highWorker := resultFromLines("STATUS: IMPLEMENTED", "RISK: HIGH")
+	lowWorker := resultFromBody(`{"status":"IMPLEMENTED","risk":"LOW"}`)
+	highWorker := resultFromBody(`{"status":"IMPLEMENTED","risk":"HIGH"}`)
 
 	tests := []struct {
 		name           string
@@ -1492,18 +1565,7 @@ func TestReviewNeedsHighRiskFloor(t *testing.T) {
 }
 
 func TestRiskFloorFailClosedPacketIsValid(t *testing.T) {
-	passPkt := resultFromLines(
-		"STATUS: PASS",
-		"RISK: LOW",
-		"SUMMARY: reviewer pass",
-		"REQUIREMENT_COVERAGE: covered",
-		"INVARIANTS: preserved",
-		"TEST_EVIDENCE: ev",
-		"ISSUES: none",
-		"RESIDUAL_RISK: none",
-		"TARGETS: none",
-		"ARTIFACTS: none",
-	)
+	passPkt := resultFromBody(`{"status":"PASS","risk":"LOW","summary":"reviewer pass","requirement_coverage":"covered","invariants":"preserved","test_evidence":"ev","issues":"none","residual_risk":"none","targets":["none"]}`)
 
 	enforced := riskFloorFailClosedResult(passPkt)
 	if enforced.Status != packet.StatusNeedsSolReview || enforced.Risk != packet.RiskHigh {
@@ -1518,35 +1580,12 @@ func TestRiskFloorFailClosedPacketIsValid(t *testing.T) {
 }
 
 func TestResolveRiskFloorReemitAcceptsCompliantAndFailsClosed(t *testing.T) {
-	compliant := resultFromLines(
-		"STATUS: NEEDS_SOL_REVIEW",
-		"RISK: HIGH",
-		"SUMMARY: reviewer reemit",
-		"REQUIREMENT_COVERAGE: covered",
-		"INVARIANTS: preserved",
-		"TEST_EVIDENCE: ev",
-		"ISSUES: i",
-		"RESIDUAL_RISK: r",
-		"TARGETS: t",
-		"ARTIFACTS: none",
-		"SOL_QUESTION: q",
-	)
+	compliant := resultFromBody(`{"status":"NEEDS_SOL_REVIEW","risk":"HIGH","summary":"reviewer reemit","requirement_coverage":"covered","invariants":"preserved","test_evidence":"ev","issues":"i","residual_risk":"r","targets":["t"],"sol_question":"q"}`)
 	if resolved := resolveRiskFloorReemit(compliant); resolved.Status != packet.StatusNeedsSolReview {
 		t.Fatalf("準拠再出力はそのまま採用すべき: %#v", resolved)
 	}
 
-	passed := resultFromLines(
-		"STATUS: PASS",
-		"RISK: LOW",
-		"SUMMARY: pass again",
-		"REQUIREMENT_COVERAGE: covered",
-		"INVARIANTS: preserved",
-		"TEST_EVIDENCE: ev",
-		"ISSUES: none",
-		"RESIDUAL_RISK: none",
-		"TARGETS: none",
-		"ARTIFACTS: none",
-	)
+	passed := resultFromBody(`{"status":"PASS","risk":"LOW","summary":"pass again","requirement_coverage":"covered","invariants":"preserved","test_evidence":"ev","issues":"none","residual_risk":"none","targets":["none"]}`)
 	closed := resolveRiskFloorReemit(passed)
 	if closed.Status != packet.StatusNeedsSolReview || !strings.Contains(closed.Summary, "PASS") {
 		t.Fatalf("再違反はfail closedのNEEDS_SOL_REVIEWへ昇格すべき: %#v", closed)
@@ -1570,10 +1609,10 @@ func TestRiskFloorReemitPromptConstraints(t *testing.T) {
 func TestFixRequiredTargetsPacketDispatchesReportOnlyPrompt(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacketWithRisk("high risk work", "HIGH")},
-		{output: fixRequiredPacketWithTargets("PACKET")},
-		{output: implementedPacketWithRisk("report re-emitted", "HIGH")},
-		{output: needsSolReviewPacket()},
+		{structured: implementedPacketWithRisk("high risk work", "HIGH")},
+		{structured: fixRequiredPacketWithTargets("PACKET")},
+		{structured: implementedPacketWithRisk("report re-emitted", "HIGH")},
+		{structured: needsSolReviewPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 
@@ -1620,10 +1659,10 @@ func TestFixRequiredTargetsPacketDispatchesReportOnlyPrompt(t *testing.T) {
 func TestFixRequiredOtherTargetsKeepsImplementationAutoFix(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacketWithRisk("high risk work", "HIGH")},
-		{output: fixRequiredPacketWithTargets("glm-worker/internal/state/store.go:Read")},
-		{output: implementedPacketWithRisk("fixed implementation", "HIGH")},
-		{output: needsSolReviewPacket()},
+		{structured: implementedPacketWithRisk("high risk work", "HIGH")},
+		{structured: fixRequiredPacketWithTargets("glm-worker/internal/state/store.go:Read")},
+		{structured: implementedPacketWithRisk("fixed implementation", "HIGH")},
+		{structured: needsSolReviewPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 
@@ -1663,11 +1702,11 @@ func TestFixRequiredWithoutTargetsCorrectsBeforeAutoFix(t *testing.T) {
 	st := newStateStoreT(t)
 	fixWithoutTargets := `{"status":"FIX_REQUIRED","risk":"HIGH","summary":"fix","requirement_coverage":"covered","invariants":"preserved","test_evidence":"ev","issues":"i","residual_risk":"r","targets":[],"artifacts":[]}`
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacketWithRisk("high risk work", "HIGH")},
+		{structured: implementedPacketWithRisk("high risk work", "HIGH")},
 		{structured: fixWithoutTargets},
-		{output: fixRequiredPacketWithTargets("glm-worker/internal/state/store.go:Read")},
-		{output: implementedPacketWithRisk("fixed implementation", "HIGH")},
-		{output: needsSolReviewPacket()},
+		{structured: fixRequiredPacketWithTargets("glm-worker/internal/state/store.go:Read")},
+		{structured: implementedPacketWithRisk("fixed implementation", "HIGH")},
+		{structured: needsSolReviewPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 
@@ -1712,7 +1751,7 @@ func TestNeedsSolDecisionWithoutTargetsCorrectsBeforeParentDispatch(t *testing.T
 	decisionWithoutTargets := `{"status":"NEEDS_SOL_DECISION","risk":"HIGH","decision":"d","evidence":"e","options":"o","recommendation":"r","test_obligations":"t","targets":[],"artifacts":[]}`
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: decisionWithoutTargets},
-		{output: needsSolDecisionPacket()},
+		{structured: needsSolDecisionPacket()},
 	}}
 	var emitted bytes.Buffer
 	w := newWorkflowTWithOutput(t, st, r, &emitted)
@@ -1753,11 +1792,11 @@ func TestFixRequiredBlankTargetsElementCorrectsBeforeAutoFix(t *testing.T) {
 	st := newStateStoreT(t)
 	fixWithBlankElement := `{"status":"FIX_REQUIRED","risk":"HIGH","summary":"fix","requirement_coverage":"covered","invariants":"preserved","test_evidence":"ev","issues":"i","residual_risk":"r","targets":["   "],"artifacts":[]}`
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacketWithRisk("high risk work", "HIGH")},
+		{structured: implementedPacketWithRisk("high risk work", "HIGH")},
 		{structured: fixWithBlankElement},
-		{output: fixRequiredPacketWithTargets("glm-worker/internal/state/store.go:Read")},
-		{output: implementedPacketWithRisk("fixed implementation", "HIGH")},
-		{output: needsSolReviewPacket()},
+		{structured: fixRequiredPacketWithTargets("glm-worker/internal/state/store.go:Read")},
+		{structured: implementedPacketWithRisk("fixed implementation", "HIGH")},
+		{structured: needsSolReviewPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 
@@ -1798,7 +1837,7 @@ func TestNeedsSolDecisionMixedNoneTargetsCorrectsBeforeParentDispatch(t *testing
 	decisionMixedNone := `{"status":"NEEDS_SOL_DECISION","risk":"HIGH","decision":"d","evidence":"e","options":"o","recommendation":"r","test_obligations":"t","targets":["none","glm-worker/internal/packet/validate.go:validateTargets"],"artifacts":[]}`
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: decisionMixedNone},
-		{output: needsSolDecisionPacket()},
+		{structured: needsSolDecisionPacket()},
 	}}
 	var emitted bytes.Buffer
 	w := newWorkflowTWithOutput(t, st, r, &emitted)
@@ -1839,9 +1878,9 @@ func TestNeedsSolReviewNoneElementCorrectsBeforeSolReviewDispatch(t *testing.T) 
 	st := newStateStoreT(t)
 	reviewMixedNone := `{"status":"NEEDS_SOL_REVIEW","risk":"HIGH","summary":"review","requirement_coverage":"covered","invariants":"preserved","test_evidence":"ev","issues":"i","residual_risk":"r","targets":["none","glm-worker/internal/packet/validate.go:validateTargets"],"artifacts":[],"sol_question":"q"}`
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacketWithRisk("high risk work", "HIGH")},
+		{structured: implementedPacketWithRisk("high risk work", "HIGH")},
 		{structured: reviewMixedNone},
-		{output: needsSolReviewPacket()},
+		{structured: needsSolReviewPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 
@@ -1878,9 +1917,9 @@ func TestNeedsSolReviewNoneElementCorrectsBeforeSolReviewDispatch(t *testing.T) 
 func TestRiskFloorRejectsPassOnHighRiskWorker(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacketWithRisk("high risk work", "HIGH")},
-		{output: passPacket()},
-		{output: needsSolReviewPacket()},
+		{structured: implementedPacketWithRisk("high risk work", "HIGH")},
+		{structured: passPacket()},
+		{structured: needsSolReviewPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 
@@ -1920,9 +1959,9 @@ func TestRiskFloorRejectsPassAfterDecision(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacketWithRisk("decision applied", "LOW")},
-		{output: passPacket()},
-		{output: needsSolReviewPacket()},
+		{structured: implementedPacketWithRisk("decision applied", "LOW")},
+		{structured: passPacket()},
+		{structured: needsSolReviewPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 
@@ -1947,11 +1986,11 @@ func TestRiskFloorRejectsPassAfterDecision(t *testing.T) {
 func TestRiskFloorRejectsPassAfterAutoFix(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacket("done")},
-		{output: fixRequiredPacket()},
-		{output: implementedPacket("fixed")},
-		{output: passPacket()},
-		{output: needsSolReviewPacket()},
+		{structured: implementedPacket("done")},
+		{structured: fixRequiredPacket()},
+		{structured: implementedPacket("fixed")},
+		{structured: passPacket()},
+		{structured: needsSolReviewPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 
@@ -1985,9 +2024,9 @@ func TestRiskFloorRejectsPassAfterExplicitFix(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacket("explicit fix")},
-		{output: passPacket()},
-		{output: needsSolReviewPacket()},
+		{structured: implementedPacket("explicit fix")},
+		{structured: passPacket()},
+		{structured: needsSolReviewPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 
@@ -2025,17 +2064,9 @@ func TestRiskFloorRejectsPassAfterResume(t *testing.T) {
 		Prompt:         "review",
 		OriginalPrompt: "review",
 		Request:        "request",
-		WorkerResult: workerResultFromLines(
-			"STATUS: IMPLEMENTED",
-			"RISK: HIGH",
-			"SUMMARY: done",
-			"REQUIREMENT_COVERAGE: covered",
-			"TESTS: pass",
-			"UNVERIFIED: none",
-			"ARTIFACTS: none",
-		),
-		ReviewNumber: 1,
-		RateLimited:  true,
+		WorkerResult:   workerResultFromBody(`{"status":"IMPLEMENTED","risk":"HIGH","summary":"done","requirement_coverage":"covered","tests":"pass","unverified":"none"}`),
+		ReviewNumber:   1,
+		RateLimited:    true,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -2043,8 +2074,8 @@ func TestRiskFloorRejectsPassAfterResume(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: passPacket()},
-		{output: needsSolReviewPacket()},
+		{structured: passPacket()},
+		{structured: needsSolReviewPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 
@@ -2069,8 +2100,8 @@ func TestRiskFloorRejectsPassAfterResume(t *testing.T) {
 func TestRiskFloorAllowsLowRiskPass(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacket("done")},
-		{output: passPacket()},
+		{structured: implementedPacket("done")},
+		{structured: passPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 
@@ -2092,9 +2123,9 @@ func TestRiskFloorAllowsLowRiskPass(t *testing.T) {
 func TestRiskFloorReemitFailClosedOnRepeatedPass(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacketWithRisk("high risk work", "HIGH")},
-		{output: passPacket()},
-		{output: passPacket()},
+		{structured: implementedPacketWithRisk("high risk work", "HIGH")},
+		{structured: passPacket()},
+		{structured: passPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 
@@ -2138,7 +2169,7 @@ func TestRiskFloorReemitResumeCompliant(t *testing.T) {
 		Prompt:          "reemit",
 		OriginalPrompt:  "reemit",
 		Request:         "request",
-		WorkerResult:    workerResultFromLines("STATUS: IMPLEMENTED", "RISK: HIGH", "SUMMARY: done", "REQUIREMENT_COVERAGE: covered", "TESTS: pass", "UNVERIFIED: none", "ARTIFACTS: none"),
+		WorkerResult:    workerResultFromBody(workerPacketWithRisk("HIGH")),
 		ReviewNumber:    1,
 		RateLimited:     true,
 		RiskFloorReemit: true,
@@ -2148,7 +2179,7 @@ func TestRiskFloorReemitResumeCompliant(t *testing.T) {
 	if err := st.SetTaskStatus(state.TaskStatusRateLimited); err != nil {
 		t.Fatal(err)
 	}
-	r := &scriptedRunner{steps: []runnerStep{{output: needsSolReviewPacket()}}}
+	r := &scriptedRunner{steps: []runnerStep{{structured: needsSolReviewPacket()}}}
 	w := newWorkflowT(t, st, r)
 
 	if err := w.ExecuteResume(); err != nil {
@@ -2185,7 +2216,7 @@ func TestRiskFloorReemitResumeFailClosed(t *testing.T) {
 		Prompt:          "reemit",
 		OriginalPrompt:  "reemit",
 		Request:         "request",
-		WorkerResult:    workerResultFromLines("STATUS: IMPLEMENTED", "RISK: HIGH", "SUMMARY: done", "REQUIREMENT_COVERAGE: covered", "TESTS: pass", "UNVERIFIED: none", "ARTIFACTS: none"),
+		WorkerResult:    workerResultFromBody(workerPacketWithRisk("HIGH")),
 		ReviewNumber:    1,
 		RateLimited:     true,
 		RiskFloorReemit: true,
@@ -2195,7 +2226,7 @@ func TestRiskFloorReemitResumeFailClosed(t *testing.T) {
 	if err := st.SetTaskStatus(state.TaskStatusRateLimited); err != nil {
 		t.Fatal(err)
 	}
-	r := &scriptedRunner{steps: []runnerStep{{output: passPacket()}}}
+	r := &scriptedRunner{steps: []runnerStep{{structured: passPacket()}}}
 	w := newWorkflowT(t, st, r)
 
 	if err := w.ExecuteResume(); err != nil {

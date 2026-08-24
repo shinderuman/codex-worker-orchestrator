@@ -21,6 +21,16 @@ import (
 // ptyStartupFeedRunsはmarker確認直後の即writeでの輸送成立を反復観測する成功case回数。
 const ptyStartupFeedRuns = 5
 
+// stdinReadyMarkerはREADY control eventのmachine JSONL 1行本文。productionのtyped
+// producerと同一encodingから組み立て、契約形式をtest側へ再定義しない。
+func stdinReadyMarker() string {
+	line, err := marshalEventLine(stdinReadyControlEvent{Type: "control", Event: "stdin_ready"})
+	if err != nil {
+		panic(err)
+	}
+	return strings.TrimSuffix(string(line), "\n")
+}
+
 // TestStdinPayloadSelfContainedPTYはcaller契約「固定command起動・READY marker確認後の
 // payload 1回writeだけ」が事前sttyなしの実PTY上で成立することをAI callなしで検証する。
 // helperはscriptが用意したcanonical+echo有効の初期termiosを前提にproduction経路
@@ -156,7 +166,7 @@ func ptyTransportRun(t *testing.T, scenario string, run int) {
 			}
 		}
 	}
-	if strings.Count(output, stdinReadyMarker) != 1 {
+	if strings.Count(output, stdinReadyMarker()) != 1 {
 		t.Fatalf("run %d: READY markerがexactly onceではありません: %q", run, output)
 	}
 	if strings.Contains(output, "GLMPTYMARK") {
@@ -169,7 +179,7 @@ func ptyTransportRun(t *testing.T, scenario string, run int) {
 func ptyDrainOutput(r io.Reader, markerReady chan<- error, outputText chan<- string) {
 	reader := bufio.NewReader(r)
 	var output strings.Builder
-	markerLine := stdinReadyMarker + "\n"
+	markerLine := stdinReadyMarker() + "\n"
 	seen := false
 	for {
 		line, readErr := reader.ReadString('\n')
@@ -245,7 +255,7 @@ func stdinSelfContainedPTYHelper() {
 		ptyHelperFail(outPath, "raw mode not applied")
 	}
 	// markerはraw適用を保証した直後にだけ出す(production run()と同じ順序)。
-	if err := emitStdinReadyMarker(os.Stderr); err != nil {
+	if err := emitStdinReadyControlEvent(os.Stderr); err != nil {
 		ptyHelperFail(outPath, "ready marker: "+err.Error())
 	}
 

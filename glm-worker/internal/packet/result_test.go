@@ -121,7 +121,7 @@ func TestValidateWorkerResultRejections(t *testing.T) {
 			r.Recommendation = "r"
 			r.TestObligations = "t"
 		}, "NEEDS_SOL_DECISIONのTARGETSは空", false},
-		{"missing summary", func(r *Result) { r.Summary = " " }, "必須field SUMMARY", false},
+		{"missing summary", func(r *Result) { r.Summary = " " }, "必須field summary", false},
 		{"multiline field", func(r *Result) { r.Tests = "line1\nline2" }, "改行", false},
 		{"oversize field", func(r *Result) { r.Summary = strings.Repeat("x", MaxFieldBytes+1) }, "bytes以内", false},
 		{"unknown risk", func(r *Result) { r.Risk = Risk("MEDIUM") }, "LOWまたはHIGH", false},
@@ -213,8 +213,8 @@ func TestValidateReviewerResultRejections(t *testing.T) {
 			r.Status = StatusNeedsSolReview
 			r.Risk = RiskHigh
 			r.Targets = []string{"a.go"}
-		}, "必須field SOL_QUESTION", false},
-		{"missing invariants", func(r *Result) { r.Invariants = "" }, "必須field INVARIANTS", false},
+		}, "必須field sol_question", false},
+		{"missing invariants", func(r *Result) { r.Invariants = "" }, "必須field invariants", false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -247,73 +247,6 @@ func TestValidateResultRejectsOversizeDisplay(t *testing.T) {
 	err := ValidateWorkerResult(result)
 	if err == nil || !strings.Contains(err.Error(), "結果全体") {
 		t.Fatalf("err = %v", err)
-	}
-}
-
-func TestResultDisplayLines(t *testing.T) {
-	implemented := implementedResult()
-	want := []string{
-		"STATUS: IMPLEMENTED",
-		"RISK: LOW",
-		"SUMMARY: s",
-		"REQUIREMENT_COVERAGE: c",
-		"TESTS: t",
-		"UNVERIFIED: none",
-		"ARTIFACTS: none",
-	}
-	if got := implemented.DisplayLines(); strings.Join(got, "|") != strings.Join(want, "|") {
-		t.Fatalf("display = %v", got)
-	}
-
-	implemented.Targets = []string{"a.go", "b.go"}
-	if !strings.Contains(implemented.Display(), "TARGETS: a.go;b.go") {
-		t.Fatalf("targets not joined: %s", implemented.Display())
-	}
-
-	decision := Result{
-		Status:          StatusNeedsSolDecision,
-		Risk:            RiskHigh,
-		Decision:        "d",
-		Evidence:        "e",
-		Options:         "o",
-		Recommendation:  "r",
-		TestObligations: "t",
-	}
-	decisionDisplay := decision.Display()
-	for _, want := range []string{"DECISION: d", "TARGETS: none", "ARTIFACTS: none"} {
-		if !strings.Contains(decisionDisplay, want) {
-			t.Fatalf("decision display missing %q: %s", want, decisionDisplay)
-		}
-	}
-
-	review := Result{
-		Status:              StatusNeedsSolReview,
-		Risk:                RiskHigh,
-		Summary:             "s",
-		RequirementCoverage: "c",
-		TestEvidence:        "e",
-		Targets:             []string{"a.go"},
-		SolQuestion:         "q",
-		Invariants:          "i",
-		Issues:              "n",
-		ResidualRisk:        "n",
-	}
-	reviewDisplay := review.DisplayLines()
-	wantReview := []string{
-		"STATUS: NEEDS_SOL_REVIEW",
-		"RISK: HIGH",
-		"SUMMARY: s",
-		"REQUIREMENT_COVERAGE: c",
-		"INVARIANTS: i",
-		"TEST_EVIDENCE: e",
-		"ISSUES: n",
-		"RESIDUAL_RISK: n",
-		"SOL_QUESTION: q",
-		"TARGETS: a.go",
-		"ARTIFACTS: none",
-	}
-	if strings.Join(reviewDisplay, "|") != strings.Join(wantReview, "|") {
-		t.Fatalf("review display = %v, want %v", reviewDisplay, wantReview)
 	}
 }
 
@@ -393,11 +326,6 @@ func TestSolQuestionIsNeedsSolReviewOnly(t *testing.T) {
 		if strings.Contains(string(data), "sol_question") {
 			t.Fatalf("%s: 混入sol_questionがmachine JSONへ流出: %s", status, data)
 		}
-		for _, line := range result.DisplayLines() {
-			if strings.HasPrefix(line, "SOL_QUESTION") {
-				t.Fatalf("%s: 混入sol_questionがprojectionへ流出: %s", status, line)
-			}
-		}
 	}
 }
 
@@ -419,11 +347,11 @@ func TestValidateSolQuestionFieldConstraints(t *testing.T) {
 		question string
 		want     string
 	}{
-		{"newline", "line1\nline2", "field SOL_QUESTIONに改行"},
-		{"carriage return", "line1\rline2", "field SOL_QUESTIONに改行"},
-		{"oversize", strings.Repeat("q", MaxFieldBytes+1), "field SOL_QUESTIONは1536 bytes以内"},
-		{"empty", "", "必須field SOL_QUESTION"},
-		{"whitespace only", " \t ", "必須field SOL_QUESTION"},
+		{"newline", "line1\nline2", "field sol_questionに改行"},
+		{"carriage return", "line1\rline2", "field sol_questionに改行"},
+		{"oversize", strings.Repeat("q", MaxFieldBytes+1), "field sol_questionは1536 bytes以内"},
+		{"empty", "", "必須field sol_question"},
+		{"whitespace only", " \t ", "必須field sol_question"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -491,11 +419,10 @@ func fullyPopulatedResult(status Status) Result {
 }
 
 // TestContractFieldsSingleSourceはstatus別契約field集合を正として、validatorの必須集合と
-// MachineJSON・Displayの出力集合が一致することを全statusで直接照合する。
+// MachineJSONの出力集合が一致することを全statusで直接照合する。
 //   - 契約fieldを空にするとvalidatorはそのfieldの必須errorを返す
-//   - 契約外fieldへ改行・上限超の値を混入してもvalidation対象にならず、
-//     machine JSON・projectionのどちらにも出ない
-//   - machine JSONのtext key集合・DisplayのKEY順序はcontractFieldsと完全一致する
+//   - 契約外fieldへ改行・上限超の値を混入してもvalidation対象にならずmachine JSONへ出ない
+//   - machine JSONのtext key集合はcontractFieldsと完全一致する
 func TestContractFieldsSingleSource(t *testing.T) {
 	cases := map[Status]func(Result) error{
 		StatusImplemented:      ValidateWorkerResult,
@@ -521,7 +448,7 @@ func TestContractFieldsSingleSource(t *testing.T) {
 				blanked := fullyPopulatedResult(status)
 				setter(&blanked, " ")
 				err := validate(blanked)
-				if err == nil || !IsConstraintError(err) || !strings.Contains(err.Error(), "必須field "+field.display) {
+				if err == nil || !IsConstraintError(err) || !strings.Contains(err.Error(), "必須field "+field.machine) {
 					t.Fatalf("%sを空にした場合の必須field errorが出ていません: %v", field.machine, err)
 				}
 			}
@@ -540,11 +467,6 @@ func TestContractFieldsSingleSource(t *testing.T) {
 				}
 				if strings.Contains(string(data), `"`+machine+`"`) {
 					t.Fatalf("契約外field %sがmachine JSONへ流出: %s", machine, data)
-				}
-				for _, line := range noisy.DisplayLines() {
-					if strings.Contains(line, "noise("+string(status)+")") {
-						t.Fatalf("契約外field %sがprojectionへ流出: %s", machine, line)
-					}
 				}
 			}
 			data, err := result.MachineJSON()
@@ -565,14 +487,6 @@ func TestContractFieldsSingleSource(t *testing.T) {
 			}
 			if !reflect.DeepEqual(gotKeys, wantKeys) {
 				t.Fatalf("machine JSON key集合がcontractFieldsと一致しません: got %v want %v", gotKeys, wantKeys)
-			}
-			wantLines := []string{"STATUS: " + string(status), "RISK: " + string(result.Risk)}
-			for _, field := range contract {
-				wantLines = append(wantLines, field.display+": "+field.value(result))
-			}
-			wantLines = append(wantLines, "TARGETS: a.go:f", "ARTIFACTS: /tmp/x")
-			if got := result.DisplayLines(); strings.Join(got, "|") != strings.Join(wantLines, "|") {
-				t.Fatalf("display = %v, want %v", got, wantLines)
 			}
 		})
 	}
@@ -618,58 +532,6 @@ func TestMachineJSONRoundTrip(t *testing.T) {
 	}
 }
 
-func TestFromDisplayLinesRoundTrip(t *testing.T) {
-	result := Result{
-		Status:              StatusNeedsSolReview,
-		Risk:                RiskHigh,
-		Summary:             "s",
-		RequirementCoverage: "c",
-		Invariants:          "i",
-		TestEvidence:        "e",
-		Issues:              "none",
-		ResidualRisk:        "r",
-		Targets:             []string{"a.go:f", "b.go"},
-		Artifacts:           []string{"/tmp/x"},
-		SolQuestion:         "q",
-	}
-	parsed, err := FromDisplayLines(result.DisplayLines())
-	if err != nil {
-		t.Fatalf("err = %v", err)
-	}
-	encoded, err := json.Marshal(parsed)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want, err := json.Marshal(result)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(encoded) != string(want) {
-		t.Fatalf("round trip mismatch:\n%s\n%s", encoded, want)
-	}
-}
-
-func TestFromDisplayLinesRejectsBroken(t *testing.T) {
-	cases := []struct {
-		name  string
-		lines []string
-		want  string
-	}{
-		{"no key", []string{"plain text"}, "KEY: value"},
-		{"empty key", []string{": v"}, "KEYが空"},
-		{"duplicate", []string{"STATUS: PASS", "STATUS: PASS"}, "重複"},
-		{"no status", []string{"RISK: LOW"}, "STATUSがありません"},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			_, err := FromDisplayLines(c.lines)
-			if err == nil || !strings.Contains(err.Error(), c.want) {
-				t.Fatalf("err = %v, want substring %q", err, c.want)
-			}
-		})
-	}
-}
-
 func TestIsReportOnlyFix(t *testing.T) {
 	fix := Result{Status: StatusFixRequired, Targets: []string{ReportOnlyTargets}}
 	if !IsReportOnlyFix(fix) {
@@ -702,8 +564,8 @@ func TestRejectCategory(t *testing.T) {
 		{&constraintError{reason: "PASSのriskはLOWにしてください"}, "risk"},
 		{&constraintError{reason: "reviewer結果のstatusとして許容されません"}, "status"},
 		{&constraintError{reason: "ARTIFACTSのパスが重複しています"}, "artifacts"},
-		{&constraintError{reason: "field SUMMARYに改行を含められません"}, "multiline-field"},
-		{&constraintError{reason: "field SUMMARYは1536 bytes以内にしてください"}, "size"},
+		{&constraintError{reason: "field summaryに改行を含められません"}, "multiline-field"},
+		{&constraintError{reason: "field summaryは1536 bytes以内にしてください"}, "size"},
 		{&constraintError{reason: "other"}, "other"},
 		{nil, ""},
 	}

@@ -9,17 +9,17 @@ import (
 // 既存telemetryのTask Work Call記録だけから導出し、追加のmodel call・推測補完は行わない。
 // CallLatencyMSは呼出順のwall timeで、位置がsession内call indexに対応する。
 type SessionAging struct {
-	SessionID              string
-	Role                   SessionRole
-	Models                 []string
-	Calls                  int
-	ResumedCalls           int
-	CumulativeTurns        int
-	CumulativeInputTokens  int64
-	CumulativeOutputTokens int64
-	CallLatencyMS          []int64
-	FirstCallAt            time.Time
-	LastCallAt             time.Time
+	SessionID              string      `json:"session_id"`
+	Role                   SessionRole `json:"role"`
+	Models                 []string    `json:"models"`
+	Calls                  int         `json:"calls"`
+	ResumedCalls           int         `json:"resumed_calls"`
+	CumulativeTurns        int         `json:"cumulative_turns"`
+	CumulativeInputTokens  int64       `json:"cumulative_input_tokens"`
+	CumulativeOutputTokens int64       `json:"cumulative_output_tokens"`
+	CallLatencyMS          []int64     `json:"call_latency_ms"`
+	FirstCallAt            time.Time   `json:"first_call_at"`
+	LastCallAt             time.Time   `json:"last_call_at"`
 }
 
 // AgingFromModelCallLogsは呼出記録をsession単位へ集計する。session順は最初の呼出

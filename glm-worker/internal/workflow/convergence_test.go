@@ -24,8 +24,8 @@ func readRoundLogT(t *testing.T, st *state.StateStore) []state.RoundRecord {
 func TestConvergenceRecordsBaselineAndReviewRounds(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacket("done")},
-		{output: passPacket()},
+		{structured: implementedPacket("done")},
+		{structured: passPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 
@@ -57,10 +57,10 @@ func TestConvergenceRecordsBaselineAndReviewRounds(t *testing.T) {
 func TestConvergenceRecordsAutoFixRounds(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacket("done")},
-		{output: fixRequiredPacket()},
-		{output: implementedPacket("fixed")},
-		{output: needsSolReviewPacket()},
+		{structured: implementedPacket("done")},
+		{structured: fixRequiredPacket()},
+		{structured: implementedPacket("fixed")},
+		{structured: needsSolReviewPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 
@@ -93,8 +93,8 @@ func TestConvergenceRecordsDecisionRound(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacketWithRisk("decision applied", "HIGH")},
-		{output: needsSolReviewPacket()},
+		{structured: implementedPacketWithRisk("decision applied", "HIGH")},
+		{structured: needsSolReviewPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 
@@ -116,9 +116,9 @@ func TestConvergenceRecordsDecisionRound(t *testing.T) {
 func TestConvergenceCaptureErrorRecordedNotFatal(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacket("done")},
-		{output: passPacket()},
-		{output: needsSolReviewPacket()},
+		{structured: implementedPacket("done")},
+		{structured: passPacket()},
+		{structured: needsSolReviewPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 	w.collectChangedPaths = func(string, string) ([]string, error) {
@@ -152,8 +152,8 @@ func TestConvergenceRecordAppendFailureDoesNotAffectTask(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacket("done")},
-		{output: passPacket()},
+		{structured: implementedPacket("done")},
+		{structured: passPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 
@@ -174,8 +174,8 @@ func TestConvergencePathObservationUsesWorktree(t *testing.T) {
 	}
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacket("done")},
-		{output: passPacket()},
+		{structured: implementedPacket("done")},
+		{structured: passPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 	w.config.RepoRoot = root

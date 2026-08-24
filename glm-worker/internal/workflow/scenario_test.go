@@ -19,12 +19,15 @@ import (
 )
 
 type scenarioStep struct {
-	Lines []string `json:"lines"`
-	Error string   `json:"error"`
-	// Signalは出力fileへ書くprovider障害signal本文。packet行とは共存しない。
+	// Packetは1 stepのmodel structured_output JSON object本文。scriptedRunnerがそのまま
+	// StructuredOutputへ流し、 corpus検証はParseStructured+意味検証を通す。
+	Packet json.RawMessage `json:"packet"`
+	Error  string          `json:"error"`
+	// Signalは出力fileへ書くprovider障害signal本文。packetとは共存しない。
 	Signal string `json:"signal,omitempty"`
-	// Rawは結果検証違反を再現する生の出力本文。corpus検証を通らない構造(未変換本文による
-	// schema-mismatch再現)や意味違反(TARGETS: none等)をscenarioへ入力する。
+	// Rawは結果検証違反を再現するstructured_output本文。corpus検証(packet欄の事前
+	// validate)を通らないbody、すなわち意味違反(NEEDS_SOL_REVIEW targetsへの予約値none等)
+	// やschema不一致(JSONでない本文・契約外構造)をそのままmodel出力として流す。
 	Raw string `json:"raw,omitempty"`
 	// Usage/CostUSDはRunResult観測値(token/cost telemetry検証用)。実runnerはerror時も
 	// 取得できた観測値を返すため、fatal終了stepにも設定して記録欠落を検証できる。
@@ -116,7 +119,7 @@ type scenarioDoc struct {
 	// ExpectedPromptsはprompt呼出indexごとの期待内容。FIX_REQUIREDのTARGETS予約値が
 	// production dispatchで専用promptを選んだ因果を終端期待と独立に検証する。
 	ExpectedPrompts []promptExpectation `json:"expected_prompts,omitempty"`
-	// ExpectedErrorStatusはerror terminal終端scenarioの期待STATUS。設定時はpacket終端を検証しない。
+	// ExpectedErrorStatusはerror terminal終端scenarioの期待process error kind。設定時はpacket終端を検証しない。
 	ExpectedErrorStatus string `json:"expected_error_status,omitempty"`
 	// ExpectedProbeCountはprobe呼出の期待回数。
 	ExpectedProbeCount int `json:"expected_probe_count,omitempty"`
@@ -263,7 +266,7 @@ func validateCorpus(sc scenarioFile, mf manifestFile) error {
 
 	knownEntry := map[string]bool{"new_task": true, "resume": true}
 	knownStatus := map[string]bool{"IMPLEMENTED": true, "PASS": true, "FIX_REQUIRED": true, "NEEDS_SOL_DECISION": true, "NEEDS_SOL_REVIEW": true}
-	knownError := map[string]bool{"PROVIDER_UNAVAILABLE": true, "RATE_LIMITED": true, "WORKER_ERROR": true}
+	knownError := map[string]bool{"provider_unavailable": true, "rate_limited": true, "worker_error": true}
 	knownRisk := map[string]bool{"LOW": true, "HIGH": true}
 	knownTask := map[string]bool{"active": true, "waiting-decision": true, "waiting-sol-review": true, "complete": true, "rate-limited": true, "provider-unavailable": true}
 
@@ -393,7 +396,7 @@ func validateCorpus(sc scenarioFile, mf manifestFile) error {
 		if s.ForbiddenErrorStatus != "" && !knownError[s.ForbiddenErrorStatus] {
 			return fmt.Errorf("scenario %s unknown forbidden error status %q", s.ID, s.ForbiddenErrorStatus)
 		}
-		if s.Entry == "resume" && s.ExpectedErrorStatus == "" && s.RunnerSteps[len(s.RunnerSteps)-1].Error == "" && s.RunnerSteps[len(s.RunnerSteps)-1].Signal == "" && s.RunnerSteps[len(s.RunnerSteps)-1].Raw == "" && len(s.RunnerSteps[len(s.RunnerSteps)-1].Lines) == 0 {
+		if s.Entry == "resume" && s.ExpectedErrorStatus == "" && s.RunnerSteps[len(s.RunnerSteps)-1].Error == "" && s.RunnerSteps[len(s.RunnerSteps)-1].Signal == "" && s.RunnerSteps[len(s.RunnerSteps)-1].Raw == "" && len(s.RunnerSteps[len(s.RunnerSteps)-1].Packet) == 0 {
 			return fmt.Errorf("scenario %s empty terminal step", s.ID)
 		}
 		knownCheckpoint := map[string]bool{"": true, "none": true, "rate-limited": true, "provider-unavailable": true}
@@ -441,12 +444,12 @@ func validateCorpus(sc scenarioFile, mf manifestFile) error {
 		}
 		artifactTokenUsed := false
 		for i, step := range s.RunnerSteps {
-			hasLines := len(step.Lines) > 0
+			hasPacket := len(step.Packet) > 0
 			hasErr := step.Error != ""
 			hasSignal := step.Signal != ""
 			hasRaw := step.Raw != ""
 			kinds := 0
-			for _, present := range []bool{hasLines, hasErr, hasSignal, hasRaw} {
+			for _, present := range []bool{hasPacket, hasErr, hasSignal, hasRaw} {
 				if present {
 					kinds++
 				}
@@ -457,26 +460,25 @@ func validateCorpus(sc scenarioFile, mf manifestFile) error {
 			if kinds > 1 {
 				return fmt.Errorf("scenario %s step %d has multiple terminal kinds", s.ID, i)
 			}
-			if hasLines {
-				result, convErr := packet.FromDisplayLines(step.Lines)
-				if convErr != nil {
-					return fmt.Errorf("scenario %s step %d invalid result: %w", s.ID, i, convErr)
+			if hasPacket {
+				result, parseErr := packet.ParseStructured(step.Packet)
+				if parseErr != nil {
+					return fmt.Errorf("scenario %s step %d invalid result: %w", s.ID, i, parseErr)
 				}
 				if err := validateTypedResult(result); err != nil {
 					return fmt.Errorf("scenario %s step %d invalid result: %v", s.ID, i, err)
 				}
-				for _, ln := range step.Lines {
-					if err := validateScenarioArtifactToken(s.ID, ln, artifactNames); err != nil {
-						return err
-					}
-					if strings.Contains(ln, scenarioArtifactDirToken) {
-						artifactTokenUsed = true
-					}
+				packetText := string(step.Packet)
+				if err := validateScenarioArtifactToken(s.ID, packetText, artifactNames); err != nil {
+					return err
+				}
+				if strings.Contains(packetText, scenarioArtifactDirToken) {
+					artifactTokenUsed = true
 				}
 			}
 		}
 		if len(s.ArtifactFiles) > 0 && !artifactTokenUsed {
-			return fmt.Errorf("scenario %s declares artifact_files but no runner step line references %s", s.ID, scenarioArtifactDirToken)
+			return fmt.Errorf("scenario %s declares artifact_files but no runner step packet references %s", s.ID, scenarioArtifactDirToken)
 		}
 		for i, exp := range s.ExpectedPrompts {
 			if exp.Index < 0 {
@@ -621,8 +623,8 @@ func validCorpus() (scenarioFile, manifestFile) {
 			Entry:            "new_task",
 			InstructionFiles: []string{"codex/glm-worker/prompts/WORKER.md"},
 			RunnerSteps: []scenarioStep{
-				{Lines: []string{"STATUS: IMPLEMENTED", "RISK: LOW", "SUMMARY: s", "REQUIREMENT_COVERAGE: c", "TESTS: t", "UNVERIFIED: none", "ARTIFACTS: none"}},
-				{Lines: []string{"STATUS: PASS", "RISK: LOW", "SUMMARY: s", "REQUIREMENT_COVERAGE: c", "INVARIANTS: i", "TEST_EVIDENCE: e", "ISSUES: none", "RESIDUAL_RISK: none", "TARGETS: final diff", "ARTIFACTS: none"}},
+				{Packet: json.RawMessage(`{"status":"IMPLEMENTED","risk":"LOW","summary":"s","requirement_coverage":"c","tests":"t","unverified":"none"}`)},
+				{Packet: json.RawMessage(`{"status":"PASS","risk":"LOW","summary":"s","requirement_coverage":"c","invariants":"i","test_evidence":"e","issues":"none","residual_risk":"none","targets":["final diff"]}`)},
 			},
 			ExpectedModels:       []string{"opus", "haiku"},
 			ExpectedPacketStatus: "PASS",
@@ -704,10 +706,10 @@ func TestScenarioCorpusContractRejectsInvalid(t *testing.T) {
 			sc.Scenarios[0].RunnerSteps[0].Error = "boom"
 		}, "multiple terminal kinds"},
 		{"step both packet and raw", func(sc *scenarioFile, _ *manifestFile) {
-			sc.Scenarios[0].RunnerSteps[0].Raw = "PACKET_BEGIN\nSTATUS: IMPLEMENTED\nPACKET_END\n"
+			sc.Scenarios[0].RunnerSteps[0].Raw = "{\"status\":\"IMPLEMENTED\"}\n"
 		}, "multiple terminal kinds"},
 		{"step invalid packet", func(sc *scenarioFile, _ *manifestFile) {
-			sc.Scenarios[0].RunnerSteps[0] = scenarioStep{Lines: []string{"STATUS: PASS", "RISK: LOW", "SUMMARY: s"}}
+			sc.Scenarios[0].RunnerSteps[0] = scenarioStep{Packet: json.RawMessage(`{"status":"PASS","risk":"LOW","summary":"s"}`)}
 		}, "invalid result"},
 		{"duplicate manifest path", func(_ *scenarioFile, mf *manifestFile) {
 			mf.InstructionFiles = append(mf.InstructionFiles, manifestEntry{Path: "codex/glm-worker/prompts/WORKER.md", SHA256: "x", Scenarios: []string{"s1"}})
@@ -771,10 +773,10 @@ func TestScenarioCorpusContractRejectsInvalid(t *testing.T) {
 		}, "content empty"},
 		{"artifact files unused", func(sc *scenarioFile, _ *manifestFile) {
 			sc.Scenarios[0].ArtifactFiles = []scenarioArtifact{{Name: "evidence.md", Content: "x"}}
-		}, "no runner step line references"},
+		}, "no runner step packet references"},
 		{"artifact token without declared file", func(sc *scenarioFile, _ *manifestFile) {
-			lines := sc.Scenarios[0].RunnerSteps[0].Lines
-			lines[len(lines)-1] = strings.Replace(lines[len(lines)-1], "ARTIFACTS: none", "ARTIFACTS: "+scenarioArtifactDirToken+"/evidence.md", 1)
+			packetText := string(sc.Scenarios[0].RunnerSteps[0].Packet)
+			sc.Scenarios[0].RunnerSteps[0].Packet = json.RawMessage(strings.Replace(packetText, `"unverified":"none"`, `"unverified":"none","artifacts":["`+scenarioArtifactDirToken+`/evidence.md"]`, 1))
 		}, "without matching artifact_files entry"},
 	}
 	for _, c := range cases {
@@ -796,17 +798,20 @@ func TestScenarioCorpusContractRejectsInvalid(t *testing.T) {
 func stepsFromScenario(doc scenarioDoc) []runnerStep {
 	steps := make([]runnerStep, len(doc.RunnerSteps))
 	for i, s := range doc.RunnerSteps {
-		output := "PACKET_BEGIN\n" + strings.Join(s.Lines, "\n") + "\nPACKET_END\n"
+		// packet/rawはどちらもmodel structured_output本文。rawは意味・schema違反を
+		// 再現する契約不合致bodyで、検証を通らない点以外はpacketと同じ経路へ流す。
+		structured := string(s.Packet)
+		if s.Raw != "" {
+			structured = s.Raw
+		}
 		var runErr error
 		if s.Error != "" {
 			runErr = errors.New(s.Error)
 		}
+		output := ""
 		if s.Signal != "" {
 			output = s.Signal
 			runErr = errors.New("exit status 1")
-		}
-		if s.Raw != "" {
-			output = s.Raw
 		}
 		result := runner.RunResult{
 			TopLevelUsage: runner.TokenUsage{
@@ -815,13 +820,31 @@ func stepsFromScenario(doc scenarioDoc) []runnerStep {
 			},
 			TotalCostUSD: s.CostUSD,
 		}
-		steps[i] = runnerStep{output: output, runErr: runErr, result: result}
+		steps[i] = runnerStep{output: output, runErr: runErr, result: result, structured: structured}
 	}
 	return steps
 }
 
-// validateTypedResultは表示行から復元した結果がworker/reviewerどちらかの契約を満たすかを
-// 検証する。roleは実行時のrunModelで確定するため、corpus検証はどちらか一方の通過を要求する。
+// workflowErrorKindはscenario終端errorをprocess error kind相当へ分類する。app層の
+// buildProcessErrorと同じtyped error対応を、import cycleを避けるためtest側で写す。
+func workflowErrorKind(err error) string {
+	var workerErr *WorkerError
+	var limitErr runner.ZaiRateLimitError
+	var providerErr *runner.ProviderUnavailableError
+	switch {
+	case errors.As(err, &limitErr):
+		return "rate_limited"
+	case errors.As(err, &providerErr):
+		return "provider_unavailable"
+	case errors.As(err, &workerErr):
+		return "worker_error"
+	default:
+		return "internal"
+	}
+}
+
+// validateTypedResultはstructured_outputから復元した結果がworker/reviewerどちらかの契約を
+// 満たすかを検証する。roleは実行時のrunModelで確定するため、corpus検証はどちらか一方の通過を要求する。
 func validateTypedResult(result packet.Result) error {
 	if err := packet.ValidateWorkerResult(result); err == nil {
 		return nil
@@ -1104,11 +1127,11 @@ func runScenario(t *testing.T, doc scenarioDoc) {
 		if scenarioErr == nil {
 			t.Fatalf("expected error terminal %s, got success with packet:\n%s", doc.ExpectedErrorStatus, buf.String())
 		}
-		if !strings.Contains(scenarioErr.Error(), "STATUS: "+doc.ExpectedErrorStatus) {
-			t.Fatalf("error terminal = %q want STATUS: %s\n%s", scenarioErr.Error(), doc.ExpectedErrorStatus, scenarioErr)
+		if got := workflowErrorKind(scenarioErr); got != doc.ExpectedErrorStatus {
+			t.Fatalf("error terminal kind = %q want %q (%v)", got, doc.ExpectedErrorStatus, scenarioErr)
 		}
-		if doc.ForbiddenErrorStatus != "" && strings.Contains(scenarioErr.Error(), "STATUS: "+doc.ForbiddenErrorStatus) {
-			t.Fatalf("error terminal must not be %s:\n%s", doc.ForbiddenErrorStatus, scenarioErr)
+		if doc.ForbiddenErrorStatus != "" && workflowErrorKind(scenarioErr) == doc.ForbiddenErrorStatus {
+			t.Fatalf("error terminal must not be %s:\n%v", doc.ForbiddenErrorStatus, scenarioErr)
 		}
 	} else {
 		if scenarioErr != nil {

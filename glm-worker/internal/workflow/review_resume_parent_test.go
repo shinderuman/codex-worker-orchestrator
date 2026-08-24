@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -94,7 +95,7 @@ func reviewResumeCheckpoint(stop *state.ParentFileStates) state.ResumeCheckpoint
 		Prompt:          "review",
 		OriginalPrompt:  "review",
 		Request:         "request",
-		WorkerResult:    workerResultFromLines(workerPacketLines()...),
+		WorkerResult:    workerResultFromBody(workerPacket()),
 		ReviewNumber:    1,
 		RateLimited:     true,
 		StopParentFiles: stop,
@@ -144,7 +145,7 @@ func assertReviewResumeStopped(t *testing.T, st *state.StateStore, r *scriptedRu
 // 現状へ再固定し、reviewer呼出・review-end再照合・承認telemetryがすべて新基準で動く。
 func TestReviewResumeParentUpdateAcceptedReanchorsBaseline(t *testing.T) {
 	st := newStateStoreT(t)
-	r := &scriptedRunner{steps: []runnerStep{{output: passPacket()}}}
+	r := &scriptedRunner{steps: []runnerStep{{structured: passPacket()}}}
 	var out bytes.Buffer
 	w := newReviewResumeWorkflow(t, st, r, &out)
 	repoRoot := w.config.RepoRoot
@@ -322,7 +323,7 @@ func TestReviewResumeParentDeltaMatrix(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			st := newStateStoreT(t)
-			r := &scriptedRunner{steps: []runnerStep{{output: passPacket()}}}
+			r := &scriptedRunner{steps: []runnerStep{{structured: passPacket()}}}
 			var out bytes.Buffer
 			w := newReviewResumeWorkflow(t, st, r, &out)
 			repoRoot := w.config.RepoRoot
@@ -385,7 +386,7 @@ func TestReviewResumeLegacyStateFailsClosed(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			st := newStateStoreT(t)
-			r := &scriptedRunner{steps: []runnerStep{{output: passPacket()}}}
+			r := &scriptedRunner{steps: []runnerStep{{structured: passPacket()}}}
 			var out bytes.Buffer
 			w := newReviewResumeWorkflow(t, st, r, &out)
 			repoRoot := w.config.RepoRoot
@@ -422,7 +423,7 @@ func TestReviewResumeLegacyStateFailsClosed(t *testing.T) {
 // 変更すれば再固定基準に対してfail closedする。
 func TestReviewResumeParentUpdateThenReviewerMutationFailsClosed(t *testing.T) {
 	st := newStateStoreT(t)
-	r := &scriptedRunner{steps: []runnerStep{{output: passPacket()}}}
+	r := &scriptedRunner{steps: []runnerStep{{structured: passPacket()}}}
 	var out bytes.Buffer
 	w := newReviewResumeWorkflow(t, st, r, &out)
 	repoRoot := w.config.RepoRoot
@@ -483,7 +484,7 @@ func TestFailedResumeCallRecapturesStopParentStates(t *testing.T) {
 		t.Fatalf("復元checkpointの停止時親stateが呼出後時点へ固定されていません: %#v", restored.StopParentFiles)
 	}
 
-	r2 := &scriptedRunner{steps: []runnerStep{{output: passPacket()}}}
+	r2 := &scriptedRunner{steps: []runnerStep{{structured: passPacket()}}}
 	var out2 bytes.Buffer
 	w2 := newReviewResumeWorkflow(t, st, r2, &out2)
 	if err := st.SetTaskStatus(state.TaskStatusRateLimited); err != nil {
@@ -504,7 +505,7 @@ func TestFailedResumeCallRecapturesStopParentStates(t *testing.T) {
 // 再開は基準なしとしてfail closedする。
 func TestReviewResumeCrashWindowTamperFailsClosed(t *testing.T) {
 	st := newStateStoreT(t)
-	r := &scriptedRunner{steps: []runnerStep{{output: passPacket()}}}
+	r := &scriptedRunner{steps: []runnerStep{{structured: passPacket()}}}
 	var out bytes.Buffer
 	w := newReviewResumeWorkflow(t, st, r, &out)
 	repoRoot := w.config.RepoRoot
@@ -546,7 +547,7 @@ func TestReviewResumeCrashWindowTamperFailsClosed(t *testing.T) {
 	// crash直後の素直なresumeは停止理由を持たないため従来gateで拒否される。
 	tampered := reviewResumeSnapshot("worktree-2", "excluding-1", nil)
 	var out2 bytes.Buffer
-	w2 := newReviewResumeWorkflow(t, st, &scriptedRunner{steps: []runnerStep{{output: passPacket()}}}, &out2)
+	w2 := newReviewResumeWorkflow(t, st, &scriptedRunner{steps: []runnerStep{{structured: passPacket()}}}, &out2)
 	w2.captureSnapshot = func(string) (state.GitSnapshot, error) { return tampered, nil }
 	if err := w2.ExecuteResume(); err == nil || !strings.Contains(err.Error(), "not stopped") {
 		t.Fatalf("crash残存checkpointの直接resumeはgate errorになるべき: %v", err)
@@ -560,7 +561,7 @@ func TestReviewResumeCrashWindowTamperFailsClosed(t *testing.T) {
 	if err := st.SetTaskStatus(state.TaskStatusRateLimited); err != nil {
 		t.Fatal(err)
 	}
-	r3 := &scriptedRunner{steps: []runnerStep{{output: passPacket()}}}
+	r3 := &scriptedRunner{steps: []runnerStep{{structured: passPacket()}}}
 	var out3 bytes.Buffer
 	w3 := newReviewResumeWorkflow(t, st, r3, &out3)
 	w3.captureSnapshot = func(string) (state.GitSnapshot, error) { return tampered, nil }
@@ -576,8 +577,8 @@ func TestReviewResumeCrashWindowTamperFailsClosed(t *testing.T) {
 func TestWorkerResumeParentUpdateDuringStopProceeds(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
-		{output: implementedPacket("resumed")},
-		{output: passPacket()},
+		{structured: implementedPacket("resumed")},
+		{structured: passPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 	repoRoot := w.config.RepoRoot
@@ -628,7 +629,8 @@ func TestRateLimitStopRecordsStopParentFiles(t *testing.T) {
 	w.temp = t.TempDir()
 	writeRepoParentPlan(t, w.config.RepoRoot, "plan-at-stop\n")
 
-	if _, err := w.runModel(reviewResumeCheckpoint(nil)); err == nil || !strings.Contains(err.Error(), "STATUS: RATE_LIMITED") {
+	var limitErr runner.ZaiRateLimitError
+	if _, err := w.runModel(reviewResumeCheckpoint(nil)); err == nil || !errors.As(err, &limitErr) {
 		t.Fatalf("rate limit errorを期待: %v", err)
 	}
 	cp, err := st.LoadResumeCheckpoint()

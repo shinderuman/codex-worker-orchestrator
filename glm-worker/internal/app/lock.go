@@ -1,6 +1,13 @@
 package app
 
-import "strings"
+import (
+	"errors"
+	"strings"
+)
+
+// ErrRepoLockHeldは同一repositoryで別glm-worker processがlockを保持している失敗。
+// process errorのkind repo_lock_heldへ対応し、重複起動判定の唯一の根拠になる。
+var ErrRepoLockHeld = errors.New("another glm-worker is already running for this repository")
 
 // LockStateは対象repository lock fileの実保持状態。
 type LockState string

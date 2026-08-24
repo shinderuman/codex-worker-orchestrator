@@ -8,11 +8,10 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/007-machine-only-legacy-cleanup.md`
+- `IMPLEMENTATION_TASKS/completion-detection-false-negative-incident.md`
 
 ## NEXT（優先順）
 
-- `IMPLEMENTATION_TASKS/completion-detection-false-negative-incident.md`
 - `IMPLEMENTATION_TASKS/zai-five-hour-limit-immediate-stop.md`
 - `IMPLEMENTATION_TASKS/008-machine-protocol-measurement.md`
 - `IMPLEMENTATION_TASKS/009-worker-call-outliers.md`
@@ -44,14 +43,14 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 ## 現在のGit境界
 
 - branch: `main`
-- implementation baseline: Task 007 external output JSON/JSONL再open metadata commit（current HEAD）
-- metadata boundary: ユーザー追加要件を同じTask 007へlosslessに追記してtask fileを復元し、new task ID `820e121c-4a18-4c41-b644-86d18a850896`でworker-newを開始した境界
+- implementation baseline: Task 007 external machine JSON/JSONL統一commit（current HEAD）
+- metadata boundary: 再openしたTask 007をHistoryへ移行してtask fileを削除し、本配置・installed status JSON smokeを完了してcompletion detection incidentをACTIVEへ昇格した境界
 - push: 禁止
 
 ## 現在の停止理由
 
-Task 007の外部出力JSON/JSONL統一をworker-newで開始後、Z.ai 5h rate limit停止。working tree・task state・session・checkpointを保持し、自動再開automationを実体検証済み。
+blockerなし。Task 007の実装・review・Sol採否・commit・完了同期・本配置・installed-state検証を完了。completion detection incidentは未着手。
 
 ## 次の親Codex操作
 
-`2026-08-24T06:15:56+08:00`のheartbeatでtask ID・rate-limited・resume可を確認し、同一checkout/session/checkpointから`glm-worker --resume`する。固定間隔pollingは行わない。
+ACTIVEのcompletion detection incidentを要求正本として新しいGLM taskを開始する。

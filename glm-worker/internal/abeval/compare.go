@@ -79,85 +79,139 @@ func reductionPercent(direct, orchestrated int64) float64 {
 	return float64(direct-orchestrated) / float64(direct) * 100
 }
 
-// Formatは比較結果をKEY: value形式の表示へ組み立てる。Codex ReductionとQuality Deltaを
-// 先頭に置き、時間とGLM usageは別行とし、actual usageとproxy指標・unknownを区別した
-// 表記だけを出力する。
-func Format(c Comparison) string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "SPEC: %s\n", c.Spec.ID)
-	fmt.Fprintf(&b, "MODES: %s vs %s\n", ModeDirect, ModeOrchestrated)
-	fmt.Fprintf(&b, "COMPARISON_METADATA: commit=%s; initial-worktree=%s; codex-model=%s; codex-reasoning=%s; request-sha256=%s\n",
-		c.Spec.RepoSnapshotCommit,
-		c.Spec.InitialWorktree,
-		c.Spec.CodexModel,
-		c.Spec.CodexReasoningEffort,
-		shortSHA256(c.Spec.UserRequest))
-	fmt.Fprintf(&b, "MEASUREMENT_BOUNDARY: %s\n", c.Spec.MeasurementBoundary)
-	fmt.Fprintf(&b, "ISOLATION: independent-session=%t; independent-worktree=%t; cache-avoidance=%s\n",
-		c.Spec.Isolation.IndependentSession,
-		c.Spec.Isolation.IndependentWorktree,
-		c.Spec.Isolation.CacheAvoidance)
-	fmt.Fprintf(&b, "CODEX_REDUCTION: %s\n", formatCodexReduction(c))
-	fmt.Fprintf(&b, "QUALITY_DELTA: tests direct=%dfail/%drun orchestrated=%dfail/%drun; hidden-verification direct=%s orchestrated=%s; escaped-bugs direct=%d orchestrated=%d; scope-violations direct=%d orchestrated=%d\n",
-		c.Direct.Quality.TestFailures, c.Direct.Quality.TestsRun,
-		c.Orchestrated.Quality.TestFailures, c.Orchestrated.Quality.TestsRun,
-		c.Direct.Quality.HiddenVerification, c.Orchestrated.Quality.HiddenVerification,
-		c.Direct.Quality.EscapedBugs, c.Orchestrated.Quality.EscapedBugs,
-		c.Direct.Quality.ScopeViolations, c.Orchestrated.Quality.ScopeViolations)
-	fmt.Fprintf(&b, "TIME: direct=%s; orchestrated=%s; delta=%s\n",
-		c.DirectDuration.Truncate(time.Second),
-		c.OrchestratedDuration.Truncate(time.Second),
-		(c.OrchestratedDuration - c.DirectDuration).Truncate(time.Second))
-	fmt.Fprintf(&b, "CODEX_USAGE: direct=%s; orchestrated=%s\n", formatCodexUsage(c.Direct.CodexUsage), formatCodexUsage(c.Orchestrated.CodexUsage))
-	fmt.Fprintf(&b, "GLM_USAGE: direct=%s; orchestrated=%s\n", formatDirectGLMUsage(), formatGLMUsage(c.Orchestrated.GLMUsage))
-	fmt.Fprintf(&b, "PROXY_METRICS: direct=%s; orchestrated=%s\n", formatProxy(c.Direct.Proxy), formatProxy(c.Orchestrated.Proxy))
-	fmt.Fprintf(&b, "NOTES: GLM tokenとCodex tokenの合算値は算出しない。actual Codex usageは公式/runtime telemetry由来のみで、取得できない値はunknownとし推定しない。codex_usage.sourceは申告値であり公式export内容との機械照合は行わない。usage測定用の追加AI promptは発生させていない。\n")
-	return b.String()
+// Reportは--eval-ab成功時のmachine contract。actual usageとproxy指標・unknownを
+// JSON型で区別して載せる。GLM tokenとCodex tokenを合算した総合値fieldは持たない。
+type Report struct {
+	SpecID              string                `json:"spec_id"`
+	Modes               []string              `json:"modes"`
+	Metadata            ReportMetadata        `json:"metadata"`
+	MeasurementBoundary string                `json:"measurement_boundary"`
+	Isolation           IsolationRequirements `json:"isolation"`
+	CodexReduction      ReportReduction       `json:"codex_reduction"`
+	QualityDelta        ReportQualityDelta    `json:"quality_delta"`
+	Time                ReportTime            `json:"time"`
+	CodexUsage          ReportCodexUsagePair  `json:"codex_usage"`
+	GLMUsage            ReportGLMUsagePair    `json:"glm_usage"`
+	ProxyMetrics        ReportProxyPair       `json:"proxy_metrics"`
 }
 
-func formatCodexReduction(c Comparison) string {
-	r := c.CodexReduction
-	if r.Status == codexReductionUnknown {
-		return fmt.Sprintf("unknown (%s)", r.UnknownReason)
-	}
-	var parts []string
-	if c.Direct.CodexUsage.InputTokens > 0 {
-		parts = append(parts, fmt.Sprintf("input=%.1f%%", r.InputPercent))
-	}
-	if c.Direct.CodexUsage.OutputTokens > 0 {
-		parts = append(parts, fmt.Sprintf("output=%.1f%%", r.OutputPercent))
-	}
-	return fmt.Sprintf("%s (actual usage, direct-source=%s, orchestrated-source=%s)",
-		strings.Join(parts, ", "),
-		c.Direct.CodexUsage.Source,
-		c.Orchestrated.CodexUsage.Source)
+// ReportMetadataは両mode共通の比較条件。UserRequestSHA256は要求本文の正準hash全文。
+type ReportMetadata struct {
+	RepoSnapshotCommit string `json:"repo_snapshot_commit"`
+	InitialWorktree    string `json:"initial_worktree"`
+	CodexModel         string `json:"codex_model"`
+	CodexReasoning     string `json:"codex_reasoning"`
+	UserRequestSHA256  string `json:"user_request_sha256"`
 }
 
-func formatCodexUsage(usage CodexUsage) string {
+// ReportReductionはactual Codex使用量に基づくDirect比の削減率。Statusはactualか
+// unknownで、unknownのときUnknownReasonだけが根拠を運びpercentは出さない。
+type ReportReduction struct {
+	Status             string   `json:"status"`
+	UnknownReason      string   `json:"unknown_reason,omitempty"`
+	InputPercent       *float64 `json:"input_percent,omitempty"`
+	OutputPercent      *float64 `json:"output_percent,omitempty"`
+	DirectSource       string   `json:"direct_source,omitempty"`
+	OrchestratedSource string   `json:"orchestrated_source,omitempty"`
+}
+
+type ReportQualityDelta struct {
+	Direct       Quality `json:"direct"`
+	Orchestrated Quality `json:"orchestrated"`
+}
+
+type ReportTime struct {
+	DirectMS       int64 `json:"direct_ms"`
+	OrchestratedMS int64 `json:"orchestrated_ms"`
+	DeltaMS        int64 `json:"delta_ms"`
+}
+
+// ReportCodexUsagePairは両modeのactual Codex使用量。unknownのときnull。
+type ReportCodexUsagePair struct {
+	Direct       *CodexUsage `json:"direct"`
+	Orchestrated *CodexUsage `json:"orchestrated"`
+}
+
+// ReportGLMUsagePairはglm-worker側実測使用量。direct modeはglm-worker委譲がないため
+// null、orchestratedはrecord解決済みの実測値。
+type ReportGLMUsagePair struct {
+	Direct       *GLMUsage `json:"direct"`
+	Orchestrated *GLMUsage `json:"orchestrated"`
+}
+
+// ReportProxyPairはactual usageではない代理指標。観測がないmodeはnull。
+type ReportProxyPair struct {
+	Direct       *ProxyMetrics `json:"direct"`
+	Orchestrated *ProxyMetrics `json:"orchestrated"`
+}
+
+// BuildReportは比較結果をmachine contractのReportへ組み立てる。
+func BuildReport(c Comparison) Report {
+	reduction := ReportReduction{Status: c.CodexReduction.Status}
+	if c.CodexReduction.Status == codexReductionUnknown {
+		reduction.UnknownReason = c.CodexReduction.UnknownReason
+	} else {
+		if c.Direct.CodexUsage.InputTokens > 0 {
+			reduction.InputPercent = &c.CodexReduction.InputPercent
+		}
+		if c.Direct.CodexUsage.OutputTokens > 0 {
+			reduction.OutputPercent = &c.CodexReduction.OutputPercent
+		}
+		reduction.DirectSource = c.Direct.CodexUsage.Source
+		reduction.OrchestratedSource = c.Orchestrated.CodexUsage.Source
+	}
+	return Report{
+		SpecID: c.Spec.ID,
+		Modes:  []string{string(ModeDirect), string(ModeOrchestrated)},
+		Metadata: ReportMetadata{
+			RepoSnapshotCommit: c.Spec.RepoSnapshotCommit,
+			InitialWorktree:    c.Spec.InitialWorktree,
+			CodexModel:         c.Spec.CodexModel,
+			CodexReasoning:     c.Spec.CodexReasoningEffort,
+			UserRequestSHA256:  requestSHA256(c.Spec.UserRequest),
+		},
+		MeasurementBoundary: c.Spec.MeasurementBoundary,
+		Isolation:           c.Spec.Isolation,
+		CodexReduction:      reduction,
+		QualityDelta: ReportQualityDelta{
+			Direct:       c.Direct.Quality,
+			Orchestrated: c.Orchestrated.Quality,
+		},
+		Time: ReportTime{
+			DirectMS:       c.DirectDuration.Milliseconds(),
+			OrchestratedMS: c.OrchestratedDuration.Milliseconds(),
+			DeltaMS:        (c.OrchestratedDuration - c.DirectDuration).Milliseconds(),
+		},
+		CodexUsage: ReportCodexUsagePair{
+			Direct:       codexUsagePtr(c.Direct.CodexUsage),
+			Orchestrated: codexUsagePtr(c.Orchestrated.CodexUsage),
+		},
+		GLMUsage: ReportGLMUsagePair{
+			Direct:       nil,
+			Orchestrated: &c.Orchestrated.GLMUsage,
+		},
+		ProxyMetrics: ReportProxyPair{
+			Direct:       proxyPtr(c.Direct.Proxy),
+			Orchestrated: proxyPtr(c.Orchestrated.Proxy),
+		},
+	}
+}
+
+func codexUsagePtr(usage CodexUsage) *CodexUsage {
 	if !usage.Known() {
-		return "unknown"
+		return nil
 	}
-	return fmt.Sprintf("actual(source=%s, input=%d, output=%d)", usage.Source, usage.InputTokens, usage.OutputTokens)
+	return &usage
 }
 
-func formatDirectGLMUsage() string {
-	return "not-used(direct modeはglm-worker委譲なし)"
-}
-
-func formatGLMUsage(usage GLMUsage) string {
-	return fmt.Sprintf("input=%d, cache-creation=%d, cache-read=%d, output=%d, model-calls=%d (source=%s)",
-		usage.InputTokens, usage.CacheCreationInputTokens, usage.CacheReadInputTokens, usage.OutputTokens, usage.ModelCalls, usage.Source)
-}
-
-func formatProxy(proxy ProxyMetrics) string {
-	if (proxy == ProxyMetrics{}) {
-		return "none"
+func proxyPtr(proxy ProxyMetrics) *ProxyMetrics {
+	if proxy == (ProxyMetrics{}) {
+		return nil
 	}
-	return fmt.Sprintf("sol-packet-bytes=%d, sol-decision-commands=%d, sol-fix-commands=%d, auto-fix-rounds=%d",
-		proxy.SolPacketBytes, proxy.SolDecisionCommands, proxy.SolFixCommands, proxy.AutoFixRounds)
+	return &proxy
 }
 
-func shortSHA256(value string) string {
+func requestSHA256(value string) string {
 	sum := sha256.Sum256([]byte(value))
-	return hex.EncodeToString(sum[:])[:16]
+	return hex.EncodeToString(sum[:])
 }

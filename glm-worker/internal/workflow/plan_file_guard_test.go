@@ -96,8 +96,8 @@ func TestPlanFileWorkerMutationFailsClosedBeforeReview(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
 	w, r, out, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
-		{output: implementedPacket("done")},
-		{output: passPacket()},
+		{structured: implementedPacket("done")},
+		{structured: passPacket()},
 	}, "worker-new", 0, mutatePlanFile)
 
 	if err := w.ExecuteNewTask("request"); err != nil {
@@ -126,8 +126,8 @@ func TestPlanFileWorkerMutationFailsClosedBeforeReview(t *testing.T) {
 func TestPlanFileAbsentWorkerCreationFailsClosed(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	w, r, out, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
-		{output: implementedPacket("done")},
-		{output: passPacket()},
+		{structured: implementedPacket("done")},
+		{structured: passPacket()},
 	}, "worker-new", 0, mutatePlanFile)
 
 	if err := w.ExecuteNewTask("request"); err != nil {
@@ -141,8 +141,8 @@ func TestPlanFileDeletionFailsClosed(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
 	w, r, out, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
-		{output: implementedPacket("done")},
-		{output: passPacket()},
+		{structured: implementedPacket("done")},
+		{structured: passPacket()},
 	}, "worker-new", 0, func(repoRoot string) error {
 		return os.Remove(filepath.Join(repoRoot, implementationPlanFile))
 	})
@@ -159,8 +159,8 @@ func TestPlanFileUnchangedProceedsToReview(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
 	w, r, _, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
-		{output: implementedPacket("done")},
-		{output: passPacket()},
+		{structured: implementedPacket("done")},
+		{structured: passPacket()},
 	}, "", 0, nil)
 
 	if err := w.ExecuteNewTask("request"); err != nil {
@@ -179,8 +179,8 @@ func TestPlanFileUnchangedProceedsToReview(t *testing.T) {
 func TestPlanFileAbsentThroughoutProceeds(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	w, r, _, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
-		{output: implementedPacket("done")},
-		{output: passPacket()},
+		{structured: implementedPacket("done")},
+		{structured: passPacket()},
 	}, "", 0, nil)
 
 	if err := w.ExecuteNewTask("request"); err != nil {
@@ -216,8 +216,8 @@ func TestPlanFileTrackedMissingFailsClosedBeforeCall(t *testing.T) {
 				t.Fatal(err)
 			}
 			w, r, out, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
-				{output: implementedPacket("done")},
-				{output: passPacket()},
+				{structured: implementedPacket("done")},
+				{structured: passPacket()},
 			}, "", 0, nil)
 
 			if err := w.ExecuteNewTask("request"); err != nil {
@@ -265,8 +265,8 @@ func TestPlanFileTrackingIndeterminateFailsClosedBeforeCall(t *testing.T) {
 		t.Fatal(err)
 	}
 	w, r, out, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
-		{output: implementedPacket("done")},
-		{output: passPacket()},
+		{structured: implementedPacket("done")},
+		{structured: passPacket()},
 	}, "", 0, nil)
 	w.captureSnapshot = func(string) (state.GitSnapshot, error) {
 		return fixedSnapshot, nil
@@ -308,8 +308,8 @@ func TestPlanFileTrackingIndeterminateFailsClosedBeforeCall(t *testing.T) {
 func TestPlanFileUntrackedAbsentNonGitRepoProceeds(t *testing.T) {
 	repoRoot := t.TempDir()
 	w, r, _, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
-		{output: implementedPacket("done")},
-		{output: passPacket()},
+		{structured: implementedPacket("done")},
+		{structured: passPacket()},
 	}, "", 0, nil)
 	w.captureSnapshot = func(string) (state.GitSnapshot, error) {
 		return fixedSnapshot, nil
@@ -371,7 +371,7 @@ func planFileDecisionWorkflow(t *testing.T, st *state.StateStore, repoRoot strin
 	t.Helper()
 	r := &mutatingRunner{
 		repoRoot:    repoRoot,
-		steps:       []runnerStep{{output: implementedPacket("done")}, {output: passPacket()}},
+		steps:       []runnerStep{{structured: implementedPacket("done")}, {structured: passPacket()}},
 		mutate:      mutate,
 		mutatePhase: mutatePhase,
 	}
@@ -390,10 +390,10 @@ func TestPlanFileAutoFixMutationFailsClosed(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
 	w, r, out, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
-		{output: implementedPacket("done")},
-		{output: fixRequiredPacket()},
-		{output: implementedPacket("fixed")},
-		{output: passPacket()},
+		{structured: implementedPacket("done")},
+		{structured: fixRequiredPacket()},
+		{structured: implementedPacket("fixed")},
+		{structured: passPacket()},
 	}, "worker-auto-fix-1", 0, mutatePlanFile)
 
 	if err := w.ExecuteNewTask("request"); err != nil {
@@ -432,7 +432,7 @@ func TestPlanFileResumeAdoptsParentUpdateAsBaseline(t *testing.T) {
 	parentUpdatedPlan := "# plan v2\n\n## ACTIVE\n\n- `" + activeTaskGuardPath + "`\n"
 	writePlanFileContent(t, repoRoot, parentUpdatedPlan)
 	w, r, _ := planFileDecisionWorkflow(t, st, repoRoot, "", nil)
-	r.steps = []runnerStep{{output: implementedPacket("resumed")}, {output: passPacket()}}
+	r.steps = []runnerStep{{structured: implementedPacket("resumed")}, {structured: passPacket()}}
 
 	if err := w.ExecuteResume(); err != nil {
 		t.Fatal(err)
@@ -475,8 +475,8 @@ func TestPlanFileTransientRecoveryResumedTaskMutationFailsClosed(t *testing.T) {
 	writePlanFileContent(t, repoRoot, planGuardSeed)
 	w, r, out, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
 		{output: "API Error: 503 Service Unavailable", runErr: errors.New("exit status 1")},
-		{output: implementedPacket("resumed")},
-		{output: passPacket()},
+		{structured: implementedPacket("resumed")},
+		{structured: passPacket()},
 	}, "worker-new", 0, mutatePlanFile)
 
 	if err := w.ExecuteNewTask("request"); err != nil {
@@ -496,7 +496,7 @@ func TestPlanFileReadErrorFailsClosedBeforeCall(t *testing.T) {
 		t.Fatal(err)
 	}
 	w, r, out, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
-		{output: implementedPacket("done")},
+		{structured: implementedPacket("done")},
 	}, "", 0, nil)
 
 	if err := w.ExecuteNewTask("request"); err != nil {
@@ -582,8 +582,8 @@ func TestPlanFileAfterReadFailureRecordsExecutedCallOnce(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
 	w, r, out, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
-		{output: implementedPacket("done")},
-		{output: passPacket()},
+		{structured: implementedPacket("done")},
+		{structured: passPacket()},
 	}, "worker-new", 0, removeAndDirGuardFile(implementationPlanFile))
 
 	if err := w.ExecuteNewTask("request"); err != nil {
@@ -600,8 +600,8 @@ func TestHistoryFileAfterReadFailureRecordsExecutedCallOnce(t *testing.T) {
 	writePlanFileContent(t, repoRoot, planGuardSeed)
 	writeHistoryFileContent(t, repoRoot, historyGuardSeed)
 	w, r, out, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
-		{output: implementedPacket("done")},
-		{output: passPacket()},
+		{structured: implementedPacket("done")},
+		{structured: passPacket()},
 	}, "worker-new", 0, removeAndDirGuardFile(implementationHistoryFile))
 
 	if err := w.ExecuteNewTask("request"); err != nil {
@@ -618,8 +618,8 @@ func TestPlanFileAfterReadFailureOnResumedTaskRecordsCallOnce(t *testing.T) {
 	writePlanFileContent(t, repoRoot, planGuardSeed)
 	w, r, out, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
 		{output: "API Error: 503 Service Unavailable", runErr: errors.New("exit status 1")},
-		{output: implementedPacket("resumed")},
-		{output: passPacket()},
+		{structured: implementedPacket("resumed")},
+		{structured: passPacket()},
 	}, "worker-new", 0, removeAndDirGuardFile(implementationPlanFile))
 
 	if err := w.ExecuteNewTask("request"); err != nil {
@@ -653,8 +653,8 @@ func TestHistoryFileAfterReadFailureOnResumedTaskRecordsCallOnce(t *testing.T) {
 	writeHistoryFileContent(t, repoRoot, historyGuardSeed)
 	w, r, out, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
 		{output: "API Error: 503 Service Unavailable", runErr: errors.New("exit status 1")},
-		{output: implementedPacket("resumed")},
-		{output: passPacket()},
+		{structured: implementedPacket("resumed")},
+		{structured: passPacket()},
 	}, "worker-new", 0, removeAndDirGuardFile(implementationHistoryFile))
 
 	if err := w.ExecuteNewTask("request"); err != nil {
@@ -673,8 +673,8 @@ func TestPlanFileReviewerMutationUsesExistingSnapshotInvariant(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
 	w, r, out, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
-		{output: implementedPacket("done")},
-		{output: passPacket()},
+		{structured: implementedPacket("done")},
+		{structured: passPacket()},
 	}, "", 0, mutatePlanFile)
 
 	if err := w.ExecuteNewTask("request"); err != nil {
@@ -703,8 +703,8 @@ func TestHistoryFileWorkerMutationFailsClosedBeforeReview(t *testing.T) {
 	writePlanFileContent(t, repoRoot, planGuardSeed)
 	writeHistoryFileContent(t, repoRoot, historyGuardSeed)
 	w, r, out, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
-		{output: implementedPacket("done")},
-		{output: passPacket()},
+		{structured: implementedPacket("done")},
+		{structured: passPacket()},
 	}, "worker-new", 0, mutateHistoryFile)
 
 	if err := w.ExecuteNewTask("request"); err != nil {
@@ -737,8 +737,8 @@ func TestHistoryFileAbsentWorkerCreationFailsClosed(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
 	w, r, out, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
-		{output: implementedPacket("done")},
-		{output: passPacket()},
+		{structured: implementedPacket("done")},
+		{structured: passPacket()},
 	}, "worker-new", 0, mutateHistoryFile)
 
 	if err := w.ExecuteNewTask("request"); err != nil {
@@ -753,8 +753,8 @@ func TestHistoryFileDeletionFailsClosed(t *testing.T) {
 	writePlanFileContent(t, repoRoot, planGuardSeed)
 	writeHistoryFileContent(t, repoRoot, historyGuardSeed)
 	w, r, out, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
-		{output: implementedPacket("done")},
-		{output: passPacket()},
+		{structured: implementedPacket("done")},
+		{structured: passPacket()},
 	}, "worker-new", 0, func(repoRoot string) error {
 		return os.Remove(filepath.Join(repoRoot, implementationHistoryFile))
 	})
@@ -772,8 +772,8 @@ func TestHistoryFileUnchangedProceedsToReview(t *testing.T) {
 	writePlanFileContent(t, repoRoot, planGuardSeed)
 	writeHistoryFileContent(t, repoRoot, historyGuardSeed)
 	w, r, _, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
-		{output: implementedPacket("done")},
-		{output: passPacket()},
+		{structured: implementedPacket("done")},
+		{structured: passPacket()},
 	}, "", 0, nil)
 
 	if err := w.ExecuteNewTask("request"); err != nil {
@@ -793,8 +793,8 @@ func TestHistoryFileAbsentUntrackedProceedsWithPlan(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
 	w, r, _, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
-		{output: implementedPacket("done")},
-		{output: passPacket()},
+		{structured: implementedPacket("done")},
+		{structured: passPacket()},
 	}, "", 0, nil)
 
 	if err := w.ExecuteNewTask("request"); err != nil {
@@ -813,8 +813,8 @@ func TestHistoryFileAbsentUntrackedProceedsWithPlan(t *testing.T) {
 func TestHistoryFileGuardInactiveWithoutPlan(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	w, r, _, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
-		{output: implementedPacket("done")},
-		{output: passPacket()},
+		{structured: implementedPacket("done")},
+		{structured: passPacket()},
 	}, "worker-new", 0, mutateHistoryFile)
 
 	if err := w.ExecuteNewTask("request"); err != nil {
@@ -851,8 +851,8 @@ func TestHistoryFileTrackedMissingFailsClosedBeforeCall(t *testing.T) {
 				t.Fatal(err)
 			}
 			w, r, out, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
-				{output: implementedPacket("done")},
-				{output: passPacket()},
+				{structured: implementedPacket("done")},
+				{structured: passPacket()},
 			}, "", 0, nil)
 
 			if err := w.ExecuteNewTask("request"); err != nil {
@@ -902,7 +902,7 @@ func TestHistoryFileReadErrorFailsClosedBeforeCall(t *testing.T) {
 		t.Fatal(err)
 	}
 	w, r, out, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
-		{output: implementedPacket("done")},
+		{structured: implementedPacket("done")},
 	}, "", 0, nil)
 
 	if err := w.ExecuteNewTask("request"); err != nil {
@@ -954,8 +954,8 @@ func TestHistoryFileReviewerMutationUsesExistingSnapshotInvariant(t *testing.T) 
 	writePlanFileContent(t, repoRoot, planGuardSeed)
 	writeHistoryFileContent(t, repoRoot, historyGuardSeed)
 	w, r, out, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
-		{output: implementedPacket("done")},
-		{output: passPacket()},
+		{structured: implementedPacket("done")},
+		{structured: passPacket()},
 	}, "", 0, mutateHistoryFile)
 
 	if err := w.ExecuteNewTask("request"); err != nil {
