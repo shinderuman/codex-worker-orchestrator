@@ -47,16 +47,17 @@ func msPtr(d time.Duration) *int64 {
 	return &ms
 }
 
-// statusOutputは--statusのmachine contract。観測できない値はnull/ omissionで出し、
-// "unknown"/"none"のようなpresentation文字列へ落とさない。
+// statusOutputは--statusのmachine contract。観測できない値はnull/omissionで出し、
+// "unknown"/"none"のようなpresentation文字列へ落とさない。enum fieldは常にkeyを出し、
+// 観測できないときだけnullにする(消さない)。
 type statusOutput struct {
 	RepoRoot            *string                   `json:"repo_root"`
-	RepositoryLock      string                    `json:"repository_lock"`
+	RepositoryLock      *string                   `json:"repository_lock"`
 	LockPID             *string                   `json:"lock_pid"`
 	TaskID              *string                   `json:"task_id"`
 	ArtifactDir         *string                   `json:"artifact_dir"`
-	TaskStatus          string                    `json:"task_status"`
-	TaskLiveness        string                    `json:"task_liveness,omitempty"`
+	TaskStatus          *string                   `json:"task_status"`
+	TaskLiveness        *string                   `json:"task_liveness"`
 	WorkerSession       *string                   `json:"worker_session"`
 	ReviewerSession     *string                   `json:"reviewer_session"`
 	PendingDecision     bool                      `json:"pending_decision"`
@@ -108,12 +109,13 @@ func printStatus(st *state.StateStore, stdout io.Writer) error {
 
 func buildStatusOutput(st *state.StateStore, taskID string, logs []state.ModelCallLog, logErr error) statusOutput {
 	probe := ProbeRepoLock(st.LockPath())
+	taskStatus := st.TaskStatus()
 	output := statusOutput{
 		RepoRoot:        stringPtr(st.ReadOr("repo-root", "")),
-		RepositoryLock:  string(probe.State),
+		RepositoryLock:  lockStatePtr(probe.State),
 		LockPID:         lockPIDPtr(probe.PID),
 		TaskID:          stringPtr(taskID),
-		TaskStatus:      string(st.TaskStatus()),
+		TaskStatus:      taskStatusPtr(taskStatus),
 		WorkerSession:   stringPtr(st.ReadOr("worker.id", "")),
 		ReviewerSession: stringPtr(st.ReadOr("reviewer.id", "")),
 		PendingDecision: st.Exists("pending-decision"),
@@ -121,7 +123,7 @@ func buildStatusOutput(st *state.StateStore, taskID string, logs []state.ModelCa
 	if taskID != "" {
 		output.ArtifactDir = stringPtr(st.ArtifactDir(taskID))
 	}
-	if output.TaskStatus == string(state.TaskStatusActive) {
+	if taskStatus == state.TaskStatusActive {
 		output.TaskLiveness = taskLiveness(probe)
 	}
 	if label := st.OpenParentReviewLabel(); label != "none" {
@@ -136,9 +138,30 @@ func buildStatusOutput(st *state.StateStore, taskID string, logs []state.ModelCa
 	return output
 }
 
-// lockPIDPtrはlock fileに残っていたPID診断値を対応付ける。"none"はJSON nullへ出す。
+// lockStatePtrはlock実保持の外部enumへ対応付ける。probe不能(LockUnknown)は
+// 観測できないためJSON nullへ出し、"unknown" sentinelを出さない。
+func lockStatePtr(lockState LockState) *string {
+	if lockState == LockUnknown {
+		return nil
+	}
+	value := string(lockState)
+	return &value
+}
+
+// taskStatusPtrはtask.statusの外部enumへ対応付ける。task不在sentinel
+// (TaskStatusNone)は観測できないためJSON nullへ出す。
+func taskStatusPtr(status state.TaskStatus) *string {
+	if status == state.TaskStatusNone {
+		return nil
+	}
+	value := string(status)
+	return &value
+}
+
+// lockPIDPtrはlock fileに残っていたPID診断値を対応付ける。読み取れなかった
+// sentinel値はJSON nullへ出す。
 func lockPIDPtr(pid string) *string {
-	if pid == "" || pid == "none" {
+	if pid == "" || pid == "none" || pid == "unknown" {
 		return nil
 	}
 	return &pid
@@ -275,21 +298,25 @@ func lastTaskEvent(st *state.StateStore, taskID string) (state.TaskEventRecord, 
 }
 
 // taskLivenessはtask_status=active時のrepo lock実保持による生存値。
-// heldは現在のglm-worker processが同一repo taskを実行中、freeはstale候補、
-// unknownは判定不能。lock file内PIDは権威にせずstale PID・PID reuseでrunning扱いしない。
-func taskLiveness(probe LockProbe) string {
+// heldは現在のglm-worker processが同一repo taskを実行中、freeはstale候補。
+// probe不能は観測できないためJSON nullへ出す。lock file内PIDは権威にせず
+// stale PID・PID reuseでrunning扱いしない。
+func taskLiveness(probe LockProbe) *string {
 	switch probe.State {
 	case LockHeld:
-		return "running"
+		running := "running"
+		return &running
 	case LockFree:
-		return "stale"
+		stale := "stale"
+		return &stale
 	default:
-		return "unknown"
+		return nil
 	}
 }
 
 // statsOutputは--statsのmachine contract。集計値は数値・map objectのまま出し、
-// mapの文字列化・note行のようなpresentationは持たない。
+// mapの文字列化・note行のようなpresentationは持たない。map集計fieldは0件でも
+// nullではなく空object `{}`で出る。
 type statsOutput struct {
 	Tasks                                   int                 `json:"tasks"`
 	ModelCalls                              int                 `json:"model_calls"`
@@ -374,7 +401,7 @@ type statsParentRework struct {
 
 type statsCurrentTask struct {
 	ID          *string `json:"id"`
-	Status      string  `json:"status"`
+	Status      *string `json:"status"`
 	ArtifactDir *string `json:"artifact_dir"`
 }
 
@@ -388,7 +415,32 @@ func printStats(st *state.StateStore, stdout io.Writer) error {
 }
 
 func buildStatsOutput(st *state.StateStore, all []state.TaskStats) statsOutput {
-	aggregate := state.TaskStats{}
+	// 集計対象taskが1件もないときのnil mapがJSON nullへ出るのを防ぐため、
+	// merge先のmap集計fieldを最初から空mapで初期化する。
+	aggregate := state.TaskStats{
+		ModelCallsByAlias:                       map[string]int{},
+		ModelDurationMSByAlias:                  map[string]int64{},
+		RateLimitsByAlias:                       map[string]int{},
+		InputTokensByAlias:                      map[string]int64{},
+		CacheCreationInputTokensByAlias:         map[string]int64{},
+		CacheReadInputTokensByAlias:             map[string]int64{},
+		OutputTokensByAlias:                     map[string]int64{},
+		TopLevelTurnsByAlias:                    map[string]int{},
+		CallTreesByResolvedModel:                map[string]int{},
+		InputTokensByResolvedModel:              map[string]int64{},
+		CacheCreationInputTokensByResolvedModel: map[string]int64{},
+		CacheReadInputTokensByResolvedModel:     map[string]int64{},
+		OutputTokensByResolvedModel:             map[string]int64{},
+		ProviderUnavailableByAlias:              map[string]int{},
+		RiskFloorByCategory:                     map[string]int{},
+		SnapshotMismatchByAxis:                  map[string]int{},
+		PacketRejectByCategory:                  map[string]int{},
+		ProbeOutcome:                            map[string]int{},
+		ParentOutcomes:                          map[string]int{},
+		ParentFixOrigins:                        map[string]int{},
+		ParentOutcomesByModel:                   map[string]int{},
+		ParentOutcomesByRisk:                    map[string]int{},
+	}
 	for _, stats := range all {
 		aggregate.ModelCalls += stats.ModelCalls
 		mergeIntMap(&aggregate.ModelCallsByAlias, stats.ModelCallsByAlias)
@@ -554,7 +606,7 @@ func fillStatsParentReview(st *state.StateStore, all []state.TaskStats, aggregat
 }
 
 func statsCurrentTaskDetail(st *state.StateStore) statsCurrentTask {
-	current := statsCurrentTask{Status: string(st.TaskStatus())}
+	current := statsCurrentTask{Status: taskStatusPtr(st.TaskStatus())}
 	if id := st.ReadOr("task.id", ""); id != "" {
 		current.ID = stringPtr(id)
 		current.ArtifactDir = stringPtr(st.ArtifactDir(id))

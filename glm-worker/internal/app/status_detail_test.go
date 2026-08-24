@@ -38,6 +38,14 @@ func statusString(t *testing.T, name string, value *string, want string) {
 	}
 }
 
+// statusNullStringはnullable string fieldがnullであることを検査する。
+func statusNullString(t *testing.T, name string, value *string) {
+	t.Helper()
+	if value != nil {
+		t.Fatalf("status出力の%s = %q want null", name, *value)
+	}
+}
+
 // statusInt64MSはnullable数値fieldが存在し指定値であることを検査する。
 func statusInt64MS(t *testing.T, name string, value *int64, want int64) {
 	t.Helper()

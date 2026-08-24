@@ -2,6 +2,8 @@ package app
 
 import (
 	"bytes"
+	"errors"
+	"fmt"
 	"io"
 	"os"
 	"time"
@@ -21,6 +23,25 @@ type watchOptions struct {
 	changeInterval time.Duration
 	now            func() time.Time
 	stop           <-chan struct{}
+	// openEventLog・statEventLogはevent log fileのopen/statを差し替えるtest用注入。
+	// 非ENOENT errorをchmod等の環境依存なしで決定論的に発生させるためのものであり、
+	// 汎用のfilesystem abstractionではない。nil時はos.Open・os.Statをそのまま使う。
+	openEventLog func(path string) (*os.File, error)
+	statEventLog func(path string) (os.FileInfo, error)
+}
+
+func (o watchOptions) openLog(path string) (*os.File, error) {
+	if o.openEventLog != nil {
+		return o.openEventLog(path)
+	}
+	return os.Open(path)
+}
+
+func (o watchOptions) statLog(path string) (os.FileInfo, error) {
+	if o.statEventLog != nil {
+		return o.statEventLog(path)
+	}
+	return os.Stat(path)
 }
 
 func defaultWatchOptions(verbose bool) watchOptions {
@@ -61,10 +82,13 @@ type watchExitEvent struct {
 // repo lock・AI call・provider/workerへの問い合わせを行わない。event recordは保存済み
 // JSONL行をそのままpassthroughし、watch固有の状態遷移だけ型付きcontrol eventへ出す。
 // event logがまだ無いtaskはその旨をstatusへ出して即座に終了し、存在すれば既存行を
-// 流した後追記をfollowする。followはfollow対象taskのauthoritative task.statusがactiveを
-// 離れた時点・別taskへの切替時に残eventを流してwatch_exit eventを出し終了する。
-// event log消失時はremoved status eventのみで終了する。verbose指定時はlive tool状態を
-// 型付きlive eventへ出す。stopはtest用の打ち切り信号で、nilでも上記終端で必ず終了する。
+// 流した後追記をfollowする。event log不在(fileがない)だけがempty・removedの正常終了で、
+// permission等の他のI/O失敗は正常状態へ偽装せずerrorとして呼び出し元へ返す
+// (process境界ではstructured error JSON + non-zero exitになる)。followはfollow対象taskの
+// authoritative task.statusがactiveを離れた時点・別taskへの切替時に残eventを流して
+// watch_exit eventを出し終了する。event log消失時はremoved status eventのみで終了する。
+// verbose指定時はlive tool状態を型付きlive eventへ出す。stopはtest用の打ち切り信号で、
+// nilでも上記終端で必ず終了する。
 func printWatch(st *state.StateStore, stdout io.Writer, opts watchOptions) error {
 	taskID := st.ReadOr("task.id", "")
 	if taskID == "" {
@@ -73,8 +97,11 @@ func printWatch(st *state.StateStore, stdout io.Writer, opts watchOptions) error
 		})
 	}
 	path := st.TaskEventLogPath(taskID)
-	file, err := os.Open(path)
+	file, err := opts.openLog(path)
 	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("event log %sを開けません: %w", path, err)
+		}
 		return writeWatchEvent(stdout, watchStartEvent{
 			Type: "watch_start", TaskID: &taskID, EventLog: &path, EventLogStatus: "empty",
 		})
@@ -128,7 +155,10 @@ func watchTaskEvents(st *state.StateStore, taskID string, file *os.File, path st
 			return nil
 		case <-time.After(opts.followInterval):
 		}
-		if _, err := os.Stat(path); err != nil {
+		if _, err := opts.statLog(path); err != nil {
+			if !errors.Is(err, os.ErrNotExist) {
+				return fmt.Errorf("event log %sの状態を取得できません: %w", path, err)
+			}
 			return writeWatchEvent(stdout, watchLogStatusEvent{Type: "event_log_status", Status: "removed"})
 		}
 		exitEvent, terminal := watchTerminal(st, taskID)

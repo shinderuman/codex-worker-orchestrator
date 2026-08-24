@@ -55,9 +55,7 @@ func TestExecuteStatusShowsProviderUnavailable(t *testing.T) {
 	}
 
 	output := executeStatusOutput(t, cfg)
-	if output.TaskStatus != string(state.TaskStatusProviderUnavailable) {
-		t.Fatalf("task_status = %q", output.TaskStatus)
-	}
+	statusString(t, "task_status", output.TaskStatus, string(state.TaskStatusProviderUnavailable))
 	if !output.ProviderUnavailable.Unavailable {
 		t.Fatalf("provider_unavailable = %#v", output.ProviderUnavailable)
 	}

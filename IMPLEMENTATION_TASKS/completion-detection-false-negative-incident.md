@@ -124,4 +124,4 @@ none
 
 ## Current boundary
 
-completion detectionの反復false negativeを重大インシデントとしてopen。Task 007のrate-limit resumeを壊さないため最優先NEXTへ積み、Task 007局所終端後にACTIVE化する。二重描画修正はCodex actual token / Quality Deltaへの影響を確認してから判断し、実害なしでも現象自体は独立BLOCKED taskへ保持する。
+GLM実装・独立review・必要なSol採否を完了。model contextへの二重流入は確認されず、Desktop二重描画は最上位Evalへの実害が未立証な外部境界としてBLOCKED taskへ保持する方針を採用した。未commit実装diffはstash `completion-detection-incident-sol-accepted-uncommitted`へ独立保全済み。external review follow-upを先に処理するためNEXTへ退避し、follow-up終了後にstashを復元してcommit/install/完了同期を行う。pushしない。

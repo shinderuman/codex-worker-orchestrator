@@ -14,12 +14,8 @@ import (
 func TestExecuteStatusShowsRepositoryLockFreeByDefault(t *testing.T) {
 	cfg := newAppConfig(t)
 	output := executeStatusOutput(t, cfg)
-	if output.RepositoryLock != "free" {
-		t.Fatalf("空状態のrepository_lock = %q", output.RepositoryLock)
-	}
-	if output.TaskLiveness != "" {
-		t.Fatalf("task_statusがactiveでない状態でtask_liveness = %q", output.TaskLiveness)
-	}
+	statusString(t, "repository_lock", output.RepositoryLock, "free")
+	statusNullString(t, "task_liveness", output.TaskLiveness)
 }
 
 func TestExecuteStatusActiveWithoutLockIsStaleCandidate(t *testing.T) {
@@ -33,15 +29,9 @@ func TestExecuteStatusActiveWithoutLockIsStaleCandidate(t *testing.T) {
 	}
 
 	output := executeStatusOutput(t, cfg)
-	if output.TaskStatus != string(state.TaskStatusActive) {
-		t.Fatalf("task_status = %q", output.TaskStatus)
-	}
-	if output.RepositoryLock != "free" {
-		t.Fatalf("repository_lock = %q", output.RepositoryLock)
-	}
-	if output.TaskLiveness != "stale" {
-		t.Fatalf("task_liveness = %q", output.TaskLiveness)
-	}
+	statusString(t, "task_status", output.TaskStatus, string(state.TaskStatusActive))
+	statusString(t, "repository_lock", output.RepositoryLock, "free")
+	statusString(t, "task_liveness", output.TaskLiveness, "stale")
 	if output.ResumeAvailable {
 		t.Fatal("停止理由がないのにresume_availableです")
 	}
@@ -64,12 +54,8 @@ func TestExecuteStatusActiveWithLockHeldIsRunning(t *testing.T) {
 	defer lock.Close()
 
 	output := executeStatusOutput(t, cfg)
-	if output.RepositoryLock != "held" {
-		t.Fatalf("repository_lock = %q", output.RepositoryLock)
-	}
-	if output.TaskLiveness != "running" {
-		t.Fatalf("task_liveness = %q", output.TaskLiveness)
-	}
+	statusString(t, "repository_lock", output.RepositoryLock, "held")
+	statusString(t, "task_liveness", output.TaskLiveness, "running")
 }
 
 // status観測後に同じrepoで次commandを実行すると、lock取得成否だけで安全に収束する。
@@ -124,12 +110,8 @@ func TestExecuteStatusHidesLivenessForNonActiveTask(t *testing.T) {
 	}
 
 	output := executeStatusOutput(t, cfg)
-	if output.TaskLiveness != "" {
-		t.Fatalf("非active taskでtask_liveness = %q", output.TaskLiveness)
-	}
-	if output.RepositoryLock != "free" {
-		t.Fatalf("repository_lock = %q", output.RepositoryLock)
-	}
+	statusNullString(t, "task_liveness", output.TaskLiveness)
+	statusString(t, "repository_lock", output.RepositoryLock, "free")
 }
 
 // checkpointを持つrate-limited taskのresume表示はliveness追加後も不変。
@@ -160,16 +142,12 @@ func TestExecuteStatusRateLimitedResumeFieldsUnchanged(t *testing.T) {
 	}
 
 	output := executeStatusOutput(t, cfg)
-	if output.TaskStatus != string(state.TaskStatusRateLimited) {
-		t.Fatalf("task_status = %q", output.TaskStatus)
-	}
+	statusString(t, "task_status", output.TaskStatus, string(state.TaskStatusRateLimited))
 	if !output.RateLimited.Limited {
 		t.Fatalf("rate_limited = %#v", output.RateLimited)
 	}
 	if !output.ResumeAvailable {
 		t.Fatal("rate-limited taskはresume_availableが必要です")
 	}
-	if output.TaskLiveness != "" {
-		t.Fatalf("rate-limited taskでtask_liveness = %q", output.TaskLiveness)
-	}
+	statusNullString(t, "task_liveness", output.TaskLiveness)
 }

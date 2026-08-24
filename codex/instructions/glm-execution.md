@@ -42,7 +42,7 @@
 
 ## 対象repoの生存判定
 
-- glm-worker taskの生存判定は`glm-worker --status`出力JSONの`repository_lock`(held/free)と、`task_status`が`active`のときだけ出る`task_liveness`(running/stale)だけを使う。global process一覧・`pgrep`・Claude Code processの存在を生存判定や起動可否の根拠にしない。lock file内のPIDは診断情報であり、stale PIDやPID reuseでrunning扱いしない。
+- glm-worker taskの生存判定は`glm-worker --status`出力JSONの`repository_lock`(held/free、probe不能時はnull)と、`task_liveness`(running/stale。`task_status`が`active`のときだけ値が出て、非active時・probe不能時はnull)だけを使う。global process一覧・`pgrep`・Claude Code processの存在を生存判定や起動可否の根拠にしない。lock file内のPIDは診断情報であり、stale PIDやPID reuseでrunning扱いしない。
 - `repository_lock`は対象repoのlockだけを意味する。別repositoryのglm-worker processやlockの解放を待たず、「GLM全体で同時実行不可」と推測して待機しない。global mutexは追加しない。
 - 同じrepoの`repository_lock: held`だけが重複起動の待避理由になる。
 - `task_status: active`・`repository_lock: free`・`resume_available: false`を別repo終了待ちにせず、stale候補として扱う。対象repoのworking treeとstateを確認し、repo固有の復旧へ進む。checkpointがある場合は既存のresume手順に従う。
@@ -51,7 +51,7 @@
 ## 待機
 
 - 完了待機の対象は当該taskを起動した主`glm-worker`呼出process(session)だけとする。主呼出はterminal・Sol/user attention状態でpacketを出力して終了するため、観測用の別commandを完了待機へ使わない。
-- 主呼出のexec cell・session IDを失ったattach recovery時だけ`glm-worker --watch`で既存taskへ追加AI callなしでattachできる。`--watch`は現在taskのevent log保存済みJSONL行をそのまま流す読み取り専用JSONL streamであり、follow対象taskのauthoritative `task.status`が`active`を離れた時点(`waiting-decision`・`waiting-sol-review`・`complete`・`rate-limited`・`provider-unavailable`)・別taskへの切替時に残eventを流して`watch_exit` control event(`{"type":"watch_exit","task_id":...,"status":...}`、task切替時は`new_task_id`付き)を出力しexit 0する。event log消失時は`event_log_status` control event(`{"type":"event_log_status","status":"removed"}`)のみで終了する。resident monitorとして付けっぱなしにしない。
+- 主呼出のexec cell・session IDを失ったattach recovery時だけ`glm-worker --watch`で既存taskへ追加AI callなしでattachできる。`--watch`は現在taskのevent log保存済みJSONL行をそのまま流す読み取り専用JSONL streamであり、follow対象taskのauthoritative `task.status`が`active`を離れた時点(`waiting-decision`・`waiting-sol-review`・`complete`・`rate-limited`・`provider-unavailable`)・別taskへの切替時に残eventを流して`watch_exit` control event(`{"type":"watch_exit","task_id":...,"status":...}`、task切替時は`new_task_id`付き)を出力しexit 0する。event log file不在時は`event_log_status` control event(`{"type":"event_log_status","status":"removed"}`)のみで正常終了する。permission等のfile不在以外のI/O失敗は正常終了せず、stderrのprocess error JSON(`kind:"internal"`)とnon-zero exitになる。resident monitorとして付けっぱなしにしない。
 - `--watch`が終了しても、`--status`等を固定間隔で繰り返すpollingへ追跡をfallbackさせない。
 - 最初の`functions.exec`等の呼び出しからbackground terminalで利用可能な最大待機時間を指定し、可能な限り同一tool orchestration内で完了までblocking waitする。
 - tool内部上限でcell ID（session ID）が返る場合も、1回のwaitに最大待機時間を使い、短時間・固定間隔でwaitを掛け直さない。同じtool orchestration内で最大待機を再開し、Sol Highへ制御を戻して`write_stdin`等を呼ぶ方式へ変換しない。

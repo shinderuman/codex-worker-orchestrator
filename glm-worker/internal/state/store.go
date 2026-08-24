@@ -26,6 +26,9 @@ const (
 	TaskStatusComplete            TaskStatus = "complete"
 	TaskStatusRateLimited         TaskStatus = "rate-limited"
 	TaskStatusProviderUnavailable TaskStatus = "provider-unavailable"
+	// TaskStatusNoneはtask.statusが未観測(task不在・書込み前)の内部sentinel。
+	// 外部machine JSON boundaryではnullへ正規化され、この値を出さない。
+	TaskStatusNone TaskStatus = "none"
 )
 
 type StateStore struct {
@@ -183,7 +186,7 @@ func (s *StateStore) TaskStatus() TaskStatus {
 	if status, err := s.Read("task.status"); err == nil && status != "" {
 		return TaskStatus(status)
 	}
-	return TaskStatus("none")
+	return TaskStatusNone
 }
 
 // SetTaskStatusはtask.statusを書き込みstats mirrorへも反映する。
