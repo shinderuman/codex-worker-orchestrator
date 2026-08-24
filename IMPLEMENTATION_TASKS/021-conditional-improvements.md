@@ -79,10 +79,10 @@ Task 021自身のためだけに通常implementation task同等の、
 ## Historical invariants
 
 - complexity responsibility、conditional convergence方針
+- Task 008測定ではmachine JSONのbytes/token proxy削減は不立証、意味保持は31/31（旧形式27/31）であり、継続採用根拠は単一contractとQuality Delta
 
 ## Dependencies
 
-- `IMPLEMENTATION_TASKS/008-machine-protocol-measurement.md`
 - `IMPLEMENTATION_TASKS/009-worker-call-outliers.md`
 - `IMPLEMENTATION_TASKS/011-operation-category-telemetry.md`
 

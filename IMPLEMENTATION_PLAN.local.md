@@ -8,17 +8,18 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/008-machine-protocol-measurement.md`
+- `IMPLEMENTATION_TASKS/zai-five-hour-limit-immediate-stop.md`
 
 ## NEXT（優先順）
 
+- `IMPLEMENTATION_TASKS/external-feasibility-dispatch-gate.md`
+- `IMPLEMENTATION_TASKS/015-fixed-eval-corpus.md`
 - `IMPLEMENTATION_TASKS/009-worker-call-outliers.md`
 - `IMPLEMENTATION_TASKS/010-task-splitting-milestones.md`
 - `IMPLEMENTATION_TASKS/011-operation-category-telemetry.md`
 - `IMPLEMENTATION_TASKS/012-compaction-threshold-evaluation.md`
 - `IMPLEMENTATION_TASKS/013-worker-model-routing-evaluation.md`
 - `IMPLEMENTATION_TASKS/014-test-impact-evaluation.md`
-- `IMPLEMENTATION_TASKS/015-fixed-eval-corpus.md`
 - `IMPLEMENTATION_TASKS/016-worker-repo-search-integration.md`
 - `IMPLEMENTATION_TASKS/017-reviewer-diff-first-search.md`
 - `IMPLEMENTATION_TASKS/018-exhaustive-search-gate.md`
@@ -41,14 +42,14 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 ## 現在のGit境界
 
 - branch: `main`
-- implementation baseline: Z.ai 5時間Usage Limit即時停止commit（current HEAD）
-- metadata boundary: 5時間limit taskの独立review・Sol差戻し後再review・完了証跡・task削除を同一commitへ同期し、Task 008をACTIVEへ昇格した境界
+- implementation baseline: Task 008 machine protocol measurement commit（current HEAD）
+- metadata boundary: Task 008の完了証跡・task削除・5時間limit taskのACTIVE昇格を同一commitへ同期した境界
 - push: 禁止
 
 ## 現在の停止理由
 
-blockerなし。5時間Usage Limit即時停止taskのfinal HEAD gate、本配置、installed binary/source一致、status JSON smokeを完了。Task 008を開始できる。
+blockerなし。Task 008はmachine JSONのbytes削減効果を不立証、意味保持・単一contract品質を採用根拠として完了。実producer PoCで効果不成立と判明した5時間limit early-stopを選択的に戻す。
 
 ## 次の親Codex操作
 
-ACTIVE Task 008を要求正本としてmachine protocol measurementを開始する。pushしない。
+commit `cbf71c7`のproduction code/testだけを選択的に逆適用し、Plan/History/task lifecycleは戻さない。terminal 5時間limit分類・checkpoint/session・RATE_LIMITED/auto-resumeは維持し、関連testと全gate後に親Codexがcommitする。pushしない。

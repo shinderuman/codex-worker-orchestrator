@@ -1,0 +1,644 @@
+{
+ "description": "Task 008 measurement corpus: accepted structured results harvested read-only from saved glm-worker telemetry (codex-config + media-backup state). Era B = structured model protocol with KEY-line wrapper output (22c1d0b..202bc92), Era C = machine JSON wrapper output (202bc92..).",
+ "harvested_at": "2026-08-24",
+ "entries": [
+  {
+   "source": {
+    "repo": "codex-config",
+    "task": "a151e04d-c161-4122-98a2-65911ba15604",
+    "call": "74600938",
+    "at": "2026-08-21T13:02:44.450765Z",
+    "era": "B(structured-keyline)",
+    "phase": "reviewer-1"
+   },
+   "result": {
+    "artifacts": [],
+    "invariants": "親2file削除・他path変更・head/index移動は従来どおりfail closed;worker工程resumeとparent file guardは無影響;review-end再照合は緩めず(再固定後のreviewer変更はfail closedをtest済み);承認時にreviewerを再度呼びreview-end一致で完了。",
+    "issues": "crash window基準stale: runModel呼出前checkpoint保存(workflow.go:830)がresume再固定後のreviewer呼出で前回停止時の古いStopParentFilesを再保存する。process crash/kill後の次resumeでreviewerの呼出中親2file改変が「停止期間中の親更新」として誤承認され得る(停止path3経路は再capture済みだがpre-call保存のみ未対応。第一cycleはnilのため拒否、再固定後cycleのみ発現)。呼出開始時の親状態をreview stageのpre-call保存へ固定し、crash→tamper→次resumeがfail closedになるtestを追加すること。",
+    "requirement_coverage": "配置一致確認は真(binary・managed file全てHEADと一致をreviewerが再現)。plan/history読み取り専用守衛(working tree diffはbaselineと同一)。承認済み親deltaのみ許可・他変更fail closed・代替案不採用は要件どおり。既存責務調査と最小単一contract実装。commitなし。ただし上記crash windowの境界漏れ1件が要求「正確な識別」に違反。",
+    "residual_risk": "承認は停止window内の変化を親Codexとtiming基準でのみ識別(identity証明なし);reviewer呼出中改変の後に停止window中の親上書きが続く場合両者は機械不可分(設計上の限界)。downgrade方向(新checkpointを旧binaryが読む)は旧binaryに例外logicが無いためfail closedで安全。実5h windowの実運用datapointは未検証(worker申告どおり)。",
+    "risk": "HIGH",
+    "sol_question": "",
+    "status": "FIX_REQUIRED",
+    "summary": "review-resume 3軸再照合へ「停止期間中の親管理2file更新のみ」を承認する例外を追加。停止保存時に親2file状態をcheckpointへ、review-start snapshotに親2file状態と親除外worktree digestを記録し、head/index一致+親除外digest一致+停止時→現在の親差分だけを承認deltaとして基準を現状へ再固定する。削除・呼出中変更・他path・head/index移動・旧binary基準なしstateはfail closed。",
+    "targets": [
+     "glm-worker/internal/workflow/workflow.go:830 (runModel pre-call SaveResumeCheckpoint)",
+     "glm-worker/internal/workflow/workflow.go:acceptReviewResumeParentDelta",
+     "glm-worker/internal/workflow/workflow.go:verifyReviewResumeSnapshot"
+    ],
+    "test_evidence": "reviewer再実行: go test ./... -count=1全package成功、go vet/gofmt -l(空)/go build成功。worker test: 承認時re-anchor+reviewer 1回+review-end一致+snapshot_parent_update telemetry、matrix(内容更新/新規作成承認、他path/head/index/呼出中/削除拒否)、旧checkpoint/旧snapshot fail closed、再固定後reviewer変更拒否、失敗resume復元時再capture、worker工程resume無影響、実git repoのtracked/untracked/subdir同名列検証。crash window caseのtestは欠落。"
+   }
+  },
+  {
+   "source": {
+    "repo": "codex-config",
+    "task": "6b59a4cf-6f84-4a5a-bb8b-bc9658259164",
+    "call": "e644d6a0",
+    "at": "2026-08-22T15:55:14.617379Z",
+    "era": "B(structured-keyline)",
+    "phase": "reviewer-1"
+   },
+   "result": {
+    "artifacts": [],
+    "invariants": "darwin/linuxのTCGETS/TCSETS・cfmakeraw相当raw化・全path復元(errors.Join)・pipe/file exact read・argv/byte数/SHA契約・instruction本文とmanifest hashは前回review時から不変; 新境界はいずれもfail closed方向へのみ働く(/dev/nullのfalse positive含む)",
+    "issues": "glm-worker/internal/app/stdin_terminal.go:10-12のenterStdinRawMode doc commentが旧実装のまま。「stdinがpipe/fileやterminal判定不能な場合はno-op復元を返す」は現行と不整合: probe失敗(ENOTTY以外)と非実装環境のchar device stdinはno-opでなくfail closedする。Sol amendmentが引いた境界と逆を記述しており、修正が必要(Comment修正のみ、コードは正しい)",
+    "requirement_coverage": "Sol amendment(2026-08-23)両要件を充足: (1) 非darwin/linuxはchar device stdinをpayload読取・state変更前にGOOS入り明示errorでfail closedしpipe/regular fileのno-op復元+exact readを維持、Stat失敗もfail closed、交叉buildのみでTTY成立扱いしない。(2) darwin/linux probeはENOTTYのみpipe/file判定no-op、その他ioctl failure(EBADF実証)はfail closed。境界logicはtagなし共通関数でdarwin上実行検証。Original実装要求・test一覧・recipe削除・app.go wiringは前reviewで確認済みのまま不変かつ再PASS",
+    "residual_risk": "修正後も前回と同じSol判断点が残る: write_stdin到達がraw設定前に先行した場合のecho/信号化はCodex契約(session ID返却後の1回write_stdin)依存でlive再現なし、非darwin/linuxのruntime実行は未検証(darwin上のlogic検証+交叉buildで代替)、本配置instructionはcommit後install待ち(混合運用は冪等で互換)",
+    "risk": "HIGH",
+    "sol_question": "",
+    "status": "FIX_REQUIRED",
+    "summary": "Sol amendment 2点へ適合: darwin/linuxのterminal probeはENOTTYだけをpipe/file扱いとし他のioctl failureを読取前にfail closed、非darwin/linuxはchar deviceなstdinをGOOS入りerrorでfail closedしpipe/file exact readはno-op復元で維持。既存raw化/復元・instruction/manifest・app.go wiringは不変で全test再PASS。enterStdinRawModeのdoc comment1件だけが旧no-op semanticsのまま残存し実装と不整合。",
+    "targets": [
+     "glm-worker/internal/app/stdin_terminal.go:enterStdinRawMode doc comment (L10-12)"
+    ],
+    "test_evidence": "再実行: gofmt/vet ok、go build darwin+linux/windows/freebsd ok、go test -count=1 ./...全package ok、app+workflow -race ok。新test(閉fd=EBADF probe fail closed・/dev/null char device fail closed・pipe/regular file no-op・非file reader no-op)と実PTY事前sttyなし輸送・SHA mismatch復元付きfail closedは全てPASS非skip"
+   }
+  },
+  {
+   "source": {
+    "repo": "codex-config",
+    "task": "25f6a48e-e20c-4678-8908-5d3c1707a942",
+    "call": "097ff28f",
+    "at": "2026-08-23T02:15:29.778131Z",
+    "era": "B(structured-keyline)",
+    "phase": "reviewer-1"
+   },
+   "result": {
+    "artifacts": [
+     "/Users/shinderumanm/.glm-worker/sessions/4b1083bd6f6e13220f3e0d653377d694f010b8951c788559f19840a14a0df6d0/artifacts/25f6a48e-e20c-4678-8908-5d3c1707a942/parent-review-telemetry-finite-sets.md"
+    ],
+    "invariants": "fix_commands等既存計数はparent outcome確定の影響を受けない(state testで固定);TaskStats/telemetry共にversion 3のままomitempty追加で旧recordは欠落=未観測として読め、migration・補込なし;emitResultは親向けterminal 3statusのみでpacket counterとopportunityの加法整合を維持;reviewer auto-fix・rate-limit停止・resumeはopportunityを作らない;--acceptはrepo lock取得後・model呼出・Git操作なし;親管理metadata 4面不変・commit/pushなし(baseline空、全変更未commit)",
+    "issues": "1) state/parent_review.go:67-70 openParentReviewのsupersede経路はParentOutcomes[unknown]のみ加算し、resolveParentOutcomeがclose時unknownへ行うParentOutcomesByModel/ByRiskへの帰属を行わない。supersede後は内訳mapの総和<outcome総数となり「outcomeのmodel/risk別内訳」の意味が壊れる(現行command flowでは防御経路だがartifact §3が定義しstate testが直接駆動する境界)。帰属を同じ形で行うかresolveParentOutcome経由に直し、TestSupersededOpenOpportunityCountsUnknownへby-model/by-risk加法整合のassertを追加すること。2) codex/instructions/glm-execution.md:38「再実行はno-outである」は「no-op」のtypo。修正時はscenarios/manifest.jsonのhash pinを再更新すること。3) worker報告はreviewer省略・model downgrade判断への単独使用禁止を「README/NOTEへ明記」と主張するが、実際の記載はartifact §9のみでREADME新設段落とPARENT_REVIEW_NOTEにはactual usage/非A/B代替の限定だけしかない。READMEへ1文追加して報告と実態を一致させること",
+    "requirement_coverage": "Contract: opportunity=outgoing terminal packet 1件(producer=直近成功呼出のrole/model、risk=packet値)はemitResult経由のRecordSolResultでのみopen、emitResult呼び出し元は全て親向けterminal 3 statusのみでpacket counterとの加法整合が成立。outcome 4値・origin 5値・全確定境界をartifactが定義。auto-fix/rate-limit/resumeはopportunityを作らない、旧archiveは補完なし、--fix単独はunknown originでaccepted推定なし、--accept on NEEDS_SOL_DECISIONはstate無変更で拒否、--reset/新task closeとsupersedeはunknown確定。repo/task/risk/model別read-only集計とorigin別reworkを--statsで再現。schema comment・PARENT_REVIEW_NOTE・README・artifact §9がactual usage/非A/B代替を明記。Must not: raw本文・secret・高cardinality label不保存、AI call追加なし、parent-managed metadata不変、commit/pushなし。acceptanceの独立reviewer以外(親Codex commit・本配置)は残務として妥当",
+    "residual_risk": "実親Codexによる--accept/--origin運用はtest simulation外未実施でglm-execution.md申告節の実運用に依存(number 1修正後のpin再更新を含む)。reworkのcoverage complete率は長期運用で未観測。これらはSolの進行管理事項で実装の採否判断は不要",
+    "risk": "HIGH",
+    "sol_question": "",
+    "status": "FIX_REQUIRED",
+    "summary": "glm-workerへparent review観測(--accept、--fix --origin有限集合)を追加し、terminal packet毎のopportunity openと明示操作/task closeでのexactly-once確定、TaskStats v3へのomitempty追加、--status/--statsへの集計表示、glm-execution.mdへの親申告節を実装。要求契約とMust notは概ね実装通り。ただしsupersede時のunknown outcomeがby-model/by-risk集計へ帰属されず内訳の加法整合が壊れる集計欠陥と、親手順fileのtypo、README記載の報告過大が残る",
+    "targets": [
+     "glm-worker/internal/state/parent_review.go:openParentReview",
+     "glm-worker/internal/state/parent_review_test.go:TestSupersededOpenOpportunityCountsUnknown",
+     "codex/instructions/glm-execution.md:38",
+     "glm-worker/scenarios/manifest.json:glm-execution.md",
+     "README.md:parent review観測段落"
+    ],
+    "test_evidence": "再実行: go test ./... 全package ok、go test -race ./internal/{state,app,workflow}/ ok、go vet ok、go build ./cmd/... ok、gofmt -l 空(callbackなし)。scenarios/manifest.json pin値1383cb01...は現行glm-execution.mdのsha256と一致。production-path test(app Execute levelのNEEDS_SOL_REVIEW→--fix --origin→--accept冪等+加法整合+stats行一式)とworkflow levelのfix失敗/再実行・rate-limit/resume境界を確認済み"
+   }
+  },
+  {
+   "source": {
+    "repo": "codex-config",
+    "task": "55292417-a783-407b-8095-263785e685de",
+    "call": "5b91e235",
+    "at": "2026-08-22T08:21:13.836889Z",
+    "era": "B(structured-keyline)",
+    "phase": "worker-explicit-fix"
+   },
+   "result": {
+    "artifacts": [],
+    "decision": "",
+    "evidence": "",
+    "options": "",
+    "recommendation": "",
+    "requirement_coverage": "Sol差戻し全項目対応: duplicate TARGETS拒否理由から入力要素文字列の埋込みを除去し固定TARGETS文(「各対象は1回だけ指定してください」)へ変更、artifact.go:10重複caseをshared tableへ追加して全statusでRejectCategory targets-noneを固定(table loopの共通assertion)、受理集合・none厳密正規形・PACKET・production dispatch・prompt/EVAL/schema/manifestは本轮不変、親専有4面不侵・commit/push無し",
+    "risk": "HIGH",
+    "status": "IMPLEMENTED",
+    "summary": "duplicate TARGETS拒否のconstraint errorが要素文字列を埋込んでRejectCategoryをartifactsへ誤分類し得る問題を、理由文の固定化で解消。shared tableへartifact.go:10重複caseを追加し全statusでcategory targets-noneを回帰固定。他契約・受理集合は無変更。",
+    "targets": [],
+    "test_obligations": "",
+    "tests": "gofmt -l空、go vet/go build緑、go test -count=1 ./...全9package緑、packet+workflow -race緑(workflow 41s)。targeted runでduplicate_artifacts-like_elementが5 status全てPASSしRejectCategory targets-noneを確認",
+    "unverified": "none。前回RESIDUAL_RISKのduplicate埋込み問題は本轮で解消済。wrapper独立reviewは次phase"
+   }
+  },
+  {
+   "source": {
+    "repo": "codex-config",
+    "task": "170a263e-5d75-4611-8868-e875cc678b02",
+    "call": "51711021",
+    "at": "2026-08-22T01:23:21.532045Z",
+    "era": "B(structured-keyline)",
+    "phase": "worker-explicit-fix"
+   },
+   "result": {
+    "artifacts": [],
+    "decision": "",
+    "evidence": "",
+    "options": "",
+    "recommendation": "",
+    "requirement_coverage": "REVIEW_FEEDBACK指摘の配置契約漏れを修正。validateActiveTaskPathは`.md`拡張子を強制(番号prefix不問・配下subdirectory許容で現RULESのpath契約を狭めない)、resolveActiveTaskPathはos.Lstatのfile typeでsymlink・directory・FIFO等のnon-regularを辿らず拒否(repository外targetのsymlinkも展開前に拒否)、errorは既存active_unresolvable fail closedへ流す。activeTaskFileExistsも同じregular file判定へ変更し、固定後のsymlink・directory差し替えを欠損扱いで呼出前fail closedに統一。EVAL.mdへ`.md` regular file限定契約を追記しwiring testがpin。親専有4面は無編集(Plan/task fileのdiffは親Codex追記)、GLM commit/pushなし",
+    "risk": "HIGH",
+    "status": "IMPLEMENTED",
+    "summary": "契約変更: ACTIVE task解決の受理対象を`IMPLEMENTATION_TASKS/`配下の`.md` regular fileへ限定した。失敗境界: `.md`以外の拡張子はvalidateActiveTaskPathで拒否、symlink(os.Statがrepository外へ辿る)・directory・FIFO等はLstatのfile typeでregular file以外として拒否、いずれもparent_metadata_active_unresolvableとして0 model call fail closed。固定済みpathの呼出前存在確認も同一のLstat regular判定へ変更し、固定後のnon-regular差し替えを同様にfail closed。番号付き・semantic filenameの`.md`は従来どおり受理しsequence prefixは要求しない。EVAL.mdの契約文とwiring test pinを更新",
+    "targets": [
+     "glm-worker/internal/workflow/activetask.go: validateActiveTaskPath/resolveActiveTaskPath/activeTaskFileExists",
+     "glm-worker/internal/workflow/activetask_test.go: TestResolveActiveTaskPathMatrix/TestActiveTaskNonRegularFileFailsClosedBeforeCall"
+    ],
+    "tests": "TestResolveActiveTaskPathMatrixへ6 case追加(semantic filename・subdirectory .md positive、non-.md・directory・repository外target symlink negative、計15 case)。新規TestActiveTaskNonRegularFileFailsClosedBeforeCallはproduction pathでsymlink ACTIVE指定が0 model call・waiting-sol-review・active_unresolvable event 1件・理由文出力となる因果を固定。TestActiveTaskContractWiringがEVALの`.md` regular file限定文をpin。go test -count=1 ./...全9 package ok、go test -race -count=1 ./... ok、gofmt/vet/build gate OK、install smoke PASS(production source変更後の再実行)。telemetry意味変化なし(active_unresolvableへ合流)",
+    "unverified": "既知懸念は前回不変: 旧2file形式stop_parent_files checkpoint読込不可、plan_file_*→parent_metadata_* outcomeの集計側貼替、新sourceのinstall・実運用確認は親Codex側未実施"
+   }
+  },
+  {
+   "source": {
+    "repo": "media-backup",
+    "task": "efa509f0-611d-4cc4-b9b0-3c883b8fd634",
+    "call": "854a7325",
+    "at": "2026-08-22T21:39:57.586475Z",
+    "era": "B(structured-keyline)",
+    "phase": "worker-new-result-correct"
+   },
+   "result": {
+    "artifacts": [
+     "/Users/shinderumanm/.glm-worker/sessions/4e04e4e3df1652d0735226ea4f56f55e5335353f60243423e7828d13504137af/artifacts/efa509f0-611d-4cc4-b9b0-3c883b8fd634/webui-speed-eta-diagnosis.txt"
+    ],
+    "decision": "none",
+    "evidence": "none",
+    "options": "none",
+    "recommendation": "none",
+    "requirement_coverage": "(1) process.go Run wires stdout+stderr to one progressWriter; live log interleaves NOTICE stats(1/s)+INFO \"Copied (server-side copy)\"; ERROR only in an old failed run; INFO/NOTICE not swapped, neither stream dropped — parser matches only the NOTICE stats shape. (2) NOTICE stats: bytes/percent/xfr/1s-ts, no filename, speed always 0, ETA \"-\"; INFO Copied: 1s-ts+filename only (no bytes), so discarding it loses nothing usable; totals revised mid-run. (3) intervals: 3h unknown-backup 1042 (median 7s, p95 36s, max 161s, >5s 59.5%, >60s 1.1%); current 10min 91 (median 3s, p95 14s, max 60s, >5s 34%); music 5958 (median 1s, max 16s, >5s 1%). complement() simulation display share: hold 5s 41.5/56.6/97.4%; 60s 96.8/98.8/99.4%; infinite 99.6/98.8/99.4%. (4) 2s x20 /api/status polls: speed appears only within 5s of completion jumps (+1.08GiB 385MB/s, +577MiB 30.8MB/s), zeros between, matching log ticks. (5) v1.68.2: no flag gives non-zero server-side-copy speed between completions; --use-json-log / --rc core/stats expose same accounting; --transfers only shortens gaps; clonefile toggle --local-no-clone out of scope. (6) 4 fix options compared. (7) escaped-cause: fix validated on music-backup.log (dense regime) only; tests codify 5s expiry. (8) sanitized artifact saved.",
+    "risk": "LOW",
+    "status": "IMPLEMENTED",
+    "summary": "Diagnosis only — repo/tests/config/git/install untouched, run 20260822T212555.104277000Z-001 left running (unknown-backup still progressing, pct 7 at last check). Root cause: APFS clonefile copies are logged as \"Copied (server-side copy)\" and rclone credits whole-file bytes only at completion, so every 1s NOTICE stats line reports 0 B/s, ETA - while transferred stays frozen between completions (median 7s, p95 36s, max 161s in the 3h production run); the uncommitted 5s derived-speed hold (internal/backup/progress.go derivedSpeedHold) covers only 41.5% of stats ticks in the unknown-backup large-file regime vs 97.4% in music, so speed/ETA are hidden most of the time and the card shows 0 B/s / \"—\". Recommended minimal fix: rolling ~120s window derivation (speed = transferred delta / window span, keep displaying while any increase is inside the window, honest decay to 0 when quiet exceeds the window, existing percent>=100/counter-reset/finishJob clears unchanged); cheapest alternative is raising derivedSpeedHold to 90-120s (one constant, ~97-99% coverage, but a magic constant tied to file-size distribution and up to 2min stale speed on a true stall).",
+    "targets": [
+     "internal/backup/progress.go:74 derivedSpeedHold",
+     "internal/backup/progress.go:95 progressWriter.complement",
+     "internal/backup/jobs.go:62 SyncInvocation"
+    ],
+    "test_obligations": "none",
+    "tests": "No tests run by design (diagnosis-only, zero changes). Verification was runtime evidence: 20 live /api/status polls over 40s correlated with log ticks, plus an exact simulation of the current complement() state machine replayed over three production logs (current unknown-backup, previous 3h unknown-backup, previous music-backup) to measure display share per hold window.",
+    "unverified": "Whether --use-json-log / RC core/stats also report 0 speed between server-side-copy completions is inferred from rclone accounting design plus local help text, not empirically tested (no rclone experiments per instructions); interval distribution beyond the observed 3h sample (max 161s) is unknown — later phases with larger files could gap longer, which affects the chosen window/hold size; no signal currently distinguishes a >window quiet copy from a genuine hang (both freeze transferred), so the fix must treat decay-to-zero as the stall indicator."
+   }
+  },
+  {
+   "source": {
+    "repo": "codex-config",
+    "task": "a0e6878f-5f3a-4cf4-8dda-0a0806eeff90",
+    "call": "7ef2cd18",
+    "at": "2026-08-21T16:45:35.242525Z",
+    "era": "B(structured-keyline)",
+    "phase": "worker-new"
+   },
+   "result": {
+    "artifacts": [],
+    "decision": "final HEAD planのstale-by-one機械postconditionの実装位置と検出契約:(a) install.sh preflight gateかglm-worker worker-start fail closed guardか、(b) 検出は「完了同期marker必須+進行状態/次の操作行のpending amend文言拒否」のhybridか文言拒否のみか",
+    "evidence": "c6a0bb0はgit.md二段階手順+TestPlanCommitSyncContractWiring(instruction文字列pin)+install_smoke配置grepのみで、HEAD plan内容を検証する機械検査は不存在(install.sh preflightはgo test/buildのみ、glm-worker production codeにgit show HEAD:plan呼出なし、.githooks/post-mergeはinstall.shへ委譲); 4cedc91/0ae3e46のHEAD収録planは「前taskのplan/historyを同一commitへamendする直前」「次の操作: amend後にinstall.sh…」と記述し後続taskがその上にcommit済み、ce86313は「同期を完了し」形態でamend実行依存を示す; EVAL.md本節はwrapper終端なし・live親behavioral Evalは許可待ちと明記; 本配置はinstall.sh管理sourceと完全一致(install.sh/codex配下全diffなし)、IMPLEMENTATION_PLAN.local.md(working treeでM)・IMPLEMENTATION_HISTORY.mdは読み取りのみで未編集",
+    "options": "1) install.sh preflight新段階: git repo+planのindex追跡+HEAD存在時のみgit show HEAD:IMPLEMENTATION_PLAN.local.mdへ完了同期marker(固定行)必須+進行状態/次の操作行のpending amend文言拒否、非git/commitなし/untracked planはskip、違反時は配置前fail closed+git.md同一commit復旧amendへの誘導、git.md/EVAL.md契約文+wiring pin+install_smoke実Git scenarioで固定; 2) 同位置で文言拒否のみ: plan形式変更なし、自由文の言い換えdriftで検出漏れ再発余地; 3) glm-worker worker-start guard: install未実施でも次回GLM呼出前に検出する最強だがpin済みEVAL「wrapper終端なし」決定の反転とplan保有全repoへの新fail closed surface; 共通副選択: install時clean tree/plan-HEAD一致の追加強化はしない(本postconditionはHEAD内容のみ、dirty treeは非干渉を固定)",
+    "recommendation": "案1(hybrid検出): stale状態が実際に横切った境界はinstall(ならびにpost-merge hook経由の同一gate)であり、親の原因分類「親側のcommit後postconditionとfinal HEAD検証」に合致し、wrapper fail closed面やpin済みEVAL決定を反転しない; 固定markerは自由文driftに強く、marker書き漏れはfail closed側に落ちる誤検出方向; 初回installは本task自身のcommit+amend(marker込み)後に通る順序をgit.mdへ明記する運用bootstrap付き",
+    "risk": "HIGH",
+    "status": "NEEDS_SOL_DECISION",
+    "summary": "一次証拠で原因層を確定: c6a0bb0対策は手順文の文字列pinのみでfinal HEAD plan postconditionの機械強制が存在せず、親Codexが初回commit後の同期amendを実行せずinstall/次taskへ進行した(4cedc91/0ae3e46)。実装位置と検出契約は将来構造へ意味差を生むためSol判断へ返却。",
+    "targets": [
+     "codex/instructions/git.md:22-36(tracked canonical planのcommit同期節)",
+     "glm-worker/internal/workflow/plan_commit_sync_test.go:17(TestPlanCommitSyncContractWiring)",
+     "install.sh:221-240(preflight),292-299(実行順)",
+     "EVAL.md:110-118付近(tracked canonical planのcommit同期contract節)",
+     "tests/install_smoke.sh:46-61,100-137,322-338(prepare_preflight_failure_case/expect_preflight_failure)",
+     "IMPLEMENTATION_PLAN.local.md:40-43(現在作業中)およびIMPLEMENTATION_PLAN.local.md@4cedc91(進行状態/次の操作行)",
+     "glm-worker/internal/workflow/planfile.go:207(captureParentFileGuard)"
+    ],
+    "test_obligations": "実Git repository scenarioでproduction install.sh経由の固定: 旧c6a0bb0手順をamend前停止して4cedc91型stale planをHEADへ置いた場合のinstall失敗と配置不変(binary/managed files/settings/hook無変更); 同期済みfinal HEAD+clean treeでのinstall成功; dirty working tree(未commit plan編集)でもHEAD基準読込で誤失敗しないこと; amend失敗時にgate継続失敗し同一commit復旧amendで通過すること; 非git source/commitなしrepo/untracked planのskipで既存preflight失敗caseの期待go呼出log不変; git.md/EVAL.md/install.shのwiring pin更新とworker/reviewer prompt checklist不追加; tracked canonical・commit前[x]禁止・plan/history同一commit同期・push禁止の既存pin存続; sh -n install.sh・go test ./...・go vet・gofmt・build全部通し"
+   }
+  },
+  {
+   "source": {
+    "repo": "codex-config",
+    "task": "4b260f22-978e-4272-9484-580685c9326c",
+    "call": "fbb2b827",
+    "at": "2026-08-22T21:15:14.775331Z",
+    "era": "B(structured-keyline)",
+    "phase": "worker-new"
+   },
+   "result": {
+    "artifacts": [
+     "/Users/shinderumanm/.glm-worker/sessions/4b1083bd6f6e13220f3e0d653377d694f010b8951c788559f19840a14a0df6d0/artifacts/4b260f22-978e-4272-9484-580685c9326c/pty-startup-feed-race-report.md",
+     "/Users/shinderumanm/.glm-worker/sessions/4b1083bd6f6e13220f3e0d653377d694f010b8951c788559f19840a14a0df6d0/artifacts/4b260f22-978e-4272-9484-580685c9326c/pty-immediate-write-race-evidence.txt",
+     "/Users/shinderumanm/.glm-worker/sessions/4b1083bd6f6e13220f3e0d653377d694f010b8951c788559f19840a14a0df6d0/artifacts/4b260f22-978e-4272-9484-580685c9326c/final-race-run.txt"
+    ],
+    "decision": "再現済みのstartup/feed raceに対し、glm-worker stdin payload modeへ最小READY handshake(readiness信号)を追加するか否かと、追加する場合の信号表面(stdout/stderr・非TTY stdin挙動)・caller契約(glm-execution.mdの1回write契約へのREADY待ち追加)をどう固定するか",
+    "evidence": "即write化で4/4実行すべて失敗: helperがreadStdinPayloadで宣言byte数へ到達できず60s停止し、tool outputへ^Cを含む本文末尾がecho漏洩(raw化前のcanonical+echo処理の直接証拠)。write前200ms/1000msの人工delayでは全run成功し、失敗が配線ではなく書き込みとhelper raw化の順序依存と確定(対照実験用codeは実施後撤去)。production caller契約はreadiness確認なし1回write_stdinで、line disciplineはmaster書き込み時点のmodeで入力を処理するため、raw化前に到達した本文はcanonical line buffer滞留・ICRNL・ISIG・ECHOを受ける。Task 004当時のlive検証(9-byte)はtool往復latencyが起動+raw化より長かっただけで成立していた",
+    "options": "(1) glm-workerがraw化完了後に最小READY信号を1行出力しcallerはそれを待ってから1回write(自己完結transport維持・caller契約にREADY待ち追加) (2) handshake追加なしでrace受容またはpayload byte制限(任意byte完全性契約の縮小) (3) caller側のfail closed検知retryで遅延writeし直す(非決定的でstate前fail closed契約と摩擦) (4) 旧testのREADY同期へ戻す(今回のレビュー却下理由の再発)",
+    "recommendation": "(1)。stderr(またはpacketとは別surface)へのREADY 1行・非TTY stdin(pipe/file)では信号を出さない構成が最小。stdoutへ出すとPACKET機械読取を汚染し、pipe経路の既存test一括変更が必要になるため、その選定もSol確定事項",
+    "requirement_coverage": "指定3点のみ実施しTARGETS修正・decision retry・requirement source・schedule fail-closed・PTY raw化・live snapshot方式には非接触、一般parser/新機構/event JSONL本文追加/production handshake実装なし、commit/pushなし、parent metadata読み取り専用で前後hash一致。escaped原因History候補(一次証拠): PTY=旧testがproductionに存在しないready file待ちで強い同期前提を入れ、live検証もtool往復latency>起動raw化が偶然成立させただけで同期不在の保証が無かった。corpus=判定にsection/fence境界が無く現corpusが偶然cleanなため誤検出境界が一度も発火せず、検証は0件要求の中身だけで検索範囲を見ていなかった。MODEL_IDLE=基準時刻へmodel/non-model分類がそもそも存在せず、fixture最終eventが常にassistant eventで表示意味が偶然一致していた",
+    "risk": "HIGH",
+    "status": "NEEDS_SOL_DECISION",
+    "summary": "1点目: PTY testをREADY待ちなし即write+5回反復(run番号で本文変化)へ再構成した結果startup/feed raceが毎回再現したため、task file指示どおり最小READY handshakeを設計判断(Sol)へ戻した。testは契約どおりの形で赤のまま保持し証拠化。2点目: corpus conformanceをfence境界(3+ backtick開・同数以上backtick行で閉)越しのtop-level Status/Dependencies section判定へ変更し、Original instruction内同文字列を誤検出しないpositive/negative fixtureを追加。3点目: MODEL_IDLE基準をwatchModelActivityRecord(assistant thinking/text/tool_useのみ)で更新するmodel activity時刻へ変更し、snapshot last_event_at(非model eventで進む)を基準から除外。runtimeのingester・event log・snapshot形式は不変",
+    "targets": [
+     "glm-worker/internal/app/stdin_pty_test.go:ptyTransportRun",
+     "glm-worker/internal/app/app.go:run",
+     "glm-worker/internal/app/stdin_terminal.go:enterStdinRawMode",
+     "codex/instructions/glm-execution.md"
+    ],
+    "test_obligations": "handshake採用時: PTY testはREADY待ち+即writeでUTF-8/改行/backtick/$/quote/NUL/Ctrl-C全byte・複数回反復green化。pipe/file stdin経路・sha mismatch/short readのstate前fail closed・termios復元は不変。glm-execution.md契約文とcontract wiring testの一致。race detector警告0維持。 handshake不採用時: 現行testを落とすか残すかの方針と、race受容の根拠明記",
+    "tests": "go test ./... と go test -race ./...: 失敗は再現race対象のPTY 2test(TestStdinPayloadSelfContainedPTY・TestStdinPayloadPTYSHAMismatchRestoresTerminal、宣言byte数未到達+echo漏洩)のみで他全package green、DATA RACE警告0(ctx.Done pathのoutput読取競合をWaitドレイン後に読む形で解消済み)。TestTaskCorpusScheduleStateConformance・TestTaskCorpusFindingsScopeToTopLevelSections・TestWatchModelActivityRecordClassifiesModelEvents・TestWatchVerboseModelIdleGrowsDuringToolProgress含むwatch/workflow/runner全系pass。vet/build(-o /dev/null)/gofmt合格",
+    "unverified": "production実機(tty:true exec_command経由)での直接再現は未実施(実測はscript実PTYのproduction同等条件のみ)。READY信号の正確なsurface選定と非TTY stdinでの扱いはSol判断対象のため未設計。script仲介の分だけtestのwrite到達がproductionより数ms遅くなりうるが、即writeでも全run再現しているため観測への影響なし"
+   }
+  },
+  {
+   "source": {
+    "repo": "codex-config",
+    "task": "09048648-5a6a-4d8d-ac55-426946e8e374",
+    "call": "576e2db4",
+    "at": "2026-08-21T15:52:36.820698Z",
+    "era": "B(structured-keyline)",
+    "phase": "reviewer-1"
+   },
+   "result": {
+    "artifacts": [],
+    "invariants": "既存--stats全key不変、TaskStats/ModelCallLog schema・記録経路無変更、欠損・過剰のtask別加算と非相殺維持(実data 12=9+3)、unreadable優先維持、旧version record/stats集計外も不変、秘密/prompt/response非表示、plan/history未編集、配置binary=HEAD buildでinstall.sh管理一致を再確認",
+    "issues": "none",
+    "requirement_coverage": "Sol指摘2点を正しく修正しscope拡張なし: (1) orphan 1件以上でoverall Statusをincompleteへ落としUsageKnown=false(unreadable優先はStatus==Completeガードで維持、集計task自体の分類・ORPHAN_FILES表示は不変、TelemetryCoverageコメントへ理由追記) (2) INCOMPLETE_TASK行からmissing条件を削除し常にusage=unknown付き。test追加・反転は上記境界を正確に固定。元要求の全項目は前round実装のまま保持",
+    "residual_risk": "前round挙げの設計上限はSol review後も仕様として維持(count一致は同一task内の重複↔欠損置換を検出不能、呼出中現在taskは常にincomplete missing=1、historical-gapの一般化、並行追記中の一時的unreadable)。今回の2修正は保守方向のみで新たなfalse complete経路なし。残る判断は最終契約確定のみ",
+    "risk": "HIGH",
+    "sol_question": "指示した2修正(orphanでStatus incomplete+UsageKnown false、INCOMPLETE_TASK行常時usage=unknown)が実装・test固定済みであることを確認のうえ、本coverage表示を最終--stats契約として確定してよいか。",
+    "status": "NEEDS_SOL_REVIEW",
+    "summary": "Sol指摘2点を修正。orphan telemetry file 1件以上でoverall Statusをincompleteへ落としUsageKnown=false(unreadable優先と集計task自体の分類は不変)。INCOMPLETE_TASK行はmissing有無にかかわらず常にusage=unknown付きで出力。永続data model・記録経路・既存CLI行は不変。",
+    "targets": [
+     "glm-worker/internal/state/coverage.go:ComputeTelemetryCoverage (orphan時のStatus降格とUsageKnown)",
+     "glm-worker/internal/app/output.go:printTelemetryCoverage (INCOMPLETE_TASK行の常時usage=unknown)"
+    ],
+    "test_evidence": "再実行: go test ./...全pass、state/app -race pass、vet/gofmt/build clean。新規orphanのみ出力test(incomplete+USAGE unknown+orphan 1+task行なし)とexcessのみ行test(missing=0 excess=1 usage=unknown)を確認、state orphan testはincomplete/UsageKnown false/集計task complete維持へ反転済み。実state dirで--statsが12=9+3(historical gap 2+in-flight missing 1)を加法整合表示、orphan 0"
+   }
+  },
+  {
+   "source": {
+    "repo": "codex-config",
+    "task": "47b74712-9977-464f-b0ad-3aa6eb3d773e",
+    "call": "75248539",
+    "at": "2026-08-22T03:05:15.748086Z",
+    "era": "B(structured-keyline)",
+    "phase": "reviewer-1"
+   },
+   "result": {
+    "artifacts": [],
+    "invariants": "失敗はgo呼出・binary・managed files・config.toml・claude settings・git hook有効化より前で全て未実行(smokeがsentinel・invocations.log不在・hooksPath不設定で固定)。plan非Git repo・plan untracked repoの通常installはskipで不変。判定はHEAD収録planのみでdirty working treeを許容。永続形式・manifest・識別子・stateへの変更なし(gateはgit読取のみ)。親管理4面未編集・commit/pushなしを確認。",
+    "issues": "minor: gateがgrepを使用するがrequire列(git/go/rsync/cmp/awk/install)へ追加なし(実害はほぼ無い局局慣行違反)。gateのpath検証はGo runtime版より緩い(`.`segment・backslash通過、runtime側がfail closedで実害なし)。detached HEAD時`git branch --show-current`空→境界branch不一致扱い(fail closed方向だが誤表示)。",
+    "requirement_coverage": "ACCEPTANCE 6項目すべてproduction pathで機械検証: ACTIVE一意解決とHEAD tree実在(ls-tree regular file限定), amend直前/install前等の過渡表現拒否(3節限定のERE), 削除済みACTIVE・NEXT欠損・ACTIVE重複・branch境界不一致拒否。実Git scenarioでの拒否・同期済みfull install・dirty working tree許容・untracked skip・amend失敗→同一commit復旧amend通過をsmokeが固定。文書だけの対策ではなくworker-start面は追加なし。親管理fileはbaselineどおり未編集、commit/pushなし。",
+    "residual_risk": "過渡表現patternは意味判断を含む: \"amend後\"を完了済み状態表現にも拒否(運用上の言い換え制約)、substringで\"uninstall前\"等も一致、\"amendの前\"等の言い換えは素通り。skip境界(非Git・commitなし・untracked・HEAD未収録)とgate失敗時の同一commit amend-only復旧がinstall契約の意味決定。preflight内の自己保護testとgateの適用分離は意図どおり。",
+    "risk": "HIGH",
+    "sol_question": "final HEAD postcondition契約として、過渡表現patternの広さ(amend後拒否・言い換え漏れ)とskip境界・amend-only復旧をこのまま確定してよいか。",
+    "status": "NEEDS_SOL_REVIEW",
+    "summary": "install.shへpreflight前のverify_plan_final_head gateを追加。HEAD収録planだけを判定しACTIVE一意解決・ACTIVE/NEXT/BLOCKEDのHEAD tree regular file存在・ACTIVE重複拒否・Git境界branch一致・現在状態3節の過渡表現(amend直前/amend後/install前等)拒否を機械強制。失敗時はgo test/build・binary・managed files・hook配置前に停止し同一commit amendだけを復旧経路として案内。契約をgit.md/EVAL.md/README.mdへ記述しwiring testと実Git smoke scenarioが固定。",
+    "targets": [
+     "install.sh:296-401 verify_plan_final_head",
+     "install.sh:12 plan_transitional_pattern",
+     "codex/instructions/git.md:37-47 final HEAD postconditionの機械強制",
+     "tests/install_smoke.sh:615-903 plan gate scenarios",
+     "glm-worker/internal/workflow/plan_commit_sync_test.go:49-170 TestPlanCommitSyncContractWiring",
+     "EVAL.md:126 final HEAD postconditionの機械強制"
+    ],
+    "test_evidence": "bash tests/install_smoke.sh exit 0(新規7拒否+復旧amend+synced+dirty+untracked skipと既存全scenario、reviewer再実行)。sh -n/dash -n OK。go vet・gofmt・go test両module green。実repo HEAD 88d1965でgate関数を抽出実行しverifiedを独立確認。"
+   }
+  },
+  {
+   "source": {
+    "repo": "codex-config",
+    "task": "5366474e-3354-405f-be4d-fa5b14c34e08",
+    "call": "16994786",
+    "at": "2026-08-23T03:05:08.37413Z",
+    "era": "B(structured-keyline)",
+    "phase": "reviewer-1-risk-floor-result-correct"
+   },
+   "result": {
+    "artifacts": [
+     "/Users/shinderumanm/.glm-worker/sessions/4b1083bd6f6e13220f3e0d653377d694f010b8951c788559f19840a14a0df6d0/artifacts/5366474e-3354-405f-be4d-fa5b14c34e08/model-idle-history-update-candidate.md"
+    ],
+    "invariants": "tool_progressではMODEL_IDLEをリセットしない(3828347目的)維持; thinking_tokensのevent log不保存維持; generic last_event_atの意味・用途は不変; 非verbose watch表示・event schema・retentionは無変更; parent-managed 4面は未編集(working treeのtask file diffはbaseline由来の親Current boundary更新のみ); commit/pushなし(HEAD=81d57d2, stage空)",
+    "issues": "none",
+    "requirement_coverage": "Active task fileのContract・Must not・Acceptance criteria全て充足: 専用時刻のlive snapshot最小追加とgeneric LastEventAt温存; 受理集合4種限定(table+実stream摄取testで固定); thinking_tokensのevent log不保存維持; watch MODEL_IDLEの専用時刻正(推測なし); 旧snapshot欠損のzero安全側fallback(migrationなし); production Run経路test・producer/consumer統合test・受理集合table test・旧snapshot解釈test; 全test/race/vet/build/gofmt; README該当段落更新; HISTORY原因候補(合同原因)をartifactへ保存",
+    "residual_risk": "live snapshot書込み断続(liveBroken)時はMODEL_IDLEがevent log側assistant観測のみへ落る表示劣化; 新call開始直後のingester専用時刻resetでcall間は旧callのassistant観測基準になる(構造上安全、zero→fallback); rollback(旧binary)は未知JSON field無視+次回上書きでfield消失のため非破壊だが実機確認は未実施; 実運用旧snapshot file実物での確認は未実施(旧形式raw JSON testで代替)",
+    "risk": "HIGH",
+    "sol_question": "transientなlive snapshotへのadditive field `last_model_activity_at`(旧snapshot欠損はzero→event log側assistant観測へfallback、migrationなし)と、受理集合をstate.IsModelActivityEventへ単一化するproducer/consumer契約を、MODEL_IDLE観測契約の最終形として承認するか",
+    "status": "NEEDS_SOL_REVIEW",
+    "summary": "model activity受理集合をstate.IsModelActivityEventへ単一化し、runner(producer)とwatch(consumer)が同一契約を共有。live snapshotへmodel activity専用時刻last_model_activity_atを最小追加し、assistant thinking/text/tool_useとevent log不保存のsystem/thinking_tokensだけが進め、system/tool_progress・task notification・user tool_result・background通知・resultでは進まない(変更前契約: MODEL_IDLE基準はassistant 3種のみでthinking_tokens無視、長時間thinking中も増え続ける失敗境界を解消)。watchのMODEL_IDLEは専用時刻とevent log側assistant観測時刻の新しい方だけから組み立て、generic last_event_atの意味は不変。旧形式snapshot(専用時刻欠損)はzeroとして読めassistant観測時刻へ安全側fallback、snapshotは次のevent観測で上書きされる瞬間状態のためmigration不要・upgrade非破壊",
+    "targets": [
+     "glm-worker/internal/state/live.go:TaskLiveStatus.LastModelActivityAt/IsModelActivityEvent",
+     "glm-worker/internal/runner/stream_events.go:streamEventIngester.noteLiveActivity/ingestLine",
+     "glm-worker/internal/app/watch_verbose.go:liveToolDetails"
+    ],
+    "test_evidence": "独立再実行: gofmt -l空、go vet ./...清浄、go build成功、go test -race -count=1 ./...で9package全ok。新規test群をgo test -race -count=3で再実行し全pass(実時間sleep 1秒のtiming testも安定)。観点: production Run経路でthinking_tokensが専用時刻を進めresultは進めない(TestClaudeRunnerLiveModelActivityFromSuppressedThinkingTokens、assistant<思考<result順序を1秒差で固定); thinking_tokensのevent log不保存; tool_progressはgeneric時刻のみ進め専用時刻不進; assistant→thinking_tokens→tool_progress順の統合testでMODEL_IDLE 2:30がthinking_tokens基準のみ成立(assistant基準2:31以上/tool_progress基準2:29以下と区別); 受理集合table(state契約+実stream摄取で非model eventの陰性caseも明示assert); 旧snapshot raw JSONのzero解釈とwatch fallback(generic last_event_at基準1:00にならない)"
+   }
+  },
+  {
+   "source": {
+    "repo": "codex-config",
+    "task": "57ad8392-a28f-47fe-94ba-0e253ba9833f",
+    "call": "e80829ac",
+    "at": "2026-08-23T07:46:21.697098Z",
+    "era": "B(structured-keyline)",
+    "phase": "reviewer-1"
+   },
+   "result": {
+    "artifacts": [],
+    "invariants": "repo hash namespace state/lock/search cache、同一repo flock以外の直列化なし、stdin先読み順序維持、quota共有はbug扱いせずrepo stateへ分離、parent-managed metadata/commit/push不触。test-only変更でproduction挙動・公開API・永続形式は無変更。",
+    "issues": "none",
+    "requirement_coverage": "Contract列挙15項目すべて明示assertionで充足(state/lock分離、A lock中B完走、同一repo第2processのみ拒否、task.id/session/checkpoint/telemetry/event log/search cache非混入、reset/resume/rate-limit recovery/status非干渉、PTY payload byte正確・mode非干渉)。shared resource audit 8種をREADME tracked contractへ分類(GLM_WORKER_HOME/sessions hash・search cache path・temp dir・settings.json読取のみ等はcode照合済み)。Must not遵守: production .go無変更・coordination機構追加なし・parent metadata/commit/push不触(plan/task fileのdiffはrate limit停止時のparent境界記録でtask file本文の帰属記述と一致)。",
+    "residual_risk": "none重要。開示済み残余: 429以外のprovider unavailable系の実機非検証(同一repo-local checkpoint機構のため低影響)、repo-search testはTask 019のCLI配線待ちでlibrary API直。いずれも列挙contract外。",
+    "risk": "LOW",
+    "sol_question": "",
+    "status": "PASS",
+    "summary": "実binary 2repo並列test・repo-search cache並列test・2実PTY非干渉testを追加し、共有資源8種の分類をREADME tracked contract sectionへ記録。production .goは無変更でglobal serialization等の新coordination機構なし。test/docsのみの変更で公開API・データモデル・永続状態意味は無変更。",
+    "targets": [
+     "glm-worker/internal/app/multirepo_process_test.go:TestMultiRepositoryProcessIsolation",
+     "glm-worker/internal/app/multirepo_reposearch_test.go:TestMultiRepositorySearchCacheProcessIsolation",
+     "glm-worker/internal/app/multirepo_pty_test.go:TestStdinPayloadPTYParallelNonInterference",
+     "README.md:複数リポジトリの並列利用と共有資源"
+    ],
+    "test_evidence": "reviewer独立実行: 新規3 test PASS・skipなし(2.47s/0.02s/0.46s)、go test -count=1 ./... 全ok、go test -count=1 -race ./... 全ok(app 39.2s workflow 48.4s reposearch 33.1s)、gofmt -l無出力・go vet/build clean。stub claude mode file固定のため追加AI callなし。"
+   }
+  },
+  {
+   "source": {
+    "repo": "codex-config",
+    "task": "5366474e-3354-405f-be4d-fa5b14c34e08",
+    "call": "7effd32e",
+    "at": "2026-08-23T02:58:31.973083Z",
+    "era": "B(structured-keyline)",
+    "phase": "reviewer-1"
+   },
+   "result": {
+    "artifacts": [
+     "/Users/shinderumanm/.glm-worker/sessions/4b1083bd6f6e13220f3e0d653377d694f010b8951c788559f19840a14a0df6d0/artifacts/5366474e-3354-405f-be4d-fa5b14c34e08/model-idle-history-update-candidate.md"
+    ],
+    "invariants": "tool_progressでMODEL_IDLE非リセット維持; thinking_tokens event log不保存維持; generic last_event_at意味不変; 非verbose watch・retention・event schema無変更; 旧snapshot zero fallbackでmigration不要・rollback安全(旧binaryは未知field無視); 親管理4面・telemetry変更へ非干渉(working treeは本task分のみ); GLM commit/pushなし",
+    "issues": "none",
+    "requirement_coverage": "Contract全項目充足: 専用時刻最小追加+generic温存、4種のみ受理・他不受理、thinking_tokens log不保存+専用時刻のみ更新、watch MODEL_IDLE専用時刻正、旧snapshot安全側fallback(migrationなし)。Acceptance criteriaのtest要件6種全て実装済み。HISTORY原因記録は親専有のため共同原因(親指示列挙漏れ・Derived Contract狭窄・横断review不足)を含む更新候補をartifactへ保存。README該当段落のみ更新",
+    "residual_risk": "none",
+    "risk": "LOW",
+    "sol_question": "",
+    "status": "PASS",
+    "summary": "model activity受理集合をstate.IsModelActivityEventへ単一化し、runner(producer)とwatch(consumer)が同一契約を共有。live snapshotへMODEL_IDLE専用のlast_model_activity_atを最小追加し、assistant 3block種とevent log不保存のsystem/thinking_tokensだけが進め、tool_progress等の非model eventでは進まない。watchは専用時刻とevent log側assistant観測時刻の新しい方だけからMODEL_IDLEを組立て、generic last_event_atの意味は不変。旧snapshot欠損はzero読み→assistant観測時刻への安全側fallbackでmigration不要。",
+    "targets": [
+     "glm-worker/internal/state/live.go:IsModelActivityEvent",
+     "glm-worker/internal/runner/stream_events.go:noteLiveActivity",
+     "glm-worker/internal/app/watch_verbose.go:liveToolDetails",
+     "glm-worker/internal/app/watch_verbose_test.go:TestWatchVerboseModelIdleUsesLiveModelActivity"
+    ],
+    "test_evidence": "独立再実行: go test -race -count=1 ./... 9package全ok、vet/build/gofmt清浄。新規6test+拡張2testを-race -count=3で再実行し全pass(実時間sleep 1秒の順序固定も安定)。受理集合table(state+producer配線)は陽性・陰性両caseを明示assert。統合testはthinking_tokens基準2:30をassistant基準2:31+/tool_progress基準2:29-と判別可能な時刻で判定、旧snapshot fallbackはgeneric基準1:00にならないことも固定"
+   }
+  },
+  {
+   "source": {
+    "repo": "media-backup",
+    "task": "db1ad675-02f4-4bd4-9ae6-c26f8d5da845",
+    "call": "985e8fde",
+    "at": "2026-08-23T02:55:22.356032Z",
+    "era": "B(structured-keyline)",
+    "phase": "reviewer-1-result-correct"
+   },
+   "result": {
+    "status": "PASS",
+    "risk": "LOW",
+    "targets": [
+     "web/model.mjs:parseTimestamp",
+     "web/model.mjs:elapsedSeconds",
+     "web/model.test.mjs"
+    ],
+    "artifacts": [
+     "/Users/shinderumanm/.glm-worker/sessions/4e04e4e3df1652d0735226ea4f56f55e5335353f60243423e7828d13504137af/artifacts/db1ad675-02f4-4bd4-9ae6-c26f8d5da845/elapsed-zerotime-fix-memo.md"
+    ],
+    "summary": "web/model.mjs elapsedSeconds rewritten: parseTimestamp rejects timestamps at/before Go zero time (0001-01-01T00:00:00Z); valid finished_at≥started_at fixes elapsed, terminal records without valid finish fall back to elapsed_seconds (never now-based), active records derive from now so elapsed advances 0→1→2s on unchanged single 1000ms ticker; removes latent huge-elapsed path from truthy zero-time started_at on queued/skipped jobs. app.js ticker/metric-cache/layout and all backend files untouched. Bug D appended to escaped-ui-bugs artifact with production DOM evidence.",
+    "requirement_coverage": "Contract 1-4: Fully implemented. parseTimestamp correctly filters Go zero time/invalid timestamps; elapsedSeconds handles all 4 cases per spec (active zero/invalid/before-start finishes→now-based advancing; terminal valid finish→fixed; terminal invalid finish→elapsed_seconds fallback; queued/skipped zero/invalid started_at→safe fallback). Contract 5: All 5 regression scenarios tested with exact Go zero-time fixture from installed API. Contract 6: All 7 verifications passed (19 tests, node check, go tests, go vet, go build, git diff check). Contract 7: Bug D documented with implementation/test-design/review/acceptance layers plus production evidence.",
+    "invariants": "Pre-existing working-tree changes preserved; web layer only; backend ETA/speed/API/SSE cadence unchanged; createElapsedTicker single 1000ms interval maintained; updateElapsedDisplays DOM-only tick preserved; metricDisplay cache semantics intact; layout/styles unchanged; all 14 pre-existing tests pass without narrowing; no breaking changes to public interfaces; Go zero time correctly rejected; terminal states never use now-based elapsed; queued/skipped states never produce huge/negative elapsed.",
+    "test_evidence": "node --test web/*.test.mjs: 19 pass / 0 fail (14 pre-existing + 5 new regression tests covering active Go zero finish, finish-before-start, terminal valid/zero finish, queued/skipped safety); node --check web/app.js OK; go test -count=1 ./... OK; go test -race -count=1 ./... OK; go vet ./... OK; go build ./... OK; git diff --check OK. All contract regression scenarios verified with exact installed API fixture 0001-01-01T00:00:00Z.",
+    "issues": "none",
+    "residual_risk": "none",
+    "sol_question": ""
+   }
+  },
+  {
+   "source": {
+    "repo": "codex-config",
+    "task": "820e121c-4a18-4c41-b644-86d18a850896",
+    "call": "c92ae795",
+    "at": "2026-08-23T22:54:40.020794Z",
+    "era": "C(machine-json)",
+    "phase": "reviewer-1"
+   },
+   "result": {
+    "artifacts": [
+     "/Users/shinderumanm/.glm-worker/sessions/4b1083bd6f6e13220f3e0d653377d694f010b8951c788559f19840a14a0df6d0/artifacts/820e121c-4a18-4c41-b644-86d18a850896/external-output-inventory.md"
+    ],
+    "invariants": "READY-before-write維持(stdin_ready control eventはraw適用直後・payload read前にstderr 1回、実PTY test+非TTY無event testで固定);result packet machine JSON 1行契約不変;PacketCompactions historical出力とstats v3保持;checkpoint v4 strict rejectは前段commitどおり不変;resume_available=rateLimited||providerUnavailableの旧意味と一致;--watchのread-only・終端drain順序不変;TotalAICalls=ModelCalls+ProbeCalls加法整合test固定",
+    "issues": "1) buildProcessErrorの10 kind中8 kind(usage/stdin_payload/not_found/repo_lock_held/worker_error/provider_unavailable/verification_unavailable/internal)がerror envelopeとしてtyped testで未固定(現行はverification_failedのunit assertionとrate_limitedの実binary stderrのみ)。amendmentの「error contractをtyped contract testで固定」への未達。table-driven testをprocess_errorへ追加し全kindのkind/message/detail構造を固定すること。2) 旧display KEY名`ARTIFACTS`参照がcodex/instructions/glm-execution.md:19・failure-evidence.md:22・README.md:302・EVAL.md:177-178に残存(glm-packets.md/AGENTS.mdは`artifacts`へ置換済み)。machine key `artifacts`へ統一し、instruction file変更時はmanifest SHA pinを再更新してscenario testを再実行すること",
+    "requirement_coverage": "通常結果/全列挙command/status/stats/timeline/convergence/watch+verbose/eval-ab/verify-auto-resume/reset/accept=typed struct JSON ✓、error/usage=stderr error JSON+exit1 ✓、watch=JSONL passthrough+型付きcontrol/live event ✓、PTY handshake=stdin_ready control eventでREADY-before-write維持 ✓、旧text/dual/fallback/presentation削除 ✓(production grep全滅、Display/FromDisplayLines削除)、consumer同時置換 ✓(README・instructions・AGENTS・EVAL・install_smoke・manifest pin4件・corpus)、--status --json不追加 ✓、汎用framework不追加 ✓、親metadata不変・commit/push無し ✓、test/race/vet/build/gofmt ✓(reviewer再実行)。不足: error kind別envelope test(上記ISSUES 1)",
+    "residual_risk": "旧binaryが書いたon-disk旧形式(KEY: text last-review・v3以下checkpoint)との実稼働upgradeはunit test固定のみで未観測(last-reviewはprompt textへ素通りしparse破壊なし、checkpointはrouting前rejectで既verify済み挙動)。install_smoke.sh実配置smokeは未実行(親Codex install手続きで要実施)。項目2修正でmanifest pinを再度更新する際のscenario再照合は機械手順",
+    "risk": "HIGH",
+    "sol_question": "",
+    "status": "FIX_REQUIRED",
+    "summary": "glm-worker外部出力22経路をJSON/JSONL単一machine contractへ統一した実装は本体ほぼ成立。単発成功=JSON 1行、失敗=stderr {\"error\":{kind,message,detail?}}+exit 1、watch=保存行passthrough+型付きcontrol/live JSONL event、PTY=stdin_ready control eventでREADY-before-write維持。旧text producer/parser/formatterはproduction codeから消失しconsumer doc/test/manifest pinも同期済み。残る2件は機械的修正(error kind test gapと旧KEY名残存)。",
+    "targets": [
+     "glm-worker/internal/app/process_error.go:buildProcessError",
+     "codex/instructions/glm-execution.md:19",
+     "codex/instructions/failure-evidence.md:22",
+     "README.md:302",
+     "EVAL.md:177"
+    ],
+    "test_evidence": "reviewer再実行: gofmt差分0、go vet ./...清浄、go build ./...成功、go test ./...全package合格、go test -race ./internal/{app,workflow,packet,state,runner}合格。watch control event順序(watch_start先頭・event_skipped位置・live<watch_exit)・PTY exactly-once READY・rate_limited実binary stderr・telemetry coverage加法・PacketCompactions historical保持は既存testで確認"
+   }
+  },
+  {
+   "source": {
+    "repo": "codex-config",
+    "task": "173436e3-633c-493d-a6c7-9816704f0888",
+    "call": "944b040c",
+    "at": "2026-08-23T17:16:25.00063Z",
+    "era": "C(machine-json)",
+    "phase": "worker-explicit-fix"
+   },
+   "result": {
+    "artifacts": [
+     "/Users/shinderumanm/.glm-worker/sessions/4b1083bd6f6e13220f3e0d653377d694f010b8951c788559f19840a14a0df6d0/artifacts/173436e3-633c-493d-a6c7-9816704f0888/task007-legacy-inventory.md"
+    ],
+    "decision": "none",
+    "evidence": "none",
+    "options": "none",
+    "recommendation": "none",
+    "requirement_coverage": "REVIEW_FEEDBACK指示すべて適用: (1)generic schema frameworkなし・*bool probe 8行の最小検証、(2)v4・report-only風phase(worker-report-only-1)key欠落とv4・通常auto-fix(worker-auto-fix-1)key欠落の両方をstate/workflow両層でrouting前拒否、(3)workflow testはworker/probe 0呼出・baseline不作成・status不変(TaskStatusRateLimited)を固定、(4)明示falseの通常auto-fix・明示trueのreport-onlyはstate testで従来どおり受理を固定、(5)非bool値は最初のUnmarshal型検証でfail closed、(6)README 2箇所とinventoryのv4 strict contract同期、(7)親管理metadata未編集・commit/push無し",
+    "risk": "HIGH",
+    "status": "IMPLEMENTED",
+    "summary": "LoadResumeCheckpointでv4 report_only keyの明示存在を*bool probeで最小検証し、key欠落をzero value falseの通常auto-fixとして受理せずrouting前にfail closedした(非bool値は最初のUnmarshal型検証で拒否)。state/workflow両層にkey欠落拒否test(report-only風phase・通常auto-fix両方、worker/probe 0呼出・baseline不作成・status不変)と明示false/true受理testを追加。README 2箇所とinventory artifactをv4 strict contractへ同期。",
+    "targets": [
+     "glm-worker/internal/state/resume.go:LoadResumeCheckpoint",
+     "glm-worker/internal/state/resume_test.go:TestLoadResumeCheckpointV4RequiresExplicitReportOnly",
+     "glm-worker/internal/workflow/report_only_snapshot_test.go:TestReportOnlyV4MissingReportOnlyKeyRejectedBeforeRouting",
+     "README.md:156"
+    ],
+    "test_obligations": "none",
+    "tests": "go test ./...全package pass、go test -race -count=1 state/workflow/app/packet全pass、go vet/gofmt/build clean。固定test: TestLoadResumeCheckpointV4RequiresExplicitReportOnly(key欠落2形式+非bool拒否・明示false/true受理とReportOnly値検証)、TestReportOnlyV4MissingReportOnlyKeyRejectedBeforeRouting(worker/probe 0呼出・baseline不作成・status不変)、既存TestResumeCheckpointPersists・TestLoadResumeCheckpointRejectsLegacyVersions・TestReportOnlyLegacyVersionCheckpointRejectedBeforeRouting等はfixture修正のみで維持",
+    "unverified": "none"
+   }
+  },
+  {
+   "source": {
+    "repo": "codex-config",
+    "task": "820e121c-4a18-4c41-b644-86d18a850896",
+    "call": "2979a85e",
+    "at": "2026-08-23T22:16:10.296701Z",
+    "era": "C(machine-json)",
+    "phase": "worker-new"
+   },
+   "result": {
+    "artifacts": [
+     "/Users/shinderumanm/.glm-worker/sessions/4b1083bd6f6e13220f3e0d653377d694f010b8951c788559f19840a14a0df6d0/artifacts/820e121c-4a18-4c41-b644-86d18a850896/external-output-inventory.md"
+    ],
+    "decision": "",
+    "evidence": "",
+    "options": "",
+    "recommendation": "",
+    "requirement_coverage": "Task 007本体+2026-08-24 amendment充足。単発成功=JSON 1行、失敗=stderr error JSON(kind/message/detail)+non-zero exit、stream/control=JSONL。--status/--stats/--timeline/--convergence/--eval-ab/--verify-auto-resume/--reset/--accept typed struct化、watchはpassthrough+watch_start/event_skipped/event_log_status/watch_exit/live型付きevent、GLM_STDIN_READY→stdin_ready control event(READY-before-write維持)。KEY: value/yes-no/none-unknown文字列化/map join/ASCII graph/LIVE行/Dual mode/fallback全削除。consumer(README・glm-execution/auto-resume/packets・codex AGENTS・EVAL・install_smoke・pinned test・manifest hash 4件)同時置換済み。親管理metadataは不変。commit/push実施なし",
+    "risk": "HIGH",
+    "status": "IMPLEMENTED",
+    "summary": "glm-worker外部出力22経路をJSON/JSONL単一machine contractへ統一した。status/stats/timeline/convergence/watch/eval-ab/verify-auto-resume/reset/acceptはtyped struct JSON化、全process失敗はstderr `{\"error\":{kind,message,detail?}}`+exit 1、PTY handshakeは`{\"type\":\"control\",\"event\":\"stdin_ready\"}`へ統合(READY-before-write順序は不変)。packet.Display/DisplayLines/FromDisplayLines等の旧text parser/formatterとKEY: value表示を削除した。README・codex instruction・EVAL・install_smoke・manifest SHA pin・pinned testを新contractへ同期し、testは全面typed JSON decode assertionへ置換した(規模: production +1400/-1246、test +2246/-1836)",
+    "targets": [],
+    "test_obligations": "",
+    "tests": "go test ./...、go test -race ./...全package合格。gofmt差分0、go vet ./...清浄、go build ./cmd/glm-worker+./...成功。stdin_pty/multirepo_ptyの実PTY READY handshake、watch control event順序、error kind別契約、status別packet field、telemetry coverage加法整合(parent outcomes総数=PASS+REVIEW+DECISION packet数)をtyped testで固定。scenario corpus(packet JSON化)・manifest hash pin・instruction文面pin test更新済み",
+    "unverified": "旧binaryが書いたon-disk旧形式(KEY: text last-review、v2/v3 checkpoint)はreject/skip契約どおりunit testで固定済みだが実稼働dataでのupgrade挙動は未観測。独立reviewerによるreviewとSol品質gate、commitは親Codex側手続きとして未実施。install_smoke.shの実行(配置後smoke)は本sessionでは文面grep修正のみで未実行"
+   }
+  },
+  {
+   "source": {
+    "repo": "codex-config",
+    "task": "4f115cd1-614f-4004-b8f6-ba47ee900992",
+    "call": "dd590e35",
+    "at": "2026-08-23T12:56:59.383706Z",
+    "era": "C(machine-json)",
+    "phase": "worker-new"
+   },
+   "result": {
+    "artifacts": [],
+    "decision": "",
+    "evidence": "",
+    "options": "",
+    "recommendation": "",
+    "requirement_coverage": "Task file Contract全項目充足: NEEDS_SOL_REVIEWだけreviewer共通field+sol_question(status別集合の単一正)、空・改行・MaxFieldBytesを同一validation経路へ適用、PASS/FIX_REQUIRED noiseは非検証かつ非出力、Task 007 stash未触rex・scope未拡大・親metadata未変更・commit/pushなし。テスト7要件全て追加済み。履歴候補の各層分離報告もSUMMARYへ記載",
+    "risk": "HIGH",
+    "status": "IMPLEMENTED",
+    "summary": "sol_questionをneedsSolReviewContractFields(reviewer共通6 field+sol_question)へ統合し、contractFields()をvalidator・MachineJSON・Display唯一のstatus別field対応にした。ValidateReviewerResult/ValidateWorkerResultは共通validateFields(result.contractFields())経路へ統一し、sol_question個別のTrimSpace検査とMachineJSON/Displayのstatus special-caseを削除した。契約変更: NEEDS_SOL_REVIEWのsol_questionは改行・CR・1536 bytes超がconstraint error(旧: 空のみ拒否・改行/超過は受理されmachine JSONへ流出)。失敗境界は従来どおり修正再依頼可能なconstraint error。DisplayのみSOL_QUESTION表示位置がTARGETS/ARTIFACTSの後から契約field並び(RESIDUAL_RISK直後)へ変化(Displayに本番呼出なし・FromDisplayLinesは順序非依存)。履歴候補: 親指示層=Task 006指示が全status text fieldの同一validation source収束まで具体化せず。derived contract層=Result tableとREVIEWER.mdは共通制約を既に要求したが受理集合との横断照合検証が欠落。実装層=sol_questionのstatus-scopingをspecial-caseし共通contractFieldの外に残した。review/Sol gate層=noise除外とmachine JSON出力は確認したがstatus table共通制約とvalidator受理集合の照合を落とした",
+    "targets": [
+     "glm-worker/internal/packet/result.go:needsSolReviewContractFields(169-171)",
+     "glm-worker/internal/packet/result.go:contractFields(174)",
+     "glm-worker/internal/packet/validate.go:ValidateReviewerResult(79)",
+     "glm-worker/internal/packet/result_test.go:TestContractFieldsSingleSource(499)",
+     "glm-worker/internal/packet/result_test.go:TestValidateSolQuestionFieldConstraints(406)"
+    ],
+    "test_obligations": "",
+    "tests": "glm-worker全package go test -race ./... PASS、go vet ./... PASS、go build ./... PASS、gofmt -l 空。tools/merge-jsonもtest/vet/gofmt PASS。新規: TestValidateSolQuestionFieldConstraints(改行/CR拒否・上限超拒否・1536 bytesちょうど受理・空/空白のみ拒否)、TestSolQuestionIsNeedsSolReviewOnly拡張(PASS/FIX_REQUIRED混入sol_questionが改行+上限超でも非検証・machine JSON/Display非流出)、TestContractFieldsSingleSource(全5 statusでcontractFieldsがvalidator必須集合とMachineJSON key集合とDisplay行順序に完全一致・契約外field値の非検証・非出力を直接照合)。coverage: contractFields/displayFields/両validator 100%",
+    "unverified": "tests/install_smoke.shがclaude cli probe caseで失敗するが本変更と無関係のHEAD既存障害(git archiveしたpristine HEADでも同一失敗を再現)。機構: 当該caseのPATH上の偽claude shim(非--helpでexit 1)をinternal/runner TestClaudePreflightLiveClaudeCLIが拾いgo test ./...が失敗、期待go呼出順序logと不一致。修正は親判断待ち(GLM_WORKER_CLAUDE_BIN未指定時skip等)。独立review・Sol品質gate・親commitは本worker外。schema(reviewerSchema)はrole共通のためstatus別required表現不要で不変、live CLI再probeは不要と判断"
+   }
+  },
+  {
+   "source": {
+    "repo": "codex-config",
+    "task": "820e121c-4a18-4c41-b644-86d18a850896",
+    "call": "a165eb35",
+    "at": "2026-08-24T03:16:11.573682Z",
+    "era": "C(machine-json)",
+    "phase": "reviewer-2"
+   },
+   "result": {
+    "artifacts": [
+     "/Users/shinderumanm/.glm-worker/sessions/4b1083bd6f6e13220f3e0d653377d694f010b8951c788559f19840a14a0df6d0/artifacts/820e121c-4a18-4c41-b644-86d18a850896/external-output-inventory.md"
+    ],
+    "invariants": "READY-before-write維持(stdin_ready control eventはraw適用直後・payload read前にexactly once、実PTY test固定);result packet machine JSON 1行契約とpacket schema不変;PacketCompactions historical出力・stats v3保持;checkpoint v4 strict reject・report_only不変条件は不変;argv --decision/--fixはusage error fail closed維持;resume_available=rate_limited||provider_unavailable旧意味と同一;watch read-only・終端drain順序・TotalAICalls加法整合test固定のまま",
+    "issues": "none",
+    "requirement_coverage": "Task 007本体+2026-08-24 amendment全要求をreview 1で実装確認済み。review 1指摘2件の修正を独立検証: (1)全10 kind+not_found両経由11 caseのerror envelope typed test新規追加・全subtest合格 (2)旧display key参照は機械field参照箇所(glm-execution:19・failure-evidence:15/22・README:302・EVAL:174/177/178)で`artifacts`へ統一、pin test 3件・manifest SHA 2件同期を実際のfile hashと照合一致。残存大文字表記はWORKER/REVIEWER.md schema語彙慣例と非backtick prose(EVAL方針文・scenarios behavior記述)のみでmachine-format consumerなし。親管理metadata不変(worker編集なし)、commit/pushなし、追加scopeなし",
+    "residual_risk": "旧binaryが書いたon-disk旧形式との実稼働upgradeはunit test固定のみで未観測(last-reviewはprompt textへ素通りでparse破壊なし、v3以下checkpointはrouting前reject)。install_smoke.sh実配置smoke未実行(親Codex install手続き)。機械契約の全面入れ替えにより、pin更新済みinstruction配下(~/.codex/instructions)の実binary再配置が親側手続きとして必要",
+    "risk": "HIGH",
+    "sol_question": "glm-worker外部machine契約の全面入れ替え(全command typed JSON、失敗=stderr {\"error\":{kind,message,detail?}}+exit 1、watch/PTY=JSONL、旧text契約とpresentation/旧parser完全削除、LLM側instructionとmanifest pin同期済み)を本toolの確定外部契約として採用するか",
+    "status": "NEEDS_SOL_REVIEW",
+    "summary": "JSON/JSONL単一machine contract統一はreview 1指摘2件の修正で完成し、独立検証で全要求を満たした。全10 kind error envelope test追加、旧display key参照は機械field参照箇所で`artifacts`へ統一済み。test/race/vet/build/gofmt全合格、manifest pinは実file hashと一致。残る判断は高リスク機械契約入れ替えの最終採否のみ。",
+    "targets": [
+     "glm-worker/internal/app/process_error.go:buildProcessError",
+     "glm-worker/internal/app/output.go:statusOutput",
+     "glm-worker/internal/app/watch.go:printWatch",
+     "glm-worker/internal/app/app.go:emitStdinReadyControlEvent",
+     "glm-worker/internal/packet/result.go:MachineJSON"
+    ],
+    "test_evidence": "reviewer再実行: gofmt差分0・go vet清浄・go build成功・go test ./...全package合格・go test -race(app/workflow/autoresume/packet)合格。TestWriteProcessErrorKindContract 11 subtest全合格を単独実行で確認。manifest 4 pin+autoresume pinを実file SHA-256と手動照合一致。watch順序・PTY exactly-once READY・rate_limited実binary stderr・PacketCompactions保持は既存testで確認済み(review 1)"
+   }
+  },
+  {
+   "source": {
+    "repo": "codex-config",
+    "task": "c52365f6-f7dc-402b-b196-a09aaa6e0548",
+    "call": "a04c4c31",
+    "at": "2026-08-24T03:41:26.693359Z",
+    "era": "C(machine-json)",
+    "phase": "reviewer-1"
+   },
+   "result": {
+    "artifacts": [
+     "/Users/shinderumanm/.glm-worker/sessions/4b1083bd6f6e13220f3e0d653377d694f010b8951c788559f19840a14a0df6d0/artifacts/c52365f6-f7dc-402b-b196-a09aaa6e0548/completion-detection-incident-remediation.md"
+    ],
+    "invariants": "glm-worker production code/cmd無変更のためTask 007 rate-limit resume・autoresume挙動は不変; caller側echo除外の撤回は維持; 1 accepted result=親machine受領1回のhistorical invariantを層別evidenceで再確認; repo側dedupe・capture framework・worker/reviewer prompt checklist・telemetry schema追加なし; manifest pinは現行docと一致し13 scenarioのrouting行は無変更(全test成功で裏付け); BLOCKED taskは未変更でevidence保持。",
+    "issues": "none",
+    "requirement_coverage": "層別evidence保存達成(telemetryはreviewer側で直接再照合); model context二重流入なし・token impact unknown維持; 過去2回の誤完了証拠・見逃し層(第2はwiring test自身が誤完了証拠をpin強制)・gate拒否不能理由を記録; EVAL.md obsolete live positive完了証拠を撤回しauthority分離と「満たした」/「違反残存・非対応」区別・再検知activation条件を記録; glm-execution.md撤回済み解消宣言を強制可能範囲(model context単一流入)と再調査禁止条件へ置換; bounded監査はevidence付きで同型risk該当なし(未実行Eval 5項目は未完了保持); containment/rollback明示; BLOCKED task維持を現物確認; IMPLEMENTATION_HISTORY.md再openとtask Current boundary更新は親専有のため編集せず候補をartifact §7へ報告(正当な境界扱い); 親commit・Sol gateはacceptance上の残作業で親側対応。",
+    "residual_risk": "Solが採否すべき点: (1) ユーザー可視単一描画を「違反残存・上位目的影響なしのため非対応」と恒久分類し、再発のみでは再調査しない新activation条件の受け入れ (2) 機械gate反転を2度のfalse-complete對する是正として閉じてよいか。exact Desktop renderer surfaceは未特定、token影響はunknown(規定通り推測なし)、prose pinは言い換えで回避可能。IMPLEMENTATION_HISTORY.md再openとtask Current boundary更新は親commit時に必要で未実施。",
+    "risk": "HIGH",
+    "sol_question": "ユーザー可視単一描画をrepo強制不能の「違反残存・非対応」として恒久分類し再発のみでは再調査しないactivation条件、および誤完了証拠の再混入を機械拒否するgate反転をもって2度のfalse-completeインシデントを閉じてよいか。",
+    "status": "NEEDS_SOL_REVIEW",
+    "summary": "EVAL.md・glm-execution.mdの撤回済み「解消済み」宣言と単発live positive完了証拠を、2026-08-24実再現の層別evidence(producer stdout 1・telemetry 1・親tool output 1・ユーザー可視2、model context二重流入なし・token影響unknown)へ置換し、完了条件/postcondition/証拠authorityを分離、「要求を満たした」と「違反残存・非対応」を区別記録した。誤完了証拠を必須pinしていたwiring gateを是正後契約の強制へ反転させ、manifest pinを更新した。production code無変更、Desktop二重描画は修正せずBLOCKED境界維持、親管理metadataは読取専用、commit/pushなし。",
+    "targets": [
+     "EVAL.md:親tool orchestrationのterminal payload単一描画節",
+     "codex/instructions/glm-execution.md:親tool orchestrationのterminal payload単一描画節",
+     "glm-worker/internal/workflow/terminal_payload_test.go:TestTerminalPayloadSingleRenderContractWiring"
+    ],
+    "test_evidence": "reviewer再実行: go test ./... -count=1全package ok、go test -race ./... exit 0、go vet ./... clean、go build ./cmd/glm-worker ok、gofmt -l指摘0。wiring gateは新契約pin・撤回文言拒否とも合格。telemetry 173436e3-....jsonl(10 records)のcall ID・response SHA照合をreviewerが独立実施し各1件を確認。TestTerminalPayloadBoundarySingleRenderは手順semantics検証として継続成功。"
+   }
+  },
+  {
+   "source": {
+    "repo": "codex-config",
+    "task": "4f115cd1-614f-4004-b8f6-ba47ee900992",
+    "call": "4d5293d4",
+    "at": "2026-08-23T13:23:37.240354Z",
+    "era": "C(machine-json)",
+    "phase": "reviewer-1"
+   },
+   "result": {
+    "artifacts": [],
+    "invariants": "Task 006 machine JSON形式・PASS/FIX_REQUIRED noise除外・status別field table維持; 有効結果のmachine JSON出力は旧実装と同一key集合; FromDisplayLines(v2 resume)はKEY map解析で順序非依存; RejectCategory分類(missing-field/multiline-field/size)は共通固定文面のため不変; schema(reviewerSchema)はrole共通語彙のまま不変",
+    "issues": "none",
+    "requirement_coverage": "Task file Contract全項目充足: NEEDS_SOL_REVIEWだけreviewer共通field+sol_question、空・改行・MaxFieldBytesをvalidateFields共通経路へ適用、PASS/FIX_REQUIRED noiseは非検証かつ非出力、Task 007 stash未触rex・scope未拡大・親metadata未変更・commit/pushなし。テスト7要件(改行/CR/上限超拒否・上限ちょうど受理・空/空白拒否・noise非検証非流出・全5 statusでcontractFields=validator必須集合=MachineJSON key集合=Display行順序の直接照合)全てresult_test.goに実装。escaped原因の4層(親指示/derived contract/実装/review・Sol gate)分離報告もWORKER_REPORT SUMMARYにあり",
+    "residual_risk": "契約厳格化により旧受理でmachine JSONへ改行付きsol_questionが流出した結果は今後constraint errorとなり修正再依頼1回を消費; NEEDS_SOL_REVIEWのDisplay行順変更(表示位置のみ・本番呼出なし)はv2 checkpoint往復非依存のため影響なし、但しTask 007 stashが同file(result.go)へ触れており親のstash pop時にconflictの可能性; rollbackは3 file revertのみでmigrationなし; install_smoke.sh claude shim失敗はHEAD既存の環境依存障害で本diff範囲外(親判断待ち)",
+    "risk": "HIGH",
+    "sol_question": "NEEDS_SOL_REVIEWのsol_question改行・CR・1536bytes超をconstraint error(修正再依頼可能)へ厳格化し、SOL_QUESTION表示位置を契約field並び(RESIDUAL_RISK直後)へ変更した本契約確定と親commitを承認するか",
+    "status": "NEEDS_SOL_REVIEW",
+    "summary": "sol_questionをneedsSolReviewContractFields(reviewer共通6 field+sol_question)へ統合し、contractFields()をvalidator・MachineJSON・Display唯一のstatus別field対応にした。ValidateReviewerResult/ValidateWorkerResultは共通validateFields(result.contractFields())経路へ統一し、sol_question個別TrimSpace検査とMachineJSON/Displayのstatus special-caseを削除。契約変更: NEEDS_SOL_REVIEWのsol_questionは改行・CR・1536 bytes超がconstraint error(旧: 空のみ拒否・改行/超過は受理されmachine JSONへ流出)。失敗境界は従来どおり修正再依頼可能なconstraint error。DisplayのみSOL_QUESTION位置がTARGETS/ARTIFACTS後から契約field並び(RESIDUAL_RISK直後)へ変化(Display本番呼出なし・FromDisplayLines順序非依存・有効結果のmachine JSON出力は旧と同一key集合を独自検証済み)",
+    "targets": [
+     "glm-worker/internal/packet/result.go:needsSolReviewContractFields",
+     "glm-worker/internal/packet/validate.go:ValidateReviewerResult",
+     "glm-worker/internal/packet/result_test.go:TestContractFieldsSingleSource"
+    ],
+    "test_evidence": "独立再実行: glm-worker gofmt -l空・go vet ./... PASS・go build ./... PASS・go test -race -count=1 ./... 全package PASS、tools/merge-json vet/test PASS。境界test(TestValidateSolQuestionFieldConstraints)・noise非検証非流出(TestSolQuestionIsNeedsSolReviewOnly拡張)・単一正照合(TestContractFieldsSingleSource)を本文検証済み"
+   }
+  },
+  {
+   "source": {
+    "repo": "codex-config",
+    "task": "9fecbede-4e8e-423d-9d33-4fa462771194",
+    "call": "e3b38b6c",
+    "at": "2026-08-24T05:01:18.602848Z",
+    "era": "C(machine-json)",
+    "phase": "reviewer-1"
+   },
+   "result": {
+    "artifacts": [],
+    "invariants": "generic 429・503/529・network transientはkillされず既存retry/probe/backoff/resume経路不変(実process testで完走検証)。RATE_LIMITEDは既存saveRateLimitedState経由でWORKER_ERRORへ変換されずsession/checkpoint保持。classifyPlainSignalは非JSON行限定でmodel本文が早期killへ誤走しない。旧来の無限待ちなし、Task 007へ未混合、親metadata(task file)はbaselineと同一diffで未touch、commit/pushなし(HEAD 168d3d7)。",
+    "issues": "none",
+    "requirement_coverage": "Contract全項目充足: classifier単一正(limit_stop.go:28とtransient.go:116が同一DetectZaiFiveHourLimitText、signature literalのzai_limit.go外増加をtestで機械強制)、exact signal観測時child即時kill(sync.Once)+retry 0回、checkpoint/session/reset時刻/auto-resume(+2min grace)維持、単一分類点のみで二重遷移なし(stats.RateLimits==1で検証)、generic 429/503/529/overloadでkillされず完走(testで境界固定)。task fileテスト要件1-9全て対応、実process fake child(30/60秒保持)で早期terminate・marker未到達・復帰約5.3秒を直接検証。",
+    "residual_risk": "worker開示どおり実機未観測が2点のみで、いずれも保守的: (1) 実CLIの5h signalがJSON stream event内のみに出た場合は早期killせず従来どおり終了待ち+終端分類(outputPath経由)で同一RATE_LIMITEDへ到達、回帰なし。(2) WaitDelay=5sは全runへ適用され、成功時に子孫processがpipeを握ったまま残る場合は従来の無限待ちが5秒上限のerror復帰へ変わる(分類入力は保持)。永続状態・API・互換性の意味変更なし。",
+    "risk": "LOW",
+    "sol_question": "",
+    "status": "PASS",
+    "summary": "runner実行中のstderr(MultiWriter+bounded蓄積)とplain stdout非JSON行(ingester)を既存DetectZaiFiveHourLimitTextで早期観測し、exact 5h signal(429+[1308]+Usage limit)最初の出現でchildをkill 1回、WaitDelay=5sでpipe解放を上限待機し既存終端分類へ復帰させる。workflowは無変更で、kill後もoutputPath(stderr記録)+PlainFailureから既存単一分類点がsaveRateLimitedState/checkpoint/auto-resumeへ一度だけ遷移する。generic 429・overload・5xx・network transient・probe/backoff/resumeは不変。",
+    "targets": [
+     "glm-worker/internal/runner/limit_stop.go:zaiLimitStopper.observeSignal/zaiLimitStderrWatch.Write",
+     "glm-worker/internal/runner/runner.go:274-281",
+     "glm-worker/internal/runner/stream_events.go:364-371",
+     "glm-worker/internal/workflow/workflow.go:899-907"
+    ],
+    "test_evidence": "独立再実行: 新規runner test 6件PASS(kill境界約5.3s復帰・後続marker未到達・chunk分割検出・kill exactly once・generic 429/503/529でkillされずstructured output完走・signature単一ソース走査)。workflow production path test PASS(実ClaudeRunner接続・model呼出1回・RATE_LIMITED保存exactly once・checkpoint ResetAtCST/RFC3339・worker session保持・auto-resume reset+2min・30秒保持childを30秒未満で復帰)。go test ./... 全package緑、go test -race -count=1 runner(34s)/workflow(50s)/state(7.8s)緑、go vet/gofmt/build(-o /dev/null)クリア。"
+   }
+  }
+ ]
+}

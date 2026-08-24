@@ -74,11 +74,10 @@ reviewer省略を先行導入しない。
 
 ## Historical invariants
 
-reviewer FIX_REQUIRED率、risk floor。完了済みparent review outcome telemetryにより、Codex新規検出とGLM reviewer既記載の差戻しを分離したorigin別outcome / reworkを追加AI callなしで観測できる。
+reviewer FIX_REQUIRED率、risk floor。完了済みparent review outcome telemetryにより、Codex新規検出とGLM reviewer既記載の差戻しを分離したorigin別outcome / reworkを追加AI callなしで観測できる。Task 008の固定入力測定ではmachine JSONのbytes/token proxy削減は不立証で、意味保持を採用根拠とした。
 
 ## Dependencies
 
-- `IMPLEMENTATION_TASKS/008-machine-protocol-measurement.md`
 - `IMPLEMENTATION_TASKS/009-worker-call-outliers.md`
 
 ## Review findings
