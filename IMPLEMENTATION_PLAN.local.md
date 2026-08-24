@@ -8,11 +8,10 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/completion-detection-false-negative-incident.md`
+- `IMPLEMENTATION_TASKS/zai-five-hour-limit-immediate-stop.md`
 
 ## NEXT（優先順）
 
-- `IMPLEMENTATION_TASKS/zai-five-hour-limit-immediate-stop.md`
 - `IMPLEMENTATION_TASKS/008-machine-protocol-measurement.md`
 - `IMPLEMENTATION_TASKS/009-worker-call-outliers.md`
 - `IMPLEMENTATION_TASKS/010-task-splitting-milestones.md`
@@ -43,14 +42,14 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 ## 現在のGit境界
 
 - branch: `main`
-- implementation baseline: Task 007 machine JSON contract external-review follow-up完了commit（current HEAD）
-- metadata boundary: external-review follow-upの実装・独立review・Sol採否・完了証跡・task削除を同一commitへ同期し、completion detection incidentをACTIVEへ復帰した境界
+- implementation baseline: completion detection authority是正commit（current HEAD）
+- metadata boundary: incidentの独立review・Sol採否・完了証跡・task削除を同一commitへ同期し、5時間Usage Limit即時停止taskをACTIVEへ昇格した境界
 - push: 禁止
 
 ## 現在の停止理由
 
-blockerなし。external-review follow-upのfinal HEAD gate、本配置、installed `--status` null・`--stats`全map object smoke、binary byte一致を完了。completion detection incidentの保全stashを復元できる。
+blockerなし。completion detection incidentのfinal HEAD gate、本配置、managed instruction source/installed hash一致を完了。5時間Usage Limit即時停止taskを開始できる。
 
 ## 次の親Codex操作
 
-ACTIVE incidentのstash `completion-detection-incident-sol-accepted-uncommitted`を復元し、既に完了したSol採否結果と照合して同taskのcommit/install/完了同期を継続する。pushしない。
+ACTIVEの5時間Usage Limit即時停止taskを要求正本として新しいGLM taskを開始する。pushしない。

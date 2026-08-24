@@ -64,14 +64,14 @@
 
 ## 親tool orchestrationのterminal payload単一描画
 
-- terminal payload二面表示の原因層はglm-worker内部emitではなく親Codex orchestrationである。glm-workerの主呼出は受理したterminal resultをstdoutへ1回だけ出力する。Codex desktopがbackground `functions.exec`の完了outputと後続`functions.wait`のresult cardで同じraw terminal payloadを二面描画するため、境界はcaller側で解消する。structured JSON移行後も結果object全体が同じ境界で二度描画され得る前提を維持し、JSON化を解決根拠にしない。
-- 単一postconditionは「1 accepted terminal resultにつき、親tool orchestration全体でユーザー可視payloadは1回」である。repo内emitの再調査・原因境界の特定だけでこの症状を解消扱いしない。
+- terminal payload二面表示の原因層はglm-worker内部emitではなく親tool orchestrationとDesktop表示である。glm-workerの主呼出は受理したterminal resultをstdoutへ1回だけ出力する。旧運用ではbackground `functions.exec`の完了outputと後続`functions.wait`のresult cardが同じraw terminal payloadを二面描画した。本契約手順が強制できるのはmodel contextへの流入を1回にすることまでであり、ユーザー可視描画回数はDesktop表示層の外部境界としてrepoから強制できない(2026-08-24の手順適用後再現で、producer stdout・telemetry・親tool outputが各1件でもDesktop上へ2回表示された)。structured JSON移行後も結果object全体が同じ境界で二度描画され得る前提を維持し、JSON化を解決根拠にしない。
+- 単一postconditionは「1 accepted terminal resultにつき、親tool orchestration全体でユーザー可視payloadは1回」である。repo内emitの再調査・原因境界の特定だけでこの症状を解消扱いしない。同一payloadのmodel context・永続contextへの二重流入や測定可能なCodex実消費増などの実害証拠がない限り、表示の再発をrepo内再調査・orchestration変更の理由にしない。
 - 長時間cell(主`glm-worker`呼出)では、`functions.exec`のorchestration内でnested `exec_command`・`write_stdin`の各outputを変数へ蓄積し、raw stdout・packetをtext・notify・image等の即時描画経路へ一切出さない。
 - 蓄積した出力にstdin_ready control event行が含まれていてもtransport controlであり、受理対象のterminal payload・machine result・単一描画の本文へ含めない。
 - cell終端では、蓄積したraw terminal payloadをFunctionsのstoreへtask固有keyで保存し、cellの返り値は短いcaptured marker(`GLM_TERMINAL_CAPTURED <key>`)だけにする。
 - `functions.wait`でcell終端を受け取った後、別の短い同期`functions.exec`でstoreのload(key)を読み、text(raw)として1回だけ親へ渡す。この同期callで追加AI call・追加のglm-worker実行を行わない。
 - background cellの完了outputと`functions.wait`の双方へ同じraw payloadを流す運用は禁止する。repo側のPACKET/JSON blind dedupeと正当な別terminal resultの抑止も行わない。
-- 境界検証は追加AI callなしのdelayed markerと実`glm-worker` terminal resultを同じbackground exec→wait→同期取得境界で行う。将来のCodex desktop変更で同一境界の二面表示が再発した場合は本契約の手順へ戻す。
+- 境界検証は追加AI callなしのdelayed markerと実`glm-worker` terminal resultを同じbackground exec→wait→同期取得境界で行う。これは契約手順のsemantics検証であり実Desktop rendererの継続的保証ではなく、単発live観測・模擬test・契約文面だけで解消済みと報告しない。表示が再発してもproducer stdout・telemetry・親tool outputが各1件ならrepo内emitの再調査を繰り返さず、model context二重流入の新証拠・測定可能なCodex実消費増・Quality Delta低下・Desktop側の調査可能な修正境界が得られた場合だけ再調査する。
 
 ## rate limit停止(stderr error JSON `kind: rate_limited`)
 
