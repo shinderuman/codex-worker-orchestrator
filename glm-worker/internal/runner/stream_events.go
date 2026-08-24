@@ -54,9 +54,6 @@ type streamEventIngester struct {
 	liveLastModelActivityAt time.Time
 	liveLastWrite           time.Time
 	liveBroken              bool
-	// limitStopは受信済みstdout行(JSON event・plain行)からZ.ai 5h上限のexact signalを
-	// 観測した時点でchildを終了させる早期停止hook。nilのとき早期停止しない。
-	limitStop *zaiLimitStopper
 }
 
 // toolUseObservationはtool_use blockを出したeventの観測時刻とtool名。
@@ -132,7 +129,6 @@ func (g *streamEventIngester) ingestLine(line []byte) {
 	if len(bytes.TrimSpace(line)) == 0 {
 		return
 	}
-	g.observeZaiLimitSignal(line)
 	if streamResultEvent(line) {
 		g.resultLine = append(g.resultLine[:0], line...)
 	}
@@ -351,21 +347,6 @@ func toolUseInputs(line []byte) map[string]json.RawMessage {
 	return inputs
 }
 
-// observeZaiLimitSignalは受信済みstdout行をJSON eventかplain行かを問わず既存5h
-// classifierへ通し、exact signalならchildを終了させる。JSON event行はplain分類bufferへ
-// 入らないため、kill判断に使った観測行だけをbufferへ残し、終端分類が停止判断と同じ証拠を
-// 見てRATE_LIMITEDへ至るようにする。bufferへ載るのは検出済みの1行だけで、それ以外の
-// JSON event本文は従来どおりどこにも保存しない。
-func (g *streamEventIngester) observeZaiLimitSignal(line []byte) {
-	if g.limitStop == nil || !g.limitStop.observeSignal(string(line)) {
-		return
-	}
-	var event streamEvent
-	if json.Unmarshal(line, &event) == nil {
-		g.appendPlainSignal(line)
-	}
-}
-
 // capturePlainSignalはJSON eventとして解釈できないplain stdout行だけを分類用bufferへ
 // 追記する。assistant/thinking/tool等のJSON content内の数値・文字列をprovider信号へ
 // 誤認しないための境界で、有効なJSON object行はここへ入らない。bufferは生本文を
@@ -375,11 +356,6 @@ func (g *streamEventIngester) capturePlainSignal(line []byte) {
 	if json.Unmarshal(line, &event) == nil {
 		return
 	}
-	g.appendPlainSignal(line)
-}
-
-// appendPlainSignalは分類用plain bufferへ行を末尾boundedで追記する。
-func (g *streamEventIngester) appendPlainSignal(line []byte) {
 	g.plain = append(g.plain, line...)
 	g.plain = append(g.plain, '\n')
 	if excess := len(g.plain) - plainSignalMaxBytes; excess > 0 {

@@ -8,11 +8,10 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/zai-five-hour-limit-immediate-stop.md`
+- `IMPLEMENTATION_TASKS/external-feasibility-dispatch-gate.md`
 
 ## NEXT（優先順）
 
-- `IMPLEMENTATION_TASKS/external-feasibility-dispatch-gate.md`
 - `IMPLEMENTATION_TASKS/015-fixed-eval-corpus.md`
 - `IMPLEMENTATION_TASKS/009-worker-call-outliers.md`
 - `IMPLEMENTATION_TASKS/010-task-splitting-milestones.md`
@@ -42,14 +41,14 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 ## 現在のGit境界
 
 - branch: `main`
-- implementation baseline: Task 008 machine protocol measurement commit（current HEAD）
-- metadata boundary: Task 008の完了証跡・task削除・5時間limit taskのACTIVE昇格を同一commitへ同期した境界
+- implementation baseline: 5時間limit early-stop selective revert commit（current HEAD）
+- metadata boundary: 実producer PoCのNo-Go、選択的revert、false-complete原因、task削除、external feasibility dispatch gate昇格を同一commitへ同期した境界
 - push: 禁止
 
 ## 現在の停止理由
 
-blockerなし。Task 008はmachine JSONのbytes削減効果を不立証、意味保持・単一contract品質を採用根拠として完了。実producer PoCで効果不成立と判明した5時間limit early-stopを選択的に戻す。
+blockerなし。5時間limit early-stopは実producer PoCで効果不成立と確定し、production code/testだけを選択的に逆適用して完了。terminal分類・RATE_LIMITED・checkpoint/session・auto-resumeは維持した。
 
 ## 次の親Codex操作
 
-commit `cbf71c7`のproduction code/testだけを選択的に逆適用し、Plan/History/task lifecycleは戻さない。terminal 5時間limit分類・checkpoint/session・RATE_LIMITED/auto-resumeは維持し、関連testと全gate後に親Codexがcommitする。pushしない。
+current HEADを本配置してsource/binary一致とstatus smokeを確認後、ACTIVE taskのexternal feasibility implementation dispatch gateを要求正本として開始する。pushしない。
