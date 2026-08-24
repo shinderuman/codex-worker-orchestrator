@@ -26,6 +26,9 @@ const (
 	TaskStatusComplete            TaskStatus = "complete"
 	TaskStatusRateLimited         TaskStatus = "rate-limited"
 	TaskStatusProviderUnavailable TaskStatus = "provider-unavailable"
+	// TaskStatusInterruptedは親Codexの--stop要求による安全停止。rate-limited・
+	// provider-unavailableとは停止理由が独立した再開可能状態である。
+	TaskStatusInterrupted TaskStatus = "interrupted"
 	// TaskStatusNoneはtask.statusが未観測(task不在・書込み前)の内部sentinel。
 	// 外部machine JSON boundaryではnullへ正規化され、この値を出さない。
 	TaskStatusNone TaskStatus = "none"

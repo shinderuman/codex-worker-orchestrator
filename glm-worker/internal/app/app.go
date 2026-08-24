@@ -26,6 +26,7 @@ const (
 	ModeFix
 	ModeAccept
 	ModeResume
+	ModeStop
 	ModeStatus
 	ModeWatch
 	ModeTimeline
@@ -85,7 +86,7 @@ func usageError(format string, args ...any) *UsageError {
 
 func ParseCommand(args []string) (Command, error) {
 	if len(args) == 0 {
-		return Command{}, usageError("usage: glm-worker <instruction> | --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix-stdin <payload-bytes> [--sha256 <hex>] %s | --accept | --resume | --status | --watch [--verbose] | --timeline [task-id] | --convergence [task-id] | --stats | --reset | --eval-ab <run-dir>", fixOriginUsage)
+		return Command{}, usageError("usage: glm-worker <instruction> | --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix-stdin <payload-bytes> [--sha256 <hex>] %s | --accept | --resume | --stop | --status | --watch [--verbose] | --timeline [task-id] | --convergence [task-id] | --stats | --reset | --eval-ab <run-dir>", fixOriginUsage)
 	}
 
 	switch args[0] {
@@ -107,6 +108,11 @@ func ParseCommand(args []string) (Command, error) {
 			return Command{}, usageError("usage: glm-worker --resume")
 		}
 		return Command{Mode: ModeResume}, nil
+	case "--stop":
+		if len(args) != 1 {
+			return Command{}, usageError("usage: glm-worker --stop")
+		}
+		return Command{Mode: ModeStop}, nil
 	case "--status":
 		if len(args) != 1 {
 			return Command{}, usageError("usage: glm-worker --status")
@@ -277,11 +283,14 @@ func emitStdinReadyControlEvent(w io.Writer) error {
 	return nil
 }
 
-// テストでModelRunnerを差し替えるためのfactory。
-type RunnerFactory func(cfg config.AppConfig, st *state.StateStore) workflow.ModelRunner
+// テストでModelRunnerを差し替えるためのfactory。stopは--stop要求の観測経路で、
+// 実runnerはこれを受け取ってchildの安全停止へ参加する。
+type RunnerFactory func(cfg config.AppConfig, st *state.StateStore, stop *runner.StopController) workflow.ModelRunner
 
-func defaultRunnerFactory(cfg config.AppConfig, st *state.StateStore) workflow.ModelRunner {
-	return runner.NewClaudeRunner(cfg, st)
+func defaultRunnerFactory(cfg config.AppConfig, st *state.StateStore, stop *runner.StopController) workflow.ModelRunner {
+	r := runner.NewClaudeRunner(cfg, st)
+	r.AttachStopController(stop)
+	return r
 }
 
 func Run(args []string) error {
@@ -325,6 +334,7 @@ func run(
 
 // Executeはcmdをcfg配下で実行する。runner/workflowはrf経由で注入可能で、
 // --watch・--timeline・--convergence・--eval-abはstateへ書き込まないread-only参照、
+// --stopはrepo lockを待たずrunning ownerのlocal control endpointへ固定要求を送り、
 // --status/--statsはロック取得前に、それ以外はプロセス間ロック後に処理する。
 // stdin payload modeの読み取り・照合とTTY/PTYのtermios復元はrun()がstate初期化前に
 // 完了しており、不足・不一致時はここへ到達しない。
@@ -343,6 +353,9 @@ func Execute(cmd Command, cfg config.AppConfig, rf RunnerFactory, stdout, stderr
 	}
 	if cmd.Mode == ModeEvalAB {
 		return printEvalAB(state.AttachStateStore(cfg), cmd.Payload, stdout)
+	}
+	if cmd.Mode == ModeStop {
+		return requestStop(cfg, stdout)
 	}
 
 	st, err := state.NewStateStore(cfg)
@@ -373,8 +386,18 @@ func Execute(cmd Command, cfg config.AppConfig, rf RunnerFactory, stdout, stderr
 		return parentAccept(st, stdout)
 	}
 
-	r := rf(cfg, st)
+	// workflow実行modeはrepo lock保有中だけ単一目的stop endpointを開く。endpoint接続と
+	// owner側ackが停止authorityで、lock fileのPIDは診断値にとどまる。
+	controller := runner.NewStopController()
+	stopServer, err := startStopEndpoint(st, controller)
+	if err != nil {
+		return err
+	}
+	defer stopServer.Close()
+
+	r := rf(cfg, st, controller)
 	wf := workflow.NewWorkflow(cfg, st, r, stdout)
+	wf.AttachStopController(controller)
 
 	switch cmd.Mode {
 	case ModeNewTask:

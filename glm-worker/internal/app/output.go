@@ -131,9 +131,8 @@ func buildStatusOutput(st *state.StateStore, taskID string, logs []state.ModelCa
 	}
 
 	fillStatusTaskDetail(st, taskID, &output)
-	fillStatusCheckpoint(st, &output)
+	output.ResumeAvailable = fillStatusCheckpoint(st, &output)
 	output.Probes = statusProbesDetail(logs, time.Now())
-	output.ResumeAvailable = output.RateLimited.Limited || output.ProviderUnavailable.Unavailable
 	fillStatusTelemetry(taskID, logErr, logs, &output)
 	return output
 }
@@ -148,9 +147,9 @@ func lockStatePtr(lockState LockState) *string {
 	return &value
 }
 
-// taskStatusPtrはtask.statusの外部enumへ対応付ける。外部受理集合は現行6値だけであり、
-// task不在sentinel(TaskStatusNone)と永続file上の未知値(破損・未知state)は観測できない値
-// としてJSON nullへ出す。unknown等のpresentation sentinelへは変換しない。
+// taskStatusPtrはtask.statusの外部enumへ対応付ける。外部受理集合はinterruptedを含む
+// 7値だけであり、task不在sentinel(TaskStatusNone)と永続file上の未知値(破損・未知state)は
+// 観測できない値としてJSON nullへ出す。unknown等のpresentation sentinelへは変換しない。
 func taskStatusPtr(status state.TaskStatus) *string {
 	switch status {
 	case state.TaskStatusActive,
@@ -158,7 +157,8 @@ func taskStatusPtr(status state.TaskStatus) *string {
 		state.TaskStatusWaitingSolReview,
 		state.TaskStatusComplete,
 		state.TaskStatusRateLimited,
-		state.TaskStatusProviderUnavailable:
+		state.TaskStatusProviderUnavailable,
+		state.TaskStatusInterrupted:
 		value := string(status)
 		return &value
 	}
@@ -202,10 +202,12 @@ func fillStatusTaskDetail(st *state.StateStore, taskID string, output *statusOut
 	output.CurrentModel = stringPtr(current.model)
 }
 
-func fillStatusCheckpoint(st *state.StateStore, output *statusOutput) {
+// fillStatusCheckpointは保存済みresume checkpointの停止理由を表示へ埋め、再開可能な
+// 停止状態(rate-limited・provider-unavailable・user interruption)かを返す。
+func fillStatusCheckpoint(st *state.StateStore, output *statusOutput) bool {
 	checkpoint, err := st.LoadResumeCheckpoint()
 	if err != nil {
-		return
+		return false
 	}
 	if checkpoint.RateLimited {
 		output.RateLimited = statusRateLimit{
@@ -228,6 +230,7 @@ func fillStatusCheckpoint(st *state.StateStore, output *statusOutput) {
 			ElapsedMS:      elapsed,
 		}
 	}
+	return checkpoint.RateLimited || checkpoint.ProviderUnavailable || checkpoint.UserInterrupted
 }
 
 // statusProbesDetailはprovider probe呼出の観測(実行回数と最終probe)をtelemetryだけから

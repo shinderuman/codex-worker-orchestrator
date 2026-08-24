@@ -13,6 +13,7 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/abeval"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
 )
@@ -300,7 +301,7 @@ func TestExecuteEvalABRejectsRunDirWithUnknownField(t *testing.T) {
 // unusedRunnerFactoryは--eval-abがrunner/workflow構築へ到達しないことを
 // production entrypoint側で検出するための呼出記録付きfactory。
 func unusedRunnerFactory(calls *int) RunnerFactory {
-	return func(_ config.AppConfig, _ *state.StateStore) workflow.ModelRunner {
+	return func(_ config.AppConfig, _ *state.StateStore, _ *runner.StopController) workflow.ModelRunner {
 		*calls++
 		return nil
 	}

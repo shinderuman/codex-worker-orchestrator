@@ -145,7 +145,7 @@ func TestStatusRawJSONContract(t *testing.T) {
 }
 
 // knownTaskStatusesはtask_statusの現行外部enum。--status・--stats・--timeline・
-// --convergenceのtask status受理集合はこの6値とnullだけである。
+// --convergenceのtask status受理集合はこの7値とnullだけである。
 var knownTaskStatuses = []string{
 	"active",
 	"waiting-decision",
@@ -153,6 +153,7 @@ var knownTaskStatuses = []string{
 	"complete",
 	"rate-limited",
 	"provider-unavailable",
+	"interrupted",
 }
 
 // timelineRawJSONは--timeline出力1行(現在task)のraw JSONを返す。
@@ -206,8 +207,8 @@ var taskStatusSurfaces = []struct {
 	}},
 }
 
-// TestTaskStatusFiniteEnumBoundaryはtask_status外部受理集合を現行6値とnullだけへ固定する。
-// --status・--stats・--timeline・--convergenceの全producerで、既知6値がそのまま出ることと、
+// TestTaskStatusFiniteEnumBoundaryはtask_status外部受理集合を現行7値とnullだけへ固定する。
+// --status・--stats・--timeline・--convergenceの全producerで、既知7値がそのまま出ることと、
 // 永続task.statusへ直接書いた未知値が契約外string・presentation sentinelとして漏れないことを
 // raw JSONで検証する。
 func TestTaskStatusFiniteEnumBoundary(t *testing.T) {

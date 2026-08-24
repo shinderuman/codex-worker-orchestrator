@@ -51,7 +51,7 @@
 ## 待機
 
 - 完了待機の対象は当該taskを起動した主`glm-worker`呼出process(session)だけとする。主呼出はterminal・Sol/user attention状態でpacketを出力して終了するため、観測用の別commandを完了待機へ使わない。
-- 主呼出のexec cell・session IDを失ったattach recovery時だけ`glm-worker --watch`で既存taskへ追加AI callなしでattachできる。`--watch`は現在taskのevent log保存済みJSONL行をそのまま流す読み取り専用JSONL streamであり、follow対象taskのauthoritative `task.status`が`active`を離れた時点(`waiting-decision`・`waiting-sol-review`・`complete`・`rate-limited`・`provider-unavailable`)・別taskへの切替時に残eventを流して`watch_exit` control event(`{"type":"watch_exit","task_id":...,"status":...}`、task切替時は`new_task_id`付き)を出力しexit 0する。event log file不在時は`event_log_status` control event(`{"type":"event_log_status","status":"removed"}`)のみで正常終了する。permission等のfile不在以外のI/O失敗は正常終了せず、stderrのprocess error JSON(`kind:"internal"`)とnon-zero exitになる。resident monitorとして付けっぱなしにしない。
+- 主呼出のexec cell・session IDを失ったattach recovery時だけ`glm-worker --watch`で既存taskへ追加AI callなしでattachできる。`--watch`は現在taskのevent log保存済みJSONL行をそのまま流す読み取り専用JSONL streamであり、follow対象taskのauthoritative `task.status`が`active`を離れた時点(`waiting-decision`・`waiting-sol-review`・`complete`・`rate-limited`・`provider-unavailable`・`interrupted`)・別taskへの切替時に残eventを流して`watch_exit` control event(`{"type":"watch_exit","task_id":...,"status":...}`、task切替時は`new_task_id`付き)を出力しexit 0する。event log file不在時は`event_log_status` control event(`{"type":"event_log_status","status":"removed"}`)のみで正常終了する。permission等のfile不在以外のI/O失敗は正常終了せず、stderrのprocess error JSON(`kind:"internal"`)とnon-zero exitになる。resident monitorとして付けっぱなしにしない。
 - `--watch`が終了しても、`--status`等を固定間隔で繰り返すpollingへ追跡をfallbackさせない。
 - 最初の`functions.exec`等の呼び出しからbackground terminalで利用可能な最大待機時間を指定し、可能な限り同一tool orchestration内で完了までblocking waitする。
 - tool内部上限でcell ID（session ID）が返る場合も、1回のwaitに最大待機時間を使い、短時間・固定間隔でwaitを掛け直さない。同じtool orchestration内で最大待機を再開し、Sol Highへ制御を戻して`write_stdin`等を呼ぶ方式へ変換しない。
@@ -80,3 +80,12 @@
 - `detail.auto_resume_available: true`なら`~/.codex/instructions/glm-auto-resume.md`を読み、現在のCodexタスクへ自動再開automationを作成または更新する。作成不能な場合だけ手動再開を案内する。
 - 手動再開指示では`glm-worker --resume`を使い、保存済みの同一task・phase・sessionから継続する。元依頼を再構成しない。
 - 枠が未回復なら再び`kind: rate_limited`として状態を保持する。
+
+## GLM workerの安全停止 (`--stop`)
+
+- 実行中のglm-worker taskを止めるときは`glm-worker --stop`だけを使う。手動でのPID特定・`kill`・`pkill`・process groupへのsignal送出を正式手順として使わない。停止authorityは単一目的local control endpointへの接続とowner側ackであり、lock fileのPIDは診断値である。
+- 停止要求はrepo lockを待たず対象repositoryのcwdから実行する。ownerはClaude CLIのprocess groupへTERMを送り、bounded猶予後に残存childだけへKILLへ昇格し、group非残存とinterrupted状態保存を確認してからackする。
+- ackのmachine JSONは`{"result":"interrupted","task_id":...,"task_status":"interrupted","resume_available":true}`。停止より先に自然終端していたときは`result: terminal|exited`へ現在のauthoritative statusで応答し、確定済みの成功結果を停止扱いへ書き換えない。
+- `kind: stop_endpoint_absent`は現在running ownerが不在、`kind: stop_endpoint_stale`はsocketが残ってもackが得られない状態である。どちらもstale PID推定・手動killへ切り替えず、`--status`で現在状態を確認してから扱う。
+- 停止された主呼出はstderrへ`kind: interrupted`のerror JSONを出してnon-zero exitする。これは失敗ではなく再開可能停止であり、`worker_error`扱いしない。
+- 中断taskのworking tree・task state・session・resume checkpointを破棄・resetせず、新規taskとしてやり直さない。再開は同じcheckoutで`glm-worker --status`の`task_status: interrupted`を確認してから`glm-worker --resume`で行う。

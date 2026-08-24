@@ -29,7 +29,11 @@ formal safe-stopとは独立した責務として、停止taskの要求正本・
 
 ## Amendments
 
-none
+### 2026-08-25: safe-stop prerequisite完了後のlifecycle同期
+
+````text
+safe-interruption-task-suspensionはproduction実装・review・Sol採用・親commitまで完了し、完了task fileをHistoryへ移行した。fulfilled dependency pathはDependenciesから除去し、成立済みsafe-stop invariantをHistorical invariantsへ保持する。
+````
 
 ## Resolved references
 
@@ -66,12 +70,13 @@ formal safe-stop後、割り込みtaskが元taskのstateとworking treeを上書
 
 ## Historical invariants
 
+- running taskの安全停止は、単一目的`glm-worker --stop` endpoint、Claude process-group cleanup、`interrupted` checkpoint/status、同一task `--resume`としてproduction成立済み
 - repo lockとstateはrepository path/hashごとに分離され、別repo並列実行をglobal mutexで直列化しない
 - parent-managed metadataは親Codex専有、GLMはcommit/pushしない
 
 ## Dependencies
 
-- `IMPLEMENTATION_TASKS/safe-interruption-task-suspension.md`
+none
 
 ## Review findings
 
@@ -79,4 +84,4 @@ formal safe-stop後、割り込みtaskが元taskのstateとworking treeを上書
 
 ## Current boundary
 
-safe-stop production実装・本配置完了後に設計を再確認してACTIVE化する。現時点では別checkout第一候補の未実装task。
+safe-stop production実装・親commitを完了しACTIVE化済み。本配置・source一致・installed smoke完了後に、別checkout第一候補の設計を再確認して実装へ進む。

@@ -38,6 +38,8 @@ type Workflow struct {
 	now                 func() time.Time
 	sleep               func(time.Duration)
 	jitter              func(base time.Duration) time.Duration
+	// stopは--stop要求の観測経路。nil(旧test配線)のとき停止要求を観測しない。
+	stop *runner.StopController
 	// pendingSnapshotはverifyReviewStart/ResumeSnapshotが一致判定した直近snapshot診断。
 	// reviewer呼出成功時にそのcallのtelemetryへ付与して消費する。reemit呼出には付与しない。
 	pendingSnapshot *state.SnapshotDiagnostic
@@ -68,6 +70,18 @@ func NewWorkflow(cfg config.AppConfig, st *state.StateStore, r ModelRunner, outp
 		sleep:               time.Sleep,
 		jitter:              boundedBackoffJitter,
 	}
+}
+
+// AttachStopControllerは--stop要求の観測経路をworkflowへ接続する。未接続のworkflowは
+// 停止要求を観測せず、従来どおり自然終端・provider停止経路だけを扱う。
+func (w *Workflow) AttachStopController(stop *runner.StopController) {
+	w.stop = stop
+}
+
+// stopRequestedは現在までに--stop要求が出ているか。停止経路を観測しない配線では
+// 常にfalseである。
+func (w *Workflow) stopRequested() bool {
+	return w.stop != nil && w.stop.StopRequested()
 }
 
 // providerUnavailableDeadlineは一時障害回復のhard deadline。backoffは各待機後にprobe 1回だけ送り、
@@ -130,6 +144,8 @@ func (w *Workflow) ExecuteNewTask(request string) error {
 				return &WorkerError{Message: "previous task is rate-limited; use --resume or --reset"}
 			case checkpoint.ProviderUnavailable:
 				return &WorkerError{Message: "previous task is provider-unavailable; use --resume or --reset"}
+			case checkpoint.UserInterrupted:
+				return &WorkerError{Message: "previous task is interrupted; use --resume or --reset"}
 			}
 		}
 
@@ -296,8 +312,8 @@ func (w *Workflow) ExecuteResume() error {
 		if err != nil {
 			return err
 		}
-		if !checkpoint.RateLimited && !checkpoint.ProviderUnavailable {
-			return &WorkerError{Message: "saved task is not stopped by Z.ai 5h limit or provider unavailability"}
+		if !checkpoint.RateLimited && !checkpoint.ProviderUnavailable && !checkpoint.UserInterrupted {
+			return &WorkerError{Message: "saved task is not stopped by Z.ai 5h limit, provider unavailability or user interruption"}
 		}
 		if !isKnownResumeStage(checkpoint.Stage) {
 			return &WorkerError{Message: fmt.Sprintf("unknown resume stage: %s", checkpoint.Stage)}
@@ -323,6 +339,10 @@ func (w *Workflow) ExecuteResume() error {
 		// 明確な非transient errorはfail closedへ復帰する。
 		if checkpoint.ProviderUnavailable {
 			if err := w.gateResumeOnProbe(checkpoint); err != nil {
+				var interrupted *runner.InterruptedCallError
+				if errors.As(err, &interrupted) {
+					return w.interruptBetweenCalls(checkpoint)
+				}
 				var pErr *runner.ProviderUnavailableError
 				if errors.As(err, &pErr) {
 					return err
@@ -353,12 +373,17 @@ func (w *Workflow) ExecuteResume() error {
 		checkpoint.ProviderUnavailableClassification = ""
 		checkpoint.ProviderUnavailableProbes = 0
 		checkpoint.ProviderUnavailableStartedAt = time.Time{}
+		checkpoint.UserInterrupted = false
 
 		result, err := w.runModel(checkpoint)
 		if err != nil {
 			// 親Codex専有file不変性違反のfail closedはcheckpoint清除・status移行を完了済みのため、
 			// 保存済みcheckpointの復元で上書きしない。
 			if errors.Is(err, errParentFileGuardStopped) {
+				return err
+			}
+			var stopped *runner.InterruptedCallError
+			if errors.As(err, &stopped) {
 				return err
 			}
 			var pErr *runner.ProviderUnavailableError
@@ -370,7 +395,7 @@ func (w *Workflow) ExecuteResume() error {
 				return err
 			}
 			saved, loadErr := w.state.LoadResumeCheckpoint()
-			if loadErr != nil || (!saved.RateLimited && !saved.ProviderUnavailable) {
+			if loadErr != nil || (!saved.RateLimited && !saved.ProviderUnavailable && !saved.UserInterrupted) {
 				// 復元はmodel呼出を実行した後の失敗也可能なため、親管理2fileの停止時状態を復元時点へ
 				// 固定し直す。呼出中の変化が停止期間中の親更新として誤承認されるのを防ぐ。
 				previousCheckpoint.StopParentFiles = captureStopParentFiles(w.config.RepoRoot)
@@ -384,6 +409,8 @@ func (w *Workflow) ExecuteResume() error {
 					restoredStatus = state.TaskStatusProviderUnavailable
 				case saved.RateLimited:
 					restoredStatus = state.TaskStatusRateLimited
+				case saved.UserInterrupted:
+					restoredStatus = state.TaskStatusInterrupted
 				}
 			}
 			if restoredStatus == state.TaskStatusActive {
@@ -392,6 +419,8 @@ func (w *Workflow) ExecuteResume() error {
 					restoredStatus = state.TaskStatusProviderUnavailable
 				case previousCheckpoint.RateLimited:
 					restoredStatus = state.TaskStatusRateLimited
+				case previousCheckpoint.UserInterrupted:
+					restoredStatus = state.TaskStatusInterrupted
 				}
 			}
 			_ = w.state.SetTaskStatus(restoredStatus)
@@ -488,9 +517,11 @@ func isKnownResumeStage(stage state.ResumeStage) bool {
 	}
 }
 
-// resumeSourceOfは再開理由をrate-limit/provider-unavailable/空(非resume)へ分類する。
+// resumeSourceOfは再開理由をrate-limit/provider-unavailable/user-interrupt/空(非resume)へ分類する。
 func resumeSourceOf(checkpoint state.ResumeCheckpoint) string {
 	switch {
+	case checkpoint.UserInterrupted:
+		return "user-interrupt"
 	case checkpoint.ProviderUnavailable:
 		return "provider-unavailable"
 	case checkpoint.RateLimited:
@@ -879,6 +910,11 @@ func (w *Workflow) runModel(checkpoint state.ResumeCheckpoint) (packet.Result, e
 	if err := w.state.SaveResumeCheckpoint(checkpoint); err != nil {
 		return packet.Result{}, err
 	}
+	// 呼出直前に--stopを観測したときはchildを起動せず、保存済みcheckpointからinterrupted
+	// 停止へ保存する。実callがないためcall計上も行わない。
+	if w.stopRequested() {
+		return packet.Result{}, w.interruptBetweenCalls(checkpoint)
+	}
 	w.state.RecordModelCall(checkpoint.Role, checkpoint.Model)
 
 	startedAt := w.now().UTC()
@@ -897,6 +933,12 @@ func (w *Workflow) runModel(checkpoint state.ResumeCheckpoint) (packet.Result, e
 		return packet.Result{}, err
 	}
 	failureClass := runner.ProviderFailureClass{}
+	// --stopによる呼出中断は5h上限・transient分類より優先する。停止済みchildのpartial出力に
+	// provider信号が混在していても、停止要求が完了済みであることを理由に扱わない。
+	var interrupted *runner.InterruptedCallError
+	if runErr != nil && errors.As(runErr, &interrupted) {
+		return packet.Result{}, w.interruptFromCall(checkpoint, runResult, startedAt, completedAt, runErr, outputPath)
+	}
 	if runErr != nil {
 		failureClass = mergePlainFailureClass(
 			runner.ClassifyProviderFailureText(runner.ReadTransientSignal(outputPath)),
@@ -946,6 +988,15 @@ func (w *Workflow) runModel(checkpoint state.ResumeCheckpoint) (packet.Result, e
 			// 5h/provider停止やfatal扱いに上書きせずそのまま伝播させる。
 			if errors.Is(recErr, errParentFileGuardStopped) {
 				return packet.Result{}, recErr
+			}
+			var interrupted *runner.InterruptedCallError
+			if errors.As(recErr, &interrupted) {
+				// backoff待機の打ち切りは再開task呼出を実行していないためcall記録を残さず、
+				// 実行済み呼出の中断だけをcall記録へ確定する。
+				if resumeStartedAt.IsZero() {
+					return packet.Result{}, w.interruptBetweenCalls(checkpoint)
+				}
+				return packet.Result{}, w.interruptFromCall(checkpoint, resumeResult, resumeStartedAt, resumeCompletedAt, recErr, outputPath)
 			}
 			var pErr *runner.ProviderUnavailableError
 			if errors.As(recErr, &pErr) {
@@ -1170,6 +1221,12 @@ func (w *Workflow) runResumedTask(checkpoint state.ResumeCheckpoint, outputPath 
 	if stopped, err := w.verifyParentFileAfterCall(checkpoint, guardBefore, result, startedAt, completedAt, runErr, outputPath); stopped {
 		return false, result, startedAt, completedAt, err
 	}
+	// --stopで中断された再開task呼出は、runModel側のinterrupted記録へ1回だけ残すため
+	// ここでは分類・記録をせずtyped errorを伝播させる。
+	var interrupted *runner.InterruptedCallError
+	if runErr != nil && errors.As(runErr, &interrupted) {
+		return false, result, startedAt, completedAt, runErr
+	}
 	if runErr == nil {
 		return true, result, startedAt, completedAt, nil
 	}
@@ -1238,7 +1295,9 @@ func (w *Workflow) recoveryLoop(
 			if !ok {
 				break
 			}
-			w.sleep(wait)
+			if w.sleepInterruptible(wait) {
+				return false, runner.RunResult{}, time.Time{}, time.Time{}, &runner.InterruptedCallError{Phase: checkpoint.Phase}
+			}
 			sleeps++
 			if w.now().After(deadline) {
 				break
@@ -1344,6 +1403,113 @@ func (w *Workflow) saveProviderUnavailable(checkpoint state.ResumeCheckpoint, cl
 		RepoRoot:       w.config.RepoRoot,
 		RepoShort:      w.config.RepoShort,
 	}, nil
+}
+
+// interruptFromCallは実行中のmodel呼出が--stopで停止したときのinterrupted状態保存を行う。
+// 呼出は実行済みのためtelemetryへoutcome=interruptedで記録し、generic worker error経路の
+// checkpoint/session clearへ流さない。
+func (w *Workflow) interruptFromCall(
+	checkpoint state.ResumeCheckpoint,
+	runResult runner.RunResult,
+	startedAt time.Time,
+	completedAt time.Time,
+	runErr error,
+	outputPath string,
+) error {
+	w.recordModelCall(checkpoint, runResult, startedAt, completedAt, "interrupted", "", runErr, outputPath, callDiagnostics{})
+	return w.persistInterruptedStop(checkpoint, runErr)
+}
+
+// interruptBetweenCallsはmodel呼出の実行前に--stopを観測したときのinterrupted状態保存を
+// 行う。呼出を実行していないためcall記録ではなくevent記録だけを残す。
+func (w *Workflow) interruptBetweenCalls(checkpoint state.ResumeCheckpoint) error {
+	w.recordInterruptedEvent(checkpoint)
+	return w.persistInterruptedStop(checkpoint, nil)
+}
+
+// persistInterruptedStopは--stop停止を既存rate-limited/provider-unavailableと独立した
+// 再開可能停止として保存する。保存済みcheckpoint・role session・要求正本・snapshot基準を
+// そのまま保持し、採番済みsessionだけをresumableへmarkした上でtask statusをinterruptedへ
+// 移す。保存に失敗した場合も保存できた範囲を残し、停止完了のackは出さない。
+func (w *Workflow) persistInterruptedStop(checkpoint state.ResumeCheckpoint, cause error) error {
+	checkpoint.UserInterrupted = true
+	checkpoint.RateLimited = false
+	checkpoint.ResetAtCST = ""
+	checkpoint.ResetAtRFC3339 = ""
+	checkpoint.ProviderUnavailable = false
+	checkpoint.ProviderUnavailableClassification = ""
+	checkpoint.ProviderUnavailableProbes = 0
+	checkpoint.ProviderUnavailableStartedAt = time.Time{}
+	// 停止保存直前の親管理metadata集合状態を固定する。review resumeのsnapshot例外が
+	// 停止期間中の親Codex更新だけを承認する基準として使う。
+	checkpoint.StopParentFiles = captureStopParentFiles(w.config.RepoRoot)
+	// session ID未採番の初回call前停止でreadyだけ作ると、resume時の新規採番UUIDが
+	// ready付きで返り、存在しないsessionへの--resume起動になってしまう。採番済み
+	// sessionだけをmarkし、未採番ならresumeの初回callで新規sessionを起動させる。
+	if w.state.ReadOr(string(checkpoint.Role)+".id", "") != "" {
+		if err := w.state.MarkReady(checkpoint.Role); err != nil {
+			return err
+		}
+	}
+	if err := w.state.SaveResumeCheckpoint(checkpoint); err != nil {
+		return err
+	}
+	if err := w.state.SetTaskStatus(state.TaskStatusInterrupted); err != nil {
+		return err
+	}
+	_ = w.state.SecureArtifactDir()
+	taskID, _ := w.state.TaskID()
+	if w.stop != nil {
+		w.stop.NotifyInterrupted(taskID)
+	}
+	stopped := &runner.InterruptedCallError{
+		Phase:    checkpoint.Phase,
+		TaskID:   taskID,
+		RepoRoot: w.config.RepoRoot,
+	}
+	if cause != nil {
+		var interrupted *runner.InterruptedCallError
+		if errors.As(cause, &interrupted) {
+			stopped.CleanupWarning = interrupted.CleanupWarning
+		}
+	}
+	return stopped
+}
+
+// recordInterruptedEventは呼出を実行せずに停止した事実をtelemetryへ記録する(best-effort)。
+func (w *Workflow) recordInterruptedEvent(checkpoint state.ResumeCheckpoint) {
+	now := w.now().UTC()
+	w.state.RecordModelCallLog(state.ModelCallLog{
+		TaskID:      w.state.ReadOr("task.id", "unknown"),
+		CallType:    state.CallTypeEvent,
+		StartedAt:   now,
+		CompletedAt: now,
+		Phase:       checkpoint.Phase + "-user-interrupted",
+		Role:        checkpoint.Role,
+		ModelAlias:  checkpoint.Model,
+		Outcome:     "user_interrupted",
+	})
+}
+
+// sleepInterruptibleはbackoff待機を実行し、待機が--stop要求で打ち切られたかを返す。
+// 停止経路を観測しない配線では従来のsleepと同じ挙動になる。打ち切り時も背後の待機goroutineは
+// 残duration後に自然に終わり、待機自体の副作用はない。
+func (w *Workflow) sleepInterruptible(duration time.Duration) bool {
+	if w.stop == nil {
+		w.sleep(duration)
+		return false
+	}
+	done := make(chan struct{})
+	go func() {
+		w.sleep(duration)
+		close(done)
+	}()
+	select {
+	case <-done:
+		return false
+	case <-w.stop.Requested():
+		return true
+	}
 }
 
 // recordProviderUnavailableEventは回復が上限/deadlineに到達し再開可能停止状態へ移行した事実を

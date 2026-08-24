@@ -334,6 +334,35 @@ ratelimit)
 	echo "API Error: Request rejected (429) [1308][Usage limit reached for 5 hour. Your limit will reset at 2026-08-23 12:00:00]" >&2
 	exit 1
 	;;
+hold-with-tool)
+	(
+		trap '' TERM
+		while :; do sleep 0.2; done
+	) &
+	echo $! > "$dir/tool.pid"
+	waits=0
+	while [ ! -f "$dir/release" ] && [ "$waits" -lt 3000 ]; do
+		sleep 0.1
+		waits=$((waits + 1))
+	done
+	exit 1
+	;;
+reviewer-hold)
+	role=worker
+	for arg in "$@"; do
+		if [ "$arg" = "--disallowedTools" ]; then role=reviewer; fi
+	done
+	if [ "$role" = reviewer ]; then
+		waits=0
+		while [ ! -f "$dir/release" ] && [ "$waits" -lt 3000 ]; do
+			sleep 0.1
+			waits=$((waits + 1))
+		done
+		exit 1
+	fi
+	printf '%s\n' '{"type":"result","subtype":"success","is_error":false,"result":"worker implemented","structured_output":{"status":"IMPLEMENTED","risk":"LOW","summary":"stub implementation summary","requirement_coverage":"stub coverage","tests":"stub tests","unverified":"none"},"usage":{"input_tokens":5,"output_tokens":5},"duration_ms":5}'
+	exit 0
+	;;
 success)
 	role=worker
 	for arg in "$@"; do

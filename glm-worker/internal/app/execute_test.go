@@ -72,7 +72,7 @@ func (r *fakeRunner) Probe(model string) (runner.ProbeResult, error) {
 }
 
 func (r *fakeRunner) factory() RunnerFactory {
-	return func(_ config.AppConfig, _ *state.StateStore) workflow.ModelRunner { return r }
+	return func(_ config.AppConfig, _ *state.StateStore, _ *runner.StopController) workflow.ModelRunner { return r }
 }
 
 // appPacketBodyはtyped結果からmachine JSON 1行を組み立てるtest helper。

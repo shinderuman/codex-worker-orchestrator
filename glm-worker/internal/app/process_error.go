@@ -20,6 +20,9 @@ const (
 	errorKindWorkerError             = "worker_error"
 	errorKindRateLimited             = "rate_limited"
 	errorKindProviderUnavailable     = "provider_unavailable"
+	errorKindInterrupted             = "interrupted"
+	errorKindStopEndpointAbsent      = "stop_endpoint_absent"
+	errorKindStopEndpointStale       = "stop_endpoint_stale"
 	errorKindVerificationFailed      = "verification_failed"
 	errorKindVerificationUnavailable = "verification_unavailable"
 	errorKindInternal                = "internal"
@@ -49,6 +52,8 @@ func buildProcessError(err error) processErrorBody {
 	var workerErr *workflow.WorkerError
 	var rateLimit runner.ZaiRateLimitError
 	var providerUnavailable *runner.ProviderUnavailableError
+	var interrupted *runner.InterruptedCallError
+	var stopEndpoint *StopEndpointError
 
 	switch {
 	case errors.As(err, &usage):
@@ -78,6 +83,23 @@ func buildProcessError(err error) processErrorBody {
 			Kind:    errorKindProviderUnavailable,
 			Message: "provider stayed unavailable after probe budget; task is stopped and resumable",
 			Detail:  providerUnavailableDetail(providerUnavailable),
+		}
+	case errors.As(err, &interrupted):
+		return processErrorBody{
+			Kind:    errorKindInterrupted,
+			Message: "task interrupted by glm-worker --stop; task is stopped and resumable",
+			Detail:  interruptedDetail(interrupted),
+		}
+	case errors.As(err, &stopEndpoint):
+		if stopEndpoint.Absent {
+			return processErrorBody{
+				Kind:    errorKindStopEndpointAbsent,
+				Message: stopEndpoint.Error(),
+			}
+		}
+		return processErrorBody{
+			Kind:    errorKindStopEndpointStale,
+			Message: stopEndpoint.Error(),
 		}
 	case errors.As(err, &verification):
 		return processErrorBody{
@@ -136,6 +158,19 @@ func providerUnavailableDetail(err *runner.ProviderUnavailableError) map[string]
 		"repo_root":        stringPtr(err.RepoRoot),
 		"resume_available": true,
 	}
+}
+
+func interruptedDetail(err *runner.InterruptedCallError) map[string]any {
+	detail := map[string]any{
+		"phase":            stringPtr(err.Phase),
+		"task_id":          stringPtr(err.TaskID),
+		"repo_root":        stringPtr(err.RepoRoot),
+		"resume_available": true,
+	}
+	if err.CleanupWarning != "" {
+		detail["cleanup_warning"] = err.CleanupWarning
+	}
+	return detail
 }
 
 func verificationKind(outcome autoresume.Outcome) string {

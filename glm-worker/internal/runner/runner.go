@@ -85,6 +85,7 @@ func structuredSchema(role state.SessionRole) (string, error) {
 type ClaudeRunner struct {
 	config config.AppConfig
 	state  *state.StateStore
+	stop   *StopController
 }
 
 // TokenUsageはClaude CLIが返す1回の実行全体のtoken使用量。
@@ -146,12 +147,20 @@ func NewClaudeRunner(cfg config.AppConfig, st *state.StateStore) *ClaudeRunner {
 	return &ClaudeRunner{config: cfg, state: st}
 }
 
+// AttachStopControllerは--stop要求の観測経路を接続する。未接続のrunnerは停止要求を
+// 観測せず、従来どおりchildの自然終了だけを扱う。
+func (r *ClaudeRunner) AttachStopController(stop *StopController) {
+	r.stop = stop
+}
+
 // Runはrole/effort/promptでClaude Codeを起動し出力をoutputPathへ書き出す。
 // 初回起動時は新規sessionを採番し、2回目以降は同一sessionへresumeする。
 // 起動は全入力経路を隔離する: --safe-modeでcustomization・managed CLAUDE.md・
 // managed skills/plugins・policy-configured MCPを一括無効化し、--setting-sources ""
 // でfilesystem settingsを読まず、Z.ai接続・model aliasはsettings.jsonからallowlist
-// 抽出した最小envを明示注入する。CLAUDE.md/auto memory/hooks/MCP/skills等はinline
+// 抽出した最小envを明示注入する。childは独自process groupで起動し、--stop要求時は
+// groupへTERM・bounded猶予後のKILLでtool実行中のdescendantごと終了させる。
+// CLAUDE.md/auto memory/hooks/MCP/skills等はinline
 // --settingsとflagで追加遮断する。組込みsystem promptとmanaged settings policy
 // （認証・権限等の組織policy）だけは遮断不可能な残余として残る。現行の隔離policyと
 // 一致しない旧sessionは暗黙入力が混入しているためresumeせず新sessionへ切り替える。
@@ -179,6 +188,11 @@ func (r *ClaudeRunner) Run(
 ) (RunResult, error) {
 	if model == "" {
 		return RunResult{}, fmt.Errorf("modelを指定してください")
+	}
+	// 停止要求を観測済みならchildを起動しない。呼出元はtyped errorでinterrupted停止へ
+	// 保存するため、この経路でsession・checkpointを破棄しない。
+	if r.stop != nil && r.stop.StopRequested() {
+		return RunResult{}, &InterruptedCallError{Phase: phase}
 	}
 	taskID, err := r.state.TaskID()
 	if err != nil {
@@ -265,7 +279,7 @@ func (r *ClaudeRunner) Run(
 
 	ingester := r.newTaskEventIngester(taskID, role, phase, model, sessionID, ready)
 
-	command := exec.Command(r.config.ClaudeBin, args...)
+	command := newProcessGroupCmd(r.config.ClaudeBin, args...)
 	command.Dir = r.config.RepoRoot
 	command.Stdin = devNull
 	// stdoutはingesterだけが受け、非result eventのraw本文をdiskへ書かない。
@@ -278,7 +292,7 @@ func (r *ClaudeRunner) Run(
 		"CLAUDE_CODE_ALWAYS_ENABLE_EFFORT": "1",
 	}, envDeletes)
 
-	runErr := command.Run()
+	runErr := r.runCommand(command)
 	ingester.flush()
 	stderrCloseErr := stderr.Close()
 	if runErr == nil && stderrCloseErr != nil {
@@ -334,6 +348,37 @@ func (r *ClaudeRunner) Run(
 
 func createPrivateFile(path string) (*os.File, error) {
 	return os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+}
+
+// runCommandはchildの完了待機を停止要求で割り込める形で実行する。停止要求が来た場合、
+// process groupへTERM→猶予→KILLの順で終了させ、direct childのwaitとgroup非残存を確認
+// してからInterruptedCallErrorを返す。自然終了が停止に先着した場合は通常の完了を返す。
+func (r *ClaudeRunner) runCommand(command *exec.Cmd) error {
+	if r.stop == nil {
+		return command.Run()
+	}
+	if err := command.Start(); err != nil {
+		return err
+	}
+	waitDone := make(chan error, 1)
+	go func() {
+		waitDone <- command.Wait()
+	}()
+	select {
+	case err := <-waitDone:
+		return err
+	case <-r.stop.Requested():
+		// 停止観測時点で自然終了が既に確定しているならその結果を優先する。
+		// 停止と終了が重なる競合で成功結果を中断で上書きさせないための先決確認である。
+		select {
+		case err := <-waitDone:
+			return err
+		default:
+		}
+		warning := terminateProcessGroup(command.Process.Pid, stopTermGrace)
+		<-waitDone
+		return &InterruptedCallError{CleanupWarning: warning}
+	}
 }
 
 func parseClaudeJSONResult(path string) (claudeJSONResult, error) {

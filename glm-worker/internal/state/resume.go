@@ -56,6 +56,10 @@ type ResumeCheckpoint struct {
 	// 空文字は旧checkpointなど未計算を表し、resume時に現在stateから安全側へ決定論的に再構成する。
 	EffectiveRisk       string `json:"effective_risk,omitempty"`
 	EffectiveRiskSource string `json:"effective_risk_source,omitempty"`
+	// UserInterruptedは親Codexの--stop要求による安全停止を表す。既存のrate-limited・
+	// provider-unavailableとは停止理由が排他で、role/phase/model/session/promptはそのまま
+	// 保持し--resumeで同一sessionから再開する。
+	UserInterrupted bool `json:"user_interrupted,omitempty"`
 	// ProviderUnavailableは一時provider障害の回復がprobe上限・deadlineに到達し、
 	// WORKER_ERROR/RATE_LIMITEDとは独立した再開可能停止状態になったことを表す。
 	// role/phase/model/session/promptはそのまま保持し、--resumeで同一session/checkpointから再試行する。
