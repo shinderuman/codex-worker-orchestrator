@@ -148,14 +148,21 @@ func lockStatePtr(lockState LockState) *string {
 	return &value
 }
 
-// taskStatusPtrはtask.statusの外部enumへ対応付ける。task不在sentinel
-// (TaskStatusNone)は観測できないためJSON nullへ出す。
+// taskStatusPtrはtask.statusの外部enumへ対応付ける。外部受理集合は現行6値だけであり、
+// task不在sentinel(TaskStatusNone)と永続file上の未知値(破損・未知state)は観測できない値
+// としてJSON nullへ出す。unknown等のpresentation sentinelへは変換しない。
 func taskStatusPtr(status state.TaskStatus) *string {
-	if status == state.TaskStatusNone {
-		return nil
+	switch status {
+	case state.TaskStatusActive,
+		state.TaskStatusWaitingDecision,
+		state.TaskStatusWaitingSolReview,
+		state.TaskStatusComplete,
+		state.TaskStatusRateLimited,
+		state.TaskStatusProviderUnavailable:
+		value := string(status)
+		return &value
 	}
-	value := string(status)
-	return &value
+	return nil
 }
 
 // lockPIDPtrはlock fileに残っていたPID診断値を対応付ける。読み取れなかった

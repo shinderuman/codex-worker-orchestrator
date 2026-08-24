@@ -16,7 +16,7 @@ import (
 // presentationは持たず、観測値そのものをJSON型で出す。
 type timelineOutput struct {
 	TaskID        string               `json:"task_id"`
-	TaskStatus    string               `json:"task_status"`
+	TaskStatus    *string              `json:"task_status"`
 	EventLog      timelineEventLog     `json:"event_log"`
 	SkippedEvents int                  `json:"skipped_events,omitempty"`
 	Telemetry     *string              `json:"telemetry"`
@@ -143,24 +143,25 @@ func validTimelineTaskID(taskID string, explicit bool) bool {
 }
 
 // timelineTaskStatusは現在taskは正規task.statusを、明示指定taskはstats履歴のarchive値を
-// 返す。履歴にも無いtask IDはunknownとする(推測しない)。
-func timelineTaskStatus(st *state.StateStore, taskID string, explicit bool) string {
+// taskStatusPtrの外部受理集合へ通して返す。履歴にも無いtask ID・読込失敗・受理集合外の
+// 永続値は観測できないためnullとする(推測しない)。
+func timelineTaskStatus(st *state.StateStore, taskID string, explicit bool) *string {
 	if !explicit {
-		return string(st.TaskStatus())
+		return taskStatusPtr(st.TaskStatus())
 	}
 	if taskID == st.ReadOr("task.id", "") {
-		return string(st.TaskStatus())
+		return taskStatusPtr(st.TaskStatus())
 	}
 	all, err := st.AllTaskStats()
 	if err != nil {
-		return "unknown"
+		return nil
 	}
 	for _, stats := range all {
 		if stats.TaskID == taskID {
-			return string(stats.Status)
+			return taskStatusPtr(stats.Status)
 		}
 	}
-	return "unknown"
+	return nil
 }
 
 // readTaskEventRecordsはtask event logを行ごとに読む。破損行・旧version行はskipして

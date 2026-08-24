@@ -42,7 +42,7 @@ type convergenceRound struct {
 
 type convergenceOutput struct {
 	TaskID        string                `json:"task_id"`
-	TaskStatus    string                `json:"task_status"`
+	TaskStatus    *string               `json:"task_status"`
 	RoundsLog     convergenceLog        `json:"rounds_log"`
 	SkippedRounds int                   `json:"skipped_rounds,omitempty"`
 	Telemetry     string                `json:"telemetry"`

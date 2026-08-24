@@ -23,6 +23,35 @@
 だから015の完了条件を変えるだけじゃ再発するだけなんじゃないのって言ってるの
 ````
 
+### 2026-08-24: ACTIVE boundary同期
+
+````text
+## 2. ACTIVE external feasibility taskのstale boundaryを同期する
+
+IMPLEMENTATION_TASKS/external-feasibility-dispatch-gate.md に現在も、
+
+- 「現ACTIVE Task 008」
+- 「Task 008停止中は...production codeへ触れない」
+
+という作成時の境界が残っている。
+
+現在の正はPlanどおり:
+
+- Task 008は完了済み
+- 5h early-stop selective revertも完了済み
+- external-feasibility-dispatch-gate自体がACTIVE
+- 次はこのgateをimplementationする
+
+したがってOriginal instruction / Amendments / Resolved references等の
+historical evidenceは保持したまま、
+Must not / Current boundaryだけを現在状態へ同期する。
+
+原因はTask 008実行中にfollow-upを積み、
+Task 008完了→5h revert→ACTIVE昇格時にtask-local boundaryを更新しなかった
+parent lifecycle metadata同期漏れ。
+GLM実装上の問題として扱わない。
+````
+
 ## Resolved references
 
 - 「この件」はcommit `cbf71c7`のZ.ai 5時間limit early-stop false-complete。実Claude CLIはretry中の`api_retry`へgeneric 429しか出さず、exact `[1308]`は全retry後に初めて公開した
@@ -50,7 +79,7 @@
 - semantic applicabilityを脆いkeyword/regexだけで自動判定し、false negativeを保証済みとしない
 - worker/reviewer checklist、新しいstate DB、generic policy frameworkを追加しない
 - `not-applicable`宣言が誤っていても絶対防止できると主張しない。残余riskとreview責務を明示する
-- 現ACTIVE Task 008のsession/checkpoint/未コミットdiffへ混ぜない
+- 独立review follow-upや他taskの未コミットdiff・task stateへ混ぜない
 - GLMにcommit/pushさせない。pushしない
 
 ## Acceptance criteria
@@ -81,4 +110,4 @@ none
 
 ## Current boundary
 
-ACTIVE Task 008の完了とreopen済み5時間limit taskの選択的revert後、Task 015より前に実装する。Task 008停止中はparent-managed metadataだけを更新しproduction codeへ触れない。
+Task 008、5時間limit early-stop selective revert、task status machine enum follow-upは完了済み。本taskの最初のimplementation callはexternal-review follow-up受領時に停止したが、Claude childがorphan化してsource diffを書き続けたため、最終process group停止後のdiffをmessage identity付きstashへ保全した。現在はsafe interruption taskを先行し、その完了後にstash・元task要求・stateの整合を確認して本taskを再びACTIVEへ昇格し、Task 015より前にproduction dispatch gateを実装する。

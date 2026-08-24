@@ -103,8 +103,8 @@ func TestTimelineRendersCallsToolsGraphAndAging(t *testing.T) {
 	if output.TaskID != taskID {
 		t.Fatalf("task_id = %q", output.TaskID)
 	}
-	if output.TaskStatus != string(state.TaskStatusActive) {
-		t.Fatalf("task_status = %q", output.TaskStatus)
+	if output.TaskStatus == nil || *output.TaskStatus != string(state.TaskStatusActive) {
+		t.Fatalf("task_status = %#v want %q", output.TaskStatus, state.TaskStatusActive)
 	}
 	if output.EventLog.Status != "ok" || output.EventLog.Path == nil || *output.EventLog.Path != st.TaskEventLogPath(taskID) {
 		t.Fatalf("event_log = %#v", output.EventLog)
@@ -298,8 +298,8 @@ func TestTimelineExplicitTask(t *testing.T) {
 	if output.TaskID != oldTaskID {
 		t.Fatalf("task_id = %q", output.TaskID)
 	}
-	if output.TaskStatus != string(state.TaskStatusComplete) {
-		t.Fatalf("task_status = %q", output.TaskStatus)
+	if output.TaskStatus == nil || *output.TaskStatus != string(state.TaskStatusComplete) {
+		t.Fatalf("task_status = %#v want %q", output.TaskStatus, state.TaskStatusComplete)
 	}
 	if len(output.Calls) != 1 {
 		t.Fatalf("calls = %#v", output.Calls)

@@ -8,10 +8,11 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/external-feasibility-dispatch-gate.md`
+- `IMPLEMENTATION_TASKS/safe-interruption-task-suspension.md`
 
 ## NEXT（優先順）
 
+- `IMPLEMENTATION_TASKS/external-feasibility-dispatch-gate.md`
 - `IMPLEMENTATION_TASKS/015-fixed-eval-corpus.md`
 - `IMPLEMENTATION_TASKS/009-worker-call-outliers.md`
 - `IMPLEMENTATION_TASKS/010-task-splitting-milestones.md`
@@ -41,14 +42,15 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 ## 現在のGit境界
 
 - branch: `main`
-- implementation baseline: 5時間limit early-stop selective revert commit（current HEAD）
-- metadata boundary: 実producer PoCのNo-Go、選択的revert、false-complete原因、task削除、external feasibility dispatch gate昇格を同一commitへ同期した境界
+- implementation baseline: task status machine enum follow-up完了commit（current HEAD）
+- implementation boundary: status/stats/timeline/convergenceのtask statusを現行6値+nullへ統一し、全品質gate・parent accept・task lifecycle同期を完了
+- preserved boundary: external feasibility gateの中断diffはmessage identity付きstash 2件へ可逆保全し、orphan process group終了済み
 - push: 禁止
 
 ## 現在の停止理由
 
-blockerなし。5時間limit early-stopは実producer PoCで効果不成立と確定し、production code/testだけを選択的に逆適用して完了。terminal分類・RATE_LIMITED・checkpoint/session・auto-resumeは維持した。
+blockerなし。安全なprocess停止と、別task実行中の元task state保持が同一能力か別能力かは未確定であり、実装前の親調査・Sol設計判断が必要。
 
 ## 次の親Codex操作
 
-current HEADを本配置してsource/binary一致とstatus smokeを確認後、ACTIVE taskのexternal feasibility implementation dispatch gateを要求正本として開始する。pushしない。
+ACTIVE taskのOriginal instruction・Amendments・Resolved referencesを再読し、現行process/state/checkpoint/lock境界と保全済みincident evidenceをread-only調査する。安全停止とtask suspend/restoreを同一実装へ束ねるか分離するかをSolが判断し、外部Claude CLI成立性が前提ならimplementation dispatch前に実producer/process tree PoCを行う。pushしない。

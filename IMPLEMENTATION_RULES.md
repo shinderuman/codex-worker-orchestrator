@@ -83,6 +83,12 @@ parent-managed metadataを扱うguard、self-protection、production wiring自�
 - 同一invariantを成立させる実装とintegration testは過剰分割しない
 - umbrella見出しをそのままGLMへ渡さず、具体task file 1件だけをdispatchする
 
+## parent orchestrationのproduct化判断
+
+- 親Codexは通常作業中、自身が同種の手作業・定型操作・定型判断を繰り返していると気付いた時点で、それを親の手作業に残すべきか、glm-workerのcommand / machine interface / automationへ取り込むべきかを判断する。対象は実行制御、状態確認、復旧、安全確認、review補助を含み、command追加に限定しない
+- 反復可能で機械的に強制でき、Codex / Sol消費または反復障害を減らし、実装・保守コストに見合うと判断した場合は、ユーザーの個別指摘を待たず通常のPlan lifecycleへsemanticな改善taskを追加する。一度限り、低頻度、実装コストに見合わない候補、および高レバレッジな意味判断は機械化しない
+- 初回棚卸しtaskを設けても、その完了をこの継続的判断義務の完了とは扱わない。この規則は通常orchestrationの恒久contractとして残す
+
 ## priorityとhard dependency
 
 - PlanのACTIVE / NEXTにおけるsource上の順序は変更可能な実行priorityだけを表す

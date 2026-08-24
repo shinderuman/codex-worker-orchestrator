@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -140,6 +141,148 @@ func TestStatusRawJSONContract(t *testing.T) {
 		assertEnumJSONValue(t, "task_liveness", requireJSONKey(t, decoded, "task_liveness"), "running", "stale")
 		assertEnumJSONValue(t, "repository_lock", requireJSONKey(t, decoded, "repository_lock"), "held", "free")
 		assertNoPresentationSentinel(t, decoded, statusFields...)
+	})
+}
+
+// knownTaskStatusesはtask_statusの現行外部enum。--status・--stats・--timeline・
+// --convergenceのtask status受理集合はこの6値とnullだけである。
+var knownTaskStatuses = []string{
+	"active",
+	"waiting-decision",
+	"waiting-sol-review",
+	"complete",
+	"rate-limited",
+	"provider-unavailable",
+}
+
+// timelineRawJSONは--timeline出力1行(現在task)のraw JSONを返す。
+func timelineRawJSON(t *testing.T, st *state.StateStore) map[string]any {
+	t.Helper()
+	var out bytes.Buffer
+	if err := printTimeline(st, "", &out); err != nil {
+		t.Fatal(err)
+	}
+	return decodeSingleLineJSON(t, out.String())
+}
+
+// convergenceRawJSONは--convergence出力1行(現在task)のraw JSONを返す。
+func convergenceRawJSON(t *testing.T, st *state.StateStore) map[string]any {
+	t.Helper()
+	var out bytes.Buffer
+	if err := printConvergence(st, "", &out); err != nil {
+		t.Fatal(err)
+	}
+	return decodeSingleLineJSON(t, out.String())
+}
+
+// statsCurrentTaskJSONは--stats出力のcurrent_task objectを返す。
+func statsCurrentTaskJSON(t *testing.T, st *state.StateStore) map[string]any {
+	t.Helper()
+	decoded := statsRawJSON(t, st)
+	currentTask, ok := decoded["current_task"].(map[string]any)
+	if !ok {
+		t.Fatalf("current_taskがJSON objectではありません: %#v", decoded["current_task"])
+	}
+	return currentTask
+}
+
+// taskStatusSurfacesは同一意味のtask statusをmachine JSONへ出す全production surfaceの
+// raw JSON読み取り。
+var taskStatusSurfaces = []struct {
+	name string
+	read func(t *testing.T, cfg config.AppConfig, st *state.StateStore) any
+}{
+	{"--status.task_status", func(t *testing.T, cfg config.AppConfig, st *state.StateStore) any {
+		return requireJSONKey(t, statusRawJSON(t, cfg), "task_status")
+	}},
+	{"--stats.current_task.status", func(t *testing.T, cfg config.AppConfig, st *state.StateStore) any {
+		return requireJSONKey(t, statsCurrentTaskJSON(t, st), "status")
+	}},
+	{"--timeline.task_status", func(t *testing.T, cfg config.AppConfig, st *state.StateStore) any {
+		return requireJSONKey(t, timelineRawJSON(t, st), "task_status")
+	}},
+	{"--convergence.task_status", func(t *testing.T, cfg config.AppConfig, st *state.StateStore) any {
+		return requireJSONKey(t, convergenceRawJSON(t, st), "task_status")
+	}},
+}
+
+// TestTaskStatusFiniteEnumBoundaryはtask_status外部受理集合を現行6値とnullだけへ固定する。
+// --status・--stats・--timeline・--convergenceの全producerで、既知6値がそのまま出ることと、
+// 永続task.statusへ直接書いた未知値が契約外string・presentation sentinelとして漏れないことを
+// raw JSONで検証する。
+func TestTaskStatusFiniteEnumBoundary(t *testing.T) {
+	for _, known := range knownTaskStatuses {
+		t.Run(known, func(t *testing.T) {
+			cfg := newAppConfig(t)
+			st, err := state.NewStateStore(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := st.StartNewTask(); err != nil {
+				t.Fatal(err)
+			}
+			if err := st.SetTaskStatus(state.TaskStatus(known)); err != nil {
+				t.Fatal(err)
+			}
+			for _, surface := range taskStatusSurfaces {
+				if got := surface.read(t, cfg, st); got != known {
+					t.Fatalf("%s = %#v want %q", surface.name, got, known)
+				}
+			}
+		})
+	}
+
+	// 未知永続値は未観測扱いへ正規化され、presentation sentinelへも変換されない。
+	// "none"は内部sentinel相当の永続値が外部へ出ないことの境界確認用。
+	for _, unknown := range []string{"legacy-unknown-status", "none"} {
+		t.Run("未知永続値 "+unknown, func(t *testing.T) {
+			cfg := newAppConfig(t)
+			st, err := state.NewStateStore(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := st.StartNewTask(); err != nil {
+				t.Fatal(err)
+			}
+			if err := st.Write("task.status", unknown); err != nil {
+				t.Fatal(err)
+			}
+			for _, surface := range taskStatusSurfaces {
+				if got := surface.read(t, cfg, st); got != nil {
+					t.Fatalf("%s = %#v want null", surface.name, got)
+				}
+			}
+		})
+	}
+
+	// stats履歴archiveのstatus値も同じ受理集合を通る。明示指定taskのarchive値が
+	// 未知のとき契約外stringが出ないことを--timelineで検証する。
+	t.Run("未知archive値", func(t *testing.T) {
+		cfg := newAppConfig(t)
+		st, err := state.NewStateStore(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := st.StartNewTask(); err != nil {
+			t.Fatal(err)
+		}
+		archivedID, err := state.NewUUID()
+		if err != nil {
+			t.Fatal(err)
+		}
+		archive := `{"version":3,"task_id":"` + archivedID + `","status":"legacy-unknown-status"}`
+		if err := st.Write(filepath.Join("stats", archivedID+".json"), archive); err != nil {
+			t.Fatal(err)
+		}
+		if err := st.Write(filepath.Join("events", archivedID+".jsonl"), ""); err != nil {
+			t.Fatal(err)
+		}
+
+		var out bytes.Buffer
+		if err := printTimeline(st, archivedID, &out); err != nil {
+			t.Fatal(err)
+		}
+		assertNullJSONValue(t, "task_status", requireJSONKey(t, decodeSingleLineJSON(t, out.String()), "task_status"))
 	})
 }
 
