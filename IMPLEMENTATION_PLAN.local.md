@@ -8,11 +8,10 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/interrupted-task-checkout-isolation.md`
+- `IMPLEMENTATION_TASKS/external-feasibility-dispatch-gate.md`
 
 ## NEXT（優先順）
 
-- `IMPLEMENTATION_TASKS/external-feasibility-dispatch-gate.md`
 - `IMPLEMENTATION_TASKS/015-fixed-eval-corpus.md`
 - `IMPLEMENTATION_TASKS/009-worker-call-outliers.md`
 - `IMPLEMENTATION_TASKS/010-task-splitting-milestones.md`
@@ -42,15 +41,15 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 ## 現在のGit境界
 
 - branch: `main`
-- implementation baseline: safe-stop production実装・完了metadata同期・本配置済みのcurrent HEAD
-- implementation boundary: 単一目的`--stop` endpoint、Claude process-group cleanup、interrupted checkpoint/status、同一task resume、重複stop outcome broadcastを実装・検証・親採用・本配置済み。別task実行中の元task checkout/state隔離は新ACTIVEへ分離
+- implementation baseline: checkout/state隔離実装と完了metadataを収録したcurrent HEAD
+- implementation boundary: 単一目的`--stop`に加え、`--isolate`による別checkout/state分離、対称なmachine記録、統合後resume保持照合を実装・検証・独立review・親Sol採用まで完了。旧interrupted checkpointは保持基準欠損でfail closedしmigrationしない
 - preserved boundary: external feasibility gateの中断diffはmessage identity付きstash 2件へ可逆保全し、orphan process group終了済み
 - push: 禁止
 
 ## 現在の停止理由
 
-新ACTIVEの初回呼出は、install完了前の旧installed binaryへ`--stop` smokeを送った親orchestration誤りにより開始され、変更なしの`NEEDS_SOL_DECISION`で停止中。safe-stop本配置とsource一致、owner不在`--stop` fail-closed smokeは現在完了済み。
+external feasibility gateはcheckout隔離taskの割り込み前diffをmessage identity付きstash 2件へ保全した状態。current HEADの本配置確認後、復元対象とtask stateを再照合する。
 
 ## 次の親Codex操作
 
-誤起動callの調査文脈は新ACTIVE taskの設計調査として再利用可能なため、safe-stop本配置完了の親判断を同じworker sessionへ渡し、checkout/state隔離taskを継続する。pushしない。
+current HEADのfinal gate・本配置・source/installed一致・`--isolate` fail-closed smokeを確認し、保全済みexternal feasibility gateを同一task文脈で再開する。pushしない。

@@ -17,8 +17,11 @@ type AppConfig struct {
 	RepoHash  string
 	RepoShort string
 	StateBase string
-	PromptDir string
-	ClaudeBin string
+	// WorktreeBaseは--isolateが割り込みtask実行用checkout(git worktree)を作成するbase
+	// directory。repo配下へ置くと元checkoutのuntracked観測を汚すためstate home配下へ置く。
+	WorktreeBase string
+	PromptDir    string
+	ClaudeBin    string
 	// ClaudeConfigDirはClaude CLIのconfig dir(CLAUDE_CONFIG_DIR, 既定~/.claude)。
 	// user global memory(<dir>/CLAUDE.md, <dir>/rules/**)の除外path解決に使う。
 	ClaudeConfigDir string
@@ -41,6 +44,13 @@ type AppConfig struct {
 	TelemetryContent      bool
 }
 
+// RepoHashForはrepo root pathからstate分離key(repo hash)を計算する。Loadと同一規則を
+// --isolateが隔離先worktree側state dirへ適用するための対称な出口である。
+func RepoHashFor(root string) string {
+	sum := sha256.Sum256([]byte(root))
+	return hex.EncodeToString(sum[:])
+}
+
 func Load() (AppConfig, error) {
 	repoRoot, err := resolveRepoRoot()
 	if err != nil {
@@ -52,8 +62,7 @@ func Load() (AppConfig, error) {
 		return AppConfig{}, fmt.Errorf("ホームディレクトリを取得できません: %w", err)
 	}
 
-	repoHash := sha256.Sum256([]byte(repoRoot))
-	repoHashString := hex.EncodeToString(repoHash[:])
+	repoHashString := RepoHashFor(repoRoot)
 
 	stateHome := envOrDefault("GLM_WORKER_HOME", filepath.Join(home, ".glm-worker"))
 	promptDir := envOrDefault("GLM_WORKER_PROMPT_DIR", filepath.Join(home, ".codex", "glm-worker", "prompts"))
@@ -75,6 +84,7 @@ func Load() (AppConfig, error) {
 		RepoHash:               repoHashString,
 		RepoShort:              repoHashString[:12],
 		StateBase:              filepath.Join(stateHome, "sessions"),
+		WorktreeBase:           filepath.Join(stateHome, "worktrees"),
 		PromptDir:              promptDir,
 		CodexConfigDir:         codexConfigDir,
 		ClaudeBin:              envOrDefault("GLM_WORKER_CLAUDE_BIN", "claude"),

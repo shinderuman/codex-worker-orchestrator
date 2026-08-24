@@ -136,10 +136,10 @@ func TestStopBeforeCallSavesInterruptedWithoutCallRecord(t *testing.T) {
 // 実行し直し、新規session起動の前提(session未採番・未ready)を保ったまま完結する。
 // 採番済みsessionの--resume引数境界はrunner testが固定する。
 func TestResumeAfterPreFirstCallStopStartsFreshSession(t *testing.T) {
-	st := newStateStoreT(t)
+	repo := newRetentionGitRepo(t)
+	st := newGitStateStoreT(t, repo)
 	r := &scriptedRunner{steps: []runnerStep{{structured: implementedPacket("done")}}}
-	w, _ := newRecoveryWorkflowT(t, st, r)
-	w.temp = t.TempDir()
+	w := newGitWorkflowT(t, st, r, repo)
 	stop := attachStop(t, w)
 	stop.Request()
 
@@ -156,8 +156,7 @@ func TestResumeAfterPreFirstCallStopStartsFreshSession(t *testing.T) {
 		{structured: implementedPacket("resumed")},
 		{structured: passPacket()},
 	}}
-	resumeW, _ := newRecoveryWorkflowT(t, st, resumeRunner)
-	resumeW.temp = t.TempDir()
+	resumeW := newGitWorkflowT(t, st, resumeRunner, repo)
 	if err := resumeW.ExecuteResume(); err != nil {
 		t.Fatal(err)
 	}
@@ -228,7 +227,8 @@ func TestStopDuringBackoffSleepInterruptsWithoutCallRecord(t *testing.T) {
 
 // seedInterruptedCheckpointは--stop停止直後のstateを用意する。worker sessionは既に
 // 採番・resumable済みとし、resumeが同一sessionへ戻ることを検証可能にする。
-func seedInterruptedCheckpoint(t *testing.T, st *state.StateStore, sessionID string) {
+// repoRootにgit repositoryを渡すと停止時保持基準も停止保存と同じ形で固定する。
+func seedInterruptedCheckpoint(t *testing.T, st *state.StateStore, sessionID string, repoRoot string) {
 	t.Helper()
 	if err := st.Write("last-request", "req"); err != nil {
 		t.Fatal(err)
@@ -239,7 +239,7 @@ func seedInterruptedCheckpoint(t *testing.T, st *state.StateStore, sessionID str
 	if err := st.MarkReady(state.WorkerRole); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.SaveResumeCheckpoint(state.ResumeCheckpoint{
+	checkpoint := state.ResumeCheckpoint{
 		Stage:           state.ResumeStageWorker,
 		Phase:           "worker-new",
 		Role:            state.WorkerRole,
@@ -250,7 +250,16 @@ func seedInterruptedCheckpoint(t *testing.T, st *state.StateStore, sessionID str
 		Request:         "req",
 		ReportOnly:      false,
 		UserInterrupted: true,
-	}); err != nil {
+	}
+	if repoRoot != "" {
+		snapshot, snapErr := state.CaptureGitSnapshot(repoRoot)
+		files, filesErr := state.CaptureStopDirtyFiles(repoRoot)
+		if snapErr == nil && filesErr == nil {
+			checkpoint.StopGitSnapshot = &snapshot
+			checkpoint.StopDirtyFiles = files
+		}
+	}
+	if err := st.SaveResumeCheckpoint(checkpoint); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.SetTaskStatus(state.TaskStatusInterrupted); err != nil {
@@ -261,14 +270,14 @@ func seedInterruptedCheckpoint(t *testing.T, st *state.StateStore, sessionID str
 // TestResumeFromInterruptedCheckpointはinterrupted checkpointが--resumeで同一worker session
 // から再開し完結することを固定する。停止理由fieldは再開時に消え、statusは完結へ遷移する。
 func TestResumeFromInterruptedCheckpoint(t *testing.T) {
-	st := newStateStoreT(t)
-	seedInterruptedCheckpoint(t, st, "sess-interrupted-before")
+	repo := newRetentionGitRepo(t)
+	st := newGitStateStoreT(t, repo)
+	seedInterruptedCheckpoint(t, st, "sess-interrupted-before", repo)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: implementedPacket("resumed")},
 		{structured: passPacket()},
 	}}
-	w, _ := newRecoveryWorkflowT(t, st, r)
-	w.temp = t.TempDir()
+	w := newGitWorkflowT(t, st, r, repo)
 
 	if err := w.ExecuteResume(); err != nil {
 		t.Fatal(err)
@@ -288,7 +297,7 @@ func TestResumeFromInterruptedCheckpoint(t *testing.T) {
 // ことを固定する。中断stateを--resetなしで上書きさせない。
 func TestExecuteNewTaskRejectsInterruptedCheckpoint(t *testing.T) {
 	st := newStateStoreT(t)
-	seedInterruptedCheckpoint(t, st, "sess-interrupted-before")
+	seedInterruptedCheckpoint(t, st, "sess-interrupted-before", "")
 	r := &scriptedRunner{steps: []runnerStep{{structured: implementedPacket("done")}}}
 	w, _ := newRecoveryWorkflowT(t, st, r)
 	w.temp = t.TempDir()

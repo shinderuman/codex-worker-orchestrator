@@ -72,6 +72,13 @@ type ResumeCheckpoint struct {
 	// 旧binaryのcheckpointは2file形式の本文を持つため読込時に型不一致でfail closedし、旧形式の
 	// 停止期間変化を機械識別できないまま承認しない。
 	StopParentFiles *ParentFileStates `json:"stop_parent_files,omitempty"`
+	// StopGitSnapshotは--stop停止保存時点の3軸snapshot。UserInterrupted resumeが停止期間中の
+	// 元checkout保持を照合する基準の一部で、取得失敗時はnilのまま残りresume側でfail closedする。
+	StopGitSnapshot *GitSnapshot `json:"stop_git_snapshot,omitempty"`
+	// StopDirtyFilesは--stop停止時点の親管理metadata除外dirty/untracked保持基準。nilは停止時
+	// 固定なし(旧checkpoint・取得失敗)を意味し、UserInterrupted resumeはfail closedする。
+	// 空列は「dirty fileなし」としてnilと区別するためomitemptyを付けない。
+	StopDirtyFiles []StopDirtyFile `json:"stop_dirty_files"`
 }
 
 func (s *StateStore) SaveResumeCheckpoint(checkpoint ResumeCheckpoint) error {

@@ -57,6 +57,13 @@ func AttachStateStore(config config.AppConfig) *StateStore {
 	return &StateStore{dir: filepath.Join(config.StateBase, config.RepoHash)}
 }
 
+// AttachSiblingStoreは同じStateBase配下の別repo hashのstateディレクトリへ書き込まず
+// 参照するだけのstoreを返す。--isolateの出自記録照合など、同一state home内の対repo記録を
+// 読むために使う。ディレクトリ不存在は読み込み側のerrorとして現れる。
+func (s *StateStore) AttachSiblingStore(repoHash string) *StateStore {
+	return &StateStore{dir: filepath.Join(filepath.Dir(s.dir), repoHash)}
+}
+
 func (s *StateStore) Path(name string) string {
 	return filepath.Join(s.dir, name)
 }
@@ -123,6 +130,9 @@ func (s *StateStore) StartNewTask() (string, error) {
 		"task.status",
 		"isolation.policy",
 		"baseline-head",
+		stopWorktreePatchFile,
+		stopIndexPatchFile,
+		isolationStateFile,
 		workerEndSnapshotFile,
 		reviewStartSnapshotFile,
 		reportOnlyStartSnapshotFile,
@@ -167,6 +177,10 @@ func taskStateFileNames() []string {
 		"baseline-head",
 		"baseline-worktree.patch",
 		"baseline-index.patch",
+		stopWorktreePatchFile,
+		stopIndexPatchFile,
+		isolationStateFile,
+		isolationOriginStateFile,
 		resumeStateFile,
 		workerEndSnapshotFile,
 		reviewStartSnapshotFile,

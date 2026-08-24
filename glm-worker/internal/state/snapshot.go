@@ -164,17 +164,17 @@ func captureSnapshotWorktreeDigest(repoRoot string) (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
-	excluding, err := captureWorktreeDigestVariant(repoRoot, parentFileExcludePathspecs())
+	excluding, err := captureWorktreeDigestVariant(repoRoot, ParentExcludePathspecs())
 	if err != nil {
 		return "", "", err
 	}
 	return full, excluding, nil
 }
 
-// parentFileExcludePathspecsは親管理metadata集合だけをgit列挙から外すanchored exclude pathspec。
+// ParentExcludePathspecsは親管理metadata集合だけをgit列挙から外すanchored exclude pathspec。
 // :(top)でrepository root直下の同名列とIMPLEMENTATION_TASKS/配下だけを除外し、subdirectory配下の
 // 同名列は検出対象に残す。IMPLEMENTATION_TASKSは directory pathspec として配下全fileへ一致する。
-func parentFileExcludePathspecs() []string {
+func ParentExcludePathspecs() []string {
 	specs := make([]string, 0, len(parentManagedFiles)+1)
 	for _, name := range parentManagedFiles {
 		specs = append(specs, ":(top,exclude)"+name)

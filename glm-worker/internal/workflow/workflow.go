@@ -319,6 +319,15 @@ func (w *Workflow) ExecuteResume() error {
 			return &WorkerError{Message: fmt.Sprintf("unknown resume stage: %s", checkpoint.Stage)}
 		}
 
+		// --stop停止taskのresumeは、割り込みtask隔離実行の有無に関わらず停止期間中の元checkout
+		// 保持をまず機械照合する。保持基準からの逸脱はstatus変更・checkpoint破棄をせずfail closedに
+		// 終端するため、親Codexが元checkoutを停止時内容へ戻せば同じ--resumeで再試行できる。
+		if checkpoint.UserInterrupted {
+			if err := w.verifyInterruptedRetention(checkpoint); err != nil {
+				return err
+			}
+		}
+
 		previousCheckpoint := checkpoint
 		if err := w.state.SetTaskStatus(state.TaskStatusActive); err != nil {
 			return err
@@ -1443,6 +1452,19 @@ func (w *Workflow) persistInterruptedStop(checkpoint state.ResumeCheckpoint, cau
 	// 停止保存直前の親管理metadata集合状態を固定する。review resumeのsnapshot例外が
 	// 停止期間中の親Codex更新だけを承認する基準として使う。
 	checkpoint.StopParentFiles = captureStopParentFiles(w.config.RepoRoot)
+	// 停止時点の元checkout保持基準を固定する。UserInterrupted resumeがこの値へ現在状態を
+	// 照合し、割り込みtask実行期間中に元taskのstate/working treeが保持されたままかを機械検証
+	// する。取得失敗時はnilのまま残し、resume側で保持確認不能としてfail closedする。停止自体は
+	// 保護対象のrepo状態をこれ以上変化させないため、この固定を優先して完了させる。
+	if snapshot, snapErr := state.CaptureGitSnapshot(w.config.RepoRoot); snapErr == nil {
+		if files, filesErr := state.CaptureStopDirtyFiles(w.config.RepoRoot); filesErr == nil {
+			checkpoint.StopGitSnapshot = &snapshot
+			checkpoint.StopDirtyFiles = files
+		}
+	}
+	// 停止時点のtracked diffを親Codexのconflict recovery資材として残す(untracked本文は
+	// 含まれない)。保持確認自体はcheckpoint側の基準で行うため、この保存の失敗は停止を失敗させない。
+	_ = state.CaptureStopPatches(w.config, w.state)
 	// session ID未採番の初回call前停止でreadyだけ作ると、resume時の新規採番UUIDが
 	// ready付きで返り、存在しないsessionへの--resume起動になってしまう。採番済み
 	// sessionだけをmarkし、未採番ならresumeの初回callで新規sessionを起動させる。

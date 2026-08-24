@@ -75,6 +75,30 @@ type statusOutput struct {
 	ResumeAvailable     bool                      `json:"resume_available"`
 	Telemetry           *string                   `json:"telemetry"`
 	SessionAging        []state.SessionAging      `json:"session_aging"`
+	// Isolationは元repo側の隔離記録(--isolate)。現在taskの割り込み実行checkoutを指し、
+	// 統合判断の機械確認に使う。未使用時はfield自体を出さない。
+	Isolation *statusIsolation `json:"isolation,omitempty"`
+	// IsolationOriginは隔離先worktree側の出自記録。隔離先で--statusを実行した親Codexが
+	// 元task・復帰対象を取り違えないための対称な確認である。
+	IsolationOrigin *statusIsolationOrigin `json:"isolation_origin,omitempty"`
+}
+
+type statusIsolation struct {
+	IsolationID string `json:"isolation_id"`
+	Worktree    string `json:"worktree"`
+	Branch      string `json:"branch"`
+	TaskID      string `json:"origin_task_id"`
+	RepoRoot    string `json:"origin_repo_root"`
+	Head        string `json:"origin_head"`
+	CreatedAt   string `json:"created_at"`
+}
+
+type statusIsolationOrigin struct {
+	IsolationID    string `json:"isolation_id"`
+	OriginRepoRoot string `json:"origin_repo_root"`
+	OriginTaskID   string `json:"origin_task_id"`
+	Branch         string `json:"branch"`
+	CreatedAt      string `json:"created_at"`
 }
 
 type statusProbes struct {
@@ -132,9 +156,35 @@ func buildStatusOutput(st *state.StateStore, taskID string, logs []state.ModelCa
 
 	fillStatusTaskDetail(st, taskID, &output)
 	output.ResumeAvailable = fillStatusCheckpoint(st, &output)
+	fillStatusIsolation(st, &output)
 	output.Probes = statusProbesDetail(logs, time.Now())
 	fillStatusTelemetry(taskID, logErr, logs, &output)
 	return output
+}
+
+// fillStatusIsolationは元repo側・隔離先側それぞれの隔離記録を読める側だけへ出す。
+// 記録不在・読込失敗は観測できないためfield欠落のままとし、推測しない。
+func fillStatusIsolation(st *state.StateStore, output *statusOutput) {
+	if record, err := st.LoadIsolationRecord(); err == nil {
+		output.Isolation = &statusIsolation{
+			IsolationID: record.IsolationID,
+			Worktree:    record.Worktree,
+			Branch:      record.Branch,
+			TaskID:      record.OriginTaskID,
+			RepoRoot:    record.OriginRepoRoot,
+			Head:        record.OriginHead,
+			CreatedAt:   record.CreatedAt,
+		}
+	}
+	if origin, err := st.LoadIsolationOrigin(); err == nil {
+		output.IsolationOrigin = &statusIsolationOrigin{
+			IsolationID:    origin.IsolationID,
+			OriginRepoRoot: origin.OriginRepoRoot,
+			OriginTaskID:   origin.OriginTaskID,
+			Branch:         origin.Branch,
+			CreatedAt:      origin.CreatedAt,
+		}
+	}
 }
 
 // lockStatePtrはlock実保持の外部enumへ対応付ける。probe不能(LockUnknown)は

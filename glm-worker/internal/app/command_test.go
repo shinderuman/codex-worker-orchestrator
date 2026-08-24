@@ -14,6 +14,8 @@ func TestParseCommandModes(t *testing.T) {
 	}{
 		{name: "new task", args: []string{"調査して", "実装する"}, mode: ModeNewTask, payload: "調査して 実装する"},
 		{name: "resume", args: []string{"--resume"}, mode: ModeResume},
+		{name: "stop", args: []string{"--stop"}, mode: ModeStop},
+		{name: "isolate", args: []string{"--isolate"}, mode: ModeIsolate},
 		{name: "status", args: []string{"--status"}, mode: ModeStatus},
 		{name: "stats", args: []string{"--stats"}, mode: ModeStats},
 		{name: "reset", args: []string{"--reset"}, mode: ModeReset},
@@ -133,6 +135,8 @@ func TestParseCommandRejectsInvalidArguments(t *testing.T) {
 		{"--decision", "   "},
 		{"--fix"},
 		{"--resume", "extra"},
+		{"--stop", "extra"},
+		{"--isolate", "extra"},
 		{"--status", "extra"},
 		{"--stats", "extra"},
 		{"--reset", "extra"},

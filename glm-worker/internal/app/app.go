@@ -27,6 +27,7 @@ const (
 	ModeAccept
 	ModeResume
 	ModeStop
+	ModeIsolate
 	ModeStatus
 	ModeWatch
 	ModeTimeline
@@ -86,7 +87,7 @@ func usageError(format string, args ...any) *UsageError {
 
 func ParseCommand(args []string) (Command, error) {
 	if len(args) == 0 {
-		return Command{}, usageError("usage: glm-worker <instruction> | --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix-stdin <payload-bytes> [--sha256 <hex>] %s | --accept | --resume | --stop | --status | --watch [--verbose] | --timeline [task-id] | --convergence [task-id] | --stats | --reset | --eval-ab <run-dir>", fixOriginUsage)
+		return Command{}, usageError("usage: glm-worker <instruction> | --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix-stdin <payload-bytes> [--sha256 <hex>] %s | --accept | --resume | --stop | --isolate | --status | --watch [--verbose] | --timeline [task-id] | --convergence [task-id] | --stats | --reset | --eval-ab <run-dir>", fixOriginUsage)
 	}
 
 	switch args[0] {
@@ -113,6 +114,11 @@ func ParseCommand(args []string) (Command, error) {
 			return Command{}, usageError("usage: glm-worker --stop")
 		}
 		return Command{Mode: ModeStop}, nil
+	case "--isolate":
+		if len(args) != 1 {
+			return Command{}, usageError("usage: glm-worker --isolate")
+		}
+		return Command{Mode: ModeIsolate}, nil
 	case "--status":
 		if len(args) != 1 {
 			return Command{}, usageError("usage: glm-worker --status")
@@ -384,6 +390,12 @@ func Execute(cmd Command, cfg config.AppConfig, rf RunnerFactory, stdout, stderr
 
 	if cmd.Mode == ModeAccept {
 		return parentAccept(st, stdout)
+	}
+
+	// --isolateはrepo lock保有下でstateの前提検証だけを行う隔離操作であり、model呼出と
+	// 停止endpointの対象にならない。endpointを開く前に処理する。
+	if cmd.Mode == ModeIsolate {
+		return isolateInterruptedTask(st, cfg, stdout)
 	}
 
 	// workflow実行modeはrepo lock保有中だけ単一目的stop endpointを開く。endpoint接続と

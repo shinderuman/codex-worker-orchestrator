@@ -347,6 +347,16 @@ hold-with-tool)
 	done
 	exit 1
 	;;
+dirty-hold)
+	# 停止保持基準の観測対象として未commit作業を残してからholdする。
+	printf 'stub uncommitted work\n' > uncommitted.txt
+	waits=0
+	while [ ! -f "$dir/release" ] && [ "$waits" -lt 3000 ]; do
+		sleep 0.1
+		waits=$((waits + 1))
+	done
+	exit 1
+	;;
 reviewer-hold)
 	role=worker
 	for arg in "$@"; do
