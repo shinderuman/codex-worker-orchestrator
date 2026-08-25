@@ -1596,19 +1596,22 @@ func (w *Workflow) persistInterruptedStop(checkpoint state.ResumeCheckpoint, cau
 	}
 	_ = w.state.SecureArtifactDir()
 	taskID, _ := w.state.TaskID()
-	if w.stop != nil {
-		w.stop.NotifyInterrupted(taskID)
-	}
-	stopped := &runner.InterruptedCallError{
-		Phase:    checkpoint.Phase,
-		TaskID:   taskID,
-		RepoRoot: w.config.RepoRoot,
-	}
+	// 残存process group観測は停止ackの安全authorityから除外するため、通知前に診断を確定させる。
+	cleanupWarning := ""
 	if cause != nil {
 		var interrupted *runner.InterruptedCallError
 		if errors.As(cause, &interrupted) {
-			stopped.CleanupWarning = interrupted.CleanupWarning
+			cleanupWarning = interrupted.CleanupWarning
 		}
+	}
+	if w.stop != nil {
+		w.stop.NotifyInterrupted(taskID, cleanupWarning)
+	}
+	stopped := &runner.InterruptedCallError{
+		Phase:          checkpoint.Phase,
+		TaskID:         taskID,
+		RepoRoot:       w.config.RepoRoot,
+		CleanupWarning: cleanupWarning,
 	}
 	return stopped
 }

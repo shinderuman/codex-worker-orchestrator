@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
@@ -56,12 +57,21 @@ func (e *StopEndpointError) Error() string {
 	return "stop endpoint did not acknowledge the stop request"
 }
 
+// stop要求ackのresult集合。interrupted_cleanup_residualはinterrupted checkpoint保存済み
+// だが停止後のprocess group残存が観測された状態で、group非残存を確認した安全停止authority
+// とは別契約である。
+const (
+	stopResultInterrupted         = "interrupted"
+	stopResultInterruptedResidual = "interrupted_cleanup_residual"
+)
+
 // stopOutputは--stop成功時のmachine contract。owner側ackの結果をそのまま載せる。
 type stopOutput struct {
 	Result          string  `json:"result"`
 	TaskID          *string `json:"task_id"`
 	TaskStatus      *string `json:"task_status"`
 	ResumeAvailable bool    `json:"resume_available"`
+	CleanupWarning  string  `json:"cleanup_warning,omitempty"`
 }
 
 // stopEndpointResponseはowner側ackの1行JSON。
@@ -70,6 +80,7 @@ type stopEndpointResponse struct {
 	TaskID          *string `json:"task_id"`
 	TaskStatus      *string `json:"task_status"`
 	ResumeAvailable bool    `json:"resume_available"`
+	CleanupWarning  string  `json:"cleanup_warning,omitempty"`
 }
 
 // stopEndpointPathは--stop endpointのunix socket file path。第一候補はstate dir配下の
@@ -117,6 +128,7 @@ func requestStop(cfg config.AppConfig, stdout io.Writer) error {
 		TaskID:          response.TaskID,
 		TaskStatus:      response.TaskStatus,
 		ResumeAvailable: response.ResumeAvailable,
+		CleanupWarning:  response.CleanupWarning,
 	})
 }
 
@@ -135,7 +147,7 @@ func readStopEndpointResponse(conn net.Conn) (stopEndpointResponse, error) {
 		return stopEndpointResponse{}, err
 	}
 	switch response.Result {
-	case "interrupted", "terminal", "exited":
+	case stopResultInterrupted, stopResultInterruptedResidual, "terminal", "exited":
 		return response, nil
 	default:
 		return stopEndpointResponse{}, fmt.Errorf("stop endpoint returned unknown result: %q", response.Result)
@@ -150,6 +162,10 @@ type stopEndpointServer struct {
 	st         *state.StateStore
 	path       string
 	done       chan struct{}
+	// handlersは受理済みconnectionのhandler群。Closeはaccept loop終了後にこれらのack
+	// 書込み完了を待ってから戻り、呼出元のprocess終了でin-flight requestへのackが失われる
+	// のを防ぐ。
+	handlers sync.WaitGroup
 }
 
 // startStopEndpointはendpointを開いてaccept loopを始める。repo lock保有者は対象
@@ -185,11 +201,14 @@ func (s *stopEndpointServer) acceptLoop() {
 		if err != nil {
 			return
 		}
+		// Addはaccept loop内だけなので、Closeが<-doneでloop終了を観測した後はWaitと競合しない。
+		s.handlers.Add(1)
 		go s.handleConn(conn)
 	}
 }
 
 func (s *stopEndpointServer) handleConn(conn net.Conn) {
+	defer s.handlers.Done()
 	defer conn.Close()
 	_ = conn.SetDeadline(time.Now().Add(stopRequestReadTimeout))
 	reader := bufio.NewReader(io.LimitReader(conn, stopResponseLimit+1))
@@ -207,15 +226,22 @@ func (s *stopEndpointServer) handleConn(conn net.Conn) {
 }
 
 // buildResponseは停止確定結果をackへ組み立てる。中断時はinterrupted checkpoint保存済みの
-// task IDとstatusで応答し、自然終端時は現在のauthoritative statusで応答する。
+// task IDとstatusで応答するが、process group残存が観測されているときはgroup非残存確認後の
+// 安全停止ack(result=interrupted)とは分離したtyped結果で返す。自然終端時は現在の
+// authoritative statusで応答する。
 func (s *stopEndpointServer) buildResponse(outcome runner.StopOutcome) stopEndpointResponse {
 	if outcome.Interrupted {
 		status := "interrupted"
+		result := stopResultInterrupted
+		if outcome.CleanupWarning != "" {
+			result = stopResultInterruptedResidual
+		}
 		return stopEndpointResponse{
-			Result:          "interrupted",
+			Result:          result,
 			TaskID:          stringPtr(outcome.TaskID),
 			TaskStatus:      &status,
 			ResumeAvailable: true,
+			CleanupWarning:  outcome.CleanupWarning,
 		}
 	}
 	response := stopEndpointResponse{Result: stopFinishedResult(s.st.TaskStatus())}
@@ -261,10 +287,11 @@ func (s *stopEndpointServer) writeResponse(conn net.Conn, response stopEndpointR
 }
 
 // Closeはendpointを閉じる。停止が確定しないまま残った要求へは現在状態で終端ackを返し、
-// socket fileを除去する。
+// 受理済み要求へのack書込み完了を待ってからsocket fileを除去する。
 func (s *stopEndpointServer) Close() {
 	s.controller.NotifyFinished()
 	_ = s.listener.Close()
 	<-s.done
+	s.handlers.Wait()
 	_ = os.Remove(s.path)
 }

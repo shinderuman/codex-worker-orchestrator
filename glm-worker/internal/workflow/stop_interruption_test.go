@@ -91,6 +91,44 @@ func TestStopDuringRunningCallSavesInterruptedState(t *testing.T) {
 	}
 }
 
+// TestStopCleanupResidualCarriesWarningIntoStopOutcomeは停止後のprocess group残存診断
+// (terminateProcessGroupが返すwarningを載せたInterruptedCallError)がinterrupted保存を
+// 経てstop outcomeへ渡ることを固定する。endpointはこのoutcome値で安全停止ackと残存時の
+// typed outcomeを分けるため、ここでの受け渡しが失われると残存時も安全停止ackへ戻る。
+// macOSのkill(-pgid,0)はzombieのみのgroupをEPERM=非残存として扱い、KILL後のlive残存は
+// userspaceから決定論的に作れないため、残存観測はrunnerが返すerror値で注入する。
+func TestStopCleanupResidualCarriesWarningIntoStopOutcome(t *testing.T) {
+	st := newStateStoreT(t)
+	warning := "process group 424242に残存processがあります"
+	r := &scriptedRunner{steps: []runnerStep{{
+		result: runner.RunResult{SessionID: "test-session"},
+		runErr: &runner.InterruptedCallError{Phase: "worker-new", CleanupWarning: warning},
+	}}}
+	w, _ := newRecoveryWorkflowT(t, st, r)
+	w.temp = t.TempDir()
+	stop := attachStop(t, w)
+	r.onRun = func() { stop.Request() }
+	if err := st.Write("worker.id", "test-session"); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := w.runModel(workerCheckpoint())
+	var stopped *runner.InterruptedCallError
+	if !errors.As(err, &stopped) {
+		t.Fatalf("InterruptedCallErrorを期待: %v", err)
+	}
+	if stopped.CleanupWarning != warning {
+		t.Fatalf("中断errorの残存診断 = %q want %q", stopped.CleanupWarning, warning)
+	}
+	outcome := stop.WaitOutcome()
+	if !outcome.Interrupted || outcome.TaskID != stopped.TaskID || outcome.CleanupWarning != warning {
+		t.Fatalf("残存診断を載せたstop outcome = %#v", outcome)
+	}
+	if st.TaskStatus() != state.TaskStatusInterrupted {
+		t.Fatalf("task status = %s want interrupted", st.TaskStatus())
+	}
+}
+
 // TestStopBeforeCallSavesInterruptedWithoutCallRecordは呼出前の--stop観測を固定する:
 // childを起動せず、call記録を作らない(event記録だけ)、checkpoint・statusは中断状態へ保存する。
 func TestStopBeforeCallSavesInterruptedWithoutCallRecord(t *testing.T) {

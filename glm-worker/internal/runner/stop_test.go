@@ -32,7 +32,7 @@ func TestStopControllerRequestIsIdempotent(t *testing.T) {
 
 func TestStopControllerOutcomeFirstNotifyWins(t *testing.T) {
 	controller := NewStopController()
-	controller.NotifyInterrupted("task-1")
+	controller.NotifyInterrupted("task-1", "")
 	controller.NotifyFinished()
 	outcome := controller.WaitOutcome()
 	if !outcome.Interrupted || outcome.TaskID != "task-1" {
@@ -63,7 +63,7 @@ func TestStopControllerConcurrentWaitersShareOutcome(t *testing.T) {
 	}
 	// 全waiterの待機入りを確実にしてから確定する。
 	time.Sleep(50 * time.Millisecond)
-	controller.NotifyInterrupted("task-broadcast-1")
+	controller.NotifyInterrupted("task-broadcast-1", "")
 	controller.NotifyFinished()
 
 	want := StopOutcome{Interrupted: true, TaskID: "task-broadcast-1"}

@@ -254,6 +254,40 @@ func TestResumeInterruptedDirtyDriftFailsClosed(t *testing.T) {
 	}
 }
 
+// TestResumeInterruptedExecBitDriftFailsClosedは停止時に保持したdirty fileの内容byteが
+// 同じままexecutable bitだけ変わった状態をfail closedすることを固定する。保持識別子は
+// type・modeを含むlossless比較に載っている。
+func TestResumeInterruptedExecBitDriftFailsClosed(t *testing.T) {
+	repo := newRetentionGitRepo(t)
+	if err := os.WriteFile(filepath.Join(repo, "tracked.txt"), []byte("作業中\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	st := newGitStateStoreT(t, repo)
+	stopRunner := &scriptedRunner{steps: []runnerStep{{
+		result: runner.RunResult{SessionID: "sess-retention"},
+		runErr: &runner.InterruptedCallError{Phase: "worker-new"},
+	}}}
+	w := newGitWorkflowT(t, st, stopRunner, repo)
+	stopWorkflowInCall(t, w, st, workerCheckpoint())
+
+	if err := os.Chmod(filepath.Join(repo, "tracked.txt"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	resumeRunner := &scriptedRunner{steps: []runnerStep{{structured: implementedPacket("resumed")}}}
+	resumeW := newGitWorkflowT(t, st, resumeRunner, repo)
+	err := resumeW.ExecuteResume()
+	var workerErr *WorkerError
+	if !errors.As(err, &workerErr) {
+		t.Fatalf("executable bit変化のresumeがWorkerErrorになりません: %v", err)
+	}
+	if !strings.Contains(workerErr.Message, "tracked.txt(内容変化)") {
+		t.Fatalf("fail closed理由がexecutable bit変化を指していません: %s", workerErr.Message)
+	}
+	if st.TaskStatus() != state.TaskStatusInterrupted {
+		t.Fatalf("fail closed後のtask status = %s want interrupted", st.TaskStatus())
+	}
+}
+
 // TestResumeInterruptedForeignDirtyFailsClosedは停止後に現れた新規の非親管理dirty fileを
 // fail closedすることを固定する。
 func TestResumeInterruptedForeignDirtyFailsClosed(t *testing.T) {
@@ -398,6 +432,23 @@ func (f *isolationGateFixture) commitOnBranchAndMerge(t *testing.T, branch strin
 	runRetentionGit(t, f.repo, "merge", "--quiet", "--no-edit", branch)
 }
 
+// commitSourceChangeOnBranchAndMergeはbranchへ非親管理fileの実変更をcommitして元repoへ
+// mergeする。隔離成果が内容diffを運ぶ主経路で、統合後HEADはbranch tipと一致する。
+func (f *isolationGateFixture) commitSourceChangeOnBranchAndMerge(t *testing.T, branch string) {
+	t.Helper()
+	runRetentionGit(t, f.repo, "checkout", "-q", "-b", branch)
+	if err := os.WriteFile(filepath.Join(f.repo, "isolation-result.txt"), []byte("隔離成果\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runRetentionGit(t, f.repo, "add", "isolation-result.txt")
+	runRetentionGit(t, f.repo, "commit", "-q", "-m", "isolation task result")
+	runRetentionGit(t, f.repo, "checkout", "-q", "-")
+	runRetentionGit(t, f.repo, "merge", "--quiet", "--no-edit", branch)
+	if got := gitRetentionOutput(t, f.repo, "diff", "--name-only", f.stopHead, "HEAD"); got != "isolation-result.txt" {
+		t.Fatalf("統合後の停止時HEAD差 = %q want isolation-result.txtのみ", got)
+	}
+}
+
 // advanceHeadWithoutBranchはbranchを経由しないHEAD前進(手動commit)を作る。
 func (f *isolationGateFixture) advanceHeadWithoutBranch(t *testing.T) {
 	t.Helper()
@@ -483,6 +534,30 @@ func TestResumeInterruptedIsolatedIntegrationPasses(t *testing.T) {
 	}
 }
 
+// TestResumeInterruptedIsolatedSourceChangeIntegrationPassesは隔離branch自身が非親管理
+// source fileの変更を載せて通常mergeされたHEAD前進を承認する主経路を固定する。既存の
+// 同tree commit fixtureはbranch内容diffを運ばないため、統合後gateの比較基準を停止時HEADへ
+// 崩すrefactorをこのtestだけが検出する。
+func TestResumeInterruptedIsolatedSourceChangeIntegrationPasses(t *testing.T) {
+	f := stopTaskForIsolationGate(t)
+	branch := "glm-worker/isolation/isogate10"
+	f.commitSourceChangeOnBranchAndMerge(t, branch)
+	f.saveOrigin(t, f.taskID, branch)
+	f.saveRecord(t, branch, f.taskID, f.stopHead)
+	if f.checkpoint.StopDirtyFiles == nil {
+		t.Fatal("停止時基準がありません")
+	}
+
+	resumeRunner := &scriptedRunner{steps: []runnerStep{
+		{structured: implementedPacket("resumed")},
+		{structured: passPacket()},
+	}}
+	resumeW := newGitWorkflowT(t, f.st, resumeRunner, f.repo)
+	if err := resumeW.ExecuteResume(); err != nil {
+		t.Fatalf("実変更を載せた隔離branch統合後のresumeが保持照合を通過しません: %v", err)
+	}
+}
+
 // TestResumeInterruptedIsolationAfterParentMetadataCommitPassesは停止→隔離の間の
 // 親管理metadata commitを挟んだ隔離(作成HEADが停止時HEADの子孫)を承認することを固定する。
 func TestResumeInterruptedIsolationAfterParentMetadataCommitPasses(t *testing.T) {
@@ -509,6 +584,43 @@ func TestResumeInterruptedIsolationAfterParentMetadataCommitPasses(t *testing.T)
 	resumeW := newGitWorkflowT(t, f.st, resumeRunner, f.repo)
 	if err := resumeW.ExecuteResume(); err != nil {
 		t.Fatalf("親metadata commitを挟んだ隔離統合後のresumeが通りません: %v", err)
+	}
+}
+
+// TestResumeInterruptedIsolationPostIntegrationNonParentCommitFailsClosedは実質検証を
+// 通る隔離branch統合の後で、branch経由ではない非親管理source commitが追加されたHEAD前進を
+// fail closedすることを固定する。tipが現在HEADの祖先であるだけで承認はしない。
+func TestResumeInterruptedIsolationPostIntegrationNonParentCommitFailsClosed(t *testing.T) {
+	f := stopTaskForIsolationGate(t)
+	branch := "glm-worker/isolation/isogate8"
+	f.commitOnBranchAndMerge(t, branch)
+	f.saveOrigin(t, f.taskID, branch)
+	f.saveRecord(t, branch, f.taskID, f.stopHead)
+	f.advanceHeadWithoutBranch(t)
+	expectRetentionFailure(t, f, "統合後に親管理外file")
+}
+
+// TestResumeInterruptedIsolationPostIntegrationParentMetadataCommitPassesは隔離branch統合後に
+// 追加された前進が親管理metadata commitだけならresumeを承認することを固定する。
+func TestResumeInterruptedIsolationPostIntegrationParentMetadataCommitPasses(t *testing.T) {
+	f := stopTaskForIsolationGate(t)
+	branch := "glm-worker/isolation/isogate9"
+	f.commitOnBranchAndMerge(t, branch)
+	f.saveOrigin(t, f.taskID, branch)
+	f.saveRecord(t, branch, f.taskID, f.stopHead)
+	if err := os.WriteFile(filepath.Join(f.repo, "IMPLEMENTATION_PLAN.local.md"), []byte("plan v2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runRetentionGit(t, f.repo, "add", "IMPLEMENTATION_PLAN.local.md")
+	runRetentionGit(t, f.repo, "commit", "-q", "-m", "parent metadata update")
+
+	resumeRunner := &scriptedRunner{steps: []runnerStep{
+		{structured: implementedPacket("resumed")},
+		{structured: passPacket()},
+	}}
+	resumeW := newGitWorkflowT(t, f.st, resumeRunner, f.repo)
+	if err := resumeW.ExecuteResume(); err != nil {
+		t.Fatalf("統合後の親管理metadata commitを挟んだresumeが通りません: %v", err)
 	}
 }
 

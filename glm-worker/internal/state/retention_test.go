@@ -2,6 +2,7 @@ package state
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -180,6 +181,24 @@ func TestDescribeStopDirtyDiffScenarios(t *testing.T) {
 			current: []StopDirtyFile{{Path: "a.txt", IndexSHA: "i2", WorktreeSHA: "w1"}},
 			want:    "a.txt(内容変化)",
 		},
+		{
+			name:    "lossless識別子の一致",
+			stopped: []StopDirtyFile{{Path: "a.txt", IndexSHA: "i1", WorktreeSHA: "w1", IndexIdentity: "ii1", WorktreeIdentity: "wi1"}},
+			current: []StopDirtyFile{{Path: "a.txt", IndexSHA: "i1", WorktreeSHA: "w1", IndexIdentity: "ii1", WorktreeIdentity: "wi1"}},
+			want:    "",
+		},
+		{
+			name:    "lossless識別子だけの変化(mode・type・stage差)",
+			stopped: []StopDirtyFile{{Path: "a.txt", IndexSHA: "i1", WorktreeSHA: "w1", IndexIdentity: "ii1", WorktreeIdentity: "wi1"}},
+			current: []StopDirtyFile{{Path: "a.txt", IndexSHA: "i1", WorktreeSHA: "w1", IndexIdentity: "ii1", WorktreeIdentity: "wi2"}},
+			want:    "a.txt(内容変化)",
+		},
+		{
+			name:    "lossless識別子を持つ停止基準とlegacyだけの現在",
+			stopped: []StopDirtyFile{{Path: "a.txt", IndexSHA: "i1", WorktreeSHA: "w1", IndexIdentity: "ii1", WorktreeIdentity: "wi1"}},
+			current: []StopDirtyFile{{Path: "a.txt", IndexSHA: "i1", WorktreeSHA: "w1"}},
+			want:    "a.txt(内容変化)",
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -187,6 +206,141 @@ func TestDescribeStopDirtyDiffScenarios(t *testing.T) {
 				t.Fatalf("差異 = %q want %q", got, test.want)
 			}
 		})
+	}
+}
+
+// gitRetentionOutputWithStdinはstdin付きgit commandを実行してstdoutをtrimして返す。
+// conflict index構築のupdate-index --index-infoとblob登録のhash-objectで使う。
+func gitRetentionOutputWithStdin(t *testing.T, dir string, stdin string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	cmd.Stdin = strings.NewReader(stdin)
+	cmd.Env = append(os.Environ(),
+		"GIT_AUTHOR_NAME=test", "GIT_AUTHOR_EMAIL=test@example.com",
+		"GIT_COMMITTER_NAME=test", "GIT_COMMITTER_EMAIL=test@example.com",
+	)
+	output, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("git %s in %s: %v: %s", strings.Join(args, " "), dir, err, output)
+	}
+	return strings.TrimSpace(string(output))
+}
+
+// stopDirtyFileForは保持列挙から指定pathの識別子を取り出す。
+func stopDirtyFileFor(t *testing.T, files []StopDirtyFile, path string) StopDirtyFile {
+	t.Helper()
+	for _, file := range files {
+		if file.Path == path {
+			return file
+		}
+	}
+	t.Fatalf("保持列挙に%sがありません: %#v", path, files)
+	return StopDirtyFile{}
+}
+
+// TestCaptureStopDirtyFilesExecBitDriftDetectedはworktree内容が同じままexecutable bitだけ
+// 変わったdirty fileを保持変化として検出することを固定する。legacyの内容hashだけでは
+// 検出できない軸である。
+func TestCaptureStopDirtyFilesExecBitDriftDetected(t *testing.T) {
+	repo := initCommittedRepo(t)
+	if err := os.WriteFile(filepath.Join(repo, "tracked.txt"), []byte("modified\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stopped, err := CaptureStopDirtyFiles(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(filepath.Join(repo, "tracked.txt"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	current, err := CaptureStopDirtyFiles(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	before := stopDirtyFileFor(t, stopped, "tracked.txt")
+	after := stopDirtyFileFor(t, current, "tracked.txt")
+	if before.WorktreeSHA != after.WorktreeSHA || before.IndexSHA != after.IndexSHA {
+		t.Fatalf("chmodだけの変化でlegacy hashが変わっています: %#v -> %#v", before, after)
+	}
+	if diff := DescribeStopDirtyDiff(stopped, current); !strings.Contains(diff, "tracked.txt(内容変化)") {
+		t.Fatalf("executable bit変化を検出していません: %q %#v -> %#v", diff, before, after)
+	}
+}
+
+// TestCaptureStopDirtyFilesTypeChangeDriftDetectedはregular fileと同じbyte列のsymlink targetへ
+// 置き換わったdirty fileを保持変化として検出することを固定する。legacyの内容hashだけでは
+// type変更を区別できない軸である。
+func TestCaptureStopDirtyFilesTypeChangeDriftDetected(t *testing.T) {
+	repo := initCommittedRepo(t)
+	if err := os.WriteFile(filepath.Join(repo, "tracked.txt"), []byte("link-target"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stopped, err := CaptureStopDirtyFiles(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(repo, "tracked.txt")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("link-target", filepath.Join(repo, "tracked.txt")); err != nil {
+		t.Fatal(err)
+	}
+	current, err := CaptureStopDirtyFiles(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	before := stopDirtyFileFor(t, stopped, "tracked.txt")
+	after := stopDirtyFileFor(t, current, "tracked.txt")
+	if before.WorktreeSHA != after.WorktreeSHA {
+		t.Fatalf("同じbyte列のはずのworktree hashが変わっています: %#v -> %#v", before, after)
+	}
+	if diff := DescribeStopDirtyDiff(stopped, current); !strings.Contains(diff, "tracked.txt(内容変化)") {
+		t.Fatalf("file type変化を検出していません: %q %#v -> %#v", diff, before, after)
+	}
+}
+
+// TestCaptureStopDirtyFilesConflictStageDriftDetectedはmerge conflict indexのstage 2/3だけが
+// 変わったdirty fileを保持変化として検出することを固定する。legacy IndexSHAは最初のentry
+// (stage 1)だけを採用するため、この軸では一致してしまう。
+func TestCaptureStopDirtyFilesConflictStageDriftDetected(t *testing.T) {
+	repo := initCommittedRepo(t)
+	base := gitRetentionOutputWithStdin(t, repo, "base\n", "hash-object", "-w", "--stdin")
+	ours1 := gitRetentionOutputWithStdin(t, repo, "ours1\n", "hash-object", "-w", "--stdin")
+	ours2 := gitRetentionOutputWithStdin(t, repo, "ours2\n", "hash-object", "-w", "--stdin")
+	theirs := gitRetentionOutputWithStdin(t, repo, "theirs\n", "hash-object", "-w", "--stdin")
+	if err := os.WriteFile(filepath.Join(repo, "conflict.txt"), []byte("worktree\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stageBase := func(stage2 string) string {
+		return strings.Join([]string{
+			"100644 " + base + " 1\tconflict.txt",
+			"100644 " + stage2 + " 2\tconflict.txt",
+			"100644 " + theirs + " 3\tconflict.txt",
+			"",
+		}, "\n")
+	}
+	gitRetentionOutputWithStdin(t, repo, stageBase(ours1), "update-index", "--index-info")
+
+	stopped, err := CaptureStopDirtyFiles(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gitRetentionOutputWithStdin(t, repo, stageBase(ours2), "update-index", "--index-info")
+	current, err := CaptureStopDirtyFiles(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	before := stopDirtyFileFor(t, stopped, "conflict.txt")
+	after := stopDirtyFileFor(t, current, "conflict.txt")
+	if before.IndexSHA != after.IndexSHA || before.WorktreeSHA != after.WorktreeSHA {
+		t.Fatalf("stage 2だけの変化でlegacy hashが変わっています: %#v -> %#v", before, after)
+	}
+	if diff := DescribeStopDirtyDiff(stopped, current); !strings.Contains(diff, "conflict.txt(内容変化)") {
+		t.Fatalf("conflict stage変化を検出していません: %q %#v -> %#v", diff, before, after)
 	}
 }
 

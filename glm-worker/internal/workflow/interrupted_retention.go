@@ -22,8 +22,8 @@ import (
 //     親管理metadataのworking tree編集(HEAD不変)
 //   - 停止時HEADを祖先に含むHEAD前進。このとき隔離記録がなければ親管理metadataだけの
 //     変更範囲に限り、隔離記録があれば記録の実質検証(元task・repo・作成HEADの一致、記録branch
-//     の解決と現在HEADへの統合済み、隔離worktree側出自記録との対称)を通過した隔離branch統合
-//     として非親管理file変更も認める
+//     の解決と現在HEADへの統合済み、統合後のtipから現在HEADまでが親管理metadata更新だけ、
+//     隔離worktree側出自記録との対称)を通過した隔離branch統合として非親管理file変更も認める
 //
 // それ以外(保持対象の内容変化・消失・新規dirty・停止時HEADを含まないHEAD移動・隔離記録の
 // 読込失敗・隔離記録の実質検証失敗)は全てfail closedである。dirty保持fileと統合の両方が触れた
@@ -73,8 +73,9 @@ func (w *Workflow) verifyInterruptedRetention(checkpoint state.ResumeCheckpoint)
 // verifyIsolationIntegrationは隔離記録があるHEAD前進を実質検証する。記録の存在だけではなく、
 // 記録が現在task・repoの隔離として成立していること(元task ID・repo root一致)、作成HEADが停止時HEAD
 // から親管理metadata更新だけで動いていること、記録branchが解決可能でそのtipが現在HEADへ統合済み
-// であること、隔離worktree側stateの出自記録と対称であることを、model呼出なしのgit/state読み取り
-// だけ確認する。stale・破損・別branch・未統合(squash/cherry-pick統合を含む)はfail closedである。
+// であること、統合後のtipから現在HEADまでが親管理metadata更新だけであること、隔離worktree側stateの
+// 出自記録と対称であることを、model呼出なしのgit/state読み取りだけ確認する。stale・破損・別branch・
+// 未統合(squash/cherry-pick統合を含む)・統合後の非親管理commitはfail closedである。
 func (w *Workflow) verifyIsolationIntegration(checkpoint state.ResumeCheckpoint, stop *state.GitSnapshot, current state.GitSnapshot) error {
 	record, err := w.state.LoadIsolationRecord()
 	if err != nil {
@@ -107,6 +108,15 @@ func (w *Workflow) verifyIsolationIntegration(checkpoint state.ResumeCheckpoint,
 	}
 	if err := verifyHeadAncestry(w.config.RepoRoot, tip, current.Head); err != nil {
 		return w.failClosedRetention(checkpoint, "隔離branchのtipが現在HEADへ統合されていません(通常mergeで統合してください。squash/cherry-pick統合は照合できません)", err)
+	}
+	// tipが祖先でも、統合後に追加されたcommitは承認済みHEAD前進の範囲外である。隔離branch
+	// tipから現在HEADまでの間の非親管理file変更はfail closedにする。
+	nonParent, npErr := headDeltaNonParentPaths(w.config.RepoRoot, tip, current.Head)
+	if npErr != nil {
+		return w.failClosedRetention(checkpoint, "隔離branch統合後の変更範囲を確認できません", npErr)
+	}
+	if len(nonParent) > 0 {
+		return w.failClosedRetention(checkpoint, fmt.Sprintf("隔離branch統合後に親管理外file(%s)が変化しています", strings.Join(nonParent, ", ")), nil)
 	}
 	origin, err := w.state.AttachSiblingStore(config.RepoHashFor(record.Worktree)).LoadIsolationOrigin()
 	if err != nil {

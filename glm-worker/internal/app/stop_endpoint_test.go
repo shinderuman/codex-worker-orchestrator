@@ -112,7 +112,7 @@ func TestStopEndpointAcknowledgesInterruptedStop(t *testing.T) {
 	var out strings.Builder
 	done := make(chan error, 1)
 	go func() { done <- requestStop(cfg, &out) }()
-	controller.NotifyInterrupted("task-interrupted-1")
+	controller.NotifyInterrupted("task-interrupted-1", "")
 	select {
 	case err := <-done:
 		if err != nil {
@@ -143,7 +143,7 @@ func TestStopEndpointAcknowledgesConcurrentStopRequests(t *testing.T) {
 	}
 	// 両要求の待機入りを確実にしてから確定する。
 	time.Sleep(50 * time.Millisecond)
-	controller.NotifyInterrupted("task-concurrent-stop")
+	controller.NotifyInterrupted("task-concurrent-stop", "")
 
 	for i := range outs {
 		select {
@@ -161,6 +161,72 @@ func TestStopEndpointAcknowledgesConcurrentStopRequests(t *testing.T) {
 			!strings.Contains(outs[i].String(), `"resume_available":true`) {
 			t.Fatalf("同時stop要求 %d のack = %s", i, outs[i].String())
 		}
+	}
+}
+
+// TestStopEndpointAcknowledgesCleanupResidualAsTypedOutcomeはprocess group残存が観測された
+// 停止確定を安全停止ack(result=interrupted)とは別のtyped結果へ返すことを固定する。
+// 親Codexがgroup非残存を確認済みの「安全にpreempt可能」と誤認しない契約である。
+func TestStopEndpointAcknowledgesCleanupResidualAsTypedOutcome(t *testing.T) {
+	st, cfg := stopEndpointTestStore(t)
+	_, controller, _ := startStopEndpointForTest(t, st)
+
+	var out strings.Builder
+	done := make(chan error, 1)
+	go func() { done <- requestStop(cfg, &out) }()
+	controller.NotifyInterrupted("task-residual-1", "process group 424242に残存processがあります")
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("stop要求がackを返しません")
+	}
+	if !strings.Contains(out.String(), `"result":"interrupted_cleanup_residual"`) ||
+		!strings.Contains(out.String(), `"task_id":"task-residual-1"`) ||
+		!strings.Contains(out.String(), `"task_status":"interrupted"`) ||
+		!strings.Contains(out.String(), `"resume_available":true`) ||
+		!strings.Contains(out.String(), `"cleanup_warning":"process group 424242に残存processがあります"`) {
+		t.Fatalf("残存時ack = %s", out.String())
+	}
+	if strings.Contains(out.String(), `"result":"interrupted"`) {
+		t.Fatalf("残存時ackが安全停止resultを返しています: %s", out.String())
+	}
+}
+
+// TestStopEndpointCloseWaitsForPendingRequestAckは停止確定待ちの受理済み要求がある状態で
+// Closeを実行したとき、Closeの戻り前にterminal/exited ackの書込みが完了していることを固定
+// する。Close後にprocessが終了してもrequesterがackを失わないshutdown lifecycleの回帰である。
+func TestStopEndpointCloseWaitsForPendingRequestAck(t *testing.T) {
+	st, _ := stopEndpointTestStore(t)
+	controller := runner.NewStopController()
+	server, err := startStopEndpoint(st, controller)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, err := net.DialTimeout("unix", stopEndpointPath(st), stopDialTimeout)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if _, err := conn.Write([]byte(stopRequestLine)); err != nil {
+		t.Fatal(err)
+	}
+	// handlerが要求行を読み終え、WaitOutcomeで停止確定待ちに入るのを待つ。
+	time.Sleep(100 * time.Millisecond)
+
+	server.Close()
+	if _, err := os.Stat(stopEndpointPath(st)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("Close後にsocket fileが残っています: %v", err)
+	}
+	_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	response := readStopEndpointResponseForTest(t, conn)
+	if response.Result != "terminal" && response.Result != "exited" {
+		t.Fatalf("Close後のpending要求ack = %#v want terminal/exited", response)
+	}
+	if response.TaskID == nil || *response.TaskID == "" {
+		t.Fatalf("Close後のpending要求ackがtask IDを失っています: %#v", response)
 	}
 }
 

@@ -45,6 +45,10 @@ wrapperで固定できるoffline/fake-provider scenarioだけを対象。
 - 既存`feasibility-gate.md`はPoC分離と親Go/No-Goを既に要求しており、今回の改善はworker/reviewer checklist追加ではなく、親がproducerのfield可視性・event timingを外部runtime assumptionとしてgate対象へ含める適用境界と証拠authorityの固定を指す
 - 最新AmendmentはOriginal instructionの「live behaviorをTask 015完了条件へ混ぜない」を、追加AI callによるsynthetic Evalは要求しないが、自然な該当taskの行動証拠がない限り再発防止完了とはせずBLOCKEDへ残す契約へ更新する
 
+## External feasibility
+
+status: not-applicable
+
 ## Purpose
 
 既知escaped behaviorを追加AI callなしのproduction-path corpusへ固定する。
@@ -92,4 +96,4 @@ none
 
 ## Current boundary
 
-既存wiringあり。5時間limit incidentの実producer evidenceにより親gate不適用が再現済み。reopen済み5時間limit taskの選択的revertとexternal feasibility production dispatch gate完了後、Task 009より前にgate受理集合とoffline contractを評価する。正しい親行動の一次証拠が自然な後続taskで得られなければ、再発防止完了とはせず本taskをBLOCKEDへ移してTask 009以降を進める。
+external feasibility production dispatch gateは完了済み。本taskがACTIVEへ昇格し、Task 009より前に4 caseのgate受理集合とoffline contractを評価する。正しい親行動の一次証拠が自然な後続taskで得られなければ、再発防止完了とはせず本taskをBLOCKEDへ移してTask 009以降を進める。

@@ -8,11 +8,10 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/safe-stop-isolation-external-review-followup.md`
+- `IMPLEMENTATION_TASKS/015-fixed-eval-corpus.md`
 
 ## NEXT（優先順）
 
-- `IMPLEMENTATION_TASKS/015-fixed-eval-corpus.md`
 - `IMPLEMENTATION_TASKS/009-worker-call-outliers.md`
 - `IMPLEMENTATION_TASKS/010-task-splitting-milestones.md`
 - `IMPLEMENTATION_TASKS/011-operation-category-telemetry.md`
@@ -41,15 +40,15 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 ## 現在のGit境界
 
 - branch: `main`
-- implementation baseline: external feasibility dispatch gate実装・完了metadata同期・本配置済みのcurrent HEAD
-- implementation boundary: 全model dispatch入口の宣言fail-closed、PoC read-only/snapshot境界、親Go判断への復帰をproductionへ統合済み
-- preserved boundary: 不要stashは削除済み。safe-stop/isolation external-review follow-upは独立ACTIVE taskとして未着手
+- implementation baseline: safe-stop/isolation external-review follow-up修正・完了metadata同期・本配置済みのcurrent HEAD
+- implementation boundary: cleanup residual authority分離、統合後provenance、lossless dirty identity、endpoint shutdown ack待機をproductionへ統合済み
+- preserved boundary: Greptile日次scheduled reviewとexternal feasibility dispatch gateは不変、不要stashなし
 - push: GLM push、force/non-fast-forward、他refへのpushは禁止。Greptile運用に必要な`refs/heads/main`と`refs/heads/codex/greptile-reviewed`の親Codexによる通常fast-forwardだけ許可
 
 ## 現在の停止理由
 
-safe-stop/isolation external-review follow-upがACTIVE。4 findingをcurrent production codeで再検証し、成立するものだけを修正する開始境界にある。
+Task 015 fixed Eval corpusがACTIVE。external feasibility dispatch gateを含む4 caseのoffline contract/wiring評価を開始する境界にある。
 
 ## 次の親Codex操作
 
-ACTIVE taskの4 findingを一次証拠で再検証し、成立性と修正境界を同一taskのGLM workerへ委譲する。pushはGreptile運用のremote main/checkpoint通常fast-forward以外禁止。
+Task 015の要求正本とproduction wiringを照合し、既存caseのfalse-complete確認と未実装offline contractだけをGLM workerへ委譲する。pushはGreptile運用のremote main/checkpoint通常fast-forward以外禁止。

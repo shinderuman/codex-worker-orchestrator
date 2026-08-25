@@ -37,9 +37,12 @@ func (e *InterruptedCallError) Error() string {
 
 // StopOutcomeは停止要求への応答として確定したinvocation側の終着。
 // Interrupted=trueはinterrupted checkpoint保存済み、falseは停止より先に自然終端した。
+// CleanupWarningは停止後にprocess groupへ残存が観測された場合の診断で、空ならgroup非残存を
+// 確認済みである。残存があるinterruptedは安全停止authorityから除外される。
 type StopOutcome struct {
-	Interrupted bool
-	TaskID      string
+	Interrupted    bool
+	TaskID         string
+	CleanupWarning string
 }
 
 // StopControllerは1回のworkflow実行invocationに対する停止要求の受け渡しを調停する。
@@ -99,8 +102,9 @@ func (c *StopController) WaitOutcome() StopOutcome {
 }
 
 // NotifyInterruptedはinterrupted checkpoint保存完了を確定する。最初の確定だけ有効。
-func (c *StopController) NotifyInterrupted(taskID string) {
-	c.notify(StopOutcome{Interrupted: true, TaskID: taskID})
+// cleanupWarningは停止後のprocess group残存診断で、空ならgroup非残存確認済みの安全停止になる。
+func (c *StopController) NotifyInterrupted(taskID string, cleanupWarning string) {
+	c.notify(StopOutcome{Interrupted: true, TaskID: taskID, CleanupWarning: cleanupWarning})
 }
 
 // NotifyFinishedは停止が効果を持つ前にinvocationが終端したことを確定する。
