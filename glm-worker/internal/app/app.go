@@ -36,6 +36,7 @@ const (
 	ModeReset
 	ModeVerifyAutoResume
 	ModeEvalAB
+	ModeCallOutliers
 )
 
 type Command struct {
@@ -87,7 +88,7 @@ func usageError(format string, args ...any) *UsageError {
 
 func ParseCommand(args []string) (Command, error) {
 	if len(args) == 0 {
-		return Command{}, usageError("usage: glm-worker <instruction> | --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix-stdin <payload-bytes> [--sha256 <hex>] %s | --accept | --resume | --stop | --isolate | --status | --watch [--verbose] | --timeline [task-id] | --convergence [task-id] | --stats | --reset | --eval-ab <run-dir>", fixOriginUsage)
+		return Command{}, usageError("usage: glm-worker <instruction> | --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix-stdin <payload-bytes> [--sha256 <hex>] %s | --accept | --resume | --stop | --isolate | --status | --watch [--verbose] | --timeline [task-id] | --convergence [task-id] | --stats | --reset | --eval-ab <run-dir> | --call-outliers", fixOriginUsage)
 	}
 
 	switch args[0] {
@@ -175,6 +176,11 @@ func ParseCommand(args []string) (Command, error) {
 			return Command{}, usageError("usage: glm-worker --eval-ab <run-dir>")
 		}
 		return Command{Mode: ModeEvalAB, Payload: args[1]}, nil
+	case "--call-outliers":
+		if len(args) != 1 {
+			return Command{}, usageError("usage: glm-worker --call-outliers")
+		}
+		return Command{Mode: ModeCallOutliers}, nil
 	default:
 		return Command{Mode: ModeNewTask, Payload: strings.Join(args, " ")}, nil
 	}
@@ -339,7 +345,7 @@ func run(
 }
 
 // Executeはcmdをcfg配下で実行する。runner/workflowはrf経由で注入可能で、
-// --watch・--timeline・--convergence・--eval-abはstateへ書き込まないread-only参照、
+// --watch・--timeline・--convergence・--eval-ab・--call-outliersはstateへ書き込まないread-only参照、
 // --stopはrepo lockを待たずrunning ownerのlocal control endpointへ固定要求を送り、
 // --status/--statsはロック取得前に、それ以外はプロセス間ロック後に処理する。
 // stdin payload modeの読み取り・照合とTTY/PTYのtermios復元はrun()がstate初期化前に
@@ -359,6 +365,9 @@ func Execute(cmd Command, cfg config.AppConfig, rf RunnerFactory, stdout, stderr
 	}
 	if cmd.Mode == ModeEvalAB {
 		return printEvalAB(state.AttachStateStore(cfg), cmd.Payload, stdout)
+	}
+	if cmd.Mode == ModeCallOutliers {
+		return printCallOutliers(state.AttachStateStore(cfg), stdout)
 	}
 	if cmd.Mode == ModeStop {
 		return requestStop(cfg, stdout)

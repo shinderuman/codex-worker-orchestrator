@@ -65,11 +65,10 @@ Task 009/010のevidenceに基づく。
 
 ## Historical invariants
 
-session aging telemetry。
+session aging telemetry。Task 009 worker outlier report完了済み。
 
 ## Dependencies
 
-- `IMPLEMENTATION_TASKS/009-worker-call-outliers.md`
 - `IMPLEMENTATION_TASKS/010-task-splitting-milestones.md`
 
 ## Review findings

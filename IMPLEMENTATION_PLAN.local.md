@@ -8,10 +8,12 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/009-worker-call-outliers.md`
+- `IMPLEMENTATION_TASKS/source-comment-absolute-invariant.md`
 
 ## NEXT（優先順）
 
+- `IMPLEMENTATION_TASKS/commit-authorization-source-recognition.md`
+- `IMPLEMENTATION_TASKS/install-smoke-loop-cost-reduction.md`
 - `IMPLEMENTATION_TASKS/010-task-splitting-milestones.md`
 - `IMPLEMENTATION_TASKS/011-operation-category-telemetry.md`
 - `IMPLEMENTATION_TASKS/012-compaction-threshold-evaluation.md`
@@ -39,15 +41,15 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 ## 現在のGit境界
 
 - branch: `main`
-- implementation baseline: Task 015 fixed Eval corpus・完了metadata同期済みのcurrent HEAD
-- implementation boundary: 4 case offline contract照合、5時間limit incident統合、producer field/schema/timingの実証authority固定、配線testとinstall smoke修復を完了済み
-- preserved boundary: behavioral evidenceはsafe interruption taskで実装委譲前の実Claude PoC・親Go判断・後続production実装順序を確認済み。Greptile日次scheduled review、external feasibility dispatch gate、safe-stop/isolation境界は不変、不要stashなし
+- implementation baseline: Task 009 worker call outlier可視化・完了metadata同期済みのcurrent HEAD
+- implementation boundary: 保存telemetryからtask/phase/session/model別分布・task増幅・p95 outlierを追加AI callなしでJSON表示し、directory I/O failureと観測済みturn母集団の親review差戻しを修正済み
+- preserved boundary: source comment absolute invariant taskを最優先ACTIVEへ昇格。commit authorization source false negative、install smoke loop costを後続NEXTとして保持。Greptile日次scheduled review、external feasibility dispatch gate、safe-stop/isolation境界は不変、不要stashなし
 - push: GLM push、force/non-fast-forward、他refへのpushは禁止。Greptile運用に必要な`refs/heads/main`と`refs/heads/codex/greptile-reviewed`の親Codexによる通常fast-forwardだけ許可
 
 ## 現在の停止理由
 
-Task 009 worker call外れ値観測がACTIVEへ昇格し、既存telemetryから反復可能なoutlier分類と最上位Evalへの改善候補を評価する開始境界にある。
+Task 009は完了。ユーザー明示priorityに従い、source comment absolute invariant taskをGLMなしで親Codexが直接実施する開始境界。
 
 ## 次の親Codex操作
 
-Task 009の要求正本と既存telemetry authorityを確認し、追加AI callを最小化した外れ値分析を同taskのGLM workerへ委譲する。pushはGreptile運用のremote main/checkpoint通常fast-forward以外禁止。
+ACTIVE taskのOriginal instructionと直接編集規則を再読し、過去comment対策の一次証拠・source inventory・既存lint ecosystemを確認してcommentlint設計へ進む。本taskではGLM worker/reviewerを利用しない。pushはGreptile運用のremote main/checkpoint通常fast-forward以外禁止。
