@@ -42,14 +42,14 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 - branch: `main`
 - implementation baseline: checkout/state隔離実装・完了metadata同期・本配置済みのcurrent HEAD
-- implementation boundary: Greptile要求をCodex scheduled task＋既存git/Greptile CLIだけへ縮小。checkpoint専用remote refを`b6442c2a2821e245f371c44f4aeedff958f007d1`へ初期化し、日次automation `greptile-review`を作成済み。repository production source変更なし
+- implementation boundary: Greptile要求をCodex scheduled task＋既存git/Greptile CLIだけへ縮小。日次automation `greptile-review`はremote `refs/heads/codex/greptile-reviewed..refs/heads/main`をreview範囲の唯一の正とし、repository production source変更なし
 - preserved boundary: external feasibility gateの中断diffはmessage identity付きstash 2件へ可逆保全し、orphan process group終了済み
-- push: 通常pushは禁止。Greptile checkpoint専用`refs/heads/codex/greptile-reviewed`の親Codexによる通常fast-forwardだけ許可
+- push: GLM push、force/non-fast-forward、他refへのpushは禁止。Greptile運用に必要な`refs/heads/main`と`refs/heads/codex/greptile-reviewed`の親Codexによる通常fast-forwardだけ許可
 
 ## 現在の停止理由
 
-external feasibility gateの中断diffはmessage identity付きstash 2件へ保全済み。Greptile日次reviewはcommit済みcheckpoint..開始時HEADだけを対象にし、dirty working treeはreview対象外として許容する。
+external feasibility gateの中断diffはmessage identity付きstash 2件へ保全済み。Greptile日次reviewはremote checkpoint..remote mainだけを対象にし、local-only commitとdirty working treeはreview対象外とする。dirty working tree自体は許容する。
 
 ## 次の親Codex操作
 
-保全済みexternal feasibility gateのstash identity・適用順・現在task stateを再照合し、checkout隔離導入後の安全な復元経路で同taskを再開する。pushはGreptile checkpoint専用ref以外禁止。
+保全済みexternal feasibility gateのstash identity・適用順・現在task stateを再照合し、checkout隔離導入後の安全な復元経路で同taskを再開する。pushはGreptile運用のremote main/checkpoint通常fast-forward以外禁止。
