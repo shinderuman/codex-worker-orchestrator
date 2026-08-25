@@ -41,15 +41,15 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 ## 現在のGit境界
 
 - branch: `main`
-- implementation baseline: checkout/state隔離実装と完了metadataを収録したcurrent HEAD
-- implementation boundary: 単一目的`--stop`に加え、`--isolate`による別checkout/state分離、対称なmachine記録、統合後resume保持照合を実装・検証・独立review・親Sol採用まで完了。旧interrupted checkpointは保持基準欠損でfail closedしmigrationしない
+- implementation baseline: checkout/state隔離実装・完了metadata同期・本配置済みのcurrent HEAD
+- implementation boundary: Greptile要求をCodex scheduled task＋既存git/Greptile CLIだけへ縮小。checkpoint専用remote refを`b6442c2a2821e245f371c44f4aeedff958f007d1`へ初期化し、日次automation `greptile-review`を作成済み。repository production source変更なし
 - preserved boundary: external feasibility gateの中断diffはmessage identity付きstash 2件へ可逆保全し、orphan process group終了済み
-- push: 禁止
+- push: 通常pushは禁止。Greptile checkpoint専用`refs/heads/codex/greptile-reviewed`の親Codexによる通常fast-forwardだけ許可
 
 ## 現在の停止理由
 
-external feasibility gateはcheckout隔離taskの割り込み前diffをmessage identity付きstash 2件へ保全した状態。current HEADの本配置確認後、復元対象とtask stateを再照合する。
+external feasibility gateの中断diffはmessage identity付きstash 2件へ保全済み。Greptile日次reviewはcommit済みcheckpoint..開始時HEADだけを対象にし、dirty working treeはreview対象外として許容する。
 
 ## 次の親Codex操作
 
-current HEADのfinal gate・本配置・source/installed一致・`--isolate` fail-closed smokeを確認し、保全済みexternal feasibility gateを同一task文脈で再開する。pushしない。
+保全済みexternal feasibility gateのstash identity・適用順・現在task stateを再照合し、checkout隔離導入後の安全な復元経路で同taskを再開する。pushはGreptile checkpoint専用ref以外禁止。
