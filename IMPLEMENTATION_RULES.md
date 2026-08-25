@@ -137,7 +137,9 @@ task完了時は、必要証跡とescaped原因をHistoryへ追加し、task fil
 
 ## commit / install
 
-- GLMにcommitさせない。独立review、必要なSol gate、指摘後再review、acceptance確認後だけ親Codexが単一taskをcommitする。pushは禁止
+- GLMにcommit/pushさせない。独立review、必要なSol gate、指摘後再review、acceptance確認後だけ親Codexが単一taskをcommitする
+- Greptile日次reviewを有効にしている本repositoryでは、各task・review follow-up・独立parent maintenanceのfinal commit後に親Codexがcurrent `main`をremote `refs/heads/main`へ通常fast-forwardする。scheduled review自身はmainをpushせず、正常review完了時だけreview対象HEADへ`refs/heads/codex/greptile-reviewed`を通常fast-forwardする。この2 ref以外、GLMによるpush、force/non-fast-forwardは許可しない
+- main push失敗はGreptile補助reviewの未同期として明示し、review checkpointを進めない。通常開発をGreptile failureで完了扱いにも停止扱いにもせず、次の親orchestrationで未同期commitをまとめて通常fast-forwardする
 - task metadata同期はfinal HEADの機械postconditionを正とし、文書手順だけで保証したことにしない
 - runtimeへ影響するtaskはimplementation、test/review、commit後、適切な区切りで`install.sh`本配置、installed/source一致、そのinstalled状態で必要なproduction smokeまでをtask completion flowとして行う。複数task分を未配置のまま後続実運用へ進めず、最終taskまでinstall義務を延期しない
 - source-only metadata変更はruntime install対象から除外する
@@ -151,4 +153,4 @@ glm-worker/Codex/GLMだけが生成・消費するmachine dataを長期公開API
 - taskごとの独自state DB、filesystem watcher、daemonを追加しない
 - task fileをHistoryや進捗日記にしない
 - Planとtask fileへ詳細仕様を二重管理しない
-- ユーザー許可のない実Sol High本番A/B、benchmark目的の追加AI call、pushを行わない
+- ユーザー許可のない実Sol High本番A/B、benchmark目的の追加AI call、上記Greptile 2 ref以外へのpushを行わない

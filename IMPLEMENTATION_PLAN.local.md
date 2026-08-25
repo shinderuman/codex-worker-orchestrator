@@ -44,8 +44,8 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 - branch: `main`
 - implementation baseline: source comment absolute invariant・完了metadata同期済みのcurrent HEAD
 - implementation boundary: repository専用`commentlint`、workflowとinstallerのmandatory gate、exact machine-semantic allowlist、安全で冪等な`--fix`を実装し、既存source comment 4,038件を除去して0 violationへ収束。全Go test/race/vet/build、shell syntax、full install smoke、親最終reviewを完了
-- preserved boundary: 親Codex 5h Limit自動再開を最優先ACTIVE、Markdown runtime context削減を次点NEXTへ追加。commit authorization source false negative、install smoke loop costを後続NEXTとして保持。Greptile日次scheduled review、external feasibility dispatch gate、safe-stop/isolation境界は不変、不要stashなし
-- push: GLM push、force/non-fast-forward、他refへのpushは禁止。Greptile運用に必要な`refs/heads/main`と`refs/heads/codex/greptile-reviewed`の親Codexによる通常fast-forwardだけ許可
+- preserved boundary: 親Codex 5h Limit自動再開を最優先ACTIVE、Markdown runtime context削減を次点NEXTへ追加。commit authorization source false negative、install smoke loop costを後続NEXTとして保持。Greptile日次reviewはremote checkpoint..remote mainを正とし、各親commit後のmain fast-forwardをcompletion flowへ追加。external feasibility dispatch gate、safe-stop/isolation境界は不変、不要stashなし
+- push: 各親commit後の`refs/heads/main`とGreptile正常review後の`refs/heads/codex/greptile-reviewed`だけを親Codexが通常fast-forwardする。GLM push、force/non-fast-forward、他refへのpushは禁止
 
 ## 現在の停止理由
 
@@ -53,4 +53,4 @@ source comment absolute invariant taskは完了。ユーザー指定により親
 
 ## 次の親Codex操作
 
-本配置とinstalled `commentlint` smokeを確認した後、ACTIVE taskのOriginal instructionを要求正本として外部成立性gateから開始する。pushは行わない。
+remote main同期とinstalled `commentlint` smokeを確認した後、ACTIVE taskのOriginal instructionを要求正本として外部成立性gateから開始する。
