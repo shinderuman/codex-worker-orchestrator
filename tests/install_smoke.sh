@@ -64,18 +64,48 @@ prepare_preflight_failure_case() {
 # 末尾package引数のgo buildだけを失敗させるshimを作る。
 # 失敗段階より後のpreflight commandやbuild_glm_worker/go runの実行有無は
 # この呼出記録で段階ごとに固定する。
+# go shimが起動するGo testだけは、captured Claude helpへ応答する専用fake canaryを
+# GLM_WORKER_CLAUDE_BINへ注入する。生成shimはsubcommandがtestの呼出だけcanary envを
+# 付け、build等の他subcommandへはcanary envを新規注入せずreal goを呼ぶ。
+# これによりlive canary test(TestClaudePreflightLiveClaudeCLI)がPATH上のclaude shimを
+# 本物と誤認せず、preflight段階のgo test結果がclaude probe caseのPATH構成から独立する。
+# envはreal goの子processにだけ渡るため、install.sh自身のverify_claude_cliは
+# 従来どおりPATH上のclaudeを検証し、--help単独呼出の契約も変わらない。
+# canaryのfile名を`claude`にするとPATH検索をshadowするため、別名にする。
 make_go_shim() {
     shim_dir=$1
     forced_build_package=$2
 
     mkdir -p "$shim_dir"
     real_go=$(command -v go)
+    cp "$repo_root/glm-worker/internal/runner/testdata/claude-help-2.1.226.txt" \
+        "$shim_dir/claude-help.txt"
+
+    cat >"$shim_dir/canary-claude" <<EOF
+#!/bin/sh
+case \$1 in
+--version)
+    printf '%s\n' '2.1.226 (Claude Code)'
+    exit 0
+    ;;
+--help)
+    cat '$shim_dir/claude-help.txt'
+    exit 0
+    ;;
+*)
+    printf 'unexpected canary invocation: %s\n' "\$*" >&2
+    exit 87
+    ;;
+esac
+EOF
+    chmod +x "$shim_dir/canary-claude"
 
     cat >"$shim_dir/go" <<EOF
 #!/bin/sh
 real_go='$real_go'
 log_file='$shim_dir/invocations.log'
 forced_build_package='$forced_build_package'
+canary_claude='$shim_dir/canary-claude'
 
 subcommand=\$1
 for package in "\$@"; do
@@ -89,7 +119,11 @@ if [ "\$subcommand" = build ] && [ -n "\$forced_build_package" ] && [ "\$package
     exit 1
 fi
 
-"\$real_go" "\$@"
+if [ "\$subcommand" = test ]; then
+    GLM_WORKER_CLAUDE_BIN="\$canary_claude" "\$real_go" "\$@"
+else
+    "\$real_go" "\$@"
+fi
 status=\$?
 printf '%s %s %s\n' "\$subcommand" "\$module" "\$status" >>"\$log_file"
 exit "\$status"
@@ -164,6 +198,8 @@ test -f "$success_case/codex/instructions/feasibility-gate.md"
 grep -Fq 'feasibility-gate.md' "$success_case/codex/instructions/glm-execution.md"
 grep -Fq 'feasibility-gate.md' "$success_case/codex/AGENTS.md"
 grep -Fq 'transport成功だけを成立性の証明にしない' "$success_case/codex/instructions/feasibility-gate.md"
+grep -Fq '外部producerが必要なfieldを必要な時点で公開する可用性とそのevent timing' "$success_case/codex/instructions/feasibility-gate.md"
+grep -Fq '人工fixture・scripted packet・worker/reviewer/Solの合意は、producerのfield・schema・timing成立の証拠として受理しない' "$success_case/codex/instructions/feasibility-gate.md"
 test -f "$success_case/codex/instructions/task-lifecycle.md"
 grep -Fq 'task-lifecycle.md' "$success_case/codex/AGENTS.md"
 grep -Fq 'task-lifecycle.md' "$success_case/codex/instructions/glm-execution.md"
@@ -199,12 +235,12 @@ grep -Fq 'RRULE:FREQ=HOURLY' "$success_case/codex/instructions/glm-auto-resume.m
 grep -Fq '成功前にIDを推測・仮定しない' "$success_case/codex/instructions/glm-auto-resume.md"
 grep -Fq '作成済みplaceholder automationをbest-effortで削除' "$success_case/codex/instructions/glm-auto-resume.md"
 grep -Fq 'placeholderを作り直さない' "$success_case/codex/instructions/glm-auto-resume.md"
-grep -Fq 'TELEMETRY_DIR' "$success_case/codex/instructions/glm-execution.md"
+grep -Fq 'telemetry_dir' "$success_case/codex/instructions/glm-execution.md"
 grep -Fq '同じ責務・変更理由・検証単位' "$success_case/codex/instructions/glm-execution.md"
 grep -Fq 'REPORT_ARTIFACT_DIR' "$success_case/codex/instructions/glm-execution.md"
 grep -Fq 'direct-edit.md' "$success_case/codex/instructions/glm-execution.md"
-grep -Fq 'REPOSITORY_LOCK' "$success_case/codex/instructions/glm-execution.md"
-grep -Fq 'TASK_LIVENESS' "$success_case/codex/instructions/glm-execution.md"
+grep -Fq 'repository_lock' "$success_case/codex/instructions/glm-execution.md"
+grep -Fq 'task_liveness' "$success_case/codex/instructions/glm-execution.md"
 grep -Fq 'GLM全体で同時実行不可' "$success_case/codex/instructions/glm-execution.md"
 grep -Fq 'stale PIDやPID reuseでrunning扱いしない' "$success_case/codex/instructions/glm-execution.md"
 grep -Fq '確認済みの状態に変化がなくても発言しない' "$success_case/codex/instructions/glm-execution.md"

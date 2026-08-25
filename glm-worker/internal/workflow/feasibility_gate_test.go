@@ -39,6 +39,8 @@ func TestFeasibilityGateContractWiring(t *testing.T) {
 		{"codex/instructions/feasibility-gate.md", "Amazon取得PoCの48〜72時間はその対象固有の観測条件であり一般contractへ固定しない"},
 		{"codex/instructions/feasibility-gate.md", "短時間の意味的検証で足りる対象へ長時間試験を要求しない"},
 		{"codex/instructions/feasibility-gate.md", "形式的なPoCや固定の観測期間を要求しない"},
+		{"codex/instructions/feasibility-gate.md", "外部producerが必要なfieldを必要な時点で公開する可用性とそのevent timing"},
+		{"codex/instructions/feasibility-gate.md", "人工fixture・scripted packet・worker/reviewer/Solの合意は、producerのfield・schema・timing成立の証拠として受理しない"},
 		{"codex/instructions/feasibility-gate.md", "Go/No-Go基準と撤退条件"},
 		{"codex/instructions/feasibility-gate.md", "workaroundの追加実装をさせず観測事実をSol/ユーザー判断へ戻す"},
 		{"codex/instructions/feasibility-gate.md", "PoC・観測taskとproduction実装taskを分離する"},
@@ -70,6 +72,9 @@ func TestFeasibilityGateContractWiring(t *testing.T) {
 		{"短時間の意味的検証でcritical assumptionが解消する対象へ、Amazon取得PoC固有の48〜72時間等の長時間観測を要求せず", "Amazon取得PoCの48〜72時間はその対象固有の観測条件であり一般contractへ固定しない"},
 		{"短時間の意味的検証でcritical assumptionが解消する対象へ、Amazon取得PoC固有の48〜72時間等の長時間観測を要求せず", "外部API schema確認・実行環境からの到達確認・認証方式の成立確認など短時間の意味的検証で足りる対象へ長時間試験を要求しない"},
 		{"確立済み前提内の保守変更へ形式的PoCを要求しない", "短時間の意味的検証でcritical assumptionを解消できる対象へ、形式的なPoCや固定の観測期間を要求しない"},
+		{"未検証のproducer field可視性・event timing assumptionをPoC前にproduction実装へ委譲し", "外部producerが必要なfieldを必要な時点で公開する可用性とそのevent timing"},
+		{"production実装前に停止すべきcaseとして固定される", "実producerでの最小PoCをproduction実装より先に要求する"},
+		{"evidence authority(人工fixture不受理)・親Go/No-Goという既存gate要件から一意に導かれ", "人工fixture・scripted packet・worker/reviewer/Solの合意は、producerのfield・schema・timing成立の証拠として受理しない"},
 	}
 	for _, g := range evalGrounds {
 		if !strings.Contains(instruction, g.guidance) {
@@ -93,6 +98,12 @@ func TestFeasibilityGateContractWiring(t *testing.T) {
 		"親Codexのgate読込・routing判断・委譲内容・完了報告の受領/差し戻し行動をraw telemetry・task log等の一次証拠で照合",
 		"live model呼出しを要するためユーザーの明示指示後だけ実行し",
 		"EVAL.md本節のpositive/negative caseと期待判断を`feasibility-gate.md`の適用条件・意味的成功条件・観測期間・orchestration契約文へ直接突き合わせて検証する",
+		"Z.ai 5時間limit early-stop escaped case(commit `cbf71c7`)を本caseへ統合する",
+		"実incident raw eventと親Codex直接`claude -p` PoCが一次証拠",
+		"実producer evidenceと親Go判断なしのimplementation委譲をmodel呼出0回で拒否する",
+		"自然な該当taskでの親Codex行動証拠",
+		"scripted packet・corpus・wiring test・manifest hash・本節の文面は親行動の証明に使わない",
+		"行動証拠が得られないままの場合は再発防止を完了扱いにせずBLOCKEDへ残す",
 	} {
 		if !strings.Contains(evalDoc, wire) {
 			t.Errorf("EVAL.md lacks feasibility gate eval wiring: %q", wire)

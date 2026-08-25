@@ -4,7 +4,7 @@
 
 ## 適用条件
 
-- 未検証のcritical assumption(外部serviceの継続提供、取得方式の継続成立、実行環境からの到達・認証成立等)がproduction code・IaC・運用展開の設計前提になり、誤った前提のまま進んだ後続コストが大きい場合だけgateを適用する。
+- 未検証のcritical assumption(外部serviceの継続提供、取得方式の継続成立、実行環境からの到達・認証成立、外部producerが必要なfieldを必要な時点で公開する可用性とそのevent timing等)がproduction code・IaC・運用展開の設計前提になり、誤った前提のまま進んだ後続コストが大きい場合だけgateを適用する。
 - 通常の局所変更、確立済み前提の範囲内変更、短時間の意味的検証でcritical assumptionを解消できる対象へ、形式的なPoCや固定の観測期間を要求しない。
 
 ## gateで固定する内容
@@ -20,6 +20,7 @@ production実装へ進む前に、次を対象の不確実性・変動性・継�
 ## orchestration
 
 - 成立性検証のPoC・観測taskとproduction実装taskを分離する。未検証の外部成立性を前提にしたproduction code・IaC・運用展開の実装をGLMへ委譲しない。
+- 外部producerが必要なfieldを必要な時点で公開すること自体が効果成立の前提なら、実producerでの最小PoCをproduction実装より先に要求する。人工fixture・scripted packet・worker/reviewer/Solの合意は、producerのfield・schema・timing成立の証拠として受理しない。
 - transport成功だけの完了報告を成立性の証明として受領しない。意味的成功条件・代表caseのterminal outcome・観測結果が揃わない完了報告は差し戻す。
 - Go/No-Goと撤退判断はSol High・ユーザーへ戻し、GLMだけで確定させない。
 - 観測中に前提が崩れた場合は、workaroundの追加実装をさせず観測事実をSol/ユーザー判断へ戻す。

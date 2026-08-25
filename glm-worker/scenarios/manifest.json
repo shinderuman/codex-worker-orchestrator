@@ -127,7 +127,7 @@
     },
     {
       "path": "codex/instructions/feasibility-gate.md",
-      "sha256": "39f2e05a73cfed898056dfdfbdbf4ca54e6b05a3e5fd31fcc992991f49746738",
+      "sha256": "acb5592034302645f9196c8a8219d93c891d17b5756b994f178aca85a43e8df2",
       "scenarios": [
         "feasibility-gate-production-beyond-unverified-viability-returns-to-sol",
         "feasibility-gate-premise-collapse-stops-further-implementation",
