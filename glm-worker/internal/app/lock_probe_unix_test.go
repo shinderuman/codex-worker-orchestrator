@@ -55,7 +55,6 @@ func TestProbeRepoLockHeldWhileOtherProcessHolds(t *testing.T) {
 	}
 }
 
-// 別repoのlock pathは独立しており、他repo lock保持中でも対象repoはfreeになる。
 func TestProbeRepoLockIndependentPerPath(t *testing.T) {
 	dir := t.TempDir()
 	otherPath := filepath.Join(dir, "other-lock")
@@ -72,7 +71,6 @@ func TestProbeRepoLockIndependentPerPath(t *testing.T) {
 	}
 }
 
-// probeはfileを作成せず、既存のlock file内容も書き換えない。
 func TestProbeRepoLockNonDestructive(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "lock")
@@ -96,7 +94,6 @@ func TestProbeRepoLockNonDestructive(t *testing.T) {
 	}
 }
 
-// 存在しないPIDが書かれたstale lock fileはfreeと判定され、PIDは診断表示に残る。
 func TestProbeRepoLockStalePIDIsNotRunning(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "lock")
 	if err := os.WriteFile(path, []byte("61243\n"), 0o600); err != nil {

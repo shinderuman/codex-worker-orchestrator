@@ -7,14 +7,6 @@ import (
 	"testing"
 )
 
-// TestFailureEvidenceContractWiringは親Codex側runtime failure evidence contractの
-// production routing配線と、親behavioral Eval入力・期待判断との因果を決定論検証する。
-// codex/AGENTS.mdのrouting、glm-execution.mdの委譲前読込指示、glm-packets.mdの受理時指示、
-// failure-evidence.md本文の必須契約文のいずれかが欠けると失敗する。EVAL.mdの親behavioral Evalは
-// scripted scenarioの終端検証とは異なり親Codexの委譲/受理/差戻し行動の証明ではないため、
-// その入力・期待判断がinstruction本文のどの契約文へ根拠を持つかを対で固定する。
-// 親behavioral Evalの代替へfailure-evidence-*の重複scenarioがcorpusへ追加された場合へも失敗する。
-// worker/reviewer promptへ一般checklistを追加しない方針も本testで固定する。
 func TestFailureEvidenceContractWiring(t *testing.T) {
 	root := scenarioRepoRoot(t)
 
@@ -61,8 +53,6 @@ func TestFailureEvidenceContractWiring(t *testing.T) {
 		}
 	}
 
-	// 親behavioral Evalの期待判断(EVAL.md本節)がproduction guidanceのどの契約文へ根拠を
-	// 持つかを対で検証する。EVAL.md側の文面だけ、instruction側の契約文だけの片側存在は通さない。
 	section := evalFailureEvidenceSection(t, readContractFile("EVAL.md"))
 	instruction := contents["codex/instructions/failure-evidence.md"]
 	evalGrounds := []struct {
@@ -86,8 +76,6 @@ func TestFailureEvidenceContractWiring(t *testing.T) {
 		}
 	}
 
-	// behavioral Eval・corpus参照の管理文面。scripted packetのARTIFACTS宣言を親Codexの委譲/受理/
-	// 差戻し行動の証明としない限定と、未実行Evalの一次証拠・完了条件・実行条件をEVAL.mdへ残す。
 	for _, wire := range []string{
 		"TestFailureEvidenceContractWiring",
 		"failure-evidence-minimal-sanitized-evidence-packet-returns-to-sol",
@@ -104,9 +92,6 @@ func TestFailureEvidenceContractWiring(t *testing.T) {
 		}
 	}
 
-	// EVAL.mdが参照するcorpus entryとmanifest pinが実在すること。文面参照だけの自己充足を防ぐと
-	// ともに、親behavioral Evalの代替へfailure-evidence-*の重複scenarioがcorpusへ追加された
-	// 場合へ失敗させる。
 	expectedIDs := []string{
 		"failure-evidence-minimal-sanitized-evidence-packet-returns-to-sol",
 		"failure-evidence-unobtainable-evidence-returns-undecidable-to-sol",
@@ -147,8 +132,6 @@ func TestFailureEvidenceContractWiring(t *testing.T) {
 		t.Error("manifest.json must pin codex/instructions/failure-evidence.md")
 	}
 
-	// 本contractは親Codex側の委譲・受理条件であり、常時checklistのworker/reviewer prompt
-	// 追加で代替した実装になっていないことを固定する。
 	for _, promptFile := range []string{"codex/glm-worker/prompts/WORKER.md", "codex/glm-worker/prompts/REVIEWER.md"} {
 		if strings.Contains(readContractFile(promptFile), "failure-evidence") {
 			t.Errorf("%s must not add a general failure evidence checklist", promptFile)

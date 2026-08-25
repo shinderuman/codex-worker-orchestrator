@@ -22,9 +22,6 @@ const (
 	snapshotComparisonFile      = "snapshot-comparison.json"
 )
 
-// 親管理implementation metadata集合。RULES・PLAN・HISTORYのrepository root 3fileと
-// IMPLEMENTATION_TASKS/配下の全fileからなり、編集できるのは親Codexだけである。model呼出前後の
-// 不変guardとreview resumeのsnapshot例外が同じ対象を指すためここへ一元化する。
 const (
 	ParentRulesFile   = "IMPLEMENTATION_RULES.md"
 	ParentPlanFile    = "IMPLEMENTATION_PLAN.local.md"
@@ -34,19 +31,14 @@ const (
 
 var parentManagedFiles = []string{ParentRulesFile, ParentPlanFile, ParentHistoryFile}
 
-// ParentFileStateは親管理metadata 1件の存在と内容hash。欠損はExists=falseで表現する。
 type ParentFileState struct {
 	Path   string `json:"path"`
 	Exists bool   `json:"exists"`
 	SHA256 string `json:"sha256"`
 }
 
-// ParentFileStatesは親管理metadata集合の状態snapshot。review開始時基準とrate-limit/
-// provider-unavailable停止保存時点で同じ形式を使い、review resumeが停止期間中の親更新だけを
-// 承認deltaとして識別する。path昇順で整列し、集合比較を要素順比較で扱えるようにする。
 type ParentFileStates []ParentFileState
 
-// SameParentFileStatesは2つの集合snapshotが同一かを判定する。
 func SameParentFileStates(a, b ParentFileStates) bool {
 	if len(a) != len(b) {
 		return false
@@ -59,8 +51,6 @@ func SameParentFileStates(a, b ParentFileStates) bool {
 	return true
 }
 
-// FindParentFileStateは指定pathの状態を返す。集合に無いpathはExists=falseの零値で表現し、
-// 停止期間中の新規作成・削除を同じ比較式で扱えるようにする。
 func FindParentFileState(states ParentFileStates, path string) ParentFileState {
 	for _, s := range states {
 		if s.Path == path {
@@ -70,18 +60,14 @@ func FindParentFileState(states ParentFileStates, path string) ParentFileState {
 	return ParentFileState{Path: path}
 }
 
-// GitSnapshotはworker終了時・review開始時のrepo状態を3軸のdigestで識別する。
 type GitSnapshot struct {
 	Head        string `json:"head"`
 	IndexDigest string `json:"index_digest"`
-	// WorktreeDigestはunstaged tracked変更とuntracked(ignored除外)の内容/pathを反映する。
+
 	WorktreeDigest string `json:"worktree_digest"`
-	// WorktreeDigestExcludingParentは親管理metadata集合をdiff/untracked列挙から除外した
-	// worktree digest。review resumeが親metadataだけのdeltaを識別する基準に使い、旧binaryの
-	// snapshot fileでは空文字のため例外判定できずfail closedになる。
+
 	WorktreeDigestExcludingParent string `json:"worktree_digest_excluding_parent,omitempty"`
-	// ParentFilesはsnapshot保存時点の親管理metadata集合状態。review-start snapshotだけが
-	// 設定し、resume例外が呼出中変更と停止期間中変更をfile単位で区別する基準にする。
+
 	ParentFiles *ParentFileStates `json:"parent_files,omitempty"`
 }
 
@@ -98,23 +84,17 @@ const (
 	SnapshotStagePoCEnd          SnapshotStage = "poc-end"
 )
 
-// SnapshotComparisonはworker-endとreview-start snapshotの一致判定結果を記録する。
-// 値そのものは各snapshot fileへ、判定結果はcomparison fileへ区別して永続化する。
 type SnapshotComparison struct {
 	Stage         SnapshotStage `json:"stage"`
 	Matched       bool          `json:"matched"`
 	HeadMatch     bool          `json:"head_match"`
 	IndexMatch    bool          `json:"index_match"`
 	WorktreeMatch bool          `json:"worktree_match"`
-	// ParentUpdateAcceptedは3軸不一致が停止期間中の親管理metadata更新だけだったためreview基準を
-	// 現状へ再固定して再開したことを表す。Matchedは元の3軸判定のまま残す。
+
 	ParentUpdateAccepted bool   `json:"parent_update_accepted,omitempty"`
 	Reason               string `json:"reason,omitempty"`
 }
 
-// CaptureGitSnapshotはrepoRootの状態を3軸のdigestへ読み出す。index・object・worktreeへは書き込まず、
-// untracked通常fileの生内容とsymlink target文字列を読む。commitが無いrepoではHeadを空文字とし、
-// index/worktree digestで状態を識別する。
 func CaptureGitSnapshot(repoRoot string) (GitSnapshot, error) {
 	head, err := captureSnapshotHead(repoRoot)
 	if err != nil {
@@ -148,8 +128,6 @@ func captureSnapshotHead(repoRoot string) (string, error) {
 	return strings.TrimSpace(string(output)), nil
 }
 
-// git ls-files -sは<path>毎に<mode> <sha> <stage>をpath順で出力するため、出力全体のsha256が
-// index同一性を決定論的に表す。
 func captureSnapshotIndexDigest(repoRoot string) (string, error) {
 	output, err := exec.Command("git", "-C", repoRoot, "ls-files", "-s").Output()
 	if err != nil {
@@ -159,9 +137,6 @@ func captureSnapshotIndexDigest(repoRoot string) (string, error) {
 	return hex.EncodeToString(sum[:]), nil
 }
 
-// git I/Oとdigest計算を分離し、列挙結果を直接与える特殊file・消失・境界越えのtestを決定論的に扱う。
-// captureSnapshotWorktreeDigestは親管理metadata集合を含む全体と除外した値の両方のworktree digestを
-// 返す。除外値はreview resumeが親metadataだけのdeltaを識別する基準になる。
 func captureSnapshotWorktreeDigest(repoRoot string) (string, string, error) {
 	full, err := captureWorktreeDigestVariant(repoRoot, nil)
 	if err != nil {
@@ -174,9 +149,6 @@ func captureSnapshotWorktreeDigest(repoRoot string) (string, string, error) {
 	return full, excluding, nil
 }
 
-// ParentExcludePathspecsは親管理metadata集合だけをgit列挙から外すanchored exclude pathspec。
-// :(top)でrepository root直下の同名列とIMPLEMENTATION_TASKS/配下だけを除外し、subdirectory配下の
-// 同名列は検出対象に残す。IMPLEMENTATION_TASKSは directory pathspec として配下全fileへ一致する。
 func ParentExcludePathspecs() []string {
 	specs := make([]string, 0, len(parentManagedFiles)+1)
 	for _, name := range parentManagedFiles {
@@ -214,7 +186,6 @@ func gitSnapshotOutput(repoRoot string, args []string) ([]byte, error) {
 	return output, nil
 }
 
-// 列挙後に消失したpathを空扱いすると別状態を同一視するため、消失も取得失敗とする。
 func buildWorktreeDigest(diffOutput, untrackedOutput []byte, repoRoot string) (string, error) {
 	hasher := sha256.New()
 	hasher.Write([]byte("diff\n"))
@@ -245,8 +216,6 @@ func buildWorktreeDigest(diffOutput, untrackedOutput []byte, repoRoot string) (s
 	return hex.EncodeToString(hasher.Sum(nil)), nil
 }
 
-// symlinkはtarget文字列だけをhashし、指す先がrepo外・巨大file・特殊fileでも内容を読まない。
-// FIFO・device・socket等はhangや無制限読込を避けるため通常file/symlink以外は失敗にする。
 func hashUntrackedEntry(hasher hash.Hash, absPath string, mode os.FileMode) error {
 	switch {
 	case mode.IsRegular():
@@ -271,8 +240,6 @@ func hashUntrackedEntry(hasher hash.Hash, absPath string, mode os.FileMode) erro
 	return nil
 }
 
-// root配下へpathを結合し、repo境界を越えるpath文字列を拒否する。symlink target解決ではなく文字列判定で、
-// root自身・root外へ向かうrelを弾く。
 func joinWithinRoot(root, rel string) (string, error) {
 	abs := filepath.Join(root, rel)
 	relToRoot, err := filepath.Rel(root, abs)
@@ -342,9 +309,6 @@ func (s *StateStore) LoadReviewStartSnapshot() (GitSnapshot, error) {
 	return readSnapshot(s.Path(reviewStartSnapshotFile))
 }
 
-// SaveReportOnlyStartSnapshotはreport-only PACKET再出力workerの開始直前状態を保存する。
-// 通常worker-end/review-start snapshotとは異なり、resumeを跨いでも再保存せず
-// 同一基準として読み続ける。
 func (s *StateStore) SaveReportOnlyStartSnapshot(snap GitSnapshot) error {
 	if err := writeSnapshot(s.Path(reportOnlyStartSnapshotFile), snap); err != nil {
 		return fmt.Errorf("report-only開始前snapshotを書き込めません: %w", err)
@@ -356,9 +320,6 @@ func (s *StateStore) LoadReportOnlyStartSnapshot() (GitSnapshot, error) {
 	return readSnapshot(s.Path(reportOnlyStartSnapshotFile))
 }
 
-// SavePoCStartSnapshotはPoC/観測専用taskのworker開始直前状態を保存する。report-onlyと
-// 同じくresumeを跨いでも再保存せず同一基準として読み続け、production diff無しを
-// wrapper側で強制するための基準になる。
 func (s *StateStore) SavePoCStartSnapshot(snap GitSnapshot) error {
 	if err := writeSnapshot(s.Path(poCStartSnapshotFile), snap); err != nil {
 		return fmt.Errorf("PoC開始前snapshotを書き込めません: %w", err)
@@ -390,13 +351,11 @@ func (s *StateStore) LoadSnapshotComparison() (SnapshotComparison, error) {
 	return comparison, nil
 }
 
-// SnapshotDigestはGitSnapshotのdigest群をtelemetry記録用へ切り出したもの。
-// 生diffやfile内容は持たず、HEAD・index・worktree(全体と親管理metadata集合除外)のdigestだけを残す。
 type SnapshotDigest struct {
 	Head           string `json:"head,omitempty"`
 	IndexDigest    string `json:"index_digest,omitempty"`
 	WorktreeDigest string `json:"worktree_digest,omitempty"`
-	// WorktreeDigestExcludingParentはreview resume承認判断のtelemetry証跡用。
+
 	WorktreeDigestExcludingParent string `json:"worktree_digest_excluding_parent,omitempty"`
 }
 
@@ -409,10 +368,6 @@ func snapshotDigest(s GitSnapshot) SnapshotDigest {
 	}
 }
 
-// SnapshotDiagnosticは1回のreview工程に付与するGit snapshot診断。Previousは比較基準
-// (worker-endまたは保存review-start)、Currentは比較対象の現在snapshot。Matchedはpointerで
-// nil=比較未実施(取得失敗等)、true=一致、false=不一致を区別し、bool零値(false=不一致)との
-// 混同を防ぐ。MismatchAxis/Reasonは不一致または取得失敗時だけ設定される。
 type SnapshotDiagnostic struct {
 	Stage        string          `json:"stage"`
 	Previous     *SnapshotDigest `json:"previous,omitempty"`
@@ -422,8 +377,6 @@ type SnapshotDiagnostic struct {
 	Reason       string          `json:"reason,omitempty"`
 }
 
-// MismatchAxisはcomparisonの不一致軸を"head,index,worktree"形式で返す。一致時は空文字。
-// SnapshotMismatchByAxis集計で各軸のmismatch件数へ用いる。
 func MismatchAxis(c SnapshotComparison) string {
 	if c.Matched {
 		return ""
@@ -441,9 +394,6 @@ func MismatchAxis(c SnapshotComparison) string {
 	return strings.Join(axes, ",")
 }
 
-// BuildSnapshotDiagnosticは2 snapshotと比較結果からtelemetry記録用diagnosticを構築する。
-// previous/currentのいずれかが空(取得失敗等)のときはmatchedをnil=未比較とし不一致軸集計から
-// 除外する。両方揃っていればcomparisonからmatched/mismatch軸を反映する。
 func BuildSnapshotDiagnostic(stage SnapshotStage, previous, current GitSnapshot, comparison SnapshotComparison, reason string) SnapshotDiagnostic {
 	diag := SnapshotDiagnostic{Stage: string(stage), Reason: reason}
 	if !isEmptySnapshot(previous) {

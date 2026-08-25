@@ -10,20 +10,15 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-// 実行済みTask Work Callはrunnerを実際に呼んだ全terminal pathでraw telemetryへexactly once
-// 記録される。本testはinitial/resumed/provider recovery各経路とcall前停止・mismatch・
-// after-read失敗・通常success/errorの全終端を横断し、runner実行回数・task記録数・stats計上の
-// 3者一致とprobe記録の分離をproduction flow全体で強制する。guard検出以外の終端
-// (rate_limited・state_error等)の記録は既存のprovider/packet testが固定している。
 type exactOnceCase struct {
 	name string
-	// setupはrepoとstate storeへplan/history・resume checkpoint等を用意する。
+
 	setup       func(t *testing.T, repoRoot string, st *state.StateStore)
 	steps       []runnerStep
 	entry       func(w *Workflow) error
 	mutatePhase string
 	mutate      func(string) error
-	// mutateStateはstate store側fileを破壊する終端(5h上限保存失敗)で使う。
+
 	mutateState       func(st *state.StateStore) error
 	mutateOnErr       bool
 	wantEntryErr      string
@@ -121,8 +116,6 @@ func (c exactOnceCase) run(t *testing.T) {
 	}
 }
 
-// TestGuardTerminalPathsRecordExecutedCallsExactlyOnceは親Codex専有file guardとprovider
-// recoveryを横断するterminal path行列でexactly once invariantを強制する。
 func TestGuardTerminalPathsRecordExecutedCallsExactlyOnce(t *testing.T) {
 	seedPlan := func(t *testing.T, repoRoot string, st *state.StateStore) {
 		writePlanFileContent(t, repoRoot, planGuardSeed)
@@ -261,8 +254,7 @@ func TestGuardTerminalPathsRecordExecutedCallsExactlyOnce(t *testing.T) {
 			wantEventOutcomes: []string{"parent_metadata_unavailable"},
 		},
 		{
-			// 5h上限でMarkReadyに失敗しても実行済み呼出はstate_errorとして1回だけ残る。
-			// resume経路で起こすためready markerの中身有りdirectoryは事前掃除されない。
+
 			name: "rate limit ready-state failure records executed call once",
 			setup: func(t *testing.T, repoRoot string, st *state.StateStore) {
 				seedPlan(t, repoRoot, st)
@@ -282,13 +274,13 @@ func TestGuardTerminalPathsRecordExecutedCallsExactlyOnce(t *testing.T) {
 			wantTaskOutcomes: []string{"state_error"},
 		},
 		{
-			// 5h上限で停止状態の保存に失敗しても実行済み呼出はstate_errorとして1回だけ残る。
+
 			name:  "rate limit checkpoint persist failure records executed call once",
 			setup: seedPlan,
 			steps: []runnerStep{{output: zaiFiveHourLog, runErr: errors.New("exit status 1")}},
 			entry: newTask,
 			mutateState: func(st *state.StateStore) error {
-				// run前のresume checkpoint書込みは成功させ、run後の保存だけを壊す。
+
 				if err := os.Remove(st.Path("resume-state.json")); err != nil {
 					return err
 				}

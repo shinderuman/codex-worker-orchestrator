@@ -10,8 +10,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
 )
 
-// process errorのkind集合。単発失敗の機械分類であり、人間向けusage文のような別契約を
-// 持たない。messageが呼出形式や失敗理由の本文を運ぶ。
 const (
 	errorKindUsage                   = "usage"
 	errorKindStdinPayload            = "stdin_payload"
@@ -38,8 +36,6 @@ type processErrorEnvelope struct {
 	Error processErrorBody `json:"error"`
 }
 
-// WriteProcessErrorは単発失敗のmachine contractであるJSON 1行をstderrへ出す。
-// 呼び出し元はnon-zero exit codeでprocess失敗を併示する。
 func WriteProcessError(w io.Writer, err error) error {
 	return writeJSON(w, processErrorEnvelope{Error: buildProcessError(err)})
 }

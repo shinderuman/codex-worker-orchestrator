@@ -14,7 +14,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
 )
 
-// processErrorEnvelopeのdecode先。外部machine contractの形そのものを固定する。
 type decodeProcessError struct {
 	Error struct {
 		Kind    string         `json:"kind"`
@@ -23,8 +22,6 @@ type decodeProcessError struct {
 	} `json:"error"`
 }
 
-// writeProcessErrorJSONはWriteProcessErrorの出力を1行JSONへdecodeして返す。
-// JSONでない出力はmachine contract違反として失敗する。
 func writeProcessErrorJSON(t *testing.T, err error) (decodeProcessError, string) {
 	t.Helper()
 	var out bytes.Buffer
@@ -49,9 +46,6 @@ func writeProcessErrorJSON(t *testing.T, err error) (decodeProcessError, string)
 	return envelope, raw
 }
 
-// TestWriteProcessErrorKindContractは単発失敗の全kind分類をtyped envelopeで固定する。
-// 各kindのkind値・message由来・detail構造が契約どおりであることを検証し、
-// presentation用の追加行・別契約を持たないことを保証する。
 func TestWriteProcessErrorKindContract(t *testing.T) {
 	rateLimit := runner.ZaiRateLimitError{
 		Phase:     "reviewer-1",

@@ -9,8 +9,6 @@ func timelineBaseTime() time.Time {
 	return time.Date(2026, 8, 16, 12, 0, 0, 0, time.UTC)
 }
 
-// TestCallsFromTaskEventsAggregatesPerCallはcall_id単位の集計でrole/phase/session・
-// session内call番号・結果観測・tool種別別の測定済みdurationと未測定数を出すことを検証する。
 func TestCallsFromTaskEventsAggregatesPerCall(t *testing.T) {
 	base := timelineBaseTime()
 	records := []TaskEventRecord{
@@ -93,8 +91,6 @@ func TestCallsFromTaskEventsAggregatesPerCall(t *testing.T) {
 	}
 }
 
-// TestCallsFromTaskEventsOutOfOrderTimestampsはfile順と時刻順が一致しないrecordでも
-// 観測窓を実際のtimestamp最小最大から算出する。
 func TestCallsFromTaskEventsOutOfOrderTimestamps(t *testing.T) {
 	base := timelineBaseTime()
 	records := []TaskEventRecord{
@@ -110,8 +106,6 @@ func TestCallsFromTaskEventsOutOfOrderTimestamps(t *testing.T) {
 	}
 }
 
-// TestCallsFromTaskEventsLastResultWinsは同一call内の複数result recordで最後のものを
-// 採用する(streamの最終result eventが観測値)。
 func TestCallsFromTaskEventsLastResultWins(t *testing.T) {
 	base := timelineBaseTime()
 	records := []TaskEventRecord{
@@ -124,7 +118,6 @@ func TestCallsFromTaskEventsLastResultWins(t *testing.T) {
 	}
 }
 
-// TestSumCallTimelineToolsはcall横断のtool合算で件数・合計時間・最大時間を統合する。
 func TestSumCallTimelineTools(t *testing.T) {
 	entries := []CallTimelineEntry{
 		{Tools: []CallTimelineTool{

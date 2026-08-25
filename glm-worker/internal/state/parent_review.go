@@ -9,10 +9,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 )
 
-// parent review outcome / fix originの有限集合。親Codexがterminal packetへ取った行動を
-// glm-worker側の確定境界だけで記録し、GLM modelによる意味推定とraw本文保存を行わない。
-// これら集計はglm-worker側の親行動観測であってCodex actual token usageそのものではなく、
-// Direct/orchestrated A/B評価の代替metricでもない。
 const (
 	ParentOutcomeAccepted = "accepted"
 	ParentOutcomeFix      = "fix"
@@ -20,10 +16,6 @@ const (
 	ParentOutcomeUnknown  = "unknown"
 )
 
-// fix originの意味: codex-reviewは親Codexがterminal packet受領後の最終reviewで新たに検出した
-// 差戻しだけ。GLM reviewerのterminal resultへ既に記載された指摘を親が差し戻す場合は
-// glm-reviewerへ分離する。どちらにも確定できないときだけunknownとし、codex-reviewへ
-// fail-open推定しない。
 const (
 	ParentOriginCodexReview    = "codex-review"
 	ParentOriginGLMReviewer    = "glm-reviewer"
@@ -40,8 +32,6 @@ var parentOutcomeKinds = map[string]bool{
 	ParentOutcomeUnknown:  true,
 }
 
-// ValidParentOriginは--origin値がfix originの有限集合へ一致するかだけを判定する。
-// 未宣言(空)はunknown originとして記録するため、ここでは受理しない。
 func ValidParentOrigin(value string) bool {
 	switch value {
 	case ParentOriginCodexReview, ParentOriginGLMReviewer, ParentOriginUserAmendment, ParentOriginExternalReview, ParentOriginMetadataRepair:
@@ -50,9 +40,6 @@ func ValidParentOrigin(value string) bool {
 	return false
 }
 
-// ParentReviewOpenStateはterminal packet emit時に開く未確定opportunityの識別。
-// Role/ModelAlias/Riskはそのpacketを生成した直近のTask Work Callから持ち、
-// outcome確定時のmodel/risk別集計とevent recordへの対応付けへ使う。
 type ParentReviewOpenState struct {
 	PacketStatus string `json:"packet_status"`
 	Role         string `json:"role,omitempty"`
@@ -60,16 +47,11 @@ type ParentReviewOpenState struct {
 	Risk         string `json:"risk,omitempty"`
 }
 
-// ParentReviewProducerはterminal packetを生成した直近のTask Work Callの識別。
 type ParentReviewProducer struct {
 	Role  string
 	Model string
 }
 
-// openParentReviewはterminal packet 1件分のopportunityを開く。既に未確定opportunityが
-// 残っている場合は新packetへ上書きされるため、破棄される側をtask closeと同じ
-// resolveParentOutcomeのunknown確定へ渡し、内訳model/risk集計への帰属も同じ形で行って
-// opportunity総数とoutcome総数の加法整合を保つ(fail-openなaccepted推定は行わない)。
 func (stats *TaskStats) openParentReview(status string, risk string, producer ParentReviewProducer) {
 	stats.resolveParentOutcome(ParentOutcomeUnknown, "")
 	stats.ParentReviewOpen = &ParentReviewOpenState{
@@ -80,9 +62,6 @@ func (stats *TaskStats) openParentReview(status string, risk string, producer Pa
 	}
 }
 
-// resolveParentOutcomeは未確定opportunityをoutcome 1件へ確定する。未確定が無い場合は
-// 何もせずfalseを返す(同じfix/decision/acceptの再実行での二重計上防止)。acceptedは
-// 採用可能なreview系packetだけへ限定し、decision packetへの--acceptをfail closedする。
 func (stats *TaskStats) resolveParentOutcome(kind, origin string) (ParentReviewOpenState, bool, error) {
 	if !parentOutcomeKinds[kind] {
 		return ParentReviewOpenState{}, false, fmt.Errorf("unknown parent outcome kind: %s", kind)
@@ -120,9 +99,6 @@ func (stats *TaskStats) resolveParentOutcome(kind, origin string) (ParentReviewO
 	return resolved, true, nil
 }
 
-// RecordParentOutcomeは現在taskの未確定parent review opportunityをoutcomeへ確定する。
-// --accept・--fix・--decisionの各gate通過後に呼ぶ。未確定が無い再実行はno-opでfalseを返す。
-// mirror書込失敗は他のstats観測と同じbest-effort警告へ留め、正規workflowを止めない。
 func (s *StateStore) RecordParentOutcome(kind, origin string) (bool, error) {
 	stats, err := s.loadTaskStats()
 	if err != nil {
@@ -143,7 +119,6 @@ func (s *StateStore) RecordParentOutcome(kind, origin string) (bool, error) {
 	return true, nil
 }
 
-// OpenParentReviewLabelは--status表示用に現在taskの未確定opportunity種別を返す。
 func (s *StateStore) OpenParentReviewLabel() string {
 	stats, err := s.loadTaskStats()
 	if err != nil || stats.ParentReviewOpen == nil {
@@ -152,8 +127,6 @@ func (s *StateStore) OpenParentReviewLabel() string {
 	return stats.ParentReviewOpen.PacketStatus
 }
 
-// 親行動event recordの固定phase。parent-closeはtask close(new task開始・--reset)での
-// 未確定opportunityのunknown確定を表す。
 const (
 	ParentPhaseAccept   = "parent-accept"
 	ParentPhaseFix      = "parent-fix"
@@ -191,15 +164,11 @@ func (s *StateStore) appendParentOutcomeEvent(taskID string, phase string, kind 
 	})
 }
 
-// rework集計のcoverage label。task呼出recordが読めない・足りないtaskがあるときunknownへ
-// 落とし、部分logからの増分を完全値として扱わない。
 const (
 	ParentReworkCoverageComplete = "complete"
 	ParentReworkCoverageUnknown  = "unknown"
 )
 
-// ParentReworkOriginはfix origin別の差し戻し後追加消費。該当originのfix outcome eventより
-// 後・次の親行動outcome eventより前のTask Work Callだけを数える。
 type ParentReworkOrigin struct {
 	Calls            int
 	WorkerCalls      int
@@ -210,9 +179,6 @@ type ParentReworkOrigin struct {
 	WallDurationMS   int64
 }
 
-// ParentReworkSummaryは--stats用のorigin別rework集計。Coverageはtask call記録と
-// TaskStats model_callsの対応が取れないtaskがある場合にunknownへ落とし、部分logからの
-// 増分を完全値として扱わない。
 type ParentReworkSummary struct {
 	ByOrigin map[string]ParentReworkOrigin
 	Coverage string
@@ -226,9 +192,6 @@ func isParentOutcomePhase(phase string) bool {
 	return false
 }
 
-// ComputeParentReworkは集計対象taskのtelemetry JSONLからfix origin別の差し戻し後追加消費を
-// 導出する。追加AI callも新規snapshot保存も行わず、既存task呼出recordのusage/turn/durationを
-// 親行動eventでのみ区切る。record欠損taskはCoverageをunknownへ落とすだけで補完しない。
 func (s *StateStore) ComputeParentRework(tasks []TaskStats) ParentReworkSummary {
 	summary := ParentReworkSummary{ByOrigin: make(map[string]ParentReworkOrigin), Coverage: ParentReworkCoverageComplete}
 	for _, task := range tasks {

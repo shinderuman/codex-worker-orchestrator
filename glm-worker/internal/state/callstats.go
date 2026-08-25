@@ -7,22 +7,12 @@ import (
 	"time"
 )
 
-// callOutlierPercentileMethodは分布の分位計算法。線形補間(rank法ではなくindex補間)で
-// あり、昇順sort値の隣接2点間をq比率で内挿する。
 const callOutlierPercentileMethod = "linear"
 
-// CallOutlierMinPopulationはoutlier閾値算出に使う母数の下限。group(呼出単位)と
-// task別turn合計(個別task単位)の両方へ適用する。group側の母数はturnを観測できた呼出数で
-// 数え、閾値になる分位は観測値だけから計算するためである。これ未満の母集団は分布閾値の
-// 根拠にならず(少数repoのsampleを閾値根拠にしない)、outlier判定から除外して分布値の表示
-// だけを続ける。
 const CallOutlierMinPopulation = 20
 
-// callOutlierRuleはoutlier判定規則の機械可読説明。
 const callOutlierRule = "worker task call with top_level_turns > p95(turns) of its role+phase+resumed group; task with worker turns_total > p95(turns_total) across tasks having at least one observed-turn call; populations below min_population are ineligible"
 
-// worker phaseの集計category。raw phaseには同一段階の再出力(-result-correct)や
-// auto-fixのround番号が混ざるため、分布はこのcategoryへ丸めてraw phaseは内訳で残す。
 const (
 	WorkerPhaseCategoryNew         = "worker-new"
 	WorkerPhaseCategoryExplicitFix = "worker-explicit-fix"
@@ -30,12 +20,8 @@ const (
 	WorkerPhaseCategoryDecision    = "worker-decision"
 )
 
-// workerReportOnlyPhasePrefixはTARGETS: PACKET再出力専用のauto-fix変種phase。収束上限・
-// risk floor・routingは通常auto-fixと同じ枠で数えるため集計でも同じcategoryへ丸める。
 const workerReportOnlyPhasePrefix = "worker-report-only-"
 
-// WorkerPhaseCategoryはworker呼出のraw phaseを集計categoryへ対応付ける。
-// reviewer phaseは丸めずraw phaseをそのまま使う。
 func WorkerPhaseCategory(phase string) string {
 	switch {
 	case phase == WorkerPhaseCategoryNew || strings.HasPrefix(phase, WorkerPhaseCategoryNew+"-"):
@@ -52,13 +38,11 @@ func WorkerPhaseCategory(phase string) string {
 	}
 }
 
-// TaskCallLogsは1 task分のtelemetry呼出記録。分析側へ読み取り済みrecordを渡す。
 type TaskCallLogs struct {
 	TaskID string
 	Logs   []ModelCallLog
 }
 
-// CallRecordCountsは分析対象recordのcall_type別計数。
 type CallRecordCounts struct {
 	Read  int `json:"read"`
 	Task  int `json:"task_calls"`
@@ -67,9 +51,6 @@ type CallRecordCounts struct {
 	Other int `json:"other_records"`
 }
 
-// CallMetricDistributionは1計量の分布。Observedは計量が観測できたrecord数で、
-// 観測できないrecord(turn数を持たないinterrupted呼出等)は分布へ入れずCalls側にだけ
-// 数える。Median・P95は線形補間。Total・Maxは観測値の合計・最大。
 type CallMetricDistribution struct {
 	Observed int     `json:"observed"`
 	Median   float64 `json:"median"`
@@ -78,9 +59,6 @@ type CallMetricDistribution struct {
 	Total    int64   `json:"total"`
 }
 
-// CallGroupDistributionは(role, phase, resumed)別の呼出分布。worker roleのPhaseは
-// 集計categoryで、RawPhasesへraw phase別の呼出数を残す。OutlierEligibleは
-// turn観測済み呼出がCallOutlierMinPopulation以上ありoutlier閾値算出に使えるか。
 type CallGroupDistribution struct {
 	Role            string                 `json:"role"`
 	Phase           string                 `json:"phase"`
@@ -94,7 +72,6 @@ type CallGroupDistribution struct {
 	OutlierEligible bool                   `json:"outlier_eligible"`
 }
 
-// CallModelDistributionは(role, model alias)別の呼出分布。
 type CallModelDistribution struct {
 	Role       string                 `json:"role"`
 	ModelAlias string                 `json:"model_alias"`
@@ -103,8 +80,6 @@ type CallModelDistribution struct {
 	DurationMS CallMetricDistribution `json:"duration_ms"`
 }
 
-// CallSessionDistributionはsession別の呼出集計。同一sessionのcurrent/resume/fix呼出の
-// 蓄積を横断で見るためのもので、追加のmodel呼出や推測補完は行わない。
 type CallSessionDistribution struct {
 	SessionID       string      `json:"session_id"`
 	Role            SessionRole `json:"role"`
@@ -118,7 +93,6 @@ type CallSessionDistribution struct {
 	LastCallAt      time.Time   `json:"last_call_at"`
 }
 
-// TaskCallCategoryTotalはtask内のcategory別呼出集計。
 type TaskCallCategoryTotal struct {
 	Category     string `json:"category"`
 	Calls        int    `json:"calls"`
@@ -127,7 +101,6 @@ type TaskCallCategoryTotal struct {
 	DurationMS   int64  `json:"duration_ms"`
 }
 
-// TaskInitialCallはtask内で最初のworker Task Work Call。
 type TaskInitialCall struct {
 	Phase      string    `json:"phase"`
 	StartedAt  time.Time `json:"started_at"`
@@ -136,10 +109,6 @@ type TaskInitialCall struct {
 	Outcome    string    `json:"outcome"`
 }
 
-// TaskCallAmplificationはtask単位のworker呼出増幅。TurnsXInitial・DurationMSXInitialは
-// 合計を最初のworker呼出で割った倍率で、最初の呼出がturn数0で中断された場合は倍率を
-// 観測できないためnullにする。TurnsObservedCallsはturnを観測できた呼出数で、task-level
-// outlierの母集団はこの値が1以上のtaskだけとする。
 type TaskCallAmplification struct {
 	TaskID             string                  `json:"task_id"`
 	Calls              int                     `json:"calls"`
@@ -154,7 +123,6 @@ type TaskCallAmplification struct {
 	ByCategory         []TaskCallCategoryTotal `json:"by_category"`
 }
 
-// CallOutlierObservationはoutlierに当たったworker呼出1件。
 type CallOutlierObservation struct {
 	TaskID        string    `json:"task_id"`
 	CallID        string    `json:"call_id"`
@@ -169,7 +137,6 @@ type CallOutlierObservation struct {
 	GroupP95Turns float64   `json:"group_p95_turns"`
 }
 
-// TaskOutlierObservationはoutlierに当たったtaskの累積worker呼出。
 type TaskOutlierObservation struct {
 	TaskID          string  `json:"task_id"`
 	Calls           int     `json:"calls"`
@@ -178,7 +145,6 @@ type TaskOutlierObservation struct {
 	TasksP95Turns   float64 `json:"tasks_p95_turns"`
 }
 
-// CallOutlierReportは保存済みtelemetryだけから組むworker呼出の分布とoutlier報告。
 type CallOutlierReport struct {
 	PercentileMethod string                    `json:"percentile_method"`
 	OutlierRule      string                    `json:"outlier_rule"`
@@ -192,25 +158,21 @@ type CallOutlierReport struct {
 	OutlierTasks     []TaskOutlierObservation  `json:"outlier_tasks"`
 }
 
-// callGroupKeyは呼出分布の集計key(role・phase・resumed)。
 type callGroupKey struct {
 	role    string
 	phase   string
 	resumed bool
 }
 
-// callModelKeyはmodel別分布の集計key(role・model alias)。
 type callModelKey struct {
 	role  string
 	alias string
 }
 
-// callSessionKeyはsession別集計の集計key。
 type callSessionKey struct {
 	sessionID string
 }
 
-// callGroupSamplesは分布算出前の1集計単位への蓄積。
 type callGroupSamples struct {
 	calls     int
 	turns     []int64
@@ -220,15 +182,11 @@ type callGroupSamples struct {
 	sessions  map[string]bool
 }
 
-// workerCallRefはoutlier判定へ使いやすいようtask IDを付けたworker Task Work Call。
 type workerCallRef struct {
 	taskID string
 	log    ModelCallLog
 }
 
-// BuildCallOutlierReportはtask別呼出記録から分布・増幅・outlierを組む。recordは読み取り
-// 済みの現行versionだけを渡し、AI呼出・推測補完は行わない。並び順はrole・phaseの昇順、
-// task・outlierはturn数の降順で固定する。
 func BuildCallOutlierReport(tasks []TaskCallLogs) CallOutlierReport {
 	report := CallOutlierReport{
 		PercentileMethod: callOutlierPercentileMethod,
@@ -419,7 +377,6 @@ func BuildCallOutlierReport(tasks []TaskCallLogs) CallOutlierReport {
 	return report
 }
 
-// absorbCallGroupは1呼出をgroupの集計へ反映する。nil samplesは新規に作る。
 func absorbCallGroup(samples *callGroupSamples, log ModelCallLog) *callGroupSamples {
 	if samples == nil {
 		samples = &callGroupSamples{
@@ -463,8 +420,6 @@ func callMetricDistribution(values []int64) CallMetricDistribution {
 	return distribution
 }
 
-// percentileLinearは昇順sort済みvaluesのq分位を隣接2点の線形補間で返す。
-// 観測がないときは0。
 func percentileLinear(sorted []int64, q float64) float64 {
 	if len(sorted) == 0 {
 		return 0
@@ -479,14 +434,10 @@ func percentileLinear(sorted []int64, q float64) float64 {
 	return float64(sorted[int(lower)]) + fraction*float64(sorted[int(upper)]-sorted[int(lower)])
 }
 
-// roundMetricFloatは分位・倍率のようなfloat計量を小数2桁へ丸める。線形補間のfloat誤差を
-// 出力へ残さないための表示丸めで、整数計量(Total・Max)は丸めない。
 func roundMetricFloat(value float64) float64 {
 	return math.Round(value*100) / 100
 }
 
-// buildTaskAmplificationは1 taskのworker呼出から増幅行を組む。initialはStartedAtが
-// 最も早い呼出で、同時刻のとき記録順の先を優先する。
 func buildTaskAmplification(taskID string, logs []ModelCallLog) TaskCallAmplification {
 	sorted := slices.Clone(logs)
 	slices.SortStableFunc(sorted, func(a, b ModelCallLog) int {
@@ -551,10 +502,6 @@ func buildTaskAmplification(taskID string, logs []ModelCallLog) TaskCallAmplific
 	return row
 }
 
-// taskTurnOutliersはtask別worker turn合計のp95超taskを返す。母集団はgroup側と同じ
-// 観測済み意味論でturnを観測できた呼出を1件以上持つtaskだけとし、zero-only taskが
-// 母数を増やしp95を下げてfalse outlierを作らないようにする。母数が
-// CallOutlierMinPopulation未満のときは閾値根拠にならないため空配列を返す。
 func taskTurnOutliers(tasks []TaskCallAmplification) []TaskOutlierObservation {
 	outliers := []TaskOutlierObservation{}
 	observed := make([]TaskCallAmplification, 0, len(tasks))

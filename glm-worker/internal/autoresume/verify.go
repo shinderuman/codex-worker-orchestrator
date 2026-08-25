@@ -1,7 +1,3 @@
-// Package autoresumeはauto-resume automationの作成結果をfail-closedで検証する。
-// Codex appのautomation_update応答だけを信頼せず、保存済みTOML実体とSQLite rowを
-// 期待ID・対象thread・status ACTIVE・絶対時刻で照合する。
-// DBへの書込みやautomation自作は行わず、sqlite3 CLI経由の読取のみ行う。
 package autoresume
 
 import (
@@ -188,7 +184,6 @@ func checkDB(db DBRow, params Params, expectedEpochMS int64, tomlRrule string) s
 	return ""
 }
 
-// validateRruleは1回限りのUTC実行規則だけを許可する。
 func validateRrule(rrule string, expectedDTStart string) string {
 	lines := strings.Split(rrule, "\n")
 	if len(lines) != 2 {

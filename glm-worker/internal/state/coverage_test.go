@@ -146,7 +146,6 @@ func TestComputeTelemetryCoverageArchivedStatsOnlyTaskIsHistoricalGap(t *testing
 	st := &StateStore{dir: t.TempDir()}
 	gapTask := "ccc205d1-1111-4222-8333-444444444444"
 
-	// 既知gapはtelemetry file自体が存在しない(statsだけに1 callが残る)。
 	all := []TaskStats{archivedStatsForCoverage(gapTask, 1)}
 	coverage := st.ComputeTelemetryCoverage(all)
 	if coverage.Status != CoverageIncomplete || coverage.UsageKnown {

@@ -1,4 +1,3 @@
-// --isolate: --stop停止中の元taskを保持したまま割り込みtask実行用checkoutを作る。
 package app
 
 import (
@@ -16,11 +15,8 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
 )
 
-// isolationBranchPrefixは--isolateが作成するbranchの固定接頭辞。
 const isolationBranchPrefix = "glm-worker/isolation/"
 
-// isolateOutputは--isolate成功時のmachine JSON 1行。親Codexはworktreeで割り込みtaskを
-// 実行し、統合・worktree削除の責務を持つ。
 type isolateOutput struct {
 	Result      string `json:"result"`
 	IsolationID string `json:"isolation_id"`
@@ -30,14 +26,6 @@ type isolateOutput struct {
 	RepoRoot    string `json:"repo_root"`
 }
 
-// isolateInterruptedTaskは--stop停止中(user interruption)の元taskから隔離checkout
-// (git worktree + branch)をHEAD位置へ作成し、元repo側とworktree側のstateへ対称な
-// 隔離記録を保存する。元checkoutのworking tree・元taskのstate/checkpoint/sessionへ
-// 書き込まず、隔離先はpath由来の別repo hashでstate・lock・session・stop endpointが
-// 分離される。統合(branch merge)の実施時期とconflict解決は親Codexの責務であり、
-// 元taskのresume保持照合が統合済みHEADを隔離記録の実質検証付きで承認する。
-// 既存の有効な隔離記録があるときは新規作成せず同じmachine結果を冪等に返し、
-// stale・破損記録は上書きせずfail closedにする。
 func isolateInterruptedTask(st *state.StateStore, cfg config.AppConfig, stdout io.Writer) error {
 	taskID := st.ReadOr("task.id", "")
 	if taskID == "" {
@@ -54,8 +42,6 @@ func isolateInterruptedTask(st *state.StateStore, cfg config.AppConfig, stdout i
 		return &workflow.WorkerError{Phase: "isolate", Message: "隔離はuser interruptionによる--stop停止状態だけで受け付けます"}
 	}
 
-	// 既存隔離記録の再実行は冪等再観測かfail closedのどちらかで、先行隔離先を孤児化する
-	// 上書きを作らない。
 	switch existing, recErr := st.LoadIsolationRecord(); {
 	case errors.Is(recErr, state.ErrNoIsolationRecord):
 	case recErr != nil:
@@ -78,13 +64,11 @@ func isolateInterruptedTask(st *state.StateStore, cfg config.AppConfig, stdout i
 		return fmt.Errorf("隔離worktreeの親directoryを作成できません: %w", err)
 	}
 
-	// git worktree addは空でない存在dirを拒否するため、worktreePath自体は作らない。
 	command := exec.Command("git", "-C", cfg.RepoRoot, "worktree", "add", "--quiet", "-b", branch, worktreePath, head)
 	if output, err := command.CombinedOutput(); err != nil {
 		return &workflow.WorkerError{Phase: "isolate", Message: fmt.Sprintf("隔離worktreeを作成できません: %v: %s", err, strings.TrimSpace(string(output)))}
 	}
-	// macOSのstate baseは/var symlink配下になり得る。state分離keyと記録は解決後pathで
-	// 固定しないと--status・再実行が同じhashを引かない。
+
 	canonical, err := filepath.EvalSymlinks(worktreePath)
 	if err != nil {
 		removeIsolationWorktree(cfg.RepoRoot, worktreePath, branch)
@@ -111,9 +95,7 @@ func isolateInterruptedTask(st *state.StateStore, cfg config.AppConfig, stdout i
 		removeIsolationWorktree(cfg.RepoRoot, worktreePath, branch)
 		return err
 	}
-	// 元repo側の隔離記録を最後に書く。ここまでの失敗はresume保持照合へ隔離経路を
-	// 出現させない。記録は現在の隔離先を指す単一pointerで、再--isolateは上書きせず
-	// 冪等再観測かfail closedにする(replayIsolation)。
+
 	if err := st.SaveIsolationRecord(state.IsolationRecord{
 		IsolationID:    isolationID,
 		Worktree:       canonical,
@@ -137,10 +119,6 @@ func isolateInterruptedTask(st *state.StateStore, cfg config.AppConfig, stdout i
 	})
 }
 
-// replayIsolationは有効な既存隔離記録へ同じmachine結果を冪等に返す。新worktreeを作って
-// 単一pointerを上書きせず、記録が現在task・repoの生きた隔離としてstill成立していること
-// (worktree・branch・隔離側出自記録の対称)だけを確認する。確認できない記録はstaleとして
-// fail closedにし、都合のよい上書きをしない。
 func replayIsolation(st *state.StateStore, cfg config.AppConfig, record state.IsolationRecord, taskID string, stdout io.Writer) error {
 	if record.OriginTaskID != taskID {
 		return &workflow.WorkerError{Phase: "isolate", Message: fmt.Sprintf("既存隔離記録の元task(%s)が現在task(%s)と一致しません", record.OriginTaskID, taskID)}
@@ -169,7 +147,6 @@ func replayIsolation(st *state.StateStore, cfg config.AppConfig, record state.Is
 	})
 }
 
-// resolveIsolationHeadは隔離branchの作成位置を現在HEADとして解決する。
 func resolveIsolationHead(repoRoot string) (string, error) {
 	output, err := exec.Command("git", "-C", repoRoot, "rev-parse", "HEAD").Output()
 	if err != nil {
@@ -178,8 +155,6 @@ func resolveIsolationHead(repoRoot string) (string, error) {
 	return strings.TrimSpace(string(output)), nil
 }
 
-// removeIsolationWorktreeは隔離作成の失敗経路でgit側資材を取り下げる。取り下げ失敗は
-// 呼出元の失敗理由を上書きしない。
 func removeIsolationWorktree(repoRoot string, worktreePath string, branch string) {
 	_ = exec.Command("git", "-C", repoRoot, "worktree", "remove", "--force", worktreePath).Run()
 	_ = exec.Command("git", "-C", repoRoot, "branch", "-D", branch).Run()

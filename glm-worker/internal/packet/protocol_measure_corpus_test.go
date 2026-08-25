@@ -8,9 +8,6 @@ import (
 	"testing"
 )
 
-// tokenProxyRunBasedはBPE風の決定論token proxy。ASCII英数連続を1 token、
-// ASCII区切記号の連続を1 token、非ASCII rune(日本語等)を1 tokenずつとして数える。
-// JSONの句読点がkey名・引用符で増える効果を、実tokenizerの概算として拾う。
 func tokenProxyRunBased(s string) int {
 	count := 0
 	runClass := byte(0)
@@ -43,8 +40,6 @@ func tokenProxyRunBased(s string) int {
 	return count
 }
 
-// tokenProxyCharPunctは悲観側の決定論token proxy。ASCII区切記号と非ASCII runeを
-// 1文字ずつ別tokenとして数え、JSON構文の句読点増加が最悪どう読まれるかを示す。
 func tokenProxyCharPunct(s string) int {
 	count := 0
 	inWord := false
@@ -69,9 +64,6 @@ func isProxyWordRune(r rune) bool {
 	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')
 }
 
-// semanticValueBytesは両形式が同じ値として運ぶ意味本文のbyte数。契約text field
-// 全体とtargets/artifacts各要素だけを数え、key名・区切り・引用符・placeholderは
-// 含めない。structured bytes = stdout bytes - この値。
 func semanticValueBytes(r Result) int {
 	total := len(r.Summary) + len(r.RequirementCoverage) + len(r.Tests) + len(r.Unverified) +
 		len(r.Decision) + len(r.Evidence) + len(r.Options) + len(r.Recommendation) +
@@ -86,7 +78,6 @@ func semanticValueBytes(r Result) int {
 	return total
 }
 
-// renderMeasurementは1件のsemantic payloadを1形式へrenderした結果の測定値。
 type renderMeasurement struct {
 	Format          string
 	StdoutBytes     int
@@ -94,10 +85,9 @@ type renderMeasurement struct {
 	TokensCharPunct int
 	SemanticBytes   int
 	StructuredBytes int
-	// NoiseFieldsは意味本文を持たない行・keyの数。旧形式の`none` placeholder・
-	// 空text field行に相当し、machine JSONのomitemptyは常に0。
+
 	NoiseFields int
-	// DuplicateValuesは同じ値が意味的に別field・要素へ重複出力された回数。
+
 	DuplicateValues int
 }
 
@@ -121,8 +111,6 @@ func measureRendered(format string, rendered string, value Result) renderMeasure
 	return m
 }
 
-// addValuesは意味重複検出のため、status/risk/text field/要素の空でない値の出現数を数える。
-// 予約placeholder(none/PACKET)はprotocol語彙で意味本文ではないため数えない。
 func addValues(values map[string]int, value Result) {
 	bump := func(s string) {
 		if s != "" && s != noneTargetsSentinel && s != ReportOnlyTargets {
@@ -147,8 +135,6 @@ func addValues(values map[string]int, value Result) {
 	}
 }
 
-// measureLegacyNoiseは旧形式が意味本文なしで出力した行数を数える。空text fieldの
-// 行と、配列が空のまま`none` placeholderだけを出したTARGETS/ARTIFACTS行。
 func measureLegacyNoise(value Result) int {
 	noise := 0
 	for _, field := range legacyDisplayFields(value) {
@@ -179,8 +165,6 @@ func measureMachine(value Result) renderMeasurement {
 	return measureRendered("machine-json", string(data), value)
 }
 
-// sameResultSemanticsはstatus/risk/全契約text field/targets/artifactsの意味等価比較。
-// nil配列と空配列は同じ「要素なし」として扱う。
 func sameResultSemantics(a Result, b Result) bool {
 	equalList := func(x []string, y []string) bool {
 		if len(x) != len(y) {
@@ -213,10 +197,6 @@ func sameResultSemantics(a Result, b Result) bool {
 		equalList(a.Artifacts, b.Artifacts)
 }
 
-// contractSemanticsはstatus別契約field・status/risk・targets/artifactsだけを残した
-// 投影。実corpusにはproducerが契約外field(例: IMPLEMENTEDへのdecision filler)を
-// 混入させる場合があり、machine JSON・旧KEY行形式とも契約面だけを運ぶため、
-// 保持比較はこの投影に対して行う。契約外fieldの混入数自体は測定値として報告する。
 func contractSemantics(value Result) Result {
 	projected := Result{
 		Status:    value.Status,
@@ -246,20 +226,16 @@ func contractSemantics(value Result) Result {
 	return projected
 }
 
-// hasNonContractNoiseはproducerが契約外fieldへ値を混入したpayloadかを判定する。
 func hasNonContractNoise(value Result) bool {
 	return !sameResultSemantics(value, contractSemantics(value))
 }
 
-// measuredPayloadは測定corpus 1件。Sourceは実telemetry由来の由来情報。
 type measuredPayload struct {
 	Name   string
 	Source string
 	Value  Result
 }
 
-// syntheticMeasuredPayloadsは契約境界を含む固定payload。全status正例・上限長
-// field・none sentinel・report-only PACKET・要素内セミコロンの旧形式脆弱性。
 func syntheticMeasuredPayloads() []measuredPayload {
 	maxField := strings.Repeat("x", 1000) + strings.Repeat("語", 100)
 	implementedNone := implementedResult()
@@ -300,8 +276,6 @@ func syntheticMeasuredPayloads() []measuredPayload {
 	}
 }
 
-// realMeasuredPayloadsは保存telemetryから収穫した受理済みstructured結果。
-// testdata出所とeraはtest file本文で固定し、収穫は読み取り専用で行った。
 func realMeasuredPayloads(t *testing.T) []measuredPayload {
 	t.Helper()
 	data, err := os.ReadFile(filepath.Join("testdata", "protocol-measure-results.json"))
@@ -342,9 +316,6 @@ func allMeasuredPayloads(t *testing.T) []measuredPayload {
 	return append(syntheticMeasuredPayloads(), realMeasuredPayloads(t)...)
 }
 
-// legacyRoundTripExpectedLossは旧形式decoderが往復で失う既知の意味。reviewerの
-// TARGETS予約値noneは`none` placeholderへ潰れて要素なしになり、要素内セミコロンは
-// 要素分割を起こす。それ以外の契約fieldは往復保存される。
 func legacyRoundTripLoss(value Result) string {
 	joined := legacyJoinList(value.Targets)
 	parsed := legacySplitDisplayList(joined)
@@ -359,10 +330,6 @@ func legacyRoundTripLoss(value Result) string {
 	return ""
 }
 
-// TestProtocolMeasurementSemanticRetentionは同じsemantic payloadを両形式へ
-// renderしてdecodeしたとき、Codexが受け取る意味情報が保存されるかを固定する。
-// 比較面はstatus別契約field・status/risk・targets/artifacts。machine JSONは全corpus
-// で無劣化、旧KEY行形式は列挙した既知喪失のみ許容する。
 func TestProtocolMeasurementSemanticRetention(t *testing.T) {
 	for _, payload := range allMeasuredPayloads(t) {
 		t.Run(payload.Name, func(t *testing.T) {
@@ -392,9 +359,6 @@ func TestProtocolMeasurementSemanticRetention(t *testing.T) {
 	}
 }
 
-// TestProtocolMeasurementNonContractNoiseは実corpusに契約外fieldを混入したpayloadが
-// 存在することと、両形式がその混入を同じように契約面から除外することを固定する。
-// 混入fieldの値自体はどちらの形式でもCodexへ届かない。
 func TestProtocolMeasurementNonContractNoise(t *testing.T) {
 	noisy := 0
 	for _, payload := range realMeasuredPayloads(t) {
@@ -424,9 +388,6 @@ func TestProtocolMeasurementNonContractNoise(t *testing.T) {
 	}
 }
 
-// TestProtocolMeasurementLegacyNoneSentinelLossは旧形式だけが持つ意味喪失を実例で
-// 固定する。reviewer TARGETS予約値none(現契約で有効)は旧形式では`TARGETS: none`
-// placeholderへ描画され、decoderが要素なしへ潰す。machine JSONは配列として保存する。
 func TestProtocolMeasurementLegacyNoneSentinelLoss(t *testing.T) {
 	review := passResult()
 	review.Targets = []string{noneTargetsSentinel}
@@ -451,9 +412,6 @@ func TestProtocolMeasurementLegacyNoneSentinelLoss(t *testing.T) {
 	}
 }
 
-// TestProtocolMeasurementNoiseAndDuplicationは意味本文のない出力(placeholder・空行)
-// と値重複の測定を固定する。machine JSONのnoiseは構造的に0、旧形式はartifacts空の
-// payloadで`ARTIFACTS: none`行が残る。値重複は両形式とも発生しない。
 func TestProtocolMeasurementNoiseAndDuplication(t *testing.T) {
 	for _, payload := range allMeasuredPayloads(t) {
 		machine := measureMachine(payload.Value)
@@ -474,9 +432,6 @@ func TestProtocolMeasurementNoiseAndDuplication(t *testing.T) {
 	}
 }
 
-// TestProtocolMeasurementByteDeltaBandは実payload corpusでのbyte/token差を測定値
-// どおり固定する。machine JSONはkey名・引用符の構文費用で旧形式よりわずかに大きく
-// なる(-2%..+5%の帯)ことが測定結論であり、形式の優劣を前提にしない。
 func TestProtocolMeasurementByteDeltaBand(t *testing.T) {
 	var legacyBytes, machineBytes, legacyRun, machineRun int
 	for _, payload := range realMeasuredPayloads(t) {

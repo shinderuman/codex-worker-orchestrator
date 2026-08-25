@@ -7,16 +7,11 @@ import (
 	"testing"
 )
 
-// 必須fieldの意味対応は、旧text protocolのstatus別requiredFields(packet.go@22c1d0b^)を
-// typed結果契約へ写したものである。TARGETSを要求した4 STATUS(worker NEEDS_SOL_DECISIONと
-// reviewer PASS/FIX_REQUIRED/NEEDS_SOL_REVIEW)すべてで配列長1以上を要求し、旧WORKER.mdの
-// 「不要ならnone」sentinelは小文字厳密表現"none"の単独要素だけを正規形とする。
-// IMPLEMENTEDだけ旧契約どおり対象なし(空配列)を許す。
 type requiredFieldCase struct {
 	key   string
 	blank func(*Result)
 	want  string
-	// mismatchはschema保証違反としてfail closed分類になるfield(STATUS等)を区別する。
+
 	mismatch bool
 }
 
@@ -131,9 +126,6 @@ func statusContracts() []statusContract {
 	}
 }
 
-// TestStatusRequiredFieldsCorrespondenceは旧status別requiredFieldsの意味対応を
-// table-drivenのnegative/positiveで固定する。ARTIFACTSの行存在契約はschema requiredが担うため
-// TestProducerSchemaConsumerAcceptance側で検証する。
 func TestStatusRequiredFieldsCorrespondence(t *testing.T) {
 	for _, contract := range statusContracts() {
 		t.Run(contract.name, func(t *testing.T) {
@@ -163,10 +155,6 @@ func TestStatusRequiredFieldsCorrespondence(t *testing.T) {
 	}
 }
 
-// TestWorkerDecisionTargetsNoneSentinelは旧WORKER.mdのTARGETS契約
-// 「現物確認が必要ならfile:symbol等。不要ならnone」の予約値noneを要素として維持する。
-// 対象が概念的でfile targetを持たないNEEDS_SOL_DECISIONもこの既存sentinelだけで表現し、
-// 新しい自由文fallbackは追加しない。
 func TestWorkerDecisionTargetsNoneSentinel(t *testing.T) {
 	decision := Result{
 		Status:          StatusNeedsSolDecision,
@@ -183,18 +171,14 @@ func TestWorkerDecisionTargetsNoneSentinel(t *testing.T) {
 	}
 }
 
-// targetsElementCaseはTARGETS受理集合の要素表現1件。旧text protocolの
-// 「field値が非空」をtyped arrayへ写す際、配列長だけでなく要素内容まで比較する。
 type targetsElementCase struct {
 	name    string
 	targets []string
 	accept  bool
-	// wantRejectSubstringは拒否時の理由文。受理期待caseでは空。
+
 	wantRejectSubstring string
 }
 
-// sharedTargetsElementCasesはstatus非依存の要素正規形。予約値の扱いだけ
-// status別契約(validators側のtable)へ差し込む。
 func sharedTargetsElementCases() []targetsElementCase {
 	return []targetsElementCase{
 		{name: "empty element", targets: []string{""}, accept: false, wantRejectSubstring: "空・空白のみ"},
@@ -205,8 +189,7 @@ func sharedTargetsElementCases() []targetsElementCase {
 		{name: "padded concrete", targets: []string{" a.go:10 "}, accept: true},
 		{name: "duplicate", targets: []string{"a.go:10", "a.go:10"}, accept: false, wantRejectSubstring: "重複"},
 		{name: "duplicate after trim", targets: []string{"a.go:10", " a.go:10"}, accept: false, wantRejectSubstring: "重複"},
-		// 重複拒否理由へ要素文字列を埋め込まないため、artifact等の集計keywordを含む
-		// 要素でもRejectCategoryはtargets-noneのまま保たれる。
+
 		{name: "duplicate artifacts-like element", targets: []string{"artifact.go:10", "artifact.go:10"}, accept: false, wantRejectSubstring: "重複"},
 		{name: "mixed none", targets: []string{"none", "glm-worker/internal/foo.go:10"}, accept: false, wantRejectSubstring: "混在"},
 		{name: "none case variant sole", targets: []string{"NONE"}, accept: false, wantRejectSubstring: "厳密表現"},
@@ -216,9 +199,6 @@ func sharedTargetsElementCases() []targetsElementCase {
 	}
 }
 
-// TestTargetsElementAcceptanceByStatusはworker/reviewer全statusのTARGETS受理集合を
-// 同一の要素表現tableへ通して比較する。EVAL文言「NEEDS_SOL_REVIEWのnone要素拒否」は
-// all-noneだけでなく1要素でも含めた拒否として実装側と一致させる。
 func TestTargetsElementAcceptanceByStatus(t *testing.T) {
 	validTargets := []string{"glm-worker/internal/packet/validate.go:validateTargets"}
 	statuses := []struct {
@@ -360,10 +340,6 @@ func schemaRequiredNames(t *testing.T, node map[string]any) []string {
 	return names
 }
 
-// TestProducerSchemaConsumerAcceptanceはproducer JSON Schemaとconsumer
-// (ParseStructured+Validate*)の受理集合の合成を固定する。schemaは未検証語彙の
-// additionalPropertiesを使わないため未知propertyを許容し、consumerは未知fieldを
-// 無害に無視する。既知fieldの型・必須・status別意味制約は厳格に維持する。
 func TestProducerSchemaConsumerAcceptance(t *testing.T) {
 	knownFields := resultJSONFieldNames(t)
 	for name, build := range map[string]func() (string, error){
@@ -422,15 +398,11 @@ func TestProducerSchemaConsumerAcceptance(t *testing.T) {
 	})
 }
 
-// worker/reviewer schema双方のrequired keyを過不足なく含む正例JSON。schema適合出力が
-// consumerへ受理されることだけを検証するため、omitemptyで省略されうる空配列も明示する。
 const (
 	workerStructuredFixture   = `{"status":"IMPLEMENTED","risk":"LOW","summary":"s","requirement_coverage":"c","tests":"t","unverified":"none","targets":[],"artifacts":[]}`
 	reviewerStructuredFixture = `{"status":"PASS","risk":"LOW","summary":"s","requirement_coverage":"c","invariants":"i","test_evidence":"e","issues":"none","residual_risk":"none","targets":["a.go:f"],"artifacts":[]}`
 )
 
-// TestParseStructuredIgnoresSchemaPermittedUnknownFieldsはproducer schemaが許容する
-// 未知fieldをconsumerが無害に無視し、表示へ伝播しないことを検証する。
 func TestParseStructuredIgnoresSchemaPermittedUnknownFields(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -461,8 +433,6 @@ func TestParseStructuredIgnoresSchemaPermittedUnknownFields(t *testing.T) {
 	}
 }
 
-// TestParseStructuredKeepsKnownFieldStrictnessは未知fieldの無視と引き換えに
-// 既知fieldの構造検証を緩めないことを検証する。
 func TestParseStructuredKeepsKnownFieldStrictness(t *testing.T) {
 	cases := []struct {
 		name string
@@ -487,8 +457,6 @@ func TestParseStructuredKeepsKnownFieldStrictness(t *testing.T) {
 	}
 }
 
-// TestConsumerBackstopForReviewerTargetsKeyはschema requiredをproviderが破った
-// structured_output(targets key欠落)でもconsumer側意味検証が拒否することを検証する。
 func TestConsumerBackstopForReviewerTargetsKey(t *testing.T) {
 	data := strings.Replace(reviewerStructuredFixture, `"targets":["a.go:f"],`, "", 1)
 	result, err := ParseStructured([]byte(data))
@@ -501,9 +469,6 @@ func TestConsumerBackstopForReviewerTargetsKey(t *testing.T) {
 	}
 }
 
-// TestConsumerBackstopForWorkerTargetsKeyはworker側でもtargets key欠落・空配列の
-// NEEDS_SOL_DECISIONをconsumer側意味検証が拒否することを検証する(schemaはrole共通のため
-// IMPLEMENTEDの空配列は引き続き受理する)。
 func TestConsumerBackstopForWorkerTargetsKey(t *testing.T) {
 	decision := `{"status":"NEEDS_SOL_DECISION","risk":"HIGH","decision":"d","evidence":"e","options":"o","recommendation":"r","test_obligations":"t","artifacts":[]}`
 	result, err := ParseStructured([]byte(decision))
@@ -532,8 +497,6 @@ func TestConsumerBackstopForWorkerTargetsKey(t *testing.T) {
 	}
 }
 
-// TestStructuredStatusPositivesは全statusのschema適合かつ意味検証合格の正例を
-// producer出力から最終受理まで通す。schemaが要求する必須keyを全て含む形で与える。
 func TestStructuredStatusPositives(t *testing.T) {
 	cases := []struct {
 		name     string

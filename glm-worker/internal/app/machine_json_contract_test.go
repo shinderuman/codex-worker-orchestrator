@@ -12,8 +12,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-// decodeSingleLineJSONはmachine JSON 1行をdecode済みmapへ返す。typed structのzero
-// valueとJSON null・field omissionを区別するため、契約確認はこのraw JSONに対して行う。
 func decodeSingleLineJSON(t *testing.T, rendered string) map[string]any {
 	t.Helper()
 	raw := strings.TrimSpace(rendered)
@@ -24,7 +22,6 @@ func decodeSingleLineJSON(t *testing.T, rendered string) map[string]any {
 	return decoded
 }
 
-// statusRawJSONは--status出力1行のraw JSONを返す。
 func statusRawJSON(t *testing.T, cfg config.AppConfig) map[string]any {
 	t.Helper()
 	var out bytes.Buffer
@@ -34,7 +31,6 @@ func statusRawJSON(t *testing.T, cfg config.AppConfig) map[string]any {
 	return decodeSingleLineJSON(t, out.String())
 }
 
-// statsRawJSONは--stats出力1行のraw JSONを返す。
 func statsRawJSON(t *testing.T, st *state.StateStore) map[string]any {
 	t.Helper()
 	var out bytes.Buffer
@@ -44,7 +40,6 @@ func statsRawJSON(t *testing.T, st *state.StateStore) map[string]any {
 	return decodeSingleLineJSON(t, out.String())
 }
 
-// requireJSONKeyはkeyの省略ではなくnullとして存在することを検査する。
 func requireJSONKey(t *testing.T, decoded map[string]any, key string) any {
 	t.Helper()
 	value, ok := decoded[key]
@@ -54,7 +49,6 @@ func requireJSONKey(t *testing.T, decoded map[string]any, key string) any {
 	return value
 }
 
-// assertNullJSONValueは値がJSON nullであることを検査する。
 func assertNullJSONValue(t *testing.T, key string, value any) {
 	t.Helper()
 	if value != nil {
@@ -62,7 +56,6 @@ func assertNullJSONValue(t *testing.T, key string, value any) {
 	}
 }
 
-// assertEnumJSONValueは値が指定enum集合内の文字列であることを検査する。
 func assertEnumJSONValue(t *testing.T, key string, value any, allowed ...string) {
 	t.Helper()
 	text, ok := value.(string)
@@ -77,8 +70,6 @@ func assertEnumJSONValue(t *testing.T, key string, value any, allowed ...string)
 	t.Fatalf("machine JSONの%q = %q want enum %v", key, text, allowed)
 }
 
-// assertNoPresentationSentinelは対象fieldへ"none"/"unknown"のpresentation sentinelが
-// 漏れていないことを検査する。
 func assertNoPresentationSentinel(t *testing.T, decoded map[string]any, keys ...string) {
 	t.Helper()
 	for _, key := range keys {
@@ -89,9 +80,6 @@ func assertNoPresentationSentinel(t *testing.T, decoded map[string]any, keys ...
 	}
 }
 
-// TestStatusRawJSONContractは--status機械契約の対象enum fieldをraw JSONで固定する。
-// task不在・非active・activeの全境界で、観測できない値がJSON文字列のsentinelでも
-// key omissionでもなくnullであること、観測できる値がenum値であることを検証する。
 func TestStatusRawJSONContract(t *testing.T) {
 	statusFields := []string{"task_status", "task_liveness", "repository_lock", "lock_pid"}
 
@@ -144,8 +132,6 @@ func TestStatusRawJSONContract(t *testing.T) {
 	})
 }
 
-// knownTaskStatusesはtask_statusの現行外部enum。--status・--stats・--timeline・
-// --convergenceのtask status受理集合はこの7値とnullだけである。
 var knownTaskStatuses = []string{
 	"active",
 	"waiting-decision",
@@ -156,7 +142,6 @@ var knownTaskStatuses = []string{
 	"interrupted",
 }
 
-// timelineRawJSONは--timeline出力1行(現在task)のraw JSONを返す。
 func timelineRawJSON(t *testing.T, st *state.StateStore) map[string]any {
 	t.Helper()
 	var out bytes.Buffer
@@ -166,7 +151,6 @@ func timelineRawJSON(t *testing.T, st *state.StateStore) map[string]any {
 	return decodeSingleLineJSON(t, out.String())
 }
 
-// convergenceRawJSONは--convergence出力1行(現在task)のraw JSONを返す。
 func convergenceRawJSON(t *testing.T, st *state.StateStore) map[string]any {
 	t.Helper()
 	var out bytes.Buffer
@@ -176,7 +160,6 @@ func convergenceRawJSON(t *testing.T, st *state.StateStore) map[string]any {
 	return decodeSingleLineJSON(t, out.String())
 }
 
-// statsCurrentTaskJSONは--stats出力のcurrent_task objectを返す。
 func statsCurrentTaskJSON(t *testing.T, st *state.StateStore) map[string]any {
 	t.Helper()
 	decoded := statsRawJSON(t, st)
@@ -187,8 +170,6 @@ func statsCurrentTaskJSON(t *testing.T, st *state.StateStore) map[string]any {
 	return currentTask
 }
 
-// taskStatusSurfacesは同一意味のtask statusをmachine JSONへ出す全production surfaceの
-// raw JSON読み取り。
 var taskStatusSurfaces = []struct {
 	name string
 	read func(t *testing.T, cfg config.AppConfig, st *state.StateStore) any
@@ -207,10 +188,6 @@ var taskStatusSurfaces = []struct {
 	}},
 }
 
-// TestTaskStatusFiniteEnumBoundaryはtask_status外部受理集合を現行7値とnullだけへ固定する。
-// --status・--stats・--timeline・--convergenceの全producerで、既知7値がそのまま出ることと、
-// 永続task.statusへ直接書いた未知値が契約外string・presentation sentinelとして漏れないことを
-// raw JSONで検証する。
 func TestTaskStatusFiniteEnumBoundary(t *testing.T) {
 	for _, known := range knownTaskStatuses {
 		t.Run(known, func(t *testing.T) {
@@ -233,8 +210,6 @@ func TestTaskStatusFiniteEnumBoundary(t *testing.T) {
 		})
 	}
 
-	// 未知永続値は未観測扱いへ正規化され、presentation sentinelへも変換されない。
-	// "none"は内部sentinel相当の永続値が外部へ出ないことの境界確認用。
 	for _, unknown := range []string{"legacy-unknown-status", "none"} {
 		t.Run("未知永続値 "+unknown, func(t *testing.T) {
 			cfg := newAppConfig(t)
@@ -256,8 +231,6 @@ func TestTaskStatusFiniteEnumBoundary(t *testing.T) {
 		})
 	}
 
-	// stats履歴archiveのstatus値も同じ受理集合を通る。明示指定taskのarchive値が
-	// 未知のとき契約外stringが出ないことを--timelineで検証する。
 	t.Run("未知archive値", func(t *testing.T) {
 		cfg := newAppConfig(t)
 		st, err := state.NewStateStore(cfg)
@@ -287,7 +260,6 @@ func TestTaskStatusFiniteEnumBoundary(t *testing.T) {
 	})
 }
 
-// statsMapAggregateFieldsは--stats出力のmap集計field全件のJSON key。
 var statsMapAggregateFields = []string{
 	"model_calls_by_alias",
 	"model_duration_ms_by_alias",
@@ -314,8 +286,6 @@ var statsMapAggregateFields = []string{
 	"parent_outcomes_by_risk",
 }
 
-// assertStatsMapFieldsAreObjectsは全map集計fieldがJSON nullではなくobjectであることを
-// raw JSONで検査する。typed decodeのlen(nilMap)==0ではnullと{}を区別できない。
 func assertStatsMapFieldsAreObjects(t *testing.T, decoded map[string]any) {
 	t.Helper()
 	for _, key := range statsMapAggregateFields {
@@ -325,8 +295,6 @@ func assertStatsMapFieldsAreObjects(t *testing.T, decoded map[string]any) {
 	}
 }
 
-// TestStatsRawJSONContractは--stats機械契約をraw JSONで固定する。task 0件でも全map
-// 集計fieldが空objectで存在し、current_task.statusがtask不在時nullになる。
 func TestStatsRawJSONContract(t *testing.T) {
 	t.Run("task 0件", func(t *testing.T) {
 		cfg := newAppConfig(t)

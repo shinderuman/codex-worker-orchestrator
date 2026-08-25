@@ -11,8 +11,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-// planGuardSeedはPlan配置契約(## ACTIVE節へ`IMPLEMENTATION_TASKS/`相対path 1件)を満たす
-// seed。activeTaskGuardSeedはそこへ解決されるACTIVE task file本文の代役。
 const (
 	planGuardSeed       = "# plan\n\n## ACTIVE\n\n- `IMPLEMENTATION_TASKS/001-active.md`\n"
 	activeTaskGuardSeed = "# ACTIVE task\n\n## External feasibility\n\nstatus: not-applicable\n\n## Contract\n\n- guard検証用seed\n"
@@ -67,8 +65,6 @@ func mutatePlanFile(repoRoot string) error {
 	return os.WriteFile(filepath.Join(repoRoot, implementationPlanFile), []byte("glm edited plan\n"), 0o644)
 }
 
-// requirePlanFileFailClosedはplan file不変性違反のfail closed終端共通の事後条件を検証する。
-// reviewerを呼ばず(または次のreviewerを呼ばず)Sol確認へ昇格し、resume可能な停止状態を残さない。
 func requirePlanFileFailClosed(t *testing.T, st *state.StateStore, r *mutatingRunner, out *bytes.Buffer, wantReason string, wantCalls int) {
 	t.Helper()
 	if got, want := len(r.prompts), wantCalls; got != want {
@@ -89,9 +85,6 @@ func requirePlanFileFailClosed(t *testing.T, st *state.StateStore, r *mutatingRu
 	}
 }
 
-// TestPlanFileWorkerMutationFailsClosedBeforeReviewは通常worker呼出中のplan file編集を
-// 呼出前後の内容比較で検出し、reviewerを呼ばずSol確認へ昇格するproduction因果を固定する。
-// GLMの変更内容はbaselineへ自動復元せず、実行されたtask呼出はtelemetryへ残す。
 func TestPlanFileWorkerMutationFailsClosedBeforeReview(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
@@ -121,8 +114,6 @@ func TestPlanFileWorkerMutationFailsClosedBeforeReview(t *testing.T) {
 	}
 }
 
-// TestPlanFileAbsentWorkerCreationFailsClosedはplan欠損時にworkerが同fileを生成した場合を
-// 呼出前後の存在比較で検出する。生成禁止契約をwrapper側で機械強制する。
 func TestPlanFileAbsentWorkerCreationFailsClosed(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	w, r, out, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
@@ -136,7 +127,6 @@ func TestPlanFileAbsentWorkerCreationFailsClosed(t *testing.T) {
 	requirePlanFileFailClosed(t, st, r, out, "存在しない状態から新規作成", 1)
 }
 
-// TestPlanFileDeletionFailsClosedはworkerによるplan削除も同じ不変性違反として検出する。
 func TestPlanFileDeletionFailsClosed(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
@@ -153,8 +143,6 @@ func TestPlanFileDeletionFailsClosed(t *testing.T) {
 	requirePlanFileFailClosed(t, st, r, out, "削除されました", 1)
 }
 
-// TestPlanFileUnchangedProceedsToReviewはplanが親Codex置きの内容のまま変更無ければ
-// 通常flowを妨げないことを確認する(false positive回帰)。
 func TestPlanFileUnchangedProceedsToReview(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
@@ -174,8 +162,6 @@ func TestPlanFileUnchangedProceedsToReview(t *testing.T) {
 	}
 }
 
-// TestPlanFileAbsentThroughoutProceedsはGit repository内でplanが未追跡のまま欠損して
-// いる場合、生成検出以外に干渉しないことを確認する。
 func TestPlanFileAbsentThroughoutProceeds(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	w, r, _, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
@@ -194,9 +180,6 @@ func TestPlanFileAbsentThroughoutProceeds(t *testing.T) {
 	}
 }
 
-// TestPlanFileTrackedMissingFailsClosedBeforeCallはGit indexがplanを追跡するのにworking treeへ
-// 欠損している場合、model呼出前にfail closedする境界を固定する。stagedとcommitted両方の
-// 追跡形態で等しく扱い、欠損planの再生成・復元は行わない。
 func TestPlanFileTrackedMissingFailsClosedBeforeCall(t *testing.T) {
 	cases := map[string]func(t *testing.T, repoRoot string){
 		"staged index entry": func(t *testing.T, repoRoot string) {
@@ -255,12 +238,9 @@ func TestPlanFileTrackedMissingFailsClosedBeforeCall(t *testing.T) {
 	}
 }
 
-// TestPlanFileTrackingIndeterminateFailsClosedBeforeCallはGit repository内でplan追跡判定が
-// 失敗した場合を未追跡へ畳まず、baseline取得不能としてmodel呼出前にfail closedする境界を
-// 固定する。一時的なgit異常でtracked欠損検出を素通りさせない。
 func TestPlanFileTrackingIndeterminateFailsClosedBeforeCall(t *testing.T) {
 	repoRoot := initMutationRepo(t)
-	// .git markerは残し、index参照だけ失敗する状態を作る。
+
 	if err := os.Remove(filepath.Join(repoRoot, ".git", "HEAD")); err != nil {
 		t.Fatal(err)
 	}
@@ -302,9 +282,6 @@ func TestPlanFileTrackingIndeterminateFailsClosedBeforeCall(t *testing.T) {
 	}
 }
 
-// TestPlanFileUntrackedAbsentNonGitRepoProceedsはgit repository外でもplan未追跡欠損を
-// 通常作業として扱うことを確認する。glm-workerはplanを置かない他repositoryでも使うため。
-// snapshot取得はgit外で失敗するため既定stubへ戻し、plan guard境界だけを検証する。
 func TestPlanFileUntrackedAbsentNonGitRepoProceeds(t *testing.T) {
 	repoRoot := t.TempDir()
 	w, r, _, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
@@ -326,7 +303,6 @@ func TestPlanFileUntrackedAbsentNonGitRepoProceeds(t *testing.T) {
 	}
 }
 
-// TestPlanFileDecisionWorkerMutationFailsClosedはSol判断後worker経路でも同じ検出を強制する。
 func TestPlanFileDecisionWorkerMutationFailsClosed(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
@@ -348,7 +324,6 @@ func TestPlanFileDecisionWorkerMutationFailsClosed(t *testing.T) {
 	requirePlanFileFailClosed(t, st, r, out, "内容が変化", 1)
 }
 
-// TestPlanFileExplicitFixMutationFailsClosedは明示fix worker経路でも同じ検出を強制する。
 func TestPlanFileExplicitFixMutationFailsClosed(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
@@ -384,8 +359,6 @@ func planFileDecisionWorkflow(t *testing.T, st *state.StateStore, repoRoot strin
 	return w, r, out
 }
 
-// TestPlanFileAutoFixMutationFailsClosedはautomatic fix workerの変更を検出し、
-// 次のreviewer(round 2)を呼ばずfail closedする。
 func TestPlanFileAutoFixMutationFailsClosed(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
@@ -402,8 +375,6 @@ func TestPlanFileAutoFixMutationFailsClosed(t *testing.T) {
 	requirePlanFileFailClosed(t, st, r, out, "内容が変化", 3)
 }
 
-// TestPlanFileResumeWorkerMutationFailsClosedはrate-limit resume後のworker変更を検出し、
-// 保存済みcheckpointを復元せずfail closedする。ExecuteResumeはerrorを出さず停止する。
 func TestPlanFileResumeWorkerMutationFailsClosed(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
@@ -420,15 +391,12 @@ func TestPlanFileResumeWorkerMutationFailsClosed(t *testing.T) {
 	}
 }
 
-// TestPlanFileResumeAdoptsParentUpdateAsBaselineは停止中に親Codexが更新したplan内容を
-// call開始時baselineとして採用し、変更無しを通常flowとして扱う。
 func TestPlanFileResumeAdoptsParentUpdateAsBaseline(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
 	st := newStateStoreT(t)
 	seedRateLimitedWorkerCheckpoint(t, st, "request")
-	// 停止中の親更新後もPlanはACTIVE配置契約を満たす。reviewer再開時のACTIVE確定が
-	// 更新後Planから解決できるため、worker resume→reviewerまで通常どおり進む。
+
 	parentUpdatedPlan := "# plan v2\n\n## ACTIVE\n\n- `" + activeTaskGuardPath + "`\n"
 	writePlanFileContent(t, repoRoot, parentUpdatedPlan)
 	w, r, _ := planFileDecisionWorkflow(t, st, repoRoot, "", nil)
@@ -468,8 +436,6 @@ func seedRateLimitedWorkerCheckpoint(t *testing.T, st *state.StateStore, request
 	}
 }
 
-// TestPlanFileTransientRecoveryResumedTaskMutationFailsClosedはtransient復帰のresumed task
-// 呼出中の変更も検出する。provider-unavailable停止やfatal扱いへ上書きせずfail closedする。
 func TestPlanFileTransientRecoveryResumedTaskMutationFailsClosed(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
@@ -488,8 +454,6 @@ func TestPlanFileTransientRecoveryResumedTaskMutationFailsClosed(t *testing.T) {
 	}
 }
 
-// TestPlanFileReadErrorFailsClosedBeforeCallはbaseline取得に失敗すると不変性の基準が
-// 確認できないため、model呼出を実行せずfail closedすることを固定する。
 func TestPlanFileReadErrorFailsClosedBeforeCall(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	if err := os.Mkdir(filepath.Join(repoRoot, implementationPlanFile), 0o755); err != nil {
@@ -530,8 +494,6 @@ func mutateHistoryFile(repoRoot string) error {
 	return os.WriteFile(filepath.Join(repoRoot, implementationHistoryFile), []byte("glm edited history\n"), 0o644)
 }
 
-// removeAndDirGuardFileはguard対象fileを呼出中に削除し同pathへdirectoryを置く。
-// 呼出後の終了状態読込を確実に失敗させるafter-read failure終端の再現用。
 func removeAndDirGuardFile(name string) func(string) error {
 	return func(repoRoot string) error {
 		if err := os.Remove(filepath.Join(repoRoot, name)); err != nil {
@@ -541,8 +503,6 @@ func removeAndDirGuardFile(name string) func(string) error {
 	}
 }
 
-// requireGuardTelemetryExactOnceはrunner実行回数・raw telemetryのtask記録数・stats計上の
-// 3者一致(exactly once)と、event記録との役割分離を検証する。
 func requireGuardTelemetryExactOnce(t *testing.T, st *state.StateStore, runnerCalls int, wantTaskOutcome string, wantEventOutcome string) {
 	t.Helper()
 	taskRecords, eventRecords := 0, 0
@@ -575,9 +535,6 @@ func requireGuardTelemetryExactOnce(t *testing.T, st *state.StateStore, runnerCa
 	}
 }
 
-// TestPlanFileAfterReadFailureRecordsExecutedCallOnceはrunner実行後の終了状態読込失敗終端でも
-// 実行済みTask Work Callをraw telemetryへexactly once記録するcross-cutting invariantを固定する。
-// 記録を飛ばすとstats計上だけが残り加法整合が崩れる。
 func TestPlanFileAfterReadFailureRecordsExecutedCallOnce(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
@@ -593,8 +550,6 @@ func TestPlanFileAfterReadFailureRecordsExecutedCallOnce(t *testing.T) {
 	requireGuardTelemetryExactOnce(t, st, 1, "parent_metadata_unavailable", "parent_metadata_unavailable")
 }
 
-// TestHistoryFileAfterReadFailureRecordsExecutedCallOnceはhistory面でも同じafter-read失敗終端の
-// exactly once記録を固定する。
 func TestHistoryFileAfterReadFailureRecordsExecutedCallOnce(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
@@ -611,8 +566,6 @@ func TestHistoryFileAfterReadFailureRecordsExecutedCallOnce(t *testing.T) {
 	requireGuardTelemetryExactOnce(t, st, 1, "parent_metadata_unavailable", "parent_metadata_unavailable")
 }
 
-// TestPlanFileAfterReadFailureOnResumedTaskRecordsCallOnceはtransient復帰の再開task呼出が
-// after-read失敗で終わった場合も、初回transient記録と再開呼出記録の両方を残す。
 func TestPlanFileAfterReadFailureOnResumedTaskRecordsCallOnce(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
@@ -645,8 +598,6 @@ func TestPlanFileAfterReadFailureOnResumedTaskRecordsCallOnce(t *testing.T) {
 	}
 }
 
-// TestHistoryFileAfterReadFailureOnResumedTaskRecordsCallOnceはhistory面の再開呼出after-read失敗も
-// 同じexactly once契約へ載せる。
 func TestHistoryFileAfterReadFailureOnResumedTaskRecordsCallOnce(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
@@ -667,8 +618,6 @@ func TestHistoryFileAfterReadFailureOnResumedTaskRecordsCallOnce(t *testing.T) {
 	requireGuardTelemetryExactOnce(t, st, 2, "parent_metadata_unavailable", "parent_metadata_unavailable")
 }
 
-// TestPlanFileReviewerMutationUsesExistingSnapshotInvariantはreviewer呼出をplan guardの
-// 対象外とし、reviewerのplan変更は既存review-end snapshot不変性で検出することを固定する。
 func TestPlanFileReviewerMutationUsesExistingSnapshotInvariant(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
@@ -696,8 +645,6 @@ func TestPlanFileReviewerMutationUsesExistingSnapshotInvariant(t *testing.T) {
 	}
 }
 
-// TestHistoryFileWorkerMutationFailsClosedBeforeReviewはplan存在repoでworkerがhistoryを
-// 編集した場合をplanと同じ呼出前後比較で検出するproduction因果を固定する。
 func TestHistoryFileWorkerMutationFailsClosedBeforeReview(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
@@ -731,8 +678,6 @@ func TestHistoryFileWorkerMutationFailsClosedBeforeReview(t *testing.T) {
 	}
 }
 
-// TestHistoryFileAbsentWorkerCreationFailsClosedはhistory未作成repoでworkerが同fileを生成した
-// 場合を存在比較で検出する。生成禁止契約をplanと同じくwrapper側で機械強制する。
 func TestHistoryFileAbsentWorkerCreationFailsClosed(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
@@ -747,7 +692,6 @@ func TestHistoryFileAbsentWorkerCreationFailsClosed(t *testing.T) {
 	requirePlanFileFailClosed(t, st, r, out, "存在しない状態から新規作成", 1)
 }
 
-// TestHistoryFileDeletionFailsClosedはworkerによるhistory削除も同じ不変性違反として検出する。
 func TestHistoryFileDeletionFailsClosed(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
@@ -765,8 +709,6 @@ func TestHistoryFileDeletionFailsClosed(t *testing.T) {
 	requirePlanFileFailClosed(t, st, r, out, "削除されました", 1)
 }
 
-// TestHistoryFileUnchangedProceedsToReviewはhistoryが親Codex置きの内容のまま変更無ければ
-// 通常flowを妨げないことを確認する(false positive回帰)。
 func TestHistoryFileUnchangedProceedsToReview(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
@@ -787,8 +729,6 @@ func TestHistoryFileUnchangedProceedsToReview(t *testing.T) {
 	}
 }
 
-// TestHistoryFileAbsentUntrackedProceedsWithPlanはplanが存在してもhistoryが未追跡欠損の
-// 場所は通常作業を許可する互換境界を固定する(history未作成状態)。
 func TestHistoryFileAbsentUntrackedProceedsWithPlan(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
@@ -808,8 +748,6 @@ func TestHistoryFileAbsentUntrackedProceedsWithPlan(t *testing.T) {
 	}
 }
 
-// TestHistoryFileGuardInactiveWithoutPlanはplanの無い旧repositoryではhistory契約を適用せず
-// 通常作業を許可する互換境界を固定する。強制はplanが存在するrepositoryだけ。
 func TestHistoryFileGuardInactiveWithoutPlan(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	w, r, _, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
@@ -828,9 +766,6 @@ func TestHistoryFileGuardInactiveWithoutPlan(t *testing.T) {
 	}
 }
 
-// TestHistoryFileTrackedMissingFailsClosedBeforeCallはGit indexがhistoryを追跡するのに
-// working treeへ欠損している場合、model呼出前にfail closedする境界を固定する。
-// 呼出前停止のためrunnerは1回も実行せず、task telemetryへphantom記録も残さない。
 func TestHistoryFileTrackedMissingFailsClosedBeforeCall(t *testing.T) {
 	cases := map[string]func(t *testing.T, repoRoot string){
 		"staged index entry": func(t *testing.T, repoRoot string) {
@@ -893,8 +828,6 @@ func TestHistoryFileTrackedMissingFailsClosedBeforeCall(t *testing.T) {
 	}
 }
 
-// TestHistoryFileReadErrorFailsClosedBeforeCallはhistory baseline取得に失敗すると不変性の
-// 基準が確認できないため、model呼出を実行せずfail closedすることを固定する。
 func TestHistoryFileReadErrorFailsClosedBeforeCall(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
@@ -928,8 +861,6 @@ func TestHistoryFileReadErrorFailsClosedBeforeCall(t *testing.T) {
 	}
 }
 
-// TestHistoryFileResumeWorkerMutationFailsClosedはrate-limit resume後のworkerによるhistory
-// 変更も検出し、保存済みcheckpointを復元せずfail closedする。
 func TestHistoryFileResumeWorkerMutationFailsClosed(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
@@ -947,8 +878,6 @@ func TestHistoryFileResumeWorkerMutationFailsClosed(t *testing.T) {
 	}
 }
 
-// TestHistoryFileReviewerMutationUsesExistingSnapshotInvariantはreviewer呼出をhistory guardの
-// 対象外とし、reviewerのhistory変更は既存review-end snapshot不変性で検出することを固定する。
 func TestHistoryFileReviewerMutationUsesExistingSnapshotInvariant(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
@@ -977,9 +906,6 @@ func TestHistoryFileReviewerMutationUsesExistingSnapshotInvariant(t *testing.T) 
 	}
 }
 
-// TestPlanFileGuardScenarioPinnedInEscapedCorpusはescaped corpusがplan file不変性破壊の
-// production検出scenarioを保持することを固定する。corpus契約testは存在するscenarioの妥当性
-// だけを検証するため、当該scenarioの削除は本pin検証だけが検知する。
 func TestPlanFileGuardScenarioPinnedInEscapedCorpus(t *testing.T) {
 	sc, mf := loadCorpus(t)
 	found := ""
@@ -1034,9 +960,6 @@ func TestPlanFileGuardScenarioPinnedInEscapedCorpus(t *testing.T) {
 	}
 }
 
-// TestPlanFileContractWiringはroot AGENTS.md・EVAL.md・plan guard実装の契約文と実装の
-// 対応を固定する。文面の並記だけへ依存させないため、guard sentinelと読み取り専用契約の
-// 両方が現物へ存在することを要求する。
 func TestPlanFileContractWiring(t *testing.T) {
 	root := scenarioRepoRoot(t)
 	agents, err := os.ReadFile(filepath.Join(root, "AGENTS.md"))

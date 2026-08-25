@@ -62,8 +62,6 @@ type reservationResult struct {
 
 var automationIDPattern = regexp.MustCompile(`(?i)automation[\s_-]*id\s*[:=]\s*"?([A-Za-z0-9][A-Za-z0-9_.-]*)"?`)
 
-// 明示成功markerは実観測応答(Created/Updated automation in the app)とsuccess語幹。
-// markerは返り値全体へcase-insensitiveで適用し、失敗markerを先に判定してfail closedとする。
 func classifyResponse(text string) (responseClass, string) {
 	trimmed := strings.TrimSpace(text)
 	if trimmed == "" {
@@ -92,7 +90,6 @@ func classifyResponse(text string) (responseClass, string) {
 	return responseSuccess, m[1]
 }
 
-// 検証不可(verification_unavailable)はCodex app表示確認済みの場合だけ成功(instruction L45)。
 func orchestrateReservation(env reservationEnv, key, resumeAtRFC3339, existingAutomationID string) reservationResult {
 	_, dtStart, _, err := expectedFromRFC3339(resumeAtRFC3339)
 	if err != nil {

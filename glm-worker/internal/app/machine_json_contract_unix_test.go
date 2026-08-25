@@ -15,9 +15,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-// TestStatusRawJSONLockProbeUnknownIsNullはlock fileのopenができない(ELOOP)とき、
-// probe不能のrepository_lock・lock_pidがJSON nullになることをraw JSONで固定する。
-// symlink loopは権限操作なしで決定論的にopen失敗を起こす。
 func TestStatusRawJSONLockProbeUnknownIsNull(t *testing.T) {
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
@@ -39,10 +36,6 @@ func TestStatusRawJSONLockProbeUnknownIsNull(t *testing.T) {
 	assertNoPresentationSentinel(t, decoded, "repository_lock", "lock_pid", "task_status", "task_liveness")
 }
 
-// TestWatchProcessNonENOENTOutputsStructuredErrorAndNonZeroは実binaryの--watchが
-// event log openの非ENOENT失敗をstderrのprocess error JSON(kind internal)とnon-zero
-// exitへ流すことを固定する。state dirのeventsを通常fileにしてENOTDIRを決定論的に
-// 発生させ、chmod等の環境依存を使わない。
 func TestWatchProcessNonENOENTOutputsStructuredErrorAndNonZero(t *testing.T) {
 	if _, err := exec.LookPath("go"); err != nil {
 		t.Skipf("go commandがないため実binary testをskipします: %v", err)

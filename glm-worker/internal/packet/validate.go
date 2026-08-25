@@ -8,8 +8,6 @@ import (
 	"strings"
 )
 
-// constraintErrorはschemaでは表現できない意味検証不合格。modelが内容を修正して
-// 再出力すれば回復できるため、workflowは同一sessionで1回だけ修正再依頼できる。
 type constraintError struct {
 	reason string
 }
@@ -18,14 +16,11 @@ func (e *constraintError) Error() string {
 	return e.reason
 }
 
-// IsConstraintErrorは意味検証不合格(true)と契約ミスマッチ(false)を区別する。
 func IsConstraintError(err error) bool {
 	var target *constraintError
 	return errors.As(err, &target)
 }
 
-// RejectCategoryは結果検証不合格のerrorを集計用の安定categoryへ分類する。
-// 理由文字列のphrasingに依存するが、これらは検証関数内で固定済み。
 func RejectCategory(err error) string {
 	if err == nil {
 		return ""
@@ -54,7 +49,6 @@ func RejectCategory(err error) string {
 	}
 }
 
-// ValidateWorkerResultはworker role結果の意味契約を検証する。
 func ValidateWorkerResult(result Result) error {
 	switch result.Status {
 	case StatusImplemented:
@@ -66,7 +60,7 @@ func ValidateWorkerResult(result Result) error {
 			return &constraintError{reason: "NEEDS_SOL_DECISIONのriskはHIGHにしてください"}
 		}
 	default:
-		// status enumはrole別schemaが保証するため、ここへの到達はschema違反でありfail closed対象。
+
 		return &mismatchError{reason: fmt.Sprintf("worker結果のstatusとして許容されません: %q", string(result.Status))}
 	}
 	if err := validateFields(result, result.contractFields()); err != nil {
@@ -75,7 +69,6 @@ func ValidateWorkerResult(result Result) error {
 	return validateTargets(result)
 }
 
-// ValidateReviewerResultはreviewer role結果の意味契約を検証する。
 func ValidateReviewerResult(result Result) error {
 	switch result.Status {
 	case StatusPass:
@@ -91,7 +84,7 @@ func ValidateReviewerResult(result Result) error {
 			return &constraintError{reason: "NEEDS_SOL_REVIEWのriskはHIGHにしてください"}
 		}
 	default:
-		// status enumはrole別schemaが保証するため、ここへの到達はschema違反でありfail closed対象。
+
 		return &mismatchError{reason: fmt.Sprintf("reviewer結果のstatusとして許容されません: %q", string(result.Status))}
 	}
 	if err := validateFields(result, result.contractFields()); err != nil {
@@ -100,19 +93,6 @@ func ValidateReviewerResult(result Result) error {
 	return validateTargets(result)
 }
 
-// validateTargetsはTARGETS要素の正規形を強制する唯一のpredicateで、worker/reviewer
-// 両roleの全statusが共有する。schema(array of string)で表現できない意味契約をここへ集約する:
-//   - TARGETSを要求するstatus(worker NEEDS_SOL_DECISION・reviewer PASS/FIX_REQUIRED/
-//     NEEDS_SOL_REVIEW)は配列長1以上。IMPLEMENTEDだけ旧契約どおり空配列を許す
-//   - 各要素はTrimSpace後に空ではない(空要素・空白のみ要素の拒否)。具体対象の
-//     外側空白自体は正規形違反としない
-//   - 予約値noneは小文字厳密表現"none"の単独要素だけを対象なしsentinelの正規形とし、
-//     NONE等の大小文字・前後空白variantは全statusで拒否し、具体対象との混在も
-//     全statusで拒否する
-//   - NEEDS_SOL_REVIEWはnone要素を1つでも含めたら拒否する(Solが読む対象を実質失う)
-//   - 予約値PACKETはreviewer FIX_REQUIREDの報告再出力専用(IsReportOnlyFix)で、
-//     大小文字・前後空白variantごと拒否し、厳密表現"PACKET"の単独要素としてだけ許す
-//   - TrimSpace後に同一の要素重複は拒否する
 func validateTargets(result Result) error {
 	if len(result.Targets) == 0 {
 		if result.Status == StatusImplemented {
@@ -153,8 +133,6 @@ func validateTargets(result Result) error {
 	return nil
 }
 
-// validateFieldsはstatus別必須fieldの非空・改行なし・byte上限を検証する。
-// 改行はmachine protocolの1行契約を壊すため意味検証で拒否する。
 func validateFields(result Result, fields []contractField) error {
 	for _, field := range fields {
 		value := field.value(result)
@@ -182,13 +160,10 @@ func validateFields(result Result, fields []contractField) error {
 	return nil
 }
 
-// IsReportOnlyFixはreviewer結果が報告再出力専用のTARGETS予約値かを判定する。
 func IsReportOnlyFix(result Result) bool {
 	return result.Status == StatusFixRequired && len(result.Targets) == 1 && result.Targets[0] == ReportOnlyTargets
 }
 
-// ValidateArtifactsはartifacts参照がtask専用root配下の実在通常ファイルだけを
-// 指していることを検証する。空配列(none)は検証不要。
 func ValidateArtifacts(artifacts []string, root string) error {
 	if len(artifacts) == 0 {
 		return nil

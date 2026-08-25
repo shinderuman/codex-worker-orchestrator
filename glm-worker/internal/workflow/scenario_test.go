@@ -19,26 +19,17 @@ import (
 )
 
 type scenarioStep struct {
-	// Packetは1 stepのmodel structured_output JSON object本文。scriptedRunnerがそのまま
-	// StructuredOutputへ流し、 corpus検証はParseStructured+意味検証を通す。
 	Packet json.RawMessage `json:"packet"`
 	Error  string          `json:"error"`
-	// Signalは出力fileへ書くprovider障害signal本文。packetとは共存しない。
+
 	Signal string `json:"signal,omitempty"`
-	// Rawは結果検証違反を再現するstructured_output本文。corpus検証(packet欄の事前
-	// validate)を通らないbody、すなわち意味違反(NEEDS_SOL_REVIEW targetsへの予約値none等)
-	// やschema不一致(JSONでない本文・契約外構造)をそのままmodel出力として流す。
+
 	Raw string `json:"raw,omitempty"`
-	// Usage/CostUSDはRunResult観測値(token/cost telemetry検証用)。実runnerはerror時も
-	// 取得できた観測値を返すため、fatal終了stepにも設定して記録欠落を検証できる。
-	// 未設定は未観測(0)を表す。
+
 	Usage   scenarioUsage `json:"usage,omitempty"`
 	CostUSD float64       `json:"cost_usd,omitempty"`
 }
 
-// scenarioArtifactはwrapperのartifact packet検証へ使うtask artifact保存file。
-// scriptedRunnerがstep消費時にpacket行の{{ARTIFACT_DIR}}予約tokenを実artifact dirへ
-// 置換し、宣言済みfileだけを保存・参照させる。
 type scenarioArtifact struct {
 	Name    string `json:"name"`
 	Content string `json:"content"`
@@ -46,10 +37,6 @@ type scenarioArtifact struct {
 
 const scenarioArtifactDirToken = "{{ARTIFACT_DIR}}"
 
-// scenarioPlanSeed/ scenarioPlanMutatedはplan file不変性破壊scenarioのseed(親Codexがcall前に
-// 置いた内容の代役)とworker呼出中の書換内容。seed planは## ACTIVE節からtask fileを一意に
-// 解決できる配置契約を満たし、scenarioActiveTaskSeedがその解決先本文の代役になる。
-// 検証は内容の変化検出のみへ用いる。
 const (
 	scenarioPlanSeed          = "# plan\n\n## ACTIVE\n\n- `IMPLEMENTATION_TASKS/001-scenario.md`\n"
 	scenarioPlanMutated       = "glm edited plan\n"
@@ -58,8 +45,6 @@ const (
 	scenarioActiveTaskMutated = "glm edited active task\n"
 )
 
-// telemetryClockInjectedStartはscenario終端後の全telemetry record時刻が注入fake clockの
-// 開始時刻と一致することを期待するexpected_telemetry_clock値。
 const telemetryClockInjectedStart = "injected-start"
 
 type scenarioUsage struct {
@@ -67,8 +52,6 @@ type scenarioUsage struct {
 	OutputTokens int64 `json:"output_tokens,omitempty"`
 }
 
-// scenarioStatsはTask Work CallとProvider Probe Callの呼出数が重複・欠落なく数えられる
-// ことを固定する期待値。TotalAICalls = ModelCalls + probe成功/失敗の合計。
 type scenarioStats struct {
 	ModelCalls       int `json:"model_calls"`
 	WorkerCalls      int `json:"worker_calls"`
@@ -80,8 +63,6 @@ type scenarioStats struct {
 	TotalAICalls     int `json:"total_ai_calls"`
 }
 
-// scenarioTelemetryは呼出種別別のJSONL記録数とtoken/cost期待値。種別はcall_typeで
-// 判別し、task集計へprobeが混ざらないことを呼出種別別の和で検証する。
 type scenarioTelemetry struct {
 	TaskCalls          int     `json:"task_calls"`
 	ProbeCalls         int     `json:"probe_calls"`
@@ -95,8 +76,6 @@ type scenarioTelemetry struct {
 	ProbeResolvedModel string  `json:"probe_resolved_model"`
 }
 
-// promptExpectationはscripted終端へ至るまでのproduction prompt選択(dispatch因果)を直接検証する
-// 期待値。予約markerによるprompt分岐など、終端期待だけでは観測できない選択を固定する。
 type promptExpectation struct {
 	Index       int      `json:"index"`
 	Contains    []string `json:"contains"`
@@ -116,77 +95,59 @@ type scenarioDoc struct {
 	ExpectedPacketRisk   string         `json:"expected_packet_risk"`
 	ExpectedTaskStatus   string         `json:"expected_task_status"`
 	MustNotPass          bool           `json:"must_not_pass"`
-	// ExpectedPromptsはprompt呼出indexごとの期待内容。FIX_REQUIREDのTARGETS予約値が
-	// production dispatchで専用promptを選んだ因果を終端期待と独立に検証する。
+
 	ExpectedPrompts []promptExpectation `json:"expected_prompts,omitempty"`
-	// ExpectedErrorStatusはerror terminal終端scenarioの期待process error kind。設定時はpacket終端を検証しない。
+
 	ExpectedErrorStatus string `json:"expected_error_status,omitempty"`
-	// ExpectedProbeCountはprobe呼出の期待回数。
+
 	ExpectedProbeCount int `json:"expected_probe_count,omitempty"`
-	// ExpectedRunCountは本task Run呼出の期待回数。未設定時はrunner_steps通り検証する。
+
 	ExpectedRunCount *int `json:"expected_run_count,omitempty"`
-	// ForbiddenErrorStatusはerror terminalの誤分類検出用の排他STATUS。
+
 	ForbiddenErrorStatus string `json:"forbidden_error_status,omitempty"`
-	// ProbeErrorsはprobe呼出へ順に返すerror本文。空要素は成功probeを表す。
+
 	ProbeErrors []string `json:"probe_errors,omitempty"`
-	// ProbeBlankは成功probeが空応答を返す偽陽性を再現する。
+
 	ProbeBlank bool `json:"probe_blank,omitempty"`
-	// ProbeResponsesはexit 0の成功probeがsentinel以外の本文を返す偽陽性を再現する。
+
 	ProbeResponses []string `json:"probe_responses,omitempty"`
-	// ProbeIsErrorはexit 0でもis_error=trueを返す偽陽性probeを再現する。
+
 	ProbeIsError bool `json:"probe_is_error,omitempty"`
-	// SleepAdvanceMinutesは各backoff待機後にfake clockを進める分数。
-	// backoff schedule合計では到達しないhard deadline経路など、時間経過を要するscenarioだけが設定する。
+
 	SleepAdvanceMinutes int `json:"sleep_advance_minutes,omitempty"`
-	// ReviewerMutatesWorktreeはreviewerがBash相当でrepositoryを変更するscenarioで有効化する。
+
 	ReviewerMutatesWorktree bool `json:"reviewer_mutates_worktree,omitempty"`
-	// ReportOnlyMutatesWorktreeはreport-only PACKET再出力workerが期待packetを返しながら
-	// 開始前後でrepositoryを変更するscenarioで有効化する。scripted packetの成功宣言と
-	// 無関係にreport-only不変性のproduction検証へ失敗させるescaped review固定のhook。
+
 	ReportOnlyMutatesWorktree bool `json:"report_only_mutates_worktree,omitempty"`
-	// WorkerMutatesPlanFileはworkerがtask呼出中にIMPLEMENTATION_PLAN.local.mdへ書き込む
-	// scenarioで有効化する。scripted packetの成功宣言と無関係にplan file不変性のproduction
-	// 検証がreviewer開始前へfail closedする escaped review固定のhook。
+
 	WorkerMutatesPlanFile bool `json:"worker_mutates_plan_file,omitempty"`
-	// WorkerMutatesActiveTaskFileはworkerがtask呼出中にACTIVE task fileへ書き込むscenarioで
-	// 有効化する。親管理metadata集合(IMPLEMENTATION_TASKS/配下含む)の不変検出を固定する。
+
 	WorkerMutatesActiveTaskFile bool `json:"worker_mutates_active_task_file,omitempty"`
-	// PlanMissingActiveSectionはplanが存在するのにACTIVE欄からtask fileを解決できない状態を
-	// seedする。要求正本を特定できないままのmodel呼出前fail closedを固定する。
+
 	PlanMissingActiveSection bool `json:"plan_missing_active_section,omitempty"`
-	// ActiveTaskFileMissingはplanのACTIVE欄が指すtask fileがworking treeへ存在しない状態を
-	// seedする。参照欠損のmodel呼出前fail closedを固定する。
+
 	ActiveTaskFileMissing bool `json:"active_task_file_missing,omitempty"`
-	// SeedActiveTaskMetadataはplan+ACTIVE task fileをseedするだけでmutationを伴わない
-	// scenarioで有効化する。ACTIVE解決とprompt配線のproduction因果を通常完結終端で固定する。
+
 	SeedActiveTaskMetadata bool `json:"seed_active_task_metadata,omitempty"`
-	// ResumeCarriesActiveTaskBlockはresume entryで保存済み前回指示をACTIVE_TASK_FILE block
-	// 入りの本物のnew task promptへ差し替える。中断再開(compaction後のresumeを含む)でも
-	// worker再送promptとreviewer promptが要求定義を失わない因果を固定する。
+
 	ResumeCarriesActiveTaskBlock bool `json:"resume_carries_active_task_block,omitempty"`
-	// PlanFileInitiallyAbsentはWorkerMutatesPlanFile対象repoのplan fileを初期欠損にする。
-	// workerによる新規作成(plan生成禁止契約)を再現する。
+
 	PlanFileInitiallyAbsent bool `json:"plan_file_initially_absent,omitempty"`
-	// PlanFileTrackedAbsentはGit indexがplan fileを追跡するのにworking treeへ欠損した
-	// repoを再現する。追跡中canonical source欠損のmodel呼出前fail closedを固定する。
+
 	PlanFileTrackedAbsent bool `json:"plan_file_tracked_absent,omitempty"`
-	// ExpectedOutputContainsはwrapper最終出力へ含めるべき本文。終端STATUS期待だけでは
-	// 観測できない「どのgateが発火したか」をfail closed理由文へ直接束ねる。
+
 	ExpectedOutputContains []string `json:"expected_output_contains,omitempty"`
-	// ExpectedStatsは終端後のtask/probe呼出数集計の期待値。
+
 	ExpectedStats *scenarioStats `json:"expected_stats,omitempty"`
-	// ExpectedTelemetryは終端後のJSONL telemetryの種別別記録数とtoken/costの期待値。
+
 	ExpectedTelemetry *scenarioTelemetry `json:"expected_telemetry,omitempty"`
-	// ExpectedTelemetryClockは終端後の全telemetry record時刻・durationが注入fake clockの
-	// 開始時刻だけから導出されていることを検証する。production codeへwall clock取得が
-	// 再導入されるとrecord時刻が実時間へ分岐し、scripted packet終端期待とは独立に失敗する。
+
 	ExpectedTelemetryClock string `json:"expected_telemetry_clock,omitempty"`
-	// ExpectedCheckpointは終端時のresume checkpoint状態(none/rate-limited/provider-unavailable)。
+
 	ExpectedCheckpoint string `json:"expected_checkpoint,omitempty"`
-	// ExpectedProviderClassificationはprovider-unavailable停止時のcheckpoint分類期待値。
+
 	ExpectedProviderClassification string `json:"expected_provider_classification,omitempty"`
-	// ArtifactFilesはscriptedRunnerがstep消費時に現在taskのartifact dirへ保存するfile。
-	// packet行の{{ARTIFACT_DIR}}tokenと組み合わせ、ARTIFACTS参照の実在file検証を通る例を作る。
+
 	ArtifactFiles []scenarioArtifact `json:"artifact_files,omitempty"`
 }
 
@@ -327,8 +288,7 @@ func validateCorpus(sc scenarioFile, mf manifestFile) error {
 		if preCallStopHooks > 1 || preCallStopHooks > 0 && mutationHooks > 0 {
 			return fmt.Errorf("scenario %s declares incompatible pre-call hooks", s.ID)
 		}
-		// 追跡中plan欠損scenarioはmutation無しでmodel呼出前に停止する。呼出中の変化を
-		// 扱うhookや0呼出以外の終端と併存した場合、期待内容の再確認を強制する。
+
 		if s.PlanFileTrackedAbsent {
 			if s.WorkerMutatesPlanFile || s.ReviewerMutatesWorktree || s.ReportOnlyMutatesWorktree {
 				return fmt.Errorf("scenario %s plan_file_tracked_absent with mutation hook", s.ID)
@@ -340,22 +300,21 @@ func validateCorpus(sc scenarioFile, mf manifestFile) error {
 				return fmt.Errorf("scenario %s plan file tracked absent must expect zero model runs", s.ID)
 			}
 		}
-		// report-only不変性破壊scenarioは、scripted packet成功宣言と無関係にproduction gateが
-		// fail closed終端へ至ること自体が期待値。他終端への書換えは再確認を強制する。
+
 		if s.ReportOnlyMutatesWorktree && s.ExpectedPacketStatus != "NEEDS_SOL_REVIEW" {
 			return fmt.Errorf("scenario %s report-only mutation must expect fail-closed NEEDS_SOL_REVIEW", s.ID)
 		}
-		// plan file不変性破壊scenarioも同じくfail closed終端が期待値。
+
 		if s.WorkerMutatesPlanFile && s.ExpectedPacketStatus != "NEEDS_SOL_REVIEW" {
 			return fmt.Errorf("scenario %s plan file mutation must expect fail-closed NEEDS_SOL_REVIEW", s.ID)
 		}
-		// ACTIVE task file不変性破壊scenarioも集合guardにより同じfail closed終端が期待値。
+
 		if s.WorkerMutatesActiveTaskFile {
 			if s.ExpectedPacketStatus != "NEEDS_SOL_REVIEW" {
 				return fmt.Errorf("scenario %s active task file mutation must expect fail-closed NEEDS_SOL_REVIEW", s.ID)
 			}
 		}
-		// ACTIVE解決失敗scenarioはmodel呼出前停止であるため0呼出とfail closed終端が期待値。
+
 		for _, unresolvable := range []bool{s.PlanMissingActiveSection, s.ActiveTaskFileMissing} {
 			if !unresolvable {
 				continue
@@ -370,8 +329,7 @@ func validateCorpus(sc scenarioFile, mf manifestFile) error {
 		if s.PlanFileInitiallyAbsent && !s.WorkerMutatesPlanFile {
 			return fmt.Errorf("scenario %s plan_file_initially_absent without worker_mutates_plan_file", s.ID)
 		}
-		// resume因果scenarioはresume entryとplan+ACTIVE task seedの併用が前提のため、
-		// metadata再現hookの併存を拒否し前置きを固定する。
+
 		if s.ResumeCarriesActiveTaskBlock {
 			if s.Entry != "resume" {
 				return fmt.Errorf("scenario %s resume_carries_active_task_block without resume entry", s.ID)
@@ -572,9 +530,6 @@ func validateCorpus(sc scenarioFile, mf manifestFile) error {
 	return nil
 }
 
-// validateScenarioArtifactTokenはpacket行内の{{ARTIFACT_DIR}}予約tokenが宣言済み
-// artifact file名だけを参照していることを検証する。未宣言fileや素のdir参照は
-// scriptedRunnerでの置換後に実在file検証へ失敗するため、corpus段階で拒否する。
 func validateScenarioArtifactToken(id string, line string, artifactNames map[string]bool) error {
 	rest := line
 	for {
@@ -602,8 +557,7 @@ func TestScenarioCorpusContract(t *testing.T) {
 	if err := validateCorpus(sc, mf); err != nil {
 		t.Fatalf("corpus contract violation: %v", err)
 	}
-	// hash pinはmanaged instruction fileの変更を検知して人手でscenario期待結果を再確認させるgateであり、
-	// 自然言語の意味適合を自動証明するものではない。modelが規則へ従うかは後続固定Evalの対象。
+
 	root := scenarioRepoRoot(t)
 	for _, entry := range mf.InstructionFiles {
 		actual := sha256File(t, filepath.Join(root, entry.Path))
@@ -798,8 +752,7 @@ func TestScenarioCorpusContractRejectsInvalid(t *testing.T) {
 func stepsFromScenario(doc scenarioDoc) []runnerStep {
 	steps := make([]runnerStep, len(doc.RunnerSteps))
 	for i, s := range doc.RunnerSteps {
-		// packet/rawはどちらもmodel structured_output本文。rawは意味・schema違反を
-		// 再現する契約不合致bodyで、検証を通らない点以外はpacketと同じ経路へ流す。
+
 		structured := string(s.Packet)
 		if s.Raw != "" {
 			structured = s.Raw
@@ -825,8 +778,6 @@ func stepsFromScenario(doc scenarioDoc) []runnerStep {
 	return steps
 }
 
-// workflowErrorKindはscenario終端errorをprocess error kind相当へ分類する。app層の
-// buildProcessErrorと同じtyped error対応を、import cycleを避けるためtest側で写す。
 func workflowErrorKind(err error) string {
 	var workerErr *WorkerError
 	var limitErr runner.ZaiRateLimitError
@@ -843,8 +794,6 @@ func workflowErrorKind(err error) string {
 	}
 }
 
-// validateTypedResultはstructured_outputから復元した結果がworker/reviewerどちらかの契約を
-// 満たすかを検証する。roleは実行時のrunModelで確定するため、corpus検証はどちらか一方の通過を要求する。
 func validateTypedResult(result packet.Result) error {
 	if err := packet.ValidateWorkerResult(result); err == nil {
 		return nil
@@ -852,9 +801,6 @@ func validateTypedResult(result packet.Result) error {
 	return packet.ValidateReviewerResult(result)
 }
 
-// lastPacketFromOutputはwrapper stdoutのmachine protocol 1行(compact JSON)から
-// typed結果を復元する。emitResultだけがstdoutへ書くため、最終の空でない行が結果本体。
-// 旧表示形式の`TARGETS: none`読み替えは、空配列がkey省略で表現されるmachine JSONでは不要。
 func lastPacketFromOutput(t *testing.T, out string) packet.Result {
 	t.Helper()
 	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
@@ -880,8 +826,7 @@ func runScenario(t *testing.T, doc scenarioDoc) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: stepsFromScenario(doc)}
 	if len(doc.ArtifactFiles) > 0 {
-		// ExecuteNewTaskは新規task IDへ切り替わるため、artifact fileと{{ARTIFACT_DIR}}の
-		// 置換はstep消費時の現在taskへ行う。事前配置では旧task配下になり検証が通らない。
+
 		r.artifactFiles = doc.ArtifactFiles
 		r.taskArtifactDir = st.PrepareArtifactDir
 	}
@@ -898,7 +843,7 @@ func runScenario(t *testing.T, doc scenarioDoc) {
 	r.probeIsError = doc.ProbeIsError
 	w := newWorkflowT(t, st, r)
 	if doc.SleepAdvanceMinutes > 0 {
-		// 各待機でscheduleどおりの時間を記録しつつ、clockだけ大きく進めてdeadline経路へ入れる。
+
 		clock := newFakeClock()
 		step := time.Duration(doc.SleepAdvanceMinutes) * time.Minute
 		w.now = clock.nowFunc
@@ -928,7 +873,7 @@ func runScenario(t *testing.T, doc scenarioDoc) {
 			}
 		}
 		if doc.WorkerMutatesPlanFile {
-			// seedは親Codexがcall前に置いたworking tree内容の代役。初期欠損指定だけ省く。
+
 			if !doc.PlanFileInitiallyAbsent {
 				seedActiveTaskMetadata()
 			}
@@ -943,27 +888,26 @@ func runScenario(t *testing.T, doc scenarioDoc) {
 			}
 		}
 		if doc.SeedActiveTaskMetadata || doc.ResumeCarriesActiveTaskBlock {
-			// seedだけのscenario。mutatePhaseを設定しないため呼出中の変化は起こらない。
+
 			seedActiveTaskMetadata()
 			mutate = nil
 		}
 		if doc.PlanMissingActiveSection {
-			// planは存在するがACTIVE欄からtask fileを解決できない状態をseedする。
+
 			if err := os.WriteFile(filepath.Join(mutationRepoRoot, implementationPlanFile), []byte("parent owned plan\n"), 0o644); err != nil {
 				t.Fatal(err)
 			}
 			mutate = nil
 		}
 		if doc.ActiveTaskFileMissing {
-			// planのACTIVE欄が指すtask fileがworking treeへ無い状態をseedする。
+
 			if err := os.WriteFile(filepath.Join(mutationRepoRoot, implementationPlanFile), []byte(scenarioPlanSeed), 0o644); err != nil {
 				t.Fatal(err)
 			}
 			mutate = nil
 		}
 		if doc.PlanFileTrackedAbsent {
-			// Git indexへ追加済み(追跡中)なのにworking treeへ無い状態をseedする。
-			// このrepoのstaged planと同じくindex追跡がcanonical、working tree欠損を再現する。
+
 			if err := os.WriteFile(filepath.Join(mutationRepoRoot, implementationPlanFile), []byte(scenarioPlanSeed), 0o644); err != nil {
 				t.Fatal(err)
 			}
@@ -1001,11 +945,9 @@ func runScenario(t *testing.T, doc scenarioDoc) {
 		if err := st.Write("last-request", doc.Request); err != nil {
 			t.Fatal(err)
 		}
-		// resume entryは常にprovider-unavailable停止状態から開始する。
+
 		{
-			// resume因果scenarioだけ保存済み前回指示を本物のnew task promptへ固定する。
-			// productionではExecuteNewTaskがこの本文をmodel呼出時に保存しており、compaction
-			// や5時間上限後のresumeはこの保存文の再送で要求定義を失わない。
+
 			savedPrompt := "p"
 			if doc.ResumeCarriesActiveTaskBlock {
 				savedPrompt = newTaskPrompt(doc.Request, scenarioActiveTaskPath)
@@ -1042,17 +984,17 @@ func runScenario(t *testing.T, doc scenarioDoc) {
 		r.prompts = mr.prompts
 		r.models = mr.models
 		if doc.WorkerMutatesPlanFile {
-			// orchestratorがGLMのplan変更をbaselineへ自動復元していないことを検証する。
+
 			if content, err := os.ReadFile(filepath.Join(mutationRepoRoot, implementationPlanFile)); err != nil || string(content) != scenarioPlanMutated {
 				t.Fatalf("workerによるplan file変更が自動復元・編集されています: %q %v", content, err)
 			}
 		} else if doc.WorkerMutatesActiveTaskFile {
-			// orchestratorがGLMのACTIVE task file変更をbaselineへ自動復元していないことを検証する。
+
 			if content, err := os.ReadFile(filepath.Join(mutationRepoRoot, scenarioActiveTaskPath)); err != nil || string(content) != scenarioActiveTaskMutated {
 				t.Fatalf("workerによるACTIVE task file変更が自動復元・編集されています: %q %v", content, err)
 			}
 		} else if doc.PlanFileTrackedAbsent {
-			// orchestratorが追跡中plan欠損を検出してもfileを再生成・復元しないことを検証する。
+
 			if _, err := os.Stat(filepath.Join(mutationRepoRoot, implementationPlanFile)); !os.IsNotExist(err) {
 				t.Fatalf("追跡中plan欠損が復元・生成されています: %v", err)
 			}
@@ -1065,17 +1007,16 @@ func runScenario(t *testing.T, doc scenarioDoc) {
 			}
 		}
 	}
-	// expected_run_count=0はmodel呼出前に停止する終端を明示する期待値であるため、
-	// この検証から除外する。それ以外はproduction codeへ一度も到達しないscenarioを検出する。
+
 	if len(r.prompts) == 0 && doc.ExpectedProbeCount == 0 && doc.ExpectedRunCount == nil {
 		t.Fatal("production runner was not invoked")
 	}
 	for i, p := range r.prompts {
-		// 再出力系prompt(risk floor再出力・意味検証不合格の修正再依頼)はMODEを持たない。
+
 		isReformat := strings.Contains(p, "PACKETだけを再出力") || strings.Contains(p, "結果を再出力") || strings.Contains(p, "結果だけを再出力")
 		hasRequest := strings.Contains(p, doc.Request)
 		hasMode := strings.Contains(p, "MODE:") || strings.Contains(p, "REVIEW_MODE:")
-		// resume promptは保存済み前回指示の再送であり、seed時のrequest文言は含まない。
+
 		isResume := strings.Contains(p, "再開してください")
 		if !(hasMode || isReformat || isResume) {
 			t.Fatalf("prompt %d is not a production-generated prompt:\n%s", i, p)
@@ -1098,14 +1039,13 @@ func runScenario(t *testing.T, doc scenarioDoc) {
 			t.Fatalf("probe回数 = %d want %d", len(r.probes), doc.ExpectedProbeCount)
 		}
 	}
-	// expected_run_count設定時は呼出回数自体を検証済みのためmodel列は検証しない。
+
 	if doc.ExpectedRunCount == nil {
 		if got, want := strings.Join(r.models, ","), strings.Join(doc.ExpectedModels, ","); got != want {
 			t.Fatalf("model routing = %q want %q", got, want)
 		}
 	}
-	// expected_promptsはproduction dispatchがscripted packet列の予約値から期待promptを選んだ
-	// 因果を直接検証する。終端STATUS/routing期待とは独立したgate。
+
 	for _, exp := range doc.ExpectedPrompts {
 		if exp.Index >= len(r.prompts) {
 			t.Fatalf("expected_prompts index %d out of range: prompts=%d", exp.Index, len(r.prompts))
@@ -1192,7 +1132,6 @@ func runScenario(t *testing.T, doc scenarioDoc) {
 	}
 }
 
-// verifyScenarioStatsはtask/probe呼出数の加法整合性(total = task + probe)を検証する。
 func verifyScenarioStats(t *testing.T, st *state.StateStore, want scenarioStats) {
 	t.Helper()
 	stats := currentStats(t, st)
@@ -1212,8 +1151,6 @@ func verifyScenarioStats(t *testing.T, st *state.StateStore, want scenarioStats)
 	}
 }
 
-// verifyScenarioTelemetryはcall_type別のJSONL記録数とtoken/costを検証する。
-// probeはtoken/cost/resolved modelをJSONLへ残し、task集計へ混ざらない。
 func verifyScenarioTelemetry(t *testing.T, st *state.StateStore, want scenarioTelemetry) {
 	t.Helper()
 	got := scenarioTelemetry{}
@@ -1252,9 +1189,6 @@ func verifyScenarioTelemetry(t *testing.T, st *state.StateStore, want scenarioTe
 	}
 }
 
-// checkTelemetryClockは全telemetry recordの時刻とdurationが注入fake clockだけから導出
-// されていることを検証する。sleepでclockを進めないscenarioでは全recordが開始時刻に一致し、
-// workflow production codeへ直接wall clock取得が再導入されると実時間へ分岐したrecordで失敗する。
 func checkTelemetryClock(logs []state.ModelCallLog) error {
 	if len(logs) == 0 {
 		return errors.New("telemetry recordが無いためclock検証が空で通過")
@@ -1286,8 +1220,6 @@ func TestScenarioCorpusDrivenThroughProductionGate(t *testing.T) {
 	}
 }
 
-// TestTelemetryClockCheckRejectsWallClockRecordsはclock検証がwall clock由来のrecordを
-// 実際に拒否することを確認する。空recordでの無条件通過も拒否する。
 func TestTelemetryClockCheckRejectsWallClockRecords(t *testing.T) {
 	injected := state.ModelCallLog{CallType: state.CallTypeTask, Phase: "worker-new", StartedAt: testFixedTime, CompletedAt: testFixedTime}
 	if err := checkTelemetryClock([]state.ModelCallLog{injected}); err != nil {

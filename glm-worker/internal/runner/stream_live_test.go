@@ -12,7 +12,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-// writeIngesterLinesはingesterへstream-json行を流し込む。test fixture構築の補助。
 func writeIngesterLines(t *testing.T, ingester *streamEventIngester, lines ...string) {
 	t.Helper()
 	for _, line := range lines {
@@ -32,8 +31,6 @@ func readLiveStatus(t *testing.T, st *state.StateStore, taskID string) state.Tas
 	return status
 }
 
-// TestStreamEventIngesterPublishesLiveToolDetailsはtool_useの実行中だけcommand・purpose・
-// background待ち詳細がlive snapshotへ乗り、tool_resultで外れることを検証する。
 func TestStreamEventIngesterPublishesLiveToolDetails(t *testing.T) {
 	st := newTestStateStore(t)
 	ingester := newFakeClockIngester(t, st, 3*time.Second)
@@ -74,10 +71,6 @@ func TestStreamEventIngesterPublishesLiveToolDetails(t *testing.T) {
 	}
 }
 
-// TestStreamEventIngesterLiveProgressEventsAdvanceIdleBaseはevent logへ抑止される
-// thinking_tokens進捗eventもlive snapshotのlast_event_atとmodel activity専用時刻の
-// 両方へ反映されることを検証する。initは非model activityのため専用時刻の起点に
-// ならない。
 func TestStreamEventIngesterLiveProgressEventsAdvanceIdleBase(t *testing.T) {
 	st := newTestStateStore(t)
 	ingester := newFakeClockIngester(t, st, 2*time.Second)
@@ -101,9 +94,6 @@ func TestStreamEventIngesterLiveProgressEventsAdvanceIdleBase(t *testing.T) {
 	}
 }
 
-// TestStreamEventIngesterToolProgressAdvancesOnlyGenericActivityはsystem/tool_progressが
-// genericなlast_event_atだけを進め、model activity専用時刻を進めないことを検証する。
-// 長時間tool実行中にMODEL_IDLEが誤ってリセットされない境界。
 func TestStreamEventIngesterToolProgressAdvancesOnlyGenericActivity(t *testing.T) {
 	st := newTestStateStore(t)
 	ingester := newFakeClockIngester(t, st, 2*time.Second)
@@ -127,9 +117,6 @@ func TestStreamEventIngesterToolProgressAdvancesOnlyGenericActivity(t *testing.T
 	}
 }
 
-// TestStreamEventIngesterModelActivityAcceptanceSetはstate.IsModelActivityEventの共有
-// 契約どおりのeventだけがlive snapshotのmodel activity専用時刻を進めることを、
-// 実stream-json行の摄取経路で検証する。
 func TestStreamEventIngesterModelActivityAcceptanceSet(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -185,8 +172,6 @@ func TestStreamEventIngesterModelActivityAcceptanceSet(t *testing.T) {
 	}
 }
 
-// TestStreamEventIngesterBoundsLiveDetailTextはlive snapshot本文が上限bytesでUTF-8境界に
-// 合わせて切詰められることを検証する。watch表示でのtruncateとは別のfile size上限。
 func TestStreamEventIngesterBoundsLiveDetailText(t *testing.T) {
 	st := newTestStateStore(t)
 	ingester := newFakeClockIngester(t, st, 3*time.Second)
@@ -209,8 +194,6 @@ func TestStreamEventIngesterBoundsLiveDetailText(t *testing.T) {
 	}
 }
 
-// TestStreamEventIngesterLiveWriteFailureKeepsEventLogはlive snapshotへ書けないときも
-// event log追記・tool timing観測が継続することを検証する。
 func TestStreamEventIngesterLiveWriteFailureKeepsEventLog(t *testing.T) {
 	st := newTestStateStore(t)
 	if err := os.MkdirAll(filepath.Join(st.Path("events"), "t.live.json"), 0o700); err != nil {
@@ -232,9 +215,6 @@ func TestStreamEventIngesterLiveWriteFailureKeepsEventLog(t *testing.T) {
 	}
 }
 
-// TestClaudeRunnerLiveStatusSnapshotBoundaryはproduction Run経路で、live snapshotにtool
-// 実行中のcommand詳細が置かれる期間があってもevent logへcommand本文・秘密情報が
-// 保存されないことを検証する。
 func TestClaudeRunnerLiveStatusSnapshotBoundary(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixtureはUnix系環境向け")
@@ -261,8 +241,6 @@ func TestClaudeRunnerLiveStatusSnapshotBoundary(t *testing.T) {
 	}
 }
 
-// writeTimedStreamScriptはstream-json行を1行ずつ1秒間隔で出すfake claude scriptを書く。
-// 実時間の観測時刻差を保証し、production Run経路のsnapshot時刻検証を決定的にする。
 func writeTimedStreamScript(t *testing.T, lines ...string) string {
 	t.Helper()
 	for _, line := range lines {
@@ -284,10 +262,6 @@ func writeTimedStreamScript(t *testing.T, lines ...string) string {
 	return commandPath
 }
 
-// TestClaudeRunnerLiveModelActivityFromSuppressedThinkingTokensはproduction Run経路で、
-// event logへ保存されないsystem/thinking_tokensがlive snapshotのmodel activity専用時刻を
-// 進め、最後のresult eventは専用時刻を進めないことを検証する。行間1秒の実時間差で
-// assistant観測 < thinking_tokens観測 < result観測の順序を固定する。
 func TestClaudeRunnerLiveModelActivityFromSuppressedThinkingTokens(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixtureはUnix系環境向け")

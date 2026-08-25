@@ -42,9 +42,6 @@ func TestRoundPathClassBucketsDocCodeOther(t *testing.T) {
 	}
 }
 
-// TestRoundSemanticDigestIgnoresCommentAndWhitespaceOnlyChangesはslash言語で
-// comment追記・空白行・行末空白だけの差分を同一意味へ畳め、code行の差分は別digestに
-// なることを検証する。
 func TestRoundSemanticDigestIgnoresCommentAndWhitespaceOnlyChanges(t *testing.T) {
 	before := []byte("package main\n\nfunc main() {\n\tprintln(1)\n}\n")
 	after := []byte("package main\n\n// 追加comment\nfunc main() {\n\tprintln(1)  \n}\n\n")
@@ -57,9 +54,6 @@ func TestRoundSemanticDigestIgnoresCommentAndWhitespaceOnlyChanges(t *testing.T)
 	}
 }
 
-// TestRoundSemanticDigestKeepsUnsafeContentUnnormalizedはraw string・directive
-// comment・行継続・triple quoteなど正規化が安全と確定できない内容を未正規化扱い
-// (空digestまたは別digest)へ倒すことを検証する。
 func TestRoundSemanticDigestKeepsUnsafeContentUnnormalized(t *testing.T) {
 	if got := RoundSemanticDigest([]byte("s := `raw // not comment`\n"), RoundPathClassCode, "a.go"); got != "" {
 		t.Fatalf("backtick含有go fileが正規化されています: %q", got)
@@ -70,8 +64,7 @@ func TestRoundSemanticDigestKeepsUnsafeContentUnnormalized(t *testing.T) {
 	if got := RoundSemanticDigest([]byte("s = \"\"\"# not comment\"\"\"\n"), RoundPathClassCode, "a.py"); got != "" {
 		t.Fatalf("triple quote含有python fileが正規化されています: %q", got)
 	}
-	// slash言語の言語固有複数行文字列(text block・raw string)内の「//」行も
-	// comment除去へ混ぜない。
+
 	for _, unsafe := range []struct {
 		path    string
 		content string
@@ -94,8 +87,6 @@ func TestRoundSemanticDigestKeepsUnsafeContentUnnormalized(t *testing.T) {
 		}
 	}
 
-	// text block内容の差分はcomment差分へ誤分類させないため、正規化不能扱い
-	// (空digest)同士の比較がsemantic候補へ倒れることをCompareRoundRecordsで確認する。
 	javaBefore := &RoundRecord{Paths: []RoundPathState{
 		{Path: "A.java", Class: RoundPathClassCode, FullDigest: "j1", SemanticDigest: RoundSemanticDigest([]byte("String s = \"\"\"\nalpha\n\"\"\";\n"), RoundPathClassCode, "A.java")},
 	}}
@@ -111,22 +102,18 @@ func TestRoundSemanticDigestKeepsUnsafeContentUnnormalized(t *testing.T) {
 		t.Fatalf("非対応形式が正規化されています: %q", got)
 	}
 
-	// directive commentは意味を持つため除去しない。
 	withDirective := []byte("//go:build linux\n\npackage main\n")
 	withoutDirective := []byte("package main\n")
 	if RoundSemanticDigest(withDirective, RoundPathClassCode, "a.go") == RoundSemanticDigest(withoutDirective, RoundPathClassCode, "a.go") {
 		t.Fatal("build directiveが非意味差分として扱われています")
 	}
 
-	// doc pathは内容全体が意味を持つため全内容digestと一致する。
 	doc := []byte("# 見出し\n本文\n")
 	if RoundSemanticDigest(doc, RoundPathClassDoc, "README.md") != roundDigest(doc) {
 		t.Fatal("doc pathの意味digestが全内容digestと一致しません")
 	}
 }
 
-// TestClassifyRoundPathObservesWorktreeは通常file・削除・symlink・repo外pathの
-// 観測結果を検証する。
 func TestClassifyRoundPathObservesWorktree(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package main\n"), 0o644); err != nil {
@@ -153,7 +140,6 @@ func TestClassifyRoundPathObservesWorktree(t *testing.T) {
 	}
 }
 
-// TestCompareRoundRecordsClassifiesDeltasはround差分分類の主要分岐を検証する。
 func TestCompareRoundRecordsClassifiesDeltas(t *testing.T) {
 	base := RoundRecord{
 		Version: 1, TaskID: "task-1", Seq: 1, ReviewNumber: 1, WorkerPhase: "worker-new",
@@ -183,7 +169,6 @@ func TestCompareRoundRecordsClassifiesDeltas(t *testing.T) {
 		t.Fatalf("同一snapshot = %+v", got)
 	}
 
-	// commentのみ差分:意味digest一致・全digest不一致。
 	commentOnly := base
 	commentOnly.Seq = 2
 	commentOnly.Snapshot = SnapshotDigest{Head: "h", IndexDigest: "i", WorktreeDigest: "w2"}
@@ -194,14 +179,12 @@ func TestCompareRoundRecordsClassifiesDeltas(t *testing.T) {
 		t.Fatalf("comment/format差分 = %+v", got)
 	}
 
-	// doc追記はcomment/format-onlyへ落ちずdoc-changeとして観測される。
 	docAdded := commentOnly
 	docAdded.Paths = append(docAdded.Paths, RoundPathState{Path: "README.md", Class: RoundPathClassDoc, FullDigest: "d1"})
 	if got := CompareRoundRecords(&base, &docAdded); got.Class != RoundDeltaDocChange || got.ChangedPaths != 2 || got.SemanticPaths != 0 || got.DocPaths != 1 {
 		t.Fatalf("doc追記 = %+v", got)
 	}
 
-	// 意味差分:意味digest不一致。
 	semantic := commentOnly
 	semantic.Paths = []RoundPathState{
 		{Path: "main.go", Class: RoundPathClassCode, FullDigest: "f3", SemanticDigest: "s2"},
@@ -210,28 +193,24 @@ func TestCompareRoundRecordsClassifiesDeltas(t *testing.T) {
 		t.Fatalf("意味差分 = %+v", got)
 	}
 
-	// 正規化不能言語の変更はsemantic候補。
 	shellChanged := commentOnly
 	shellChanged.Paths = append(shellChanged.Paths, RoundPathState{Path: "run.sh", Class: RoundPathClassOther, FullDigest: "sh2"})
 	if got := CompareRoundRecords(&base, &shellChanged); got.Class != RoundDeltaSemantic {
 		t.Fatalf("非対応形式変更 = %+v", got)
 	}
 
-	// code path削除(取り消し)はsemantic候補。
 	reverted := commentOnly
 	reverted.Paths = nil
 	if got := CompareRoundRecords(&base, &reverted); got.Class != RoundDeltaSemantic || got.ChangedPaths != 1 || got.SemanticPaths != 1 {
 		t.Fatalf("取り消し = %+v", got)
 	}
 
-	// 観測失敗はunknown。
 	captureFailed := commentOnly
 	captureFailed.CaptureError = "collect failed"
 	if got := CompareRoundRecords(&base, &captureFailed); got.Class != RoundDeltaUnknown {
 		t.Fatalf("観測失敗 = %+v", got)
 	}
 
-	// snapshotが変わったがpath差分が無い(観測範囲外変更)はunknown。
 	outside := commentOnly
 	outside.Paths = base.Paths
 	if got := CompareRoundRecords(&base, &outside); got.Class != RoundDeltaUnknown {
@@ -239,10 +218,6 @@ func TestCompareRoundRecordsClassifiesDeltas(t *testing.T) {
 	}
 }
 
-// TestCompareRoundRecordsDocChangesGetOwnClassは文書pathの追加・変更・削除がfile種別
-// だけで非意味へ分類されずdoc-changeとして観測されること、AGENTS・instructions・
-// EVAL・仕様等の行動規定文書がcomment/format-onlyへ落ちないこと、実codeの
-// comment/format-only分類が維持されることを検証する。
 func TestCompareRoundRecordsDocChangesGetOwnClass(t *testing.T) {
 	prev := RoundRecord{
 		Version: 1, TaskID: "task-doc", Seq: 1, ReviewNumber: 1, WorkerPhase: "worker-new",
@@ -265,20 +240,20 @@ func TestCompareRoundRecordsDocChangesGetOwnClass(t *testing.T) {
 		}
 		return entry
 	}
-	// withDigestは全内容と意味digestが両方変わる差分(doc・code意味差分)。
+
 	withDigest := func(path string, digest string) RoundPathState {
 		entry := pick(path)
 		entry.FullDigest = digest
 		entry.SemanticDigest = digest
 		return entry
 	}
-	// withFullDigestは全内容だけが変わる差分(code comment/format-only)。
+
 	withFullDigest := func(path string, digest string) RoundPathState {
 		entry := pick(path)
 		entry.FullDigest = digest
 		return entry
 	}
-	// replaceは基準path集合の同path entryを差し替える。
+
 	replace := func(mutations ...RoundPathState) []RoundPathState {
 		list := append([]RoundPathState(nil), prev.Paths...)
 		for _, mutation := range mutations {
@@ -290,7 +265,7 @@ func TestCompareRoundRecordsDocChangesGetOwnClass(t *testing.T) {
 		}
 		return list
 	}
-	// dropは基準path集合からpathを除外する(record上の削除)。
+
 	drop := func(path string) []RoundPathState {
 		list := make([]RoundPathState, 0, len(prev.Paths)-1)
 		for _, entry := range prev.Paths {
@@ -371,8 +346,6 @@ func TestCompareRoundRecordsDocChangesGetOwnClass(t *testing.T) {
 	}
 }
 
-// TestAppendAndReadRoundRecordsはseq採番・roundtrip・破損行と旧version行の
-// 扱いを検証する。
 func TestAppendAndReadRoundRecords(t *testing.T) {
 	st := newConvergenceTestStore(t)
 	first := RoundRecord{TaskID: "task-1", ReviewNumber: 1, WorkerPhase: "worker-new", CapturedAt: time.Now()}
@@ -410,8 +383,6 @@ func TestAppendAndReadRoundRecords(t *testing.T) {
 	}
 }
 
-// TestAppendRoundRecordFailureIsolationは追記失敗がerrorとして返ることと、
-// log pathがdirectoryで塞がれた場合の失敗が呼出元へ伝わることを検証する。
 func TestAppendRoundRecordFailureIsolation(t *testing.T) {
 	st := newConvergenceTestStore(t)
 	if err := os.MkdirAll(st.RoundLogPath("task-1"), 0o700); err != nil {

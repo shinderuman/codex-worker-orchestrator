@@ -17,10 +17,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/reposearch"
 )
 
-// TestMultiRepositorySearchCacheProcessIsolationは共有GLM_WORKER_HOME上のrepo-search cacheが
-// repo別namespaceへ分離されることを、独立2 processの並列実行で検証する。glm-worker CLI
-// 本体はまだsearchをproduct配線していないため、子processは将来のproduct呼出と同じ
-// reposearch APIを既定cache root(GLM_WORKER_HOME配下のsearch)に対して実行する。
 func TestMultiRepositorySearchCacheProcessIsolation(t *testing.T) {
 	if os.Getenv("GLM_WORKER_REPOSEARCH_HELPER") == "1" {
 		multiRepoSearchHelper()
@@ -74,8 +70,6 @@ func TestMultiRepositorySearchCacheProcessIsolation(t *testing.T) {
 	assertSearchReportIsolated(t, reused, "mrsearchalpha", "mrsearchbeta")
 }
 
-// multiRepoSearchReportは子processの検索結果。Report全体へtest側の期待を課さず、
-// 非混入検査に必要な構造値だけをやり取りする。
 type multiRepoSearchReport struct {
 	Error       string   `json:"error,omitempty"`
 	CacheStatus string   `json:"cache_status"`
@@ -83,9 +77,6 @@ type multiRepoSearchReport struct {
 	Snippets    []string `json:"snippets"`
 }
 
-// runMultiRepoSearchChildはtest binaryを子processとして再実行し、共有homeの既定cache
-// rootへ検索を実行させる。呼出元のtest環境envを継承しない。test本体goroutineからは
-// 並列起動されるため、失敗はerrorとして返す。
 func runMultiRepoSearchChild(home string, repo string, query string) (multiRepoSearchReport, error) {
 	outDir, err := os.MkdirTemp("", "glm-worker-search-child-*")
 	if err != nil {
@@ -124,8 +115,6 @@ func runMultiRepoSearchChild(home string, repo string, query string) (multiRepoS
 	return report, nil
 }
 
-// assertSearchReportIsolatedは検索結果が自repoのmarker語だけを含み、相手repoのmarker語が
-// path・snippetのどこにも現れないことを検査する。
 func assertSearchReportIsolated(t *testing.T, report multiRepoSearchReport, own string, other string) {
 	t.Helper()
 	if len(report.Paths) == 0 {
@@ -145,8 +134,6 @@ func assertSearchReportIsolated(t *testing.T, report multiRepoSearchReport, own 
 	}
 }
 
-// multiRepoSearchHelperは子process側本体。envで指定されたrepo・queryでproductionと同じ
-// reposearch.Searchを既定cache rootに対して実行し、結果をJSON fileへ書く。
 func multiRepoSearchHelper() {
 	code := multiRepoSearchHelperRun()
 	os.Exit(code)

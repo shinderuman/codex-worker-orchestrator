@@ -12,13 +12,10 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-// watchNonENOENTErrorはpermission失敗のような、file不在(ENOENT)以外のI/O失敗。
 func watchNonENOENTError(op string, path string) error {
 	return &fs.PathError{Op: op, Path: path, Err: fs.ErrPermission}
 }
 
-// TestWatchInitialOpenNonENOENTFailsClosedは初回openの非ENOENT失敗をevent_log_status
-// emptyの正常JSONLへ偽装せずerrorで返す。watch_startすら出さないfail closedを固定する。
 func TestWatchInitialOpenNonENOENTFailsClosed(t *testing.T) {
 	st, _ := watchTestStore(t)
 	taskID := "12345678-aaaa-bbbb-cccc-dddddddddddd"
@@ -47,8 +44,6 @@ func TestWatchInitialOpenNonENOENTFailsClosed(t *testing.T) {
 	}
 }
 
-// TestWatchFollowStatNonENOENTFailsAfterStreamingはfollow中のstatの非ENOENT失敗を
-// removedの正常終了へ偽装せずerrorで返す。既にstreamへ出したeventはそのまま残る。
 func TestWatchFollowStatNonENOENTFailsAfterStreaming(t *testing.T) {
 	st, _ := watchTestStore(t)
 	taskID := "12345678-aaaa-bbbb-cccc-dddddddddddd"

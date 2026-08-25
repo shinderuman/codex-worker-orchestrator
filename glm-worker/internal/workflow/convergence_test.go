@@ -9,7 +9,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-// readRoundLogTは現在taskのround logを読むtest helper。
 func readRoundLogT(t *testing.T, st *state.StateStore) []state.RoundRecord {
 	t.Helper()
 	records, err := st.ReadRoundRecords(st.ReadOr("task.id", ""))
@@ -19,8 +18,6 @@ func readRoundLogT(t *testing.T, st *state.StateStore) []state.RoundRecord {
 	return records
 }
 
-// TestConvergenceRecordsBaselineAndReviewRoundsはnew task実行がbaseline recordと
-// round 1 record(WorkerPhase・ReviewNumber・snapshot)を書くことを検証する。
 func TestConvergenceRecordsBaselineAndReviewRounds(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
@@ -52,8 +49,6 @@ func TestConvergenceRecordsBaselineAndReviewRounds(t *testing.T) {
 	}
 }
 
-// TestConvergenceRecordsAutoFixRoundsはauto-fix経路のround recordがreview番号と
-// worker-auto-fix phaseを正しく持つことを検証する。
 func TestConvergenceRecordsAutoFixRounds(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
@@ -79,8 +74,6 @@ func TestConvergenceRecordsAutoFixRounds(t *testing.T) {
 	}
 }
 
-// TestConvergenceRecordsDecisionRoundはSol decision実行のround recordが
-// worker-decision phaseを持つことを検証する。
 func TestConvergenceRecordsDecisionRound(t *testing.T) {
 	st := newStateStoreT(t)
 	if err := st.Write("last-request", "request"); err != nil {
@@ -110,9 +103,6 @@ func TestConvergenceRecordsDecisionRound(t *testing.T) {
 	}
 }
 
-// TestConvergenceCaptureErrorRecordedNotFatalはpath観測失敗がCaptureErrorへ記録
-// されるだけでreview flowを crashingさせないことを検証する。観測失敗は
-// self-protection HIGHへ倒されるためrisk floor reemitまで含む経路になる。
 func TestConvergenceCaptureErrorRecordedNotFatal(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
@@ -143,8 +133,6 @@ func TestConvergenceCaptureErrorRecordedNotFatal(t *testing.T) {
 	}
 }
 
-// TestConvergenceRecordAppendFailureDoesNotAffectTaskはround log追記失敗がtask
-// 完了へ影響しないことを検証する。
 func TestConvergenceRecordAppendFailureDoesNotAffectTask(t *testing.T) {
 	st := newStateStoreT(t)
 	taskID := st.ReadOr("task.id", "")
@@ -165,8 +153,6 @@ func TestConvergenceRecordAppendFailureDoesNotAffectTask(t *testing.T) {
 	}
 }
 
-// TestConvergencePathObservationUsesWorktreeはround recordのpath観測がrepo
-// worktreeの実内容(digest・削除)を読むことを検証する。
 func TestConvergencePathObservationUsesWorktree(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package main\n"), 0o644); err != nil {

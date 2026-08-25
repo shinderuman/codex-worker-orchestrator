@@ -12,8 +12,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-// timelineOutputは--timelineのmachine contract。call観測窓の相対barのような
-// presentationは持たず、観測値そのものをJSON型で出す。
 type timelineOutput struct {
 	TaskID        string               `json:"task_id"`
 	TaskStatus    *string              `json:"task_status"`
@@ -25,8 +23,6 @@ type timelineOutput struct {
 	SessionAging  []state.SessionAging `json:"session_aging"`
 }
 
-// timelineEventLogはevent logの所在と読み取り状態。statusはok(読めた)・none(まだ無い)・
-// unreadable(読み取り失敗)で、okのときだけpathが載る。
 type timelineEventLog struct {
 	Status string  `json:"status"`
 	Path   *string `json:"path,omitempty"`
@@ -72,14 +68,6 @@ type timelineTool struct {
 	Errors        int    `json:"errors,omitempty"`
 }
 
-// printTimelineは保存済みevent logとtelemetryだけからtask/call単位のtimelineをmachine JSON
-// で出す。state書換・repo lock・AI call・provider/workerへの問い合わせを行わない。
-// 対応付けできなかったtool duration・観測されていない結果値はnull/omitとして推測で
-// 埋めない。taskIDArgが空なら現在task、指定されればそのtaskの保存済みlogを読む。
-// event log・telemetry pathの構築に使うtask ID(明示引数・現在task両方)は先に生成形式
-// (UUID v4)へ検証し、不正値はfilesystemへ触れずerrorとする。event logのない現在taskは
-// その旨をstatusへ出して正常終了し、明示指定taskのlog不在はnot_found error、読込失敗は
-// internal errorとして返す。
 func printTimeline(st *state.StateStore, taskIDArg string, stdout io.Writer) error {
 	explicit := taskIDArg != ""
 	taskID := taskIDArg
@@ -132,9 +120,6 @@ func fillTimelineTelemetry(taskID string, logErr error, logs []state.ModelCallLo
 	output.SessionAging = state.AgingFromModelCallLogs(logs)
 }
 
-// validTimelineTaskIDはevent log・telemetry path構築へ使うtask IDの境界を判定する。
-// 明示指定は生成形式UUID v4のみを受け付け、現在taskは無task sentinel空文字かUUID v4
-// のみを受け付ける(破損・改変されたtask.idでstate root外へ出ないようにする)。
 func validTimelineTaskID(taskID string, explicit bool) bool {
 	if taskID == "" && !explicit {
 		return true
@@ -142,9 +127,6 @@ func validTimelineTaskID(taskID string, explicit bool) bool {
 	return state.ValidGeneratedUUID(taskID)
 }
 
-// timelineTaskStatusは現在taskは正規task.statusを、明示指定taskはstats履歴のarchive値を
-// taskStatusPtrの外部受理集合へ通して返す。履歴にも無いtask ID・読込失敗・受理集合外の
-// 永続値は観測できないためnullとする(推測しない)。
 func timelineTaskStatus(st *state.StateStore, taskID string, explicit bool) *string {
 	if !explicit {
 		return taskStatusPtr(st.TaskStatus())
@@ -164,8 +146,6 @@ func timelineTaskStatus(st *state.StateStore, taskID string, explicit bool) *str
 	return nil
 }
 
-// readTaskEventRecordsはtask event logを行ごとに読む。破損行・旧version行はskipして
-// その件数を返し、log全体の読込失敗だけをerrorとする。
 func readTaskEventRecords(st *state.StateStore, taskID string) ([]state.TaskEventRecord, int, error) {
 	file, err := os.Open(st.TaskEventLogPath(taskID))
 	if err != nil {
@@ -190,8 +170,6 @@ func readTaskEventRecords(st *state.StateStore, taskID string) ([]state.TaskEven
 	return records, skipped, nil
 }
 
-// readLastTaskEventはevent logの最終parse可能recordを返す。書き込み途中の末尾部分行は
-// parse失敗として無視される。
 func readLastTaskEvent(path string) (state.TaskEventRecord, bool) {
 	file, err := os.Open(path)
 	if err != nil {
@@ -252,8 +230,6 @@ func timelineCallDetail(index int, entry state.CallTimelineEntry) timelineCall {
 	return call
 }
 
-// timelineCallResultDetailはresult eventが観測されたcallだけ結果値を出す。duration 0は
-// 未測定として出さず、tokenはresult usageが観測できたときだけ載る。
 func timelineCallResultDetail(entry state.CallTimelineEntry) timelineCallResult {
 	result := timelineCallResult{Observed: entry.ResultObserved}
 	if !entry.ResultObserved {
@@ -292,14 +268,11 @@ func timelineTools(tools []state.CallTimelineTool) []timelineTool {
 	return rendered
 }
 
-// eventLogSkippedLineは破損行などparseできないevent log行をfail visibleにするJSONL行。
 type eventLogSkippedLine struct {
 	Type  string `json:"type"`
 	Error string `json:"error"`
 }
 
-// marshalEventLineはJSONL 1行へencodeする。watchのevent passthroughとcontrol eventで
-// 共用する。
 func marshalEventLine(value any) ([]byte, error) {
 	data, err := json.Marshal(value)
 	if err != nil {

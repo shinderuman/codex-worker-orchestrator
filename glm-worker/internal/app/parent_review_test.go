@@ -65,7 +65,6 @@ func TestParseCommandFixStdinOrigin(t *testing.T) {
 	}
 }
 
-// reviewFixPacketAppはreviewerがSol確認へ昇格するpacket。
 func reviewFixPacketApp() string {
 	return appPacketBody(packet.Result{
 		Status:              packet.StatusNeedsSolReview,
@@ -81,7 +80,6 @@ func reviewFixPacketApp() string {
 	})
 }
 
-// needsSolDecisionPacketAppはworkerがSol判断を要求するpacket。
 func needsSolDecisionPacketApp() string {
 	return appPacketBody(packet.Result{
 		Status:          packet.StatusNeedsSolDecision,
@@ -132,7 +130,7 @@ func TestExecuteParentReviewFixThenAcceptFlow(t *testing.T) {
 		{structured: passPacketApp()},
 		{structured: passPacketApp()},
 	}}
-	// reviewer terminal resultのNEEDS_SOL_REVIEW指摘をそのまま差し戻すためglm-reviewer。
+
 	if err := Execute(Command{Mode: ModeFix, Payload: "指摘を修正", Origin: "glm-reviewer"}, cfg, fix.factory(), io.Discard, io.Discard); err != nil {
 		t.Fatal(err)
 	}

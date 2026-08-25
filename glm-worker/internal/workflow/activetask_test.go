@@ -27,8 +27,6 @@ func writeTaskFileAtPath(t *testing.T, repoRoot string, relPath string) {
 	}
 }
 
-// resolveActiveTaskPathはplanのACTIVE欄からACTIVE task fileを一意に解決する。plan欠損は
-// 配線なし、配置契約違反・非一意・欠損file参照は要求正本を特定できないためerrorを返す。
 func TestResolveActiveTaskPathMatrix(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -211,8 +209,7 @@ func TestResolveActiveTaskPathMatrix(t *testing.T) {
 		{
 			name: "symlink target rejected",
 			plan: func(t *testing.T, repoRoot string) {
-				// repository外の実fileへ向くsymlinkを要求正本にできない。os.Statは辿って
-				// 成立してしまうため、Lstatのfile typeで拒否する。
+
 				outside := t.TempDir()
 				if err := os.WriteFile(filepath.Join(outside, "outside.md"), []byte("# outside\n"), 0o644); err != nil {
 					t.Fatal(err)
@@ -250,11 +247,6 @@ func TestResolveActiveTaskPathMatrix(t *testing.T) {
 	}
 }
 
-// TestDecisionRejectsInvalidActiveThenSameDecisionResumesは「ACTIVE不正 → decision拒否 →
-// 親修復 → 同じdecisionで正常resume」をproduction pathで固定する。拒否はdecision消費前に
-// 行われるためwaiting-decisionとpending decisionが残り、修復後に同じdecisionを正規経路で
-// 再実行できる。旧実装はdecision反映後のACTIVE解決fail closedでstatusがwaiting-sol-reviewへ
-// 変わるため--decisionも--fixも拒否され、--reset以外の再開経路が無くなっていた。
 func TestDecisionRejectsInvalidActiveThenSameDecisionResumes(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
@@ -273,7 +265,6 @@ func TestDecisionRejectsInvalidActiveThenSameDecisionResumes(t *testing.T) {
 		t.Fatalf("NEEDS_SOL_DECISION後 = %q/pending=%v want waiting-decision/pending", st.TaskStatus(), st.Exists("pending-decision"))
 	}
 
-	// 親Codexが停止中にACTIVE task fileを欠損させた状態を再現する。
 	if err := os.Remove(filepath.Join(repoRoot, activeTaskGuardPath)); err != nil {
 		t.Fatal(err)
 	}
@@ -312,8 +303,6 @@ func TestDecisionRejectsInvalidActiveThenSameDecisionResumes(t *testing.T) {
 		t.Fatalf("decision拒否のmissing event = %d want 1", events)
 	}
 
-	// 親CodexがACTIVE task fileを修復し、同じdecisionを再実行する。decision後のreviewは
-	// risk floorでHIGH固定のため、reviewer PASSは再出力のNEEDS_SOL_REVIEWへ差し替わる。
 	writeActiveTaskFileContent(t, repoRoot)
 	if err := w.ExecuteDecision(decision); err != nil {
 		t.Fatal(err)
@@ -341,8 +330,6 @@ func TestDecisionRejectsInvalidActiveThenSameDecisionResumes(t *testing.T) {
 	}
 }
 
-// TestDecisionGateUnresolvablePlanRejectsWithoutStatusChangeはdecision消費前gateがPlanの
-// ACTIVE欄を解決できない場合も、waiting-sol-reviewへのstatus書換なく拒否することを固定する。
 func TestDecisionGateUnresolvablePlanRejectsWithoutStatusChange(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, "# plan without active\n")
@@ -374,9 +361,6 @@ func TestDecisionGateUnresolvablePlanRejectsWithoutStatusChange(t *testing.T) {
 	}
 }
 
-// TestExecuteNewTaskRecordsActiveTaskAndPromptBlockは解決済みACTIVE task pathがtask stateへ
-// 固定され、worker/reviewer両promptが同じfileの本文読み込み指示を持つproduction因果を固定する。
-// task名や実装者要約ではなくtask file本文を毎回の呼出へ渡す配線の回帰防止。
 func TestExecuteNewTaskRecordsActiveTaskAndPromptBlock(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
@@ -404,9 +388,6 @@ func TestExecuteNewTaskRecordsActiveTaskAndPromptBlock(t *testing.T) {
 	}
 }
 
-// TestPlanWithoutActiveFailsClosedBeforeCallはplanが存在するのにACTIVE欄から要求正本を解決
-// できない場合、model呼出前にfail closedすることを固定する。解決できないまま呼ぶとtask名だけの
-// 曖昧な要求で作業が始まる。
 func TestPlanWithoutActiveFailsClosedBeforeCall(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, "# plan without active\n")
@@ -440,9 +421,6 @@ func TestPlanWithoutActiveFailsClosedBeforeCall(t *testing.T) {
 	}
 }
 
-// TestActiveTaskFileDeletionFailsClosedBeforeCallはtask開始後に親Codex以外の何者かがACTIVE
-// task fileを削除した場合、次のworker呼出前にfail closedすることを固定する。固定済みpathは
-// Plan再解決ではなく実在確認で守る。
 func TestActiveTaskFileDeletionFailsClosedBeforeCall(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
@@ -472,9 +450,6 @@ func TestActiveTaskFileDeletionFailsClosedBeforeCall(t *testing.T) {
 	}
 }
 
-// TestDecisionAndFixPromptsCarryActiveTaskBlockはdecision・explicit fix・auto-fix各worker経路の
-// promptも同じ要求正本blockを保つことを固定する。経路ごとに要求源が失われるとreviewerだけが
-// task契約を読む非対称状態になる。
 func TestDecisionAndFixPromptsCarryActiveTaskBlock(t *testing.T) {
 	reviewReport := `{"risk":"LOW","status":"IMPLEMENTED","summary":"done"}`
 	if got := decisionPrompt("r", "d", activeTaskGuardPath); !strings.Contains(got, "ACTIVE_TASK_FILE: "+activeTaskGuardPath) {
@@ -494,8 +469,6 @@ func TestDecisionAndFixPromptsCarryActiveTaskBlock(t *testing.T) {
 	}
 }
 
-// TestResumePromptCarriesOriginalActiveTaskBlockはrate-limit/provider停止のresumeが保存済み
-// 前回指示を再送するため、compaction後もACTIVE task file指示が失われないことを固定する。
 func TestResumePromptCarriesOriginalActiveTaskBlock(t *testing.T) {
 	original := newTaskPrompt("request", activeTaskGuardPath)
 	got := resumePrompt(state.ResumeCheckpoint{OriginalPrompt: original})
@@ -504,10 +477,6 @@ func TestResumePromptCarriesOriginalActiveTaskBlock(t *testing.T) {
 	}
 }
 
-// TestExecuteNewTaskClearsStaleActiveTaskStateは新task開始時に前taskのACTIVE固定を除去し、
-// planの無いrepoでは初回解決成功として空値を設定済みにすることを固定する。設定済み空値と
-// 未設定を区別しないと、ACTIVE解決fail closed後の修復再開で要求正本なし・旧task参照のまま
-// modelを呼べてしまう。
 func TestExecuteNewTaskClearsStaleActiveTaskState(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	w, r, _, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
@@ -534,8 +503,6 @@ func TestExecuteNewTaskClearsStaleActiveTaskState(t *testing.T) {
 	}
 }
 
-// TestActiveResolutionFailureClearsStaleActiveTaskStateはACTIVE解決fail closed時に前taskの
-// 固定値が残らないことを固定する。残ると修復後の継続呼出が旧taskを読み込める。
 func TestActiveResolutionFailureClearsStaleActiveTaskState(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, "# plan without active\n")
@@ -557,9 +524,6 @@ func TestActiveResolutionFailureClearsStaleActiveTaskState(t *testing.T) {
 	}
 }
 
-// TestActiveTaskNonRegularFileFailsClosedBeforeCallは`.md`以外・directory・symlink等の
-// 配置契約外対象をACTIVE解決が受理したままmodelを呼ばないことをproduction pathで固定する。
-// symlinkはrepository外の実fileへ向いても解決時に拒否される。
 func TestActiveTaskNonRegularFileFailsClosedBeforeCall(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	outside := t.TempDir()
@@ -600,9 +564,6 @@ func TestActiveTaskNonRegularFileFailsClosedBeforeCall(t *testing.T) {
 	}
 }
 
-// TestExplicitFixAfterParentRepairResolvesActiveTaskはACTIVE解決fail closed後に親Codexが
-// Plan・task fileを修復して同じtaskを--fixで再開した場合、state未設定を検出してACTIVEを
-// 再解決・固定してからpromptを作るproduction経路を固定する。
 func TestExplicitFixAfterParentRepairResolvesActiveTask(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, "# plan without active\n")
@@ -617,7 +578,7 @@ func TestExplicitFixAfterParentRepairResolvesActiveTask(t *testing.T) {
 	if len(r.prompts) != 0 {
 		t.Fatalf("ACTIVE解決失敗時はmodel呼出前に停止すべき: %d", len(r.prompts))
 	}
-	// 親Codexが停止期間中にPlanとACTIVE task fileを修復した状態を再現する。
+
 	writePlanFileContent(t, repoRoot, planGuardSeed)
 
 	if err := w.ExecuteExplicitFix("修復後の継続", ""); err != nil {
@@ -636,8 +597,6 @@ func TestExplicitFixAfterParentRepairResolvesActiveTask(t *testing.T) {
 	}
 }
 
-// TestExplicitFixStillUnresolvableFailsClosedAgainは修復が不十分なまま--fixされた場合、
-// ACTIVE再解決失敗を0 model callで再度fail closedすることを固定する。
 func TestExplicitFixStillUnresolvableFailsClosedAgain(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, "# plan without active\n")
@@ -674,8 +633,6 @@ func TestExplicitFixStillUnresolvableFailsClosedAgain(t *testing.T) {
 	}
 }
 
-// TestEnsureActiveTaskPathDoesNotSwapFixedTaskは一度固定したACTIVE task pathをPlanのACTIVE欄
-// 変更で別taskへすり替えないことを固定する。停止中のPlan切り替えは次task開始時にだけ反映される。
 func TestEnsureActiveTaskPathDoesNotSwapFixedTask(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)

@@ -48,7 +48,6 @@ func DetectZaiFiveHourLimitText(output string) (ZaiFiveHourLimit, bool) {
 
 	limit.ResetAtCST = match[1]
 
-	// Z.ai Coding Planのreset時刻は中国標準時 (CST, UTC+8) として扱う。
 	chinaStandardTime := time.FixedZone("CST", 8*60*60)
 	resetAt, err := time.ParseInLocation(
 		"2006-01-02 15:04:05",
@@ -71,19 +70,14 @@ type ZaiRateLimitError struct {
 	ArtifactWarning string
 }
 
-// Errorは人間が読む1行message。reset時刻・auto-resume予定等の機械fieldは
-// app層のprocess error detailへ構造化して載るため、ここでは重複させない。
 func (e ZaiRateLimitError) Error() string {
 	return fmt.Sprintf("Z.ai Coding Plan 5h limit reached at phase %s; task stopped, resumable via glm-worker --resume", e.Phase)
 }
 
-// AutoResumeScheduleはreset時刻からgrace後の自動再開予定。reset時刻がparse不能な
-// 場合はfalseを返し、自動再開なし(利用者の--resume待ち)を意味する。
 func (e ZaiRateLimitError) AutoResumeSchedule() (bool, string) {
 	return autoResumeSchedule(e.Limit.ResetAtRFC3339)
 }
 
-// AutoResumeKeyはこの停止に対応するCodex automation keyの期待値。
 func (e ZaiRateLimitError) AutoResumeKey() string {
 	return autoResumeKey(e.RepoShort, e.TaskID)
 }

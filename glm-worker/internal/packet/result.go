@@ -1,6 +1,3 @@
-// Package packetはstructured outputのtyped結果と、Sol表示への変換・意味検証を担う。
-// model呼出の唯一のprotocolは--json-schemaで強制されるtyped structured outputであり、
-// marker抽出・KEY行parser・重複/迷子marker検出のようなtext構造検査は持たない。
 package packet
 
 import (
@@ -10,16 +7,12 @@ import (
 	"fmt"
 )
 
-// 表示・検証契約の上限。structured outputでは物理行数は意味を持たないため、
-// 親Codexへ出すmachine protocol全体のbyte上限と1 field本文のbyte上限だけを
-// 圧縮規律として残す。
 const (
 	MaxPacketBytes     = 6 * 1024
 	MaxFieldBytes      = 1536
 	MaxDiagnosticBytes = 6 * 1024
 )
 
-// Statusはworkflow終端の種別。worker roleとreviewer roleで許容集合が異なる。
 type Status string
 
 const (
@@ -30,7 +23,6 @@ const (
 	StatusNeedsSolReview   Status = "NEEDS_SOL_REVIEW"
 )
 
-// RiskはSol判断へ昇格すべき変更かの申告。意味整合はValidate*Resultが強制する。
 type Risk string
 
 const (
@@ -38,33 +30,10 @@ const (
 	RiskHigh Risk = "HIGH"
 )
 
-// ReportOnlyTargetsはFIX_REQUIREDのTARGETS予約値。reviewerがコード・diffを正しいと
-// 確認し報告の意味情報だけを不足と指摘するときに使い、productionは実装修正と
-// 報告再出力をこの値だけで機械識別する。
 const ReportOnlyTargets = "PACKET"
 
-// noneTargetsSentinelは「対象が概念的でfile targetがない」ことを表す旧WORKER.md
-// 「不要ならnone」由来のTARGETS予約値。小文字厳密表現の単独要素としてだけ使用できる。
 const noneTargetsSentinel = "none"
 
-// Resultは1回のmodel呼出が返すtyped結果。worker/reviewer両roleで同じ構造を持ち、
-// statusenumと意味検証でrole契約を強制する。未知の意味問題は各free text fieldへ
-// 残り、構造はschemaとこの型が固定する。
-//
-// status別契約(machine protocol・検証の共通table):
-//
-//	status              role      risk      必須text field                                                         targets受理
-//	IMPLEMENTED         worker    LOW/HIGH  summary, requirement_coverage, tests, unverified                       空配列可 / none可 / PACKET不可
-//	NEEDS_SOL_DECISION  worker    HIGH      decision, evidence, options, recommendation, test_obligations         空配列不可 / none可 / PACKET不可
-//	PASS                reviewer  LOW       summary, requirement_coverage, invariants, test_evidence,             空配列不可 / none可 / PACKET不可
-//	                                     issues, residual_risk
-//	FIX_REQUIRED        reviewer  LOW/HIGH  PASSと同上                                                             空配列不可 / none可 / PACKET単独可(報告再出力専用)
-//	NEEDS_SOL_REVIEW    reviewer  HIGH      PASSと同上 + sol_question                                              空配列不可 / none不可 / PACKET不可
-//
-// 共通: 契約text fieldは空・改行・1536 bytes超を拒否する。targets/artifacts各要素は
-// 改行不可・1536 bytes以内・TrimSpace後の重複不可。artifactsは空配列可で、指定時は
-// task専用artifact dir配下の実在通常fileの絶対pathだけを取る。結果全体はmachine JSONで
-// 6144 bytes以内。契約外のstatus・fieldはmachine protocolへ出力しない。
 type Result struct {
 	Status              Status   `json:"status"`
 	Risk                Risk     `json:"risk"`
@@ -86,8 +55,6 @@ type Result struct {
 	Artifacts           []string `json:"artifacts,omitempty"`
 }
 
-// mismatchErrorはresult event契約・schema適合の破綻。modelの内容修正で回復できない
-// 経路のため再依頼せずfail closedする。
 type mismatchError struct {
 	reason string
 }
@@ -96,17 +63,11 @@ func (e *mismatchError) Error() string {
 	return e.reason
 }
 
-// IsMismatchErrorはschema/result契約ミスマッチ(true)と意味検証不合格(false)を区別する。
 func IsMismatchError(err error) bool {
 	var target *mismatchError
 	return errors.As(err, &target)
 }
 
-// ParseStructuredはresult eventのauthoritative structured_outputをtyped結果へ変換する。
-// producer schemaはadditionalProperties未検証の語彙制限から未知propertyを許容するため、
-// decoderも未知fieldを無害に無視して表示・stateへ伝播させない。既知fieldの型不一致と
-// status欠落だけを契約ミスマッチとしてfail closedに分類し、必須性・status別意味制約は
-// Validate*Resultが厳格に強制する。
 func ParseStructured(data []byte) (Result, error) {
 	if len(bytes.TrimSpace(data)) == 0 || string(bytes.TrimSpace(data)) == "null" {
 		return Result{}, &mismatchError{reason: "result eventにstructured_outputがありません"}
@@ -121,9 +82,6 @@ func ParseStructured(data []byte) (Result, error) {
 	return result, nil
 }
 
-// contractFieldはstatus別契約text fieldの共通定義。machine keyはschema語彙と同じ
-// JSON key。意味検証とmachine protocolが同一のstatus別集合を共有し、契約外fieldの
-// 機械出力混入を構造的に防ぐ。
 type contractField struct {
 	machine string
 	value   func(Result) string
@@ -153,15 +111,9 @@ var reviewerContractFields = []contractField{
 	{"residual_risk", func(r Result) string { return r.ResidualRisk }},
 }
 
-// needsSolReviewContractFieldsはreviewer共通fieldへsol_questionを加えた集合。
-// sol_questionはNEEDS_SOL_REVIEWだけの契約fieldで、PASS/FIX_REQUIREDへmodelが混入させた
-// 値は検証対象にならずmachine JSONへ出ない(field audit実測: PASS 10件中1件の混入)。
-// reviewerContractFieldsへ直接appendすると共用backing arrayを伸ばすため、複製へ足す。
 var needsSolReviewContractFields = append(append([]contractField{}, reviewerContractFields...),
 	contractField{"sol_question", func(r Result) string { return r.SolQuestion }})
 
-// contractFieldsはstatus別の契約text field集合。validatorとmachine protocolが
-// 参照する唯一のstatus→field対応。
 func (r Result) contractFields() []contractField {
 	switch r.Status {
 	case StatusImplemented:
@@ -175,10 +127,6 @@ func (r Result) contractFields() []contractField {
 	}
 }
 
-// MachineJSONは親Codexと次のmodel呼出へ出すcompact machine protocol。status別契約
-// fieldだけを含め、契約外field・空field・空配列のkeyを出さず、
-// 空配列はkey自体を省く(absence = none)。pretty print・HTML escape・改行を含まない
-// 1行を返し、keyはschema語彙と共通のためCodexが再解釈なしで構造を読める。
 func (r Result) MachineJSON() ([]byte, error) {
 	object := map[string]any{
 		"status": string(r.Status),
@@ -204,9 +152,6 @@ func (r Result) MachineJSON() ([]byte, error) {
 	return bytes.TrimSuffix(buf.Bytes(), []byte("\n")), nil
 }
 
-// ByteSizeはmachine protocol全体のbyte数。圧縮規律の検証に使う。
-// 値型がstring/[]stringだけのためencode失敗は到達せず、失敗時の0が
-// MaxPacketBytes検証を素通りさせる経路は実在しない。
 func (r Result) ByteSize() int {
 	data, err := r.MachineJSON()
 	if err != nil {

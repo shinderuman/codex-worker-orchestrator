@@ -10,8 +10,8 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
-# install.shはmktemp prefix等の非永続表示に新名称を使うが、端末local永続識別子
-# (override path/env/sidecar/manifest)は旧codex-config名前空間を維持する。
+
+
 for forbidden in \
     'CODEX_WORKER_ORCHESTRATOR_CLAUDE_SETTINGS_OVERRIDE' \
     'codex-worker-orchestrator/claude-settings.local.json' \
@@ -48,8 +48,8 @@ prepare_preflight_failure_case() {
     case_dir=$2
 
     copy_source "$source_dir"
-    # self-protection testはtracked file前提で走るため、空repoではなく
-    # 全fileをindexへ乗せた実運用相当のgit状態を作る。
+
+
     git -C "$source_dir" init -q
     git -C "$source_dir" add -A
     chmod 0644 "$source_dir/.githooks/post-merge"
@@ -60,18 +60,18 @@ prepare_preflight_failure_case() {
     cp "$case_dir/claude/settings.json" "$case_dir/claude/original.json"
 }
 
-# 本物のgoへ結果ごと透過しつつ全呼出を記録し、forced_build_packageに一致する
-# 末尾package引数のgo buildだけを失敗させるshimを作る。
-# 失敗段階より後のpreflight commandやbuild_glm_worker/go runの実行有無は
-# この呼出記録で段階ごとに固定する。
-# go shimが起動するGo testだけは、captured Claude helpへ応答する専用fake canaryを
-# GLM_WORKER_CLAUDE_BINへ注入する。生成shimはsubcommandがtestの呼出だけcanary envを
-# 付け、build等の他subcommandへはcanary envを新規注入せずreal goを呼ぶ。
-# これによりlive canary test(TestClaudePreflightLiveClaudeCLI)がPATH上のclaude shimを
-# 本物と誤認せず、preflight段階のgo test結果がclaude probe caseのPATH構成から独立する。
-# envはreal goの子processにだけ渡るため、install.sh自身のverify_claude_cliは
-# 従来どおりPATH上のclaudeを検証し、--help単独呼出の契約も変わらない。
-# canaryのfile名を`claude`にするとPATH検索をshadowするため、別名にする。
+
+
+
+
+
+
+
+
+
+
+
+
 make_go_shim() {
     shim_dir=$1
     forced_build_package=$2
@@ -189,6 +189,7 @@ printf '%s\n' 'instructions/obsolete-managed.md' >>"$success_case/codex/.codex-c
 run_installer "$success_source" "$success_case"
 
 test -x "$success_case/bin/glm-worker"
+test -x "$success_case/bin/commentlint"
 test -f "$success_case/codex/AGENTS.md"
 test -f "$success_case/codex/instructions/glm-auto-resume.md"
 test -f "$success_case/codex/rules/glm-worker.rules"
@@ -305,7 +306,7 @@ grep -Fq 'packet(stdoutのmachine JSON 1行)またはprocess失敗' "$success_ca
 "$success_case/bin/glm-worker" --verify-auto-resume 2>&1 \
     | grep -Fq 'usage: glm-worker --verify-auto-resume'
 
-# 旧5.2/5.1 managed installからのupgradeでmanaged model keyだけ5.3へ置き換わる
+
 upgrade_source="$test_root/upgrade-source"
 upgrade_case="$test_root/upgrade-case"
 copy_source "$upgrade_source"
@@ -333,27 +334,44 @@ if ! cmp -s "$upgrade_case/first.json" "$upgrade_case/claude/settings.json"; the
     exit 1
 fi
 
-# preflight各段階(glm-worker test/build、merge-json test/build)の失敗は、
-# binary・managed files・Claude settings・git hookなどへの配置前に停止しなければならない。
-# 各caseの期待呼出順序は、失敗段階より後のgo commandが一度も実行されていないことを固定する。
+
+
+
 printf '%s\n' \
+    'build glm-worker 0' \
     'test glm-worker 1' \
     >"$test_root/expected-glm-worker-test-fail.log"
 printf '%s\n' \
+    'build glm-worker 0' \
     'test glm-worker 0' \
     'build glm-worker forced-fail' \
     >"$test_root/expected-glm-worker-build-fail.log"
 printf '%s\n' \
+    'build glm-worker 0' \
     'test glm-worker 0' \
     'build glm-worker 0' \
     'test merge-json 1' \
     >"$test_root/expected-merge-json-test-fail.log"
 printf '%s\n' \
+    'build glm-worker 0' \
     'test glm-worker 0' \
     'build glm-worker 0' \
     'test merge-json 0' \
     'build merge-json forced-fail' \
     >"$test_root/expected-merge-json-build-fail.log"
+printf '%s\n' \
+    'build glm-worker 0' \
+    >"$test_root/expected-commentlint-fail.log"
+
+commentlint_fail_source="$test_root/commentlint-fail-source"
+commentlint_fail_case="$test_root/commentlint-fail-case"
+commentlint_fail_shim="$test_root/commentlint-fail-shim"
+prepare_preflight_failure_case "$commentlint_fail_source" "$commentlint_fail_case"
+make_go_shim "$commentlint_fail_shim" ''
+printf '%s\n' '// forbidden comment' >>"$commentlint_fail_source/glm-worker/internal/config/config.go"
+expect_preflight_failure 'commentlint' \
+    "$commentlint_fail_source" "$commentlint_fail_case" \
+    "$commentlint_fail_shim" "$test_root/expected-commentlint-fail.log"
 
 glm_worker_test_fail_source="$test_root/glm-worker-test-fail-source"
 glm_worker_test_fail_case="$test_root/glm-worker-test-fail-case"
@@ -409,8 +427,8 @@ expect_preflight_failure 'merge-json build' \
     "$merge_json_build_fail_source" "$merge_json_build_fail_case" \
     "$merge_json_build_fail_shim" "$test_root/expected-merge-json-build-fail.log"
 
-# claude CLI shim。--help応答の文言で--json-schema契約支援有無を切り替え、呼出引数を
-# 記録する。AI呼出は一切行わない。
+
+
 make_claude_shim() {
     shim_dir=$1
     help_text=$2
@@ -432,9 +450,9 @@ EOF
     chmod +x "$shim_dir/claude"
 }
 
-# --json-schemaを案内しないclaude CLIではverify_claude_cliがpreflight通過後に
-# installをfail closedさせ、binary・managed files・settingsへの配置は起きない。
-# go呼出記録はpreflight全段階の成功だけを示し、claude呼出記録はprobe実行を固定する。
+
+
+
 claude_probe_fail_source="$test_root/claude-probe-fail-source"
 claude_probe_fail_case="$test_root/claude-probe-fail-case"
 claude_probe_fail_shim="$test_root/claude-probe-fail-shim"
@@ -442,6 +460,7 @@ prepare_preflight_failure_case "$claude_probe_fail_source" "$claude_probe_fail_c
 make_go_shim "$claude_probe_fail_shim" ''
 make_claude_shim "$claude_probe_fail_shim" 'usage: claude [-p prompt] [--model name]'
 printf '%s\n' \
+    'build glm-worker 0' \
     'test glm-worker 0' \
     'build glm-worker 0' \
     'test merge-json 0' \
@@ -507,7 +526,7 @@ XDG_CONFIG_HOME="$override_delete_case/xdg" \
 
 grep -Fq '"ANTHROPIC_BASE_URL": "https://api.z.ai/api/anthropic"' "$override_delete_case/claude/settings.json"
 
-# override削除後に再installでmanaged Z.ai defaultsが復元され、override追加keyは不存在へ戻る
+
 rm "$override_case/xdg/codex-config/claude-settings.local.json"
 HOME="$override_case/home" \
 CODEX_CONFIG_DIR="$override_case/codex" \
@@ -546,7 +565,7 @@ if ! cmp -s "$bad_override_case/original.json" "$bad_override_case/claude/settin
     exit 1
 fi
 
-# top-level null / env null overrideはinstallをfail closedさせsettings.jsonを書き換えない
+
 for null_case in 'null' '{"env":null}'; do
     null_source="$test_root/null-override-source"
     null_case_dir="$test_root/null-override-case"
@@ -573,7 +592,7 @@ for null_case in 'null' '{"env":null}'; do
     fi
 done
 
-# 既存local keyの上書き/null削除をoverride解除で元値へ復元するinstaller統合確認
+
 restore_source="$test_root/restore-source"
 restore_case="$test_root/restore-case"
 copy_source "$restore_source"
@@ -606,7 +625,7 @@ XDG_CONFIG_HOME="$restore_case/xdg" \
 grep -Fq '"LOCAL_OVERWRITE": "orig"' "$restore_case/claude/settings.json"
 grep -Fq '"LOCAL_DELETE": "orig"' "$restore_case/claude/settings.json"
 
-# 壊れたstate sidecarはinstallをfail closedさせtarget/stateとも書き換えない
+
 broken_state_source="$test_root/broken-state-source"
 broken_state_case="$test_root/broken-state-case"
 copy_source "$broken_state_source"
@@ -648,12 +667,12 @@ if ! cmp -s "$broken_state_case/state-before.json" "$state_file"; then
     exit 1
 fi
 
-# tracked canonical planのfinal HEAD postcondition gate。
-# 同期amendを飛ばした4cedc91型stale HEAD plan・削除済み/欠損ACTIVE task file参照・NEXTの
-# 削除済み参照・NEXT/ACTIVEのtask path契約違反・閉じbacktick欠損等のmalformed bullet・
-# `*`marker等の未知list記法・ACTIVE重複・Git境界branch不一致は、go test/build・binary配置・
-# managed files配置よりも前にfail closedし、呼出・配置が一切起きないことを固定する。
-# 過渡表現の正当なamend後/uninstall前記述は通過させる。
+
+
+
+
+
+
 make_plan_gate_repo() {
     source_dir=$1
     copy_source "$source_dir"
@@ -747,8 +766,8 @@ expect_plan_gate_failure() {
     grep -Fq "$expected_reason" "$log_file"
 }
 
-# 4cedc91型stale HEAD。完了済みcommitの同期amendを飛ばし、停止理由・次の親Codex操作が
-# amend直前・install前の過渡表現を残したplanをfinal HEADへcommitしている。
+
+
 stale_source="$test_root/plan-gate-stale-source"
 stale_case="$test_root/plan-gate-stale-case"
 stale_shim="$test_root/plan-gate-stale-shim"
@@ -766,7 +785,7 @@ expect_plan_gate_failure '4cedc91型stale HEAD' \
     "$test_root/plan-gate-stale.log" \
     '現在状態記述が完了済みcommitの操作を未実施としています'
 
-# 完了task fileを削除したcommit後もplanがACTIVE参照を残している削除済みACTIVE。
+
 deleted_active_source="$test_root/plan-gate-deleted-active-source"
 deleted_active_case="$test_root/plan-gate-deleted-active-case"
 deleted_active_shim="$test_root/plan-gate-deleted-active-shim"
@@ -781,7 +800,7 @@ expect_plan_gate_failure '削除済みACTIVE参照' \
     "$test_root/plan-gate-deleted-active.log" \
     'IMPLEMENTATION_TASKS/next-task.md がHEAD treeへregular fileとして存在しません'
 
-# ACTIVE欄がHEAD treeに存在しないtask fileを指す欠損ACTIVE file。
+
 missing_active_source="$test_root/plan-gate-missing-active-source"
 missing_active_case="$test_root/plan-gate-missing-active-case"
 missing_active_shim="$test_root/plan-gate-missing-active-shim"
@@ -799,7 +818,7 @@ expect_plan_gate_failure '欠損ACTIVE file' \
     "$test_root/plan-gate-missing-active.log" \
     'IMPLEMENTATION_TASKS/ghost-task.md がHEAD treeへregular fileとして存在しません'
 
-# NEXTが削除済みtask fileを参照している場合も同じpostcondition違反として拒否する。
+
 next_missing_source="$test_root/plan-gate-next-missing-source"
 next_missing_case="$test_root/plan-gate-next-missing-case"
 next_missing_shim="$test_root/plan-gate-next-missing-shim"
@@ -817,8 +836,8 @@ expect_plan_gate_failure 'NEXTの削除済み参照' \
     "$test_root/plan-gate-next-missing.log" \
     'IMPLEMENTATION_TASKS/vanished-task.md がHEAD treeへregular fileとして存在しません'
 
-# NEXTのbulletがtask pathへ解決できない場合もfail closedする。認識できないbulletを
-# 黙って無視するとinvalid scheduled entryを含むHEADがgateを通過する。
+
+
 next_garbage_source="$test_root/plan-gate-next-garbage-source"
 next_garbage_case="$test_root/plan-gate-next-garbage-case"
 next_garbage_shim="$test_root/plan-gate-next-garbage-shim"
@@ -836,7 +855,7 @@ expect_plan_gate_failure 'NEXT非task項目' \
     "$test_root/plan-gate-next-garbage.log" \
     'NEXT/BLOCKED欄にtask pathへ解決できない項目があります: garbage'
 
-# NEXTのbulletが配置契約外のpathを指す場合も同じfail closedで拒否する。
+
 next_outside_source="$test_root/plan-gate-next-outside-source"
 next_outside_case="$test_root/plan-gate-next-outside-case"
 next_outside_shim="$test_root/plan-gate-next-outside-shim"
@@ -854,7 +873,7 @@ expect_plan_gate_failure 'NEXT配置契約外path' \
     "$test_root/plan-gate-next-outside.log" \
     'NEXT/BLOCKED欄にtask pathへ解決できない項目があります: tasks/future-task.md'
 
-# ACTIVE欄自体が配置契約外のpathを指す場合も共通task path契約で拒否する。
+
 active_outside_source="$test_root/plan-gate-active-outside-source"
 active_outside_case="$test_root/plan-gate-active-outside-case"
 active_outside_shim="$test_root/plan-gate-active-outside-shim"
@@ -872,8 +891,8 @@ expect_plan_gate_failure 'ACTIVE配置契約違反' \
     "$test_root/plan-gate-active-outside.log" \
     'ACTIVE欄がtask path契約(IMPLEMENTATION_TASKS/配下の.md・配置契約準拠)へ違反しています: tasks/next-task.md'
 
-# 閉じbacktickのないbulletはruntime抽出とinstaller抽出の受理集合を揃えるため、
-# ACTIVE/NEXT/BLOCKEDすべてでmalformedとしてfail closedする。
+
+
 active_unclosed_source="$test_root/plan-gate-active-unclosed-source"
 active_unclosed_case="$test_root/plan-gate-active-unclosed-case"
 active_unclosed_shim="$test_root/plan-gate-active-unclosed-shim"
@@ -894,7 +913,7 @@ expect_plan_gate_failure 'ACTIVE閉じbacktick欠損' \
     "$test_root/plan-gate-active-unclosed.log" \
     'ACTIVE欄にschedule list記法(`- `bulletとblank行のみ、逆引用符は項目全体を1組で囲むか逆引用符なしの直書き)へ違反している行があります'
 
-# 閉じbacktickの後ろに余分なtextがあればmalformedとして拒否する。
+
 active_suffix_source="$test_root/plan-gate-active-suffix-source"
 active_suffix_case="$test_root/plan-gate-active-suffix-case"
 active_suffix_shim="$test_root/plan-gate-active-suffix-shim"
@@ -912,7 +931,7 @@ expect_plan_gate_failure 'ACTIVE余分なsuffix' \
     "$test_root/plan-gate-active-suffix.log" \
     'ACTIVE欄にschedule list記法(`- `bulletとblank行のみ、逆引用符は項目全体を1組で囲むか逆引用符なしの直書き)へ違反している行があります'
 
-# 複数backtick組もmalformedとして拒否する。
+
 active_multi_source="$test_root/plan-gate-active-multi-source"
 active_multi_case="$test_root/plan-gate-active-multi-case"
 active_multi_shim="$test_root/plan-gate-active-multi-shim"
@@ -930,8 +949,8 @@ expect_plan_gate_failure 'ACTIVE複数backtick組' \
     "$test_root/plan-gate-active-multi.log" \
     'ACTIVE欄にschedule list記法(`- `bulletとblank行のみ、逆引用符は項目全体を1組で囲むか逆引用符なしの直書き)へ違反している行があります'
 
-# `*`marker等の未知list記法のACTIVE行はbulletとして数えず、schedule list違反として
-# 拒否する。runtime側の受理集合ともTestPlanFinalHeadBulletExtractionMatchesRuntimeで一致させる。
+
+
 active_star_source="$test_root/plan-gate-active-star-source"
 active_star_case="$test_root/plan-gate-active-star-case"
 active_star_shim="$test_root/plan-gate-active-star-shim"
@@ -952,7 +971,7 @@ expect_plan_gate_failure 'ACTIVE未知list記法' \
     "$test_root/plan-gate-active-star.log" \
     'ACTIVE欄にschedule list記法(`- `bulletとblank行のみ、逆引用符は項目全体を1組で囲むか逆引用符なしの直書き)へ違反している行があります: * `IMPLEMENTATION_TASKS/next-task.md`'
 
-# NEXT欄の`*`marker行も同じschedule list違反としてfail closedする。
+
 next_star_source="$test_root/plan-gate-next-star-source"
 next_star_case="$test_root/plan-gate-next-star-case"
 next_star_shim="$test_root/plan-gate-next-star-shim"
@@ -970,7 +989,7 @@ expect_plan_gate_failure 'NEXT未知list記法' \
     "$test_root/plan-gate-next-star.log" \
     'NEXT/BLOCKED欄にschedule list記法(`- `bulletとblank行のみ、逆引用符は項目全体を1組で囲むか逆引用符なしの直書き)へ違反している行があります: * `IMPLEMENTATION_TASKS/future-task.md`'
 
-# NEXTの閉じbacktick欠損も同じmalformed拒否へ流れる。
+
 next_unclosed_source="$test_root/plan-gate-next-unclosed-source"
 next_unclosed_case="$test_root/plan-gate-next-unclosed-case"
 next_unclosed_shim="$test_root/plan-gate-next-unclosed-shim"
@@ -988,7 +1007,7 @@ expect_plan_gate_failure 'NEXT閉じbacktick欠損' \
     "$test_root/plan-gate-next-unclosed.log" \
     'NEXT/BLOCKED欄にschedule list記法(`- `bulletとblank行のみ、逆引用符は項目全体を1組で囲むか逆引用符なしの直書き)へ違反している行があります'
 
-# BLOCKED欄の閉じbacktick欠損も同じmalformed拒否へ流れる。
+
 blocked_unclosed_source="$test_root/plan-gate-blocked-unclosed-source"
 blocked_unclosed_case="$test_root/plan-gate-blocked-unclosed-case"
 blocked_unclosed_shim="$test_root/plan-gate-blocked-unclosed-shim"
@@ -1008,7 +1027,7 @@ expect_plan_gate_failure 'BLOCKED閉じbacktick欠損' \
     "$test_root/plan-gate-blocked-unclosed.log" \
     'NEXT/BLOCKED欄にschedule list記法(`- `bulletとblank行のみ、逆引用符は項目全体を1組で囲むか逆引用符なしの直書き)へ違反している行があります'
 
-# NEXT昇格を忘れて完了済みACTIVE taskをNEXTへ残す重複記載。
+
 active_dup_source="$test_root/plan-gate-active-dup-source"
 active_dup_case="$test_root/plan-gate-active-dup-case"
 active_dup_shim="$test_root/plan-gate-active-dup-shim"
@@ -1027,7 +1046,7 @@ expect_plan_gate_failure 'ACTIVE重複記載' \
     "$test_root/plan-gate-active-dup.log" \
     'IMPLEMENTATION_TASKS/next-task.md がNEXT/BLOCKEDへ重複して記載されています'
 
-# PlanのGit境界branchがHEADの実際のbranchと矛盾している場合を拒否する。
+
 branch_mismatch_source="$test_root/plan-gate-branch-mismatch-source"
 branch_mismatch_case="$test_root/plan-gate-branch-mismatch-case"
 branch_mismatch_shim="$test_root/plan-gate-branch-mismatch-shim"
@@ -1045,8 +1064,8 @@ expect_plan_gate_failure 'HEAD境界不一致' \
     "$test_root/plan-gate-branch-mismatch.log" \
     'Git境界branch feature-xが現在のbranch(main)と矛盾しています'
 
-# amend失敗(pre-commit hook拒否)でHEADがstaleのまま残ってもgateは拒否し続け、
-# 同期済みplanへの同一commit復旧amendだけで通過する。
+
+
 amend_fail_source="$test_root/plan-gate-amend-fail-source"
 amend_fail_case="$test_root/plan-gate-amend-fail-case"
 amend_fail_shim="$test_root/plan-gate-amend-fail-shim"
@@ -1073,8 +1092,8 @@ if git -C "$amend_fail_source" commit --amend --no-edit >/dev/null 2>&1; then
 fi
 rm "$amend_fail_source/.git/hooks/pre-commit"
 
-# 同期済みfinal HEADへの同一commit復旧amend。追加commitを挟まず同じHEADへ同期内容を
-# 収めた後はgateを通過し、本配置まで進む。
+
+
 write_plan_gate_synced "$amend_fail_source"
 git -C "$amend_fail_source" add -A
 git -C "$amend_fail_source" commit --amend --no-edit -q
@@ -1082,9 +1101,10 @@ run_installer "$amend_fail_source" "$test_root/plan-gate-amend-recover-case" \
     >"$test_root/plan-gate-amend-recover.log" 2>&1
 grep -Fq 'plan final head: verified' "$test_root/plan-gate-amend-recover.log"
 test -x "$test_root/plan-gate-amend-recover-case/bin/glm-worker"
+test -x "$test_root/plan-gate-amend-recover-case/bin/commentlint"
 
-# 同期済みfinal HEADは本配置まで進む。working treeのplanを未commitのstale内容へ
-# 書き換えても、gateはHEADだけを判定するため影響しない。
+
+
 synced_source="$test_root/plan-gate-synced-source"
 synced_case="$test_root/plan-gate-synced-case"
 make_plan_gate_repo "$synced_source"
@@ -1093,6 +1113,7 @@ commit_plan_gate_repo "$synced_source"
 run_installer "$synced_source" "$synced_case" >"$test_root/plan-gate-synced.log" 2>&1
 grep -Fq 'plan final head: verified' "$test_root/plan-gate-synced.log"
 test -x "$synced_case/bin/glm-worker"
+test -x "$synced_case/bin/commentlint"
 
 write_plan_gate_plan "$synced_source" \
     'IMPLEMENTATION_TASKS/next-task.md' \
@@ -1103,8 +1124,8 @@ write_plan_gate_plan "$synced_source" \
 run_installer "$synced_source" "$synced_case" >"$test_root/plan-gate-dirty.log" 2>&1
 grep -Fq 'plan final head: verified' "$test_root/plan-gate-dirty.log"
 
-# 過渡表現patternはpending操作だけを対象にする。「amend後のpostcondition」は現在taskの
-# 正当な記述、「uninstall前」は英数字identifier境界で別語のため、いずれも拒否しない。
+
+
 positive_source="$test_root/plan-gate-positive-source"
 positive_case="$test_root/plan-gate-positive-case"
 make_plan_gate_repo "$positive_source"
@@ -1118,12 +1139,13 @@ commit_plan_gate_repo "$positive_source"
 run_installer "$positive_source" "$positive_case" >"$test_root/plan-gate-positive.log" 2>&1
 grep -Fq 'plan final head: verified' "$test_root/plan-gate-positive.log"
 test -x "$positive_case/bin/glm-worker"
+test -x "$positive_case/bin/commentlint"
 
-# planをGit indexへ置かないrepositoryではgateはskipしてHEAD postconditionの適用外と
-# なり、過渡的なworking tree planを理由に配置を拒否しない。skip後にpreflight段階まで
-# 到達したこととgate失敗案内が出ないことを固定する。なお本source copyのpreflightは
-# tracked canonical planを要求する自己保護testを別契約として持つため、untracked planの
-# installはpreflightで失敗する。gate側のskipだけを本scenarioの対象とする。
+
+
+
+
+
 untracked_source="$test_root/plan-gate-untracked-source"
 untracked_case="$test_root/plan-gate-untracked-case"
 make_plan_gate_repo "$untracked_source"

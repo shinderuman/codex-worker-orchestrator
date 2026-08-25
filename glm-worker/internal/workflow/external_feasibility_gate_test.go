@@ -13,7 +13,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-// 宣言節の共通入力。
 const (
 	feasibilityNotApplicableDecl  = "## External feasibility\n\nstatus: not-applicable"
 	feasibilityPoCDecl            = "## External feasibility\n\nstatus: poc\nassumption: 実producerがapi_retry中のretry前にexact signalを公開するか未検証"
@@ -49,9 +48,6 @@ func writeFeasibilityActiveTask(t *testing.T, repoRoot string, declaration strin
 	}
 }
 
-// TestExternalFeasibilityDeclarationParsingは宣言parserの受理・拒否集合を固定する。
-// runtimeとtestが同じparserだけを使う前提のため、ここでの受理集合がproduction gateの
-// 受理集合そのものである。
 func TestExternalFeasibilityDeclarationParsing(t *testing.T) {
 	taskWith := func(decl string) []byte {
 		return []byte("# task\n\n" + decl + "\n\n## Contract\n\n- seed\n")
@@ -59,7 +55,7 @@ func TestExternalFeasibilityDeclarationParsing(t *testing.T) {
 	cases := []struct {
 		name string
 		task string
-		want string // 期待status。空なら拒否。
+		want string
 	}{
 		{"not-applicable", feasibilityNotApplicableDecl, "not-applicable"},
 		{"poc", feasibilityPoCDecl, "poc"},
@@ -103,12 +99,8 @@ func TestExternalFeasibilityDeclarationParsing(t *testing.T) {
 	}
 }
 
-// TestExternalFeasibilityDeclarationIgnoresFencedBlocksはOriginal instruction等のfenced
-// code block内の宣言例を文書構造として数えないことを固定する。task corpusのsection
-// 判定と同じ3backtick以上で開き同数以上で閉じるfence境界だけを使う。
 func TestExternalFeasibilityDeclarationIgnoresFencedBlocks(t *testing.T) {
-	// 4backtick外側fence内の3backtick例。例の中の同見出しは節ではなく、fence外のtop-level
-	// 宣言だけが受理される。
+
 	fencedExample := "```markdown\n## External feasibility\n\nstatus: poc\nassumption: fence内の例\n```"
 	withTopLevel := "# task\n\n````text\n" + fencedExample + "\n````\n\n" + feasibilityNotApplicableDecl + "\n\n## Contract\n\n- seed\n"
 	decl, err := parseExternalFeasibilityDeclaration([]byte(withTopLevel))
@@ -119,7 +111,6 @@ func TestExternalFeasibilityDeclarationIgnoresFencedBlocks(t *testing.T) {
 		t.Fatalf("status = %q want not-applicable(fence外のtop-level宣言が使われるべき)", decl.status)
 	}
 
-	// 宣言がfence内にしか無いtaskはmissingとして拒否される。
 	fenceOnly := "# task\n\n````text\n" + fencedExample + "\n````\n\n## Contract\n\n- seed\n"
 	_, err = parseExternalFeasibilityDeclaration([]byte(fenceOnly))
 	var reject *externalFeasibilityParseError
@@ -128,9 +119,6 @@ func TestExternalFeasibilityDeclarationIgnoresFencedBlocks(t *testing.T) {
 	}
 }
 
-// requireFeasibilityFailClosedは宣言gate停止の共通事後条件。0 model call・wantStatusへの
-// status遷移(--decision/--resumeは拒否前の停止理由を保持)・NEEDS_SOL_REVIEW/HIGH packet・
-// event 1件。resume checkpointは拒否でも消さない。
 func requireFeasibilityFailClosed(t *testing.T, st *state.StateStore, r *mutatingRunner, out *bytes.Buffer, wantOutcome string, wantStatus state.TaskStatus) {
 	t.Helper()
 	if len(r.prompts) != 0 {
@@ -157,9 +145,6 @@ func requireFeasibilityFailClosed(t *testing.T, st *state.StateStore, r *mutatin
 	}
 }
 
-// TestExternalFeasibilityMissingDeclarationFailsClosedBeforeWorkerは宣言節の無い
-// ACTIVE task file(既存taskをそのままACTIVE化した状態)を0 model callで拒否する。
-// 現5時間limit taskと同型の「宣言を書き忘れたimplementation task」の再発防止境界。
 func TestExternalFeasibilityMissingDeclarationFailsClosedBeforeWorker(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	writeFeasibilityActiveTask(t, repoRoot, "")
@@ -177,8 +162,6 @@ func TestExternalFeasibilityMissingDeclarationFailsClosedBeforeWorker(t *testing
 	}
 }
 
-// TestExternalFeasibilityUnverifiedImplementationFailsClosedはevidence・親Go判断の無い
-// implementation宣言(未検証外部前提をproduction設計へ進める状態)を0 model callで拒否する。
 func TestExternalFeasibilityUnverifiedImplementationFailsClosed(t *testing.T) {
 	for name, decl := range map[string]string{
 		"evidence欠落":  feasibilityUnverifiedDecl,
@@ -200,8 +183,6 @@ func TestExternalFeasibilityUnverifiedImplementationFailsClosed(t *testing.T) {
 	}
 }
 
-// TestExternalFeasibilityMalformedDeclarationFailsClosedは未知status等のmalformed宣言も
-// 同じ0 model call境界で拒否する。
 func TestExternalFeasibilityMalformedDeclarationFailsClosed(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	writeFeasibilityActiveTask(t, repoRoot, "## External feasibility\n\nstatus: verified")
@@ -216,8 +197,6 @@ func TestExternalFeasibilityMalformedDeclarationFailsClosed(t *testing.T) {
 	requireFeasibilityFailClosed(t, st, r, out, externalFeasibilityGuardSurface.malformedOutcome(), state.TaskStatusWaitingSolReview)
 }
 
-// TestExternalFeasibilityNotApplicableProceedsNormallyは非該当宣言の通常taskが
-// 従来どおり書き込み可能worker+独立reviewerで完了するfalse positive回帰を固定する。
 func TestExternalFeasibilityNotApplicableProceedsNormally(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	writeFeasibilityActiveTask(t, repoRoot, feasibilityNotApplicableDecl)
@@ -240,8 +219,6 @@ func TestExternalFeasibilityNotApplicableProceedsNormally(t *testing.T) {
 	}
 }
 
-// TestExternalFeasibilityImplementationWithProducerEvidenceProceedsは実producer evidenceと
-// 親Go判断付きimplementation宣言が正当経路として通ることを固定する。
 func TestExternalFeasibilityImplementationWithProducerEvidenceProceeds(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	writeFeasibilityActiveTask(t, repoRoot, feasibilityImplementationDecl)
@@ -264,10 +241,6 @@ func TestExternalFeasibilityImplementationWithProducerEvidenceProceeds(t *testin
 	}
 }
 
-// TestExternalFeasibilityPoCTaskRunsReadOnlyAndReturnsGoNoGoはpoc宣言taskが
-// read-only capability・snapshot同一性強制の下で実行され、結果がreviewer PASSを経ず
-// 親Go/No-Go(NEEDS_SOL_DECISION)へ戻ることを固定する。GLMだけでimplementationへ
-// 昇格させる経路が存在しない。
 func TestExternalFeasibilityPoCTaskRunsReadOnlyAndReturnsGoNoGo(t *testing.T) {
 	for name, decl := range map[string]string{"poc": feasibilityPoCDecl, "observation": feasibilityObservationDecl} {
 		t.Run(name, func(t *testing.T) {
@@ -304,9 +277,6 @@ func TestExternalFeasibilityPoCTaskRunsReadOnlyAndReturnsGoNoGo(t *testing.T) {
 	}
 }
 
-// TestExternalFeasibilityPoCWorkerMutationFailsClosedはPoC workerがread-only capabilityを
-// 回り込んでrepositoryを変更した場合、開始前snapshot同一性で検出し通常reviewへ進めず
-// fail closedすることを固定する。変更は巻き戻さずSolへ引き渡す。
 func TestExternalFeasibilityPoCWorkerMutationFailsClosed(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	writeFeasibilityActiveTask(t, repoRoot, feasibilityPoCDecl)
@@ -334,8 +304,6 @@ func TestExternalFeasibilityPoCWorkerMutationFailsClosed(t *testing.T) {
 	}
 }
 
-// TestExternalFeasibilityDecisionGatePreservesPendingDecisionは--decision経路で宣言が
-// 受理できない場合、decisionを消費せずwaiting-decisionとpending decisionを残す。
 func TestExternalFeasibilityDecisionGatePreservesPendingDecision(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	writeFeasibilityActiveTask(t, repoRoot, feasibilityUnverifiedDecl)
@@ -369,10 +337,6 @@ func TestExternalFeasibilityDecisionGatePreservesPendingDecision(t *testing.T) {
 	}
 }
 
-// TestExternalFeasibilityPoCToImplementationDecisionResumesWritableはPoC/観測taskの
-// Go/No-Go待ちへ親Codexが同じtaskの宣言をproducer evidence付きimplementationへmigrationした
-// 場合、同じ--decisionがwritable worker・reviewer経路へ継続し、旧PoC snapshotやread-only
-// capabilityを引き継がないことをproduction pathで固定する。
 func TestExternalFeasibilityPoCToImplementationDecisionResumesWritable(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	writeFeasibilityActiveTask(t, repoRoot, feasibilityPoCDecl)
@@ -393,7 +357,6 @@ func TestExternalFeasibilityPoCToImplementationDecisionResumesWritable(t *testin
 		t.Fatal("PoC workerはread-only capabilityで実行されるべきです")
 	}
 
-	// 親CodexのGo判断と宣言migration: 同じACTIVE task fileをimplementation宣言へ書き換える。
 	writeFeasibilityActiveTask(t, repoRoot, feasibilityImplementationDecl)
 	if err := w.ExecuteDecision("Go: 実装へ進める"); err != nil {
 		t.Fatal(err)
@@ -413,8 +376,6 @@ func TestExternalFeasibilityPoCToImplementationDecisionResumesWritable(t *testin
 	}
 }
 
-// TestExternalFeasibilityFixGateFailsClosedは--fix経路も同じ受理集合で0 model call
-// 拒否されることを固定する。
 func TestExternalFeasibilityFixGateFailsClosed(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	writeFeasibilityActiveTask(t, repoRoot, feasibilityFixtureDecl)
@@ -433,10 +394,6 @@ func TestExternalFeasibilityFixGateFailsClosed(t *testing.T) {
 	requireFeasibilityFailClosed(t, st, r, out, externalFeasibilityGuardSurface.unverifiedOutcome(), state.TaskStatusWaitingSolReview)
 }
 
-// TestExternalFeasibilityReviewResumeGateFailsClosedはreviewer resume経路も同じ受理集合で
-// reviewer呼出0回でfail closedすることを固定する。run中のtask file内容変化は親管理metadata
-// guardの内容不変性(parent_metadata_mismatch)が先に検出するため、宣言gateのreviewer経路が
-// 実際に意味を持つのはrate-limit停止中に親Codexが宣言を壊した状態での再開時である。
 func TestExternalFeasibilityReviewResumeGateFailsClosed(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	writeFeasibilityActiveTask(t, repoRoot, "")
@@ -471,8 +428,7 @@ func TestExternalFeasibilityReviewResumeGateFailsClosed(t *testing.T) {
 	if err := w.ExecuteResume(); err != nil {
 		t.Fatal(err)
 	}
-	// 拒否はrate-limit停止中のstatus・checkpoint・保存済みreviewer contextを保持する。
-	// 親Codexが宣言を修復すれば同じ--resumeで再開できる。
+
 	requireFeasibilityFailClosed(t, st, r, out, externalFeasibilityGuardSurface.missingOutcome(), state.TaskStatusRateLimited)
 	saved, err := st.LoadResumeCheckpoint()
 	if err != nil {
@@ -483,8 +439,6 @@ func TestExternalFeasibilityReviewResumeGateFailsClosed(t *testing.T) {
 	}
 }
 
-// TestExternalFeasibilityResumeGateFailsClosedBeforeProbeはresume経路で宣言が受理できない
-// 場合、provider probe含む全model呼出前にfail closedすることを固定する。
 func TestExternalFeasibilityResumeGateFailsClosedBeforeProbe(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	writeFeasibilityActiveTask(t, repoRoot, "")
@@ -518,7 +472,7 @@ func TestExternalFeasibilityResumeGateFailsClosedBeforeProbe(t *testing.T) {
 	if err := w.ExecuteResume(); err != nil {
 		t.Fatal(err)
 	}
-	// 拒否はprovider-unavailable停止中のstatus・checkpointも保持する。
+
 	requireFeasibilityFailClosed(t, st, r, out, externalFeasibilityGuardSurface.missingOutcome(), state.TaskStatusProviderUnavailable)
 	if len(r.probes) != 0 {
 		t.Fatalf("宣言gate拒否時はprobeも実行しない: %d", len(r.probes))
@@ -529,10 +483,6 @@ func TestExternalFeasibilityResumeGateFailsClosedBeforeProbe(t *testing.T) {
 	}
 }
 
-// TestExternalFeasibilityInterruptedResumeRejectThenRepairResumesは--stop停止中のtaskが
-// 宣言欠損でresume拒否された場合でもinterrupted checkpoint・保持基準・statusが破壊されず、
-// 親Codexが宣言を修復すれば同じ--resumeが保持照合を通って完了することをproduction pathで
-// 固定する。
 func TestExternalFeasibilityInterruptedResumeRejectThenRepairResumes(t *testing.T) {
 	repo := newRetentionGitRepo(t)
 	taskPath := filepath.Join(repo, activeTaskGuardPath)
@@ -549,8 +499,6 @@ func TestExternalFeasibilityInterruptedResumeRejectThenRepairResumes(t *testing.
 	stopW := newGitWorkflowT(t, st, stopRunner, repo)
 	stopWorkflowInCall(t, stopW, st, workerCheckpoint())
 
-	// 停止期間中に親Codexが宣言節を壊した状態でresumeする。拒否は保持基準ごとcheckpointを
-	// 消さないため、宣言修復後に同じ--resumeを再実行できる。
 	if err := os.WriteFile(taskPath, []byte("# ACTIVE task\n\n## Contract\n\n- 宣言が消えた\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -576,8 +524,6 @@ func TestExternalFeasibilityInterruptedResumeRejectThenRepairResumes(t *testing.
 		t.Fatalf("拒否packet = %s/%s want NEEDS_SOL_REVIEW/HIGH:\n%s", pkt.Status, pkt.Risk, rejectOut.String())
 	}
 
-	// 親Codexが宣言を修復し、同じ--resumeを再実行する。保持照合を通過したうえで、
-	// plan・task file込みのdiffはHIGH reviewとなるためrisk floor経由でSol確認へ昇格する。
 	if err := os.WriteFile(taskPath, []byte(validTask), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -595,8 +541,6 @@ func TestExternalFeasibilityInterruptedResumeRejectThenRepairResumes(t *testing.
 	}
 }
 
-// TestExternalFeasibilityPoCResumeUsesSavedSnapshotはrate-limit停止したPoC workerのresumeが
-// 保存済み開始前snapshotを基準にread-onlyで再開し、結果を親Go/No-Goへ戻すことを固定する。
 func TestExternalFeasibilityPoCResumeUsesSavedSnapshot(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	writeFeasibilityActiveTask(t, repoRoot, feasibilityPoCDecl)
@@ -652,8 +596,6 @@ func TestExternalFeasibilityPoCResumeUsesSavedSnapshot(t *testing.T) {
 	}
 }
 
-// TestExternalFeasibilityPoCResumeWithoutSnapshotFailsClosedはPoC resumeで開始前snapshotが
-// 欠損している場合、新baselineを撮影せずprobe・worker呼出0回でfail closedする。
 func TestExternalFeasibilityPoCResumeWithoutSnapshotFailsClosed(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	writeFeasibilityActiveTask(t, repoRoot, feasibilityPoCDecl)
@@ -697,8 +639,6 @@ func TestExternalFeasibilityPoCResumeWithoutSnapshotFailsClosed(t *testing.T) {
 	}
 }
 
-// TestExternalFeasibilityDeclarationContextBudgetは宣言の固定context増分をbytesとtoken
-// proxy(bytes/4)で固定する。promptへの追加文面なし・追加model call 0を維持する境界。
 func TestExternalFeasibilityDeclarationContextBudget(t *testing.T) {
 	notApplicable := "## External feasibility\n\nstatus: not-applicable\n"
 	implementation := feasibilityImplementationDecl + "\n"

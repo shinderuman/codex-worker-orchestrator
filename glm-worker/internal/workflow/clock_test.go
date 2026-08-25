@@ -11,9 +11,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-// workflowの全timestamp/durationはNewWorkflowのnow注入seamだけから供給する。
-// production codeへwall clock呼出が再混入するとfake clock testが実時間へ分岐し、
-// このfileの時刻assertionが黙って裏切られるため、source levelで禁止する。
 func TestWorkflowProductionCodeHasNoDirectWallClock(t *testing.T) {
 	entries, err := os.ReadDir(".")
 	if err != nil {
@@ -45,9 +42,6 @@ func TestWorkflowProductionCodeHasNoDirectWallClock(t *testing.T) {
 	}
 }
 
-// TestClockDeviationScenarioPinnedInEscapedCorpusはescaped corpusがclock逸脱検出scenarioを
-// 保持することを固定する。corpus契約testは存在するscenarioの妥当性だけを検証するため、
-// 当該scenarioの削除は本pin検証だけが検知する。
 func TestClockDeviationScenarioPinnedInEscapedCorpus(t *testing.T) {
 	sc, mf := loadCorpus(t)
 	found := ""
@@ -78,7 +72,6 @@ func TestClockDeviationScenarioPinnedInEscapedCorpus(t *testing.T) {
 	}
 }
 
-// initial Task Work呼出のtelemetry timestamp/durationとstats集計が注入clockに従う。
 func TestRunModelTelemetryTimestampsFollowInjectedClock(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{{structured: implementedPacket("done")}}}
@@ -107,8 +100,6 @@ func TestRunModelTelemetryTimestampsFollowInjectedClock(t *testing.T) {
 	}
 }
 
-// initial transient失敗からbackoff/probe上限でのprovider-unavailable停止まで、
-// task/probe/event全recordのtimestampとdurationが注入clockだけで導出される。
 func TestRecoveryTelemetryTimestampsFollowInjectedClock(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{
@@ -188,8 +179,6 @@ func TestRecoveryTelemetryTimestampsFollowInjectedClock(t *testing.T) {
 	}
 }
 
-// --resumeのprobe gateは即時probeで始まり、再開task呼出・後続reviewer呼出のtimestamp/durationも
-// 注入clockに従う。sleepなしでresumeされることも同じ経路で固定する。
 func TestResumeTelemetryTimestampsFollowInjectedClock(t *testing.T) {
 	st := newStateStoreT(t)
 	seedProviderUnavailableCheckpoint(t, st)

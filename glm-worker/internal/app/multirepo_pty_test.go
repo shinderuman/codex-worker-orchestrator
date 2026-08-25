@@ -15,12 +15,6 @@ import (
 	"time"
 )
 
-// TestStdinPayloadPTYParallelNonInterferenceは2つの独立PTY(glm-worker呼出ごとに親が用意
-// するCodex PTY A/B相当)でstdin payload輸送を時間的に重ね、mode変更とpayloadが
-// 互相干しないことを実PTY 2本で検証する。PTY Aをraw適用済み・本文未送の状態で保持した
-// 間にPTY Bがraw適用→READY marker→本文受取→termios復元まで完結し、その後のPTY A本文が
-// NUL/CR/Ctrl-C含みでbyte正確に届けば、Bのmode変更がAのline disciplineへ影響していない
-// ことを意味する。
 func TestStdinPayloadPTYParallelNonInterference(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("PTY transport契約の実機検証はmacOSのscript前提")
@@ -41,8 +35,6 @@ func TestStdinPayloadPTYParallelNonInterference(t *testing.T) {
 	assertPTYParallelIsolated(t, ptyB, "GLMPTYB", "GLMPTYA")
 }
 
-// ptyParallelTransportは1本の実PTY輸送の進行状態。script子process・stdin writer・
-// marker待ち・全文受取の各段階を保持する。
 type ptyParallelTransport struct {
 	payload    string
 	outPath    string
@@ -59,9 +51,6 @@ func (p *ptyParallelTransport) close() {
 	p.cancel()
 }
 
-// startPTYParallelTransportはproduction caller契約(固定command起動・事前terminal設定なし)
-// でPTYを起動し、READY marker確認まで待つ。この時点でhelperはraw modeで本文待ちになり、
-// 複数PTYのraw期間を重ねられる。
 func startPTYParallelTransport(t *testing.T, marker string, run int) *ptyParallelTransport {
 	t.Helper()
 	payload := marker + " parallel run=" + strconv.Itoa(run) +
@@ -123,8 +112,6 @@ func startPTYParallelTransport(t *testing.T, marker string, run int) *ptyParalle
 	return transport
 }
 
-// finishPTYParallelTransportはmarker確認済みのPTYへ本文を1回だけ書き、helper終了・
-// 出力読切りまで待つ。
 func finishPTYParallelTransport(t *testing.T, transport *ptyParallelTransport, marker string) {
 	t.Helper()
 	if _, err := transport.stdin.Write([]byte(transport.payload)); err != nil {
@@ -142,8 +129,6 @@ func finishPTYParallelTransport(t *testing.T, transport *ptyParallelTransport, m
 	transport.outputText = output
 }
 
-// assertPTYParallelIsolatedは自PTYの輸送結果がbyte正確で、marker 1回・echoなし・相手
-// marker語の混入なしを検査する。
 func assertPTYParallelIsolated(t *testing.T, transport *ptyParallelTransport, own string, other string) {
 	t.Helper()
 	received, err := os.ReadFile(transport.outPath)

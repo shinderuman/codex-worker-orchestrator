@@ -20,11 +20,6 @@ REPORT_ARTIFACT_DIR: %s
 `, strings.TrimRight(prompt, "\n"), artifactDir)
 }
 
-// activeTaskPromptBlockはworker/reviewerの各呼出へ共通して付ける要求正本読み込み指示。
-// USER_REQUESTと実装者要約だけに依存させず、親Codex専有のACTIVE task file本文を毎回の呼出で
-// 独自に読み直させる。compaction・resume・reviewを挟んでもOriginal instruction・Amendments・
-// Contract・Must not・Acceptance criteriaが要求定義として届く経路をこれで保証する。
-// activeTaskPathが空(planの無いrepository等、配線なし)のときは何も付けない。
 func activeTaskPromptBlock(activeTaskPath string) string {
 	if activeTaskPath == "" {
 		return ""
@@ -39,10 +34,6 @@ USER_REQUEST・会話要約・過去session記憶ではなくtask file本文か�
 `, activeTaskPath)
 }
 
-// reviewerActiveTaskBlockはreviewer用の要求正本読み込み指示。実装指示ではなく、task file全文を
-// 判定基準として確認させる。Derived Contract vs Original instruction(workerの実装前提とした要求契約が
-// Original instruction・Amendments・Resolved referencesと一致するか)とImplementation vs Contract
-// (実装がContract・Must not・Acceptance criteriaを満たすか)の二段比較を毎回のreviewer呼出へ保証する。
 func reviewerActiveTaskBlock(activeTaskPath string) string {
 	if activeTaskPath == "" {
 		return ""
@@ -140,9 +131,6 @@ INDEPENDENT_REVIEW:
 `, request, decision, reviewReport, activeTaskPromptBlock(activeTaskPath))
 }
 
-// reportOnlyFixPromptはreviewerがコード・diffを正しいと確認し報告の意味情報だけを
-// 不足と指摘した場合の専用prompt。実装修正・調査・検証の再実行を禁止し、現在の結果とdiffに基づく
-// 報告の再出力だけを求める。通常のimplementation fix文言を含めない。
 func reportOnlyFixPrompt(request string, decision string, reviewReport string, activeTaskPath string) string {
 	return fmt.Sprintf(`MODE: APPLY_REVIEW_FIX
 
@@ -160,8 +148,6 @@ INDEPENDENT_REVIEW:
 `, request, decision, reviewReport, activeTaskPromptBlock(activeTaskPath))
 }
 
-// resultCorrectionPromptは意味検証不合格時の修正再依頼。schemaが構造を保証するため、
-// ここで伝えるのは意味違反の修正だけであり、出力形式の再説明は含めない。
 func resultCorrectionPrompt(reason string) string {
 	return fmt.Sprintf(`直前の作業結果の内容は有効ですが、結果の意味検証に不合格でした。
 作業・調査・テストをやり直さず、違反を修正した同じ内容の結果を再出力してください。

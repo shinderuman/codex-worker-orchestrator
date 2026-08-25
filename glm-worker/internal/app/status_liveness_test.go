@@ -10,7 +10,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-// statusは対象repo lockと独立に、別repoのstate/lockの影響を受けない。
 func TestExecuteStatusShowsRepositoryLockFreeByDefault(t *testing.T) {
 	cfg := newAppConfig(t)
 	output := executeStatusOutput(t, cfg)
@@ -58,8 +57,6 @@ func TestExecuteStatusActiveWithLockHeldIsRunning(t *testing.T) {
 	statusString(t, "task_liveness", output.TaskLiveness, "running")
 }
 
-// status観測後に同じrepoで次commandを実行すると、lock取得成否だけで安全に収束する。
-// 別repoのlockは同一commandの可否に影響しない。
 func TestExecuteStatusRaceConvergesOnNextCommandLock(t *testing.T) {
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
@@ -95,7 +92,6 @@ func TestExecuteStatusRaceConvergesOnNextCommandLock(t *testing.T) {
 	_ = st
 }
 
-// TASK_STATUSがactive以外ではtask_livenessを出さない。
 func TestExecuteStatusHidesLivenessForNonActiveTask(t *testing.T) {
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
@@ -114,7 +110,6 @@ func TestExecuteStatusHidesLivenessForNonActiveTask(t *testing.T) {
 	statusString(t, "repository_lock", output.RepositoryLock, "free")
 }
 
-// checkpointを持つrate-limited taskのresume表示はliveness追加後も不変。
 func TestExecuteStatusRateLimitedResumeFieldsUnchanged(t *testing.T) {
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)

@@ -7,12 +7,10 @@ import (
 	"os"
 )
 
-// RepoLockはリポジトリ別のプロセス間ロック(flock非対応環境向けの排他作成フォールバック)。
 type RepoLock struct {
 	path string
 }
 
-// AcquireRepoLockはO_EXCLでロックファイルを作成し排他を取る。
 func AcquireRepoLock(path string) (*RepoLock, error) {
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {

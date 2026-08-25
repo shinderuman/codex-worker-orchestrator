@@ -18,8 +18,6 @@ func timelineBaseTime() time.Time {
 	return time.Date(2026, 8, 16, 12, 0, 0, 0, time.UTC)
 }
 
-// executeTimelineOutputはprintTimelineの出力1行をtimelineOutputへdecodeする。
-// JSONでない出力はmachine contract違反として失敗する。
 func executeTimelineOutput(t *testing.T, st *state.StateStore, taskID string) timelineOutput {
 	t.Helper()
 	var out bytes.Buffer
@@ -33,7 +31,6 @@ func executeTimelineOutput(t *testing.T, st *state.StateStore, taskID string) ti
 	return output
 }
 
-// timelineToolOfはtool集計一覧から指定nameの要素を返す。
 func timelineToolOf(t *testing.T, tools []timelineTool, name string) timelineTool {
 	t.Helper()
 	for _, tool := range tools {
@@ -45,7 +42,6 @@ func timelineToolOf(t *testing.T, tools []timelineTool, name string) timelineToo
 	return timelineTool{}
 }
 
-// timelineAgingOfはsession aging一覧から指定sessionの要素を返す。
 func timelineAgingOf(t *testing.T, agings []state.SessionAging, sessionID string) state.SessionAging {
 	t.Helper()
 	for _, aging := range agings {
@@ -57,9 +53,6 @@ func timelineAgingOf(t *testing.T, agings []state.SessionAging, sessionID string
 	return state.SessionAging{}
 }
 
-// TestTimelineRendersCallsToolsGraphAndAgingは保存済みevent logとtelemetryだけから
-// call単位のrole/phase/session番号・観測窓・結果観測・tool種別別測定済みduration・
-// session agingを表示することを検証する。
 func TestTimelineRendersCallsToolsGraphAndAging(t *testing.T) {
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
@@ -189,8 +182,6 @@ func TestTimelineRendersCallsToolsGraphAndAging(t *testing.T) {
 	}
 }
 
-// TestTimelineSkipsCorruptLinesはevent logの部分破損行をskip件数として報告し、
-// 以後のrecord表示へ波及させない。
 func TestTimelineSkipsCorruptLines(t *testing.T) {
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
@@ -233,8 +224,6 @@ func TestTimelineSkipsCorruptLines(t *testing.T) {
 	}
 }
 
-// TestTimelineCurrentTaskWithoutEventsはevent logがまだない現在taskを正常終了し、
-// telemetry由来のsession agingだけでも表示する。
 func TestTimelineCurrentTaskWithoutEvents(t *testing.T) {
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
@@ -267,8 +256,6 @@ func TestTimelineCurrentTaskWithoutEvents(t *testing.T) {
 	}
 }
 
-// TestTimelineExplicitTaskは明示指定task IDで現在task以外の保存済みevent log・stats
-// 履歴status・telemetry agingを表示し、存在しないtask IDはerrorにする。
 func TestTimelineExplicitTask(t *testing.T) {
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
@@ -323,8 +310,6 @@ func TestTimelineExplicitTask(t *testing.T) {
 	}
 }
 
-// writeTimelineSentinelはstate root外へ置いた読まれてはならないevent logのsentinelを
-// 書く。path traversal可能な実装なら ../../evil は <StateBase>/evil.jsonl へ解決される。
 func writeTimelineSentinel(t *testing.T, cfg config.AppConfig) {
 	t.Helper()
 	sentinel := state.TaskEventRecord{
@@ -344,8 +329,6 @@ func writeTimelineSentinel(t *testing.T, cfg config.AppConfig) {
 	}
 }
 
-// TestTimelineRejectsTaskIDOutsideGeneratedFormは明示task IDの生成形式検証が
-// filesystemへのprobe/readより先に働き、state root外のsentinelを読まないことを検証する。
 func TestTimelineRejectsTaskIDOutsideGeneratedForm(t *testing.T) {
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
@@ -376,8 +359,6 @@ func TestTimelineRejectsTaskIDOutsideGeneratedForm(t *testing.T) {
 	}
 }
 
-// TestTimelineRejectsTamperedCurrentTaskIDは現在taskのtask.idが破損・改変されていても
-// state root外へ出ないことを検証する。
 func TestTimelineRejectsTamperedCurrentTaskID(t *testing.T) {
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
@@ -398,8 +379,6 @@ func TestTimelineRejectsTamperedCurrentTaskID(t *testing.T) {
 	}
 }
 
-// TestExecuteTimelineRejectsTraversalはproduction Execute経路でも生成形式検証が
-// state root外のsentinel読取を防ぐことを検証する。
 func TestExecuteTimelineRejectsTraversal(t *testing.T) {
 	cfg := newAppConfig(t)
 	writeTimelineSentinel(t, cfg)
@@ -416,7 +395,6 @@ func TestExecuteTimelineRejectsTraversal(t *testing.T) {
 	}
 }
 
-// TestExecuteTimelineDoesNotCreateStateは--timeline実行がstate dirを一切作成・書換しない。
 func TestExecuteTimelineDoesNotCreateState(t *testing.T) {
 	base := t.TempDir()
 	cfg := config.AppConfig{StateBase: base, RepoHash: "timelinehash", RepoRoot: "/repo"}

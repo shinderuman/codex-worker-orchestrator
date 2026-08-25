@@ -7,18 +7,11 @@ import (
 	"os"
 )
 
-// claudeEnvOverrideはinstall.sh経路(tools/merge-json)と同じJSON意味論を並行実装した
-// 端末local patch。別Go moduleのため共有せず、意味論の一致は両者のtestで担保する。
 type claudeEnvOverride struct {
 	sets    map[string]string
 	deletes []string
 }
 
-// 受理形式: {"env":{"KEY":"value","DEL":null}}。top-level keyは"env"のみ、
-// env値はstring(set)かnull(delete)のみ。空文字はunsetではなく文字列値。
-// 空objectと{"env":{}}は空patchとして受理し、top-level null・env null・
-// それ以外・壊れたJSONはinstall・runner両方でfail closedとする外部仕様。
-// runnerはこのpatch意味論だけ検査し、復元stateは読まない(installer側責務)。
 func parseClaudeEnvOverride(path string) (claudeEnvOverride, error) {
 	var override claudeEnvOverride
 	if path == "" {

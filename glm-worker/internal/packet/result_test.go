@@ -82,7 +82,7 @@ func TestValidateWorkerResultStatuses(t *testing.T) {
 		Options:         "o",
 		Recommendation:  "r",
 		TestObligations: "t",
-		// 旧WORKER.md「不要ならnone」の予約値sentinel。旧protocolの`TARGETS: none`値相当。
+
 		Targets: []string{"none"},
 	}
 	if err := ValidateWorkerResult(implementedResult()); err != nil {
@@ -106,7 +106,7 @@ func TestValidateWorkerResultRejections(t *testing.T) {
 		want           string
 		schemaMismatch bool
 	}{
-		// status enumはrole別schemaが保証するため、role外statusはschema違反としてfail closed。
+
 		{"reviewer status", func(r *Result) { r.Status = StatusPass }, "worker結果のstatus", true},
 		{"decision low risk", func(r *Result) {
 			r.Status = StatusNeedsSolDecision
@@ -161,8 +161,6 @@ func TestValidateReviewerResultStatuses(t *testing.T) {
 		t.Fatalf("fix required: %v", err)
 	}
 
-	// 旧protocolのPASS/FIX_REQUIREDは`TARGETS: none`値を許容した。typed結果では
-	// ["none"]要素がその表示に相当するため、空配列だけを拒否する。
 	fixNone := fix
 	fixNone.Targets = []string{"none"}
 	if err := ValidateReviewerResult(fixNone); err != nil {
@@ -250,9 +248,6 @@ func TestValidateResultRejectsOversizeDisplay(t *testing.T) {
 	}
 }
 
-// TestMachineJSONIsCompactStatusScopedLineはmachine protocolの契約を固定する。
-// 契約fieldだけを1行compact JSONへ出し、契約外field・空field・空配列key・HTML escape・
-// 末尾改行を出さない。schema語彙と同じkeyのためParseStructuredでroundtripする。
 func TestMachineJSONIsCompactStatusScopedLine(t *testing.T) {
 	result := implementedResult()
 	result.Targets = []string{"a.go:f", "b.go:g"}
@@ -272,7 +267,6 @@ func TestMachineJSONIsCompactStatusScopedLine(t *testing.T) {
 		t.Fatalf("ByteSize = %d want %d", result.ByteSize(), len(data))
 	}
 
-	// 契約外statusのfield・空配列・sol_question(worker status)はkeyごと出さない。
 	noise := implementedResult()
 	noise.Decision = "none"
 	noise.Evidence = "n/a"
@@ -289,7 +283,6 @@ func TestMachineJSONIsCompactStatusScopedLine(t *testing.T) {
 		t.Fatalf("契約外field・空配列keyがmachine JSONへ混入: %s", data)
 	}
 
-	// reviewer statusのsol_questionだけ出す。HTML escape無効で<>&をそのまま保つ。
 	review := passResult()
 	review.Status = StatusNeedsSolReview
 	review.Risk = RiskHigh
@@ -303,10 +296,6 @@ func TestMachineJSONIsCompactStatusScopedLine(t *testing.T) {
 	}
 }
 
-// TestSolQuestionIsNeedsSolReviewOnlyはsol_questionをNEEDS_SOL_REVIEWだけの契約fieldへ
-// 固定する。PASS/FIX_REQUIREDへmodelが混入させた値はvalidation対象にならず、
-// machine JSON・人間向けprojectionの両面でkeyごと除外される
-// (field audit実測: PASS 10件中1件の混入)。
 func TestSolQuestionIsNeedsSolReviewOnly(t *testing.T) {
 	for _, status := range []Status{StatusPass, StatusFixRequired} {
 		result := passResult()
@@ -314,7 +303,7 @@ func TestSolQuestionIsNeedsSolReviewOnly(t *testing.T) {
 		if status == StatusFixRequired {
 			result.Risk = RiskHigh
 		}
-		// 契約外fieldは制約違反内容でもvalidation対象にしない。
+
 		result.SolQuestion = "line1\nline2" + strings.Repeat("x", MaxFieldBytes)
 		if err := ValidateReviewerResult(result); err != nil {
 			t.Fatalf("%s: 混入sol_questionがvalidation対象になっています: %v", status, err)
@@ -329,8 +318,6 @@ func TestSolQuestionIsNeedsSolReviewOnly(t *testing.T) {
 	}
 }
 
-// TestValidateSolQuestionFieldConstraintsはNEEDS_SOL_REVIEWのsol_questionが
-// 他の必須text fieldと同じ空・改行・byte上限制約へ従うことを境界値で固定する。
 func TestValidateSolQuestionFieldConstraints(t *testing.T) {
 	base := func(question string) Result {
 		review := passResult()
@@ -369,8 +356,6 @@ func TestValidateSolQuestionFieldConstraints(t *testing.T) {
 	}
 }
 
-// textFieldSetterはResultの契約text fieldへ検証用値を差し込む。testだけの全field表で、
-// contractFieldsのmachine keyと対応する。
 var textFieldSetters = map[string]func(*Result, string){
 	"summary":              func(r *Result, v string) { r.Summary = v },
 	"requirement_coverage": func(r *Result, v string) { r.RequirementCoverage = v },
@@ -388,7 +373,6 @@ var textFieldSetters = map[string]func(*Result, string){
 	"sol_question":         func(r *Result, v string) { r.SolQuestion = v },
 }
 
-// fullyPopulatedResultは全text field・targets・artifactsへ区別できる値を設定した正例。
 func fullyPopulatedResult(status Status) Result {
 	result := Result{
 		Status:              status,
@@ -418,11 +402,6 @@ func fullyPopulatedResult(status Status) Result {
 	return result
 }
 
-// TestContractFieldsSingleSourceはstatus別契約field集合を正として、validatorの必須集合と
-// MachineJSONの出力集合が一致することを全statusで直接照合する。
-//   - 契約fieldを空にするとvalidatorはそのfieldの必須errorを返す
-//   - 契約外fieldへ改行・上限超の値を混入してもvalidation対象にならずmachine JSONへ出ない
-//   - machine JSONのtext key集合はcontractFieldsと完全一致する
 func TestContractFieldsSingleSource(t *testing.T) {
 	cases := map[Status]func(Result) error{
 		StatusImplemented:      ValidateWorkerResult,
@@ -492,8 +471,6 @@ func TestContractFieldsSingleSource(t *testing.T) {
 	}
 }
 
-// TestMachineJSONRoundTripはmachine protocol行がParseStructuredで同一のtyped結果へ
-// 戻ることを保証する。親Codex・次のmodel呼出・state保存が同じ形式を対称に扱える根拠。
 func TestMachineJSONRoundTrip(t *testing.T) {
 	for name, result := range map[string]Result{
 		"implemented": implementedResult(),

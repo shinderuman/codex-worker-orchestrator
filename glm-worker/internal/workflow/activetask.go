@@ -10,29 +10,12 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-// activeTaskStateKeyはExecuteNewTaskで解決したACTIVE task file pathをtask単位で保持するstate名。
-// decision/fix/reviewer/auto-fix各呼出のprompt構築と、worker呼出前の存在確認が同じ値を読む。
-// PlanのACTIVE欄は親Codexが停止中に切り替え得るため、実行中taskの要求正本pathはtask開始時点へ
-// 固定し、毎回のPlan再解決で別taskの要求定義へすり替わらないようにする。新task開始時は前taskの
-// 値を除去し、初回解決成功時だけ設定する。planの無いrepoでは空値を設定済みにして配線なしを表し、
-// 解決fail closed後は未設定のまま残すため、親修復後の同一task継続時に再解決して固定し直す。
 const activeTaskStateKey = "active-task"
 
-// activeTaskPathPrefixはACTIVE task fileの配置契約。RULESがPlanのACTIVE欄へ許すのは
-// `IMPLEMENTATION_TASKS/`配下の`.md` fileだけである(番号付き・semantic filenameの両方を許容し、
-// 配下subdirectoryも許容する)。解決対象はsymlinkを辿らないregular fileに限る。
 const activeTaskPathPrefix = state.ParentTasksDir + "/"
 
-// activeTaskPathExtはACTIVE task fileの拡張子契約。
 const activeTaskPathExt = ".md"
 
-// resolveActiveTaskPathは`IMPLEMENTATION_PLAN.local.md`のACTIVE欄からACTIVE task fileの
-// repository相対pathを解決する。planが存在しないrepositoryでは配線なし(wired=false, err=nil)を
-// 返し、既存の通常作業を許可する。planが存在する場合はACTIVE欄が一意・bullet構文
-// (逆引用符1組の単一task pathか逆引用符なし直書き)・配置契約内(`.md`)・path escapeなし・
-// 参照先がsymlinkを辿らないregular fileとしてworking treeへ実在することを全て
-// 満たす必要があり、欠けた場合は要求正本を特定できないためerrorを返し呼出元がmodel呼出前に
-// fail closedする。
 func resolveActiveTaskPath(repoRoot string) (string, bool, error) {
 	planPath := filepath.Join(repoRoot, implementationPlanFile)
 	content, err := os.ReadFile(planPath)
@@ -60,20 +43,13 @@ func resolveActiveTaskPath(repoRoot string) (string, bool, error) {
 	if err != nil {
 		return "", true, fmt.Errorf("ACTIVE task file %sを確認できません: %w", path, err)
 	}
-	// symlink・directory・FIFO等は要求正本として受理しない。symlinkはos.Statがrepository外へ
-	// 辿るため、Lstatのfile typeで展開前に拒否する。
+
 	if !info.Mode().IsRegular() {
 		return "", true, fmt.Errorf("ACTIVE task file %sはregular fileではありません(%s)", path, info.Mode().Type())
 	}
 	return path, true, nil
 }
 
-// activeSectionEntriesはplan本文の`## ACTIVE`節からlist項目を取り出す。節の終わりは次の
-// `## `見出し行で、schedule listはRULESが定めるunordered marker `-`のbulletとblank行だけを
-// 受理する。`*`・`+`・番号付きmarker等のtask-like list記法や説明文などの非bullet行を黙って
-// 無視すると未知のschedule記述を隠したまま解決が進むfail openになるため、fail closedに
-// 拒否する。installer gateのplan_bullet_pathsと同じ規則であり、受理集合の一致は
-// TestPlanFinalHeadBulletExtractionMatchesRuntimeが固定する。
 func activeSectionEntries(planContent string) ([]string, error) {
 	lines := strings.Split(planContent, "\n")
 	inSection := false
@@ -105,11 +81,6 @@ func activeSectionEntries(planContent string) ([]string, error) {
 	return entries, nil
 }
 
-// activeEntryPathはlist項目からtask path候補を取り出す。標準形式は
-// 「- `IMPLEMENTATION_TASKS/....md`」で、逆引用符なしの直書きも受理する。逆引用符は
-// 項目全体を1組で囲む場合だけpath区切りとして扱い、閉じ欠損・前後の余分なtext・複数組は
-// bullet構文違反としてerrorを返す。installer final HEAD gateのplan_bullet_pathsと同じ
-// 規則であり、受理集合の一致はTestPlanFinalHeadBulletExtractionMatchesRuntimeが固定する。
 func activeEntryPath(item string) (string, error) {
 	switch strings.Count(item, "`") {
 	case 0:
@@ -122,9 +93,6 @@ func activeEntryPath(item string) (string, error) {
 	return "", fmt.Errorf("ACTIVE欄の項目 %qがbullet構文(逆引用符1組で囲まれた単一task path、または逆引用符なしの直書き)へ違反しています", item)
 }
 
-// validateActiveTaskPathはACTIVE task pathが`IMPLEMENTATION_TASKS/`配下の`.md` file契約へ収まり
-// repository境界を越えないことを確認する。空segment・`.`・`..`・絶対path・区切り文字の混在・
-// `.md`以外の拡張子は全て拒否する。番号prefixは契約外のため要求しない。
 func validateActiveTaskPath(path string) error {
 	if !strings.HasPrefix(path, activeTaskPathPrefix) {
 		return fmt.Errorf("ACTIVE task path %qは%s配下である必要があります", path, state.ParentTasksDir)
@@ -144,24 +112,14 @@ func validateActiveTaskPath(path string) error {
 	return nil
 }
 
-// readActiveTaskStateは現在taskへ固定済みのACTIVE task file pathを読む。未設定(空)は
-// 配線の無いtask・repositoryを表し、呼出元はpromptへ要求源blockを付けない。
 func (w *Workflow) readActiveTaskState() string {
 	return w.state.ReadOr(activeTaskStateKey, "")
 }
 
-// activeTaskStateSetはactive-task stateが書き込まれているかを返す。planの無い正常な
-// repositoryでは初回解決成功時に空値を設定済みにするため、未設定はACTIVE解決fail closed
-// 後に親CodexがPlan・task fileを修復して同じtaskを再開しようとしている状態だけを意味する。
 func (w *Workflow) activeTaskStateSet() bool {
 	return w.state.Exists(activeTaskStateKey)
 }
 
-// resolveAndPinActiveTaskは現在taskのACTIVE task file pathを確定させる。設定済みならその
-// 値をそのまま使い、planの無いrepoの空値も再解決しない。PlanのACTIVE欄は停止中に親Codexが
-// 切り替え得るため設定済み値の再解決は実行中taskの要求正本を別taskへすり替えるだけである。
-// 未設定はACTIVE解決fail closed後の同一task再開だけを意味するためPlanから再解決して固定する。
-// 解決errorの停止semanticsは呼出元が決める。
 func (w *Workflow) resolveAndPinActiveTask() (string, error) {
 	if w.activeTaskStateSet() {
 		return w.readActiveTaskState(), nil
@@ -179,9 +137,6 @@ func (w *Workflow) resolveAndPinActiveTask() (string, error) {
 	return activeTaskPath, nil
 }
 
-// ensureActiveTaskPathは継続呼出(fix・reviewer・auto-fix)開始時に現在taskのACTIVE task
-// file pathを確定させ、解決失敗はmodel呼出前にfail closedする。--decisionはdecision消費前に
-// 拒否するgateDecisionActiveTaskを使い、こちらを通らない。
 func (w *Workflow) ensureActiveTaskPath(phase string) (string, error) {
 	activeTaskPath, err := w.resolveAndPinActiveTask()
 	if err != nil {
@@ -190,10 +145,6 @@ func (w *Workflow) ensureActiveTaskPath(phase string) (string, error) {
 	return activeTaskPath, nil
 }
 
-// gateDecisionActiveTaskは--decisionのdecision消費前ACTIVE gate。resolveAndPinActiveTaskと
-// 同じ固定・再解決規則で要求正本を確定させ、固定済みpathの実在も確認する。ACTIVE不正は
-// decisionを消費する前に拒否し、停止はtask.statusをwaiting-decisionのまま残すため、親Codexが
-// Plan・task fileを修復すれば同じdecisionをそのまま再実行できる。
 func (w *Workflow) gateDecisionActiveTask() (string, error) {
 	activeTaskPath, err := w.resolveAndPinActiveTask()
 	if err != nil {
@@ -205,9 +156,6 @@ func (w *Workflow) gateDecisionActiveTask() (string, error) {
 	return activeTaskPath, nil
 }
 
-// activeTaskFileExistsは固定済みACTIVE task fileが現在もworking treeへregular fileとして存在するかを
-// 確認する。解決時と同じくsymlinkは辿らないため、固定後のsymlink・directory差し替えも欠損扱いで
-// model呼出前のfail closedへ流れる。
 func activeTaskFileExists(repoRoot string, activeTaskPath string) bool {
 	if activeTaskPath == "" {
 		return true

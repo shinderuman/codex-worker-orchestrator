@@ -8,8 +8,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 )
 
-// CaptureGitBaselineはタスク開始前のgit状態をstateへ保存する。
-// gitの取得失敗時はbaselineを取り下げ(削除)しエラーとはしない。
 func CaptureGitBaseline(cfg config.AppConfig, state *StateStore) error {
 	commands := []struct {
 		name string
@@ -37,7 +35,7 @@ func CaptureGitBaseline(cfg config.AppConfig, state *StateStore) error {
 
 	head, unborn, err := resolveRepoHead(cfg.RepoRoot)
 	if err != nil {
-		// baseline-headを残留させず、collectChangedPaths失敗経由で安全側HIGHへ回す。
+
 		return state.Remove("baseline-head")
 	}
 	if unborn {
@@ -46,14 +44,11 @@ func CaptureGitBaseline(cfg config.AppConfig, state *StateStore) error {
 	return state.Write("baseline-head", head)
 }
 
-// resolveRepoHeadは正当なunborn branch(HEADが未作成のrefs/heads/* symbolic refを指しそのrefが
-// loose/packedいずれにも不在)だけをunborn扱いし、それ以外(detached HEAD・tree/blob指し・壊れたsymbolic HEAD・
-// missing objectのloose ref・refs DB読込失敗)はerrorとして安全側HIGHへ区別する。
 func resolveRepoHead(repoRoot string) (head string, unborn bool, err error) {
 	if _, e := exec.Command("git", "-C", repoRoot, "rev-parse", "--git-dir").Output(); e != nil {
 		return "", false, e
 	}
-	// HEAD^{commit}はHEADがcommitへpeel可能かを一度に検証し、missing object・tree/blob・壊れたrefは失敗させる。
+
 	output, e := exec.Command("git", "-C", repoRoot, "rev-parse", "--verify", "-q", "HEAD^{commit}").Output()
 	if e == nil {
 		return strings.TrimSpace(string(output)), false, nil
@@ -66,8 +61,7 @@ func resolveRepoHead(repoRoot string) (head string, unborn bool, err error) {
 	if !strings.HasPrefix(ref, "refs/heads/") {
 		return "", false, fmt.Errorf("HEAD symbolic target %q is not under refs/heads", ref)
 	}
-	// for-each-refはobject妥当性に関わらずref storeの存在を返す。ref存在時はHEAD^{commit}失敗との組み合わせで
-	// missing object等の破損扱いとし、errorは伝播する。出力空だけが正当unborn(loose/packed不在)を意味する。
+
 	refs, fe := exec.Command("git", "-C", repoRoot, "for-each-ref", "--format=%(refname)", ref).Output()
 	if fe != nil {
 		return "", false, fmt.Errorf("ref lookup %s failed: %w", ref, fe)

@@ -18,17 +18,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-// implementationPlanFileはrepository rootへ置くtracked canonical sourceの実施計画file。
-// implementationRulesFileはtask lifecycle規則、implementationHistoryFileは完了証跡とescaped
-// bug/review原因分析のtracked archiveであり、implementationTasksDir配下は未完了taskのrequirement
-// contractを置く。これらは「parent-managed implementation metadata」という単一集合であり、本文を
-// 更新できるのは親Codexだけで、GLM worker/reviewerは読み取り専用で、欠損時も生成しない。
-// wrapperはworker呼出前後の集合内容不変を機械強制する。
-// glm-workerはplanを置かない他repositoryでも使うため、集合契約の有効無効はplanの存在で区別する。
-// 追跡中fileのworking tree欠損は親Codexが置いた正が失われた状態のため呼出前にfail closedする。
-// 未追跡欠損の通常作業を許可するのはGit管理外directoryと確認できた場合と、Git repository内で
-// 未追跡と正常判定できた場合だけで、repo内で判定不能なGit異常はbaseline取得不能として同じく
-// 呼出前にfail closedする。
 const (
 	implementationPlanFile    = state.ParentPlanFile
 	implementationRulesFile   = state.ParentRulesFile
@@ -36,22 +25,14 @@ const (
 	implementationHistoryFile = state.ParentHistoryFile
 )
 
-// errParentFileGuardStoppedは親管理metadata不変性確認・外部成立性宣言gateによるfail closed
-// 停止が完了したことを呼出元へ伝えるsentinel。packet出力・checkpoint清除・task status更新は
-// 既に終わっているため、呼出元は追加のerror出力をしない。
 var errParentFileGuardStopped = errors.New("parent-owned file guard stopped workflow")
 
-// parentFileGuardはworker task呼出直前に固定した親管理metadata集合のbaseline。
-// guardedはplanが存在し集合契約がこの呼出で有効かを表す。planOnlyはplanが存在しない
-// repositoryで集合契約ではなくplan新規生成検出だけを強制する縮小modeを表す。
 type parentFileGuard struct {
 	files    state.ParentFileStates
 	guarded  bool
 	planOnly bool
 }
 
-// guardSurfaceは親管理metadata集合guardの設定。event logのphase suffix・telemetry outcome
-// 接頭辞・fail closed packetの契約文へ使う。集合を1単位として扱うためfile単位の分岐を持たない。
 type guardSurface struct {
 	label         string
 	files         string
@@ -91,8 +72,6 @@ func readParentFileState(repoRoot string, name string) (state.ParentFileState, e
 	return state.ParentFileState{Path: name, Exists: true, SHA256: hex.EncodeToString(sum[:])}, nil
 }
 
-// readParentFileStatesは親管理metadata集合の現在状態をroot 3fileとIMPLEMENTATION_TASKS/配下
-// 全fileから読む。review-start基準の記録とreview resumeの承認判定が同じ観測を共有する。
 func readParentFileStates(repoRoot string) (state.ParentFileStates, error) {
 	rootFiles := []string{implementationRulesFile, implementationPlanFile, implementationHistoryFile}
 	states := make(state.ParentFileStates, 0, len(rootFiles)+8)
@@ -112,9 +91,6 @@ func readParentFileStates(repoRoot string) (state.ParentFileStates, error) {
 	return states, nil
 }
 
-// readParentTaskFileStatesはIMPLEMENTATION_TASKS/配下の全file状態を列挙する。directoryごと
-// 無いrepositoryでは空集合を返す。親が停止中へ追加した新規task fileも集合要素として扱うため、
-// file名のfilterは行わず配下の全fileを親管理として数える。
 func readParentTaskFileStates(repoRoot string) (state.ParentFileStates, error) {
 	dir := filepath.Join(repoRoot, implementationTasksDir)
 	if _, err := os.Stat(dir); err != nil {
@@ -148,8 +124,6 @@ func readParentTaskFileStates(repoRoot string) (state.ParentFileStates, error) {
 	return states, nil
 }
 
-// captureStopParentFilesはrate-limit/provider-unavailable停止を保存する直前の親管理metadata
-// 集合状態をcheckpoint記録値へ変換する。読込失敗時はnilを返し、resume時の承認識別をfail closed側へ倒す。
 func captureStopParentFiles(repoRoot string) *state.ParentFileStates {
 	states, err := readParentFileStates(repoRoot)
 	if err != nil {
@@ -158,7 +132,6 @@ func captureStopParentFiles(repoRoot string) *state.ParentFileStates {
 	return &states
 }
 
-// parentFileChangeReasonは対象file 1件の前後差分を日本語で分類する。
 func parentFileChangeReason(before, after state.ParentFileState) string {
 	switch {
 	case before.Exists && after.Exists:
@@ -170,7 +143,6 @@ func parentFileChangeReason(before, after state.ParentFileState) string {
 	}
 }
 
-// describeParentFileChangesは集合の前後差分をpathごとの変化理由へ展開する。
 func describeParentFileChanges(before, after state.ParentFileStates) string {
 	paths := make(map[string]struct{}, len(before)+len(after))
 	for _, s := range before {
@@ -196,8 +168,6 @@ func describeParentFileChanges(before, after state.ParentFileStates) string {
 	return strings.Join(reasons, ", ")
 }
 
-// quietWhenParentFileGuardStoppedは親管理metadata guardのfail closed終端が既にpacket出力・
-// 状態遷移を完了している場合、追加のerror出力をせず正常終了として扱う。
 func quietWhenParentFileGuardStopped(err error) error {
 	if errors.Is(err, errParentFileGuardStopped) {
 		return nil
@@ -205,8 +175,6 @@ func quietWhenParentFileGuardStopped(err error) error {
 	return err
 }
 
-// parentFileTrackingは親管理metadata fileのGit追跡判定の確定結果。判定errorは値で表現せず
-// errorへ分離し、未追跡へ畳まない。
 type parentFileTracking int
 
 const (
@@ -215,9 +183,6 @@ const (
 	parentFileTrackingOutsideGit
 )
 
-// gitWorktreePresentはrepoRootから上位へ.git markerを探索し、Git管理下にあるかを
-// file構造で確定する。git commandのerror文面へ依存しないため、Git管理外の判定を
-// command異常と区別できる。
 func gitWorktreePresent(repoRoot string) (bool, error) {
 	for dir := repoRoot; ; dir = filepath.Dir(dir) {
 		_, err := os.Stat(filepath.Join(dir, ".git"))
@@ -234,10 +199,6 @@ func gitWorktreePresent(repoRoot string) (bool, error) {
 	}
 }
 
-// classifyParentFileTrackingは対象fileの追跡状態をrepository/index現物から判定する。
-// 追跡判定を特定repository pathの前提へhardcodeせず対象repositoryへ問い合わせる。
-// Git管理外directoryは未追跡欠損の通常作業を許可できる唯一の無条件許可枠であり、
-// Git repository内ではls-filesの失敗を判定不能errorとして呼出元へ返す。
 func classifyParentFileTracking(repoRoot string, name string) (parentFileTracking, error) {
 	insideGit, err := gitWorktreePresent(repoRoot)
 	if err != nil {
@@ -256,9 +217,6 @@ func classifyParentFileTracking(repoRoot string, name string) (parentFileTrackin
 	return parentFileTrackingUntracked, nil
 }
 
-// missingTrackedTaskFilesはGit indexがIMPLEMENTATION_TASKS/配下へ追跡するfileのうちworking
-// treeへ存在しないものを返す。directory列挙はworktree現物だけを見るため、追跡中fileの削除は
-// この比較でのみ検出できる。Git管理外directoryでは追跡概念自体が無いため空を返す。
 func missingTrackedTaskFiles(repoRoot string, worktreeStates state.ParentFileStates) ([]string, error) {
 	insideGit, err := gitWorktreePresent(repoRoot)
 	if err != nil {
@@ -287,13 +245,6 @@ func missingTrackedTaskFiles(repoRoot string, worktreeStates state.ParentFileSta
 	return missing, nil
 }
 
-// captureParentFileGuardはworker task呼出直前の親管理metadata集合状態をbaselineとして固定する。
-// 親Codexがcall前に更新したworking tree内容をそのまま基準にし、wrapperは復元・編集を行わない。
-// planが存在しないrepositoryでは契約自体を適用せず通常作業を許可する。planが存在する場合は
-// root 3fileの追跡中欠損、IMPLEMENTATION_TASKS/配下の追跡中欠損、task開始時に固定したACTIVE
-// task fileの消失を呼出前にfail closedする。読込失敗・repo内での追跡判定不能も不変性の基準自体が
-// 確認できないため同じく呼出前にfail closedする。reviewer呼出とprobeは既存read-only invariant
-// (review-start/end snapshot)の対象のため外す。
 func (w *Workflow) captureParentFileGuard(role state.SessionRole) (parentFileGuard, bool, error) {
 	if role != state.WorkerRole {
 		return parentFileGuard{}, false, nil
@@ -310,9 +261,7 @@ func (w *Workflow) captureParentFileGuard(role state.SessionRole) (parentFileGua
 		case tracking == parentFileTrackingTracked:
 			return parentFileGuard{}, true, w.failClosedParentFileGuard("parent-metadata-capture", parentMetadataGuardSurface, parentMetadataGuardSurface.missingOutcome(), "Git indexで追跡されている"+implementationPlanFile+"がworking treeへ存在しません", nil)
 		}
-		// planの無い旧repositoryでは集合契約(RULES/TASKS/HISTORY読み取り専用)を適用しないが、
-		// plan自身の新規生成検出だけは継続する。親Codexがplanを置いていないrepoへGLMがplanを
-		// 生成すると以降の呼出が存在しない親契約の下へ置かれるため、呼出後検出でfail closedする。
+
 		return parentFileGuard{files: state.ParentFileStates{{Path: implementationPlanFile}}, guarded: true, planOnly: true}, false, nil
 	}
 	states, err := readParentFileStates(w.config.RepoRoot)
@@ -344,8 +293,6 @@ func (w *Workflow) captureParentFileGuard(role state.SessionRole) (parentFileGua
 	return parentFileGuard{files: states, guarded: true}, false, nil
 }
 
-// verifyParentFileAfterCallはworker task呼出直後にbaselineへ再照合する。GLM workerによる
-// 集合への変更・生成・削除をreviewer開始前にfail closed検出し、resume前提の停止状態へ保存しない。
 func (w *Workflow) verifyParentFileAfterCall(
 	checkpoint state.ResumeCheckpoint,
 	before parentFileGuard,
@@ -364,8 +311,7 @@ func (w *Workflow) verifyParentFileAfterCall(
 		return true, w.failClosedParentFileGuard(checkpoint.Phase, parentMetadataGuardSurface, parentMetadataGuardSurface.unavailableOutcome(), "親管理metadata終了状態取得失敗のため不変性を確認できません", err)
 	}
 	if before.planOnly {
-		// plan縮小modeではplan自身の生成だけを検出する。他の集合構成fileは契約対象外のため
-		// 比較しない。
+
 		if plan := state.FindParentFileState(after, implementationPlanFile); plan != state.FindParentFileState(before.files, implementationPlanFile) {
 			violation := fmt.Errorf("worker呼出開始前に対し親管理implementation metadataが変化しました: %s(%s)", implementationPlanFile, parentFileChangeReason(state.FindParentFileState(before.files, implementationPlanFile), plan))
 			if runErr != nil {
@@ -387,9 +333,6 @@ func (w *Workflow) verifyParentFileAfterCall(
 	return true, w.failClosedParentFileGuard(checkpoint.Phase, parentMetadataGuardSurface, parentMetadataGuardSurface.mismatchOutcome(), violation.Error(), nil)
 }
 
-// failClosedParentFileGuardは親管理metadata不変性確認失敗時の停止semantics。resume checkpointを
-// 消してWaitingSolReviewへ移行し、Sol確認packetを出力する。GLM変更内容はbaselineへ
-// 巻き戻さず現物のままSolへ引き渡す。
 func (w *Workflow) failClosedParentFileGuard(phase string, surface guardSurface, outcome string, reason string, cause error) error {
 	w.recordParentFileEvent(phase, surface, outcome, reason, cause)
 	if err := w.state.ClearResumeCheckpoint(); err != nil {
@@ -407,16 +350,10 @@ func (w *Workflow) failClosedParentFileGuard(phase string, surface guardSurface,
 	return errParentFileGuardStopped
 }
 
-// failClosedActiveTaskResolutionはACTIVE task file解決失敗時の同一停止semantics。要求正本を
-// 特定できないままmodelを呼ばせることを防ぐため、packet出力まで同じ経路へ載せる。
 func (w *Workflow) failClosedActiveTaskResolution(phase string, cause error) error {
 	return w.failClosedParentFileGuard(phase, parentMetadataGuardSurface, parentMetadataGuardSurface.activeUnresolvableOutcome(), "PlanのACTIVE欄からACTIVE task fileを一意に解決できません", cause)
 }
 
-// failClosedDecisionRejectionは--decisionの消費前ACTIVE gate失敗時の停止semantics。decisionを
-// 消費していないためtask.statusのwaiting-decisionとpending decisionをそのまま残し、親Codexが
-// Plan・task fileを修復すれば同じdecisionを正規経路で再実行できる。telemetry eventとfail
-// closed packetは他の親管理metadata停止と同じ経路へ載せる。
 func (w *Workflow) failClosedDecisionRejection(phase string, outcome string, reason string, cause error) error {
 	w.recordParentFileEvent(phase, parentMetadataGuardSurface, outcome, reason, cause)
 	if err := w.state.ClearResumeCheckpoint(); err != nil {
@@ -431,9 +368,6 @@ func (w *Workflow) failClosedDecisionRejection(phase string, outcome string, rea
 	return errParentFileGuardStopped
 }
 
-// recordParentFileEventは親管理metadata不変性確認失敗をtelemetryへ記録する。token消費は持たない
-// (best-effort)。task呼出自身の記録はverifyParentFileAfterCallがviolation/unavailable outcomeで
-// 残すため、二重計上しない。
 func (w *Workflow) recordParentFileEvent(phase string, surface guardSurface, outcome string, reason string, cause error) {
 	now := w.now().UTC()
 	errorText := reason

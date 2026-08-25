@@ -213,8 +213,6 @@ func TestBuildChildEnvDoesNotReflowDeletedKeyFromParent(t *testing.T) {
 	}
 }
 
-// 親が値を持ちEnvAllowlistにも含まれるkeyをoverride nullにした場合、
-// tombstoneがextra-allow経由の親env再流入を遮断するか検証する。
 func TestBuildChildEnvTombstoneBlocksExtraAllowReflow(t *testing.T) {
 	t.Setenv("ANTHROPIC_BASE_URL", "parent-zai-leak")
 
@@ -236,8 +234,6 @@ func TestBuildChildEnvTombstoneBlocksExtraAllowReflow(t *testing.T) {
 	}
 }
 
-// 親が値を持ちEnvAllowlistにも含まれるkeyをoverride setにした場合、
-// override値が親より優先されるか検証する。
 func TestBuildChildEnvOverrideSetWinsOverParent(t *testing.T) {
 	t.Setenv("ANTHROPIC_AUTH_TOKEN", "parent-token")
 

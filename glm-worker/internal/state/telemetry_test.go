@@ -117,7 +117,6 @@ func TestReadModelCallLogsSkipsVersion1(t *testing.T) {
 	}
 }
 
-// v2 recordはcall_typeを持たずtask/probeが区別できないため、v3集計へ混在させない。
 func TestReadModelCallLogsSkipsVersion2(t *testing.T) {
 	st := &StateStore{dir: t.TempDir()}
 	taskID, err := st.StartNewTask()
@@ -138,7 +137,6 @@ func TestReadModelCallLogsSkipsVersion2(t *testing.T) {
 	}
 }
 
-// probe recordはJSONLへtoken/cost/resolved modelを残すが、task集計mirrorへは混ぜない。
 func TestRecordProbeCallLogExcludedFromTaskAggregates(t *testing.T) {
 	st := &StateStore{dir: t.TempDir()}
 	taskID, err := st.StartNewTask()
@@ -180,8 +178,6 @@ func TestRecordProbeCallLogExcludedFromTaskAggregates(t *testing.T) {
 	}
 }
 
-// 旧record(診断field欠落)と新record(診断field付き)が同一v2 JSONLへ混在しても、
-// 既存token集計は両方から維持され、診断値はcaptured recordだけに現れる(not capturedと区別)。
 func TestReadModelCallLogsMixedSchemaPreservesTokensAndDiagnostics(t *testing.T) {
 	st := &StateStore{dir: t.TempDir()}
 	taskID, err := st.StartNewTask()
@@ -246,8 +242,6 @@ func TestReadModelCallLogsMixedSchemaPreservesTokensAndDiagnostics(t *testing.T)
 		t.Fatalf("新recordのtoken集計が失われた: %+v", currentRec)
 	}
 
-	// legacyはappendModelCallLogで直接書かれたためstats mirrorへは含まれず、current recordの
-	// tokenだけがstatsへ集計される(旧recordのtokenはJSONL読込側で維持される)。
 	stats, err := st.loadTaskStats()
 	if err != nil {
 		t.Fatal(err)

@@ -12,10 +12,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-// report-only再出力経路のproduction因果test。scripted packetの終端だけでなく、
-// dispatch→checkpoint capability→worker実行→終了後snapshot比較→review遷移を
-// 実git repository・実CaptureGitSnapshotで検証する。
-
 func newReportOnlyWorkflow(t *testing.T, repoRoot string, steps []runnerStep, mutate func(string) error) (*Workflow, *mutatingRunner, *bytes.Buffer) {
 	t.Helper()
 	w, r, out := newMutationWorkflow(t, repoRoot, steps, mutate)
@@ -66,7 +62,6 @@ func requireReportOnlyFailClosed(t *testing.T, w *Workflow, out *bytes.Buffer, w
 	}
 }
 
-// TARGETS: PACKET dispatchはReadOnly capabilityでworkerを呼び、開始前baselineをworker実行前に保存する。
 func TestReportOnlyDispatchCapabilityAndBaselineOrdering(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
@@ -118,7 +113,6 @@ func TestReportOnlyDispatchCapabilityAndBaselineOrdering(t *testing.T) {
 	}
 }
 
-// 実装修正auto-fixはwrite capabilityと既存worker-end基準flowを維持し、開始前snapshotを作らない。
 func TestImplementationAutoFixKeepsWriteCapabilityAndBaselineFlow(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
@@ -147,7 +141,6 @@ func TestImplementationAutoFixKeepsWriteCapabilityAndBaselineFlow(t *testing.T) 
 	}
 }
 
-// report-only workerがtracked fileを変更した場合、reviewer-2を呼ばずfail closedし変更は保持される。
 func TestReportOnlyWorktreeMutationFailsClosedBeforeReview(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	w, r, out := newReportOnlyWorkflow(t, repoRoot, []runnerStep{
@@ -181,8 +174,7 @@ func TestReportOnlyWorktreeMutationFailsClosedBeforeReview(t *testing.T) {
 	if state.EqualGitSnapshot(start, after) {
 		t.Fatal("不一致検出対象のsnapshotが一致しています")
 	}
-	// fail closedはresume checkpointの再実行だけ止め、--fix recoveryでの調査に必要な
-	// 開始前snapshot・comparison・telemetry上のworker session診断を残す。
+
 	if comparison, err := w.state.LoadSnapshotComparison(); err != nil || comparison.Stage != state.SnapshotStageReportOnlyEnd || comparison.Matched {
 		t.Fatalf("report-only-end comparison証拠が保持されていません: %#v err=%v", comparison, err)
 	}
@@ -197,7 +189,6 @@ func TestReportOnlyWorktreeMutationFailsClosedBeforeReview(t *testing.T) {
 	}
 }
 
-// report-only workerがindexへstageした場合もfail closedする。
 func TestReportOnlyIndexMutationFailsClosedBeforeReview(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	w, r, out := newReportOnlyWorkflow(t, repoRoot, []runnerStep{
@@ -225,7 +216,6 @@ func TestReportOnlyIndexMutationFailsClosedBeforeReview(t *testing.T) {
 	}
 }
 
-// report-only workerがcommitした場合もhead軸でfail closedする。
 func TestReportOnlyHeadMutationFailsClosedBeforeReview(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	w, _, out := newReportOnlyWorkflow(t, repoRoot, []runnerStep{
@@ -251,7 +241,6 @@ func TestReportOnlyHeadMutationFailsClosedBeforeReview(t *testing.T) {
 	}
 }
 
-// repo不変のreport-only再出力は既存のreview再開・risk floor routingを維持する。
 func TestReportOnlyNoMutationMaintainsReviewRestartAndRiskFloor(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	w, r, out := newReportOnlyWorkflow(t, repoRoot, []runnerStep{
@@ -301,7 +290,6 @@ func TestReportOnlyNoMutationMaintainsReviewRestartAndRiskFloor(t *testing.T) {
 	}
 }
 
-// 開始前baselineを確保できないときはreport-only workerを実行せずfail closedする。
 func TestReportOnlyStartSnapshotCaptureFailureStopsBeforeWorkerRun(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	w, r, out := newReportOnlyWorkflow(t, repoRoot, []runnerStep{
@@ -367,7 +355,6 @@ func TestReportOnlyStartSnapshotSaveFailureStopsBeforeWorkerRun(t *testing.T) {
 	}
 }
 
-// report-only検証のcomparison保存失敗も状態確認済み一致と同じくfail closedへ停止する。
 func TestReportOnlyComparisonSaveFailureFailsClosed(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	st := newStateStoreT(t)
@@ -410,7 +397,6 @@ func TestReportOnlyComparisonSaveFailureFailsClosed(t *testing.T) {
 	t.Fatalf("snapshot_save_failed eventがありません: %+v", phasesOf(taskLogs(t, st)))
 }
 
-// 終了後snapshot取得失敗は比較未実施としてfail closedし、mismatch軸集計へ混ぜない。
 func TestReportOnlyEndSnapshotCaptureFailureFailsClosedNotMismatch(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	st := newStateStoreT(t)
@@ -465,7 +451,6 @@ func TestReportOnlyEndSnapshotCaptureFailureFailsClosedNotMismatch(t *testing.T)
 	}
 }
 
-// 5h上限で停止しても開始前snapshotを基準に保持し、停止期間中の変化をresume検証から隠さない。
 func TestReportOnlyRateLimitResumeVerifiesAgainstSameStartSnapshot(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	w, _, _ := newReportOnlyWorkflow(t, repoRoot, []runnerStep{
@@ -530,7 +515,6 @@ func TestReportOnlyRateLimitResumeVerifiesAgainstSameStartSnapshot(t *testing.T)
 	}
 }
 
-// 停止期間中に変化がなければresumeはreport-only再実行から通常reviewへ復帰する。
 func TestReportOnlyRateLimitResumeWithoutDriftProceedsToReview(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	w, _, _ := newReportOnlyWorkflow(t, repoRoot, []runnerStep{
@@ -577,7 +561,6 @@ func TestReportOnlyRateLimitResumeWithoutDriftProceedsToReview(t *testing.T) {
 	}
 }
 
-// provider一時障害から同じsession/checkpointで回復した後も終了後同一性検証は効く。
 func TestReportOnlyTransientRecoveryStillEnforcesInvariant(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	w, r, out := newReportOnlyWorkflow(t, repoRoot, []runnerStep{
@@ -602,7 +585,6 @@ func TestReportOnlyTransientRecoveryStillEnforcesInvariant(t *testing.T) {
 	}
 }
 
-// provider-unavailable停止からのresumeもprobe gate通過後に同じ開始前snapshot基準で検証する。
 func TestReportOnlyProviderUnavailableResumeVerifiesAgainstStartSnapshot(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	st := newStateStoreT(t)
@@ -671,8 +653,6 @@ func TestReportOnlyProviderUnavailableResumeVerifiesAgainstStartSnapshot(t *test
 	}
 }
 
-// 開始前snapshotが欠損したresumeはworker/provider呼出前に比較不能としてfail closedし、
-// reviewerへ進めない。新baselineを撮って欠損を隠さない。
 func TestReportOnlyResumeWithoutStartSnapshotFailsClosedBeforeCalls(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	st := newStateStoreT(t)
@@ -734,7 +714,7 @@ func TestReportOnlyResumeWithoutStartSnapshotFailsClosedBeforeCalls(t *testing.T
 	if _, err := st.LoadReportOnlyStartSnapshot(); err == nil {
 		t.Fatal("resumeが新baselineを作成しています")
 	}
-	// fail closedはresume再実行だけ止め、--fix recoveryでの調査に必要な診断証拠を残す。
+
 	if got, err := st.Read("worker.id"); err != nil || got != "worker-session-evidence" {
 		t.Fatalf("worker session ID証拠が保持されていません: %q %v", got, err)
 	}
@@ -753,9 +733,6 @@ func TestReportOnlyResumeWithoutStartSnapshotFailsClosedBeforeCalls(t *testing.T
 	}
 }
 
-// 旧version(v3) resume checkpoint(report_only欠落・phase推定前提)はphase文字列に関係なく
-// version gateでrouting前にresume不能として拒否する。report-only工程のcheckpointを通常の
-// auto-fix resumeへ落とさず、worker/probe呼出・report-only baseline作成へ進まない。
 func TestReportOnlyLegacyVersionCheckpointRejectedBeforeRouting(t *testing.T) {
 	for _, phase := range []string{"worker-report-only-1", "worker-report-only-1-packet-compact", "worker-auto-fix-1"} {
 		t.Run(phase, func(t *testing.T) {
@@ -793,8 +770,6 @@ func TestReportOnlyLegacyVersionCheckpointRejectedBeforeRouting(t *testing.T) {
 	}
 }
 
-// v4でもreport_only keyが欠落したcheckpointは、bool zero value falseの通常auto-fixとして
-// 受理しない。routing・status変更前にfail closedする。
 func TestReportOnlyV4MissingReportOnlyKeyRejectedBeforeRouting(t *testing.T) {
 	for _, phase := range []string{"worker-report-only-1", "worker-auto-fix-1"} {
 		t.Run(phase, func(t *testing.T) {
@@ -835,9 +810,6 @@ func TestReportOnlyV4MissingReportOnlyKeyRejectedBeforeRouting(t *testing.T) {
 	}
 }
 
-// TestReportOnlyPostconditionScenarioPinnedInEscapedCorpusはescaped corpusがreport-only
-// repo不変postconditionのproduction検出scenarioを保持することを固定する。corpus契約testは
-// 存在するscenarioの妥当性だけを検証するため、当該scenarioの削除は本pin検証だけが検知する。
 func TestReportOnlyPostconditionScenarioPinnedInEscapedCorpus(t *testing.T) {
 	sc, mf := loadCorpus(t)
 	found := ""
@@ -868,8 +840,6 @@ func TestReportOnlyPostconditionScenarioPinnedInEscapedCorpus(t *testing.T) {
 	}
 }
 
-// 通常implementation auto-fixのresumeはreport-only推定の対象外で、開始前snapshotが
-// 無くても従来どおりworker再実行からreviewへ進む。
 func TestAutoFixResumeWithoutReportOnlyPhaseKeepsLegacyFlow(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	st := newStateStoreT(t)

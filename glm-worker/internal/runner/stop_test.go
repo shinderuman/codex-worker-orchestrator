@@ -43,10 +43,6 @@ func TestStopControllerOutcomeFirstNotifyWins(t *testing.T) {
 	}
 }
 
-// TestStopControllerConcurrentWaitersShareOutcomeは確定前に同時開始した複数の
-// WaitOutcomeが最初の確定結果をtimeoutなしで同一値として受け取ることを固定する。
-// 単一buffered channelの受渡しだと2番目以降のwaiterが確定を受け取れず、重複--stop要求の
-// ackがhandshake timeoutまで停止する。
 func TestStopControllerConcurrentWaitersShareOutcome(t *testing.T) {
 	controller := NewStopController()
 	const waiters = 3
@@ -61,7 +57,7 @@ func TestStopControllerConcurrentWaitersShareOutcome(t *testing.T) {
 	for i := 0; i < waiters; i++ {
 		<-started
 	}
-	// 全waiterの待機入りを確実にしてから確定する。
+
 	time.Sleep(50 * time.Millisecond)
 	controller.NotifyInterrupted("task-broadcast-1", "")
 	controller.NotifyFinished()
@@ -82,9 +78,6 @@ func TestStopControllerConcurrentWaitersShareOutcome(t *testing.T) {
 	}
 }
 
-// stopTestStubはTERMを無視して存続するchildと孫processのstub。trap設置後に孫が
-// ready fileを書くため、停止要求の時点で両processのTERM無視が確定している。
-// subshell内の$$は元shellのPIDになるため、孫PIDは親sideの$!で書く。
 func stopTestStub(t *testing.T) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "term-ignoring-stub")
@@ -122,7 +115,6 @@ func waitStopStubPID(t *testing.T, path string) int {
 	return 0
 }
 
-// waitStopStubFileはfileの出現を待つ。孫processのTERM無視trap設置完了のready観測に使う。
 func waitStopStubFile(t *testing.T, path string) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
@@ -135,9 +127,6 @@ func waitStopStubFile(t *testing.T, path string) {
 	t.Fatalf("stubがfile %s を書きません", path)
 }
 
-// TestRunCommandStopsProcessGroupWithTermIgnoringChildrenはTERMを無視するchildと孫を
-// KILLへ昇格してprocess groupごと終了させる契約を固定する。残存がなければ
-// CleanupWarningは空のままinterrupted errorを返す。
 func TestRunCommandStopsProcessGroupWithTermIgnoringChildren(t *testing.T) {
 	stub := stopTestStub(t)
 	pidFile := filepath.Join(t.TempDir(), "parent.pid")
@@ -175,8 +164,7 @@ func TestRunCommandStopsProcessGroupWithTermIgnoringChildren(t *testing.T) {
 		_ = syscall.Kill(-pgid, syscall.SIGKILL)
 		t.Fatal("停止が完了しません")
 	}
-	// 孫はgroup leaderではないため負のpid指定の検証では常に成功してしまう。leaderは
-	// 負のpidでgroup全体の非残存を、孫は正のpidで単独processの非残存を確認する。
+
 	for _, target := range []int{-pgid, grandchild} {
 		deadline := time.Now().Add(2 * time.Second)
 		for {
@@ -191,8 +179,6 @@ func TestRunCommandStopsProcessGroupWithTermIgnoringChildren(t *testing.T) {
 	}
 }
 
-// TestRunCommandPrefersCompletedNaturalExitは呼出が停止要求前に自然終了したとき、
-// その結果をerrorにしないことを固定する。
 func TestRunCommandPrefersCompletedNaturalExit(t *testing.T) {
 	stub := filepath.Join(t.TempDir(), "quick-exit")
 	if err := os.WriteFile(stub, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {

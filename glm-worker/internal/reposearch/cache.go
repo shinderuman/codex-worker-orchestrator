@@ -16,10 +16,6 @@ const (
 	cacheFileName      = "index.json"
 )
 
-// cacheDataはcache file 1つへ保存する全情報。schema・policy version・canonical
-// repo_root・fingerprintのすべてが現repositoryと一致する時だけcacheを使うため、
-// 別repo-root marker fileは持たない。docsはtoken統計だけで、file本文・snippet等の
-// raw sourceは保存しない。
 type cacheData struct {
 	SchemaVersion      int      `json:"schema_version"`
 	RepoRoot           string   `json:"repo_root"`
@@ -34,8 +30,6 @@ type cacheData struct {
 	Docs               []doc    `json:"docs"`
 }
 
-// sortedExcludeDirsは実効除外集合(既定+Options.ExcludeDirs)を決定的な並びへ整列する。
-// cache identityの一部として保存・比較するため、mapの走査順に依らない固定形にする。
 func sortedExcludeDirs(dirs map[string]bool) []string {
 	names := make([]string, 0, len(dirs))
 	for name := range dirs {
@@ -45,17 +39,11 @@ func sortedExcludeDirs(dirs map[string]bool) []string {
 	return names
 }
 
-// cachePathForはcacheRoot配下へrepo canonical pathのsha256でdirを切る。state packageの
-// RepoHash規則と同じで、repo移動後は別dirになり旧cacheが混入しない。
 func cachePathFor(cacheRoot, repoRoot string) string {
 	hash := sha256.Sum256([]byte(repoRoot))
 	return filepath.Join(cacheRoot, hex.EncodeToString(hash[:]), cacheFileName)
 }
 
-// loadIndexはsettingsのcacheを読み、現repositoryとの完全一致時だけその中身を返す。
-// 欠損・corruption・parse失敗・schema/version不一致・repo_root不一致・fingerprint
-// 不一致・doc統計の意味的異常は区別せずmiss(rebuild)扱いにし、stale結果は使わない。
-// 上限より大きいcacheもmissにし、上限を下げた呼出側で一貫してErrIndexLimitへ向かう。
 func loadIndex(settings searchSettings, repoRoot string, fp fingerprint) (builtIndex, bool) {
 	if settings.cacheDisabled {
 		return builtIndex{}, false
@@ -86,8 +74,7 @@ func cacheMatchesRepository(cached cacheData, repoRoot string, fp fingerprint, s
 	if cached.TokenizerVersion != tokenizerVersion || cached.EnumerationVersion != enumerationVersion {
 		return false
 	}
-	// 除外policyが異なるcacheは収集対象が異なるため、たとえfingerprintが一致して
-	// いても再利用しない。実効集合(既定は除去不可)との完全一致を要求する。
+
 	if !slices.Equal(cached.ExcludeDirs, sortedExcludeDirs(settings.excludeDirs)) {
 		return false
 	}
@@ -123,8 +110,6 @@ func cacheMatchesRepository(cached cacheData, repoRoot string, fp fingerprint, s
 	return true
 }
 
-// validTermFrequenciesはTF統計の意味的整合を見る。countは正整数のみ、その合計が
-// lengthと一致し、length 0なら空である。 tampered cacheを検出してmissへ落とす。
 func validTermFrequencies(frequencies map[string]int, length int) bool {
 	var sum int64
 	for _, count := range frequencies {
@@ -139,8 +124,6 @@ func validTermFrequencies(frequencies map[string]int, length int) bool {
 	return sum == int64(length)
 }
 
-// writeIndexはrebuild結果を単一JSONへ原子的に書き込む。呼出側でfingerprint一致を
-// 確認した後だけ呼ばれ、混合状態のcacheは書かない。
 func writeIndex(settings searchSettings, repoRoot string, fp fingerprint, index builtIndex) error {
 	if settings.cacheRoot == "" {
 		return nil
@@ -167,8 +150,6 @@ func writeIndex(settings searchSettings, repoRoot string, fp fingerprint, index 
 	return writeFileAtomic(cachePathFor(settings.cacheRoot, repoRoot), append(data, '\n'), 0o600)
 }
 
-// writeFileAtomicは同directoryのtemp fileへ書き込み後renameする。state packageの
-// 同名helperと同じ規則で、部分書込み状態を利用者へ見せない。
 func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err

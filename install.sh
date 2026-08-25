@@ -7,11 +7,11 @@ bin_dir="${GLM_WORKER_BIN_DIR:-$HOME/.local/bin}"
 claude_settings="${CLAUDE_SETTINGS_FILE:-$HOME/.claude/settings.json}"
 glm_worker_home="${GLM_WORKER_HOME:-$HOME/.glm-worker}"
 
-# final HEADのplan現在状態節へ許さない過渡表現。完了済みcommitのamend/install操作を
-# 未実施のpending操作として記述するstale-by-oneの機械判定対象。amend直前・install前・
-# amendの前等のpending形式に限定し、先頭のidentifier境界でuninstall前等の別語への誤一致
-# を避ける。「amend後」は現在taskの正当な記述(amend後のpostconditionを実装する等)にも
-# 使うため対象外とする。
+
+
+
+
+
 plan_transitional_pattern='(^|[^[:alnum:]_])(amend|install)(する)?(の|直)?前'
 
 require() {
@@ -41,8 +41,8 @@ copy_tree() {
 
     mkdir -p "$dst"
 
-    # 配布元に存在するファイルだけを配置する。
-    # default.rules等、配置先にしかないファイルは削除しない。
+
+
     rsync -a "$src/" "$dst/"
 }
 
@@ -70,9 +70,9 @@ install_codex_files() {
         : >"$previous_manifest"
     fi
 
-    # 前回codex-worker-orchestratorが配置したファイルのうち、
-    # 今回の配布元から消えたものだけを削除する。
-    # manifestにないローカルファイルには触れない。
+
+
+
     while IFS= read -r relative_path; do
         [ -n "$relative_path" ] || continue
 
@@ -192,6 +192,7 @@ build_glm_worker() {
     (
         cd "$repo_root/glm-worker"
         go build -buildvcs=false -trimpath -o "$build_dir/glm-worker" ./cmd/glm-worker
+        go build -buildvcs=false -trimpath -o "$build_dir/commentlint" ./cmd/commentlint
     )
 
     mkdir -p "$bin_dir"
@@ -203,15 +204,22 @@ build_glm_worker() {
         printf 'installed: %s\n' "$bin_dir/glm-worker"
     fi
 
+    if [ -f "$bin_dir/commentlint" ] && cmp -s "$build_dir/commentlint" "$bin_dir/commentlint"; then
+        printf '%s\n' 'commentlint: unchanged'
+    else
+        install -m 0755 "$build_dir/commentlint" "$bin_dir/commentlint"
+        printf 'installed: %s\n' "$bin_dir/commentlint"
+    fi
+
     rm -rf "$build_dir"
     trap - EXIT HUP INT TERM
 }
 
-# verify_claude_cliはglm-workerのstructured output契約(--json-schema flag)をCLI側が
-# 支援しているかをAI呼び出しなしで確認する。PATH上に見つかるbinaryだけが検証対象で、
-# 見つからない場合はruntime構成(GLM_WORKER_CLAUDE_BIN)へ委ねてinstallは続行する。
-# 見つかったbinaryが--json-schemaを案内しない場合は全model呼出がfail closedになるため
-# install時点で失敗させる。
+
+
+
+
+
 verify_claude_cli() {
     claude_bin="${GLM_WORKER_CLAUDE_BIN:-claude}"
     if ! command -v "$claude_bin" >/dev/null 2>&1; then
@@ -225,8 +233,8 @@ verify_claude_cli() {
     printf 'claude cli: %s supports --json-schema\n' "$claude_bin"
 }
 
-# plan_sectionはstdinのplan本文から見出しpatternに一致する`## `節の本文を取り出す。
-# 節の終わりは次の`## `見出し行で、項目はRULESが定めるunordered marker `-`だけを対象にする。
+
+
 plan_section() {
     awk -v pattern="$1" '
         /^## / {
@@ -242,13 +250,13 @@ plan_section() {
     '
 }
 
-# plan_bullet_pathsはstdinのplan本文から全schedule list項目を1行1項目で取り出す。
-# 検出とpath抽出はruntime activeSectionEntries/activeEntryPathと同じ規則で、行両端の
-# 空白を除去してから`- `markerを判定し、逆引用符は項目全体を1組で囲む場合だけpath区切りとして
-# 扱う。逆引用符なしの直書きは行全体をpath候補とする。blank行だけを無視し、`*`・`+`・番号付き
-# marker等のtask-like list行や説明文などの非bullet行、閉じ欠損・前後の余分なtext・複数組の
-# malformed bulletを黙って捨てるとfail openになるため、どちらも先頭marker `!` で呼出側へ
-# 渡し、path候補は `+` を付けて区別する。
+
+
+
+
+
+
+
 plan_bullet_paths() {
     awk '
         {
@@ -276,11 +284,11 @@ plan_bullet_paths() {
     '
 }
 
-# validate_plan_task_pathはplanが記述するtask pathがruntime配置契約(workflowの
-# validateActiveTaskPath)と同じ規則へ収まることを確認する。IMPLEMENTATION_TASKS/
-# prefix・.md suffix・空segment・`.`・`..`・二重slash・backslashを拒否する。番号prefixは
-# 契約外のため要求せず、subdirectoryは許容する。受理集合のruntimeとの一致は
-# TestPlanFinalHeadTaskPathValidatorMatchesRuntimeが固定する。
+
+
+
+
+
 validate_plan_task_path() {
     case $1 in
         IMPLEMENTATION_TASKS/*.md) ;;
@@ -292,17 +300,17 @@ validate_plan_task_path() {
     return 0
 }
 
-# plan_final_head_failはfinal HEAD postcondition gateの失敗出力と復旧経路を固定する。
-# 追加commitの連鎖やworking treeだけの修正で通過扱いにさせないため、同一commitへの
-# amendだけを復旧経路として案内する。
+
+
+
 plan_final_head_fail() {
     printf 'plan final head: %s\n' "$1" >&2
     printf '%s\n' 'plan final head: IMPLEMENTATION_RULES.mdのtask完了契約に従いPlan・IMPLEMENTATION_TASKS・Historyを同期し、同一commitへamendしてからinstallすること。同期済みfinal HEADになるまでinstall・次task・handoffへ進まない' >&2
     return 1
 }
 
-# require_head_task_fileはplanが参照するtask fileがHEAD treeへregular fileとして存在する
-# ことを確認する。symlinkとdirectoryは要求正本として受理しない。
+
+
 require_head_task_file() {
     referenced_path=$1
     referenced_mode=$(git -C "$repo_root" ls-tree HEAD -- "$referenced_path" | awk '{print $1; exit}')
@@ -315,14 +323,14 @@ require_head_task_file() {
     esac
 }
 
-# verify_plan_final_headはtracked canonical planのfinal HEAD postconditionをmanaged配置の
-# 前段階として機械強制する。親Codexのtask完了契約は完了taskのmetadata同期(History移行・
-# task file削除・NEXT昇格)を同一commitへamendしてfinal HEADへ収めるが、手順実施を同期
-# 保証と同一視してamendを飛ばすとfinal HEADのplanだけが完了済みcommitを「amend直前」
-# 「install前」等の未実施操作として記述したstale-by-oneになる。gateはHEAD収録planの
-# ACTIVE/NEXT/task file存在/Git境界を判定し、現在状態節の過渡表現を拒否する。判定は
-# HEADだけで行い、dirty working treeのplanやplanを置かない他repositoryの通常installは
-# 妨げない。
+
+
+
+
+
+
+
+
 verify_plan_final_head() {
     if ! git -C "$repo_root" rev-parse --git-dir >/dev/null 2>&1; then
         printf '%s\n' 'plan final head: skipped (not a git repository)'
@@ -341,10 +349,10 @@ verify_plan_final_head() {
         return 0
     fi
 
-    # ACTIVE欄はschedule list記法(`- `bulletとblank行のみ)で検証する。plan_bullet_pathsが
-    # `!`markerを返した行は`*`等の未知list記法・説明文・malformed bulletのどれであっても
-    # 黙って無視せずfail closedにする。違反行は一意性判定より先に報告し、runtime
-    # activeSectionEntriesがscan中に最初の違反行でerrorを返す順序と揃える。
+
+
+
+
     active_entries=$(printf '%s\n' "$plan_head" | plan_section '^## ACTIVE[[:space:]]*$' | plan_bullet_paths)
     active_count=0
     active_path=''
@@ -367,7 +375,7 @@ verify_plan_final_head() {
 $active_entries
 EOF
     if [ -n "$active_violation" ]; then
-        # 逆引用符を含む固定文はcommand substitutionへ解釈されないよう単引用符で結合する。
+
         plan_final_head_fail 'HEADのplanのACTIVE欄にschedule list記法(`- `bulletとblank行のみ、逆引用符は項目全体を1組で囲むか逆引用符なしの直書き)へ違反している行があります: '"$active_violation"
         return 1
     fi
@@ -385,10 +393,10 @@ EOF
     fi
     require_head_task_file "$active_path" || return 1
 
-    # NEXT/BLOCKEDは空sectionを許容するが、bulletが存在するなら全てvalid task pathへ
-    # 解決されることを検証する。認識できないbulletや`*`等の非bullet行を無視すると
-    # invalid entryがgateを通過するため、schedule list記法とpath検証は行単位でfail
-    # closedする。
+
+
+
+
     scheduled_tasks=$(
         printf '%s\n' "$plan_head" | plan_section '^## NEXT' | plan_bullet_paths
         printf '%s\n' "$plan_head" | plan_section '^## BLOCKED' | plan_bullet_paths
@@ -398,7 +406,7 @@ EOF
         [ -n "$scheduled_entry" ] || continue
         case $scheduled_entry in
             '!'*)
-                # 逆引用符を含む固定文はcommand substitutionへ解釈されないよう単引用符で結合する。
+
                 plan_final_head_fail 'HEADのplanのNEXT/BLOCKED欄にschedule list記法(`- `bulletとblank行のみ、逆引用符は項目全体を1組で囲むか逆引用符なしの直書き)へ違反している行があります: '"${scheduled_entry#!}"
                 return 1
                 ;;
@@ -445,11 +453,11 @@ EOF
         fi
     fi
 
-    # 完了済みcommitの操作をamend直前・install前等の未実施pendingとして記述する過渡表現は
-    # final HEADではもう存在できない。対象は現在状態を記述する3節だけとし、次taskの作業中planは
-    # commit前のworking treeだけに置ける。境界のnegated classはBSD grepのUTF-8 localeで
-    # multibyte前置文字に一致しないため、判定はbyte志向のLC_ALL=Cで行いplatform間で同じ
-    # 挙動に固定する。
+
+
+
+
+
     transitional=$(
         {
             printf '%s\n' "$plan_head" | plan_section '^## 現在のGit境界' | LC_ALL=C grep -E "$plan_transitional_pattern" || true
@@ -468,10 +476,10 @@ EOF
 preflight() {
     build_dir=$(mktemp -d "${TMPDIR:-/tmp}/codex-worker-orchestrator-preflight.XXXXXX")
 
-    # if ! (...)内ではerrexitが無視され、subshell全体の成否は最後のcommandだけで決まる。
-    # 失敗を後続の成功で上書きさせないため、各commandは失敗時に明示的に非0でsubshellを抜ける。
     if ! (
         cd "$repo_root/glm-worker" || exit
+        go build -buildvcs=false -trimpath -o "$build_dir/commentlint" ./cmd/commentlint || exit
+        COMMENTLINT_REPO_ROOT="$repo_root" "$build_dir/commentlint" || exit
         go test ./... || exit
         go build -buildvcs=false -trimpath -o "$build_dir/glm-worker" ./cmd/glm-worker || exit
 

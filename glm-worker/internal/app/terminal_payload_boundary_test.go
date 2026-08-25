@@ -19,14 +19,6 @@ const (
 	terminalPayloadCapturePrefix = "GLM_TERMINAL_CAPTURED"
 )
 
-// TestTerminalPayloadBoundarySingleRenderは親tool orchestrationのterminal payload単一描画契約
-// (glm-execution.md)をtool orchestration semanticsのmodelで検証する。実運用3回の二面表示は、
-// Codex desktopがbackground functions.execの完了outputと後続functions.waitのresult cardで
-// 同じcell返り値を2回描画することが直接原因である。契約手順(長時間cell内のraw非描画・内部store
-// へのtask固有key保存・cell返り値のcaptured marker化・cell終端後の短い同期load 1回)では
-// aggregate内のpayload出現が1回、rawをcell返り値へ流す旧形では2回になることを同じ境界で固定する。
-// 実`glm-worker` binaryによるproduction経路のterminal result生成はfake claude binary固定応答で
-// 追加AI callなしに検証する。
 func TestTerminalPayloadBoundarySingleRender(t *testing.T) {
 	if os.Getenv(terminalPayloadHelperEnv) == "1" {
 		terminalPayloadHelperMain()
@@ -41,10 +33,6 @@ func TestTerminalPayloadBoundarySingleRender(t *testing.T) {
 	terminalPayloadRealWorkerTerminalResult(t)
 }
 
-// terminalPayloadOrchestrationは親Codexがfunctions.execのorchestration内へ実装するcaller手順の
-// model。nested exec_command/write_stdinの出力は変数(captured)へだけ蓄積され、cell実行中の
-// text/notify/image即時描画(liveEmit)・cell返り値(exec完了outputとwait result cardが描画する
-// 対象)・内部store(task固有key)を分離して観測する。
 type terminalPayloadOrchestration struct {
 	captured  string
 	liveEmit  []string
@@ -56,9 +44,6 @@ func newTerminalPayloadOrchestration() *terminalPayloadOrchestration {
 	return &terminalPayloadOrchestration{store: make(map[string]string)}
 }
 
-// terminalPayloadDroppedEnvKeysは長時間cell環境を構築するとき親process環境から除外するkey。
-// 重複keyは先頭一致が優先される実装が多く、端末に残った旧GLM_WORKER_*設定が
-// extraEnvの隔離設定へshadowをかけないように除去する。
 var terminalPayloadDroppedEnvKeys = []string{
 	"GLM_WORKER_HOME",
 	"GLM_WORKER_PROMPT_DIR",
@@ -83,8 +68,6 @@ func terminalPayloadCellEnv(extraEnv []string) []string {
 	return append(env, extraEnv...)
 }
 
-// runLongCellは長時間cell内のnested exec_command相当を1回実行する。子process出力は
-// orchestration内の変数(captured)へ蓄積するだけで、text/notify/image等の描画経路へ出さない。
 func (o *terminalPayloadOrchestration) runLongCell(
 	t *testing.T,
 	ctx context.Context,
@@ -104,40 +87,30 @@ func (o *terminalPayloadOrchestration) runLongCell(
 	if err := cell.Start(); err != nil {
 		t.Fatalf("長時間cellの起動に失敗: %v", err)
 	}
-	// pollingなしの1回のblocking wait。完了待機契約は固定間隔の反復waitを行わない。
+
 	if err := cell.Wait(); err != nil {
 		t.Fatalf("長時間cellが非zero終了: %v captured=%q", err, captured.String())
 	}
 	o.captured = captured.String()
 }
 
-// emitLiveは旧形がcell実行中にrawをtext/notify/imageへ出した状況を再現する。
 func (o *terminalPayloadOrchestration) emitLive(text string) {
 	o.liveEmit = append(o.liveEmit, text)
 }
 
-// captureTerminalはcell終端の契約手順。蓄積rawを内部storeへtask固有keyで保存し、
-// cell返り値を短いcaptured markerだけにする。
 func (o *terminalPayloadOrchestration) captureTerminal(key string) {
 	o.store[key] = o.captured
 	o.cellValue = terminalPayloadCapturePrefix + " " + key
 }
 
-// passThroughCellValueは旧形。蓄積rawをそのままcell返り値へ流し、background exec完了outputと
-// functions.wait result cardの双方でrawが描画された3回再現時の呼出形を再現する。
 func (o *terminalPayloadOrchestration) passThroughCellValue() {
 	o.cellValue = o.captured
 }
 
-// syncLoadはcell終端後の別の短い同期functions.execがstoreのload(key)をtext(raw)で返す値の
-// model。追加AI call・追加のglm-worker実行は発生しない。
 func (o *terminalPayloadOrchestration) syncLoad(key string) string {
 	return o.store[key]
 }
 
-// renderedPayloadsは観測された親描画経路が描画する文字列を列挙する。cell実行中の即時描画、
-// background exec完了outputとfunctions.wait result cardによる同じcell返り値の2回描画、
-// cell終端後の短い同期call出力の1回描画である。
 func (o *terminalPayloadOrchestration) renderedPayloads(syncText string) []string {
 	rendered := append([]string(nil), o.liveEmit...)
 	return append(rendered, o.cellValue, o.cellValue, syncText)
@@ -151,9 +124,6 @@ func (o *terminalPayloadOrchestration) renderedCount(syncText string, payload st
 	return count
 }
 
-// terminalPayloadDelayedMarkerSingleRenderは追加AI callなしのdelayed markerで契約手順を検証する。
-// markerはcell終端付近にだけ出力され、変数蓄積を経て内部storeへ保存され、cell返り値はcaptured
-// markerだけになり、cell終端後の短い同期loadだけで1回親へ渡る。
 func terminalPayloadDelayedMarkerSingleRender(t *testing.T) {
 	t.Helper()
 
@@ -183,9 +153,6 @@ func terminalPayloadDelayedMarkerSingleRender(t *testing.T) {
 	}
 }
 
-// terminalPayloadLegacyDoubleRenderDetectedは蓄積rawをcell返り値へ流す旧形が同じ境界で
-// 2回描画されることを固定する。本検証が1回や0回になった場合、上記契約手順検証は検出できない
-// 境界の空通過になる。旧形の即時描画経路流出を加えると3回以上へ増えることも同じ境界で観測できる。
 func terminalPayloadLegacyDoubleRenderDetected(t *testing.T) {
 	t.Helper()
 
@@ -209,10 +176,6 @@ func terminalPayloadLegacyDoubleRenderDetected(t *testing.T) {
 	}
 }
 
-// terminalPayloadRealWorkerTerminalResultは実`glm-worker` binaryのproduction経路
-// (Run→ExecuteNewTask→emitResult)がfake claude binary固定応答で追加AI callなしに
-// accepted terminal resultを1回だけ生成することを同じ境界で検証する。helperのstdoutは
-// orchestration内の変数へ蓄積され、内部storeと短い同期loadだけ経由して親可視になる。
 func terminalPayloadRealWorkerTerminalResult(t *testing.T) {
 	t.Helper()
 
@@ -281,17 +244,10 @@ func terminalPayloadRealWorkerTerminalResult(t *testing.T) {
 	}
 }
 
-// terminalPayloadFakeResultJSONはfake claude binaryが返す単一行のresult event。
-// structured_outputだけが結果解析の権威であり、追加AI callなしに受理可能な
-// NEEDS_SOL_DECISION terminal resultを再現する。対象が概念的なためtargetsは
-// 予約値none sentinelで埋める(旧protocolの`TARGETS: none`値相当)。
 func terminalPayloadFakeResultJSON() string {
 	return `{"type":"result","subtype":"success","is_error":false,"result":"STATUS: NEEDS_SOL_DECISION","structured_output":{"status":"NEEDS_SOL_DECISION","risk":"HIGH","decision":"terminal payload単一描画境界の検証として親が選択する判断","evidence":"fake claude binaryの固定result event","options":"契約手順で単一描画 / 旧形の二面表示","recommendation":"契約手順","test_obligations":"background exec→wait→同期取得境界の検証維持","targets":["none"],"artifacts":[]},"duration_ms":3,"duration_api_ms":3,"num_turns":1,"usage":{"input_tokens":1,"output_tokens":1}}`
 }
 
-// terminalPayloadHelperMainはtest binary再実行helper本体。親と同じbinaryのproduction経路
-// Run()を実行し、受理したterminal resultをstdout(orchestrationの変数蓄積対象)へ出す。
-// 失敗時のerrorはcaptured側へ残り、呼出元の失敗messageへ含まれる。
 func terminalPayloadHelperMain() {
 	if err := Run([]string{os.Getenv(terminalPayloadRequestEnv)}); err != nil {
 		fmt.Fprintln(os.Stderr, err)

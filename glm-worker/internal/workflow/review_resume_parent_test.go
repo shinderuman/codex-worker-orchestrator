@@ -65,8 +65,6 @@ func parentStateForContent(path string, content string) state.ParentFileState {
 	return state.ParentFileState{Path: path, Exists: true, SHA256: hex.EncodeToString(sum[:])}
 }
 
-// makeStopStatesは承認判定の停止時基準としてplanとACTIVE task fileの状態listを組む。
-// 集合形式ではpathを明示するため、対象file毎に内容から状態を作る。
 func makeStopStates(planContent string, taskContent string) state.ParentFileStates {
 	return state.ParentFileStates{
 		parentStateForContent(state.ParentPlanFile, planContent),
@@ -141,8 +139,6 @@ func assertReviewResumeStopped(t *testing.T, st *state.StateStore, r *scriptedRu
 	}
 }
 
-// 停止期間中の親Codexによる親管理2file更新だけがreview-resumeを許可される。許可時はreview基準を
-// 現状へ再固定し、reviewer呼出・review-end再照合・承認telemetryがすべて新基準で動く。
 func TestReviewResumeParentUpdateAcceptedReanchorsBaseline(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{{structured: passPacket()}}}
@@ -203,10 +199,6 @@ func TestReviewResumeParentUpdateAcceptedReanchorsBaseline(t *testing.T) {
 	}
 }
 
-// 承認済みdeltaの識別条件を一覧化する。他path変更・head/index移動・呼出中変更・削除は拒否し、
-// 停止期間中の内容更新・新規作成だけを許可する。呼出中変更は同じfileが停止期間中にさらに変化していても
-// current値に関係なく拒否する。判定は集合全体へ同一規則で適用されるため、planとIMPLEMENTATION_TASKS
-// 配下ACTIVE task fileの両面で同じ行列を固定する。
 func TestReviewResumeParentDeltaMatrix(t *testing.T) {
 	tests := []struct {
 		name              string
@@ -261,16 +253,14 @@ func TestReviewResumeParentDeltaMatrix(t *testing.T) {
 			planAtResume:      "p1\n",
 		},
 		{
-			// reviewer呼出中にp0→p1へ変化し、停止期間中に同じfileがさらにp1→p2へ変化した場合。
-			// 呼出中変更は停止中の再変更で免除されないため、current値に関係なく拒否する。
+
 			name:              "reviewer change plus stop-period change on same file rejected",
 			planAtReviewStart: "p0\n",
 			planAtStop:        "p1\n",
 			planAtResume:      "p2\n",
 		},
 		{
-			// reviewer呼出中新規作成され、停止期間中に再変更された場合。作成自体が呼出中変更である
-			// ため、停止中の内容更新を承認理由にできない。
+
 			name:              "creation during reviewer call then stop-period change rejected",
 			planAtReviewStart: "",
 			planAtStop:        "p1\n",
@@ -309,8 +299,7 @@ func TestReviewResumeParentDeltaMatrix(t *testing.T) {
 			taskAtStop:        "t0\n",
 		},
 		{
-			// ACTIVE task fileがreviewer呼出中にt0→t1へ変化し、停止期間中にさらにt1→t2へ変化した
-			// 場合も同じ規則で拒否する。
+
 			name:              "active task file reviewer change plus stop-period change rejected",
 			planAtReviewStart: "p0\n",
 			planAtStop:        "p0\n",
@@ -372,8 +361,6 @@ func TestReviewResumeParentDeltaMatrix(t *testing.T) {
 	}
 }
 
-// 旧binaryが保存したcheckpoint(停止時親state無し)・snapshot(除外digest・親state基準無し)は
-// 承認識別の基準が存在しないため、親2fileだけのdeltaでも従来どおりfail closedする。
 func TestReviewResumeLegacyStateFailsClosed(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -419,8 +406,6 @@ func TestReviewResumeLegacyStateFailsClosed(t *testing.T) {
 	}
 }
 
-// 承認済み再固定はreviewer呼出後のreview-end再照合を緩めない。reviewerが再開中にrepositoryを
-// 変更すれば再固定基準に対してfail closedする。
 func TestReviewResumeParentUpdateThenReviewerMutationFailsClosed(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{{structured: passPacket()}}}
@@ -455,8 +440,6 @@ func TestReviewResumeParentUpdateThenReviewerMutationFailsClosed(t *testing.T) {
 	}
 }
 
-// 失敗つきresumeのcheckpoint復元はmodel呼出を実行済みのため、親管理2fileの停止時状態を復元時点へ
-// 固定し直す。呼出中のreviewer変更が次回resumeで親更新として誤承認されない。
 func TestFailedResumeCallRecapturesStopParentStates(t *testing.T) {
 	st := newStateStoreT(t)
 	var out bytes.Buffer
@@ -499,10 +482,6 @@ func TestFailedResumeCallRecapturesStopParentStates(t *testing.T) {
 	assertReviewResumeStopped(t, st, r2, &out2)
 }
 
-// reviewer呼出開始直後のcrashはrate-limit/provider/error復元の停止pathを通らないため、pre-call保存
-// 時点のcheckpointがそのまま残る。この保存に前回停止時の親管理2file基準を持ち越すと、呼出中の改変が
-// 次回resumeで停止期間中の親更新として誤承認される。pre-call保存は基準を持たないため、tamper後の
-// 再開は基準なしとしてfail closedする。
 func TestReviewResumeCrashWindowTamperFailsClosed(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{{structured: passPacket()}}}
@@ -544,7 +523,6 @@ func TestReviewResumeCrashWindowTamperFailsClosed(t *testing.T) {
 		t.Fatal("crash前のreviewer完了は無い前提")
 	}
 
-	// crash直後の素直なresumeは停止理由を持たないため従来gateで拒否される。
 	tampered := reviewResumeSnapshot("worktree-2", "excluding-1", nil)
 	var out2 bytes.Buffer
 	w2 := newReviewResumeWorkflow(t, st, &scriptedRunner{steps: []runnerStep{{structured: passPacket()}}}, &out2)
@@ -553,7 +531,6 @@ func TestReviewResumeCrashWindowTamperFailsClosed(t *testing.T) {
 		t.Fatalf("crash残存checkpointの直接resumeはgate errorになるべき: %v", err)
 	}
 
-	// gateを満たす再armが基準を書き換えずに行われても、pre-call保存に基準が無いため誤承認できない。
 	crashed.RateLimited = true
 	if err := st.SaveResumeCheckpoint(crashed); err != nil {
 		t.Fatal(err)
@@ -571,9 +548,6 @@ func TestReviewResumeCrashWindowTamperFailsClosed(t *testing.T) {
 	assertReviewResumeStopped(t, st, r3, &out3)
 }
 
-// worker工程resumeは親管理metadata集合のguardをresume時点で再固定するため、停止期間中の親更新で
-// review-resumeのような全体同一性fail closedにならない。停止中の親更新後もPlanはACTIVE配置契約を
-// 満たすため、reviewer再開時のACTIVE確定も更新後Planから解決できる。
 func TestWorkerResumeParentUpdateDuringStopProceeds(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
@@ -617,7 +591,6 @@ func TestWorkerResumeParentUpdateDuringStopProceeds(t *testing.T) {
 	}
 }
 
-// rate-limit停止保存は親管理2fileの停止時状態をcheckpointへ記録する。review resume承認の基準になる。
 func TestRateLimitStopRecordsStopParentFiles(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{{

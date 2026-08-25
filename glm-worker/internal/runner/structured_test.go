@@ -14,8 +14,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-// writeStructuredFakeClaudeは結果event本文をstdoutへ出して終わるfake CLIを置く。
-// exitCodeはCLIの終了状態を再現する。
 func writeStructuredFakeClaude(t *testing.T, resultEvent string, exitCode int) string {
 	t.Helper()
 	commandPath := filepath.Join(t.TempDir(), "fake-claude")
@@ -26,7 +24,6 @@ func writeStructuredFakeClaude(t *testing.T, resultEvent string, exitCode int) s
 	return commandPath
 }
 
-// newStructuredRunnerは引数検証用に呼出ごとの引数を記録するfake CLI runnerを組み立てる。
 func newStructuredRunner(t *testing.T, commandPath string) *ClaudeRunner {
 	t.Helper()
 	promptDir := t.TempDir()
@@ -51,9 +48,6 @@ func newStructuredRunner(t *testing.T, commandPath string) *ClaudeRunner {
 	}, st)
 }
 
-// TestClaudeRunnerPassesRoleSchemaは呼出ごとにrole別のtyped schemaが--json-schemaへ
-// 渡されることを検証する。schemaはCLI側で構造を強制する契約そのもののため、
-// status enumの語彙がroleで切り替わることまで固定する。
 func TestClaudeRunnerPassesRoleSchema(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixtureはUnix系環境向け")
@@ -113,9 +107,6 @@ func assertStatusEnum(t *testing.T, schema map[string]any, want []string) {
 	}
 }
 
-// TestClaudeRunnerStructuredRetryExhaustionFailsClosedはCLIがschema適合出力を
-// 上限まで再試行して失敗した終端(subtype=error_max_structured_output_retries)を
-// StructuredOutputErrorとして分類することを検証する。
 func TestClaudeRunnerStructuredRetryExhaustionFailsClosed(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixtureはUnix系環境向け")
@@ -134,8 +125,6 @@ func TestClaudeRunnerStructuredRetryExhaustionFailsClosed(t *testing.T) {
 	}
 }
 
-// TestClaudeRunnerSuccessWithoutStructuredOutputFailsClosedは成功result eventに
-// structured_outputが無い場合を契約違反としてfail closedすることを検証する。
 func TestClaudeRunnerSuccessWithoutStructuredOutputFailsClosed(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixtureはUnix系環境向け")

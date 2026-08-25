@@ -12,8 +12,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-// executeStatusOutputは--statusを実行し、出力1行をstatusOutputへdecodeする。
-// JSONでない出力はmachine contract違反として失敗する。
 func executeStatusOutput(t *testing.T, cfg config.AppConfig) statusOutput {
 	t.Helper()
 	var out bytes.Buffer
@@ -27,7 +25,6 @@ func executeStatusOutput(t *testing.T, cfg config.AppConfig) statusOutput {
 	return output
 }
 
-// statusStringはnullable string fieldの値を検査する。
 func statusString(t *testing.T, name string, value *string, want string) {
 	t.Helper()
 	if value == nil {
@@ -38,7 +35,6 @@ func statusString(t *testing.T, name string, value *string, want string) {
 	}
 }
 
-// statusNullStringはnullable string fieldがnullであることを検査する。
 func statusNullString(t *testing.T, name string, value *string) {
 	t.Helper()
 	if value != nil {
@@ -46,7 +42,6 @@ func statusNullString(t *testing.T, name string, value *string) {
 	}
 }
 
-// statusInt64MSはnullable数値fieldが存在し指定値であることを検査する。
 func statusInt64MS(t *testing.T, name string, value *int64, want int64) {
 	t.Helper()
 	if value == nil {
@@ -57,9 +52,6 @@ func statusInt64MS(t *testing.T, name string, value *int64, want int64) {
 	}
 }
 
-// TestExecuteStatusShowsDetailFromEventLogAndTelemetryは--statusが既存event logと
-// telemetryだけからcurrent phase/role/model・開始経過・最終event・session aging・
-// probe観測を表示し、AI callを足さないことを検証する。
 func TestExecuteStatusShowsDetailFromEventLogAndTelemetry(t *testing.T) {
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
@@ -163,9 +155,6 @@ func TestExecuteStatusShowsDetailFromEventLogAndTelemetry(t *testing.T) {
 	}
 }
 
-// TestExecuteStatusDetailFallsBackToCheckpointはevent logがないtaskでresume checkpoint
-// からcurrent表示を補い、停止理由ごとの再開情報(RFC3339 reset・provider観測)を
-// 既存stateだけから表示することを検証する。
 func TestExecuteStatusDetailFallsBackToCheckpoint(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -272,8 +261,6 @@ func TestExecuteStatusDetailFallsBackToCheckpoint(t *testing.T) {
 	}
 }
 
-// TestExecuteStatusEmptyTaskDetailIsExplicitUnknownはtaskがない状態で観測できない項目を
-// nullで出し、probe/session表示を出さないことを検証する。
 func TestExecuteStatusEmptyTaskDetailIsExplicitUnknown(t *testing.T) {
 	cfg := newAppConfig(t)
 	output := executeStatusOutput(t, cfg)

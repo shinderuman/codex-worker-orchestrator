@@ -73,7 +73,6 @@ func TestReadTransientSignalMissingFile(t *testing.T) {
 	}
 }
 
-// 共通分類入口は5h上限→transient→非一時の順で排他的に判定する。
 func TestClassifyProviderFailureTextExclusive(t *testing.T) {
 	fiveHour := "API Error: Request rejected (429) · [1308][Usage limit reached for 5 hour. Your limit will reset at 2026-07-22 14:06:34]"
 	tests := []struct {
@@ -83,7 +82,7 @@ func TestClassifyProviderFailureTextExclusive(t *testing.T) {
 		wantDetail string
 	}{
 		{"zai 5h limit", fiveHour, ProviderFailureZaiFiveHour, ""},
-		// 5h上限本文に503等の別signalが混在しても5h上限が優先する。
+
 		{"zai 5h with mixed 503", fiveHour + " upstream 503", ProviderFailureZaiFiveHour, ""},
 		{"http 502", "API Error: 502 Bad Gateway", ProviderFailureTransient, "http-502"},
 		{"network dial", "dial tcp: lookup api.z.ai: no such host", ProviderFailureTransient, "network:dial tcp"},
@@ -124,8 +123,6 @@ func TestProviderUnavailableErrorMessage(t *testing.T) {
 	}
 }
 
-// probe応答内の明示的auth/config信号だけを検出し、sentinel不一致・malformed等の
-// semantic invalid(default fatalへ落ちる)や裸の数字・一般語とは区別する。
 func TestDetectProbeFatalSignal(t *testing.T) {
 	fatal := []string{
 		"401 Unauthorized",
@@ -175,9 +172,6 @@ func TestDetectProbeFatalSignal(t *testing.T) {
 	}
 }
 
-// production matcherの全列挙signalを契約へ照合する。文脈なし一般語や数字だけの登録と、
-// 実際には一度も検出されない死にsignalの再登録を防ぐ。代表caseの存在で列挙値の妥当性を
-// 代替しない。
 func TestProbeFatalSignalsEnumerationMatchesContract(t *testing.T) {
 	bareWords := map[string]bool{
 		"unauthorized":   true,

@@ -7,13 +7,6 @@ import (
 	"testing"
 )
 
-// TestTaskLifecycleContractWiringは親Codex側lifecycle contractのproduction routing配線と、
-// 親behavioral Eval入力・期待判断との因果を決定論検証する。codex/AGENTS.mdのrouting、
-// glm-execution.mdのpacket受理後読込指示、task-lifecycle.md本文の必須契約文のいずれかが
-// 欠けると失敗する。EVAL.mdの親behavioral Evalはscripted scenarioの終端検証とは異なり
-// 親Codexの再評価・継続行動の証明ではないため、その入力・期待判断がinstruction本文の
-// どの契約文へ根拠を持つかを対で固定する。worker/reviewer promptへlifecycle checklistを
-// 追加しない方針も本testで固定する。
 func TestTaskLifecycleContractWiring(t *testing.T) {
 	root := scenarioRepoRoot(t)
 
@@ -54,8 +47,6 @@ func TestTaskLifecycleContractWiring(t *testing.T) {
 		}
 	}
 
-	// 親behavioral Evalの期待判断(EVAL.md本節)がproduction guidanceのどの契約文へ根拠を
-	// 持つかを対で検証する。EVAL.md側の文面だけ、instruction側の契約文だけの片側存在は通さない。
 	section := evalLifecycleSection(t, readContractFile("EVAL.md"))
 	instruction := contents["codex/instructions/task-lifecycle.md"]
 	evalGrounds := []struct {
@@ -85,8 +76,6 @@ func TestTaskLifecycleContractWiring(t *testing.T) {
 		}
 	}
 
-	// behavioral Eval・corpus参照の管理文面。scripted packetの局所終端宣言を親Codexの再評価・
-	// 継続行動の証明としない限定と、未実行Evalの一次証拠・完了条件・実行条件をEVAL.mdへ残す。
 	for _, wire := range []string{
 		"TestTaskLifecycleContractWiring",
 		"task-lifecycle-monitor-safe-stop-local-terminal-returns-to-sol",
@@ -103,9 +92,6 @@ func TestTaskLifecycleContractWiring(t *testing.T) {
 		}
 	}
 
-	// EVAL.mdが参照するcorpus entryとmanifest pinが実在すること。文面参照だけの自己充足を防ぐと
-	// ともに、親behavioral Evalの代替へtask-lifecycle-*の重複scenarioがcorpusへ追加された場合へ
-	// 失敗させる。
 	expectedIDs := []string{
 		"task-lifecycle-monitor-safe-stop-local-terminal-returns-to-sol",
 		"task-lifecycle-external-judgment-blocker-stops-with-state",
@@ -146,8 +132,6 @@ func TestTaskLifecycleContractWiring(t *testing.T) {
 		t.Error("manifest.json must pin codex/instructions/task-lifecycle.md")
 	}
 
-	// 本contractは親Codex側の再評価・継続条件であり、常時checklistのworker/reviewer prompt
-	// 追加で代替した実装になっていないことを固定する。
 	for _, promptFile := range []string{"codex/glm-worker/prompts/WORKER.md", "codex/glm-worker/prompts/REVIEWER.md"} {
 		prompt := readContractFile(promptFile)
 		for _, keyword := range []string{"task-lifecycle", "親USER_REQUEST", "局所終端"} {

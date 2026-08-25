@@ -1,4 +1,3 @@
-// Package configは環境変数とgitからアプリ全体の設定を構築する。
 package config
 
 import (
@@ -17,23 +16,17 @@ type AppConfig struct {
 	RepoHash  string
 	RepoShort string
 	StateBase string
-	// WorktreeBaseは--isolateが割り込みtask実行用checkout(git worktree)を作成するbase
-	// directory。repo配下へ置くと元checkoutのuntracked観測を汚すためstate home配下へ置く。
+
 	WorktreeBase string
 	PromptDir    string
 	ClaudeBin    string
-	// ClaudeConfigDirはClaude CLIのconfig dir(CLAUDE_CONFIG_DIR, 既定~/.claude)。
-	// user global memory(<dir>/CLAUDE.md, <dir>/rules/**)の除外path解決に使う。
+
 	ClaudeConfigDir string
-	// ClaudeSettingsOverrideはGit管理外の端末local override JSONのpath。
-	// 既定で ${XDG_CONFIG_HOME:-$HOME/.config}/codex-config/claude-settings.local.json。
-	// install.shと同じpath規則・JSON意味論でsettings.json envへset/deleteを適用する。
+
 	ClaudeSettingsOverride string
-	// EnvAllowlistは親process環境からworkerへ追加で受け渡すenv key。
-	// OS必須・Z.ai必須keyは常に渡り、それ以外はここへ指定したkeyだけ追加される。
+
 	EnvAllowlist []string
-	// CodexConfigDirはCodex appのconfig dir(CODEX_CONFIG_DIR, 既定~/.codex)。
-	// install.shと同じ規則で、--verify-auto-resumeがautomation TOMLとSQLiteを参照する。
+
 	CodexConfigDir        string
 	WorkerModel           string
 	ReviewerModel         string
@@ -44,8 +37,6 @@ type AppConfig struct {
 	TelemetryContent      bool
 }
 
-// RepoHashForはrepo root pathからstate分離key(repo hash)を計算する。Loadと同一規則を
-// --isolateが隔離先worktree側state dirへ適用するための対称な出口である。
 func RepoHashFor(root string) string {
 	sum := sha256.Sum256([]byte(root))
 	return hex.EncodeToString(sum[:])
@@ -129,9 +120,6 @@ func envOrDefault(name string, defaultValue string) string {
 	return defaultValue
 }
 
-// resolveClaudeSettingsOverrideはinstall.shのmerge_claude_settings内の
-// override_path解決(CODEX_CONFIG_CLAUDE_SETTINGS_OVERRIDE優先、未設定時はXDG_CONFIG_HOME配下)
-// と同じ規則でなければならない。
 func resolveClaudeSettingsOverride(home string) string {
 	if value := os.Getenv("CODEX_CONFIG_CLAUDE_SETTINGS_OVERRIDE"); value != "" {
 		return value

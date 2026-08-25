@@ -170,7 +170,7 @@ func TestSnapshotComparisonSaveFailureFailsClosed(t *testing.T) {
 	if err := st.SaveWorkerEndSnapshot(fixedSnapshot); err != nil {
 		t.Fatal(err)
 	}
-	// comparison file pathへ非空dirを置きSaveSnapshotComparisonを失敗させる。
+
 	blockerDir := st.Path("snapshot-comparison.json")
 	if err := os.MkdirAll(blockerDir, 0o700); err != nil {
 		t.Fatal(err)

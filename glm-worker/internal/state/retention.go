@@ -17,12 +17,6 @@ const (
 	stopIndexPatchFile    = "stop-index.patch"
 )
 
-// StopDirtyFileは--stop停止時点でHEADに対してdirty/untrackedだった非親管理file 1件の
-// 保持識別子。IndexSHAはgit index上のblob hash(untrackedは空)、WorktreeSHAは同じ関数で
-// 計算したworking tree内容のhash(worktree側削除は空)であり、停止時とresume時の2点間で
-// path集合とhash組が一致すれば元taskの未commit作業がbyte保持されていることを意味する。
-// IndexIdentity・WorktreeIdentityはmode・file type・conflict stageを含むlossless識別子で、
-// 旧binaryのcheckpointでは空のまま比較から除外されlegacy 2 hashだけで照合される。
 type StopDirtyFile struct {
 	Path             string `json:"path"`
 	IndexSHA         string `json:"index_sha"`
@@ -31,9 +25,6 @@ type StopDirtyFile struct {
 	WorktreeIdentity string `json:"worktree_identity,omitempty"`
 }
 
-// CaptureStopDirtyFilesはrepoRootの親管理metadata除外dirty/untracked状態を停止時保持の
-// 基準として列挙する。git失敗・取り扱えないfile typeはerrorにし、呼出元で保持情報欠損の
-// fail closedへ流す。
 func CaptureStopDirtyFiles(repoRoot string) ([]StopDirtyFile, error) {
 	paths, err := dirtyStatusPaths(repoRoot)
 	if err != nil {
@@ -64,9 +55,6 @@ func CaptureStopDirtyFiles(repoRoot string) ([]StopDirtyFile, error) {
 	return files, nil
 }
 
-// dirtyStatusPathsは親管理metadata集合を除外した porcelain v1 -z のpath集合を返す。
-// rename/copyの2 record分(orig・new)も両pathとも列挙へ含め、停止時・再観測時で同じ
-// 規則を通すことでhash組比較をpath集合の一致だけに載せる。
 func dirtyStatusPaths(repoRoot string) ([]string, error) {
 	args := append([]string{"-C", repoRoot, "status", "--porcelain=v1", "-z", "--untracked-files=all", "--"}, ParentExcludePathspecs()...)
 	output, err := exec.Command("git", args...).Output()
@@ -97,16 +85,11 @@ func dirtyStatusPaths(repoRoot string) ([]string, error) {
 	return paths, nil
 }
 
-// indexEntryIdentityは1 path分のindex識別子。BlobSHAは最初のentryのblob hash(旧保持基準
-// との比較互換)、Identityは同pathの全stage entryのmode・blob・stageを並べたhashであり、
-// merge conflictのstage構成とexecutable modeの変化も識別する。
 type indexEntryIdentity struct {
 	BlobSHA  string
 	Identity string
 }
 
-// indexBlobHashesは親管理metadata除外のindex entry識別子をpath毎に返す。untracked fileや
-// worktree削除はmapに現れない。
 func indexBlobHashes(repoRoot string) (map[string]indexEntryIdentity, error) {
 	args := append([]string{"-C", repoRoot, "ls-files", "-s", "-z", "--"}, ParentExcludePathspecs()...)
 	output, err := exec.Command("git", args...).Output()
@@ -147,12 +130,6 @@ func indexBlobHashes(repoRoot string) (map[string]indexEntryIdentity, error) {
 	return hashes, nil
 }
 
-// worktreeContentHashはworking treeの実内容hashと、type discriminator・git意味のmode
-// (executable bit)・内容hashを含むlossless識別子を返す。内容hashだけではregular fileと
-// 同じbyte列のsymlink target・executable bitの変化を区別できないため、保持照合は識別子
-// を使う。symlinkはtarget文字列だけを対象とし、FIFO・device・socket等はhangや無制限読込を
-// 避けるため失敗にする。これはsnapshotのuntracked列挙と同じ制約である。worktree側削除は
-// 両方とも空文字を返す。
 func worktreeContentHash(repoRoot string, rel string) (string, string, error) {
 	absPath, err := joinWithinRoot(repoRoot, rel)
 	if err != nil {
@@ -196,9 +173,6 @@ func worktreeContentHash(repoRoot string, rel string) (string, string, error) {
 	return contentSHA, hex.EncodeToString(identity.Sum(nil)), nil
 }
 
-// DescribeStopDirtyDiffは停止時と現在の保持基準の差異を1行へ要約する。一致時は空文字。
-// 停止時基準がlossless識別子(旧binaryの停止)を持つときだけにmode・type・stage差も比較し、
-// 旧形式checkpointはlegacy 2 hashの比較のまま再開できる。
 func DescribeStopDirtyDiff(stopped, current []StopDirtyFile) string {
 	stoppedByPath := stopDirtyFileByPath(stopped)
 	currentByPath := stopDirtyFileByPath(current)
@@ -253,9 +227,6 @@ func stopDirtyPaths(groups ...map[string]StopDirtyFile) []string {
 	return paths
 }
 
-// CaptureStopPatchesは--stop停止時点のtracked diffを親Codexのconflict recovery資材として
-// stateへ保存する。untracked file本文はpatchに含まれず、保持はStopDirtyFilesのhash検証のみで
-// 親が別途保持する原本なしには復元できない。git取得失敗時はbaselineと同じく取り下げてerrorとはしない。
 func CaptureStopPatches(cfg config.AppConfig, st *StateStore) error {
 	commands := []struct {
 		name string

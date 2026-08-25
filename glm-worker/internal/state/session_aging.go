@@ -5,9 +5,6 @@ import (
 	"time"
 )
 
-// SessionAgingは1 session(同一worker/reviewer sessionの連続呼出)の経時観測要約。
-// 既存telemetryのTask Work Call記録だけから導出し、追加のmodel call・推測補完は行わない。
-// CallLatencyMSは呼出順のwall timeで、位置がsession内call indexに対応する。
 type SessionAging struct {
 	SessionID              string      `json:"session_id"`
 	Role                   SessionRole `json:"role"`
@@ -22,8 +19,6 @@ type SessionAging struct {
 	LastCallAt             time.Time   `json:"last_call_at"`
 }
 
-// AgingFromModelCallLogsは呼出記録をsession単位へ集計する。session順は最初の呼出
-// 記録順、呼出順はtelemetry記録順で安定させる。role/modelは実際の記録値だけを残す。
 func AgingFromModelCallLogs(logs []ModelCallLog) []SessionAging {
 	order := make([]string, 0)
 	bySession := make(map[string]*SessionAging)

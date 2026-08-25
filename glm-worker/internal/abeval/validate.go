@@ -10,8 +10,6 @@ import (
 	"strings"
 )
 
-// LoadPairはrun dirからspec.json・direct.json・orchestrated.jsonを読み込む。
-// ここでは構造だけを検証し、比較前提の検証はValidatePairが行う。
 func LoadPair(dir string) (Spec, RunRecord, RunRecord, error) {
 	spec, err := LoadSpec(filepath.Join(dir, "spec.json"))
 	if err != nil {
@@ -61,9 +59,6 @@ func LoadRecord(path string) (RunRecord, error) {
 	return record, nil
 }
 
-// decodeStrictは未知fieldと末尾の第2JSON値を拒否してJSONへdecodeする。field typoや
-// spec hash対象外の追加metadataを黙って捨てないための契約入口で、run dirの全JSON
-// fileの読み込みに使う。
 func decodeStrict(data []byte, what string, v any) error {
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
@@ -77,8 +72,6 @@ func decodeStrict(data []byte, what string, v any) error {
 	return nil
 }
 
-// ValidateSpecは固定比較metadataの必須条件を検証する。計測境界は契約文面と完全一致を
-// 要求し、mode間で境界定義が変わる比較を成立させない。
 func ValidateSpec(spec Spec) error {
 	if spec.Version != specVersion {
 		return fmt.Errorf("spec versionは%dである必要があります: %d", specVersion, spec.Version)
@@ -126,7 +119,6 @@ func ValidateSpec(spec Spec) error {
 	return nil
 }
 
-// isGitObjectHashはSHA-1(40桁)またはSHA-256(64桁)の小写hex形式かを判定する。
 func isGitObjectHash(value string) bool {
 	if len(value) != 40 && len(value) != 64 {
 		return false
@@ -139,9 +131,6 @@ func isGitObjectHash(value string) bool {
 	return true
 }
 
-// ValidatePairはspecとdirect/orchestrated両記録の比較前提を検証する。spec自体の
-// 固定比較条件、mode間でsession・working treeが独立していること(比較汚染回避)、
-// actual usage契約(unknown推定禁止・direct modeのGLM未使用)を含む。
 func ValidatePair(spec Spec, direct, orchestrated RunRecord) error {
 	if err := ValidateSpec(spec); err != nil {
 		return err

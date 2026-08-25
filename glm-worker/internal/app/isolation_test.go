@@ -15,7 +15,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
 )
 
-// newIsolationGitRepoはHEAD commitを持つgit repositoryを用意する。
 func newIsolationGitRepo(t *testing.T) string {
 	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {
@@ -52,7 +51,6 @@ func newIsolationConfig(t *testing.T, repo string) config.AppConfig {
 	}
 }
 
-// seedInterruptedIsolationStateは--stop直後の元repo stateを用意する。
 func seedInterruptedIsolationState(t *testing.T, st *state.StateStore, checkpoint state.ResumeCheckpoint) {
 	t.Helper()
 	if _, err := st.StartNewTask(); err != nil {
@@ -79,8 +77,6 @@ func interruptedCheckpoint() state.ResumeCheckpoint {
 	}
 }
 
-// TestIsolateRejectsNonUserInterruptedStateは--isolateの前提検証をfail closedに
-// することを固定する。task不在・status違い・停止理由違いはworktreeを作らない。
 func TestIsolateRejectsNonUserInterruptedState(t *testing.T) {
 	repo := newIsolationGitRepo(t)
 	tests := []struct {
@@ -152,9 +148,6 @@ func TestIsolateRejectsNonUserInterruptedState(t *testing.T) {
 	}
 }
 
-// TestIsolateCreatesWorktreeAndSymmetricRecordsは--isolate成功経路を固定する:
-// worktree+branch作成、元repo側隔離記録、worktree側出自記録、元task stateの不変、
-// 隔離先stateのrepo-hash分離。
 func TestIsolateCreatesWorktreeAndSymmetricRecords(t *testing.T) {
 	repo := newIsolationGitRepo(t)
 	if err := os.WriteFile(filepath.Join(repo, "uncommitted.txt"), []byte("作業中\n"), 0o644); err != nil {
@@ -204,7 +197,6 @@ func TestIsolateCreatesWorktreeAndSymmetricRecords(t *testing.T) {
 		t.Fatalf("元repo側隔離記録 = %#v", record)
 	}
 
-	// 元task stateは隔離操作で書き換えない。
 	if st.TaskStatus() != state.TaskStatusInterrupted {
 		t.Fatalf("task status = %s want interrupted", st.TaskStatus())
 	}
@@ -218,7 +210,6 @@ func TestIsolateCreatesWorktreeAndSymmetricRecords(t *testing.T) {
 		t.Fatal("隔離操作が元task識別を消しています")
 	}
 
-	// 隔離先stateはrepo-hash分離の上、出自記録を持つ。
 	worktreeStore := state.AttachStateStore(config.AppConfig{
 		StateBase: cfg.StateBase,
 		RepoHash:  config.RepoHashFor(result.Worktree),
@@ -235,7 +226,6 @@ func TestIsolateCreatesWorktreeAndSymmetricRecords(t *testing.T) {
 		t.Fatalf("隔離先へ元repo側記録が混入しています: %v", recErr)
 	}
 
-	// 元checkoutのworking tree状態は隔離操作の前後で不変。
 	statusOut, err := exec.Command("git", "-C", repo, "status", "--porcelain").Output()
 	if err != nil {
 		t.Fatal(err)
@@ -245,8 +235,6 @@ func TestIsolateCreatesWorktreeAndSymmetricRecords(t *testing.T) {
 	}
 }
 
-// TestIsolateReplayIsIdempotentは隔離済みstateへの再--isolateが同じmachine結果を
-// 冪等に返し、先行隔離先(worktree・branch・記録)を孤児化する上書きを作らないことを固定する。
 func TestIsolateReplayIsIdempotent(t *testing.T) {
 	repo := newIsolationGitRepo(t)
 	cfg := newIsolationConfig(t, repo)
@@ -292,8 +280,6 @@ func TestIsolateReplayIsIdempotent(t *testing.T) {
 	}
 }
 
-// TestIsolateReplayFailsClosedOnStaleRecordは生きた隔離として成立しない既存記録への
-// 再--isolateを、記録を上書きせずfail closedにすることを固定する。
 func TestIsolateReplayFailsClosedOnStaleRecord(t *testing.T) {
 	repo := newIsolationGitRepo(t)
 	prepare := func(t *testing.T) (config.AppConfig, *state.StateStore, isolateOutput) {
@@ -328,8 +314,7 @@ func TestIsolateReplayFailsClosedOnStaleRecord(t *testing.T) {
 			wantIn: "隔離先worktreeが存在しないため",
 		},
 		{
-			// branchだけが削除済みのstale記録。gitはworktreeが掴むbranchの削除を拒否するため、
-			// worktree解除→branch削除→dirのみ復元でこの状態を作る。
+
 			name: "branch削除",
 			damage: func(t *testing.T, st *state.StateStore, result isolateOutput) {
 				if output, err := exec.Command("git", "-C", repo, "worktree", "remove", "--force", result.Worktree).CombinedOutput(); err != nil {
@@ -402,8 +387,6 @@ func TestIsolateReplayFailsClosedOnStaleRecord(t *testing.T) {
 	}
 }
 
-// TestStatusExposesIsolationRecordsは--statusが元repo側・隔離先側の記録を出す側だけへ
-// 出すことを固定する。
 func TestStatusExposesIsolationRecords(t *testing.T) {
 	repo := newIsolationGitRepo(t)
 	cfg := newIsolationConfig(t, repo)

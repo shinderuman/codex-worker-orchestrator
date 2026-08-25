@@ -141,8 +141,6 @@ func TestABEvalCorpusContractRejectsInvalid(t *testing.T) {
 	}
 }
 
-// TestABEvalCorpusDrivenThroughComparisonはcorpusの全pairを比較・Report組立まで通し、
-// expected_codex_reductionの両経路(actual/unknown)と最重要出力の構成を検証する。
 func TestABEvalCorpusDrivenThroughComparison(t *testing.T) {
 	corpus := loadCorpus(t)
 	if err := validateCorpus(corpus); err != nil {

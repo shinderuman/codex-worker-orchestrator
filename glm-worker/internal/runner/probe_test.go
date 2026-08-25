@@ -100,7 +100,7 @@ func TestProbeRejectsMalformedSuccessResponses(t *testing.T) {
 		name    string
 		script  string
 		wantErr string
-		// typedはexit 0でも契約不通過ならProbeInvalidResponseErrorになるかの期待値。
+
 		typed bool
 	}{
 		{

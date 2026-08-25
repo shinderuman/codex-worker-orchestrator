@@ -1,5 +1,3 @@
-// Package stateはリポジトリ別のstateディレクトリ上でタスク状態・session・
-// resume checkpoint・観測用stats mirror・git baselineを管理する。
 package state
 
 import (
@@ -26,11 +24,9 @@ const (
 	TaskStatusComplete            TaskStatus = "complete"
 	TaskStatusRateLimited         TaskStatus = "rate-limited"
 	TaskStatusProviderUnavailable TaskStatus = "provider-unavailable"
-	// TaskStatusInterruptedは親Codexの--stop要求による安全停止。rate-limited・
-	// provider-unavailableとは停止理由が独立した再開可能状態である。
+
 	TaskStatusInterrupted TaskStatus = "interrupted"
-	// TaskStatusNoneはtask.statusが未観測(task不在・書込み前)の内部sentinel。
-	// 外部machine JSON boundaryではnullへ正規化され、この値を出さない。
+
 	TaskStatusNone TaskStatus = "none"
 )
 
@@ -51,15 +47,10 @@ func NewStateStore(config config.AppConfig) (*StateStore, error) {
 	return state, nil
 }
 
-// AttachStateStoreはstateディレクトリへ書き込まず既存stateを参照するだけのstoreを返す。
-// read-only表示(--watch)向けで、ディレクトリ不存在もここではエラーにしない。
 func AttachStateStore(config config.AppConfig) *StateStore {
 	return &StateStore{dir: filepath.Join(config.StateBase, config.RepoHash)}
 }
 
-// AttachSiblingStoreは同じStateBase配下の別repo hashのstateディレクトリへ書き込まず
-// 参照するだけのstoreを返す。--isolateの出自記録照合など、同一state home内の対repo記録を
-// 読むために使う。ディレクトリ不存在は読み込み側のerrorとして現れる。
 func (s *StateStore) AttachSiblingStore(repoHash string) *StateStore {
 	return &StateStore{dir: filepath.Join(filepath.Dir(s.dir), repoHash)}
 }
@@ -77,7 +68,6 @@ func (s *StateStore) Exists(name string) bool {
 	return err == nil
 }
 
-// Readはstateファイルを読み込み前後の空白を除去して返す。
 func (s *StateStore) Read(name string) (string, error) {
 	data, err := os.ReadFile(s.Path(name))
 	if err != nil {
@@ -86,7 +76,6 @@ func (s *StateStore) Read(name string) (string, error) {
 	return strings.TrimSpace(string(data)), nil
 }
 
-// ReadOrは読み込み失敗または空時にfallbackを返す。
 func (s *StateStore) ReadOr(name string, fallback string) string {
 	value, err := s.Read(name)
 	if err != nil || value == "" {
@@ -95,7 +84,6 @@ func (s *StateStore) ReadOr(name string, fallback string) string {
 	return value
 }
 
-// Writeは値を末尾改行付きで原子的に書き込む。
 func (s *StateStore) Write(name string, value string) error {
 	if err := writeFileAtomic(s.Path(name), []byte(value+"\n"), 0o600); err != nil {
 		return fmt.Errorf("state %sを書き込めません: %w", name, err)
@@ -103,12 +91,10 @@ func (s *StateStore) Write(name string, value string) error {
 	return nil
 }
 
-// Touchは存在マーカーとして"1"を書き込む。
 func (s *StateStore) Touch(name string) error {
 	return s.Write(name, "1")
 }
 
-// Removeは指定stateファイルを存在しなければ何もしないで削除する。
 func (s *StateStore) Remove(names ...string) error {
 	for _, name := range names {
 		err := os.Remove(s.Path(name))
@@ -165,9 +151,7 @@ func taskStateFileNames() []string {
 		"reviewer.ready",
 		"task.status",
 		"isolation.policy",
-		// active-taskはworkflow層がtask開始時に固定するACTIVE task file path。
-		// resetで現在task扱いのstateと一緒に消えないと、次task開始前に旧taskの要求正本参照が
-		// 残る。task開始時の除去はworkflow.ExecuteNewTaskも重ねて行う。
+
 		"active-task",
 		"last-request",
 		"last-decision",
@@ -189,7 +173,6 @@ func taskStateFileNames() []string {
 	}
 }
 
-// TaskIDは現在タスクの必須IDを返す。
 func (s *StateStore) TaskID() (string, error) {
 	taskID, err := s.Read("task.id")
 	if err != nil || taskID == "" {
@@ -198,7 +181,6 @@ func (s *StateStore) TaskID() (string, error) {
 	return taskID, nil
 }
 
-// TaskStatusは正規状態であるtask.statusを返す。
 func (s *StateStore) TaskStatus() TaskStatus {
 	if status, err := s.Read("task.status"); err == nil && status != "" {
 		return TaskStatus(status)
@@ -206,7 +188,6 @@ func (s *StateStore) TaskStatus() TaskStatus {
 	return TaskStatusNone
 }
 
-// SetTaskStatusはtask.statusを書き込みstats mirrorへも反映する。
 func (s *StateStore) SetTaskStatus(status TaskStatus) error {
 	if err := s.Write("task.status", string(status)); err != nil {
 		return err
@@ -217,8 +198,6 @@ func (s *StateStore) SetTaskStatus(status TaskStatus) error {
 	return nil
 }
 
-// SessionIDは役割別session IDを返し、初回は新規採番する。
-// 2つ目の戻り値は当該sessionがreadyか否か。
 func (s *StateStore) SessionID(role SessionRole) (string, bool, error) {
 	idName := string(role) + ".id"
 	if id, err := s.Read(idName); err == nil && id != "" {
@@ -246,10 +225,6 @@ func (s *StateStore) RemoveUnreadySession(role SessionRole) error {
 	return s.Remove(string(role) + ".id")
 }
 
-// ResetSessionsForPolicyは現行の隔離policyと一致しないとき両roleのsessionを破棄する。
-// isolation.policyはtask共通のため、policy不一致時は呼出しroleによらずworker/reviewer
-// 両方のidとreadyを破棄する。呼出しroleだけresetすると成功時にtask共通markerが更新され、
-// 残るもう一方の旧sessionが次回marker一致としてresumeされてしまう。
 func (s *StateStore) ResetSessionsForPolicy(currentPolicy string) error {
 	if s.IsolationPolicy() == currentPolicy {
 		return nil

@@ -17,8 +17,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-// writeJSONは単発結果のmachine JSON 1行をwへ出す。HTML escapeを無効化し、
-// 改行はencoderが付与する末尾1つだけとする。
 func writeJSON(w io.Writer, value any) error {
 	var buf bytes.Buffer
 	encoder := json.NewEncoder(&buf)
@@ -30,7 +28,6 @@ func writeJSON(w io.Writer, value any) error {
 	return err
 }
 
-// stringPtrは空文字列をnilへ対応付ける。観測できない文字列値をJSON nullへ出すため。
 func stringPtr(value string) *string {
 	if value == "" {
 		return nil
@@ -38,7 +35,6 @@ func stringPtr(value string) *string {
 	return &value
 }
 
-// msPtrはdurationをmillisecond整数へ対応付ける。負値は観測境界の揺れとして0へ寄せる。
 func msPtr(d time.Duration) *int64 {
 	if d < 0 {
 		d = 0
@@ -47,9 +43,6 @@ func msPtr(d time.Duration) *int64 {
 	return &ms
 }
 
-// statusOutputは--statusのmachine contract。観測できない値はnull/omissionで出し、
-// "unknown"/"none"のようなpresentation文字列へ落とさない。enum fieldは常にkeyを出し、
-// 観測できないときだけnullにする(消さない)。
 type statusOutput struct {
 	RepoRoot            *string                   `json:"repo_root"`
 	RepositoryLock      *string                   `json:"repository_lock"`
@@ -75,11 +68,9 @@ type statusOutput struct {
 	ResumeAvailable     bool                      `json:"resume_available"`
 	Telemetry           *string                   `json:"telemetry"`
 	SessionAging        []state.SessionAging      `json:"session_aging"`
-	// Isolationは元repo側の隔離記録(--isolate)。現在taskの割り込み実行checkoutを指し、
-	// 統合判断の機械確認に使う。未使用時はfield自体を出さない。
+
 	Isolation *statusIsolation `json:"isolation,omitempty"`
-	// IsolationOriginは隔離先worktree側の出自記録。隔離先で--statusを実行した親Codexが
-	// 元task・復帰対象を取り違えないための対称な確認である。
+
 	IsolationOrigin *statusIsolationOrigin `json:"isolation_origin,omitempty"`
 }
 
@@ -162,8 +153,6 @@ func buildStatusOutput(st *state.StateStore, taskID string, logs []state.ModelCa
 	return output
 }
 
-// fillStatusIsolationは元repo側・隔離先側それぞれの隔離記録を読める側だけへ出す。
-// 記録不在・読込失敗は観測できないためfield欠落のままとし、推測しない。
 func fillStatusIsolation(st *state.StateStore, output *statusOutput) {
 	if record, err := st.LoadIsolationRecord(); err == nil {
 		output.Isolation = &statusIsolation{
@@ -187,8 +176,6 @@ func fillStatusIsolation(st *state.StateStore, output *statusOutput) {
 	}
 }
 
-// lockStatePtrはlock実保持の外部enumへ対応付ける。probe不能(LockUnknown)は
-// 観測できないためJSON nullへ出し、"unknown" sentinelを出さない。
 func lockStatePtr(lockState LockState) *string {
 	if lockState == LockUnknown {
 		return nil
@@ -197,9 +184,6 @@ func lockStatePtr(lockState LockState) *string {
 	return &value
 }
 
-// taskStatusPtrはtask.statusの外部enumへ対応付ける。外部受理集合はinterruptedを含む
-// 7値だけであり、task不在sentinel(TaskStatusNone)と永続file上の未知値(破損・未知state)は
-// 観測できない値としてJSON nullへ出す。unknown等のpresentation sentinelへは変換しない。
 func taskStatusPtr(status state.TaskStatus) *string {
 	switch status {
 	case state.TaskStatusActive,
@@ -215,8 +199,6 @@ func taskStatusPtr(status state.TaskStatus) *string {
 	return nil
 }
 
-// lockPIDPtrはlock fileに残っていたPID診断値を対応付ける。読み取れなかった
-// sentinel値はJSON nullへ出す。
 func lockPIDPtr(pid string) *string {
 	if pid == "" || pid == "none" || pid == "unknown" {
 		return nil
@@ -224,9 +206,6 @@ func lockPIDPtr(pid string) *string {
 	return &pid
 }
 
-// fillStatusTaskDetailは現在taskの実行観測(開始時刻・経過・最終event・現在呼出識別)を
-// 既存stateだけから埋める。AI call・provider requestは行わず、取得できない項目は
-// nullのままにする(推測補完はしない)。
 func fillStatusTaskDetail(st *state.StateStore, taskID string, output *statusOutput) {
 	if stats, err := st.CurrentTaskStats(); err == nil && !stats.StartedAt.IsZero() {
 		startedAt := stats.StartedAt
@@ -252,8 +231,6 @@ func fillStatusTaskDetail(st *state.StateStore, taskID string, output *statusOut
 	output.CurrentModel = stringPtr(current.model)
 }
 
-// fillStatusCheckpointは保存済みresume checkpointの停止理由を表示へ埋め、再開可能な
-// 停止状態(rate-limited・provider-unavailable・user interruption)かを返す。
 func fillStatusCheckpoint(st *state.StateStore, output *statusOutput) bool {
 	checkpoint, err := st.LoadResumeCheckpoint()
 	if err != nil {
@@ -283,8 +260,6 @@ func fillStatusCheckpoint(st *state.StateStore, output *statusOutput) bool {
 	return checkpoint.RateLimited || checkpoint.ProviderUnavailable || checkpoint.UserInterrupted
 }
 
-// statusProbesDetailはprovider probe呼出の観測(実行回数と最終probe)をtelemetryだけから
-// 組み立てる。probe記録がないときは何も出さない(null)。
 func statusProbesDetail(logs []state.ModelCallLog, now time.Time) *statusProbes {
 	probes := make([]state.ModelCallLog, 0)
 	for _, log := range logs {
@@ -323,9 +298,6 @@ func fillStatusTelemetry(taskID string, logErr error, logs []state.ModelCallLog,
 	output.SessionAging = state.AgingFromModelCallLogs(logs)
 }
 
-// readStatusTelemetryは現在taskのtelemetry呼出記録を読む。file不在は空扱いとし、
-// corruption等の読み取り失敗はtelemetry status側でunreadable表示へ使う(status自体は
-// 失敗させない)。
 func readStatusTelemetry(st *state.StateStore, taskID string) ([]state.ModelCallLog, error) {
 	if taskID == "" {
 		return nil, nil
@@ -340,16 +312,12 @@ func readStatusTelemetry(st *state.StateStore, taskID string) ([]state.ModelCall
 	return logs, nil
 }
 
-// currentCallViewは--status表示用の現在呼出識別。event log最終recordを優先し、
-// eventがないときはresume checkpointから補う。
 type currentCallView struct {
 	phase string
 	role  string
 	model string
 }
 
-// lastTaskEventはtask event logの最終parse可能recordを返す。書き込み途中の末尾部分行は
-// parse失敗として無視される。
 func lastTaskEvent(st *state.StateStore, taskID string) (state.TaskEventRecord, bool) {
 	if taskID == "" {
 		return state.TaskEventRecord{}, false
@@ -357,10 +325,6 @@ func lastTaskEvent(st *state.StateStore, taskID string) (state.TaskEventRecord, 
 	return readLastTaskEvent(st.TaskEventLogPath(taskID))
 }
 
-// taskLivenessはtask_status=active時のrepo lock実保持による生存値。
-// heldは現在のglm-worker processが同一repo taskを実行中、freeはstale候補。
-// probe不能は観測できないためJSON nullへ出す。lock file内PIDは権威にせず
-// stale PID・PID reuseでrunning扱いしない。
 func taskLiveness(probe LockProbe) *string {
 	switch probe.State {
 	case LockHeld:
@@ -374,9 +338,6 @@ func taskLiveness(probe LockProbe) *string {
 	}
 }
 
-// statsOutputは--statsのmachine contract。集計値は数値・map objectのまま出し、
-// mapの文字列化・note行のようなpresentationは持たない。map集計fieldは0件でも
-// nullではなく空object `{}`で出る。
 type statsOutput struct {
 	Tasks                                   int                 `json:"tasks"`
 	ModelCalls                              int                 `json:"model_calls"`
@@ -438,7 +399,6 @@ type statsCoverage struct {
 	Tasks         []statsCoverageTask `json:"tasks"`
 }
 
-// statsCoverageTaskはcoverageがcompleteでないtaskの明細。complete taskは一覧へ出さない。
 type statsCoverageTask struct {
 	TaskID         string `json:"task_id"`
 	Classification string `json:"classification"`
@@ -475,8 +435,7 @@ func printStats(st *state.StateStore, stdout io.Writer) error {
 }
 
 func buildStatsOutput(st *state.StateStore, all []state.TaskStats) statsOutput {
-	// 集計対象taskが1件もないときのnil mapがJSON nullへ出るのを防ぐため、
-	// merge先のmap集計fieldを最初から空mapで初期化する。
+
 	aggregate := state.TaskStats{
 		ModelCallsByAlias:                       map[string]int{},
 		ModelDurationMSByAlias:                  map[string]int64{},
@@ -547,8 +506,6 @@ func buildStatsOutput(st *state.StateStore, all []state.TaskStats) statsOutput {
 		probeCalls += count
 	}
 
-	// MODEL_CALLSはTask Work Callのみ。probeはProbeCalls(probe_outcome総計)へ別計上し、
-	// TotalAICalls = ModelCalls + ProbeCalls で重複・欠落なく導出できる。
 	output := statsOutput{
 		Tasks:                           len(all),
 		ModelCalls:                      aggregate.ModelCalls,
@@ -604,9 +561,6 @@ func buildStatsOutput(st *state.StateStore, all []state.TaskStats) statsOutput {
 	return output
 }
 
-// statsCoverageDetailはTaskStats model_callsとraw JSONL task record数の対応を組み立てる。
-// 欠損callのusageは既知historical gapを含め推測せず、token集計が捕まえたrecordだけの
-// 部分合計であることをusage_totals_knownで明示する。
 func statsCoverageDetail(coverage state.TelemetryCoverage) statsCoverage {
 	detail := statsCoverage{
 		Status:        coverage.Status,
@@ -635,12 +589,6 @@ func statsCoverageDetail(coverage state.TelemetryCoverage) statsCoverage {
 	return detail
 }
 
-// fillStatsParentReviewはparent review opportunity outcome観測を埋める。opportunity種別は
-// 既存PASS/NEEDS_SOL_REVIEW/NEEDS_SOL_DECISION packet計数と同値であり、本task binaryで
-// 記録されたtaskではoutcome総数(+未確定1件)と一致する。旧archiveはoutcome未観測のまま
-// 補完しない。rework増分はtelemetry JSONLの親行動eventで区切った部分合計で、record欠損時は
-// coverageをunknownへ出す。本観測はglm-worker側の親行動観測でありCodex actual usageの
-// 代替ではない。
 func fillStatsParentReview(st *state.StateStore, all []state.TaskStats, aggregate state.TaskStats, output *statsOutput) {
 	output.ParentFixRework = make([]statsParentRework, 0)
 	rework := st.ComputeParentRework(all)
@@ -702,10 +650,6 @@ func sumInt64Maps(values ...map[string]int64) map[string]int64 {
 	return result
 }
 
-// printEvalABはdirect/orchestrated A/B run dir(spec.json・direct.json・orchestrated.json)を
-// 読み込み、glm_usage.sourceがglm-worker-task-statsの記録だけを既存stats履歴から解決し、
-// 比較前提を検証してから結果をmachine JSONで出す。明示commandのため読み込み・解決・検証
-// 失敗はerrorとして返す。AI呼出は行わない。
 func printEvalAB(st *state.StateStore, dir string, stdout io.Writer) error {
 	spec, direct, orchestrated, err := abeval.LoadPair(dir)
 	if err != nil {
@@ -742,8 +686,6 @@ type resetOutput struct {
 	RepoRoot *string `json:"repo_root"`
 }
 
-// parentAcceptは--acceptで、修正なし採用したterminal resultの親review outcomeを確定する。
-// 未確定opportunityが無い再実行は二重計上せずaccepted=falseへ収める。
 func parentAccept(st *state.StateStore, stdout io.Writer) error {
 	resolved, err := st.RecordParentOutcome(state.ParentOutcomeAccepted, "")
 	if err != nil {
@@ -756,8 +698,6 @@ type acceptOutput struct {
 	Accepted bool `json:"accepted"`
 }
 
-// VerificationErrorは--verify-auto-resumeが検証に失敗したことをprocess errorへ伝える
-// typed error。Reasonは検証不合格の機械理由。
 type VerificationError struct {
 	Outcome autoresume.Outcome
 	Reason  string
@@ -767,9 +707,6 @@ func (e *VerificationError) Error() string {
 	return fmt.Sprintf("verification %s: %s", outcomeLabel(e.Outcome), e.Reason)
 }
 
-// verifyAutoResumeOutputは--verify-auto-resume成功時のmachine contract。検証できた
-// automation実体(TOML・DB row)の対応fieldをそのまま載せる。失敗・検証不可は
-// process errorのkind verification_failed/verification_unavailableへ出る。
 type verifyAutoResumeOutput struct {
 	AutomationKey  string `json:"automation_key"`
 	TargetThread   string `json:"target_thread"`

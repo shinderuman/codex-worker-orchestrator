@@ -20,8 +20,6 @@ func searchNeedle(t *testing.T, dir string, opts Options) Report {
 	return report
 }
 
-// canonicalCachePathはSearch内部と同じcanonical root評価を経由したcache file pathを
-// 返す。macOSのTempDir symlink(/var -> /private/var)でも実pathと一致させるため。
 func canonicalCachePath(t *testing.T, cacheRoot, dir string) string {
 	t.Helper()
 	canonical, err := filepath.EvalSymlinks(dir)
@@ -171,8 +169,6 @@ func TestCacheRebuildsOnVersionAndRepoMismatch(t *testing.T) {
 	}
 }
 
-// 除外policy違いのcacheを再利用すると収集対象の差が結果へ漏れるため、
-// 実効除外集合が完全一致する時だけhitする。
 func TestCacheRebuildsWhenExcludeDirsDiffer(t *testing.T) {
 	dir := initRepo(t)
 	writeTestFile(t, filepath.Join(dir, "a.txt"), "needle one\n")
@@ -291,8 +287,7 @@ func TestCacheKeepsNoRawSource(t *testing.T) {
 }
 
 func TestCacheRebuildsOnFirstSearchWithDefaultRoot(t *testing.T) {
-	// CacheRoot空は既定root(GLM_WORKER_HOME/search)を意味するため、実homeへ
-	// 書き込まないよう隔離する。
+
 	t.Setenv("GLM_WORKER_HOME", t.TempDir())
 	dir := initRepo(t)
 	writeTestFile(t, filepath.Join(dir, "a.txt"), "needle one\n")
@@ -366,8 +361,6 @@ func TestDisableCacheConflictsWithCacheRoot(t *testing.T) {
 	}
 }
 
-// HEAD移動だけでindex・worktreeの検索対象corpusが不変ならcacheを再利用する。
-// staged変更はindex digestのblob sha経由で必ず無効化する。
 func TestCacheFreshnessTracksCorpusNotHead(t *testing.T) {
 	dir := initRepo(t)
 	writeTestFile(t, filepath.Join(dir, "a.txt"), "needle one\n")

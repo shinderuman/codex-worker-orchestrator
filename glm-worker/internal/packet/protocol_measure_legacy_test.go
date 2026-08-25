@@ -7,19 +7,11 @@ import (
 	"testing"
 )
 
-// このfile群はTask 008 machine protocol測定のtest-only harnessであり、production
-// protocolへimportされない。旧形式の参照実装は測定対象の正確さのためだけに存在する。
-
-// legacyFieldは旧KEY行protocolの表示行1件。key/valueは202bc92^時点の
-// packet.Result.displayFieldsと同じ対応。
 type legacyField struct {
 	key   string
 	value string
 }
 
-// legacyDisplayFieldsはTask 006直前(202bc92^ = 677e469。fdb9c41..677e469間で
-// result.goの表示codeは不変)のKEY行protocol実装の測定用移植。status別field順・空配列の
-// `none` placeholder・空text fieldの行出力まで当時の挙動を維持する。
 func legacyDisplayFields(r Result) []legacyField {
 	text := func(key string, value string) legacyField {
 		return legacyField{key: key, value: value}
@@ -85,7 +77,6 @@ func legacyJoinList(values []string) string {
 	return strings.Join(values, ";")
 }
 
-// legacyDisplayLinesは旧protocolの表示行を返す。
 func legacyDisplayLines(r Result) []string {
 	fields := legacyDisplayFields(r)
 	lines := make([]string, 0, len(fields))
@@ -95,15 +86,10 @@ func legacyDisplayLines(r Result) []string {
 	return lines
 }
 
-// legacyDisplayはTask 006前のwrapper最終stdout本文。emitResultはFprintlnで
-// 末尾に改行を1つ足していた。
 func legacyDisplay(r Result) string {
 	return strings.Join(legacyDisplayLines(r), "\n")
 }
 
-// legacyFromDisplayLinesは旧text PACKET形式のdecoder(v2 resume checkpoint読込で
-// 使われた202bc92^のFromDisplayLines)の測定用移植。information loss測定の対として
-// 使い、productionの受理経路ではない。
 func legacyFromDisplayLines(lines []string) (Result, error) {
 	fields := make(map[string]string, len(lines))
 	for _, line := range lines {
@@ -150,8 +136,6 @@ func legacyFromDisplayLines(lines []string) (Result, error) {
 	return result, nil
 }
 
-// legacySplitDisplayListは当時の実装どおり`none`・空を要素なし扱いへ潰す。
-// この潰しがreviewer TARGETS予約値`none`の意味喪失になることを測定で固定する。
 func legacySplitDisplayList(value string) []string {
 	if value == "" || value == noneTargetsSentinel {
 		return nil
@@ -166,10 +150,6 @@ func legacySplitDisplayList(value string) []string {
 	return result
 }
 
-// TestLegacyRendererMatchesPreTask006Productionは移植rendererのbyte一致を
-// 202bc92^時点のproduction test(packet/result_test.go TestResultDisplayLines)の
-// 期待値原文で固定する。測定の正確さがこの一致に依存するため、vectorは当時の
-// production helper(implementedResult相当)と同一入力で与える。
 func TestLegacyRendererMatchesPreTask006Production(t *testing.T) {
 	implemented := Result{
 		Status:              StatusImplemented,
@@ -230,8 +210,6 @@ func TestLegacyRendererMatchesPreTask006Production(t *testing.T) {
 	}
 }
 
-// TestLegacyRoundTripMatchesPreTask006Productionは当時の
-// TestFromDisplayLinesRoundTripと同一入力・同一比較でdecoder移植を固定する。
 func TestLegacyRoundTripMatchesPreTask006Production(t *testing.T) {
 	result := Result{
 		Status:              StatusNeedsSolReview,

@@ -14,8 +14,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-// streamFixtureはstream-json出力の縮小再現。secretを含むtext/thinking/tool入出力を
-// 混ぜ、event logへcontent本体が落ちないことを検証する。
 const streamFixtureSecret = "sk-ant-secret-TOKEN123"
 
 const streamFixtureLines = `{"type":"system","subtype":"init","session_id":"sess-1","model":"glm-5.3"}
@@ -83,9 +81,6 @@ func readTaskEventLines(t *testing.T, st *state.StateStore, taskID string) []sta
 	return records
 }
 
-// TestClaudeRunnerStreamEventsAppendSanitizedMetadataはstream-json受動eventが
-// 追記安全にmetadataだけ保存され、初回/resume呼出をcall_id・phase・resumedで
-// 識別できることをproduction Run経路で検証する。
 func TestClaudeRunnerStreamEventsAppendSanitizedMetadata(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixtureはUnix系環境向け")
@@ -185,9 +180,6 @@ func TestClaudeRunnerStreamEventsAppendSanitizedMetadata(t *testing.T) {
 	}
 }
 
-// TestClaudeRunnerStreamNonResultContentNeverReachesDiskはstreamの非result event本文
-// (thinking・assistant text・tool入出力)が成功経路のどのdisk出力にも現れないことを
-// 検証する。stdoutはingesterだけが受け、result event行もdiskへ書かない。
 func TestClaudeRunnerStreamNonResultContentNeverReachesDisk(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixtureはUnix系環境向け")
@@ -223,9 +215,6 @@ func TestClaudeRunnerStreamNonResultContentNeverReachesDisk(t *testing.T) {
 	}
 }
 
-// TestClaudeRunnerStreamNoResultKeepsFailureBoundaryはresult eventがないstreamで
-// 従来のtype不正失敗区分へ落ち、error・診断output・event logのいずれにも
-// assistant/tool本文が転記されないことを検証する。
 func TestClaudeRunnerStreamNoResultKeepsFailureBoundary(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixtureはUnix系環境向け")
@@ -277,7 +266,6 @@ func TestClaudeRunnerStreamNoResultKeepsFailureBoundary(t *testing.T) {
 	}
 }
 
-// lineOfKindはfixtureから指定typeの行を取り出す。test fixture構築の補助。
 func lineOfKind(fixture string, kind string) string {
 	for _, line := range strings.Split(fixture, "\n") {
 		if strings.Contains(line, `"type":"`+kind+`"`) {
@@ -287,16 +275,12 @@ func lineOfKind(fixture string, kind string) string {
 	return ""
 }
 
-// plainStdoutSignalはresult eventを欠くstreamへ混ざるplain stdout障害textの共通fixture。
-// secret行を併せ、信号は分類構造値になる一方で本文がどこにも保存されないことを検証する。
 const plainStdoutSecretLine = "diagnostic context contains " + streamFixtureSecret
 
 func plainStdoutFixture(signalLine string) string {
 	return signalLine + "\n" + plainStdoutSecretLine + "\n"
 }
 
-// assertPlainSignalNotPersistedはplain stdout本文(信号行・secret)が最終output・error・
-// event log・分類構造値のどこへも残らないことを検証する。
 func assertPlainSignalNotPersisted(t *testing.T, outputPath string, runErr error, st *state.StateStore, taskID string, signalFragment string, classText string) {
 	t.Helper()
 	signals := []string{streamFixtureSecret, signalFragment}
@@ -326,9 +310,6 @@ func assertPlainSignalNotPersisted(t *testing.T, outputPath string, runErr error
 	}
 }
 
-// TestClaudeRunnerPlainStdoutFailureClassificationは、result eventが無い経路で
-// plain stdoutに現れた5h上限・transient・明示fatal信号が旧raw fallbackと同じ
-// classifierで構造値に分類されることをproduction Run経路で検証する。
 func TestClaudeRunnerPlainStdoutFailureClassification(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixtureはUnix系環境向け")
@@ -389,9 +370,6 @@ func TestClaudeRunnerPlainStdoutFailureClassification(t *testing.T) {
 	}
 }
 
-// TestClaudeRunnerStreamNumbersAndJSONContentNotClassifiedは、任意のevent数と
-// assistant/tool JSON content内の数値がtransient誤一致しないことを検証する。
-// 旧summaryの(stream events=N)形式へ503が露出した場合の回帰固定でもある。
 func TestClaudeRunnerStreamNumbersAndJSONContentNotClassified(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixtureはUnix系環境向け")
@@ -432,8 +410,6 @@ func TestClaudeRunnerStreamNumbersAndJSONContentNotClassified(t *testing.T) {
 	}
 }
 
-// TestClaudeRunnerStreamEventsSurviveCorruptTailAndAppendは既存event logの部分破損行が
-// 以降の追記・parseを壊さない(破損がその行へ局所化される)ことを検証する。
 func TestClaudeRunnerStreamEventsSurviveCorruptTailAndAppend(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixtureはUnix系環境向け")
@@ -478,7 +454,7 @@ func TestClaudeRunnerStreamEventsSurviveCorruptTailAndAppend(t *testing.T) {
 		parsed++
 		lastRecord = record
 	}
-	// 改行なし破損tailは直後の追記1行と連結して1破損行になり、以後の行は無傷のまま。
+
 	if parsed != 7 || skipped != 1 {
 		t.Fatalf("parse可能行 = %d, skip行 = %d", parsed, skipped)
 	}
@@ -487,8 +463,6 @@ func TestClaudeRunnerStreamEventsSurviveCorruptTailAndAppend(t *testing.T) {
 	}
 }
 
-// TestClaudeRunnerStreamEventsBestEffortOnUnwritableLogはevent logへ追記できないときも
-// 本体実行・result解析・session readyが成功することを検証する。
 func TestClaudeRunnerStreamEventsBestEffortOnUnwritableLog(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixtureはUnix系環境向け")
@@ -524,7 +498,6 @@ func TestClaudeRunnerStreamEventsBestEffortOnUnwritableLog(t *testing.T) {
 	}
 }
 
-// TestReduceStreamEventUnknownLineは未知種別・不正JSON行をcontent無しで観測記録する。
 func TestReduceStreamEventUnknownLine(t *testing.T) {
 	base := state.TaskEventRecord{TaskID: "t", CallID: "c", Role: "worker", Phase: "worker-new"}
 	observedAt := time.Date(2026, 8, 16, 10, 0, 0, 0, time.UTC)
@@ -540,8 +513,6 @@ func TestReduceStreamEventUnknownLine(t *testing.T) {
 	}
 }
 
-// newFakeClockIngesterはevent観測時刻を制御できるingesterを返す。event 1件の記録ごとに
-// clockを進め、tool timing対応付けのduration検証を決定的にする。
 func newFakeClockIngester(t *testing.T, st *state.StateStore, advance time.Duration) *streamEventIngester {
 	t.Helper()
 	current := time.Date(2026, 8, 16, 10, 0, 0, 0, time.UTC)
@@ -553,9 +524,6 @@ func newFakeClockIngester(t *testing.T, st *state.StateStore, advance time.Durat
 	return ingester
 }
 
-// TestStreamEventIngesterSuppressesProgressEventsは実運用で大量観測された
-// system/thinking_tokens進捗eventを記録せず、他のsystem subtypeは記録し続けることを
-// 検証する。seqは抑止分を消費せず連続する。
 func TestStreamEventIngesterSuppressesProgressEvents(t *testing.T) {
 	st := newTestStateStore(t)
 	ingester := newFakeClockIngester(t, st, time.Second)
@@ -579,8 +547,6 @@ func TestStreamEventIngesterSuppressesProgressEvents(t *testing.T) {
 	}
 }
 
-// TestStreamEventIngesterPairsToolTimingByIDはtool_use idとtool_resultのtool_use_idの
-// 正確な対応付けだけを記録し、片側しか観測できない組へdurationを書かないことを検証する。
 func TestStreamEventIngesterPairsToolTimingByID(t *testing.T) {
 	st := newTestStateStore(t)
 	ingester := newFakeClockIngester(t, st, 2*time.Second)
@@ -617,7 +583,7 @@ func TestStreamEventIngesterPairsToolTimingByID(t *testing.T) {
 	if paired.ToolID != "toolu_ok" || paired.Name != "Bash" {
 		t.Fatalf("対応済tool_result = %#v", paired)
 	}
-	// tool_use観測は1番目のclock呼出(+2s)、tool_result観測は3番目(+6s)で差は2event分=4s。
+
 	if paired.DurationMS != 4000 {
 		t.Fatalf("対応済duration = %d", paired.DurationMS)
 	}
@@ -628,8 +594,6 @@ func TestStreamEventIngesterPairsToolTimingByID(t *testing.T) {
 	}
 }
 
-// TestStreamEventIngesterCapKeepsResultCaptureは記録上限到達後の追記停止と、
-// result event行捕捉の維持を検証する。
 func TestStreamEventIngesterCapKeepsResultCapture(t *testing.T) {
 	st := newTestStateStore(t)
 	ingester := newFakeClockIngester(t, st, 0)

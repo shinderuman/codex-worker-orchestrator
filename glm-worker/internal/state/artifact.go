@@ -34,8 +34,6 @@ func (s *StateStore) PrepareArtifactDir() (string, error) {
 	return dir, nil
 }
 
-// SecureArtifactDirはモデルが作成した現在タスクの成果物を所有者限定へ揃える。
-// state外を指すsymlinkや特殊ファイルは成果物として認めない。
 func (s *StateStore) SecureArtifactDir() error {
 	taskID, err := s.TaskID()
 	if err != nil {

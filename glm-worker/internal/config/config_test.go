@@ -94,7 +94,7 @@ func TestLoadBuildsConfigFromRepositoryAndEnvironment(t *testing.T) {
 	stateHome := filepath.Join(t.TempDir(), "state")
 	promptDir := filepath.Join(t.TempDir(), "prompts")
 	t.Setenv("HOME", home)
-	// 既定ClaudeConfigDir($HOME/.claude)を検証するため、外部envのCLAUDE_CONFIG_DIRを空にする。
+
 	t.Setenv("CLAUDE_CONFIG_DIR", "")
 	t.Setenv("GLM_WORKER_HOME", stateHome)
 	t.Setenv("GLM_WORKER_PROMPT_DIR", promptDir)
@@ -269,8 +269,6 @@ func TestResolveClaudeSettingsOverrideResolution(t *testing.T) {
 	}
 }
 
-// config.goはstdlibのみをimportしGo module pathを含まない。新名称(codex-worker-orchestrator)
-// が現れるのは端末local永続識別子(override path・env変数)の回帰のみであり、ここで検出する。
 func TestConfigSourceRetainsLegacyOverrideIdentifiers(t *testing.T) {
 	source, err := os.ReadFile("config.go")
 	if err != nil {

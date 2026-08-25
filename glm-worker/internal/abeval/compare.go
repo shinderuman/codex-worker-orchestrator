@@ -13,9 +13,6 @@ const (
 	codexReductionUnknown = "unknown"
 )
 
-// Comparisonは検証済みrun記録1組の集計結果。最重要出力のCodexReductionと品質比較、
-// および時間とGLM usageを別枠で持つ。GLM tokenとCodex tokenを合算した総合値fieldは
-// 持たない。
 type Comparison struct {
 	Spec                 Spec
 	Direct               RunRecord
@@ -25,8 +22,6 @@ type Comparison struct {
 	OrchestratedDuration time.Duration
 }
 
-// CodexReductionはactual Codex使用量に基づくDirect比の削減率。両modeのactual usageが
-// 揃わない場合はStatus=unknownとし、proxy指標や推定値で代替しない。
 type CodexReduction struct {
 	Status        string
 	UnknownReason string
@@ -79,8 +74,6 @@ func reductionPercent(direct, orchestrated int64) float64 {
 	return float64(direct-orchestrated) / float64(direct) * 100
 }
 
-// Reportは--eval-ab成功時のmachine contract。actual usageとproxy指標・unknownを
-// JSON型で区別して載せる。GLM tokenとCodex tokenを合算した総合値fieldは持たない。
 type Report struct {
 	SpecID              string                `json:"spec_id"`
 	Modes               []string              `json:"modes"`
@@ -95,7 +88,6 @@ type Report struct {
 	ProxyMetrics        ReportProxyPair       `json:"proxy_metrics"`
 }
 
-// ReportMetadataは両mode共通の比較条件。UserRequestSHA256は要求本文の正準hash全文。
 type ReportMetadata struct {
 	RepoSnapshotCommit string `json:"repo_snapshot_commit"`
 	InitialWorktree    string `json:"initial_worktree"`
@@ -104,8 +96,6 @@ type ReportMetadata struct {
 	UserRequestSHA256  string `json:"user_request_sha256"`
 }
 
-// ReportReductionはactual Codex使用量に基づくDirect比の削減率。Statusはactualか
-// unknownで、unknownのときUnknownReasonだけが根拠を運びpercentは出さない。
 type ReportReduction struct {
 	Status             string   `json:"status"`
 	UnknownReason      string   `json:"unknown_reason,omitempty"`
@@ -126,26 +116,21 @@ type ReportTime struct {
 	DeltaMS        int64 `json:"delta_ms"`
 }
 
-// ReportCodexUsagePairは両modeのactual Codex使用量。unknownのときnull。
 type ReportCodexUsagePair struct {
 	Direct       *CodexUsage `json:"direct"`
 	Orchestrated *CodexUsage `json:"orchestrated"`
 }
 
-// ReportGLMUsagePairはglm-worker側実測使用量。direct modeはglm-worker委譲がないため
-// null、orchestratedはrecord解決済みの実測値。
 type ReportGLMUsagePair struct {
 	Direct       *GLMUsage `json:"direct"`
 	Orchestrated *GLMUsage `json:"orchestrated"`
 }
 
-// ReportProxyPairはactual usageではない代理指標。観測がないmodeはnull。
 type ReportProxyPair struct {
 	Direct       *ProxyMetrics `json:"direct"`
 	Orchestrated *ProxyMetrics `json:"orchestrated"`
 }
 
-// BuildReportは比較結果をmachine contractのReportへ組み立てる。
 func BuildReport(c Comparison) Report {
 	reduction := ReportReduction{Status: c.CodexReduction.Status}
 	if c.CodexReduction.Status == codexReductionUnknown {

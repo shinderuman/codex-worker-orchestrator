@@ -12,11 +12,6 @@ import (
 	"testing"
 )
 
-// このfileはClaude CLI compatibility preflightのPoCである。productionの
-// startup・workflow・state semanticsへは接続しておらず、採用時のみ独立taskで
-// 本体packageへ昇格する。preflightが実行するのは `claude --version` と
-// `claude --help` の2呼出だけ(AI call 0件・task/session/checkpoint状態には触れない)。
-
 const (
 	preflightBinaryAbsent         = "binary-absent"
 	preflightBinaryNotExecutable  = "binary-not-executable"
@@ -27,16 +22,11 @@ const (
 	preflightFakeUnexpectedArgsEc = 87
 )
 
-// claudePreflightFeatureはinternal/runnerがClaude CLI argvへ渡すflag 1件と、
-// それを使う呼出経路。surfacesは run(実task)・probe(provider recovery)の組合せ。
 type claudePreflightFeature struct {
 	flag     string
 	surfaces string
 }
 
-// claudePreflightFeaturesはproduction argvに現れるflagの全集合。runner.go/probe.goへ
-// flagを追加した場合はこのinventoryへ同じflagを足す。
-// TestClaudePreflightInventoryMatchesRunnerSourceFlagsが両方向の更新漏れを検出する。
 var claudePreflightFeatures = []claudePreflightFeature{
 	{flag: "-p", surfaces: "run+probe"},
 	{flag: "--safe-mode", surfaces: "run+probe"},
@@ -73,10 +63,6 @@ type claudePreflightReport struct {
 	failures []claudePreflightFailure
 }
 
-// claudeCompatPreflightはClaude CLI binaryのflag互換性をmodel callなしで確認する。
-// binary不在・非実行可能・version/help失敗・必須feature欠落はすべてfail closedで
-// 呼出元へ返す。help本文だけでは検証できないstream/result semantics・session/resume
-// 契約は対象外(非保証)であり、この関数はそれらを保証済みにしない。
 func claudeCompatPreflight(bin string) claudePreflightReport {
 	report := claudePreflightReport{}
 	resolved := bin
@@ -144,12 +130,6 @@ func claudeCompatPreflight(bin string) claudePreflightReport {
 	return report
 }
 
-// claudeHelpDocumentsFlagはhelp本文がflagをoption宣言として案内しているかを判定する。
-// 宣言行(行頭の浅いindentで始まるoption token列)への照合に限定し、他optionの説明文へ
-// の言及は案内とみなさない。--mcp-configの宣言を消しても--strict-mcp-configの説明文が
-// 言及し続けるような形のfalse acceptを防ぐためである。bracket圧縮表記
-// `--append-system-prompt[-file]` は宣言行を持たない正式なoption名表記のため、
-// こちらだけ本文全域で照合する。
 func claudeHelpDocumentsFlag(help string, flag string) bool {
 	if claudeHelpDeclarationPattern(flag).MatchString(help) {
 		return true
@@ -158,20 +138,12 @@ func claudeHelpDocumentsFlag(help string, flag string) bool {
 	return documented
 }
 
-// claudeHelpDeclarationPatternはflagのoption宣言行(行頭の浅いindent、直前のcomma区切り
-// alias列、flag token)に一致させる。`-r, --resume [value]` のようなshort alias併記と
-// `--disallowedTools, --disallowed-tools` のようなlong alias併記を捕捉する。説明文の
-// wrap行は深いindentで始まるため宣言位置と区別できる。
 func claudeHelpDeclarationPattern(flag string) *regexp.Regexp {
 	return regexp.MustCompile(
 		`(?m)^([ \t]{0,6})((?:(?:--|-)[A-Za-z0-9][A-Za-z0-9-]*,[ \t]+)*)` +
 			regexp.QuoteMeta(flag) + `($|[ \t,<\[\]=])`)
 }
 
-// claudeBracketExpandedFlagsはClaude Code 2.1.226の--bare説明にある
-// `--append-system-prompt[-file]` 形式のbracket圧縮表記を展開したtoken集合。
-// 圧縮表記はbase flagとsuffix拡張flagの2 option名の正式な省略表記のため、展開して
-// 照合しないと現行CLIが持つ--append-system-prompt-fileを誤拒否する。
 func claudeBracketExpandedFlags(help string) map[string]bool {
 	expanded := map[string]bool{}
 	for _, token := range regexp.MustCompile(`--[A-Za-z0-9-]+\[-[A-Za-z0-9-]+\]`).FindAllString(help, -1) {
@@ -182,9 +154,6 @@ func claudeBracketExpandedFlags(help string) map[string]bool {
 	return expanded
 }
 
-// claudeHelpDocumentsOutputFormatsは--output-format宣言blockの説明が実行protocol依存の
-// "json"(Probe経路)と"stream-json"(Run経路)を含むかを検査する。blockの外にある
-// --input-format等の同じ語彙は数えない。
 func claudeHelpDocumentsOutputFormats(help string) bool {
 	block := claudeHelpOutputFormatBlock(help)
 	return strings.Contains(block, `"json"`) && strings.Contains(block, `"stream-json"`)
@@ -192,8 +161,6 @@ func claudeHelpDocumentsOutputFormats(help string) bool {
 
 var claudeHelpDeclarationLinePattern = regexp.MustCompile(`^[ \t]{0,6}-`)
 
-// claudeHelpOutputFormatBlockは--output-format宣言行から次の宣言行までのhelp範囲を返す。
-// 宣言行がなければ空を返し、呼出元はfail closedとして扱う。
 func claudeHelpOutputFormatBlock(help string) string {
 	lines := strings.Split(help, "\n")
 	start := -1
@@ -216,9 +183,6 @@ func claudeHelpOutputFormatBlock(help string) string {
 	return strings.Join(block, "\n")
 }
 
-// claudeHelpWithoutFlagはfeature欠落fixtureとして、helpからflagの宣言だけを取り除く。
-// 説明文への言及は残す(宣言消失・prose言及残存が現実のdrift形態のため)。
-// 続けてbracket圧縮表記はbase表記へ置き換える。
 func claudeHelpWithoutFlag(help string, flag string) string {
 	reduced := claudeHelpDeclarationPattern(flag).ReplaceAllString(help, "${1}${2}--removed-feature${3}")
 	for _, token := range regexp.MustCompile(`--[A-Za-z0-9-]+\[-[A-Za-z0-9-]+\]`).FindAllString(reduced, -1) {
@@ -230,9 +194,6 @@ func claudeHelpWithoutFlag(help string, flag string) string {
 	return reduced
 }
 
-// writeFakeClaudePreflightBinaryは--version/--helpだけに応答するfake claude binaryを
-// 作る。起動されるたびに引数を行単位でrecord fileへ残し、想定外の起動引数は
-// exit 87で失敗させる(preflightがmodel呼出を起こしていないことの機械検証)。
 func writeFakeClaudePreflightBinary(t *testing.T, helpText string, versionExitCode int, helpExitCode int) (string, string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -312,8 +273,6 @@ func requireSingleFailureCategory(t *testing.T, report claudePreflightReport, ca
 	}
 }
 
-// TestClaudePreflightPassesOnCapturedClaudeHelpはClaude Code 2.1.226のhelp snapshotで
-// preflightがPASSすることと、起動が --version と --help の2回だけであることを固定する。
 func TestClaudePreflightPassesOnCapturedClaudeHelp(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixtureはUnix系環境向け")
@@ -334,8 +293,6 @@ func TestClaudePreflightPassesOnCapturedClaudeHelp(t *testing.T) {
 	}
 }
 
-// TestClaudePreflightIdentifiesEachMissingFeatureは必須featureを1件ずつ欠落させた
-// fixtureが、欠落flagを特定してfail closedになることを全inventory分固定する。
 func TestClaudePreflightIdentifiesEachMissingFeature(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixtureはUnix系環境向け")
@@ -358,9 +315,6 @@ func TestClaudePreflightIdentifiesEachMissingFeature(t *testing.T) {
 	}
 }
 
-// TestClaudePreflightDetectsOutputFormatVocabularyDriftはflag宣言が残っていても
-// choices語彙から依存formatが消えた場合をfail closedで検出する境界である。
-// --output-format blockの語彙だけを消し、--input-format等のblock外語彙は残す。
 func TestClaudePreflightDetectsOutputFormatVocabularyDrift(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixtureはUnix系環境向け")
@@ -387,8 +341,6 @@ func TestClaudePreflightDetectsOutputFormatVocabularyDrift(t *testing.T) {
 	}
 }
 
-// TestClaudePreflightBinaryBoundariesはbinary不在(絶対path・PATH上なし)と
-// 非実行可能の境界を、binary起動前にfail closedする分類で固定する。
 func TestClaudePreflightBinaryBoundaries(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixtureはUnix系環境向け")
@@ -412,8 +364,6 @@ func TestClaudePreflightBinaryBoundaries(t *testing.T) {
 	})
 }
 
-// TestClaudePreflightVersionAndHelpFailureBoundariesはversion/helpが非zero exitで
-// 失敗する境界を固定する。version失敗後はhelpを起動せず即fail closedする。
 func TestClaudePreflightVersionAndHelpFailureBoundaries(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixtureはUnix系環境向け")
@@ -438,11 +388,6 @@ func TestClaudePreflightVersionAndHelpFailureBoundaries(t *testing.T) {
 	})
 }
 
-// TestClaudePreflightInventoryMatchesRunnerSourceFlagsはrunner package本体がClaude CLI
-// argvへ渡すflag string literalとclaudePreflightFeaturesのdriftを両方向で検出する。
-// 走査はpackage内の非test .go file全体を対象とし、将来3箇所目の呼出fileが増えても
-// flag追加を拾う。flagを足してinventoryを更新し忘れた場合と、inventoryに実装から
-// 消えたflagが残った場合に失敗する。
 func TestClaudePreflightInventoryMatchesRunnerSourceFlags(t *testing.T) {
 	sourceFlags := map[string]bool{}
 	entries, err := os.ReadDir(".")
@@ -482,8 +427,6 @@ func TestClaudePreflightInventoryMatchesRunnerSourceFlags(t *testing.T) {
 	}
 }
 
-// TestClaudePreflightLiveClaudeCLIは実Claude CLIに対してno-AI preflightが通ることを
-// 確認する。binaryがない環境ではskipし、version番号は固定しない(form契約のみ検査)。
 func TestClaudePreflightLiveClaudeCLI(t *testing.T) {
 	bin := os.Getenv("GLM_WORKER_CLAUDE_BIN")
 	if bin == "" {

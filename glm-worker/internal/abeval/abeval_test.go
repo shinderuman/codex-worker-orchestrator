@@ -9,7 +9,6 @@ import (
 	"time"
 )
 
-// writeRecordJSONはrecordを一時fileへJSON化してpathを返す。
 func writeRecordJSON(t *testing.T, name string, record RunRecord) string {
 	t.Helper()
 	data, err := json.Marshal(record)
@@ -99,8 +98,7 @@ func validOrchestratedRecord(spec Spec) RunRecord {
 			InputTokens:  480000,
 			OutputTokens: 42000,
 		},
-		// task-stats解決済みsnapshotのfake表現。実CLI経路ではglm_usage値は
-		// ResolveFromTaskStatsがstats履歴から導入する。
+
 		GLMUsage: GLMUsage{
 			Source:       GLMUsageSourceTaskStats,
 			TaskID:       "task-fixture-orchestrated-0002",
@@ -286,8 +284,6 @@ func writeRunDirRaw(t *testing.T, specJSON, directJSON, orchestratedJSON []byte)
 	return dir
 }
 
-// TestLoadPairRejectsUnknownFieldsAndTrailingJSONはstrict decode契約の検証。
-// 未知field(field typo)と末尾の第2JSON値を黙って捨てずfail closedにする。
 func TestLoadPairRejectsUnknownFieldsAndTrailingJSON(t *testing.T) {
 	spec := validSpec()
 	specJSON := marshalOrFatal(t, spec)

@@ -105,8 +105,6 @@ func TestParseCommandRejectsInvalidStdinArguments(t *testing.T) {
 	}
 }
 
-// 廃止したargv埋込みmodeはusage errorへfail closedし、payload本文を新規taskへ
-// 誤routingしない。errorはstdin modeへの移行先を示す。
 func TestParseCommandRejectsArgvDecisionFix(t *testing.T) {
 	for _, args := range [][]string{
 		{"--decision", "A案で進める"},

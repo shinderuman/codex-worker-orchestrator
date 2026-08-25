@@ -22,7 +22,6 @@ func matchedTrue() *bool {
 	return &value
 }
 
-// appendConvergenceRoundはseqを採番してround logへrecordを追記するtest helper。
 func appendConvergenceRound(t *testing.T, st *state.StateStore, record state.RoundRecord) {
 	t.Helper()
 	if err := st.AppendRoundRecord(record); err != nil {
@@ -30,8 +29,6 @@ func appendConvergenceRound(t *testing.T, st *state.StateStore, record state.Rou
 	}
 }
 
-// executeConvergenceOutputはprintConvergenceの出力1行をconvergenceOutputへdecodeする。
-// JSONでない出力はmachine contract違反として失敗する。
 func executeConvergenceOutput(t *testing.T, st *state.StateStore, taskID string) convergenceOutput {
 	t.Helper()
 	var out bytes.Buffer
@@ -45,7 +42,6 @@ func executeConvergenceOutput(t *testing.T, st *state.StateStore, taskID string)
 	return output
 }
 
-// convergenceSummaryOfはsummary.by_classから指定classの要素を返す。
 func convergenceSummaryOf(t *testing.T, output convergenceOutput, class string) convergenceClassSummary {
 	t.Helper()
 	for _, summary := range output.Summary.ByClass {
@@ -57,8 +53,6 @@ func convergenceSummaryOf(t *testing.T, output convergenceOutput, class string) 
 	return convergenceClassSummary{}
 }
 
-// TestConvergenceRendersRoundsCostsAndSummaryはround log・telemetry・event logだけ
-// からround単位の分類・reviewer/worker cost・summaryを表示することを検証する。
 func TestConvergenceRendersRoundsCostsAndSummary(t *testing.T) {
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
@@ -85,7 +79,7 @@ func TestConvergenceRendersRoundsCostsAndSummary(t *testing.T) {
 		TreeUsage:      state.TokenUsage{InputTokens: 100, OutputTokens: 40},
 		WallDurationMS: 5000, TopLevelTurns: 3,
 	})
-	// 旧protocolのpacket圧縮suffix phase recordはround生成呼出へ対応付けない。
+
 	st.RecordModelCallLog(state.ModelCallLog{
 		TaskID: taskID, CallType: state.CallTypeTask, Role: state.WorkerRole, Phase: "worker-new-packet-compact",
 		StartedAt: base.Add(5 * time.Second), CompletedAt: base.Add(6 * time.Second),
@@ -159,8 +153,6 @@ func TestConvergenceRendersRoundsCostsAndSummary(t *testing.T) {
 	}
 }
 
-// TestConvergenceRendersDocChangeRoundは行動規定文書(AGENTS等)の変更roundが
-// doc-changeとして表示・集計され、comment/format-onlyへ落ちないことを検証する。
 func TestConvergenceRendersDocChangeRound(t *testing.T) {
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
@@ -213,8 +205,6 @@ func TestConvergenceRendersDocChangeRound(t *testing.T) {
 	}
 }
 
-// TestConvergenceMutatingToolUseStaysSameSnapshotはfile変更toolが観測された
-// same-snapshot roundをverification-onlyへ細分化しないことを検証する。
 func TestConvergenceMutatingToolUseStaysSameSnapshot(t *testing.T) {
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
@@ -251,8 +241,6 @@ func TestConvergenceMutatingToolUseStaysSameSnapshot(t *testing.T) {
 	}
 }
 
-// TestConvergenceGapAndMismatchFallToUnknownはseq不連続とreviewer番号不一致が
-// 該当roundの分類をunknownへ倒し、mismatch/gap表示へ出ることを検証する。
 func TestConvergenceGapAndMismatchFallToUnknown(t *testing.T) {
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
@@ -269,12 +257,12 @@ func TestConvergenceGapAndMismatchFallToUnknown(t *testing.T) {
 	appendConvergenceRound(t, st, state.RoundRecord{
 		TaskID: taskID, WorkerPhase: state.RoundWorkerPhaseBaseline, CapturedAt: base, Snapshot: snapshot,
 	})
-	// round 1: worker-new。telemetry reviewerはreviewer-2を返す(番号不一致)。
+
 	appendConvergenceRound(t, st, state.RoundRecord{
 		TaskID: taskID, ReviewNumber: 1, WorkerPhase: "worker-new", CapturedAt: base.Add(10 * time.Second),
 		Snapshot: snapshot, Paths: []state.RoundPathState{},
 	})
-	// round 2: seqを手書きで5へ飛ばしrecord欠落(不連続)を作る。
+
 	jumped := state.RoundRecord{
 		Version: 1, TaskID: taskID, Seq: 5, ReviewNumber: 2, WorkerPhase: "worker-auto-fix-1",
 		CapturedAt: base.Add(30 * time.Second), Snapshot: changed,
@@ -325,8 +313,6 @@ func TestConvergenceGapAndMismatchFallToUnknown(t *testing.T) {
 	}
 }
 
-// TestConvergenceUnresolvedAndHighCountersはFIX_REQUIRED outcomeとHIGH riskの
-// round集計を検証する。
 func TestConvergenceUnresolvedAndHighCounters(t *testing.T) {
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
@@ -338,7 +324,7 @@ func TestConvergenceUnresolvedAndHighCounters(t *testing.T) {
 		t.Fatal(err)
 	}
 	base := convergenceBaseTime()
-	// baseline recordを意図的に欠かせround 1をinitial分類にする。
+
 	appendConvergenceRound(t, st, state.RoundRecord{
 		TaskID: taskID, ReviewNumber: 1, WorkerPhase: "worker-new", CapturedAt: base.Add(10 * time.Second),
 		Snapshot: state.SnapshotDigest{Head: "h2", IndexDigest: "i2", WorktreeDigest: "w2"},
@@ -377,8 +363,6 @@ func TestConvergenceUnresolvedAndHighCounters(t *testing.T) {
 	}
 }
 
-// TestConvergenceSkipsCorruptRoundLinesはround logの部分破損行をskip件数として
-// 報告し、以後のrecord表示へ波及させない。
 func TestConvergenceSkipsCorruptRoundLines(t *testing.T) {
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
@@ -419,8 +403,6 @@ func TestConvergenceSkipsCorruptRoundLines(t *testing.T) {
 	}
 }
 
-// TestConvergenceCurrentTaskWithoutRecordsはround logがまだない現在taskを
-// 正常終了する。
 func TestConvergenceCurrentTaskWithoutRecords(t *testing.T) {
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
@@ -440,8 +422,6 @@ func TestConvergenceCurrentTaskWithoutRecords(t *testing.T) {
 	}
 }
 
-// TestConvergenceExplicitTaskMissingRoundLogは明示指定taskのround log不在を
-// errorにする。
 func TestConvergenceExplicitTaskMissingRoundLog(t *testing.T) {
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
@@ -458,8 +438,6 @@ func TestConvergenceExplicitTaskMissingRoundLog(t *testing.T) {
 	}
 }
 
-// TestConvergenceRejectsTaskIDOutsideGeneratedFormは--timelineと同じ生成形式
-// 検証がfilesystem probeより先に働くことを検証する。
 func TestConvergenceRejectsTaskIDOutsideGeneratedForm(t *testing.T) {
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
@@ -499,8 +477,6 @@ func TestParseCommandConvergence(t *testing.T) {
 	}
 }
 
-// TestExecuteConvergenceDoesNotCreateStateは--convergence実行がstate dirを
-// 一切作成・書換しない。
 func TestExecuteConvergenceDoesNotCreateState(t *testing.T) {
 	base := t.TempDir()
 	cfg := config.AppConfig{StateBase: base, RepoHash: "convergencehash", RepoRoot: "/repo"}

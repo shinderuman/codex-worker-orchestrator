@@ -101,7 +101,7 @@ func TestExplicitFixRecordsOutcomeOnceDespiteReexecution(t *testing.T) {
 
 	failed := &scriptedRunner{steps: []runnerStep{{runErr: errors.New("boom")}}}
 	wf := newWorkflowT(t, st, failed)
-	// reviewer terminal resultの非収束指摘をそのまま差し戻すためglm-reviewer。
+
 	err := wf.ExecuteExplicitFix("境界値を修正する", state.ParentOriginGLMReviewer)
 	if err == nil || !errors.As(err, &workerErr) {
 		t.Fatalf("fix実行中の失敗を伝播する必要があります: %v", err)

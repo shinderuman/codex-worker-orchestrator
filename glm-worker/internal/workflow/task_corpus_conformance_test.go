@@ -9,17 +9,6 @@ import (
 	"testing"
 )
 
-// TestTaskCorpusScheduleStateConformanceはtask corpusのschedule state二重管理廃止後の
-// 形式を固定する。schedule state(ACTIVE/NEXT/BLOCKED)の正はPlanだけであり、全task file本文は
-// `## Status`節を1件も持たない。installer smoke等の合成repoは実際のcorpusを含むままPlanの
-// ACTIVEだけscenario taskへ差し替えるため、検証はPlanのACTIVE指す先によらず corpus 全体へ
-// 対する0件要求として機械検証する。
-// また完了task fileは削除されるcontractのため、`## Dependencies`節の`IMPLEMENTATION_TASKS/`
-// 参照は現存fileへ解決できなければならない。解決不能な依存を残すと依存完了時の除去契約
-// (fulfilled dependencyの除去・必要invariantのHistorical invariants移行・file削除)が
-// 実行されていないことを意味するためfailする。
-// 両判定ともOriginal instruction等のfenced code block内部は文書構造ではないため対象外とし、
-// top-level sectionだけを見る。
 func TestTaskCorpusScheduleStateConformance(t *testing.T) {
 	root := scenarioRepoRoot(t)
 	tasksDir := filepath.Join(root, "IMPLEMENTATION_TASKS")
@@ -67,10 +56,6 @@ func TestTaskCorpusScheduleStateConformance(t *testing.T) {
 	}
 }
 
-// TestTaskCorpusFindingsScopeToTopLevelSectionsはsection判定がOriginal instruction内の
-// `## Status`見出し・`IMPLEMENTATION_TASKS/` task path bulletを誤検出せず、top-levelの
-// `## Status`節とtop-level `## Dependencies`節の未解決参照だけを検出することを固定する。
-// fence内の同文字列はlosslessなOriginal instruction本文の一部であり、検出してはならない。
 func TestTaskCorpusFindingsScopeToTopLevelSections(t *testing.T) {
 	existing := map[string]bool{"IMPLEMENTATION_TASKS/016-worker-repo-search-integration.md": true}
 
@@ -118,10 +103,6 @@ func TestTaskCorpusFindingsScopeToTopLevelSections(t *testing.T) {
 	}
 }
 
-// taskCorpusFindingsはtask file本文をtop-level sectionだけへ絞ってschedule state・dependency
-// 契約へ照合し、違反の説明文を返す。`## Status`節の存在はschedule state二重管理、
-// `## Dependencies`節内の`IMPLEMENTATION_TASKS/`参照の未解決はfulfilled dependency除去契約の
-// 未実行をそれぞれ意味する。
 func taskCorpusFindings(taskPath string, body string, existing map[string]bool) []string {
 	var findings []string
 	inDependencies := false
@@ -149,11 +130,6 @@ func taskCorpusFindings(taskPath string, body string, existing map[string]bool) 
 	return findings
 }
 
-// taskFileSectionLinesはtask file本文の行のうちfenced code blockの外だけを返す。
-// Original instruction等は````text fenceでlosslessに保持され、fence内の`## Status`見出しや
-// `IMPLEMENTATION_TASKS/` path bulletは文書構造ではない。一般Markdown parserを入れず、
-// section判定に必要なfence境界だけを扱い、fenceは3つ以上のbacktick連続で開き
-// 同数以上のbacktick連続の行で閉じる。
 func taskFileSectionLines(body string) []string {
 	var lines []string
 	fence := 0

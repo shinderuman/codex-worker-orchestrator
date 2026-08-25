@@ -59,8 +59,6 @@ func TestRequestStopFailsWhenEndpointIsStale(t *testing.T) {
 	}
 }
 
-// startStopEndpointForTestはendpointと接続済みclientを返す。固定要求行の遣り取りを
-// 直接観察するためのtest wireである。
 func startStopEndpointForTest(t *testing.T, st *state.StateStore) (*stopEndpointServer, *runner.StopController, net.Conn) {
 	t.Helper()
 	controller := runner.NewStopController()
@@ -90,7 +88,6 @@ func TestStopEndpointRejectsUnknownRequestLine(t *testing.T) {
 	}
 }
 
-// readStopEndpointResponseForTestはack 1行をreaderから読む。
 func readStopEndpointResponseForTest(t *testing.T, conn net.Conn) stopEndpointResponse {
 	t.Helper()
 	raw := make([]byte, stopResponseLimit)
@@ -129,9 +126,6 @@ func TestStopEndpointAcknowledgesInterruptedStop(t *testing.T) {
 	}
 }
 
-// TestStopEndpointAcknowledgesConcurrentStopRequestsは重複--stop要求が両方ともackを
-// 受け取ることを固定する。Requestの冪等化に合わせ、確定outcomeは全waiterへ同一値で
-// 配られ、片方だけがhandshake timeoutで止まることがない。
 func TestStopEndpointAcknowledgesConcurrentStopRequests(t *testing.T) {
 	st, cfg := stopEndpointTestStore(t)
 	_, controller, _ := startStopEndpointForTest(t, st)
@@ -141,7 +135,7 @@ func TestStopEndpointAcknowledgesConcurrentStopRequests(t *testing.T) {
 	for i := range outs {
 		go func(i int) { done <- requestStop(cfg, &outs[i]) }(i)
 	}
-	// 両要求の待機入りを確実にしてから確定する。
+
 	time.Sleep(50 * time.Millisecond)
 	controller.NotifyInterrupted("task-concurrent-stop", "")
 
@@ -164,9 +158,6 @@ func TestStopEndpointAcknowledgesConcurrentStopRequests(t *testing.T) {
 	}
 }
 
-// TestStopEndpointAcknowledgesCleanupResidualAsTypedOutcomeはprocess group残存が観測された
-// 停止確定を安全停止ack(result=interrupted)とは別のtyped結果へ返すことを固定する。
-// 親Codexがgroup非残存を確認済みの「安全にpreempt可能」と誤認しない契約である。
 func TestStopEndpointAcknowledgesCleanupResidualAsTypedOutcome(t *testing.T) {
 	st, cfg := stopEndpointTestStore(t)
 	_, controller, _ := startStopEndpointForTest(t, st)
@@ -195,9 +186,6 @@ func TestStopEndpointAcknowledgesCleanupResidualAsTypedOutcome(t *testing.T) {
 	}
 }
 
-// TestStopEndpointCloseWaitsForPendingRequestAckは停止確定待ちの受理済み要求がある状態で
-// Closeを実行したとき、Closeの戻り前にterminal/exited ackの書込みが完了していることを固定
-// する。Close後にprocessが終了してもrequesterがackを失わないshutdown lifecycleの回帰である。
 func TestStopEndpointCloseWaitsForPendingRequestAck(t *testing.T) {
 	st, _ := stopEndpointTestStore(t)
 	controller := runner.NewStopController()
@@ -213,7 +201,7 @@ func TestStopEndpointCloseWaitsForPendingRequestAck(t *testing.T) {
 	if _, err := conn.Write([]byte(stopRequestLine)); err != nil {
 		t.Fatal(err)
 	}
-	// handlerが要求行を読み終え、WaitOutcomeで停止確定待ちに入るのを待つ。
+
 	time.Sleep(100 * time.Millisecond)
 
 	server.Close()
@@ -294,8 +282,6 @@ func TestStopEndpointCloseRemovesSocketFile(t *testing.T) {
 	}
 }
 
-// TestStopEndpointPathFitsUnixSocketLimitはendpoint pathがunix socketのsun_path長上限を
-// 常に下回ることを固定する。深いstate dirでもendpointが開けなくならない保証である。
 func TestStopEndpointPathFitsUnixSocketLimit(t *testing.T) {
 	deepBase := t.TempDir()
 	deep := deepBase

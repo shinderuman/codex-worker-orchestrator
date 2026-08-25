@@ -8,13 +8,6 @@ import (
 	"testing"
 )
 
-// TestPlanCommitSyncContractWiringは親Codex側plan commit同期contractのproduction wiringを
-// 決定論検証する。codex/AGENTS.mdのcommit時読込routing、git.md本文の必須契約文、
-// root AGENTS.mdのparent-only plan規則、git.mdの既存commit承認・push禁止規則の存続の
-// いずれかが欠けると失敗する。EVAL.md本節の親behavioral Eval入力・期待判断がinstruction
-// 本文のどの契約文へ根拠を持つかを対で固定する。本contractのcommit・amendは親Codexが
-// 実行するためwrapper終端が存在せず、corpusへの重複scenario追加とworker/reviewer prompt
-// へのchecklist追加で代替した実装になっていないことも固定する。
 func TestPlanCommitSyncContractWiring(t *testing.T) {
 	root := scenarioRepoRoot(t)
 
@@ -47,8 +40,7 @@ func TestPlanCommitSyncContractWiring(t *testing.T) {
 		{"codex/instructions/git.md", "大規模ledger・別status DB・追加commitの連鎖・worker/reviewer個別checklistは追加しない"},
 		{"codex/instructions/git.md", "worker/reviewerへの個別checklist追加で代替しない"},
 		{"codex/instructions/git.md", "plan本文・`[x]`・優先順・現在状態の更新権限が親Codex専有であること、commit実行の承認条件、Gitリモートへの書込禁止、wrapperのplan file不変guardは本契約で変更しない"},
-		// final HEAD postcondition gateの契約文。手順instructionの文言pinだけに依存しない
-		// 機械強制としてinstall.sh gateが存在し、その契約がgit.mdへ固定されていることを検査する。
+
 		{"codex/instructions/git.md", "### final HEAD postconditionの機械強制"},
 		{"codex/instructions/git.md", "install.shがmanaged配置の前段階としてfinal HEAD postconditionを機械検証する"},
 		{"codex/instructions/git.md", "順序は「実装・commit-ready planの初回commit → 親CodexによるPlan・IMPLEMENTATION_TASKS・Historyの完了同期 → 同一commitへのamend → install.shのgate通過と本配置 → 次task・handoff」であり、installをamendより先に行わない"},
@@ -58,8 +50,7 @@ func TestPlanCommitSyncContractWiring(t *testing.T) {
 		{"codex/instructions/git.md", "ACTIVE task fileがNEXT/BLOCKEDへ重複記載されていないこと"},
 		{"codex/instructions/git.md", "Git境界のbranchがHEADの実際のbranchと一致すること"},
 		{"codex/instructions/git.md", "現在のGit境界・停止理由・次の親Codex操作が完了済みcommitの操作をamend直前・install前・amendの前等の未実施として記述していないこと"},
-		// Sol review修正の契約面。NEXT/BLOCKED全bulletのfail closed検証、runtimeと同じ
-		// 共通task path契約・bullet構文、過渡表現のamend後除外とidentifier境界をgit.mdへ固定する。
+
 		{"codex/instructions/git.md", "ACTIVE/NEXT/BLOCKEDの各欄はbulletが存在するならすべてがbullet構文およびtask path契約へ解決されること(NEXT/BLOCKEDの空欄は許容する)"},
 		{"codex/instructions/git.md", "task path契約はruntime配置契約(`validateActiveTaskPath`)と同じである"},
 		{"codex/instructions/git.md", "bullet構文はruntime ACTIVE解決(`activeSectionEntries`/`activeEntryPath`)と同じである"},
@@ -80,8 +71,7 @@ func TestPlanCommitSyncContractWiring(t *testing.T) {
 		{"install.sh", "LC_ALL=C grep -E \"$plan_transitional_pattern\""},
 		{"install.sh", "skipped (IMPLEMENTATION_PLAN.local.md is untracked)"},
 		{"install.sh", "skipped (IMPLEMENTATION_PLAN.local.md is not in HEAD yet)"},
-		// 既存規則の存続確認。contract追加に伴い既存のcommit承認・push禁止・parent-only
-		// plan/history規則が削除・弱体化していないことを検査する。
+
 		{"codex/instructions/git.md", "明示的な依頼がない限り`git commit`しない"},
 		{"codex/instructions/git.md", "`git push`等Gitリモートへの書き込みは禁止"},
 		{"AGENTS.md", "このplanの本文・`[x]`・優先順・現在状態を更新できるのは親Codexだけである"},
@@ -98,8 +88,6 @@ func TestPlanCommitSyncContractWiring(t *testing.T) {
 		}
 	}
 
-	// 親behavioral Evalの期待判断(EVAL.md本節)がproduction guidanceのどの契約文へ根拠を
-	// 持つかを対で検証する。EVAL.md側の文面だけ、instruction側の契約文だけの片側存在は通さない。
 	section := evalPlanCommitSyncSection(t, readContractFile("EVAL.md"))
 	instruction := contents["codex/instructions/git.md"]
 	evalGrounds := []struct {
@@ -135,8 +123,6 @@ func TestPlanCommitSyncContractWiring(t *testing.T) {
 		}
 	}
 
-	// behavioral Eval・管理文面。scripted packetやcorpus scenarioを親Codexのcommit同期
-	// 行動の証明としない限定と、未実行Evalの一次証拠・完了条件・実行条件をEVAL.mdへ残す。
 	for _, wire := range []string{
 		"TestPlanCommitSyncContractWiring",
 		"scripted packetで表現できるwrapper終端を持たず",
@@ -158,9 +144,6 @@ func TestPlanCommitSyncContractWiring(t *testing.T) {
 		}
 	}
 
-	// 本contractは親Codexがcommit・amendを実行するorchestration契約であり、wrapper終端
-	// scenarioを持たない。親behavioral Evalの代替へplan-commit-sync-*のscenarioがcorpusへ
-	// 追加された場合へ失敗させる。
 	sc, _ := loadCorpus(t)
 	for _, s := range sc.Scenarios {
 		if strings.HasPrefix(s.ID, "plan-commit-sync-") {
@@ -168,7 +151,6 @@ func TestPlanCommitSyncContractWiring(t *testing.T) {
 		}
 	}
 
-	// worker/reviewer promptへの個別checklist追加で代替した実装になっていないことを固定する。
 	for _, promptFile := range []string{"codex/glm-worker/prompts/WORKER.md", "codex/glm-worker/prompts/REVIEWER.md"} {
 		prompt := readContractFile(promptFile)
 		for _, keyword := range []string{"commit-ready", "stale-by-one", "amend", "commit同期"} {
@@ -178,9 +160,6 @@ func TestPlanCommitSyncContractWiring(t *testing.T) {
 		}
 	}
 
-	// gateはpreflight・binary build・managed files配置など全配置の前に実行される。呼出位置が
-	// 配置段階より後へ動くとstale HEADのまま配置が完了するため、install.sh本文内の呼出順を固定する。
-	// gateはgrepへ依存するため、require grepがgate呼出より前であることも固定する。
 	installer := readContractFile("install.sh")
 	gateCall := strings.Index(installer, "verify_plan_final_head || exit $?")
 	if gateCall < 0 {
@@ -204,10 +183,6 @@ func TestPlanCommitSyncContractWiring(t *testing.T) {
 	}
 }
 
-// TestPlanFinalHeadTaskPathValidatorMatchesRuntimeはinstall.shのvalidate_plan_task_pathが
-// runtime配置契約validateActiveTaskPathと同じ受理集合を持つことを固定する。install.shから
-// 関数本体だけを抽出してshで実行し、境界caseも含めた候補path群の判定をruntime側と突き合わせる。
-// shell側だけ緩いpathを通すとgateがruntime配置契約と異なるHEADを許可するため、差分はfailする。
 func TestPlanFinalHeadTaskPathValidatorMatchesRuntime(t *testing.T) {
 	root := scenarioRepoRoot(t)
 	installerBytes, err := os.ReadFile(filepath.Join(root, "install.sh"))
@@ -260,12 +235,6 @@ func TestPlanFinalHeadTaskPathValidatorMatchesRuntime(t *testing.T) {
 	}
 }
 
-// TestPlanFinalHeadBulletExtractionMatchesRuntimeはinstall.shのplan_bullet_pathsが
-// runtime activeSectionEntries/activeEntryPathと同じbullet抽出規則を持つことを固定する。
-// 閉じbacktick欠損・前後の余分なtext・複数backtick組をshellだけ緩く受けると、runtimeが
-// 拒否するACTIVE欄をinstaller gateが通すfail openになるため、path validatorだけでなく
-// 抽出規約の差分もfailする。`*`・`+`・番号付きmarker・説明文などの非bullet行はblank行と
-// 区別して双方がfail closed扱いにすることも本testが固定する。
 func TestPlanFinalHeadBulletExtractionMatchesRuntime(t *testing.T) {
 	root := scenarioRepoRoot(t)
 	installerBytes, err := os.ReadFile(filepath.Join(root, "install.sh"))

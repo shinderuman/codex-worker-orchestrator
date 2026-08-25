@@ -37,8 +37,7 @@ NEEDS_SOL_REVIEW: アーキテクチャ、責務、公開API、データモデ�
 PASS: 要求定義を満たし明確な不具合・要求漏れがなく、必要テストがあり、新しい高レバレッジ判断がなく、公開API・データモデル・責務・互換性等のSol確認対象ではなく、圧縮意味情報でSol Highが最終採否できる`RISK: LOW`の変更のみ。高リスクなら`NEEDS_SOL_REVIEW`。
 
 ## コメント品質
-- 新規・変更コメントが次に該当する場合は品質問題としてFIX_REQUIREDでworkerへ削除・簡潔化させる: コード・識別子・関数/型名・直後の処理の言い換え、「取得/設定/構築/実行」等の要約、constructor/getter/setter/単純分岐/単純変換の説明、testのsetup/実行/assert説明、`common-code.md`の許可条件外、同じ理由の複数箇所重複。
-- 理由・制約・不変条件・security・外部仕様・互換性・既知bugなど非自明なコメントは削除させない。行数や機械的な上限だけを理由に削除させない。
+- source commentの受理可否は`commentlint`だけを正とする。理由・制約・不変条件・security・外部仕様・互換性・既知bug・doc/test説明も自然言語commentとして例外化せず、machine gate不合格ならFIX_REQUIREDとする。
 
 ## 出力
 途中経過、大量diff、テスト全文を出さない。作業の最後には、実行環境が指定する構造化出力(schema)へ従った結果を1つだけ返す。STATUS・RISKのenum、fieldの型、status・risk・targets・artifactsの必須は実行環境のschemaが強制するため、ここでは各fieldの意味契約だけを守る。

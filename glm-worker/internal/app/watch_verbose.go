@@ -10,23 +10,14 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-// defaultWatchStatusIntervalはverbose live eventの定期再出力間隔。follow tickより長く、
-// 長時間toolのelapsed更新を追える鮮度に保つ。
 const defaultWatchStatusInterval = 5 * time.Second
 
-// defaultWatchChangeIntervalは現在tool集合の変化を検出した際の再出力最小間隔。busyな
-// stream中にlive eventが割り込み続けないための下限。
 const defaultWatchChangeInterval = time.Second
 
-// watchVerboseLastToolMinDurationは「直前に完了した長時間tool」としてlastに載せる最小
-// 所要時間。短いtoolの連続でlastが意味を失わないための閾値。
 const watchVerboseLastToolMinDuration = 10 * time.Second
 
-// watchDetailMaxRunesはlive eventへ出すcommand・purpose本文の出力上限。切詰めはこの
-// 出力時だけに行い、event log・live snapshot側の保存内容を変更しない。
 const watchDetailMaxRunes = 200
 
-// watchPendingToolはevent logのtool_use blockから組立中の実行中tool。
 type watchPendingTool struct {
 	toolID    string
 	name      string
@@ -34,24 +25,17 @@ type watchPendingTool struct {
 	startedAt time.Time
 }
 
-// watchCompletedToolは測定済み所要時間を持つ完了tool。last表示の対象。
 type watchCompletedTool struct {
 	name       string
 	duration   time.Duration
 	finishedAt time.Time
 }
 
-// watchToolErrorは直近に観測したtool error。
 type watchToolError struct {
 	name string
 	at   time.Time
 }
 
-// watchToolTrackerは流したevent recordから--watch --verbose用のtool状態を組立る。
-// tool_use/tool_resultをtool IDで対応付け、未対応のresult eventで同一callのpendingを
-// 除く(呼出終端後も実行し続けているとは限らないため)。model activity時刻は
-// state.IsModelActivityEventの共有契約に従い、event logへ現れるassistant側の
-// thinking/text/tool_use観測を基準に更新する。
 type watchToolTracker struct {
 	pending             map[string]watchPendingTool
 	lastLongTool        *watchCompletedTool
@@ -134,7 +118,6 @@ func toolDisplayName(blockName string, observedName string) string {
 	return observedName
 }
 
-// pendingToolsは実行中toolを開始順で返す。
 func (t *watchToolTracker) pendingTools() []watchPendingTool {
 	tools := make([]watchPendingTool, 0, len(t.pending))
 	for _, tool := range t.pending {
@@ -149,8 +132,6 @@ func (t *watchToolTracker) pendingTools() []watchPendingTool {
 	return tools
 }
 
-// signatureはlive event再出力要否判定用の現在状態要約。表示対象の変化(pending集合・last・
-// error)だけを含め、経過時間の変化だけで再出力しない。
 func (t *watchToolTracker) signature() string {
 	tools := t.pendingTools()
 	parts := make([]string, 0, len(tools)+2)
@@ -166,8 +147,6 @@ func (t *watchToolTracker) signature() string {
 	return strings.Join(parts, ",")
 }
 
-// watchLiveStatusはverbose live eventの出力間隔を制御する。state・live snapshotは毎回
-// 読み取り専用で参照し、watch側から何も書き込まない。
 type watchLiveStatus struct {
 	st            *state.StateStore
 	taskID        string
@@ -179,8 +158,6 @@ type watchLiveStatus struct {
 	lastSignature string
 }
 
-// refreshは出力条件を満たすときlive eventを出す。statusInterval経過、または出力対象の
-// 変化をchangeInterval経過後に検出したときに出す。forceは初回出力の呼出。
 func (w *watchLiveStatus) refresh(force bool) error {
 	if !w.opts.verbose {
 		return nil
@@ -206,8 +183,6 @@ func (w *watchLiveStatus) refresh(force bool) error {
 	return nil
 }
 
-// watchLiveEventはverbose時のlive tool観測1件。実行中tool・直前の長時間tool・直近の
-// tool errorを1つの型付きeventへ載せる。
 type watchLiveEvent struct {
 	Type        string             `json:"type"`
 	TaskAgeMS   *int64             `json:"task_age_ms,omitempty"`
@@ -236,9 +211,6 @@ type watchLiveToolErr struct {
 	AgeMS int64  `json:"age_ms"`
 }
 
-// writeWatchLiveStatusは現時点のlive tool状態をlive eventへ出す。tool種別・経過・lastは
-// event logのrecordから、command・purpose・background待ちはrunnerが書いたlive snapshot
-// からtool ID対応で取り、snapshot欠損時はそれらのfieldを省く(出力全体は失敗させない)。
 func writeWatchLiveStatus(st *state.StateStore, taskID string, stdout io.Writer, tracker *watchToolTracker, now time.Time) error {
 	event := watchLiveEvent{Type: "live", Current: []watchLiveTool{}}
 	if startedAt, ok := watchTaskStartedAt(st, tracker); ok {
@@ -276,7 +248,6 @@ func writeWatchLiveStatus(st *state.StateStore, taskID string, stdout io.Writer,
 	return writeWatchEvent(stdout, event)
 }
 
-// elapsedMSは経過durationをmillisecond整数へ寄せる。負値は観測境界の揺れとして0にする。
 func elapsedMS(d time.Duration) int64 {
 	if d < 0 {
 		return 0
@@ -284,13 +255,6 @@ func elapsedMS(d time.Duration) int64 {
 	return d.Milliseconds()
 }
 
-// liveToolDetailsはlive snapshotを読み、MODEL_IDLE基準のmodel activity時刻とtool ID対応の
-// 詳細を返す。MODEL_IDLE基準はevent log側trackerのmodel activity時刻とsnapshotの
-// last_model_activity_atの新しい方で、event logへ保存されないsystem/thinking_tokensの
-// 観測はsnapshot側だけが持つ。snapshotのlast_event_atはtool_progress等の非model event
-// 観測でも進むため基準には使わない。新field導入前の旧snapshotではlast_model_activity_atが
-// zeroとして読め、tracker側の時刻へ落ちる(未知はassistant観測基準の安全側扱い)。読めない
-// ときは詳細無しで復帰する。
 type watchLiveDetails struct {
 	tools       map[string]state.TaskLiveTool
 	modelIdleAt time.Time
@@ -311,8 +275,6 @@ func liveToolDetails(st *state.StateStore, taskID string, tracker *watchToolTrac
 	return details
 }
 
-// watchTaskStartedAtはtask年齢の基準時刻を観測用stats mirrorから、無ければ先頭eventから
-// 取る。どちらも無いときはtask_age_msを出さない。
 func watchTaskStartedAt(st *state.StateStore, tracker *watchToolTracker) (time.Time, bool) {
 	if stats, err := st.CurrentTaskStats(); err == nil && !stats.StartedAt.IsZero() {
 		return stats.StartedAt, true
@@ -323,8 +285,6 @@ func watchTaskStartedAt(st *state.StateStore, tracker *watchToolTracker) (time.T
 	return time.Time{}, false
 }
 
-// truncateWatchDetailはlive詳細本文を出力上限runesへ切詰める。改行は1 event本文へ
-// 収まるようescapeする。保存側ではなく出力時だけのtruncateである。
 func truncateWatchDetail(text string) string {
 	single := strings.ReplaceAll(text, "\r", "")
 	single = strings.ReplaceAll(single, "\n", "\\n")

@@ -7,9 +7,6 @@ import (
 	"syscall"
 )
 
-// ProbeRepoLockは対象repo lock fileのflock実保持を非破壊で判定する。
-// lock fileが存在しない場合はfree。fileは開くが作成せず、内容も書き換えない。
-// 独自のflockを取得して即解放するため、並行するworkerの保持とは排他されない。
 func ProbeRepoLock(path string) LockProbe {
 	file, err := os.OpenFile(path, os.O_RDONLY, 0)
 	if err != nil {

@@ -14,8 +14,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-// newRetentionGitRepoは停止時保持基準の機械照合に必要な実git repositoryを用意する。
-// git commandがない環境では保持照合test全体をskipする。
 func newRetentionGitRepo(t *testing.T) string {
 	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {
@@ -50,7 +48,6 @@ func runRetentionGit(t *testing.T, repo string, args ...string) {
 	}
 }
 
-// newGitStateStoreTは実git repositoryをRepoRootに持つstate storeを用意する。
 func newGitStateStoreT(t *testing.T, repo string) *state.StateStore {
 	t.Helper()
 	st, err := state.NewStateStore(config.AppConfig{
@@ -67,7 +64,6 @@ func newGitStateStoreT(t *testing.T, repo string) *state.StateStore {
 	return st
 }
 
-// newGitWorkflowTはcaptureSnapshot差替えをしない実repo向けworkflowを組む。
 func newGitWorkflowT(t *testing.T, st *state.StateStore, r *scriptedRunner, repo string) *Workflow {
 	t.Helper()
 	w := NewWorkflow(config.AppConfig{
@@ -86,7 +82,6 @@ func newGitWorkflowT(t *testing.T, st *state.StateStore, r *scriptedRunner, repo
 	return w
 }
 
-// stopWorkflowInCallは実行中呼出内で--stop要求を出してinterrupted保存まで進める。
 func stopWorkflowInCall(t *testing.T, w *Workflow, st *state.StateStore, checkpoint state.ResumeCheckpoint) {
 	t.Helper()
 	r := w.runner.(*scriptedRunner)
@@ -102,7 +97,6 @@ func stopWorkflowInCall(t *testing.T, w *Workflow, st *state.StateStore, checkpo
 	}
 }
 
-// retentionCheckpointは保持照合対象のinterrupted checkpointを読む。
 func retentionCheckpoint(t *testing.T, st *state.StateStore) state.ResumeCheckpoint {
 	t.Helper()
 	checkpoint, err := st.LoadResumeCheckpoint()
@@ -112,8 +106,6 @@ func retentionCheckpoint(t *testing.T, st *state.StateStore) state.ResumeCheckpo
 	return checkpoint
 }
 
-// TestInterruptedStopCapturesRetentionは--stop停止保存が保持基準(snapshot・dirty列挙・
-// recovery patch)をcheckpointとstateへ固定することを検証する。
 func TestInterruptedStopCapturesRetention(t *testing.T) {
 	repo := newRetentionGitRepo(t)
 	if err := os.WriteFile(filepath.Join(repo, "uncommitted.txt"), []byte("作業中\n"), 0o644); err != nil {
@@ -151,8 +143,6 @@ func TestInterruptedStopCapturesRetention(t *testing.T) {
 	}
 }
 
-// TestResumeInterruptedUntouchedPassesは停止期間中に元checkoutへ誰も触れない場合の
-// resume通過を固定する。
 func TestResumeInterruptedUntouchedPasses(t *testing.T) {
 	repo := newRetentionGitRepo(t)
 	os.WriteFile(filepath.Join(repo, "uncommitted.txt"), []byte("作業中\n"), 0o644)
@@ -177,8 +167,6 @@ func TestResumeInterruptedUntouchedPasses(t *testing.T) {
 	}
 }
 
-// TestResumeInterruptedParentMetadataDeltaPassesは停止期間中の親管理metadata編集
-// (working treeのみ・HEAD不変)を承認してresumeすることを固定する。
 func TestResumeInterruptedParentMetadataDeltaPasses(t *testing.T) {
 	repo := newRetentionGitRepo(t)
 	os.WriteFile(filepath.Join(repo, "IMPLEMENTATION_PLAN.local.md"), []byte("plan v1\n"), 0o644)
@@ -204,9 +192,6 @@ func TestResumeInterruptedParentMetadataDeltaPasses(t *testing.T) {
 	}
 }
 
-// TestResumeInterruptedDirtyDriftFailsClosedは停止時に保持したdirty fileの内容変化・
-// 新規dirty・消失をfail closedにすることを固定する。失敗時もstatusとcheckpointは
-// interruptedのまま残る。
 func TestResumeInterruptedDirtyDriftFailsClosed(t *testing.T) {
 	repo := newRetentionGitRepo(t)
 	os.WriteFile(filepath.Join(repo, "uncommitted.txt"), []byte("作業中\n"), 0o644)
@@ -237,9 +222,6 @@ func TestResumeInterruptedDirtyDriftFailsClosed(t *testing.T) {
 		t.Fatalf("保持違反でmodel呼出を実行しています: %v", resumeRunner.prompts)
 	}
 
-	// 停止時内容へ戻すと同じ--resumeが通過する。これがconflict recovery契約。この対象は
-	// untracked fileのため停止patchではなく保持基準のhash照合で機械検証されており、本文の
-	// 復元はtest(親Codex相当)が原本を保持していることによる。
 	os.WriteFile(filepath.Join(repo, "uncommitted.txt"), []byte("作業中\n"), 0o644)
 	if before.StopDirtyFiles == nil {
 		t.Fatal("停止時基準がありません")
@@ -254,9 +236,6 @@ func TestResumeInterruptedDirtyDriftFailsClosed(t *testing.T) {
 	}
 }
 
-// TestResumeInterruptedExecBitDriftFailsClosedは停止時に保持したdirty fileの内容byteが
-// 同じままexecutable bitだけ変わった状態をfail closedすることを固定する。保持識別子は
-// type・modeを含むlossless比較に載っている。
 func TestResumeInterruptedExecBitDriftFailsClosed(t *testing.T) {
 	repo := newRetentionGitRepo(t)
 	if err := os.WriteFile(filepath.Join(repo, "tracked.txt"), []byte("作業中\n"), 0o644); err != nil {
@@ -288,8 +267,6 @@ func TestResumeInterruptedExecBitDriftFailsClosed(t *testing.T) {
 	}
 }
 
-// TestResumeInterruptedForeignDirtyFailsClosedは停止後に現れた新規の非親管理dirty fileを
-// fail closedすることを固定する。
 func TestResumeInterruptedForeignDirtyFailsClosed(t *testing.T) {
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)
@@ -313,8 +290,6 @@ func TestResumeInterruptedForeignDirtyFailsClosed(t *testing.T) {
 	}
 }
 
-// TestResumeInterruptedParentOnlyHeadAdvancePassesは停止期間中の親管理metadataだけを
-// commitしたHEAD前進を承認することを固定する。
 func TestResumeInterruptedParentOnlyHeadAdvancePasses(t *testing.T) {
 	repo := newRetentionGitRepo(t)
 	os.WriteFile(filepath.Join(repo, "IMPLEMENTATION_PLAN.local.md"), []byte("plan v1\n"), 0o644)
@@ -342,8 +317,6 @@ func TestResumeInterruptedParentOnlyHeadAdvancePasses(t *testing.T) {
 	}
 }
 
-// TestResumeInterruptedHeadAdvanceWithoutIsolationFailsClosedは隔離記録がないまま
-// 非親管理fileを含むHEAD前進をfail closedすることを固定する。
 func TestResumeInterruptedHeadAdvanceWithoutIsolationFailsClosed(t *testing.T) {
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)
@@ -370,7 +343,6 @@ func TestResumeInterruptedHeadAdvanceWithoutIsolationFailsClosed(t *testing.T) {
 	}
 }
 
-// isolationGateFixtureは隔離記録の実質検証へ必要な停止済みtaskの前提を揃える。
 type isolationGateFixture struct {
 	repo       string
 	st         *state.StateStore
@@ -379,7 +351,6 @@ type isolationGateFixture struct {
 	checkpoint state.ResumeCheckpoint
 }
 
-// stopTaskForIsolationGateはdirty作業を持つtaskを--stop停止まで進める。
 func stopTaskForIsolationGate(t *testing.T) *isolationGateFixture {
 	t.Helper()
 	repo := newRetentionGitRepo(t)
@@ -406,7 +377,6 @@ func stopTaskForIsolationGate(t *testing.T) *isolationGateFixture {
 	}
 }
 
-// gitRetentionOutputはgit commandの出力をtrimして返す。
 func gitRetentionOutput(t *testing.T, repo string, args ...string) string {
 	t.Helper()
 	command := exec.Command("git", args...)
@@ -418,12 +388,8 @@ func gitRetentionOutput(t *testing.T, repo string, args ...string) string {
 	return strings.TrimSpace(string(output))
 }
 
-// isolationWorktreePathは実worktreeを伴わない記録検証testのworktree識別path。
 const isolationWorktreePath = "/nonexistent/worktree-iso"
 
-// commitOnBranchAndMergeはbranchを停止時HEADへ作り、隔離成果commit(checkout不要の同tree
-// commit)を1つ乗せて元repoへmergeする。通常merge(fast-forward)なのでbranch tipは統合後HEAD
-// の祖先に残る。
 func (f *isolationGateFixture) commitOnBranchAndMerge(t *testing.T, branch string) {
 	t.Helper()
 	tree := gitRetentionOutput(t, f.repo, "rev-parse", f.stopHead+"^{tree}")
@@ -432,8 +398,6 @@ func (f *isolationGateFixture) commitOnBranchAndMerge(t *testing.T, branch strin
 	runRetentionGit(t, f.repo, "merge", "--quiet", "--no-edit", branch)
 }
 
-// commitSourceChangeOnBranchAndMergeはbranchへ非親管理fileの実変更をcommitして元repoへ
-// mergeする。隔離成果が内容diffを運ぶ主経路で、統合後HEADはbranch tipと一致する。
 func (f *isolationGateFixture) commitSourceChangeOnBranchAndMerge(t *testing.T, branch string) {
 	t.Helper()
 	runRetentionGit(t, f.repo, "checkout", "-q", "-b", branch)
@@ -449,7 +413,6 @@ func (f *isolationGateFixture) commitSourceChangeOnBranchAndMerge(t *testing.T, 
 	}
 }
 
-// advanceHeadWithoutBranchはbranchを経由しないHEAD前進(手動commit)を作る。
 func (f *isolationGateFixture) advanceHeadWithoutBranch(t *testing.T) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(f.repo, "manual.txt"), []byte("手動統合\n"), 0o644); err != nil {
@@ -459,7 +422,6 @@ func (f *isolationGateFixture) advanceHeadWithoutBranch(t *testing.T) {
 	runRetentionGit(t, f.repo, "commit", "-q", "-m", "manual integration")
 }
 
-// saveRecordは元repo側隔離記録を保存する。taskID/repo/headは実値を使う。
 func (f *isolationGateFixture) saveRecord(t *testing.T, branch string, originTaskID string, originHead string) {
 	t.Helper()
 	if err := f.st.SaveIsolationRecord(state.IsolationRecord{
@@ -475,7 +437,6 @@ func (f *isolationGateFixture) saveRecord(t *testing.T, branch string, originTas
 	}
 }
 
-// saveOriginは隔離worktree側stateへ対称な出自記録を保存する。
 func (f *isolationGateFixture) saveOrigin(t *testing.T, taskID string, branch string) {
 	t.Helper()
 	sibling := f.st.AttachSiblingStore(config.RepoHashFor(isolationWorktreePath))
@@ -493,8 +454,6 @@ func (f *isolationGateFixture) saveOrigin(t *testing.T, taskID string, branch st
 	}
 }
 
-// expectRetentionFailureはresume保持照合がWorkerErrorでfail closedすることと、
-// その時点でstatusがinterruptedのまま残ることを検証する。
 func expectRetentionFailure(t *testing.T, f *isolationGateFixture, wantIn string) {
 	t.Helper()
 	resumeRunner := &scriptedRunner{steps: []runnerStep{{structured: implementedPacket("resumed")}}}
@@ -512,8 +471,6 @@ func expectRetentionFailure(t *testing.T, f *isolationGateFixture, wantIn string
 	}
 }
 
-// TestResumeInterruptedIsolatedIntegrationPassesは実branch統合と対称な出自記録を伴う
-// 隔離記録のHEAD前進を、停止時dirty保持が崩れない限り承認することを固定する。
 func TestResumeInterruptedIsolatedIntegrationPasses(t *testing.T) {
 	f := stopTaskForIsolationGate(t)
 	branch := "glm-worker/isolation/isogate1"
@@ -534,10 +491,6 @@ func TestResumeInterruptedIsolatedIntegrationPasses(t *testing.T) {
 	}
 }
 
-// TestResumeInterruptedIsolatedSourceChangeIntegrationPassesは隔離branch自身が非親管理
-// source fileの変更を載せて通常mergeされたHEAD前進を承認する主経路を固定する。既存の
-// 同tree commit fixtureはbranch内容diffを運ばないため、統合後gateの比較基準を停止時HEADへ
-// 崩すrefactorをこのtestだけが検出する。
 func TestResumeInterruptedIsolatedSourceChangeIntegrationPasses(t *testing.T) {
 	f := stopTaskForIsolationGate(t)
 	branch := "glm-worker/isolation/isogate10"
@@ -558,8 +511,6 @@ func TestResumeInterruptedIsolatedSourceChangeIntegrationPasses(t *testing.T) {
 	}
 }
 
-// TestResumeInterruptedIsolationAfterParentMetadataCommitPassesは停止→隔離の間の
-// 親管理metadata commitを挟んだ隔離(作成HEADが停止時HEADの子孫)を承認することを固定する。
 func TestResumeInterruptedIsolationAfterParentMetadataCommitPasses(t *testing.T) {
 	f := stopTaskForIsolationGate(t)
 	if err := os.WriteFile(filepath.Join(f.repo, "IMPLEMENTATION_PLAN.local.md"), []byte("plan v2\n"), 0o644); err != nil {
@@ -587,9 +538,6 @@ func TestResumeInterruptedIsolationAfterParentMetadataCommitPasses(t *testing.T)
 	}
 }
 
-// TestResumeInterruptedIsolationPostIntegrationNonParentCommitFailsClosedは実質検証を
-// 通る隔離branch統合の後で、branch経由ではない非親管理source commitが追加されたHEAD前進を
-// fail closedすることを固定する。tipが現在HEADの祖先であるだけで承認はしない。
 func TestResumeInterruptedIsolationPostIntegrationNonParentCommitFailsClosed(t *testing.T) {
 	f := stopTaskForIsolationGate(t)
 	branch := "glm-worker/isolation/isogate8"
@@ -600,8 +548,6 @@ func TestResumeInterruptedIsolationPostIntegrationNonParentCommitFailsClosed(t *
 	expectRetentionFailure(t, f, "統合後に親管理外file")
 }
 
-// TestResumeInterruptedIsolationPostIntegrationParentMetadataCommitPassesは隔離branch統合後に
-// 追加された前進が親管理metadata commitだけならresumeを承認することを固定する。
 func TestResumeInterruptedIsolationPostIntegrationParentMetadataCommitPasses(t *testing.T) {
 	f := stopTaskForIsolationGate(t)
 	branch := "glm-worker/isolation/isogate9"
@@ -624,8 +570,6 @@ func TestResumeInterruptedIsolationPostIntegrationParentMetadataCommitPasses(t *
 	}
 }
 
-// TestResumeInterruptedUnmergedIsolationBranchFailsClosedは記録branchが統合される前に
-// HEADが別経路で前進した場合をfail closedにすることを固定する。
 func TestResumeInterruptedUnmergedIsolationBranchFailsClosed(t *testing.T) {
 	f := stopTaskForIsolationGate(t)
 	branch := "glm-worker/isolation/isogate3"
@@ -638,8 +582,6 @@ func TestResumeInterruptedUnmergedIsolationBranchFailsClosed(t *testing.T) {
 	expectRetentionFailure(t, f, "統合されていません")
 }
 
-// TestResumeInterruptedIsolationRecordMismatchFailsClosedは記録の元task・元repoが現在と
-// 一致しない場合をfail closedにすることを固定する。
 func TestResumeInterruptedIsolationRecordMismatchFailsClosed(t *testing.T) {
 	f := stopTaskForIsolationGate(t)
 	branch := "glm-worker/isolation/isogate4"
@@ -662,8 +604,6 @@ func TestResumeInterruptedIsolationRecordMismatchFailsClosed(t *testing.T) {
 	expectRetentionFailure(t, f, "元repo")
 }
 
-// TestResumeInterruptedIsolationBranchUnresolvableFailsClosedは記録branchが現在repoで
-// 解決できない場合をfail closedにすることを固定する。
 func TestResumeInterruptedIsolationBranchUnresolvableFailsClosed(t *testing.T) {
 	f := stopTaskForIsolationGate(t)
 	f.advanceHeadWithoutBranch(t)
@@ -672,8 +612,6 @@ func TestResumeInterruptedIsolationBranchUnresolvableFailsClosed(t *testing.T) {
 	expectRetentionFailure(t, f, "解決できません")
 }
 
-// TestResumeInterruptedIsolationOriginMissingFailsClosedは隔離worktree側stateの出自記録が
-// 読めない場合をfail closedにすることを固定する。隔離側state dirは元task完了まで残す。
 func TestResumeInterruptedIsolationOriginMissingFailsClosed(t *testing.T) {
 	f := stopTaskForIsolationGate(t)
 	branch := "glm-worker/isolation/isogate5"
@@ -682,13 +620,11 @@ func TestResumeInterruptedIsolationOriginMissingFailsClosed(t *testing.T) {
 	expectRetentionFailure(t, f, "出自記録を読み込めません")
 }
 
-// TestResumeInterruptedIsolationOriginAsymmetryFailsClosedは出自記録との対称性欠損を
-// fail closedにすることを固定する。
 func TestResumeInterruptedIsolationOriginAsymmetryFailsClosed(t *testing.T) {
 	f := stopTaskForIsolationGate(t)
 	branch := "glm-worker/isolation/isogate6"
 	f.commitOnBranchAndMerge(t, branch)
-	// branch名だけ書き換えた非対称recordも解決可能な実branchを指すようにする。
+
 	runRetentionGit(t, f.repo, "branch", branch+"-other", f.stopHead)
 	f.saveOrigin(t, f.taskID, branch)
 	if err := f.st.SaveIsolationRecord(state.IsolationRecord{
@@ -704,12 +640,10 @@ func TestResumeInterruptedIsolationOriginAsymmetryFailsClosed(t *testing.T) {
 	expectRetentionFailure(t, f, "一致しません")
 }
 
-// TestResumeInterruptedIsolationOriginHeadDriftFailsClosedは記録作成HEADが停止時HEADと
-// 一致せず祖先関係もない場合をfail closedにすることを固定する。
 func TestResumeInterruptedIsolationOriginHeadDriftFailsClosed(t *testing.T) {
 	f := stopTaskForIsolationGate(t)
 	f.advanceHeadWithoutBranch(t)
-	// 停止時HEADを祖先に含まない孤立commitを作成HEADとして申告する。
+
 	tree := gitRetentionOutput(t, f.repo, "rev-parse", f.stopHead+"^{tree}")
 	alienHead := gitRetentionOutput(t, f.repo, "commit-tree", tree, "-m", "alien base")
 	f.saveOrigin(t, f.taskID, "glm-worker/isolation/isogate7")
@@ -717,8 +651,6 @@ func TestResumeInterruptedIsolationOriginHeadDriftFailsClosed(t *testing.T) {
 	expectRetentionFailure(t, f, "作成HEADが停止時HEADと一致しません")
 }
 
-// TestResumeInterruptedNonAncestorHeadFailsClosedは停止時commitを祖先に含まない
-// HEAD移動(amend・rebase等)をfail closedすることを固定する。
 func TestResumeInterruptedNonAncestorHeadFailsClosed(t *testing.T) {
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)
@@ -740,8 +672,6 @@ func TestResumeInterruptedNonAncestorHeadFailsClosed(t *testing.T) {
 	}
 }
 
-// TestResumeInterruptedLegacyCheckpointFailsClosedは保持基準を持たない旧形式
-// interrupted checkpointのresumeをfail closedすることを固定する。
 func TestResumeInterruptedLegacyCheckpointFailsClosed(t *testing.T) {
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)

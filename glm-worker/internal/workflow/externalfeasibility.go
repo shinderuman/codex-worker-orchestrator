@@ -11,12 +11,8 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-// externalFeasibilitySectionHeadingはACTIVE task file内の外部成立性宣言節の見出し。
-// 未検証external runtime assumptionをimplementation前提へ進ませない機械gateの
-// 唯一の入力であり、runtime(test含む)はこのparserだけを使い別parserを置かない。
 const externalFeasibilitySectionHeading = "## External feasibility"
 
-// 宣言statusの受理集合。unknown値はfail closedする。
 const (
 	externalFeasibilityStatusNotApplicable  = "not-applicable"
 	externalFeasibilityStatusPoC            = "poc"
@@ -24,17 +20,10 @@ const (
 	externalFeasibilityStatusImplementation = "implementation"
 )
 
-// externalFeasibilityEvidenceProducerはimplementation statusのevidence-source受理値。
-// 実producer由来以外(人工fixture・scripted packet・worker/reviewer PASS等)を
-// implementation許可のevidenceとして受理しない。
 const externalFeasibilityEvidenceProducer = "producer"
 
-// externalFeasibilityFieldKeysは宣言節へ書けるkeyの全集合。status以外は必須時だけ使う。
 var externalFeasibilityFieldKeys = []string{"status", "assumption", "evidence-source", "evidence", "go"}
 
-// externalFeasibilityはACTIVE task fileの外部成立性宣言。statusは
-// not-applicable(非該当)・poc/observation(PoC・観測段階でproduction実装不可)・
-// implementation(実producer evidenceと親Go判断済み)の4値だけを取る。
 type externalFeasibility struct {
 	status         string
 	assumption     string
@@ -43,12 +32,10 @@ type externalFeasibility struct {
 	goDecision     string
 }
 
-// pocStageはPoC・観測段階の宣言か。production diffを残せない境界でworkerを実行する。
 func (f externalFeasibility) pocStage() bool {
 	return f.status == externalFeasibilityStatusPoC || f.status == externalFeasibilityStatusObservation
 }
 
-// externalFeasibilityRejectKindは宣言拒否理由のtelemetry分類。
 type externalFeasibilityRejectKind int
 
 const (
@@ -57,8 +44,6 @@ const (
 	externalFeasibilityRejectUnverified
 )
 
-// externalFeasibilityParseErrorは宣言の解析・検証失敗。kindでmissing・malformed・
-// unverifiedを区別し、gateがoutcomeへ反映する。
 type externalFeasibilityParseError struct {
 	kind   externalFeasibilityRejectKind
 	reason string
@@ -66,7 +51,6 @@ type externalFeasibilityParseError struct {
 
 func (e *externalFeasibilityParseError) Error() string { return e.reason }
 
-// leadingBackticksは行頭のbacktick連続数を返す。fence境界の判定だけに使う。
 func leadingBackticks(line string) int {
 	count := 0
 	for count < len(line) && line[count] == '`' {
@@ -75,12 +59,6 @@ func leadingBackticks(line string) int {
 	return count
 }
 
-// parseExternalFeasibilityDeclarationはtask file本文から`## External feasibility`節を
-// 解析する。Original instruction等のfenced code block内の同見出しは文書構造ではないため、
-// 3backtick以上の行で開き同数以上のbacktickで閉じるfence境界の外だけを節構造として数える。
-// 節の無いtask・複数節・key: value形式以外の行・未知key・重複key・空value・
-// status別の必須field欠落・evidence-source非producerは全てerror(fail closed)を返す。
-// 宣言内容の真偽とsemantic適用判断は機械検証せず親Codexの責務に残す。
 func parseExternalFeasibilityDeclaration(content []byte) (externalFeasibility, error) {
 	var decl externalFeasibility
 	lines := strings.Split(string(content), "\n")
@@ -175,9 +153,6 @@ func externalFeasibilityKnownKey(key string) bool {
 	return false
 }
 
-// validateExternalFeasibilityFieldsはstatus別の必須・禁止fieldを検証する。
-// poc/observationはstatus+assumptionだけ、implementationは親Go判断と実producer evidenceの
-// fieldを必須とし、not-applicableはstatus以外を書かせない。
 func validateExternalFeasibilityFields(values map[string]string) (externalFeasibility, error) {
 	var decl externalFeasibility
 	status := values["status"]
@@ -245,8 +220,6 @@ func validateExternalFeasibilityFields(values map[string]string) (externalFeasib
 	}, nil
 }
 
-// externalFeasibilityGuardSurfaceは外部成立性宣言gateの設定。親管理metadata guardと同じ
-// 停止semanticsへ載せ、outcome接頭辞だけ分離して集計する。
 var externalFeasibilityGuardSurface = guardSurface{
 	label:         "external feasibility宣言",
 	files:         "ACTIVE task fileの`## External feasibility`節",
@@ -258,20 +231,12 @@ var externalFeasibilityGuardSurface = guardSurface{
 
 func (s guardSurface) unverifiedOutcome() string { return s.outcomePrefix + "_unverified" }
 
-// gateExternalFeasibilityは現在taskのACTIVE task fileから宣言を解析し、受理できない
-// 宣言をmodel呼出前にfail closedする。planの無いrepository(配線なし)は何も強制しない。
-// 全worker/reviewer dispatch entrypointがこの同じ受理集合を通る。keepTaskStatusは
-// --decision・--resumeのように拒否時に現在のtask status(waiting-decisionや停止理由)を
-// 保持すべき呼出でtrueにする。resume checkpoint・session・pending decisionは常にもつ
-// ため、親Codexが宣言を修復すれば同じentrypointを再実行できる。
 func (w *Workflow) gateExternalFeasibility(phase string, keepTaskStatus bool) (externalFeasibility, error) {
 	activeTaskPath := w.readActiveTaskState()
 	if activeTaskPath == "" {
 		return externalFeasibility{}, nil
 	}
-	// 固定済みtask fileの欠損・差し替えは宣言gateではなく既存の親管理metadata guardが
-	// 担当する。ここで停止すると欠損理由のoutcomeが二系統に分かれるため、読まずに下流の
-	// 実在確認へ任せる。
+
 	if !activeTaskFileExists(w.config.RepoRoot, activeTaskPath) {
 		return externalFeasibility{}, nil
 	}
@@ -296,11 +261,6 @@ func (w *Workflow) gateExternalFeasibility(phase string, keepTaskStatus bool) (e
 	return externalFeasibility{}, w.failClosedExternalFeasibility(phase, outcome, err.Error(), nil, !keepTaskStatus)
 }
 
-// failClosedExternalFeasibilityは宣言gate失敗の停止semantics。resume checkpoint・
-// session・pending decisionは消さず保持し、moveToWaitingSolReview=trueの呼出
-// (new task・fix・reviewer・auto-fix)だけtask statusをWaitingSolReviewへ移す。
-// --decision・--resumeはstatusも変えず、親Codexが宣言を修復すれば同じentrypointを
-// そのまま再実行できる。
 func (w *Workflow) failClosedExternalFeasibility(phase string, outcome string, reason string, cause error, moveToWaitingSolReview bool) error {
 	w.recordParentFileEvent(phase, externalFeasibilityGuardSurface, outcome, reason, cause)
 	if moveToWaitingSolReview {
@@ -317,9 +277,6 @@ func (w *Workflow) failClosedExternalFeasibility(phase string, outcome string, r
 	return errParentFileGuardStopped
 }
 
-// externalFeasibilityFailClosedResultは宣言gateのfail closed packet。worker/reviewer
-// model呼出0回で止まったこと・停止済みstateの保持・親Codexの回復操作(宣言の追加・
-// migration・Go判断)を明示する。
 func externalFeasibilityFailClosedResult(phase string, reason string) packet.Result {
 	return packet.Result{
 		Status:              packet.StatusNeedsSolReview,
@@ -335,9 +292,6 @@ func externalFeasibilityFailClosedResult(phase string, reason string) packet.Res
 	}
 }
 
-// savePoCStartSnapshotはPoC/観測taskのworker開始直前のHEAD/index/worktreeを基準として
-// 保存する。基準を確保できないときはworkerを実行せずfail closedする。resumeはこの保存済み
-// snapshotを基準に再利用し、再撮影して停止期間中の変化を隠さない。
 func (w *Workflow) savePoCStartSnapshot() (bool, error) {
 	start, err := w.captureSnapshot(w.config.RepoRoot)
 	if err != nil {
@@ -349,8 +303,6 @@ func (w *Workflow) savePoCStartSnapshot() (bool, error) {
 	return false, nil
 }
 
-// gatePoCResumeSnapshotはPoC worker resumeを実行前に基準snapshotの存在だけを確認する。
-// 基準が無ければprobeもworker呼出も1件も行わずfail closedする。
 func (w *Workflow) gatePoCResumeSnapshot() (bool, error) {
 	if _, err := w.state.LoadPoCStartSnapshot(); err != nil {
 		return true, w.failClosedPoCSnapshot(
@@ -364,9 +316,6 @@ func (w *Workflow) gatePoCResumeSnapshot() (bool, error) {
 	return false, nil
 }
 
-// verifyPoCEndSnapshotはPoC/観測worker終了後、開始直前の保存snapshotへ現在状態を再照合する。
-// 通常reviewへ進める前に強制し、1軸でも変化すればfail closedする。rate-limit・provider障害の
-// resume後も同じ基準を使うため、停止期間中の変化も検出から逃れない。
 func (w *Workflow) verifyPoCEndSnapshot() (bool, error) {
 	start, err := w.state.LoadPoCStartSnapshot()
 	if err != nil {
@@ -386,15 +335,11 @@ func (w *Workflow) verifyPoCEndSnapshot() (bool, error) {
 	return false, nil
 }
 
-// failClosedPoCSnapshotはPoC前後同一性確認失敗をreport-onlyと同じ停止semanticsへ載せる。
-// 検出主体はworkerの前後invariantのためevent roleはWorkerRoleのままにする。
 func (w *Workflow) failClosedPoCSnapshot(stage state.SnapshotStage, start, current state.GitSnapshot, reason string, cause error) error {
 	w.recordSnapshotEvent(state.WorkerRole, stage, start, current, reason, cause)
 	return w.failClosedStopped(stage, reason, cause, poCSnapshotFailClosedResult)
 }
 
-// poCSnapshotFailClosedResultはPoC/観測taskの不変性確認失敗時のSol確認結果。
-// production diff禁止の機械強制境界であることをSolへ区別可能にする。
 func poCSnapshotFailClosedResult(stage state.SnapshotStage, reason string) packet.Result {
 	return packet.Result{
 		Status:              packet.StatusNeedsSolReview,
@@ -410,8 +355,6 @@ func poCSnapshotFailClosedResult(stage state.SnapshotStage, reason string) packe
 	}
 }
 
-// routePoCWorkerResultはPoC/観測taskのIMPLEMENTED結果を親Go/No-Go待ちへ変換する。
-// reviewer PASSで完了させず、implementation昇格を親Codexの宣言書き換えに限定する。
 func (w *Workflow) routePoCWorkerResult(workerResult packet.Result) error {
 	result := pocGoNoGoResult(workerResult)
 	if err := packet.ValidateWorkerResult(result); err != nil {
@@ -426,9 +369,6 @@ func (w *Workflow) routePoCWorkerResult(workerResult packet.Result) error {
 	return w.emitResult(result)
 }
 
-// pocGoNoGoResultはPoC/観測結果をNEEDS_SOL_DECISIONへ包む。workerの観測報告
-// (summary/tests/unverified/artifacts)をevidence欄へそのまま載せ、昇格手段を
-// 宣言migrationだけに限定したdecision fieldsを機械的に固定する。
 func pocGoNoGoResult(workerResult packet.Result) packet.Result {
 	targets := workerResult.Targets
 	if len(targets) == 0 {

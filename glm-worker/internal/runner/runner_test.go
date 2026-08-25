@@ -648,8 +648,6 @@ func seedStaleReadyRole(t *testing.T, st *state.StateStore, role state.SessionRo
 	}
 }
 
-// 呼出しroleだけresetして成功後にtask共通markerを更新すると、reviewerの旧sessionが
-// readyのまま残りmarker一致としてresumeされる回帰を防ぐ。
 func TestIsolationMigrationWorkerFirstClearsReviewerSession(t *testing.T) {
 	f := newIsolationMigrationFixture(t)
 	seedStaleReadyRole(t, f.state, state.WorkerRole, "stale-worker")
@@ -713,11 +711,10 @@ func TestIsolationMigrationReviewerFirstClearsWorkerSession(t *testing.T) {
 	}
 }
 
-// 呼出し対象でないworkerの旧readyが残ると、次回worker呼出しがmarker一致で旧sessionをresumeする回帰を防ぐ。
 func TestIsolationMigrationClearsNonCallingReadyRole(t *testing.T) {
 	f := newIsolationMigrationFixture(t)
 	seedStaleReadyRole(t, f.state, state.WorkerRole, "stale-worker")
-	// reviewerはid発行済みだが未成功(readyなし)。
+
 	if err := f.state.Write("reviewer.id", "stale-reviewer"); err != nil {
 		t.Fatal(err)
 	}
@@ -744,10 +741,6 @@ func TestIsolationMigrationClearsNonCallingReadyRole(t *testing.T) {
 	}
 }
 
-// isolation.policyは成功markerではなくsession IDの起動policyを表すため、Claude実行前に
-// 永続化される。通常失敗時はpolicyがcurrentになったままでも、worker.readyが付かないため
-// 失敗sessionが--resumeされることはない。失敗session idの破棄はworkflow層の
-// RemoveUnreadySessionが担い、runner層は永続化したidを保持する。
 func TestIsolationPolicyPersistedBeforeExecutionOnFailure(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixtureはUnix系環境向け")
@@ -815,8 +808,6 @@ func TestIsolationPolicyPersistedBeforeExecutionOnFailure(t *testing.T) {
 	}
 }
 
-// workflow.runModelは5h上限検出時にMarkReady(role)でsessionを保存するため、テストも
-// 1回目のRun後にMarkReadyを呼び出して本物の制御フローを再現する。
 func newFiveHourLimitResumeFixture(t *testing.T, role state.SessionRole) (*ClaudeRunner, *state.StateStore, string) {
 	t.Helper()
 	if runtime.GOOS == "windows" {
@@ -852,15 +843,12 @@ func newFiveHourLimitResumeFixture(t *testing.T, role state.SessionRole) (*Claud
 		EnvAllowlist:    []string{"GLM_ARGS_DIR"},
 	}, st)
 	if role == state.ReviewerRole {
-		// reviewer実行にはworkerの完了packet(last-review等)は不要だが、reviewer modelを設定。
+
 		r.config.ReviewerModel = "reviewer-model"
 	}
 	return r, st, argsDir
 }
 
-// 初回worker呼出しがZ.ai 5h上限へ到達しても、workflowのMarkReady後に同一session IDへ
-// --resumeされる回帰。policy未書込のままresumeされてResetSessionsForPolicyにsession IDを
-// 破棄される元のバグを防ぐ。
 func TestFirstWorkerRunFiveHourLimitResumesSameSession(t *testing.T) {
 	r, st, argsDir := newFiveHourLimitResumeFixture(t, state.WorkerRole)
 
@@ -868,7 +856,7 @@ func TestFirstWorkerRunFiveHourLimitResumesSameSession(t *testing.T) {
 		filepath.Join(t.TempDir(), "first.log")); err == nil {
 		t.Fatal("5h上限はerrorを返す必要があります")
 	}
-	// workflow.runModelは5h上限検出時にsessionをready保存する。
+
 	if err := st.MarkReady(state.WorkerRole); err != nil {
 		t.Fatal(err)
 	}
@@ -895,7 +883,6 @@ func TestFirstWorkerRunFiveHourLimitResumesSameSession(t *testing.T) {
 	}
 }
 
-// reviewer roleでもworkerと同様に5h上限後に同一session IDへ--resumeされる。
 func TestFirstReviewerRunFiveHourLimitResumesSameSession(t *testing.T) {
 	r, st, argsDir := newFiveHourLimitResumeFixture(t, state.ReviewerRole)
 
@@ -948,8 +935,7 @@ func TestIsolationPolicyWriteFailureAbortsBeforeClaude(t *testing.T) {
 	if _, err := st.StartNewTask(); err != nil {
 		t.Fatal(err)
 	}
-	// isolation.policy pathへdirectoryを置き、SetIsolationPolicyのrenameだけを失敗させる。
-	// SessionIDのworker.id書き込みは別pathなので成功し、policy永続化のみ境界を再現する。
+
 	if err := os.MkdirAll(st.Path("isolation.policy"), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -970,7 +956,6 @@ func TestIsolationPolicyWriteFailureAbortsBeforeClaude(t *testing.T) {
 	}
 }
 
-// 一経路でも欠ければ全sessionで隔離が崩れるため、個別testではなくここへ集約する共有helper。
 func assertFullIsolationArgs(t *testing.T, args []string, claudeConfigDir string, expectReviewerAgentBlock bool) {
 	t.Helper()
 	if !containsArgument(args, "--safe-mode") {
@@ -1013,7 +998,7 @@ func assertFullIsolationArgs(t *testing.T, args []string, claudeConfigDir string
 	if payload.AutoMemoryEnabled || !payload.DisableAllHooks || !payload.DisableBundledSkills || !payload.DisableWorkflows {
 		t.Fatalf("customization無効化が不完全: %#v", payload)
 	}
-	// reviewerはAgent禁止、workerはAgent許可。経路(resume含む)で変わらない。
+
 	hasAgentDisallowed := false
 	for _, argument := range args {
 		if argument == "--disallowedTools" {
@@ -1033,7 +1018,6 @@ func assertFullIsolationArgs(t *testing.T, args []string, claudeConfigDir string
 	}
 }
 
-// resume経路で隔離flagが落ちる回帰を防ぐ。
 func TestIsolationArgsIdenticalAcrossRoleAndResume(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixtureはUnix系環境向け")
@@ -1050,8 +1034,7 @@ func TestIsolationArgsIdenticalAcrossRoleAndResume(t *testing.T) {
 		t.Fatal(err)
 	}
 	commandPath := filepath.Join(t.TempDir(), "fake-claude")
-	// 呼出しごとに連番ファイルへ引数を書き出す。空文字列引数(--setting-sources "")も
-	// 行として保持するため、読み側は末尾改行1件だけ除去するreadLinesを使う。
+
 	commandScript := "#!/bin/sh\nn=$(cat \"$GLM_ARGS_DIR/count\" 2>/dev/null || echo 0)\nn=$((n+1))\nprintf '%s\\n' \"$n\" >\"$GLM_ARGS_DIR/count\"\nprintf '%s\\n' \"$@\" >\"$GLM_ARGS_DIR/run-$n\"\nprintf '%s\\n' '{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"structured_output\":{\"status\":\"IMPLEMENTED\",\"risk\":\"LOW\",\"summary\":\"done\",\"requirement_coverage\":\"covered\",\"tests\":\"pass\",\"unverified\":\"none\"},\"result\":\"ok\\n\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}'\n"
 	if err := os.WriteFile(commandPath, []byte(commandScript), 0o700); err != nil {
 		t.Fatal(err)

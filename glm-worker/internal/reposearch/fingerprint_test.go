@@ -8,21 +8,15 @@ import (
 	"testing"
 )
 
-// freshnessCaseはproduction Search()経由のcache freshness境界1件分。初回Searchで
-// cacheを書き、状態変化後に再Searchする。freshnessはcache結果と DisableCacheの
-// 新規Search結果の完全一致(変化の過不足ない反映)と、変化の種類に応じたCacheStatusの
-// 両方で判定する。fingerprintがcorpus軸を見落とすと結果不一致として、corpus外まで
-// 見ると不必要なrebuiltとして直接検出される。
 type freshnessCase struct {
 	name string
-	// setupは初回Search前のrepo準備。
+
 	setup func(t *testing.T, dir string)
-	// mutateは初回Search後の状態変化。
+
 	mutate func(t *testing.T, dir string)
-	// expectRebuiltは corpus が変化する変化か。trueはrebuilt必須、falseはhit必須、
-	// nilはgit diff由来の安全な過剰再構築(tracked binary変更等)を許し結果一致だけ見る。
+
 	expectRebuilt *bool
-	// wantPathsは変化後の結果path一覧。
+
 	wantPaths []string
 }
 
@@ -361,8 +355,6 @@ func TestSearchFreshnessTracksCorpusBoundaries(t *testing.T) {
 	}
 }
 
-// 追加除外directoryも既定除外と同じくcorpus外であり、配下のtracked変更はcacheを
-// 無効化しない。除外policy違いのcache再利用判定は別testで固定済み。
 func TestSearchFreshnessIgnoresUserExcludedDirContent(t *testing.T) {
 	dir := initRepo(t)
 	writeTestFile(t, filepath.Join(dir, "real.txt"), "needle\n")
@@ -383,8 +375,6 @@ func TestSearchFreshnessIgnoresUserExcludedDirContent(t *testing.T) {
 	}
 }
 
-// submodule配下は検索対象外。pointer移動(内部commit)も検索corpusを変えないため
-// cacheを再利用し、submodule内部の文書は結果へ出ない。
 func TestSearchTreatsSubmoduleOutsideCorpus(t *testing.T) {
 	dir := initRepo(t)
 	writeTestFile(t, filepath.Join(dir, "real.txt"), "needle\n")
@@ -393,8 +383,7 @@ func TestSearchTreatsSubmoduleOutsideCorpus(t *testing.T) {
 	gitRun(t, "", "init", "--quiet", "--initial-branch=main", subSource)
 	writeTestFile(t, filepath.Join(subSource, "s.txt"), "needle inside submodule\n")
 	commitAll(t, subSource, "sub init")
-	// local pathのsubmodule登録はgit 2.38.1以降既定でfile transportを拒否するため
-	// このtest実行に限り許可する。
+
 	gitRun(t, dir, "-c", "protocol.file.allow=always", "submodule", "add", "--quiet", subSource, "deps/subm")
 	commitAll(t, dir, "add submodule")
 	opts := Options{CacheRoot: t.TempDir()}

@@ -7,8 +7,6 @@ import (
 	"strings"
 )
 
-// gitOutputはgit subprocessをcontext付きで実行しstdoutを返す。context取消時は
-// kill後のexit errorではなくctx.Err()をそのまま返す。
 func gitOutput(ctx context.Context, repoRoot string, args ...string) ([]byte, error) {
 	output, err := exec.CommandContext(ctx, "git", append([]string{"-C", repoRoot}, args...)...).Output()
 	if err != nil {

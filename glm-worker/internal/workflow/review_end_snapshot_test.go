@@ -38,7 +38,6 @@ func initMutationRepo(t *testing.T) string {
 	return repoRoot
 }
 
-// mutatingRunnerはEdit/Write禁止のreviewerがBash相当でrepositoryを変更する事象を再現するfake runner。
 type mutatingRunner struct {
 	steps    []runnerStep
 	prompts  []string
@@ -46,15 +45,13 @@ type mutatingRunner struct {
 	phases   []string
 	repoRoot string
 	mutate   func(repoRoot string) error
-	// mutatePhaseを設定するとreviewer呼出条件へ優先し、指定phaseの呼出だけmutateする。
+
 	mutatePhase string
-	// mutateSkipCallsはmutate適用までに読み飛ばす対象呼出の数。同一phaseの再実行呼出の
-	// うちprobe成功後のresumed taskだけを変更対象にする試験で使う。
+
 	mutateSkipCalls int
-	// mutateOnRunErrorはrunErr終端stepでもmutateを適用する。5h上限などrunErr必須の
-	// 終端でstate fileを破壊する試験だけが使う。
+
 	mutateOnRunError bool
-	// readOnlyCallsは各Run呼出へ渡されたcapability flagを記録する。
+
 	readOnlyCalls []bool
 	probes        []string
 }
@@ -86,7 +83,7 @@ func (r *mutatingRunner) Run(
 		result.StructuredOutput = json.RawMessage(step.structured)
 	}
 	if result.Response == "" {
-		// productionと同じくresult文字列はstructured outputのJSON表現とする。
+
 		result.Response = string(result.StructuredOutput)
 	}
 	mutateTarget := role == state.ReviewerRole
@@ -124,7 +121,6 @@ func newMutationWorkflow(t *testing.T, repoRoot string, steps []runnerStep, muta
 	return w, r, out
 }
 
-// runner/output/RepoRoot/captureSnapshotは呼出側で実repoへ向ける。
 func newMutationWorkflowShell(t *testing.T, st *state.StateStore) *Workflow {
 	t.Helper()
 	return newWorkflowT(t, st, &scriptedRunner{})
@@ -161,7 +157,6 @@ func mismatchEvent(t *testing.T, st *state.StateStore) state.ModelCallLog {
 	return state.ModelCallLog{}
 }
 
-// reviewerがtracked fileを変更した場合、PASSを採用せずfail closedし変更は保持される。
 func TestReviewEndWorktreeMutationRejectsPass(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	w, r, out := newMutationWorkflow(t, repoRoot, []runnerStep{
@@ -188,7 +183,6 @@ func TestReviewEndWorktreeMutationRejectsPass(t *testing.T) {
 	}
 }
 
-// reviewerがuntracked fileを作成した場合もworktree軸で拒否される。
 func TestReviewEndUntrackedMutationRejectsPass(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	w, r, out := newMutationWorkflow(t, repoRoot, []runnerStep{
@@ -210,7 +204,6 @@ func TestReviewEndUntrackedMutationRejectsPass(t *testing.T) {
 	}
 }
 
-// reviewerがindexへstageした場合、index軸で検出される。
 func TestReviewEndIndexMutationRejectsPass(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	w, r, out := newMutationWorkflow(t, repoRoot, []runnerStep{
@@ -237,7 +230,6 @@ func TestReviewEndIndexMutationRejectsPass(t *testing.T) {
 	}
 }
 
-// reviewerがcommitした場合、head軸で検出される。
 func TestReviewEndHeadMutationRejectsPass(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	w, r, out := newMutationWorkflow(t, repoRoot, []runnerStep{
@@ -264,7 +256,6 @@ func TestReviewEndHeadMutationRejectsPass(t *testing.T) {
 	}
 }
 
-// FIX_REQUIREDも採用せずauto-fixを起こさない。
 func TestReviewEndMutationRejectsFixRequired(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	w, r, out := newMutationWorkflow(t, repoRoot, []runnerStep{
@@ -284,7 +275,6 @@ func TestReviewEndMutationRejectsFixRequired(t *testing.T) {
 	}
 }
 
-// reviewer自身のNEEDS_SOL_REVIEW packetも採用せずwrapperのfail closed packetへ差し替える。
 func TestReviewEndMutationRejectsNeedsSolReview(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	w, r, out := newMutationWorkflow(t, repoRoot, []runnerStep{
@@ -303,7 +293,6 @@ func TestReviewEndMutationRejectsNeedsSolReview(t *testing.T) {
 	}
 }
 
-// mutation無しの通常reviewはPASS採用が維持され、review-end一致comparisonが残る。
 func TestReviewEndMatchProceedsToPass(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	w, _, out := newMutationWorkflow(t, repoRoot, []runnerStep{
@@ -331,7 +320,6 @@ func TestReviewEndMatchProceedsToPass(t *testing.T) {
 	}
 }
 
-// auto-fix loopのrepeated reviewでもreview-end検証が通り、risk floor reemit結果が採用される。
 func TestReviewEndMatchOnAutoFixLoop(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	w, _, out := newMutationWorkflow(t, repoRoot, []runnerStep{
@@ -359,8 +347,6 @@ func TestReviewEndMatchOnAutoFixLoop(t *testing.T) {
 	}
 }
 
-// rate-limit resumeでreviewerが正常終了した直後のmutationをreview-end検出する。
-// resume前のreview-start照合は壊さない。
 func TestReviewEndMutationAfterRateLimitResumeRejectsPass(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	st := newStateStoreT(t)
@@ -417,7 +403,6 @@ func TestReviewEndMutationAfterRateLimitResumeRejectsPass(t *testing.T) {
 	}
 }
 
-// risk floor reemit呼出中のmutationも採用前に検出する。reemit自身のNEEDS_SOL_REVIEWは出さない。
 func TestReviewEndMutationOnRiskFloorReemitRejects(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	reviewerCalls := 0
@@ -459,7 +444,6 @@ func TestReviewEndMutationOnRiskFloorReemitRejects(t *testing.T) {
 	}
 }
 
-// review-end時点のsnapshot取得失敗は比較未実施としてmismatch軸集計へ混ぜない。
 func TestReviewEndCaptureFailureFailsClosedNotMismatch(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{

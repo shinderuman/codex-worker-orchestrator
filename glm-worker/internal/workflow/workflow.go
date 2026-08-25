@@ -1,4 +1,3 @@
-// Package workflowはworker→reviewer→auto-fixの状態機械を駆動する。
 package workflow
 
 import (
@@ -14,14 +13,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/commentlint"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-// interfaceは実装側ではなく利用側に置き、テストでは偽装実装へ差し替える。
-// phaseは受動event logへ記録するcall識別metadataで、実行内容へは影響しない。
 type ModelRunner interface {
 	Run(role state.SessionRole, phase string, model string, readOnly bool, effort string, prompt string, outputPath string) (runner.RunResult, error)
 	Probe(model string) (runner.ProbeResult, error)
@@ -38,21 +36,17 @@ type Workflow struct {
 	now                 func() time.Time
 	sleep               func(time.Duration)
 	jitter              func(base time.Duration) time.Duration
-	// stopは--stop要求の観測経路。nil(旧test配線)のとき停止要求を観測しない。
+	commentLint         func(root string) (commentlint.Report, error)
+
 	stop *runner.StopController
-	// pendingSnapshotはverifyReviewStart/ResumeSnapshotが一致判定した直近snapshot診断。
-	// reviewer呼出成功時にそのcallのtelemetryへ付与して消費する。reemit呼出には付与しない。
+
 	pendingSnapshot *state.SnapshotDiagnostic
-	// currentResumeSourceはExecuteResumeが設定する再開理由(rate-limit/provider-unavailable)。
-	// resume直後のrunModel記録へ付与して使う。1コマンド実行で1回だけ設定される。
+
 	currentResumeSource string
-	// lastProducerは直近に成功したTask Work Callの識別。emitResultがterminal packetの
-	// parent review opportunityへ生成呼出を対応付けるために使う。
+
 	lastProducer state.ParentReviewProducer
 }
 
-// callDiagnosticsは1回のmodel呼出記録へ付与する診断情報。recordModelCallへ渡す。
-// reportedRiskは成功時のpacket RISK。providerClassificationはtransient障害分類。
 type callDiagnostics struct {
 	reportedRisk           string
 	providerClassification string
@@ -69,29 +63,29 @@ func NewWorkflow(cfg config.AppConfig, st *state.StateStore, r ModelRunner, outp
 		now:                 time.Now,
 		sleep:               time.Sleep,
 		jitter:              boundedBackoffJitter,
+		commentLint:         runCommentLint,
 	}
 }
 
-// AttachStopControllerは--stop要求の観測経路をworkflowへ接続する。未接続のworkflowは
-// 停止要求を観測せず、従来どおり自然終端・provider停止経路だけを扱う。
+func runCommentLint(root string) (commentlint.Report, error) {
+	if root == "" {
+		return commentlint.Report{Status: "pass", Violations: []commentlint.Violation{}}, nil
+	}
+	return commentlint.Check(root)
+}
+
 func (w *Workflow) AttachStopController(stop *runner.StopController) {
 	w.stop = stop
 }
 
-// stopRequestedは現在までに--stop要求が出ているか。停止経路を観測しない配線では
-// 常にfalseである。
 func (w *Workflow) stopRequested() bool {
 	return w.stop != nil && w.stop.StopRequested()
 }
 
-// providerUnavailableDeadlineは一時障害回復のhard deadline。backoffは各待機後にprobe 1回だけ送り、
-// この上限とprobe回数上限の先に到達した側で停止する。deadlineを超えるsleepはbackoffWaitが禁止する。
 const providerUnavailableDeadline = 3 * time.Hour
 
 const maxTransientProbes = 4
 
-// transientBackoffScheduleは各probe前のbase待機時間。合計155分で、jitter込みでも通常は
-// 2.5〜3時間以内にdeadlineへ収まるよう選んだ。
 var transientBackoffSchedule = []time.Duration{
 	5 * time.Minute,
 	15 * time.Minute,
@@ -99,7 +93,6 @@ var transientBackoffSchedule = []time.Duration{
 	90 * time.Minute,
 }
 
-// boundedBackoffJitterは固定間隔pollingを避けるためbaseに0〜25%を加える。testへ差し替え可能。
 func boundedBackoffJitter(base time.Duration) time.Duration {
 	if base <= 0 {
 		return base
@@ -117,8 +110,6 @@ func (w *Workflow) withTemp(fn func() error) error {
 	return fn()
 }
 
-// WorkerErrorはworker/workflow実行のfail closed失敗。process errorのkind worker_errorへ
-// 対応し、Phase・ExitCode・Tailは診識別の機械fieldとして分離して載る。
 type WorkerError struct {
 	Phase    string
 	ExitCode int
@@ -160,15 +151,11 @@ func (w *Workflow) ExecuteNewTask(request string) error {
 		if err := w.state.Write("last-request", request); err != nil {
 			return err
 		}
-		// 新task開始時に前taskのACTIVE task固定を除去する。解決失敗時は未設定のまま残り、
-		// 親CodexがPlan・task fileを修復して同じtaskを--fix等で再開した時点で再解決される。
+
 		if err := w.state.Remove("last-decision", "last-review", activeTaskStateKey); err != nil {
 			return err
 		}
-		// ACTIVE task file pathはtask開始時に一度だけ解決してstateへ固定する。以降のdecision・fix・
-		// reviewer・auto-fix各呼出とworker呼出前の存在確認は同じ値を読むため、親Codexが停止中にPlanの
-		// ACTIVE欄を切り替えても実行中taskの要求正本が別taskへすり替わらない。planの無いrepositoryでは
-		// 配線なしとして要求source blockを付けず、解決失敗はmodel呼出前にfail closedする。
+
 		activeTaskPath, wired, err := resolveActiveTaskPath(w.config.RepoRoot)
 		if err != nil {
 			return w.failClosedActiveTaskResolution("worker-new", err)
@@ -179,9 +166,7 @@ func (w *Workflow) ExecuteNewTask(request string) error {
 		if err := w.state.Write(activeTaskStateKey, activeTaskPath); err != nil {
 			return err
 		}
-		// ACTIVE task fileの外部成立性宣言をmodel呼出前に機械検証する。宣言欠損・不正・
-		// evidence無しimplementationは0 model callでfail closedし、poc/observationは
-		// production diffを残せない境界へ流す。
+
 		decl, err := w.gateExternalFeasibility("worker-new", false)
 		if err != nil {
 			return err
@@ -236,15 +221,12 @@ func (w *Workflow) ExecuteDecision(decision string) error {
 		if err != nil {
 			return &WorkerError{Message: "original request is missing"}
 		}
-		// ACTIVE不正はdecision消費・state mutationより前に拒否する。拒否はwaiting-decisionと
-		// pending decisionを残すため、親CodexがPlan・task fileを修復すれば同じdecisionを
-		// そのまま再実行できる。
+
 		activeTaskPath, err := w.gateDecisionActiveTask()
 		if err != nil {
 			return err
 		}
-		// 外部成立性宣言gateもdecision消費前に拒否する。拒否はwaiting-decisionとpending
-		// decisionを残すため、親Codexが宣言を修復すれば同じdecisionを再実行できる。
+
 		decl, err := w.gateExternalFeasibility("worker-decision", true)
 		if err != nil {
 			return err
@@ -257,8 +239,7 @@ func (w *Workflow) ExecuteDecision(decision string) error {
 			return err
 		}
 		w.state.RecordDecision()
-		// pending decision packetへの親回答をoutcome 1件へ確定する。gate前の再実行や
-		// 二重実行は未確定opportunityが既に無ければ計上しない(exactly-once)。
+
 		if _, err := w.state.RecordParentOutcome(state.ParentOutcomeDecision, ""); err != nil {
 			return err
 		}
@@ -322,18 +303,16 @@ func (w *Workflow) ExecuteExplicitFix(instruction, origin string) error {
 			return err
 		}
 		w.state.RecordFix()
-		// 親reviewの差し戻しをoutcome 1件へ確定する。originは親が--originで宣言した値だけで、
-		// 未宣言はunknownに倒し本文や状況からの推定を行わない。同一fixの再実行は未確定
-		// opportunityが既に無ければ計上しない(exactly-once)。
+
 		if _, err := w.state.RecordParentOutcome(state.ParentOutcomeFix, origin); err != nil {
 			return err
 		}
-		// decision同様、ACTIVE解決fail closed後の修復再開ではstate未設定を検出して再解決する。
+
 		activeTaskPath, err := w.ensureActiveTaskPath("worker-explicit-fix")
 		if err != nil {
 			return err
 		}
-		// 外部成立性宣言gateはfix経路も同じ受理集合で通す。
+
 		decl, err := w.gateExternalFeasibility("worker-explicit-fix", false)
 		if err != nil {
 			return err
@@ -390,20 +369,13 @@ func (w *Workflow) ExecuteResume() error {
 		if !isKnownResumeStage(checkpoint.Stage) {
 			return &WorkerError{Message: fmt.Sprintf("unknown resume stage: %s", checkpoint.Stage)}
 		}
-		// 外部成立性宣言gateはresumeでも同じ受理集合を使う。停止中に親Codexが宣言を
-		// migrationした場合は現在値が正であり、poc/observationの再開は書き込み不可境界へ
-		// 流れる。宣言が受理できなければprobe含む全model呼出前にfail closedする。拒否は
-		// 停止中のtask status・checkpointを保持するため、親Codexが宣言を修復すれば同じ
-		// --resumeを再実行できる。
+
 		decl, err := w.gateExternalFeasibility(checkpoint.Phase, true)
 		if err != nil {
 			return err
 		}
 		pocResume := checkpoint.Stage == state.ResumeStageWorker && decl.pocStage()
 
-		// --stop停止taskのresumeは、割り込みtask隔離実行の有無に関わらず停止期間中の元checkout
-		// 保持をまず機械照合する。保持基準からの逸脱はstatus変更・checkpoint破棄をせずfail closedに
-		// 終端するため、親Codexが元checkoutを停止時内容へ戻せば同じ--resumeで再試行できる。
 		if checkpoint.UserInterrupted {
 			if err := w.verifyInterruptedRetention(checkpoint); err != nil {
 				return err
@@ -416,8 +388,7 @@ func (w *Workflow) ExecuteResume() error {
 		}
 		w.state.RecordResume()
 		w.currentResumeSource = resumeSourceOf(checkpoint)
-		// report-only resumeは基準snapshotが無ければ不変性を確認する基準自体が存在しないため、
-		// probe・worker呼出を1件も実行する前にfail closedし、新baseline撮影で欠損を隠さない。
+
 		if checkpoint.Stage == state.ResumeStageAutoFix && checkpoint.ReportOnly {
 			if stopped, err := w.gateReportOnlyResumeSnapshot(); err != nil {
 				return err
@@ -425,7 +396,7 @@ func (w *Workflow) ExecuteResume() error {
 				return nil
 			}
 		}
-		// PoC/観測taskのworker resumeも同じく初回開始直前の保存snapshotを基準に要求する。
+
 		if pocResume {
 			if stopped, err := w.gatePoCResumeSnapshot(); err != nil {
 				return err
@@ -433,9 +404,7 @@ func (w *Workflow) ExecuteResume() error {
 				return nil
 			}
 		}
-		// provider-unavailable resumeは本taskの前にprobeで疎通確認する。未回復のまま重い実requestを
-		// 浪費しないため。transient失敗でbackoffに入り、上限で同じprovider-unavailable状態を再保存、
-		// 明確な非transient errorはfail closedへ復帰する。
+
 		if checkpoint.ProviderUnavailable {
 			if err := w.gateResumeOnProbe(checkpoint); err != nil {
 				var interrupted *runner.InterruptedCallError
@@ -452,11 +421,11 @@ func (w *Workflow) ExecuteResume() error {
 				}
 				_ = w.state.ClearResumeCheckpoint()
 				_ = w.state.RemoveUnreadySession(checkpoint.Role)
-				// gate上のfatal(auth/config・state異常等)は本task再開せずfail closed終端へ出す。
+
 				return &WorkerError{Phase: checkpoint.Phase, Message: err.Error()}
 			}
 		}
-		// review工程resume時は5h上限の時間経過を挟んでreview-start snapshotと現在状態を再照合する。
+
 		if checkpoint.Stage == state.ResumeStageReview {
 			if stopped, err := w.verifyReviewResumeSnapshot(checkpoint); err != nil {
 				return err
@@ -465,9 +434,7 @@ func (w *Workflow) ExecuteResume() error {
 			}
 		}
 		checkpoint.Prompt = resumePrompt(checkpoint)
-		// worker工程resumeのcapabilityは現在の宣言へ合わせる。poc/observation宣言のままなら
-		// read-onlyで再開し、停止中の宣言migration(implementation/not-applicable)後は書き込み
-		// 可で再開する。
+
 		if checkpoint.Stage == state.ResumeStageWorker {
 			checkpoint.ReadOnly = decl.pocStage()
 		}
@@ -482,8 +449,7 @@ func (w *Workflow) ExecuteResume() error {
 
 		result, err := w.runModel(checkpoint)
 		if err != nil {
-			// 親Codex専有file不変性違反のfail closedはcheckpoint清除・status移行を完了済みのため、
-			// 保存済みcheckpointの復元で上書きしない。
+
 			if errors.Is(err, errParentFileGuardStopped) {
 				return err
 			}
@@ -501,12 +467,11 @@ func (w *Workflow) ExecuteResume() error {
 			}
 			saved, loadErr := w.state.LoadResumeCheckpoint()
 			if loadErr != nil || (!saved.RateLimited && !saved.ProviderUnavailable && !saved.UserInterrupted) {
-				// 復元はmodel呼出を実行した後の失敗也可能なため、親管理2fileの停止時状態を復元時点へ
-				// 固定し直す。呼出中の変化が停止期間中の親更新として誤承認されるのを防ぐ。
+
 				previousCheckpoint.StopParentFiles = captureStopParentFiles(w.config.RepoRoot)
 				_ = w.state.SaveResumeCheckpoint(previousCheckpoint)
 			}
-			// 誤resume防止のためstatusは保存済みcheckpointの停止理由と一致させる。
+
 			restoredStatus := state.TaskStatusActive
 			if loadErr == nil {
 				switch {
@@ -601,8 +566,7 @@ func (w *Workflow) ExecuteResume() error {
 				checkpoint.AutoFixes,
 			)
 		case state.ResumeStageAutoFix:
-			// report-only resumeは初回開始前に保存した基準snapshotへ再照合する。停止期間中の
-			// 変化も含めて同一性を強制し、resume時に新baselineを取り直して隠さない。
+
 			if checkpoint.ReportOnly {
 				if stopped, err := w.verifyReportOnlyEndSnapshot(); err != nil {
 					return err
@@ -632,7 +596,6 @@ func isKnownResumeStage(stage state.ResumeStage) bool {
 	}
 }
 
-// resumeSourceOfは再開理由をrate-limit/provider-unavailable/user-interrupt/空(非resume)へ分類する。
 func resumeSourceOf(checkpoint state.ResumeCheckpoint) string {
 	switch {
 	case checkpoint.UserInterrupted:
@@ -683,19 +646,28 @@ func (w *Workflow) reviewUntilStable(
 	if stopped {
 		return nil
 	}
+	commentReport, err := w.commentLint(w.config.RepoRoot)
+	if err != nil {
+		return &WorkerError{Phase: "commentlint", Message: fmt.Sprintf("commentlint failed: %v", err)}
+	}
+	if commentlint.IsViolation(commentReport) {
+		result := commentLintFixResult(commentReport)
+		if err := w.writeLastReview(result); err != nil {
+			return err
+		}
+		return w.handleReviewResult(request, workerResult, result, reviewNumber, autoFixes)
+	}
 	w.recordConvergenceRound(reviewNumber, autoFixes, workerPhase, workerEnd)
 
 	decision := w.state.ReadOr("last-decision", "none")
 	hasDecision := w.state.Exists("last-decision")
 	risk := w.computeEffectiveRisk(workerResult, autoFixes, hasDecision, w.state.Exists("last-review"))
-	// worker継続呼出と同じく、reviewer promptもACTIVE解決fail closed後の修復再開ではstate
-	// 未設定を検出してから作る。再解決失敗はreviewer呼出前にfail closedする。
+
 	activeTaskPath, err := w.ensureActiveTaskPath(fmt.Sprintf("reviewer-%d", reviewNumber))
 	if err != nil {
 		return err
 	}
-	// reviewer呼出もworkerと同じ外部成立性宣言の受理集合を通る。宣言が受理できない
-	// taskのreviewはworker同様0 model callでfail closedする。
+
 	if _, err := w.gateExternalFeasibility(fmt.Sprintf("reviewer-%d", reviewNumber), false); err != nil {
 		return err
 	}
@@ -772,6 +744,21 @@ func (w *Workflow) reviewUntilStable(
 	)
 }
 
+func commentLintFixResult(report commentlint.Report) packet.Result {
+	issues := fmt.Sprintf("commentlintが禁止source commentまたは未分類sourceを%d件検出した。commentlint --fixを実行し、未分類sourceは分類を追加して再検査する", len(report.Violations))
+	return packet.Result{
+		Status:              packet.StatusFixRequired,
+		Risk:                packet.RiskHigh,
+		Summary:             "machine comment gateがrepository-wide postconditionを拒否した",
+		RequirementCoverage: "source commentの絶対禁止をreviewer判断より前に機械検証した",
+		Invariants:          "build constraintとshebang以外のsource commentを許可しない",
+		TestEvidence:        "commentlintのtyped violation結果",
+		Issues:              issues,
+		ResidualRisk:        "自動修正後もcommentlint再実行と通常reviewが必要",
+		Targets:             []string{"commentlint"},
+	}
+}
+
 func (w *Workflow) handleReviewResult(
 	request string,
 	workerResult packet.Result,
@@ -803,12 +790,12 @@ func (w *Workflow) handleReviewResult(
 		nextAutoFixes := autoFixes + 1
 		decision := w.state.ReadOr("last-decision", "none")
 		phase := fmt.Sprintf("worker-auto-fix-%d", nextAutoFixes)
-		// auto-fixもACTIVE解決fail closed後の修復再開経路に含める。未設定なら再解決して固定する。
+
 		activeTaskPath, err := w.ensureActiveTaskPath(phase)
 		if err != nil {
 			return err
 		}
-		// auto-fix worker呼出も同じ外部成立性宣言の受理集合を通す。
+
 		if _, err := w.gateExternalFeasibility(phase, false); err != nil {
 			return err
 		}
@@ -818,11 +805,7 @@ func (w *Workflow) handleReviewResult(
 		}
 		prompt := automaticFixPrompt(request, decision, reviewReport, activeTaskPath)
 		reportOnly := isReportOnlyFix(reviewResult)
-		// TARGETS: PACKETはreviewerがコード・diffを正しいと確認しPACKET/reportの意味情報だけを
-		// 不足と指摘した予約marker。実装修正へ流さず報告再出力専用promptへ分岐する。
-		// 収束上限・risk floor・session/model routingは通常auto-fixと同じ枠で数える。
-		// report-only workerはReadOnly capabilityで実行し、開始前3軸snapshotを基準とした
-		// 前後同一性をprompt遵守ではなくwrapper側で強制する。
+
 		if reportOnly {
 			prompt = reportOnlyFixPrompt(request, decision, reviewReport, activeTaskPath)
 			phase = fmt.Sprintf("worker-report-only-%d", nextAutoFixes)
@@ -882,18 +865,12 @@ func reviewNeedsHighRiskFloor(workerResult packet.Result, autoFixes int, hasDeci
 	return workerResult.Risk == packet.RiskHigh || autoFixes > 0 || hasDecision || hasPriorReview
 }
 
-// isReportOnlyFixはreviewer結果が実装修正ではなく報告再出力専用のTARGETS予約値("PACKET")かを
-// packet共通判定へ委譲する。productionはこの機械識別だけで実装修正と報告再出力を分岐する。
 func isReportOnlyFix(reviewResult packet.Result) bool {
 	return packet.IsReportOnlyFix(reviewResult)
 }
 
-// resultCorrectionPhaseSuffixは意味検証不合格の修正再依頼時にrunModelがphase末尾へ付与する
-// 固定suffix。
 const resultCorrectionPhaseSuffix = "-result-correct"
 
-// effectiveRiskはworker原文risk・既存floor信号(auto-fix/decision/prior-review)・自己保護を統合したwrapperの実効risk。
-// workerのLOW自己申告を実際の変更対象でHIGHへ昇格できる。
 type effectiveRisk struct {
 	high   bool
 	source string
@@ -930,7 +907,6 @@ func (w *Workflow) computeEffectiveRisk(workerResult packet.Result, autoFixes in
 	return effectiveRisk{high: true, source: strings.Join(sources, ";")}
 }
 
-// selfProtectionNowはpath取得失敗時をclassify-error HIGHへ倒し、silent LOWによるfail-openを防ぐ。
 func (w *Workflow) selfProtectionNow() selfProtectionDecision {
 	baselineHead, _ := w.state.Read("baseline-head")
 	paths, err := w.collectChangedPaths(w.config.RepoRoot, baselineHead)
@@ -940,10 +916,6 @@ func (w *Workflow) selfProtectionNow() selfProtectionDecision {
 	return classifySelfProtection(paths)
 }
 
-// resolveReviewResumeRiskはresume時の実効riskを決定する。保存HIGHはfloor保持のため無条件で維持し、
-// 保存LOW・未計算(旧checkpoint)は現在の自己保護を再評価してHIGHへ昇格できる。これによりpolicy更新後に
-// 保存LOWがcritical変更をLOWへ固定するfail-openを防ぐ。永続policy versionは持たず、LOW再評価が常に
-// 現行policyへ照合するためversion陳腐化は起きない。
 func (w *Workflow) resolveReviewResumeRisk(workerResult packet.Result, checkpoint state.ResumeCheckpoint) effectiveRisk {
 	if checkpoint.EffectiveRisk == "HIGH" {
 		return effectiveRisk{high: true, source: checkpoint.EffectiveRiskSource}
@@ -1019,23 +991,18 @@ func (w *Workflow) runModel(checkpoint state.ResumeCheckpoint) (packet.Result, e
 		checkpoint.Effort = w.config.RoutineEffort
 	}
 
-	// 親Codex専有file(plan/history)のbaselineはmodel呼出・集計記録の前に固定する。baseline取得に
-	// 失敗したとき呼出を実行していない事実とstats/telemetryの加法整合を保つためである。
 	guardBefore, stopped, err := w.captureParentFileGuard(checkpoint.Role)
 	if stopped {
 		return packet.Result{}, err
 	}
-	// review工程のpre-call保存はmodel呼出をこれから開始する時点であり停止確定ではない。前回停止時の
-	// 親管理2file基準を持ち越したままcrash等で再開されると、呼出中の改変が停止期間中の親更新として
-	// 誤承認される。基準を保存時に持たせず、基準なしfail closedへ倒す。
+
 	if checkpoint.Stage == state.ResumeStageReview {
 		checkpoint.StopParentFiles = nil
 	}
 	if err := w.state.SaveResumeCheckpoint(checkpoint); err != nil {
 		return packet.Result{}, err
 	}
-	// 呼出直前に--stopを観測したときはchildを起動せず、保存済みcheckpointからinterrupted
-	// 停止へ保存する。実callがないためcall計上も行わない。
+
 	if w.stopRequested() {
 		return packet.Result{}, w.interruptBetweenCalls(checkpoint)
 	}
@@ -1057,8 +1024,7 @@ func (w *Workflow) runModel(checkpoint state.ResumeCheckpoint) (packet.Result, e
 		return packet.Result{}, err
 	}
 	failureClass := runner.ProviderFailureClass{}
-	// --stopによる呼出中断は5h上限・transient分類より優先する。停止済みchildのpartial出力に
-	// provider信号が混在していても、停止要求が完了済みであることを理由に扱わない。
+
 	var interrupted *runner.InterruptedCallError
 	if runErr != nil && errors.As(runErr, &interrupted) {
 		return packet.Result{}, w.interruptFromCall(checkpoint, runResult, startedAt, completedAt, runErr, outputPath)
@@ -1073,14 +1039,9 @@ func (w *Workflow) runModel(checkpoint state.ResumeCheckpoint) (packet.Result, e
 		}
 	}
 
-	// structured output契約不成立(schema適合retry枯渇・成功時のstructured_output欠落)は
-	// provider分類・transient recovery・修正再依頼の対象にせずfail closedで終える。
-	// 失敗内容を修復する情報が結果側に残らず、同じ呼出を重ねてもprovider消費だけが増えるためである。
 	var structuredErr *runner.StructuredOutputError
 	if runErr != nil && errors.As(runErr, &structuredErr) {
-		// structured_retry_exhaustedはCLI内部のschema適合retry枯渇回数だけを数える。
-		// 成功resultでのstructured_output欠落は別の契約欠損であり、
-		// PacketRejectReason=structured-outputのraw telemetryだけで観測する。
+
 		if structuredErr.RetryExhausted() {
 			w.state.RecordStructuredRetryExhausted()
 		}
@@ -1094,9 +1055,6 @@ func (w *Workflow) runModel(checkpoint state.ResumeCheckpoint) (packet.Result, e
 		}
 	}
 
-	// Z.ai 5h上限以外の一時障害(502/503/504/529・明確な一時network障害)は同じsession/checkpointと
-	// Git snapshotを保持した上限付きbackoffで回復する。auth/invalid request/session破損/不明errorは
-	// 非transientのためここへ入らず、従来どおり下段のWORKER_ERROR分岐へ進む。
 	recoveryFatal := false
 	if failureClass.Kind == runner.ProviderFailureTransient {
 		recovered, resumeResult, resumeStartedAt, resumeCompletedAt, recErr := w.recoverTransient(
@@ -1108,15 +1066,13 @@ func (w *Workflow) runModel(checkpoint state.ResumeCheckpoint) (packet.Result, e
 			completedAt = resumeCompletedAt
 			runErr = nil
 		} else {
-			// recovery中の親Codex専有file不変性違反は既にfail closed停止へ遷移済みのため、
-			// 5h/provider停止やfatal扱いに上書きせずそのまま伝播させる。
+
 			if errors.Is(recErr, errParentFileGuardStopped) {
 				return packet.Result{}, recErr
 			}
 			var interrupted *runner.InterruptedCallError
 			if errors.As(recErr, &interrupted) {
-				// backoff待機の打ち切りは再開task呼出を実行していないためcall記録を残さず、
-				// 実行済み呼出の中断だけをcall記録へ確定する。
+
 				if resumeStartedAt.IsZero() {
 					return packet.Result{}, w.interruptBetweenCalls(checkpoint)
 				}
@@ -1130,16 +1086,14 @@ func (w *Workflow) runModel(checkpoint state.ResumeCheckpoint) (packet.Result, e
 			}
 			var limitErr runner.ZaiRateLimitError
 			if errors.As(recErr, &limitErr) {
-				// 5h上限checkpointは保存済みのため、WORKER_ERROR分岐でcheckpointを壊させない。
+
 				return packet.Result{}, recErr
 			}
 			runResult = resumeResult
 			startedAt = resumeStartedAt
 			completedAt = resumeCompletedAt
 			runErr = recErr
-			// recovery終端のfatal分類と実call記録は分離する。実行された再開task呼出は
-			// runResumedTaskが各終端で記録済みで、probe段階fatalは本task呼出を実行していない。
-			// どちらもここへの追加記録はphantom/二重計上になるため抑止する。
+
 			recoveryFatal = true
 		}
 	}
@@ -1186,8 +1140,7 @@ func (w *Workflow) runModel(checkpoint state.ResumeCheckpoint) (packet.Result, e
 	}
 	if err != nil {
 		w.recordModelCall(checkpoint, runResult, startedAt, completedAt, "invalid_packet", "", err, outputPath, callDiagnostics{})
-		// 意味検証不合格だけが修正再依頼できる。schemaが強制する構造はもう保証済みのため、
-		// 旧構造欠陥再圧縮と違い、失敗理由を伝える1回の同一session再依頼に置き換える。
+
 		if packet.IsConstraintError(err) && !checkpoint.ResultCorrection {
 			w.state.RecordResultCorrection()
 			correctCheckpoint := checkpoint
@@ -1209,8 +1162,6 @@ func (w *Workflow) runModel(checkpoint state.ResumeCheckpoint) (packet.Result, e
 	return result, nil
 }
 
-// saveRateLimitedStateは5h上限時もsessionを破棄せず再開可能な状態へ保存し、ZaiRateLimitErrorを返す。
-// 停止状態の保存に失敗したterminalでも実行済み呼出のtelemetry記録を残す(exactly once)。
 func (w *Workflow) saveRateLimitedState(
 	checkpoint state.ResumeCheckpoint,
 	limit runner.ZaiFiveHourLimit,
@@ -1248,8 +1199,6 @@ func (w *Workflow) saveRateLimitedState(
 	}
 }
 
-// persistRateLimitedStopは5h上限の再開可能停止へcheckpointとtask statusを保存する。
-// provider-unavailable停止fieldは排他させてクリアし、resume理由の誤分類を防ぐ。
 func (w *Workflow) persistRateLimitedStop(checkpoint state.ResumeCheckpoint, limit runner.ZaiFiveHourLimit) (string, error) {
 	checkpoint.RateLimited = true
 	checkpoint.ResetAtCST = limit.ResetAtCST
@@ -1258,8 +1207,7 @@ func (w *Workflow) persistRateLimitedStop(checkpoint state.ResumeCheckpoint, lim
 	checkpoint.ProviderUnavailableClassification = ""
 	checkpoint.ProviderUnavailableProbes = 0
 	checkpoint.ProviderUnavailableStartedAt = time.Time{}
-	// 停止保存直前の親管理2file状態を固定する。review resumeのsnapshot例外がこの値と現在値を
-	// 比較し、model呼出が存在しない停止期間中の変化だけを親Codex更新として承認する。
+
 	checkpoint.StopParentFiles = captureStopParentFiles(w.config.RepoRoot)
 	if err := w.state.SaveResumeCheckpoint(checkpoint); err != nil {
 		return "", err
@@ -1275,8 +1223,6 @@ func (w *Workflow) persistRateLimitedStop(checkpoint state.ResumeCheckpoint, lim
 	return taskID, nil
 }
 
-// saveProbeRateLimitedはprobe応答から5h上限を検出した時点でrate-limited停止へ保存する。
-// probe呼出はrecordProbeCallで記録済みのため、task呼出のtelemetry記録は追加しない。
 func (w *Workflow) saveProbeRateLimited(checkpoint state.ResumeCheckpoint, limit runner.ZaiFiveHourLimit) error {
 	taskID, err := w.persistRateLimitedStop(checkpoint, limit)
 	if err != nil {
@@ -1292,8 +1238,6 @@ func (w *Workflow) saveProbeRateLimited(checkpoint state.ResumeCheckpoint, limit
 	}
 }
 
-// recoverTransientは一時provider障害を同じsession/checkpoint/Git snapshot保持で回復する。
-// 5h上限のような自動wakeは設定せず、短周期polling・新task/sessionでの再実行は行わない。
 func (w *Workflow) recoverTransient(
 	checkpoint state.ResumeCheckpoint,
 	outputPath string,
@@ -1311,8 +1255,6 @@ func (w *Workflow) recoverTransient(
 	})
 }
 
-// gateResumeOnProbeはprovider-unavailableからの--resumeで本task送出前にprobeで疎通を確認する。
-// 手動resume直後は既に時間経過しているため最初のprobeは即時に行う。
 func (w *Workflow) gateResumeOnProbe(checkpoint state.ResumeCheckpoint) error {
 	_, _, _, _, err := w.recoveryLoop(checkpoint, checkpoint.ProviderUnavailableClassification, true, func() (bool, runner.RunResult, time.Time, time.Time, error) {
 		return true, runner.RunResult{}, time.Time{}, time.Time{}, nil
@@ -1321,14 +1263,13 @@ func (w *Workflow) gateResumeOnProbe(checkpoint state.ResumeCheckpoint) error {
 }
 
 func (w *Workflow) runResumedTask(checkpoint state.ResumeCheckpoint, outputPath string) (bool, runner.RunResult, time.Time, time.Time, error) {
-	// 再開task呼出も初回呼出と同じ親Codex専有file不変契約の対象とする。baselineはこの呼出の
-	// 開始時内容で、probe待機中の変化がないことを前提に初回呼出と同じく固定する。
+
 	guardBefore, stopped, err := w.captureParentFileGuard(checkpoint.Role)
 	if stopped {
 		return false, runner.RunResult{}, time.Time{}, time.Time{}, err
 	}
 	startedAt := w.now().UTC()
-	// probe成功後の再実行も本taskのTask Work Callとしてrole別に数える。
+
 	w.state.RecordTransientRetry()
 	w.state.RecordModelCall(checkpoint.Role, checkpoint.Model)
 	result, runErr := w.runner.Run(
@@ -1345,8 +1286,7 @@ func (w *Workflow) runResumedTask(checkpoint state.ResumeCheckpoint, outputPath 
 	if stopped, err := w.verifyParentFileAfterCall(checkpoint, guardBefore, result, startedAt, completedAt, runErr, outputPath); stopped {
 		return false, result, startedAt, completedAt, err
 	}
-	// --stopで中断された再開task呼出は、runModel側のinterrupted記録へ1回だけ残すため
-	// ここでは分類・記録をせずtyped errorを伝播させる。
+
 	var interrupted *runner.InterruptedCallError
 	if runErr != nil && errors.As(runErr, &interrupted) {
 		return false, result, startedAt, completedAt, runErr
@@ -1363,9 +1303,7 @@ func (w *Workflow) runResumedTask(checkpoint state.ResumeCheckpoint, outputPath 
 		return false, result, startedAt, completedAt, err
 	}
 	if class.Kind != runner.ProviderFailureTransient {
-		// 実行した再開task呼出がordinary nontransient fatalで終わった場合も、初回transient runと
-		// 同じく実callの記録を残す。runModel側のrecovery fatal抑止と対で、call実行事実と
-		// recovery終端分類を独立に扱う。
+
 		w.recordModelCall(checkpoint, result, startedAt, completedAt, "error", "", runErr, outputPath, callDiagnostics{})
 		return false, result, startedAt, completedAt, runErr
 	}
@@ -1373,10 +1311,6 @@ func (w *Workflow) runResumedTask(checkpoint state.ResumeCheckpoint, outputPath 
 	return false, runner.RunResult{}, startedAt, completedAt, nil
 }
 
-// mergePlainFailureClassはoutputPath本文の分類に、result本文が無い経路だけrunnerが
-// plain stdoutから検出した5h上限・transient分類を統合する。旧raw fallbackは全本文を
-// 連結して5h→transientの順で一致させていたため、どちらかの5hを最優先にし、
-// file由来とplain由来が同種のときはfile由来のdetailを保つ。
 func mergePlainFailureClass(base runner.ProviderFailureClass, plain runner.ProviderFailureClass) runner.ProviderFailureClass {
 	switch {
 	case plain.Kind == runner.ProviderFailureZaiFiveHour:
@@ -1392,11 +1326,6 @@ func mergePlainFailureClass(base runner.ProviderFailureClass, plain runner.Provi
 	}
 }
 
-// recoveryLoopは上限付きbackoffでprobeを繰り返し、transientだけ再試行する。
-// probe応答の契約違反(semantic invalid)もsaved taskのresumeへ進めない通常のprobe失敗として
-// 同じbackoff/retryへ戻し、probe上限・hard deadlineの先に到達した側でprovider-unavailableへ保存する。
-// probe応答の分類優先度は5h→transient→明示fatalの順でtask呼出と共通の既存classifierと一致させ、
-// 明示的なauth/config信号のときだけfatal経路へ即時にfail closedする。
 func (w *Workflow) recoveryLoop(
 	checkpoint state.ResumeCheckpoint,
 	classification string,
@@ -1407,7 +1336,7 @@ func (w *Workflow) recoveryLoop(
 	deadline := recoveryStart.Add(providerUnavailableDeadline)
 	probes := 0
 	sleeps := 0
-	// 停止時分類は初期障害分類で開始し、probe応答の契約違反観測で上書きする。
+
 	exhaustClassification := classification
 
 	for {
@@ -1432,7 +1361,7 @@ func (w *Workflow) recoveryLoop(
 		probeStartedAt := w.now().UTC()
 		probeResult, probeErr := w.runner.Probe(checkpoint.Model)
 		probeCompletedAt := w.now().UTC()
-		// fake runnerはreal runnerの応答検証を通らないため、gate側でも契約を強制する。
+
 		if probeErr == nil {
 			if contractErr := runner.ValidateProbeResult(probeResult); contractErr != nil {
 				probeErr = &runner.ProbeInvalidResponseError{
@@ -1445,20 +1374,18 @@ func (w *Workflow) recoveryLoop(
 
 		if probeErr != nil {
 			class := runner.ClassifyProviderFailureText(probeErr.Error())
-			// 5h上限signatureはprobe応答でも他分類へより優先しrate-limited停止へ保存する。
+
 			if class.Kind == runner.ProviderFailureZaiFiveHour {
 				err := w.saveProbeRateLimited(checkpoint, class.FiveHourLimit)
 				return false, runner.RunResult{}, probeStartedAt, probeCompletedAt, err
 			}
-			// transient信号は明示fatal検出より優先し、既存classifierと同じbackoff/retryへ戻す。
-			// 503等とauth語の混在応答もここでtransientとして扱われる。
+
 			if class.Kind == runner.ProviderFailureTransient {
 				continue
 			}
 			var probeInvalid *runner.ProbeInvalidResponseError
 			if errors.As(probeErr, &probeInvalid) {
-				// 応答本文中の明示的なauth/config信号はsemantic invalidと区別し、
-				// 既存classifierと同じfatal経路へ直ちにfail closedする。
+
 				if runner.DetectProbeFatalSignal(probeErr.Error()) {
 					return false, runner.RunResult{}, probeStartedAt, probeCompletedAt, probeErr
 				}
@@ -1484,8 +1411,6 @@ func (w *Workflow) recoveryLoop(
 	return false, runner.RunResult{}, time.Time{}, time.Time{}, pErr
 }
 
-// backoffWaitはscheduleにjitterを加えた待機時間を返す。deadline残り時間を超えないよう切り詰め、
-// schedule外か残り0のときはok=falseを返す。
 func (w *Workflow) backoffWait(sleeps int, deadline time.Time) (time.Duration, bool) {
 	if sleeps >= len(transientBackoffSchedule) {
 		return 0, false
@@ -1507,7 +1432,7 @@ func (w *Workflow) saveProviderUnavailable(checkpoint state.ResumeCheckpoint, cl
 	checkpoint.ProviderUnavailableProbes = probes
 	checkpoint.ProviderUnavailableStartedAt = recoveryStart
 	checkpoint.RateLimited = false
-	// rate-limit停止と同じく、停止保存直前の親管理2file状態をreview resume承認の基準へ固定する。
+
 	checkpoint.StopParentFiles = captureStopParentFiles(w.config.RepoRoot)
 	if err := w.state.SaveResumeCheckpoint(checkpoint); err != nil {
 		return nil, err
@@ -1529,9 +1454,6 @@ func (w *Workflow) saveProviderUnavailable(checkpoint state.ResumeCheckpoint, cl
 	}, nil
 }
 
-// interruptFromCallは実行中のmodel呼出が--stopで停止したときのinterrupted状態保存を行う。
-// 呼出は実行済みのためtelemetryへoutcome=interruptedで記録し、generic worker error経路の
-// checkpoint/session clearへ流さない。
 func (w *Workflow) interruptFromCall(
 	checkpoint state.ResumeCheckpoint,
 	runResult runner.RunResult,
@@ -1544,17 +1466,11 @@ func (w *Workflow) interruptFromCall(
 	return w.persistInterruptedStop(checkpoint, runErr)
 }
 
-// interruptBetweenCallsはmodel呼出の実行前に--stopを観測したときのinterrupted状態保存を
-// 行う。呼出を実行していないためcall記録ではなくevent記録だけを残す。
 func (w *Workflow) interruptBetweenCalls(checkpoint state.ResumeCheckpoint) error {
 	w.recordInterruptedEvent(checkpoint)
 	return w.persistInterruptedStop(checkpoint, nil)
 }
 
-// persistInterruptedStopは--stop停止を既存rate-limited/provider-unavailableと独立した
-// 再開可能停止として保存する。保存済みcheckpoint・role session・要求正本・snapshot基準を
-// そのまま保持し、採番済みsessionだけをresumableへmarkした上でtask statusをinterruptedへ
-// 移す。保存に失敗した場合も保存できた範囲を残し、停止完了のackは出さない。
 func (w *Workflow) persistInterruptedStop(checkpoint state.ResumeCheckpoint, cause error) error {
 	checkpoint.UserInterrupted = true
 	checkpoint.RateLimited = false
@@ -1564,25 +1480,18 @@ func (w *Workflow) persistInterruptedStop(checkpoint state.ResumeCheckpoint, cau
 	checkpoint.ProviderUnavailableClassification = ""
 	checkpoint.ProviderUnavailableProbes = 0
 	checkpoint.ProviderUnavailableStartedAt = time.Time{}
-	// 停止保存直前の親管理metadata集合状態を固定する。review resumeのsnapshot例外が
-	// 停止期間中の親Codex更新だけを承認する基準として使う。
+
 	checkpoint.StopParentFiles = captureStopParentFiles(w.config.RepoRoot)
-	// 停止時点の元checkout保持基準を固定する。UserInterrupted resumeがこの値へ現在状態を
-	// 照合し、割り込みtask実行期間中に元taskのstate/working treeが保持されたままかを機械検証
-	// する。取得失敗時はnilのまま残し、resume側で保持確認不能としてfail closedする。停止自体は
-	// 保護対象のrepo状態をこれ以上変化させないため、この固定を優先して完了させる。
+
 	if snapshot, snapErr := state.CaptureGitSnapshot(w.config.RepoRoot); snapErr == nil {
 		if files, filesErr := state.CaptureStopDirtyFiles(w.config.RepoRoot); filesErr == nil {
 			checkpoint.StopGitSnapshot = &snapshot
 			checkpoint.StopDirtyFiles = files
 		}
 	}
-	// 停止時点のtracked diffを親Codexのconflict recovery資材として残す(untracked本文は
-	// 含まれない)。保持確認自体はcheckpoint側の基準で行うため、この保存の失敗は停止を失敗させない。
+
 	_ = state.CaptureStopPatches(w.config, w.state)
-	// session ID未採番の初回call前停止でreadyだけ作ると、resume時の新規採番UUIDが
-	// ready付きで返り、存在しないsessionへの--resume起動になってしまう。採番済み
-	// sessionだけをmarkし、未採番ならresumeの初回callで新規sessionを起動させる。
+
 	if w.state.ReadOr(string(checkpoint.Role)+".id", "") != "" {
 		if err := w.state.MarkReady(checkpoint.Role); err != nil {
 			return err
@@ -1596,7 +1505,7 @@ func (w *Workflow) persistInterruptedStop(checkpoint state.ResumeCheckpoint, cau
 	}
 	_ = w.state.SecureArtifactDir()
 	taskID, _ := w.state.TaskID()
-	// 残存process group観測は停止ackの安全authorityから除外するため、通知前に診断を確定させる。
+
 	cleanupWarning := ""
 	if cause != nil {
 		var interrupted *runner.InterruptedCallError
@@ -1616,7 +1525,6 @@ func (w *Workflow) persistInterruptedStop(checkpoint state.ResumeCheckpoint, cau
 	return stopped
 }
 
-// recordInterruptedEventは呼出を実行せずに停止した事実をtelemetryへ記録する(best-effort)。
 func (w *Workflow) recordInterruptedEvent(checkpoint state.ResumeCheckpoint) {
 	now := w.now().UTC()
 	w.state.RecordModelCallLog(state.ModelCallLog{
@@ -1631,9 +1539,6 @@ func (w *Workflow) recordInterruptedEvent(checkpoint state.ResumeCheckpoint) {
 	})
 }
 
-// sleepInterruptibleはbackoff待機を実行し、待機が--stop要求で打ち切られたかを返す。
-// 停止経路を観測しない配線では従来のsleepと同じ挙動になる。打ち切り時も背後の待機goroutineは
-// 残duration後に自然に終わり、待機自体の副作用はない。
 func (w *Workflow) sleepInterruptible(duration time.Duration) bool {
 	if w.stop == nil {
 		w.sleep(duration)
@@ -1652,8 +1557,6 @@ func (w *Workflow) sleepInterruptible(duration time.Duration) bool {
 	}
 }
 
-// recordProviderUnavailableEventは回復が上限/deadlineに到達し再開可能停止状態へ移行した事実を
-// telemetryへ記録する。classification・probe回数・累積経過時間を残し、token消費は持たない(best-effort)。
 func (w *Workflow) recordProviderUnavailableEvent(checkpoint state.ResumeCheckpoint, classification string, probes int, elapsed time.Duration) {
 	now := w.now().UTC()
 	w.state.RecordModelCallLog(state.ModelCallLog{
@@ -1808,9 +1711,6 @@ func (w *Workflow) recordModelCall(
 	w.state.RecordModelCallLog(entry)
 }
 
-// applyCallDiagnosticsは診断fieldと集計をentryへ反映する。報告risk・実効risk・risk floor・
-// snapshot・packet reject・provider分類・resume sourceを、当該callで観測されたときだけ設定する。
-// 未観測は零値(空文字/nil)のままで、意味値(HIGH/LOW/一致)とは区別される。
 func (w *Workflow) applyCallDiagnostics(entry *state.ModelCallLog, checkpoint state.ResumeCheckpoint, outcome string, callErr error, diag callDiagnostics) {
 	if diag.reportedRisk != "" {
 		if checkpoint.Role == state.ReviewerRole {
@@ -1849,8 +1749,6 @@ func (w *Workflow) applyCallDiagnostics(entry *state.ModelCallLog, checkpoint st
 	}
 }
 
-// riskFloorSourceは"worker-declared;auto-fix;self-protection:critical-path"等の詳細文字列。
-// riskFloorCategoryは集計用へself-protectionのpath詳細を落として安定bucket化する。
 func riskFloorCategory(source string) string {
 	if source == "" {
 		return ""
@@ -1894,8 +1792,6 @@ func workerError(phase string, outputPath string, runErr error) error {
 	}
 }
 
-// machineReportはmachine protocol 1行をrenderする。最終stdout・reviewer/auto-fix
-// prompt埋め込み・state保存の機械経路は全てこれを通す。
 func machineReport(value packet.Result) (string, error) {
 	data, err := value.MachineJSON()
 	if err != nil {
@@ -2011,9 +1907,6 @@ func (w *Workflow) captureWorkerEndSnapshot() (state.GitSnapshot, bool, error) {
 	return workerEnd, false, nil
 }
 
-// saveReportOnlyStartSnapshotはreport-only worker開始直前のHEAD/index/worktreeを基準として
-// 保存する。基準を確保できないときはworkerを実行せずfail closedする。resumeはこの保存済み
-// snapshotを基準に再利用し、再撮影して停止期間中の変化を隠さない。
 func (w *Workflow) saveReportOnlyStartSnapshot() (bool, error) {
 	start, err := w.captureSnapshot(w.config.RepoRoot)
 	if err != nil {
@@ -2025,9 +1918,6 @@ func (w *Workflow) saveReportOnlyStartSnapshot() (bool, error) {
 	return false, nil
 }
 
-// gateReportOnlyResumeSnapshotはreport-only resumeを実行前に基準snapshotの存在だけを確認する。
-// 基準が無ければprobeもworker呼出も1件も行わずfail closedする。resume時に新baselineを撮って
-// 欠損を隠さないため、存在する基準は必ず初回開始直前に保存されたものである。
 func (w *Workflow) gateReportOnlyResumeSnapshot() (bool, error) {
 	if _, err := w.state.LoadReportOnlyStartSnapshot(); err != nil {
 		return true, w.failClosedReportOnlySnapshot(
@@ -2041,10 +1931,6 @@ func (w *Workflow) gateReportOnlyResumeSnapshot() (bool, error) {
 	return false, nil
 }
 
-// verifyReportOnlyEndSnapshotはreport-only worker終了後、開始直前の保存snapshotへ現在状態を
-// 再照合する。通常auto-fixがworker-end snapshotを新基準として撮り直すreviewUntilStableへ
-// 入る前に強制し、1軸でも変化すれば通常reviewへ進めずfail closedする。rate-limit・provider
-// 障害のresume後も同じ基準を使うため、停止期間中の変化も検出から逃れない。
 func (w *Workflow) verifyReportOnlyEndSnapshot() (bool, error) {
 	start, err := w.state.LoadReportOnlyStartSnapshot()
 	if err != nil {
@@ -2064,10 +1950,6 @@ func (w *Workflow) verifyReportOnlyEndSnapshot() (bool, error) {
 	return false, nil
 }
 
-// recordConvergenceRoundはreview round開始境界のrepo状態観測をround logへbest-effort
-// 記録する。reviewer呼出・token・durationはtelemetryが正であるためここへ持たず、
-// 表示側でCapturedAtの時間窓とWorkerPhaseで対応付ける。失敗はround log側のwarning
-// だけとし、review flowへ影響させない。
 func (w *Workflow) recordConvergenceRound(reviewNumber int, autoFixes int, workerPhase string, snap state.GitSnapshot) {
 	record := state.RoundRecord{
 		TaskID:       w.state.ReadOr("task.id", "unknown"),
@@ -2081,9 +1963,6 @@ func (w *Workflow) recordConvergenceRound(reviewNumber int, autoFixes int, worke
 	_ = w.state.AppendRoundRecord(record)
 }
 
-// recordBaselineRoundはtask開始時(worker実行前)の境界recordを書き、round 1の差分
-// 分類にtask開始前状態を与える。baseline観測はreview進行へ影響しないため、snapshot
-// 取得失敗もCaptureErrorへ記録するだけとする。
 func (w *Workflow) recordBaselineRound() {
 	record := state.RoundRecord{
 		TaskID:      w.state.ReadOr("task.id", "unknown"),
@@ -2104,8 +1983,6 @@ func (w *Workflow) recordBaselineRound() {
 	_ = w.state.AppendRoundRecord(record)
 }
 
-// classifyRoundPathsはself-protectionと同じ変更対象集合をworktree観測へ変換する。
-// 取得失敗はerror文字列へ返し、観測を部分続行しない(欠落pathの誤分類を防ぐ)。
 func (w *Workflow) classifyRoundPaths() ([]state.RoundPathState, string) {
 	baselineHead, _ := w.state.Read("baseline-head")
 	paths, err := w.collectChangedPaths(w.config.RepoRoot, baselineHead)
@@ -2124,8 +2001,7 @@ func (w *Workflow) verifyReviewStartSnapshot() (bool, error) {
 	if err != nil {
 		return true, w.failClosedSnapshot(state.SnapshotStageReviewStart, workerEnd, state.GitSnapshot{}, "review-start snapshot取得失敗", err)
 	}
-	// review開始時の親管理metadata集合状態を基準へ記録する。読込失敗時は記録なし(nil)とし、resume例外を
-	// 使えないfail closed側へ倒す。ここで停止する理由は無い。
+
 	if parentStates, parentErr := readParentFileStates(w.config.RepoRoot); parentErr == nil {
 		reviewStart.ParentFiles = &parentStates
 	}
@@ -2143,11 +2019,6 @@ func (w *Workflow) verifyReviewStartSnapshot() (bool, error) {
 	return false, nil
 }
 
-// verifyReviewResumeSnapshotはrate-limit/provider-unavailable停止を挟んだreview resumeで、保存
-// review-start snapshotへ現在状態を再照合する。3軸一致時は従来どおり再開する。不一致時は停止期間中の
-// 親Codexによる親管理metadata集合更新だけを承認済みdeltaとして例外にし、review基準を現状へ再固定して
-// reviewerを再開する。それ以外の外部変更(worker/reviewer実装surface・親管理metadata削除・head/index移動)は
-// 従来どおりfail closedする。
 func (w *Workflow) verifyReviewResumeSnapshot(checkpoint state.ResumeCheckpoint) (bool, error) {
 	saved, err := w.state.LoadReviewStartSnapshot()
 	if err != nil {
@@ -2184,14 +2055,6 @@ func (w *Workflow) verifyReviewResumeSnapshot(checkpoint state.ResumeCheckpoint)
 	return false, nil
 }
 
-// acceptReviewResumeParentDeltaはreview-resume時の3軸不一致が停止期間中の親管理metadata集合更新だけに
-// 帰着するかを判定する。head・indexが一致し集合除外worktree digestが保存値と等しければ、変化は
-// 親管理metadataだけに限られる。その上で停止保存時の集合状態と現在値の差分だけが、変化がmodel呼出の
-// 存在しない停止期間中に起きた(=親Codexによる)機械識別可能な証拠になる。判定はfile単位の共通規則を
-// 停止時・現在・review開始時の3状態の和集合path全件へ適用し、plan/historyのような特定path名の分岐を
-// 持たない。reviewer呼出中の変化(reviewStart≠stop)は停止期間中に同じfileが再変更されていても
-// current値に関係なく直ちに拒否し、停止期間中の更新として承認しない。削除は要求正本喪失のfail closed
-// 契約を維持し、旧binaryのcheckpoint/snapshot(基準なし)も拒否する。
 func (w *Workflow) acceptReviewResumeParentDelta(saved, current state.GitSnapshot, checkpoint state.ResumeCheckpoint) bool {
 	if saved.Head != current.Head || saved.IndexDigest != current.IndexDigest {
 		return false
@@ -2211,8 +2074,7 @@ func (w *Workflow) acceptReviewResumeParentDelta(saved, current state.GitSnapsho
 		reviewStart := state.FindParentFileState(*saved.ParentFiles, path)
 		stop := state.FindParentFileState(*checkpoint.StopParentFiles, path)
 		currentState := state.FindParentFileState(now, path)
-		// reviewStart→stop間の差分はreviewer呼出中の変化である。停止期間中に同じfileがさらに
-		// 変化していてもmodel呼出中の不変契約違反は免除されないため、current値に関係なく拒否する。
+
 		if stop != reviewStart {
 			return false
 		}
@@ -2226,8 +2088,6 @@ func (w *Workflow) acceptReviewResumeParentDelta(saved, current state.GitSnapsho
 	return changedDuringStop
 }
 
-// parentStatePathsは複数の集合snapshotへ現れたpathの和集合を昇順で返す。承認判定を新規作成・
-// 削除されたfileも含む全pathへ同一規則で適用するために使う。
 func parentStatePaths(groups ...state.ParentFileStates) []string {
 	seen := make(map[string]struct{})
 	for _, group := range groups {
@@ -2243,8 +2103,6 @@ func parentStatePaths(groups ...state.ParentFileStates) []string {
 	return paths
 }
 
-// recordSnapshotParentUpdateEventはreview基準の再固定をtelemetryへ記録する。comparison fileは
-// 後続のreview-end比較で上書きされるため、承認判断の永続証跡はこのeventだけが持つ(best-effort)。
 func (w *Workflow) recordSnapshotParentUpdateEvent(checkpoint state.ResumeCheckpoint) {
 	now := w.now().UTC()
 	w.state.RecordModelCallLog(state.ModelCallLog{
@@ -2258,8 +2116,6 @@ func (w *Workflow) recordSnapshotParentUpdateEvent(checkpoint state.ResumeCheckp
 	})
 }
 
-// verifyReviewEndSnapshotはreviewer呼出成功直後・結果採用前にもreview-start snapshotへ再照合する。
-// reviewerはEdit/Write禁止でもBash等でrepositoryを変更でき、review-start時点では検出できないため。
 func (w *Workflow) verifyReviewEndSnapshot() (bool, error) {
 	saved, err := w.state.LoadReviewStartSnapshot()
 	if err != nil {
@@ -2279,17 +2135,11 @@ func (w *Workflow) verifyReviewEndSnapshot() (bool, error) {
 	return false, nil
 }
 
-// checkpointを先に消すことでstatus更新失敗時もresumeさせず安全方向へ収束させ、
-// WaitingSolReview移行中に残存checkpointがresume復元情報と矛盾するのを防ぐ。
-// 併せてsnapshot診断をtelemetry/statsへbest-effort記録する(本flowは止めない)。
 func (w *Workflow) failClosedSnapshot(stage state.SnapshotStage, workerEnd, reviewStart state.GitSnapshot, reason string, cause error) error {
 	w.recordSnapshotEvent(state.ReviewerRole, stage, workerEnd, reviewStart, reason, cause)
 	return w.failClosedStopped(stage, reason, cause, snapshotFailClosedResult)
 }
 
-// failClosedReportOnlySnapshotはreport-only worker前後の不変性確認失敗を同じ停止semantics
-// (checkpoint清除・WaitingSolReview・診断記録)へ載せる。検出主体はreviewerではなくworkerの
-// 前後invariantのため、event roleとpacket文言をreview-start/end検証と区別する。
 func (w *Workflow) failClosedReportOnlySnapshot(stage state.SnapshotStage, start, current state.GitSnapshot, reason string, cause error) error {
 	w.recordSnapshotEvent(state.WorkerRole, stage, start, current, reason, cause)
 	return w.failClosedStopped(stage, reason, cause, reportOnlySnapshotFailClosedResult)
@@ -2308,10 +2158,6 @@ func (w *Workflow) failClosedStopped(stage state.SnapshotStage, reason string, c
 	return w.emitResult(build(stage, reason))
 }
 
-// recordSnapshotEventはsnapshot同一性確認失敗をtelemetryへ記録する。比較結果に応じて
-// Outcomeを切り替える: 両snapshot揃って不一致→snapshot_mismatch(mismatch軸を集計)、
-// 揃ったが一致(保存失敗等でfail-closed)→snapshot_save_failed、一方が空(取得失敗等)で
-// 比較未実施→snapshot_unavailable。token消費は持たない(best-effort)。
 func (w *Workflow) recordSnapshotEvent(role state.SessionRole, stage state.SnapshotStage, previous, current state.GitSnapshot, reason string, cause error) {
 	comparison := state.CompareGitSnapshot(previous, current, stage, "")
 	diag := state.BuildSnapshotDiagnostic(stage, previous, current, comparison, reason)
@@ -2359,9 +2205,6 @@ func snapshotFailClosedResult(stage state.SnapshotStage, reason string) packet.R
 	}
 }
 
-// reportOnlySnapshotFailClosedResultはreport-only PACKET再出力workerの前後同一性確認失敗時の
-// Sol確認結果。reviewer自身のreview-start/end mutation検出とは主体が違い、report-only workerの
-// 開始前snapshot基準であることをSolへ区別可能にする。
 func reportOnlySnapshotFailClosedResult(stage state.SnapshotStage, reason string) packet.Result {
 	return packet.Result{
 		Status:              packet.StatusNeedsSolReview,

@@ -327,7 +327,7 @@ func TestAttachSnippetsWarnsAndKeepsResultOnUnreadableFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "a.txt")
 	writeTestFile(t, path, "needle one\n")
-	// 読み取り不可にするとreadSearchableFileだけが失敗し、結果は残してwarning経路を通る。
+
 	if err := os.Chmod(path, 0o000); err != nil {
 		t.Fatal(err)
 	}
@@ -408,7 +408,6 @@ func TestSearchIgnoresFilesInvisibleToGitEnumeration(t *testing.T) {
 		t.Skipf("FIFOを作成できません: %v", err)
 	}
 
-	// gitはuntracked列挙にFIFOを出さないため、検索もfingerprintも影響を受けない。
 	report, err := Search(context.Background(), dir, "needle", Options{DisableCache: true})
 	if err != nil {
 		t.Fatal(err)

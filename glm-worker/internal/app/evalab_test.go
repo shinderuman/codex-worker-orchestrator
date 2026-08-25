@@ -108,8 +108,6 @@ func evalABOrchestratedRecord(spec abeval.Spec) abeval.RunRecord {
 	}
 }
 
-// writeABStatsArchiveは既存stats履歴へv3 TaskStats archiveを書き込む。
-// --eval-abはglm_usage.source=glm-worker-task-statsの記録をこの履歴から解決する。
 func writeABStatsArchive(t *testing.T, cfg config.AppConfig, stats state.TaskStats) {
 	t.Helper()
 	st, err := state.NewStateStore(cfg)
@@ -153,8 +151,6 @@ func writeEvalABRunDir(t *testing.T, spec abeval.Spec, direct, orchestrated abev
 	return dir
 }
 
-// executeEvalABReportは--eval-ab実行の出力1行をabeval.Reportへdecodeする。
-// JSONでない出力はmachine contract違反として失敗する。
 func executeEvalABReport(t *testing.T, cfg config.AppConfig, dir string) abeval.Report {
 	t.Helper()
 	var stdout bytes.Buffer
@@ -298,8 +294,6 @@ func TestExecuteEvalABRejectsRunDirWithUnknownField(t *testing.T) {
 	}
 }
 
-// unusedRunnerFactoryは--eval-abがrunner/workflow構築へ到達しないことを
-// production entrypoint側で検出するための呼出記録付きfactory。
 func unusedRunnerFactory(calls *int) RunnerFactory {
 	return func(_ config.AppConfig, _ *state.StateStore, _ *runner.StopController) workflow.ModelRunner {
 		*calls++
@@ -370,8 +364,6 @@ func TestExecuteEvalABKeepsExistingStateUnchanged(t *testing.T) {
 	writeABStatsArchive(t, cfg, abFakeTaskStats("task-ab-1"))
 	runnerCalls := 0
 
-	// writeFileAtomicはtemp+renameで必ずmtimeを更新するため、
-	// repo-rootを過去の時刻へ固定すれば再書込みはmtime変化として検出できる。
 	repoRootPath := filepath.Join(cfg.StateBase, cfg.RepoHash, "repo-root")
 	past := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
 	if err := os.Chtimes(repoRootPath, past, past); err != nil {

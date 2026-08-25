@@ -7,13 +7,6 @@ import (
 	"testing"
 )
 
-// TestDecisionStdinTransportContractWiringはdecision/fix stdin modeの親caller contractを
-// glm-execution.md本文の必須契約文で固定する。transportは自己完結で、TTY/PTYのterminal mode
-// 設定・復元はglm-worker内部責務のため、caller側`stty` recipe・echo無効化・terminal設定の
-// 各契約文が本文へ再混入した場合や、byte数・SHA以外の本文由来情報をcommandへ載せる契約が
-// 欠けた場合は失敗する。stdin_ready control event確認後の1回write・未観測/重複/先行終了の
-// fail closed・control eventをtransport controlとしてterminal payloadへ含めない各契約も固定する。
-// 旧caller-side recipe固定形と、CLI内部機構(raw/noecho・termios)の詳細本文の再混入も拒否する。
 func TestDecisionStdinTransportContractWiring(t *testing.T) {
 	root := scenarioRepoRoot(t)
 	b, err := os.ReadFile(filepath.Join(root, "codex", "instructions", "glm-execution.md"))
@@ -48,10 +41,7 @@ func TestDecisionStdinTransportContractWiring(t *testing.T) {
 			t.Errorf("glm-execution.md lacks stdin transport wiring: %q", wire)
 		}
 	}
-	// 旧caller-side stty recipe・弱い固定形が契約本文へ残留しないことを固定する。
-	// sandbox外実行の理由はstate更新権限であり、terminal制御の成立場所ではない。
-	// raw/noecho・termios等の内部機構詳細はCLI契約(README・PTY test)が持ち、
-	// 毎回読むcaller instructionへは載せない。
+
 	for _, weak := range []string{
 		"stty raw -echo",
 		"`stty`を適用",

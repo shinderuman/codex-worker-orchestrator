@@ -5,10 +5,6 @@ import (
 	"time"
 )
 
-// CallTimelineToolはtool種別(tool名)別の呼出観測。Usesはtool_use block数、Resultsは
-// tool_result block数。MeasuredはID対応付けできた結果だけの測定数で、対応付け不能な
-// 結果はUnmeasuredへ数える(durationを推測して埋めない)。tool名を持たないblockは
-// unknown tool種別へ集計する。
 type CallTimelineTool struct {
 	Name          string
 	Uses          int
@@ -20,9 +16,6 @@ type CallTimelineTool struct {
 	Errors        int
 }
 
-// CallTimelineEntryはevent log 1 call分(call_id単位)の観測要約。ResultObservedは
-// そのcall内にresult eventが存在したかで、falseのとき結果系fieldは未観測のまま。
-// SessionCallIndex/SessionCallsは同一session内のevent log上のcall順(1始まり)。
 type CallTimelineEntry struct {
 	CallID           string
 	Role             string
@@ -47,8 +40,6 @@ type CallTimelineEntry struct {
 	Tools            []CallTimelineTool
 }
 
-// CallsFromTaskEventsはevent log record列をcall単位へ集計する。call順はlog内での
-// 初出順、tool順はtool名のsort順で安定させる。record列はfile順そのまま渡すこと。
 func CallsFromTaskEvents(records []TaskEventRecord) []CallTimelineEntry {
 	order := make([]string, 0)
 	byCall := make(map[string]*CallTimelineEntry)
@@ -173,8 +164,6 @@ func sortedTimelineTools(tools map[string]*CallTimelineTool) []CallTimelineTool 
 	return result
 }
 
-// SumCallTimelineToolsはentry群のtool観測をtool名単位へ合算する。同一tool名の
-// 測定済み最大値は合算後の最大値として扱う。
 func SumCallTimelineTools(entries []CallTimelineEntry) []CallTimelineTool {
 	tools := make(map[string]*CallTimelineTool)
 	for _, entry := range entries {

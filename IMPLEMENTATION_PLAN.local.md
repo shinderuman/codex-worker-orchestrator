@@ -8,10 +8,11 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/source-comment-absolute-invariant.md`
+- `IMPLEMENTATION_TASKS/codex-5h-limit-auto-resume.md`
 
 ## NEXT（優先順）
 
+- `IMPLEMENTATION_TASKS/markdown-context-footprint-reduction.md`
 - `IMPLEMENTATION_TASKS/commit-authorization-source-recognition.md`
 - `IMPLEMENTATION_TASKS/install-smoke-loop-cost-reduction.md`
 - `IMPLEMENTATION_TASKS/010-task-splitting-milestones.md`
@@ -41,15 +42,15 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 ## 現在のGit境界
 
 - branch: `main`
-- implementation baseline: Task 009 worker call outlier可視化・完了metadata同期済みのcurrent HEAD
-- implementation boundary: 保存telemetryからtask/phase/session/model別分布・task増幅・p95 outlierを追加AI callなしでJSON表示し、directory I/O failureと観測済みturn母集団の親review差戻しを修正済み
-- preserved boundary: source comment absolute invariant taskを最優先ACTIVEへ昇格。commit authorization source false negative、install smoke loop costを後続NEXTとして保持。Greptile日次scheduled review、external feasibility dispatch gate、safe-stop/isolation境界は不変、不要stashなし
+- implementation baseline: source comment absolute invariant・完了metadata同期済みのcurrent HEAD
+- implementation boundary: repository専用`commentlint`、workflowとinstallerのmandatory gate、exact machine-semantic allowlist、安全で冪等な`--fix`を実装し、既存source comment 4,038件を除去して0 violationへ収束。全Go test/race/vet/build、shell syntax、full install smoke、親最終reviewを完了
+- preserved boundary: 親Codex 5h Limit自動再開を最優先ACTIVE、Markdown runtime context削減を次点NEXTへ追加。commit authorization source false negative、install smoke loop costを後続NEXTとして保持。Greptile日次scheduled review、external feasibility dispatch gate、safe-stop/isolation境界は不変、不要stashなし
 - push: GLM push、force/non-fast-forward、他refへのpushは禁止。Greptile運用に必要な`refs/heads/main`と`refs/heads/codex/greptile-reviewed`の親Codexによる通常fast-forwardだけ許可
 
 ## 現在の停止理由
 
-Task 009は完了。ユーザー明示priorityに従い、source comment absolute invariant taskをGLMなしで親Codexが直接実施する開始境界。
+source comment absolute invariant taskは完了。ユーザー指定により親Codex 5h Limit自動再開taskを次の主要作業対象へ昇格した開始境界。
 
 ## 次の親Codex操作
 
-ACTIVE taskのOriginal instructionと直接編集規則を再読し、過去comment対策の一次証拠・source inventory・既存lint ecosystemを確認してcommentlint設計へ進む。本taskではGLM worker/reviewerを利用しない。pushはGreptile運用のremote main/checkpoint通常fast-forward以外禁止。
+本配置とinstalled `commentlint` smokeを確認した後、ACTIVE taskのOriginal instructionを要求正本として外部成立性gateから開始する。pushは行わない。

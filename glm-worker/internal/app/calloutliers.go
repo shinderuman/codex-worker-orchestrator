@@ -10,9 +10,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-// callOutliersTelemetryは分析対象telemetry dirの所在と読み取り状態。statusはok(全fileを
-// 読めた)・partial(読めないtask fileがあった)・none(dir不在・空、または.jsonl fileがない)。
-// ignored_filesはtask IDとして生成形式に合わないfile名で、読まずにfail visibleにする。
 type callOutliersTelemetry struct {
 	Status          string                   `json:"status"`
 	Dir             string                   `json:"dir"`
@@ -31,12 +28,6 @@ type callOutliersOutput struct {
 	Report    state.CallOutlierReport `json:"report"`
 }
 
-// printCallOutliersは保存済みtelemetry JSONLだけからtask/phase/session/model別の呼出分布・
-// task単位増幅・outlierをmachine JSON 1行で出す参照専用command。state書換・repo lock・
-// AI呼出を行わず、prompt/response本文も読み取り対象のrecordに含まれていても出さない。
-// telemetry dirの読取り失敗(不在以外)はnoneへ偽装せずerrorへ流し、process境界の
-// internal error・non-zero exitへ出す。読めないtask fileがあっても他taskの集計は出し、
-// unreadable_tasksへ失敗を残す。
 func printCallOutliers(st *state.StateStore, stdout io.Writer) error {
 	dir := st.Path("telemetry")
 	entries, err := os.ReadDir(dir)

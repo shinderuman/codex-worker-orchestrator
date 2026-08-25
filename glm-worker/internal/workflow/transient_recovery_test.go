@@ -125,9 +125,6 @@ func TestRecoveryProbeSuccessThenResumeCompletes(t *testing.T) {
 	}
 }
 
-// result本文が無い経路のplain stdout transient信号はrunnerの構造値だけから
-// 通常のprobe→resume回復へ入る。outputPath本文に信号が無くても分類semanticsが
-// 旧raw fallbackと同じことを固定する。
 func TestRecoveryFromPlainStdoutTransientSignal(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{
@@ -161,8 +158,6 @@ func TestRecoveryFromPlainStdoutTransientSignal(t *testing.T) {
 	}
 }
 
-// probe成功後の本task再実行はrole別task callとして数え、probe呼出・tokenはtask集計へ混ざらない。
-// total AI call数はtask call + probe callで重複・欠落なく導出できる。
 func TestRecoveryAccountingSeparatesTaskAndProbeCalls(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{
@@ -250,7 +245,7 @@ func TestRecoveryStopsAtDeadline(t *testing.T) {
 	}
 	w, clock := newRecoveryWorkflowT(t, st, r)
 	w.temp = t.TempDir()
-	// schedule合計(155m)ではdeadlineに届かないため、sleepあたり90分進めてdeadline経路へ入れる。
+
 	bigStep := 90 * time.Minute
 	w.sleep = func(d time.Duration) {
 		clock.sleeps = append(clock.sleeps, d)
@@ -299,7 +294,7 @@ func TestRecoveryResumeNonTransientFailsClosed(t *testing.T) {
 	if _, cerr := st.LoadResumeCheckpoint(); cerr == nil {
 		t.Fatal("非transient error時はresume checkpointがclearされるべき")
 	}
-	// probe段階fatalと異なり本task呼出は実行済みのため、task記録は初回transient分と再開fatal分の2件。
+
 	stats := currentStats(t, st)
 	if stats.ModelCalls != 2 || stats.WorkerCalls != 2 || stats.TransientRetries != 1 {
 		t.Fatalf("task call集計 = %#v", stats)
@@ -315,9 +310,6 @@ func TestRecoveryResumeNonTransientFailsClosed(t *testing.T) {
 	}
 }
 
-// probe成功後に実行した再開task呼出がordinary nontransient fatalで終わっても、
-// token/cost/duration/session/resolved model等の観測fieldごと記録を落とさない。
-// recovery終端分類(WORKER_ERROR)と実AI callのaccounting事実は独立に扱う。
 func TestRecoveryResumeNonTransientFatalRecordsExecutedCall(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{
@@ -397,8 +389,6 @@ func TestRecoveryResumeNonTransientFatalRecordsExecutedCall(t *testing.T) {
 	}
 }
 
-// recovery fatal終端でartifact保護に失敗しても、実行済み再開呼出の記録をstate_error記録で
-// 二重に作らない。1実callあたりの記録は常にちょうど1件のまま維持する。
 func TestRecoveryResumeFatalArtifactFailureKeepsSingleRecord(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{
@@ -639,7 +629,7 @@ func TestRecoveryProbeNonTransientFailsClosed(t *testing.T) {
 	if _, cerr := st.LoadResumeCheckpoint(); cerr == nil {
 		t.Fatal("fail closed時はresume checkpointがclearされるべき")
 	}
-	// probe段階fatalは本task呼出を実行していないため、task記録は初回transient分だけ。
+
 	stats := currentStats(t, st)
 	if stats.ModelCalls != 1 || stats.TransientRetries != 0 {
 		t.Fatalf("task call集計 = %#v", stats)
@@ -685,7 +675,7 @@ func TestRecoveryAppliesJitter(t *testing.T) {
 	}
 	w, clock := newRecoveryWorkflowT(t, st, r)
 	w.temp = t.TempDir()
-	// base + 1分の固定jitter。合計159分でdeadline(180分)に届かずclamp不発。
+
 	w.jitter = func(base time.Duration) time.Duration { return base + time.Minute }
 
 	_, err := w.runModel(workerCheckpoint())
@@ -752,7 +742,6 @@ func TestResumeProbeGateFailClosedOnNonTransientProbe(t *testing.T) {
 	}
 }
 
-// 回復試行中の5h上限到達はtransient継続せずRATE_LIMITEDへ移行する。
 func TestRecoveryHitsFiveHourLimitSavesRateLimited(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{
@@ -788,8 +777,6 @@ func TestRecoveryHitsFiveHourLimitSavesRateLimited(t *testing.T) {
 	}
 }
 
-// probe契約不通過(空応答)はsemantic invalidだけでは即fatalにせず通常のprobe失敗として
-// backoff/retryを継続し、probe上限到達でprovider-unavailable停止へ保存する。
 func TestRecoveryProbeBlankResponseRetriesToProviderUnavailable(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{
@@ -829,7 +816,6 @@ func TestRecoveryProbeBlankResponseRetriesToProviderUnavailable(t *testing.T) {
 	}
 }
 
-// transient→probe契約違反→backoff→probe再試行成功→saved task resumeの経路を固定する。
 func TestRecoveryProbeContractFailureThenSuccessResumes(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{
@@ -860,8 +846,6 @@ func TestRecoveryProbeContractFailureThenSuccessResumes(t *testing.T) {
 	}
 }
 
-// probe契約違反がhard deadlineまで継続した場合はprobe上限到達と区別してdeadline側で
-// resumable provider-unavailableへ遷移する。
 func TestRecoveryProbeContractFailureUntilDeadlineStopsUnavailable(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{
@@ -870,7 +854,7 @@ func TestRecoveryProbeContractFailureUntilDeadlineStopsUnavailable(t *testing.T)
 	}
 	w, clock := newRecoveryWorkflowT(t, st, r)
 	w.temp = t.TempDir()
-	// schedule合計(155m)ではdeadlineに届かないため、sleepあたり90分進めてdeadline経路へ入れる。
+
 	w.sleep = func(d time.Duration) {
 		clock.sleeps = append(clock.sleeps, d)
 		clock.now = clock.now.Add(90 * time.Minute)
@@ -901,7 +885,6 @@ func TestRecoveryProbeContractFailureUntilDeadlineStopsUnavailable(t *testing.T)
 	}
 }
 
-// --resumeのprobe gateでも空応答は回復済みと認めず、backoff上限まで再試行する。
 func TestResumeProbeGateBlankResponseNotRecovered(t *testing.T) {
 	st := newStateStoreT(t)
 	seedProviderUnavailableCheckpoint(t, st)
@@ -930,7 +913,6 @@ func TestResumeProbeGateBlankResponseNotRecovered(t *testing.T) {
 	}
 }
 
-// typedProbeRunnerはreal runnerと同じProbeInvalidResponseErrorを返すfake。
 type typedProbeRunner struct {
 	scriptedRunner
 }
@@ -971,7 +953,6 @@ func TestRecoveryTypedInvalidResponseErrorRetriesToUnavailable(t *testing.T) {
 	}
 }
 
-// provider-unavailable resume中の5h上限到達はrate-limited状態で上書きする。
 func TestResumeFromProviderUnavailableHitsFiveHourLimit(t *testing.T) {
 	st := newStateStoreT(t)
 	seedProviderUnavailableCheckpoint(t, st)
@@ -996,7 +977,6 @@ func TestResumeFromProviderUnavailableHitsFiveHourLimit(t *testing.T) {
 	}
 }
 
-// probe応答の5h上限signatureはis_error・sentinel不一致より優先しrate-limited停止へ保存する。
 func TestRecoveryProbeFiveHourSignatureSavesRateLimited(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{
@@ -1033,8 +1013,6 @@ func TestRecoveryProbeFiveHourSignatureSavesRateLimited(t *testing.T) {
 	}
 }
 
-// provider-unavailable resumeのprobe gateで5h上限を検出した場合はfail closedせず
-// rate-limited checkpointへ上書きし、保存taskを失わせない。
 func TestResumeProbeGateFiveHourSignatureSavesRateLimited(t *testing.T) {
 	st := newStateStoreT(t)
 	seedProviderUnavailableCheckpoint(t, st)
@@ -1064,8 +1042,6 @@ func TestResumeProbeGateFiveHourSignatureSavesRateLimited(t *testing.T) {
 	}
 }
 
-// transient回復中のprobe応答に明示的なauth信号(exit 0 + is_error + 401本文)がある場合は
-// probe-contractとしてbackoffせず、既存classifierと同じfatal/WORKER_ERROR経路へ即時に落とす。
 func TestRecoveryProbeAuthSignalFailsClosed(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{
@@ -1100,8 +1076,6 @@ func TestRecoveryProbeAuthSignalFailsClosed(t *testing.T) {
 	}
 }
 
-// provider-unavailable resumeのprobe gateでexit 0 + is_error + auth本文が返った場合は
-// 本task resumeも追加probeもせずfatal/WORKER_ERRORへfail closedする。
 func TestResumeProbeGateAuthSignalFailsClosed(t *testing.T) {
 	st := newStateStoreT(t)
 	seedProviderUnavailableCheckpoint(t, st)
@@ -1135,8 +1109,6 @@ func TestResumeProbeGateAuthSignalFailsClosed(t *testing.T) {
 	}
 }
 
-// 通常文中の裸のHTTP status数字(400等)を含むsentinel mismatchは明示fatalとせず、
-// probe-contractとして既存backoff/retryを継続し上限でprovider-unavailableへ保存する。
 func TestRecoveryProbeBareHTTPNumberStaysProbeContract(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{
@@ -1171,8 +1143,6 @@ func TestRecoveryProbeBareHTTPNumberStaysProbeContract(t *testing.T) {
 	}
 }
 
-// 503等のtransient信号とauth語の混在したprobe応答は、既存classifierの優先順位
-// (5h→transient→fatal)どおりtransientとしてbackoff/retryされ、fatal誤判定しない。
 func TestRecoveryProbeMixedTransientAuthWordRetriesAsTransient(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{
@@ -1200,9 +1170,6 @@ func TestRecoveryProbeMixedTransientAuthWordRetriesAsTransient(t *testing.T) {
 	}
 }
 
-// probe応答本文に裸のunauthorized/forbiddenを含むsemantic invalidはfatal誤判定せず、
-// 通常のprobe-contract失敗としてbackoff/retryし上限でprovider-unavailableへ保存する。
-// false positiveでresume checkpointとworker sessionを破棄しない。
 func TestRecoveryProbeBareAuthWordStaysProbeContract(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{
@@ -1245,8 +1212,6 @@ func TestRecoveryProbeBareAuthWordStaysProbeContract(t *testing.T) {
 	}
 }
 
-// provider-unavailable resumeのprobe gateでも裸のunauthorized/forbidden本文はfatalとせず、
-// probe上限でprovider-unavailableを再保存しresume checkpointとworker sessionを保持する。
 func TestResumeProbeGateBareAuthWordStaysUnavailable(t *testing.T) {
 	st := newStateStoreT(t)
 	seedProviderUnavailableCheckpoint(t, st)
@@ -1283,8 +1248,6 @@ func TestResumeProbeGateBareAuthWordStaysUnavailable(t *testing.T) {
 	}
 }
 
-// 裸語をfatalから除外しても403+Forbidden等のstatus組合せは明示的auth信号のままで、
-// checkpoint clear・unready session remove・WORKER_ERRORへ従来どおりfail closedする。
 func TestRecoveryProbeStatusAuthPhraseFailsClosed(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{

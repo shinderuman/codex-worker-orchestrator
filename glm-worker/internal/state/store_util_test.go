@@ -5,7 +5,6 @@ import (
 	"testing"
 )
 
-// TestValidGeneratedUUIDAcceptsNewUUIDOutputは生成function自身の出力形式を常に受け付ける。
 func TestValidGeneratedUUIDAcceptsNewUUIDOutput(t *testing.T) {
 	for i := 0; i < 32; i++ {
 		id, err := NewUUID()
@@ -21,8 +20,6 @@ func TestValidGeneratedUUIDAcceptsNewUUIDOutput(t *testing.T) {
 	}
 }
 
-// TestValidGeneratedUUIDRejectsForeignFormsは生成形式の外にある値をすべて拒否する。
-// 拒否だけが境界であり、ここではfilesystemへ触らない。
 func TestValidGeneratedUUIDRejectsForeignForms(t *testing.T) {
 	for _, id := range []string{
 		"",

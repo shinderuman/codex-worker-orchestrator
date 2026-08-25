@@ -18,12 +18,10 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-// verboseTestClockは固定観測時刻を返すtest用clock。
 func verboseTestClock(at time.Time) func() time.Time {
 	return func() time.Time { return at }
 }
 
-// verboseRenderStoreはlive snapshotを持たない表示検証用store。
 func verboseRenderStore(t *testing.T) *state.StateStore {
 	t.Helper()
 	st, err := state.NewStateStore(config.AppConfig{
@@ -37,7 +35,6 @@ func verboseRenderStore(t *testing.T) *state.StateStore {
 	return st
 }
 
-// renderWatchLiveはwriteWatchLiveStatusでlive event 1行を出し、typed eventへ復元する。
 func renderWatchLive(t *testing.T, st *state.StateStore, taskID string, tracker *watchToolTracker, now time.Time) watchLiveEvent {
 	t.Helper()
 	out := &bytes.Buffer{}
@@ -47,7 +44,6 @@ func renderWatchLive(t *testing.T, st *state.StateStore, taskID string, tracker 
 	return parseWatchLiveLine(t, out.String())
 }
 
-// parseWatchLiveLineはlive event 1行をtyped eventへparseする。
 func parseWatchLiveLine(t *testing.T, line string) watchLiveEvent {
 	t.Helper()
 	var event watchLiveEvent
@@ -60,7 +56,6 @@ func parseWatchLiveLine(t *testing.T, line string) watchLiveEvent {
 	return event
 }
 
-// liveEventsFromStreamはwatch出力全体からlive eventだけを取り出す。
 func liveEventsFromStream(t *testing.T, rendered string) []watchLiveEvent {
 	t.Helper()
 	var lives []watchLiveEvent
@@ -73,7 +68,6 @@ func liveEventsFromStream(t *testing.T, rendered string) []watchLiveEvent {
 	return lives
 }
 
-// requireModelIdleMSはlive eventのmodel_idle_msを検査する。
 func requireModelIdleMS(t *testing.T, event watchLiveEvent, wantMS int64) {
 	t.Helper()
 	if event.ModelIdleMS == nil {
@@ -84,7 +78,6 @@ func requireModelIdleMS(t *testing.T, event watchLiveEvent, wantMS int64) {
 	}
 }
 
-// liveToolOfは実行中tool一覧から指定nameの要素を返す。
 func liveToolOf(t *testing.T, event watchLiveEvent, name string) watchLiveTool {
 	t.Helper()
 	for _, tool := range event.Current {
@@ -96,8 +89,6 @@ func liveToolOf(t *testing.T, event watchLiveEvent, name string) watchLiveTool {
 	return watchLiveTool{}
 }
 
-// setupVerboseWatchTaskはstats mirrorの開始時刻・event log・live snapshotを固定時刻で
-// 用意し、watch対象storeと固定nowを返す。
 func setupVerboseWatchTask(t *testing.T) (*state.StateStore, string, time.Time) {
 	t.Helper()
 	st, _ := watchTestStore(t)
@@ -123,8 +114,6 @@ func setupVerboseWatchTask(t *testing.T) (*state.StateStore, string, time.Time) 
 	return st, taskID, base
 }
 
-// TestParseCommandWatchVerboseは--watch --verboseだけを受け付け、他の引数と--watch単体を
-// 従来どおり扱うことを検証する。
 func TestParseCommandWatchVerbose(t *testing.T) {
 	cmd, err := ParseCommand([]string{"--watch", "--verbose"})
 	if err != nil {
@@ -148,8 +137,6 @@ func TestParseCommandWatchVerbose(t *testing.T) {
 	}
 }
 
-// TestWatchVerboseRendersLiveToolStatusはverbose指定でtask年齢・model idle・実行中Bashの
-// command・purpose・経過が型付きlive eventへ出ることを検証する。
 func TestWatchVerboseRendersLiveToolStatus(t *testing.T) {
 	st, _, base := setupVerboseWatchTask(t)
 	now := base.Add(2*time.Hour + 50*time.Minute + 46*time.Second)
@@ -193,8 +180,6 @@ func TestWatchVerboseRendersLiveToolStatus(t *testing.T) {
 	}
 }
 
-// TestWatchPlainOutputUnchangedByVerboseDataは--watch単体がlive snapshot・statsを読んで
-// いてもlive eventを出さないことを検証する。
 func TestWatchPlainOutputUnchangedByVerboseData(t *testing.T) {
 	st, _, _ := setupVerboseWatchTask(t)
 
@@ -210,9 +195,6 @@ func TestWatchPlainOutputUnchangedByVerboseData(t *testing.T) {
 	}
 }
 
-// watchModelActivityResultLineはproducer/consumer統合testでcallを正常終端させる
-// result event行。structured_outputはpacket.Resultのmachine JSONをそのまま埋め、
-// 手書きescapeのJSON破損を構造的に排除する。
 func watchModelActivityResultLine() string {
 	structured := appPacketBody(packet.Result{
 		Status:              packet.StatusImplemented,
@@ -235,8 +217,6 @@ func watchModelActivityResultLine() string {
 	return string(data)
 }
 
-// runWatchModelActivityProducerは行間1秒のfake claude scriptで本物のClaudeRunnerを
-// 1 call実行し、watch対象storeと同じstate dirへevent logとlive snapshotを書かせる。
 func runWatchModelActivityProducer(t *testing.T, st *state.StateStore, lines ...string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -274,11 +254,6 @@ func runWatchModelActivityProducer(t *testing.T, st *state.StateStore, lines ...
 	}
 }
 
-// TestWatchVerboseModelIdleUsesLiveModelActivityはassistant activity → thinking_tokens →
-// tool_progressの順で発生したstreamを本物のrunnerで摄取し、watchのMODEL_IDLE基準が
-// event logへ保存されないthinking_tokens観測時刻(live snapshotのmodel activity専用時刻)
-// になることを検証する。assistant基準なら+1分以上、tool_progress/result基準なら-1分以下に
-// なる観測間隔で判定する。
 func TestWatchVerboseModelIdleUsesLiveModelActivity(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixtureはUnix系環境向け")
@@ -316,9 +291,6 @@ func TestWatchVerboseModelIdleUsesLiveModelActivity(t *testing.T) {
 	requireModelIdleMS(t, renderWatchLive(t, st, taskID, tracker, snapshot.LastModelActivityAt.Add(240*time.Second)), 240000)
 }
 
-// TestWatchVerboseLegacySnapshotFallsBackToTrackerはlast_model_activity_atを持たない
-// 旧live snapshotで、MODEL_IDLE基準がevent log側trackerのmodel activity時刻へ落ちる
-// ことを検証する。migrationやgeneric last_event_atからの意味推定を挟まない安全側挙動。
 func TestWatchVerboseLegacySnapshotFallsBackToTracker(t *testing.T) {
 	st, _ := watchTestStore(t)
 	taskID := "12345678-aaaa-bbbb-cccc-dddddddddddd"
@@ -341,9 +313,6 @@ func TestWatchVerboseLegacySnapshotFallsBackToTracker(t *testing.T) {
 	}
 }
 
-// TestWatchVerboseModelIdleGrowsDuringToolProgressは長時間Bash中に30秒ごつの
-// tool_progress等の非model eventが流れてもMODEL_IDLEが最後のassistant activityから
-// 増え続けることを検証する。snapshotのlast_event_atが進んでいても基準にしない。
 func TestWatchVerboseModelIdleGrowsDuringToolProgress(t *testing.T) {
 	st, _ := watchTestStore(t)
 	taskID := "12345678-aaaa-bbbb-cccc-dddddddddddd"
@@ -369,9 +338,6 @@ func TestWatchVerboseModelIdleGrowsDuringToolProgress(t *testing.T) {
 	}
 }
 
-// TestWatchVerboseToolLifecycleTransitionsはtool完了でcurrentから外れてlastへ遷移し、
-// 経過時間が観測時刻とともに更新されること、未対応のresult eventで同一callのpendingが
-// 除かれることを検証する。
 func TestWatchVerboseToolLifecycleTransitions(t *testing.T) {
 	base := time.Date(2026, 8, 23, 9, 0, 0, 0, time.UTC)
 	tracker := newWatchToolTracker()
@@ -400,8 +366,6 @@ func TestWatchVerboseToolLifecycleTransitions(t *testing.T) {
 	}
 }
 
-// TestWatchVerboseShortToolCompletionStaysOffCurrentは短いtoolの完了でlastが置き換わらず、
-// currentだけが外れることを検証する。
 func TestWatchVerboseShortToolCompletionStaysOffCurrent(t *testing.T) {
 	base := time.Date(2026, 8, 23, 9, 0, 0, 0, time.UTC)
 	tracker := newWatchToolTracker()
@@ -419,8 +383,6 @@ func TestWatchVerboseShortToolCompletionStaysOffCurrent(t *testing.T) {
 	}
 }
 
-// TestWatchVerboseBackgroundWaitAndErrorはbackground待ちと直近tool errorをlive eventで
-// 確認できることを検証する。待機中toolはcurrentとwait_task_idで停止と誤認しない。
 func TestWatchVerboseBackgroundWaitAndError(t *testing.T) {
 	st, _ := watchTestStore(t)
 	taskID := "12345678-aaaa-bbbb-cccc-dddddddddddd"
@@ -452,8 +414,6 @@ func TestWatchVerboseBackgroundWaitAndError(t *testing.T) {
 	}
 }
 
-// TestWatchVerboseTruncatesLongDetailAtDisplayは長いcommand・改行入りcommandのlive event
-// 出力時切詰めを検証する。保存側(snapshot)の本文は変更しない。
 func TestWatchVerboseTruncatesLongDetailAtDisplay(t *testing.T) {
 	st, _ := watchTestStore(t)
 	taskID := "12345678-aaaa-bbbb-cccc-dddddddddddd"
@@ -484,8 +444,6 @@ func TestWatchVerboseTruncatesLongDetailAtDisplay(t *testing.T) {
 	}
 }
 
-// TestWatchVerboseWithoutLiveSnapshotDegradesはlive snapshotが無い・壊れていてもtool種別
-// と経過の観測を続けることを検証する。
 func TestWatchVerboseWithoutLiveSnapshotDegrades(t *testing.T) {
 	st, taskID, _ := setupVerboseWatchTask(t)
 	if err := os.Remove(st.TaskLiveStatusPath(taskID)); err != nil {
@@ -511,8 +469,6 @@ func TestWatchVerboseWithoutLiveSnapshotDegrades(t *testing.T) {
 	}
 }
 
-// TestWatchVerboseFollowReprintsOnToolCompletionはfollow中のtool完了でlive eventが
-// current空へ更新されることを検証する。
 func TestWatchVerboseFollowReprintsOnToolCompletion(t *testing.T) {
 	st, taskID, _ := setupVerboseWatchTask(t)
 	base := time.Date(2026, 8, 23, 9, 10, 0, 0, time.UTC)
@@ -555,8 +511,6 @@ func TestWatchVerboseFollowReprintsOnToolCompletion(t *testing.T) {
 	}
 }
 
-// TestExecuteWatchVerboseDoesNotCreateStateは--watch --verbose実行がstate dirを一切
-// 作成・書換しないことを検証する。
 func TestExecuteWatchVerboseDoesNotCreateState(t *testing.T) {
 	base := t.TempDir()
 	cfg := config.AppConfig{StateBase: base, RepoHash: "watchhash", RepoRoot: "/repo"}

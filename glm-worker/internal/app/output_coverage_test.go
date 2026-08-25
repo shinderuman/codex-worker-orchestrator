@@ -10,8 +10,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-// writeArchivedGapStatsは既知historical gap task(ccc205d1型: statsだけに呼出が残り
-// raw JSONLが存在しない)のstats archive fileをstats履歴へ書き込む。
 func writeArchivedGapStats(t *testing.T, st *state.StateStore, taskID string, modelCalls int) {
 	t.Helper()
 	archivedAt := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC)
@@ -44,9 +42,6 @@ func recordCoverageTaskCall(st *state.StateStore, taskID string) {
 	})
 }
 
-// PacketCompactionsはstructured output移行前に計上されたhistorical metric。旧v3 archiveの
-// decode・集計・--stats出力を保持し、Task 008の旧protocol比較に使う。現行binaryに記録
-// 経路はなく、新規taskのmirrorは常に0のまま出力される。
 func TestPrintStatsKeepsHistoricalPacketCompactions(t *testing.T) {
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)

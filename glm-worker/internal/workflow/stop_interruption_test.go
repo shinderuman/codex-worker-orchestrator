@@ -10,7 +10,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-// attachStopは--stop観測経路を接続したworkflowを返す。
 func attachStop(t *testing.T, w *Workflow) *runner.StopController {
 	t.Helper()
 	stop := runner.NewStopController()
@@ -18,9 +17,6 @@ func attachStop(t *testing.T, w *Workflow) *runner.StopController {
 	return stop
 }
 
-// TestStopDuringRunningCallSavesInterruptedStateは実行中呼出の--stop停止を固定する:
-// 中断errorの型、呼出実行分のtelemetry(outcome=interrupted)、既存停止理由との排他、
-// checkpointのrole/phase/prompt/request保持、task status=interrupted、sessionのresumable化。
 func TestStopDuringRunningCallSavesInterruptedState(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{{
@@ -31,7 +27,7 @@ func TestStopDuringRunningCallSavesInterruptedState(t *testing.T) {
 	w.temp = t.TempDir()
 	stop := attachStop(t, w)
 	r.onRun = func() { stop.Request() }
-	// 実runnerは呼出前にsession IDを採番する。中断時のsession扱いを同じ前提で固定する。
+
 	if err := st.Write("worker.id", "test-session"); err != nil {
 		t.Fatal(err)
 	}
@@ -91,12 +87,6 @@ func TestStopDuringRunningCallSavesInterruptedState(t *testing.T) {
 	}
 }
 
-// TestStopCleanupResidualCarriesWarningIntoStopOutcomeは停止後のprocess group残存診断
-// (terminateProcessGroupが返すwarningを載せたInterruptedCallError)がinterrupted保存を
-// 経てstop outcomeへ渡ることを固定する。endpointはこのoutcome値で安全停止ackと残存時の
-// typed outcomeを分けるため、ここでの受け渡しが失われると残存時も安全停止ackへ戻る。
-// macOSのkill(-pgid,0)はzombieのみのgroupをEPERM=非残存として扱い、KILL後のlive残存は
-// userspaceから決定論的に作れないため、残存観測はrunnerが返すerror値で注入する。
 func TestStopCleanupResidualCarriesWarningIntoStopOutcome(t *testing.T) {
 	st := newStateStoreT(t)
 	warning := "process group 424242に残存processがあります"
@@ -129,8 +119,6 @@ func TestStopCleanupResidualCarriesWarningIntoStopOutcome(t *testing.T) {
 	}
 }
 
-// TestStopBeforeCallSavesInterruptedWithoutCallRecordは呼出前の--stop観測を固定する:
-// childを起動せず、call記録を作らない(event記録だけ)、checkpoint・statusは中断状態へ保存する。
 func TestStopBeforeCallSavesInterruptedWithoutCallRecord(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{{structured: implementedPacket("done")}}}
@@ -162,17 +150,12 @@ func TestStopBeforeCallSavesInterruptedWithoutCallRecord(t *testing.T) {
 	if stats := currentStats(t, st); stats.ModelCalls != 0 {
 		t.Fatalf("実行していない呼出が計上されています: %d", stats.ModelCalls)
 	}
-	// session ID未採番での停止はsessionをresumable化しない。readyだけ残るとresume時の
-	// 新規採番UUIDが存在しないsessionへの--resume起動になる。
+
 	if st.Exists("worker.ready") || st.ReadOr("worker.id", "") != "" {
 		t.Fatal("session未採番の呼出前停止がsessionを採番・resumable化しています")
 	}
 }
 
-// TestResumeAfterPreFirstCallStopStartsFreshSessionは初回call前停止→--resumeの境界を
-// 固定する。session ID未採番のまま保存された中断stateは、resumeで同一checkpointのphaseを
-// 実行し直し、新規session起動の前提(session未採番・未ready)を保ったまま完結する。
-// 採番済みsessionの--resume引数境界はrunner testが固定する。
 func TestResumeAfterPreFirstCallStopStartsFreshSession(t *testing.T) {
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)
@@ -209,9 +192,6 @@ func TestResumeAfterPreFirstCallStopStartsFreshSession(t *testing.T) {
 	}
 }
 
-// TestStopDuringBackoffSleepInterruptsWithoutCallRecordはtransient backoff待機中の--stopを
-// 固定する。再開task呼出を実行していないためcall記録を増やさず、初期transient呼出と
-// user_interrupted eventだけがtelemetryへ残る。
 func TestStopDuringBackoffSleepInterruptsWithoutCallRecord(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{
@@ -263,9 +243,6 @@ func TestStopDuringBackoffSleepInterruptsWithoutCallRecord(t *testing.T) {
 	}
 }
 
-// seedInterruptedCheckpointは--stop停止直後のstateを用意する。worker sessionは既に
-// 採番・resumable済みとし、resumeが同一sessionへ戻ることを検証可能にする。
-// repoRootにgit repositoryを渡すと停止時保持基準も停止保存と同じ形で固定する。
 func seedInterruptedCheckpoint(t *testing.T, st *state.StateStore, sessionID string, repoRoot string) {
 	t.Helper()
 	if err := st.Write("last-request", "req"); err != nil {
@@ -305,8 +282,6 @@ func seedInterruptedCheckpoint(t *testing.T, st *state.StateStore, sessionID str
 	}
 }
 
-// TestResumeFromInterruptedCheckpointはinterrupted checkpointが--resumeで同一worker session
-// から再開し完結することを固定する。停止理由fieldは再開時に消え、statusは完結へ遷移する。
 func TestResumeFromInterruptedCheckpoint(t *testing.T) {
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)
@@ -331,8 +306,6 @@ func TestResumeFromInterruptedCheckpoint(t *testing.T) {
 	}
 }
 
-// TestExecuteNewTaskRejectsInterruptedCheckpointは中断taskの新規task投入をfail closedする
-// ことを固定する。中断stateを--resetなしで上書きさせない。
 func TestExecuteNewTaskRejectsInterruptedCheckpoint(t *testing.T) {
 	st := newStateStoreT(t)
 	seedInterruptedCheckpoint(t, st, "sess-interrupted-before", "")

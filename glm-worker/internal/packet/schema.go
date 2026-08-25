@@ -6,10 +6,6 @@ import (
 	"sort"
 )
 
-// schema vocabularyはClaude CLIのstructured output実測(PoC)で成立を確認した
-// object root・properties・required・enum・array・items・boolean・string・numberだけに
-// 事前制限する。未検証のmaxLength/additionalProperties・composition(allOf/anyOf/oneOf/not)
-// へ依存するとCLI内部のretry枯渇までprovider消費が進むため、ここで構築時に拒否する。
 const (
 	schemaTypeObject  = "object"
 	schemaTypeArray   = "array"
@@ -18,14 +14,12 @@ const (
 	schemaTypeBoolean = "boolean"
 )
 
-// scalarTypesは末端schemaに許可するtypeの白list。
 var scalarTypes = map[string]struct{}{
 	schemaTypeString:  {},
 	schemaTypeNumber:  {},
 	schemaTypeBoolean: {},
 }
 
-// scalarSchemaはproperties値とarray itemsに使える末端schema。
 type scalarSchema struct {
 	Type string   `json:"type"`
 	Enum []string `json:"enum,omitempty"`
@@ -48,7 +42,6 @@ type propertySchema struct {
 	object *objectSchema
 }
 
-// MarshalJSONはpropertySchemaを末端表現へ直列化する。
 func (p propertySchema) MarshalJSON() ([]byte, error) {
 	switch {
 	case p.scalar != nil:
@@ -77,13 +70,6 @@ func riskProperty() *propertySchema {
 	return stringProperty(string(RiskLow), string(RiskHigh))
 }
 
-// workerSchemaはworker role呼出(worker new/decision/fix/report-only/resume)のschema。
-// targetsをrequiredへ含め、旧protocolがNEEDS_SOL_DECISIONで要求したTARGETS行の存在を
-// schema側でも保証する。schemaはrole共通のためIMPLEMENTEDもkeyの放出を求められるが、
-// status別requiredはcomposition未検証語彙なしでは表現できず、旧IMPLEMENTED(対象なし)は
-// 空配列で表現する。空配列のNEEDS_SOL_DECISION拒否・risk整合・要素正規形は
-// ValidateWorkerResultの共有targets predicateが担う
-// (minItemsは実provider成立性が未検証の語彙のため使わない)。
 func workerSchema() *objectSchema {
 	return &objectSchema{
 		Type: schemaTypeObject,
@@ -106,10 +92,6 @@ func workerSchema() *objectSchema {
 	}
 }
 
-// reviewerSchemaは独立reviewer・risk floor再出力呼出のschema。targetsをrequiredへ含め、
-// 旧protocolが全reviewer STATUSで要求したTARGETS行の存在をschema側でも保証する。
-// 空配列の拒否・要素正規形・NEEDS_SOL_REVIEWのnone拒否はValidateReviewerResultの
-// 共有targets predicateが担う(minItemsは実provider成立性が未検証の語彙のため使わない)。
 func reviewerSchema() *objectSchema {
 	return &objectSchema{
 		Type: schemaTypeObject,
@@ -130,12 +112,10 @@ func reviewerSchema() *objectSchema {
 	}
 }
 
-// WorkerSchemaJSONは検証済みworker schemaのJSON文字列を返す。
 func WorkerSchemaJSON() (string, error) {
 	return schemaJSON(workerSchema())
 }
 
-// ReviewerSchemaJSONは検証済みreviewer schemaのJSON文字列を返す。
 func ReviewerSchemaJSON() (string, error) {
 	return schemaJSON(reviewerSchema())
 }
@@ -149,9 +129,6 @@ func schemaJSON(schema *objectSchema) (string, error) {
 	return string(data), nil
 }
 
-// validateObjectSchemaはschema vocabularyを制限内へ強制する。
-// 構築元は自packageの固定値だが、schema追加・変更時に未検証keywordや許可外typeへ
-// 依存した構成が混入したら呼出前に失敗させ、provider消費済みのretry枯渇へ至らせない。
 func validateObjectSchema(schema *objectSchema, path string) {
 	if schema == nil || schema.Type != schemaTypeObject {
 		panic(fmt.Sprintf("%s: object schemaのtypeがobjectではありません", path))

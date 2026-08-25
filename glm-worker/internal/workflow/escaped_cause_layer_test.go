@@ -7,13 +7,6 @@ import (
 	"testing"
 )
 
-// TestEscapedCauseLayerContractWiringはescaped bug/review原因層分類contractの
-// production routing配線と、親behavioral Eval入力・期待判断との因果を決定論検証する。
-// codex/AGENTS.mdのrouting、glm-execution.mdの委譲前読込指示、escaped-cause-layer.md本文の
-// 必須契約文のいずれかが欠けると失敗する。EVAL.mdの親behavioral Evalはscripted scenarioの
-// 終端検証とは異なり親Codexの分類行動の証明ではないため、その入力・期待判断が
-// instruction本文のどの契約文へ根拠を持つかを対で固定する。
-// worker/reviewer promptへ本checklistを追加しない方針も本testで固定する。
 func TestEscapedCauseLayerContractWiring(t *testing.T) {
 	root := scenarioRepoRoot(t)
 
@@ -57,8 +50,6 @@ func TestEscapedCauseLayerContractWiring(t *testing.T) {
 		}
 	}
 
-	// 親behavioral Evalの期待判断(EVAL.md)がproduction guidanceのどの契約文へ根拠を持つかを
-	// 対で検証する。EVAL.md側の文面だけ、instruction側の契約文だけの片側存在は通さない。
 	evalDoc := readContractFile("EVAL.md")
 	instruction := contents["codex/instructions/escaped-cause-layer.md"]
 	evalGrounds := []struct {
@@ -82,8 +73,6 @@ func TestEscapedCauseLayerContractWiring(t *testing.T) {
 		}
 	}
 
-	// behavioral Eval・corpus参照の管理文面。scripted終端検証を親行動の証明としない限定と、
-	// 未実行Evalの完了条件・実行条件をEVAL.mdへ残す。
 	for _, wire := range []string{
 		"TestEscapedCauseLayerContractWiring",
 		"escaped-cause-layer-parent-orchestration-cause-returns-to-sol",
@@ -99,8 +88,6 @@ func TestEscapedCauseLayerContractWiring(t *testing.T) {
 		}
 	}
 
-	// EVAL.mdが参照するcorpus entryとmanifest pinが実在すること。文面参照だけの
-	// 自己充足を防ぎ、参照先がvalidateCorpusの対象へ入っていることを固定する。
 	sc, mf := loadCorpus(t)
 	corpusIDs := make(map[string]bool, len(sc.Scenarios))
 	for _, s := range sc.Scenarios {
@@ -125,8 +112,6 @@ func TestEscapedCauseLayerContractWiring(t *testing.T) {
 		t.Error("manifest.json must pin codex/instructions/escaped-cause-layer.md")
 	}
 
-	// 本contractは親Codex側の分類・委譲条件であり、常時checklistのworker/reviewer prompt
-	// 追加で代替した実装になっていないことを固定する。
 	for _, promptFile := range []string{"codex/glm-worker/prompts/WORKER.md", "codex/glm-worker/prompts/REVIEWER.md"} {
 		if strings.Contains(readContractFile(promptFile), "escaped-cause-layer") {
 			t.Errorf("%s must not add an escaped cause layer checklist", promptFile)

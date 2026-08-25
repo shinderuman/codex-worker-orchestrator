@@ -7,8 +7,6 @@ import (
 	"unicode/utf8"
 )
 
-// Tailはpathの末尾count行を返す。読めない場合は空文字列。診断表示だけへ使い、
-// 結果受理の入力にはしない。
 func Tail(path string, count int) string {
 	if count <= 0 {
 		return ""

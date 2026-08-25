@@ -10,8 +10,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-// executeStatsOutputはprintStatsの出力1行をstatsOutputへdecodeする。
-// JSONでない出力はmachine contract違反として失敗する。
 func executeStatsOutput(t *testing.T, st *state.StateStore) statsOutput {
 	t.Helper()
 	var out bytes.Buffer
@@ -107,8 +105,6 @@ func TestPrintStatsAggregatesProviderUnavailable(t *testing.T) {
 	}
 }
 
-// 新診断集計(risk floor / snapshot mismatch axis / packet reject / probe outcome)が
-// --statsへ少数表示される。空なら空object。
 func TestPrintStatsReportsDiagnosticAggregates(t *testing.T) {
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)

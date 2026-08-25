@@ -376,9 +376,6 @@ func seedSubdirSameNameParentFile(t *testing.T, dir string) {
 	gitRun(t, dir, "commit", "--quiet", "-m", "subdir")
 }
 
-// review resumeの承認例外は親管理metadata集合除外worktree digestが非親fileの変化を全域で捉えることに
-// 依存する。tracked/untracked・削除・subdirectory同名列・IMPLEMENTATION_TASKS配下の各形状で
-// 除外digestの感度を固定する。
 func TestCaptureGitSnapshotExcludingParentDigest(t *testing.T) {
 	tests := []struct {
 		name          string

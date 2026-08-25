@@ -165,7 +165,6 @@ func TestBuildReportShowsUnknownReductionWithoutFabricatedPercent(t *testing.T) 
 	}
 }
 
-// TestBuildReportJSONKeysAreStableは--eval-ab成功JSONのtop-level key集合を固定する。
 func TestBuildReportJSONKeysAreStable(t *testing.T) {
 	data, err := json.Marshal(BuildReport(compareFixture()))
 	if err != nil {

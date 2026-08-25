@@ -267,9 +267,6 @@ func TestRunFixStdinFailsClosedOnShortRead(t *testing.T) {
 	}
 }
 
-// TestRunDecisionStdinEmitsNoReadyMarkerForNonTTYはpipe(*os.File)と非file readerの
-// 両stdinでREADY markerがstderrへ出力されないことを固定する。markerはTTY stdinの
-// raw適用成功直後にだけ出すtransport controlであり、非TTY輸送は無markerの従来契約。
 func TestRunDecisionStdinEmitsNoReadyMarkerForNonTTY(t *testing.T) {
 	payload := stdinTestPayload()
 	args := []string{"--decision-stdin", fmt.Sprint(len(payload)), "--sha256", stdinPayloadSHA(payload)}
@@ -312,9 +309,6 @@ func TestRunDecisionStdinEmitsNoReadyMarkerForNonTTY(t *testing.T) {
 	}
 }
 
-// TestRunDecisionStdinPreservesNULBytesOverPipeFileはstdinが実*os.File pipeのときに
-// termios変更を行わない経路のまま、NUL byteを含む本文がargvを通らず全byte保存されることを
-// run()の全経路で検証する。
 func TestRunDecisionStdinPreservesNULBytesOverPipeFile(t *testing.T) {
 	cfg := newAppConfig(t)
 	prepareWaitingDecisionState(t, cfg)

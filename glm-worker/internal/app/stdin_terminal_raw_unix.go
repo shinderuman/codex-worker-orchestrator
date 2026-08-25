@@ -10,10 +10,6 @@ import (
 	"unsafe"
 )
 
-// setStdinFileRawはstdin fdがterminalのときだけtermiosをcfmakeraw相当へ変更する。
-// termios取得ioctlはENOTTY(fdがterminalでない)のときだけpipe/fileとしてapplied=falseの
-// no-op復元を返し、その他の失敗はTTYでないと黙って解釈せずfail closedする。
-// 復元は呼び出し元の責務で、読み取り成功・不足・sha256不一致を含む全pathで実行する。
 func setStdinFileRaw(file *os.File) (restore func() error, applied bool, err error) {
 	var saved syscall.Termios
 	if err := getTerminalAttrs(file.Fd(), &saved); err != nil {
@@ -36,9 +32,6 @@ func setStdinFileRaw(file *os.File) (restore func() error, applied bool, err err
 	}, true, nil
 }
 
-// makeTermiosRawは`stty raw -echo`相当の設定。input/output processing・canonical・
-// signals・flow controlをまとめて無効化し、CR/NL置換(ICRNL/INLCR)・制御byteの信号化(ISIG)・
-// flow control(IXON)・stdoutのPTY側加工(OPOST)を防ぐ。
 func makeTermiosRaw(t *syscall.Termios) {
 	t.Iflag &^= syscall.IGNBRK | syscall.BRKINT | syscall.PARMRK | syscall.ISTRIP | syscall.INLCR | syscall.IGNCR | syscall.ICRNL | syscall.IXON
 	t.Oflag &^= syscall.OPOST

@@ -103,8 +103,6 @@ func TestAppendTaskEventIsolatedPerTask(t *testing.T) {
 	}
 }
 
-// writeEventLogWithmtimeは旧taskのevent logを指定mtimeで作る。retentionの新旧判定は
-// mtime順のため、作成順と異なる時刻を与えて順序依存を検出できるようにする。
 func writeEventLogWithmtime(t *testing.T, st *StateStore, taskID string, mtime time.Time) {
 	t.Helper()
 	if err := st.AppendTaskEvent(TaskEventRecord{TaskID: taskID, CallID: "c", Role: "worker", Phase: "p", Kind: "result"}); err != nil {
@@ -137,8 +135,6 @@ func TestPruneTaskEventLogsKeepsNewestAndCurrent(t *testing.T) {
 	}
 }
 
-// TestPruneTaskEventLogsFailureStopsQuietlyは削除失敗(削除できないfile)がwarningだけに
-// 留まり、他logの整理や呼出元へ影響しないことを検証する。
 func TestPruneTaskEventLogsFailureStopsQuietly(t *testing.T) {
 	st := newEventTestStore(t)
 	base := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
@@ -163,8 +159,6 @@ func TestPruneTaskEventLogsFailureStopsQuietly(t *testing.T) {
 	}
 }
 
-// TestStartNewTaskPrunesOldEventLogsは新規task開始が旧task event logのretention整理を
-// best-effortで行い、新規taskのlogを作成済みstateへ影響させないことを検証する。
 func TestStartNewTaskPrunesOldEventLogs(t *testing.T) {
 	st := newEventTestStore(t)
 	if _, err := st.StartNewTask(); err != nil {

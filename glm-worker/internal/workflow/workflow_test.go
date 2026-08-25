@@ -7,11 +7,13 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/commentlint"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
@@ -22,31 +24,28 @@ type runnerStep struct {
 	output string
 	runErr error
 	result runner.RunResult
-	// structuredはstructured_output JSON本文。packet stepはここへmachine JSONを指定し、
-	// outputはprovider障害signal等の生text(出力file本文)だけに使う。
+
 	structured string
 }
 
 type scriptedRunner struct {
 	steps     []runnerStep
 	probeErrs []error
-	// probeResponsesは成功probeの応答本文。未指定indexはsentinelへfall backする。
+
 	probeResponses     []string
 	probeBlankResponse bool
-	// probeIsErrorはexit 0でis_error=trueの偽陽性probeを再現する。
+
 	probeIsError bool
-	// onRun/onProbeは各呼出の実行中にclockを進める試験用hook。
+
 	onRun   func()
 	onProbe func()
 	prompts []string
 	models  []string
 	phases  []string
-	// readOnlyCallsは各Run呼出へ渡されたcapability flagを記録する。
+
 	readOnlyCalls []bool
 	probes        []string
-	// artifactFiles/taskArtifactDirはscenarioのartifact packet検証用。step出力の
-	// {{ARTIFACT_DIR}}予約tokenを現在taskのartifact dirへ置換し、宣言済みfileを保存する。
-	// productionのmodelが委譲時に示されたREPORT_ARTIFACT_DIR配下へ保存する動作の再現。
+
 	artifactFiles   []scenarioArtifact
 	taskArtifactDir func() (string, error)
 }
@@ -95,7 +94,7 @@ func (r *scriptedRunner) Run(
 		result.StructuredOutput = json.RawMessage(step.structured)
 	}
 	if result.Response == "" {
-		// productionと同じくresult文字列はstructured outputのJSON表現とする。
+
 		result.Response = string(result.StructuredOutput)
 	}
 	return result, step.runErr
@@ -255,8 +254,6 @@ func newStateStoreT(t *testing.T) *state.StateStore {
 
 var testFixedTime = time.Unix(1_700_000_000, 0).UTC()
 
-// fakeClockは実sleepなしでbackoff scheduleとdeadlineを駆動する試験用clock。
-// sleepは即座に現在時刻を進め、待機時間を記録する。
 type fakeClock struct {
 	now    time.Time
 	sleeps []time.Duration
@@ -278,7 +275,6 @@ func newWorkflowT(t *testing.T, st *state.StateStore, r *scriptedRunner) *Workfl
 	return newWorkflowTWithOutput(t, st, r, io.Discard)
 }
 
-// newWorkflowTWithOutputは親境界へ放出される結果packetを検証するtest用のwire先を渡せる版。
 func newWorkflowTWithOutput(t *testing.T, st *state.StateStore, r *scriptedRunner, output io.Writer) *Workflow {
 	t.Helper()
 	w := NewWorkflow(config.AppConfig{
@@ -300,10 +296,47 @@ func newWorkflowTWithOutput(t *testing.T, st *state.StateStore, r *scriptedRunne
 	w.now = clock.nowFunc
 	w.sleep = clock.sleepFunc
 	w.jitter = identityJitter
+	w.commentLint = func(string) (commentlint.Report, error) {
+		return commentlint.Report{Status: "pass", Violations: []commentlint.Violation{}}, nil
+	}
 	return w
 }
 
-// identityJitterはtest用の決定論jitter。待機時間をそのまま返す。
+func TestCommentLintBlocksReviewerAndRoutesWorkerFix(t *testing.T) {
+	st := newStateStoreT(t)
+	r := &scriptedRunner{steps: []runnerStep{
+		{structured: implementedPacket("initial")},
+		{structured: implementedPacket("fixed")},
+		{structured: needsSolReviewPacket()},
+	}}
+	w := newWorkflowT(t, st, r)
+	w.temp = t.TempDir()
+	calls := 0
+	w.commentLint = func(string) (commentlint.Report, error) {
+		calls++
+		if calls == 1 {
+			return commentlint.Report{Status: "fail", Violations: []commentlint.Violation{{Path: "a.go", Line: 3, Column: 1, Kind: "comment", Message: "forbidden"}}}, nil
+		}
+		return commentlint.Report{Status: "pass", Violations: []commentlint.Violation{}}, nil
+	}
+	if err := w.ExecuteNewTask("request"); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(r.phases, []string{"worker-new", "worker-auto-fix-1", "reviewer-2"}) {
+		t.Fatalf("phases = %v", r.phases)
+	}
+	if calls != 2 {
+		t.Fatalf("commentlint calls = %d", calls)
+	}
+	if !strings.Contains(r.prompts[1], "commentlint") {
+		t.Fatalf("fix prompt = %s", r.prompts[1])
+	}
+	status := st.TaskStatus()
+	if status != state.TaskStatusWaitingSolReview {
+		t.Fatalf("status = %s", status)
+	}
+}
+
 func identityJitter(base time.Duration) time.Duration { return base }
 
 func TestRunModelRecordsPromptResponseAndUsage(t *testing.T) {
@@ -419,7 +452,6 @@ func currentStats(t *testing.T, st *state.StateStore) state.TaskStats {
 	return state.TaskStats{}
 }
 
-// packetBodyはtyped結果からmodel structured_output本文(machine JSON 1行)を組み立てる。
 func packetBody(result packet.Result) string {
 	data, err := json.Marshal(result)
 	if err != nil {
@@ -428,7 +460,6 @@ func packetBody(result packet.Result) string {
 	return string(data)
 }
 
-// resultFromBodyはmachine JSON本文からtyped結果を組み立てるtest helper。
 func resultFromBody(body string) packet.Result {
 	value, err := packet.ParseStructured([]byte(body))
 	if err != nil {
@@ -437,13 +468,11 @@ func resultFromBody(body string) packet.Result {
 	return value
 }
 
-// workerResultFromBodyはresume checkpoint用のworker結果pointerを組み立てる。
 func workerResultFromBody(body string) *packet.Result {
 	value := resultFromBody(body)
 	return &value
 }
 
-// workerPacketWithRiskはriskだけ指定したIMPLEMENTED worker packet本文を返す。
 func workerPacketWithRisk(risk string) string {
 	return packetBody(packet.Result{
 		Status:              packet.StatusImplemented,
@@ -455,7 +484,6 @@ func workerPacketWithRisk(risk string) string {
 	})
 }
 
-// constraintViolatingImplementedPacketはschema適合・意味検証不合格(必須field欠落)を再現する。
 func constraintViolatingImplementedPacket() string {
 	return packetBody(packet.Result{
 		Status:     packet.StatusImplemented,
@@ -466,7 +494,6 @@ func constraintViolatingImplementedPacket() string {
 	})
 }
 
-// oversizeImplementedPacketはschema適合・意味検証不合格(size)を再現する。
 func oversizeImplementedPacket() string {
 	return packetBody(packet.Result{
 		Status:              packet.StatusImplemented,
@@ -523,8 +550,6 @@ func TestRunModelCorrectsInvalidResultInSameRunner(t *testing.T) {
 	}
 }
 
-// schemaが強制する構造は結果objectで保証済みのため、構造破綻textは変換不能=契約ミスマッチとして
-// 修正再依頼なしのfail closedへ落ちる。worker/reviewer両roleで同じsemanticsを保証する。
 func TestRunModelFailsClosedOnStructuredMismatch(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -582,9 +607,6 @@ func TestRunModelFailsClosedOnStructuredMismatch(t *testing.T) {
 	}
 }
 
-// StructuredOutputError(retry exhaust・成功時structured_output欠損)はprovider障害ではなく
-// 契約破綻のため、transient recoveryへ入らず即座にfail closedする。checkpointを清除し、
-// resume前提を残さない。
 func TestRunModelFailsClosedOnStructuredOutputError(t *testing.T) {
 	cases := []struct {
 		name             string
@@ -635,8 +657,7 @@ func TestRunModelFailsClosedOnStructuredOutputError(t *testing.T) {
 				t.Fatal("resume checkpointが残っています")
 			}
 			stats := currentStats(t, st)
-			// structured_retry_exhaustedはretry枯渇だけを数え、成功時structured_output欠損で
-			// 汚染しない。欠損側の観測はPacketRejectReason=structured-outputだけが担う。
+
 			if stats.StructuredRetryExhausted != c.wantRetryMetrics || stats.ResultCorrections != 0 {
 				t.Fatalf("stats = %#v", stats)
 			}
@@ -676,10 +697,6 @@ func TestExecuteEmitsAcceptedResultExactlyOnce(t *testing.T) {
 	}
 }
 
-// TestEmitResultRecordsEmittedPayloadBytesはSolPacketBytesのstable semantic
-// 「親Solへ実際にemitした受理結果payloadのbyte数」をproduction経路で固定する。
-// 計測対象はstdoutへ出した受理結果payloadそのものであり、protocol形式が旧KEY行から
-// machine JSONへ変わってもこの等式だけは保たれる(縦断比較はprotocol境界を区別)。
 func TestEmitResultRecordsEmittedPayloadBytes(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
@@ -1059,8 +1076,6 @@ func TestAutoFixRejectsReviewerStatus(t *testing.T) {
 	}}
 	w := newWorkflowT(t, st, r)
 
-	// auto-fix workerがreviewer statusを返すのはrole別schema違反のため、修正再依頼なしの
-	// fail closed停止になる。
 	err := w.ExecuteNewTask("request")
 	var workerErr *WorkerError
 	if err == nil || !errors.As(err, &workerErr) || !strings.Contains(err.Error(), "worker結果のstatus") {
@@ -1140,8 +1155,6 @@ func TestRunModelSurfacesZaiFiveHourLimit(t *testing.T) {
 	}
 }
 
-// 旧raw fallback相当の分類入力として、result本文が無い経路のplain stdout 5h上限信号が
-// outputPath本文へ信号が無くてもrunnerの構造値からrate-limited状態へ到達すること。
 func TestRunModelSurfacesPlainStdoutFiveHourLimit(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{{
@@ -1174,8 +1187,6 @@ func TestRunModelSurfacesPlainStdoutFiveHourLimit(t *testing.T) {
 	}
 }
 
-// mergePlainFailureClassは旧classifierの全体一致順序(5h→transient)をfile由来と
-// plain由来の統合でも保つ。fatal既定はどちらの上書きもしない。
 func TestMergePlainFailureClassPriority(t *testing.T) {
 	fiveHour := runner.ProviderFailureClass{Kind: runner.ProviderFailureZaiFiveHour}
 	transientFile := runner.ProviderFailureClass{Kind: runner.ProviderFailureTransient, Detail: "network:dial tcp"}
@@ -1695,9 +1706,6 @@ func TestFixRequiredOtherTargetsKeepsImplementationAutoFix(t *testing.T) {
 	}
 }
 
-// TARGETSなしFIX_REQUIREDはauto-fix promptへ修正対象を伝えられないため、
-// 意味検証不合格として同一sessionの修正再依頼へ置き換わり、targets付き再出力だけが
-// 通常auto-fixへdispatchする。旧protocolのstatus別必須field契約復元のproduction因果。
 func TestFixRequiredWithoutTargetsCorrectsBeforeAutoFix(t *testing.T) {
 	st := newStateStoreT(t)
 	fixWithoutTargets := `{"status":"FIX_REQUIRED","risk":"HIGH","summary":"fix","requirement_coverage":"covered","invariants":"preserved","test_evidence":"ev","issues":"i","residual_risk":"r","targets":[],"artifacts":[]}`
@@ -1743,9 +1751,6 @@ func TestFixRequiredWithoutTargetsCorrectsBeforeAutoFix(t *testing.T) {
 	}
 }
 
-// TARGETSなしNEEDS_SOL_DECISIONはSolが現物確認すべき対象を失うため、pending-decisionへの
-// 遷移と親境界への結果放出より前に、意味検証不合格として同一sessionの修正再依頼へ置き換わる。
-// targets付き再出力だけが親へ渡る。旧protocolのworker status別必須field契約復元のproduction因果。
 func TestNeedsSolDecisionWithoutTargetsCorrectsBeforeParentDispatch(t *testing.T) {
 	st := newStateStoreT(t)
 	decisionWithoutTargets := `{"status":"NEEDS_SOL_DECISION","risk":"HIGH","decision":"d","evidence":"e","options":"o","recommendation":"r","test_obligations":"t","targets":[],"artifacts":[]}`
@@ -1785,9 +1790,6 @@ func TestNeedsSolDecisionWithoutTargetsCorrectsBeforeParentDispatch(t *testing.T
 	}
 }
 
-// TARGETS要素の意味検証(空白のみ要素・none混在)もauto-fix dispatchの前に止まる。
-// 空要素を要素へ持つFIX_REQUIREDは修正対象の所在を伝えられないため、意味検証不合格と
-// して同一sessionの修正再依頼へ置き換わり、正規targets付き再出力だけがauto-fixへdispatchする。
 func TestFixRequiredBlankTargetsElementCorrectsBeforeAutoFix(t *testing.T) {
 	st := newStateStoreT(t)
 	fixWithBlankElement := `{"status":"FIX_REQUIRED","risk":"HIGH","summary":"fix","requirement_coverage":"covered","invariants":"preserved","test_evidence":"ev","issues":"i","residual_risk":"r","targets":["   "],"artifacts":[]}`
@@ -1829,9 +1831,6 @@ func TestFixRequiredBlankTargetsElementCorrectsBeforeAutoFix(t *testing.T) {
 	}
 }
 
-// noneと具体targetの混在したNEEDS_SOL_DECISIONはSolが読むべき対象の正規形を壊すため、
-// pending-decisionへの遷移と親境界への結果放出より前に意味検証不合格として修正再依頼へ
-// 置き換わる。正規targets付き再出力だけが親へ渡る。
 func TestNeedsSolDecisionMixedNoneTargetsCorrectsBeforeParentDispatch(t *testing.T) {
 	st := newStateStoreT(t)
 	decisionMixedNone := `{"status":"NEEDS_SOL_DECISION","risk":"HIGH","decision":"d","evidence":"e","options":"o","recommendation":"r","test_obligations":"t","targets":["none","glm-worker/internal/packet/validate.go:validateTargets"],"artifacts":[]}`
@@ -1871,9 +1870,6 @@ func TestNeedsSolDecisionMixedNoneTargetsCorrectsBeforeParentDispatch(t *testing
 	}
 }
 
-// NEEDS_SOL_REVIEWのnone要素(1要素でも混在でも)はEVAL契約「none要素拒否」として、
-// waiting-sol-reviewへの遷移と親へ渡るlast-reviewより前に意味検証不合格として
-// 修正再依頼へ置き換わる。具体targets付き再出力だけがSol判断へ流出する。
 func TestNeedsSolReviewNoneElementCorrectsBeforeSolReviewDispatch(t *testing.T) {
 	st := newStateStoreT(t)
 	reviewMixedNone := `{"status":"NEEDS_SOL_REVIEW","risk":"HIGH","summary":"review","requirement_coverage":"covered","invariants":"preserved","test_evidence":"ev","issues":"i","residual_risk":"r","targets":["none","glm-worker/internal/packet/validate.go:validateTargets"],"artifacts":[],"sol_question":"q"}`

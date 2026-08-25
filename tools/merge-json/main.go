@@ -38,8 +38,6 @@ func mergeFiles(targetPath string, fragmentPath string, overridePath string) (bo
 	return mergeFilesWithWriter(targetPath, fragmentPath, overridePath, writeAtomic)
 }
 
-// mergeFilesWithWriterはmergeFilesの注入可能本体。writeFn差し替えで特定pathの
-// atomic writeを失敗させ、transaction rollbackと再実行収束を検証する。
 func mergeFilesWithWriter(targetPath string, fragmentPath string, overridePath string, writeFn writeFileFunc) (bool, error) {
 	target, targetMode, err := readObjectOrEmpty(targetPath)
 	if err != nil {
@@ -90,8 +88,6 @@ func mergeFilesWithWriter(targetPath string, fragmentPath string, overridePath s
 		plans = append(plans, plannedWrite{path: statePath, data: append(data, '\n'), mode: 0o600})
 	}
 
-	// 検証・生成後に一度だけ書込む。一方の失敗でtargetとstateが不整合になるのを
-	// transaction rollbackで防ぐ(特にoverride解除時の空state+旧target残留)。
 	if err := commitTransaction(plans, writeFn); err != nil {
 		return false, err
 	}
@@ -193,16 +189,11 @@ func writeAtomic(path string, data []byte, mode os.FileMode) error {
 	return os.Rename(tempPath, path)
 }
 
-// envOverrideはrunner (glm-worker/internal/runner) と同じJSON意味論を並行実装した
-// 端末local patch。別Go moduleのため共有せず、意味論の一致は両者のtestで担保する。
 type envOverride struct {
 	sets    map[string]string
 	deletes []string
 }
 
-// 受理形式: {"env":{"KEY":"value","DEL":null}}。top-level keyは"env"のみ、
-// env値はstring(set)かnull(delete)のみ。空文字はunsetではなく文字列値。
-// それ以外・壊れたJSONはinstall・runner両方でfail closedとする外部仕様。
 func parseEnvOverride(path string) (envOverride, error) {
 	var override envOverride
 	if path == "" {
@@ -216,8 +207,6 @@ func parseEnvOverride(path string) (envOverride, error) {
 		return override, err
 	}
 
-	// top-levelはobjectのみ。JSON null・scalar・arrayと壊れたJSON・trailing値を
-	// 排除し、空object・{"env":{}}だけ空patchとして受理する外部仕様。
 	var topLevel any
 	if err := json.Unmarshal(data, &topLevel); err != nil {
 		return override, fmt.Errorf("override JSON: %w", err)
@@ -282,8 +271,6 @@ func ensureEnvMap(target map[string]any) map[string]any {
 	return map[string]any{}
 }
 
-// overrideStateFileはsettings.jsonと同じdirectoryへ置くGit管理外sidecar。
-// overrideが所有するenv keyの適用前baselineを記録し、OAuth等の認証情報には触れない。
 const overrideStateFile = ".codex-config-claude-env-state.json"
 
 const overrideStateVersion = 1
@@ -293,7 +280,6 @@ type overrideState struct {
 	Env     map[string]envBaseline `json:"env"`
 }
 
-// envBaselineはoverride適用前のenv keyの存在と値。ValueはExistsがtrueの時だけ意味を持つ。
 type envBaseline struct {
 	Exists bool `json:"exists"`
 	Value  any  `json:"value,omitempty"`
@@ -303,8 +289,6 @@ func statePathFor(targetPath string) string {
 	return filepath.Join(filepath.Dir(targetPath), overrideStateFile)
 }
 
-// loadOverrideStateはsidecarを読む。不存在は空state、壊れたJSON・未対応versionは
-// settings/stateを書き換える前にfail closedとするため零値とerrorを返す。
 func loadOverrideState(path string) (overrideState, error) {
 	empty := overrideState{Version: overrideStateVersion, Env: map[string]envBaseline{}}
 
@@ -339,8 +323,6 @@ func loadOverrideState(path string) (overrideState, error) {
 	return state, nil
 }
 
-// writeFileFuncは1 fileのatomic writeを抽象化する。testで特定pathの書込みを
-// 失敗させ、rollback経路と再実行収束を検証するための最小の注入点。
 type writeFileFunc func(path string, data []byte, mode os.FileMode) error
 
 type plannedWrite struct {
@@ -360,11 +342,6 @@ type plannedRestore struct {
 	restore fileRestore
 }
 
-// commitTransactionは計画した各fileをatomic writeで順に適用する。
-// いずれかの書込みが失敗した場合、計画した全pathを更新前のbytes・存在有無・modeへ
-// best-effortで復元する。これによりoverride解除で空stateと旧targetが同時に残り
-// 次回installで追加key復元が困難になる不整合を、通常エラー経路へ残さない。
-// rollback自体の失敗は元errorへ併記し黙殺しない。
 func commitTransaction(plans []plannedWrite, writeFn writeFileFunc) error {
 	restores := make([]plannedRestore, 0, len(plans))
 	seen := make(map[string]bool, len(plans))
@@ -415,9 +392,6 @@ func rollbackFiles(restores []plannedRestore, writeFn writeFileFunc) error {
 	return errors.Join(errs...)
 }
 
-// restoreEnvBaselinesは前回stateの全所有keyを適用前baselineへ戻す。
-// これが復元基点となり、override変更・削除後の再installで managed keyはdefault・
-// 追加keyは不存在・上書き/削除した既存local keyは元値へ復元される。
 func restoreEnvBaselines(target map[string]any, state overrideState) {
 	if len(state.Env) == 0 {
 		return
@@ -433,8 +407,6 @@ func restoreEnvBaselines(target map[string]any, state overrideState) {
 	target["env"] = env
 }
 
-// snapshotEnvBaselinesは今回overrideに含まれる全keyの復元基準値(deep merge後・patch前)を記録する。
-// 空overrideは空stateになり、前回所有keyは復元だけでstateから外れる。
 func snapshotEnvBaselines(target map[string]any, override envOverride) overrideState {
 	state := overrideState{Version: overrideStateVersion, Env: map[string]envBaseline{}}
 	if len(override.sets) == 0 && len(override.deletes) == 0 {

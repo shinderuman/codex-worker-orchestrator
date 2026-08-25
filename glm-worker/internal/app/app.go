@@ -1,4 +1,3 @@
-// Package appはCLI引数解析・実行調停・プロセス間ロック・コマンド出力を担う。
 package app
 
 import (
@@ -42,14 +41,13 @@ const (
 type Command struct {
 	Mode    CommandMode
 	Payload string
-	// WatchVerboseは--watch --verboseの明示的詳細表示指定。--watch単体の表示は不変。
+
 	WatchVerbose bool
-	// StdinBytesはdecision/fix payloadをstdinから読み取るbyte数。
+
 	StdinBytes int64
-	// SHA256はstdin payloadの送信元が計算した期待値。空なら照合しない。
+
 	SHA256 string
-	// Originは--fix/--fix-stdinの--origin宣言値。fix originの有限集合のどれかで、
-	// 空は未宣言(unknown origin)を意味する。
+
 	Origin string
 	Verify VerifyArgs
 }
@@ -60,10 +58,8 @@ type VerifyArgs struct {
 	ThreadID string
 }
 
-// fixOriginUsageは--originが受け付けるfix origin有限集合の表示。
 const fixOriginUsage = "[--origin codex-review|glm-reviewer|user-amendment|external-review|metadata-repair]"
 
-// UsageErrorは引数・task ID等の呼出形式の不正。process errorのkind usageへ対応する。
 type UsageError struct {
 	Message string
 }
@@ -72,8 +68,6 @@ func (e *UsageError) Error() string {
 	return e.Message
 }
 
-// NotFoundErrorは明示指定の対象(log・run dir等)が存在しない失敗。process errorのkind
-// not_foundへ対応する。
 type NotFoundError struct {
 	Message string
 }
@@ -92,8 +86,7 @@ func ParseCommand(args []string) (Command, error) {
 	}
 
 	switch args[0] {
-	// 廃止したargv埋込みmodeを新規task本文へ誤routingさせないため、専用のusage errorで
-	// fail closedする。
+
 	case "--decision", "--fix":
 		return Command{}, usageError("usage: glm-worker --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix-stdin <payload-bytes> [--sha256 <hex>] %s", fixOriginUsage)
 	case "--decision-stdin":
@@ -241,8 +234,6 @@ func parsePayloadSHA256(value string) (string, error) {
 	return strings.ToLower(value), nil
 }
 
-// StdinPayloadErrorはstdin payloadの読み取り不足・sha256不一致。process errorのkind
-// stdin_payloadへ対応し、state変更・model呼出前にfail closedする。
 type StdinPayloadError struct {
 	Message string
 }
@@ -251,8 +242,6 @@ func (e *StdinPayloadError) Error() string {
 	return e.Message
 }
 
-// readStdinPayloadは宣言byte数だけstdinから読み取り、期待sha256と照合する。
-// 呼び出し元のexec sessionがstdin pipeを開いたまま保つため、EOFまで読む過剰byte検知は行えない。
 func readStdinPayload(in io.Reader, want int64, expectedSHA string) (string, error) {
 	var buf bytes.Buffer
 	written, err := io.CopyN(&buf, in, want)
@@ -271,19 +260,11 @@ func readStdinPayload(in io.Reader, want int64, expectedSHA string) (string, err
 	return string(payload), nil
 }
 
-// stdinReadyControlEventはTTY stdinのpayload読み取り開始可能をcallerへ知らせる
-// transport control event。raw適用成功直後にstderrへ1回だけ出し、pipe/file等の
-// 非TTY stdinでは出さない。
 type stdinReadyControlEvent struct {
 	Type  string `json:"type"`
 	Event string `json:"event"`
 }
 
-// emitStdinReadyControlEventはcontrol event行をstderrへ1回だけ書く。このevent観測が
-// caller側の本文write開始条件(READY-before-write)であり、event出力はpayload読み取りの
-// 前に完了する。出力時点でraw modeのためOPOSTが無効で、行末LFはwriter経路で確定観測
-// できる。書込み失敗はcallerが本文を送れず永続待機するため、呼び出し元は復元を実行して
-// fail closedする。
 func emitStdinReadyControlEvent(w io.Writer) error {
 	line, err := marshalEventLine(stdinReadyControlEvent{Type: "control", Event: "stdin_ready"})
 	if err != nil {
@@ -295,8 +276,6 @@ func emitStdinReadyControlEvent(w io.Writer) error {
 	return nil
 }
 
-// テストでModelRunnerを差し替えるためのfactory。stopは--stop要求の観測経路で、
-// 実runnerはこれを受け取ってchildの安全停止へ参加する。
 type RunnerFactory func(cfg config.AppConfig, st *state.StateStore, stop *runner.StopController) workflow.ModelRunner
 
 func defaultRunnerFactory(cfg config.AppConfig, st *state.StateStore, stop *runner.StopController) workflow.ModelRunner {
@@ -344,12 +323,6 @@ func run(
 	return Execute(cmd, cfg, runnerFactory, stdout, stderr)
 }
 
-// Executeはcmdをcfg配下で実行する。runner/workflowはrf経由で注入可能で、
-// --watch・--timeline・--convergence・--eval-ab・--call-outliersはstateへ書き込まないread-only参照、
-// --stopはrepo lockを待たずrunning ownerのlocal control endpointへ固定要求を送り、
-// --status/--statsはロック取得前に、それ以外はプロセス間ロック後に処理する。
-// stdin payload modeの読み取り・照合とTTY/PTYのtermios復元はrun()がstate初期化前に
-// 完了しており、不足・不一致時はここへ到達しない。
 func Execute(cmd Command, cfg config.AppConfig, rf RunnerFactory, stdout, stderr io.Writer) error {
 	if cmd.StdinBytes > 0 && cmd.Payload == "" {
 		return fmt.Errorf("stdin payload mode requires the payload to be read before execute")
@@ -401,14 +374,10 @@ func Execute(cmd Command, cfg config.AppConfig, rf RunnerFactory, stdout, stderr
 		return parentAccept(st, stdout)
 	}
 
-	// --isolateはrepo lock保有下でstateの前提検証だけを行う隔離操作であり、model呼出と
-	// 停止endpointの対象にならない。endpointを開く前に処理する。
 	if cmd.Mode == ModeIsolate {
 		return isolateInterruptedTask(st, cfg, stdout)
 	}
 
-	// workflow実行modeはrepo lock保有中だけ単一目的stop endpointを開く。endpoint接続と
-	// owner側ackが停止authorityで、lock fileのPIDは診断値にとどまる。
 	controller := runner.NewStopController()
 	stopServer, err := startStopEndpoint(st, controller)
 	if err != nil {

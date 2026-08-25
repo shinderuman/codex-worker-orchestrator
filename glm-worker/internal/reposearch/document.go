@@ -13,7 +13,6 @@ const (
 	binarySniffBytes = 8 << 10
 )
 
-// docは1 file分の検索統計。cacheへこのまま永続化するため生内容・snippetは持たせない。
 type doc struct {
 	Path          string         `json:"path"`
 	ContentLength int            `json:"content_length"`
@@ -71,8 +70,6 @@ func rebuildIndex(ctx context.Context, repoRoot string, settings searchSettings)
 	return index, nil
 }
 
-// readOutcomeはfile1つが検索/index対象corpusへどう現れるか。rebuildのskip計上と
-// fingerprintのfreshness評価が同じ分類を共有するための区分。
 type readOutcome int
 
 const (
@@ -81,12 +78,6 @@ const (
 	readMissing
 )
 
-// readSearchableFileは検索対象として読める通常fileの内容を返す。symlink・FIFO等の
-// 特殊file、maxFileBytes超、先頭binarySniffBytes内にNULを含むfileはreadSkippedとして
-// 内容を読まず対象外扱いにする。tracked pathのworking treeからの消失(deleted・rename
-// 旧path)はreadMissingで区別する。Lstatで対象を確認してから読むため、特殊fileを
-// 読み切ってhangさせることはない。読み込むのはmaxFileBytes以下の対象file本文だけで、
-// fingerprintもこの関数経由で同じ上限内の読み込みに限る。
 func readSearchableFile(abs string) ([]byte, readOutcome, error) {
 	info, err := os.Lstat(abs)
 	if errors.Is(err, os.ErrNotExist) {

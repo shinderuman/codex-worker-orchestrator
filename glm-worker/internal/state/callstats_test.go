@@ -10,8 +10,6 @@ func callOutliersBaseTime() time.Time {
 	return time.Date(2026, 8, 24, 9, 0, 0, 0, time.UTC)
 }
 
-// callLogFixtureはtelemetry recordの最小fixture。session・phase・role・resumed・turn・
-// durationを指定して分布計算の入力を作る。model aliasはroleから固定する。
 func callLogFixture(sessionID string, phase string, role SessionRole, resumed bool, turns int, durationMS int64, startedAt time.Time) ModelCallLog {
 	modelAlias := "opus"
 	if role == ReviewerRole {
@@ -67,8 +65,6 @@ func TestPercentileLinear(t *testing.T) {
 	}
 }
 
-// TestBuildCallOutlierReportSeparatesPhasesAndResumeはphase category・resumed別の分布、
-// model/session集計、task増幅が保存recordだけから組めることを検証する。
 func TestBuildCallOutlierReportSeparatesPhasesAndResume(t *testing.T) {
 	base := callOutliersBaseTime()
 	taskA := "aaaaaaaa-1111-4111-8111-111111111111"
@@ -198,8 +194,6 @@ func TestBuildCallOutlierReportSeparatesPhasesAndResume(t *testing.T) {
 	}
 }
 
-// TestBuildCallOutlierReportFlagsOutlierCallsAndTasksは母数が閾値を超えたgroup・task集団で
-// p95超の呼出・taskを検出し、検出行に再現用の閾値とtask識別を載せることを検証する。
 func TestBuildCallOutlierReportFlagsOutlierCallsAndTasks(t *testing.T) {
 	base := callOutliersBaseTime()
 	logs := make([]TaskCallLogs, 0, CallOutlierMinPopulation)
@@ -219,7 +213,7 @@ func TestBuildCallOutlierReportFlagsOutlierCallsAndTasks(t *testing.T) {
 	if group.Calls != CallOutlierMinPopulation+1 || !group.OutlierEligible {
 		t.Fatalf("worker-new current group = %#v", group)
 	}
-	// 昇順21値(10が20個・100が1個)のp95位置は19.0で、20番目要素の10そのものになる。
+
 	if group.Turns.P95 != 10 {
 		t.Fatalf("p95 = %v want 10", group.Turns.P95)
 	}
@@ -239,7 +233,7 @@ func TestBuildCallOutlierReportFlagsOutlierCallsAndTasks(t *testing.T) {
 	if len(report.Tasks) != CallOutlierMinPopulation {
 		t.Fatalf("tasks = %d want %d", len(report.Tasks), CallOutlierMinPopulation)
 	}
-	// task turn合計は20task(10が19件・110が1件)で、p95位置18.05の補間値は15。
+
 	if len(report.OutlierTasks) != 1 {
 		t.Fatalf("outlier_tasks = %#v", report.OutlierTasks)
 	}
@@ -259,9 +253,6 @@ func TestBuildCallOutlierReportFlagsOutlierCallsAndTasks(t *testing.T) {
 	}
 }
 
-// TestBuildCallOutlierReportTaskOutliersExcludeZeroOnlyTasksはtask-level outlierの母集団が
-// 観測済みturn呼出を1件以上持つtaskだけであることを検証する。zero-only taskが母数を
-// 見かけ上min_population以上へ増やしp95を0近くへ下げてもfalse outlierを出さない回帰固定。
 func TestBuildCallOutlierReportTaskOutliersExcludeZeroOnlyTasks(t *testing.T) {
 	base := callOutliersBaseTime()
 	zeroOnly := CallOutlierMinPopulation + 5
@@ -297,17 +288,12 @@ func TestBuildCallOutlierReportTaskOutliersExcludeZeroOnlyTasks(t *testing.T) {
 			t.Fatalf("観測済みtask %sのturns_observed_calls = %d want 1", row.TaskID, row.TurnsObservedCalls)
 		}
 	}
-	// 全task数はmin_population超だが観測済みtaskは2件で母数不足のため、900 turn taskを
-	// false outlierに出さない。
+
 	if len(report.OutlierTasks) != 0 {
 		t.Fatalf("観測済み母数不足なのにtask outlier = %#v", report.OutlierTasks)
 	}
 }
 
-// TestBuildCallOutlierReportTaskOutliersKeepDetectionWithZeroOnlyは観測済みtaskが十分ある
-// 場合の検出維持を検証する。zero-only taskを混ぜても母集団は観測済み21件のままなので
-// p95=12となり高turn task1件だけを検出する。全taskを母集団にすればzero-onlyが母数を
-// 水増ししてp95=10へ下がり、12 turn taskもfalse outlierに出る。
 func TestBuildCallOutlierReportTaskOutliersKeepDetectionWithZeroOnly(t *testing.T) {
 	base := callOutliersBaseTime()
 	turnsPerTask := make([]int, 0, CallOutlierMinPopulation+11)
@@ -337,10 +323,6 @@ func TestBuildCallOutlierReportTaskOutliersKeepDetectionWithZeroOnly(t *testing.
 	}
 }
 
-// TestBuildCallOutlierReportEligibilityCountsObservedTurnsはgroup母数をturn観測済み呼出数で
-// 数えることを検証する。中断などでturnを観測できなかった呼出が多く、観測値が母数下限に
-// 届かないgroupは呼出数だけが多くても閾値根拠にしない。あわせて、分布母数が十分な
-// reviewer groupからもoutlier呼出を出さない(規則がworker呼出限定)ことを固定する。
 func TestBuildCallOutlierReportEligibilityCountsObservedTurns(t *testing.T) {
 	base := callOutliersBaseTime()
 	entries := make([]ModelCallLog, 0, 41)
@@ -372,9 +354,6 @@ func TestBuildCallOutlierReportEligibilityCountsObservedTurns(t *testing.T) {
 	}
 }
 
-// TestBuildCallOutlierReportSmallRepositoryFixtureは少数呼出のrepository(8呼出程度の
-// media-backupのような運用)へ同じ集計がそのまま適用でき、母数不足のためoutlier閾値を
-// 出さないことを検証する。少数sampleを閾値根拠にしない運用契約の固定である。
 func TestBuildCallOutlierReportSmallRepositoryFixture(t *testing.T) {
 	base := callOutliersBaseTime()
 	taskID := callOutliersTaskUUID(t, 90)
@@ -412,8 +391,6 @@ func TestBuildCallOutlierReportSmallRepositoryFixture(t *testing.T) {
 	}
 }
 
-// TestBuildCallOutlierReportZeroInitialTurnsは最初のworker呼出がturn・duration観測なしに
-// 中断したtaskで両倍率をnullへ出し、観測できない計量を分布へ混ぜないことを検証する。
 func TestBuildCallOutlierReportZeroInitialTurns(t *testing.T) {
 	base := callOutliersBaseTime()
 	logs := []TaskCallLogs{
@@ -477,7 +454,6 @@ func callOutliersSessionOf(t *testing.T, sessions []CallSessionDistribution, ses
 	return CallSessionDistribution{}
 }
 
-// callOutliersTaskUUIDはindexごとに一意なUUID v4生成形式のtask IDを返す。
 func callOutliersTaskUUID(t *testing.T, index int) string {
 	t.Helper()
 	taskID := fmt.Sprintf("%08x-1111-4111-8111-%012x", index, index)

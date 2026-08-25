@@ -8,7 +8,6 @@ import (
 )
 
 const (
-	// Okapi BM25の標準的parameters。
 	bm25K1 = 1.2
 	bm25B  = 0.75
 
@@ -20,10 +19,6 @@ type fieldStatistics struct {
 	frequencies   map[string]int
 }
 
-// rankDocumentsはdocsをBM25で順位付けする。content・path各fieldを独立した統計
-// (文書長・df)で評価し、PathScore=pathWeight×path BM25、Score=ContentScore+PathScore
-// とする。同点はpath昇順で固定し、doc列はpath順に並んでいる前提で先頭から走査して
-// 演算順も固定する。
 func rankDocuments(docs []doc, queryTokens []string, limit int, pathWeight float64) []Result {
 	if len(docs) == 0 {
 		return nil
@@ -79,9 +74,6 @@ func buildFieldStatistics(docs []doc, tokens []string, frequencies func(doc) map
 	return fieldStatistics{averageLength: float64(total) / float64(len(docs)), frequencies: documentFrequency}
 }
 
-// bm25FieldScoreは1 field分のBM25をquery token順に加算する。idfは常に非負になる
-// 形式のため、 corpusに多数出現するtokenが負へscoreを反転させることはない。
-// termFreq>0のdocは必ずfield長も持つためaverageLength>0が保証される。
 func bm25FieldScore(termFrequencies map[string]int, docLength int, stats fieldStatistics, docCount int, tokens []string) float64 {
 	score := 0.0
 	for _, token := range tokens {
@@ -96,8 +88,6 @@ func bm25FieldScore(termFrequencies map[string]int, docLength int, stats fieldSt
 	return score
 }
 
-// attachSnippetsは上位結果のfileからquery tokenが最も集中する行をsnippetとして取り出す。
-// pathのみの一致や対象外fileはLine=0・Snippet=""のままにし、読み取り失敗だけwarningへ残す。
 func attachSnippets(root string, results []Result, queryTokens []string) []string {
 	var warnings []string
 	for i := range results {
@@ -119,8 +109,6 @@ func attachSnippets(root string, results []Result, queryTokens []string) []strin
 	return warnings
 }
 
-// bestLineはquery token出現数が最大の行を1-based行番号付きで返す。同点は先頭行。
-// 内容にquery tokenが無い(pathのみ一致)場合は行番号0と空snippetを返す。
 func bestLine(content string, queryTokens []string) (int, string) {
 	bestNumber, bestCount, bestText := 0, 0, ""
 	for i, line := range strings.Split(content, "\n") {

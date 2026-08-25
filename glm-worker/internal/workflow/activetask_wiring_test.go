@@ -7,10 +7,6 @@ import (
 	"testing"
 )
 
-// TestActiveTaskContractWiringはACTIVE task requirement契約をAGENTS.md・caller側instruction・
-// EVAL.md・dynamic prompt配線へ分散した対応を決定論検証する。ルール文面・caller契約・Eval記述・
-// prompt builderのいずれかが欠けると失敗する。常時checklistとして静的role prompt
-// (WORKER.md/REVIEWER.md)へ条文を複製せず、毎呼出で動的に ACTIVE task pathを載せる方針を固定する。
 func TestActiveTaskContractWiring(t *testing.T) {
 	root := scenarioRepoRoot(t)
 
@@ -78,8 +74,6 @@ func TestActiveTaskContractWiring(t *testing.T) {
 		}
 	}
 
-	// 静的role promptへ契約を複製しない。ACTIVE task pathはtask毎に変わるためdynamic prompt側
-	// (prompts.go)だけが持ち、常時checklist化によるtoken固定消費と文言衝突を避ける。
 	for _, promptFile := range []string{"codex/glm-worker/prompts/WORKER.md", "codex/glm-worker/prompts/REVIEWER.md"} {
 		prompt := readFile(promptFile)
 		for _, keyword := range []string{"ACTIVE_TASK_FILE", "IMPLEMENTATION_TASKS", "IMPLEMENTATION_RULES.md"} {
@@ -89,7 +83,6 @@ func TestActiveTaskContractWiring(t *testing.T) {
 		}
 	}
 
-	// 配線対象fileはmanifest hash pinが守る。変更時は該当scenarioの期待結果を現物へ再照合する。
 	sc, mf := loadCorpus(t)
 	_ = sc
 	pinned := map[string]bool{}

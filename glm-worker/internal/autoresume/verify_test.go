@@ -312,8 +312,6 @@ func TestVerifyPass(t *testing.T) {
 	}
 }
 
-// 実障害回帰: automation_update invalid status → TOML実体が存在しない。
-// suggested_create → 候補カード表示だけで実体未作成。VerifyはこれをFAILとして検出する。
 func TestVerifyFailsWhenTOMLMissing(t *testing.T) {
 	dir := t.TempDir()
 
@@ -440,7 +438,6 @@ func TestVerifyFailsOnTOMLStatusNotActive(t *testing.T) {
 	}
 }
 
-// 実DBへ書込みはテスト専用の一時DBに対してのみ行い、Codex app DBへは触れない。
 func TestReadDBRowSqlite3Integration(t *testing.T) {
 	if _, err := exec.LookPath("sqlite3"); err != nil {
 		t.Skip("sqlite3 not installed")

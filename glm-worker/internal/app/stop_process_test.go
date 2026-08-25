@@ -13,10 +13,6 @@ import (
 	"time"
 )
 
-// TestStopCommandProcessSeriesは--stopの実binary契約を1連串で固定する:
-// 初回worker呼出とそのtool childの実行中停止(endpoint ack・KILL昇格後のgroup非残存・
-// kind=interrupted終端・PASS非放出)、interrupted status/resume_available、同一worker
-// sessionによる--resume完結、reviewer呼出中停止、そしてowner不在時のendpoint absent。
 func TestStopCommandProcessSeries(t *testing.T) {
 	env := newMultiRepoEnv(t)
 
@@ -26,9 +22,6 @@ func TestStopCommandProcessSeries(t *testing.T) {
 	stopWithoutOwnerFailsAbsent(t, env)
 }
 
-// stopWorkerCallWithToolChildは初回worker呼出とTERMを無視して存続するtool childの実行中
-// 停止を観測する。TERMだけでは終わらないchildはbounded猶予後のKILL昇格でprocess groupごと
-// 消え、停止ackはinterrupted状態保存後に返る。
 func stopWorkerCallWithToolChild(t *testing.T, env *multiRepoEnv) {
 	t.Helper()
 	env.setStubMode(t, env.stubA, "hold-with-tool")
@@ -80,8 +73,6 @@ func stopWorkerCallWithToolChild(t *testing.T, env *multiRepoEnv) {
 	}
 }
 
-// resumeInterruptedWorkerCallはinterrupted checkpointを--resumeで同一worker sessionから
-// 完結させる。
 func resumeInterruptedWorkerCall(t *testing.T, env *multiRepoEnv) {
 	t.Helper()
 	stateA := env.waitStateDir(t, env.repoA, nil)
@@ -97,7 +88,6 @@ func resumeInterruptedWorkerCall(t *testing.T, env *multiRepoEnv) {
 	}
 }
 
-// stopReviewerCallはreviewer呼出中の停止と、同じcheckpointからのresume完結を観測する。
 func stopReviewerCall(t *testing.T, env *multiRepoEnv) {
 	t.Helper()
 	env.setStubMode(t, env.stubB, "reviewer-hold")
@@ -128,8 +118,6 @@ func stopReviewerCall(t *testing.T, env *multiRepoEnv) {
 	}
 }
 
-// stopWithoutOwnerFailsAbsentはrunning owner不在(完結済み)の--stopをendpoint absentとして
-// fail closedする。
 func stopWithoutOwnerFailsAbsent(t *testing.T, env *multiRepoEnv) {
 	t.Helper()
 	stopResult := env.run(t, env.repoB, "--stop")
@@ -141,7 +129,6 @@ func stopWithoutOwnerFailsAbsent(t *testing.T, env *multiRepoEnv) {
 	}
 }
 
-// waitStopToolPIDはstub claudeのtool childがPID fileを書くまで待つ。
 func waitStopToolPID(t *testing.T, stub string) int {
 	t.Helper()
 	path := filepath.Join(filepath.Dir(stub), "tool.pid")
@@ -169,7 +156,6 @@ func waitStopFile(t *testing.T, path string) {
 	t.Fatalf("file %s が現れません", path)
 }
 
-// assertStopProcessGoneは停止済みprocessがOS上へ残存していないことを確認する。
 func assertStopProcessGone(t *testing.T, pid int) {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)

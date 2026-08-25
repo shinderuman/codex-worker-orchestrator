@@ -21,8 +21,6 @@ import (
 )
 
 type fakeStep struct {
-	// structuredはmodel structured_output JSON本文。packet stepはここへmachine JSONを
-	// 指定し、outputはprovider障害signal等の生text(出力file本文)だけに使う。
 	structured string
 	output     string
 	runErr     error
@@ -75,7 +73,6 @@ func (r *fakeRunner) factory() RunnerFactory {
 	return func(_ config.AppConfig, _ *state.StateStore, _ *runner.StopController) workflow.ModelRunner { return r }
 }
 
-// appPacketBodyはtyped結果からmachine JSON 1行を組み立てるtest helper。
 func appPacketBody(result packet.Result) string {
 	data, err := json.Marshal(result)
 	if err != nil {
@@ -243,8 +240,7 @@ func TestExecuteResetClearsTask(t *testing.T) {
 	if _, err := st.StartNewTask(); err != nil {
 		t.Fatal(err)
 	}
-	// task開始時に固定されたACTIVE task pathも現在task stateの一部。resetに残ると次task前に
-	// 旧taskの要求正本参照が生きたままになる。
+
 	if err := st.Write("active-task", "IMPLEMENTATION_TASKS/999-stale.md"); err != nil {
 		t.Fatal(err)
 	}

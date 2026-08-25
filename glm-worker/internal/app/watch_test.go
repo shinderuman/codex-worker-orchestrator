@@ -21,7 +21,6 @@ func writeTaskEventLines(t *testing.T, st *state.StateStore, taskID string, reco
 	}
 }
 
-// watchTestOptionsは既存動作と同じ間隔のtest用options。verboseだけを明示的に切替える。
 func watchTestOptions(verbose bool, followInterval time.Duration, stop <-chan struct{}) watchOptions {
 	return watchOptions{
 		verbose:        verbose,
@@ -53,8 +52,6 @@ func watchTestStore(t *testing.T) (*state.StateStore, config.AppConfig) {
 	return st, cfg
 }
 
-// parseWatchEventsはwatch出力の全行をJSON objectへdecodeする。JSONLでない行が1つでも
-// あれば契約違反として失敗する。
 func parseWatchEvents(t *testing.T, rendered string) []map[string]any {
 	t.Helper()
 	events := []map[string]any{}
@@ -71,7 +68,6 @@ func parseWatchEvents(t *testing.T, rendered string) []map[string]any {
 	return events
 }
 
-// watchEventIndexは指定typeのevent位置を返す。無い場合は-1。
 func watchEventIndex(events []map[string]any, eventType string) int {
 	for i, event := range events {
 		if event["type"] == eventType {
@@ -81,7 +77,6 @@ func watchEventIndex(events []map[string]any, eventType string) int {
 	return -1
 }
 
-// requireWatchEventは指定typeの最初のeventを返す。
 func requireWatchEvent(t *testing.T, events []map[string]any, eventType string) map[string]any {
 	t.Helper()
 	index := watchEventIndex(events, eventType)
@@ -91,7 +86,6 @@ func requireWatchEvent(t *testing.T, events []map[string]any, eventType string) 
 	return events[index]
 }
 
-// watchFloatはJSON number fieldをfloat64として取り出す。
 func watchFloat(t *testing.T, event map[string]any, key string) float64 {
 	t.Helper()
 	value, ok := event[key].(float64)
@@ -101,7 +95,6 @@ func watchFloat(t *testing.T, event map[string]any, key string) float64 {
 	return value
 }
 
-// watchStringはJSON string fieldを取り出す。
 func watchString(t *testing.T, event map[string]any, key string) string {
 	t.Helper()
 	value, ok := event[key].(string)
@@ -111,8 +104,6 @@ func watchString(t *testing.T, event map[string]any, key string) string {
 	return value
 }
 
-// TestWatchRendersSavedEventsWithoutSideEffectsは保存済みevent logだけをJSONL passthroughで
-// 流し、state書換・repo lockを行わないことを検証する。
 func TestWatchRendersSavedEventsWithoutSideEffects(t *testing.T) {
 	st, _ := watchTestStore(t)
 	taskID := "12345678-aaaa-bbbb-cccc-dddddddddddd"
@@ -142,7 +133,7 @@ func TestWatchRendersSavedEventsWithoutSideEffects(t *testing.T) {
 	if watchString(t, start, "event_log_status") != "following" {
 		t.Fatalf("event_log_status = %v", start["event_log_status"])
 	}
-	// 保存済みrecordは保存行そのままpassthroughされる。数値・boolはJSON型のまま現れる。
+
 	if len(events) != 5 {
 		t.Fatalf("watch stream = %d events: %v", len(events), events)
 	}
@@ -177,8 +168,6 @@ func TestWatchRendersSavedEventsWithoutSideEffects(t *testing.T) {
 	}
 }
 
-// TestWatchSkipsCorruptLinesはevent logの部分破損行をevent_skippedへ置き換え、以後の行を
-// 流す。
 func TestWatchSkipsCorruptLines(t *testing.T) {
 	st, _ := watchTestStore(t)
 	taskID := "12345678-aaaa-bbbb-cccc-dddddddddddd"
@@ -219,7 +208,6 @@ func TestWatchSkipsCorruptLines(t *testing.T) {
 	}
 }
 
-// TestWatchFollowsAppendedEventsはfollow中の追記もpassthroughする。
 func TestWatchFollowsAppendedEvents(t *testing.T) {
 	st, _ := watchTestStore(t)
 	taskID := "12345678-aaaa-bbbb-cccc-dddddddddddd"
@@ -256,7 +244,6 @@ func TestWatchFollowsAppendedEvents(t *testing.T) {
 	}
 }
 
-// TestWatchWithoutTaskOrLogはtask不在・event log不在で即座に終了する。
 func TestWatchWithoutTaskOrLog(t *testing.T) {
 	cfg := config.AppConfig{StateBase: t.TempDir(), RepoHash: "watchhash", RepoRoot: "/repo"}
 
@@ -287,7 +274,6 @@ func TestWatchWithoutTaskOrLog(t *testing.T) {
 	}
 }
 
-// TestExecuteWatchDoesNotCreateStateは--watch実行がstate dirを一切作成・書換しない。
 func TestExecuteWatchDoesNotCreateState(t *testing.T) {
 	base := t.TempDir()
 	cfg := config.AppConfig{StateBase: base, RepoHash: "watchhash", RepoRoot: "/repo"}
@@ -321,7 +307,6 @@ func TestParseCommandWatchRejectsExtraArgs(t *testing.T) {
 	}
 }
 
-// runWatchUntilExitはprintWatchを停止信号なしで起動し、終了またはtimeoutで表示を返す。
 func runWatchUntilExit(t *testing.T, st *state.StateStore, followInterval time.Duration) string {
 	t.Helper()
 	out := &bytes.Buffer{}
@@ -340,8 +325,6 @@ func runWatchUntilExit(t *testing.T, st *state.StateStore, followInterval time.D
 	return out.String()
 }
 
-// TestWatchExitsImmediatelyWhenTaskAlreadyNonActiveはattach時点でtask.statusが
-// active以外の全状態にある場合、保存済みeventを流して即座にwatch_exitで終了する。
 func TestWatchExitsImmediatelyWhenTaskAlreadyNonActive(t *testing.T) {
 	for _, status := range []state.TaskStatus{
 		state.TaskStatusWaitingDecision,
@@ -375,10 +358,6 @@ func TestWatchExitsImmediatelyWhenTaskAlreadyNonActive(t *testing.T) {
 	}
 }
 
-// TestWatchFollowsUntilStatusLeavesActiveはfollow中に最終event追記より後にtask.statusが
-// non-activeへ遷移した場合、当該eventを取りこぼさずwatch_exitより前に流して終了する。
-// producer側の書込み順(event append→status write)を再現し、読取り側のstate読み→drain順の
-// 取りこぼし防止を固定する。
 func TestWatchFollowsUntilStatusLeavesActive(t *testing.T) {
 	st, _ := watchTestStore(t)
 	taskID := "12345678-aaaa-bbbb-cccc-dddddddddddd"
@@ -424,8 +403,6 @@ func TestWatchFollowsUntilStatusLeavesActive(t *testing.T) {
 	}
 }
 
-// TestWatchExitsWhenTaskIDSwitchesはfollow中に現在taskが別taskへ切替わった場合、
-// 切替をnew_task_id付きのwatch_exitへ出して終了する。
 func TestWatchExitsWhenTaskIDSwitches(t *testing.T) {
 	st, _ := watchTestStore(t)
 	taskID := "12345678-aaaa-bbbb-cccc-dddddddddddd"
@@ -458,8 +435,6 @@ func TestWatchExitsWhenTaskIDSwitches(t *testing.T) {
 	}
 }
 
-// TestWatchExitsWhenEventLogRemovedはfollow中のevent log削除でremoved status eventだけを
-// 出して終了する。
 func TestWatchExitsWhenEventLogRemoved(t *testing.T) {
 	st, _ := watchTestStore(t)
 	taskID := "12345678-aaaa-bbbb-cccc-dddddddddddd"
@@ -493,8 +468,6 @@ func TestWatchExitsWhenEventLogRemoved(t *testing.T) {
 	}
 }
 
-// TestExecuteWatchReturnsAtNonActiveStatusはproduction経路(Execute)で--watchがstateへ
-// 書き込まず、authoritative task.statusのnon-active遷移でwatch_exitを出して復帰する。
 func TestExecuteWatchReturnsAtNonActiveStatus(t *testing.T) {
 	base := t.TempDir()
 	cfg := config.AppConfig{StateBase: base, RepoHash: "watchhash", RepoRoot: "/repo"}

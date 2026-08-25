@@ -10,7 +10,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 )
 
-// stopDirtyByPathは保持列挙をpath indexへ変換する。
 func stopDirtyByPath(files []StopDirtyFile) map[string]StopDirtyFile {
 	byPath := make(map[string]StopDirtyFile, len(files))
 	for _, file := range files {
@@ -19,9 +18,6 @@ func stopDirtyByPath(files []StopDirtyFile) map[string]StopDirtyFile {
 	return byPath
 }
 
-// TestCaptureStopDirtyFilesAxesは--stop保持基準の列挙対象を固定する: untracked・
-// staged・unstaged trackedを含み、親管理metadata集合を除外し、index hashとworktree
-// 内容hashの組を識別子として持つ。
 func TestCaptureStopDirtyFilesAxes(t *testing.T) {
 	repo := initCommittedRepo(t)
 	if err := os.WriteFile(filepath.Join(repo, "tracked.txt"), []byte("modified\n"), 0o600); err != nil {
@@ -94,8 +90,6 @@ func TestCaptureStopDirtyFilesAxes(t *testing.T) {
 	}
 }
 
-// TestCaptureStopDirtyFilesEmptyIsNotNilはclean checkoutの保持列挙が空列(非nil)を
-// 返すことを固定する。空列はresume gateが「dirtyなし」としてnil(旧形式)と区別する。
 func TestCaptureStopDirtyFilesEmptyIsNotNil(t *testing.T) {
 	repo := initCommittedRepo(t)
 	files, err := CaptureStopDirtyFiles(repo)
@@ -107,8 +101,6 @@ func TestCaptureStopDirtyFilesEmptyIsNotNil(t *testing.T) {
 	}
 }
 
-// TestCaptureStopDirtyFilesStagedRenameはstaged renameが新旧両pathを列挙へ含むことを
-// 固定する。
 func TestCaptureStopDirtyFilesStagedRename(t *testing.T) {
 	repo := initCommittedRepo(t)
 	if err := os.Rename(filepath.Join(repo, "tracked.txt"), filepath.Join(repo, "renamed.txt")); err != nil {
@@ -128,7 +120,6 @@ func TestCaptureStopDirtyFilesStagedRename(t *testing.T) {
 	}
 }
 
-// TestCaptureStopDirtyFilesSymlinkはsymlinkをtarget文字列のhashで識別することを固定する。
 func TestCaptureStopDirtyFilesSymlink(t *testing.T) {
 	repo := initCommittedRepo(t)
 	if err := os.Symlink("tracked.txt", filepath.Join(repo, "link")); err != nil {
@@ -147,7 +138,6 @@ func TestCaptureStopDirtyFilesSymlink(t *testing.T) {
 	}
 }
 
-// TestDescribeStopDirtyDiffScenariosは保持基準比較の全分岐を固定する。
 func TestDescribeStopDirtyDiffScenarios(t *testing.T) {
 	base := []StopDirtyFile{{Path: "a.txt", IndexSHA: "i1", WorktreeSHA: "w1"}}
 	tests := []struct {
@@ -209,8 +199,6 @@ func TestDescribeStopDirtyDiffScenarios(t *testing.T) {
 	}
 }
 
-// gitRetentionOutputWithStdinはstdin付きgit commandを実行してstdoutをtrimして返す。
-// conflict index構築のupdate-index --index-infoとblob登録のhash-objectで使う。
 func gitRetentionOutputWithStdin(t *testing.T, dir string, stdin string, args ...string) string {
 	t.Helper()
 	cmd := exec.Command("git", args...)
@@ -227,7 +215,6 @@ func gitRetentionOutputWithStdin(t *testing.T, dir string, stdin string, args ..
 	return strings.TrimSpace(string(output))
 }
 
-// stopDirtyFileForは保持列挙から指定pathの識別子を取り出す。
 func stopDirtyFileFor(t *testing.T, files []StopDirtyFile, path string) StopDirtyFile {
 	t.Helper()
 	for _, file := range files {
@@ -239,9 +226,6 @@ func stopDirtyFileFor(t *testing.T, files []StopDirtyFile, path string) StopDirt
 	return StopDirtyFile{}
 }
 
-// TestCaptureStopDirtyFilesExecBitDriftDetectedはworktree内容が同じままexecutable bitだけ
-// 変わったdirty fileを保持変化として検出することを固定する。legacyの内容hashだけでは
-// 検出できない軸である。
 func TestCaptureStopDirtyFilesExecBitDriftDetected(t *testing.T) {
 	repo := initCommittedRepo(t)
 	if err := os.WriteFile(filepath.Join(repo, "tracked.txt"), []byte("modified\n"), 0o644); err != nil {
@@ -269,9 +253,6 @@ func TestCaptureStopDirtyFilesExecBitDriftDetected(t *testing.T) {
 	}
 }
 
-// TestCaptureStopDirtyFilesTypeChangeDriftDetectedはregular fileと同じbyte列のsymlink targetへ
-// 置き換わったdirty fileを保持変化として検出することを固定する。legacyの内容hashだけでは
-// type変更を区別できない軸である。
 func TestCaptureStopDirtyFilesTypeChangeDriftDetected(t *testing.T) {
 	repo := initCommittedRepo(t)
 	if err := os.WriteFile(filepath.Join(repo, "tracked.txt"), []byte("link-target"), 0o644); err != nil {
@@ -302,9 +283,6 @@ func TestCaptureStopDirtyFilesTypeChangeDriftDetected(t *testing.T) {
 	}
 }
 
-// TestCaptureStopDirtyFilesConflictStageDriftDetectedはmerge conflict indexのstage 2/3だけが
-// 変わったdirty fileを保持変化として検出することを固定する。legacy IndexSHAは最初のentry
-// (stage 1)だけを採用するため、この軸では一致してしまう。
 func TestCaptureStopDirtyFilesConflictStageDriftDetected(t *testing.T) {
 	repo := initCommittedRepo(t)
 	base := gitRetentionOutputWithStdin(t, repo, "base\n", "hash-object", "-w", "--stdin")
@@ -344,8 +322,6 @@ func TestCaptureStopDirtyFilesConflictStageDriftDetected(t *testing.T) {
 	}
 }
 
-// TestCaptureStopPatchesWritesRecoveryMaterialsは停止時dirty diffをbinary patch 2種へ
-// 保存することを固定する。git失敗時は資材を取り下げてerrorにしない。
 func TestCaptureStopPatchesWritesRecoveryMaterials(t *testing.T) {
 	repo := initCommittedRepo(t)
 	if err := os.WriteFile(filepath.Join(repo, "tracked.txt"), []byte("recovery target\n"), 0o600); err != nil {

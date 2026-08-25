@@ -18,11 +18,8 @@ import (
 	"time"
 )
 
-// ptyStartupFeedRunsはmarker確認直後の即writeでの輸送成立を反復観測する成功case回数。
 const ptyStartupFeedRuns = 5
 
-// stdinReadyMarkerはREADY control eventのmachine JSONL 1行本文。productionのtyped
-// producerと同一encodingから組み立て、契約形式をtest側へ再定義しない。
 func stdinReadyMarker() string {
 	line, err := marshalEventLine(stdinReadyControlEvent{Type: "control", Event: "stdin_ready"})
 	if err != nil {
@@ -31,19 +28,10 @@ func stdinReadyMarker() string {
 	return strings.TrimSuffix(string(line), "\n")
 }
 
-// TestStdinPayloadSelfContainedPTYはcaller契約「固定command起動・READY marker確認後の
-// payload 1回writeだけ」が事前sttyなしの実PTY上で成立することをAI callなしで検証する。
-// helperはscriptが用意したcanonical+echo有効の初期termiosを前提にproduction経路
-// (enterStdinRawMode→READY marker→readStdinPayload→復元)を通し、raw適用中・復元後の
-// termiosと宣言byte数どおりのpayload本文を固定する。親側はproduction callerと同じ順序で
-// marker確認直後に本文を1回だけ書き、反復実行で輸送の安定性を観測する。
-// macOSの`script`でPTYを確保するため、darwin以外や`script`不在環境ではskipする。
 func TestStdinPayloadSelfContainedPTY(t *testing.T) {
 	ptyTransportCase(t, "")
 }
 
-// TestStdinPayloadPTYSHAMismatchRestoresTerminalはsha256不一致が読み取り後の復元を
-// 含む同じerror pathでfail closedすることを実PTY上で検証する。
 func TestStdinPayloadPTYSHAMismatchRestoresTerminal(t *testing.T) {
 	ptyTransportCase(t, "mismatch")
 }
@@ -70,10 +58,6 @@ func ptyTransportCase(t *testing.T, scenario string) {
 	}
 }
 
-// ptyTransportRunは1回分の実PTY輸送をproduction caller順序
-// 「process起動 → READY marker確認 → 即本文1回write」で実行する。成功caseはrun番号で
-// 本文を変えてbyte-identicalな偶然の成立を排除し、marker直後の即writeがraw適用済み
-// line disciplineだけで処理されることを反復観測する。
 func ptyTransportRun(t *testing.T, scenario string, run int) {
 	t.Helper()
 	payload := "GLMPTYMARK self-contained run=" + strconv.Itoa(run) +
@@ -86,7 +70,7 @@ func ptyTransportRun(t *testing.T, scenario string, run int) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	// 固定wrapper: 本文はcommandへ入れず、caller側のstty等のterminal設定なしでtest binary(helper)へexecする。
+
 	cmd := exec.CommandContext(ctx, "script", "-q", "/dev/null", "sh", "-c",
 		`exec "$GLM_WORKER_STDIN_PTY_BIN" -test.run=TestStdinPayloadSelfContainedPTY`)
 	cmd.Env = append(os.Environ(),
@@ -100,8 +84,7 @@ func ptyTransportRun(t *testing.T, scenario string, run int) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// scriptはhelperのstdout/stderrをPTYで1本へ統合して自身のstdoutへ流すため、
-	// marker観測もecho検査もstdout streamだけで行う。
+
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -118,7 +101,7 @@ func ptyTransportRun(t *testing.T, scenario string, run int) {
 	select {
 	case err := <-markerReady:
 		if err != nil {
-			// marker未観測・先行終了では本文を送らないcaller契約のままfailさせる。
+
 			detail, _ := os.ReadFile(outPath)
 			t.Fatalf("run %d: READY marker観測前に失敗: %v result=%q", run, err, detail)
 		}
@@ -126,14 +109,10 @@ func ptyTransportRun(t *testing.T, scenario string, run int) {
 		t.Fatalf("run %d: READY markerが現れません", run)
 	}
 
-	// marker確認直後に末尾改行なしの本文を1回だけ書き、stdin pipeは開いたまま保つ(EOF不要契約)。
 	if _, err := stdin.Write([]byte(payload)); err != nil {
 		t.Fatal(err)
 	}
 
-	// 出力本文はdrain goroutineがEOF(process tree終了)まで読み切った後channel経由でだけ
-	// 受け取る。StdoutPipeはWaitが読み取り側を閉じるため、残り出力を失わないよう
-	// drain完了を確認してからWaitを呼ぶ。
 	output := ptyWaitOutput(ctx, outputText)
 	waitErr := cmd.Wait()
 	if scenario == "mismatch" {
@@ -174,8 +153,6 @@ func ptyTransportRun(t *testing.T, scenario string, run int) {
 	}
 }
 
-// ptyDrainOutputはstdout streamを行単位で読み、最初のREADY marker行を報告した後もEOFまで
-// 読み続けて全出力本文を返す。marker前のEOFはmarker未観測としてerrorへ流す。
 func ptyDrainOutput(r io.Reader, markerReady chan<- error, outputText chan<- string) {
 	reader := bufio.NewReader(r)
 	var output strings.Builder
@@ -202,9 +179,6 @@ func ptyDrainOutput(r io.Reader, markerReady chan<- error, outputText chan<- str
 	}
 }
 
-// ptyWaitOutputはdrain goroutineがEOFまで読み切った出力本文を取り出す。出力はdrain
-// goroutineだけが書きchannelで受信するためrace freeに読める。timeout後もdrainが完了
-// しないときは診断用の省略文字列へfall throughし、呼び出し元のWaitが失敗を報告する。
 func ptyWaitOutput(ctx context.Context, outputText <-chan string) string {
 	select {
 	case output := <-outputText:
@@ -219,10 +193,6 @@ func ptyWaitOutput(ctx context.Context, outputText <-chan string) string {
 	}
 }
 
-// stdinSelfContainedPTYHelperは子process側のhelper本体。親と同じtest binaryを起動し、
-// callerがterminal設定をしていない前提(canonical+echo)を確認してからproduction経路
-// (enterStdinRawMode→READY marker→readStdinPayload→復元)で宣言byte数だけstdinから読み取り、
-// termios復元までの成否を結果fileへ書く。
 func stdinSelfContainedPTYHelper() {
 	outPath := os.Getenv("GLM_WORKER_STDIN_PTY_OUT")
 	want, err := strconv.ParseInt(os.Getenv("GLM_WORKER_STDIN_PTY_BYTES"), 10, 64)
@@ -254,7 +224,7 @@ func stdinSelfContainedPTYHelper() {
 		during.Iflag&syscall.ICRNL != 0 || during.Oflag&syscall.OPOST != 0 {
 		ptyHelperFail(outPath, "raw mode not applied")
 	}
-	// markerはraw適用を保証した直後にだけ出す(production run()と同じ順序)。
+
 	if err := emitStdinReadyControlEvent(os.Stderr); err != nil {
 		ptyHelperFail(outPath, "ready marker: "+err.Error())
 	}
@@ -295,9 +265,6 @@ func termiosDebug(t syscall.Termios) string {
 		strconv.FormatUint(uint64(t.Ispeed), 16) + "/" + strconv.FormatUint(uint64(t.Ospeed), 16)
 }
 
-// TestEnterStdinRawModeSkipsTermiosForNonTerminalはstdinがpipe・regular file・
-// 非file readerのいずれでもtermios変更を行わずraw未適用(applied=false)のno-op復元を
-// 返すことを検証する。非TTY stdinはREADY markerを出さない契約の条件になる。
 func TestEnterStdinRawModeSkipsTermiosForNonTerminal(t *testing.T) {
 	pipeReader, _, err := os.Pipe()
 	if err != nil {
@@ -348,9 +315,6 @@ func TestEnterStdinRawModeSkipsTermiosForNonTerminal(t *testing.T) {
 	}
 }
 
-// TestEnterStdinRawModeFailsClosedOnProbeErrorはterminal probeのioctlがENOTTY以外で
-// 失敗した場合をTTYでないと黙って解釈せず、payload読み取り前にfail closedすることを
-// 閉じたfd(EBADF)で検証する。
 func TestEnterStdinRawModeFailsClosedOnProbeError(t *testing.T) {
 	closed, err := os.Create(filepath.Join(t.TempDir(), "closed"))
 	if err != nil {
@@ -366,10 +330,6 @@ func TestEnterStdinRawModeFailsClosedOnProbeError(t *testing.T) {
 	}
 }
 
-// TestStdinUnsupportedPlatformTerminalFailsClosedOnTerminalLikeInputはtermios非実装環境の
-// 境界をunix上で実行して検証する。char device(console・/dev/null等)はterminal扱いで
-// 読み取り前に明示的にfail closedし、pipe・regular fileはno-op復元で通る。
-// /dev/nullがfalse positiveとなる点はfail closed側へ働くため許容する。
 func TestStdinUnsupportedPlatformTerminalFailsClosedOnTerminalLikeInput(t *testing.T) {
 	nullDevice, err := os.Open(os.DevNull)
 	if err != nil {

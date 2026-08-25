@@ -1,4 +1,3 @@
-// Package runnerはClaude Code CLIプロセスの起動とZ.ai 5h上限判定を担う。
 package runner
 
 import (
@@ -19,20 +18,10 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-// isolationPolicyVersionはworker/reviewer起動の隔離構成を識別する。
-// safe-mode・空setting-sources・child env allowlist・inline隔離settingsの組合せが
-// 変わったらbumpする。旧versionで採番されたsessionは暗黙入力が混入しているため
-// resumeせず新sessionへ切り替える。
 const isolationPolicyVersion = "claude-isolation-1"
 
-// subtypeStructuredOutputRetryExhaustedはCLIがschema適合出力を生成できず
-// 内部retryを使い切ったときにresult eventへ付ける失敗subtype。この失敗は
-// provider消費が進んだ末の契約不成立のため、呼出元はfail closedで扱う。
 const subtypeStructuredOutputRetryExhausted = "error_max_structured_output_retries"
 
-// StructuredOutputErrorは--json-schema呼出で結果objectが得られなかった失敗。
-// retry枯渇・result event欠落のどちらも結果本文側に修復可能な情報が残らないため、
-// 再送やresumeによる自動回復の対象にせずfail closedで扱う。
 type StructuredOutputError struct {
 	Subtype        string
 	TerminalReason string
@@ -45,15 +34,11 @@ func (e *StructuredOutputError) Error() string {
 	return "structured outputが得られませんでした: result eventにstructured_outputがありません"
 }
 
-// IsStructuredOutputErrorはfail closed対象のstructured output契約失敗を判定する。
 func IsStructuredOutputError(err error) bool {
 	var target *StructuredOutputError
 	return errors.As(err, &target)
 }
 
-// RetryExhaustedはCLI内部のschema適合retry枯渇による失敗かどうかを返す。
-// 成功resultでのstructured_output欠落(Subtype空)とは失敗境界が異なるため、
-// retry枯渇頻度を数える集計側でこの区別を使う。
 func (e *StructuredOutputError) RetryExhausted() bool {
 	return e.Subtype == subtypeStructuredOutputRetryExhausted
 }
@@ -67,8 +52,6 @@ var (
 	reviewerSchemaFail error
 )
 
-// structuredSchemaはrole対応のtyped結果schemaを返す。schemaは自package固定値で
-// 構築時に検証済みのため、process内で1回だけ構築して再利用する。
 func structuredSchema(role state.SessionRole) (string, error) {
 	if role == state.ReviewerRole {
 		reviewerSchemaOnce.Do(func() {
@@ -88,7 +71,6 @@ type ClaudeRunner struct {
 	stop   *StopController
 }
 
-// TokenUsageはClaude CLIが返す1回の実行全体のtoken使用量。
 type TokenUsage struct {
 	InputTokens              int64 `json:"input_tokens"`
 	CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
@@ -96,7 +78,6 @@ type TokenUsage struct {
 	OutputTokens             int64 `json:"output_tokens"`
 }
 
-// ModelUsageはClaude CLIが実モデル別に返すtoken使用量。
 type ModelUsage struct {
 	InputTokens              int64   `json:"inputTokens"`
 	CacheCreationInputTokens int64   `json:"cacheCreationInputTokens"`
@@ -105,7 +86,6 @@ type ModelUsage struct {
 	CostUSD                  float64 `json:"costUSD,omitempty"`
 }
 
-// RunResultはmodel呼出しの応答と観測値。error時も取得できた値を返す。
 type RunResult struct {
 	SessionID          string
 	Resumed            bool
@@ -119,12 +99,9 @@ type RunResult struct {
 	SystemPrompt       string
 	SystemPromptBytes  int
 	SystemPromptSHA256 string
-	// PlainFailureはresult本文が得られない経路で、JSON eventとして解釈できない
-	// plain stdout行にだけ既存provider classifierを適用した結果。5h上限・transientの
-	// ときだけKindへ値が入り、raw本文とfatal既定値は保持しない。
+
 	PlainFailure ProviderFailureClass
-	// StructuredOutputは--json-schemaで強制された結果objectの権威値。result文字列と
-	// 同一内容だが、契約上はこのobjectだけを結果解析へ使う。
+
 	StructuredOutput json.RawMessage
 }
 
@@ -147,36 +124,10 @@ func NewClaudeRunner(cfg config.AppConfig, st *state.StateStore) *ClaudeRunner {
 	return &ClaudeRunner{config: cfg, state: st}
 }
 
-// AttachStopControllerは--stop要求の観測経路を接続する。未接続のrunnerは停止要求を
-// 観測せず、従来どおりchildの自然終了だけを扱う。
 func (r *ClaudeRunner) AttachStopController(stop *StopController) {
 	r.stop = stop
 }
 
-// Runはrole/effort/promptでClaude Codeを起動し出力をoutputPathへ書き出す。
-// 初回起動時は新規sessionを採番し、2回目以降は同一sessionへresumeする。
-// 起動は全入力経路を隔離する: --safe-modeでcustomization・managed CLAUDE.md・
-// managed skills/plugins・policy-configured MCPを一括無効化し、--setting-sources ""
-// でfilesystem settingsを読まず、Z.ai接続・model aliasはsettings.jsonからallowlist
-// 抽出した最小envを明示注入する。childは独自process groupで起動し、--stop要求時は
-// groupへTERM・bounded猶予後のKILLでtool実行中のdescendantごと終了させる。
-// CLAUDE.md/auto memory/hooks/MCP/skills等はinline
-// --settingsとflagで追加遮断する。組込みsystem promptとmanaged settings policy
-// （認証・権限等の組織policy）だけは遮断不可能な残余として残る。現行の隔離policyと
-// 一致しない旧sessionは暗黙入力が混入しているためresumeせず新sessionへ切り替える。
-// isolation.policyはtask共通なのでpolicy不一致時はworker/reviewer両roleのsessionを破棄する。
-// isolation.policyは成功markerではなくsession IDの起動policyを表すため、SessionID確定時点
-// (Claude実行前)に永続化し、5h上限中断後に同一sessionへresume可能な状態を保つ。
-// 出力はstream-jsonで受け、stdoutはevent ingesterだけが処理する。実行中に返る受動
-// eventはmetadataへ縮約してtask単位event logへbest-effort追記し、非result eventの
-// raw本文・thinking・tool入出力をdisk・task log・診断tail・telemetryへ保存しない。
-// 最終result eventだけをboundedに保持し、result eventは--output-format jsonの出力と
-// 同一schemaのためresult解析・session/resume semanticsは変わらず、追加の
-// prompt/model callは発生しない。結果protocolはrole対応の--json-schemaで強制される
-// typed structured output単一であり、成功時にstructured_outputが得られなければ
-// fail closedのStructuredOutputErrorを返す。JSON eventとして解釈できないplain stdout行だけは
-// 旧raw fallbackの分類 semanticsを保つため既存classifierへ読ませ、5h上限・transient
-// の構造値だけをRunResult.PlainFailureへ渡す。event追記失敗はtask成否へ影響させない。
 func (r *ClaudeRunner) Run(
 	role state.SessionRole,
 	phase string,
@@ -189,8 +140,7 @@ func (r *ClaudeRunner) Run(
 	if model == "" {
 		return RunResult{}, fmt.Errorf("modelを指定してください")
 	}
-	// 停止要求を観測済みならchildを起動しない。呼出元はtyped errorでinterrupted停止へ
-	// 保存するため、この経路でsession・checkpointを破棄しない。
+
 	if r.stop != nil && r.stop.StopRequested() {
 		return RunResult{}, &InterruptedCallError{Phase: phase}
 	}
@@ -282,8 +232,7 @@ func (r *ClaudeRunner) Run(
 	command := newProcessGroupCmd(r.config.ClaudeBin, args...)
 	command.Dir = r.config.RepoRoot
 	command.Stdin = devNull
-	// stdoutはingesterだけが受け、非result eventのraw本文をdiskへ書かない。
-	// ingesterは行ごとにmetadataへ縮約し、最終result event行だけboundedに保持する。
+
 	command.Stdout = ingester
 	command.Stderr = stderr
 	command.Env = buildChildEnv(r.config.EnvAllowlist, settingEnv, map[string]string{
@@ -310,8 +259,7 @@ func (r *ClaudeRunner) Run(
 		result.TopLevelTurns = parsed.NumTurns
 		result.TotalCostUSD = parsed.TotalCostUSD
 	}
-	// 旧json出力はresult本文が空のときraw stdout fileを分類入力へコピーしていた。
-	// stream化後はplain stdoutをraw保存せず、既存classifierへの構造値だけを渡す。
+
 	if result.Response == "" {
 		result.PlainFailure = classifyPlainStdoutFailure(ingester.plainSignal())
 	}
@@ -319,9 +267,7 @@ func (r *ClaudeRunner) Run(
 	if err := writeResultOutput(outputPath, result.Response, streamResultSummary(parsed, parseErr), stderrPath); err != nil {
 		return result, err
 	}
-	// retry枯渇はCLIがexit 1で終えるためrunErrより先に判定し、exit statusの一般errorへ
-	// 埋もれさせない。result/structured_outputはnullで、再送しても同じ契約不成立に
-	// 至る可能性が高いためfail closed扱いの型付きerrorを返す。
+
 	if parseErr == nil && parsed.Subtype == subtypeStructuredOutputRetryExhausted {
 		return result, &StructuredOutputError{Subtype: parsed.Subtype, TerminalReason: parsed.TerminalReason}
 	}
@@ -334,8 +280,7 @@ func (r *ClaudeRunner) Run(
 	if parsed.IsError {
 		return result, fmt.Errorf("Claude CLIがerror結果を返しました: subtype=%s", parsed.Subtype)
 	}
-	// 成功経路でstructured_outputがなければ契約破綻。旧テキストprotocolへの
-	// 暗黙fallbackは存在しないため、ここでfail closedとする。
+
 	if !structuredOutputPresent(result.StructuredOutput) {
 		return result, &StructuredOutputError{}
 	}
@@ -350,9 +295,6 @@ func createPrivateFile(path string) (*os.File, error) {
 	return os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 }
 
-// runCommandはchildの完了待機を停止要求で割り込める形で実行する。停止要求が来た場合、
-// process groupへTERM→猶予→KILLの順で終了させ、direct childのwaitとgroup非残存を確認
-// してからInterruptedCallErrorを返す。自然終了が停止に先着した場合は通常の完了を返す。
 func (r *ClaudeRunner) runCommand(command *exec.Cmd) error {
 	if r.stop == nil {
 		return command.Run()
@@ -368,8 +310,7 @@ func (r *ClaudeRunner) runCommand(command *exec.Cmd) error {
 	case err := <-waitDone:
 		return err
 	case <-r.stop.Requested():
-		// 停止観測時点で自然終了が既に確定しているならその結果を優先する。
-		// 停止と終了が重なる競合で成功結果を中断で上書きさせないための先決確認である。
+
 		select {
 		case err := <-waitDone:
 			return err
@@ -396,10 +337,6 @@ func parseClaudeJSONResult(path string) (claudeJSONResult, error) {
 	return result, nil
 }
 
-// parseCapturedStreamResultはingesterが保持した最終result event行を解析する。result eventは
-// --output-format jsonの出力objectと同一schemaのため、取り出した後の取り扱いはjson出力と
-// 同じ意味を保つ。result eventがない場合(起動失敗・途中kill等)はjson出力のtype不正と同じ
-// 失敗区分へ落とす。
 func parseCapturedStreamResult(line []byte, found bool) (claudeJSONResult, error) {
 	if !found {
 		return claudeJSONResult{}, fmt.Errorf("Claude CLIのJSON出力typeが不正です: result eventがありません")
@@ -411,14 +348,10 @@ func parseCapturedStreamResult(line []byte, found bool) (claudeJSONResult, error
 	return parsed, nil
 }
 
-// structuredOutputPresentはresult eventのstructured_outputがnull/欠落でないかを判定する。
-// json.RawMessageはJSON nullを"null" bytesとして保持するため、長さ検査だけでは不足する。
 func structuredOutputPresent(raw json.RawMessage) bool {
 	return len(raw) != 0 && string(raw) != "null"
 }
 
-// newTaskEventIngesterはこのcall分の受動event記録を用意する。call ID生成に失敗した
-// 場合は以後何も記録しないingesterを返し、本体実行へ影響させない。
 func (r *ClaudeRunner) newTaskEventIngester(
 	taskID string,
 	role state.SessionRole,
@@ -435,10 +368,6 @@ func (r *ClaudeRunner) newTaskEventIngester(
 	return newStreamEventIngester(r.state, taskID, callID, role, phase, model, sessionID, resumed)
 }
 
-// streamResultSummaryはresult本文が得られない経路へ出力する安全な構造summary。
-// assistant/tool本文・thinking等のcontentを含まず、失敗分類とtransient signal検出に
-// 必要な構造情報(解析error・subtype・is_error)だけを残す。event数等の任意数値は
-// 分類入力となるこの経路へ出さず、transient HTTP status signatureへの誤一致を防ぐ。
 func streamResultSummary(parsed claudeJSONResult, parseErr error) string {
 	if parseErr != nil {
 		return fmt.Sprintf("stream-json result unavailable: %v\n", parseErr)
@@ -449,10 +378,6 @@ func streamResultSummary(parsed claudeJSONResult, parseErr error) string {
 	return ""
 }
 
-// classifyPlainStdoutFailureはplain stdoutのsignal本文を旧raw fallbackと同じclassifierへ
-// 通し、5h上限・transientの構造値だけを返す。明示fatal信号とその他の区別は既存
-// classifier上どちらもfatal既定のため、何も一致しないときは空を返して呼出元の
-// file由来分類へ委ねる。
 func classifyPlainStdoutFailure(plain string) ProviderFailureClass {
 	class := ClassifyProviderFailureText(plain)
 	if class.Kind == ProviderFailureZaiFiveHour || class.Kind == ProviderFailureTransient {
@@ -461,9 +386,6 @@ func classifyPlainStdoutFailure(plain string) ProviderFailureClass {
 	return ProviderFailureClass{}
 }
 
-// writeResultOutputは最終outputPathへresponse(result本文)・構造summary・stderrだけを
-// 0600で書き出す。raw stream全体の転記は行わず、失敗時の診断tail・telemetryへ
-// 非result event本文が流れる経路を作らない。
 func writeResultOutput(outputPath string, response string, summary string, stderrPath string) error {
 	var data []byte
 	if response != "" {
@@ -481,18 +403,6 @@ func writeResultOutput(outputPath string, response string, summary string, stder
 	return os.WriteFile(outputPath, data, 0o600)
 }
 
-// isolationSettingsはworker/reviewer sessionの入力を隔離する追加設定を
-// --settings経由で渡すJSON文字列を構築する。safe-mode/空setting-sourcesと併用し、
-// claudeMdExcludesで全階層のCLAUDE.mdを、autoMemoryEnabledでauto memoryを、
-// disableAllHooks/disableBundledSkills/disableWorkflowsで各customizationを無効化する。
-// これらはmemory・customization読込経路だけへ作用し、auth(Z.ai env)・model・
-// 組込みsystem prompt・権限へは影響しない。managed settings policy（認証・権限等の
-// 組織policy）は--safe-modeでも残存する唯一の残余であり、この関数では除去しない。
-//
-// claudeMdExcludesは user/project/local memory だけへ効き絶対pathとglobの両方を
-// 持たせる: `**/CLAUDE.md`/`**/CLAUDE.local.md` で cwd 配下の全階層を捕捉し、
-// 解決済み絶対path `<configDir>/CLAUDE.md`・`<configDir>/rules/**` で user global
-// memoryを確実に除外する(globだけでは相対path解釈に依存し確実さが足りないため)。
 func isolationSettings(claudeConfigDir string) (string, error) {
 	configDir, err := resolveClaudeConfigDir(claudeConfigDir)
 	if err != nil {
@@ -517,9 +427,6 @@ func isolationSettings(claudeConfigDir string) (string, error) {
 	return string(encoded), nil
 }
 
-// essentialSettingEnvKeysは<claudeConfigDir>/settings.jsonのenv blockから抽出して
-// workerへ明示注入する確認済みのkey。Z.ai接続・model alias・最小runtimeのみ。
-// これ以外のsettings env(任意のANTHROPIC_*/CLAUDE_CODE_*等)は引き継がない。
 var essentialSettingEnvKeys = []string{
 	"ANTHROPIC_AUTH_TOKEN",
 	"ANTHROPIC_BASE_URL",
@@ -530,11 +437,6 @@ var essentialSettingEnvKeys = []string{
 	"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
 }
 
-// loadSettingEnvはsettings.jsonのenv blockからessentialSettingEnvKeysに一致する
-// 値だけを取り出し、続けて端末local overrideのset/deleteを再適用する。
-// 戻り値のdeletesはoverrideのnull key(tombstone)で、buildChildEnvへ渡して
-// 親envのOS必須・extraAllow経由での再流入も遮断する。
-// overrideで明示setした任意keyはessential key以外でも子envへ許可する。
 func loadSettingEnv(claudeConfigDir string, overridePath string) (map[string]string, []string, error) {
 	configDir, err := resolveClaudeConfigDir(claudeConfigDir)
 	if err != nil {
@@ -571,17 +473,11 @@ func loadSettingEnv(claudeConfigDir string, overridePath string) (map[string]str
 	return result, override.deletes, nil
 }
 
-// osEssentialEnvKeysは親process環境から受け継ぐ実行必須key。
-// Claudeの入力経路にはならない(CLAUDE_CODE_*/ANTHROPIC_*を含まない)。
 var osEssentialEnvKeys = []string{
 	"PATH", "HOME", "TMPDIR", "SHELL", "USER", "LOGNAME",
 	"LANG", "LC_ALL", "LC_CTYPE", "TZ", "TERM",
 }
 
-// buildChildEnvは隔離されたchild process環境を構築する。
-// OS必須keyとextraAllowだけを親envから取り出すが、deletes(overrideのtombstone)は
-// この経路からも除外し親envへの再流入を防ぐ。続けてsettingEnvとadditionsで上書き注入する。
-// 暗黙の入力経路となるenvは親から引き継がない。
 func buildChildEnv(extraAllow []string, settingEnv, additions map[string]string, deletes []string) []string {
 	allowed := make(map[string]struct{}, len(osEssentialEnvKeys)+len(extraAllow))
 	for _, key := range osEssentialEnvKeys {

@@ -8,7 +8,6 @@ import (
 	"strings"
 )
 
-// NewUUIDはUUID version 4形式の文字列を生成する。
 func NewUUID() (string, error) {
 	var value [16]byte
 	if _, err := rand.Read(value[:]); err != nil {
@@ -28,11 +27,6 @@ func NewUUID() (string, error) {
 	), nil
 }
 
-// ValidGeneratedUUIDはNewUUIDが生成する形式(長さ36・hyphen位置8/13/18/23・小写hex・
-// version 4・variant 10x)に完全一致するかだけを判定する。CLI引数やstate fileなど外部
-// 由来IDからstate dir内pathを構築する前の境界検証に使うため、filesystemへは触れない。
-// filepath.Base比較やJoin後のprefix確認と違い、この形式一致は"../"・絶対path・上位version・
-// 不正variantをすべて生成形式の外へ落とす。
 func ValidGeneratedUUID(id string) bool {
 	if len(id) != 36 {
 		return false

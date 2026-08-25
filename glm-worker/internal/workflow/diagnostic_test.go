@@ -44,8 +44,6 @@ func phasesOf(logs []state.ModelCallLog) []string {
 	return out
 }
 
-// HIGH risk workerのreviewer記録へはworker/reviewer/effective riskとrisk floor source/category・
-// snapshotが付与され、statsへfloor計上がされる。reemit呼出にはEffectiveRiskが無い(二重計上防止)。
 func TestDiagnosticRecordsRiskFloorOnHighRiskReviewer(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
@@ -91,7 +89,6 @@ func TestDiagnosticRecordsRiskFloorOnHighRiskReviewer(t *testing.T) {
 	}
 }
 
-// LOW risk通常経路はrisk floor無し・EffectiveRisk空となる。
 func TestDiagnosticNoRiskFloorOnLowRiskPass(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
@@ -119,7 +116,6 @@ func TestDiagnosticNoRiskFloorOnLowRiskPass(t *testing.T) {
 	}
 }
 
-// snapshot不一致はtelemetryへsnapshot_mismatch eventとmismatch軸を記録し、statsへ軸別計上する。
 func TestDiagnosticRecordsSnapshotMismatch(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
@@ -172,7 +168,6 @@ func TestDiagnosticRecordsSnapshotMismatch(t *testing.T) {
 	}
 }
 
-// snapshot取得失敗は比較未実施(snapshot_unavailable)で、mismatch軸集計へ混ぜない。
 func TestDiagnosticSnapshotCaptureFailureNotCountedAsMismatch(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
@@ -207,7 +202,6 @@ func TestDiagnosticSnapshotCaptureFailureNotCountedAsMismatch(t *testing.T) {
 	}
 }
 
-// invalid_packetはreject categoryを記録し、statsへcategory別計上する。
 func TestDiagnosticRecordsPacketReject(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
@@ -233,7 +227,6 @@ func TestDiagnosticRecordsPacketReject(t *testing.T) {
 	}
 }
 
-// provider一時障害はclassificationをtransient記録へ、elapsed/probesをprovider-unavailable eventへ残す。
 func TestDiagnosticRecordsProviderClassificationAndElapsed(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{
@@ -274,7 +267,6 @@ func TestDiagnosticRecordsProviderClassificationAndElapsed(t *testing.T) {
 	}
 }
 
-// probe呼出はattempt番号を構造化fieldへ残す。
 func TestDiagnosticRecordsProbeAttempt(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{
@@ -302,7 +294,6 @@ func TestDiagnosticRecordsProbeAttempt(t *testing.T) {
 	}
 }
 
-// resume直後の呼出にresume source(rate-limit/provider-unavailable)が記録される。
 func TestDiagnosticRecordsResumeSourceRateLimit(t *testing.T) {
 	st := newStateStoreT(t)
 	if err := st.Write("last-request", "req"); err != nil {
@@ -370,7 +361,6 @@ func TestDiagnosticRecordsResumeSourceProviderUnavailable(t *testing.T) {
 	}
 }
 
-// rate-limitで中断されたreviewer resumeは、保存HIGH floorをtelemetryでも引き継ぐ。
 func TestDiagnosticResumePreservesSavedHighRiskFloor(t *testing.T) {
 	st := newStateStoreT(t)
 	seedReviewStartSnapshot(t, st)
@@ -423,8 +413,6 @@ func TestDiagnosticResumePreservesSavedHighRiskFloor(t *testing.T) {
 	}
 }
 
-// reviewerがrisk floor再出力要求を無視してPASSを返しても、reemit呼出の記録には
-// floor情報が無く(floor自体は元reviewer呼出へ1回だけ計上)、reporter riskのみ残る。
 func TestDiagnosticRiskFloorReemitCallHasNoFloorDiagnostics(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
@@ -458,8 +446,6 @@ func TestDiagnosticRiskFloorReemitCallHasNoFloorDiagnostics(t *testing.T) {
 	}
 }
 
-// TelemetryContent=falseはprompt/response/system contentだけを隠し、risk・snapshot等の
-// 診断metadataは隠さない(contentはtoken集計やhashで別途保持)。
 func TestDiagnosticPersistsWhenTelemetryContentDisabled(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
@@ -497,14 +483,12 @@ func TestDiagnosticPersistsWhenTelemetryContentDisabled(t *testing.T) {
 	}
 }
 
-// 比較は一致でもSaveSnapshotComparisonが失敗したfail-closedはsnapshot_save_failedとして
-// 記録し、snapshot_mismatchと取り違えない(mismatch集計へも計上しない)。
 func TestDiagnosticSnapshotSaveFailureNotMismatch(t *testing.T) {
 	st := newStateStoreT(t)
 	if err := st.SaveWorkerEndSnapshot(state.GitSnapshot{Head: "a", IndexDigest: "a", WorktreeDigest: "a"}); err != nil {
 		t.Fatal(err)
 	}
-	// comparison file pathへ非空dirを置きSaveSnapshotComparisonを失敗させる。
+
 	blockerDir := st.Path("snapshot-comparison.json")
 	if err := os.MkdirAll(blockerDir, 0o700); err != nil {
 		t.Fatal(err)

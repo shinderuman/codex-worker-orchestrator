@@ -7,14 +7,6 @@ import (
 	"testing"
 )
 
-// TestTerminalPayloadSingleRenderContractWiringは親tool orchestrationのterminal payload
-// 単一描画contractのproduction wiringと、完了証拠authority区別・期待判断との因果を
-// 決定論検証する。実運用3回の二面表示へ加え契約手順適用後の2026-08-24再現で、
-// 単発live positive・模擬fixed Eval・instruction文面を継続的production enforcementと
-// 同一視した2度のfalse-completeが確定した。撤回済みcaller除外文・file直接読出し手順・
-// 完了証拠宣言・解消済み宣言の再混入のいずれかが発生すると失敗する。repo側dedupeで
-// 代替した実装になっていないことと、worker/reviewer promptへ本契約のchecklistを追加
-// しない方針も固定する。
 func TestTerminalPayloadSingleRenderContractWiring(t *testing.T) {
 	root := scenarioRepoRoot(t)
 
@@ -30,8 +22,6 @@ func TestTerminalPayloadSingleRenderContractWiring(t *testing.T) {
 	glmExecution := readContractFile("codex/instructions/glm-execution.md")
 	evalDoc := readContractFile("EVAL.md")
 
-	// production caller契約はfunctions.execのorchestration内での変数蓄積・Functionsのstoreへ
-	// task固有key保存・captured marker返却・別の短い同期functions.execによるload(key)で構成される。
 	for _, wire := range []string{
 		"## 親tool orchestrationのterminal payload単一描画",
 		"原因層はglm-worker内部emitではなく親tool orchestrationとDesktop表示である",
@@ -61,8 +51,6 @@ func TestTerminalPayloadSingleRenderContractWiring(t *testing.T) {
 		}
 	}
 
-	// 実機で採用されたproduction caller手順はorchestration内store/loadであり、shell fileへの
-	// redirect・file直接読出しの手順ではない。旧契約文の再混入を拒否する。
 	for _, revoked := range []string{
 		"> <store>",
 		"cat <store>",
@@ -74,9 +62,6 @@ func TestTerminalPayloadSingleRenderContractWiring(t *testing.T) {
 		}
 	}
 
-	// 撤回済みの解消宣言。契約手順適用後もDesktop表示層の二面表示が再現したため、
-	// caller側手順で表示問題が解消したという旧主張と、再発時に手順へ戻すだけで再検証
-	// できるという旧残余risk文を再混入させない。
 	for _, revoked := range []string{
 		"境界はcaller側で解消する",
 		"将来のCodex desktop変更で同一境界の二面表示が再発した場合は本契約の手順へ戻す",
@@ -86,8 +71,6 @@ func TestTerminalPayloadSingleRenderContractWiring(t *testing.T) {
 		}
 	}
 
-	// 撤回済みのcaller除外文がEVAL.mdへ再混入していないことを固定する。本除外が3回の
-	// 報告を通過した上位原因であるため、文言の部分再掲も許さない。
 	for _, revoked := range []string{
 		"repo外のため検証対象外",
 		"caller側echoの二重表示はrepo外",
@@ -98,8 +81,7 @@ func TestTerminalPayloadSingleRenderContractWiring(t *testing.T) {
 	}
 
 	section := evalTerminalPayloadSection(t, evalDoc)
-	// 親behavioral Evalの期待判断(EVAL.md本節)がproduction guidanceのどの契約文へ根拠を
-	// 持つかを対で検証する。EVAL.md側の文面だけ、instruction側の契約文だけの片側存在は通さない。
+
 	evalGrounds := []struct {
 		eval     string
 		guidance string
@@ -126,8 +108,6 @@ func TestTerminalPayloadSingleRenderContractWiring(t *testing.T) {
 		}
 	}
 
-	// fixed Eval・層別evidence・authority区別・管理文面の参照。完了証拠の撤回・非対応分類・
-	// activation条件・corpus重複禁止・checklist不追加をEVAL.md本節へ残す。
 	for _, wire := range []string{
 		"TestTerminalPayloadBoundarySingleRender",
 		"internal/app/terminal_payload_boundary_test.go",
@@ -159,8 +139,6 @@ func TestTerminalPayloadSingleRenderContractWiring(t *testing.T) {
 		}
 	}
 
-	// 撤回済みの完了証拠・解消宣言の再混入を拒否する。2026-08-21のlive観測自体は実施済み
-	// のため未実行へ戻す文言も拒否し、単発観測を継続的保証へ格上げしない。
 	for _, revoked := range []string{
 		"fixed Evalと本live観測を本項の完了証拠とする",
 		"live positive Evalは2026-08-21に実施済みである",
@@ -175,15 +153,11 @@ func TestTerminalPayloadSingleRenderContractWiring(t *testing.T) {
 		}
 	}
 
-	// fixed Evalの実在。文面参照だけの自己充足を防ぐため、参照先test関数が実在することを
-	// 確認する。
 	boundaryTest := readContractFile("glm-worker/internal/app/terminal_payload_boundary_test.go")
 	if !strings.Contains(boundaryTest, "func TestTerminalPayloadBoundarySingleRender(") {
 		t.Error("EVAL.md references TestTerminalPayloadBoundarySingleRender but the test does not exist")
 	}
 
-	// corpusへ本contractの親behavioral Evalを重複するscenarioが追加されていないこと。
-	// repo側dedupe・terminal result抑止の実装契約と矛盾するためである。
 	sc, _ := loadCorpus(t)
 	for _, s := range sc.Scenarios {
 		if strings.HasPrefix(s.ID, "terminal-payload-") {
@@ -191,8 +165,6 @@ func TestTerminalPayloadSingleRenderContractWiring(t *testing.T) {
 		}
 	}
 
-	// 本contractは親Codex側のcaller手順であり、常時checklistのworker/reviewer prompt
-	// 追加で代替した実装になっていないことを固定する。
 	for _, promptFile := range []string{"codex/glm-worker/prompts/WORKER.md", "codex/glm-worker/prompts/REVIEWER.md"} {
 		prompt := readContractFile(promptFile)
 		for _, keyword := range []string{"terminal payload", "単一描画", "二面表示", "内部store", "GLM_TERMINAL_CAPTURED"} {

@@ -64,8 +64,7 @@ func TestTaskLiveStatusPathStaysInManagedEventsDir(t *testing.T) {
 	if filepath.Base(filepath.Dir(path)) != "events" || filepath.Base(path) != "12345678-aaaa-bbbb-cccc-dddddddddddd.live.json" {
 		t.Fatalf("live snapshot path = %s", path)
 	}
-	// Claude Code内部session JSONL(~/.claude/projects等)へ依存しない境界。snapshotは
-	// glm-worker管理のstate dir配下にだけ置かれる。
+
 	if !strings.HasPrefix(path, st.Path("events")+string(os.PathSeparator)) {
 		t.Fatalf("live snapshotがstate dir外を指しています: %s", path)
 	}
@@ -90,11 +89,6 @@ func TestTaskLiveStatusMissingAndCorruptReturnError(t *testing.T) {
 	}
 }
 
-// TestIsModelActivityEventAcceptanceSetはrunner(producer)とwatch(consumer)が共有する
-// model activity受理集合を固定する。assistant側のthinking・text・tool_useと
-// event logへ保存されないsystem/thinking_tokensだけを受理し、tool_progress・
-// task notification・user tool_result・result・block種別が違うだけのassistantは
-// MODEL_IDLE基準を進めない。
 func TestIsModelActivityEventAcceptanceSet(t *testing.T) {
 	modelActivity := []TaskEventRecord{
 		{Kind: "assistant", Blocks: []TaskBlockSummary{{Type: "thinking", Bytes: 10}}},
@@ -125,9 +119,6 @@ func TestIsModelActivityEventAcceptanceSet(t *testing.T) {
 	}
 }
 
-// TestTaskLiveStatusWithoutModelActivityFieldParsesZeroはlast_model_activity_atを
-// 持たない新field導入前の旧snapshot JSONをzero値として読めることを固定する。
-// migrationや意味推定を挟まず、consumer側はzeroを安全側扱いする。
 func TestTaskLiveStatusWithoutModelActivityFieldParsesZero(t *testing.T) {
 	st := newEventTestStore(t)
 	legacy := `{"updated_at":"2026-08-23T09:10:00Z","last_event_at":"2026-08-23T09:10:00Z","tools":[{"tool_id":"toolu_1","command":"sleep 295"}]}`

@@ -17,8 +17,6 @@ func captureStatsWarnings(t *testing.T) (*bytes.Buffer, func()) {
 	return &buf, func() { statsWarnOut = previous }
 }
 
-// capturedWarningsはstatsWarnOutへ出たJSONL warning event行を型付きで読む。
-// 旧"WARNING: "text形式の行が混ざったら失敗する。
 func capturedWarnings(t *testing.T, buf *bytes.Buffer) []statsWarningEvent {
 	t.Helper()
 	var events []statsWarningEvent
@@ -41,7 +39,6 @@ func capturedWarnings(t *testing.T, buf *bytes.Buffer) []statsWarningEvent {
 	return events
 }
 
-// requireStatsWarningは指定scopeのwarning eventが最低1件出たことを検証する。
 func requireStatsWarning(t *testing.T, buf *bytes.Buffer, scope string) {
 	t.Helper()
 	for _, event := range capturedWarnings(t, buf) {
@@ -254,8 +251,6 @@ func TestUpdateTaskStatsRebuildsVersion1Mirror(t *testing.T) {
 	}
 }
 
-// v2 archiveはmodel_callsへprobeを混ぜていた旧意味のためv3集計から除外し、
-// 診断集計は現在mirrorだけから計上される(旧archiveの新schema混在を防ぐ)。
 func TestAllTaskStatsSkipsVersion2Archive(t *testing.T) {
 	st := &StateStore{dir: t.TempDir()}
 	historyDir := filepath.Join(st.dir, "stats")

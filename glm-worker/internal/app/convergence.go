@@ -14,13 +14,8 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-// convergenceDeltaVerificationOnlyはsame-snapshot roundのうち、当該roundを生成した
-// worker呼出がevent logでtool利用を観測され・file変更toolを一度も使っていないもの。
-// treeはsnapshotで同一と確定しているため再review対象状態は同一のまま扱う。
 const convergenceDeltaVerificationOnly = "verification-only"
 
-// convergenceMutatingToolsはworktree内容を変更しうるtool名。これらが観測された
-// same-snapshot roundはverification-onlyへ細分化しない(編集後に戻した可能性)。
 var convergenceMutatingTools = map[string]bool{
 	"Edit":         true,
 	"Write":        true,
@@ -29,8 +24,6 @@ var convergenceMutatingTools = map[string]bool{
 
 var convergenceReviewerPhase = regexp.MustCompile(`^reviewer-(\d+)(-risk-floor)?$`)
 
-// convergenceRoundは集計1行分のround観測。recordはround log、reviewer/workerは時間窓で
-// 対応付けたtelemetry呼出。gapはreviewer番号不一致かseq不連続でrecord欠落が疑われるround。
 type convergenceRound struct {
 	record   state.RoundRecord
 	delta    state.RoundDelta
@@ -52,8 +45,6 @@ type convergenceOutput struct {
 	Summary       convergenceSummaryOut `json:"summary"`
 }
 
-// convergenceLogはround logの所在と読み取り状態。statusはok・none(まだ無い)・
-// unreadable(読み取り失敗)で、okのときだけpathが載る。
 type convergenceLog struct {
 	Status string  `json:"status"`
 	Path   *string `json:"path,omitempty"`
@@ -124,13 +115,6 @@ type convergenceClassSummary struct {
 	ReviewerDurationMS   int64  `json:"reviewer_duration_ms"`
 }
 
-// printConvergenceはround log・telemetry・event logだけからreview/fix convergenceを
-// machine JSONで出す。state書換・repo lock・AI call・provider/workerへの問い合わせを
-// 行わない。telemetryの呼出結果・token・durationとround logのsnapshot・path分類をrecordの
-// CapturedAt時間窓とWorkerPhaseで対応付け、対応付け不能な値はnullとして推測しない。
-// taskIDArgが空なら現在task、指定されればそのtaskの保存済みlogを読む。task ID検証は
-// --timelineと同じUUID v4境界を使う。明示指定taskのround log不在はnot_found error、
-// 読込失敗はinternal errorとし、現在taskの不在は正常終了する。
 func printConvergence(st *state.StateStore, taskIDArg string, stdout io.Writer) error {
 	explicit := taskIDArg != ""
 	taskID := taskIDArg
@@ -185,7 +169,6 @@ func printConvergence(st *state.StateStore, taskIDArg string, stdout io.Writer) 
 	return writeJSON(stdout, output)
 }
 
-// taskRecordsStatusはevent logの読み取り結果をok・none・unreadableへ分類する。
 func taskRecordsStatus(taskID string, err error) string {
 	if taskID == "" {
 		return "none"
@@ -200,8 +183,6 @@ func taskRecordsStatus(taskID string, err error) string {
 	}
 }
 
-// refineConvergenceDeltasはsame-snapshot roundをevent logのtool観測で
-// verification-onlyへ細分化する。delta.Class自体を書き替える。
 func refineConvergenceDeltas(rounds []convergenceRound, events []state.TaskEventRecord) {
 	for i := range rounds {
 		if rounds[i].delta.Class != state.RoundDeltaSameSnapshot {
@@ -214,8 +195,6 @@ func refineConvergenceDeltas(rounds []convergenceRound, events []state.TaskEvent
 	}
 }
 
-// readRoundRecordsはround logを行ごとに読む。破損行・旧version行はskipしてその件数を
-// 返し、log全体の読込失敗(不在含む)だけをerrorとする。
 func readRoundRecords(st *state.StateStore, taskID string) ([]state.RoundRecord, int, error) {
 	file, err := os.Open(st.RoundLogPath(taskID))
 	if err != nil {
@@ -240,13 +219,6 @@ func readRoundRecords(st *state.StateStore, taskID string) ([]state.RoundRecord,
 	return records, skipped, nil
 }
 
-// buildConvergenceRoundsはround record列を集計単位へ組み立てる。baseline recordは
-// 先頭に高々1つだけ分離し、以降をreview roundとして前recordとの差分を分類する。
-// telemetry呼出は各recordのCapturedAtを境界とする時間窓へ配る。round iのreviewer呼出は
-// [CapturedAt_i, CapturedAt_{i+1})へ、round iを生成したworker呼出は直前の境界からの
-// 窓でWorkerPhaseと一致するものを対応付ける。reviewer phase番号がrecordのReviewNumber
-// と一致しない呼出が同じ窓に現れたとき、record欠落が疑われるため次roundの分類をunknown
-// へ倒す。
 func buildConvergenceRounds(records []state.RoundRecord, logs []state.ModelCallLog) ([]convergenceRound, *state.RoundRecord) {
 	if len(records) == 0 {
 		return nil, nil
@@ -283,10 +255,6 @@ func buildConvergenceRounds(records []state.RoundRecord, logs []state.ModelCallL
 	return rounds, baseline
 }
 
-// bucketTaskCallsByRoundはtask呼出をrecord境界の時間窓へ割り当てる。窓kは
-// [records[k].CapturedAt, records[k+1].CapturedAt)で、最後の窓は以降全て。最初の境界
-// より前の呼出は窓-1へ置き、先頭recordがround 1のときその生成worker呼出として扱える
-// ようにする(先頭がbaselineのとき通常は存在しない)。
 func bucketTaskCallsByRound(records []state.RoundRecord, logs []state.ModelCallLog) map[int][]state.ModelCallLog {
 	buckets := make(map[int][]state.ModelCallLog, len(records)+1)
 	boundaryIndex := func(startedAt time.Time) int {
@@ -325,10 +293,6 @@ func reviewerCallsInBucket(entries []state.ModelCallLog, reviewNumber int, misma
 	return result
 }
 
-// producingWorkerCallsはround生成呼出のtelemetry記録を取り出す。WorkerPhaseと一致
-// (結果修正再依頼suffix付きを含む)するworker呼出のうち、IMPLEMENTED以外の結果を返した
-// 呼出(Sol decisionへ向かった試行)は対象から外す。
-// 結果status空欄の呼出はtransient再試行・invalid resultなど当該呼出の消費なので残す。
 func producingWorkerCalls(entries []state.ModelCallLog, workerPhase string) []state.ModelCallLog {
 	result := make([]state.ModelCallLog, 0, len(entries))
 	for _, entry := range entries {
@@ -346,8 +310,6 @@ func producingWorkerCalls(entries []state.ModelCallLog, workerPhase string) []st
 	return result
 }
 
-// roundHasRecordGapは直前recordとのseq不連続を検出する。先頭round(またはbaseline直後)
-// は比較対象が無いためfalse。
 func roundHasRecordGap(records []state.RoundRecord, recordIndex int) bool {
 	if recordIndex <= 0 {
 		return false
@@ -413,8 +375,6 @@ func convergenceRoundOutDetail(number int, round convergenceRound) convergenceRo
 	return out
 }
 
-// convergenceWorkerToolUseは当該phaseのworker eventからtool_use観測数とfile変更tool
-// の有無を数える。event recordが無いときは0観測として細分化しない。
 func convergenceWorkerToolUse(events []state.TaskEventRecord, workerPhase string) (int, bool) {
 	uses := 0
 	mutating := false

@@ -331,7 +331,6 @@ func TestMergeFilesOverrideAddedKeyRemovedFromOverride(t *testing.T) {
 		t.Fatalf("first install must apply EXTRA: %s", mustRead(t, target))
 	}
 
-	// overrideからEXTRAを外すと空patchになり、EXTRAは不存在へ復元される。
 	writeFile(t, override, `{}`)
 	if _, err := mergeFiles(target, fragment, override); err != nil {
 		t.Fatal(err)
@@ -377,7 +376,6 @@ func TestMergeFilesOverrideOverwriteRestoresOriginal(t *testing.T) {
 		t.Fatalf("state must record LOCAL baseline original: %#v", state.Env["LOCAL"])
 	}
 
-	// override削除(空patch)でLOCALは元値originalへ復元される。
 	writeFile(t, override, `{}`)
 	if _, err := mergeFiles(target, fragment, override); err != nil {
 		t.Fatal(err)
@@ -403,7 +401,6 @@ func TestMergeFilesOverrideNullRestoresExistingKey(t *testing.T) {
 		t.Fatalf("null override must delete LOCAL: %s", mustRead(t, target))
 	}
 
-	// override削除でLOCALは元値originalへ復元される。
 	writeFile(t, override, `{}`)
 	if _, err := mergeFiles(target, fragment, override); err != nil {
 		t.Fatal(err)
@@ -429,7 +426,6 @@ func TestMergeFilesOverrideManagedKeyRestoredToDefault(t *testing.T) {
 		t.Fatalf("null override must delete managed ANTHROPIC_BASE_URL: %s", mustRead(t, target))
 	}
 
-	// override削除でmanaged defaultへ復元される。
 	writeFile(t, override, `{}`)
 	if _, err := mergeFiles(target, fragment, override); err != nil {
 		t.Fatal(err)
@@ -452,7 +448,6 @@ func TestMergeFilesOverrideAbsentFileEqualsEmptyPatch(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// overrideファイル削除は空patchと等価で、追加keyは不存在・上書きkeyは元値へ復元される。
 	if _, err := mergeFiles(target, fragment, ""); err != nil {
 		t.Fatal(err)
 	}
@@ -574,8 +569,6 @@ func TestMergeFilesOverrideStateIsPrivateAndAtomic(t *testing.T) {
 	}
 }
 
-// main.goはstdlibのみをimportしGo module pathを含まない。新名称が現れるのは
-// sidecar名等の端末local永続識別子の回帰のみであり、ここで検出する。
 func TestMainSourceRetainsLegacySidecarIdentifier(t *testing.T) {
 	source, err := os.ReadFile("main.go")
 	if err != nil {
@@ -602,8 +595,6 @@ func TestEnsureEnvMapHandlesAbsentAndNonMap(t *testing.T) {
 	}
 }
 
-// writerFailingFirstはfailPathへの初回writeのみ失敗させ、以後(rollback含む)は成功させる。
-// これによりforward書込み失敗→rollback復元→再実行収束を分離して検証する。
 func writerFailingFirst(failPath string) writeFileFunc {
 	calls := map[string]int{}
 	return func(path string, data []byte, mode os.FileMode) error {
@@ -654,7 +645,7 @@ func TestMergeFilesWriteFailureRollsBackAndConverges(t *testing.T) {
 			wantStateEnvKeys: 1,
 		},
 		{
-			// override解除でstate書込みが失敗しても空state+旧targetが残らないか。
+
 			name:             "state write failure on override removal with existing state",
 			failTarget:       false,
 			seedOverride:     `{"env":{"EXTRA":"set"}}`,
@@ -718,7 +709,6 @@ func TestMergeFilesWriteFailureRollsBackAndConverges(t *testing.T) {
 			assertPreserved(t, target, beforeTarget)
 			assertPreserved(t, statePath, beforeState)
 
-			// rollback後の再実行で収束すること。1回目は変更あり、2回目は冪等。
 			changed, err := mergeFiles(target, fragment, override)
 			if err != nil {
 				t.Fatal(err)

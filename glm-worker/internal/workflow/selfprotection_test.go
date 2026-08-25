@@ -47,6 +47,7 @@ func TestIsCriticalPath(t *testing.T) {
 		{"future cmd file caught by directory rule", "glm-worker/cmd/glm-worker/wiring.go", true, "worker-entrypoint"},
 		{"merge engine for managed settings application", "tools/merge-json/main.go", true, "merge-tool"},
 		{"installer applies every managed surface", "install.sh", true, "installer"},
+		{"comment policy entrypoint", "commentlint", true, "comment-policy"},
 		{"post-merge hook auto-runs installer", ".githooks/post-merge", true, "installer"},
 		{"managed claude settings pin model routing and provider", "claude/settings-managed.json", true, "managed-claude-settings"},
 		{"managed codex config pins execution envelope", "codex/config-managed.toml", true, "managed-codex-config"},
@@ -99,9 +100,6 @@ func TestIsCriticalPath(t *testing.T) {
 	}
 }
 
-// TestSelfProtectionClassifiesEveryTrackedFileはrepoの全tracked fileがcritical・非対象
-// いずれかの意味分類を持つことを強制する。将来file追加時に分類を決めないまま放置すると
-// 本testが失敗し、HIGH/LOWの意味判断を強制する。
 func TestSelfProtectionClassifiesEveryTrackedFile(t *testing.T) {
 	root := scenarioRepoRoot(t)
 	if _, err := exec.Command("git", "-C", root, "rev-parse", "--git-dir").Output(); err != nil {
@@ -133,8 +131,6 @@ func TestSelfProtectionClassifiesEveryTrackedFile(t *testing.T) {
 	}
 }
 
-// TestImplementationPlanFileIsTrackedCanonicalはplan fileがGit追跡のcanonical sourceである
-// ことをgit ls-filesで固定する。追跡解除・exclude運用へ戻す変更は本検証だけが検知する。
 func TestImplementationPlanFileIsTrackedCanonical(t *testing.T) {
 	root := scenarioRepoRoot(t)
 	if _, err := exec.Command("git", "-C", root, "rev-parse", "--git-dir").Output(); err != nil {
@@ -149,9 +145,6 @@ func TestImplementationPlanFileIsTrackedCanonical(t *testing.T) {
 	}
 }
 
-// TestImplementationHistoryFileIsTrackedArchiveはhistory fileがGit追跡の親Codex専有archive
-// であることをgit ls-filesで固定する。guardのtracked欠損検出は追跡状態を前提とするため、
-// 追跡解除は本検証とguard両方で検知される。
 func TestImplementationHistoryFileIsTrackedArchive(t *testing.T) {
 	root := scenarioRepoRoot(t)
 	if _, err := exec.Command("git", "-C", root, "rev-parse", "--git-dir").Output(); err != nil {

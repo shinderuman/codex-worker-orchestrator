@@ -19,9 +19,6 @@ func agingTestLog(sessionID string, role SessionRole, model string, resumed bool
 	}
 }
 
-// TestAgingFromModelCallLogsAggregatesPerSessionはsession別のcall index相当latency列・
-// 累積turn/token・role/model関連付けをtelemetry記録だけから組み立てることを検証する。
-// probe/event recordは集計へ入れない。
 func TestAgingFromModelCallLogsAggregatesPerSession(t *testing.T) {
 	base := time.Date(2026, 8, 16, 9, 0, 0, 0, time.UTC)
 	logs := []ModelCallLog{
@@ -63,8 +60,6 @@ func TestAgingFromModelCallLogsAggregatesPerSession(t *testing.T) {
 	}
 }
 
-// TestAgingFromModelCallLogsTracksModelChangeは同一session内のmodel変更を記録順の
-// model列として残し、値を推測しないことを検証する。
 func TestAgingFromModelCallLogsTracksModelChange(t *testing.T) {
 	base := time.Date(2026, 8, 16, 9, 0, 0, 0, time.UTC)
 	logs := []ModelCallLog{
@@ -78,7 +73,6 @@ func TestAgingFromModelCallLogsTracksModelChange(t *testing.T) {
 	}
 }
 
-// TestAgingFromModelCallLogsEmptyはTask Work Call記録がないとき空要約を返す。
 func TestAgingFromModelCallLogsEmpty(t *testing.T) {
 	if sessions := AgingFromModelCallLogs(nil); len(sessions) != 0 {
 		t.Fatalf("空記録のsession aging = %#v", sessions)

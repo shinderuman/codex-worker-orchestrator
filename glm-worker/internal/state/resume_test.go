@@ -39,7 +39,7 @@ func TestResumeCheckpointPersists(t *testing.T) {
 	if got.ReportOnly {
 		t.Fatalf("report_only既定はfalse: %#v", got)
 	}
-	// v4はreport_onlyをfalseでも明示保存し、field有無の推定を不要にする。
+
 	data, err := os.ReadFile(st.Path(resumeStateFile))
 	if err != nil {
 		t.Fatal(err)
@@ -108,11 +108,6 @@ func TestResumeCheckpointRequiresModel(t *testing.T) {
 	}
 }
 
-// 旧version resume checkpointのupgrade互換は持たない。v2(worker_packet表示行・
-// packet_compacted)・v3(report_only欠落・phase推定前提)は内容の健全さに関係なく
-// version gateでresume不能として明示終了する。report_only欠落checkpointを通常の
-// auto-fix resumeへ落とさない。進行taskの保護は現在binaryが書く現version checkpointの
-// 読込だけで保証する。
 func TestLoadResumeCheckpointRejectsLegacyVersions(t *testing.T) {
 	st := &StateStore{dir: t.TempDir()}
 	for name, legacy := range map[string]string{
@@ -133,9 +128,6 @@ func TestLoadResumeCheckpointRejectsLegacyVersions(t *testing.T) {
 	}
 }
 
-// v4はreport_only keyの明示存在とbool型を要求する。key欠落をbool zero value falseの
-// 通常auto-fixとして受理せず、phaseがreport-only風でも通常auto-fixでもrouting前に
-// fail closedする。明示false(通常auto-fix)・明示true(report-only)は従来どおり受理する。
 func TestLoadResumeCheckpointV4RequiresExplicitReportOnly(t *testing.T) {
 	st := &StateStore{dir: t.TempDir()}
 	rejected := map[string]struct{ name, want string }{
@@ -215,8 +207,6 @@ func TestResumeCheckpointWithoutStopParentFiles(t *testing.T) {
 	}
 }
 
-// 2file形式stop_parent_files(object)は現形式(list)へunmarshalできないため、
-// 停止期間中の親更新を機械識別できないcheckpointをresume前提へ使わせない(fail closed)。
 func TestResumeCheckpointTwoFileStopParentFilesFailsClosed(t *testing.T) {
 	st := &StateStore{dir: t.TempDir()}
 	legacy := `{"version":4,"stage":"reviewer","phase":"reviewer-1","role":"reviewer","model":"sonnet","prompt":"p","request":"r","rate_limited":true,"report_only":false,"stop_parent_files":{"plan":{"sha256":"a"},"history":{"sha256":"b"}}}`

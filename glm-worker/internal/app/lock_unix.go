@@ -12,7 +12,6 @@ type RepoLock struct {
 	file *os.File
 }
 
-// AcquireRepoLockはflock(LOCK_EX|LOCK_NB)で排他ロックを取得する。
 func AcquireRepoLock(path string) (*RepoLock, error) {
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {

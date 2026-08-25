@@ -9,8 +9,6 @@ import (
 	"strings"
 )
 
-// ReadDBRowSqlite3はsqlite3 CLI経由でautomations表を読む。DB書込みは行わず、
-// Codex app内部schemaの非公開columnへはaccessしない。
 func ReadDBRowSqlite3(dbPath, key string) (DBRow, error) {
 	if _, err := exec.LookPath("sqlite3"); err != nil {
 		return DBRow{}, ErrSqlite3NotFound
@@ -19,7 +17,6 @@ func ReadDBRowSqlite3(dbPath, key string) (DBRow, error) {
 		return DBRow{}, fmt.Errorf("%w: %s", ErrDBUnreadable, dbPath)
 	}
 
-	// keyはVerify側で ^[A-Za-z0-9_-]+$ を満たすためsingle-quote injectionは不可。
 	query := fmt.Sprintf(
 		"SELECT id, status, rrule, next_run_at FROM automations WHERE id = '%s';",
 		key,
@@ -33,7 +30,6 @@ func ReadDBRowSqlite3(dbPath, key string) (DBRow, error) {
 		return DBRow{}, fmt.Errorf("%w: %s", ErrDBUnreadable, strings.TrimSpace(stderr.String()))
 	}
 
-	// sqlite3 -json は結果0件時に空文字列を返す ([] ではなく)。
 	if len(bytes.TrimSpace(output)) == 0 {
 		return DBRow{}, ErrRowNotFound
 	}

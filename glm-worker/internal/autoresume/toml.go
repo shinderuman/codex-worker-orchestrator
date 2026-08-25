@@ -5,8 +5,6 @@ import (
 	"strings"
 )
 
-// parseAutomationTOMLはautomation.tomlのknown scalarだけを抽出する行指向parser。
-// 非公開schemaへ必要以上に結合せず、複雑なescapeやtable構造は扱わない。
 func parseAutomationTOML(data []byte) (AutomationTOML, error) {
 	values := make(map[string]string)
 	bare := make(map[string]bool)
@@ -62,7 +60,6 @@ func parseAutomationTOML(data []byte) (AutomationTOML, error) {
 	}, nil
 }
 
-// parseBasicStringはTOML basic stringのescapeを展開する。3重quoteやliteral stringは扱わない。
 func parseBasicString(value string) (string, error) {
 	if !strings.HasPrefix(value, `"`) {
 		return "", fmt.Errorf("not a basic string")

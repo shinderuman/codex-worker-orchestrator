@@ -15,9 +15,6 @@ import (
 	"time"
 )
 
-// multiRepoEnvは2つの独立Git repositoryが同じ端末(GLM_WORKER_HOME・prompt dir・Claude
-// config dirを共有)でglm-workerを実行するprocess-level test環境。実claudeの代わりに
-// mode fileで動作を固定したstub binaryを使い、追加AI callなしでrepository隔離を観測する。
 type multiRepoEnv struct {
 	binary    string
 	home      string
@@ -36,10 +33,6 @@ const (
 	multiRepoWaitTimeout  = 30 * time.Second
 )
 
-// TestMultiRepositoryProcessIsolationは独立2 repositoryでの実binary並列実行契約を固定する:
-// state dir・lock pathの分離、repo A lock中のrepo B task完結、同一repo 2本目だけのlock拒否、
-// task ID・worker/reviewer session・telemetry・event logの非混入、そしてreset・resume・
-// rate-limit recovery・statusの他repo state非干渉。
 func TestMultiRepositoryProcessIsolation(t *testing.T) {
 	env := newMultiRepoEnv(t)
 	env.setStubMode(t, env.stubA, "hold")
@@ -108,8 +101,6 @@ func TestMultiRepositoryProcessIsolation(t *testing.T) {
 	}
 }
 
-// assertRepoLockSemanticsは並列実行中のlock意味を固定する。repo A hold中にrepo B taskが
-// 完結済みであることを前提に、双方のstate dir・lock path・task ID・session分離を確認する。
 func assertRepoLockSemantics(t *testing.T, env *multiRepoEnv, stateA string, stateB string, taskA1 string, taskB string) {
 	t.Helper()
 	if stateA == stateB || filepath.Join(stateA, "lock") == filepath.Join(stateB, "lock") {
@@ -151,8 +142,6 @@ func assertRepoLockSemantics(t *testing.T, env *multiRepoEnv, stateA string, sta
 	}
 }
 
-// assertSameRepoSecondProcessDeniedは同一repoの2本目だけがlock拒否になることを、
-// repo A hold中のlock取得command失敗で固定する。
 func assertSameRepoSecondProcessDenied(t *testing.T, env *multiRepoEnv, repo string) {
 	t.Helper()
 	denied := env.run(t, repo, "--reset")
@@ -161,8 +150,6 @@ func assertSameRepoSecondProcessDenied(t *testing.T, env *multiRepoEnv, repo str
 	}
 }
 
-// assertNoCrossContaminationは各repoのstate dir配下の全file内容へ相手repoの識別子・
-// instruction markerが出現しないことを検査する。
 func assertNoCrossContamination(t *testing.T, stateA string, stateB string, secretsA []string, secretsB []string) {
 	t.Helper()
 	for _, secret := range secretsB {
@@ -182,8 +169,6 @@ func assertStateDirExcludes(t *testing.T, stateDir string, secret string, other 
 	}
 }
 
-// assertRepoLocalObservabilityはtelemetry・event logが当該repo taskの記録だけを含むことを
-// 検査する。
 func assertRepoLocalObservability(t *testing.T, stateDir string, taskID string, marker string) {
 	t.Helper()
 	telemetry := readStateFile(t, stateDir, filepath.Join("telemetry", taskID+".jsonl"))
@@ -204,16 +189,12 @@ func assertRepoLocalObservability(t *testing.T, stateDir string, taskID string, 
 	}
 }
 
-// multiRepoResultはglm-worker実行1回分の終端状態。
 type multiRepoResult struct {
 	code   int
 	stdout string
 	stderr string
 }
 
-// newMultiRepoEnvは実binary・共有home・2 repo・repo別stub claudeを用意する。
-// GLM_WORKER_HOME・prompt dir・Claude config dirは両repoで同じ値を共有し、
-// 共有資源上の分離だけを検査する。
 func newMultiRepoEnv(t *testing.T) *multiRepoEnv {
 	t.Helper()
 	if _, err := exec.LookPath("go"); err != nil {
@@ -256,8 +237,6 @@ func newMultiRepoEnv(t *testing.T) *multiRepoEnv {
 	return env
 }
 
-// canonicalRepoPathはconfig.resolveRepoRootと同じsymlink解決を返す。state dirの
-// repo-root・--statusのREPO行はこのcanonical pathで書かれるため、期待値も同じ形に揃える。
 func canonicalRepoPath(t *testing.T, repo string) string {
 	t.Helper()
 	resolved, err := filepath.EvalSymlinks(repo)
@@ -267,8 +246,6 @@ func canonicalRepoPath(t *testing.T, repo string) string {
 	return resolved
 }
 
-// buildMultiRepoWorkerBinaryはproduction glm-worker binaryを1回buildする。
-// build失敗はskipではなくtest失敗として扱う。
 func buildMultiRepoWorkerBinary(t *testing.T) (string, error) {
 	t.Helper()
 	moduleRoot, err := filepath.Abs("../..")
@@ -287,8 +264,6 @@ func buildMultiRepoWorkerBinary(t *testing.T) (string, error) {
 	return binary, nil
 }
 
-// newMultiRepoGitRepoは初期commit付きの独立Git repositoryを作る。marker語は
-// repo固有内容で、repo-search cache testの検索対象でもある。
 func newMultiRepoGitRepo(t *testing.T, dir string, marker string) string {
 	t.Helper()
 	if err := os.Mkdir(dir, 0o755); err != nil {
@@ -314,9 +289,6 @@ func newMultiRepoGitRepo(t *testing.T, dir string, marker string) string {
 	return dir
 }
 
-// multiRepoStubClaudeはmode fileで動作を切替えるstub claude。success時は
-// --disallowedTools有無でreviewer/workerを判別し、schema適合のstructured_output付き
-// result eventを1行だけ返す。実providerへは接続しないため追加AI callは発生しない。
 const multiRepoStubClaude = `#!/bin/sh
 dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 mode=$(cat "$dir/mode" 2>/dev/null || echo none)
@@ -416,9 +388,6 @@ func (e *multiRepoEnv) releaseHold(t *testing.T) {
 	}
 }
 
-// childEnvはglm-worker子processへ渡す隔離env。開発環境の実GLM_WORKER_HOME・
-// CLAUDE_CONFIG_DIR等を継承せず、両repo共通の共有資源だけを与える。
-// claude binaryだけはrepo別stubへ向ける。
 func (e *multiRepoEnv) childEnv(repo string) []string {
 	stub := e.stubA
 	if repo == e.repoB {
@@ -437,7 +406,6 @@ func (e *multiRepoEnv) childEnv(repo string) []string {
 	}
 }
 
-// startはglm-workerを非同期で起動し、終端を後から待てるhandleを返す。
 func (e *multiRepoEnv) start(t *testing.T, ctx context.Context, repo string, args ...string) *multiRepoHolder {
 	t.Helper()
 	command := exec.CommandContext(ctx, e.binary, args...)
@@ -472,7 +440,6 @@ func (h *multiRepoHolder) waitFailure(t *testing.T) {
 	}
 }
 
-// runはglm-workerを同期実行して終端状態を返す。
 func (e *multiRepoEnv) run(t *testing.T, repo string, args ...string) multiRepoResult {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), multiRepoRunTimeout)
@@ -512,9 +479,6 @@ func (e *multiRepoEnv) status(t *testing.T, repo string) string {
 	return result.stdout
 }
 
-// waitStateDirはrepoのstate dirをrepo-root fileの一致で解決する。repo hash計算を
-// test側へ複製せず、実configの解決結果そのものを観測する。repo pathはconfigと同じく
-// symlink解決後のcanonical pathで照合する。
 func (e *multiRepoEnv) waitStateDir(t *testing.T, repo string, holder *multiRepoHolder) string {
 	t.Helper()
 	canonical, err := filepath.EvalSymlinks(repo)
@@ -556,8 +520,6 @@ func findStateDirForRepo(sessions string, canonicalRepo string) string {
 	return ""
 }
 
-// waitHeldWithWorkerSessionはlock保持とtask/worker session採番が完了するまで待つ。
-// この時点でholderはstub claude内でblockしており、並列観測の開始点になる。
 func (e *multiRepoEnv) waitHeldWithWorkerSession(t *testing.T, stateDir string) {
 	t.Helper()
 	deadline := time.Now().Add(multiRepoWaitTimeout)
@@ -586,8 +548,6 @@ func readStateFile(t *testing.T, stateDir string, name string) string {
 	return strings.TrimSpace(string(data))
 }
 
-// parseStateJSONはstate dirのJSON fileをfield検査可能な形へ読み込む。indent有無のような
-// 表記差へ期待を結び付けないため、意味値の検査はこの経路で行う。
 func parseStateJSON(t *testing.T, stateDir string, name string) map[string]any {
 	t.Helper()
 	var value map[string]any
@@ -597,7 +557,6 @@ func parseStateJSON(t *testing.T, stateDir string, name string) map[string]any {
 	return value
 }
 
-// snapshotStateDirはstate dir配下の全file内容を相対pathへmapしたsnapshotを返す。
 func snapshotStateDir(t *testing.T, stateDir string) map[string]string {
 	t.Helper()
 	snapshot := make(map[string]string)
@@ -625,8 +584,6 @@ func snapshotStateDir(t *testing.T, stateDir string) map[string]string {
 	return snapshot
 }
 
-// assertStateDirUnchangedはsnapshot以降にstate dirの内容が変化していないことを検査する。
-// lock fileはflock解放後も内容が残るため、比較から除外する。
 func assertStateDirUnchanged(t *testing.T, stateDir string, snapshot map[string]string) {
 	t.Helper()
 	current := snapshotStateDir(t, stateDir)
@@ -647,8 +604,6 @@ func assertStateDirUnchanged(t *testing.T, stateDir string, snapshot map[string]
 	}
 }
 
-// statusJSONFieldは--status出力1行のmachine JSONからfield値を取り出す。
-// JSONでない出力はmachine contract違反として失敗する。
 func statusJSONField(t *testing.T, output string, key string) any {
 	t.Helper()
 	var status map[string]any

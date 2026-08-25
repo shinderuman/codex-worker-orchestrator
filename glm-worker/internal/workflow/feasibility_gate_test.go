@@ -7,13 +7,6 @@ import (
 	"testing"
 )
 
-// TestFeasibilityGateContractWiringは親Codex側feasibility gateのproduction routing配線と、
-// 親behavioral Eval入力・期待判断との因果を決定論検証する。codex/AGENTS.mdの条件付きrouting・
-// 品質gate項目、glm-execution.mdの委譲前読込指示、feasibility-gate.md本文の必須契約文の
-// いずれかが欠けると失敗する。EVAL.mdの親behavioral Evalはscripted scenarioの終端検証とは
-// 異なり親Codexの委譲/受理行動の証明ではないため、その入力・期待判断がinstruction本文の
-// どの契約文へ根拠を持つかを対で固定する。worker/reviewer promptへgate checklistを
-// 追加しない方針も本testで固定する。
 func TestFeasibilityGateContractWiring(t *testing.T) {
 	root := scenarioRepoRoot(t)
 
@@ -55,8 +48,6 @@ func TestFeasibilityGateContractWiring(t *testing.T) {
 		}
 	}
 
-	// 親behavioral Evalの期待判断(EVAL.md)がproduction guidanceのどの契約文へ根拠を持つかを
-	// 対で検証する。EVAL.md側の文面だけ、instruction側の契約文だけの片側存在は通さない。
 	evalDoc := readContractFile("EVAL.md")
 	instruction := contents["codex/instructions/feasibility-gate.md"]
 	evalGrounds := []struct {
@@ -85,8 +76,6 @@ func TestFeasibilityGateContractWiring(t *testing.T) {
 		}
 	}
 
-	// behavioral Eval・corpus参照の管理文面。scripted packetの拒否宣言を親Codexの委譲/受理
-	// 行動の証明としない限定と、未実行Evalの一次証拠・完了条件・実行条件をEVAL.mdへ残す。
 	for _, wire := range []string{
 		"TestFeasibilityGateContractWiring",
 		"feasibility-gate-production-beyond-unverified-viability-returns-to-sol",
@@ -110,8 +99,6 @@ func TestFeasibilityGateContractWiring(t *testing.T) {
 		}
 	}
 
-	// EVAL.mdが参照するcorpus entryとmanifest pinが実在すること。文面参照だけの
-	// 自己充足を防ぎ、参照先がvalidateCorpusの対象へ入っていることを固定する。
 	sc, mf := loadCorpus(t)
 	corpusIDs := make(map[string]bool, len(sc.Scenarios))
 	for _, s := range sc.Scenarios {
@@ -137,8 +124,6 @@ func TestFeasibilityGateContractWiring(t *testing.T) {
 		t.Error("manifest.json must pin codex/instructions/feasibility-gate.md")
 	}
 
-	// 本contractは親Codex側の委譲・受領条件であり、常時checklistのworker/reviewer prompt
-	// 追加で代替した実装になっていないことを固定する。
 	for _, promptFile := range []string{"codex/glm-worker/prompts/WORKER.md", "codex/glm-worker/prompts/REVIEWER.md"} {
 		if strings.Contains(readContractFile(promptFile), "feasibility") {
 			t.Errorf("%s must not add a feasibility gate checklist", promptFile)

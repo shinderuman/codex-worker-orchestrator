@@ -12,19 +12,12 @@ import (
 	"time"
 )
 
-// このfileはTask 008 machine protocol効果測定のreport生成harness。PROTOEVAL_REPORT_DIRが
-// 設定されたときだけ動作し、通常のtest実行ではskipする。追加AI callなし・保存
-// telemetry・git履歴の読み取りのみで、production protocolへimportされない。
-
 const (
-	// 22c1d0b (2026-08-21T20:09:37+09:00) structured output単一protocol移行 = Era A/B境界。
 	measureEraABoundary = "2026-08-21T11:09:37Z"
-	// 202bc92 (2026-08-23T21:37:31+09:00) Codex向けresult machine JSON化 = Era B/C境界。
+
 	measureEraBBoundary = "2026-08-23T12:37:31Z"
 )
 
-// Era A (旧text PACKET直接指示期) の実測定数。当該期間のtelemetryはdiskに残って
-// いないため、IMPLEMENTATION_HISTORY.md §89/§90の保存分析値を引用する。
 const (
 	eraATasks                 = 36
 	eraATaskCalls             = 181
@@ -36,7 +29,6 @@ const (
 	eraAStructuralFailuresPoC = 53
 )
 
-// 測定reportのJSON構造。markdown出力と同じdataを機械読取可能に保つ。
 type protocolMeasureReport struct {
 	GeneratedAt      string                 `json:"generated_at"`
 	Reproduction     string                 `json:"reproduction"`
@@ -149,8 +141,6 @@ type verdictJSON struct {
 	WithdrawalTrigger   string   `json:"withdrawal_trigger"`
 }
 
-// measureBranchPrefixesはprotocol branch数proxyの定義。行頭(空白除去後)がこれらの
-// 接頭辞ならbranch文1つとして数える。新旧同じ定義で数えるため相対比較は安定。
 var measureBranchPrefixes = []string{
 	"if ", "if(", "else", "for ", "for(", "switch ", "switch(", "case ", "select {", "select{",
 }
@@ -179,8 +169,6 @@ func countNonBlankLines(src string) int {
 	return count
 }
 
-// measureProtocolSurfaceFilesは旧形式renderer・検証・wrapper出力・観測に当たる
-// production fileの固定集合。Task 006/007前後の意味比較に使う。
 var measureProtocolSurfaceFiles = []string{
 	"glm-worker/internal/packet/result.go",
 	"glm-worker/internal/packet/validate.go",
@@ -235,8 +223,6 @@ func measureGitOutput(t *testing.T, repoRoot string, args ...string) (string, er
 	return string(out), nil
 }
 
-// TestProtocolMeasurementReportは測定成果物をPROTOEVAL_REPORT_DIRへ生成する。
-// corpus測定・telemetry era比較・git code量測定・採用/撤退判定を1つのartifactへまとめる。
 func TestProtocolMeasurementReport(t *testing.T) {
 	reportDir := os.Getenv("PROTOEVAL_REPORT_DIR")
 	if reportDir == "" {
@@ -250,7 +236,6 @@ func TestProtocolMeasurementReport(t *testing.T) {
 	realPayloads := realMeasuredPayloads(t)
 	syntheticPayloads := syntheticMeasuredPayloads()
 
-	// --- 1. 固定入力render比較 ---
 	aggregateFor := func(payloads []measuredPayload, corpus string) []measureAggregateJSON {
 		var legacyTotal, machineTotal renderMeasurement
 		for _, payload := range payloads {
@@ -290,7 +275,6 @@ func TestProtocolMeasurementReport(t *testing.T) {
 	}
 	aggregates := append(aggregateFor(realPayloads, "real"), aggregateFor(syntheticPayloads, "synthetic")...)
 
-	// --- 2. 情報保持 ---
 	machinePreserved, legacyPreserved := 0, 0
 	var legacyLosses []string
 	for _, payload := range all {
@@ -318,7 +302,7 @@ func TestProtocolMeasurementReport(t *testing.T) {
 			legacyLosses = append(legacyLosses, legacyRoundTripLoss(payload.Value)+": "+payload.Name)
 		}
 	}
-	// --- 3. telemetry era比較 ---
+
 	home := os.Getenv("GLM_WORKER_HOME")
 	if home == "" {
 		userHome, err := os.UserHomeDir()
@@ -431,11 +415,6 @@ func TestProtocolMeasurementReport(t *testing.T) {
 		})
 	}
 
-	// --- 4. sol_packet_bytes記録値との照合 ---
-	// 記録値は呼出終端emitの累積和(worker/reviewer各終端・合成結果を含む)であり、
-	// 当該task最終worker成功応答1件のrenderとは一般に一致しない。そのため分類して
-	// 報告する: exact-match(式のbyte検証)・multi-emit-sum(記録値が単一render超えの
-	// 累積と整合)・not-reconstructible(単一renderから再構成不能)。
 	var audits []packetByteAuditJSON
 	for task, stats := range statsByTask {
 		if stats.SolPacketBytes == 0 {
@@ -479,7 +458,6 @@ func TestProtocolMeasurementReport(t *testing.T) {
 	}
 	sort.Slice(audits, func(i, j int) bool { return audits[i].Task < audits[j].Task })
 
-	// --- 5. git由来のlegacy/migration code量・protocol branch数 ---
 	repoRootOut, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
 	if err != nil {
 		t.Fatalf("err = %v", err)
@@ -541,7 +519,6 @@ func TestProtocolMeasurementReport(t *testing.T) {
 		return files
 	}
 
-	// --- 6. 採用/撤退判定 ---
 	var realAggLegacy, realAggMachine *measureAggregateJSON
 	for i := range aggregates {
 		if aggregates[i].Corpus != "real" {

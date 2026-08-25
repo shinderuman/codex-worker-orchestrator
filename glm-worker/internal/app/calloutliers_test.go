@@ -13,7 +13,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-// executeCallOutliersは--call-outliers相当の実行出力1行をraw JSONへdecodeする。
 func executeCallOutliers(t *testing.T, st *state.StateStore) map[string]any {
 	t.Helper()
 	var out bytes.Buffer
@@ -23,7 +22,6 @@ func executeCallOutliers(t *testing.T, st *state.StateStore) map[string]any {
 	return decodeSingleLineJSON(t, out.String())
 }
 
-// recordCallOutliersFixtureは1 task分のtelemetry記録を本番writer経由で追記する。
 func recordCallOutliersFixture(t *testing.T, st *state.StateStore, taskID string, base time.Time) {
 	t.Helper()
 	st.RecordModelCallLog(state.ModelCallLog{
@@ -41,8 +39,6 @@ func recordCallOutliersFixture(t *testing.T, st *state.StateStore, taskID string
 	})
 }
 
-// TestExecuteCallOutliersAggregatesSavedTelemetryは保存済みtelemetryだけから全task横断の
-// 分布・増幅・outlier報告を出し、prompt/response本文を出さないことを検証する。
 func TestExecuteCallOutliersAggregatesSavedTelemetry(t *testing.T) {
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
@@ -134,8 +130,6 @@ func TestExecuteCallOutliersAggregatesSavedTelemetry(t *testing.T) {
 	}
 }
 
-// TestCallOutliersEmptyTelemetryDirIsNoneは空のtelemetry dir(読取可能・fileなし)を
-// status noneで正常終了することを検証する。
 func TestCallOutliersEmptyTelemetryDirIsNone(t *testing.T) {
 	cfg := newAppConfig(t)
 	st := state.AttachStateStore(cfg)
@@ -151,9 +145,6 @@ func TestCallOutliersEmptyTelemetryDirIsNone(t *testing.T) {
 	}
 }
 
-// TestCallOutliersDirReadErrorIsProcessErrorはtelemetry dirの読取失敗(不在以外)を
-// 正常noneへ偽装せずerrorで返し、process境界のinternal error契約へ乗ることを検証する。
-// dir pathへ通常fileを置くことでENOTDIRを決定論的に起こす。
 func TestCallOutliersDirReadErrorIsProcessError(t *testing.T) {
 	cfg := newAppConfig(t)
 	st := state.AttachStateStore(cfg)
@@ -179,8 +170,6 @@ func TestCallOutliersDirReadErrorIsProcessError(t *testing.T) {
 	}
 }
 
-// TestExecuteCallOutliersEmptyStateはtelemetryがまだないstateを正常終了し、state dirを
-// 作成しないことを検証する。
 func TestExecuteCallOutliersEmptyState(t *testing.T) {
 	base := t.TempDir()
 	cfg := config.AppConfig{StateBase: base, RepoHash: "calloutliershash", RepoRoot: "/repo"}
@@ -219,8 +208,6 @@ func TestExecuteCallOutliersEmptyState(t *testing.T) {
 	}
 }
 
-// TestCallOutliersPartialOnUnreadableTelemetryは破損telemetry fileがあっても他taskの
-// 集計を出し、失敗をunreadable_tasksへ残すことを検証する。
 func TestCallOutliersPartialOnUnreadableTelemetry(t *testing.T) {
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
@@ -265,8 +252,6 @@ func TestCallOutliersPartialOnUnreadableTelemetry(t *testing.T) {
 	}
 }
 
-// TestCallOutliersIgnoresNonTaskTelemetryFilesはtask ID生成形式に合わないfile名を
-// 読まずignored_filesへ出すことを検証する。
 func TestCallOutliersIgnoresNonTaskTelemetryFiles(t *testing.T) {
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
