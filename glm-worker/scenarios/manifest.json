@@ -127,7 +127,7 @@
     },
     {
       "path": "codex/instructions/feasibility-gate.md",
-      "sha256": "f4993b418ad38258001f55b7d6703938dfb7c341dcb5c940900874567eccb446",
+      "sha256": "39f2e05a73cfed898056dfdfbdbf4ca54e6b05a3e5fd31fcc992991f49746738",
       "scenarios": [
         "feasibility-gate-production-beyond-unverified-viability-returns-to-sol",
         "feasibility-gate-premise-collapse-stops-further-implementation",
@@ -156,7 +156,7 @@
     },
     {
       "path": "codex/instructions/glm-execution.md",
-      "sha256": "18a07e87cc96b164a90f4cc245fd8cf543f436350bd080a7fb6c2e868107c39b",
+      "sha256": "cffe3bc507cf6393918c345600b34cb0566500b5174488e5827fddbc0ba8806a",
       "scenarios": [
         "feasibility-gate-production-beyond-unverified-viability-returns-to-sol",
         "feasibility-gate-premise-collapse-stops-further-implementation",

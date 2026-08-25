@@ -27,7 +27,7 @@ func TestIsolatePlanLifecycleProcessSeries(t *testing.T) {
 	// 0. 親管理metadataを持つrepo A。Plan ACTIVEは元taskを指し、両者ともtracked。
 	const originalTaskPath = "IMPLEMENTATION_TASKS/original-task.md"
 	const interruptionTaskPath = "IMPLEMENTATION_TASKS/interruption-task.md"
-	originalTaskBody := []byte("# 元task\n\n割り込み前に実行中だったtask本文。\n")
+	originalTaskBody := []byte("# 元task\n\n割り込み前に実行中だったtask本文。\n\n## External feasibility\n\nstatus: not-applicable\n")
 	planBody := []byte("# 計画\n\n## ACTIVE\n\n- `" + originalTaskPath + "`\n")
 	if err := os.MkdirAll(filepath.Join(env.repoA, "IMPLEMENTATION_TASKS"), 0o755); err != nil {
 		t.Fatal(err)
@@ -77,7 +77,7 @@ func TestIsolatePlanLifecycleProcessSeries(t *testing.T) {
 	// からtaskを実行する。Plan切替はworktree側の作業指示のためcommitへ含めない(含めると統合で
 	// 元repoのPlan ACTIVE参照が壊れる)。task fileをcommitせずに実行すると実効riskが
 	// implementation-tasks critical pathでHIGHへ固定され、reviewer PASSがrisk floorで拒否される。
-	interruptionTaskBody := []byte("# 割り込みtask\n\n隔離worktreeで実行するtask本文。\n")
+	interruptionTaskBody := []byte("# 割り込みtask\n\n隔離worktreeで実行するtask本文。\n\n## External feasibility\n\nstatus: not-applicable\n")
 	switchedPlan := []byte("# 計画\n\n## ACTIVE\n\n- `" + interruptionTaskPath + "`\n")
 	if err := os.WriteFile(filepath.Join(worktree, interruptionTaskPath), interruptionTaskBody, 0o644); err != nil {
 		t.Fatal(err)

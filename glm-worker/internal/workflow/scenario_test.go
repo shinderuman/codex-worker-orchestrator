@@ -54,7 +54,7 @@ const (
 	scenarioPlanSeed          = "# plan\n\n## ACTIVE\n\n- `IMPLEMENTATION_TASKS/001-scenario.md`\n"
 	scenarioPlanMutated       = "glm edited plan\n"
 	scenarioActiveTaskPath    = "IMPLEMENTATION_TASKS/001-scenario.md"
-	scenarioActiveTaskSeed    = "# ACTIVE task\n\n## Contract\n\n- scenario seed\n"
+	scenarioActiveTaskSeed    = "# ACTIVE task\n\n## External feasibility\n\nstatus: not-applicable\n\n## Contract\n\n- scenario seed\n"
 	scenarioActiveTaskMutated = "glm edited active task\n"
 )
 

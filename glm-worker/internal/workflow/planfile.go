@@ -36,9 +36,9 @@ const (
 	implementationHistoryFile = state.ParentHistoryFile
 )
 
-// errParentFileGuardStoppedは親管理metadata不変性確認によるfail closed停止が完了したことを
-// 呼出元へ伝えるsentinel。packet出力・checkpoint清除・task status更新は既に終わっているため、
-// 呼出元は追加のerror出力をしない。
+// errParentFileGuardStoppedは親管理metadata不変性確認・外部成立性宣言gateによるfail closed
+// 停止が完了したことを呼出元へ伝えるsentinel。packet出力・checkpoint清除・task status更新は
+// 既に終わっているため、呼出元は追加のerror出力をしない。
 var errParentFileGuardStopped = errors.New("parent-owned file guard stopped workflow")
 
 // parentFileGuardはworker task呼出直前に固定した親管理metadata集合のbaseline。
@@ -74,6 +74,7 @@ func (s guardSurface) unavailableOutcome() string { return s.outcomePrefix + "_u
 func (s guardSurface) missingOutcome() string     { return s.outcomePrefix + "_missing" }
 func (s guardSurface) mismatchOutcome() string    { return s.outcomePrefix + "_mismatch" }
 func (s guardSurface) violationOutcome() string   { return s.outcomePrefix + "_violation" }
+func (s guardSurface) malformedOutcome() string   { return s.outcomePrefix + "_malformed" }
 func (s guardSurface) activeUnresolvableOutcome() string {
 	return s.outcomePrefix + "_active_unresolvable"
 }

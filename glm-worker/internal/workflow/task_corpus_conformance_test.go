@@ -173,11 +173,3 @@ func taskFileSectionLines(body string) []string {
 	}
 	return lines
 }
-
-func leadingBackticks(line string) int {
-	count := 0
-	for count < len(line) && line[count] == '`' {
-		count++
-	}
-	return count
-}

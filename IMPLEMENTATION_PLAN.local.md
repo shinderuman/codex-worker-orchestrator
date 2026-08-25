@@ -8,7 +8,7 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/external-feasibility-dispatch-gate.md`
+- `IMPLEMENTATION_TASKS/safe-stop-isolation-external-review-followup.md`
 
 ## NEXT（優先順）
 
@@ -41,15 +41,15 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 ## 現在のGit境界
 
 - branch: `main`
-- implementation baseline: checkout/state隔離実装・完了metadata同期・本配置済みのcurrent HEAD
-- implementation boundary: Greptile要求をCodex scheduled task＋既存git/Greptile CLIだけへ縮小。日次automation `greptile-review`はremote `refs/heads/codex/greptile-reviewed..refs/heads/main`をreview範囲の唯一の正とし、repository production source変更なし
-- preserved boundary: external feasibility gateの中断diffはmessage identity付きstash 2件へ可逆保全し、orphan process group終了済み
+- implementation baseline: external feasibility dispatch gate実装・完了metadata同期・本配置済みのcurrent HEAD
+- implementation boundary: 全model dispatch入口の宣言fail-closed、PoC read-only/snapshot境界、親Go判断への復帰をproductionへ統合済み
+- preserved boundary: 不要stashは削除済み。safe-stop/isolation external-review follow-upは独立ACTIVE taskとして未着手
 - push: GLM push、force/non-fast-forward、他refへのpushは禁止。Greptile運用に必要な`refs/heads/main`と`refs/heads/codex/greptile-reviewed`の親Codexによる通常fast-forwardだけ許可
 
 ## 現在の停止理由
 
-external feasibility gateの中断diffはmessage identity付きstash 2件へ保全済み。Greptile日次reviewはremote checkpoint..remote mainだけを対象にし、local-only commitとdirty working treeはreview対象外とする。dirty working tree自体は許容する。
+safe-stop/isolation external-review follow-upがACTIVE。4 findingをcurrent production codeで再検証し、成立するものだけを修正する開始境界にある。
 
 ## 次の親Codex操作
 
-保全済みexternal feasibility gateのstash identity・適用順・現在task stateを再照合し、checkout隔離導入後の安全な復元経路で同taskを再開する。pushはGreptile運用のremote main/checkpoint通常fast-forward以外禁止。
+ACTIVE taskの4 findingを一次証拠で再検証し、成立性と修正境界を同一taskのGLM workerへ委譲する。pushはGreptile運用のremote main/checkpoint通常fast-forward以外禁止。

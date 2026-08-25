@@ -179,6 +179,14 @@ func (w *Workflow) ExecuteNewTask(request string) error {
 		if err := w.state.Write(activeTaskStateKey, activeTaskPath); err != nil {
 			return err
 		}
+		// ACTIVE task fileの外部成立性宣言をmodel呼出前に機械検証する。宣言欠損・不正・
+		// evidence無しimplementationは0 model callでfail closedし、poc/observationは
+		// production diffを残せない境界へ流す。
+		decl, err := w.gateExternalFeasibility("worker-new", false)
+		if err != nil {
+			return err
+		}
+		pocStage := decl.pocStage()
 
 		prompt := newTaskPrompt(request, activeTaskPath)
 		checkpoint := state.ResumeCheckpoint{
@@ -186,16 +194,33 @@ func (w *Workflow) ExecuteNewTask(request string) error {
 			Phase:          "worker-new",
 			Role:           state.WorkerRole,
 			Model:          w.config.WorkerModel,
-			ReadOnly:       false,
+			ReadOnly:       pocStage,
 			Effort:         w.config.RoutineEffort,
 			Prompt:         prompt,
 			OriginalPrompt: prompt,
 			Request:        request,
 		}
+		if pocStage {
+			if stopped, err := w.savePoCStartSnapshot(); err != nil {
+				return err
+			} else if stopped {
+				return nil
+			}
+		}
 
 		workerResult, err := w.runModel(checkpoint)
 		if err != nil {
 			return err
+		}
+		if pocStage {
+			if stopped, err := w.verifyPoCEndSnapshot(); err != nil {
+				return err
+			} else if stopped {
+				return nil
+			}
+			if workerResult.Status == packet.StatusImplemented {
+				return w.routePoCWorkerResult(workerResult)
+			}
 		}
 		return w.handleWorkerResult(request, workerResult, checkpoint.Phase)
 	}))
@@ -218,6 +243,13 @@ func (w *Workflow) ExecuteDecision(decision string) error {
 		if err != nil {
 			return err
 		}
+		// 外部成立性宣言gateもdecision消費前に拒否する。拒否はwaiting-decisionとpending
+		// decisionを残すため、親Codexが宣言を修復すれば同じdecisionを再実行できる。
+		decl, err := w.gateExternalFeasibility("worker-decision", true)
+		if err != nil {
+			return err
+		}
+		pocStage := decl.pocStage()
 		if err := w.state.Write("last-decision", decision); err != nil {
 			return err
 		}
@@ -237,17 +269,34 @@ func (w *Workflow) ExecuteDecision(decision string) error {
 			Phase:          "worker-decision",
 			Role:           state.WorkerRole,
 			Model:          w.config.WorkerModel,
-			ReadOnly:       false,
+			ReadOnly:       pocStage,
 			Effort:         w.config.EscalatedEffort,
 			Prompt:         prompt,
 			OriginalPrompt: prompt,
 			Request:        request,
 			Decision:       decision,
 		}
+		if pocStage {
+			if stopped, err := w.savePoCStartSnapshot(); err != nil {
+				return err
+			} else if stopped {
+				return nil
+			}
+		}
 
 		workerResult, err := w.runModel(checkpoint)
 		if err != nil {
 			return err
+		}
+		if pocStage {
+			if stopped, err := w.verifyPoCEndSnapshot(); err != nil {
+				return err
+			} else if stopped {
+				return nil
+			}
+			if workerResult.Status == packet.StatusImplemented {
+				return w.routePoCWorkerResult(workerResult)
+			}
 		}
 		return w.handleWorkerResult(request, workerResult, checkpoint.Phase)
 	}))
@@ -284,23 +333,46 @@ func (w *Workflow) ExecuteExplicitFix(instruction, origin string) error {
 		if err != nil {
 			return err
 		}
+		// 外部成立性宣言gateはfix経路も同じ受理集合で通す。
+		decl, err := w.gateExternalFeasibility("worker-explicit-fix", false)
+		if err != nil {
+			return err
+		}
+		pocStage := decl.pocStage()
 		prompt := explicitFixPrompt(request, decision, review, instruction, activeTaskPath)
 		checkpoint := state.ResumeCheckpoint{
 			Stage:          state.ResumeStageWorker,
 			Phase:          "worker-explicit-fix",
 			Role:           state.WorkerRole,
 			Model:          w.config.WorkerModel,
-			ReadOnly:       false,
+			ReadOnly:       pocStage,
 			Effort:         w.config.EscalatedEffort,
 			Prompt:         prompt,
 			OriginalPrompt: prompt,
 			Request:        request,
 			Decision:       decision,
 		}
+		if pocStage {
+			if stopped, err := w.savePoCStartSnapshot(); err != nil {
+				return err
+			} else if stopped {
+				return nil
+			}
+		}
 
 		workerResult, err := w.runModel(checkpoint)
 		if err != nil {
 			return err
+		}
+		if pocStage {
+			if stopped, err := w.verifyPoCEndSnapshot(); err != nil {
+				return err
+			} else if stopped {
+				return nil
+			}
+			if workerResult.Status == packet.StatusImplemented {
+				return w.routePoCWorkerResult(workerResult)
+			}
 		}
 		return w.handleWorkerResult(request, workerResult, checkpoint.Phase)
 	}))
@@ -318,6 +390,16 @@ func (w *Workflow) ExecuteResume() error {
 		if !isKnownResumeStage(checkpoint.Stage) {
 			return &WorkerError{Message: fmt.Sprintf("unknown resume stage: %s", checkpoint.Stage)}
 		}
+		// 外部成立性宣言gateはresumeでも同じ受理集合を使う。停止中に親Codexが宣言を
+		// migrationした場合は現在値が正であり、poc/observationの再開は書き込み不可境界へ
+		// 流れる。宣言が受理できなければprobe含む全model呼出前にfail closedする。拒否は
+		// 停止中のtask status・checkpointを保持するため、親Codexが宣言を修復すれば同じ
+		// --resumeを再実行できる。
+		decl, err := w.gateExternalFeasibility(checkpoint.Phase, true)
+		if err != nil {
+			return err
+		}
+		pocResume := checkpoint.Stage == state.ResumeStageWorker && decl.pocStage()
 
 		// --stop停止taskのresumeは、割り込みtask隔離実行の有無に関わらず停止期間中の元checkout
 		// 保持をまず機械照合する。保持基準からの逸脱はstatus変更・checkpoint破棄をせずfail closedに
@@ -338,6 +420,14 @@ func (w *Workflow) ExecuteResume() error {
 		// probe・worker呼出を1件も実行する前にfail closedし、新baseline撮影で欠損を隠さない。
 		if checkpoint.Stage == state.ResumeStageAutoFix && checkpoint.ReportOnly {
 			if stopped, err := w.gateReportOnlyResumeSnapshot(); err != nil {
+				return err
+			} else if stopped {
+				return nil
+			}
+		}
+		// PoC/観測taskのworker resumeも同じく初回開始直前の保存snapshotを基準に要求する。
+		if pocResume {
+			if stopped, err := w.gatePoCResumeSnapshot(); err != nil {
 				return err
 			} else if stopped {
 				return nil
@@ -375,6 +465,12 @@ func (w *Workflow) ExecuteResume() error {
 			}
 		}
 		checkpoint.Prompt = resumePrompt(checkpoint)
+		// worker工程resumeのcapabilityは現在の宣言へ合わせる。poc/observation宣言のままなら
+		// read-onlyで再開し、停止中の宣言migration(implementation/not-applicable)後は書き込み
+		// 可で再開する。
+		if checkpoint.Stage == state.ResumeStageWorker {
+			checkpoint.ReadOnly = decl.pocStage()
+		}
 		checkpoint.RateLimited = false
 		checkpoint.ResetAtCST = ""
 		checkpoint.ResetAtRFC3339 = ""
@@ -438,6 +534,16 @@ func (w *Workflow) ExecuteResume() error {
 
 		switch checkpoint.Stage {
 		case state.ResumeStageWorker:
+			if decl.pocStage() {
+				if stopped, err := w.verifyPoCEndSnapshot(); err != nil {
+					return err
+				} else if stopped {
+					return nil
+				}
+				if result.Status == packet.StatusImplemented {
+					return w.routePoCWorkerResult(result)
+				}
+			}
 			return w.handleWorkerResult(checkpoint.Request, result, checkpoint.Phase)
 		case state.ResumeStageReview:
 			if checkpoint.WorkerResult == nil {
@@ -588,6 +694,11 @@ func (w *Workflow) reviewUntilStable(
 	if err != nil {
 		return err
 	}
+	// reviewer呼出もworkerと同じ外部成立性宣言の受理集合を通る。宣言が受理できない
+	// taskのreviewはworker同様0 model callでfail closedする。
+	if _, err := w.gateExternalFeasibility(fmt.Sprintf("reviewer-%d", reviewNumber), false); err != nil {
+		return err
+	}
 	workerReport, err := machineReport(workerResult)
 	if err != nil {
 		return err
@@ -695,6 +806,10 @@ func (w *Workflow) handleReviewResult(
 		// auto-fixもACTIVE解決fail closed後の修復再開経路に含める。未設定なら再解決して固定する。
 		activeTaskPath, err := w.ensureActiveTaskPath(phase)
 		if err != nil {
+			return err
+		}
+		// auto-fix worker呼出も同じ外部成立性宣言の受理集合を通す。
+		if _, err := w.gateExternalFeasibility(phase, false); err != nil {
 			return err
 		}
 		reviewReport, err := machineReport(reviewResult)

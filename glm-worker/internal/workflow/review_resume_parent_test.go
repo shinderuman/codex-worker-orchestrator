@@ -582,7 +582,7 @@ func TestWorkerResumeParentUpdateDuringStopProceeds(t *testing.T) {
 	}}
 	w := newWorkflowT(t, st, r)
 	repoRoot := w.config.RepoRoot
-	writeRepoActiveTask(t, repoRoot, "task-at-stop\n")
+	writeRepoActiveTask(t, repoRoot, "task-at-stop\n\n## External feasibility\n\nstatus: not-applicable\n")
 	writeRepoParentPlan(t, repoRoot, "# plan\n\n## ACTIVE\n\n- `"+activeTaskRepoPath+"`\n")
 	if err := st.Write("last-request", "req"); err != nil {
 		t.Fatal(err)

@@ -18,6 +18,7 @@ const (
 	workerEndSnapshotFile       = "snapshot-worker-end.json"
 	reviewStartSnapshotFile     = "snapshot-review-start.json"
 	reportOnlyStartSnapshotFile = "snapshot-report-only-start.json"
+	poCStartSnapshotFile        = "snapshot-poc-start.json"
 	snapshotComparisonFile      = "snapshot-comparison.json"
 )
 
@@ -93,6 +94,8 @@ const (
 	SnapshotStageReviewEnd       SnapshotStage = "review-end"
 	SnapshotStageReportOnlyStart SnapshotStage = "report-only-start"
 	SnapshotStageReportOnlyEnd   SnapshotStage = "report-only-end"
+	SnapshotStagePoCStart        SnapshotStage = "poc-start"
+	SnapshotStagePoCEnd          SnapshotStage = "poc-end"
 )
 
 // SnapshotComparisonはworker-endとreview-start snapshotの一致判定結果を記録する。
@@ -351,6 +354,20 @@ func (s *StateStore) SaveReportOnlyStartSnapshot(snap GitSnapshot) error {
 
 func (s *StateStore) LoadReportOnlyStartSnapshot() (GitSnapshot, error) {
 	return readSnapshot(s.Path(reportOnlyStartSnapshotFile))
+}
+
+// SavePoCStartSnapshotはPoC/観測専用taskのworker開始直前状態を保存する。report-onlyと
+// 同じくresumeを跨いでも再保存せず同一基準として読み続け、production diff無しを
+// wrapper側で強制するための基準になる。
+func (s *StateStore) SavePoCStartSnapshot(snap GitSnapshot) error {
+	if err := writeSnapshot(s.Path(poCStartSnapshotFile), snap); err != nil {
+		return fmt.Errorf("PoC開始前snapshotを書き込めません: %w", err)
+	}
+	return nil
+}
+
+func (s *StateStore) LoadPoCStartSnapshot() (GitSnapshot, error) {
+	return readSnapshot(s.Path(poCStartSnapshotFile))
 }
 
 func (s *StateStore) SaveSnapshotComparison(comparison SnapshotComparison) error {

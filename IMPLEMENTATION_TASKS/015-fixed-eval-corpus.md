@@ -80,10 +80,11 @@ wrapperで固定できるoffline/fake-provider scenarioだけを対象。
 
 - `e79e1ab`、`6d8d278`、`fc5f740`、`6257133`
 - Task 001で成立したACTIVE task fileを要求正本とするtask lifecycle
+- external feasibility dispatch gateのproduction受理集合と、PoC/observationを親Go/No-Goへ戻す不変条件
 
 ## Dependencies
 
-- `IMPLEMENTATION_TASKS/external-feasibility-dispatch-gate.md`
+none
 
 ## Review findings
 

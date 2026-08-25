@@ -24,3 +24,18 @@ production実装へ進む前に、次を対象の不確実性・変動性・継�
 - Go/No-Goと撤退判断はSol High・ユーザーへ戻し、GLMだけで確定させない。
 - 観測中に前提が崩れた場合は、workaroundの追加実装をさせず観測事実をSol/ユーザー判断へ戻す。
 - 単発の具体的成功を継続運用可能性へ一般化しない。同時に個別PoCの長時間観測条件を全feasibility gateへ一般化しない。
+
+## dispatch gate宣言(task file機械検証)
+
+外部成立性をproduction correctnessの前提に含むtaskを`glm-worker`へ委譲するときは、ACTIVE task file本文へ`## External feasibility`節として宣言する。glm-workerは新規・decision・fix・reviewer・auto-fix・resumeの全dispatch入口で同一parserにより宣言を検証し、受理できないtaskはworker/reviewer model呼出0回(`external_feasibility_missing`・`external_feasibility_malformed`・`external_feasibility_unverified`)でfail closedする。検証は追加AI call・追加classifierなしの機械処理で、宣言はtask file本体の固定context増分(not-applicable宣言で約50 bytes、implementation宣言でも約300 bytes)のみを消費する。
+
+- `status: not-applicable`: 外部成立性が前提にならない通常task。status行だけを置き、他fieldを書かない。
+- `status: poc` / `status: observation`: 未検証段階。`assumption`(検証対象の外部前提)を必須とし、evidence系fieldは書かない。glm-workerはworkerをread-only capabilityで実行し、開始前repo snapshotとの同一性を強制する。workerがdiffを出した時点でfail closedする。結果はreviewerを経ず親CodexのGo/No-Go(`NEEDS_SOL_DECISION`)へ返り、GLMだけでimplementationへ昇格させる経路は存在しない。
+- `status: implementation`: 実装許可。`assumption`・`evidence-source: producer`・`evidence`(実producer観測の事実)・`go`(親CodexのGo判断と日付)の4fieldが全て必須。`evidence-source`は実producer観測のみを意味し、人工fixture・scripted packet・worker/reviewerのPASS自己申告はevidenceとして受理しない。
+
+親Codexの責務:
+
+- 既存taskをACTIVATEする前に宣言を確認し、欠けていれば該当taskへ宣言を追加してから委譲する。宣言のないtask fileはdispatch時にfail closedする。
+- 新規task生成ではこの節を最初から含める。
+- PoC結果のGo/No-Goは親Codexが行い、Goならtask fileの宣言を`status: implementation`へ書き換えてから同じtaskを再開する。
+- `not-applicable`宣言が誤っている場合(実際には未検証外部前提を含むtask)を機械検証で絶対防止はできない。この残余riskは宣言した親Codexの判断責任であり、Sol review・escaped review検知が第二防御である。
