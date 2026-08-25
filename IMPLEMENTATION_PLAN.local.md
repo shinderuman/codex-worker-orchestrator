@@ -8,11 +8,10 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/greptile-low-cost-scheduled-dispatch.md`
+- `IMPLEMENTATION_TASKS/markdown-context-footprint-reduction.md`
 
 ## NEXT（優先順）
 
-- `IMPLEMENTATION_TASKS/markdown-context-footprint-reduction.md`
 - `IMPLEMENTATION_TASKS/commit-authorization-source-recognition.md`
 - `IMPLEMENTATION_TASKS/install-smoke-loop-cost-reduction.md`
 - `IMPLEMENTATION_TASKS/010-task-splitting-milestones.md`
@@ -42,15 +41,15 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 ## 現在のGit境界
 
 - branch: `main`
-- implementation baseline: 親Codex 5h Limit自動再開と完了metadataを同一commitへ同期したcurrent HEAD
-- implementation boundary: read-only `glm-worker --codex-limit`、300分windowの位置非依存選別、Codex Desktop既存scheduler/task送信を使うwake rule、project所属Luna Low専用task、thread固有automation identityを実装。全Go gate、独立review、親差戻し、実Desktop identity/target/time verify、full install smokeを完了
-- preserved boundary: Greptile日次reviewの機械dispatchをrepository固有ruleのままLuna Low専用taskへ縮小する要求をACTIVE化。Markdown runtime context削減を次点NEXT、commit authorization source false negative、install smoke loop costを後続NEXTとして保持。external feasibility dispatch gate、safe-stop/isolation境界は不変、不要stashなし
+- implementation baseline: 親Codex 5h Limit自動再開の本配置とGreptile Luna Low scheduled dispatch移行・完了metadataを同期したcurrent HEAD
+- implementation boundary: read-only `glm-worker --codex-limit`を本配置し実app-server smokeとmanaged instruction hash一致を確認。Greptile automationはproject所属Luna Low専用taskへ切替え、finding採否・Task化を親Codexへ維持
+- preserved boundary: Markdown runtime context削減をACTIVEへ昇格。commit authorization source false negative、install smoke loop costを後続NEXTとして保持。external feasibility dispatch gate、safe-stop/isolation境界は不変、不要stashなし
 - push: 各親commit後の`refs/heads/main`とGreptile正常review後の`refs/heads/codex/greptile-reviewed`だけを親Codexが通常fast-forwardする。GLM push、force/non-fast-forward、他refへのpushは禁止
 
 ## 現在の停止理由
 
-Greptile日次reviewのLuna Low dispatch化を開始できる境界。既存Greptile CLI reviewは実行せずcreditを消費しない。
+Markdown固定context削減taskを開始できる境界。
 
 ## 次の親Codex操作
 
-既存Greptile automation/task実体とrepository ruleを確認し、`codex-config` project所属のLuna Low専用taskを作成してscheduler prompt/targetを機械dispatch・親送信だけへ切り替える。finding採否・task化は親Codexへ残す。
+ACTIVE taskのlossless requirementを要求正本として、実runtime read graph・bytes/token proxy・重複責務をGLMへ調査委譲し、品質契約を維持した固定context削減を実装する。

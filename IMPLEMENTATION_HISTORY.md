@@ -68,6 +68,7 @@
 
 ## 完了済み
 
+- [x] Greptile日次review低コストdispatch化: repository固有の外部review ruleを`glm-worker`本体から分離したまま、`codex-config` project所属・Luna Lowの専用task `01a03ac1-92ad-7b10-a447-07c4c89b5c9b`を作成。既存automation `greptile-review-2`のRRULE/次回時刻を維持してtargetを新taskへ切り替え、専用taskの責務をremote ref precondition・Standard CLI 1回・JSON/status検証・finding正規化・親task送信・成功時checkpoint fast-forwardだけへ縮小した。finding採否・重複判定・Task化・継続利用判断は親Codexへ維持し、finding送信失敗時はcheckpointを進めない。旧Greptile taskをarchiveし、TOML/SQLiteでautomation 1件・ACTIVE・target・RRULEを確認。移行時のGreptile CLI実行とcredit消費なし
 - [x] 親Codex 5h Limit自動再開: Codex CLI 0.149.1の実`app-server`から300分/10080分windowとreset時刻を読み取るread-only `glm-worker --codex-limit`を追加し、5hはprimary/secondary位置でなく`windowDurationMins == 300`で識別。scheduler・task間送信はCodex Desktop既存機能へ残し、wake_atを実reset+2分、Weekly復旧/追加credit/親不在GLM継続を禁止した。`codex-config` project所属・Luna Lowのwake専用task `01a03a9e-10a0-7f11-801c-f04e5dbd5490`を作成し、identityを`codex-5h-wake-<wake thread ID>`へ分離。実Desktopで期待ID一致、target、絶対時刻、machine verify、削除を確認し、先行PoCでheartbeat `automation_id`配送と親task送信を確認。Go全test/race/vet/build/gofmt/commentlint、独立review、2回の親差戻し、full install smoke 23分34秒、parent acceptを完了。完了task削除後のinstaller gateがMarkdown taskのfulfilled dependency残存を検出したため、依存pathを除去し成立済みinvariantへ移行。旧projectless/worktree PoC taskはarchiveし、本番schedulerはLimit到達時まで未作成
 - [x] 親orchestration継続漏れ: ユーザーのscheduler仕様・task所属確認をACTIVE taskの停止指示として扱って回答後に作業へ戻らなかった。`task-lifecycle.md`はユーザー判断が本当に必要な場合だけ停止し局所終端後に次操作へ進む契約を既に持っていたため、新frameworkではなく既存contractの適用漏れと分類。ACTIVE task Amendmentへ「質問・状態確認は停止条件ではない」を固定し、同task完了後も次taskへ継続する境界を再確認した
 

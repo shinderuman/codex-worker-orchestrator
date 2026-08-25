@@ -144,6 +144,14 @@ task完了時は、必要証跡とescaped原因をHistoryへ追加し、task fil
 - runtimeへ影響するtaskはimplementation、test/review、commit後、適切な区切りで`install.sh`本配置、installed/source一致、そのinstalled状態で必要なproduction smokeまでをtask completion flowとして行う。複数task分を未配置のまま後続実運用へ進めず、最終taskまでinstall義務を延期しない
 - source-only metadata変更はruntime install対象から除外する
 
+## Greptile日次review
+
+- Greptile日次reviewは本repository固有の補助review orchestrationであり、`glm-worker` production機能へ統合しない
+- 日次schedulerは`codex-config` project所属のLuna Low専用taskだけを起動し、remote ref precondition、Standard CLI 1回実行、JSON/status検証、finding正規化、親実装taskへの1回送信、正常時のcheckpoint fast-forwardという機械処理だけを担当する
+- 専用taskはfindingの最終採否、設計判断、自動修正、Task/Plan編集を行わない。findingの有効性・重複・Task化とGreptile継続利用価値は親CodexがGit現物と複数runの傾向から判断する
+- findingがあるrunは親taskへの送信成功前にcheckpointを進めず、送信失敗時は次回runで最後の成功地点からcatch upする。finding 0件は親taskを起こさずcheckpointだけを正常更新できる
+- scheduler移行・prompt変更の確認だけを理由にGreptile CLIを実行してcreditを消費せず、旧taskと新taskへautomationを二重登録しない
+
 ## machine-only data原則
 
 glm-worker/Codex/GLMだけが生成・消費するmachine dataを長期公開APIとして扱わない。旧parser、migration、fallback、deprecated推定、version bridge、dual protocolを「一応読める」だけで恒久追加しない。current schema validationは厳格に保ち、old versionは用途に応じreject/skip/reset/rebuild/delete/resume不能を選ぶ。active task保護と恒久互換を混同しない。
