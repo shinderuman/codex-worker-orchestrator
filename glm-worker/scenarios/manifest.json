@@ -137,7 +137,7 @@
     },
     {
       "path": "codex/AGENTS.md",
-      "sha256": "225040511bcce19790bb3a8d07becac54b4d4f1986fcd2969b788e3f05679f76",
+      "sha256": "6d98b6d4f09f818d32659ef3f6b005347ef914f239c9a703ac318f8461758c77",
       "scenarios": [
         "feasibility-gate-production-beyond-unverified-viability-returns-to-sol",
         "feasibility-gate-premise-collapse-stops-further-implementation",

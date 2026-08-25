@@ -509,10 +509,11 @@ requirementのlosslessな正を維持しながらMarkdown surfaceの責務、run
 
 - 最上位目的は、Sol High相当の品質を可能な限り維持しながらCodex/Sol実消費量を大幅に削減すること。
 - IMPLEMENTATION 4層とlossless requirement sourceは維持する。
+- 親Codex 5h Limit自動再開は先行taskで実装・review・実機PoC・full install smokeを完了しており、本taskはそのCodex instructionを通常runtime read graphの監査対象に含める。
 
 ## Dependencies
 
-- `IMPLEMENTATION_TASKS/codex-5h-limit-auto-resume.md`
+none
 
 ## Review findings
 
@@ -520,4 +521,4 @@ none
 
 ## Current boundary
 
-ユーザー指定により5h Limit自動再開taskの後に実施するNEXT。未着手。
+ユーザー指定の5h Limit自動再開taskは完了済み。Greptile低コストscheduled dispatchの後に実施するNEXT。未着手。

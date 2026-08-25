@@ -20,6 +20,7 @@ type AppConfig struct {
 	WorktreeBase string
 	PromptDir    string
 	ClaudeBin    string
+	CodexBin     string
 
 	ClaudeConfigDir string
 
@@ -79,6 +80,7 @@ func Load() (AppConfig, error) {
 		PromptDir:              promptDir,
 		CodexConfigDir:         codexConfigDir,
 		ClaudeBin:              envOrDefault("GLM_WORKER_CLAUDE_BIN", "claude"),
+		CodexBin:               envOrDefault("GLM_WORKER_CODEX_BIN", "codex"),
 		ClaudeConfigDir:        claudeConfigDir,
 		ClaudeSettingsOverride: claudeSettingsOverride,
 		EnvAllowlist:           envAllowlist,

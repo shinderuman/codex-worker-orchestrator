@@ -141,6 +141,7 @@ glm-worker --stats
 glm-worker --reset
 glm-worker --eval-ab "<A/B run dir>"
 glm-worker --call-outliers
+glm-worker --codex-limit
 ```
 
 - `--decision-stdin`は`NEEDS_SOL_DECISION`で停止した同一タスクを継続する。
@@ -156,6 +157,7 @@ glm-worker --call-outliers
 - `--convergence [task-id]`は保存済みround log・telemetry・event logだけからreview/fix convergenceをround単位で表示する参照専用command。AI呼出・repo lock・state書換を行わない。task ID省略時は現在task、明示指定時はretention内の旧taskも読める。
 - `--eval-ab`はCodex Direct対orchestratedのA/B比較run dir(spec.json・direct.json・orchestrated.json)を検証して比較結果を表示する参照専用commandで、AI呼出は行わない。orchestrated記録のGLM usageは当該taskのstats履歴から解決するため、orchestrated run側またはそのstate履歴を持つcheckoutで実行する。
 - `--call-outliers`は保存済みtelemetryだけから対象repositoryの全task横断でtask/phase/session/model別のworker呼出分布・task単位増幅・outlierをmachine JSON 1行で表示する参照専用command。AI呼出・repo lock・state書換を行わない。
+- `--codex-limit`はCodex CLIのapp-server(`initialize`→`initialized`→`account/rateLimits/read`)へ読み取り専用で接続し、5h/Weekly windowの使用率・window長・reset時刻をmachine JSON 1行(`five_hour`・`weekly`・`plan_type`・`rate_limit_reached_type`、各windowは`used_percent`・`window_duration_mins`・`resets_at`・`resets_at_rfc3339`)で表示する参照専用command。AI呼出・repo lock・state書換・scheduler操作・task間送信を行わない。5h windowはprimary/secondaryの位置でなく`windowDurationMins == 300`で識別し、weeklyは`10080`、存在しないwindow・値は`null`、応答の取得・識別に失敗した場合はstderrのprocess error JSON(`kind:"codex_limit_unavailable"`、`detail.phase`)とnon-zero exitでfail closedする。
 
 reviewer呼出しの前後でGit状態を3軸(HEAD・index・worktree/untracked)のdigestで固定・検証する。worker終了時とreviewer開始前、5h上限・provider障害からのresume前、そして各reviewer model callが正常終了した直後かつPASS/FIX_REQUIRED/NEEDS_SOL_REVIEW等を採用する前に、保存snapshotと現在状態を同じ3軸で比較する。reviewerがEdit/Write禁止でもBash・formatter・test・generator等でrepositoryを変更していた場合はreview結果を採用せず、rollbackも黙認もせず`NEEDS_SOL_REVIEW`/`HIGH`へfail closedする。追加のmodel呼出・reviewer層の変更は行わない。
 
@@ -168,6 +170,7 @@ reviewer呼出しの前後でGit状態を3軸(HEAD・index・worktree/untracked)
 | `GLM_WORKER_HOME` | `~/.glm-worker` | task・session・statsの保存先 |
 | `GLM_WORKER_PROMPT_DIR` | `~/.codex/glm-worker/prompts` | worker/reviewer prompt |
 | `GLM_WORKER_CLAUDE_BIN` | `claude` | Claude Code実行ファイル |
+| `GLM_WORKER_CODEX_BIN` | `codex` | Codex CLI実行ファイル(`--codex-limit`のrate-limit読取) |
 | `GLM_WORKER_WORKER_MODEL` | `opus` | worker model alias |
 | `GLM_WORKER_REVIEWER_MODEL` | `haiku` | 通常reviewer model alias |
 | `GLM_WORKER_HIGH_RISK_REVIEWER_MODEL` | `sonnet` | 高リスク・Sol判断後・修正後reviewer model alias |
@@ -205,6 +208,7 @@ repository分離の設計:
 | Claude config dir(`CLAUDE_CONFIG_DIR`) | read-only shared(glm-workerから)。配下のsession state書込みはupstream管理 | glm-workerはsettings.jsonのenv allowlist読取とexclude path解決だけ。config dir配下へのsession書込みはClaude CLI自身がsession ID単位で行う |
 | Claude settings override(`CODEX_CONFIG_CLAUDE_SETTINGS_OVERRIDE`) | read-only shared | env set/deleteのpatchを読むだけ。書き込みは`install.sh`/`tools/merge-json`側 |
 | Codex automation TOML/SQLite(`CODEX_CONFIG_DIR`) | read-only shared | `--verify-auto-resume`がTOML読取とSQLite読取(`sqlite3` CLIのSELECT)だけ行う。automationの作成・更新は親Codexの責務 |
+| Codex CLI app-server(`GLM_WORKER_CODEX_BIN`) | read-only shared | `--codex-limit`が`codex app-server`を起動して`account/rateLimits/read`の読取だけ行い、応答後すぐ終了させる。Codex本体のsession・automation・taskへ書き込まない |
 | provider/Z.ai quota | upstream管理・repo stateとは分離 | account単位の上限。同一provider quotaを2 repoが消費すること自体はbugではなく、rate-limit判定・停止・resumeは各repoのstateだけへ反映される |
 | temp dir(TMPDIR) | per-process | 実行ごとに`os.MkdirTemp`の一意dir(`glm-worker-*`)を作り、終了時に削除 |
 | install済みglm-worker binary | read-only shared | 全repoが同じbinaryを実行する。実行中の上書きはinstallerの適用契約(`install.sh`)が管理 |
@@ -264,6 +268,15 @@ Codex appでthread heartbeat automationを利用できる場合は、reset時刻
 wake時は同じローカルcheckoutでtask IDと`rate-limited`状態を照合してから`glm-worker --resume`を実行する。
 別worktree、reset済みtask、task IDが変わった状態では再開しない。再度rate limitになった場合は同じautomationを新しい時刻へ更新する。
 automation時刻はRFC3339のoffsetを保持してUTCへ変換する。heartbeat schedulerは`TZID`を`next_run_at`計算へ反映しないため、`DTSTART;TZID=Asia/Tokyo`は使わず、UTCの壁時計値を1回限りの`DTSTART`へ設定する。既存automationは同一IDへ直接updateする。新規作成はDTSTART付き即時createがCodex appに拒否されるため、DTSTARTなし・PAUSED・常にfuture occurrenceを持つplaceholderを作成して成功応答から正確なIDを得て、同一IDを目的の絶対時刻DTSTARTと`COUNT=1`へupdateしてACTIVE化する二段階作成とする。update失敗時はplaceholderをbest-effort削除し、最終verify失敗もfail closedとする。toolの成功応答だけで完了扱いせず、SQLiteの`automations.next_run_at`またはCodex app上の次回実行時刻が意図したJST時刻と一致することを確認する。
+
+
+## 親Codex 5h Limit自動再開
+
+親実装Codex taskがCodex 5h rate limitへ到達したらGLMを含む開発全体を停止し、reset後にwake専用Codex taskが親実装taskだけを起こして通常のGLM-Worker lifecycleへ戻す。Weekly Limitからの復旧・追加credit利用・親不在中のGLM単独開発は対象外とする。
+
+行動規則の正は`codex/instructions/codex-auto-resume.md`(親Codex 5h Limit到達時の停止手順、wake専用taskの5操作、wake schedulerの登録・検証・削除、手動復旧)。automationのidentityはwake task固有の期待key `codex-5h-wake-<wake thread ID>`へ紐付ける。再利用は`target_thread_id`完全一致1件かつその実automation IDが期待keyと一致する場合だけその実IDへupdateし、0件は二段階作成で作成応答の実IDが期待keyと一致することを確認する。ID不一致・複数件はfail closed、発火後の削除はheartbeatの実`automation_id`だけ(欠落時は何も削除せずfail closed)、update・verify・deleteは確認済みの実IDだけを使い、固定名・固定IDをrepository間で共有しない。scheduler操作・親taskへの送信はCodex Desktop既存機能のままで、glm-workerへscheduler管理・task間送信・独自daemon/UI・人間向けscheduler CLIは実装しない。
+
+Goが担うのはrate-limit取得の薄いread-only machine JSON境界(`--codex-limit`)だけ。5h windowの識別をLLMの自由解釈へ委ねないために`windowDurationMins == 300`の選別・`resets_at`のRFC3339変換・失敗時のfail closedを機械処理する。wake時刻は取得した`resets_at`へ小さな安全マージンを加えた絶対時刻だけを使い、固定相対時間を使わない。
 
 
 ## provider一時障害からの回復

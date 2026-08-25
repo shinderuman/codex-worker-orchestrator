@@ -99,6 +99,7 @@ func TestLoadBuildsConfigFromRepositoryAndEnvironment(t *testing.T) {
 	t.Setenv("GLM_WORKER_HOME", stateHome)
 	t.Setenv("GLM_WORKER_PROMPT_DIR", promptDir)
 	t.Setenv("GLM_WORKER_CLAUDE_BIN", "claude-test")
+	t.Setenv("GLM_WORKER_CODEX_BIN", "codex-test")
 	t.Setenv("GLM_WORKER_WORKER_MODEL", "worker-test")
 	t.Setenv("GLM_WORKER_REVIEWER_MODEL", "reviewer-test")
 	t.Setenv("GLM_WORKER_HIGH_RISK_REVIEWER_MODEL", "reviewer-high-test")
@@ -127,7 +128,7 @@ func TestLoadBuildsConfigFromRepositoryAndEnvironment(t *testing.T) {
 	if loaded.ClaudeConfigDir != filepath.Join(home, ".claude") {
 		t.Fatalf("ClaudeConfigDir = %q, want %q", loaded.ClaudeConfigDir, filepath.Join(home, ".claude"))
 	}
-	if loaded.ClaudeBin != "claude-test" || loaded.WorkerModel != "worker-test" || loaded.ReviewerModel != "reviewer-test" || loaded.HighRiskReviewerModel != "reviewer-high-test" {
+	if loaded.ClaudeBin != "claude-test" || loaded.CodexBin != "codex-test" || loaded.WorkerModel != "worker-test" || loaded.ReviewerModel != "reviewer-test" || loaded.HighRiskReviewerModel != "reviewer-high-test" {
 		t.Fatalf("runner config = %#v", loaded)
 	}
 	if loaded.RoutineEffort != "medium" || loaded.EscalatedEffort != "high" || loaded.MaxAutoFixRounds != 4 || loaded.TelemetryContent {
@@ -194,6 +195,9 @@ func TestLoadRespectsClaudeConfigDirEnv(t *testing.T) {
 	}
 	if loaded.ClaudeConfigDir != "/override/claude-config" {
 		t.Fatalf("ClaudeConfigDir = %q, want /override/claude-config", loaded.ClaudeConfigDir)
+	}
+	if loaded.CodexBin != "codex" {
+		t.Fatalf("CodexBin = %q, want codex", loaded.CodexBin)
 	}
 }
 

@@ -25,6 +25,8 @@ func TestParseCommandModes(t *testing.T) {
 			mode: ModeVerifyAutoResume,
 		},
 		{name: "eval-ab", args: []string{"--eval-ab", "/tmp/ab-run"}, mode: ModeEvalAB, payload: "/tmp/ab-run"},
+		{name: "call-outliers", args: []string{"--call-outliers"}, mode: ModeCallOutliers},
+		{name: "codex-limit", args: []string{"--codex-limit"}, mode: ModeCodexLimit},
 	}
 
 	for _, test := range tests {
@@ -144,6 +146,8 @@ func TestParseCommandRejectsInvalidArguments(t *testing.T) {
 		{"--verify-auto-resume", "key", "date", "thread", "extra"},
 		{"--eval-ab"},
 		{"--eval-ab", "dir", "extra"},
+		{"--call-outliers", "extra"},
+		{"--codex-limit", "extra"},
 	}
 
 	for _, args := range tests {

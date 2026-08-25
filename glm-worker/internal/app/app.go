@@ -36,6 +36,7 @@ const (
 	ModeVerifyAutoResume
 	ModeEvalAB
 	ModeCallOutliers
+	ModeCodexLimit
 )
 
 type Command struct {
@@ -82,7 +83,7 @@ func usageError(format string, args ...any) *UsageError {
 
 func ParseCommand(args []string) (Command, error) {
 	if len(args) == 0 {
-		return Command{}, usageError("usage: glm-worker <instruction> | --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix-stdin <payload-bytes> [--sha256 <hex>] %s | --accept | --resume | --stop | --isolate | --status | --watch [--verbose] | --timeline [task-id] | --convergence [task-id] | --stats | --reset | --eval-ab <run-dir> | --call-outliers", fixOriginUsage)
+		return Command{}, usageError("usage: glm-worker <instruction> | --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix-stdin <payload-bytes> [--sha256 <hex>] %s | --accept | --resume | --stop | --isolate | --status | --watch [--verbose] | --timeline [task-id] | --convergence [task-id] | --stats | --reset | --eval-ab <run-dir> | --call-outliers | --codex-limit", fixOriginUsage)
 	}
 
 	switch args[0] {
@@ -174,6 +175,11 @@ func ParseCommand(args []string) (Command, error) {
 			return Command{}, usageError("usage: glm-worker --call-outliers")
 		}
 		return Command{Mode: ModeCallOutliers}, nil
+	case "--codex-limit":
+		if len(args) != 1 {
+			return Command{}, usageError("usage: glm-worker --codex-limit")
+		}
+		return Command{Mode: ModeCodexLimit}, nil
 	default:
 		return Command{Mode: ModeNewTask, Payload: strings.Join(args, " ")}, nil
 	}
@@ -344,6 +350,10 @@ func Execute(cmd Command, cfg config.AppConfig, rf RunnerFactory, stdout, stderr
 	}
 	if cmd.Mode == ModeStop {
 		return requestStop(cfg, stdout)
+	}
+
+	if cmd.Mode == ModeCodexLimit {
+		return printCodexLimit(cfg, stdout)
 	}
 
 	st, err := state.NewStateStore(cfg)

@@ -23,6 +23,7 @@ const (
 	errorKindStopEndpointStale       = "stop_endpoint_stale"
 	errorKindVerificationFailed      = "verification_failed"
 	errorKindVerificationUnavailable = "verification_unavailable"
+	errorKindCodexLimitUnavailable   = "codex_limit_unavailable"
 	errorKindInternal                = "internal"
 )
 
@@ -45,6 +46,7 @@ func buildProcessError(err error) processErrorBody {
 	var notFound *NotFoundError
 	var stdinPayload *StdinPayloadError
 	var verification *VerificationError
+	var codexLimit *CodexLimitError
 	var workerErr *workflow.WorkerError
 	var rateLimit runner.ZaiRateLimitError
 	var providerUnavailable *runner.ProviderUnavailableError
@@ -101,6 +103,12 @@ func buildProcessError(err error) processErrorBody {
 		return processErrorBody{
 			Kind:    verificationKind(verification.Outcome),
 			Message: verification.Reason,
+		}
+	case errors.As(err, &codexLimit):
+		return processErrorBody{
+			Kind:    errorKindCodexLimitUnavailable,
+			Message: "codex rate limits unreadable; use the manual recovery path",
+			Detail:  map[string]any{"phase": codexLimit.Phase},
 		}
 	default:
 		return processErrorBody{Kind: errorKindInternal, Message: err.Error()}
