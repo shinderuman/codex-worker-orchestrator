@@ -8,10 +8,11 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/sandbox-capability-aware-quality-gates.md`
+- `IMPLEMENTATION_TASKS/gpt-external-review-a757955-e276599-validation.md`
 
 ## NEXT（優先順）
 
+- `IMPLEMENTATION_TASKS/gpt-external-review-current-head-validation.md`
 - `IMPLEMENTATION_TASKS/instruction-surface-ownership.md`
 - `IMPLEMENTATION_TASKS/unknown-production-surface-risk.md`
 - `IMPLEMENTATION_TASKS/glm-git-authority-enforcement.md`
@@ -49,15 +50,15 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 ## 現在のGit境界
 
 - branch: `main`
-- implementation baseline: EVAL責務整理を完了し、設定可能peak pause案をBLOCKEDへ保存した状態
-- implementation boundary: quality gateの既知capabilityと実行sandboxを起動前に対応付け、Unix socket不許可環境で全testを失敗させた後に同じsuiteをsandbox外で再取得する反復を、一度の有効実行へ収束する
+- implementation baseline: quality gateのcapability-aware routing実装を完了し、GPT external review PR #2をPR #1より先に処理するACTIVEへ固定した状態
+- implementation boundary: PR #2の指定review branchを明示fetchし、expected proposal commitのlocal object確認後に全finding/proposalをlosslessにGLMへ渡す直前。PR #1はNEXTのまま未着手
 - preserved boundary: wake coalescingの10分closed interval・fail-open reservation・task ID fail-closed、machine output boundary、full smoke証拠再利用、GLM commit/push禁止を維持
 - push: 各親commit後の`refs/heads/main`とGreptile正常review後の`refs/heads/codex/greptile-reviewed`だけを親Codexが通常fast-forwardする。GLM push、force/non-fast-forward、他refへのpushは禁止
 
 ## 現在の停止理由
 
-なし。sandbox capability-aware quality gateを開始できる。
+なし。quality-gate taskのfinal HEAD同期・push・install確認後にPR #2 transport確認を開始できる。
 
 ## 次の親Codex操作
 
-ACTIVE taskのlossless requirementを正として、既知capability不足による無効な全suite実行と再取得を防ぐ最小routingを調査・実装させる。
+quality-gate taskの同一commit同期・push・install確認を終え、PR #2の指定refをfetchしてproposal commitを確認する。

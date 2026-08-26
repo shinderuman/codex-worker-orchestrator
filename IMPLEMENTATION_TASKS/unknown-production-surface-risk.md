@@ -55,7 +55,7 @@ status: not-applicable
 
 ## Dependencies
 
-- `IMPLEMENTATION_TASKS/eval-responsibility-reduction.md`
+none
 
 ## Review findings
 
@@ -63,4 +63,4 @@ none
 
 ## Current boundary
 
-NEXT。EVAL責務整理完了後にF2をTrack A/Bへ分類して着手する。
+NEXT。EVAL責務整理後の現行surfaceを正としてF2をTrack A/Bへ分類して着手する。

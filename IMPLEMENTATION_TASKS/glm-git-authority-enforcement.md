@@ -56,7 +56,7 @@ GLMがtask内commit文言等を自己許可と解釈して親Git authorityを行
 
 ## Dependencies
 
-- `IMPLEMENTATION_TASKS/eval-responsibility-reduction.md`
+none
 
 ## Review findings
 
@@ -64,4 +64,4 @@ none
 
 ## Current boundary
 
-NEXT。EVAL責務整理完了後にF3をTrack A/Bへ分類して着手する。
+NEXT。EVAL責務整理後の現行surfaceを正としてF3をTrack A/Bへ分類して着手する。

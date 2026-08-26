@@ -25,6 +25,7 @@ const (
 	errorKindVerificationUnavailable = "verification_unavailable"
 	errorKindCodexLimitUnavailable   = "codex_limit_unavailable"
 	errorKindInstallSmokeFailed      = "install_smoke_failed"
+	errorKindQualityGateFailed       = "quality_gate_failed"
 	errorKindMachineOutputViolation  = "machine_output_violation"
 	errorKindInternal                = "internal"
 )
@@ -50,6 +51,7 @@ func buildProcessError(err error) processErrorBody {
 	var verification *VerificationError
 	var codexLimit *CodexLimitError
 	var smokeFail *InstallSmokeError
+	var qualityGateFail *QualityGateError
 	var outputViolation *MachineOutputViolationError
 	var workerErr *workflow.WorkerError
 	var rateLimit runner.ZaiRateLimitError
@@ -126,6 +128,12 @@ func buildProcessError(err error) processErrorBody {
 			Message: smokeFail.Error(),
 			Detail:  installSmokeFailDetail(smokeFail),
 		}
+	case errors.As(err, &qualityGateFail):
+		return processErrorBody{
+			Kind:    errorKindQualityGateFailed,
+			Message: qualityGateFail.Error(),
+			Detail:  qualityGateFailDetail(qualityGateFail),
+		}
 	default:
 		return processErrorBody{Kind: errorKindInternal, Message: err.Error()}
 	}
@@ -141,6 +149,17 @@ func installSmokeFailDetail(err *InstallSmokeError) map[string]any {
 		"log":                stringPtr(err.LogPath),
 		"tree_digest":        err.TreeDigest,
 		"smoke_input_digest": err.SmokeInputDigest,
+	}
+}
+
+func qualityGateFailDetail(err *QualityGateError) map[string]any {
+	return map[string]any{
+		"exit_code":   err.ExitCode,
+		"form":        err.Form,
+		"command":     err.Command,
+		"working_dir": err.WorkingDir,
+		"duration_ms": err.DurationMS,
+		"log":         stringPtr(err.LogPath),
 	}
 }
 

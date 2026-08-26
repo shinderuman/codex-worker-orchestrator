@@ -38,6 +38,7 @@ const (
 	ModeCallOutliers
 	ModeCodexLimit
 	ModeInstallSmoke
+	ModeQualityGate
 )
 
 type Command struct {
@@ -71,6 +72,8 @@ const fixOriginUsage = "[--origin codex-review|glm-reviewer|user-amendment|exter
 
 const installSmokeUsage = "[--role worker|reviewer|fix|parent]"
 
+const qualityGateUsage = "<go-test|go-test-race>"
+
 type UsageError struct {
 	Message string
 }
@@ -93,7 +96,7 @@ func usageError(format string, args ...any) *UsageError {
 
 func ParseCommand(args []string) (Command, error) {
 	if len(args) == 0 {
-		return Command{}, usageError("usage: glm-worker <instruction> | --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix-stdin <payload-bytes> [--sha256 <hex>] %s | --accept | --resume | --stop | --isolate | --status | --watch [--verbose] | --timeline [task-id] | --convergence [task-id] | --stats | --reset | --eval-ab <run-dir> | --call-outliers | --codex-limit | --check-wake-coalesce <parent-thread-id> <auto-resume-at-rfc3339> | --install-smoke %s", fixOriginUsage, installSmokeUsage)
+		return Command{}, usageError("usage: glm-worker <instruction> | --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix-stdin <payload-bytes> [--sha256 <hex>] %s | --accept | --resume | --stop | --isolate | --status | --watch [--verbose] | --timeline [task-id] | --convergence [task-id] | --stats | --reset | --eval-ab <run-dir> | --call-outliers | --codex-limit | --check-wake-coalesce <parent-thread-id> <auto-resume-at-rfc3339> | --install-smoke %s | --quality-gate %s", fixOriginUsage, installSmokeUsage, qualityGateUsage)
 	}
 
 	switch args[0] {
@@ -212,6 +215,11 @@ func ParseCommand(args []string) (Command, error) {
 			return Command{Mode: ModeInstallSmoke, Role: args[2]}, nil
 		}
 		return Command{}, usageError("usage: glm-worker --install-smoke %s", installSmokeUsage)
+	case "--quality-gate":
+		if len(args) != 2 || qualityGateForms[args[1]] == nil {
+			return Command{}, usageError("usage: glm-worker --quality-gate %s", qualityGateUsage)
+		}
+		return Command{Mode: ModeQualityGate, Payload: args[1]}, nil
 	default:
 		return Command{Mode: ModeNewTask, Payload: strings.Join(args, " ")}, nil
 	}
@@ -402,6 +410,8 @@ func Execute(cmd Command, cfg config.AppConfig, rf RunnerFactory, stdout, stderr
 		return printVerifyAutoResume(cmd, cfg, stdout)
 	case ModeInstallSmoke:
 		return runInstallSmoke(cmd.Role, cfg, st, stdout)
+	case ModeQualityGate:
+		return runQualityGate(cmd.Payload, st, stdout)
 	}
 
 	lock, err := AcquireRepoLock(st.LockPath())

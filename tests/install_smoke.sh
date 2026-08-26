@@ -218,6 +218,18 @@ test -x "$success_case/bin/commentlint"
 test -f "$success_case/codex/AGENTS.md"
 test -f "$success_case/codex/instructions/glm-auto-resume.md"
 test -f "$success_case/codex/rules/glm-worker.rules"
+test -f "$success_case/codex/instructions/quality-gate-capability.md"
+grep -Fq 'quality-gate-capability.md' "$success_case/codex/AGENTS.md"
+grep -Fq 'glm-worker --quality-gate go-test' "$success_case/codex/instructions/quality-gate-capability.md"
+grep -Fq '現在このrepoの`glm-worker` moduleのfull suite（glm-worker停止endpoint等のapp系test）だけである' "$success_case/codex/instructions/quality-gate-capability.md"
+grep -Fq 'sandbox内で成立するため直接sandbox実行のまま最小権限を維持する' "$success_case/codex/instructions/quality-gate-capability.md"
+grep -Fq '将来別moduleで同一capability不足を一次証拠で確認するまでは、対象は`glm-worker` moduleのfull suiteのみとする' "$success_case/codex/instructions/quality-gate-capability.md"
+grep -Fq '余分なargvは受理せずusage errorでfail closedする' "$success_case/codex/instructions/quality-gate-capability.md"
+grep -Fq 'prefix ruleはargv前方一致のため直接`go test`をallowすると後続flagで任意commandを昇格できる' "$success_case/codex/instructions/quality-gate-capability.md"
+grep -Fq 'listen unix ...: bind: operation not permitted' "$success_case/codex/instructions/quality-gate-capability.md"
+grep -Fq 'すべて実装不具合としてfail closedに扱う' "$success_case/codex/instructions/quality-gate-capability.md"
+grep -Fq 'sandbox由来と推測してskip・成功扱い・acceptance緩化を行わない' "$success_case/codex/instructions/quality-gate-capability.md"
+grep -Fq '環境選択だけを理由にsandbox内外で二重取得しない' "$success_case/codex/instructions/quality-gate-capability.md"
 test -f "$success_case/codex/instructions/glm-execution.md"
 test -f "$success_case/codex/instructions/glm-packets.md"
 test -f "$success_case/codex/instructions/feasibility-gate.md"
@@ -380,6 +392,12 @@ grep -Fq 'packet(stdoutのmachine JSON 1行)またはprocess失敗' "$success_ca
 
 "$success_case/bin/glm-worker" --install-smoke --role bogus 2>&1 \
     | grep -Fq 'usage: glm-worker --install-smoke'
+
+"$success_case/bin/glm-worker" --quality-gate go-test -exec /bin/sh 2>&1 \
+    | grep -Fq 'usage: glm-worker --quality-gate'
+
+"$success_case/bin/glm-worker" --quality-gate bogus 2>&1 \
+    | grep -Fq 'usage: glm-worker --quality-gate'
 
 
 upgrade_source="$test_root/upgrade-source"

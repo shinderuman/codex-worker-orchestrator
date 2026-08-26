@@ -55,7 +55,7 @@ status: not-applicable
 
 ## Dependencies
 
-- `IMPLEMENTATION_TASKS/eval-responsibility-reduction.md`
+none
 
 ## Review findings
 
@@ -63,4 +63,4 @@ none
 
 ## Current boundary
 
-NEXT。EVAL責務整理完了後のprose surfaceを正としてF7へ着手する。
+NEXT。EVAL責務整理後の現行prose surfaceを正としてF7へ着手する。

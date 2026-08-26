@@ -146,6 +146,8 @@ go run ./cmd/glm-worker --install-smoke --role worker
 
 full install smokeは`tests/install_smoke.sh`を直接実行せず、`glm-worker --install-smoke`単一入口で取得・確認する(未配置環境では上記の`go run`相当)。実行・再利用の契約は`codex/instructions/install-smoke-evidence.md`を参照する。install smokeのscenario分類とreal/contract実行境界は`tests/install-smoke-coverage.md`を参照する。
 
+Codex sandbox内ではUnix socket bindが拒否されるため、Unix socketを必要とする`glm-worker` moduleのfull suiteは`glm-worker` module rootから`glm-worker --quality-gate go-test|go-test-race`として実行し、既存のglm-worker prefix ruleによって最初から昇格境界へ一度だけdispatchする。この入口は固定argvだけを受理して余分なargvをfail closedで拒否する。sandbox内で成立する他moduleのGo suiteやvet/build/lint等のgateは直接sandbox実行のまま昇格しない。capabilityと実行境界の契約は`codex/instructions/quality-gate-capability.md`を参照する。
+
 ## ライセンス
 
 本リポジトリはMIT Licenseの下で配布する。詳細は[LICENSE](LICENSE)を参照。

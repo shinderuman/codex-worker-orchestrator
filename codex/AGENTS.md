@@ -54,6 +54,7 @@ USER_REQUEST・`SPECIFICATION.md`・既存`AGENTS.md`・直前のSol判断で未
 これらは実装前`NEEDS_SOL_DECISION`または最終`NEEDS_SOL_REVIEW`でSol Highを通す。
 承認済み構成内の型・package・interface追加、作業分割、命名、明白な仕様違反修正、テスト追加、互換性を狭めない強化は、それ自体を理由にSol判断へ戻さない。永続fileへ触れたことだけを理由に高リスク扱いせず、永続状態の意味変更・migration要否・既存形式やユーザー状態との互換・rollback/recovery・upgrade破壊可能性で意味判断が必要な場合だけSol確認に上げる。
 低リスク変更は独立reviewerのPASS後、Sol Highは圧縮packetで採否を判断し、全diff精読を省略してよい。
+親Codexがquality gate commandを直接実行する実行境界は、`~/.codex/instructions/quality-gate-capability.md`の契約に従う。
 
 ## 6. Codex自身による編集
 
@@ -79,3 +80,4 @@ USER_REQUEST・`SPECIFICATION.md`・既存`AGENTS.md`・直前のSol判断で未
 - Codex自身が例外的に直接編集 → `~/.codex/instructions/worker/`の該当ファイル
 - 直接編集・直接実行の許可境界 → `~/.codex/instructions/direct-edit.md`
 - full install smokeの取得・証拠再利用 → `~/.codex/instructions/install-smoke-evidence.md`
+- capability必要quality gateの実行境界 → `~/.codex/instructions/quality-gate-capability.md`

@@ -24,7 +24,7 @@ REQUIRED HARDENING
 
 ## Resolved references
 
-- EVAL最終構造は`IMPLEMENTATION_TASKS/eval-responsibility-reduction.md`完了後の状態を指す。
+- EVAL最終構造は完了commit `e276599`以後の現行`EVAL.md`を指す。
 
 ## External feasibility
 
@@ -55,7 +55,7 @@ negative case・assertion・coverage・expected behaviorの縮退を単なるnon
 
 ## Dependencies
 
-- `IMPLEMENTATION_TASKS/eval-responsibility-reduction.md`
+none
 
 ## Review findings
 
@@ -63,4 +63,4 @@ none
 
 ## Current boundary
 
-NEXT。EVAL責務整理完了後のsurfaceを正としてF4へ着手する。
+NEXT。EVAL責務整理後の現行surfaceを正としてF4へ着手する。

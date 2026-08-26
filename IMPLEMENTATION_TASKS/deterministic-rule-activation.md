@@ -58,7 +58,7 @@ GLM自身の狭い意味解釈で必要ruleを非適用にできるfailure class
 
 ## Dependencies
 
-- `IMPLEMENTATION_TASKS/eval-responsibility-reduction.md`
+none
 
 ## Review findings
 
@@ -66,4 +66,4 @@ none
 
 ## Current boundary
 
-NEXT。EVAL責務整理完了後にF5をTrack A/Bへ分類して着手する。
+NEXT。EVAL責務整理後の現行surfaceを正としてF5をTrack A/Bへ分類して着手する。

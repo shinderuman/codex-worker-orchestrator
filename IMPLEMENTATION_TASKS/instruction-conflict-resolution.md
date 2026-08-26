@@ -59,7 +59,7 @@ generic/task-specific/machine contractの衝突をGLMが都合よく選択でき
 
 ## Dependencies
 
-- `IMPLEMENTATION_TASKS/eval-responsibility-reduction.md`
+none
 
 ## Review findings
 
@@ -67,4 +67,4 @@ none
 
 ## Current boundary
 
-NEXT。EVAL責務整理完了後にF8をTrack A/Bへ分類して着手する。
+NEXT。EVAL責務整理後の現行surfaceを正としてF8をTrack A/Bへ分類して着手する。
