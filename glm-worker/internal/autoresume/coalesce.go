@@ -144,6 +144,10 @@ func evaluateWakeCandidate(toml AutomationTOML, params CoalesceParams, resumeAt 
 		result.Reason = fmt.Sprintf("wake scheduler status is %q want ACTIVE", db.Status)
 		return result, nil
 	}
+	if db.Rrule != toml.Rrule {
+		result.Reason = "wake scheduler rrule does not match automation TOML"
+		return result, nil
+	}
 	if !db.HasNextRun {
 		result.Reason = "wake next_run_at is NULL"
 		return result, nil
