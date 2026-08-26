@@ -24,6 +24,14 @@ var errUnsupportedTaskStatsVersion = errors.New("unsupported task stats version"
 
 var statsWarnOut io.Writer = os.Stderr
 
+func RedirectStatsWarnings(w io.Writer) func() {
+	previous := statsWarnOut
+	statsWarnOut = w
+	return func() {
+		statsWarnOut = previous
+	}
+}
+
 type statsWarningEvent struct {
 	Type    string `json:"type"`
 	Scope   string `json:"scope"`

@@ -8,11 +8,19 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/machine-output-boundary-enforcement.md`
+- `IMPLEMENTATION_TASKS/wake-schedule-coalescing.md`
 
 ## NEXT（優先順）
 
 - `IMPLEMENTATION_TASKS/eval-responsibility-reduction.md`
+- `IMPLEMENTATION_TASKS/instruction-surface-ownership.md`
+- `IMPLEMENTATION_TASKS/unknown-production-surface-risk.md`
+- `IMPLEMENTATION_TASKS/glm-git-authority-enforcement.md`
+- `IMPLEMENTATION_TASKS/quality-evidence-mutation-risk.md`
+- `IMPLEMENTATION_TASKS/deterministic-rule-activation.md`
+- `IMPLEMENTATION_TASKS/sol-decision-boundary-enforcement.md`
+- `IMPLEMENTATION_TASKS/prose-semantic-guard-migration.md`
+- `IMPLEMENTATION_TASKS/instruction-conflict-resolution.md`
 - `IMPLEMENTATION_TASKS/010-task-splitting-milestones.md`
 - `IMPLEMENTATION_TASKS/011-operation-category-telemetry.md`
 - `IMPLEMENTATION_TASKS/012-compaction-threshold-evaluation.md`
@@ -28,6 +36,7 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## BLOCKED / USER_PERMISSION_WAIT
 
+- `IMPLEMENTATION_TASKS/autonomous-development-harness.md`
 - `IMPLEMENTATION_TASKS/desktop-terminal-payload-double-render-boundary.md`
 - `IMPLEMENTATION_TASKS/claude-cli-runtime-preflight-reevaluation.md`
 - `IMPLEMENTATION_TASKS/101-live-sol-ab.md`
@@ -40,15 +49,15 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 ## 現在のGit境界
 
 - branch: `main`
-- implementation baseline: 同一snapshotのfull install smoke PASS証拠再利用をcurrent HEADへ収録した状態
-- implementation boundary: source/smoke input/toolchain環境の全identity一致だけでStateStore配下のPASS ledgerを共有し、worker→reviewer→fix→reviewer→parentの代表loop実実行を5回から2回へ削減。変更・異環境・失敗・破損はfail closedで再取得し、parent管理metadata-onlyとcommit前後は同一identityを維持する。`--install-smoke`は成功stdout単一JSON、失敗structured process error + non-zeroへ収束済み
-- preserved boundary: 43 installer scenario・production install preflight・全quality gate・反復コスト観測を維持し、外部machine output共通boundaryの機械強制をACTIVEへ昇格。force/non-fast-forward・tag・他ref・他repository・GLM commit/push禁止を維持
+- implementation baseline: 外部machine output共通boundaryを完了し、次のwake schedule coalescingをACTIVEへ昇格した状態
+- implementation boundary: 既存Codex 5h wakeとGLM rate-limit resume候補を機械照合し、許容遅延内なら1回のCodex wakeへ統合して二重発火・二重Codex turnを防ぐ。task ID・status・resume可能性はwake時に再検証し、条件不一致ではresumeしない
+- preserved boundary: single-shot stdout/stderr保留検証、failure process error JSON 1件、Watch JSONL、process stream有限期待集合gate、full smoke証拠再利用、GLM commit/push禁止を維持
 - push: 各親commit後の`refs/heads/main`とGreptile正常review後の`refs/heads/codex/greptile-reviewed`だけを親Codexが通常fast-forwardする。GLM push、force/non-fast-forward、他refへのpushは禁止
 
 ## 現在の停止理由
 
-なし。single-shot/streamの外部machine output contractを共通boundaryとdeterministic gateで強制する境界。
+なし。Codex wakeとGLM resume wakeの重複を削減するACTIVE taskを開始できる。
 
 ## 次の親Codex操作
 
-ACTIVE taskのlossless requirementを正として、全command出力経路・single-shot/stream分類・stdout/stderr ownershipをGLMへ監査・設計・実装させる。
+ACTIVE taskのlossless requirementを正として、既存automation実体とrate-limit metadataから安全なwake coalescing境界をGLMへ設計・実装させる。

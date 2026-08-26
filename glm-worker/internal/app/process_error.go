@@ -25,6 +25,7 @@ const (
 	errorKindVerificationUnavailable = "verification_unavailable"
 	errorKindCodexLimitUnavailable   = "codex_limit_unavailable"
 	errorKindInstallSmokeFailed      = "install_smoke_failed"
+	errorKindMachineOutputViolation  = "machine_output_violation"
 	errorKindInternal                = "internal"
 )
 
@@ -49,6 +50,7 @@ func buildProcessError(err error) processErrorBody {
 	var verification *VerificationError
 	var codexLimit *CodexLimitError
 	var smokeFail *InstallSmokeError
+	var outputViolation *MachineOutputViolationError
 	var workerErr *workflow.WorkerError
 	var rateLimit runner.ZaiRateLimitError
 	var providerUnavailable *runner.ProviderUnavailableError
@@ -66,6 +68,12 @@ func buildProcessError(err error) processErrorBody {
 		return processErrorBody{Kind: errorKindRepoLockHeld, Message: ErrRepoLockHeld.Error()}
 	case errors.Is(err, state.ErrNoResumeCheckpoint):
 		return processErrorBody{Kind: errorKindNotFound, Message: state.ErrNoResumeCheckpoint.Error()}
+	case errors.As(err, &outputViolation):
+		return processErrorBody{
+			Kind:    errorKindMachineOutputViolation,
+			Message: outputViolation.Error(),
+			Detail:  map[string]any{"held_bytes": outputViolation.HeldBytes},
+		}
 	case errors.As(err, &workerErr):
 		return processErrorBody{
 			Kind:    errorKindWorkerError,

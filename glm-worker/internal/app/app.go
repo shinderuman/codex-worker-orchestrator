@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"strconv"
 	"strings"
 
@@ -305,10 +304,6 @@ func defaultRunnerFactory(cfg config.AppConfig, st *state.StateStore, stop *runn
 	return r
 }
 
-func Run(args []string) error {
-	return run(args, config.Load, defaultRunnerFactory, os.Stdin, os.Stdout, os.Stderr)
-}
-
 func run(
 	args []string,
 	loadConfig func() (config.AppConfig, error),
@@ -341,7 +336,7 @@ func run(
 	if err != nil {
 		return err
 	}
-	return Execute(cmd, cfg, runnerFactory, stdout, stderr)
+	return dispatchMachineOutput(cmd, cfg, runnerFactory, stdout, stderr)
 }
 
 func Execute(cmd Command, cfg config.AppConfig, rf RunnerFactory, stdout, stderr io.Writer) error {
