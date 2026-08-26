@@ -10,6 +10,9 @@ import (
 )
 
 func ReadDBRowSqlite3(dbPath, key string) (DBRow, error) {
+	if !keyPattern.MatchString(key) {
+		return DBRow{}, fmt.Errorf("%w: invalid automation key format: %q", ErrDBUnreadable, key)
+	}
 	if _, err := exec.LookPath("sqlite3"); err != nil {
 		return DBRow{}, ErrSqlite3NotFound
 	}
