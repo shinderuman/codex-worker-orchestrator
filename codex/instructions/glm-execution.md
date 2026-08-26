@@ -21,6 +21,12 @@
 - 同一taskがSol判断待ち・review fix・rate limit中なら分割や新規起動へ切り替えず、保存済みtaskとsessionを継続する。
 - モデル配分・token節約・品質バランスの調整を依頼された場合だけ`glm-worker --stats`を実行し、出力の`telemetry_dir`にあるタスク別JSONLで呼出別のusage・実モデル・結果を比較する。総消費量にはsubagentを含むtree usageを使う。通常作業では調整目的のためだけに詳細ログを読まない。
 
+## machine executionの反復cost観測
+
+- worker/reviewerの結果へ接頭辞`反復コスト観測:`付きの報告がある場合、および通常orchestration中に自ら発見した場合は、ユーザーの個別指摘を待たず、反復costを別task化して改善する価値があるか判断する。対象は親Codexの手作業だけでなく、worker/reviewer/test/build/lint/smoke/provider probe/polling/resume verification等のmachine executionの反復を含む。
+- 判断は最低限、同一または意味的に重複した処理が反復しているか、今回限りではなく今後の通常loopでも再発するか、品質coverageを維持したまま実行回数・待ち時間・model/provider消費を減らせるか、expensive real executionとcheap contract/mock verificationを分離できるか、改善実装と保守costに見合うか、false success・flakiness・観測不能化を生まないかで行う。
+- 改善価値がある場合は現在ACTIVE taskへ無関係なrefactorとして混ぜず、semanticに独立したfollow-up taskとして通常Plan lifecycleへ追加する。一時的なmigration、一度限りの長時間処理、意図的に必要なintegration test、改善効果が小さいものはtask化しない。本節は既存のparent orchestration product化判断をmachine executionの反復costまで拡張した運用であり、独立した新frameworkではない。
+
 ## decision/fix本文の送信
 
 - `--decision-stdin`・`--fix-stdin`で送る判断本文・修正指示本文を、`JSON.stringify`等でshell command文字列へ埋め込むことを禁止する。shellの二重引用符内ではbacktickと`$`がcommand substitution・展開され、本文の一部が失われたりcommand出力が本文へ混入した上で最初のNUL byteで切断されたりする。

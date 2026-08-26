@@ -43,6 +43,21 @@ run_installer() {
         "$source_dir/install.sh"
 }
 
+run_installer_xdg_override() {
+    source_dir=$1
+    case_dir=$2
+    shim_dir=$3
+
+    HOME="$case_dir/home" \
+    CODEX_CONFIG_DIR="$case_dir/codex" \
+    GLM_WORKER_BIN_DIR="$case_dir/bin" \
+    GLM_WORKER_HOME="$case_dir/glm-home" \
+    CLAUDE_SETTINGS_FILE="$case_dir/claude/settings.json" \
+    XDG_CONFIG_HOME="$case_dir/xdg" \
+    PATH="${shim_dir:+$shim_dir:}$PATH" \
+        "$source_dir/install.sh"
+}
+
 prepare_preflight_failure_case() {
     source_dir=$1
     case_dir=$2
@@ -75,37 +90,17 @@ prepare_preflight_failure_case() {
 make_go_shim() {
     shim_dir=$1
     forced_build_package=$2
+    forced_test_module=$3
 
     mkdir -p "$shim_dir"
     real_go=$(command -v go)
-    cp "$repo_root/glm-worker/internal/runner/testdata/claude-help-2.1.226.txt" \
-        "$shim_dir/claude-help.txt"
-
-    cat >"$shim_dir/canary-claude" <<EOF
-#!/bin/sh
-case \$1 in
---version)
-    printf '%s\n' '2.1.226 (Claude Code)'
-    exit 0
-    ;;
---help)
-    cat '$shim_dir/claude-help.txt'
-    exit 0
-    ;;
-*)
-    printf 'unexpected canary invocation: %s\n' "\$*" >&2
-    exit 87
-    ;;
-esac
-EOF
-    chmod +x "$shim_dir/canary-claude"
 
     cat >"$shim_dir/go" <<EOF
 #!/bin/sh
 real_go='$real_go'
 log_file='$shim_dir/invocations.log'
 forced_build_package='$forced_build_package'
-canary_claude='$shim_dir/canary-claude'
+forced_test_module='$forced_test_module'
 
 subcommand=\$1
 for package in "\$@"; do
@@ -120,10 +115,15 @@ if [ "\$subcommand" = build ] && [ -n "\$forced_build_package" ] && [ "\$package
 fi
 
 if [ "\$subcommand" = test ]; then
-    GLM_WORKER_CLAUDE_BIN="\$canary_claude" "\$real_go" "\$@"
-else
-    "\$real_go" "\$@"
+    status=0
+    if [ -n "\$forced_test_module" ] && [ "\$module" = "\$forced_test_module" ]; then
+        status=1
+    fi
+    printf '%s %s %s\n' "\$subcommand" "\$module" "\$status" >>"\$log_file"
+    exit "\$status"
 fi
+
+"\$real_go" "\$@"
 status=\$?
 printf '%s %s %s\n' "\$subcommand" "\$module" "\$status" >>"\$log_file"
 exit "\$status"
@@ -170,8 +170,31 @@ assert_preflight_refused() {
     fi
 }
 
+expect_go_test_contract() {
+    label=$1
+    shim_dir=$2
+    expected_installs=$3
+
+    log_file="$shim_dir/invocations.log"
+    if [ ! -f "$log_file" ]; then
+        printf '%s\n' "install(${label}): go shimがgo testを起動していません" >&2
+        exit 1
+    fi
+    total_tests=$(grep -c '^test ' "$log_file" || true)
+    glm_worker_ok=$(grep -c '^test glm-worker 0$' "$log_file" || true)
+    merge_json_ok=$(grep -c '^test merge-json 0$' "$log_file" || true)
+    if [ "$total_tests" -ne $((expected_installs * 2)) ] \
+        || [ "$glm_worker_ok" -ne "$expected_installs" ] \
+        || [ "$merge_json_ok" -ne "$expected_installs" ]; then
+        printf '%s\n' "install(${label}): go test起動contractが期待と異なります:" >&2
+        cat "$log_file" >&2
+        exit 1
+    fi
+}
+
 success_source="$test_root/success-source"
 success_case="$test_root/success-case"
+success_shim="$test_root/success-shim"
 copy_source "$success_source"
 
 mkdir -p "$success_case/codex/rules" "$success_case/claude"
@@ -186,7 +209,9 @@ printf '%s\n' 'old managed file' >"$success_case/codex/instructions/obsolete-man
 printf '%s\n' 'local unmanaged file' >"$success_case/codex/instructions/local-unmanaged.md"
 printf '%s\n' 'instructions/obsolete-managed.md' >>"$success_case/codex/.codex-config-managed-files"
 
-run_installer "$success_source" "$success_case"
+make_go_shim "$success_shim" '' ''
+run_installer "$success_source" "$success_case" "$success_shim"
+expect_go_test_contract 'success再install' "$success_shim" 1
 
 test -x "$success_case/bin/glm-worker"
 test -x "$success_case/bin/commentlint"
@@ -237,6 +262,7 @@ grep -Fq '成功前にIDを推測・仮定しない' "$success_case/codex/instru
 grep -Fq '作成済みplaceholder automationをbest-effortで削除' "$success_case/codex/instructions/glm-auto-resume.md"
 grep -Fq 'placeholderを作り直さない' "$success_case/codex/instructions/glm-auto-resume.md"
 grep -Fq 'telemetry_dir' "$success_case/codex/instructions/glm-execution.md"
+grep -Fq 'machine executionの反復cost観測' "$success_case/codex/instructions/glm-execution.md"
 grep -Fq '同じ責務・変更理由・検証単位' "$success_case/codex/instructions/glm-execution.md"
 grep -Fq 'REPORT_ARTIFACT_DIR' "$success_case/codex/instructions/glm-execution.md"
 grep -Fq 'direct-edit.md' "$success_case/codex/instructions/glm-execution.md"
@@ -264,8 +290,10 @@ grep -Fq '進捗報告目的のwake' "$success_case/codex/instructions/glm-execu
 grep -Fq 'NEEDS_SOL_DECISION' "$success_case/codex/glm-worker/prompts/WORKER.md"
 grep -Fq '意味契約' "$success_case/codex/glm-worker/prompts/WORKER.md"
 grep -Fq '構造化出力' "$success_case/codex/glm-worker/prompts/WORKER.md"
+grep -Fq '反復コスト観測' "$success_case/codex/glm-worker/prompts/WORKER.md"
 grep -Fq '構造化出力' "$success_case/codex/glm-worker/prompts/REVIEWER.md"
 grep -Fq '内容は結果へ再掲しない' "$success_case/codex/glm-worker/prompts/REVIEWER.md"
+grep -Fq '反復コスト観測' "$success_case/codex/glm-worker/prompts/REVIEWER.md"
 test -f "$success_case/codex/instructions/worker/state-transitions.md"
 grep -Fq '時間軸上の意味ある状態遷移' "$success_case/codex/instructions/worker/state-transitions.md"
 grep -Fq '意味変更の意図の有無に関わらず' "$success_case/codex/instructions/worker/state-transitions.md"
@@ -314,13 +342,15 @@ grep -Fq 'packet(stdoutのmachine JSON 1行)またはprocess失敗' "$success_ca
 
 upgrade_source="$test_root/upgrade-source"
 upgrade_case="$test_root/upgrade-case"
+upgrade_shim="$test_root/upgrade-shim"
 copy_source "$upgrade_source"
 mkdir -p "$upgrade_case/codex/rules" "$upgrade_case/claude"
 printf '%s\n' 'model = "local-model"' >"$upgrade_case/codex/config.toml"
 printf '%s\n' 'local rule' >"$upgrade_case/codex/rules/default.rules"
 printf '%s\n' '{"local_setting":"keep","env":{"LOCAL_ENV":"keep","ANTHROPIC_BASE_URL":"https://api.z.ai/api/anthropic","ANTHROPIC_DEFAULT_HAIKU_MODEL":"glm-4.7","ANTHROPIC_DEFAULT_SONNET_MODEL":"glm-5.1","ANTHROPIC_DEFAULT_OPUS_MODEL":"glm-5.2"}}' >"$upgrade_case/claude/settings.json"
 
-run_installer "$upgrade_source" "$upgrade_case"
+make_go_shim "$upgrade_shim" '' ''
+run_installer "$upgrade_source" "$upgrade_case" "$upgrade_shim"
 
 grep -Fq '"ANTHROPIC_DEFAULT_OPUS_MODEL": "glm-5.3"' "$upgrade_case/claude/settings.json"
 grep -Fq '"ANTHROPIC_DEFAULT_SONNET_MODEL": "glm-5.3"' "$upgrade_case/claude/settings.json"
@@ -333,11 +363,12 @@ grep -Fq '"local_setting": "keep"' "$upgrade_case/claude/settings.json"
 grep -Fq '"LOCAL_ENV": "keep"' "$upgrade_case/claude/settings.json"
 
 cp "$upgrade_case/claude/settings.json" "$upgrade_case/first.json"
-run_installer "$upgrade_source" "$upgrade_case"
+run_installer "$upgrade_source" "$upgrade_case" "$upgrade_shim"
 if ! cmp -s "$upgrade_case/first.json" "$upgrade_case/claude/settings.json"; then
     printf '%s\n' 'upgrade install is not idempotent' >&2
     exit 1
 fi
+expect_go_test_contract 'upgrade' "$upgrade_shim" 2
 
 
 
@@ -372,7 +403,7 @@ commentlint_fail_source="$test_root/commentlint-fail-source"
 commentlint_fail_case="$test_root/commentlint-fail-case"
 commentlint_fail_shim="$test_root/commentlint-fail-shim"
 prepare_preflight_failure_case "$commentlint_fail_source" "$commentlint_fail_case"
-make_go_shim "$commentlint_fail_shim" ''
+make_go_shim "$commentlint_fail_shim" '' ''
 printf '%s\n' '// forbidden comment' >>"$commentlint_fail_source/glm-worker/internal/config/config.go"
 expect_preflight_failure 'commentlint' \
     "$commentlint_fail_source" "$commentlint_fail_case" \
@@ -382,16 +413,7 @@ glm_worker_test_fail_source="$test_root/glm-worker-test-fail-source"
 glm_worker_test_fail_case="$test_root/glm-worker-test-fail-case"
 glm_worker_test_fail_shim="$test_root/glm-worker-test-fail-shim"
 prepare_preflight_failure_case "$glm_worker_test_fail_source" "$glm_worker_test_fail_case"
-make_go_shim "$glm_worker_test_fail_shim" ''
-cat >"$glm_worker_test_fail_source/glm-worker/internal/config/preflight_fail_test.go" <<'EOF'
-package config
-
-import "testing"
-
-func TestInstallSmokePreflightFail(t *testing.T) {
-    t.Fatal("install smoke: preflight failure probe")
-}
-EOF
+make_go_shim "$glm_worker_test_fail_shim" '' 'glm-worker'
 expect_preflight_failure 'glm-worker test' \
     "$glm_worker_test_fail_source" "$glm_worker_test_fail_case" \
     "$glm_worker_test_fail_shim" "$test_root/expected-glm-worker-test-fail.log"
@@ -400,7 +422,7 @@ glm_worker_build_fail_source="$test_root/glm-worker-build-fail-source"
 glm_worker_build_fail_case="$test_root/glm-worker-build-fail-case"
 glm_worker_build_fail_shim="$test_root/glm-worker-build-fail-shim"
 prepare_preflight_failure_case "$glm_worker_build_fail_source" "$glm_worker_build_fail_case"
-make_go_shim "$glm_worker_build_fail_shim" './cmd/glm-worker'
+make_go_shim "$glm_worker_build_fail_shim" './cmd/glm-worker' ''
 expect_preflight_failure 'glm-worker build' \
     "$glm_worker_build_fail_source" "$glm_worker_build_fail_case" \
     "$glm_worker_build_fail_shim" "$test_root/expected-glm-worker-build-fail.log"
@@ -409,16 +431,7 @@ merge_json_test_fail_source="$test_root/merge-json-test-fail-source"
 merge_json_test_fail_case="$test_root/merge-json-test-fail-case"
 merge_json_test_fail_shim="$test_root/merge-json-test-fail-shim"
 prepare_preflight_failure_case "$merge_json_test_fail_source" "$merge_json_test_fail_case"
-make_go_shim "$merge_json_test_fail_shim" ''
-cat >"$merge_json_test_fail_source/tools/merge-json/preflight_fail_test.go" <<'EOF'
-package main
-
-import "testing"
-
-func TestInstallSmokePreflightFail(t *testing.T) {
-    t.Fatal("install smoke: preflight failure probe")
-}
-EOF
+make_go_shim "$merge_json_test_fail_shim" '' 'merge-json'
 expect_preflight_failure 'merge-json test' \
     "$merge_json_test_fail_source" "$merge_json_test_fail_case" \
     "$merge_json_test_fail_shim" "$test_root/expected-merge-json-test-fail.log"
@@ -427,7 +440,7 @@ merge_json_build_fail_source="$test_root/merge-json-build-fail-source"
 merge_json_build_fail_case="$test_root/merge-json-build-fail-case"
 merge_json_build_fail_shim="$test_root/merge-json-build-fail-shim"
 prepare_preflight_failure_case "$merge_json_build_fail_source" "$merge_json_build_fail_case"
-make_go_shim "$merge_json_build_fail_shim" '.'
+make_go_shim "$merge_json_build_fail_shim" '.' ''
 expect_preflight_failure 'merge-json build' \
     "$merge_json_build_fail_source" "$merge_json_build_fail_case" \
     "$merge_json_build_fail_shim" "$test_root/expected-merge-json-build-fail.log"
@@ -462,7 +475,7 @@ claude_probe_fail_source="$test_root/claude-probe-fail-source"
 claude_probe_fail_case="$test_root/claude-probe-fail-case"
 claude_probe_fail_shim="$test_root/claude-probe-fail-shim"
 prepare_preflight_failure_case "$claude_probe_fail_source" "$claude_probe_fail_case"
-make_go_shim "$claude_probe_fail_shim" ''
+make_go_shim "$claude_probe_fail_shim" '' ''
 make_claude_shim "$claude_probe_fail_shim" 'usage: claude [-p prompt] [--model name]'
 printf '%s\n' \
     'build glm-worker 0' \
@@ -482,19 +495,15 @@ fi
 
 override_source="$test_root/override-source"
 override_case="$test_root/override-case"
+override_shim="$test_root/override-shim"
 copy_source "$override_source"
 
 mkdir -p "$override_case/codex/rules" "$override_case/claude" "$override_case/xdg/codex-config"
 printf '%s\n' '{"env":{"ANTHROPIC_BASE_URL":null,"ANTHROPIC_CUSTOM":"set-by-override"}}' \
     >"$override_case/xdg/codex-config/claude-settings.local.json"
 
-HOME="$override_case/home" \
-CODEX_CONFIG_DIR="$override_case/codex" \
-GLM_WORKER_BIN_DIR="$override_case/bin" \
-GLM_WORKER_HOME="$override_case/glm-home" \
-CLAUDE_SETTINGS_FILE="$override_case/claude/settings.json" \
-XDG_CONFIG_HOME="$override_case/xdg" \
-    "$override_source/install.sh" >/dev/null
+make_go_shim "$override_shim" '' ''
+run_installer_xdg_override "$override_source" "$override_case" "$override_shim" >/dev/null
 
 grep -Fq '"ANTHROPIC_CUSTOM": "set-by-override"' "$override_case/claude/settings.json"
 if grep -Fq '"ANTHROPIC_BASE_URL"' "$override_case/claude/settings.json"; then
@@ -504,63 +513,45 @@ fi
 grep -Fq '"ANTHROPIC_DEFAULT_OPUS_MODEL": "glm-5.3"' "$override_case/claude/settings.json"
 
 cp "$override_case/claude/settings.json" "$override_case/first.json"
-HOME="$override_case/home" \
-CODEX_CONFIG_DIR="$override_case/codex" \
-GLM_WORKER_BIN_DIR="$override_case/bin" \
-GLM_WORKER_HOME="$override_case/glm-home" \
-CLAUDE_SETTINGS_FILE="$override_case/claude/settings.json" \
-XDG_CONFIG_HOME="$override_case/xdg" \
-    "$override_source/install.sh" >/dev/null
+run_installer_xdg_override "$override_source" "$override_case" "$override_shim" >/dev/null
 if ! cmp -s "$override_case/first.json" "$override_case/claude/settings.json"; then
     printf '%s\n' 'override install is not idempotent' >&2
     exit 1
 fi
+expect_go_test_contract 'override' "$override_shim" 2
 
 override_delete_source="$test_root/override-delete-source"
 override_delete_case="$test_root/override-delete-case"
+override_delete_shim="$test_root/override-delete-shim"
 copy_source "$override_delete_source"
 mkdir -p "$override_delete_case/claude"
 
-HOME="$override_delete_case/home" \
-CODEX_CONFIG_DIR="$override_delete_case/codex" \
-GLM_WORKER_BIN_DIR="$override_delete_case/bin" \
-GLM_WORKER_HOME="$override_delete_case/glm-home" \
-CLAUDE_SETTINGS_FILE="$override_delete_case/claude/settings.json" \
-XDG_CONFIG_HOME="$override_delete_case/xdg" \
-    "$override_delete_source/install.sh" >/dev/null
+make_go_shim "$override_delete_shim" '' ''
+run_installer_xdg_override "$override_delete_source" "$override_delete_case" "$override_delete_shim" >/dev/null
 
 grep -Fq '"ANTHROPIC_BASE_URL": "https://api.z.ai/api/anthropic"' "$override_delete_case/claude/settings.json"
 
 
 rm "$override_case/xdg/codex-config/claude-settings.local.json"
-HOME="$override_case/home" \
-CODEX_CONFIG_DIR="$override_case/codex" \
-GLM_WORKER_BIN_DIR="$override_case/bin" \
-GLM_WORKER_HOME="$override_case/glm-home" \
-CLAUDE_SETTINGS_FILE="$override_case/claude/settings.json" \
-XDG_CONFIG_HOME="$override_case/xdg" \
-    "$override_source/install.sh" >/dev/null
+run_installer_xdg_override "$override_source" "$override_case" "$override_delete_shim" >/dev/null
 grep -Fq '"ANTHROPIC_BASE_URL": "https://api.z.ai/api/anthropic"' "$override_case/claude/settings.json"
 if grep -Fq '"ANTHROPIC_CUSTOM"' "$override_case/claude/settings.json"; then
     printf '%s\n' 'override削除後にoverride追加key ANTHROPIC_CUSTOMが残っています' >&2
     exit 1
 fi
+expect_go_test_contract 'override削除' "$override_delete_shim" 2
 
 bad_override_source="$test_root/bad-override-source"
 bad_override_case="$test_root/bad-override-case"
+bad_override_shim="$test_root/bad-override-shim"
 copy_source "$bad_override_source"
 mkdir -p "$bad_override_case/claude" "$bad_override_case/xdg/codex-config"
 printf '%s\n' '{"env":{"BAD":[1,2]}}' >"$bad_override_case/xdg/codex-config/claude-settings.local.json"
 printf '%s\n' '{"existing":"keep"}' >"$bad_override_case/claude/settings.json"
 cp "$bad_override_case/claude/settings.json" "$bad_override_case/original.json"
 
-if HOME="$bad_override_case/home" \
-    CODEX_CONFIG_DIR="$bad_override_case/codex" \
-    GLM_WORKER_BIN_DIR="$bad_override_case/bin" \
-    GLM_WORKER_HOME="$bad_override_case/glm-home" \
-    CLAUDE_SETTINGS_FILE="$bad_override_case/claude/settings.json" \
-    XDG_CONFIG_HOME="$bad_override_case/xdg" \
-    "$bad_override_source/install.sh" >/dev/null 2>&1; then
+make_go_shim "$bad_override_shim" '' ''
+if run_installer_xdg_override "$bad_override_source" "$bad_override_case" "$bad_override_shim" >/dev/null 2>&1; then
     printf '%s\n' 'malformed override should fail install' >&2
     exit 1
 fi
@@ -569,8 +560,11 @@ if ! cmp -s "$bad_override_case/original.json" "$bad_override_case/claude/settin
     printf '%s\n' 'malformed override must not modify settings.json (fail closed)' >&2
     exit 1
 fi
+expect_go_test_contract 'malformed override' "$bad_override_shim" 1
 
 
+null_override_shim="$test_root/null-override-shim"
+make_go_shim "$null_override_shim" '' ''
 for null_case in 'null' '{"env":null}'; do
     null_source="$test_root/null-override-source"
     null_case_dir="$test_root/null-override-case"
@@ -580,13 +574,7 @@ for null_case in 'null' '{"env":null}'; do
     printf '%s\n' '{"existing":"keep"}' >"$null_case_dir/claude/settings.json"
     cp "$null_case_dir/claude/settings.json" "$null_case_dir/original.json"
 
-    if HOME="$null_case_dir/home" \
-        CODEX_CONFIG_DIR="$null_case_dir/codex" \
-        GLM_WORKER_BIN_DIR="$null_case_dir/bin" \
-        GLM_WORKER_HOME="$null_case_dir/glm-home" \
-        CLAUDE_SETTINGS_FILE="$null_case_dir/claude/settings.json" \
-        XDG_CONFIG_HOME="$null_case_dir/xdg" \
-        "$null_source/install.sh" >/dev/null 2>&1; then
+    if run_installer_xdg_override "$null_source" "$null_case_dir" "$null_override_shim" >/dev/null 2>&1; then
         printf '%s\n' "null override ($null_case) should fail install" >&2
         exit 1
     fi
@@ -596,23 +584,20 @@ for null_case in 'null' '{"env":null}'; do
         exit 1
     fi
 done
+expect_go_test_contract 'null override' "$null_override_shim" 2
 
 
 restore_source="$test_root/restore-source"
 restore_case="$test_root/restore-case"
+restore_shim="$test_root/restore-shim"
 copy_source "$restore_source"
 mkdir -p "$restore_case/claude" "$restore_case/xdg/codex-config"
 printf '%s\n' '{"env":{"LOCAL_OVERWRITE":"orig","LOCAL_DELETE":"orig"}}' >"$restore_case/claude/settings.json"
 printf '%s\n' '{"env":{"LOCAL_OVERWRITE":"new","LOCAL_DELETE":null}}' \
     >"$restore_case/xdg/codex-config/claude-settings.local.json"
 
-HOME="$restore_case/home" \
-CODEX_CONFIG_DIR="$restore_case/codex" \
-GLM_WORKER_BIN_DIR="$restore_case/bin" \
-GLM_WORKER_HOME="$restore_case/glm-home" \
-CLAUDE_SETTINGS_FILE="$restore_case/claude/settings.json" \
-XDG_CONFIG_HOME="$restore_case/xdg" \
-    "$restore_source/install.sh" >/dev/null
+make_go_shim "$restore_shim" '' ''
+run_installer_xdg_override "$restore_source" "$restore_case" "$restore_shim" >/dev/null
 grep -Fq '"LOCAL_OVERWRITE": "new"' "$restore_case/claude/settings.json"
 if grep -Fq '"LOCAL_DELETE"' "$restore_case/claude/settings.json"; then
     printf '%s\n' 'null override must delete LOCAL_DELETE' >&2
@@ -620,32 +605,23 @@ if grep -Fq '"LOCAL_DELETE"' "$restore_case/claude/settings.json"; then
 fi
 
 rm "$restore_case/xdg/codex-config/claude-settings.local.json"
-HOME="$restore_case/home" \
-CODEX_CONFIG_DIR="$restore_case/codex" \
-GLM_WORKER_BIN_DIR="$restore_case/bin" \
-GLM_WORKER_HOME="$restore_case/glm-home" \
-CLAUDE_SETTINGS_FILE="$restore_case/claude/settings.json" \
-XDG_CONFIG_HOME="$restore_case/xdg" \
-    "$restore_source/install.sh" >/dev/null
+run_installer_xdg_override "$restore_source" "$restore_case" "$restore_shim" >/dev/null
 grep -Fq '"LOCAL_OVERWRITE": "orig"' "$restore_case/claude/settings.json"
 grep -Fq '"LOCAL_DELETE": "orig"' "$restore_case/claude/settings.json"
+expect_go_test_contract 'override復元' "$restore_shim" 2
 
 
 broken_state_source="$test_root/broken-state-source"
 broken_state_case="$test_root/broken-state-case"
+broken_state_shim="$test_root/broken-state-shim"
 copy_source "$broken_state_source"
 mkdir -p "$broken_state_case/claude" "$broken_state_case/xdg/codex-config"
 printf '%s\n' '{"env":{"EXISTING":"keep"}}' >"$broken_state_case/claude/settings.json"
 printf '%s\n' '{"env":{"EXTRA":"set"}}' \
     >"$broken_state_case/xdg/codex-config/claude-settings.local.json"
 
-HOME="$broken_state_case/home" \
-CODEX_CONFIG_DIR="$broken_state_case/codex" \
-GLM_WORKER_BIN_DIR="$broken_state_case/bin" \
-GLM_WORKER_HOME="$broken_state_case/glm-home" \
-CLAUDE_SETTINGS_FILE="$broken_state_case/claude/settings.json" \
-XDG_CONFIG_HOME="$broken_state_case/xdg" \
-    "$broken_state_source/install.sh" >/dev/null
+make_go_shim "$broken_state_shim" '' ''
+run_installer_xdg_override "$broken_state_source" "$broken_state_case" "$broken_state_shim" >/dev/null
 
 state_file="$broken_state_case/claude/.codex-config-claude-env-state.json"
 test -f "$state_file"
@@ -653,13 +629,7 @@ printf '%s\n' '{broken state' >"$state_file"
 cp "$broken_state_case/claude/settings.json" "$broken_state_case/settings-before.json"
 cp "$state_file" "$broken_state_case/state-before.json"
 
-if HOME="$broken_state_case/home" \
-    CODEX_CONFIG_DIR="$broken_state_case/codex" \
-    GLM_WORKER_BIN_DIR="$broken_state_case/bin" \
-    GLM_WORKER_HOME="$broken_state_case/glm-home" \
-    CLAUDE_SETTINGS_FILE="$broken_state_case/claude/settings.json" \
-    XDG_CONFIG_HOME="$broken_state_case/xdg" \
-    "$broken_state_source/install.sh" >/dev/null 2>&1; then
+if run_installer_xdg_override "$broken_state_source" "$broken_state_case" "$broken_state_shim" >/dev/null 2>&1; then
     printf '%s\n' 'broken state should fail install' >&2
     exit 1
 fi
@@ -671,6 +641,7 @@ if ! cmp -s "$broken_state_case/state-before.json" "$state_file"; then
     printf '%s\n' 'broken state must not modify state sidecar' >&2
     exit 1
 fi
+expect_go_test_contract 'broken state' "$broken_state_shim" 2
 
 
 
@@ -784,7 +755,7 @@ write_plan_gate_plan "$stale_source" \
     '前taskの実装・test・review・commitは完了したが、plan/historyの同期を同一commitへamendする直前。' \
     'amend後に`install.sh`で本配置と一致を確認し、next-taskを開始する。'
 commit_plan_gate_repo "$stale_source"
-make_go_shim "$stale_shim" ''
+make_go_shim "$stale_shim" '' ''
 expect_plan_gate_failure '4cedc91型stale HEAD' \
     "$stale_source" "$stale_case" "$stale_shim" \
     "$test_root/plan-gate-stale.log" \
@@ -799,7 +770,7 @@ write_plan_gate_synced "$deleted_active_source"
 commit_plan_gate_repo "$deleted_active_source"
 git -C "$deleted_active_source" rm -q IMPLEMENTATION_TASKS/next-task.md
 git -C "$deleted_active_source" commit -qm 'chore: remove completed task'
-make_go_shim "$deleted_active_shim" ''
+make_go_shim "$deleted_active_shim" '' ''
 expect_plan_gate_failure '削除済みACTIVE参照' \
     "$deleted_active_source" "$deleted_active_case" "$deleted_active_shim" \
     "$test_root/plan-gate-deleted-active.log" \
@@ -817,7 +788,7 @@ write_plan_gate_plan "$missing_active_source" \
     '前taskは完了。ghost-taskの開始前。' \
     'ghost-taskの要件を確認してGLM workerへ委譲する。'
 commit_plan_gate_repo "$missing_active_source"
-make_go_shim "$missing_active_shim" ''
+make_go_shim "$missing_active_shim" '' ''
 expect_plan_gate_failure '欠損ACTIVE file' \
     "$missing_active_source" "$missing_active_case" "$missing_active_shim" \
     "$test_root/plan-gate-missing-active.log" \
@@ -835,7 +806,7 @@ write_plan_gate_plan "$next_missing_source" \
     '前taskは完了。next-taskの開始前。' \
     'next-taskの要件を確認してGLM workerへ委譲する。'
 commit_plan_gate_repo "$next_missing_source"
-make_go_shim "$next_missing_shim" ''
+make_go_shim "$next_missing_shim" '' ''
 expect_plan_gate_failure 'NEXTの削除済み参照' \
     "$next_missing_source" "$next_missing_case" "$next_missing_shim" \
     "$test_root/plan-gate-next-missing.log" \
@@ -854,7 +825,7 @@ write_plan_gate_plan "$next_garbage_source" \
     '前taskは完了。next-taskの開始前。' \
     'next-taskの要件を確認してGLM workerへ委譲する。'
 commit_plan_gate_repo "$next_garbage_source"
-make_go_shim "$next_garbage_shim" ''
+make_go_shim "$next_garbage_shim" '' ''
 expect_plan_gate_failure 'NEXT非task項目' \
     "$next_garbage_source" "$next_garbage_case" "$next_garbage_shim" \
     "$test_root/plan-gate-next-garbage.log" \
@@ -872,7 +843,7 @@ write_plan_gate_plan "$next_outside_source" \
     '前taskは完了。next-taskの開始前。' \
     'next-taskの要件を確認してGLM workerへ委譲する。'
 commit_plan_gate_repo "$next_outside_source"
-make_go_shim "$next_outside_shim" ''
+make_go_shim "$next_outside_shim" '' ''
 expect_plan_gate_failure 'NEXT配置契約外path' \
     "$next_outside_source" "$next_outside_case" "$next_outside_shim" \
     "$test_root/plan-gate-next-outside.log" \
@@ -890,7 +861,7 @@ write_plan_gate_plan "$active_outside_source" \
     '前taskは完了。next-taskの開始前。' \
     'next-taskの要件を確認してGLM workerへ委譲する。'
 commit_plan_gate_repo "$active_outside_source"
-make_go_shim "$active_outside_shim" ''
+make_go_shim "$active_outside_shim" '' ''
 expect_plan_gate_failure 'ACTIVE配置契約違反' \
     "$active_outside_source" "$active_outside_case" "$active_outside_shim" \
     "$test_root/plan-gate-active-outside.log" \
@@ -912,7 +883,7 @@ sed -e 's/^- `IMPLEMENTATION_TASKS\/next-task.md`$/- `IMPLEMENTATION_TASKS\/next
     "$active_unclosed_source/IMPLEMENTATION_PLAN.local.md" >"$active_unclosed_source/plan.tmp"
 mv "$active_unclosed_source/plan.tmp" "$active_unclosed_source/IMPLEMENTATION_PLAN.local.md"
 commit_plan_gate_repo "$active_unclosed_source"
-make_go_shim "$active_unclosed_shim" ''
+make_go_shim "$active_unclosed_shim" '' ''
 expect_plan_gate_failure 'ACTIVE閉じbacktick欠損' \
     "$active_unclosed_source" "$active_unclosed_case" "$active_unclosed_shim" \
     "$test_root/plan-gate-active-unclosed.log" \
@@ -930,7 +901,7 @@ write_plan_gate_plan "$active_suffix_source" \
     '前taskは完了。next-taskの開始前。' \
     'next-taskの要件を確認してGLM workerへ委譲する。'
 commit_plan_gate_repo "$active_suffix_source"
-make_go_shim "$active_suffix_shim" ''
+make_go_shim "$active_suffix_shim" '' ''
 expect_plan_gate_failure 'ACTIVE余分なsuffix' \
     "$active_suffix_source" "$active_suffix_case" "$active_suffix_shim" \
     "$test_root/plan-gate-active-suffix.log" \
@@ -948,7 +919,7 @@ write_plan_gate_plan "$active_multi_source" \
     '前taskは完了。next-taskの開始前。' \
     'next-taskの要件を確認してGLM workerへ委譲する。'
 commit_plan_gate_repo "$active_multi_source"
-make_go_shim "$active_multi_shim" ''
+make_go_shim "$active_multi_shim" '' ''
 expect_plan_gate_failure 'ACTIVE複数backtick組' \
     "$active_multi_source" "$active_multi_case" "$active_multi_shim" \
     "$test_root/plan-gate-active-multi.log" \
@@ -970,7 +941,7 @@ sed -e 's/^- `IMPLEMENTATION_TASKS\/next-task.md`$/\* `IMPLEMENTATION_TASKS\/nex
     "$active_star_source/IMPLEMENTATION_PLAN.local.md" >"$active_star_source/plan.tmp"
 mv "$active_star_source/plan.tmp" "$active_star_source/IMPLEMENTATION_PLAN.local.md"
 commit_plan_gate_repo "$active_star_source"
-make_go_shim "$active_star_shim" ''
+make_go_shim "$active_star_shim" '' ''
 expect_plan_gate_failure 'ACTIVE未知list記法' \
     "$active_star_source" "$active_star_case" "$active_star_shim" \
     "$test_root/plan-gate-active-star.log" \
@@ -988,7 +959,7 @@ write_plan_gate_plan "$next_star_source" \
     '前taskは完了。next-taskの開始前。' \
     'next-taskの要件を確認してGLM workerへ委譲する。'
 commit_plan_gate_repo "$next_star_source"
-make_go_shim "$next_star_shim" ''
+make_go_shim "$next_star_shim" '' ''
 expect_plan_gate_failure 'NEXT未知list記法' \
     "$next_star_source" "$next_star_case" "$next_star_shim" \
     "$test_root/plan-gate-next-star.log" \
@@ -1006,7 +977,7 @@ write_plan_gate_plan "$next_unclosed_source" \
     '前taskは完了。next-taskの開始前。' \
     'next-taskの要件を確認してGLM workerへ委譲する。'
 commit_plan_gate_repo "$next_unclosed_source"
-make_go_shim "$next_unclosed_shim" ''
+make_go_shim "$next_unclosed_shim" '' ''
 expect_plan_gate_failure 'NEXT閉じbacktick欠損' \
     "$next_unclosed_source" "$next_unclosed_case" "$next_unclosed_shim" \
     "$test_root/plan-gate-next-unclosed.log" \
@@ -1026,7 +997,7 @@ write_plan_gate_plan "$blocked_unclosed_source" \
 printf '\n## BLOCKED / USER_PERMISSION_WAIT\n\n- `IMPLEMENTATION_TASKS/future-task.md\n' \
     >>"$blocked_unclosed_source/IMPLEMENTATION_PLAN.local.md"
 commit_plan_gate_repo "$blocked_unclosed_source"
-make_go_shim "$blocked_unclosed_shim" ''
+make_go_shim "$blocked_unclosed_shim" '' ''
 expect_plan_gate_failure 'BLOCKED閉じbacktick欠損' \
     "$blocked_unclosed_source" "$blocked_unclosed_case" "$blocked_unclosed_shim" \
     "$test_root/plan-gate-blocked-unclosed.log" \
@@ -1045,7 +1016,7 @@ write_plan_gate_plan "$active_dup_source" \
     '前taskは完了。next-taskの開始前。' \
     'next-taskの要件を確認してGLM workerへ委譲する。'
 commit_plan_gate_repo "$active_dup_source"
-make_go_shim "$active_dup_shim" ''
+make_go_shim "$active_dup_shim" '' ''
 expect_plan_gate_failure 'ACTIVE重複記載' \
     "$active_dup_source" "$active_dup_case" "$active_dup_shim" \
     "$test_root/plan-gate-active-dup.log" \
@@ -1063,7 +1034,7 @@ write_plan_gate_plan "$branch_mismatch_source" \
     '前taskは完了。next-taskの開始前。' \
     'next-taskの要件を確認してGLM workerへ委譲する。'
 commit_plan_gate_repo "$branch_mismatch_source"
-make_go_shim "$branch_mismatch_shim" ''
+make_go_shim "$branch_mismatch_shim" '' ''
 expect_plan_gate_failure 'HEAD境界不一致' \
     "$branch_mismatch_source" "$branch_mismatch_case" "$branch_mismatch_shim" \
     "$test_root/plan-gate-branch-mismatch.log" \
@@ -1082,7 +1053,7 @@ write_plan_gate_plan "$amend_fail_source" \
     '前taskの実装・test・review・commitは完了したが、plan/historyの同期を同一commitへamendする直前。' \
     'amend後に`install.sh`で本配置と一致を確認し、next-taskを開始する。'
 commit_plan_gate_repo "$amend_fail_source"
-make_go_shim "$amend_fail_shim" ''
+make_go_shim "$amend_fail_shim" '' ''
 expect_plan_gate_failure 'amend失敗後もstale' \
     "$amend_fail_source" "$amend_fail_case" "$amend_fail_shim" \
     "$test_root/plan-gate-amend-fail.log" \
@@ -1102,20 +1073,25 @@ rm "$amend_fail_source/.git/hooks/pre-commit"
 write_plan_gate_synced "$amend_fail_source"
 git -C "$amend_fail_source" add -A
 git -C "$amend_fail_source" commit --amend --no-edit -q
+amend_recover_shim="$test_root/plan-gate-amend-recover-shim"
+make_go_shim "$amend_recover_shim" '' ''
 run_installer "$amend_fail_source" "$test_root/plan-gate-amend-recover-case" \
-    >"$test_root/plan-gate-amend-recover.log" 2>&1
+    "$amend_recover_shim" >"$test_root/plan-gate-amend-recover.log" 2>&1
 grep -Fq 'plan final head: verified' "$test_root/plan-gate-amend-recover.log"
 test -x "$test_root/plan-gate-amend-recover-case/bin/glm-worker"
 test -x "$test_root/plan-gate-amend-recover-case/bin/commentlint"
+expect_go_test_contract 'amend復旧install' "$amend_recover_shim" 1
 
 
 
 synced_source="$test_root/plan-gate-synced-source"
 synced_case="$test_root/plan-gate-synced-case"
+synced_shim="$test_root/plan-gate-synced-shim"
 make_plan_gate_repo "$synced_source"
 write_plan_gate_synced "$synced_source"
 commit_plan_gate_repo "$synced_source"
-run_installer "$synced_source" "$synced_case" >"$test_root/plan-gate-synced.log" 2>&1
+make_go_shim "$synced_shim" '' ''
+run_installer "$synced_source" "$synced_case" "$synced_shim" >"$test_root/plan-gate-synced.log" 2>&1
 grep -Fq 'plan final head: verified' "$test_root/plan-gate-synced.log"
 test -x "$synced_case/bin/glm-worker"
 test -x "$synced_case/bin/commentlint"
@@ -1126,13 +1102,14 @@ write_plan_gate_plan "$synced_source" \
     'main' \
     '前taskの実装・test・review・commitは完了したが、plan/historyの同期を同一commitへamendする直前。' \
     'amend後に`install.sh`で本配置と一致を確認し、next-taskを開始する。'
-run_installer "$synced_source" "$synced_case" >"$test_root/plan-gate-dirty.log" 2>&1
+run_installer "$synced_source" "$synced_case" "$synced_shim" >"$test_root/plan-gate-dirty.log" 2>&1
 grep -Fq 'plan final head: verified' "$test_root/plan-gate-dirty.log"
-
+expect_go_test_contract 'plan gate同期install' "$synced_shim" 2
 
 
 positive_source="$test_root/plan-gate-positive-source"
 positive_case="$test_root/plan-gate-positive-case"
+positive_shim="$test_root/plan-gate-positive-shim"
 make_plan_gate_repo "$positive_source"
 write_plan_gate_plan "$positive_source" \
     'IMPLEMENTATION_TASKS/next-task.md' \
@@ -1141,10 +1118,12 @@ write_plan_gate_plan "$positive_source" \
     '前taskは完了。next-taskはamend後のpostcondition検証とuninstall前のsettings確認を含む。' \
     'next-taskの要件を確認してGLM workerへ委譲する。'
 commit_plan_gate_repo "$positive_source"
-run_installer "$positive_source" "$positive_case" >"$test_root/plan-gate-positive.log" 2>&1
+make_go_shim "$positive_shim" '' ''
+run_installer "$positive_source" "$positive_case" "$positive_shim" >"$test_root/plan-gate-positive.log" 2>&1
 grep -Fq 'plan final head: verified' "$test_root/plan-gate-positive.log"
 test -x "$positive_case/bin/glm-worker"
 test -x "$positive_case/bin/commentlint"
+expect_go_test_contract 'plan gate陽性install' "$positive_shim" 1
 
 
 

@@ -8,12 +8,12 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/install-smoke-loop-cost-reduction.md`
+- `IMPLEMENTATION_TASKS/commit-authorization-source-recognition.md`
 
 ## NEXT（優先順）
 
-- `IMPLEMENTATION_TASKS/commit-authorization-source-recognition.md`
 - `IMPLEMENTATION_TASKS/comment-lint-empty-line-fix.md`
+- `IMPLEMENTATION_TASKS/eval-responsibility-reduction.md`
 - `IMPLEMENTATION_TASKS/010-task-splitting-milestones.md`
 - `IMPLEMENTATION_TASKS/011-operation-category-telemetry.md`
 - `IMPLEMENTATION_TASKS/012-compaction-threshold-evaluation.md`
@@ -41,15 +41,15 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 ## 現在のGit境界
 
 - branch: `main`
-- implementation baseline: external review F1-F3を隔離統合・pushし、Markdown runtime context削減の実装・review・親採用・completion metadata同期を完了したcurrent HEAD
-- implementation boundary: PoC write不能境界、heredoc認識、Codex app-server逐次handshakeを`f1a25cd`でremote mainへ反映。Markdown read graphを実測し、stop/isolate詳細をevent-gated instructionへ移動、README/prompt/prose pinを圧縮
-- preserved boundary: lossless ACTIVE task requirement、Plan index、History cold path、必要quality gateは維持。20分超のfull smoke反復costをACTIVEへ昇格し、commit/push authority不一致とcomment lint空行fixを後続NEXTとして保持
+- implementation baseline: Markdown runtime context削減を`ab28e21`でpush・本配置し、install smoke loop cost削減の実装・review・Sol採用・completion metadata同期を完了したcurrent HEAD
+- implementation boundary: production installer契約と43 installer scenarioを維持したままreal `go test ./...`を44回から3回へ削減し、full smokeを実環境305.71秒で再確認。machine execution反復costの観測・親task化判断を既存product化contractへ統合
+- preserved boundary: lossless ACTIVE task requirement、Plan index、History cold path、必要quality gateは維持。commit/push authorization source不一致をACTIVEへ昇格し、commentlint空行fixとEVAL責務整理を後続NEXTとして保持
 - push: 各親commit後の`refs/heads/main`とGreptile正常review後の`refs/heads/codex/greptile-reviewed`だけを親Codexが通常fast-forwardする。GLM push、force/non-fast-forward、他refへのpushは禁止
 
 ## 現在の停止理由
 
-install smokeの重複full Go suiteを品質coverage維持のまま削減できる境界。
+commit/push authorization sourceの受理集合をcanonical instruction間で同期できる境界。
 
 ## 次の親Codex操作
 
-ACTIVE taskのlossless requirementを要求正本として、scenario別semantic coverageとreal `go test ./...`反復回数を測定し、production install behaviorを弱めずfull smokeを高速化する。
+ACTIVE taskのlossless requirementを要求正本として、task内明示許可と本repositoryのremote main fast-forward継続許可をrepository/installed instruction・実行承認境界で一致させる。

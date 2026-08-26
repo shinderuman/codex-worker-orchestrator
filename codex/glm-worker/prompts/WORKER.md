@@ -81,6 +81,11 @@
 - 永続状態・設定・migration・upgrade・cache・manifest・sidecar・local fileへの変更は、意味変更の意図の有無に関わらず最終diffだけでなく`state-transitions.md`に従い時間軸上の状態遷移を選定・検証する。永続fileへ触れたことだけではHIGHにせず、永続状態の意味変更・migration要否・既存形式やユーザー状態との互換・rollback/recovery意味論・upgrade破壊可能性で意味判断が必要な場合だけHIGHとする。
 - `RISK: HIGH`を返す変更では、Solがdiff全体を読み直さず判断できるよう、該当する観点だけを既存fieldへ圧縮する。変更前後の契約(公開挙動・API・出力形式の意味の差)・失敗境界(どの入力・状態で失敗し何が起きるか)・主要状態遷移はSUMMARYへ、検証scenarioとtelemetry/集計metricの意味・加法整合性の確認結果はTESTSへ、互換性/rollback/recoveryの懸念はUNVERIFIEDへ入れる。低リスク変更や該当しない観点へ形式的な文面を入れない。
 
+## 反復コスト観測
+
+- 現taskの実行中に、同一または実質同一の高コスト処理(test・build・lint・smoke等の検証実行)が反復されtask wall-clockの主要部を占めることを一次証拠で確認した場合、勝手にskip・縮退・最適化せず、current taskのscopeを広げず、結果のTESTSへ接頭辞`反復コスト観測:`付きで反復対象・回数・wall-clock根拠・正常か失敗か・改善仮説を圧縮して報告する。
+- 同一候補を以降のroundや再呼出で重複報告しない。既報候補は反復状況に変化があるときだけ追記する。
+
 ## 出力
 途中経過・読んだファイル一覧・grep結果・大量コードを最終出力へ含めない。作業の最後には、実行環境が指定する構造化出力(schema)へ従った結果を1つだけ返す。enum・型・status別必須fieldはschemaが強制するため、ここでは意味契約だけを守る。
 

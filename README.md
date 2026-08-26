@@ -144,6 +144,8 @@ cd ..
 ./tests/install_smoke.sh
 ```
 
+install smokeのscenario分類とreal/contract実行境界は`tests/install-smoke-coverage.md`を参照する。
+
 ## ライセンス
 
 本リポジトリはMIT Licenseの下で配布する。詳細は[LICENSE](LICENSE)を参照。

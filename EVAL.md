@@ -192,6 +192,13 @@
 - 本contractの親behavioral Eval入力・期待判断とproduction guidance/routingの因果は、文面の並記だけに依存させない。`TestEscapedCauseLayerContractWiring`がEVAL.md本節のpositive/negative caseと期待判断を`escaped-cause-layer.md`の適用条件・層定義・対策層整合の契約文へ直接突き合わせて検証する。scripted scenarioの期待終端だけを自己充足的に採用しない方針の本体適用である。
 
 
+## machine executionの反復cost観測
+
+- install smokeのfull runが各install scenarioから`install.sh` preflightの`go test ./...`を反復しwall-clockの主要部を占めた最初の実例(Task 015観測)を一般化した、feedback loop全体の品質証拠再取得cost契約である。worker/reviewerは現task実行中に同一または実質同一の高コスト処理の反復を一次証拠で確認した場合、勝手にskip・縮退・最適化やscope拡大をせず、接頭辞`反復コスト観測:`付きで結果へ重複なく報告する。親Codexはmachine execution(worker/reviewer/test/build/lint/smoke/provider probe/polling/resume verification等)の反復costをproduct化判断対象へ含め、再発性・coverage維持・real/cheap分離・費用対効果・false success/flakiness/観測不能riskから独立task化を判断する。contract本文は`codex/glm-worker/prompts/WORKER.md`・`codex/glm-worker/prompts/REVIEWER.md`・`codex/instructions/glm-execution.md`へ既存product化判断の最小拡張として統合し、install smoke専用規則や独立frameworkとしない。
+- install smoke harnessはproduction `install.sh`のtest実行契約を変更しない。清掃install成功1件とuntracked plan拒否1件だけreal `go test ./...`を代表実行とし、他scenarioはgo shimによる呼出contract検証(起動module・順序・失敗伝播)へ分離する。本物のGo suite合格はrepoの通常test gateと代表real実行が保証する。scenario分類とsemantic coverage対応・改善前後のwall-clock・real suite実行回数・scenario数の測定は`tests/install-smoke-coverage.md`が管理し、特定秒数を恒久thresholdへhardcodeしない。
+- 決定論検証は`internal/workflow`の`TestLoopCostObservationContractWiring`が3 fileの契約文・親判断とworker/reviewer報告の重複なし・専用scenario化なしを検証し、`tests/install_smoke.sh`のshim期待log比較と`expect_go_test_contract`がscenario別の起動contract・失敗伝播・real代表実行の存続を検証する。install後の配置は`tests/install_smoke.sh`の配置grepが検証する。
+
+
 ## 親tool orchestrationのterminal payload単一描画
 
 - 実運用で3回再現したterminal payload二面表示の原因層は、`glm-worker`内部emitではなく親tool orchestrationとDesktop表示である。`glm-worker`の主呼出は受理したterminal resultをstdoutへ1回だけ出力しており、repo内の二重emitは0件に確認済み。旧運用ではCodex desktopがbackground `functions.exec`の完了outputと後続`functions.wait`のresult cardで同じraw terminal payloadを二面描画する境界が直接原因だった。契約手順適用後の2026-08-24再現でも同一machine JSONがDesktop上で2回ユーザー可視表示され、exact renderer surfaceはCodex app terminal session非接続のため内部logから一意に特定できない。

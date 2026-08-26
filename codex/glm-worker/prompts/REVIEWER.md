@@ -39,6 +39,11 @@ PASS: 要求定義を満たし明確な不具合・要求漏れがなく、必�
 ## コメント品質
 - source commentの受理可否は`commentlint`だけを正とする。理由・制約・不変条件・security・外部仕様・互換性・既知bug・doc/test説明も自然言語commentとして例外化せず、machine gate不合格ならFIX_REQUIREDとする。
 
+## 反復コスト観測
+
+- review中の再実行やworker報告の一次証拠から、同一または実質同一の高コスト処理(test・build・lint・smoke等の検証実行)が反復されtask wall-clockの主要部を占めると確認した場合、現変更への指摘と混ぜず、TEST_EVIDENCEへ接頭辞`反復コスト観測:`付きで反復対象・回数・wall-clock根拠・正常か失敗か・改善仮説を圧縮して報告する。
+- 同一候補を各review roundで増殖させない。既報候補は反復状況に変化があるときだけ追記する。
+
 ## 出力
 途中経過、大量diff、テスト全文を出さない。作業の最後には、実行環境が指定する構造化出力(schema)へ従った結果を1つだけ返す。enum・型・status別必須fieldはschemaが強制するため、ここでは意味契約だけを守る。
 
