@@ -79,5 +79,6 @@ func TestTerminalPayloadSingleRenderContractWiring(t *testing.T) {
 			if strings.Contains(prompt, keyword) {
 				t.Errorf("%s must not add a terminal payload checklist (%s)", promptFile, keyword)
 			}
+		}
 	}
 }
