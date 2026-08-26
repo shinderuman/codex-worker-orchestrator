@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -80,7 +81,7 @@ func TestScanShellTreatsHereStringAsNonHeredoc(t *testing.T) {
 }
 
 func TestScanShellScansBodyOnlyAfterRealTerminator(t *testing.T) {
-	data := []byte("#!/bin/sh\ncat <<A <<B\n# body of A\nA\n# body of B\n\tB\n# tail\n")
+	data := []byte("#!/bin/sh\ncat <<A <<-B\n# body of A\nA\n# body of B\n\tB\n# tail\n")
 	findings := scanShell("a.sh", data)
 	lines := make([]int, 0, len(findings))
 	for _, item := range findings {
@@ -88,6 +89,28 @@ func TestScanShellScansBodyOnlyAfterRealTerminator(t *testing.T) {
 	}
 	if !reflect.DeepEqual(lines, []int{7}) {
 		t.Fatalf("lines = %v", lines)
+	}
+}
+
+func TestScanShellHonorsDashHeredocTabRules(t *testing.T) {
+	plain := []byte("#!/bin/sh\ncat <<EOF\n# payload\n\tEOF\n# still payload\nEOF\n# tail\n")
+	plainFindings := scanShell("plain.sh", plain)
+	plainLines := make([]int, 0, len(plainFindings))
+	for _, item := range plainFindings {
+		plainLines = append(plainLines, item.Line)
+	}
+	if !reflect.DeepEqual(plainLines, []int{7}) {
+		t.Fatalf("plain lines = %v", plainLines)
+	}
+
+	strip := []byte("#!/bin/sh\ncat <<-EOF\n# payload\n\t\tEOF\n# tail\n")
+	stripFindings := scanShell("strip.sh", strip)
+	stripLines := make([]int, 0, len(stripFindings))
+	for _, item := range stripFindings {
+		stripLines = append(stripLines, item.Line)
+	}
+	if !reflect.DeepEqual(stripLines, []int{5}) {
+		t.Fatalf("strip lines = %v", stripLines)
 	}
 }
 
@@ -170,6 +193,26 @@ func TestRunFixFailsClosedBeforeEditingUnclassifiedSource(t *testing.T) {
 	}
 	if string(readFile(t, path)) != content {
 		t.Fatalf("source changed = %q", readFile(t, path))
+	}
+}
+
+func TestRunFixRejectsSourceSymlinkWithoutFollowingIt(t *testing.T) {
+	root := t.TempDir()
+	runGit(t, root, "init")
+	external := filepath.Join(t.TempDir(), "external.go")
+	content := "package p\n// external prose\n"
+	writeFile(t, external, content)
+	link := filepath.Join(root, "linked.go")
+	if err := os.Symlink(external, link); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, root, "add", "linked.go")
+	_, err := Run(root, true)
+	if err == nil || !strings.Contains(err.Error(), "source candidate linked.go is not a regular file") {
+		t.Fatalf("error = %v", err)
+	}
+	if string(readFile(t, external)) != content {
+		t.Fatalf("external source changed = %q", readFile(t, external))
 	}
 }
 
