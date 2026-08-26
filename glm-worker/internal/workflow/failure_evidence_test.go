@@ -53,44 +53,7 @@ func TestFailureEvidenceContractWiring(t *testing.T) {
 		}
 	}
 
-	section := evalFailureEvidenceSection(t, readContractFile("EVAL.md"))
-	instruction := contents["codex/instructions/failure-evidence.md"]
-	evalGrounds := []struct {
-		eval     string
-		guidance string
-	}{
-		{"status/size/error分類だけでは原因判定不能な外部取得・parser・integration failure依頼へ、委譲前に必要証拠・sanitization・保存先・retentionをtask固有条件としてUSER_REQUESTへ構成する", "委譲前に、必要証拠・sanitization・保存先・retentionをtask固有条件としてUSER_REQUESTへ構成する"},
-		{"受理時に`artifacts`参照先を診断に必要な範囲だけ確認する", "packet受理時は`artifacts`参照先を診断に必要な範囲だけ確認し"},
-		{"原因判定に本文等が必要なのにstatus/sizeだけを残して推測修正を重ねる完了報告を成立の根拠として受領せず、必要evidenceの保存または「判定不能」への差戻しを要求する", "原因判定に証拠が必須なのに取得不能な場合は「判定不能」としてSol/ユーザーへ戻し、推測で修正を重ねさせない"},
-		{"evidence取得不能時は判定不能としてSol/ユーザーへ戻し、推測修正を続けさせない", "原因判定に証拠が必須なのに取得不能な場合は「判定不能」としてSol/ユーザーへ戻し、推測で修正を重ねさせない"},
-		{"十分診断可能なerror・成功応答・局所bugへ形式的artifact保存を要求せず", "通常の十分診断可能なerror、成功応答、局所bugへ形式的なartifact保存を要求しない"},
-		{"全responseの無条件保存も要求しない", "全response・全成功応答の無条件保存はしない"},
-		{"親Codexの委譲内容・受理確認・差戻し判断をraw telemetry・task log・artifact実体等の一次証拠で照合する", "委譲前に、必要証拠・sanitization・保存先・retentionをtask固有条件としてUSER_REQUESTへ構成する"},
-	}
-	for _, g := range evalGrounds {
-		if !strings.Contains(instruction, g.guidance) {
-			t.Errorf("failure-evidence.md lacks guidance grounding %q", g.guidance)
-		}
-		if !strings.Contains(section, g.eval) {
-			t.Errorf("EVAL.md failure evidence section lacks behavioral eval judgment grounded in guidance: %q", g.eval)
-		}
-	}
-
-	for _, wire := range []string{
-		"TestFailureEvidenceContractWiring",
-		"failure-evidence-minimal-sanitized-evidence-packet-returns-to-sol",
-		"failure-evidence-unobtainable-evidence-returns-undecidable-to-sol",
-		"failure-evidence-sufficient-classification-completes-without-artifact",
-		"scripted packetのARTIFACTS宣言だけを親Codexの委譲/受理/差戻し行動の証明として採用しない",
-		"親behavioral Evalの代替として重複scenarioをcorpusへ追加しない",
-		"親Codexの委譲内容・受理確認・差戻し判断をraw telemetry・task log・artifact実体等の一次証拠で照合",
-		"live model呼出しを要するためユーザーの明示指示後だけ実行し",
-		"EVAL.md本節のpositive/negative caseと期待判断を`failure-evidence.md`の適用条件・保存契約・orchestration契約文へ直接突き合わせて検証",
-	} {
-		if !strings.Contains(section, wire) {
-			t.Errorf("EVAL.md failure evidence section lacks eval wiring: %q", wire)
-		}
-	}
+	requireParentBehaviorEval(t, "failure-evidence")
 
 	expectedIDs := []string{
 		"failure-evidence-minimal-sanitized-evidence-packet-returns-to-sol",
@@ -119,7 +82,7 @@ func TestFailureEvidenceContractWiring(t *testing.T) {
 			}
 		}
 		if !found {
-			t.Errorf("scenario corpus lacks %s referenced by EVAL.md", id)
+			t.Errorf("scenario corpus lacks required failure evidence scenario %s", id)
 		}
 	}
 	pinned := false
@@ -137,18 +100,4 @@ func TestFailureEvidenceContractWiring(t *testing.T) {
 			t.Errorf("%s must not add a general failure evidence checklist", promptFile)
 		}
 	}
-}
-
-func evalFailureEvidenceSection(t *testing.T, evalDoc string) string {
-	t.Helper()
-	const header = "## 原因不明runtime failureの最小evidence管理"
-	start := strings.Index(evalDoc, header)
-	if start < 0 {
-		t.Fatalf("EVAL.md lacks section header %q", header)
-	}
-	rest := evalDoc[start+len(header):]
-	if end := strings.Index(rest, "\n## "); end >= 0 {
-		rest = rest[:end]
-	}
-	return rest
 }
