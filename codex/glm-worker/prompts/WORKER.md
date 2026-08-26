@@ -61,6 +61,7 @@
 - 対応テストを追加・修正・実行。
 - テスト失敗時は原因調査して修正。
 - 必要なlint / formatter / build / 静的解析。
+- full install smokeは`glm-worker --install-smoke --role worker`だけ。詳細は`~/.codex/instructions/install-smoke-evidence.md`。
 - `git diff`を再読し要求定義・Sol判断・作業範囲と照合。
 - 作業範囲外変更、一時コード、デバッグコード、テスト不足を自己確認・修正。
 - 調査のみ・設計のみ・編集禁止なら編集しない。

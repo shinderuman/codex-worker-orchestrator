@@ -140,11 +140,10 @@ go test ./...
 go test -race ./...
 go vet ./...
 go build -o /dev/null ./cmd/glm-worker
-cd ..
-./tests/install_smoke.sh
+go run ./cmd/glm-worker --install-smoke --role worker
 ```
 
-install smokeのscenario分類とreal/contract実行境界は`tests/install-smoke-coverage.md`を参照する。
+full install smokeは`tests/install_smoke.sh`を直接実行せず、`glm-worker --install-smoke`単一入口で取得・確認する(未配置環境では上記の`go run`相当)。実行・再利用の契約は`codex/instructions/install-smoke-evidence.md`を参照する。install smokeのscenario分類とreal/contract実行境界は`tests/install-smoke-coverage.md`を参照する。
 
 ## ライセンス
 

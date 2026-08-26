@@ -78,3 +78,4 @@ USER_REQUEST・`SPECIFICATION.md`・既存`AGENTS.md`・直前のSol判断で未
 - escaped bug/reviewの原因層分類 → `~/.codex/instructions/escaped-cause-layer.md`
 - Codex自身が例外的に直接編集 → `~/.codex/instructions/worker/`の該当ファイル
 - 直接編集・直接実行の許可境界 → `~/.codex/instructions/direct-edit.md`
+- full install smokeの取得・証拠再利用 → `~/.codex/instructions/install-smoke-evidence.md`

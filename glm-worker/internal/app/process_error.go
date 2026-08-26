@@ -24,6 +24,7 @@ const (
 	errorKindVerificationFailed      = "verification_failed"
 	errorKindVerificationUnavailable = "verification_unavailable"
 	errorKindCodexLimitUnavailable   = "codex_limit_unavailable"
+	errorKindInstallSmokeFailed      = "install_smoke_failed"
 	errorKindInternal                = "internal"
 )
 
@@ -47,6 +48,7 @@ func buildProcessError(err error) processErrorBody {
 	var stdinPayload *StdinPayloadError
 	var verification *VerificationError
 	var codexLimit *CodexLimitError
+	var smokeFail *InstallSmokeError
 	var workerErr *workflow.WorkerError
 	var rateLimit runner.ZaiRateLimitError
 	var providerUnavailable *runner.ProviderUnavailableError
@@ -110,8 +112,27 @@ func buildProcessError(err error) processErrorBody {
 			Message: "codex rate limits unreadable; use the manual recovery path",
 			Detail:  map[string]any{"phase": codexLimit.Phase},
 		}
+	case errors.As(err, &smokeFail):
+		return processErrorBody{
+			Kind:    errorKindInstallSmokeFailed,
+			Message: smokeFail.Error(),
+			Detail:  installSmokeFailDetail(smokeFail),
+		}
 	default:
 		return processErrorBody{Kind: errorKindInternal, Message: err.Error()}
+	}
+}
+
+func installSmokeFailDetail(err *InstallSmokeError) map[string]any {
+	return map[string]any{
+		"exit_code":          err.ExitCode,
+		"result":             "fail",
+		"role":               stringPtr(err.Role),
+		"reuse_reason":       stringPtr(err.ReuseReason),
+		"duration_ms":        err.DurationMS,
+		"log":                stringPtr(err.LogPath),
+		"tree_digest":        err.TreeDigest,
+		"smoke_input_digest": err.SmokeInputDigest,
 	}
 }
 

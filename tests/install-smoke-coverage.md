@@ -33,8 +33,22 @@ installer呼出43回(成功2・upgrade2・preflight失敗6・settings系11・pla
 - 改善前: wall-clock 1418s(23.6分)、real `go test ./...` 44回(glm-worker 25・merge-json 19)、installer呼出43回、scenario数不変、`install smoke: PASS`
 - 改善後: wall-clock 302s(5.0分)、real `go test ./...` 3回(glm-worker 2・merge-json 1)、installer呼出43回、scenario数不変、`install smoke: PASS`
 
+## 証拠共有の実行回数測定(2026-08-26)
+
+測定方法: `glm-worker/internal/app`の`TestInstallSmokeRepresentativeLoopSharesPassEvidence`が、代表feedback loop
+`worker → reviewer → fix → reviewer → parent gate`(fixでinstall.sh変更・parentでcommitとparent管理metadata更新を含む)を
+production経路の`runInstallSmoke`で実行し、smoke script実体の起動回数を数えた。
+
+- 改善前(各境界が`tests/install_smoke.sh`を直接実行): 5回実行(worker・reviewer・fix・reviewer・parent)
+- 改善後(`glm-worker --install-smoke`単一入口): 2回実行(worker取得・fix再取得)。reviewer×2とparent gateはidentity一致の既存PASSを`status:"reused"`で共有
+- 失効検証: 同packageの`TestInstallSmokeFailureRecordIsNotReused`(失敗証拠のPASS昇格拒否)と
+  `TestInstallSmokeEnvironmentChangeInvalidatesEvidence`(claude CLI契約probe変化で`stale:environment.claude_cli`再実行)、
+  `glm-worker/internal/state`の`TestSmokeTreeDigestAxes`(source変更・parent管理metadata-only変更の非失効)・
+  `TestSmokeTreeDigestCommitInvariance`(commitをまたぐidentity同一性)が固定する
+
 ## coverage非退行の根拠
 
 - production `install.sh`は無変更であり、本番installがpreflightで`go test ./...`を実行する契約・失敗時fail closedは変更されない。
 - 削除したscenarioはなく、意味的assertion(配置grep・idempotency・fail closed・go呼出順序・plan gate拒否理由)は全て残る。従来fail検出に使っていた注入test file 2件は、shimのmodule単位強制失敗とuntracked plan実測失敗へ置き換え、期待logは同一形式のまま比較する。
 - real実行2件(清掃install成功・untracked plan拒否)が「本物suiteの実行と失敗伝播」を代表し、他scenarioはinstall.shの呼出contractをshim logで固定する。同一sourceに対するGo suiteの反復実行は品質証拠を増やさないため、semantic coverageを落とさずに反復を削減できる。
+- 証拠共有も同じ根拠に立つ。再利用は実行結果の省略ではなく、同一source snapshot(install.sh・`tests/install_smoke.sh`・install対象tree全体)・同一toolchain環境に対する機械照合済みPASSの引用であり、smoke本文・43 scenario・全assertionは1回の実取得ごとに無変更で走る。source・smoke-relevant input・環境のいずれかが変わればidentityが変わり再実行されるため、変更後snapshotへ古いPASSが流用される余地はない。

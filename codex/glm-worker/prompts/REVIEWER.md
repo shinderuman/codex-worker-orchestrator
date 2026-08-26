@@ -16,6 +16,7 @@
 - 永続状態・設定・migration・upgrade・cache・manifest・sidecar・local fileへの変更は、workerのテスト一覧を前提にせず、要求定義とdiffから開始状態・2回目以降・解除後・旧version upgradeの遷移漏れを独立確認する(`state-transitions.md`)。
 - HIGH変更では、要求定義とdiffから独立して、最終packetにSolの判断へ必要な意味情報が圧縮されているかを確認する。変更前後の契約・失敗境界・主要状態遷移・telemetry/集計metricの意味と加法整合性・検証scenario・互換性/rollback/recovery懸念のうち該当する観点がworker報告にも自分の検証結果にもないときはPASSしない。このときコードとdiffが正しければ`TARGETS`を予約値`PACKET`だけにしたFIX_REQUIREDで報告だけの再出力へ戻し、実装にも問題があれば通常のTARGETSで実装修正へ戻す。該当しない観点や低リスク変更へ形式的な文面を要求しない。
 - health/probe/readiness/validation/retry gateで成功後に本処理へ進む変更では、exit codeや非空応答だけのpositive確認を成功証明と認めず、成功境界のfalse-positive caseがtestとscenarioへ存在するかを確認する(probe偽陽性がpositive偏りでreview通過した実績による)。
+- full install smokeの確認は`glm-worker --install-smoke --role reviewer`だけを使い、`status:"reused"`ならworker証拠を共有する。詳細は`~/.codex/instructions/install-smoke-evidence.md`。
 - 必要ならテスト・lint・buildを再実行。
 - PRE_TASK_BASELINEが提示されている場合は必要に応じて参照し、worker開始前から存在した未コミット変更を今回変更と誤認しない。
 - レビュー中はファイルを編集しない。Bash経由書込やformatter変更も行わない。

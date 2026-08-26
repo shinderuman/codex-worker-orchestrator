@@ -325,6 +325,15 @@ grep -Fq 'state-transitions.md' "$success_case/codex/glm-worker/prompts/WORKER.m
 grep -Fq 'verify_claude_cli || exit $?' "$repo_root/install.sh"
 grep -Fq -- '--json-schema' "$repo_root/install.sh"
 grep -Fq 'state-transitions.md' "$success_case/codex/glm-worker/prompts/REVIEWER.md"
+grep -Fq 'glm-worker --install-smoke' "$success_case/codex/glm-worker/prompts/WORKER.md"
+grep -Fq 'glm-worker --install-smoke' "$success_case/codex/glm-worker/prompts/REVIEWER.md"
+test -f "$success_case/codex/instructions/install-smoke-evidence.md"
+grep -Fq 'install-smoke-evidence.md' "$success_case/codex/AGENTS.md"
+grep -Fq 'glm-worker --install-smoke' "$success_case/codex/instructions/install-smoke-evidence.md"
+grep -Fq 'status:"reused"' "$success_case/codex/instructions/install-smoke-evidence.md"
+grep -Fq 'kind:"install_smoke_failed"' "$success_case/codex/instructions/install-smoke-evidence.md"
+grep -Fq '自然言語の「以前PASSした」やtimestampだけでは再実行を省略しない' "$success_case/codex/instructions/install-smoke-evidence.md"
+grep -Fq 'parent管理metadata' "$success_case/codex/instructions/install-smoke-evidence.md"
 test -f "$success_case/codex/instructions/local-unmanaged.md"
 test ! -e "$success_case/codex/instructions/obsolete-managed.md"
 test -f "$success_case/codex/rules/default.rules"
@@ -357,6 +366,9 @@ grep -Fq 'packet(stdoutのmachine JSON 1行)またはprocess失敗' "$success_ca
 
 "$success_case/bin/glm-worker" --verify-auto-resume 2>&1 \
     | grep -Fq 'usage: glm-worker --verify-auto-resume'
+
+"$success_case/bin/glm-worker" --install-smoke --role bogus 2>&1 \
+    | grep -Fq 'usage: glm-worker --install-smoke'
 
 
 upgrade_source="$test_root/upgrade-source"

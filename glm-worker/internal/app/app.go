@@ -37,6 +37,7 @@ const (
 	ModeEvalAB
 	ModeCallOutliers
 	ModeCodexLimit
+	ModeInstallSmoke
 )
 
 type Command struct {
@@ -50,6 +51,7 @@ type Command struct {
 	SHA256 string
 
 	Origin string
+	Role   string
 	Verify VerifyArgs
 }
 
@@ -60,6 +62,8 @@ type VerifyArgs struct {
 }
 
 const fixOriginUsage = "[--origin codex-review|glm-reviewer|user-amendment|external-review|metadata-repair]"
+
+const installSmokeUsage = "[--role worker|reviewer|fix|parent]"
 
 type UsageError struct {
 	Message string
@@ -83,7 +87,7 @@ func usageError(format string, args ...any) *UsageError {
 
 func ParseCommand(args []string) (Command, error) {
 	if len(args) == 0 {
-		return Command{}, usageError("usage: glm-worker <instruction> | --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix-stdin <payload-bytes> [--sha256 <hex>] %s | --accept | --resume | --stop | --isolate | --status | --watch [--verbose] | --timeline [task-id] | --convergence [task-id] | --stats | --reset | --eval-ab <run-dir> | --call-outliers | --codex-limit", fixOriginUsage)
+		return Command{}, usageError("usage: glm-worker <instruction> | --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix-stdin <payload-bytes> [--sha256 <hex>] %s | --accept | --resume | --stop | --isolate | --status | --watch [--verbose] | --timeline [task-id] | --convergence [task-id] | --stats | --reset | --eval-ab <run-dir> | --call-outliers | --codex-limit | --install-smoke %s", fixOriginUsage, installSmokeUsage)
 	}
 
 	switch args[0] {
@@ -180,6 +184,17 @@ func ParseCommand(args []string) (Command, error) {
 			return Command{}, usageError("usage: glm-worker --codex-limit")
 		}
 		return Command{Mode: ModeCodexLimit}, nil
+	case "--install-smoke":
+		if len(args) == 1 {
+			return Command{Mode: ModeInstallSmoke}, nil
+		}
+		if len(args) == 3 && args[1] == "--role" {
+			if !validInstallSmokeRoles[args[2]] {
+				return Command{}, usageError("usage: glm-worker --install-smoke %s", installSmokeUsage)
+			}
+			return Command{Mode: ModeInstallSmoke, Role: args[2]}, nil
+		}
+		return Command{}, usageError("usage: glm-worker --install-smoke %s", installSmokeUsage)
 	default:
 		return Command{Mode: ModeNewTask, Payload: strings.Join(args, " ")}, nil
 	}
@@ -368,6 +383,8 @@ func Execute(cmd Command, cfg config.AppConfig, rf RunnerFactory, stdout, stderr
 		return printStats(st, stdout)
 	case ModeVerifyAutoResume:
 		return printVerifyAutoResume(cmd, cfg, stdout)
+	case ModeInstallSmoke:
+		return runInstallSmoke(cmd.Role, cfg, st, stdout)
 	}
 
 	lock, err := AcquireRepoLock(st.LockPath())
