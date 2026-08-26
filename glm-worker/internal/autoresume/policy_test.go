@@ -53,6 +53,11 @@ type reservationEnv interface {
 	VerifyReservation() verification
 }
 
+type updateVerifyEnv interface {
+	UpdateActive(id string) string
+	VerifyReservation() verification
+}
+
 type reservationResult struct {
 	Reserved         bool
 	Actions          []action
@@ -125,7 +130,7 @@ func orchestrateReservation(env reservationEnv, key, resumeAtRFC3339, existingAu
 	return reservationFailure(actions, reason, "")
 }
 
-func updateAndVerify(env reservationEnv, id, dtStart string, actions []action) ([]action, bool, string) {
+func updateAndVerify(env updateVerifyEnv, id, dtStart string, actions []action) ([]action, bool, string) {
 	actions, ok, reason := applyUpdate(env, id, dtStart, actions)
 	if !ok {
 		return actions, false, reason
@@ -162,7 +167,7 @@ func verificationOutcome(v verification) (reserved bool, reason string, isFail b
 	}
 }
 
-func applyUpdate(env reservationEnv, id, dtStart string, actions []action) ([]action, bool, string) {
+func applyUpdate(env updateVerifyEnv, id, dtStart string, actions []action) ([]action, bool, string) {
 	actions = append(actions, action{
 		Kind:         actionUpdateActive,
 		AutomationID: id,

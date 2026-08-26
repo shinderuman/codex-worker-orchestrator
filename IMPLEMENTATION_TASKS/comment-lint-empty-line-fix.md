@@ -19,7 +19,11 @@ Linter自体の修正はやってほしい
 
 ## Amendments
 
-none
+### Amendment 1
+
+```text
+GLMのPushは作業は禁止のままだが今回のGreptile導入に伴いCodexへのPushを許可する
+```
 
 ## Resolved references
 
@@ -51,7 +55,7 @@ comment lintのfixがcomment削除後へ不要な空行を残す原因を修正�
 - comment lint fixの不要空行生成原因が修正され、再現testが通る。
 - lint/check/fixの既存contractと関連testが通る。
 - 既存空行は関連fileを別taskで編集する際の自然なcleanupに留め、一括formatterを追加しない。
-- GLMはcommit/pushせず、完了gate後のlocal commitは親Codexが行う。pushしない。
+- GLMはcommit/pushせず、完了gate後に親Codexがcommitし、repository恒久許可どおりremote mainへ通常fast-forwardする。
 
 ## Historical invariants
 
@@ -67,4 +71,4 @@ none
 
 ## Current boundary
 
-未着手。Markdown context削減とinstall smoke loop cost削減を優先し、その後に実施する。
+ACTIVE。5h wake再予約lifecycle修復の完了後に昇格し、comment lint fixの不要空行生成だけを修正する。

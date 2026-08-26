@@ -8,11 +8,10 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/codex-5h-wake-reschedule-lifecycle.md`
+- `IMPLEMENTATION_TASKS/comment-lint-empty-line-fix.md`
 
 ## NEXT（優先順）
 
-- `IMPLEMENTATION_TASKS/comment-lint-empty-line-fix.md`
 - `IMPLEMENTATION_TASKS/eval-responsibility-reduction.md`
 - `IMPLEMENTATION_TASKS/010-task-splitting-milestones.md`
 - `IMPLEMENTATION_TASKS/011-operation-category-telemetry.md`
@@ -41,15 +40,15 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 ## 現在のGit境界
 
 - branch: `main`
-- implementation baseline: install smoke loop cost削減を`cdf9647`でpush・本配置し、commit/push authorization source修正の実装・review・Sol採用・completion metadata同期を完了したcurrent HEAD
-- implementation boundary: commit許可sourceを会話上の明示指示とACTIVE lossless requirementへ定義し、本repositoryの恒久push例外をremote mainとGreptile checkpointの通常fast-forwardへ限定。full install smoke PASS
-- preserved boundary: force/non-fast-forward・tag・他ref・他repository・GLM commit/push禁止を維持。5h wake初回実発火で次回automationを失ったfalse-completeをACTIVEへ昇格し、commentlint空行fixとEVAL責務整理を後続NEXTとして保持
+- implementation baseline: 5h wake再予約lifecycle修復をcurrent HEADへ収録した状態
+- implementation boundary: 発火済みautomationを削除せず同一IDへ次回one-shotを更新し、suggested-create false-completeを拒否するcanonical instruction・policy/scenario testを収録。全test/race/vet/build/gofmt、commentlint、full install smoke、独立review、親Codex最終採用を完了
+- preserved boundary: 次回wake `2026-08-26T10:18:27Z`を同ID・同target・ACTIVE one-shotでmachine verification済み。force/non-fast-forward・tag・他ref・他repository・GLM commit/push禁止を維持し、commentlint空行fixをACTIVE、EVAL責務整理をNEXTとして保持
 - push: 各親commit後の`refs/heads/main`とGreptile正常review後の`refs/heads/codex/greptile-reviewed`だけを親Codexが通常fast-forwardする。GLM push、force/non-fast-forward、他refへのpushは禁止
 
 ## 現在の停止理由
 
-5h wakeのdelete-before-createとsuggested-create false-completeを修復し、次回one-shotを実在させる境界。
+なし。comment lint fixが不要空行を新規生成する原因を修正する境界。
 
 ## 次の親Codex操作
 
-ACTIVE taskのlossless requirementと初回実発火証拠を要求正本として、既存automationの同一ID update lifecycleへ収束し、次回wake実体をmachine verificationする。
+ACTIVE taskのlossless requirementを正として、comment lint fixの不要空行生成原因をGLMへ調査・実装修正させる。

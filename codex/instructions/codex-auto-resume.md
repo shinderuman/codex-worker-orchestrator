@@ -22,7 +22,8 @@
 ## wake scheduler登録
 
 - 期待keyは`codex-5h-wake-<wake専用task自身のthread ID>`とする。新規作成のautomation名もこの期待keyを使う。作成・再利用のどちらでも、扱う実automation IDがこの期待keyと一致することを確認してからupdate・verify・deleteする。
-- 再利用できる既存automationは、`target_thread_id`がwake専用task自身のthread IDと完全一致するものだけとする。この列挙は発火前の既存scheduler再利用判定だけに使い、発火後の削除へ流用しない。Codex appのautomation一覧、または`CODEX_CONFIG_DIR`の`automations/*/automation.toml`の`target_thread_id`を読んで列挙する。automation名だけの一致を再利用の根拠にしない。
+- 絶対時刻anchorはUTCの`DTSTART:YYYYMMDDTHHMMSS`形式だけを正とし、末尾へ`Z`を付けない。`DTSTART;TZID=...`も使わない。
+- 再利用できる既存automationは、`target_thread_id`がwake専用task自身のthread IDと完全一致するものだけとする。この列挙は発火前の既存scheduler再利用判定だけに使い、発火後のupdate・verify・PAUSED化へ流用しない。Codex appのautomation一覧、または`CODEX_CONFIG_DIR`の`automations/*/automation.toml`の`target_thread_id`を読んで列挙する。automation名だけの一致を再利用の根拠にしない。
 - 列挙結果が1件で、かつその実automation IDが期待keyと一致する場合だけ、新規作成せずその実automation IDへ絶対時刻update(UTCの`DTSTART:YYYYMMDDTHHMMSS` + `RRULE:FREQ=DAILY;COUNT=1` + status ACTIVE)を行う。`DTSTART;TZID=...`は使わない。実IDが期待keyと不一致の場合と列挙結果が複数件の場合はどれもupdateせずfail closedとし、Codex Desktop UIで人間が確認・整理するまで手動復旧を案内する。
 - 列挙結果が0件の場合だけ新規作成する。DTSTART付き即時createはCodex appへ拒否されるため、DTSTARTなし・status PAUSED・`RRULE:FREQ=HOURLY`のplaceholder作成と、成功応答に含まれる実automation IDの確認、その実IDへの絶対時刻update(UTCの`DTSTART:YYYYMMDDTHHMMSS` + `RRULE:FREQ=DAILY;COUNT=1` + status ACTIVE)の二段階で行う。`suggested_create`は候補カード表示のみなので呼ばない。作成応答の実automation IDが期待keyと不一致の場合は、返却されたその実IDだけをbest-effort削除してfail closedとする。
 - `automation_update`の返り値全体を文字列として検査する。`invalid`・`error`・`failed`・空文字列・`Rendered suggestion`のいずれかを含む場合は作成・更新失敗とする。content欄だけ読んで空出力を成功扱いにしない。
@@ -31,15 +32,22 @@
 
 ## wake専用taskの処理
 
-schedulerから呼ばれたら、次の5操作だけを行う。
+schedulerから呼ばれたら、次の4操作をこの順序だけを行う。発火済みautomationの削除と新規作成は行わない。
 
-1. 発火済みの前回schedulerを削除する。削除対象はheartbeat発火指示に渡された実`automation_id`だけとする。`automation_id`が渡されていない場合は何も削除せずfail closedで終了する。target一致検索による削除は行わない。
-2. 親実装taskのthread IDへ固定短文「作業を続けろ」を1回だけ送信する。thread IDが指定されていない場合は送信せずにfail closedで終了する。送信方法はCodex appの既存task間送信(Greptile専用taskが親taskへ使っている方式)を使う。
-3. `glm-worker --codex-limit`で次回5h windowの`resets_at`を取得する。`resets_at`が現在時刻以前の場合は1回だけ再取得し、それでも過去の場合はfail closedで終了する。
-4. wake_at = `resets_at` + 2分として、「wake scheduler登録」に従い自taskへ次回schedulerを登録する。
-5. `--verify-auto-resume <実automation ID> <wake_atのRFC3339> <自taskのthread ID>`で登録結果を確認して終了する。
+1. 親実装taskのthread IDへ固定短文「作業を続けろ」を1回だけ送信する。thread IDが指定されていない場合は送信せずにfail closedで終了する。送信方法はCodex appの既存task間送信(Greptile専用taskが親taskへ使っている方式)を使う。
+2. `glm-worker --codex-limit`で次回5h windowの`resets_at`を取得する。`resets_at`が現在時刻以前の場合は1回だけ再取得し、それでも過去の場合はfail closedで終了する。
+3. wake_at = `resets_at` + 2分として、発火指示に渡された実`automation_id`のautomationを削除も新規作成もせず、同じautomation IDへ次回one-shot(UTCの`DTSTART:YYYYMMDDTHHMMSS`・`RRULE:FREQ=DAILY;COUNT=1`・status ACTIVE)を直接updateする。`automation_id`が渡されていない場合はupdateせずfail closedで終了する。`suggested_create`は候補カード表示のみであり永続automationではないため、呼ばない。
+4. update応答の検査後、`--verify-auto-resume <実automation ID> <wake_atのRFC3339> <自taskのthread ID>`で保存実体を確認して終了する。exit 0と結果JSONだけを次回予約成功の根拠とする。
 
-- 実装・review・task判断・diff解析・repository全体の再読・状況要約・設計判断を行わない。5操作に必要な読み込み・推論・出力以外を行わない。
+親送信・reset取得・update・実体検証の失敗扱いは次による。
+
+- いずれかが失敗した場合、次回予約済みと報告せず、既存automationを削除しない。
+- `automation_update`の返り値全体を文字列として検査する。`invalid`・`error`・`failed`・空文字列・`Rendered suggestion`・`suggested_create`のいずれかを含む場合は更新失敗とする。content欄だけ読んで空出力を成功扱いにしない。候補カード表示を予約成功扱いしない。
+- 実体検証FAIL時は、検証理由から誤りを特定してupdateを最大1回だけ再試行できる。再試行後も失敗する場合はfail closedとする。
+- fail closedへ落つるとき、安全に停止できる場合は同じ実`automation_id`のautomationだけをPAUSED化し、明示的な復旧境界を残す。PAUSED化も失敗した場合は実automation IDを手動復旧案内へ明示する。`automation_id`が渡されていない場合はPAUSED化もせず、その旨を報告する。
+- 実体検証UNAVAILABLE時は、Codex appのautomation表示で同じautomation ID・対象task・次回実行時刻が意図したJST時刻と一致することを確認した場合だけ予約成功とする。確認不能な場合はfail closedとする。
+
+- 実装・review・task判断・diff解析・repository全体の再読・状況要約・設計判断を行わない。4操作に必要な読み込み・推論・出力以外を行わない。
 - schedulerを追加して増殖させない。常に1件だけを維持する。
 - いずれの操作が失敗しても、失敗を報告して終了する。放っておいた未処理queueを作らない。人間は次項で復旧できる。
 
@@ -54,7 +62,7 @@ schedulerから呼ばれたら、次の5操作だけを行う。
 ## 不変条件
 
 - `glm-worker --codex-limit`はrate-limit情報の読み取り専用machine JSON出力だけを行う。scheduler作成・削除・親taskへの送信をglm-workerへ実行させない。
-- automationの探索は発火前の既存scheduler再利用判定だけに限定し、対象wake taskの`target_thread_id`完全一致と期待key(`codex-5h-wake-<wake thread ID>`)への実ID一致だけを根拠にする。発火後の削除はheartbeatで渡された実`automation_id`だけを対象とし、欠落時は何も削除せずfail closedする。update・verify・deleteは確認済みの実automation IDだけを使う。固定名・固定IDだけの一致で他repositoryのwake schedulerをupdate・削除せず、一致するautomationが複数件ならfail closedする。
+- automationの探索は発火前の既存scheduler再利用判定だけに限定し、対象wake taskの`target_thread_id`完全一致と期待key(`codex-5h-wake-<wake thread ID>`)への実ID一致だけを根拠にする。発火後のupdate・verify・PAUSED化はheartbeat発火指示に渡された実`automation_id`だけを対象とし、欠落時は何もせずfail closedする。wake専用taskは発火済みautomationを削除しない。update・verify・deleteは確認済みの実automation IDだけを使う。固定名・固定IDだけの一致で他repositoryのwake schedulerをupdate・削除せず、一致するautomationが複数件ならfail closedする。
 - GLM Resume automation(`glm-worker-resume-*`)とGreptile schedulerのownershipを変更しない。
 - 対象repository固有の`IMPLEMENTATION_PLAN`・task lifecycleをこの運用へ結合しない。wake後の作業再開は親実装taskの既存手順へ任せる。
 - launchd・cron・常駐daemon・独自UI・人間向けscheduler管理CLIを作らない。

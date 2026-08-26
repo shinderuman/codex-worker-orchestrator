@@ -266,6 +266,20 @@ grep -Fq 'RRULE:FREQ=HOURLY' "$success_case/codex/instructions/glm-auto-resume.m
 grep -Fq '成功前にIDを推測・仮定しない' "$success_case/codex/instructions/glm-auto-resume.md"
 grep -Fq '作成済みplaceholder automationをbest-effortで削除' "$success_case/codex/instructions/glm-auto-resume.md"
 grep -Fq 'placeholderを作り直さない' "$success_case/codex/instructions/glm-auto-resume.md"
+test -f "$success_case/codex/instructions/codex-auto-resume.md"
+grep -Fq '次の4操作をこの順序だけを行う。発火済みautomationの削除と新規作成は行わない' "$success_case/codex/instructions/codex-auto-resume.md"
+grep -Fq '同じautomation IDへ次回one-shot' "$success_case/codex/instructions/codex-auto-resume.md"
+grep -Fq '`automation_id`が渡されていない場合はupdateせずfail closedで終了する' "$success_case/codex/instructions/codex-auto-resume.md"
+grep -Fq '`suggested_create`は候補カード表示のみであり永続automationではないため、呼ばない' "$success_case/codex/instructions/codex-auto-resume.md"
+grep -Fq '末尾へ`Z`を付けない' "$success_case/codex/instructions/codex-auto-resume.md"
+grep -Fq '次回予約済みと報告せず、既存automationを削除しない' "$success_case/codex/instructions/codex-auto-resume.md"
+grep -Fq 'PAUSED化し、明示的な復旧境界を残す' "$success_case/codex/instructions/codex-auto-resume.md"
+grep -Fq 'exit 0と結果JSONだけを次回予約成功の根拠とする' "$success_case/codex/instructions/codex-auto-resume.md"
+grep -Fq 'wake専用taskは発火済みautomationを削除しない' "$success_case/codex/instructions/codex-auto-resume.md"
+if grep -Fq '発火済みの前回schedulerを削除する' "$success_case/codex/instructions/codex-auto-resume.md"; then
+    printf '%s\n' "install(success再install): codex-auto-resume.mdが旧delete-before-createを残しています" >&2
+    exit 1
+fi
 grep -Fq 'telemetry_dir' "$success_case/codex/instructions/glm-execution.md"
 grep -Fq 'machine executionの反復cost観測' "$success_case/codex/instructions/glm-execution.md"
 grep -Fq '同じ責務・変更理由・検証単位' "$success_case/codex/instructions/glm-execution.md"
