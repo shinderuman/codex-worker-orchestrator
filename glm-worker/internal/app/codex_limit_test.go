@@ -13,16 +13,28 @@ import (
 )
 
 const codexLimitFiveHourPrimaryScript = "#!/bin/sh\n" +
+	"IFS= read -r line\n" +
 	"printf '%s\\n' '{\"id\":1,\"result\":{\"userAgent\":\"glm-worker/0.149.1\"}}'\n" +
-	"printf '%s\\n' '{\"id\":2,\"result\":{\"rateLimits\":{\"limitId\":\"codex\",\"primary\":{\"usedPercent\":100,\"windowDurationMins\":300,\"resetsAt\":1787685137},\"secondary\":{\"usedPercent\":16,\"windowDurationMins\":10080,\"resetsAt\":1788271937},\"planType\":\"plus\",\"rateLimitReachedType\":\"rate_limit_reached\"}}}'\n"
+	"IFS= read -r line\n" +
+	"IFS= read -r line\n" +
+	"printf '%s\\n' '{\"id\":2,\"result\":{\"rateLimits\":{\"limitId\":\"codex\",\"primary\":{\"usedPercent\":100,\"windowDurationMins\":300,\"resetsAt\":1787685137},\"secondary\":{\"usedPercent\":16,\"windowDurationMins\":10080,\"resetsAt\":1788271937},\"planType\":\"plus\",\"rateLimitReachedType\":\"rate_limit_reached\"}}}'\n" +
+	"IFS= read -r line\n"
 
 const codexLimitFiveHourSecondaryScript = "#!/bin/sh\n" +
+	"IFS= read -r line\n" +
 	"printf '%s\\n' '{\"id\":1,\"result\":{\"userAgent\":\"glm-worker/0.149.1\"}}'\n" +
-	"printf '%s\\n' '{\"id\":2,\"result\":{\"rateLimits\":{\"limitId\":\"codex\",\"primary\":{\"usedPercent\":25,\"windowDurationMins\":10080,\"resetsAt\":1788271937},\"secondary\":{\"usedPercent\":60,\"windowDurationMins\":300,\"resetsAt\":1787703163},\"planType\":\"plus\",\"rateLimitReachedType\":null}}}'\n"
+	"IFS= read -r line\n" +
+	"IFS= read -r line\n" +
+	"printf '%s\\n' '{\"id\":2,\"result\":{\"rateLimits\":{\"limitId\":\"codex\",\"primary\":{\"usedPercent\":25,\"windowDurationMins\":10080,\"resetsAt\":1788271937},\"secondary\":{\"usedPercent\":60,\"windowDurationMins\":300,\"resetsAt\":1787703163},\"planType\":\"plus\",\"rateLimitReachedType\":null}}}'\n" +
+	"IFS= read -r line\n"
 
 const codexLimitNoFiveHourScript = "#!/bin/sh\n" +
+	"IFS= read -r line\n" +
 	"printf '%s\\n' '{\"id\":1,\"result\":{\"userAgent\":\"glm-worker/0.149.1\"}}'\n" +
-	"printf '%s\\n' '{\"id\":2,\"result\":{\"rateLimits\":{\"limitId\":\"codex\",\"primary\":{\"usedPercent\":10,\"windowDurationMins\":10080,\"resetsAt\":1788271937},\"planType\":\"plus\"}}}'\n"
+	"IFS= read -r line\n" +
+	"IFS= read -r line\n" +
+	"printf '%s\\n' '{\"id\":2,\"result\":{\"rateLimits\":{\"limitId\":\"codex\",\"primary\":{\"usedPercent\":10,\"windowDurationMins\":10080,\"resetsAt\":1788271937},\"planType\":\"plus\"}}}'\n" +
+	"IFS= read -r line\n"
 
 func writeCodexLimitFake(t *testing.T, script string) string {
 	t.Helper()

@@ -157,10 +157,13 @@ func TestClaudeRunnerRunStartsThenResumesSession(t *testing.T) {
 	if !containsArgument(secondArguments, "--resume") || containsArgument(secondArguments, "--session-id") {
 		t.Fatalf("resume引数 = %#v", secondArguments)
 	}
-	for _, argument := range []string{"--disallowedTools", "Edit", "Write", "NotebookEdit", "Agent", "second prompt"} {
+	for _, argument := range []string{"--disallowedTools", "Edit", "Write", "NotebookEdit", "Agent", "Bash", "second prompt"} {
 		if !containsArgument(secondArguments, argument) {
 			t.Fatalf("read-only引数%qがありません: %#v", argument, secondArguments)
 		}
+	}
+	if got := argumentAfter(secondArguments, "--tools"); got != "Read,Grep,Glob,WebFetch,WebSearch" {
+		t.Fatalf("read-only --tools = %q", got)
 	}
 	if !containsArgument(secondArguments, "override-model") {
 		t.Fatalf("model overrideがありません: %#v", secondArguments)

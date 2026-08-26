@@ -145,53 +145,73 @@ func ReadWithTimeout(bin string, timeout time.Duration) (Snapshot, error) {
 }
 
 func exchange(ctx context.Context, stdin io.WriteCloser, stdout io.Reader) (*json.RawMessage, error) {
-	requests := []rpcRequest{
-		{JSONRPC: "2.0", ID: requestIDInitialize, Method: "initialize", Params: initializeParams{
-			ClientInfo: clientInfo{Name: clientName, Title: clientName, Version: clientVersion},
-		}},
-		{JSONRPC: "2.0", Method: "initialized"},
-		{JSONRPC: "2.0", ID: requestIDRateLimits, Method: "account/rateLimits/read", Params: struct{}{}},
-	}
 	encoder := json.NewEncoder(stdin)
-	for _, request := range requests {
-		if err := encoder.Encode(request); err != nil {
-			return nil, fmt.Errorf("%w: request write: %v", ErrAppServerProtocol, err)
-		}
+	reader := bufio.NewReader(stdout)
+
+	initialize := rpcRequest{JSONRPC: "2.0", ID: requestIDInitialize, Method: "initialize", Params: initializeParams{
+		ClientInfo: clientInfo{Name: clientName, Title: clientName, Version: clientVersion},
+	}}
+	if err := encoder.Encode(initialize); err != nil {
+		return nil, fmt.Errorf("%w: request write: %v", ErrAppServerProtocol, err)
+	}
+	initializeResult, err := awaitMessage(ctx, reader, requestIDInitialize)
+	if err != nil {
+		return nil, err
+	}
+	if initializeResult.Error != nil {
+		return nil, fmt.Errorf("%w: initialize error %d: %s", ErrAppServerProtocol, initializeResult.Error.Code, initializeResult.Error.Message)
 	}
 
-	reader := bufio.NewReader(stdout)
+	notification := rpcRequest{JSONRPC: "2.0", Method: "initialized"}
+	if err := encoder.Encode(notification); err != nil {
+		return nil, fmt.Errorf("%w: request write: %v", ErrAppServerProtocol, err)
+	}
+	read := rpcRequest{JSONRPC: "2.0", ID: requestIDRateLimits, Method: "account/rateLimits/read", Params: struct{}{}}
+	if err := encoder.Encode(read); err != nil {
+		return nil, fmt.Errorf("%w: request write: %v", ErrAppServerProtocol, err)
+	}
+	message, err := awaitMessage(ctx, reader, requestIDRateLimits)
+	if err != nil {
+		return nil, err
+	}
+	if message.Error != nil {
+		return nil, fmt.Errorf("%w: error %d: %s", ErrRateLimitsRead, message.Error.Code, message.Error.Message)
+	}
+	if message.Result == nil {
+		return nil, fmt.Errorf("%w: response has no result", ErrRateLimitsRead)
+	}
+	return message.Result, nil
+}
+
+func awaitMessage(ctx context.Context, reader *bufio.Reader, id int64) (rpcMessage, error) {
 	for {
-		line, err := reader.ReadString('\n')
+		message, err := readMessage(ctx, reader)
 		if err != nil {
-			if ctx.Err() != nil {
-				return nil, fmt.Errorf("%w", ErrAppServerTimeout)
-			}
-			return nil, fmt.Errorf("%w: response stream ended: %v", ErrAppServerProtocol, err)
+			return rpcMessage{}, err
 		}
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" {
+		if message.ID == nil || *message.ID != id {
 			continue
 		}
-		var message rpcMessage
+		return message, nil
+	}
+}
+
+func readMessage(ctx context.Context, reader *bufio.Reader) (rpcMessage, error) {
+	line, err := reader.ReadString('\n')
+	if err != nil {
+		if ctx.Err() != nil {
+			return rpcMessage{}, fmt.Errorf("%w", ErrAppServerTimeout)
+		}
+		return rpcMessage{}, fmt.Errorf("%w: response stream ended: %v", ErrAppServerProtocol, err)
+	}
+	trimmed := strings.TrimSpace(line)
+	var message rpcMessage
+	if trimmed != "" {
 		if err := json.Unmarshal([]byte(trimmed), &message); err != nil {
-			return nil, fmt.Errorf("%w: malformed line %q: %v", ErrAppServerProtocol, truncateLine(trimmed), err)
-		}
-		if message.ID == nil {
-			continue
-		}
-		if message.Error != nil {
-			if *message.ID == requestIDInitialize {
-				return nil, fmt.Errorf("%w: initialize error %d: %s", ErrAppServerProtocol, message.Error.Code, message.Error.Message)
-			}
-			return nil, fmt.Errorf("%w: error %d: %s", ErrRateLimitsRead, message.Error.Code, message.Error.Message)
-		}
-		if *message.ID == requestIDRateLimits {
-			if message.Result == nil {
-				return nil, fmt.Errorf("%w: response has no result", ErrRateLimitsRead)
-			}
-			return message.Result, nil
+			return rpcMessage{}, fmt.Errorf("%w: malformed line %q: %v", ErrAppServerProtocol, truncateLine(trimmed), err)
 		}
 	}
+	return message, nil
 }
 
 func buildSnapshot(result *json.RawMessage) (Snapshot, error) {

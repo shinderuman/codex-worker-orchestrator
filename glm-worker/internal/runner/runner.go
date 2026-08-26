@@ -22,6 +22,10 @@ const isolationPolicyVersion = "claude-isolation-1"
 
 const subtypeStructuredOutputRetryExhausted = "error_max_structured_output_retries"
 
+const readOnlyTools = "Read,Grep,Glob,WebFetch,WebSearch"
+
+var readOnlyDisallowedTools = []string{"Edit", "Write", "NotebookEdit", "Agent", "Bash"}
+
 type StructuredOutputError struct {
 	Subtype        string
 	TerminalReason string
@@ -210,7 +214,9 @@ func (r *ClaudeRunner) Run(
 	)
 
 	if readOnly {
-		args = append(args, "--disallowedTools", "Edit", "Write", "NotebookEdit", "Agent")
+		args = append(args, "--tools", readOnlyTools)
+		args = append(args, "--disallowedTools")
+		args = append(args, readOnlyDisallowedTools...)
 	}
 
 	args = append(args, "--append-system-prompt-file", systemFile, prompt)
