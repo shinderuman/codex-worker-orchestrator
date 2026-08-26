@@ -95,7 +95,7 @@ func Run(root string, fix bool) (Report, error) {
 			findings = scanGitignore(path, data)
 		}
 		if fix && len(findings) > 0 {
-			updated := blankFindings(data, findings)
+			updated := removeFindings(data, findings)
 			updates = append(updates, pendingUpdate{path: absolute, data: updated, mode: fileMode(absolute)})
 			report.Fixed += len(findings)
 			continue
@@ -432,16 +432,101 @@ func scanGitignore(path string, data []byte) []finding {
 	return findings
 }
 
-func blankFindings(data []byte, findings []finding) []byte {
-	result := append([]byte(nil), data...)
+type sourceEdit struct {
+	start int
+	end   int
+	blank bool
+}
+
+func removeFindings(data []byte, findings []finding) []byte {
+	edits := []sourceEdit{}
+	decidedLine := -1
+	decidedRemoval := false
 	for _, item := range findings {
-		for index := item.start; index < item.end && index < len(result); index++ {
-			if result[index] != '\n' && result[index] != '\r' {
-				result[index] = ' '
+		for cursor := item.start; cursor < item.end; {
+			lineStart, contentEnd, nextLine := lineBounds(data, cursor)
+			if lineStart != decidedLine {
+				decidedLine = lineStart
+				decidedRemoval = lineCommentsOnly(data, findings, lineStart, contentEnd) && !endsWithLineContinuation(data, lineStart)
 			}
+			if decidedRemoval {
+				if last := len(edits) - 1; last < 0 || edits[last].blank || edits[last].start != lineStart {
+					edits = append(edits, sourceEdit{start: lineStart, end: nextLine})
+				}
+			} else {
+				edits = append(edits, sourceEdit{start: cursor, end: min(contentEnd, item.end), blank: true})
+			}
+			cursor = nextLine
 		}
 	}
-	return result
+	return applyEdits(data, edits)
+}
+
+func lineBounds(data []byte, cursor int) (int, int, int) {
+	lineStart := 0
+	if index := bytes.LastIndexByte(data[:cursor], '\n'); index >= 0 {
+		lineStart = index + 1
+	}
+	lineFeed := bytes.IndexByte(data[lineStart:], '\n')
+	if lineFeed < 0 {
+		return lineStart, len(data), len(data)
+	}
+	lineFeed += lineStart
+	contentEnd := lineFeed
+	if contentEnd > lineStart && data[contentEnd-1] == '\r' {
+		contentEnd--
+	}
+	return lineStart, contentEnd, lineFeed + 1
+}
+
+func lineCommentsOnly(data []byte, findings []finding, start, end int) bool {
+	cursor := start
+	for _, item := range findings {
+		if item.end <= cursor {
+			continue
+		}
+		if item.start >= end {
+			break
+		}
+		if item.start > cursor && !onlyWhitespace(data[cursor:item.start]) {
+			return false
+		}
+		cursor = max(cursor, item.end)
+		if cursor >= end {
+			return true
+		}
+	}
+	return onlyWhitespace(data[cursor:end])
+}
+
+func onlyWhitespace(data []byte) bool {
+	for _, value := range data {
+		if value != ' ' && value != '\t' {
+			return false
+		}
+	}
+	return true
+}
+
+func endsWithLineContinuation(data []byte, lineStart int) bool {
+	backslashes := 0
+	for index := lineStart - 2; index >= 0 && data[index] == '\\'; index-- {
+		backslashes++
+	}
+	return backslashes%2 == 1
+}
+
+func applyEdits(data []byte, edits []sourceEdit) []byte {
+	result := make([]byte, 0, len(data))
+	position := 0
+	for _, edit := range edits {
+		result = append(result, data[position:edit.start]...)
+		if edit.blank {
+			result = append(result, bytes.Repeat([]byte{' '}, edit.end-edit.start)...)
+		}
+		position = edit.end
+	}
+	return append(result, data[position:]...)
 }
 
 func fileMode(path string) os.FileMode {

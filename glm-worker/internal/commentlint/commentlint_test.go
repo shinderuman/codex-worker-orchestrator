@@ -186,6 +186,109 @@ func TestRunWithoutGitUsesFilesystemInventory(t *testing.T) {
 	}
 }
 
+func TestRemoveFindingsRemovesCommentOnlyLines(t *testing.T) {
+	cases := []struct {
+		name     string
+		scan     func(string, []byte) []finding
+		path     string
+		data     string
+		expected string
+	}{
+		{
+			name:     "shell drops comment-only lines and keeps existing blank line single",
+			scan:     scanShell,
+			path:     "a.sh",
+			data:     "#!/bin/sh\n# full prose\necho one\n# first\n# second\necho two\n\necho three # tail\n",
+			expected: "#!/bin/sh\necho one\necho two\n\necho three       \n",
+		},
+		{
+			name:     "shell keeps comment line after line continuation as blanked line",
+			scan:     scanShell,
+			path:     "a.sh",
+			data:     "#!/bin/sh\necho one \\\n# continued prose\necho two\n",
+			expected: "#!/bin/sh\necho one \\\n                 \necho two\n",
+		},
+		{
+			name:     "shell drops indented comment-only line and unterminated tail comment",
+			scan:     scanShell,
+			path:     "a.sh",
+			data:     "#!/bin/sh\nif true; then\n    # prose\n    echo one\nfi\n# tail prose",
+			expected: "#!/bin/sh\nif true; then\n    echo one\nfi\n",
+		},
+		{
+			name:     "go drops line and block comment-only lines",
+			scan:     scanGo,
+			path:     "a.go",
+			data:     "package p\n\n// full prose\nvar x = 1\n\n/* block head\nblock tail\n*/\nvar y = 2\n",
+			expected: "package p\n\nvar x = 1\n\nvar y = 2\n",
+		},
+		{
+			name:     "go blanks code line head and drops covered tail line of block comment",
+			scan:     scanGo,
+			path:     "a.go",
+			data:     "package p\nvar a = 1 /* head\ntail */\nvar b = 2\n",
+			expected: "package p\nvar a = 1        \nvar b = 2\n",
+		},
+		{
+			name:     "go drops line holding only two comments",
+			scan:     scanGo,
+			path:     "a.go",
+			data:     "package p\n/* one */ /* two */\nvar x = 1\n",
+			expected: "package p\nvar x = 1\n",
+		},
+		{
+			name:     "toml drops comment-only line",
+			scan:     scanHash,
+			path:     "a.toml",
+			data:     "# prose\nvalue = 1\n",
+			expected: "value = 1\n",
+		},
+		{
+			name:     "gitignore drops comment-only line",
+			scan:     scanGitignore,
+			path:     ".gitignore",
+			data:     "# prose\n/file\n",
+			expected: "/file\n",
+		},
+	}
+	for _, item := range cases {
+		t.Run(item.name, func(t *testing.T) {
+			data := []byte(item.data)
+			fixed := removeFindings(data, item.scan(item.path, data))
+			if string(fixed) != item.expected {
+				t.Fatalf("fixed = %q, want %q", fixed, item.expected)
+			}
+		})
+	}
+}
+
+func TestRunFixDropsCommentOnlyLinesWithoutNewBlankLines(t *testing.T) {
+	root := t.TempDir()
+	runGit(t, root, "init")
+	writeFile(t, filepath.Join(root, "run.sh"), "#!/bin/sh\n# full prose\necho one\n# first\n# second\necho two\n\necho three # tail\n")
+	writeFile(t, filepath.Join(root, "a.go"), "package p\n\n// full prose\nvar x = 1\n")
+	report, err := Run(root, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Status != "pass" || report.Fixed != 5 || len(report.Violations) != 0 {
+		t.Fatalf("report = %+v", report)
+	}
+	if string(readFile(t, filepath.Join(root, "run.sh"))) != "#!/bin/sh\necho one\necho two\n\necho three       \n" {
+		t.Fatalf("shell fix = %q", readFile(t, filepath.Join(root, "run.sh")))
+	}
+	if string(readFile(t, filepath.Join(root, "a.go"))) != "package p\n\nvar x = 1\n" {
+		t.Fatalf("go fix = %q", readFile(t, filepath.Join(root, "a.go")))
+	}
+	second, err := Run(root, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.Fixed != 0 || len(second.Violations) != 0 {
+		t.Fatalf("second = %+v", second)
+	}
+}
+
 func runGit(t *testing.T, root string, args ...string) {
 	t.Helper()
 	command := exec.Command("git", append([]string{"-C", root}, args...)...)

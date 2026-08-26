@@ -8,7 +8,7 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/comment-lint-empty-line-fix.md`
+- `IMPLEMENTATION_TASKS/full-smoke-evidence-reuse.md`
 
 ## NEXT（優先順）
 
@@ -40,15 +40,15 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 ## 現在のGit境界
 
 - branch: `main`
-- implementation baseline: 5h wake再予約lifecycle修復をcurrent HEADへ収録した状態
-- implementation boundary: 発火済みautomationを削除せず同一IDへ次回one-shotを更新し、suggested-create false-completeを拒否するcanonical instruction・policy/scenario testを収録。全test/race/vet/build/gofmt、commentlint、full install smoke、独立review、親Codex最終採用を完了
-- preserved boundary: 次回wake `2026-08-26T10:18:27Z`を同ID・同target・ACTIVE one-shotでmachine verification済み。force/non-fast-forward・tag・他ref・他repository・GLM commit/push禁止を維持し、commentlint空行fixをACTIVE、EVAL責務整理をNEXTとして保持
+- implementation baseline: comment lint不要空行生成修正をcurrent HEADへ収録した状態
+- implementation boundary: comment-only行空白化を行削除へ置換し、code行trailing commentとshell継続直後は安全側の空白化を維持。再現・冪等test、全test/race/vet/build/gofmt、commentlint、full install smoke、独立review、親Codex最終採用を完了
+- preserved boundary: 汎用formatter・既存空行一括cleanup・comment detection変更は行わず、full smoke証拠再利用をACTIVEへ昇格。force/non-fast-forward・tag・他ref・他repository・GLM commit/push禁止を維持
 - push: 各親commit後の`refs/heads/main`とGreptile正常review後の`refs/heads/codex/greptile-reviewed`だけを親Codexが通常fast-forwardする。GLM push、force/non-fast-forward、他refへのpushは禁止
 
 ## 現在の停止理由
 
-なし。comment lint fixが不要空行を新規生成する原因を修正する境界。
+なし。同一有効snapshotのfull smoke PASSをfeedback loopで再利用する境界。
 
 ## 次の親Codex操作
 
-ACTIVE taskのlossless requirementを正として、comment lint fixの不要空行生成原因をGLMへ調査・実装修正させる。
+ACTIVE taskのlossless requirementを正として、full smokeの実行入口・証拠identity・再利用/失効条件をGLMへ調査・設計・実装させる。
