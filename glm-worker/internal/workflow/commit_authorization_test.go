@@ -89,6 +89,7 @@ func TestCommitAuthorizationSourceContractWiring(t *testing.T) {
 			if strings.Contains(prompt, keyword) {
 				t.Errorf("%s must not duplicate the commit authorization source contract (%s)", promptFile, keyword)
 			}
+		}
 	}
 
 	sc, _ := loadCorpus(t)
