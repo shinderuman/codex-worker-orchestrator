@@ -485,3 +485,128 @@ created_at = 1
 		t.Fatalf("出力はJSON 1行だけ: %q", out.String())
 	}
 }
+
+func TestExecuteCheckWakeCoalesceCoalescesActiveWake(t *testing.T) {
+	if _, err := exec.LookPath("sqlite3"); err != nil {
+		t.Skip("sqlite3 not installed")
+	}
+
+	cfg := newAppConfig(t)
+	parentThread := "01a0244a-4ee4-7e71-b2e1-dec3bdda2120"
+	wakeID := "codex-5h-wake-01a03a9e-10a0-7f11-801c-f04e5dbd5490"
+
+	automationsDir := cfg.CodexConfigDir + "/automations/" + wakeID
+	if err := os.MkdirAll(automationsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	tomlContent := "version = 1\n" +
+		"id = \"" + wakeID + "\"\n" +
+		"kind = \"heartbeat\"\n" +
+		"name = \"" + wakeID + "\"\n" +
+		"prompt = \"親実装task " + parentThread + "へ固定文「作業を続けろ」を1回送信する\"\n" +
+		"status = \"ACTIVE\"\n" +
+		"rrule = \"DTSTART:20260826T152059\\nRRULE:FREQ=DAILY;COUNT=1\"\n" +
+		"target_thread_id = \"01a03a9e-10a0-7f11-801c-f04e5dbd5490\"\n" +
+		"created_at = 1\n"
+	if err := os.WriteFile(automationsDir+"/automation.toml", []byte(tomlContent), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	dbDir := cfg.CodexConfigDir + "/sqlite"
+	if err := os.MkdirAll(dbDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	dbPath := dbDir + "/codex-dev.db"
+	schema := `CREATE TABLE automations (id TEXT PRIMARY KEY, name TEXT NOT NULL, prompt TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'ACTIVE', next_run_at INTEGER, last_run_at INTEGER, cwds TEXT NOT NULL DEFAULT '[]', rrule TEXT NOT NULL, model TEXT, reasoning_effort TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, target_type TEXT, project_id TEXT);`
+	if err := exec.Command("sqlite3", dbPath, schema).Run(); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+	nextRun := time.Date(2026, 8, 26, 15, 20, 59, 0, time.UTC).UnixMilli()
+	insert := `INSERT INTO automations (id, name, prompt, status, next_run_at, cwds, rrule, created_at, updated_at) VALUES ('` + wakeID + `', '` + wakeID + `', 'p', 'ACTIVE', ` + fmt.Sprintf("%d", nextRun) + `, '[]', 'DTSTART:20260826T152059' || char(10) || 'RRULE:FREQ=DAILY;COUNT=1', 1, 1);`
+	if err := exec.Command("sqlite3", dbPath, insert).Run(); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	var out bytes.Buffer
+	err := Execute(Command{
+		Mode: ModeCheckWakeCoalesce,
+		Coalesce: CoalesceArgs{
+			ParentThreadID:  parentThread,
+			ResumeAtRFC3339: "2026-08-26T15:17:55Z",
+		},
+	}, cfg, nil, &out, io.Discard)
+	if err != nil {
+		t.Fatalf("expected coalesce, got error: %v output=%s", err, out.String())
+	}
+	var output checkWakeCoalesceOutput
+	if err := json.Unmarshal(out.Bytes(), &output); err != nil {
+		t.Fatalf("成功出力がmachine JSON 1行として読めません: %v: %q", err, out.String())
+	}
+	if output.Decision != "coalesce" || output.Reason != "" ||
+		output.WakeAutomationID != wakeID || output.WakeThread != "01a03a9e-10a0-7f11-801c-f04e5dbd5490" ||
+		output.WakeNextRunUTC != "2026-08-26T15:20:59Z" || output.AddedWaitSeconds != 184 ||
+		output.ParentThread != parentThread || output.ResumeAtUTC != "2026-08-26T15:17:55Z" {
+		t.Fatalf("coalesce output = %+v", output)
+	}
+	if strings.Count(out.String(), "\n") != 1 {
+		t.Fatalf("出力はJSON 1行だけ: %q", out.String())
+	}
+}
+
+func TestExecuteCheckWakeCoalesceCreatesGLMWakeWithoutWake(t *testing.T) {
+	cfg := newAppConfig(t)
+	var out bytes.Buffer
+
+	err := Execute(Command{
+		Mode: ModeCheckWakeCoalesce,
+		Coalesce: CoalesceArgs{
+			ParentThreadID:  "01a0244a-4ee4-7e71-b2e1-dec3bdda2120",
+			ResumeAtRFC3339: "2026-08-26T15:17:55Z",
+		},
+	}, cfg, nil, &out, io.Discard)
+	if err != nil {
+		t.Fatalf("expected create_glm_wake, got error: %v output=%s", err, out.String())
+	}
+	var output checkWakeCoalesceOutput
+	if err := json.Unmarshal(out.Bytes(), &output); err != nil {
+		t.Fatalf("成功出力がmachine JSON 1行として読めません: %v: %q", err, out.String())
+	}
+	if output.Decision != "create_glm_wake" || output.Reason != "no codex wake automation targets the parent thread" {
+		t.Fatalf("create output = %+v", output)
+	}
+}
+
+func TestExecuteCheckWakeCoalesceRejectsInvalidResumeTime(t *testing.T) {
+	cfg := newAppConfig(t)
+	var out bytes.Buffer
+
+	err := Execute(Command{
+		Mode: ModeCheckWakeCoalesce,
+		Coalesce: CoalesceArgs{
+			ParentThreadID:  "01a0244a-4ee4-7e71-b2e1-dec3bdda2120",
+			ResumeAtRFC3339: "2026-08-26 15:17:55",
+		},
+	}, cfg, nil, &out, io.Discard)
+	var usage *UsageError
+	if !errors.As(err, &usage) {
+		t.Fatalf("usage errorを期待: %v", err)
+	}
+	if out.String() != "" {
+		t.Fatalf("失敗時のstdoutは空のまま: %q", out.String())
+	}
+	var errOut bytes.Buffer
+	if err := WriteProcessError(&errOut, err); err != nil {
+		t.Fatal(err)
+	}
+	var envelope struct {
+		Error struct {
+			Kind string `json:"kind"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(errOut.Bytes(), &envelope); err != nil {
+		t.Fatalf("process errorがJSON 1行として読めません: %v: %q", err, errOut.String())
+	}
+	if envelope.Error.Kind != "usage" {
+		t.Fatalf("process error kind = %q: %s", envelope.Error.Kind, errOut.String())
+	}
+}

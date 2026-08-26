@@ -736,6 +736,39 @@ func printVerifyAutoResume(cmd Command, cfg config.AppConfig, stdout io.Writer) 
 	})
 }
 
+type checkWakeCoalesceOutput struct {
+	Decision         string `json:"decision"`
+	Reason           string `json:"reason"`
+	ParentThread     string `json:"parent_thread"`
+	ResumeAtUTC      string `json:"resume_at_utc"`
+	WakeAutomationID string `json:"wake_automation_id"`
+	WakeThread       string `json:"wake_thread"`
+	WakeNextRunUTC   string `json:"wake_next_run_at_utc"`
+	AddedWaitSeconds int64  `json:"added_wait_seconds"`
+}
+
+func printCheckWakeCoalesce(cmd Command, cfg config.AppConfig, stdout io.Writer) error {
+	result, err := autoresume.CheckCoalesce(autoresume.CoalesceParams{
+		ParentThreadID:  cmd.Coalesce.ParentThreadID,
+		ResumeAtRFC3339: cmd.Coalesce.ResumeAtRFC3339,
+		AutomationsDir:  filepath.Join(cfg.CodexConfigDir, "automations"),
+		DBPath:          filepath.Join(cfg.CodexConfigDir, "sqlite", "codex-dev.db"),
+	}, autoresume.ReadDBRowSqlite3)
+	if err != nil {
+		return usageError("%s", err.Error())
+	}
+	return writeJSON(stdout, checkWakeCoalesceOutput{
+		Decision:         result.Decision,
+		Reason:           result.Reason,
+		ParentThread:     result.ParentThread,
+		ResumeAtUTC:      result.ResumeAtUTC,
+		WakeAutomationID: result.WakeAutomationID,
+		WakeThread:       result.WakeThread,
+		WakeNextRunUTC:   result.WakeNextRunUTC,
+		AddedWaitSeconds: result.AddedWaitSeconds,
+	})
+}
+
 func outcomeLabel(o autoresume.Outcome) string {
 	switch o {
 	case autoresume.Pass:

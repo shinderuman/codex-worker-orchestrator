@@ -57,6 +57,7 @@ func parseAutomationTOML(data []byte) (AutomationTOML, error) {
 		Status:         values["status"],
 		Rrule:          values["rrule"],
 		TargetThreadID: values["target_thread_id"],
+		Prompt:         values["prompt"],
 	}, nil
 }
 

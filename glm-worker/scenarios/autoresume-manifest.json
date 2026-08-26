@@ -1,6 +1,6 @@
 {
   "version": 1,
   "description": "autoresume escaped bug corpusが根拠とするglm-auto-resume.mdのSHA-256固定。file内容が変わるとhash mismatchでtestが失敗し、corpusの期待行動・期待終端を現物へ再照合すること。",
-  "auto_resume_instruction_sha256": "41030d009a75a670b40cd1e0f2767a5c52cc2925251b48616e37ff7a03a4732e",
+  "auto_resume_instruction_sha256": "10fc213e9b2bab35842f7769c6372e6a48340bc9548608086e48deec6f6a964c",
   "scenario_count": 15
 }

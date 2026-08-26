@@ -258,6 +258,14 @@ grep -Fq 'DTSTART:YYYYMMDDTHHMMSS' "$success_case/codex/instructions/glm-auto-re
 grep -Fq 'DTSTART;TZID=Asia/Tokyo`は使わない' "$success_case/codex/instructions/glm-auto-resume.md"
 grep -Fq 'automations.next_run_at' "$success_case/codex/instructions/glm-auto-resume.md"
 grep -Fq 'verify-auto-resume' "$success_case/codex/instructions/glm-auto-resume.md"
+grep -Fq '## Codex wakeとの重複排除(coalesce判定)' "$success_case/codex/instructions/glm-auto-resume.md"
+grep -Fq 'glm-worker --check-wake-coalesce <現在の親実装task thread ID> <detail.auto_resume_at_rfc3339>' "$success_case/codex/instructions/glm-auto-resume.md"
+grep -Fq 'GLM resume時刻 <= wake次回発火時刻 <= GLM resume時刻 + 10分' "$success_case/codex/instructions/glm-auto-resume.md"
+grep -Fq 'coalesceしたwake automation ID・次回発火時刻・追加待ち時間を報告して' "$success_case/codex/instructions/glm-auto-resume.md"
+grep -Fq 'coalesceしてもCodex wakeとGLM resumeの責務・session ownershipは統合せず' "$success_case/codex/instructions/glm-auto-resume.md"
+grep -Fq 'expected task IDの正はrate-limit packetの`detail.task_id`だけであり' "$success_case/codex/instructions/glm-auto-resume.md"
+grep -Fq 'expected task IDを推測してresumeしない(fail closed)' "$success_case/codex/instructions/glm-auto-resume.md"
+grep -Fq '手動`glm-worker --resume`によるmanual fallbackを報告して停止する' "$success_case/codex/instructions/glm-auto-resume.md"
 grep -Fq '返り値全体を文字列として必ず検査' "$success_case/codex/instructions/glm-auto-resume.md"
 grep -Fq '`suggested_create`を呼ばない' "$success_case/codex/instructions/glm-auto-resume.md"
 grep -Fq 'Immediate automation creates cannot include DTSTART' "$success_case/codex/instructions/glm-auto-resume.md"
@@ -366,6 +374,9 @@ grep -Fq 'packet(stdoutのmachine JSON 1行)またはprocess失敗' "$success_ca
 
 "$success_case/bin/glm-worker" --verify-auto-resume 2>&1 \
     | grep -Fq 'usage: glm-worker --verify-auto-resume'
+
+"$success_case/bin/glm-worker" --check-wake-coalesce 2>&1 \
+    | grep -Fq 'usage: glm-worker --check-wake-coalesce'
 
 "$success_case/bin/glm-worker" --install-smoke --role bogus 2>&1 \
     | grep -Fq 'usage: glm-worker --install-smoke'

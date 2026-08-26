@@ -8,11 +8,10 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/wake-schedule-coalescing.md`
+- `IMPLEMENTATION_TASKS/eval-responsibility-reduction.md`
 
 ## NEXT（優先順）
 
-- `IMPLEMENTATION_TASKS/eval-responsibility-reduction.md`
 - `IMPLEMENTATION_TASKS/instruction-surface-ownership.md`
 - `IMPLEMENTATION_TASKS/unknown-production-surface-risk.md`
 - `IMPLEMENTATION_TASKS/glm-git-authority-enforcement.md`
@@ -49,15 +48,15 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 ## 現在のGit境界
 
 - branch: `main`
-- implementation baseline: 外部machine output共通boundaryを完了し、次のwake schedule coalescingをACTIVEへ昇格した状態
-- implementation boundary: 既存Codex 5h wakeとGLM rate-limit resume候補を機械照合し、許容遅延内なら1回のCodex wakeへ統合して二重発火・二重Codex turnを防ぐ。task ID・status・resume可能性はwake時に再検証し、条件不一致ではresumeしない
-- preserved boundary: single-shot stdout/stderr保留検証、failure process error JSON 1件、Watch JSONL、process stream有限期待集合gate、full smoke証拠再利用、GLM commit/push禁止を維持
+- implementation baseline: Codex wakeとGLM resume wakeのcoalescingを完了し、EVAL責務整理をACTIVEへ昇格した状態
+- implementation boundary: EVALのpositive/negative/regression coverageとstable external invariantを維持し、production内部実装、具体的運用手順、長いincident chronology、他surfaceの重複再掲を削減してscenario/condition/expected result/invariant中心へ収束する
+- preserved boundary: wake coalescingの10分closed interval・fail-open reservation・task ID fail-closed、machine output boundary、full smoke証拠再利用、GLM commit/push禁止を維持
 - push: 各親commit後の`refs/heads/main`とGreptile正常review後の`refs/heads/codex/greptile-reviewed`だけを親Codexが通常fast-forwardする。GLM push、force/non-fast-forward、他refへのpushは禁止
 
 ## 現在の停止理由
 
-なし。Codex wakeとGLM resume wakeの重複を削減するACTIVE taskを開始できる。
+なし。EVAL責務整理のACTIVE taskを開始できる。
 
 ## 次の親Codex操作
 
-ACTIVE taskのlossless requirementを正として、既存automation実体とrate-limit metadataから安全なwake coalescing境界をGLMへ設計・実装させる。
+ACTIVE taskのlossless requirementを正として、EVAL caseを減らさず実装詳細・運用手順・incident chronology・重複proseを整理させる。

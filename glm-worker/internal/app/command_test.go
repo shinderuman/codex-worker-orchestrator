@@ -24,6 +24,11 @@ func TestParseCommandModes(t *testing.T) {
 			args: []string{"--verify-auto-resume", "key-1234", "2026-08-12T20:01:20+09:00", "thread-uuid"},
 			mode: ModeVerifyAutoResume,
 		},
+		{
+			name: "check-wake-coalesce",
+			args: []string{"--check-wake-coalesce", "thread-uuid", "2026-08-12T20:01:20+09:00"},
+			mode: ModeCheckWakeCoalesce,
+		},
 		{name: "eval-ab", args: []string{"--eval-ab", "/tmp/ab-run"}, mode: ModeEvalAB, payload: "/tmp/ab-run"},
 		{name: "call-outliers", args: []string{"--call-outliers"}, mode: ModeCallOutliers},
 		{name: "codex-limit", args: []string{"--codex-limit"}, mode: ModeCodexLimit},
@@ -144,6 +149,9 @@ func TestParseCommandRejectsInvalidArguments(t *testing.T) {
 		{"--verify-auto-resume", "key"},
 		{"--verify-auto-resume", "key", "date"},
 		{"--verify-auto-resume", "key", "date", "thread", "extra"},
+		{"--check-wake-coalesce"},
+		{"--check-wake-coalesce", "thread"},
+		{"--check-wake-coalesce", "thread", "date", "extra"},
 		{"--eval-ab"},
 		{"--eval-ab", "dir", "extra"},
 		{"--call-outliers", "extra"},
@@ -178,5 +186,25 @@ func TestParseCommandVerifyAutoResumeArgs(t *testing.T) {
 	}
 	if command.Verify.ThreadID != "019f88f8-0e70-7d53-a2a3-f0c61666827c" {
 		t.Fatalf("ThreadID = %q", command.Verify.ThreadID)
+	}
+}
+
+func TestParseCommandCheckWakeCoalesceArgs(t *testing.T) {
+	command, err := ParseCommand([]string{
+		"--check-wake-coalesce",
+		"019f88f8-0e70-7d53-a2a3-f0c61666827c",
+		"2026-08-26T15:17:55Z",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if command.Mode != ModeCheckWakeCoalesce {
+		t.Fatalf("Mode = %d", command.Mode)
+	}
+	if command.Coalesce.ParentThreadID != "019f88f8-0e70-7d53-a2a3-f0c61666827c" {
+		t.Fatalf("ParentThreadID = %q", command.Coalesce.ParentThreadID)
+	}
+	if command.Coalesce.ResumeAtRFC3339 != "2026-08-26T15:17:55Z" {
+		t.Fatalf("ResumeAtRFC3339 = %q", command.Coalesce.ResumeAtRFC3339)
 	}
 }

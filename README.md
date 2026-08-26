@@ -91,6 +91,7 @@ glm-worker --reset
 glm-worker --eval-ab "<A/B run dir>"
 glm-worker --call-outliers
 glm-worker --codex-limit
+glm-worker --check-wake-coalesce "<親実装task thread ID>" "<GLM auto-resume時刻 RFC3339>"
 ```
 
 要点だけ記す。個別commandの呼び出し手順は配置先`~/.codex/instructions/`(glm-execution・glm-packets・glm-auto-resume等)が契約を持ち、出力契約の正は実装と`EVAL.md`である。
@@ -99,7 +100,7 @@ glm-worker --codex-limit
 - `--origin`は差戻し元申告(有限集合。未申告は`unknown`計上で`codex-review`へ推定しない)。`--accept`はterminal packet採用の観測記録専用
 - `--resume`は5h上限・provider一時障害・`--stop`停止で中断した同一phase・session・checkpointの再開。中断taskのstate・session・working treeは破棄せず、`--reset`なしの新規task投入はfail closedする
 - `--stop`は単一目的local control endpoint経由の安全停止、`--isolate`は停止中の元taskを保持したまま割り込みtask用のgit worktree隔離checkoutを作る。手動kill・同一checkoutへの重ねtaskは使わない
-- `--status`・`--watch`(event logのread-only JSONL stream)・`--timeline`・`--convergence`(round log・telemetry由来のreview/fix収束)・`--call-outliers`(全task横断のworker呼出分布・outlier)・`--eval-ab`(A/B run dir検証)・`--codex-limit`(Codex CLI rate-limit読取)はすべてAI呼出・repo lock・state書換をしない参照専用command
+- `--status`・`--watch`(event logのread-only JSONL stream)・`--timeline`・`--convergence`(round log・telemetry由来のreview/fix収束)・`--call-outliers`(全task横断のworker呼出分布・outlier)・`--eval-ab`(A/B run dir検証)・`--codex-limit`(Codex CLI rate-limit読取)・`--verify-auto-resume`・`--check-wake-coalesce`(既存Codex 5h wake実体照合によるGLM wake重複排除判定)はすべてAI呼出・repo lock・state書換をしない参照専用command
 - `--stats`は完了済みと現在taskの集計(model alias別呼出・token・risk floor・snapshot mismatch・probe・parent outcome等)。`--reset`は現在統計をarchiveして実行状態を消去する
 
 停止・再開の分類と機械契約(5h上限signal、provider一時障害のtransient分類とprobe、`--stop`保持基準、`--isolate`統合条件)の正は実装と`EVAL.md`である。error時はstderrへerror JSON 1行とnon-zero exitで、種別は`rate_limited`・`provider_unavailable`・`interrupted`・`worker_error`等の`kind`で識別できる。
@@ -126,7 +127,7 @@ model routing(worker=opus、通常reviewer=haiku、高リスク系reviewer=sonne
 
 ## 複数リポジトリの並列利用
 
-異なるrepositoryでglm-workerを同時利用できることを通常contractとする。全体を直列化するglobal lock・daemon・socket・schedulerは持たず、state dir・repo lock・session・telemetry・event log・artifact・repo-search cacheはすべて`GLM_WORKER_HOME`配下のrepo hash単位へ分離される。同一repoの2本目の起動だけflock拒否され、他repoの起動・実行はblockしない。`--verify-auto-resume`・`--codex-limit`のCodex config dir・app-server accessは読み取り専用。provider quotaはaccount単位のupstream管理であり、同一quotaを2 repoが消費すること自体はbugではない。このcontractは`glm-worker/internal/app/multirepo_process_test.go`・`multirepo_reposearch_test.go`・`multirepo_pty_test.go`で固定する。
+異なるrepositoryでglm-workerを同時利用できることを通常contractとする。全体を直列化するglobal lock・daemon・socket・schedulerは持たず、state dir・repo lock・session・telemetry・event log・artifact・repo-search cacheはすべて`GLM_WORKER_HOME`配下のrepo hash単位へ分離される。同一repoの2本目の起動だけflock拒否され、他repoの起動・実行はblockしない。`--verify-auto-resume`・`--check-wake-coalesce`・`--codex-limit`のCodex config dir・app-server accessは読み取り専用。provider quotaはaccount単位のupstream管理であり、同一quotaを2 repoが消費すること自体はbugではない。このcontractは`glm-worker/internal/app/multirepo_process_test.go`・`multirepo_reposearch_test.go`・`multirepo_pty_test.go`で固定する。
 
 ## 自己保護 (self-protection)
 

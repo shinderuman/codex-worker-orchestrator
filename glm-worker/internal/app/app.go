@@ -33,6 +33,7 @@ const (
 	ModeStats
 	ModeReset
 	ModeVerifyAutoResume
+	ModeCheckWakeCoalesce
 	ModeEvalAB
 	ModeCallOutliers
 	ModeCodexLimit
@@ -49,15 +50,21 @@ type Command struct {
 
 	SHA256 string
 
-	Origin string
-	Role   string
-	Verify VerifyArgs
+	Origin   string
+	Role     string
+	Verify   VerifyArgs
+	Coalesce CoalesceArgs
 }
 
 type VerifyArgs struct {
 	Key      string
 	RFC3339  string
 	ThreadID string
+}
+
+type CoalesceArgs struct {
+	ParentThreadID  string
+	ResumeAtRFC3339 string
 }
 
 const fixOriginUsage = "[--origin codex-review|glm-reviewer|user-amendment|external-review|metadata-repair]"
@@ -86,7 +93,7 @@ func usageError(format string, args ...any) *UsageError {
 
 func ParseCommand(args []string) (Command, error) {
 	if len(args) == 0 {
-		return Command{}, usageError("usage: glm-worker <instruction> | --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix-stdin <payload-bytes> [--sha256 <hex>] %s | --accept | --resume | --stop | --isolate | --status | --watch [--verbose] | --timeline [task-id] | --convergence [task-id] | --stats | --reset | --eval-ab <run-dir> | --call-outliers | --codex-limit | --install-smoke %s", fixOriginUsage, installSmokeUsage)
+		return Command{}, usageError("usage: glm-worker <instruction> | --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix-stdin <payload-bytes> [--sha256 <hex>] %s | --accept | --resume | --stop | --isolate | --status | --watch [--verbose] | --timeline [task-id] | --convergence [task-id] | --stats | --reset | --eval-ab <run-dir> | --call-outliers | --codex-limit | --check-wake-coalesce <parent-thread-id> <auto-resume-at-rfc3339> | --install-smoke %s", fixOriginUsage, installSmokeUsage)
 	}
 
 	switch args[0] {
@@ -166,6 +173,17 @@ func ParseCommand(args []string) (Command, error) {
 				Key:      args[1],
 				RFC3339:  args[2],
 				ThreadID: args[3],
+			},
+		}, nil
+	case "--check-wake-coalesce":
+		if len(args) != 3 {
+			return Command{}, usageError("usage: glm-worker --check-wake-coalesce <parent-thread-id> <auto-resume-at-rfc3339>")
+		}
+		return Command{
+			Mode: ModeCheckWakeCoalesce,
+			Coalesce: CoalesceArgs{
+				ParentThreadID:  args[1],
+				ResumeAtRFC3339: args[2],
 			},
 		}, nil
 	case "--eval-ab":
@@ -364,6 +382,10 @@ func Execute(cmd Command, cfg config.AppConfig, rf RunnerFactory, stdout, stderr
 
 	if cmd.Mode == ModeCodexLimit {
 		return printCodexLimit(cfg, stdout)
+	}
+
+	if cmd.Mode == ModeCheckWakeCoalesce {
+		return printCheckWakeCoalesce(cmd, cfg, stdout)
 	}
 
 	st, err := state.NewStateStore(cfg)

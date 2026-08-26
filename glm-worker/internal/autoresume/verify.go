@@ -32,6 +32,7 @@ type AutomationTOML struct {
 	Status         string
 	Rrule          string
 	TargetThreadID string
+	Prompt         string
 }
 
 type DBRow struct {

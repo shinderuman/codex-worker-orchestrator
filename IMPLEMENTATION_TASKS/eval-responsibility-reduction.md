@@ -109,4 +109,4 @@ none
 
 ## Current boundary
 
-install smoke loop cost削減を中断せずNEXTへ追加済み。既存のcommit authorization、commentlint空行fixより低い優先度で、ACTIVE完了後のPlan順に従う。
+ACTIVE。Eval coverageとescaped regression対応を維持したまま、EVALをscenario・condition・expected result・invariant中心の評価仕様へ収束する。
