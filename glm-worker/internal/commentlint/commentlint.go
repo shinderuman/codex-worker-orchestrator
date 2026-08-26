@@ -46,6 +46,11 @@ type shellLine struct {
 	offset int
 }
 
+type heredocSpec struct {
+	word      string
+	stripTabs bool
+}
+
 func Check(root string) (Report, error) {
 	return Run(root, false)
 }
@@ -79,6 +84,13 @@ func Run(root string, fix bool) (Report, error) {
 			continue
 		}
 		absolute := filepath.Join(root, filepath.FromSlash(path))
+		info, err := os.Lstat(absolute)
+		if err != nil {
+			return Report{}, fmt.Errorf("stat %s: %w", path, err)
+		}
+		if !info.Mode().IsRegular() {
+			return Report{}, fmt.Errorf("source candidate %s is not a regular file", path)
+		}
 		data, err := os.ReadFile(absolute)
 		if err != nil {
 			return Report{}, fmt.Errorf("read %s: %w", path, err)
@@ -96,7 +108,7 @@ func Run(root string, fix bool) (Report, error) {
 		}
 		if fix && len(findings) > 0 {
 			updated := removeFindings(data, findings)
-			updates = append(updates, pendingUpdate{path: absolute, data: updated, mode: fileMode(absolute)})
+			updates = append(updates, pendingUpdate{path: absolute, data: updated, mode: info.Mode().Perm()})
 			report.Fixed += len(findings)
 			continue
 		}
@@ -245,7 +257,7 @@ func scanShell(path string, data []byte) []finding {
 
 func scanShellLines(path string, lines []shellLine) []finding {
 	var findings []finding
-	pending := []string{}
+	pending := []heredocSpec{}
 	bodyStart := 0
 	for index := 0; index < len(lines); index++ {
 		line := lines[index]
@@ -276,12 +288,15 @@ func scanShellLines(path string, lines []shellLine) []finding {
 	return findings
 }
 
-func heredocTerminated(word string, line string) bool {
-	return line == word || strings.TrimPrefix(line, "\t") == word
+func heredocTerminated(spec heredocSpec, line string) bool {
+	if spec.stripTabs {
+		line = strings.TrimLeft(line, "\t")
+	}
+	return line == spec.word
 }
 
-func heredocDelimiters(code string) []string {
-	var delimiters []string
+func heredocDelimiters(code string) []heredocSpec {
+	var delimiters []heredocSpec
 	single := false
 	double := false
 	escaped := false
@@ -307,7 +322,7 @@ func heredocDelimiters(code string) []string {
 			continue
 		}
 		delimiter, consumed := heredocDelimiter(code, index+2)
-		if delimiter != "" {
+		if delimiter.word != "" {
 			delimiters = append(delimiters, delimiter)
 		}
 		index = consumed - 1
@@ -315,9 +330,11 @@ func heredocDelimiters(code string) []string {
 	return delimiters
 }
 
-func heredocDelimiter(code string, start int) (string, int) {
+func heredocDelimiter(code string, start int) (heredocSpec, int) {
 	index := start
+	stripTabs := false
 	if index < len(code) && code[index] == '-' {
+		stripTabs = true
 		index++
 	}
 	for index < len(code) && (code[index] == ' ' || code[index] == '\t') {
@@ -333,13 +350,13 @@ func heredocDelimiter(code string, start int) (string, int) {
 		index++
 	}
 	if index == begin {
-		return "", start
+		return heredocSpec{}, start
 	}
 	end := index
 	if quote != 0 && index < len(code) && code[index] == quote {
 		index++
 	}
-	return code[begin:end], index
+	return heredocSpec{word: code[begin:end], stripTabs: stripTabs}, index
 }
 
 func heredocWordByte(value byte, first bool) bool {
