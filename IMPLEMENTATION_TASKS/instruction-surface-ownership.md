@@ -59,7 +59,7 @@ GLMが読むinstructionをGLM自身が改変して次回sessionの要求・権�
 
 ## Dependencies
 
-- `IMPLEMENTATION_TASKS/eval-responsibility-reduction.md`
+none
 
 ## Review findings
 
@@ -67,4 +67,4 @@ none
 
 ## Current boundary
 
-NEXT。EVAL責務整理完了後にF1をTrack A/Bへ分類して着手する。
+NEXT。sandbox capability-aware quality gate完了後にF1をTrack A/Bへ分類して着手する。

@@ -62,8 +62,6 @@ func TestCommitAuthorizationSourceContractWiring(t *testing.T) {
 
 	evalSection := markdownSectionOf(t, evalDoc, "## commit/push authorization source認識contract")
 	for _, wire := range []string{
-		"Task 009完了時のcommit承認false negativeを一次証拠で再現可能に整理する",
-		"「ユーザーによる明示的なcommit依頼が確認できない」と2回停止させた",
 		"過去のcommit実績だけを将来許可へ拡張しない",
 		"恒久許可refの受理集合は`IMPLEMENTATION_RULES.md`の`## commit / install`節が唯一の正であり",
 		"TestCommitAuthorizationSourceContractWiring",

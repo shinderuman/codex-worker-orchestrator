@@ -8,7 +8,7 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/eval-responsibility-reduction.md`
+- `IMPLEMENTATION_TASKS/sandbox-capability-aware-quality-gates.md`
 
 ## NEXT（優先順）
 
@@ -35,6 +35,7 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## BLOCKED / USER_PERMISSION_WAIT
 
+- `IMPLEMENTATION_TASKS/configurable-peak-pause-windows.md`
 - `IMPLEMENTATION_TASKS/autonomous-development-harness.md`
 - `IMPLEMENTATION_TASKS/desktop-terminal-payload-double-render-boundary.md`
 - `IMPLEMENTATION_TASKS/claude-cli-runtime-preflight-reevaluation.md`
@@ -48,15 +49,15 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 ## 現在のGit境界
 
 - branch: `main`
-- implementation baseline: Codex wakeとGLM resume wakeのcoalescingを完了し、EVAL責務整理をACTIVEへ昇格した状態
-- implementation boundary: EVALのpositive/negative/regression coverageとstable external invariantを維持し、production内部実装、具体的運用手順、長いincident chronology、他surfaceの重複再掲を削減してscenario/condition/expected result/invariant中心へ収束する
+- implementation baseline: EVAL責務整理を完了し、設定可能peak pause案をBLOCKEDへ保存した状態
+- implementation boundary: quality gateの既知capabilityと実行sandboxを起動前に対応付け、Unix socket不許可環境で全testを失敗させた後に同じsuiteをsandbox外で再取得する反復を、一度の有効実行へ収束する
 - preserved boundary: wake coalescingの10分closed interval・fail-open reservation・task ID fail-closed、machine output boundary、full smoke証拠再利用、GLM commit/push禁止を維持
 - push: 各親commit後の`refs/heads/main`とGreptile正常review後の`refs/heads/codex/greptile-reviewed`だけを親Codexが通常fast-forwardする。GLM push、force/non-fast-forward、他refへのpushは禁止
 
 ## 現在の停止理由
 
-なし。EVAL責務整理のACTIVE taskを開始できる。
+なし。sandbox capability-aware quality gateを開始できる。
 
 ## 次の親Codex操作
 
-ACTIVE taskのlossless requirementを正として、EVAL caseを減らさず実装詳細・運用手順・incident chronology・重複proseを整理させる。
+ACTIVE taskのlossless requirementを正として、既知capability不足による無効な全suite実行と再取得を防ぐ最小routingを調査・実装させる。

@@ -116,7 +116,6 @@ func TestTerminalPayloadSingleRenderContractWiring(t *testing.T) {
 		"TestTerminalPayloadSingleRenderContractWiring",
 		"file直接読出し手順の再混入",
 		"caller側echoの二重表示をrepo外として検証対象から除外し",
-		"完了条件を「ユーザー可視payload 1回」から「repo内emit調査・原因境界特定」へ狭めても機械的に拒否しなかった",
 		"caller側の二重描画をrepo外として検証対象から除外し直さない",
 		"単発live positive・模擬fixed Eval・instruction文面を継続的production enforcementと同一視した2度目のfalse-completeが確定した",
 		"以後この3種を本項の完了証拠として採用しない",
