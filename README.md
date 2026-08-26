@@ -2,7 +2,7 @@
 
 Codex + GLM worker環境の配布元。Codex(Sol High)は判断とorchestrationに専念し、リポジトリ固有の調査・実装・test・reviewを`glm-worker`経由のGLM worker/reviewerへ委譲する。
 
-運用契約の正は配置先の`~/.codex/AGENTS.md`(routing)と`~/.codex/instructions/*.md`(event別contract)、評価契約は`EVAL.md`、wrapされる側の行動契約は`codex/glm-worker/prompts/*.md`である。本READMEは人間向け入口であり、それらの第二正本にはしない。
+運用契約の正は配置先の`~/.codex/AGENTS.md`(routing)と`~/.codex/instructions/*.md`(event別contract)、wrapされる側の行動契約は`codex/glm-worker/prompts/*.md`である。決定論的な評価契約はproduction実装・Go test・`glm-worker/scenarios/`が担い、liveな親/model行動だけ`tests/parent-behavior-evals.json`へ評価入力として分離する。本READMEやlive Eval registryをproduction contractの第二正本にはしない。
 
 ## 初回
 
@@ -59,13 +59,15 @@ codex-worker-orchestrator/
 │       └── prompts/          # WORKER.md / REVIEWER.md (system prompt)
 ├── glm-worker/
 │   ├── cmd/                  # CLI entrypoint (glm-worker, commentlint)
-│   └── internal/             # app / config / packet / runner / state / workflow
+│   ├── internal/             # app / config / packet / runner / state / workflow
+│   └── scenarios/            # deterministic workflow scenario corpus
 ├── claude/
 │   └── settings-managed.json
 ├── tools/
 │   └── merge-json/
 ├── tests/
-│   └── install_smoke.sh
+│   ├── install_smoke.sh
+│   └── parent-behavior-evals.json # explicit許可時だけ実行するlive Eval入力
 └── .githooks/
     └── post-merge
 ```
@@ -94,7 +96,7 @@ glm-worker --codex-limit
 glm-worker --check-wake-coalesce "<親実装task thread ID>" "<GLM auto-resume時刻 RFC3339>"
 ```
 
-要点だけ記す。個別commandの呼び出し手順は配置先`~/.codex/instructions/`(glm-execution・glm-packets・glm-auto-resume等)が契約を持ち、出力契約の正は実装と`EVAL.md`である。
+要点だけ記す。個別commandの呼び出し手順は配置先`~/.codex/instructions/`(glm-execution・glm-packets・glm-auto-resume等)が契約を持ち、機械的な出力契約の正はproduction実装と対応するGo test/scenarioである。
 
 - `--decision-stdin`は`NEEDS_SOL_DECISION`停止taskの継続、`--fix-stdin`は`NEEDS_SOL_REVIEW`後だけの差戻し。本文はshell quotingを通さないstdin modeで渡し、glm-workerがstderrへ出すREADY control event(`{"type":"control","event":"stdin_ready"}`)確認後に1回だけ書く。読み取り不足・`--sha256`不一致・event未観測はstate変更・model呼出前にfail closedする。廃止済みargv埋込み`--decision`/`--fix`はusage errorになる
 - `--origin`は差戻し元申告(有限集合。未申告は`unknown`計上で`codex-review`へ推定しない)。`--accept`はterminal packet採用の観測記録専用
@@ -103,7 +105,7 @@ glm-worker --check-wake-coalesce "<親実装task thread ID>" "<GLM auto-resume�
 - `--status`・`--watch`(event logのread-only JSONL stream)・`--timeline`・`--convergence`(round log・telemetry由来のreview/fix収束)・`--call-outliers`(全task横断のworker呼出分布・outlier)・`--eval-ab`(A/B run dir検証)・`--codex-limit`(Codex CLI rate-limit読取)・`--verify-auto-resume`・`--check-wake-coalesce`(既存Codex 5h wake実体照合によるGLM wake重複排除判定)はすべてAI呼出・repo lock・state書換をしない参照専用command
 - `--stats`は完了済みと現在taskの集計(model alias別呼出・token・risk floor・snapshot mismatch・probe・parent outcome等)。`--reset`は現在統計をarchiveして実行状態を消去する
 
-停止・再開の分類と機械契約(5h上限signal、provider一時障害のtransient分類とprobe、`--stop`保持基準、`--isolate`統合条件)の正は実装と`EVAL.md`である。error時はstderrへerror JSON 1行とnon-zero exitで、種別は`rate_limited`・`provider_unavailable`・`interrupted`・`worker_error`等の`kind`で識別できる。
+停止・再開の分類と機械契約(5h上限signal、provider一時障害のtransient分類とprobe、`--stop`保持基準、`--isolate`統合条件)の正はproduction実装と対応するGo test/scenario corpusである。error時はstderrへerror JSON 1行とnon-zero exitで、種別は`rate_limited`・`provider_unavailable`・`interrupted`・`worker_error`等の`kind`で識別できる。
 
 主な環境変数:
 
@@ -131,7 +133,7 @@ model routing(worker=opus、通常reviewer=haiku、高リスク系reviewer=sonne
 
 ## 自己保護 (self-protection)
 
-glm-workerはこの配布repo自身を作業対象にした変更について、wrapper側のcritical surface判定で実効riskをHIGHへ固定し、workerのLOW自己申告やreviewerのPASSだけでは完結させない。判定の唯一の正は`glm-worker/internal/workflow/selfprotection.go`であり、`internal/`・`cmd/`配下のproduction Go、installer適用経路、管理settings、依存manifest、scenario corpus、`codex/instructions/`・`codex/rules/`・`codex/glm-worker/prompts/`・両`AGENTS.md`がHIGH、test file・検証harness・docs(`README.md`・`EVAL.md`等)・観測専用fileは通常reviewのまま、という意味分類をunit testが全tracked fileへ強制する。行動固定はscenario corpus(`orchestrator-critical-low-self-declare`等)による。
+glm-workerはこの配布repo自身を作業対象にした変更について、wrapper側のcritical surface判定で実効riskをHIGHへ固定し、workerのLOW自己申告やreviewerのPASSだけでは完結させない。判定の唯一の正は`glm-worker/internal/workflow/selfprotection.go`であり、`internal/`・`cmd/`配下のproduction Go、installer適用経路、管理settings、依存manifest、scenario corpus、`codex/instructions/`・`codex/rules/`・`codex/glm-worker/prompts/`・両`AGENTS.md`がHIGH、test file・検証harness・docs(`README.md`等)・観測専用fileは通常reviewのまま、という意味分類をunit testが全tracked fileへ強制する。行動固定はscenario corpus(`orchestrator-critical-low-self-declare`等)による。
 
 ## 開発時の検証
 
@@ -143,6 +145,8 @@ go vet ./...
 go build -o /dev/null ./cmd/glm-worker
 go run ./cmd/glm-worker --install-smoke --role worker
 ```
+
+決定論的に検証できる契約はGo test・production-path test・`glm-worker/scenarios/`を正とする。親Codex/modelの実行行動そのものを必要とするlive Evalだけ`tests/parent-behavior-evals.json`へ保持し、registryの`run_policy`どおりユーザーの明示許可なしには実行しない。registryは未実行状態と評価入力を保持するだけで、instruction contractを複製する正本にはしない。
 
 full install smokeは`tests/install_smoke.sh`を直接実行せず、`glm-worker --install-smoke`単一入口で取得・確認する(未配置環境では上記の`go run`相当)。実行・再利用の契約は`codex/instructions/install-smoke-evidence.md`を参照する。install smokeのscenario分類とreal/contract実行境界は`tests/install-smoke-coverage.md`を参照する。
 
