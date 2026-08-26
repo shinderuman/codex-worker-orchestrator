@@ -95,5 +95,6 @@ func TestTaskLifecycleContractWiring(t *testing.T) {
 			if strings.Contains(prompt, keyword) {
 				t.Errorf("%s must not add a task lifecycle checklist (%s)", promptFile, keyword)
 			}
+		}
 	}
 }
