@@ -24,7 +24,6 @@ func TestCommitAuthorizationSourceContractWiring(t *testing.T) {
 	gitInstruction := readContractFile("codex/instructions/git.md")
 	agents := readContractFile("codex/AGENTS.md")
 	rules := readContractFile("IMPLEMENTATION_RULES.md")
-	evalDoc := readContractFile("EVAL.md")
 
 	cases := []struct {
 		file string
@@ -60,32 +59,15 @@ func TestCommitAuthorizationSourceContractWiring(t *testing.T) {
 		}
 	}
 
-	evalSection := markdownSectionOf(t, evalDoc, "## commit/push authorization source認識contract")
-	for _, wire := range []string{
-		"過去のcommit実績だけを将来許可へ拡張しない",
-		"恒久許可refの受理集合は`IMPLEMENTATION_RULES.md`の`## commit / install`節が唯一の正であり",
-		"TestCommitAuthorizationSourceContractWiring",
-		"親Codex behavioral Evalは未実行の固定Eval caseとする",
-		"live model呼出しを要するためユーザーの明示指示後だけ実行し",
-		"実行承認境界は親Codex model層の規則解釈でありrepoから機械強制できない",
-		"corpusへ`commit-authorization-*`scenarioを追加しない",
-	} {
-		if !strings.Contains(evalSection, wire) {
-			t.Errorf("EVAL.md commit authorization section lacks wiring: %q", wire)
-		}
-	}
+	requireParentBehaviorEval(t, "commit-authorization")
 
 	rulesRefs := sortedRemoteRefs(markdownSectionOf(t, rules, "## commit / install"))
 	gitRefs := sortedRemoteRefs(markdownSectionOf(t, gitInstruction, "## commit authorization source"))
-	evalRefs := sortedRemoteRefs(evalSection)
 	if len(rulesRefs) == 0 {
 		t.Fatalf("IMPLEMENTATION_RULES.md commit/install section enumerates no remote refs")
 	}
 	if strings.Join(rulesRefs, ",") != strings.Join(gitRefs, ",") {
 		t.Errorf("git.md commit authorization refs %v must equal IMPLEMENTATION_RULES.md permitted refs %v", gitRefs, rulesRefs)
-	}
-	if strings.Join(rulesRefs, ",") != strings.Join(evalRefs, ",") {
-		t.Errorf("EVAL.md commit authorization refs %v must equal IMPLEMENTATION_RULES.md permitted refs %v", evalRefs, rulesRefs)
 	}
 
 	agentsSection := markdownSectionOf(t, agents, "## 3. Git絶対規則")
@@ -107,13 +89,12 @@ func TestCommitAuthorizationSourceContractWiring(t *testing.T) {
 			if strings.Contains(prompt, keyword) {
 				t.Errorf("%s must not duplicate the commit authorization source contract (%s)", promptFile, keyword)
 			}
-		}
 	}
 
 	sc, _ := loadCorpus(t)
 	for _, s := range sc.Scenarios {
 		if strings.HasPrefix(s.ID, "commit-authorization-") {
-			t.Errorf("scenario %s must not duplicate the parent behavioral eval into the corpus", s.ID)
+			t.Errorf("scenario %s must not duplicate the live parent behavioral eval into the corpus", s.ID)
 		}
 	}
 }
