@@ -8,7 +8,7 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/commit-authorization-source-recognition.md`
+- `IMPLEMENTATION_TASKS/codex-5h-wake-reschedule-lifecycle.md`
 
 ## NEXT（優先順）
 
@@ -41,15 +41,15 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 ## 現在のGit境界
 
 - branch: `main`
-- implementation baseline: Markdown runtime context削減を`ab28e21`でpush・本配置し、install smoke loop cost削減の実装・review・Sol採用・completion metadata同期を完了したcurrent HEAD
-- implementation boundary: production installer契約と43 installer scenarioを維持したままreal `go test ./...`を44回から3回へ削減し、full smokeを実環境305.71秒で再確認。machine execution反復costの観測・親task化判断を既存product化contractへ統合
-- preserved boundary: lossless ACTIVE task requirement、Plan index、History cold path、必要quality gateは維持。commit/push authorization source不一致をACTIVEへ昇格し、commentlint空行fixとEVAL責務整理を後続NEXTとして保持
+- implementation baseline: install smoke loop cost削減を`cdf9647`でpush・本配置し、commit/push authorization source修正の実装・review・Sol採用・completion metadata同期を完了したcurrent HEAD
+- implementation boundary: commit許可sourceを会話上の明示指示とACTIVE lossless requirementへ定義し、本repositoryの恒久push例外をremote mainとGreptile checkpointの通常fast-forwardへ限定。full install smoke PASS
+- preserved boundary: force/non-fast-forward・tag・他ref・他repository・GLM commit/push禁止を維持。5h wake初回実発火で次回automationを失ったfalse-completeをACTIVEへ昇格し、commentlint空行fixとEVAL責務整理を後続NEXTとして保持
 - push: 各親commit後の`refs/heads/main`とGreptile正常review後の`refs/heads/codex/greptile-reviewed`だけを親Codexが通常fast-forwardする。GLM push、force/non-fast-forward、他refへのpushは禁止
 
 ## 現在の停止理由
 
-commit/push authorization sourceの受理集合をcanonical instruction間で同期できる境界。
+5h wakeのdelete-before-createとsuggested-create false-completeを修復し、次回one-shotを実在させる境界。
 
 ## 次の親Codex操作
 
-ACTIVE taskのlossless requirementを要求正本として、task内明示許可と本repositoryのremote main fast-forward継続許可をrepository/installed instruction・実行承認境界で一致させる。
+ACTIVE taskのlossless requirementと初回実発火証拠を要求正本として、既存automationの同一ID update lifecycleへ収束し、次回wake実体をmachine verificationする。

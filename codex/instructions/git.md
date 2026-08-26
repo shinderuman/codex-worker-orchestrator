@@ -17,7 +17,22 @@
 prefix: `feat` `fix` `refactor` `improve` `docs` `style` `test` `chore` `perf` `ci` `build` `revert`
 
 - `git push`等Gitリモートへの書き込みは禁止。
-- 「ユーザーレベルのPush禁止ルールを今回だけ解除する」と明示された場合だけ例外。
+- 「ユーザーレベルのPush禁止ルールを今回だけ解除する」と明示された場合と、後述のrepository恒久許可だけが例外。
+
+## commit authorization source
+
+「明示的な依頼がない限り`git commit`しない」という安全規則は維持する。明示的な依頼は文の配置場所ではなく、現在のtaskへ適用される明示的なユーザー意思の有無で判定する。
+
+- 明示的な依頼の受理集合は、同一taskへ適用される会話上の明示的なcommit指示と、現在のACTIVE taskのlossless requirement source(`Original instruction`・`Amendments`・`Resolved references`・ユーザー添付のlossless指示)である。
+- task requirementが対象taskのcommit完了までを明示的に要求し、scope・対象repository・task境界が一意な場合は、最新メッセージ単体にcommit語がなくても既存task lifecycleを継続し、commit語の再要求だけでorchestrationを停止しない。
+- commit許可がどのsourceにも存在しない場合は従来どおりcommitしない。過去にcommitした実績だけを将来のcommit許可へ拡張せず、commit語を含まない一般的な継続指示だけを無条件のcommit許可として扱わない。
+- 対象task外の変更、別task・別repositoryへのcommitはこの許可に含まれない。GLM worker/reviewerにcommitさせない。
+
+Gitリモートへの書き込みも同じauthorization sourceで判定する。
+
+- ユーザーがrepository個別に、親管理tracked instruction(`IMPLEMENTATION_RULES.md`等)で対象refへの通常fast-forwardのみを恒久許可した場合は、そのrepositoryの当該refに限りpush禁止の明示的な例外として扱い、commit単位で再許可を要求しない。
+- 恒久許可refの受理集合は対象repositoryの親管理tracked instructionが唯一の正である。本codex-config repositoryではGreptile日次review運用のため、各task・review follow-up・独立parent maintenanceのfinal parent commit後のremote `refs/heads/main`通常fast-forwardと、正常review完了時のscheduled reviewによる`refs/heads/codex/greptile-reviewed`通常fast-forwardが恒久許可である。
+- この例外はforce/non-fast-forward、タグpush、列挙外ref、他repositoryへのremote書き込みへ拡張しない。GLM worker/reviewerによるpushは常に禁止する。
 
 ## tracked canonical planのcommit同期
 

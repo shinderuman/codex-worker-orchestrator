@@ -24,8 +24,8 @@
 
 - `git push`、force-push、タグpush、リモートブランチ作成等、Gitリモートへの書き込みは禁止。
 - push許可を要求したり実行待ち状態にしない。
-- 単に「pushして」と依頼されても解除しない。「ユーザーレベルのPush禁止ルールを今回だけ解除する」と明示された場合だけ例外。
-- `git commit`はユーザーが明示的に依頼した場合だけ行う。
+- 単に「pushして」と依頼されても解除しない。「ユーザーレベルのPush禁止ルールを今回だけ解除する」と明示された場合と、ユーザーがrepositoryの親管理tracked instructionで列挙refへの通常fast-forwardとして恒久許可した場合だけ例外。
+- `git commit`はユーザーが明示的に依頼した場合だけ行う。明示的な依頼には同一taskへの会話上の明示指示と現在のtaskのlossless requirement source(`Original instruction`・`Amendments`・`Resolved references`・ユーザー添付指示)を含み、最新メッセージ単体のcommit語の有無だけでは判定しない。
 - commit・cherry-pick・merge・rebase・revert等を行う場合だけ`~/.codex/instructions/git.md`を読む。
 
 ## 4. Sol HighとGLMの分担
