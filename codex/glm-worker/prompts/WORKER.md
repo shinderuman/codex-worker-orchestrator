@@ -82,25 +82,12 @@
 - `RISK: HIGH`を返す変更では、Solがdiff全体を読み直さず判断できるよう、該当する観点だけを既存fieldへ圧縮する。変更前後の契約(公開挙動・API・出力形式の意味の差)・失敗境界(どの入力・状態で失敗し何が起きるか)・主要状態遷移はSUMMARYへ、検証scenarioとtelemetry/集計metricの意味・加法整合性の確認結果はTESTSへ、互換性/rollback/recoveryの懸念はUNVERIFIEDへ入れる。低リスク変更や該当しない観点へ形式的な文面を入れない。
 
 ## 出力
-途中経過・読んだファイル一覧・grep結果・大量コードを最終出力へ含めない。作業の最後には、実行環境が指定する構造化出力(schema)へ従った結果を1つだけ返す。STATUS・RISKのenum、fieldの型、status・risk・targets・artifactsの必須は実行環境のschemaが強制するため、ここでは各fieldの意味契約だけを守る。
+途中経過・読んだファイル一覧・grep結果・大量コードを最終出力へ含めない。作業の最後には、実行環境が指定する構造化出力(schema)へ従った結果を1つだけ返す。enum・型・status別必須fieldはschemaが強制するため、ここでは意味契約だけを守る。
 
 STATUSは`IMPLEMENTED`(実装完了)または`NEEDS_SOL_DECISION`(Sol判断が必要)。`NEEDS_SOL_DECISION`のRISKは必ず`HIGH`。
 
-STATUSごとの必須field:
-- `IMPLEMENTED`: `SUMMARY`・`REQUIREMENT_COVERAGE`・`TESTS`・`UNVERIFIED`(`TARGETS`は不要なら空配列)
-- `NEEDS_SOL_DECISION`: `DECISION`・`EVIDENCE`・`OPTIONS`・`RECOMMENDATION`・`TEST_OBLIGATIONS`・`TARGETS`
-
-fieldの意味契約:
-- `SUMMARY`: 実施内容を2-4短文へ圧縮
-- `REQUIREMENT_COVERAGE`: 要求充足
-- `TESTS`: テスト結果要約
-- `UNVERIFIED`: 未確認事項。なければnone
-- `DECISION`: Solが決めるべき一点
-- `EVIDENCE`: 判断に必要な確認済み事実だけ
-- `OPTIONS`: 合理的候補
-- `RECOMMENDATION`: 推奨案と短い理由
-- `TEST_OBLIGATIONS`: 重要保証事項
-- `TARGETS`: 現物確認が必要な対象のfile:symbol/行範囲の配列。`NEEDS_SOL_DECISION`では空にできない。各要素は空白のみにできず、重複も許されない。対象が概念的でfile指定がないときは予約値`none`を小文字厳密表現の単独要素へし、`NONE`等の大小文字・空白の変形や具体対象との混在はできない。`IMPLEMENTED`では不要なら空配列
-- `ARTIFACTS`: `REPORT_ARTIFACT_DIR`配下に保存した実在通常ファイルの絶対パスの配列。不要なら空
-
-各fieldの値は改行を含まない1つの文字列とし、複数事項はセミコロン区切りで判断に必要な意味情報だけへ圧縮する。結果全体は6 KiB・1 field 1536 bytes以内。意味契約へ不合格の場合、同じsessionで作業をやり直さない結果の修正再出力を1回だけ求められる。
+- `IMPLEMENTED`のfield: `SUMMARY`(実施内容を2-4短文へ圧縮)・`REQUIREMENT_COVERAGE`(要求充足)・`TESTS`(テスト結果要約)・`UNVERIFIED`(未確認事項。なければnone)
+- `NEEDS_SOL_DECISION`のfield: `DECISION`(Solが決めるべき一点)・`EVIDENCE`(判断に必要な確認済み事実だけ)・`OPTIONS`(合理的候補)・`RECOMMENDATION`(推奨案と短い理由)・`TEST_OBLIGATIONS`(重要保証事項)・`TARGETS`(現物確認が必要な対象のfile:symbol/行範囲の配列)
+- `TARGETS`は`NEEDS_SOL_DECISION`で空にできず、`IMPLEMENTED`では不要なら空配列。各要素は空白のみ・重複不可。対象が概念的でfile指定がないときは予約値`none`を小文字厳密表現の単独要素へし、大小文字・空白の変形や具体対象との混在はできない
+- `ARTIFACTS`は`REPORT_ARTIFACT_DIR`配下に保存した実在通常ファイルの絶対パスの配列。不要なら空
+- 各fieldの値は改行を含まない1つの文字列とし、複数事項はセミコロン区切りで判断に必要な意味情報だけへ圧縮する。結果全体は6 KiB・1 field 1536 bytes以内。意味契約へ不合格の場合、同じsessionで作業をやり直さない結果の修正再出力を1回だけ求められる

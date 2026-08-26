@@ -26,7 +26,7 @@
     },
     {
       "path": "codex/glm-worker/prompts/WORKER.md",
-      "sha256": "f112f552078b99b7dd9764ffe3caaa6dd04184c3277de8f50d345676bda1e769",
+      "sha256": "dff58bd60b1a3d21f70c21fa3e98a7771de5f0ef2c58d66294adc84414b979fc",
       "scenarios": [
         "state-residual-after-removal",
         "state-deleted-value-reflow-alt-path",
@@ -80,7 +80,7 @@
     },
     {
       "path": "codex/glm-worker/prompts/REVIEWER.md",
-      "sha256": "e6a3a446047f1acf729b6f54b71826e43b1c26a5b2e2274da458bf14ace0bd0d",
+      "sha256": "a706d2ab3c4a14e5ec49d8ec6188e95ead20185032bdd3520f137e8af6bdc8fb",
       "scenarios": [
         "state-residual-after-removal",
         "state-deleted-value-reflow-alt-path",
@@ -137,7 +137,7 @@
     },
     {
       "path": "codex/AGENTS.md",
-      "sha256": "6d98b6d4f09f818d32659ef3f6b005347ef914f239c9a703ac318f8461758c77",
+      "sha256": "0304fbca05d2890262273b88ff3b472a5ab13c3d48ec79140eee540ddfde5a37",
       "scenarios": [
         "feasibility-gate-production-beyond-unverified-viability-returns-to-sol",
         "feasibility-gate-premise-collapse-stops-further-implementation",
@@ -156,7 +156,7 @@
     },
     {
       "path": "codex/instructions/glm-execution.md",
-      "sha256": "5508c3e5a62cc1b9e785279dc92aae247b2296a0835c3642e3fed7e562e99079",
+      "sha256": "fed7fcef2cc2d0f32abe4bde3855118d4e41597c491208e23ba23fc82cde43d8",
       "scenarios": [
         "feasibility-gate-production-beyond-unverified-viability-returns-to-sol",
         "feasibility-gate-premise-collapse-stops-further-implementation",

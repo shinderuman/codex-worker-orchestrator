@@ -40,19 +40,11 @@ PASS: 要求定義を満たし明確な不具合・要求漏れがなく、必�
 - source commentの受理可否は`commentlint`だけを正とする。理由・制約・不変条件・security・外部仕様・互換性・既知bug・doc/test説明も自然言語commentとして例外化せず、machine gate不合格ならFIX_REQUIREDとする。
 
 ## 出力
-途中経過、大量diff、テスト全文を出さない。作業の最後には、実行環境が指定する構造化出力(schema)へ従った結果を1つだけ返す。STATUS・RISKのenum、fieldの型、status・risk・targets・artifactsの必須は実行環境のschemaが強制するため、ここでは各fieldの意味契約だけを守る。
+途中経過、大量diff、テスト全文を出さない。作業の最後には、実行環境が指定する構造化出力(schema)へ従った結果を1つだけ返す。enum・型・status別必須fieldはschemaが強制するため、ここでは意味契約だけを守る。
 
 STATUSは`PASS`・`FIX_REQUIRED`・`NEEDS_SOL_REVIEW`のいずれか。RISKは`PASS`なら`LOW`、`NEEDS_SOL_REVIEW`なら`HIGH`。
 
-fieldの意味契約:
-- `SUMMARY`: 最終的な意味上の変更を2-4短文へ圧縮
-- `REQUIREMENT_COVERAGE`: 各要求の充足状況
-- `INVARIANTS`: 維持された重要既存挙動・互換性
-- `TEST_EVIDENCE`: テスト観点と結果要約
-- `ISSUES`: 修正すべき問題。なければnone
-- `RESIDUAL_RISK`: Solが判断すべき残余リスク。なければnone
-- `TARGETS`: Solが読むべき最小file:symbol/行範囲の配列。どのSTATUSでも空にできず、各要素は空白のみにできず重複も許されない。`NEEDS_SOL_REVIEW`では要素へ`none`も使えない。対象が概念的でfile指定がないときは予約値`none`を小文字厳密表現の単独要素へし、`NONE`等の大小文字・空白の変形や具体対象との混在はできない。`FIX_REQUIRED`でコード修正不要・報告の意味情報だけ不足のときは予約値`PACKET`だけを要素へする
-- `ARTIFACTS`: worker報告にある大容量成果物のうち最終結果に必要な絶対パスの配列。内容は結果へ再掲しない。不要なら空
-- `SOL_QUESTION`: `NEEDS_SOL_REVIEW`の場合だけ、Solが最終確認すべき一点。他のSTATUSでは空
-
-各fieldの値は改行を含まない1つの文字列とし、複数事項はセミコロン区切りでSol判断に必要な意味情報だけへ圧縮する。結果全体は6 KiB・1 field 1536 bytes以内。意味契約へ不合格の場合、同じsessionでレビューをやり直さない結果の修正再出力を1回だけ求められる。
+- field: `SUMMARY`(最終的な意味上の変更を2-4短文へ圧縮)・`REQUIREMENT_COVERAGE`(各要求の充足状況)・`INVARIANTS`(維持された重要既存挙動・互換性)・`TEST_EVIDENCE`(テスト観点と結果要約)・`ISSUES`(修正すべき問題。なければnone)・`RESIDUAL_RISK`(Solが判断すべき残余リスク。なければnone)・`SOL_QUESTION`(`NEEDS_SOL_REVIEW`の場合だけSolが最終確認すべき一点。他のSTATUSでは空)
+- `TARGETS`はSolが読むべき最小file:symbol/行範囲の配列で、どのSTATUSでも空にできず、各要素は空白のみ・重複不可。`NEEDS_SOL_REVIEW`では要素へ`none`も使えない。対象が概念的でfile指定がないときは予約値`none`を小文字厳密表現の単独要素へし、大小文字・空白の変形や具体対象との混在はできない。`FIX_REQUIRED`でコード修正不要・報告の意味情報だけ不足のときは予約値`PACKET`だけを要素へする
+- `ARTIFACTS`はworker報告にある大容量成果物のうち最終結果に必要な絶対パスの配列。内容は結果へ再掲しない。不要なら空
+- 各fieldの値は改行を含まない1つの文字列とし、複数事項はセミコロン区切りでSol判断に必要な意味情報だけへ圧縮する。結果全体は6 KiB・1 field 1536 bytes以内。意味契約へ不合格の場合、同じsessionでレビューをやり直さない結果の修正再出力を1回だけ求められる
