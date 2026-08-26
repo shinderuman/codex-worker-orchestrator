@@ -48,7 +48,7 @@ var claudePreflightFeatures = []claudePreflightFeature{
 	{flag: "--disallowedTools", surfaces: "run"},
 	{flag: "--append-system-prompt-file", surfaces: "run"},
 	{flag: "--no-session-persistence", surfaces: "probe"},
-	{flag: "--tools", surfaces: "probe"},
+	{flag: "--tools", surfaces: "run+probe"},
 }
 
 type claudePreflightFailure struct {

@@ -1,8 +1,11 @@
 package codexlimit
 
 import (
+	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -28,11 +31,18 @@ func writeFakeCodex(t *testing.T, script string) string {
 }
 
 func fakeServerScript(lines ...string) string {
-	script := "#!/bin/sh\n"
-	for _, line := range lines {
+	readLine := "IFS= read -r line\n"
+	script := "#!/bin/sh\n" + readLine
+	rest := lines
+	if len(rest) > 0 {
+		script += "printf '%s\\n' '" + rest[0] + "'\n"
+		rest = rest[1:]
+	}
+	script += readLine + readLine
+	for _, line := range rest {
 		script += "printf '%s\\n' '" + line + "'\n"
 	}
-	return script
+	return script + readLine
 }
 
 func TestReadSelectsFiveHourFromPrimaryPosition(t *testing.T) {
@@ -208,6 +218,148 @@ func TestReadFailures(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestReadSendsSequentialHandshakeInContractOrder(t *testing.T) {
+	dir := t.TempDir()
+	recordPath := filepath.Join(dir, "requests")
+	script := "#!/bin/sh\n" +
+		"IFS= read -r line\n" +
+		"printf '%s\\n' \"$line\" >'" + recordPath + "'\n" +
+		"printf '%s\\n' '" + initializeResponseLine + "'\n" +
+		"IFS= read -r line\n" +
+		"printf '%s\\n' \"$line\" >>'" + recordPath + "'\n" +
+		"IFS= read -r line\n" +
+		"printf '%s\\n' \"$line\" >>'" + recordPath + "'\n" +
+		"printf '%s\\n' '" + primaryFiveHourRateLimits + "'\n" +
+		"IFS= read -r line\n"
+	bin := writeFakeCodex(t, script)
+
+	snapshot, err := ReadWithTimeout(bin, 10*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.FiveHour.UsedPercent == nil || *snapshot.FiveHour.UsedPercent != 100 {
+		t.Fatalf("five_hour.used_percent = %#v", snapshot.FiveHour.UsedPercent)
+	}
+	requests := readRecordLines(t, recordPath)
+	if len(requests) != 3 {
+		t.Fatalf("request数 = %d want 3: %#v", len(requests), requests)
+	}
+	if !strings.Contains(requests[0], `"method":"initialize"`) || !strings.Contains(requests[0], `"id":1`) {
+		t.Fatalf("1番目のrequest = %s want initialize", requests[0])
+	}
+	if requests[1] != `{"jsonrpc":"2.0","method":"initialized"}` {
+		t.Fatalf("2番目のrequest = %s want initialized notification", requests[1])
+	}
+	if !strings.Contains(requests[2], `"method":"account/rateLimits/read"`) || !strings.Contains(requests[2], `"id":2`) {
+		t.Fatalf("3番目のrequest = %s want account/rateLimits/read", requests[2])
+	}
+}
+
+func TestExchangeWaitsForInitializeResponseBeforeSendingInitialized(t *testing.T) {
+	server, client := net.Pipe()
+	defer server.Close()
+	defer client.Close()
+
+	type handshakeOutcome struct {
+		requests   []string
+		violations []string
+	}
+	done := make(chan handshakeOutcome, 1)
+	go func() {
+		outcome := handshakeOutcome{}
+		reader := bufio.NewReader(server)
+		if err := server.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
+			outcome.violations = append(outcome.violations, err.Error())
+			done <- outcome
+			return
+		}
+		first, err := reader.ReadString('\n')
+		if err != nil {
+			outcome.violations = append(outcome.violations, "initialize requestを受ける前にread error: "+err.Error())
+			done <- outcome
+			return
+		}
+		outcome.requests = append(outcome.requests, strings.TrimSpace(first))
+		if err := server.SetReadDeadline(time.Now().Add(300 * time.Millisecond)); err != nil {
+			outcome.violations = append(outcome.violations, err.Error())
+			done <- outcome
+			return
+		}
+		if _, err := server.Read(make([]byte, 1)); err == nil {
+			outcome.violations = append(outcome.violations, "initialize response前に次のrequestが到着しています")
+			done <- outcome
+			return
+		}
+		if err := server.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
+			outcome.violations = append(outcome.violations, err.Error())
+			done <- outcome
+			return
+		}
+		if _, err := server.Write([]byte(initializeResponseLine + "\n")); err != nil {
+			outcome.violations = append(outcome.violations, "initialize responseを書けません: "+err.Error())
+			done <- outcome
+			return
+		}
+		second, err := reader.ReadString('\n')
+		if err != nil {
+			outcome.violations = append(outcome.violations, "initialized待ちでread error: "+err.Error())
+			done <- outcome
+			return
+		}
+		outcome.requests = append(outcome.requests, strings.TrimSpace(second))
+		third, err := reader.ReadString('\n')
+		if err != nil {
+			outcome.violations = append(outcome.violations, "rateLimits/read待ちでread error: "+err.Error())
+			done <- outcome
+			return
+		}
+		outcome.requests = append(outcome.requests, strings.TrimSpace(third))
+		if _, err := server.Write([]byte(primaryFiveHourRateLimits + "\n")); err != nil {
+			outcome.violations = append(outcome.violations, "rateLimits responseを書けません: "+err.Error())
+		}
+		done <- outcome
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	result, err := exchange(ctx, client, client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outcome := <-done
+	if len(outcome.violations) != 0 {
+		t.Fatalf("handshake違反: %#v", outcome.violations)
+	}
+	if len(outcome.requests) != 3 {
+		t.Fatalf("request数 = %d want 3: %#v", len(outcome.requests), outcome.requests)
+	}
+	if !strings.Contains(outcome.requests[0], `"method":"initialize"`) {
+		t.Fatalf("1番目のrequest = %s", outcome.requests[0])
+	}
+	if !strings.Contains(outcome.requests[1], `"method":"initialized"`) {
+		t.Fatalf("2番目のrequest = %s", outcome.requests[1])
+	}
+	if !strings.Contains(outcome.requests[2], `"method":"account/rateLimits/read"`) {
+		t.Fatalf("3番目のrequest = %s", outcome.requests[2])
+	}
+	if result == nil {
+		t.Fatal("rateLimits resultがnil")
+	}
+}
+
+func readRecordLines(t *testing.T, path string) []string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("record読み込み: %v", err)
+	}
+	trimmed := strings.TrimSpace(string(data))
+	if trimmed == "" {
+		return nil
+	}
+	return strings.Split(trimmed, "\n")
 }
 
 func TestReadBinaryNotFound(t *testing.T) {

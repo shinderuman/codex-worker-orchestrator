@@ -1,7 +1,6 @@
 package commentlint
 
 import (
-	"bufio"
 	"bytes"
 	"errors"
 	"fmt"
@@ -11,7 +10,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 )
@@ -42,7 +40,11 @@ type pendingUpdate struct {
 	mode os.FileMode
 }
 
-var heredocPattern = regexp.MustCompile(`<<-?[ \t]*['"]?([A-Za-z_][A-Za-z0-9_]*)['"]?`)
+type shellLine struct {
+	text   string
+	number int
+	offset int
+}
 
 func Check(root string) (Report, error) {
 	return Run(root, false)
@@ -232,39 +234,119 @@ func scanGo(path string, data []byte) []finding {
 }
 
 func scanShell(path string, data []byte) []finding {
-	var findings []finding
+	lines := make([]shellLine, 0, bytes.Count(data, []byte("\n"))+1)
 	offset := 0
-	lineNumber := 1
+	for index, raw := range bytes.Split(data, []byte("\n")) {
+		lines = append(lines, shellLine{text: strings.TrimSuffix(string(raw), "\r"), number: index + 1, offset: offset})
+		offset += len(raw) + 1
+	}
+	return scanShellLines(path, lines)
+}
+
+func scanShellLines(path string, lines []shellLine) []finding {
+	var findings []finding
 	pending := []string{}
-	scanner := bufio.NewScanner(bytes.NewReader(data))
-	scanner.Buffer(make([]byte, 4096), 1024*1024)
-	for scanner.Scan() {
-		line := scanner.Bytes()
+	bodyStart := 0
+	for index := 0; index < len(lines); index++ {
+		line := lines[index]
 		if len(pending) > 0 {
-			candidate := string(line)
-			if candidate == pending[0] || strings.TrimPrefix(candidate, "\t") == pending[0] {
+			if heredocTerminated(pending[0], line.text) {
 				pending = pending[1:]
+				bodyStart = index + 1
 			}
-			offset += len(line) + 1
-			lineNumber++
 			continue
 		}
-		commentAt := shellCommentOffset(line)
-		code := line
+		commentAt := shellCommentOffset([]byte(line.text))
+		code := line.text
 		if commentAt >= 0 {
-			allowed := lineNumber == 1 && (string(line) == "#!/bin/sh" || string(line) == "#!/usr/bin/env bash")
+			allowed := line.number == 1 && (line.text == "#!/bin/sh" || line.text == "#!/usr/bin/env bash")
 			if !allowed {
-				findings = append(findings, finding{Violation: Violation{Path: path, Line: lineNumber, Column: commentAt + 1, Kind: "comment", Message: "natural-language source comment is forbidden"}, start: offset + commentAt, end: offset + len(line)})
+				findings = append(findings, finding{Violation: Violation{Path: path, Line: line.number, Column: commentAt + 1, Kind: "comment", Message: "natural-language source comment is forbidden"}, start: line.offset + commentAt, end: line.offset + len(line.text)})
 			}
-			code = line[:commentAt]
+			code = line.text[:commentAt]
 		}
-		for _, match := range heredocPattern.FindAllSubmatch(code, -1) {
-			pending = append(pending, string(match[1]))
+		if delimiters := heredocDelimiters(code); len(delimiters) > 0 {
+			pending = append(pending, delimiters...)
+			bodyStart = index + 1
 		}
-		offset += len(line) + 1
-		lineNumber++
+	}
+	if len(pending) > 0 && bodyStart < len(lines) {
+		findings = append(findings, scanShellLines(path, lines[bodyStart:])...)
 	}
 	return findings
+}
+
+func heredocTerminated(word string, line string) bool {
+	return line == word || strings.TrimPrefix(line, "\t") == word
+}
+
+func heredocDelimiters(code string) []string {
+	var delimiters []string
+	single := false
+	double := false
+	escaped := false
+	for index := 0; index < len(code); index++ {
+		value := code[index]
+		if escaped {
+			escaped = false
+			continue
+		}
+		if value == '\\' && !single {
+			escaped = true
+			continue
+		}
+		if value == '\'' && !double {
+			single = !single
+			continue
+		}
+		if value == '"' && !single {
+			double = !double
+			continue
+		}
+		if single || double || value != '<' || index+1 >= len(code) || code[index+1] != '<' {
+			continue
+		}
+		delimiter, consumed := heredocDelimiter(code, index+2)
+		if delimiter != "" {
+			delimiters = append(delimiters, delimiter)
+		}
+		index = consumed - 1
+	}
+	return delimiters
+}
+
+func heredocDelimiter(code string, start int) (string, int) {
+	index := start
+	if index < len(code) && code[index] == '-' {
+		index++
+	}
+	for index < len(code) && (code[index] == ' ' || code[index] == '\t') {
+		index++
+	}
+	quote := byte(0)
+	if index < len(code) && (code[index] == '\'' || code[index] == '"') {
+		quote = code[index]
+		index++
+	}
+	begin := index
+	for index < len(code) && heredocWordByte(code[index], index == begin) {
+		index++
+	}
+	if index == begin {
+		return "", start
+	}
+	end := index
+	if quote != 0 && index < len(code) && code[index] == quote {
+		index++
+	}
+	return code[begin:end], index
+}
+
+func heredocWordByte(value byte, first bool) bool {
+	if value >= 'a' && value <= 'z' || value >= 'A' && value <= 'Z' || value == '_' {
+		return true
+	}
+	return !first && value >= '0' && value <= '9'
 }
 
 func shellCommentOffset(line []byte) int {

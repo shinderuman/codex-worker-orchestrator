@@ -43,6 +43,54 @@ func TestScanShellDistinguishesSyntaxStringsAndHeredoc(t *testing.T) {
 	}
 }
 
+func TestScanShellKeepsScanningAfterQuotedFakeHeredoc(t *testing.T) {
+	data := []byte("#!/bin/sh\nprintf '%s' 'fake <<EOF in single quotes'\n# prose after single-quoted fake\necho \"fake <<EOF in double quotes\"\n# prose after double-quoted fake\necho fake\\<<EOF\n# prose after escaped operator\n")
+	findings := scanShell("a.sh", data)
+	lines := make([]int, 0, len(findings))
+	for _, item := range findings {
+		lines = append(lines, item.Line)
+	}
+	if !reflect.DeepEqual(lines, []int{3, 5, 7}) {
+		t.Fatalf("lines = %v", lines)
+	}
+}
+
+func TestScanShellKeepsScanningAfterUnterminatedHeredoc(t *testing.T) {
+	data := []byte("#!/bin/sh\ncat <<EOF\n# prose inside unterminated body\nvalue=1 # prose tail\n")
+	findings := scanShell("a.sh", data)
+	lines := make([]int, 0, len(findings))
+	for _, item := range findings {
+		lines = append(lines, item.Line)
+	}
+	if !reflect.DeepEqual(lines, []int{3, 4}) {
+		t.Fatalf("lines = %v", lines)
+	}
+}
+
+func TestScanShellTreatsHereStringAsNonHeredoc(t *testing.T) {
+	data := []byte("#!/bin/sh\ngrep -q marker <<<\"$value\"\n# prose after herestring\ncat <<<EOF\n# prose after herestring word\n")
+	findings := scanShell("a.sh", data)
+	lines := make([]int, 0, len(findings))
+	for _, item := range findings {
+		lines = append(lines, item.Line)
+	}
+	if !reflect.DeepEqual(lines, []int{3, 5}) {
+		t.Fatalf("lines = %v", lines)
+	}
+}
+
+func TestScanShellScansBodyOnlyAfterRealTerminator(t *testing.T) {
+	data := []byte("#!/bin/sh\ncat <<A <<B\n# body of A\nA\n# body of B\n\tB\n# tail\n")
+	findings := scanShell("a.sh", data)
+	lines := make([]int, 0, len(findings))
+	for _, item := range findings {
+		lines = append(lines, item.Line)
+	}
+	if !reflect.DeepEqual(lines, []int{7}) {
+		t.Fatalf("lines = %v", lines)
+	}
+}
+
 func TestScanHashAndGitignoreDistinguishData(t *testing.T) {
 	toml := []byte("a = \"# value\"\nb = 1 # prose\n")
 	if findings := scanHash("a.toml", toml); len(findings) != 1 || findings[0].Line != 2 {
