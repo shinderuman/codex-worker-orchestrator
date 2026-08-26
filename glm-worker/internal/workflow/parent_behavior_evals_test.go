@@ -12,8 +12,9 @@ import (
 )
 
 type parentBehaviorEvalRegistry struct {
-	Version int                      `json:"version"`
-	Cases   []parentBehaviorEvalCase `json:"cases"`
+	Version     int                      `json:"version"`
+	Description string                   `json:"description"`
+	Cases       []parentBehaviorEvalCase `json:"cases"`
 }
 
 type parentBehaviorEvalCase struct {
@@ -48,6 +49,9 @@ func loadParentBehaviorEvals(t *testing.T) map[string]parentBehaviorEvalCase {
 	}
 	if registry.Version != 1 {
 		t.Fatalf("parent behavior eval registry version = %d want 1", registry.Version)
+	}
+	if strings.TrimSpace(registry.Description) == "" {
+		t.Fatal("parent behavior eval registry description must not be empty")
 	}
 
 	result := make(map[string]parentBehaviorEvalCase, len(registry.Cases))
