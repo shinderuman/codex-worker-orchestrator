@@ -50,43 +50,7 @@ func TestEscapedCauseLayerContractWiring(t *testing.T) {
 		}
 	}
 
-	evalDoc := readContractFile("EVAL.md")
-	instruction := contents["codex/instructions/escaped-cause-layer.md"]
-	evalGrounds := []struct {
-		eval     string
-		guidance string
-	}{
-		{"escaped bug・escaped reviewの原因分析を開始する場合だけ適用する親Codex orchestration contract", "escaped bug・escaped reviewの原因分析を開始する場合だけ適用する"},
-		{"通常task・全reviewへ常時要求する重いgateにせず", "通常の実装・調査task、review通過時の通常確認、新規依頼の受け付けへこの分類を要求しない"},
-		{"内部のworker/reviewer pipeline失敗か親Codex orchestration失敗かを先に分類する", "対策・prompt変更・gate追加の検討より先に"},
-		{"親側contractで対策し、worker/reviewerチェック増殖や既存対策へ重複する第5・第6対策で解決扱いにしない", "worker/reviewer promptへの個別checklist追加や個別gate追加だけで解決扱いにしない"},
-		{"受理した層分類に基づき親側原因なら親contract対策を選択してworker/reviewer prompt・個別gate・重複する新対策の追加を拒否する", "worker/reviewer prompt・個別gate・新しい対策を追加する前に、原因が本当にその層で発生したかを分類結果と照合する"},
-		{"`glm-worker`内部pipeline失敗なら通常の直接修正pathへ移す", "内部のworker/reviewer pipeline失敗"},
-		{"通常task・review通過確認へ層分類を要求しない", "通常の実装・調査task、review通過時の通常確認、新規依頼の受け付けへこの分類を要求しない"},
-	}
-	for _, g := range evalGrounds {
-		if !strings.Contains(instruction, g.guidance) {
-			t.Errorf("escaped-cause-layer.md lacks guidance grounding %q", g.guidance)
-		}
-		if !strings.Contains(evalDoc, g.eval) {
-			t.Errorf("EVAL.md lacks behavioral eval judgment grounded in guidance: %q", g.eval)
-		}
-	}
-
-	for _, wire := range []string{
-		"TestEscapedCauseLayerContractWiring",
-		"escaped-cause-layer-parent-orchestration-cause-returns-to-sol",
-		"escaped-cause-layer-worker-pipeline-cause-fix-returns-to-sol-review",
-		"escaped-cause-layer-unrelated-normal-task-completes",
-		"親Codexが分類を行う行動の証明ではない",
-		"親Codexの分類判断・委譲内容・対策選択をraw telemetry・task log等の一次証拠で照合できる検証形態が整備されること",
-		"live model呼出しを要するためユーザーの明示指示後だけ実行し",
-		"EVAL.md本節のpositive/negative caseと期待判断を`escaped-cause-layer.md`の適用条件・層定義・対策層整合の契約文へ直接突き合わせて検証する",
-	} {
-		if !strings.Contains(evalDoc, wire) {
-			t.Errorf("EVAL.md lacks escaped cause layer eval wiring: %q", wire)
-		}
-	}
+	requireParentBehaviorEval(t, "escaped-cause-layer")
 
 	sc, mf := loadCorpus(t)
 	corpusIDs := make(map[string]bool, len(sc.Scenarios))
@@ -99,7 +63,7 @@ func TestEscapedCauseLayerContractWiring(t *testing.T) {
 		"escaped-cause-layer-unrelated-normal-task-completes",
 	} {
 		if !corpusIDs[id] {
-			t.Errorf("scenario corpus lacks %s referenced by EVAL.md", id)
+			t.Errorf("scenario corpus lacks required escaped cause layer scenario %s", id)
 		}
 	}
 	pinned := false
