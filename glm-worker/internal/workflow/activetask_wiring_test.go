@@ -55,6 +55,7 @@ func TestActiveTaskContractWiring(t *testing.T) {
 			if strings.Contains(prompt, keyword) {
 				t.Errorf("%s must not hard-code repository-specific ACTIVE task wiring (%s)", promptFile, keyword)
 			}
+		}
 	}
 
 	_, mf := loadCorpus(t)
