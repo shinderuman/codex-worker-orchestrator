@@ -46,6 +46,11 @@ type shellLine struct {
 	offset int
 }
 
+type heredocSpec struct {
+	word      string
+	stripTabs bool
+}
+
 func Check(root string) (Report, error) {
 	return Run(root, false)
 }
@@ -72,31 +77,19 @@ func Run(root string, fix bool) (Report, error) {
 		report.Status = "fail"
 		return sortedReport(report), nil
 	}
-	updates := []pendingUpdate{}
+	var updates []pendingUpdate
 	for _, path := range paths {
 		kind, eligible := classified[path]
 		if !eligible {
 			continue
 		}
-		absolute := filepath.Join(root, filepath.FromSlash(path))
-		data, err := os.ReadFile(absolute)
+		data, mode, err := readRegular(root, path)
 		if err != nil {
-			return Report{}, fmt.Errorf("read %s: %w", path, err)
+			return Report{}, err
 		}
-		var findings []finding
-		switch kind {
-		case "go":
-			findings = scanGo(path, data)
-		case "shell":
-			findings = scanShell(path, data)
-		case "toml":
-			findings = scanHash(path, data)
-		case "gitignore":
-			findings = scanGitignore(path, data)
-		}
+		findings := scan(kind, path, data)
 		if fix && len(findings) > 0 {
-			updated := removeFindings(data, findings)
-			updates = append(updates, pendingUpdate{path: absolute, data: updated, mode: fileMode(absolute)})
+			updates = append(updates, pendingUpdate{path: path, data: removeFindings(data, findings), mode: mode})
 			report.Fixed += len(findings)
 			continue
 		}
@@ -105,8 +98,8 @@ func Run(root string, fix bool) (Report, error) {
 		}
 	}
 	for _, update := range updates {
-		if err := os.WriteFile(update.path, update.data, update.mode); err != nil {
-			return Report{}, fmt.Errorf("write %s: %w", update.path, err)
+		if err := replaceRegular(root, update); err != nil {
+			return Report{}, err
 		}
 	}
 	if fix && report.Fixed > 0 {
@@ -121,6 +114,21 @@ func Run(root string, fix bool) (Report, error) {
 		report.Status = "fail"
 	}
 	return sortedReport(report), nil
+}
+
+func scan(kind, path string, data []byte) []finding {
+	switch kind {
+	case "go":
+		return scanGo(path, data)
+	case "shell":
+		return scanShell(path, data)
+	case "hash":
+		return scanHash(path, data)
+	case "gitignore":
+		return scanGitignore(path, data)
+	default:
+		return nil
+	}
 }
 
 func sortedReport(report Report) Report {
@@ -154,18 +162,15 @@ func trackedAndUntracked(root string) ([]string, error) {
 }
 
 func walkFiles(root string) ([]string, error) {
-	paths := []string{}
-	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
-		if err != nil {
-			return err
+	var paths []string
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
 		}
 		if entry.IsDir() {
 			if path != root && entry.Name() == ".git" {
 				return filepath.SkipDir
 			}
-			return nil
-		}
-		if !entry.Type().IsRegular() {
 			return nil
 		}
 		relative, err := filepath.Rel(root, path)
@@ -184,28 +189,76 @@ func walkFiles(root string) ([]string, error) {
 
 func classify(path string) (string, bool) {
 	base := filepath.Base(path)
-	ext := strings.ToLower(filepath.Ext(path))
-	switch ext {
+	extension := strings.ToLower(filepath.Ext(path))
+	switch extension {
 	case ".go", ".mod":
 		return "go", true
 	case ".sh":
 		return "shell", true
-	case ".toml", ".rules":
-		return "toml", true
+	case ".toml", ".rules", ".yml", ".yaml":
+		return "hash", true
 	case ".gitignore":
 		return "gitignore", true
-	case ".md", ".json", ".txt":
+	case ".md", ".json", ".txt", ".sum":
 		return "", false
 	}
 	if base == "LICENSE" {
 		return "", false
 	}
-	if ext == "" {
-		if base == "commentlint" || path == ".githooks/post-merge" {
+	if extension == "" {
+		if base == "commentlint" || base == "harnesslint" || path == ".githooks/post-merge" {
 			return "shell", true
 		}
 	}
 	return "unclassified", true
+}
+
+func readRegular(root, path string) ([]byte, os.FileMode, error) {
+	absolute := filepath.Join(root, filepath.FromSlash(path))
+	info, err := os.Lstat(absolute)
+	if err != nil {
+		return nil, 0, fmt.Errorf("lstat %s: %w", path, err)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, 0, fmt.Errorf("refusing non-regular source %s", path)
+	}
+	data, err := os.ReadFile(absolute)
+	if err != nil {
+		return nil, 0, fmt.Errorf("read %s: %w", path, err)
+	}
+	return data, info.Mode().Perm(), nil
+}
+
+func replaceRegular(root string, update pendingUpdate) error {
+	absolute := filepath.Join(root, filepath.FromSlash(update.path))
+	info, err := os.Lstat(absolute)
+	if err != nil {
+		return fmt.Errorf("lstat %s: %w", update.path, err)
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("refusing to replace non-regular source %s", update.path)
+	}
+	file, err := os.CreateTemp(filepath.Dir(absolute), ".commentlint-*")
+	if err != nil {
+		return err
+	}
+	temp := file.Name()
+	defer os.Remove(temp)
+	if err := file.Chmod(update.mode); err != nil {
+		file.Close()
+		return err
+	}
+	if _, err := file.Write(update.data); err != nil {
+		file.Close()
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(temp, absolute); err != nil {
+		return fmt.Errorf("replace %s: %w", update.path, err)
+	}
+	return nil
 }
 
 func scanGo(path string, data []byte) []finding {
@@ -215,11 +268,11 @@ func scanGo(path string, data []byte) []finding {
 	lexer.Init(file, data, nil, scanner.ScanComments)
 	var findings []finding
 	for {
-		position, tokenKind, literal := lexer.Scan()
-		if tokenKind == token.EOF {
+		position, kind, literal := lexer.Scan()
+		if kind == token.EOF {
 			break
 		}
-		if tokenKind != token.COMMENT {
+		if kind != token.COMMENT {
 			continue
 		}
 		pos := set.Position(position)
@@ -245,10 +298,9 @@ func scanShell(path string, data []byte) []finding {
 
 func scanShellLines(path string, lines []shellLine) []finding {
 	var findings []finding
-	pending := []string{}
+	var pending []heredocSpec
 	bodyStart := 0
-	for index := 0; index < len(lines); index++ {
-		line := lines[index]
+	for index, line := range lines {
 		if len(pending) > 0 {
 			if heredocTerminated(pending[0], line.text) {
 				pending = pending[1:]
@@ -265,8 +317,8 @@ func scanShellLines(path string, lines []shellLine) []finding {
 			}
 			code = line.text[:commentAt]
 		}
-		if delimiters := heredocDelimiters(code); len(delimiters) > 0 {
-			pending = append(pending, delimiters...)
+		pending = append(pending, heredocDelimiters(code)...)
+		if len(pending) > 0 {
 			bodyStart = index + 1
 		}
 	}
@@ -276,12 +328,15 @@ func scanShellLines(path string, lines []shellLine) []finding {
 	return findings
 }
 
-func heredocTerminated(word string, line string) bool {
-	return line == word || strings.TrimPrefix(line, "\t") == word
+func heredocTerminated(spec heredocSpec, line string) bool {
+	if line == spec.word {
+		return true
+	}
+	return spec.stripTabs && strings.TrimLeft(line, "\t") == spec.word
 }
 
-func heredocDelimiters(code string) []string {
-	var delimiters []string
+func heredocDelimiters(code string) []heredocSpec {
+	var delimiters []heredocSpec
 	single := false
 	double := false
 	escaped := false
@@ -306,8 +361,12 @@ func heredocDelimiters(code string) []string {
 		if single || double || value != '<' || index+1 >= len(code) || code[index+1] != '<' {
 			continue
 		}
+		if index+2 < len(code) && code[index+2] == '<' {
+			index += 2
+			continue
+		}
 		delimiter, consumed := heredocDelimiter(code, index+2)
-		if delimiter != "" {
+		if delimiter.word != "" {
 			delimiters = append(delimiters, delimiter)
 		}
 		index = consumed - 1
@@ -315,9 +374,11 @@ func heredocDelimiters(code string) []string {
 	return delimiters
 }
 
-func heredocDelimiter(code string, start int) (string, int) {
+func heredocDelimiter(code string, start int) (heredocSpec, int) {
 	index := start
+	stripTabs := false
 	if index < len(code) && code[index] == '-' {
+		stripTabs = true
 		index++
 	}
 	for index < len(code) && (code[index] == ' ' || code[index] == '\t') {
@@ -333,13 +394,13 @@ func heredocDelimiter(code string, start int) (string, int) {
 		index++
 	}
 	if index == begin {
-		return "", start
+		return heredocSpec{}, start
 	}
 	end := index
 	if quote != 0 && index < len(code) && code[index] == quote {
 		index++
 	}
-	return code[begin:end], index
+	return heredocSpec{word: code[begin:end], stripTabs: stripTabs}, index
 }
 
 func heredocWordByte(value byte, first bool) bool {
@@ -439,7 +500,7 @@ type sourceEdit struct {
 }
 
 func removeFindings(data []byte, findings []finding) []byte {
-	edits := []sourceEdit{}
+	var edits []sourceEdit
 	decidedLine := -1
 	decidedRemoval := false
 	for _, item := range findings {
@@ -527,14 +588,6 @@ func applyEdits(data []byte, edits []sourceEdit) []byte {
 		position = edit.end
 	}
 	return append(result, data[position:]...)
-}
-
-func fileMode(path string) os.FileMode {
-	info, err := os.Stat(path)
-	if err != nil {
-		return 0o644
-	}
-	return info.Mode().Perm()
 }
 
 func IsViolation(report Report) bool {
