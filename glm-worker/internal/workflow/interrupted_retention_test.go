@@ -472,42 +472,45 @@ func expectRetentionFailure(t *testing.T, f *isolationGateFixture, wantIn string
 }
 
 func TestResumeInterruptedIsolatedIntegrationPasses(t *testing.T) {
-	f := stopTaskForIsolationGate(t)
-	branch := "glm-worker/isolation/isogate1"
-	f.commitOnBranchAndMerge(t, branch)
-	f.saveOrigin(t, f.taskID, branch)
-	f.saveRecord(t, branch, f.taskID, f.stopHead)
-	if f.checkpoint.StopDirtyFiles == nil {
-		t.Fatal("停止時基準がありません")
+	cases := []struct {
+		name      string
+		branch    string
+		integrate func(*isolationGateFixture, *testing.T, string)
+	}{
+		{
+			name:   "metadata-only branch",
+			branch: "glm-worker/isolation/isogate1",
+			integrate: func(f *isolationGateFixture, t *testing.T, branch string) {
+				f.commitOnBranchAndMerge(t, branch)
+			},
+		},
+		{
+			name:   "source-change branch",
+			branch: "glm-worker/isolation/isogate10",
+			integrate: func(f *isolationGateFixture, t *testing.T, branch string) {
+				f.commitSourceChangeOnBranchAndMerge(t, branch)
+			},
+		},
 	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := stopTaskForIsolationGate(t)
+			tc.integrate(f, t, tc.branch)
+			f.saveOrigin(t, f.taskID, tc.branch)
+			f.saveRecord(t, tc.branch, f.taskID, f.stopHead)
+			if f.checkpoint.StopDirtyFiles == nil {
+				t.Fatal("停止時基準がありません")
+			}
 
-	resumeRunner := &scriptedRunner{steps: []runnerStep{
-		{structured: implementedPacket("resumed")},
-		{structured: passPacket()},
-	}}
-	resumeW := newGitWorkflowT(t, f.st, resumeRunner, f.repo)
-	if err := resumeW.ExecuteResume(); err != nil {
-		t.Fatalf("隔離統合後のresumeが保持照合を通過しません: %v", err)
-	}
-}
-
-func TestResumeInterruptedIsolatedSourceChangeIntegrationPasses(t *testing.T) {
-	f := stopTaskForIsolationGate(t)
-	branch := "glm-worker/isolation/isogate10"
-	f.commitSourceChangeOnBranchAndMerge(t, branch)
-	f.saveOrigin(t, f.taskID, branch)
-	f.saveRecord(t, branch, f.taskID, f.stopHead)
-	if f.checkpoint.StopDirtyFiles == nil {
-		t.Fatal("停止時基準がありません")
-	}
-
-	resumeRunner := &scriptedRunner{steps: []runnerStep{
-		{structured: implementedPacket("resumed")},
-		{structured: passPacket()},
-	}}
-	resumeW := newGitWorkflowT(t, f.st, resumeRunner, f.repo)
-	if err := resumeW.ExecuteResume(); err != nil {
-		t.Fatalf("実変更を載せた隔離branch統合後のresumeが保持照合を通過しません: %v", err)
+			resumeRunner := &scriptedRunner{steps: []runnerStep{
+				{structured: implementedPacket("resumed")},
+				{structured: passPacket()},
+			}}
+			resumeW := newGitWorkflowT(t, f.st, resumeRunner, f.repo)
+			if err := resumeW.ExecuteResume(); err != nil {
+				t.Fatalf("隔離branch統合後のresumeが保持照合を通過しません: %v", err)
+			}
+		})
 	}
 }
 
