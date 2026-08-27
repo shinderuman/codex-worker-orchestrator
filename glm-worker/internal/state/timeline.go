@@ -66,6 +66,15 @@ func CallsFromTaskEvents(records []TaskEventRecord) []CallTimelineEntry {
 
 func absorbTaskEvent(entry *CallTimelineEntry, tools map[string]*CallTimelineTool, record TaskEventRecord) {
 	entry.Events++
+	absorbTaskEventIdentity(entry, record)
+	absorbTaskEventTimestamp(entry, record.Timestamp)
+	absorbTaskEventResult(entry, record)
+	for _, block := range record.Blocks {
+		absorbTaskBlock(tools, block)
+	}
+}
+
+func absorbTaskEventIdentity(entry *CallTimelineEntry, record TaskEventRecord) {
 	if entry.Role == "" {
 		entry.Role = record.Role
 	}
@@ -82,27 +91,32 @@ func absorbTaskEvent(entry *CallTimelineEntry, tools map[string]*CallTimelineToo
 	if record.MessageModel != "" {
 		entry.MessageModel = record.MessageModel
 	}
-	if record.Timestamp != (time.Time{}) {
-		if entry.FirstAt.Equal((time.Time{})) || record.Timestamp.Before(entry.FirstAt) {
-			entry.FirstAt = record.Timestamp
-		}
-		if record.Timestamp.After(entry.LastAt) {
-			entry.LastAt = record.Timestamp
-		}
+}
+
+func absorbTaskEventTimestamp(entry *CallTimelineEntry, timestamp time.Time) {
+	if timestamp.IsZero() {
+		return
 	}
-	if record.Kind == "result" {
-		entry.ResultObserved = true
-		entry.ResultSubtype = record.Subtype
-		entry.IsError = record.IsError
-		entry.DurationMS = record.DurationMS
-		entry.DurationAPIMS = record.DurationAPIMS
-		entry.NumTurns = record.NumTurns
-		entry.TotalCostUSD = record.TotalCostUSD
-		entry.Usage = record.Usage
+	if entry.FirstAt.IsZero() || timestamp.Before(entry.FirstAt) {
+		entry.FirstAt = timestamp
 	}
-	for _, block := range record.Blocks {
-		absorbTaskBlock(tools, block)
+	if timestamp.After(entry.LastAt) {
+		entry.LastAt = timestamp
 	}
+}
+
+func absorbTaskEventResult(entry *CallTimelineEntry, record TaskEventRecord) {
+	if record.Kind != "result" {
+		return
+	}
+	entry.ResultObserved = true
+	entry.ResultSubtype = record.Subtype
+	entry.IsError = record.IsError
+	entry.DurationMS = record.DurationMS
+	entry.DurationAPIMS = record.DurationAPIMS
+	entry.NumTurns = record.NumTurns
+	entry.TotalCostUSD = record.TotalCostUSD
+	entry.Usage = record.Usage
 }
 
 func absorbTaskBlock(tools map[string]*CallTimelineTool, block TaskBlockSummary) {
