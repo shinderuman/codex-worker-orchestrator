@@ -9,13 +9,21 @@ import (
 )
 
 var qualityPathspecs = []string{
+	".githooks/post-merge",
+	".github/workflows",
 	".golangci.yml",
 	"commentlint",
 	"harnesslint",
+	"install.sh",
+	"tests/install_smoke.sh",
 	"glm-worker/cmd/commentlint",
 	"glm-worker/cmd/harnesslint",
+	"glm-worker/cmd/plancheck",
 	"glm-worker/internal/commentlint",
 	"glm-worker/internal/harnesslint",
+	"glm-worker/internal/plancheckcmd",
+	"glm-worker/internal/workflow/activetask.go",
+	"glm-worker/internal/workflow/plan_final_head.go",
 }
 
 func scanQualitySurface(root string, paths []string) ([]Violation, error) {
@@ -76,7 +84,15 @@ func qualityWiringViolations(root string, paths []string) ([]Violation, error) {
 			path: "install.sh",
 			tokens: []string{
 				"./cmd/harnesslint",
+				"./cmd/plancheck",
 				"for name in glm-worker commentlint harnesslint merge-json",
+				"\"$build_dir/plancheck\" \"$repo_root\"",
+			},
+		},
+		{
+			path: ".githooks/post-merge",
+			tokens: []string{
+				"exec \"$repo_root/install.sh\"",
 			},
 		},
 		{

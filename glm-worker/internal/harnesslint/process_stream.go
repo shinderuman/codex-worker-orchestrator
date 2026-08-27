@@ -14,6 +14,7 @@ var processStreamOwners = map[string]map[string]int{
 	"glm-worker/cmd/commentlint/main.go":        {"Stdout": 1, "Stderr": 1},
 	"glm-worker/cmd/harnesslint/main.go":        {"Stdout": 1, "Stderr": 1},
 	"glm-worker/cmd/merge-json/main.go":         {"Stdout": 1, "Stderr": 1},
+	"glm-worker/cmd/plancheck/main.go":          {"Stdout": 1, "Stderr": 1},
 	"glm-worker/internal/app/machine_output.go": {"Stdin": 1, "Stdout": 1, "Stderr": 1},
 	"glm-worker/internal/state/stats.go":        {"Stderr": 1},
 }

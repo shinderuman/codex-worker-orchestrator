@@ -129,6 +129,7 @@ build_binaries() {
         go build -buildvcs=false -trimpath -o "$build_dir/commentlint" ./cmd/commentlint
         go build -buildvcs=false -trimpath -o "$build_dir/harnesslint" ./cmd/harnesslint
         go build -buildvcs=false -trimpath -o "$build_dir/merge-json" ./cmd/merge-json
+        go build -buildvcs=false -trimpath -o "$build_dir/plancheck" ./cmd/plancheck
     )
 }
 
@@ -199,6 +200,7 @@ build_dir=$(mktemp -d "${TMPDIR:-/tmp}/codex-worker-orchestrator-build.XXXXXX")
 trap 'rm -rf "$build_dir"' EXIT HUP INT TERM
 printf '%s\n' 'preflight: building runtime binaries'
 build_binaries "$build_dir"
+"$build_dir/plancheck" "$repo_root"
 verify_claude_cli
 install_binaries "$build_dir"
 install_codex_files
