@@ -1,0 +1,210 @@
+package harnesslint
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"strconv"
+	"strings"
+)
+
+type commandResult struct {
+	output   string
+	exitCode int
+}
+
+type commandRunner interface {
+	run(dir, name string, args ...string) (commandResult, error)
+}
+
+type realCommandRunner struct{}
+
+type missingToolError struct {
+	name string
+}
+
+func (e *missingToolError) Error() string {
+	return "required quality tool is missing: " + e.name
+}
+
+func (realCommandRunner) run(dir, name string, args ...string) (commandResult, error) {
+	command := exec.Command(name, args...)
+	command.Dir = dir
+	output, err := command.CombinedOutput()
+	if err == nil {
+		return commandResult{output: string(output)}, nil
+	}
+	var notFound *exec.Error
+	if errors.As(err, &notFound) {
+		return commandResult{}, &missingToolError{name: name}
+	}
+	var exitError *exec.ExitError
+	if errors.As(err, &exitError) {
+		return commandResult{output: string(output), exitCode: exitError.ExitCode()}, nil
+	}
+	return commandResult{}, err
+}
+
+func runExternalChecks(root string, paths []string, runner commandRunner) ([]Violation, error) {
+	var violations []Violation
+	comment, err := runner.run(root, filepath.Join(root, "commentlint"))
+	if err != nil {
+		return nil, err
+	}
+	violations = append(violations, parseCommentlint(comment)...)
+	config := filepath.Join(root, ".golangci.yml")
+	for _, module := range moduleDirs(paths) {
+		dir := root
+		if module != "" {
+			dir = filepath.Join(root, filepath.FromSlash(module))
+		}
+		result, err := runner.run(dir, "golangci-lint", "run", "--config", config)
+		if err != nil {
+			return nil, err
+		}
+		violations = append(violations, parseGolangCI(result, module)...)
+	}
+	for _, path := range shellFiles(paths) {
+		result, err := runner.run(root, "shellcheck", "-f", "gcc", path)
+		if err != nil {
+			return nil, err
+		}
+		violations = append(violations, parseShellcheck(result, path)...)
+		result, err = runner.run(root, "shfmt", "-d", path)
+		if err != nil {
+			return nil, err
+		}
+		if result.exitCode != 0 {
+			violations = append(violations, Violation{Rule: "shfmt", Path: path, Line: 1, Column: 1, Message: "shell formatting differs from shfmt output", Fixable: true})
+		}
+	}
+	return violations, nil
+}
+
+func runExternalFixers(root string, paths []string, runner commandRunner) error {
+	if _, err := runner.run(root, filepath.Join(root, "commentlint"), "--fix"); err != nil {
+		return err
+	}
+	for _, path := range shellFiles(paths) {
+		result, err := runner.run(root, "shfmt", "-w", path)
+		if err != nil {
+			return err
+		}
+		if result.exitCode != 0 {
+			return fmt.Errorf("shfmt -w %s failed: %s", path, strings.TrimSpace(result.output))
+		}
+	}
+	config := filepath.Join(root, ".golangci.yml")
+	for _, module := range moduleDirs(paths) {
+		dir := root
+		if module != "" {
+			dir = filepath.Join(root, filepath.FromSlash(module))
+		}
+		if _, err := runner.run(dir, "golangci-lint", "run", "--fix", "--config", config); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+var golangCILine = regexp.MustCompile(`^(.+?):(\d+):(\d+):\s*(.+?)(?:\s+\(([^()]+)\))?$`)
+var shellcheckLine = regexp.MustCompile(`^(.+?):(\d+):(\d+):\s*[^:]+:\s*(.+?)(?:\s+\[([A-Z0-9]+)\])?$`)
+
+func parseGolangCI(result commandResult, module string) []Violation {
+	if result.exitCode == 0 {
+		return nil
+	}
+	var violations []Violation
+	for _, line := range strings.Split(result.output, "\n") {
+		match := golangCILine.FindStringSubmatch(strings.TrimSpace(line))
+		if match == nil {
+			continue
+		}
+		path := filepath.ToSlash(match[1])
+		if module != "" && !strings.HasPrefix(path, module+"/") {
+			path = filepath.ToSlash(filepath.Join(module, path))
+		}
+		rule := match[5]
+		if rule == "" {
+			rule = "golangci-lint"
+		}
+		violations = append(violations, Violation{Rule: rule, Path: path, Line: atoi(match[2]), Column: atoi(match[3]), Message: match[4]})
+	}
+	if len(violations) == 0 {
+		violations = append(violations, Violation{Rule: "golangci-lint", Path: modulePath(module), Line: 1, Column: 1, Message: compactOutput(result.output, "golangci-lint failed")})
+	}
+	return violations
+}
+
+func parseShellcheck(result commandResult, path string) []Violation {
+	if result.exitCode == 0 {
+		return nil
+	}
+	var violations []Violation
+	for _, line := range strings.Split(result.output, "\n") {
+		match := shellcheckLine.FindStringSubmatch(strings.TrimSpace(line))
+		if match == nil {
+			continue
+		}
+		rule := strings.ToLower(match[5])
+		if rule == "" {
+			rule = "shellcheck"
+		}
+		violations = append(violations, Violation{Rule: rule, Path: filepath.ToSlash(match[1]), Line: atoi(match[2]), Column: atoi(match[3]), Message: match[4]})
+	}
+	if len(violations) == 0 {
+		violations = append(violations, Violation{Rule: "shellcheck", Path: path, Line: 1, Column: 1, Message: compactOutput(result.output, "shellcheck failed")})
+	}
+	return violations
+}
+
+func parseCommentlint(result commandResult) []Violation {
+	var report struct {
+		Status     string `json:"status"`
+		Violations []struct {
+			Path    string `json:"path"`
+			Line    int    `json:"line"`
+			Column  int    `json:"column"`
+			Kind    string `json:"kind"`
+			Message string `json:"message"`
+		} `json:"violations"`
+	}
+	if json.Unmarshal([]byte(result.output), &report) == nil && report.Status != "" {
+		var violations []Violation
+		for _, item := range report.Violations {
+			violations = append(violations, Violation{Rule: "commentlint/" + item.Kind, Path: item.Path, Line: item.Line, Column: item.Column, Message: item.Message, Fixable: item.Kind == "comment"})
+		}
+		return violations
+	}
+	if result.exitCode == 0 {
+		return nil
+	}
+	return []Violation{{Rule: "commentlint", Path: "commentlint", Line: 1, Column: 1, Message: compactOutput(result.output, "commentlint failed")}}
+}
+
+func modulePath(module string) string {
+	if module == "" {
+		return "go.mod"
+	}
+	return filepath.ToSlash(filepath.Join(module, "go.mod"))
+}
+
+func atoi(value string) int {
+	parsed, _ := strconv.Atoi(value)
+	return parsed
+}
+
+func compactOutput(output, fallback string) string {
+	value := strings.TrimSpace(output)
+	if value == "" {
+		return fallback
+	}
+	value = strings.Join(strings.Fields(value), " ")
+	if len(value) > 500 {
+		value = value[:500]
+	}
+	return value
+}
