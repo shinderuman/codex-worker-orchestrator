@@ -8,11 +8,10 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/gpt-external-review-current-head-validation.md`
+- `IMPLEMENTATION_TASKS/instruction-surface-ownership.md`
 
 ## NEXT（優先順）
 
-- `IMPLEMENTATION_TASKS/instruction-surface-ownership.md`
 - `IMPLEMENTATION_TASKS/unknown-production-surface-risk.md`
 - `IMPLEMENTATION_TASKS/glm-git-authority-enforcement.md`
 - `IMPLEMENTATION_TASKS/quality-evidence-mutation-risk.md`
@@ -48,16 +47,17 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## 現在のGit境界
 
-- branch: `main`
-- implementation baseline: GPT external review PR #2のfindingをcurrent HEADへ照合し、EVAL自然言語authority重複を解消した状態
-- implementation boundary: PR #2は指定ref fetch・proposal object確認・lossless GLM照合・適応修正・全quality gate・独立review・親Codex semantic review・parent accept・History移行を完了。PR #1をACTIVEへ昇格したが、fetch・proposal確認・GLM dispatchを含め未着手
-- preserved boundary: wake coalescingの10分closed interval・fail-open reservation・task ID fail-closed、machine output boundary、full smoke証拠再利用、GLM commit/push禁止を維持
-- push: 各親commit後の`refs/heads/main`とGreptile正常review後の`refs/heads/codex/greptile-reviewed`だけを親Codexが通常fast-forwardする。GLM push、force/non-fast-forward、他refへのpushは禁止
+- accepted main baseline: `b5a4f2e9fd4a3199470e9df0759c8b969f6813c5`
+- reconciliation branch: `gpt/implementation-metadata-reconcile`。latest accepted mainから作成したmetadata-only branchであり、accepted baselineと混同しない
+- implementation boundary: PR #3 `6f08b301e9c4e1444af80c9b9ee646eb778a3baa`でrepository quality linterを導入し、PR #4 `b5a4f2e9fd4a3199470e9df0759c8b969f6813c5`でrepository-wide lint負債除去、reviewer前machine quality gate、accepted quality surface snapshot / worker自己改変fail-closed、scenario/prose/test負債整理までmainへSquash Merge済み
+- preserved boundary: wake coalescing、machine output、safe-stop/resume、provider accounting、parent-managed metadata guard、GLM commit/push禁止、Direct Codex対orchestratedのCodex Reduction / Quality Delta最上位評価を維持
+- reconciliation scope: Plan / Tasks / Historyのcurrent implementation同期だけ。production code・runtime behaviorは変更しない
+- merge boundary: metadata reconciliationはmainへ直接pushせずmain向けPRで停止し、Squash Mergeはユーザーが行う
 
 ## 現在の停止理由
 
-ユーザーがPR #2のmain push完了後に一度停止するよう明示したため。PR #1はACTIVEへ昇格済みだが未着手のまま保持する。
+PR #4までaccepted mainへSquash Merge済み。local runtime install / Codex+GLM acceptanceへ進む前に、PR #3/#4で完了・吸収・前提変更になったtaskをcurrent mainへ同期するmetadata reconciliationをユーザー指示で先行している。reconciliation PR作成後はユーザーのSquash Mergeまで停止し、ACTIVE taskのproduction実装は開始しない。
 
 ## 次の親Codex操作
 
-ユーザーの再開指示後、PR #1 taskのOriginal instructionと保存済みexternal review payloadを再読し、proposal transportの現状確認から開始する。
+metadata reconciliation PRがユーザーにSquash Mergeされた後、最新accepted mainをlocalへ同期して`./install.sh`を実行し、source HEAD・installed `glm-worker`・managed instructions・installed configの一致を確認する。そのinstalled状態でworker dispatch、machine quality gate、reviewer routing、quality surface protection、resume/stop、machine output、通常task lifecycleを確認し、Codex / GLMが新quality policy下で実運用できることをacceptしてからACTIVE taskへ戻る。
