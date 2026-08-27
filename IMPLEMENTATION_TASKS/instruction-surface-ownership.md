@@ -67,4 +67,4 @@ none
 
 ## Current boundary
 
-ACTIVE候補。PR #4でaccepted quality policy surfaceのworker自己改変はfail closed化されたが、glm-workerが実際に読むgeneric repo-local instruction surface全体のownership / task-wide mutation境界は別failure classとして未成立。metadata reconciliation完了後のruntime acceptanceを先に行い、その後に通常taskとして着手する。
+ACTIVE。Track Aのtask-wide instruction identity / mutation restore / session破棄とTrack Bのrepo instruction HIGH分類をproductionへ実装済み。task branchで恒久lint、targeted test / vet、全package buildがPASSしており、一時validation workflow削除後の最終lintとintegration squashを残す。

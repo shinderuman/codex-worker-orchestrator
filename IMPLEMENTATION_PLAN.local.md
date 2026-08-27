@@ -8,11 +8,10 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/installer-missing-dependency-brew-hint.md`
+- `IMPLEMENTATION_TASKS/instruction-surface-ownership.md`
 
 ## NEXT（優先順）
 
-- `IMPLEMENTATION_TASKS/instruction-surface-ownership.md`
 - `IMPLEMENTATION_TASKS/unknown-production-surface-risk.md`
 - `IMPLEMENTATION_TASKS/glm-git-authority-enforcement.md`
 - `IMPLEMENTATION_TASKS/quality-evidence-mutation-risk.md`
@@ -48,17 +47,17 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## 現在のGit境界
 
-- branch: `main`
-- accepted main baseline: `2c8bf5fe22b529dd446c65bd43b6a2289819730d`
-- implementation boundary: PR #3 `6f08b301e9c4e1444af80c9b9ee646eb778a3baa`でrepository quality linterを導入し、PR #4 `b5a4f2e9fd4a3199470e9df0759c8b969f6813c5`でrepository-wide quality enforcement、PR #5 `21cb94b5f4b9800f8092f2e2f5afc276ad37ae62`でPlan / Tasks / History reconciliation、PR #6 `2c8bf5fe22b529dd446c65bd43b6a2289819730d`で欠落した`branch: main` metadataを復元してmainへSquash Merge済み
+- branch: `hardening/agent-guardrails`
+- accepted main baseline: `815efc8f6601d344a93e8fa213d0227306db1f0d`
+- implementation boundary: PR #3 `6f08b301e9c4e1444af80c9b9ee646eb778a3baa`でrepository quality linter、PR #4 `b5a4f2e9fd4a3199470e9df0759c8b969f6813c5`でrepository-wide quality enforcement、PR #5 `21cb94b5f4b9800f8092f2e2f5afc276ad37ae62`でmetadata reconciliation、PR #6 `2c8bf5fe22b529dd446c65bd43b6a2289819730d`でPlan branch metadata修復、PR #7 `a111e0adc2d4f299e677f85148f34906d74e9c2c`でinstaller Homebrew hint、PR #9 `84e3baf18fc8d1c722682288c91ceb1623fd4e20`で恒久Repository Lint、PR #10 `815efc8f6601d344a93e8fa213d0227306db1f0d`でGreptile / CodeRabbit自動review停止をmainへ反映済み
 - preserved boundary: wake coalescing、machine output、safe-stop/resume、provider accounting、parent-managed metadata guard、GLM commit/push禁止、Direct Codex対orchestratedのCodex Reduction / Quality Delta最上位評価を維持
-- current implementation: `gpt/installer-brew-hint-v2`でHomebrew formulaを持つ必須commandの欠落時だけ`brew install <formula>`案内を追加し、既存install smokeへpositive/negative regressionを追加する
-- merge boundary: current implementationはmainへ直接pushせずmain向けPRで停止し、Squash Mergeはユーザーが行う
+- current implementation: `hardening/agent-guardrails`をintegration branchとし、`hardening-task/instruction-surface-ownership`のPR #8でF1 instruction surface ownership hardeningを進行中
+- merge boundary: hardening taskは専用task branchへ細かくcheckpoint commit/pushし、taskごとに`hardening/agent-guardrails`向けPRをSquash Mergeして1 task = 1 integration commitとする。hardening campaign完了時はintegrationからmainへSquashしないmergeを行う
 
 ## 現在の停止理由
 
-PR #6はmainへSquash Merge済み。ACTIVE taskのproduction変更と回帰testを専用branchで作成中であり、mainへmergeされるまでlocal accepted-main runtime install / task completionは行わない。
+PR #7はmainへmerge済みで、ユーザーからmerge後の`./install.sh`が問題なく動作することを確認済み。Brew hint taskを完了としてHistoryへ移し、`instruction-surface-ownership`をACTIVEとしてhardening campaignを継続する。
 
 ## 次の親Codex操作
 
-current implementation差分をreviewしてmain向けPRとして提示する。ユーザーのSquash Merge後に最新mainをlocalへ同期して`./install.sh`の本配置とinstalled/source一致を確認し、task acceptance成立後にHistory移行・task file削除・Planの次ACTIVE昇格を行う。
+PR #8のtask固有validation・恒久lint・最終diffを閉じ、`hardening/agent-guardrails`へSquash Mergeする。その後Plan優先順に次のhardening taskへ進む。
