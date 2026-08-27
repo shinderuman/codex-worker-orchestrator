@@ -8,6 +8,7 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
+- `IMPLEMENTATION_TASKS/017-reviewer-diff-first-search.md`
 
 ## NEXT（優先順）
 - `IMPLEMENTATION_TASKS/010-task-splitting-milestones.md`
@@ -15,7 +16,6 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 - `IMPLEMENTATION_TASKS/012-compaction-threshold-evaluation.md`
 - `IMPLEMENTATION_TASKS/013-worker-model-routing-evaluation.md`
 - `IMPLEMENTATION_TASKS/014-test-impact-evaluation.md`
-- `IMPLEMENTATION_TASKS/017-reviewer-diff-first-search.md`
 - `IMPLEMENTATION_TASKS/018-exhaustive-search-gate.md`
 - `IMPLEMENTATION_TASKS/019-repo-search-product-wiring.md`
 - `IMPLEMENTATION_TASKS/020-repo-search-telemetry-eval.md`
