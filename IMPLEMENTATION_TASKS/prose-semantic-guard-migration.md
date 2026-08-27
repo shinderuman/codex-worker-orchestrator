@@ -63,4 +63,4 @@ none
 
 ## Current boundary
 
-NEXT / NARROW。PR #4でscenario authority、prose存在確認test、historical protocol corpus等を大量に削除し、behavior / typed / machine gateへ移したため元scopeは縮小した。ただし現mainにも`activetask_test.go`等でpromptの`ACTIVE_TASK_FILE`、`Acceptance criteria`、`task file本文`等を`strings.Contains`で確認するprose pinが残る。残存corpusを棚卸しし、主要semanticをbehavior / typed guardへ移せるかと正当な残存理由を分類するscopeで継続する。
+ACTIVE / NARROW。F6 completion後の次taskとして選択済み。PR #4で大半をbehavior / typed / machine gateへ移した残存corpusを棚卸しし、Track Aのgeneric behavior/typed invariantとTrack Bのrepo固有prose guardを分類する。主要semanticはsubstring存在確認を主要guardにせず、逆条件・例外文で弱められないdeterministic guardへ移行する。
