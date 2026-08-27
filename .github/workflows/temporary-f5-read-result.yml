@@ -1,0 +1,104 @@
+name: Temporary F5 Read Result
+
+on:
+  push:
+    branches:
+      - hardening-task/deterministic-rule-activation
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.22.x'
+          cache: false
+      - name: Apply successful-read fix
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('glm-worker/internal/runner/stream_events.go')
+          text = path.read_text()
+          old = '''\twaitTaskID string\n}'''
+          new = '''\twaitTaskID      string\n\tinstructionRead string\n}'''
+          if old not in text:
+              raise SystemExit('tool observation anchor not found')
+          text = text.replace(old, new, 1)
+          old = '''\t\tif name, matched := workerInstructionReadName(observation.name, input, g.workerInstructionDir); matched {\n\t\t\tg.instructionReads[name] = struct{}{}\n\t\t}'''
+          new = '''\t\tif name, matched := workerInstructionReadName(observation.name, input, g.workerInstructionDir); matched {\n\t\t\tobservation.instructionRead = name\n\t\t}'''
+          if old not in text:
+              raise SystemExit('read observation anchor not found')
+          text = text.replace(old, new, 1)
+          old = '''\tif block.Name == "" {\n\t\tblock.Name = observed.name\n\t}\n\tdelete(g.tools, block.ToolID)'''
+          new = '''\tif block.Name == "" {\n\t\tblock.Name = observed.name\n\t}\n\tif !block.IsError && observed.instructionRead != "" {\n\t\tg.instructionReads[observed.instructionRead] = struct{}{}\n\t}\n\tdelete(g.tools, block.ToolID)'''
+          if old not in text:
+              raise SystemExit('tool result anchor not found')
+          path.write_text(text.replace(old, new, 1))
+
+          test_path = Path('glm-worker/internal/runner/instruction_reads_test.go')
+          tests = test_path.read_text()
+          success_use = '`{"type":"assistant","message":{"model":"glm-5.3","content":[{"type":"tool_use","id":"toolu_read","name":"Read","input":{"file_path":"/tmp/.codex/instructions/worker/go.md"}}]}}`,'
+          success_result = success_use + '\n\t\t`{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_read","content":"# Go rules","is_error":false}]}}`,'
+          if success_use not in tests:
+              raise SystemExit('success stream anchor not found')
+          tests = tests.replace(success_use, success_result, 1)
+          anchor = '\nfunc TestWorkerInstructionReadRejectsUnrelatedRead(t *testing.T) {'
+          addition = r'''
+func TestClaudeRunnerRejectsFailedWorkerInstructionRead(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fixtureはUnix系環境向け")
+	}
+	stream := strings.Join([]string{
+		`{"type":"assistant","message":{"model":"glm-5.3","content":[{"type":"tool_use","id":"toolu_read","name":"Read","input":{"file_path":"/tmp/.codex/instructions/worker/go.md"}}]}}`,
+		`{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_read","content":"missing","is_error":true}]}}`,
+		`{"type":"result","subtype":"success","is_error":false,"result":"{\"status\":\"IMPLEMENTED\",\"risk\":\"LOW\",\"summary\":\"done\",\"requirement_coverage\":\"covered\",\"tests\":\"pass\",\"unverified\":\"none\"}","structured_output":{"status":"IMPLEMENTED","risk":"LOW","summary":"done","requirement_coverage":"covered","tests":"pass","unverified":"none"}}`,
+		"",
+	}, "\n")
+	runner, _, _ := newStreamFixtureRunner(t, writeStreamFixtureClaude(t, stream))
+	runner.config.CodexConfigDir = "/tmp/.codex"
+	result, err := runner.Run(
+		state.WorkerRole,
+		"worker-new",
+		"worker-model",
+		false,
+		"high",
+		"prompt",
+		filepath.Join(t.TempDir(), "result.log"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.InstructionReads) != 0 {
+		t.Fatalf("failed read counted as instruction evidence: %v", result.InstructionReads)
+	}
+}
+'''
+          if anchor not in tests:
+              raise SystemExit('test insertion anchor not found')
+          test_path.write_text(tests.replace(anchor, addition + anchor, 1))
+          PY
+          gofmt -w glm-worker/internal/runner/stream_events.go glm-worker/internal/runner/instruction_reads_test.go
+      - name: Focused tests
+        working-directory: glm-worker
+        run: go test ./internal/runner ./internal/workflow
+      - name: Vet
+        working-directory: glm-worker
+        run: go vet ./...
+      - name: Build
+        working-directory: glm-worker
+        run: go build ./...
+      - name: Commit validated fix
+        run: |
+          rm .github/workflows/temporary-f5-read-result.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add glm-worker/internal/runner/stream_events.go glm-worker/internal/runner/instruction_reads_test.go .github/workflows/temporary-f5-read-result.yml
+          git commit -m 'fix: require successful instruction reads'
+          git push
