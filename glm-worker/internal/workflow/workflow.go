@@ -274,29 +274,7 @@ func (w *Workflow) ExecuteDecision(decision string) error {
 			Request:        request,
 			Decision:       decision,
 		}
-		if pocStage {
-			if stopped, err := w.savePoCStartSnapshot(); err != nil {
-				return err
-			} else if stopped {
-				return nil
-			}
-		}
-
-		workerResult, err := w.runModel(checkpoint)
-		if err != nil {
-			return err
-		}
-		if pocStage {
-			if stopped, err := w.verifyPoCEndSnapshot(); err != nil {
-				return err
-			} else if stopped {
-				return nil
-			}
-			if workerResult.Status == packet.StatusImplemented {
-				return w.routePoCWorkerResult(workerResult)
-			}
-		}
-		return w.handleWorkerResult(request, workerResult, checkpoint.Phase)
+		return w.executeWorkerCheckpoint(request, checkpoint, pocStage)
 	}))
 }
 
