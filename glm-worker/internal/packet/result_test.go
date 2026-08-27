@@ -7,6 +7,13 @@ import (
 	"testing"
 )
 
+type validationRejectionCase struct {
+	name           string
+	mutate         func(*Result)
+	want           string
+	schemaMismatch bool
+}
+
 var textFieldSetters = map[string]func(*Result, string){
 	"summary":              func(r *Result, v string) { r.Summary = v },
 	"requirement_coverage": func(r *Result, v string) { r.RequirementCoverage = v },
@@ -90,6 +97,30 @@ func passResult() Result {
 	}
 }
 
+func runValidationRejections(t *testing.T, base func() Result, validate func(Result) error, cases []validationRejectionCase) {
+	t.Helper()
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			result := base()
+			c.mutate(&result)
+			err := validate(result)
+			if err == nil {
+				t.Fatal("expected validation error")
+			}
+			if c.schemaMismatch {
+				if !IsMismatchError(err) {
+					t.Fatalf("error must be mismatch, got %v", err)
+				}
+			} else if !IsConstraintError(err) {
+				t.Fatalf("error must be constraint, got %v", err)
+			}
+			if !strings.Contains(err.Error(), c.want) {
+				t.Fatalf("err = %q, want substring %q", err.Error(), c.want)
+			}
+		})
+	}
+}
+
 func TestValidateWorkerResultStatuses(t *testing.T) {
 	decision := Result{
 		Status:          StatusNeedsSolDecision,
@@ -117,12 +148,7 @@ func TestValidateWorkerResultStatuses(t *testing.T) {
 }
 
 func TestValidateWorkerResultRejections(t *testing.T) {
-	cases := []struct {
-		name           string
-		mutate         func(*Result)
-		want           string
-		schemaMismatch bool
-	}{
+	cases := []validationRejectionCase{
 
 		{"reviewer status", func(r *Result) { r.Status = StatusPass }, "worker結果のstatus", true},
 		{"decision low risk", func(r *Result) {
@@ -143,26 +169,7 @@ func TestValidateWorkerResultRejections(t *testing.T) {
 		{"oversize field", func(r *Result) { r.Summary = strings.Repeat("x", MaxFieldBytes+1) }, "bytes以内", false},
 		{"unknown risk", func(r *Result) { r.Risk = Risk("MEDIUM") }, "LOWまたはHIGH", false},
 	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			result := implementedResult()
-			c.mutate(&result)
-			err := ValidateWorkerResult(result)
-			if err == nil {
-				t.Fatal("expected validation error")
-			}
-			if c.schemaMismatch {
-				if !IsMismatchError(err) {
-					t.Fatalf("error must be mismatch, got %v", err)
-				}
-			} else if !IsConstraintError(err) {
-				t.Fatalf("error must be constraint, got %v", err)
-			}
-			if !strings.Contains(err.Error(), c.want) {
-				t.Fatalf("err = %q, want substring %q", err.Error(), c.want)
-			}
-		})
-	}
+	runValidationRejections(t, implementedResult, ValidateWorkerResult, cases)
 }
 
 func TestValidateReviewerResultStatuses(t *testing.T) {
@@ -195,12 +202,7 @@ func TestValidateReviewerResultStatuses(t *testing.T) {
 }
 
 func TestValidateReviewerResultRejections(t *testing.T) {
-	cases := []struct {
-		name           string
-		mutate         func(*Result)
-		want           string
-		schemaMismatch bool
-	}{
+	cases := []validationRejectionCase{
 		{"worker status", func(r *Result) { r.Status = StatusImplemented }, "reviewer結果のstatus", true},
 		{"pass high risk", func(r *Result) { r.Risk = RiskHigh }, "PASSのrisk", false},
 		{"pass no targets", func(r *Result) { r.Targets = nil }, "PASSのTARGETSは空", false},
@@ -231,26 +233,7 @@ func TestValidateReviewerResultRejections(t *testing.T) {
 		}, "必須field sol_question", false},
 		{"missing invariants", func(r *Result) { r.Invariants = "" }, "必須field invariants", false},
 	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			result := passResult()
-			c.mutate(&result)
-			err := ValidateReviewerResult(result)
-			if err == nil {
-				t.Fatal("expected validation error")
-			}
-			if c.schemaMismatch {
-				if !IsMismatchError(err) {
-					t.Fatalf("error must be mismatch, got %v", err)
-				}
-			} else if !IsConstraintError(err) {
-				t.Fatalf("error must be constraint, got %v", err)
-			}
-			if !strings.Contains(err.Error(), c.want) {
-				t.Fatalf("err = %q, want substring %q", err.Error(), c.want)
-			}
-		})
-	}
+	runValidationRejections(t, passResult, ValidateReviewerResult, cases)
 }
 
 func TestValidateResultRejectsOversizeDisplay(t *testing.T) {
