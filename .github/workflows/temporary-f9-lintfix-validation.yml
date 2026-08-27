@@ -1,0 +1,38 @@
+name: Temporary F9 Lintfix Validation
+
+on:
+  push:
+    branches:
+      - hardening-task/reviewer-diff-first-search
+
+permissions:
+  contents: write
+
+jobs:
+  validate-f9-lintfix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.22.x'
+          cache: false
+      - name: Validate
+        working-directory: glm-worker
+        run: |
+          gofmt -w internal/workflow/reviewer_repo_search.go
+          go test ./internal/workflow ./internal/state ./internal/reposearch
+          go test -race ./internal/workflow ./internal/state ./internal/reposearch
+          go vet ./...
+          go build ./...
+      - name: Commit cleanup
+        run: |
+          rm .github/workflows/temporary-f9-lintfix-validation.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix: satisfy F9 repository lint'
+          git push origin HEAD:hardening-task/reviewer-diff-first-search
