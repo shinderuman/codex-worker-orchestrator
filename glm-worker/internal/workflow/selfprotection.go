@@ -96,6 +96,10 @@ func classifyNonCriticalPathPattern(path string) (bool, string) {
 		return false, "test-fixture"
 	case strings.HasPrefix(path, "tests/"), strings.HasPrefix(path, "glm-worker/scripts/"):
 		return false, "test-harness"
+	case isKnownSafeTestPath(path):
+		return false, "test"
+	case isKnownSafeDocumentationPath(path):
+		return false, "docs"
 	default:
 		return false, ""
 	}
@@ -152,7 +156,12 @@ func classifySelfProtection(paths []string) selfProtectionDecision {
 	categories := make(map[string]struct{})
 	var firstHit string
 	for _, p := range paths {
-		if ok, cat := IsCriticalPath(p); ok {
+		critical, cat := IsCriticalPath(p)
+		if !critical && cat == "" {
+			critical = true
+			cat = "unknown-surface"
+		}
+		if critical {
 			categories[cat] = struct{}{}
 			if firstHit == "" {
 				firstHit = p

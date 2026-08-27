@@ -41,10 +41,10 @@ func newRetentionGitRepo(t *testing.T) string {
 	run("init", "-q")
 	run("config", "user.email", "retention@example.invalid")
 	run("config", "user.name", "retention test")
-	if err := os.WriteFile(filepath.Join(repo, "tracked.txt"), []byte("base\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(repo, "tracked.md"), []byte("base\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	run("add", "tracked.txt")
+	run("add", "tracked.md")
 	run("commit", "-q", "-m", "initial")
 	return repo
 }
@@ -118,7 +118,7 @@ func retentionCheckpoint(t *testing.T, st *state.StateStore) state.ResumeCheckpo
 
 func TestInterruptedStopCapturesRetention(t *testing.T) {
 	repo := newRetentionGitRepo(t)
-	if err := os.WriteFile(filepath.Join(repo, "uncommitted.txt"), []byte("作業中\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(repo, "uncommitted.md"), []byte("作業中\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	st := newGitStateStoreT(t, repo)
@@ -138,7 +138,7 @@ func TestInterruptedStopCapturesRetention(t *testing.T) {
 	}
 	found := false
 	for _, file := range checkpoint.StopDirtyFiles {
-		if file.Path == "uncommitted.txt" {
+		if file.Path == "uncommitted.md" {
 			found = true
 			if file.IndexSHA != "" || file.WorktreeSHA == "" {
 				t.Fatalf("untracked保持識別子が不正です: %#v", file)
@@ -155,7 +155,7 @@ func TestInterruptedStopCapturesRetention(t *testing.T) {
 
 func TestResumeInterruptedUntouchedPasses(t *testing.T) {
 	repo := newRetentionGitRepo(t)
-	writeRetentionFile(t, filepath.Join(repo, "uncommitted.txt"), []byte("作業中\n"), 0o644)
+	writeRetentionFile(t, filepath.Join(repo, "uncommitted.md"), []byte("作業中\n"), 0o644)
 	st := newGitStateStoreT(t, repo)
 	stopRunner := &scriptedRunner{steps: []runnerStep{{
 		result: runner.RunResult{SessionID: "sess-retention"},
@@ -204,7 +204,7 @@ func TestResumeInterruptedParentMetadataDeltaPasses(t *testing.T) {
 
 func TestResumeInterruptedDirtyDriftFailsClosed(t *testing.T) {
 	repo := newRetentionGitRepo(t)
-	writeRetentionFile(t, filepath.Join(repo, "uncommitted.txt"), []byte("作業中\n"), 0o644)
+	writeRetentionFile(t, filepath.Join(repo, "uncommitted.md"), []byte("作業中\n"), 0o644)
 	st := newGitStateStoreT(t, repo)
 	stopRunner := &scriptedRunner{steps: []runnerStep{{
 		result: runner.RunResult{SessionID: "sess-retention"},
@@ -214,7 +214,7 @@ func TestResumeInterruptedDirtyDriftFailsClosed(t *testing.T) {
 	stopWorkflowInCall(t, w, st, workerCheckpoint())
 	before := retentionCheckpoint(t, st)
 
-	writeRetentionFile(t, filepath.Join(repo, "uncommitted.txt"), []byte("衝突解決済み\n"), 0o644)
+	writeRetentionFile(t, filepath.Join(repo, "uncommitted.md"), []byte("衝突解決済み\n"), 0o644)
 	resumeRunner := &scriptedRunner{steps: []runnerStep{{structured: implementedPacket("resumed")}}}
 	resumeW := newGitWorkflowT(t, st, resumeRunner, repo)
 	err := resumeW.ExecuteResume()
@@ -232,7 +232,7 @@ func TestResumeInterruptedDirtyDriftFailsClosed(t *testing.T) {
 		t.Fatalf("保持違反でmodel呼出を実行しています: %v", resumeRunner.prompts)
 	}
 
-	writeRetentionFile(t, filepath.Join(repo, "uncommitted.txt"), []byte("作業中\n"), 0o644)
+	writeRetentionFile(t, filepath.Join(repo, "uncommitted.md"), []byte("作業中\n"), 0o644)
 	if before.StopDirtyFiles == nil {
 		t.Fatal("停止時基準がありません")
 	}
@@ -248,7 +248,7 @@ func TestResumeInterruptedDirtyDriftFailsClosed(t *testing.T) {
 
 func TestResumeInterruptedExecBitDriftFailsClosed(t *testing.T) {
 	repo := newRetentionGitRepo(t)
-	if err := os.WriteFile(filepath.Join(repo, "tracked.txt"), []byte("作業中\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(repo, "tracked.md"), []byte("作業中\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	st := newGitStateStoreT(t, repo)
@@ -259,7 +259,7 @@ func TestResumeInterruptedExecBitDriftFailsClosed(t *testing.T) {
 	w := newGitWorkflowT(t, st, stopRunner, repo)
 	stopWorkflowInCall(t, w, st, workerCheckpoint())
 
-	if err := os.Chmod(filepath.Join(repo, "tracked.txt"), 0o755); err != nil {
+	if err := os.Chmod(filepath.Join(repo, "tracked.md"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	resumeRunner := &scriptedRunner{steps: []runnerStep{{structured: implementedPacket("resumed")}}}
@@ -269,7 +269,7 @@ func TestResumeInterruptedExecBitDriftFailsClosed(t *testing.T) {
 	if !errors.As(err, &workerErr) {
 		t.Fatalf("executable bit変化のresumeがWorkerErrorになりません: %v", err)
 	}
-	if !strings.Contains(workerErr.Message, "tracked.txt(内容変化)") {
+	if !strings.Contains(workerErr.Message, "tracked.md(内容変化)") {
 		t.Fatalf("fail closed理由がexecutable bit変化を指していません: %s", workerErr.Message)
 	}
 	if st.TaskStatus() != state.TaskStatusInterrupted {
@@ -337,8 +337,8 @@ func TestResumeInterruptedHeadAdvanceWithoutIsolationFailsClosed(t *testing.T) {
 	w := newGitWorkflowT(t, st, stopRunner, repo)
 	stopWorkflowInCall(t, w, st, workerCheckpoint())
 
-	writeRetentionFile(t, filepath.Join(repo, "tracked.txt"), []byte("changed\n"), 0o644)
-	runRetentionGit(t, repo, "add", "tracked.txt")
+	writeRetentionFile(t, filepath.Join(repo, "tracked.md"), []byte("changed\n"), 0o644)
+	runRetentionGit(t, repo, "add", "tracked.md")
 	runRetentionGit(t, repo, "commit", "-q", "-m", "foreign integration")
 
 	resumeRunner := &scriptedRunner{steps: []runnerStep{{structured: implementedPacket("resumed")}}}
@@ -356,7 +356,7 @@ func TestResumeInterruptedHeadAdvanceWithoutIsolationFailsClosed(t *testing.T) {
 func stopTaskForIsolationGate(t *testing.T) *isolationGateFixture {
 	t.Helper()
 	repo := newRetentionGitRepo(t)
-	if err := os.WriteFile(filepath.Join(repo, "uncommitted.txt"), []byte("作業中\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(repo, "uncommitted.md"), []byte("作業中\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	st := newGitStateStoreT(t, repo)
@@ -475,6 +475,7 @@ func TestResumeInterruptedIsolatedIntegrationPasses(t *testing.T) {
 	cases := []struct {
 		name      string
 		branch    string
+		highRisk  bool
 		integrate func(*isolationGateFixture, *testing.T, string)
 	}{
 		{
@@ -485,8 +486,9 @@ func TestResumeInterruptedIsolatedIntegrationPasses(t *testing.T) {
 			},
 		},
 		{
-			name:   "source-change branch",
-			branch: "glm-worker/isolation/isogate10",
+			name:     "source-change branch",
+			branch:   "glm-worker/isolation/isogate10",
+			highRisk: true,
 			integrate: func(f *isolationGateFixture, t *testing.T, branch string) {
 				f.commitSourceChangeOnBranchAndMerge(t, branch)
 			},
@@ -502,13 +504,24 @@ func TestResumeInterruptedIsolatedIntegrationPasses(t *testing.T) {
 				t.Fatal("停止時基準がありません")
 			}
 
-			resumeRunner := &scriptedRunner{steps: []runnerStep{
+			steps := []runnerStep{
 				{structured: implementedPacket("resumed")},
 				{structured: passPacket()},
-			}}
+			}
+			if tc.highRisk {
+				steps = append(steps, runnerStep{structured: needsSolReviewPacket()})
+			}
+			resumeRunner := &scriptedRunner{steps: steps}
 			resumeW := newGitWorkflowT(t, f.st, resumeRunner, f.repo)
 			if err := resumeW.ExecuteResume(); err != nil {
 				t.Fatalf("隔離branch統合後のresumeが保持照合を通過しません: %v", err)
+			}
+			wantStatus := state.TaskStatusComplete
+			if tc.highRisk {
+				wantStatus = state.TaskStatusWaitingSolReview
+			}
+			if f.st.TaskStatus() != wantStatus {
+				t.Fatalf("task status = %s want %s", f.st.TaskStatus(), wantStatus)
 			}
 		})
 	}
