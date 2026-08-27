@@ -38,7 +38,7 @@ type parentBehaviorEvalCase struct {
 const parentBehaviorEvalPath = "tests/parent-behavior-evals.json"
 
 func classifyQualityEvidence(repoRoot, baselineHead string, paths []string) (qualityEvidenceDecision, error) {
-	if strings.TrimSpace(baselineHead) == "" {
+	if strings.TrimSpace(baselineHead) == "" || !hasQualityEvidenceChanges(paths) {
 		return qualityEvidenceDecision{}, nil
 	}
 	if err := verifyQualityEvidenceBaseline(repoRoot, baselineHead); err != nil {
@@ -68,6 +68,15 @@ func classifyQualityEvidence(repoRoot, baselineHead string, paths []string) (qua
 		return qualityEvidenceDecision{High: true, Source: "track-a-evidence-removed", HitPath: missing}, nil
 	}
 	return qualityEvidenceDecision{}, nil
+}
+
+func hasQualityEvidenceChanges(paths []string) bool {
+	for _, path := range paths {
+		if filepath.ToSlash(path) == parentBehaviorEvalPath || isGenericQualityEvidencePath(path) {
+			return true
+		}
+	}
+	return false
 }
 
 func verifyQualityEvidenceBaseline(repoRoot, baselineHead string) error {
