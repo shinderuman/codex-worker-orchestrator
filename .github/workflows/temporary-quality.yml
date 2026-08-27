@@ -3,6 +3,8 @@ on:
   push:
     branches:
       - gpt-quality-apply/6f08b30
+    paths:
+      - .gpt-checkpoints/quality-progress.ready
 permissions:
   contents: write
 jobs:
@@ -12,10 +14,15 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Apply GPT checkpoint patch
-        if: github.actor != 'github-actions[bot]' && hashFiles('.gpt-checkpoints/quality-progress.patch.gz.b64') != ''
+      - name: Apply GPT checkpoint parts
         run: |
-          base64 -d .gpt-checkpoints/quality-progress.patch.gz.b64 | gzip -d >/tmp/gpt-quality-progress.patch
+          generation="$(tr -d '\r\n' < .gpt-checkpoints/quality-progress.ready)"
+          case "$generation" in
+            *[!A-Za-z0-9._-]*|'') echo 'invalid checkpoint generation' >&2; exit 1 ;;
+          esac
+          part_dir=".gpt-checkpoints/quality-progress/$generation"
+          test -d "$part_dir"
+          cat "$part_dir"/part-* | base64 -d | gzip -d >/tmp/gpt-quality-progress.patch
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git am --3way /tmp/gpt-quality-progress.patch
@@ -29,12 +36,6 @@ jobs:
           sudo apt-get install -y shellcheck
           go install mvdan.cc/sh/v3/cmd/shfmt@v3.12.0
           curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s -- -b "$(go env GOPATH)/bin" v2.4.0
-      - name: Stage temporary quality tools
-        run: |
-          mkdir -p /tmp/quality-tools
-          cp "$(go env GOPATH)/bin/golangci-lint" /tmp/quality-tools/
-          cp "$(go env GOPATH)/bin/shfmt" /tmp/quality-tools/
-          cp "$(command -v shellcheck)" /tmp/quality-tools/
       - name: Go tests
         working-directory: glm-worker
         run: go test ./...
@@ -48,18 +49,3 @@ jobs:
         run: ./harnesslint
       - name: Install smoke
         run: ./tests/install_smoke.sh
-      - name: Preserve quality tools for temporary audit
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: quality-tools-${{ github.sha }}
-          path: /tmp/quality-tools
-          retention-days: 1
-      - name: Preserve checkout for temporary audit
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: quality-checkout-${{ github.sha }}
-          path: .
-          include-hidden-files: true
-          retention-days: 1
