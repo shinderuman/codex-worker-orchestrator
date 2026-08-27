@@ -80,7 +80,9 @@ func renderActiveTaskPromptContract(contract activeTaskPromptContract) string {
 	}
 
 	var block strings.Builder
-	block.WriteString("ACTIVE_TASK_CONTEXT:\n")
+	block.WriteString("ACTIVE_TASK_FILE: ")
+	block.WriteString(contract.path)
+	block.WriteString("\nACTIVE_TASK_CONTEXT:\n")
 	block.WriteString("PATH: ")
 	block.WriteString(contract.path)
 	block.WriteString("\nAUDIENCE: ")
