@@ -32,13 +32,14 @@ type streamEventIngester struct {
 }
 
 type toolUseObservation struct {
-	toolID     string
-	timestamp  time.Time
-	name       string
-	command    string
-	purpose    string
-	background bool
-	waitTaskID string
+	toolID          string
+	timestamp       time.Time
+	name            string
+	command         string
+	purpose         string
+	background      bool
+	waitTaskID      string
+	instructionRead string
 }
 
 type liveToolDetail struct {
@@ -217,7 +218,7 @@ func (g *streamEventIngester) observeToolUse(block *state.TaskBlockSummary, at t
 		observation.background = detail.background
 		observation.waitTaskID = detail.waitTaskID
 		if name, matched := workerInstructionReadName(observation.name, input, g.workerInstructionDir); matched {
-			g.instructionReads[name] = struct{}{}
+			observation.instructionRead = name
 		}
 	}
 	g.tools[block.ToolID] = observation
@@ -280,6 +281,9 @@ func (g *streamEventIngester) observeToolResult(block *state.TaskBlockSummary, a
 	block.DurationMS = at.Sub(observed.timestamp).Milliseconds()
 	if block.Name == "" {
 		block.Name = observed.name
+	}
+	if !block.IsError && observed.instructionRead != "" {
+		g.instructionReads[observed.instructionRead] = struct{}{}
 	}
 	delete(g.tools, block.ToolID)
 	return true
