@@ -25,6 +25,7 @@ REQUIRED HARDENING
 ## Resolved references
 
 - EVAL最終構造は完了commit `e276599`以後の現行`EVAL.md`を指す。
+- 2026-08-28 current Git resolution: 後続のfalse-complete修復で`EVAL.md`は削除済み。deterministic evaluation authorityはproduction tests / scenario corpusへ収束し、live parent/model behaviorだけが`tests/parent-behavior-evals.json`へ分離されている。F4 Track Bはこの現行registryを対象とし、`EVAL.md`を復活させない。
 
 ## External feasibility
 
@@ -63,4 +64,4 @@ none
 
 ## Current boundary
 
-ACTIVE / NARROW。F3はPR #13 Squash Merge commit `627e0dcfa15148a68684c3ff9008a4658c5a2615`としてintegrationへ反映済みで、PR #14 branchもlatest integrationへ履歴を保って同期済み。PR #4でaccepted quality policy surfaceのdigest固定、worker自己改変fail-closed、reviewer前machine quality gateが成立し、quality gate/config/linter自体を通常workerが弱体化するfailure classは閉じた。一方、通常`*_test.go`・testdata・tests等はrisk分類上LOWのままで、assertion / negative case / coverage / expected behaviorの意味的縮退まではquality surface snapshotでは検出しない。残余scopeをsemantic evidence weakeningへ限定し、Track A generic signalとrepo固有Track B surfaceを区別して実装する。
+ACTIVE / NARROW。F3はPR #13 Squash Merge commit `627e0dcfa15148a68684c3ff9008a4658c5a2615`としてintegrationへ反映済みで、PR #14 branchもlatest integrationへ履歴を保って同期済み。PR #4でaccepted quality policy surfaceのdigest固定、worker自己改変fail-closed、reviewer前machine quality gateが成立し、quality gate/config/linter自体を通常workerが弱体化するfailure classは閉じた。一方、通常`*_test.go`・testdata・tests等はrisk分類上LOWのままで、assertion / negative case / coverage / expected behaviorの意味的縮退まではquality surface snapshotでは検出しない。Track Aは任意repoのquality-evidence差分を追加/維持と縮退へ分けるgeneric signal、Track Bは現行`tests/parent-behavior-evals.json`のcase/contract縮退を狭く保護するrepo固有signalとして実装する。
