@@ -162,6 +162,7 @@ func TestConvergencePathObservationUsesWorktree(t *testing.T) {
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: implementedPacket("done")},
 		{structured: passPacket()},
+		{structured: needsSolReviewPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 	w.config.RepoRoot = root

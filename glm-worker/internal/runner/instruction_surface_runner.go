@@ -1,6 +1,10 @@
 package runner
 
-import "github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
+import (
+	"errors"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
+)
 
 type InstructionSurfaceGuardRunner struct {
 	base *ClaudeRunner
@@ -19,15 +23,36 @@ func (r *InstructionSurfaceGuardRunner) Run(
 	prompt string,
 	outputPath string,
 ) (RunResult, error) {
-	before, err := r.base.prepareInstructionSurfaceGuard()
+	instructionBefore, err := r.base.prepareInstructionSurfaceGuard()
 	if err != nil {
 		r.invalidateSessions()
 		return RunResult{}, err
 	}
-	result, runErr := r.base.Run(role, phase, model, readOnly, effort, prompt, outputPath)
-	if guardErr := r.base.verifyInstructionSurfaceGuard(before); guardErr != nil {
+	gitGuard, err := prepareGitAuthorityGuard(r.base.config.RepoRoot)
+	if err != nil {
 		r.invalidateSessions()
-		return result, guardErr
+		return RunResult{}, err
+	}
+	defer gitGuard.cleanup()
+
+	callBase := r.base
+	if gitGuard.before.active {
+		wrappedClaude, wrapErr := gitGuard.prepareClaudeWrapper(r.base.config.ClaudeBin)
+		if wrapErr != nil {
+			r.invalidateSessions()
+			return RunResult{}, wrapErr
+		}
+		copyBase := *r.base
+		copyBase.config.ClaudeBin = wrappedClaude
+		callBase = &copyBase
+	}
+
+	result, runErr := callBase.Run(role, phase, model, readOnly, effort, prompt, outputPath)
+	gitErr := gitGuard.verify()
+	instructionErr := r.base.verifyInstructionSurfaceGuard(instructionBefore)
+	if gitErr != nil || instructionErr != nil {
+		r.invalidateSessions()
+		return result, errors.Join(gitErr, instructionErr)
 	}
 	return result, runErr
 }
