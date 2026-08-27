@@ -40,11 +40,11 @@ func TestRuleActivationCorrectionPreservesPinnedPrimaryAuthority(t *testing.T) {
 
 	workflow := NewWorkflow(cfg, st, nil, io.Discard)
 	parent := state.ResumeCheckpoint{
-		Phase:           "worker",
-		Prompt:          "old prompt",
-		OriginalPrompt:  "old prompt",
-		Request:         "add only --long-option",
-		Decision:        "none",
+		Phase:              "worker",
+		Prompt:             "old prompt",
+		OriginalPrompt:     "old prompt",
+		Request:            "add only --long-option",
+		Decision:           "none",
 		ActivatedRuleFiles: nil,
 	}
 	got, err := workflow.ruleActivationCorrectionCheckpoint(parent, []workerRule{ruleCLI}, 1)
