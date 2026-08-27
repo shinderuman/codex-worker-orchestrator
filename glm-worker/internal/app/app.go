@@ -240,43 +240,46 @@ func stdinPayloadCommand(mode CommandMode, args []string, usage string, allowOri
 	if len(args) < 2 {
 		return Command{}, usageError("%s", usage)
 	}
-
 	payloadBytes, err := strconv.ParseInt(args[1], 10, 64)
 	if err != nil || payloadBytes <= 0 {
 		return Command{}, usageError("%s", usage)
 	}
-
-	command := Command{Mode: mode, StdinBytes: payloadBytes}
 	options := args[2:]
 	if len(options)%2 != 0 {
 		return Command{}, usageError("%s", usage)
 	}
+	command := Command{Mode: mode, StdinBytes: payloadBytes}
 	seenSHA256 := false
 	for index := 0; index < len(options); index += 2 {
-		switch options[index] {
-		case "--sha256":
-			if seenSHA256 {
-				return Command{}, usageError("%s", usage)
-			}
-			digest, err := parsePayloadSHA256(options[index+1])
-			if err != nil {
-				return Command{}, usageError("%s", usage)
-			}
-			command.SHA256 = digest
-			seenSHA256 = true
-		case "--origin":
-			if !allowOrigin || command.Origin != "" {
-				return Command{}, usageError("%s", usage)
-			}
-			if !state.ValidParentOrigin(options[index+1]) {
-				return Command{}, usageError("%s", usage)
-			}
-			command.Origin = options[index+1]
-		default:
-			return Command{}, usageError("%s", usage)
+		if err := applyStdinPayloadOption(&command, options[index], options[index+1], usage, allowOrigin, &seenSHA256); err != nil {
+			return Command{}, err
 		}
 	}
 	return command, nil
+}
+
+func applyStdinPayloadOption(command *Command, name, value, usage string, allowOrigin bool, seenSHA256 *bool) error {
+	switch name {
+	case "--sha256":
+		if *seenSHA256 {
+			return usageError("%s", usage)
+		}
+		digest, err := parsePayloadSHA256(value)
+		if err != nil {
+			return usageError("%s", usage)
+		}
+		command.SHA256 = digest
+		*seenSHA256 = true
+		return nil
+	case "--origin":
+		if !allowOrigin || command.Origin != "" || !state.ValidParentOrigin(value) {
+			return usageError("%s", usage)
+		}
+		command.Origin = value
+		return nil
+	default:
+		return usageError("%s", usage)
+	}
 }
 
 func parsePayloadSHA256(value string) (string, error) {
