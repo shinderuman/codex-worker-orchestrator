@@ -34,7 +34,7 @@ func (w *Workflow) verifyInterruptedRetention(checkpoint state.ResumeCheckpoint)
 	return w.verifyIsolationIntegration(checkpoint, stop, current, record)
 }
 
-func (w *Workflow) verifyStoppedCheckoutState(checkpoint state.ResumeCheckpoint, stop *state.GitSnapshot) (state.GitSnapshot, error) {
+func (w *Workflow) verifyStoppedCheckoutState(checkpoint state.ResumeCheckpoint, _ *state.GitSnapshot) (state.GitSnapshot, error) {
 	currentFiles, err := state.CaptureStopDirtyFiles(w.config.RepoRoot)
 	if err != nil {
 		return state.GitSnapshot{}, w.failClosedRetention(checkpoint, "現在の元checkout保持状態を列挙できません", err)

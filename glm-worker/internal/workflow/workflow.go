@@ -481,7 +481,7 @@ func clearResumeStopState(checkpoint *state.ResumeCheckpoint) {
 	checkpoint.UserInterrupted = false
 }
 
-func (w *Workflow) handleResumeRunError(checkpoint, previous state.ResumeCheckpoint, runErr error) error {
+func (w *Workflow) handleResumeRunError(_ state.ResumeCheckpoint, previous state.ResumeCheckpoint, runErr error) error {
 	if isResumeStopError(runErr) {
 		return runErr
 	}
@@ -829,7 +829,7 @@ func (w *Workflow) finishReview(status state.TaskStatus, result packet.Result) e
 
 func (w *Workflow) handleFixRequiredReview(
 	request string,
-	workerResult packet.Result,
+	_ packet.Result,
 	reviewResult packet.Result,
 	reviewNumber int,
 	autoFixes int,
@@ -1245,7 +1245,7 @@ func (w *Workflow) finalizeModelCallState(
 	return nil
 }
 
-func (w *Workflow) parseModelCallResult(checkpoint state.ResumeCheckpoint, runResult runner.RunResult) (packet.Result, error) {
+func (_ *Workflow) parseModelCallResult(checkpoint state.ResumeCheckpoint, runResult runner.RunResult) (packet.Result, error) {
 	result, err := packet.ParseStructured(runResult.StructuredOutput)
 	if err != nil {
 		return packet.Result{}, err
