@@ -9,7 +9,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 )
 
@@ -100,35 +99,6 @@ func (g *gitAuthorityGuard) prepareProxy() error {
 	return nil
 }
 
-func (g *gitAuthorityGuard) applyChildEnv(env map[string]string) {
-	if g == nil || !g.before.active {
-		return
-	}
-	currentPath := os.Getenv("PATH")
-	if currentPath == "" {
-		env["PATH"] = g.tempDir
-	} else {
-		env["PATH"] = g.tempDir + string(os.PathListSeparator) + currentPath
-	}
-	env["GIT_TERMINAL_PROMPT"] = "0"
-	env["GIT_ASKPASS"] = g.denyPath
-	env["SSH_ASKPASS"] = g.denyPath
-	env["GIT_SSH_COMMAND"] = g.denyPath
-	env["GIT_CONFIG_GLOBAL"] = os.DevNull
-	env["GIT_CONFIG_SYSTEM"] = os.DevNull
-	values := []string{"", "https://", "http://", "ssh://", "git://", "git@", "file://", "/", "./", "../"}
-	keys := make([]string, len(values))
-	keys[0] = "credential.helper"
-	for i := 1; i < len(values); i++ {
-		keys[i] = "url.blocked://glm-worker/.pushInsteadOf"
-	}
-	env["GIT_CONFIG_COUNT"] = strconv.Itoa(len(values))
-	for i := range values {
-		env[fmt.Sprintf("GIT_CONFIG_KEY_%d", i)] = keys[i]
-		env[fmt.Sprintf("GIT_CONFIG_VALUE_%d", i)] = values[i]
-	}
-}
-
 func (g *gitAuthorityGuard) verify() error {
 	if g == nil || !g.before.active {
 		return nil
@@ -141,31 +111,37 @@ func (g *gitAuthorityGuard) verify() error {
 	if err != nil {
 		return &GitAuthorityGuardError{Stage: "capture-after-call", Mutations: attempts, Cause: err}
 	}
-	mutations := append([]string(nil), attempts...)
-	if g.before.head != after.head {
-		mutations = append(mutations, "HEAD")
-	}
-	if g.before.symbolicHead != after.symbolicHead {
-		mutations = append(mutations, "symbolic-HEAD")
-	}
-	if g.before.refsDigest != after.refsDigest {
-		mutations = append(mutations, "refs")
-	}
-	if g.before.indexDigest != after.indexDigest {
-		mutations = append(mutations, "index")
-	}
-	if g.before.configDigest != after.configDigest {
-		mutations = append(mutations, "local-config")
-	}
+	snapshotMutations := gitAuthoritySnapshotMutations(g.before, after)
+	mutations := append(append([]string(nil), attempts...), snapshotMutations...)
 	mutations = uniqueSortedStrings(mutations)
 	if len(mutations) == 0 {
 		return nil
 	}
 	stage := "blocked-command"
-	if g.before.head != after.head || g.before.symbolicHead != after.symbolicHead || g.before.refsDigest != after.refsDigest || g.before.indexDigest != after.indexDigest || g.before.configDigest != after.configDigest {
+	if len(snapshotMutations) > 0 {
 		stage = "after-call-mutation"
 	}
 	return &GitAuthorityGuardError{Stage: stage, Mutations: mutations}
+}
+
+func gitAuthoritySnapshotMutations(before, after gitAuthoritySnapshot) []string {
+	mutations := make([]string, 0, 5)
+	if before.head != after.head {
+		mutations = append(mutations, "HEAD")
+	}
+	if before.symbolicHead != after.symbolicHead {
+		mutations = append(mutations, "symbolic-HEAD")
+	}
+	if before.refsDigest != after.refsDigest {
+		mutations = append(mutations, "refs")
+	}
+	if before.indexDigest != after.indexDigest {
+		mutations = append(mutations, "index")
+	}
+	if before.configDigest != after.configDigest {
+		mutations = append(mutations, "local-config")
+	}
+	return mutations
 }
 
 func (g *gitAuthorityGuard) cleanup() {
