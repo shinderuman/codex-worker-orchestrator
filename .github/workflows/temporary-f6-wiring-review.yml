@@ -1,0 +1,156 @@
+name: Temporary F6 Wiring Review
+
+on:
+  push:
+    branches:
+      - hardening-task/sol-decision-boundary-enforcement
+
+permissions:
+  contents: write
+
+jobs:
+  validate-wiring:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.22.x'
+          cache: false
+      - name: Add production wiring regression tests
+        run: |
+          cat >> glm-worker/internal/workflow/decision_boundary_test.go <<'EOF'
+
+          func TestRunWorkerModelInjectsPinnedTaskDecisionBoundary(t *testing.T) {
+          	st := newStateStoreT(t)
+          	r := &scriptedRunner{steps: []runnerStep{{structured: needsSolDecisionPacket()}}}
+          	w := newWorkflowT(t, st, r)
+          	activeTaskPath := "IMPLEMENTATION_TASKS/task.md"
+          	writeTaskFile := func(content string) {
+          		t.Helper()
+          		path := filepath.Join(w.config.RepoRoot, filepath.FromSlash(activeTaskPath))
+          		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+          			t.Fatal(err)
+          		}
+          		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+          			t.Fatal(err)
+          		}
+          	}
+          	writeTaskFile("# task\n\n## Sol decision authority\n\n- responsibility: keep workflow ownership\n- validation-error-semantics: preserve current rejection behavior\n")
+          	if err := st.Write(activeTaskStateKey, activeTaskPath); err != nil {
+          		t.Fatal(err)
+          	}
+          	if err := st.Write("baseline-head", "base"); err != nil {
+          		t.Fatal(err)
+          	}
+          	checkpoint := state.ResumeCheckpoint{
+          		Stage:          state.ResumeStageWorker,
+          		Phase:          "worker-new",
+          		Role:           state.WorkerRole,
+          		Model:          "opus",
+          		Prompt:         "MODE: NEW_TASK\n\nUSER_REQUEST:\noutcome only",
+          		OriginalPrompt: "MODE: NEW_TASK\n\nUSER_REQUEST:\noutcome only",
+          		Request:        "outcome only",
+          	}
+          	if _, err := w.runWorkerModelWithRuleActivation(checkpoint); err != nil {
+          		t.Fatal(err)
+          	}
+          	if len(r.prompts) != 1 {
+          		t.Fatalf("model calls = %d want 1", len(r.prompts))
+          	}
+          	prompt := r.prompts[0]
+          	for _, want := range []string{
+          		"SOL_DECISION_BOUNDARY:",
+          		"- responsibility: keep workflow ownership",
+          		"- validation-error-semantics: preserve current rejection behavior",
+          		"UNRESOLVED_AXES: dependency-direction,public-surface,compatibility",
+          	} {
+          		if !strings.Contains(prompt, want) {
+          			t.Fatalf("production prompt missing %q: %s", want, prompt)
+          		}
+          	}
+          }
+
+          func TestRunWorkerModelTreatsLegacyTaskAxesAsUnresolvedWithoutExtraModelCall(t *testing.T) {
+          	st := newStateStoreT(t)
+          	r := &scriptedRunner{steps: []runnerStep{{structured: needsSolDecisionPacket()}}}
+          	w := newWorkflowT(t, st, r)
+          	activeTaskPath := "IMPLEMENTATION_TASKS/legacy.md"
+          	path := filepath.Join(w.config.RepoRoot, filepath.FromSlash(activeTaskPath))
+          	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+          		t.Fatal(err)
+          	}
+          	if err := os.WriteFile(path, []byte("# legacy\n\n## Contract\nrequested outcome only\n"), 0o644); err != nil {
+          		t.Fatal(err)
+          	}
+          	if err := st.Write(activeTaskStateKey, activeTaskPath); err != nil {
+          		t.Fatal(err)
+          	}
+          	if err := st.Write("baseline-head", "base"); err != nil {
+          		t.Fatal(err)
+          	}
+          	checkpoint := state.ResumeCheckpoint{Stage: state.ResumeStageWorker, Phase: "worker-new", Role: state.WorkerRole, Model: "opus", Prompt: "request", OriginalPrompt: "request", Request: "request"}
+          	if _, err := w.runWorkerModelWithRuleActivation(checkpoint); err != nil {
+          		t.Fatal(err)
+          	}
+          	if len(r.prompts) != 1 {
+          		t.Fatalf("model calls = %d want 1", len(r.prompts))
+          	}
+          	if !strings.Contains(r.prompts[0], "UNRESOLVED_AXES: responsibility,dependency-direction,public-surface,compatibility,validation-error-semantics") {
+          		t.Fatalf("legacy task boundary missing: %s", r.prompts[0])
+          	}
+          }
+
+          func TestRunWorkerModelRejectsMalformedDecisionAuthorityBeforeModelCall(t *testing.T) {
+          	st := newStateStoreT(t)
+          	r := &scriptedRunner{}
+          	w := newWorkflowT(t, st, r)
+          	activeTaskPath := "IMPLEMENTATION_TASKS/bad.md"
+          	path := filepath.Join(w.config.RepoRoot, filepath.FromSlash(activeTaskPath))
+          	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+          		t.Fatal(err)
+          	}
+          	if err := os.WriteFile(path, []byte("# task\n\n## Sol decision authority\n\n- compatibility:\n"), 0o644); err != nil {
+          		t.Fatal(err)
+          	}
+          	if err := st.Write(activeTaskStateKey, activeTaskPath); err != nil {
+          		t.Fatal(err)
+          	}
+          	if err := st.Write("baseline-head", "base"); err != nil {
+          		t.Fatal(err)
+          	}
+          	checkpoint := state.ResumeCheckpoint{Stage: state.ResumeStageWorker, Phase: "worker-new", Role: state.WorkerRole, Model: "opus", Prompt: "request", OriginalPrompt: "request", Request: "request"}
+          	_, err := w.runWorkerModelWithRuleActivation(checkpoint)
+          	if err == nil || !strings.Contains(err.Error(), "valueが空") {
+          		t.Fatalf("error = %v", err)
+          	}
+          	if len(r.prompts) != 0 {
+          		t.Fatalf("model calls = %d want 0", len(r.prompts))
+          	}
+          }
+          EOF
+          python3 <<'PY'
+          from pathlib import Path
+          p = Path('glm-worker/internal/workflow/decision_boundary_test.go')
+          text = p.read_text()
+          text = text.replace('import (\n\t"strings"\n\t"testing"', 'import (\n\t"os"\n\t"path/filepath"\n\t"strings"\n\t"testing"', 1)
+          p.write_text(text)
+          PY
+          gofmt -w glm-worker/internal/workflow/decision_boundary_test.go
+      - name: Validate production wiring
+        working-directory: glm-worker
+        run: |
+          go test ./internal/workflow ./internal/state
+          go vet ./...
+          go build ./...
+      - name: Commit wiring tests
+        run: |
+          rm .github/workflows/temporary-f6-wiring-review.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add glm-worker/internal/workflow/decision_boundary_test.go .github/workflows/temporary-f6-wiring-review.yml
+          git commit -m 'test: cover F6 production decision boundary wiring'
+          git push
