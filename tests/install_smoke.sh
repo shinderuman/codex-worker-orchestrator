@@ -19,6 +19,13 @@ fi
 exit 1
 EOF_CLAUDE
 chmod +x "$tmp/bin/claude"
+for tool in golangci-lint shellcheck shfmt; do
+    cat >"$tmp/bin/$tool" <<'EOF_TOOL'
+#!/bin/sh
+exit 0
+EOF_TOOL
+    chmod +x "$tmp/bin/$tool"
+done
 
 run_install() {
     HOME="$home" \

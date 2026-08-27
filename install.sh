@@ -191,6 +191,9 @@ require cmp
 require awk
 require grep
 require install
+require golangci-lint
+require shellcheck
+require shfmt
 
 build_dir=$(mktemp -d "${TMPDIR:-/tmp}/codex-worker-orchestrator-build.XXXXXX")
 trap 'rm -rf "$build_dir"' EXIT HUP INT TERM

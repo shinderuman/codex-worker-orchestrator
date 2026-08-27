@@ -102,20 +102,11 @@ func buildProcessError(err error) processErrorBody {
 		}
 	case errors.As(err, &stopEndpoint):
 		if stopEndpoint.Absent {
-			return processErrorBody{
-				Kind:    errorKindStopEndpointAbsent,
-				Message: stopEndpoint.Error(),
-			}
+			return processErrorBody{Kind: errorKindStopEndpointAbsent, Message: stopEndpoint.Error()}
 		}
-		return processErrorBody{
-			Kind:    errorKindStopEndpointStale,
-			Message: stopEndpoint.Error(),
-		}
+		return processErrorBody{Kind: errorKindStopEndpointStale, Message: stopEndpoint.Error()}
 	case errors.As(err, &verification):
-		return processErrorBody{
-			Kind:    verificationKind(verification.Outcome),
-			Message: verification.Reason,
-		}
+		return processErrorBody{Kind: verificationKind(verification.Outcome), Message: verification.Reason}
 	case errors.As(err, &codexLimit):
 		return processErrorBody{
 			Kind:    errorKindCodexLimitUnavailable,
@@ -141,14 +132,10 @@ func buildProcessError(err error) processErrorBody {
 
 func installSmokeFailDetail(err *InstallSmokeError) map[string]any {
 	return map[string]any{
-		"exit_code":          err.ExitCode,
-		"result":             "fail",
-		"role":               stringPtr(err.Role),
-		"reuse_reason":       stringPtr(err.ReuseReason),
-		"duration_ms":        err.DurationMS,
-		"log":                stringPtr(err.LogPath),
-		"tree_digest":        err.TreeDigest,
-		"smoke_input_digest": err.SmokeInputDigest,
+		"exit_code":   err.ExitCode,
+		"result":      "fail",
+		"role":        stringPtr(err.Role),
+		"duration_ms": err.DurationMS,
 	}
 }
 

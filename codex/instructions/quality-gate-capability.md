@@ -1,27 +1,32 @@
 # capability必要quality gateの実行境界
 
-親Codexが自身の検証・final gateでquality gate commandを直接実行する場合だけ適用する。GLM worker/reviewerはglm-worker配下のClaude Code sessionでcommandを実行しCodex sandboxを通らないため対象外であり、glm-workerの実行契約は`~/.codex/instructions/glm-execution.md`のまま変更しない。
+親Codexが自身の検証・final gateでquality gate commandを直接実行する場合だけ適用する。GLM worker/reviewerの実行契約は`~/.codex/instructions/glm-execution.md`に従う。
 
-## 既知capabilityと実行境界の対応
+## Unix socketを必要とするGo full suite
 
-- full-suite Go test（`glm-worker` module）: 一次証拠でUnix socket bindを必要とするのは、現在このrepoの`glm-worker` moduleのfull suite（glm-worker停止endpoint等のapp系test）だけである。このsuiteはsandbox内では`listen unix ...: bind: operation not permitted`で成立しないため、`glm-worker` module rootから`glm-worker --quality-gate go-test`・`glm-worker --quality-gate go-test-race`を実行し、既存の`glm-worker` prefix ruleによって最初から昇格境界（sandbox外）へ一度だけdispatchする。
-- 他moduleのGo suite（`tools/merge-json`等）・`go vet ./...`・`go build`・gofmt・commentlint・`git diff`等: sandbox内で成立するため直接sandbox実行のまま最小権限を維持する。capability根拠のないcommandやmoduleを昇格させない。
-- working tree内のscriptや`go test`自体へprefix ruleを直接追加しない。prefix ruleはargv前方一致のため直接`go test`をallowすると後続flagで任意commandを昇格できる（`go test ./... -exec /bin/sh`等）。実行権限の境界はinstalled glm-worker binaryだけが持つ。
+このrepositoryの`glm-worker` module full suiteにはUnix socket bindを必要とするapp系testがある。Codex sandbox内では`listen unix ...: bind: operation not permitted`で成立しないため、module rootから次の固定入口だけを使う。
 
-## 固定実行境界の契約
+```sh
+glm-worker --quality-gate go-test
+glm-worker --quality-gate go-test-race
+```
 
-- この入口は`go test ./...`・`go test -race ./...`の固定argvだけを実行する。formの選択以外に引数を受け付けず、余分なargvは受理せずusage errorでfail closedする（`go test ./... -exec /bin/sh`相当の昇格経路を作らない）。拒否はconfig読込・state・go process起動より前に完了する。
-- 子process環境の`GOFLAGS`は空に固定し、環境変数経由のflag注入も同一の固定argv保証へ折り込む。実行dirは呼出時のcurrent directory（module root）であり、入口側でrepoを選び直さない。
-- machine出力は成功時stdoutのJSON object 1件だけである。失敗時はstdoutへ出力せず、stderrのstructured process error JSON（`kind:"quality_gate_failed"`）と非zero exitで伝える。subprocess出力はlog fileへ保存し、結果JSONの`log`に保存先pathだけを載せる。full install smoke証拠の取得・再利用は`~/.codex/instructions/install-smoke-evidence.md`の単一入口が担ったままであり、この入口はGo suite gate専用として併存する。
+- 入口はそれぞれ`go test ./...`、`go test -race ./...`の固定argvだけを実行する。追加argvはusage errorでfail closedする。
+- 子processの`GOFLAGS`は空に固定する。
+- 実行dirは呼出時current directoryで、入口側でrepositoryを選び直さない。
+- 成功はstdoutのJSON object 1件、失敗はstderrの`kind:"quality_gate_failed"` error JSONとnon-zero exitで返す。subprocess出力はlog fileへ保存し、machine出力にはpathだけを載せる。
+- sandbox内で一度失敗させてから同じsuiteを再実行せず、最初からこの入口へ一度だけdispatchする。
 
-## 決定論的dispatch契約
+## sandbox内で実行するgate
 
-- 既知capabilityを必要とするgate commandは、sandbox内で一度失敗させてから同じ全suiteをsandbox外で再実行しない。最初から上記入口で一度だけ実行し、「失敗1回＋再実行1回」を「有効な実行1回」に収束させる。
-- 対象mapping内のmoduleでrouted form以外の形式（直接`go test`・flag付きvariant等）をsandbox内で実行して同じsignatureに失敗した場合はrouting missである。同一gateを上記入口で再実行して成立を確認し、それでも失敗する場合は実装不具合として扱う。
-- 新たなcapability不足を一次証拠で把握したgateだけ、対象module mappingへの追加と固定formの追加としてこの入口へ最小実装する。将来別moduleで同一capability不足を一次証拠で確認するまでは、対象は`glm-worker` moduleのfull suiteのみとする。全部のcommandやmoduleの無条件昇格、汎用command実行form、Unix socket等をhardcodeする汎用sandbox frameworkは作らない。管理rules fileへ直接`go test`等のcommandをallowするruleを追加しない。
+`go vet ./...`、`go build ./...`、gofmt、`harnesslint`、`commentlint`、Shell lint、`git diff`等、追加capabilityを必要としないcommandはsandbox内で実行する。capability根拠のないcommandへ昇格権限を広げない。
 
-## 環境失敗と実不具合の受理集合
+`harnesslint`は`codex-worker-orchestrator`固有のrepository quality gateで、Go/Shell/Markdown/structured configとgate wiringを検査する。通常のGLM workflowではreviewerを呼ぶ前にwrapperがcheck-onlyで実行し、不合格ならreviewerへ進めない。formatter等の自動修正が必要ならworker側で`harnesslint --fix`を実行し、その後checkを通す。
 
-- 環境失敗として受理するのは、sandbox実行で観測されたUnix socket bind拒否の既知signature（`listen unix ...: bind: operation not permitted`）と、それが同一package内へ波及した二次失敗だけである。
-- 昇格境界で実行したgateの失敗は、すべて実装不具合としてfail closedに扱う。sandbox由来と推測してskip・成功扱い・acceptance緩化を行わない。環境失敗の認定に失敗分類の推測を使わない。
-- 同一snapshotの同一gate証拠を、環境選択だけを理由にsandbox内外で二重取得しない。昇格境界での1回の実行結果を証拠とする。
+installer/managed-file behaviorを変更した場合のoffline install smokeは`glm-worker --install-smoke --role <role>`で実行する。証拠cacheや再利用layerは持たず、必要なときに実行結果そのものを証拠とする。
+
+## fail closed
+
+- 昇格境界で実行したfull suiteの失敗は実装不具合として扱い、sandbox由来と推測してskip・成功扱いしない。
+- 新しいcapability不足を一次証拠で確認した場合だけ固定入口へ最小追加する。汎用command実行formや直接`go test`をallowするprefix ruleは追加しない。
+- 同一snapshotの同一gateを環境選択だけを理由に重複実行しない。

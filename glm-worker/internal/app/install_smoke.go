@@ -21,13 +21,9 @@ var validInstallSmokeRoles = map[string]bool{
 }
 
 type InstallSmokeError struct {
-	Role             string
-	ExitCode         int
-	ReuseReason      string
-	DurationMS       int64
-	LogPath          string
-	TreeDigest       string
-	SmokeInputDigest string
+	Role       string
+	ExitCode   int
+	DurationMS int64
 }
 
 func (e *InstallSmokeError) Error() string {
