@@ -14,6 +14,16 @@ require() {
 	fi
 }
 
+require_brew() {
+	command_name=$1
+	formula=$2
+	if ! command -v "$command_name" >/dev/null 2>&1; then
+		printf 'required command not found: %s\n' "$command_name" >&2
+		printf 'install with Homebrew: brew install %s\n' "$formula" >&2
+		exit 1
+	fi
+}
+
 copy_file() {
 	src=$1
 	dst=$2
@@ -192,9 +202,9 @@ require cmp
 require awk
 require grep
 require install
-require golangci-lint
-require shellcheck
-require shfmt
+require_brew golangci-lint golangci-lint
+require_brew shellcheck shellcheck
+require_brew shfmt shfmt
 
 build_dir=$(mktemp -d "${TMPDIR:-/tmp}/codex-worker-orchestrator-build.XXXXXX")
 trap 'rm -rf "$build_dir"' EXIT HUP INT TERM
