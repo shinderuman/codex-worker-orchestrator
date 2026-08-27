@@ -84,7 +84,7 @@ jobs:
         run: |
           cp IMPLEMENTATION_PLAN.local.md /tmp/f6-plan-integration.md
           sed -i 's/- branch: `hardening\/agent-guardrails`/- branch: `hardening-task\/sol-decision-boundary-enforcement`/' IMPLEMENTATION_PLAN.local.md
-          go run ./glm-worker/cmd/plancheck .
+          (cd glm-worker && go run ./cmd/plancheck ..)
           mkdir -p "$HOME" "$GLM_WORKER_BIN_DIR"
           ./install.sh
           test -x "$GLM_WORKER_BIN_DIR/glm-worker"
