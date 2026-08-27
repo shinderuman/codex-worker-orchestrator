@@ -57,6 +57,7 @@ type RunResult struct {
 	SystemPrompt       string
 	SystemPromptBytes  int
 	SystemPromptSHA256 string
+	InstructionReads   []string
 
 	PlainFailure ProviderFailureClass
 
@@ -318,6 +319,7 @@ func (r *ClaudeRunner) finishRun(
 	result RunResult,
 	runErr error,
 ) (RunResult, error) {
+	result.InstructionReads = ingester.instructionReadNames()
 	parsed, parseErr := parseCapturedStreamResult(ingester.result())
 	if parseErr == nil {
 		applyParsedRunResult(&result, parsed)
@@ -441,7 +443,9 @@ func (r *ClaudeRunner) newTaskEventIngester(
 		state.WarnTaskEventSkip("call ID生成", err)
 		return &streamEventIngester{closed: true}
 	}
-	return newStreamEventIngester(r.state, taskID, callID, role, phase, model, sessionID, resumed)
+	ingester := newStreamEventIngester(r.state, taskID, callID, role, phase, model, sessionID, resumed)
+	ingester.workerInstructionDir = filepath.Join(r.config.CodexConfigDir, "instructions", "worker")
+	return ingester
 }
 
 func streamResultSummary(parsed claudeJSONResult, parseErr error) string {
