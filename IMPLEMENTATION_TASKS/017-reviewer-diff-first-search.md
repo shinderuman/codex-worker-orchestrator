@@ -48,4 +48,4 @@ none
 
 ## Current boundary
 
-未着手。
+ACTIVE。016 `worker-repo-search-integration`のproduction routing完了を前提に、reviewerをdiff-firstで開始し、impact expansion後に必要な場合だけworker searchとは独立したrepo-searchを行う最小境界を調査・実装する。PR #22がhardening integrationへSquash Mergeされるまでは実装開始しない。
