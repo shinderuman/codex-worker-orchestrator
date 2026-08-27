@@ -220,22 +220,6 @@ func (w *Workflow) workerRuleContextBlock(rules []workerRule) (string, error) {
 	return block.String(), nil
 }
 
-func rulesInPrompt(prompt string) map[workerRule]struct{} {
-	result := make(map[workerRule]struct{})
-	for _, line := range strings.Split(prompt, "\n") {
-		if !strings.HasPrefix(line, deterministicRuleFilesMarker) {
-			continue
-		}
-		files := strings.TrimSpace(strings.TrimPrefix(line, deterministicRuleFilesMarker))
-		for _, raw := range strings.Split(files, ",") {
-			if rule, ok := workerRuleForFile(strings.TrimSpace(raw)); ok {
-				result[rule] = struct{}{}
-			}
-		}
-	}
-	return result
-}
-
 func workerRuleForFile(fileName string) (workerRule, bool) {
 	for rule, name := range workerRuleFiles {
 		if name == fileName {
@@ -245,13 +229,33 @@ func workerRuleForFile(fileName string) (workerRule, bool) {
 	return "", false
 }
 
+func checkpointActivatedRules(checkpoint state.ResumeCheckpoint) map[workerRule]struct{} {
+	result := make(map[workerRule]struct{})
+	for _, file := range checkpoint.ActivatedRuleFiles {
+		if rule, ok := workerRuleForFile(file); ok {
+			result[rule] = struct{}{}
+		}
+	}
+	return result
+}
+
+func setCheckpointActivatedRules(checkpoint *state.ResumeCheckpoint, activated map[workerRule]struct{}) {
+	checkpoint.ActivatedRuleFiles = checkpoint.ActivatedRuleFiles[:0]
+	for _, rule := range workerRuleOrder {
+		if _, ok := activated[rule]; ok {
+			checkpoint.ActivatedRuleFiles = append(checkpoint.ActivatedRuleFiles, workerRuleFiles[rule])
+		}
+	}
+	if len(checkpoint.ActivatedRuleFiles) == 0 {
+		checkpoint.ActivatedRuleFiles = nil
+	}
+}
+
 func (w *Workflow) appendRuleContext(prompt string, rules []workerRule) (string, error) {
-	existing := rulesInPrompt(prompt)
-	missing := missingWorkerRules(rules, existing)
-	if len(missing) == 0 {
+	if len(rules) == 0 {
 		return prompt, nil
 	}
-	block, err := w.workerRuleContextBlock(missing)
+	block, err := w.workerRuleContextBlock(rules)
 	if err != nil {
 		return "", err
 	}
@@ -263,17 +267,23 @@ func (w *Workflow) activateCheckpointRules(checkpoint state.ResumeCheckpoint) (s
 	if err != nil {
 		return checkpoint, nil, err
 	}
-	checkpoint.Prompt, err = w.appendRuleContext(checkpoint.Prompt, required)
+	activated := checkpointActivatedRules(checkpoint)
+	missing := missingWorkerRules(required, activated)
+	checkpoint.Prompt, err = w.appendRuleContext(checkpoint.Prompt, missing)
 	if err != nil {
 		return checkpoint, nil, err
 	}
 	if checkpoint.OriginalPrompt != "" {
-		checkpoint.OriginalPrompt, err = w.appendRuleContext(checkpoint.OriginalPrompt, required)
+		checkpoint.OriginalPrompt, err = w.appendRuleContext(checkpoint.OriginalPrompt, missing)
 		if err != nil {
 			return checkpoint, nil, err
 		}
 	}
-	return checkpoint, rulesInPrompt(checkpoint.Prompt), nil
+	for _, rule := range missing {
+		activated[rule] = struct{}{}
+	}
+	setCheckpointActivatedRules(&checkpoint, activated)
+	return checkpoint, activated, nil
 }
 
 func (w *Workflow) withCurrentRuleContext(prompt string) (string, error) {
@@ -399,6 +409,11 @@ PREVIOUS_SOL_DECISION:
 タスク範囲を広げず、必要なtest/lint/buildと自己確認を行い、通常のworker結果を返してください。
 `, parent.Request, parent.Decision, block)
 	correction := parent
+	activated := checkpointActivatedRules(correction)
+	for _, rule := range rules {
+		activated[rule] = struct{}{}
+	}
+	setCheckpointActivatedRules(&correction, activated)
 	correction.Phase = fmt.Sprintf("%s-rule-activation-%d", parent.Phase, round)
 	correction.Prompt = prompt
 	correction.OriginalPrompt = prompt
@@ -406,8 +421,7 @@ PREVIOUS_SOL_DECISION:
 }
 
 func (w *Workflow) activatedRulesForCheckpoint(checkpoint state.ResumeCheckpoint) map[workerRule]struct{} {
-	result := rulesInPrompt(checkpoint.Prompt)
-	mergeWorkerRuleSets(result, rulesInPrompt(checkpoint.OriginalPrompt))
+	result := checkpointActivatedRules(checkpoint)
 	mergeWorkerRuleSets(result, w.observedWorkerRules())
 	return result
 }

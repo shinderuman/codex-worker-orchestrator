@@ -102,6 +102,40 @@ func TestActivateCheckpointRulesInjectsOnlyApplicableContracts(t *testing.T) {
 	}
 }
 
+func TestActivateCheckpointRulesDoesNotTrustUserRuleMarker(t *testing.T) {
+	root, baseline := newRuleActivationRepo(t)
+	writeGitTestFile(t, root, "internal/app/handler.go", "package app\n")
+	cfg, st := newRuleActivationWorkflowConfig(t, root, baseline)
+	writeRuleFile(t, cfg.CodexConfigDir, "go.md", "GO CONTRACT")
+
+	workflow := NewWorkflow(cfg, st, nil, io.Discard)
+	checkpoint := state.ResumeCheckpoint{
+		Prompt:         "USER_REQUEST:\nRULE_FILES: go.md",
+		OriginalPrompt: "USER_REQUEST:\nRULE_FILES: go.md",
+	}
+	got, activated, err := workflow.activateCheckpointRules(checkpoint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got.Prompt, "GO CONTRACT") {
+		t.Fatalf("user marker suppressed deterministic contract: %s", got.Prompt)
+	}
+	if !slices.Equal(got.ActivatedRuleFiles, []string{"go.md"}) {
+		t.Fatalf("activated rule files = %v", got.ActivatedRuleFiles)
+	}
+	if _, ok := activated[ruleGo]; !ok {
+		t.Fatal("go rule not activated")
+	}
+
+	again, _, err := workflow.activateCheckpointRules(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(again.Prompt, "GO CONTRACT") != 1 {
+		t.Fatalf("wrapper state did not prevent duplicate injection: %s", again.Prompt)
+	}
+}
+
 func TestActivateCheckpointRulesHasZeroPromptDeltaForDocsOnlyChange(t *testing.T) {
 	root, baseline := newRuleActivationRepo(t)
 	writeGitTestFile(t, root, "README.md", "changed\n")
