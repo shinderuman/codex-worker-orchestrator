@@ -67,7 +67,11 @@ func requestHasKnownRepoTarget(repoRoot string, request string) bool {
 		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 			continue
 		}
-		if _, err := os.Lstat(path); err == nil {
+		info, err := os.Lstat(path)
+		if err != nil {
+			continue
+		}
+		if strings.Contains(candidate, "/") || info.Mode().IsRegular() {
 			return true
 		}
 	}
