@@ -16,7 +16,7 @@
 ## Resolved references
 
 - `こっち`は、PR #5 merge後の`./install.sh`が`plan final head: HEADのplanに現在のGit境界branchがありません`で停止したmetadata不整合の修復を先行する指示を指す。
-- Homebrew hint実装自体はmetadata修復後に再開する。
+- metadata不整合はPR #6 `2c8bf5fe22b529dd446c65bd43b6a2289819730d`でmainへ修復済み。
 
 ## Purpose
 
@@ -55,4 +55,4 @@ none
 
 ## Current boundary
 
-PR #5 merge後にPlanの必須`branch:` metadata欠落が判明したため、そのmetadata-only修復を先行中。修復merge後に本taskのproduction実装へ進む。
+PR #6によるmetadata修復はmainへmerge済み。`gpt/installer-brew-hint-v2`でproduction変更とinstall smoke regressionを作成し、main向けPR・merge後のlocal runtime acceptance待ち。
