@@ -33,7 +33,7 @@ func coalescePrompt(parentThreadID string) string {
 }
 
 func fixedDBReader(rows map[string]DBRow, failure error) DBReader {
-	return func(dbPath, key string) (DBRow, error) {
+	return func(_, key string) (DBRow, error) {
 		if failure != nil {
 			return DBRow{}, failure
 		}
