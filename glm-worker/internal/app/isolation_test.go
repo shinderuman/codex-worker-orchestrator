@@ -306,7 +306,7 @@ func TestIsolateReplayFailsClosedOnStaleRecord(t *testing.T) {
 	}{
 		{
 			name: "worktree消失",
-			damage: func(t *testing.T, st *state.StateStore, result isolateOutput) {
+			damage: func(t *testing.T, _ *state.StateStore, result isolateOutput) {
 				if output, err := exec.Command("git", "-C", repo, "worktree", "remove", "--force", result.Worktree).CombinedOutput(); err != nil {
 					t.Fatalf("worktree削除失敗: %v: %s", err, output)
 				}
@@ -316,7 +316,7 @@ func TestIsolateReplayFailsClosedOnStaleRecord(t *testing.T) {
 		{
 
 			name: "branch削除",
-			damage: func(t *testing.T, st *state.StateStore, result isolateOutput) {
+			damage: func(t *testing.T, _ *state.StateStore, result isolateOutput) {
 				if output, err := exec.Command("git", "-C", repo, "worktree", "remove", "--force", result.Worktree).CombinedOutput(); err != nil {
 					t.Fatalf("worktree削除失敗: %v: %s", err, output)
 				}
@@ -345,7 +345,7 @@ func TestIsolateReplayFailsClosedOnStaleRecord(t *testing.T) {
 		},
 		{
 			name: "破損記録",
-			damage: func(t *testing.T, st *state.StateStore, result isolateOutput) {
+			damage: func(t *testing.T, st *state.StateStore, _ isolateOutput) {
 				if err := os.WriteFile(st.Path("isolation.json"), []byte("{broken"), 0o600); err != nil {
 					t.Fatal(err)
 				}

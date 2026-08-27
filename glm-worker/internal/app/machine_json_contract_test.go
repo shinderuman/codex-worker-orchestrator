@@ -26,16 +26,16 @@ var taskStatusSurfaces = []struct {
 	name string
 	read func(t *testing.T, cfg config.AppConfig, st *state.StateStore) any
 }{
-	{"--status.task_status", func(t *testing.T, cfg config.AppConfig, st *state.StateStore) any {
+	{"--status.task_status", func(t *testing.T, cfg config.AppConfig, _ *state.StateStore) any {
 		return requireJSONKey(t, statusRawJSON(t, cfg), "task_status")
 	}},
-	{"--stats.current_task.status", func(t *testing.T, cfg config.AppConfig, st *state.StateStore) any {
+	{"--stats.current_task.status", func(t *testing.T, _ config.AppConfig, st *state.StateStore) any {
 		return requireJSONKey(t, statsCurrentTaskJSON(t, st), "status")
 	}},
-	{"--timeline.task_status", func(t *testing.T, cfg config.AppConfig, st *state.StateStore) any {
+	{"--timeline.task_status", func(t *testing.T, _ config.AppConfig, st *state.StateStore) any {
 		return requireJSONKey(t, timelineRawJSON(t, st), "task_status")
 	}},
-	{"--convergence.task_status", func(t *testing.T, cfg config.AppConfig, st *state.StateStore) any {
+	{"--convergence.task_status", func(t *testing.T, _ config.AppConfig, st *state.StateStore) any {
 		return requireJSONKey(t, convergenceRawJSON(t, st), "task_status")
 	}},
 }

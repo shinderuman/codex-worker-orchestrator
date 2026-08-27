@@ -380,7 +380,7 @@ func writeMultiRepoStubClaude(t *testing.T, dir string) string {
 	return stub
 }
 
-func (e *multiRepoEnv) setStubMode(t *testing.T, stub string, mode string) {
+func (_ *multiRepoEnv) setStubMode(t *testing.T, stub string, mode string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(filepath.Dir(stub), "mode"), []byte(mode), 0o600); err != nil {
 		t.Fatal(err)
@@ -520,7 +520,7 @@ func findStateDirForRepo(sessions string, canonicalRepo string) string {
 	return ""
 }
 
-func (e *multiRepoEnv) waitHeldWithWorkerSession(t *testing.T, stateDir string) {
+func (_ *multiRepoEnv) waitHeldWithWorkerSession(t *testing.T, stateDir string) {
 	t.Helper()
 	deadline := time.Now().Add(multiRepoWaitTimeout)
 	for time.Now().Before(deadline) {
