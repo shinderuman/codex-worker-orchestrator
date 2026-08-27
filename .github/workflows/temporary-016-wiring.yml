@@ -1,0 +1,64 @@
+name: Temporary 016 Wiring
+
+on:
+  push:
+    branches:
+      - hardening-task/worker-repo-search-integration
+
+permissions:
+  contents: write
+
+jobs:
+  validate-016:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.22.x'
+          cache: false
+      - name: Wire production worker prompt
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('glm-worker/internal/workflow/workflow.go')
+          s = path.read_text()
+          old = 'captureQualitySurface func(root string) (string, error)\n'
+          new = old + '\trepoSearch             repoSearchFunc\n'
+          if 'repoSearch             repoSearchFunc' not in s:
+              if old not in s:
+                  raise SystemExit('workflow field anchor missing')
+              s = s.replace(old, new, 1)
+          old = 'captureQualitySurface: captureQualitySurfaceDigest,\n'
+          new = old + '\t\trepoSearch:             defaultRepoSearch,\n'
+          if 'repoSearch:             defaultRepoSearch' not in s:
+              if old not in s:
+                  raise SystemExit('constructor anchor missing')
+              s = s.replace(old, new, 1)
+          old = 'prompt := newTaskPrompt(request, activeTaskPath)\n'
+          new = 'prompt := w.newWorkerTaskPrompt(request, activeTaskPath)\n'
+          if new not in s:
+              if old not in s:
+                  raise SystemExit('new task prompt anchor missing')
+              s = s.replace(old, new, 1)
+          path.write_text(s)
+          PY
+          gofmt -w glm-worker/internal/workflow/workflow.go glm-worker/internal/workflow/worker_repo_search.go glm-worker/internal/workflow/worker_repo_search_test.go
+      - name: Validate production routing
+        working-directory: glm-worker
+        run: |
+          go test ./internal/workflow ./internal/reposearch
+          go test -race ./internal/workflow ./internal/reposearch
+          go vet ./...
+          go build ./...
+      - name: Commit clean wiring
+        run: |
+          rm .github/workflows/temporary-016-wiring.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'feat: route unknown worker targets through repo search'
+          git push
