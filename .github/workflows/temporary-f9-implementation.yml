@@ -1,0 +1,534 @@
+name: Temporary F9 Implementation
+
+on:
+  push:
+    branches:
+      - hardening-task/reviewer-diff-first-search
+
+permissions:
+  contents: write
+
+jobs:
+  implement-f9:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.22.x'
+          cache: false
+      - name: Implement reviewer diff-first independent search
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          events = Path('glm-worker/internal/state/events.go')
+          s = events.read_text()
+          old = '\tSubtype    string    `json:"subtype,omitempty"`\n\n\tMessageModel'
+          new = '\tSubtype    string    `json:"subtype,omitempty"`\n\tSearchQuery string    `json:"search_query,omitempty"`\n\tSearchPaths []string  `json:"search_paths,omitempty"`\n\n\tMessageModel'
+          if old not in s:
+              raise SystemExit('events anchor missing')
+          events.write_text(s.replace(old, new, 1))
+
+          workflow = Path('glm-worker/internal/workflow/workflow.go')
+          s = workflow.read_text()
+          old = '''\tworkerReport, err := machineReport(workerResult)\n\tif err != nil {\n\t\treturn state.ResumeCheckpoint{}, "", false, err\n\t}\n\tprompt := reviewerPrompt(\n\t\trequest,\n\t\tdecision,\n\t\tworkerReport,\n\t\treviewNumber,\n\t\tw.state.BaselineDescription(),\n\t\tactiveTaskPath,\n\t)\n'''
+          new = '''\tworkerReport, err := machineReport(workerResult)\n\tif err != nil {\n\t\treturn state.ResumeCheckpoint{}, "", false, err\n\t}\n\treviewNavigation := w.reviewerDiffFirstContext(request, reviewNumber)\n\tprompt := reviewerPrompt(\n\t\trequest,\n\t\tdecision,\n\t\tworkerReport,\n\t\treviewNumber,\n\t\tw.state.BaselineDescription(),\n\t\treviewNavigation,\n\t\tactiveTaskPath,\n\t)\n'''
+          if old not in s:
+              raise SystemExit('review checkpoint anchor missing')
+          workflow.write_text(s.replace(old, new, 1))
+
+          prompts = Path('glm-worker/internal/workflow/prompts.go')
+          s = prompts.read_text()
+          start = s.index('func reviewerPrompt(')
+          end = s.index('\nfunc automaticFixPrompt(', start)
+          replacement = r'''func reviewerPrompt(request string, decision string, workerReport string, reviewNumber int, baseline string, reviewNavigation string, activeTaskPath string) string {
+	return fmt.Sprintf(`REVIEW_MODE: INDEPENDENT_REVIEW
+
+USER_REQUEST:
+%s
+
+SOL_DECISION:
+%s
+
+WORKER_REPORT:
+%s
+
+REVIEW_NUMBER: %d
+
+PRE_TASK_BASELINE:
+%s
+
+%s
+
+%s現在のworking treeを実際に独立確認して判定してください。
+REVIEW_DIFF_FIRST_NAVIGATIONのCHANGED_PATHを起点にactual git diffを最初に確認し、diffから影響範囲を拡張してください。
+INDEPENDENT_SEARCHがperformedの場合も候補はnavigation-onlyであり、worker search結果やworker reportをauthorityとして採用せず、現在のコードで独立検証してください。
+過去sessionの記憶より現在のコードを優先してください。
+PRE_TASK_BASELINEのファイルはworker開始前の状態です。既存未コミット変更と今回変更を区別する必要がある場合に参照してください。
+`, request, decision, workerReport, reviewNumber, baseline, reviewNavigation, reviewerActiveTaskBlock(activeTaskPath))
+}
+'''
+          prompts.write_text(s[:start] + replacement + s[end:])
+          PY
+
+          cat > glm-worker/internal/workflow/worker_repo_search.go <<'EOF'
+          package workflow
+
+          import (
+          	"context"
+          	"fmt"
+          	"os"
+          	"path/filepath"
+          	"strconv"
+          	"strings"
+          	"time"
+
+          	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/reposearch"
+          	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
+          )
+
+          type repoSearchFunc func(context.Context, string, string, reposearch.Options) (reposearch.Report, error)
+
+          const (
+          	repoSearchPhase         = "worker-repo-search"
+          	repoSearchKnownSkip     = "known-target-skip"
+          	repoSearchHit           = "search-hit"
+          	repoSearchEmptyFallback = "search-empty-fallback"
+          	repoSearchErrorFallback = "search-error-fallback"
+          	repoSearchMaxResults    = 8
+          )
+
+          func (w *Workflow) newWorkerTaskPrompt(request string, activeTaskPath string) string {
+          	prompt := newTaskPrompt(request, activeTaskPath)
+          	search := w.repoSearch
+          	if search == nil {
+          		search = reposearch.Search
+          	}
+          	block, outcome, results := routeWorkerRepoSearch(context.Background(), w.config.RepoRoot, request, search)
+          	w.recordRepoSearchOutcome(repoSearchPhase, state.WorkerRole, 1, outcome, request, results)
+          	if block == "" {
+          		return prompt
+          	}
+          	return strings.TrimRight(prompt, "\n") + block
+          }
+
+          func routeWorkerRepoSearch(ctx context.Context, repoRoot string, request string, search repoSearchFunc) (string, string, []reposearch.Result) {
+          	if requestHasKnownRepoTarget(repoRoot, request) {
+          		return "", repoSearchKnownSkip, nil
+          	}
+          	report, err := search(ctx, repoRoot, request, reposearch.Options{MaxResults: repoSearchMaxResults})
+          	if err != nil {
+          		return "", repoSearchErrorFallback, nil
+          	}
+          	if len(report.Results) == 0 {
+          		return "", repoSearchEmptyFallback, nil
+          	}
+          	return renderRepoSearchNavigation(report.Results), repoSearchHit, report.Results
+          }
+
+          func requestHasKnownRepoTarget(repoRoot string, request string) bool {
+          	for _, raw := range strings.Fields(request) {
+          		candidate := normalizeRequestPathCandidate(raw)
+          		if candidate == "" || filepath.IsAbs(candidate) {
+          			continue
+          		}
+          		path := filepath.Join(repoRoot, filepath.FromSlash(candidate))
+          		rel, err := filepath.Rel(repoRoot, path)
+          		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+          			continue
+          		}
+          		info, err := os.Lstat(path)
+          		if err != nil {
+          			continue
+          		}
+          		if strings.Contains(candidate, "/") || info.Mode().IsRegular() {
+          			return true
+          		}
+          	}
+          	return false
+          }
+
+          func normalizeRequestPathCandidate(raw string) string {
+          	value := strings.Trim(raw, "`'\"()[]{}<>.,;:、。")
+          	value = strings.TrimPrefix(value, "./")
+          	if index := strings.LastIndex(value, ":"); index > 0 {
+          		if _, err := strconv.Atoi(value[index+1:]); err == nil {
+          			value = value[:index]
+          		}
+          	}
+          	return filepath.ToSlash(value)
+          }
+
+          func renderRepoSearchNavigation(results []reposearch.Result) string {
+          	var block strings.Builder
+          	block.WriteString("\n\nREPO_SEARCH_NAVIGATION:\n")
+          	block.WriteString("MODE: wrapper-bm25-navigation\n")
+          	block.WriteString(fmt.Sprintf("RESULT_COUNT: %d\n", len(results)))
+          	for _, result := range results {
+          		block.WriteString("CANDIDATE: ")
+          		block.WriteString(result.Path)
+          		if result.Line > 0 {
+          			block.WriteString(":")
+          			block.WriteString(strconv.Itoa(result.Line))
+          		}
+          		block.WriteString("\n")
+          	}
+          	block.WriteString("AUTHORITY: navigation-only\n")
+          	block.WriteString("END_REPO_SEARCH_NAVIGATION\n")
+          	return block.String()
+          }
+
+          func (w *Workflow) recordRepoSearchOutcome(phase string, role state.SessionRole, seq int, outcome string, query string, results []reposearch.Result) {
+          	taskID, err := w.state.TaskID()
+          	if err != nil {
+          		return
+          	}
+          	now := time.Now
+          	if w.now != nil {
+          		now = w.now
+          	}
+          	paths := make([]string, 0, len(results))
+          	for _, result := range results {
+          		paths = append(paths, result.Path)
+          	}
+          	if err := w.state.AppendTaskEvent(state.TaskEventRecord{
+          		TaskID:      taskID,
+          		Role:        string(role),
+          		Phase:       phase,
+          		Seq:         seq,
+          		Timestamp:   now().UTC(),
+          		Kind:        "navigation",
+          		Subtype:     outcome,
+          		SearchQuery: query,
+          		SearchPaths: paths,
+          	}); err != nil {
+          		state.WarnTaskEventSkip("repo-search route追記", err)
+          	}
+          }
+          EOF
+
+          cat > glm-worker/internal/workflow/reviewer_repo_search.go <<'EOF'
+          package workflow
+
+          import (
+          	"context"
+          	"fmt"
+          	"sort"
+          	"strings"
+
+          	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/reposearch"
+          	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
+          )
+
+          const (
+          	reviewerRepoSearchPhase          = "reviewer-repo-search"
+          	reviewerSearchDiffSufficient     = "diff-sufficient"
+          	reviewerSearchHit                = "independent-search-hit"
+          	reviewerSearchEmpty              = "independent-search-empty"
+          	reviewerSearchErrorFallback      = "independent-search-error-fallback"
+          	reviewerSearchDiffErrorFallback  = "diff-surface-error-fallback"
+          )
+
+          func (w *Workflow) reviewerDiffFirstContext(request string, reviewNumber int) string {
+          	collector := w.collectChangedPaths
+          	if collector == nil {
+          		collector = collectChangedPaths
+          	}
+          	paths, err := collector(w.config.RepoRoot, w.state.ReadOr("baseline-head", ""))
+          	if err != nil {
+          		w.recordRepoSearchOutcome(reviewerRepoSearchPhase, state.ReviewerRole, reviewNumber+1, reviewerSearchDiffErrorFallback, "", nil)
+          		return renderReviewerDiffFirstNavigation(nil, reviewerSearchDiffErrorFallback, "", nil)
+          	}
+          	paths = uniqueSortedPaths(paths)
+          	impactPaths := reviewerImpactPaths(paths)
+          	if len(impactPaths) == 0 {
+          		w.recordRepoSearchOutcome(reviewerRepoSearchPhase, state.ReviewerRole, reviewNumber+1, reviewerSearchDiffSufficient, "", nil)
+          		return renderReviewerDiffFirstNavigation(paths, reviewerSearchDiffSufficient, "", nil)
+          	}
+
+          	query := reviewerIndependentSearchQuery(request, impactPaths)
+          	search := w.repoSearch
+          	if search == nil {
+          		search = reposearch.Search
+          	}
+          	report, searchErr := search(context.Background(), w.config.RepoRoot, query, reposearch.Options{MaxResults: repoSearchMaxResults})
+          	if searchErr != nil {
+          		w.recordRepoSearchOutcome(reviewerRepoSearchPhase, state.ReviewerRole, reviewNumber+1, reviewerSearchErrorFallback, query, nil)
+          		return renderReviewerDiffFirstNavigation(paths, reviewerSearchErrorFallback, query, nil)
+          	}
+          	candidates := excludeChangedPaths(report.Results, paths)
+          	outcome := reviewerSearchHit
+          	if len(candidates) == 0 {
+          		outcome = reviewerSearchEmpty
+          	}
+          	w.recordRepoSearchOutcome(reviewerRepoSearchPhase, state.ReviewerRole, reviewNumber+1, outcome, query, candidates)
+          	return renderReviewerDiffFirstNavigation(paths, outcome, query, candidates)
+          }
+
+          func reviewerImpactPaths(paths []string) []string {
+          	impact := make([]string, 0, len(paths))
+          	for _, path := range paths {
+          		if isParentManagedReviewPath(path) {
+          			continue
+          		}
+          		critical, category := IsCriticalPath(path)
+          		if critical {
+          			impact = append(impact, path)
+          			continue
+          		}
+          		switch category {
+          		case testPathCategory, testFixturePathCategory, testHarnessPathCategory, "docs", "repo-metadata":
+          			continue
+          		default:
+          			impact = append(impact, path)
+          		}
+          	}
+          	return impact
+          }
+
+          func isParentManagedReviewPath(path string) bool {
+          	return path == state.ParentRulesFile || path == state.ParentPlanFile || path == state.ParentHistoryFile || strings.HasPrefix(path, state.ParentTasksDir+"/")
+          }
+
+          func reviewerIndependentSearchQuery(request string, paths []string) string {
+          	return strings.TrimSpace(request) + "\nreview impact paths: " + strings.Join(paths, " ")
+          }
+
+          func excludeChangedPaths(results []reposearch.Result, changed []string) []reposearch.Result {
+          	changedSet := make(map[string]struct{}, len(changed))
+          	for _, path := range changed {
+          		changedSet[path] = struct{}{}
+          	}
+          	filtered := make([]reposearch.Result, 0, len(results))
+          	for _, result := range results {
+          		if _, found := changedSet[result.Path]; found {
+          			continue
+          		}
+          		filtered = append(filtered, result)
+          	}
+          	return filtered
+          }
+
+          func uniqueSortedPaths(paths []string) []string {
+          	seen := make(map[string]struct{}, len(paths))
+          	unique := make([]string, 0, len(paths))
+          	for _, path := range paths {
+          		path = strings.TrimSpace(path)
+          		if path == "" {
+          			continue
+          		}
+          		if _, found := seen[path]; found {
+          			continue
+          		}
+          		seen[path] = struct{}{}
+          		unique = append(unique, path)
+          	}
+          	sort.Strings(unique)
+          	return unique
+          }
+
+          func renderReviewerDiffFirstNavigation(paths []string, outcome string, query string, candidates []reposearch.Result) string {
+          	var block strings.Builder
+          	block.WriteString("REVIEW_DIFF_FIRST_NAVIGATION:\n")
+          	block.WriteString(fmt.Sprintf("CHANGED_PATH_COUNT: %d\n", len(paths)))
+          	for _, path := range paths {
+          		block.WriteString("CHANGED_PATH: ")
+          		block.WriteString(path)
+          		block.WriteByte('\n')
+          	}
+          	searchMode := "skipped"
+          	if outcome != reviewerSearchDiffSufficient && outcome != reviewerSearchDiffErrorFallback {
+          		searchMode = "performed"
+          	}
+          	block.WriteString("INDEPENDENT_SEARCH: ")
+          	block.WriteString(searchMode)
+          	block.WriteByte('\n')
+          	block.WriteString("SEARCH_OUTCOME: ")
+          	block.WriteString(outcome)
+          	block.WriteByte('\n')
+          	if query != "" {
+          		block.WriteString("INDEPENDENT_QUERY: ")
+          		block.WriteString(strings.ReplaceAll(query, "\n", " "))
+          		block.WriteByte('\n')
+          	}
+          	for _, result := range candidates {
+          		block.WriteString("IMPACT_CANDIDATE: ")
+          		block.WriteString(result.Path)
+          		if result.Line > 0 {
+          			block.WriteString(fmt.Sprintf(":%d", result.Line))
+          		}
+          		block.WriteByte('\n')
+          	}
+          	block.WriteString("WORKER_SEARCH_AUTHORITY: none\n")
+          	block.WriteString("AUTHORITY: navigation-only\n")
+          	block.WriteString("END_REVIEW_DIFF_FIRST_NAVIGATION")
+          	return block.String()
+          }
+          EOF
+
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('glm-worker/internal/workflow/worker_repo_search_test.go')
+          s = path.read_text()
+          s = s.replace('block, outcome := routeWorkerRepoSearch(', 'block, outcome, _ := routeWorkerRepoSearch(')
+          old = '''\tif event.Phase != repoSearchPhase || event.Kind != "navigation" || event.Subtype != repoSearchHit {\n\t\tt.Fatalf("event=%#v", event)\n\t}\n'''
+          new = '''\tif event.Phase != repoSearchPhase || event.Kind != "navigation" || event.Subtype != repoSearchHit {\n\t\tt.Fatalf("event=%#v", event)\n\t}\n\tif event.SearchQuery != "unknown worker target" || len(event.SearchPaths) != 1 || event.SearchPaths[0] != "internal/worker.go" {\n\t\tt.Fatalf("search telemetry=%#v", event)\n\t}\n'''
+          if old not in s:
+              raise SystemExit('worker telemetry test anchor missing')
+          path.write_text(s.replace(old, new, 1))
+          PY
+
+          cat > glm-worker/internal/workflow/reviewer_repo_search_test.go <<'EOF'
+          package workflow
+
+          import (
+          	"bufio"
+          	"context"
+          	"errors"
+          	"os"
+          	"strings"
+          	"testing"
+          	"time"
+
+          	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+          	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/reposearch"
+          	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
+          )
+
+          func newReviewerSearchWorkflow(t *testing.T, paths []string) (*Workflow, *state.StateStore, string) {
+          	t.Helper()
+          	root := t.TempDir()
+          	cfg := config.AppConfig{RepoRoot: root, RepoHash: "review-search-routing", StateBase: t.TempDir()}
+          	st, err := state.NewStateStore(cfg)
+          	if err != nil {
+          		t.Fatal(err)
+          	}
+          	taskID, err := st.StartNewTask()
+          	if err != nil {
+          		t.Fatal(err)
+          	}
+          	w := NewWorkflow(cfg, st, nil, nil)
+          	w.now = func() time.Time { return time.Date(2026, 8, 28, 0, 0, 0, 0, time.UTC) }
+          	w.collectChangedPaths = func(string, string) ([]string, error) { return paths, nil }
+          	return w, st, taskID
+          }
+
+          func TestReviewerDiffFirstSkipsIndependentSearchForTestOnlyDiff(t *testing.T) {
+          	w, st, taskID := newReviewerSearchWorkflow(t, []string{"glm-worker/internal/workflow/foo_test.go"})
+          	calls := 0
+          	w.repoSearch = func(context.Context, string, string, reposearch.Options) (reposearch.Report, error) {
+          		calls++
+          		return reposearch.Report{}, nil
+          	}
+          	block := w.reviewerDiffFirstContext("fix workflow", 1)
+          	if calls != 0 || !strings.Contains(block, "INDEPENDENT_SEARCH: skipped") || !strings.Contains(block, "SEARCH_OUTCOME: diff-sufficient") {
+          		t.Fatalf("calls=%d block=%s", calls, block)
+          	}
+          	event := readOnlyTaskEvent(t, st, taskID)
+          	if event.Phase != reviewerRepoSearchPhase || event.Subtype != reviewerSearchDiffSufficient || event.SearchQuery != "" || len(event.SearchPaths) != 0 {
+          		t.Fatalf("event=%#v", event)
+          	}
+          }
+
+          func TestReviewerDiffFirstSearchesImpactIndependentlyAndExcludesChangedPaths(t *testing.T) {
+          	w, st, taskID := newReviewerSearchWorkflow(t, []string{"glm-worker/internal/workflow/workflow.go"})
+          	w.repoSearch = func(_ context.Context, _ string, query string, opts reposearch.Options) (reposearch.Report, error) {
+          		if !strings.Contains(query, "review impact paths: glm-worker/internal/workflow/workflow.go") || opts.MaxResults != repoSearchMaxResults {
+          			t.Fatalf("query=%q opts=%#v", query, opts)
+          		}
+          		return reposearch.Report{Results: []reposearch.Result{
+          			{Path: "glm-worker/internal/workflow/workflow.go", Line: 50},
+          			{Path: "glm-worker/internal/workflow/prompts.go", Line: 20},
+          		}}, nil
+          	}
+          	block := w.reviewerDiffFirstContext("change reviewer dispatch", 2)
+          	if !strings.Contains(block, "INDEPENDENT_SEARCH: performed") || !strings.Contains(block, "IMPACT_CANDIDATE: glm-worker/internal/workflow/prompts.go:20") {
+          		t.Fatalf("block=%s", block)
+          	}
+          	if strings.Contains(block, "IMPACT_CANDIDATE: glm-worker/internal/workflow/workflow.go") {
+          		t.Fatalf("changed path leaked into impact candidates: %s", block)
+          	}
+          	if !strings.Contains(block, "WORKER_SEARCH_AUTHORITY: none") {
+          		t.Fatalf("independence marker missing: %s", block)
+          	}
+          	event := readOnlyTaskEvent(t, st, taskID)
+          	if event.Phase != reviewerRepoSearchPhase || event.Subtype != reviewerSearchHit || !strings.Contains(event.SearchQuery, "workflow.go") || len(event.SearchPaths) != 1 || event.SearchPaths[0] != "glm-worker/internal/workflow/prompts.go" {
+          		t.Fatalf("event=%#v", event)
+          	}
+          }
+
+          func TestReviewerDiffFirstSearchFailureFallsBackToDiffInspection(t *testing.T) {
+          	w, _, _ := newReviewerSearchWorkflow(t, []string{"glm-worker/internal/workflow/workflow.go"})
+          	w.repoSearch = func(context.Context, string, string, reposearch.Options) (reposearch.Report, error) {
+          		return reposearch.Report{}, errors.New("search unavailable")
+          	}
+          	block := w.reviewerDiffFirstContext("change reviewer dispatch", 1)
+          	if !strings.Contains(block, "SEARCH_OUTCOME: independent-search-error-fallback") || !strings.Contains(block, "CHANGED_PATH: glm-worker/internal/workflow/workflow.go") {
+          		t.Fatalf("block=%s", block)
+          	}
+          }
+
+          func TestReviewerPromptMakesDiffFirstNavigationProductionVisible(t *testing.T) {
+          	navigation := renderReviewerDiffFirstNavigation(
+          		[]string{"glm-worker/internal/workflow/workflow.go"},
+          		reviewerSearchHit,
+          		"independent query",
+          		[]reposearch.Result{{Path: "glm-worker/internal/workflow/prompts.go", Line: 20}},
+          	)
+          	prompt := reviewerPrompt("request", "none", "worker report", 1, "baseline", navigation, "")
+          	for _, want := range []string{
+          		"REVIEW_MODE: INDEPENDENT_REVIEW",
+          		"REVIEW_DIFF_FIRST_NAVIGATION:",
+          		"CHANGED_PATH: glm-worker/internal/workflow/workflow.go",
+          		"IMPACT_CANDIDATE: glm-worker/internal/workflow/prompts.go:20",
+          		"actual git diffを最初に確認",
+          		"worker search結果やworker reportをauthorityとして採用せず",
+          	} {
+          		if !strings.Contains(prompt, want) {
+          			t.Fatalf("missing %q in %s", want, prompt)
+          		}
+          	}
+          }
+
+          func readOnlyTaskEvent(t *testing.T, st *state.StateStore, taskID string) state.TaskEventRecord {
+          	t.Helper()
+          	file, err := os.Open(st.TaskEventLogPath(taskID))
+          	if err != nil {
+          		t.Fatal(err)
+          	}
+          	defer func() { _ = file.Close() }()
+          	scanner := bufio.NewScanner(file)
+          	if !scanner.Scan() {
+          		t.Fatalf("event missing: %v", scanner.Err())
+          	}
+          	event, err := state.ParseTaskEventLine(scanner.Bytes())
+          	if err != nil {
+          		t.Fatal(err)
+          	}
+          	if scanner.Scan() {
+          		t.Fatalf("unexpected extra event: %q", scanner.Text())
+          	}
+          	return event
+          }
+          EOF
+
+          gofmt -w glm-worker/internal/state/events.go glm-worker/internal/workflow/workflow.go glm-worker/internal/workflow/prompts.go glm-worker/internal/workflow/worker_repo_search.go glm-worker/internal/workflow/worker_repo_search_test.go glm-worker/internal/workflow/reviewer_repo_search.go glm-worker/internal/workflow/reviewer_repo_search_test.go
+      - name: Validate F9 routing
+        working-directory: glm-worker
+        run: |
+          go test ./internal/workflow ./internal/state ./internal/reposearch
+          go test -race ./internal/workflow ./internal/state ./internal/reposearch
+          go vet ./...
+          go build ./...
+      - name: Commit implementation
+        run: |
+          rm .github/workflows/temporary-f9-implementation.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'feat: make reviewer repo search diff-first'
+          git push
