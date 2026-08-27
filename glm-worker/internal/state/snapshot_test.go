@@ -400,7 +400,7 @@ func TestCaptureGitSnapshotExcludingParentDigest(t *testing.T) {
 		},
 		{
 			name:          "untracked parent plan creation",
-			seed:          func(_ *testing.T, dir string) {},
+			seed:          func(_ *testing.T, _ string) {},
 			mutate:        func(t *testing.T, dir string) { writeParentPlanFile(t, dir, "plan-new\n") },
 			wantFull:      true,
 			wantExcluding: false,
