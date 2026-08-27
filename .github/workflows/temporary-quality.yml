@@ -5,6 +5,7 @@ on:
       - gpt-quality-apply/6f08b30
     paths:
       - .gpt-checkpoints/quality-progress.ready
+      - glm-worker/**
 permissions:
   contents: write
 jobs:
@@ -16,6 +17,9 @@ jobs:
           fetch-depth: 0
       - name: Apply GPT checkpoint parts
         run: |
+          if ! git diff-tree --no-commit-id --name-only -r "$GITHUB_SHA" | grep -qx '.gpt-checkpoints/quality-progress.ready'; then
+            exit 0
+          fi
           generation="$(tr -d '\r\n' < .gpt-checkpoints/quality-progress.ready)"
           case "$generation" in
             *[!A-Za-z0-9._-]*|'') echo 'invalid checkpoint generation' >&2; exit 1 ;;
