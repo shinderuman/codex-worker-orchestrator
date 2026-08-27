@@ -192,8 +192,7 @@ func readQualityEvidenceBaselineFile(repoRoot, baselineHead, path string) ([]byt
 	object := baselineHead + ":" + filepath.ToSlash(path)
 	check := exec.Command("git", "-C", repoRoot, "cat-file", "-e", object)
 	if err := check.Run(); err != nil {
-		var exitErr *exec.ExitError
-		if ok := errorAsExit(err, &exitErr); ok {
+		if _, ok := err.(*exec.ExitError); ok {
 			return nil, false, nil
 		}
 		return nil, false, err
@@ -203,14 +202,6 @@ func readQualityEvidenceBaselineFile(repoRoot, baselineHead, path string) ([]byt
 		return nil, false, err
 	}
 	return data, true, nil
-}
-
-func errorAsExit(err error, target **exec.ExitError) bool {
-	exitErr, ok := err.(*exec.ExitError)
-	if ok {
-		*target = exitErr
-	}
-	return ok
 }
 
 func readQualityEvidenceWorktreeFile(repoRoot, path string) ([]byte, bool, error) {
@@ -280,6 +271,9 @@ func goTestBodyEvidence(body *ast.BlockStmt) []string {
 }
 
 func goNodeContainsFailure(node ast.Node) bool {
+	if node == nil {
+		return false
+	}
 	found := false
 	ast.Inspect(node, func(current ast.Node) bool {
 		call, ok := current.(*ast.CallExpr)
@@ -313,7 +307,7 @@ func normalizeGoEvidenceNode(node any) string {
 	var lexical scanner.Scanner
 	files := token.NewFileSet()
 	file := files.AddFile("evidence.go", -1, formatted.Len())
-	lexical.Init(file, formatted.Bytes(), nil, scanner.ScanStrings|scanner.ScanRawStrings|scanner.ScanChars|scanner.ScanFloats)
+	lexical.Init(file, formatted.Bytes(), nil, 0)
 	var result strings.Builder
 	previous := token.ILLEGAL
 	for {
