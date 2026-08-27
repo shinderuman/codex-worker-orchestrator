@@ -469,9 +469,8 @@ func printStats(st *state.StateStore, stdout io.Writer) error {
 	return writeJSON(stdout, output)
 }
 
-func buildStatsOutput(st *state.StateStore, all []state.TaskStats) statsOutput {
-
-	aggregate := state.TaskStats{
+func newAggregateTaskStats() state.TaskStats {
+	return state.TaskStats{
 		ModelCallsByAlias:                       map[string]int{},
 		ModelDurationMSByAlias:                  map[string]int64{},
 		RateLimitsByAlias:                       map[string]int{},
@@ -495,54 +494,72 @@ func buildStatsOutput(st *state.StateStore, all []state.TaskStats) statsOutput {
 		ParentOutcomesByModel:                   map[string]int{},
 		ParentOutcomesByRisk:                    map[string]int{},
 	}
+}
+
+func mergeTaskStats(aggregate *state.TaskStats, stats state.TaskStats) {
+	aggregate.ModelCalls += stats.ModelCalls
+	mergeIntMap(&aggregate.ModelCallsByAlias, stats.ModelCallsByAlias)
+	mergeInt64Map(&aggregate.ModelDurationMSByAlias, stats.ModelDurationMSByAlias)
+	mergeIntMap(&aggregate.RateLimitsByAlias, stats.RateLimitsByAlias)
+	mergeInt64Map(&aggregate.InputTokensByAlias, stats.InputTokensByAlias)
+	mergeInt64Map(&aggregate.CacheCreationInputTokensByAlias, stats.CacheCreationInputTokensByAlias)
+	mergeInt64Map(&aggregate.CacheReadInputTokensByAlias, stats.CacheReadInputTokensByAlias)
+	mergeInt64Map(&aggregate.OutputTokensByAlias, stats.OutputTokensByAlias)
+	mergeIntMap(&aggregate.TopLevelTurnsByAlias, stats.TopLevelTurnsByAlias)
+	mergeIntMap(&aggregate.CallTreesByResolvedModel, stats.CallTreesByResolvedModel)
+	mergeInt64Map(&aggregate.InputTokensByResolvedModel, stats.InputTokensByResolvedModel)
+	mergeInt64Map(&aggregate.CacheCreationInputTokensByResolvedModel, stats.CacheCreationInputTokensByResolvedModel)
+	mergeInt64Map(&aggregate.CacheReadInputTokensByResolvedModel, stats.CacheReadInputTokensByResolvedModel)
+	mergeInt64Map(&aggregate.OutputTokensByResolvedModel, stats.OutputTokensByResolvedModel)
+	aggregate.WorkerCalls += stats.WorkerCalls
+	aggregate.ReviewerCalls += stats.ReviewerCalls
+	aggregate.DecisionCommands += stats.DecisionCommands
+	aggregate.FixCommands += stats.FixCommands
+	aggregate.ResumeCommands += stats.ResumeCommands
+	aggregate.AutoFixRounds += stats.AutoFixRounds
+	aggregate.NeedsSolDecisionPackets += stats.NeedsSolDecisionPackets
+	aggregate.NeedsSolReviewPackets += stats.NeedsSolReviewPackets
+	aggregate.PassPackets += stats.PassPackets
+	aggregate.RateLimits += stats.RateLimits
+	aggregate.PacketCompactions += stats.PacketCompactions
+	aggregate.SolPacketBytes += stats.SolPacketBytes
+	aggregate.ProviderUnavailable += stats.ProviderUnavailable
+	mergeIntMap(&aggregate.ProviderUnavailableByAlias, stats.ProviderUnavailableByAlias)
+	mergeIntMap(&aggregate.RiskFloorByCategory, stats.RiskFloorByCategory)
+	aggregate.SnapshotMismatches += stats.SnapshotMismatches
+	mergeIntMap(&aggregate.SnapshotMismatchByAxis, stats.SnapshotMismatchByAxis)
+	mergeIntMap(&aggregate.PacketRejectByCategory, stats.PacketRejectByCategory)
+	mergeIntMap(&aggregate.ProbeOutcome, stats.ProbeOutcome)
+	aggregate.TransientRetries += stats.TransientRetries
+	mergeIntMap(&aggregate.ParentOutcomes, stats.ParentOutcomes)
+	mergeIntMap(&aggregate.ParentFixOrigins, stats.ParentFixOrigins)
+	mergeIntMap(&aggregate.ParentOutcomesByModel, stats.ParentOutcomesByModel)
+	mergeIntMap(&aggregate.ParentOutcomesByRisk, stats.ParentOutcomesByRisk)
+}
+
+func buildStatsOutput(st *state.StateStore, all []state.TaskStats) statsOutput {
+	aggregate := newAggregateTaskStats()
 	for _, stats := range all {
-		aggregate.ModelCalls += stats.ModelCalls
-		mergeIntMap(&aggregate.ModelCallsByAlias, stats.ModelCallsByAlias)
-		mergeInt64Map(&aggregate.ModelDurationMSByAlias, stats.ModelDurationMSByAlias)
-		mergeIntMap(&aggregate.RateLimitsByAlias, stats.RateLimitsByAlias)
-		mergeInt64Map(&aggregate.InputTokensByAlias, stats.InputTokensByAlias)
-		mergeInt64Map(&aggregate.CacheCreationInputTokensByAlias, stats.CacheCreationInputTokensByAlias)
-		mergeInt64Map(&aggregate.CacheReadInputTokensByAlias, stats.CacheReadInputTokensByAlias)
-		mergeInt64Map(&aggregate.OutputTokensByAlias, stats.OutputTokensByAlias)
-		mergeIntMap(&aggregate.TopLevelTurnsByAlias, stats.TopLevelTurnsByAlias)
-		mergeIntMap(&aggregate.CallTreesByResolvedModel, stats.CallTreesByResolvedModel)
-		mergeInt64Map(&aggregate.InputTokensByResolvedModel, stats.InputTokensByResolvedModel)
-		mergeInt64Map(&aggregate.CacheCreationInputTokensByResolvedModel, stats.CacheCreationInputTokensByResolvedModel)
-		mergeInt64Map(&aggregate.CacheReadInputTokensByResolvedModel, stats.CacheReadInputTokensByResolvedModel)
-		mergeInt64Map(&aggregate.OutputTokensByResolvedModel, stats.OutputTokensByResolvedModel)
-		aggregate.WorkerCalls += stats.WorkerCalls
-		aggregate.ReviewerCalls += stats.ReviewerCalls
-		aggregate.DecisionCommands += stats.DecisionCommands
-		aggregate.FixCommands += stats.FixCommands
-		aggregate.ResumeCommands += stats.ResumeCommands
-		aggregate.AutoFixRounds += stats.AutoFixRounds
-		aggregate.NeedsSolDecisionPackets += stats.NeedsSolDecisionPackets
-		aggregate.NeedsSolReviewPackets += stats.NeedsSolReviewPackets
-		aggregate.PassPackets += stats.PassPackets
-		aggregate.RateLimits += stats.RateLimits
-		aggregate.PacketCompactions += stats.PacketCompactions
-		aggregate.SolPacketBytes += stats.SolPacketBytes
-		aggregate.ProviderUnavailable += stats.ProviderUnavailable
-		mergeIntMap(&aggregate.ProviderUnavailableByAlias, stats.ProviderUnavailableByAlias)
-		mergeIntMap(&aggregate.RiskFloorByCategory, stats.RiskFloorByCategory)
-		aggregate.SnapshotMismatches += stats.SnapshotMismatches
-		mergeIntMap(&aggregate.SnapshotMismatchByAxis, stats.SnapshotMismatchByAxis)
-		mergeIntMap(&aggregate.PacketRejectByCategory, stats.PacketRejectByCategory)
-		mergeIntMap(&aggregate.ProbeOutcome, stats.ProbeOutcome)
-		aggregate.TransientRetries += stats.TransientRetries
-		mergeIntMap(&aggregate.ParentOutcomes, stats.ParentOutcomes)
-		mergeIntMap(&aggregate.ParentFixOrigins, stats.ParentFixOrigins)
-		mergeIntMap(&aggregate.ParentOutcomesByModel, stats.ParentOutcomesByModel)
-		mergeIntMap(&aggregate.ParentOutcomesByRisk, stats.ParentOutcomesByRisk)
+		mergeTaskStats(&aggregate, stats)
 	}
+	output := statsOutputFromAggregate(st, len(all), aggregate, probeCallCount(aggregate.ProbeOutcome))
+	output.TelemetryCoverage = statsCoverageDetail(st.ComputeTelemetryCoverage(all))
+	fillStatsParentReview(st, all, aggregate, &output)
+	output.CurrentTask = statsCurrentTaskDetail(st)
+	return output
+}
 
-	probeCalls := 0
-	for _, count := range aggregate.ProbeOutcome {
-		probeCalls += count
+func probeCallCount(outcomes map[string]int) int {
+	total := 0
+	for _, count := range outcomes {
+		total += count
 	}
+	return total
+}
 
-	output := statsOutput{
-		Tasks:                           len(all),
+func statsOutputFromAggregate(st *state.StateStore, tasks int, aggregate state.TaskStats, probeCalls int) statsOutput {
+	return statsOutput{
+		Tasks:                           tasks,
 		ModelCalls:                      aggregate.ModelCalls,
 		ModelCallsByAlias:               aggregate.ModelCallsByAlias,
 		ProbeCalls:                      probeCalls,
@@ -590,10 +607,6 @@ func buildStatsOutput(st *state.StateStore, all []state.TaskStats) statsOutput {
 		SolPacketBytes:                          aggregate.SolPacketBytes,
 		TelemetryDir:                            st.Path("telemetry"),
 	}
-	output.TelemetryCoverage = statsCoverageDetail(st.ComputeTelemetryCoverage(all))
-	fillStatsParentReview(st, all, aggregate, &output)
-	output.CurrentTask = statsCurrentTaskDetail(st)
-	return output
 }
 
 func statsCoverageDetail(coverage state.TelemetryCoverage) statsCoverage {
