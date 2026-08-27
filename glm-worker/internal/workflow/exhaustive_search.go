@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	workerExhaustiveSearchPhase    = "worker-exhaustive-search"
+	workerExhaustiveSearchPhase   = "worker-exhaustive-search"
 	reviewerExhaustiveSearchPhase = "reviewer-exhaustive-search"
 	exhaustiveSearchComplete      = "full-corpus-proof"
 )

@@ -165,6 +165,11 @@ func (w *Workflow) ExecuteNewTask(request string) error {
 		pocStage := decl.pocStage()
 
 		prompt := w.newWorkerTaskPrompt(request, activeTaskPath)
+		exhaustiveContext, err := w.exhaustiveSearchContext(request, activeTaskPath, state.WorkerRole, 1)
+		if err != nil {
+			return err
+		}
+		prompt += exhaustiveContext
 		checkpoint := state.ResumeCheckpoint{
 			Stage:          state.ResumeStageWorker,
 			Phase:          "worker-new",
@@ -265,6 +270,11 @@ func (w *Workflow) ExecuteDecision(decision string) error {
 		}
 
 		prompt := decisionPrompt(request, decision, activeTaskPath)
+		exhaustiveContext, err := w.exhaustiveSearchContext(request, activeTaskPath, state.WorkerRole, 1)
+		if err != nil {
+			return err
+		}
+		prompt += exhaustiveContext
 		checkpoint := state.ResumeCheckpoint{
 			Stage:          state.ResumeStageWorker,
 			Phase:          "worker-decision",
@@ -317,6 +327,11 @@ func (w *Workflow) ExecuteExplicitFix(instruction, origin string) error {
 		}
 		pocStage := decl.pocStage()
 		prompt := explicitFixPrompt(request, decision, review, instruction, activeTaskPath)
+		exhaustiveContext, err := w.exhaustiveSearchContext(request, activeTaskPath, state.WorkerRole, 1)
+		if err != nil {
+			return err
+		}
+		prompt += exhaustiveContext
 		checkpoint := state.ResumeCheckpoint{
 			Stage:          state.ResumeStageWorker,
 			Phase:          "worker-explicit-fix",
@@ -779,6 +794,11 @@ func (w *Workflow) buildReviewCheckpoint(
 		return state.ResumeCheckpoint{}, "", false, err
 	}
 	reviewNavigation := w.reviewerDiffFirstContext(request, reviewNumber)
+	exhaustiveNavigation, err := w.exhaustiveSearchContext(request, activeTaskPath, state.ReviewerRole, reviewNumber+1)
+	if err != nil {
+		return state.ResumeCheckpoint{}, "", false, err
+	}
+	reviewNavigation += exhaustiveNavigation
 	prompt := reviewerPrompt(
 		request,
 		decision,

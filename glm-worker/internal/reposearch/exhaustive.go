@@ -28,7 +28,7 @@ type ExhaustiveOptions struct {
 const (
 	defaultMaxExhaustiveMatches = 512
 	hardMaxExhaustiveMatches    = 4096
-	exhaustivePredicate          = "any-normalized-query-token-in-path-or-text"
+	exhaustivePredicate         = "any-normalized-query-token-in-path-or-text"
 )
 
 func ExhaustiveSearch(ctx context.Context, repoRoot string, query string, opts ExhaustiveOptions) (ExhaustiveReport, error) {
