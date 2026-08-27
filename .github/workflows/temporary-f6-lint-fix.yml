@@ -30,11 +30,11 @@ jobs:
           text = p.read_text()
           text = text.replace(
               'type semanticDecisionAxis string\n\nconst (',
-              'type semanticDecisionAxis string\n\ntype semanticDecisionAuthority struct {\n\\tfixed map[semanticDecisionAxis]string\n}\n\nconst (',
+              'type semanticDecisionAxis string\n\ntype semanticDecisionAuthority struct {\n\tfixed map[semanticDecisionAxis]string\n}\n\nconst (',
               1,
           )
           text = text.replace(
-              'type semanticDecisionAuthority struct {\n\\tfixed map[semanticDecisionAxis]string\n}\n\nfunc parseSemanticDecisionAuthority',
+              'type semanticDecisionAuthority struct {\n\tfixed map[semanticDecisionAxis]string\n}\n\nfunc parseSemanticDecisionAuthority',
               'func parseSemanticDecisionAuthority',
               1,
           )
@@ -97,7 +97,7 @@ jobs:
           }
 
           func loadSemanticDecisionAuthority'''
-          text, count = re.subn(pattern, replacement, text, count=1, flags=re.S)
+          text, count = re.subn(pattern, lambda _: replacement, text, count=1, flags=re.S)
           if count != 1:
               raise SystemExit('parser replacement failed')
           p.write_text(text)
