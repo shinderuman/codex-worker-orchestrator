@@ -156,6 +156,17 @@ type workerCallRef struct {
 	log    ModelCallLog
 }
 
+type callOutlierBuilder struct {
+	report        CallOutlierReport
+	groups        map[callGroupKey]*callGroupSamples
+	modelSamples  map[callModelKey]*callGroupSamples
+	sessionState  map[callSessionKey]*CallSessionDistribution
+	sessionTasks  map[callSessionKey]map[string]bool
+	sessionModels map[callSessionKey]map[string]bool
+	taskWorkers   map[string][]ModelCallLog
+	workerCalls   []workerCallRef
+}
+
 const callOutlierPercentileMethod = "linear"
 
 const CallOutlierMinPopulation = 20
@@ -188,121 +199,149 @@ func WorkerPhaseCategory(phase string) string {
 }
 
 func BuildCallOutlierReport(tasks []TaskCallLogs) CallOutlierReport {
-	report := CallOutlierReport{
-		PercentileMethod: callOutlierPercentileMethod,
-		OutlierRule:      callOutlierRule,
-		MinPopulation:    CallOutlierMinPopulation,
-		Distributions:    []CallGroupDistribution{},
-		Models:           []CallModelDistribution{},
-		Sessions:         []CallSessionDistribution{},
-		Tasks:            []TaskCallAmplification{},
-		OutlierCalls:     []CallOutlierObservation{},
-		OutlierTasks:     []TaskOutlierObservation{},
+	builder := newCallOutlierBuilder()
+	builder.absorbTasks(tasks)
+	builder.buildGroupDistributions()
+	builder.buildModelDistributions()
+	builder.buildSessions()
+	builder.buildTaskAmplifications()
+	builder.sortReport()
+	builder.report.OutlierTasks = taskTurnOutliers(builder.report.Tasks)
+	return builder.report
+}
+
+func newCallOutlierBuilder() *callOutlierBuilder {
+	return &callOutlierBuilder{
+		report: CallOutlierReport{
+			PercentileMethod: callOutlierPercentileMethod,
+			OutlierRule:      callOutlierRule,
+			MinPopulation:    CallOutlierMinPopulation,
+			Distributions:    []CallGroupDistribution{},
+			Models:           []CallModelDistribution{},
+			Sessions:         []CallSessionDistribution{},
+			Tasks:            []TaskCallAmplification{},
+			OutlierCalls:     []CallOutlierObservation{},
+			OutlierTasks:     []TaskOutlierObservation{},
+		},
+		groups:        make(map[callGroupKey]*callGroupSamples),
+		modelSamples:  make(map[callModelKey]*callGroupSamples),
+		sessionState:  make(map[callSessionKey]*CallSessionDistribution),
+		sessionTasks:  make(map[callSessionKey]map[string]bool),
+		sessionModels: make(map[callSessionKey]map[string]bool),
+		taskWorkers:   make(map[string][]ModelCallLog),
+		workerCalls:   make([]workerCallRef, 0),
 	}
+}
 
-	groups := make(map[callGroupKey]*callGroupSamples)
-	modelSamples := make(map[callModelKey]*callGroupSamples)
-	sessionState := make(map[callSessionKey]*CallSessionDistribution)
-	sessionTasks := make(map[callSessionKey]map[string]bool)
-	sessionModels := make(map[callSessionKey]map[string]bool)
-	taskWorkers := make(map[string][]ModelCallLog)
-	workerCalls := make([]workerCallRef, 0)
-
-	counts := CallRecordCounts{}
+func (b *callOutlierBuilder) absorbTasks(tasks []TaskCallLogs) {
 	for _, task := range tasks {
 		for _, log := range task.Logs {
-			counts.Read++
-			switch log.CallType {
-			case CallTypeTask:
-				counts.Task++
-			case CallTypeEvent:
-				counts.Event++
-			case CallTypeProbe:
-				counts.Probe++
-			default:
-				counts.Other++
-			}
-			if log.CallType != CallTypeTask {
-				continue
-			}
-
-			phase := log.Phase
-			if log.Role == WorkerRole {
-				phase = WorkerPhaseCategory(log.Phase)
-				taskWorkers[task.TaskID] = append(taskWorkers[task.TaskID], log)
-				workerCalls = append(workerCalls, workerCallRef{taskID: task.TaskID, log: log})
-			}
-			groupKey := callGroupKey{role: string(log.Role), phase: phase, resumed: log.Resumed}
-			groups[groupKey] = absorbCallGroup(groups[groupKey], log)
-			modelKey := callModelKey{role: string(log.Role), alias: log.ModelAlias}
-			modelSamples[modelKey] = absorbCallGroup(modelSamples[modelKey], log)
-
-			sessionKey := callSessionKey{log.SessionID}
-			session := sessionState[sessionKey]
-			if session == nil {
-				session = &CallSessionDistribution{
-					SessionID: log.SessionID, Role: log.Role,
-					FirstCallAt: log.StartedAt, LastCallAt: log.StartedAt,
-				}
-				sessionState[sessionKey] = session
-				sessionTasks[sessionKey] = make(map[string]bool)
-				sessionModels[sessionKey] = make(map[string]bool)
-			}
-			session.Calls++
-			if log.Resumed {
-				session.ResumedCalls++
-			}
-			sessionTasks[sessionKey][task.TaskID] = true
-			sessionModels[sessionKey][log.ModelAlias] = true
-			session.TurnsTotal += int64(log.TopLevelTurns)
-			session.DurationMSTotal += log.WallDurationMS
-			if log.StartedAt.Before(session.FirstCallAt) {
-				session.FirstCallAt = log.StartedAt
-			}
-			if log.StartedAt.After(session.LastCallAt) {
-				session.LastCallAt = log.StartedAt
-			}
+			b.absorbLog(task.TaskID, log)
 		}
 	}
-	report.Records = counts
+}
 
-	groupTurnsP95 := make(map[callGroupKey]float64)
-	for key, samples := range groups {
+func (b *callOutlierBuilder) absorbLog(taskID string, log ModelCallLog) {
+	b.report.Records.Read++
+	switch log.CallType {
+	case CallTypeTask:
+		b.report.Records.Task++
+	case CallTypeEvent:
+		b.report.Records.Event++
+	case CallTypeProbe:
+		b.report.Records.Probe++
+	default:
+		b.report.Records.Other++
+	}
+	if log.CallType != CallTypeTask {
+		return
+	}
+
+	phase := log.Phase
+	if log.Role == WorkerRole {
+		phase = WorkerPhaseCategory(log.Phase)
+		b.taskWorkers[taskID] = append(b.taskWorkers[taskID], log)
+		b.workerCalls = append(b.workerCalls, workerCallRef{taskID: taskID, log: log})
+	}
+	groupKey := callGroupKey{role: string(log.Role), phase: phase, resumed: log.Resumed}
+	b.groups[groupKey] = absorbCallGroup(b.groups[groupKey], log)
+	modelKey := callModelKey{role: string(log.Role), alias: log.ModelAlias}
+	b.modelSamples[modelKey] = absorbCallGroup(b.modelSamples[modelKey], log)
+	b.absorbSession(taskID, log)
+}
+
+func (b *callOutlierBuilder) absorbSession(taskID string, log ModelCallLog) {
+	key := callSessionKey{log.SessionID}
+	session := b.sessionState[key]
+	if session == nil {
+		session = &CallSessionDistribution{
+			SessionID:   log.SessionID,
+			Role:        log.Role,
+			FirstCallAt: log.StartedAt,
+			LastCallAt:  log.StartedAt,
+		}
+		b.sessionState[key] = session
+		b.sessionTasks[key] = make(map[string]bool)
+		b.sessionModels[key] = make(map[string]bool)
+	}
+	session.Calls++
+	if log.Resumed {
+		session.ResumedCalls++
+	}
+	b.sessionTasks[key][taskID] = true
+	b.sessionModels[key][log.ModelAlias] = true
+	session.TurnsTotal += int64(log.TopLevelTurns)
+	session.DurationMSTotal += log.WallDurationMS
+	if log.StartedAt.Before(session.FirstCallAt) {
+		session.FirstCallAt = log.StartedAt
+	}
+	if log.StartedAt.After(session.LastCallAt) {
+		session.LastCallAt = log.StartedAt
+	}
+}
+
+func (b *callOutlierBuilder) buildGroupDistributions() {
+	eligible := make(map[callGroupKey]float64)
+	for key, samples := range b.groups {
 		turns := callMetricDistribution(samples.turns)
-		durations := callMetricDistribution(samples.durations)
-		report.Distributions = append(report.Distributions, CallGroupDistribution{
+		b.report.Distributions = append(b.report.Distributions, CallGroupDistribution{
 			Role:            key.role,
 			Phase:           key.phase,
 			Resumed:         key.resumed,
 			Calls:           samples.calls,
 			Turns:           turns,
-			DurationMS:      durations,
+			DurationMS:      callMetricDistribution(samples.durations),
 			Models:          samples.models,
 			RawPhases:       samples.rawPhases,
 			Sessions:        len(samples.sessions),
 			OutlierEligible: len(samples.turns) >= CallOutlierMinPopulation,
 		})
 		if key.role == string(WorkerRole) && len(samples.turns) >= CallOutlierMinPopulation {
-			groupTurnsP95[key] = turns.P95
+			eligible[key] = turns.P95
 		}
 	}
+	b.buildOutlierCallsFrom(eligible)
+}
 
-	for _, call := range workerCalls {
+func (b *callOutlierBuilder) buildOutlierCallsFrom(groupTurnsP95 map[callGroupKey]float64) {
+	for _, call := range b.workerCalls {
 		key := callGroupKey{role: string(call.log.Role), phase: WorkerPhaseCategory(call.log.Phase), resumed: call.log.Resumed}
 		p95, ok := groupTurnsP95[key]
 		if !ok || float64(call.log.TopLevelTurns) <= p95 {
 			continue
 		}
-		report.OutlierCalls = append(report.OutlierCalls, CallOutlierObservation{
+		b.report.OutlierCalls = append(b.report.OutlierCalls, CallOutlierObservation{
 			TaskID: call.taskID, CallID: call.log.CallID, Phase: call.log.Phase, GroupPhase: key.phase,
 			Resumed: call.log.Resumed, ModelAlias: call.log.ModelAlias, SessionID: call.log.SessionID,
 			StartedAt: call.log.StartedAt, Turns: int64(call.log.TopLevelTurns), DurationMS: call.log.WallDurationMS,
 			GroupP95Turns: p95,
 		})
 	}
+}
 
-	for key, samples := range modelSamples {
-		report.Models = append(report.Models, CallModelDistribution{
+func (b *callOutlierBuilder) buildModelDistributions() {
+	for key, samples := range b.modelSamples {
+		b.report.Models = append(b.report.Models, CallModelDistribution{
 			Role:       key.role,
 			ModelAlias: key.alias,
 			Calls:      samples.calls,
@@ -310,71 +349,84 @@ func BuildCallOutlierReport(tasks []TaskCallLogs) CallOutlierReport {
 			DurationMS: callMetricDistribution(samples.durations),
 		})
 	}
+}
 
-	for key, session := range sessionState {
-		session.Tasks = len(sessionTasks[key])
-		session.Models = sortedKeys(sessionModels[key])
-		report.Sessions = append(report.Sessions, *session)
+func (b *callOutlierBuilder) buildSessions() {
+	for key, session := range b.sessionState {
+		session.Tasks = len(b.sessionTasks[key])
+		session.Models = sortedKeys(b.sessionModels[key])
+		b.report.Sessions = append(b.report.Sessions, *session)
 	}
+}
 
-	for taskID, logs := range taskWorkers {
-		report.Tasks = append(report.Tasks, buildTaskAmplification(taskID, logs))
+func (b *callOutlierBuilder) buildTaskAmplifications() {
+	for taskID, logs := range b.taskWorkers {
+		b.report.Tasks = append(b.report.Tasks, buildTaskAmplification(taskID, logs))
 	}
+}
 
-	slices.SortFunc(report.Distributions, func(a, b CallGroupDistribution) int {
-		if a.Role != b.Role {
-			return strings.Compare(a.Role, b.Role)
-		}
-		if a.Phase != b.Phase {
-			return strings.Compare(a.Phase, b.Phase)
-		}
-		if a.Resumed != b.Resumed {
-			if !a.Resumed {
-				return -1
-			}
-			return 1
-		}
+func (b *callOutlierBuilder) sortReport() {
+	slices.SortFunc(b.report.Distributions, compareCallGroupDistribution)
+	slices.SortFunc(b.report.Models, compareCallModelDistribution)
+	slices.SortFunc(b.report.Sessions, compareCallSessionDistribution)
+	slices.SortFunc(b.report.Tasks, compareTaskCallAmplification)
+	slices.SortFunc(b.report.OutlierCalls, compareCallOutlierObservation)
+}
+
+func compareCallGroupDistribution(a, b CallGroupDistribution) int {
+	if a.Role != b.Role {
+		return strings.Compare(a.Role, b.Role)
+	}
+	if a.Phase != b.Phase {
+		return strings.Compare(a.Phase, b.Phase)
+	}
+	if a.Resumed == b.Resumed {
 		return 0
-	})
-	slices.SortFunc(report.Models, func(a, b CallModelDistribution) int {
-		if a.Role != b.Role {
-			return strings.Compare(a.Role, b.Role)
-		}
-		return strings.Compare(a.ModelAlias, b.ModelAlias)
-	})
-	slices.SortFunc(report.Sessions, func(a, b CallSessionDistribution) int {
-		if a.FirstCallAt != b.FirstCallAt {
-			if a.FirstCallAt.Before(b.FirstCallAt) {
-				return -1
-			}
-			return 1
-		}
-		return strings.Compare(a.SessionID, b.SessionID)
-	})
-	slices.SortFunc(report.Tasks, func(a, b TaskCallAmplification) int {
-		if a.TurnsTotal != b.TurnsTotal {
-			if a.TurnsTotal > b.TurnsTotal {
-				return -1
-			}
-			return 1
-		}
-		return strings.Compare(a.TaskID, b.TaskID)
-	})
-	slices.SortFunc(report.OutlierCalls, func(a, b CallOutlierObservation) int {
-		if a.Turns != b.Turns {
-			if a.Turns > b.Turns {
-				return -1
-			}
-			return 1
-		}
-		if a.TaskID != b.TaskID {
-			return strings.Compare(a.TaskID, b.TaskID)
-		}
-		return strings.Compare(a.CallID, b.CallID)
-	})
+	}
+	if !a.Resumed {
+		return -1
+	}
+	return 1
+}
 
-	report.OutlierTasks = taskTurnOutliers(report.Tasks)
-	return report
+func compareCallModelDistribution(a, b CallModelDistribution) int {
+	if a.Role != b.Role {
+		return strings.Compare(a.Role, b.Role)
+	}
+	return strings.Compare(a.ModelAlias, b.ModelAlias)
+}
+
+func compareCallSessionDistribution(a, b CallSessionDistribution) int {
+	if a.FirstCallAt.Equal(b.FirstCallAt) {
+		return strings.Compare(a.SessionID, b.SessionID)
+	}
+	if a.FirstCallAt.Before(b.FirstCallAt) {
+		return -1
+	}
+	return 1
+}
+
+func compareTaskCallAmplification(a, b TaskCallAmplification) int {
+	if a.TurnsTotal == b.TurnsTotal {
+		return strings.Compare(a.TaskID, b.TaskID)
+	}
+	if a.TurnsTotal > b.TurnsTotal {
+		return -1
+	}
+	return 1
+}
+
+func compareCallOutlierObservation(a, b CallOutlierObservation) int {
+	if a.Turns != b.Turns {
+		if a.Turns > b.Turns {
+			return -1
+		}
+		return 1
+	}
+	if a.TaskID != b.TaskID {
+		return strings.Compare(a.TaskID, b.TaskID)
+	}
+	return strings.Compare(a.CallID, b.CallID)
 }
 
 func absorbCallGroup(samples *callGroupSamples, log ModelCallLog) *callGroupSamples {
