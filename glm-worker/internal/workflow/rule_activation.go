@@ -263,6 +263,10 @@ func (w *Workflow) appendRuleContext(prompt string, rules []workerRule) (string,
 }
 
 func (w *Workflow) activateCheckpointRules(checkpoint state.ResumeCheckpoint) (state.ResumeCheckpoint, map[workerRule]struct{}, error) {
+	checkpoint, err := w.activateDecisionBoundaryContext(checkpoint)
+	if err != nil {
+		return checkpoint, nil, err
+	}
 	required, err := w.currentRequiredWorkerRules()
 	if err != nil {
 		return checkpoint, nil, err
@@ -417,6 +421,11 @@ PREVIOUS_SOL_DECISION:
 	correction.Phase = fmt.Sprintf("%s-rule-activation-%d", parent.Phase, round)
 	correction.Prompt = prompt
 	correction.OriginalPrompt = prompt
+	correction.DecisionBoundaryApplied = false
+	correction, err = w.activateDecisionBoundaryContext(correction)
+	if err != nil {
+		return state.ResumeCheckpoint{}, err
+	}
 	return correction, nil
 }
 
