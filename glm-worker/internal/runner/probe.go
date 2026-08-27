@@ -42,19 +42,7 @@ func (r *ClaudeRunner) Probe(model string) (ProbeResult, error) {
 		return ProbeResult{}, err
 	}
 
-	args := []string{
-		"-p", "--safe-mode", "--setting-sources", "",
-		"--no-session-persistence",
-		"--model", model,
-		"--effort", "low",
-		"--output-format", "json",
-		"--dangerously-skip-permissions",
-		"--strict-mcp-config",
-		"--mcp-config", `{"mcpServers":{}}`,
-		"--disable-slash-commands",
-		"--tools", "",
-		"--settings", isolationArgs, ProbePrompt,
-	}
+	args := probeArgs(model, isolationArgs)
 
 	probeDir, err := os.MkdirTemp("", "glm-worker-probe-*")
 	if err != nil {
@@ -62,22 +50,9 @@ func (r *ClaudeRunner) Probe(model string) (ProbeResult, error) {
 	}
 	defer func() { _ = os.RemoveAll(probeDir) }()
 
-	rawOutputPath := filepath.Join(probeDir, "probe.json")
-	stderrPath := filepath.Join(probeDir, "probe.stderr")
-	output, err := createPrivateFile(rawOutputPath)
+	output, stderr, devNull, rawOutputPath, stderrPath, err := openProbeFiles(probeDir)
 	if err != nil {
 		return ProbeResult{}, err
-	}
-	stderr, err := createPrivateFile(stderrPath)
-	if err != nil {
-		_ = output.Close()
-		return ProbeResult{}, err
-	}
-	devNull, err := os.Open(os.DevNull)
-	if err != nil {
-		_ = output.Close()
-		_ = stderr.Close()
-		return ProbeResult{}, fmt.Errorf("/dev/nullを開けません: %w", err)
 	}
 	defer func() { _ = devNull.Close() }()
 
@@ -92,28 +67,8 @@ func (r *ClaudeRunner) Probe(model string) (ProbeResult, error) {
 		"CLAUDE_CODE_ALWAYS_ENABLE_EFFORT": "1",
 	}, envDeletes)
 
-	runErr := command.Run()
-	outputCloseErr := output.Close()
-	stderrCloseErr := stderr.Close()
-	if runErr == nil {
-		if outputCloseErr != nil {
-			runErr = outputCloseErr
-		} else if stderrCloseErr != nil {
-			runErr = stderrCloseErr
-		}
-	}
-
-	result := ProbeResult{}
-	parsed, parseErr := parseClaudeJSONResult(rawOutputPath)
-	if parseErr == nil {
-		result.Response = parsed.Result
-		result.IsError = parsed.IsError
-		result.Usage = parsed.Usage
-		result.ModelUsage = parsed.ModelUsage
-		result.DurationMS = parsed.DurationMS
-		result.DurationAPIMS = parsed.DurationAPIMS
-		result.TotalCostUSD = parsed.TotalCostUSD
-	}
+	runErr := closeProbeOutputs(command.Run(), output, stderr)
+	result, parseErr := readProbeResult(rawOutputPath)
 	if runErr != nil {
 		stderrText, _ := os.ReadFile(stderrPath)
 		return result, fmt.Errorf("probe失敗(%s): %w%s", model, runErr, probeDiagnostic(rawOutputPath, stderrPath, stderrText))
@@ -125,6 +80,71 @@ func (r *ClaudeRunner) Probe(model string) (ProbeResult, error) {
 		return result, &ProbeInvalidResponseError{Model: model, Reason: err}
 	}
 	return result, nil
+}
+
+func probeArgs(model, isolationArgs string) []string {
+	return []string{
+		"-p", "--safe-mode", "--setting-sources", "",
+		"--no-session-persistence",
+		"--model", model,
+		"--effort", "low",
+		"--output-format", "json",
+		"--dangerously-skip-permissions",
+		"--strict-mcp-config",
+		"--mcp-config", `{"mcpServers":{}}`,
+		"--disable-slash-commands",
+		"--tools", "",
+		"--settings", isolationArgs, ProbePrompt,
+	}
+}
+
+func openProbeFiles(probeDir string) (output, stderr, devNull *os.File, rawOutputPath, stderrPath string, err error) {
+	rawOutputPath = filepath.Join(probeDir, "probe.json")
+	stderrPath = filepath.Join(probeDir, "probe.stderr")
+	output, err = createPrivateFile(rawOutputPath)
+	if err != nil {
+		return nil, nil, nil, "", "", err
+	}
+	stderr, err = createPrivateFile(stderrPath)
+	if err != nil {
+		_ = output.Close()
+		return nil, nil, nil, "", "", err
+	}
+	devNull, err = os.Open(os.DevNull)
+	if err != nil {
+		_ = output.Close()
+		_ = stderr.Close()
+		return nil, nil, nil, "", "", fmt.Errorf("/dev/nullを開けません: %w", err)
+	}
+	return output, stderr, devNull, rawOutputPath, stderrPath, nil
+}
+
+func closeProbeOutputs(runErr error, output, stderr *os.File) error {
+	outputCloseErr := output.Close()
+	stderrCloseErr := stderr.Close()
+	if runErr != nil {
+		return runErr
+	}
+	if outputCloseErr != nil {
+		return outputCloseErr
+	}
+	return stderrCloseErr
+}
+
+func readProbeResult(rawOutputPath string) (ProbeResult, error) {
+	parsed, err := parseClaudeJSONResult(rawOutputPath)
+	if err != nil {
+		return ProbeResult{}, err
+	}
+	return ProbeResult{
+		Response:      parsed.Result,
+		IsError:       parsed.IsError,
+		Usage:         parsed.Usage,
+		ModelUsage:    parsed.ModelUsage,
+		DurationMS:    parsed.DurationMS,
+		DurationAPIMS: parsed.DurationAPIMS,
+		TotalCostUSD:  parsed.TotalCostUSD,
+	}, nil
 }
 
 func (e *ProbeInvalidResponseError) Error() string {
