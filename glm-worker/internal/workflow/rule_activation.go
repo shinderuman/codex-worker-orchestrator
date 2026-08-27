@@ -98,7 +98,7 @@ func requiredWorkerRules(repoRoot string, paths []string) []workerRule {
 func isTestingRulePath(path string) bool {
 	_, category := IsCriticalPath(path)
 	switch category {
-	case "test", "test-fixture", "test-harness":
+	case "test", testFixturePathCategory, testHarnessPathCategory:
 		return true
 	}
 	lower := strings.ToLower(filepath.ToSlash(path))

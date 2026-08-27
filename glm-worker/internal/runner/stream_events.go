@@ -235,7 +235,15 @@ func workerInstructionReadName(toolName string, input json.RawMessage, instructi
 	if err := json.Unmarshal(input, &parsed); err != nil {
 		return "", false
 	}
-	readPath, err := filepath.Abs(filepath.Clean(parsed.FilePath))
+	name, ok := workerInstructionReadPathName(parsed.FilePath, instructionDir)
+	if !ok {
+		return "", false
+	}
+	return knownWorkerInstructionFile(name)
+}
+
+func workerInstructionReadPathName(filePath, instructionDir string) (string, bool) {
+	readPath, err := filepath.Abs(filepath.Clean(filePath))
 	if err != nil {
 		return "", false
 	}
@@ -244,11 +252,16 @@ func workerInstructionReadName(toolName string, input json.RawMessage, instructi
 		return "", false
 	}
 	relative, err := filepath.Rel(root, readPath)
-	if err != nil || relative == "." || filepath.IsAbs(relative) || relative == ".." ||
-		strings.HasPrefix(relative, ".."+string(filepath.Separator)) || strings.ContainsRune(relative, filepath.Separator) {
+	if err != nil || relative == "." || filepath.IsAbs(relative) || relative == ".." {
 		return "", false
 	}
-	name := filepath.Base(readPath)
+	if strings.HasPrefix(relative, ".."+string(filepath.Separator)) || strings.ContainsRune(relative, filepath.Separator) {
+		return "", false
+	}
+	return filepath.Base(readPath), true
+}
+
+func knownWorkerInstructionFile(name string) (string, bool) {
 	switch name {
 	case "common-code.md", "testing.md", "state-transitions.md", "cli.md",
 		"go.md", "javascript.md", "php.md", "eslint.md":

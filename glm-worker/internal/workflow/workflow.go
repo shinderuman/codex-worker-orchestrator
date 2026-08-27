@@ -413,10 +413,8 @@ func (w *Workflow) prepareResumeCheckpoint(
 	if stopped, err := w.gateResumeSnapshots(checkpoint, pocResume); err != nil || stopped {
 		return checkpoint, stopped, err
 	}
-	if checkpoint.ProviderUnavailable {
-		if err := w.gateResumeOnProbe(checkpoint); err != nil {
-			return checkpoint, false, w.handleResumeProbeError(checkpoint, err)
-		}
+	if err := w.gateResumeProvider(checkpoint); err != nil {
+		return checkpoint, false, err
 	}
 	if checkpoint.Stage == state.ResumeStageReview {
 		if stopped, err := w.verifyReviewResumeSnapshot(checkpoint); err != nil || stopped {
@@ -424,18 +422,37 @@ func (w *Workflow) prepareResumeCheckpoint(
 		}
 	}
 	checkpoint.Prompt = resumePrompt(checkpoint)
-	if checkpoint.Role == state.WorkerRole && !checkpoint.ReportOnly {
-		activatedCheckpoint, _, activationErr := w.activateCheckpointRules(checkpoint)
-		if activationErr != nil {
-			return checkpoint, false, activationErr
-		}
-		checkpoint = activatedCheckpoint
+	activatedCheckpoint, activationErr := w.activateResumeRuleContext(checkpoint)
+	if activationErr != nil {
+		return checkpoint, false, activationErr
 	}
+	checkpoint = activatedCheckpoint
 	if checkpoint.Stage == state.ResumeStageWorker {
 		checkpoint.ReadOnly = decl.pocStage()
 	}
 	clearResumeStopState(&checkpoint)
 	return checkpoint, false, nil
+}
+
+func (w *Workflow) activateResumeRuleContext(checkpoint state.ResumeCheckpoint) (state.ResumeCheckpoint, error) {
+	if checkpoint.Role != state.WorkerRole || checkpoint.ReportOnly {
+		return checkpoint, nil
+	}
+	activated, _, err := w.activateCheckpointRules(checkpoint)
+	if err != nil {
+		return checkpoint, err
+	}
+	return activated, nil
+}
+
+func (w *Workflow) gateResumeProvider(checkpoint state.ResumeCheckpoint) error {
+	if !checkpoint.ProviderUnavailable {
+		return nil
+	}
+	if err := w.gateResumeOnProbe(checkpoint); err != nil {
+		return w.handleResumeProbeError(checkpoint, err)
+	}
+	return nil
 }
 
 func (w *Workflow) activateResume(checkpoint state.ResumeCheckpoint) error {
