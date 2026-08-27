@@ -8,26 +8,13 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/installer-missing-dependency-brew-hint.md`
+- `IMPLEMENTATION_TASKS/010-task-splitting-milestones.md`
 
 ## NEXT（優先順）
-
-- `IMPLEMENTATION_TASKS/instruction-surface-ownership.md`
-- `IMPLEMENTATION_TASKS/unknown-production-surface-risk.md`
-- `IMPLEMENTATION_TASKS/glm-git-authority-enforcement.md`
-- `IMPLEMENTATION_TASKS/quality-evidence-mutation-risk.md`
-- `IMPLEMENTATION_TASKS/deterministic-rule-activation.md`
-- `IMPLEMENTATION_TASKS/sol-decision-boundary-enforcement.md`
-- `IMPLEMENTATION_TASKS/prose-semantic-guard-migration.md`
-- `IMPLEMENTATION_TASKS/instruction-conflict-resolution.md`
-- `IMPLEMENTATION_TASKS/010-task-splitting-milestones.md`
 - `IMPLEMENTATION_TASKS/011-operation-category-telemetry.md`
 - `IMPLEMENTATION_TASKS/012-compaction-threshold-evaluation.md`
 - `IMPLEMENTATION_TASKS/013-worker-model-routing-evaluation.md`
 - `IMPLEMENTATION_TASKS/014-test-impact-evaluation.md`
-- `IMPLEMENTATION_TASKS/016-worker-repo-search-integration.md`
-- `IMPLEMENTATION_TASKS/017-reviewer-diff-first-search.md`
-- `IMPLEMENTATION_TASKS/018-exhaustive-search-gate.md`
 - `IMPLEMENTATION_TASKS/019-repo-search-product-wiring.md`
 - `IMPLEMENTATION_TASKS/020-repo-search-telemetry-eval.md`
 - `IMPLEMENTATION_TASKS/021-conditional-improvements.md`
@@ -49,16 +36,16 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 ## 現在のGit境界
 
 - branch: `main`
-- accepted main baseline: `2c8bf5fe22b529dd446c65bd43b6a2289819730d`
-- implementation boundary: PR #3 `6f08b301e9c4e1444af80c9b9ee646eb778a3baa`でrepository quality linterを導入し、PR #4 `b5a4f2e9fd4a3199470e9df0759c8b969f6813c5`でrepository-wide quality enforcement、PR #5 `21cb94b5f4b9800f8092f2e2f5afc276ad37ae62`でPlan / Tasks / History reconciliation、PR #6 `2c8bf5fe22b529dd446c65bd43b6a2289819730d`で欠落した`branch: main` metadataを復元してmainへSquash Merge済み
+- accepted main baseline before GPT hardening: `815efc8f6601d344a93e8fa213d0227306db1f0d`
+- implementation boundary: PR #3 `6f08b301e9c4e1444af80c9b9ee646eb778a3baa`以降のGPT hardeningでrepository quality enforcement、instruction/authority guard、review/search boundary等を大幅に強化し、F1-F10とF9のhard dependency 016まで完了した。F1 `instruction-surface-ownership`はPR #8 `621a6c6cec384b8ef0488796b6488085a77a6b5d`、F2 `unknown-production-surface-risk`はPR #12 `f33203418c33d85baee34fa69225ef954e7996aa`、F3 `glm-git-authority-enforcement`はPR #13 `627e0dcfa15148a68684c3ff9008a4658c5a2615`、F4 `quality-evidence-mutation-risk`はPR #14 `87af3f4700f5dd8220c582efa62f18f561c33c20`、F5 `deterministic-rule-activation`はPR #15 `9c33ae4784b6cfe33cf63de8d415fac38cad9fae`、F6 `sol-decision-boundary-enforcement`はPR #16 `16d975e02dc37b2279cce441d09bebc85adef3f3`、F7 `prose-semantic-guard-migration`はPR #17 `1b4546548a5089c8160f6f53263ea91fb39a821d`、F8 `instruction-conflict-resolution`はPR #18 `407595e2e2a8a095c16a93624bef57d1b2bb32b3`、016 `worker-repo-search-integration`はPR #22 `da468541683a832b102acecc60770678452e6fa4`、F9 `reviewer-diff-first-search`はPR #19 `948ea31ee4381f4192afeff607c015696349a9a1`、F10 `exhaustive-search-gate`はPR #20 `6633569d2e30acd62470de74b3966bd824cef1af`としてintegration済み
 - preserved boundary: wake coalescing、machine output、safe-stop/resume、provider accounting、parent-managed metadata guard、GLM commit/push禁止、Direct Codex対orchestratedのCodex Reduction / Quality Delta最上位評価を維持
-- current implementation: `gpt/installer-brew-hint-v2`でHomebrew formulaを持つ必須commandの欠落時だけ`brew install <formula>`案内を追加し、既存install smokeへpositive/negative regressionを追加する
-- merge boundary: current implementationはmainへ直接pushせずmain向けPRで停止し、Squash Mergeはユーザーが行う
+- current implementation: GPT hardening campaignは完了。関連改善taskもcampaign中に処理したため通常Planの残件は縮小済み。次の通常taskは`010-task-splitting-milestones.md`だが、GPTだけで大規模変更したHEADのローカル実環境確認が終わるまでは実装を開始しない
+- merge boundary: hardening task PRはintegrationへSquash Mergeしてtask単位commitを作り、最終integration→mainはPR #21で非Squash mergeして各task commit履歴を保持する
 
 ## 現在の停止理由
 
-PR #6はmainへSquash Merge済み。ACTIVE taskのproduction変更と回帰testを専用branchで作成中であり、mainへmergeされるまでlocal accepted-main runtime install / task completionは行わない。
+GPT hardening implementationは完了。通常Plan実装の再開前に、ローカルPCを最新`main`へ更新し、Codexが現在HEAD・Rules・Plan・関連Markdownを読み直したうえでツールの動作確認を行う。確認中はACTIVE 010を実装しない。
 
 ## 次の親Codex操作
 
-current implementation差分をreviewしてmain向けPRとして提示する。ユーザーのSquash Merge後に最新mainをlocalへ同期して`./install.sh`の本配置とinstalled/source一致を確認し、task acceptance成立後にHistory移行・task file削除・Planの次ACTIVE昇格を行う。
+ローカル最新`main`でHEADを正としてルール・Plan・Markdownを再確認し、実際のCodex + GLM workflowが動作するか確認する。懸念や不整合があれば報告だけ行い、修正担当・対応方針はユーザー判断を待つ。問題がなければ確認作業を終了し、その後の通常開発再開時にACTIVE 010からPlanどおり継続する。

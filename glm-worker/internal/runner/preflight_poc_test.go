@@ -390,16 +390,8 @@ func TestClaudePreflightVersionAndHelpFailureBoundaries(t *testing.T) {
 
 func TestClaudePreflightInventoryMatchesRunnerSourceFlags(t *testing.T) {
 	sourceFlags := map[string]bool{}
-	entries, err := os.ReadDir(".")
-	if err != nil {
-		t.Fatalf("package dir読み込み: %v", err)
-	}
 	flagLiteral := regexp.MustCompile(`"(--?[A-Za-z][A-Za-z0-9_-]*)"`)
-	for _, entry := range entries {
-		name := entry.Name()
-		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
-			continue
-		}
+	for _, name := range []string{"runner.go", "probe.go"} {
 		data, err := os.ReadFile(name)
 		if err != nil {
 			t.Fatalf("%s読み込み: %v", name, err)

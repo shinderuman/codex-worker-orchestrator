@@ -38,6 +38,7 @@ type Workflow struct {
 	jitter                func(base time.Duration) time.Duration
 	qualityGate           func(root string) (harnesslint.Report, error)
 	captureQualitySurface func(root string) (string, error)
+	repoSearch            repoSearchFunc
 
 	stop *runner.StopController
 
@@ -45,7 +46,8 @@ type Workflow struct {
 
 	currentResumeSource string
 
-	lastProducer state.ParentReviewProducer
+	lastProducer             state.ParentReviewProducer
+	observedInstructionReads map[string]struct{}
 }
 
 type callDiagnostics struct {
@@ -162,7 +164,12 @@ func (w *Workflow) ExecuteNewTask(request string) error {
 		}
 		pocStage := decl.pocStage()
 
-		prompt := newTaskPrompt(request, activeTaskPath)
+		prompt := w.newWorkerTaskPrompt(request, activeTaskPath)
+		exhaustiveContext, err := w.exhaustiveSearchContext(request, activeTaskPath, state.WorkerRole, 1)
+		if err != nil {
+			return err
+		}
+		prompt += exhaustiveContext
 		checkpoint := state.ResumeCheckpoint{
 			Stage:          state.ResumeStageWorker,
 			Phase:          "worker-new",
@@ -275,7 +282,7 @@ func (w *Workflow) ExecuteDecision(decision string) error {
 			Request:        request,
 			Decision:       decision,
 		}
-		return w.executeWorkerCheckpoint(request, checkpoint, pocStage)
+		return w.executeWorkerCheckpointWithExhaustiveContext(request, activeTaskPath, checkpoint, pocStage)
 	}))
 }
 
@@ -327,7 +334,7 @@ func (w *Workflow) ExecuteExplicitFix(instruction, origin string) error {
 			Request:        request,
 			Decision:       decision,
 		}
-		return w.executeWorkerCheckpoint(request, checkpoint, pocStage)
+		return w.executeWorkerCheckpointWithExhaustiveContext(request, activeTaskPath, checkpoint, pocStage)
 	}))
 }
 
@@ -339,7 +346,7 @@ func (w *Workflow) executeWorkerCheckpoint(request string, checkpoint state.Resu
 		}
 	}
 
-	workerResult, err := w.runModel(checkpoint)
+	workerResult, err := w.runWorkerModelWithRuleActivation(checkpoint)
 	if err != nil {
 		return err
 	}
@@ -370,6 +377,7 @@ func (w *Workflow) executeResume() error {
 		return err
 	}
 
+	w.resetInstructionReadObservation()
 	result, err := w.runModel(checkpoint)
 	if err != nil {
 		return w.handleResumeRunError(checkpoint, previousCheckpoint, err)
@@ -411,10 +419,8 @@ func (w *Workflow) prepareResumeCheckpoint(
 	if stopped, err := w.gateResumeSnapshots(checkpoint, pocResume); err != nil || stopped {
 		return checkpoint, stopped, err
 	}
-	if checkpoint.ProviderUnavailable {
-		if err := w.gateResumeOnProbe(checkpoint); err != nil {
-			return checkpoint, false, w.handleResumeProbeError(checkpoint, err)
-		}
+	if err := w.gateResumeProvider(checkpoint); err != nil {
+		return checkpoint, false, err
 	}
 	if checkpoint.Stage == state.ResumeStageReview {
 		if stopped, err := w.verifyReviewResumeSnapshot(checkpoint); err != nil || stopped {
@@ -422,11 +428,37 @@ func (w *Workflow) prepareResumeCheckpoint(
 		}
 	}
 	checkpoint.Prompt = resumePrompt(checkpoint)
+	activatedCheckpoint, activationErr := w.activateResumeRuleContext(checkpoint)
+	if activationErr != nil {
+		return checkpoint, false, activationErr
+	}
+	checkpoint = activatedCheckpoint
 	if checkpoint.Stage == state.ResumeStageWorker {
 		checkpoint.ReadOnly = decl.pocStage()
 	}
 	clearResumeStopState(&checkpoint)
 	return checkpoint, false, nil
+}
+
+func (w *Workflow) activateResumeRuleContext(checkpoint state.ResumeCheckpoint) (state.ResumeCheckpoint, error) {
+	if checkpoint.Role != state.WorkerRole || checkpoint.ReportOnly {
+		return checkpoint, nil
+	}
+	activated, _, err := w.activateCheckpointRules(checkpoint)
+	if err != nil {
+		return checkpoint, err
+	}
+	return activated, nil
+}
+
+func (w *Workflow) gateResumeProvider(checkpoint state.ResumeCheckpoint) error {
+	if !checkpoint.ProviderUnavailable {
+		return nil
+	}
+	if err := w.gateResumeOnProbe(checkpoint); err != nil {
+		return w.handleResumeProbeError(checkpoint, err)
+	}
+	return nil
 }
 
 func (w *Workflow) activateResume(checkpoint state.ResumeCheckpoint) error {
@@ -561,6 +593,10 @@ func (w *Workflow) routeWorkerResumeResult(
 			return w.routePoCWorkerResult(result)
 		}
 	}
+	result, err := w.convergeWorkerRuleActivation(checkpoint, result, w.activatedRulesForCheckpoint(checkpoint))
+	if err != nil {
+		return err
+	}
 	return w.handleWorkerResult(checkpoint.Request, result, checkpoint.Phase)
 }
 
@@ -612,6 +648,13 @@ func (w *Workflow) resolveResumedReviewResult(
 func (w *Workflow) routeAutoFixResumeResult(checkpoint state.ResumeCheckpoint, result packet.Result) error {
 	if checkpoint.ReportOnly {
 		if stopped, err := w.verifyReportOnlyEndSnapshot(); err != nil || stopped {
+			return err
+		}
+	}
+	if !checkpoint.ReportOnly {
+		var err error
+		result, err = w.convergeWorkerRuleActivation(checkpoint, result, w.activatedRulesForCheckpoint(checkpoint))
+		if err != nil {
 			return err
 		}
 	}
@@ -740,14 +783,25 @@ func (w *Workflow) buildReviewCheckpoint(
 	if err != nil {
 		return state.ResumeCheckpoint{}, "", false, err
 	}
+	reviewNavigation := w.reviewerDiffFirstContext(request, reviewNumber)
+	exhaustiveNavigation, err := w.exhaustiveSearchContext(request, activeTaskPath, state.ReviewerRole, reviewNumber+1)
+	if err != nil {
+		return state.ResumeCheckpoint{}, "", false, err
+	}
+	reviewNavigation += exhaustiveNavigation
 	prompt := reviewerPrompt(
 		request,
 		decision,
 		workerReport,
 		reviewNumber,
 		w.state.BaselineDescription(),
+		reviewNavigation,
 		activeTaskPath,
 	)
+	prompt, err = w.withCurrentRuleContext(prompt)
+	if err != nil {
+		return state.ResumeCheckpoint{}, "", false, err
+	}
 	return state.ResumeCheckpoint{
 		Stage:               state.ResumeStageReview,
 		Phase:               phase,
@@ -877,6 +931,11 @@ func (w *Workflow) prepareAutoFixCheckpoint(
 		prompt = reportOnlyFixPrompt(request, decision, reviewReport, activeTaskPath)
 		phase = fmt.Sprintf("worker-report-only-%d", nextAutoFixes)
 	}
+	exhaustiveContext, err := w.exhaustiveSearchContext(request, activeTaskPath, state.WorkerRole, nextAutoFixes)
+	if err != nil {
+		return state.ResumeCheckpoint{}, err
+	}
+	prompt += exhaustiveContext
 	return state.ResumeCheckpoint{
 		Stage:          state.ResumeStageAutoFix,
 		Phase:          phase,
@@ -902,7 +961,7 @@ func (w *Workflow) runAutoFixCheckpoint(checkpoint state.ResumeCheckpoint) (pack
 		}
 	}
 
-	fixResult, err := w.runModel(checkpoint)
+	fixResult, err := w.runWorkerModelWithRuleActivation(checkpoint)
 	if err != nil {
 		return packet.Result{}, false, err
 	}
@@ -927,8 +986,8 @@ func riskLabel(high bool) string {
 }
 
 func (w *Workflow) computeEffectiveRisk(workerResult packet.Result, autoFixes int, hasDecision bool, hasPriorReview bool) effectiveRisk {
-	sp := w.selfProtectionNow()
-	if !reviewNeedsHighRiskFloor(workerResult, autoFixes, hasDecision, hasPriorReview) && !sp.High {
+	sp, qe := w.riskSurfaceDecisions()
+	if !reviewNeedsHighRiskFloor(workerResult, autoFixes, hasDecision, hasPriorReview) && !sp.High && !qe.High {
 		return effectiveRisk{high: false}
 	}
 	var sources []string
@@ -947,16 +1006,24 @@ func (w *Workflow) computeEffectiveRisk(workerResult packet.Result, autoFixes in
 	if sp.High {
 		sources = append(sources, "self-protection:"+sp.Source)
 	}
+	if qe.High {
+		sources = append(sources, "quality-evidence:"+qe.Source)
+	}
 	return effectiveRisk{high: true, source: strings.Join(sources, ";")}
 }
 
-func (w *Workflow) selfProtectionNow() selfProtectionDecision {
+func (w *Workflow) riskSurfaceDecisions() (selfProtectionDecision, qualityEvidenceDecision) {
 	baselineHead, _ := w.state.Read("baseline-head")
 	paths, err := w.collectChangedPaths(w.config.RepoRoot, baselineHead)
 	if err != nil {
-		return selfProtectionDecision{High: true, Source: "classify-error", HitPath: err.Error()}
+		return selfProtectionDecision{High: true, Source: "classify-error", HitPath: err.Error()}, qualityEvidenceDecision{}
 	}
-	return classifySelfProtection(paths)
+	sp := classifySelfProtection(paths)
+	qe, err := classifyQualityEvidence(w.config.RepoRoot, baselineHead, paths)
+	if err != nil {
+		qe = qualityEvidenceDecision{High: true, Source: "classify-error", HitPath: err.Error()}
+	}
+	return sp, qe
 }
 
 func (w *Workflow) resolveReviewResumeRisk(workerResult packet.Result, checkpoint state.ResumeCheckpoint) effectiveRisk {
@@ -1027,6 +1094,7 @@ func (w *Workflow) runModel(checkpoint state.ResumeCheckpoint) (packet.Result, e
 	if err != nil {
 		return packet.Result{}, err
 	}
+	w.observeInstructionReads(execution.runResult.InstructionReads)
 	if err := w.finalizeModelCallState(checkpoint, outputPath, execution); err != nil {
 		return packet.Result{}, err
 	}
