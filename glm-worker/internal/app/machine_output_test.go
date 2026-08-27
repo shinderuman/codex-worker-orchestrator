@@ -13,6 +13,11 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
+type releasableMachineOutput interface {
+	Write([]byte) (int, error)
+	release() error
+}
+
 func TestSingleShotOutputReleasesExactlyOneJSONObject(t *testing.T) {
 	var target bytes.Buffer
 	output := newSingleShotOutput(&target)
@@ -45,53 +50,17 @@ func TestSingleShotOutputReleaseRejectsContractViolations(t *testing.T) {
 	}
 	for name, rendered := range cases {
 		t.Run(name, func(t *testing.T) {
-			var target bytes.Buffer
-			output := newSingleShotOutput(&target)
-			if _, err := output.Write([]byte(rendered)); err != nil {
-				t.Fatal(err)
-			}
-			err := output.release()
-			if err == nil {
-				t.Fatalf("契約違反出力がreleaseされました: %q", rendered)
-			}
-			var violation *MachineOutputViolationError
-			if !errors.As(err, &violation) {
-				t.Fatalf("release errorがMachineOutputViolationErrorではありません: %v", err)
-			}
-			if target.Len() != 0 {
-				t.Fatalf("違反出力が対象stdoutへ漏れています: %q", target.String())
-			}
+			assertMachineOutputRejected(t, rendered, func(target *bytes.Buffer) releasableMachineOutput {
+				return newSingleShotOutput(target)
+			})
 		})
 	}
 }
 
 func TestSingleShotOutputRejectsSubprocessWiredToMachineStdout(t *testing.T) {
-	if _, err := exec.LookPath("go"); err != nil {
-		t.Skipf("go commandがないためsubprocess再現をskipします: %v", err)
-	}
-
-	var target bytes.Buffer
-	output := newSingleShotOutput(&target)
-	leak := exec.Command("go", "version")
-	leak.Stdout = output
-	leak.Stderr = output
-	if err := leak.Run(); err != nil {
-		t.Fatal(err)
-	}
-	releaseErr := output.release()
-	if releaseErr == nil {
-		t.Fatalf("subprocess textの直結出力がreleaseされました: %q", target.String())
-	}
-	var violation *MachineOutputViolationError
-	if !errors.As(releaseErr, &violation) {
-		t.Fatalf("release errorがMachineOutputViolationErrorではありません: %v", releaseErr)
-	}
-	if target.Len() != 0 {
-		t.Fatalf("subprocessのtextがmachine stdoutへ漏れています: %q", target.String())
-	}
-	if violation.HeldBytes == 0 {
-		t.Fatalf("違反errorが保留byte数を保持していません: %v", violation)
-	}
+	assertSubprocessOutputRejected(t, func(target *bytes.Buffer) releasableMachineOutput {
+		return newSingleShotOutput(target)
+	})
 }
 
 func TestSingleShotOutputRejectsSubprocessTextAfterSerializedJSON(t *testing.T) {
@@ -170,49 +139,63 @@ func TestStructuredLinesOutputReleaseRejectsContractViolations(t *testing.T) {
 	}
 	for name, rendered := range cases {
 		t.Run(name, func(t *testing.T) {
-			var target bytes.Buffer
-			diagnostics := newStructuredLinesOutput(&target)
-			if _, err := diagnostics.Write([]byte(rendered)); err != nil {
-				t.Fatal(err)
-			}
-			err := diagnostics.release()
-			if err == nil {
-				t.Fatalf("契約違反stderrがreleaseされました: %q", rendered)
-			}
-			var violation *MachineOutputViolationError
-			if !errors.As(err, &violation) {
-				t.Fatalf("release errorがMachineOutputViolationErrorではありません: %v", err)
-			}
-			if target.Len() != 0 {
-				t.Fatalf("違反stderrが対象stderrへ漏れています: %q", target.String())
-			}
+			assertMachineOutputRejected(t, rendered, func(target *bytes.Buffer) releasableMachineOutput {
+				return newStructuredLinesOutput(target)
+			})
 		})
 	}
 }
 
+func assertMachineOutputRejected(t *testing.T, rendered string, newOutput func(*bytes.Buffer) releasableMachineOutput) {
+	t.Helper()
+	var target bytes.Buffer
+	output := newOutput(&target)
+	if _, err := output.Write([]byte(rendered)); err != nil {
+		t.Fatal(err)
+	}
+	err := output.release()
+	if err == nil {
+		t.Fatalf("契約違反出力がreleaseされました: %q", rendered)
+	}
+	var violation *MachineOutputViolationError
+	if !errors.As(err, &violation) {
+		t.Fatalf("release errorがMachineOutputViolationErrorではありません: %v", err)
+	}
+	if target.Len() != 0 {
+		t.Fatalf("違反出力が対象streamへ漏れています: %q", target.String())
+	}
+}
+
 func TestStructuredLinesOutputRejectsSubprocessWiredToMachineStderrOnSuccessExit(t *testing.T) {
+	assertSubprocessOutputRejected(t, func(target *bytes.Buffer) releasableMachineOutput {
+		return newStructuredLinesOutput(target)
+	})
+}
+
+func assertSubprocessOutputRejected(t *testing.T, newOutput func(*bytes.Buffer) releasableMachineOutput) {
+	t.Helper()
 	if _, err := exec.LookPath("go"); err != nil {
 		t.Skipf("go commandがないためsubprocess再現をskipします: %v", err)
 	}
 
 	var target bytes.Buffer
-	diagnostics := newStructuredLinesOutput(&target)
+	output := newOutput(&target)
 	leak := exec.Command("go", "version")
-	leak.Stdout = diagnostics
-	leak.Stderr = diagnostics
+	leak.Stdout = output
+	leak.Stderr = output
 	if err := leak.Run(); err != nil {
 		t.Fatal(err)
 	}
-	releaseErr := diagnostics.release()
+	releaseErr := output.release()
 	if releaseErr == nil {
-		t.Fatalf("subprocess textの直結stderrがreleaseされました: %q", target.String())
+		t.Fatalf("subprocess textの直結出力がreleaseされました: %q", target.String())
 	}
 	var violation *MachineOutputViolationError
 	if !errors.As(releaseErr, &violation) {
 		t.Fatalf("release errorがMachineOutputViolationErrorではありません: %v", releaseErr)
 	}
 	if target.Len() != 0 {
-		t.Fatalf("subprocessのtextがmachine stderrへ漏れています: %q", target.String())
+		t.Fatalf("subprocessのtextがmachine streamへ漏れています: %q", target.String())
 	}
 	if violation.HeldBytes == 0 {
 		t.Fatalf("違反errorが保留byte数を保持していません: %v", violation)
