@@ -254,31 +254,14 @@ func (w *Workflow) captureParentFileGuard(role state.SessionRole) (parentFileGua
 		return parentFileGuard{}, true, w.failClosedParentFileGuard("parent-metadata-capture", parentMetadataGuardSurface, parentMetadataGuardSurface.unavailableOutcome(), "plan file baseline取得失敗のため不変性を確認できません", err)
 	}
 	if !plan.Exists {
-		tracking, trackErr := classifyParentFileTracking(w.config.RepoRoot, implementationPlanFile)
-		switch {
-		case trackErr != nil:
-			return parentFileGuard{}, true, w.failClosedParentFileGuard("parent-metadata-capture", parentMetadataGuardSurface, parentMetadataGuardSurface.unavailableOutcome(), "plan fileのGit追跡判定に失敗したため欠損を安全に扱えません", trackErr)
-		case tracking == parentFileTrackingTracked:
-			return parentFileGuard{}, true, w.failClosedParentFileGuard("parent-metadata-capture", parentMetadataGuardSurface, parentMetadataGuardSurface.missingOutcome(), "Git indexで追跡されている"+implementationPlanFile+"がworking treeへ存在しません", nil)
-		}
-
-		return parentFileGuard{files: state.ParentFileStates{{Path: implementationPlanFile}}, guarded: true, planOnly: true}, false, nil
+		return w.captureMissingPlanGuard()
 	}
 	states, err := readParentFileStates(w.config.RepoRoot)
 	if err != nil {
 		return parentFileGuard{}, true, w.failClosedParentFileGuard("parent-metadata-capture", parentMetadataGuardSurface, parentMetadataGuardSurface.unavailableOutcome(), "親管理metadata baseline取得失敗のため不変性を確認できません", err)
 	}
-	for _, name := range []string{implementationRulesFile, implementationHistoryFile} {
-		if state.FindParentFileState(states, name).Exists {
-			continue
-		}
-		tracking, trackErr := classifyParentFileTracking(w.config.RepoRoot, name)
-		switch {
-		case trackErr != nil:
-			return parentFileGuard{}, true, w.failClosedParentFileGuard("parent-metadata-capture", parentMetadataGuardSurface, parentMetadataGuardSurface.unavailableOutcome(), name+"のGit追跡判定に失敗したため欠損を安全に扱えません", trackErr)
-		case tracking == parentFileTrackingTracked:
-			return parentFileGuard{}, true, w.failClosedParentFileGuard("parent-metadata-capture", parentMetadataGuardSurface, parentMetadataGuardSurface.missingOutcome(), "Git indexで追跡されている"+name+"がworking treeへ存在しません", nil)
-		}
+	if err := w.verifyRequiredParentFilesPresent(states); err != nil {
+		return parentFileGuard{}, true, err
 	}
 	missing, err := missingTrackedTaskFiles(w.config.RepoRoot, states)
 	if err != nil {
@@ -291,6 +274,33 @@ func (w *Workflow) captureParentFileGuard(role state.SessionRole) (parentFileGua
 		return parentFileGuard{}, true, w.failClosedParentFileGuard("parent-metadata-capture", parentMetadataGuardSurface, parentMetadataGuardSurface.missingOutcome(), "task開始時に固定したACTIVE task file "+activePath+"がworking treeへ存在しません", nil)
 	}
 	return parentFileGuard{files: states, guarded: true}, false, nil
+}
+
+func (w *Workflow) captureMissingPlanGuard() (parentFileGuard, bool, error) {
+	tracking, err := classifyParentFileTracking(w.config.RepoRoot, implementationPlanFile)
+	if err != nil {
+		return parentFileGuard{}, true, w.failClosedParentFileGuard("parent-metadata-capture", parentMetadataGuardSurface, parentMetadataGuardSurface.unavailableOutcome(), "plan fileのGit追跡判定に失敗したため欠損を安全に扱えません", err)
+	}
+	if tracking == parentFileTrackingTracked {
+		return parentFileGuard{}, true, w.failClosedParentFileGuard("parent-metadata-capture", parentMetadataGuardSurface, parentMetadataGuardSurface.missingOutcome(), "Git indexで追跡されている"+implementationPlanFile+"がworking treeへ存在しません", nil)
+	}
+	return parentFileGuard{files: state.ParentFileStates{{Path: implementationPlanFile}}, guarded: true, planOnly: true}, false, nil
+}
+
+func (w *Workflow) verifyRequiredParentFilesPresent(states state.ParentFileStates) error {
+	for _, name := range []string{implementationRulesFile, implementationHistoryFile} {
+		if state.FindParentFileState(states, name).Exists {
+			continue
+		}
+		tracking, err := classifyParentFileTracking(w.config.RepoRoot, name)
+		if err != nil {
+			return w.failClosedParentFileGuard("parent-metadata-capture", parentMetadataGuardSurface, parentMetadataGuardSurface.unavailableOutcome(), name+"のGit追跡判定に失敗したため欠損を安全に扱えません", err)
+		}
+		if tracking == parentFileTrackingTracked {
+			return w.failClosedParentFileGuard("parent-metadata-capture", parentMetadataGuardSurface, parentMetadataGuardSurface.missingOutcome(), "Git indexで追跡されている"+name+"がworking treeへ存在しません", nil)
+		}
+	}
+	return nil
 }
 
 func (w *Workflow) verifyParentFileAfterCall(
