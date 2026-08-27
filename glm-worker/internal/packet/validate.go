@@ -103,32 +103,46 @@ func validateTargets(result Result) error {
 	seen := make(map[string]struct{}, len(result.Targets))
 	hasNone := false
 	for _, element := range result.Targets {
-		trimmed := strings.TrimSpace(element)
-		if trimmed == "" {
-			return &constraintError{reason: "TARGETSの要素は空・空白のみにできません: 具体対象または予約値none/PACKETを指定してください"}
+		isNone, err := validateTargetElement(result, element, seen)
+		if err != nil {
+			return err
 		}
-		if _, duplicate := seen[trimmed]; duplicate {
-			return &constraintError{reason: "TARGETSの要素が重複しています: 各対象は1回だけ指定してください"}
-		}
-		seen[trimmed] = struct{}{}
-		if strings.EqualFold(trimmed, noneTargetsSentinel) {
-			if element != noneTargetsSentinel {
-				return &constraintError{reason: "TARGETSの予約値noneは小文字厳密表現のnoneだけを要素にできます: 大小文字・空白の変形は使えません"}
-			}
-			hasNone = true
-		}
-		if strings.EqualFold(trimmed, ReportOnlyTargets) &&
-			(result.Status != StatusFixRequired || element != ReportOnlyTargets || len(result.Targets) != 1) {
-			return &constraintError{reason: "TARGETSの予約値PACKETはFIX_REQUIREDの報告再出力専用です: 実装修正では具体対象を指定してください"}
-		}
+		hasNone = hasNone || isNone
 	}
-	if hasNone {
-		if len(result.Targets) > 1 {
-			return &constraintError{reason: "TARGETSの予約値noneは具体対象と混在できません: 対象が概念的なときはnoneだけを要素にしてください"}
+	return validateNoneTarget(result, hasNone)
+}
+
+func validateTargetElement(result Result, element string, seen map[string]struct{}) (bool, error) {
+	trimmed := strings.TrimSpace(element)
+	if trimmed == "" {
+		return false, &constraintError{reason: "TARGETSの要素は空・空白のみにできません: 具体対象または予約値none/PACKETを指定してください"}
+	}
+	if _, duplicate := seen[trimmed]; duplicate {
+		return false, &constraintError{reason: "TARGETSの要素が重複しています: 各対象は1回だけ指定してください"}
+	}
+	seen[trimmed] = struct{}{}
+	if strings.EqualFold(trimmed, noneTargetsSentinel) {
+		if element != noneTargetsSentinel {
+			return false, &constraintError{reason: "TARGETSの予約値noneは小文字厳密表現のnoneだけを要素にできます: 大小文字・空白の変形は使えません"}
 		}
-		if result.Status == StatusNeedsSolReview {
-			return &constraintError{reason: "NEEDS_SOL_REVIEWのTARGETSはnoneにできません: Solが読むべき最小対象をfile:symbol/行範囲で指定してください"}
-		}
+		return true, nil
+	}
+	if strings.EqualFold(trimmed, ReportOnlyTargets) &&
+		(result.Status != StatusFixRequired || element != ReportOnlyTargets || len(result.Targets) != 1) {
+		return false, &constraintError{reason: "TARGETSの予約値PACKETはFIX_REQUIREDの報告再出力専用です: 実装修正では具体対象を指定してください"}
+	}
+	return false, nil
+}
+
+func validateNoneTarget(result Result, hasNone bool) error {
+	if !hasNone {
+		return nil
+	}
+	if len(result.Targets) > 1 {
+		return &constraintError{reason: "TARGETSの予約値noneは具体対象と混在できません: 対象が概念的なときはnoneだけを要素にしてください"}
+	}
+	if result.Status == StatusNeedsSolReview {
+		return &constraintError{reason: "NEEDS_SOL_REVIEWのTARGETSはnoneにできません: Solが読むべき最小対象をfile:symbol/行範囲で指定してください"}
 	}
 	return nil
 }
@@ -176,28 +190,35 @@ func ValidateArtifacts(artifacts []string, root string) error {
 	}
 	seen := make(map[string]struct{})
 	for _, path := range artifacts {
-		if path == "" || !filepath.IsAbs(path) || filepath.Clean(path) != path {
-			return &constraintError{reason: fmt.Sprintf("ARTIFACTSは正規化済み絶対パスを指定してください: %q", path)}
+		if err := validateArtifactPath(path, root, resolvedRoot, seen); err != nil {
+			return err
 		}
-		if !pathWithinRoot(root, path) {
-			return &constraintError{reason: fmt.Sprintf("ARTIFACTSは現在taskのartifact dir配下だけを指定してください: %s", path)}
-		}
-		if _, exists := seen[path]; exists {
-			return &constraintError{reason: fmt.Sprintf("ARTIFACTSのパスが重複しています: %s", path)}
-		}
-		seen[path] = struct{}{}
+	}
+	return nil
+}
 
-		info, err := os.Lstat(path)
-		if err != nil {
-			return &constraintError{reason: fmt.Sprintf("ARTIFACTSのファイルを確認できません: %s: %v", path, err)}
-		}
-		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
-			return &constraintError{reason: fmt.Sprintf("ARTIFACTSは実在する通常ファイルだけを指定してください: %s", path)}
-		}
-		resolvedPath, err := filepath.EvalSymlinks(path)
-		if err != nil || !pathWithinRoot(resolvedRoot, resolvedPath) {
-			return &constraintError{reason: fmt.Sprintf("ARTIFACTSの解決先がartifact dir外です: %s", path)}
-		}
+func validateArtifactPath(path, root, resolvedRoot string, seen map[string]struct{}) error {
+	if path == "" || !filepath.IsAbs(path) || filepath.Clean(path) != path {
+		return &constraintError{reason: fmt.Sprintf("ARTIFACTSは正規化済み絶対パスを指定してください: %q", path)}
+	}
+	if !pathWithinRoot(root, path) {
+		return &constraintError{reason: fmt.Sprintf("ARTIFACTSは現在taskのartifact dir配下だけを指定してください: %s", path)}
+	}
+	if _, exists := seen[path]; exists {
+		return &constraintError{reason: fmt.Sprintf("ARTIFACTSのパスが重複しています: %s", path)}
+	}
+	seen[path] = struct{}{}
+
+	info, err := os.Lstat(path)
+	if err != nil {
+		return &constraintError{reason: fmt.Sprintf("ARTIFACTSのファイルを確認できません: %s: %v", path, err)}
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return &constraintError{reason: fmt.Sprintf("ARTIFACTSは実在する通常ファイルだけを指定してください: %s", path)}
+	}
+	resolvedPath, err := filepath.EvalSymlinks(path)
+	if err != nil || !pathWithinRoot(resolvedRoot, resolvedPath) {
+		return &constraintError{reason: fmt.Sprintf("ARTIFACTSの解決先がartifact dir外です: %s", path)}
 	}
 	return nil
 }
