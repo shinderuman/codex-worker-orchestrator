@@ -17,68 +17,55 @@ jobs:
           fetch-depth: 0
       - name: Refactor guard without behavior change
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
+          perl -0pi -e 's/\t"strconv"\n//' glm-worker/internal/runner/git_authority_guard.go
+          python3 -c 'from pathlib import Path; p=Path("glm-worker/internal/runner/git_authority_guard.go"); s=p.read_text(); a=s.index("func (g *gitAuthorityGuard) applyChildEnv"); b=s.index("func (g *gitAuthorityGuard) verify()", a); p.write_text(s[:a]+s[b:])'
+          cat > /tmp/verify.go <<'EOF'
+          func (g *gitAuthorityGuard) verify() error {
+          	if g == nil || !g.before.active {
+          		return nil
+          	}
+          	attempts, err := readGitAuthorityAttempts(g.attemptLog)
+          	if err != nil {
+          		return &GitAuthorityGuardError{Stage: "read-blocked-attempts", Cause: err}
+          	}
+          	after, err := captureGitAuthoritySnapshot(g.realGit, g.repoRoot)
+          	if err != nil {
+          		return &GitAuthorityGuardError{Stage: "capture-after-call", Mutations: attempts, Cause: err}
+          	}
+          	snapshotMutations := gitAuthoritySnapshotMutations(g.before, after)
+          	mutations := append(append([]string(nil), attempts...), snapshotMutations...)
+          	mutations = uniqueSortedStrings(mutations)
+          	if len(mutations) == 0 {
+          		return nil
+          	}
+          	stage := "blocked-command"
+          	if len(snapshotMutations) > 0 {
+          		stage = "after-call-mutation"
+          	}
+          	return &GitAuthorityGuardError{Stage: stage, Mutations: mutations}
+          }
 
-          path = Path('glm-worker/internal/runner/git_authority_guard.go')
-          text = path.read_text()
-          text = text.replace('\t"strconv"\n', '', 1)
-
-          start = text.index('func (g *gitAuthorityGuard) applyChildEnv')
-          end = text.index('func (g *gitAuthorityGuard) verify()', start)
-          text = text[:start] + text[end:]
-
-          verify_start = text.index('func (g *gitAuthorityGuard) verify()')
-          cleanup_start = text.index('func (g *gitAuthorityGuard) cleanup()', verify_start)
-          replacement = '''func (g *gitAuthorityGuard) verify() error {
-\tif g == nil || !g.before.active {
-\t\treturn nil
-\t}
-\tattempts, err := readGitAuthorityAttempts(g.attemptLog)
-\tif err != nil {
-\t\treturn &GitAuthorityGuardError{Stage: "read-blocked-attempts", Cause: err}
-\t}
-\tafter, err := captureGitAuthoritySnapshot(g.realGit, g.repoRoot)
-\tif err != nil {
-\t\treturn &GitAuthorityGuardError{Stage: "capture-after-call", Mutations: attempts, Cause: err}
-\t}
-\tsnapshotMutations := gitAuthoritySnapshotMutations(g.before, after)
-\tmutations := append(append([]string(nil), attempts...), snapshotMutations...)
-\tmutations = uniqueSortedStrings(mutations)
-\tif len(mutations) == 0 {
-\t\treturn nil
-\t}
-\tstage := "blocked-command"
-\tif len(snapshotMutations) > 0 {
-\t\tstage = "after-call-mutation"
-\t}
-\treturn &GitAuthorityGuardError{Stage: stage, Mutations: mutations}
-}
-
-func gitAuthoritySnapshotMutations(before, after gitAuthoritySnapshot) []string {
-\tmutations := make([]string, 0, 5)
-\tif before.head != after.head {
-\t\tmutations = append(mutations, "HEAD")
-\t}
-\tif before.symbolicHead != after.symbolicHead {
-\t\tmutations = append(mutations, "symbolic-HEAD")
-\t}
-\tif before.refsDigest != after.refsDigest {
-\t\tmutations = append(mutations, "refs")
-\t}
-\tif before.indexDigest != after.indexDigest {
-\t\tmutations = append(mutations, "index")
-\t}
-\tif before.configDigest != after.configDigest {
-\t\tmutations = append(mutations, "local-config")
-\t}
-\treturn mutations
-}
-
-'''
-          text = text[:verify_start] + replacement + text[cleanup_start:]
-          path.write_text(text)
-          PY
+          func gitAuthoritySnapshotMutations(before, after gitAuthoritySnapshot) []string {
+          	mutations := make([]string, 0, 5)
+          	if before.head != after.head {
+          		mutations = append(mutations, "HEAD")
+          	}
+          	if before.symbolicHead != after.symbolicHead {
+          		mutations = append(mutations, "symbolic-HEAD")
+          	}
+          	if before.refsDigest != after.refsDigest {
+          		mutations = append(mutations, "refs")
+          	}
+          	if before.indexDigest != after.indexDigest {
+          		mutations = append(mutations, "index")
+          	}
+          	if before.configDigest != after.configDigest {
+          		mutations = append(mutations, "local-config")
+          	}
+          	return mutations
+          }
+          EOF
+          python3 -c 'from pathlib import Path; p=Path("glm-worker/internal/runner/git_authority_guard.go"); s=p.read_text(); a=s.index("func (g *gitAuthorityGuard) verify()"); b=s.index("func (g *gitAuthorityGuard) cleanup()", a); r=Path("/tmp/verify.go").read_text()+"\n"; p.write_text(s[:a]+r+s[b:])'
           gofmt -w glm-worker/internal/runner/git_authority_guard.go
       - uses: actions/setup-go@v7
         with:
