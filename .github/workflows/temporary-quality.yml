@@ -21,6 +21,9 @@ jobs:
           if ! git diff-tree --no-commit-id --name-only -r "$GITHUB_SHA" | grep -qx '.gpt-checkpoints/quality-progress.ready'; then
             exit 0
           fi
+          if [ ! -f .gpt-checkpoints/quality-progress.ready ]; then
+            exit 0
+          fi
           generation="$(tr -d '\r\n' < .gpt-checkpoints/quality-progress.ready)"
           case "$generation" in
             *[!A-Za-z0-9._-]*|'') echo 'invalid checkpoint generation' >&2; exit 1 ;;
@@ -47,7 +50,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y shellcheck
           go install mvdan.cc/sh/v3/cmd/shfmt@v3.12.0
-          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s -- -b "$(go env GOPATH)/bin" v2.4.0
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s -- -b "$(go env GOPATH)/bin" v2.7.0
       - name: Go tests
         working-directory: glm-worker
         run: go test ./...
