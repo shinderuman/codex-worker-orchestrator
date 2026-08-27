@@ -44,36 +44,50 @@ func captureQualitySurfaceDigest(root string) (string, error) {
 		if !IsQualitySurface(path) {
 			continue
 		}
-		_, _ = hash.Write([]byte(path))
-		_, _ = hash.Write([]byte{0})
-		absolute := filepath.Join(root, filepath.FromSlash(path))
-		info, statErr := os.Lstat(absolute)
-		if os.IsNotExist(statErr) {
-			_, _ = hash.Write([]byte("missing\x00"))
-			continue
+		if err := writeQualitySurfaceDigestEntry(hash, root, path); err != nil {
+			return "", err
 		}
-		if statErr != nil {
-			return "", fmt.Errorf("inspect quality surface %s: %w", path, statErr)
-		}
-		_, _ = hash.Write([]byte(info.Mode().String()))
-		_, _ = hash.Write([]byte{0})
-		switch {
-		case info.Mode().IsRegular():
-			content, readErr := os.ReadFile(absolute)
-			if readErr != nil {
-				return "", fmt.Errorf("read quality surface %s: %w", path, readErr)
-			}
-			_, _ = hash.Write(content)
-		case info.Mode()&os.ModeSymlink != 0:
-			target, readErr := os.Readlink(absolute)
-			if readErr != nil {
-				return "", fmt.Errorf("read quality surface symlink %s: %w", path, readErr)
-			}
-			_, _ = hash.Write([]byte(target))
-		}
-		_, _ = hash.Write([]byte{0})
 	}
 	return hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+func writeQualitySurfaceDigestEntry(hash interface{ Write([]byte) (int, error) }, root, path string) error {
+	_, _ = hash.Write([]byte(path))
+	_, _ = hash.Write([]byte{0})
+	absolute := filepath.Join(root, filepath.FromSlash(path))
+	info, err := os.Lstat(absolute)
+	if os.IsNotExist(err) {
+		_, _ = hash.Write([]byte("missing\x00"))
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("inspect quality surface %s: %w", path, err)
+	}
+	_, _ = hash.Write([]byte(info.Mode().String()))
+	_, _ = hash.Write([]byte{0})
+	if err := writeQualitySurfaceContent(hash, absolute, path, info.Mode()); err != nil {
+		return err
+	}
+	_, _ = hash.Write([]byte{0})
+	return nil
+}
+
+func writeQualitySurfaceContent(hash interface{ Write([]byte) (int, error) }, absolute, path string, mode os.FileMode) error {
+	switch {
+	case mode.IsRegular():
+		content, err := os.ReadFile(absolute)
+		if err != nil {
+			return fmt.Errorf("read quality surface %s: %w", path, err)
+		}
+		_, _ = hash.Write(content)
+	case mode&os.ModeSymlink != 0:
+		target, err := os.Readlink(absolute)
+		if err != nil {
+			return fmt.Errorf("read quality surface symlink %s: %w", path, err)
+		}
+		_, _ = hash.Write([]byte(target))
+	}
+	return nil
 }
 
 func (w *Workflow) captureQualitySurfaceBaseline() error {
