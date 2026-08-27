@@ -29,7 +29,7 @@ func TestRouteWorkerRepoSearchSkipsKnownTarget(t *testing.T) {
 		calls++
 		return reposearch.Report{}, nil
 	}
-	block, outcome := routeWorkerRepoSearch(context.Background(), root, "fix `internal/workflow/workflow.go`", search)
+	block, outcome, _ := routeWorkerRepoSearch(context.Background(), root, "fix `internal/workflow/workflow.go`", search)
 	if calls != 0 || block != "" || outcome != repoSearchKnownSkip {
 		t.Fatalf("calls=%d block=%q outcome=%q", calls, block, outcome)
 	}
@@ -45,7 +45,7 @@ func TestRouteWorkerRepoSearchDoesNotTreatBareDirectoryWordAsKnownTarget(t *test
 		calls++
 		return reposearch.Report{}, nil
 	}
-	block, outcome := routeWorkerRepoSearch(context.Background(), root, "fix internal behavior", search)
+	block, outcome, _ := routeWorkerRepoSearch(context.Background(), root, "fix internal behavior", search)
 	if calls != 1 || block != "" || outcome != repoSearchEmptyFallback {
 		t.Fatalf("calls=%d block=%q outcome=%q", calls, block, outcome)
 	}
@@ -61,7 +61,7 @@ func TestRouteWorkerRepoSearchInjectsUnknownTargetCandidates(t *testing.T) {
 			{Path: "glm-worker/internal/workflow/prompts.go", Line: 31},
 		}}, nil
 	}
-	block, outcome := routeWorkerRepoSearch(context.Background(), "/repo", "find worker dispatch", search)
+	block, outcome, _ := routeWorkerRepoSearch(context.Background(), "/repo", "find worker dispatch", search)
 	if outcome != repoSearchHit {
 		t.Fatalf("outcome=%q", outcome)
 	}
@@ -92,7 +92,7 @@ func TestRouteWorkerRepoSearchFallsBackOnEmptyOrError(t *testing.T) {
 			search := func(context.Context, string, string, reposearch.Options) (reposearch.Report, error) {
 				return tt.report, tt.err
 			}
-			block, outcome := routeWorkerRepoSearch(context.Background(), t.TempDir(), "unknown target", search)
+			block, outcome, _ := routeWorkerRepoSearch(context.Background(), t.TempDir(), "unknown target", search)
 			if block != "" || outcome != tt.outcome {
 				t.Fatalf("block=%q outcome=%q", block, outcome)
 			}
@@ -139,6 +139,9 @@ func TestNewWorkerTaskPromptRecordsRepoSearchTelemetry(t *testing.T) {
 	}
 	if event.Phase != repoSearchPhase || event.Kind != "navigation" || event.Subtype != repoSearchHit {
 		t.Fatalf("event=%#v", event)
+	}
+	if event.SearchQuery != "unknown worker target" || len(event.SearchPaths) != 1 || event.SearchPaths[0] != "internal/worker.go" {
+		t.Fatalf("search telemetry=%#v", event)
 	}
 	if !event.Timestamp.Equal(fixed) || event.TaskID != taskID || event.Role != string(state.WorkerRole) {
 		t.Fatalf("event=%#v", event)

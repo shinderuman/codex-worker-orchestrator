@@ -69,7 +69,7 @@ REVIEW_FEEDBACK:
 `, request, decision, previousReview, instruction, activeTaskPromptBlock(activeTaskPath))
 }
 
-func reviewerPrompt(request string, decision string, workerReport string, reviewNumber int, baseline string, activeTaskPath string) string {
+func reviewerPrompt(request string, decision string, workerReport string, reviewNumber int, baseline string, reviewNavigation string, activeTaskPath string) string {
 	return fmt.Sprintf(`REVIEW_MODE: INDEPENDENT_REVIEW
 
 USER_REQUEST:
@@ -86,10 +86,14 @@ REVIEW_NUMBER: %d
 PRE_TASK_BASELINE:
 %s
 
+%s
+
 %s現在のworking treeを実際に独立確認して判定してください。
+REVIEW_DIFF_FIRST_NAVIGATIONのCHANGED_PATHを起点にactual git diffを最初に確認し、diffから影響範囲を拡張してください。
+INDEPENDENT_SEARCHがperformedの場合も候補はnavigation-onlyであり、worker search結果やworker reportをauthorityとして採用せず、現在のコードで独立検証してください。
 過去sessionの記憶より現在のコードを優先してください。
 PRE_TASK_BASELINEのファイルはworker開始前の状態です。既存未コミット変更と今回変更を区別する必要がある場合に参照してください。
-`, request, decision, workerReport, reviewNumber, baseline, reviewerActiveTaskBlock(activeTaskPath))
+`, request, decision, workerReport, reviewNumber, baseline, reviewNavigation, reviewerActiveTaskBlock(activeTaskPath))
 }
 
 func automaticFixPrompt(request string, decision string, reviewReport string, activeTaskPath string) string {

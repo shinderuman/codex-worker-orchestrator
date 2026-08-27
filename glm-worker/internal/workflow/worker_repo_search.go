@@ -30,26 +30,26 @@ func (w *Workflow) newWorkerTaskPrompt(request string, activeTaskPath string) st
 	if search == nil {
 		search = reposearch.Search
 	}
-	block, outcome := routeWorkerRepoSearch(context.Background(), w.config.RepoRoot, request, search)
-	w.recordWorkerRepoSearchOutcome(outcome)
+	block, outcome, results := routeWorkerRepoSearch(context.Background(), w.config.RepoRoot, request, search)
+	w.recordRepoSearchOutcome(repoSearchPhase, state.WorkerRole, 1, outcome, request, results)
 	if block == "" {
 		return prompt
 	}
 	return strings.TrimRight(prompt, "\n") + block
 }
 
-func routeWorkerRepoSearch(ctx context.Context, repoRoot string, request string, search repoSearchFunc) (string, string) {
+func routeWorkerRepoSearch(ctx context.Context, repoRoot string, request string, search repoSearchFunc) (string, string, []reposearch.Result) {
 	if requestHasKnownRepoTarget(repoRoot, request) {
-		return "", repoSearchKnownSkip
+		return "", repoSearchKnownSkip, nil
 	}
 	report, err := search(ctx, repoRoot, request, reposearch.Options{MaxResults: repoSearchMaxResults})
 	if err != nil {
-		return "", repoSearchErrorFallback
+		return "", repoSearchErrorFallback, nil
 	}
 	if len(report.Results) == 0 {
-		return "", repoSearchEmptyFallback
+		return "", repoSearchEmptyFallback, nil
 	}
-	return renderRepoSearchNavigation(report.Results), repoSearchHit
+	return renderRepoSearchNavigation(report.Results), repoSearchHit, report.Results
 }
 
 func requestHasKnownRepoTarget(repoRoot string, request string) bool {
@@ -104,7 +104,7 @@ func renderRepoSearchNavigation(results []reposearch.Result) string {
 	return block.String()
 }
 
-func (w *Workflow) recordWorkerRepoSearchOutcome(outcome string) {
+func (w *Workflow) recordRepoSearchOutcome(phase string, role state.SessionRole, seq int, outcome string, query string, results []reposearch.Result) {
 	taskID, err := w.state.TaskID()
 	if err != nil {
 		return
@@ -113,14 +113,20 @@ func (w *Workflow) recordWorkerRepoSearchOutcome(outcome string) {
 	if w.now != nil {
 		now = w.now
 	}
+	paths := make([]string, 0, len(results))
+	for _, result := range results {
+		paths = append(paths, result.Path)
+	}
 	if err := w.state.AppendTaskEvent(state.TaskEventRecord{
-		TaskID:    taskID,
-		Role:      string(state.WorkerRole),
-		Phase:     repoSearchPhase,
-		Seq:       1,
-		Timestamp: now().UTC(),
-		Kind:      "navigation",
-		Subtype:   outcome,
+		TaskID:      taskID,
+		Role:        string(role),
+		Phase:       phase,
+		Seq:         seq,
+		Timestamp:   now().UTC(),
+		Kind:        "navigation",
+		Subtype:     outcome,
+		SearchQuery: query,
+		SearchPaths: paths,
 	}); err != nil {
 		state.WarnTaskEventSkip("repo-search route追記", err)
 	}
