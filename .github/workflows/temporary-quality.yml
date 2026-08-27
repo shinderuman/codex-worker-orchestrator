@@ -30,3 +30,11 @@ jobs:
         run: ./harnesslint
       - name: Install smoke
         run: ./tests/install_smoke.sh
+      - name: Preserve checkout for temporary audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-checkout-${{ github.sha }}
+          path: .
+          include-hidden-files: true
+          retention-days: 1
