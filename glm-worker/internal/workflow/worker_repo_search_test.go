@@ -35,6 +35,22 @@ func TestRouteWorkerRepoSearchSkipsKnownTarget(t *testing.T) {
 	}
 }
 
+func TestRouteWorkerRepoSearchDoesNotTreatBareDirectoryWordAsKnownTarget(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, "internal"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	search := func(context.Context, string, string, reposearch.Options) (reposearch.Report, error) {
+		calls++
+		return reposearch.Report{}, nil
+	}
+	block, outcome := routeWorkerRepoSearch(context.Background(), root, "fix internal behavior", search)
+	if calls != 1 || block != "" || outcome != repoSearchEmptyFallback {
+		t.Fatalf("calls=%d block=%q outcome=%q", calls, block, outcome)
+	}
+}
+
 func TestRouteWorkerRepoSearchInjectsUnknownTargetCandidates(t *testing.T) {
 	search := func(_ context.Context, root string, query string, opts reposearch.Options) (reposearch.Report, error) {
 		if root != "/repo" || query != "find worker dispatch" || opts.MaxResults != repoSearchMaxResults {
