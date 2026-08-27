@@ -63,4 +63,4 @@ none
 
 ## Current boundary
 
-ACTIVE / NARROW。現mainで`glm-worker/internal/`と`glm-worker/cmd/`配下のproduction Goは新package名でもHIGHだが、既知prefix外の新しいproduction-like script / config / file type等は未分類LOWへ落ち得る残余failure classがある。F1のintegration squash完了後、known-safe LOWとunknown production-like surfaceを区別するTrack A / Track B境界から着手する。
+ACTIVE / NARROW。F1はintegration commit `621a6c6cec384b8ef0488796b6488085a77a6b5d`として完了済み。`hardening-task/unknown-production-surface-risk`で、既知prefix外の新しいproduction-like script / config / file typeが未分類LOWへ落ちる残余failure classについてclassification call graphとrepository surfaceのinventoryから着手する。
