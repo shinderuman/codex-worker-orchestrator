@@ -1,0 +1,44 @@
+name: Temporary F8 Final Validation
+
+on:
+  push:
+    branches:
+      - hardening-task/instruction-conflict-resolution
+
+permissions:
+  contents: write
+
+jobs:
+  validate-f8:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.22.x'
+          cache: false
+      - name: Validate representative conflict behavior
+        working-directory: glm-worker
+        run: |
+          go test ./internal/workflow
+          go test ./internal/app
+          go vet ./...
+          go build ./...
+      - name: Verify conflict surfaces
+        run: |
+          grep -Fq 'GENERIC_RULE_PRECEDENCE: subordinate-to-primary-authority' glm-worker/internal/workflow/instruction_conflict.go
+          grep -Fq 'PUBLIC_SURFACE_EXPANSION: requires-primary-authority' glm-worker/internal/workflow/instruction_conflict.go
+          grep -Fq 'MACHINE_CONTRACT_OVERRIDE: forbidden' glm-worker/internal/workflow/instruction_conflict.go
+          grep -Fq '外部machine stdout/stderrへ人間向けtextを追加しない' codex/instructions/worker/common-code.md
+          grep -Fq 'primary authority' codex/instructions/worker/cli.md
+      - name: Commit clean validation checkpoint
+        run: |
+          rm .github/workflows/temporary-f8-final-validation.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'chore: verify F8 production tree'
+          git push
