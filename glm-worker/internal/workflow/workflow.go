@@ -2041,13 +2041,7 @@ func (w *Workflow) verifyReviewResumeSnapshot(checkpoint state.ResumeCheckpoint)
 }
 
 func (w *Workflow) acceptReviewResumeParentDelta(saved, current state.GitSnapshot, checkpoint state.ResumeCheckpoint) bool {
-	if saved.Head != current.Head || saved.IndexDigest != current.IndexDigest {
-		return false
-	}
-	if saved.WorktreeDigestExcludingParent == "" || saved.WorktreeDigestExcludingParent != current.WorktreeDigestExcludingParent {
-		return false
-	}
-	if saved.ParentFiles == nil || checkpoint.StopParentFiles == nil {
+	if !reviewResumeParentBaselineMatches(saved, current) || saved.ParentFiles == nil || checkpoint.StopParentFiles == nil {
 		return false
 	}
 	now, err := readParentFileStates(w.config.RepoRoot)
@@ -2071,6 +2065,13 @@ func (w *Workflow) acceptReviewResumeParentDelta(saved, current state.GitSnapsho
 		}
 	}
 	return changedDuringStop
+}
+
+func reviewResumeParentBaselineMatches(saved, current state.GitSnapshot) bool {
+	return saved.Head == current.Head &&
+		saved.IndexDigest == current.IndexDigest &&
+		saved.WorktreeDigestExcludingParent != "" &&
+		saved.WorktreeDigestExcludingParent == current.WorktreeDigestExcludingParent
 }
 
 func parentStatePaths(groups ...state.ParentFileStates) []string {
