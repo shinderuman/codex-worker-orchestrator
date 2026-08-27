@@ -140,47 +140,11 @@ func (e *WorkerError) Error() string {
 
 func (w *Workflow) ExecuteNewTask(request string) error {
 	return quietWhenParentFileGuardStopped(w.withTemp(func() error {
-		if w.state.Exists("pending-decision") {
-			return &WorkerError{Message: "previous task is waiting for Sol decision; use --decision or --reset"}
-		}
-		if checkpoint, err := w.state.LoadResumeCheckpoint(); err == nil {
-			switch {
-			case checkpoint.RateLimited:
-				return &WorkerError{Message: "previous task is rate-limited; use --resume or --reset"}
-			case checkpoint.ProviderUnavailable:
-				return &WorkerError{Message: "previous task is provider-unavailable; use --resume or --reset"}
-			case checkpoint.UserInterrupted:
-				return &WorkerError{Message: "previous task is interrupted; use --resume or --reset"}
-			}
-		}
-
-		if _, err := w.state.StartNewTask(); err != nil {
+		if err := w.validateNewTaskStart(); err != nil {
 			return err
 		}
-
-		if err := state.CaptureGitBaseline(w.config, w.state); err != nil {
-			return err
-		}
-		if err := w.captureQualitySurfaceBaseline(); err != nil {
-			return err
-		}
-		w.recordBaselineRound()
-		if err := w.state.Write("last-request", request); err != nil {
-			return err
-		}
-
-		if err := w.state.Remove("last-decision", "last-review", activeTaskStateKey); err != nil {
-			return err
-		}
-
-		activeTaskPath, wired, err := resolveActiveTaskPath(w.config.RepoRoot)
+		activeTaskPath, err := w.initializeNewTask(request)
 		if err != nil {
-			return w.failClosedActiveTaskResolution("worker-new", err)
-		}
-		if !wired {
-			activeTaskPath = ""
-		}
-		if err := w.state.Write(activeTaskStateKey, activeTaskPath); err != nil {
 			return err
 		}
 
@@ -202,30 +166,59 @@ func (w *Workflow) ExecuteNewTask(request string) error {
 			OriginalPrompt: prompt,
 			Request:        request,
 		}
-		if pocStage {
-			if stopped, err := w.savePoCStartSnapshot(); err != nil {
-				return err
-			} else if stopped {
-				return nil
-			}
-		}
-
-		workerResult, err := w.runModel(checkpoint)
-		if err != nil {
-			return err
-		}
-		if pocStage {
-			if stopped, err := w.verifyPoCEndSnapshot(); err != nil {
-				return err
-			} else if stopped {
-				return nil
-			}
-			if workerResult.Status == packet.StatusImplemented {
-				return w.routePoCWorkerResult(workerResult)
-			}
-		}
-		return w.handleWorkerResult(request, workerResult, checkpoint.Phase)
+		return w.executeWorkerCheckpoint(request, checkpoint, pocStage)
 	}))
+}
+
+func (w *Workflow) validateNewTaskStart() error {
+	if w.state.Exists("pending-decision") {
+		return &WorkerError{Message: "previous task is waiting for Sol decision; use --decision or --reset"}
+	}
+	checkpoint, err := w.state.LoadResumeCheckpoint()
+	if err != nil {
+		return nil
+	}
+	switch {
+	case checkpoint.RateLimited:
+		return &WorkerError{Message: "previous task is rate-limited; use --resume or --reset"}
+	case checkpoint.ProviderUnavailable:
+		return &WorkerError{Message: "previous task is provider-unavailable; use --resume or --reset"}
+	case checkpoint.UserInterrupted:
+		return &WorkerError{Message: "previous task is interrupted; use --resume or --reset"}
+	default:
+		return nil
+	}
+}
+
+func (w *Workflow) initializeNewTask(request string) (string, error) {
+	if _, err := w.state.StartNewTask(); err != nil {
+		return "", err
+	}
+	if err := state.CaptureGitBaseline(w.config, w.state); err != nil {
+		return "", err
+	}
+	if err := w.captureQualitySurfaceBaseline(); err != nil {
+		return "", err
+	}
+	w.recordBaselineRound()
+	if err := w.state.Write("last-request", request); err != nil {
+		return "", err
+	}
+	if err := w.state.Remove("last-decision", "last-review", activeTaskStateKey); err != nil {
+		return "", err
+	}
+
+	activeTaskPath, wired, err := resolveActiveTaskPath(w.config.RepoRoot)
+	if err != nil {
+		return "", w.failClosedActiveTaskResolution("worker-new", err)
+	}
+	if !wired {
+		activeTaskPath = ""
+	}
+	if err := w.state.Write(activeTaskStateKey, activeTaskPath); err != nil {
+		return "", err
+	}
+	return activeTaskPath, nil
 }
 
 func (w *Workflow) ExecuteDecision(decision string) error {
