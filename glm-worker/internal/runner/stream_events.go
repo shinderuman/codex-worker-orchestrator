@@ -178,35 +178,7 @@ func progressOnlyStreamEvent(record state.TaskEventRecord) bool {
 func (g *streamEventIngester) observeToolBlocks(record *state.TaskEventRecord, inputs map[string]json.RawMessage) bool {
 	changed := false
 	for i := range record.Blocks {
-		block := &record.Blocks[i]
-		switch block.Type {
-		case "tool_use":
-			if block.ToolID == "" {
-				continue
-			}
-			observation := toolUseObservation{toolID: block.ToolID, timestamp: record.Timestamp, name: block.Name}
-			if input, ok := inputs[block.ToolID]; ok {
-				detail := extractLiveToolDetail(input)
-				observation.command = detail.command
-				observation.purpose = detail.purpose
-				observation.background = detail.background
-				observation.waitTaskID = detail.waitTaskID
-			}
-			g.tools[block.ToolID] = observation
-			changed = true
-		case "tool_result":
-			if block.ToolID == "" {
-				continue
-			}
-			observed, ok := g.tools[block.ToolID]
-			if !ok {
-				continue
-			}
-			block.DurationMS = record.Timestamp.Sub(observed.timestamp).Milliseconds()
-			if block.Name == "" {
-				block.Name = observed.name
-			}
-			delete(g.tools, block.ToolID)
+		if g.observeToolBlock(&record.Blocks[i], record.Timestamp, inputs) {
 			changed = true
 		}
 	}
@@ -215,6 +187,49 @@ func (g *streamEventIngester) observeToolBlocks(record *state.TaskEventRecord, i
 		changed = true
 	}
 	return changed
+}
+
+func (g *streamEventIngester) observeToolBlock(block *state.TaskBlockSummary, at time.Time, inputs map[string]json.RawMessage) bool {
+	switch block.Type {
+	case "tool_use":
+		return g.observeToolUse(block, at, inputs)
+	case "tool_result":
+		return g.observeToolResult(block, at)
+	default:
+		return false
+	}
+}
+
+func (g *streamEventIngester) observeToolUse(block *state.TaskBlockSummary, at time.Time, inputs map[string]json.RawMessage) bool {
+	if block.ToolID == "" {
+		return false
+	}
+	observation := toolUseObservation{toolID: block.ToolID, timestamp: at, name: block.Name}
+	if input, ok := inputs[block.ToolID]; ok {
+		detail := extractLiveToolDetail(input)
+		observation.command = detail.command
+		observation.purpose = detail.purpose
+		observation.background = detail.background
+		observation.waitTaskID = detail.waitTaskID
+	}
+	g.tools[block.ToolID] = observation
+	return true
+}
+
+func (g *streamEventIngester) observeToolResult(block *state.TaskBlockSummary, at time.Time) bool {
+	if block.ToolID == "" {
+		return false
+	}
+	observed, ok := g.tools[block.ToolID]
+	if !ok {
+		return false
+	}
+	block.DurationMS = at.Sub(observed.timestamp).Milliseconds()
+	if block.Name == "" {
+		block.Name = observed.name
+	}
+	delete(g.tools, block.ToolID)
+	return true
 }
 
 func (g *streamEventIngester) noteLiveActivity(at time.Time, modelActivity bool, toolsChanged bool) {
