@@ -49,16 +49,16 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 ## 現在のGit境界
 
 - branch: `main`
-- accepted main baseline: `21cb94b5f4b9800f8092f2e2f5afc276ad37ae62`
-- implementation boundary: PR #3 `6f08b301e9c4e1444af80c9b9ee646eb778a3baa`でrepository quality linterを導入し、PR #4 `b5a4f2e9fd4a3199470e9df0759c8b969f6813c5`でrepository-wide quality enforcementをmainへSquash Merge、PR #5 `21cb94b5f4b9800f8092f2e2f5afc276ad37ae62`でPlan / Tasks / History reconciliationまでmainへSquash Merge済み
+- accepted main baseline: `2c8bf5fe22b529dd446c65bd43b6a2289819730d`
+- implementation boundary: PR #3 `6f08b301e9c4e1444af80c9b9ee646eb778a3baa`でrepository quality linterを導入し、PR #4 `b5a4f2e9fd4a3199470e9df0759c8b969f6813c5`でrepository-wide quality enforcement、PR #5 `21cb94b5f4b9800f8092f2e2f5afc276ad37ae62`でPlan / Tasks / History reconciliation、PR #6 `2c8bf5fe22b529dd446c65bd43b6a2289819730d`で欠落した`branch: main` metadataを復元してmainへSquash Merge済み
 - preserved boundary: wake coalescing、machine output、safe-stop/resume、provider accounting、parent-managed metadata guard、GLM commit/push禁止、Direct Codex対orchestratedのCodex Reduction / Quality Delta最上位評価を維持
-- metadata repair: PR #5 reconciliationで誤って欠落した`branch: main`を復元し、`plancheck`のfinal HEAD contractとPlanを再同期する。production code・runtime behaviorは変更しない
-- merge boundary: metadata repairはmainへ直接pushせずmain向けPRで停止し、Squash Mergeはユーザーが行う
+- current implementation: `gpt/installer-brew-hint-v2`でHomebrew formulaを持つ必須commandの欠落時だけ`brew install <formula>`案内を追加し、既存install smokeへpositive/negative regressionを追加する
+- merge boundary: current implementationはmainへ直接pushせずmain向けPRで停止し、Squash Mergeはユーザーが行う
 
 ## 現在の停止理由
 
-PR #5 merge後のlocal runtime acceptanceで`plancheck`がPlanの必須`branch:`欠落を検出した。metadata repairを先行し、Homebrew dependency hintのユーザー要求をACTIVEとして保持している。
+PR #6はmainへSquash Merge済み。ACTIVE taskのproduction変更と回帰testを専用branchで作成中であり、mainへmergeされるまでlocal accepted-main runtime install / task completionは行わない。
 
 ## 次の親Codex操作
 
-metadata repairがmainへSquash Mergeされた後、`IMPLEMENTATION_TASKS/installer-missing-dependency-brew-hint.md`の実装・回帰test・reviewへ進み、別PRとしてmainへ提示する。
+current implementation差分をreviewしてmain向けPRとして提示する。ユーザーのSquash Merge後に最新mainをlocalへ同期して`./install.sh`の本配置とinstalled/source一致を確認し、task acceptance成立後にHistory移行・task file削除・Planの次ACTIVE昇格を行う。
