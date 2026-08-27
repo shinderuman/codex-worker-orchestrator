@@ -1335,11 +1335,9 @@ func (w *Workflow) recoveryLoop(
 	deadline := recoveryStart.Add(providerUnavailableDeadline)
 	probes := 0
 	sleeps := 0
-
 	exhaustClassification := classification
 
 	for probes < maxTransientProbes {
-
 		if !firstProbeImmediate || probes != 0 {
 			wait, ok := w.backoffWait(sleeps, deadline)
 			if !ok {
@@ -1355,41 +1353,15 @@ func (w *Workflow) recoveryLoop(
 		}
 
 		probes++
-		probeStartedAt := w.now().UTC()
-		probeResult, probeErr := w.runner.Probe(checkpoint.Model)
-		probeCompletedAt := w.now().UTC()
-
-		if probeErr == nil {
-			if contractErr := runner.ValidateProbeResult(probeResult); contractErr != nil {
-				probeErr = &runner.ProbeInvalidResponseError{
-					Model:  checkpoint.Model,
-					Reason: contractErr,
-				}
-			}
+		success, nextClassification, probeStartedAt, probeCompletedAt, err := w.runRecoveryProbe(checkpoint, probes)
+		if nextClassification != "" {
+			exhaustClassification = nextClassification
 		}
-		w.recordProbeCall(checkpoint, probeResult, probes, probeStartedAt, probeCompletedAt, probeErr)
-
-		if probeErr != nil {
-			class := runner.ClassifyProviderFailureText(probeErr.Error())
-
-			if class.Kind == runner.ProviderFailureZaiFiveHour {
-				err := w.saveProbeRateLimited(checkpoint, class.FiveHourLimit)
-				return false, runner.RunResult{}, probeStartedAt, probeCompletedAt, err
-			}
-
-			if class.Kind == runner.ProviderFailureTransient {
-				continue
-			}
-			var probeInvalid *runner.ProbeInvalidResponseError
-			if errors.As(probeErr, &probeInvalid) {
-
-				if runner.DetectProbeFatalSignal(probeErr.Error()) {
-					return false, runner.RunResult{}, probeStartedAt, probeCompletedAt, probeErr
-				}
-				exhaustClassification = runner.ProbeContractFailure
-				continue
-			}
-			return false, runner.RunResult{}, probeStartedAt, probeCompletedAt, probeErr
+		if err != nil {
+			return false, runner.RunResult{}, probeStartedAt, probeCompletedAt, err
+		}
+		if !success {
+			continue
 		}
 
 		recovered, result, startedAt, completedAt, err := onProbeSuccess()
@@ -1406,6 +1378,34 @@ func (w *Workflow) recoveryLoop(
 		return false, runner.RunResult{}, time.Time{}, time.Time{}, saveErr
 	}
 	return false, runner.RunResult{}, time.Time{}, time.Time{}, pErr
+}
+
+func (w *Workflow) runRecoveryProbe(checkpoint state.ResumeCheckpoint, attempt int) (bool, string, time.Time, time.Time, error) {
+	startedAt := w.now().UTC()
+	probeResult, probeErr := w.runner.Probe(checkpoint.Model)
+	completedAt := w.now().UTC()
+	if probeErr == nil {
+		if contractErr := runner.ValidateProbeResult(probeResult); contractErr != nil {
+			probeErr = &runner.ProbeInvalidResponseError{Model: checkpoint.Model, Reason: contractErr}
+		}
+	}
+	w.recordProbeCall(checkpoint, probeResult, attempt, startedAt, completedAt, probeErr)
+	if probeErr == nil {
+		return true, "", startedAt, completedAt, nil
+	}
+
+	class := runner.ClassifyProviderFailureText(probeErr.Error())
+	if class.Kind == runner.ProviderFailureZaiFiveHour {
+		return false, "", startedAt, completedAt, w.saveProbeRateLimited(checkpoint, class.FiveHourLimit)
+	}
+	if class.Kind == runner.ProviderFailureTransient {
+		return false, "", startedAt, completedAt, nil
+	}
+	var probeInvalid *runner.ProbeInvalidResponseError
+	if errors.As(probeErr, &probeInvalid) && !runner.DetectProbeFatalSignal(probeErr.Error()) {
+		return false, runner.ProbeContractFailure, startedAt, completedAt, nil
+	}
+	return false, "", startedAt, completedAt, probeErr
 }
 
 func (w *Workflow) backoffWait(sleeps int, deadline time.Time) (time.Duration, bool) {
