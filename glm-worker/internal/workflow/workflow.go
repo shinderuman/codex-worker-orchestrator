@@ -1704,15 +1704,7 @@ func (w *Workflow) applyCallDiagnostics(entry *state.ModelCallLog, checkpoint st
 			entry.WorkerReportedRisk = diag.reportedRisk
 		}
 	}
-	if checkpoint.EffectiveRisk != "" {
-		entry.EffectiveRisk = checkpoint.EffectiveRisk
-		entry.RiskFloorSource = checkpoint.EffectiveRiskSource
-		if checkpoint.Role == state.ReviewerRole && checkpoint.EffectiveRisk == highRiskValue {
-			category := riskFloorCategory(checkpoint.EffectiveRiskSource)
-			entry.RiskFloorCategory = category
-			w.state.RecordRiskFloor(category)
-		}
-	}
+	w.applyEffectiveRiskDiagnostic(entry, checkpoint)
 	if diag.providerClassification != "" {
 		entry.ProviderClassification = diag.providerClassification
 	}
@@ -1732,6 +1724,20 @@ func (w *Workflow) applyCallDiagnostics(entry *state.ModelCallLog, checkpoint st
 		entry.Snapshot = w.pendingSnapshot
 		w.pendingSnapshot = nil
 	}
+}
+
+func (w *Workflow) applyEffectiveRiskDiagnostic(entry *state.ModelCallLog, checkpoint state.ResumeCheckpoint) {
+	if checkpoint.EffectiveRisk == "" {
+		return
+	}
+	entry.EffectiveRisk = checkpoint.EffectiveRisk
+	entry.RiskFloorSource = checkpoint.EffectiveRiskSource
+	if checkpoint.Role != state.ReviewerRole || checkpoint.EffectiveRisk != highRiskValue {
+		return
+	}
+	category := riskFloorCategory(checkpoint.EffectiveRiskSource)
+	entry.RiskFloorCategory = category
+	w.state.RecordRiskFloor(category)
 }
 
 func riskFloorCategory(source string) string {
