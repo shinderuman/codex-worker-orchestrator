@@ -188,60 +188,8 @@ func externalFeasibilityKnownKey(key string) bool {
 func validateExternalFeasibilityFields(values map[string]string) (externalFeasibility, error) {
 	var decl externalFeasibility
 	status := values["status"]
-	switch status {
-	case "":
-		return decl, &externalFeasibilityParseError{
-			kind:   externalFeasibilityRejectMalformed,
-			reason: "External feasibility節にstatusがありません(not-applicable/poc/observation/implementation)",
-		}
-	case externalFeasibilityStatusNotApplicable:
-		for _, key := range externalFeasibilityFieldKeys[1:] {
-			if values[key] != "" {
-				return decl, &externalFeasibilityParseError{
-					kind:   externalFeasibilityRejectMalformed,
-					reason: "not-applicableではstatus以外のkey(" + key + ")を書けません。外部前提がある場合はpoc/observation/implementationを宣言してください",
-				}
-			}
-		}
-	case externalFeasibilityStatusPoC, externalFeasibilityStatusObservation:
-		if values["assumption"] == "" {
-			return decl, &externalFeasibilityParseError{
-				kind:   externalFeasibilityRejectMalformed,
-				reason: status + "では未検証外部前提を表すassumptionが必須です",
-			}
-		}
-		for _, key := range []string{"evidence-source", "evidence", "go"} {
-			if values[key] != "" {
-				return decl, &externalFeasibilityParseError{
-					kind:   externalFeasibilityRejectMalformed,
-					reason: status + "では" + key + "を書けません。implementation昇格は親Codexが宣言全体を書き換えて行います",
-				}
-			}
-		}
-	case externalFeasibilityStatusImplementation:
-		if values["assumption"] == "" {
-			return decl, &externalFeasibilityParseError{
-				kind:   externalFeasibilityRejectMalformed,
-				reason: "implementationでは前提とした外部成立性のassumptionが必須です",
-			}
-		}
-		if values["evidence-source"] == "" || values["evidence"] == "" || values["go"] == "" {
-			return decl, &externalFeasibilityParseError{
-				kind:   externalFeasibilityRejectUnverified,
-				reason: "implementationはevidence-source・evidence・go(親Go判断)の全てが必須です。PoC結果をGLMだけでGoへ昇格させない",
-			}
-		}
-		if values["evidence-source"] != externalFeasibilityEvidenceProducer {
-			return decl, &externalFeasibilityParseError{
-				kind:   externalFeasibilityRejectUnverified,
-				reason: "implementationのevidence-sourceは実producer由来の \"" + externalFeasibilityEvidenceProducer + "\" だけです(人工fixture・scripted packet・worker/reviewer PASSは不可)",
-			}
-		}
-	default:
-		return decl, &externalFeasibilityParseError{
-			kind:   externalFeasibilityRejectMalformed,
-			reason: fmt.Sprintf("External feasibilityのstatus %qは未知です(not-applicable/poc/observation/implementation)", status),
-		}
+	if err := validateExternalFeasibilityStatus(status, values); err != nil {
+		return decl, err
 	}
 	return externalFeasibility{
 		status:         status,
@@ -250,6 +198,63 @@ func validateExternalFeasibilityFields(values map[string]string) (externalFeasib
 		evidence:       values["evidence"],
 		goDecision:     values["go"],
 	}, nil
+}
+
+func validateExternalFeasibilityStatus(status string, values map[string]string) error {
+	switch status {
+	case "":
+		return externalFeasibilityMalformed("External feasibility節にstatusがありません(not-applicable/poc/observation/implementation)")
+	case externalFeasibilityStatusNotApplicable:
+		return validateExternalFeasibilityNotApplicable(values)
+	case externalFeasibilityStatusPoC, externalFeasibilityStatusObservation:
+		return validateExternalFeasibilityExploration(status, values)
+	case externalFeasibilityStatusImplementation:
+		return validateExternalFeasibilityImplementation(values)
+	default:
+		return externalFeasibilityMalformed(fmt.Sprintf("External feasibilityのstatus %qは未知です(not-applicable/poc/observation/implementation)", status))
+	}
+}
+
+func validateExternalFeasibilityNotApplicable(values map[string]string) error {
+	for _, key := range externalFeasibilityFieldKeys[1:] {
+		if values[key] != "" {
+			return externalFeasibilityMalformed("not-applicableではstatus以外のkey(" + key + ")を書けません。外部前提がある場合はpoc/observation/implementationを宣言してください")
+		}
+	}
+	return nil
+}
+
+func validateExternalFeasibilityExploration(status string, values map[string]string) error {
+	if values["assumption"] == "" {
+		return externalFeasibilityMalformed(status + "では未検証外部前提を表すassumptionが必須です")
+	}
+	for _, key := range []string{"evidence-source", "evidence", "go"} {
+		if values[key] != "" {
+			return externalFeasibilityMalformed(status + "では" + key + "を書けません。implementation昇格は親Codexが宣言全体を書き換えて行います")
+		}
+	}
+	return nil
+}
+
+func validateExternalFeasibilityImplementation(values map[string]string) error {
+	if values["assumption"] == "" {
+		return externalFeasibilityMalformed("implementationでは前提とした外部成立性のassumptionが必須です")
+	}
+	if values["evidence-source"] == "" || values["evidence"] == "" || values["go"] == "" {
+		return externalFeasibilityUnverified("implementationはevidence-source・evidence・go(親Go判断)の全てが必須です。PoC結果をGLMだけでGoへ昇格させない")
+	}
+	if values["evidence-source"] != externalFeasibilityEvidenceProducer {
+		return externalFeasibilityUnverified("implementationのevidence-sourceは実producer由来の \"" + externalFeasibilityEvidenceProducer + "\" だけです(人工fixture・scripted packet・worker/reviewer PASSは不可)")
+	}
+	return nil
+}
+
+func externalFeasibilityMalformed(reason string) error {
+	return &externalFeasibilityParseError{kind: externalFeasibilityRejectMalformed, reason: reason}
+}
+
+func externalFeasibilityUnverified(reason string) error {
+	return &externalFeasibilityParseError{kind: externalFeasibilityRejectUnverified, reason: reason}
 }
 
 func (s guardSurface) unverifiedOutcome() string { return s.outcomePrefix + "_unverified" }
