@@ -384,7 +384,7 @@ func run(
 	return dispatchMachineOutput(cmd, cfg, runnerFactory, stdout, stderr)
 }
 
-func Execute(cmd Command, cfg config.AppConfig, rf RunnerFactory, stdout, stderr io.Writer) error {
+func Execute(cmd Command, cfg config.AppConfig, rf RunnerFactory, stdout, _ io.Writer) error {
 	if cmd.StdinBytes > 0 && cmd.Payload == "" {
 		return fmt.Errorf("stdin payload mode requires the payload to be read before execute")
 	}

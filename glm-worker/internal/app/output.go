@@ -637,7 +637,7 @@ func statsCoverageDetail(coverage state.TelemetryCoverage) statsCoverage {
 	return detail
 }
 
-func fillStatsParentReview(st *state.StateStore, all []state.TaskStats, aggregate state.TaskStats, output *statsOutput) {
+func fillStatsParentReview(st *state.StateStore, all []state.TaskStats, _ state.TaskStats, output *statsOutput) {
 	output.ParentFixRework = make([]statsParentRework, 0)
 	rework := st.ComputeParentRework(all)
 	origins := make([]string, 0, len(rework.ByOrigin))
