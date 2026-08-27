@@ -475,6 +475,7 @@ func TestResumeInterruptedIsolatedIntegrationPasses(t *testing.T) {
 	cases := []struct {
 		name      string
 		branch    string
+		highRisk  bool
 		integrate func(*isolationGateFixture, *testing.T, string)
 	}{
 		{
@@ -485,8 +486,9 @@ func TestResumeInterruptedIsolatedIntegrationPasses(t *testing.T) {
 			},
 		},
 		{
-			name:   "source-change branch",
-			branch: "glm-worker/isolation/isogate10",
+			name:     "source-change branch",
+			branch:   "glm-worker/isolation/isogate10",
+			highRisk: true,
 			integrate: func(f *isolationGateFixture, t *testing.T, branch string) {
 				f.commitSourceChangeOnBranchAndMerge(t, branch)
 			},
@@ -502,13 +504,24 @@ func TestResumeInterruptedIsolatedIntegrationPasses(t *testing.T) {
 				t.Fatal("停止時基準がありません")
 			}
 
-			resumeRunner := &scriptedRunner{steps: []runnerStep{
+			steps := []runnerStep{
 				{structured: implementedPacket("resumed")},
 				{structured: passPacket()},
-			}}
+			}
+			if tc.highRisk {
+				steps = append(steps, runnerStep{structured: needsSolReviewPacket()})
+			}
+			resumeRunner := &scriptedRunner{steps: steps}
 			resumeW := newGitWorkflowT(t, f.st, resumeRunner, f.repo)
 			if err := resumeW.ExecuteResume(); err != nil {
 				t.Fatalf("隔離branch統合後のresumeが保持照合を通過しません: %v", err)
+			}
+			wantStatus := state.TaskStatusComplete
+			if tc.highRisk {
+				wantStatus = state.TaskStatusWaitingSolReview
+			}
+			if f.st.TaskStatus() != wantStatus {
+				t.Fatalf("task status = %s want %s", f.st.TaskStatus(), wantStatus)
 			}
 		})
 	}
