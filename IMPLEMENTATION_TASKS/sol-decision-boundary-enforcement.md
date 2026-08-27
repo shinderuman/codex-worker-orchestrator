@@ -63,4 +63,4 @@ none
 
 ## Current boundary
 
-NEXT。EVAL責務整理後の現行surfaceを正としてF6をTrack A/Bへ分類して着手する。
+ACTIVE。latest integrationを履歴を書き換えず同期済み。現行Sol gate・risk classification・task requirement surfaceを一次証拠で確認し、F6 Track A/B分類とproduction boundaryを確定して実装を進める。
