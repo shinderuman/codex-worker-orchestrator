@@ -10,12 +10,21 @@ func isKnownSafeDocumentationPath(path string) bool {
 	if strings.HasPrefix(clean, "docs/") {
 		return true
 	}
-	switch strings.ToLower(filepath.Ext(clean)) {
+	ext := strings.ToLower(filepath.Ext(clean))
+	if ext == ".txt" {
+		return !isDependencyControlTextFile(clean)
+	}
+	switch ext {
 	case ".md", ".markdown", ".rst", ".adoc":
 		return true
 	default:
 		return false
 	}
+}
+
+func isDependencyControlTextFile(path string) bool {
+	base := strings.ToLower(filepath.Base(path))
+	return base == "requirements.txt" || base == "constraints.txt" || strings.HasPrefix(base, "requirements-") || strings.HasPrefix(base, "constraints-")
 }
 
 func isKnownSafeTestPath(path string) bool {
