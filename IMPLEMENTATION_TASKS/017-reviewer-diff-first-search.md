@@ -48,4 +48,4 @@ none
 
 ## Current boundary
 
-ACTIVE。016 `worker-repo-search-integration`のproduction routing完了を前提に、reviewerをdiff-firstで開始し、impact expansion後に必要な場合だけworker searchとは独立したrepo-searchを行う最小境界を調査・実装する。PR #22がhardening integrationへSquash Mergeされるまでは実装開始しない。
+ACTIVE。016 `worker-repo-search-integration`はPR #22のSquash Merge commit `da468541683a832b102acecc60770678452e6fa4`としてintegration済み。reviewerをdiff-firstで開始し、impact expansion後に必要な場合だけworker searchとは独立したrepo-searchを行う最小境界を調査・実装する。worker query/resultをreviewer authorityにせず、reviewer側の独立query/resultとtelemetryを分離して記録する。
