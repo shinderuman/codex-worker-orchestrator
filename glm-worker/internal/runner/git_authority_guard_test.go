@@ -155,7 +155,7 @@ func newGitAuthorityProductionRunner(t *testing.T, root, modelCommand string, ex
 }
 
 func gitAuthorityResultJSON() string {
-	return `{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"structured_output\":{\"status\":\"IMPLEMENTED\",\"risk\":\"LOW\",\"summary\":\"done\",\"requirement_coverage\":\"covered\",\"tests\":\"pass\",\"unverified\":\"none\"},\"result\":\"runner output\"}`
+	return `{"type":"result","subtype":"success","is_error":false,"structured_output":{"status":"IMPLEMENTED","risk":"LOW","summary":"done","requirement_coverage":"covered","tests":"pass","unverified":"none"},"result":"runner output"}`
 }
 
 func containsGitAuthorityMutation(values []string, want string) bool {

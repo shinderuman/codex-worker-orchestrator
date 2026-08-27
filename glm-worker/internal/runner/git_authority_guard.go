@@ -29,13 +29,13 @@ type gitAuthoritySnapshot struct {
 }
 
 type gitAuthorityGuard struct {
-	repoRoot      string
-	realGit       string
-	tempDir       string
-	proxyPath     string
-	denyPath      string
-	attemptLog    string
-	before        gitAuthoritySnapshot
+	repoRoot   string
+	realGit    string
+	tempDir    string
+	proxyPath  string
+	denyPath   string
+	attemptLog string
+	before     gitAuthoritySnapshot
 }
 
 func (e *GitAuthorityGuardError) Error() string {
