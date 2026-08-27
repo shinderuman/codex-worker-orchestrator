@@ -68,46 +68,58 @@ func loadIndex(settings searchSettings, repoRoot string, fp fingerprint) (builtI
 }
 
 func cacheMatchesRepository(cached cacheData, repoRoot string, fp fingerprint, settings searchSettings) bool {
-	if cached.SchemaVersion != cacheSchemaVersion || cached.RepoRoot != repoRoot {
+	if !cacheMetadataMatches(cached, repoRoot, fp, settings) {
 		return false
 	}
-	if cached.TokenizerVersion != tokenizerVersion || cached.EnumerationVersion != enumerationVersion {
-		return false
-	}
+	return cachedDocsValid(cached.Docs, repoRoot, settings.excludeDirs)
+}
 
-	if !slices.Equal(cached.ExcludeDirs, sortedExcludeDirs(settings.excludeDirs)) {
-		return false
-	}
-	if cached.IndexDigest != fp.IndexDigest || cached.WorktreeDigest != fp.WorktreeDigest {
-		return false
-	}
-	if cached.IndexedFiles != len(cached.Docs) || cached.IndexedFiles < 0 || cached.SkippedFiles < 0 {
-		return false
-	}
-	if cached.IndexedBytes < 0 || cached.IndexedFiles > settings.maxFiles || cached.IndexedBytes > settings.maxTotalBytes {
-		return false
-	}
-	for i, entry := range cached.Docs {
-		if entry.Path == "" || filepath.ToSlash(entry.Path) != entry.Path {
+func cacheMetadataMatches(cached cacheData, repoRoot string, fp fingerprint, settings searchSettings) bool {
+	return cacheVersionMatches(cached, repoRoot) &&
+		cacheCorpusMatches(cached, fp, settings) &&
+		cacheCountsValid(cached, settings)
+}
+
+func cacheVersionMatches(cached cacheData, repoRoot string) bool {
+	return cached.SchemaVersion == cacheSchemaVersion &&
+		cached.RepoRoot == repoRoot &&
+		cached.TokenizerVersion == tokenizerVersion &&
+		cached.EnumerationVersion == enumerationVersion
+}
+
+func cacheCorpusMatches(cached cacheData, fp fingerprint, settings searchSettings) bool {
+	return slices.Equal(cached.ExcludeDirs, sortedExcludeDirs(settings.excludeDirs)) &&
+		cached.IndexDigest == fp.IndexDigest && cached.WorktreeDigest == fp.WorktreeDigest
+}
+
+func cacheCountsValid(cached cacheData, settings searchSettings) bool {
+	return cached.IndexedFiles == len(cached.Docs) && cached.IndexedFiles >= 0 && cached.SkippedFiles >= 0 &&
+		cached.IndexedBytes >= 0 && cached.IndexedFiles <= settings.maxFiles && cached.IndexedBytes <= settings.maxTotalBytes
+}
+
+func cachedDocsValid(docs []doc, repoRoot string, excludeDirs map[string]bool) bool {
+	for i, entry := range docs {
+		if !cachedDocValid(entry, repoRoot, excludeDirs) {
 			return false
 		}
-		if entry.ContentLength < 0 || entry.PathLength < 0 {
-			return false
-		}
-		if excludedPath(entry.Path, settings.excludeDirs) {
-			return false
-		}
-		if _, err := joinWithinRoot(repoRoot, entry.Path); err != nil {
-			return false
-		}
-		if i > 0 && cached.Docs[i-1].Path >= entry.Path {
-			return false
-		}
-		if !validTermFrequencies(entry.ContentTF, entry.ContentLength) || !validTermFrequencies(entry.PathTF, entry.PathLength) {
+		if i > 0 && docs[i-1].Path >= entry.Path {
 			return false
 		}
 	}
 	return true
+}
+
+func cachedDocValid(entry doc, repoRoot string, excludeDirs map[string]bool) bool {
+	if entry.Path == "" || filepath.ToSlash(entry.Path) != entry.Path {
+		return false
+	}
+	if entry.ContentLength < 0 || entry.PathLength < 0 || excludedPath(entry.Path, excludeDirs) {
+		return false
+	}
+	if _, err := joinWithinRoot(repoRoot, entry.Path); err != nil {
+		return false
+	}
+	return validTermFrequencies(entry.ContentTF, entry.ContentLength) && validTermFrequencies(entry.PathTF, entry.PathLength)
 }
 
 func validTermFrequencies(frequencies map[string]int, length int) bool {
