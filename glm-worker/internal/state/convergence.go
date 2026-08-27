@@ -44,6 +44,26 @@ type RoundDelta struct {
 const roundLogVersion = 1
 
 const (
+	extCC    = ".cc"
+	extCS    = ".cs"
+	extMM    = ".mm"
+	extCPP   = ".cpp"
+	extDart  = ".dart"
+	extPHP   = ".php"
+	extCXX   = ".cxx"
+	extJava  = ".java"
+	extKT    = ".kt"
+	extKTS   = ".kts"
+	extScala = ".scala"
+	extSwift = ".swift"
+	extRS    = ".rs"
+	extHPP   = ".hpp"
+	extHH    = ".hh"
+	extHXX   = ".hxx"
+	extH     = ".h"
+)
+
+const (
 	RoundPathClassDoc   = "doc"
 	RoundPathClassCode  = "code"
 	RoundPathClassOther = "other"
@@ -188,9 +208,9 @@ func RoundPathClass(path string) string {
 	switch strings.ToLower(filepath.Ext(path)) {
 	case ".md", ".markdown", ".rst", ".adoc", ".txt":
 		return RoundPathClassDoc
-	case ".go", ".c", ".h", ".cpp", ".hpp", ".cc", ".hh", ".cxx", ".hxx",
-		".java", ".kt", ".kts", ".cs", ".swift", ".rs", ".dart", ".scala",
-		".m", ".mm", ".php",
+	case ".go", ".c", extH, extCPP, extHPP, extCC, extHH, extCXX, extHXX,
+		extJava, extKT, extKTS, extCS, extSwift, extRS, extDart, extScala,
+		".m", extMM, extPHP,
 		".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs",
 		".py", ".toml", ".ini", ".cfg",
 		".json", ".css", ".scss", ".less":
@@ -205,9 +225,9 @@ func RoundPathClass(path string) string {
 
 func roundCommentKind(path string) string {
 	switch strings.ToLower(filepath.Ext(path)) {
-	case ".go", ".c", ".h", ".cpp", ".hpp", ".cc", ".hh", ".cxx", ".hxx",
-		".java", ".kt", ".kts", ".cs", ".swift", ".rs", ".dart", ".scala",
-		".m", ".mm", ".php",
+	case ".go", ".c", extH, extCPP, extHPP, extCC, extHH, extCXX, extHXX,
+		extJava, extKT, extKTS, extCS, extSwift, extRS, extDart, extScala,
+		".m", extMM, extPHP,
 		".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs":
 		return roundCommentSlash
 	case ".py", ".toml", ".ini", ".cfg":
@@ -236,7 +256,7 @@ func RoundSemanticDigest(content []byte, class string, path string) string {
 			return ""
 		}
 		ext := strings.ToLower(filepath.Ext(path))
-		if ext == ".php" && bytes.Contains(content, []byte("<<<")) {
+		if ext == extPHP && bytes.Contains(content, []byte("<<<")) {
 			return ""
 		}
 		for _, marker := range roundSlashStringGuardMarkers(ext) {
@@ -254,15 +274,15 @@ func RoundSemanticDigest(content []byte, class string, path string) string {
 
 func roundSlashStringGuardMarkers(ext string) [][]byte {
 	switch ext {
-	case ".java", ".kt", ".kts", ".scala":
+	case extJava, extKT, extKTS, extScala:
 		return [][]byte{[]byte(`"""`)}
-	case ".swift", ".dart":
+	case extSwift, extDart:
 		return [][]byte{[]byte(`"""`), []byte(`'''`)}
-	case ".cs":
+	case extCS:
 		return [][]byte{[]byte(`"""`), []byte(`@"`)}
-	case ".rs":
+	case extRS:
 		return [][]byte{[]byte(`r"`), []byte(`#"`)}
-	case ".cpp", ".hpp", ".cc", ".hh", ".cxx", ".hxx", ".h", ".mm":
+	case extCPP, extHPP, extCC, extHH, extCXX, extHXX, extH, extMM:
 		return [][]byte{[]byte(`R"`)}
 	}
 	return nil

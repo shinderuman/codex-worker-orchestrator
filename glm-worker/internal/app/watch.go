@@ -72,7 +72,7 @@ func printWatch(st *state.StateStore, stdout io.Writer, opts watchOptions) error
 	taskID := st.ReadOr("task.id", "")
 	if taskID == "" {
 		return writeWatchEvent(stdout, watchStartEvent{
-			Type: "watch_start", TaskID: nil, EventLog: nil, EventLogStatus: "none",
+			Type: "watch_start", TaskID: nil, EventLog: nil, EventLogStatus: statusNone,
 		})
 	}
 	path := st.TaskEventLogPath(taskID)

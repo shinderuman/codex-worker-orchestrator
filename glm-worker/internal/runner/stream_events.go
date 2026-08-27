@@ -71,6 +71,8 @@ type streamBlock struct {
 	IsError   bool   `json:"is_error"`
 }
 
+const streamResultType = "result"
+
 const plainSignalMaxBytes = 64 * 1024
 
 const maxStreamEventRecordsPerCall = 50000
@@ -208,7 +210,7 @@ func (g *streamEventIngester) observeToolBlocks(record *state.TaskEventRecord, i
 			changed = true
 		}
 	}
-	if record.Kind == "result" && len(g.tools) > 0 {
+	if record.Kind == streamResultType && len(g.tools) > 0 {
 		g.tools = make(map[string]toolUseObservation)
 		changed = true
 	}
@@ -347,7 +349,7 @@ func streamResultEvent(line []byte) bool {
 	var head struct {
 		Type string `json:"type"`
 	}
-	return json.Unmarshal(line, &head) == nil && head.Type == "result"
+	return json.Unmarshal(line, &head) == nil && head.Type == streamResultType
 }
 
 func reduceStreamEvent(line []byte, base state.TaskEventRecord, seq int, observedAt time.Time) state.TaskEventRecord {
@@ -372,7 +374,7 @@ func reduceStreamEvent(line []byte, base state.TaskEventRecord, seq int, observe
 			record.Usage = message.Usage
 			record.Blocks = reduceStreamBlocks(message.Content)
 		}
-	case "result":
+	case streamResultType:
 		record.IsError = event.IsError
 		record.DurationMS = event.DurationMS
 		record.DurationAPIMS = event.DurationAPIMS

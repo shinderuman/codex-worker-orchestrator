@@ -13,6 +13,8 @@ type LockProbe struct {
 }
 
 const (
+	statusNone = "none"
+
 	LockHeld    LockState = "held"
 	LockFree    LockState = "free"
 	LockUnknown LockState = "unknown"
@@ -26,7 +28,7 @@ func parseLockPID(data []byte) string {
 		text = text[:i]
 	}
 	if strings.TrimSpace(text) == "" {
-		return "none"
+		return statusNone
 	}
 	return text
 }

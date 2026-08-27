@@ -120,7 +120,7 @@ func readWakeTOML(path string, dirName string) (AutomationTOML, string) {
 }
 
 func evaluateWakeCandidate(toml AutomationTOML, params CoalesceParams, resumeAt time.Time, readDB DBReader, result CoalesceResult) (CoalesceResult, error) {
-	if toml.Status != "ACTIVE" {
+	if toml.Status != activeStatus {
 		result.Reason = fmt.Sprintf("wake automation status is %q want ACTIVE", toml.Status)
 		return result, nil
 	}
@@ -137,7 +137,7 @@ func evaluateWakeCandidate(toml AutomationTOML, params CoalesceParams, resumeAt 
 		}
 		return result, nil
 	}
-	if db.Status != "ACTIVE" {
+	if db.Status != activeStatus {
 		result.Reason = fmt.Sprintf("wake scheduler status is %q want ACTIVE", db.Status)
 		return result, nil
 	}

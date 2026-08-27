@@ -55,7 +55,10 @@ const (
 	Unavailable
 )
 
-const dtStartLayout = "20060102T150405"
+const (
+	dtStartLayout = "20060102T150405"
+	activeStatus  = "ACTIVE"
+)
 
 var (
 	ErrSqlite3NotFound = errors.New("sqlite3 binary not found")
@@ -152,7 +155,7 @@ func checkTOML(toml AutomationTOML, params Params, expectedDTStart string) strin
 	if toml.Name != params.AutomationKey {
 		return fmt.Sprintf("TOML name mismatch: got %q want %q", toml.Name, params.AutomationKey)
 	}
-	if toml.Status != "ACTIVE" {
+	if toml.Status != activeStatus {
 		return fmt.Sprintf("TOML status is %q want ACTIVE", toml.Status)
 	}
 	if toml.TargetThreadID != params.ExpectedThreadID {
@@ -168,7 +171,7 @@ func checkDB(db DBRow, params Params, expectedEpochMS int64, tomlRrule string) s
 	if db.ID != params.AutomationKey {
 		return fmt.Sprintf("DB id mismatch: got %q want %q", db.ID, params.AutomationKey)
 	}
-	if db.Status != "ACTIVE" {
+	if db.Status != activeStatus {
 		return fmt.Sprintf("DB status is %q want ACTIVE", db.Status)
 	}
 	if !db.HasNextRun {

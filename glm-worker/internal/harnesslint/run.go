@@ -71,7 +71,8 @@ func checkRules(root string, paths []string) ([]Violation, error) {
 	if err != nil {
 		return nil, err
 	}
-	violations := append(goViolations, textViolations...)
+	violations := append([]Violation{}, goViolations...)
+	violations = append(violations, textViolations...)
 	violations = append(violations, qualityViolations...)
 	return violations, nil
 }

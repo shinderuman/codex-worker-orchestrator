@@ -215,6 +215,8 @@ type checkWakeCoalesceOutput struct {
 	AddedWaitSeconds int64  `json:"added_wait_seconds"`
 }
 
+const statusUnreadable = "unreadable"
+
 func writeJSON(w io.Writer, value any) error {
 	var buf bytes.Buffer
 	encoder := json.NewEncoder(&buf)
@@ -267,7 +269,7 @@ func buildStatusOutput(st *state.StateStore, taskID string, logs []state.ModelCa
 	if taskStatus == state.TaskStatusActive {
 		output.TaskLiveness = taskLiveness(probe)
 	}
-	if label := st.OpenParentReviewLabel(); label != "none" {
+	if label := st.OpenParentReviewLabel(); label != statusNone {
 		output.ParentReviewOpen = stringPtr(label)
 	}
 
@@ -326,7 +328,7 @@ func taskStatusPtr(status state.TaskStatus) *string {
 }
 
 func lockPIDPtr(pid string) *string {
-	if pid == "" || pid == "none" || pid == "unknown" {
+	if pid == "" || pid == statusNone || pid == "unknown" {
 		return nil
 	}
 	return &pid
@@ -415,7 +417,7 @@ func fillStatusTelemetry(taskID string, logErr error, logs []state.ModelCallLog,
 		return
 	}
 	if logErr != nil {
-		unreadable := "unreadable"
+		unreadable := statusUnreadable
 		output.Telemetry = &unreadable
 		return
 	}

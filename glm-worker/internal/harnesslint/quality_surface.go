@@ -17,7 +17,26 @@ func scanQualitySurface(root string, paths []string) ([]Violation, error) {
 }
 
 func qualityWiringViolations(root string, paths []string) ([]Violation, error) {
-	checks := []struct {
+	present := make(map[string]bool, len(paths))
+	for _, path := range paths {
+		present[path] = true
+	}
+	var violations []Violation
+	for _, check := range qualityWiringChecks() {
+		current, err := qualityWiringCheckViolations(root, present, check.path, check.tokens)
+		if err != nil {
+			return nil, err
+		}
+		violations = append(violations, current...)
+	}
+	return violations, nil
+}
+
+func qualityWiringChecks() []struct {
+	path   string
+	tokens []string
+} {
+	return []struct {
 		path   string
 		tokens []string
 	}{
@@ -60,33 +79,29 @@ func qualityWiringViolations(root string, paths []string) ([]Violation, error) {
 			},
 		},
 	}
-	present := make(map[string]bool, len(paths))
-	for _, path := range paths {
-		present[path] = true
+}
+
+func qualityWiringCheckViolations(root string, present map[string]bool, path string, tokens []string) ([]Violation, error) {
+	if !present[path] {
+		return []Violation{{
+			Rule: "quality-wiring", Path: path, Line: 1, Column: 1,
+			Message: "required quality-gate file is missing",
+		}}, nil
 	}
+	data, err := readRegularFile(root, path)
+	if err != nil {
+		return nil, err
+	}
+	text := string(data)
 	var violations []Violation
-	for _, check := range checks {
-		if !present[check.path] {
-			violations = append(violations, Violation{
-				Rule: "quality-wiring", Path: check.path, Line: 1, Column: 1,
-				Message: "required quality-gate file is missing",
-			})
+	for _, token := range tokens {
+		if strings.Contains(text, token) {
 			continue
 		}
-		data, err := readRegularFile(root, check.path)
-		if err != nil {
-			return nil, err
-		}
-		text := string(data)
-		for _, token := range check.tokens {
-			if strings.Contains(text, token) {
-				continue
-			}
-			violations = append(violations, Violation{
-				Rule: "quality-wiring", Path: check.path, Line: 1, Column: 1,
-				Message: "required quality-gate wiring is missing: " + token,
-			})
-		}
+		violations = append(violations, Violation{
+			Rule: "quality-wiring", Path: path, Line: 1, Column: 1,
+			Message: "required quality-gate wiring is missing: " + token,
+		})
 	}
 	return violations, nil
 }

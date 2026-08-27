@@ -132,12 +132,12 @@ func printConvergence(st *state.StateStore, taskIDArg string, stdout io.Writer) 
 		if explicit {
 			return &NotFoundError{Message: fmt.Sprintf("task %sのround logがありません: %v", taskID, recordsErr)}
 		}
-		logStatus = convergenceLog{Status: "none"}
+		logStatus = convergenceLog{Status: statusNone}
 	case recordsErr != nil:
 		if explicit {
 			return fmt.Errorf("task %sのround logを読めません: %w", taskID, recordsErr)
 		}
-		logStatus = convergenceLog{Status: "unreadable"}
+		logStatus = convergenceLog{Status: statusUnreadable}
 	default:
 		logStatus = convergenceLog{Status: "ok", Path: stringPtr(st.RoundLogPath(taskID))}
 	}
@@ -154,7 +154,7 @@ func printConvergence(st *state.StateStore, taskIDArg string, stdout io.Writer) 
 
 	logs, logErr := readStatusTelemetry(st, taskID)
 	if logErr != nil {
-		output.Telemetry = "unreadable"
+		output.Telemetry = statusUnreadable
 	} else {
 		output.Telemetry = "ok"
 	}
@@ -171,13 +171,13 @@ func printConvergence(st *state.StateStore, taskIDArg string, stdout io.Writer) 
 
 func taskRecordsStatus(taskID string, err error) string {
 	if taskID == "" {
-		return "none"
+		return statusNone
 	}
 	switch {
 	case errors.Is(err, os.ErrNotExist):
-		return "none"
+		return statusNone
 	case err != nil:
-		return "unreadable"
+		return statusUnreadable
 	default:
 		return "ok"
 	}

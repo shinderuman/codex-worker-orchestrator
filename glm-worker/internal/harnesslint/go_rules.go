@@ -12,6 +12,8 @@ import (
 	"unicode/utf8"
 )
 
+const mainFunctionName = "main"
+
 func scanGoRules(root string, paths []string) ([]Violation, error) {
 	var violations []Violation
 	for _, path := range goFiles(paths) {
@@ -43,7 +45,7 @@ func scanGoRules(root string, paths []string) ([]Violation, error) {
 }
 
 func entrypointViolations(set *token.FileSet, file *ast.File, path string) []Violation {
-	if filepath.Base(path) != "main.go" || file.Name.Name != "main" || !isCommandMain(path) {
+	if filepath.Base(path) != "main.go" || file.Name.Name != mainFunctionName || !isCommandMain(path) {
 		return nil
 	}
 	var violations []Violation
@@ -51,7 +53,7 @@ func entrypointViolations(set *token.FileSet, file *ast.File, path string) []Vio
 	for _, declaration := range file.Decls {
 		switch typed := declaration.(type) {
 		case *ast.FuncDecl:
-			if typed.Name.Name == "main" {
+			if typed.Name.Name == mainFunctionName {
 				mainDecl = typed
 				continue
 			}
@@ -101,61 +103,57 @@ func prosePinGoViolations(set *token.FileSet, file *ast.File, path string, data 
 			continue
 		}
 		segment := nodeText(data, set.Position(function.Pos()).Offset, set.Position(function.End()).Offset)
-		if !hasDocumentReference(segment) {
+		if hasDocumentReference(segment) {
+			violations = append(violations, prosePinFunctionViolations(set, path, function)...)
+		}
+	}
+	return violations
+}
+
+func prosePinFunctionViolations(set *token.FileSet, path string, function *ast.FuncDecl) []Violation {
+	var violations []Violation
+	ast.Inspect(function.Body, func(node ast.Node) bool {
+		violations = append(violations, prosePinNodeViolations(set, path, node)...)
+		return true
+	})
+	return violations
+}
+
+func prosePinNodeViolations(set *token.FileSet, path string, node ast.Node) []Violation {
+	switch typed := node.(type) {
+	case *ast.CallExpr:
+		if !isStringPinCall(typed.Fun) {
+			return nil
+		}
+		return proseLiteralViolations(set, path, typed.Args, "test must not pin long natural-language instruction or Markdown prose")
+	case *ast.BinaryExpr:
+		if typed.Op != token.EQL && typed.Op != token.NEQ {
+			return nil
+		}
+		return proseLiteralViolations(set, path, []ast.Expr{typed.X, typed.Y}, "test must not exact-pin long natural-language instruction or Markdown prose")
+	default:
+		return nil
+	}
+}
+
+func proseLiteralViolations(set *token.FileSet, path string, expressions []ast.Expr, message string) []Violation {
+	var violations []Violation
+	for _, expression := range expressions {
+		value, ok := stringLiteral(expression)
+		if !ok || !proseLike(value) {
 			continue
 		}
-		ast.Inspect(function.Body, func(node ast.Node) bool {
-			switch typed := node.(type) {
-			case *ast.CallExpr:
-				if !isStringPinCall(typed.Fun) {
-					return true
-				}
-				for _, argument := range typed.Args {
-					value, ok := stringLiteral(argument)
-					if !ok || !proseLike(value) {
-						continue
-					}
-					position := set.Position(argument.Pos())
-					violations = append(violations, Violation{
-						Rule: "prose-contract-pin", Path: path, Line: position.Line, Column: position.Column,
-						Message: "test must not pin long natural-language instruction or Markdown prose",
-					})
-				}
-			case *ast.BinaryExpr:
-				if typed.Op != token.EQL && typed.Op != token.NEQ {
-					return true
-				}
-				for _, expression := range []ast.Expr{typed.X, typed.Y} {
-					value, ok := stringLiteral(expression)
-					if !ok || !proseLike(value) {
-						continue
-					}
-					position := set.Position(expression.Pos())
-					violations = append(violations, Violation{
-						Rule: "prose-contract-pin", Path: path, Line: position.Line, Column: position.Column,
-						Message: "test must not exact-pin long natural-language instruction or Markdown prose",
-					})
-				}
-			}
-			return true
+		position := set.Position(expression.Pos())
+		violations = append(violations, Violation{
+			Rule: "prose-contract-pin", Path: path, Line: position.Line, Column: position.Column,
+			Message: message,
 		})
 	}
 	return violations
 }
 
 func instructionHashGoViolations(set *token.FileSet, file *ast.File, path string, data []byte) []Violation {
-	if !strings.HasSuffix(path, "_test.go") {
-		return nil
-	}
-	importsSHA256 := false
-	for _, spec := range file.Imports {
-		value, err := strconv.Unquote(spec.Path.Value)
-		if err == nil && value == "crypto/sha256" {
-			importsSHA256 = true
-			break
-		}
-	}
-	if !importsSHA256 {
+	if !strings.HasSuffix(path, "_test.go") || !importsPackage(file, "crypto/sha256") {
 		return nil
 	}
 	for _, declaration := range file.Decls {
@@ -164,7 +162,7 @@ func instructionHashGoViolations(set *token.FileSet, file *ast.File, path string
 			continue
 		}
 		segment := nodeText(data, set.Position(function.Pos()).Offset, set.Position(function.End()).Offset)
-		if !hasDocumentReference(segment) || (!strings.Contains(segment, "sha256") && !strings.Contains(segment, "SHA256")) {
+		if !hasDocumentReference(segment) || !containsSHA256Reference(segment) {
 			continue
 		}
 		position := set.Position(function.Pos())
@@ -174,6 +172,20 @@ func instructionHashGoViolations(set *token.FileSet, file *ast.File, path string
 		}}
 	}
 	return nil
+}
+
+func importsPackage(file *ast.File, packagePath string) bool {
+	for _, spec := range file.Imports {
+		value, err := strconv.Unquote(spec.Path.Value)
+		if err == nil && value == packagePath {
+			return true
+		}
+	}
+	return false
+}
+
+func containsSHA256Reference(segment string) bool {
+	return strings.Contains(segment, "sha256") || strings.Contains(segment, "SHA256")
 }
 
 func shadowProductionViolations(set *token.FileSet, file *ast.File, path string) []Violation {
@@ -264,24 +276,33 @@ func thinWrapperViolations(set *token.FileSet, file *ast.File, path string, data
 	var violations []Violation
 	for _, declaration := range file.Decls {
 		function, ok := declaration.(*ast.FuncDecl)
-		if !ok || function.Recv != nil || function.Body == nil || function.Name.IsExported() || function.Name.Name == "main" {
+		if !ok {
 			continue
 		}
-		parameters := parameterNames(function.Type.Params)
-		if len(parameters) == 0 || len(function.Body.List) != 1 {
-			continue
+		if violation, ok := thinWrapperViolation(set, path, function); ok {
+			violations = append(violations, violation)
 		}
-		call := forwardedCall(function.Body.List[0])
-		if call == nil || !argumentsForward(parameters, call.Args) {
-			continue
-		}
-		position := set.Position(function.Pos())
-		violations = append(violations, Violation{
-			Rule: "thin-wrapper-proliferation", Path: path, Line: position.Line, Column: position.Column,
-			Message: "private forwarding wrapper adds no validation, transformation, or ownership boundary",
-		})
 	}
 	return violations
+}
+
+func thinWrapperViolation(set *token.FileSet, path string, function *ast.FuncDecl) (Violation, bool) {
+	if function.Recv != nil || function.Body == nil || function.Name.IsExported() || function.Name.Name == mainFunctionName {
+		return Violation{}, false
+	}
+	parameters := parameterNames(function.Type.Params)
+	if len(parameters) == 0 || len(function.Body.List) != 1 {
+		return Violation{}, false
+	}
+	call := forwardedCall(function.Body.List[0])
+	if call == nil || !argumentsForward(parameters, call.Args) {
+		return Violation{}, false
+	}
+	position := set.Position(function.Pos())
+	return Violation{
+		Rule: "thin-wrapper-proliferation", Path: path, Line: position.Line, Column: position.Column,
+		Message: "private forwarding wrapper adds no validation, transformation, or ownership boundary",
+	}, true
 }
 
 func hasBuildConstraint(data []byte) bool {

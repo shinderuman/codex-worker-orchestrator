@@ -11,7 +11,7 @@ func ProbeRepoLock(path string) LockProbe {
 	file, err := os.OpenFile(path, os.O_RDONLY, 0)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return LockProbe{State: LockFree, PID: "none"}
+			return LockProbe{State: LockFree, PID: statusNone}
 		}
 		return LockProbe{State: LockUnknown, PID: "unknown"}
 	}

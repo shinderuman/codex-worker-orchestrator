@@ -93,12 +93,12 @@ func printTimeline(st *state.StateStore, taskIDArg string, stdout io.Writer) err
 		if explicit {
 			return &NotFoundError{Message: fmt.Sprintf("task %sのevent logがありません: %v", taskID, err)}
 		}
-		output.EventLog = timelineEventLog{Status: "none"}
+		output.EventLog = timelineEventLog{Status: statusNone}
 	case err != nil:
 		if explicit {
 			return fmt.Errorf("task %sのevent logを読めません: %w", taskID, err)
 		}
-		output.EventLog = timelineEventLog{Status: "unreadable"}
+		output.EventLog = timelineEventLog{Status: statusUnreadable}
 	default:
 		output.EventLog = timelineEventLog{Status: "ok", Path: stringPtr(st.TaskEventLogPath(taskID))}
 		output.Calls = timelineCalls(records)
@@ -116,7 +116,7 @@ func fillTimelineTelemetry(taskID string, logErr error, logs []state.ModelCallLo
 		return
 	}
 	if logErr != nil {
-		unreadable := "unreadable"
+		unreadable := statusUnreadable
 		output.Telemetry = &unreadable
 		return
 	}

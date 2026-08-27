@@ -65,6 +65,8 @@ type effectiveRisk struct {
 	source string
 }
 
+const highRiskValue = "HIGH"
+
 const providerUnavailableDeadline = 3 * time.Hour
 
 const maxTransientProbes = 4
@@ -860,7 +862,7 @@ func reviewNeedsHighRiskFloor(workerResult packet.Result, autoFixes int, hasDeci
 
 func riskLabel(high bool) string {
 	if high {
-		return "HIGH"
+		return highRiskValue
 	}
 	return "LOW"
 }
@@ -899,7 +901,7 @@ func (w *Workflow) selfProtectionNow() selfProtectionDecision {
 }
 
 func (w *Workflow) resolveReviewResumeRisk(workerResult packet.Result, checkpoint state.ResumeCheckpoint) effectiveRisk {
-	if checkpoint.EffectiveRisk == "HIGH" {
+	if checkpoint.EffectiveRisk == highRiskValue {
 		return effectiveRisk{high: true, source: checkpoint.EffectiveRiskSource}
 	}
 	hasDecision := w.state.Exists("last-decision")
@@ -1705,7 +1707,7 @@ func (w *Workflow) applyCallDiagnostics(entry *state.ModelCallLog, checkpoint st
 	if checkpoint.EffectiveRisk != "" {
 		entry.EffectiveRisk = checkpoint.EffectiveRisk
 		entry.RiskFloorSource = checkpoint.EffectiveRiskSource
-		if checkpoint.Role == state.ReviewerRole && checkpoint.EffectiveRisk == "HIGH" {
+		if checkpoint.Role == state.ReviewerRole && checkpoint.EffectiveRisk == highRiskValue {
 			category := riskFloorCategory(checkpoint.EffectiveRiskSource)
 			entry.RiskFloorCategory = category
 			w.state.RecordRiskFloor(category)

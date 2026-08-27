@@ -55,9 +55,25 @@ func processStreamViolations(root string, paths []string) ([]Violation, error) {
 }
 
 func processStreamReferences(set *token.FileSet, file *ast.File, path string) (map[string]int, map[string]token.Position, []Violation) {
-	aliases := make(map[string]string)
+	aliases, violations := processStreamImportAliases(set, file, path)
 	found := make(map[string]int)
 	positions := make(map[string]token.Position)
+	ast.Inspect(file, func(node ast.Node) bool {
+		if selector, ok := node.(*ast.SelectorExpr); ok {
+			recordProcessStreamSelector(set, aliases, selector, found, positions)
+		}
+		if call, ok := node.(*ast.CallExpr); ok {
+			if violation, ok := directPrintViolation(set, aliases, path, call); ok {
+				violations = append(violations, violation)
+			}
+		}
+		return true
+	})
+	return found, positions, violations
+}
+
+func processStreamImportAliases(set *token.FileSet, file *ast.File, path string) (map[string]string, []Violation) {
+	aliases := make(map[string]string)
 	var violations []Violation
 	for _, spec := range file.Imports {
 		importPath, err := strconv.Unquote(spec.Path.Value)
@@ -83,32 +99,39 @@ func processStreamReferences(set *token.FileSet, file *ast.File, path string) (m
 		}
 		aliases[name] = importPath
 	}
-	ast.Inspect(file, func(node ast.Node) bool {
-		switch typed := node.(type) {
-		case *ast.SelectorExpr:
-			identifier, ok := typed.X.(*ast.Ident)
-			if !ok || aliases[identifier.Name] != "os" {
-				return true
-			}
-			switch typed.Sel.Name {
-			case "Stdin", "Stdout", "Stderr":
-				found[typed.Sel.Name]++
-				if _, exists := positions[typed.Sel.Name]; !exists {
-					positions[typed.Sel.Name] = set.Position(typed.Pos())
-				}
-			}
-		case *ast.CallExpr:
-			if name, ok := directPrintCall(aliases, typed); ok {
-				position := set.Position(typed.Pos())
-				violations = append(violations, Violation{
-					Rule: "process-stream-boundary", Path: path, Line: position.Line, Column: position.Column,
-					Message: "direct process print " + name + " is forbidden; use an injected writer",
-				})
-			}
-		}
+	return aliases, violations
+}
+
+func recordProcessStreamSelector(set *token.FileSet, aliases map[string]string, selector *ast.SelectorExpr, found map[string]int, positions map[string]token.Position) {
+	identifier, ok := selector.X.(*ast.Ident)
+	if !ok || aliases[identifier.Name] != "os" || !isProcessStreamName(selector.Sel.Name) {
+		return
+	}
+	found[selector.Sel.Name]++
+	if _, exists := positions[selector.Sel.Name]; !exists {
+		positions[selector.Sel.Name] = set.Position(selector.Pos())
+	}
+}
+
+func isProcessStreamName(name string) bool {
+	switch name {
+	case "Stdin", "Stdout", "Stderr":
 		return true
-	})
-	return found, positions, violations
+	default:
+		return false
+	}
+}
+
+func directPrintViolation(set *token.FileSet, aliases map[string]string, path string, call *ast.CallExpr) (Violation, bool) {
+	name, ok := directPrintCall(aliases, call)
+	if !ok {
+		return Violation{}, false
+	}
+	position := set.Position(call.Pos())
+	return Violation{
+		Rule: "process-stream-boundary", Path: path, Line: position.Line, Column: position.Column,
+		Message: "direct process print " + name + " is forbidden; use an injected writer",
+	}, true
 }
 
 func directPrintCall(aliases map[string]string, call *ast.CallExpr) (string, bool) {
