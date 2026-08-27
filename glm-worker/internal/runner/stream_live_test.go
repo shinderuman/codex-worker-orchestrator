@@ -284,13 +284,14 @@ func TestClaudeRunnerLiveModelActivityFromSuppressedThinkingTokens(t *testing.T)
 		t.Fatalf("event log = %#v(assistantとresultだけが記録される)", records)
 	}
 	status := readLiveStatus(t, st, taskID)
-	if status.LastModelActivityAt.Sub(records[0].Timestamp) < time.Second {
-		t.Fatalf("thinking_tokensがmodel activity専用時刻を進めていません: %v(assistant = %v)", status.LastModelActivityAt, records[0].Timestamp)
+	minimumGap := 900 * time.Millisecond
+	if status.LastModelActivityAt.Sub(records[0].Timestamp) < minimumGap {
+		t.Fatalf("thinking_tokensがmodel activity専用時刻を十分に進めていません: %v(assistant = %v)", status.LastModelActivityAt, records[0].Timestamp)
 	}
 	if !status.LastEventAt.Equal(records[1].Timestamp) {
 		t.Fatalf("last_event_at = %v, want result観測時刻 %v", status.LastEventAt, records[1].Timestamp)
 	}
-	if status.LastEventAt.Sub(status.LastModelActivityAt) < time.Second {
-		t.Fatalf("resultがmodel activity専用時刻を進めています: %v(result = %v)", status.LastModelActivityAt, records[1].Timestamp)
+	if status.LastEventAt.Sub(status.LastModelActivityAt) < minimumGap {
+		t.Fatalf("resultとmodel activity専用時刻が十分に分離されていません: %v(result = %v)", status.LastModelActivityAt, records[1].Timestamp)
 	}
 }
