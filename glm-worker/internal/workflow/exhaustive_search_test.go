@@ -95,3 +95,26 @@ func configForExhaustiveFailure(root string) config.AppConfig {
 func testNow() time.Time {
 	return testFixedTime
 }
+
+func TestExhaustiveProofPersistsIntoAutoFixPrompt(t *testing.T) {
+	repoRoot := initMutationRepo(t)
+	writePlanFileContent(t, repoRoot, planGuardSeed)
+	if err := os.WriteFile(filepath.Join(repoRoot, "needle-target.txt"), []byte("needle implementation\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	w, r, _, _ := newPlanFileWorkflow(t, repoRoot, []runnerStep{
+		{structured: implementedPacket("initial")},
+		{structured: fixRequiredPacket()},
+		{structured: implementedPacket("fixed")},
+		{structured: needsSolReviewPacket()},
+	}, "", 0, nil)
+	if err := w.ExecuteNewTask("exhaustive needle inspection"); err != nil {
+		t.Fatal(err)
+	}
+	if len(r.prompts) != 4 {
+		t.Fatalf("calls=%d want=4 phases=%v", len(r.prompts), r.phases)
+	}
+	if !strings.Contains(r.prompts[2], "EXHAUSTIVE_SEARCH_PROOF:") || !strings.Contains(r.prompts[2], "ROLE: worker") {
+		t.Fatalf("auto-fix prompt lost exhaustive proof:\n%s", r.prompts[2])
+	}
+}

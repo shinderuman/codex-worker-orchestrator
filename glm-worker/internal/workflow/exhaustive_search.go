@@ -18,8 +18,6 @@ const (
 	exhaustiveSearchComplete      = "full-corpus-proof"
 )
 
-type exhaustiveSearchFunc func(context.Context, string, string, reposearch.ExhaustiveOptions) (reposearch.ExhaustiveReport, error)
-
 func (w *Workflow) exhaustiveSearchContext(request, activeTaskPath string, role state.SessionRole, seq int) (string, error) {
 	required, err := exhaustiveSearchRequired(w.config.RepoRoot, request, activeTaskPath)
 	if err != nil {
