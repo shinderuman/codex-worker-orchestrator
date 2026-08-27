@@ -78,10 +78,11 @@ ranking上位だけで網羅性を誤認するfalse-completeを防ぐ。
 
 - BM25 corpus境界とfingerprint統一
 - 016 worker repo-search integrationはPR #22のSquash Merge commit `da468541683a832b102acecc60770678452e6fa4`で充足済み。BM25はnavigation/ranking用途でありexhaustive proofにはしない
+- F9 reviewer diff-first independent searchはPR #19のSquash Merge commit `948ea31ee4381f4192afeff607c015696349a9a1`で充足済み。reviewer独立searchはnavigationでありexhaustive proofにはしない
 
 ## Dependencies
 
-- `IMPLEMENTATION_TASKS/017-reviewer-diff-first-search.md`
+none
 
 ## Review findings
 
@@ -89,4 +90,4 @@ none
 
 ## Current boundary
 
-未着手。
+ACTIVE。通常BM25 worker/reviewer searchは既にproduction接続済みだがranking/navigationに限定される。F10ではexhaustive要求を通常searchから決定論的に区別し、full-corpus criterionをworker/reviewer双方のproduction wiringで独立に成立させる。
