@@ -54,6 +54,9 @@ type heredocSpec struct {
 }
 
 func Check(root string) (Report, error) {
+	if !harnesslint.AppliesTo(root) {
+		return Run(root, false)
+	}
 	quality, err := harnesslint.Check(root)
 	if err != nil {
 		return Report{}, err

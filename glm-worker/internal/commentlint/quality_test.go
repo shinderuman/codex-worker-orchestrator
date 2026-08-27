@@ -1,6 +1,8 @@
 package commentlint
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint"
@@ -21,5 +23,20 @@ func TestQualityReportPreservesHarnesslintViolation(t *testing.T) {
 	violation := got.Violations[0]
 	if violation.Kind != "prose-contract-pin" || violation.Path != "a_test.go" || violation.Line != 7 || violation.Column != 3 || violation.Message != "pin" {
 		t.Fatalf("violation = %+v", violation)
+	}
+}
+
+func TestCheckKeepsCommentPolicyForOtherRepositories(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "x.go")
+	if err := os.WriteFile(path, []byte("package x\n// prose\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	report, err := Check(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Status != "fail" || len(report.Violations) != 1 || report.Violations[0].Kind != "comment" {
+		t.Fatalf("report = %+v", report)
 	}
 }

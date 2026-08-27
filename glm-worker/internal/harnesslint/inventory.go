@@ -12,6 +12,21 @@ import (
 	"strings"
 )
 
+const repositoryModule = "module github.com/shinderuman/codex-worker-orchestrator/glm-worker"
+
+func AppliesTo(root string) bool {
+	data, err := os.ReadFile(filepath.Join(root, "glm-worker", "go.mod"))
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.TrimSpace(line) == repositoryModule {
+			return true
+		}
+	}
+	return false
+}
+
 func ValidateRoot(root string) error {
 	info, err := os.Stat(root)
 	if err != nil {
