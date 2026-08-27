@@ -165,6 +165,11 @@ func (w *Workflow) ExecuteNewTask(request string) error {
 		pocStage := decl.pocStage()
 
 		prompt := w.newWorkerTaskPrompt(request, activeTaskPath)
+		exhaustiveContext, err := w.exhaustiveSearchContext(request, activeTaskPath, state.WorkerRole, 1)
+		if err != nil {
+			return err
+		}
+		prompt += exhaustiveContext
 		checkpoint := state.ResumeCheckpoint{
 			Stage:          state.ResumeStageWorker,
 			Phase:          "worker-new",
@@ -277,7 +282,7 @@ func (w *Workflow) ExecuteDecision(decision string) error {
 			Request:        request,
 			Decision:       decision,
 		}
-		return w.executeWorkerCheckpoint(request, checkpoint, pocStage)
+		return w.executeWorkerCheckpointWithExhaustiveContext(request, activeTaskPath, checkpoint, pocStage)
 	}))
 }
 
@@ -329,7 +334,7 @@ func (w *Workflow) ExecuteExplicitFix(instruction, origin string) error {
 			Request:        request,
 			Decision:       decision,
 		}
-		return w.executeWorkerCheckpoint(request, checkpoint, pocStage)
+		return w.executeWorkerCheckpointWithExhaustiveContext(request, activeTaskPath, checkpoint, pocStage)
 	}))
 }
 
@@ -779,6 +784,11 @@ func (w *Workflow) buildReviewCheckpoint(
 		return state.ResumeCheckpoint{}, "", false, err
 	}
 	reviewNavigation := w.reviewerDiffFirstContext(request, reviewNumber)
+	exhaustiveNavigation, err := w.exhaustiveSearchContext(request, activeTaskPath, state.ReviewerRole, reviewNumber+1)
+	if err != nil {
+		return state.ResumeCheckpoint{}, "", false, err
+	}
+	reviewNavigation += exhaustiveNavigation
 	prompt := reviewerPrompt(
 		request,
 		decision,
@@ -921,6 +931,11 @@ func (w *Workflow) prepareAutoFixCheckpoint(
 		prompt = reportOnlyFixPrompt(request, decision, reviewReport, activeTaskPath)
 		phase = fmt.Sprintf("worker-report-only-%d", nextAutoFixes)
 	}
+	exhaustiveContext, err := w.exhaustiveSearchContext(request, activeTaskPath, state.WorkerRole, nextAutoFixes)
+	if err != nil {
+		return state.ResumeCheckpoint{}, err
+	}
+	prompt += exhaustiveContext
 	return state.ResumeCheckpoint{
 		Stage:          state.ResumeStageAutoFix,
 		Phase:          phase,
