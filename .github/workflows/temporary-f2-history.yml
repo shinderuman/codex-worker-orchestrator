@@ -1,0 +1,32 @@
+name: Temporary F2 History
+
+on:
+  push:
+    branches:
+      - hardening-task/unknown-production-surface-risk
+
+permissions:
+  contents: write
+
+jobs:
+  append:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Append F2 completion evidence
+        run: |
+          if grep -Fq -- '- [x] F2 unknown production surface risk:' IMPLEMENTATION_HISTORY.md; then
+            echo 'F2 history already present' >&2
+            exit 1
+          fi
+          cat >> IMPLEMENTATION_HISTORY.md <<'EOF'
+          - [x] F2 unknown production surface risk: A/B分類はTrack Aをgeneric fail-closed境界として成立させ、本repo向けTrack Bも同じmechanismで包含したためrepo固有path列挙を追加しなかった。既存`IsCriticalPath`が明示的known-safe/noncritical categoryを返すtest/docs等はLOWを維持し、critical=falseかつcategory空の未分類pathだけを`unknown-surface` HIGHへ昇格することで、新規directory/script/config/file typeの分類漏れをreview前のhigh-risk reviewer / risk-floor経路へ送る。`runtime/new-worker.py`、`.github/workflows/new-quality.yml`、`config/runtime.yaml`、`requirements.txt`、`allowlist.txt`等のunknown HIGH、docs/test/fixtureのLOW、known criticalとのcategory集約、production review flowの`reviewer-1-risk-floor`遷移を回帰testで固定した。cost/noiseは既知safe surfaceでは従来LOWのまま増加せず、追加の高risk review/Sol確認は未分類surfaceが実際に現れた場合だけ発生する。最終reviewでは既存retention testを通すため`.txt`全般をLOWにする案が`allowlist.txt`等をsilent LOWへ戻す欠陥を持つと判定して撤回し、test fixture側だけを明示的docへ変更、intentional source-like `isolation-result.txt`はHIGH経路を期待するtestへ更新した。Actions run `33096824690`でworkflow tests、workflow vet、全package buildがPASSし、最終treeのRepository Lint run `33096961707`もPASSした。
+          EOF
+          rm .github/workflows/temporary-f2-history.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add IMPLEMENTATION_HISTORY.md .github/workflows/temporary-f2-history.yml
+          git commit -m 'chore: record F2 completion evidence'
+          git push
