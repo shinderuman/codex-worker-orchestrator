@@ -1,0 +1,78 @@
+name: Temporary F10 Auto Fix
+on:
+  push:
+    branches:
+      - hardening-task/exhaustive-search-gate
+permissions:
+  contents: write
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.22.x'
+      - name: Patch auto-fix and cleanup
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('glm-worker/internal/workflow/workflow.go')
+          s = p.read_text()
+          old = '''\tif reportOnly {\n\t\tprompt = reportOnlyFixPrompt(request, decision, reviewReport, activeTaskPath)\n\t\tphase = fmt.Sprintf("worker-report-only-%d", nextAutoFixes)\n\t}\n\treturn state.ResumeCheckpoint{\n'''
+          new = '''\tif reportOnly {\n\t\tprompt = reportOnlyFixPrompt(request, decision, reviewReport, activeTaskPath)\n\t\tphase = fmt.Sprintf("worker-report-only-%d", nextAutoFixes)\n\t}\n\texhaustiveContext, err := w.exhaustiveSearchContext(request, activeTaskPath, state.WorkerRole, nextAutoFixes)\n\tif err != nil {\n\t\treturn state.ResumeCheckpoint{}, err\n\t}\n\tprompt += exhaustiveContext\n\treturn state.ResumeCheckpoint{\n'''
+          if old not in s:
+              raise SystemExit('auto-fix anchor missing')
+          p.write_text(s.replace(old, new, 1))
+          p = Path('glm-worker/internal/workflow/exhaustive_search.go')
+          s = p.read_text()
+          line = 'type exhaustiveSearchFunc func(context.Context, string, string, reposearch.ExhaustiveOptions) (reposearch.ExhaustiveReport, error)\n\n'
+          if line not in s:
+              raise SystemExit('unused type anchor missing')
+          p.write_text(s.replace(line, '', 1))
+          PY
+          cat >> glm-worker/internal/workflow/exhaustive_search_test.go <<'EOF'
+
+func TestExhaustiveProofPersistsIntoAutoFixPrompt(t *testing.T) {
+	repoRoot := initMutationRepo(t)
+	writePlanFileContent(t, repoRoot, planGuardSeed)
+	if err := os.WriteFile(filepath.Join(repoRoot, "needle-target.txt"), []byte("needle implementation\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	w, r, _, _ := newPlanFileWorkflow(t, repoRoot, []runnerStep{
+		{structured: implementedPacket("initial")},
+		{structured: fixRequiredPacket()},
+		{structured: implementedPacket("fixed")},
+		{structured: passPacket()},
+	}, "", 0, nil)
+	if err := w.ExecuteNewTask("exhaustive needle inspection"); err != nil {
+		t.Fatal(err)
+	}
+	if len(r.prompts) != 4 {
+		t.Fatalf("calls=%d want=4 phases=%v", len(r.prompts), r.phases)
+	}
+	if !strings.Contains(r.prompts[2], "EXHAUSTIVE_SEARCH_PROOF:") || !strings.Contains(r.prompts[2], "ROLE: worker") {
+		t.Fatalf("auto-fix prompt lost exhaustive proof:\n%s", r.prompts[2])
+	}
+}
+EOF
+          gofmt -w glm-worker/internal/workflow/workflow.go glm-worker/internal/workflow/exhaustive_search.go glm-worker/internal/workflow/exhaustive_search_test.go
+      - name: Validate
+        working-directory: glm-worker
+        run: |
+          go test ./internal/reposearch ./internal/workflow
+          go test -race ./internal/reposearch ./internal/workflow
+          go vet ./...
+          go build ./...
+      - name: Commit
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add glm-worker/internal/workflow/workflow.go glm-worker/internal/workflow/exhaustive_search.go glm-worker/internal/workflow/exhaustive_search_test.go
+          git commit -m 'fix: preserve exhaustive proof across auto-fix'
+          git push origin HEAD:hardening-task/exhaustive-search-gate
