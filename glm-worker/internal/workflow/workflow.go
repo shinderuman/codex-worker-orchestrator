@@ -348,30 +348,32 @@ func (w *Workflow) ExecuteExplicitFix(instruction, origin string) error {
 			Request:        request,
 			Decision:       decision,
 		}
-		if pocStage {
-			if stopped, err := w.savePoCStartSnapshot(); err != nil {
-				return err
-			} else if stopped {
-				return nil
-			}
-		}
+		return w.executeWorkerCheckpoint(request, checkpoint, pocStage)
+	}))
+}
 
-		workerResult, err := w.runModel(checkpoint)
-		if err != nil {
+func (w *Workflow) executeWorkerCheckpoint(request string, checkpoint state.ResumeCheckpoint, pocStage bool) error {
+	if pocStage {
+		stopped, err := w.savePoCStartSnapshot()
+		if err != nil || stopped {
 			return err
 		}
-		if pocStage {
-			if stopped, err := w.verifyPoCEndSnapshot(); err != nil {
-				return err
-			} else if stopped {
-				return nil
-			}
-			if workerResult.Status == packet.StatusImplemented {
-				return w.routePoCWorkerResult(workerResult)
-			}
+	}
+
+	workerResult, err := w.runModel(checkpoint)
+	if err != nil {
+		return err
+	}
+	if pocStage {
+		stopped, err := w.verifyPoCEndSnapshot()
+		if err != nil || stopped {
+			return err
 		}
-		return w.handleWorkerResult(request, workerResult, checkpoint.Phase)
-	}))
+		if workerResult.Status == packet.StatusImplemented {
+			return w.routePoCWorkerResult(workerResult)
+		}
+	}
+	return w.handleWorkerResult(request, workerResult, checkpoint.Phase)
 }
 
 func (w *Workflow) ExecuteResume() error {
