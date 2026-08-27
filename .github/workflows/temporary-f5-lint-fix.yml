@@ -80,18 +80,25 @@ jobs:
           for path in workflow_dir.glob('*.go'):
               data = path.read_text()
               if '"test-fixture"' in data:
-                  path.write_text(data.replace('"test-fixture"', 'testFixturePathCategory'))
+                  data = data.replace('"test-fixture"', 'testFixturePathCategory')
+              if '"test-harness"' in data:
+                  data = data.replace('"test-harness"', 'testHarnessPathCategory')
+              path.write_text(data)
 
           quality_path = workflow_dir / 'quality_evidence.go'
           quality = quality_path.read_text()
           anchor = 'const parentBehaviorEvalPath = "tests/parent-behavior-evals.json"\n'
           if anchor not in quality:
               raise SystemExit('quality evidence const anchor not found')
-          quality_path.write_text(quality.replace(anchor, anchor + 'const testFixturePathCategory = "test-fixture"\n', 1))
+          quality_path.write_text(quality.replace(
+              anchor,
+              anchor + 'const testFixturePathCategory = "test-fixture"\nconst testHarnessPathCategory = "test-harness"\n',
+              1,
+          ))
 
           workflow_path = workflow_dir / 'workflow.go'
           workflow = workflow_path.read_text()
-          old = '''\tif checkpoint.Role == state.WorkerRole && !checkpoint.ReportOnly {
+          old_activation = '''\tif checkpoint.Role == state.WorkerRole && !checkpoint.ReportOnly {
           \t\tactivatedCheckpoint, _, activationErr := w.activateCheckpointRules(checkpoint)
           \t\tif activationErr != nil {
           \t\t\treturn checkpoint, false, activationErr
@@ -99,17 +106,32 @@ jobs:
           \t\tcheckpoint = activatedCheckpoint
           \t}
           '''
-          new = '''\tactivatedCheckpoint, activationErr := w.activateResumeRuleContext(checkpoint)
+          new_activation = '''\tactivatedCheckpoint, activationErr := w.activateResumeRuleContext(checkpoint)
           \tif activationErr != nil {
           \t\treturn checkpoint, false, activationErr
           \t}
           \tcheckpoint = activatedCheckpoint
           '''
-          if old not in workflow:
+          if old_activation not in workflow:
               raise SystemExit('resume activation block not found')
-          workflow = workflow.replace(old, new, 1)
+          workflow = workflow.replace(old_activation, new_activation, 1)
+
+          old_provider = '''\tif checkpoint.ProviderUnavailable {
+          \t\tif err := w.gateResumeOnProbe(checkpoint); err != nil {
+          \t\t\treturn checkpoint, false, w.handleResumeProbeError(checkpoint, err)
+          \t\t}
+          \t}
+          '''
+          new_provider = '''\tif err := w.gateResumeProvider(checkpoint); err != nil {
+          \t\treturn checkpoint, false, err
+          \t}
+          '''
+          if old_provider not in workflow:
+              raise SystemExit('resume provider block not found')
+          workflow = workflow.replace(old_provider, new_provider, 1)
+
           helper_anchor = '\nfunc (w *Workflow) activateResume(checkpoint state.ResumeCheckpoint) error {'
-          helper = r'''
+          helpers = r'''
           func (w *Workflow) activateResumeRuleContext(checkpoint state.ResumeCheckpoint) (state.ResumeCheckpoint, error) {
               if checkpoint.Role != state.WorkerRole || checkpoint.ReportOnly {
                   return checkpoint, nil
@@ -120,10 +142,20 @@ jobs:
               }
               return activated, nil
           }
+
+          func (w *Workflow) gateResumeProvider(checkpoint state.ResumeCheckpoint) error {
+              if !checkpoint.ProviderUnavailable {
+                  return nil
+              }
+              if err := w.gateResumeOnProbe(checkpoint); err != nil {
+                  return w.handleResumeProbeError(checkpoint, err)
+              }
+              return nil
+          }
           '''
           if helper_anchor not in workflow:
               raise SystemExit('activateResume helper anchor not found')
-          workflow_path.write_text(workflow.replace(helper_anchor, '\n' + helper + helper_anchor, 1))
+          workflow_path.write_text(workflow.replace(helper_anchor, '\n' + helpers + helper_anchor, 1))
           PY
           gofmt -w glm-worker/internal/runner/stream_events.go glm-worker/internal/workflow/*.go
       - name: Focused tests
