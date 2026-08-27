@@ -1,0 +1,26 @@
+name: Temporary F3 History
+
+on:
+  push:
+    branches:
+      - hardening-task/glm-git-authority-enforcement
+
+permissions:
+  contents: write
+
+jobs:
+  append:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Append F3 completion evidence
+        run: |
+          cat >> IMPLEMENTATION_HISTORY.md <<'EOF'
+          - [x] F3 GLM Git authority enforcement: Track Aとして任意Git repositoryのworker/reviewer model callだけをchild-only Git authority guardで囲み、通常の`git` commandはread-only allowlist proxy経由へ固定してcommit / branch・ref更新 / reset / checkout破棄 / push等を実行前に拒否・記録した。さらにcall前後のHEAD / symbolic HEAD /全refs / index / local configをreal Gitでdigest照合し、proxyを迂回したmetadata mutationもfail closed、guard違反時はworker/reviewer session identityを破棄して親recoveryへ戻す。通常worktree source editとguard外の親Codex commit/pushは維持し、worker promptの「明示依頼ならcommit可」と読める曖昧さもGLM commit絶対禁止へ同期した。Track Bは同じgeneric guardで本repoを包含しrepo固有hook追加なし。定常costはmodel callごとのlocal Git snapshot取得と一時proxy/wrapper file I/Oのみで追加model callはなく、通常read-only Git利用は維持する。threat boundaryは偶発・通常command経路のauthority越権を機械防止するものでhostile OS sandboxではなく、absolute real-Git等を意図的に使うworktree-only操作が通常source editと同一結果になる場合までpost-stateから識別するものではない。Actions `33100209070`とlint-fix再検証`33100899719`でrunner tests / runner vet /全package build PASS、恒久Repository Lint `33100991743` PASS。初回恒久lintがunused旧env helperとcyclop 16を検出し、policyを緩めず旧helper削除とsnapshot差分helper分離で解消した。
+          EOF
+          rm .github/workflows/temporary-f3-history.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add IMPLEMENTATION_HISTORY.md .github/workflows/temporary-f3-history.yml
+          git commit -m 'chore: record F3 completion evidence'
+          git push
