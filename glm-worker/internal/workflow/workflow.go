@@ -270,11 +270,6 @@ func (w *Workflow) ExecuteDecision(decision string) error {
 		}
 
 		prompt := decisionPrompt(request, decision, activeTaskPath)
-		exhaustiveContext, err := w.exhaustiveSearchContext(request, activeTaskPath, state.WorkerRole, 1)
-		if err != nil {
-			return err
-		}
-		prompt += exhaustiveContext
 		checkpoint := state.ResumeCheckpoint{
 			Stage:          state.ResumeStageWorker,
 			Phase:          "worker-decision",
@@ -287,7 +282,7 @@ func (w *Workflow) ExecuteDecision(decision string) error {
 			Request:        request,
 			Decision:       decision,
 		}
-		return w.executeWorkerCheckpoint(request, checkpoint, pocStage)
+		return w.executeWorkerCheckpointWithExhaustiveContext(request, activeTaskPath, checkpoint, pocStage)
 	}))
 }
 
@@ -327,11 +322,6 @@ func (w *Workflow) ExecuteExplicitFix(instruction, origin string) error {
 		}
 		pocStage := decl.pocStage()
 		prompt := explicitFixPrompt(request, decision, review, instruction, activeTaskPath)
-		exhaustiveContext, err := w.exhaustiveSearchContext(request, activeTaskPath, state.WorkerRole, 1)
-		if err != nil {
-			return err
-		}
-		prompt += exhaustiveContext
 		checkpoint := state.ResumeCheckpoint{
 			Stage:          state.ResumeStageWorker,
 			Phase:          "worker-explicit-fix",
@@ -344,7 +334,7 @@ func (w *Workflow) ExecuteExplicitFix(instruction, origin string) error {
 			Request:        request,
 			Decision:       decision,
 		}
-		return w.executeWorkerCheckpoint(request, checkpoint, pocStage)
+		return w.executeWorkerCheckpointWithExhaustiveContext(request, activeTaskPath, checkpoint, pocStage)
 	}))
 }
 
