@@ -63,4 +63,4 @@ none
 
 ## Current boundary
 
-NEXT。EVAL責務整理後の現行surfaceを正としてF2をTrack A/Bへ分類して着手する。
+NEXT / NARROW。現mainでは`glm-worker/internal/`と`glm-worker/cmd/`配下のproduction Goを新package名でもHIGHへ分類するため、その範囲のsilent LOWは解消済み。一方、既知prefix外の新しいproduction-like script / config / file type等は`IsCriticalPath`で未分類のままLOWへ落ち得るため、残余failure classをknown-safe LOWと区別するgeneric / repo-local境界へscopeを絞って継続する。

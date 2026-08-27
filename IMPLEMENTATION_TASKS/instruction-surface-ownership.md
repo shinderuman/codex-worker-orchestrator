@@ -67,4 +67,4 @@ none
 
 ## Current boundary
 
-NEXT。sandbox capability-aware quality gate完了後にF1をTrack A/Bへ分類して着手する。
+ACTIVE候補。PR #4でaccepted quality policy surfaceのworker自己改変はfail closed化されたが、glm-workerが実際に読むgeneric repo-local instruction surface全体のownership / task-wide mutation境界は別failure classとして未成立。metadata reconciliation完了後のruntime acceptanceを先に行い、その後に通常taskとして着手する。
