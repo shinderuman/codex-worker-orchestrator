@@ -15,6 +15,7 @@ func TestClassifySelfProtectionFailsClosedUnknownSurfaces(t *testing.T) {
 		"config/runtime.yaml",
 		"new-area/custom.extension",
 		"requirements.txt",
+		"allowlist.txt",
 	} {
 		t.Run(path, func(t *testing.T) {
 			decision := classifySelfProtection([]string{path})
@@ -28,11 +29,11 @@ func TestClassifySelfProtectionFailsClosedUnknownSurfaces(t *testing.T) {
 func TestClassifySelfProtectionKeepsKnownSafeLow(t *testing.T) {
 	for _, path := range []string{
 		"docs/guide.md",
+		"notes.md",
 		"pkg/worker_test.py",
 		"frontend/widget.spec.ts",
 		"src/tests/helper.js",
 		"fixtures/sample.json",
-		"uncommitted.txt",
 	} {
 		t.Run(path, func(t *testing.T) {
 			decision := classifySelfProtection([]string{path})
