@@ -1,0 +1,33 @@
+name: Temporary Campaign Close Plan Check
+on:
+  push:
+    branches:
+      - hardening/agent-guardrails
+permissions:
+  contents: write
+jobs:
+  plancheck:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.22.x'
+          cache: false
+      - name: Validate integration plan
+        working-directory: glm-worker
+        run: |
+          go run ./cmd/plancheck ..
+          go test ./internal/workflow -run 'Test(CheckFinalHeadPlan|ActiveTask)'
+      - name: Remove temporary workflow
+        shell: bash
+        run: |
+          rm .github/workflows/temporary-campaign-close-plan.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'chore: remove campaign close plan check'
+          git push origin HEAD:hardening/agent-guardrails
