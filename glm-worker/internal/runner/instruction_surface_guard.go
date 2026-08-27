@@ -56,23 +56,44 @@ func (r *ClaudeRunner) prepareInstructionSurfaceGuard() (instructionSurfaceSnaps
 	if err != nil {
 		return instructionSurfaceSnapshot{}, &InstructionSurfaceGuardError{Stage: "capture-before-call", Cause: err}
 	}
-	if !r.state.Exists(instructionSurfaceBaselineStateKey) {
-		if err := r.state.Write(instructionSurfaceBaselineStateKey, current.digest); err != nil {
-			return instructionSurfaceSnapshot{}, &InstructionSurfaceGuardError{Stage: "persist-task-baseline", Cause: err}
-		}
-		return current, nil
+	taskID, err := r.state.TaskID()
+	if err != nil {
+		return instructionSurfaceSnapshot{}, &InstructionSurfaceGuardError{Stage: "read-task-identity", Cause: err}
 	}
 	baseline, err := r.state.Read(instructionSurfaceBaselineStateKey)
 	if err != nil {
-		return instructionSurfaceSnapshot{}, &InstructionSurfaceGuardError{Stage: "read-task-baseline", Cause: err}
+		if !os.IsNotExist(err) {
+			return instructionSurfaceSnapshot{}, &InstructionSurfaceGuardError{Stage: "read-task-baseline", Cause: err}
+		}
+		if err := r.writeInstructionSurfaceBaseline(taskID, current.digest); err != nil {
+			return instructionSurfaceSnapshot{}, err
+		}
+		return current, nil
 	}
-	if strings.TrimSpace(baseline) != current.digest {
+	baselineTaskID, baselineDigest, ok := strings.Cut(strings.TrimSpace(baseline), " ")
+	if !ok || baselineTaskID == "" || baselineDigest == "" {
+		return instructionSurfaceSnapshot{}, &InstructionSurfaceGuardError{Stage: "read-task-baseline", Cause: fmt.Errorf("instruction surface baseline is malformed")}
+	}
+	if baselineTaskID != taskID {
+		if err := r.writeInstructionSurfaceBaseline(taskID, current.digest); err != nil {
+			return instructionSurfaceSnapshot{}, err
+		}
+		return current, nil
+	}
+	if baselineDigest != current.digest {
 		return instructionSurfaceSnapshot{}, &InstructionSurfaceGuardError{
 			Stage:        "before-call-mismatch",
 			ChangedPaths: []string{"AGENTS.md/AGENTS.local.md"},
 		}
 	}
 	return current, nil
+}
+
+func (r *ClaudeRunner) writeInstructionSurfaceBaseline(taskID, digest string) error {
+	if err := r.state.Write(instructionSurfaceBaselineStateKey, taskID+" "+digest); err != nil {
+		return &InstructionSurfaceGuardError{Stage: "persist-task-baseline", Cause: err}
+	}
+	return nil
 }
 
 func (r *ClaudeRunner) verifyInstructionSurfaceGuard(before instructionSurfaceSnapshot) error {
