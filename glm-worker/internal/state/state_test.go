@@ -437,208 +437,156 @@ func TestCaptureGitBaselineOmitsHeadOnNoCommitRepo(t *testing.T) {
 	}
 }
 
-func TestResolveRepoHeadDistinguishesUnbornFromCorrupt(t *testing.T) {
-	t.Run("non-git directory is corrupt not unborn", func(t *testing.T) {
-		_, unborn, err := resolveRepoHead(t.TempDir())
-		if err == nil {
-			t.Fatal("非git directoryはerrorになるべき")
+func TestResolveRepoHeadRejectsNonGitDirectory(t *testing.T) {
+	_, unborn, err := resolveRepoHead(t.TempDir())
+	if err == nil {
+		t.Fatal("非git directoryはerrorになるべき")
+	}
+	if unborn {
+		t.Fatal("非git directoryをunborn扱いしてはいけない")
+	}
+}
+
+func TestResolveRepoHeadReportsUnbornRepo(t *testing.T) {
+	repository := newResolveRepoHeadTestRepo(t)
+	head, unborn, err := resolveRepoHead(repository)
+	if err != nil {
+		t.Fatalf("unborn repoでerror: %v", err)
+	}
+	if !unborn || head != "" {
+		t.Fatalf("unborn repo=(%q,%v,nil) want (\"\",true,nil)", head, unborn)
+	}
+}
+
+func TestResolveRepoHeadResolvesCommittedRepo(t *testing.T) {
+	repository := newResolveRepoHeadTestRepo(t)
+	commitResolveRepoHeadTestFile(t, repository)
+	head, unborn, err := resolveRepoHead(repository)
+	if err != nil || unborn || head == "" {
+		t.Fatalf("committed repo=(%q,%v,%v) want (sha,false,nil)", head, unborn, err)
+	}
+}
+
+func TestResolveRepoHeadRejectsMissingDetachedCommit(t *testing.T) {
+	repository := newResolveRepoHeadTestRepo(t)
+	if err := os.WriteFile(filepath.Join(repository, ".git", "HEAD"), []byte("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, unborn, err := resolveRepoHead(repository)
+	if err == nil {
+		t.Fatal("detached HEADが存在しないcommitを指す場合、errorになるべき")
+	}
+	if unborn {
+		t.Fatal("detached HEADをunborn扱いしてはいけない")
+	}
+}
+
+func TestResolveRepoHeadRejectsCorruptSymbolicHead(t *testing.T) {
+	repository := newResolveRepoHeadTestRepo(t)
+	if err := os.WriteFile(filepath.Join(repository, ".git", "HEAD"), []byte("ref: not-under-refs-heads\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, unborn, err := resolveRepoHead(repository)
+	if err == nil {
+		t.Fatal("HEADがrefs/heads外のsymbolic targetを指す場合、errorになるべき")
+	}
+	if unborn {
+		t.Fatal("refs/heads外のsymbolic HEADをunborn扱いしてはいけない")
+	}
+}
+
+func TestResolveRepoHeadRejectsDetachedTreeObject(t *testing.T) {
+	repository := newResolveRepoHeadTestRepo(t)
+	commitResolveRepoHeadTestFile(t, repository)
+	treeCmd := exec.Command("git", "rev-parse", "HEAD^{tree}")
+	treeCmd.Dir = repository
+	tree, err := treeCmd.Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repository, ".git", "HEAD"), bytes.TrimSpace(tree), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, unborn, err := resolveRepoHead(repository)
+	if err == nil {
+		t.Fatal("tree objectを指すdetached HEADはcommitへpeelできずerrorになるべき")
+	}
+	if unborn {
+		t.Fatal("tree objectを指すdetached HEADをunborn扱いしてはいけない")
+	}
+}
+
+func TestResolveRepoHeadRejectsMissingLooseRefObject(t *testing.T) {
+	repository := newResolveRepoHeadTestRepo(t)
+	refsHeads := filepath.Join(repository, ".git", "refs", "heads")
+	if err := os.MkdirAll(refsHeads, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(refsHeads, "broken"), []byte("feedfacefeedfacefeedfacefeedfacefeedface\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repository, ".git", "HEAD"), []byte("ref: refs/heads/broken\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, unborn, err := resolveRepoHead(repository)
+	if err == nil {
+		t.Fatal("missing objectを指すloose refへのsymbolic HEADはerrorになるべき")
+	}
+	if unborn {
+		t.Fatal("missing objectのloose refを正当unborn扱いしてはいけない")
+	}
+}
+
+func TestResolveRepoHeadRejectsEmptyLooseRef(t *testing.T) {
+	repository := newResolveRepoHeadTestRepo(t)
+	refsHeads := filepath.Join(repository, ".git", "refs", "heads")
+	if err := os.MkdirAll(refsHeads, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(refsHeads, "empty"), []byte{}, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repository, ".git", "HEAD"), []byte("ref: refs/heads/empty\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, unborn, err := resolveRepoHead(repository)
+	if err == nil {
+		t.Fatal("空loose refへのsymbolic HEADはerrorになるべき")
+	}
+	if unborn {
+		t.Fatal("空loose refを正当unborn扱いしてはいけない")
+	}
+}
+
+func newResolveRepoHeadTestRepo(t *testing.T) string {
+	t.Helper()
+	repository := t.TempDir()
+	for _, args := range [][]string{
+		{"init", "--quiet"},
+		{"config", "user.email", "t@example.com"},
+		{"config", "user.name", "tester"},
+	} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repository
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
 		}
-		if unborn {
-			t.Fatal("非git directoryをunborn扱いしてはいけない")
+	}
+	return repository
+}
+
+func commitResolveRepoHeadTestFile(t *testing.T, repository string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(repository, "f.txt"), []byte("x\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"add", "f.txt"}, {"commit", "--quiet", "-m", "x"}} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repository
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
 		}
-	})
-	t.Run("unborn branch repo reports unborn without error", func(t *testing.T) {
-		repository := t.TempDir()
-		if out, err := exec.Command("git", "init", "--quiet", repository).CombinedOutput(); err != nil {
-			t.Fatalf("git init: %v: %s", err, out)
-		}
-		head, unborn, err := resolveRepoHead(repository)
-		if err != nil {
-			t.Fatalf("unborn repoでerror: %v", err)
-		}
-		if !unborn || head != "" {
-			t.Fatalf("unborn repo=(%q,%v,nil) want (\"\",true,nil)", head, unborn)
-		}
-	})
-	t.Run("committed repo resolves head", func(t *testing.T) {
-		repository := t.TempDir()
-		for _, args := range [][]string{
-			{"init", "--quiet"},
-			{"config", "user.email", "t@example.com"},
-			{"config", "user.name", "tester"},
-		} {
-			cmd := exec.Command("git", args...)
-			cmd.Dir = repository
-			if out, err := cmd.CombinedOutput(); err != nil {
-				t.Fatalf("git %v: %v: %s", args, err, out)
-			}
-		}
-		if err := os.WriteFile(filepath.Join(repository, "f.txt"), []byte("x\n"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		for _, args := range [][]string{{"add", "f.txt"}, {"commit", "--quiet", "-m", "x"}} {
-			cmd := exec.Command("git", args...)
-			cmd.Dir = repository
-			if out, err := cmd.CombinedOutput(); err != nil {
-				t.Fatalf("git %v: %v: %s", args, err, out)
-			}
-		}
-		head, unborn, err := resolveRepoHead(repository)
-		if err != nil || unborn || head == "" {
-			t.Fatalf("committed repo=(%q,%v,%v) want (sha,false,nil)", head, unborn, err)
-		}
-	})
-	t.Run("detached HEAD with missing commit is error not unborn", func(t *testing.T) {
-		repository := t.TempDir()
-		for _, args := range [][]string{
-			{"init", "--quiet"},
-			{"config", "user.email", "t@example.com"},
-			{"config", "user.name", "tester"},
-		} {
-			cmd := exec.Command("git", args...)
-			cmd.Dir = repository
-			if out, err := cmd.CombinedOutput(); err != nil {
-				t.Fatalf("git %v: %v: %s", args, err, out)
-			}
-		}
-		if err := os.WriteFile(filepath.Join(repository, ".git", "HEAD"), []byte("deadbeefdeadbeefdeadbeefdeadbeefdeadbeef\n"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		_, unborn, err := resolveRepoHead(repository)
-		if err == nil {
-			t.Fatal("detached HEADが存在しないcommitを指す場合、errorになるべき")
-		}
-		if unborn {
-			t.Fatal("detached HEADをunborn扱いしてはいけない")
-		}
-	})
-	t.Run("corrupt symbolic HEAD is error not unborn", func(t *testing.T) {
-		repository := t.TempDir()
-		for _, args := range [][]string{
-			{"init", "--quiet"},
-			{"config", "user.email", "t@example.com"},
-			{"config", "user.name", "tester"},
-		} {
-			cmd := exec.Command("git", args...)
-			cmd.Dir = repository
-			if out, err := cmd.CombinedOutput(); err != nil {
-				t.Fatalf("git %v: %v: %s", args, err, out)
-			}
-		}
-		if err := os.WriteFile(filepath.Join(repository, ".git", "HEAD"), []byte("ref: not-under-refs-heads\n"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		_, unborn, err := resolveRepoHead(repository)
-		if err == nil {
-			t.Fatal("HEADがrefs/heads外のsymbolic targetを指す場合、errorになるべき")
-		}
-		if unborn {
-			t.Fatal("refs/heads外のsymbolic HEADをunborn扱いしてはいけない")
-		}
-	})
-	t.Run("detached HEAD pointing at tree object is error not head", func(t *testing.T) {
-		repository := t.TempDir()
-		for _, args := range [][]string{
-			{"init", "--quiet"},
-			{"config", "user.email", "t@example.com"},
-			{"config", "user.name", "tester"},
-			{"add", "."},
-		} {
-			cmd := exec.Command("git", args...)
-			cmd.Dir = repository
-			if out, err := cmd.CombinedOutput(); err != nil {
-				t.Fatalf("git %v: %v: %s", args, err, out)
-			}
-		}
-		if err := os.WriteFile(filepath.Join(repository, "f.txt"), []byte("x\n"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		for _, args := range [][]string{{"add", "f.txt"}, {"commit", "--quiet", "-m", "x"}} {
-			cmd := exec.Command("git", args...)
-			cmd.Dir = repository
-			if out, err := cmd.CombinedOutput(); err != nil {
-				t.Fatalf("git %v: %v: %s", args, err, out)
-			}
-		}
-		treeCmd := exec.Command("git", "rev-parse", "HEAD^{tree}")
-		treeCmd.Dir = repository
-		tree, err := treeCmd.Output()
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(repository, ".git", "HEAD"), bytes.TrimSpace(tree), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		_, unborn, err := resolveRepoHead(repository)
-		if err == nil {
-			t.Fatal("tree objectを指すdetached HEADはcommitへpeelできずerrorになるべき")
-		}
-		if unborn {
-			t.Fatal("tree objectを指すdetached HEADをunborn扱いしてはいけない")
-		}
-	})
-	t.Run("symbolic HEAD to loose ref with missing object is error not unborn", func(t *testing.T) {
-		repository := t.TempDir()
-		for _, args := range [][]string{
-			{"init", "--quiet"},
-			{"config", "user.email", "t@example.com"},
-			{"config", "user.name", "tester"},
-		} {
-			cmd := exec.Command("git", args...)
-			cmd.Dir = repository
-			if out, err := cmd.CombinedOutput(); err != nil {
-				t.Fatalf("git %v: %v: %s", args, err, out)
-			}
-		}
-		refsHeads := filepath.Join(repository, ".git", "refs", "heads")
-		if err := os.MkdirAll(refsHeads, 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(refsHeads, "broken"), []byte("feedfacefeedfacefeedfacefeedfacefeedface\n"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(repository, ".git", "HEAD"), []byte("ref: refs/heads/broken\n"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		_, unborn, err := resolveRepoHead(repository)
-		if err == nil {
-			t.Fatal("missing objectを指すloose refへのsymbolic HEADはerrorになるべき")
-		}
-		if unborn {
-			t.Fatal("missing objectのloose refを正当unborn扱いしてはいけない")
-		}
-	})
-	t.Run("symbolic HEAD to empty loose ref is error not unborn", func(t *testing.T) {
-		repository := t.TempDir()
-		for _, args := range [][]string{
-			{"init", "--quiet"},
-			{"config", "user.email", "t@example.com"},
-			{"config", "user.name", "tester"},
-		} {
-			cmd := exec.Command("git", args...)
-			cmd.Dir = repository
-			if out, err := cmd.CombinedOutput(); err != nil {
-				t.Fatalf("git %v: %v: %s", args, err, out)
-			}
-		}
-		refsHeads := filepath.Join(repository, ".git", "refs", "heads")
-		if err := os.MkdirAll(refsHeads, 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(refsHeads, "empty"), []byte{}, 0o644); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(repository, ".git", "HEAD"), []byte("ref: refs/heads/empty\n"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		_, unborn, err := resolveRepoHead(repository)
-		if err == nil {
-			t.Fatal("空loose refへのsymbolic HEADはerrorになるべき")
-		}
-		if unborn {
-			t.Fatal("空loose refを正当unborn扱いしてはいけない")
-		}
-	})
+	}
 }
 
 func TestStartNewTaskClearsBaselineHead(t *testing.T) {
