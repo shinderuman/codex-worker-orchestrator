@@ -21,32 +21,11 @@ REPORT_ARTIFACT_DIR: %s
 }
 
 func activeTaskPromptBlock(activeTaskPath string) string {
-	if activeTaskPath == "" {
-		return ""
-	}
-	return fmt.Sprintf(`ACTIVE_TASK_FILE: %s
-
-要件の正は親Codex専有のこのACTIVE task fileです。作業・判定の前に全文を読んでください。
-Original instruction・Amendments・Resolved references・Contract・Must not・Acceptance criteriaを
-USER_REQUEST・会話要約・過去session記憶ではなくtask file本文から確認してください。
-このfileとIMPLEMENTATION_RULES.md・IMPLEMENTATION_PLAN.local.md・IMPLEMENTATION_HISTORY.mdは
-親Codex専有のため編集・生成・復元・削除を行わず、更新候補は結果fieldへ報告してください。
-`, activeTaskPath)
+	return renderActiveTaskPromptContract(newActiveTaskPromptContract(activeTaskPath, activeTaskAudienceWorker))
 }
 
 func reviewerActiveTaskBlock(activeTaskPath string) string {
-	if activeTaskPath == "" {
-		return ""
-	}
-	return fmt.Sprintf(`ACTIVE_TASK_FILE: %s
-
-判定基準の正は親Codex専有のこのACTIVE task fileです。判定の前に全文を読んでください。
-Original instruction・Amendments・Resolved references・Contract・Must not・Acceptance criteria・
-Historical invariantsをUSER_REQUEST・WORKER_REPORT・過去session記憶ではなくtask file本文から
-確認し、Derived Contract vs Original instructionとImplementation vs Contractの両方を独立に検証してください。
-このfileとIMPLEMENTATION_RULES.md・IMPLEMENTATION_PLAN.local.md・IMPLEMENTATION_HISTORY.mdは
-親Codex専有のため編集・生成・復元・削除を行わないでください。
-`, activeTaskPath)
+	return renderActiveTaskPromptContract(newActiveTaskPromptContract(activeTaskPath, activeTaskAudienceReviewer))
 }
 
 func newTaskPrompt(request string, activeTaskPath string) string {
@@ -167,11 +146,14 @@ func resumePrompt(checkpoint state.ResumeCheckpoint) string {
 	}
 
 	reason := "Z.ai GLM Coding Planの5時間利用上限"
+	reasonCode := "plan-limit"
 	if checkpoint.ProviderUnavailable {
 		reason = "一時的なprovider障害"
+		reasonCode = "provider-unavailable"
 	}
 
-	return fmt.Sprintf(`前回のClaude Code呼び出しは%sで中断しました。
+	return fmt.Sprintf(`RESUME_REASON: %s
+前回のClaude Code呼び出しは%sで中断しました。
 
 同じタスク・同じsessionの中断箇所から作業を再開してください。
 現在のworking treeには前回の途中変更が残っている可能性があります。破棄せず、session文脈と照合して続行してください。
@@ -179,7 +161,7 @@ func resumePrompt(checkpoint state.ResumeCheckpoint) string {
 
 前回の指示:
 %s
-`, reason, originalPrompt)
+`, reasonCode, reason, originalPrompt)
 }
 
 func riskFloorReemitPrompt() string {
