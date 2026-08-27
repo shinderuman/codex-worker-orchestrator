@@ -17,6 +17,12 @@ jobs:
           sudo apt-get install -y shellcheck
           go install mvdan.cc/sh/v3/cmd/shfmt@v3.12.0
           curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s -- -b "$(go env GOPATH)/bin" v2.4.0
+      - name: Stage temporary quality tools
+        run: |
+          mkdir -p /tmp/quality-tools
+          cp "$(go env GOPATH)/bin/golangci-lint" /tmp/quality-tools/
+          cp "$(go env GOPATH)/bin/shfmt" /tmp/quality-tools/
+          cp "$(command -v shellcheck)" /tmp/quality-tools/
       - name: Go tests
         working-directory: glm-worker
         run: go test ./...
@@ -30,6 +36,13 @@ jobs:
         run: ./harnesslint
       - name: Install smoke
         run: ./tests/install_smoke.sh
+      - name: Preserve quality tools for temporary audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-tools-${{ github.sha }}
+          path: /tmp/quality-tools
+          retention-days: 1
       - name: Preserve checkout for temporary audit
         if: always()
         uses: actions/upload-artifact@v4
