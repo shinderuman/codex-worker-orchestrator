@@ -9,6 +9,14 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
+type activeTaskPathCase struct {
+	name        string
+	plan        func(t *testing.T, repoRoot string)
+	wantPath    string
+	wantWired   bool
+	wantErrPart string
+}
+
 func writePlanWithActive(t *testing.T, repoRoot string, activeSection string) {
 	t.Helper()
 	content := "# plan\n\n" + activeSection
@@ -27,14 +35,15 @@ func writeTaskFileAtPath(t *testing.T, repoRoot string, relPath string) {
 	}
 }
 
-func TestResolveActiveTaskPathMatrix(t *testing.T) {
-	tests := []struct {
-		name        string
-		plan        func(t *testing.T, repoRoot string)
-		wantPath    string
-		wantWired   bool
-		wantErrPart string
-	}{
+func resolveActiveTaskCase(t *testing.T, plan func(t *testing.T, repoRoot string)) (string, bool, error) {
+	t.Helper()
+	repoRoot := t.TempDir()
+	plan(t, repoRoot)
+	return resolveActiveTaskPath(repoRoot)
+}
+
+func TestResolveActiveTaskPathValidForms(t *testing.T) {
+	tests := []activeTaskPathCase{
 		{
 			name: "backtick path resolves",
 			plan: func(t *testing.T, repoRoot string) {
@@ -68,72 +77,6 @@ func TestResolveActiveTaskPathMatrix(t *testing.T) {
 			plan: func(t *testing.T, repoRoot string) {},
 		},
 		{
-			name: "active section blank only fails",
-			plan: func(t *testing.T, repoRoot string) {
-				writePlanWithActive(t, repoRoot, "## ACTIVE\n\n\n")
-			},
-			wantWired:   true,
-			wantErrPart: "ACTIVE欄にtask fileがありません",
-		},
-		{
-			name: "prose line in active section rejected",
-			plan: func(t *testing.T, repoRoot string) {
-				writePlanWithActive(t, repoRoot, "## ACTIVE\n\n(なし)\n")
-			},
-			wantWired:   true,
-			wantErrPart: "schedule list記法",
-		},
-		{
-			name: "unknown list marker rejected",
-			plan: func(t *testing.T, repoRoot string) {
-				writePlanWithActive(t, repoRoot, "## ACTIVE\n\n* `IMPLEMENTATION_TASKS/001-a.md`\n")
-				writeTaskFileAtPath(t, repoRoot, "IMPLEMENTATION_TASKS/001-a.md")
-			},
-			wantWired:   true,
-			wantErrPart: "schedule list記法",
-		},
-		{
-			name: "prose after bullet rejected",
-			plan: func(t *testing.T, repoRoot string) {
-				writePlanWithActive(t, repoRoot, "## ACTIVE\n\n- `IMPLEMENTATION_TASKS/001-a.md`\n(次taskは001-a)\n")
-				writeTaskFileAtPath(t, repoRoot, "IMPLEMENTATION_TASKS/001-a.md")
-			},
-			wantWired:   true,
-			wantErrPart: "schedule list記法",
-		},
-		{
-			name: "two entries are ambiguous",
-			plan: func(t *testing.T, repoRoot string) {
-				writePlanWithActive(t, repoRoot, "## ACTIVE\n\n- `IMPLEMENTATION_TASKS/001-a.md`\n- `IMPLEMENTATION_TASKS/002-b.md`\n")
-			},
-			wantWired:   true,
-			wantErrPart: "一意ではありません",
-		},
-		{
-			name: "path escape rejected",
-			plan: func(t *testing.T, repoRoot string) {
-				writePlanWithActive(t, repoRoot, "## ACTIVE\n\n- `IMPLEMENTATION_TASKS/../AGENTS.md`\n")
-			},
-			wantWired:   true,
-			wantErrPart: "配置契約に違反",
-		},
-		{
-			name: "outside tasks dir rejected",
-			plan: func(t *testing.T, repoRoot string) {
-				writePlanWithActive(t, repoRoot, "## ACTIVE\n\n- `codex/AGENTS.md`\n")
-			},
-			wantWired:   true,
-			wantErrPart: "IMPLEMENTATION_TASKS配下",
-		},
-		{
-			name: "missing task file fails",
-			plan: func(t *testing.T, repoRoot string) {
-				writePlanWithActive(t, repoRoot, "## ACTIVE\n\n- `IMPLEMENTATION_TASKS/001-gone.md`\n")
-			},
-			wantWired:   true,
-			wantErrPart: "確認できません",
-		},
-		{
 			name: "semantic filename resolves",
 			plan: func(t *testing.T, repoRoot string) {
 				writePlanWithActive(t, repoRoot, "## ACTIVE\n\n- `IMPLEMENTATION_TASKS/requirement-task-lifecycle.md`\n")
@@ -151,13 +94,130 @@ func TestResolveActiveTaskPathMatrix(t *testing.T) {
 			wantPath:  "IMPLEMENTATION_TASKS/batch/001-nested.md",
 			wantWired: true,
 		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path, wired, err := resolveActiveTaskCase(t, tt.plan)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if wired != tt.wantWired || path != tt.wantPath {
+				t.Fatalf("resolve = (%q,%v) want (%q,%v)", path, wired, tt.wantPath, tt.wantWired)
+			}
+		})
+	}
+}
+
+func TestResolveActiveTaskPathRejectsInvalidScheduleSyntax(t *testing.T) {
+	tests := []activeTaskPathCase{
+		{
+			name: "active section blank only fails",
+			plan: func(t *testing.T, repoRoot string) {
+				writePlanWithActive(t, repoRoot, "## ACTIVE\n\n\n")
+			},
+			wantErrPart: "ACTIVE欄にtask fileがありません",
+		},
+		{
+			name: "prose line in active section rejected",
+			plan: func(t *testing.T, repoRoot string) {
+				writePlanWithActive(t, repoRoot, "## ACTIVE\n\n(なし)\n")
+			},
+			wantErrPart: "schedule list記法",
+		},
+		{
+			name: "unknown list marker rejected",
+			plan: func(t *testing.T, repoRoot string) {
+				writePlanWithActive(t, repoRoot, "## ACTIVE\n\n* `IMPLEMENTATION_TASKS/001-a.md`\n")
+				writeTaskFileAtPath(t, repoRoot, "IMPLEMENTATION_TASKS/001-a.md")
+			},
+			wantErrPart: "schedule list記法",
+		},
+		{
+			name: "prose after bullet rejected",
+			plan: func(t *testing.T, repoRoot string) {
+				writePlanWithActive(t, repoRoot, "## ACTIVE\n\n- `IMPLEMENTATION_TASKS/001-a.md`\n(次taskは001-a)\n")
+				writeTaskFileAtPath(t, repoRoot, "IMPLEMENTATION_TASKS/001-a.md")
+			},
+			wantErrPart: "schedule list記法",
+		},
+		{
+			name: "two entries are ambiguous",
+			plan: func(t *testing.T, repoRoot string) {
+				writePlanWithActive(t, repoRoot, "## ACTIVE\n\n- `IMPLEMENTATION_TASKS/001-a.md`\n- `IMPLEMENTATION_TASKS/002-b.md`\n")
+			},
+			wantErrPart: "一意ではありません",
+		},
+		{
+			name: "unclosed backtick rejected",
+			plan: func(t *testing.T, repoRoot string) {
+				writePlanWithActive(t, repoRoot, "## ACTIVE\n\n- `IMPLEMENTATION_TASKS/001-a.md\n")
+				writeTaskFileAtPath(t, repoRoot, "IMPLEMENTATION_TASKS/001-a.md")
+			},
+			wantErrPart: "bullet構文",
+		},
+		{
+			name: "text after closing backtick rejected",
+			plan: func(t *testing.T, repoRoot string) {
+				writePlanWithActive(t, repoRoot, "## ACTIVE\n\n- `IMPLEMENTATION_TASKS/001-a.md` (次task)\n")
+				writeTaskFileAtPath(t, repoRoot, "IMPLEMENTATION_TASKS/001-a.md")
+			},
+			wantErrPart: "bullet構文",
+		},
+		{
+			name: "text before opening backtick rejected",
+			plan: func(t *testing.T, repoRoot string) {
+				writePlanWithActive(t, repoRoot, "## ACTIVE\n\n- see `IMPLEMENTATION_TASKS/001-a.md`\n")
+				writeTaskFileAtPath(t, repoRoot, "IMPLEMENTATION_TASKS/001-a.md")
+			},
+			wantErrPart: "bullet構文",
+		},
+		{
+			name: "multiple backtick pairs rejected",
+			plan: func(t *testing.T, repoRoot string) {
+				writePlanWithActive(t, repoRoot, "## ACTIVE\n\n- `IMPLEMENTATION_TASKS/001-a.md` `IMPLEMENTATION_TASKS/002-b.md`\n")
+			},
+			wantErrPart: "bullet構文",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, err := resolveActiveTaskCase(t, tt.plan)
+			if err == nil || !strings.Contains(err.Error(), tt.wantErrPart) {
+				t.Fatalf("error = %v want %qを含む", err, tt.wantErrPart)
+			}
+		})
+	}
+}
+
+func TestResolveActiveTaskPathRejectsInvalidTargets(t *testing.T) {
+	tests := []activeTaskPathCase{
+		{
+			name: "path escape rejected",
+			plan: func(t *testing.T, repoRoot string) {
+				writePlanWithActive(t, repoRoot, "## ACTIVE\n\n- `IMPLEMENTATION_TASKS/../AGENTS.md`\n")
+			},
+			wantErrPart: "配置契約に違反",
+		},
+		{
+			name: "outside tasks dir rejected",
+			plan: func(t *testing.T, repoRoot string) {
+				writePlanWithActive(t, repoRoot, "## ACTIVE\n\n- `codex/AGENTS.md`\n")
+			},
+			wantErrPart: "IMPLEMENTATION_TASKS配下",
+		},
+		{
+			name: "missing task file fails",
+			plan: func(t *testing.T, repoRoot string) {
+				writePlanWithActive(t, repoRoot, "## ACTIVE\n\n- `IMPLEMENTATION_TASKS/001-gone.md`\n")
+			},
+			wantErrPart: "確認できません",
+		},
 		{
 			name: "non-md extension rejected",
 			plan: func(t *testing.T, repoRoot string) {
 				writePlanWithActive(t, repoRoot, "## ACTIVE\n\n- `IMPLEMENTATION_TASKS/task.txt`\n")
 				writeTaskFileAtPath(t, repoRoot, "IMPLEMENTATION_TASKS/task.txt")
 			},
-			wantWired:   true,
 			wantErrPart: "配置契約に違反",
 		},
 		{
@@ -168,48 +228,11 @@ func TestResolveActiveTaskPathMatrix(t *testing.T) {
 					t.Fatal(err)
 				}
 			},
-			wantWired:   true,
 			wantErrPart: "regular fileではありません",
-		},
-		{
-			name: "unclosed backtick rejected",
-			plan: func(t *testing.T, repoRoot string) {
-				writePlanWithActive(t, repoRoot, "## ACTIVE\n\n- `IMPLEMENTATION_TASKS/001-a.md\n")
-				writeTaskFileAtPath(t, repoRoot, "IMPLEMENTATION_TASKS/001-a.md")
-			},
-			wantWired:   true,
-			wantErrPart: "bullet構文",
-		},
-		{
-			name: "text after closing backtick rejected",
-			plan: func(t *testing.T, repoRoot string) {
-				writePlanWithActive(t, repoRoot, "## ACTIVE\n\n- `IMPLEMENTATION_TASKS/001-a.md` (次task)\n")
-				writeTaskFileAtPath(t, repoRoot, "IMPLEMENTATION_TASKS/001-a.md")
-			},
-			wantWired:   true,
-			wantErrPart: "bullet構文",
-		},
-		{
-			name: "text before opening backtick rejected",
-			plan: func(t *testing.T, repoRoot string) {
-				writePlanWithActive(t, repoRoot, "## ACTIVE\n\n- see `IMPLEMENTATION_TASKS/001-a.md`\n")
-				writeTaskFileAtPath(t, repoRoot, "IMPLEMENTATION_TASKS/001-a.md")
-			},
-			wantWired:   true,
-			wantErrPart: "bullet構文",
-		},
-		{
-			name: "multiple backtick pairs rejected",
-			plan: func(t *testing.T, repoRoot string) {
-				writePlanWithActive(t, repoRoot, "## ACTIVE\n\n- `IMPLEMENTATION_TASKS/001-a.md` `IMPLEMENTATION_TASKS/002-b.md`\n")
-			},
-			wantWired:   true,
-			wantErrPart: "bullet構文",
 		},
 		{
 			name: "symlink target rejected",
 			plan: func(t *testing.T, repoRoot string) {
-
 				outside := t.TempDir()
 				if err := os.WriteFile(filepath.Join(outside, "outside.md"), []byte("# outside\n"), 0o644); err != nil {
 					t.Fatal(err)
@@ -222,26 +245,14 @@ func TestResolveActiveTaskPathMatrix(t *testing.T) {
 				}
 				writePlanWithActive(t, repoRoot, "## ACTIVE\n\n- `IMPLEMENTATION_TASKS/link.md`\n")
 			},
-			wantWired:   true,
 			wantErrPart: "regular fileではありません",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			repoRoot := t.TempDir()
-			tt.plan(t, repoRoot)
-			path, wired, err := resolveActiveTaskPath(repoRoot)
-			if tt.wantErrPart != "" {
-				if err == nil || !strings.Contains(err.Error(), tt.wantErrPart) {
-					t.Fatalf("error = %v want %qを含む", err, tt.wantErrPart)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatal(err)
-			}
-			if wired != tt.wantWired || path != tt.wantPath {
-				t.Fatalf("resolve = (%q,%v) want (%q,%v)", path, wired, tt.wantPath, tt.wantWired)
+			_, _, err := resolveActiveTaskCase(t, tt.plan)
+			if err == nil || !strings.Contains(err.Error(), tt.wantErrPart) {
+				t.Fatalf("error = %v want %qを含む", err, tt.wantErrPart)
 			}
 		})
 	}
