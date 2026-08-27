@@ -1639,35 +1639,33 @@ func (w *Workflow) recordModelCall(
 	outputPath string,
 	diag callDiagnostics,
 ) {
+	entry := w.buildModelCallLog(checkpoint, runResult, startedAt, completedAt, outcome, packetStatus, callErr, outputPath)
+	w.applyCallDiagnostics(&entry, checkpoint, outcome, callErr, diag)
+	w.state.RecordModelCallLog(entry)
+}
+
+func (w *Workflow) buildModelCallLog(
+	checkpoint state.ResumeCheckpoint,
+	runResult runner.RunResult,
+	startedAt time.Time,
+	completedAt time.Time,
+	outcome string,
+	packetStatus string,
+	callErr error,
+	outputPath string,
+) state.ModelCallLog {
 	response := runResult.Response
 	if response == "" {
 		response = packet.Tail(outputPath, packet.MaxDiagnosticBytes)
 	}
 	promptHash := sha256.Sum256([]byte(checkpoint.Prompt))
 	responseHash := sha256.Sum256([]byte(response))
-	resolvedUsage := make(map[string]state.ResolvedModelUsage, len(runResult.ModelUsage))
-	for model, usage := range runResult.ModelUsage {
-		resolvedUsage[model] = state.ResolvedModelUsage{
-			InputTokens:              usage.InputTokens,
-			CacheCreationInputTokens: usage.CacheCreationInputTokens,
-			CacheReadInputTokens:     usage.CacheReadInputTokens,
-			OutputTokens:             usage.OutputTokens,
-			CostUSD:                  usage.CostUSD,
-		}
-	}
 	errorText := ""
 	if callErr != nil {
 		errorText = boundedText(callErr.Error(), packet.MaxDiagnosticBytes)
 	}
-	promptContent := checkpoint.Prompt
-	systemPromptContent := runResult.SystemPrompt
-	responseContent := response
-	if !w.config.TelemetryContent {
-		promptContent = ""
-		systemPromptContent = ""
-		responseContent = ""
-	}
-	entry := state.ModelCallLog{
+	promptContent, systemPromptContent, responseContent := w.telemetryContents(checkpoint.Prompt, runResult.SystemPrompt, response)
+	return state.ModelCallLog{
 		TaskID:             w.state.ReadOr("task.id", "unknown"),
 		CallType:           state.CallTypeTask,
 		SessionID:          modelSessionID(w.state, checkpoint.Role, runResult.SessionID),
@@ -1676,7 +1674,7 @@ func (w *Workflow) recordModelCall(
 		Phase:              checkpoint.Phase,
 		Role:               checkpoint.Role,
 		ModelAlias:         checkpoint.Model,
-		ResolvedModelUsage: resolvedUsage,
+		ResolvedModelUsage: resolvedModelUsage(runResult.ModelUsage),
 		Effort:             checkpoint.Effort,
 		ReadOnly:           checkpoint.ReadOnly,
 		Resumed:            runResult.Resumed,
@@ -1704,8 +1702,27 @@ func (w *Workflow) recordModelCall(
 		TopLevelTurns:       runResult.TopLevelTurns,
 		TotalCostUSD:        runResult.TotalCostUSD,
 	}
-	w.applyCallDiagnostics(&entry, checkpoint, outcome, callErr, diag)
-	w.state.RecordModelCallLog(entry)
+}
+
+func resolvedModelUsage(usageByModel map[string]runner.ModelUsage) map[string]state.ResolvedModelUsage {
+	resolved := make(map[string]state.ResolvedModelUsage, len(usageByModel))
+	for model, usage := range usageByModel {
+		resolved[model] = state.ResolvedModelUsage{
+			InputTokens:              usage.InputTokens,
+			CacheCreationInputTokens: usage.CacheCreationInputTokens,
+			CacheReadInputTokens:     usage.CacheReadInputTokens,
+			OutputTokens:             usage.OutputTokens,
+			CostUSD:                  usage.CostUSD,
+		}
+	}
+	return resolved
+}
+
+func (w *Workflow) telemetryContents(prompt string, systemPrompt string, response string) (string, string, string) {
+	if !w.config.TelemetryContent {
+		return "", "", ""
+	}
+	return prompt, systemPrompt, response
 }
 
 func (w *Workflow) applyCallDiagnostics(entry *state.ModelCallLog, checkpoint state.ResumeCheckpoint, outcome string, callErr error, diag callDiagnostics) {
