@@ -64,6 +64,8 @@ type stdinReadyControlEvent struct {
 
 type RunnerFactory func(cfg config.AppConfig, st *state.StateStore, stop *runner.StopController) workflow.ModelRunner
 
+type commandParser func([]string) (Command, error)
+
 const (
 	ModeNewTask CommandMode = iota
 	ModeDecision
@@ -92,20 +94,6 @@ const fixOriginUsage = "[--origin codex-review|glm-reviewer|user-amendment|exter
 const installSmokeUsage = "[--role worker|reviewer|fix|parent]"
 
 const qualityGateUsage = "<go-test|go-test-race>"
-
-func (e *UsageError) Error() string {
-	return e.Message
-}
-
-func (e *NotFoundError) Error() string {
-	return e.Message
-}
-
-func usageError(format string, args ...any) *UsageError {
-	return &UsageError{Message: fmt.Sprintf(format, args...)}
-}
-
-type commandParser func([]string) (Command, error)
 
 var commandParsers = map[string]commandParser{
 	"--decision": func([]string) (Command, error) {
@@ -161,6 +149,18 @@ var commandParsers = map[string]commandParser{
 	},
 	"--install-smoke": installSmokeCommand,
 	"--quality-gate":  qualityGateCommand,
+}
+
+func (e *UsageError) Error() string {
+	return e.Message
+}
+
+func (e *NotFoundError) Error() string {
+	return e.Message
+}
+
+func usageError(format string, args ...any) *UsageError {
+	return &UsageError{Message: fmt.Sprintf(format, args...)}
 }
 
 func ParseCommand(args []string) (Command, error) {
