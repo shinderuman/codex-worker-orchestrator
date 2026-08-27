@@ -63,4 +63,4 @@ none
 
 ## Current boundary
 
-NEXT。EVAL責務整理後の現行surfaceを正としてF4へ着手する。
+NEXT / NARROW。PR #4でaccepted quality policy surfaceのdigest固定、worker自己改変fail-closed、reviewer前machine quality gateが成立し、quality gate/config/linter自体を通常workerが弱体化するfailure classは閉じた。一方、通常`*_test.go`・testdata・tests等はrisk分類上LOWのままで、assertion / negative case / coverage / expected behaviorの意味的縮退まではquality surface snapshotでは検出しない。残余scopeをこのsemantic evidence weakeningへ限定して継続する。
