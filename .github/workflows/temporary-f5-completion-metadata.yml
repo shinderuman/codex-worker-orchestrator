@@ -1,0 +1,62 @@
+name: Temporary F5 Completion Metadata
+
+on:
+  push:
+    branches:
+      - hardening-task/deterministic-rule-activation
+
+permissions:
+  contents: write
+
+jobs:
+  completion-metadata:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Apply F5 completion metadata
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          history = Path('IMPLEMENTATION_HISTORY.md')
+          text = history.read_text()
+          marker = '## 重大インシデント / 再オープン中\n\n'
+          entry = ('- [x] F5 deterministic rule activation: generic Track Aとしてbaseline実diffのpath/categoryからtesting、persistent state/config/storage/migration、CLI、Go、JavaScript、PHP、ESLint contractをwrapperが決定論的に選択し、該当rule本文だけをworker/reviewer promptへ注入する境界へ移行した。初回workerで未来の変更pathが未確定な場合はconfigured `<CodexConfigDir>/instructions/worker/<known-rule>.md` の成功したReadだけをevidenceとして記録し、実diff再計算後に不足ruleがあれば同一worker sessionへcorrectionを行う。repo-local lookalike、Bash/cat、failed Read、user prompt中の`RULE_FILES:` markerはactivation authorityとして受理せず、wrapper-owned `ResumeCheckpoint.ActivatedRuleFiles`だけをresume/correctionの正とした。docs-onlyはprompt delta 0、追加Sol/Codex call 0、追加GLM callは初回workerが必要rule未適用の場合だけ。focused workflow/runner tests、`go vet ./...`、`go build ./...`を通し、恒久Repository Lint `33111566961` PASS。final diff/bypass reviewで新たなfunctional defectは確認されず、初回lintで検出したcyclop/gocognit/goconst findingは責務分割と定数化だけで解消しbehaviorは維持した。\n')
+          if marker not in text:
+              raise SystemExit('history marker not found')
+          if 'F5 deterministic rule activation:' not in text:
+              history.write_text(text.replace(marker, marker + entry, 1))
+
+          plan = Path('IMPLEMENTATION_PLAN.local.md')
+          text = plan.read_text()
+          replacements = {
+              '## ACTIVE\n\n- `IMPLEMENTATION_TASKS/deterministic-rule-activation.md`\n\n## NEXT（優先順）\n\n- `IMPLEMENTATION_TASKS/sol-decision-boundary-enforcement.md`\n':
+              '## ACTIVE\n\n- `IMPLEMENTATION_TASKS/sol-decision-boundary-enforcement.md`\n\n## NEXT（優先順）\n\n',
+              '- current implementation: F5 `deterministic-rule-activation`がACTIVE。予約済みPR #15 branchは予約commitを保持し、latest integration `87af3f4700f5dd8220c582efa62f18f561c33c20`をmerge commit `3e507947e3b1ddecb559393c4851c270ca40fedb`で履歴を書き換えず同期済み\n':
+              '- current implementation: F5 `deterministic-rule-activation`はPR #15でgeneric Track A production実装、representative regression、final diff/bypass review、恒久Repository Lint `33111566961`、History証跡まで完了。completion metadataを閉じて`hardening/agent-guardrails`へのSquash Merge待ち。次ACTIVEはF6 `sol-decision-boundary-enforcement`\n',
+              'F5開始を妨げるdependency / permission waitはない。\n':
+              'F5はtask contractとvalidationを満たした。PR #15をintegrationへSquash MergeするまでF6 implementationは開始しない。\n',
+              '現行instruction routing / worker・reviewer dispatch surfaceを一次証拠で確認し、path/change-type/operationから必要contractを決定論的に導出するgeneric Track Aを優先してF5 A/B分類を確定する。その分類に沿ってproduction実装、representative regression、追加cost確認、review、恒久Repository Lint、completion lifecycleを行う。\n':
+              'PR #15のcompletion metadata込みfinal treeを恒久Repository Lintで確認し、runtime install/source-equality/installed production smokeを完了してPR本文を最終証跡へ同期し、ready化して`hardening/agent-guardrails`へSquash Mergeする。その後latest integrationを予約済みF6 branchへ履歴を書き換えず同期し、Rules / Plan / ACTIVE F6 taskを再読してF6を開始する。\n',
+          }
+          for old, new in replacements.items():
+              if old not in text:
+                  raise SystemExit('plan replacement anchor not found: ' + old[:80])
+              text = text.replace(old, new, 1)
+          plan.write_text(text)
+
+          task = Path('IMPLEMENTATION_TASKS/deterministic-rule-activation.md')
+          if not task.exists():
+              raise SystemExit('F5 task missing before completion')
+          task.unlink()
+          PY
+          rm .github/workflows/temporary-f5-completion-metadata.yml
+      - name: Commit completion metadata
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add IMPLEMENTATION_HISTORY.md IMPLEMENTATION_PLAN.local.md IMPLEMENTATION_TASKS/deterministic-rule-activation.md .github/workflows/temporary-f5-completion-metadata.yml
+          git commit -m 'docs: close F5 completion metadata'
+          git push
