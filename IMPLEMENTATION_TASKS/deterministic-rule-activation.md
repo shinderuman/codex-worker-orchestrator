@@ -66,4 +66,4 @@ none
 
 ## Current boundary
 
-ACTIVE。F4はPR #14 Squash Merge commit `87af3f4700f5dd8220c582efa62f18f561c33c20`としてintegrationへ反映済み。予約済みPR #15 branchは予約commitを保持したままlatest integrationをmerge commit `3e507947e3b1ddecb559393c4851c270ca40fedb`で同期済み。現行instruction routing / worker・reviewer dispatch surfaceを一次証拠で確認し、generic Track Aを優先してF5 A/B分類を確定してから実装する。
+ACTIVE / DESIGN RESOLVED。F4はPR #14 Squash Merge commit `87af3f4700f5dd8220c582efa62f18f561c33c20`としてintegrationへ反映済み。予約済みPR #15 branchはlatest integrationを履歴を保って同期済み。現行WORKER/REVIEWER promptはoptional worker ruleの適用をモデルの「必要時だけ読む」判断へ委ね、workflow prompt builder自体にはrule routing signalがないことを確認した。Track Aは任意repoのbaseline差分pathとoperation phaseからtest/state/config/cache/migration/CLI/language ruleを機械導出する。初回NEW_TASKは未来の変更pathを事前確定できないため、worker call中のinstalled worker-rule Read実績とcall後の実diffを比較し、不足ruleだけを同一worker sessionへ機械注入してreviewer前に再検証させる。decision/fix/reviewer等、既にdiffが存在するphaseではcall前に必要rule本文だけを機械注入する。非該当ruleはpromptへ追加せず、rule選択そのものにmodel自己申告を使わない。現行要件はgeneric Track Aだけで閉じられ、repo固有path routingのTrack Bは不要と判定する。追加Sol/Codex callは0を設計上限とし、追加GLM callは初回workerが必要ruleを未読だった場合だけ発生させる。
