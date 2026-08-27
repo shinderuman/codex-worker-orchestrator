@@ -1,0 +1,120 @@
+name: Temporary F4 Quality Evidence
+
+on:
+  push:
+    branches:
+      - hardening-task/quality-evidence-mutation-risk
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Wire quality evidence risk floor
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('glm-worker/internal/workflow/workflow.go')
+          text = path.read_text()
+          old = '''func (w *Workflow) computeEffectiveRisk(workerResult packet.Result, autoFixes int, hasDecision bool, hasPriorReview bool) effectiveRisk {
+          \tsp := w.selfProtectionNow()
+          \tif !reviewNeedsHighRiskFloor(workerResult, autoFixes, hasDecision, hasPriorReview) && !sp.High {
+          \t\treturn effectiveRisk{high: false}
+          \t}
+          \tvar sources []string
+          \tif workerResult.Risk == packet.RiskHigh {
+          \t\tsources = append(sources, "worker-declared")
+          \t}
+          \tif autoFixes > 0 {
+          \t\tsources = append(sources, "auto-fix")
+          \t}
+          \tif hasDecision {
+          \t\tsources = append(sources, "decision")
+          \t}
+          \tif hasPriorReview {
+          \t\tsources = append(sources, "prior-review")
+          \t}
+          \tif sp.High {
+          \t\tsources = append(sources, "self-protection:"+sp.Source)
+          \t}
+          \treturn effectiveRisk{high: true, source: strings.Join(sources, ";")}
+          }
+
+          func (w *Workflow) selfProtectionNow() selfProtectionDecision {
+          \tbaselineHead, _ := w.state.Read("baseline-head")
+          \tpaths, err := w.collectChangedPaths(w.config.RepoRoot, baselineHead)
+          \tif err != nil {
+          \t\treturn selfProtectionDecision{High: true, Source: "classify-error", HitPath: err.Error()}
+          \t}
+          \treturn classifySelfProtection(paths)
+          }
+'''.replace('          ', '')
+          new = '''func (w *Workflow) computeEffectiveRisk(workerResult packet.Result, autoFixes int, hasDecision bool, hasPriorReview bool) effectiveRisk {
+          \tsp, qe := w.riskSurfaceDecisions()
+          \tif !reviewNeedsHighRiskFloor(workerResult, autoFixes, hasDecision, hasPriorReview) && !sp.High && !qe.High {
+          \t\treturn effectiveRisk{high: false}
+          \t}
+          \tvar sources []string
+          \tif workerResult.Risk == packet.RiskHigh {
+          \t\tsources = append(sources, "worker-declared")
+          \t}
+          \tif autoFixes > 0 {
+          \t\tsources = append(sources, "auto-fix")
+          \t}
+          \tif hasDecision {
+          \t\tsources = append(sources, "decision")
+          \t}
+          \tif hasPriorReview {
+          \t\tsources = append(sources, "prior-review")
+          \t}
+          \tif sp.High {
+          \t\tsources = append(sources, "self-protection:"+sp.Source)
+          \t}
+          \tif qe.High {
+          \t\tsources = append(sources, "quality-evidence:"+qe.Source)
+          \t}
+          \treturn effectiveRisk{high: true, source: strings.Join(sources, ";")}
+          }
+
+          func (w *Workflow) riskSurfaceDecisions() (selfProtectionDecision, qualityEvidenceDecision) {
+          \tbaselineHead, _ := w.state.Read("baseline-head")
+          \tpaths, err := w.collectChangedPaths(w.config.RepoRoot, baselineHead)
+          \tif err != nil {
+          \t\treturn selfProtectionDecision{High: true, Source: "classify-error", HitPath: err.Error()}, qualityEvidenceDecision{}
+          \t}
+          \tsp := classifySelfProtection(paths)
+          \tqe, err := classifyQualityEvidence(w.config.RepoRoot, baselineHead, paths)
+          \tif err != nil {
+          \t\tqe = qualityEvidenceDecision{High: true, Source: "classify-error", HitPath: err.Error()}
+          \t}
+          \treturn sp, qe
+          }
+'''.replace('          ', '')
+          if text.count(old) != 1:
+              raise SystemExit(f'workflow anchor count={text.count(old)}')
+          path.write_text(text.replace(old, new, 1))
+          PY
+          gofmt -w glm-worker/internal/workflow/workflow.go glm-worker/internal/workflow/quality_evidence.go glm-worker/internal/workflow/quality_evidence_test.go
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.22.x'
+          cache: false
+      - name: Workflow tests
+        run: go -C glm-worker test ./internal/workflow
+      - name: Workflow vet
+        run: go -C glm-worker vet ./internal/workflow
+      - name: Build all packages
+        run: go -C glm-worker build ./...
+      - name: Commit validated F4 wiring
+        run: |
+          rm .github/workflows/temporary-f4-quality-evidence.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add glm-worker/internal/workflow/workflow.go glm-worker/internal/workflow/quality_evidence.go glm-worker/internal/workflow/quality_evidence_test.go .github/workflows/temporary-f4-quality-evidence.yml
+          git commit -m 'hardening: wire quality evidence risk floor'
+          git push
