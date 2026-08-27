@@ -57,6 +57,7 @@ type RunResult struct {
 	SystemPrompt       string
 	SystemPromptBytes  int
 	SystemPromptSHA256 string
+	InstructionReads   []string
 
 	PlainFailure ProviderFailureClass
 
@@ -318,6 +319,7 @@ func (r *ClaudeRunner) finishRun(
 	result RunResult,
 	runErr error,
 ) (RunResult, error) {
+	result.InstructionReads = ingester.instructionReadNames()
 	parsed, parseErr := parseCapturedStreamResult(ingester.result())
 	if parseErr == nil {
 		applyParsedRunResult(&result, parsed)

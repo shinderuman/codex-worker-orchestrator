@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"sort"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -11,15 +12,16 @@ import (
 )
 
 type streamEventIngester struct {
-	state      *state.StateStore
-	base       state.TaskEventRecord
-	seq        int
-	pending    []byte
-	closed     bool
-	resultLine []byte
-	plain      []byte
-	tools      map[string]toolUseObservation
-	now        func() time.Time
+	state            *state.StateStore
+	base             state.TaskEventRecord
+	seq              int
+	pending          []byte
+	closed           bool
+	resultLine       []byte
+	plain            []byte
+	tools            map[string]toolUseObservation
+	instructionReads map[string]struct{}
+	now              func() time.Time
 
 	liveLastEventAt         time.Time
 	liveLastModelActivityAt time.Time
@@ -105,8 +107,9 @@ func newStreamEventIngester(
 			ModelAlias: model,
 			Resumed:    resumed,
 		},
-		tools: make(map[string]toolUseObservation),
-		now:   time.Now,
+		tools:            make(map[string]toolUseObservation),
+		instructionReads: make(map[string]struct{}),
+		now:              time.Now,
 	}
 }
 
@@ -211,9 +214,48 @@ func (g *streamEventIngester) observeToolUse(block *state.TaskBlockSummary, at t
 		observation.purpose = detail.purpose
 		observation.background = detail.background
 		observation.waitTaskID = detail.waitTaskID
+		if name, matched := workerInstructionReadName(observation.name, input); matched {
+			g.instructionReads[name] = struct{}{}
+		}
 	}
 	g.tools[block.ToolID] = observation
 	return true
+}
+
+func workerInstructionReadName(toolName string, input json.RawMessage) (string, bool) {
+	if toolName != "Read" || len(input) == 0 {
+		return "", false
+	}
+	var parsed struct {
+		FilePath string `json:"file_path"`
+	}
+	if err := json.Unmarshal(input, &parsed); err != nil {
+		return "", false
+	}
+	path := strings.ReplaceAll(parsed.FilePath, "\\", "/")
+	if !strings.Contains(path, "/instructions/worker/") {
+		return "", false
+	}
+	name := path[strings.LastIndexByte(path, '/')+1:]
+	switch name {
+	case "common-code.md", "testing.md", "state-transitions.md", "cli.md",
+		"go.md", "javascript.md", "php.md", "eslint.md":
+		return name, true
+	default:
+		return "", false
+	}
+}
+
+func (g *streamEventIngester) instructionReadNames() []string {
+	if len(g.instructionReads) == 0 {
+		return nil
+	}
+	result := make([]string, 0, len(g.instructionReads))
+	for name := range g.instructionReads {
+		result = append(result, name)
+	}
+	sort.Strings(result)
+	return result
 }
 
 func (g *streamEventIngester) observeToolResult(block *state.TaskBlockSummary, at time.Time) bool {

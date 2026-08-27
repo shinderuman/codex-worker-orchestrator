@@ -45,7 +45,8 @@ type Workflow struct {
 
 	currentResumeSource string
 
-	lastProducer state.ParentReviewProducer
+	lastProducer             state.ParentReviewProducer
+	observedInstructionReads map[string]struct{}
 }
 
 type callDiagnostics struct {
@@ -339,7 +340,7 @@ func (w *Workflow) executeWorkerCheckpoint(request string, checkpoint state.Resu
 		}
 	}
 
-	workerResult, err := w.runModel(checkpoint)
+	workerResult, err := w.runWorkerModelWithRuleActivation(checkpoint)
 	if err != nil {
 		return err
 	}
@@ -370,6 +371,7 @@ func (w *Workflow) executeResume() error {
 		return err
 	}
 
+	w.resetInstructionReadObservation()
 	result, err := w.runModel(checkpoint)
 	if err != nil {
 		return w.handleResumeRunError(checkpoint, previousCheckpoint, err)
@@ -422,6 +424,13 @@ func (w *Workflow) prepareResumeCheckpoint(
 		}
 	}
 	checkpoint.Prompt = resumePrompt(checkpoint)
+	if checkpoint.Role == state.WorkerRole && !checkpoint.ReportOnly {
+		activatedCheckpoint, _, activationErr := w.activateCheckpointRules(checkpoint)
+		if activationErr != nil {
+			return checkpoint, false, activationErr
+		}
+		checkpoint = activatedCheckpoint
+	}
 	if checkpoint.Stage == state.ResumeStageWorker {
 		checkpoint.ReadOnly = decl.pocStage()
 	}
@@ -561,6 +570,10 @@ func (w *Workflow) routeWorkerResumeResult(
 			return w.routePoCWorkerResult(result)
 		}
 	}
+	result, err := w.convergeWorkerRuleActivation(checkpoint, result, w.activatedRulesForCheckpoint(checkpoint))
+	if err != nil {
+		return err
+	}
 	return w.handleWorkerResult(checkpoint.Request, result, checkpoint.Phase)
 }
 
@@ -612,6 +625,13 @@ func (w *Workflow) resolveResumedReviewResult(
 func (w *Workflow) routeAutoFixResumeResult(checkpoint state.ResumeCheckpoint, result packet.Result) error {
 	if checkpoint.ReportOnly {
 		if stopped, err := w.verifyReportOnlyEndSnapshot(); err != nil || stopped {
+			return err
+		}
+	}
+	if !checkpoint.ReportOnly {
+		var err error
+		result, err = w.convergeWorkerRuleActivation(checkpoint, result, w.activatedRulesForCheckpoint(checkpoint))
+		if err != nil {
 			return err
 		}
 	}
@@ -748,6 +768,10 @@ func (w *Workflow) buildReviewCheckpoint(
 		w.state.BaselineDescription(),
 		activeTaskPath,
 	)
+	prompt, err = w.withCurrentRuleContext(prompt)
+	if err != nil {
+		return state.ResumeCheckpoint{}, "", false, err
+	}
 	return state.ResumeCheckpoint{
 		Stage:               state.ResumeStageReview,
 		Phase:               phase,
@@ -902,7 +926,7 @@ func (w *Workflow) runAutoFixCheckpoint(checkpoint state.ResumeCheckpoint) (pack
 		}
 	}
 
-	fixResult, err := w.runModel(checkpoint)
+	fixResult, err := w.runWorkerModelWithRuleActivation(checkpoint)
 	if err != nil {
 		return packet.Result{}, false, err
 	}
@@ -1035,6 +1059,7 @@ func (w *Workflow) runModel(checkpoint state.ResumeCheckpoint) (packet.Result, e
 	if err != nil {
 		return packet.Result{}, err
 	}
+	w.observeInstructionReads(execution.runResult.InstructionReads)
 	if err := w.finalizeModelCallState(checkpoint, outputPath, execution); err != nil {
 		return packet.Result{}, err
 	}
