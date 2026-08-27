@@ -61,7 +61,7 @@ func (r *mutatingRunner) Run(
 	phase string,
 	model string,
 	readOnly bool,
-	effort string,
+	_ string,
 	prompt string,
 	outputPath string,
 ) (runner.RunResult, error) {
