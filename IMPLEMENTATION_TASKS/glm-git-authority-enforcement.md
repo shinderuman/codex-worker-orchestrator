@@ -64,4 +64,4 @@ none
 
 ## Current boundary
 
-ACTIVE。Track Aはmodel childだけへread-only Git command proxyを注入し、禁止mutation試行を記録・拒否すると同時にcall前後のHEAD / symbolic HEAD / refs / indexを比較してproxy bypassもfail closedにするgeneric境界で進める。通常worktree source editと親processのGit authorityはguard対象外とする。
+ACTIVE。Track A generic guardをproductionへ配線済み。model childだけにread-only Git proxyとtransport denialを適用し、commit / branch / reset / checkout破棄 / pushを通常経路で実行前拒否する。call前後はHEAD / symbolic HEAD / refs / index / local configを比較し、proxy bypassによるauthority mutationもfail closedする。通常worktree source editと親processのcommit/pushはguard対象外。guard違反時はworker/reviewer sessionを破棄し、dirty sourceを自動rollbackせず親による確認・recoveryへ戻す。Actions run `33100209070`でrunner tests、runner vet、全package buildがPASS。恒久Repository Lintとcompletion metadataを残す。
