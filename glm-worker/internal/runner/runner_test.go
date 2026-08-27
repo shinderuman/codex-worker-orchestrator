@@ -19,6 +19,12 @@ type isolationMigrationFixture struct {
 	argsDir string
 }
 
+type runnerSessionFixture struct {
+	runner          *ClaudeRunner
+	argumentsPath   string
+	claudeConfigDir string
+}
+
 func newTestStateStore(t *testing.T) *state.StateStore {
 	t.Helper()
 	st, err := state.NewStateStore(config.AppConfig{
@@ -47,12 +53,6 @@ func TestSessionNameIncludesTaskID(t *testing.T) {
 	if got != want {
 		t.Fatalf("session name = %q, want %q", got, want)
 	}
-}
-
-type runnerSessionFixture struct {
-	runner          *ClaudeRunner
-	argumentsPath   string
-	claudeConfigDir string
 }
 
 func newRunnerSessionFixture(t *testing.T) runnerSessionFixture {
