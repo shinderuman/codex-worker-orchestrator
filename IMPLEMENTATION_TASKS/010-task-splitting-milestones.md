@@ -64,4 +64,4 @@ none
 
 ## Current boundary
 
-ACTIVE。Task 009の再現可能outlier reportとtask-management再設計後の観測を使い、巨大taskの事前分割・semantic milestone checkpoint・resume boundaryをそれぞれ独立に評価する。turn数単独では分割せず、Codex Reduction / Quality Delta / additional review callsを上位指標に置き、session rotationとは分離して採否条件を確定する。
+EVALUATED。tracked evidenceではworkerがmodel時間の約81%を占め、Task 009以前の観測に400 turn超outlier、別引継ぎ証跡に4 call/154 turnと11 call/535 turnのtaskがあるが、turn/call数と責務分割の因果・Quality Delta・Codex actual usageは確定できない。事前分割は既存Rulesどおり独立acceptance・rollback・責務境界がある場合だけ採用し、turn hard capや自動分割は採用しない。semantic milestone checkpointは同一task内の回復可能な作業境界として維持できるが、それ自体を追加review/model callへ変換しない。resumeはrate-limit/provider interruption等の実停止から同一task/sessionを継続する既存境界を維持し、長さだけを理由にproactive resume/rotationしない。session rotationはTask 105の別論点として扱う。採用条件は、将来telemetryで同種責務の比較可能母集団が得られ、Quality Delta非悪化かつCodex Reductionを損なわず、追加review callを含むtotal costで改善が再現された場合に限る。
