@@ -113,7 +113,6 @@ func NewWorkflow(cfg config.AppConfig, st *state.StateStore, r ModelRunner, outp
 		jitter:                boundedBackoffJitter,
 		qualityGate:           runRepositoryQualityGate,
 		captureQualitySurface: captureQualitySurfaceDigest,
-		repoSearch:            defaultRepoSearch,
 	}
 }
 
