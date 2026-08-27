@@ -64,4 +64,4 @@ none
 
 ## Current boundary
 
-NEXT。EVAL責務整理後の現行surfaceを正としてF3をTrack A/Bへ分類して着手する。
+ACTIVE。Track Aはmodel childだけへread-only Git command proxyを注入し、禁止mutation試行を記録・拒否すると同時にcall前後のHEAD / symbolic HEAD / refs / indexを比較してproxy bypassもfail closedにするgeneric境界で進める。通常worktree source editと親processのGit authorityはguard対象外とする。
