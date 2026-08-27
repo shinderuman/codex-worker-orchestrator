@@ -71,4 +71,19 @@ fi
 test ! -s "$tmp/missing.stdout"
 grep -Fxq 'required command not found: shellcheck' "$missing_stderr"
 grep -Fxq 'install with Homebrew: brew install shellcheck' "$missing_stderr"
+
+standard_bin="$tmp/standard-bin"
+mkdir -p "$standard_bin"
+ln -s "$(command -v dirname)" "$standard_bin/dirname"
+standard_stderr="$tmp/standard.stderr"
+if PATH="$standard_bin" "$repo/install.sh" >"$tmp/standard.stdout" 2>"$standard_stderr"; then
+	printf '%s\n' 'install missing standard command: expected failure' >&2
+	exit 1
+fi
+test ! -s "$tmp/standard.stdout"
+grep -Fxq 'required command not found: git' "$standard_stderr"
+if grep -Fq 'brew install' "$standard_stderr"; then
+	printf '%s\n' 'install missing standard command: unexpected Homebrew hint' >&2
+	exit 1
+fi
 printf '%s\n' 'install smoke: pass'
