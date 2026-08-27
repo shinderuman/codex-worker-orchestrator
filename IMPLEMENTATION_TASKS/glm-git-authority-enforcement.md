@@ -64,4 +64,4 @@ none
 
 ## Current boundary
 
-ACTIVE。Track A generic guardをproductionへ配線済み。model childだけにread-only Git proxyとtransport denialを適用し、commit / branch / reset / checkout破棄 / pushを通常経路で実行前拒否する。call前後はHEAD / symbolic HEAD / refs / index / local configを比較し、proxy bypassによるauthority mutationもfail closedする。通常worktree source editと親processのcommit/pushはguard対象外。guard違反時はworker/reviewer sessionを破棄し、dirty sourceを自動rollbackせず親による確認・recoveryへ戻す。Actions run `33100209070`でrunner tests、runner vet、全package buildがPASS。恒久Repository Lintとcompletion metadataを残す。
+ACTIVE。Track A generic guardをproductionへ配線済み。model childだけにread-only Git proxyとtransport denialを適用し、commit / branch / reset / checkout破棄 / pushを通常経路で実行前拒否する。call前後はHEAD / symbolic HEAD / refs / index / local configを比較し、proxy bypassによるauthority mutationもfail closedする。通常worktree source editと親processのcommit/pushはguard対象外。guard違反時はworker/reviewer sessionを破棄し、dirty sourceを自動rollbackせず親による確認・recoveryへ戻す。Actions run `33100209070`でrunner tests、runner vet、全package buildがPASS。恒久lintで検出されたunused/cyclop 2件はbehavior不変の分割・旧関数削除で修正し、run `33100899719`でrunner tests、runner vet、全package buildを再PASS。completion前の恒久Repository Lintを残す。
