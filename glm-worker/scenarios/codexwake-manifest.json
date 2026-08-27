@@ -1,6 +1,0 @@
-{
-  "version": 1,
-  "description": "codex wake escaped bug corpusが根拠とするcodex-auto-resume.mdのSHA-256固定。file内容が変わるとhash mismatchでtestが失敗し、corpusの期待行動・期待終端を現物へ再照合すること。",
-  "codex_wake_instruction_sha256": "48a05121aedc4ebefc2906311dc5045bfe4d441050c8eabadb3faee076c66e97",
-  "scenario_count": 14
-}
