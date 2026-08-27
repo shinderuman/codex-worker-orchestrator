@@ -49,31 +49,6 @@ func TestActiveTaskContractWiring(t *testing.T) {
 		}
 	}
 
-	eval := readFile("EVAL.md")
-	for _, wire := range []string{
-		"parent-managed implementation metadataの単一集合",
-		"path名ごとの分岐実装を持たず",
-		"critical分類(`implementation-rules`)",
-		"critical分類(`implementation-tasks`)",
-		"ACTIVE task fileを`IMPLEMENTATION_TASKS/`配下へ一意に解決する",
-		"`.md` regular fileに限定し",
-		"non-regular file(固定後のsymlink差し替え含む)は同じ解決失敗として扱う",
-		"pathはtask開始時に一度だけstateへ固定し",
-		"新task開始時は前taskの固定を除去し",
-		"解決fail closed後のstateは未設定のまま残し",
-		"未設定を検出してACTIVEを再解決・固定してからpromptを作る",
-		"再解決失敗は0 model callで再度fail closedする",
-		"停止期間中に同じfileがさらに再変更されていてもcurrent値に関係なくfile単位で拒否し",
-		"毎回の呼出promptへ同じACTIVE task file pathと本文読み込み指示(ACTIVE_TASK_FILE block)",
-		"resumeは保存済み前回指示を再送するためblockが失われない",
-		"TestActiveTaskContractWiring",
-		"型不一致でfail closedし、migration・fallbackは置かない",
-	} {
-		if !strings.Contains(eval, wire) {
-			t.Errorf("EVAL.md lacks ACTIVE task contract wiring: %q", wire)
-		}
-	}
-
 	for _, promptFile := range []string{"codex/glm-worker/prompts/WORKER.md", "codex/glm-worker/prompts/REVIEWER.md"} {
 		prompt := readFile(promptFile)
 		for _, keyword := range []string{"ACTIVE_TASK_FILE", "IMPLEMENTATION_TASKS", "IMPLEMENTATION_RULES.md"} {
@@ -83,8 +58,7 @@ func TestActiveTaskContractWiring(t *testing.T) {
 		}
 	}
 
-	sc, mf := loadCorpus(t)
-	_ = sc
+	_, mf := loadCorpus(t)
 	pinned := map[string]bool{}
 	for _, e := range mf.InstructionFiles {
 		pinned[e.Path] = true

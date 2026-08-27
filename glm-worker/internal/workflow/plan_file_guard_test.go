@@ -984,28 +984,6 @@ func TestPlanFileContractWiring(t *testing.T) {
 			t.Errorf("root AGENTS.mdにplan/history契約文 %qがありません", want)
 		}
 	}
-	eval, err := os.ReadFile(filepath.Join(root, "EVAL.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, want := range []string{
-		"tracked canonical source",
-		"更新できるのは親Codexだけ",
-		"reviewer開始前にfail closed検出",
-		"git ls-files",
-		"未追跡で最初から存在しないrepositoryでは",
-		"index現物",
-		"追跡判定不能なGit異常は呼出前fail closed",
-		"Git管理外directoryだけを未追跡欠損の許可枠",
-		"親Codex専有のtracked archive",
-		"plan file guardと同じ責務で機械強制",
-		"critical分類(`implementation-history`)",
-		"raw telemetryへexactly once記録",
-	} {
-		if !strings.Contains(string(eval), want) {
-			t.Errorf("EVAL.mdの計画file bootstrap節に契約文 %qがありません", want)
-		}
-	}
 	managed, err := os.ReadFile(filepath.Join(root, "codex", "AGENTS.md"))
 	if err != nil {
 		t.Fatal(err)

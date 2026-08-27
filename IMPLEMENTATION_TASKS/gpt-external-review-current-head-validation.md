@@ -361,4 +361,4 @@ none
 
 ## Current boundary
 
-NEXT。PR #2 external-review taskのpush後に親Codexが停止するため、本taskのGLM review/fix dispatchはまだ開始しない。
+ACTIVE。PR #2 external-review taskは完了した。ユーザーがPR #2のmain push後に一度停止するよう明示したため、本taskはfetch・proposal確認・GLM review/fix dispatchを含め未着手のまま保持する。

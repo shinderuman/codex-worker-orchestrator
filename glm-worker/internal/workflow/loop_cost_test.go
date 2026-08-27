@@ -94,17 +94,6 @@ func TestLoopCostObservationContractWiring(t *testing.T) {
 			t.Errorf("tests/install_smoke.sh lacks go test invocation contract helper: %q", wire)
 		}
 	}
-
-	eval := readContractFile("EVAL.md")
-	for _, wire := range []string{
-		"## machine executionの反復cost観測",
-		"TestLoopCostObservationContractWiring",
-		"tests/install-smoke-coverage.md",
-	} {
-		if !strings.Contains(eval, wire) {
-			t.Errorf("EVAL.md lacks machine execution loop cost section wiring: %q", wire)
-		}
-	}
 }
 
 func loopCostSection(t *testing.T, header string, doc string) string {

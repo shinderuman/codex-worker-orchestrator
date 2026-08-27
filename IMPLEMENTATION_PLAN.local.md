@@ -8,11 +8,10 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/gpt-external-review-a757955-e276599-validation.md`
+- `IMPLEMENTATION_TASKS/gpt-external-review-current-head-validation.md`
 
 ## NEXT（優先順）
 
-- `IMPLEMENTATION_TASKS/gpt-external-review-current-head-validation.md`
 - `IMPLEMENTATION_TASKS/instruction-surface-ownership.md`
 - `IMPLEMENTATION_TASKS/unknown-production-surface-risk.md`
 - `IMPLEMENTATION_TASKS/glm-git-authority-enforcement.md`
@@ -50,15 +49,15 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 ## 現在のGit境界
 
 - branch: `main`
-- implementation baseline: quality gateのcapability-aware routing実装を完了し、GPT external review PR #2をPR #1より先に処理するACTIVEへ固定した状態
-- implementation boundary: PR #2の指定review branchを明示fetchし、expected proposal commitのlocal object確認後に全finding/proposalをlosslessにGLMへ渡す直前。PR #1はNEXTのまま未着手
+- implementation baseline: GPT external review PR #2のfindingをcurrent HEADへ照合し、EVAL自然言語authority重複を解消した状態
+- implementation boundary: PR #2は指定ref fetch・proposal object確認・lossless GLM照合・適応修正・全quality gate・独立review・親Codex semantic review・parent accept・History移行を完了。PR #1をACTIVEへ昇格したが、fetch・proposal確認・GLM dispatchを含め未着手
 - preserved boundary: wake coalescingの10分closed interval・fail-open reservation・task ID fail-closed、machine output boundary、full smoke証拠再利用、GLM commit/push禁止を維持
 - push: 各親commit後の`refs/heads/main`とGreptile正常review後の`refs/heads/codex/greptile-reviewed`だけを親Codexが通常fast-forwardする。GLM push、force/non-fast-forward、他refへのpushは禁止
 
 ## 現在の停止理由
 
-なし。quality-gate taskのfinal HEAD同期・push・install確認後にPR #2 transport確認を開始できる。
+ユーザーがPR #2のmain push完了後に一度停止するよう明示したため。PR #1はACTIVEへ昇格済みだが未着手のまま保持する。
 
 ## 次の親Codex操作
 
-quality-gate taskの同一commit同期・push・install確認を終え、PR #2の指定refをfetchしてproposal commitを確認する。
+ユーザーの再開指示後、PR #1 taskのOriginal instructionと保存済みexternal review payloadを再読し、proposal transportの現状確認から開始する。
