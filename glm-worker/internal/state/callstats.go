@@ -454,29 +454,7 @@ func buildTaskAmplification(taskID string, logs []ModelCallLog) TaskCallAmplific
 	byCategory := make(map[string]*TaskCallCategoryTotal)
 	row := TaskCallAmplification{TaskID: taskID, ByCategory: []TaskCallCategoryTotal{}}
 	for _, log := range sorted {
-		category := WorkerPhaseCategory(log.Phase)
-		total, ok := byCategory[category]
-		if !ok {
-			total = &TaskCallCategoryTotal{Category: category}
-			byCategory[category] = total
-			categoryOrder = append(categoryOrder, category)
-		}
-		total.Calls++
-		if log.Resumed {
-			total.ResumedCalls++
-		}
-		total.Turns += int64(log.TopLevelTurns)
-		total.DurationMS += log.WallDurationMS
-
-		row.Calls++
-		if log.Resumed {
-			row.ResumedCalls++
-		}
-		if log.TopLevelTurns > 0 {
-			row.TurnsObservedCalls++
-		}
-		row.TurnsTotal += int64(log.TopLevelTurns)
-		row.DurationMSTotal += log.WallDurationMS
+		accumulateTaskCall(&row, byCategory, &categoryOrder, log)
 	}
 
 	initial := sorted[0]
@@ -500,6 +478,32 @@ func buildTaskAmplification(taskID string, logs []ModelCallLog) TaskCallAmplific
 		row.ByCategory = append(row.ByCategory, *byCategory[category])
 	}
 	return row
+}
+
+func accumulateTaskCall(row *TaskCallAmplification, byCategory map[string]*TaskCallCategoryTotal, categoryOrder *[]string, log ModelCallLog) {
+	category := WorkerPhaseCategory(log.Phase)
+	total, ok := byCategory[category]
+	if !ok {
+		total = &TaskCallCategoryTotal{Category: category}
+		byCategory[category] = total
+		*categoryOrder = append(*categoryOrder, category)
+	}
+	total.Calls++
+	if log.Resumed {
+		total.ResumedCalls++
+	}
+	total.Turns += int64(log.TopLevelTurns)
+	total.DurationMS += log.WallDurationMS
+
+	row.Calls++
+	if log.Resumed {
+		row.ResumedCalls++
+	}
+	if log.TopLevelTurns > 0 {
+		row.TurnsObservedCalls++
+	}
+	row.TurnsTotal += int64(log.TopLevelTurns)
+	row.DurationMSTotal += log.WallDurationMS
 }
 
 func taskTurnOutliers(tasks []TaskCallAmplification) []TaskOutlierObservation {
