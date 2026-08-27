@@ -1,0 +1,61 @@
+name: Temporary F3 Git Authority Validation
+
+on:
+  push:
+    branches:
+      - hardening-task/glm-git-authority-enforcement
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Finalize guard fixtures and prompt contract
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          test_path = Path('glm-worker/internal/runner/git_authority_guard_test.go')
+          text = test_path.read_text()
+          pattern = r'func gitAuthorityResultJSON\(\) string \{\n\treturn `.*?`\n\}'
+          replacement = '''func gitAuthorityResultJSON() string {
+\treturn `{"type":"result","subtype":"success","is_error":false,"structured_output":{"status":"IMPLEMENTED","risk":"LOW","summary":"done","requirement_coverage":"covered","tests":"pass","unverified":"none"},"result":"runner output"}`
+}'''
+          text, count = re.subn(pattern, replacement, text, count=1, flags=re.S)
+          if count != 1:
+              raise SystemExit(f'gitAuthorityResultJSON replacement count={count}')
+          test_path.write_text(text)
+
+          prompt_path = Path('codex/glm-worker/prompts/WORKER.md')
+          prompt = prompt_path.read_text()
+          old = '- 明示依頼なしに`git commit`しない。'
+          new = '- `git commit`は禁止。task要求や明示依頼にcommit文言があってもGLM worker自身へのGit authority付与とは解釈せず、commitは親Codexへ残す。'
+          if prompt.count(old) != 1:
+              raise SystemExit(f'worker prompt replacement count={prompt.count(old)}')
+          prompt_path.write_text(prompt.replace(old, new, 1))
+          PY
+          gofmt -w glm-worker/internal/runner/git_authority_guard.go glm-worker/internal/runner/git_authority_claude_wrapper.go glm-worker/internal/runner/git_authority_guard_test.go glm-worker/internal/runner/instruction_surface_runner.go
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.22.x'
+          cache: false
+      - name: Runner tests
+        run: go -C glm-worker test ./internal/runner
+      - name: Runner vet
+        run: go -C glm-worker vet ./internal/runner
+      - name: Build all packages
+        run: go -C glm-worker build ./...
+      - name: Commit validated F3 implementation
+        run: |
+          rm .github/workflows/temporary-f3-git-authority-validation.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add codex/glm-worker/prompts/WORKER.md glm-worker/internal/runner/git_authority_guard.go glm-worker/internal/runner/git_authority_claude_wrapper.go glm-worker/internal/runner/git_authority_guard_test.go glm-worker/internal/runner/instruction_surface_runner.go .github/workflows/temporary-f3-git-authority-validation.yml
+          git commit -m 'hardening: enforce model git authority boundary'
+          git push
