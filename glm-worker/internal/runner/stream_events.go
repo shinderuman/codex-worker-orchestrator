@@ -3,6 +3,7 @@ package runner
 import (
 	"bytes"
 	"encoding/json"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -12,16 +13,17 @@ import (
 )
 
 type streamEventIngester struct {
-	state            *state.StateStore
-	base             state.TaskEventRecord
-	seq              int
-	pending          []byte
-	closed           bool
-	resultLine       []byte
-	plain            []byte
-	tools            map[string]toolUseObservation
-	instructionReads map[string]struct{}
-	now              func() time.Time
+	state                *state.StateStore
+	base                 state.TaskEventRecord
+	seq                  int
+	pending              []byte
+	closed               bool
+	resultLine           []byte
+	plain                []byte
+	tools                map[string]toolUseObservation
+	instructionReads     map[string]struct{}
+	workerInstructionDir string
+	now                  func() time.Time
 
 	liveLastEventAt         time.Time
 	liveLastModelActivityAt time.Time
@@ -214,7 +216,7 @@ func (g *streamEventIngester) observeToolUse(block *state.TaskBlockSummary, at t
 		observation.purpose = detail.purpose
 		observation.background = detail.background
 		observation.waitTaskID = detail.waitTaskID
-		if name, matched := workerInstructionReadName(observation.name, input); matched {
+		if name, matched := workerInstructionReadName(observation.name, input, g.workerInstructionDir); matched {
 			g.instructionReads[name] = struct{}{}
 		}
 	}
@@ -222,8 +224,8 @@ func (g *streamEventIngester) observeToolUse(block *state.TaskBlockSummary, at t
 	return true
 }
 
-func workerInstructionReadName(toolName string, input json.RawMessage) (string, bool) {
-	if toolName != "Read" || len(input) == 0 {
+func workerInstructionReadName(toolName string, input json.RawMessage, instructionDir string) (string, bool) {
+	if toolName != "Read" || len(input) == 0 || instructionDir == "" {
 		return "", false
 	}
 	var parsed struct {
@@ -232,11 +234,20 @@ func workerInstructionReadName(toolName string, input json.RawMessage) (string, 
 	if err := json.Unmarshal(input, &parsed); err != nil {
 		return "", false
 	}
-	path := strings.ReplaceAll(parsed.FilePath, "\\", "/")
-	if !strings.Contains(path, "/instructions/worker/") {
+	readPath, err := filepath.Abs(filepath.Clean(parsed.FilePath))
+	if err != nil {
 		return "", false
 	}
-	name := path[strings.LastIndexByte(path, '/')+1:]
+	root, err := filepath.Abs(filepath.Clean(instructionDir))
+	if err != nil {
+		return "", false
+	}
+	relative, err := filepath.Rel(root, readPath)
+	if err != nil || relative == "." || filepath.IsAbs(relative) || relative == ".." ||
+		strings.HasPrefix(relative, ".."+string(filepath.Separator)) || strings.ContainsRune(relative, filepath.Separator) {
+		return "", false
+	}
+	name := filepath.Base(readPath)
 	switch name {
 	case "common-code.md", "testing.md", "state-transitions.md", "cli.md",
 		"go.md", "javascript.md", "php.md", "eslint.md":

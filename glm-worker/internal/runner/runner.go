@@ -443,7 +443,9 @@ func (r *ClaudeRunner) newTaskEventIngester(
 		state.WarnTaskEventSkip("call ID生成", err)
 		return &streamEventIngester{closed: true}
 	}
-	return newStreamEventIngester(r.state, taskID, callID, role, phase, model, sessionID, resumed)
+	ingester := newStreamEventIngester(r.state, taskID, callID, role, phase, model, sessionID, resumed)
+	ingester.workerInstructionDir = filepath.Join(r.config.CodexConfigDir, "instructions", "worker")
+	return ingester
 }
 
 func streamResultSummary(parsed claudeJSONResult, parseErr error) string {

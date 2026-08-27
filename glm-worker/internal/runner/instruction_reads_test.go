@@ -19,6 +19,7 @@ func TestClaudeRunnerReportsWorkerInstructionReads(t *testing.T) {
 		"",
 	}, "\n")
 	runner, _, _ := newStreamFixtureRunner(t, writeStreamFixtureClaude(t, stream))
+	runner.config.CodexConfigDir = "/tmp/.codex"
 	result, err := runner.Run(
 		state.WorkerRole,
 		"worker-new",
@@ -37,15 +38,25 @@ func TestClaudeRunnerReportsWorkerInstructionReads(t *testing.T) {
 }
 
 func TestWorkerInstructionReadRejectsUnrelatedRead(t *testing.T) {
+	instructionDir := "/tmp/.codex/instructions/worker"
 	if name, ok := workerInstructionReadName(
 		"Read",
-		[]byte(`{"file_path":"/repo/docs/go.md"}`),
+		[]byte(`{"file_path":"/repo/instructions/worker/go.md"}`),
+		instructionDir,
 	); ok || name != "" {
-		t.Fatalf("unexpected match: %q %v", name, ok)
+		t.Fatalf("repo-local fake instruction must not match: %q %v", name, ok)
+	}
+	if name, ok := workerInstructionReadName(
+		"Read",
+		[]byte(`{"file_path":"/tmp/.codex/instructions/worker/go.md"}`),
+		instructionDir,
+	); !ok || name != "go.md" {
+		t.Fatalf("configured instruction read did not match: %q %v", name, ok)
 	}
 	if name, ok := workerInstructionReadName(
 		"Bash",
 		[]byte(`{"command":"cat ~/.codex/instructions/worker/go.md"}`),
+		instructionDir,
 	); ok || name != "" {
 		t.Fatalf("bash must not count as verified Read: %q %v", name, ok)
 	}
