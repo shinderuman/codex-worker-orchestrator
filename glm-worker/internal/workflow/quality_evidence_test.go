@@ -39,6 +39,26 @@ func TestQualityEvidenceExpectedBehaviorChangeRaisesRisk(t *testing.T) {
 	}
 }
 
+func TestQualityEvidenceFailureMessageChangeStaysLow(t *testing.T) {
+	base := qualityEvidenceGoTest("got", "1", true)
+	root, baseline := newQualityEvidenceRepo(t, base)
+	writeGitTestFile(t, root, "sample_test.go", strings.Replace(base, "got %d", "value %d", 1))
+	decision := qualityEvidenceDecisionForTest(t, root, baseline)
+	if decision.High {
+		t.Fatalf("failure message change raised risk: %#v", decision)
+	}
+}
+
+func TestQualityEvidenceSubtestFailureMessageChangeStaysLow(t *testing.T) {
+	base := qualityEvidenceSubtests(true)
+	root, baseline := newQualityEvidenceRepo(t, base)
+	writeGitTestFile(t, root, "sample_test.go", strings.Replace(base, `t.Fatal("negative")`, `t.Fatal("details")`, 1))
+	decision := qualityEvidenceDecisionForTest(t, root, baseline)
+	if decision.High {
+		t.Fatalf("subtest failure message change raised risk: %#v", decision)
+	}
+}
+
 func TestQualityEvidenceNegativeCaseDeletionRaisesRisk(t *testing.T) {
 	root, baseline := newQualityEvidenceRepo(t, qualityEvidenceSubtests(true))
 	writeGitTestFile(t, root, "sample_test.go", qualityEvidenceSubtests(false))

@@ -268,10 +268,14 @@ func goTestBodyEvidence(body *ast.BlockStmt) []string {
 	ast.Inspect(body, func(node ast.Node) bool {
 		switch value := node.(type) {
 		case *ast.CallExpr:
-			signatures = append(signatures, "call:"+normalizeGoEvidenceNode(value))
-			if selector, ok := value.Fun.(*ast.SelectorExpr); ok && selector.Sel.Name == "Run" {
-				signatures = append(signatures, "subtest")
+			if isGoFailureCall(value) {
+				break
 			}
+			if selector, ok := value.Fun.(*ast.SelectorExpr); ok && selector.Sel.Name == "Run" {
+				signatures = append(signatures, "subtest:"+goSubtestEvidence(value))
+				break
+			}
+			signatures = append(signatures, "call:"+normalizeGoEvidenceNode(value))
 		case *ast.IfStmt:
 			if goNodeContainsFailure(value.Body) || goNodeContainsFailure(value.Else) {
 				signatures = append(signatures, "failure-guard:"+normalizeGoEvidenceNode(value.Cond))
@@ -280,6 +284,13 @@ func goTestBodyEvidence(body *ast.BlockStmt) []string {
 		return true
 	})
 	return signatures
+}
+
+func goSubtestEvidence(call *ast.CallExpr) string {
+	if len(call.Args) == 0 {
+		return "<missing-name>"
+	}
+	return normalizeGoEvidenceNode(call.Args[0])
 }
 
 func goNodeContainsFailure(node ast.Node) bool {
