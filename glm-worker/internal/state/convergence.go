@@ -237,39 +237,47 @@ func roundCommentKind(path string) string {
 }
 
 func RoundSemanticDigest(content []byte, class string, path string) string {
-	if len(content) == 0 {
-		return roundDigest(content)
-	}
-	if class == RoundPathClassDoc {
+	if len(content) == 0 || class == RoundPathClassDoc {
 		return roundDigest(content)
 	}
 	if class != RoundPathClassCode {
 		return ""
 	}
-	if bytes.Contains(content, []byte("\\\n")) {
+	kind := roundCommentKind(path)
+	if roundSemanticUnsafe(content, path, kind) {
 		return ""
 	}
-	kind := roundCommentKind(path)
+	return roundDigest(normalizeRoundContent(content, kind))
+}
+
+func roundSemanticUnsafe(content []byte, path, kind string) bool {
+	if bytes.Contains(content, []byte("\\\n")) {
+		return true
+	}
 	switch kind {
 	case roundCommentSlash:
-		if bytes.IndexByte(content, '`') >= 0 {
-			return ""
-		}
-		ext := strings.ToLower(filepath.Ext(path))
-		if ext == extPHP && bytes.Contains(content, []byte("<<<")) {
-			return ""
-		}
-		for _, marker := range roundSlashStringGuardMarkers(ext) {
-			if bytes.Contains(content, marker) {
-				return ""
-			}
-		}
+		return roundSlashSemanticUnsafe(content, path)
 	case roundCommentHash:
-		if bytes.Contains(content, []byte(`"""`)) || bytes.Contains(content, []byte(`'''`)) {
-			return ""
+		return bytes.Contains(content, []byte(`"""`)) || bytes.Contains(content, []byte(`'''`))
+	default:
+		return false
+	}
+}
+
+func roundSlashSemanticUnsafe(content []byte, path string) bool {
+	if bytes.IndexByte(content, '`') >= 0 {
+		return true
+	}
+	ext := strings.ToLower(filepath.Ext(path))
+	if ext == extPHP && bytes.Contains(content, []byte("<<<")) {
+		return true
+	}
+	for _, marker := range roundSlashStringGuardMarkers(ext) {
+		if bytes.Contains(content, marker) {
+			return true
 		}
 	}
-	return roundDigest(normalizeRoundContent(content, kind))
+	return false
 }
 
 func roundSlashStringGuardMarkers(ext string) [][]byte {
@@ -360,24 +368,38 @@ func roundDigest(content []byte) string {
 }
 
 func CompareRoundRecords(prev, curr *RoundRecord) RoundDelta {
-	if curr == nil {
-		return RoundDelta{Class: RoundDeltaUnknown}
-	}
-	if curr.WorkerPhase == RoundWorkerPhaseBaseline {
-		return RoundDelta{Class: RoundDeltaBaseline}
-	}
-	if prev == nil {
-		return RoundDelta{Class: RoundDeltaInitial}
-	}
-	if roundSnapshotsEqual(prev.Snapshot, curr.Snapshot) {
-		return RoundDelta{Class: RoundDeltaSameSnapshot}
-	}
-	if prev.CaptureError != "" || curr.CaptureError != "" {
-		return RoundDelta{Class: RoundDeltaUnknown}
+	if initial, done := initialRoundDelta(prev, curr); done {
+		return initial
 	}
 	previous := roundPathIndex(prev.Paths)
 	current := roundPathIndex(curr.Paths)
 	delta := RoundDelta{Class: RoundDeltaCommentFormat}
+	accumulateCurrentRoundPaths(&delta, previous, current)
+	accumulateRemovedRoundPaths(&delta, previous, current)
+	if delta.ChangedPaths == 0 {
+		return RoundDelta{Class: RoundDeltaUnknown}
+	}
+	return delta
+}
+
+func initialRoundDelta(prev, curr *RoundRecord) (RoundDelta, bool) {
+	switch {
+	case curr == nil:
+		return RoundDelta{Class: RoundDeltaUnknown}, true
+	case curr.WorkerPhase == RoundWorkerPhaseBaseline:
+		return RoundDelta{Class: RoundDeltaBaseline}, true
+	case prev == nil:
+		return RoundDelta{Class: RoundDeltaInitial}, true
+	case roundSnapshotsEqual(prev.Snapshot, curr.Snapshot):
+		return RoundDelta{Class: RoundDeltaSameSnapshot}, true
+	case prev.CaptureError != "" || curr.CaptureError != "":
+		return RoundDelta{Class: RoundDeltaUnknown}, true
+	default:
+		return RoundDelta{}, false
+	}
+}
+
+func accumulateCurrentRoundPaths(delta *RoundDelta, previous, current map[string]RoundPathState) {
 	for path, currEntry := range current {
 		prevEntry, existed := previous[path]
 		if existed && prevEntry.FullDigest == currEntry.FullDigest && currEntry.FullDigest != "" {
@@ -394,22 +416,21 @@ func CompareRoundRecords(prev, curr *RoundRecord) RoundDelta {
 		delta.SemanticPaths++
 		delta.Class = RoundDeltaSemantic
 	}
-	for path := range previous {
+}
+
+func accumulateRemovedRoundPaths(delta *RoundDelta, previous, current map[string]RoundPathState) {
+	for path, prevEntry := range previous {
 		if _, ok := current[path]; ok {
 			continue
 		}
 		delta.ChangedPaths++
-		if previous[path].Class == RoundPathClassDoc {
+		if prevEntry.Class == RoundPathClassDoc {
 			delta.addDocPath()
 			continue
 		}
 		delta.SemanticPaths++
 		delta.Class = RoundDeltaSemantic
 	}
-	if delta.ChangedPaths == 0 {
-		return RoundDelta{Class: RoundDeltaUnknown}
-	}
-	return delta
 }
 
 func (d *RoundDelta) addDocPath() {
