@@ -72,4 +72,4 @@ none
 
 ## Current boundary
 
-core実装済み、production routing未接続。
+ACTIVE。F8 integration `6ccae8dc001a002fec0aa790f3f2bca71de16c9d`を開始点とし、既存BM25 coreを再実装せず、production worker dispatchでtarget既知/不明を判定して必要時だけrepo-searchへrouteする最小境界を調査・実装する。fallbackは利用不能/候補不足時に既存normal repo inspectionへ戻すだけとし、telemetryとknown/unknown/failure scenarioを固定する。
