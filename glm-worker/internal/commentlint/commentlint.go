@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint"
 )
 
 type Violation struct {
@@ -52,7 +54,29 @@ type heredocSpec struct {
 }
 
 func Check(root string) (Report, error) {
-	return Run(root, false)
+	quality, err := harnesslint.Check(root)
+	if err != nil {
+		return Report{}, err
+	}
+	return qualityReport(quality), nil
+}
+
+func qualityReport(source harnesslint.Report) Report {
+	report := Report{
+		Status:     source.Status,
+		Fixed:      source.Fixed,
+		Violations: make([]Violation, 0, len(source.Violations)),
+	}
+	for _, item := range source.Violations {
+		report.Violations = append(report.Violations, Violation{
+			Path:    item.Path,
+			Line:    item.Line,
+			Column:  item.Column,
+			Kind:    item.Rule,
+			Message: item.Message,
+		})
+	}
+	return report
 }
 
 func Run(root string, fix bool) (Report, error) {
