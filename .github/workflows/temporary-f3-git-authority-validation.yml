@@ -17,9 +17,44 @@ jobs:
           fetch-depth: 0
       - name: Finalize F3 source
         run: |
-          python3 -c 'from pathlib import Path; p=Path("glm-worker/internal/runner/git_authority_guard_test.go"); s=p.read_text(); old="return `{\\\"type\\\":\\\"result\\\",\\\"subtype\\\":\\\"success\\\",\\\"is_error\\\":false,\\\"structured_output\\\":{\\\"status\\\":\\\"IMPLEMENTED\\\",\\\"risk\\\":\\\"LOW\\\",\\\"summary\\\":\\\"done\\\",\\\"requirement_coverage\\\":\\\"covered\\\",\\\"tests\\\":\\\"pass\\\",\\\"unverified\\\":\\\"none\\\"},\\\"result\\\":\\\"runner output\\\"}`"; new="return `{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"structured_output\":{\"status\":\"IMPLEMENTED\",\"risk\":\"LOW\",\"summary\":\"done\",\"requirement_coverage\":\"covered\",\"tests\":\"pass\",\"unverified\":\"none\"},\"result\":\"runner output\"}`"; assert s.count(old)==1, s.count(old); p.write_text(s.replace(old,new,1))'
-          python3 -c 'from pathlib import Path; p=Path("codex/glm-worker/prompts/WORKER.md"); s=p.read_text(); old="- 明示依頼なしに`git commit`しない。"; new="- `git commit`は禁止。task要求や明示依頼にcommit文言があってもGLM worker自身へのGit authority付与とは解釈せず、commitは親Codexへ残す。"; assert s.count(old)==1, s.count(old); p.write_text(s.replace(old,new,1))'
-          python3 -c 'from pathlib import Path; import re; p=Path("glm-worker/internal/runner/preflight_poc_test.go"); s=p.read_text(); pat=r"\tsourceFlags := map\[string\]bool\{\}\n\tentries, err := os\.ReadDir\(\"\.\"\)\n.*?\n\tinventoryFlags := map\[string\]bool\{\}"; repl="\tsourceFlags := map[string]bool{}\n\tflagLiteral := regexp.MustCompile(`\\\"(--?[A-Za-z][A-Za-z0-9_-]*)\\\"`)\n\tfor _, name := range []string{\\\"runner.go\\\", \\\"probe.go\\\"} {\n\t\tdata, err := os.ReadFile(name)\n\t\tif err != nil {\n\t\t\tt.Fatalf(\\\"%s読み込み: %v\\\", name, err)\n\t\t}\n\t\tfor _, literal := range flagLiteral.FindAllStringSubmatch(string(data), -1) {\n\t\t\tsourceFlags[literal[1]] = true\n\t\t}\n\t}\n\tinventoryFlags := map[string]bool{}"; out,n=re.subn(pat,repl,s,count=1,flags=re.S); assert n==1,n; p.write_text(out)'
+          cat > /tmp/f3.patch <<'PATCH'
+          diff --git a/codex/glm-worker/prompts/WORKER.md b/codex/glm-worker/prompts/WORKER.md
+          --- a/codex/glm-worker/prompts/WORKER.md
+          +++ b/codex/glm-worker/prompts/WORKER.md
+          @@
+          -- 明示依頼なしに`git commit`しない。
+          +- `git commit`は禁止。task要求や明示依頼にcommit文言があってもGLM worker自身へのGit authority付与とは解釈せず、commitは親Codexへ残す。
+          diff --git a/glm-worker/internal/runner/git_authority_guard_test.go b/glm-worker/internal/runner/git_authority_guard_test.go
+          --- a/glm-worker/internal/runner/git_authority_guard_test.go
+          +++ b/glm-worker/internal/runner/git_authority_guard_test.go
+          @@
+           func gitAuthorityResultJSON() string {
+          -	return `{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"structured_output\":{\"status\":\"IMPLEMENTED\",\"risk\":\"LOW\",\"summary\":\"done\",\"requirement_coverage\":\"covered\",\"tests\":\"pass\",\"unverified\":\"none\"},\"result\":\"runner output\"}`
+          +	return `{"type":"result","subtype":"success","is_error":false,"structured_output":{"status":"IMPLEMENTED","risk":"LOW","summary":"done","requirement_coverage":"covered","tests":"pass","unverified":"none"},"result":"runner output"}`
+           }
+          diff --git a/glm-worker/internal/runner/preflight_poc_test.go b/glm-worker/internal/runner/preflight_poc_test.go
+          --- a/glm-worker/internal/runner/preflight_poc_test.go
+          +++ b/glm-worker/internal/runner/preflight_poc_test.go
+          @@
+           func TestClaudePreflightInventoryMatchesRunnerSourceFlags(t *testing.T) {
+           	sourceFlags := map[string]bool{}
+          -	entries, err := os.ReadDir(".")
+          -	if err != nil {
+          -		t.Fatalf("package dir読み込み: %v", err)
+          -	}
+           	flagLiteral := regexp.MustCompile(`"(--?[A-Za-z][A-Za-z0-9_-]*)"`)
+          -	for _, entry := range entries {
+          -		name := entry.Name()
+          -		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+          -			continue
+          -		}
+          +	for _, name := range []string{"runner.go", "probe.go"} {
+           		data, err := os.ReadFile(name)
+           		if err != nil {
+           			t.Fatalf("%s読み込み: %v", name, err)
+           		}
+          PATCH
+          git apply --unidiff-zero /tmp/f3.patch
           gofmt -w glm-worker/internal/runner/git_authority_guard.go glm-worker/internal/runner/git_authority_claude_wrapper.go glm-worker/internal/runner/git_authority_guard_test.go glm-worker/internal/runner/instruction_surface_runner.go glm-worker/internal/runner/preflight_poc_test.go
       - uses: actions/setup-go@v7
         with:
