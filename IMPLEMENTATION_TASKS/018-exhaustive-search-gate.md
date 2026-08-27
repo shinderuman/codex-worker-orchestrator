@@ -90,4 +90,4 @@ none
 
 ## Current boundary
 
-ACTIVE。通常BM25 worker/reviewer searchは既にproduction接続済みだがranking/navigationに限定される。F10ではexhaustive要求を通常searchから決定論的に区別し、full-corpus criterionをworker/reviewer双方のproduction wiringで独立に成立させる。
+COMPLETE / CAMPAIGN_STOP_SENTINEL。F10実装・独立review・恒久Repository Lint `33126476876`・runtime completion `33126575073`は完了済み。ユーザー指定によりPR #20完了後は通常Plan taskを開始しない。current plancheckがACTIVE 1件を必須とするため本taskをsentinelとして一時保持するが、再dispatch・追加実装は禁止。010以降はNEXTのまま維持する。
