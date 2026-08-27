@@ -197,47 +197,36 @@ func TestExternalFeasibilityMalformedDeclarationFailsClosed(t *testing.T) {
 	requireFeasibilityFailClosed(t, st, r, out, externalFeasibilityGuardSurface.malformedOutcome(), state.TaskStatusWaitingSolReview)
 }
 
-func TestExternalFeasibilityNotApplicableProceedsNormally(t *testing.T) {
-	repoRoot := initMutationRepo(t)
-	writeFeasibilityActiveTask(t, repoRoot, feasibilityNotApplicableDecl)
-	w, r, _, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
-		{structured: implementedPacket("done")},
-		{structured: passPacket()},
-	}, "", 0, nil)
+func TestExternalFeasibilityVerifiedImplementationProceedsNormally(t *testing.T) {
+	cases := []struct {
+		name string
+		decl string
+	}{
+		{name: "not applicable", decl: feasibilityNotApplicableDecl},
+		{name: "producer evidence", decl: feasibilityImplementationDecl},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			repoRoot := initMutationRepo(t)
+			writeFeasibilityActiveTask(t, repoRoot, tc.decl)
+			w, r, _, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
+				{structured: implementedPacket("done")},
+				{structured: passPacket()},
+			}, "", 0, nil)
 
-	if err := w.ExecuteNewTask("request"); err != nil {
-		t.Fatal(err)
-	}
-	if st.TaskStatus() != state.TaskStatusComplete {
-		t.Fatalf("status = %q want complete", st.TaskStatus())
-	}
-	if len(r.prompts) != 2 {
-		t.Fatalf("worker/reviewer 2呼出が必要: %d", len(r.prompts))
-	}
-	if r.readOnlyCalls[0] {
-		t.Fatal("not-applicable taskのworkerは書き込み可能であるべきです")
-	}
-}
-
-func TestExternalFeasibilityImplementationWithProducerEvidenceProceeds(t *testing.T) {
-	repoRoot := initMutationRepo(t)
-	writeFeasibilityActiveTask(t, repoRoot, feasibilityImplementationDecl)
-	w, r, _, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
-		{structured: implementedPacket("done")},
-		{structured: passPacket()},
-	}, "", 0, nil)
-
-	if err := w.ExecuteNewTask("request"); err != nil {
-		t.Fatal(err)
-	}
-	if st.TaskStatus() != state.TaskStatusComplete {
-		t.Fatalf("status = %q want complete", st.TaskStatus())
-	}
-	if len(r.prompts) != 2 {
-		t.Fatalf("worker/reviewer 2呼出が必要: %d", len(r.prompts))
-	}
-	if r.readOnlyCalls[0] {
-		t.Fatal("producer evidence付きimplementation taskのworkerは書き込み可能であるべきです")
+			if err := w.ExecuteNewTask("request"); err != nil {
+				t.Fatal(err)
+			}
+			if st.TaskStatus() != state.TaskStatusComplete {
+				t.Fatalf("status = %q want complete", st.TaskStatus())
+			}
+			if len(r.prompts) != 2 {
+				t.Fatalf("worker/reviewer 2呼出が必要: %d", len(r.prompts))
+			}
+			if r.readOnlyCalls[0] {
+				t.Fatal("verified implementation taskのworkerは書き込み可能であるべきです")
+			}
+		})
 	}
 }
 
