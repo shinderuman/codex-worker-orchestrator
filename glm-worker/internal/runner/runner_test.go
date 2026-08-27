@@ -852,48 +852,15 @@ func newFiveHourLimitResumeFixture(t *testing.T, role state.SessionRole) (*Claud
 	return r, st, argsDir
 }
 
-func TestFirstWorkerRunFiveHourLimitResumesSameSession(t *testing.T) {
-	r, st, argsDir := newFiveHourLimitResumeFixture(t, state.WorkerRole)
+func testFirstRunFiveHourLimitResumesSameSession(t *testing.T, role state.SessionRole, phase, model string, resumed bool, firstPrompt, resumePrompt string) {
+	t.Helper()
+	r, st, argsDir := newFiveHourLimitResumeFixture(t, role)
 
-	if _, err := r.Run(state.WorkerRole, "worker-new", "worker-model", false, "high", "first prompt",
+	if _, err := r.Run(role, phase, model, resumed, "high", firstPrompt,
 		filepath.Join(t.TempDir(), "first.log")); err == nil {
 		t.Fatal("5h上限はerrorを返す必要があります")
 	}
-
-	if err := st.MarkReady(state.WorkerRole); err != nil {
-		t.Fatal(err)
-	}
-	if policy := st.IsolationPolicy(); policy != isolationPolicyVersion {
-		t.Fatalf("5h上限後policy = %q, want %q (実行前永続化で破棄を防ぐ)", policy, isolationPolicyVersion)
-	}
-
-	firstArgs := readLines(t, filepath.Join(argsDir, "run-1"))
-	firstSessionID := argumentAfter(firstArgs, "--session-id")
-	if firstSessionID == "" || containsArgument(firstArgs, "--resume") {
-		t.Fatalf("初回は新session採番が必要: %#v", firstArgs)
-	}
-
-	if _, err := r.Run(state.WorkerRole, "worker-new", "worker-model", false, "high", "resume prompt",
-		filepath.Join(t.TempDir(), "resume.log")); err != nil {
-		t.Fatal(err)
-	}
-	resumeArgs := readLines(t, filepath.Join(argsDir, "run-2"))
-	if !containsArgument(resumeArgs, "--resume") || containsArgument(resumeArgs, "--session-id") {
-		t.Fatalf("resume呼出しは--resumeで同一sessionへ戻る必要があります: %#v", resumeArgs)
-	}
-	if got := argumentAfter(resumeArgs, "--resume"); got != firstSessionID {
-		t.Fatalf("resume session ID = %q, want %q (同一sessionへ継続)", got, firstSessionID)
-	}
-}
-
-func TestFirstReviewerRunFiveHourLimitResumesSameSession(t *testing.T) {
-	r, st, argsDir := newFiveHourLimitResumeFixture(t, state.ReviewerRole)
-
-	if _, err := r.Run(state.ReviewerRole, "reviewer-1", "reviewer-model", true, "high", "first review prompt",
-		filepath.Join(t.TempDir(), "first.log")); err == nil {
-		t.Fatal("5h上限はerrorを返す必要があります")
-	}
-	if err := st.MarkReady(state.ReviewerRole); err != nil {
+	if err := st.MarkReady(role); err != nil {
 		t.Fatal(err)
 	}
 	if policy := st.IsolationPolicy(); policy != isolationPolicyVersion {
@@ -906,7 +873,7 @@ func TestFirstReviewerRunFiveHourLimitResumesSameSession(t *testing.T) {
 		t.Fatalf("初回は新session採番が必要: %#v", firstArgs)
 	}
 
-	if _, err := r.Run(state.ReviewerRole, "reviewer-1", "reviewer-model", true, "high", "resume review prompt",
+	if _, err := r.Run(role, phase, model, resumed, "high", resumePrompt,
 		filepath.Join(t.TempDir(), "resume.log")); err != nil {
 		t.Fatal(err)
 	}
@@ -915,8 +882,16 @@ func TestFirstReviewerRunFiveHourLimitResumesSameSession(t *testing.T) {
 		t.Fatalf("resume呼出しは--resumeで同一sessionへ戻る必要があります: %#v", resumeArgs)
 	}
 	if got := argumentAfter(resumeArgs, "--resume"); got != firstSessionID {
-		t.Fatalf("resume session ID = %q, want %q", got, firstSessionID)
+		t.Fatalf("resume session ID = %q, want %q (同一sessionへ継続)", got, firstSessionID)
 	}
+}
+
+func TestFirstWorkerRunFiveHourLimitResumesSameSession(t *testing.T) {
+	testFirstRunFiveHourLimitResumesSameSession(t, state.WorkerRole, "worker-new", "worker-model", false, "first prompt", "resume prompt")
+}
+
+func TestFirstReviewerRunFiveHourLimitResumesSameSession(t *testing.T) {
+	testFirstRunFiveHourLimitResumesSameSession(t, state.ReviewerRole, "reviewer-1", "reviewer-model", true, "first review prompt", "resume review prompt")
 }
 
 func TestIsolationPolicyWriteFailureAbortsBeforeClaude(t *testing.T) {
