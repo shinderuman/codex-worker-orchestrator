@@ -53,6 +53,14 @@ type callDiagnostics struct {
 	providerClassification string
 }
 
+type modelCallExecution struct {
+	runResult     runner.RunResult
+	startedAt     time.Time
+	completedAt   time.Time
+	runErr        error
+	recoveryFatal bool
+}
+
 type WorkerError struct {
 	Phase    string
 	ExitCode int
@@ -1007,23 +1015,56 @@ func (w *Workflow) handleAutoFixResult(
 }
 
 func (w *Workflow) runModel(checkpoint state.ResumeCheckpoint) (packet.Result, error) {
+	checkpoint, outputPath, guardBefore, err := w.prepareModelCall(checkpoint)
+	if err != nil {
+		return packet.Result{}, err
+	}
+	execution, err := w.invokeModelCall(checkpoint, outputPath, guardBefore)
+	if err != nil {
+		return packet.Result{}, err
+	}
+	execution, err = w.resolveModelCallFailure(checkpoint, outputPath, execution)
+	if err != nil {
+		return packet.Result{}, err
+	}
+	if err := w.finalizeModelCallState(checkpoint, outputPath, execution); err != nil {
+		return packet.Result{}, err
+	}
+
+	result, err := w.parseModelCallResult(checkpoint, execution.runResult)
+	if err != nil {
+		return w.handleInvalidModelResult(checkpoint, outputPath, execution, err)
+	}
+	taskID, err := w.state.TaskID()
+	if err != nil {
+		w.recordModelCall(checkpoint, execution.runResult, execution.startedAt, execution.completedAt, "state_error", "", err, outputPath, callDiagnostics{})
+		return packet.Result{}, err
+	}
+	if err := packet.ValidateArtifacts(result.Artifacts, w.state.ArtifactDir(taskID)); err != nil {
+		return w.handleInvalidModelResult(checkpoint, outputPath, execution, err)
+	}
+	w.recordModelCall(checkpoint, execution.runResult, execution.startedAt, execution.completedAt, "success", string(result.Status), nil, outputPath, callDiagnostics{reportedRisk: string(result.Risk)})
+	w.lastProducer = state.ParentReviewProducer{Role: string(checkpoint.Role), Model: checkpoint.Model}
+	return result, nil
+}
+
+func (w *Workflow) prepareModelCall(checkpoint state.ResumeCheckpoint) (state.ResumeCheckpoint, string, parentFileGuard, error) {
 	outputPath := filepath.Join(w.temp, checkpoint.Phase+".log")
 	if checkpoint.Role == state.WorkerRole {
 		artifactDir, err := w.state.PrepareArtifactDir()
 		if err != nil {
-			return packet.Result{}, err
+			return checkpoint, outputPath, parentFileGuard{}, err
 		}
 		checkpoint.Prompt = withArtifactContext(checkpoint.Prompt, artifactDir)
 		if checkpoint.OriginalPrompt != "" {
 			checkpoint.OriginalPrompt = withArtifactContext(checkpoint.OriginalPrompt, artifactDir)
 		}
 	}
-
 	if checkpoint.OriginalPrompt == "" {
 		checkpoint.OriginalPrompt = checkpoint.Prompt
 	}
 	if checkpoint.Model == "" {
-		return packet.Result{}, &WorkerError{Phase: checkpoint.Phase, Message: "checkpoint model is missing"}
+		return checkpoint, outputPath, parentFileGuard{}, &WorkerError{Phase: checkpoint.Phase, Message: "checkpoint model is missing"}
 	}
 	if checkpoint.Effort == "" {
 		checkpoint.Effort = w.config.RoutineEffort
@@ -1031,23 +1072,28 @@ func (w *Workflow) runModel(checkpoint state.ResumeCheckpoint) (packet.Result, e
 
 	guardBefore, stopped, err := w.captureParentFileGuard(checkpoint.Role)
 	if stopped {
-		return packet.Result{}, err
+		return checkpoint, outputPath, guardBefore, err
 	}
-
 	if checkpoint.Stage == state.ResumeStageReview {
 		checkpoint.StopParentFiles = nil
 	}
 	if err := w.state.SaveResumeCheckpoint(checkpoint); err != nil {
-		return packet.Result{}, err
+		return checkpoint, outputPath, guardBefore, err
 	}
-
 	if w.stopRequested() {
-		return packet.Result{}, w.interruptBetweenCalls(checkpoint)
+		return checkpoint, outputPath, guardBefore, w.interruptBetweenCalls(checkpoint)
 	}
 	w.state.RecordModelCall(checkpoint.Role, checkpoint.Model)
+	return checkpoint, outputPath, guardBefore, nil
+}
 
-	startedAt := w.now().UTC()
-	runResult, runErr := w.runner.Run(
+func (w *Workflow) invokeModelCall(
+	checkpoint state.ResumeCheckpoint,
+	outputPath string,
+	guardBefore parentFileGuard,
+) (modelCallExecution, error) {
+	execution := modelCallExecution{startedAt: w.now().UTC()}
+	execution.runResult, execution.runErr = w.runner.Run(
 		checkpoint.Role,
 		checkpoint.Phase,
 		checkpoint.Model,
@@ -1056,148 +1102,184 @@ func (w *Workflow) runModel(checkpoint state.ResumeCheckpoint) (packet.Result, e
 		checkpoint.Prompt,
 		outputPath,
 	)
-	completedAt := w.now().UTC()
-	w.state.RecordModelDuration(checkpoint.Model, completedAt.Sub(startedAt))
-	if stopped, err := w.verifyParentFileAfterCall(checkpoint, guardBefore, runResult, startedAt, completedAt, runErr, outputPath); stopped {
-		return packet.Result{}, err
+	execution.completedAt = w.now().UTC()
+	w.state.RecordModelDuration(checkpoint.Model, execution.completedAt.Sub(execution.startedAt))
+	if stopped, err := w.verifyParentFileAfterCall(
+		checkpoint,
+		guardBefore,
+		execution.runResult,
+		execution.startedAt,
+		execution.completedAt,
+		execution.runErr,
+		outputPath,
+	); stopped {
+		return execution, err
 	}
-	failureClass := runner.ProviderFailureClass{}
+	return execution, nil
+}
 
+func (w *Workflow) resolveModelCallFailure(
+	checkpoint state.ResumeCheckpoint,
+	outputPath string,
+	execution modelCallExecution,
+) (modelCallExecution, error) {
+	if execution.runErr == nil {
+		return execution, nil
+	}
 	var interrupted *runner.InterruptedCallError
-	if runErr != nil && errors.As(runErr, &interrupted) {
-		return packet.Result{}, w.interruptFromCall(checkpoint, runResult, startedAt, completedAt, runErr, outputPath)
-	}
-	if runErr != nil {
-		failureClass = mergePlainFailureClass(
-			runner.ClassifyProviderFailureText(runner.ReadTransientSignal(outputPath)),
-			runResult.PlainFailure,
-		)
-		if failureClass.Kind == runner.ProviderFailureZaiFiveHour {
-			return packet.Result{}, w.saveRateLimitedState(checkpoint, failureClass.FiveHourLimit, runResult, startedAt, completedAt, runErr, outputPath)
-		}
+	if errors.As(execution.runErr, &interrupted) {
+		return execution, w.interruptFromCall(checkpoint, execution.runResult, execution.startedAt, execution.completedAt, execution.runErr, outputPath)
 	}
 
+	failureClass := mergePlainFailureClass(
+		runner.ClassifyProviderFailureText(runner.ReadTransientSignal(outputPath)),
+		execution.runResult.PlainFailure,
+	)
+	if failureClass.Kind == runner.ProviderFailureZaiFiveHour {
+		return execution, w.saveRateLimitedState(checkpoint, failureClass.FiveHourLimit, execution.runResult, execution.startedAt, execution.completedAt, execution.runErr, outputPath)
+	}
+	if err := w.handleStructuredModelFailure(checkpoint, outputPath, execution); err != nil {
+		return execution, err
+	}
+	if failureClass.Kind != runner.ProviderFailureTransient {
+		return execution, nil
+	}
+	return w.resolveTransientModelFailure(checkpoint, outputPath, failureClass.Detail, execution)
+}
+
+func (w *Workflow) handleStructuredModelFailure(
+	checkpoint state.ResumeCheckpoint,
+	outputPath string,
+	execution modelCallExecution,
+) error {
 	var structuredErr *runner.StructuredOutputError
-	if runErr != nil && errors.As(runErr, &structuredErr) {
+	if !errors.As(execution.runErr, &structuredErr) {
+		return nil
+	}
+	if structuredErr.RetryExhausted() {
+		w.state.RecordStructuredRetryExhausted()
+	}
+	w.recordModelCall(checkpoint, execution.runResult, execution.startedAt, execution.completedAt, "invalid_packet", "", execution.runErr, outputPath, callDiagnostics{})
+	_ = w.state.ClearResumeCheckpoint()
+	_ = w.state.RemoveUnreadySession(checkpoint.Role)
+	return &WorkerError{
+		Phase:   checkpoint.Phase + "-structured-output",
+		Message: execution.runErr.Error(),
+		Tail:    packet.Tail(outputPath, 20),
+	}
+}
 
-		if structuredErr.RetryExhausted() {
-			w.state.RecordStructuredRetryExhausted()
+func (w *Workflow) resolveTransientModelFailure(
+	checkpoint state.ResumeCheckpoint,
+	outputPath string,
+	classification string,
+	execution modelCallExecution,
+) (modelCallExecution, error) {
+	recovered, resumeResult, resumeStartedAt, resumeCompletedAt, recErr := w.recoverTransient(
+		checkpoint,
+		outputPath,
+		classification,
+		execution.runResult,
+		execution.startedAt,
+		execution.completedAt,
+	)
+	if recovered {
+		execution.runResult = resumeResult
+		execution.startedAt = resumeStartedAt
+		execution.completedAt = resumeCompletedAt
+		execution.runErr = nil
+		return execution, nil
+	}
+	if errors.Is(recErr, errParentFileGuardStopped) {
+		return execution, recErr
+	}
+	var interrupted *runner.InterruptedCallError
+	if errors.As(recErr, &interrupted) {
+		if resumeStartedAt.IsZero() {
+			return execution, w.interruptBetweenCalls(checkpoint)
 		}
-		w.recordModelCall(checkpoint, runResult, startedAt, completedAt, "invalid_packet", "", runErr, outputPath, callDiagnostics{})
-		_ = w.state.ClearResumeCheckpoint()
-		_ = w.state.RemoveUnreadySession(checkpoint.Role)
-		return packet.Result{}, &WorkerError{
-			Phase:   checkpoint.Phase + "-structured-output",
-			Message: runErr.Error(),
-			Tail:    packet.Tail(outputPath, 20),
-		}
+		return execution, w.interruptFromCall(checkpoint, resumeResult, resumeStartedAt, resumeCompletedAt, recErr, outputPath)
+	}
+	var providerUnavailable *runner.ProviderUnavailableError
+	if errors.As(recErr, &providerUnavailable) {
+		_ = w.state.SecureArtifactDir()
+		w.state.RecordProviderUnavailable(checkpoint.Model)
+		return execution, recErr
+	}
+	var limitErr runner.ZaiRateLimitError
+	if errors.As(recErr, &limitErr) {
+		return execution, recErr
 	}
 
-	recoveryFatal := false
-	if failureClass.Kind == runner.ProviderFailureTransient {
-		recovered, resumeResult, resumeStartedAt, resumeCompletedAt, recErr := w.recoverTransient(
-			checkpoint, outputPath, failureClass.Detail, runResult, startedAt, completedAt,
-		)
-		if recovered {
-			runResult = resumeResult
-			startedAt = resumeStartedAt
-			completedAt = resumeCompletedAt
-			runErr = nil
-		} else {
+	execution.runResult = resumeResult
+	execution.startedAt = resumeStartedAt
+	execution.completedAt = resumeCompletedAt
+	execution.runErr = recErr
+	execution.recoveryFatal = true
+	return execution, nil
+}
 
-			if errors.Is(recErr, errParentFileGuardStopped) {
-				return packet.Result{}, recErr
-			}
-			var interrupted *runner.InterruptedCallError
-			if errors.As(recErr, &interrupted) {
-
-				if resumeStartedAt.IsZero() {
-					return packet.Result{}, w.interruptBetweenCalls(checkpoint)
-				}
-				return packet.Result{}, w.interruptFromCall(checkpoint, resumeResult, resumeStartedAt, resumeCompletedAt, recErr, outputPath)
-			}
-			var pErr *runner.ProviderUnavailableError
-			if errors.As(recErr, &pErr) {
-				_ = w.state.SecureArtifactDir()
-				w.state.RecordProviderUnavailable(checkpoint.Model)
-				return packet.Result{}, recErr
-			}
-			var limitErr runner.ZaiRateLimitError
-			if errors.As(recErr, &limitErr) {
-
-				return packet.Result{}, recErr
-			}
-			runResult = resumeResult
-			startedAt = resumeStartedAt
-			completedAt = resumeCompletedAt
-			runErr = recErr
-
-			recoveryFatal = true
-		}
-	}
-
+func (w *Workflow) finalizeModelCallState(
+	checkpoint state.ResumeCheckpoint,
+	outputPath string,
+	execution modelCallExecution,
+) error {
 	if err := w.state.SecureArtifactDir(); err != nil {
-		if !recoveryFatal {
-			w.recordModelCall(checkpoint, runResult, startedAt, completedAt, "state_error", "", err, outputPath, callDiagnostics{})
+		if !execution.recoveryFatal {
+			w.recordModelCall(checkpoint, execution.runResult, execution.startedAt, execution.completedAt, "state_error", "", err, outputPath, callDiagnostics{})
 		}
-		return packet.Result{}, err
+		return err
 	}
-	if runErr != nil {
-		if !recoveryFatal {
-			w.recordModelCall(checkpoint, runResult, startedAt, completedAt, "error", "", runErr, outputPath, callDiagnostics{})
+	if execution.runErr != nil {
+		if !execution.recoveryFatal {
+			w.recordModelCall(checkpoint, execution.runResult, execution.startedAt, execution.completedAt, "error", "", execution.runErr, outputPath, callDiagnostics{})
 		}
 		_ = w.state.ClearResumeCheckpoint()
 		_ = w.state.RemoveUnreadySession(checkpoint.Role)
-		return packet.Result{}, workerError(
-			checkpoint.Phase,
-			outputPath,
-			runErr,
-		)
+		return workerError(checkpoint.Phase, outputPath, execution.runErr)
 	}
-
 	if err := w.state.ClearResumeCheckpoint(); err != nil {
-		w.recordModelCall(checkpoint, runResult, startedAt, completedAt, "state_error", "", err, outputPath, callDiagnostics{})
+		w.recordModelCall(checkpoint, execution.runResult, execution.startedAt, execution.completedAt, "state_error", "", err, outputPath, callDiagnostics{})
+		return err
+	}
+	return nil
+}
+
+func (w *Workflow) parseModelCallResult(checkpoint state.ResumeCheckpoint, runResult runner.RunResult) (packet.Result, error) {
+	result, err := packet.ParseStructured(runResult.StructuredOutput)
+	if err != nil {
 		return packet.Result{}, err
 	}
-
-	result, err := packet.ParseStructured(runResult.StructuredOutput)
-	if err == nil {
-		if checkpoint.Role == state.ReviewerRole {
-			err = packet.ValidateReviewerResult(result)
-		} else {
-			err = packet.ValidateWorkerResult(result)
-		}
-		if err == nil {
-			taskID, taskErr := w.state.TaskID()
-			if taskErr != nil {
-				w.recordModelCall(checkpoint, runResult, startedAt, completedAt, "state_error", "", taskErr, outputPath, callDiagnostics{})
-				return packet.Result{}, taskErr
-			}
-			err = packet.ValidateArtifacts(result.Artifacts, w.state.ArtifactDir(taskID))
-		}
+	if checkpoint.Role == state.ReviewerRole {
+		err = packet.ValidateReviewerResult(result)
+	} else {
+		err = packet.ValidateWorkerResult(result)
 	}
-	if err != nil {
-		w.recordModelCall(checkpoint, runResult, startedAt, completedAt, "invalid_packet", "", err, outputPath, callDiagnostics{})
+	return result, err
+}
 
-		if packet.IsConstraintError(err) && !checkpoint.ResultCorrection {
-			w.state.RecordResultCorrection()
-			correctCheckpoint := checkpoint
-			correctCheckpoint.Phase += resultCorrectionPhaseSuffix
-			correctPrompt := resultCorrectionPrompt(err.Error())
-			correctCheckpoint.Prompt = correctPrompt
-			correctCheckpoint.OriginalPrompt = correctPrompt
-			correctCheckpoint.ResultCorrection = true
-			return w.runModel(correctCheckpoint)
-		}
-		return packet.Result{}, &WorkerError{
-			Phase:   checkpoint.Phase + "-format",
-			Message: err.Error(),
-			Tail:    packet.Tail(outputPath, 20),
-		}
+func (w *Workflow) handleInvalidModelResult(
+	checkpoint state.ResumeCheckpoint,
+	outputPath string,
+	execution modelCallExecution,
+	resultErr error,
+) (packet.Result, error) {
+	w.recordModelCall(checkpoint, execution.runResult, execution.startedAt, execution.completedAt, "invalid_packet", "", resultErr, outputPath, callDiagnostics{})
+	if packet.IsConstraintError(resultErr) && !checkpoint.ResultCorrection {
+		w.state.RecordResultCorrection()
+		correctCheckpoint := checkpoint
+		correctCheckpoint.Phase += resultCorrectionPhaseSuffix
+		correctPrompt := resultCorrectionPrompt(resultErr.Error())
+		correctCheckpoint.Prompt = correctPrompt
+		correctCheckpoint.OriginalPrompt = correctPrompt
+		correctCheckpoint.ResultCorrection = true
+		return w.runModel(correctCheckpoint)
 	}
-	w.recordModelCall(checkpoint, runResult, startedAt, completedAt, "success", string(result.Status), nil, outputPath, callDiagnostics{reportedRisk: string(result.Risk)})
-	w.lastProducer = state.ParentReviewProducer{Role: string(checkpoint.Role), Model: checkpoint.Model}
-	return result, nil
+	return packet.Result{}, &WorkerError{
+		Phase:   checkpoint.Phase + "-format",
+		Message: resultErr.Error(),
+		Tail:    packet.Tail(outputPath, 20),
+	}
 }
 
 func (w *Workflow) saveRateLimitedState(
