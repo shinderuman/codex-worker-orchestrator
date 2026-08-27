@@ -12,8 +12,6 @@ import (
 	"strings"
 )
 
-const instructionSurfaceBaselineStateKey = "instruction-surface-baseline-v1"
-
 type instructionSurfaceEntry struct {
 	path       string
 	mode       fs.FileMode
@@ -32,6 +30,8 @@ type InstructionSurfaceGuardError struct {
 	Restored     bool
 	Cause        error
 }
+
+const instructionSurfaceBaselineStateKey = "instruction-surface-baseline-v1"
 
 func (e *InstructionSurfaceGuardError) Error() string {
 	parts := []string{"repository instruction surface guard failed", e.Stage}
