@@ -37,10 +37,11 @@ review tokenを抑えつつ影響範囲漏れと自己充足reviewを防ぐ。
 ## Historical invariants
 
 - reviewer独立性、BM25 core
+- 016 worker repo-search integrationはPR #22のSquash Merge commit `da468541683a832b102acecc60770678452e6fa4`で充足済み。worker searchはnavigation-onlyでありreviewer authorityではない
 
 ## Dependencies
 
-- `IMPLEMENTATION_TASKS/016-worker-repo-search-integration.md`
+none
 
 ## Review findings
 
