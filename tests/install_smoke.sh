@@ -69,8 +69,10 @@ if PATH="$missing_bin" "$repo/install.sh" >"$tmp/missing.stdout" 2>"$missing_std
 	exit 1
 fi
 test ! -s "$tmp/missing.stdout"
-grep -Fxq 'required command not found: shellcheck' "$missing_stderr"
-grep -Fxq 'install with Homebrew: brew install shellcheck' "$missing_stderr"
+missing_command_error='required command not found: shellcheck'
+missing_brew_hint='install with Homebrew: brew install shellcheck'
+grep -Fxq "$missing_command_error" "$missing_stderr"
+grep -Fxq "$missing_brew_hint" "$missing_stderr"
 
 standard_bin="$tmp/standard-bin"
 mkdir -p "$standard_bin"
