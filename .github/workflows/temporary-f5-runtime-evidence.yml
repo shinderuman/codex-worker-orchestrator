@@ -1,0 +1,51 @@
+name: Temporary F5 Runtime Evidence
+
+on:
+  push:
+    branches:
+      - hardening-task/deterministic-rule-activation
+
+permissions:
+  contents: write
+
+jobs:
+  runtime-evidence:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Record F5 runtime evidence
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          history = Path('IMPLEMENTATION_HISTORY.md')
+          text = history.read_text()
+          old = '初回lintで検出したcyclop/gocognit/goconst findingは責務分割と定数化だけで解消しbehaviorは維持した。'
+          new = old + ' completion runtime run `33112316727`で`install.sh`本配置、`glm-worker`/`commentlint`/`harnesslint`/`merge-json`のsource再build一致、managed instruction/prompt一致、installed `glm-worker --status` production smokeをすべてPASSした。'
+          if old not in text:
+              raise SystemExit('F5 history evidence anchor not found')
+          history.write_text(text.replace(old, new, 1))
+
+          plan = Path('IMPLEMENTATION_PLAN.local.md')
+          text = plan.read_text()
+          old = '- current implementation: F5 `deterministic-rule-activation`はPR #15でgeneric Track A production実装、representative regression、final diff/bypass review、恒久Repository Lint `33111566961`、History証跡まで完了。completion metadataを閉じて`hardening/agent-guardrails`へのSquash Merge待ち。次ACTIVEはF6 `sol-decision-boundary-enforcement`\n'
+          new = '- current implementation: F5 `deterministic-rule-activation`はPR #15でgeneric Track A production実装、representative regression、final diff/bypass review、恒久Repository Lint `33111566961`、completion-metadata lint `33112164523`、runtime completion `33112316727`、cleanup後lint `33112396626`、History証跡まで完了。`hardening/agent-guardrails`へのSquash Merge待ち。次ACTIVEはF6 `sol-decision-boundary-enforcement`\n'
+          if old not in text:
+              raise SystemExit('Plan current implementation anchor not found')
+          text = text.replace(old, new, 1)
+          old = 'PR #15のcompletion metadata込みfinal treeを恒久Repository Lintで確認し、runtime install/source-equality/installed production smokeを完了してPR本文を最終証跡へ同期し、ready化して`hardening/agent-guardrails`へSquash Mergeする。その後latest integrationを予約済みF6 branchへ履歴を書き換えず同期し、Rules / Plan / ACTIVE F6 taskを再読してF6を開始する。\n'
+          new = 'PR #15のruntime証跡込みfinal treeを恒久Repository Lintで確認し、PR本文を最終証跡へ同期してready化し、`hardening/agent-guardrails`へSquash Mergeする。その後latest integrationを予約済みF6 branchへ履歴を書き換えず同期し、Rules / Plan / ACTIVE F6 taskを再読してF6を開始する。\n'
+          if old not in text:
+              raise SystemExit('Plan next action anchor not found')
+          plan.write_text(text.replace(old, new, 1))
+          PY
+          rm .github/workflows/temporary-f5-runtime-evidence.yml
+      - name: Commit runtime evidence
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add IMPLEMENTATION_HISTORY.md IMPLEMENTATION_PLAN.local.md .github/workflows/temporary-f5-runtime-evidence.yml
+          git commit -m 'docs: record F5 runtime evidence'
+          git push
