@@ -63,4 +63,4 @@ none
 
 ## Current boundary
 
-ACTIVE。Task 009の再現可能outlier reportは利用可能。2026-08-23 baselineはworker時間比率約81%と複数の累積400 turn超taskを示すが、分割効果は未確定。PR #19がhardening integrationへSquash Mergeされるまでは実装開始しない。
+ACTIVE。Task 009の再現可能outlier reportは利用可能。2026-08-23 baselineはworker時間比率約81%と複数の累積400 turn超taskを示すが、分割効果は未確定。GPT hardening campaign完了後の通常Plan先頭task。ただし、最新`main`をローカルCodexで再読・動作確認して新HEADの実運用成立性を確認するまでは本taskの実装を開始しない。確認で懸念や不整合が出た場合は報告に留め、修正担当・対応方針はユーザー判断を待つ。問題がなければ通常開発再開時に本taskから継続する。
