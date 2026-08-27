@@ -1,0 +1,69 @@
+version: "2"
+run:
+  go: "1.22"
+linters:
+  default: none
+  enable:
+    - bodyclose
+    - cyclop
+    - decorder
+    - dupl
+    - errcheck
+    - errorlint
+    - funlen
+    - gocognit
+    - goconst
+    - gocritic
+    - govet
+    - ineffassign
+    - interfacebloat
+    - nolintlint
+    - revive
+    - sqlclosecheck
+    - staticcheck
+    - unused
+    - forbidigo
+  settings:
+    cyclop:
+      max-complexity: 12
+    decorder:
+      dec-order:
+        - type
+        - const
+        - var
+        - func
+      disable-dec-order-check: false
+      disable-init-func-first-check: true
+      disable-dec-num-check: true
+    dupl:
+      threshold: 100
+    funlen:
+      lines: 60
+      statements: 40
+      ignore-comments: true
+    gocognit:
+      min-complexity: 15
+    goconst:
+      min-len: 3
+      min-occurrences: 3
+      ignore-tests: false
+    interfacebloat:
+      max: 5
+    forbidigo:
+      forbid:
+        - pattern: ^print(ln)?$
+    nolintlint:
+      allow-unused: false
+      require-explanation: true
+      require-specific: true
+    revive:
+      severity: error
+      enable-default-rules: false
+      rules:
+        - name: max-control-nesting
+          arguments: [3]
+        - name: identical-branches
+        - name: identical-ifelseif-conditions
+        - name: unnecessary-if
+        - name: unused-parameter
+        - name: unused-receiver
