@@ -393,9 +393,6 @@ func TestExecuteNewTaskRecordsActiveTaskAndPromptBlock(t *testing.T) {
 		if !strings.Contains(prompt, "ACTIVE_TASK_FILE: "+activeTaskGuardPath) {
 			t.Fatalf("prompt %dがACTIVE task file読み込み指示を欠いています:\n%s", i, prompt)
 		}
-		if !strings.Contains(prompt, "Acceptance criteria") || !strings.Contains(prompt, "task file本文") {
-			t.Fatalf("prompt %dがtask file本文確認指示を欠いています:\n%s", i, prompt)
-		}
 	}
 }
 

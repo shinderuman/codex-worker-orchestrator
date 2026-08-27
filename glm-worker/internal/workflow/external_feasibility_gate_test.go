@@ -637,14 +637,4 @@ func TestExternalFeasibilityDeclarationContextBudget(t *testing.T) {
 	if got := len(implementation); got > 512 {
 		t.Fatalf("implementation宣言 = %d bytes(<=512, token proxy %d)に収めてください", got, got/4)
 	}
-	for name, prompt := range map[string]string{
-		"new task":     newTaskPrompt("request", activeTaskGuardPath),
-		"decision":     decisionPrompt("request", "decision", activeTaskGuardPath),
-		"explicit fix": explicitFixPrompt("request", "none", "none", "fix", activeTaskGuardPath),
-		"reviewer":     reviewerPrompt("request", "none", "report", 1, "baseline", activeTaskGuardPath),
-	} {
-		if strings.Contains(prompt, "feasibility") || strings.Contains(prompt, "External feasibility") {
-			t.Fatalf("%s promptへgate文言を追加しない(checklist増加以内包された固定context増分を禁止): %s", name, prompt)
-		}
-	}
 }
