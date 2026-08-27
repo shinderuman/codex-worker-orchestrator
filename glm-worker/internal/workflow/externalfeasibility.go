@@ -71,19 +71,23 @@ func leadingBackticks(line string) int {
 func parseExternalFeasibilityDeclaration(content []byte) (externalFeasibility, error) {
 	var decl externalFeasibility
 	lines := strings.Split(string(content), "\n")
+	headingAt, err := findExternalFeasibilitySection(lines)
+	if err != nil {
+		return decl, err
+	}
+	values, err := parseExternalFeasibilityValues(lines, headingAt)
+	if err != nil {
+		return decl, err
+	}
+	return validateExternalFeasibilityFields(values)
+}
+
+func findExternalFeasibilitySection(lines []string) (int, error) {
 	headingAt := -1
 	sections := 0
 	fence := 0
 	for i, line := range lines {
-		backticks := leadingBackticks(line)
-		if fence > 0 {
-			if backticks >= fence {
-				fence = 0
-			}
-			continue
-		}
-		if backticks >= 3 {
-			fence = backticks
+		if !externalFeasibilityLineOutsideFence(line, &fence) {
 			continue
 		}
 		if strings.HasPrefix(line, "## ") && strings.TrimSpace(line) == externalFeasibilitySectionHeading {
@@ -93,31 +97,43 @@ func parseExternalFeasibilityDeclaration(content []byte) (externalFeasibility, e
 			}
 		}
 	}
-	if sections == 0 {
-		return decl, &externalFeasibilityParseError{
+	switch {
+	case sections == 0:
+		return -1, &externalFeasibilityParseError{
 			kind:   externalFeasibilityRejectMissing,
 			reason: "External feasibility節(" + externalFeasibilitySectionHeading + ")がありません",
 		}
-	}
-	if sections > 1 {
-		return decl, &externalFeasibilityParseError{
+	case sections > 1:
+		return -1, &externalFeasibilityParseError{
 			kind:   externalFeasibilityRejectMalformed,
 			reason: fmt.Sprintf("External feasibility節が複数あります(%d節)", sections),
 		}
+	default:
+		return headingAt, nil
 	}
+}
+
+func externalFeasibilityLineOutsideFence(line string, fence *int) bool {
+	backticks := leadingBackticks(line)
+	if *fence > 0 {
+		if backticks >= *fence {
+			*fence = 0
+		}
+		return false
+	}
+	if backticks >= 3 {
+		*fence = backticks
+		return false
+	}
+	return true
+}
+
+func parseExternalFeasibilityValues(lines []string, headingAt int) (map[string]string, error) {
 	values := map[string]string{}
-	fence = 0
+	fence := 0
 	for i := headingAt + 1; i < len(lines); i++ {
 		line := lines[i]
-		backticks := leadingBackticks(line)
-		if fence > 0 {
-			if backticks >= fence {
-				fence = 0
-			}
-			continue
-		}
-		if backticks >= 3 {
-			fence = backticks
+		if !externalFeasibilityLineOutsideFence(line, &fence) {
 			continue
 		}
 		if strings.HasPrefix(line, "## ") {
@@ -127,30 +143,37 @@ func parseExternalFeasibilityDeclaration(content []byte) (externalFeasibility, e
 		if trimmed == "" {
 			continue
 		}
-		key, value, ok := strings.Cut(trimmed, ":")
-		key = strings.TrimSpace(key)
-		value = strings.TrimSpace(value)
-		if !ok || !externalFeasibilityKnownKey(key) {
-			return decl, &externalFeasibilityParseError{
-				kind:   externalFeasibilityRejectMalformed,
-				reason: fmt.Sprintf("External feasibility節の%d行目 %qがkey: value形式ではありません(使えるkey: %s)", i+1, trimmed, strings.Join(externalFeasibilityFieldKeys, ", ")),
-			}
+		if err := addExternalFeasibilityValue(values, trimmed, i+1); err != nil {
+			return nil, err
 		}
-		if _, dup := values[key]; dup {
-			return decl, &externalFeasibilityParseError{
-				kind:   externalFeasibilityRejectMalformed,
-				reason: "External feasibility節のkey \"" + key + "\"が重複しています",
-			}
-		}
-		if value == "" {
-			return decl, &externalFeasibilityParseError{
-				kind:   externalFeasibilityRejectMalformed,
-				reason: "External feasibility節のkey \"" + key + "\"のvalueが空です",
-			}
-		}
-		values[key] = value
 	}
-	return validateExternalFeasibilityFields(values)
+	return values, nil
+}
+
+func addExternalFeasibilityValue(values map[string]string, line string, lineNumber int) error {
+	key, value, ok := strings.Cut(line, ":")
+	key = strings.TrimSpace(key)
+	value = strings.TrimSpace(value)
+	if !ok || !externalFeasibilityKnownKey(key) {
+		return &externalFeasibilityParseError{
+			kind:   externalFeasibilityRejectMalformed,
+			reason: fmt.Sprintf("External feasibility節の%d行目 %qがkey: value形式ではありません(使えるkey: %s)", lineNumber, line, strings.Join(externalFeasibilityFieldKeys, ", ")),
+		}
+	}
+	if _, dup := values[key]; dup {
+		return &externalFeasibilityParseError{
+			kind:   externalFeasibilityRejectMalformed,
+			reason: "External feasibility節のkey \"" + key + "\"が重複しています",
+		}
+	}
+	if value == "" {
+		return &externalFeasibilityParseError{
+			kind:   externalFeasibilityRejectMalformed,
+			reason: "External feasibility節のkey \"" + key + "\"のvalueが空です",
+		}
+	}
+	values[key] = value
+	return nil
 }
 
 func externalFeasibilityKnownKey(key string) bool {
