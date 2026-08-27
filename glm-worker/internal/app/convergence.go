@@ -1,7 +1,6 @@
 package app
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
 	"io"
@@ -196,27 +195,7 @@ func refineConvergenceDeltas(rounds []convergenceRound, events []state.TaskEvent
 }
 
 func readRoundRecords(st *state.StateStore, taskID string) ([]state.RoundRecord, int, error) {
-	file, err := os.Open(st.RoundLogPath(taskID))
-	if err != nil {
-		return nil, 0, err
-	}
-	defer func() { _ = file.Close() }()
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
-	var records []state.RoundRecord
-	skipped := 0
-	for scanner.Scan() {
-		record, err := state.ParseRoundLine(scanner.Bytes())
-		if err != nil {
-			skipped++
-			continue
-		}
-		records = append(records, record)
-	}
-	if err := scanner.Err(); err != nil {
-		return records, skipped, err
-	}
-	return records, skipped, nil
+	return scanLogRecords(st.RoundLogPath(taskID), state.ParseRoundLine)
 }
 
 func buildConvergenceRounds(records []state.RoundRecord, logs []state.ModelCallLog) ([]convergenceRound, *state.RoundRecord) {

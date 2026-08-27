@@ -152,27 +152,7 @@ func timelineTaskStatus(st *state.StateStore, taskID string, explicit bool) *str
 }
 
 func readTaskEventRecords(st *state.StateStore, taskID string) ([]state.TaskEventRecord, int, error) {
-	file, err := os.Open(st.TaskEventLogPath(taskID))
-	if err != nil {
-		return nil, 0, err
-	}
-	defer func() { _ = file.Close() }()
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
-	var records []state.TaskEventRecord
-	skipped := 0
-	for scanner.Scan() {
-		record, err := state.ParseTaskEventLine(scanner.Bytes())
-		if err != nil {
-			skipped++
-			continue
-		}
-		records = append(records, record)
-	}
-	if err := scanner.Err(); err != nil {
-		return records, skipped, err
-	}
-	return records, skipped, nil
+	return scanLogRecords(st.TaskEventLogPath(taskID), state.ParseTaskEventLine)
 }
 
 func readLastTaskEvent(path string) (state.TaskEventRecord, bool) {
