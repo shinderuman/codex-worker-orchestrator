@@ -1,0 +1,65 @@
+from pathlib import Path
+
+path = Path("glm-worker/internal/workflow/interrupted_retention_test.go")
+text = path.read_text()
+
+old = """\tcases := []struct {
+\t\tname      string
+\t\tbranch    string
+\t\tintegrate func(*isolationGateFixture, *testing.T, string)
+\t}{"""
+new = """\tcases := []struct {
+\t\tname      string
+\t\tbranch    string
+\t\thighRisk  bool
+\t\tintegrate func(*isolationGateFixture, *testing.T, string)
+\t}{"""
+if text.count(old) != 1:
+    raise SystemExit(f"struct snippet count={text.count(old)}")
+text = text.replace(old, new, 1)
+
+old = """\t\t{
+\t\t\tname:   \"source-change branch\",
+\t\t\tbranch: \"glm-worker/isolation/isogate10\",
+\t\t\tintegrate: func(f *isolationGateFixture, t *testing.T, branch string) {"""
+new = """\t\t{
+\t\t\tname:     \"source-change branch\",
+\t\t\tbranch:   \"glm-worker/isolation/isogate10\",
+\t\t\thighRisk: true,
+\t\t\tintegrate: func(f *isolationGateFixture, t *testing.T, branch string) {"""
+if text.count(old) != 1:
+    raise SystemExit(f"source-case snippet count={text.count(old)}")
+text = text.replace(old, new, 1)
+
+old = """\t\t\tresumeRunner := &scriptedRunner{steps: []runnerStep{
+\t\t\t\t{structured: implementedPacket(\"resumed\")},
+\t\t\t\t{structured: passPacket()},
+\t\t\t}}
+\t\t\tresumeW := newGitWorkflowT(t, f.st, resumeRunner, f.repo)
+\t\t\tif err := resumeW.ExecuteResume(); err != nil {
+\t\t\t\tt.Fatalf(\"隔離branch統合後のresumeが保持照合を通過しません: %v\", err)
+\t\t\t}
+"""
+new = """\t\t\tsteps := []runnerStep{
+\t\t\t\t{structured: implementedPacket(\"resumed\")},
+\t\t\t\t{structured: passPacket()},
+\t\t\t}
+\t\t\tif tc.highRisk {
+\t\t\t\tsteps = append(steps, runnerStep{structured: needsSolReviewPacket()})
+\t\t\t}
+\t\t\tresumeRunner := &scriptedRunner{steps: steps}
+\t\t\tresumeW := newGitWorkflowT(t, f.st, resumeRunner, f.repo)
+\t\t\tif err := resumeW.ExecuteResume(); err != nil {
+\t\t\t\tt.Fatalf(\"隔離branch統合後のresumeが保持照合を通過しません: %v\", err)
+\t\t\t}
+\t\t\twantStatus := state.TaskStatusComplete
+\t\t\tif tc.highRisk {
+\t\t\t\twantStatus = state.TaskStatusWaitingSolReview
+\t\t\t}
+\t\t\tif f.st.TaskStatus() != wantStatus {
+\t\t\t\tt.Fatalf(\"task status = %s want %s\", f.st.TaskStatus(), wantStatus)
+\t\t\t}
+"""
+if text.count(old) != 1:
+    raise SystemExit(f"resume snippet count={text.count(old)}")
+path.write_text(text.replace(old, new, 1))
