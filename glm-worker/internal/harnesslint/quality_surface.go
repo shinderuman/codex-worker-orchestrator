@@ -27,7 +27,12 @@ func scanQualitySurface(root string, paths []string) ([]Violation, error) {
 	if err != nil {
 		return nil, err
 	}
-	return append(dirty, wiring...), nil
+	streams, err := processStreamViolations(root, paths)
+	if err != nil {
+		return nil, err
+	}
+	violations := append(dirty, wiring...)
+	return append(violations, streams...), nil
 }
 
 func dirtyQualitySurface(root string) ([]Violation, error) {
