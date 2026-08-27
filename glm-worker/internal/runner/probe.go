@@ -168,7 +168,7 @@ func ValidateProbeResult(result ProbeResult) error {
 	return nil
 }
 
-func probeDiagnostic(rawOutputPath, stderrPath string, stderrText []byte) string {
+func probeDiagnostic(rawOutputPath, _ string, stderrText []byte) string {
 	detail := string(stderrText)
 	if raw, err := os.ReadFile(rawOutputPath); err == nil {
 		detail += string(raw)
