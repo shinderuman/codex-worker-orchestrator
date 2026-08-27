@@ -51,7 +51,7 @@ ACTIVE task fileが提示されている場合、要求の正はその本文(Ori
 HIGHではSolが全diffを読み直さず判断できるよう、変更前後のcontract・失敗境界・主要状態遷移をSUMMARY、検証結果をTESTS、互換性/rollback/recovery懸念をUNVERIFIEDへ圧縮する。
 
 ## Git禁止
-- 明示依頼なしに`git commit`しない。
+- `git commit`は禁止。task要求や明示依頼にcommit文言があってもGLM worker自身へのGit authority付与とは解釈せず、commitは親Codexへ残す。
 - `git push`、force-push、tag push、remote branch作成禁止。
 - `git reset`/`git checkout`で既存変更を破棄しない。
 - 既存未commit変更を勝手に整理・破棄・上書きしない。
