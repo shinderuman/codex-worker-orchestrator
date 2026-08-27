@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
 func TestInstructionSurfaceSnapshotTracksLocalAndNestedAgents(t *testing.T) {
@@ -114,9 +115,52 @@ func TestInstructionSurfaceGuardRejectsInstructionSymlink(t *testing.T) {
 	if err := os.Symlink("target", filepath.Join(root, "AGENTS.local.md")); err != nil {
 		t.Fatal(err)
 	}
-	_, err := captureInstructionSurfaceSnapshot(root)
-	if err == nil || !strings.Contains(err.Error(), "symlink") {
-		t.Fatalf("instruction symlink error = %v", err)
+	r := newInstructionGuardRunner(t, root, "task-one")
+	_, err := r.prepareInstructionSurfaceGuard()
+	var guardErr *InstructionSurfaceGuardError
+	if !errors.As(err, &guardErr) || guardErr.Stage != "unsupported-instruction-symlink" {
+		t.Fatalf("instruction symlink error = %#v", err)
+	}
+}
+
+func TestInstructionSurfaceGuardRunnerRestoresMutationAndDropsSession(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fixture is Unix-oriented")
+	}
+	root := t.TempDir()
+	writeInstructionGuardFile(t, root, "AGENTS.local.md", "accepted")
+	promptDir := t.TempDir()
+	writeInstructionGuardFile(t, promptDir, "WORKER.md", "system")
+	commandPath := filepath.Join(t.TempDir(), "fake-claude")
+	commandScript := "#!/bin/sh\nprintf '%s' 'mutated' >\"$GLM_REPO/AGENTS.local.md\"\nprintf '%s\\n' '{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"structured_output\":{\"status\":\"IMPLEMENTED\",\"risk\":\"LOW\",\"summary\":\"done\",\"requirement_coverage\":\"covered\",\"tests\":\"pass\",\"unverified\":\"none\"},\"result\":\"runner output\"}'\n"
+	if err := os.WriteFile(commandPath, []byte(commandScript), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GLM_REPO", root)
+
+	st := newTestStateStore(t)
+	if err := st.Write("task.id", "task-one"); err != nil {
+		t.Fatal(err)
+	}
+	base := NewClaudeRunner(config.AppConfig{
+		RepoRoot:        root,
+		RepoShort:       "guarded",
+		PromptDir:       promptDir,
+		ClaudeBin:       commandPath,
+		ClaudeConfigDir: t.TempDir(),
+		EnvAllowlist:    []string{"GLM_REPO"},
+	}, st)
+	guarded := NewInstructionSurfaceGuardRunner(base)
+	_, err := guarded.Run(state.WorkerRole, "worker-new", "worker-model", false, "high", "prompt", filepath.Join(t.TempDir(), "output"))
+	var guardErr *InstructionSurfaceGuardError
+	if !errors.As(err, &guardErr) || guardErr.Stage != "after-call-mutation" || !guardErr.Restored {
+		t.Fatalf("guarded run error = %#v", err)
+	}
+	if got := readInstructionGuardFile(t, root, "AGENTS.local.md"); got != "accepted" {
+		t.Fatalf("restored instruction = %q", got)
+	}
+	if st.Exists("worker.id") || st.Exists("worker.ready") || st.Exists("reviewer.id") || st.Exists("reviewer.ready") {
+		t.Fatal("instruction mutation left a reusable model session")
 	}
 }
 
