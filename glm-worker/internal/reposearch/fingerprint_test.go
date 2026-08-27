@@ -30,8 +30,8 @@ func hitExpected() *bool {
 	return &rebuilt
 }
 
-func TestSearchFreshnessTracksCorpusBoundaries(t *testing.T) {
-	cases := []freshnessCase{
+func trackedFreshnessCases() []freshnessCase {
+	return []freshnessCase{
 		{
 			name: "tracked searchable content change rebuilds",
 			setup: func(t *testing.T, dir string) {
@@ -110,6 +110,11 @@ func TestSearchFreshnessTracksCorpusBoundaries(t *testing.T) {
 			expectRebuilt: nil,
 			wantPaths:     []string{"text.txt"},
 		},
+	}
+}
+
+func untrackedFreshnessCases() []freshnessCase {
+	return []freshnessCase{
 		{
 			name: "untracked searchable add rebuilds",
 			setup: func(t *testing.T, dir string) {
@@ -241,6 +246,11 @@ func TestSearchFreshnessTracksCorpusBoundaries(t *testing.T) {
 			expectRebuilt: rebuiltExpected(),
 			wantPaths:     []string{"a.txt", "link.txt"},
 		},
+	}
+}
+
+func excludedFreshnessCases() []freshnessCase {
+	return []freshnessCase{
 		{
 			name: "untracked file under default excluded dir keeps cache",
 			setup: func(t *testing.T, dir string) {
@@ -323,6 +333,10 @@ func TestSearchFreshnessTracksCorpusBoundaries(t *testing.T) {
 			wantPaths:     []string{"a.txt"},
 		},
 	}
+}
+
+func runFreshnessCases(t *testing.T, cases []freshnessCase) {
+	t.Helper()
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := initRepo(t)
@@ -353,6 +367,18 @@ func TestSearchFreshnessTracksCorpusBoundaries(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSearchFreshnessTracksTrackedCorpusBoundaries(t *testing.T) {
+	runFreshnessCases(t, trackedFreshnessCases())
+}
+
+func TestSearchFreshnessTracksUntrackedCorpusBoundaries(t *testing.T) {
+	runFreshnessCases(t, untrackedFreshnessCases())
+}
+
+func TestSearchFreshnessTracksExcludedCorpusBoundaries(t *testing.T) {
+	runFreshnessCases(t, excludedFreshnessCases())
 }
 
 func TestSearchFreshnessIgnoresUserExcludedDirContent(t *testing.T) {
