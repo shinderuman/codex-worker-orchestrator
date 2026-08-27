@@ -927,8 +927,8 @@ func riskLabel(high bool) string {
 }
 
 func (w *Workflow) computeEffectiveRisk(workerResult packet.Result, autoFixes int, hasDecision bool, hasPriorReview bool) effectiveRisk {
-	sp := w.selfProtectionNow()
-	if !reviewNeedsHighRiskFloor(workerResult, autoFixes, hasDecision, hasPriorReview) && !sp.High {
+	sp, qe := w.riskSurfaceDecisions()
+	if !reviewNeedsHighRiskFloor(workerResult, autoFixes, hasDecision, hasPriorReview) && !sp.High && !qe.High {
 		return effectiveRisk{high: false}
 	}
 	var sources []string
@@ -947,16 +947,24 @@ func (w *Workflow) computeEffectiveRisk(workerResult packet.Result, autoFixes in
 	if sp.High {
 		sources = append(sources, "self-protection:"+sp.Source)
 	}
+	if qe.High {
+		sources = append(sources, "quality-evidence:"+qe.Source)
+	}
 	return effectiveRisk{high: true, source: strings.Join(sources, ";")}
 }
 
-func (w *Workflow) selfProtectionNow() selfProtectionDecision {
+func (w *Workflow) riskSurfaceDecisions() (selfProtectionDecision, qualityEvidenceDecision) {
 	baselineHead, _ := w.state.Read("baseline-head")
 	paths, err := w.collectChangedPaths(w.config.RepoRoot, baselineHead)
 	if err != nil {
-		return selfProtectionDecision{High: true, Source: "classify-error", HitPath: err.Error()}
+		return selfProtectionDecision{High: true, Source: "classify-error", HitPath: err.Error()}, qualityEvidenceDecision{}
 	}
-	return classifySelfProtection(paths)
+	sp := classifySelfProtection(paths)
+	qe, err := classifyQualityEvidence(w.config.RepoRoot, baselineHead, paths)
+	if err != nil {
+		qe = qualityEvidenceDecision{High: true, Source: "classify-error", HitPath: err.Error()}
+	}
+	return sp, qe
 }
 
 func (w *Workflow) resolveReviewResumeRisk(workerResult packet.Result, checkpoint state.ResumeCheckpoint) effectiveRisk {
