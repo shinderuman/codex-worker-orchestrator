@@ -650,40 +650,65 @@ func (w *Workflow) reviewUntilStable(
 	workerPhase string,
 ) error {
 	workerEnd, stopped, err := w.captureWorkerEndSnapshot()
-	if err != nil {
+	if err != nil || stopped {
 		return err
 	}
-	if stopped {
-		return nil
-	}
-	qualityReport, err := w.qualityGate(w.config.RepoRoot)
-	if err != nil {
-		return &WorkerError{Phase: "harnesslint", Message: fmt.Sprintf("harnesslint failed: %v", err)}
-	}
-	if harnesslint.IsViolation(qualityReport) {
-		result := qualityGateFixResult(qualityReport)
-		if err := w.writeLastReview(result); err != nil {
-			return err
-		}
-		return w.handleReviewResult(request, workerResult, result, reviewNumber, autoFixes)
+	handled, err := w.handleRepositoryQualityViolation(request, workerResult, reviewNumber, autoFixes)
+	if err != nil || handled {
+		return err
 	}
 	w.recordConvergenceRound(reviewNumber, autoFixes, workerPhase, workerEnd)
 
-	decision := w.state.ReadOr("last-decision", "none")
-	hasDecision := w.state.Exists("last-decision")
-	risk := w.computeEffectiveRisk(workerResult, autoFixes, hasDecision, w.state.Exists("last-review"))
-
-	activeTaskPath, err := w.ensureActiveTaskPath(fmt.Sprintf("reviewer-%d", reviewNumber))
+	checkpoint, decision, highRisk, err := w.buildReviewCheckpoint(request, workerResult, reviewNumber, autoFixes)
 	if err != nil {
 		return err
 	}
-
-	if _, err := w.gateExternalFeasibility(fmt.Sprintf("reviewer-%d", reviewNumber), false); err != nil {
+	reviewResult, stopped, err := w.runReviewModel(checkpoint)
+	if err != nil || stopped {
 		return err
+	}
+	reviewResult, reemitStopped, err := w.enforceRiskFloor(
+		request,
+		workerResult,
+		reviewNumber,
+		autoFixes,
+		decision,
+		highRisk,
+		reviewResult,
+	)
+	if err != nil || reemitStopped {
+		return err
+	}
+	if err := w.writeLastReview(reviewResult); err != nil {
+		return err
+	}
+	return w.handleReviewResult(request, workerResult, reviewResult, reviewNumber, autoFixes)
+}
+
+func (w *Workflow) buildReviewCheckpoint(
+	request string,
+	workerResult packet.Result,
+	reviewNumber int,
+	autoFixes int,
+) (state.ResumeCheckpoint, string, bool, error) {
+	decision := w.state.ReadOr("last-decision", "none")
+	risk := w.computeEffectiveRisk(
+		workerResult,
+		autoFixes,
+		w.state.Exists("last-decision"),
+		w.state.Exists("last-review"),
+	)
+	phase := fmt.Sprintf("reviewer-%d", reviewNumber)
+	activeTaskPath, err := w.ensureActiveTaskPath(phase)
+	if err != nil {
+		return state.ResumeCheckpoint{}, "", false, err
+	}
+	if _, err := w.gateExternalFeasibility(phase, false); err != nil {
+		return state.ResumeCheckpoint{}, "", false, err
 	}
 	workerReport, err := machineReport(workerResult)
 	if err != nil {
-		return err
+		return state.ResumeCheckpoint{}, "", false, err
 	}
 	prompt := reviewerPrompt(
 		request,
@@ -693,9 +718,9 @@ func (w *Workflow) reviewUntilStable(
 		w.state.BaselineDescription(),
 		activeTaskPath,
 	)
-	checkpoint := state.ResumeCheckpoint{
+	return state.ResumeCheckpoint{
 		Stage:               state.ResumeStageReview,
-		Phase:               fmt.Sprintf("reviewer-%d", reviewNumber),
+		Phase:               phase,
 		Role:                state.ReviewerRole,
 		Model:               w.reviewerModel(risk),
 		ReadOnly:            true,
@@ -709,49 +734,41 @@ func (w *Workflow) reviewUntilStable(
 		AutoFixes:           autoFixes,
 		EffectiveRisk:       riskLabel(risk.high),
 		EffectiveRiskSource: risk.source,
-	}
+	}, decision, risk.high, nil
+}
 
-	if stopped, err := w.verifyReviewStartSnapshot(); err != nil {
-		return err
-	} else if stopped {
-		return nil
+func (w *Workflow) runReviewModel(checkpoint state.ResumeCheckpoint) (packet.Result, bool, error) {
+	if stopped, err := w.verifyReviewStartSnapshot(); err != nil || stopped {
+		return packet.Result{}, stopped, err
 	}
-
 	reviewResult, err := w.runModel(checkpoint)
 	if err != nil {
-		return err
+		return packet.Result{}, false, err
 	}
-	if stopped, err := w.verifyReviewEndSnapshot(); err != nil {
-		return err
-	} else if stopped {
-		return nil
+	if stopped, err := w.verifyReviewEndSnapshot(); err != nil || stopped {
+		return packet.Result{}, stopped, err
 	}
-	reviewResult, reemitStopped, err := w.enforceRiskFloor(
-		request,
-		workerResult,
-		reviewNumber,
-		autoFixes,
-		decision,
-		risk.high,
-		reviewResult,
-	)
-	if err != nil {
-		return err
-	}
-	if reemitStopped {
-		return nil
-	}
-	if err := w.writeLastReview(reviewResult); err != nil {
-		return err
-	}
+	return reviewResult, false, nil
+}
 
-	return w.handleReviewResult(
-		request,
-		workerResult,
-		reviewResult,
-		reviewNumber,
-		autoFixes,
-	)
+func (w *Workflow) handleRepositoryQualityViolation(
+	request string,
+	workerResult packet.Result,
+	reviewNumber int,
+	autoFixes int,
+) (bool, error) {
+	qualityReport, err := w.qualityGate(w.config.RepoRoot)
+	if err != nil {
+		return true, &WorkerError{Phase: "harnesslint", Message: fmt.Sprintf("harnesslint failed: %v", err)}
+	}
+	if !harnesslint.IsViolation(qualityReport) {
+		return false, nil
+	}
+	result := qualityGateFixResult(qualityReport)
+	if err := w.writeLastReview(result); err != nil {
+		return true, err
+	}
+	return true, w.handleReviewResult(request, workerResult, result, reviewNumber, autoFixes)
 }
 
 func (w *Workflow) handleReviewResult(
