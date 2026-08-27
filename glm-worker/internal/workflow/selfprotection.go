@@ -61,29 +61,44 @@ func IsCriticalPath(path string) (bool, string) {
 	if c, ok := classifiedFiles[path]; ok {
 		return c.critical, c.category
 	}
+	if critical, category, matched := classifyCriticalPathPattern(path); matched {
+		return critical, category
+	}
+	return classifyNonCriticalPathPattern(path)
+}
+
+func classifyCriticalPathPattern(path string) (bool, string, bool) {
 	switch {
 	case isRepositoryInstructionPath(path):
-		return true, "repo-instructions"
+		return true, "repo-instructions", true
 	case isProductionGoUnder(path, "glm-worker/internal/"):
-		return true, internalPackageCategory(path)
+		return true, internalPackageCategory(path), true
 	case isProductionGoUnder(path, "glm-worker/cmd/"):
-		return true, "worker-entrypoint"
+		return true, "worker-entrypoint", true
 	case strings.HasPrefix(path, "codex/glm-worker/prompts/"):
-		return true, "managed-prompts"
+		return true, "managed-prompts", true
 	case strings.HasPrefix(path, "codex/instructions/"):
-		return true, "managed-instructions"
+		return true, "managed-instructions", true
 	case strings.HasPrefix(path, "codex/rules/"):
-		return true, "managed-rules"
+		return true, "managed-rules", true
 	case strings.HasPrefix(path, "IMPLEMENTATION_TASKS/"):
-		return true, "implementation-tasks"
+		return true, "implementation-tasks", true
+	default:
+		return false, "", false
+	}
+}
+
+func classifyNonCriticalPathPattern(path string) (bool, string) {
+	switch {
 	case strings.HasSuffix(path, "_test.go"):
 		return false, "test"
 	case strings.Contains(path, "testdata/"):
 		return false, "test-fixture"
 	case strings.HasPrefix(path, "tests/"), strings.HasPrefix(path, "glm-worker/scripts/"):
 		return false, "test-harness"
+	default:
+		return false, ""
 	}
-	return false, ""
 }
 
 func IsQualitySurface(path string) bool {
