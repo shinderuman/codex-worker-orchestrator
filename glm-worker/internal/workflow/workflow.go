@@ -778,12 +778,14 @@ func (w *Workflow) buildReviewCheckpoint(
 	if err != nil {
 		return state.ResumeCheckpoint{}, "", false, err
 	}
+	reviewNavigation := w.reviewerDiffFirstContext(request, reviewNumber)
 	prompt := reviewerPrompt(
 		request,
 		decision,
 		workerReport,
 		reviewNumber,
 		w.state.BaselineDescription(),
+		reviewNavigation,
 		activeTaskPath,
 	)
 	prompt, err = w.withCurrentRuleContext(prompt)

@@ -63,4 +63,4 @@ none
 
 ## Current boundary
 
-Task 009の再現可能outlier reportは利用可能。2026-08-23 baselineはworker時間比率約81%と複数の累積400 turn超taskを示すが、分割効果は未確定。
+ACTIVE。Task 009の再現可能outlier reportは利用可能。2026-08-23 baselineはworker時間比率約81%と複数の累積400 turn超taskを示すが、分割効果は未確定。PR #19がhardening integrationへSquash Mergeされるまでは実装開始しない。
