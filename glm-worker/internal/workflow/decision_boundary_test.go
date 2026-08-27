@@ -1,6 +1,8 @@
 package workflow
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -106,5 +108,113 @@ func TestDecisionBoundaryContextKeepsImplementationDetailsAutonomous(t *testing.
 	}
 	if !strings.Contains(block, "validation-error-semanticsがFIXEDでない限り自律強化しない") {
 		t.Fatal("validation/error strengthening boundary is missing")
+	}
+}
+
+func TestRunWorkerModelInjectsPinnedTaskDecisionBoundary(t *testing.T) {
+	st := newStateStoreT(t)
+	r := &scriptedRunner{steps: []runnerStep{{structured: needsSolDecisionPacket()}}}
+	w := newWorkflowT(t, st, r)
+	activeTaskPath := "IMPLEMENTATION_TASKS/task.md"
+	writeTaskFile := func(content string) {
+		t.Helper()
+		path := filepath.Join(w.config.RepoRoot, filepath.FromSlash(activeTaskPath))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeTaskFile("# task\n\n## Sol decision authority\n\n- responsibility: keep workflow ownership\n- validation-error-semantics: preserve current rejection behavior\n")
+	if err := st.Write(activeTaskStateKey, activeTaskPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Write("baseline-head", "base"); err != nil {
+		t.Fatal(err)
+	}
+	checkpoint := state.ResumeCheckpoint{
+		Stage:          state.ResumeStageWorker,
+		Phase:          "worker-new",
+		Role:           state.WorkerRole,
+		Model:          "opus",
+		Prompt:         "MODE: NEW_TASK\n\nUSER_REQUEST:\noutcome only",
+		OriginalPrompt: "MODE: NEW_TASK\n\nUSER_REQUEST:\noutcome only",
+		Request:        "outcome only",
+	}
+	if _, err := w.runWorkerModelWithRuleActivation(checkpoint); err != nil {
+		t.Fatal(err)
+	}
+	if len(r.prompts) != 1 {
+		t.Fatalf("model calls = %d want 1", len(r.prompts))
+	}
+	prompt := r.prompts[0]
+	for _, want := range []string{
+		"SOL_DECISION_BOUNDARY:",
+		"- responsibility: keep workflow ownership",
+		"- validation-error-semantics: preserve current rejection behavior",
+		"UNRESOLVED_AXES: dependency-direction,public-surface,compatibility",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("production prompt missing %q: %s", want, prompt)
+		}
+	}
+}
+
+func TestRunWorkerModelTreatsLegacyTaskAxesAsUnresolvedWithoutExtraModelCall(t *testing.T) {
+	st := newStateStoreT(t)
+	r := &scriptedRunner{steps: []runnerStep{{structured: needsSolDecisionPacket()}}}
+	w := newWorkflowT(t, st, r)
+	activeTaskPath := "IMPLEMENTATION_TASKS/legacy.md"
+	path := filepath.Join(w.config.RepoRoot, filepath.FromSlash(activeTaskPath))
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("# legacy\n\n## Contract\nrequested outcome only\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Write(activeTaskStateKey, activeTaskPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Write("baseline-head", "base"); err != nil {
+		t.Fatal(err)
+	}
+	checkpoint := state.ResumeCheckpoint{Stage: state.ResumeStageWorker, Phase: "worker-new", Role: state.WorkerRole, Model: "opus", Prompt: "request", OriginalPrompt: "request", Request: "request"}
+	if _, err := w.runWorkerModelWithRuleActivation(checkpoint); err != nil {
+		t.Fatal(err)
+	}
+	if len(r.prompts) != 1 {
+		t.Fatalf("model calls = %d want 1", len(r.prompts))
+	}
+	if !strings.Contains(r.prompts[0], "UNRESOLVED_AXES: responsibility,dependency-direction,public-surface,compatibility,validation-error-semantics") {
+		t.Fatalf("legacy task boundary missing: %s", r.prompts[0])
+	}
+}
+
+func TestRunWorkerModelRejectsMalformedDecisionAuthorityBeforeModelCall(t *testing.T) {
+	st := newStateStoreT(t)
+	r := &scriptedRunner{}
+	w := newWorkflowT(t, st, r)
+	activeTaskPath := "IMPLEMENTATION_TASKS/bad.md"
+	path := filepath.Join(w.config.RepoRoot, filepath.FromSlash(activeTaskPath))
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("# task\n\n## Sol decision authority\n\n- compatibility:\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Write(activeTaskStateKey, activeTaskPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Write("baseline-head", "base"); err != nil {
+		t.Fatal(err)
+	}
+	checkpoint := state.ResumeCheckpoint{Stage: state.ResumeStageWorker, Phase: "worker-new", Role: state.WorkerRole, Model: "opus", Prompt: "request", OriginalPrompt: "request", Request: "request"}
+	_, err := w.runWorkerModelWithRuleActivation(checkpoint)
+	if err == nil || !strings.Contains(err.Error(), "valueが空") {
+		t.Fatalf("error = %v", err)
+	}
+	if len(r.prompts) != 0 {
+		t.Fatalf("model calls = %d want 0", len(r.prompts))
 	}
 }
