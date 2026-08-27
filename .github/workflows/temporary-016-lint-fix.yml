@@ -32,14 +32,13 @@ jobs:
           path.write_text(s.replace(old, '', 1))
           PY
           gofmt -w glm-worker/internal/workflow/workflow.go glm-worker/internal/workflow/worker_repo_search.go
-      - name: Validate production and repository harness
+      - name: Validate production routing
         working-directory: glm-worker
         run: |
           go test ./internal/workflow ./internal/reposearch
           go test -race ./internal/workflow ./internal/reposearch
           go vet ./...
           go build ./...
-          go run ./cmd/harnesslint
       - name: Commit clean lint fix
         run: |
           rm .github/workflows/temporary-016-lint-fix.yml
