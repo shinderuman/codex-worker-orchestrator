@@ -12,16 +12,21 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-func executeStatusOutput(t *testing.T, cfg config.AppConfig) statusOutput {
+func executeCommandOutput(t *testing.T, cfg config.AppConfig, mode CommandMode, output any, label string) {
 	t.Helper()
 	var out bytes.Buffer
-	if err := Execute(Command{Mode: ModeStatus}, cfg, nil, &out, io.Discard); err != nil {
+	if err := Execute(Command{Mode: mode}, cfg, nil, &out, io.Discard); err != nil {
 		t.Fatal(err)
 	}
-	var output statusOutput
-	if err := json.Unmarshal([]byte(strings.TrimSpace(out.String())), &output); err != nil {
-		t.Fatalf("--status出力がmachine JSONではありません: %v: %q", err, out.String())
+	if err := json.Unmarshal([]byte(strings.TrimSpace(out.String())), output); err != nil {
+		t.Fatalf("%s出力がmachine JSONではありません: %v: %q", label, err, out.String())
 	}
+}
+
+func executeStatusOutput(t *testing.T, cfg config.AppConfig) statusOutput {
+	t.Helper()
+	var output statusOutput
+	executeCommandOutput(t, cfg, ModeStatus, &output, "--status")
 	return output
 }
 
