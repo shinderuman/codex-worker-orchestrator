@@ -38,6 +38,7 @@ type Workflow struct {
 	jitter                func(base time.Duration) time.Duration
 	qualityGate           func(root string) (harnesslint.Report, error)
 	captureQualitySurface func(root string) (string, error)
+	repoSearch            repoSearchFunc
 
 	stop *runner.StopController
 
@@ -112,6 +113,7 @@ func NewWorkflow(cfg config.AppConfig, st *state.StateStore, r ModelRunner, outp
 		jitter:                boundedBackoffJitter,
 		qualityGate:           runRepositoryQualityGate,
 		captureQualitySurface: captureQualitySurfaceDigest,
+		repoSearch:            defaultRepoSearch,
 	}
 }
 
@@ -163,7 +165,7 @@ func (w *Workflow) ExecuteNewTask(request string) error {
 		}
 		pocStage := decl.pocStage()
 
-		prompt := newTaskPrompt(request, activeTaskPath)
+		prompt := w.newWorkerTaskPrompt(request, activeTaskPath)
 		checkpoint := state.ResumeCheckpoint{
 			Stage:          state.ResumeStageWorker,
 			Phase:          "worker-new",
