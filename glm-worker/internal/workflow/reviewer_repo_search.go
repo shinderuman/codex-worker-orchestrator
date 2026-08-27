@@ -103,27 +103,44 @@ func extractReviewerDiffImpactTerms(diff string, limit int) []string {
 	seen := make(map[string]struct{}, limit)
 	terms := make([]string, 0, limit)
 	for _, line := range strings.Split(diff, "\n") {
-		if len(line) < 2 || (line[0] != '+' && line[0] != '-') || strings.HasPrefix(line, "+++") || strings.HasPrefix(line, "---") {
+		if !isReviewerImpactDiffLine(line) {
 			continue
 		}
-		for _, term := range strings.FieldsFunc(line[1:], func(r rune) bool {
-			return !(unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' || r == '.' || r == '/' || r == '-')
-		}) {
-			term = strings.Trim(term, "./-")
-			if len(term) < 3 {
-				continue
-			}
-			if _, found := seen[term]; found {
-				continue
-			}
-			seen[term] = struct{}{}
-			terms = append(terms, term)
-			if len(terms) == limit {
-				return terms
-			}
+		terms = appendReviewerImpactTerms(terms, seen, line[1:], limit)
+		if len(terms) == limit {
+			break
 		}
 	}
 	return terms
+}
+
+func isReviewerImpactDiffLine(line string) bool {
+	if len(line) < 2 || strings.HasPrefix(line, "+++") || strings.HasPrefix(line, "---") {
+		return false
+	}
+	return line[0] == '+' || line[0] == '-'
+}
+
+func appendReviewerImpactTerms(terms []string, seen map[string]struct{}, line string, limit int) []string {
+	for _, term := range strings.FieldsFunc(line, reviewerImpactTermSeparator) {
+		term = strings.Trim(term, "./-")
+		if len(term) < 3 {
+			continue
+		}
+		if _, found := seen[term]; found {
+			continue
+		}
+		seen[term] = struct{}{}
+		terms = append(terms, term)
+		if len(terms) == limit {
+			break
+		}
+	}
+	return terms
+}
+
+func reviewerImpactTermSeparator(r rune) bool {
+	return !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' && r != '.' && r != '/' && r != '-'
 }
 
 func reviewerIndependentSearchQuery(request string, paths []string, impactTerms []string) string {
