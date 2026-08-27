@@ -98,6 +98,7 @@ func qualityConfigViolations(root string, paths []string) ([]Violation, error) {
 		"      disable-dec-order-check: false",
 		"      require-explanation: true",
 		"      require-specific: true",
+		"      ignore-tests: true",
 	}
 	var violations []Violation
 	for _, token := range required {

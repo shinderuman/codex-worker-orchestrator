@@ -77,6 +77,36 @@ func TestCorpusContract() {
 	requireRulePath(t, violations, "scenario-self-test", "glm-worker/internal/x/scenario_test.go")
 }
 
+func TestShadowProductionDoesNotRejectOrdinaryComplexTestHelper(t *testing.T) {
+	root := fixtureRoot(t)
+	writeFixture(t, root, "glm-worker/internal/x/process_test.go", `package x
+func processFixture(v int) int {
+	if v > 0 { v-- }
+	if v > 1 { v-- }
+	if v > 2 { v-- }
+	if v > 3 { v-- }
+	return v
+}
+`)
+	for _, violation := range ruleViolations(t, root) {
+		if violation.Rule == "test-shadow-production" {
+			t.Fatalf("ordinary fixture helper must not be treated as shadow production: %+v", violation)
+		}
+	}
+}
+
+func TestTestSizeLimit(t *testing.T) {
+	root := fixtureRoot(t)
+	var body strings.Builder
+	body.WriteString("package x\nimport \"testing\"\nfunc TestHuge(t *testing.T) {\n")
+	for i := 0; i < 151; i++ {
+		body.WriteString("t.Log(\"x\")\n")
+	}
+	body.WriteString("}\n")
+	writeFixture(t, root, "glm-worker/internal/x/x_test.go", body.String())
+	requireRulePath(t, ruleViolations(t, root), "test-size-limit", "glm-worker/internal/x/x_test.go")
+}
+
 func TestModuleBoundaryAndThinWrapper(t *testing.T) {
 	root := fixtureRoot(t)
 	writeFixture(t, root, "tools/x/go.mod", "module example.com/x\n")

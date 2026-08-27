@@ -98,7 +98,7 @@ func qualityWiringViolations(root string, paths []string) ([]Violation, error) {
 		{
 			path: "harnesslint",
 			tokens: []string{
-				"glm-worker/cmd/harnesslint",
+				"run ./cmd/harnesslint",
 			},
 		},
 	}
@@ -109,6 +109,10 @@ func qualityWiringViolations(root string, paths []string) ([]Violation, error) {
 	var violations []Violation
 	for _, check := range checks {
 		if !present[check.path] {
+			violations = append(violations, Violation{
+				Rule: "quality-wiring", Path: check.path, Line: 1, Column: 1,
+				Message: "required quality-gate file is missing",
+			})
 			continue
 		}
 		data, err := readRegularFile(root, check.path)

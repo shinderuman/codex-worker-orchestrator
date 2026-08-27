@@ -57,11 +57,23 @@ func runExternalChecks(root string, paths []string, runner commandRunner) ([]Vio
 	violations = append(violations, parseCommentlint(comment)...)
 	config := filepath.Join(root, ".golangci.yml")
 	for _, module := range moduleDirs(paths) {
-		dir := root
-		if module != "" {
-			dir = filepath.Join(root, filepath.FromSlash(module))
+		dir := moduleDir(root, module)
+		baseArgs := []string{
+			"run", "--config", config,
+			"--max-issues-per-linter", "0", "--max-same-issues", "0",
+			"--disable", "cyclop,gocognit,funlen,goconst",
 		}
-		result, err := runner.run(dir, "golangci-lint", "run", "--config", config)
+		result, err := runner.run(dir, "golangci-lint", baseArgs...)
+		if err != nil {
+			return nil, err
+		}
+		violations = append(violations, parseGolangCI(result, module)...)
+		productionArgs := []string{
+			"run", "--config", config,
+			"--max-issues-per-linter", "0", "--max-same-issues", "0",
+			"--tests=false", "--enable-only", "cyclop,gocognit,funlen,goconst",
+		}
+		result, err = runner.run(dir, "golangci-lint", productionArgs...)
 		if err != nil {
 			return nil, err
 		}
@@ -102,18 +114,44 @@ func runExternalFixers(root string, paths []string, runner commandRunner) error 
 	}
 	config := filepath.Join(root, ".golangci.yml")
 	for _, module := range moduleDirs(paths) {
-		dir := root
-		if module != "" {
-			dir = filepath.Join(root, filepath.FromSlash(module))
+		dir := moduleDir(root, module)
+		baseArgs := []string{
+			"run", "--fix", "--config", config,
+			"--max-issues-per-linter", "0", "--max-same-issues", "0",
+			"--disable", "cyclop,gocognit,funlen,goconst",
 		}
-		if _, err := runner.run(dir, "golangci-lint", "run", "--fix", "--config", config); err != nil {
+		result, err := runner.run(dir, "golangci-lint", baseArgs...)
+		if err != nil {
 			return err
+		}
+		if result.exitCode != 0 && strings.TrimSpace(result.output) != "" {
+			return fmt.Errorf("golangci-lint --fix failed: %s", compactOutput(result.output, "golangci-lint failed"))
+		}
+		productionArgs := []string{
+			"run", "--fix", "--config", config,
+			"--max-issues-per-linter", "0", "--max-same-issues", "0",
+			"--tests=false", "--enable-only", "cyclop,gocognit,funlen,goconst",
+		}
+		result, err = runner.run(dir, "golangci-lint", productionArgs...)
+		if err != nil {
+			return err
+		}
+		if result.exitCode != 0 && strings.TrimSpace(result.output) != "" {
+			return fmt.Errorf("golangci-lint production --fix failed: %s", compactOutput(result.output, "golangci-lint failed"))
 		}
 	}
 	return nil
 }
 
+func moduleDir(root, module string) string {
+	if module == "" {
+		return root
+	}
+	return filepath.Join(root, filepath.FromSlash(module))
+}
+
 var golangCILine = regexp.MustCompile(`^(.+?):(\d+):(\d+):\s*(.+?)(?:\s+\(([^()]+)\))?$`)
+var golangCILineOnly = regexp.MustCompile(`^(.+?):(\d+):\s*(.+?)(?:\s+\(([^()]+)\))?$`)
 var shellcheckLine = regexp.MustCompile(`^(.+?):(\d+):(\d+):\s*[^:]+:\s*(.+?)(?:\s+\[([A-Z0-9]+)\])?$`)
 
 func parseGolangCI(result commandResult, module string) []Violation {
@@ -122,21 +160,16 @@ func parseGolangCI(result commandResult, module string) []Violation {
 	}
 	var violations []Violation
 	for _, line := range strings.Split(result.output, "\n") {
-		match := golangCILine.FindStringSubmatch(strings.TrimSpace(line))
-		if match == nil {
+		trimmed := strings.TrimSpace(line)
+		match := golangCILine.FindStringSubmatch(trimmed)
+		if match != nil {
+			violations = append(violations, golangCIViolation(module, match[1], match[2], match[3], match[4], match[5]))
 			continue
 		}
-		path := filepath.ToSlash(match[1])
-		if module != "" && !strings.HasPrefix(path, module+"/") {
-			path = filepath.ToSlash(filepath.Join(module, path))
+		lineOnly := golangCILineOnly.FindStringSubmatch(trimmed)
+		if lineOnly != nil {
+			violations = append(violations, golangCIViolation(module, lineOnly[1], lineOnly[2], "1", lineOnly[3], lineOnly[4]))
 		}
-		rule := match[5]
-		if rule == "" {
-			rule = "golangci-lint"
-		}
-		violations = append(violations, Violation{
-			Rule: rule, Path: path, Line: atoi(match[2]), Column: atoi(match[3]), Message: match[4],
-		})
 	}
 	if len(violations) == 0 {
 		violations = append(violations, Violation{
@@ -145,6 +178,17 @@ func parseGolangCI(result commandResult, module string) []Violation {
 		})
 	}
 	return violations
+}
+
+func golangCIViolation(module, rawPath, rawLine, rawColumn, message, rule string) Violation {
+	path := filepath.ToSlash(rawPath)
+	if module != "" && !strings.HasPrefix(path, module+"/") {
+		path = filepath.ToSlash(filepath.Join(module, path))
+	}
+	if rule == "" {
+		rule = "golangci-lint"
+	}
+	return Violation{Rule: rule, Path: path, Line: atoi(rawLine), Column: atoi(rawColumn), Message: message}
 }
 
 func parseShellcheck(result commandResult, path string) []Violation {
