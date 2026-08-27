@@ -21,32 +21,11 @@ REPORT_ARTIFACT_DIR: %s
 }
 
 func activeTaskPromptBlock(activeTaskPath string) string {
-	if activeTaskPath == "" {
-		return ""
-	}
-	return fmt.Sprintf(`ACTIVE_TASK_FILE: %s
-
-要件の正は親Codex専有のこのACTIVE task fileです。作業・判定の前に全文を読んでください。
-Original instruction・Amendments・Resolved references・Contract・Must not・Acceptance criteriaを
-USER_REQUEST・会話要約・過去session記憶ではなくtask file本文から確認してください。
-このfileとIMPLEMENTATION_RULES.md・IMPLEMENTATION_PLAN.local.md・IMPLEMENTATION_HISTORY.mdは
-親Codex専有のため編集・生成・復元・削除を行わず、更新候補は結果fieldへ報告してください。
-`, activeTaskPath)
+	return renderActiveTaskPromptContract(newActiveTaskPromptContract(activeTaskPath, activeTaskAudienceWorker))
 }
 
 func reviewerActiveTaskBlock(activeTaskPath string) string {
-	if activeTaskPath == "" {
-		return ""
-	}
-	return fmt.Sprintf(`ACTIVE_TASK_FILE: %s
-
-判定基準の正は親Codex専有のこのACTIVE task fileです。判定の前に全文を読んでください。
-Original instruction・Amendments・Resolved references・Contract・Must not・Acceptance criteria・
-Historical invariantsをUSER_REQUEST・WORKER_REPORT・過去session記憶ではなくtask file本文から
-確認し、Derived Contract vs Original instructionとImplementation vs Contractの両方を独立に検証してください。
-このfileとIMPLEMENTATION_RULES.md・IMPLEMENTATION_PLAN.local.md・IMPLEMENTATION_HISTORY.mdは
-親Codex専有のため編集・生成・復元・削除を行わないでください。
-`, activeTaskPath)
+	return renderActiveTaskPromptContract(newActiveTaskPromptContract(activeTaskPath, activeTaskAudienceReviewer))
 }
 
 func newTaskPrompt(request string, activeTaskPath string) string {
