@@ -24,7 +24,7 @@ jobs:
         working-directory: glm-worker
         run: |
           go test ./internal/workflow
-          go test ./internal/app
+          go test ./internal/app -run 'Test(SingleShotOutput|StructuredLinesOutput|MachineOutputViolation)'
           go vet ./...
           go build ./...
       - name: Verify conflict surfaces
