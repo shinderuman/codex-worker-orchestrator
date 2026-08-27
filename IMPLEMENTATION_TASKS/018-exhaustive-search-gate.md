@@ -77,11 +77,12 @@ ranking上位だけで網羅性を誤認するfalse-completeを防ぐ。
 ## Historical invariants
 
 - BM25 corpus境界とfingerprint統一
+- 016 worker repo-search integrationはPR #22のSquash Merge commit `da468541683a832b102acecc60770678452e6fa4`で充足済み。BM25はnavigation/ranking用途でありexhaustive proofにはしない
+- F9 reviewer diff-first independent searchはPR #19のSquash Merge commit `948ea31ee4381f4192afeff607c015696349a9a1`で充足済み。reviewer独立searchはnavigationでありexhaustive proofにはしない
 
 ## Dependencies
 
-- `IMPLEMENTATION_TASKS/016-worker-repo-search-integration.md`
-- `IMPLEMENTATION_TASKS/017-reviewer-diff-first-search.md`
+none
 
 ## Review findings
 
@@ -89,4 +90,4 @@ none
 
 ## Current boundary
 
-未着手。
+COMPLETE / CAMPAIGN_STOP_SENTINEL。F10実装・独立review・恒久Repository Lint `33126476876`・runtime completion `33126575073`は完了済み。ユーザー指定によりPR #20完了後は通常Plan taskを開始しない。current plancheckがACTIVE 1件を必須とするため本taskをsentinelとして一時保持するが、再dispatch・追加実装は禁止。010以降はNEXTのまま維持する。

@@ -262,11 +262,11 @@ func TestReportOnlyNoMutationMaintainsReviewRestartAndRiskFloor(t *testing.T) {
 	if got, want := strings.Join(r.models, ","), "opus,sonnet,opus,sonnet"; got != want {
 		t.Fatalf("risk floor model routing = %q want %q", got, want)
 	}
-	if !strings.Contains(r.prompts[3], "現在のworking treeを実際に独立確認して判定してください") {
-		t.Fatalf("reviewer-2は通常review promptであるべき: %s", r.prompts[3])
+	if !strings.Contains(r.prompts[3], "REVIEW_MODE: INDEPENDENT_REVIEW") {
+		t.Fatalf("reviewer-2はindependent review modeであるべき: %s", r.prompts[3])
 	}
-	if strings.Contains(r.prompts[3], "実装・working tree変更・追加調査・test/lint/build/self-reviewをやり直さず") {
-		t.Fatalf("reviewer-2へreport-only promptが使われています: %s", r.prompts[3])
+	if strings.Contains(r.prompts[3], "MODE: APPLY_REVIEW_FIX") {
+		t.Fatalf("reviewer-2へreview-fix modeが使われています: %s", r.prompts[3])
 	}
 	pkt := lastPacketFromOutput(t, out.String())
 	if pkt.Status != "NEEDS_SOL_REVIEW" || !strings.Contains(pkt.Summary, "review") {
