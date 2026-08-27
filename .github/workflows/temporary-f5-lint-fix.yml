@@ -171,8 +171,7 @@ jobs:
         env:
           GOTOOLCHAIN: auto
         run: |
-          sudo apt-get update
-          sudo apt-get install -y shellcheck
+          command -v shellcheck
           go install mvdan.cc/sh/v3/cmd/shfmt@v3.12.0
           curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s -- -b "$(go env GOPATH)/bin" v2.7.0
       - name: Repository lint
