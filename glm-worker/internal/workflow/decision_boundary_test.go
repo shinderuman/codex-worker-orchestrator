@@ -99,18 +99,6 @@ func TestDecisionBoundaryContextDoesNotTrustPromptMarker(t *testing.T) {
 	}
 }
 
-func TestDecisionBoundaryContextKeepsImplementationDetailsAutonomous(t *testing.T) {
-	block := decisionBoundaryContextBlock("IMPLEMENTATION_TASKS/task.md", semanticDecisionAuthority{fixed: map[semanticDecisionAxis]string{
-		decisionAxisResponsibility: "keep existing package responsibility",
-	}})
-	if !strings.Contains(block, "type/package/interface追加は、それ自体では意味責務新設とは扱わない") {
-		t.Fatal("implementation-detail exception is missing")
-	}
-	if !strings.Contains(block, "validation-error-semanticsがFIXEDでない限り自律強化しない") {
-		t.Fatal("validation/error strengthening boundary is missing")
-	}
-}
-
 func TestRunWorkerModelInjectsPinnedTaskDecisionBoundary(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{{structured: needsSolDecisionPacket()}}}

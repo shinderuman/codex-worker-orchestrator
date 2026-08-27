@@ -11,6 +11,10 @@ import (
 
 type semanticDecisionAxis string
 
+type semanticDecisionAuthority struct {
+	fixed map[semanticDecisionAxis]string
+}
+
 const (
 	decisionAxisResponsibility      semanticDecisionAxis = "responsibility"
 	decisionAxisDependencyDirection semanticDecisionAxis = "dependency-direction"
@@ -38,44 +42,16 @@ var semanticDecisionAxes = map[string]semanticDecisionAxis{
 	string(decisionAxisValidationError):     decisionAxisValidationError,
 }
 
-type semanticDecisionAuthority struct {
-	fixed map[semanticDecisionAxis]string
-}
-
 func parseSemanticDecisionAuthority(content string) (semanticDecisionAuthority, error) {
 	authority := semanticDecisionAuthority{fixed: make(map[semanticDecisionAxis]string)}
-	inSection := false
-	for _, line := range strings.Split(content, "\n") {
-		if strings.HasPrefix(line, "## ") {
-			heading := strings.TrimSpace(strings.TrimPrefix(line, "## "))
-			if inSection {
-				break
-			}
-			inSection = heading == solDecisionAuthorityHeading
-			continue
-		}
-		if !inSection {
-			continue
-		}
+	for _, line := range semanticDecisionAuthorityLines(content) {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" {
 			continue
 		}
-		if !strings.HasPrefix(trimmed, "- ") {
-			return semanticDecisionAuthority{}, fmt.Errorf("%s sectionの行 %qは`- axis: value`形式である必要があります", solDecisionAuthorityHeading, trimmed)
-		}
-		entry := strings.TrimSpace(strings.TrimPrefix(trimmed, "- "))
-		name, value, ok := strings.Cut(entry, ":")
-		if !ok {
-			return semanticDecisionAuthority{}, fmt.Errorf("%s sectionの行 %qにaxis value区切りがありません", solDecisionAuthorityHeading, trimmed)
-		}
-		axis, ok := semanticDecisionAxes[strings.TrimSpace(name)]
-		if !ok {
-			return semanticDecisionAuthority{}, fmt.Errorf("%s sectionにunknown axis %qがあります", solDecisionAuthorityHeading, strings.TrimSpace(name))
-		}
-		value = strings.TrimSpace(value)
-		if value == "" {
-			return semanticDecisionAuthority{}, fmt.Errorf("%s sectionの%s axis valueが空です", solDecisionAuthorityHeading, axis)
+		axis, value, err := parseSemanticDecisionAuthorityEntry(trimmed)
+		if err != nil {
+			return semanticDecisionAuthority{}, err
 		}
 		if _, exists := authority.fixed[axis]; exists {
 			return semanticDecisionAuthority{}, fmt.Errorf("%s sectionの%s axisが重複しています", solDecisionAuthorityHeading, axis)
@@ -83,6 +59,44 @@ func parseSemanticDecisionAuthority(content string) (semanticDecisionAuthority, 
 		authority.fixed[axis] = value
 	}
 	return authority, nil
+}
+
+func semanticDecisionAuthorityLines(content string) []string {
+	lines := strings.Split(content, "\n")
+	for i, line := range lines {
+		if !strings.HasPrefix(line, "## ") || strings.TrimSpace(strings.TrimPrefix(line, "## ")) != solDecisionAuthorityHeading {
+			continue
+		}
+		end := len(lines)
+		for j := i + 1; j < len(lines); j++ {
+			if strings.HasPrefix(lines[j], "## ") {
+				end = j
+				break
+			}
+		}
+		return lines[i+1 : end]
+	}
+	return nil
+}
+
+func parseSemanticDecisionAuthorityEntry(line string) (semanticDecisionAxis, string, error) {
+	if !strings.HasPrefix(line, "- ") {
+		return "", "", fmt.Errorf("%s sectionの行 %qは`- axis: value`形式である必要があります", solDecisionAuthorityHeading, line)
+	}
+	entry := strings.TrimSpace(strings.TrimPrefix(line, "- "))
+	name, value, ok := strings.Cut(entry, ":")
+	if !ok {
+		return "", "", fmt.Errorf("%s sectionの行 %qにaxis value区切りがありません", solDecisionAuthorityHeading, line)
+	}
+	axis, ok := semanticDecisionAxes[strings.TrimSpace(name)]
+	if !ok {
+		return "", "", fmt.Errorf("%s sectionにunknown axis %qがあります", solDecisionAuthorityHeading, strings.TrimSpace(name))
+	}
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", "", fmt.Errorf("%s sectionの%s axis valueが空です", solDecisionAuthorityHeading, axis)
+	}
+	return axis, value, nil
 }
 
 func loadSemanticDecisionAuthority(repoRoot, activeTaskPath string) (semanticDecisionAuthority, error) {
