@@ -1,0 +1,52 @@
+name: Temporary F2 Convergence Patch
+
+on:
+  push:
+    branches:
+      - hardening-task/unknown-production-surface-risk
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Update convergence fixture for fail-closed risk floor
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("glm-worker/internal/workflow/convergence_test.go")
+          text = path.read_text()
+          marker = "func TestConvergencePathObservationUsesWorktree(t *testing.T) {"
+          start = text.find(marker)
+          if start < 0:
+              raise SystemExit("target test not found")
+          before = text[:start]
+          target = text[start:]
+          old = '''\tr := &scriptedRunner{steps: []runnerStep{
+          \t\t{structured: implementedPacket("done")},
+          \t\t{structured: passPacket()},
+          \t}}
+          '''
+          new = '''\tr := &scriptedRunner{steps: []runnerStep{
+          \t\t{structured: implementedPacket("done")},
+          \t\t{structured: passPacket()},
+          \t\t{structured: needsSolReviewPacket()},
+          \t}}
+          '''
+          if target.count(old) != 1:
+              raise SystemExit("target fixture source mismatch")
+          path.write_text(before + target.replace(old, new, 1))
+          Path(".github/workflows/temporary-f2-convergence-patch.yml").unlink()
+      - name: Commit patch
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add glm-worker/internal/workflow/convergence_test.go .github/workflows/temporary-f2-convergence-patch.yml
+          git commit -m "test: align convergence fixture with unknown-surface risk floor"
+          git push
