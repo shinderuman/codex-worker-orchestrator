@@ -21,6 +21,7 @@ jobs:
           cache: false
       - name: Apply marker-boundary fix
         run: |
+          sed -i "s/addition = r'''/addition = '''/" .github/f5_marker_patch.py
           python3 .github/f5_marker_patch.py
           gofmt -w glm-worker/internal/state/resume.go glm-worker/internal/workflow/rule_activation.go glm-worker/internal/workflow/rule_activation_test.go
       - name: Focused tests
