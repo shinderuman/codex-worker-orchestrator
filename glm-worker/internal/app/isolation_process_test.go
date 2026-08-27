@@ -11,22 +11,36 @@ import (
 	"testing"
 )
 
-func TestIsolateCommandProcessSeries(t *testing.T) {
+func setupStoppedIsolationTask(t *testing.T) (*multiRepoEnv, string, string) {
+	t.Helper()
 	env := newMultiRepoEnv(t)
 	env.setStubMode(t, env.stubA, "dirty-hold")
 
 	holder := startIsolationHolder(t, env)
 	stateA := env.waitStateDir(t, env.repoA, holder)
 	env.waitHeldWithWorkerSession(t, stateA)
-
 	waitStopFile(t, filepath.Join(env.repoA, "uncommitted.txt"))
+
 	stopResult := env.run(t, env.repoA, "--stop")
 	if stopResult.code != 0 || !strings.Contains(stopResult.stdout, `"result":"interrupted"`) {
 		t.Fatalf("--stopがinterruptedになりません: code=%d stdout=%s stderr=%s", stopResult.code, stopResult.stdout, stopResult.stderr)
 	}
 	holder.waitFailure(t)
-	taskID := readStateFile(t, stateA, "task.id")
+	return env, stateA, readStateFile(t, stateA, "task.id")
+}
 
+func isolateStoppedTask(t *testing.T, env *multiRepoEnv, stateA string) (map[string]string, string, string, string) {
+	t.Helper()
+	before := snapshotIsolationState(t, stateA)
+	isolate := env.run(t, env.repoA, "--isolate")
+	if isolate.code != 0 || !strings.Contains(isolate.stdout, `"result":"isolated"`) {
+		t.Fatalf("--isolateが失敗しました: code=%d stdout=%s stderr=%s", isolate.code, isolate.stdout, isolate.stderr)
+	}
+	return before, isolationOutputField(t, isolate.stdout, "worktree"), isolationOutputField(t, isolate.stdout, "branch"), isolate.stdout
+}
+
+func TestIsolateStopCheckpointCapturesRecoveryBaseline(t *testing.T) {
+	_, stateA, _ := setupStoppedIsolationTask(t)
 	checkpoint := parseStateJSON(t, stateA, "resume-state.json")
 	dirty, ok := checkpoint["stop_dirty_files"].([]any)
 	if !ok || len(dirty) == 0 {
@@ -35,10 +49,7 @@ func TestIsolateCommandProcessSeries(t *testing.T) {
 	foundUncommitted := false
 	for _, entry := range dirty {
 		file, ok := entry.(map[string]any)
-		if !ok {
-			continue
-		}
-		if file["path"] == "uncommitted.txt" {
+		if ok && file["path"] == "uncommitted.txt" {
 			foundUncommitted = true
 		}
 	}
@@ -52,20 +63,17 @@ func TestIsolateCommandProcessSeries(t *testing.T) {
 	if !fileExists(filepath.Join(stateA, "stop-worktree.patch")) {
 		t.Fatal("停止時recovery patchが保存されていません")
 	}
+}
 
-	before := snapshotIsolationState(t, stateA)
-	isolate := env.run(t, env.repoA, "--isolate")
-	if isolate.code != 0 || !strings.Contains(isolate.stdout, `"result":"isolated"`) {
-		t.Fatalf("--isolateが失敗しました: code=%d stdout=%s stderr=%s", isolate.code, isolate.stdout, isolate.stderr)
-	}
+func TestIsolateCommandCreatesIdempotentWorktree(t *testing.T) {
+	env, stateA, taskID := setupStoppedIsolationTask(t)
+	before, worktree, branch, isolateOut := isolateStoppedTask(t, env, stateA)
 	assertIsolationStateDeltaIsRecordOnly(t, stateA, before)
-	worktree := isolationOutputField(t, isolate.stdout, "worktree")
-	branch := isolationOutputField(t, isolate.stdout, "branch")
 	if worktree == "" || !strings.HasPrefix(branch, "glm-worker/isolation/") {
-		t.Fatalf("隔離出力 = %s", isolate.stdout)
+		t.Fatalf("隔離出力 = %s", isolateOut)
 	}
-	if !strings.Contains(isolate.stdout, `"task_id":"`+taskID+`"`) {
-		t.Fatalf("隔離出力が元taskを指しません: %s (task %s)", isolate.stdout, taskID)
+	if !strings.Contains(isolateOut, `"task_id":"`+taskID+`"`) {
+		t.Fatalf("隔離出力が元taskを指しません: %s (task %s)", isolateOut, taskID)
 	}
 	if !fileExists(filepath.Join(worktree, "corpus.md")) {
 		t.Fatalf("隔離worktreeがHEAD内容をcheck outしていません: %s", worktree)
@@ -80,16 +88,18 @@ func TestIsolateCommandProcessSeries(t *testing.T) {
 
 	recordBefore := readStateFile(t, stateA, "isolation.json")
 	replay := env.run(t, env.repoA, "--isolate")
-	if replay.code != 0 || !strings.Contains(replay.stdout, `"result":"isolated"`) {
-		t.Fatalf("再--isolateが冪等に成功しません: code=%d stdout=%s stderr=%s", replay.code, replay.stdout, replay.stderr)
-	}
-	if replay.stdout != isolate.stdout {
-		t.Fatalf("再--isolateのmachine結果が初回と異なります: first=%s replay=%s", isolate.stdout, replay.stdout)
+	if replay.code != 0 || replay.stdout != isolateOut {
+		t.Fatalf("再--isolateが冪等ではありません: first=%s replay=%s stderr=%s", isolateOut, replay.stdout, replay.stderr)
 	}
 	if got := readStateFile(t, stateA, "isolation.json"); got != recordBefore {
 		t.Fatal("再--isolateが隔離記録を上書きしています")
 	}
 	assertIsolationStateDeltaIsRecordOnly(t, stateA, before)
+}
+
+func TestIsolatedWorktreeTaskIsIndependentAndMergePreservesOrigin(t *testing.T) {
+	env, stateA, taskID := setupStoppedIsolationTask(t)
+	before, worktree, branch, _ := isolateStoppedTask(t, env, stateA)
 
 	env.setStubMode(t, env.stubA, "success")
 	interrupted := env.run(t, worktree, "割り込みtask marker ISOW1")
@@ -98,11 +108,8 @@ func TestIsolateCommandProcessSeries(t *testing.T) {
 	}
 	assertIsolationStateDeltaIsRecordOnly(t, stateA, before)
 	worktreeState := env.waitStateDir(t, worktree, nil)
-	if worktreeState == stateA {
-		t.Fatal("隔離worktreeのstate dirが元repo stateと分離されていません")
-	}
-	if readStateFile(t, worktreeState, "task.id") == taskID {
-		t.Fatal("隔離worktree taskが元task IDを再利用しています")
+	if worktreeState == stateA || readStateFile(t, worktreeState, "task.id") == taskID {
+		t.Fatal("隔離worktreeのtask stateが元taskから分離されていません")
 	}
 	originStatus := env.status(t, worktree)
 	if !strings.Contains(originStatus, `"isolation_origin"`) || !strings.Contains(originStatus, `"origin_repo_root":"`+env.repoA+`"`) {
@@ -121,6 +128,21 @@ func TestIsolateCommandProcessSeries(t *testing.T) {
 	originRepoStatus := env.status(t, env.repoA)
 	if !strings.Contains(originRepoStatus, `"isolation"`) || !strings.Contains(originRepoStatus, `"worktree":"`+worktree+`"`) {
 		t.Fatalf("元repo --statusが隔離記録を出していません: %s", originRepoStatus)
+	}
+}
+
+func TestIsolateStaleRecordFailsClosedAndResumePreservesDirtyBaseline(t *testing.T) {
+	env, stateA, _ := setupStoppedIsolationTask(t)
+	_, worktree, branch, _ := isolateStoppedTask(t, env, stateA)
+	env.setStubMode(t, env.stubA, "success")
+	if interrupted := env.run(t, worktree, "割り込みtask marker ISOW1"); interrupted.code != 0 {
+		t.Fatalf("隔離worktree task setup失敗: %s", interrupted.stderr)
+	}
+	if output, err := exec.Command("git", "-C", worktree, "commit", "--quiet", "--allow-empty", "-m", "isolation task result").CombinedOutput(); err != nil {
+		t.Fatalf("隔離worktreeのcommitに失敗しました: %v: %s", err, output)
+	}
+	if output, err := exec.Command("git", "-C", env.repoA, "merge", "--quiet", "--no-edit", branch).CombinedOutput(); err != nil {
+		t.Fatalf("隔離branchの統合に失敗しました: %v: %s", err, output)
 	}
 
 	staleRecordBefore := readStateFile(t, stateA, "isolation.json")
