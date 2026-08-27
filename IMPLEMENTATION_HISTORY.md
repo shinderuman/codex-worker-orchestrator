@@ -172,3 +172,7 @@
 ## 2026-08-28 parent completion reconciliation
 
 - [x] installer missing dependency Homebrew hint: PR #7 `a111e0adc2d4f299e677f85148f34906d74e9c2c`で、Homebrew formulaを明示対応した`golangci-lint` / `shellcheck` / `shfmt`欠落時に既存fail-closed errorへ`brew install <formula>`案内を追加し、標準commandでは誤ったhintを出さないpositive/negative install smoke regressionを導入。main merge後、ユーザーから`./install.sh`が問題なく動作することを確認した。
+
+## 2026-08-28 hardening completion
+
+- [x] F1 instruction surface ownership: Track Aとして任意repo内の`AGENTS.md` / `AGENTS.local.md`（nested、tracked/ignoredを問わない）をtask-wide identityへ固定し、model call前の同一task mismatchをfail closed、call中の追加・変更・削除をpre-call snapshotへrestoreしてcallを失敗させ、instruction mutation検出時はworker/reviewer session identityを破棄して汚染sessionのresumeを防止した。instruction file symlinkはmutable external authorityを避けるためfail closedとし、通常source editはguard対象外、新taskでは親が選んだinstructionを新baselineとして受理する。Track Bとして本repoのroot/nested `AGENTS.md` / `AGENTS.local.md`をself-protection HIGH (`repo-instructions`)へ分類した。production entrypointはguarded runner factoryへ配線し、fake Claude subprocessが`AGENTS.local.md`を実変更するproduction-path regressionを含む。Actions run `33092397845`でrunner/workflow/app targeted tests、targeted vet、全package buildがPASSし、Repository Lint runs `33092246330`、`33092606205`、`33093034956`もPASSした。

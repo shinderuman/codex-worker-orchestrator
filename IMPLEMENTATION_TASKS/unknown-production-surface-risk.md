@@ -63,4 +63,4 @@ none
 
 ## Current boundary
 
-NEXT / NARROW。現mainでは`glm-worker/internal/`と`glm-worker/cmd/`配下のproduction Goを新package名でもHIGHへ分類するため、その範囲のsilent LOWは解消済み。一方、既知prefix外の新しいproduction-like script / config / file type等は`IsCriticalPath`で未分類のままLOWへ落ち得るため、残余failure classをknown-safe LOWと区別するgeneric / repo-local境界へscopeを絞って継続する。
+ACTIVE / NARROW。現mainで`glm-worker/internal/`と`glm-worker/cmd/`配下のproduction Goは新package名でもHIGHだが、既知prefix外の新しいproduction-like script / config / file type等は未分類LOWへ落ち得る残余failure classがある。F1のintegration squash完了後、known-safe LOWとunknown production-like surfaceを区別するTrack A / Track B境界から着手する。
