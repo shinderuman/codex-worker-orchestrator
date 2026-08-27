@@ -13,6 +13,21 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
+type MachineOutputViolationError struct {
+	HeldBytes int
+	Cause     error
+}
+
+type singleShotOutput struct {
+	target  io.Writer
+	pending bytes.Buffer
+}
+
+type structuredLinesOutput struct {
+	target  io.Writer
+	pending bytes.Buffer
+}
+
 func Run(args []string) error {
 	return run(args, config.Load, defaultRunnerFactory, os.Stdin, os.Stdout, os.Stderr)
 }
@@ -44,18 +59,8 @@ func dispatchMachineOutput(cmd Command, cfg config.AppConfig, rf RunnerFactory, 
 	return output.release()
 }
 
-type MachineOutputViolationError struct {
-	HeldBytes int
-	Cause     error
-}
-
 func (e *MachineOutputViolationError) Error() string {
 	return fmt.Sprintf("machine stdout/stderr契約違反を検出したため出力を保留しました(%d bytes): %v", e.HeldBytes, e.Cause)
-}
-
-type singleShotOutput struct {
-	target  io.Writer
-	pending bytes.Buffer
 }
 
 func newSingleShotOutput(target io.Writer) *singleShotOutput {
@@ -82,11 +87,6 @@ func (o *singleShotOutput) release() error {
 		return fmt.Errorf("machine stdoutへの保留出力のflushに失敗しました: %w", err)
 	}
 	return nil
-}
-
-type structuredLinesOutput struct {
-	target  io.Writer
-	pending bytes.Buffer
 }
 
 func newStructuredLinesOutput(target io.Writer) *structuredLinesOutput {

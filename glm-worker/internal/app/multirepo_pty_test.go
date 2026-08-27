@@ -15,6 +15,17 @@ import (
 	"time"
 )
 
+type ptyParallelTransport struct {
+	payload    string
+	outPath    string
+	ctx        context.Context
+	cancel     context.CancelFunc
+	command    *exec.Cmd
+	stdin      io.WriteCloser
+	output     chan string
+	outputText string
+}
+
 func TestStdinPayloadPTYParallelNonInterference(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("PTY transport契約の実機検証はmacOSのscript前提")
@@ -33,17 +44,6 @@ func TestStdinPayloadPTYParallelNonInterference(t *testing.T) {
 
 	assertPTYParallelIsolated(t, ptyA, "GLMPTYA", "GLMPTYB")
 	assertPTYParallelIsolated(t, ptyB, "GLMPTYB", "GLMPTYA")
-}
-
-type ptyParallelTransport struct {
-	payload    string
-	outPath    string
-	ctx        context.Context
-	cancel     context.CancelFunc
-	command    *exec.Cmd
-	stdin      io.WriteCloser
-	output     chan string
-	outputText string
 }
 
 func (p *ptyParallelTransport) close() {

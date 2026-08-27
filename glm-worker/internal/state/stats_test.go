@@ -149,7 +149,7 @@ func TestStartNewTaskContinuesWhenArchiveWriteFails(t *testing.T) {
 	if err := os.Chmod(statsDir, 0o500); err != nil {
 		t.Fatal(err)
 	}
-	defer os.Chmod(statsDir, 0o700)
+	defer func() { _ = os.Chmod(statsDir, 0o700) }()
 
 	warn, restore := captureStatsWarnings(t)
 	defer restore()
@@ -175,7 +175,7 @@ func TestUpdateTaskStatsToleratesWriteFailure(t *testing.T) {
 	if err := os.Chmod(st.dir, 0o500); err != nil {
 		t.Fatal(err)
 	}
-	defer os.Chmod(st.dir, 0o700)
+	defer func() { _ = os.Chmod(st.dir, 0o700) }()
 
 	warn, restore := captureStatsWarnings(t)
 	defer restore()

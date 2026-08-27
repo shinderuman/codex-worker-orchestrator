@@ -18,55 +18,9 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-const isolationPolicyVersion = "claude-isolation-1"
-
-const subtypeStructuredOutputRetryExhausted = "error_max_structured_output_retries"
-
-const readOnlyTools = "Read,Grep,Glob,WebFetch,WebSearch"
-
-var readOnlyDisallowedTools = []string{"Edit", "Write", "NotebookEdit", "Agent", "Bash"}
-
 type StructuredOutputError struct {
 	Subtype        string
 	TerminalReason string
-}
-
-func (e *StructuredOutputError) Error() string {
-	if e.Subtype != "" {
-		return fmt.Sprintf("structured outputが得られませんでした: subtype=%s", e.Subtype)
-	}
-	return "structured outputが得られませんでした: result eventにstructured_outputがありません"
-}
-
-func IsStructuredOutputError(err error) bool {
-	var target *StructuredOutputError
-	return errors.As(err, &target)
-}
-
-func (e *StructuredOutputError) RetryExhausted() bool {
-	return e.Subtype == subtypeStructuredOutputRetryExhausted
-}
-
-var (
-	workerSchemaOnce   sync.Once
-	reviewerSchemaOnce sync.Once
-	workerSchemaValue  string
-	workerSchemaErr    error
-	reviewerSchemaVal  string
-	reviewerSchemaFail error
-)
-
-func structuredSchema(role state.SessionRole) (string, error) {
-	if role == state.ReviewerRole {
-		reviewerSchemaOnce.Do(func() {
-			reviewerSchemaVal, reviewerSchemaFail = packet.ReviewerSchemaJSON()
-		})
-		return reviewerSchemaVal, reviewerSchemaFail
-	}
-	workerSchemaOnce.Do(func() {
-		workerSchemaValue, workerSchemaErr = packet.WorkerSchemaJSON()
-	})
-	return workerSchemaValue, workerSchemaErr
 }
 
 type ClaudeRunner struct {
@@ -124,6 +78,75 @@ type claudeJSONResult struct {
 	ModelUsage     map[string]ModelUsage `json:"modelUsage"`
 }
 
+type runInputs struct {
+	systemFile    string
+	isolationArgs string
+	settingEnv    map[string]string
+	envDeletes    []string
+	schema        string
+}
+
+const isolationPolicyVersion = "claude-isolation-1"
+
+const subtypeStructuredOutputRetryExhausted = "error_max_structured_output_retries"
+
+const readOnlyTools = "Read,Grep,Glob,WebFetch,WebSearch"
+
+var readOnlyDisallowedTools = []string{"Edit", "Write", "NotebookEdit", "Agent", "Bash"}
+
+var (
+	workerSchemaOnce   sync.Once
+	reviewerSchemaOnce sync.Once
+	workerSchemaValue  string
+	workerSchemaErr    error
+	reviewerSchemaVal  string
+	reviewerSchemaFail error
+)
+
+var essentialSettingEnvKeys = []string{
+	"ANTHROPIC_AUTH_TOKEN",
+	"ANTHROPIC_BASE_URL",
+	"ANTHROPIC_DEFAULT_OPUS_MODEL",
+	"ANTHROPIC_DEFAULT_SONNET_MODEL",
+	"ANTHROPIC_DEFAULT_HAIKU_MODEL",
+	"API_TIMEOUT_MS",
+	"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
+}
+
+var osEssentialEnvKeys = []string{
+	"PATH", "HOME", "TMPDIR", "SHELL", "USER", "LOGNAME",
+	"LANG", "LC_ALL", "LC_CTYPE", "TZ", "TERM",
+}
+
+func (e *StructuredOutputError) Error() string {
+	if e.Subtype != "" {
+		return fmt.Sprintf("structured outputが得られませんでした: subtype=%s", e.Subtype)
+	}
+	return "structured outputが得られませんでした: result eventにstructured_outputがありません"
+}
+
+func IsStructuredOutputError(err error) bool {
+	var target *StructuredOutputError
+	return errors.As(err, &target)
+}
+
+func (e *StructuredOutputError) RetryExhausted() bool {
+	return e.Subtype == subtypeStructuredOutputRetryExhausted
+}
+
+func structuredSchema(role state.SessionRole) (string, error) {
+	if role == state.ReviewerRole {
+		reviewerSchemaOnce.Do(func() {
+			reviewerSchemaVal, reviewerSchemaFail = packet.ReviewerSchemaJSON()
+		})
+		return reviewerSchemaVal, reviewerSchemaFail
+	}
+	workerSchemaOnce.Do(func() {
+		workerSchemaValue, workerSchemaErr = packet.WorkerSchemaJSON()
+	})
+	return workerSchemaValue, workerSchemaErr
+}
+
 func NewClaudeRunner(cfg config.AppConfig, st *state.StateStore) *ClaudeRunner {
 	return &ClaudeRunner{config: cfg, state: st}
 }
@@ -141,33 +164,54 @@ func (r *ClaudeRunner) Run(
 	prompt string,
 	outputPath string,
 ) (RunResult, error) {
-	if model == "" {
-		return RunResult{}, fmt.Errorf("modelを指定してください")
+	result, taskID, sessionID, ready, err := r.prepareRunSession(role, phase, model)
+	if err != nil {
+		return result, err
 	}
+	inputs, err := r.prepareRunInputs(role, &result)
+	if err != nil {
+		return result, err
+	}
+	args := r.buildRunArgs(role, taskID, sessionID, ready, model, readOnly, effort, prompt, inputs)
+	ingester, stderrPath, runErr, err := r.executeRunCommand(
+		role, phase, model, taskID, sessionID, ready, args, inputs, outputPath,
+	)
+	if err != nil {
+		return result, err
+	}
+	return r.finishRun(role, outputPath, stderrPath, ingester, result, runErr)
+}
 
+func (r *ClaudeRunner) prepareRunSession(role state.SessionRole, phase, model string) (RunResult, string, string, bool, error) {
+	if model == "" {
+		return RunResult{}, "", "", false, fmt.Errorf("modelを指定してください")
+	}
 	if r.stop != nil && r.stop.StopRequested() {
-		return RunResult{}, &InterruptedCallError{Phase: phase}
+		return RunResult{}, "", "", false, &InterruptedCallError{Phase: phase}
 	}
 	taskID, err := r.state.TaskID()
 	if err != nil {
-		return RunResult{}, err
+		return RunResult{}, "", "", false, err
 	}
 	if err := r.state.ResetSessionsForPolicy(isolationPolicyVersion); err != nil {
-		return RunResult{}, err
+		return RunResult{}, "", "", false, err
 	}
 	sessionID, ready, err := r.state.SessionID(role)
 	if err != nil {
-		return RunResult{}, err
+		return RunResult{}, "", "", false, err
 	}
 	result := RunResult{SessionID: sessionID, Resumed: ready}
 	if err := r.state.SetIsolationPolicy(isolationPolicyVersion); err != nil {
-		return result, err
+		return result, "", "", false, err
 	}
+	return result, taskID, sessionID, ready, nil
+}
 
+func (r *ClaudeRunner) prepareRunInputs(role state.SessionRole, result *RunResult) (runInputs, error) {
 	systemFile := filepath.Join(r.config.PromptDir, promptFileName(role))
 	systemPrompt, err := os.ReadFile(systemFile)
 	if err != nil {
-		return result, fmt.Errorf("required promptがありません: %s", systemFile)
+		return runInputs{}, fmt.Errorf("required promptがありません: %s", systemFile)
 	}
 	result.SystemPromptBytes = len(systemPrompt)
 	result.SystemPrompt = string(systemPrompt)
@@ -176,30 +220,38 @@ func (r *ClaudeRunner) Run(
 
 	isolationArgs, err := isolationSettings(r.config.ClaudeConfigDir)
 	if err != nil {
-		return result, err
+		return runInputs{}, err
 	}
 	settingEnv, envDeletes, err := loadSettingEnv(r.config.ClaudeConfigDir, r.config.ClaudeSettingsOverride)
 	if err != nil {
-		return result, err
+		return runInputs{}, err
 	}
 	schema, err := structuredSchema(role)
 	if err != nil {
-		return result, fmt.Errorf("structured output schemaを構築できません: %w", err)
+		return runInputs{}, fmt.Errorf("structured output schemaを構築できません: %w", err)
 	}
+	return runInputs{
+		systemFile: systemFile, isolationArgs: isolationArgs,
+		settingEnv: settingEnv, envDeletes: envDeletes, schema: schema,
+	}, nil
+}
 
+func (r *ClaudeRunner) buildRunArgs(
+	role state.SessionRole,
+	taskID, sessionID string,
+	ready bool,
+	model string,
+	readOnly bool,
+	effort, prompt string,
+	inputs runInputs,
+) []string {
 	args := []string{"-p", "--safe-mode", "--setting-sources", ""}
 	if ready {
 		args = append(args, "--resume", sessionID)
 	} else {
-		args = append(
-			args,
-			"--session-id", sessionID,
-			"--name", r.sessionName(role, taskID),
-		)
+		args = append(args, "--session-id", sessionID, "--name", r.sessionName(role, taskID))
 	}
-
-	args = append(
-		args,
+	args = append(args,
 		"--model", model,
 		"--effort", effort,
 		"--autocompact", "500k",
@@ -209,92 +261,110 @@ func (r *ClaudeRunner) Run(
 		"--strict-mcp-config",
 		"--mcp-config", `{"mcpServers":{}}`,
 		"--disable-slash-commands",
-		"--settings", isolationArgs,
-		"--json-schema", schema,
+		"--settings", inputs.isolationArgs,
+		"--json-schema", inputs.schema,
 	)
-
 	if readOnly {
-		args = append(args, "--tools", readOnlyTools)
-		args = append(args, "--disallowedTools")
+		args = append(args, "--tools", readOnlyTools, "--disallowedTools")
 		args = append(args, readOnlyDisallowedTools...)
 	}
+	return append(args, "--append-system-prompt-file", inputs.systemFile, prompt)
+}
 
-	args = append(args, "--append-system-prompt-file", systemFile, prompt)
-
+func (r *ClaudeRunner) executeRunCommand(
+	role state.SessionRole,
+	phase, model, taskID, sessionID string,
+	ready bool,
+	args []string,
+	inputs runInputs,
+	outputPath string,
+) (*streamEventIngester, string, error, error) {
 	stderrPath := outputPath + ".stderr"
 	stderr, err := createPrivateFile(stderrPath)
 	if err != nil {
-		return result, err
+		return nil, stderrPath, nil, err
 	}
 	devNull, err := os.Open(os.DevNull)
 	if err != nil {
-		stderr.Close()
-		return result, fmt.Errorf("/dev/nullを開けません: %w", err)
+		_ = stderr.Close()
+		return nil, stderrPath, nil, fmt.Errorf("/dev/nullを開けません: %w", err)
 	}
-	defer devNull.Close()
+	defer func() { _ = devNull.Close() }()
 
 	ingester := r.newTaskEventIngester(taskID, role, phase, model, sessionID, ready)
-
 	command := newProcessGroupCmd(r.config.ClaudeBin, args...)
 	command.Dir = r.config.RepoRoot
 	command.Stdin = devNull
-
 	command.Stdout = ingester
 	command.Stderr = stderr
-	command.Env = buildChildEnv(r.config.EnvAllowlist, settingEnv, map[string]string{
+	command.Env = buildChildEnv(r.config.EnvAllowlist, inputs.settingEnv, map[string]string{
 		"CLAUDE_CONFIG_DIR":                r.config.ClaudeConfigDir,
 		"CLAUDE_CODE_AUTO_COMPACT_WINDOW":  "500000",
 		"CLAUDE_CODE_ALWAYS_ENABLE_EFFORT": "1",
-	}, envDeletes)
+	}, inputs.envDeletes)
 
 	runErr := r.runCommand(command)
 	ingester.flush()
-	stderrCloseErr := stderr.Close()
-	if runErr == nil && stderrCloseErr != nil {
-		runErr = stderrCloseErr
+	if closeErr := stderr.Close(); runErr == nil && closeErr != nil {
+		runErr = closeErr
 	}
+	return ingester, stderrPath, runErr, nil
+}
 
+func (r *ClaudeRunner) finishRun(
+	role state.SessionRole,
+	outputPath, stderrPath string,
+	ingester *streamEventIngester,
+	result RunResult,
+	runErr error,
+) (RunResult, error) {
 	parsed, parseErr := parseCapturedStreamResult(ingester.result())
 	if parseErr == nil {
-		result.Response = parsed.Result
-		result.StructuredOutput = parsed.StructuredOut
-		result.TopLevelUsage = parsed.Usage
-		result.ModelUsage = parsed.ModelUsage
-		result.DurationMS = parsed.DurationMS
-		result.DurationAPIMS = parsed.DurationAPIMS
-		result.TopLevelTurns = parsed.NumTurns
-		result.TotalCostUSD = parsed.TotalCostUSD
+		applyParsedRunResult(&result, parsed)
 	}
-
 	if result.Response == "" {
 		result.PlainFailure = classifyPlainStdoutFailure(ingester.plainSignal())
 	}
-
 	if err := writeResultOutput(outputPath, result.Response, streamResultSummary(parsed, parseErr), stderrPath); err != nil {
 		return result, err
 	}
-
-	if parseErr == nil && parsed.Subtype == subtypeStructuredOutputRetryExhausted {
-		return result, &StructuredOutputError{Subtype: parsed.Subtype, TerminalReason: parsed.TerminalReason}
+	if err := terminalRunError(result, parsed, parseErr, runErr); err != nil {
+		return result, err
 	}
-	if runErr != nil {
-		return result, runErr
-	}
-	if parseErr != nil {
-		return result, parseErr
-	}
-	if parsed.IsError {
-		return result, fmt.Errorf("Claude CLIがerror結果を返しました: subtype=%s", parsed.Subtype)
-	}
-
-	if !structuredOutputPresent(result.StructuredOutput) {
-		return result, &StructuredOutputError{}
-	}
-
 	if err := r.state.MarkReady(role); err != nil {
 		return result, err
 	}
 	return result, nil
+}
+
+func applyParsedRunResult(result *RunResult, parsed claudeJSONResult) {
+	result.Response = parsed.Result
+	result.StructuredOutput = parsed.StructuredOut
+	result.TopLevelUsage = parsed.Usage
+	result.ModelUsage = parsed.ModelUsage
+	result.DurationMS = parsed.DurationMS
+	result.DurationAPIMS = parsed.DurationAPIMS
+	result.TopLevelTurns = parsed.NumTurns
+	result.TotalCostUSD = parsed.TotalCostUSD
+}
+
+func terminalRunError(result RunResult, parsed claudeJSONResult, parseErr, runErr error) error {
+	if parseErr == nil && parsed.Subtype == subtypeStructuredOutputRetryExhausted {
+		return &StructuredOutputError{Subtype: parsed.Subtype, TerminalReason: parsed.TerminalReason}
+	}
+	if runErr != nil {
+		return runErr
+	}
+	if parseErr != nil {
+		return parseErr
+	}
+	if parsed.IsError {
+		return fmt.Errorf("claude CLIがerror結果を返しました: subtype=%s", parsed.Subtype)
+	}
+	if !structuredOutputPresent(result.StructuredOutput) {
+		return &StructuredOutputError{}
+	}
+	return nil
 }
 
 func createPrivateFile(path string) (*os.File, error) {
@@ -335,21 +405,21 @@ func parseClaudeJSONResult(path string) (claudeJSONResult, error) {
 	}
 	var result claudeJSONResult
 	if err := json.Unmarshal(data, &result); err != nil {
-		return claudeJSONResult{}, fmt.Errorf("Claude CLIのJSON出力を解析できません: %w", err)
+		return claudeJSONResult{}, fmt.Errorf("claude CLIのJSON出力を解析できません: %w", err)
 	}
 	if result.Type != "result" {
-		return claudeJSONResult{}, fmt.Errorf("Claude CLIのJSON出力typeが不正です: %q", result.Type)
+		return claudeJSONResult{}, fmt.Errorf("claude CLIのJSON出力typeが不正です: %q", result.Type)
 	}
 	return result, nil
 }
 
 func parseCapturedStreamResult(line []byte, found bool) (claudeJSONResult, error) {
 	if !found {
-		return claudeJSONResult{}, fmt.Errorf("Claude CLIのJSON出力typeが不正です: result eventがありません")
+		return claudeJSONResult{}, fmt.Errorf("claude CLIのJSON出力typeが不正です: result eventがありません")
 	}
 	var parsed claudeJSONResult
 	if err := json.Unmarshal(line, &parsed); err != nil {
-		return claudeJSONResult{}, fmt.Errorf("Claude CLIのJSON出力を解析できません: %w", err)
+		return claudeJSONResult{}, fmt.Errorf("claude CLIのJSON出力を解析できません: %w", err)
 	}
 	return parsed, nil
 }
@@ -433,16 +503,6 @@ func isolationSettings(claudeConfigDir string) (string, error) {
 	return string(encoded), nil
 }
 
-var essentialSettingEnvKeys = []string{
-	"ANTHROPIC_AUTH_TOKEN",
-	"ANTHROPIC_BASE_URL",
-	"ANTHROPIC_DEFAULT_OPUS_MODEL",
-	"ANTHROPIC_DEFAULT_SONNET_MODEL",
-	"ANTHROPIC_DEFAULT_HAIKU_MODEL",
-	"API_TIMEOUT_MS",
-	"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
-}
-
 func loadSettingEnv(claudeConfigDir string, overridePath string) (map[string]string, []string, error) {
 	configDir, err := resolveClaudeConfigDir(claudeConfigDir)
 	if err != nil {
@@ -455,7 +515,7 @@ func loadSettingEnv(claudeConfigDir string, overridePath string) (map[string]str
 			Env map[string]string `json:"env"`
 		}
 		if err := json.Unmarshal(data, &parsed); err != nil {
-			return nil, nil, fmt.Errorf("Claude settings.jsonを解析できません: %w", err)
+			return nil, nil, fmt.Errorf("claude settings.jsonを解析できません: %w", err)
 		}
 		for _, key := range essentialSettingEnvKeys {
 			if value, ok := parsed.Env[key]; ok && value != "" {
@@ -463,7 +523,7 @@ func loadSettingEnv(claudeConfigDir string, overridePath string) (map[string]str
 			}
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
-		return nil, nil, fmt.Errorf("Claude settings.jsonを読み込めません: %w", err)
+		return nil, nil, fmt.Errorf("claude settings.jsonを読み込めません: %w", err)
 	}
 
 	override, err := parseClaudeEnvOverride(overridePath)
@@ -477,11 +537,6 @@ func loadSettingEnv(claudeConfigDir string, overridePath string) (map[string]str
 		result[key] = value
 	}
 	return result, override.deletes, nil
-}
-
-var osEssentialEnvKeys = []string{
-	"PATH", "HOME", "TMPDIR", "SHELL", "USER", "LOGNAME",
-	"LANG", "LC_ALL", "LC_CTYPE", "TZ", "TERM",
 }
 
 func buildChildEnv(extraAllow []string, settingEnv, additions map[string]string, deletes []string) []string {

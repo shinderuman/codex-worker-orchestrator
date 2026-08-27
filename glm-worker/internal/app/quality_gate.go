@@ -14,13 +14,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-var qualityGateForms = map[string][]string{
-	"go-test":      {"test", "./..."},
-	"go-test-race": {"test", "-race", "./..."},
-}
-
-const qualityGateLogDirectory = "quality-gate-logs"
-
 type QualityGateError struct {
 	Form       string
 	Command    string
@@ -30,10 +23,6 @@ type QualityGateError struct {
 	LogPath    string
 }
 
-func (e *QualityGateError) Error() string {
-	return fmt.Sprintf("quality gateが失敗しました (exit %d)", e.ExitCode)
-}
-
 type qualityGateOutput struct {
 	Status     string `json:"status"`
 	Form       string `json:"form"`
@@ -41,6 +30,17 @@ type qualityGateOutput struct {
 	WorkingDir string `json:"working_dir"`
 	DurationMS int64  `json:"duration_ms"`
 	Log        string `json:"log"`
+}
+
+const qualityGateLogDirectory = "quality-gate-logs"
+
+var qualityGateForms = map[string][]string{
+	"go-test":      {"test", "./..."},
+	"go-test-race": {"test", "-race", "./..."},
+}
+
+func (e *QualityGateError) Error() string {
+	return fmt.Sprintf("quality gateが失敗しました (exit %d)", e.ExitCode)
 }
 
 func runQualityGate(form string, st *state.StateStore, stdout io.Writer) error {

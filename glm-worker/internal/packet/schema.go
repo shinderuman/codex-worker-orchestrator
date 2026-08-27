@@ -6,20 +6,6 @@ import (
 	"sort"
 )
 
-const (
-	schemaTypeObject  = "object"
-	schemaTypeArray   = "array"
-	schemaTypeString  = "string"
-	schemaTypeNumber  = "number"
-	schemaTypeBoolean = "boolean"
-)
-
-var scalarTypes = map[string]struct{}{
-	schemaTypeString:  {},
-	schemaTypeNumber:  {},
-	schemaTypeBoolean: {},
-}
-
 type scalarSchema struct {
 	Type string   `json:"type"`
 	Enum []string `json:"enum,omitempty"`
@@ -40,6 +26,20 @@ type propertySchema struct {
 	scalar *scalarSchema
 	array  *arraySchema
 	object *objectSchema
+}
+
+const (
+	schemaTypeObject  = "object"
+	schemaTypeArray   = "array"
+	schemaTypeString  = "string"
+	schemaTypeNumber  = "number"
+	schemaTypeBoolean = "boolean"
+)
+
+var scalarTypes = map[string]struct{}{
+	schemaTypeString:  {},
+	schemaTypeNumber:  {},
+	schemaTypeBoolean: {},
 }
 
 func (p propertySchema) MarshalJSON() ([]byte, error) {

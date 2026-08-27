@@ -8,7 +8,7 @@ import (
 
 type fakeRunner struct{}
 
-func (fakeRunner) run(dir, name string, args ...string) (commandResult, error) {
+func (fakeRunner) run(_ string, _ string, _ ...string) (commandResult, error) {
 	return commandResult{}, nil
 }
 
@@ -39,9 +39,16 @@ func TestRunFixFormatsGoAndIsIdempotent(t *testing.T) {
 }
 
 func TestExternalParsersPreserveLocations(t *testing.T) {
-	goIssues := parseGolangCI(commandResult{output: "internal/x.go:12:3: bad thing (revive)\n", exitCode: 1}, "glm-worker")
-	if len(goIssues) != 1 || goIssues[0].Rule != "revive" || goIssues[0].Path != "glm-worker/internal/x.go" || goIssues[0].Line != 12 {
+	goIssues := parseGolangCI(commandResult{output: "internal/x.go:12:3: bad thing (revive)\ninternal/y.go:8: duplicated block (dupl)\n", exitCode: 1}, "glm-worker")
+	if len(goIssues) != 2 || goIssues[0].Rule != "revive" || goIssues[0].Path != "glm-worker/internal/x.go" || goIssues[0].Line != 12 {
 		t.Fatalf("golangci issues=%+v", goIssues)
+	}
+	if goIssues[1].Rule != "dupl" || goIssues[1].Path != "glm-worker/internal/y.go" || goIssues[1].Line != 8 || goIssues[1].Column != 1 {
+		t.Fatalf("line-only golangci issue=%+v", goIssues[1])
+	}
+	withSourceExcerpt := parseGolangCI(commandResult{output: "internal/z.go:4:1: bad thing (revive)\nconst timestamp = \"2026-07-22 14:06:34\"\n^\n", exitCode: 1}, "glm-worker")
+	if len(withSourceExcerpt) != 1 || withSourceExcerpt[0].Path != "glm-worker/internal/z.go" {
+		t.Fatalf("source excerpt must not become a diagnostic: %+v", withSourceExcerpt)
 	}
 	shellIssues := parseShellcheck(commandResult{output: "tests/x.sh:4:2: warning: quote this [SC2086]\n", exitCode: 1}, "tests/x.sh")
 	if len(shellIssues) != 1 || shellIssues[0].Rule != "sc2086" || shellIssues[0].Line != 4 {

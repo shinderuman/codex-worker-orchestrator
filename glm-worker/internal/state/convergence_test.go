@@ -224,7 +224,7 @@ func TestCompareRoundRecordsDocChangesGetOwnClass(t *testing.T) {
 		Snapshot: SnapshotDigest{Head: "h", IndexDigest: "i", WorktreeDigest: "w"},
 		Paths: []RoundPathState{
 			{Path: "AGENTS.md", Class: RoundPathClassDoc, FullDigest: "ad1", SemanticDigest: "ad1"},
-			{Path: "EVAL.md", Class: RoundPathClassDoc, FullDigest: "ed1", SemanticDigest: "ed1"},
+			{Path: "README.md", Class: RoundPathClassDoc, FullDigest: "rd1", SemanticDigest: "rd1"},
 			{Path: "codex/instructions/worker/go.md", Class: RoundPathClassDoc, FullDigest: "id1", SemanticDigest: "id1"},
 			{Path: "SPECIFICATION.md", Class: RoundPathClassDoc, FullDigest: "sd1", SemanticDigest: "sd1"},
 			{Path: "NOTES.txt", Class: RoundPathClassDoc, FullDigest: "nd1", SemanticDigest: "nd1"},
@@ -298,7 +298,7 @@ func TestCompareRoundRecordsDocChangesGetOwnClass(t *testing.T) {
 		},
 		{
 			name:  "instructions変更とEVAL変更の同居",
-			curr:  curr(replace(withDigest("EVAL.md", "ed2"), withDigest("codex/instructions/worker/go.md", "id2"))...),
+			curr:  curr(replace(withDigest("README.md", "rd2"), withDigest("codex/instructions/worker/go.md", "id2"))...),
 			class: RoundDeltaDocChange, changed: 2, semantic: 0, doc: 2,
 		},
 		{

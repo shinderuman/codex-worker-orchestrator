@@ -394,13 +394,13 @@ func TestCaptureGitSnapshotExcludingParentDigest(t *testing.T) {
 		{
 			name:          "tracked parent plan deletion",
 			seed:          seedCommittedParentFiles,
-			mutate:        func(t *testing.T, dir string) { os.Remove(filepath.Join(dir, ParentPlanFile)) },
+			mutate:        func(t *testing.T, dir string) { removeSnapshotPath(t, filepath.Join(dir, ParentPlanFile)) },
 			wantFull:      true,
 			wantExcluding: false,
 		},
 		{
 			name:          "untracked parent plan creation",
-			seed:          func(t *testing.T, dir string) {},
+			seed:          func(_ *testing.T, _ string) {},
 			mutate:        func(t *testing.T, dir string) { writeParentPlanFile(t, dir, "plan-new\n") },
 			wantFull:      true,
 			wantExcluding: false,
@@ -420,9 +420,11 @@ func TestCaptureGitSnapshotExcludingParentDigest(t *testing.T) {
 			wantExcluding: false,
 		},
 		{
-			name:          "tracked parent task file deletion",
-			seed:          seedCommittedParentFiles,
-			mutate:        func(t *testing.T, dir string) { os.Remove(filepath.Join(dir, ParentTasksDir, "001-active.md")) },
+			name: "tracked parent task file deletion",
+			seed: seedCommittedParentFiles,
+			mutate: func(t *testing.T, dir string) {
+				removeSnapshotPath(t, filepath.Join(dir, ParentTasksDir, "001-active.md"))
+			},
 			wantFull:      true,
 			wantExcluding: false,
 		},
@@ -554,5 +556,12 @@ func TestSnapshotComparisonParentUpdateAcceptedRoundTrip(t *testing.T) {
 	}
 	if loaded.Matched || loaded.ParentUpdateAccepted != true || loaded.Reason != comparison.Reason {
 		t.Fatalf("parent update accepted comparison round-trip = %#v", loaded)
+	}
+}
+
+func removeSnapshotPath(t *testing.T, path string) {
+	t.Helper()
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
 	}
 }

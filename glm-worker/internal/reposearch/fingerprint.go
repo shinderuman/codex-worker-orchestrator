@@ -9,12 +9,12 @@ import (
 	"sort"
 )
 
-var captureFingerprint = captureRepositoryFingerprint
-
 type fingerprint struct {
 	IndexDigest    string
 	WorktreeDigest string
 }
+
+var captureFingerprint = captureRepositoryFingerprint
 
 func computeFingerprint(ctx context.Context, repoRoot string, excludeDirs map[string]bool) (fingerprint, error) {
 	fp, err := captureFingerprint(ctx, repoRoot, excludeDirs)

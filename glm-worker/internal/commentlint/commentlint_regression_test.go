@@ -77,6 +77,25 @@ func TestRunFixFailsClosedBeforeEditingUnclassifiedSource(t *testing.T) {
 	}
 }
 
+func TestRunIgnoresTrackedFileDeletedFromWorkingTree(t *testing.T) {
+	root := t.TempDir()
+	runGit(t, root, "init")
+	path := filepath.Join(root, "deleted.go")
+	writeFile(t, path, "package p\n")
+	runGit(t, root, "add", "deleted.go")
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := Run(root, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Status != "pass" || len(report.Violations) != 0 {
+		t.Fatalf("report = %+v", report)
+	}
+}
+
 func TestRunWithoutGitUsesFilesystemInventory(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "a.go"), "package p\n// prose\n")

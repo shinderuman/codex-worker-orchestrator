@@ -8,8 +8,6 @@ import (
 	"strings"
 )
 
-const emptyTreeObject = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
-
 type selfProtectionDecision struct {
 	High    bool
 	Source  string
@@ -21,14 +19,17 @@ type pathClass struct {
 	category string
 }
 
+const emptyTreeObject = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+
 var classifiedFiles = map[string]pathClass{
 	"install.sh":                             {true, "installer"},
 	"commentlint":                            {true, "comment-policy"},
+	"harnesslint":                            {true, "quality-policy"},
+	".golangci.yml":                          {true, "quality-policy"},
 	".githooks/post-merge":                   {true, "installer"},
 	"claude/settings-managed.json":           {true, "managed-claude-settings"},
 	"codex/config-managed.toml":              {true, "managed-codex-config"},
 	"glm-worker/go.mod":                      {true, "dependency-manifest"},
-	"tools/merge-json/go.mod":                {true, "dependency-manifest"},
 	"codex/AGENTS.md":                        {true, "managed-agents"},
 	"AGENTS.md":                              {true, "repo-agents"},
 	"IMPLEMENTATION_RULES.md":                {true, "implementation-rules"},
@@ -37,19 +38,20 @@ var classifiedFiles = map[string]pathClass{
 	"glm-worker/internal/state/stats.go":     {false, "observation"},
 	"glm-worker/internal/state/telemetry.go": {false, "observation"},
 	"README.md":                              {false, "docs"},
-	"EVAL.md":                                {false, "docs"},
 	"LICENSE":                                {false, "docs"},
 	".gitignore":                             {false, "repo-metadata"},
 }
 
 var internalPackageCategories = map[string]string{
-	"workflow":   "workflow-package",
-	"packet":     "packet-package",
-	"runner":     "runner-package",
-	"app":        "app-package",
-	"config":     "config-package",
-	"state":      "state-critical",
-	"autoresume": "autoresume-package",
+	"workflow":    "workflow-package",
+	"packet":      "packet-package",
+	"runner":      "runner-package",
+	"app":         "app-package",
+	"config":      "config-package",
+	"state":       "state-critical",
+	"autoresume":  "autoresume-package",
+	"commentlint": "comment-policy",
+	"harnesslint": "quality-policy",
 }
 
 func IsCriticalPath(path string) (bool, string) {
@@ -64,10 +66,6 @@ func IsCriticalPath(path string) (bool, string) {
 		return true, internalPackageCategory(path)
 	case isProductionGoUnder(path, "glm-worker/cmd/"):
 		return true, "worker-entrypoint"
-	case isProductionGoUnder(path, "tools/merge-json/"):
-		return true, "merge-tool"
-	case strings.HasPrefix(path, "glm-worker/scenarios/"):
-		return true, "scenario-corpus"
 	case strings.HasPrefix(path, "codex/glm-worker/prompts/"):
 		return true, "managed-prompts"
 	case strings.HasPrefix(path, "codex/instructions/"):
@@ -75,7 +73,6 @@ func IsCriticalPath(path string) (bool, string) {
 	case strings.HasPrefix(path, "codex/rules/"):
 		return true, "managed-rules"
 	case strings.HasPrefix(path, "IMPLEMENTATION_TASKS/"):
-
 		return true, "implementation-tasks"
 	case strings.HasSuffix(path, "_test.go"):
 		return false, "test"
@@ -85,6 +82,26 @@ func IsCriticalPath(path string) (bool, string) {
 		return false, "test-harness"
 	}
 	return false, ""
+}
+
+func IsQualitySurface(path string) bool {
+	if path == ".golangci.yml" || path == "harnesslint" || path == "commentlint" ||
+		path == "glm-worker/internal/workflow/quality_gate.go" || path == "glm-worker/internal/workflow/selfprotection.go" {
+		return true
+	}
+	for _, prefix := range []string{
+		"glm-worker/cmd/harnesslint/",
+		"glm-worker/cmd/commentlint/",
+		"glm-worker/internal/harnesslint/",
+		"glm-worker/internal/harnesslintcmd/",
+		"glm-worker/internal/commentlint/",
+		"glm-worker/internal/commentlintcmd/",
+	} {
+		if strings.HasPrefix(path, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func internalPackageCategory(path string) string {
@@ -100,10 +117,7 @@ func internalPackageCategory(path string) string {
 }
 
 func isProductionGoUnder(path, dir string) bool {
-	if !strings.HasPrefix(path, dir) {
-		return false
-	}
-	if !strings.HasSuffix(path, ".go") {
+	if !strings.HasPrefix(path, dir) || !strings.HasSuffix(path, ".go") {
 		return false
 	}
 	return !strings.HasSuffix(path, "_test.go")

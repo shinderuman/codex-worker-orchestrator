@@ -7,6 +7,10 @@ import (
 
 const tokenizerVersion = 1
 
+var katakanaProlongedSoundMark = &unicode.RangeTable{
+	R16: []unicode.Range16{{Lo: 0x30FC, Hi: 0x30FC, Stride: 1}},
+}
+
 func tokenize(text string) []string {
 	var tokens []string
 	var run []rune
@@ -33,10 +37,6 @@ func tokenize(text string) []string {
 	}
 	flush()
 	return tokens
-}
-
-var katakanaProlongedSoundMark = &unicode.RangeTable{
-	R16: []unicode.Range16{{Lo: 0x30FC, Hi: 0x30FC, Stride: 1}},
 }
 
 func isCJK(r rune) bool {

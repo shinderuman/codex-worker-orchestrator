@@ -12,11 +12,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 )
 
-const (
-	stopWorktreePatchFile = "stop-worktree.patch"
-	stopIndexPatchFile    = "stop-index.patch"
-)
-
 type StopDirtyFile struct {
 	Path             string `json:"path"`
 	IndexSHA         string `json:"index_sha"`
@@ -24,6 +19,16 @@ type StopDirtyFile struct {
 	IndexIdentity    string `json:"index_identity,omitempty"`
 	WorktreeIdentity string `json:"worktree_identity,omitempty"`
 }
+
+type indexEntryIdentity struct {
+	BlobSHA  string
+	Identity string
+}
+
+const (
+	stopWorktreePatchFile = "stop-worktree.patch"
+	stopIndexPatchFile    = "stop-index.patch"
+)
 
 func CaptureStopDirtyFiles(repoRoot string) ([]StopDirtyFile, error) {
 	paths, err := dirtyStatusPaths(repoRoot)
@@ -83,11 +88,6 @@ func dirtyStatusPaths(repoRoot string) ([]string, error) {
 	}
 	sort.Strings(paths)
 	return paths, nil
-}
-
-type indexEntryIdentity struct {
-	BlobSHA  string
-	Identity string
 }
 
 func indexBlobHashes(repoRoot string) (map[string]indexEntryIdentity, error) {

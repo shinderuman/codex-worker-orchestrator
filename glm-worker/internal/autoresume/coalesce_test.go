@@ -9,8 +9,6 @@ import (
 	"time"
 )
 
-const coalesceOtherParentThread = "0e6f1111-0000-7aaa-bbbb-ccccdddd0000"
-
 func writeCoalesceTOML(t *testing.T, path, id, name, status, targetThreadID, prompt, dtstart string) {
 	t.Helper()
 	content := "version = 1\n" +
@@ -35,7 +33,7 @@ func coalescePrompt(parentThreadID string) string {
 }
 
 func fixedDBReader(rows map[string]DBRow, failure error) DBReader {
-	return func(dbPath, key string) (DBRow, error) {
+	return func(_, key string) (DBRow, error) {
 		if failure != nil {
 			return DBRow{}, failure
 		}

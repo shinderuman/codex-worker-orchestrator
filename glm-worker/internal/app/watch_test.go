@@ -12,7 +12,7 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-func writeTaskEventLines(t *testing.T, st *state.StateStore, taskID string, records ...state.TaskEventRecord) {
+func writeTaskEventLines(t *testing.T, st *state.StateStore, _ string, records ...state.TaskEventRecord) {
 	t.Helper()
 	for _, record := range records {
 		if err := st.AppendTaskEvent(record); err != nil {
@@ -84,15 +84,6 @@ func requireWatchEvent(t *testing.T, events []map[string]any, eventType string) 
 		t.Fatalf("watch streamに%q eventがありません: %v", eventType, events)
 	}
 	return events[index]
-}
-
-func watchFloat(t *testing.T, event map[string]any, key string) float64 {
-	t.Helper()
-	value, ok := event[key].(float64)
-	if !ok {
-		t.Fatalf("event %vの%qがJSON numberではありません: %#v", event["type"], key, event[key])
-	}
-	return value
 }
 
 func watchString(t *testing.T, event map[string]any, key string) string {

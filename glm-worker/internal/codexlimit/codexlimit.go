@@ -14,28 +14,6 @@ import (
 	"time"
 )
 
-const (
-	fiveHourWindowMins  = int64(300)
-	weeklyWindowMins    = int64(10080)
-	requestIDInitialize = int64(1)
-	requestIDRateLimits = int64(2)
-	appServerTimeout    = 30 * time.Second
-	clientName          = "glm-worker"
-	clientVersion       = "1"
-	stderrTailLimit     = 500
-)
-
-var (
-	ErrCodexBinaryNotFound     = errors.New("codex binary not found")
-	ErrAppServerStart          = errors.New("codex app-server failed to start")
-	ErrAppServerProtocol       = errors.New("codex app-server protocol failure")
-	ErrAppServerTimeout        = errors.New("codex app-server response timed out")
-	ErrRateLimitsRead          = errors.New("account/rateLimits/read returned no usable codex rate limits")
-	ErrFiveHourWindowMissing   = errors.New("rate limits response has no 300-minute window")
-	ErrWindowAmbiguous         = errors.New("rate limits response has duplicate windows for one duration")
-	ErrFiveHourResetsAtMissing = errors.New("300-minute window has no resetsAt")
-)
-
 type Window struct {
 	UsedPercent        *int64  `json:"used_percent"`
 	WindowDurationMins int64   `json:"window_duration_mins"`
@@ -99,6 +77,28 @@ type rpcError struct {
 	Data    json.RawMessage `json:"data"`
 }
 
+const (
+	fiveHourWindowMins  = int64(300)
+	weeklyWindowMins    = int64(10080)
+	requestIDInitialize = int64(1)
+	requestIDRateLimits = int64(2)
+	appServerTimeout    = 30 * time.Second
+	clientName          = "glm-worker"
+	clientVersion       = "1"
+	stderrTailLimit     = 500
+)
+
+var (
+	ErrCodexBinaryNotFound     = errors.New("codex binary not found")
+	ErrAppServerStart          = errors.New("codex app-server failed to start")
+	ErrAppServerProtocol       = errors.New("codex app-server protocol failure")
+	ErrAppServerTimeout        = errors.New("codex app-server response timed out")
+	ErrRateLimitsRead          = errors.New("account/rateLimits/read returned no usable codex rate limits")
+	ErrFiveHourWindowMissing   = errors.New("rate limits response has no 300-minute window")
+	ErrWindowAmbiguous         = errors.New("rate limits response has duplicate windows for one duration")
+	ErrFiveHourResetsAtMissing = errors.New("300-minute window has no resetsAt")
+)
+
 func Read(bin string) (Snapshot, error) {
 	return ReadWithTimeout(bin, appServerTimeout)
 }
@@ -114,18 +114,18 @@ func ReadWithTimeout(bin string, timeout time.Duration) (Snapshot, error) {
 	cmd := exec.CommandContext(ctx, bin, "app-server")
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
-		return Snapshot{}, fmt.Errorf("%w: stdin pipe: %v", ErrAppServerStart, err)
+		return Snapshot{}, fmt.Errorf("%w: stdin pipe: %w", ErrAppServerStart, err)
 	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return Snapshot{}, fmt.Errorf("%w: stdout pipe: %v", ErrAppServerStart, err)
+		return Snapshot{}, fmt.Errorf("%w: stdout pipe: %w", ErrAppServerStart, err)
 	}
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	cmd.WaitDelay = 3 * time.Second
 
 	if err := cmd.Start(); err != nil {
-		return Snapshot{}, fmt.Errorf("%w: %v", ErrAppServerStart, err)
+		return Snapshot{}, fmt.Errorf("%w: %w", ErrAppServerStart, err)
 	}
 
 	result, exchangeErr := exchange(ctx, stdin, stdout)
@@ -135,11 +135,11 @@ func ReadWithTimeout(bin string, timeout time.Duration) (Snapshot, error) {
 		return Snapshot{}, withStderrTail(exchangeErr, stderr.String())
 	}
 	if killErr != nil && !errors.Is(killErr, os.ErrProcessDone) {
-		return Snapshot{}, fmt.Errorf("%w: kill: %v", ErrAppServerProtocol, killErr)
+		return Snapshot{}, fmt.Errorf("%w: kill: %w", ErrAppServerProtocol, killErr)
 	}
 	var exitErr *exec.ExitError
 	if waitErr != nil && !errors.As(waitErr, &exitErr) {
-		return Snapshot{}, fmt.Errorf("%w: wait: %v", ErrAppServerProtocol, waitErr)
+		return Snapshot{}, fmt.Errorf("%w: wait: %w", ErrAppServerProtocol, waitErr)
 	}
 	return buildSnapshot(result)
 }
@@ -152,7 +152,7 @@ func exchange(ctx context.Context, stdin io.WriteCloser, stdout io.Reader) (*jso
 		ClientInfo: clientInfo{Name: clientName, Title: clientName, Version: clientVersion},
 	}}
 	if err := encoder.Encode(initialize); err != nil {
-		return nil, fmt.Errorf("%w: request write: %v", ErrAppServerProtocol, err)
+		return nil, fmt.Errorf("%w: request write: %w", ErrAppServerProtocol, err)
 	}
 	initializeResult, err := awaitMessage(ctx, reader, requestIDInitialize)
 	if err != nil {
@@ -164,11 +164,11 @@ func exchange(ctx context.Context, stdin io.WriteCloser, stdout io.Reader) (*jso
 
 	notification := rpcRequest{JSONRPC: "2.0", Method: "initialized"}
 	if err := encoder.Encode(notification); err != nil {
-		return nil, fmt.Errorf("%w: request write: %v", ErrAppServerProtocol, err)
+		return nil, fmt.Errorf("%w: request write: %w", ErrAppServerProtocol, err)
 	}
 	read := rpcRequest{JSONRPC: "2.0", ID: requestIDRateLimits, Method: "account/rateLimits/read", Params: struct{}{}}
 	if err := encoder.Encode(read); err != nil {
-		return nil, fmt.Errorf("%w: request write: %v", ErrAppServerProtocol, err)
+		return nil, fmt.Errorf("%w: request write: %w", ErrAppServerProtocol, err)
 	}
 	message, err := awaitMessage(ctx, reader, requestIDRateLimits)
 	if err != nil {
@@ -202,13 +202,13 @@ func readMessage(ctx context.Context, reader *bufio.Reader) (rpcMessage, error) 
 		if ctx.Err() != nil {
 			return rpcMessage{}, fmt.Errorf("%w", ErrAppServerTimeout)
 		}
-		return rpcMessage{}, fmt.Errorf("%w: response stream ended: %v", ErrAppServerProtocol, err)
+		return rpcMessage{}, fmt.Errorf("%w: response stream ended: %w", ErrAppServerProtocol, err)
 	}
 	trimmed := strings.TrimSpace(line)
 	var message rpcMessage
 	if trimmed != "" {
 		if err := json.Unmarshal([]byte(trimmed), &message); err != nil {
-			return rpcMessage{}, fmt.Errorf("%w: malformed line %q: %v", ErrAppServerProtocol, truncateLine(trimmed), err)
+			return rpcMessage{}, fmt.Errorf("%w: malformed line %q: %w", ErrAppServerProtocol, truncateLine(trimmed), err)
 		}
 	}
 	return message, nil
@@ -217,7 +217,7 @@ func readMessage(ctx context.Context, reader *bufio.Reader) (rpcMessage, error) 
 func buildSnapshot(result *json.RawMessage) (Snapshot, error) {
 	var decoded rateLimitsResult
 	if err := json.Unmarshal(*result, &decoded); err != nil {
-		return Snapshot{}, fmt.Errorf("%w: result decode: %v", ErrRateLimitsRead, err)
+		return Snapshot{}, fmt.Errorf("%w: result decode: %w", ErrRateLimitsRead, err)
 	}
 	snapshot := decoded.RateLimits
 	if snapshot == nil {

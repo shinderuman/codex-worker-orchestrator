@@ -13,48 +13,68 @@ type claudeEnvOverride struct {
 }
 
 func parseClaudeEnvOverride(path string) (claudeEnvOverride, error) {
-	var override claudeEnvOverride
+	data, found, err := readClaudeEnvOverride(path)
+	if err != nil || !found {
+		return claudeEnvOverride{}, err
+	}
+	entries, err := decodeClaudeEnvEntries(data)
+	if err != nil {
+		return claudeEnvOverride{}, err
+	}
+	return buildClaudeEnvOverride(entries)
+}
+
+func readClaudeEnvOverride(path string) ([]byte, bool, error) {
 	if path == "" {
-		return override, nil
+		return nil, false, nil
 	}
 	data, err := os.ReadFile(path)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return override, nil
-		}
-		return override, err
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, false, nil
 	}
+	if err != nil {
+		return nil, false, err
+	}
+	return data, true, nil
+}
 
+func decodeClaudeEnvEntries(data []byte) (map[string]any, error) {
 	var topLevel any
 	if err := json.Unmarshal(data, &topLevel); err != nil {
-		return override, fmt.Errorf("override JSON: %w", err)
+		return nil, fmt.Errorf("override JSON: %w", err)
 	}
 	if topLevel == nil {
-		return override, fmt.Errorf("override JSON: top-level nullは許可されません")
+		return nil, fmt.Errorf("override JSON: top-level nullは許可されません")
 	}
 	raw, ok := topLevel.(map[string]any)
 	if !ok {
-		return override, fmt.Errorf("override JSON: top-levelはobjectのみ許可されます")
+		return nil, fmt.Errorf("override JSON: top-levelはobjectのみ許可されます")
 	}
 	for key := range raw {
 		if key != "env" {
-			return override, fmt.Errorf("top-level key %qは許可されません (envのみ)", key)
+			return nil, fmt.Errorf("top-level key %qは許可されません (envのみ)", key)
 		}
 	}
 
 	envValue, hasEnv := raw["env"]
 	if !hasEnv {
-		return override, nil
+		return nil, nil
 	}
 	if envValue == nil {
-		return override, fmt.Errorf("override env: nullは許可されません (objectまたは空object)")
+		return nil, fmt.Errorf("override env: nullは許可されません (objectまたは空object)")
 	}
 	entries, ok := envValue.(map[string]any)
 	if !ok {
-		return override, fmt.Errorf("override env: objectのみ許可されます")
+		return nil, fmt.Errorf("override env: objectのみ許可されます")
 	}
+	return entries, nil
+}
 
-	override.sets = make(map[string]string, len(entries))
+func buildClaudeEnvOverride(entries map[string]any) (claudeEnvOverride, error) {
+	if entries == nil {
+		return claudeEnvOverride{}, nil
+	}
+	override := claudeEnvOverride{sets: make(map[string]string, len(entries))}
 	for key, value := range entries {
 		switch typed := value.(type) {
 		case string:
@@ -62,7 +82,7 @@ func parseClaudeEnvOverride(path string) (claudeEnvOverride, error) {
 		case nil:
 			override.deletes = append(override.deletes, key)
 		default:
-			return override, fmt.Errorf("override env %qはstringかnullのみ許可されます", key)
+			return claudeEnvOverride{}, fmt.Errorf("override env %qはstringかnullのみ許可されます", key)
 		}
 	}
 	return override, nil

@@ -9,6 +9,33 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 )
 
+type ParentReviewOpenState struct {
+	PacketStatus string `json:"packet_status"`
+	Role         string `json:"role,omitempty"`
+	ModelAlias   string `json:"model_alias,omitempty"`
+	Risk         string `json:"risk,omitempty"`
+}
+
+type ParentReviewProducer struct {
+	Role  string
+	Model string
+}
+
+type ParentReworkOrigin struct {
+	Calls            int
+	WorkerCalls      int
+	ReviewerCalls    int
+	Turns            int
+	TreeInputTokens  int64
+	TreeOutputTokens int64
+	WallDurationMS   int64
+}
+
+type ParentReworkSummary struct {
+	ByOrigin map[string]ParentReworkOrigin
+	Coverage string
+}
+
 const (
 	ParentOutcomeAccepted = "accepted"
 	ParentOutcomeFix      = "fix"
@@ -23,6 +50,18 @@ const (
 	ParentOriginExternalReview = "external-review"
 	ParentOriginMetadataRepair = "metadata-repair"
 	ParentOriginUnknown        = "unknown"
+)
+
+const (
+	ParentPhaseAccept   = "parent-accept"
+	ParentPhaseFix      = "parent-fix"
+	ParentPhaseDecision = "parent-decision"
+	ParentPhaseClose    = "parent-close"
+)
+
+const (
+	ParentReworkCoverageComplete = "complete"
+	ParentReworkCoverageUnknown  = "unknown"
 )
 
 var parentOutcomeKinds = map[string]bool{
@@ -40,20 +79,8 @@ func ValidParentOrigin(value string) bool {
 	return false
 }
 
-type ParentReviewOpenState struct {
-	PacketStatus string `json:"packet_status"`
-	Role         string `json:"role,omitempty"`
-	ModelAlias   string `json:"model_alias,omitempty"`
-	Risk         string `json:"risk,omitempty"`
-}
-
-type ParentReviewProducer struct {
-	Role  string
-	Model string
-}
-
 func (stats *TaskStats) openParentReview(status string, risk string, producer ParentReviewProducer) {
-	stats.resolveParentOutcome(ParentOutcomeUnknown, "")
+	_, _, _ = stats.resolveParentOutcome(ParentOutcomeUnknown, "")
 	stats.ParentReviewOpen = &ParentReviewOpenState{
 		PacketStatus: status,
 		Role:         producer.Role,
@@ -127,13 +154,6 @@ func (s *StateStore) OpenParentReviewLabel() string {
 	return stats.ParentReviewOpen.PacketStatus
 }
 
-const (
-	ParentPhaseAccept   = "parent-accept"
-	ParentPhaseFix      = "parent-fix"
-	ParentPhaseDecision = "parent-decision"
-	ParentPhaseClose    = "parent-close"
-)
-
 func parentPhaseOfKind(kind string) string {
 	switch kind {
 	case ParentOutcomeAccepted:
@@ -164,26 +184,6 @@ func (s *StateStore) appendParentOutcomeEvent(taskID string, phase string, kind 
 	})
 }
 
-const (
-	ParentReworkCoverageComplete = "complete"
-	ParentReworkCoverageUnknown  = "unknown"
-)
-
-type ParentReworkOrigin struct {
-	Calls            int
-	WorkerCalls      int
-	ReviewerCalls    int
-	Turns            int
-	TreeInputTokens  int64
-	TreeOutputTokens int64
-	WallDurationMS   int64
-}
-
-type ParentReworkSummary struct {
-	ByOrigin map[string]ParentReworkOrigin
-	Coverage string
-}
-
 func isParentOutcomePhase(phase string) bool {
 	switch phase {
 	case ParentPhaseAccept, ParentPhaseFix, ParentPhaseDecision, ParentPhaseClose:
@@ -195,52 +195,63 @@ func isParentOutcomePhase(phase string) bool {
 func (s *StateStore) ComputeParentRework(tasks []TaskStats) ParentReworkSummary {
 	summary := ParentReworkSummary{ByOrigin: make(map[string]ParentReworkOrigin), Coverage: ParentReworkCoverageComplete}
 	for _, task := range tasks {
-		logs, err := s.ReadModelCallLogs(task.TaskID)
-		taskCalls := 0
-		if err != nil {
-			if !errors.Is(err, os.ErrNotExist) || task.ModelCalls > 0 {
-				summary.Coverage = ParentReworkCoverageUnknown
-			}
-			continue
-		}
-		origin := ""
-		for _, record := range logs {
-			if record.CallType == CallTypeEvent && isParentOutcomePhase(record.Phase) {
-				if record.Outcome == ParentOutcomeFix {
-					origin = record.ParentOrigin
-					if origin == "" {
-						origin = ParentOriginUnknown
-					}
-				} else {
-					origin = ""
-				}
-				continue
-			}
-			if record.CallType != CallTypeTask {
-				continue
-			}
-			taskCalls++
-			if origin == "" {
-				continue
-			}
-			entry := summary.ByOrigin[origin]
-			entry.Calls++
-			switch record.Role {
-			case WorkerRole:
-				entry.WorkerCalls++
-			case ReviewerRole:
-				entry.ReviewerCalls++
-			}
-			entry.Turns += record.TopLevelTurns
-			usage := modelCallTreeUsage(record)
-			entry.TreeInputTokens += usage.InputTokens + usage.CacheCreationInputTokens + usage.CacheReadInputTokens
-			entry.TreeOutputTokens += usage.OutputTokens
-			entry.WallDurationMS += record.WallDurationMS
-			summary.ByOrigin[origin] = entry
-		}
-		if taskCalls != task.ModelCalls {
+		if !s.accumulateParentReworkTask(&summary, task) {
 			summary.Coverage = ParentReworkCoverageUnknown
 		}
 	}
 	return summary
+}
+
+func (s *StateStore) accumulateParentReworkTask(summary *ParentReworkSummary, task TaskStats) bool {
+	logs, err := s.ReadModelCallLogs(task.TaskID)
+	if err != nil {
+		return errors.Is(err, os.ErrNotExist) && task.ModelCalls == 0
+	}
+	origin := ""
+	taskCalls := 0
+	for _, record := range logs {
+		if nextOrigin, handled := parentReworkOriginTransition(origin, record); handled {
+			origin = nextOrigin
+			continue
+		}
+		if record.CallType != CallTypeTask {
+			continue
+		}
+		taskCalls++
+		if origin != "" {
+			addParentReworkCall(summary.ByOrigin, origin, record)
+		}
+	}
+	return taskCalls == task.ModelCalls
+}
+
+func parentReworkOriginTransition(current string, record ModelCallLog) (string, bool) {
+	if record.CallType != CallTypeEvent || !isParentOutcomePhase(record.Phase) {
+		return current, false
+	}
+	if record.Outcome != ParentOutcomeFix {
+		return "", true
+	}
+	origin := record.ParentOrigin
+	if origin == "" {
+		origin = ParentOriginUnknown
+	}
+	return origin, true
+}
+
+func addParentReworkCall(byOrigin map[string]ParentReworkOrigin, origin string, record ModelCallLog) {
+	entry := byOrigin[origin]
+	entry.Calls++
+	switch record.Role {
+	case WorkerRole:
+		entry.WorkerCalls++
+	case ReviewerRole:
+		entry.ReviewerCalls++
+	}
+	entry.Turns += record.TopLevelTurns
+	usage := modelCallTreeUsage(record)
+	entry.TreeInputTokens += usage.InputTokens + usage.CacheCreationInputTokens + usage.CacheReadInputTokens
+	entry.TreeOutputTokens += usage.OutputTokens
+	entry.WallDurationMS += record.WallDurationMS
+	byOrigin[origin] = entry
 }

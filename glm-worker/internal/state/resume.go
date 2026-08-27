@@ -10,18 +10,7 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 )
 
-const (
-	resumeStateFile    = "resume-state.json"
-	resumeStateVersion = 4
-)
-
 type ResumeStage string
-
-const (
-	ResumeStageWorker  ResumeStage = "worker"
-	ResumeStageReview  ResumeStage = "reviewer"
-	ResumeStageAutoFix ResumeStage = "auto-fix"
-)
 
 type ResumeCheckpoint struct {
 	Version        int         `json:"version"`
@@ -66,6 +55,19 @@ type ResumeCheckpoint struct {
 	StopDirtyFiles []StopDirtyFile `json:"stop_dirty_files"`
 }
 
+const (
+	resumeStateFile    = "resume-state.json"
+	resumeStateVersion = 4
+)
+
+const (
+	ResumeStageWorker  ResumeStage = "worker"
+	ResumeStageReview  ResumeStage = "reviewer"
+	ResumeStageAutoFix ResumeStage = "auto-fix"
+)
+
+var ErrNoResumeCheckpoint = errors.New("resumable task is not available")
+
 func (s *StateStore) SaveResumeCheckpoint(checkpoint ResumeCheckpoint) error {
 	if checkpoint.Model == "" {
 		return fmt.Errorf("resume state model is required")
@@ -81,8 +83,6 @@ func (s *StateStore) SaveResumeCheckpoint(checkpoint ResumeCheckpoint) error {
 	}
 	return nil
 }
-
-var ErrNoResumeCheckpoint = errors.New("resumable task is not available")
 
 func (s *StateStore) LoadResumeCheckpoint() (ResumeCheckpoint, error) {
 	data, err := os.ReadFile(s.Path(resumeStateFile))

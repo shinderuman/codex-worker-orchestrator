@@ -14,6 +14,24 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
+type mutatingRunner struct {
+	steps    []runnerStep
+	prompts  []string
+	models   []string
+	phases   []string
+	repoRoot string
+	mutate   func(repoRoot string) error
+
+	mutatePhase string
+
+	mutateSkipCalls int
+
+	mutateOnRunError bool
+
+	readOnlyCalls []bool
+	probes        []string
+}
+
 func gitIn(t *testing.T, repoRoot string, args ...string) string {
 	t.Helper()
 	cmd := exec.Command("git", append([]string{"-C", repoRoot}, args...)...)
@@ -38,30 +56,12 @@ func initMutationRepo(t *testing.T) string {
 	return repoRoot
 }
 
-type mutatingRunner struct {
-	steps    []runnerStep
-	prompts  []string
-	models   []string
-	phases   []string
-	repoRoot string
-	mutate   func(repoRoot string) error
-
-	mutatePhase string
-
-	mutateSkipCalls int
-
-	mutateOnRunError bool
-
-	readOnlyCalls []bool
-	probes        []string
-}
-
 func (r *mutatingRunner) Run(
 	role state.SessionRole,
 	phase string,
 	model string,
 	readOnly bool,
-	effort string,
+	_ string,
 	prompt string,
 	outputPath string,
 ) (runner.RunResult, error) {

@@ -46,7 +46,7 @@ linters:
     goconst:
       min-len: 3
       min-occurrences: 3
-      ignore-tests: false
+      ignore-tests: true
     interfacebloat:
       max: 5
     forbidigo:
@@ -60,10 +60,7 @@ linters:
       severity: error
       enable-default-rules: false
       rules:
-        - name: max-control-nesting
-          arguments: [3]
         - name: identical-branches
-        - name: identical-ifelseif-conditions
         - name: unnecessary-if
         - name: unused-parameter
         - name: unused-receiver

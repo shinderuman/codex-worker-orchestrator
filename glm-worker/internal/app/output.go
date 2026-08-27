@@ -17,32 +17,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-func writeJSON(w io.Writer, value any) error {
-	var buf bytes.Buffer
-	encoder := json.NewEncoder(&buf)
-	encoder.SetEscapeHTML(false)
-	if err := encoder.Encode(value); err != nil {
-		return err
-	}
-	_, err := w.Write(buf.Bytes())
-	return err
-}
-
-func stringPtr(value string) *string {
-	if value == "" {
-		return nil
-	}
-	return &value
-}
-
-func msPtr(d time.Duration) *int64 {
-	if d < 0 {
-		d = 0
-	}
-	ms := d.Milliseconds()
-	return &ms
-}
-
 type statusOutput struct {
 	RepoRoot            *string                   `json:"repo_root"`
 	RepositoryLock      *string                   `json:"repository_lock"`
@@ -115,227 +89,10 @@ type statusProviderUnavailable struct {
 	ElapsedMS      *int64  `json:"elapsed_ms,omitempty"`
 }
 
-func printStatus(st *state.StateStore, stdout io.Writer) error {
-	taskID := st.ReadOr("task.id", "")
-	logs, logErr := readStatusTelemetry(st, taskID)
-	output := buildStatusOutput(st, taskID, logs, logErr)
-	return writeJSON(stdout, output)
-}
-
-func buildStatusOutput(st *state.StateStore, taskID string, logs []state.ModelCallLog, logErr error) statusOutput {
-	probe := ProbeRepoLock(st.LockPath())
-	taskStatus := st.TaskStatus()
-	output := statusOutput{
-		RepoRoot:        stringPtr(st.ReadOr("repo-root", "")),
-		RepositoryLock:  lockStatePtr(probe.State),
-		LockPID:         lockPIDPtr(probe.PID),
-		TaskID:          stringPtr(taskID),
-		TaskStatus:      taskStatusPtr(taskStatus),
-		WorkerSession:   stringPtr(st.ReadOr("worker.id", "")),
-		ReviewerSession: stringPtr(st.ReadOr("reviewer.id", "")),
-		PendingDecision: st.Exists("pending-decision"),
-	}
-	if taskID != "" {
-		output.ArtifactDir = stringPtr(st.ArtifactDir(taskID))
-	}
-	if taskStatus == state.TaskStatusActive {
-		output.TaskLiveness = taskLiveness(probe)
-	}
-	if label := st.OpenParentReviewLabel(); label != "none" {
-		output.ParentReviewOpen = stringPtr(label)
-	}
-
-	fillStatusTaskDetail(st, taskID, &output)
-	output.ResumeAvailable = fillStatusCheckpoint(st, &output)
-	fillStatusIsolation(st, &output)
-	output.Probes = statusProbesDetail(logs, time.Now())
-	fillStatusTelemetry(taskID, logErr, logs, &output)
-	return output
-}
-
-func fillStatusIsolation(st *state.StateStore, output *statusOutput) {
-	if record, err := st.LoadIsolationRecord(); err == nil {
-		output.Isolation = &statusIsolation{
-			IsolationID: record.IsolationID,
-			Worktree:    record.Worktree,
-			Branch:      record.Branch,
-			TaskID:      record.OriginTaskID,
-			RepoRoot:    record.OriginRepoRoot,
-			Head:        record.OriginHead,
-			CreatedAt:   record.CreatedAt,
-		}
-	}
-	if origin, err := st.LoadIsolationOrigin(); err == nil {
-		output.IsolationOrigin = &statusIsolationOrigin{
-			IsolationID:    origin.IsolationID,
-			OriginRepoRoot: origin.OriginRepoRoot,
-			OriginTaskID:   origin.OriginTaskID,
-			Branch:         origin.Branch,
-			CreatedAt:      origin.CreatedAt,
-		}
-	}
-}
-
-func lockStatePtr(lockState LockState) *string {
-	if lockState == LockUnknown {
-		return nil
-	}
-	value := string(lockState)
-	return &value
-}
-
-func taskStatusPtr(status state.TaskStatus) *string {
-	switch status {
-	case state.TaskStatusActive,
-		state.TaskStatusWaitingDecision,
-		state.TaskStatusWaitingSolReview,
-		state.TaskStatusComplete,
-		state.TaskStatusRateLimited,
-		state.TaskStatusProviderUnavailable,
-		state.TaskStatusInterrupted:
-		value := string(status)
-		return &value
-	}
-	return nil
-}
-
-func lockPIDPtr(pid string) *string {
-	if pid == "" || pid == "none" || pid == "unknown" {
-		return nil
-	}
-	return &pid
-}
-
-func fillStatusTaskDetail(st *state.StateStore, taskID string, output *statusOutput) {
-	if stats, err := st.CurrentTaskStats(); err == nil && !stats.StartedAt.IsZero() {
-		startedAt := stats.StartedAt
-		output.TaskStartedAt = &startedAt
-		output.TaskElapsedMS = msPtr(time.Since(startedAt))
-	}
-
-	current := currentCallView{}
-	if last, ok := lastTaskEvent(st, taskID); ok {
-		current = currentCallView{phase: last.Phase, role: last.Role, model: last.ModelAlias}
-		if current.model == "" {
-			current.model = last.MessageModel
-		}
-		output.LastEvent = &last
-		if !last.Timestamp.IsZero() {
-			output.LastEventAgeMS = msPtr(time.Since(last.Timestamp))
-		}
-	} else if checkpoint, err := st.LoadResumeCheckpoint(); err == nil {
-		current = currentCallView{phase: checkpoint.Phase, role: string(checkpoint.Role), model: checkpoint.Model}
-	}
-	output.CurrentPhase = stringPtr(current.phase)
-	output.CurrentRole = stringPtr(current.role)
-	output.CurrentModel = stringPtr(current.model)
-}
-
-func fillStatusCheckpoint(st *state.StateStore, output *statusOutput) bool {
-	checkpoint, err := st.LoadResumeCheckpoint()
-	if err != nil {
-		return false
-	}
-	if checkpoint.RateLimited {
-		output.RateLimited = statusRateLimit{
-			Limited:        true,
-			Phase:          checkpoint.Phase,
-			ResetAtCST:     checkpoint.ResetAtCST,
-			ResetAtRFC3339: stringPtr(checkpoint.ResetAtRFC3339),
-		}
-	}
-	if checkpoint.ProviderUnavailable {
-		elapsed := (*int64)(nil)
-		if !checkpoint.ProviderUnavailableStartedAt.IsZero() {
-			elapsed = msPtr(time.Since(checkpoint.ProviderUnavailableStartedAt))
-		}
-		output.ProviderUnavailable = statusProviderUnavailable{
-			Unavailable:    true,
-			Phase:          checkpoint.Phase,
-			Classification: stringPtr(checkpoint.ProviderUnavailableClassification),
-			Probes:         checkpoint.ProviderUnavailableProbes,
-			ElapsedMS:      elapsed,
-		}
-	}
-	return checkpoint.RateLimited || checkpoint.ProviderUnavailable || checkpoint.UserInterrupted
-}
-
-func statusProbesDetail(logs []state.ModelCallLog, now time.Time) *statusProbes {
-	probes := make([]state.ModelCallLog, 0)
-	for _, log := range logs {
-		if log.CallType == state.CallTypeProbe {
-			probes = append(probes, log)
-		}
-	}
-	if len(probes) == 0 {
-		return nil
-	}
-	last := probes[len(probes)-1]
-	detail := statusProbes{
-		Count:       len(probes),
-		LastOutcome: stringPtr(last.Outcome),
-		LastAttempt: last.ProbeAttempt,
-	}
-	if !last.CompletedAt.IsZero() {
-		completedAt := last.CompletedAt
-		detail.LastAt = &completedAt
-		detail.LastAgeMS = msPtr(now.Sub(completedAt))
-	}
-	return &detail
-}
-
-func fillStatusTelemetry(taskID string, logErr error, logs []state.ModelCallLog, output *statusOutput) {
-	if taskID == "" {
-		return
-	}
-	if logErr != nil {
-		unreadable := "unreadable"
-		output.Telemetry = &unreadable
-		return
-	}
-	ok := "ok"
-	output.Telemetry = &ok
-	output.SessionAging = state.AgingFromModelCallLogs(logs)
-}
-
-func readStatusTelemetry(st *state.StateStore, taskID string) ([]state.ModelCallLog, error) {
-	if taskID == "" {
-		return nil, nil
-	}
-	logs, err := st.ReadModelCallLogs(taskID)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	return logs, nil
-}
-
 type currentCallView struct {
 	phase string
 	role  string
 	model string
-}
-
-func lastTaskEvent(st *state.StateStore, taskID string) (state.TaskEventRecord, bool) {
-	if taskID == "" {
-		return state.TaskEventRecord{}, false
-	}
-	return readLastTaskEvent(st.TaskEventLogPath(taskID))
-}
-
-func taskLiveness(probe LockProbe) *string {
-	switch probe.State {
-	case LockHeld:
-		running := "running"
-		return &running
-	case LockFree:
-		stale := "stale"
-		return &stale
-	default:
-		return nil
-	}
 }
 
 type statsOutput struct {
@@ -425,6 +182,284 @@ type statsCurrentTask struct {
 	ArtifactDir *string `json:"artifact_dir"`
 }
 
+type resetOutput struct {
+	Status   string  `json:"status"`
+	RepoRoot *string `json:"repo_root"`
+}
+
+type acceptOutput struct {
+	Accepted bool `json:"accepted"`
+}
+
+type VerificationError struct {
+	Outcome autoresume.Outcome
+	Reason  string
+}
+
+type verifyAutoResumeOutput struct {
+	AutomationKey  string `json:"automation_key"`
+	TargetThread   string `json:"target_thread"`
+	ExpectedAtUTC  string `json:"expected_at_utc"`
+	TOMLDTStart    string `json:"toml_dtstart"`
+	DBNextRunAtUTC string `json:"db_next_run_at_utc"`
+}
+
+type checkWakeCoalesceOutput struct {
+	Decision         string `json:"decision"`
+	Reason           string `json:"reason"`
+	ParentThread     string `json:"parent_thread"`
+	ResumeAtUTC      string `json:"resume_at_utc"`
+	WakeAutomationID string `json:"wake_automation_id"`
+	WakeThread       string `json:"wake_thread"`
+	WakeNextRunUTC   string `json:"wake_next_run_at_utc"`
+	AddedWaitSeconds int64  `json:"added_wait_seconds"`
+}
+
+const statusUnreadable = "unreadable"
+
+func writeJSON(w io.Writer, value any) error {
+	var buf bytes.Buffer
+	encoder := json.NewEncoder(&buf)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(value); err != nil {
+		return err
+	}
+	_, err := w.Write(buf.Bytes())
+	return err
+}
+
+func stringPtr(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
+}
+
+func msPtr(d time.Duration) *int64 {
+	if d < 0 {
+		d = 0
+	}
+	ms := d.Milliseconds()
+	return &ms
+}
+
+func printStatus(st *state.StateStore, stdout io.Writer) error {
+	taskID := st.ReadOr("task.id", "")
+	logs, logErr := readStatusTelemetry(st, taskID)
+	output := buildStatusOutput(st, taskID, logs, logErr)
+	return writeJSON(stdout, output)
+}
+
+func buildStatusOutput(st *state.StateStore, taskID string, logs []state.ModelCallLog, logErr error) statusOutput {
+	probe := ProbeRepoLock(st.LockPath())
+	taskStatus := st.TaskStatus()
+	output := statusOutput{
+		RepoRoot:        stringPtr(st.ReadOr("repo-root", "")),
+		RepositoryLock:  lockStatePtr(probe.State),
+		LockPID:         lockPIDPtr(probe.PID),
+		TaskID:          stringPtr(taskID),
+		TaskStatus:      taskStatusPtr(taskStatus),
+		WorkerSession:   stringPtr(st.ReadOr("worker.id", "")),
+		ReviewerSession: stringPtr(st.ReadOr("reviewer.id", "")),
+		PendingDecision: st.Exists("pending-decision"),
+	}
+	if taskID != "" {
+		output.ArtifactDir = stringPtr(st.ArtifactDir(taskID))
+	}
+	if taskStatus == state.TaskStatusActive {
+		output.TaskLiveness = taskLiveness(probe)
+	}
+	if label := st.OpenParentReviewLabel(); label != statusNone {
+		output.ParentReviewOpen = stringPtr(label)
+	}
+
+	fillStatusTaskDetail(st, taskID, &output)
+	output.ResumeAvailable = fillStatusCheckpoint(st, &output)
+	fillStatusIsolation(st, &output)
+	output.Probes = statusProbesDetail(logs, time.Now())
+	fillStatusTelemetry(taskID, logErr, logs, &output)
+	return output
+}
+
+func fillStatusIsolation(st *state.StateStore, output *statusOutput) {
+	if record, err := st.LoadIsolationRecord(); err == nil {
+		output.Isolation = &statusIsolation{
+			IsolationID: record.IsolationID,
+			Worktree:    record.Worktree,
+			Branch:      record.Branch,
+			TaskID:      record.OriginTaskID,
+			RepoRoot:    record.OriginRepoRoot,
+			Head:        record.OriginHead,
+			CreatedAt:   record.CreatedAt,
+		}
+	}
+	if origin, err := st.LoadIsolationOrigin(); err == nil {
+		output.IsolationOrigin = &statusIsolationOrigin{
+			IsolationID:    origin.IsolationID,
+			OriginRepoRoot: origin.OriginRepoRoot,
+			OriginTaskID:   origin.OriginTaskID,
+			Branch:         origin.Branch,
+			CreatedAt:      origin.CreatedAt,
+		}
+	}
+}
+
+func lockStatePtr(lockState LockState) *string {
+	if lockState == LockUnknown {
+		return nil
+	}
+	value := string(lockState)
+	return &value
+}
+
+func taskStatusPtr(status state.TaskStatus) *string {
+	switch status {
+	case state.TaskStatusActive,
+		state.TaskStatusWaitingDecision,
+		state.TaskStatusWaitingSolReview,
+		state.TaskStatusComplete,
+		state.TaskStatusRateLimited,
+		state.TaskStatusProviderUnavailable,
+		state.TaskStatusInterrupted:
+		value := string(status)
+		return &value
+	}
+	return nil
+}
+
+func lockPIDPtr(pid string) *string {
+	if pid == "" || pid == statusNone || pid == "unknown" {
+		return nil
+	}
+	return &pid
+}
+
+func fillStatusTaskDetail(st *state.StateStore, taskID string, output *statusOutput) {
+	if stats, err := st.CurrentTaskStats(); err == nil && !stats.StartedAt.IsZero() {
+		startedAt := stats.StartedAt
+		output.TaskStartedAt = &startedAt
+		output.TaskElapsedMS = msPtr(time.Since(startedAt))
+	}
+
+	current := currentCallView{}
+	if last, ok := lastTaskEvent(st, taskID); ok {
+		current = currentCallView{phase: last.Phase, role: last.Role, model: last.ModelAlias}
+		if current.model == "" {
+			current.model = last.MessageModel
+		}
+		output.LastEvent = &last
+		if !last.Timestamp.IsZero() {
+			output.LastEventAgeMS = msPtr(time.Since(last.Timestamp))
+		}
+	} else if checkpoint, err := st.LoadResumeCheckpoint(); err == nil {
+		current = currentCallView{phase: checkpoint.Phase, role: string(checkpoint.Role), model: checkpoint.Model}
+	}
+	output.CurrentPhase = stringPtr(current.phase)
+	output.CurrentRole = stringPtr(current.role)
+	output.CurrentModel = stringPtr(current.model)
+}
+
+func fillStatusCheckpoint(st *state.StateStore, output *statusOutput) bool {
+	checkpoint, err := st.LoadResumeCheckpoint()
+	if err != nil {
+		return false
+	}
+	if checkpoint.RateLimited {
+		output.RateLimited = statusRateLimit{
+			Limited:        true,
+			Phase:          checkpoint.Phase,
+			ResetAtCST:     checkpoint.ResetAtCST,
+			ResetAtRFC3339: stringPtr(checkpoint.ResetAtRFC3339),
+		}
+	}
+	if checkpoint.ProviderUnavailable {
+		elapsed := (*int64)(nil)
+		if !checkpoint.ProviderUnavailableStartedAt.IsZero() {
+			elapsed = msPtr(time.Since(checkpoint.ProviderUnavailableStartedAt))
+		}
+		output.ProviderUnavailable = statusProviderUnavailable{
+			Unavailable:    true,
+			Phase:          checkpoint.Phase,
+			Classification: stringPtr(checkpoint.ProviderUnavailableClassification),
+			Probes:         checkpoint.ProviderUnavailableProbes,
+			ElapsedMS:      elapsed,
+		}
+	}
+	return checkpoint.RateLimited || checkpoint.ProviderUnavailable || checkpoint.UserInterrupted
+}
+
+func statusProbesDetail(logs []state.ModelCallLog, now time.Time) *statusProbes {
+	probes := make([]state.ModelCallLog, 0)
+	for _, log := range logs {
+		if log.CallType == state.CallTypeProbe {
+			probes = append(probes, log)
+		}
+	}
+	if len(probes) == 0 {
+		return nil
+	}
+	last := probes[len(probes)-1]
+	detail := statusProbes{
+		Count:       len(probes),
+		LastOutcome: stringPtr(last.Outcome),
+		LastAttempt: last.ProbeAttempt,
+	}
+	if !last.CompletedAt.IsZero() {
+		completedAt := last.CompletedAt
+		detail.LastAt = &completedAt
+		detail.LastAgeMS = msPtr(now.Sub(completedAt))
+	}
+	return &detail
+}
+
+func fillStatusTelemetry(taskID string, logErr error, logs []state.ModelCallLog, output *statusOutput) {
+	if taskID == "" {
+		return
+	}
+	if logErr != nil {
+		unreadable := statusUnreadable
+		output.Telemetry = &unreadable
+		return
+	}
+	ok := "ok"
+	output.Telemetry = &ok
+	output.SessionAging = state.AgingFromModelCallLogs(logs)
+}
+
+func readStatusTelemetry(st *state.StateStore, taskID string) ([]state.ModelCallLog, error) {
+	if taskID == "" {
+		return nil, nil
+	}
+	logs, err := st.ReadModelCallLogs(taskID)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return logs, nil
+}
+
+func lastTaskEvent(st *state.StateStore, taskID string) (state.TaskEventRecord, bool) {
+	if taskID == "" {
+		return state.TaskEventRecord{}, false
+	}
+	return readLastTaskEvent(st.TaskEventLogPath(taskID))
+}
+
+func taskLiveness(probe LockProbe) *string {
+	switch probe.State {
+	case LockHeld:
+		running := "running"
+		return &running
+	case LockFree:
+		stale := "stale"
+		return &stale
+	default:
+		return nil
+	}
+}
+
 func printStats(st *state.StateStore, stdout io.Writer) error {
 	all, err := st.AllTaskStats()
 	if err != nil {
@@ -434,9 +469,8 @@ func printStats(st *state.StateStore, stdout io.Writer) error {
 	return writeJSON(stdout, output)
 }
 
-func buildStatsOutput(st *state.StateStore, all []state.TaskStats) statsOutput {
-
-	aggregate := state.TaskStats{
+func newAggregateTaskStats() state.TaskStats {
+	return state.TaskStats{
 		ModelCallsByAlias:                       map[string]int{},
 		ModelDurationMSByAlias:                  map[string]int64{},
 		RateLimitsByAlias:                       map[string]int{},
@@ -460,54 +494,72 @@ func buildStatsOutput(st *state.StateStore, all []state.TaskStats) statsOutput {
 		ParentOutcomesByModel:                   map[string]int{},
 		ParentOutcomesByRisk:                    map[string]int{},
 	}
+}
+
+func mergeTaskStats(aggregate *state.TaskStats, stats state.TaskStats) {
+	aggregate.ModelCalls += stats.ModelCalls
+	mergeIntMap(&aggregate.ModelCallsByAlias, stats.ModelCallsByAlias)
+	mergeInt64Map(&aggregate.ModelDurationMSByAlias, stats.ModelDurationMSByAlias)
+	mergeIntMap(&aggregate.RateLimitsByAlias, stats.RateLimitsByAlias)
+	mergeInt64Map(&aggregate.InputTokensByAlias, stats.InputTokensByAlias)
+	mergeInt64Map(&aggregate.CacheCreationInputTokensByAlias, stats.CacheCreationInputTokensByAlias)
+	mergeInt64Map(&aggregate.CacheReadInputTokensByAlias, stats.CacheReadInputTokensByAlias)
+	mergeInt64Map(&aggregate.OutputTokensByAlias, stats.OutputTokensByAlias)
+	mergeIntMap(&aggregate.TopLevelTurnsByAlias, stats.TopLevelTurnsByAlias)
+	mergeIntMap(&aggregate.CallTreesByResolvedModel, stats.CallTreesByResolvedModel)
+	mergeInt64Map(&aggregate.InputTokensByResolvedModel, stats.InputTokensByResolvedModel)
+	mergeInt64Map(&aggregate.CacheCreationInputTokensByResolvedModel, stats.CacheCreationInputTokensByResolvedModel)
+	mergeInt64Map(&aggregate.CacheReadInputTokensByResolvedModel, stats.CacheReadInputTokensByResolvedModel)
+	mergeInt64Map(&aggregate.OutputTokensByResolvedModel, stats.OutputTokensByResolvedModel)
+	aggregate.WorkerCalls += stats.WorkerCalls
+	aggregate.ReviewerCalls += stats.ReviewerCalls
+	aggregate.DecisionCommands += stats.DecisionCommands
+	aggregate.FixCommands += stats.FixCommands
+	aggregate.ResumeCommands += stats.ResumeCommands
+	aggregate.AutoFixRounds += stats.AutoFixRounds
+	aggregate.NeedsSolDecisionPackets += stats.NeedsSolDecisionPackets
+	aggregate.NeedsSolReviewPackets += stats.NeedsSolReviewPackets
+	aggregate.PassPackets += stats.PassPackets
+	aggregate.RateLimits += stats.RateLimits
+	aggregate.PacketCompactions += stats.PacketCompactions
+	aggregate.SolPacketBytes += stats.SolPacketBytes
+	aggregate.ProviderUnavailable += stats.ProviderUnavailable
+	mergeIntMap(&aggregate.ProviderUnavailableByAlias, stats.ProviderUnavailableByAlias)
+	mergeIntMap(&aggregate.RiskFloorByCategory, stats.RiskFloorByCategory)
+	aggregate.SnapshotMismatches += stats.SnapshotMismatches
+	mergeIntMap(&aggregate.SnapshotMismatchByAxis, stats.SnapshotMismatchByAxis)
+	mergeIntMap(&aggregate.PacketRejectByCategory, stats.PacketRejectByCategory)
+	mergeIntMap(&aggregate.ProbeOutcome, stats.ProbeOutcome)
+	aggregate.TransientRetries += stats.TransientRetries
+	mergeIntMap(&aggregate.ParentOutcomes, stats.ParentOutcomes)
+	mergeIntMap(&aggregate.ParentFixOrigins, stats.ParentFixOrigins)
+	mergeIntMap(&aggregate.ParentOutcomesByModel, stats.ParentOutcomesByModel)
+	mergeIntMap(&aggregate.ParentOutcomesByRisk, stats.ParentOutcomesByRisk)
+}
+
+func buildStatsOutput(st *state.StateStore, all []state.TaskStats) statsOutput {
+	aggregate := newAggregateTaskStats()
 	for _, stats := range all {
-		aggregate.ModelCalls += stats.ModelCalls
-		mergeIntMap(&aggregate.ModelCallsByAlias, stats.ModelCallsByAlias)
-		mergeInt64Map(&aggregate.ModelDurationMSByAlias, stats.ModelDurationMSByAlias)
-		mergeIntMap(&aggregate.RateLimitsByAlias, stats.RateLimitsByAlias)
-		mergeInt64Map(&aggregate.InputTokensByAlias, stats.InputTokensByAlias)
-		mergeInt64Map(&aggregate.CacheCreationInputTokensByAlias, stats.CacheCreationInputTokensByAlias)
-		mergeInt64Map(&aggregate.CacheReadInputTokensByAlias, stats.CacheReadInputTokensByAlias)
-		mergeInt64Map(&aggregate.OutputTokensByAlias, stats.OutputTokensByAlias)
-		mergeIntMap(&aggregate.TopLevelTurnsByAlias, stats.TopLevelTurnsByAlias)
-		mergeIntMap(&aggregate.CallTreesByResolvedModel, stats.CallTreesByResolvedModel)
-		mergeInt64Map(&aggregate.InputTokensByResolvedModel, stats.InputTokensByResolvedModel)
-		mergeInt64Map(&aggregate.CacheCreationInputTokensByResolvedModel, stats.CacheCreationInputTokensByResolvedModel)
-		mergeInt64Map(&aggregate.CacheReadInputTokensByResolvedModel, stats.CacheReadInputTokensByResolvedModel)
-		mergeInt64Map(&aggregate.OutputTokensByResolvedModel, stats.OutputTokensByResolvedModel)
-		aggregate.WorkerCalls += stats.WorkerCalls
-		aggregate.ReviewerCalls += stats.ReviewerCalls
-		aggregate.DecisionCommands += stats.DecisionCommands
-		aggregate.FixCommands += stats.FixCommands
-		aggregate.ResumeCommands += stats.ResumeCommands
-		aggregate.AutoFixRounds += stats.AutoFixRounds
-		aggregate.NeedsSolDecisionPackets += stats.NeedsSolDecisionPackets
-		aggregate.NeedsSolReviewPackets += stats.NeedsSolReviewPackets
-		aggregate.PassPackets += stats.PassPackets
-		aggregate.RateLimits += stats.RateLimits
-		aggregate.PacketCompactions += stats.PacketCompactions
-		aggregate.SolPacketBytes += stats.SolPacketBytes
-		aggregate.ProviderUnavailable += stats.ProviderUnavailable
-		mergeIntMap(&aggregate.ProviderUnavailableByAlias, stats.ProviderUnavailableByAlias)
-		mergeIntMap(&aggregate.RiskFloorByCategory, stats.RiskFloorByCategory)
-		aggregate.SnapshotMismatches += stats.SnapshotMismatches
-		mergeIntMap(&aggregate.SnapshotMismatchByAxis, stats.SnapshotMismatchByAxis)
-		mergeIntMap(&aggregate.PacketRejectByCategory, stats.PacketRejectByCategory)
-		mergeIntMap(&aggregate.ProbeOutcome, stats.ProbeOutcome)
-		aggregate.TransientRetries += stats.TransientRetries
-		mergeIntMap(&aggregate.ParentOutcomes, stats.ParentOutcomes)
-		mergeIntMap(&aggregate.ParentFixOrigins, stats.ParentFixOrigins)
-		mergeIntMap(&aggregate.ParentOutcomesByModel, stats.ParentOutcomesByModel)
-		mergeIntMap(&aggregate.ParentOutcomesByRisk, stats.ParentOutcomesByRisk)
+		mergeTaskStats(&aggregate, stats)
 	}
+	output := statsOutputFromAggregate(st, len(all), aggregate, probeCallCount(aggregate.ProbeOutcome))
+	output.TelemetryCoverage = statsCoverageDetail(st.ComputeTelemetryCoverage(all))
+	fillStatsParentReview(st, all, aggregate, &output)
+	output.CurrentTask = statsCurrentTaskDetail(st)
+	return output
+}
 
-	probeCalls := 0
-	for _, count := range aggregate.ProbeOutcome {
-		probeCalls += count
+func probeCallCount(outcomes map[string]int) int {
+	total := 0
+	for _, count := range outcomes {
+		total += count
 	}
+	return total
+}
 
-	output := statsOutput{
-		Tasks:                           len(all),
+func statsOutputFromAggregate(st *state.StateStore, tasks int, aggregate state.TaskStats, probeCalls int) statsOutput {
+	return statsOutput{
+		Tasks:                           tasks,
 		ModelCalls:                      aggregate.ModelCalls,
 		ModelCallsByAlias:               aggregate.ModelCallsByAlias,
 		ProbeCalls:                      probeCalls,
@@ -555,10 +607,6 @@ func buildStatsOutput(st *state.StateStore, all []state.TaskStats) statsOutput {
 		SolPacketBytes:                          aggregate.SolPacketBytes,
 		TelemetryDir:                            st.Path("telemetry"),
 	}
-	output.TelemetryCoverage = statsCoverageDetail(st.ComputeTelemetryCoverage(all))
-	fillStatsParentReview(st, all, aggregate, &output)
-	output.CurrentTask = statsCurrentTaskDetail(st)
-	return output
 }
 
 func statsCoverageDetail(coverage state.TelemetryCoverage) statsCoverage {
@@ -589,7 +637,7 @@ func statsCoverageDetail(coverage state.TelemetryCoverage) statsCoverage {
 	return detail
 }
 
-func fillStatsParentReview(st *state.StateStore, all []state.TaskStats, aggregate state.TaskStats, output *statsOutput) {
+func fillStatsParentReview(st *state.StateStore, all []state.TaskStats, _ state.TaskStats, output *statsOutput) {
 	output.ParentFixRework = make([]statsParentRework, 0)
 	rework := st.ComputeParentRework(all)
 	origins := make([]string, 0, len(rework.ByOrigin))
@@ -681,11 +729,6 @@ func resetState(st *state.StateStore, stdout io.Writer) error {
 	})
 }
 
-type resetOutput struct {
-	Status   string  `json:"status"`
-	RepoRoot *string `json:"repo_root"`
-}
-
 func parentAccept(st *state.StateStore, stdout io.Writer) error {
 	resolved, err := st.RecordParentOutcome(state.ParentOutcomeAccepted, "")
 	if err != nil {
@@ -694,25 +737,8 @@ func parentAccept(st *state.StateStore, stdout io.Writer) error {
 	return writeJSON(stdout, acceptOutput{Accepted: resolved})
 }
 
-type acceptOutput struct {
-	Accepted bool `json:"accepted"`
-}
-
-type VerificationError struct {
-	Outcome autoresume.Outcome
-	Reason  string
-}
-
 func (e *VerificationError) Error() string {
 	return fmt.Sprintf("verification %s: %s", outcomeLabel(e.Outcome), e.Reason)
-}
-
-type verifyAutoResumeOutput struct {
-	AutomationKey  string `json:"automation_key"`
-	TargetThread   string `json:"target_thread"`
-	ExpectedAtUTC  string `json:"expected_at_utc"`
-	TOMLDTStart    string `json:"toml_dtstart"`
-	DBNextRunAtUTC string `json:"db_next_run_at_utc"`
 }
 
 func printVerifyAutoResume(cmd Command, cfg config.AppConfig, stdout io.Writer) error {
@@ -734,17 +760,6 @@ func printVerifyAutoResume(cmd Command, cfg config.AppConfig, stdout io.Writer) 
 		TOMLDTStart:    result.TOMLDTStart,
 		DBNextRunAtUTC: result.DBNextRunUTC,
 	})
-}
-
-type checkWakeCoalesceOutput struct {
-	Decision         string `json:"decision"`
-	Reason           string `json:"reason"`
-	ParentThread     string `json:"parent_thread"`
-	ResumeAtUTC      string `json:"resume_at_utc"`
-	WakeAutomationID string `json:"wake_automation_id"`
-	WakeThread       string `json:"wake_thread"`
-	WakeNextRunUTC   string `json:"wake_next_run_at_utc"`
-	AddedWaitSeconds int64  `json:"added_wait_seconds"`
 }
 
 func printCheckWakeCoalesce(cmd Command, cfg config.AppConfig, stdout io.Writer) error {

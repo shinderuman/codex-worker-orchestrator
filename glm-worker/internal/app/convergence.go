@@ -1,7 +1,6 @@
 package app
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
 	"io"
@@ -13,16 +12,6 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
-
-const convergenceDeltaVerificationOnly = "verification-only"
-
-var convergenceMutatingTools = map[string]bool{
-	"Edit":         true,
-	"Write":        true,
-	"NotebookEdit": true,
-}
-
-var convergenceReviewerPhase = regexp.MustCompile(`^reviewer-(\d+)(-risk-floor)?$`)
 
 type convergenceRound struct {
 	record   state.RoundRecord
@@ -115,6 +104,16 @@ type convergenceClassSummary struct {
 	ReviewerDurationMS   int64  `json:"reviewer_duration_ms"`
 }
 
+const convergenceDeltaVerificationOnly = "verification-only"
+
+var convergenceMutatingTools = map[string]bool{
+	"Edit":         true,
+	"Write":        true,
+	"NotebookEdit": true,
+}
+
+var convergenceReviewerPhase = regexp.MustCompile(`^reviewer-(\d+)(-risk-floor)?$`)
+
 func printConvergence(st *state.StateStore, taskIDArg string, stdout io.Writer) error {
 	explicit := taskIDArg != ""
 	taskID := taskIDArg
@@ -132,12 +131,12 @@ func printConvergence(st *state.StateStore, taskIDArg string, stdout io.Writer) 
 		if explicit {
 			return &NotFoundError{Message: fmt.Sprintf("task %sのround logがありません: %v", taskID, recordsErr)}
 		}
-		logStatus = convergenceLog{Status: "none"}
+		logStatus = convergenceLog{Status: statusNone}
 	case recordsErr != nil:
 		if explicit {
 			return fmt.Errorf("task %sのround logを読めません: %w", taskID, recordsErr)
 		}
-		logStatus = convergenceLog{Status: "unreadable"}
+		logStatus = convergenceLog{Status: statusUnreadable}
 	default:
 		logStatus = convergenceLog{Status: "ok", Path: stringPtr(st.RoundLogPath(taskID))}
 	}
@@ -154,7 +153,7 @@ func printConvergence(st *state.StateStore, taskIDArg string, stdout io.Writer) 
 
 	logs, logErr := readStatusTelemetry(st, taskID)
 	if logErr != nil {
-		output.Telemetry = "unreadable"
+		output.Telemetry = statusUnreadable
 	} else {
 		output.Telemetry = "ok"
 	}
@@ -171,13 +170,13 @@ func printConvergence(st *state.StateStore, taskIDArg string, stdout io.Writer) 
 
 func taskRecordsStatus(taskID string, err error) string {
 	if taskID == "" {
-		return "none"
+		return statusNone
 	}
 	switch {
 	case errors.Is(err, os.ErrNotExist):
-		return "none"
+		return statusNone
 	case err != nil:
-		return "unreadable"
+		return statusUnreadable
 	default:
 		return "ok"
 	}
@@ -196,27 +195,7 @@ func refineConvergenceDeltas(rounds []convergenceRound, events []state.TaskEvent
 }
 
 func readRoundRecords(st *state.StateStore, taskID string) ([]state.RoundRecord, int, error) {
-	file, err := os.Open(st.RoundLogPath(taskID))
-	if err != nil {
-		return nil, 0, err
-	}
-	defer file.Close()
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
-	var records []state.RoundRecord
-	skipped := 0
-	for scanner.Scan() {
-		record, err := state.ParseRoundLine(scanner.Bytes())
-		if err != nil {
-			skipped++
-			continue
-		}
-		records = append(records, record)
-	}
-	if err := scanner.Err(); err != nil {
-		return records, skipped, err
-	}
-	return records, skipped, nil
+	return scanLogRecords(st.RoundLogPath(taskID), state.ParseRoundLine)
 }
 
 func buildConvergenceRounds(records []state.RoundRecord, logs []state.ModelCallLog) ([]convergenceRound, *state.RoundRecord) {

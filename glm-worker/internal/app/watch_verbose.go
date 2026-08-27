@@ -10,14 +10,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-const defaultWatchStatusInterval = 5 * time.Second
-
-const defaultWatchChangeInterval = time.Second
-
-const watchVerboseLastToolMinDuration = 10 * time.Second
-
-const watchDetailMaxRunes = 200
-
 type watchPendingTool struct {
 	toolID    string
 	name      string
@@ -43,6 +35,58 @@ type watchToolTracker struct {
 	lastModelActivityAt time.Time
 	firstEventAt        time.Time
 }
+
+type watchLiveStatus struct {
+	st            *state.StateStore
+	taskID        string
+	stdout        io.Writer
+	tracker       *watchToolTracker
+	opts          watchOptions
+	printed       bool
+	lastPrint     time.Time
+	lastSignature string
+}
+
+type watchLiveEvent struct {
+	Type        string             `json:"type"`
+	TaskAgeMS   *int64             `json:"task_age_ms,omitempty"`
+	ModelIdleMS *int64             `json:"model_idle_ms,omitempty"`
+	Current     []watchLiveTool    `json:"current"`
+	Last        *watchLiveLastTool `json:"last,omitempty"`
+	ToolError   *watchLiveToolErr  `json:"tool_error,omitempty"`
+}
+
+type watchLiveTool struct {
+	Name       string `json:"name"`
+	ElapsedMS  int64  `json:"elapsed_ms"`
+	Command    string `json:"command,omitempty"`
+	Purpose    string `json:"purpose,omitempty"`
+	Background bool   `json:"background,omitempty"`
+	WaitTaskID string `json:"wait_task_id,omitempty"`
+}
+
+type watchLiveLastTool struct {
+	Name       string `json:"name"`
+	DurationMS int64  `json:"duration_ms"`
+}
+
+type watchLiveToolErr struct {
+	Name  string `json:"name"`
+	AgeMS int64  `json:"age_ms"`
+}
+
+type watchLiveDetails struct {
+	tools       map[string]state.TaskLiveTool
+	modelIdleAt time.Time
+}
+
+const defaultWatchStatusInterval = 5 * time.Second
+
+const defaultWatchChangeInterval = time.Second
+
+const watchVerboseLastToolMinDuration = 10 * time.Second
+
+const watchDetailMaxRunes = 200
 
 func newWatchToolTracker() *watchToolTracker {
 	return &watchToolTracker{pending: make(map[string]watchPendingTool)}
@@ -147,17 +191,6 @@ func (t *watchToolTracker) signature() string {
 	return strings.Join(parts, ",")
 }
 
-type watchLiveStatus struct {
-	st            *state.StateStore
-	taskID        string
-	stdout        io.Writer
-	tracker       *watchToolTracker
-	opts          watchOptions
-	printed       bool
-	lastPrint     time.Time
-	lastSignature string
-}
-
 func (w *watchLiveStatus) refresh(force bool) error {
 	if !w.opts.verbose {
 		return nil
@@ -181,34 +214,6 @@ func (w *watchLiveStatus) refresh(force bool) error {
 	w.lastPrint = now
 	w.lastSignature = signature
 	return nil
-}
-
-type watchLiveEvent struct {
-	Type        string             `json:"type"`
-	TaskAgeMS   *int64             `json:"task_age_ms,omitempty"`
-	ModelIdleMS *int64             `json:"model_idle_ms,omitempty"`
-	Current     []watchLiveTool    `json:"current"`
-	Last        *watchLiveLastTool `json:"last,omitempty"`
-	ToolError   *watchLiveToolErr  `json:"tool_error,omitempty"`
-}
-
-type watchLiveTool struct {
-	Name       string `json:"name"`
-	ElapsedMS  int64  `json:"elapsed_ms"`
-	Command    string `json:"command,omitempty"`
-	Purpose    string `json:"purpose,omitempty"`
-	Background bool   `json:"background,omitempty"`
-	WaitTaskID string `json:"wait_task_id,omitempty"`
-}
-
-type watchLiveLastTool struct {
-	Name       string `json:"name"`
-	DurationMS int64  `json:"duration_ms"`
-}
-
-type watchLiveToolErr struct {
-	Name  string `json:"name"`
-	AgeMS int64  `json:"age_ms"`
 }
 
 func writeWatchLiveStatus(st *state.StateStore, taskID string, stdout io.Writer, tracker *watchToolTracker, now time.Time) error {
@@ -253,11 +258,6 @@ func elapsedMS(d time.Duration) int64 {
 		return 0
 	}
 	return d.Milliseconds()
-}
-
-type watchLiveDetails struct {
-	tools       map[string]state.TaskLiveTool
-	modelIdleAt time.Time
 }
 
 func liveToolDetails(st *state.StateStore, taskID string, tracker *watchToolTracker) watchLiveDetails {

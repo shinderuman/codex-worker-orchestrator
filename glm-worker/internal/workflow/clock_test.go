@@ -202,15 +202,15 @@ func TestResumeTelemetryTimestampsFollowInjectedClock(t *testing.T) {
 	resumedStart := testFixedTime.Add(probeRun)
 	var taskRecords []state.ModelCallLog
 	for _, l := range taskLogs(t, st) {
-		switch {
-		case l.CallType == state.CallTypeProbe:
+		switch l.CallType {
+		case state.CallTypeProbe:
 			if l.StartedAt != testFixedTime || l.CompletedAt != resumedStart {
 				t.Fatalf("probe gate時刻 = %s/%s want %s/%s", l.StartedAt, l.CompletedAt, testFixedTime, resumedStart)
 			}
 			if l.WallDurationMS != probeRun.Milliseconds() {
 				t.Fatalf("probe gate wall duration = %d", l.WallDurationMS)
 			}
-		case l.CallType == state.CallTypeTask:
+		case state.CallTypeTask:
 			taskRecords = append(taskRecords, l)
 		}
 	}

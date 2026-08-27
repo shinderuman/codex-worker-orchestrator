@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
@@ -93,7 +94,8 @@ func needsSolDecisionPacketApp() string {
 	})
 }
 
-func TestExecuteParentReviewFixThenAcceptFlow(t *testing.T) {
+func newParentReviewOpportunity(t *testing.T) (config.AppConfig, *state.StateStore) {
+	t.Helper()
 	cfg := newAppConfig(t)
 	review := &fakeRunner{steps: []fakeStep{
 		{structured: implementedPacketApp("done")},
@@ -102,14 +104,40 @@ func TestExecuteParentReviewFixThenAcceptFlow(t *testing.T) {
 	if err := Execute(Command{Mode: ModeNewTask, Payload: "request"}, cfg, review.factory(), io.Discard, io.Discard); err != nil {
 		t.Fatal(err)
 	}
-
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stats, err := st.CurrentTaskStats(); err != nil || stats.ParentReviewOpen == nil {
+	return cfg, st
+}
+
+func applyParentReviewFix(t *testing.T, cfg config.AppConfig) {
+	t.Helper()
+	fix := &fakeRunner{steps: []fakeStep{
+		{structured: implementedPacketApp("fixed")},
+		{structured: passPacketApp()},
+		{structured: passPacketApp()},
+	}}
+	if err := Execute(Command{Mode: ModeFix, Payload: "指摘を修正", Origin: "glm-reviewer"}, cfg, fix.factory(), io.Discard, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func executeAccept(t *testing.T, cfg config.AppConfig) acceptOutput {
+	t.Helper()
+	var accept acceptOutput
+	executeCommandOutput(t, cfg, ModeAccept, &accept, "accept")
+	return accept
+}
+
+func TestExecuteParentReviewOpensOpportunity(t *testing.T) {
+	cfg, st := newParentReviewOpportunity(t)
+
+	stats, err := st.CurrentTaskStats()
+	if err != nil || stats.ParentReviewOpen == nil {
 		t.Fatalf("NEEDS_SOL_REVIEW後にopportunityがopenではありません: %#v err=%v", stats, err)
-	} else if stats.ParentReviewOpen.Role != "reviewer" || stats.ParentReviewOpen.ModelAlias != "haiku" {
+	}
+	if stats.ParentReviewOpen.Role != "reviewer" || stats.ParentReviewOpen.ModelAlias != "haiku" {
 		t.Fatalf("producer対応付け = %#v", stats.ParentReviewOpen)
 	}
 	if st.OpenParentReviewLabel() != "NEEDS_SOL_REVIEW" {
@@ -124,39 +152,13 @@ func TestExecuteParentReviewFixThenAcceptFlow(t *testing.T) {
 	if status.ParentReviewOpen == nil || *status.ParentReviewOpen != "NEEDS_SOL_REVIEW" {
 		t.Fatalf("status出力のparent_review_open = %#v: %q", status.ParentReviewOpen, statusOut.String())
 	}
+}
 
-	fix := &fakeRunner{steps: []fakeStep{
-		{structured: implementedPacketApp("fixed")},
-		{structured: passPacketApp()},
-		{structured: passPacketApp()},
-	}}
-
-	if err := Execute(Command{Mode: ModeFix, Payload: "指摘を修正", Origin: "glm-reviewer"}, cfg, fix.factory(), io.Discard, io.Discard); err != nil {
-		t.Fatal(err)
-	}
-
-	var acceptOut bytes.Buffer
-	if err := Execute(Command{Mode: ModeAccept}, cfg, nil, &acceptOut, io.Discard); err != nil {
-		t.Fatal(err)
-	}
-	var accept acceptOutput
-	if err := json.Unmarshal([]byte(strings.TrimSpace(acceptOut.String())), &accept); err != nil {
-		t.Fatalf("accept出力がmachine JSONではありません: %v: %q", err, acceptOut.String())
-	}
-	if !accept.Accepted {
-		t.Fatalf("accept出力 = %q", acceptOut.String())
-	}
-
-	var retryOut bytes.Buffer
-	if err := Execute(Command{Mode: ModeAccept}, cfg, nil, &retryOut, io.Discard); err != nil {
-		t.Fatal(err)
-	}
-	var retry acceptOutput
-	if err := json.Unmarshal([]byte(strings.TrimSpace(retryOut.String())), &retry); err != nil {
-		t.Fatalf("accept再実行出力がmachine JSONではありません: %v: %q", err, retryOut.String())
-	}
-	if retry.Accepted {
-		t.Fatalf("accept再実行 = %q", retryOut.String())
+func TestExecuteParentReviewFixThenAcceptRecordsOutcomes(t *testing.T) {
+	cfg, st := newParentReviewOpportunity(t)
+	applyParentReviewFix(t, cfg)
+	if accept := executeAccept(t, cfg); !accept.Accepted {
+		t.Fatal("open opportunityへのacceptが確定されませんでした")
 	}
 
 	stats, err := st.CurrentTaskStats()
@@ -179,6 +181,25 @@ func TestExecuteParentReviewFixThenAcceptFlow(t *testing.T) {
 	packets := stats.PassPackets + stats.NeedsSolReviewPackets + stats.NeedsSolDecisionPackets
 	if outcomeTotal != packets || stats.ParentReviewOpen != nil {
 		t.Fatalf("加法整合: outcomes=%d packets=%d open=%#v", outcomeTotal, packets, stats.ParentReviewOpen)
+	}
+}
+
+func TestExecuteParentReviewAcceptIsSingleUse(t *testing.T) {
+	cfg, _ := newParentReviewOpportunity(t)
+	applyParentReviewFix(t, cfg)
+	if first := executeAccept(t, cfg); !first.Accepted {
+		t.Fatal("最初のacceptが確定されませんでした")
+	}
+	if retry := executeAccept(t, cfg); retry.Accepted {
+		t.Fatal("同一opportunityのaccept再実行が二重確定されました")
+	}
+}
+
+func TestExecuteParentReviewStatsExposeRework(t *testing.T) {
+	cfg, st := newParentReviewOpportunity(t)
+	applyParentReviewFix(t, cfg)
+	if accept := executeAccept(t, cfg); !accept.Accepted {
+		t.Fatal("acceptが確定されませんでした")
 	}
 
 	var statsOut bytes.Buffer

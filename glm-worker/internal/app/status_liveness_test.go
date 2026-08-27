@@ -50,7 +50,7 @@ func TestExecuteStatusActiveWithLockHeldIsRunning(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer lock.Close()
+	defer func() { _ = lock.Close() }()
 
 	output := executeStatusOutput(t, cfg)
 	statusString(t, "repository_lock", output.RepositoryLock, "held")
@@ -76,7 +76,7 @@ func TestExecuteStatusRaceConvergesOnNextCommandLock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer otherLock.Close()
+	defer func() { _ = otherLock.Close() }()
 
 	var resetOut bytes.Buffer
 	if err := Execute(Command{Mode: ModeReset}, cfg, nil, &resetOut, io.Discard); err != nil {

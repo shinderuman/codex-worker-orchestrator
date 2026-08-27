@@ -156,7 +156,7 @@ func TestValidatePairRejectsInvalid(t *testing.T) {
 		{"record spec hash mismatch", func(_ *Spec, d *RunRecord, _ *RunRecord) {
 			d.SpecSHA256 = "deadbeef"
 		}, "spec_sha256"},
-		{"record run conditions drift", func(spec *Spec, _ *RunRecord, o *RunRecord) {
+		{"record run conditions drift", func(_ *Spec, _ *RunRecord, o *RunRecord) {
 			o.RunConditions.CodexReasoningEffort = "medium"
 		}, "run_conditions"},
 		{"record relative worktree", func(_ *Spec, d *RunRecord, _ *RunRecord) {

@@ -47,7 +47,7 @@ func TestProbeRepoLockHeldWhileOtherProcessHolds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer lock.Close()
+	defer func() { _ = lock.Close() }()
 
 	probe := ProbeRepoLock(path)
 	if probe.State != LockHeld {
@@ -63,7 +63,7 @@ func TestProbeRepoLockIndependentPerPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer other.Close()
+	defer func() { _ = other.Close() }()
 
 	probe := ProbeRepoLock(filepath.Join(dir, "lock"))
 	if probe.State != LockFree {

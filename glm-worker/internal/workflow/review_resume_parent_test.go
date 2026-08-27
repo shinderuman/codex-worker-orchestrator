@@ -15,14 +15,31 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
+type reviewResumeDeltaCase struct {
+	name              string
+	planAtReviewStart string
+	planAtStop        string
+	planAtResume      string
+	taskAtReviewStart string
+	taskAtStop        string
+	taskAtResume      string
+	mutateCurrent     func(snap *state.GitSnapshot)
+}
+
+type reviewResumeDeltaRun struct {
+	store  *state.StateStore
+	runner *scriptedRunner
+	output *bytes.Buffer
+}
+
+const activeTaskRepoPath = state.ParentTasksDir + "/001-active.md"
+
 func writeRepoParentPlan(t *testing.T, repoRoot string, content string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(repoRoot, state.ParentPlanFile), []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
 }
-
-const activeTaskRepoPath = state.ParentTasksDir + "/001-active.md"
 
 func writeRepoActiveTask(t *testing.T, repoRoot string, content string) {
 	t.Helper()
@@ -199,32 +216,95 @@ func TestReviewResumeParentUpdateAcceptedReanchorsBaseline(t *testing.T) {
 	}
 }
 
-func TestReviewResumeParentDeltaMatrix(t *testing.T) {
-	tests := []struct {
-		name              string
-		planAtReviewStart string
-		planAtStop        string
-		planAtResume      string
-		taskAtReviewStart string
-		taskAtStop        string
-		taskAtResume      string
-		mutateCurrent     func(snap *state.GitSnapshot)
-		wantAccepted      bool
-	}{
+func runReviewResumeDeltaCase(t *testing.T, tt reviewResumeDeltaCase) reviewResumeDeltaRun {
+	t.Helper()
+	st := newStateStoreT(t)
+	r := &scriptedRunner{steps: []runnerStep{{structured: passPacket()}}}
+	out := &bytes.Buffer{}
+	w := newReviewResumeWorkflow(t, st, r, out)
+	repoRoot := w.config.RepoRoot
+	if tt.planAtReviewStart != "" {
+		writeRepoParentPlan(t, repoRoot, tt.planAtReviewStart)
+	}
+	if tt.taskAtReviewStart != "" {
+		writeRepoActiveTask(t, repoRoot, tt.taskAtReviewStart)
+	}
+	reviewStartParents := repoParentStates(t, repoRoot)
+	stop := makeStopStates(tt.planAtStop, tt.taskAtStop)
+	seedReviewResumeStop(t, st, reviewResumeSnapshot("worktree-0", "excluding-1", &reviewStartParents), reviewResumeCheckpoint(&stop))
+
+	if tt.planAtResume == "" {
+		removeRepoParentPlan(t, repoRoot)
+	} else {
+		writeRepoParentPlan(t, repoRoot, tt.planAtResume)
+	}
+	switch {
+	case tt.taskAtResume == "":
+		if tt.taskAtReviewStart != "" {
+			removeRepoActiveTask(t, repoRoot)
+		}
+	case tt.taskAtReviewStart == "":
+		writeRepoActiveTask(t, repoRoot, tt.taskAtResume)
+	default:
+		writeRepoActiveTask(t, repoRoot, tt.taskAtResume)
+	}
+	current := reviewResumeSnapshot("worktree-1", "excluding-1", nil)
+	if tt.mutateCurrent != nil {
+		tt.mutateCurrent(&current)
+	}
+	w.captureSnapshot = func(string) (state.GitSnapshot, error) { return current, nil }
+
+	if err := w.ExecuteResume(); err != nil {
+		t.Fatal(err)
+	}
+	return reviewResumeDeltaRun{store: st, runner: r, output: out}
+}
+
+func assertReviewResumeAccepted(t *testing.T, run reviewResumeDeltaRun) {
+	t.Helper()
+	if run.store.TaskStatus() != state.TaskStatusComplete || len(run.runner.prompts) != 1 {
+		t.Fatalf("承認済み親更新はreviewer再開を許可するべき: status=%q calls=%d", run.store.TaskStatus(), len(run.runner.prompts))
+	}
+}
+
+func TestReviewResumeParentUpdatesDuringStopAreAccepted(t *testing.T) {
+	tests := []reviewResumeDeltaCase{
 		{
 			name:              "parent content update during stop accepted",
 			planAtReviewStart: "p0\n",
 			planAtStop:        "p0\n",
 			planAtResume:      "p1\n",
-			wantAccepted:      true,
 		},
 		{
-			name:              "parent creation during stop accepted",
-			planAtReviewStart: "",
-			planAtStop:        "",
-			planAtResume:      "p1\n",
-			wantAccepted:      true,
+			name:         "parent creation during stop accepted",
+			planAtResume: "p1\n",
 		},
+		{
+			name:              "active task file content update during stop accepted",
+			planAtReviewStart: "p0\n",
+			planAtStop:        "p0\n",
+			planAtResume:      "p0\n",
+			taskAtReviewStart: "t0\n",
+			taskAtStop:        "t0\n",
+			taskAtResume:      "t1\n",
+		},
+		{
+			name:              "active task file creation during stop accepted",
+			planAtReviewStart: "p0\n",
+			planAtStop:        "p0\n",
+			planAtResume:      "p0\n",
+			taskAtResume:      "t1\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertReviewResumeAccepted(t, runReviewResumeDeltaCase(t, tt))
+		})
+	}
+}
+
+func TestReviewResumeRepositoryDriftDuringStopIsRejected(t *testing.T) {
+	tests := []reviewResumeDeltaCase{
 		{
 			name:              "other path change during stop rejected",
 			planAtReviewStart: "p0\n",
@@ -247,48 +327,9 @@ func TestReviewResumeParentDeltaMatrix(t *testing.T) {
 			mutateCurrent:     func(snap *state.GitSnapshot) { snap.IndexDigest = "index-2" },
 		},
 		{
-			name:              "reviewer change during call rejected",
-			planAtReviewStart: "p0\n",
-			planAtStop:        "p1\n",
-			planAtResume:      "p1\n",
-		},
-		{
-
-			name:              "reviewer change plus stop-period change on same file rejected",
-			planAtReviewStart: "p0\n",
-			planAtStop:        "p1\n",
-			planAtResume:      "p2\n",
-		},
-		{
-
-			name:              "creation during reviewer call then stop-period change rejected",
-			planAtReviewStart: "",
-			planAtStop:        "p1\n",
-			planAtResume:      "p2\n",
-		},
-		{
 			name:              "parent deletion during stop rejected",
 			planAtReviewStart: "p0\n",
 			planAtStop:        "p0\n",
-			planAtResume:      "",
-		},
-		{
-			name:              "active task file content update during stop accepted",
-			planAtReviewStart: "p0\n",
-			planAtStop:        "p0\n",
-			planAtResume:      "p0\n",
-			taskAtReviewStart: "t0\n",
-			taskAtStop:        "t0\n",
-			taskAtResume:      "t1\n",
-			wantAccepted:      true,
-		},
-		{
-			name:              "active task file creation during stop accepted",
-			planAtReviewStart: "p0\n",
-			planAtStop:        "p0\n",
-			planAtResume:      "p0\n",
-			taskAtResume:      "t1\n",
-			wantAccepted:      true,
 		},
 		{
 			name:              "active task file deletion during stop rejected",
@@ -298,8 +339,35 @@ func TestReviewResumeParentDeltaMatrix(t *testing.T) {
 			taskAtReviewStart: "t0\n",
 			taskAtStop:        "t0\n",
 		},
-		{
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			run := runReviewResumeDeltaCase(t, tt)
+			assertReviewResumeStopped(t, run.store, run.runner, run.output)
+		})
+	}
+}
 
+func TestReviewResumeReviewerMutationIsRejected(t *testing.T) {
+	tests := []reviewResumeDeltaCase{
+		{
+			name:              "reviewer change during call rejected",
+			planAtReviewStart: "p0\n",
+			planAtStop:        "p1\n",
+			planAtResume:      "p1\n",
+		},
+		{
+			name:              "reviewer change plus stop-period change on same file rejected",
+			planAtReviewStart: "p0\n",
+			planAtStop:        "p1\n",
+			planAtResume:      "p2\n",
+		},
+		{
+			name:         "creation during reviewer call then stop-period change rejected",
+			planAtStop:   "p1\n",
+			planAtResume: "p2\n",
+		},
+		{
 			name:              "active task file reviewer change plus stop-period change rejected",
 			planAtReviewStart: "p0\n",
 			planAtStop:        "p0\n",
@@ -311,52 +379,8 @@ func TestReviewResumeParentDeltaMatrix(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			st := newStateStoreT(t)
-			r := &scriptedRunner{steps: []runnerStep{{structured: passPacket()}}}
-			var out bytes.Buffer
-			w := newReviewResumeWorkflow(t, st, r, &out)
-			repoRoot := w.config.RepoRoot
-			if tt.planAtReviewStart != "" {
-				writeRepoParentPlan(t, repoRoot, tt.planAtReviewStart)
-			}
-			if tt.taskAtReviewStart != "" {
-				writeRepoActiveTask(t, repoRoot, tt.taskAtReviewStart)
-			}
-			reviewStartParents := repoParentStates(t, repoRoot)
-			stop := makeStopStates(tt.planAtStop, tt.taskAtStop)
-			seedReviewResumeStop(t, st, reviewResumeSnapshot("worktree-0", "excluding-1", &reviewStartParents), reviewResumeCheckpoint(&stop))
-
-			if tt.planAtResume == "" {
-				removeRepoParentPlan(t, repoRoot)
-			} else {
-				writeRepoParentPlan(t, repoRoot, tt.planAtResume)
-			}
-			switch {
-			case tt.taskAtResume == "":
-				if tt.taskAtReviewStart != "" {
-					removeRepoActiveTask(t, repoRoot)
-				}
-			case tt.taskAtReviewStart == "":
-				writeRepoActiveTask(t, repoRoot, tt.taskAtResume)
-			default:
-				writeRepoActiveTask(t, repoRoot, tt.taskAtResume)
-			}
-			current := reviewResumeSnapshot("worktree-1", "excluding-1", nil)
-			if tt.mutateCurrent != nil {
-				tt.mutateCurrent(&current)
-			}
-			w.captureSnapshot = func(string) (state.GitSnapshot, error) { return current, nil }
-
-			if err := w.ExecuteResume(); err != nil {
-				t.Fatal(err)
-			}
-			if tt.wantAccepted {
-				if st.TaskStatus() != state.TaskStatusComplete || len(r.prompts) != 1 {
-					t.Fatalf("承認済み親更新はreviewer再開を許可するべき: status=%q calls=%d", st.TaskStatus(), len(r.prompts))
-				}
-				return
-			}
-			assertReviewResumeStopped(t, st, r, &out)
+			run := runReviewResumeDeltaCase(t, tt)
+			assertReviewResumeStopped(t, run.store, run.runner, run.output)
 		})
 	}
 }

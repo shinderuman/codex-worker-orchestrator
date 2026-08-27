@@ -10,17 +10,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-const plainSignalMaxBytes = 64 * 1024
-
-const maxStreamEventRecordsPerCall = 50000
-
-const liveStatusWriteInterval = time.Second
-
-const (
-	liveCommandMaxBytes = 2048
-	livePurposeMaxBytes = 512
-)
-
 type streamEventIngester struct {
 	state      *state.StateStore
 	base       state.TaskEventRecord
@@ -47,6 +36,53 @@ type toolUseObservation struct {
 	background bool
 	waitTaskID string
 }
+
+type liveToolDetail struct {
+	command    string
+	purpose    string
+	background bool
+	waitTaskID string
+}
+
+type streamEvent struct {
+	Type          string                `json:"type"`
+	Subtype       string                `json:"subtype"`
+	Model         string                `json:"model"`
+	Message       json.RawMessage       `json:"message"`
+	IsError       bool                  `json:"is_error"`
+	DurationMS    int64                 `json:"duration_ms"`
+	DurationAPIMS int64                 `json:"duration_api_ms"`
+	NumTurns      int                   `json:"num_turns"`
+	TotalCostUSD  float64               `json:"total_cost_usd"`
+	Usage         *state.TaskEventUsage `json:"usage"`
+}
+
+type streamMessage struct {
+	Model   string                `json:"model"`
+	Usage   *state.TaskEventUsage `json:"usage"`
+	Content []json.RawMessage     `json:"content"`
+}
+
+type streamBlock struct {
+	Type      string `json:"type"`
+	Name      string `json:"name"`
+	ID        string `json:"id"`
+	ToolUseID string `json:"tool_use_id"`
+	IsError   bool   `json:"is_error"`
+}
+
+const streamResultType = "result"
+
+const plainSignalMaxBytes = 64 * 1024
+
+const maxStreamEventRecordsPerCall = 50000
+
+const liveStatusWriteInterval = time.Second
+
+const (
+	liveCommandMaxBytes = 2048
+	livePurposeMaxBytes = 512
+)
 
 func newStreamEventIngester(
 	st *state.StateStore,
@@ -142,43 +178,58 @@ func progressOnlyStreamEvent(record state.TaskEventRecord) bool {
 func (g *streamEventIngester) observeToolBlocks(record *state.TaskEventRecord, inputs map[string]json.RawMessage) bool {
 	changed := false
 	for i := range record.Blocks {
-		block := &record.Blocks[i]
-		switch block.Type {
-		case "tool_use":
-			if block.ToolID == "" {
-				continue
-			}
-			observation := toolUseObservation{toolID: block.ToolID, timestamp: record.Timestamp, name: block.Name}
-			if input, ok := inputs[block.ToolID]; ok {
-				detail := extractLiveToolDetail(input)
-				observation.command = detail.command
-				observation.purpose = detail.purpose
-				observation.background = detail.background
-				observation.waitTaskID = detail.waitTaskID
-			}
-			g.tools[block.ToolID] = observation
-			changed = true
-		case "tool_result":
-			if block.ToolID == "" {
-				continue
-			}
-			observed, ok := g.tools[block.ToolID]
-			if !ok {
-				continue
-			}
-			block.DurationMS = record.Timestamp.Sub(observed.timestamp).Milliseconds()
-			if block.Name == "" {
-				block.Name = observed.name
-			}
-			delete(g.tools, block.ToolID)
+		if g.observeToolBlock(&record.Blocks[i], record.Timestamp, inputs) {
 			changed = true
 		}
 	}
-	if record.Kind == "result" && len(g.tools) > 0 {
+	if record.Kind == streamResultType && len(g.tools) > 0 {
 		g.tools = make(map[string]toolUseObservation)
 		changed = true
 	}
 	return changed
+}
+
+func (g *streamEventIngester) observeToolBlock(block *state.TaskBlockSummary, at time.Time, inputs map[string]json.RawMessage) bool {
+	switch block.Type {
+	case "tool_use":
+		return g.observeToolUse(block, at, inputs)
+	case "tool_result":
+		return g.observeToolResult(block, at)
+	default:
+		return false
+	}
+}
+
+func (g *streamEventIngester) observeToolUse(block *state.TaskBlockSummary, at time.Time, inputs map[string]json.RawMessage) bool {
+	if block.ToolID == "" {
+		return false
+	}
+	observation := toolUseObservation{toolID: block.ToolID, timestamp: at, name: block.Name}
+	if input, ok := inputs[block.ToolID]; ok {
+		detail := extractLiveToolDetail(input)
+		observation.command = detail.command
+		observation.purpose = detail.purpose
+		observation.background = detail.background
+		observation.waitTaskID = detail.waitTaskID
+	}
+	g.tools[block.ToolID] = observation
+	return true
+}
+
+func (g *streamEventIngester) observeToolResult(block *state.TaskBlockSummary, at time.Time) bool {
+	if block.ToolID == "" {
+		return false
+	}
+	observed, ok := g.tools[block.ToolID]
+	if !ok {
+		return false
+	}
+	block.DurationMS = at.Sub(observed.timestamp).Milliseconds()
+	if block.Name == "" {
+		block.Name = observed.name
+	}
+	delete(g.tools, block.ToolID)
+	return true
 }
 
 func (g *streamEventIngester) noteLiveActivity(at time.Time, modelActivity bool, toolsChanged bool) {
@@ -228,13 +279,6 @@ func liveToolsSnapshot(tools map[string]toolUseObservation) []state.TaskLiveTool
 		})
 	}
 	return result
-}
-
-type liveToolDetail struct {
-	command    string
-	purpose    string
-	background bool
-	waitTaskID string
 }
 
 func extractLiveToolDetail(input json.RawMessage) liveToolDetail {
@@ -320,34 +364,7 @@ func streamResultEvent(line []byte) bool {
 	var head struct {
 		Type string `json:"type"`
 	}
-	return json.Unmarshal(line, &head) == nil && head.Type == "result"
-}
-
-type streamEvent struct {
-	Type          string                `json:"type"`
-	Subtype       string                `json:"subtype"`
-	Model         string                `json:"model"`
-	Message       json.RawMessage       `json:"message"`
-	IsError       bool                  `json:"is_error"`
-	DurationMS    int64                 `json:"duration_ms"`
-	DurationAPIMS int64                 `json:"duration_api_ms"`
-	NumTurns      int                   `json:"num_turns"`
-	TotalCostUSD  float64               `json:"total_cost_usd"`
-	Usage         *state.TaskEventUsage `json:"usage"`
-}
-
-type streamMessage struct {
-	Model   string                `json:"model"`
-	Usage   *state.TaskEventUsage `json:"usage"`
-	Content []json.RawMessage     `json:"content"`
-}
-
-type streamBlock struct {
-	Type      string `json:"type"`
-	Name      string `json:"name"`
-	ID        string `json:"id"`
-	ToolUseID string `json:"tool_use_id"`
-	IsError   bool   `json:"is_error"`
+	return json.Unmarshal(line, &head) == nil && head.Type == streamResultType
 }
 
 func reduceStreamEvent(line []byte, base state.TaskEventRecord, seq int, observedAt time.Time) state.TaskEventRecord {
@@ -372,7 +389,7 @@ func reduceStreamEvent(line []byte, base state.TaskEventRecord, seq int, observe
 			record.Usage = message.Usage
 			record.Blocks = reduceStreamBlocks(message.Content)
 		}
-	case "result":
+	case streamResultType:
 		record.IsError = event.IsError
 		record.DurationMS = event.DurationMS
 		record.DurationAPIMS = event.DurationAPIMS

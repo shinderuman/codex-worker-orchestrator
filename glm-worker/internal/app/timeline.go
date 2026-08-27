@@ -68,6 +68,11 @@ type timelineTool struct {
 	Errors        int    `json:"errors,omitempty"`
 }
 
+type eventLogSkippedLine struct {
+	Type  string `json:"type"`
+	Error string `json:"error"`
+}
+
 func printTimeline(st *state.StateStore, taskIDArg string, stdout io.Writer) error {
 	explicit := taskIDArg != ""
 	taskID := taskIDArg
@@ -88,12 +93,12 @@ func printTimeline(st *state.StateStore, taskIDArg string, stdout io.Writer) err
 		if explicit {
 			return &NotFoundError{Message: fmt.Sprintf("task %sのevent logがありません: %v", taskID, err)}
 		}
-		output.EventLog = timelineEventLog{Status: "none"}
+		output.EventLog = timelineEventLog{Status: statusNone}
 	case err != nil:
 		if explicit {
 			return fmt.Errorf("task %sのevent logを読めません: %w", taskID, err)
 		}
-		output.EventLog = timelineEventLog{Status: "unreadable"}
+		output.EventLog = timelineEventLog{Status: statusUnreadable}
 	default:
 		output.EventLog = timelineEventLog{Status: "ok", Path: stringPtr(st.TaskEventLogPath(taskID))}
 		output.Calls = timelineCalls(records)
@@ -111,7 +116,7 @@ func fillTimelineTelemetry(taskID string, logErr error, logs []state.ModelCallLo
 		return
 	}
 	if logErr != nil {
-		unreadable := "unreadable"
+		unreadable := statusUnreadable
 		output.Telemetry = &unreadable
 		return
 	}
@@ -147,27 +152,7 @@ func timelineTaskStatus(st *state.StateStore, taskID string, explicit bool) *str
 }
 
 func readTaskEventRecords(st *state.StateStore, taskID string) ([]state.TaskEventRecord, int, error) {
-	file, err := os.Open(st.TaskEventLogPath(taskID))
-	if err != nil {
-		return nil, 0, err
-	}
-	defer file.Close()
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
-	var records []state.TaskEventRecord
-	skipped := 0
-	for scanner.Scan() {
-		record, err := state.ParseTaskEventLine(scanner.Bytes())
-		if err != nil {
-			skipped++
-			continue
-		}
-		records = append(records, record)
-	}
-	if err := scanner.Err(); err != nil {
-		return records, skipped, err
-	}
-	return records, skipped, nil
+	return scanLogRecords(st.TaskEventLogPath(taskID), state.ParseTaskEventLine)
 }
 
 func readLastTaskEvent(path string) (state.TaskEventRecord, bool) {
@@ -175,7 +160,7 @@ func readLastTaskEvent(path string) (state.TaskEventRecord, bool) {
 	if err != nil {
 		return state.TaskEventRecord{}, false
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
 	var last state.TaskEventRecord
@@ -266,11 +251,6 @@ func timelineTools(tools []state.CallTimelineTool) []timelineTool {
 		})
 	}
 	return rendered
-}
-
-type eventLogSkippedLine struct {
-	Type  string `json:"type"`
-	Error string `json:"error"`
 }
 
 func marshalEventLine(value any) ([]byte, error) {

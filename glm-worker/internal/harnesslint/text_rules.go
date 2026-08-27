@@ -10,6 +10,13 @@ import (
 	"strings"
 )
 
+const (
+	goModName         = "go.mod"
+	commentlintName   = "commentlint"
+	harnesslintName   = "harnesslint"
+	postMergeHookPath = ".githooks/post-merge"
+)
+
 var quotedLongText = regexp.MustCompile(`'([^']{32,})'|"([^"]{32,})"`)
 
 var markdownBudgets = map[string]int{
@@ -23,41 +30,44 @@ var markdownBudgets = map[string]int{
 func scanTextRules(root string, paths []string) ([]Violation, error) {
 	var violations []Violation
 	for _, path := range paths {
-		if strings.HasSuffix(path, ".json") {
-			data, err := readRegularFile(root, path)
-			if err != nil {
-				return nil, err
-			}
-			violations = append(violations, instructionHashJSONViolations(path, data)...)
+		current, err := scanPathTextRules(root, path)
+		if err != nil {
+			return nil, err
 		}
-		if isShellPath(path) {
-			data, err := readRegularFile(root, path)
-			if err != nil {
-				return nil, err
-			}
-			violations = append(violations, prosePinShellViolations(path, data)...)
-			violations = append(violations, qualityBypassViolations(path, data)...)
-			if path == "tests/install_smoke.sh" {
-				violations = append(violations, smokeScopeViolations(path, data)...)
-			}
-		}
+		violations = append(violations, current...)
 	}
 	violations = append(violations, moduleBoundaryViolations(paths)...)
-	markdown, err := markdownBudgetViolations(root, paths)
+	for _, scan := range []func(string, []string) ([]Violation, error){markdownBudgetViolations, staleAuthorityViolations, qualityConfigViolations} {
+		current, err := scan(root, paths)
+		if err != nil {
+			return nil, err
+		}
+		violations = append(violations, current...)
+	}
+	return violations, nil
+}
+
+func scanPathTextRules(root string, path string) ([]Violation, error) {
+	var violations []Violation
+	if strings.HasSuffix(path, ".json") {
+		data, err := readRegularFile(root, path)
+		if err != nil {
+			return nil, err
+		}
+		violations = append(violations, instructionHashJSONViolations(path, data)...)
+	}
+	if !isShellPath(path) {
+		return violations, nil
+	}
+	data, err := readRegularFile(root, path)
 	if err != nil {
 		return nil, err
 	}
-	violations = append(violations, markdown...)
-	stale, err := staleAuthorityViolations(root, paths)
-	if err != nil {
-		return nil, err
+	violations = append(violations, prosePinShellViolations(path, data)...)
+	violations = append(violations, qualityBypassViolations(path, data)...)
+	if path == "tests/install_smoke.sh" {
+		violations = append(violations, smokeScopeViolations(path, data)...)
 	}
-	violations = append(violations, stale...)
-	config, err := qualityConfigViolations(root, paths)
-	if err != nil {
-		return nil, err
-	}
-	violations = append(violations, config...)
 	return violations, nil
 }
 
@@ -74,6 +84,13 @@ func qualityConfigViolations(root string, paths []string) ([]Violation, error) {
 		return nil, err
 	}
 	text := string(data)
+	violations := requiredQualityConfigViolations(path, text)
+	violations = append(violations, forbiddenQualityConfigViolations(path, text)...)
+	violations = append(violations, qualityThresholdViolations(path, text)...)
+	return violations, nil
+}
+
+func requiredQualityConfigViolations(path, text string) []Violation {
 	required := []string{
 		`version: "2"`,
 		"    - bodyclose",
@@ -98,6 +115,7 @@ func qualityConfigViolations(root string, paths []string) ([]Violation, error) {
 		"      disable-dec-order-check: false",
 		"      require-explanation: true",
 		"      require-specific: true",
+		"      ignore-tests: true",
 	}
 	var violations []Violation
 	for _, token := range required {
@@ -109,6 +127,11 @@ func qualityConfigViolations(root string, paths []string) ([]Violation, error) {
 			Message: "required quality configuration is missing: " + strings.TrimSpace(token),
 		})
 	}
+	return violations
+}
+
+func forbiddenQualityConfigViolations(path, text string) []Violation {
+	var violations []Violation
 	for _, token := range []string{"exclusions:", "exclude-rules:", "skip-dirs:", "skip-files:"} {
 		if line := lineOf(text, token); line > 0 {
 			violations = append(violations, Violation{
@@ -117,6 +140,10 @@ func qualityConfigViolations(root string, paths []string) ([]Violation, error) {
 			})
 		}
 	}
+	return violations
+}
+
+func qualityThresholdViolations(path, text string) []Violation {
 	limits := []struct {
 		key string
 		max int
@@ -130,6 +157,7 @@ func qualityConfigViolations(root string, paths []string) ([]Violation, error) {
 		{"min-occurrences", 3},
 		{"max", 5},
 	}
+	var violations []Violation
 	for _, limit := range limits {
 		values := yamlIntegerValues(text, limit.key)
 		if len(values) == 0 {
@@ -140,15 +168,16 @@ func qualityConfigViolations(root string, paths []string) ([]Violation, error) {
 			continue
 		}
 		for _, value := range values {
-			if value > limit.max {
-				violations = append(violations, Violation{
-					Rule: "quality-config-policy", Path: path, Line: lineOf(text, limit.key+":"), Column: 1,
-					Message: fmt.Sprintf("%s=%d weakens protected maximum %d", limit.key, value, limit.max),
-				})
+			if value <= limit.max {
+				continue
 			}
+			violations = append(violations, Violation{
+				Rule: "quality-config-policy", Path: path, Line: lineOf(text, limit.key+":"), Column: 1,
+				Message: fmt.Sprintf("%s=%d weakens protected maximum %d", limit.key, value, limit.max),
+			})
 		}
 	}
-	return violations, nil
+	return violations
 }
 
 func yamlIntegerValues(text, key string) []int {
@@ -184,20 +213,31 @@ func instructionHashJSONViolations(path string, data []byte) []Violation {
 func containsInstructionHashKey(value any) bool {
 	switch typed := value.(type) {
 	case map[string]any:
-		for key, child := range typed {
-			lower := strings.ToLower(key)
-			if strings.Contains(lower, "sha256") && (strings.Contains(lower, "instruction") || strings.Contains(lower, "prompt")) {
-				return true
-			}
-			if containsInstructionHashKey(child) {
-				return true
-			}
-		}
+		return mapContainsInstructionHashKey(typed)
 	case []any:
-		for _, child := range typed {
-			if containsInstructionHashKey(child) {
-				return true
-			}
+		return sliceContainsInstructionHashKey(typed)
+	default:
+		return false
+	}
+}
+
+func mapContainsInstructionHashKey(value map[string]any) bool {
+	for key, child := range value {
+		lower := strings.ToLower(key)
+		if strings.Contains(lower, "sha256") && (strings.Contains(lower, "instruction") || strings.Contains(lower, "prompt")) {
+			return true
+		}
+		if containsInstructionHashKey(child) {
+			return true
+		}
+	}
+	return false
+}
+
+func sliceContainsInstructionHashKey(value []any) bool {
+	for _, child := range value {
+		if containsInstructionHashKey(child) {
+			return true
 		}
 	}
 	return false
@@ -276,7 +316,7 @@ func qualityBypassViolations(path string, data []byte) []Violation {
 func moduleBoundaryViolations(paths []string) []Violation {
 	var violations []Violation
 	for _, path := range paths {
-		if filepath.Base(path) != "go.mod" || path == "glm-worker/go.mod" {
+		if filepath.Base(path) != goModName || path == "glm-worker/go.mod" {
 			continue
 		}
 		violations = append(violations, Violation{
@@ -292,6 +332,18 @@ func markdownBudgetViolations(root string, paths []string) ([]Violation, error) 
 	for _, path := range paths {
 		present[path] = true
 	}
+	violations, err := markdownFileBudgetViolations(root, present)
+	if err != nil || !present["codex/AGENTS.md"] {
+		return violations, err
+	}
+	routing, err := markdownRoutingViolations(root, paths)
+	if err != nil {
+		return nil, err
+	}
+	return append(violations, routing...), nil
+}
+
+func markdownFileBudgetViolations(root string, present map[string]bool) ([]Violation, error) {
 	var violations []Violation
 	for path, limit := range markdownBudgets {
 		if !present[path] {
@@ -309,13 +361,15 @@ func markdownBudgetViolations(root string, paths []string) ([]Violation, error) 
 			Message: fmt.Sprintf("runtime Markdown is %d bytes over budget %d", len(data)-limit, limit),
 		})
 	}
-	if !present["codex/AGENTS.md"] {
-		return violations, nil
-	}
+	return violations, nil
+}
+
+func markdownRoutingViolations(root string, paths []string) ([]Violation, error) {
 	agents, err := readRegularFile(root, "codex/AGENTS.md")
 	if err != nil {
 		return nil, err
 	}
+	var violations []Violation
 	for _, path := range paths {
 		if filepath.Dir(path) != "codex/instructions" || !strings.HasSuffix(path, ".md") {
 			continue
@@ -339,32 +393,41 @@ func staleAuthorityViolations(root string, paths []string) ([]Violation, error) 
 	}
 	var violations []Violation
 	for _, path := range paths {
-		if isParentMetadata(path) || strings.HasPrefix(path, "glm-worker/internal/harnesslint/") {
-			continue
-		}
-		if containsString(staleFiles, path) || staleScenarioManifest(path) {
-			violations = append(violations, Violation{
-				Rule: "stale-authority-reference", Path: path, Line: 1, Column: 1,
-				Message: "obsolete authority or test-framework artifact must be removed",
-			})
-			continue
-		}
-		if !isTextPath(path) {
-			continue
-		}
-		data, err := readRegularFile(root, path)
+		current, err := staleAuthorityPathViolations(root, path, staleFiles)
 		if err != nil {
 			return nil, err
 		}
-		for _, stale := range staleFiles {
-			if !bytes.Contains(data, []byte(stale)) {
-				continue
-			}
-			violations = append(violations, Violation{
-				Rule: "stale-authority-reference", Path: path, Line: lineOf(string(data), stale), Column: 1,
-				Message: "live code or instruction references obsolete authority " + stale,
-			})
+		violations = append(violations, current...)
+	}
+	return violations, nil
+}
+
+func staleAuthorityPathViolations(root, path string, staleFiles []string) ([]Violation, error) {
+	if isParentMetadata(path) || strings.HasPrefix(path, "glm-worker/internal/harnesslint/") {
+		return nil, nil
+	}
+	if containsString(staleFiles, path) || staleScenarioManifest(path) {
+		return []Violation{{
+			Rule: "stale-authority-reference", Path: path, Line: 1, Column: 1,
+			Message: "obsolete authority or test-framework artifact must be removed",
+		}}, nil
+	}
+	if !isTextPath(path) {
+		return nil, nil
+	}
+	data, err := readRegularFile(root, path)
+	if err != nil {
+		return nil, err
+	}
+	var violations []Violation
+	for _, stale := range staleFiles {
+		if !bytes.Contains(data, []byte(stale)) {
+			continue
 		}
+		violations = append(violations, Violation{
+			Rule: "stale-authority-reference", Path: path, Line: lineOf(string(data), stale), Column: 1,
+			Message: "live code or instruction references obsolete authority " + stale,
+		})
 	}
 	return violations, nil
 }
@@ -388,13 +451,13 @@ func isTextPath(path string) bool {
 	case ".go", ".sh", ".md", ".json", ".toml", ".rules", ".txt", ".yml", ".yaml":
 		return true
 	default:
-		return filepath.Base(path) == "commentlint" || filepath.Base(path) == "harnesslint" || path == ".githooks/post-merge"
+		return filepath.Base(path) == commentlintName || filepath.Base(path) == harnesslintName || path == postMergeHookPath
 	}
 }
 
 func isShellPath(path string) bool {
 	base := filepath.Base(path)
-	return strings.HasSuffix(path, ".sh") || base == "commentlint" || base == "harnesslint" || path == ".githooks/post-merge"
+	return strings.HasSuffix(path, ".sh") || base == commentlintName || base == harnesslintName || path == postMergeHookPath
 }
 
 func lineOf(text, needle string) int {

@@ -13,26 +13,6 @@ import (
 	"time"
 )
 
-const roundLogVersion = 1
-
-const (
-	RoundPathClassDoc   = "doc"
-	RoundPathClassCode  = "code"
-	RoundPathClassOther = "other"
-)
-
-const (
-	RoundDeltaBaseline      = "baseline"
-	RoundDeltaInitial       = "initial"
-	RoundDeltaSameSnapshot  = "same-snapshot"
-	RoundDeltaCommentFormat = "comment-format-only"
-	RoundDeltaDocChange     = "doc-change"
-	RoundDeltaSemantic      = "semantic-change"
-	RoundDeltaUnknown       = "unknown"
-)
-
-const RoundWorkerPhaseBaseline = "baseline"
-
 type RoundPathState struct {
 	Path           string `json:"path"`
 	Class          string `json:"class"`
@@ -53,6 +33,59 @@ type RoundRecord struct {
 	Paths        []RoundPathState `json:"paths,omitempty"`
 	CaptureError string           `json:"capture_error,omitempty"`
 }
+
+type RoundDelta struct {
+	Class         string
+	ChangedPaths  int
+	SemanticPaths int
+	DocPaths      int
+}
+
+const roundLogVersion = 1
+
+const (
+	extCC    = ".cc"
+	extCS    = ".cs"
+	extMM    = ".mm"
+	extCPP   = ".cpp"
+	extDart  = ".dart"
+	extPHP   = ".php"
+	extCXX   = ".cxx"
+	extJava  = ".java"
+	extKT    = ".kt"
+	extKTS   = ".kts"
+	extScala = ".scala"
+	extSwift = ".swift"
+	extRS    = ".rs"
+	extHPP   = ".hpp"
+	extHH    = ".hh"
+	extHXX   = ".hxx"
+	extH     = ".h"
+)
+
+const (
+	RoundPathClassDoc   = "doc"
+	RoundPathClassCode  = "code"
+	RoundPathClassOther = "other"
+)
+
+const (
+	RoundDeltaBaseline      = "baseline"
+	RoundDeltaInitial       = "initial"
+	RoundDeltaSameSnapshot  = "same-snapshot"
+	RoundDeltaCommentFormat = "comment-format-only"
+	RoundDeltaDocChange     = "doc-change"
+	RoundDeltaSemantic      = "semantic-change"
+	RoundDeltaUnknown       = "unknown"
+)
+
+const RoundWorkerPhaseBaseline = "baseline"
+
+const (
+	roundCommentSlash = "slash"
+	roundCommentHash  = "hash"
+	roundCommentNone  = "none"
+)
 
 func (s *StateStore) RoundLogPath(taskID string) string {
 	return s.Path(filepath.Join("rounds", taskID+".jsonl"))
@@ -84,12 +117,12 @@ func (s *StateStore) AppendRoundRecord(record RoundRecord) error {
 		return err
 	}
 	if err := file.Chmod(0o600); err != nil {
-		file.Close()
+		_ = file.Close()
 		warnRoundRecordFailure("log chmod", err)
 		return err
 	}
 	if _, err := file.Write(append(data, '\n')); err != nil {
-		file.Close()
+		_ = file.Close()
 		warnRoundRecordFailure("追記", err)
 		return err
 	}
@@ -175,9 +208,9 @@ func RoundPathClass(path string) string {
 	switch strings.ToLower(filepath.Ext(path)) {
 	case ".md", ".markdown", ".rst", ".adoc", ".txt":
 		return RoundPathClassDoc
-	case ".go", ".c", ".h", ".cpp", ".hpp", ".cc", ".hh", ".cxx", ".hxx",
-		".java", ".kt", ".kts", ".cs", ".swift", ".rs", ".dart", ".scala",
-		".m", ".mm", ".php",
+	case ".go", ".c", extH, extCPP, extHPP, extCC, extHH, extCXX, extHXX,
+		extJava, extKT, extKTS, extCS, extSwift, extRS, extDart, extScala,
+		".m", extMM, extPHP,
 		".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs",
 		".py", ".toml", ".ini", ".cfg",
 		".json", ".css", ".scss", ".less":
@@ -190,17 +223,11 @@ func RoundPathClass(path string) string {
 	return RoundPathClassOther
 }
 
-const (
-	roundCommentSlash = "slash"
-	roundCommentHash  = "hash"
-	roundCommentNone  = "none"
-)
-
 func roundCommentKind(path string) string {
 	switch strings.ToLower(filepath.Ext(path)) {
-	case ".go", ".c", ".h", ".cpp", ".hpp", ".cc", ".hh", ".cxx", ".hxx",
-		".java", ".kt", ".kts", ".cs", ".swift", ".rs", ".dart", ".scala",
-		".m", ".mm", ".php",
+	case ".go", ".c", extH, extCPP, extHPP, extCC, extHH, extCXX, extHXX,
+		extJava, extKT, extKTS, extCS, extSwift, extRS, extDart, extScala,
+		".m", extMM, extPHP,
 		".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs":
 		return roundCommentSlash
 	case ".py", ".toml", ".ini", ".cfg":
@@ -210,52 +237,60 @@ func roundCommentKind(path string) string {
 }
 
 func RoundSemanticDigest(content []byte, class string, path string) string {
-	if len(content) == 0 {
-		return roundDigest(content)
-	}
-	if class == RoundPathClassDoc {
+	if len(content) == 0 || class == RoundPathClassDoc {
 		return roundDigest(content)
 	}
 	if class != RoundPathClassCode {
 		return ""
 	}
-	if bytes.Contains(content, []byte("\\\n")) {
-		return ""
-	}
 	kind := roundCommentKind(path)
-	switch kind {
-	case roundCommentSlash:
-		if bytes.IndexByte(content, '`') >= 0 {
-			return ""
-		}
-		ext := strings.ToLower(filepath.Ext(path))
-		if ext == ".php" && bytes.Contains(content, []byte("<<<")) {
-			return ""
-		}
-		for _, marker := range roundSlashStringGuardMarkers(ext) {
-			if bytes.Contains(content, marker) {
-				return ""
-			}
-		}
-	case roundCommentHash:
-		if bytes.Contains(content, []byte(`"""`)) || bytes.Contains(content, []byte(`'''`)) {
-			return ""
-		}
+	if roundSemanticUnsafe(content, path, kind) {
+		return ""
 	}
 	return roundDigest(normalizeRoundContent(content, kind))
 }
 
+func roundSemanticUnsafe(content []byte, path, kind string) bool {
+	if bytes.Contains(content, []byte("\\\n")) {
+		return true
+	}
+	switch kind {
+	case roundCommentSlash:
+		return roundSlashSemanticUnsafe(content, path)
+	case roundCommentHash:
+		return bytes.Contains(content, []byte(`"""`)) || bytes.Contains(content, []byte(`'''`))
+	default:
+		return false
+	}
+}
+
+func roundSlashSemanticUnsafe(content []byte, path string) bool {
+	if bytes.IndexByte(content, '`') >= 0 {
+		return true
+	}
+	ext := strings.ToLower(filepath.Ext(path))
+	if ext == extPHP && bytes.Contains(content, []byte("<<<")) {
+		return true
+	}
+	for _, marker := range roundSlashStringGuardMarkers(ext) {
+		if bytes.Contains(content, marker) {
+			return true
+		}
+	}
+	return false
+}
+
 func roundSlashStringGuardMarkers(ext string) [][]byte {
 	switch ext {
-	case ".java", ".kt", ".kts", ".scala":
+	case extJava, extKT, extKTS, extScala:
 		return [][]byte{[]byte(`"""`)}
-	case ".swift", ".dart":
+	case extSwift, extDart:
 		return [][]byte{[]byte(`"""`), []byte(`'''`)}
-	case ".cs":
+	case extCS:
 		return [][]byte{[]byte(`"""`), []byte(`@"`)}
-	case ".rs":
+	case extRS:
 		return [][]byte{[]byte(`r"`), []byte(`#"`)}
-	case ".cpp", ".hpp", ".cc", ".hh", ".cxx", ".hxx", ".h", ".mm":
+	case extCPP, extHPP, extCC, extHH, extCXX, extHXX, extH, extMM:
 		return [][]byte{[]byte(`R"`)}
 	}
 	return nil
@@ -332,32 +367,39 @@ func roundDigest(content []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
-type RoundDelta struct {
-	Class         string
-	ChangedPaths  int
-	SemanticPaths int
-	DocPaths      int
-}
-
 func CompareRoundRecords(prev, curr *RoundRecord) RoundDelta {
-	if curr == nil {
-		return RoundDelta{Class: RoundDeltaUnknown}
-	}
-	if curr.WorkerPhase == RoundWorkerPhaseBaseline {
-		return RoundDelta{Class: RoundDeltaBaseline}
-	}
-	if prev == nil {
-		return RoundDelta{Class: RoundDeltaInitial}
-	}
-	if roundSnapshotsEqual(prev.Snapshot, curr.Snapshot) {
-		return RoundDelta{Class: RoundDeltaSameSnapshot}
-	}
-	if prev.CaptureError != "" || curr.CaptureError != "" {
-		return RoundDelta{Class: RoundDeltaUnknown}
+	if initial, done := initialRoundDelta(prev, curr); done {
+		return initial
 	}
 	previous := roundPathIndex(prev.Paths)
 	current := roundPathIndex(curr.Paths)
 	delta := RoundDelta{Class: RoundDeltaCommentFormat}
+	accumulateCurrentRoundPaths(&delta, previous, current)
+	accumulateRemovedRoundPaths(&delta, previous, current)
+	if delta.ChangedPaths == 0 {
+		return RoundDelta{Class: RoundDeltaUnknown}
+	}
+	return delta
+}
+
+func initialRoundDelta(prev, curr *RoundRecord) (RoundDelta, bool) {
+	switch {
+	case curr == nil:
+		return RoundDelta{Class: RoundDeltaUnknown}, true
+	case curr.WorkerPhase == RoundWorkerPhaseBaseline:
+		return RoundDelta{Class: RoundDeltaBaseline}, true
+	case prev == nil:
+		return RoundDelta{Class: RoundDeltaInitial}, true
+	case roundSnapshotsEqual(prev.Snapshot, curr.Snapshot):
+		return RoundDelta{Class: RoundDeltaSameSnapshot}, true
+	case prev.CaptureError != "" || curr.CaptureError != "":
+		return RoundDelta{Class: RoundDeltaUnknown}, true
+	default:
+		return RoundDelta{}, false
+	}
+}
+
+func accumulateCurrentRoundPaths(delta *RoundDelta, previous, current map[string]RoundPathState) {
 	for path, currEntry := range current {
 		prevEntry, existed := previous[path]
 		if existed && prevEntry.FullDigest == currEntry.FullDigest && currEntry.FullDigest != "" {
@@ -374,22 +416,21 @@ func CompareRoundRecords(prev, curr *RoundRecord) RoundDelta {
 		delta.SemanticPaths++
 		delta.Class = RoundDeltaSemantic
 	}
-	for path := range previous {
+}
+
+func accumulateRemovedRoundPaths(delta *RoundDelta, previous, current map[string]RoundPathState) {
+	for path, prevEntry := range previous {
 		if _, ok := current[path]; ok {
 			continue
 		}
 		delta.ChangedPaths++
-		if previous[path].Class == RoundPathClassDoc {
+		if prevEntry.Class == RoundPathClassDoc {
 			delta.addDocPath()
 			continue
 		}
 		delta.SemanticPaths++
 		delta.Class = RoundDeltaSemantic
 	}
-	if delta.ChangedPaths == 0 {
-		return RoundDelta{Class: RoundDeltaUnknown}
-	}
-	return delta
 }
 
 func (d *RoundDelta) addDocPath() {

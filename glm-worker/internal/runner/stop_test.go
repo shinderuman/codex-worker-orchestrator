@@ -167,10 +167,8 @@ func TestRunCommandStopsProcessGroupWithTermIgnoringChildren(t *testing.T) {
 
 	for _, target := range []int{-pgid, grandchild} {
 		deadline := time.Now().Add(2 * time.Second)
-		for {
-			if syscall.Kill(target, syscall.Signal(0)) != nil {
-				break
-			}
+		for syscall.Kill(target, syscall.Signal(0)) == nil {
+
 			if !time.Now().Before(deadline) {
 				t.Fatalf("process %dが停止後もgroupへ残存しています", target)
 			}

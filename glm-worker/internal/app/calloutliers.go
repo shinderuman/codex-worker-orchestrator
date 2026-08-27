@@ -64,7 +64,7 @@ func printCallOutliers(st *state.StateStore, stdout io.Writer) error {
 		})
 	}
 	if considered == 0 {
-		output.Telemetry.Status = "none"
+		output.Telemetry.Status = statusNone
 		output.Report = state.BuildCallOutlierReport(nil)
 		return writeJSON(stdout, output)
 	}

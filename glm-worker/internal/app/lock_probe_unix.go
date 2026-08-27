@@ -11,11 +11,11 @@ func ProbeRepoLock(path string) LockProbe {
 	file, err := os.OpenFile(path, os.O_RDONLY, 0)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return LockProbe{State: LockFree, PID: "none"}
+			return LockProbe{State: LockFree, PID: statusNone}
 		}
 		return LockProbe{State: LockUnknown, PID: "unknown"}
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	pidBytes := make([]byte, 32)
 	n, _ := file.ReadAt(pidBytes, 0)

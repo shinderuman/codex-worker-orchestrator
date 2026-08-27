@@ -10,6 +10,16 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
 )
 
+type processErrorBody struct {
+	Kind    string         `json:"kind"`
+	Message string         `json:"message"`
+	Detail  map[string]any `json:"detail,omitempty"`
+}
+
+type processErrorEnvelope struct {
+	Error processErrorBody `json:"error"`
+}
+
 const (
 	errorKindUsage                   = "usage"
 	errorKindStdinPayload            = "stdin_payload"
@@ -30,29 +40,52 @@ const (
 	errorKindInternal                = "internal"
 )
 
-type processErrorBody struct {
-	Kind    string         `json:"kind"`
-	Message string         `json:"message"`
-	Detail  map[string]any `json:"detail,omitempty"`
-}
-
-type processErrorEnvelope struct {
-	Error processErrorBody `json:"error"`
-}
-
 func WriteProcessError(w io.Writer, err error) error {
 	return writeJSON(w, processErrorEnvelope{Error: buildProcessError(err)})
 }
 
 func buildProcessError(err error) processErrorBody {
+	if body, ok := buildInputProcessError(err); ok {
+		return body
+	}
+	if body, ok := buildRuntimeProcessError(err); ok {
+		return body
+	}
+	if body, ok := buildPostRunProcessError(err); ok {
+		return body
+	}
+	return processErrorBody{Kind: errorKindInternal, Message: err.Error()}
+}
+
+func buildInputProcessError(err error) (processErrorBody, bool) {
 	var usage *UsageError
 	var notFound *NotFoundError
 	var stdinPayload *StdinPayloadError
-	var verification *VerificationError
-	var codexLimit *CodexLimitError
-	var smokeFail *InstallSmokeError
-	var qualityGateFail *QualityGateError
 	var outputViolation *MachineOutputViolationError
+
+	switch {
+	case errors.As(err, &usage):
+		return processErrorBody{Kind: errorKindUsage, Message: usage.Message}, true
+	case errors.As(err, &stdinPayload):
+		return processErrorBody{Kind: errorKindStdinPayload, Message: stdinPayload.Message}, true
+	case errors.As(err, &notFound):
+		return processErrorBody{Kind: errorKindNotFound, Message: notFound.Message}, true
+	case errors.Is(err, ErrRepoLockHeld):
+		return processErrorBody{Kind: errorKindRepoLockHeld, Message: ErrRepoLockHeld.Error()}, true
+	case errors.Is(err, state.ErrNoResumeCheckpoint):
+		return processErrorBody{Kind: errorKindNotFound, Message: state.ErrNoResumeCheckpoint.Error()}, true
+	case errors.As(err, &outputViolation):
+		return processErrorBody{
+			Kind:    errorKindMachineOutputViolation,
+			Message: outputViolation.Error(),
+			Detail:  map[string]any{"held_bytes": outputViolation.HeldBytes},
+		}, true
+	default:
+		return processErrorBody{}, false
+	}
+}
+
+func buildRuntimeProcessError(err error) (processErrorBody, bool) {
 	var workerErr *workflow.WorkerError
 	var rateLimit runner.ZaiRateLimitError
 	var providerUnavailable *runner.ProviderUnavailableError
@@ -60,95 +93,79 @@ func buildProcessError(err error) processErrorBody {
 	var stopEndpoint *StopEndpointError
 
 	switch {
-	case errors.As(err, &usage):
-		return processErrorBody{Kind: errorKindUsage, Message: usage.Message}
-	case errors.As(err, &stdinPayload):
-		return processErrorBody{Kind: errorKindStdinPayload, Message: stdinPayload.Message}
-	case errors.As(err, &notFound):
-		return processErrorBody{Kind: errorKindNotFound, Message: notFound.Message}
-	case errors.Is(err, ErrRepoLockHeld):
-		return processErrorBody{Kind: errorKindRepoLockHeld, Message: ErrRepoLockHeld.Error()}
-	case errors.Is(err, state.ErrNoResumeCheckpoint):
-		return processErrorBody{Kind: errorKindNotFound, Message: state.ErrNoResumeCheckpoint.Error()}
-	case errors.As(err, &outputViolation):
-		return processErrorBody{
-			Kind:    errorKindMachineOutputViolation,
-			Message: outputViolation.Error(),
-			Detail:  map[string]any{"held_bytes": outputViolation.HeldBytes},
-		}
 	case errors.As(err, &workerErr):
 		return processErrorBody{
 			Kind:    errorKindWorkerError,
 			Message: workerErr.Message,
 			Detail:  workerErrorDetail(workerErr),
-		}
+		}, true
 	case errors.As(err, &rateLimit):
 		return processErrorBody{
 			Kind:    errorKindRateLimited,
 			Message: "Z.ai Coding Plan 5h limit reached; task is stopped and resumable",
 			Detail:  rateLimitDetail(rateLimit),
-		}
+		}, true
 	case errors.As(err, &providerUnavailable):
 		return processErrorBody{
 			Kind:    errorKindProviderUnavailable,
 			Message: "provider stayed unavailable after probe budget; task is stopped and resumable",
 			Detail:  providerUnavailableDetail(providerUnavailable),
-		}
+		}, true
 	case errors.As(err, &interrupted):
 		return processErrorBody{
 			Kind:    errorKindInterrupted,
 			Message: "task interrupted by glm-worker --stop; task is stopped and resumable",
 			Detail:  interruptedDetail(interrupted),
-		}
+		}, true
 	case errors.As(err, &stopEndpoint):
+		kind := errorKindStopEndpointStale
 		if stopEndpoint.Absent {
-			return processErrorBody{
-				Kind:    errorKindStopEndpointAbsent,
-				Message: stopEndpoint.Error(),
-			}
+			kind = errorKindStopEndpointAbsent
 		}
-		return processErrorBody{
-			Kind:    errorKindStopEndpointStale,
-			Message: stopEndpoint.Error(),
-		}
+		return processErrorBody{Kind: kind, Message: stopEndpoint.Error()}, true
+	default:
+		return processErrorBody{}, false
+	}
+}
+
+func buildPostRunProcessError(err error) (processErrorBody, bool) {
+	var verification *VerificationError
+	var codexLimit *CodexLimitError
+	var smokeFail *InstallSmokeError
+	var qualityGateFail *QualityGateError
+
+	switch {
 	case errors.As(err, &verification):
-		return processErrorBody{
-			Kind:    verificationKind(verification.Outcome),
-			Message: verification.Reason,
-		}
+		return processErrorBody{Kind: verificationKind(verification.Outcome), Message: verification.Reason}, true
 	case errors.As(err, &codexLimit):
 		return processErrorBody{
 			Kind:    errorKindCodexLimitUnavailable,
 			Message: "codex rate limits unreadable; use the manual recovery path",
 			Detail:  map[string]any{"phase": codexLimit.Phase},
-		}
+		}, true
 	case errors.As(err, &smokeFail):
 		return processErrorBody{
 			Kind:    errorKindInstallSmokeFailed,
 			Message: smokeFail.Error(),
 			Detail:  installSmokeFailDetail(smokeFail),
-		}
+		}, true
 	case errors.As(err, &qualityGateFail):
 		return processErrorBody{
 			Kind:    errorKindQualityGateFailed,
 			Message: qualityGateFail.Error(),
 			Detail:  qualityGateFailDetail(qualityGateFail),
-		}
+		}, true
 	default:
-		return processErrorBody{Kind: errorKindInternal, Message: err.Error()}
+		return processErrorBody{}, false
 	}
 }
 
 func installSmokeFailDetail(err *InstallSmokeError) map[string]any {
 	return map[string]any{
-		"exit_code":          err.ExitCode,
-		"result":             "fail",
-		"role":               stringPtr(err.Role),
-		"reuse_reason":       stringPtr(err.ReuseReason),
-		"duration_ms":        err.DurationMS,
-		"log":                stringPtr(err.LogPath),
-		"tree_digest":        err.TreeDigest,
-		"smoke_input_digest": err.SmokeInputDigest,
+		"exit_code":   err.ExitCode,
+		"result":      "fail",
+		"role":        stringPtr(err.Role),
+		"duration_ms": err.DurationMS,
 	}
 }
 

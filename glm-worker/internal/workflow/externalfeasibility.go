@@ -11,6 +11,21 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
+type externalFeasibility struct {
+	status         string
+	assumption     string
+	evidenceSource string
+	evidence       string
+	goDecision     string
+}
+
+type externalFeasibilityRejectKind int
+
+type externalFeasibilityParseError struct {
+	kind   externalFeasibilityRejectKind
+	reason string
+}
+
 const externalFeasibilitySectionHeading = "## External feasibility"
 
 const (
@@ -22,31 +37,25 @@ const (
 
 const externalFeasibilityEvidenceProducer = "producer"
 
-var externalFeasibilityFieldKeys = []string{"status", "assumption", "evidence-source", "evidence", "go"}
-
-type externalFeasibility struct {
-	status         string
-	assumption     string
-	evidenceSource string
-	evidence       string
-	goDecision     string
-}
-
-func (f externalFeasibility) pocStage() bool {
-	return f.status == externalFeasibilityStatusPoC || f.status == externalFeasibilityStatusObservation
-}
-
-type externalFeasibilityRejectKind int
-
 const (
 	externalFeasibilityRejectMissing externalFeasibilityRejectKind = iota + 1
 	externalFeasibilityRejectMalformed
 	externalFeasibilityRejectUnverified
 )
 
-type externalFeasibilityParseError struct {
-	kind   externalFeasibilityRejectKind
-	reason string
+var externalFeasibilityFieldKeys = []string{"status", "assumption", "evidence-source", "evidence", "go"}
+
+var externalFeasibilityGuardSurface = guardSurface{
+	label:         "external feasibility宣言",
+	files:         "ACTIVE task fileの`## External feasibility`節",
+	eventSuffix:   "external-feasibility-check",
+	outcomePrefix: "external_feasibility",
+	invariants:    "ACTIVE task fileは`## External feasibility`節へstatus(not-applicable/poc/observation/implementation)を宣言し、implementationはevidence-source: producer・evidence・go(親Go判断)を伴う。poc/observationのworkerはread-only capabilityと開始前後snapshot同一性でproduction diffを禁止する。宣言内容の真偽は機械検証しない",
+	targets:       "ACTIVE task fileの`## External feasibility`節と現在の宣言status",
+}
+
+func (f externalFeasibility) pocStage() bool {
+	return f.status == externalFeasibilityStatusPoC || f.status == externalFeasibilityStatusObservation
 }
 
 func (e *externalFeasibilityParseError) Error() string { return e.reason }
@@ -62,19 +71,23 @@ func leadingBackticks(line string) int {
 func parseExternalFeasibilityDeclaration(content []byte) (externalFeasibility, error) {
 	var decl externalFeasibility
 	lines := strings.Split(string(content), "\n")
+	headingAt, err := findExternalFeasibilitySection(lines)
+	if err != nil {
+		return decl, err
+	}
+	values, err := parseExternalFeasibilityValues(lines, headingAt)
+	if err != nil {
+		return decl, err
+	}
+	return validateExternalFeasibilityFields(values)
+}
+
+func findExternalFeasibilitySection(lines []string) (int, error) {
 	headingAt := -1
 	sections := 0
 	fence := 0
 	for i, line := range lines {
-		backticks := leadingBackticks(line)
-		if fence > 0 {
-			if backticks >= fence {
-				fence = 0
-			}
-			continue
-		}
-		if backticks >= 3 {
-			fence = backticks
+		if !externalFeasibilityLineOutsideFence(line, &fence) {
 			continue
 		}
 		if strings.HasPrefix(line, "## ") && strings.TrimSpace(line) == externalFeasibilitySectionHeading {
@@ -84,31 +97,43 @@ func parseExternalFeasibilityDeclaration(content []byte) (externalFeasibility, e
 			}
 		}
 	}
-	if sections == 0 {
-		return decl, &externalFeasibilityParseError{
+	switch {
+	case sections == 0:
+		return -1, &externalFeasibilityParseError{
 			kind:   externalFeasibilityRejectMissing,
 			reason: "External feasibility節(" + externalFeasibilitySectionHeading + ")がありません",
 		}
-	}
-	if sections > 1 {
-		return decl, &externalFeasibilityParseError{
+	case sections > 1:
+		return -1, &externalFeasibilityParseError{
 			kind:   externalFeasibilityRejectMalformed,
 			reason: fmt.Sprintf("External feasibility節が複数あります(%d節)", sections),
 		}
+	default:
+		return headingAt, nil
 	}
+}
+
+func externalFeasibilityLineOutsideFence(line string, fence *int) bool {
+	backticks := leadingBackticks(line)
+	if *fence > 0 {
+		if backticks >= *fence {
+			*fence = 0
+		}
+		return false
+	}
+	if backticks >= 3 {
+		*fence = backticks
+		return false
+	}
+	return true
+}
+
+func parseExternalFeasibilityValues(lines []string, headingAt int) (map[string]string, error) {
 	values := map[string]string{}
-	fence = 0
+	fence := 0
 	for i := headingAt + 1; i < len(lines); i++ {
 		line := lines[i]
-		backticks := leadingBackticks(line)
-		if fence > 0 {
-			if backticks >= fence {
-				fence = 0
-			}
-			continue
-		}
-		if backticks >= 3 {
-			fence = backticks
+		if !externalFeasibilityLineOutsideFence(line, &fence) {
 			continue
 		}
 		if strings.HasPrefix(line, "## ") {
@@ -118,30 +143,37 @@ func parseExternalFeasibilityDeclaration(content []byte) (externalFeasibility, e
 		if trimmed == "" {
 			continue
 		}
-		key, value, ok := strings.Cut(trimmed, ":")
-		key = strings.TrimSpace(key)
-		value = strings.TrimSpace(value)
-		if !ok || !externalFeasibilityKnownKey(key) {
-			return decl, &externalFeasibilityParseError{
-				kind:   externalFeasibilityRejectMalformed,
-				reason: fmt.Sprintf("External feasibility節の%d行目 %qがkey: value形式ではありません(使えるkey: %s)", i+1, trimmed, strings.Join(externalFeasibilityFieldKeys, ", ")),
-			}
+		if err := addExternalFeasibilityValue(values, trimmed, i+1); err != nil {
+			return nil, err
 		}
-		if _, dup := values[key]; dup {
-			return decl, &externalFeasibilityParseError{
-				kind:   externalFeasibilityRejectMalformed,
-				reason: "External feasibility節のkey \"" + key + "\"が重複しています",
-			}
-		}
-		if value == "" {
-			return decl, &externalFeasibilityParseError{
-				kind:   externalFeasibilityRejectMalformed,
-				reason: "External feasibility節のkey \"" + key + "\"のvalueが空です",
-			}
-		}
-		values[key] = value
 	}
-	return validateExternalFeasibilityFields(values)
+	return values, nil
+}
+
+func addExternalFeasibilityValue(values map[string]string, line string, lineNumber int) error {
+	key, value, ok := strings.Cut(line, ":")
+	key = strings.TrimSpace(key)
+	value = strings.TrimSpace(value)
+	if !ok || !externalFeasibilityKnownKey(key) {
+		return &externalFeasibilityParseError{
+			kind:   externalFeasibilityRejectMalformed,
+			reason: fmt.Sprintf("External feasibility節の%d行目 %qがkey: value形式ではありません(使えるkey: %s)", lineNumber, line, strings.Join(externalFeasibilityFieldKeys, ", ")),
+		}
+	}
+	if _, dup := values[key]; dup {
+		return &externalFeasibilityParseError{
+			kind:   externalFeasibilityRejectMalformed,
+			reason: "External feasibility節のkey \"" + key + "\"が重複しています",
+		}
+	}
+	if value == "" {
+		return &externalFeasibilityParseError{
+			kind:   externalFeasibilityRejectMalformed,
+			reason: "External feasibility節のkey \"" + key + "\"のvalueが空です",
+		}
+	}
+	values[key] = value
+	return nil
 }
 
 func externalFeasibilityKnownKey(key string) bool {
@@ -156,60 +188,8 @@ func externalFeasibilityKnownKey(key string) bool {
 func validateExternalFeasibilityFields(values map[string]string) (externalFeasibility, error) {
 	var decl externalFeasibility
 	status := values["status"]
-	switch status {
-	case "":
-		return decl, &externalFeasibilityParseError{
-			kind:   externalFeasibilityRejectMalformed,
-			reason: "External feasibility節にstatusがありません(not-applicable/poc/observation/implementation)",
-		}
-	case externalFeasibilityStatusNotApplicable:
-		for _, key := range externalFeasibilityFieldKeys[1:] {
-			if values[key] != "" {
-				return decl, &externalFeasibilityParseError{
-					kind:   externalFeasibilityRejectMalformed,
-					reason: "not-applicableではstatus以外のkey(" + key + ")を書けません。外部前提がある場合はpoc/observation/implementationを宣言してください",
-				}
-			}
-		}
-	case externalFeasibilityStatusPoC, externalFeasibilityStatusObservation:
-		if values["assumption"] == "" {
-			return decl, &externalFeasibilityParseError{
-				kind:   externalFeasibilityRejectMalformed,
-				reason: status + "では未検証外部前提を表すassumptionが必須です",
-			}
-		}
-		for _, key := range []string{"evidence-source", "evidence", "go"} {
-			if values[key] != "" {
-				return decl, &externalFeasibilityParseError{
-					kind:   externalFeasibilityRejectMalformed,
-					reason: status + "では" + key + "を書けません。implementation昇格は親Codexが宣言全体を書き換えて行います",
-				}
-			}
-		}
-	case externalFeasibilityStatusImplementation:
-		if values["assumption"] == "" {
-			return decl, &externalFeasibilityParseError{
-				kind:   externalFeasibilityRejectMalformed,
-				reason: "implementationでは前提とした外部成立性のassumptionが必須です",
-			}
-		}
-		if values["evidence-source"] == "" || values["evidence"] == "" || values["go"] == "" {
-			return decl, &externalFeasibilityParseError{
-				kind:   externalFeasibilityRejectUnverified,
-				reason: "implementationはevidence-source・evidence・go(親Go判断)の全てが必須です。PoC結果をGLMだけでGoへ昇格させない",
-			}
-		}
-		if values["evidence-source"] != externalFeasibilityEvidenceProducer {
-			return decl, &externalFeasibilityParseError{
-				kind:   externalFeasibilityRejectUnverified,
-				reason: "implementationのevidence-sourceは実producer由来の \"" + externalFeasibilityEvidenceProducer + "\" だけです(人工fixture・scripted packet・worker/reviewer PASSは不可)",
-			}
-		}
-	default:
-		return decl, &externalFeasibilityParseError{
-			kind:   externalFeasibilityRejectMalformed,
-			reason: fmt.Sprintf("External feasibilityのstatus %qは未知です(not-applicable/poc/observation/implementation)", status),
-		}
+	if err := validateExternalFeasibilityStatus(status, values); err != nil {
+		return decl, err
 	}
 	return externalFeasibility{
 		status:         status,
@@ -220,13 +200,61 @@ func validateExternalFeasibilityFields(values map[string]string) (externalFeasib
 	}, nil
 }
 
-var externalFeasibilityGuardSurface = guardSurface{
-	label:         "external feasibility宣言",
-	files:         "ACTIVE task fileの`## External feasibility`節",
-	eventSuffix:   "external-feasibility-check",
-	outcomePrefix: "external_feasibility",
-	invariants:    "ACTIVE task fileは`## External feasibility`節へstatus(not-applicable/poc/observation/implementation)を宣言し、implementationはevidence-source: producer・evidence・go(親Go判断)を伴う。poc/observationのworkerはread-only capabilityと開始前後snapshot同一性でproduction diffを禁止する。宣言内容の真偽は機械検証しない",
-	targets:       "ACTIVE task fileの`## External feasibility`節と現在の宣言status",
+func validateExternalFeasibilityStatus(status string, values map[string]string) error {
+	switch status {
+	case "":
+		return externalFeasibilityMalformed("External feasibility節にstatusがありません(not-applicable/poc/observation/implementation)")
+	case externalFeasibilityStatusNotApplicable:
+		return validateExternalFeasibilityNotApplicable(values)
+	case externalFeasibilityStatusPoC, externalFeasibilityStatusObservation:
+		return validateExternalFeasibilityExploration(status, values)
+	case externalFeasibilityStatusImplementation:
+		return validateExternalFeasibilityImplementation(values)
+	default:
+		return externalFeasibilityMalformed(fmt.Sprintf("External feasibilityのstatus %qは未知です(not-applicable/poc/observation/implementation)", status))
+	}
+}
+
+func validateExternalFeasibilityNotApplicable(values map[string]string) error {
+	for _, key := range externalFeasibilityFieldKeys[1:] {
+		if values[key] != "" {
+			return externalFeasibilityMalformed("not-applicableではstatus以外のkey(" + key + ")を書けません。外部前提がある場合はpoc/observation/implementationを宣言してください")
+		}
+	}
+	return nil
+}
+
+func validateExternalFeasibilityExploration(status string, values map[string]string) error {
+	if values["assumption"] == "" {
+		return externalFeasibilityMalformed(status + "では未検証外部前提を表すassumptionが必須です")
+	}
+	for _, key := range []string{"evidence-source", "evidence", "go"} {
+		if values[key] != "" {
+			return externalFeasibilityMalformed(status + "では" + key + "を書けません。implementation昇格は親Codexが宣言全体を書き換えて行います")
+		}
+	}
+	return nil
+}
+
+func validateExternalFeasibilityImplementation(values map[string]string) error {
+	if values["assumption"] == "" {
+		return externalFeasibilityMalformed("implementationでは前提とした外部成立性のassumptionが必須です")
+	}
+	if values["evidence-source"] == "" || values["evidence"] == "" || values["go"] == "" {
+		return externalFeasibilityUnverified("implementationはevidence-source・evidence・go(親Go判断)の全てが必須です。PoC結果をGLMだけでGoへ昇格させない")
+	}
+	if values["evidence-source"] != externalFeasibilityEvidenceProducer {
+		return externalFeasibilityUnverified("implementationのevidence-sourceは実producer由来の \"" + externalFeasibilityEvidenceProducer + "\" だけです(人工fixture・scripted packet・worker/reviewer PASSは不可)")
+	}
+	return nil
+}
+
+func externalFeasibilityMalformed(reason string) error {
+	return &externalFeasibilityParseError{kind: externalFeasibilityRejectMalformed, reason: reason}
+}
+
+func externalFeasibilityUnverified(reason string) error {
+	return &externalFeasibilityParseError{kind: externalFeasibilityRejectUnverified, reason: reason}
 }
 
 func (s guardSurface) unverifiedOutcome() string { return s.outcomePrefix + "_unverified" }
@@ -317,22 +345,15 @@ func (w *Workflow) gatePoCResumeSnapshot() (bool, error) {
 }
 
 func (w *Workflow) verifyPoCEndSnapshot() (bool, error) {
-	start, err := w.state.LoadPoCStartSnapshot()
-	if err != nil {
-		return true, w.failClosedPoCSnapshot(state.SnapshotStagePoCEnd, state.GitSnapshot{}, state.GitSnapshot{}, "PoC開始前snapshot読込失敗", err)
-	}
-	current, err := w.captureSnapshot(w.config.RepoRoot)
-	if err != nil {
-		return true, w.failClosedPoCSnapshot(state.SnapshotStagePoCEnd, start, state.GitSnapshot{}, "PoC終了後snapshot取得失敗", err)
-	}
-	comparison := state.CompareGitSnapshot(start, current, state.SnapshotStagePoCEnd, "")
-	if err := w.state.SaveSnapshotComparison(comparison); err != nil {
-		return true, w.failClosedPoCSnapshot(state.SnapshotStagePoCEnd, start, current, "snapshot comparison保存失敗", err)
-	}
-	if !comparison.Matched {
-		return true, w.failClosedPoCSnapshot(state.SnapshotStagePoCEnd, start, current, "PoC/観測worker開始前から終了後までの間にrepository状態が変化しています(production diff禁止違反)", nil)
-	}
-	return false, nil
+	return w.verifyEndSnapshot(snapshotEndCheck{
+		stage:          state.SnapshotStagePoCEnd,
+		loadStart:      w.state.LoadPoCStartSnapshot,
+		failClosed:     w.failClosedPoCSnapshot,
+		loadReason:     "PoC開始前snapshot読込失敗",
+		captureReason:  "PoC終了後snapshot取得失敗",
+		saveReason:     "snapshot comparison保存失敗",
+		mismatchReason: "PoC/観測worker開始前から終了後までの間にrepository状態が変化しています(production diff禁止違反)",
+	})
 }
 
 func (w *Workflow) failClosedPoCSnapshot(stage state.SnapshotStage, start, current state.GitSnapshot, reason string, cause error) error {

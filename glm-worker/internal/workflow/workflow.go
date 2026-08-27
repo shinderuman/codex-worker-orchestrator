@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/commentlint"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
@@ -26,17 +26,18 @@ type ModelRunner interface {
 }
 
 type Workflow struct {
-	config              config.AppConfig
-	state               *state.StateStore
-	runner              ModelRunner
-	output              io.Writer
-	temp                string
-	captureSnapshot     func(repoRoot string) (state.GitSnapshot, error)
-	collectChangedPaths func(repoRoot, baselineHead string) ([]string, error)
-	now                 func() time.Time
-	sleep               func(time.Duration)
-	jitter              func(base time.Duration) time.Duration
-	commentLint         func(root string) (commentlint.Report, error)
+	config                config.AppConfig
+	state                 *state.StateStore
+	runner                ModelRunner
+	output                io.Writer
+	temp                  string
+	captureSnapshot       func(repoRoot string) (state.GitSnapshot, error)
+	collectChangedPaths   func(repoRoot, baselineHead string) ([]string, error)
+	now                   func() time.Time
+	sleep                 func(time.Duration)
+	jitter                func(base time.Duration) time.Duration
+	qualityGate           func(root string) (harnesslint.Report, error)
+	captureQualitySurface func(root string) (string, error)
 
 	stop *runner.StopController
 
@@ -52,26 +53,65 @@ type callDiagnostics struct {
 	providerClassification string
 }
 
-func NewWorkflow(cfg config.AppConfig, st *state.StateStore, r ModelRunner, output io.Writer) *Workflow {
-	return &Workflow{
-		config:              cfg,
-		state:               st,
-		runner:              r,
-		output:              output,
-		captureSnapshot:     state.CaptureGitSnapshot,
-		collectChangedPaths: collectChangedPaths,
-		now:                 time.Now,
-		sleep:               time.Sleep,
-		jitter:              boundedBackoffJitter,
-		commentLint:         runCommentLint,
-	}
+type modelCallExecution struct {
+	runResult     runner.RunResult
+	startedAt     time.Time
+	completedAt   time.Time
+	runErr        error
+	recoveryFatal bool
 }
 
-func runCommentLint(root string) (commentlint.Report, error) {
-	if root == "" {
-		return commentlint.Report{Status: "pass", Violations: []commentlint.Violation{}}, nil
+type WorkerError struct {
+	Phase    string
+	ExitCode int
+	Tail     string
+	Message  string
+}
+
+type effectiveRisk struct {
+	high   bool
+	source string
+}
+
+type snapshotEndCheck struct {
+	stage          state.SnapshotStage
+	loadStart      func() (state.GitSnapshot, error)
+	failClosed     func(state.SnapshotStage, state.GitSnapshot, state.GitSnapshot, string, error) error
+	loadReason     string
+	captureReason  string
+	saveReason     string
+	mismatchReason string
+}
+
+const highRiskValue = "HIGH"
+
+const providerUnavailableDeadline = 3 * time.Hour
+
+const maxTransientProbes = 4
+
+const resultCorrectionPhaseSuffix = "-result-correct"
+
+var transientBackoffSchedule = []time.Duration{
+	5 * time.Minute,
+	15 * time.Minute,
+	45 * time.Minute,
+	90 * time.Minute,
+}
+
+func NewWorkflow(cfg config.AppConfig, st *state.StateStore, r ModelRunner, output io.Writer) *Workflow {
+	return &Workflow{
+		config:                cfg,
+		state:                 st,
+		runner:                r,
+		output:                output,
+		captureSnapshot:       state.CaptureGitSnapshot,
+		collectChangedPaths:   collectChangedPaths,
+		now:                   time.Now,
+		sleep:                 time.Sleep,
+		jitter:                boundedBackoffJitter,
+		qualityGate:           runRepositoryQualityGate,
+		captureQualitySurface: captureQualitySurfaceDigest,
 	}
-	return commentlint.Check(root)
 }
 
 func (w *Workflow) AttachStopController(stop *runner.StopController) {
@@ -80,17 +120,6 @@ func (w *Workflow) AttachStopController(stop *runner.StopController) {
 
 func (w *Workflow) stopRequested() bool {
 	return w.stop != nil && w.stop.StopRequested()
-}
-
-const providerUnavailableDeadline = 3 * time.Hour
-
-const maxTransientProbes = 4
-
-var transientBackoffSchedule = []time.Duration{
-	5 * time.Minute,
-	15 * time.Minute,
-	45 * time.Minute,
-	90 * time.Minute,
 }
 
 func boundedBackoffJitter(base time.Duration) time.Duration {
@@ -106,15 +135,8 @@ func (w *Workflow) withTemp(fn func() error) error {
 		return err
 	}
 	w.temp = temp
-	defer os.RemoveAll(temp)
+	defer func() { _ = os.RemoveAll(temp) }()
 	return fn()
-}
-
-type WorkerError struct {
-	Phase    string
-	ExitCode int
-	Tail     string
-	Message  string
 }
 
 func (e *WorkerError) Error() string {
@@ -126,44 +148,11 @@ func (e *WorkerError) Error() string {
 
 func (w *Workflow) ExecuteNewTask(request string) error {
 	return quietWhenParentFileGuardStopped(w.withTemp(func() error {
-		if w.state.Exists("pending-decision") {
-			return &WorkerError{Message: "previous task is waiting for Sol decision; use --decision or --reset"}
-		}
-		if checkpoint, err := w.state.LoadResumeCheckpoint(); err == nil {
-			switch {
-			case checkpoint.RateLimited:
-				return &WorkerError{Message: "previous task is rate-limited; use --resume or --reset"}
-			case checkpoint.ProviderUnavailable:
-				return &WorkerError{Message: "previous task is provider-unavailable; use --resume or --reset"}
-			case checkpoint.UserInterrupted:
-				return &WorkerError{Message: "previous task is interrupted; use --resume or --reset"}
-			}
-		}
-
-		if _, err := w.state.StartNewTask(); err != nil {
+		if err := w.validateNewTaskStart(); err != nil {
 			return err
 		}
-
-		if err := state.CaptureGitBaseline(w.config, w.state); err != nil {
-			return err
-		}
-		w.recordBaselineRound()
-		if err := w.state.Write("last-request", request); err != nil {
-			return err
-		}
-
-		if err := w.state.Remove("last-decision", "last-review", activeTaskStateKey); err != nil {
-			return err
-		}
-
-		activeTaskPath, wired, err := resolveActiveTaskPath(w.config.RepoRoot)
+		activeTaskPath, err := w.initializeNewTask(request)
 		if err != nil {
-			return w.failClosedActiveTaskResolution("worker-new", err)
-		}
-		if !wired {
-			activeTaskPath = ""
-		}
-		if err := w.state.Write(activeTaskStateKey, activeTaskPath); err != nil {
 			return err
 		}
 
@@ -185,30 +174,59 @@ func (w *Workflow) ExecuteNewTask(request string) error {
 			OriginalPrompt: prompt,
 			Request:        request,
 		}
-		if pocStage {
-			if stopped, err := w.savePoCStartSnapshot(); err != nil {
-				return err
-			} else if stopped {
-				return nil
-			}
-		}
-
-		workerResult, err := w.runModel(checkpoint)
-		if err != nil {
-			return err
-		}
-		if pocStage {
-			if stopped, err := w.verifyPoCEndSnapshot(); err != nil {
-				return err
-			} else if stopped {
-				return nil
-			}
-			if workerResult.Status == packet.StatusImplemented {
-				return w.routePoCWorkerResult(workerResult)
-			}
-		}
-		return w.handleWorkerResult(request, workerResult, checkpoint.Phase)
+		return w.executeWorkerCheckpoint(request, checkpoint, pocStage)
 	}))
+}
+
+func (w *Workflow) validateNewTaskStart() error {
+	if w.state.Exists("pending-decision") {
+		return &WorkerError{Message: "previous task is waiting for Sol decision; use --decision or --reset"}
+	}
+	checkpoint, err := w.state.LoadResumeCheckpoint()
+	if err != nil {
+		return nil
+	}
+	switch {
+	case checkpoint.RateLimited:
+		return &WorkerError{Message: "previous task is rate-limited; use --resume or --reset"}
+	case checkpoint.ProviderUnavailable:
+		return &WorkerError{Message: "previous task is provider-unavailable; use --resume or --reset"}
+	case checkpoint.UserInterrupted:
+		return &WorkerError{Message: "previous task is interrupted; use --resume or --reset"}
+	default:
+		return nil
+	}
+}
+
+func (w *Workflow) initializeNewTask(request string) (string, error) {
+	if _, err := w.state.StartNewTask(); err != nil {
+		return "", err
+	}
+	if err := state.CaptureGitBaseline(w.config, w.state); err != nil {
+		return "", err
+	}
+	if err := w.captureQualitySurfaceBaseline(); err != nil {
+		return "", err
+	}
+	w.recordBaselineRound()
+	if err := w.state.Write("last-request", request); err != nil {
+		return "", err
+	}
+	if err := w.state.Remove("last-decision", "last-review", activeTaskStateKey); err != nil {
+		return "", err
+	}
+
+	activeTaskPath, wired, err := resolveActiveTaskPath(w.config.RepoRoot)
+	if err != nil {
+		return "", w.failClosedActiveTaskResolution("worker-new", err)
+	}
+	if !wired {
+		activeTaskPath = ""
+	}
+	if err := w.state.Write(activeTaskStateKey, activeTaskPath); err != nil {
+		return "", err
+	}
+	return activeTaskPath, nil
 }
 
 func (w *Workflow) ExecuteDecision(decision string) error {
@@ -257,29 +275,7 @@ func (w *Workflow) ExecuteDecision(decision string) error {
 			Request:        request,
 			Decision:       decision,
 		}
-		if pocStage {
-			if stopped, err := w.savePoCStartSnapshot(); err != nil {
-				return err
-			} else if stopped {
-				return nil
-			}
-		}
-
-		workerResult, err := w.runModel(checkpoint)
-		if err != nil {
-			return err
-		}
-		if pocStage {
-			if stopped, err := w.verifyPoCEndSnapshot(); err != nil {
-				return err
-			} else if stopped {
-				return nil
-			}
-			if workerResult.Status == packet.StatusImplemented {
-				return w.routePoCWorkerResult(workerResult)
-			}
-		}
-		return w.handleWorkerResult(request, workerResult, checkpoint.Phase)
+		return w.executeWorkerCheckpoint(request, checkpoint, pocStage)
 	}))
 }
 
@@ -331,260 +327,301 @@ func (w *Workflow) ExecuteExplicitFix(instruction, origin string) error {
 			Request:        request,
 			Decision:       decision,
 		}
-		if pocStage {
-			if stopped, err := w.savePoCStartSnapshot(); err != nil {
-				return err
-			} else if stopped {
-				return nil
-			}
-		}
-
-		workerResult, err := w.runModel(checkpoint)
-		if err != nil {
-			return err
-		}
-		if pocStage {
-			if stopped, err := w.verifyPoCEndSnapshot(); err != nil {
-				return err
-			} else if stopped {
-				return nil
-			}
-			if workerResult.Status == packet.StatusImplemented {
-				return w.routePoCWorkerResult(workerResult)
-			}
-		}
-		return w.handleWorkerResult(request, workerResult, checkpoint.Phase)
+		return w.executeWorkerCheckpoint(request, checkpoint, pocStage)
 	}))
 }
 
+func (w *Workflow) executeWorkerCheckpoint(request string, checkpoint state.ResumeCheckpoint, pocStage bool) error {
+	if pocStage {
+		stopped, err := w.savePoCStartSnapshot()
+		if err != nil || stopped {
+			return err
+		}
+	}
+
+	workerResult, err := w.runModel(checkpoint)
+	if err != nil {
+		return err
+	}
+	if pocStage {
+		stopped, err := w.verifyPoCEndSnapshot()
+		if err != nil || stopped {
+			return err
+		}
+		if workerResult.Status == packet.StatusImplemented {
+			return w.routePoCWorkerResult(workerResult)
+		}
+	}
+	return w.handleWorkerResult(request, workerResult, checkpoint.Phase)
+}
+
 func (w *Workflow) ExecuteResume() error {
-	return quietWhenParentFileGuardStopped(w.withTemp(func() error {
-		checkpoint, err := w.state.LoadResumeCheckpoint()
-		if err != nil {
+	return quietWhenParentFileGuardStopped(w.withTemp(w.executeResume))
+}
+
+func (w *Workflow) executeResume() error {
+	checkpoint, decl, pocResume, err := w.loadResumeCheckpoint()
+	if err != nil {
+		return err
+	}
+	previousCheckpoint := checkpoint
+	checkpoint, stopped, err := w.prepareResumeCheckpoint(checkpoint, decl, pocResume)
+	if err != nil || stopped {
+		return err
+	}
+
+	result, err := w.runModel(checkpoint)
+	if err != nil {
+		return w.handleResumeRunError(checkpoint, previousCheckpoint, err)
+	}
+	return w.routeResumeResult(checkpoint, decl, result)
+}
+
+func (w *Workflow) loadResumeCheckpoint() (state.ResumeCheckpoint, externalFeasibility, bool, error) {
+	checkpoint, err := w.state.LoadResumeCheckpoint()
+	if err != nil {
+		return state.ResumeCheckpoint{}, externalFeasibility{}, false, err
+	}
+	if !checkpoint.RateLimited && !checkpoint.ProviderUnavailable && !checkpoint.UserInterrupted {
+		return state.ResumeCheckpoint{}, externalFeasibility{}, false, &WorkerError{Message: "saved task is not stopped by Z.ai 5h limit, provider unavailability or user interruption"}
+	}
+	if !isKnownResumeStage(checkpoint.Stage) {
+		return state.ResumeCheckpoint{}, externalFeasibility{}, false, &WorkerError{Message: fmt.Sprintf("unknown resume stage: %s", checkpoint.Stage)}
+	}
+	decl, err := w.gateExternalFeasibility(checkpoint.Phase, true)
+	if err != nil {
+		return state.ResumeCheckpoint{}, externalFeasibility{}, false, err
+	}
+	return checkpoint, decl, checkpoint.Stage == state.ResumeStageWorker && decl.pocStage(), nil
+}
+
+func (w *Workflow) prepareResumeCheckpoint(
+	checkpoint state.ResumeCheckpoint,
+	decl externalFeasibility,
+	pocResume bool,
+) (state.ResumeCheckpoint, bool, error) {
+	if checkpoint.UserInterrupted {
+		if err := w.verifyInterruptedRetention(checkpoint); err != nil {
+			return checkpoint, false, err
+		}
+	}
+	if err := w.activateResume(checkpoint); err != nil {
+		return checkpoint, false, err
+	}
+	if stopped, err := w.gateResumeSnapshots(checkpoint, pocResume); err != nil || stopped {
+		return checkpoint, stopped, err
+	}
+	if checkpoint.ProviderUnavailable {
+		if err := w.gateResumeOnProbe(checkpoint); err != nil {
+			return checkpoint, false, w.handleResumeProbeError(checkpoint, err)
+		}
+	}
+	if checkpoint.Stage == state.ResumeStageReview {
+		if stopped, err := w.verifyReviewResumeSnapshot(checkpoint); err != nil || stopped {
+			return checkpoint, stopped, err
+		}
+	}
+	checkpoint.Prompt = resumePrompt(checkpoint)
+	if checkpoint.Stage == state.ResumeStageWorker {
+		checkpoint.ReadOnly = decl.pocStage()
+	}
+	clearResumeStopState(&checkpoint)
+	return checkpoint, false, nil
+}
+
+func (w *Workflow) activateResume(checkpoint state.ResumeCheckpoint) error {
+	if err := w.state.SetTaskStatus(state.TaskStatusActive); err != nil {
+		return err
+	}
+	w.state.RecordResume()
+	w.currentResumeSource = resumeSourceOf(checkpoint)
+	return nil
+}
+
+func (w *Workflow) gateResumeSnapshots(checkpoint state.ResumeCheckpoint, pocResume bool) (bool, error) {
+	if checkpoint.Stage == state.ResumeStageAutoFix && checkpoint.ReportOnly {
+		if stopped, err := w.gateReportOnlyResumeSnapshot(); err != nil || stopped {
+			return stopped, err
+		}
+	}
+	if pocResume {
+		if stopped, err := w.gatePoCResumeSnapshot(); err != nil || stopped {
+			return stopped, err
+		}
+	}
+	return false, nil
+}
+
+func (w *Workflow) handleResumeProbeError(checkpoint state.ResumeCheckpoint, err error) error {
+	var interrupted *runner.InterruptedCallError
+	if errors.As(err, &interrupted) {
+		return w.interruptBetweenCalls(checkpoint)
+	}
+	var providerUnavailable *runner.ProviderUnavailableError
+	if errors.As(err, &providerUnavailable) {
+		return err
+	}
+	var limitErr runner.ZaiRateLimitError
+	if errors.As(err, &limitErr) {
+		return err
+	}
+	_ = w.state.ClearResumeCheckpoint()
+	_ = w.state.RemoveUnreadySession(checkpoint.Role)
+	return &WorkerError{Phase: checkpoint.Phase, Message: err.Error()}
+}
+
+func clearResumeStopState(checkpoint *state.ResumeCheckpoint) {
+	checkpoint.RateLimited = false
+	checkpoint.ResetAtCST = ""
+	checkpoint.ResetAtRFC3339 = ""
+	checkpoint.ProviderUnavailable = false
+	checkpoint.ProviderUnavailableClassification = ""
+	checkpoint.ProviderUnavailableProbes = 0
+	checkpoint.ProviderUnavailableStartedAt = time.Time{}
+	checkpoint.UserInterrupted = false
+}
+
+func (w *Workflow) handleResumeRunError(_ state.ResumeCheckpoint, previous state.ResumeCheckpoint, runErr error) error {
+	if isResumeStopError(runErr) {
+		return runErr
+	}
+	saved, loadErr := w.state.LoadResumeCheckpoint()
+	if loadErr != nil || resumeCheckpointStatus(saved) == state.TaskStatusActive {
+		previous.StopParentFiles = captureStopParentFiles(w.config.RepoRoot)
+		_ = w.state.SaveResumeCheckpoint(previous)
+	}
+
+	restoredStatus := state.TaskStatusActive
+	if loadErr == nil {
+		restoredStatus = resumeCheckpointStatus(saved)
+	}
+	if restoredStatus == state.TaskStatusActive {
+		restoredStatus = resumeCheckpointStatus(previous)
+	}
+	_ = w.state.SetTaskStatus(restoredStatus)
+	return runErr
+}
+
+func isResumeStopError(err error) bool {
+	if errors.Is(err, errParentFileGuardStopped) {
+		return true
+	}
+	var interrupted *runner.InterruptedCallError
+	if errors.As(err, &interrupted) {
+		return true
+	}
+	var providerUnavailable *runner.ProviderUnavailableError
+	if errors.As(err, &providerUnavailable) {
+		return true
+	}
+	var limitErr runner.ZaiRateLimitError
+	return errors.As(err, &limitErr)
+}
+
+func resumeCheckpointStatus(checkpoint state.ResumeCheckpoint) state.TaskStatus {
+	switch {
+	case checkpoint.ProviderUnavailable:
+		return state.TaskStatusProviderUnavailable
+	case checkpoint.RateLimited:
+		return state.TaskStatusRateLimited
+	case checkpoint.UserInterrupted:
+		return state.TaskStatusInterrupted
+	default:
+		return state.TaskStatusActive
+	}
+}
+
+func (w *Workflow) routeResumeResult(
+	checkpoint state.ResumeCheckpoint,
+	decl externalFeasibility,
+	result packet.Result,
+) error {
+	switch checkpoint.Stage {
+	case state.ResumeStageWorker:
+		return w.routeWorkerResumeResult(checkpoint, decl, result)
+	case state.ResumeStageReview:
+		return w.routeReviewResumeResult(checkpoint, result)
+	case state.ResumeStageAutoFix:
+		return w.routeAutoFixResumeResult(checkpoint, result)
+	default:
+		return &WorkerError{Phase: checkpoint.Phase, Message: fmt.Sprintf("unknown resume stage: %s", checkpoint.Stage)}
+	}
+}
+
+func (w *Workflow) routeWorkerResumeResult(
+	checkpoint state.ResumeCheckpoint,
+	decl externalFeasibility,
+	result packet.Result,
+) error {
+	if decl.pocStage() {
+		if stopped, err := w.verifyPoCEndSnapshot(); err != nil || stopped {
 			return err
 		}
-		if !checkpoint.RateLimited && !checkpoint.ProviderUnavailable && !checkpoint.UserInterrupted {
-			return &WorkerError{Message: "saved task is not stopped by Z.ai 5h limit, provider unavailability or user interruption"}
+		if result.Status == packet.StatusImplemented {
+			return w.routePoCWorkerResult(result)
 		}
-		if !isKnownResumeStage(checkpoint.Stage) {
-			return &WorkerError{Message: fmt.Sprintf("unknown resume stage: %s", checkpoint.Stage)}
-		}
+	}
+	return w.handleWorkerResult(checkpoint.Request, result, checkpoint.Phase)
+}
 
-		decl, err := w.gateExternalFeasibility(checkpoint.Phase, true)
-		if err != nil {
+func (w *Workflow) routeReviewResumeResult(checkpoint state.ResumeCheckpoint, result packet.Result) error {
+	if checkpoint.WorkerResult == nil {
+		return &WorkerError{Phase: checkpoint.Phase, Message: "resume checkpoint has no worker result"}
+	}
+	if stopped, err := w.verifyReviewEndSnapshot(); err != nil || stopped {
+		return err
+	}
+	workerResult := *checkpoint.WorkerResult
+	reviewResult, stopped, err := w.resolveResumedReviewResult(checkpoint, workerResult, result)
+	if err != nil || stopped {
+		return err
+	}
+	if err := w.writeLastReview(reviewResult); err != nil {
+		return err
+	}
+	return w.handleReviewResult(
+		checkpoint.Request,
+		workerResult,
+		reviewResult,
+		checkpoint.ReviewNumber,
+		checkpoint.AutoFixes,
+	)
+}
+
+func (w *Workflow) resolveResumedReviewResult(
+	checkpoint state.ResumeCheckpoint,
+	workerResult packet.Result,
+	result packet.Result,
+) (packet.Result, bool, error) {
+	if checkpoint.RiskFloorReemit {
+		return resolveRiskFloorReemit(result), false, nil
+	}
+	decision := w.state.ReadOr("last-decision", "none")
+	highRiskFloor := w.resolveReviewResumeRisk(workerResult, checkpoint).high
+	return w.enforceRiskFloor(
+		checkpoint.Request,
+		workerResult,
+		checkpoint.ReviewNumber,
+		checkpoint.AutoFixes,
+		decision,
+		highRiskFloor,
+		result,
+	)
+}
+
+func (w *Workflow) routeAutoFixResumeResult(checkpoint state.ResumeCheckpoint, result packet.Result) error {
+	if checkpoint.ReportOnly {
+		if stopped, err := w.verifyReportOnlyEndSnapshot(); err != nil || stopped {
 			return err
 		}
-		pocResume := checkpoint.Stage == state.ResumeStageWorker && decl.pocStage()
-
-		if checkpoint.UserInterrupted {
-			if err := w.verifyInterruptedRetention(checkpoint); err != nil {
-				return err
-			}
-		}
-
-		previousCheckpoint := checkpoint
-		if err := w.state.SetTaskStatus(state.TaskStatusActive); err != nil {
-			return err
-		}
-		w.state.RecordResume()
-		w.currentResumeSource = resumeSourceOf(checkpoint)
-
-		if checkpoint.Stage == state.ResumeStageAutoFix && checkpoint.ReportOnly {
-			if stopped, err := w.gateReportOnlyResumeSnapshot(); err != nil {
-				return err
-			} else if stopped {
-				return nil
-			}
-		}
-
-		if pocResume {
-			if stopped, err := w.gatePoCResumeSnapshot(); err != nil {
-				return err
-			} else if stopped {
-				return nil
-			}
-		}
-
-		if checkpoint.ProviderUnavailable {
-			if err := w.gateResumeOnProbe(checkpoint); err != nil {
-				var interrupted *runner.InterruptedCallError
-				if errors.As(err, &interrupted) {
-					return w.interruptBetweenCalls(checkpoint)
-				}
-				var pErr *runner.ProviderUnavailableError
-				if errors.As(err, &pErr) {
-					return err
-				}
-				var limitErr runner.ZaiRateLimitError
-				if errors.As(err, &limitErr) {
-					return err
-				}
-				_ = w.state.ClearResumeCheckpoint()
-				_ = w.state.RemoveUnreadySession(checkpoint.Role)
-
-				return &WorkerError{Phase: checkpoint.Phase, Message: err.Error()}
-			}
-		}
-
-		if checkpoint.Stage == state.ResumeStageReview {
-			if stopped, err := w.verifyReviewResumeSnapshot(checkpoint); err != nil {
-				return err
-			} else if stopped {
-				return nil
-			}
-		}
-		checkpoint.Prompt = resumePrompt(checkpoint)
-
-		if checkpoint.Stage == state.ResumeStageWorker {
-			checkpoint.ReadOnly = decl.pocStage()
-		}
-		checkpoint.RateLimited = false
-		checkpoint.ResetAtCST = ""
-		checkpoint.ResetAtRFC3339 = ""
-		checkpoint.ProviderUnavailable = false
-		checkpoint.ProviderUnavailableClassification = ""
-		checkpoint.ProviderUnavailableProbes = 0
-		checkpoint.ProviderUnavailableStartedAt = time.Time{}
-		checkpoint.UserInterrupted = false
-
-		result, err := w.runModel(checkpoint)
-		if err != nil {
-
-			if errors.Is(err, errParentFileGuardStopped) {
-				return err
-			}
-			var stopped *runner.InterruptedCallError
-			if errors.As(err, &stopped) {
-				return err
-			}
-			var pErr *runner.ProviderUnavailableError
-			if errors.As(err, &pErr) {
-				return err
-			}
-			var limitErr runner.ZaiRateLimitError
-			if errors.As(err, &limitErr) {
-				return err
-			}
-			saved, loadErr := w.state.LoadResumeCheckpoint()
-			if loadErr != nil || (!saved.RateLimited && !saved.ProviderUnavailable && !saved.UserInterrupted) {
-
-				previousCheckpoint.StopParentFiles = captureStopParentFiles(w.config.RepoRoot)
-				_ = w.state.SaveResumeCheckpoint(previousCheckpoint)
-			}
-
-			restoredStatus := state.TaskStatusActive
-			if loadErr == nil {
-				switch {
-				case saved.ProviderUnavailable:
-					restoredStatus = state.TaskStatusProviderUnavailable
-				case saved.RateLimited:
-					restoredStatus = state.TaskStatusRateLimited
-				case saved.UserInterrupted:
-					restoredStatus = state.TaskStatusInterrupted
-				}
-			}
-			if restoredStatus == state.TaskStatusActive {
-				switch {
-				case previousCheckpoint.ProviderUnavailable:
-					restoredStatus = state.TaskStatusProviderUnavailable
-				case previousCheckpoint.RateLimited:
-					restoredStatus = state.TaskStatusRateLimited
-				case previousCheckpoint.UserInterrupted:
-					restoredStatus = state.TaskStatusInterrupted
-				}
-			}
-			_ = w.state.SetTaskStatus(restoredStatus)
-			return err
-		}
-
-		switch checkpoint.Stage {
-		case state.ResumeStageWorker:
-			if decl.pocStage() {
-				if stopped, err := w.verifyPoCEndSnapshot(); err != nil {
-					return err
-				} else if stopped {
-					return nil
-				}
-				if result.Status == packet.StatusImplemented {
-					return w.routePoCWorkerResult(result)
-				}
-			}
-			return w.handleWorkerResult(checkpoint.Request, result, checkpoint.Phase)
-		case state.ResumeStageReview:
-			if checkpoint.WorkerResult == nil {
-				return &WorkerError{Phase: checkpoint.Phase, Message: "resume checkpoint has no worker result"}
-			}
-			workerResult := *checkpoint.WorkerResult
-			decision := w.state.ReadOr("last-decision", "none")
-			if checkpoint.RiskFloorReemit {
-				if stopped, err := w.verifyReviewEndSnapshot(); err != nil {
-					return err
-				} else if stopped {
-					return nil
-				}
-				reviewResult := resolveRiskFloorReemit(result)
-				if err := w.writeLastReview(reviewResult); err != nil {
-					return err
-				}
-				return w.handleReviewResult(
-					checkpoint.Request,
-					workerResult,
-					reviewResult,
-					checkpoint.ReviewNumber,
-					checkpoint.AutoFixes,
-				)
-			}
-			if stopped, err := w.verifyReviewEndSnapshot(); err != nil {
-				return err
-			} else if stopped {
-				return nil
-			}
-			highRiskFloor := w.resolveReviewResumeRisk(workerResult, checkpoint).high
-			reviewResult, reemitStopped, err := w.enforceRiskFloor(
-				checkpoint.Request,
-				workerResult,
-				checkpoint.ReviewNumber,
-				checkpoint.AutoFixes,
-				decision,
-				highRiskFloor,
-				result,
-			)
-			if err != nil {
-				return err
-			}
-			if reemitStopped {
-				return nil
-			}
-			if err := w.writeLastReview(reviewResult); err != nil {
-				return err
-			}
-			return w.handleReviewResult(
-				checkpoint.Request,
-				workerResult,
-				reviewResult,
-				checkpoint.ReviewNumber,
-				checkpoint.AutoFixes,
-			)
-		case state.ResumeStageAutoFix:
-
-			if checkpoint.ReportOnly {
-				if stopped, err := w.verifyReportOnlyEndSnapshot(); err != nil {
-					return err
-				} else if stopped {
-					return nil
-				}
-			}
-			return w.handleAutoFixResult(
-				checkpoint.Request,
-				result,
-				checkpoint.ReviewNumber,
-				checkpoint.AutoFixes,
-				checkpoint.Phase,
-			)
-		default:
-			return &WorkerError{Phase: checkpoint.Phase, Message: fmt.Sprintf("unknown resume stage: %s", checkpoint.Stage)}
-		}
-	}))
+	}
+	return w.handleAutoFixResult(
+		checkpoint.Request,
+		result,
+		checkpoint.ReviewNumber,
+		checkpoint.AutoFixes,
+		checkpoint.Phase,
+	)
 }
 
 func isKnownResumeStage(stage state.ResumeStage) bool {
@@ -610,6 +647,9 @@ func resumeSourceOf(checkpoint state.ResumeCheckpoint) string {
 }
 
 func (w *Workflow) handleWorkerResult(request string, workerResult packet.Result, workerPhase string) error {
+	if stopped, err := w.verifyQualitySurfaceBaseline(workerPhase); err != nil || stopped {
+		return err
+	}
 	switch workerResult.Status {
 	case packet.StatusNeedsSolDecision:
 		if err := w.state.Touch("pending-decision"); err != nil {
@@ -640,40 +680,65 @@ func (w *Workflow) reviewUntilStable(
 	workerPhase string,
 ) error {
 	workerEnd, stopped, err := w.captureWorkerEndSnapshot()
-	if err != nil {
+	if err != nil || stopped {
 		return err
 	}
-	if stopped {
-		return nil
-	}
-	commentReport, err := w.commentLint(w.config.RepoRoot)
-	if err != nil {
-		return &WorkerError{Phase: "commentlint", Message: fmt.Sprintf("commentlint failed: %v", err)}
-	}
-	if commentlint.IsViolation(commentReport) {
-		result := commentLintFixResult(commentReport)
-		if err := w.writeLastReview(result); err != nil {
-			return err
-		}
-		return w.handleReviewResult(request, workerResult, result, reviewNumber, autoFixes)
+	handled, err := w.handleRepositoryQualityViolation(request, workerResult, reviewNumber, autoFixes)
+	if err != nil || handled {
+		return err
 	}
 	w.recordConvergenceRound(reviewNumber, autoFixes, workerPhase, workerEnd)
 
-	decision := w.state.ReadOr("last-decision", "none")
-	hasDecision := w.state.Exists("last-decision")
-	risk := w.computeEffectiveRisk(workerResult, autoFixes, hasDecision, w.state.Exists("last-review"))
-
-	activeTaskPath, err := w.ensureActiveTaskPath(fmt.Sprintf("reviewer-%d", reviewNumber))
+	checkpoint, decision, highRisk, err := w.buildReviewCheckpoint(request, workerResult, reviewNumber, autoFixes)
 	if err != nil {
 		return err
 	}
-
-	if _, err := w.gateExternalFeasibility(fmt.Sprintf("reviewer-%d", reviewNumber), false); err != nil {
+	reviewResult, stopped, err := w.runReviewModel(checkpoint)
+	if err != nil || stopped {
 		return err
+	}
+	reviewResult, reemitStopped, err := w.enforceRiskFloor(
+		request,
+		workerResult,
+		reviewNumber,
+		autoFixes,
+		decision,
+		highRisk,
+		reviewResult,
+	)
+	if err != nil || reemitStopped {
+		return err
+	}
+	if err := w.writeLastReview(reviewResult); err != nil {
+		return err
+	}
+	return w.handleReviewResult(request, workerResult, reviewResult, reviewNumber, autoFixes)
+}
+
+func (w *Workflow) buildReviewCheckpoint(
+	request string,
+	workerResult packet.Result,
+	reviewNumber int,
+	autoFixes int,
+) (state.ResumeCheckpoint, string, bool, error) {
+	decision := w.state.ReadOr("last-decision", "none")
+	risk := w.computeEffectiveRisk(
+		workerResult,
+		autoFixes,
+		w.state.Exists("last-decision"),
+		w.state.Exists("last-review"),
+	)
+	phase := fmt.Sprintf("reviewer-%d", reviewNumber)
+	activeTaskPath, err := w.ensureActiveTaskPath(phase)
+	if err != nil {
+		return state.ResumeCheckpoint{}, "", false, err
+	}
+	if _, err := w.gateExternalFeasibility(phase, false); err != nil {
+		return state.ResumeCheckpoint{}, "", false, err
 	}
 	workerReport, err := machineReport(workerResult)
 	if err != nil {
-		return err
+		return state.ResumeCheckpoint{}, "", false, err
 	}
 	prompt := reviewerPrompt(
 		request,
@@ -683,9 +748,9 @@ func (w *Workflow) reviewUntilStable(
 		w.state.BaselineDescription(),
 		activeTaskPath,
 	)
-	checkpoint := state.ResumeCheckpoint{
+	return state.ResumeCheckpoint{
 		Stage:               state.ResumeStageReview,
-		Phase:               fmt.Sprintf("reviewer-%d", reviewNumber),
+		Phase:               phase,
 		Role:                state.ReviewerRole,
 		Model:               w.reviewerModel(risk),
 		ReadOnly:            true,
@@ -699,64 +764,41 @@ func (w *Workflow) reviewUntilStable(
 		AutoFixes:           autoFixes,
 		EffectiveRisk:       riskLabel(risk.high),
 		EffectiveRiskSource: risk.source,
-	}
-
-	if stopped, err := w.verifyReviewStartSnapshot(); err != nil {
-		return err
-	} else if stopped {
-		return nil
-	}
-
-	reviewResult, err := w.runModel(checkpoint)
-	if err != nil {
-		return err
-	}
-	if stopped, err := w.verifyReviewEndSnapshot(); err != nil {
-		return err
-	} else if stopped {
-		return nil
-	}
-	reviewResult, reemitStopped, err := w.enforceRiskFloor(
-		request,
-		workerResult,
-		reviewNumber,
-		autoFixes,
-		decision,
-		risk.high,
-		reviewResult,
-	)
-	if err != nil {
-		return err
-	}
-	if reemitStopped {
-		return nil
-	}
-	if err := w.writeLastReview(reviewResult); err != nil {
-		return err
-	}
-
-	return w.handleReviewResult(
-		request,
-		workerResult,
-		reviewResult,
-		reviewNumber,
-		autoFixes,
-	)
+	}, decision, risk.high, nil
 }
 
-func commentLintFixResult(report commentlint.Report) packet.Result {
-	issues := fmt.Sprintf("commentlintが禁止source commentまたは未分類sourceを%d件検出した。commentlint --fixを実行し、未分類sourceは分類を追加して再検査する", len(report.Violations))
-	return packet.Result{
-		Status:              packet.StatusFixRequired,
-		Risk:                packet.RiskHigh,
-		Summary:             "machine comment gateがrepository-wide postconditionを拒否した",
-		RequirementCoverage: "source commentの絶対禁止をreviewer判断より前に機械検証した",
-		Invariants:          "build constraintとshebang以外のsource commentを許可しない",
-		TestEvidence:        "commentlintのtyped violation結果",
-		Issues:              issues,
-		ResidualRisk:        "自動修正後もcommentlint再実行と通常reviewが必要",
-		Targets:             []string{"commentlint"},
+func (w *Workflow) runReviewModel(checkpoint state.ResumeCheckpoint) (packet.Result, bool, error) {
+	if stopped, err := w.verifyReviewStartSnapshot(); err != nil || stopped {
+		return packet.Result{}, stopped, err
 	}
+	reviewResult, err := w.runModel(checkpoint)
+	if err != nil {
+		return packet.Result{}, false, err
+	}
+	if stopped, err := w.verifyReviewEndSnapshot(); err != nil || stopped {
+		return packet.Result{}, stopped, err
+	}
+	return reviewResult, false, nil
+}
+
+func (w *Workflow) handleRepositoryQualityViolation(
+	request string,
+	workerResult packet.Result,
+	reviewNumber int,
+	autoFixes int,
+) (bool, error) {
+	qualityReport, err := w.qualityGate(w.config.RepoRoot)
+	if err != nil {
+		return true, &WorkerError{Phase: "harnesslint", Message: fmt.Sprintf("harnesslint failed: %v", err)}
+	}
+	if !harnesslint.IsViolation(qualityReport) {
+		return false, nil
+	}
+	result := qualityGateFixResult(qualityReport)
+	if err := w.writeLastReview(result); err != nil {
+		return true, err
+	}
+	return true, w.handleReviewResult(request, workerResult, result, reviewNumber, autoFixes)
 }
 
 func (w *Workflow) handleReviewResult(
@@ -768,117 +810,118 @@ func (w *Workflow) handleReviewResult(
 ) error {
 	switch reviewResult.Status {
 	case packet.StatusPass:
-		if err := w.state.SetTaskStatus(state.TaskStatusComplete); err != nil {
-			return err
-		}
-		return w.emitResult(reviewResult)
-
+		return w.finishReview(state.TaskStatusComplete, reviewResult)
 	case packet.StatusNeedsSolReview:
-		if err := w.state.SetTaskStatus(state.TaskStatusWaitingSolReview); err != nil {
-			return err
-		}
-		return w.emitResult(reviewResult)
-
+		return w.finishReview(state.TaskStatusWaitingSolReview, reviewResult)
 	case packet.StatusFixRequired:
-		if autoFixes >= w.config.MaxAutoFixRounds {
-			if err := w.state.SetTaskStatus(state.TaskStatusWaitingSolReview); err != nil {
-				return err
-			}
-			return w.emitResult(nonConvergedResult(reviewResult))
-		}
-
-		nextAutoFixes := autoFixes + 1
-		decision := w.state.ReadOr("last-decision", "none")
-		phase := fmt.Sprintf("worker-auto-fix-%d", nextAutoFixes)
-
-		activeTaskPath, err := w.ensureActiveTaskPath(phase)
-		if err != nil {
-			return err
-		}
-
-		if _, err := w.gateExternalFeasibility(phase, false); err != nil {
-			return err
-		}
-		reviewReport, err := machineReport(reviewResult)
-		if err != nil {
-			return err
-		}
-		prompt := automaticFixPrompt(request, decision, reviewReport, activeTaskPath)
-		reportOnly := isReportOnlyFix(reviewResult)
-
-		if reportOnly {
-			prompt = reportOnlyFixPrompt(request, decision, reviewReport, activeTaskPath)
-			phase = fmt.Sprintf("worker-report-only-%d", nextAutoFixes)
-		}
-		checkpoint := state.ResumeCheckpoint{
-			Stage:          state.ResumeStageAutoFix,
-			Phase:          phase,
-			Role:           state.WorkerRole,
-			Model:          w.config.WorkerModel,
-			ReadOnly:       reportOnly,
-			ReportOnly:     reportOnly,
-			Effort:         w.config.RoutineEffort,
-			Prompt:         prompt,
-			OriginalPrompt: prompt,
-			Request:        request,
-			Decision:       decision,
-			ReviewNumber:   reviewNumber,
-			AutoFixes:      nextAutoFixes,
-		}
-		w.state.RecordAutoFix()
-
-		if reportOnly {
-			if stopped, err := w.saveReportOnlyStartSnapshot(); err != nil {
-				return err
-			} else if stopped {
-				return nil
-			}
-		}
-
-		fixResult, err := w.runModel(checkpoint)
-		if err != nil {
-			return err
-		}
-
-		if reportOnly {
-			if stopped, err := w.verifyReportOnlyEndSnapshot(); err != nil {
-				return err
-			} else if stopped {
-				return nil
-			}
-		}
-
-		return w.handleAutoFixResult(
-			request,
-			fixResult,
-			reviewNumber,
-			nextAutoFixes,
-			phase,
-		)
-
+		return w.handleFixRequiredReview(request, workerResult, reviewResult, reviewNumber, autoFixes)
 	default:
 		return &WorkerError{Phase: "reviewer-format", Message: "reviewer did not return a valid STATUS"}
 	}
+}
+
+func (w *Workflow) finishReview(status state.TaskStatus, result packet.Result) error {
+	if err := w.state.SetTaskStatus(status); err != nil {
+		return err
+	}
+	return w.emitResult(result)
+}
+
+func (w *Workflow) handleFixRequiredReview(
+	request string,
+	_ packet.Result,
+	reviewResult packet.Result,
+	reviewNumber int,
+	autoFixes int,
+) error {
+	if autoFixes >= w.config.MaxAutoFixRounds {
+		return w.finishReview(state.TaskStatusWaitingSolReview, nonConvergedResult(reviewResult))
+	}
+
+	checkpoint, err := w.prepareAutoFixCheckpoint(request, reviewResult, reviewNumber, autoFixes+1)
+	if err != nil {
+		return err
+	}
+	w.state.RecordAutoFix()
+
+	fixResult, stopped, err := w.runAutoFixCheckpoint(checkpoint)
+	if err != nil || stopped {
+		return err
+	}
+	return w.handleAutoFixResult(request, fixResult, reviewNumber, checkpoint.AutoFixes, checkpoint.Phase)
+}
+
+func (w *Workflow) prepareAutoFixCheckpoint(
+	request string,
+	reviewResult packet.Result,
+	reviewNumber int,
+	nextAutoFixes int,
+) (state.ResumeCheckpoint, error) {
+	decision := w.state.ReadOr("last-decision", "none")
+	phase := fmt.Sprintf("worker-auto-fix-%d", nextAutoFixes)
+	activeTaskPath, err := w.ensureActiveTaskPath(phase)
+	if err != nil {
+		return state.ResumeCheckpoint{}, err
+	}
+	if _, err := w.gateExternalFeasibility(phase, false); err != nil {
+		return state.ResumeCheckpoint{}, err
+	}
+	reviewReport, err := machineReport(reviewResult)
+	if err != nil {
+		return state.ResumeCheckpoint{}, err
+	}
+
+	reportOnly := packet.IsReportOnlyFix(reviewResult)
+	prompt := automaticFixPrompt(request, decision, reviewReport, activeTaskPath)
+	if reportOnly {
+		prompt = reportOnlyFixPrompt(request, decision, reviewReport, activeTaskPath)
+		phase = fmt.Sprintf("worker-report-only-%d", nextAutoFixes)
+	}
+	return state.ResumeCheckpoint{
+		Stage:          state.ResumeStageAutoFix,
+		Phase:          phase,
+		Role:           state.WorkerRole,
+		Model:          w.config.WorkerModel,
+		ReadOnly:       reportOnly,
+		ReportOnly:     reportOnly,
+		Effort:         w.config.RoutineEffort,
+		Prompt:         prompt,
+		OriginalPrompt: prompt,
+		Request:        request,
+		Decision:       decision,
+		ReviewNumber:   reviewNumber,
+		AutoFixes:      nextAutoFixes,
+	}, nil
+}
+
+func (w *Workflow) runAutoFixCheckpoint(checkpoint state.ResumeCheckpoint) (packet.Result, bool, error) {
+	if checkpoint.ReportOnly {
+		stopped, err := w.saveReportOnlyStartSnapshot()
+		if err != nil || stopped {
+			return packet.Result{}, stopped, err
+		}
+	}
+
+	fixResult, err := w.runModel(checkpoint)
+	if err != nil {
+		return packet.Result{}, false, err
+	}
+	if checkpoint.ReportOnly {
+		stopped, err := w.verifyReportOnlyEndSnapshot()
+		if err != nil || stopped {
+			return packet.Result{}, stopped, err
+		}
+	}
+	return fixResult, false, nil
 }
 
 func reviewNeedsHighRiskFloor(workerResult packet.Result, autoFixes int, hasDecision bool, hasPriorReview bool) bool {
 	return workerResult.Risk == packet.RiskHigh || autoFixes > 0 || hasDecision || hasPriorReview
 }
 
-func isReportOnlyFix(reviewResult packet.Result) bool {
-	return packet.IsReportOnlyFix(reviewResult)
-}
-
-const resultCorrectionPhaseSuffix = "-result-correct"
-
-type effectiveRisk struct {
-	high   bool
-	source string
-}
-
 func riskLabel(high bool) string {
 	if high {
-		return "HIGH"
+		return highRiskValue
 	}
 	return "LOW"
 }
@@ -917,7 +960,7 @@ func (w *Workflow) selfProtectionNow() selfProtectionDecision {
 }
 
 func (w *Workflow) resolveReviewResumeRisk(workerResult packet.Result, checkpoint state.ResumeCheckpoint) effectiveRisk {
-	if checkpoint.EffectiveRisk == "HIGH" {
+	if checkpoint.EffectiveRisk == highRiskValue {
 		return effectiveRisk{high: true, source: checkpoint.EffectiveRiskSource}
 	}
 	hasDecision := w.state.Exists("last-decision")
@@ -938,6 +981,9 @@ func (w *Workflow) handleAutoFixResult(
 	autoFixes int,
 	fixPhase string,
 ) error {
+	if stopped, err := w.verifyQualitySurfaceBaseline(fixPhase); err != nil || stopped {
+		return err
+	}
 	switch fixResult.Status {
 	case packet.StatusNeedsSolDecision:
 		if err := w.state.Touch("pending-decision"); err != nil {
@@ -969,23 +1015,56 @@ func (w *Workflow) handleAutoFixResult(
 }
 
 func (w *Workflow) runModel(checkpoint state.ResumeCheckpoint) (packet.Result, error) {
+	checkpoint, outputPath, guardBefore, err := w.prepareModelCall(checkpoint)
+	if err != nil {
+		return packet.Result{}, err
+	}
+	execution, err := w.invokeModelCall(checkpoint, outputPath, guardBefore)
+	if err != nil {
+		return packet.Result{}, err
+	}
+	execution, err = w.resolveModelCallFailure(checkpoint, outputPath, execution)
+	if err != nil {
+		return packet.Result{}, err
+	}
+	if err := w.finalizeModelCallState(checkpoint, outputPath, execution); err != nil {
+		return packet.Result{}, err
+	}
+
+	result, err := w.parseModelCallResult(checkpoint, execution.runResult)
+	if err != nil {
+		return w.handleInvalidModelResult(checkpoint, outputPath, execution, err)
+	}
+	taskID, err := w.state.TaskID()
+	if err != nil {
+		w.recordModelCall(checkpoint, execution.runResult, execution.startedAt, execution.completedAt, "state_error", "", err, outputPath, callDiagnostics{})
+		return packet.Result{}, err
+	}
+	if err := packet.ValidateArtifacts(result.Artifacts, w.state.ArtifactDir(taskID)); err != nil {
+		return w.handleInvalidModelResult(checkpoint, outputPath, execution, err)
+	}
+	w.recordModelCall(checkpoint, execution.runResult, execution.startedAt, execution.completedAt, "success", string(result.Status), nil, outputPath, callDiagnostics{reportedRisk: string(result.Risk)})
+	w.lastProducer = state.ParentReviewProducer{Role: string(checkpoint.Role), Model: checkpoint.Model}
+	return result, nil
+}
+
+func (w *Workflow) prepareModelCall(checkpoint state.ResumeCheckpoint) (state.ResumeCheckpoint, string, parentFileGuard, error) {
 	outputPath := filepath.Join(w.temp, checkpoint.Phase+".log")
 	if checkpoint.Role == state.WorkerRole {
 		artifactDir, err := w.state.PrepareArtifactDir()
 		if err != nil {
-			return packet.Result{}, err
+			return checkpoint, outputPath, parentFileGuard{}, err
 		}
 		checkpoint.Prompt = withArtifactContext(checkpoint.Prompt, artifactDir)
 		if checkpoint.OriginalPrompt != "" {
 			checkpoint.OriginalPrompt = withArtifactContext(checkpoint.OriginalPrompt, artifactDir)
 		}
 	}
-
 	if checkpoint.OriginalPrompt == "" {
 		checkpoint.OriginalPrompt = checkpoint.Prompt
 	}
 	if checkpoint.Model == "" {
-		return packet.Result{}, &WorkerError{Phase: checkpoint.Phase, Message: "checkpoint model is missing"}
+		return checkpoint, outputPath, parentFileGuard{}, &WorkerError{Phase: checkpoint.Phase, Message: "checkpoint model is missing"}
 	}
 	if checkpoint.Effort == "" {
 		checkpoint.Effort = w.config.RoutineEffort
@@ -993,23 +1072,28 @@ func (w *Workflow) runModel(checkpoint state.ResumeCheckpoint) (packet.Result, e
 
 	guardBefore, stopped, err := w.captureParentFileGuard(checkpoint.Role)
 	if stopped {
-		return packet.Result{}, err
+		return checkpoint, outputPath, guardBefore, err
 	}
-
 	if checkpoint.Stage == state.ResumeStageReview {
 		checkpoint.StopParentFiles = nil
 	}
 	if err := w.state.SaveResumeCheckpoint(checkpoint); err != nil {
-		return packet.Result{}, err
+		return checkpoint, outputPath, guardBefore, err
 	}
-
 	if w.stopRequested() {
-		return packet.Result{}, w.interruptBetweenCalls(checkpoint)
+		return checkpoint, outputPath, guardBefore, w.interruptBetweenCalls(checkpoint)
 	}
 	w.state.RecordModelCall(checkpoint.Role, checkpoint.Model)
+	return checkpoint, outputPath, guardBefore, nil
+}
 
-	startedAt := w.now().UTC()
-	runResult, runErr := w.runner.Run(
+func (w *Workflow) invokeModelCall(
+	checkpoint state.ResumeCheckpoint,
+	outputPath string,
+	guardBefore parentFileGuard,
+) (modelCallExecution, error) {
+	execution := modelCallExecution{startedAt: w.now().UTC()}
+	execution.runResult, execution.runErr = w.runner.Run(
 		checkpoint.Role,
 		checkpoint.Phase,
 		checkpoint.Model,
@@ -1018,148 +1102,184 @@ func (w *Workflow) runModel(checkpoint state.ResumeCheckpoint) (packet.Result, e
 		checkpoint.Prompt,
 		outputPath,
 	)
-	completedAt := w.now().UTC()
-	w.state.RecordModelDuration(checkpoint.Model, completedAt.Sub(startedAt))
-	if stopped, err := w.verifyParentFileAfterCall(checkpoint, guardBefore, runResult, startedAt, completedAt, runErr, outputPath); stopped {
-		return packet.Result{}, err
+	execution.completedAt = w.now().UTC()
+	w.state.RecordModelDuration(checkpoint.Model, execution.completedAt.Sub(execution.startedAt))
+	if stopped, err := w.verifyParentFileAfterCall(
+		checkpoint,
+		guardBefore,
+		execution.runResult,
+		execution.startedAt,
+		execution.completedAt,
+		execution.runErr,
+		outputPath,
+	); stopped {
+		return execution, err
 	}
-	failureClass := runner.ProviderFailureClass{}
+	return execution, nil
+}
 
+func (w *Workflow) resolveModelCallFailure(
+	checkpoint state.ResumeCheckpoint,
+	outputPath string,
+	execution modelCallExecution,
+) (modelCallExecution, error) {
+	if execution.runErr == nil {
+		return execution, nil
+	}
 	var interrupted *runner.InterruptedCallError
-	if runErr != nil && errors.As(runErr, &interrupted) {
-		return packet.Result{}, w.interruptFromCall(checkpoint, runResult, startedAt, completedAt, runErr, outputPath)
-	}
-	if runErr != nil {
-		failureClass = mergePlainFailureClass(
-			runner.ClassifyProviderFailureText(runner.ReadTransientSignal(outputPath)),
-			runResult.PlainFailure,
-		)
-		if failureClass.Kind == runner.ProviderFailureZaiFiveHour {
-			return packet.Result{}, w.saveRateLimitedState(checkpoint, failureClass.FiveHourLimit, runResult, startedAt, completedAt, runErr, outputPath)
-		}
+	if errors.As(execution.runErr, &interrupted) {
+		return execution, w.interruptFromCall(checkpoint, execution.runResult, execution.startedAt, execution.completedAt, execution.runErr, outputPath)
 	}
 
+	failureClass := mergePlainFailureClass(
+		runner.ClassifyProviderFailureText(runner.ReadTransientSignal(outputPath)),
+		execution.runResult.PlainFailure,
+	)
+	if failureClass.Kind == runner.ProviderFailureZaiFiveHour {
+		return execution, w.saveRateLimitedState(checkpoint, failureClass.FiveHourLimit, execution.runResult, execution.startedAt, execution.completedAt, execution.runErr, outputPath)
+	}
+	if err := w.handleStructuredModelFailure(checkpoint, outputPath, execution); err != nil {
+		return execution, err
+	}
+	if failureClass.Kind != runner.ProviderFailureTransient {
+		return execution, nil
+	}
+	return w.resolveTransientModelFailure(checkpoint, outputPath, failureClass.Detail, execution)
+}
+
+func (w *Workflow) handleStructuredModelFailure(
+	checkpoint state.ResumeCheckpoint,
+	outputPath string,
+	execution modelCallExecution,
+) error {
 	var structuredErr *runner.StructuredOutputError
-	if runErr != nil && errors.As(runErr, &structuredErr) {
+	if !errors.As(execution.runErr, &structuredErr) {
+		return nil
+	}
+	if structuredErr.RetryExhausted() {
+		w.state.RecordStructuredRetryExhausted()
+	}
+	w.recordModelCall(checkpoint, execution.runResult, execution.startedAt, execution.completedAt, "invalid_packet", "", execution.runErr, outputPath, callDiagnostics{})
+	_ = w.state.ClearResumeCheckpoint()
+	_ = w.state.RemoveUnreadySession(checkpoint.Role)
+	return &WorkerError{
+		Phase:   checkpoint.Phase + "-structured-output",
+		Message: execution.runErr.Error(),
+		Tail:    packet.Tail(outputPath, 20),
+	}
+}
 
-		if structuredErr.RetryExhausted() {
-			w.state.RecordStructuredRetryExhausted()
+func (w *Workflow) resolveTransientModelFailure(
+	checkpoint state.ResumeCheckpoint,
+	outputPath string,
+	classification string,
+	execution modelCallExecution,
+) (modelCallExecution, error) {
+	recovered, resumeResult, resumeStartedAt, resumeCompletedAt, recErr := w.recoverTransient(
+		checkpoint,
+		outputPath,
+		classification,
+		execution.runResult,
+		execution.startedAt,
+		execution.completedAt,
+	)
+	if recovered {
+		execution.runResult = resumeResult
+		execution.startedAt = resumeStartedAt
+		execution.completedAt = resumeCompletedAt
+		execution.runErr = nil
+		return execution, nil
+	}
+	if errors.Is(recErr, errParentFileGuardStopped) {
+		return execution, recErr
+	}
+	var interrupted *runner.InterruptedCallError
+	if errors.As(recErr, &interrupted) {
+		if resumeStartedAt.IsZero() {
+			return execution, w.interruptBetweenCalls(checkpoint)
 		}
-		w.recordModelCall(checkpoint, runResult, startedAt, completedAt, "invalid_packet", "", runErr, outputPath, callDiagnostics{})
-		_ = w.state.ClearResumeCheckpoint()
-		_ = w.state.RemoveUnreadySession(checkpoint.Role)
-		return packet.Result{}, &WorkerError{
-			Phase:   checkpoint.Phase + "-structured-output",
-			Message: runErr.Error(),
-			Tail:    packet.Tail(outputPath, 20),
-		}
+		return execution, w.interruptFromCall(checkpoint, resumeResult, resumeStartedAt, resumeCompletedAt, recErr, outputPath)
+	}
+	var providerUnavailable *runner.ProviderUnavailableError
+	if errors.As(recErr, &providerUnavailable) {
+		_ = w.state.SecureArtifactDir()
+		w.state.RecordProviderUnavailable(checkpoint.Model)
+		return execution, recErr
+	}
+	var limitErr runner.ZaiRateLimitError
+	if errors.As(recErr, &limitErr) {
+		return execution, recErr
 	}
 
-	recoveryFatal := false
-	if failureClass.Kind == runner.ProviderFailureTransient {
-		recovered, resumeResult, resumeStartedAt, resumeCompletedAt, recErr := w.recoverTransient(
-			checkpoint, outputPath, failureClass.Detail, runResult, startedAt, completedAt,
-		)
-		if recovered {
-			runResult = resumeResult
-			startedAt = resumeStartedAt
-			completedAt = resumeCompletedAt
-			runErr = nil
-		} else {
+	execution.runResult = resumeResult
+	execution.startedAt = resumeStartedAt
+	execution.completedAt = resumeCompletedAt
+	execution.runErr = recErr
+	execution.recoveryFatal = true
+	return execution, nil
+}
 
-			if errors.Is(recErr, errParentFileGuardStopped) {
-				return packet.Result{}, recErr
-			}
-			var interrupted *runner.InterruptedCallError
-			if errors.As(recErr, &interrupted) {
-
-				if resumeStartedAt.IsZero() {
-					return packet.Result{}, w.interruptBetweenCalls(checkpoint)
-				}
-				return packet.Result{}, w.interruptFromCall(checkpoint, resumeResult, resumeStartedAt, resumeCompletedAt, recErr, outputPath)
-			}
-			var pErr *runner.ProviderUnavailableError
-			if errors.As(recErr, &pErr) {
-				_ = w.state.SecureArtifactDir()
-				w.state.RecordProviderUnavailable(checkpoint.Model)
-				return packet.Result{}, recErr
-			}
-			var limitErr runner.ZaiRateLimitError
-			if errors.As(recErr, &limitErr) {
-
-				return packet.Result{}, recErr
-			}
-			runResult = resumeResult
-			startedAt = resumeStartedAt
-			completedAt = resumeCompletedAt
-			runErr = recErr
-
-			recoveryFatal = true
-		}
-	}
-
+func (w *Workflow) finalizeModelCallState(
+	checkpoint state.ResumeCheckpoint,
+	outputPath string,
+	execution modelCallExecution,
+) error {
 	if err := w.state.SecureArtifactDir(); err != nil {
-		if !recoveryFatal {
-			w.recordModelCall(checkpoint, runResult, startedAt, completedAt, "state_error", "", err, outputPath, callDiagnostics{})
+		if !execution.recoveryFatal {
+			w.recordModelCall(checkpoint, execution.runResult, execution.startedAt, execution.completedAt, "state_error", "", err, outputPath, callDiagnostics{})
 		}
-		return packet.Result{}, err
+		return err
 	}
-	if runErr != nil {
-		if !recoveryFatal {
-			w.recordModelCall(checkpoint, runResult, startedAt, completedAt, "error", "", runErr, outputPath, callDiagnostics{})
+	if execution.runErr != nil {
+		if !execution.recoveryFatal {
+			w.recordModelCall(checkpoint, execution.runResult, execution.startedAt, execution.completedAt, "error", "", execution.runErr, outputPath, callDiagnostics{})
 		}
 		_ = w.state.ClearResumeCheckpoint()
 		_ = w.state.RemoveUnreadySession(checkpoint.Role)
-		return packet.Result{}, workerError(
-			checkpoint.Phase,
-			outputPath,
-			runErr,
-		)
+		return workerError(checkpoint.Phase, outputPath, execution.runErr)
 	}
-
 	if err := w.state.ClearResumeCheckpoint(); err != nil {
-		w.recordModelCall(checkpoint, runResult, startedAt, completedAt, "state_error", "", err, outputPath, callDiagnostics{})
+		w.recordModelCall(checkpoint, execution.runResult, execution.startedAt, execution.completedAt, "state_error", "", err, outputPath, callDiagnostics{})
+		return err
+	}
+	return nil
+}
+
+func (*Workflow) parseModelCallResult(checkpoint state.ResumeCheckpoint, runResult runner.RunResult) (packet.Result, error) {
+	result, err := packet.ParseStructured(runResult.StructuredOutput)
+	if err != nil {
 		return packet.Result{}, err
 	}
-
-	result, err := packet.ParseStructured(runResult.StructuredOutput)
-	if err == nil {
-		if checkpoint.Role == state.ReviewerRole {
-			err = packet.ValidateReviewerResult(result)
-		} else {
-			err = packet.ValidateWorkerResult(result)
-		}
-		if err == nil {
-			taskID, taskErr := w.state.TaskID()
-			if taskErr != nil {
-				w.recordModelCall(checkpoint, runResult, startedAt, completedAt, "state_error", "", taskErr, outputPath, callDiagnostics{})
-				return packet.Result{}, taskErr
-			}
-			err = packet.ValidateArtifacts(result.Artifacts, w.state.ArtifactDir(taskID))
-		}
+	if checkpoint.Role == state.ReviewerRole {
+		err = packet.ValidateReviewerResult(result)
+	} else {
+		err = packet.ValidateWorkerResult(result)
 	}
-	if err != nil {
-		w.recordModelCall(checkpoint, runResult, startedAt, completedAt, "invalid_packet", "", err, outputPath, callDiagnostics{})
+	return result, err
+}
 
-		if packet.IsConstraintError(err) && !checkpoint.ResultCorrection {
-			w.state.RecordResultCorrection()
-			correctCheckpoint := checkpoint
-			correctCheckpoint.Phase += resultCorrectionPhaseSuffix
-			correctPrompt := resultCorrectionPrompt(err.Error())
-			correctCheckpoint.Prompt = correctPrompt
-			correctCheckpoint.OriginalPrompt = correctPrompt
-			correctCheckpoint.ResultCorrection = true
-			return w.runModel(correctCheckpoint)
-		}
-		return packet.Result{}, &WorkerError{
-			Phase:   checkpoint.Phase + "-format",
-			Message: err.Error(),
-			Tail:    packet.Tail(outputPath, 20),
-		}
+func (w *Workflow) handleInvalidModelResult(
+	checkpoint state.ResumeCheckpoint,
+	outputPath string,
+	execution modelCallExecution,
+	resultErr error,
+) (packet.Result, error) {
+	w.recordModelCall(checkpoint, execution.runResult, execution.startedAt, execution.completedAt, "invalid_packet", "", resultErr, outputPath, callDiagnostics{})
+	if packet.IsConstraintError(resultErr) && !checkpoint.ResultCorrection {
+		w.state.RecordResultCorrection()
+		correctCheckpoint := checkpoint
+		correctCheckpoint.Phase += resultCorrectionPhaseSuffix
+		correctPrompt := resultCorrectionPrompt(resultErr.Error())
+		correctCheckpoint.Prompt = correctPrompt
+		correctCheckpoint.OriginalPrompt = correctPrompt
+		correctCheckpoint.ResultCorrection = true
+		return w.runModel(correctCheckpoint)
 	}
-	w.recordModelCall(checkpoint, runResult, startedAt, completedAt, "success", string(result.Status), nil, outputPath, callDiagnostics{reportedRisk: string(result.Risk)})
-	w.lastProducer = state.ParentReviewProducer{Role: string(checkpoint.Role), Model: checkpoint.Model}
-	return result, nil
+	return packet.Result{}, &WorkerError{
+		Phase:   checkpoint.Phase + "-format",
+		Message: resultErr.Error(),
+		Tail:    packet.Tail(outputPath, 20),
+	}
 }
 
 func (w *Workflow) saveRateLimitedState(
@@ -1186,7 +1306,7 @@ func (w *Workflow) saveRateLimitedState(
 	artifactWarning := ""
 	if artifactErr != nil {
 		artifactWarning = artifactErr.Error()
-		telemetryErr = fmt.Errorf("%v; %w", runErr, artifactErr)
+		telemetryErr = fmt.Errorf("%w; %w", runErr, artifactErr)
 	}
 	w.recordModelCall(checkpoint, runResult, startedAt, completedAt, "rate_limited", "", telemetryErr, outputPath, callDiagnostics{})
 	return runner.ZaiRateLimitError{
@@ -1336,71 +1456,28 @@ func (w *Workflow) recoveryLoop(
 	deadline := recoveryStart.Add(providerUnavailableDeadline)
 	probes := 0
 	sleeps := 0
-
 	exhaustClassification := classification
 
-	for {
-		if probes >= maxTransientProbes {
+	for probes < maxTransientProbes {
+		nextSleeps, proceed, err := w.waitForRecoveryProbe(checkpoint, firstProbeImmediate, probes, sleeps, deadline)
+		if err != nil {
+			return false, runner.RunResult{}, time.Time{}, time.Time{}, err
+		}
+		if !proceed {
 			break
 		}
-		if !(firstProbeImmediate && probes == 0) {
-			wait, ok := w.backoffWait(sleeps, deadline)
-			if !ok {
-				break
-			}
-			if w.sleepInterruptible(wait) {
-				return false, runner.RunResult{}, time.Time{}, time.Time{}, &runner.InterruptedCallError{Phase: checkpoint.Phase}
-			}
-			sleeps++
-			if w.now().After(deadline) {
-				break
-			}
-		}
+		sleeps = nextSleeps
 
 		probes++
-		probeStartedAt := w.now().UTC()
-		probeResult, probeErr := w.runner.Probe(checkpoint.Model)
-		probeCompletedAt := w.now().UTC()
-
-		if probeErr == nil {
-			if contractErr := runner.ValidateProbeResult(probeResult); contractErr != nil {
-				probeErr = &runner.ProbeInvalidResponseError{
-					Model:  checkpoint.Model,
-					Reason: contractErr,
-				}
-			}
-		}
-		w.recordProbeCall(checkpoint, probeResult, probes, probeStartedAt, probeCompletedAt, probeErr)
-
-		if probeErr != nil {
-			class := runner.ClassifyProviderFailureText(probeErr.Error())
-
-			if class.Kind == runner.ProviderFailureZaiFiveHour {
-				err := w.saveProbeRateLimited(checkpoint, class.FiveHourLimit)
-				return false, runner.RunResult{}, probeStartedAt, probeCompletedAt, err
-			}
-
-			if class.Kind == runner.ProviderFailureTransient {
-				continue
-			}
-			var probeInvalid *runner.ProbeInvalidResponseError
-			if errors.As(probeErr, &probeInvalid) {
-
-				if runner.DetectProbeFatalSignal(probeErr.Error()) {
-					return false, runner.RunResult{}, probeStartedAt, probeCompletedAt, probeErr
-				}
-				exhaustClassification = runner.ProbeContractFailure
-				continue
-			}
-			return false, runner.RunResult{}, probeStartedAt, probeCompletedAt, probeErr
-		}
-
-		recovered, result, startedAt, completedAt, err := onProbeSuccess()
-		if recovered {
-			return true, result, startedAt, completedAt, nil
+		done, recovered, result, startedAt, completedAt, nextClassification, err := w.runRecoveryAttempt(checkpoint, probes, onProbeSuccess)
+		if nextClassification != "" {
+			exhaustClassification = nextClassification
 		}
 		if err != nil {
 			return false, result, startedAt, completedAt, err
+		}
+		if done {
+			return recovered, result, startedAt, completedAt, nil
 		}
 	}
 
@@ -1409,6 +1486,68 @@ func (w *Workflow) recoveryLoop(
 		return false, runner.RunResult{}, time.Time{}, time.Time{}, saveErr
 	}
 	return false, runner.RunResult{}, time.Time{}, time.Time{}, pErr
+}
+
+func (w *Workflow) waitForRecoveryProbe(
+	checkpoint state.ResumeCheckpoint,
+	firstProbeImmediate bool,
+	probes int,
+	sleeps int,
+	deadline time.Time,
+) (int, bool, error) {
+	if firstProbeImmediate && probes == 0 {
+		return sleeps, true, nil
+	}
+	wait, ok := w.backoffWait(sleeps, deadline)
+	if !ok {
+		return sleeps, false, nil
+	}
+	if w.sleepInterruptible(wait) {
+		return sleeps, false, &runner.InterruptedCallError{Phase: checkpoint.Phase}
+	}
+	sleeps++
+	return sleeps, !w.now().After(deadline), nil
+}
+
+func (w *Workflow) runRecoveryAttempt(
+	checkpoint state.ResumeCheckpoint,
+	attempt int,
+	onProbeSuccess func() (bool, runner.RunResult, time.Time, time.Time, error),
+) (bool, bool, runner.RunResult, time.Time, time.Time, string, error) {
+	success, classification, startedAt, completedAt, err := w.runRecoveryProbe(checkpoint, attempt)
+	if err != nil || !success {
+		return false, false, runner.RunResult{}, startedAt, completedAt, classification, err
+	}
+	recovered, result, startedAt, completedAt, err := onProbeSuccess()
+	return recovered || err != nil, recovered, result, startedAt, completedAt, classification, err
+}
+
+func (w *Workflow) runRecoveryProbe(checkpoint state.ResumeCheckpoint, attempt int) (bool, string, time.Time, time.Time, error) {
+	startedAt := w.now().UTC()
+	probeResult, probeErr := w.runner.Probe(checkpoint.Model)
+	completedAt := w.now().UTC()
+	if probeErr == nil {
+		if contractErr := runner.ValidateProbeResult(probeResult); contractErr != nil {
+			probeErr = &runner.ProbeInvalidResponseError{Model: checkpoint.Model, Reason: contractErr}
+		}
+	}
+	w.recordProbeCall(checkpoint, probeResult, attempt, startedAt, completedAt, probeErr)
+	if probeErr == nil {
+		return true, "", startedAt, completedAt, nil
+	}
+
+	class := runner.ClassifyProviderFailureText(probeErr.Error())
+	if class.Kind == runner.ProviderFailureZaiFiveHour {
+		return false, "", startedAt, completedAt, w.saveProbeRateLimited(checkpoint, class.FiveHourLimit)
+	}
+	if class.Kind == runner.ProviderFailureTransient {
+		return false, "", startedAt, completedAt, nil
+	}
+	var probeInvalid *runner.ProbeInvalidResponseError
+	if errors.As(probeErr, &probeInvalid) && !runner.DetectProbeFatalSignal(probeErr.Error()) {
+		return false, runner.ProbeContractFailure, startedAt, completedAt, nil
+	}
+	return false, "", startedAt, completedAt, probeErr
 }
 
 func (w *Workflow) backoffWait(sleeps int, deadline time.Time) (time.Duration, bool) {
@@ -1642,35 +1781,33 @@ func (w *Workflow) recordModelCall(
 	outputPath string,
 	diag callDiagnostics,
 ) {
+	entry := w.buildModelCallLog(checkpoint, runResult, startedAt, completedAt, outcome, packetStatus, callErr, outputPath)
+	w.applyCallDiagnostics(&entry, checkpoint, outcome, callErr, diag)
+	w.state.RecordModelCallLog(entry)
+}
+
+func (w *Workflow) buildModelCallLog(
+	checkpoint state.ResumeCheckpoint,
+	runResult runner.RunResult,
+	startedAt time.Time,
+	completedAt time.Time,
+	outcome string,
+	packetStatus string,
+	callErr error,
+	outputPath string,
+) state.ModelCallLog {
 	response := runResult.Response
 	if response == "" {
 		response = packet.Tail(outputPath, packet.MaxDiagnosticBytes)
 	}
 	promptHash := sha256.Sum256([]byte(checkpoint.Prompt))
 	responseHash := sha256.Sum256([]byte(response))
-	resolvedUsage := make(map[string]state.ResolvedModelUsage, len(runResult.ModelUsage))
-	for model, usage := range runResult.ModelUsage {
-		resolvedUsage[model] = state.ResolvedModelUsage{
-			InputTokens:              usage.InputTokens,
-			CacheCreationInputTokens: usage.CacheCreationInputTokens,
-			CacheReadInputTokens:     usage.CacheReadInputTokens,
-			OutputTokens:             usage.OutputTokens,
-			CostUSD:                  usage.CostUSD,
-		}
-	}
 	errorText := ""
 	if callErr != nil {
 		errorText = boundedText(callErr.Error(), packet.MaxDiagnosticBytes)
 	}
-	promptContent := checkpoint.Prompt
-	systemPromptContent := runResult.SystemPrompt
-	responseContent := response
-	if !w.config.TelemetryContent {
-		promptContent = ""
-		systemPromptContent = ""
-		responseContent = ""
-	}
-	entry := state.ModelCallLog{
+	promptContent, systemPromptContent, responseContent := w.telemetryContents(checkpoint.Prompt, runResult.SystemPrompt, response)
+	return state.ModelCallLog{
 		TaskID:             w.state.ReadOr("task.id", "unknown"),
 		CallType:           state.CallTypeTask,
 		SessionID:          modelSessionID(w.state, checkpoint.Role, runResult.SessionID),
@@ -1679,7 +1816,7 @@ func (w *Workflow) recordModelCall(
 		Phase:              checkpoint.Phase,
 		Role:               checkpoint.Role,
 		ModelAlias:         checkpoint.Model,
-		ResolvedModelUsage: resolvedUsage,
+		ResolvedModelUsage: resolvedModelUsage(runResult.ModelUsage),
 		Effort:             checkpoint.Effort,
 		ReadOnly:           checkpoint.ReadOnly,
 		Resumed:            runResult.Resumed,
@@ -1707,8 +1844,27 @@ func (w *Workflow) recordModelCall(
 		TopLevelTurns:       runResult.TopLevelTurns,
 		TotalCostUSD:        runResult.TotalCostUSD,
 	}
-	w.applyCallDiagnostics(&entry, checkpoint, outcome, callErr, diag)
-	w.state.RecordModelCallLog(entry)
+}
+
+func resolvedModelUsage(usageByModel map[string]runner.ModelUsage) map[string]state.ResolvedModelUsage {
+	resolved := make(map[string]state.ResolvedModelUsage, len(usageByModel))
+	for model, usage := range usageByModel {
+		resolved[model] = state.ResolvedModelUsage{
+			InputTokens:              usage.InputTokens,
+			CacheCreationInputTokens: usage.CacheCreationInputTokens,
+			CacheReadInputTokens:     usage.CacheReadInputTokens,
+			OutputTokens:             usage.OutputTokens,
+			CostUSD:                  usage.CostUSD,
+		}
+	}
+	return resolved
+}
+
+func (w *Workflow) telemetryContents(prompt string, systemPrompt string, response string) (string, string, string) {
+	if !w.config.TelemetryContent {
+		return "", "", ""
+	}
+	return prompt, systemPrompt, response
 }
 
 func (w *Workflow) applyCallDiagnostics(entry *state.ModelCallLog, checkpoint state.ResumeCheckpoint, outcome string, callErr error, diag callDiagnostics) {
@@ -1719,15 +1875,7 @@ func (w *Workflow) applyCallDiagnostics(entry *state.ModelCallLog, checkpoint st
 			entry.WorkerReportedRisk = diag.reportedRisk
 		}
 	}
-	if checkpoint.EffectiveRisk != "" {
-		entry.EffectiveRisk = checkpoint.EffectiveRisk
-		entry.RiskFloorSource = checkpoint.EffectiveRiskSource
-		if checkpoint.Role == state.ReviewerRole && checkpoint.EffectiveRisk == "HIGH" {
-			category := riskFloorCategory(checkpoint.EffectiveRiskSource)
-			entry.RiskFloorCategory = category
-			w.state.RecordRiskFloor(category)
-		}
-	}
+	w.applyEffectiveRiskDiagnostic(entry, checkpoint)
 	if diag.providerClassification != "" {
 		entry.ProviderClassification = diag.providerClassification
 	}
@@ -1747,6 +1895,20 @@ func (w *Workflow) applyCallDiagnostics(entry *state.ModelCallLog, checkpoint st
 		entry.Snapshot = w.pendingSnapshot
 		w.pendingSnapshot = nil
 	}
+}
+
+func (w *Workflow) applyEffectiveRiskDiagnostic(entry *state.ModelCallLog, checkpoint state.ResumeCheckpoint) {
+	if checkpoint.EffectiveRisk == "" {
+		return
+	}
+	entry.EffectiveRisk = checkpoint.EffectiveRisk
+	entry.RiskFloorSource = checkpoint.EffectiveRiskSource
+	if checkpoint.Role != state.ReviewerRole || checkpoint.EffectiveRisk != highRiskValue {
+		return
+	}
+	category := riskFloorCategory(checkpoint.EffectiveRiskSource)
+	entry.RiskFloorCategory = category
+	w.state.RecordRiskFloor(category)
 }
 
 func riskFloorCategory(source string) string {
@@ -1814,8 +1976,8 @@ func (w *Workflow) emitResult(value packet.Result) error {
 		return err
 	}
 	w.state.RecordSolResult(value, w.lastProducer)
-	fmt.Fprintln(w.output, report)
-	return nil
+	_, err = fmt.Fprintln(w.output, report)
+	return err
 }
 
 func (w *Workflow) enforceRiskFloor(
@@ -1932,22 +2094,15 @@ func (w *Workflow) gateReportOnlyResumeSnapshot() (bool, error) {
 }
 
 func (w *Workflow) verifyReportOnlyEndSnapshot() (bool, error) {
-	start, err := w.state.LoadReportOnlyStartSnapshot()
-	if err != nil {
-		return true, w.failClosedReportOnlySnapshot(state.SnapshotStageReportOnlyEnd, state.GitSnapshot{}, state.GitSnapshot{}, "report-only開始前snapshot読込失敗", err)
-	}
-	current, err := w.captureSnapshot(w.config.RepoRoot)
-	if err != nil {
-		return true, w.failClosedReportOnlySnapshot(state.SnapshotStageReportOnlyEnd, start, state.GitSnapshot{}, "report-only終了後snapshot取得失敗", err)
-	}
-	comparison := state.CompareGitSnapshot(start, current, state.SnapshotStageReportOnlyEnd, "")
-	if err := w.state.SaveSnapshotComparison(comparison); err != nil {
-		return true, w.failClosedReportOnlySnapshot(state.SnapshotStageReportOnlyEnd, start, current, "snapshot comparison保存失敗", err)
-	}
-	if !comparison.Matched {
-		return true, w.failClosedReportOnlySnapshot(state.SnapshotStageReportOnlyEnd, start, current, "report-only worker開始前から終了後までの間にrepository状態が変化しています", nil)
-	}
-	return false, nil
+	return w.verifyEndSnapshot(snapshotEndCheck{
+		stage:          state.SnapshotStageReportOnlyEnd,
+		loadStart:      w.state.LoadReportOnlyStartSnapshot,
+		failClosed:     w.failClosedReportOnlySnapshot,
+		loadReason:     "report-only開始前snapshot読込失敗",
+		captureReason:  "report-only終了後snapshot取得失敗",
+		saveReason:     "snapshot comparison保存失敗",
+		mismatchReason: "report-only worker開始前から終了後までの間にrepository状態が変化しています",
+	})
 }
 
 func (w *Workflow) recordConvergenceRound(reviewNumber int, autoFixes int, workerPhase string, snap state.GitSnapshot) {
@@ -2056,13 +2211,7 @@ func (w *Workflow) verifyReviewResumeSnapshot(checkpoint state.ResumeCheckpoint)
 }
 
 func (w *Workflow) acceptReviewResumeParentDelta(saved, current state.GitSnapshot, checkpoint state.ResumeCheckpoint) bool {
-	if saved.Head != current.Head || saved.IndexDigest != current.IndexDigest {
-		return false
-	}
-	if saved.WorktreeDigestExcludingParent == "" || saved.WorktreeDigestExcludingParent != current.WorktreeDigestExcludingParent {
-		return false
-	}
-	if saved.ParentFiles == nil || checkpoint.StopParentFiles == nil {
+	if !reviewResumeParentBaselineMatches(saved, current) || saved.ParentFiles == nil || checkpoint.StopParentFiles == nil {
 		return false
 	}
 	now, err := readParentFileStates(w.config.RepoRoot)
@@ -2086,6 +2235,13 @@ func (w *Workflow) acceptReviewResumeParentDelta(saved, current state.GitSnapsho
 		}
 	}
 	return changedDuringStop
+}
+
+func reviewResumeParentBaselineMatches(saved, current state.GitSnapshot) bool {
+	return saved.Head == current.Head &&
+		saved.IndexDigest == current.IndexDigest &&
+		saved.WorktreeDigestExcludingParent != "" &&
+		saved.WorktreeDigestExcludingParent == current.WorktreeDigestExcludingParent
 }
 
 func parentStatePaths(groups ...state.ParentFileStates) []string {
@@ -2116,23 +2272,35 @@ func (w *Workflow) recordSnapshotParentUpdateEvent(checkpoint state.ResumeCheckp
 	})
 }
 
-func (w *Workflow) verifyReviewEndSnapshot() (bool, error) {
-	saved, err := w.state.LoadReviewStartSnapshot()
+func (w *Workflow) verifyEndSnapshot(check snapshotEndCheck) (bool, error) {
+	start, err := check.loadStart()
 	if err != nil {
-		return true, w.failClosedSnapshot(state.SnapshotStageReviewEnd, state.GitSnapshot{}, state.GitSnapshot{}, "review-start snapshot読込失敗", err)
+		return true, check.failClosed(check.stage, state.GitSnapshot{}, state.GitSnapshot{}, check.loadReason, err)
 	}
 	current, err := w.captureSnapshot(w.config.RepoRoot)
 	if err != nil {
-		return true, w.failClosedSnapshot(state.SnapshotStageReviewEnd, saved, state.GitSnapshot{}, "review-end snapshot取得失敗", err)
+		return true, check.failClosed(check.stage, start, state.GitSnapshot{}, check.captureReason, err)
 	}
-	comparison := state.CompareGitSnapshot(saved, current, state.SnapshotStageReviewEnd, "")
+	comparison := state.CompareGitSnapshot(start, current, check.stage, "")
 	if err := w.state.SaveSnapshotComparison(comparison); err != nil {
-		return true, w.failClosedSnapshot(state.SnapshotStageReviewEnd, saved, current, "snapshot comparison保存失敗", err)
+		return true, check.failClosed(check.stage, start, current, check.saveReason, err)
 	}
 	if !comparison.Matched {
-		return true, w.failClosedSnapshot(state.SnapshotStageReviewEnd, saved, current, "reviewer実行中にrepository状態が変化しています", nil)
+		return true, check.failClosed(check.stage, start, current, check.mismatchReason, nil)
 	}
 	return false, nil
+}
+
+func (w *Workflow) verifyReviewEndSnapshot() (bool, error) {
+	return w.verifyEndSnapshot(snapshotEndCheck{
+		stage:          state.SnapshotStageReviewEnd,
+		loadStart:      w.state.LoadReviewStartSnapshot,
+		failClosed:     w.failClosedSnapshot,
+		loadReason:     "review-start snapshot読込失敗",
+		captureReason:  "review-end snapshot取得失敗",
+		saveReason:     "snapshot comparison保存失敗",
+		mismatchReason: "reviewer実行中にrepository状態が変化しています",
+	})
 }
 
 func (w *Workflow) failClosedSnapshot(stage state.SnapshotStage, workerEnd, reviewStart state.GitSnapshot, reason string, cause error) error {

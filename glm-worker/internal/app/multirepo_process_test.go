@@ -27,11 +27,96 @@ type multiRepoEnv struct {
 	stubB     string
 }
 
+type multiRepoResult struct {
+	code   int
+	stdout string
+	stderr string
+}
+
+type multiRepoHolder struct {
+	stdout *strings.Builder
+	stderr *strings.Builder
+	done   chan error
+}
+
 const (
 	multiRepoPollInterval = 50 * time.Millisecond
 	multiRepoRunTimeout   = 3 * time.Minute
 	multiRepoWaitTimeout  = 30 * time.Second
 )
+
+const multiRepoStubClaude = `#!/bin/sh
+dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+mode=$(cat "$dir/mode" 2>/dev/null || echo none)
+case "$mode" in
+hold)
+	waits=0
+	while [ ! -f "$dir/release" ] && [ "$waits" -lt 1200 ]; do
+		sleep 0.1
+		waits=$((waits + 1))
+	done
+	echo "stub claude hold released" >&2
+	exit 1
+	;;
+ratelimit)
+	echo "API Error: Request rejected (429) [1308][Usage limit reached for 5 hour. Your limit will reset at 2026-08-23 12:00:00]" >&2
+	exit 1
+	;;
+hold-with-tool)
+	(
+		trap '' TERM
+		while :; do sleep 0.2; done
+	) &
+	echo $! > "$dir/tool.pid"
+	waits=0
+	while [ ! -f "$dir/release" ] && [ "$waits" -lt 3000 ]; do
+		sleep 0.1
+		waits=$((waits + 1))
+	done
+	exit 1
+	;;
+dirty-hold)
+	# 停止保持基準の観測対象として未commit作業を残してからholdする。
+	printf 'stub uncommitted work\n' > uncommitted.txt
+	waits=0
+	while [ ! -f "$dir/release" ] && [ "$waits" -lt 3000 ]; do
+		sleep 0.1
+		waits=$((waits + 1))
+	done
+	exit 1
+	;;
+reviewer-hold)
+	role=worker
+	for arg in "$@"; do
+		if [ "$arg" = "--disallowedTools" ]; then role=reviewer; fi
+	done
+	if [ "$role" = reviewer ]; then
+		waits=0
+		while [ ! -f "$dir/release" ] && [ "$waits" -lt 3000 ]; do
+			sleep 0.1
+			waits=$((waits + 1))
+		done
+		exit 1
+	fi
+	printf '%s\n' '{"type":"result","subtype":"success","is_error":false,"result":"worker implemented","structured_output":{"status":"IMPLEMENTED","risk":"LOW","summary":"stub implementation summary","requirement_coverage":"stub coverage","tests":"stub tests","unverified":"none"},"usage":{"input_tokens":5,"output_tokens":5},"duration_ms":5}'
+	exit 0
+	;;
+success)
+	role=worker
+	for arg in "$@"; do
+		if [ "$arg" = "--disallowedTools" ]; then role=reviewer; fi
+	done
+	if [ "$role" = reviewer ]; then
+		printf '%s\n' '{"type":"result","subtype":"success","is_error":false,"result":"reviewer pass","structured_output":{"status":"PASS","risk":"LOW","summary":"stub review summary","requirement_coverage":"stub coverage","invariants":"stub invariants","test_evidence":"stub evidence","issues":"none","residual_risk":"none","targets":["none"]},"usage":{"input_tokens":3,"output_tokens":3},"duration_ms":3}'
+	else
+		printf '%s\n' '{"type":"result","subtype":"success","is_error":false,"result":"worker implemented","structured_output":{"status":"IMPLEMENTED","risk":"LOW","summary":"stub implementation summary","requirement_coverage":"stub coverage","tests":"stub tests","unverified":"none"},"usage":{"input_tokens":5,"output_tokens":5},"duration_ms":5}'
+	fi
+	exit 0
+	;;
+esac
+echo "stub claude unknown mode: $mode" >&2
+exit 1
+`
 
 func TestMultiRepositoryProcessIsolation(t *testing.T) {
 	env := newMultiRepoEnv(t)
@@ -189,12 +274,6 @@ func assertRepoLocalObservability(t *testing.T, stateDir string, taskID string, 
 	}
 }
 
-type multiRepoResult struct {
-	code   int
-	stdout string
-	stderr string
-}
-
 func newMultiRepoEnv(t *testing.T) *multiRepoEnv {
 	t.Helper()
 	if _, err := exec.LookPath("go"); err != nil {
@@ -259,7 +338,7 @@ func buildMultiRepoWorkerBinary(t *testing.T) (string, error) {
 	build := exec.Command("go", "build", "-o", binary, "./cmd/glm-worker")
 	build.Dir = moduleRoot
 	if output, err := build.CombinedOutput(); err != nil {
-		return "", fmt.Errorf("go build失敗: %v: %s", err, output)
+		return "", fmt.Errorf("go build失敗: %w: %s", err, output)
 	}
 	return binary, nil
 }
@@ -289,79 +368,6 @@ func newMultiRepoGitRepo(t *testing.T, dir string, marker string) string {
 	return dir
 }
 
-const multiRepoStubClaude = `#!/bin/sh
-dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-mode=$(cat "$dir/mode" 2>/dev/null || echo none)
-case "$mode" in
-hold)
-	waits=0
-	while [ ! -f "$dir/release" ] && [ "$waits" -lt 1200 ]; do
-		sleep 0.1
-		waits=$((waits + 1))
-	done
-	echo "stub claude hold released" >&2
-	exit 1
-	;;
-ratelimit)
-	echo "API Error: Request rejected (429) [1308][Usage limit reached for 5 hour. Your limit will reset at 2026-08-23 12:00:00]" >&2
-	exit 1
-	;;
-hold-with-tool)
-	(
-		trap '' TERM
-		while :; do sleep 0.2; done
-	) &
-	echo $! > "$dir/tool.pid"
-	waits=0
-	while [ ! -f "$dir/release" ] && [ "$waits" -lt 3000 ]; do
-		sleep 0.1
-		waits=$((waits + 1))
-	done
-	exit 1
-	;;
-dirty-hold)
-	# 停止保持基準の観測対象として未commit作業を残してからholdする。
-	printf 'stub uncommitted work\n' > uncommitted.txt
-	waits=0
-	while [ ! -f "$dir/release" ] && [ "$waits" -lt 3000 ]; do
-		sleep 0.1
-		waits=$((waits + 1))
-	done
-	exit 1
-	;;
-reviewer-hold)
-	role=worker
-	for arg in "$@"; do
-		if [ "$arg" = "--disallowedTools" ]; then role=reviewer; fi
-	done
-	if [ "$role" = reviewer ]; then
-		waits=0
-		while [ ! -f "$dir/release" ] && [ "$waits" -lt 3000 ]; do
-			sleep 0.1
-			waits=$((waits + 1))
-		done
-		exit 1
-	fi
-	printf '%s\n' '{"type":"result","subtype":"success","is_error":false,"result":"worker implemented","structured_output":{"status":"IMPLEMENTED","risk":"LOW","summary":"stub implementation summary","requirement_coverage":"stub coverage","tests":"stub tests","unverified":"none"},"usage":{"input_tokens":5,"output_tokens":5},"duration_ms":5}'
-	exit 0
-	;;
-success)
-	role=worker
-	for arg in "$@"; do
-		if [ "$arg" = "--disallowedTools" ]; then role=reviewer; fi
-	done
-	if [ "$role" = reviewer ]; then
-		printf '%s\n' '{"type":"result","subtype":"success","is_error":false,"result":"reviewer pass","structured_output":{"status":"PASS","risk":"LOW","summary":"stub review summary","requirement_coverage":"stub coverage","invariants":"stub invariants","test_evidence":"stub evidence","issues":"none","residual_risk":"none","targets":["none"]},"usage":{"input_tokens":3,"output_tokens":3},"duration_ms":3}'
-	else
-		printf '%s\n' '{"type":"result","subtype":"success","is_error":false,"result":"worker implemented","structured_output":{"status":"IMPLEMENTED","risk":"LOW","summary":"stub implementation summary","requirement_coverage":"stub coverage","tests":"stub tests","unverified":"none"},"usage":{"input_tokens":5,"output_tokens":5},"duration_ms":5}'
-	fi
-	exit 0
-	;;
-esac
-echo "stub claude unknown mode: $mode" >&2
-exit 1
-`
-
 func writeMultiRepoStubClaude(t *testing.T, dir string) string {
 	t.Helper()
 	if err := os.Mkdir(dir, 0o700); err != nil {
@@ -374,7 +380,7 @@ func writeMultiRepoStubClaude(t *testing.T, dir string) string {
 	return stub
 }
 
-func (e *multiRepoEnv) setStubMode(t *testing.T, stub string, mode string) {
+func (*multiRepoEnv) setStubMode(t *testing.T, stub string, mode string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(filepath.Dir(stub), "mode"), []byte(mode), 0o600); err != nil {
 		t.Fatal(err)
@@ -420,12 +426,6 @@ func (e *multiRepoEnv) start(t *testing.T, ctx context.Context, repo string, arg
 	done := make(chan error, 1)
 	go func() { done <- command.Wait() }()
 	return &multiRepoHolder{stdout: &stdout, stderr: &stderr, done: done}
-}
-
-type multiRepoHolder struct {
-	stdout *strings.Builder
-	stderr *strings.Builder
-	done   chan error
 }
 
 func (h *multiRepoHolder) waitFailure(t *testing.T) {
@@ -520,7 +520,7 @@ func findStateDirForRepo(sessions string, canonicalRepo string) string {
 	return ""
 }
 
-func (e *multiRepoEnv) waitHeldWithWorkerSession(t *testing.T, stateDir string) {
+func (*multiRepoEnv) waitHeldWithWorkerSession(t *testing.T, stateDir string) {
 	t.Helper()
 	deadline := time.Now().Add(multiRepoWaitTimeout)
 	for time.Now().Before(deadline) {

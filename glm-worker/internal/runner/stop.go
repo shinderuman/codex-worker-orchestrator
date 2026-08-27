@@ -6,26 +6,12 @@ import (
 	"time"
 )
 
-var (
-	stopTermGrace       = 10 * time.Second
-	killSettleTimeout   = 2 * time.Second
-	processGroupPollGap = 50 * time.Millisecond
-)
-
 type InterruptedCallError struct {
 	Phase    string
 	TaskID   string
 	RepoRoot string
 
 	CleanupWarning string
-}
-
-func (e *InterruptedCallError) Error() string {
-	message := fmt.Sprintf("task interrupted by glm-worker --stop at phase %s; task stopped, resumable via glm-worker --resume", e.Phase)
-	if e.CleanupWarning != "" {
-		message += ": " + e.CleanupWarning
-	}
-	return message
 }
 
 type StopOutcome struct {
@@ -41,6 +27,20 @@ type StopController struct {
 	outcome   StopOutcome
 	requestCh chan struct{}
 	doneCh    chan struct{}
+}
+
+var (
+	stopTermGrace       = 10 * time.Second
+	killSettleTimeout   = 2 * time.Second
+	processGroupPollGap = 50 * time.Millisecond
+)
+
+func (e *InterruptedCallError) Error() string {
+	message := fmt.Sprintf("task interrupted by glm-worker --stop at phase %s; task stopped, resumable via glm-worker --resume", e.Phase)
+	if e.CleanupWarning != "" {
+		message += ": " + e.CleanupWarning
+	}
+	return message
 }
 
 func NewStopController() *StopController {

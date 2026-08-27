@@ -12,12 +12,6 @@ import (
 
 type Outcome int
 
-const (
-	Pass Outcome = iota
-	Fail
-	Unavailable
-)
-
 type Params struct {
 	AutomationKey    string
 	ExpectedRFC3339  string
@@ -55,6 +49,17 @@ type Result struct {
 
 type DBReader func(dbPath, key string) (DBRow, error)
 
+const (
+	Pass Outcome = iota
+	Fail
+	Unavailable
+)
+
+const (
+	dtStartLayout = "20060102T150405"
+	activeStatus  = "ACTIVE"
+)
+
 var (
 	ErrSqlite3NotFound = errors.New("sqlite3 binary not found")
 	ErrDBUnreadable    = errors.New("codex sqlite db unreadable")
@@ -64,74 +69,75 @@ var (
 var keyPattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 
 func Verify(params Params, readDB DBReader) Result {
-	result := Result{
-		AutomationKey: params.AutomationKey,
-		TargetThread:  params.ExpectedThreadID,
-	}
-
-	if !keyPattern.MatchString(params.AutomationKey) {
+	result := Result{AutomationKey: params.AutomationKey, TargetThread: params.ExpectedThreadID}
+	expectedUTC, expectedDTStart, expectedEpochMS, reason := verifyInputs(params)
+	if reason != "" {
 		result.Outcome = Fail
-		result.Reason = fmt.Sprintf("invalid automation key format: %q", params.AutomationKey)
-		return result
-	}
-
-	if params.ExpectedThreadID == "" {
-		result.Outcome = Fail
-		result.Reason = "expected thread ID is empty"
-		return result
-	}
-
-	expectedUTC, expectedDTStart, expectedEpochMS, err := expectedFromRFC3339(params.ExpectedRFC3339)
-	if err != nil {
-		result.Outcome = Fail
-		result.Reason = err.Error()
+		result.Reason = reason
 		return result
 	}
 	result.ExpectedUTC = expectedUTC.Format(time.RFC3339)
 	result.TOMLDTStart = expectedDTStart
 
-	tomlPath := filepath.Join(params.AutomationsDir, params.AutomationKey, "automation.toml")
-	data, err := os.ReadFile(tomlPath)
-	if err != nil {
-		result.Outcome = Fail
-		result.Reason = fmt.Sprintf("automation.toml not found: %s", tomlPath)
-		return result
-	}
-
-	toml, err := parseAutomationTOML(data)
-	if err != nil {
-		result.Outcome = Fail
-		result.Reason = fmt.Sprintf("TOML parse: %v", err)
-		return result
-	}
-
-	if reason := checkTOML(toml, params, expectedDTStart); reason != "" {
+	toml, reason := readVerifiedAutomation(params, expectedDTStart)
+	if reason != "" {
 		result.Outcome = Fail
 		result.Reason = reason
 		return result
 	}
-
-	db, err := readDB(params.DBPath, params.AutomationKey)
-	if err != nil {
-		if errors.Is(err, ErrRowNotFound) {
-			result.Outcome = Fail
-			result.Reason = "SQLite automation row not found (entity uncreated)"
-		} else {
-			result.Outcome = Unavailable
-			result.Reason = fmt.Sprintf("DB verification unavailable: %v", err)
-		}
-		return result
-	}
-
-	if reason := checkDB(db, params, expectedEpochMS, toml.Rrule); reason != "" {
-		result.Outcome = Fail
+	outcome, reason := verifyAutomationDB(params, readDB, expectedEpochMS, toml.Rrule)
+	if reason != "" {
+		result.Outcome = outcome
 		result.Reason = reason
 		return result
 	}
-
 	result.Outcome = Pass
 	result.DBNextRunUTC = time.UnixMilli(expectedEpochMS).UTC().Format(time.RFC3339)
 	return result
+}
+
+func verifyInputs(params Params) (time.Time, string, int64, string) {
+	if !keyPattern.MatchString(params.AutomationKey) {
+		return time.Time{}, "", 0, fmt.Sprintf("invalid automation key format: %q", params.AutomationKey)
+	}
+	if params.ExpectedThreadID == "" {
+		return time.Time{}, "", 0, "expected thread ID is empty"
+	}
+	expectedUTC, expectedDTStart, expectedEpochMS, err := expectedFromRFC3339(params.ExpectedRFC3339)
+	if err != nil {
+		return time.Time{}, "", 0, err.Error()
+	}
+	return expectedUTC, expectedDTStart, expectedEpochMS, ""
+}
+
+func readVerifiedAutomation(params Params, expectedDTStart string) (AutomationTOML, string) {
+	tomlPath := filepath.Join(params.AutomationsDir, params.AutomationKey, "automation.toml")
+	data, err := os.ReadFile(tomlPath)
+	if err != nil {
+		return AutomationTOML{}, fmt.Sprintf("automation.toml not found: %s", tomlPath)
+	}
+	toml, err := parseAutomationTOML(data)
+	if err != nil {
+		return AutomationTOML{}, fmt.Sprintf("TOML parse: %v", err)
+	}
+	if reason := checkTOML(toml, params, expectedDTStart); reason != "" {
+		return AutomationTOML{}, reason
+	}
+	return toml, ""
+}
+
+func verifyAutomationDB(params Params, readDB DBReader, expectedEpochMS int64, tomlRrule string) (Outcome, string) {
+	db, err := readDB(params.DBPath, params.AutomationKey)
+	if err != nil {
+		if errors.Is(err, ErrRowNotFound) {
+			return Fail, "SQLite automation row not found (entity uncreated)"
+		}
+		return Unavailable, fmt.Sprintf("DB verification unavailable: %v", err)
+	}
+	if reason := checkDB(db, params, expectedEpochMS, tomlRrule); reason != "" {
+		return Fail, reason
+	}
+	return Pass, ""
 }
 
 func expectedFromRFC3339(rfc3339 string) (time.Time, string, int64, error) {
@@ -143,8 +149,6 @@ func expectedFromRFC3339(rfc3339 string) (time.Time, string, int64, error) {
 	return utc, utc.Format(dtStartLayout), utc.UnixMilli(), nil
 }
 
-const dtStartLayout = "20060102T150405"
-
 func checkTOML(toml AutomationTOML, params Params, expectedDTStart string) string {
 	if toml.ID != params.AutomationKey {
 		return fmt.Sprintf("TOML id mismatch: got %q want %q", toml.ID, params.AutomationKey)
@@ -152,7 +156,7 @@ func checkTOML(toml AutomationTOML, params Params, expectedDTStart string) strin
 	if toml.Name != params.AutomationKey {
 		return fmt.Sprintf("TOML name mismatch: got %q want %q", toml.Name, params.AutomationKey)
 	}
-	if toml.Status != "ACTIVE" {
+	if toml.Status != activeStatus {
 		return fmt.Sprintf("TOML status is %q want ACTIVE", toml.Status)
 	}
 	if toml.TargetThreadID != params.ExpectedThreadID {
@@ -168,7 +172,7 @@ func checkDB(db DBRow, params Params, expectedEpochMS int64, tomlRrule string) s
 	if db.ID != params.AutomationKey {
 		return fmt.Sprintf("DB id mismatch: got %q want %q", db.ID, params.AutomationKey)
 	}
-	if db.Status != "ACTIVE" {
+	if db.Status != activeStatus {
 		return fmt.Sprintf("DB status is %q want ACTIVE", db.Status)
 	}
 	if !db.HasNextRun {

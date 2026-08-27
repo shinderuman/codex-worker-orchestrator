@@ -21,36 +21,9 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-const stopEndpointFile = "stop.sock"
-
-const stopRequestLine = "{\"type\":\"stop\",\"version\":1}\n"
-
-const (
-	stopDialTimeout = 5 * time.Second
-
-	stopHandshakeTimeout = 90 * time.Second
-
-	stopRequestReadTimeout = 10 * time.Second
-	stopResponseLimit      = 64 * 1024
-
-	stopEndpointMaxPath = 100
-)
-
 type StopEndpointError struct {
 	Absent bool
 }
-
-func (e *StopEndpointError) Error() string {
-	if e.Absent {
-		return "no running glm-worker holds the stop endpoint for this repository"
-	}
-	return "stop endpoint did not acknowledge the stop request"
-}
-
-const (
-	stopResultInterrupted         = "interrupted"
-	stopResultInterruptedResidual = "interrupted_cleanup_residual"
-)
 
 type stopOutput struct {
 	Result          string  `json:"result"`
@@ -66,6 +39,43 @@ type stopEndpointResponse struct {
 	TaskStatus      *string `json:"task_status"`
 	ResumeAvailable bool    `json:"resume_available"`
 	CleanupWarning  string  `json:"cleanup_warning,omitempty"`
+}
+
+type stopEndpointServer struct {
+	listener   net.Listener
+	controller *runner.StopController
+	st         *state.StateStore
+	path       string
+	done       chan struct{}
+
+	handlers sync.WaitGroup
+}
+
+const stopEndpointFile = "stop.sock"
+
+const stopRequestLine = "{\"type\":\"stop\",\"version\":1}\n"
+
+const (
+	stopDialTimeout = 5 * time.Second
+
+	stopHandshakeTimeout = 90 * time.Second
+
+	stopRequestReadTimeout = 10 * time.Second
+	stopResponseLimit      = 64 * 1024
+
+	stopEndpointMaxPath = 100
+)
+
+const (
+	stopResultInterrupted         = "interrupted"
+	stopResultInterruptedResidual = "interrupted_cleanup_residual"
+)
+
+func (e *StopEndpointError) Error() string {
+	if e.Absent {
+		return "no running glm-worker holds the stop endpoint for this repository"
+	}
+	return "stop endpoint did not acknowledge the stop request"
 }
 
 func stopEndpointPath(st *state.StateStore) string {
@@ -91,7 +101,7 @@ func requestStop(cfg config.AppConfig, stdout io.Writer) error {
 	if err != nil {
 		return &StopEndpointError{}
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	if err := conn.SetDeadline(time.Now().Add(stopHandshakeTimeout)); err != nil {
 		return err
 	}
@@ -102,13 +112,7 @@ func requestStop(cfg config.AppConfig, stdout io.Writer) error {
 	if err != nil {
 		return &StopEndpointError{}
 	}
-	return writeJSON(stdout, stopOutput{
-		Result:          response.Result,
-		TaskID:          response.TaskID,
-		TaskStatus:      response.TaskStatus,
-		ResumeAvailable: response.ResumeAvailable,
-		CleanupWarning:  response.CleanupWarning,
-	})
+	return writeJSON(stdout, stopOutput(response))
 }
 
 func readStopEndpointResponse(conn net.Conn) (stopEndpointResponse, error) {
@@ -131,16 +135,6 @@ func readStopEndpointResponse(conn net.Conn) (stopEndpointResponse, error) {
 	}
 }
 
-type stopEndpointServer struct {
-	listener   net.Listener
-	controller *runner.StopController
-	st         *state.StateStore
-	path       string
-	done       chan struct{}
-
-	handlers sync.WaitGroup
-}
-
 func startStopEndpoint(st *state.StateStore, controller *runner.StopController) (*stopEndpointServer, error) {
 	path := stopEndpointPath(st)
 	_ = os.Remove(path)
@@ -149,7 +143,7 @@ func startStopEndpoint(st *state.StateStore, controller *runner.StopController) 
 		return nil, fmt.Errorf("GLM worker停止endpointを開けません: %w", err)
 	}
 	if err := os.Chmod(path, 0o600); err != nil {
-		listener.Close()
+		_ = listener.Close()
 		return nil, fmt.Errorf("GLM worker停止endpointの接続権を限定できません: %w", err)
 	}
 	server := &stopEndpointServer{
@@ -178,7 +172,7 @@ func (s *stopEndpointServer) acceptLoop() {
 
 func (s *stopEndpointServer) handleConn(conn net.Conn) {
 	defer s.handlers.Done()
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	_ = conn.SetDeadline(time.Now().Add(stopRequestReadTimeout))
 	reader := bufio.NewReader(io.LimitReader(conn, stopResponseLimit+1))
 	line, err := reader.ReadString('\n')
@@ -239,7 +233,7 @@ func checkpointResumeAvailable(st *state.StateStore) bool {
 	return checkpoint.RateLimited || checkpoint.ProviderUnavailable || checkpoint.UserInterrupted
 }
 
-func (s *stopEndpointServer) writeResponse(conn net.Conn, response stopEndpointResponse) {
+func (*stopEndpointServer) writeResponse(conn net.Conn, response stopEndpointResponse) {
 	data, err := marshalEventLine(response)
 	if err != nil {
 		return

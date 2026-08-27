@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint"
 )
 
 type Violation struct {
@@ -51,8 +53,50 @@ type heredocSpec struct {
 	stripTabs bool
 }
 
+type sourceEdit struct {
+	start int
+	end   int
+	blank bool
+}
+
+type shellLexState struct {
+	single  bool
+	double  bool
+	escaped bool
+}
+
+const (
+	statusFail  = "fail"
+	sourceShell = "shell"
+)
+
 func Check(root string) (Report, error) {
-	return Run(root, false)
+	if !harnesslint.AppliesTo(root) {
+		return Run(root, false)
+	}
+	quality, err := harnesslint.Check(root)
+	if err != nil {
+		return Report{}, err
+	}
+	return qualityReport(quality), nil
+}
+
+func qualityReport(source harnesslint.Report) Report {
+	report := Report{
+		Status:     source.Status,
+		Fixed:      source.Fixed,
+		Violations: make([]Violation, 0, len(source.Violations)),
+	}
+	for _, item := range source.Violations {
+		report.Violations = append(report.Violations, Violation{
+			Path:    item.Path,
+			Line:    item.Line,
+			Column:  item.Column,
+			Kind:    item.Rule,
+			Message: item.Message,
+		})
+	}
+	return report
 }
 
 func Run(root string, fix bool) (Report, error) {
@@ -60,6 +104,33 @@ func Run(root string, fix bool) (Report, error) {
 	if err != nil {
 		return Report{}, err
 	}
+	report, classified := classifyPaths(paths)
+	if len(report.Violations) > 0 {
+		report.Status = statusFail
+		return sortedReport(report), nil
+	}
+	updates, err := scanClassifiedPaths(root, paths, classified, fix, &report)
+	if err != nil {
+		return Report{}, err
+	}
+	if err := applyPendingUpdates(root, updates); err != nil {
+		return Report{}, err
+	}
+	if fix && report.Fixed > 0 {
+		checked, err := Run(root, false)
+		if err != nil {
+			return Report{}, err
+		}
+		checked.Fixed = report.Fixed
+		return checked, nil
+	}
+	if len(report.Violations) > 0 {
+		report.Status = statusFail
+	}
+	return sortedReport(report), nil
+}
+
+func classifyPaths(paths []string) (Report, map[string]string) {
 	report := Report{Status: "pass", Violations: []Violation{}}
 	classified := make(map[string]string, len(paths))
 	for _, path := range paths {
@@ -73,10 +144,10 @@ func Run(root string, fix bool) (Report, error) {
 		}
 		classified[path] = kind
 	}
-	if len(report.Violations) > 0 {
-		report.Status = "fail"
-		return sortedReport(report), nil
-	}
+	return report, classified
+}
+
+func scanClassifiedPaths(root string, paths []string, classified map[string]string, fix bool, report *Report) ([]pendingUpdate, error) {
 	var updates []pendingUpdate
 	for _, path := range paths {
 		kind, eligible := classified[path]
@@ -85,7 +156,7 @@ func Run(root string, fix bool) (Report, error) {
 		}
 		data, mode, err := readRegular(root, path)
 		if err != nil {
-			return Report{}, err
+			return nil, err
 		}
 		findings := scan(kind, path, data)
 		if fix && len(findings) > 0 {
@@ -97,30 +168,23 @@ func Run(root string, fix bool) (Report, error) {
 			report.Violations = append(report.Violations, item.Violation)
 		}
 	}
+	return updates, nil
+}
+
+func applyPendingUpdates(root string, updates []pendingUpdate) error {
 	for _, update := range updates {
 		if err := replaceRegular(root, update); err != nil {
-			return Report{}, err
+			return err
 		}
 	}
-	if fix && report.Fixed > 0 {
-		checked, err := Run(root, false)
-		if err != nil {
-			return Report{}, err
-		}
-		checked.Fixed = report.Fixed
-		return checked, nil
-	}
-	if len(report.Violations) > 0 {
-		report.Status = "fail"
-	}
-	return sortedReport(report), nil
+	return nil
 }
 
 func scan(kind, path string, data []byte) []finding {
 	switch kind {
 	case "go":
 		return scanGo(path, data)
-	case "shell":
+	case sourceShell:
 		return scanShell(path, data)
 	case "hash":
 		return scanHash(path, data)
@@ -153,9 +217,18 @@ func trackedAndUntracked(root string) ([]string, error) {
 	parts := bytes.Split(data, []byte{0})
 	paths := make([]string, 0, len(parts))
 	for _, part := range parts {
-		if len(part) > 0 {
-			paths = append(paths, filepath.ToSlash(string(part)))
+		if len(part) == 0 {
+			continue
 		}
+		path := filepath.ToSlash(string(part))
+		_, statErr := os.Lstat(filepath.Join(root, filepath.FromSlash(path)))
+		if errors.Is(statErr, os.ErrNotExist) {
+			continue
+		}
+		if statErr != nil {
+			return nil, fmt.Errorf("lstat %s: %w", path, statErr)
+		}
+		paths = append(paths, path)
 	}
 	sort.Strings(paths)
 	return paths, nil
@@ -194,7 +267,7 @@ func classify(path string) (string, bool) {
 	case ".go", ".mod":
 		return "go", true
 	case ".sh":
-		return "shell", true
+		return sourceShell, true
 	case ".toml", ".rules", ".yml", ".yaml":
 		return "hash", true
 	case ".gitignore":
@@ -207,7 +280,7 @@ func classify(path string) (string, bool) {
 	}
 	if extension == "" {
 		if base == "commentlint" || base == "harnesslint" || path == ".githooks/post-merge" {
-			return "shell", true
+			return sourceShell, true
 		}
 	}
 	return "unclassified", true
@@ -243,13 +316,13 @@ func replaceRegular(root string, update pendingUpdate) error {
 		return err
 	}
 	temp := file.Name()
-	defer os.Remove(temp)
+	defer func() { _ = os.Remove(temp) }()
 	if err := file.Chmod(update.mode); err != nil {
-		file.Close()
+		_ = file.Close()
 		return err
 	}
 	if _, err := file.Write(update.data); err != nil {
-		file.Close()
+		_ = file.Close()
 		return err
 	}
 	if err := file.Close(); err != nil {
@@ -308,16 +381,9 @@ func scanShellLines(path string, lines []shellLine) []finding {
 			}
 			continue
 		}
-		commentAt := shellCommentOffset([]byte(line.text))
-		code := line.text
-		if commentAt >= 0 {
-			allowed := line.number == 1 && (line.text == "#!/bin/sh" || line.text == "#!/usr/bin/env bash")
-			if !allowed {
-				findings = append(findings, finding{Violation: Violation{Path: path, Line: line.number, Column: commentAt + 1, Kind: "comment", Message: "natural-language source comment is forbidden"}, start: line.offset + commentAt, end: line.offset + len(line.text)})
-			}
-			code = line.text[:commentAt]
-		}
-		pending = append(pending, heredocDelimiters(code)...)
+		lineFindings, delimiters := scanShellCodeLine(path, line)
+		findings = append(findings, lineFindings...)
+		pending = append(pending, delimiters...)
 		if len(pending) > 0 {
 			bodyStart = index + 1
 		}
@@ -326,6 +392,26 @@ func scanShellLines(path string, lines []shellLine) []finding {
 		findings = append(findings, scanShellLines(path, lines[bodyStart:])...)
 	}
 	return findings
+}
+
+func scanShellCodeLine(path string, line shellLine) ([]finding, []heredocSpec) {
+	commentAt := shellCommentOffset([]byte(line.text))
+	code := line.text
+	var findings []finding
+	if commentAt >= 0 {
+		if !allowedShellComment(line) {
+			findings = append(findings, finding{
+				Violation: Violation{Path: path, Line: line.number, Column: commentAt + 1, Kind: "comment", Message: "natural-language source comment is forbidden"},
+				start:     line.offset + commentAt, end: line.offset + len(line.text),
+			})
+		}
+		code = line.text[:commentAt]
+	}
+	return findings, heredocDelimiters(code)
+}
+
+func allowedShellComment(line shellLine) bool {
+	return line.number == 1 && (line.text == "#!/bin/sh" || line.text == "#!/usr/bin/env bash")
 }
 
 func heredocTerminated(spec heredocSpec, line string) bool {
@@ -337,31 +423,12 @@ func heredocTerminated(spec heredocSpec, line string) bool {
 
 func heredocDelimiters(code string) []heredocSpec {
 	var delimiters []heredocSpec
-	single := false
-	double := false
-	escaped := false
+	state := shellLexState{}
 	for index := 0; index < len(code); index++ {
-		value := code[index]
-		if escaped {
-			escaped = false
+		if state.consume(code[index]) || state.quoted() || !heredocStart(code, index) {
 			continue
 		}
-		if value == '\\' && !single {
-			escaped = true
-			continue
-		}
-		if value == '\'' && !double {
-			single = !single
-			continue
-		}
-		if value == '"' && !single {
-			double = !double
-			continue
-		}
-		if single || double || value != '<' || index+1 >= len(code) || code[index+1] != '<' {
-			continue
-		}
-		if index+2 < len(code) && code[index+2] == '<' {
+		if tripleRedirect(code, index) {
 			index += 2
 			continue
 		}
@@ -374,21 +441,41 @@ func heredocDelimiters(code string) []heredocSpec {
 	return delimiters
 }
 
+func (s *shellLexState) consume(value byte) bool {
+	if s.escaped {
+		s.escaped = false
+		return true
+	}
+	if value == '\\' && !s.single {
+		s.escaped = true
+		return true
+	}
+	if value == '\'' && !s.double {
+		s.single = !s.single
+		return true
+	}
+	if value == '"' && !s.single {
+		s.double = !s.double
+		return true
+	}
+	return false
+}
+
+func (s shellLexState) quoted() bool {
+	return s.single || s.double
+}
+
+func heredocStart(code string, index int) bool {
+	return code[index] == '<' && index+1 < len(code) && code[index+1] == '<'
+}
+
+func tripleRedirect(code string, index int) bool {
+	return index+2 < len(code) && code[index+2] == '<'
+}
+
 func heredocDelimiter(code string, start int) (heredocSpec, int) {
-	index := start
-	stripTabs := false
-	if index < len(code) && code[index] == '-' {
-		stripTabs = true
-		index++
-	}
-	for index < len(code) && (code[index] == ' ' || code[index] == '\t') {
-		index++
-	}
-	quote := byte(0)
-	if index < len(code) && (code[index] == '\'' || code[index] == '"') {
-		quote = code[index]
-		index++
-	}
+	index, stripTabs := heredocPrefix(code, start)
+	quote, index := heredocQuote(code, index)
 	begin := index
 	for index < len(code) && heredocWordByte(code[index], index == begin) {
 		index++
@@ -403,6 +490,26 @@ func heredocDelimiter(code string, start int) (heredocSpec, int) {
 	return heredocSpec{word: code[begin:end], stripTabs: stripTabs}, index
 }
 
+func heredocPrefix(code string, start int) (int, bool) {
+	index := start
+	stripTabs := false
+	if index < len(code) && code[index] == '-' {
+		stripTabs = true
+		index++
+	}
+	for index < len(code) && (code[index] == ' ' || code[index] == '\t') {
+		index++
+	}
+	return index, stripTabs
+}
+
+func heredocQuote(code string, index int) (byte, int) {
+	if index >= len(code) || (code[index] != '\'' && code[index] != '"') {
+		return 0, index
+	}
+	return code[index], index + 1
+}
+
 func heredocWordByte(value byte, first bool) bool {
 	if value >= 'a' && value <= 'z' || value >= 'A' && value <= 'Z' || value == '_' {
 		return true
@@ -411,27 +518,9 @@ func heredocWordByte(value byte, first bool) bool {
 }
 
 func shellCommentOffset(line []byte) int {
-	single := false
-	double := false
-	escaped := false
+	state := shellLexState{}
 	for index, value := range line {
-		if escaped {
-			escaped = false
-			continue
-		}
-		if value == '\\' && !single {
-			escaped = true
-			continue
-		}
-		if value == '\'' && !double {
-			single = !single
-			continue
-		}
-		if value == '"' && !single {
-			double = !double
-			continue
-		}
-		if value != '#' || single || double {
+		if state.consume(value) || state.quoted() || value != '#' {
 			continue
 		}
 		if index == 0 || strings.ContainsRune(" \t;|&() <>", rune(line[index-1])) {
@@ -445,40 +534,51 @@ func scanHash(path string, data []byte) []finding {
 	var findings []finding
 	line := 1
 	column := 1
-	single := false
-	double := false
-	escaped := false
+	state := shellLexState{}
 	for index, value := range data {
 		if value == '\n' {
 			line++
 			column = 1
-			escaped = false
+			state.escaped = false
 			continue
 		}
-		if escaped {
-			escaped = false
+		if scanHashState(&state, value) {
 			column++
 			continue
 		}
-		if value == '\\' && double {
-			escaped = true
-			column++
-			continue
-		}
-		if value == '\'' && !double {
-			single = !single
-		} else if value == '"' && !single {
-			double = !double
-		} else if value == '#' && !single && !double {
+		if value == '#' && !state.quoted() {
 			end := bytes.IndexByte(data[index:], '\n')
 			if end < 0 {
 				end = len(data) - index
 			}
-			findings = append(findings, finding{Violation: Violation{Path: path, Line: line, Column: column, Kind: "comment", Message: "natural-language source comment is forbidden"}, start: index, end: index + end})
+			findings = append(findings, finding{
+				Violation: Violation{Path: path, Line: line, Column: column, Kind: "comment", Message: "natural-language source comment is forbidden"},
+				start:     index, end: index + end,
+			})
 		}
 		column++
 	}
 	return findings
+}
+
+func scanHashState(state *shellLexState, value byte) bool {
+	if state.escaped {
+		state.escaped = false
+		return true
+	}
+	if value == '\\' && state.double {
+		state.escaped = true
+		return true
+	}
+	if value == '\'' && !state.double {
+		state.single = !state.single
+		return true
+	}
+	if value == '"' && !state.single {
+		state.double = !state.double
+		return true
+	}
+	return false
 }
 
 func scanGitignore(path string, data []byte) []finding {
@@ -493,34 +593,34 @@ func scanGitignore(path string, data []byte) []finding {
 	return findings
 }
 
-type sourceEdit struct {
-	start int
-	end   int
-	blank bool
+func removeFindings(data []byte, findings []finding) []byte {
+	var edits []sourceEdit
+	for _, item := range findings {
+		edits = append(edits, findingEdits(data, findings, item)...)
+	}
+	return applyEdits(data, edits)
 }
 
-func removeFindings(data []byte, findings []finding) []byte {
+func findingEdits(data []byte, findings []finding, item finding) []sourceEdit {
 	var edits []sourceEdit
 	decidedLine := -1
 	decidedRemoval := false
-	for _, item := range findings {
-		for cursor := item.start; cursor < item.end; {
-			lineStart, contentEnd, nextLine := lineBounds(data, cursor)
-			if lineStart != decidedLine {
-				decidedLine = lineStart
-				decidedRemoval = lineCommentsOnly(data, findings, lineStart, contentEnd) && !endsWithLineContinuation(data, lineStart)
-			}
-			if decidedRemoval {
-				if last := len(edits) - 1; last < 0 || edits[last].blank || edits[last].start != lineStart {
-					edits = append(edits, sourceEdit{start: lineStart, end: nextLine})
-				}
-			} else {
-				edits = append(edits, sourceEdit{start: cursor, end: min(contentEnd, item.end), blank: true})
-			}
-			cursor = nextLine
+	for cursor := item.start; cursor < item.end; {
+		lineStart, contentEnd, nextLine := lineBounds(data, cursor)
+		if lineStart != decidedLine {
+			decidedLine = lineStart
+			decidedRemoval = lineCommentsOnly(data, findings, lineStart, contentEnd) && !endsWithLineContinuation(data, lineStart)
 		}
+		if decidedRemoval {
+			if last := len(edits) - 1; last < 0 || edits[last].blank || edits[last].start != lineStart {
+				edits = append(edits, sourceEdit{start: lineStart, end: nextLine})
+			}
+		} else {
+			edits = append(edits, sourceEdit{start: cursor, end: min(contentEnd, item.end), blank: true})
+		}
+		cursor = nextLine
 	}
-	return applyEdits(data, edits)
+	return edits
 }
 
 func lineBounds(data []byte, cursor int) (int, int, int) {
@@ -591,7 +691,7 @@ func applyEdits(data []byte, edits []sourceEdit) []byte {
 }
 
 func IsViolation(report Report) bool {
-	return report.Status == "fail" && len(report.Violations) > 0
+	return report.Status == statusFail && len(report.Violations) > 0
 }
 
 func ValidateRoot(root string) error {

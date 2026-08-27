@@ -11,24 +11,27 @@ import (
 	"testing"
 )
 
-func TestIsolatePlanLifecycleProcessSeries(t *testing.T) {
-	env := newMultiRepoEnv(t)
+const (
+	planOriginalTaskPath     = "IMPLEMENTATION_TASKS/original-task.md"
+	planInterruptionTaskPath = "IMPLEMENTATION_TASKS/interruption-task.md"
+)
 
-	const originalTaskPath = "IMPLEMENTATION_TASKS/original-task.md"
-	const interruptionTaskPath = "IMPLEMENTATION_TASKS/interruption-task.md"
+func setupPlanLifecycleIsolation(t *testing.T) (*multiRepoEnv, string, string, string, []byte, []byte) {
+	t.Helper()
+	env := newMultiRepoEnv(t)
 	originalTaskBody := []byte("# 元task\n\n割り込み前に実行中だったtask本文。\n\n## External feasibility\n\nstatus: not-applicable\n")
-	planBody := []byte("# 計画\n\n## ACTIVE\n\n- `" + originalTaskPath + "`\n")
+	planBody := []byte("# 計画\n\n## ACTIVE\n\n- `" + planOriginalTaskPath + "`\n")
 	if err := os.MkdirAll(filepath.Join(env.repoA, "IMPLEMENTATION_TASKS"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(env.repoA, originalTaskPath), originalTaskBody, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(env.repoA, planOriginalTaskPath), originalTaskBody, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(env.repoA, "IMPLEMENTATION_PLAN.local.md"), planBody, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	for _, args := range [][]string{
-		{"-C", env.repoA, "add", "IMPLEMENTATION_PLAN.local.md", originalTaskPath},
+		{"-C", env.repoA, "add", "IMPLEMENTATION_PLAN.local.md", planOriginalTaskPath},
 		{"-C", env.repoA, "commit", "-q", "-m", "parent metadata"},
 	} {
 		if output, err := exec.Command("git", args...).CombinedOutput(); err != nil {
@@ -48,27 +51,30 @@ func TestIsolatePlanLifecycleProcessSeries(t *testing.T) {
 		t.Fatalf("--stopがinterruptedになりません: code=%d stdout=%s stderr=%s", stopResult.code, stopResult.stdout, stopResult.stderr)
 	}
 	holder.waitFailure(t)
-	if got := readStateFile(t, stateA, "active-task"); got != originalTaskPath {
-		t.Fatalf("元taskの要求正本固定 = %q want %q", got, originalTaskPath)
-	}
 
 	isolate := env.run(t, env.repoA, "--isolate")
 	if isolate.code != 0 || !strings.Contains(isolate.stdout, `"result":"isolated"`) {
 		t.Fatalf("--isolateが失敗しました: code=%d stdout=%s stderr=%s", isolate.code, isolate.stdout, isolate.stderr)
 	}
-	worktree := isolationOutputField(t, isolate.stdout, "worktree")
-	branch := isolationOutputField(t, isolate.stdout, "branch")
+	return env, stateA, isolationOutputField(t, isolate.stdout, "worktree"), isolationOutputField(t, isolate.stdout, "branch"), planBody, originalTaskBody
+}
+
+func TestIsolatePlanLifecycleProcessSeries(t *testing.T) {
+	env, stateA, worktree, branch, planBody, originalTaskBody := setupPlanLifecycleIsolation(t)
+	if got := readStateFile(t, stateA, "active-task"); got != planOriginalTaskPath {
+		t.Fatalf("元taskの要求正本固定 = %q want %q", got, planOriginalTaskPath)
+	}
 
 	interruptionTaskBody := []byte("# 割り込みtask\n\n隔離worktreeで実行するtask本文。\n\n## External feasibility\n\nstatus: not-applicable\n")
-	switchedPlan := []byte("# 計画\n\n## ACTIVE\n\n- `" + interruptionTaskPath + "`\n")
-	if err := os.WriteFile(filepath.Join(worktree, interruptionTaskPath), interruptionTaskBody, 0o644); err != nil {
+	switchedPlan := []byte("# 計画\n\n## ACTIVE\n\n- `" + planInterruptionTaskPath + "`\n")
+	if err := os.WriteFile(filepath.Join(worktree, planInterruptionTaskPath), interruptionTaskBody, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(worktree, "IMPLEMENTATION_PLAN.local.md"), switchedPlan, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	for _, args := range [][]string{
-		{"-C", worktree, "add", interruptionTaskPath},
+		{"-C", worktree, "add", planInterruptionTaskPath},
 		{"-C", worktree, "commit", "-q", "-m", "interruption task file"},
 	} {
 		if output, err := exec.Command("git", args...).CombinedOutput(); err != nil {
@@ -85,10 +91,10 @@ func TestIsolatePlanLifecycleProcessSeries(t *testing.T) {
 	if status := env.status(t, worktree); !strings.Contains(status, `"task_status":"waiting-sol-review"`) {
 		t.Fatalf("割り込みtaskの終了状態 = %s", status)
 	}
-	if got := readStateFile(t, worktreeState, "active-task"); got != interruptionTaskPath {
-		t.Fatalf("隔離taskの要求正本 = %q want %q(Plan切替が隔離側task開始へ反映されていません)", got, interruptionTaskPath)
+	if got := readStateFile(t, worktreeState, "active-task"); got != planInterruptionTaskPath {
+		t.Fatalf("隔離taskの要求正本 = %q want %q(Plan切替が隔離側task開始へ反映されていません)", got, planInterruptionTaskPath)
 	}
-	if got := readStateFile(t, stateA, "active-task"); got != originalTaskPath {
+	if got := readStateFile(t, stateA, "active-task"); got != planOriginalTaskPath {
 		t.Fatalf("元taskの要求正本固定が隔離実行で変化しています: %q", got)
 	}
 
@@ -121,14 +127,14 @@ func TestIsolatePlanLifecycleProcessSeries(t *testing.T) {
 	if string(planAfter) != string(planBody) {
 		t.Fatalf("統合が元repoのPlanを変化させています: %q", planAfter)
 	}
-	originalAfter, err := os.ReadFile(filepath.Join(env.repoA, originalTaskPath))
+	originalAfter, err := os.ReadFile(filepath.Join(env.repoA, planOriginalTaskPath))
 	if err != nil {
 		t.Fatalf("統合後に元task fileが存在しません: %v", err)
 	}
 	if string(originalAfter) != string(originalTaskBody) {
 		t.Fatal("統合が元task fileの本文を変化させています")
 	}
-	if !fileExists(filepath.Join(env.repoA, interruptionTaskPath)) {
+	if !fileExists(filepath.Join(env.repoA, planInterruptionTaskPath)) {
 		t.Fatal("統合後に割り込みtask fileが存在しません")
 	}
 	if !fileExists(filepath.Join(env.repoA, "uncommitted.txt")) {

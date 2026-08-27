@@ -116,21 +116,35 @@ func (c exactOnceCase) run(t *testing.T) {
 	}
 }
 
-func TestGuardTerminalPathsRecordExecutedCallsExactlyOnce(t *testing.T) {
-	seedPlan := func(t *testing.T, repoRoot string, st *state.StateStore) {
-		writePlanFileContent(t, repoRoot, planGuardSeed)
-	}
-	seedPlanAndHistory := func(t *testing.T, repoRoot string, st *state.StateStore) {
-		writePlanFileContent(t, repoRoot, planGuardSeed)
-		writeHistoryFileContent(t, repoRoot, historyGuardSeed)
-	}
-	newTask := func(w *Workflow) error { return w.ExecuteNewTask("request") }
-	transientFirstStep := runnerStep{output: "API Error: 503 Service Unavailable", runErr: errors.New("exit status 1")}
+func seedExactOncePlan(t *testing.T, repoRoot string, _ *state.StateStore) {
+	t.Helper()
+	writePlanFileContent(t, repoRoot, planGuardSeed)
+}
 
-	cases := []exactOnceCase{
+func seedExactOncePlanAndHistory(t *testing.T, repoRoot string, _ *state.StateStore) {
+	t.Helper()
+	writePlanFileContent(t, repoRoot, planGuardSeed)
+	writeHistoryFileContent(t, repoRoot, historyGuardSeed)
+}
+
+func executeExactOnceNewTask(w *Workflow) error {
+	return w.ExecuteNewTask("request")
+}
+
+func runExactOnceCases(t *testing.T, cases []exactOnceCase) {
+	t.Helper()
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			c.run(t)
+		})
+	}
+}
+
+func TestGuardMissingMetadataDoesNotCreatePhantomTelemetry(t *testing.T) {
+	runExactOnceCases(t, []exactOnceCase{
 		{
 			name: "plan tracked missing stops before call without phantom telemetry",
-			setup: func(t *testing.T, repoRoot string, st *state.StateStore) {
+			setup: func(t *testing.T, repoRoot string, _ *state.StateStore) {
 				writePlanFileContent(t, repoRoot, planGuardSeed)
 				gitIn(t, repoRoot, "add", implementationPlanFile)
 				if err := removeFile(t, repoRoot, implementationPlanFile); err != nil {
@@ -138,31 +152,34 @@ func TestGuardTerminalPathsRecordExecutedCallsExactlyOnce(t *testing.T) {
 				}
 			},
 			steps:             []runnerStep{{structured: implementedPacket("done")}, {structured: passPacket()}},
-			entry:             newTask,
+			entry:             executeExactOnceNewTask,
 			wantRunnerCalls:   0,
-			wantTaskOutcomes:  nil,
 			wantEventOutcomes: []string{"parent_metadata_missing"},
 		},
 		{
 			name: "history tracked missing stops before call without phantom telemetry",
 			setup: func(t *testing.T, repoRoot string, st *state.StateStore) {
-				seedPlanAndHistory(t, repoRoot, st)
+				seedExactOncePlanAndHistory(t, repoRoot, st)
 				gitIn(t, repoRoot, "add", implementationHistoryFile)
 				if err := removeFile(t, repoRoot, implementationHistoryFile); err != nil {
 					t.Fatal(err)
 				}
 			},
 			steps:             []runnerStep{{structured: implementedPacket("done")}, {structured: passPacket()}},
-			entry:             newTask,
+			entry:             executeExactOnceNewTask,
 			wantRunnerCalls:   0,
-			wantTaskOutcomes:  nil,
 			wantEventOutcomes: []string{"parent_metadata_missing"},
 		},
+	})
+}
+
+func TestGuardMetadataMutationRecordsExecutedCallOnce(t *testing.T) {
+	runExactOnceCases(t, []exactOnceCase{
 		{
 			name:              "plan mismatch on initial call records executed call once",
-			setup:             seedPlan,
+			setup:             seedExactOncePlan,
 			steps:             []runnerStep{{structured: implementedPacket("done")}, {structured: passPacket()}},
-			entry:             newTask,
+			entry:             executeExactOnceNewTask,
 			mutatePhase:       "worker-new",
 			mutate:            mutatePlanFile,
 			wantRunnerCalls:   1,
@@ -171,9 +188,9 @@ func TestGuardTerminalPathsRecordExecutedCallsExactlyOnce(t *testing.T) {
 		},
 		{
 			name:              "history mismatch on initial call records executed call once",
-			setup:             seedPlanAndHistory,
+			setup:             seedExactOncePlanAndHistory,
 			steps:             []runnerStep{{structured: implementedPacket("done")}, {structured: passPacket()}},
-			entry:             newTask,
+			entry:             executeExactOnceNewTask,
 			mutatePhase:       "worker-new",
 			mutate:            mutateHistoryFile,
 			wantRunnerCalls:   1,
@@ -182,9 +199,9 @@ func TestGuardTerminalPathsRecordExecutedCallsExactlyOnce(t *testing.T) {
 		},
 		{
 			name:              "plan after-read failure on initial call records executed call once",
-			setup:             seedPlan,
+			setup:             seedExactOncePlan,
 			steps:             []runnerStep{{structured: implementedPacket("done")}, {structured: passPacket()}},
-			entry:             newTask,
+			entry:             executeExactOnceNewTask,
 			mutatePhase:       "worker-new",
 			mutate:            removeAndDirGuardFile(implementationPlanFile),
 			wantRunnerCalls:   1,
@@ -193,28 +210,34 @@ func TestGuardTerminalPathsRecordExecutedCallsExactlyOnce(t *testing.T) {
 		},
 		{
 			name:              "history after-read failure on initial call records executed call once",
-			setup:             seedPlanAndHistory,
+			setup:             seedExactOncePlanAndHistory,
 			steps:             []runnerStep{{structured: implementedPacket("done")}, {structured: passPacket()}},
-			entry:             newTask,
+			entry:             executeExactOnceNewTask,
 			mutatePhase:       "worker-new",
 			mutate:            removeAndDirGuardFile(implementationHistoryFile),
 			wantRunnerCalls:   1,
 			wantTaskOutcomes:  []string{"parent_metadata_unavailable"},
 			wantEventOutcomes: []string{"parent_metadata_unavailable"},
 		},
+	})
+}
+
+func TestGuardOrdinaryAndRecoveryCallsAreRecordedExactlyOnce(t *testing.T) {
+	transientFirstStep := runnerStep{output: "API Error: 503 Service Unavailable", runErr: errors.New("exit status 1")}
+	runExactOnceCases(t, []exactOnceCase{
 		{
 			name:             "ordinary success records worker and reviewer once each",
-			setup:            seedPlan,
+			setup:            seedExactOncePlan,
 			steps:            []runnerStep{{structured: implementedPacket("done")}, {structured: passPacket()}},
-			entry:            newTask,
+			entry:            executeExactOnceNewTask,
 			wantRunnerCalls:  2,
 			wantTaskOutcomes: []string{"success", "success"},
 		},
 		{
 			name:             "ordinary nontransient error records executed call once",
-			setup:            seedPlan,
+			setup:            seedExactOncePlan,
 			steps:            []runnerStep{{runErr: errors.New("exit status 1")}},
-			entry:            newTask,
+			entry:            executeExactOnceNewTask,
 			wantEntryErr:     "*WorkerError",
 			wantRunnerCalls:  1,
 			wantTaskOutcomes: []string{"error"},
@@ -222,7 +245,7 @@ func TestGuardTerminalPathsRecordExecutedCallsExactlyOnce(t *testing.T) {
 		{
 			name: "rate-limit resume success records resumed call once",
 			setup: func(t *testing.T, repoRoot string, st *state.StateStore) {
-				seedPlan(t, repoRoot, st)
+				seedExactOncePlan(t, repoRoot, st)
 				seedRateLimitedWorkerCheckpoint(t, st, "request")
 			},
 			steps:            []runnerStep{{structured: implementedPacket("resumed")}, {structured: passPacket()}},
@@ -232,9 +255,9 @@ func TestGuardTerminalPathsRecordExecutedCallsExactlyOnce(t *testing.T) {
 		},
 		{
 			name:             "provider recovery records initial transient and resumed success separately",
-			setup:            seedPlan,
+			setup:            seedExactOncePlan,
 			steps:            []runnerStep{transientFirstStep, {structured: implementedPacket("resumed")}, {structured: passPacket()}},
-			entry:            newTask,
+			entry:            executeExactOnceNewTask,
 			wantRunnerCalls:  3,
 			wantTaskOutcomes: []string{"transient_error", "success", "success"},
 			wantProbes:       1,
@@ -242,9 +265,9 @@ func TestGuardTerminalPathsRecordExecutedCallsExactlyOnce(t *testing.T) {
 		},
 		{
 			name:              "provider recovery after-read failure on resumed task records both calls",
-			setup:             seedPlan,
+			setup:             seedExactOncePlan,
 			steps:             []runnerStep{transientFirstStep, {structured: implementedPacket("resumed")}, {structured: passPacket()}},
-			entry:             newTask,
+			entry:             executeExactOnceNewTask,
 			mutatePhase:       "worker-new",
 			mutate:            removeAndDirGuardFile(implementationPlanFile),
 			wantRunnerCalls:   2,
@@ -253,11 +276,15 @@ func TestGuardTerminalPathsRecordExecutedCallsExactlyOnce(t *testing.T) {
 			wantTransient:     1,
 			wantEventOutcomes: []string{"parent_metadata_unavailable"},
 		},
-		{
+	})
+}
 
+func TestGuardRateLimitStateFailuresRecordExecutedCallOnce(t *testing.T) {
+	runExactOnceCases(t, []exactOnceCase{
+		{
 			name: "rate limit ready-state failure records executed call once",
 			setup: func(t *testing.T, repoRoot string, st *state.StateStore) {
-				seedPlan(t, repoRoot, st)
+				seedExactOncePlan(t, repoRoot, st)
 				seedRateLimitedWorkerCheckpoint(t, st, "request")
 				readyDir := st.Path("worker.ready")
 				if err := os.Mkdir(readyDir, 0o755); err != nil {
@@ -274,13 +301,11 @@ func TestGuardTerminalPathsRecordExecutedCallsExactlyOnce(t *testing.T) {
 			wantTaskOutcomes: []string{"state_error"},
 		},
 		{
-
 			name:  "rate limit checkpoint persist failure records executed call once",
-			setup: seedPlan,
+			setup: seedExactOncePlan,
 			steps: []runnerStep{{output: zaiFiveHourLog, runErr: errors.New("exit status 1")}},
-			entry: newTask,
+			entry: executeExactOnceNewTask,
 			mutateState: func(st *state.StateStore) error {
-
 				if err := os.Remove(st.Path("resume-state.json")); err != nil {
 					return err
 				}
@@ -292,12 +317,7 @@ func TestGuardTerminalPathsRecordExecutedCallsExactlyOnce(t *testing.T) {
 			wantRunnerCalls:  1,
 			wantTaskOutcomes: []string{"state_error"},
 		},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			c.run(t)
-		})
-	}
+	})
 }
 
 func removeFile(t *testing.T, repoRoot string, name string) error {

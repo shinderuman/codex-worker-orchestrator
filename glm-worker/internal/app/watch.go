@@ -11,8 +11,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-const defaultWatchFollowInterval = 500 * time.Millisecond
-
 type watchOptions struct {
 	verbose        bool
 	followInterval time.Duration
@@ -24,6 +22,27 @@ type watchOptions struct {
 	openEventLog func(path string) (*os.File, error)
 	statEventLog func(path string) (os.FileInfo, error)
 }
+
+type watchStartEvent struct {
+	Type           string  `json:"type"`
+	TaskID         *string `json:"task_id"`
+	EventLog       *string `json:"event_log"`
+	EventLogStatus string  `json:"event_log_status"`
+}
+
+type watchLogStatusEvent struct {
+	Type   string `json:"type"`
+	Status string `json:"status"`
+}
+
+type watchExitEvent struct {
+	Type      string  `json:"type"`
+	TaskID    string  `json:"task_id"`
+	Status    string  `json:"status"`
+	NewTaskID *string `json:"new_task_id,omitempty"`
+}
+
+const defaultWatchFollowInterval = 500 * time.Millisecond
 
 func (o watchOptions) openLog(path string) (*os.File, error) {
 	if o.openEventLog != nil {
@@ -49,30 +68,11 @@ func defaultWatchOptions(verbose bool) watchOptions {
 	}
 }
 
-type watchStartEvent struct {
-	Type           string  `json:"type"`
-	TaskID         *string `json:"task_id"`
-	EventLog       *string `json:"event_log"`
-	EventLogStatus string  `json:"event_log_status"`
-}
-
-type watchLogStatusEvent struct {
-	Type   string `json:"type"`
-	Status string `json:"status"`
-}
-
-type watchExitEvent struct {
-	Type      string  `json:"type"`
-	TaskID    string  `json:"task_id"`
-	Status    string  `json:"status"`
-	NewTaskID *string `json:"new_task_id,omitempty"`
-}
-
 func printWatch(st *state.StateStore, stdout io.Writer, opts watchOptions) error {
 	taskID := st.ReadOr("task.id", "")
 	if taskID == "" {
 		return writeWatchEvent(stdout, watchStartEvent{
-			Type: "watch_start", TaskID: nil, EventLog: nil, EventLogStatus: "none",
+			Type: "watch_start", TaskID: nil, EventLog: nil, EventLogStatus: statusNone,
 		})
 	}
 	path := st.TaskEventLogPath(taskID)
@@ -85,7 +85,7 @@ func printWatch(st *state.StateStore, stdout io.Writer, opts watchOptions) error
 			Type: "watch_start", TaskID: &taskID, EventLog: &path, EventLogStatus: "empty",
 		})
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	if err := writeWatchEvent(stdout, watchStartEvent{
 		Type: "watch_start", TaskID: &taskID, EventLog: &path, EventLogStatus: "following",
 	}); err != nil {
@@ -108,32 +108,26 @@ func watchTerminal(st *state.StateStore, taskID string) (watchExitEvent, bool) {
 }
 
 func watchTaskEvents(st *state.StateStore, taskID string, file *os.File, path string, stdout io.Writer, opts watchOptions) error {
-	tracker := newWatchToolTracker()
-	pending, err := drainTaskEvents(file, stdout, nil, tracker.observe)
+	pending, status, exitEvent, err := prepareWatchTaskEvents(st, taskID, file, stdout, opts)
 	if err != nil {
 		return err
 	}
-	status := watchLiveStatus{st: st, taskID: taskID, stdout: stdout, tracker: tracker, opts: opts}
-	if err := status.refresh(true); err != nil {
-		return err
-	}
-	if exitEvent, terminal := watchTerminal(st, taskID); terminal {
-		return writeWatchEvent(stdout, exitEvent)
+	if exitEvent != nil {
+		return writeWatchEvent(stdout, *exitEvent)
 	}
 	for {
-		select {
-		case <-opts.stop:
+		if waitWatchTick(opts.stop, opts.followInterval) {
 			return nil
-		case <-time.After(opts.followInterval):
 		}
-		if _, err := opts.statLog(path); err != nil {
-			if !errors.Is(err, os.ErrNotExist) {
-				return fmt.Errorf("event log %sの状態を取得できません: %w", path, err)
-			}
+		removed, err := watchEventLogRemoved(path, opts)
+		if err != nil {
+			return err
+		}
+		if removed {
 			return writeWatchEvent(stdout, watchLogStatusEvent{Type: "event_log_status", Status: "removed"})
 		}
 		exitEvent, terminal := watchTerminal(st, taskID)
-		pending, err = drainTaskEvents(file, stdout, pending, tracker.observe)
+		pending, err = drainTaskEvents(file, stdout, pending, status.tracker.observe)
 		if err != nil {
 			return err
 		}
@@ -144,6 +138,41 @@ func watchTaskEvents(st *state.StateStore, taskID string, file *os.File, path st
 			return writeWatchEvent(stdout, exitEvent)
 		}
 	}
+}
+
+func prepareWatchTaskEvents(st *state.StateStore, taskID string, file *os.File, stdout io.Writer, opts watchOptions) ([]byte, watchLiveStatus, *watchExitEvent, error) {
+	tracker := newWatchToolTracker()
+	pending, err := drainTaskEvents(file, stdout, nil, tracker.observe)
+	status := watchLiveStatus{st: st, taskID: taskID, stdout: stdout, tracker: tracker, opts: opts}
+	if err != nil {
+		return nil, status, nil, err
+	}
+	if err := status.refresh(true); err != nil {
+		return nil, status, nil, err
+	}
+	if exitEvent, terminal := watchTerminal(st, taskID); terminal {
+		return pending, status, &exitEvent, nil
+	}
+	return pending, status, nil, nil
+}
+
+func waitWatchTick(stop <-chan struct{}, interval time.Duration) bool {
+	select {
+	case <-stop:
+		return true
+	case <-time.After(interval):
+		return false
+	}
+}
+
+func watchEventLogRemoved(path string, opts watchOptions) (bool, error) {
+	if _, err := opts.statLog(path); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return true, nil
+		}
+		return false, fmt.Errorf("event log %sの状態を取得できません: %w", path, err)
+	}
+	return false, nil
 }
 
 func writeWatchEvent(w io.Writer, event any) error {
@@ -161,23 +190,30 @@ func drainTaskEvents(file *os.File, stdout io.Writer, pending []byte, onRecord f
 		read, err := file.Read(buffer)
 		if read > 0 {
 			pending = append(pending, buffer[:read]...)
-			for {
-				index := bytes.IndexByte(pending, '\n')
-				if index < 0 {
-					break
-				}
-				if err := emitTaskEventLine(pending[:index], stdout, onRecord); err != nil {
-					return pending, err
-				}
-				pending = pending[index+1:]
+			pending, err = emitCompleteTaskEventLines(pending, stdout, onRecord)
+			if err != nil {
+				return pending, err
 			}
 		}
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			return pending, nil
 		}
 		if err != nil {
 			return pending, err
 		}
+	}
+}
+
+func emitCompleteTaskEventLines(pending []byte, stdout io.Writer, onRecord func(state.TaskEventRecord)) ([]byte, error) {
+	for {
+		index := bytes.IndexByte(pending, '\n')
+		if index < 0 {
+			return pending, nil
+		}
+		if err := emitTaskEventLine(pending[:index], stdout, onRecord); err != nil {
+			return pending, err
+		}
+		pending = pending[index+1:]
 	}
 }
 

@@ -17,6 +17,13 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/reposearch"
 )
 
+type multiRepoSearchReport struct {
+	Error       string   `json:"error,omitempty"`
+	CacheStatus string   `json:"cache_status"`
+	Paths       []string `json:"paths"`
+	Snippets    []string `json:"snippets"`
+}
+
 func TestMultiRepositorySearchCacheProcessIsolation(t *testing.T) {
 	if os.Getenv("GLM_WORKER_REPOSEARCH_HELPER") == "1" {
 		multiRepoSearchHelper()
@@ -70,19 +77,12 @@ func TestMultiRepositorySearchCacheProcessIsolation(t *testing.T) {
 	assertSearchReportIsolated(t, reused, "mrsearchalpha", "mrsearchbeta")
 }
 
-type multiRepoSearchReport struct {
-	Error       string   `json:"error,omitempty"`
-	CacheStatus string   `json:"cache_status"`
-	Paths       []string `json:"paths"`
-	Snippets    []string `json:"snippets"`
-}
-
 func runMultiRepoSearchChild(home string, repo string, query string) (multiRepoSearchReport, error) {
 	outDir, err := os.MkdirTemp("", "glm-worker-search-child-*")
 	if err != nil {
 		return multiRepoSearchReport{}, err
 	}
-	defer os.RemoveAll(outDir)
+	defer func() { _ = os.RemoveAll(outDir) }()
 	outPath := filepath.Join(outDir, "search-report.json")
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
@@ -99,7 +99,7 @@ func runMultiRepoSearchChild(home string, repo string, query string) (multiRepoS
 		"GLM_WORKER_SEARCH_OUT=" + outPath,
 	}
 	if output, err := command.CombinedOutput(); err != nil {
-		return multiRepoSearchReport{}, fmt.Errorf("検索子process失敗(%v): %s", err, output)
+		return multiRepoSearchReport{}, fmt.Errorf("検索子process失敗(%w): %s", err, output)
 	}
 	data, err := os.ReadFile(outPath)
 	if err != nil {
@@ -107,7 +107,7 @@ func runMultiRepoSearchChild(home string, repo string, query string) (multiRepoS
 	}
 	var report multiRepoSearchReport
 	if err := json.Unmarshal(data, &report); err != nil {
-		return multiRepoSearchReport{}, fmt.Errorf("検索子processの結果を解析できません: %v: %s", err, data)
+		return multiRepoSearchReport{}, fmt.Errorf("検索子processの結果を解析できません: %w: %s", err, data)
 	}
 	if report.Error != "" {
 		return multiRepoSearchReport{}, fmt.Errorf("検索失敗: %s", report.Error)

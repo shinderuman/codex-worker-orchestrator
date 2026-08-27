@@ -8,6 +8,12 @@ import (
 	"strings"
 )
 
+type trackedEntry struct {
+	mode string
+	sha  string
+	path string
+}
+
 const enumerationVersion = 1
 
 const (
@@ -68,12 +74,6 @@ func enumerateFiles(ctx context.Context, repoRoot string, excludeDirs map[string
 	}
 	sort.Strings(paths)
 	return paths, nil
-}
-
-type trackedEntry struct {
-	mode string
-	sha  string
-	path string
 }
 
 func trackedFileEntries(ctx context.Context, repoRoot string) ([]trackedEntry, error) {

@@ -14,6 +14,55 @@ import (
 	"strings"
 )
 
+type ParentFileState struct {
+	Path   string `json:"path"`
+	Exists bool   `json:"exists"`
+	SHA256 string `json:"sha256"`
+}
+
+type ParentFileStates []ParentFileState
+
+type GitSnapshot struct {
+	Head        string `json:"head"`
+	IndexDigest string `json:"index_digest"`
+
+	WorktreeDigest string `json:"worktree_digest"`
+
+	WorktreeDigestExcludingParent string `json:"worktree_digest_excluding_parent,omitempty"`
+
+	ParentFiles *ParentFileStates `json:"parent_files,omitempty"`
+}
+
+type SnapshotStage string
+
+type SnapshotComparison struct {
+	Stage         SnapshotStage `json:"stage"`
+	Matched       bool          `json:"matched"`
+	HeadMatch     bool          `json:"head_match"`
+	IndexMatch    bool          `json:"index_match"`
+	WorktreeMatch bool          `json:"worktree_match"`
+
+	ParentUpdateAccepted bool   `json:"parent_update_accepted,omitempty"`
+	Reason               string `json:"reason,omitempty"`
+}
+
+type SnapshotDigest struct {
+	Head           string `json:"head,omitempty"`
+	IndexDigest    string `json:"index_digest,omitempty"`
+	WorktreeDigest string `json:"worktree_digest,omitempty"`
+
+	WorktreeDigestExcludingParent string `json:"worktree_digest_excluding_parent,omitempty"`
+}
+
+type SnapshotDiagnostic struct {
+	Stage        string          `json:"stage"`
+	Previous     *SnapshotDigest `json:"previous,omitempty"`
+	Current      *SnapshotDigest `json:"current,omitempty"`
+	Matched      *bool           `json:"matched,omitempty"`
+	MismatchAxis string          `json:"mismatch_axis,omitempty"`
+	Reason       string          `json:"reason,omitempty"`
+}
+
 const (
 	workerEndSnapshotFile       = "snapshot-worker-end.json"
 	reviewStartSnapshotFile     = "snapshot-review-start.json"
@@ -29,15 +78,18 @@ const (
 	ParentHistoryFile = "IMPLEMENTATION_HISTORY.md"
 )
 
+const (
+	SnapshotStageWorkerEnd       SnapshotStage = "worker-end"
+	SnapshotStageReviewStart     SnapshotStage = "review-start"
+	SnapshotStageReviewResume    SnapshotStage = "review-resume"
+	SnapshotStageReviewEnd       SnapshotStage = "review-end"
+	SnapshotStageReportOnlyStart SnapshotStage = "report-only-start"
+	SnapshotStageReportOnlyEnd   SnapshotStage = "report-only-end"
+	SnapshotStagePoCStart        SnapshotStage = "poc-start"
+	SnapshotStagePoCEnd          SnapshotStage = "poc-end"
+)
+
 var parentManagedFiles = []string{ParentRulesFile, ParentPlanFile, ParentHistoryFile}
-
-type ParentFileState struct {
-	Path   string `json:"path"`
-	Exists bool   `json:"exists"`
-	SHA256 string `json:"sha256"`
-}
-
-type ParentFileStates []ParentFileState
 
 func SameParentFileStates(a, b ParentFileStates) bool {
 	if len(a) != len(b) {
@@ -58,41 +110,6 @@ func FindParentFileState(states ParentFileStates, path string) ParentFileState {
 		}
 	}
 	return ParentFileState{Path: path}
-}
-
-type GitSnapshot struct {
-	Head        string `json:"head"`
-	IndexDigest string `json:"index_digest"`
-
-	WorktreeDigest string `json:"worktree_digest"`
-
-	WorktreeDigestExcludingParent string `json:"worktree_digest_excluding_parent,omitempty"`
-
-	ParentFiles *ParentFileStates `json:"parent_files,omitempty"`
-}
-
-type SnapshotStage string
-
-const (
-	SnapshotStageWorkerEnd       SnapshotStage = "worker-end"
-	SnapshotStageReviewStart     SnapshotStage = "review-start"
-	SnapshotStageReviewResume    SnapshotStage = "review-resume"
-	SnapshotStageReviewEnd       SnapshotStage = "review-end"
-	SnapshotStageReportOnlyStart SnapshotStage = "report-only-start"
-	SnapshotStageReportOnlyEnd   SnapshotStage = "report-only-end"
-	SnapshotStagePoCStart        SnapshotStage = "poc-start"
-	SnapshotStagePoCEnd          SnapshotStage = "poc-end"
-)
-
-type SnapshotComparison struct {
-	Stage         SnapshotStage `json:"stage"`
-	Matched       bool          `json:"matched"`
-	HeadMatch     bool          `json:"head_match"`
-	IndexMatch    bool          `json:"index_match"`
-	WorktreeMatch bool          `json:"worktree_match"`
-
-	ParentUpdateAccepted bool   `json:"parent_update_accepted,omitempty"`
-	Reason               string `json:"reason,omitempty"`
 }
 
 func CaptureGitSnapshot(repoRoot string) (GitSnapshot, error) {
@@ -351,14 +368,6 @@ func (s *StateStore) LoadSnapshotComparison() (SnapshotComparison, error) {
 	return comparison, nil
 }
 
-type SnapshotDigest struct {
-	Head           string `json:"head,omitempty"`
-	IndexDigest    string `json:"index_digest,omitempty"`
-	WorktreeDigest string `json:"worktree_digest,omitempty"`
-
-	WorktreeDigestExcludingParent string `json:"worktree_digest_excluding_parent,omitempty"`
-}
-
 func snapshotDigest(s GitSnapshot) SnapshotDigest {
 	return SnapshotDigest{
 		Head:                          s.Head,
@@ -366,15 +375,6 @@ func snapshotDigest(s GitSnapshot) SnapshotDigest {
 		WorktreeDigest:                s.WorktreeDigest,
 		WorktreeDigestExcludingParent: s.WorktreeDigestExcludingParent,
 	}
-}
-
-type SnapshotDiagnostic struct {
-	Stage        string          `json:"stage"`
-	Previous     *SnapshotDigest `json:"previous,omitempty"`
-	Current      *SnapshotDigest `json:"current,omitempty"`
-	Matched      *bool           `json:"matched,omitempty"`
-	MismatchAxis string          `json:"mismatch_axis,omitempty"`
-	Reason       string          `json:"reason,omitempty"`
 }
 
 func MismatchAxis(c SnapshotComparison) string {
