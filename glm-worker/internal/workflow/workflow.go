@@ -1338,38 +1338,25 @@ func (w *Workflow) recoveryLoop(
 	exhaustClassification := classification
 
 	for probes < maxTransientProbes {
-		if !firstProbeImmediate || probes != 0 {
-			wait, ok := w.backoffWait(sleeps, deadline)
-			if !ok {
-				break
-			}
-			if w.sleepInterruptible(wait) {
-				return false, runner.RunResult{}, time.Time{}, time.Time{}, &runner.InterruptedCallError{Phase: checkpoint.Phase}
-			}
-			sleeps++
-			if w.now().After(deadline) {
-				break
-			}
+		nextSleeps, proceed, err := w.waitForRecoveryProbe(checkpoint, firstProbeImmediate, probes, sleeps, deadline)
+		if err != nil {
+			return false, runner.RunResult{}, time.Time{}, time.Time{}, err
 		}
+		if !proceed {
+			break
+		}
+		sleeps = nextSleeps
 
 		probes++
-		success, nextClassification, probeStartedAt, probeCompletedAt, err := w.runRecoveryProbe(checkpoint, probes)
+		done, recovered, result, startedAt, completedAt, nextClassification, err := w.runRecoveryAttempt(checkpoint, probes, onProbeSuccess)
 		if nextClassification != "" {
 			exhaustClassification = nextClassification
 		}
 		if err != nil {
-			return false, runner.RunResult{}, probeStartedAt, probeCompletedAt, err
-		}
-		if !success {
-			continue
-		}
-
-		recovered, result, startedAt, completedAt, err := onProbeSuccess()
-		if recovered {
-			return true, result, startedAt, completedAt, nil
-		}
-		if err != nil {
 			return false, result, startedAt, completedAt, err
+		}
+		if done {
+			return recovered, result, startedAt, completedAt, nil
 		}
 	}
 
@@ -1378,6 +1365,40 @@ func (w *Workflow) recoveryLoop(
 		return false, runner.RunResult{}, time.Time{}, time.Time{}, saveErr
 	}
 	return false, runner.RunResult{}, time.Time{}, time.Time{}, pErr
+}
+
+func (w *Workflow) waitForRecoveryProbe(
+	checkpoint state.ResumeCheckpoint,
+	firstProbeImmediate bool,
+	probes int,
+	sleeps int,
+	deadline time.Time,
+) (int, bool, error) {
+	if firstProbeImmediate && probes == 0 {
+		return sleeps, true, nil
+	}
+	wait, ok := w.backoffWait(sleeps, deadline)
+	if !ok {
+		return sleeps, false, nil
+	}
+	if w.sleepInterruptible(wait) {
+		return sleeps, false, &runner.InterruptedCallError{Phase: checkpoint.Phase}
+	}
+	sleeps++
+	return sleeps, !w.now().After(deadline), nil
+}
+
+func (w *Workflow) runRecoveryAttempt(
+	checkpoint state.ResumeCheckpoint,
+	attempt int,
+	onProbeSuccess func() (bool, runner.RunResult, time.Time, time.Time, error),
+) (bool, bool, runner.RunResult, time.Time, time.Time, string, error) {
+	success, classification, startedAt, completedAt, err := w.runRecoveryProbe(checkpoint, attempt)
+	if err != nil || !success {
+		return false, false, runner.RunResult{}, startedAt, completedAt, classification, err
+	}
+	recovered, result, startedAt, completedAt, err := onProbeSuccess()
+	return recovered || err != nil, recovered, result, startedAt, completedAt, classification, err
 }
 
 func (w *Workflow) runRecoveryProbe(checkpoint state.ResumeCheckpoint, attempt int) (bool, string, time.Time, time.Time, error) {
