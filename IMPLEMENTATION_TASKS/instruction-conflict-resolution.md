@@ -67,4 +67,4 @@ none
 
 ## Current boundary
 
-NEXT。EVAL責務整理後の現行surfaceを正としてF8をTrack A/Bへ分類して着手する。
+ACTIVE / NARROW。F7 completion後のPlan-selected taskとして開始済み。通常glm-workerが読むinstruction/contract surfaceをTrack A generic production conflictとTrack B repository-specific policyへ分類し、machine output/log責務とCLI short option/要求外public APIの代表conflictをモデル自由選択ではなくdeterministic priority/behavior boundaryへ収束する。machine output共通serializer自体は再実装しない。
