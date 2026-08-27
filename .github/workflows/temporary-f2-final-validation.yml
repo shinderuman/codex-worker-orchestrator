@@ -1,0 +1,25 @@
+name: Temporary F2 Final Validation
+
+on:
+  push:
+    branches:
+      - hardening-task/unknown-production-surface-risk
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.22.x'
+          cache: false
+      - name: Workflow tests
+        run: go -C glm-worker test ./internal/workflow
+      - name: Workflow vet
+        run: go -C glm-worker vet ./internal/workflow
+      - name: Build all packages
+        run: go -C glm-worker build ./...
