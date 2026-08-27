@@ -123,25 +123,17 @@ func resolveSettings(opts Options) (searchSettings, error) {
 	if err != nil {
 		return searchSettings{}, err
 	}
-	pathWeight := defaultPathWeight
-	if opts.PathWeight != nil {
-		pathWeight = *opts.PathWeight
-		if pathWeight < 0 || math.IsNaN(pathWeight) || math.IsInf(pathWeight, 0) {
-			return searchSettings{}, fmt.Errorf("%w: PathWeightは0以上の有限値を指定してください: %v", ErrInvalidOptions, *opts.PathWeight)
-		}
+	pathWeight, err := resolvePathWeight(opts.PathWeight)
+	if err != nil {
+		return searchSettings{}, err
 	}
 	excludeDirs, err := resolveExcludeDirs(opts.ExcludeDirs)
 	if err != nil {
 		return searchSettings{}, err
 	}
-	if opts.DisableCache && opts.CacheRoot != "" {
-		return searchSettings{}, fmt.Errorf("%w: DisableCacheとCacheRootは同時指定できません", ErrInvalidOptions)
-	}
-	cacheRoot := opts.CacheRoot
-	if cacheRoot == "" && !opts.DisableCache {
-		if cacheRoot, err = defaultCacheRoot(); err != nil {
-			return searchSettings{}, err
-		}
+	cacheRoot, err := resolveCacheRoot(opts)
+	if err != nil {
+		return searchSettings{}, err
 	}
 	return searchSettings{
 		cacheRoot:     cacheRoot,
@@ -152,6 +144,26 @@ func resolveSettings(opts Options) (searchSettings, error) {
 		pathWeight:    pathWeight,
 		excludeDirs:   excludeDirs,
 	}, nil
+}
+
+func resolvePathWeight(requested *float64) (float64, error) {
+	if requested == nil {
+		return defaultPathWeight, nil
+	}
+	if *requested < 0 || math.IsNaN(*requested) || math.IsInf(*requested, 0) {
+		return 0, fmt.Errorf("%w: PathWeightは0以上の有限値を指定してください: %v", ErrInvalidOptions, *requested)
+	}
+	return *requested, nil
+}
+
+func resolveCacheRoot(opts Options) (string, error) {
+	if opts.DisableCache && opts.CacheRoot != "" {
+		return "", fmt.Errorf("%w: DisableCacheとCacheRootは同時指定できません", ErrInvalidOptions)
+	}
+	if opts.CacheRoot != "" || opts.DisableCache {
+		return opts.CacheRoot, nil
+	}
+	return defaultCacheRoot()
 }
 
 func resolveBound(requested, defaultValue, hardCap int, name string) (int, error) {
