@@ -1,0 +1,133 @@
+name: Temporary F5 Read Boundary
+
+on:
+  push:
+    branches:
+      - hardening-task/deterministic-rule-activation
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.22.x'
+          cache: false
+      - name: Apply read-boundary fix
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('glm-worker/internal/runner/stream_events.go')
+          text = path.read_text()
+          text = text.replace('''\t"encoding/json"\n\t"sort"''', '''\t"encoding/json"\n\t"path/filepath"\n\t"sort"''', 1)
+          text = text.replace('''\tinstructionReads map[string]struct{}\n\tnow              func() time.Time''', '''\tinstructionReads     map[string]struct{}\n\tworkerInstructionDir string\n\tnow                  func() time.Time''', 1)
+          text = text.replace('''if name, matched := workerInstructionReadName(observation.name, input); matched {''', '''if name, matched := workerInstructionReadName(observation.name, input, g.workerInstructionDir); matched {''', 1)
+          old = '''func workerInstructionReadName(toolName string, input json.RawMessage) (string, bool) {
+          \tif toolName != "Read" || len(input) == 0 {
+          \t\treturn "", false
+          \t}
+          \tvar parsed struct {
+          \t\tFilePath string `json:"file_path"`
+          \t}
+          \tif err := json.Unmarshal(input, &parsed); err != nil {
+          \t\treturn "", false
+          \t}
+          \tpath := strings.ReplaceAll(parsed.FilePath, "\\\\", "/")
+          \tif !strings.Contains(path, "/instructions/worker/") {
+          \t\treturn "", false
+          \t}
+          \tname := path[strings.LastIndexByte(path, '/')+1:]
+          '''.replace('          ', '')
+          new = '''func workerInstructionReadName(toolName string, input json.RawMessage, instructionDir string) (string, bool) {
+          \tif toolName != "Read" || len(input) == 0 || instructionDir == "" {
+          \t\treturn "", false
+          \t}
+          \tvar parsed struct {
+          \t\tFilePath string `json:"file_path"`
+          \t}
+          \tif err := json.Unmarshal(input, &parsed); err != nil {
+          \t\treturn "", false
+          \t}
+          \treadPath, err := filepath.Abs(filepath.Clean(parsed.FilePath))
+          \tif err != nil {
+          \t\treturn "", false
+          \t}
+          \troot, err := filepath.Abs(filepath.Clean(instructionDir))
+          \tif err != nil {
+          \t\treturn "", false
+          \t}
+          \trelative, err := filepath.Rel(root, readPath)
+          \tif err != nil || relative == "." || filepath.IsAbs(relative) || relative == ".." ||
+          \t\tstrings.HasPrefix(relative, ".."+string(filepath.Separator)) || strings.ContainsRune(relative, filepath.Separator) {
+          \t\treturn "", false
+          \t}
+          \tname := filepath.Base(readPath)
+          '''.replace('          ', '')
+          if old not in text:
+              raise SystemExit('instruction read function anchor not found')
+          path.write_text(text.replace(old, new, 1))
+
+          runner_path = Path('glm-worker/internal/runner/runner.go')
+          runner = runner_path.read_text()
+          old = '''\treturn newStreamEventIngester(r.state, taskID, callID, role, phase, model, sessionID, resumed)'''
+          new = '''\tingester := newStreamEventIngester(r.state, taskID, callID, role, phase, model, sessionID, resumed)\n\tingester.workerInstructionDir = filepath.Join(r.config.CodexConfigDir, "instructions", "worker")\n\treturn ingester'''
+          if old not in runner:
+              raise SystemExit('newTaskEventIngester anchor not found')
+          runner_path.write_text(runner.replace(old, new, 1))
+
+          test_path = Path('glm-worker/internal/runner/instruction_reads_test.go')
+          tests = test_path.read_text()
+          tests = tests.replace('''\trunner, _, _ := newStreamFixtureRunner(t, writeStreamFixtureClaude(t, stream))\n\tresult, err := runner.Run(''', '''\trunner, _, _ := newStreamFixtureRunner(t, writeStreamFixtureClaude(t, stream))\n\trunner.config.CodexConfigDir = "/tmp/.codex"\n\tresult, err := runner.Run(''', 1)
+          start = tests.index('func TestWorkerInstructionReadRejectsUnrelatedRead')
+          replacement = '''func TestWorkerInstructionReadRejectsUnrelatedRead(t *testing.T) {
+          \tinstructionDir := "/tmp/.codex/instructions/worker"
+          \tif name, ok := workerInstructionReadName(
+          \t\t"Read",
+          \t\t[]byte(`{"file_path":"/repo/instructions/worker/go.md"}`),
+          \t\tinstructionDir,
+          \t); ok || name != "" {
+          \t\tt.Fatalf("repo-local fake instruction must not match: %q %v", name, ok)
+          \t}
+          \tif name, ok := workerInstructionReadName(
+          \t\t"Read",
+          \t\t[]byte(`{"file_path":"/tmp/.codex/instructions/worker/go.md"}`),
+          \t\tinstructionDir,
+          \t); !ok || name != "go.md" {
+          \t\tt.Fatalf("configured instruction read did not match: %q %v", name, ok)
+          \t}
+          \tif name, ok := workerInstructionReadName(
+          \t\t"Bash",
+          \t\t[]byte(`{"command":"cat ~/.codex/instructions/worker/go.md"}`),
+          \t\tinstructionDir,
+          \t); ok || name != "" {
+          \t\tt.Fatalf("bash must not count as verified Read: %q %v", name, ok)
+          \t}
+          }
+          '''.replace('          ', '')
+          test_path.write_text(tests[:start] + replacement)
+          PY
+          gofmt -w glm-worker/internal/runner/stream_events.go glm-worker/internal/runner/runner.go glm-worker/internal/runner/instruction_reads_test.go
+      - name: Focused tests
+        working-directory: glm-worker
+        run: go test ./internal/runner ./internal/workflow
+      - name: Vet
+        working-directory: glm-worker
+        run: go vet ./...
+      - name: Build
+        working-directory: glm-worker
+        run: go build ./...
+      - name: Commit validated fix
+        run: |
+          rm .github/workflows/temporary-f5-read-boundary.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add glm-worker/internal/runner/stream_events.go glm-worker/internal/runner/runner.go glm-worker/internal/runner/instruction_reads_test.go .github/workflows/temporary-f5-read-boundary.yml
+          git commit -m 'fix: bind rule reads to managed instruction root'
+          git push
