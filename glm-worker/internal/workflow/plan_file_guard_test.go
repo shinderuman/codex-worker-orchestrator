@@ -145,40 +145,47 @@ func TestPlanFileDeletionFailsClosed(t *testing.T) {
 	requirePlanFileFailClosed(t, st, r, out, "削除されました", 1)
 }
 
-func TestPlanFileUnchangedProceedsToReview(t *testing.T) {
-	repoRoot := initMutationRepo(t)
-	writePlanFileContent(t, repoRoot, planGuardSeed)
-	w, r, _, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
-		{structured: implementedPacket("done")},
-		{structured: passPacket()},
-	}, "", 0, nil)
+func TestParentManagedMetadataNonGuardedStatesProceed(t *testing.T) {
+	cases := []struct {
+		name    string
+		setup   func(*testing.T, string)
+		session string
+		mutate  func(string) error
+	}{
+		{
+			name: "plan unchanged and history absent untracked",
+			setup: func(t *testing.T, repoRoot string) {
+				writePlanFileContent(t, repoRoot, planGuardSeed)
+			},
+		},
+		{name: "plan absent throughout"},
+		{
+			name:    "history creation without plan",
+			session: "worker-new",
+			mutate:  mutateHistoryFile,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			repoRoot := initMutationRepo(t)
+			if tc.setup != nil {
+				tc.setup(t, repoRoot)
+			}
+			w, r, _, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
+				{structured: implementedPacket("done")},
+				{structured: passPacket()},
+			}, tc.session, 0, tc.mutate)
 
-	if err := w.ExecuteNewTask("request"); err != nil {
-		t.Fatal(err)
-	}
-	if st.TaskStatus() != state.TaskStatusComplete {
-		t.Fatalf("plan不変時は通常reviewを通ってcompleteになるべき: %q", st.TaskStatus())
-	}
-	if len(r.prompts) != 2 {
-		t.Fatalf("worker/reviewer 2呼出が必要: %d", len(r.prompts))
-	}
-}
-
-func TestPlanFileAbsentThroughoutProceeds(t *testing.T) {
-	repoRoot := initMutationRepo(t)
-	w, r, _, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
-		{structured: implementedPacket("done")},
-		{structured: passPacket()},
-	}, "", 0, nil)
-
-	if err := w.ExecuteNewTask("request"); err != nil {
-		t.Fatal(err)
-	}
-	if st.TaskStatus() != state.TaskStatusComplete {
-		t.Fatalf("plan欠損継続時は通常flowを維持すべき: %q", st.TaskStatus())
-	}
-	if len(r.prompts) != 2 {
-		t.Fatalf("worker/reviewer 2呼出が必要: %d", len(r.prompts))
+			if err := w.ExecuteNewTask("request"); err != nil {
+				t.Fatal(err)
+			}
+			if st.TaskStatus() != state.TaskStatusComplete {
+				t.Fatalf("非guard状態は通常flowを維持すべき: %q", st.TaskStatus())
+			}
+			if len(r.prompts) != 2 {
+				t.Fatalf("worker/reviewer 2呼出が必要: %d", len(r.prompts))
+			}
+		})
 	}
 }
 
@@ -723,43 +730,6 @@ func TestHistoryFileUnchangedProceedsToReview(t *testing.T) {
 	}
 	if st.TaskStatus() != state.TaskStatusComplete {
 		t.Fatalf("history不変時は通常reviewを通ってcompleteになるべき: %q", st.TaskStatus())
-	}
-	if len(r.prompts) != 2 {
-		t.Fatalf("worker/reviewer 2呼出が必要: %d", len(r.prompts))
-	}
-}
-
-func TestHistoryFileAbsentUntrackedProceedsWithPlan(t *testing.T) {
-	repoRoot := initMutationRepo(t)
-	writePlanFileContent(t, repoRoot, planGuardSeed)
-	w, r, _, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
-		{structured: implementedPacket("done")},
-		{structured: passPacket()},
-	}, "", 0, nil)
-
-	if err := w.ExecuteNewTask("request"); err != nil {
-		t.Fatal(err)
-	}
-	if st.TaskStatus() != state.TaskStatusComplete {
-		t.Fatalf("history未作成状態は通常flowを維持すべき: %q", st.TaskStatus())
-	}
-	if len(r.prompts) != 2 {
-		t.Fatalf("worker/reviewer 2呼出が必要: %d", len(r.prompts))
-	}
-}
-
-func TestHistoryFileGuardInactiveWithoutPlan(t *testing.T) {
-	repoRoot := initMutationRepo(t)
-	w, r, _, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
-		{structured: implementedPacket("done")},
-		{structured: passPacket()},
-	}, "worker-new", 0, mutateHistoryFile)
-
-	if err := w.ExecuteNewTask("request"); err != nil {
-		t.Fatal(err)
-	}
-	if st.TaskStatus() != state.TaskStatusComplete {
-		t.Fatalf("planの無いrepoのhistory新規作成は通常flowを維持すべき: %q", st.TaskStatus())
 	}
 	if len(r.prompts) != 2 {
 		t.Fatalf("worker/reviewer 2呼出が必要: %d", len(r.prompts))
