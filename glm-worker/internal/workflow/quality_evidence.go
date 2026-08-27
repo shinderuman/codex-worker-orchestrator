@@ -228,12 +228,15 @@ func qualityEvidenceSignatures(path string, data []byte, exists bool) ([]string,
 	if !exists {
 		return nil, nil
 	}
-	if strings.HasSuffix(strings.ToLower(path), ".go") {
+	lower := strings.ToLower(path)
+	if strings.HasSuffix(lower, ".go") {
 		return goQualityEvidenceSignatures(data)
+	}
+	if strings.HasSuffix(lower, ".json") {
+		return jsonQualityEvidenceSignatures(data)
 	}
 	return textQualityEvidenceSignatures(data), nil
 }
-
 func goQualityEvidenceSignatures(data []byte) ([]string, error) {
 	file, err := parser.ParseFile(token.NewFileSet(), "quality_evidence_test.go", data, 0)
 	if err != nil {
@@ -337,6 +340,39 @@ func normalizeGoEvidenceNode(node any) string {
 	return result.String()
 }
 
+func jsonQualityEvidenceSignatures(data []byte) ([]string, error) {
+	var value any
+	if err := json.Unmarshal(data, &value); err != nil {
+		return nil, err
+	}
+	signatures := []string{"file:json-test"}
+	for range countJSONEvidenceUnits(value) {
+		signatures = append(signatures, "json-unit")
+	}
+	return signatures, nil
+}
+
+func countJSONEvidenceUnits(value any) int {
+	switch item := value.(type) {
+	case map[string]any:
+		count := 0
+		for _, child := range item {
+			count++
+			count += countJSONEvidenceUnits(child)
+		}
+		return count
+	case []any:
+		count := 0
+		for _, child := range item {
+			count++
+			count += countJSONEvidenceUnits(child)
+		}
+		return count
+	default:
+		return 1
+	}
+}
+
 func textQualityEvidenceSignatures(data []byte) []string {
 	signatures := []string{"file:text-test"}
 	for _, raw := range strings.Split(string(data), "\n") {
@@ -344,11 +380,10 @@ func textQualityEvidenceSignatures(data []byte) []string {
 		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "//") {
 			continue
 		}
-		signatures = append(signatures, "line:"+line)
+		signatures = append(signatures, "text-unit")
 	}
 	return signatures
 }
-
 func addEvidenceSignatures(target map[string]int, values []string) {
 	for _, value := range values {
 		target[value]++

@@ -59,6 +59,24 @@ func TestQualityEvidenceFileRenameWithSameEvidenceStaysLow(t *testing.T) {
 	}
 }
 
+func TestTextQualityEvidenceMechanicalUpdateStaysLow(t *testing.T) {
+	root, baseline := newQualityEvidencePathRepo(t, "tests/cases.txt", "case one\ncase two\n")
+	writeGitTestFile(t, root, "tests/cases.txt", "case alpha\ncase beta\n")
+	decision := qualityEvidenceDecisionForTest(t, root, baseline)
+	if decision.High {
+		t.Fatalf("mechanical text update raised risk: %#v", decision)
+	}
+}
+
+func TestTextQualityEvidenceCoverageDeletionRaisesRisk(t *testing.T) {
+	root, baseline := newQualityEvidencePathRepo(t, "tests/cases.txt", "case one\ncase two\n")
+	writeGitTestFile(t, root, "tests/cases.txt", "case one\n")
+	decision := qualityEvidenceDecisionForTest(t, root, baseline)
+	if !decision.High || decision.Source != "track-a-evidence-removed" {
+		t.Fatalf("decision = %#v", decision)
+	}
+}
+
 func TestParentBehaviorEvalStatusOnlyChangeStaysLow(t *testing.T) {
 	root, baseline := newQualityEvidenceRegistryRepo(t, "not-run", "positive contract")
 	writeGitTestFile(t, root, parentBehaviorEvalPath, qualityEvidenceRegistry("pass", "positive contract"))
@@ -102,6 +120,18 @@ func newQualityEvidenceRepo(t *testing.T, testContent string) (string, string) {
 	runGitTest(t, root, "config", "user.email", "quality@example.invalid")
 	runGitTest(t, root, "config", "user.name", "quality evidence")
 	writeGitTestFile(t, root, "sample_test.go", testContent)
+	runGitTest(t, root, "add", ".")
+	runGitTest(t, root, "commit", "-m", "baseline")
+	return root, runGitTest(t, root, "rev-parse", "HEAD")
+}
+
+func newQualityEvidencePathRepo(t *testing.T, path, content string) (string, string) {
+	t.Helper()
+	root := t.TempDir()
+	runGitTest(t, root, "init")
+	runGitTest(t, root, "config", "user.email", "quality@example.invalid")
+	runGitTest(t, root, "config", "user.name", "quality evidence")
+	writeGitTestFile(t, root, path, content)
 	runGitTest(t, root, "add", ".")
 	runGitTest(t, root, "commit", "-m", "baseline")
 	return root, runGitTest(t, root, "rev-parse", "HEAD")
