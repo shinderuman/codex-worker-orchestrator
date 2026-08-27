@@ -26,6 +26,14 @@ REQUIRED HARDENING
 
 - 意味判断は新責務、依存方向、公開surface、互換性、validation/error semanticsを含む。
 
+## Sol decision authority
+
+- responsibility: semantic decision boundaryの解析・注入はworkflow wrapperの責務とし、結果要求やACTIVE状態だけからworkerが設計軸確定を推論しない
+- dependency-direction: 既存のrepo/state境界からpin済みACTIVE taskを読む。新規外部依存は追加しない
+- public-surface: public CLI/API/packet protocolは変更せず、必要な状態はwrapper-owned internal checkpointへ保持する
+- compatibility: authority sectionがない既存taskは有効なまま読み、意味軸は未確定として扱う。section欠如だけではtaskを拒否しない
+- validation-error-semantics: authority sectionが存在するのにunknown axis・重複axis・空valueがある場合はworker実行前にfail closedする
+
 ## External feasibility
 
 status: not-applicable
@@ -63,4 +71,4 @@ none
 
 ## Current boundary
 
-ACTIVE。latest integrationを履歴を書き換えず同期済み。現行Sol gate・risk classification・task requirement surfaceを一次証拠で確認し、F6 Track A/B分類とproduction boundaryを確定して実装を進める。
+ACTIVE。Track Aはwrapper-owned structured decision authorityをpin済みACTIVE taskから読みworker/resumeへ注入する境界、Track Bはrepository固有quality gateとの独立性を評価する。F5 implementationはreopenせずF6 production実装を進める。
