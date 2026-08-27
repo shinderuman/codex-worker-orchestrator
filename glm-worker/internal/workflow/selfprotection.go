@@ -19,7 +19,10 @@ type pathClass struct {
 	category string
 }
 
-const emptyTreeObject = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+const (
+	emptyTreeObject  = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+	testPathCategory = "test"
+)
 
 var classifiedFiles = map[string]pathClass{
 	"install.sh":                             {true, "installer"},
@@ -91,13 +94,13 @@ func classifyCriticalPathPattern(path string) (bool, string, bool) {
 func classifyNonCriticalPathPattern(path string) (bool, string) {
 	switch {
 	case strings.HasSuffix(path, "_test.go"):
-		return false, "test"
+		return false, testPathCategory
 	case strings.Contains(path, "testdata/"):
 		return false, "test-fixture"
 	case strings.HasPrefix(path, "tests/"), strings.HasPrefix(path, "glm-worker/scripts/"):
 		return false, "test-harness"
 	case isKnownSafeTestPath(path):
-		return false, "test"
+		return false, testPathCategory
 	case isKnownSafeDocumentationPath(path):
 		return false, "docs"
 	default:

@@ -3,6 +3,7 @@ package workflow
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/format"
@@ -46,26 +47,46 @@ func classifyQualityEvidence(repoRoot, baselineHead string, paths []string) (qua
 	}
 	before := map[string]int{}
 	after := map[string]int{}
-	for _, path := range paths {
-		decision, handled, err := classifyRepositoryQualityEvidence(repoRoot, baselineHead, path)
-		if err != nil {
-			return qualityEvidenceDecision{}, err
-		}
-		if handled {
-			if decision.High {
-				return decision, nil
-			}
-			continue
-		}
-		if !isGenericQualityEvidencePath(path) {
-			continue
-		}
-		if err := collectQualityEvidenceSignatures(repoRoot, baselineHead, path, before, after); err != nil {
-			return qualityEvidenceDecision{}, err
-		}
+	decision, err := classifyChangedQualityEvidence(repoRoot, baselineHead, paths, before, after)
+	if err != nil || decision.High {
+		return decision, err
 	}
 	if missing := firstMissingEvidenceSignature(before, after); missing != "" {
 		return qualityEvidenceDecision{High: true, Source: "track-a-evidence-removed", HitPath: missing}, nil
+	}
+	return qualityEvidenceDecision{}, nil
+}
+
+func classifyChangedQualityEvidence(
+	repoRoot, baselineHead string,
+	paths []string,
+	before, after map[string]int,
+) (qualityEvidenceDecision, error) {
+	for _, path := range paths {
+		decision, err := classifyQualityEvidencePath(repoRoot, baselineHead, path, before, after)
+		if err != nil || decision.High {
+			return decision, err
+		}
+	}
+	return qualityEvidenceDecision{}, nil
+}
+
+func classifyQualityEvidencePath(
+	repoRoot, baselineHead, path string,
+	before, after map[string]int,
+) (qualityEvidenceDecision, error) {
+	decision, handled, err := classifyRepositoryQualityEvidence(repoRoot, baselineHead, path)
+	if err != nil {
+		return qualityEvidenceDecision{}, err
+	}
+	if handled {
+		return decision, nil
+	}
+	if !isGenericQualityEvidencePath(path) {
+		return qualityEvidenceDecision{}, nil
+	}
+	if err := collectQualityEvidenceSignatures(repoRoot, baselineHead, path, before, after); err != nil {
+		return qualityEvidenceDecision{}, err
 	}
 	return qualityEvidenceDecision{}, nil
 }
@@ -168,7 +189,7 @@ func isGenericQualityEvidencePath(path string) bool {
 		return false
 	}
 	switch category {
-	case "test", "test-fixture", "test-harness":
+	case testPathCategory, "test-fixture", "test-harness":
 		return true
 	default:
 		return false
@@ -201,7 +222,8 @@ func readQualityEvidenceBaselineFile(repoRoot, baselineHead, path string) ([]byt
 	object := baselineHead + ":" + filepath.ToSlash(path)
 	check := exec.Command("git", "-C", repoRoot, "cat-file", "-e", object)
 	if err := check.Run(); err != nil {
-		if _, ok := err.(*exec.ExitError); ok {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
 			return nil, false, nil
 		}
 		return nil, false, err
