@@ -1,0 +1,125 @@
+name: Temporary F7 Residual Migration
+
+on:
+  push:
+    branches:
+      - hardening-task/prose-semantic-guard-migration
+
+permissions:
+  contents: write
+
+jobs:
+  migrate-and-validate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.22.x'
+          cache: false
+      - name: Migrate residual prose semantic pins
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          p = Path('glm-worker/internal/workflow/report_only_snapshot_test.go')
+          text = p.read_text()
+          old = '''\tif !strings.Contains(r.prompts[3], "現在のworking treeを実際に独立確認して判定してください") {
+          \t\tt.Fatalf("reviewer-2は通常review promptであるべき: %s", r.prompts[3])
+          \t}
+          \tif strings.Contains(r.prompts[3], "実装・working tree変更・追加調査・test/lint/build/self-reviewをやり直さず") {
+          \t\tt.Fatalf("reviewer-2へreport-only promptが使われています: %s", r.prompts[3])
+          \t}
+          '''
+          new = '''\tif !strings.Contains(r.prompts[3], "REVIEW_MODE: INDEPENDENT_REVIEW") {
+          \t\tt.Fatalf("reviewer-2はindependent review modeであるべき: %s", r.prompts[3])
+          \t}
+          \tif strings.Contains(r.prompts[3], "MODE: APPLY_REVIEW_FIX") {
+          \t\tt.Fatalf("reviewer-2へreview-fix modeが使われています: %s", r.prompts[3])
+          \t}
+          '''
+          if old not in text:
+              raise SystemExit('report-only prose assertions not found')
+          p.write_text(text.replace(old, new, 1))
+
+          p = Path('glm-worker/internal/workflow/external_feasibility_gate_test.go')
+          text = p.read_text()
+          start = '''\tfor name, prompt := range map[string]string{
+          \t\t"new task":     newTaskPrompt("request", activeTaskGuardPath),
+          \t\t"decision":     decisionPrompt("request", "decision", activeTaskGuardPath),
+          \t\t"explicit fix": explicitFixPrompt("request", "none", "none", "fix", activeTaskGuardPath),
+          \t\t"reviewer":     reviewerPrompt("request", "none", "report", 1, "baseline", activeTaskGuardPath),
+          \t} {
+          \t\tif strings.Contains(prompt, "feasibility") || strings.Contains(prompt, "External feasibility") {
+          \t\t\tt.Fatalf("%s promptへgate文言を追加しない(checklist増加以内包された固定context増分を禁止): %s", name, prompt)
+          \t\t}
+          \t}
+          '''
+          if start not in text:
+              raise SystemExit('feasibility prose absence guard not found')
+          p.write_text(text.replace(start, '', 1))
+
+          p = Path('glm-worker/internal/workflow/prompts.go')
+          text = p.read_text()
+          old = '''\treason := "Z.ai GLM Coding Planの5時間利用上限"
+          \tif checkpoint.ProviderUnavailable {
+          \t\treason = "一時的なprovider障害"
+          \t}
+
+          \treturn fmt.Sprintf(`前回のClaude Code呼び出しは%sで中断しました。
+          '''
+          new = '''\treason := "Z.ai GLM Coding Planの5時間利用上限"
+          \treasonCode := "plan-limit"
+          \tif checkpoint.ProviderUnavailable {
+          \t\treason = "一時的なprovider障害"
+          \t\treasonCode = "provider-unavailable"
+          \t}
+
+          \treturn fmt.Sprintf(`RESUME_REASON: %s
+          前回のClaude Code呼び出しは%sで中断しました。
+          '''
+          if old not in text:
+              raise SystemExit('resume reason block not found')
+          text = text.replace(old, new, 1)
+          old_tail = ''', reason, originalPrompt)
+          }
+          '''
+          new_tail = ''', reasonCode, reason, originalPrompt)
+          }
+          '''
+          if old_tail not in text:
+              raise SystemExit('resume fmt args not found')
+          p.write_text(text.replace(old_tail, new_tail, 1))
+
+          p = Path('glm-worker/internal/workflow/transient_recovery_test.go')
+          text = p.read_text()
+          old = '''\tif !strings.Contains(r.prompts[0], "一時的なprovider障害") {
+          \t\tt.Fatalf("provider-unavailable resume理由がpromptにない: %q", r.prompts[0])
+          \t}
+          '''
+          new = '''\tif !strings.Contains(r.prompts[0], "RESUME_REASON: provider-unavailable") {
+          \t\tt.Fatalf("provider-unavailable resume reason markerがpromptにない: %q", r.prompts[0])
+          \t}
+          '''
+          if old not in text:
+              raise SystemExit('transient recovery prose assertion not found')
+          p.write_text(text.replace(old, new, 1))
+          PY
+          gofmt -w glm-worker/internal/workflow/report_only_snapshot_test.go glm-worker/internal/workflow/external_feasibility_gate_test.go glm-worker/internal/workflow/prompts.go glm-worker/internal/workflow/transient_recovery_test.go
+      - name: Validate residual migration
+        working-directory: glm-worker
+        run: |
+          go test ./internal/workflow ./internal/harnesslint
+          go vet ./...
+          go build ./...
+      - name: Commit migration
+        run: |
+          rm .github/workflows/temporary-f7-residual-migration.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'hardening: migrate residual F7 prompt prose guards'
+          git push
