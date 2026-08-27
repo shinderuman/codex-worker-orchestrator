@@ -19,12 +19,234 @@ jobs:
         with:
           go-version: '1.22.x'
           cache: false
-      - name: Apply F5 implementation
+      - name: Apply F5 wiring
         run: |
-          printf '%s' 'aW1wb3J0IGJhc2U2NCwganNvbgpmcm9tIHBhdGhsaWIgaW1wb3J0IFBhdGgKcmVwbHMgPSBqc29uLmxvYWRzKGJhc2U2NC5iNjRkZWNvZGUoImV5Sm5iRzB0ZDI5eWEyVnlMMmx1ZEdWeWJtRnNMM0oxYm01bGNpOXlkVzV1WlhJdVoyOGlPaUJiV3lKY1hIUklVM2x6ZEdWdFVISnZiWEIwVTBoQk1qVTJJSFJsZUhSY1hHNWNYSEJzWVdsdVJtRnBiSFZ5WlNCUWNtOTJhV1JsY2taaGFXeDFjbVZjWEc0aUxDSWNYSFJUZVhOMFpXMVFjbTl0Y0ZSVVJGUjBJSE4wY21sdVoxeHVYSFJKYm5OMGNuVmpkR2x2YmxKbFlXUnpJQ0FnVzEwemRISnBibWRjWEc1Y1hHNWNYSFJRYkdGcGJrWmhhV3gxY21VZ1VISnZkbWxrWlhKR1lXbHNkWEpsUTJ4aGMzTmNiaUlzSUNKY1hIUlRlWE4wWlcxUWNtOXRjSFJVUkZSVUlITjBjbWx1WjF4dVhIUkpibk4wY25WamRHbHZibEpsWVdSeklDQWdXMTF6ZEhKcGJtZGNYSFJRYkdGcGJrWmhhV3gxY21VZ1VISnZkbWxrWlhKR1lXbHNkWEpsUTJ4aGMzTmNiaUlzSWwwc0lGc2lYSFJ3WVhKelpXUXNJSEJoY25ObFJYSnlJRG89' | base64 -d | python3
-          printf '%s' 'cGFja2FnZSB3b3JrZmxvdwoKaW1wb3J0ICgKCSJlbmNvZGluZy9qc29uIgoJImZtdCIKCSJvcyIKCSJwYXRoL2ZpbGVwYXRoIgoJInN0cmluZ3MiCgogICJnaXRodWIuY29tL3NoaW5kZXJ1bWFuL2NvZGV4LXdvcmtlci1vcmNoZXN0cmF0b3IvZ2xtLXdvcmtlci9pbnRlcm5hbC9wYWNrZXQiCgkiZ2l0aHViLmNvbS9zaGluZGVydW1hbi9jb2RleC13b3JrZXItb3JjaGVzdHJhdG9yL2dsbS13b3JrZXIvaW50ZXJuYWwvc3RhdGUiCikKCnR5cGUgd29ya2VyUnVsZSBzdHJpbmcKCmNvbnN0ICgKCSBydWxlVGVzdGluZyAgICAgICAgICB3b3JrZXJSdWxlID0gInRlc3RpbmciCglydWxlU3RhdGVUcmFuc2l0aW9ucyB3b3JrZXJSdWxlID0gInN0YXRlLXRyYW5zaXRpb25zIgoJcnVsZUNMSSAgICAgICAgICAgICAgIHdvcmtlclJ1bGUgPSAiY2xpIgoJcnVsZUdvICAgICAgICAgICAgICAgIHdvcmtlclJ1bGUgPSAiZ28iCglydWxlSmF2YVNjcmlwdCAgICAgICB3b3JrZXJSdWxlID0gImphdmFzY3JpcHQiCglydWxlUEhQICAgICAgICAgICAgICAgd29ya2VyUnVsZSA9ICJwaHAiCglydWxlRVNMaW50ICAgICAgICAgICB3b3JrZXJSdWxlID0gImVzbGludCIKCglkZXRlcm1pbmlzdGljUnVsZU1hcmtlciAgICAgID0gIkRFVEVSTUlOSVNUSUNfUlVMRV9BQ1RJVkFUSU9OOiIKCWRldGVybWluaXN0aWNSdWxlRmlsZXNNYXJrZXIgPSAiUlVMRV9GSUxFUzoiCikKCnZhciB3b3JrZXJSdWxlT3JkZXIgPSBbXXdvcmtlclJ1bGV7CglydWxlVGVzdGluZywKCXJ1bGVTdGF0ZVRyYW5zaXRpb25zLAoJcnVsZUNMSSwKCXJ1bGVHbywKCXJ1bGVKYXZhU2NyaXB0LAoJcnVsZVBIUCwKCXJ1bGVFU0xpbnQsCn0KCnZhciB3b3JrZXJSdWxlRmlsZXMgPSBtYXBbd29ya2VyUnVsZV1zdHJpbmd7CglydWxlVGVzdGluZzogICAgICAgICAgInRlc3RpbmcubWQiLAoJcnVsZVN0YXRlVHJhbnNpdGlvbnM6ICJzdGF0ZS10cmFuc2l0aW9ucy5tZCIsCglydWxlQ0xJOiAgICAgICAgICAgICAgImNsaS5tZCIsCglydWxlR286ICAgICAgICAgICAgICAgImdvLm1kIiwKCXJ1bGVKYXZhU2NyaXB0OiAgICAgICAiamF2YXNjcmlwdC5tZCIsCglydWxlUEhQOiAgICAgICAgICAgICAgInBocC5tZCIsCglydWxlRVNMaW50OiAgICAgICAgICAgImVzbGludC5tZCIsCn0KCnZhciBzdGF0ZVJ1bGVUb2tlbnMgPSBtYXBbc3RyaW5nXXN0cnVjdHt9ewoJInN0YXRlIjoge30sICJzdGF0ZXMiOiB7fSwgImNvbmZpZyI6IHt9LCAiY29uZmlncyI6IHt9LCAiY29uZmlndXJhdGlvbiI6IHt9LAoJImNhY2hlIjoge30sICJjYWNoZXMiOiB7fSwgIm1pZ3JhdGlvbiI6IHt9LCAibWlncmF0aW9ucyI6IHt9LAp9Cgp2YXIgY2xpUnVsZVRva2VucyA9IG1hcFtzdHJpbmddc3RydWN0e317CgkiY21kIjoge30sICJjbGkiOiB7fSwgImJpbiI6IHt9LCAiY29tbWFuZCI6IHt9LCAiY29tbWFuZHMiOiB7fSwKfQoKZnVuYyByZXF1aXJlZFdvcmtlclJ1bGVzKHJlcG9Sb290IHN0cmluZywgcGF0aHMgW11zdHJpbmcpIFtdd29ya2VyUnVsZSB7CglyZXF1aXJlZCA6PSBtYWtlKG1hcFt3b3JrZXJSdWxlXXN0cnVjdHt9KQoJamF2YVNjcmlwdENoYW5nZWQgOj0gZmFsc2UKCWZvciBfLCByYXcgOj0gcmFuZ2UgcGF0aHMgewoJCXBhdGggOj0gZmlsZXBhdGguVG9TbGFzaChyYXcpCgkJaXNUZXN0IDo9IGlzVGVzdGluZ1J1bGVQYXRoKHBhdGgpCgkJaWYgaXNUZXN0IHsKCQkJcmVxdWlyZWRbcnVsZVRlc3RpbmddID0gc3RydWN0e317fQoJCX0KCQlzd2l0Y2ggc3RyaW5ncy5Ub0xvd2VyKGZpbGVwYXRoLkV4dChwYXRoKSkgewoJCWNhc2UgIi5nbyI6CgkJCXJlcXVpcmVkW3J1bGVHb10gPSBzdHJ1Y3R7fXt9CgkJY2FzZSAiLmpzIiwgIi5tanMiLCAiLmNqcyIsICIuanN4IjoKCQkJcmVxdWlyZWRbcnVsZUphdmFTY3JpcHRdID0gc3RydWN0e317fQoJCQlqYXZhU2NyaXB0Q2hhbmdlZCA9IHRydWUKCQljYXNlICIucGhwIjoKCQkJcmVxdWlyZWRbcnVsZVBIUF0gPSBzdHJ1Y3R7fXt9CgkJfQoJCWlmIGlzVGVzdCB7CgkJCWNvbnRpbnVlCgkJfQoJCWlmIHBhdGhIYXNSdWxlVG9rZW4ocGF0aCwgc3RhdGVSdWxlVG9rZW5zKSB7CgkJCXJlcXVpcmVkW3J1bGVTdGF0ZVRyYW5zaXRpb25zXSA9IHN0cnVjdHt9e30KCQl9CgkJaWYgcGF0aEhhc1J1bGVUb2tlbihwYXRoLCBjbGlSdWxlVG9rZW5zKSB7CgkJCXJlcXVpcmVkW3J1bGVDTElfID0gc3RydWN0e317fQoJCX0KCX0KCWlmIGphdmFTY3JpcHRDaGFuZ2VkICYmIHJlcG9zaXRvcnlVc2VzRVNMaW50KHJlcG9Sb290KSB7CgkJcmVxdWlyZWRbcnVsZUVTTGludF0gPSBzdHJ1Y3R7fXt9Cgl9CglyZXR1cm4gb3JkZXJlZFdvcmtlclJ1bGVzKHJlcXVpcmVkKQp9Cg==' | base64 -d > glm-worker/internal/workflow/rule_activation.go
-          printf '%s' 'cGFja2FnZSB3b3JrZmxvdwoKaW1wb3J0ICgKCSJpbyIKCSJvcyIKCSJwYXRoL2ZpbGVwYXRoIgoJInNsaWNlcyIKCSJzdHJpbmdzIgoJInRlc3RpbmciCgogICJnaXRodWIuY29tL3NoaW5kZXJ1bWFuL2NvZGV4LXdvcmtlci1vcmNoZXN0cmF0b3IvZ2xtLXdvcmtlci9pbnRlcm5hbC9jb25maWciCgkiZ2l0aHViLmNvbS9zaGluZGVydW1hbi9jb2RleC13b3JrZXItb3JjaGVzdHJhdG9yL2dsbS13b3JrZXIvaW50ZXJuYWwvc3RhdGUiCikKCmZ1bmMgVGVzdFJlcXVpcmVkV29ya2VyUnVsZXNBcmVEZXJpdmVkRnJvbUdlbmVyaWNQYXRocyh0ICp0ZXN0aW5nLlQpIHsKCSByb290IDo9IHQuVGVtcERpcigpCgppZiBlcnIgOj0gb3MuV3JpdGVGaWxlKAoJCWZpbGVwYXRoLkpvaW4ocm9vdCwgInBhY2thZ2UuanNvbiIpLAoJCQlbXWJ5dGUoYHsiZGV2RGVwZW5kZW5jaWVzIjp7ImVzbGludCI6IjEuMC4wIn19YCksCgkJCTBvNjAwLAoJKTsKICAgIGVyciAhPSBuaWwgewoJCXQuRmF0YWwoZXJyKQoJfQoJZ290IDo9IHJlcXVpcmVkV29ya2VyUnVsZXMocm9vdCwgW11zdHJpbmd7CgkJImludGVybmFsL3N0YXRlL3N0b3JlLmdvIiwKCQkiY21kL3Rvb2wvbWFpbi5nbyIsCgkJInRlc3RzL2Nhc2UuanMiLAoJfSkKCXdhbnQgOj0gW113b3JrZXJSdWxlewogICAgICAgIHJ1bGVUZXN0aW5nLAogICAgICAgIHJ1bGVTdGF0ZVRyYW5zaXRpb25zLAogICAgICAgIHJ1bGVDTEksCiAgICAgICAgcnVsZUdvLAogICAgICAgIHJ1bGVKYXZhU2NyaXB0LAogICAgICAgIHJ1bGVFU0xpbnQsCiAgICB9CgppZiAhc2xpY2VzLkVxdWFsKGdvdCwgd2FudCkgewoJCXQuRmF0YWYoInJ1bGVzID0gJXYsIHdhbnQgJXYiLCBnb3QsIHdhbnQpCgl9Cn0KCmZ1bmMgVGVzdFJlcXVpcmVkV29ya2VyUnVsZXNEb05vdFJvdXRlU3RhdGVGcm9tVGVzdFBhY2thZ2VOYW1lKHQgKnRlc3RpbmcuVCkgewogICAgZ290IDo9IHJlcXVpcmVkV29ya2VyUnVsZXModC5UZW1wRGlyKCksIFtdc3RyaW5neyJpbnRlcm5hbC9zdGF0ZS9zdG9yZV90ZXN0LmdvIn0pCiAgICB3YW50IDo9IFtdd29ya2VyUnVsZXtydWxlVGVzdGluZywgcnVsZUdvfQogICAgaWYgIXNsaWNlcy5FcXVhbChnb3QsIHdhbnQpIHsKICAgICAgICB0LkZhdGFsZigicnVsZXMgPSAldiwgd2FudCAldiIsIGdvdCwgd2FudCkKICAgIH0KfQoKZnVuYyBUZXN0QWN0aXZhdGVDaGVja3BvaW50UnVsZXNJbmplY3RzT25seUFwcGxpY2FibGVDb250cmFjdHModCAqdGVzdGluZy5UKSB7CiAgICByb290LCBiYXNlbGluZSA6PSBuZXdSdWxlQWN0aXZhdGlvblJlcG8odCkKICAgIHdyaXRlR2l0VGVzdEZpbGUodCwgcm9vdCwgImNtZC90b29sL21haW4uZ28iLCAicGFja2FnZSBtYWluXG5mdW5jIG1haW4oKSB7fVxuIikKICAgIGNmZywgc3QgOj0gbmV3UnVsZUFjdGl2YXRpb25Xb3JrZmxvd0NvbmZpZyh0LCByb290LCBiYXNlbGluZSkKICAgIHdyaXRlUnVsZUZpbGUodCwgY2ZnLkNvZGV4Q29uZmlnRGlyLCAiZ28ubWQiLCAiR08gQ09OVFJBQ1QiKQogICAgd3JpdGVSdWxlRmlsZSh0LCBjZmcuQ29kZXhDb25maWdEaXIsICJjbGkubWQiLCAiQ0xJIENPTlRSQUNUIikKICAgIHdyaXRlUnVsZUZpbGUodCwgY2ZnLkNvZGV4Q29uZmlnRGlyLCAidGVzdGluZy5tZCIsICJURVNUIENPTlRSQUNUIikKCiAgICB3b3JrZmxvdyA6PSBOZXdXb3JrZmxvdyhjZmcsIHN0LCBuaWwsIGlvLkRpc2NhcmQpCiAgICBjaGVja3BvaW50IDo9IHN0YXRlLlJlc3VtZUNoZWNrcG9pbnR7UHJvbXB0OiAiYmFzZSIsIE9yaWdpbmFsUHJvbXB0OiAiYmFzZSJ9CiAgICBnb3QsIGFjdGl2YXRlZCwgZXJyIDo9IHdvcmtmbG93LmFjdGl2YXRlQ2hlY2twb2ludFJ1bGVzKGNoZWNrcG9pbnQpCiAgICBpZiBlcnIgIT0gbmlsIHsKICAgICAgICB0LkZhdGFsKGVycikKICAgIH0KICAgIGlmICFzdHJpbmdzLkNvbnRhaW5zKGdvdC5Qcm9tcHQsICJHTyBDT05UUkFDVCIpIHx8ICFzdHJpbmdzLkNvbnRhaW5zKGdvdC5Qcm9tcHQsICJDTEkgQ09OVFJBQ1QiKSB7CiAgICAgICAgdC5GYXRhbGYoInJlcXVpcmVkIGNvbnRyYWN0cyBtaXNzaW5nOiAlcyIsIGdvdC5Qcm9tcHQpCiAgICB9CiAgICBpZiBzdHJpbmdzLkNvbnRhaW5zKGdvdC5Qcm9tcHQsICJURVNUIENPTlRSQUNUIikgewogICAgICAgIHQuRmF0YWxmKCJ1bnJlbGF0ZWQgY29udHJhY3QgaW5qZWN0ZWQ6ICVzIiwgZ290LlByb21wdCkKICAgIH0KICAgIGlmIF8sIG9rIDo9IGFjdGl2YXRlZFtydWxlR29dOyAhb2sgewogICAgICAgIHQuRmF0YWwoImdvIHJ1bGUgbm90IGFjdGl2YXRlZCIpCiAgICB9CiAgICBpZiBfLCBvayA6PSBhY3RpdmF0ZWRbcnVsZUNMSV07ICFvayB7CiAgICAgICAgdC5GYXRhbCgiY2xpIHJ1bGUgbm90IGFjdGl2YXRlZCIpCiAgICB9Cn0KCmZ1bmMgVGVzdEFjdGl2YXRlQ2hlY2twb2ludFJ1bGVzSGFzWmVyb1Byb21wdERlbHRhRm9yRG9jc09ubHlDaGFuZ2UodCAqdGVzdGluZy5UKSB7CiAgICByb290LCBiYXNlbGluZSA6PSBuZXdSdWxlQWN0aXZhdGlvblJlcG8odCkKICAgIHdyaXRlR2l0VGVzdEZpbGUodCwgcm9vdCwgIlJFQURNRS5tZCIsICJjaGFuZ2VkXG4iKQogICAgY2ZnLCBzdCA6PSBuZXdSdWxlQWN0aXZhdGlvbldvcmtmbG93Q29uZmlnKHQsIHJvb3QsIGJhc2VsaW5lKQogICAgd29ya2Zsb3cgOj0gTmV3V29ya2Zsb3coY2ZnLCBzdCwgbmlsLCBpby5EaXNjYXJkKQogICAgY2hlY2twb2ludCA6PSBzdGF0ZS5SZXN1bWVDaGVja3BvaW50e1Byb21wdDogImJhc2UiLCBPcmlnaW5hbFByb21wdDogImJhc2UifQoKICAgIGdvdCwgYWN0aXZhdGVkLCBlcnIgOj0gd29ya2Zsb3cuYWN0aXZhdGVDaGVja3BvaW50UnVsZXMoY2hlY2twb2ludCkKICAgIGlmIGVyciAhPSBuaWwgewogICAgICAgIHQuRmF0YWwoZXJyKQogICAgfQogICAgaWYgZ290LlByb21wdCAhPSBjaGVja3BvaW50LlByb21wdCB8fCBnb3QuT3JpZ2luYWxQcm9tcHQgIT0gY2hlY2twb2ludC5PcmlnaW5hbFByb21wdCB7CiAgICAgICAgdC5GYXRhbGYoInByb21wdCBjaGFuZ2VkOiAlIyB2IiwgZ290KQogICAgfQogICAgaWYgbGVuKGFjdGl2YXRlZCkgIT0gMCB7CiAgICAgICAgdC5GYXRhbGYoImFjdGl2YXRlZCA9ICV2IiwgYWN0aXZhdGVkKQogICAgfQp9Cg==' | base64 -d > glm-worker/internal/workflow/rule_activation_test.go
-          printf '%s' 'cGFja2FnZSBydW5uZXIKCmltcG9ydCAoCgkicGF0aC9maWxlcGF0aCIKCSJydW50aW1lIgoJInN0cmluZ3MiCgkidGVzdGluZyIKCgkiZ2l0aHViLmNvbS9zaGluZGVydW1hbi9jb2RleC13b3JrZXItb3JjaGVzdHJhdG9yL2dsbS13b3JrZXIvaW50ZXJuYWwvc3RhdGUiCikKCmZ1bmMgVGVzdENsYXVkZVJ1bm5lclJlcG9ydHNXb3JrZXJJbnN0cnVjdGlvblJlYWRzKHQgKnRlc3RpbmcuVCkgewppZiBydW50aW1lLkdPT1MgPT0gIndpbmRvd3MiIHsKCQl0LlNraXAoInNoZWxsIGZpeHR1cmXjga9Vbml457O755Kw55Kw5aKD5ZCR44GRIikKCX0KCXN0cmVhbSA6PSBzdHJpbmdzLkpvaW4oW11zdHJpbmd7CgkJYHsidHlwZSI6ImFzc2lzdGFudCIsIm1lc3NhZ2UiOnsibW9kZWwiOiJnbG0tNS4zIiwiY29udGVudCI6W3sidHlwZSI6InRvb2xfdXNlIiwiaWQiOiJ0b29sdV9yZWFkIiwibmFtZSI6IlJlYWQiLCJpbnB1dCI6eyJmaWxlX3BhdGgiOiIvdG1wLy5jb2RleC9pbnN0cnVjdGlvbnMvd29ya2VyL2dvLm1kIn19XX19YCwKCQlgeyJ0eXBlIjoicmVzdWx0Iiwic3VidHlwZSI6InN1Y2Nlc3MiLCJpc19lcnJvciI6ZmFsc2UsInJlc3VsdCI6IntcInN0YXR1c1wiOlwiSU1QTEVNRU5URURcIixcInJpc2tcIjpcIkxPV1wiLFwic3VtbWFyeVwiOlwiZG9uZVwiLFwicmVxdWlyZW1lbnRfY292ZXJhZ2VcIjpcImNvdmVyZWRcIixcInRlc3RzXCI6XCJwYXNzXCIsXCJ1bnZlcmlmaWVkXCI6XCJub25lXCJ9Iiwic3RydWN0dXJlZF9vdXRwdXQiOnsic3RhdHVzIjoiSU1QTEVNRU5URUQiLCJyaXNrIjoiTE9XIiwic3VtbWFyeSI6ImRvbmUiLCJyZXF1aXJlbWVudF9jb3ZlcmFnZSI6ImNvdmVyZWQiLCJ0ZXN0cyI6InBhc3MiLCJ1bnZlcmlmaWVkIjoibm9uZSJ9fWAsCgkJIiIsCgl9LCAiXG4iKQoJcnVubmVyLCBfLCBfIDo9IG5ld1N0cmVhbUZpeHR1cmVSdW5uZXIodCwgd3JpdGVTdHJlYW1GaXh0dXJlQ2xhdWRlKHQsIHN0cmVhbSkpCglyZXN1bHQsIGVyciA6PSBydW5uZXIuUnVuKAoJCXN0YXRlLldvcmtlclJvbGUsCgkJIndvcmtlci1uZXciLAoJIndvcmtlci1tb2RlbCIsCgkJZmFsc2UsCgkJImhpZ2giLAoJInByb21wdCIsCgkJZmlsZXBhdGguSm9pbih0LlRlbXBEaXIoKSwgInJlc3VsdC5sb2ciKSwKCSkKCWlmIGVyciAhPSBuaWwgewoJCXQuRmF0YWwoZXJyKQoJfQoJaWYgbGVuKHJlc3VsdC5JbnN0cnVjdGlvblJlYWRzKSAhPSAxIHx8IHJlc3VsdC5JbnN0cnVjdGlvblJlYWRzWzBdICE9ICJnby5tZCIgewoJCXQuRmF0YWYoImluc3RydWN0aW9uIHJlYWRzID0gJXYiLCByZXN1bHQuSW5zdHJ1Y3Rpb25SZWFkcykKCX0KfQoKZnVuYyBUZXN0V29ya2VySW5zdHJ1Y3Rpb25SZWFkUmVqZWN0c1VucmVsYXRlZFJlYWQodCAqdGVzdGluZy5UKSB7CglpZiBuYW1lLCBvayA6PSB3b3JrZXJJbnN0cnVjdGlvblJlYWROYW1lKAoJCSJSZWFkIiwKCQlbXWJ5dGUoYHsiZmlsZV9wYXRoIjoiL3JlcG8vZG9jcy9nby5tZCJ9YCksCgkpOyBvayB8fCBuYW1lICE9ICIiIHsKCQl0LkZhdGFsZigidW5leHBlY3RlZCBtYXRjaDogJXEgJXYiLCBuYW1lLCBvaykKCX0KCWlmIG5hbWUsIG9rIDo9IHdvcmtlckluc3RydWN0aW9uUmVhZE5hbWUoCgkJIkJhc2giLAoJCVtdYnl0ZShgeyJjb21tYW5kIjoiY2F0IH4vLmNvZGV4L2luc3RydWN0aW9ucy93b3JrZXIvZ28ubWQifWApLAoJKTsgb2sgfHwgbmFtZSAhPSAiIiB7CgkJdC5GYXRhbGYoImJhc2ggbXVzdCBub3QgY291bnQgYXMgdmVyaWZpZWQgUmVhZDogJXEgJXYiLCBuYW1lLCBvaykKCX0KfQo=' | base64 -d > glm-worker/internal/runner/instruction_reads_test.go
+          python3 <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              text = path.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: anchor count={count}: {old[:80]!r}")
+              path.write_text(text.replace(old, new, 1))
+
+          runner = Path("glm-worker/internal/runner/runner.go")
+          replace_once(
+              runner,
+              "\tSystemPromptSHA256 string\n\n\tPlainFailure ProviderFailureClass\n",
+              "\tSystemPromptSHA256 string\n\tInstructionReads   []string\n\n\tPlainFailure ProviderFailureClass\n",
+          )
+          replace_once(
+              runner,
+              "\tparsed, parseErr := parseCapturedStreamResult(ingester.result())\n",
+              "\tresult.InstructionReads = ingester.instructionReadNames()\n\tparsed, parseErr := parseCapturedStreamResult(ingester.result())\n",
+          )
+
+          events = Path("glm-worker/internal/runner/stream_events.go")
+          replace_once(events, '\t"sort"\n\t"time"\n', '\t"sort"\n\t"strings"\n\t"time"\n')
+          replace_once(
+              events,
+              "\ttools      map[string]toolUseObservation\n\tnow        func() time.Time\n",
+              "\ttools            map[string]toolUseObservation\n\tinstructionReads map[string]struct{}\n\tnow              func() time.Time\n",
+          )
+          replace_once(
+              events,
+              "\t\ttools: make(map[string]toolUseObservation),\n\t\tnow:   time.Now,\n",
+              "\t\ttools:            make(map[string]toolUseObservation),\n\t\tinstructionReads: make(map[string]struct{}),\n\t\tnow:              time.Now,\n",
+          )
+          replace_once(
+              events,
+              '''\tif input, ok := inputs[block.ToolID]; ok {
+          \t\tdetail := extractLiveToolDetail(input)
+          \t\tobservation.command = detail.command
+          \t\tobservation.purpose = detail.purpose
+          \t\tobservation.background = detail.background
+          \t\tobservation.waitTaskID = detail.waitTaskID
+          \t}
+          ''',
+              '''\tif input, ok := inputs[block.ToolID]; ok {
+          \t\tdetail := extractLiveToolDetail(input)
+          \t\tobservation.command = detail.command
+          \t\tobservation.purpose = detail.purpose
+          \t\tobservation.background = detail.background
+          \t\tobservation.waitTaskID = detail.waitTaskID
+          \t\tif name, matched := workerInstructionReadName(observation.name, input); matched {
+          \t\t\tg.instructionReads[name] = struct{}{}
+          \t\t}
+          \t}
+          ''',
+          )
+          helper_anchor = "func (g *streamEventIngester) observeToolResult(block *state.TaskBlockSummary, at time.Time) bool {"
+          helper = r'''func workerInstructionReadName(toolName string, input json.RawMessage) (string, bool) {
+          	if toolName != "Read" || len(input) == 0 {
+          		return "", false
+          	}
+          	var parsed struct {
+          		FilePath string `json:"file_path"`
+          	}
+          	if err := json.Unmarshal(input, &parsed); err != nil {
+          		return "", false
+          	}
+          	path := strings.ReplaceAll(parsed.FilePath, "\\", "/")
+          	if !strings.Contains(path, "/instructions/worker/") {
+          		return "", false
+          	}
+          	name := path[strings.LastIndexByte(path, '/')+1:]
+          	switch name {
+          	case "common-code.md", "testing.md", "state-transitions.md", "cli.md",
+          		"go.md", "javascript.md", "php.md", "eslint.md":
+          		return name, true
+          	default:
+          		return "", false
+          	}
+          }
+
+          func (g *streamEventIngester) instructionReadNames() []string {
+          	if len(g.instructionReads) == 0 {
+          		return nil
+          	}
+          	result := make([]string, 0, len(g.instructionReads))
+          	for name := range g.instructionReads {
+          		result = append(result, name)
+          	}
+          	sort.Strings(result)
+          	return result
+          }
+
+          '''
+          replace_once(events, helper_anchor, helper + helper_anchor)
+
+          workflow = Path("glm-worker/internal/workflow/workflow.go")
+          replace_once(
+              workflow,
+              "\tlastProducer state.ParentReviewProducer\n}\n",
+              "\tlastProducer             state.ParentReviewProducer\n\tobservedInstructionReads map[string]struct{}\n}\n",
+          )
+          replace_once(
+              workflow,
+              "\tworkerResult, err := w.runModel(checkpoint)\n",
+              "\tworkerResult, err := w.runWorkerModelWithRuleActivation(checkpoint)\n",
+          )
+          replace_once(
+              workflow,
+              '''\tresult, err := w.runModel(checkpoint)
+          \tif err != nil {
+          \t\treturn w.handleResumeRunError(checkpoint, previousCheckpoint, err)
+          \t}
+          ''',
+              '''\tw.resetInstructionReadObservation()
+          \tresult, err := w.runModel(checkpoint)
+          \tif err != nil {
+          \t\treturn w.handleResumeRunError(checkpoint, previousCheckpoint, err)
+          \t}
+          ''',
+          )
+          replace_once(
+              workflow,
+              "\tcheckpoint.Prompt = resumePrompt(checkpoint)\n\tif checkpoint.Stage == state.ResumeStageWorker {\n",
+              '''\tcheckpoint.Prompt = resumePrompt(checkpoint)
+          \tif checkpoint.Role == state.WorkerRole && !checkpoint.ReportOnly {
+          \t\tactivatedCheckpoint, _, activationErr := w.activateCheckpointRules(checkpoint)
+          \t\tif activationErr != nil {
+          \t\t\treturn checkpoint, false, activationErr
+          \t\t}
+          \t\tcheckpoint = activatedCheckpoint
+          \t}
+          \tif checkpoint.Stage == state.ResumeStageWorker {
+          ''',
+          )
+          replace_once(
+              workflow,
+              "\treturn w.handleWorkerResult(checkpoint.Request, result, checkpoint.Phase)\n}\n\nfunc (w *Workflow) routeReviewResumeResult",
+              '''\tresult, err := w.convergeWorkerRuleActivation(checkpoint, result, w.activatedRulesForCheckpoint(checkpoint))
+          \tif err != nil {
+          \t\treturn err
+          \t}
+          \treturn w.handleWorkerResult(checkpoint.Request, result, checkpoint.Phase)
+          }
+
+          func (w *Workflow) routeReviewResumeResult''',
+          )
+          replace_once(
+              workflow,
+              '''\treturn w.handleAutoFixResult(
+          \t\tcheckpoint.Request,
+          \t\tresult,
+          \t\tcheckpoint.ReviewNumber,
+          \t\tcheckpoint.AutoFixes,
+          \t\tcheckpoint.Phase,
+          \t)
+          }
+
+          func isKnownResumeStage''',
+              '''\tif !checkpoint.ReportOnly {
+          \t\tvar err error
+          \t\tresult, err = w.convergeWorkerRuleActivation(checkpoint, result, w.activatedRulesForCheckpoint(checkpoint))
+          \t\tif err != nil {
+          \t\t\treturn err
+          \t\t}
+          \t}
+          \treturn w.handleAutoFixResult(
+          \t\tcheckpoint.Request,
+          \t\tresult,
+          \t\tcheckpoint.ReviewNumber,
+          \t\tcheckpoint.AutoFixes,
+          \t\tcheckpoint.Phase,
+          \t)
+          }
+
+          func isKnownResumeStage''',
+          )
+          replace_once(
+              workflow,
+              '''\tprompt := reviewerPrompt(
+          \t\trequest,
+          \t\tdecision,
+          \t\tworkerReport,
+          \t\treviewNumber,
+          \t\tw.state.BaselineDescription(),
+          \t\tactiveTaskPath,
+          \t)
+          \treturn state.ResumeCheckpoint{
+          ''',
+              '''\tprompt := reviewerPrompt(
+          \t\trequest,
+          \t\tdecision,
+          \t\tworkerReport,
+          \t\treviewNumber,
+          \t\tw.state.BaselineDescription(),
+          \t\tactiveTaskPath,
+          \t)
+          \tprompt, err = w.withCurrentRuleContext(prompt)
+          \tif err != nil {
+          \t\treturn state.ResumeCheckpoint{}, "", false, err
+          \t}
+          \treturn state.ResumeCheckpoint{
+          ''',
+          )
+          replace_once(
+              workflow,
+              "\tfixResult, err := w.runModel(checkpoint)\n",
+              "\tfixResult, err := w.runWorkerModelWithRuleActivation(checkpoint)\n",
+          )
+          replace_once(
+              workflow,
+              '''\texecution, err = w.resolveModelCallFailure(checkpoint, outputPath, execution)
+          \tif err != nil {
+          \t\treturn packet.Result{}, err
+          \t}
+          \tif err := w.finalizeModelCallState(checkpoint, outputPath, execution); err != nil {
+          ''',
+              '''\texecution, err = w.resolveModelCallFailure(checkpoint, outputPath, execution)
+          \tif err != nil {
+          \t\treturn packet.Result{}, err
+          \t}
+          \tw.observeInstructionReads(execution.runResult.InstructionReads)
+          \tif err := w.finalizeModelCallState(checkpoint, outputPath, execution); err != nil {
+          ''',
+          )
+          PY
           gofmt -w glm-worker/internal/workflow/rule_activation.go glm-worker/internal/workflow/rule_activation_test.go glm-worker/internal/workflow/workflow.go glm-worker/internal/runner/runner.go glm-worker/internal/runner/stream_events.go glm-worker/internal/runner/instruction_reads_test.go
       - name: Focused tests
         run: go -C glm-worker test ./internal/runner ./internal/workflow
