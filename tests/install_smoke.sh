@@ -52,4 +52,23 @@ find "$home/.codex" "$home/.claude" "$home/.local/bin" -type f -exec shasum -a 2
 run_install
 find "$home/.codex" "$home/.claude" "$home/.local/bin" -type f -exec shasum -a 256 {} \; | LC_ALL=C sort >"$tmp/second.sha"
 cmp "$tmp/first.sha" "$tmp/second.sha"
+
+missing_bin="$tmp/missing-bin"
+mkdir -p "$missing_bin"
+ln -s "$(command -v dirname)" "$missing_bin/dirname"
+for tool in git go rsync cmp awk grep install golangci-lint; do
+	cat >"$missing_bin/$tool" <<'EOF_TOOL'
+#!/bin/sh
+exit 0
+EOF_TOOL
+	chmod +x "$missing_bin/$tool"
+done
+missing_stderr="$tmp/missing.stderr"
+if PATH="$missing_bin" "$repo/install.sh" >"$tmp/missing.stdout" 2>"$missing_stderr"; then
+	printf '%s\n' 'install missing dependency: expected failure' >&2
+	exit 1
+fi
+test ! -s "$tmp/missing.stdout"
+grep -Fxq 'required command not found: shellcheck' "$missing_stderr"
+grep -Fxq 'install with Homebrew: brew install shellcheck' "$missing_stderr"
 printf '%s\n' 'install smoke: pass'
