@@ -21,10 +21,12 @@ func (r *InstructionSurfaceGuardRunner) Run(
 ) (RunResult, error) {
 	before, err := r.base.prepareInstructionSurfaceGuard()
 	if err != nil {
+		r.invalidateSessions()
 		return RunResult{}, err
 	}
 	result, runErr := r.base.Run(role, phase, model, readOnly, effort, prompt, outputPath)
 	if guardErr := r.base.verifyInstructionSurfaceGuard(before); guardErr != nil {
+		r.invalidateSessions()
 		return result, guardErr
 	}
 	return result, runErr
@@ -32,4 +34,8 @@ func (r *InstructionSurfaceGuardRunner) Run(
 
 func (r *InstructionSurfaceGuardRunner) Probe(model string) (ProbeResult, error) {
 	return r.base.Probe(model)
+}
+
+func (r *InstructionSurfaceGuardRunner) invalidateSessions() {
+	_ = r.base.state.Remove("worker.id", "worker.ready", "reviewer.id", "reviewer.ready")
 }
