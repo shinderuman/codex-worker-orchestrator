@@ -763,97 +763,109 @@ func (w *Workflow) handleReviewResult(
 ) error {
 	switch reviewResult.Status {
 	case packet.StatusPass:
-		if err := w.state.SetTaskStatus(state.TaskStatusComplete); err != nil {
-			return err
-		}
-		return w.emitResult(reviewResult)
-
+		return w.finishReview(state.TaskStatusComplete, reviewResult)
 	case packet.StatusNeedsSolReview:
-		if err := w.state.SetTaskStatus(state.TaskStatusWaitingSolReview); err != nil {
-			return err
-		}
-		return w.emitResult(reviewResult)
-
+		return w.finishReview(state.TaskStatusWaitingSolReview, reviewResult)
 	case packet.StatusFixRequired:
-		if autoFixes >= w.config.MaxAutoFixRounds {
-			if err := w.state.SetTaskStatus(state.TaskStatusWaitingSolReview); err != nil {
-				return err
-			}
-			return w.emitResult(nonConvergedResult(reviewResult))
-		}
-
-		nextAutoFixes := autoFixes + 1
-		decision := w.state.ReadOr("last-decision", "none")
-		phase := fmt.Sprintf("worker-auto-fix-%d", nextAutoFixes)
-
-		activeTaskPath, err := w.ensureActiveTaskPath(phase)
-		if err != nil {
-			return err
-		}
-
-		if _, err := w.gateExternalFeasibility(phase, false); err != nil {
-			return err
-		}
-		reviewReport, err := machineReport(reviewResult)
-		if err != nil {
-			return err
-		}
-		prompt := automaticFixPrompt(request, decision, reviewReport, activeTaskPath)
-		reportOnly := packet.IsReportOnlyFix(reviewResult)
-
-		if reportOnly {
-			prompt = reportOnlyFixPrompt(request, decision, reviewReport, activeTaskPath)
-			phase = fmt.Sprintf("worker-report-only-%d", nextAutoFixes)
-		}
-		checkpoint := state.ResumeCheckpoint{
-			Stage:          state.ResumeStageAutoFix,
-			Phase:          phase,
-			Role:           state.WorkerRole,
-			Model:          w.config.WorkerModel,
-			ReadOnly:       reportOnly,
-			ReportOnly:     reportOnly,
-			Effort:         w.config.RoutineEffort,
-			Prompt:         prompt,
-			OriginalPrompt: prompt,
-			Request:        request,
-			Decision:       decision,
-			ReviewNumber:   reviewNumber,
-			AutoFixes:      nextAutoFixes,
-		}
-		w.state.RecordAutoFix()
-
-		if reportOnly {
-			if stopped, err := w.saveReportOnlyStartSnapshot(); err != nil {
-				return err
-			} else if stopped {
-				return nil
-			}
-		}
-
-		fixResult, err := w.runModel(checkpoint)
-		if err != nil {
-			return err
-		}
-
-		if reportOnly {
-			if stopped, err := w.verifyReportOnlyEndSnapshot(); err != nil {
-				return err
-			} else if stopped {
-				return nil
-			}
-		}
-
-		return w.handleAutoFixResult(
-			request,
-			fixResult,
-			reviewNumber,
-			nextAutoFixes,
-			phase,
-		)
-
+		return w.handleFixRequiredReview(request, workerResult, reviewResult, reviewNumber, autoFixes)
 	default:
 		return &WorkerError{Phase: "reviewer-format", Message: "reviewer did not return a valid STATUS"}
 	}
+}
+
+func (w *Workflow) finishReview(status state.TaskStatus, result packet.Result) error {
+	if err := w.state.SetTaskStatus(status); err != nil {
+		return err
+	}
+	return w.emitResult(result)
+}
+
+func (w *Workflow) handleFixRequiredReview(
+	request string,
+	workerResult packet.Result,
+	reviewResult packet.Result,
+	reviewNumber int,
+	autoFixes int,
+) error {
+	if autoFixes >= w.config.MaxAutoFixRounds {
+		return w.finishReview(state.TaskStatusWaitingSolReview, nonConvergedResult(reviewResult))
+	}
+
+	checkpoint, err := w.prepareAutoFixCheckpoint(request, reviewResult, reviewNumber, autoFixes+1)
+	if err != nil {
+		return err
+	}
+	w.state.RecordAutoFix()
+
+	fixResult, stopped, err := w.runAutoFixCheckpoint(checkpoint)
+	if err != nil || stopped {
+		return err
+	}
+	return w.handleAutoFixResult(request, fixResult, reviewNumber, checkpoint.AutoFixes, checkpoint.Phase)
+}
+
+func (w *Workflow) prepareAutoFixCheckpoint(
+	request string,
+	reviewResult packet.Result,
+	reviewNumber int,
+	nextAutoFixes int,
+) (state.ResumeCheckpoint, error) {
+	decision := w.state.ReadOr("last-decision", "none")
+	phase := fmt.Sprintf("worker-auto-fix-%d", nextAutoFixes)
+	activeTaskPath, err := w.ensureActiveTaskPath(phase)
+	if err != nil {
+		return state.ResumeCheckpoint{}, err
+	}
+	if _, err := w.gateExternalFeasibility(phase, false); err != nil {
+		return state.ResumeCheckpoint{}, err
+	}
+	reviewReport, err := machineReport(reviewResult)
+	if err != nil {
+		return state.ResumeCheckpoint{}, err
+	}
+
+	reportOnly := packet.IsReportOnlyFix(reviewResult)
+	prompt := automaticFixPrompt(request, decision, reviewReport, activeTaskPath)
+	if reportOnly {
+		prompt = reportOnlyFixPrompt(request, decision, reviewReport, activeTaskPath)
+		phase = fmt.Sprintf("worker-report-only-%d", nextAutoFixes)
+	}
+	return state.ResumeCheckpoint{
+		Stage:          state.ResumeStageAutoFix,
+		Phase:          phase,
+		Role:           state.WorkerRole,
+		Model:          w.config.WorkerModel,
+		ReadOnly:       reportOnly,
+		ReportOnly:     reportOnly,
+		Effort:         w.config.RoutineEffort,
+		Prompt:         prompt,
+		OriginalPrompt: prompt,
+		Request:        request,
+		Decision:       decision,
+		ReviewNumber:   reviewNumber,
+		AutoFixes:      nextAutoFixes,
+	}, nil
+}
+
+func (w *Workflow) runAutoFixCheckpoint(checkpoint state.ResumeCheckpoint) (packet.Result, bool, error) {
+	if checkpoint.ReportOnly {
+		stopped, err := w.saveReportOnlyStartSnapshot()
+		if err != nil || stopped {
+			return packet.Result{}, stopped, err
+		}
+	}
+
+	fixResult, err := w.runModel(checkpoint)
+	if err != nil {
+		return packet.Result{}, false, err
+	}
+	if checkpoint.ReportOnly {
+		stopped, err := w.verifyReportOnlyEndSnapshot()
+		if err != nil || stopped {
+			return packet.Result{}, stopped, err
+		}
+	}
+	return fixResult, false, nil
 }
 
 func reviewNeedsHighRiskFloor(workerResult packet.Result, autoFixes int, hasDecision bool, hasPriorReview bool) bool {
