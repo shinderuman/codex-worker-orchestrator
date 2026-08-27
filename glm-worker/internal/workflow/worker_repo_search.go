@@ -24,15 +24,11 @@ const (
 	repoSearchMaxResults    = 8
 )
 
-func defaultRepoSearch(ctx context.Context, root string, query string, opts reposearch.Options) (reposearch.Report, error) {
-	return reposearch.Search(ctx, root, query, opts)
-}
-
 func (w *Workflow) newWorkerTaskPrompt(request string, activeTaskPath string) string {
 	prompt := newTaskPrompt(request, activeTaskPath)
 	search := w.repoSearch
 	if search == nil {
-		search = defaultRepoSearch
+		search = reposearch.Search
 	}
 	block, outcome := routeWorkerRepoSearch(context.Background(), w.config.RepoRoot, request, search)
 	w.recordWorkerRepoSearchOutcome(outcome)
