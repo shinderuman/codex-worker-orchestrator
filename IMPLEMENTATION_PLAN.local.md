@@ -8,11 +8,10 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/unknown-production-surface-risk.md`
+- `IMPLEMENTATION_TASKS/glm-git-authority-enforcement.md`
 
 ## NEXT（優先順）
 
-- `IMPLEMENTATION_TASKS/glm-git-authority-enforcement.md`
 - `IMPLEMENTATION_TASKS/quality-evidence-mutation-risk.md`
 - `IMPLEMENTATION_TASKS/deterministic-rule-activation.md`
 - `IMPLEMENTATION_TASKS/sol-decision-boundary-enforcement.md`
@@ -46,17 +45,17 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## 現在のGit境界
 
-- branch: `hardening-task/unknown-production-surface-risk`
+- branch: `hardening/agent-guardrails`
 - accepted main baseline: `815efc8f6601d344a93e8fa213d0227306db1f0d`
 - implementation boundary: PR #3 `6f08b301e9c4e1444af80c9b9ee646eb778a3baa`でrepository quality linter、PR #4 `b5a4f2e9fd4a3199470e9df0759c8b969f6813c5`でrepository-wide quality enforcement、PR #5 `21cb94b5f4b9800f8092f2e2f5afc276ad37ae62`でmetadata reconciliation、PR #6 `2c8bf5fe22b529dd446c65bd43b6a2289819730d`でPlan branch metadata修復、PR #7 `a111e0adc2d4f299e677f85148f34906d74e9c2c`でinstaller Homebrew hint、PR #9 `84e3baf18fc8d1c722682288c91ceb1623fd4e20`で恒久Repository Lint、PR #10 `815efc8f6601d344a93e8fa213d0227306db1f0d`でGreptile / CodeRabbit自動review停止をmainへ反映済み。hardening integrationではF1 `instruction-surface-ownership`をPR #8のSquash Merge commit `621a6c6cec384b8ef0488796b6488085a77a6b5d`として完了済み
 - preserved boundary: wake coalescing、machine output、safe-stop/resume、provider accounting、parent-managed metadata guard、GLM commit/push禁止、Direct Codex対orchestratedのCodex Reduction / Quality Delta最上位評価を維持
-- current implementation: integration parent `71345fa27234787b23e060804628461f6088acd2`から`hardening-task/unknown-production-surface-risk`を開始。known-safe LOWとunknown production-like surfaceを区別するTrack A / Track B分類境界をinventory中
+- current implementation: F2 `unknown-production-surface-risk`はPR #12でproduction実装・回帰test・task固有validation・恒久Repository Lint・最終diff reviewまで完了し、`hardening/agent-guardrails`へのSquash Merge待ち。次ACTIVEは`glm-git-authority-enforcement`
 - merge boundary: hardening taskは専用task branchへ細かくcheckpoint commit/pushし、taskごとに`hardening/agent-guardrails`向けPRをSquash Mergeして1 task = 1 integration commitとする。hardening campaign完了時はintegrationからmainへSquashしないmergeを行う
 
 ## 現在の停止理由
 
-停止なし。F2 implementation / regression / reviewを進行する。
+F2はtask contractとvalidationを満たした。PR #12をintegrationへSquash MergeするまでF3 implementationは開始しない。
 
 ## 次の親Codex操作
 
-self-protectionのclassification call graphとrepository production surfaceを棚卸しし、未知production-like pathをsilent LOWへ落とさない最小generic境界を決定してtest-firstで実装する。
+PR #12のcompletion metadata込み最終treeを恒久lintで確認して`hardening/agent-guardrails`へSquash Mergeする。その後latest integrationを予約済みPR #13 branchへ同期し、`glm-git-authority-enforcement`を開始する。
