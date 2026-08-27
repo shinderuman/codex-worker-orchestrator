@@ -3,7 +3,9 @@ package runner
 import (
 	"bytes"
 	"encoding/json"
+	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -11,15 +13,17 @@ import (
 )
 
 type streamEventIngester struct {
-	state      *state.StateStore
-	base       state.TaskEventRecord
-	seq        int
-	pending    []byte
-	closed     bool
-	resultLine []byte
-	plain      []byte
-	tools      map[string]toolUseObservation
-	now        func() time.Time
+	state                *state.StateStore
+	base                 state.TaskEventRecord
+	seq                  int
+	pending              []byte
+	closed               bool
+	resultLine           []byte
+	plain                []byte
+	tools                map[string]toolUseObservation
+	instructionReads     map[string]struct{}
+	workerInstructionDir string
+	now                  func() time.Time
 
 	liveLastEventAt         time.Time
 	liveLastModelActivityAt time.Time
@@ -28,13 +32,14 @@ type streamEventIngester struct {
 }
 
 type toolUseObservation struct {
-	toolID     string
-	timestamp  time.Time
-	name       string
-	command    string
-	purpose    string
-	background bool
-	waitTaskID string
+	toolID          string
+	timestamp       time.Time
+	name            string
+	command         string
+	purpose         string
+	background      bool
+	waitTaskID      string
+	instructionRead string
 }
 
 type liveToolDetail struct {
@@ -105,8 +110,9 @@ func newStreamEventIngester(
 			ModelAlias: model,
 			Resumed:    resumed,
 		},
-		tools: make(map[string]toolUseObservation),
-		now:   time.Now,
+		tools:            make(map[string]toolUseObservation),
+		instructionReads: make(map[string]struct{}),
+		now:              time.Now,
 	}
 }
 
@@ -211,9 +217,70 @@ func (g *streamEventIngester) observeToolUse(block *state.TaskBlockSummary, at t
 		observation.purpose = detail.purpose
 		observation.background = detail.background
 		observation.waitTaskID = detail.waitTaskID
+		if name, matched := workerInstructionReadName(observation.name, input, g.workerInstructionDir); matched {
+			observation.instructionRead = name
+		}
 	}
 	g.tools[block.ToolID] = observation
 	return true
+}
+
+func workerInstructionReadName(toolName string, input json.RawMessage, instructionDir string) (string, bool) {
+	if toolName != "Read" || len(input) == 0 || instructionDir == "" {
+		return "", false
+	}
+	var parsed struct {
+		FilePath string `json:"file_path"`
+	}
+	if err := json.Unmarshal(input, &parsed); err != nil {
+		return "", false
+	}
+	name, ok := workerInstructionReadPathName(parsed.FilePath, instructionDir)
+	if !ok {
+		return "", false
+	}
+	return knownWorkerInstructionFile(name)
+}
+
+func workerInstructionReadPathName(filePath, instructionDir string) (string, bool) {
+	readPath, err := filepath.Abs(filepath.Clean(filePath))
+	if err != nil {
+		return "", false
+	}
+	root, err := filepath.Abs(filepath.Clean(instructionDir))
+	if err != nil {
+		return "", false
+	}
+	relative, err := filepath.Rel(root, readPath)
+	if err != nil || relative == "." || filepath.IsAbs(relative) || relative == ".." {
+		return "", false
+	}
+	if strings.HasPrefix(relative, ".."+string(filepath.Separator)) || strings.ContainsRune(relative, filepath.Separator) {
+		return "", false
+	}
+	return filepath.Base(readPath), true
+}
+
+func knownWorkerInstructionFile(name string) (string, bool) {
+	switch name {
+	case "common-code.md", "testing.md", "state-transitions.md", "cli.md",
+		"go.md", "javascript.md", "php.md", "eslint.md":
+		return name, true
+	default:
+		return "", false
+	}
+}
+
+func (g *streamEventIngester) instructionReadNames() []string {
+	if len(g.instructionReads) == 0 {
+		return nil
+	}
+	result := make([]string, 0, len(g.instructionReads))
+	for name := range g.instructionReads {
+		result = append(result, name)
+	}
+	sort.Strings(result)
+	return result
 }
 
 func (g *streamEventIngester) observeToolResult(block *state.TaskBlockSummary, at time.Time) bool {
@@ -227,6 +294,9 @@ func (g *streamEventIngester) observeToolResult(block *state.TaskBlockSummary, a
 	block.DurationMS = at.Sub(observed.timestamp).Milliseconds()
 	if block.Name == "" {
 		block.Name = observed.name
+	}
+	if !block.IsError && observed.instructionRead != "" {
+		g.instructionReads[observed.instructionRead] = struct{}{}
 	}
 	delete(g.tools, block.ToolID)
 	return true

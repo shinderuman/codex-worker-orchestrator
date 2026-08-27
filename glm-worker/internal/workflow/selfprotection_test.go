@@ -23,7 +23,7 @@ func TestIsCriticalPath(t *testing.T) {
 		{"IMPLEMENTATION_PLAN.local.md", true, "implementation-plan"},
 		{"codex/glm-worker/prompts/WORKER.md", true, "managed-prompts"},
 		{"glm-worker/internal/workflow/workflow_test.go", false, "test"},
-		{"tests/install_smoke.sh", false, "test-harness"},
+		{"tests/install_smoke.sh", false, testHarnessPathCategory},
 		{"README.md", false, "docs"},
 	}
 	for _, tc := range cases {
