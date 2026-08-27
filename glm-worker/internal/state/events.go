@@ -28,18 +28,20 @@ type TaskEventUsage struct {
 }
 
 type TaskEventRecord struct {
-	Version    int       `json:"version"`
-	TaskID     string    `json:"task_id"`
-	CallID     string    `json:"call_id"`
-	SessionID  string    `json:"session_id,omitempty"`
-	Role       string    `json:"role"`
-	Phase      string    `json:"phase"`
-	ModelAlias string    `json:"model_alias,omitempty"`
-	Resumed    bool      `json:"resumed,omitempty"`
-	Seq        int       `json:"seq"`
-	Timestamp  time.Time `json:"timestamp"`
-	Kind       string    `json:"kind"`
-	Subtype    string    `json:"subtype,omitempty"`
+	Version     int       `json:"version"`
+	TaskID      string    `json:"task_id"`
+	CallID      string    `json:"call_id"`
+	SessionID   string    `json:"session_id,omitempty"`
+	Role        string    `json:"role"`
+	Phase       string    `json:"phase"`
+	ModelAlias  string    `json:"model_alias,omitempty"`
+	Resumed     bool      `json:"resumed,omitempty"`
+	Seq         int       `json:"seq"`
+	Timestamp   time.Time `json:"timestamp"`
+	Kind        string    `json:"kind"`
+	Subtype     string    `json:"subtype,omitempty"`
+	SearchQuery string    `json:"search_query,omitempty"`
+	SearchPaths []string  `json:"search_paths,omitempty"`
 
 	MessageModel  string             `json:"message_model,omitempty"`
 	Blocks        []TaskBlockSummary `json:"blocks,omitempty"`

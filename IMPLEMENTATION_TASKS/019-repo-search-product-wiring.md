@@ -41,10 +41,10 @@ repo-searchを管理可能なproduction featureとして配布する。
 ## Historical invariants
 
 - installer fail-closed、BM25 core
+- 016 worker repo-search integrationはPR #22のSquash Merge commit `da468541683a832b102acecc60770678452e6fa4`で充足済み。既存production routingとBM25 coreをfeature wiringで再実装しない
 
 ## Dependencies
 
-- `IMPLEMENTATION_TASKS/016-worker-repo-search-integration.md`
 - `IMPLEMENTATION_TASKS/018-exhaustive-search-gate.md`
 
 ## Review findings

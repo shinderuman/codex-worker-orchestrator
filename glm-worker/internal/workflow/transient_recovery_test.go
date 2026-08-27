@@ -540,8 +540,8 @@ func TestResumeFromProviderUnavailableRetriesSameSession(t *testing.T) {
 	if len(r.prompts) != 2 {
 		t.Fatalf("同一session/checkpointからworker→reviewerへ再試行すべき: prompts=%d", len(r.prompts))
 	}
-	if !strings.Contains(r.prompts[0], "一時的なprovider障害") {
-		t.Fatalf("provider-unavailable resume理由がpromptにない: %q", r.prompts[0])
+	if !strings.Contains(r.prompts[0], "RESUME_REASON: provider-unavailable") {
+		t.Fatalf("provider-unavailable resume reason markerがpromptにない: %q", r.prompts[0])
 	}
 }
 

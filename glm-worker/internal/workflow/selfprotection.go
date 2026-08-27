@@ -19,7 +19,10 @@ type pathClass struct {
 	category string
 }
 
-const emptyTreeObject = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+const (
+	emptyTreeObject  = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+	testPathCategory = "test"
+)
 
 var classifiedFiles = map[string]pathClass{
 	"install.sh":                             {true, "installer"},
@@ -91,11 +94,15 @@ func classifyCriticalPathPattern(path string) (bool, string, bool) {
 func classifyNonCriticalPathPattern(path string) (bool, string) {
 	switch {
 	case strings.HasSuffix(path, "_test.go"):
-		return false, "test"
+		return false, testPathCategory
 	case strings.Contains(path, "testdata/"):
-		return false, "test-fixture"
+		return false, testFixturePathCategory
 	case strings.HasPrefix(path, "tests/"), strings.HasPrefix(path, "glm-worker/scripts/"):
-		return false, "test-harness"
+		return false, testHarnessPathCategory
+	case isKnownSafeTestPath(path):
+		return false, testPathCategory
+	case isKnownSafeDocumentationPath(path):
+		return false, "docs"
 	default:
 		return false, ""
 	}
@@ -152,7 +159,12 @@ func classifySelfProtection(paths []string) selfProtectionDecision {
 	categories := make(map[string]struct{})
 	var firstHit string
 	for _, p := range paths {
-		if ok, cat := IsCriticalPath(p); ok {
+		critical, cat := IsCriticalPath(p)
+		if !critical && cat == "" {
+			critical = true
+			cat = "unknown-surface"
+		}
+		if critical {
 			categories[cat] = struct{}{}
 			if firstHit == "" {
 				firstHit = p
