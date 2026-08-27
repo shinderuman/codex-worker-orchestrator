@@ -20,7 +20,10 @@ func scanGoRules(root string, paths []string) ([]Violation, error) {
 			return nil, err
 		}
 		if formatted, formatErr := format.Source(data); formatErr == nil && string(formatted) != string(data) {
-			violations = append(violations, Violation{Rule: "gofmt", Path: path, Line: 1, Column: 1, Message: "Go source differs from gofmt output", Fixable: true})
+			violations = append(violations, Violation{
+				Rule: "gofmt", Path: path, Line: 1, Column: 1,
+				Message: "Go source differs from gofmt output", Fixable: true,
+			})
 		}
 		set := token.NewFileSet()
 		file, err := parser.ParseFile(set, path, data, 0)
@@ -52,13 +55,19 @@ func entrypointViolations(set *token.FileSet, file *ast.File, path string) []Vio
 				continue
 			}
 			position := set.Position(typed.Pos())
-			violations = append(violations, Violation{Rule: "entrypoint-thin", Path: path, Line: position.Line, Column: position.Column, Message: "cmd main.go must not contain helper or business functions"})
+			violations = append(violations, Violation{
+				Rule: "entrypoint-thin", Path: path, Line: position.Line, Column: position.Column,
+				Message: "cmd main.go must not contain helper or business functions",
+			})
 		case *ast.GenDecl:
 			if typed.Tok == token.IMPORT {
 				continue
 			}
 			position := set.Position(typed.Pos())
-			violations = append(violations, Violation{Rule: "entrypoint-thin", Path: path, Line: position.Line, Column: position.Column, Message: "cmd main.go must not contain type, const, or var declarations"})
+			violations = append(violations, Violation{
+				Rule: "entrypoint-thin", Path: path, Line: position.Line, Column: position.Column,
+				Message: "cmd main.go must not contain type, const, or var declarations",
+			})
 		}
 	}
 	if mainDecl == nil {
@@ -67,7 +76,10 @@ func entrypointViolations(set *token.FileSet, file *ast.File, path string) []Vio
 	}
 	if statementCount(mainDecl.Body) > 8 {
 		position := set.Position(mainDecl.Pos())
-		violations = append(violations, Violation{Rule: "entrypoint-thin", Path: path, Line: position.Line, Column: position.Column, Message: "main must only delegate to an internal command and handle its terminal error"})
+		violations = append(violations, Violation{
+			Rule: "entrypoint-thin", Path: path, Line: position.Line, Column: position.Column,
+			Message: "main must only delegate to an internal command and handle its terminal error",
+		})
 	}
 	return violations
 }
@@ -94,7 +106,10 @@ func prosePinGoViolations(set *token.FileSet, file *ast.File, path string, data 
 					continue
 				}
 				position := set.Position(argument.Pos())
-				violations = append(violations, Violation{Rule: "prose-contract-pin", Path: path, Line: position.Line, Column: position.Column, Message: "test must not pin long natural-language instruction or Markdown prose"})
+				violations = append(violations, Violation{
+					Rule: "prose-contract-pin", Path: path, Line: position.Line, Column: position.Column,
+					Message: "test must not pin long natural-language instruction or Markdown prose",
+				})
 			}
 		case *ast.BinaryExpr:
 			if typed.Op != token.EQL && typed.Op != token.NEQ {
@@ -106,7 +121,10 @@ func prosePinGoViolations(set *token.FileSet, file *ast.File, path string, data 
 					continue
 				}
 				position := set.Position(expression.Pos())
-				violations = append(violations, Violation{Rule: "prose-contract-pin", Path: path, Line: position.Line, Column: position.Column, Message: "test must not exact-pin long natural-language instruction or Markdown prose"})
+				violations = append(violations, Violation{
+					Rule: "prose-contract-pin", Path: path, Line: position.Line, Column: position.Column,
+					Message: "test must not exact-pin long natural-language instruction or Markdown prose",
+				})
 			}
 		}
 		return true
@@ -128,7 +146,10 @@ func instructionHashGoViolations(set *token.FileSet, file *ast.File, path string
 			continue
 		}
 		position := set.Position(spec.Pos())
-		return []Violation{{Rule: "instruction-content-hash", Path: path, Line: position.Line, Column: position.Column, Message: "tests must not make whole instruction or Markdown file hashes a contract"}}
+		return []Violation{{
+			Rule: "instruction-content-hash", Path: path, Line: position.Line, Column: position.Column,
+			Message: "tests must not make whole instruction or Markdown file hashes a contract",
+		}}
 	}
 	return nil
 }
@@ -150,7 +171,10 @@ func shadowProductionViolations(set *token.FileSet, file *ast.File, path string)
 			continue
 		}
 		position := set.Position(function.Pos())
-		violations = append(violations, Violation{Rule: "test-shadow-production", Path: path, Line: position.Line, Column: position.Column, Message: "large branching test helper behaves like a second production implementation"})
+		violations = append(violations, Violation{
+			Rule: "test-shadow-production", Path: path, Line: position.Line, Column: position.Column,
+			Message: "large branching test helper behaves like a second production implementation",
+		})
 	}
 	return violations
 }
@@ -167,11 +191,17 @@ func scenarioSelfTestViolations(set *token.FileSet, file *ast.File, path string,
 		}
 		segment := nodeText(data, set.Position(function.Pos()).Offset, set.Position(function.End()).Offset)
 		lower := strings.ToLower(segment)
-		if !strings.Contains(function.Name.Name, "CorpusContract") && !strings.Contains(lower, "scenariocount") && !strings.Contains(lower, "requiredscenario") && !strings.Contains(lower, "manifest.") {
+		if !strings.Contains(function.Name.Name, "CorpusContract") &&
+			!strings.Contains(lower, "scenariocount") &&
+			!strings.Contains(lower, "requiredscenario") &&
+			!strings.Contains(lower, "manifest.") {
 			continue
 		}
 		position := set.Position(function.Pos())
-		violations = append(violations, Violation{Rule: "scenario-self-test", Path: path, Line: position.Line, Column: position.Column, Message: "scenario corpus must drive production behavior, not maintain a second self-test contract"})
+		violations = append(violations, Violation{
+			Rule: "scenario-self-test", Path: path, Line: position.Line, Column: position.Column,
+			Message: "scenario corpus must drive production behavior, not maintain a second self-test contract",
+		})
 	}
 	return violations
 }
@@ -195,7 +225,10 @@ func thinWrapperViolations(set *token.FileSet, file *ast.File, path string) []Vi
 			continue
 		}
 		position := set.Position(function.Pos())
-		violations = append(violations, Violation{Rule: "thin-wrapper-proliferation", Path: path, Line: position.Line, Column: position.Column, Message: "private forwarding wrapper adds no validation, transformation, or ownership boundary"})
+		violations = append(violations, Violation{
+			Rule: "thin-wrapper-proliferation", Path: path, Line: position.Line, Column: position.Column,
+			Message: "private forwarding wrapper adds no validation, transformation, or ownership boundary",
+		})
 	}
 	return violations
 }
@@ -215,7 +248,9 @@ func branchCount(node ast.Node) int {
 	count := 0
 	ast.Inspect(node, func(current ast.Node) bool {
 		switch current.(type) {
-		case *ast.IfStmt, *ast.ForStmt, *ast.RangeStmt, *ast.SwitchStmt, *ast.TypeSwitchStmt, *ast.SelectStmt, *ast.CaseClause:
+		case *ast.IfStmt, *ast.ForStmt, *ast.RangeStmt, *ast.SwitchStmt, *ast.TypeSwitchStmt, *ast.SelectStmt:
+			count++
+		case *ast.CaseClause:
 			count++
 		}
 		return true
@@ -224,7 +259,8 @@ func branchCount(node ast.Node) int {
 }
 
 func isGoTestEntrypoint(name string) bool {
-	return strings.HasPrefix(name, "Test") || strings.HasPrefix(name, "Benchmark") || strings.HasPrefix(name, "Fuzz") || strings.HasPrefix(name, "Example")
+	return strings.HasPrefix(name, "Test") || strings.HasPrefix(name, "Benchmark") ||
+		strings.HasPrefix(name, "Fuzz") || strings.HasPrefix(name, "Example")
 }
 
 func parameterNames(fields *ast.FieldList) []string {
@@ -299,7 +335,8 @@ func stringLiteral(expression ast.Expr) (string, bool) {
 }
 
 func hasDocumentReference(text string) bool {
-	return strings.Contains(text, ".md") || strings.Contains(text, "codex/instructions/") || strings.Contains(text, "codex/glm-worker/prompts/") || strings.Contains(text, "AGENTS")
+	return strings.Contains(text, ".md") || strings.Contains(text, "codex/instructions/") ||
+		strings.Contains(text, "codex/glm-worker/prompts/") || strings.Contains(text, "AGENTS")
 }
 
 func proseLike(value string) bool {
