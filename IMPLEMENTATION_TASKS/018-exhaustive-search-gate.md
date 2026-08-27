@@ -77,10 +77,10 @@ ranking上位だけで網羅性を誤認するfalse-completeを防ぐ。
 ## Historical invariants
 
 - BM25 corpus境界とfingerprint統一
+- 016 worker repo-search integrationはPR #22のSquash Merge commit `da468541683a832b102acecc60770678452e6fa4`で充足済み。BM25はnavigation/ranking用途でありexhaustive proofにはしない
 
 ## Dependencies
 
-- `IMPLEMENTATION_TASKS/016-worker-repo-search-integration.md`
 - `IMPLEMENTATION_TASKS/017-reviewer-diff-first-search.md`
 
 ## Review findings
