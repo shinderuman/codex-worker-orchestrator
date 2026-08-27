@@ -348,233 +348,272 @@ func (w *Workflow) executeWorkerCheckpoint(request string, checkpoint state.Resu
 }
 
 func (w *Workflow) ExecuteResume() error {
-	return quietWhenParentFileGuardStopped(w.withTemp(func() error {
-		checkpoint, err := w.state.LoadResumeCheckpoint()
-		if err != nil {
+	return quietWhenParentFileGuardStopped(w.withTemp(w.executeResume))
+}
+
+func (w *Workflow) executeResume() error {
+	checkpoint, decl, pocResume, err := w.loadResumeCheckpoint()
+	if err != nil {
+		return err
+	}
+	previousCheckpoint := checkpoint
+	checkpoint, stopped, err := w.prepareResumeCheckpoint(checkpoint, decl, pocResume)
+	if err != nil || stopped {
+		return err
+	}
+
+	result, err := w.runModel(checkpoint)
+	if err != nil {
+		return w.handleResumeRunError(checkpoint, previousCheckpoint, err)
+	}
+	return w.routeResumeResult(checkpoint, decl, result)
+}
+
+func (w *Workflow) loadResumeCheckpoint() (state.ResumeCheckpoint, externalFeasibility, bool, error) {
+	checkpoint, err := w.state.LoadResumeCheckpoint()
+	if err != nil {
+		return state.ResumeCheckpoint{}, externalFeasibility{}, false, err
+	}
+	if !checkpoint.RateLimited && !checkpoint.ProviderUnavailable && !checkpoint.UserInterrupted {
+		return state.ResumeCheckpoint{}, externalFeasibility{}, false, &WorkerError{Message: "saved task is not stopped by Z.ai 5h limit, provider unavailability or user interruption"}
+	}
+	if !isKnownResumeStage(checkpoint.Stage) {
+		return state.ResumeCheckpoint{}, externalFeasibility{}, false, &WorkerError{Message: fmt.Sprintf("unknown resume stage: %s", checkpoint.Stage)}
+	}
+	decl, err := w.gateExternalFeasibility(checkpoint.Phase, true)
+	if err != nil {
+		return state.ResumeCheckpoint{}, externalFeasibility{}, false, err
+	}
+	return checkpoint, decl, checkpoint.Stage == state.ResumeStageWorker && decl.pocStage(), nil
+}
+
+func (w *Workflow) prepareResumeCheckpoint(
+	checkpoint state.ResumeCheckpoint,
+	decl externalFeasibility,
+	pocResume bool,
+) (state.ResumeCheckpoint, bool, error) {
+	if checkpoint.UserInterrupted {
+		if err := w.verifyInterruptedRetention(checkpoint); err != nil {
+			return checkpoint, false, err
+		}
+	}
+	if err := w.activateResume(checkpoint); err != nil {
+		return checkpoint, false, err
+	}
+	if stopped, err := w.gateResumeSnapshots(checkpoint, pocResume); err != nil || stopped {
+		return checkpoint, stopped, err
+	}
+	if checkpoint.ProviderUnavailable {
+		if err := w.gateResumeOnProbe(checkpoint); err != nil {
+			return checkpoint, false, w.handleResumeProbeError(checkpoint, err)
+		}
+	}
+	if checkpoint.Stage == state.ResumeStageReview {
+		if stopped, err := w.verifyReviewResumeSnapshot(checkpoint); err != nil || stopped {
+			return checkpoint, stopped, err
+		}
+	}
+	checkpoint.Prompt = resumePrompt(checkpoint)
+	if checkpoint.Stage == state.ResumeStageWorker {
+		checkpoint.ReadOnly = decl.pocStage()
+	}
+	clearResumeStopState(&checkpoint)
+	return checkpoint, false, nil
+}
+
+func (w *Workflow) activateResume(checkpoint state.ResumeCheckpoint) error {
+	if err := w.state.SetTaskStatus(state.TaskStatusActive); err != nil {
+		return err
+	}
+	w.state.RecordResume()
+	w.currentResumeSource = resumeSourceOf(checkpoint)
+	return nil
+}
+
+func (w *Workflow) gateResumeSnapshots(checkpoint state.ResumeCheckpoint, pocResume bool) (bool, error) {
+	if checkpoint.Stage == state.ResumeStageAutoFix && checkpoint.ReportOnly {
+		if stopped, err := w.gateReportOnlyResumeSnapshot(); err != nil || stopped {
+			return stopped, err
+		}
+	}
+	if pocResume {
+		if stopped, err := w.gatePoCResumeSnapshot(); err != nil || stopped {
+			return stopped, err
+		}
+	}
+	return false, nil
+}
+
+func (w *Workflow) handleResumeProbeError(checkpoint state.ResumeCheckpoint, err error) error {
+	var interrupted *runner.InterruptedCallError
+	if errors.As(err, &interrupted) {
+		return w.interruptBetweenCalls(checkpoint)
+	}
+	var providerUnavailable *runner.ProviderUnavailableError
+	if errors.As(err, &providerUnavailable) {
+		return err
+	}
+	var limitErr runner.ZaiRateLimitError
+	if errors.As(err, &limitErr) {
+		return err
+	}
+	_ = w.state.ClearResumeCheckpoint()
+	_ = w.state.RemoveUnreadySession(checkpoint.Role)
+	return &WorkerError{Phase: checkpoint.Phase, Message: err.Error()}
+}
+
+func clearResumeStopState(checkpoint *state.ResumeCheckpoint) {
+	checkpoint.RateLimited = false
+	checkpoint.ResetAtCST = ""
+	checkpoint.ResetAtRFC3339 = ""
+	checkpoint.ProviderUnavailable = false
+	checkpoint.ProviderUnavailableClassification = ""
+	checkpoint.ProviderUnavailableProbes = 0
+	checkpoint.ProviderUnavailableStartedAt = time.Time{}
+	checkpoint.UserInterrupted = false
+}
+
+func (w *Workflow) handleResumeRunError(checkpoint, previous state.ResumeCheckpoint, runErr error) error {
+	if isResumeStopError(runErr) {
+		return runErr
+	}
+	saved, loadErr := w.state.LoadResumeCheckpoint()
+	if loadErr != nil || resumeCheckpointStatus(saved) == state.TaskStatusActive {
+		previous.StopParentFiles = captureStopParentFiles(w.config.RepoRoot)
+		_ = w.state.SaveResumeCheckpoint(previous)
+	}
+
+	restoredStatus := state.TaskStatusActive
+	if loadErr == nil {
+		restoredStatus = resumeCheckpointStatus(saved)
+	}
+	if restoredStatus == state.TaskStatusActive {
+		restoredStatus = resumeCheckpointStatus(previous)
+	}
+	_ = w.state.SetTaskStatus(restoredStatus)
+	return runErr
+}
+
+func isResumeStopError(err error) bool {
+	if errors.Is(err, errParentFileGuardStopped) {
+		return true
+	}
+	var interrupted *runner.InterruptedCallError
+	if errors.As(err, &interrupted) {
+		return true
+	}
+	var providerUnavailable *runner.ProviderUnavailableError
+	if errors.As(err, &providerUnavailable) {
+		return true
+	}
+	var limitErr runner.ZaiRateLimitError
+	return errors.As(err, &limitErr)
+}
+
+func resumeCheckpointStatus(checkpoint state.ResumeCheckpoint) state.TaskStatus {
+	switch {
+	case checkpoint.ProviderUnavailable:
+		return state.TaskStatusProviderUnavailable
+	case checkpoint.RateLimited:
+		return state.TaskStatusRateLimited
+	case checkpoint.UserInterrupted:
+		return state.TaskStatusInterrupted
+	default:
+		return state.TaskStatusActive
+	}
+}
+
+func (w *Workflow) routeResumeResult(
+	checkpoint state.ResumeCheckpoint,
+	decl externalFeasibility,
+	result packet.Result,
+) error {
+	switch checkpoint.Stage {
+	case state.ResumeStageWorker:
+		return w.routeWorkerResumeResult(checkpoint, decl, result)
+	case state.ResumeStageReview:
+		return w.routeReviewResumeResult(checkpoint, result)
+	case state.ResumeStageAutoFix:
+		return w.routeAutoFixResumeResult(checkpoint, result)
+	default:
+		return &WorkerError{Phase: checkpoint.Phase, Message: fmt.Sprintf("unknown resume stage: %s", checkpoint.Stage)}
+	}
+}
+
+func (w *Workflow) routeWorkerResumeResult(
+	checkpoint state.ResumeCheckpoint,
+	decl externalFeasibility,
+	result packet.Result,
+) error {
+	if decl.pocStage() {
+		if stopped, err := w.verifyPoCEndSnapshot(); err != nil || stopped {
 			return err
 		}
-		if !checkpoint.RateLimited && !checkpoint.ProviderUnavailable && !checkpoint.UserInterrupted {
-			return &WorkerError{Message: "saved task is not stopped by Z.ai 5h limit, provider unavailability or user interruption"}
+		if result.Status == packet.StatusImplemented {
+			return w.routePoCWorkerResult(result)
 		}
-		if !isKnownResumeStage(checkpoint.Stage) {
-			return &WorkerError{Message: fmt.Sprintf("unknown resume stage: %s", checkpoint.Stage)}
-		}
+	}
+	return w.handleWorkerResult(checkpoint.Request, result, checkpoint.Phase)
+}
 
-		decl, err := w.gateExternalFeasibility(checkpoint.Phase, true)
-		if err != nil {
+func (w *Workflow) routeReviewResumeResult(checkpoint state.ResumeCheckpoint, result packet.Result) error {
+	if checkpoint.WorkerResult == nil {
+		return &WorkerError{Phase: checkpoint.Phase, Message: "resume checkpoint has no worker result"}
+	}
+	if stopped, err := w.verifyReviewEndSnapshot(); err != nil || stopped {
+		return err
+	}
+	workerResult := *checkpoint.WorkerResult
+	reviewResult, stopped, err := w.resolveResumedReviewResult(checkpoint, workerResult, result)
+	if err != nil || stopped {
+		return err
+	}
+	if err := w.writeLastReview(reviewResult); err != nil {
+		return err
+	}
+	return w.handleReviewResult(
+		checkpoint.Request,
+		workerResult,
+		reviewResult,
+		checkpoint.ReviewNumber,
+		checkpoint.AutoFixes,
+	)
+}
+
+func (w *Workflow) resolveResumedReviewResult(
+	checkpoint state.ResumeCheckpoint,
+	workerResult packet.Result,
+	result packet.Result,
+) (packet.Result, bool, error) {
+	if checkpoint.RiskFloorReemit {
+		return resolveRiskFloorReemit(result), false, nil
+	}
+	decision := w.state.ReadOr("last-decision", "none")
+	highRiskFloor := w.resolveReviewResumeRisk(workerResult, checkpoint).high
+	return w.enforceRiskFloor(
+		checkpoint.Request,
+		workerResult,
+		checkpoint.ReviewNumber,
+		checkpoint.AutoFixes,
+		decision,
+		highRiskFloor,
+		result,
+	)
+}
+
+func (w *Workflow) routeAutoFixResumeResult(checkpoint state.ResumeCheckpoint, result packet.Result) error {
+	if checkpoint.ReportOnly {
+		if stopped, err := w.verifyReportOnlyEndSnapshot(); err != nil || stopped {
 			return err
 		}
-		pocResume := checkpoint.Stage == state.ResumeStageWorker && decl.pocStage()
-
-		if checkpoint.UserInterrupted {
-			if err := w.verifyInterruptedRetention(checkpoint); err != nil {
-				return err
-			}
-		}
-
-		previousCheckpoint := checkpoint
-		if err := w.state.SetTaskStatus(state.TaskStatusActive); err != nil {
-			return err
-		}
-		w.state.RecordResume()
-		w.currentResumeSource = resumeSourceOf(checkpoint)
-
-		if checkpoint.Stage == state.ResumeStageAutoFix && checkpoint.ReportOnly {
-			if stopped, err := w.gateReportOnlyResumeSnapshot(); err != nil {
-				return err
-			} else if stopped {
-				return nil
-			}
-		}
-
-		if pocResume {
-			if stopped, err := w.gatePoCResumeSnapshot(); err != nil {
-				return err
-			} else if stopped {
-				return nil
-			}
-		}
-
-		if checkpoint.ProviderUnavailable {
-			if err := w.gateResumeOnProbe(checkpoint); err != nil {
-				var interrupted *runner.InterruptedCallError
-				if errors.As(err, &interrupted) {
-					return w.interruptBetweenCalls(checkpoint)
-				}
-				var pErr *runner.ProviderUnavailableError
-				if errors.As(err, &pErr) {
-					return err
-				}
-				var limitErr runner.ZaiRateLimitError
-				if errors.As(err, &limitErr) {
-					return err
-				}
-				_ = w.state.ClearResumeCheckpoint()
-				_ = w.state.RemoveUnreadySession(checkpoint.Role)
-
-				return &WorkerError{Phase: checkpoint.Phase, Message: err.Error()}
-			}
-		}
-
-		if checkpoint.Stage == state.ResumeStageReview {
-			if stopped, err := w.verifyReviewResumeSnapshot(checkpoint); err != nil {
-				return err
-			} else if stopped {
-				return nil
-			}
-		}
-		checkpoint.Prompt = resumePrompt(checkpoint)
-
-		if checkpoint.Stage == state.ResumeStageWorker {
-			checkpoint.ReadOnly = decl.pocStage()
-		}
-		checkpoint.RateLimited = false
-		checkpoint.ResetAtCST = ""
-		checkpoint.ResetAtRFC3339 = ""
-		checkpoint.ProviderUnavailable = false
-		checkpoint.ProviderUnavailableClassification = ""
-		checkpoint.ProviderUnavailableProbes = 0
-		checkpoint.ProviderUnavailableStartedAt = time.Time{}
-		checkpoint.UserInterrupted = false
-
-		result, err := w.runModel(checkpoint)
-		if err != nil {
-
-			if errors.Is(err, errParentFileGuardStopped) {
-				return err
-			}
-			var stopped *runner.InterruptedCallError
-			if errors.As(err, &stopped) {
-				return err
-			}
-			var pErr *runner.ProviderUnavailableError
-			if errors.As(err, &pErr) {
-				return err
-			}
-			var limitErr runner.ZaiRateLimitError
-			if errors.As(err, &limitErr) {
-				return err
-			}
-			saved, loadErr := w.state.LoadResumeCheckpoint()
-			if loadErr != nil || (!saved.RateLimited && !saved.ProviderUnavailable && !saved.UserInterrupted) {
-
-				previousCheckpoint.StopParentFiles = captureStopParentFiles(w.config.RepoRoot)
-				_ = w.state.SaveResumeCheckpoint(previousCheckpoint)
-			}
-
-			restoredStatus := state.TaskStatusActive
-			if loadErr == nil {
-				switch {
-				case saved.ProviderUnavailable:
-					restoredStatus = state.TaskStatusProviderUnavailable
-				case saved.RateLimited:
-					restoredStatus = state.TaskStatusRateLimited
-				case saved.UserInterrupted:
-					restoredStatus = state.TaskStatusInterrupted
-				}
-			}
-			if restoredStatus == state.TaskStatusActive {
-				switch {
-				case previousCheckpoint.ProviderUnavailable:
-					restoredStatus = state.TaskStatusProviderUnavailable
-				case previousCheckpoint.RateLimited:
-					restoredStatus = state.TaskStatusRateLimited
-				case previousCheckpoint.UserInterrupted:
-					restoredStatus = state.TaskStatusInterrupted
-				}
-			}
-			_ = w.state.SetTaskStatus(restoredStatus)
-			return err
-		}
-
-		switch checkpoint.Stage {
-		case state.ResumeStageWorker:
-			if decl.pocStage() {
-				if stopped, err := w.verifyPoCEndSnapshot(); err != nil {
-					return err
-				} else if stopped {
-					return nil
-				}
-				if result.Status == packet.StatusImplemented {
-					return w.routePoCWorkerResult(result)
-				}
-			}
-			return w.handleWorkerResult(checkpoint.Request, result, checkpoint.Phase)
-		case state.ResumeStageReview:
-			if checkpoint.WorkerResult == nil {
-				return &WorkerError{Phase: checkpoint.Phase, Message: "resume checkpoint has no worker result"}
-			}
-			workerResult := *checkpoint.WorkerResult
-			decision := w.state.ReadOr("last-decision", "none")
-			if checkpoint.RiskFloorReemit {
-				if stopped, err := w.verifyReviewEndSnapshot(); err != nil {
-					return err
-				} else if stopped {
-					return nil
-				}
-				reviewResult := resolveRiskFloorReemit(result)
-				if err := w.writeLastReview(reviewResult); err != nil {
-					return err
-				}
-				return w.handleReviewResult(
-					checkpoint.Request,
-					workerResult,
-					reviewResult,
-					checkpoint.ReviewNumber,
-					checkpoint.AutoFixes,
-				)
-			}
-			if stopped, err := w.verifyReviewEndSnapshot(); err != nil {
-				return err
-			} else if stopped {
-				return nil
-			}
-			highRiskFloor := w.resolveReviewResumeRisk(workerResult, checkpoint).high
-			reviewResult, reemitStopped, err := w.enforceRiskFloor(
-				checkpoint.Request,
-				workerResult,
-				checkpoint.ReviewNumber,
-				checkpoint.AutoFixes,
-				decision,
-				highRiskFloor,
-				result,
-			)
-			if err != nil {
-				return err
-			}
-			if reemitStopped {
-				return nil
-			}
-			if err := w.writeLastReview(reviewResult); err != nil {
-				return err
-			}
-			return w.handleReviewResult(
-				checkpoint.Request,
-				workerResult,
-				reviewResult,
-				checkpoint.ReviewNumber,
-				checkpoint.AutoFixes,
-			)
-		case state.ResumeStageAutoFix:
-
-			if checkpoint.ReportOnly {
-				if stopped, err := w.verifyReportOnlyEndSnapshot(); err != nil {
-					return err
-				} else if stopped {
-					return nil
-				}
-			}
-			return w.handleAutoFixResult(
-				checkpoint.Request,
-				result,
-				checkpoint.ReviewNumber,
-				checkpoint.AutoFixes,
-				checkpoint.Phase,
-			)
-		default:
-			return &WorkerError{Phase: checkpoint.Phase, Message: fmt.Sprintf("unknown resume stage: %s", checkpoint.Stage)}
-		}
-	}))
+	}
+	return w.handleAutoFixResult(
+		checkpoint.Request,
+		result,
+		checkpoint.ReviewNumber,
+		checkpoint.AutoFixes,
+		checkpoint.Phase,
+	)
 }
 
 func isKnownResumeStage(stage state.ResumeStage) bool {
