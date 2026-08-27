@@ -50,7 +50,8 @@ func TestActiveTaskContractRejectsSemanticWeakening(t *testing.T) {
 
 func TestActiveTaskContractRendersStructuredContext(t *testing.T) {
 	contract := newActiveTaskPromptContract("IMPLEMENTATION_TASKS/task.md", activeTaskAudienceWorker)
-	want := "ACTIVE_TASK_CONTEXT:\n" +
+	want := "ACTIVE_TASK_FILE: IMPLEMENTATION_TASKS/task.md\n" +
+		"ACTIVE_TASK_CONTEXT:\n" +
 		"PATH: IMPLEMENTATION_TASKS/task.md\n" +
 		"AUDIENCE: worker\n" +
 		"SOURCE_AUTHORITY: active-task-file\n" +
