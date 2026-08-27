@@ -57,7 +57,7 @@ jobs:
           test_path = Path('glm-worker/internal/workflow/rule_activation_test.go')
           tests = test_path.read_text()
           anchor = 'func TestRequiredWorkerRulesDoNotRouteStateFromTestPackageName(t *testing.T) {'
-          addition = r'''func TestRequiredWorkerRulesCoverPersistentAndCLIAliases(t *testing.T) {
+          addition = '''func TestRequiredWorkerRulesCoverPersistentAndCLIAliases(t *testing.T) {
           \ttests := []struct {
           \t\tname string
           \t\tpath string
