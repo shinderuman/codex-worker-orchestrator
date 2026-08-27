@@ -141,10 +141,6 @@ func evaluateWakeCandidate(toml AutomationTOML, params CoalesceParams, resumeAt 
 		result.Reason = fmt.Sprintf("wake scheduler status is %q want ACTIVE", db.Status)
 		return result, nil
 	}
-	if db.Rrule != toml.Rrule {
-		result.Reason = "wake scheduler rrule does not match automation.toml"
-		return result, nil
-	}
 	if !db.HasNextRun {
 		result.Reason = "wake next_run_at is NULL"
 		return result, nil
@@ -152,6 +148,10 @@ func evaluateWakeCandidate(toml AutomationTOML, params CoalesceParams, resumeAt 
 	wakeAt := time.UnixMilli(db.NextRunAt).UTC()
 	if reason := validateRrule(toml.Rrule, wakeAt.Format(dtStartLayout)); reason != "" {
 		result.Reason = "wake rrule does not match the one-shot next_run_at: " + reason
+		return result, nil
+	}
+	if db.Rrule != toml.Rrule {
+		result.Reason = "wake scheduler rrule does not match automation.toml"
 		return result, nil
 	}
 	if wakeAt.Before(resumeAt) {
