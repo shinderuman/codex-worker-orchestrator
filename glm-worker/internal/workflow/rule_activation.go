@@ -205,7 +205,9 @@ func (w *Workflow) workerRuleContextBlock(rules []workerRule) (string, error) {
 		files = append(files, workerRuleFiles[rule])
 	}
 	block.WriteString(strings.Join(files, ","))
-	block.WriteString("\nwrapperが実diffから決定論的に選択したcontractです。以下の本文を今回の作業・reviewへ適用してください。\n")
+	block.WriteString("\n")
+	block.WriteString(renderInstructionConflictBoundary(defaultInstructionConflictBoundary()))
+	block.WriteString("wrapperが実diffから決定論的に選択したcontractです。以下の本文を今回の作業・reviewへ適用してください。\n")
 	for _, rule := range rules {
 		fileName := workerRuleFiles[rule]
 		path := filepath.Join(w.config.CodexConfigDir, "instructions", "worker", fileName)
@@ -399,6 +401,7 @@ func (w *Workflow) ruleActivationCorrectionCheckpoint(
 	if err != nil {
 		return state.ResumeCheckpoint{}, err
 	}
+	primaryAuthority := activeTaskPromptBlock(w.readActiveTaskState())
 	prompt := fmt.Sprintf(`MODE: APPLY_DETERMINISTIC_RULES
 
 ORIGINAL_USER_REQUEST:
@@ -407,11 +410,11 @@ ORIGINAL_USER_REQUEST:
 PREVIOUS_SOL_DECISION:
 %s
 
-%s
+%s%s
 実diffに対してwrapperが必要contractの未適用を検出しました。
 上記contract本文を現在のworking treeへ適用し、違反があれば修正してください。
 タスク範囲を広げず、必要なtest/lint/buildと自己確認を行い、通常のworker結果を返してください。
-`, parent.Request, parent.Decision, block)
+`, parent.Request, parent.Decision, primaryAuthority, block)
 	correction := parent
 	activated := checkpointActivatedRules(correction)
 	for _, rule := range rules {
