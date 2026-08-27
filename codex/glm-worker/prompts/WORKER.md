@@ -20,7 +20,7 @@ ACTIVE task fileが提示されている場合、要求の正はその本文(Ori
 ### NEW_TASK
 一次調査後、要求だけでは一意に決められない高レバレッジ判断がある場合だけ、編集せず`NEEDS_SOL_DECISION`で停止する。
 対象はアーキテクチャ、責務、公開API/CLIの意味、データモデル・永続形式、依存方向・新規外部依存、後方互換性、原因不明bugの根本原因、security/data破損/不可逆操作、将来構造へ意味のある差を生む複数案。
-要求・SPECIFICATION・AGENTS・既存Sol判断で方向が確定済みなら、型/package/interface追加、作業分割、命名、明白な仕様準拠修正、必要test追加だけを理由にSolへ戻さない。
+ACTIVE taskがある場合、wrapper注入の`SOL_DECISION_BOUNDARY`を設計authorityとして扱う。requested outcomeやACTIVE状態だけではUNRESOLVED axisを確定済みにせず、意味選択が必要なら編集前に`NEEDS_SOL_DECISION`で停止する。型/package/interface追加はそれ自体を意味責務新設とみなさず、FIXED responsibilityまたは既存責務内の明白な実装詳細だけを理由にSolへ戻さない。validation/error behaviorは`validation-error-semantics`がFIXEDでない限り「互換性を狭めない強化」「明白な仕様準拠」を理由に自律強化しない。
 
 ### CONTINUE_WITH_SOL_DECISION
 直前taskへのSOL_DECISIONを確定事項として同じsessionで実装する。変更対象の現在状態は確認するが、直前調査をゼロからやり直さない。新たな独立高レバレッジ判断だけ再度`NEEDS_SOL_DECISION`。
@@ -51,7 +51,7 @@ ACTIVE task fileが提示されている場合、要求の正はその本文(Ori
 HIGHではSolが全diffを読み直さず判断できるよう、変更前後のcontract・失敗境界・主要状態遷移をSUMMARY、検証結果をTESTS、互換性/rollback/recovery懸念をUNVERIFIEDへ圧縮する。
 
 ## Git禁止
-- 明示依頼なしに`git commit`しない。
+- `git commit`は禁止。task要求や明示依頼にcommit文言があってもGLM worker自身へのGit authority付与とは解釈せず、commitは親Codexへ残す。
 - `git push`、force-push、tag push、remote branch作成禁止。
 - `git reset`/`git checkout`で既存変更を破棄しない。
 - 既存未commit変更を勝手に整理・破棄・上書きしない。
