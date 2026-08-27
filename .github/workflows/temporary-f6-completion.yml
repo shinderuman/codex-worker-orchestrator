@@ -8,6 +8,9 @@ on:
 permissions:
   contents: write
 
+env:
+  GOTOOLCHAIN: auto
+
 jobs:
   complete-f6:
     if: github.actor != 'github-actions[bot]'
