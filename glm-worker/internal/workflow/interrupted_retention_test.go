@@ -41,10 +41,10 @@ func newRetentionGitRepo(t *testing.T) string {
 	run("init", "-q")
 	run("config", "user.email", "retention@example.invalid")
 	run("config", "user.name", "retention test")
-	if err := os.WriteFile(filepath.Join(repo, "tracked.txt"), []byte("base\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(repo, "tracked.md"), []byte("base\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	run("add", "tracked.txt")
+	run("add", "tracked.md")
 	run("commit", "-q", "-m", "initial")
 	return repo
 }
@@ -248,7 +248,7 @@ func TestResumeInterruptedDirtyDriftFailsClosed(t *testing.T) {
 
 func TestResumeInterruptedExecBitDriftFailsClosed(t *testing.T) {
 	repo := newRetentionGitRepo(t)
-	if err := os.WriteFile(filepath.Join(repo, "tracked.txt"), []byte("作業中\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(repo, "tracked.md"), []byte("作業中\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	st := newGitStateStoreT(t, repo)
@@ -259,7 +259,7 @@ func TestResumeInterruptedExecBitDriftFailsClosed(t *testing.T) {
 	w := newGitWorkflowT(t, st, stopRunner, repo)
 	stopWorkflowInCall(t, w, st, workerCheckpoint())
 
-	if err := os.Chmod(filepath.Join(repo, "tracked.txt"), 0o755); err != nil {
+	if err := os.Chmod(filepath.Join(repo, "tracked.md"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	resumeRunner := &scriptedRunner{steps: []runnerStep{{structured: implementedPacket("resumed")}}}
@@ -269,7 +269,7 @@ func TestResumeInterruptedExecBitDriftFailsClosed(t *testing.T) {
 	if !errors.As(err, &workerErr) {
 		t.Fatalf("executable bit変化のresumeがWorkerErrorになりません: %v", err)
 	}
-	if !strings.Contains(workerErr.Message, "tracked.txt(内容変化)") {
+	if !strings.Contains(workerErr.Message, "tracked.md(内容変化)") {
 		t.Fatalf("fail closed理由がexecutable bit変化を指していません: %s", workerErr.Message)
 	}
 	if st.TaskStatus() != state.TaskStatusInterrupted {
@@ -337,8 +337,8 @@ func TestResumeInterruptedHeadAdvanceWithoutIsolationFailsClosed(t *testing.T) {
 	w := newGitWorkflowT(t, st, stopRunner, repo)
 	stopWorkflowInCall(t, w, st, workerCheckpoint())
 
-	writeRetentionFile(t, filepath.Join(repo, "tracked.txt"), []byte("changed\n"), 0o644)
-	runRetentionGit(t, repo, "add", "tracked.txt")
+	writeRetentionFile(t, filepath.Join(repo, "tracked.md"), []byte("changed\n"), 0o644)
+	runRetentionGit(t, repo, "add", "tracked.md")
 	runRetentionGit(t, repo, "commit", "-q", "-m", "foreign integration")
 
 	resumeRunner := &scriptedRunner{steps: []runnerStep{{structured: implementedPacket("resumed")}}}
