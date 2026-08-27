@@ -233,7 +233,7 @@ func checkpointResumeAvailable(st *state.StateStore) bool {
 	return checkpoint.RateLimited || checkpoint.ProviderUnavailable || checkpoint.UserInterrupted
 }
 
-func (_ *stopEndpointServer) writeResponse(conn net.Conn, response stopEndpointResponse) {
+func (*stopEndpointServer) writeResponse(conn net.Conn, response stopEndpointResponse) {
 	data, err := marshalEventLine(response)
 	if err != nil {
 		return
