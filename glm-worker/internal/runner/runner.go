@@ -78,6 +78,14 @@ type claudeJSONResult struct {
 	ModelUsage     map[string]ModelUsage `json:"modelUsage"`
 }
 
+type runInputs struct {
+	systemFile    string
+	isolationArgs string
+	settingEnv    map[string]string
+	envDeletes    []string
+	schema        string
+}
+
 const isolationPolicyVersion = "claude-isolation-1"
 
 const subtypeStructuredOutputRetryExhausted = "error_max_structured_output_retries"
@@ -145,14 +153,6 @@ func NewClaudeRunner(cfg config.AppConfig, st *state.StateStore) *ClaudeRunner {
 
 func (r *ClaudeRunner) AttachStopController(stop *StopController) {
 	r.stop = stop
-}
-
-type runInputs struct {
-	systemFile    string
-	isolationArgs string
-	settingEnv    map[string]string
-	envDeletes    []string
-	schema        string
 }
 
 func (r *ClaudeRunner) Run(
