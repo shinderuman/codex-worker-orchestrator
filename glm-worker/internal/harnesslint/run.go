@@ -72,7 +72,8 @@ func checkRules(root string, paths []string) ([]Violation, error) {
 		return nil, err
 	}
 	violations := append(goViolations, textViolations...)
-	return append(violations, qualityViolations...), nil
+	violations = append(violations, qualityViolations...)
+	return violations, nil
 }
 
 func fixGoFormatting(root string, paths []string) error {

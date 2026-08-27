@@ -68,6 +68,11 @@ type timelineTool struct {
 	Errors        int    `json:"errors,omitempty"`
 }
 
+type eventLogSkippedLine struct {
+	Type  string `json:"type"`
+	Error string `json:"error"`
+}
+
 func printTimeline(st *state.StateStore, taskIDArg string, stdout io.Writer) error {
 	explicit := taskIDArg != ""
 	taskID := taskIDArg
@@ -151,7 +156,7 @@ func readTaskEventRecords(st *state.StateStore, taskID string) ([]state.TaskEven
 	if err != nil {
 		return nil, 0, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
 	var records []state.TaskEventRecord
@@ -175,7 +180,7 @@ func readLastTaskEvent(path string) (state.TaskEventRecord, bool) {
 	if err != nil {
 		return state.TaskEventRecord{}, false
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
 	var last state.TaskEventRecord
@@ -266,11 +271,6 @@ func timelineTools(tools []state.CallTimelineTool) []timelineTool {
 		})
 	}
 	return rendered
-}
-
-type eventLogSkippedLine struct {
-	Type  string `json:"type"`
-	Error string `json:"error"`
 }
 
 func marshalEventLine(value any) ([]byte, error) {

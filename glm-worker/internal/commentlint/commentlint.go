@@ -53,6 +53,12 @@ type heredocSpec struct {
 	stripTabs bool
 }
 
+type sourceEdit struct {
+	start int
+	end   int
+	blank bool
+}
+
 func Check(root string) (Report, error) {
 	if !harnesslint.AppliesTo(root) {
 		return Run(root, false)
@@ -180,9 +186,18 @@ func trackedAndUntracked(root string) ([]string, error) {
 	parts := bytes.Split(data, []byte{0})
 	paths := make([]string, 0, len(parts))
 	for _, part := range parts {
-		if len(part) > 0 {
-			paths = append(paths, filepath.ToSlash(string(part)))
+		if len(part) == 0 {
+			continue
 		}
+		path := filepath.ToSlash(string(part))
+		_, statErr := os.Lstat(filepath.Join(root, filepath.FromSlash(path)))
+		if errors.Is(statErr, os.ErrNotExist) {
+			continue
+		}
+		if statErr != nil {
+			return nil, fmt.Errorf("lstat %s: %w", path, statErr)
+		}
+		paths = append(paths, path)
 	}
 	sort.Strings(paths)
 	return paths, nil
@@ -270,13 +285,13 @@ func replaceRegular(root string, update pendingUpdate) error {
 		return err
 	}
 	temp := file.Name()
-	defer os.Remove(temp)
+	defer func() { _ = os.Remove(temp) }()
 	if err := file.Chmod(update.mode); err != nil {
-		file.Close()
+		_ = file.Close()
 		return err
 	}
 	if _, err := file.Write(update.data); err != nil {
-		file.Close()
+		_ = file.Close()
 		return err
 	}
 	if err := file.Close(); err != nil {
@@ -492,11 +507,12 @@ func scanHash(path string, data []byte) []finding {
 			column++
 			continue
 		}
-		if value == '\'' && !double {
+		switch {
+		case value == '\'' && !double:
 			single = !single
-		} else if value == '"' && !single {
+		case value == '"' && !single:
 			double = !double
-		} else if value == '#' && !single && !double {
+		case value == '#' && !single && !double:
 			end := bytes.IndexByte(data[index:], '\n')
 			if end < 0 {
 				end = len(data) - index
@@ -518,12 +534,6 @@ func scanGitignore(path string, data []byte) []finding {
 		offset += len(line) + 1
 	}
 	return findings
-}
-
-type sourceEdit struct {
-	start int
-	end   int
-	blank bool
 }
 
 func removeFindings(data []byte, findings []finding) []byte {

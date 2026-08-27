@@ -331,7 +331,7 @@ func TestAttachSnippetsWarnsAndKeepsResultOnUnreadableFile(t *testing.T) {
 	if err := os.Chmod(path, 0o000); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { os.Chmod(path, 0o644) })
+	t.Cleanup(func() { _ = os.Chmod(path, 0o644) })
 
 	results := []Result{{Path: "a.txt", Score: 1, ContentScore: 1}}
 	warnings := attachSnippets(dir, results, []string{"needle"})

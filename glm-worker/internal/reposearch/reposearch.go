@@ -10,24 +10,7 @@ import (
 	"strings"
 )
 
-const (
-	defaultMaxResults    = 20
-	hardMaxResults       = 100
-	defaultMaxFiles      = 50_000
-	hardMaxFiles         = 50_000
-	defaultMaxTotalBytes = 256 << 20
-	hardMaxTotalBytes    = 256 << 20
-	defaultPathWeight    = 0.5
-	maxSearchAttempts    = 2
-)
-
 type CacheStatus string
-
-const (
-	CacheStatusHit          CacheStatus = "hit"
-	CacheStatusRebuilt      CacheStatus = "rebuilt"
-	CacheStatusWriteWarning CacheStatus = "write-warning"
-)
 
 type Result struct {
 	Path         string
@@ -62,13 +45,6 @@ type Options struct {
 	ExcludeDirs []string
 }
 
-var (
-	ErrEmptyQuery     = errors.New("queryをtoken化しても空です")
-	ErrIndexRace      = errors.New("検索中にrepository状態が変化しました")
-	ErrInvalidOptions = errors.New("reposearchのOptionsが不正です")
-	ErrIndexLimit     = errors.New("検索対象がOptions上限を超えています")
-)
-
 type searchSettings struct {
 	cacheRoot     string
 	cacheDisabled bool
@@ -78,6 +54,30 @@ type searchSettings struct {
 	pathWeight    float64
 	excludeDirs   map[string]bool
 }
+
+const (
+	defaultMaxResults    = 20
+	hardMaxResults       = 100
+	defaultMaxFiles      = 50_000
+	hardMaxFiles         = 50_000
+	defaultMaxTotalBytes = 256 << 20
+	hardMaxTotalBytes    = 256 << 20
+	defaultPathWeight    = 0.5
+	maxSearchAttempts    = 2
+)
+
+const (
+	CacheStatusHit          CacheStatus = "hit"
+	CacheStatusRebuilt      CacheStatus = "rebuilt"
+	CacheStatusWriteWarning CacheStatus = "write-warning"
+)
+
+var (
+	ErrEmptyQuery     = errors.New("queryをtoken化しても空です")
+	ErrIndexRace      = errors.New("検索中にrepository状態が変化しました")
+	ErrInvalidOptions = errors.New("reposearchのOptionsが不正です")
+	ErrIndexLimit     = errors.New("検索対象がOptions上限を超えています")
+)
 
 func Search(ctx context.Context, repoRoot string, query string, opts Options) (Report, error) {
 	settings, err := resolveSettings(opts)

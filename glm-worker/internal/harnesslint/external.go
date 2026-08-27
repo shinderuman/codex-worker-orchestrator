@@ -26,6 +26,10 @@ type missingToolError struct {
 	name string
 }
 
+var golangCILine = regexp.MustCompile(`^(.+?):(\d+):(\d+):\s*(.+?)(?:\s+\(([^()]+)\))?$`)
+var golangCILineOnly = regexp.MustCompile(`^(.+?):(\d+):\s*(.+?)(?:\s+\(([^()]+)\))?$`)
+var shellcheckLine = regexp.MustCompile(`^(.+?):(\d+):(\d+):\s*[^:]+:\s*(.+?)(?:\s+\[([A-Z0-9]+)\])?$`)
+
 func (e *missingToolError) Error() string {
 	return "required quality tool is missing: " + e.name
 }
@@ -142,10 +146,6 @@ func moduleDir(root, module string) string {
 	return filepath.Join(root, filepath.FromSlash(module))
 }
 
-var golangCILine = regexp.MustCompile(`^(.+?):(\d+):(\d+):\s*(.+?)(?:\s+\(([^()]+)\))?$`)
-var golangCILineOnly = regexp.MustCompile(`^(.+?):(\d+):\s*(.+?)(?:\s+\(([^()]+)\))?$`)
-var shellcheckLine = regexp.MustCompile(`^(.+?):(\d+):(\d+):\s*[^:]+:\s*(.+?)(?:\s+\[([A-Z0-9]+)\])?$`)
-
 func parseGolangCI(result commandResult, module string) []Violation {
 	if result.exitCode == 0 {
 		return nil
@@ -154,12 +154,12 @@ func parseGolangCI(result commandResult, module string) []Violation {
 	for _, line := range strings.Split(result.output, "\n") {
 		trimmed := strings.TrimSpace(line)
 		match := golangCILine.FindStringSubmatch(trimmed)
-		if match != nil {
+		if match != nil && strings.HasSuffix(match[1], ".go") {
 			violations = append(violations, golangCIViolation(module, match[1], match[2], match[3], match[4], match[5]))
 			continue
 		}
 		lineOnly := golangCILineOnly.FindStringSubmatch(trimmed)
-		if lineOnly != nil {
+		if lineOnly != nil && strings.HasSuffix(lineOnly[1], ".go") {
 			violations = append(violations, golangCIViolation(module, lineOnly[1], lineOnly[2], "1", lineOnly[3], lineOnly[4]))
 		}
 	}

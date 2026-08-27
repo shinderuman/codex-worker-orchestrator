@@ -9,14 +9,6 @@ import (
 	"time"
 )
 
-const modelCallLogVersion = 3
-
-const (
-	CallTypeTask  = "task"
-	CallTypeProbe = "probe"
-	CallTypeEvent = "event"
-)
-
 type TokenUsage struct {
 	InputTokens              int64 `json:"input_tokens"`
 	CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
@@ -82,6 +74,14 @@ type ModelCallLog struct {
 	ParentOrigin string `json:"parent_origin,omitempty"`
 }
 
+const modelCallLogVersion = 3
+
+const (
+	CallTypeTask  = "task"
+	CallTypeProbe = "probe"
+	CallTypeEvent = "event"
+)
+
 func (s *StateStore) RecordModelCallLog(value ModelCallLog) {
 	if value.Version == 0 {
 		value.Version = modelCallLogVersion
@@ -115,11 +115,11 @@ func (s *StateStore) appendModelCallLog(value ModelCallLog) error {
 		return err
 	}
 	if err := file.Chmod(0o600); err != nil {
-		file.Close()
+		_ = file.Close()
 		return err
 	}
 	if _, err := file.Write(append(data, '\n')); err != nil {
-		file.Close()
+		_ = file.Close()
 		return err
 	}
 	return file.Close()
@@ -191,7 +191,7 @@ func (s *StateStore) ReadModelCallLogs(taskID string) ([]ModelCallLog, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	var result []ModelCallLog
 	scanner := bufio.NewScanner(file)

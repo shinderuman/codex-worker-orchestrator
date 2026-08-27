@@ -259,8 +259,8 @@ func TestReadSendsSequentialHandshakeInContractOrder(t *testing.T) {
 
 func TestExchangeWaitsForInitializeResponseBeforeSendingInitialized(t *testing.T) {
 	server, client := net.Pipe()
-	defer server.Close()
-	defer client.Close()
+	defer func() { _ = server.Close() }()
+	defer func() { _ = client.Close() }()
 
 	type handshakeOutcome struct {
 		requests   []string

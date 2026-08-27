@@ -15,8 +15,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
 )
 
-const isolationBranchPrefix = "glm-worker/isolation/"
-
 type isolateOutput struct {
 	Result      string `json:"result"`
 	IsolationID string `json:"isolation_id"`
@@ -25,6 +23,8 @@ type isolateOutput struct {
 	TaskID      string `json:"task_id"`
 	RepoRoot    string `json:"repo_root"`
 }
+
+const isolationBranchPrefix = "glm-worker/isolation/"
 
 func isolateInterruptedTask(st *state.StateStore, cfg config.AppConfig, stdout io.Writer) error {
 	taskID := st.ReadOr("task.id", "")

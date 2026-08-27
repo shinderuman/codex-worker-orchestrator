@@ -24,6 +24,8 @@ const streamFixtureLines = `{"type":"system","subtype":"init","session_id":"sess
 {"type":"result","subtype":"success","is_error":false,"result":"{\"status\":\"IMPLEMENTED\",\"risk\":\"LOW\",\"summary\":\"done\",\"requirement_coverage\":\"covered\",\"tests\":\"pass\",\"unverified\":\"none\"}","structured_output":{"status":"IMPLEMENTED","risk":"LOW","summary":"done","requirement_coverage":"covered","tests":"pass","unverified":"none"},"duration_ms":1200,"duration_api_ms":900,"num_turns":2,"total_cost_usd":0.5,"usage":{"input_tokens":11,"cache_creation_input_tokens":12,"cache_read_input_tokens":13,"output_tokens":14},"modelUsage":{"glm-5.3":{"inputTokens":11,"cacheCreationInputTokens":12,"cacheReadInputTokens":13,"outputTokens":14}}}
 `
 
+const plainStdoutSecretLine = "diagnostic context contains " + streamFixtureSecret
+
 func writeStreamFixtureClaude(t *testing.T, output string) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -275,8 +277,6 @@ func lineOfKind(fixture string, kind string) string {
 	return ""
 }
 
-const plainStdoutSecretLine = "diagnostic context contains " + streamFixtureSecret
-
 func plainStdoutFixture(signalLine string) string {
 	return signalLine + "\n" + plainStdoutSecretLine + "\n"
 }
@@ -471,7 +471,7 @@ func TestClaudeRunnerStreamEventsBestEffortOnUnwritableLog(t *testing.T) {
 	commandPath := writeStreamFixtureClaude(t, streamFixtureLines)
 	r, st, taskID := newStreamFixtureRunner(t, commandPath)
 
-	eventsDir := filepath.Join(st.Path("events"))
+	eventsDir := st.Path("events")
 	if err := os.MkdirAll(eventsDir, 0o700); err != nil {
 		t.Fatal(err)
 	}

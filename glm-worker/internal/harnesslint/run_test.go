@@ -46,6 +46,10 @@ func TestExternalParsersPreserveLocations(t *testing.T) {
 	if goIssues[1].Rule != "dupl" || goIssues[1].Path != "glm-worker/internal/y.go" || goIssues[1].Line != 8 || goIssues[1].Column != 1 {
 		t.Fatalf("line-only golangci issue=%+v", goIssues[1])
 	}
+	withSourceExcerpt := parseGolangCI(commandResult{output: "internal/z.go:4:1: bad thing (revive)\nconst timestamp = \"2026-07-22 14:06:34\"\n^\n", exitCode: 1}, "glm-worker")
+	if len(withSourceExcerpt) != 1 || withSourceExcerpt[0].Path != "glm-worker/internal/z.go" {
+		t.Fatalf("source excerpt must not become a diagnostic: %+v", withSourceExcerpt)
+	}
 	shellIssues := parseShellcheck(commandResult{output: "tests/x.sh:4:2: warning: quote this [SC2086]\n", exitCode: 1}, "tests/x.sh")
 	if len(shellIssues) != 1 || shellIssues[0].Rule != "sc2086" || shellIssues[0].Line != 4 {
 		t.Fatalf("shellcheck issues=%+v", shellIssues)

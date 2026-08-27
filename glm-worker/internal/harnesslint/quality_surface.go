@@ -1,36 +1,10 @@
 package harnesslint
 
 import (
-	"bytes"
-	"fmt"
-	"os/exec"
-	"path/filepath"
 	"strings"
 )
 
-var qualityPathspecs = []string{
-	".githooks/post-merge",
-	".github/workflows",
-	".golangci.yml",
-	"commentlint",
-	"harnesslint",
-	"install.sh",
-	"tests/install_smoke.sh",
-	"glm-worker/cmd/commentlint",
-	"glm-worker/cmd/harnesslint",
-	"glm-worker/cmd/plancheck",
-	"glm-worker/internal/commentlint",
-	"glm-worker/internal/harnesslint",
-	"glm-worker/internal/plancheckcmd",
-	"glm-worker/internal/workflow/activetask.go",
-	"glm-worker/internal/workflow/plan_final_head.go",
-}
-
 func scanQualitySurface(root string, paths []string) ([]Violation, error) {
-	dirty, err := dirtyQualitySurface(root)
-	if err != nil {
-		return nil, err
-	}
 	wiring, err := qualityWiringViolations(root, paths)
 	if err != nil {
 		return nil, err
@@ -39,32 +13,7 @@ func scanQualitySurface(root string, paths []string) ([]Violation, error) {
 	if err != nil {
 		return nil, err
 	}
-	violations := append(dirty, wiring...)
-	return append(violations, streams...), nil
-}
-
-func dirtyQualitySurface(root string) ([]Violation, error) {
-	if err := exec.Command("git", "-C", root, "rev-parse", "--git-dir").Run(); err != nil {
-		return nil, nil
-	}
-	args := []string{"-C", root, "status", "--porcelain=v1", "-z", "--untracked-files=all", "--no-renames", "--"}
-	args = append(args, qualityPathspecs...)
-	output, err := exec.Command("git", args...).Output()
-	if err != nil {
-		return nil, fmt.Errorf("git status quality surface: %w", err)
-	}
-	var violations []Violation
-	for _, record := range bytes.Split(output, []byte{0}) {
-		if len(record) < 4 {
-			continue
-		}
-		path := filepath.ToSlash(string(record[3:]))
-		violations = append(violations, Violation{
-			Rule: "quality-surface-dirty", Path: path, Line: 1, Column: 1,
-			Message: "quality policy surface must not be modified by the worker task; report a concrete policy change request instead",
-		})
-	}
-	return violations, nil
+	return append(wiring, streams...), nil
 }
 
 func qualityWiringViolations(root string, paths []string) ([]Violation, error) {
@@ -75,9 +24,18 @@ func qualityWiringViolations(root string, paths []string) ([]Violation, error) {
 		{
 			path: "glm-worker/internal/workflow/workflow.go",
 			tokens: []string{
-				"return commentlint.Check(root)",
-				"w.commentLint(w.config.RepoRoot)",
-				"commentlint.IsViolation(commentReport)",
+				"w.captureQualitySurfaceBaseline()",
+				"w.verifyQualitySurfaceBaseline(workerPhase)",
+				"w.qualityGate(w.config.RepoRoot)",
+				"harnesslint.IsViolation(qualityReport)",
+			},
+		},
+		{
+			path: "glm-worker/internal/workflow/quality_gate.go",
+			tokens: []string{
+				"harnesslint.Run(root, true)",
+				"harnesslint.Check(root)",
+				"captureQualitySurfaceDigest",
 			},
 		},
 		{

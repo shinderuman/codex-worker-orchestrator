@@ -8,6 +8,30 @@ import (
 	"time"
 )
 
+type ProviderFailureClass struct {
+	Kind          string
+	Detail        string
+	FiveHourLimit ZaiFiveHourLimit
+}
+
+type ProviderUnavailableError struct {
+	Phase          string
+	Classification string
+	Probes         int
+	Elapsed        time.Duration
+	TaskID         string
+	RepoRoot       string
+	RepoShort      string
+}
+
+const (
+	ProviderFailureZaiFiveHour = "zai-5h"
+	ProviderFailureTransient   = "transient"
+	ProviderFailureFatal       = "fatal"
+
+	ProbeContractFailure = "probe-contract"
+)
+
 var transientHTTPPattern = regexp.MustCompile(`\b(502|503|504|529)\b`)
 
 var transientNetworkSignals = []string{
@@ -72,20 +96,6 @@ func ReadTransientSignal(outputPath string) string {
 	return string(data)
 }
 
-type ProviderFailureClass struct {
-	Kind          string
-	Detail        string
-	FiveHourLimit ZaiFiveHourLimit
-}
-
-const (
-	ProviderFailureZaiFiveHour = "zai-5h"
-	ProviderFailureTransient   = "transient"
-	ProviderFailureFatal       = "fatal"
-
-	ProbeContractFailure = "probe-contract"
-)
-
 func ClassifyProviderFailureText(text string) ProviderFailureClass {
 	if limit, ok := DetectZaiFiveHourLimitText(text); ok {
 		return ProviderFailureClass{Kind: ProviderFailureZaiFiveHour, FiveHourLimit: limit}
@@ -94,16 +104,6 @@ func ClassifyProviderFailureText(text string) ProviderFailureClass {
 		return ProviderFailureClass{Kind: ProviderFailureTransient, Detail: classification}
 	}
 	return ProviderFailureClass{Kind: ProviderFailureFatal}
-}
-
-type ProviderUnavailableError struct {
-	Phase          string
-	Classification string
-	Probes         int
-	Elapsed        time.Duration
-	TaskID         string
-	RepoRoot       string
-	RepoShort      string
 }
 
 func (e *ProviderUnavailableError) Error() string {

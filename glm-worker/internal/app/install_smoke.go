@@ -13,21 +13,10 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-var validInstallSmokeRoles = map[string]bool{
-	"worker":   true,
-	"reviewer": true,
-	"fix":      true,
-	"parent":   true,
-}
-
 type InstallSmokeError struct {
 	Role       string
 	ExitCode   int
 	DurationMS int64
-}
-
-func (e *InstallSmokeError) Error() string {
-	return fmt.Sprintf("install smokeが失敗しました (exit %d)", e.ExitCode)
 }
 
 type installSmokeOutput struct {
@@ -35,6 +24,17 @@ type installSmokeOutput struct {
 	Result     string `json:"result"`
 	Role       string `json:"role,omitempty"`
 	DurationMS int64  `json:"duration_ms"`
+}
+
+var validInstallSmokeRoles = map[string]bool{
+	"worker":   true,
+	"reviewer": true,
+	"fix":      true,
+	"parent":   true,
+}
+
+func (e *InstallSmokeError) Error() string {
+	return fmt.Sprintf("install smokeが失敗しました (exit %d)", e.ExitCode)
 }
 
 func runInstallSmoke(role string, cfg config.AppConfig, _ *state.StateStore, stdout io.Writer) error {

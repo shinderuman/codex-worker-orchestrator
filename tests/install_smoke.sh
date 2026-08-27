@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-source_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+source_root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/codex-install-smoke.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT HUP INT TERM
 repo="$tmp/repo"

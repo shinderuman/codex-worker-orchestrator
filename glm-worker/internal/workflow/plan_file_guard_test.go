@@ -17,6 +17,8 @@ const (
 	activeTaskGuardPath = "IMPLEMENTATION_TASKS/001-active.md"
 )
 
+const historyGuardSeed = "parent owned history\n"
+
 func writeActiveTaskFileContent(t *testing.T, repoRoot string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Join(repoRoot, implementationTasksDir), 0o755); err != nil {
@@ -480,8 +482,6 @@ func TestPlanFileReadErrorFailsClosedBeforeCall(t *testing.T) {
 		t.Fatalf("ACTIVE task解決失敗理由が出力されていません:\n%s", out.String())
 	}
 }
-
-const historyGuardSeed = "parent owned history\n"
 
 func writeHistoryFileContent(t *testing.T, repoRoot string, content string) {
 	t.Helper()

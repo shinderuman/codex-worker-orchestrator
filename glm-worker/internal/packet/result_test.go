@@ -7,6 +7,23 @@ import (
 	"testing"
 )
 
+var textFieldSetters = map[string]func(*Result, string){
+	"summary":              func(r *Result, v string) { r.Summary = v },
+	"requirement_coverage": func(r *Result, v string) { r.RequirementCoverage = v },
+	"tests":                func(r *Result, v string) { r.Tests = v },
+	"unverified":           func(r *Result, v string) { r.Unverified = v },
+	"decision":             func(r *Result, v string) { r.Decision = v },
+	"evidence":             func(r *Result, v string) { r.Evidence = v },
+	"options":              func(r *Result, v string) { r.Options = v },
+	"recommendation":       func(r *Result, v string) { r.Recommendation = v },
+	"test_obligations":     func(r *Result, v string) { r.TestObligations = v },
+	"invariants":           func(r *Result, v string) { r.Invariants = v },
+	"test_evidence":        func(r *Result, v string) { r.TestEvidence = v },
+	"issues":               func(r *Result, v string) { r.Issues = v },
+	"residual_risk":        func(r *Result, v string) { r.ResidualRisk = v },
+	"sol_question":         func(r *Result, v string) { r.SolQuestion = v },
+}
+
 func TestParseStructuredAcceptsTypedResult(t *testing.T) {
 	raw := `{"status":"IMPLEMENTED","risk":"LOW","summary":"s","requirement_coverage":"c","tests":"t","unverified":"none","targets":[],"artifacts":[]}`
 	result, err := ParseStructured([]byte(raw))
@@ -354,23 +371,6 @@ func TestValidateSolQuestionFieldConstraints(t *testing.T) {
 			}
 		})
 	}
-}
-
-var textFieldSetters = map[string]func(*Result, string){
-	"summary":              func(r *Result, v string) { r.Summary = v },
-	"requirement_coverage": func(r *Result, v string) { r.RequirementCoverage = v },
-	"tests":                func(r *Result, v string) { r.Tests = v },
-	"unverified":           func(r *Result, v string) { r.Unverified = v },
-	"decision":             func(r *Result, v string) { r.Decision = v },
-	"evidence":             func(r *Result, v string) { r.Evidence = v },
-	"options":              func(r *Result, v string) { r.Options = v },
-	"recommendation":       func(r *Result, v string) { r.Recommendation = v },
-	"test_obligations":     func(r *Result, v string) { r.TestObligations = v },
-	"invariants":           func(r *Result, v string) { r.Invariants = v },
-	"test_evidence":        func(r *Result, v string) { r.TestEvidence = v },
-	"issues":               func(r *Result, v string) { r.Issues = v },
-	"residual_risk":        func(r *Result, v string) { r.ResidualRisk = v },
-	"sol_question":         func(r *Result, v string) { r.SolQuestion = v },
 }
 
 func fullyPopulatedResult(status Status) Result {

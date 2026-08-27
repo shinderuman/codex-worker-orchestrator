@@ -22,9 +22,22 @@ type statusContract struct {
 	required []requiredFieldCase
 }
 
+type targetsElementCase struct {
+	name    string
+	targets []string
+	accept  bool
+
+	wantRejectSubstring string
+}
+
+const (
+	workerStructuredFixture   = `{"status":"IMPLEMENTED","risk":"LOW","summary":"s","requirement_coverage":"c","tests":"t","unverified":"none","targets":[],"artifacts":[]}`
+	reviewerStructuredFixture = `{"status":"PASS","risk":"LOW","summary":"s","requirement_coverage":"c","invariants":"i","test_evidence":"e","issues":"none","residual_risk":"none","targets":["a.go:f"],"artifacts":[]}`
+)
+
 func statusContracts() []statusContract {
-	worker := func(result Result) error { return ValidateWorkerResult(result) }
-	reviewer := func(result Result) error { return ValidateReviewerResult(result) }
+	worker := ValidateWorkerResult
+	reviewer := ValidateReviewerResult
 	return []statusContract{
 		{
 			name:     "worker IMPLEMENTED",
@@ -169,14 +182,6 @@ func TestWorkerDecisionTargetsNoneSentinel(t *testing.T) {
 	if err := ValidateWorkerResult(decision); err != nil {
 		t.Fatalf("予約値none要素のNEEDS_SOL_DECISIONは旧契約どおり有効: %v", err)
 	}
-}
-
-type targetsElementCase struct {
-	name    string
-	targets []string
-	accept  bool
-
-	wantRejectSubstring string
 }
 
 func sharedTargetsElementCases() []targetsElementCase {
@@ -397,11 +402,6 @@ func TestProducerSchemaConsumerAcceptance(t *testing.T) {
 		}
 	})
 }
-
-const (
-	workerStructuredFixture   = `{"status":"IMPLEMENTED","risk":"LOW","summary":"s","requirement_coverage":"c","tests":"t","unverified":"none","targets":[],"artifacts":[]}`
-	reviewerStructuredFixture = `{"status":"PASS","risk":"LOW","summary":"s","requirement_coverage":"c","invariants":"i","test_evidence":"e","issues":"none","residual_risk":"none","targets":["a.go:f"],"artifacts":[]}`
-)
 
 func TestParseStructuredIgnoresSchemaPermittedUnknownFields(t *testing.T) {
 	cases := []struct {

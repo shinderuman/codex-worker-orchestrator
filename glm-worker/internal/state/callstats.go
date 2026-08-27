@@ -7,37 +7,6 @@ import (
 	"time"
 )
 
-const callOutlierPercentileMethod = "linear"
-
-const CallOutlierMinPopulation = 20
-
-const callOutlierRule = "worker task call with top_level_turns > p95(turns) of its role+phase+resumed group; task with worker turns_total > p95(turns_total) across tasks having at least one observed-turn call; populations below min_population are ineligible"
-
-const (
-	WorkerPhaseCategoryNew         = "worker-new"
-	WorkerPhaseCategoryExplicitFix = "worker-explicit-fix"
-	WorkerPhaseCategoryAutoFix     = "worker-auto-fix"
-	WorkerPhaseCategoryDecision    = "worker-decision"
-)
-
-const workerReportOnlyPhasePrefix = "worker-report-only-"
-
-func WorkerPhaseCategory(phase string) string {
-	switch {
-	case phase == WorkerPhaseCategoryNew || strings.HasPrefix(phase, WorkerPhaseCategoryNew+"-"):
-		return WorkerPhaseCategoryNew
-	case strings.HasPrefix(phase, WorkerPhaseCategoryExplicitFix):
-		return WorkerPhaseCategoryExplicitFix
-	case strings.HasPrefix(phase, WorkerPhaseCategoryAutoFix+"-"),
-		strings.HasPrefix(phase, workerReportOnlyPhasePrefix):
-		return WorkerPhaseCategoryAutoFix
-	case strings.HasPrefix(phase, WorkerPhaseCategoryDecision):
-		return WorkerPhaseCategoryDecision
-	default:
-		return phase
-	}
-}
-
 type TaskCallLogs struct {
 	TaskID string
 	Logs   []ModelCallLog
@@ -185,6 +154,37 @@ type callGroupSamples struct {
 type workerCallRef struct {
 	taskID string
 	log    ModelCallLog
+}
+
+const callOutlierPercentileMethod = "linear"
+
+const CallOutlierMinPopulation = 20
+
+const callOutlierRule = "worker task call with top_level_turns > p95(turns) of its role+phase+resumed group; task with worker turns_total > p95(turns_total) across tasks having at least one observed-turn call; populations below min_population are ineligible"
+
+const (
+	WorkerPhaseCategoryNew         = "worker-new"
+	WorkerPhaseCategoryExplicitFix = "worker-explicit-fix"
+	WorkerPhaseCategoryAutoFix     = "worker-auto-fix"
+	WorkerPhaseCategoryDecision    = "worker-decision"
+)
+
+const workerReportOnlyPhasePrefix = "worker-report-only-"
+
+func WorkerPhaseCategory(phase string) string {
+	switch {
+	case phase == WorkerPhaseCategoryNew || strings.HasPrefix(phase, WorkerPhaseCategoryNew+"-"):
+		return WorkerPhaseCategoryNew
+	case strings.HasPrefix(phase, WorkerPhaseCategoryExplicitFix):
+		return WorkerPhaseCategoryExplicitFix
+	case strings.HasPrefix(phase, WorkerPhaseCategoryAutoFix+"-"),
+		strings.HasPrefix(phase, workerReportOnlyPhasePrefix):
+		return WorkerPhaseCategoryAutoFix
+	case strings.HasPrefix(phase, WorkerPhaseCategoryDecision):
+		return WorkerPhaseCategoryDecision
+	default:
+		return phase
+	}
 }
 
 func BuildCallOutlierReport(tasks []TaskCallLogs) CallOutlierReport {

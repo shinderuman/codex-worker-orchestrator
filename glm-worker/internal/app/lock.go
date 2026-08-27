@@ -5,9 +5,12 @@ import (
 	"strings"
 )
 
-var ErrRepoLockHeld = errors.New("another glm-worker is already running for this repository")
-
 type LockState string
+
+type LockProbe struct {
+	State LockState
+	PID   string
+}
 
 const (
 	LockHeld    LockState = "held"
@@ -15,10 +18,7 @@ const (
 	LockUnknown LockState = "unknown"
 )
 
-type LockProbe struct {
-	State LockState
-	PID   string
-}
+var ErrRepoLockHeld = errors.New("another glm-worker is already running for this repository")
 
 func parseLockPID(data []byte) string {
 	text := string(data)

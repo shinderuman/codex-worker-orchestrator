@@ -8,8 +8,6 @@ import (
 	"strings"
 )
 
-const emptyTreeObject = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
-
 type selfProtectionDecision struct {
 	High    bool
 	Source  string
@@ -20,6 +18,8 @@ type pathClass struct {
 	critical bool
 	category string
 }
+
+const emptyTreeObject = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 
 var classifiedFiles = map[string]pathClass{
 	"install.sh":                             {true, "installer"},
@@ -85,7 +85,8 @@ func IsCriticalPath(path string) (bool, string) {
 }
 
 func IsQualitySurface(path string) bool {
-	if path == ".golangci.yml" || path == "harnesslint" || path == "commentlint" {
+	if path == ".golangci.yml" || path == "harnesslint" || path == "commentlint" ||
+		path == "glm-worker/internal/workflow/quality_gate.go" || path == "glm-worker/internal/workflow/selfprotection.go" {
 		return true
 	}
 	for _, prefix := range []string{

@@ -138,7 +138,7 @@ func TestCacheRebuildsOnVersionAndRepoMismatch(t *testing.T) {
 		"digest":             func(data *cacheData) { data.WorktreeDigest = strings.Repeat("0", 64) },
 		"docs path escape":   func(data *cacheData) { data.Docs[0].Path = "../escape" },
 		"unsorted docs":      func(data *cacheData) { data.Docs[0].Path = "zzz.txt" },
-		"count mismatch":     func(data *cacheData) { data.IndexedFiles = data.IndexedFiles + 1 },
+		"count mismatch":     func(data *cacheData) { data.IndexedFiles++ },
 	}
 	for name, mutate := range mutations {
 		t.Run(name, func(t *testing.T) {
@@ -241,7 +241,7 @@ func TestCacheWriteFailureReturnsResultsAsWarning(t *testing.T) {
 	if err := os.Chmod(cacheDir, 0o500); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { os.Chmod(cacheDir, 0o700) })
+	t.Cleanup(func() { _ = os.Chmod(cacheDir, 0o700) })
 	writeTestFile(t, filepath.Join(dir, "a.txt"), "needle changed\n")
 	report := searchNeedle(t, dir, opts)
 

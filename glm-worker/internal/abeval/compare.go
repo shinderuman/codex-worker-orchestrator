@@ -8,11 +8,6 @@ import (
 	"time"
 )
 
-const (
-	codexReductionActual  = "actual"
-	codexReductionUnknown = "unknown"
-)
-
 type Comparison struct {
 	Spec                 Spec
 	Direct               RunRecord
@@ -27,51 +22,6 @@ type CodexReduction struct {
 	UnknownReason string
 	InputPercent  float64
 	OutputPercent float64
-}
-
-func Compare(spec Spec, direct, orchestrated RunRecord) Comparison {
-	return Comparison{
-		Spec:                 spec,
-		Direct:               direct,
-		Orchestrated:         orchestrated,
-		CodexReduction:       codexReduction(direct.CodexUsage, orchestrated.CodexUsage),
-		DirectDuration:       direct.Boundary.CompletedAt.Sub(direct.Boundary.StartedAt),
-		OrchestratedDuration: orchestrated.Boundary.CompletedAt.Sub(orchestrated.Boundary.StartedAt),
-	}
-}
-
-func codexReduction(direct, orchestrated CodexUsage) CodexReduction {
-	var missing []string
-	if !direct.Known() {
-		missing = append(missing, "direct")
-	}
-	if !orchestrated.Known() {
-		missing = append(missing, "orchestrated")
-	}
-	if len(missing) > 0 {
-		return CodexReduction{
-			Status:        codexReductionUnknown,
-			UnknownReason: fmt.Sprintf("actual Codex usageが公式/runtime telemetryから取得できていません: %s", strings.Join(missing, ",")),
-		}
-	}
-	if direct.InputTokens <= 0 && direct.OutputTokens <= 0 {
-		return CodexReduction{
-			Status:        codexReductionUnknown,
-			UnknownReason: "direct actual usageのtoken値が零のため削減率を定義できません",
-		}
-	}
-	result := CodexReduction{Status: codexReductionActual}
-	if direct.InputTokens > 0 {
-		result.InputPercent = reductionPercent(direct.InputTokens, orchestrated.InputTokens)
-	}
-	if direct.OutputTokens > 0 {
-		result.OutputPercent = reductionPercent(direct.OutputTokens, orchestrated.OutputTokens)
-	}
-	return result
-}
-
-func reductionPercent(direct, orchestrated int64) float64 {
-	return float64(direct-orchestrated) / float64(direct) * 100
 }
 
 type Report struct {
@@ -129,6 +79,56 @@ type ReportGLMUsagePair struct {
 type ReportProxyPair struct {
 	Direct       *ProxyMetrics `json:"direct"`
 	Orchestrated *ProxyMetrics `json:"orchestrated"`
+}
+
+const (
+	codexReductionActual  = "actual"
+	codexReductionUnknown = "unknown"
+)
+
+func Compare(spec Spec, direct, orchestrated RunRecord) Comparison {
+	return Comparison{
+		Spec:                 spec,
+		Direct:               direct,
+		Orchestrated:         orchestrated,
+		CodexReduction:       codexReduction(direct.CodexUsage, orchestrated.CodexUsage),
+		DirectDuration:       direct.Boundary.CompletedAt.Sub(direct.Boundary.StartedAt),
+		OrchestratedDuration: orchestrated.Boundary.CompletedAt.Sub(orchestrated.Boundary.StartedAt),
+	}
+}
+
+func codexReduction(direct, orchestrated CodexUsage) CodexReduction {
+	var missing []string
+	if !direct.Known() {
+		missing = append(missing, "direct")
+	}
+	if !orchestrated.Known() {
+		missing = append(missing, "orchestrated")
+	}
+	if len(missing) > 0 {
+		return CodexReduction{
+			Status:        codexReductionUnknown,
+			UnknownReason: fmt.Sprintf("actual Codex usageが公式/runtime telemetryから取得できていません: %s", strings.Join(missing, ",")),
+		}
+	}
+	if direct.InputTokens <= 0 && direct.OutputTokens <= 0 {
+		return CodexReduction{
+			Status:        codexReductionUnknown,
+			UnknownReason: "direct actual usageのtoken値が零のため削減率を定義できません",
+		}
+	}
+	result := CodexReduction{Status: codexReductionActual}
+	if direct.InputTokens > 0 {
+		result.InputPercent = reductionPercent(direct.InputTokens, orchestrated.InputTokens)
+	}
+	if direct.OutputTokens > 0 {
+		result.OutputPercent = reductionPercent(direct.OutputTokens, orchestrated.OutputTokens)
+	}
+	return result
+}
+
+func reductionPercent(direct, orchestrated int64) float64 {
+	return float64(direct-orchestrated) / float64(direct) * 100
 }
 
 func BuildReport(c Comparison) Report {

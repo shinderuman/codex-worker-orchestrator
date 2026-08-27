@@ -14,6 +14,16 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
+type isolationGateFixture struct {
+	repo       string
+	st         *state.StateStore
+	taskID     string
+	stopHead   string
+	checkpoint state.ResumeCheckpoint
+}
+
+const isolationWorktreePath = "/nonexistent/worktree-iso"
+
 func newRetentionGitRepo(t *testing.T) string {
 	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {
@@ -145,7 +155,7 @@ func TestInterruptedStopCapturesRetention(t *testing.T) {
 
 func TestResumeInterruptedUntouchedPasses(t *testing.T) {
 	repo := newRetentionGitRepo(t)
-	os.WriteFile(filepath.Join(repo, "uncommitted.txt"), []byte("作業中\n"), 0o644)
+	writeRetentionFile(t, filepath.Join(repo, "uncommitted.txt"), []byte("作業中\n"), 0o644)
 	st := newGitStateStoreT(t, repo)
 	stopRunner := &scriptedRunner{steps: []runnerStep{{
 		result: runner.RunResult{SessionID: "sess-retention"},
@@ -169,8 +179,8 @@ func TestResumeInterruptedUntouchedPasses(t *testing.T) {
 
 func TestResumeInterruptedParentMetadataDeltaPasses(t *testing.T) {
 	repo := newRetentionGitRepo(t)
-	os.WriteFile(filepath.Join(repo, "IMPLEMENTATION_PLAN.local.md"), []byte("plan v1\n"), 0o644)
-	os.Mkdir(filepath.Join(repo, "IMPLEMENTATION_TASKS"), 0o755)
+	writeRetentionFile(t, filepath.Join(repo, "IMPLEMENTATION_PLAN.local.md"), []byte("plan v1\n"), 0o644)
+	makeRetentionDir(t, filepath.Join(repo, "IMPLEMENTATION_TASKS"), 0o755)
 	st := newGitStateStoreT(t, repo)
 	stopRunner := &scriptedRunner{steps: []runnerStep{{
 		result: runner.RunResult{SessionID: "sess-retention"},
@@ -179,8 +189,8 @@ func TestResumeInterruptedParentMetadataDeltaPasses(t *testing.T) {
 	w := newGitWorkflowT(t, st, stopRunner, repo)
 	stopWorkflowInCall(t, w, st, workerCheckpoint())
 
-	os.WriteFile(filepath.Join(repo, "IMPLEMENTATION_PLAN.local.md"), []byte("plan v2\n"), 0o644)
-	os.WriteFile(filepath.Join(repo, "IMPLEMENTATION_TASKS", "other-task.md"), []byte("task\n"), 0o644)
+	writeRetentionFile(t, filepath.Join(repo, "IMPLEMENTATION_PLAN.local.md"), []byte("plan v2\n"), 0o644)
+	writeRetentionFile(t, filepath.Join(repo, "IMPLEMENTATION_TASKS", "other-task.md"), []byte("task\n"), 0o644)
 
 	resumeRunner := &scriptedRunner{steps: []runnerStep{
 		{structured: implementedPacket("resumed")},
@@ -194,7 +204,7 @@ func TestResumeInterruptedParentMetadataDeltaPasses(t *testing.T) {
 
 func TestResumeInterruptedDirtyDriftFailsClosed(t *testing.T) {
 	repo := newRetentionGitRepo(t)
-	os.WriteFile(filepath.Join(repo, "uncommitted.txt"), []byte("作業中\n"), 0o644)
+	writeRetentionFile(t, filepath.Join(repo, "uncommitted.txt"), []byte("作業中\n"), 0o644)
 	st := newGitStateStoreT(t, repo)
 	stopRunner := &scriptedRunner{steps: []runnerStep{{
 		result: runner.RunResult{SessionID: "sess-retention"},
@@ -204,7 +214,7 @@ func TestResumeInterruptedDirtyDriftFailsClosed(t *testing.T) {
 	stopWorkflowInCall(t, w, st, workerCheckpoint())
 	before := retentionCheckpoint(t, st)
 
-	os.WriteFile(filepath.Join(repo, "uncommitted.txt"), []byte("衝突解決済み\n"), 0o644)
+	writeRetentionFile(t, filepath.Join(repo, "uncommitted.txt"), []byte("衝突解決済み\n"), 0o644)
 	resumeRunner := &scriptedRunner{steps: []runnerStep{{structured: implementedPacket("resumed")}}}
 	resumeW := newGitWorkflowT(t, st, resumeRunner, repo)
 	err := resumeW.ExecuteResume()
@@ -222,7 +232,7 @@ func TestResumeInterruptedDirtyDriftFailsClosed(t *testing.T) {
 		t.Fatalf("保持違反でmodel呼出を実行しています: %v", resumeRunner.prompts)
 	}
 
-	os.WriteFile(filepath.Join(repo, "uncommitted.txt"), []byte("作業中\n"), 0o644)
+	writeRetentionFile(t, filepath.Join(repo, "uncommitted.txt"), []byte("作業中\n"), 0o644)
 	if before.StopDirtyFiles == nil {
 		t.Fatal("停止時基準がありません")
 	}
@@ -277,7 +287,7 @@ func TestResumeInterruptedForeignDirtyFailsClosed(t *testing.T) {
 	w := newGitWorkflowT(t, st, stopRunner, repo)
 	stopWorkflowInCall(t, w, st, workerCheckpoint())
 
-	os.WriteFile(filepath.Join(repo, "foreign.txt"), []byte("外部書込み\n"), 0o644)
+	writeRetentionFile(t, filepath.Join(repo, "foreign.txt"), []byte("外部書込み\n"), 0o644)
 	resumeRunner := &scriptedRunner{steps: []runnerStep{{structured: implementedPacket("resumed")}}}
 	resumeW := newGitWorkflowT(t, st, resumeRunner, repo)
 	err := resumeW.ExecuteResume()
@@ -292,7 +302,7 @@ func TestResumeInterruptedForeignDirtyFailsClosed(t *testing.T) {
 
 func TestResumeInterruptedParentOnlyHeadAdvancePasses(t *testing.T) {
 	repo := newRetentionGitRepo(t)
-	os.WriteFile(filepath.Join(repo, "IMPLEMENTATION_PLAN.local.md"), []byte("plan v1\n"), 0o644)
+	writeRetentionFile(t, filepath.Join(repo, "IMPLEMENTATION_PLAN.local.md"), []byte("plan v1\n"), 0o644)
 	runRetentionGit(t, repo, "add", "IMPLEMENTATION_PLAN.local.md")
 	runRetentionGit(t, repo, "commit", "-q", "-m", "plan")
 	st := newGitStateStoreT(t, repo)
@@ -303,7 +313,7 @@ func TestResumeInterruptedParentOnlyHeadAdvancePasses(t *testing.T) {
 	w := newGitWorkflowT(t, st, stopRunner, repo)
 	stopWorkflowInCall(t, w, st, workerCheckpoint())
 
-	os.WriteFile(filepath.Join(repo, "IMPLEMENTATION_PLAN.local.md"), []byte("plan v2\n"), 0o644)
+	writeRetentionFile(t, filepath.Join(repo, "IMPLEMENTATION_PLAN.local.md"), []byte("plan v2\n"), 0o644)
 	runRetentionGit(t, repo, "add", "IMPLEMENTATION_PLAN.local.md")
 	runRetentionGit(t, repo, "commit", "-q", "-m", "plan update")
 
@@ -327,7 +337,7 @@ func TestResumeInterruptedHeadAdvanceWithoutIsolationFailsClosed(t *testing.T) {
 	w := newGitWorkflowT(t, st, stopRunner, repo)
 	stopWorkflowInCall(t, w, st, workerCheckpoint())
 
-	os.WriteFile(filepath.Join(repo, "tracked.txt"), []byte("changed\n"), 0o644)
+	writeRetentionFile(t, filepath.Join(repo, "tracked.txt"), []byte("changed\n"), 0o644)
 	runRetentionGit(t, repo, "add", "tracked.txt")
 	runRetentionGit(t, repo, "commit", "-q", "-m", "foreign integration")
 
@@ -341,14 +351,6 @@ func TestResumeInterruptedHeadAdvanceWithoutIsolationFailsClosed(t *testing.T) {
 	if st.TaskStatus() != state.TaskStatusInterrupted {
 		t.Fatalf("fail closed後のtask status = %s want interrupted", st.TaskStatus())
 	}
-}
-
-type isolationGateFixture struct {
-	repo       string
-	st         *state.StateStore
-	taskID     string
-	stopHead   string
-	checkpoint state.ResumeCheckpoint
 }
 
 func stopTaskForIsolationGate(t *testing.T) *isolationGateFixture {
@@ -387,8 +389,6 @@ func gitRetentionOutput(t *testing.T, repo string, args ...string) string {
 	}
 	return strings.TrimSpace(string(output))
 }
-
-const isolationWorktreePath = "/nonexistent/worktree-iso"
 
 func (f *isolationGateFixture) commitOnBranchAndMerge(t *testing.T, branch string) {
 	t.Helper()
@@ -689,5 +689,19 @@ func TestResumeInterruptedLegacyCheckpointFailsClosed(t *testing.T) {
 	}
 	if len(resumeRunner.prompts) != 0 {
 		t.Fatalf("旧形式checkpointでmodel呼出を実行しています: %v", resumeRunner.prompts)
+	}
+}
+
+func writeRetentionFile(t *testing.T, path string, data []byte, mode os.FileMode) {
+	t.Helper()
+	if err := os.WriteFile(path, data, mode); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func makeRetentionDir(t *testing.T, path string, mode os.FileMode) {
+	t.Helper()
+	if err := os.Mkdir(path, mode); err != nil {
+		t.Fatal(err)
 	}
 }

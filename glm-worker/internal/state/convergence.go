@@ -13,26 +13,6 @@ import (
 	"time"
 )
 
-const roundLogVersion = 1
-
-const (
-	RoundPathClassDoc   = "doc"
-	RoundPathClassCode  = "code"
-	RoundPathClassOther = "other"
-)
-
-const (
-	RoundDeltaBaseline      = "baseline"
-	RoundDeltaInitial       = "initial"
-	RoundDeltaSameSnapshot  = "same-snapshot"
-	RoundDeltaCommentFormat = "comment-format-only"
-	RoundDeltaDocChange     = "doc-change"
-	RoundDeltaSemantic      = "semantic-change"
-	RoundDeltaUnknown       = "unknown"
-)
-
-const RoundWorkerPhaseBaseline = "baseline"
-
 type RoundPathState struct {
 	Path           string `json:"path"`
 	Class          string `json:"class"`
@@ -53,6 +33,39 @@ type RoundRecord struct {
 	Paths        []RoundPathState `json:"paths,omitempty"`
 	CaptureError string           `json:"capture_error,omitempty"`
 }
+
+type RoundDelta struct {
+	Class         string
+	ChangedPaths  int
+	SemanticPaths int
+	DocPaths      int
+}
+
+const roundLogVersion = 1
+
+const (
+	RoundPathClassDoc   = "doc"
+	RoundPathClassCode  = "code"
+	RoundPathClassOther = "other"
+)
+
+const (
+	RoundDeltaBaseline      = "baseline"
+	RoundDeltaInitial       = "initial"
+	RoundDeltaSameSnapshot  = "same-snapshot"
+	RoundDeltaCommentFormat = "comment-format-only"
+	RoundDeltaDocChange     = "doc-change"
+	RoundDeltaSemantic      = "semantic-change"
+	RoundDeltaUnknown       = "unknown"
+)
+
+const RoundWorkerPhaseBaseline = "baseline"
+
+const (
+	roundCommentSlash = "slash"
+	roundCommentHash  = "hash"
+	roundCommentNone  = "none"
+)
 
 func (s *StateStore) RoundLogPath(taskID string) string {
 	return s.Path(filepath.Join("rounds", taskID+".jsonl"))
@@ -84,12 +97,12 @@ func (s *StateStore) AppendRoundRecord(record RoundRecord) error {
 		return err
 	}
 	if err := file.Chmod(0o600); err != nil {
-		file.Close()
+		_ = file.Close()
 		warnRoundRecordFailure("log chmod", err)
 		return err
 	}
 	if _, err := file.Write(append(data, '\n')); err != nil {
-		file.Close()
+		_ = file.Close()
 		warnRoundRecordFailure("追記", err)
 		return err
 	}
@@ -189,12 +202,6 @@ func RoundPathClass(path string) string {
 	}
 	return RoundPathClassOther
 }
-
-const (
-	roundCommentSlash = "slash"
-	roundCommentHash  = "hash"
-	roundCommentNone  = "none"
-)
 
 func roundCommentKind(path string) string {
 	switch strings.ToLower(filepath.Ext(path)) {
@@ -330,13 +337,6 @@ func isDirectiveIdentChar(char byte, first bool) bool {
 func roundDigest(content []byte) string {
 	sum := sha256.Sum256(content)
 	return hex.EncodeToString(sum[:])
-}
-
-type RoundDelta struct {
-	Class         string
-	ChangedPaths  int
-	SemanticPaths int
-	DocPaths      int
 }
 
 func CompareRoundRecords(prev, curr *RoundRecord) RoundDelta {

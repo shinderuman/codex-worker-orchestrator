@@ -14,28 +14,6 @@ import (
 	"time"
 )
 
-const (
-	fiveHourWindowMins  = int64(300)
-	weeklyWindowMins    = int64(10080)
-	requestIDInitialize = int64(1)
-	requestIDRateLimits = int64(2)
-	appServerTimeout    = 30 * time.Second
-	clientName          = "glm-worker"
-	clientVersion       = "1"
-	stderrTailLimit     = 500
-)
-
-var (
-	ErrCodexBinaryNotFound     = errors.New("codex binary not found")
-	ErrAppServerStart          = errors.New("codex app-server failed to start")
-	ErrAppServerProtocol       = errors.New("codex app-server protocol failure")
-	ErrAppServerTimeout        = errors.New("codex app-server response timed out")
-	ErrRateLimitsRead          = errors.New("account/rateLimits/read returned no usable codex rate limits")
-	ErrFiveHourWindowMissing   = errors.New("rate limits response has no 300-minute window")
-	ErrWindowAmbiguous         = errors.New("rate limits response has duplicate windows for one duration")
-	ErrFiveHourResetsAtMissing = errors.New("300-minute window has no resetsAt")
-)
-
 type Window struct {
 	UsedPercent        *int64  `json:"used_percent"`
 	WindowDurationMins int64   `json:"window_duration_mins"`
@@ -98,6 +76,28 @@ type rpcError struct {
 	Message string          `json:"message"`
 	Data    json.RawMessage `json:"data"`
 }
+
+const (
+	fiveHourWindowMins  = int64(300)
+	weeklyWindowMins    = int64(10080)
+	requestIDInitialize = int64(1)
+	requestIDRateLimits = int64(2)
+	appServerTimeout    = 30 * time.Second
+	clientName          = "glm-worker"
+	clientVersion       = "1"
+	stderrTailLimit     = 500
+)
+
+var (
+	ErrCodexBinaryNotFound     = errors.New("codex binary not found")
+	ErrAppServerStart          = errors.New("codex app-server failed to start")
+	ErrAppServerProtocol       = errors.New("codex app-server protocol failure")
+	ErrAppServerTimeout        = errors.New("codex app-server response timed out")
+	ErrRateLimitsRead          = errors.New("account/rateLimits/read returned no usable codex rate limits")
+	ErrFiveHourWindowMissing   = errors.New("rate limits response has no 300-minute window")
+	ErrWindowAmbiguous         = errors.New("rate limits response has duplicate windows for one duration")
+	ErrFiveHourResetsAtMissing = errors.New("300-minute window has no resetsAt")
+)
 
 func Read(bin string) (Snapshot, error) {
 	return ReadWithTimeout(bin, appServerTimeout)

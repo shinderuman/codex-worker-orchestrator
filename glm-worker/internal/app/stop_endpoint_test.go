@@ -197,7 +197,7 @@ func TestStopEndpointCloseWaitsForPendingRequestAck(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	if _, err := conn.Write([]byte(stopRequestLine)); err != nil {
 		t.Fatal(err)
 	}

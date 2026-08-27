@@ -9,6 +9,33 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 )
 
+type ParentReviewOpenState struct {
+	PacketStatus string `json:"packet_status"`
+	Role         string `json:"role,omitempty"`
+	ModelAlias   string `json:"model_alias,omitempty"`
+	Risk         string `json:"risk,omitempty"`
+}
+
+type ParentReviewProducer struct {
+	Role  string
+	Model string
+}
+
+type ParentReworkOrigin struct {
+	Calls            int
+	WorkerCalls      int
+	ReviewerCalls    int
+	Turns            int
+	TreeInputTokens  int64
+	TreeOutputTokens int64
+	WallDurationMS   int64
+}
+
+type ParentReworkSummary struct {
+	ByOrigin map[string]ParentReworkOrigin
+	Coverage string
+}
+
 const (
 	ParentOutcomeAccepted = "accepted"
 	ParentOutcomeFix      = "fix"
@@ -23,6 +50,18 @@ const (
 	ParentOriginExternalReview = "external-review"
 	ParentOriginMetadataRepair = "metadata-repair"
 	ParentOriginUnknown        = "unknown"
+)
+
+const (
+	ParentPhaseAccept   = "parent-accept"
+	ParentPhaseFix      = "parent-fix"
+	ParentPhaseDecision = "parent-decision"
+	ParentPhaseClose    = "parent-close"
+)
+
+const (
+	ParentReworkCoverageComplete = "complete"
+	ParentReworkCoverageUnknown  = "unknown"
 )
 
 var parentOutcomeKinds = map[string]bool{
@@ -40,20 +79,8 @@ func ValidParentOrigin(value string) bool {
 	return false
 }
 
-type ParentReviewOpenState struct {
-	PacketStatus string `json:"packet_status"`
-	Role         string `json:"role,omitempty"`
-	ModelAlias   string `json:"model_alias,omitempty"`
-	Risk         string `json:"risk,omitempty"`
-}
-
-type ParentReviewProducer struct {
-	Role  string
-	Model string
-}
-
 func (stats *TaskStats) openParentReview(status string, risk string, producer ParentReviewProducer) {
-	stats.resolveParentOutcome(ParentOutcomeUnknown, "")
+	_, _, _ = stats.resolveParentOutcome(ParentOutcomeUnknown, "")
 	stats.ParentReviewOpen = &ParentReviewOpenState{
 		PacketStatus: status,
 		Role:         producer.Role,
@@ -127,13 +154,6 @@ func (s *StateStore) OpenParentReviewLabel() string {
 	return stats.ParentReviewOpen.PacketStatus
 }
 
-const (
-	ParentPhaseAccept   = "parent-accept"
-	ParentPhaseFix      = "parent-fix"
-	ParentPhaseDecision = "parent-decision"
-	ParentPhaseClose    = "parent-close"
-)
-
 func parentPhaseOfKind(kind string) string {
 	switch kind {
 	case ParentOutcomeAccepted:
@@ -162,26 +182,6 @@ func (s *StateStore) appendParentOutcomeEvent(taskID string, phase string, kind 
 		WorkerReportedRisk: resolved.Risk,
 		ParentOrigin:       origin,
 	})
-}
-
-const (
-	ParentReworkCoverageComplete = "complete"
-	ParentReworkCoverageUnknown  = "unknown"
-)
-
-type ParentReworkOrigin struct {
-	Calls            int
-	WorkerCalls      int
-	ReviewerCalls    int
-	Turns            int
-	TreeInputTokens  int64
-	TreeOutputTokens int64
-	WallDurationMS   int64
-}
-
-type ParentReworkSummary struct {
-	ByOrigin map[string]ParentReworkOrigin
-	Coverage string
 }
 
 func isParentOutcomePhase(phase string) bool {

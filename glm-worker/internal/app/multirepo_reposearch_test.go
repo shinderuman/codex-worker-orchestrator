@@ -17,6 +17,13 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/reposearch"
 )
 
+type multiRepoSearchReport struct {
+	Error       string   `json:"error,omitempty"`
+	CacheStatus string   `json:"cache_status"`
+	Paths       []string `json:"paths"`
+	Snippets    []string `json:"snippets"`
+}
+
 func TestMultiRepositorySearchCacheProcessIsolation(t *testing.T) {
 	if os.Getenv("GLM_WORKER_REPOSEARCH_HELPER") == "1" {
 		multiRepoSearchHelper()
@@ -70,19 +77,12 @@ func TestMultiRepositorySearchCacheProcessIsolation(t *testing.T) {
 	assertSearchReportIsolated(t, reused, "mrsearchalpha", "mrsearchbeta")
 }
 
-type multiRepoSearchReport struct {
-	Error       string   `json:"error,omitempty"`
-	CacheStatus string   `json:"cache_status"`
-	Paths       []string `json:"paths"`
-	Snippets    []string `json:"snippets"`
-}
-
 func runMultiRepoSearchChild(home string, repo string, query string) (multiRepoSearchReport, error) {
 	outDir, err := os.MkdirTemp("", "glm-worker-search-child-*")
 	if err != nil {
 		return multiRepoSearchReport{}, err
 	}
-	defer os.RemoveAll(outDir)
+	defer func() { _ = os.RemoveAll(outDir) }()
 	outPath := filepath.Join(outDir, "search-report.json")
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()

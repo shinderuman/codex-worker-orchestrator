@@ -12,12 +12,6 @@ import (
 
 type Outcome int
 
-const (
-	Pass Outcome = iota
-	Fail
-	Unavailable
-)
-
 type Params struct {
 	AutomationKey    string
 	ExpectedRFC3339  string
@@ -54,6 +48,14 @@ type Result struct {
 }
 
 type DBReader func(dbPath, key string) (DBRow, error)
+
+const (
+	Pass Outcome = iota
+	Fail
+	Unavailable
+)
+
+const dtStartLayout = "20060102T150405"
 
 var (
 	ErrSqlite3NotFound = errors.New("sqlite3 binary not found")
@@ -142,8 +144,6 @@ func expectedFromRFC3339(rfc3339 string) (time.Time, string, int64, error) {
 	utc := t.UTC()
 	return utc, utc.Format(dtStartLayout), utc.UnixMilli(), nil
 }
-
-const dtStartLayout = "20060102T150405"
 
 func checkTOML(toml AutomationTOML, params Params, expectedDTStart string) string {
 	if toml.ID != params.AutomationKey {

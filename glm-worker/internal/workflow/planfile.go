@@ -18,15 +18,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-const (
-	implementationPlanFile    = state.ParentPlanFile
-	implementationRulesFile   = state.ParentRulesFile
-	implementationTasksDir    = state.ParentTasksDir
-	implementationHistoryFile = state.ParentHistoryFile
-)
-
-var errParentFileGuardStopped = errors.New("parent-owned file guard stopped workflow")
-
 type parentFileGuard struct {
 	files    state.ParentFileStates
 	guarded  bool
@@ -41,6 +32,23 @@ type guardSurface struct {
 	invariants    string
 	targets       string
 }
+
+type parentFileTracking int
+
+const (
+	implementationPlanFile    = state.ParentPlanFile
+	implementationRulesFile   = state.ParentRulesFile
+	implementationTasksDir    = state.ParentTasksDir
+	implementationHistoryFile = state.ParentHistoryFile
+)
+
+const (
+	parentFileTrackingTracked parentFileTracking = iota + 1
+	parentFileTrackingUntracked
+	parentFileTrackingOutsideGit
+)
+
+var errParentFileGuardStopped = errors.New("parent-owned file guard stopped workflow")
 
 var parentMetadataGuardSurface = guardSurface{
 	label:         "親管理implementation metadata",
@@ -174,14 +182,6 @@ func quietWhenParentFileGuardStopped(err error) error {
 	}
 	return err
 }
-
-type parentFileTracking int
-
-const (
-	parentFileTrackingTracked parentFileTracking = iota + 1
-	parentFileTrackingUntracked
-	parentFileTrackingOutsideGit
-)
 
 func gitWorktreePresent(repoRoot string) (bool, error) {
 	for dir := repoRoot; ; dir = filepath.Dir(dir) {

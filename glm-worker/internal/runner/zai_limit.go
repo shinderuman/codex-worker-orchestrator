@@ -8,6 +8,20 @@ import (
 	"time"
 )
 
+type ZaiFiveHourLimit struct {
+	ResetAtCST     string
+	ResetAtRFC3339 string
+}
+
+type ZaiRateLimitError struct {
+	Phase           string
+	Limit           ZaiFiveHourLimit
+	TaskID          string
+	RepoRoot        string
+	RepoShort       string
+	ArtifactWarning string
+}
+
 const (
 	zaiFiveHourLimitCode = "1308"
 	zaiFiveHourMessage   = "Usage limit reached for 5 hour."
@@ -15,11 +29,6 @@ const (
 )
 
 var zaiResetPattern = regexp.MustCompile(`Your limit will reset at ([0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2})`)
-
-type ZaiFiveHourLimit struct {
-	ResetAtCST     string
-	ResetAtRFC3339 string
-}
 
 func DetectZaiFiveHourLimit(path string) (ZaiFiveHourLimit, bool) {
 	data, err := os.ReadFile(path)
@@ -59,15 +68,6 @@ func DetectZaiFiveHourLimitText(output string) (ZaiFiveHourLimit, bool) {
 	}
 
 	return limit, true
-}
-
-type ZaiRateLimitError struct {
-	Phase           string
-	Limit           ZaiFiveHourLimit
-	TaskID          string
-	RepoRoot        string
-	RepoShort       string
-	ArtifactWarning string
 }
 
 func (e ZaiRateLimitError) Error() string {

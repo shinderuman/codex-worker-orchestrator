@@ -13,6 +13,12 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
+type isolationMigrationFixture struct {
+	runner  *ClaudeRunner
+	state   *state.StateStore
+	argsDir string
+}
+
 func newTestStateStore(t *testing.T) *state.StateStore {
 	t.Helper()
 	st, err := state.NewStateStore(config.AppConfig{
@@ -589,12 +595,6 @@ func TestClaudeRunnerReMintSessionOnStaleIsolationPolicy(t *testing.T) {
 	if policy := st.IsolationPolicy(); policy != isolationPolicyVersion {
 		t.Fatalf("policy = %q, want %q", policy, isolationPolicyVersion)
 	}
-}
-
-type isolationMigrationFixture struct {
-	runner  *ClaudeRunner
-	state   *state.StateStore
-	argsDir string
 }
 
 func newIsolationMigrationFixture(t *testing.T) isolationMigrationFixture {

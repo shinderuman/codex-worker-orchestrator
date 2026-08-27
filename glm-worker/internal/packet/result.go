@@ -7,32 +7,9 @@ import (
 	"fmt"
 )
 
-const (
-	MaxPacketBytes     = 6 * 1024
-	MaxFieldBytes      = 1536
-	MaxDiagnosticBytes = 6 * 1024
-)
-
 type Status string
 
-const (
-	StatusImplemented      Status = "IMPLEMENTED"
-	StatusNeedsSolDecision Status = "NEEDS_SOL_DECISION"
-	StatusPass             Status = "PASS"
-	StatusFixRequired      Status = "FIX_REQUIRED"
-	StatusNeedsSolReview   Status = "NEEDS_SOL_REVIEW"
-)
-
 type Risk string
-
-const (
-	RiskLow  Risk = "LOW"
-	RiskHigh Risk = "HIGH"
-)
-
-const ReportOnlyTargets = "PACKET"
-
-const noneTargetsSentinel = "none"
 
 type Result struct {
 	Status              Status   `json:"status"`
@@ -59,33 +36,33 @@ type mismatchError struct {
 	reason string
 }
 
-func (e *mismatchError) Error() string {
-	return e.reason
-}
-
-func IsMismatchError(err error) bool {
-	var target *mismatchError
-	return errors.As(err, &target)
-}
-
-func ParseStructured(data []byte) (Result, error) {
-	if len(bytes.TrimSpace(data)) == 0 || string(bytes.TrimSpace(data)) == "null" {
-		return Result{}, &mismatchError{reason: "result eventにstructured_outputがありません"}
-	}
-	var result Result
-	if err := json.Unmarshal(data, &result); err != nil {
-		return Result{}, &mismatchError{reason: fmt.Sprintf("structured_outputをResultへ解析できません: %v", err)}
-	}
-	if result.Status == "" {
-		return Result{}, &mismatchError{reason: "structured_outputのstatusが空です"}
-	}
-	return result, nil
-}
-
 type contractField struct {
 	machine string
 	value   func(Result) string
 }
+
+const (
+	MaxPacketBytes     = 6 * 1024
+	MaxFieldBytes      = 1536
+	MaxDiagnosticBytes = 6 * 1024
+)
+
+const (
+	StatusImplemented      Status = "IMPLEMENTED"
+	StatusNeedsSolDecision Status = "NEEDS_SOL_DECISION"
+	StatusPass             Status = "PASS"
+	StatusFixRequired      Status = "FIX_REQUIRED"
+	StatusNeedsSolReview   Status = "NEEDS_SOL_REVIEW"
+)
+
+const (
+	RiskLow  Risk = "LOW"
+	RiskHigh Risk = "HIGH"
+)
+
+const ReportOnlyTargets = "PACKET"
+
+const noneTargetsSentinel = "none"
 
 var implementedContractFields = []contractField{
 	{"summary", func(r Result) string { return r.Summary }},
@@ -113,6 +90,29 @@ var reviewerContractFields = []contractField{
 
 var needsSolReviewContractFields = append(append([]contractField{}, reviewerContractFields...),
 	contractField{"sol_question", func(r Result) string { return r.SolQuestion }})
+
+func (e *mismatchError) Error() string {
+	return e.reason
+}
+
+func IsMismatchError(err error) bool {
+	var target *mismatchError
+	return errors.As(err, &target)
+}
+
+func ParseStructured(data []byte) (Result, error) {
+	if len(bytes.TrimSpace(data)) == 0 || string(bytes.TrimSpace(data)) == "null" {
+		return Result{}, &mismatchError{reason: "result eventにstructured_outputがありません"}
+	}
+	var result Result
+	if err := json.Unmarshal(data, &result); err != nil {
+		return Result{}, &mismatchError{reason: fmt.Sprintf("structured_outputをResultへ解析できません: %v", err)}
+	}
+	if result.Status == "" {
+		return Result{}, &mismatchError{reason: "structured_outputのstatusが空です"}
+	}
+	return result, nil
+}
 
 func (r Result) contractFields() []contractField {
 	switch r.Status {

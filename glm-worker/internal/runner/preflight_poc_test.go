@@ -12,6 +12,23 @@ import (
 	"testing"
 )
 
+type claudePreflightFeature struct {
+	flag     string
+	surfaces string
+}
+
+type claudePreflightFailure struct {
+	category string
+	feature  string
+	detail   string
+}
+
+type claudePreflightReport struct {
+	version  string
+	ok       bool
+	failures []claudePreflightFailure
+}
+
 const (
 	preflightBinaryAbsent         = "binary-absent"
 	preflightBinaryNotExecutable  = "binary-not-executable"
@@ -21,11 +38,6 @@ const (
 	preflightOutputFormatsMissing = "output-format-vocabulary-missing"
 	preflightFakeUnexpectedArgsEc = 87
 )
-
-type claudePreflightFeature struct {
-	flag     string
-	surfaces string
-}
 
 var claudePreflightFeatures = []claudePreflightFeature{
 	{flag: "-p", surfaces: "run+probe"},
@@ -51,17 +63,7 @@ var claudePreflightFeatures = []claudePreflightFeature{
 	{flag: "--tools", surfaces: "run+probe"},
 }
 
-type claudePreflightFailure struct {
-	category string
-	feature  string
-	detail   string
-}
-
-type claudePreflightReport struct {
-	version  string
-	ok       bool
-	failures []claudePreflightFailure
-}
+var claudeHelpDeclarationLinePattern = regexp.MustCompile(`^[ \t]{0,6}-`)
 
 func claudeCompatPreflight(bin string) claudePreflightReport {
 	report := claudePreflightReport{}
@@ -158,8 +160,6 @@ func claudeHelpDocumentsOutputFormats(help string) bool {
 	block := claudeHelpOutputFormatBlock(help)
 	return strings.Contains(block, `"json"`) && strings.Contains(block, `"stream-json"`)
 }
-
-var claudeHelpDeclarationLinePattern = regexp.MustCompile(`^[ \t]{0,6}-`)
 
 func claudeHelpOutputFormatBlock(help string) string {
 	lines := strings.Split(help, "\n")

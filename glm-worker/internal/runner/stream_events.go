@@ -10,17 +10,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-const plainSignalMaxBytes = 64 * 1024
-
-const maxStreamEventRecordsPerCall = 50000
-
-const liveStatusWriteInterval = time.Second
-
-const (
-	liveCommandMaxBytes = 2048
-	livePurposeMaxBytes = 512
-)
-
 type streamEventIngester struct {
 	state      *state.StateStore
 	base       state.TaskEventRecord
@@ -47,6 +36,51 @@ type toolUseObservation struct {
 	background bool
 	waitTaskID string
 }
+
+type liveToolDetail struct {
+	command    string
+	purpose    string
+	background bool
+	waitTaskID string
+}
+
+type streamEvent struct {
+	Type          string                `json:"type"`
+	Subtype       string                `json:"subtype"`
+	Model         string                `json:"model"`
+	Message       json.RawMessage       `json:"message"`
+	IsError       bool                  `json:"is_error"`
+	DurationMS    int64                 `json:"duration_ms"`
+	DurationAPIMS int64                 `json:"duration_api_ms"`
+	NumTurns      int                   `json:"num_turns"`
+	TotalCostUSD  float64               `json:"total_cost_usd"`
+	Usage         *state.TaskEventUsage `json:"usage"`
+}
+
+type streamMessage struct {
+	Model   string                `json:"model"`
+	Usage   *state.TaskEventUsage `json:"usage"`
+	Content []json.RawMessage     `json:"content"`
+}
+
+type streamBlock struct {
+	Type      string `json:"type"`
+	Name      string `json:"name"`
+	ID        string `json:"id"`
+	ToolUseID string `json:"tool_use_id"`
+	IsError   bool   `json:"is_error"`
+}
+
+const plainSignalMaxBytes = 64 * 1024
+
+const maxStreamEventRecordsPerCall = 50000
+
+const liveStatusWriteInterval = time.Second
+
+const (
+	liveCommandMaxBytes = 2048
+	livePurposeMaxBytes = 512
+)
 
 func newStreamEventIngester(
 	st *state.StateStore,
@@ -230,13 +264,6 @@ func liveToolsSnapshot(tools map[string]toolUseObservation) []state.TaskLiveTool
 	return result
 }
 
-type liveToolDetail struct {
-	command    string
-	purpose    string
-	background bool
-	waitTaskID string
-}
-
 func extractLiveToolDetail(input json.RawMessage) liveToolDetail {
 	if len(input) == 0 {
 		return liveToolDetail{}
@@ -321,33 +348,6 @@ func streamResultEvent(line []byte) bool {
 		Type string `json:"type"`
 	}
 	return json.Unmarshal(line, &head) == nil && head.Type == "result"
-}
-
-type streamEvent struct {
-	Type          string                `json:"type"`
-	Subtype       string                `json:"subtype"`
-	Model         string                `json:"model"`
-	Message       json.RawMessage       `json:"message"`
-	IsError       bool                  `json:"is_error"`
-	DurationMS    int64                 `json:"duration_ms"`
-	DurationAPIMS int64                 `json:"duration_api_ms"`
-	NumTurns      int                   `json:"num_turns"`
-	TotalCostUSD  float64               `json:"total_cost_usd"`
-	Usage         *state.TaskEventUsage `json:"usage"`
-}
-
-type streamMessage struct {
-	Model   string                `json:"model"`
-	Usage   *state.TaskEventUsage `json:"usage"`
-	Content []json.RawMessage     `json:"content"`
-}
-
-type streamBlock struct {
-	Type      string `json:"type"`
-	Name      string `json:"name"`
-	ID        string `json:"id"`
-	ToolUseID string `json:"tool_use_id"`
-	IsError   bool   `json:"is_error"`
 }
 
 func reduceStreamEvent(line []byte, base state.TaskEventRecord, seq int, observedAt time.Time) state.TaskEventRecord {

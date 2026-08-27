@@ -19,6 +19,11 @@ type ProbeResult struct {
 	ModelUsage    map[string]ModelUsage
 }
 
+type ProbeInvalidResponseError struct {
+	Model  string
+	Reason error
+}
+
 const ProbeSentinel = "GLM_WORKER_PROBE_OK"
 
 const ProbePrompt = "Reply with exactly GLM_WORKER_PROBE_OK and nothing else."
@@ -55,7 +60,7 @@ func (r *ClaudeRunner) Probe(model string) (ProbeResult, error) {
 	if err != nil {
 		return ProbeResult{}, fmt.Errorf("probe dirを作成できません: %w", err)
 	}
-	defer os.RemoveAll(probeDir)
+	defer func() { _ = os.RemoveAll(probeDir) }()
 
 	rawOutputPath := filepath.Join(probeDir, "probe.json")
 	stderrPath := filepath.Join(probeDir, "probe.stderr")
@@ -65,16 +70,16 @@ func (r *ClaudeRunner) Probe(model string) (ProbeResult, error) {
 	}
 	stderr, err := createPrivateFile(stderrPath)
 	if err != nil {
-		output.Close()
+		_ = output.Close()
 		return ProbeResult{}, err
 	}
 	devNull, err := os.Open(os.DevNull)
 	if err != nil {
-		output.Close()
-		stderr.Close()
+		_ = output.Close()
+		_ = stderr.Close()
 		return ProbeResult{}, fmt.Errorf("/dev/nullを開けません: %w", err)
 	}
-	defer devNull.Close()
+	defer func() { _ = devNull.Close() }()
 
 	command := exec.Command(r.config.ClaudeBin, args...)
 	command.Dir = probeDir
@@ -120,11 +125,6 @@ func (r *ClaudeRunner) Probe(model string) (ProbeResult, error) {
 		return result, &ProbeInvalidResponseError{Model: model, Reason: err}
 	}
 	return result, nil
-}
-
-type ProbeInvalidResponseError struct {
-	Model  string
-	Reason error
 }
 
 func (e *ProbeInvalidResponseError) Error() string {

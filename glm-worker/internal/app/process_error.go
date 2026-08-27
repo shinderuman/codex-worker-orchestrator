@@ -10,6 +10,16 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
 )
 
+type processErrorBody struct {
+	Kind    string         `json:"kind"`
+	Message string         `json:"message"`
+	Detail  map[string]any `json:"detail,omitempty"`
+}
+
+type processErrorEnvelope struct {
+	Error processErrorBody `json:"error"`
+}
+
 const (
 	errorKindUsage                   = "usage"
 	errorKindStdinPayload            = "stdin_payload"
@@ -29,16 +39,6 @@ const (
 	errorKindMachineOutputViolation  = "machine_output_violation"
 	errorKindInternal                = "internal"
 )
-
-type processErrorBody struct {
-	Kind    string         `json:"kind"`
-	Message string         `json:"message"`
-	Detail  map[string]any `json:"detail,omitempty"`
-}
-
-type processErrorEnvelope struct {
-	Error processErrorBody `json:"error"`
-}
 
 func WriteProcessError(w io.Writer, err error) error {
 	return writeJSON(w, processErrorEnvelope{Error: buildProcessError(err)})

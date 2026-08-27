@@ -9,12 +9,6 @@ import (
 	"strings"
 )
 
-const isolationStateFile = "isolation.json"
-
-const isolationOriginStateFile = "isolation.origin.json"
-
-const isolationRecordVersion = 1
-
 type IsolationRecord struct {
 	Version        int    `json:"version"`
 	IsolationID    string `json:"isolation_id"`
@@ -34,6 +28,12 @@ type IsolationOrigin struct {
 	Branch         string `json:"branch"`
 	CreatedAt      string `json:"created_at"`
 }
+
+const isolationStateFile = "isolation.json"
+
+const isolationOriginStateFile = "isolation.origin.json"
+
+const isolationRecordVersion = 1
 
 var ErrNoIsolationRecord = errors.New("isolation record is not available")
 

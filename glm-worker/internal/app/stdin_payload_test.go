@@ -281,7 +281,7 @@ func TestRunDecisionStdinEmitsNoReadyMarkerForNonTTY(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer pipeReader.Close()
+	defer func() { _ = pipeReader.Close() }()
 	go func() {
 		_, _ = pipeWriter.Write([]byte(payload))
 		_ = pipeWriter.Close()
@@ -322,7 +322,7 @@ func TestRunDecisionStdinPreservesNULBytesOverPipeFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer pipeReader.Close()
+	defer func() { _ = pipeReader.Close() }()
 	go func() {
 		_, _ = pipeWriter.Write([]byte(payload))
 		_ = pipeWriter.Close()

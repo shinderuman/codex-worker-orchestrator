@@ -18,29 +18,6 @@ import (
 
 type CommandMode int
 
-const (
-	ModeNewTask CommandMode = iota
-	ModeDecision
-	ModeFix
-	ModeAccept
-	ModeResume
-	ModeStop
-	ModeIsolate
-	ModeStatus
-	ModeWatch
-	ModeTimeline
-	ModeConvergence
-	ModeStats
-	ModeReset
-	ModeVerifyAutoResume
-	ModeCheckWakeCoalesce
-	ModeEvalAB
-	ModeCallOutliers
-	ModeCodexLimit
-	ModeInstallSmoke
-	ModeQualityGate
-)
-
 type Command struct {
 	Mode    CommandMode
 	Payload string
@@ -68,22 +45,56 @@ type CoalesceArgs struct {
 	ResumeAtRFC3339 string
 }
 
+type UsageError struct {
+	Message string
+}
+
+type NotFoundError struct {
+	Message string
+}
+
+type StdinPayloadError struct {
+	Message string
+}
+
+type stdinReadyControlEvent struct {
+	Type  string `json:"type"`
+	Event string `json:"event"`
+}
+
+type RunnerFactory func(cfg config.AppConfig, st *state.StateStore, stop *runner.StopController) workflow.ModelRunner
+
+const (
+	ModeNewTask CommandMode = iota
+	ModeDecision
+	ModeFix
+	ModeAccept
+	ModeResume
+	ModeStop
+	ModeIsolate
+	ModeStatus
+	ModeWatch
+	ModeTimeline
+	ModeConvergence
+	ModeStats
+	ModeReset
+	ModeVerifyAutoResume
+	ModeCheckWakeCoalesce
+	ModeEvalAB
+	ModeCallOutliers
+	ModeCodexLimit
+	ModeInstallSmoke
+	ModeQualityGate
+)
+
 const fixOriginUsage = "[--origin codex-review|glm-reviewer|user-amendment|external-review|metadata-repair]"
 
 const installSmokeUsage = "[--role worker|reviewer|fix|parent]"
 
 const qualityGateUsage = "<go-test|go-test-race>"
 
-type UsageError struct {
-	Message string
-}
-
 func (e *UsageError) Error() string {
 	return e.Message
-}
-
-type NotFoundError struct {
-	Message string
 }
 
 func (e *NotFoundError) Error() string {
@@ -280,10 +291,6 @@ func parsePayloadSHA256(value string) (string, error) {
 	return strings.ToLower(value), nil
 }
 
-type StdinPayloadError struct {
-	Message string
-}
-
 func (e *StdinPayloadError) Error() string {
 	return e.Message
 }
@@ -306,11 +313,6 @@ func readStdinPayload(in io.Reader, want int64, expectedSHA string) (string, err
 	return string(payload), nil
 }
 
-type stdinReadyControlEvent struct {
-	Type  string `json:"type"`
-	Event string `json:"event"`
-}
-
 func emitStdinReadyControlEvent(w io.Writer) error {
 	line, err := marshalEventLine(stdinReadyControlEvent{Type: "control", Event: "stdin_ready"})
 	if err != nil {
@@ -321,8 +323,6 @@ func emitStdinReadyControlEvent(w io.Writer) error {
 	}
 	return nil
 }
-
-type RunnerFactory func(cfg config.AppConfig, st *state.StateStore, stop *runner.StopController) workflow.ModelRunner
 
 func defaultRunnerFactory(cfg config.AppConfig, st *state.StateStore, stop *runner.StopController) workflow.ModelRunner {
 	r := runner.NewClaudeRunner(cfg, st)
@@ -418,7 +418,7 @@ func Execute(cmd Command, cfg config.AppConfig, rf RunnerFactory, stdout, stderr
 	if err != nil {
 		return err
 	}
-	defer lock.Close()
+	defer func() { _ = lock.Close() }()
 
 	if cmd.Mode == ModeReset {
 		return resetState(st, stdout)

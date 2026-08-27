@@ -11,8 +11,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-const defaultWatchFollowInterval = 500 * time.Millisecond
-
 type watchOptions struct {
 	verbose        bool
 	followInterval time.Duration
@@ -24,6 +22,27 @@ type watchOptions struct {
 	openEventLog func(path string) (*os.File, error)
 	statEventLog func(path string) (os.FileInfo, error)
 }
+
+type watchStartEvent struct {
+	Type           string  `json:"type"`
+	TaskID         *string `json:"task_id"`
+	EventLog       *string `json:"event_log"`
+	EventLogStatus string  `json:"event_log_status"`
+}
+
+type watchLogStatusEvent struct {
+	Type   string `json:"type"`
+	Status string `json:"status"`
+}
+
+type watchExitEvent struct {
+	Type      string  `json:"type"`
+	TaskID    string  `json:"task_id"`
+	Status    string  `json:"status"`
+	NewTaskID *string `json:"new_task_id,omitempty"`
+}
+
+const defaultWatchFollowInterval = 500 * time.Millisecond
 
 func (o watchOptions) openLog(path string) (*os.File, error) {
 	if o.openEventLog != nil {
@@ -49,25 +68,6 @@ func defaultWatchOptions(verbose bool) watchOptions {
 	}
 }
 
-type watchStartEvent struct {
-	Type           string  `json:"type"`
-	TaskID         *string `json:"task_id"`
-	EventLog       *string `json:"event_log"`
-	EventLogStatus string  `json:"event_log_status"`
-}
-
-type watchLogStatusEvent struct {
-	Type   string `json:"type"`
-	Status string `json:"status"`
-}
-
-type watchExitEvent struct {
-	Type      string  `json:"type"`
-	TaskID    string  `json:"task_id"`
-	Status    string  `json:"status"`
-	NewTaskID *string `json:"new_task_id,omitempty"`
-}
-
 func printWatch(st *state.StateStore, stdout io.Writer, opts watchOptions) error {
 	taskID := st.ReadOr("task.id", "")
 	if taskID == "" {
@@ -85,7 +85,7 @@ func printWatch(st *state.StateStore, stdout io.Writer, opts watchOptions) error
 			Type: "watch_start", TaskID: &taskID, EventLog: &path, EventLogStatus: "empty",
 		})
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	if err := writeWatchEvent(stdout, watchStartEvent{
 		Type: "watch_start", TaskID: &taskID, EventLog: &path, EventLogStatus: "following",
 	}); err != nil {

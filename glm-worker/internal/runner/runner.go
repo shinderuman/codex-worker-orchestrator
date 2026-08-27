@@ -18,55 +18,9 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-const isolationPolicyVersion = "claude-isolation-1"
-
-const subtypeStructuredOutputRetryExhausted = "error_max_structured_output_retries"
-
-const readOnlyTools = "Read,Grep,Glob,WebFetch,WebSearch"
-
-var readOnlyDisallowedTools = []string{"Edit", "Write", "NotebookEdit", "Agent", "Bash"}
-
 type StructuredOutputError struct {
 	Subtype        string
 	TerminalReason string
-}
-
-func (e *StructuredOutputError) Error() string {
-	if e.Subtype != "" {
-		return fmt.Sprintf("structured outputが得られませんでした: subtype=%s", e.Subtype)
-	}
-	return "structured outputが得られませんでした: result eventにstructured_outputがありません"
-}
-
-func IsStructuredOutputError(err error) bool {
-	var target *StructuredOutputError
-	return errors.As(err, &target)
-}
-
-func (e *StructuredOutputError) RetryExhausted() bool {
-	return e.Subtype == subtypeStructuredOutputRetryExhausted
-}
-
-var (
-	workerSchemaOnce   sync.Once
-	reviewerSchemaOnce sync.Once
-	workerSchemaValue  string
-	workerSchemaErr    error
-	reviewerSchemaVal  string
-	reviewerSchemaFail error
-)
-
-func structuredSchema(role state.SessionRole) (string, error) {
-	if role == state.ReviewerRole {
-		reviewerSchemaOnce.Do(func() {
-			reviewerSchemaVal, reviewerSchemaFail = packet.ReviewerSchemaJSON()
-		})
-		return reviewerSchemaVal, reviewerSchemaFail
-	}
-	workerSchemaOnce.Do(func() {
-		workerSchemaValue, workerSchemaErr = packet.WorkerSchemaJSON()
-	})
-	return workerSchemaValue, workerSchemaErr
 }
 
 type ClaudeRunner struct {
@@ -122,6 +76,67 @@ type claudeJSONResult struct {
 	TotalCostUSD   float64               `json:"total_cost_usd"`
 	Usage          TokenUsage            `json:"usage"`
 	ModelUsage     map[string]ModelUsage `json:"modelUsage"`
+}
+
+const isolationPolicyVersion = "claude-isolation-1"
+
+const subtypeStructuredOutputRetryExhausted = "error_max_structured_output_retries"
+
+const readOnlyTools = "Read,Grep,Glob,WebFetch,WebSearch"
+
+var readOnlyDisallowedTools = []string{"Edit", "Write", "NotebookEdit", "Agent", "Bash"}
+
+var (
+	workerSchemaOnce   sync.Once
+	reviewerSchemaOnce sync.Once
+	workerSchemaValue  string
+	workerSchemaErr    error
+	reviewerSchemaVal  string
+	reviewerSchemaFail error
+)
+
+var essentialSettingEnvKeys = []string{
+	"ANTHROPIC_AUTH_TOKEN",
+	"ANTHROPIC_BASE_URL",
+	"ANTHROPIC_DEFAULT_OPUS_MODEL",
+	"ANTHROPIC_DEFAULT_SONNET_MODEL",
+	"ANTHROPIC_DEFAULT_HAIKU_MODEL",
+	"API_TIMEOUT_MS",
+	"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
+}
+
+var osEssentialEnvKeys = []string{
+	"PATH", "HOME", "TMPDIR", "SHELL", "USER", "LOGNAME",
+	"LANG", "LC_ALL", "LC_CTYPE", "TZ", "TERM",
+}
+
+func (e *StructuredOutputError) Error() string {
+	if e.Subtype != "" {
+		return fmt.Sprintf("structured outputが得られませんでした: subtype=%s", e.Subtype)
+	}
+	return "structured outputが得られませんでした: result eventにstructured_outputがありません"
+}
+
+func IsStructuredOutputError(err error) bool {
+	var target *StructuredOutputError
+	return errors.As(err, &target)
+}
+
+func (e *StructuredOutputError) RetryExhausted() bool {
+	return e.Subtype == subtypeStructuredOutputRetryExhausted
+}
+
+func structuredSchema(role state.SessionRole) (string, error) {
+	if role == state.ReviewerRole {
+		reviewerSchemaOnce.Do(func() {
+			reviewerSchemaVal, reviewerSchemaFail = packet.ReviewerSchemaJSON()
+		})
+		return reviewerSchemaVal, reviewerSchemaFail
+	}
+	workerSchemaOnce.Do(func() {
+		workerSchemaValue, workerSchemaErr = packet.WorkerSchemaJSON()
+	})
+	return workerSchemaValue, workerSchemaErr
 }
 
 func NewClaudeRunner(cfg config.AppConfig, st *state.StateStore) *ClaudeRunner {
@@ -228,10 +243,10 @@ func (r *ClaudeRunner) Run(
 	}
 	devNull, err := os.Open(os.DevNull)
 	if err != nil {
-		stderr.Close()
+		_ = stderr.Close()
 		return result, fmt.Errorf("/dev/nullを開けません: %w", err)
 	}
-	defer devNull.Close()
+	defer func() { _ = devNull.Close() }()
 
 	ingester := r.newTaskEventIngester(taskID, role, phase, model, sessionID, ready)
 
@@ -284,7 +299,7 @@ func (r *ClaudeRunner) Run(
 		return result, parseErr
 	}
 	if parsed.IsError {
-		return result, fmt.Errorf("Claude CLIがerror結果を返しました: subtype=%s", parsed.Subtype)
+		return result, fmt.Errorf("claude CLIがerror結果を返しました: subtype=%s", parsed.Subtype)
 	}
 
 	if !structuredOutputPresent(result.StructuredOutput) {
@@ -335,21 +350,21 @@ func parseClaudeJSONResult(path string) (claudeJSONResult, error) {
 	}
 	var result claudeJSONResult
 	if err := json.Unmarshal(data, &result); err != nil {
-		return claudeJSONResult{}, fmt.Errorf("Claude CLIのJSON出力を解析できません: %w", err)
+		return claudeJSONResult{}, fmt.Errorf("claude CLIのJSON出力を解析できません: %w", err)
 	}
 	if result.Type != "result" {
-		return claudeJSONResult{}, fmt.Errorf("Claude CLIのJSON出力typeが不正です: %q", result.Type)
+		return claudeJSONResult{}, fmt.Errorf("claude CLIのJSON出力typeが不正です: %q", result.Type)
 	}
 	return result, nil
 }
 
 func parseCapturedStreamResult(line []byte, found bool) (claudeJSONResult, error) {
 	if !found {
-		return claudeJSONResult{}, fmt.Errorf("Claude CLIのJSON出力typeが不正です: result eventがありません")
+		return claudeJSONResult{}, fmt.Errorf("claude CLIのJSON出力typeが不正です: result eventがありません")
 	}
 	var parsed claudeJSONResult
 	if err := json.Unmarshal(line, &parsed); err != nil {
-		return claudeJSONResult{}, fmt.Errorf("Claude CLIのJSON出力を解析できません: %w", err)
+		return claudeJSONResult{}, fmt.Errorf("claude CLIのJSON出力を解析できません: %w", err)
 	}
 	return parsed, nil
 }
@@ -433,16 +448,6 @@ func isolationSettings(claudeConfigDir string) (string, error) {
 	return string(encoded), nil
 }
 
-var essentialSettingEnvKeys = []string{
-	"ANTHROPIC_AUTH_TOKEN",
-	"ANTHROPIC_BASE_URL",
-	"ANTHROPIC_DEFAULT_OPUS_MODEL",
-	"ANTHROPIC_DEFAULT_SONNET_MODEL",
-	"ANTHROPIC_DEFAULT_HAIKU_MODEL",
-	"API_TIMEOUT_MS",
-	"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
-}
-
 func loadSettingEnv(claudeConfigDir string, overridePath string) (map[string]string, []string, error) {
 	configDir, err := resolveClaudeConfigDir(claudeConfigDir)
 	if err != nil {
@@ -455,7 +460,7 @@ func loadSettingEnv(claudeConfigDir string, overridePath string) (map[string]str
 			Env map[string]string `json:"env"`
 		}
 		if err := json.Unmarshal(data, &parsed); err != nil {
-			return nil, nil, fmt.Errorf("Claude settings.jsonを解析できません: %w", err)
+			return nil, nil, fmt.Errorf("claude settings.jsonを解析できません: %w", err)
 		}
 		for _, key := range essentialSettingEnvKeys {
 			if value, ok := parsed.Env[key]; ok && value != "" {
@@ -463,7 +468,7 @@ func loadSettingEnv(claudeConfigDir string, overridePath string) (map[string]str
 			}
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
-		return nil, nil, fmt.Errorf("Claude settings.jsonを読み込めません: %w", err)
+		return nil, nil, fmt.Errorf("claude settings.jsonを読み込めません: %w", err)
 	}
 
 	override, err := parseClaudeEnvOverride(overridePath)
@@ -477,11 +482,6 @@ func loadSettingEnv(claudeConfigDir string, overridePath string) (map[string]str
 		result[key] = value
 	}
 	return result, override.deletes, nil
-}
-
-var osEssentialEnvKeys = []string{
-	"PATH", "HOME", "TMPDIR", "SHELL", "USER", "LOGNAME",
-	"LANG", "LC_ALL", "LC_CTYPE", "TZ", "TERM",
 }
 
 func buildChildEnv(extraAllow []string, settingEnv, additions map[string]string, deletes []string) []string {

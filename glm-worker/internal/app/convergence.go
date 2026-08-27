@@ -14,16 +14,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-const convergenceDeltaVerificationOnly = "verification-only"
-
-var convergenceMutatingTools = map[string]bool{
-	"Edit":         true,
-	"Write":        true,
-	"NotebookEdit": true,
-}
-
-var convergenceReviewerPhase = regexp.MustCompile(`^reviewer-(\d+)(-risk-floor)?$`)
-
 type convergenceRound struct {
 	record   state.RoundRecord
 	delta    state.RoundDelta
@@ -115,6 +105,16 @@ type convergenceClassSummary struct {
 	ReviewerDurationMS   int64  `json:"reviewer_duration_ms"`
 }
 
+const convergenceDeltaVerificationOnly = "verification-only"
+
+var convergenceMutatingTools = map[string]bool{
+	"Edit":         true,
+	"Write":        true,
+	"NotebookEdit": true,
+}
+
+var convergenceReviewerPhase = regexp.MustCompile(`^reviewer-(\d+)(-risk-floor)?$`)
+
 func printConvergence(st *state.StateStore, taskIDArg string, stdout io.Writer) error {
 	explicit := taskIDArg != ""
 	taskID := taskIDArg
@@ -200,7 +200,7 @@ func readRoundRecords(st *state.StateStore, taskID string) ([]state.RoundRecord,
 	if err != nil {
 		return nil, 0, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
 	var records []state.RoundRecord

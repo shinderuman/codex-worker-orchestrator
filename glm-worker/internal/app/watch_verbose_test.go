@@ -271,7 +271,7 @@ func TestWatchVerboseModelIdleUsesLiveModelActivity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	tracker := newWatchToolTracker()
 	if _, err := drainTaskEvents(file, io.Discard, nil, tracker.observe); err != nil {
 		t.Fatal(err)

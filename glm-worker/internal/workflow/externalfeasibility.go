@@ -11,6 +11,21 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
+type externalFeasibility struct {
+	status         string
+	assumption     string
+	evidenceSource string
+	evidence       string
+	goDecision     string
+}
+
+type externalFeasibilityRejectKind int
+
+type externalFeasibilityParseError struct {
+	kind   externalFeasibilityRejectKind
+	reason string
+}
+
 const externalFeasibilitySectionHeading = "## External feasibility"
 
 const (
@@ -22,31 +37,25 @@ const (
 
 const externalFeasibilityEvidenceProducer = "producer"
 
-var externalFeasibilityFieldKeys = []string{"status", "assumption", "evidence-source", "evidence", "go"}
-
-type externalFeasibility struct {
-	status         string
-	assumption     string
-	evidenceSource string
-	evidence       string
-	goDecision     string
-}
-
-func (f externalFeasibility) pocStage() bool {
-	return f.status == externalFeasibilityStatusPoC || f.status == externalFeasibilityStatusObservation
-}
-
-type externalFeasibilityRejectKind int
-
 const (
 	externalFeasibilityRejectMissing externalFeasibilityRejectKind = iota + 1
 	externalFeasibilityRejectMalformed
 	externalFeasibilityRejectUnverified
 )
 
-type externalFeasibilityParseError struct {
-	kind   externalFeasibilityRejectKind
-	reason string
+var externalFeasibilityFieldKeys = []string{"status", "assumption", "evidence-source", "evidence", "go"}
+
+var externalFeasibilityGuardSurface = guardSurface{
+	label:         "external feasibility宣言",
+	files:         "ACTIVE task fileの`## External feasibility`節",
+	eventSuffix:   "external-feasibility-check",
+	outcomePrefix: "external_feasibility",
+	invariants:    "ACTIVE task fileは`## External feasibility`節へstatus(not-applicable/poc/observation/implementation)を宣言し、implementationはevidence-source: producer・evidence・go(親Go判断)を伴う。poc/observationのworkerはread-only capabilityと開始前後snapshot同一性でproduction diffを禁止する。宣言内容の真偽は機械検証しない",
+	targets:       "ACTIVE task fileの`## External feasibility`節と現在の宣言status",
+}
+
+func (f externalFeasibility) pocStage() bool {
+	return f.status == externalFeasibilityStatusPoC || f.status == externalFeasibilityStatusObservation
 }
 
 func (e *externalFeasibilityParseError) Error() string { return e.reason }
@@ -218,15 +227,6 @@ func validateExternalFeasibilityFields(values map[string]string) (externalFeasib
 		evidence:       values["evidence"],
 		goDecision:     values["go"],
 	}, nil
-}
-
-var externalFeasibilityGuardSurface = guardSurface{
-	label:         "external feasibility宣言",
-	files:         "ACTIVE task fileの`## External feasibility`節",
-	eventSuffix:   "external-feasibility-check",
-	outcomePrefix: "external_feasibility",
-	invariants:    "ACTIVE task fileは`## External feasibility`節へstatus(not-applicable/poc/observation/implementation)を宣言し、implementationはevidence-source: producer・evidence・go(親Go判断)を伴う。poc/observationのworkerはread-only capabilityと開始前後snapshot同一性でproduction diffを禁止する。宣言内容の真偽は機械検証しない",
-	targets:       "ACTIVE task fileの`## External feasibility`節と現在の宣言status",
 }
 
 func (s guardSurface) unverifiedOutcome() string { return s.outcomePrefix + "_unverified" }

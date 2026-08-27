@@ -42,16 +42,6 @@ func statusNullString(t *testing.T, name string, value *string) {
 	}
 }
 
-func statusInt64MS(t *testing.T, name string, value *int64, want int64) {
-	t.Helper()
-	if value == nil {
-		t.Fatalf("status出力の%sがnullです", name)
-	}
-	if *value != want {
-		t.Fatalf("status出力の%s = %d want %d", name, *value, want)
-	}
-}
-
 func TestExecuteStatusShowsDetailFromEventLogAndTelemetry(t *testing.T) {
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)

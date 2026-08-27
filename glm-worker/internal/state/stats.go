@@ -14,41 +14,11 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 )
 
-const (
-	currentStatsFile = "task-stats.json"
-
-	taskStatsVersion = 3
-)
-
-var errUnsupportedTaskStatsVersion = errors.New("unsupported task stats version")
-
-var statsWarnOut io.Writer = os.Stderr
-
-func RedirectStatsWarnings(w io.Writer) func() {
-	previous := statsWarnOut
-	statsWarnOut = w
-	return func() {
-		statsWarnOut = previous
-	}
-}
-
 type statsWarningEvent struct {
 	Type    string `json:"type"`
 	Scope   string `json:"scope"`
 	Message string `json:"message"`
 	Error   string `json:"error,omitempty"`
-}
-
-func writeStatsWarningEvent(scope, message string, err error) {
-	event := statsWarningEvent{Type: "warning", Scope: scope, Message: message}
-	if err != nil {
-		event.Error = err.Error()
-	}
-	data, marshalErr := json.Marshal(event)
-	if marshalErr != nil {
-		return
-	}
-	statsWarnOut.Write(append(data, '\n'))
 }
 
 type TaskStats struct {
@@ -105,6 +75,36 @@ type TaskStats struct {
 	ParentFixOrigins      map[string]int         `json:"parent_fix_origins,omitempty"`
 	ParentOutcomesByModel map[string]int         `json:"parent_outcomes_by_model,omitempty"`
 	ParentOutcomesByRisk  map[string]int         `json:"parent_outcomes_by_risk,omitempty"`
+}
+
+const (
+	currentStatsFile = "task-stats.json"
+
+	taskStatsVersion = 3
+)
+
+var errUnsupportedTaskStatsVersion = errors.New("unsupported task stats version")
+
+var statsWarnOut io.Writer = os.Stderr
+
+func RedirectStatsWarnings(w io.Writer) func() {
+	previous := statsWarnOut
+	statsWarnOut = w
+	return func() {
+		statsWarnOut = previous
+	}
+}
+
+func writeStatsWarningEvent(scope, message string, err error) {
+	event := statsWarningEvent{Type: "warning", Scope: scope, Message: message}
+	if err != nil {
+		event.Error = err.Error()
+	}
+	data, marshalErr := json.Marshal(event)
+	if marshalErr != nil {
+		return
+	}
+	_, _ = statsWarnOut.Write(append(data, '\n'))
 }
 
 func warnStatsFailure(operation string, err error) {
@@ -243,11 +243,12 @@ func (s *StateStore) AllTaskStats() ([]TaskStats, error) {
 		result = append(result, stats)
 	}
 	current, err := s.loadTaskStats()
-	if err == nil {
+	switch {
+	case err == nil:
 		result = append(result, current)
-	} else if errors.Is(err, errUnsupportedTaskStatsVersion) {
+	case errors.Is(err, errUnsupportedTaskStatsVersion):
 		return result, nil
-	} else if !errors.Is(err, os.ErrNotExist) {
+	case !errors.Is(err, os.ErrNotExist):
 		return nil, err
 	}
 	return result, nil

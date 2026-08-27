@@ -18,7 +18,6 @@ func TestEntrypointThin(t *testing.T) {
 func TestProseContractPin(t *testing.T) {
 	root := fixtureRoot(t)
 	writeFixture(t, root, "glm-worker/internal/x/x_test.go", `package x
-import "strings"
 func TestX() {
 	data := "codex/instructions/rule.md"
 	_ = data

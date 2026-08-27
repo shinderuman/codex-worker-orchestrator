@@ -14,6 +14,10 @@ type SessionRole string
 
 type TaskStatus string
 
+type StateStore struct {
+	dir string
+}
+
 const (
 	WorkerRole   SessionRole = "worker"
 	ReviewerRole SessionRole = "reviewer"
@@ -29,10 +33,6 @@ const (
 
 	TaskStatusNone TaskStatus = "none"
 )
-
-type StateStore struct {
-	dir string
-}
 
 func NewStateStore(config config.AppConfig) (*StateStore, error) {
 	dir := filepath.Join(config.StateBase, config.RepoHash)

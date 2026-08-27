@@ -10,13 +10,6 @@ import (
 	"strings"
 )
 
-const (
-	CoverageComplete      = "complete"
-	CoverageIncomplete    = "incomplete"
-	CoverageUnreadable    = "unreadable"
-	CoverageHistoricalGap = "historical-gap"
-)
-
 type TaskCallCoverage struct {
 	TaskID     string
 	Archived   bool
@@ -24,6 +17,24 @@ type TaskCallCoverage struct {
 	RawRecords int
 	Unreadable bool
 }
+
+type TelemetryCoverage struct {
+	Tasks         []TaskCallCoverage
+	StatsCalls    int
+	RawRecords    int
+	MissingCalls  int
+	ExcessRecords int
+	OrphanFiles   int
+	Status        string
+	UsageKnown    bool
+}
+
+const (
+	CoverageComplete      = "complete"
+	CoverageIncomplete    = "incomplete"
+	CoverageUnreadable    = "unreadable"
+	CoverageHistoricalGap = "historical-gap"
+)
 
 func (c TaskCallCoverage) MissingCalls() int {
 	if c.Unreadable || c.StatsCalls <= c.RawRecords {
@@ -52,17 +63,6 @@ func (c TaskCallCoverage) Classification() string {
 		return CoverageIncomplete
 	}
 	return CoverageComplete
-}
-
-type TelemetryCoverage struct {
-	Tasks         []TaskCallCoverage
-	StatsCalls    int
-	RawRecords    int
-	MissingCalls  int
-	ExcessRecords int
-	OrphanFiles   int
-	Status        string
-	UsageKnown    bool
 }
 
 func (s *StateStore) ComputeTelemetryCoverage(tasks []TaskStats) TelemetryCoverage {
@@ -115,7 +115,7 @@ func (s *StateStore) countTaskCallRecords(taskID string) (int, error) {
 		}
 		return 0, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	count := 0
 	scanner := bufio.NewScanner(file)

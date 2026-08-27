@@ -8,10 +8,6 @@ import (
 	"time"
 )
 
-func WarnTaskLiveSkip(err error) {
-	writeStatsWarningEvent("live_status", "live status snapshotの書込みに失敗したため以後のlive表示更新をskipします（task本体へ影響しません）", err)
-}
-
 type TaskLiveTool struct {
 	ToolID     string `json:"tool_id"`
 	Command    string `json:"command,omitempty"`
@@ -26,6 +22,10 @@ type TaskLiveStatus struct {
 
 	LastModelActivityAt time.Time      `json:"last_model_activity_at"`
 	Tools               []TaskLiveTool `json:"tools,omitempty"`
+}
+
+func WarnTaskLiveSkip(err error) {
+	writeStatsWarningEvent("live_status", "live status snapshotの書込みに失敗したため以後のlive表示更新をskipします（task本体へ影響しません）", err)
 }
 
 func IsModelActivityEvent(record TaskEventRecord) bool {

@@ -11,8 +11,6 @@ import (
 	"time"
 )
 
-const taskEventLogVersion = 1
-
 type TaskBlockSummary struct {
 	Type       string `json:"type"`
 	Name       string `json:"name,omitempty"`
@@ -53,6 +51,10 @@ type TaskEventRecord struct {
 	TotalCostUSD  float64            `json:"total_cost_usd,omitempty"`
 }
 
+const taskEventLogVersion = 1
+
+const retainedTaskEventLogs = 10
+
 func (s *StateStore) AppendTaskEvent(record TaskEventRecord) error {
 	if record.Version == 0 {
 		record.Version = taskEventLogVersion
@@ -73,11 +75,11 @@ func (s *StateStore) AppendTaskEvent(record TaskEventRecord) error {
 		return err
 	}
 	if err := file.Chmod(0o600); err != nil {
-		file.Close()
+		_ = file.Close()
 		return err
 	}
 	if _, err := file.Write(append(data, '\n')); err != nil {
-		file.Close()
+		_ = file.Close()
 		return err
 	}
 	return file.Close()
@@ -105,8 +107,6 @@ func WarnTaskEventCap(limit int) {
 func (s *StateStore) TaskEventLogPath(taskID string) string {
 	return s.Path(filepath.Join("events", taskID+".jsonl"))
 }
-
-const retainedTaskEventLogs = 10
 
 func (s *StateStore) PruneTaskEventLogs(keep int, currentTaskID string) {
 	paths, err := filepath.Glob(s.Path(filepath.Join("events", "*.jsonl")))

@@ -8,11 +8,6 @@ import (
 	"os"
 )
 
-const (
-	maxFileBytes     = 1 << 20
-	binarySniffBytes = 8 << 10
-)
-
 type doc struct {
 	Path          string         `json:"path"`
 	ContentLength int            `json:"content_length"`
@@ -27,6 +22,19 @@ type builtIndex struct {
 	indexedBytes int
 	skipped      int
 }
+
+type readOutcome int
+
+const (
+	maxFileBytes     = 1 << 20
+	binarySniffBytes = 8 << 10
+)
+
+const (
+	readIndexed readOutcome = iota
+	readSkipped
+	readMissing
+)
 
 func rebuildIndex(ctx context.Context, repoRoot string, settings searchSettings) (builtIndex, error) {
 	paths, err := enumerateFiles(ctx, repoRoot, settings.excludeDirs)
@@ -69,14 +77,6 @@ func rebuildIndex(ctx context.Context, repoRoot string, settings searchSettings)
 	index.indexedBytes = totalBytes
 	return index, nil
 }
-
-type readOutcome int
-
-const (
-	readIndexed readOutcome = iota
-	readSkipped
-	readMissing
-)
 
 func readSearchableFile(abs string) ([]byte, readOutcome, error) {
 	info, err := os.Lstat(abs)

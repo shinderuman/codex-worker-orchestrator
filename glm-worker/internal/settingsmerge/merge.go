@@ -11,9 +11,6 @@ import (
 	"reflect"
 )
 
-const overrideStateFile = ".codex-config-claude-env-state.json"
-const overrideStateVersion = 1
-
 type envOverride struct {
 	sets    map[string]string
 	deletes []string
@@ -47,6 +44,9 @@ type plannedRestore struct {
 	path    string
 	restore fileRestore
 }
+
+const overrideStateFile = ".codex-config-claude-env-state.json"
+const overrideStateVersion = 1
 
 func MergeFiles(targetPath, fragmentPath, overridePath string) (bool, error) {
 	return mergeFilesWithWriter(targetPath, fragmentPath, overridePath, writeAtomic)
@@ -130,7 +130,7 @@ func readObject(path string) (map[string]any, os.FileMode, error) {
 	if err != nil {
 		return nil, 0, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	stat, err := file.Stat()
 	if err != nil {
 		return nil, 0, err
@@ -272,7 +272,7 @@ func loadOverrideState(path string) (overrideState, error) {
 	if err != nil {
 		return overrideState{}, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	decoder := json.NewDecoder(file)
 	decoder.UseNumber()
 	var state overrideState
@@ -345,13 +345,13 @@ func writeAtomic(path string, data []byte, mode os.FileMode) error {
 		return err
 	}
 	tempPath := file.Name()
-	defer os.Remove(tempPath)
+	defer func() { _ = os.Remove(tempPath) }()
 	if _, err := bytes.NewReader(data).WriteTo(file); err != nil {
-		file.Close()
+		_ = file.Close()
 		return err
 	}
 	if err := file.Chmod(mode); err != nil {
-		file.Close()
+		_ = file.Close()
 		return err
 	}
 	if err := file.Close(); err != nil {

@@ -15,14 +15,14 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
+const activeTaskRepoPath = state.ParentTasksDir + "/001-active.md"
+
 func writeRepoParentPlan(t *testing.T, repoRoot string, content string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(repoRoot, state.ParentPlanFile), []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
 }
-
-const activeTaskRepoPath = state.ParentTasksDir + "/001-active.md"
 
 func writeRepoActiveTask(t *testing.T, repoRoot string, content string) {
 	t.Helper()

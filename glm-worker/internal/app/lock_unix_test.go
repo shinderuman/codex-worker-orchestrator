@@ -14,7 +14,7 @@ func TestAcquireRepoLockSerializes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer first.Close()
+	defer func() { _ = first.Close() }()
 
 	if _, err := AcquireRepoLock(path); err == nil {
 		t.Fatal("2つ目のロック取得は失敗する必要があります")
@@ -36,5 +36,5 @@ func TestAcquireRepoLockReusableAfterClose(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Close後の再取得に失敗しました: %v", err)
 	}
-	second.Close()
+	_ = second.Close()
 }

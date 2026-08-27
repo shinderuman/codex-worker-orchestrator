@@ -62,8 +62,8 @@ func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
 	tempPath := file.Name()
 
 	defer func() {
-		file.Close()
-		os.Remove(tempPath)
+		_ = file.Close()
+		_ = os.Remove(tempPath)
 	}()
 
 	if _, err := file.Write(data); err != nil {

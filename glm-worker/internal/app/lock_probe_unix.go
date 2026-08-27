@@ -15,7 +15,7 @@ func ProbeRepoLock(path string) LockProbe {
 		}
 		return LockProbe{State: LockUnknown, PID: "unknown"}
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	pidBytes := make([]byte, 32)
 	n, _ := file.ReadAt(pidBytes, 0)

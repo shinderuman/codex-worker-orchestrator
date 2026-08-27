@@ -270,7 +270,7 @@ func TestEnterStdinRawModeSkipsTermiosForNonTerminal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer pipeReader.Close()
+	defer func() { _ = pipeReader.Close() }()
 
 	restore, applied, err := enterStdinRawMode(pipeReader)
 	if err != nil {
@@ -291,7 +291,7 @@ func TestEnterStdinRawModeSkipsTermiosForNonTerminal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer payloadFile.Close()
+	defer func() { _ = payloadFile.Close() }()
 	restore, applied, err = enterStdinRawMode(payloadFile)
 	if err != nil {
 		t.Fatal(err)
@@ -335,9 +335,9 @@ func TestStdinUnsupportedPlatformTerminalFailsClosedOnTerminalLikeInput(t *testi
 	if err != nil {
 		t.Skipf("character deviceが開けません: %v", err)
 	}
-	defer nullDevice.Close()
+	defer func() { _ = nullDevice.Close() }()
 
-	restore, applied, err := stdinUnsupportedPlatformTerminal(nullDevice)
+	_, _, err = stdinUnsupportedPlatformTerminal(nullDevice)
 	if err == nil || !strings.Contains(err.Error(), "raw mode is not implemented") {
 		t.Fatalf("terminalらしきstdinをfail closedする必要があります: err=%v", err)
 	}
@@ -346,8 +346,8 @@ func TestStdinUnsupportedPlatformTerminalFailsClosedOnTerminalLikeInput(t *testi
 	if pipeErr != nil {
 		t.Fatal(pipeErr)
 	}
-	defer pipeReader.Close()
-	restore, applied, err = stdinUnsupportedPlatformTerminal(pipeReader)
+	defer func() { _ = pipeReader.Close() }()
+	restore, applied, err := stdinUnsupportedPlatformTerminal(pipeReader)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -366,7 +366,7 @@ func TestStdinUnsupportedPlatformTerminalFailsClosedOnTerminalLikeInput(t *testi
 	if openErr != nil {
 		t.Fatal(openErr)
 	}
-	defer payloadFile.Close()
+	defer func() { _ = payloadFile.Close() }()
 	restore, applied, err = stdinUnsupportedPlatformTerminal(payloadFile)
 	if err != nil {
 		t.Fatal(err)

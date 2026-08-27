@@ -9,8 +9,6 @@ import (
 	"time"
 )
 
-const coalesceOtherParentThread = "0e6f1111-0000-7aaa-bbbb-ccccdddd0000"
-
 func writeCoalesceTOML(t *testing.T, path, id, name, status, targetThreadID, prompt, dtstart string) {
 	t.Helper()
 	content := "version = 1\n" +

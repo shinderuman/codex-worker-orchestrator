@@ -9,15 +9,6 @@ import (
 	"time"
 )
 
-const (
-	DecisionCoalesce      = "coalesce"
-	DecisionCreateGLMWake = "create_glm_wake"
-
-	codexWakeKeyPrefix = "codex-5h-wake-"
-
-	maxCoalesceDelay = 10 * time.Minute
-)
-
 type CoalesceParams struct {
 	ParentThreadID  string
 	ResumeAtRFC3339 string
@@ -40,6 +31,15 @@ type wakeEntity struct {
 	Candidate AutomationTOML
 	Problem   string
 }
+
+const (
+	DecisionCoalesce      = "coalesce"
+	DecisionCreateGLMWake = "create_glm_wake"
+
+	codexWakeKeyPrefix = "codex-5h-wake-"
+
+	maxCoalesceDelay = 10 * time.Minute
+)
 
 func CheckCoalesce(params CoalesceParams, readDB DBReader) (CoalesceResult, error) {
 	if !keyPattern.MatchString(params.ParentThreadID) {

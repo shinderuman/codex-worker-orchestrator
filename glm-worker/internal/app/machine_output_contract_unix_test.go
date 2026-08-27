@@ -20,6 +20,12 @@ import (
 	"time"
 )
 
+type machineProcessOutcome struct {
+	runErr error
+	stdout string
+	stderr string
+}
+
 const machineContractProbeArg = "--machine-contract-probe"
 
 const machineContractCommandTimeout = 60 * time.Second
@@ -58,12 +64,6 @@ func TestDispatchCommandMachineOutputContract(t *testing.T) {
 		outcome := runBinaryForMachineContract(t, binary, []string{machineContractProbeArg}, true)
 		requireMachineProcessContract(t, []string{machineContractProbeArg}, outcome)
 	})
-}
-
-type machineProcessOutcome struct {
-	runErr error
-	stdout string
-	stderr string
 }
 
 func runBinaryForMachineContract(t *testing.T, binary string, args []string, breakStateHome bool) machineProcessOutcome {

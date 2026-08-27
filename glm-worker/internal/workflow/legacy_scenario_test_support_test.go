@@ -6,11 +6,6 @@ import (
 	"testing"
 )
 
-const (
-	scenarioArtifactDirToken   = "{{ARTIFACT_DIR}}"
-	telemetryClockInjectedStart = "injected-start"
-)
-
 type scenarioArtifact struct {
 	Name    string
 	Content string
@@ -38,6 +33,11 @@ type manifestEntry struct {
 type manifestFile struct {
 	InstructionFiles []manifestEntry
 }
+
+const (
+	scenarioArtifactDirToken    = "{{ARTIFACT_DIR}}"
+	telemetryClockInjectedStart = "injected-start"
+)
 
 func scenarioRepoRoot(t *testing.T) string {
 	t.Helper()

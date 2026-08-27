@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-repo_root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+repo_root=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 codex_dir="${CODEX_CONFIG_DIR:-$HOME/.codex}"
 bin_dir="${GLM_WORKER_BIN_DIR:-$HOME/.local/bin}"
 claude_settings="${CLAUDE_SETTINGS_FILE:-$HOME/.claude/settings.json}"

@@ -17,32 +17,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-func writeJSON(w io.Writer, value any) error {
-	var buf bytes.Buffer
-	encoder := json.NewEncoder(&buf)
-	encoder.SetEscapeHTML(false)
-	if err := encoder.Encode(value); err != nil {
-		return err
-	}
-	_, err := w.Write(buf.Bytes())
-	return err
-}
-
-func stringPtr(value string) *string {
-	if value == "" {
-		return nil
-	}
-	return &value
-}
-
-func msPtr(d time.Duration) *int64 {
-	if d < 0 {
-		d = 0
-	}
-	ms := d.Milliseconds()
-	return &ms
-}
-
 type statusOutput struct {
 	RepoRoot            *string                   `json:"repo_root"`
 	RepositoryLock      *string                   `json:"repository_lock"`
@@ -113,6 +87,158 @@ type statusProviderUnavailable struct {
 	Classification *string `json:"classification,omitempty"`
 	Probes         int     `json:"probes,omitempty"`
 	ElapsedMS      *int64  `json:"elapsed_ms,omitempty"`
+}
+
+type currentCallView struct {
+	phase string
+	role  string
+	model string
+}
+
+type statsOutput struct {
+	Tasks                                   int                 `json:"tasks"`
+	ModelCalls                              int                 `json:"model_calls"`
+	ModelCallsByAlias                       map[string]int      `json:"model_calls_by_alias"`
+	ProbeCalls                              int                 `json:"probe_calls"`
+	TotalAICalls                            int                 `json:"total_ai_calls"`
+	TelemetryCoverage                       statsCoverage       `json:"telemetry_coverage"`
+	ModelDurationMSByAlias                  map[string]int64    `json:"model_duration_ms_by_alias"`
+	InputTokensByAlias                      map[string]int64    `json:"input_tokens_by_alias"`
+	CacheCreationInputTokensByAlias         map[string]int64    `json:"cache_creation_input_tokens_by_alias"`
+	CacheReadInputTokensByAlias             map[string]int64    `json:"cache_read_input_tokens_by_alias"`
+	TotalPromptTokensByAlias                map[string]int64    `json:"total_prompt_tokens_by_alias"`
+	OutputTokensByAlias                     map[string]int64    `json:"output_tokens_by_alias"`
+	TopLevelTurnsByAlias                    map[string]int      `json:"top_level_turns_by_alias"`
+	CallTreesByResolvedModel                map[string]int      `json:"call_trees_by_resolved_model"`
+	InputTokensByResolvedModel              map[string]int64    `json:"input_tokens_by_resolved_model"`
+	CacheCreationInputTokensByResolvedModel map[string]int64    `json:"cache_creation_input_tokens_by_resolved_model"`
+	CacheReadInputTokensByResolvedModel     map[string]int64    `json:"cache_read_input_tokens_by_resolved_model"`
+	OutputTokensByResolvedModel             map[string]int64    `json:"output_tokens_by_resolved_model"`
+	WorkerCalls                             int                 `json:"worker_calls"`
+	ReviewerCalls                           int                 `json:"reviewer_calls"`
+	DecisionCommands                        int                 `json:"decision_commands"`
+	FixCommands                             int                 `json:"fix_commands"`
+	ResumeCommands                          int                 `json:"resume_commands"`
+	TransientRetries                        int                 `json:"transient_retries"`
+	AutoFixRounds                           int                 `json:"auto_fix_rounds"`
+	NeedsSolDecisionPackets                 int                 `json:"needs_sol_decision_packets"`
+	NeedsSolReviewPackets                   int                 `json:"needs_sol_review_packets"`
+	PassPackets                             int                 `json:"pass_packets"`
+	RateLimits                              int                 `json:"rate_limits"`
+	RateLimitsByAlias                       map[string]int      `json:"rate_limits_by_alias"`
+	ProviderUnavailable                     int                 `json:"provider_unavailable"`
+	ProviderUnavailableByAlias              map[string]int      `json:"provider_unavailable_by_alias"`
+	PacketCompactions                       int                 `json:"packet_compactions"`
+	RiskFloorByCategory                     map[string]int      `json:"risk_floor_by_category"`
+	SnapshotMismatches                      int                 `json:"snapshot_mismatches"`
+	SnapshotMismatchByAxis                  map[string]int      `json:"snapshot_mismatch_by_axis"`
+	PacketRejectByCategory                  map[string]int      `json:"packet_reject_by_category"`
+	ProbeOutcome                            map[string]int      `json:"probe_outcome"`
+	ParentOutcomes                          map[string]int      `json:"parent_outcomes"`
+	ParentFixOrigins                        map[string]int      `json:"parent_fix_origins"`
+	ParentOutcomesByModel                   map[string]int      `json:"parent_outcomes_by_model"`
+	ParentOutcomesByRisk                    map[string]int      `json:"parent_outcomes_by_risk"`
+	ParentFixRework                         []statsParentRework `json:"parent_fix_rework"`
+	ParentFixReworkCoverage                 string              `json:"parent_fix_rework_coverage"`
+	SolPacketBytes                          int                 `json:"sol_packet_bytes"`
+	TelemetryDir                            string              `json:"telemetry_dir"`
+	CurrentTask                             statsCurrentTask    `json:"current_task"`
+}
+
+type statsCoverage struct {
+	Status        string              `json:"status"`
+	StatsCalls    int                 `json:"stats_calls"`
+	RawRecords    int                 `json:"raw_records"`
+	MissingCalls  int                 `json:"missing_calls"`
+	ExcessRecords int                 `json:"excess_records"`
+	OrphanFiles   int                 `json:"orphan_files"`
+	UsageKnown    bool                `json:"usage_totals_known"`
+	Tasks         []statsCoverageTask `json:"tasks"`
+}
+
+type statsCoverageTask struct {
+	TaskID         string `json:"task_id"`
+	Classification string `json:"classification"`
+	StatsCalls     int    `json:"stats_calls"`
+	RawRecords     int    `json:"raw_records"`
+	MissingCalls   int    `json:"missing_calls"`
+	ExcessRecords  int    `json:"excess_records"`
+}
+
+type statsParentRework struct {
+	Origin           string `json:"origin"`
+	Calls            int    `json:"calls"`
+	WorkerCalls      int    `json:"worker_calls"`
+	ReviewerCalls    int    `json:"reviewer_calls"`
+	Turns            int    `json:"turns"`
+	TreeInputTokens  int64  `json:"tree_input_tokens"`
+	TreeOutputTokens int64  `json:"tree_output_tokens"`
+	WallDurationMS   int64  `json:"wall_duration_ms"`
+}
+
+type statsCurrentTask struct {
+	ID          *string `json:"id"`
+	Status      *string `json:"status"`
+	ArtifactDir *string `json:"artifact_dir"`
+}
+
+type resetOutput struct {
+	Status   string  `json:"status"`
+	RepoRoot *string `json:"repo_root"`
+}
+
+type acceptOutput struct {
+	Accepted bool `json:"accepted"`
+}
+
+type VerificationError struct {
+	Outcome autoresume.Outcome
+	Reason  string
+}
+
+type verifyAutoResumeOutput struct {
+	AutomationKey  string `json:"automation_key"`
+	TargetThread   string `json:"target_thread"`
+	ExpectedAtUTC  string `json:"expected_at_utc"`
+	TOMLDTStart    string `json:"toml_dtstart"`
+	DBNextRunAtUTC string `json:"db_next_run_at_utc"`
+}
+
+type checkWakeCoalesceOutput struct {
+	Decision         string `json:"decision"`
+	Reason           string `json:"reason"`
+	ParentThread     string `json:"parent_thread"`
+	ResumeAtUTC      string `json:"resume_at_utc"`
+	WakeAutomationID string `json:"wake_automation_id"`
+	WakeThread       string `json:"wake_thread"`
+	WakeNextRunUTC   string `json:"wake_next_run_at_utc"`
+	AddedWaitSeconds int64  `json:"added_wait_seconds"`
+}
+
+func writeJSON(w io.Writer, value any) error {
+	var buf bytes.Buffer
+	encoder := json.NewEncoder(&buf)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(value); err != nil {
+		return err
+	}
+	_, err := w.Write(buf.Bytes())
+	return err
+}
+
+func stringPtr(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
+}
+
+func msPtr(d time.Duration) *int64 {
+	if d < 0 {
+		d = 0
+	}
+	ms := d.Milliseconds()
+	return &ms
 }
 
 func printStatus(st *state.StateStore, stdout io.Writer) error {
@@ -312,12 +438,6 @@ func readStatusTelemetry(st *state.StateStore, taskID string) ([]state.ModelCall
 	return logs, nil
 }
 
-type currentCallView struct {
-	phase string
-	role  string
-	model string
-}
-
 func lastTaskEvent(st *state.StateStore, taskID string) (state.TaskEventRecord, bool) {
 	if taskID == "" {
 		return state.TaskEventRecord{}, false
@@ -336,93 +456,6 @@ func taskLiveness(probe LockProbe) *string {
 	default:
 		return nil
 	}
-}
-
-type statsOutput struct {
-	Tasks                                   int                 `json:"tasks"`
-	ModelCalls                              int                 `json:"model_calls"`
-	ModelCallsByAlias                       map[string]int      `json:"model_calls_by_alias"`
-	ProbeCalls                              int                 `json:"probe_calls"`
-	TotalAICalls                            int                 `json:"total_ai_calls"`
-	TelemetryCoverage                       statsCoverage       `json:"telemetry_coverage"`
-	ModelDurationMSByAlias                  map[string]int64    `json:"model_duration_ms_by_alias"`
-	InputTokensByAlias                      map[string]int64    `json:"input_tokens_by_alias"`
-	CacheCreationInputTokensByAlias         map[string]int64    `json:"cache_creation_input_tokens_by_alias"`
-	CacheReadInputTokensByAlias             map[string]int64    `json:"cache_read_input_tokens_by_alias"`
-	TotalPromptTokensByAlias                map[string]int64    `json:"total_prompt_tokens_by_alias"`
-	OutputTokensByAlias                     map[string]int64    `json:"output_tokens_by_alias"`
-	TopLevelTurnsByAlias                    map[string]int      `json:"top_level_turns_by_alias"`
-	CallTreesByResolvedModel                map[string]int      `json:"call_trees_by_resolved_model"`
-	InputTokensByResolvedModel              map[string]int64    `json:"input_tokens_by_resolved_model"`
-	CacheCreationInputTokensByResolvedModel map[string]int64    `json:"cache_creation_input_tokens_by_resolved_model"`
-	CacheReadInputTokensByResolvedModel     map[string]int64    `json:"cache_read_input_tokens_by_resolved_model"`
-	OutputTokensByResolvedModel             map[string]int64    `json:"output_tokens_by_resolved_model"`
-	WorkerCalls                             int                 `json:"worker_calls"`
-	ReviewerCalls                           int                 `json:"reviewer_calls"`
-	DecisionCommands                        int                 `json:"decision_commands"`
-	FixCommands                             int                 `json:"fix_commands"`
-	ResumeCommands                          int                 `json:"resume_commands"`
-	TransientRetries                        int                 `json:"transient_retries"`
-	AutoFixRounds                           int                 `json:"auto_fix_rounds"`
-	NeedsSolDecisionPackets                 int                 `json:"needs_sol_decision_packets"`
-	NeedsSolReviewPackets                   int                 `json:"needs_sol_review_packets"`
-	PassPackets                             int                 `json:"pass_packets"`
-	RateLimits                              int                 `json:"rate_limits"`
-	RateLimitsByAlias                       map[string]int      `json:"rate_limits_by_alias"`
-	ProviderUnavailable                     int                 `json:"provider_unavailable"`
-	ProviderUnavailableByAlias              map[string]int      `json:"provider_unavailable_by_alias"`
-	PacketCompactions                       int                 `json:"packet_compactions"`
-	RiskFloorByCategory                     map[string]int      `json:"risk_floor_by_category"`
-	SnapshotMismatches                      int                 `json:"snapshot_mismatches"`
-	SnapshotMismatchByAxis                  map[string]int      `json:"snapshot_mismatch_by_axis"`
-	PacketRejectByCategory                  map[string]int      `json:"packet_reject_by_category"`
-	ProbeOutcome                            map[string]int      `json:"probe_outcome"`
-	ParentOutcomes                          map[string]int      `json:"parent_outcomes"`
-	ParentFixOrigins                        map[string]int      `json:"parent_fix_origins"`
-	ParentOutcomesByModel                   map[string]int      `json:"parent_outcomes_by_model"`
-	ParentOutcomesByRisk                    map[string]int      `json:"parent_outcomes_by_risk"`
-	ParentFixRework                         []statsParentRework `json:"parent_fix_rework"`
-	ParentFixReworkCoverage                 string              `json:"parent_fix_rework_coverage"`
-	SolPacketBytes                          int                 `json:"sol_packet_bytes"`
-	TelemetryDir                            string              `json:"telemetry_dir"`
-	CurrentTask                             statsCurrentTask    `json:"current_task"`
-}
-
-type statsCoverage struct {
-	Status        string              `json:"status"`
-	StatsCalls    int                 `json:"stats_calls"`
-	RawRecords    int                 `json:"raw_records"`
-	MissingCalls  int                 `json:"missing_calls"`
-	ExcessRecords int                 `json:"excess_records"`
-	OrphanFiles   int                 `json:"orphan_files"`
-	UsageKnown    bool                `json:"usage_totals_known"`
-	Tasks         []statsCoverageTask `json:"tasks"`
-}
-
-type statsCoverageTask struct {
-	TaskID         string `json:"task_id"`
-	Classification string `json:"classification"`
-	StatsCalls     int    `json:"stats_calls"`
-	RawRecords     int    `json:"raw_records"`
-	MissingCalls   int    `json:"missing_calls"`
-	ExcessRecords  int    `json:"excess_records"`
-}
-
-type statsParentRework struct {
-	Origin           string `json:"origin"`
-	Calls            int    `json:"calls"`
-	WorkerCalls      int    `json:"worker_calls"`
-	ReviewerCalls    int    `json:"reviewer_calls"`
-	Turns            int    `json:"turns"`
-	TreeInputTokens  int64  `json:"tree_input_tokens"`
-	TreeOutputTokens int64  `json:"tree_output_tokens"`
-	WallDurationMS   int64  `json:"wall_duration_ms"`
-}
-
-type statsCurrentTask struct {
-	ID          *string `json:"id"`
-	Status      *string `json:"status"`
-	ArtifactDir *string `json:"artifact_dir"`
 }
 
 func printStats(st *state.StateStore, stdout io.Writer) error {
@@ -681,11 +714,6 @@ func resetState(st *state.StateStore, stdout io.Writer) error {
 	})
 }
 
-type resetOutput struct {
-	Status   string  `json:"status"`
-	RepoRoot *string `json:"repo_root"`
-}
-
 func parentAccept(st *state.StateStore, stdout io.Writer) error {
 	resolved, err := st.RecordParentOutcome(state.ParentOutcomeAccepted, "")
 	if err != nil {
@@ -694,25 +722,8 @@ func parentAccept(st *state.StateStore, stdout io.Writer) error {
 	return writeJSON(stdout, acceptOutput{Accepted: resolved})
 }
 
-type acceptOutput struct {
-	Accepted bool `json:"accepted"`
-}
-
-type VerificationError struct {
-	Outcome autoresume.Outcome
-	Reason  string
-}
-
 func (e *VerificationError) Error() string {
 	return fmt.Sprintf("verification %s: %s", outcomeLabel(e.Outcome), e.Reason)
-}
-
-type verifyAutoResumeOutput struct {
-	AutomationKey  string `json:"automation_key"`
-	TargetThread   string `json:"target_thread"`
-	ExpectedAtUTC  string `json:"expected_at_utc"`
-	TOMLDTStart    string `json:"toml_dtstart"`
-	DBNextRunAtUTC string `json:"db_next_run_at_utc"`
 }
 
 func printVerifyAutoResume(cmd Command, cfg config.AppConfig, stdout io.Writer) error {
@@ -734,17 +745,6 @@ func printVerifyAutoResume(cmd Command, cfg config.AppConfig, stdout io.Writer) 
 		TOMLDTStart:    result.TOMLDTStart,
 		DBNextRunAtUTC: result.DBNextRunUTC,
 	})
-}
-
-type checkWakeCoalesceOutput struct {
-	Decision         string `json:"decision"`
-	Reason           string `json:"reason"`
-	ParentThread     string `json:"parent_thread"`
-	ResumeAtUTC      string `json:"resume_at_utc"`
-	WakeAutomationID string `json:"wake_automation_id"`
-	WakeThread       string `json:"wake_thread"`
-	WakeNextRunUTC   string `json:"wake_next_run_at_utc"`
-	AddedWaitSeconds int64  `json:"added_wait_seconds"`
 }
 
 func printCheckWakeCoalesce(cmd Command, cfg config.AppConfig, stdout io.Writer) error {

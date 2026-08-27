@@ -12,6 +12,60 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
+var knownTaskStatuses = []string{
+	"active",
+	"waiting-decision",
+	"waiting-sol-review",
+	"complete",
+	"rate-limited",
+	"provider-unavailable",
+	"interrupted",
+}
+
+var taskStatusSurfaces = []struct {
+	name string
+	read func(t *testing.T, cfg config.AppConfig, st *state.StateStore) any
+}{
+	{"--status.task_status", func(t *testing.T, cfg config.AppConfig, st *state.StateStore) any {
+		return requireJSONKey(t, statusRawJSON(t, cfg), "task_status")
+	}},
+	{"--stats.current_task.status", func(t *testing.T, cfg config.AppConfig, st *state.StateStore) any {
+		return requireJSONKey(t, statsCurrentTaskJSON(t, st), "status")
+	}},
+	{"--timeline.task_status", func(t *testing.T, cfg config.AppConfig, st *state.StateStore) any {
+		return requireJSONKey(t, timelineRawJSON(t, st), "task_status")
+	}},
+	{"--convergence.task_status", func(t *testing.T, cfg config.AppConfig, st *state.StateStore) any {
+		return requireJSONKey(t, convergenceRawJSON(t, st), "task_status")
+	}},
+}
+
+var statsMapAggregateFields = []string{
+	"model_calls_by_alias",
+	"model_duration_ms_by_alias",
+	"input_tokens_by_alias",
+	"cache_creation_input_tokens_by_alias",
+	"cache_read_input_tokens_by_alias",
+	"total_prompt_tokens_by_alias",
+	"output_tokens_by_alias",
+	"top_level_turns_by_alias",
+	"call_trees_by_resolved_model",
+	"input_tokens_by_resolved_model",
+	"cache_creation_input_tokens_by_resolved_model",
+	"cache_read_input_tokens_by_resolved_model",
+	"output_tokens_by_resolved_model",
+	"rate_limits_by_alias",
+	"provider_unavailable_by_alias",
+	"risk_floor_by_category",
+	"snapshot_mismatch_by_axis",
+	"packet_reject_by_category",
+	"probe_outcome",
+	"parent_outcomes",
+	"parent_fix_origins",
+	"parent_outcomes_by_model",
+	"parent_outcomes_by_risk",
+}
+
 func decodeSingleLineJSON(t *testing.T, rendered string) map[string]any {
 	t.Helper()
 	raw := strings.TrimSpace(rendered)
@@ -132,16 +186,6 @@ func TestStatusRawJSONContract(t *testing.T) {
 	})
 }
 
-var knownTaskStatuses = []string{
-	"active",
-	"waiting-decision",
-	"waiting-sol-review",
-	"complete",
-	"rate-limited",
-	"provider-unavailable",
-	"interrupted",
-}
-
 func timelineRawJSON(t *testing.T, st *state.StateStore) map[string]any {
 	t.Helper()
 	var out bytes.Buffer
@@ -168,24 +212,6 @@ func statsCurrentTaskJSON(t *testing.T, st *state.StateStore) map[string]any {
 		t.Fatalf("current_taskがJSON objectではありません: %#v", decoded["current_task"])
 	}
 	return currentTask
-}
-
-var taskStatusSurfaces = []struct {
-	name string
-	read func(t *testing.T, cfg config.AppConfig, st *state.StateStore) any
-}{
-	{"--status.task_status", func(t *testing.T, cfg config.AppConfig, st *state.StateStore) any {
-		return requireJSONKey(t, statusRawJSON(t, cfg), "task_status")
-	}},
-	{"--stats.current_task.status", func(t *testing.T, cfg config.AppConfig, st *state.StateStore) any {
-		return requireJSONKey(t, statsCurrentTaskJSON(t, st), "status")
-	}},
-	{"--timeline.task_status", func(t *testing.T, cfg config.AppConfig, st *state.StateStore) any {
-		return requireJSONKey(t, timelineRawJSON(t, st), "task_status")
-	}},
-	{"--convergence.task_status", func(t *testing.T, cfg config.AppConfig, st *state.StateStore) any {
-		return requireJSONKey(t, convergenceRawJSON(t, st), "task_status")
-	}},
 }
 
 func TestTaskStatusFiniteEnumBoundary(t *testing.T) {
@@ -258,32 +284,6 @@ func TestTaskStatusFiniteEnumBoundary(t *testing.T) {
 		}
 		assertNullJSONValue(t, "task_status", requireJSONKey(t, decodeSingleLineJSON(t, out.String()), "task_status"))
 	})
-}
-
-var statsMapAggregateFields = []string{
-	"model_calls_by_alias",
-	"model_duration_ms_by_alias",
-	"input_tokens_by_alias",
-	"cache_creation_input_tokens_by_alias",
-	"cache_read_input_tokens_by_alias",
-	"total_prompt_tokens_by_alias",
-	"output_tokens_by_alias",
-	"top_level_turns_by_alias",
-	"call_trees_by_resolved_model",
-	"input_tokens_by_resolved_model",
-	"cache_creation_input_tokens_by_resolved_model",
-	"cache_read_input_tokens_by_resolved_model",
-	"output_tokens_by_resolved_model",
-	"rate_limits_by_alias",
-	"provider_unavailable_by_alias",
-	"risk_floor_by_category",
-	"snapshot_mismatch_by_axis",
-	"packet_reject_by_category",
-	"probe_outcome",
-	"parent_outcomes",
-	"parent_fix_origins",
-	"parent_outcomes_by_model",
-	"parent_outcomes_by_risk",
 }
 
 func assertStatsMapFieldsAreObjects(t *testing.T, decoded map[string]any) {

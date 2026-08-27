@@ -11,6 +11,13 @@ import (
 	"time"
 )
 
+type terminalPayloadOrchestration struct {
+	captured  string
+	liveEmit  []string
+	cellValue string
+	store     map[string]string
+}
+
 const (
 	terminalPayloadHelperEnv     = "GLM_WORKER_TERMINAL_PAYLOAD_HELPER"
 	terminalPayloadRequestEnv    = "GLM_WORKER_TERMINAL_PAYLOAD_REQUEST"
@@ -18,6 +25,14 @@ const (
 	terminalPayloadPacketHead    = `"status":"NEEDS_SOL_DECISION"`
 	terminalPayloadCapturePrefix = "GLM_TERMINAL_CAPTURED"
 )
+
+var terminalPayloadDroppedEnvKeys = []string{
+	"GLM_WORKER_HOME",
+	"GLM_WORKER_PROMPT_DIR",
+	"GLM_WORKER_CLAUDE_BIN",
+	"GLM_WORKER_TELEMETRY_CONTENT",
+	"CLAUDE_CONFIG_DIR",
+}
 
 func TestTerminalPayloadBoundarySingleRender(t *testing.T) {
 	if os.Getenv(terminalPayloadHelperEnv) == "1" {
@@ -33,23 +48,8 @@ func TestTerminalPayloadBoundarySingleRender(t *testing.T) {
 	terminalPayloadRealWorkerTerminalResult(t)
 }
 
-type terminalPayloadOrchestration struct {
-	captured  string
-	liveEmit  []string
-	cellValue string
-	store     map[string]string
-}
-
 func newTerminalPayloadOrchestration() *terminalPayloadOrchestration {
 	return &terminalPayloadOrchestration{store: make(map[string]string)}
-}
-
-var terminalPayloadDroppedEnvKeys = []string{
-	"GLM_WORKER_HOME",
-	"GLM_WORKER_PROMPT_DIR",
-	"GLM_WORKER_CLAUDE_BIN",
-	"GLM_WORKER_TELEMETRY_CONTENT",
-	"CLAUDE_CONFIG_DIR",
 }
 
 func terminalPayloadCellEnv(extraEnv []string) []string {

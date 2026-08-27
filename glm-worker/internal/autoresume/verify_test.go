@@ -1,6 +1,7 @@
 package autoresume
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"

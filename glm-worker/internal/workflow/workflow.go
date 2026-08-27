@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/commentlint"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
@@ -26,17 +26,18 @@ type ModelRunner interface {
 }
 
 type Workflow struct {
-	config              config.AppConfig
-	state               *state.StateStore
-	runner              ModelRunner
-	output              io.Writer
-	temp                string
-	captureSnapshot     func(repoRoot string) (state.GitSnapshot, error)
-	collectChangedPaths func(repoRoot, baselineHead string) ([]string, error)
-	now                 func() time.Time
-	sleep               func(time.Duration)
-	jitter              func(base time.Duration) time.Duration
-	commentLint         func(root string) (commentlint.Report, error)
+	config                config.AppConfig
+	state                 *state.StateStore
+	runner                ModelRunner
+	output                io.Writer
+	temp                  string
+	captureSnapshot       func(repoRoot string) (state.GitSnapshot, error)
+	collectChangedPaths   func(repoRoot, baselineHead string) ([]string, error)
+	now                   func() time.Time
+	sleep                 func(time.Duration)
+	jitter                func(base time.Duration) time.Duration
+	qualityGate           func(root string) (harnesslint.Report, error)
+	captureQualitySurface func(root string) (string, error)
 
 	stop *runner.StopController
 
@@ -52,26 +53,45 @@ type callDiagnostics struct {
 	providerClassification string
 }
 
-func NewWorkflow(cfg config.AppConfig, st *state.StateStore, r ModelRunner, output io.Writer) *Workflow {
-	return &Workflow{
-		config:              cfg,
-		state:               st,
-		runner:              r,
-		output:              output,
-		captureSnapshot:     state.CaptureGitSnapshot,
-		collectChangedPaths: collectChangedPaths,
-		now:                 time.Now,
-		sleep:               time.Sleep,
-		jitter:              boundedBackoffJitter,
-		commentLint:         runCommentLint,
-	}
+type WorkerError struct {
+	Phase    string
+	ExitCode int
+	Tail     string
+	Message  string
 }
 
-func runCommentLint(root string) (commentlint.Report, error) {
-	if root == "" {
-		return commentlint.Report{Status: "pass", Violations: []commentlint.Violation{}}, nil
+type effectiveRisk struct {
+	high   bool
+	source string
+}
+
+const providerUnavailableDeadline = 3 * time.Hour
+
+const maxTransientProbes = 4
+
+const resultCorrectionPhaseSuffix = "-result-correct"
+
+var transientBackoffSchedule = []time.Duration{
+	5 * time.Minute,
+	15 * time.Minute,
+	45 * time.Minute,
+	90 * time.Minute,
+}
+
+func NewWorkflow(cfg config.AppConfig, st *state.StateStore, r ModelRunner, output io.Writer) *Workflow {
+	return &Workflow{
+		config:                cfg,
+		state:                 st,
+		runner:                r,
+		output:                output,
+		captureSnapshot:       state.CaptureGitSnapshot,
+		collectChangedPaths:   collectChangedPaths,
+		now:                   time.Now,
+		sleep:                 time.Sleep,
+		jitter:                boundedBackoffJitter,
+		qualityGate:           runRepositoryQualityGate,
+		captureQualitySurface: captureQualitySurfaceDigest,
 	}
-	return commentlint.Check(root)
 }
 
 func (w *Workflow) AttachStopController(stop *runner.StopController) {
@@ -80,17 +100,6 @@ func (w *Workflow) AttachStopController(stop *runner.StopController) {
 
 func (w *Workflow) stopRequested() bool {
 	return w.stop != nil && w.stop.StopRequested()
-}
-
-const providerUnavailableDeadline = 3 * time.Hour
-
-const maxTransientProbes = 4
-
-var transientBackoffSchedule = []time.Duration{
-	5 * time.Minute,
-	15 * time.Minute,
-	45 * time.Minute,
-	90 * time.Minute,
 }
 
 func boundedBackoffJitter(base time.Duration) time.Duration {
@@ -106,15 +115,8 @@ func (w *Workflow) withTemp(fn func() error) error {
 		return err
 	}
 	w.temp = temp
-	defer os.RemoveAll(temp)
+	defer func() { _ = os.RemoveAll(temp) }()
 	return fn()
-}
-
-type WorkerError struct {
-	Phase    string
-	ExitCode int
-	Tail     string
-	Message  string
 }
 
 func (e *WorkerError) Error() string {
@@ -145,6 +147,9 @@ func (w *Workflow) ExecuteNewTask(request string) error {
 		}
 
 		if err := state.CaptureGitBaseline(w.config, w.state); err != nil {
+			return err
+		}
+		if err := w.captureQualitySurfaceBaseline(); err != nil {
 			return err
 		}
 		w.recordBaselineRound()
@@ -610,6 +615,9 @@ func resumeSourceOf(checkpoint state.ResumeCheckpoint) string {
 }
 
 func (w *Workflow) handleWorkerResult(request string, workerResult packet.Result, workerPhase string) error {
+	if stopped, err := w.verifyQualitySurfaceBaseline(workerPhase); err != nil || stopped {
+		return err
+	}
 	switch workerResult.Status {
 	case packet.StatusNeedsSolDecision:
 		if err := w.state.Touch("pending-decision"); err != nil {
@@ -646,12 +654,12 @@ func (w *Workflow) reviewUntilStable(
 	if stopped {
 		return nil
 	}
-	commentReport, err := w.commentLint(w.config.RepoRoot)
+	qualityReport, err := w.qualityGate(w.config.RepoRoot)
 	if err != nil {
-		return &WorkerError{Phase: "commentlint", Message: fmt.Sprintf("commentlint failed: %v", err)}
+		return &WorkerError{Phase: "harnesslint", Message: fmt.Sprintf("harnesslint failed: %v", err)}
 	}
-	if commentlint.IsViolation(commentReport) {
-		result := commentLintFixResult(commentReport)
+	if harnesslint.IsViolation(qualityReport) {
+		result := qualityGateFixResult(qualityReport)
 		if err := w.writeLastReview(result); err != nil {
 			return err
 		}
@@ -744,21 +752,6 @@ func (w *Workflow) reviewUntilStable(
 	)
 }
 
-func commentLintFixResult(report commentlint.Report) packet.Result {
-	issues := fmt.Sprintf("commentlintが禁止source commentまたは未分類sourceを%d件検出した。commentlint --fixを実行し、未分類sourceは分類を追加して再検査する", len(report.Violations))
-	return packet.Result{
-		Status:              packet.StatusFixRequired,
-		Risk:                packet.RiskHigh,
-		Summary:             "machine comment gateがrepository-wide postconditionを拒否した",
-		RequirementCoverage: "source commentの絶対禁止をreviewer判断より前に機械検証した",
-		Invariants:          "build constraintとshebang以外のsource commentを許可しない",
-		TestEvidence:        "commentlintのtyped violation結果",
-		Issues:              issues,
-		ResidualRisk:        "自動修正後もcommentlint再実行と通常reviewが必要",
-		Targets:             []string{"commentlint"},
-	}
-}
-
 func (w *Workflow) handleReviewResult(
 	request string,
 	workerResult packet.Result,
@@ -804,7 +797,7 @@ func (w *Workflow) handleReviewResult(
 			return err
 		}
 		prompt := automaticFixPrompt(request, decision, reviewReport, activeTaskPath)
-		reportOnly := isReportOnlyFix(reviewResult)
+		reportOnly := packet.IsReportOnlyFix(reviewResult)
 
 		if reportOnly {
 			prompt = reportOnlyFixPrompt(request, decision, reviewReport, activeTaskPath)
@@ -863,17 +856,6 @@ func (w *Workflow) handleReviewResult(
 
 func reviewNeedsHighRiskFloor(workerResult packet.Result, autoFixes int, hasDecision bool, hasPriorReview bool) bool {
 	return workerResult.Risk == packet.RiskHigh || autoFixes > 0 || hasDecision || hasPriorReview
-}
-
-func isReportOnlyFix(reviewResult packet.Result) bool {
-	return packet.IsReportOnlyFix(reviewResult)
-}
-
-const resultCorrectionPhaseSuffix = "-result-correct"
-
-type effectiveRisk struct {
-	high   bool
-	source string
 }
 
 func riskLabel(high bool) string {
@@ -938,6 +920,9 @@ func (w *Workflow) handleAutoFixResult(
 	autoFixes int,
 	fixPhase string,
 ) error {
+	if stopped, err := w.verifyQualitySurfaceBaseline(fixPhase); err != nil || stopped {
+		return err
+	}
 	switch fixResult.Status {
 	case packet.StatusNeedsSolDecision:
 		if err := w.state.Touch("pending-decision"); err != nil {
@@ -1812,8 +1797,8 @@ func (w *Workflow) emitResult(value packet.Result) error {
 		return err
 	}
 	w.state.RecordSolResult(value, w.lastProducer)
-	fmt.Fprintln(w.output, report)
-	return nil
+	_, err = fmt.Fprintln(w.output, report)
+	return err
 }
 
 func (w *Workflow) enforceRiskFloor(

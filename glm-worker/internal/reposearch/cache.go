@@ -11,11 +11,6 @@ import (
 	"sort"
 )
 
-const (
-	cacheSchemaVersion = 2
-	cacheFileName      = "index.json"
-)
-
 type cacheData struct {
 	SchemaVersion      int      `json:"schema_version"`
 	RepoRoot           string   `json:"repo_root"`
@@ -29,6 +24,11 @@ type cacheData struct {
 	SkippedFiles       int      `json:"skipped_files"`
 	Docs               []doc    `json:"docs"`
 }
+
+const (
+	cacheSchemaVersion = 2
+	cacheFileName      = "index.json"
+)
 
 func sortedExcludeDirs(dirs map[string]bool) []string {
 	names := make([]string, 0, len(dirs))
@@ -161,8 +161,8 @@ func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
 	tempPath := file.Name()
 
 	defer func() {
-		file.Close()
-		os.Remove(tempPath)
+		_ = file.Close()
+		_ = os.Remove(tempPath)
 	}()
 
 	if _, err := file.Write(data); err != nil {

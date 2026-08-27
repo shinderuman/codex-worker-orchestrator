@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/commentlint"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
@@ -49,6 +49,17 @@ type scriptedRunner struct {
 	artifactFiles   []scenarioArtifact
 	taskArtifactDir func() (string, error)
 }
+
+type fakeClock struct {
+	now    time.Time
+	sleeps []time.Duration
+}
+
+const zaiFiveHourLog = "API Error: Request rejected (429) · [1308][Usage limit reached for 5 hour. Your limit will reset at 2026-07-22 14:06:34]\n"
+
+var fixedSnapshot = state.GitSnapshot{Head: "test-head", IndexDigest: "test-index", WorktreeDigest: "test-worktree"}
+
+var testFixedTime = time.Unix(1_700_000_000, 0).UTC()
 
 func (r *scriptedRunner) Run(
 	_ state.SessionRole,
@@ -225,10 +236,6 @@ func unknownStatusPacket() string {
 	return packetBody(packet.Result{Status: packet.Status("UNKNOWN"), Risk: packet.RiskLow, Summary: "x"})
 }
 
-const zaiFiveHourLog = "API Error: Request rejected (429) · [1308][Usage limit reached for 5 hour. Your limit will reset at 2026-07-22 14:06:34]\n"
-
-var fixedSnapshot = state.GitSnapshot{Head: "test-head", IndexDigest: "test-index", WorktreeDigest: "test-worktree"}
-
 func seedReviewStartSnapshot(t *testing.T, st *state.StateStore) {
 	t.Helper()
 	if err := st.SaveReviewStartSnapshot(fixedSnapshot); err != nil {
@@ -250,13 +257,6 @@ func newStateStoreT(t *testing.T) *state.StateStore {
 		t.Fatal(err)
 	}
 	return st
-}
-
-var testFixedTime = time.Unix(1_700_000_000, 0).UTC()
-
-type fakeClock struct {
-	now    time.Time
-	sleeps []time.Duration
 }
 
 func newFakeClock() *fakeClock {
@@ -296,13 +296,14 @@ func newWorkflowTWithOutput(t *testing.T, st *state.StateStore, r *scriptedRunne
 	w.now = clock.nowFunc
 	w.sleep = clock.sleepFunc
 	w.jitter = identityJitter
-	w.commentLint = func(string) (commentlint.Report, error) {
-		return commentlint.Report{Status: "pass", Violations: []commentlint.Violation{}}, nil
+	w.qualityGate = func(string) (harnesslint.Report, error) {
+		return harnesslint.Report{Status: "pass", Violations: []harnesslint.Violation{}}, nil
 	}
+	w.captureQualitySurface = func(string) (string, error) { return "quality-baseline", nil }
 	return w
 }
 
-func TestCommentLintBlocksReviewerAndRoutesWorkerFix(t *testing.T) {
+func TestQualityGateBlocksReviewerAndRoutesWorkerFix(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: implementedPacket("initial")},
@@ -312,12 +313,12 @@ func TestCommentLintBlocksReviewerAndRoutesWorkerFix(t *testing.T) {
 	w := newWorkflowT(t, st, r)
 	w.temp = t.TempDir()
 	calls := 0
-	w.commentLint = func(string) (commentlint.Report, error) {
+	w.qualityGate = func(string) (harnesslint.Report, error) {
 		calls++
 		if calls == 1 {
-			return commentlint.Report{Status: "fail", Violations: []commentlint.Violation{{Path: "a.go", Line: 3, Column: 1, Kind: "comment", Message: "forbidden"}}}, nil
+			return harnesslint.Report{Status: "fail", Violations: []harnesslint.Violation{{Rule: "funlen", Path: "a.go", Line: 3, Column: 1, Message: "too long"}}}, nil
 		}
-		return commentlint.Report{Status: "pass", Violations: []commentlint.Violation{}}, nil
+		return harnesslint.Report{Status: "pass", Violations: []harnesslint.Violation{}}, nil
 	}
 	if err := w.ExecuteNewTask("request"); err != nil {
 		t.Fatal(err)
@@ -326,9 +327,9 @@ func TestCommentLintBlocksReviewerAndRoutesWorkerFix(t *testing.T) {
 		t.Fatalf("phases = %v", r.phases)
 	}
 	if calls != 2 {
-		t.Fatalf("commentlint calls = %d", calls)
+		t.Fatalf("harnesslint calls = %d", calls)
 	}
-	if !strings.Contains(r.prompts[1], "commentlint") {
+	if !strings.Contains(r.prompts[1], "harnesslint") {
 		t.Fatalf("fix prompt = %s", r.prompts[1])
 	}
 	status := st.TaskStatus()

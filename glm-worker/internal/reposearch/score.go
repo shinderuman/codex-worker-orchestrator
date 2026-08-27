@@ -7,17 +7,17 @@ import (
 	"strings"
 )
 
+type fieldStatistics struct {
+	averageLength float64
+	frequencies   map[string]int
+}
+
 const (
 	bm25K1 = 1.2
 	bm25B  = 0.75
 
 	maxSnippetRunes = 200
 )
-
-type fieldStatistics struct {
-	averageLength float64
-	frequencies   map[string]int
-}
 
 func rankDocuments(docs []doc, queryTokens []string, limit int, pathWeight float64) []Result {
 	if len(docs) == 0 {

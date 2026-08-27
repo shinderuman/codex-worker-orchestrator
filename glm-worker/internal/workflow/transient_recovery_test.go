@@ -12,6 +12,10 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
+type typedProbeRunner struct {
+	scriptedRunner
+}
+
 var (
 	errProbeTransient    = errors.New("API Error: 503 Service Unavailable")
 	errProbeNonTransient = errors.New("401 Unauthorized: invalid api key")
@@ -911,10 +915,6 @@ func TestResumeProbeGateBlankResponseNotRecovered(t *testing.T) {
 	if st.TaskStatus() != state.TaskStatusProviderUnavailable {
 		t.Fatalf("status = %q", st.TaskStatus())
 	}
-}
-
-type typedProbeRunner struct {
-	scriptedRunner
 }
 
 func (r *typedProbeRunner) Probe(model string) (runner.ProbeResult, error) {

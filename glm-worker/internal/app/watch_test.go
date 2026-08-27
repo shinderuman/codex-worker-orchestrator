@@ -86,15 +86,6 @@ func requireWatchEvent(t *testing.T, events []map[string]any, eventType string) 
 	return events[index]
 }
 
-func watchFloat(t *testing.T, event map[string]any, key string) float64 {
-	t.Helper()
-	value, ok := event[key].(float64)
-	if !ok {
-		t.Fatalf("event %vの%qがJSON numberではありません: %#v", event["type"], key, event[key])
-	}
-	return value
-}
-
 func watchString(t *testing.T, event map[string]any, key string) string {
 	t.Helper()
 	value, ok := event[key].(string)

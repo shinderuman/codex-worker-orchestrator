@@ -19,7 +19,7 @@ func AcquireRepoLock(path string) (*RepoLock, error) {
 	}
 
 	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		file.Close()
+		_ = file.Close()
 		return nil, ErrRepoLockHeld
 	}
 
