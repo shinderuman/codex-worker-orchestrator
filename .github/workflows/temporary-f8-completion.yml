@@ -20,48 +20,17 @@ jobs:
         with:
           go-version: '1.22.x'
           cache: false
-      - name: Close F8 metadata
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          history = Path('IMPLEMENTATION_HISTORY.md')
-          h = history.read_text()
-          marker = '## 重大インシデント / 再オープン中\n\n'
-          entry = ('- [x] F8 instruction conflict resolution: Track Aとしてwrapper-owned `INSTRUCTION_CONFLICT_BOUNDARY`を導入し、generic worker ruleをACTIVE taskまたはUSER_REQUEST由来のprimary authorityより従属させた。scope expansionとmachine contract overrideを禁止し、public surface追加はprimary authorityが要求・許可した場合だけ許容する。F5 rule-activation correctionにもpin済みACTIVE task authorityを再注入し、generic correction promptだけが局所ruleを優先する経路を閉じた。Track Bとして`common-code.md`の診断情報をinternal state/artifact/logger等の既存sinkへ限定してmachine stdout/stderrへのhuman text混入を禁止し、`cli.md`のshort option規則をprimary authority依存へ修正した。独立reviewでPlan非接続repoにおけるUSER_REQUEST authorityとdiagnostic sink表現を補正。production implementation run `33118531106` PASS、final validation run `33118860692`でworkflow conflict tests、既存machine-output contract tests、`go vet ./...`、`go build ./...`をPASS、clean production headの恒久Repository Lint `33118968569`もPASS。追加model/Sol callは0。runtime completion evidenceは後段で追記する。\n')
-          if entry not in h:
-              h = h.replace(marker, marker + entry, 1)
-              history.write_text(h)
-
-          plan = Path('IMPLEMENTATION_PLAN.local.md')
-          p = plan.read_text()
-          p = p.replace('- `IMPLEMENTATION_TASKS/instruction-conflict-resolution.md`\n\n## NEXT（優先順）', '- `IMPLEMENTATION_TASKS/016-worker-repo-search-integration.md`\n\n## NEXT（優先順）', 1)
-          p = p.replace('- `IMPLEMENTATION_TASKS/016-worker-repo-search-integration.md`\n', '', 1)
-          old = '- current implementation: F7 `prose-semantic-guard-migration`はPR #17のSquash Merge commit `1b4546548a5089c8160f6f53263ea91fb39a821d`としてCOMPLETE。F8 `instruction-conflict-resolution`がACTIVE'
-          new = '- current implementation: F8 `instruction-conflict-resolution`はproduction実装・独立review・final validation `33118860692`・恒久Repository Lint `33118968569`までCOMPLETEでPR #18 merge待ち。F9 `017-reviewer-diff-first-search.md`は`016-worker-repo-search-integration.md`へのhard dependencyが未充足のため、016をACTIVEへ昇格'
-          p = p.replace(old, new)
-          p = p.replace('F8開始を妨げるdependency / permission waitはない。', 'F8はCOMPLETE。F9のhard dependencyを満たすため`016-worker-repo-search-integration.md`をACTIVEとして先行実装する。')
-          p = p.replace('latest integrationをF8 branchへ履歴を書き換えず同期し、Rules / Plan / ACTIVE F8 taskを再読する。instruction conflict resolutionの現行production authorityとconflict pathを棚卸しし、F8 production実装を進める。', 'F8 completion runtime validationを完了し、最終completion-tree Repository Lint後にPR #18をSquash Mergeする。その後integration metadataを同期し、016専用task branchをlatest integrationへ履歴を書き換えず同期して開始する。')
-          plan.write_text(p)
-
-          task = Path('IMPLEMENTATION_TASKS/instruction-conflict-resolution.md')
-          task.unlink()
-          PY
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -A
-          git commit -m 'docs: close F8 completion metadata'
-          git push
       - name: Install runtime prerequisites
         run: |
-          export PATH="$HOME/go/bin:$PATH"
-          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.1.6
-          go install mvdan.cc/sh/v3/cmd/shfmt@v3.12.0
+          mkdir -p "$HOME/.local/bin"
+          curl -fsSL https://github.com/golangci/golangci-lint/releases/download/v2.1.6/golangci-lint-2.1.6-linux-amd64.tar.gz -o /tmp/golangci-lint.tar.gz
+          tar -xzf /tmp/golangci-lint.tar.gz -C /tmp
+          install -m 0755 /tmp/golangci-lint-2.1.6-linux-amd64/golangci-lint "$HOME/.local/bin/golangci-lint"
+          curl -fsSL https://github.com/mvdan/sh/releases/download/v3.12.0/shfmt_v3.12.0_linux_amd64 -o "$HOME/.local/bin/shfmt"
+          chmod 0755 "$HOME/.local/bin/shfmt"
           curl -fsSL https://github.com/koalaman/shellcheck/releases/download/v0.10.0/shellcheck-v0.10.0.linux.x86_64.tar.xz -o /tmp/shellcheck.tar.xz
           tar -xJf /tmp/shellcheck.tar.xz -C /tmp
-          mkdir -p "$HOME/.local/bin"
           install -m 0755 /tmp/shellcheck-v0.10.0/shellcheck "$HOME/.local/bin/shellcheck"
-          echo "$HOME/go/bin" >> "$GITHUB_PATH"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Validate installed runtime
         run: |
@@ -106,6 +75,8 @@ jobs:
           plan.write_text(p)
           Path('.github/workflows/temporary-f8-completion.yml').unlink()
           PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
           git commit -m 'docs: record F8 runtime evidence'
           git push origin HEAD:hardening-task/instruction-conflict-resolution
