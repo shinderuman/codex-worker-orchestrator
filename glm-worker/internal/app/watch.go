@@ -108,32 +108,26 @@ func watchTerminal(st *state.StateStore, taskID string) (watchExitEvent, bool) {
 }
 
 func watchTaskEvents(st *state.StateStore, taskID string, file *os.File, path string, stdout io.Writer, opts watchOptions) error {
-	tracker := newWatchToolTracker()
-	pending, err := drainTaskEvents(file, stdout, nil, tracker.observe)
+	pending, status, exitEvent, err := prepareWatchTaskEvents(st, taskID, file, stdout, opts)
 	if err != nil {
 		return err
 	}
-	status := watchLiveStatus{st: st, taskID: taskID, stdout: stdout, tracker: tracker, opts: opts}
-	if err := status.refresh(true); err != nil {
-		return err
-	}
-	if exitEvent, terminal := watchTerminal(st, taskID); terminal {
-		return writeWatchEvent(stdout, exitEvent)
+	if exitEvent != nil {
+		return writeWatchEvent(stdout, *exitEvent)
 	}
 	for {
-		select {
-		case <-opts.stop:
+		if waitWatchTick(opts.stop, opts.followInterval) {
 			return nil
-		case <-time.After(opts.followInterval):
 		}
-		if _, err := opts.statLog(path); err != nil {
-			if !errors.Is(err, os.ErrNotExist) {
-				return fmt.Errorf("event log %sの状態を取得できません: %w", path, err)
-			}
+		removed, err := watchEventLogRemoved(path, opts)
+		if err != nil {
+			return err
+		}
+		if removed {
 			return writeWatchEvent(stdout, watchLogStatusEvent{Type: "event_log_status", Status: "removed"})
 		}
 		exitEvent, terminal := watchTerminal(st, taskID)
-		pending, err = drainTaskEvents(file, stdout, pending, tracker.observe)
+		pending, err = drainTaskEvents(file, stdout, pending, status.tracker.observe)
 		if err != nil {
 			return err
 		}
@@ -144,6 +138,41 @@ func watchTaskEvents(st *state.StateStore, taskID string, file *os.File, path st
 			return writeWatchEvent(stdout, exitEvent)
 		}
 	}
+}
+
+func prepareWatchTaskEvents(st *state.StateStore, taskID string, file *os.File, stdout io.Writer, opts watchOptions) ([]byte, watchLiveStatus, *watchExitEvent, error) {
+	tracker := newWatchToolTracker()
+	pending, err := drainTaskEvents(file, stdout, nil, tracker.observe)
+	status := watchLiveStatus{st: st, taskID: taskID, stdout: stdout, tracker: tracker, opts: opts}
+	if err != nil {
+		return nil, status, nil, err
+	}
+	if err := status.refresh(true); err != nil {
+		return nil, status, nil, err
+	}
+	if exitEvent, terminal := watchTerminal(st, taskID); terminal {
+		return pending, status, &exitEvent, nil
+	}
+	return pending, status, nil, nil
+}
+
+func waitWatchTick(stop <-chan struct{}, interval time.Duration) bool {
+	select {
+	case <-stop:
+		return true
+	case <-time.After(interval):
+		return false
+	}
+}
+
+func watchEventLogRemoved(path string, opts watchOptions) (bool, error) {
+	if _, err := opts.statLog(path); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return true, nil
+		}
+		return false, fmt.Errorf("event log %sの状態を取得できません: %w", path, err)
+	}
+	return false, nil
 }
 
 func writeWatchEvent(w io.Writer, event any) error {
@@ -161,23 +190,30 @@ func drainTaskEvents(file *os.File, stdout io.Writer, pending []byte, onRecord f
 		read, err := file.Read(buffer)
 		if read > 0 {
 			pending = append(pending, buffer[:read]...)
-			for {
-				index := bytes.IndexByte(pending, '\n')
-				if index < 0 {
-					break
-				}
-				if err := emitTaskEventLine(pending[:index], stdout, onRecord); err != nil {
-					return pending, err
-				}
-				pending = pending[index+1:]
+			pending, err = emitCompleteTaskEventLines(pending, stdout, onRecord)
+			if err != nil {
+				return pending, err
 			}
 		}
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			return pending, nil
 		}
 		if err != nil {
 			return pending, err
 		}
+	}
+}
+
+func emitCompleteTaskEventLines(pending []byte, stdout io.Writer, onRecord func(state.TaskEventRecord)) ([]byte, error) {
+	for {
+		index := bytes.IndexByte(pending, '\n')
+		if index < 0 {
+			return pending, nil
+		}
+		if err := emitTaskEventLine(pending[:index], stdout, onRecord); err != nil {
+			return pending, err
+		}
+		pending = pending[index+1:]
 	}
 }
 
