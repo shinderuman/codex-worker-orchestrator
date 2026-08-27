@@ -48,11 +48,17 @@ var workerRuleFiles = map[workerRule]string{
 
 var stateRuleTokens = map[string]struct{}{
 	"state": {}, "states": {}, "config": {}, "configs": {}, "configuration": {},
-	"cache": {}, "caches": {}, "migration": {}, "migrations": {},
+	"setting": {}, "settings": {}, "cache": {}, "caches": {},
+	"migration": {}, "migrations": {}, "upgrade": {}, "upgrades": {},
+	"manifest": {}, "manifests": {}, "sidecar": {}, "sidecars": {},
+	"persistent": {}, "persistence": {}, "storage": {}, "store": {},
+	"database": {}, "databases": {}, "db": {},
 }
 
 var cliRuleTokens = map[string]struct{}{
 	"cmd": {}, "cli": {}, "bin": {}, "command": {}, "commands": {},
+	"flag": {}, "flags": {}, "arg": {}, "args": {}, "argv": {},
+	"option": {}, "options": {}, "subcommand": {}, "subcommands": {},
 }
 
 func requiredWorkerRules(repoRoot string, paths []string) []workerRule {

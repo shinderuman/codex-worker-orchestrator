@@ -39,6 +39,33 @@ func TestRequiredWorkerRulesAreDerivedFromGenericPaths(t *testing.T) {
 	}
 }
 
+func TestRequiredWorkerRulesCoverPersistentAndCLIAliases(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		want workerRule
+	}{
+		{name: "settings", path: "internal/settings/loader.go", want: ruleStateTransitions},
+		{name: "upgrade", path: "upgrade/schema.go", want: ruleStateTransitions},
+		{name: "manifest", path: "internal/manifest/writer.go", want: ruleStateTransitions},
+		{name: "sidecar", path: "internal/sidecar/file.go", want: ruleStateTransitions},
+		{name: "storage", path: "internal/storage/record.go", want: ruleStateTransitions},
+		{name: "database", path: "internal/database/query.go", want: ruleStateTransitions},
+		{name: "flags", path: "internal/app/flags.go", want: ruleCLI},
+		{name: "args", path: "internal/app/args.go", want: ruleCLI},
+		{name: "options", path: "internal/app/options.go", want: ruleCLI},
+		{name: "subcommand", path: "internal/app/subcommand.go", want: ruleCLI},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rules := requiredWorkerRules(t.TempDir(), []string{tt.path})
+			if !slices.Contains(rules, tt.want) {
+				t.Fatalf("rules = %v, missing %s for %s", rules, tt.want, tt.path)
+			}
+		})
+	}
+}
+
 func TestRequiredWorkerRulesDoNotRouteStateFromTestPackageName(t *testing.T) {
 	got := requiredWorkerRules(t.TempDir(), []string{"internal/state/store_test.go"})
 	want := []workerRule{ruleTesting, ruleGo}
