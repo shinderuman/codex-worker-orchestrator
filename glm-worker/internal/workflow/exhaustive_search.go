@@ -38,6 +38,16 @@ func (w *Workflow) exhaustiveSearchContext(request, activeTaskPath string, role 
 	return renderExhaustiveSearchProof(role, report), nil
 }
 
+func (w *Workflow) executeWorkerCheckpointWithExhaustiveContext(request, activeTaskPath string, checkpoint state.ResumeCheckpoint, pocStage bool) error {
+	contextBlock, err := w.exhaustiveSearchContext(request, activeTaskPath, state.WorkerRole, 1)
+	if err != nil {
+		return err
+	}
+	checkpoint.Prompt += contextBlock
+	checkpoint.OriginalPrompt = checkpoint.Prompt
+	return w.executeWorkerCheckpoint(request, checkpoint, pocStage)
+}
+
 func exhaustiveSearchRequired(repoRoot, request, activeTaskPath string) (bool, error) {
 	if hasExhaustiveRequirement(request) {
 		return true, nil
