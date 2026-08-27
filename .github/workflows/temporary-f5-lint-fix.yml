@@ -99,10 +99,11 @@ jobs:
           \t\tcheckpoint = activatedCheckpoint
           \t}
           '''
-          new = '''\tcheckpoint, err = w.activateResumeRuleContext(checkpoint)
-          \tif err != nil {
-          \t\treturn checkpoint, false, err
+          new = '''\tactivatedCheckpoint, activationErr := w.activateResumeRuleContext(checkpoint)
+          \tif activationErr != nil {
+          \t\treturn checkpoint, false, activationErr
           \t}
+          \tcheckpoint = activatedCheckpoint
           '''
           if old not in workflow:
           	raise SystemExit('resume activation block not found')
