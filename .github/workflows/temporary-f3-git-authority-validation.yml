@@ -15,65 +15,11 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - name: Finalize guard fixtures and prompt contract
+      - name: Finalize F3 source
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-
-          test_path = Path('glm-worker/internal/runner/git_authority_guard_test.go')
-          text = test_path.read_text()
-          pattern = r'func gitAuthorityResultJSON\(\) string \{\n\treturn `.*?`\n\}'
-          replacement = 'func gitAuthorityResultJSON() string {\n\treturn `{"type":"result","subtype":"success","is_error":false,"structured_output":{"status":"IMPLEMENTED","risk":"LOW","summary":"done","requirement_coverage":"covered","tests":"pass","unverified":"none"},"result":"runner output"}`\n}'
-          text, count = re.subn(pattern, replacement, text, count=1, flags=re.S)
-          if count != 1:
-              raise SystemExit(f'gitAuthorityResultJSON replacement count={count}')
-          test_path.write_text(text)
-
-          prompt_path = Path('codex/glm-worker/prompts/WORKER.md')
-          prompt = prompt_path.read_text()
-          old = '- 明示依頼なしに`git commit`しない。'
-          new = '- `git commit`は禁止。task要求や明示依頼にcommit文言があってもGLM worker自身へのGit authority付与とは解釈せず、commitは親Codexへ残す。'
-          if prompt.count(old) != 1:
-              raise SystemExit(f'worker prompt replacement count={prompt.count(old)}')
-          prompt_path.write_text(prompt.replace(old, new, 1))
-
-          preflight_path = Path('glm-worker/internal/runner/preflight_poc_test.go')
-          preflight = preflight_path.read_text()
-          old = '''\tsourceFlags := map[string]bool{}
-\tentries, err := os.ReadDir(".")
-\tif err != nil {
-\t\tt.Fatalf("package dir読み込み: %v", err)
-\t}
-\tflagLiteral := regexp.MustCompile(`"(--?[A-Za-z][A-Za-z0-9_-]*)"`)
-\tfor _, entry := range entries {
-\t\tname := entry.Name()
-\t\tif entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
-\t\t\tcontinue
-\t\t}
-\t\tdata, err := os.ReadFile(name)
-\t\tif err != nil {
-\t\t\tt.Fatalf("%s読み込み: %v", name, err)
-\t\t}
-\t\tfor _, literal := range flagLiteral.FindAllStringSubmatch(string(data), -1) {
-\t\t\tsourceFlags[literal[1]] = true
-\t\t}
-\t}'''
-          new = '''\tsourceFlags := map[string]bool{}
-\tflagLiteral := regexp.MustCompile(`"(--?[A-Za-z][A-Za-z0-9_-]*)"`)
-\tfor _, name := range []string{"runner.go", "probe.go"} {
-\t\tdata, err := os.ReadFile(name)
-\t\tif err != nil {
-\t\t\tt.Fatalf("%s読み込み: %v", name, err)
-\t\t}
-\t\tfor _, literal := range flagLiteral.FindAllStringSubmatch(string(data), -1) {
-\t\t\tsourceFlags[literal[1]] = true
-\t\t}
-\t}'''
-          if preflight.count(old) != 1:
-              raise SystemExit(f'preflight inventory replacement count={preflight.count(old)}')
-          preflight_path.write_text(preflight.replace(old, new, 1))
-          PY
+          python3 -c 'from pathlib import Path; p=Path("glm-worker/internal/runner/git_authority_guard_test.go"); s=p.read_text(); old="return `{\\\"type\\\":\\\"result\\\",\\\"subtype\\\":\\\"success\\\",\\\"is_error\\\":false,\\\"structured_output\\\":{\\\"status\\\":\\\"IMPLEMENTED\\\",\\\"risk\\\":\\\"LOW\\\",\\\"summary\\\":\\\"done\\\",\\\"requirement_coverage\\\":\\\"covered\\\",\\\"tests\\\":\\\"pass\\\",\\\"unverified\\\":\\\"none\\\"},\\\"result\\\":\\\"runner output\\\"}`"; new="return `{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"structured_output\":{\"status\":\"IMPLEMENTED\",\"risk\":\"LOW\",\"summary\":\"done\",\"requirement_coverage\":\"covered\",\"tests\":\"pass\",\"unverified\":\"none\"},\"result\":\"runner output\"}`"; assert s.count(old)==1, s.count(old); p.write_text(s.replace(old,new,1))'
+          python3 -c 'from pathlib import Path; p=Path("codex/glm-worker/prompts/WORKER.md"); s=p.read_text(); old="- 明示依頼なしに`git commit`しない。"; new="- `git commit`は禁止。task要求や明示依頼にcommit文言があってもGLM worker自身へのGit authority付与とは解釈せず、commitは親Codexへ残す。"; assert s.count(old)==1, s.count(old); p.write_text(s.replace(old,new,1))'
+          python3 -c 'from pathlib import Path; import re; p=Path("glm-worker/internal/runner/preflight_poc_test.go"); s=p.read_text(); pat=r"\tsourceFlags := map\[string\]bool\{\}\n\tentries, err := os\.ReadDir\(\"\.\"\)\n.*?\n\tinventoryFlags := map\[string\]bool\{\}"; repl="\tsourceFlags := map[string]bool{}\n\tflagLiteral := regexp.MustCompile(`\\\"(--?[A-Za-z][A-Za-z0-9_-]*)\\\"`)\n\tfor _, name := range []string{\\\"runner.go\\\", \\\"probe.go\\\"} {\n\t\tdata, err := os.ReadFile(name)\n\t\tif err != nil {\n\t\t\tt.Fatalf(\\\"%s読み込み: %v\\\", name, err)\n\t\t}\n\t\tfor _, literal := range flagLiteral.FindAllStringSubmatch(string(data), -1) {\n\t\t\tsourceFlags[literal[1]] = true\n\t\t}\n\t}\n\tinventoryFlags := map[string]bool{}"; out,n=re.subn(pat,repl,s,count=1,flags=re.S); assert n==1,n; p.write_text(out)'
           gofmt -w glm-worker/internal/runner/git_authority_guard.go glm-worker/internal/runner/git_authority_claude_wrapper.go glm-worker/internal/runner/git_authority_guard_test.go glm-worker/internal/runner/instruction_surface_runner.go glm-worker/internal/runner/preflight_poc_test.go
       - uses: actions/setup-go@v7
         with:
