@@ -76,33 +76,8 @@ func ValidateSpec(spec Spec) error {
 	if spec.Version != specVersion {
 		return fmt.Errorf("spec versionは%dである必要があります: %d", specVersion, spec.Version)
 	}
-	var empty []string
-	if spec.ID == "" {
-		empty = append(empty, "id")
-	}
-	if spec.UserRequest == "" {
-		empty = append(empty, "user_request")
-	}
-	if spec.RepoSnapshotCommit == "" {
-		empty = append(empty, "repo_snapshot_commit")
-	}
-	if spec.InitialWorktree == "" {
-		empty = append(empty, "initial_worktree")
-	}
-	if spec.CompletionConditions == "" {
-		empty = append(empty, "completion_conditions")
-	}
-	if spec.QualityVerification == "" {
-		empty = append(empty, "quality_verification")
-	}
-	if spec.CodexModel == "" {
-		empty = append(empty, "codex_model")
-	}
-	if spec.CodexReasoningEffort == "" {
-		empty = append(empty, "codex_reasoning_effort")
-	}
-	if len(empty) > 0 {
-		return fmt.Errorf("specの必須fieldが空です: %s", strings.Join(empty, ","))
+	if err := validateSpecRequiredFields(spec); err != nil {
+		return err
 	}
 	if !isGitObjectHash(spec.RepoSnapshotCommit) {
 		return fmt.Errorf("repo_snapshot_commitがgit object hash形式ではありません: %s", spec.RepoSnapshotCommit)
@@ -110,6 +85,36 @@ func ValidateSpec(spec Spec) error {
 	if spec.MeasurementBoundary != CanonicalMeasurementBoundary {
 		return fmt.Errorf("measurement_boundaryは計測境界契約と一致する必要があります: %q", spec.MeasurementBoundary)
 	}
+	return validateSpecIsolation(spec)
+}
+
+func validateSpecRequiredFields(spec Spec) error {
+	fields := []struct {
+		name  string
+		value string
+	}{
+		{name: "id", value: spec.ID},
+		{name: "user_request", value: spec.UserRequest},
+		{name: "repo_snapshot_commit", value: spec.RepoSnapshotCommit},
+		{name: "initial_worktree", value: spec.InitialWorktree},
+		{name: "completion_conditions", value: spec.CompletionConditions},
+		{name: "quality_verification", value: spec.QualityVerification},
+		{name: "codex_model", value: spec.CodexModel},
+		{name: "codex_reasoning_effort", value: spec.CodexReasoningEffort},
+	}
+	empty := make([]string, 0, len(fields))
+	for _, field := range fields {
+		if field.value == "" {
+			empty = append(empty, field.name)
+		}
+	}
+	if len(empty) > 0 {
+		return fmt.Errorf("specの必須fieldが空です: %s", strings.Join(empty, ","))
+	}
+	return nil
+}
+
+func validateSpecIsolation(spec Spec) error {
 	if !spec.Isolation.IndependentSession || !spec.Isolation.IndependentWorktree {
 		return fmt.Errorf("isolationは独立session・独立working treeを比較前提として要求します: %+v", spec.Isolation)
 	}
@@ -157,6 +162,25 @@ func ValidatePair(spec Spec, direct, orchestrated RunRecord) error {
 }
 
 func validateRecord(spec Spec, record RunRecord) error {
+	if err := validateRecordIdentity(spec, record); err != nil {
+		return err
+	}
+	if err := validateRunBoundary(record); err != nil {
+		return err
+	}
+	if err := validateCodexUsage(record.CodexUsage); err != nil {
+		return err
+	}
+	if err := validateQuality(record.Quality); err != nil {
+		return err
+	}
+	if err := validateGLMUsage(record); err != nil {
+		return err
+	}
+	return validateProxy(record.Proxy)
+}
+
+func validateRecordIdentity(spec Spec, record RunRecord) error {
 	if record.SpecID != spec.ID {
 		return fmt.Errorf("spec_id %qはspec %qと一致しません", record.SpecID, spec.ID)
 	}
@@ -178,56 +202,78 @@ func validateRecord(spec Spec, record RunRecord) error {
 	if record.RunConditions != expected {
 		return fmt.Errorf("run_conditionsがspecの固定条件と一致しません: %+v want %+v", record.RunConditions, expected)
 	}
+	return nil
+}
+
+func validateRunBoundary(record RunRecord) error {
 	if record.Boundary.StartedAt.IsZero() || record.Boundary.CompletedAt.IsZero() {
 		return fmt.Errorf("boundaryの時刻が未設定です")
 	}
 	if !record.Boundary.StartedAt.Before(record.Boundary.CompletedAt) {
 		return fmt.Errorf("boundaryの開始時刻が完了時刻以降です: %s >= %s", record.Boundary.StartedAt, record.Boundary.CompletedAt)
 	}
-	if record.CodexUsage.Source != "" && record.CodexUsage.Source != CodexUsageSourceAppExport {
-		return fmt.Errorf("codex_usage.sourceは%sのみ受理します。取得できない場合はunknown(source空)としてください: %q", CodexUsageSourceAppExport, record.CodexUsage.Source)
+	return nil
+}
+
+func validateCodexUsage(usage CodexUsage) error {
+	if usage.Source != "" && usage.Source != CodexUsageSourceAppExport {
+		return fmt.Errorf("codex_usage.sourceは%sのみ受理します。取得できない場合はunknown(source空)としてください: %q", CodexUsageSourceAppExport, usage.Source)
 	}
-	if record.CodexUsage.InputTokens < 0 || record.CodexUsage.OutputTokens < 0 {
-		return fmt.Errorf("codex_usageのtoken値が負です: %+v", record.CodexUsage)
+	if usage.InputTokens < 0 || usage.OutputTokens < 0 {
+		return fmt.Errorf("codex_usageのtoken値が負です: %+v", usage)
 	}
-	if !record.CodexUsage.Known() && (record.CodexUsage.InputTokens != 0 || record.CodexUsage.OutputTokens != 0) {
+	if !usage.Known() && (usage.InputTokens != 0 || usage.OutputTokens != 0) {
 		return fmt.Errorf("codex_usageはsourceなしにtoken値を持てません。actual usageを取得できない場合はunknown(零値)としてください")
 	}
-	switch record.Quality.HiddenVerification {
+	return nil
+}
+
+func validateQuality(quality Quality) error {
+	switch quality.HiddenVerification {
 	case "pass", "fail", "not-run":
 	default:
-		return fmt.Errorf("quality.hidden_verificationはpass/fail/not-runである必要があります: %q", record.Quality.HiddenVerification)
+		return fmt.Errorf("quality.hidden_verificationはpass/fail/not-runである必要があります: %q", quality.HiddenVerification)
 	}
-	if record.Quality.TestsRun < 0 || record.Quality.TestFailures < 0 {
-		return fmt.Errorf("qualityのtest数が負です: %+v", record.Quality)
+	if quality.TestsRun < 0 || quality.TestFailures < 0 {
+		return fmt.Errorf("qualityのtest数が負です: %+v", quality)
 	}
-	if record.Quality.TestFailures > record.Quality.TestsRun {
-		return fmt.Errorf("quality.test_failuresがtests_runを超えています: %+v", record.Quality)
+	if quality.TestFailures > quality.TestsRun {
+		return fmt.Errorf("quality.test_failuresがtests_runを超えています: %+v", quality)
 	}
-	if record.Quality.EscapedBugs < 0 || record.Quality.ScopeViolations < 0 {
-		return fmt.Errorf("qualityのescaped_bugs/scope_violationsが負です: %+v", record.Quality)
+	if quality.EscapedBugs < 0 || quality.ScopeViolations < 0 {
+		return fmt.Errorf("qualityのescaped_bugs/scope_violationsが負です: %+v", quality)
 	}
-	if record.GLMUsage.InputTokens < 0 || record.GLMUsage.CacheCreationInputTokens < 0 ||
-		record.GLMUsage.CacheReadInputTokens < 0 || record.GLMUsage.OutputTokens < 0 || record.GLMUsage.ModelCalls < 0 {
-		return fmt.Errorf("glm_usageの値が負です: %+v", record.GLMUsage)
+	return nil
+}
+
+func validateGLMUsage(record RunRecord) error {
+	usage := record.GLMUsage
+	if usage.InputTokens < 0 || usage.CacheCreationInputTokens < 0 ||
+		usage.CacheReadInputTokens < 0 || usage.OutputTokens < 0 || usage.ModelCalls < 0 {
+		return fmt.Errorf("glm_usageの値が負です: %+v", usage)
 	}
 	switch record.Mode {
 	case ModeDirect:
-		if !record.GLMUsage.IsZero() {
-			return fmt.Errorf("direct modeはglm-worker委譲を使わないためglm_usageを持ちません: %+v", record.GLMUsage)
+		if !usage.IsZero() {
+			return fmt.Errorf("direct modeはglm-worker委譲を使わないためglm_usageを持ちません: %+v", usage)
 		}
 	case ModeOrchestrated:
-		if record.GLMUsage.Source != GLMUsageSourceTaskStats {
-			return fmt.Errorf("orchestrated modeのglm_usage.sourceは%sのみ受理します。任意sourceへの転記は明示的な契約変更が必要です: %q", GLMUsageSourceTaskStats, record.GLMUsage.Source)
+		if usage.Source != GLMUsageSourceTaskStats {
+			return fmt.Errorf("orchestrated modeのglm_usage.sourceは%sのみ受理します。任意sourceへの転記は明示的な契約変更が必要です: %q", GLMUsageSourceTaskStats, usage.Source)
 		}
-		if record.GLMUsage.TaskID == "" {
+		if usage.TaskID == "" {
 			return fmt.Errorf("glm_usage.sourceが%sのときtask_idが必要です", GLMUsageSourceTaskStats)
 		}
 	}
-	if (record.Proxy != ProxyMetrics{}) {
-		if record.Proxy.SolPacketBytes < 0 || record.Proxy.SolDecisionCommands < 0 || record.Proxy.SolFixCommands < 0 || record.Proxy.AutoFixRounds < 0 {
-			return fmt.Errorf("proxyの値が負です: %+v", record.Proxy)
-		}
+	return nil
+}
+
+func validateProxy(proxy ProxyMetrics) error {
+	if proxy == (ProxyMetrics{}) {
+		return nil
+	}
+	if proxy.SolPacketBytes < 0 || proxy.SolDecisionCommands < 0 || proxy.SolFixCommands < 0 || proxy.AutoFixRounds < 0 {
+		return fmt.Errorf("proxyの値が負です: %+v", proxy)
 	}
 	return nil
 }
