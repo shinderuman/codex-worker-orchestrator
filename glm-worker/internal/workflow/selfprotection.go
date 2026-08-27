@@ -96,9 +96,9 @@ func classifyNonCriticalPathPattern(path string) (bool, string) {
 	case strings.HasSuffix(path, "_test.go"):
 		return false, testPathCategory
 	case strings.Contains(path, "testdata/"):
-		return false, "test-fixture"
+		return false, testFixturePathCategory
 	case strings.HasPrefix(path, "tests/"), strings.HasPrefix(path, "glm-worker/scripts/"):
-		return false, "test-harness"
+		return false, testHarnessPathCategory
 	case isKnownSafeTestPath(path):
 		return false, testPathCategory
 	case isKnownSafeDocumentationPath(path):

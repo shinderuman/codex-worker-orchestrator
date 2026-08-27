@@ -37,6 +37,8 @@ type parentBehaviorEvalCase struct {
 }
 
 const parentBehaviorEvalPath = "tests/parent-behavior-evals.json"
+const testFixturePathCategory = "test-fixture"
+const testHarnessPathCategory = "test-harness"
 
 func classifyQualityEvidence(repoRoot, baselineHead string, paths []string) (qualityEvidenceDecision, error) {
 	if strings.TrimSpace(baselineHead) == "" || !hasQualityEvidenceChanges(paths) {
@@ -189,7 +191,7 @@ func isGenericQualityEvidencePath(path string) bool {
 		return false
 	}
 	switch category {
-	case testPathCategory, "test-fixture", "test-harness":
+	case testPathCategory, testFixturePathCategory, testHarnessPathCategory:
 		return true
 	default:
 		return false

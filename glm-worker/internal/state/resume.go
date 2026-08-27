@@ -13,17 +13,18 @@ import (
 type ResumeStage string
 
 type ResumeCheckpoint struct {
-	Version        int         `json:"version"`
-	Stage          ResumeStage `json:"stage"`
-	Phase          string      `json:"phase"`
-	Role           SessionRole `json:"role"`
-	Model          string      `json:"model"`
-	ReadOnly       bool        `json:"read_only"`
-	Effort         string      `json:"effort,omitempty"`
-	Prompt         string      `json:"prompt"`
-	OriginalPrompt string      `json:"original_prompt,omitempty"`
-	Request        string      `json:"request"`
-	Decision       string      `json:"decision,omitempty"`
+	Version            int         `json:"version"`
+	Stage              ResumeStage `json:"stage"`
+	Phase              string      `json:"phase"`
+	Role               SessionRole `json:"role"`
+	Model              string      `json:"model"`
+	ReadOnly           bool        `json:"read_only"`
+	Effort             string      `json:"effort,omitempty"`
+	Prompt             string      `json:"prompt"`
+	OriginalPrompt     string      `json:"original_prompt,omitempty"`
+	Request            string      `json:"request"`
+	Decision           string      `json:"decision,omitempty"`
+	ActivatedRuleFiles []string    `json:"activated_rule_files,omitempty"`
 
 	WorkerResult   *packet.Result `json:"worker_result,omitempty"`
 	ReviewNumber   int            `json:"review_number,omitempty"`
