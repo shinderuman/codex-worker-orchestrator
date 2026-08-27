@@ -78,7 +78,10 @@ func runExternalChecks(root string, paths []string, runner commandRunner) ([]Vio
 			return nil, err
 		}
 		if result.exitCode != 0 {
-			violations = append(violations, Violation{Rule: "shfmt", Path: path, Line: 1, Column: 1, Message: "shell formatting differs from shfmt output", Fixable: true})
+			violations = append(violations, Violation{
+				Rule: "shfmt", Path: path, Line: 1, Column: 1,
+				Message: "shell formatting differs from shfmt output", Fixable: true,
+			})
 		}
 	}
 	return violations, nil
@@ -131,10 +134,15 @@ func parseGolangCI(result commandResult, module string) []Violation {
 		if rule == "" {
 			rule = "golangci-lint"
 		}
-		violations = append(violations, Violation{Rule: rule, Path: path, Line: atoi(match[2]), Column: atoi(match[3]), Message: match[4]})
+		violations = append(violations, Violation{
+			Rule: rule, Path: path, Line: atoi(match[2]), Column: atoi(match[3]), Message: match[4],
+		})
 	}
 	if len(violations) == 0 {
-		violations = append(violations, Violation{Rule: "golangci-lint", Path: modulePath(module), Line: 1, Column: 1, Message: compactOutput(result.output, "golangci-lint failed")})
+		violations = append(violations, Violation{
+			Rule: "golangci-lint", Path: modulePath(module), Line: 1, Column: 1,
+			Message: compactOutput(result.output, "golangci-lint failed"),
+		})
 	}
 	return violations
 }
@@ -153,10 +161,14 @@ func parseShellcheck(result commandResult, path string) []Violation {
 		if rule == "" {
 			rule = "shellcheck"
 		}
-		violations = append(violations, Violation{Rule: rule, Path: filepath.ToSlash(match[1]), Line: atoi(match[2]), Column: atoi(match[3]), Message: match[4]})
+		violations = append(violations, Violation{
+			Rule: rule, Path: filepath.ToSlash(match[1]), Line: atoi(match[2]), Column: atoi(match[3]), Message: match[4],
+		})
 	}
 	if len(violations) == 0 {
-		violations = append(violations, Violation{Rule: "shellcheck", Path: path, Line: 1, Column: 1, Message: compactOutput(result.output, "shellcheck failed")})
+		violations = append(violations, Violation{
+			Rule: "shellcheck", Path: path, Line: 1, Column: 1, Message: compactOutput(result.output, "shellcheck failed"),
+		})
 	}
 	return violations
 }
@@ -175,14 +187,20 @@ func parseCommentlint(result commandResult) []Violation {
 	if json.Unmarshal([]byte(result.output), &report) == nil && report.Status != "" {
 		var violations []Violation
 		for _, item := range report.Violations {
-			violations = append(violations, Violation{Rule: "commentlint/" + item.Kind, Path: item.Path, Line: item.Line, Column: item.Column, Message: item.Message, Fixable: item.Kind == "comment"})
+			violations = append(violations, Violation{
+				Rule: "commentlint/" + item.Kind, Path: item.Path, Line: item.Line, Column: item.Column,
+				Message: item.Message, Fixable: item.Kind == "comment",
+			})
 		}
 		return violations
 	}
 	if result.exitCode == 0 {
 		return nil
 	}
-	return []Violation{{Rule: "commentlint", Path: "commentlint", Line: 1, Column: 1, Message: compactOutput(result.output, "commentlint failed")}}
+	return []Violation{{
+		Rule: "commentlint", Path: "commentlint", Line: 1, Column: 1,
+		Message: compactOutput(result.output, "commentlint failed"),
+	}}
 }
 
 func modulePath(module string) string {
