@@ -56,6 +56,13 @@ func (r *ClaudeRunner) prepareInstructionSurfaceGuard() (instructionSurfaceSnaps
 	if err != nil {
 		return instructionSurfaceSnapshot{}, &InstructionSurfaceGuardError{Stage: "capture-before-call", Cause: err}
 	}
+	if path := firstInstructionSurfaceSymlink(current); path != "" {
+		return instructionSurfaceSnapshot{}, &InstructionSurfaceGuardError{
+			Stage:        "unsupported-instruction-symlink",
+			ChangedPaths: []string{path},
+			Cause:        fmt.Errorf("repository instruction files must be regular files"),
+		}
+	}
 	taskID, err := r.state.TaskID()
 	if err != nil {
 		return instructionSurfaceSnapshot{}, &InstructionSurfaceGuardError{Stage: "read-task-identity", Cause: err}
@@ -158,6 +165,15 @@ func captureInstructionSurfaceSnapshot(root string) (instructionSurfaceSnapshot,
 	return instructionSurfaceSnapshot{entries: entries, digest: instructionSurfaceDigest(entries)}, nil
 }
 
+func firstInstructionSurfaceSymlink(snapshot instructionSurfaceSnapshot) string {
+	for _, item := range snapshot.entries {
+		if item.mode&os.ModeSymlink != 0 {
+			return item.path
+		}
+	}
+	return ""
+}
+
 func isRepositoryInstructionName(name string) bool {
 	return name == "AGENTS.md" || name == "AGENTS.local.md"
 }
@@ -178,10 +194,6 @@ func readInstructionSurfaceEntry(absolute string, relative string) (instructionS
 		item.linkTarget, err = os.Readlink(absolute)
 		if err != nil {
 			return instructionSurfaceEntry{}, fmt.Errorf("read instruction symlink %s: %w", relative, err)
-		}
-		item.content, err = os.ReadFile(absolute)
-		if err != nil {
-			return instructionSurfaceEntry{}, fmt.Errorf("read instruction symlink target %s: %w", relative, err)
 		}
 	default:
 		return instructionSurfaceEntry{}, fmt.Errorf("instruction surface %s is not a regular file or symlink", relative)
