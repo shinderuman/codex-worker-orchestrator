@@ -1,0 +1,33 @@
+name: Temporary F4 Cost
+
+on:
+  push:
+    branches:
+      - hardening-task/quality-evidence-mutation-risk
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Narrow classifier activation
+        run: |
+          python3 -c 'from pathlib import Path; p=Path("glm-worker/internal/workflow/quality_evidence.go"); s=p.read_text(); old="if strings.TrimSpace(baselineHead) == \"\" {"; new="if strings.TrimSpace(baselineHead) == \"\" || !hasQualityEvidenceChanges(paths) {"; assert s.count(old)==1; s=s.replace(old,new,1); marker="func verifyQualityEvidenceBaseline"; helper="func hasQualityEvidenceChanges(paths []string) bool {\n\tfor _, path := range paths {\n\t\tif filepath.ToSlash(path) == parentBehaviorEvalPath || isGenericQualityEvidencePath(path) {\n\t\t\treturn true\n\t\t}\n\t}\n\treturn false\n}\n\n"; assert s.count(marker)==1; p.write_text(s.replace(marker,helper+marker,1))'
+          gofmt -w glm-worker/internal/workflow/quality_evidence.go
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.22.x'
+          cache: false
+      - name: Workflow tests
+        run: go -C glm-worker test ./internal/workflow
+      - name: Commit validated cost boundary
+        run: |
+          rm .github/workflows/temporary-f4-cost.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add glm-worker/internal/workflow/quality_evidence.go .github/workflows/temporary-f4-cost.yml
+          git commit -m 'perf: avoid F4 classifier without evidence changes'
+          git push
