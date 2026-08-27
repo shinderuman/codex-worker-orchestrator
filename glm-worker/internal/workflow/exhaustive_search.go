@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,9 +13,9 @@ import (
 )
 
 const (
-	workerExhaustiveSearchPhase   = "worker-exhaustive-search"
+	workerExhaustiveSearchPhase    = "worker-exhaustive-search"
 	reviewerExhaustiveSearchPhase = "reviewer-exhaustive-search"
-	exhaustiveSearchComplete       = "full-corpus-proof"
+	exhaustiveSearchComplete      = "full-corpus-proof"
 )
 
 type exhaustiveSearchFunc func(context.Context, string, string, reposearch.ExhaustiveOptions) (reposearch.ExhaustiveReport, error)
@@ -48,6 +49,9 @@ func exhaustiveSearchRequired(repoRoot, request, activeTaskPath string) (bool, e
 	}
 	path := filepath.Join(repoRoot, filepath.FromSlash(activeTaskPath))
 	content, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
 	if err != nil {
 		return false, fmt.Errorf("read exhaustive requirement source %s: %w", activeTaskPath, err)
 	}
