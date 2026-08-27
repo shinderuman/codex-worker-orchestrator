@@ -55,7 +55,6 @@ func CheckCoalesce(params CoalesceParams, readDB DBReader) (CoalesceResult, erro
 		ParentThread: params.ParentThreadID,
 		ResumeAtUTC:  resumeAtUTC.Format(time.RFC3339),
 	}
-
 	entities, reason := enumerateWakeEntities(params.AutomationsDir, params.ParentThreadID)
 	if reason != "" {
 		result.Reason = reason
@@ -88,7 +87,6 @@ func enumerateWakeEntities(dir string, parentThreadID string) ([]wakeEntity, str
 		}
 		return nil, "wake enumeration unavailable: " + err.Error()
 	}
-
 	entities := []wakeEntity{}
 	for _, entry := range entries {
 		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), codexWakeKeyPrefix) {
@@ -130,7 +128,6 @@ func evaluateWakeCandidate(toml AutomationTOML, params CoalesceParams, resumeAt 
 		result.Reason = fmt.Sprintf("wake automation id %q does not bind to target_thread_id %q", toml.ID, toml.TargetThreadID)
 		return result, nil
 	}
-
 	db, err := readDB(params.DBPath, toml.ID)
 	if err != nil {
 		if errors.Is(err, ErrRowNotFound) {
@@ -144,6 +141,10 @@ func evaluateWakeCandidate(toml AutomationTOML, params CoalesceParams, resumeAt 
 		result.Reason = fmt.Sprintf("wake scheduler status is %q want ACTIVE", db.Status)
 		return result, nil
 	}
+	if db.Rrule != toml.Rrule {
+		result.Reason = "wake scheduler rrule does not match automation.toml"
+		return result, nil
+	}
 	if !db.HasNextRun {
 		result.Reason = "wake next_run_at is NULL"
 		return result, nil
@@ -154,21 +155,14 @@ func evaluateWakeCandidate(toml AutomationTOML, params CoalesceParams, resumeAt 
 		return result, nil
 	}
 	if wakeAt.Before(resumeAt) {
-		result.Reason = fmt.Sprintf(
-			"wake next run %s is before the GLM resume time %s",
-			wakeAt.Format(time.RFC3339), resumeAt.Format(time.RFC3339),
-		)
+		result.Reason = fmt.Sprintf("wake next run %s is before the GLM resume time %s", wakeAt.Format(time.RFC3339), resumeAt.Format(time.RFC3339))
 		return result, nil
 	}
 	delay := wakeAt.Sub(resumeAt)
 	if delay > maxCoalesceDelay {
-		result.Reason = fmt.Sprintf(
-			"wake next run %s delays the GLM resume by %s beyond the coalesce limit %s",
-			wakeAt.Format(time.RFC3339), delay.Truncate(time.Second), maxCoalesceDelay,
-		)
+		result.Reason = fmt.Sprintf("wake next run %s delays the GLM resume by %s beyond the coalesce limit %s", wakeAt.Format(time.RFC3339), delay.Truncate(time.Second), maxCoalesceDelay)
 		return result, nil
 	}
-
 	result.Decision = DecisionCoalesce
 	result.WakeAutomationID = toml.ID
 	result.WakeThread = toml.TargetThreadID
