@@ -1,0 +1,146 @@
+name: Temporary F5 Lint Fix
+
+on:
+  push:
+    branches:
+      - hardening-task/deterministic-rule-activation
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.22.x'
+          cache: false
+      - name: Apply lint-only refactor
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          stream_path = Path('glm-worker/internal/runner/stream_events.go')
+          text = stream_path.read_text()
+          start = text.index('func workerInstructionReadName(')
+          end = text.index('\nfunc (g *streamEventIngester) instructionReadNames()', start)
+          replacement = r'''func workerInstructionReadName(toolName string, input json.RawMessage, instructionDir string) (string, bool) {
+          	if toolName != "Read" || len(input) == 0 || instructionDir == "" {
+          		return "", false
+          	}
+          	var parsed struct {
+          		FilePath string `json:"file_path"`
+          	}
+          	if err := json.Unmarshal(input, &parsed); err != nil {
+          		return "", false
+          	}
+          	name, ok := workerInstructionReadPathName(parsed.FilePath, instructionDir)
+          	if !ok {
+          		return "", false
+          	}
+          	return knownWorkerInstructionFile(name)
+          }
+
+          func workerInstructionReadPathName(filePath, instructionDir string) (string, bool) {
+          	readPath, err := filepath.Abs(filepath.Clean(filePath))
+          	if err != nil {
+          		return "", false
+          	}
+          	root, err := filepath.Abs(filepath.Clean(instructionDir))
+          	if err != nil {
+          		return "", false
+          	}
+          	relative, err := filepath.Rel(root, readPath)
+          	if err != nil || relative == "." || filepath.IsAbs(relative) || relative == ".." {
+          		return "", false
+          	}
+          	if strings.HasPrefix(relative, ".."+string(filepath.Separator)) || strings.ContainsRune(relative, filepath.Separator) {
+          		return "", false
+          	}
+          	return filepath.Base(readPath), true
+          }
+
+          func knownWorkerInstructionFile(name string) (string, bool) {
+          	switch name {
+          	case "common-code.md", "testing.md", "state-transitions.md", "cli.md",
+          		"go.md", "javascript.md", "php.md", "eslint.md":
+          		return name, true
+          	default:
+          		return "", false
+          	}
+          }
+          '''
+          stream_path.write_text(text[:start] + replacement + text[end:])
+
+          workflow_dir = Path('glm-worker/internal/workflow')
+          for path in workflow_dir.glob('*.go'):
+          	data = path.read_text()
+          	if '"test-fixture"' in data:
+          		path.write_text(data.replace('"test-fixture"', 'testFixturePathCategory'))
+
+          quality_path = workflow_dir / 'quality_evidence.go'
+          quality = quality_path.read_text()
+          anchor = 'const parentBehaviorEvalPath = "tests/parent-behavior-evals.json"\n'
+          if anchor not in quality:
+          	raise SystemExit('quality evidence const anchor not found')
+          quality_path.write_text(quality.replace(anchor, anchor + 'const testFixturePathCategory = "test-fixture"\n', 1))
+
+          workflow_path = workflow_dir / 'workflow.go'
+          workflow = workflow_path.read_text()
+          old = '''\tif checkpoint.Role == state.WorkerRole && !checkpoint.ReportOnly {
+          \t\tactivatedCheckpoint, _, activationErr := w.activateCheckpointRules(checkpoint)
+          \t\tif activationErr != nil {
+          \t\t\treturn checkpoint, false, activationErr
+          \t\t}
+          \t\tcheckpoint = activatedCheckpoint
+          \t}
+          '''
+          new = '''\tcheckpoint, err = w.activateResumeRuleContext(checkpoint)
+          \tif err != nil {
+          \t\treturn checkpoint, false, err
+          \t}
+          '''
+          if old not in workflow:
+          	raise SystemExit('resume activation block not found')
+          workflow = workflow.replace(old, new, 1)
+          helper_anchor = '\nfunc (w *Workflow) activateResume(checkpoint state.ResumeCheckpoint) error {'
+          helper = r'''
+          func (w *Workflow) activateResumeRuleContext(checkpoint state.ResumeCheckpoint) (state.ResumeCheckpoint, error) {
+          	if checkpoint.Role != state.WorkerRole || checkpoint.ReportOnly {
+          		return checkpoint, nil
+          	}
+          	activated, _, err := w.activateCheckpointRules(checkpoint)
+          	if err != nil {
+          		return checkpoint, err
+          	}
+          	return activated, nil
+          }
+          '''
+          if helper_anchor not in workflow:
+          	raise SystemExit('activateResume helper anchor not found')
+          workflow_path.write_text(workflow.replace(helper_anchor, '\n' + helper + helper_anchor, 1))
+          PY
+          gofmt -w glm-worker/internal/runner/stream_events.go glm-worker/internal/workflow/*.go
+      - name: Focused tests
+        working-directory: glm-worker
+        run: go test ./internal/runner ./internal/workflow
+      - name: Vet
+        working-directory: glm-worker
+        run: go vet ./...
+      - name: Build
+        working-directory: glm-worker
+        run: go build ./...
+      - name: Repository lint
+        run: ./harnesslint
+      - name: Commit validated lint fix
+        run: |
+          rm .github/workflows/temporary-f5-lint-fix.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add glm-worker/internal/runner/stream_events.go glm-worker/internal/workflow .github/workflows/temporary-f5-lint-fix.yml
+          git commit -m 'fix: satisfy F5 repository lint'
+          git push
