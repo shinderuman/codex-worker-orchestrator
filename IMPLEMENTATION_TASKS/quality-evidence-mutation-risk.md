@@ -63,4 +63,4 @@ none
 
 ## Current boundary
 
-ACTIVE / NARROW。F3 completion lifecycleによりPlan上ACTIVEへ昇格。PR #4でaccepted quality policy surfaceのdigest固定、worker自己改変fail-closed、reviewer前machine quality gateが成立し、quality gate/config/linter自体を通常workerが弱体化するfailure classは閉じた。一方、通常`*_test.go`・testdata・tests等はrisk分類上LOWのままで、assertion / negative case / coverage / expected behaviorの意味的縮退まではquality surface snapshotでは検出しない。残余scopeをこのsemantic evidence weakeningへ限定し、F3 PR #13のintegration squash後に実装を開始する。
+ACTIVE / NARROW。F3はPR #13 Squash Merge commit `627e0dcfa15148a68684c3ff9008a4658c5a2615`としてintegrationへ反映済みで、PR #14 branchもlatest integrationへ履歴を保って同期済み。PR #4でaccepted quality policy surfaceのdigest固定、worker自己改変fail-closed、reviewer前machine quality gateが成立し、quality gate/config/linter自体を通常workerが弱体化するfailure classは閉じた。一方、通常`*_test.go`・testdata・tests等はrisk分類上LOWのままで、assertion / negative case / coverage / expected behaviorの意味的縮退まではquality surface snapshotでは検出しない。残余scopeをsemantic evidence weakeningへ限定し、Track A generic signalとrepo固有Track B surfaceを区別して実装する。
