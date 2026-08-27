@@ -1,0 +1,114 @@
+name: Temporary F6 Completion
+
+on:
+  push:
+    branches:
+      - hardening-task/sol-decision-boundary-enforcement
+
+permissions:
+  contents: write
+
+jobs:
+  complete-f6:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.22.x'
+          cache: false
+      - name: Install validation tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rsync shellcheck
+          go install mvdan.cc/sh/v3/cmd/shfmt@v3.12.0
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s -- -b "$(go env GOPATH)/bin" v2.7.0
+      - name: Validate F6 production tree
+        working-directory: glm-worker
+        run: |
+          go test ./internal/workflow ./internal/state
+          go vet ./...
+          go build ./...
+      - name: Validate isolated runtime install
+        env:
+          CODEX_CONFIG_DIR: ${{ runner.temp }}/f6-codex
+          GLM_WORKER_BIN_DIR: ${{ runner.temp }}/f6-bin
+          CLAUDE_SETTINGS_FILE: ${{ runner.temp }}/f6-claude/settings.json
+          GLM_WORKER_HOME: ${{ runner.temp }}/f6-home
+          HOME: ${{ runner.temp }}/f6-user
+        run: |
+          mkdir -p "$HOME" "$GLM_WORKER_BIN_DIR"
+          ./install.sh
+          test -x "$GLM_WORKER_BIN_DIR/glm-worker"
+          test -x "$GLM_WORKER_BIN_DIR/commentlint"
+          test -x "$GLM_WORKER_BIN_DIR/harnesslint"
+          test -x "$GLM_WORKER_BIN_DIR/merge-json"
+          "$GLM_WORKER_BIN_DIR/glm-worker" --status >/tmp/f6-status.json
+          python3 - <<'PY'
+          import json
+          json.load(open('/tmp/f6-status.json'))
+          PY
+          cmp codex/glm-worker/prompts/WORKER.md "$CODEX_CONFIG_DIR/glm-worker/prompts/WORKER.md"
+      - name: Finalize completion metadata
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          plan = Path('IMPLEMENTATION_PLAN.local.md')
+          text = plan.read_text()
+          text = text.replace(
+              '## ACTIVE\n\n- `IMPLEMENTATION_TASKS/sol-decision-boundary-enforcement.md`\n\n## NEXT（優先順）\n\n- `IMPLEMENTATION_TASKS/prose-semantic-guard-migration.md`',
+              '## ACTIVE\n\n- `IMPLEMENTATION_TASKS/prose-semantic-guard-migration.md`\n\n## NEXT（優先順）',
+              1,
+          )
+          old = '- current implementation: F6 `sol-decision-boundary-enforcement`がACTIVE。integration metadata sync `0ebd5afae2ee8946ffdadf0dc364a502213aa224`をtask branchへmerge commit `95cc7d41ff5722ac175d944882be8a2feb0626ed`で履歴を書き換えず同期済み'
+          new = '- current implementation: F6 `sol-decision-boundary-enforcement`はPR #16でproduction実装・review・恒久Repository Lint・runtime completionまで完了しmerge待ち。F7 `prose-semantic-guard-migration`をACTIVEへ昇格済み'
+          if old not in text:
+              raise SystemExit('plan current implementation anchor missing')
+          text = text.replace(old, new, 1)
+          text = text.replace('F6開始を妨げるdependency / permission waitはない。', 'F7開始を妨げるdependency / permission waitはない。', 1)
+          old_next = 'Rules / Plan / ACTIVE F6 taskを正として、現行Sol gate・risk classification・task requirement surfaceを一次証拠で確認し、「要求された結果」と「確定済み設計判断」を区別するF6 Track A/B分類を確定する。その分類に沿ってproduction実装、representative regression、不要Sol call増分確認、review、恒久Repository Lint、completion lifecycleを行う。'
+          new_next = 'PR #16をSquash MergeしてintegrationへF6を1 task = 1 commitとして反映後、latest integrationをF7 branchへ履歴を書き換えず同期する。Rules / Plan / ACTIVE F7 taskを再読し、残存prose pin corpusのTrack A/B棚卸しからF7 production作業を開始する。'
+          if old_next not in text:
+              raise SystemExit('plan next action anchor missing')
+          text = text.replace(old_next, new_next, 1)
+          plan.write_text(text)
+
+          f7 = Path('IMPLEMENTATION_TASKS/prose-semantic-guard-migration.md')
+          text = f7.read_text()
+          old = 'NEXT / NARROW。PR #4でscenario authority、prose存在確認test、historical protocol corpus等を大量に削除し、behavior / typed / machine gateへ移したため元scopeは縮小した。ただし現mainにも`activetask_test.go`等でpromptの`ACTIVE_TASK_FILE`、`Acceptance criteria`、`task file本文`等を`strings.Contains`で確認するprose pinが残る。残存corpusを棚卸しし、主要semanticをbehavior / typed guardへ移せるかと正当な残存理由を分類するscopeで継続する。'
+          new = 'ACTIVE / NARROW。F6 completion後の次taskとして選択済み。PR #4で大半をbehavior / typed / machine gateへ移した残存corpusを棚卸しし、Track Aのgeneric behavior/typed invariantとTrack Bのrepo固有prose guardを分類する。主要semanticはsubstring存在確認を主要guardにせず、逆条件・例外文で弱められないdeterministic guardへ移行する。'
+          if old not in text:
+              raise SystemExit('F7 boundary anchor missing')
+          f7.write_text(text.replace(old, new, 1))
+
+          history = Path('IMPLEMENTATION_HISTORY.md')
+          h = history.read_text()
+          marker = '- [x] F6 Sol decision boundary enforcement:'
+          if marker not in h:
+              entry = ('- [x] F6 Sol decision boundary enforcement: Track Aとしてpin済みACTIVE taskの`## Sol decision authority`をwrapper-owned structured authorityとして読み、responsibility、dependency-direction、public-surface、compatibility、validation-error-semanticsの5軸をFIXED/UNRESOLVEDへ決定論的に分類してworker/resumeへ注入するproduction boundaryを実装した。requested outcomeやACTIVE状態だけを設計軸確定とみなさず、未確定な意味選択は`NEEDS_SOL_DECISION`を維持する一方、type/package/interface追加そのものは意味責務新設と扱わない。validation/error behaviorは該当axisがFIXEDでない限り「互換性を狭めない強化」「明白な仕様準拠」を根拠に自律強化できない。prompt内の偽`SOL_DECISION_BOUNDARY` markerはauthorityにせず`ResumeCheckpoint.DecisionBoundaryApplied`をwrapper-owned stateとし、legacy taskはsection欠如だけで拒否せず全軸UNRESOLVED、present sectionのunknown/duplicate/empty axisはmodel call前にfail closedする。production dispatch regressionでFIXED注入1 model call、legacy 1 model call、malformed 0 model callを固定し、通常taskへの追加Sol/model callは0。Track Bのrepository固有quality gateは変更せず独立性を維持し追加call 0。focused workflow/state test、`go vet ./...`、`go build ./...`、恒久Repository Lint run `33114701427` PASS。初回lintのdecorder/gocognit/prose-contract-pin findingは責務分割と脆弱なprose substring test削除で解消し、isolated `install.sh`、installed binary存在、installed `glm-worker --status` JSON smoke、managed WORKER prompt source一致までcompletion validationで確認した。final reviewで新たなfunctional defectは確認されず、F5 implementationはreopenしていない。\n')
+              anchor = '## 重大インシデント / 再オープン中\n\n'
+              if anchor not in h:
+                  raise SystemExit('history anchor missing')
+              h = h.replace(anchor, anchor + entry, 1)
+              history.write_text(h)
+          PY
+          rm IMPLEMENTATION_TASKS/sol-decision-boundary-enforcement.md
+          rm .github/workflows/temporary-f6-completion.yml
+      - name: Validate final metadata state
+        run: |
+          go run ./glm-worker/cmd/plancheck .
+          test ! -e IMPLEMENTATION_TASKS/sol-decision-boundary-enforcement.md
+          grep -Fq -- '- `IMPLEMENTATION_TASKS/prose-semantic-guard-migration.md`' IMPLEMENTATION_PLAN.local.md
+          grep -Fq -- 'ACTIVE / NARROW。F6 completion後' IMPLEMENTATION_TASKS/prose-semantic-guard-migration.md
+          grep -Fq -- '- [x] F6 Sol decision boundary enforcement:' IMPLEMENTATION_HISTORY.md
+      - name: Commit F6 completion lifecycle
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'hardening: complete F6 lifecycle and promote F7'
+          git push
