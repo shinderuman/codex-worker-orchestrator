@@ -56,42 +56,55 @@ func (r *ClaudeRunner) prepareInstructionSurfaceGuard() (instructionSurfaceSnaps
 	if err != nil {
 		return instructionSurfaceSnapshot{}, &InstructionSurfaceGuardError{Stage: "capture-before-call", Cause: err}
 	}
-	if path := firstInstructionSurfaceSymlink(current); path != "" {
-		return instructionSurfaceSnapshot{}, &InstructionSurfaceGuardError{
-			Stage:        "unsupported-instruction-symlink",
-			ChangedPaths: []string{path},
-			Cause:        fmt.Errorf("repository instruction files must be regular files"),
-		}
+	if err := validateInstructionSurfaceSnapshot(current); err != nil {
+		return instructionSurfaceSnapshot{}, err
 	}
 	taskID, err := r.state.TaskID()
 	if err != nil {
 		return instructionSurfaceSnapshot{}, &InstructionSurfaceGuardError{Stage: "read-task-identity", Cause: err}
 	}
+	return r.ensureInstructionSurfaceBaseline(taskID, current)
+}
+
+func validateInstructionSurfaceSnapshot(snapshot instructionSurfaceSnapshot) error {
+	path := firstInstructionSurfaceSymlink(snapshot)
+	if path == "" {
+		return nil
+	}
+	return &InstructionSurfaceGuardError{
+		Stage:        "unsupported-instruction-symlink",
+		ChangedPaths: []string{path},
+		Cause:        fmt.Errorf("repository instruction files must be regular files"),
+	}
+}
+
+func (r *ClaudeRunner) ensureInstructionSurfaceBaseline(taskID string, current instructionSurfaceSnapshot) (instructionSurfaceSnapshot, error) {
 	baseline, err := r.state.Read(instructionSurfaceBaselineStateKey)
 	if err != nil {
-		if !os.IsNotExist(err) {
-			return instructionSurfaceSnapshot{}, &InstructionSurfaceGuardError{Stage: "read-task-baseline", Cause: err}
+		if os.IsNotExist(err) {
+			return r.initializeInstructionSurfaceBaseline(taskID, current)
 		}
-		if err := r.writeInstructionSurfaceBaseline(taskID, current.digest); err != nil {
-			return instructionSurfaceSnapshot{}, err
-		}
-		return current, nil
+		return instructionSurfaceSnapshot{}, &InstructionSurfaceGuardError{Stage: "read-task-baseline", Cause: err}
 	}
 	baselineTaskID, baselineDigest, ok := strings.Cut(strings.TrimSpace(baseline), " ")
 	if !ok || baselineTaskID == "" || baselineDigest == "" {
 		return instructionSurfaceSnapshot{}, &InstructionSurfaceGuardError{Stage: "read-task-baseline", Cause: fmt.Errorf("instruction surface baseline is malformed")}
 	}
 	if baselineTaskID != taskID {
-		if err := r.writeInstructionSurfaceBaseline(taskID, current.digest); err != nil {
-			return instructionSurfaceSnapshot{}, err
-		}
+		return r.initializeInstructionSurfaceBaseline(taskID, current)
+	}
+	if baselineDigest == current.digest {
 		return current, nil
 	}
-	if baselineDigest != current.digest {
-		return instructionSurfaceSnapshot{}, &InstructionSurfaceGuardError{
-			Stage:        "before-call-mismatch",
-			ChangedPaths: []string{"AGENTS.md/AGENTS.local.md"},
-		}
+	return instructionSurfaceSnapshot{}, &InstructionSurfaceGuardError{
+		Stage:        "before-call-mismatch",
+		ChangedPaths: []string{"AGENTS.md/AGENTS.local.md"},
+	}
+}
+
+func (r *ClaudeRunner) initializeInstructionSurfaceBaseline(taskID string, current instructionSurfaceSnapshot) (instructionSurfaceSnapshot, error) {
+	if err := r.writeInstructionSurfaceBaseline(taskID, current.digest); err != nil {
+		return instructionSurfaceSnapshot{}, err
 	}
 	return current, nil
 }
@@ -133,36 +146,54 @@ func captureInstructionSurfaceSnapshot(root string) (instructionSurfaceSnapshot,
 	if strings.TrimSpace(root) == "" {
 		return instructionSurfaceSnapshot{}, fmt.Errorf("repository root is empty")
 	}
-	entries := make([]instructionSurfaceEntry, 0, 4)
-	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if entry.IsDir() {
-			if path != root && entry.Name() == ".git" {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if !isRepositoryInstructionName(entry.Name()) {
-			return nil
-		}
-		rel, err := filepath.Rel(root, path)
-		if err != nil {
-			return err
-		}
-		item, err := readInstructionSurfaceEntry(path, filepath.ToSlash(rel))
-		if err != nil {
-			return err
-		}
-		entries = append(entries, item)
-		return nil
-	})
+	entries, err := collectInstructionSurfaceEntries(root)
 	if err != nil {
-		return instructionSurfaceSnapshot{}, fmt.Errorf("enumerate repository instruction surface: %w", err)
+		return instructionSurfaceSnapshot{}, err
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].path < entries[j].path })
 	return instructionSurfaceSnapshot{entries: entries, digest: instructionSurfaceDigest(entries)}, nil
+}
+
+func collectInstructionSurfaceEntries(root string) ([]instructionSurfaceEntry, error) {
+	entries := make([]instructionSurfaceEntry, 0, 4)
+	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
+		item, include, err := instructionSurfaceWalkEntry(root, path, entry, walkErr)
+		if err != nil {
+			return err
+		}
+		if include {
+			entries = append(entries, item)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("enumerate repository instruction surface: %w", err)
+	}
+	return entries, nil
+}
+
+func instructionSurfaceWalkEntry(root string, path string, entry fs.DirEntry, walkErr error) (instructionSurfaceEntry, bool, error) {
+	if walkErr != nil {
+		return instructionSurfaceEntry{}, false, walkErr
+	}
+	if entry.IsDir() {
+		if path != root && entry.Name() == ".git" {
+			return instructionSurfaceEntry{}, false, filepath.SkipDir
+		}
+		return instructionSurfaceEntry{}, false, nil
+	}
+	if !isRepositoryInstructionName(entry.Name()) {
+		return instructionSurfaceEntry{}, false, nil
+	}
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		return instructionSurfaceEntry{}, false, err
+	}
+	item, err := readInstructionSurfaceEntry(path, filepath.ToSlash(rel))
+	if err != nil {
+		return instructionSurfaceEntry{}, false, err
+	}
+	return item, true, nil
 }
 
 func firstInstructionSurfaceSymlink(snapshot instructionSurfaceSnapshot) string {
