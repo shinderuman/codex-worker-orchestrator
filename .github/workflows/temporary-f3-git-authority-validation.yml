@@ -20,18 +20,14 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           import re
-
           test_path = Path('glm-worker/internal/runner/git_authority_guard_test.go')
           text = test_path.read_text()
           pattern = r'func gitAuthorityResultJSON\(\) string \{\n\treturn `.*?`\n\}'
-          replacement = '''func gitAuthorityResultJSON() string {
-\treturn `{"type":"result","subtype":"success","is_error":false,"structured_output":{"status":"IMPLEMENTED","risk":"LOW","summary":"done","requirement_coverage":"covered","tests":"pass","unverified":"none"},"result":"runner output"}`
-}'''
+          replacement = 'func gitAuthorityResultJSON() string {\n\treturn `{"type":"result","subtype":"success","is_error":false,"structured_output":{"status":"IMPLEMENTED","risk":"LOW","summary":"done","requirement_coverage":"covered","tests":"pass","unverified":"none"},"result":"runner output"}`\n}'
           text, count = re.subn(pattern, replacement, text, count=1, flags=re.S)
           if count != 1:
               raise SystemExit(f'gitAuthorityResultJSON replacement count={count}')
           test_path.write_text(text)
-
           prompt_path = Path('codex/glm-worker/prompts/WORKER.md')
           prompt = prompt_path.read_text()
           old = '- 明示依頼なしに`git commit`しない。'
