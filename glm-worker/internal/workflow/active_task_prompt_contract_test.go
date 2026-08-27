@@ -57,6 +57,8 @@ func TestActiveTaskContractRendersStructuredContext(t *testing.T) {
 		"SOURCE_AUTHORITY: active-task-file\n" +
 		"REQUIRED_SECTIONS: original-instruction,amendments,resolved-references,contract,must-not,acceptance-criteria\n" +
 		"PARENT_MANAGED: true\n" +
+		"PARENT_MANAGED_SURFACES: active-task-file,IMPLEMENTATION_RULES.md,IMPLEMENTATION_PLAN.local.md,IMPLEMENTATION_HISTORY.md\n" +
+		"WORKER_MUTATION: forbidden\n" +
 		"DERIVED_CONTRACT_REVIEW: false\n" +
 		"END_ACTIVE_TASK_CONTEXT\n"
 	if got := renderActiveTaskPromptContract(contract); got != want {
