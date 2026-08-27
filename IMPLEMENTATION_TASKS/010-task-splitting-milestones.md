@@ -52,6 +52,7 @@ worker call長大化を機械的切断ではなく責務境界で抑える。
 ## Historical invariants
 
 - Task 009完了済みのworker outlier report、session aging観測
+- F9 reviewer diff-first searchはPR #19のSquash Merge commit `948ea31ee4381f4192afeff607c015696349a9a1`でintegration済み
 
 ## Dependencies
 
@@ -63,4 +64,4 @@ none
 
 ## Current boundary
 
-ACTIVE。Task 009の再現可能outlier reportは利用可能。2026-08-23 baselineはworker時間比率約81%と複数の累積400 turn超taskを示すが、分割効果は未確定。PR #19がhardening integrationへSquash Mergeされるまでは実装開始しない。
+ACTIVE。Task 009の再現可能outlier reportとtask-management再設計後の観測を使い、巨大taskの事前分割・semantic milestone checkpoint・resume boundaryをそれぞれ独立に評価する。turn数単独では分割せず、Codex Reduction / Quality Delta / additional review callsを上位指標に置き、session rotationとは分離して採否条件を確定する。
