@@ -26,3 +26,10 @@ func lastPacketFromOutput(t *testing.T, out string) packet.Result {
 	}
 	return value
 }
+
+func validateTypedResult(result packet.Result) error {
+	if err := packet.ValidateWorkerResult(result); err == nil {
+		return nil
+	}
+	return packet.ValidateReviewerResult(result)
+}
