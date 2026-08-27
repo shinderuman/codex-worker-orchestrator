@@ -83,7 +83,11 @@ jobs:
           HOME: ${{ runner.temp }}/f6-user
         run: |
           cp IMPLEMENTATION_PLAN.local.md /tmp/f6-plan-integration.md
-          sed -i 's/- branch: `hardening\/agent-guardrails`/- branch: `hardening-task\/sol-decision-boundary-enforcement`/' IMPLEMENTATION_PLAN.local.md
+          sed -i 's|- branch: `hardening/agent-guardrails`|- branch: `hardening-task/sol-decision-boundary-enforcement`|' IMPLEMENTATION_PLAN.local.md
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add IMPLEMENTATION_PLAN.local.md IMPLEMENTATION_HISTORY.md IMPLEMENTATION_TASKS/prose-semantic-guard-migration.md IMPLEMENTATION_TASKS/sol-decision-boundary-enforcement.md
+          git commit -m 'hardening: validate F6 completion state'
           (cd glm-worker && go run ./cmd/plancheck ..)
           mkdir -p "$HOME" "$GLM_WORKER_BIN_DIR"
           ./install.sh
@@ -106,8 +110,6 @@ jobs:
       - name: Commit F6 completion lifecycle
         run: |
           rm .github/workflows/temporary-f6-completion-v2.yml
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
-          git commit -m 'hardening: complete F6 lifecycle and promote F7'
+          git commit --amend -m 'hardening: complete F6 lifecycle and promote F7'
           git push
