@@ -345,22 +345,15 @@ func (w *Workflow) gatePoCResumeSnapshot() (bool, error) {
 }
 
 func (w *Workflow) verifyPoCEndSnapshot() (bool, error) {
-	start, err := w.state.LoadPoCStartSnapshot()
-	if err != nil {
-		return true, w.failClosedPoCSnapshot(state.SnapshotStagePoCEnd, state.GitSnapshot{}, state.GitSnapshot{}, "PoC開始前snapshot読込失敗", err)
-	}
-	current, err := w.captureSnapshot(w.config.RepoRoot)
-	if err != nil {
-		return true, w.failClosedPoCSnapshot(state.SnapshotStagePoCEnd, start, state.GitSnapshot{}, "PoC終了後snapshot取得失敗", err)
-	}
-	comparison := state.CompareGitSnapshot(start, current, state.SnapshotStagePoCEnd, "")
-	if err := w.state.SaveSnapshotComparison(comparison); err != nil {
-		return true, w.failClosedPoCSnapshot(state.SnapshotStagePoCEnd, start, current, "snapshot comparison保存失敗", err)
-	}
-	if !comparison.Matched {
-		return true, w.failClosedPoCSnapshot(state.SnapshotStagePoCEnd, start, current, "PoC/観測worker開始前から終了後までの間にrepository状態が変化しています(production diff禁止違反)", nil)
-	}
-	return false, nil
+	return w.verifyEndSnapshot(snapshotEndCheck{
+		stage:          state.SnapshotStagePoCEnd,
+		loadStart:      w.state.LoadPoCStartSnapshot,
+		failClosed:     w.failClosedPoCSnapshot,
+		loadReason:     "PoC開始前snapshot読込失敗",
+		captureReason:  "PoC終了後snapshot取得失敗",
+		saveReason:     "snapshot comparison保存失敗",
+		mismatchReason: "PoC/観測worker開始前から終了後までの間にrepository状態が変化しています(production diff禁止違反)",
+	})
 }
 
 func (w *Workflow) failClosedPoCSnapshot(stage state.SnapshotStage, start, current state.GitSnapshot, reason string, cause error) error {

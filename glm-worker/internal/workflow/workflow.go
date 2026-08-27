@@ -65,6 +65,16 @@ type effectiveRisk struct {
 	source string
 }
 
+type snapshotEndCheck struct {
+	stage          state.SnapshotStage
+	loadStart      func() (state.GitSnapshot, error)
+	failClosed     func(state.SnapshotStage, state.GitSnapshot, state.GitSnapshot, string, error) error
+	loadReason     string
+	captureReason  string
+	saveReason     string
+	mismatchReason string
+}
+
 const highRiskValue = "HIGH"
 
 const providerUnavailableDeadline = 3 * time.Hour
@@ -1940,22 +1950,15 @@ func (w *Workflow) gateReportOnlyResumeSnapshot() (bool, error) {
 }
 
 func (w *Workflow) verifyReportOnlyEndSnapshot() (bool, error) {
-	start, err := w.state.LoadReportOnlyStartSnapshot()
-	if err != nil {
-		return true, w.failClosedReportOnlySnapshot(state.SnapshotStageReportOnlyEnd, state.GitSnapshot{}, state.GitSnapshot{}, "report-only開始前snapshot読込失敗", err)
-	}
-	current, err := w.captureSnapshot(w.config.RepoRoot)
-	if err != nil {
-		return true, w.failClosedReportOnlySnapshot(state.SnapshotStageReportOnlyEnd, start, state.GitSnapshot{}, "report-only終了後snapshot取得失敗", err)
-	}
-	comparison := state.CompareGitSnapshot(start, current, state.SnapshotStageReportOnlyEnd, "")
-	if err := w.state.SaveSnapshotComparison(comparison); err != nil {
-		return true, w.failClosedReportOnlySnapshot(state.SnapshotStageReportOnlyEnd, start, current, "snapshot comparison保存失敗", err)
-	}
-	if !comparison.Matched {
-		return true, w.failClosedReportOnlySnapshot(state.SnapshotStageReportOnlyEnd, start, current, "report-only worker開始前から終了後までの間にrepository状態が変化しています", nil)
-	}
-	return false, nil
+	return w.verifyEndSnapshot(snapshotEndCheck{
+		stage:          state.SnapshotStageReportOnlyEnd,
+		loadStart:      w.state.LoadReportOnlyStartSnapshot,
+		failClosed:     w.failClosedReportOnlySnapshot,
+		loadReason:     "report-only開始前snapshot読込失敗",
+		captureReason:  "report-only終了後snapshot取得失敗",
+		saveReason:     "snapshot comparison保存失敗",
+		mismatchReason: "report-only worker開始前から終了後までの間にrepository状態が変化しています",
+	})
 }
 
 func (w *Workflow) recordConvergenceRound(reviewNumber int, autoFixes int, workerPhase string, snap state.GitSnapshot) {
@@ -2125,23 +2128,35 @@ func (w *Workflow) recordSnapshotParentUpdateEvent(checkpoint state.ResumeCheckp
 	})
 }
 
-func (w *Workflow) verifyReviewEndSnapshot() (bool, error) {
-	saved, err := w.state.LoadReviewStartSnapshot()
+func (w *Workflow) verifyEndSnapshot(check snapshotEndCheck) (bool, error) {
+	start, err := check.loadStart()
 	if err != nil {
-		return true, w.failClosedSnapshot(state.SnapshotStageReviewEnd, state.GitSnapshot{}, state.GitSnapshot{}, "review-start snapshot読込失敗", err)
+		return true, check.failClosed(check.stage, state.GitSnapshot{}, state.GitSnapshot{}, check.loadReason, err)
 	}
 	current, err := w.captureSnapshot(w.config.RepoRoot)
 	if err != nil {
-		return true, w.failClosedSnapshot(state.SnapshotStageReviewEnd, saved, state.GitSnapshot{}, "review-end snapshot取得失敗", err)
+		return true, check.failClosed(check.stage, start, state.GitSnapshot{}, check.captureReason, err)
 	}
-	comparison := state.CompareGitSnapshot(saved, current, state.SnapshotStageReviewEnd, "")
+	comparison := state.CompareGitSnapshot(start, current, check.stage, "")
 	if err := w.state.SaveSnapshotComparison(comparison); err != nil {
-		return true, w.failClosedSnapshot(state.SnapshotStageReviewEnd, saved, current, "snapshot comparison保存失敗", err)
+		return true, check.failClosed(check.stage, start, current, check.saveReason, err)
 	}
 	if !comparison.Matched {
-		return true, w.failClosedSnapshot(state.SnapshotStageReviewEnd, saved, current, "reviewer実行中にrepository状態が変化しています", nil)
+		return true, check.failClosed(check.stage, start, current, check.mismatchReason, nil)
 	}
 	return false, nil
+}
+
+func (w *Workflow) verifyReviewEndSnapshot() (bool, error) {
+	return w.verifyEndSnapshot(snapshotEndCheck{
+		stage:          state.SnapshotStageReviewEnd,
+		loadStart:      w.state.LoadReviewStartSnapshot,
+		failClosed:     w.failClosedSnapshot,
+		loadReason:     "review-start snapshot読込失敗",
+		captureReason:  "review-end snapshot取得失敗",
+		saveReason:     "snapshot comparison保存失敗",
+		mismatchReason: "reviewer実行中にrepository状態が変化しています",
+	})
 }
 
 func (w *Workflow) failClosedSnapshot(stage state.SnapshotStage, workerEnd, reviewStart state.GitSnapshot, reason string, cause error) error {
