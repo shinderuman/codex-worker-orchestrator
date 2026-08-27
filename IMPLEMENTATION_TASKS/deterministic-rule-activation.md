@@ -66,4 +66,4 @@ none
 
 ## Current boundary
 
-NEXT。EVAL責務整理後の現行surfaceを正としてF5をTrack A/Bへ分類して着手する。
+ACTIVE。F4はPR #14 Squash Merge commit `87af3f4700f5dd8220c582efa62f18f561c33c20`としてintegrationへ反映済み。予約済みPR #15 branchは予約commitを保持したままlatest integrationをmerge commit `3e507947e3b1ddecb559393c4851c270ca40fedb`で同期済み。現行instruction routing / worker・reviewer dispatch surfaceを一次証拠で確認し、generic Track Aを優先してF5 A/B分類を確定してから実装する。
