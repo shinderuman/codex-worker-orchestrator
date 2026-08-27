@@ -64,39 +64,87 @@ func scanTextRules(root string, paths []string) ([]Violation, error) {
 func qualityConfigViolations(root string, paths []string) ([]Violation, error) {
 	const path = ".golangci.yml"
 	if !containsString(paths, path) {
-		return []Violation{{Rule: "quality-config-policy", Path: path, Line: 1, Column: 1, Message: "canonical golangci-lint v2 configuration is missing"}}, nil
+		return []Violation{{
+			Rule: "quality-config-policy", Path: path, Line: 1, Column: 1,
+			Message: "canonical golangci-lint v2 configuration is missing",
+		}}, nil
 	}
 	data, err := readRegularFile(root, path)
 	if err != nil {
 		return nil, err
 	}
 	text := string(data)
-	required := []string{`version: "2"`, "    - bodyclose", "    - cyclop", "    - decorder", "    - dupl", "    - errcheck", "    - errorlint", "    - funlen", "    - gocognit", "    - goconst", "    - gocritic", "    - govet", "    - ineffassign", "    - interfacebloat", "    - nolintlint", "    - revive", "    - sqlclosecheck", "    - staticcheck", "    - unused", "    - forbidigo", "      disable-dec-order-check: false", "      require-explanation: true", "      require-specific: true"}
+	required := []string{
+		`version: "2"`,
+		"    - bodyclose",
+		"    - cyclop",
+		"    - decorder",
+		"    - dupl",
+		"    - errcheck",
+		"    - errorlint",
+		"    - funlen",
+		"    - gocognit",
+		"    - goconst",
+		"    - gocritic",
+		"    - govet",
+		"    - ineffassign",
+		"    - interfacebloat",
+		"    - nolintlint",
+		"    - revive",
+		"    - sqlclosecheck",
+		"    - staticcheck",
+		"    - unused",
+		"    - forbidigo",
+		"      disable-dec-order-check: false",
+		"      require-explanation: true",
+		"      require-specific: true",
+	}
 	var violations []Violation
 	for _, token := range required {
 		if strings.Contains(text, token) {
 			continue
 		}
-		violations = append(violations, Violation{Rule: "quality-config-policy", Path: path, Line: 1, Column: 1, Message: "required quality configuration is missing: " + strings.TrimSpace(token)})
+		violations = append(violations, Violation{
+			Rule: "quality-config-policy", Path: path, Line: 1, Column: 1,
+			Message: "required quality configuration is missing: " + strings.TrimSpace(token),
+		})
 	}
 	for _, token := range []string{"exclusions:", "exclude-rules:", "skip-dirs:", "skip-files:"} {
 		if line := lineOf(text, token); line > 0 {
-			violations = append(violations, Violation{Rule: "quality-config-policy", Path: path, Line: line, Column: 1, Message: "quality exclusions and skip lists are forbidden"})
+			violations = append(violations, Violation{
+				Rule: "quality-config-policy", Path: path, Line: line, Column: 1,
+				Message: "quality exclusions and skip lists are forbidden",
+			})
 		}
 	}
 	limits := []struct {
 		key string
 		max int
-	}{{"max-complexity", 12}, {"min-complexity", 15}, {"threshold", 100}, {"lines", 60}, {"statements", 40}, {"min-len", 3}, {"min-occurrences", 3}, {"max", 5}}
+	}{
+		{"max-complexity", 12},
+		{"min-complexity", 15},
+		{"threshold", 100},
+		{"lines", 60},
+		{"statements", 40},
+		{"min-len", 3},
+		{"min-occurrences", 3},
+		{"max", 5},
+	}
 	for _, limit := range limits {
 		values := yamlIntegerValues(text, limit.key)
 		if len(values) == 0 {
-			violations = append(violations, Violation{Rule: "quality-config-policy", Path: path, Line: 1, Column: 1, Message: "protected quality threshold is missing: " + limit.key})
+			violations = append(violations, Violation{
+				Rule: "quality-config-policy", Path: path, Line: 1, Column: 1,
+				Message: "protected quality threshold is missing: " + limit.key,
+			})
 			continue
 		}
 		for _, value := range values {
 			if value > limit.max {
-				violations = append(violations, Violation{Rule: "quality-config-policy", Path: path, Line: lineOf(text, limit.key+":"), Column: 1, Message: fmt.Sprintf("%s=%d weakens protected maximum %d", limit.key, value, limit.max)})
+				violations = append(violations, Violation{
+					Rule: "quality-config-policy", Path: path, Line: lineOf(text, limit.key+":"), Column: 1,
+					Message: fmt.Sprintf("%s=%d weakens protected maximum %d", limit.key, value, limit.max),
+				})
 			}
 		}
 	}
@@ -121,10 +169,16 @@ func instructionHashJSONViolations(path string, data []byte) []Violation {
 		return nil
 	}
 	var value any
-	if json.Unmarshal(data, &value) != nil || !containsInstructionHashKey(value) {
+	if json.Unmarshal(data, &value) != nil {
 		return nil
 	}
-	return []Violation{{Rule: "instruction-content-hash", Path: path, Line: 1, Column: 1, Message: "scenario metadata must not pin whole instruction or prompt file hashes"}}
+	if !containsInstructionHashKey(value) {
+		return nil
+	}
+	return []Violation{{
+		Rule: "instruction-content-hash", Path: path, Line: 1, Column: 1,
+		Message: "scenario metadata must not pin whole instruction or prompt file hashes",
+	}}
 }
 
 func containsInstructionHashKey(value any) bool {
@@ -165,9 +219,13 @@ func prosePinShellViolations(path string, data []byte) []Violation {
 			if value == "" {
 				value = match[2]
 			}
-			if proseLike(value) {
-				violations = append(violations, Violation{Rule: "prose-contract-pin", Path: path, Line: index + 1, Column: 1, Message: "shell test must not grep long natural-language instruction or Markdown prose"})
+			if !proseLike(value) {
+				continue
 			}
+			violations = append(violations, Violation{
+				Rule: "prose-contract-pin", Path: path, Line: index + 1, Column: 1,
+				Message: "shell test must not grep long natural-language instruction or Markdown prose",
+			})
 		}
 	}
 	return violations
@@ -175,11 +233,22 @@ func prosePinShellViolations(path string, data []byte) []Violation {
 
 func smokeScopeViolations(path string, data []byte) []Violation {
 	text := string(data)
-	patterns := []struct{ needle, message string }{{"make_go_shim", "install smoke must not replace the Go toolchain with a call-order shim"}, {"expect_go_test_contract", "install smoke must not assert internal go test invocation counts or ordering"}, {"invocations.log", "install smoke must not maintain an internal test-runner invocation ledger"}, {"ANTHROPIC_AUTH_TOKEN", "install smoke must stay offline and must not require provider credentials"}, {"ANTHROPIC_BASE_URL", "install smoke must stay offline and must not require provider endpoints"}}
+	patterns := []struct {
+		needle  string
+		message string
+	}{
+		{"make_go_shim", "install smoke must not replace the Go toolchain with a call-order shim"},
+		{"expect_go_test_contract", "install smoke must not assert internal go test invocation counts or ordering"},
+		{"invocations.log", "install smoke must not maintain an internal test-runner invocation ledger"},
+		{"ANTHROPIC_AUTH_TOKEN", "install smoke must stay offline and must not require provider credentials"},
+		{"ANTHROPIC_BASE_URL", "install smoke must stay offline and must not require provider endpoints"},
+	}
 	var violations []Violation
 	for _, pattern := range patterns {
 		if line := lineOf(text, pattern.needle); line > 0 {
-			violations = append(violations, Violation{Rule: "smoke-test-scope", Path: path, Line: line, Column: 1, Message: pattern.message})
+			violations = append(violations, Violation{
+				Rule: "smoke-test-scope", Path: path, Line: line, Column: 1, Message: pattern.message,
+			})
 		}
 	}
 	return violations
@@ -193,9 +262,13 @@ func qualityBypassViolations(path string, data []byte) []Violation {
 			continue
 		}
 		lower := strings.ToLower(line)
-		if containsAny(lower, "lint", "test", "quality", "gate", "vet", "shellcheck", "shfmt", "golangci") {
-			violations = append(violations, Violation{Rule: "quality-bypass", Path: path, Line: index + 1, Column: 1, Message: "quality command failure must not be converted to success with || true"})
+		if !containsAny(lower, "lint", "test", "quality", "gate", "vet", "shellcheck", "shfmt", "golangci") {
+			continue
 		}
+		violations = append(violations, Violation{
+			Rule: "quality-bypass", Path: path, Line: index + 1, Column: 1,
+			Message: "quality command failure must not be converted to success with || true",
+		})
 	}
 	return violations
 }
@@ -206,7 +279,10 @@ func moduleBoundaryViolations(paths []string) []Violation {
 		if filepath.Base(path) != "go.mod" || path == "glm-worker/go.mod" {
 			continue
 		}
-		violations = append(violations, Violation{Rule: "module-boundary", Path: path, Line: 1, Column: 1, Message: "glm-worker/go.mod is the canonical Go module; additional modules require explicit architecture approval"})
+		violations = append(violations, Violation{
+			Rule: "module-boundary", Path: path, Line: 1, Column: 1,
+			Message: "glm-worker/go.mod is the canonical Go module; additional modules require explicit architecture approval",
+		})
 	}
 	return violations
 }
@@ -225,9 +301,13 @@ func markdownBudgetViolations(root string, paths []string) ([]Violation, error) 
 		if err != nil {
 			return nil, err
 		}
-		if len(data) > limit {
-			violations = append(violations, Violation{Rule: "markdown-runtime-budget", Path: path, Line: 1, Column: 1, Message: fmt.Sprintf("runtime Markdown is %d bytes over budget %d", len(data)-limit, limit)})
+		if len(data) <= limit {
+			continue
 		}
+		violations = append(violations, Violation{
+			Rule: "markdown-runtime-budget", Path: path, Line: 1, Column: 1,
+			Message: fmt.Sprintf("runtime Markdown is %d bytes over budget %d", len(data)-limit, limit),
+		})
 	}
 	if !present["codex/AGENTS.md"] {
 		return violations, nil
@@ -237,22 +317,36 @@ func markdownBudgetViolations(root string, paths []string) ([]Violation, error) 
 		return nil, err
 	}
 	for _, path := range paths {
-		if filepath.Dir(path) == "codex/instructions" && strings.HasSuffix(path, ".md") && !bytes.Contains(agents, []byte(filepath.Base(path))) {
-			violations = append(violations, Violation{Rule: "markdown-runtime-budget", Path: "codex/AGENTS.md", Line: 1, Column: 1, Message: "routing lacks codex/instructions/" + filepath.Base(path)})
+		if filepath.Dir(path) != "codex/instructions" || !strings.HasSuffix(path, ".md") {
+			continue
 		}
+		if bytes.Contains(agents, []byte(filepath.Base(path))) {
+			continue
+		}
+		violations = append(violations, Violation{
+			Rule: "markdown-runtime-budget", Path: "codex/AGENTS.md", Line: 1, Column: 1,
+			Message: "routing lacks codex/instructions/" + filepath.Base(path),
+		})
 	}
 	return violations, nil
 }
 
 func staleAuthorityViolations(root string, paths []string) ([]Violation, error) {
-	staleFiles := []string{"EVAL.md", "tests/install-smoke-coverage.md", "codex/instructions/install-smoke-evidence.md"}
+	staleFiles := []string{
+		"EVAL.md",
+		"tests/install-smoke-coverage.md",
+		"codex/instructions/install-smoke-evidence.md",
+	}
 	var violations []Violation
 	for _, path := range paths {
 		if isParentMetadata(path) || strings.HasPrefix(path, "glm-worker/internal/harnesslint/") {
 			continue
 		}
 		if containsString(staleFiles, path) || staleScenarioManifest(path) {
-			violations = append(violations, Violation{Rule: "stale-authority-reference", Path: path, Line: 1, Column: 1, Message: "obsolete authority or test-framework artifact must be removed"})
+			violations = append(violations, Violation{
+				Rule: "stale-authority-reference", Path: path, Line: 1, Column: 1,
+				Message: "obsolete authority or test-framework artifact must be removed",
+			})
 			continue
 		}
 		if !isTextPath(path) {
@@ -263,9 +357,13 @@ func staleAuthorityViolations(root string, paths []string) ([]Violation, error) 
 			return nil, err
 		}
 		for _, stale := range staleFiles {
-			if bytes.Contains(data, []byte(stale)) {
-				violations = append(violations, Violation{Rule: "stale-authority-reference", Path: path, Line: lineOf(string(data), stale), Column: 1, Message: "live code or instruction references obsolete authority " + stale})
+			if !bytes.Contains(data, []byte(stale)) {
+				continue
 			}
+			violations = append(violations, Violation{
+				Rule: "stale-authority-reference", Path: path, Line: lineOf(string(data), stale), Column: 1,
+				Message: "live code or instruction references obsolete authority " + stale,
+			})
 		}
 	}
 	return violations, nil
@@ -280,7 +378,8 @@ func staleScenarioManifest(path string) bool {
 }
 
 func isParentMetadata(path string) bool {
-	return path == "IMPLEMENTATION_RULES.md" || path == "IMPLEMENTATION_PLAN.local.md" || path == "IMPLEMENTATION_HISTORY.md" || strings.HasPrefix(path, "IMPLEMENTATION_TASKS/")
+	return path == "IMPLEMENTATION_RULES.md" || path == "IMPLEMENTATION_PLAN.local.md" ||
+		path == "IMPLEMENTATION_HISTORY.md" || strings.HasPrefix(path, "IMPLEMENTATION_TASKS/")
 }
 
 func isTextPath(path string) bool {
