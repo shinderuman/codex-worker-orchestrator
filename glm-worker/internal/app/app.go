@@ -388,49 +388,16 @@ func Execute(cmd Command, cfg config.AppConfig, rf RunnerFactory, stdout, stderr
 	if cmd.StdinBytes > 0 && cmd.Payload == "" {
 		return fmt.Errorf("stdin payload mode requires the payload to be read before execute")
 	}
-	if cmd.Mode == ModeWatch {
-		return printWatch(state.AttachStateStore(cfg), stdout, defaultWatchOptions(cmd.WatchVerbose))
-	}
-	if cmd.Mode == ModeTimeline {
-		return printTimeline(state.AttachStateStore(cfg), cmd.Payload, stdout)
-	}
-	if cmd.Mode == ModeConvergence {
-		return printConvergence(state.AttachStateStore(cfg), cmd.Payload, stdout)
-	}
-	if cmd.Mode == ModeEvalAB {
-		return printEvalAB(state.AttachStateStore(cfg), cmd.Payload, stdout)
-	}
-	if cmd.Mode == ModeCallOutliers {
-		return printCallOutliers(state.AttachStateStore(cfg), stdout)
-	}
-	if cmd.Mode == ModeStop {
-		return requestStop(cfg, stdout)
-	}
-
-	if cmd.Mode == ModeCodexLimit {
-		return printCodexLimit(cfg, stdout)
-	}
-
-	if cmd.Mode == ModeCheckWakeCoalesce {
-		return printCheckWakeCoalesce(cmd, cfg, stdout)
+	if handled, err := executeStateless(cmd, cfg, stdout); handled {
+		return err
 	}
 
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
 		return err
 	}
-
-	switch cmd.Mode {
-	case ModeStatus:
-		return printStatus(st, stdout)
-	case ModeStats:
-		return printStats(st, stdout)
-	case ModeVerifyAutoResume:
-		return printVerifyAutoResume(cmd, cfg, stdout)
-	case ModeInstallSmoke:
-		return runInstallSmoke(cmd.Role, cfg, st, stdout)
-	case ModeQualityGate:
-		return runQualityGate(cmd.Payload, st, stdout)
+	if handled, err := executeStateOnly(cmd, cfg, st, stdout); handled {
+		return err
 	}
 
 	lock, err := AcquireRepoLock(st.LockPath())
@@ -439,18 +406,66 @@ func Execute(cmd Command, cfg config.AppConfig, rf RunnerFactory, stdout, stderr
 	}
 	defer func() { _ = lock.Close() }()
 
-	if cmd.Mode == ModeReset {
-		return resetState(st, stdout)
+	if handled, err := executeLocked(cmd, cfg, st, stdout); handled {
+		return err
 	}
+	return executeWorkflow(cmd, cfg, st, rf, stdout)
+}
 
-	if cmd.Mode == ModeAccept {
-		return parentAccept(st, stdout)
+func executeStateless(cmd Command, cfg config.AppConfig, stdout io.Writer) (bool, error) {
+	switch cmd.Mode {
+	case ModeWatch:
+		return true, printWatch(state.AttachStateStore(cfg), stdout, defaultWatchOptions(cmd.WatchVerbose))
+	case ModeTimeline:
+		return true, printTimeline(state.AttachStateStore(cfg), cmd.Payload, stdout)
+	case ModeConvergence:
+		return true, printConvergence(state.AttachStateStore(cfg), cmd.Payload, stdout)
+	case ModeEvalAB:
+		return true, printEvalAB(state.AttachStateStore(cfg), cmd.Payload, stdout)
+	case ModeCallOutliers:
+		return true, printCallOutliers(state.AttachStateStore(cfg), stdout)
+	case ModeStop:
+		return true, requestStop(cfg, stdout)
+	case ModeCodexLimit:
+		return true, printCodexLimit(cfg, stdout)
+	case ModeCheckWakeCoalesce:
+		return true, printCheckWakeCoalesce(cmd, cfg, stdout)
+	default:
+		return false, nil
 	}
+}
 
-	if cmd.Mode == ModeIsolate {
-		return isolateInterruptedTask(st, cfg, stdout)
+func executeStateOnly(cmd Command, cfg config.AppConfig, st *state.StateStore, stdout io.Writer) (bool, error) {
+	switch cmd.Mode {
+	case ModeStatus:
+		return true, printStatus(st, stdout)
+	case ModeStats:
+		return true, printStats(st, stdout)
+	case ModeVerifyAutoResume:
+		return true, printVerifyAutoResume(cmd, cfg, stdout)
+	case ModeInstallSmoke:
+		return true, runInstallSmoke(cmd.Role, cfg, st, stdout)
+	case ModeQualityGate:
+		return true, runQualityGate(cmd.Payload, st, stdout)
+	default:
+		return false, nil
 	}
+}
 
+func executeLocked(cmd Command, cfg config.AppConfig, st *state.StateStore, stdout io.Writer) (bool, error) {
+	switch cmd.Mode {
+	case ModeReset:
+		return true, resetState(st, stdout)
+	case ModeAccept:
+		return true, parentAccept(st, stdout)
+	case ModeIsolate:
+		return true, isolateInterruptedTask(st, cfg, stdout)
+	default:
+		return false, nil
+	}
+}
+
+func executeWorkflow(cmd Command, cfg config.AppConfig, st *state.StateStore, rf RunnerFactory, stdout io.Writer) error {
 	controller := runner.NewStopController()
 	stopServer, err := startStopEndpoint(st, controller)
 	if err != nil {
