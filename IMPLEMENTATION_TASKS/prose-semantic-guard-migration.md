@@ -63,4 +63,4 @@ none
 
 ## Current boundary
 
-NEXT。EVAL責務整理後の現行prose surfaceを正としてF7へ着手する。
+NEXT / NARROW。PR #4でscenario authority、prose存在確認test、historical protocol corpus等を大量に削除し、behavior / typed / machine gateへ移したため元scopeは縮小した。ただし現mainにも`activetask_test.go`等でpromptの`ACTIVE_TASK_FILE`、`Acceptance criteria`、`task file本文`等を`strings.Contains`で確認するprose pinが残る。残存corpusを棚卸しし、主要semanticをbehavior / typed guardへ移せるかと正当な残存理由を分類するscopeで継続する。
