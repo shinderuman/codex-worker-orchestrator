@@ -41,6 +41,8 @@ const activeTaskWorkerRequirements = activeTaskOriginalInstruction |
 
 const activeTaskReviewerRequirements = activeTaskWorkerRequirements | activeTaskHistoricalInvariants
 
+const activeTaskParentManagedSurfaces = "active-task-file,IMPLEMENTATION_RULES.md,IMPLEMENTATION_PLAN.local.md,IMPLEMENTATION_HISTORY.md"
+
 func newActiveTaskPromptContract(path string, audience activeTaskPromptAudience) activeTaskPromptContract {
 	contract := activeTaskPromptContract{
 		path:          path,
@@ -91,6 +93,9 @@ func renderActiveTaskPromptContract(contract activeTaskPromptContract) string {
 	block.WriteString("REQUIRED_SECTIONS: ")
 	block.WriteString(strings.Join(activeTaskRequirementNames(contract.requirements), ","))
 	block.WriteString("\nPARENT_MANAGED: true\n")
+	block.WriteString("PARENT_MANAGED_SURFACES: ")
+	block.WriteString(activeTaskParentManagedSurfaces)
+	block.WriteString("\nWORKER_MUTATION: forbidden\n")
 	block.WriteString("DERIVED_CONTRACT_REVIEW: ")
 	block.WriteString(fmt.Sprintf("%t", contract.verifyDerivedContract))
 	block.WriteString("\nEND_ACTIVE_TASK_CONTEXT\n")
