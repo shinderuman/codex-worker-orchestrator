@@ -118,7 +118,7 @@ func retentionCheckpoint(t *testing.T, st *state.StateStore) state.ResumeCheckpo
 
 func TestInterruptedStopCapturesRetention(t *testing.T) {
 	repo := newRetentionGitRepo(t)
-	if err := os.WriteFile(filepath.Join(repo, "uncommitted.txt"), []byte("作業中\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(repo, "uncommitted.md"), []byte("作業中\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	st := newGitStateStoreT(t, repo)
@@ -138,7 +138,7 @@ func TestInterruptedStopCapturesRetention(t *testing.T) {
 	}
 	found := false
 	for _, file := range checkpoint.StopDirtyFiles {
-		if file.Path == "uncommitted.txt" {
+		if file.Path == "uncommitted.md" {
 			found = true
 			if file.IndexSHA != "" || file.WorktreeSHA == "" {
 				t.Fatalf("untracked保持識別子が不正です: %#v", file)
@@ -155,7 +155,7 @@ func TestInterruptedStopCapturesRetention(t *testing.T) {
 
 func TestResumeInterruptedUntouchedPasses(t *testing.T) {
 	repo := newRetentionGitRepo(t)
-	writeRetentionFile(t, filepath.Join(repo, "uncommitted.txt"), []byte("作業中\n"), 0o644)
+	writeRetentionFile(t, filepath.Join(repo, "uncommitted.md"), []byte("作業中\n"), 0o644)
 	st := newGitStateStoreT(t, repo)
 	stopRunner := &scriptedRunner{steps: []runnerStep{{
 		result: runner.RunResult{SessionID: "sess-retention"},
@@ -204,7 +204,7 @@ func TestResumeInterruptedParentMetadataDeltaPasses(t *testing.T) {
 
 func TestResumeInterruptedDirtyDriftFailsClosed(t *testing.T) {
 	repo := newRetentionGitRepo(t)
-	writeRetentionFile(t, filepath.Join(repo, "uncommitted.txt"), []byte("作業中\n"), 0o644)
+	writeRetentionFile(t, filepath.Join(repo, "uncommitted.md"), []byte("作業中\n"), 0o644)
 	st := newGitStateStoreT(t, repo)
 	stopRunner := &scriptedRunner{steps: []runnerStep{{
 		result: runner.RunResult{SessionID: "sess-retention"},
@@ -214,7 +214,7 @@ func TestResumeInterruptedDirtyDriftFailsClosed(t *testing.T) {
 	stopWorkflowInCall(t, w, st, workerCheckpoint())
 	before := retentionCheckpoint(t, st)
 
-	writeRetentionFile(t, filepath.Join(repo, "uncommitted.txt"), []byte("衝突解決済み\n"), 0o644)
+	writeRetentionFile(t, filepath.Join(repo, "uncommitted.md"), []byte("衝突解決済み\n"), 0o644)
 	resumeRunner := &scriptedRunner{steps: []runnerStep{{structured: implementedPacket("resumed")}}}
 	resumeW := newGitWorkflowT(t, st, resumeRunner, repo)
 	err := resumeW.ExecuteResume()
@@ -232,7 +232,7 @@ func TestResumeInterruptedDirtyDriftFailsClosed(t *testing.T) {
 		t.Fatalf("保持違反でmodel呼出を実行しています: %v", resumeRunner.prompts)
 	}
 
-	writeRetentionFile(t, filepath.Join(repo, "uncommitted.txt"), []byte("作業中\n"), 0o644)
+	writeRetentionFile(t, filepath.Join(repo, "uncommitted.md"), []byte("作業中\n"), 0o644)
 	if before.StopDirtyFiles == nil {
 		t.Fatal("停止時基準がありません")
 	}
@@ -356,7 +356,7 @@ func TestResumeInterruptedHeadAdvanceWithoutIsolationFailsClosed(t *testing.T) {
 func stopTaskForIsolationGate(t *testing.T) *isolationGateFixture {
 	t.Helper()
 	repo := newRetentionGitRepo(t)
-	if err := os.WriteFile(filepath.Join(repo, "uncommitted.txt"), []byte("作業中\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(repo, "uncommitted.md"), []byte("作業中\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	st := newGitStateStoreT(t, repo)
