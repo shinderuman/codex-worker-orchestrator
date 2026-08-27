@@ -62,6 +62,8 @@ func IsCriticalPath(path string) (bool, string) {
 		return c.critical, c.category
 	}
 	switch {
+	case isRepositoryInstructionPath(path):
+		return true, "repo-instructions"
 	case isProductionGoUnder(path, "glm-worker/internal/"):
 		return true, internalPackageCategory(path)
 	case isProductionGoUnder(path, "glm-worker/cmd/"):
@@ -102,6 +104,14 @@ func IsQualitySurface(path string) bool {
 		}
 	}
 	return false
+}
+
+func isRepositoryInstructionPath(path string) bool {
+	base := path
+	if index := strings.LastIndexByte(path, '/'); index >= 0 {
+		base = path[index+1:]
+	}
+	return base == "AGENTS.md" || base == "AGENTS.local.md"
 }
 
 func internalPackageCategory(path string) string {
