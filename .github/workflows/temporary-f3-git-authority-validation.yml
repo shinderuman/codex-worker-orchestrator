@@ -20,6 +20,7 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           import re
+
           test_path = Path('glm-worker/internal/runner/git_authority_guard_test.go')
           text = test_path.read_text()
           pattern = r'func gitAuthorityResultJSON\(\) string \{\n\treturn `.*?`\n\}'
@@ -28,6 +29,7 @@ jobs:
           if count != 1:
               raise SystemExit(f'gitAuthorityResultJSON replacement count={count}')
           test_path.write_text(text)
+
           prompt_path = Path('codex/glm-worker/prompts/WORKER.md')
           prompt = prompt_path.read_text()
           old = '- 明示依頼なしに`git commit`しない。'
@@ -35,8 +37,44 @@ jobs:
           if prompt.count(old) != 1:
               raise SystemExit(f'worker prompt replacement count={prompt.count(old)}')
           prompt_path.write_text(prompt.replace(old, new, 1))
+
+          preflight_path = Path('glm-worker/internal/runner/preflight_poc_test.go')
+          preflight = preflight_path.read_text()
+          old = '''\tsourceFlags := map[string]bool{}
+\tentries, err := os.ReadDir(".")
+\tif err != nil {
+\t\tt.Fatalf("package dir読み込み: %v", err)
+\t}
+\tflagLiteral := regexp.MustCompile(`"(--?[A-Za-z][A-Za-z0-9_-]*)"`)
+\tfor _, entry := range entries {
+\t\tname := entry.Name()
+\t\tif entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+\t\t\tcontinue
+\t\t}
+\t\tdata, err := os.ReadFile(name)
+\t\tif err != nil {
+\t\t\tt.Fatalf("%s読み込み: %v", name, err)
+\t\t}
+\t\tfor _, literal := range flagLiteral.FindAllStringSubmatch(string(data), -1) {
+\t\t\tsourceFlags[literal[1]] = true
+\t\t}
+\t}'''
+          new = '''\tsourceFlags := map[string]bool{}
+\tflagLiteral := regexp.MustCompile(`"(--?[A-Za-z][A-Za-z0-9_-]*)"`)
+\tfor _, name := range []string{"runner.go", "probe.go"} {
+\t\tdata, err := os.ReadFile(name)
+\t\tif err != nil {
+\t\t\tt.Fatalf("%s読み込み: %v", name, err)
+\t\t}
+\t\tfor _, literal := range flagLiteral.FindAllStringSubmatch(string(data), -1) {
+\t\t\tsourceFlags[literal[1]] = true
+\t\t}
+\t}'''
+          if preflight.count(old) != 1:
+              raise SystemExit(f'preflight inventory replacement count={preflight.count(old)}')
+          preflight_path.write_text(preflight.replace(old, new, 1))
           PY
-          gofmt -w glm-worker/internal/runner/git_authority_guard.go glm-worker/internal/runner/git_authority_claude_wrapper.go glm-worker/internal/runner/git_authority_guard_test.go glm-worker/internal/runner/instruction_surface_runner.go
+          gofmt -w glm-worker/internal/runner/git_authority_guard.go glm-worker/internal/runner/git_authority_claude_wrapper.go glm-worker/internal/runner/git_authority_guard_test.go glm-worker/internal/runner/instruction_surface_runner.go glm-worker/internal/runner/preflight_poc_test.go
       - uses: actions/setup-go@v7
         with:
           go-version: '1.22.x'
@@ -52,6 +90,6 @@ jobs:
           rm .github/workflows/temporary-f3-git-authority-validation.yml
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add codex/glm-worker/prompts/WORKER.md glm-worker/internal/runner/git_authority_guard.go glm-worker/internal/runner/git_authority_claude_wrapper.go glm-worker/internal/runner/git_authority_guard_test.go glm-worker/internal/runner/instruction_surface_runner.go .github/workflows/temporary-f3-git-authority-validation.yml
+          git add codex/glm-worker/prompts/WORKER.md glm-worker/internal/runner/git_authority_guard.go glm-worker/internal/runner/git_authority_claude_wrapper.go glm-worker/internal/runner/git_authority_guard_test.go glm-worker/internal/runner/instruction_surface_runner.go glm-worker/internal/runner/preflight_poc_test.go .github/workflows/temporary-f3-git-authority-validation.yml
           git commit -m 'hardening: enforce model git authority boundary'
           git push
