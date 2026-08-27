@@ -3,8 +3,10 @@ package workflow
 import (
 	"context"
 	"fmt"
+	"os/exec"
 	"sort"
 	"strings"
+	"unicode"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/reposearch"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
@@ -17,6 +19,7 @@ const (
 	reviewerSearchEmpty             = "independent-search-empty"
 	reviewerSearchErrorFallback     = "independent-search-error-fallback"
 	reviewerSearchDiffErrorFallback = "diff-surface-error-fallback"
+	reviewerDiffImpactTermLimit     = 32
 )
 
 func (w *Workflow) reviewerDiffFirstContext(request string, reviewNumber int) string {
@@ -24,7 +27,8 @@ func (w *Workflow) reviewerDiffFirstContext(request string, reviewNumber int) st
 	if collector == nil {
 		collector = collectChangedPaths
 	}
-	paths, err := collector(w.config.RepoRoot, w.state.ReadOr("baseline-head", ""))
+	baseline := w.state.ReadOr("baseline-head", "")
+	paths, err := collector(w.config.RepoRoot, baseline)
 	if err != nil {
 		w.recordRepoSearchOutcome(reviewerRepoSearchPhase, state.ReviewerRole, reviewNumber+1, reviewerSearchDiffErrorFallback, "", nil)
 		return renderReviewerDiffFirstNavigation(nil, reviewerSearchDiffErrorFallback, "", nil)
@@ -36,7 +40,8 @@ func (w *Workflow) reviewerDiffFirstContext(request string, reviewNumber int) st
 		return renderReviewerDiffFirstNavigation(paths, reviewerSearchDiffSufficient, "", nil)
 	}
 
-	query := reviewerIndependentSearchQuery(request, impactPaths)
+	impactTerms := collectReviewerDiffImpactTerms(w.config.RepoRoot, baseline)
+	query := reviewerIndependentSearchQuery(request, impactPaths, impactTerms)
 	search := w.repoSearch
 	if search == nil {
 		search = reposearch.Search
@@ -80,8 +85,57 @@ func isParentManagedReviewPath(path string) bool {
 	return path == state.ParentRulesFile || path == state.ParentPlanFile || path == state.ParentHistoryFile || strings.HasPrefix(path, state.ParentTasksDir+"/")
 }
 
-func reviewerIndependentSearchQuery(request string, paths []string) string {
-	return strings.TrimSpace(request) + "\nreview impact paths: " + strings.Join(paths, " ")
+func collectReviewerDiffImpactTerms(repoRoot, baseline string) []string {
+	if strings.TrimSpace(baseline) == "" {
+		return nil
+	}
+	output, err := exec.Command("git", "-C", repoRoot, "diff", "--unified=0", "--no-ext-diff", baseline, "--").Output()
+	if err != nil {
+		return nil
+	}
+	return extractReviewerDiffImpactTerms(string(output), reviewerDiffImpactTermLimit)
+}
+
+func extractReviewerDiffImpactTerms(diff string, limit int) []string {
+	if limit <= 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, limit)
+	terms := make([]string, 0, limit)
+	for _, line := range strings.Split(diff, "\n") {
+		if len(line) < 2 || (line[0] != '+' && line[0] != '-') || strings.HasPrefix(line, "+++") || strings.HasPrefix(line, "---") {
+			continue
+		}
+		for _, term := range strings.FieldsFunc(line[1:], func(r rune) bool {
+			return !(unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' || r == '.' || r == '/' || r == '-')
+		}) {
+			term = strings.Trim(term, "./-")
+			if len(term) < 3 {
+				continue
+			}
+			if _, found := seen[term]; found {
+				continue
+			}
+			seen[term] = struct{}{}
+			terms = append(terms, term)
+			if len(terms) == limit {
+				return terms
+			}
+		}
+	}
+	return terms
+}
+
+func reviewerIndependentSearchQuery(request string, paths []string, impactTerms []string) string {
+	var query strings.Builder
+	query.WriteString(strings.TrimSpace(request))
+	query.WriteString("\nreview impact paths: ")
+	query.WriteString(strings.Join(paths, " "))
+	if len(impactTerms) > 0 {
+		query.WriteString("\nreview diff impact terms: ")
+		query.WriteString(strings.Join(impactTerms, " "))
+	}
+	return query.String()
 }
 
 func excludeChangedPaths(results []reposearch.Result, changed []string) []reposearch.Result {
