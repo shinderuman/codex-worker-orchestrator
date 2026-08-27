@@ -8,7 +8,7 @@ import (
 
 type fakeRunner struct{}
 
-func (fakeRunner) run(dir, name string, args ...string) (commandResult, error) {
+func (fakeRunner) run(_ string, name string, args ...string) (commandResult, error) {
 	return commandResult{}, nil
 }
 
