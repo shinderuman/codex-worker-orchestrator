@@ -7,14 +7,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"go/ast"
-	"go/parser"
-	"go/token"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -189,43 +185,10 @@ func requireStreamJSONLStdout(t *testing.T, name string, stdout string) {
 
 func dispatchCommandFlags(t *testing.T) map[string]bool {
 	t.Helper()
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, "app.go", nil, 0)
-	if err != nil {
-		t.Fatalf("ParseCommand sourceを解析できません: %v", err)
+	flags := make(map[string]bool, len(commandParsers))
+	for flag := range commandParsers {
+		flags[flag] = true
 	}
-	var declaration *ast.FuncDecl
-	for _, candidate := range file.Decls {
-		function, ok := candidate.(*ast.FuncDecl)
-		if ok && function.Name.Name == "ParseCommand" {
-			declaration = function
-			break
-		}
-	}
-	if declaration == nil {
-		t.Fatal("app.goにParseCommandがありません")
-	}
-	flags := map[string]bool{}
-	ast.Inspect(declaration.Body, func(node ast.Node) bool {
-		clause, ok := node.(*ast.CaseClause)
-		if !ok {
-			return true
-		}
-		for _, expression := range clause.List {
-			literal, ok := expression.(*ast.BasicLit)
-			if !ok || literal.Kind != token.STRING {
-				continue
-			}
-			value, err := strconv.Unquote(literal.Value)
-			if err != nil {
-				t.Fatalf("dispatch case labelをunquoteできません: %v", err)
-			}
-			if strings.HasPrefix(value, "--") {
-				flags[value] = true
-			}
-		}
-		return true
-	})
 	if len(flags) == 0 {
 		t.Fatal("ParseCommand dispatchからflagを列挙できませんでした")
 	}

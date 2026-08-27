@@ -105,135 +105,151 @@ func usageError(format string, args ...any) *UsageError {
 	return &UsageError{Message: fmt.Sprintf(format, args...)}
 }
 
+type commandParser func([]string) (Command, error)
+
+var commandParsers = map[string]commandParser{
+	"--decision": func([]string) (Command, error) {
+		return Command{}, usageError("usage: glm-worker --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix-stdin <payload-bytes> [--sha256 <hex>] %s", fixOriginUsage)
+	},
+	"--fix": func([]string) (Command, error) {
+		return Command{}, usageError("usage: glm-worker --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix-stdin <payload-bytes> [--sha256 <hex>] %s", fixOriginUsage)
+	},
+	"--decision-stdin": func(args []string) (Command, error) {
+		return stdinPayloadCommand(ModeDecision, args, "usage: glm-worker --decision-stdin <payload-bytes> [--sha256 <hex>]", false)
+	},
+	"--fix-stdin": func(args []string) (Command, error) {
+		return stdinPayloadCommand(ModeFix, args, fmt.Sprintf("usage: glm-worker --fix-stdin <payload-bytes> [--sha256 <hex>] %s", fixOriginUsage), true)
+	},
+	"--accept": func(args []string) (Command, error) {
+		return singleArgCommand(args, ModeAccept, "usage: glm-worker --accept")
+	},
+	"--resume": func(args []string) (Command, error) {
+		return singleArgCommand(args, ModeResume, "usage: glm-worker --resume")
+	},
+	"--stop": func(args []string) (Command, error) {
+		return singleArgCommand(args, ModeStop, "usage: glm-worker --stop")
+	},
+	"--isolate": func(args []string) (Command, error) {
+		return singleArgCommand(args, ModeIsolate, "usage: glm-worker --isolate")
+	},
+	"--status": func(args []string) (Command, error) {
+		return singleArgCommand(args, ModeStatus, "usage: glm-worker --status")
+	},
+	"--watch": watchCommand,
+	"--timeline": func(args []string) (Command, error) {
+		return optionalPayloadCommand(args, ModeTimeline, "usage: glm-worker --timeline [task-id]")
+	},
+	"--convergence": func(args []string) (Command, error) {
+		return optionalPayloadCommand(args, ModeConvergence, "usage: glm-worker --convergence [task-id]")
+	},
+	"--stats": func(args []string) (Command, error) {
+		return singleArgCommand(args, ModeStats, "usage: glm-worker --stats")
+	},
+	"--reset": func(args []string) (Command, error) {
+		return singleArgCommand(args, ModeReset, "usage: glm-worker --reset")
+	},
+	"--verify-auto-resume":  verifyAutoResumeCommand,
+	"--check-wake-coalesce": checkWakeCoalesceCommand,
+	"--eval-ab": func(args []string) (Command, error) {
+		return requiredPayloadCommand(args, ModeEvalAB, "usage: glm-worker --eval-ab <run-dir>")
+	},
+	"--call-outliers": func(args []string) (Command, error) {
+		return singleArgCommand(args, ModeCallOutliers, "usage: glm-worker --call-outliers")
+	},
+	"--codex-limit": func(args []string) (Command, error) {
+		return singleArgCommand(args, ModeCodexLimit, "usage: glm-worker --codex-limit")
+	},
+	"--install-smoke": installSmokeCommand,
+	"--quality-gate":  qualityGateCommand,
+}
+
 func ParseCommand(args []string) (Command, error) {
 	if len(args) == 0 {
 		return Command{}, usageError("usage: glm-worker <instruction> | --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix-stdin <payload-bytes> [--sha256 <hex>] %s | --accept | --resume | --stop | --isolate | --status | --watch [--verbose] | --timeline [task-id] | --convergence [task-id] | --stats | --reset | --eval-ab <run-dir> | --call-outliers | --codex-limit | --check-wake-coalesce <parent-thread-id> <auto-resume-at-rfc3339> | --install-smoke %s | --quality-gate %s", fixOriginUsage, installSmokeUsage, qualityGateUsage)
 	}
-
-	switch args[0] {
-
-	case "--decision", "--fix":
-		return Command{}, usageError("usage: glm-worker --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix-stdin <payload-bytes> [--sha256 <hex>] %s", fixOriginUsage)
-	case "--decision-stdin":
-		return stdinPayloadCommand(ModeDecision, args, "usage: glm-worker --decision-stdin <payload-bytes> [--sha256 <hex>]", false)
-	case "--fix-stdin":
-		return stdinPayloadCommand(ModeFix, args, fmt.Sprintf("usage: glm-worker --fix-stdin <payload-bytes> [--sha256 <hex>] %s", fixOriginUsage), true)
-	case "--accept":
-		if len(args) != 1 {
-			return Command{}, usageError("usage: glm-worker --accept")
-		}
-		return Command{Mode: ModeAccept}, nil
-	case "--resume":
-		if len(args) != 1 {
-			return Command{}, usageError("usage: glm-worker --resume")
-		}
-		return Command{Mode: ModeResume}, nil
-	case "--stop":
-		if len(args) != 1 {
-			return Command{}, usageError("usage: glm-worker --stop")
-		}
-		return Command{Mode: ModeStop}, nil
-	case "--isolate":
-		if len(args) != 1 {
-			return Command{}, usageError("usage: glm-worker --isolate")
-		}
-		return Command{Mode: ModeIsolate}, nil
-	case "--status":
-		if len(args) != 1 {
-			return Command{}, usageError("usage: glm-worker --status")
-		}
-		return Command{Mode: ModeStatus}, nil
-	case "--watch":
-		if len(args) == 2 && args[1] == "--verbose" {
-			return Command{Mode: ModeWatch, WatchVerbose: true}, nil
-		}
-		if len(args) != 1 {
-			return Command{}, usageError("usage: glm-worker --watch [--verbose]")
-		}
-		return Command{Mode: ModeWatch}, nil
-	case "--timeline":
-		if len(args) > 2 {
-			return Command{}, usageError("usage: glm-worker --timeline [task-id]")
-		}
-		if len(args) == 2 {
-			return Command{Mode: ModeTimeline, Payload: args[1]}, nil
-		}
-		return Command{Mode: ModeTimeline}, nil
-	case "--convergence":
-		if len(args) > 2 {
-			return Command{}, usageError("usage: glm-worker --convergence [task-id]")
-		}
-		if len(args) == 2 {
-			return Command{Mode: ModeConvergence, Payload: args[1]}, nil
-		}
-		return Command{Mode: ModeConvergence}, nil
-	case "--stats":
-		if len(args) != 1 {
-			return Command{}, usageError("usage: glm-worker --stats")
-		}
-		return Command{Mode: ModeStats}, nil
-	case "--reset":
-		if len(args) != 1 {
-			return Command{}, usageError("usage: glm-worker --reset")
-		}
-		return Command{Mode: ModeReset}, nil
-	case "--verify-auto-resume":
-		if len(args) != 4 {
-			return Command{}, usageError("usage: glm-worker --verify-auto-resume <automation-key> <auto-resume-at-rfc3339> <thread-id>")
-		}
-		return Command{
-			Mode: ModeVerifyAutoResume,
-			Verify: VerifyArgs{
-				Key:      args[1],
-				RFC3339:  args[2],
-				ThreadID: args[3],
-			},
-		}, nil
-	case "--check-wake-coalesce":
-		if len(args) != 3 {
-			return Command{}, usageError("usage: glm-worker --check-wake-coalesce <parent-thread-id> <auto-resume-at-rfc3339>")
-		}
-		return Command{
-			Mode: ModeCheckWakeCoalesce,
-			Coalesce: CoalesceArgs{
-				ParentThreadID:  args[1],
-				ResumeAtRFC3339: args[2],
-			},
-		}, nil
-	case "--eval-ab":
-		if len(args) != 2 {
-			return Command{}, usageError("usage: glm-worker --eval-ab <run-dir>")
-		}
-		return Command{Mode: ModeEvalAB, Payload: args[1]}, nil
-	case "--call-outliers":
-		if len(args) != 1 {
-			return Command{}, usageError("usage: glm-worker --call-outliers")
-		}
-		return Command{Mode: ModeCallOutliers}, nil
-	case "--codex-limit":
-		if len(args) != 1 {
-			return Command{}, usageError("usage: glm-worker --codex-limit")
-		}
-		return Command{Mode: ModeCodexLimit}, nil
-	case "--install-smoke":
-		if len(args) == 1 {
-			return Command{Mode: ModeInstallSmoke}, nil
-		}
-		if len(args) == 3 && args[1] == "--role" {
-			if !validInstallSmokeRoles[args[2]] {
-				return Command{}, usageError("usage: glm-worker --install-smoke %s", installSmokeUsage)
-			}
-			return Command{Mode: ModeInstallSmoke, Role: args[2]}, nil
-		}
-		return Command{}, usageError("usage: glm-worker --install-smoke %s", installSmokeUsage)
-	case "--quality-gate":
-		if len(args) != 2 || qualityGateForms[args[1]] == nil {
-			return Command{}, usageError("usage: glm-worker --quality-gate %s", qualityGateUsage)
-		}
-		return Command{Mode: ModeQualityGate, Payload: args[1]}, nil
-	default:
-		return Command{Mode: ModeNewTask, Payload: strings.Join(args, " ")}, nil
+	if parser, ok := commandParsers[args[0]]; ok {
+		return parser(args)
 	}
+	return Command{Mode: ModeNewTask, Payload: strings.Join(args, " ")}, nil
+}
+
+func singleArgCommand(args []string, mode CommandMode, usage string) (Command, error) {
+	if len(args) != 1 {
+		return Command{}, usageError("%s", usage)
+	}
+	return Command{Mode: mode}, nil
+}
+
+func optionalPayloadCommand(args []string, mode CommandMode, usage string) (Command, error) {
+	if len(args) > 2 {
+		return Command{}, usageError("%s", usage)
+	}
+	command := Command{Mode: mode}
+	if len(args) == 2 {
+		command.Payload = args[1]
+	}
+	return command, nil
+}
+
+func requiredPayloadCommand(args []string, mode CommandMode, usage string) (Command, error) {
+	if len(args) != 2 {
+		return Command{}, usageError("%s", usage)
+	}
+	return Command{Mode: mode, Payload: args[1]}, nil
+}
+
+func watchCommand(args []string) (Command, error) {
+	if len(args) == 1 {
+		return Command{Mode: ModeWatch}, nil
+	}
+	if len(args) == 2 && args[1] == "--verbose" {
+		return Command{Mode: ModeWatch, WatchVerbose: true}, nil
+	}
+	return Command{}, usageError("usage: glm-worker --watch [--verbose]")
+}
+
+func verifyAutoResumeCommand(args []string) (Command, error) {
+	if len(args) != 4 {
+		return Command{}, usageError("usage: glm-worker --verify-auto-resume <automation-key> <auto-resume-at-rfc3339> <thread-id>")
+	}
+	return Command{
+		Mode: ModeVerifyAutoResume,
+		Verify: VerifyArgs{
+			Key:      args[1],
+			RFC3339:  args[2],
+			ThreadID: args[3],
+		},
+	}, nil
+}
+
+func checkWakeCoalesceCommand(args []string) (Command, error) {
+	if len(args) != 3 {
+		return Command{}, usageError("usage: glm-worker --check-wake-coalesce <parent-thread-id> <auto-resume-at-rfc3339>")
+	}
+	return Command{
+		Mode: ModeCheckWakeCoalesce,
+		Coalesce: CoalesceArgs{
+			ParentThreadID:  args[1],
+			ResumeAtRFC3339: args[2],
+		},
+	}, nil
+}
+
+func installSmokeCommand(args []string) (Command, error) {
+	if len(args) == 1 {
+		return Command{Mode: ModeInstallSmoke}, nil
+	}
+	if len(args) == 3 && args[1] == "--role" && validInstallSmokeRoles[args[2]] {
+		return Command{Mode: ModeInstallSmoke, Role: args[2]}, nil
+	}
+	return Command{}, usageError("usage: glm-worker --install-smoke %s", installSmokeUsage)
+}
+
+func qualityGateCommand(args []string) (Command, error) {
+	if len(args) != 2 || qualityGateForms[args[1]] == nil {
+		return Command{}, usageError("usage: glm-worker --quality-gate %s", qualityGateUsage)
+	}
+	return Command{Mode: ModeQualityGate, Payload: args[1]}, nil
 }
 
 func stdinPayloadCommand(mode CommandMode, args []string, usage string, allowOrigin bool) (Command, error) {
