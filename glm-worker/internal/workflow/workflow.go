@@ -1245,7 +1245,7 @@ func (w *Workflow) finalizeModelCallState(
 	return nil
 }
 
-func (_ *Workflow) parseModelCallResult(checkpoint state.ResumeCheckpoint, runResult runner.RunResult) (packet.Result, error) {
+func (*Workflow) parseModelCallResult(checkpoint state.ResumeCheckpoint, runResult runner.RunResult) (packet.Result, error) {
 	result, err := packet.ParseStructured(runResult.StructuredOutput)
 	if err != nil {
 		return packet.Result{}, err

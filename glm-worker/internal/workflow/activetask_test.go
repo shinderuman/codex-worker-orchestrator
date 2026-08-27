@@ -74,7 +74,7 @@ func TestResolveActiveTaskPathValidForms(t *testing.T) {
 		},
 		{
 			name: "plan missing means unwired",
-			plan: func(_ *testing.T, repoRoot string) {},
+			plan: func(_ *testing.T, _ string) {},
 		},
 		{
 			name: "semantic filename resolves",
