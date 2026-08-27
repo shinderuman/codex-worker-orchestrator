@@ -489,7 +489,7 @@ func TestReadDBRowSqlite3Integration(t *testing.T) {
 		t.Fatalf("Rrule = %q want %q", row.Rrule, testRrule)
 	}
 
-	if _, err := ReadDBRowSqlite3(dbPath, "nonexistent-key1234"); err != ErrRowNotFound {
+	if _, err := ReadDBRowSqlite3(dbPath, "nonexistent-key1234"); !errors.Is(err, ErrRowNotFound) {
 		t.Fatalf("missing row = %v want ErrRowNotFound", err)
 	}
 

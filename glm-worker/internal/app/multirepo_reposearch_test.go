@@ -99,7 +99,7 @@ func runMultiRepoSearchChild(home string, repo string, query string) (multiRepoS
 		"GLM_WORKER_SEARCH_OUT=" + outPath,
 	}
 	if output, err := command.CombinedOutput(); err != nil {
-		return multiRepoSearchReport{}, fmt.Errorf("検索子process失敗(%v): %s", err, output)
+		return multiRepoSearchReport{}, fmt.Errorf("検索子process失敗(%w): %s", err, output)
 	}
 	data, err := os.ReadFile(outPath)
 	if err != nil {
@@ -107,7 +107,7 @@ func runMultiRepoSearchChild(home string, repo string, query string) (multiRepoS
 	}
 	var report multiRepoSearchReport
 	if err := json.Unmarshal(data, &report); err != nil {
-		return multiRepoSearchReport{}, fmt.Errorf("検索子processの結果を解析できません: %v: %s", err, data)
+		return multiRepoSearchReport{}, fmt.Errorf("検索子processの結果を解析できません: %w: %s", err, data)
 	}
 	if report.Error != "" {
 		return multiRepoSearchReport{}, fmt.Errorf("検索失敗: %s", report.Error)

@@ -102,13 +102,7 @@ func requestStop(cfg config.AppConfig, stdout io.Writer) error {
 	if err != nil {
 		return &StopEndpointError{}
 	}
-	return writeJSON(stdout, stopOutput{
-		Result:          response.Result,
-		TaskID:          response.TaskID,
-		TaskStatus:      response.TaskStatus,
-		ResumeAvailable: response.ResumeAvailable,
-		CleanupWarning:  response.CleanupWarning,
-	})
+	return writeJSON(stdout, stopOutput(response))
 }
 
 func readStopEndpointResponse(conn net.Conn) (stopEndpointResponse, error) {

@@ -20,27 +20,27 @@ exit 1
 EOF_CLAUDE
 chmod +x "$tmp/bin/claude"
 for tool in golangci-lint shellcheck shfmt; do
-    cat >"$tmp/bin/$tool" <<'EOF_TOOL'
+	cat >"$tmp/bin/$tool" <<'EOF_TOOL'
 #!/bin/sh
 exit 0
 EOF_TOOL
-    chmod +x "$tmp/bin/$tool"
+	chmod +x "$tmp/bin/$tool"
 done
 
 run_install() {
-    HOME="$home" \
-    PATH="$tmp/bin:$PATH" \
-    CODEX_CONFIG_DIR="$home/.codex" \
-    GLM_WORKER_BIN_DIR="$home/.local/bin" \
-    GLM_WORKER_HOME="$home/.glm-worker" \
-    CLAUDE_SETTINGS_FILE="$home/.claude/settings.json" \
-    XDG_CONFIG_HOME="$home/.config" \
-    "$repo/install.sh"
+	HOME="$home" \
+		PATH="$tmp/bin:$PATH" \
+		CODEX_CONFIG_DIR="$home/.codex" \
+		GLM_WORKER_BIN_DIR="$home/.local/bin" \
+		GLM_WORKER_HOME="$home/.glm-worker" \
+		CLAUDE_SETTINGS_FILE="$home/.claude/settings.json" \
+		XDG_CONFIG_HOME="$home/.config" \
+		"$repo/install.sh"
 }
 
 run_install
 for binary in glm-worker commentlint harnesslint merge-json; do
-    test -x "$home/.local/bin/$binary"
+	test -x "$home/.local/bin/$binary"
 done
 test -f "$home/.codex/AGENTS.md"
 test -f "$home/.codex/glm-worker/prompts/WORKER.md"

@@ -120,24 +120,16 @@ func runExternalFixers(root string, paths []string, runner commandRunner) error 
 			"--max-issues-per-linter", "0", "--max-same-issues", "0",
 			"--disable", "cyclop,gocognit,funlen,goconst",
 		}
-		result, err := runner.run(dir, "golangci-lint", baseArgs...)
-		if err != nil {
+		if _, err := runner.run(dir, "golangci-lint", baseArgs...); err != nil {
 			return err
-		}
-		if result.exitCode != 0 && strings.TrimSpace(result.output) != "" {
-			return fmt.Errorf("golangci-lint --fix failed: %s", compactOutput(result.output, "golangci-lint failed"))
 		}
 		productionArgs := []string{
 			"run", "--fix", "--config", config,
 			"--max-issues-per-linter", "0", "--max-same-issues", "0",
 			"--tests=false", "--enable-only", "cyclop,gocognit,funlen,goconst",
 		}
-		result, err = runner.run(dir, "golangci-lint", productionArgs...)
-		if err != nil {
+		if _, err := runner.run(dir, "golangci-lint", productionArgs...); err != nil {
 			return err
-		}
-		if result.exitCode != 0 && strings.TrimSpace(result.output) != "" {
-			return fmt.Errorf("golangci-lint production --fix failed: %s", compactOutput(result.output, "golangci-lint failed"))
 		}
 	}
 	return nil

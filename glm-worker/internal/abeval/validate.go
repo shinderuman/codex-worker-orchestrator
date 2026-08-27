@@ -67,7 +67,7 @@ func decodeStrict(data []byte, what string, v any) error {
 	}
 	var extra json.RawMessage
 	if err := dec.Decode(&extra); err != io.EOF {
-		return fmt.Errorf("%sには複数のJSON値が含まれています: %v", what, err)
+		return fmt.Errorf("%sには複数のJSON値が含まれています: %w", what, err)
 	}
 	return nil
 }

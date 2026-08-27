@@ -118,7 +118,7 @@ func validateTargets(result Result) error {
 			hasNone = true
 		}
 		if strings.EqualFold(trimmed, ReportOnlyTargets) &&
-			!(result.Status == StatusFixRequired && element == ReportOnlyTargets && len(result.Targets) == 1) {
+			(result.Status != StatusFixRequired || element != ReportOnlyTargets || len(result.Targets) != 1) {
 			return &constraintError{reason: "TARGETSの予約値PACKETはFIX_REQUIREDの報告再出力専用です: 実装修正では具体対象を指定してください"}
 		}
 	}

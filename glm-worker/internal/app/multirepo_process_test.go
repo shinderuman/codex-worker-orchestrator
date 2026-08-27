@@ -259,7 +259,7 @@ func buildMultiRepoWorkerBinary(t *testing.T) (string, error) {
 	build := exec.Command("go", "build", "-o", binary, "./cmd/glm-worker")
 	build.Dir = moduleRoot
 	if output, err := build.CombinedOutput(); err != nil {
-		return "", fmt.Errorf("go build失敗: %v: %s", err, output)
+		return "", fmt.Errorf("go build失敗: %w: %s", err, output)
 	}
 	return binary, nil
 }

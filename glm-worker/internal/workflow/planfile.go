@@ -315,7 +315,7 @@ func (w *Workflow) verifyParentFileAfterCall(
 		if plan := state.FindParentFileState(after, implementationPlanFile); plan != state.FindParentFileState(before.files, implementationPlanFile) {
 			violation := fmt.Errorf("worker呼出開始前に対し親管理implementation metadataが変化しました: %s(%s)", implementationPlanFile, parentFileChangeReason(state.FindParentFileState(before.files, implementationPlanFile), plan))
 			if runErr != nil {
-				violation = fmt.Errorf("%v; 呼出error: %w", violation, runErr)
+				violation = fmt.Errorf("%w; 呼出error: %w", violation, runErr)
 			}
 			w.recordModelCall(checkpoint, runResult, startedAt, completedAt, parentMetadataGuardSurface.violationOutcome(), "", violation, outputPath, callDiagnostics{})
 			return true, w.failClosedParentFileGuard(checkpoint.Phase, parentMetadataGuardSurface, parentMetadataGuardSurface.mismatchOutcome(), violation.Error(), nil)
@@ -327,7 +327,7 @@ func (w *Workflow) verifyParentFileAfterCall(
 	}
 	violation := fmt.Errorf("worker呼出開始前に対し親管理implementation metadataが変化しました: %s", describeParentFileChanges(before.files, after))
 	if runErr != nil {
-		violation = fmt.Errorf("%v; 呼出error: %w", violation, runErr)
+		violation = fmt.Errorf("%w; 呼出error: %w", violation, runErr)
 	}
 	w.recordModelCall(checkpoint, runResult, startedAt, completedAt, parentMetadataGuardSurface.violationOutcome(), "", violation, outputPath, callDiagnostics{})
 	return true, w.failClosedParentFileGuard(checkpoint.Phase, parentMetadataGuardSurface, parentMetadataGuardSurface.mismatchOutcome(), violation.Error(), nil)

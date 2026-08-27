@@ -83,7 +83,7 @@ func absorbTaskEvent(entry *CallTimelineEntry, tools map[string]*CallTimelineToo
 		entry.MessageModel = record.MessageModel
 	}
 	if record.Timestamp != (time.Time{}) {
-		if entry.FirstAt == (time.Time{}) || record.Timestamp.Before(entry.FirstAt) {
+		if entry.FirstAt.Equal((time.Time{})) || record.Timestamp.Before(entry.FirstAt) {
 			entry.FirstAt = record.Timestamp
 		}
 		if record.Timestamp.After(entry.LastAt) {

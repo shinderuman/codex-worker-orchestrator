@@ -1186,7 +1186,7 @@ func (w *Workflow) saveRateLimitedState(
 	artifactWarning := ""
 	if artifactErr != nil {
 		artifactWarning = artifactErr.Error()
-		telemetryErr = fmt.Errorf("%v; %w", runErr, artifactErr)
+		telemetryErr = fmt.Errorf("%w; %w", runErr, artifactErr)
 	}
 	w.recordModelCall(checkpoint, runResult, startedAt, completedAt, "rate_limited", "", telemetryErr, outputPath, callDiagnostics{})
 	return runner.ZaiRateLimitError{
@@ -1339,11 +1339,9 @@ func (w *Workflow) recoveryLoop(
 
 	exhaustClassification := classification
 
-	for {
-		if probes >= maxTransientProbes {
-			break
-		}
-		if !(firstProbeImmediate && probes == 0) {
+	for probes < maxTransientProbes {
+
+		if !firstProbeImmediate || probes != 0 {
 			wait, ok := w.backoffWait(sleeps, deadline)
 			if !ok {
 				break

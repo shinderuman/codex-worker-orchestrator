@@ -47,7 +47,7 @@ func CheckCoalesce(params CoalesceParams, readDB DBReader) (CoalesceResult, erro
 	}
 	resumeAt, err := time.Parse(time.RFC3339, params.ResumeAtRFC3339)
 	if err != nil {
-		return CoalesceResult{}, fmt.Errorf("invalid resume time %q: %v", params.ResumeAtRFC3339, err)
+		return CoalesceResult{}, fmt.Errorf("invalid resume time %q: %w", params.ResumeAtRFC3339, err)
 	}
 	resumeAtUTC := resumeAt.UTC()
 	result := CoalesceResult{

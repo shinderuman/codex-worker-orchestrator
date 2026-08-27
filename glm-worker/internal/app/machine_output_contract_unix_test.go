@@ -125,7 +125,8 @@ func requireMachineProcessContract(t *testing.T, args []string, outcome machineP
 		requireExactlyOneJSONStdout(t, rendered, outcome.stdout)
 		return
 	}
-	exitErr, ok := outcome.runErr.(*exec.ExitError)
+	exitErr := &exec.ExitError{}
+	ok := errors.As(outcome.runErr, &exitErr)
 	if !ok || exitErr.ExitCode() <= 0 {
 		t.Fatalf("%s: 失敗時のexitがnon-zeroではありません: %v", rendered, outcome.runErr)
 	}

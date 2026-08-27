@@ -365,7 +365,7 @@ func commitTransaction(plans []plannedWrite, writeFn writeFileFunc) error {
 	for _, plan := range plans {
 		if err := writeFn(plan.path, plan.data, plan.mode); err != nil {
 			if rollbackErr := rollbackFiles(restores, writeFn); rollbackErr != nil {
-				return fmt.Errorf("%w (rollback失敗: %v)", err, rollbackErr)
+				return fmt.Errorf("%w (rollback失敗: %w)", err, rollbackErr)
 			}
 			return err
 		}

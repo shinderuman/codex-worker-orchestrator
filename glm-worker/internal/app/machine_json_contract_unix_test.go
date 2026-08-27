@@ -78,7 +78,8 @@ func TestWatchProcessNonENOENTOutputsStructuredErrorAndNonZero(t *testing.T) {
 	if runErr == nil {
 		t.Fatalf("--watchがexit 0で成功しました: stdout=%s stderr=%s", stdout, stderr)
 	}
-	exitErr, ok := runErr.(*exec.ExitError)
+	exitErr := &exec.ExitError{}
+	ok := errors.As(runErr, &exitErr)
 	if !ok || exitErr.ExitCode() <= 0 {
 		t.Fatalf("non-zero exitを期待しました: %v", runErr)
 	}

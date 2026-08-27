@@ -37,7 +37,7 @@ func ReadDBRowSqlite3(dbPath, key string) (DBRow, error) {
 		NextRunAt *int64 `json:"next_run_at"`
 	}
 	if err := json.Unmarshal(output, &rows); err != nil {
-		return DBRow{}, fmt.Errorf("%w: json parse: %v", ErrDBUnreadable, err)
+		return DBRow{}, fmt.Errorf("%w: json parse: %w", ErrDBUnreadable, err)
 	}
 	if len(rows) == 0 {
 		return DBRow{}, ErrRowNotFound
