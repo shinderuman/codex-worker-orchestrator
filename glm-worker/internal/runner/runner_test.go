@@ -49,7 +49,14 @@ func TestSessionNameIncludesTaskID(t *testing.T) {
 	}
 }
 
-func TestClaudeRunnerRunStartsThenResumesSession(t *testing.T) {
+type runnerSessionFixture struct {
+	runner          *ClaudeRunner
+	argumentsPath   string
+	claudeConfigDir string
+}
+
+func newRunnerSessionFixture(t *testing.T) runnerSessionFixture {
+	t.Helper()
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixtureはUnix系環境向け")
 	}
@@ -75,36 +82,52 @@ func TestClaudeRunnerRunStartsThenResumesSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	claudeConfigDir := filepath.Join(t.TempDir(), "claude-home")
-	r := NewClaudeRunner(config.AppConfig{
-		RepoRoot:        repository,
-		RepoShort:       "abcdef123456",
-		PromptDir:       promptDir,
-		ClaudeBin:       commandPath,
-		ClaudeConfigDir: claudeConfigDir,
-		EnvAllowlist:    []string{"GLM_ARGS_FILE"},
-		WorkerModel:     "worker-model",
-		ReviewerModel:   "reviewer-model",
-	}, st)
 
-	firstOutput := filepath.Join(t.TempDir(), "first.log")
-	firstResult, err := r.Run(state.WorkerRole, "worker-new", "worker-model", false, "high", "first prompt", firstOutput)
+	return runnerSessionFixture{
+		runner: NewClaudeRunner(config.AppConfig{
+			RepoRoot:        repository,
+			RepoShort:       "abcdef123456",
+			PromptDir:       promptDir,
+			ClaudeBin:       commandPath,
+			ClaudeConfigDir: claudeConfigDir,
+			EnvAllowlist:    []string{"GLM_ARGS_FILE"},
+			WorkerModel:     "worker-model",
+			ReviewerModel:   "reviewer-model",
+		}, st),
+		argumentsPath:   argumentsPath,
+		claudeConfigDir: claudeConfigDir,
+	}
+}
+
+func (f runnerSessionFixture) runFirst(t *testing.T) (RunResult, string) {
+	t.Helper()
+	outputPath := filepath.Join(t.TempDir(), "first.log")
+	result, err := f.runner.Run(state.WorkerRole, "worker-new", "worker-model", false, "high", "first prompt", outputPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	firstArguments := readLines(t, argumentsPath)
-	if !containsArgument(firstArguments, "--session-id") || containsArgument(firstArguments, "--resume") {
-		t.Fatalf("初回引数 = %#v", firstArguments)
+	return result, outputPath
+}
+
+func TestClaudeRunnerRunStartsSessionWithIsolatedArguments(t *testing.T) {
+	fixture := newRunnerSessionFixture(t)
+	_, _ = fixture.runFirst(t)
+
+	arguments := readLines(t, fixture.argumentsPath)
+	if !containsArgument(arguments, "--session-id") || containsArgument(arguments, "--resume") {
+		t.Fatalf("初回引数 = %#v", arguments)
 	}
-	if !containsArgument(firstArguments, "worker-model") || !containsArgument(firstArguments, "first prompt") {
-		t.Fatalf("worker引数 = %#v", firstArguments)
+	if !containsArgument(arguments, "worker-model") || !containsArgument(arguments, "first prompt") {
+		t.Fatalf("worker引数 = %#v", arguments)
 	}
-	if !containsArgument(firstArguments, "stream-json") || !containsArgument(firstArguments, "--verbose") {
-		t.Fatalf("stream-json出力指定がありません: %#v", firstArguments)
+	if !containsArgument(arguments, "stream-json") || !containsArgument(arguments, "--verbose") {
+		t.Fatalf("stream-json出力指定がありません: %#v", arguments)
 	}
-	settingsValue := argumentAfter(firstArguments, "--settings")
+	settingsValue := argumentAfter(arguments, "--settings")
 	if settingsValue == "" {
-		t.Fatalf("隔離--settingsがありません: %#v", firstArguments)
+		t.Fatalf("隔離--settingsがありません: %#v", arguments)
 	}
+
 	var settingsPayload struct {
 		ClaudeMdExcludes     []string `json:"claudeMdExcludes"`
 		AutoMemoryEnabled    bool     `json:"autoMemoryEnabled"`
@@ -115,8 +138,8 @@ func TestClaudeRunnerRunStartsThenResumesSession(t *testing.T) {
 	if err := json.Unmarshal([]byte(settingsValue), &settingsPayload); err != nil {
 		t.Fatalf("--settingsの値がJSONではありません: %v: %q", err, settingsValue)
 	}
-	wantRules := filepath.Join(claudeConfigDir, "rules", "**")
-	wantUserGlobal := filepath.Join(claudeConfigDir, "CLAUDE.md")
+	wantRules := filepath.Join(fixture.claudeConfigDir, "rules", "**")
+	wantUserGlobal := filepath.Join(fixture.claudeConfigDir, "CLAUDE.md")
 	if !containsString(settingsPayload.ClaudeMdExcludes, "**/CLAUDE.md") ||
 		!containsString(settingsPayload.ClaudeMdExcludes, "**/CLAUDE.local.md") ||
 		!containsString(settingsPayload.ClaudeMdExcludes, wantUserGlobal) ||
@@ -126,53 +149,66 @@ func TestClaudeRunnerRunStartsThenResumesSession(t *testing.T) {
 	if settingsPayload.AutoMemoryEnabled || !settingsPayload.DisableAllHooks || !settingsPayload.DisableBundledSkills || !settingsPayload.DisableWorkflows {
 		t.Fatalf("隔離settings = %#v", settingsPayload)
 	}
-	if !containsArgument(firstArguments, "--safe-mode") {
-		t.Fatalf("--safe-modeがありません: %#v", firstArguments)
+	if !containsArgument(arguments, "--safe-mode") {
+		t.Fatalf("--safe-modeがありません: %#v", arguments)
 	}
-	if argumentAfter(firstArguments, "--setting-sources") != "" {
-		t.Fatalf("setting-sourcesを空にする必要があります: %#v", firstArguments)
+	if argumentAfter(arguments, "--setting-sources") != "" {
+		t.Fatalf("setting-sourcesを空にする必要があります: %#v", arguments)
 	}
-	if !containsArgument(firstArguments, "--strict-mcp-config") {
-		t.Fatalf("--strict-mcp-configがありません: %#v", firstArguments)
+	if !containsArgument(arguments, "--strict-mcp-config") {
+		t.Fatalf("--strict-mcp-configがありません: %#v", arguments)
 	}
-	if got := argumentAfter(firstArguments, "--mcp-config"); got != `{"mcpServers":{}}` {
+	if got := argumentAfter(arguments, "--mcp-config"); got != `{"mcpServers":{}}` {
 		t.Fatalf("--mcp-config = %q", got)
 	}
-	if !containsArgument(firstArguments, "--disable-slash-commands") {
-		t.Fatalf("--disable-slash-commandsがありません: %#v", firstArguments)
+	if !containsArgument(arguments, "--disable-slash-commands") {
+		t.Fatalf("--disable-slash-commandsがありません: %#v", arguments)
 	}
-	if output, err := os.ReadFile(firstOutput); err != nil || string(output) != "runner output\n" {
+}
+
+func TestClaudeRunnerRunParsesResultUsage(t *testing.T) {
+	fixture := newRunnerSessionFixture(t)
+	result, outputPath := fixture.runFirst(t)
+
+	output, err := os.ReadFile(outputPath)
+	if err != nil || string(output) != "runner output\n" {
 		t.Fatalf("output = %q, err = %v", output, err)
 	}
-	if firstResult.TopLevelUsage.InputTokens != 11 || firstResult.TopLevelUsage.CacheReadInputTokens != 13 || firstResult.TopLevelUsage.OutputTokens != 14 {
-		t.Fatalf("usage = %#v", firstResult.TopLevelUsage)
+	if result.TopLevelUsage.InputTokens != 11 || result.TopLevelUsage.CacheReadInputTokens != 13 || result.TopLevelUsage.OutputTokens != 14 {
+		t.Fatalf("usage = %#v", result.TopLevelUsage)
 	}
-	if firstResult.ModelUsage["glm-5.3"].OutputTokens != 14 || firstResult.SystemPromptSHA256 == "" || firstResult.SystemPrompt != "system" {
-		t.Fatalf("run result = %#v", firstResult)
+	if result.ModelUsage["glm-5.3"].OutputTokens != 14 || result.SystemPromptSHA256 == "" || result.SystemPrompt != "system" {
+		t.Fatalf("run result = %#v", result)
 	}
+}
 
-	secondOutput := filepath.Join(t.TempDir(), "second.log")
-	secondResult, err := r.Run(state.WorkerRole, "worker-decision", "override-model", true, "max", "second prompt", secondOutput)
+func TestClaudeRunnerRunResumesSessionReadOnly(t *testing.T) {
+	fixture := newRunnerSessionFixture(t)
+	_, _ = fixture.runFirst(t)
+
+	outputPath := filepath.Join(t.TempDir(), "second.log")
+	result, err := fixture.runner.Run(state.WorkerRole, "worker-decision", "override-model", true, "max", "second prompt", outputPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !secondResult.Resumed {
+	if !result.Resumed {
 		t.Fatal("2回目がresumeとして記録されていません")
 	}
-	secondArguments := readLines(t, argumentsPath)
-	if !containsArgument(secondArguments, "--resume") || containsArgument(secondArguments, "--session-id") {
-		t.Fatalf("resume引数 = %#v", secondArguments)
+
+	arguments := readLines(t, fixture.argumentsPath)
+	if !containsArgument(arguments, "--resume") || containsArgument(arguments, "--session-id") {
+		t.Fatalf("resume引数 = %#v", arguments)
 	}
 	for _, argument := range []string{"--disallowedTools", "Edit", "Write", "NotebookEdit", "Agent", "Bash", "second prompt"} {
-		if !containsArgument(secondArguments, argument) {
-			t.Fatalf("read-only引数%qがありません: %#v", argument, secondArguments)
+		if !containsArgument(arguments, argument) {
+			t.Fatalf("read-only引数%qがありません: %#v", argument, arguments)
 		}
 	}
-	if got := argumentAfter(secondArguments, "--tools"); got != "Read,Grep,Glob,WebFetch,WebSearch" {
+	if got := argumentAfter(arguments, "--tools"); got != "Read,Grep,Glob,WebFetch,WebSearch" {
 		t.Fatalf("read-only --tools = %q", got)
 	}
-	if !containsArgument(secondArguments, "override-model") {
-		t.Fatalf("model overrideがありません: %#v", secondArguments)
+	if !containsArgument(arguments, "override-model") {
+		t.Fatalf("model overrideがありません: %#v", arguments)
 	}
 }
 
