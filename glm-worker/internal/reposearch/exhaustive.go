@@ -25,6 +25,13 @@ type ExhaustiveOptions struct {
 	ExcludeDirs   []string
 }
 
+type exhaustiveSettings struct {
+	maxFiles      int
+	maxTotalBytes int
+	maxMatches    int
+	excludeDirs   map[string]bool
+}
+
 const (
 	defaultMaxExhaustiveMatches = 512
 	hardMaxExhaustiveMatches    = 4096
@@ -39,19 +46,7 @@ func ExhaustiveSearch(ctx context.Context, repoRoot string, query string, opts E
 	if len(queryTokens) == 0 {
 		return ExhaustiveReport{}, ErrEmptyQuery
 	}
-	maxFiles, err := resolveBound(opts.MaxFiles, defaultMaxFiles, hardMaxFiles, "MaxFiles")
-	if err != nil {
-		return ExhaustiveReport{}, err
-	}
-	maxTotalBytes, err := resolveBound(opts.MaxTotalBytes, defaultMaxTotalBytes, hardMaxTotalBytes, "MaxTotalBytes")
-	if err != nil {
-		return ExhaustiveReport{}, err
-	}
-	maxMatches, err := resolveBound(opts.MaxMatches, defaultMaxExhaustiveMatches, hardMaxExhaustiveMatches, "MaxMatches")
-	if err != nil {
-		return ExhaustiveReport{}, err
-	}
-	excludeDirs, err := resolveExcludeDirs(opts.ExcludeDirs)
+	settings, err := resolveExhaustiveSettings(opts)
 	if err != nil {
 		return ExhaustiveReport{}, err
 	}
@@ -59,16 +54,51 @@ func ExhaustiveSearch(ctx context.Context, repoRoot string, query string, opts E
 	if err != nil {
 		return ExhaustiveReport{}, err
 	}
-	before, err := computeFingerprint(ctx, root, excludeDirs)
+	before, err := computeFingerprint(ctx, root, settings.excludeDirs)
 	if err != nil {
 		return ExhaustiveReport{}, err
 	}
-	paths, err := enumerateFiles(ctx, root, excludeDirs)
+	report, err := scanExhaustiveCorpus(ctx, root, queryTokens, settings)
 	if err != nil {
 		return ExhaustiveReport{}, err
 	}
-	if len(paths) > maxFiles {
-		return ExhaustiveReport{}, fmt.Errorf("%w: 対象file数 %d がMaxFiles %dを超えています", ErrIndexLimit, len(paths), maxFiles)
+	raced, err := fingerprintUnchanged(ctx, root, settings.excludeDirs, before)
+	if err != nil {
+		return ExhaustiveReport{}, err
+	}
+	if raced {
+		return ExhaustiveReport{}, ErrIndexRace
+	}
+	return report, nil
+}
+
+func resolveExhaustiveSettings(opts ExhaustiveOptions) (exhaustiveSettings, error) {
+	maxFiles, err := resolveBound(opts.MaxFiles, defaultMaxFiles, hardMaxFiles, "MaxFiles")
+	if err != nil {
+		return exhaustiveSettings{}, err
+	}
+	maxTotalBytes, err := resolveBound(opts.MaxTotalBytes, defaultMaxTotalBytes, hardMaxTotalBytes, "MaxTotalBytes")
+	if err != nil {
+		return exhaustiveSettings{}, err
+	}
+	maxMatches, err := resolveBound(opts.MaxMatches, defaultMaxExhaustiveMatches, hardMaxExhaustiveMatches, "MaxMatches")
+	if err != nil {
+		return exhaustiveSettings{}, err
+	}
+	excludeDirs, err := resolveExcludeDirs(opts.ExcludeDirs)
+	if err != nil {
+		return exhaustiveSettings{}, err
+	}
+	return exhaustiveSettings{maxFiles: maxFiles, maxTotalBytes: maxTotalBytes, maxMatches: maxMatches, excludeDirs: excludeDirs}, nil
+}
+
+func scanExhaustiveCorpus(ctx context.Context, root string, queryTokens []string, settings exhaustiveSettings) (ExhaustiveReport, error) {
+	paths, err := enumerateFiles(ctx, root, settings.excludeDirs)
+	if err != nil {
+		return ExhaustiveReport{}, err
+	}
+	if len(paths) > settings.maxFiles {
+		return ExhaustiveReport{}, fmt.Errorf("%w: 対象file数 %d がMaxFiles %dを超えています", ErrIndexLimit, len(paths), settings.maxFiles)
 	}
 	report := ExhaustiveReport{
 		Predicate:       exhaustivePredicate,
@@ -78,41 +108,43 @@ func ExhaustiveSearch(ctx context.Context, repoRoot string, query string, opts E
 	}
 	totalBytes := 0
 	for _, rel := range paths {
-		if err := ctx.Err(); err != nil {
-			return ExhaustiveReport{}, err
-		}
-		abs, err := joinWithinRoot(root, rel)
+		bytesRead, err := scanExhaustiveFile(ctx, root, rel, queryTokens, settings.maxMatches, &report)
 		if err != nil {
 			return ExhaustiveReport{}, err
 		}
-		content, outcome, err := readSearchableFile(abs)
-		if err != nil {
-			return ExhaustiveReport{}, err
+		totalBytes += bytesRead
+		if totalBytes > settings.maxTotalBytes {
+			return ExhaustiveReport{}, fmt.Errorf("%w: 読み込み合計 %d bytes がMaxTotalBytes %dを超えています", ErrIndexLimit, totalBytes, settings.maxTotalBytes)
 		}
-		if outcome != readIndexed {
-			report.SkippedFiles++
-			continue
-		}
-		totalBytes += len(content)
-		if totalBytes > maxTotalBytes {
-			return ExhaustiveReport{}, fmt.Errorf("%w: 読み込み合計 %d bytes がMaxTotalBytes %dを超えています", ErrIndexLimit, totalBytes, maxTotalBytes)
-		}
-		report.ScannedFiles++
-		if exhaustiveDocumentMatches(rel, string(content), queryTokens) {
-			report.Matches = append(report.Matches, ExhaustiveMatch{Path: rel})
-			if len(report.Matches) > maxMatches {
-				return ExhaustiveReport{}, fmt.Errorf("%w: exhaustive match数がMaxMatches %dを超えています", ErrIndexLimit, maxMatches)
-			}
-		}
-	}
-	raced, err := fingerprintUnchanged(ctx, root, excludeDirs, before)
-	if err != nil {
-		return ExhaustiveReport{}, err
-	}
-	if raced {
-		return ExhaustiveReport{}, ErrIndexRace
 	}
 	return report, nil
+}
+
+func scanExhaustiveFile(ctx context.Context, root, rel string, queryTokens []string, maxMatches int, report *ExhaustiveReport) (int, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+	abs, err := joinWithinRoot(root, rel)
+	if err != nil {
+		return 0, err
+	}
+	content, outcome, err := readSearchableFile(abs)
+	if err != nil {
+		return 0, err
+	}
+	if outcome != readIndexed {
+		report.SkippedFiles++
+		return 0, nil
+	}
+	report.ScannedFiles++
+	if !exhaustiveDocumentMatches(rel, string(content), queryTokens) {
+		return len(content), nil
+	}
+	report.Matches = append(report.Matches, ExhaustiveMatch{Path: rel})
+	if len(report.Matches) > maxMatches {
+		return 0, fmt.Errorf("%w: exhaustive match数がMaxMatches %dを超えています", ErrIndexLimit, maxMatches)
+	}
+	return len(content), nil
 }
 
 func uniqueTokenOrder(tokens []string) []string {
