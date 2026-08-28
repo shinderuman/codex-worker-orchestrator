@@ -22,39 +22,20 @@ jobs:
           from pathlib import Path
           p = Path('glm-worker/internal/workflow/workflow.go')
           text = p.read_text()
-          old = '''\tfloorActive := risk.high && !w.acceptedFixScopeCoversCurrent()
-\tphase := fmt.Sprintf("reviewer-%d", reviewNumber)
-\tif floorActive {
-\t\tphase += "-high-floor"
-\t}
-'''
-          new = '''\tphase, floorPrompt, floorActive := w.reviewerRiskFloorContext(reviewNumber, risk)
-'''
+          old = '\tfloorActive := risk.high && !w.acceptedFixScopeCoversCurrent()\n\tphase := fmt.Sprintf("reviewer-%d", reviewNumber)\n\tif floorActive {\n\t\tphase += "-high-floor"\n\t}\n'
+          new = '\tphase, floorPrompt, floorActive := w.reviewerRiskFloorContext(reviewNumber, risk)\n'
           if new not in text:
               if text.count(old) != 1:
                   raise SystemExit('floor phase block not found')
               text = text.replace(old, new, 1)
-          old = '''\tif floorActive {
-\t\tprompt += reviewerHighRiskFloorPrompt(risk.source)
-\t}
-'''
-          new = '''\tprompt += floorPrompt
-'''
+          old = '\tif floorActive {\n\t\tprompt += reviewerHighRiskFloorPrompt(risk.source)\n\t}\n'
+          new = '\tprompt += floorPrompt\n'
           if new not in text:
               if text.count(old) != 1:
                   raise SystemExit('floor prompt block not found')
               text = text.replace(old, new, 1)
           marker = 'func (w *Workflow) runReviewModel('
-          helper = '''func (w *Workflow) reviewerRiskFloorContext(reviewNumber int, risk effectiveRisk) (string, string, bool) {
-\tfloorActive := risk.high && !w.acceptedFixScopeCoversCurrent()
-\tphase := fmt.Sprintf("reviewer-%d", reviewNumber)
-\tif !floorActive {
-\t\treturn phase, "", false
-\t}
-\treturn phase + "-high-floor", reviewerHighRiskFloorPrompt(risk.source), true
-}
-
-'''
+          helper = 'func (w *Workflow) reviewerRiskFloorContext(reviewNumber int, risk effectiveRisk) (string, string, bool) {\n\tfloorActive := risk.high && !w.acceptedFixScopeCoversCurrent()\n\tphase := fmt.Sprintf("reviewer-%d", reviewNumber)\n\tif !floorActive {\n\t\treturn phase, "", false\n\t}\n\treturn phase + "-high-floor", reviewerHighRiskFloorPrompt(risk.source), true\n}\n\n'
           if helper not in text:
               if text.count(marker) != 1:
                   raise SystemExit('runReviewModel marker not found')
