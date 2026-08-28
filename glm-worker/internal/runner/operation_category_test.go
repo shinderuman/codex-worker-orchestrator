@@ -43,6 +43,7 @@ func TestShellOperationCategoryKeepsObservedFormsNarrow(t *testing.T) {
 	}{
 		{command: "cd /repo && go test ./...", want: state.OperationCategoryTest},
 		{command: "git branch --contains HEAD", want: state.OperationCategoryGitRead},
+		{command: "git branch --show-current", want: state.OperationCategoryGitRead},
 		{command: "./harnesslint", want: state.OperationCategoryTest},
 		{command: "GOFLAGS=-mod=readonly go vet ./...", want: state.OperationCategoryOther},
 		{command: "/usr/local/bin/go test ./...", want: state.OperationCategoryOther},
@@ -52,6 +53,7 @@ func TestShellOperationCategoryKeepsObservedFormsNarrow(t *testing.T) {
 		{command: "npm run build", want: state.OperationCategoryOther},
 		{command: "python -m pytest tests", want: state.OperationCategoryOther},
 		{command: "git branch feature", want: state.OperationCategoryOther},
+		{command: "git branch --merged", want: state.OperationCategoryOther},
 		{command: "git tag v1", want: state.OperationCategoryOther},
 		{command: "go mod tidy", want: state.OperationCategoryOther},
 		{command: "cd /repo && go test ./... && go vet ./...", want: state.OperationCategoryOther},
