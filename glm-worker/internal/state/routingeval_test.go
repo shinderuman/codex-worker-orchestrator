@@ -447,3 +447,24 @@ func TestBuildModelRoutingReportQualitySufficiencyAggregatesAcrossAliases(t *tes
 		t.Fatalf("glm-5.3 quality groups = %d: %#v", groups, report.QualityGroups)
 	}
 }
+
+func TestBuildModelRoutingReportMissingOwnerUsageStaysUnknown(t *testing.T) {
+	base := time.Date(2026, 8, 29, 9, 0, 0, 0, time.UTC)
+	taskID := "90909090-1111-4111-8111-111111111111"
+	log := routingLogFixture(taskID, "sess-missing-owner", "worker-new", WorkerRole, "opus", base)
+	log.CallID = "call-missing-owner"
+	log.EffectiveRisk = "HIGH"
+	log.ResolvedModelID = "glm-5.3"
+	log.ResolvedModelUsage = map[string]ResolvedModelUsage{
+		"helper-model": {InputTokens: 50, OutputTokens: 5},
+	}
+	report := BuildModelRoutingReport([]TaskCallLogs{{TaskID: taskID, Logs: []ModelCallLog{log}}})
+	owner := routingCellOf(t, report.Cells, "worker", WorkerPhaseCategoryNew, "HIGH", RoundDeltaUnknown, "opus", "glm-5.3")
+	helper := routingCellOf(t, report.Cells, "worker", WorkerPhaseCategoryNew, "HIGH", RoundDeltaUnknown, "opus", "helper-model")
+	if owner.Usage != (TokenUsage{}) || owner.UsageUnknownCalls != 1 || owner.TopLevelCalls != 1 {
+		t.Fatalf("owner usage = %#v", owner)
+	}
+	if helper.Usage.InputTokens != 50 || helper.Usage.OutputTokens != 5 || helper.UsageUnknownCalls != 0 {
+		t.Fatalf("helper usage = %#v", helper)
+	}
+}

@@ -341,7 +341,11 @@ func (b *modelRoutingBuilder) absorbAliasLink(role string, alias string, model s
 func absorbModelRoutingCellUsage(samples *modelRoutingCellSamples, log ModelCallLog, model string) {
 	switch {
 	case len(log.ResolvedModelUsage) > 0:
-		usage := log.ResolvedModelUsage[model]
+		usage, ok := log.ResolvedModelUsage[model]
+		if !ok {
+			samples.cell.UsageUnknownCalls++
+			return
+		}
 		samples.cell.Usage.InputTokens += usage.InputTokens
 		samples.cell.Usage.CacheCreationInputTokens += usage.CacheCreationInputTokens
 		samples.cell.Usage.CacheReadInputTokens += usage.CacheReadInputTokens
