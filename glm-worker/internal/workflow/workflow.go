@@ -1925,37 +1925,39 @@ func (w *Workflow) buildModelCallLog(
 	}
 	promptHash := sha256.Sum256([]byte(checkpoint.Prompt))
 	responseHash := sha256.Sum256([]byte(response))
-	errorText := ""
-	if callErr != nil {
-		errorText = boundedText(callErr.Error(), packet.MaxDiagnosticBytes)
-	}
+	errorText := modelCallErrorText(callErr)
 	promptContent, systemPromptContent, responseContent := w.telemetryContents(checkpoint.Prompt, runResult.SystemPrompt, response)
 	return state.ModelCallLog{
-		CallID:             runResult.CallID,
-		TaskID:             w.state.ReadOr("task.id", "unknown"),
-		CallType:           state.CallTypeTask,
-		SessionID:          modelSessionID(w.state, checkpoint.Role, runResult.SessionID),
-		StartedAt:          startedAt,
-		CompletedAt:        completedAt,
-		Phase:              checkpoint.Phase,
-		Role:               checkpoint.Role,
-		ModelAlias:         checkpoint.Model,
-		ResolvedModelUsage: resolvedModelUsage(runResult.ModelUsage),
-		Effort:             checkpoint.Effort,
-		ReadOnly:           checkpoint.ReadOnly,
-		Resumed:            runResult.Resumed,
-		Outcome:            outcome,
-		PacketStatus:       packetStatus,
-		Prompt:             promptContent,
-		PromptBytes:        len([]byte(checkpoint.Prompt)),
-		PromptSHA256:       hex.EncodeToString(promptHash[:]),
-		SystemPromptBytes:  runResult.SystemPromptBytes,
-		SystemPromptSHA256: runResult.SystemPromptSHA256,
-		SystemPrompt:       systemPromptContent,
-		Response:           responseContent,
-		ResponseBytes:      len([]byte(response)),
-		ResponseSHA256:     hex.EncodeToString(responseHash[:]),
-		Error:              errorText,
+		CallID:                            runResult.CallID,
+		TaskID:                            w.state.ReadOr("task.id", "unknown"),
+		CallType:                          state.CallTypeTask,
+		SessionID:                         modelSessionID(w.state, checkpoint.Role, runResult.SessionID),
+		StartedAt:                         startedAt,
+		CompletedAt:                       completedAt,
+		Phase:                             checkpoint.Phase,
+		Role:                              checkpoint.Role,
+		ModelAlias:                        checkpoint.Model,
+		ResolvedModelID:                   runResult.ResolvedModelID,
+		ConfiguredAutoCompactWindowTokens: runResult.ConfiguredAutoCompactWindowTokens,
+		KnownModelContextWindowTokens:     runResult.KnownModelContextWindowTokens,
+		DeclaredMaxContextWindowTokens:    runResult.DeclaredMaxContextWindowTokens,
+		ContextWindowSource:               runResult.ContextWindowSource,
+		ResolvedModelUsage:                resolvedModelUsage(runResult.ModelUsage),
+		Effort:                            checkpoint.Effort,
+		ReadOnly:                          checkpoint.ReadOnly,
+		Resumed:                           runResult.Resumed,
+		Outcome:                           outcome,
+		PacketStatus:                      packetStatus,
+		Prompt:                            promptContent,
+		PromptBytes:                       len([]byte(checkpoint.Prompt)),
+		PromptSHA256:                      hex.EncodeToString(promptHash[:]),
+		SystemPromptBytes:                 runResult.SystemPromptBytes,
+		SystemPromptSHA256:                runResult.SystemPromptSHA256,
+		SystemPrompt:                      systemPromptContent,
+		Response:                          responseContent,
+		ResponseBytes:                     len([]byte(response)),
+		ResponseSHA256:                    hex.EncodeToString(responseHash[:]),
+		Error:                             errorText,
 		TopLevelUsage: state.TokenUsage{
 			InputTokens:              runResult.TopLevelUsage.InputTokens,
 			CacheCreationInputTokens: runResult.TopLevelUsage.CacheCreationInputTokens,
@@ -1968,6 +1970,13 @@ func (w *Workflow) buildModelCallLog(
 		TopLevelTurns:       runResult.TopLevelTurns,
 		TotalCostUSD:        runResult.TotalCostUSD,
 	}
+}
+
+func modelCallErrorText(callErr error) string {
+	if callErr == nil {
+		return ""
+	}
+	return boundedText(callErr.Error(), packet.MaxDiagnosticBytes)
 }
 
 func resolvedModelUsage(usageByModel map[string]runner.ModelUsage) map[string]state.ResolvedModelUsage {
