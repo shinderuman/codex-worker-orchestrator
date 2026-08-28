@@ -6,12 +6,13 @@ Codex(Sol High)を判断・orchestrationへ集中させ、repository調査・実
 
 ## 必要command
 
-- Go
+- Go 1.25.4 toolchain
+- lint解析用Go 1.22.12 toolchain
 - git
 - rsync
-- `golangci-lint` v2
-- `shellcheck`
-- `shfmt`
+- `golangci-lint` 2.7.0
+- `shellcheck` 0.11.0
+- `shfmt` 3.13.1
 - Claude Code CLI(runtimeで必要)
 
 ## Install
@@ -19,12 +20,17 @@ Codex(Sol High)を判断・orchestrationへ集中させ、repository調査・実
 ```sh
 git clone https://github.com/shinderuman/codex-worker-orchestrator.git
 cd codex-worker-orchestrator
+./install-quality-tools.sh
+export PATH="$HOME/.local/bin:$PATH"
 ./install.sh
 ```
+
+`install.sh`がquality toolの不足またはversion不一致を報告した場合も、`./install-quality-tools.sh`で`quality-tools.yml`の全固定versionを導入する。Go toolchainはGoのtoolchain管理、実行fileは`~/.local/bin`を使用する。別配置先は`QUALITY_TOOLS_BIN_DIR`で指定し、そのdirectoryを`PATH`へ追加する。
 
 `install.sh`は次だけを行う。
 
 - runtimeに必要なcommandの存在確認
+- `quality-tools.yml`に固定した実行用Go・lint解析用Go・lint tool versionの検証
 - `glm-worker` / `commentlint` / `harnesslint` / `merge-json`を`glm-worker` moduleからbuildして配置
 - `codex/`のmanaged fileを`~/.codex`へ同期し、前回manifestにのみ残るfileを削除
 - managed Codex configを既存`~/.codex/config.toml`へ反映
@@ -81,6 +87,8 @@ Go commandは薄い`cmd/<name>/main.go`とし、実装責務は`internal/`へ置
 ```
 
 `harnesslint`は標準Go lint群、`shellcheck`、`shfmt`、`commentlint`とrepository固有ruleを集約する。主な固有ruleは、prose contract pin、test-only production/state-machine、scenario self-test、追加Go module、thin wrapper、smoke scope逸脱、quality bypass、runtime Markdown肥大、stale authority、quality config弱体化、quality wiring欠落を対象とする。
+
+CI、root wrapper、`glm-worker`内部quality gate、installerは`quality-tools.yml`を同じversion authorityとして使う。version不一致はlint結果として扱わずpreflightで拒否する。
 
 このrepositoryを`glm-worker`自身で変更する場合、worker終了後・reviewer開始前にwrapperがcheck-only quality gateを必ず通す。不合格ならreviewerへ進まずworker修正へ戻る。GLM task中の`.golangci.yml`、harnesslint/commentlint実装・entrypoint・wrapper変更は`quality-surface-dirty`で拒否する。gate wiring自体の削除も`quality-wiring`で拒否する。Linterのpolicy変更が必要なら通常task内で自己変更せず、具体的なfalse positive/negativeと最小再現を親へ報告する。
 

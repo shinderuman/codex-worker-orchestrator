@@ -2,6 +2,7 @@
 set -eu
 
 repo_root=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+quality_tools_file="$repo_root/quality-tools.yml"
 codex_dir="${CODEX_CONFIG_DIR:-$HOME/.codex}"
 bin_dir="${GLM_WORKER_BIN_DIR:-$HOME/.local/bin}"
 claude_settings="${CLAUDE_SETTINGS_FILE:-$HOME/.claude/settings.json}"
@@ -14,12 +15,42 @@ require() {
 	fi
 }
 
-require_brew() {
+require_quality_command() {
 	command_name=$1
-	formula=$2
 	if ! command -v "$command_name" >/dev/null 2>&1; then
 		printf 'required command not found: %s\n' "$command_name" >&2
-		printf 'install with Homebrew: brew install %s\n' "$formula" >&2
+		printf '%s\n' 'install required versions with: ./install-quality-tools.sh' >&2
+		exit 1
+	fi
+}
+
+quality_tool_version() {
+	case "$1" in
+	golangci-lint) golangci-lint version ;;
+	shellcheck) shellcheck --version ;;
+	shfmt) shfmt --version ;;
+	esac | awk 'match($0, /[0-9]+\.[0-9]+\.[0-9]+/) { print substr($0, RSTART, RLENGTH); exit }'
+}
+
+require_quality_tool() {
+	command_name=$1
+	required_version=$2
+	require_quality_command "$command_name"
+	installed_version=$(quality_tool_version "$command_name")
+	if [ "$installed_version" != "$required_version" ]; then
+		printf 'quality tool version mismatch: %s=%s, required=%s\n' "$command_name" "${installed_version:-unknown}" "$required_version" >&2
+		printf '%s\n' 'install required versions with: ./install-quality-tools.sh' >&2
+		exit 1
+	fi
+}
+
+verify_go_toolchain() {
+	tool_name=$1
+	required_version=$2
+	installed_version=$(GOTOOLCHAIN="go$required_version" go version | awk 'match($0, /go[0-9]+\.[0-9]+\.[0-9]+/) { print substr($0, RSTART + 2, RLENGTH - 2); exit }')
+	if [ "$installed_version" != "$required_version" ]; then
+		printf 'quality tool version mismatch: %s=%s, required=%s\n' "$tool_name" "${installed_version:-unknown}" "$required_version" >&2
+		printf '%s\n' 'install required versions with: ./install-quality-tools.sh' >&2
 		exit 1
 	fi
 }
@@ -202,9 +233,17 @@ require cmp
 require awk
 require grep
 require install
-require_brew golangci-lint golangci-lint
-require_brew shellcheck shellcheck
-require_brew shfmt shfmt
+GO_VERSION=$(awk -F': ' '$1 == "go" { print $2 }' "$quality_tools_file")
+LINT_GO_VERSION=$(awk -F': ' '$1 == "lint-go" { print $2 }' "$quality_tools_file")
+GOLANGCI_LINT_VERSION=$(awk -F': ' '$1 == "golangci-lint" { print $2 }' "$quality_tools_file")
+SHELLCHECK_VERSION=$(awk -F': ' '$1 == "shellcheck" { print $2 }' "$quality_tools_file")
+SHFMT_VERSION=$(awk -F': ' '$1 == "shfmt" { print $2 }' "$quality_tools_file")
+export GOTOOLCHAIN="go$GO_VERSION"
+verify_go_toolchain go "$GO_VERSION"
+verify_go_toolchain lint-go "$LINT_GO_VERSION"
+require_quality_tool golangci-lint "$GOLANGCI_LINT_VERSION"
+require_quality_tool shellcheck "$SHELLCHECK_VERSION"
+require_quality_tool shfmt "$SHFMT_VERSION"
 
 build_dir=$(mktemp -d "${TMPDIR:-/tmp}/codex-worker-orchestrator-build.XXXXXX")
 trap 'rm -rf "$build_dir"' EXIT HUP INT TERM

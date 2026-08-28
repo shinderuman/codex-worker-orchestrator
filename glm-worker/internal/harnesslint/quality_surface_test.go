@@ -14,7 +14,7 @@ func TestQualityWiringRequiresReviewerGate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(violations) != 8 {
+	if len(violations) != 11 {
 		t.Fatalf("violations = %+v", violations)
 	}
 }

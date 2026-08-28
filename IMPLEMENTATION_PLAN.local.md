@@ -39,13 +39,13 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 - accepted main baseline before F1-F10 hardening integration: `815efc8f6601d344a93e8fa213d0227306db1f0d`
 - implementation boundary: PR #3 `6f08b301e9c4e1444af80c9b9ee646eb778a3baa`以降のGPT hardeningでrepository quality enforcement、instruction/authority guard、review/search boundary等を大幅に強化し、F1-F10とF9のhard dependency 016まで完了した。F1 `instruction-surface-ownership`はPR #8 `621a6c6cec384b8ef0488796b6488085a77a6b5d`、F2 `unknown-production-surface-risk`はPR #12 `f33203418c33d85baee34fa69225ef954e7996aa`、F3 `glm-git-authority-enforcement`はPR #13 `627e0dcfa15148a68684c3ff9008a4658c5a2615`、F4 `quality-evidence-mutation-risk`はPR #14 `87af3f4700f5dd8220c582efa62f18f561c33c20`、F5 `deterministic-rule-activation`はPR #15 `9c33ae4784b6cfe33cf63de8d415fac38cad9fae`、F6 `sol-decision-boundary-enforcement`はPR #16 `16d975e02dc37b2279cce441d09bebc85adef3f3`、F7 `prose-semantic-guard-migration`はPR #17 `1b4546548a5089c8160f6f53263ea91fb39a821d`、F8 `instruction-conflict-resolution`はPR #18 `407595e2e2a8a095c16a93624bef57d1b2bb32b3`、016 `worker-repo-search-integration`はPR #22 `da468541683a832b102acecc60770678452e6fa4`、F9 `reviewer-diff-first-search`はPR #19 `948ea31ee4381f4192afeff607c015696349a9a1`、F10 `exhaustive-search-gate`はPR #20 `6633569d2e30acd62470de74b3966bd824cef1af`としてintegration済み
 - preserved boundary: wake coalescing、machine output、safe-stop/resume、provider accounting、parent-managed metadata guard、GLM commit/push禁止、Direct Codex対orchestratedのCodex Reduction / Quality Delta最上位評価を維持
-- current implementation: GPT hardening campaignは完了。関連改善taskもcampaign中に処理したため通常Planの残件は縮小済み。次の通常taskは`010-task-splitting-milestones.md`だが、GPTだけで大規模変更したHEADのローカル実環境確認が終わるまでは実装を開始しない
+- current implementation: post-hardening local runtime recoveryを完了。`quality-tools.yml`をCI/local共通version authority、`install-quality-tools.sh`を共通導入経路とし、実行用Go 1.25.4 / lint解析用Go 1.22.12 / golangci-lint 2.7.0 / shellcheck 0.11.0 / shfmt 3.13.1へ固定した。local全gateとinstaller smokeはPASSし、010をACTIVEへ戻したが実装は未着手
 - merge boundary: hardening task PRはintegrationへSquash Mergeしてtask単位commitを作り、最終integration→mainはPR #21で非Squash mergeして各task commit履歴を保持する
 
 ## 現在の停止理由
 
-GPT hardening implementationは完了。通常Plan実装の再開前に、ローカルPCを最新`main`へ更新し、Codexが現在HEAD・Rules・Plan・関連Markdownを読み直したうえでツールの動作確認を行う。確認中はACTIVE 010を実装しない。
+post-hardening local runtime recoveryの変更は検証済みだが未commit。今回の直接作業scopeに従い010の実装開始前で停止している。
 
 ## 次の親Codex操作
 
-ローカル最新`main`でHEADを正としてルール・Plan・Markdownを再確認し、実際のCodex + GLM workflowが動作するか確認する。懸念や不整合があれば報告だけ行い、修正担当・対応方針はユーザー判断を待つ。問題がなければ確認作業を終了し、その後の通常開発再開時にACTIVE 010からPlanどおり継続する。
+親Codexがrecovery diffと全gate証拠を確認し、commit許可が得られた場合だけ個別commitする。その後010のOriginal instructionを再読して通常lifecycleを開始する。

@@ -180,8 +180,12 @@ func TestIsolateStaleRecordFailsClosedAndResumePreservesDirtyBaseline(t *testing
 		t.Fatal(err)
 	}
 	resumed := env.run(t, env.repoA, "--resume")
-	if resumed.code != 0 || !strings.Contains(resumed.stdout, `"status":"PASS"`) {
+	if resumed.code != 0 || !strings.Contains(resumed.stdout, `"status":"NEEDS_SOL_REVIEW"`) ||
+		!strings.Contains(resumed.stdout, "risk floor") {
 		t.Fatalf("統合後の元task resumeが完結しません: code=%d stdout=%s stderr=%s", resumed.code, resumed.stdout, resumed.stderr)
+	}
+	if status := env.status(t, env.repoA); !strings.Contains(status, `"task_status":"waiting-sol-review"`) {
+		t.Fatalf("統合後resumeの元task終了状態 = %s", status)
 	}
 }
 
