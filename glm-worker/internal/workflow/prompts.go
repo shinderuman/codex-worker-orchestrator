@@ -16,7 +16,7 @@ func withArtifactContext(prompt string, artifactDir string) string {
 	return fmt.Sprintf(`%s
 
 REPORT_ARTIFACT_DIR: %s
-結果へ収まらない正確な一覧・レポート・生成物だけをこのディレクトリへ保存してください。リポジトリへ追加せず、結果のARTIFACTSには絶対パスだけを記載してください。大容量成果物が不要ならARTIFACTSは空にしてください。
+結果へ収まらない正確な一覧・レポート・生成物だけをこのディレクトリへ保存してください。リポジトリへ追加しないでください。ARTIFACTSに記載できるのはこのREPORT_ARTIFACT_DIR配下の実在する通常ファイルだけです。WORKER_REPORT・過去artifact・入力に含まれる他taskのartifact pathは参照証拠であり、ARTIFACTSへコピーしないでください。大容量成果物が不要ならARTIFACTSは空にしてください。
 `, strings.TrimRight(prompt, "\n"), artifactDir)
 }
 
