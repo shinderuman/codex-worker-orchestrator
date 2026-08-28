@@ -36,6 +36,7 @@ type toolUseObservation struct {
 	timestamp       time.Time
 	name            string
 	command         string
+	category        string
 	purpose         string
 	background      bool
 	waitTaskID      string
@@ -221,6 +222,8 @@ func (g *streamEventIngester) observeToolUse(block *state.TaskBlockSummary, at t
 			observation.instructionRead = name
 		}
 	}
+	observation.category = operationCategoryForTool(block.Name, observation.command)
+	block.OperationCategory = observation.category
 	g.tools[block.ToolID] = observation
 	return true
 }
@@ -295,6 +298,7 @@ func (g *streamEventIngester) observeToolResult(block *state.TaskBlockSummary, a
 	if block.Name == "" {
 		block.Name = observed.name
 	}
+	block.OperationCategory = observed.category
 	if !block.IsError && observed.instructionRead != "" {
 		g.instructionReads[observed.instructionRead] = struct{}{}
 	}

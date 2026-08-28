@@ -160,12 +160,18 @@ func TestClaudeRunnerStreamEventsAppendSanitizedMetadata(t *testing.T) {
 	if assistant.Blocks[2].ToolID != "toolu_1" {
 		t.Fatalf("tool_use id = %#v", assistant.Blocks[2])
 	}
+	if assistant.Blocks[2].OperationCategory != state.OperationCategoryOther {
+		t.Fatalf("tool_use operation category = %#v", assistant.Blocks[2])
+	}
 	user := records[2]
 	if user.Kind != "user" || len(user.Blocks) != 1 {
 		t.Fatalf("user event = %#v", user)
 	}
 	if user.Blocks[0].ToolID != "toolu_1" || user.Blocks[0].Name != "Bash" {
 		t.Fatalf("tool_result block = %#v", user.Blocks[0])
+	}
+	if user.Blocks[0].OperationCategory != state.OperationCategoryOther {
+		t.Fatalf("tool_result operation category = %#v", user.Blocks[0])
 	}
 
 	result := records[3]
@@ -591,6 +597,57 @@ func TestStreamEventIngesterPairsToolTimingByID(t *testing.T) {
 	reuse := records[3].Blocks[0]
 	if reuse.ToolID != "toolu_open" || reuse.DurationMS != 0 {
 		t.Fatalf("再登場tool_use = %#v", reuse)
+	}
+}
+
+func TestStreamEventIngesterRecordsOperationCategoryWithoutCommandText(t *testing.T) {
+	st := newTestStateStore(t)
+	ingester := newFakeClockIngester(t, st, time.Second)
+
+	commandText := "rg pattern /Users/secret/" + streamFixtureSecret + "/path"
+	readPath := "/Users/secret/" + streamFixtureSecret + "/file.go"
+	lines := []string{
+		`{"type":"assistant","message":{"model":"glm-5.3","content":[{"type":"tool_use","id":"toolu_search","name":"Bash","input":{"command":"` + commandText + `"}},{"type":"tool_use","id":"toolu_read","name":"Read","input":{"file_path":"` + readPath + `"}},{"type":"tool_use","id":"toolu_bare","name":"Bash","input":{}}]}}`,
+		`{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"toolu_search","content":"hit"},{"type":"tool_result","tool_use_id":"toolu_read","content":"body","is_error":true},{"type":"tool_result","tool_use_id":"toolu_bare","content":"done"}]}}`,
+	}
+	for _, line := range lines {
+		if _, err := ingester.Write([]byte(line + "\n")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ingester.flush()
+
+	records := readTaskEventLines(t, st, "t")
+	if len(records) != 2 {
+		t.Fatalf("記録件数 = %d: %#v", len(records), records)
+	}
+	assistant := records[0].Blocks
+	if assistant[0].OperationCategory != state.OperationCategorySearch {
+		t.Fatalf("search category = %#v", assistant[0])
+	}
+	if assistant[1].OperationCategory != state.OperationCategoryFileRead {
+		t.Fatalf("file-read category = %#v", assistant[1])
+	}
+	if assistant[2].OperationCategory != state.OperationCategoryOther {
+		t.Fatalf("input欠損Bash category = %#v", assistant[2])
+	}
+	user := records[1].Blocks
+	if user[0].OperationCategory != state.OperationCategorySearch {
+		t.Fatalf("tool_result search category = %#v", user[0])
+	}
+	if user[1].OperationCategory != state.OperationCategoryFileRead {
+		t.Fatalf("tool_result file-read category = %#v", user[1])
+	}
+	if user[2].OperationCategory != state.OperationCategoryOther {
+		t.Fatalf("tool_result other category = %#v", user[2])
+	}
+
+	raw, err := os.ReadFile(st.TaskEventLogPath("t"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), streamFixtureSecret) || strings.Contains(string(raw), "/Users/secret") || strings.Contains(string(raw), "rg pattern") {
+		t.Fatalf("event logへcommand・path本文が混入しました: %s", raw)
 	}
 }
 

@@ -72,9 +72,9 @@ func TestCallsFromTaskEventsAggregatesPerCall(t *testing.T) {
 		t.Fatalf("call-1結果観測 = %+v", first)
 	}
 	wantTools := []CallTimelineTool{
-		{Name: "Bash", Uses: 2, Results: 2, Measured: 2, MeasuredSumMS: 1200, MeasuredMaxMS: 700, Errors: 1},
-		{Name: "Read", Uses: 1},
-		{Name: "unknown", Results: 1, Unmeasured: 1},
+		{Name: "Bash", timelineMeasure: timelineMeasure{Uses: 2, Results: 2, Measured: 2, MeasuredSumMS: 1200, MeasuredMaxMS: 700, Errors: 1}},
+		{Name: "Read", timelineMeasure: timelineMeasure{Uses: 1}},
+		{Name: "unknown", timelineMeasure: timelineMeasure{Results: 1, Unmeasured: 1}},
 	}
 	assertTimelineTools(t, first.Tools, wantTools)
 
@@ -121,18 +121,127 @@ func TestCallsFromTaskEventsLastResultWins(t *testing.T) {
 func TestSumCallTimelineTools(t *testing.T) {
 	entries := []CallTimelineEntry{
 		{Tools: []CallTimelineTool{
-			{Name: "Bash", Uses: 2, Results: 2, Measured: 2, MeasuredSumMS: 300, MeasuredMaxMS: 200},
-			{Name: "Read", Uses: 1, Results: 1, Unmeasured: 1},
+			{Name: "Bash", timelineMeasure: timelineMeasure{Uses: 2, Results: 2, Measured: 2, MeasuredSumMS: 300, MeasuredMaxMS: 200}},
+			{Name: "Read", timelineMeasure: timelineMeasure{Uses: 1, Results: 1, Unmeasured: 1}},
 		}},
 		{Tools: []CallTimelineTool{
-			{Name: "Bash", Uses: 1, Results: 1, Measured: 1, MeasuredSumMS: 900, MeasuredMaxMS: 900, Errors: 1},
+			{Name: "Bash", timelineMeasure: timelineMeasure{Uses: 1, Results: 1, Measured: 1, MeasuredSumMS: 900, MeasuredMaxMS: 900, Errors: 1}},
 		}},
 	}
 	totals := SumCallTimelineTools(entries)
 	assertTimelineTools(t, totals, []CallTimelineTool{
-		{Name: "Bash", Uses: 3, Results: 3, Measured: 3, MeasuredSumMS: 1200, MeasuredMaxMS: 900, Errors: 1},
-		{Name: "Read", Uses: 1, Results: 1, Unmeasured: 1},
+		{Name: "Bash", timelineMeasure: timelineMeasure{Uses: 3, Results: 3, Measured: 3, MeasuredSumMS: 1200, MeasuredMaxMS: 900, Errors: 1}},
+		{Name: "Read", timelineMeasure: timelineMeasure{Uses: 1, Results: 1, Unmeasured: 1}},
 	})
+}
+
+func TestCallsFromTaskEventsAggregatesOperations(t *testing.T) {
+	base := timelineBaseTime()
+	legacy, err := ParseTaskEventLine([]byte(`{"version":1,"task_id":"task-1","call_id":"call-1","role":"worker","phase":"worker-new","seq":5,"timestamp":"` + base.UTC().Format(time.RFC3339) + `","kind":"assistant","blocks":[{"type":"thinking","bytes":40},{"type":"tool_use","name":"Bash","tool_id":"t5","bytes":90}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	records := []TaskEventRecord{
+		{
+			TaskID: "task-1", CallID: "call-1", SessionID: "sess-a", Role: "worker", Phase: "worker-new",
+			Seq: 2, Timestamp: base.Add(2 * time.Second), Kind: "assistant",
+			Blocks: []TaskBlockSummary{
+				{Type: "tool_use", Name: "Bash", ToolID: "t1", OperationCategory: OperationCategoryTest, Bytes: 80},
+				{Type: "tool_use", Name: "Bash", ToolID: "t2", Bytes: 81},
+				{Type: "tool_use", Name: "Read", ToolID: "t3", OperationCategory: OperationCategoryFileRead, Bytes: 60},
+			},
+		},
+		{
+			TaskID: "task-1", CallID: "call-1", SessionID: "sess-a", Role: "worker", Phase: "worker-new",
+			Seq: 3, Timestamp: base.Add(3 * time.Second), Kind: "user",
+			Blocks: []TaskBlockSummary{
+				{Type: "tool_result", Name: "Bash", ToolID: "t1", OperationCategory: OperationCategoryTest, Bytes: 100, DurationMS: 500},
+				{Type: "tool_result", Name: "Bash", ToolID: "t2", Bytes: 101, DurationMS: 700, IsError: true},
+				{Type: "tool_result", ToolID: "t4", Bytes: 102},
+			},
+		},
+		legacy,
+	}
+
+	entries := CallsFromTaskEvents(records)
+	if len(entries) != 1 {
+		t.Fatalf("call数 = %d: %+v", len(entries), entries)
+	}
+	operations := entries[0].Operations
+	want := []CallTimelineOperation{
+		{Category: OperationCategoryFileRead, timelineMeasure: timelineMeasure{Uses: 1}},
+		{Category: OperationCategoryOther, timelineMeasure: timelineMeasure{Uses: 2, Results: 2, Measured: 1, MeasuredSumMS: 700, MeasuredMaxMS: 700, Unmeasured: 1, Errors: 1}},
+		{Category: OperationCategoryTest, timelineMeasure: timelineMeasure{Uses: 1, Results: 1, Measured: 1, MeasuredSumMS: 500, MeasuredMaxMS: 500}},
+	}
+	assertTimelineOperations(t, operations, want)
+}
+
+func TestSumCallTimelineOperationsMatchesWholeAndToolTotals(t *testing.T) {
+	base := timelineBaseTime()
+	records := []TaskEventRecord{
+		{
+			CallID: "call-1", Role: "worker", Timestamp: base, Kind: "assistant",
+			Blocks: []TaskBlockSummary{
+				{Type: "tool_use", Name: "Bash", ToolID: "t1", OperationCategory: OperationCategoryTest, Bytes: 80},
+				{Type: "tool_use", Name: "Bash", ToolID: "t2", OperationCategory: OperationCategoryGitRead, Bytes: 81},
+			},
+		},
+		{
+			CallID: "call-1", Role: "worker", Timestamp: base.Add(time.Second), Kind: "user",
+			Blocks: []TaskBlockSummary{
+				{Type: "tool_result", Name: "Bash", ToolID: "t1", OperationCategory: OperationCategoryTest, Bytes: 100, DurationMS: 400, IsError: true},
+			},
+		},
+		{
+			CallID: "call-2", Role: "reviewer", Timestamp: base.Add(60 * time.Second), Kind: "assistant",
+			Blocks: []TaskBlockSummary{
+				{Type: "tool_use", Name: "Bash", ToolID: "t5", OperationCategory: OperationCategoryTest, Bytes: 90},
+			},
+		},
+	}
+
+	whole := SumCallTimelineOperations(CallsFromTaskEvents(records))
+	assertTimelineOperations(t, whole, []CallTimelineOperation{
+		{Category: OperationCategoryGitRead, timelineMeasure: timelineMeasure{Uses: 1}},
+		{Category: OperationCategoryTest, timelineMeasure: timelineMeasure{Uses: 2, Results: 1, Measured: 1, MeasuredSumMS: 400, MeasuredMaxMS: 400, Errors: 1}},
+	})
+
+	toolTotals := SumCallTimelineTools(CallsFromTaskEvents(records))
+	var toolUses, toolResults, toolErrors, toolMeasured int
+	var toolSumMS int64
+	for _, tool := range toolTotals {
+		toolUses += tool.Uses
+		toolResults += tool.Results
+		toolErrors += tool.Errors
+		toolMeasured += tool.Measured
+		toolSumMS += tool.MeasuredSumMS
+	}
+	var operationUses, operationResults, operationErrors, operationMeasured int
+	var operationSumMS int64
+	for _, operation := range whole {
+		operationUses += operation.Uses
+		operationResults += operation.Results
+		operationErrors += operation.Errors
+		operationMeasured += operation.Measured
+		operationSumMS += operation.MeasuredSumMS
+	}
+	if operationUses != toolUses || operationResults != toolResults || operationErrors != toolErrors ||
+		operationMeasured != toolMeasured || operationSumMS != toolSumMS {
+		t.Fatalf("operation集計 = uses %d/%d results %d/%d errors %d/%d measured %d/%d sum %d/%d",
+			operationUses, toolUses, operationResults, toolResults, operationErrors, toolErrors, operationMeasured, toolMeasured, operationSumMS, toolSumMS)
+	}
+}
+
+func assertTimelineOperations(t *testing.T, got []CallTimelineOperation, want []CallTimelineOperation) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("operation数 = %d: %+v", len(got), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("operation[%d] = %+v, want %+v", i, got[i], want[i])
+		}
+	}
 }
 
 func assertTimelineTools(t *testing.T, got []CallTimelineTool, want []CallTimelineTool) {

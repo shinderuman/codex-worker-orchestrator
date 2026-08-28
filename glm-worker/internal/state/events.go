@@ -12,12 +12,13 @@ import (
 )
 
 type TaskBlockSummary struct {
-	Type       string `json:"type"`
-	Name       string `json:"name,omitempty"`
-	ToolID     string `json:"tool_id,omitempty"`
-	Bytes      int    `json:"bytes"`
-	IsError    bool   `json:"is_error,omitempty"`
-	DurationMS int64  `json:"duration_ms,omitempty"`
+	Type              string `json:"type"`
+	Name              string `json:"name,omitempty"`
+	ToolID            string `json:"tool_id,omitempty"`
+	OperationCategory string `json:"operation_category,omitempty"`
+	Bytes             int    `json:"bytes"`
+	IsError           bool   `json:"is_error,omitempty"`
+	DurationMS        int64  `json:"duration_ms,omitempty"`
 }
 
 type TaskEventUsage struct {
@@ -56,6 +57,19 @@ type TaskEventRecord struct {
 const taskEventLogVersion = 1
 
 const retainedTaskEventLogs = 10
+
+const (
+	OperationCategorySearch    = "search"
+	OperationCategoryTest      = "test"
+	OperationCategoryBuild     = "build"
+	OperationCategoryFormat    = "format"
+	OperationCategoryInstall   = "install"
+	OperationCategoryGitRead   = "git-read"
+	OperationCategoryGitWrite  = "git-write"
+	OperationCategoryFileRead  = "file-read"
+	OperationCategoryFileWrite = "file-write"
+	OperationCategoryOther     = "other"
+)
 
 func (s *StateStore) AppendTaskEvent(record TaskEventRecord) error {
 	if record.Version == 0 {

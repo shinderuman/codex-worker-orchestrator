@@ -113,4 +113,4 @@ none
 
 ## Current boundary
 
-依存task待ち。
+依存Task 011完了。未着手。
