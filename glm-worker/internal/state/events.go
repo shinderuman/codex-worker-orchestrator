@@ -28,6 +28,14 @@ type TaskEventUsage struct {
 	OutputTokens             int64 `json:"output_tokens,omitempty"`
 }
 
+type TaskCompactionSummary struct {
+	Trigger                 string `json:"trigger,omitempty"`
+	PreTokens               int64  `json:"pre_tokens,omitempty"`
+	PostTokens              int64  `json:"post_tokens,omitempty"`
+	CumulativeDroppedTokens int64  `json:"cumulative_dropped_tokens,omitempty"`
+	DurationMS              int64  `json:"duration_ms,omitempty"`
+}
+
 type TaskEventRecord struct {
 	Version     int       `json:"version"`
 	TaskID      string    `json:"task_id"`
@@ -44,14 +52,15 @@ type TaskEventRecord struct {
 	SearchQuery string    `json:"search_query,omitempty"`
 	SearchPaths []string  `json:"search_paths,omitempty"`
 
-	MessageModel  string             `json:"message_model,omitempty"`
-	Blocks        []TaskBlockSummary `json:"blocks,omitempty"`
-	Usage         *TaskEventUsage    `json:"usage,omitempty"`
-	IsError       bool               `json:"is_error,omitempty"`
-	DurationMS    int64              `json:"duration_ms,omitempty"`
-	DurationAPIMS int64              `json:"duration_api_ms,omitempty"`
-	NumTurns      int                `json:"num_turns,omitempty"`
-	TotalCostUSD  float64            `json:"total_cost_usd,omitempty"`
+	MessageModel  string                 `json:"message_model,omitempty"`
+	Compaction    *TaskCompactionSummary `json:"compaction,omitempty"`
+	Blocks        []TaskBlockSummary     `json:"blocks,omitempty"`
+	Usage         *TaskEventUsage        `json:"usage,omitempty"`
+	IsError       bool                   `json:"is_error,omitempty"`
+	DurationMS    int64                  `json:"duration_ms,omitempty"`
+	DurationAPIMS int64                  `json:"duration_api_ms,omitempty"`
+	NumTurns      int                    `json:"num_turns,omitempty"`
+	TotalCostUSD  float64                `json:"total_cost_usd,omitempty"`
 }
 
 const taskEventLogVersion = 1
