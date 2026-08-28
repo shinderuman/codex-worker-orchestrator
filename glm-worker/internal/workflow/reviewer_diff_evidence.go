@@ -15,7 +15,7 @@ import (
 const reviewerTaskDiffFile = "review-current-task.patch"
 
 func (w *Workflow) reviewerNavigationContext(request, activeTaskPath string, reviewNumber int) (string, error) {
-	diffPath, err := w.captureReviewerTaskDiff()
+	diffPath, diffAvailable, err := w.captureReviewerTaskDiff()
 	if err != nil {
 		return "", err
 	}
@@ -23,68 +23,80 @@ func (w *Workflow) reviewerNavigationContext(request, activeTaskPath string, rev
 	if err != nil {
 		return "", err
 	}
-	return renderReviewerTaskDiffEvidence(diffPath) + "\n" + w.reviewerDiffFirstContext(request, reviewNumber) + exhaustive, nil
+	return renderReviewerTaskDiffEvidence(diffPath, diffAvailable) + "\n" + w.reviewerDiffFirstContext(request, reviewNumber) + exhaustive, nil
 }
 
-func renderReviewerTaskDiffEvidence(path string) string {
+func renderReviewerTaskDiffEvidence(path string, available bool) string {
+	if !available {
+		return "REVIEW_CURRENT_TASK_DIFF:\nPATCH: unavailable\nREAD_FIRST: false\nEND_REVIEW_CURRENT_TASK_DIFF"
+	}
 	return "REVIEW_CURRENT_TASK_DIFF:\nPATCH: " + path + "\nAUTHORITY: wrapper-baseline-to-review-start\nREAD_FIRST: true\nEND_REVIEW_CURRENT_TASK_DIFF"
 }
 
-func (w *Workflow) captureReviewerTaskDiff() (string, error) {
+func (w *Workflow) captureReviewerTaskDiff() (string, bool, error) {
+	if !w.state.Exists("baseline-head") || !w.state.Exists("baseline-status") {
+		return "", false, nil
+	}
 	baseline, err := w.state.Read("baseline-head")
 	if err != nil {
-		return "", fmt.Errorf("read review diff baseline head: %w", err)
+		return "", false, fmt.Errorf("read review diff baseline head: %w", err)
 	}
 	if strings.TrimSpace(baseline) == "" {
-		return "", errors.New("review diff baseline head is empty")
+		return "", false, nil
 	}
-	indexPatch, err := w.state.Read("baseline-index.patch")
+	indexPatch, err := os.ReadFile(w.state.Path("baseline-index.patch"))
 	if err != nil {
-		return "", fmt.Errorf("read baseline index patch: %w", err)
+		return "", false, fmt.Errorf("read baseline index patch: %w", err)
 	}
-	worktreePatch, err := w.state.Read("baseline-worktree.patch")
+	worktreePatch, err := os.ReadFile(w.state.Path("baseline-worktree.patch"))
 	if err != nil {
-		return "", fmt.Errorf("read baseline worktree patch: %w", err)
+		return "", false, fmt.Errorf("read baseline worktree patch: %w", err)
 	}
 
 	tempDir, err := os.MkdirTemp("", "glm-worker-review-diff-")
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() { _ = os.RemoveAll(tempDir) }()
 	indexPath := filepath.Join(tempDir, "index")
 	if _, err := gitWithIndex(w.config.RepoRoot, indexPath, nil, "read-tree", strings.TrimSpace(baseline)); err != nil {
-		return "", fmt.Errorf("reconstruct review baseline index: %w", err)
+		return "", false, fmt.Errorf("reconstruct review baseline index: %w", err)
 	}
-	for _, patch := range []string{indexPatch, worktreePatch} {
-		if strings.TrimSpace(patch) == "" {
+	for _, patch := range [][]byte{indexPatch, worktreePatch} {
+		if len(bytes.TrimSpace(patch)) == 0 {
 			continue
 		}
-		if _, err := gitWithIndex(w.config.RepoRoot, indexPath, strings.NewReader(patch), "apply", "--cached", "--binary", "--whitespace=nowarn", "-"); err != nil {
-			return "", fmt.Errorf("reconstruct review baseline worktree: %w", err)
+		if _, err := gitWithIndex(w.config.RepoRoot, indexPath, patch, "apply", "--cached", "--binary", "--whitespace=nowarn", "-"); err != nil {
+			return "", false, fmt.Errorf("reconstruct review baseline worktree: %w", err)
 		}
 	}
 
 	diff, err := gitWithIndex(w.config.RepoRoot, indexPath, nil, "diff", "--binary", "--no-ext-diff", "--no-renames", "--")
 	if err != nil {
-		return "", fmt.Errorf("capture tracked review task diff: %w", err)
+		return "", false, fmt.Errorf("capture tracked review task diff: %w", err)
 	}
-	untracked, err := taskCreatedUntrackedDiff(w.config.RepoRoot, w.state.ReadOr("baseline-untracked", ""))
-	if err != nil {
-		return "", err
+	if w.state.Exists("baseline-untracked") {
+		baselineUntracked, err := os.ReadFile(w.state.Path("baseline-untracked"))
+		if err != nil {
+			return "", false, fmt.Errorf("read baseline untracked paths: %w", err)
+		}
+		untracked, err := taskCreatedUntrackedDiff(w.config.RepoRoot, baselineUntracked)
+		if err != nil {
+			return "", false, err
+		}
+		diff = append(diff, untracked...)
 	}
-	diff = append(diff, untracked...)
 	if err := w.state.Write(reviewerTaskDiffFile, string(diff)); err != nil {
-		return "", err
+		return "", false, err
 	}
-	return w.state.Path(reviewerTaskDiffFile), nil
+	return w.state.Path(reviewerTaskDiffFile), true, nil
 }
 
-func gitWithIndex(repoRoot, indexPath string, stdin *strings.Reader, args ...string) ([]byte, error) {
+func gitWithIndex(repoRoot, indexPath string, stdin []byte, args ...string) ([]byte, error) {
 	cmd := exec.Command("git", append([]string{"-C", repoRoot}, args...)...)
 	cmd.Env = append(os.Environ(), "GIT_INDEX_FILE="+indexPath)
 	if stdin != nil {
-		cmd.Stdin = stdin
+		cmd.Stdin = bytes.NewReader(stdin)
 	}
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -93,12 +105,12 @@ func gitWithIndex(repoRoot, indexPath string, stdin *strings.Reader, args ...str
 	return output, nil
 }
 
-func taskCreatedUntrackedDiff(repoRoot, baselineRaw string) ([]byte, error) {
+func taskCreatedUntrackedDiff(repoRoot string, baselineRaw []byte) ([]byte, error) {
 	currentRaw, err := exec.Command("git", "-C", repoRoot, "ls-files", "-z", "--others", "--exclude-standard").Output()
 	if err != nil {
 		return nil, fmt.Errorf("list current untracked files: %w", err)
 	}
-	baseline := nulPathSet([]byte(baselineRaw))
+	baseline := nulPathSet(baselineRaw)
 	var result bytes.Buffer
 	for _, path := range splitNul(currentRaw) {
 		if _, existed := baseline[path]; existed {
