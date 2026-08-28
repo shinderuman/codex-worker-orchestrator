@@ -83,10 +83,15 @@ func checkRules(root string, paths []string) ([]Violation, error) {
 	if err != nil {
 		return nil, err
 	}
+	activeTaskViolations, err := activeTaskContractViolations(root, paths)
+	if err != nil {
+		return nil, err
+	}
 	violations := append([]Violation{}, goViolations...)
 	violations = append(violations, textViolations...)
 	violations = append(violations, qualityViolations...)
 	violations = append(violations, taskViolations...)
+	violations = append(violations, activeTaskViolations...)
 	return violations, nil
 }
 
