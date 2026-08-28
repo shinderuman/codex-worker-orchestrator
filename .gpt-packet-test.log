@@ -1,0 +1,6 @@
+--- FAIL: TestProducerSchemaConsumerAcceptance (0.00s)
+    --- FAIL: TestProducerSchemaConsumerAcceptance/reviewer_required_mirrors_old_presence_contract (0.00s)
+        protocol_test.go:387: reviewer required = "status,risk,summary,requirement_coverage,invariants,test_evidence,issues,residual_risk,targets,artifacts", want status,risk,targets,artifacts
+FAIL
+FAIL	github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet	0.009s
+FAIL
