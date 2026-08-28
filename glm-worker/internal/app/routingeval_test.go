@@ -27,7 +27,7 @@ func recordModelRoutingFixture(t *testing.T, st *state.StateStore, taskID string
 	t.Helper()
 	st.RecordModelCallLog(state.ModelCallLog{
 		Version: 3, CallType: state.CallTypeTask, TaskID: taskID, SessionID: "sess-a",
-		Role: state.WorkerRole, ModelAlias: "opus", Phase: "worker-new",
+		Role: state.WorkerRole, ModelAlias: "opus", ResolvedModelID: "glm-5.3", Phase: "worker-new",
 		StartedAt: base, CompletedAt: base.Add(time.Minute),
 		Outcome: "success", PacketStatus: "IMPLEMENTED",
 		Prompt: "raw-prompt-must-not-leak", Response: "raw-response-must-not-leak",
@@ -37,7 +37,7 @@ func recordModelRoutingFixture(t *testing.T, st *state.StateStore, taskID string
 	})
 	st.RecordModelCallLog(state.ModelCallLog{
 		Version: 3, CallType: state.CallTypeTask, TaskID: taskID, SessionID: "sess-b",
-		Role: state.ReviewerRole, ModelAlias: "sonnet", Phase: "reviewer-1-risk-floor",
+		Role: state.ReviewerRole, ModelAlias: "sonnet", ResolvedModelID: "glm-5.3", Phase: "reviewer-1-risk-floor",
 		StartedAt: base.Add(time.Hour), CompletedAt: base.Add(time.Hour).Add(time.Minute),
 		Outcome: "accepted", PacketStatus: "PASS", EffectiveRisk: "HIGH",
 		ResolvedModelUsage: map[string]state.ResolvedModelUsage{
@@ -78,8 +78,8 @@ func TestExecuteModelRoutingAggregatesSavedTelemetry(t *testing.T) {
 		t.Fatalf("report定義sectionがありません: %#v", report)
 	}
 	sufficiency, _ := report["sufficiency"].(map[string]any)
-	if sufficiency["min_calls_per_cell"].(float64) != state.ModelRoutingMinCallsPerCell ||
-		sufficiency["min_tasks_per_cell"].(float64) != state.ModelRoutingMinTasksPerCell {
+	if sufficiency["min_quality_calls_per_group"].(float64) != state.ModelRoutingMinQualityCallsPerGroup ||
+		sufficiency["min_quality_tasks_per_group"].(float64) != state.ModelRoutingMinQualityTasksPerGroup {
 		t.Fatalf("sufficiency = %#v", sufficiency)
 	}
 	cells, _ := report["cells"].([]any)
@@ -114,7 +114,7 @@ func TestExecuteModelRoutingAggregatesSavedTelemetry(t *testing.T) {
 		t.Fatalf("evaluation = %#v", evaluation)
 	}
 	reasons, _ := evaluation["reasons"].([]any)
-	if len(reasons) != 2 {
+	if len(reasons) != 1 || reasons[0] != "no attributable downstream quality evidence; operational outcome and packet_status are not model-quality evidence" {
 		t.Fatalf("reasons = %#v", reasons)
 	}
 
@@ -152,7 +152,7 @@ func TestExecuteModelRoutingEmptyState(t *testing.T) {
 		t.Fatalf("repo_root = %#v", decoded["repo_root"])
 	}
 	report, _ := decoded["report"].(map[string]any)
-	for _, key := range []string{"cells", "alias_links"} {
+	for _, key := range []string{"cells", "quality_groups", "alias_links"} {
 		value, ok := report[key].([]any)
 		if !ok || len(value) != 0 {
 			t.Fatalf("reportの%qが空配列ではありません: %#v", key, report[key])
@@ -340,5 +340,35 @@ func TestParseCommandModelRouting(t *testing.T) {
 	}
 	if _, err := ParseCommand([]string{"--model-routing", "extra"}); err == nil {
 		t.Fatal("余分な引数が受け入れられています")
+	}
+}
+
+func TestConvergenceQualityOutcomesRequiresUniqueWorkerAndTerminalIndependentReview(t *testing.T) {
+	base := time.Date(2026, 8, 29, 9, 0, 0, 0, time.UTC)
+	records := []state.RoundRecord{
+		{Seq: 1, WorkerPhase: state.RoundWorkerPhaseBaseline, CapturedAt: base, Snapshot: state.SnapshotDigest{Head: "h", IndexDigest: "i", WorktreeDigest: "w"}},
+		{Seq: 2, ReviewNumber: 1, WorkerPhase: "worker-new", CapturedAt: base.Add(30 * time.Minute), Snapshot: state.SnapshotDigest{Head: "h", IndexDigest: "i2", WorktreeDigest: "w2"}},
+	}
+	worker := state.ModelCallLog{CallType: state.CallTypeTask, CallID: "worker-1", Role: state.WorkerRole, Phase: "worker-new", PacketStatus: "IMPLEMENTED", StartedAt: base.Add(time.Minute)}
+	reviewer := state.ModelCallLog{CallType: state.CallTypeTask, CallID: "reviewer-1", Role: state.ReviewerRole, Phase: "reviewer-1", PacketStatus: "FIX_REQUIRED", StartedAt: base.Add(40 * time.Minute)}
+
+	got := convergenceQualityOutcomes(records, []state.ModelCallLog{worker, reviewer})
+	if got["worker-1"] != state.ModelRoutingQualityReviewFixRequired {
+		t.Fatalf("quality outcomes = %#v", got)
+	}
+
+	reviewer.Phase = "reviewer-1-high-floor"
+	reviewer.PacketStatus = "NEEDS_SOL_REVIEW"
+	if got := convergenceQualityOutcomes(records, []state.ModelCallLog{worker, reviewer}); len(got) != 0 {
+		t.Fatalf("forced high-floor Sol routing became quality evidence: %#v", got)
+	}
+
+	second := worker
+	second.CallID = "worker-2"
+	second.StartedAt = base.Add(2 * time.Minute)
+	reviewer.Phase = "reviewer-1"
+	reviewer.PacketStatus = "PASS"
+	if got := convergenceQualityOutcomes(records, []state.ModelCallLog{worker, second, reviewer}); len(got) != 0 {
+		t.Fatalf("ambiguous producing workers became quality evidence: %#v", got)
 	}
 }

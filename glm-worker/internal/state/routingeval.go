@@ -13,9 +13,9 @@ type ModelRoutingMetrics struct {
 }
 
 type ModelRoutingSufficiency struct {
-	MinCalls int    `json:"min_calls_per_cell"`
-	MinTasks int    `json:"min_tasks_per_cell"`
-	Rule     string `json:"rule"`
+	MinQualityCalls int    `json:"min_quality_calls_per_group"`
+	MinQualityTasks int    `json:"min_quality_tasks_per_group"`
+	Rule            string `json:"rule"`
 }
 
 type ModelRoutingCell struct {
@@ -26,13 +26,25 @@ type ModelRoutingCell struct {
 	ModelAlias        string         `json:"model_alias"`
 	ResolvedModel     string         `json:"resolved_model"`
 	Calls             int            `json:"calls"`
+	TopLevelCalls     int            `json:"top_level_calls"`
 	Tasks             int            `json:"tasks"`
 	Sessions          int            `json:"sessions"`
 	Usage             TokenUsage     `json:"usage"`
 	UsageUnknownCalls int            `json:"usage_unknown_calls"`
 	Outcomes          map[string]int `json:"outcomes"`
 	PacketStatuses    map[string]int `json:"packet_statuses"`
-	Sufficient        bool           `json:"sufficient"`
+}
+
+type ModelRoutingQualityGroup struct {
+	Role             string         `json:"role"`
+	Phase            string         `json:"phase"`
+	EffectiveRisk    string         `json:"effective_risk"`
+	ConvergenceDelta string         `json:"convergence_delta"`
+	ResolvedModel    string         `json:"resolved_model"`
+	Calls            int            `json:"calls"`
+	Tasks            int            `json:"tasks"`
+	Outcomes         map[string]int `json:"outcomes"`
+	Sufficient       bool           `json:"sufficient"`
 }
 
 type ModelRoutingAliasLink struct {
@@ -48,12 +60,13 @@ type ModelRoutingEvaluation struct {
 }
 
 type ModelRoutingReport struct {
-	Metrics     ModelRoutingMetrics     `json:"metrics"`
-	Sufficiency ModelRoutingSufficiency `json:"sufficiency"`
-	Records     CallRecordCounts        `json:"records"`
-	Cells       []ModelRoutingCell      `json:"cells"`
-	AliasLinks  []ModelRoutingAliasLink `json:"alias_links"`
-	Evaluation  ModelRoutingEvaluation  `json:"evaluation"`
+	Metrics       ModelRoutingMetrics        `json:"metrics"`
+	Sufficiency   ModelRoutingSufficiency    `json:"sufficiency"`
+	Records       CallRecordCounts           `json:"records"`
+	Cells         []ModelRoutingCell         `json:"cells"`
+	QualityGroups []ModelRoutingQualityGroup `json:"quality_groups"`
+	AliasLinks    []ModelRoutingAliasLink    `json:"alias_links"`
+	Evaluation    ModelRoutingEvaluation     `json:"evaluation"`
 }
 
 type modelRoutingCellKey struct {
@@ -79,23 +92,26 @@ type modelRoutingGroupKey struct {
 }
 
 type modelRoutingModelSamples struct {
-	calls int
-	tasks map[string]bool
+	calls    int
+	tasks    map[string]bool
+	outcomes map[string]int
 }
 
 type modelRoutingBuilder struct {
-	report      ModelRoutingReport
-	cells       map[modelRoutingCellKey]*modelRoutingCellSamples
-	aliasLinks  map[string]map[string]map[string]int
-	modelGroups map[modelRoutingGroupKey]map[string]*modelRoutingModelSamples
-	taskCalls   int
+	report        ModelRoutingReport
+	cells         map[modelRoutingCellKey]*modelRoutingCellSamples
+	aliasLinks    map[string]map[string]map[string]int
+	qualityGroups map[modelRoutingGroupKey]map[string]*modelRoutingModelSamples
+	taskCalls     int
 }
 
 const (
-	ModelRoutingUnknownModel    = "unknown"
-	ModelRoutingUnknownRisk     = "unknown"
-	ModelRoutingMinCallsPerCell = 20
-	ModelRoutingMinTasksPerCell = 5
+	ModelRoutingUnknownModel             = "unknown"
+	ModelRoutingUnknownRisk              = "unknown"
+	ModelRoutingMinQualityCallsPerGroup  = 20
+	ModelRoutingMinQualityTasksPerGroup  = 5
+	ModelRoutingQualityReviewPass        = "review_pass"
+	ModelRoutingQualityReviewFixRequired = "review_fix_required"
 )
 
 const (
@@ -108,14 +124,15 @@ const modelRoutingTreeUsageMetric = "existing ModelCallLog v3 tree_usage: input_
 
 const modelRoutingCostMetric = "per-cell token totals attributed with the existing definitions: calls with resolved_model_usage attribute each model's own tokens to that model's cell, calls without it attribute the tree_usage fallback value to the resolved_model_id cell (or unknown), and calls with neither source count only in usage_unknown_calls"
 
-const modelRoutingQualityMetric = "per-cell outcome and packet_status distributions (worker terminal packets: IMPLEMENTED, NEEDS_SOL_REVIEW, NEEDS_SOL_DECISION; reviewer packets: PASS, FIX_REQUIRED, NEEDS_SOL_REVIEW, NEEDS_SOL_DECISION) inside cells separated by role, normalized phase, effective risk, and the existing RoundRecord convergence delta class joined per call (unknown when the call cannot be uniquely joined to a round record); no composite quality score is defined"
+const modelRoutingQualityMetric = "quality_groups contain only deterministic downstream review outcomes attributed to one producing worker call and its top-level resolved model: review_pass or review_fix_required; operational outcome and packet_status remain in cells for reliability/debugging and are not model-quality evidence; unresolved Sol routing, provider failures, ambiguous producing calls, and unattributable mixed-model results remain absent from quality_groups; no composite quality score is defined"
 
-const modelRoutingSufficiencyRule = "within one repository, a model quality comparison requires at least 2 distinct resolved models in the same role+normalized-phase+effective-risk+convergence-delta group, each with at least min_calls_per_cell task calls across at least min_tasks_per_cell distinct tasks; meeting these minimums only lists a group as a comparison candidate and is neither a statistical proof of model quality nor a downgrade criterion, below them the quality delta stays unknown or insufficient and cannot support downgrade, and alias-only contrast where the aliases resolve to the same resolved model is not model quality evidence"
+const modelRoutingSufficiencyRule = "within one repository, controlled model quality comparison uses alias-independent quality_groups only: effective risk and convergence delta must both be known, and at least 2 distinct resolved models in the same role+normalized-phase+effective-risk+convergence-delta group must each have at least min_quality_calls_per_group attributable downstream quality calls across at least min_quality_tasks_per_group distinct tasks; operational calls without attributable quality do not count, meeting the minimums only lists a comparison candidate and is neither statistical proof nor a routing/downgrade criterion"
 
 func BuildModelRoutingReport(tasks []TaskCallLogs) ModelRoutingReport {
 	builder := newModelRoutingBuilder()
 	builder.absorbTasks(tasks)
 	builder.buildCells()
+	builder.buildQualityGroups()
 	builder.buildAliasLinks()
 	builder.buildEvaluation()
 	return builder.report
@@ -130,18 +147,19 @@ func newModelRoutingBuilder() *modelRoutingBuilder {
 				Quality:   modelRoutingQualityMetric,
 			},
 			Sufficiency: ModelRoutingSufficiency{
-				MinCalls: ModelRoutingMinCallsPerCell,
-				MinTasks: ModelRoutingMinTasksPerCell,
-				Rule:     modelRoutingSufficiencyRule,
+				MinQualityCalls: ModelRoutingMinQualityCallsPerGroup,
+				MinQualityTasks: ModelRoutingMinQualityTasksPerGroup,
+				Rule:            modelRoutingSufficiencyRule,
 			},
-			Records:    CallRecordCounts{},
-			Cells:      []ModelRoutingCell{},
-			AliasLinks: []ModelRoutingAliasLink{},
-			Evaluation: ModelRoutingEvaluation{QualityDelta: ModelRoutingQualityDeltaUnknown, Reasons: []string{}},
+			Records:       CallRecordCounts{},
+			Cells:         []ModelRoutingCell{},
+			QualityGroups: []ModelRoutingQualityGroup{},
+			AliasLinks:    []ModelRoutingAliasLink{},
+			Evaluation:    ModelRoutingEvaluation{QualityDelta: ModelRoutingQualityDeltaUnknown, Reasons: []string{}},
 		},
-		cells:       make(map[modelRoutingCellKey]*modelRoutingCellSamples),
-		aliasLinks:  make(map[string]map[string]map[string]int),
-		modelGroups: make(map[modelRoutingGroupKey]map[string]*modelRoutingModelSamples),
+		cells:         make(map[modelRoutingCellKey]*modelRoutingCellSamples),
+		aliasLinks:    make(map[string]map[string]map[string]int),
+		qualityGroups: make(map[modelRoutingGroupKey]map[string]*modelRoutingModelSamples),
 	}
 }
 
@@ -176,8 +194,12 @@ func (b *modelRoutingBuilder) absorbLog(task TaskCallLogs, log ModelCallLog) {
 		risk:  routingEffectiveRiskClass(log),
 		delta: routingConvergenceDeltaClass(task, log),
 	}
+	owner := routingResultOwner(log)
 	for _, model := range routingResolvedModels(log) {
-		b.absorbCell(task.TaskID, log, group, model)
+		b.absorbCell(task.TaskID, log, group, model, owner == model)
+	}
+	if outcome := routingQualityOutcome(task, log); outcome != "" && owner != "" && owner != ModelRoutingUnknownModel {
+		b.absorbQualityGroup(task.TaskID, group, owner, outcome)
 	}
 }
 
@@ -210,21 +232,53 @@ func routingPhaseCategory(role SessionRole, phase string) string {
 }
 
 func routingResolvedModels(log ModelCallLog) []string {
-	if len(log.ResolvedModelUsage) > 0 {
-		models := make([]string, 0, len(log.ResolvedModelUsage))
-		for model := range log.ResolvedModelUsage {
-			models = append(models, model)
-		}
-		slices.Sort(models)
-		return models
+	seen := make(map[string]bool)
+	for model := range log.ResolvedModelUsage {
+		seen[model] = true
 	}
 	if log.ResolvedModelID != "" {
-		return []string{log.ResolvedModelID}
+		seen[log.ResolvedModelID] = true
 	}
-	return []string{ModelRoutingUnknownModel}
+	if len(seen) == 0 {
+		return []string{ModelRoutingUnknownModel}
+	}
+	models := make([]string, 0, len(seen))
+	for model := range seen {
+		models = append(models, model)
+	}
+	slices.Sort(models)
+	return models
 }
 
-func (b *modelRoutingBuilder) absorbCell(taskID string, log ModelCallLog, group modelRoutingGroupKey, model string) {
+func routingResultOwner(log ModelCallLog) string {
+	if log.ResolvedModelID != "" {
+		return log.ResolvedModelID
+	}
+	if len(log.ResolvedModelUsage) == 1 {
+		for model := range log.ResolvedModelUsage {
+			return model
+		}
+	}
+	if len(log.ResolvedModelUsage) == 0 {
+		return ModelRoutingUnknownModel
+	}
+	return ""
+}
+
+func routingQualityOutcome(task TaskCallLogs, log ModelCallLog) string {
+	if log.Role != WorkerRole || log.CallID == "" {
+		return ""
+	}
+	outcome := task.QualityOutcomes[log.CallID]
+	switch outcome {
+	case ModelRoutingQualityReviewPass, ModelRoutingQualityReviewFixRequired:
+		return outcome
+	default:
+		return ""
+	}
+}
+
+func (b *modelRoutingBuilder) absorbCell(taskID string, log ModelCallLog, group modelRoutingGroupKey, model string, ownsTopLevel bool) {
 	key := modelRoutingCellKey{role: group.role, phase: group.phase, risk: group.risk, delta: group.delta, alias: log.ModelAlias, model: model}
 	samples := b.cells[key]
 	if samples == nil {
@@ -244,24 +298,29 @@ func (b *modelRoutingBuilder) absorbCell(taskID string, log ModelCallLog, group 
 	if log.SessionID != "" {
 		samples.sessions[log.SessionID] = true
 	}
-	addInt(&samples.cell.Outcomes, log.Outcome, 1)
-	addInt(&samples.cell.PacketStatuses, log.PacketStatus, 1)
+	if ownsTopLevel {
+		samples.cell.TopLevelCalls++
+		addInt(&samples.cell.Outcomes, log.Outcome, 1)
+		addInt(&samples.cell.PacketStatuses, log.PacketStatus, 1)
+	}
 	absorbModelRoutingCellUsage(samples, log, model)
 	b.absorbAliasLink(group.role, log.ModelAlias, model)
-	b.absorbModelGroup(taskID, group, model)
 }
 
-func (b *modelRoutingBuilder) absorbModelGroup(taskID string, group modelRoutingGroupKey, model string) {
-	models := b.modelGroups[group]
+func (b *modelRoutingBuilder) absorbQualityGroup(taskID string, group modelRoutingGroupKey, model string, outcome string) {
+	models := b.qualityGroups[group]
 	if models == nil {
 		models = make(map[string]*modelRoutingModelSamples)
-		b.modelGroups[group] = models
+		b.qualityGroups[group] = models
 	}
-	if models[model] == nil {
-		models[model] = &modelRoutingModelSamples{tasks: make(map[string]bool)}
+	samples := models[model]
+	if samples == nil {
+		samples = &modelRoutingModelSamples{tasks: make(map[string]bool), outcomes: make(map[string]int)}
+		models[model] = samples
 	}
-	models[model].calls++
-	models[model].tasks[taskID] = true
+	samples.calls++
+	samples.tasks[taskID] = true
+	addInt(&samples.outcomes, outcome, 1)
 }
 
 func (b *modelRoutingBuilder) absorbAliasLink(role string, alias string, model string) {
@@ -302,11 +361,32 @@ func (b *modelRoutingBuilder) buildCells() {
 	for _, samples := range b.cells {
 		samples.cell.Tasks = len(samples.tasks)
 		samples.cell.Sessions = len(samples.sessions)
-		samples.cell.Sufficient = samples.cell.Calls >= ModelRoutingMinCallsPerCell &&
-			samples.cell.Tasks >= ModelRoutingMinTasksPerCell
 		b.report.Cells = append(b.report.Cells, samples.cell)
 	}
 	slices.SortFunc(b.report.Cells, compareModelRoutingCell)
+}
+
+func (b *modelRoutingBuilder) buildQualityGroups() {
+	for _, group := range sortedModelRoutingGroups(b.qualityGroups) {
+		models := make([]string, 0, len(b.qualityGroups[group]))
+		for model := range b.qualityGroups[group] {
+			models = append(models, model)
+		}
+		slices.Sort(models)
+		for _, model := range models {
+			samples := b.qualityGroups[group][model]
+			b.report.QualityGroups = append(b.report.QualityGroups, ModelRoutingQualityGroup{
+				Role: group.role, Phase: group.phase, EffectiveRisk: group.risk, ConvergenceDelta: group.delta,
+				ResolvedModel: model, Calls: samples.calls, Tasks: len(samples.tasks), Outcomes: samples.outcomes,
+				Sufficient: routingQualityGroupSufficient(group, samples),
+			})
+		}
+	}
+}
+
+func routingQualityGroupSufficient(group modelRoutingGroupKey, samples *modelRoutingModelSamples) bool {
+	return group.risk != ModelRoutingUnknownRisk && group.delta != RoundDeltaUnknown &&
+		samples.calls >= ModelRoutingMinQualityCallsPerGroup && len(samples.tasks) >= ModelRoutingMinQualityTasksPerGroup
 }
 
 func (b *modelRoutingBuilder) buildAliasLinks() {
@@ -331,7 +411,7 @@ func (b *modelRoutingBuilder) buildEvaluation() {
 
 func (b *modelRoutingBuilder) distinctResolvedModels() []string {
 	seen := make(map[string]bool)
-	for _, samples := range b.modelGroups {
+	for _, samples := range b.qualityGroups {
 		for model := range samples {
 			if model != ModelRoutingUnknownModel {
 				seen[model] = true
@@ -347,10 +427,10 @@ func (b *modelRoutingBuilder) buildUnknownEvaluation(models []string) {
 	case b.taskCalls == 0:
 		reasons = append(reasons, "no task-call telemetry recorded")
 	case len(models) == 0:
-		reasons = append(reasons, "no resolved model recorded with usage; resolved-model contrast is unmeasurable")
+		reasons = append(reasons, "no attributable downstream quality evidence; operational outcome and packet_status are not model-quality evidence")
 	default:
 		reasons = append(reasons, fmt.Sprintf(
-			"resolved-model contrast requires at least 2 distinct resolved models; observed only %s",
+			"resolved-model quality contrast requires at least 2 distinct resolved models with attributable downstream evidence; observed only %s",
 			strings.Join(models, ", ")))
 	}
 	if reason, ok := b.aliasOnlyReason(models); ok {
@@ -366,8 +446,8 @@ func (b *modelRoutingBuilder) buildUnknownEvaluation(models []string) {
 func (b *modelRoutingBuilder) buildContrastEvaluation(models []string) {
 	reasons := make([]string, 0)
 	comparable := make([]string, 0)
-	for _, group := range sortedModelRoutingGroups(b.modelGroups) {
-		sufficient, shortfalls := routingGroupSufficientModels(group, b.modelGroups[group], models)
+	for _, group := range sortedModelRoutingGroups(b.qualityGroups) {
+		sufficient, shortfalls := routingGroupSufficientModels(group, b.qualityGroups[group], models)
 		reasons = append(reasons, shortfalls...)
 		if len(sufficient) < 2 {
 			continue
@@ -400,18 +480,21 @@ func routingGroupSufficientModels(group modelRoutingGroupKey, groupModels map[st
 	if len(candidates) < 2 {
 		return nil, nil
 	}
+	if group.risk == ModelRoutingUnknownRisk || group.delta == RoundDeltaUnknown {
+		return nil, []string{fmt.Sprintf("%s: controlled quality comparison requires known effective risk and convergence delta", modelRoutingGroupLabel(group))}
+	}
 	sufficient := make([]string, 0, len(candidates))
 	shortfalls := make([]string, 0)
 	for _, model := range candidates {
 		samples := groupModels[model]
-		if samples.calls >= ModelRoutingMinCallsPerCell && len(samples.tasks) >= ModelRoutingMinTasksPerCell {
+		if routingQualityGroupSufficient(group, samples) {
 			sufficient = append(sufficient, model)
 			continue
 		}
 		shortfalls = append(shortfalls, fmt.Sprintf(
-			"%s: %s has %d calls across %d tasks, below min %d calls / %d tasks",
+			"%s: %s has %d attributable quality calls across %d tasks, below min %d calls / %d tasks",
 			modelRoutingGroupLabel(group), model, samples.calls, len(samples.tasks),
-			ModelRoutingMinCallsPerCell, ModelRoutingMinTasksPerCell))
+			ModelRoutingMinQualityCallsPerGroup, ModelRoutingMinQualityTasksPerGroup))
 	}
 	return sufficient, shortfalls
 }
