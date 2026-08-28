@@ -5,12 +5,12 @@ import (
 	"strings"
 )
 
-const taskCorpusPrefix = "IMPLEMENTATION_TASKS/"
-
 type taskCorpusLine struct {
 	number int
 	text   string
 }
+
+const taskCorpusPrefix = "IMPLEMENTATION_TASKS/"
 
 func taskCorpusViolations(root string, paths []string) ([]Violation, error) {
 	existing := make(map[string]bool)
