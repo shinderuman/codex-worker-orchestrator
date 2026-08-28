@@ -33,27 +33,13 @@ jobs:
 
           path = Path('glm-worker/internal/state/events.go')
           text = path.read_text()
-          old = '''type TaskEventUsage struct {
-\tInputTokens              int64 `json:"input_tokens,omitempty"`
-\tCacheCreationInputTokens int64 `json:"cache_creation_input_tokens,omitempty"`
-\tCacheReadInputTokens     int64 `json:"cache_read_input_tokens,omitempty"`
-\tOutputTokens             int64 `json:"output_tokens,omitempty"`
-}
-'''
-          new = old + '''
-type TaskCompactionSummary struct {
-\tTrigger                 string `json:"trigger,omitempty"`
-\tPreTokens               int64  `json:"pre_tokens,omitempty"`
-\tPostTokens              int64  `json:"post_tokens,omitempty"`
-\tCumulativeDroppedTokens int64  `json:"cumulative_dropped_tokens,omitempty"`
-\tDurationMS              int64  `json:"duration_ms,omitempty"`
-}
-'''
+          old = 'type TaskEventUsage struct {\n\tInputTokens              int64 `json:"input_tokens,omitempty"`\n\tCacheCreationInputTokens int64 `json:"cache_creation_input_tokens,omitempty"`\n\tCacheReadInputTokens     int64 `json:"cache_read_input_tokens,omitempty"`\n\tOutputTokens             int64 `json:"output_tokens,omitempty"`\n}\n'
+          new = old + '\ntype TaskCompactionSummary struct {\n\tTrigger                 string `json:"trigger,omitempty"`\n\tPreTokens               int64  `json:"pre_tokens,omitempty"`\n\tPostTokens              int64  `json:"post_tokens,omitempty"`\n\tCumulativeDroppedTokens int64  `json:"cumulative_dropped_tokens,omitempty"`\n\tDurationMS              int64  `json:"duration_ms,omitempty"`\n}\n'
           if text.count(old) != 1:
               raise SystemExit(f'events usage match count={text.count(old)}')
           text = text.replace(old, new, 1)
           old = '\tMessageModel  string             `json:"message_model,omitempty"`\n\tBlocks        []TaskBlockSummary `json:"blocks,omitempty"`'
-          new = '\tMessageModel string                 `json:"message_model,omitempty"`\n\tCompaction  *TaskCompactionSummary `json:"compaction,omitempty"`\n\tBlocks      []TaskBlockSummary     `json:"blocks,omitempty"`'
+          new = '\tMessageModel string                  `json:"message_model,omitempty"`\n\tCompaction  *TaskCompactionSummary `json:"compaction,omitempty"`\n\tBlocks      []TaskBlockSummary      `json:"blocks,omitempty"`'
           if text.count(old) != 1:
               raise SystemExit(f'events record match count={text.count(old)}')
           path.write_text(text.replace(old, new, 1))
