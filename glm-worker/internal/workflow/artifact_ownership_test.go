@@ -1,6 +1,8 @@
 package workflow
 
 import (
+	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -40,6 +42,9 @@ func TestReviewerGetsCurrentArtifactContext(t *testing.T) {
 	}
 	if !strings.Contains(prompt, priorArtifactReferenceMarker) {
 		t.Fatalf("reviewer prompt has no prior-artifact marker: %q", prompt)
+	}
+	if _, err := os.Stat(artifactDir); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("reviewer artifact directory state = %v", err)
 	}
 }
 
