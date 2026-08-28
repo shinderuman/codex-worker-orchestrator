@@ -58,6 +58,7 @@ func TestSchemaJSONRestrictedVocabulary(t *testing.T) {
 							if _, ok := properties[name]; !ok {
 								t.Fatalf("%s: required %qがpropertiesにありません", path, name)
 							}
+						}
 					}
 				case "array":
 					items, _ := node["items"].(map[string]any)
@@ -194,22 +195,22 @@ func TestSchemaValidationPanicsOnVocabularyViolation(t *testing.T) {
 			Required: []string{"y"},
 		}},
 		{"array items enum", &objectSchema{
-			Type: schemaTypeObject,
+			Type: "object",
 			Properties: map[string]*propertySchema{
 				"x": {array: &arraySchema{Type: schemaTypeArray, Items: scalarSchema{Type: schemaTypeString, Enum: []string{"a"}}}},
 			},
 		}},
 		{"empty property", &objectSchema{
-			Type: schemaTypeObject,
+			Type: "object",
 			Properties: map[string]*propertySchema{
 				"x": {},
 			},
 		}},
 		{"nested object violation", &objectSchema{
-			Type: schemaTypeObject,
+			Type: "object",
 			Properties: map[string]*propertySchema{
 				"x": {object: &objectSchema{
-					Type:       schemaTypeObject,
+					Type:       "object",
 					Properties: map[string]*propertySchema{"y": {scalar: &scalarSchema{Type: "integer"}}},
 				}},
 			},
