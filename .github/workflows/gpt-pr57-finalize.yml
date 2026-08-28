@@ -1,0 +1,60 @@
+name: GPT PR57 finalize
+
+on:
+  push:
+    branches:
+      - gpt/reviewer-current-diff-evidence
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: gpt/reviewer-current-diff-evidence
+      - name: Wire reviewer diff evidence
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('glm-worker/internal/workflow/workflow.go')
+          s = p.read_text()
+          old = '\treviewNavigation := w.reviewerDiffFirstContext(request, reviewNumber)\n\texhaustiveNavigation, err := w.exhaustiveSearchContext(request, activeTaskPath, state.ReviewerRole, reviewNumber+1)\n\tif err != nil {\n\t\treturn state.ResumeCheckpoint{}, "", false, err\n\t}\n\treviewNavigation += exhaustiveNavigation\n'
+          new = '\treviewNavigation, err := w.reviewerNavigationContext(request, activeTaskPath, reviewNumber)\n\tif err != nil {\n\t\treturn state.ResumeCheckpoint{}, "", false, err\n\t}\n'
+          if new not in s:
+              if s.count(old) != 1:
+                  raise SystemExit(f'workflow navigation matches={s.count(old)}')
+              s = s.replace(old, new, 1)
+          p.write_text(s)
+
+          p = Path('glm-worker/internal/workflow/prompts.go')
+          s = p.read_text()
+          old = 'REVIEW_DIFF_FIRST_NAVIGATIONのCHANGED_PATHを起点にactual git diffを最初に確認し、diffから影響範囲を拡張してください。'
+          new = 'REVIEW_CURRENT_TASK_DIFFのREAD_FIRSTがtrueなら、そのPATCHをReadしてactual git diffを最初に確認してください。その後REVIEW_DIFF_FIRST_NAVIGATIONのCHANGED_PATHを起点に影響範囲を拡張してください。'
+          if new not in s:
+              if s.count(old) != 1:
+                  raise SystemExit(f'reviewer prompt sentence matches={s.count(old)}')
+              s = s.replace(old, new, 1)
+          p.write_text(s)
+          PY
+          gofmt -w glm-worker/internal/workflow/workflow.go glm-worker/internal/workflow/prompts.go glm-worker/internal/workflow/reviewer_diff_evidence.go glm-worker/internal/workflow/reviewer_diff_evidence_test.go glm-worker/internal/state/baseline.go
+      - name: Validate
+        shell: bash
+        run: |
+          cd glm-worker
+          go test ./internal/state ./internal/workflow -count=1
+          go vet ./...
+          go build ./...
+      - name: Commit
+        shell: bash
+        run: |
+          if git diff --quiet; then exit 0; fi
+          git config user.name "ChatGPT Web GPT"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add glm-worker/internal/workflow/workflow.go glm-worker/internal/workflow/prompts.go glm-worker/internal/workflow/reviewer_diff_evidence.go glm-worker/internal/workflow/reviewer_diff_evidence_test.go glm-worker/internal/state/baseline.go
+          git commit -m "feat: expose exact task diff to reviewer"
+          git push origin HEAD:gpt/reviewer-current-diff-evidence
