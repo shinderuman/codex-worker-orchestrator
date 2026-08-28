@@ -831,8 +831,7 @@ func (w *Workflow) buildReviewCheckpoint(
 		w.state.BaselineDescription(),
 		reviewNavigation,
 		activeTaskPath,
-	)
-	prompt += floorPrompt
+	) + floorPrompt
 	prompt, err = w.withCurrentRuleContext(prompt)
 	if err != nil {
 		return state.ResumeCheckpoint{}, "", false, err
