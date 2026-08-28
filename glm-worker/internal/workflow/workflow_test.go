@@ -1523,7 +1523,7 @@ func TestReviewerFormatError(t *testing.T) {
 	w := newWorkflowT(t, st, r)
 
 	err := w.ExecuteNewTask("request")
-	if err == nil || !strings.Contains(err.Error(), "reviewer結果のstatusとして許容されません") {
+	if err == nil || !strings.Contains(err.Error(), "without an active task decision boundary") {
 		t.Fatalf("reviewer role status error = %v", err)
 	}
 	if len(r.prompts) != 2 {

@@ -125,16 +125,16 @@ func TestReviewerSchemaContents(t *testing.T) {
 	for _, raw := range enum {
 		values = append(values, raw.(string))
 	}
-	if strings.Join(values, ",") != "PASS,FIX_REQUIRED,NEEDS_SOL_REVIEW" {
+	if strings.Join(values, ",") != "PASS,FIX_REQUIRED,NEEDS_SOL_REVIEW,NEEDS_SOL_DECISION" {
 		t.Fatalf("reviewer status enum = %v", values)
 	}
-	for _, want := range []string{"invariants", "test_evidence", "issues", "residual_risk", "sol_question", "targets", "artifacts"} {
+	for _, want := range []string{
+		"invariants", "test_evidence", "issues", "residual_risk", "sol_question",
+		"decision", "evidence", "options", "recommendation", "test_obligations", "targets", "artifacts",
+	} {
 		if _, ok := properties[want]; !ok {
 			t.Fatalf("reviewer schemaに%sがありません", want)
 		}
-	}
-	if _, ok := properties["decision"]; ok {
-		t.Fatal("reviewer schemaはworker専用fieldを持ってはいけません")
 	}
 }
 

@@ -72,7 +72,7 @@ func TestClaudeRunnerPassesRoleSchema(t *testing.T) {
 		t.Fatal(err)
 	}
 	reviewerSchema := schemaFromArguments(t, readLines(t, argumentsPath))
-	assertStatusEnum(t, reviewerSchema, []string{"PASS", "FIX_REQUIRED", "NEEDS_SOL_REVIEW"})
+	assertStatusEnum(t, reviewerSchema, []string{"PASS", "FIX_REQUIRED", "NEEDS_SOL_REVIEW", "NEEDS_SOL_DECISION"})
 }
 
 func schemaFromArguments(t *testing.T, arguments []string) map[string]any {
