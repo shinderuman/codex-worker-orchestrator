@@ -61,9 +61,7 @@ jobs:
 
           p = Path('glm-worker/internal/runner/git_authority_proxy.go')
           s = p.read_text()
-          anchor = '''git_guard_read_only() {
-          '''
-          anchor = '\n'.join(line[10:] if line.startswith('          ') else line for line in anchor.splitlines())
+          anchor = 'git_guard_read_only() {\n'
           helper = r'''git_guard_plain_read_tree() {
           seen=0
           expect=0
@@ -100,7 +98,7 @@ jobs:
           helper = '\n'.join(line[10:] if line.startswith('          ') else line for line in helper.splitlines())
           if anchor not in s:
               raise SystemExit('proxy read-only anchor not found')
-          s = s.replace(anchor, helper + anchor, 1)
+          s = s.replace(anchor, helper + '\n' + anchor, 1)
           old = '''if [ "$scope" = temp ]; then
             GIT_ALLOW_PROTOCOL=file
             export GIT_ALLOW_PROTOCOL
