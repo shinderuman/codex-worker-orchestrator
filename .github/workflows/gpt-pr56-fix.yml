@@ -284,6 +284,7 @@ jobs:
           go test ./internal/packet ./internal/runner ./internal/workflow -count=1
           go vet ./...
           go build ./...
+          cd ..
           ./harnesslint
       - name: Commit implementation
         shell: bash
