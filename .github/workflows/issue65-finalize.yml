@@ -1,0 +1,178 @@
+name: Issue 65 Finalize
+
+on:
+  push:
+    branches:
+      - gpt/issue-65-attributable-quality
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    if: ${{ contains(github.event.head_commit.message, 'testfix') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: gpt/issue-65-attributable-quality
+      - name: Read quality tool contract
+        id: quality-tools
+        run: |
+          GO_VERSION=$(awk -F': ' '$1 == "go" { print $2 }' quality-tools.yml)
+          printf 'go_version=%s\n' "$GO_VERSION" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ steps.quality-tools.outputs.go_version }}
+          cache: false
+      - name: Install quality tools
+        run: |
+          quality_bin="$(go env GOPATH)/bin"
+          QUALITY_TOOLS_BIN_DIR="$quality_bin" ./install-quality-tools.sh
+          printf '%s\n' "$quality_bin" >> "$GITHUB_PATH"
+      - name: Rebuild implementation and align tests
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path('.github/workflows/issue65-implement.yml').read_text().splitlines()
+          start = next(i for i, line in enumerate(text) if line == '      - name: Implement attributable model quality')
+          run = next(i for i in range(start + 1, len(text)) if text[i] == '        run: |')
+          end = next(i for i in range(run + 1, len(text)) if text[i] == '      - name: Validate')
+          body = '\n'.join(line[10:] if line.startswith('          ') else line for line in text[run + 1:end]) + '\n'
+          body = body.replace("s += extra.replace('          ', '')", "s += extra.replace(r'\\t', '\\t').replace('          ', '')")
+          Path('/tmp/issue65-impl.sh').write_text(body)
+          PY
+          bash /tmp/issue65-impl.sh
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(text, old, new, label):
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected one anchor, got {count}')
+              return text.replace(old, new, 1)
+
+          p = Path('glm-worker/internal/state/routingeval_test.go')
+          s = p.read_text()
+          s = s.replace('report.Sufficiency.MinCalls', 'report.Sufficiency.MinQualityCalls')
+          s = s.replace('report.Sufficiency.MinTasks', 'report.Sufficiency.MinQualityTasks')
+          s = s.replace('ModelRoutingMinCallsPerCell', 'ModelRoutingMinQualityCallsPerGroup')
+          s = s.replace('ModelRoutingMinTasksPerCell', 'ModelRoutingMinQualityTasksPerGroup')
+          s = replace_once(s,
+              '\t\tPhase: phase, Role: role, ModelAlias: alias,\n\t\tOutcome: "success", PacketStatus: "IMPLEMENTED",',
+              '\t\tPhase: phase, Role: role, ModelAlias: alias, ResolvedModelID: "glm-5.3",\n\t\tOutcome: "success", PacketStatus: "IMPLEMENTED",',
+              'fixture resolved model')
+          s = replace_once(s,
+              'if workerCell.UsageUnknownCalls != 0 || workerCell.Sufficient {',
+              'if workerCell.UsageUnknownCalls != 0 || workerCell.TopLevelCalls != 2 {',
+              'worker operational boundary')
+
+          old = '''\tif report.Evaluation.QualityDelta != ModelRoutingQualityDeltaInsufficient {
+          \t\tt.Fatalf("quality delta = %#v", report.Evaluation)
+          \t}
+          \tif len(report.Evaluation.ComparableGroups) != 0 {
+          \t\tt.Fatalf("comparable groups = %#v", report.Evaluation.ComparableGroups)
+          \t}
+          \tif len(report.Evaluation.Reasons) != 1 ||
+          \t\treport.Evaluation.Reasons[0] != "no role+normalized-phase+effective-risk+convergence-delta group contains at least 2 of the observed resolved models" {
+          \t\tt.Fatalf("reasons = %#v", report.Evaluation.Reasons)
+          \t}
+          }'''
+          new = '''\tif report.Evaluation.QualityDelta != ModelRoutingQualityDeltaUnknown {
+          \t\tt.Fatalf("quality delta = %#v", report.Evaluation)
+          \t}
+          \tif len(report.Evaluation.ComparableGroups) != 0 || len(report.QualityGroups) != 0 {
+          \t\tt.Fatalf("quality groups = %#v / %#v", report.Evaluation.ComparableGroups, report.QualityGroups)
+          \t}
+          \tif len(report.Evaluation.Reasons) != 1 ||
+          \t\treport.Evaluation.Reasons[0] != "no attributable downstream quality evidence; operational outcome and packet_status are not model-quality evidence" {
+          \t\tt.Fatalf("reasons = %#v", report.Evaluation.Reasons)
+          \t}
+          }'''
+          s = replace_once(s, old, new, 'aggregate evaluation')
+
+          old = '''\tif len(report.Evaluation.Reasons) != 2 {
+          \t\tt.Fatalf("reasons = %#v", report.Evaluation.Reasons)
+          \t}
+          \tif report.Evaluation.Reasons[0] != "resolved-model contrast requires at least 2 distinct resolved models; observed only glm-5.3" {
+          \t\tt.Fatalf("single model reason = %q", report.Evaluation.Reasons[0])
+          \t}
+          \tif report.Evaluation.Reasons[1] != "2 model aliases resolve to the same resolved model set (glm-5.3); alias-level differences are not model quality evidence" {
+          \t\tt.Fatalf("alias reason = %q", report.Evaluation.Reasons[1])
+          \t}
+          }'''
+          new = '''\tif len(report.Evaluation.Reasons) != 1 ||
+          \t\treport.Evaluation.Reasons[0] != "no attributable downstream quality evidence; operational outcome and packet_status are not model-quality evidence" {
+          \t\tt.Fatalf("reasons = %#v", report.Evaluation.Reasons)
+          \t}
+          }'''
+          s = replace_once(s, old, new, 'single model evaluation')
+
+          s = replace_once(s,
+              '\t\tentries := make([]ModelCallLog, 0, callsPerTask)\n\t\tdeltas := make(map[string]string)',
+              '\t\tentries := make([]ModelCallLog, 0, callsPerTask)\n\t\tdeltas := make(map[string]string)\n\t\tquality := make(map[string]string)',
+              'quality fixture map')
+          s = replace_once(s,
+              '\t\t\tentry.EffectiveRisk = risk\n\t\t\tentry.ResolvedModelUsage = map[string]ResolvedModelUsage{',
+              '\t\t\tentry.EffectiveRisk = risk\n\t\t\tentry.ResolvedModelID = model\n\t\t\tentry.ResolvedModelUsage = map[string]ResolvedModelUsage{',
+              'quality fixture owner')
+          s = replace_once(s,
+              '\t\t\tentries = append(entries, entry)\n\t\t\tif delta != RoundDeltaUnknown {',
+              '\t\t\tentries = append(entries, entry)\n\t\t\tquality[callID] = ModelRoutingQualityReviewPass\n\t\t\tif delta != RoundDeltaUnknown {',
+              'quality fixture outcome')
+          s = replace_once(s,
+              '\t\tlogs = append(logs, TaskCallLogs{TaskID: taskID, Logs: entries, ConvergenceDeltas: deltas})',
+              '\t\tlogs = append(logs, TaskCallLogs{TaskID: taskID, Logs: entries, ConvergenceDeltas: deltas, QualityOutcomes: quality})',
+              'quality fixture attach')
+
+          old = '''\tfor _, cell := range report.Cells {
+          \t\tif !cell.Sufficient {
+          \t\t\tt.Fatalf("sufficient cellがないものがあります: %#v", cell)
+          \t\t}
+          \t\tif cell.EffectiveRisk != "HIGH" || cell.ConvergenceDelta != RoundDeltaSemantic {
+          \t\t\tt.Fatalf("cell軸が分離されていません: %#v", cell)
+          \t\t}
+          \t}
+          }'''
+          new = '''\tif len(report.QualityGroups) != 2 {
+          \t\tt.Fatalf("quality groups = %#v", report.QualityGroups)
+          \t}
+          \tfor _, group := range report.QualityGroups {
+          \t\tif !group.Sufficient || group.EffectiveRisk != "HIGH" || group.ConvergenceDelta != RoundDeltaSemantic {
+          \t\t\tt.Fatalf("quality group = %#v", group)
+          \t\t}
+          \t}
+          }'''
+          s = replace_once(s, old, new, 'comparable quality groups')
+          p.write_text(s)
+
+          p = Path('glm-worker/internal/app/routingeval_test.go')
+          s = p.read_text()
+          old = '''\treasons, _ := evaluation["reasons"].([]any)
+          \tif len(reasons) != 2 {
+          \t\tt.Fatalf("reasons = %#v", reasons)
+          \t}'''
+          new = '''\treasons, _ := evaluation["reasons"].([]any)
+          \tif len(reasons) != 1 || reasons[0] != "no attributable downstream quality evidence; operational outcome and packet_status are not model-quality evidence" {
+          \t\tt.Fatalf("reasons = %#v", reasons)
+          \t}'''
+          s = replace_once(s, old, new, 'app no-quality reason')
+          p.write_text(s)
+          PY
+
+          gofmt -w glm-worker/internal/state/callstats.go glm-worker/internal/state/routingeval.go glm-worker/internal/state/routingeval_test.go glm-worker/internal/app/routingeval.go glm-worker/internal/app/routingeval_test.go
+          git diff --check
+      - name: Validate
+        run: |
+          (cd glm-worker && go test ./...)
+          (cd glm-worker && go vet ./...)
+          (cd glm-worker && go build ./...)
+          ./harnesslint
+      - name: Commit implementation
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add glm-worker/internal/state/callstats.go glm-worker/internal/state/routingeval.go glm-worker/internal/state/routingeval_test.go glm-worker/internal/app/routingeval.go glm-worker/internal/app/routingeval_test.go
+          git commit -m 'Implement issue 65 attributable quality'
+          git push origin HEAD:gpt/issue-65-attributable-quality
