@@ -218,6 +218,7 @@ func stopFinishedResult(status state.TaskStatus) string {
 		state.TaskStatusWaitingSolReview,
 		state.TaskStatusRateLimited,
 		state.TaskStatusProviderUnavailable,
+		state.TaskStatusGuardRecoverable,
 		state.TaskStatusInterrupted:
 		return "terminal"
 	default:
@@ -230,7 +231,7 @@ func checkpointResumeAvailable(st *state.StateStore) bool {
 	if err != nil {
 		return false
 	}
-	return checkpoint.RateLimited || checkpoint.ProviderUnavailable || checkpoint.UserInterrupted
+	return checkpoint.RateLimited || checkpoint.ProviderUnavailable || checkpoint.UserInterrupted || checkpoint.GuardRecoverable
 }
 
 func (*stopEndpointServer) writeResponse(conn net.Conn, response stopEndpointResponse) {
