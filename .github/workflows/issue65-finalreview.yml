@@ -1,0 +1,102 @@
+name: Issue 65 Final Review
+
+on:
+  push:
+    branches:
+      - gpt/issue-65-attributable-quality
+
+permissions:
+  contents: write
+
+jobs:
+  finalreview:
+    if: ${{ contains(github.event.head_commit.message, 'producing worker quality boundary') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: gpt/issue-65-attributable-quality
+      - name: Read quality tool contract
+        id: quality-tools
+        run: |
+          GO_VERSION=$(awk -F': ' '$1 == "go" { print $2 }' quality-tools.yml)
+          printf 'go_version=%s\n' "$GO_VERSION" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ steps.quality-tools.outputs.go_version }}
+          cache: false
+      - name: Install quality tools
+        run: |
+          quality_bin="$(go env GOPATH)/bin"
+          QUALITY_TOOLS_BIN_DIR="$quality_bin" ./install-quality-tools.sh
+          printf '%s\n' "$quality_bin" >> "$GITHUB_PATH"
+      - name: Tighten quality attribution
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(text, old, new, label):
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected one anchor, got {count}')
+              return text.replace(old, new, 1)
+
+          p = Path('glm-worker/internal/app/routingeval.go')
+          s = p.read_text()
+          old = '''\tfor _, round := range rounds {
+          \t\tif round.gap || round.mismatch || len(round.worker) != 1 {
+          \t\t\tcontinue
+          \t\t}
+          \t\treview := convergenceReviewOutDetail(round)'''
+          new = '''\tfor _, round := range rounds {
+          \t\tif round.gap || round.mismatch || len(round.worker) != 1 ||
+          \t\t\tround.worker[0].PacketStatus != string(packet.StatusImplemented) {
+          \t\t\tcontinue
+          \t\t}
+          \t\treview := convergenceReviewOutDetail(round)'''
+          s = replace_once(s, old, new, 'worker implementation gate')
+          p.write_text(s)
+
+          p = Path('glm-worker/internal/app/routingeval_test.go')
+          s = p.read_text()
+          old = '''\treviewer.Phase = "reviewer-1-high-floor"
+          \treviewer.PacketStatus = "NEEDS_SOL_REVIEW"
+          \tif got := convergenceQualityOutcomes(records, []state.ModelCallLog{worker, reviewer}); len(got) != 0 {
+          \t\tt.Fatalf("forced high-floor Sol routing became quality evidence: %#v", got)
+          \t}
+
+          \tsecond := worker'''
+          new = '''\treviewer.Phase = "reviewer-1-high-floor"
+          \treviewer.PacketStatus = "NEEDS_SOL_REVIEW"
+          \tif got := convergenceQualityOutcomes(records, []state.ModelCallLog{worker, reviewer}); len(got) != 0 {
+          \t\tt.Fatalf("forced high-floor Sol routing became quality evidence: %#v", got)
+          \t}
+
+          \treviewer.Phase = "reviewer-1"
+          \treviewer.PacketStatus = "PASS"
+          \tworker.PacketStatus = "NEEDS_SOL_DECISION"
+          \tif got := convergenceQualityOutcomes(records, []state.ModelCallLog{worker, reviewer}); len(got) != 0 {
+          \t\tt.Fatalf("non-implemented worker became quality evidence: %#v", got)
+          \t}
+          \tworker.PacketStatus = "IMPLEMENTED"
+
+          \tsecond := worker'''
+          s = replace_once(s, old, new, 'non implemented regression')
+          p.write_text(s)
+          PY
+          gofmt -w glm-worker/internal/app/routingeval.go glm-worker/internal/app/routingeval_test.go
+          git diff --check
+      - name: Validate
+        run: |
+          (cd glm-worker && go test ./...)
+          (cd glm-worker && go vet ./...)
+          (cd glm-worker && go build ./...)
+          rm -f .github/workflows/issue65-finalreview.yml
+          ./harnesslint
+      - name: Commit hardening
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add glm-worker/internal/app/routingeval.go glm-worker/internal/app/routingeval_test.go
+          git commit -m 'Harden issue 65 producing worker quality boundary'
+          git push origin HEAD:gpt/issue-65-attributable-quality
