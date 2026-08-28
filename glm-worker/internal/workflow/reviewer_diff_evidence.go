@@ -12,13 +12,13 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-const reviewerTaskDiffFile = "review-current-task.patch"
-
 type reviewerDiffBaseline struct {
 	head          string
 	indexPatch    []byte
 	worktreePatch []byte
 }
+
+const reviewerTaskDiffFile = "review-current-task.patch"
 
 func (w *Workflow) reviewerNavigationContext(request, activeTaskPath string, reviewNumber int) (string, error) {
 	diffPath, diffAvailable, err := w.captureReviewerTaskDiff()
