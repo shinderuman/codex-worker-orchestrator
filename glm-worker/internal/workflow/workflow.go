@@ -259,10 +259,7 @@ func (w *Workflow) ExecuteDecision(decision string) error {
 			return err
 		}
 		pocStage := decl.pocStage()
-		if err := w.state.Remove(acceptedFixScopeStateFile); err != nil {
-			return err
-		}
-		if err := w.state.Write("last-decision", decision); err != nil {
+		if err := w.replaceAcceptedScopeWithDecision(decision); err != nil {
 			return err
 		}
 		if err := w.state.SetTaskStatus(state.TaskStatusActive); err != nil {
@@ -291,15 +288,19 @@ func (w *Workflow) ExecuteDecision(decision string) error {
 	}))
 }
 
+func (w *Workflow) replaceAcceptedScopeWithDecision(decision string) error {
+	if err := w.state.Remove(acceptedFixScopeStateFile); err != nil {
+		return err
+	}
+	return w.state.Write("last-decision", decision)
+}
+
 func (w *Workflow) ExecuteExplicitFix(instruction, origin string) error {
 	return w.ExecuteExplicitFixWithScope(instruction, origin, "")
 }
 
 func (w *Workflow) ExecuteExplicitFixWithScope(instruction, origin, acceptedScope string) error {
 	return quietWhenParentFileGuardStopped(w.withTemp(func() error {
-		if acceptedScope != "" && acceptedScope != acceptedFixScopeCurrentDiff {
-			return &WorkerError{Message: "unknown accepted fix scope: " + acceptedScope}
-		}
 		if w.state.Exists("pending-decision") {
 			return &WorkerError{Message: "task is waiting for Sol decision; resolve it before --fix"}
 		}

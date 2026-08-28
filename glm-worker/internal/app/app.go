@@ -276,6 +276,9 @@ func stdinPayloadCommand(mode CommandMode, args []string, usage string, allowOri
 }
 
 func applyStdinPayloadOption(command *Command, name, value, usage string, allowOrigin bool, seenSHA256 *bool) error {
+	if name == "--accepted-scope" {
+		return applyAcceptedScopeOption(command, value, usage, allowOrigin)
+	}
 	switch name {
 	case "--sha256":
 		if *seenSHA256 {
@@ -294,15 +297,17 @@ func applyStdinPayloadOption(command *Command, name, value, usage string, allowO
 		}
 		command.Origin = value
 		return nil
-	case "--accepted-scope":
-		if !allowOrigin || command.AcceptedScope != "" || value != "current-diff" {
-			return usageError("%s", usage)
-		}
-		command.AcceptedScope = value
-		return nil
 	default:
 		return usageError("%s", usage)
 	}
+}
+
+func applyAcceptedScopeOption(command *Command, value, usage string, allowOrigin bool) error {
+	if !allowOrigin || command.AcceptedScope != "" || value != "current-diff" {
+		return usageError("%s", usage)
+	}
+	command.AcceptedScope = value
+	return nil
 }
 
 func parsePayloadSHA256(value string) (string, error) {

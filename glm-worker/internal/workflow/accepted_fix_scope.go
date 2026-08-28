@@ -14,17 +14,23 @@ import (
 	"strings"
 )
 
-const (
-	acceptedFixScopeStateFile   = "accepted-fix-scope.json"
-	acceptedFixScopeCurrentDiff = "current-diff"
-	acceptedFixScopeVersion     = 1
-)
-
 type acceptedFixScope struct {
 	Version      int            `json:"version"`
 	BaselineHead string         `json:"baseline_head"`
 	Changes      map[string]int `json:"changes"`
 }
+
+type acceptedPatchState struct {
+	oldLine        int
+	inHunk         bool
+	previousChange byte
+}
+
+const (
+	acceptedFixScopeStateFile   = "accepted-fix-scope.json"
+	acceptedFixScopeCurrentDiff = "current-diff"
+	acceptedFixScopeVersion     = 1
+)
 
 var zeroContextHunk = regexp.MustCompile(`^@@ -([0-9]+)(?:,[0-9]+)? \+[0-9]+(?:,[0-9]+)? @@`)
 
@@ -183,55 +189,71 @@ func addPatchScopeChanges(changes map[string]int, path string, patch []byte) err
 	if bytes.Contains(patch, []byte("GIT binary patch")) || bytes.Contains(patch, []byte("Binary files ")) || bytes.IndexByte(patch, 0) >= 0 {
 		return fmt.Errorf("accepted scope cannot compare binary patch %s", path)
 	}
-	oldLine := 0
-	inHunk := false
-	previousChange := byte(0)
+	state := acceptedPatchState{}
 	for _, line := range strings.Split(string(patch), "\n") {
-		switch {
-		case line == "":
-			continue
-		case strings.HasPrefix(line, "diff --git "), strings.HasPrefix(line, "index "), strings.HasPrefix(line, "--- "), strings.HasPrefix(line, "+++ "):
-			continue
-		case strings.HasPrefix(line, "old mode "), strings.HasPrefix(line, "new mode "), strings.HasPrefix(line, "new file mode "), strings.HasPrefix(line, "deleted file mode "):
-			changes["meta\x00"+path+"\x00"+line]++
-			continue
-		case strings.HasPrefix(line, "@@ "):
-			match := zeroContextHunk.FindStringSubmatch(line)
-			if match == nil {
-				return fmt.Errorf("accepted scope cannot parse hunk %q", line)
-			}
-			value, err := strconv.Atoi(match[1])
-			if err != nil {
-				return err
-			}
-			oldLine = value
-			inHunk = true
-			previousChange = 0
-			continue
-		case strings.HasPrefix(line, `\ No newline at end of file`):
-			if !inHunk || previousChange == 0 {
-				return fmt.Errorf("accepted scope cannot place no-newline marker in %s", path)
-			}
-			changes[fmt.Sprintf("newline\x00%s\x00%c\x00%d", path, previousChange, oldLine)]++
-			continue
-		case !inHunk:
-			return fmt.Errorf("accepted scope cannot parse patch metadata %q", line)
+		handled, err := state.addMetadataChange(changes, path, line)
+		if err != nil {
+			return err
 		}
+		if handled {
+			continue
+		}
+		if err := state.addHunkChange(changes, path, line); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
-		switch line[0] {
-		case '-':
-			changes[fmt.Sprintf("line\x00%s\x00-\x00%d\x00%s", path, oldLine, line[1:])]++
-			oldLine++
-			previousChange = '-'
-		case '+':
-			changes[fmt.Sprintf("line\x00%s\x00+\x00%d\x00%s", path, oldLine, line[1:])]++
-			previousChange = '+'
-		case ' ':
-			oldLine++
-			previousChange = 0
-		default:
-			return fmt.Errorf("accepted scope cannot parse patch line %q", line)
+func (s *acceptedPatchState) addMetadataChange(changes map[string]int, path, line string) (bool, error) {
+	switch {
+	case line == "":
+		return true, nil
+	case strings.HasPrefix(line, "diff --git "), strings.HasPrefix(line, "index "), strings.HasPrefix(line, "--- "), strings.HasPrefix(line, "+++ "):
+		return true, nil
+	case strings.HasPrefix(line, "old mode "), strings.HasPrefix(line, "new mode "), strings.HasPrefix(line, "new file mode "), strings.HasPrefix(line, "deleted file mode "):
+		changes["meta\x00"+path+"\x00"+line]++
+		return true, nil
+	case strings.HasPrefix(line, "@@ "):
+		match := zeroContextHunk.FindStringSubmatch(line)
+		if match == nil {
+			return true, fmt.Errorf("accepted scope cannot parse hunk %q", line)
 		}
+		value, err := strconv.Atoi(match[1])
+		if err != nil {
+			return true, err
+		}
+		s.oldLine = value
+		s.inHunk = true
+		s.previousChange = 0
+		return true, nil
+	case strings.HasPrefix(line, `\ No newline at end of file`):
+		if !s.inHunk || s.previousChange == 0 {
+			return true, fmt.Errorf("accepted scope cannot place no-newline marker in %s", path)
+		}
+		changes[fmt.Sprintf("newline\x00%s\x00%c\x00%d", path, s.previousChange, s.oldLine)]++
+		return true, nil
+	case !s.inHunk:
+		return true, fmt.Errorf("accepted scope cannot parse patch metadata %q", line)
+	default:
+		return false, nil
+	}
+}
+
+func (s *acceptedPatchState) addHunkChange(changes map[string]int, path, line string) error {
+	switch line[0] {
+	case '-':
+		changes[fmt.Sprintf("line\x00%s\x00-\x00%d\x00%s", path, s.oldLine, line[1:])]++
+		s.oldLine++
+		s.previousChange = '-'
+	case '+':
+		changes[fmt.Sprintf("line\x00%s\x00+\x00%d\x00%s", path, s.oldLine, line[1:])]++
+		s.previousChange = '+'
+	case ' ':
+		s.oldLine++
+		s.previousChange = 0
+	default:
+		return fmt.Errorf("accepted scope cannot parse patch line %q", line)
 	}
 	return nil
 }
