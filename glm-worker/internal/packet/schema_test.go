@@ -58,7 +58,6 @@ func TestSchemaJSONRestrictedVocabulary(t *testing.T) {
 							if _, ok := properties[name]; !ok {
 								t.Fatalf("%s: required %qがpropertiesにありません", path, name)
 							}
-						}
 					}
 				case "array":
 					items, _ := node["items"].(map[string]any)
@@ -135,6 +134,27 @@ func TestReviewerSchemaContents(t *testing.T) {
 	if _, ok := properties["decision"]; ok {
 		t.Fatal("reviewer schemaはworker専用fieldを持ってはいけません")
 	}
+	required := decoded["required"].([]any)
+	for _, want := range []string{
+		"status", "risk", "summary", "requirement_coverage", "invariants",
+		"test_evidence", "issues", "residual_risk", "targets", "artifacts",
+	} {
+		found := false
+		for _, raw := range required {
+			if raw == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("reviewer requiredに%sがありません: %v", want, required)
+		}
+	}
+	for _, raw := range required {
+		if raw == "sol_question" {
+			t.Fatalf("通常reviewer schemaでstatus依存fieldを必須にできません: %v", required)
+		}
+	}
 }
 
 func TestSchemaValidationPanicsOnVocabularyViolation(t *testing.T) {
@@ -174,22 +194,22 @@ func TestSchemaValidationPanicsOnVocabularyViolation(t *testing.T) {
 			Required: []string{"y"},
 		}},
 		{"array items enum", &objectSchema{
-			Type: "object",
+			Type: schemaTypeObject,
 			Properties: map[string]*propertySchema{
 				"x": {array: &arraySchema{Type: schemaTypeArray, Items: scalarSchema{Type: schemaTypeString, Enum: []string{"a"}}}},
 			},
 		}},
 		{"empty property", &objectSchema{
-			Type: "object",
+			Type: schemaTypeObject,
 			Properties: map[string]*propertySchema{
 				"x": {},
 			},
 		}},
 		{"nested object violation", &objectSchema{
-			Type: "object",
+			Type: schemaTypeObject,
 			Properties: map[string]*propertySchema{
 				"x": {object: &objectSchema{
-					Type:       "object",
+					Type:       schemaTypeObject,
 					Properties: map[string]*propertySchema{"y": {scalar: &scalarSchema{Type: "integer"}}},
 				}},
 			},
