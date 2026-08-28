@@ -108,7 +108,10 @@ func reviewerSchema() *objectSchema {
 			"targets":              stringsProperty(),
 			"artifacts":            stringsProperty(),
 		},
-		Required: []string{"status", "risk", "targets", "artifacts"},
+		Required: []string{
+			"status", "risk", "summary", "requirement_coverage", "invariants",
+			"test_evidence", "issues", "residual_risk", "targets", "artifacts",
+		},
 	}
 }
 
