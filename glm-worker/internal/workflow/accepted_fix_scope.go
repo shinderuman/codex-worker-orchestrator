@@ -12,8 +12,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
 const (
