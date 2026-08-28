@@ -83,6 +83,10 @@ func ValidateReviewerResult(result Result) error {
 		if result.Risk != RiskHigh {
 			return &constraintError{reason: "NEEDS_SOL_REVIEWのriskはHIGHにしてください"}
 		}
+	case StatusNeedsSolDecision:
+		if result.Risk != RiskHigh {
+			return &constraintError{reason: "NEEDS_SOL_DECISIONのriskはHIGHにしてください"}
+		}
 	default:
 
 		return &mismatchError{reason: fmt.Sprintf("reviewer結果のstatusとして許容されません: %q", string(result.Status))}

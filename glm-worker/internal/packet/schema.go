@@ -103,6 +103,11 @@ func reviewerProperties(status *propertySchema, risk *propertySchema) map[string
 		"issues":               stringProperty(),
 		"residual_risk":        stringProperty(),
 		"sol_question":         stringProperty(),
+		"decision":             stringProperty(),
+		"evidence":             stringProperty(),
+		"options":              stringProperty(),
+		"recommendation":       stringProperty(),
+		"test_obligations":     stringProperty(),
 		"targets":              stringsProperty(),
 		"artifacts":            stringsProperty(),
 	}
@@ -112,7 +117,7 @@ func reviewerSchema() *objectSchema {
 	return &objectSchema{
 		Type: schemaTypeObject,
 		Properties: reviewerProperties(
-			stringProperty(string(StatusPass), string(StatusFixRequired), string(StatusNeedsSolReview)),
+			stringProperty(string(StatusPass), string(StatusFixRequired), string(StatusNeedsSolReview), string(StatusNeedsSolDecision)),
 			riskProperty(),
 		),
 		Required: []string{"status", "risk", "targets", "artifacts"},

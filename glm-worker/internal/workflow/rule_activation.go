@@ -294,7 +294,18 @@ func (w *Workflow) withCurrentRuleContext(prompt string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return w.appendRuleContext(prompt, required)
+	prompt, err = w.appendRuleContext(prompt, required)
+	if err != nil {
+		return "", err
+	}
+	boundary, err := w.reviewerDecisionBoundaryContext(w.readActiveTaskState())
+	if err != nil {
+		return "", err
+	}
+	if boundary == "" {
+		return prompt, nil
+	}
+	return strings.TrimRight(prompt, "\n") + boundary, nil
 }
 
 func (w *Workflow) resetInstructionReadObservation() {
