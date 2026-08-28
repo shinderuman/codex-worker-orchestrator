@@ -40,16 +40,16 @@ jobs:
           	"strings"
           )
 
+          type ReviewerPhaseInfo struct {
+          	ReviewNumber int
+          	Category     string
+          }
+
           const (
           	ReviewerPhaseCategoryReview    = "reviewer"
           	ReviewerPhaseCategoryRiskFloor = "reviewer-risk-floor"
           	ReviewerPhaseCategoryHighFloor = "reviewer-high-floor"
           )
-
-          type ReviewerPhaseInfo struct {
-          	ReviewNumber int
-          	Category     string
-          }
 
           func ParseReviewerPhase(phase string) (ReviewerPhaseInfo, bool) {
           	rest, ok := strings.CutPrefix(phase, ReviewerPhaseCategoryReview+"-")
