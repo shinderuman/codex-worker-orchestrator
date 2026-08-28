@@ -275,6 +275,7 @@ case "${GIT_INDEX_FILE:-}" in
   /*) ;;
   *) return 1 ;;
 esac
+if [ -e "$GIT_INDEX_FILE" ] || [ -L "$GIT_INDEX_FILE" ]; then return 1; fi
 index=$(git_guard_normalize_path "$GIT_INDEX_FILE" /) || return 1
 [ "$(git_guard_path_scope "$index")" = temp ]
 }

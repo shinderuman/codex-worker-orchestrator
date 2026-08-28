@@ -134,6 +134,8 @@ func TestGitAuthorityGuardRejectsProtectedReadTreeWithoutAuthorizedTempIndex(t *
 		{name: "default protected index", command: "git read-tree HEAD"},
 		{name: "explicit protected index", command: "GIT_INDEX_FILE=\"$PROTECTED_INDEX\" git read-tree HEAD", env: map[string]string{"PROTECTED_INDEX": protectedIndex}},
 		{name: "external index", command: "GIT_INDEX_FILE=\"$EXTERNAL_INDEX\" git read-tree HEAD", env: map[string]string{"EXTERNAL_INDEX": externalIndex}},
+		{name: "existing authorized temp index", command: ": >\"$GLM_WORKER_GIT_TEMP_ROOT/existing-index\"; GIT_INDEX_FILE=\"$GLM_WORKER_GIT_TEMP_ROOT/existing-index\" git read-tree HEAD"},
+		{name: "symlink to protected index", command: "ln -s \"$PROTECTED_INDEX\" \"$GLM_WORKER_GIT_TEMP_ROOT/symlink-index\"; GIT_INDEX_FILE=\"$GLM_WORKER_GIT_TEMP_ROOT/symlink-index\" git read-tree HEAD", env: map[string]string{"PROTECTED_INDEX": protectedIndex}},
 		{name: "worktree update option", command: "GIT_INDEX_FILE=\"$GLM_WORKER_GIT_TEMP_ROOT/snapshot-index\" git read-tree -u HEAD"},
 	}
 	for _, tc := range cases {
