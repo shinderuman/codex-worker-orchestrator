@@ -46,6 +46,10 @@ blocked taskには、
 「permission received」だけで設計未確定taskをGLMへ投げないでください。
 ````
 
+## Resolved references
+
+- Task 012の完了証跡は`IMPLEMENTATION_HISTORY.md`の`2026-08-28 Task 012 compaction threshold evaluation`を正とする。保存済み20 task・69 call中のboundaryは4 call / 4件で、trigger直前context sizeとcompaction要約costはunknownのため、現時点の採否はNo-Go。明示許可後も同形式再測定と、必要なら別契約の観測追加を先に確定する。
+
 ## Purpose
 
 品質を落とさずtokenを削減する。
@@ -68,7 +72,7 @@ compactionとsession agingを分離。
 
 ## Dependencies
 
-- `IMPLEMENTATION_TASKS/012-compaction-threshold-evaluation.md`
+none
 
 ## Review findings
 
@@ -76,4 +80,4 @@ none
 
 ## Current boundary
 
-evidence/permission待ち。
+Task 012 evidenceはNo-Go。permissionと、activation時のconcrete Contract / Must not / Acceptance criteria確定待ち。

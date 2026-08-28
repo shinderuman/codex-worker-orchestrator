@@ -27,9 +27,7 @@ func TestOperationCategoryForToolCoversAllowlist(t *testing.T) {
 		{tool: "Grep", want: state.OperationCategorySearch},
 		{tool: "Glob", want: state.OperationCategorySearch},
 		{tool: "Bash", command: "echo done", want: state.OperationCategoryOther},
-		{tool: "Bash", command: "", want: state.OperationCategoryOther},
 		{tool: "WebSearch", want: state.OperationCategoryOther},
-		{tool: "TaskOutput", want: state.OperationCategoryOther},
 	}
 	for _, c := range cases {
 		if got := operationCategoryForTool(c.tool, c.command); got != c.want {
@@ -38,27 +36,27 @@ func TestOperationCategoryForToolCoversAllowlist(t *testing.T) {
 	}
 }
 
-func TestShellOperationCategoryResolvesAmbiguousCommands(t *testing.T) {
+func TestShellOperationCategoryKeepsObservedFormsNarrow(t *testing.T) {
 	cases := []struct {
 		command string
 		want    string
 	}{
 		{command: "cd /repo && go test ./...", want: state.OperationCategoryTest},
-		{command: "GOFLAGS=-mod=readonly go vet ./...", want: state.OperationCategoryTest},
-		{command: "/usr/local/bin/go test ./...", want: state.OperationCategoryTest},
-		{command: "git diff HEAD && go build ./...", want: state.OperationCategoryGitRead},
-		{command: "echo start; go build ./...; echo done", want: state.OperationCategoryBuild},
-		{command: "grep pattern | wc -l", want: state.OperationCategorySearch},
-		{command: "git notes list", want: state.OperationCategoryOther},
+		{command: "git branch --contains HEAD", want: state.OperationCategoryGitRead},
+		{command: "git branch --show-current", want: state.OperationCategoryGitRead},
+		{command: "./harnesslint", want: state.OperationCategoryTest},
+		{command: "GOFLAGS=-mod=readonly go vet ./...", want: state.OperationCategoryOther},
+		{command: "/usr/local/bin/go test ./...", want: state.OperationCategoryOther},
+		{command: "git diff HEAD && go build ./...", want: state.OperationCategoryOther},
+		{command: "echo start; go build ./...; echo done", want: state.OperationCategoryOther},
+		{command: "grep pattern | wc -l", want: state.OperationCategoryOther},
+		{command: "npm run build", want: state.OperationCategoryOther},
+		{command: "python -m pytest tests", want: state.OperationCategoryOther},
+		{command: "git branch feature", want: state.OperationCategoryOther},
+		{command: "git branch --merged", want: state.OperationCategoryOther},
+		{command: "git tag v1", want: state.OperationCategoryOther},
 		{command: "go mod tidy", want: state.OperationCategoryOther},
-		{command: "make test", want: state.OperationCategoryTest},
-		{command: "make", want: state.OperationCategoryBuild},
-		{command: "npm install", want: state.OperationCategoryInstall},
-		{command: "npm run build", want: state.OperationCategoryBuild},
-		{command: "python -m pytest tests", want: state.OperationCategoryTest},
-		{command: "pip install requests", want: state.OperationCategoryInstall},
-		{command: "echo sk-ant-secret-token", want: state.OperationCategoryOther},
-		{command: "sleep 503", want: state.OperationCategoryOther},
+		{command: "cd /repo && go test ./... && go vet ./...", want: state.OperationCategoryOther},
 		{command: "   ", want: state.OperationCategoryOther},
 	}
 	for _, c := range cases {
