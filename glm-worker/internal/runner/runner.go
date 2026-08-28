@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -60,6 +61,12 @@ type RunResult struct {
 	InstructionReads   []string
 	CallID             string
 
+	ResolvedModelID                   string
+	ConfiguredAutoCompactWindowTokens int
+	KnownModelContextWindowTokens     int
+	DeclaredMaxContextWindowTokens    int
+	ContextWindowSource               string
+
 	PlainFailure ProviderFailureClass
 
 	StructuredOutput json.RawMessage
@@ -86,6 +93,7 @@ type runInputs struct {
 	settingEnv    map[string]string
 	envDeletes    []string
 	schema        string
+	contextWindow contextWindowConfig
 }
 
 const isolationPolicyVersion = "claude-isolation-1"
@@ -179,7 +187,7 @@ func (r *ClaudeRunner) Run(
 	if err != nil {
 		return result, err
 	}
-	inputs, err := r.prepareRunInputs(role, phase, &result)
+	inputs, err := r.prepareRunInputs(role, phase, model, &result)
 	if err != nil {
 		return result, err
 	}
@@ -224,7 +232,7 @@ func (r *ClaudeRunner) prepareRunSession(role state.SessionRole, phase, model st
 	return result, taskID, sessionID, ready, nil
 }
 
-func (r *ClaudeRunner) prepareRunInputs(role state.SessionRole, phase string, result *RunResult) (runInputs, error) {
+func (r *ClaudeRunner) prepareRunInputs(role state.SessionRole, phase, model string, result *RunResult) (runInputs, error) {
 	systemFile := filepath.Join(r.config.PromptDir, promptFileName(role))
 	systemPrompt, err := os.ReadFile(systemFile)
 	if err != nil {
@@ -243,13 +251,19 @@ func (r *ClaudeRunner) prepareRunInputs(role state.SessionRole, phase string, re
 	if err != nil {
 		return runInputs{}, err
 	}
+	contextWindow := contextWindowForModel(model, settingEnv)
+	result.ResolvedModelID = contextWindow.resolvedModelID
+	result.ConfiguredAutoCompactWindowTokens = configuredAutoCompactWindowTokens
+	result.KnownModelContextWindowTokens = contextWindow.knownModelContextWindowTokens
+	result.DeclaredMaxContextWindowTokens = contextWindow.declaredMaxContextTokens
+	result.ContextWindowSource = contextWindow.source
 	schema, err := structuredSchema(role, phase)
 	if err != nil {
 		return runInputs{}, fmt.Errorf("structured output schemaを構築できません: %w", err)
 	}
 	return runInputs{
 		systemFile: systemFile, isolationArgs: isolationArgs,
-		settingEnv: settingEnv, envDeletes: envDeletes, schema: schema,
+		settingEnv: settingEnv, envDeletes: envDeletes, schema: schema, contextWindow: contextWindow,
 	}, nil
 }
 
@@ -271,7 +285,7 @@ func (r *ClaudeRunner) buildRunArgs(
 	args = append(args,
 		"--model", model,
 		"--effort", effort,
-		"--autocompact", "500k",
+		"--autocompact", configuredAutoCompactWindowArgument,
 		"--output-format", "stream-json",
 		"--verbose",
 		"--dangerously-skip-permissions",
@@ -314,11 +328,15 @@ func (r *ClaudeRunner) executeRunCommand(
 	command.Stdin = devNull
 	command.Stdout = ingester
 	command.Stderr = stderr
-	command.Env = buildChildEnv(r.config.EnvAllowlist, inputs.settingEnv, map[string]string{
+	additions := map[string]string{
 		"CLAUDE_CONFIG_DIR":                r.config.ClaudeConfigDir,
-		"CLAUDE_CODE_AUTO_COMPACT_WINDOW":  "500000",
+		"CLAUDE_CODE_AUTO_COMPACT_WINDOW":  strconv.Itoa(configuredAutoCompactWindowTokens),
 		"CLAUDE_CODE_ALWAYS_ENABLE_EFFORT": "1",
-	}, inputs.envDeletes)
+	}
+	if inputs.contextWindow.declaredMaxContextTokens > 0 {
+		additions["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] = strconv.Itoa(inputs.contextWindow.declaredMaxContextTokens)
+	}
+	command.Env = buildChildEnv(r.config.EnvAllowlist, inputs.settingEnv, additions, inputs.envDeletes)
 
 	runErr := r.runCommand(command)
 	ingester.flush()
