@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskcontract"
 )
 
 func TestTaskCorpusScheduleStateConformance(t *testing.T) {
@@ -12,7 +14,7 @@ func TestTaskCorpusScheduleStateConformance(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read %s: %v", implementationPlanFile, err)
 	}
-	activeEntries, err := activeSectionEntries(string(planBytes))
+	activeEntries, err := taskcontract.ActiveSectionEntries(string(planBytes))
 	if err != nil || len(activeEntries) != 1 {
 		t.Fatalf("plan ACTIVE解決が成立していません: entries=%v err=%v", activeEntries, err)
 	}

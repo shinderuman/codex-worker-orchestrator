@@ -5,6 +5,8 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskcontract"
 )
 
 var finalHeadTransitionPattern = regexp.MustCompile(`(^|[^[:alnum:]_])(amend|install)(する)?(の|直)?前`)
@@ -41,7 +43,7 @@ func finalHeadPlan(root string) (string, string, bool, error) {
 }
 
 func validateFinalHeadPlan(root string, plan string) error {
-	active, err := activeSectionEntries(plan)
+	active, err := taskcontract.ActiveSectionEntries(plan)
 	if err != nil {
 		return err
 	}
@@ -91,7 +93,7 @@ func finalHeadScheduleEntries(plan string, section string) ([]string, error) {
 		return nil, nil
 	}
 	synthetic := "## ACTIVE\n" + strings.Join(lines, "\n") + "\n"
-	entries, err := activeSectionEntries(synthetic)
+	entries, err := taskcontract.ActiveSectionEntries(synthetic)
 	if err != nil {
 		return nil, fmt.Errorf("HEADのplanの%s欄: %w", section, err)
 	}
@@ -99,7 +101,7 @@ func finalHeadScheduleEntries(plan string, section string) ([]string, error) {
 }
 
 func validateFinalHeadTask(root string, path string) error {
-	if err := validateActiveTaskPath(path); err != nil {
+	if err := taskcontract.ValidateActiveTaskPath(path); err != nil {
 		return err
 	}
 	entry, err := finalHeadGitOutput(root, "ls-tree", "HEAD", "--", path)
