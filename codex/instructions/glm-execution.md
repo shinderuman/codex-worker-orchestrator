@@ -19,6 +19,7 @@
 - `AGENTS.md`や既存規約にある一般品質ゲートを依頼文へ列挙し直さず、タスク固有の完了条件・対象・除外事項・必要テストだけを明記する。
 - 正確な長い一覧や監査報告がpacket上限へ収まらない場合は、実行時に渡される`REPORT_ARTIFACT_DIR`へ保存させ、packetでは`artifacts`の絶対パスだけを受け取る。
 - 同一taskがSol判断待ち・review fix・rate limit中なら分割や新規起動へ切り替えず、保存済みtaskとsessionを継続する。
+- `task_status: guard-recoverable`はguardがmodel sessionを失効させたがtask checkpointを保持した状態である。親が報告されたguard conditionとrepository現物を確認・必要なら修正した後、別taskを起こさず同じ`--resume`を実行する。resumeは失効済みmodel sessionを再利用せず、保存済みworker resultを安全に再利用できない場合だけfresh worker callから同stageをやり直す。
 - モデル配分・token節約・品質バランスの調整を依頼された場合だけ`glm-worker --stats`を実行し、出力の`telemetry_dir`にあるタスク別JSONLで呼出別のusage・実モデル・結果を比較する。総消費量にはsubagentを含むtree usageを使う。通常作業では調整目的のためだけに詳細ログを読まない。
 
 ## machine executionの反復cost観測
