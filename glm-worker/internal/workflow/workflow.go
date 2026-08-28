@@ -189,6 +189,9 @@ func (w *Workflow) validateNewTaskStart() error {
 	if w.state.Exists("pending-decision") {
 		return &WorkerError{Message: "previous task is waiting for Sol decision; use --decision or --reset"}
 	}
+	if open := w.state.OpenParentReviewLabel(); open != "none" {
+		return &WorkerError{Message: fmt.Sprintf("previous task has unresolved parent review (%s); resolve it explicitly with --accept (or --fix when rework is required) before starting a new task", open)}
+	}
 	checkpoint, err := w.state.LoadResumeCheckpoint()
 	if err != nil {
 		return nil

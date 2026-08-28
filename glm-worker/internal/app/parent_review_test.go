@@ -247,46 +247,83 @@ func TestExecuteAcceptWithoutOpenOpportunityIsNoOp(t *testing.T) {
 	}
 }
 
-func TestExecuteNewTaskClosesOpenOpportunityAsUnknown(t *testing.T) {
-	cfg := newAppConfig(t)
-	first := &fakeRunner{steps: []fakeStep{
-		{structured: implementedPacketApp("done")},
-		{structured: passPacketApp()},
-	}}
-	if err := Execute(Command{Mode: ModeNewTask, Payload: "request"}, cfg, first.factory(), io.Discard, io.Discard); err != nil {
-		t.Fatal(err)
-	}
-
-	second := &fakeRunner{steps: []fakeStep{
-		{structured: implementedPacketApp("next")},
-		{structured: passPacketApp()},
-	}}
-	if err := Execute(Command{Mode: ModeNewTask, Payload: "request2"}, cfg, second.factory(), io.Discard, io.Discard); err != nil {
-		t.Fatal(err)
-	}
-
-	st, err := state.NewStateStore(cfg)
+func TestExecuteNewTaskRejectsOpenParentReviewUntilAccepted(t *testing.T) {
+	cfg, st := newParentReviewOpportunity(t)
+	before, err := st.CurrentTaskStats()
 	if err != nil {
 		t.Fatal(err)
 	}
+	if before.ParentReviewOpen == nil || before.ParentReviewOpen.PacketStatus != "NEEDS_SOL_REVIEW" {
+		t.Fatalf("前taskのparent reviewがopenではありません: %#v", before.ParentReviewOpen)
+	}
+	beforeLogs, err := st.ReadModelCallLogs(before.TaskID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rejected := &fakeRunner{steps: []fakeStep{
+		{structured: implementedPacketApp("must not run")},
+		{structured: passPacketApp()},
+	}}
+	err = Execute(Command{Mode: ModeNewTask, Payload: "request2"}, cfg, rejected.factory(), io.Discard, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "unresolved parent review") || !strings.Contains(err.Error(), "--accept") {
+		t.Fatalf("未解決parent reviewの新task開始を明示的に拒否する必要があります: %v", err)
+	}
+	if len(rejected.prompts) != 0 {
+		t.Fatalf("拒否時はmodelを呼び出してはいけません: %d", len(rejected.prompts))
+	}
+
+	after, err := st.CurrentTaskStats()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.TaskID != before.TaskID || after.ParentReviewOpen == nil || after.ParentReviewOpen.PacketStatus != "NEEDS_SOL_REVIEW" {
+		t.Fatalf("拒否時にcurrent task/reviewが変化しました: before=%#v after=%#v", before, after)
+	}
+	if after.ParentOutcomes[state.ParentOutcomeUnknown] != 0 {
+		t.Fatalf("拒否時にunknown outcomeを記録してはいけません: %#v", after.ParentOutcomes)
+	}
+	afterLogs, err := st.ReadModelCallLogs(after.TaskID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(afterLogs) != len(beforeLogs) {
+		t.Fatalf("拒否時にtelemetryが変化しました: before=%d after=%d", len(beforeLogs), len(afterLogs))
+	}
+
+	if accept := executeAccept(t, cfg); !accept.Accepted {
+		t.Fatal("open parent reviewをacceptできませんでした")
+	}
+	if got := st.TaskStatus(); got != state.TaskStatusWaitingSolReview {
+		t.Fatalf("accept後のstale lifecycle status = %q want %q", got, state.TaskStatusWaitingSolReview)
+	}
+
+	next := &fakeRunner{steps: []fakeStep{
+		{structured: implementedPacketApp("next")},
+		{structured: passPacketApp()},
+	}}
+	if err := Execute(Command{Mode: ModeNewTask, Payload: "request2"}, cfg, next.factory(), io.Discard, io.Discard); err != nil {
+		t.Fatalf("parent review解決後はstale statusだけで新taskを拒否してはいけません: %v", err)
+	}
+
 	all, err := st.AllTaskStats()
 	if err != nil {
 		t.Fatal(err)
 	}
 	var archived state.TaskStats
 	for _, stats := range all {
-		if stats.ArchivedAt != nil {
+		if stats.TaskID == before.TaskID {
 			archived = stats
+			break
 		}
 	}
-	if archived.TaskID == "" {
-		t.Fatalf("archived statsが見つかりません: %#v", all)
+	if archived.TaskID == "" || archived.ArchivedAt == nil {
+		t.Fatalf("前task statsがarchiveされていません: %#v", all)
 	}
-	if archived.ParentOutcomes[state.ParentOutcomeUnknown] != 1 || archived.ParentOutcomes[state.ParentOutcomeAccepted] != 0 {
-		t.Fatalf("新task開始で未確定opportunityはunknown: %#v", archived.ParentOutcomes)
+	if archived.ParentOutcomes[state.ParentOutcomeAccepted] != 1 || archived.ParentOutcomes[state.ParentOutcomeUnknown] != 0 {
+		t.Fatalf("明示parent outcomeが保持されていません: %#v", archived.ParentOutcomes)
 	}
 }
-
 func TestExecuteAcceptRejectsPendingDecisionOpportunity(t *testing.T) {
 	cfg := newAppConfig(t)
 	decision := &fakeRunner{steps: []fakeStep{
