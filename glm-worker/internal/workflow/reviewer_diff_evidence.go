@@ -86,7 +86,7 @@ func (w *Workflow) loadReviewerDiffBaseline() (reviewerDiffBaseline, bool, error
 }
 
 func (w *Workflow) reconstructReviewerBaselineIndex(baseline reviewerDiffBaseline) (string, func(), error) {
-	tempDir, err := os.MkdirTemp("", "glm-worker-review-diff-")
+	tempDir, err := os.MkdirTemp(os.Getenv("GLM_WORKER_GIT_TEMP_ROOT"), "glm-worker-review-diff-")
 	if err != nil {
 		return "", nil, err
 	}

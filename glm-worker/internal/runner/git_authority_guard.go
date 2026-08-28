@@ -88,7 +88,7 @@ func (g *gitAuthorityGuard) prepareProxy() error {
 	if err := os.WriteFile(g.attemptLog, nil, 0o600); err != nil {
 		return &GitAuthorityGuardError{Stage: "prepare-command-proxy", Cause: err}
 	}
-	proxy := gitAuthorityProxyScript(g.realGit, g.attemptLog, g.repoRoot, os.TempDir())
+	proxy := gitAuthorityProxyScript(g.realGit, g.attemptLog, g.repoRoot, g.tempDir)
 	if err := os.WriteFile(g.proxyPath, []byte(proxy), 0o700); err != nil {
 		return &GitAuthorityGuardError{Stage: "prepare-command-proxy", Cause: err}
 	}

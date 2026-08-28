@@ -246,6 +246,38 @@ git_guard_remote_read_only() {
     *) return 1 ;;
   esac
 }
+git_guard_plain_read_tree() {
+seen=0
+expect=0
+trees=0
+for arg do
+  if [ "$seen" -eq 0 ]; then
+    if [ "$expect" -eq 1 ]; then expect=0; continue; fi
+    case "$arg" in
+      -C|-c|--git-dir|--work-tree|--namespace|--config-env) expect=1 ;;
+      --git-dir=*|--work-tree=*|--namespace=*|--config-env=*) ;;
+      -*) ;;
+      read-tree) seen=1 ;;
+      *) return 1 ;;
+    esac
+    continue
+  fi
+  case "$arg" in
+    -*) return 1 ;;
+    *) trees=$((trees + 1)) ;;
+  esac
+done
+[ "$seen" -eq 1 ] && [ "$trees" -eq 1 ]
+}
+git_guard_temp_index_read_tree() {
+git_guard_plain_read_tree "$@" || return 1
+case "${GIT_INDEX_FILE:-}" in
+  /*) ;;
+  *) return 1 ;;
+esac
+index=$(git_guard_normalize_path "$GIT_INDEX_FILE" /) || return 1
+[ "$(git_guard_path_scope "$index")" = temp ]
+}
 git_guard_read_only() {
   command_name=$(git_guard_command_name "$@")
   case "$command_name" in
@@ -265,6 +297,9 @@ scope=$(git_guard_scope "$@")
 if [ "$scope" = temp ]; then
   GIT_ALLOW_PROTOCOL=file
   export GIT_ALLOW_PROTOCOL
+  exec "$real_git" "$@"
+fi
+if [ "$scope" = protected ] && git_guard_temp_index_read_tree "$@"; then
   exec "$real_git" "$@"
 fi
 if git_guard_read_only "$@"; then
