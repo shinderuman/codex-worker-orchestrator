@@ -88,7 +88,7 @@ func (g *gitAuthorityGuard) prepareProxy() error {
 	if err := os.WriteFile(g.attemptLog, nil, 0o600); err != nil {
 		return &GitAuthorityGuardError{Stage: "prepare-command-proxy", Cause: err}
 	}
-	proxy := gitAuthorityProxyScript(g.realGit, g.attemptLog)
+	proxy := gitAuthorityProxyScript(g.realGit, g.attemptLog, g.repoRoot, os.TempDir())
 	if err := os.WriteFile(g.proxyPath, []byte(proxy), 0o700); err != nil {
 		return &GitAuthorityGuardError{Stage: "prepare-command-proxy", Cause: err}
 	}
@@ -245,37 +245,4 @@ func uniqueSortedStrings(values []string) []string {
 	}
 	sort.Strings(result)
 	return result
-}
-
-func gitAuthorityProxyScript(realGit, attemptLog string) string {
-	return "#!/bin/sh\n" +
-		"real_git=" + shellSingleQuote(realGit) + "\n" +
-		"attempt_log=" + shellSingleQuote(attemptLog) + "\n" +
-		"command_name=\n" +
-		"expect_value=0\n" +
-		"for arg do\n" +
-		"  if [ \"$expect_value\" -eq 1 ]; then expect_value=0; continue; fi\n" +
-		"  case \"$arg\" in\n" +
-		"    -C|-c|--git-dir|--work-tree|--namespace|--config-env) expect_value=1 ;;\n" +
-		"    --git-dir=*|--work-tree=*|--namespace=*|--config-env=*) ;;\n" +
-		"    --version|--help) if [ -z \"$command_name\" ]; then command_name=$arg; fi ;;\n" +
-		"    -*) ;;\n" +
-		"    *) command_name=$arg; break ;;\n" +
-		"  esac\n" +
-		"done\n" +
-		"case \"$command_name\" in\n" +
-		"  status|diff|log|show|grep|ls-files|rev-parse|rev-list|merge-base|cat-file|for-each-ref|show-ref|describe|name-rev|shortlog|blame|ls-tree|check-ignore|check-attr|--version|--help) exec \"$real_git\" \"$@\" ;;\n" +
-		"  '') printf '%s\\n' '<missing-subcommand>' >>\"$attempt_log\"; exit 97 ;;\n" +
-		"  *) printf '%s\\n' \"$command_name\" >>\"$attempt_log\"; exit 97 ;;\n" +
-		"esac\n"
-}
-
-func gitAuthorityDenyTransportScript(attemptLog string) string {
-	return "#!/bin/sh\n" +
-		"printf '%s\\n' 'transport' >>" + shellSingleQuote(attemptLog) + "\n" +
-		"exit 97\n"
-}
-
-func shellSingleQuote(value string) string {
-	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
 }

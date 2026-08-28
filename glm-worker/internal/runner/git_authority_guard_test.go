@@ -25,6 +25,9 @@ func TestGitAuthorityGuardBlocksModelGitMutationsBeforeExecution(t *testing.T) {
 	}{
 		{name: "commit", command: "git commit --allow-empty -m blocked", want: "command:commit"},
 		{name: "branch", command: "git branch blocked", want: "command:branch"},
+		{name: "config", command: "git config user.name blocked", want: "command:config"},
+		{name: "remote", command: "git remote add blocked /tmp/blocked", want: "command:remote"},
+		{name: "init", command: "git init", want: "command:init"},
 		{name: "reset", command: "git reset --hard HEAD", want: "command:reset"},
 		{name: "checkout destruction", command: "git checkout -- tracked.txt", want: "command:checkout", dirty: true},
 		{name: "push", command: "git push origin HEAD", want: "command:push"},
@@ -68,6 +71,43 @@ func TestGitAuthorityGuardAllowsSourceEditAndReadOnlyGit(t *testing.T) {
 	}
 	if got := readGitAuthorityFile(t, root, "tracked.txt"); got != "changed\n" {
 		t.Fatalf("source edit = %q", got)
+	}
+}
+
+func TestGitAuthorityGuardAllowsReadOnlyGitVariants(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fixture is Unix-oriented")
+	}
+	root := newGitAuthorityRepo(t)
+	command := "git branch --contains HEAD >/dev/null; git config --get user.name >/dev/null; git remote -v >/dev/null"
+	guarded, _ := newGitAuthorityProductionRunner(t, root, command, nil)
+	if _, err := guarded.Run(state.WorkerRole, "worker-new", "worker-model", false, "high", "prompt", filepath.Join(t.TempDir(), "output")); err != nil {
+		t.Fatalf("read-only git variants failed: %v", err)
+	}
+}
+
+func TestGitAuthorityGuardAllowsFixtureGitOutsideProtectedRepo(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fixture is Unix-oriented")
+	}
+	root := newGitAuthorityRepo(t)
+	fixtureRoot := t.TempDir()
+	command := "git init -q \"$FIXTURE_ROOT/repo\"; " +
+		"git init --bare -q \"$FIXTURE_ROOT/remote.git\"; " +
+		"git -C \"$FIXTURE_ROOT/repo\" config user.email fixture@example.invalid; " +
+		"git -C \"$FIXTURE_ROOT/repo\" config user.name fixture; " +
+		"printf '%s\\n' fixture >\"$FIXTURE_ROOT/repo/tracked.txt\"; " +
+		"git -C \"$FIXTURE_ROOT/repo\" add tracked.txt; " +
+		"git -C \"$FIXTURE_ROOT/repo\" commit -q -m fixture; " +
+		"git -C \"$FIXTURE_ROOT/repo\" branch fixture-branch; " +
+		"git -C \"$FIXTURE_ROOT/repo\" remote add origin \"$FIXTURE_ROOT/remote.git\"; " +
+		"git -C \"$FIXTURE_ROOT/repo\" push -q origin HEAD:refs/heads/main"
+	guarded, _ := newGitAuthorityProductionRunner(t, root, command, map[string]string{"FIXTURE_ROOT": fixtureRoot})
+	if _, err := guarded.Run(state.WorkerRole, "worker-new", "worker-model", false, "high", "prompt", filepath.Join(t.TempDir(), "output")); err != nil {
+		t.Fatalf("fixture git failed: %v", err)
+	}
+	if got := strings.TrimSpace(runGitAuthorityOutput(t, filepath.Join(fixtureRoot, "remote.git"), "rev-parse", "refs/heads/main")); got == "" {
+		t.Fatal("fixture push did not create local remote main")
 	}
 }
 

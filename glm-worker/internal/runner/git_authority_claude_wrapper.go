@@ -20,7 +20,7 @@ func (g *gitAuthorityGuard) prepareClaudeWrapper(claudeBin string) (string, erro
 }
 
 func gitAuthorityClaudeWrapperScript(g *gitAuthorityGuard, claudeBin string) string {
-	configValues := []string{"", "https://", "http://", "ssh://", "git://", "git@", "file://", "/", "./", "../"}
+	configValues := []string{"", "https://", "http://", "ssh://", "git://", "git@"}
 	result := "#!/bin/sh\n"
 	result += "PATH=" + shellSingleQuote(g.tempDir) + ":\"$PATH\"\nexport PATH\n"
 	result += "GIT_TERMINAL_PROMPT=0\nexport GIT_TERMINAL_PROMPT\n"
