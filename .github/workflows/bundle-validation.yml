@@ -22,9 +22,19 @@ jobs:
         with:
           go-version: ${{ steps.quality-tools.outputs.go_version }}
           cache: false
-      - name: Test
-        run: go test ./...
-      - name: Vet
-        run: go vet ./...
-      - name: Build
-        run: go build ./...
+      - name: Capture validation
+        run: |
+          set +e
+          mkdir -p "$RUNNER_TEMP/bundle-validation"
+          go test ./... > "$RUNNER_TEMP/bundle-validation/test.log" 2>&1
+          test_status=$?
+          go vet ./... > "$RUNNER_TEMP/bundle-validation/vet.log" 2>&1
+          vet_status=$?
+          go build ./... > "$RUNNER_TEMP/bundle-validation/build.log" 2>&1
+          build_status=$?
+          printf 'test=%s\nvet=%s\nbuild=%s\n' "$test_status" "$vet_status" "$build_status" > "$RUNNER_TEMP/bundle-validation/status.txt"
+          exit 0
+      - uses: actions/upload-artifact@v6
+        with:
+          name: bundle-validation
+          path: ${{ runner.temp }}/bundle-validation
