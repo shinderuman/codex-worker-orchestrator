@@ -11,6 +11,10 @@ const artifactPromptMarker = "REPORT_ARTIFACT_DIR:"
 
 const reviewerArtifactPromptMarker = "CURRENT_TASK_ARTIFACT_DIR:"
 
+const priorArtifactReferenceMarker = "PRIOR_ARTIFACT_PATHS: reference-only"
+
+const rejectedArtifactMarker = "REJECTED_ARTIFACT_PATHS: do-not-reuse"
+
 func withArtifactContext(prompt string, artifactDir string) string {
 	if strings.Contains(prompt, artifactPromptMarker) {
 		return prompt
@@ -18,8 +22,9 @@ func withArtifactContext(prompt string, artifactDir string) string {
 	return fmt.Sprintf(`%s
 
 REPORT_ARTIFACT_DIR: %s
+%s
 結果へ収まらない正確な一覧・レポート・生成物だけをこのディレクトリへ保存してください。リポジトリへ追加しないでください。ARTIFACTSに記載できるのはこのREPORT_ARTIFACT_DIR配下の実在する通常ファイルだけです。WORKER_REPORT・過去artifact・入力に含まれる他taskのartifact pathは参照証拠であり、ARTIFACTSへコピーしないでください。大容量成果物が不要ならARTIFACTSは空にしてください。
-`, strings.TrimRight(prompt, "\n"), artifactDir)
+`, strings.TrimRight(prompt, "\n"), artifactDir, priorArtifactReferenceMarker)
 }
 
 func withReviewerArtifactContext(prompt string, artifactDir string) string {
@@ -29,8 +34,9 @@ func withReviewerArtifactContext(prompt string, artifactDir string) string {
 	return fmt.Sprintf(`%s
 
 CURRENT_TASK_ARTIFACT_DIR: %s
+%s
 reviewerはread-onlyです。このディレクトリを含め、artifact fileを新規作成・変更・コピーしないでください。ARTIFACTSに記載できるのはCURRENT_TASK_ARTIFACT_DIR配下に既に存在する通常ファイルだけです。WORKER_REPORT・過去artifact・入力に含まれる他taskのartifact pathは参照証拠であり、ARTIFACTSへコピーしないでください。現在task配下に報告すべき既存artifactがなければARTIFACTSは空にしてください。
-`, strings.TrimRight(prompt, "\n"), artifactDir)
+`, strings.TrimRight(prompt, "\n"), artifactDir, priorArtifactReferenceMarker)
 }
 
 func activeTaskPromptBlock(activeTaskPath string) string {
@@ -149,11 +155,12 @@ func resultCorrectionPrompt(reason string) string {
 作業・調査・テストをやり直さず、違反を修正した同じ内容の結果を再出力してください。
 各fieldのvalueは空にできず、改行を含められません。複数事項は同じvalue内でセミコロン区切りにしてください。
 結果全体は6 KiB・1 field 1536 bytes以内です。STATUSに応じた必須fieldを省略しないでください。
+%s
 大容量成果物の内容は再掲しないでください。違反内容に表示されたARTIFACTS pathは拒否された値であり、修正候補ではありません。REPORT_ARTIFACT_DIRまたはCURRENT_TASK_ARTIFACT_DIRが提示されている場合、その配下以外のpathをARTIFACTSへ残さないでください。現在taskで報告すべきartifactがなければARTIFACTSは空にしてください。
 
 違反内容:
 %s
-`, reason)
+`, rejectedArtifactMarker, reason)
 }
 
 func resumePrompt(checkpoint state.ResumeCheckpoint) string {
