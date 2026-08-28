@@ -51,16 +51,17 @@ type liveToolDetail struct {
 }
 
 type streamEvent struct {
-	Type          string                `json:"type"`
-	Subtype       string                `json:"subtype"`
-	Model         string                `json:"model"`
-	Message       json.RawMessage       `json:"message"`
-	IsError       bool                  `json:"is_error"`
-	DurationMS    int64                 `json:"duration_ms"`
-	DurationAPIMS int64                 `json:"duration_api_ms"`
-	NumTurns      int                   `json:"num_turns"`
-	TotalCostUSD  float64               `json:"total_cost_usd"`
-	Usage         *state.TaskEventUsage `json:"usage"`
+	Type            string                 `json:"type"`
+	Subtype         string                 `json:"subtype"`
+	Model           string                 `json:"model"`
+	Message         json.RawMessage        `json:"message"`
+	IsError         bool                   `json:"is_error"`
+	DurationMS      int64                  `json:"duration_ms"`
+	DurationAPIMS   int64                  `json:"duration_api_ms"`
+	NumTurns        int                    `json:"num_turns"`
+	TotalCostUSD    float64                `json:"total_cost_usd"`
+	Usage           *state.TaskEventUsage  `json:"usage"`
+	CompactMetadata *streamCompactMetadata `json:"compactMetadata"`
 }
 
 type streamMessage struct {
@@ -456,6 +457,9 @@ func reduceStreamEvent(line []byte, base state.TaskEventRecord, seq int, observe
 	switch event.Type {
 	case "system":
 		record.MessageModel = event.Model
+		if event.Subtype == "compact_boundary" {
+			record.Compaction = reduceCompactionMetadata(event.CompactMetadata)
+		}
 	case "assistant", "user":
 		var message streamMessage
 		if err := json.Unmarshal(event.Message, &message); err == nil {
