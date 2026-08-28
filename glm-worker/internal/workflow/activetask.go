@@ -20,7 +20,7 @@ func resolveActiveTaskPath(repoRoot string) (string, bool, error) {
 		}
 		return "", true, fmt.Errorf("read %s: %w", implementationPlanFile, err)
 	}
-	entries, err := activeSectionEntries(string(content))
+	entries, err := taskcontract.ActiveSectionEntries(string(content))
 	if err != nil {
 		return "", true, err
 	}
@@ -31,7 +31,7 @@ func resolveActiveTaskPath(repoRoot string) (string, bool, error) {
 		return "", true, fmt.Errorf("%sのACTIVE欄が一意ではありません(%d件)", implementationPlanFile, len(entries))
 	}
 	path := entries[0]
-	if err := validateActiveTaskPath(path); err != nil {
+	if err := taskcontract.ValidateActiveTaskPath(path); err != nil {
 		return "", true, err
 	}
 	info, err := os.Lstat(filepath.Join(repoRoot, filepath.FromSlash(path)))
@@ -42,14 +42,6 @@ func resolveActiveTaskPath(repoRoot string) (string, bool, error) {
 		return "", true, fmt.Errorf("ACTIVE task file %sはregular fileではありません(%s)", path, info.Mode().Type())
 	}
 	return path, true, nil
-}
-
-func activeSectionEntries(planContent string) ([]string, error) {
-	return taskcontract.ActiveSectionEntries(planContent)
-}
-
-func validateActiveTaskPath(path string) error {
-	return taskcontract.ValidateActiveTaskPath(path)
 }
 
 func (w *Workflow) readActiveTaskState() string {

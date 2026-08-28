@@ -5,11 +5,6 @@ import (
 	"strings"
 )
 
-const (
-	TasksDir                   = "IMPLEMENTATION_TASKS"
-	ExternalFeasibilityHeading = "## External feasibility"
-)
-
 type ExternalFeasibility struct {
 	Status         string
 	Assumption     string
@@ -20,25 +15,26 @@ type ExternalFeasibility struct {
 
 type FeasibilityRejectKind int
 
-const (
-	FeasibilityRejectMissing FeasibilityRejectKind = iota + 1
-	FeasibilityRejectMalformed
-	FeasibilityRejectUnverified
-)
-
 type FeasibilityError struct {
 	Kind   FeasibilityRejectKind
 	Reason string
 }
 
 const (
+	TasksDir                   = "IMPLEMENTATION_TASKS"
+	ExternalFeasibilityHeading = "## External feasibility"
+
+	FeasibilityRejectMissing FeasibilityRejectKind = iota + 1
+	FeasibilityRejectMalformed
+	FeasibilityRejectUnverified
+
 	StatusNotApplicable  = "not-applicable"
 	StatusPoC            = "poc"
 	StatusObservation    = "observation"
 	StatusImplementation = "implementation"
-)
 
-const evidenceProducer = "producer"
+	evidenceProducer = "producer"
+)
 
 var feasibilityFieldKeys = []string{"status", "assumption", "evidence-source", "evidence", "go"}
 

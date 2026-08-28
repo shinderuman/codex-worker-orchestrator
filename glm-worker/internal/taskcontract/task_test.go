@@ -1,4 +1,4 @@
-package workflow
+package taskcontract
 
 import "testing"
 
@@ -21,13 +21,13 @@ func TestValidateActiveTaskPathContract(t *testing.T) {
 		`IMPLEMENTATION_TASKS\task.md`,
 	}
 	for _, path := range valid {
-		if err := validateActiveTaskPath(path); err != nil {
-			t.Errorf("validateActiveTaskPath(%q) = %v", path, err)
+		if err := ValidateActiveTaskPath(path); err != nil {
+			t.Errorf("ValidateActiveTaskPath(%q) = %v", path, err)
 		}
 	}
 	for _, path := range invalid {
-		if err := validateActiveTaskPath(path); err == nil {
-			t.Errorf("validateActiveTaskPath(%q) accepted invalid path", path)
+		if err := ValidateActiveTaskPath(path); err == nil {
+			t.Errorf("ValidateActiveTaskPath(%q) accepted invalid path", path)
 		}
 	}
 }
@@ -45,7 +45,7 @@ func TestActiveSectionEntriesRejectsMalformedScheduleSyntax(t *testing.T) {
 	}
 	for _, line := range invalid {
 		plan := "## ACTIVE\n\n" + line + "\n\n## NEXT\n"
-		if _, err := activeSectionEntries(plan); err == nil {
+		if _, err := ActiveSectionEntries(plan); err == nil {
 			t.Errorf("activeSectionEntries accepted %q", line)
 		}
 	}
@@ -53,7 +53,7 @@ func TestActiveSectionEntriesRejectsMalformedScheduleSyntax(t *testing.T) {
 
 func TestActiveSectionEntriesAcceptsCanonicalForms(t *testing.T) {
 	plan := "## ACTIVE\n\n- `IMPLEMENTATION_TASKS/a.md`\n- IMPLEMENTATION_TASKS/b.md\n\n## NEXT\n"
-	entries, err := activeSectionEntries(plan)
+	entries, err := ActiveSectionEntries(plan)
 	if err != nil {
 		t.Fatal(err)
 	}
