@@ -95,10 +95,11 @@ raw commandを保存しない原則を維持したまま、既存stream-json/eve
 ## Historical invariants
 
 - installer preflight、full test gate、escaped review履歴
+- Task 011でoperation categoryの10値閉集合と保存済みeventからのcategory別集計経路が成立済み。raw commandは保存せず、分類不能commandは`other`へ畳み込む。
 
 ## Dependencies
 
-- `IMPLEMENTATION_TASKS/011-operation-category-telemetry.md`
+none
 
 ## Review findings
 
@@ -106,4 +107,4 @@ none
 
 ## Current boundary
 
-依存task待ち。
+Task 011完了済み。evaluation未着手。
