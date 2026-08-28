@@ -23,6 +23,7 @@ jobs:
           go-version: ${{ steps.quality-tools.outputs.go_version }}
           cache: false
       - name: Capture validation
+        working-directory: glm-worker
         run: |
           set +e
           mkdir -p "$RUNNER_TEMP/bundle-validation"
