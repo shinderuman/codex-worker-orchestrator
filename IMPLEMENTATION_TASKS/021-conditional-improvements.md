@@ -93,4 +93,4 @@ none
 
 ## Current boundary
 
-Task 011完了済み。Task 008/009/011等の測定artifactを親Codexが採否するdecision gate待ち。
+Task 011完了済み。Task 008/009/011等の測定artifactを親Codexが採否するdecision gate待ち。残る測定task完了前は直接dispatch禁止。
