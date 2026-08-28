@@ -7,15 +7,15 @@ import (
 )
 
 var shellProgramCategories = map[string]string{
-	"rg":               state.OperationCategorySearch,
-	"grep":             state.OperationCategorySearch,
-	"cat":              state.OperationCategoryFileRead,
-	"head":             state.OperationCategoryFileRead,
-	"tail":             state.OperationCategoryFileRead,
-	"tee":              state.OperationCategoryFileWrite,
-	"gofmt":            state.OperationCategoryFormat,
-	"./harnesslint":    state.OperationCategoryTest,
-	"./commentlint":    state.OperationCategoryTest,
+	"rg":            state.OperationCategorySearch,
+	"grep":          state.OperationCategorySearch,
+	"cat":           state.OperationCategoryFileRead,
+	"head":          state.OperationCategoryFileRead,
+	"tail":          state.OperationCategoryFileRead,
+	"tee":           state.OperationCategoryFileWrite,
+	"gofmt":         state.OperationCategoryFormat,
+	"./harnesslint": state.OperationCategoryTest,
+	"./commentlint": state.OperationCategoryTest,
 }
 
 func operationCategoryForTool(toolName string, command string) string {
