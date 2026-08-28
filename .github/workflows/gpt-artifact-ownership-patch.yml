@@ -1,0 +1,44 @@
+name: GPT artifact ownership patch
+
+on:
+  push:
+    branches:
+      - gpt/artifact-ownership-recovery
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: gpt/artifact-ownership-recovery
+          fetch-depth: 0
+      - name: Configure bot
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+      - name: Give every model role current artifact context
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('glm-worker/internal/workflow/workflow.go')
+          text = path.read_text()
+          old = '''\tif checkpoint.Role == state.WorkerRole {\n\t\tartifactDir, err := w.state.PrepareArtifactDir()\n\t\tif err != nil {\n\t\t\treturn checkpoint, outputPath, parentFileGuard{}, err\n\t\t}\n\t\tcheckpoint.Prompt = withArtifactContext(checkpoint.Prompt, artifactDir)\n\t\tif checkpoint.OriginalPrompt != "" {\n\t\t\tcheckpoint.OriginalPrompt = withArtifactContext(checkpoint.OriginalPrompt, artifactDir)\n\t\t}\n\t}\n'''
+          new = '''\tartifactDir, err := w.state.PrepareArtifactDir()\n\tif err != nil {\n\t\treturn checkpoint, outputPath, parentFileGuard{}, err\n\t}\n\tcheckpoint.Prompt = withArtifactContext(checkpoint.Prompt, artifactDir)\n\tif checkpoint.OriginalPrompt != "" {\n\t\tcheckpoint.OriginalPrompt = withArtifactContext(checkpoint.OriginalPrompt, artifactDir)\n\t}\n'''
+          if text.count(old) != 1:
+              raise SystemExit(f'expected one prepareModelCall artifact block, found {text.count(old)}')
+          path.write_text(text.replace(old, new))
+          PY
+          git add glm-worker/internal/workflow/workflow.go
+          git commit -m 'fix: give reviewers current artifact ownership context'
+          git push origin HEAD:gpt/artifact-ownership-recovery
+      - name: Remove temporary workflow
+        run: |
+          git pull --ff-only origin gpt/artifact-ownership-recovery
+          git rm .github/workflows/gpt-artifact-ownership-patch.yml
+          git commit -m 'ci: remove temporary artifact ownership patcher'
+          git push origin HEAD:gpt/artifact-ownership-recovery
