@@ -5,9 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"regexp"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
@@ -111,8 +109,6 @@ var convergenceMutatingTools = map[string]bool{
 	"Write":        true,
 	"NotebookEdit": true,
 }
-
-var convergenceReviewerPhase = regexp.MustCompile(`^reviewer-(\d+)(-risk-floor)?$`)
 
 func printConvergence(st *state.StateStore, taskIDArg string, stdout io.Writer) error {
 	explicit := taskIDArg != ""
@@ -262,8 +258,8 @@ func reviewerCallsInBucket(entries []state.ModelCallLog, reviewNumber int, misma
 		if entry.Role != state.ReviewerRole {
 			continue
 		}
-		match := convergenceReviewerPhase.FindStringSubmatch(entry.Phase)
-		if match == nil || match[1] != fmt.Sprint(reviewNumber) {
+		parsed, ok := state.ParseReviewerPhase(entry.Phase)
+		if !ok || parsed.ReviewNumber != reviewNumber {
 			*mismatch = true
 			continue
 		}
@@ -380,7 +376,7 @@ func convergenceReviewOutDetail(round convergenceRound) convergenceReviewOut {
 		Snapshot: "unknown",
 	}
 	for _, entry := range round.reviewer {
-		if strings.HasSuffix(entry.Phase, "-risk-floor") {
+		if parsed, ok := state.ParseReviewerPhase(entry.Phase); ok && parsed.Category == state.ReviewerPhaseCategoryRiskFloor {
 			out.RiskFloorReemit = true
 		}
 		if entry.PacketStatus != "" {

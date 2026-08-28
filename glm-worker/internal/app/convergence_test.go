@@ -241,6 +241,66 @@ func TestConvergenceMutatingToolUseStaysSameSnapshot(t *testing.T) {
 	}
 }
 
+func TestReviewerCallsInBucketRecognizesCurrentReviewerPhaseGrammar(t *testing.T) {
+	entries := []state.ModelCallLog{
+		{Role: state.ReviewerRole, Phase: "reviewer-2"},
+		{Role: state.ReviewerRole, Phase: "reviewer-2-result-correct"},
+		{Role: state.ReviewerRole, Phase: "reviewer-2-risk-floor"},
+		{Role: state.ReviewerRole, Phase: "reviewer-2-risk-floor-result-correct"},
+		{Role: state.ReviewerRole, Phase: "reviewer-2-high-floor"},
+		{Role: state.ReviewerRole, Phase: "reviewer-2-high-floor-result-correct"},
+	}
+	mismatch := false
+	got := reviewerCallsInBucket(entries, 2, &mismatch)
+	if mismatch || len(got) != len(entries) {
+		t.Fatalf("valid reviewer phases were not attributed: mismatch=%v calls=%#v", mismatch, got)
+	}
+
+	mismatch = false
+	got = reviewerCallsInBucket([]state.ModelCallLog{{Role: state.ReviewerRole, Phase: "reviewer-2-future-floor"}}, 2, &mismatch)
+	if !mismatch || len(got) != 0 {
+		t.Fatalf("unknown reviewer phase must remain mismatch: mismatch=%v calls=%#v", mismatch, got)
+	}
+}
+
+func TestConvergenceHighFloorReviewerDoesNotCreateSubsequentGap(t *testing.T) {
+	base := convergenceBaseTime()
+	snapshot := state.SnapshotDigest{Head: "h", IndexDigest: "i", WorktreeDigest: "w"}
+	records := []state.RoundRecord{
+		{Seq: 1, WorkerPhase: state.RoundWorkerPhaseBaseline, CapturedAt: base, Snapshot: snapshot},
+		{Seq: 2, ReviewNumber: 1, WorkerPhase: "worker-new", CapturedAt: base.Add(10 * time.Second), Snapshot: snapshot},
+		{Seq: 3, ReviewNumber: 2, WorkerPhase: "worker-auto-fix-1", CapturedAt: base.Add(30 * time.Second), Snapshot: snapshot},
+	}
+	logs := []state.ModelCallLog{{
+		CallType: state.CallTypeTask, Role: state.ReviewerRole, Phase: "reviewer-1-high-floor",
+		StartedAt: base.Add(20 * time.Second), PacketStatus: "NEEDS_SOL_REVIEW",
+	}}
+	rounds, _ := buildConvergenceRounds(records, logs)
+	if len(rounds) != 2 {
+		t.Fatalf("rounds = %#v", rounds)
+	}
+	if rounds[0].mismatch {
+		t.Fatalf("high-floor reviewer was treated as mismatch: %#v", rounds[0])
+	}
+	if rounds[1].gap || rounds[1].delta.Class == state.RoundDeltaUnknown {
+		t.Fatalf("high-floor reviewer created a subsequent gap: %#v", rounds[1])
+	}
+}
+
+func TestConvergenceRiskFloorResultCorrectionRemainsRiskFloor(t *testing.T) {
+	riskRound := convergenceRound{reviewer: []state.ModelCallLog{{
+		Role: state.ReviewerRole, Phase: "reviewer-1-risk-floor-result-correct",
+	}}}
+	if got := convergenceReviewOutDetail(riskRound); !got.RiskFloorReemit {
+		t.Fatalf("risk-floor result correction lost risk-floor identity: %#v", got)
+	}
+	highRound := convergenceRound{reviewer: []state.ModelCallLog{{
+		Role: state.ReviewerRole, Phase: "reviewer-1-high-floor-result-correct",
+	}}}
+	if got := convergenceReviewOutDetail(highRound); got.RiskFloorReemit {
+		t.Fatalf("high-floor result correction was conflated with risk-floor: %#v", got)
+	}
+}
 func TestConvergenceGapAndMismatchFallToUnknown(t *testing.T) {
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)

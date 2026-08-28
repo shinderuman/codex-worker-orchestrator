@@ -112,45 +112,6 @@ const modelRoutingQualityMetric = "per-cell outcome and packet_status distributi
 
 const modelRoutingSufficiencyRule = "within one repository, a model quality comparison requires at least 2 distinct resolved models in the same role+normalized-phase+effective-risk+convergence-delta group, each with at least min_calls_per_cell task calls across at least min_tasks_per_cell distinct tasks; meeting these minimums only lists a group as a comparison candidate and is neither a statistical proof of model quality nor a downgrade criterion, below them the quality delta stays unknown or insufficient and cannot support downgrade, and alias-only contrast where the aliases resolve to the same resolved model is not model quality evidence"
 
-const (
-	ReviewerPhaseCategoryReview    = "reviewer"
-	ReviewerPhaseCategoryRiskFloor = "reviewer-risk-floor"
-	ReviewerPhaseCategoryHighFloor = "reviewer-high-floor"
-)
-
-func ReviewerPhaseCategory(phase string) string {
-	rest, ok := strings.CutPrefix(phase, ReviewerPhaseCategoryReview+"-")
-	if !ok {
-		return phase
-	}
-	number, suffix, separated := strings.Cut(rest, "-")
-	if number == "" || !routingAllDigits(number) {
-		return phase
-	}
-	if !separated {
-		return ReviewerPhaseCategoryReview
-	}
-	switch suffix {
-	case "result-correct":
-		return ReviewerPhaseCategoryReview
-	case "risk-floor", "risk-floor-result-correct":
-		return ReviewerPhaseCategoryRiskFloor
-	case "high-floor", "high-floor-result-correct":
-		return ReviewerPhaseCategoryHighFloor
-	default:
-		return phase
-	}
-}
-
-func routingAllDigits(value string) bool {
-	for _, char := range value {
-		if char < '0' || char > '9' {
-			return false
-		}
-	}
-	return true
-}
-
 func BuildModelRoutingReport(tasks []TaskCallLogs) ModelRoutingReport {
 	builder := newModelRoutingBuilder()
 	builder.absorbTasks(tasks)
