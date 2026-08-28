@@ -46,10 +46,18 @@ jobs:
           p = Path('glm-worker/internal/runner/git_authority_claude_wrapper.go')
           s = p.read_text()
           anchor = '\tresult += "PATH=" + shellSingleQuote(g.tempDir) + ":\\\"$PATH\\\"\\nexport PATH\\n"\n'
-          replacement = anchor + '\tresult += "TMPDIR=" + shellSingleQuote(g.tempDir) + "\\nexport TMPDIR\\n"\n'
+          replacement = anchor + '\tresult += "GLM_WORKER_GIT_TEMP_ROOT=" + shellSingleQuote(g.tempDir) + "\\nexport GLM_WORKER_GIT_TEMP_ROOT\\n"\n'
           if anchor not in s:
               raise SystemExit('wrapper PATH anchor not found')
           p.write_text(s.replace(anchor, replacement, 1))
+
+          p = Path('glm-worker/internal/workflow/reviewer_diff_evidence.go')
+          s = p.read_text()
+          old = 'tempDir, err := os.MkdirTemp("", "glm-worker-review-diff-")'
+          new = 'tempDir, err := os.MkdirTemp(os.Getenv("GLM_WORKER_GIT_TEMP_ROOT"), "glm-worker-review-diff-")'
+          if old not in s:
+              raise SystemExit('reviewer diff temp anchor not found')
+          p.write_text(s.replace(old, new, 1))
 
           p = Path('glm-worker/internal/runner/git_authority_proxy.go')
           s = p.read_text()
@@ -125,7 +133,7 @@ jobs:
               t.Skip("shell fixture is Unix-oriented")
           }
           root := newGitAuthorityRepo(t)
-          command := "fixture_root=\"$TMPDIR/fixture\"; " +
+          command := "fixture_root=\"$GLM_WORKER_GIT_TEMP_ROOT/fixture\"; " +
               "git init -q \"$fixture_root/repo\"; " +
               "git init --bare -q \"$fixture_root/remote.git\"; " +
               "git -C \"$fixture_root/repo\" config user.email fixture@example.invalid; " +
@@ -148,8 +156,8 @@ jobs:
               t.Skip("shell fixture is Unix-oriented")
           }
           root := newGitAuthorityRepo(t)
-          command := "GIT_INDEX_FILE=\"$TMPDIR/snapshot-index\" git read-tree HEAD; " +
-              "GIT_INDEX_FILE=\"$TMPDIR/snapshot-index\" git ls-files -s >/dev/null"
+          command := "GIT_INDEX_FILE=\"$GLM_WORKER_GIT_TEMP_ROOT/snapshot-index\" git read-tree HEAD; " +
+              "GIT_INDEX_FILE=\"$GLM_WORKER_GIT_TEMP_ROOT/snapshot-index\" git ls-files -s >/dev/null"
           guarded, _ := newGitAuthorityProductionRunner(t, root, command, nil)
           if _, err := guarded.Run(state.WorkerRole, "worker-new", "worker-model", false, "high", "prompt", filepath.Join(t.TempDir(), "output")); err != nil {
               t.Fatalf("temp-index read-tree fixture failed: %v", err)
@@ -171,7 +179,7 @@ jobs:
               {name: "default protected index", command: "git read-tree HEAD"},
               {name: "explicit protected index", command: "GIT_INDEX_FILE=\"$PROTECTED_INDEX\" git read-tree HEAD", env: map[string]string{"PROTECTED_INDEX": protectedIndex}},
               {name: "external index", command: "GIT_INDEX_FILE=\"$EXTERNAL_INDEX\" git read-tree HEAD", env: map[string]string{"EXTERNAL_INDEX": externalIndex}},
-              {name: "worktree update option", command: "GIT_INDEX_FILE=\"$TMPDIR/snapshot-index\" git read-tree -u HEAD"},
+              {name: "worktree update option", command: "GIT_INDEX_FILE=\"$GLM_WORKER_GIT_TEMP_ROOT/snapshot-index\" git read-tree -u HEAD"},
           }
           for _, tc := range cases {
               t.Run(tc.name, func(t *testing.T) {
@@ -192,7 +200,7 @@ jobs:
           replacement = '\n'.join(line[10:] if line.startswith('          ') else line for line in replacement.splitlines())
           p.write_text(s[:start] + replacement + s[end:])
           PY
-          gofmt -w glm-worker/internal/runner/git_authority_guard.go glm-worker/internal/runner/git_authority_claude_wrapper.go glm-worker/internal/runner/git_authority_proxy.go glm-worker/internal/runner/git_authority_guard_test.go
+          gofmt -w glm-worker/internal/runner/git_authority_guard.go glm-worker/internal/runner/git_authority_claude_wrapper.go glm-worker/internal/runner/git_authority_proxy.go glm-worker/internal/runner/git_authority_guard_test.go glm-worker/internal/workflow/reviewer_diff_evidence.go
           git diff --check
       - name: Validate
         run: |
@@ -204,6 +212,6 @@ jobs:
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add glm-worker/internal/runner/git_authority_guard.go glm-worker/internal/runner/git_authority_claude_wrapper.go glm-worker/internal/runner/git_authority_proxy.go glm-worker/internal/runner/git_authority_guard_test.go
+          git add glm-worker/internal/runner/git_authority_guard.go glm-worker/internal/runner/git_authority_claude_wrapper.go glm-worker/internal/runner/git_authority_proxy.go glm-worker/internal/runner/git_authority_guard_test.go glm-worker/internal/workflow/reviewer_diff_evidence.go
           git commit -m 'Implement issue 61 temp index guard'
           git push origin HEAD:gpt/issue-61-temp-index-read-tree
