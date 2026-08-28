@@ -897,6 +897,8 @@ func (w *Workflow) handleReviewResult(
 	autoFixes int,
 ) error {
 	switch reviewResult.Status {
+	case packet.StatusNeedsSolDecision:
+		return w.finishReviewerDecision(reviewResult)
 	case packet.StatusPass:
 		return w.finishReview(state.TaskStatusComplete, reviewResult)
 	case packet.StatusNeedsSolReview:
@@ -1368,13 +1370,16 @@ func (w *Workflow) finalizeModelCallState(
 	return nil
 }
 
-func (*Workflow) parseModelCallResult(checkpoint state.ResumeCheckpoint, runResult runner.RunResult) (packet.Result, error) {
+func (w *Workflow) parseModelCallResult(checkpoint state.ResumeCheckpoint, runResult runner.RunResult) (packet.Result, error) {
 	result, err := packet.ParseStructured(runResult.StructuredOutput)
 	if err != nil {
 		return packet.Result{}, err
 	}
 	if checkpoint.Role == state.ReviewerRole {
 		err = packet.ValidateReviewerResult(result)
+		if err == nil && result.Status == packet.StatusNeedsSolDecision {
+			err = w.validateReviewerDecisionBoundary()
+		}
 	} else {
 		err = packet.ValidateWorkerResult(result)
 	}
