@@ -23,9 +23,9 @@ jobs:
         with:
           go-version: ${{ steps.quality-tools.outputs.go_version }}
           cache: false
-      - name: Test
+      - name: Packet tests
         working-directory: glm-worker
-        run: go test ./... -count=1
+        run: go test ./internal/packet -count=1
       - name: Vet
         working-directory: glm-worker
         run: go vet ./...
