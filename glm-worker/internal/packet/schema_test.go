@@ -20,9 +20,9 @@ func TestSchemaJSONRestrictedVocabulary(t *testing.T) {
 	allowedTypes := map[string]bool{"object": true, "array": true, "string": true, "number": true, "boolean": true}
 
 	for name, encoded := range map[string]func() (string, error){
-		"worker":      WorkerSchemaJSON,
-		"reviewer":    ReviewerSchemaJSON,
-		"risk-floor":  RiskFloorReviewerSchemaJSON,
+		"worker":     WorkerSchemaJSON,
+		"reviewer":   ReviewerSchemaJSON,
+		"risk-floor": RiskFloorReviewerSchemaJSON,
 	} {
 		t.Run(name, func(t *testing.T) {
 			encoded, err := encoded()
