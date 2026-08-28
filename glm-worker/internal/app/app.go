@@ -89,6 +89,7 @@ const (
 	ModeInstallSmoke
 	ModeQualityGate
 	ModeModelRouting
+	ModeBundle
 )
 
 const fixOriginUsage = "[--origin codex-review|glm-reviewer|user-amendment|external-review|metadata-repair] [--accepted-scope current-diff]"
@@ -154,6 +155,9 @@ var commandParsers = map[string]commandParser{
 	},
 	"--install-smoke": installSmokeCommand,
 	"--quality-gate":  qualityGateCommand,
+	"bundle": func(args []string) (Command, error) {
+		return optionalPayloadCommand(args, ModeBundle, "usage: glm-worker bundle [task-id]")
+	},
 }
 
 func (e *UsageError) Error() string {
@@ -170,7 +174,7 @@ func usageError(format string, args ...any) *UsageError {
 
 func ParseCommand(args []string) (Command, error) {
 	if len(args) == 0 {
-		return Command{}, usageError("usage: glm-worker <instruction> | --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix-stdin <payload-bytes> [--sha256 <hex>] %s | --accept | --resume | --stop | --isolate | --status | --watch [--verbose] | --timeline [task-id] | --convergence [task-id] | --stats | --reset | --eval-ab <run-dir> | --call-outliers | --codex-limit | --check-wake-coalesce <parent-thread-id> <auto-resume-at-rfc3339> | --install-smoke %s | --quality-gate %s | --model-routing", fixOriginUsage, installSmokeUsage, qualityGateUsage)
+		return Command{}, usageError("usage: glm-worker <instruction> | --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix-stdin <payload-bytes> [--sha256 <hex>] %s | --accept | --resume | --stop | --isolate | --status | --watch [--verbose] | --timeline [task-id] | --convergence [task-id] | --stats | --reset | --eval-ab <run-dir> | --call-outliers | --codex-limit | --check-wake-coalesce <parent-thread-id> <auto-resume-at-rfc3339> | --install-smoke %s | --quality-gate %s | --model-routing | bundle [task-id]", fixOriginUsage, installSmokeUsage, qualityGateUsage)
 	}
 	if parser, ok := commandParsers[args[0]]; ok {
 		return parser(args)
@@ -442,6 +446,8 @@ func executeStateless(cmd Command, cfg config.AppConfig, stdout io.Writer) (bool
 		return true, printCallOutliers(state.AttachStateStore(cfg), stdout)
 	case ModeModelRouting:
 		return true, printModelRouting(state.AttachStateStore(cfg), stdout)
+	case ModeBundle:
+		return true, printBundle(cfg, state.AttachStateStore(cfg), cmd.Payload, stdout)
 	case ModeStop:
 		return true, requestStop(cfg, stdout)
 	case ModeCodexLimit:
