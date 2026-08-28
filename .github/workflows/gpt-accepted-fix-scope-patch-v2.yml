@@ -1,0 +1,128 @@
+name: GPT accepted fix scope patch v2
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.head_ref == 'gpt/accepted-sol-decision-scope'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+      - name: Patch accepted fix scope wiring
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_exact(path, old, new, want=1):
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != want:
+                  raise SystemExit(f'{path}: match count={count}, want={want}, old={old[:100]!r}')
+              p.write_text(text.replace(old, new))
+
+          replace_exact('glm-worker/internal/workflow/accepted_fix_scope.go', 'acceptedFixScopeCurrentDiff = "current-diff"', 'AcceptedFixScopeCurrentDiff = "current-diff"')
+          replace_exact('glm-worker/internal/workflow/accepted_fix_scope.go', 'mode != acceptedFixScopeCurrentDiff', 'mode != AcceptedFixScopeCurrentDiff')
+          replace_exact('glm-worker/internal/workflow/accepted_fix_scope_test.go', 'acceptedFixScopeCurrentDiff', 'AcceptedFixScopeCurrentDiff', 3)
+
+          replace_exact(
+              'glm-worker/internal/app/app.go',
+              '\tOrigin   string\n\tRole     string',
+              '\tOrigin        string\n\tAcceptedScope string\n\tRole          string',
+          )
+          replace_exact(
+              'glm-worker/internal/app/app.go',
+              'const fixOriginUsage = "[--origin codex-review|glm-reviewer|user-amendment|external-review|metadata-repair]"',
+              'const fixOriginUsage = "[--origin codex-review|glm-reviewer|user-amendment|external-review|metadata-repair] [--accepted-scope current-diff]"',
+          )
+          replace_exact(
+              'glm-worker/internal/app/app.go',
+              '\tcase "--origin":\n\t\tif !allowOrigin || command.Origin != "" || !state.ValidParentOrigin(value) {\n\t\t\treturn usageError("%s", usage)\n\t\t}\n\t\tcommand.Origin = value\n\t\treturn nil\n\tdefault:',
+              '\tcase "--origin":\n\t\tif !allowOrigin || command.Origin != "" || !state.ValidParentOrigin(value) {\n\t\t\treturn usageError("%s", usage)\n\t\t}\n\t\tcommand.Origin = value\n\t\treturn nil\n\tcase "--accepted-scope":\n\t\tif !allowOrigin || command.AcceptedScope != "" || value != workflow.AcceptedFixScopeCurrentDiff {\n\t\t\treturn usageError("%s", usage)\n\t\t}\n\t\tcommand.AcceptedScope = value\n\t\treturn nil\n\tdefault:',
+          )
+          replace_exact(
+              'glm-worker/internal/app/app.go',
+              '\tcase ModeFix:\n\t\treturn wf.ExecuteExplicitFix(cmd.Payload, cmd.Origin)',
+              '\tcase ModeFix:\n\t\treturn wf.ExecuteExplicitFixWithScope(cmd.Payload, cmd.Origin, cmd.AcceptedScope)',
+          )
+
+          replace_exact(
+              'glm-worker/internal/workflow/workflow.go',
+              'func (w *Workflow) ExecuteExplicitFix(instruction, origin string) error {\n\treturn quietWhenParentFileGuardStopped(w.withTemp(func() error {',
+              'func (w *Workflow) ExecuteExplicitFix(instruction, origin string) error {\n\treturn w.ExecuteExplicitFixWithScope(instruction, origin, "")\n}\n\nfunc (w *Workflow) ExecuteExplicitFixWithScope(instruction, origin, acceptedScope string) error {\n\treturn quietWhenParentFileGuardStopped(w.withTemp(func() error {\n\t\tif acceptedScope != "" && acceptedScope != AcceptedFixScopeCurrentDiff {\n\t\t\treturn &WorkerError{Message: "unknown accepted fix scope: " + acceptedScope}\n\t\t}',
+          )
+          replace_exact(
+              'glm-worker/internal/workflow/workflow.go',
+              '\t\trequest, err := w.state.Read("last-request")\n\t\tif err != nil {\n\t\t\treturn &WorkerError{Message: "no previous task for this repository"}\n\t\t}\n\n\t\tdecision := w.state.ReadOr("last-decision", "none")',
+              '\t\trequest, err := w.state.Read("last-request")\n\t\tif err != nil {\n\t\t\treturn &WorkerError{Message: "no previous task for this repository"}\n\t\t}\n\t\tw.prepareAcceptedFixScope(acceptedScope)\n\n\t\tdecision := w.state.ReadOr("last-decision", "none")',
+          )
+          replace_exact(
+              'glm-worker/internal/workflow/workflow.go',
+              'if err := w.state.Remove("last-decision", "last-review", activeTaskStateKey); err != nil {',
+              'if err := w.state.Remove("last-decision", "last-review", activeTaskStateKey, acceptedFixScopeStateFile); err != nil {',
+          )
+          replace_exact(
+              'glm-worker/internal/workflow/workflow.go',
+              '\t\tpocStage := decl.pocStage()\n\t\tif err := w.state.Write("last-decision", decision); err != nil {',
+              '\t\tpocStage := decl.pocStage()\n\t\tif err := w.state.Remove(acceptedFixScopeStateFile); err != nil {\n\t\t\treturn err\n\t\t}\n\t\tif err := w.state.Write("last-decision", decision); err != nil {',
+          )
+          replace_exact(
+              'glm-worker/internal/workflow/workflow.go',
+              '\tif !effectiveHigh || reviewResult.Status != packet.StatusPass {\n\t\treturn reviewResult, false, nil\n\t}\n\treemitResult, stopped, err := w.riskFloorReemit(',
+              '\tif !effectiveHigh || reviewResult.Status != packet.StatusPass {\n\t\treturn reviewResult, false, nil\n\t}\n\tif w.acceptedFixScopeCoversCurrent() {\n\t\treturn reviewResult, false, nil\n\t}\n\treemitResult, stopped, err := w.riskFloorReemit(',
+          )
+
+          replace_exact(
+              'glm-worker/internal/state/store.go',
+              '\t\t"baseline-index.patch",\n\t\tstopWorktreePatchFile,',
+              '\t\t"baseline-index.patch",\n\t\t"accepted-fix-scope.json",\n\t\tstopWorktreePatchFile,',
+          )
+
+          path = Path('codex/instructions/glm-execution.md')
+          text = path.read_text()
+          anchor = '- stdin modeでは`--fix-stdin <payload-bytes> --sha256 <hex> --origin <値>`の対形式で渡す。`--origin`は観測申告であり、fix本文の内容・範囲を替わってはならない。\n'
+          addition = anchor + '- Sol High自身が現在のnon-parent diffを確認し、fix本文で撤回・縮小を指示する部分以外は受理済みと明示判断した場合だけ、`--fix-stdin`へ`--accepted-scope current-diff`を追加してよい。`--origin`やreviewerのPASSからこの受理を推測しない。不確実なら指定しない。glm-workerはfix開始時のchange setをscopeとして保存し、fix後のchange setがそのsubsetである場合だけ同一HIGH riskの再Sol escalationを省略する。新しい変更・別replacement・新規file内容・比較不能なbinary/dirty baselineがあれば通常のrisk floorへ戻る。\n'
+          if text.count(anchor) != 1:
+              raise SystemExit(f'glm-execution anchor count={text.count(anchor)}')
+          path.write_text(text.replace(anchor, addition, 1))
+
+          path = Path('glm-worker/internal/workflow/accepted_fix_scope_test.go')
+          text = path.read_text()
+          replace_import = '"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"\n\t"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"'
+          if text.count(replace_import) != 1:
+              raise SystemExit('accepted scope test import anchor mismatch')
+          text = text.replace(replace_import, '"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"\n\t"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"\n\t"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"', 1)
+          old = '\tw := NewWorkflow(cfg, st, nil, io.Discard)\n\tw.prepareAcceptedFixScope(AcceptedFixScopeCurrentDiff)\n'
+          if text.count(old) != 1:
+              raise SystemExit(f'accepted scope runner setup count={text.count(old)}')
+          text = text.replace(old, '\trunner := &scriptedRunner{}\n\tw := NewWorkflow(cfg, st, runner, io.Discard)\n\tw.prepareAcceptedFixScope(AcceptedFixScopeCurrentDiff)\n', 1)
+          old = '\tif !w.acceptedFixScopeCoversCurrent() {\n\t\tt.Fatal("shrinking the reviewed change set should remain inside accepted scope")\n\t}\n'
+          if text.count(old) != 1:
+              raise SystemExit(f'accepted scope assertion count={text.count(old)}')
+          text = text.replace(old, '\tresult, stopped, err := w.enforceRiskFloor("request", packet.Result{}, 1, 0, "none", true, packet.Result{Status: packet.StatusPass})\n\tif err != nil || stopped || result.Status != packet.StatusPass {\n\t\tt.Fatalf("accepted shrink result = %#v, stopped=%v, err=%v", result, stopped, err)\n\t}\n\tif len(runner.phases) != 0 {\n\t\tt.Fatalf("accepted shrink unexpectedly called risk-floor model: %v", runner.phases)\n\t}\n', 1)
+          path.write_text(text)
+          PY
+          gofmt -w glm-worker/internal/workflow/accepted_fix_scope.go glm-worker/internal/workflow/accepted_fix_scope_test.go glm-worker/internal/app/app.go glm-worker/internal/app/accepted_fix_scope_command_test.go glm-worker/internal/workflow/workflow.go glm-worker/internal/state/store.go
+          git config user.name web-gpt
+          git config user.email web-gpt@users.noreply.github.com
+          git add glm-worker/internal/workflow/accepted_fix_scope.go glm-worker/internal/workflow/accepted_fix_scope_test.go glm-worker/internal/app/app.go glm-worker/internal/app/accepted_fix_scope_command_test.go glm-worker/internal/workflow/workflow.go glm-worker/internal/state/store.go codex/instructions/glm-execution.md
+          git commit -m 'feat: reuse explicitly accepted fix scope'
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
+      - name: Focused tests
+        working-directory: glm-worker
+        run: go test ./internal/app ./internal/workflow ./internal/state -count=1
+      - name: Full tests
+        working-directory: glm-worker
+        run: go test ./... -count=1
+      - name: Vet
+        working-directory: glm-worker
+        run: go vet ./...
