@@ -363,6 +363,14 @@ func TestConvergenceQualityOutcomesRequiresUniqueWorkerAndTerminalIndependentRev
 		t.Fatalf("forced high-floor Sol routing became quality evidence: %#v", got)
 	}
 
+	reviewer.Phase = "reviewer-1"
+	reviewer.PacketStatus = "PASS"
+	worker.PacketStatus = "NEEDS_SOL_DECISION"
+	if got := convergenceQualityOutcomes(records, []state.ModelCallLog{worker, reviewer}); len(got) != 0 {
+		t.Fatalf("non-implemented worker became quality evidence: %#v", got)
+	}
+	worker.PacketStatus = "IMPLEMENTED"
+
 	second := worker
 	second.CallID = "worker-2"
 	second.StartedAt = base.Add(2 * time.Minute)

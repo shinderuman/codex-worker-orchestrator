@@ -79,7 +79,8 @@ func convergenceQualityOutcomes(records []state.RoundRecord, logs []state.ModelC
 	rounds, _ := buildConvergenceRounds(records, logs)
 	outcomes := make(map[string]string)
 	for _, round := range rounds {
-		if round.gap || round.mismatch || len(round.worker) != 1 {
+		if round.gap || round.mismatch || len(round.worker) != 1 ||
+			round.worker[0].PacketStatus != string(packet.StatusImplemented) {
 			continue
 		}
 		review := convergenceReviewOutDetail(round)
