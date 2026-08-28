@@ -86,31 +86,72 @@ func TestGitAuthorityGuardAllowsReadOnlyGitVariants(t *testing.T) {
 	}
 }
 
-func TestGitAuthorityGuardAllowsFixtureGitOutsideProtectedRepo(t *testing.T) {
+func TestGitAuthorityGuardRejectsFixtureGitOutsideInvocationTempRoot(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixture is Unix-oriented")
 	}
 	root := newGitAuthorityRepo(t)
-	fixtureRoot := t.TempDir()
-	command := "git init -q \"$FIXTURE_ROOT/repo\"; " +
-		"git init --bare -q \"$FIXTURE_ROOT/remote.git\"; " +
-		"git -C \"$FIXTURE_ROOT/repo\" config user.email fixture@example.invalid; " +
-		"git -C \"$FIXTURE_ROOT/repo\" config user.name fixture; " +
-		"printf '%s\\n' fixture >\"$FIXTURE_ROOT/repo/tracked.txt\"; " +
-		"git -C \"$FIXTURE_ROOT/repo\" add tracked.txt; " +
-		"git -C \"$FIXTURE_ROOT/repo\" commit -q -m fixture; " +
-		"git -C \"$FIXTURE_ROOT/repo\" branch fixture-branch; " +
-		"git -C \"$FIXTURE_ROOT/repo\" remote add origin \"$FIXTURE_ROOT/remote.git\"; " +
-		"git -C \"$FIXTURE_ROOT/repo\" push -q origin HEAD:refs/heads/main"
-	guarded, _ := newGitAuthorityProductionRunner(t, root, command, map[string]string{"FIXTURE_ROOT": fixtureRoot})
-	if _, err := guarded.Run(state.WorkerRole, "worker-new", "worker-model", false, "high", "prompt", filepath.Join(t.TempDir(), "output")); err != nil {
-		t.Fatalf("fixture git failed: %v", err)
+	externalRoot := t.TempDir()
+	fixtureRepo := filepath.Join(externalRoot, "repo")
+	runGitAuthorityCommand(t, "", "init", "-q", fixtureRepo)
+	command := "git -C \"$EXTERNAL_ROOT/repo\" branch blocked"
+	guarded, _ := newGitAuthorityProductionRunner(t, root, command, map[string]string{"EXTERNAL_ROOT": externalRoot})
+	_, err := guarded.Run(state.WorkerRole, "worker-new", "worker-model", false, "high", "prompt", filepath.Join(t.TempDir(), "output"))
+	var guardErr *GitAuthorityGuardError
+	if !errors.As(err, &guardErr) || guardErr.Stage != "blocked-command" {
+		t.Fatalf("guard error = %#v", err)
 	}
-	if got := strings.TrimSpace(runGitAuthorityOutput(t, filepath.Join(fixtureRoot, "remote.git"), "rev-parse", "refs/heads/main")); got == "" {
-		t.Fatal("fixture push did not create local remote main")
+	if !containsGitAuthorityMutation(guardErr.Mutations, "command:branch") {
+		t.Fatalf("mutations = %v want command:branch", guardErr.Mutations)
 	}
 }
 
+func TestGitAuthorityGuardAllowsProtectedReadTreeWithInvocationTempIndex(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fixture is Unix-oriented")
+	}
+	root := newGitAuthorityRepo(t)
+	command := "GIT_INDEX_FILE=\"$GLM_WORKER_GIT_TEMP_ROOT/snapshot-index\" git read-tree HEAD; " +
+		"GIT_INDEX_FILE=\"$GLM_WORKER_GIT_TEMP_ROOT/snapshot-index\" git ls-files -s >/dev/null"
+	guarded, _ := newGitAuthorityProductionRunner(t, root, command, nil)
+	if _, err := guarded.Run(state.WorkerRole, "worker-new", "worker-model", false, "high", "prompt", filepath.Join(t.TempDir(), "output")); err != nil {
+		t.Fatalf("temp-index read-tree fixture failed: %v", err)
+	}
+}
+
+func TestGitAuthorityGuardRejectsProtectedReadTreeWithoutAuthorizedTempIndex(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fixture is Unix-oriented")
+	}
+	root := newGitAuthorityRepo(t)
+	externalIndex := filepath.Join(t.TempDir(), "external-index")
+	protectedIndex := filepath.Join(root, ".git", "index")
+	cases := []struct {
+		name    string
+		command string
+		env     map[string]string
+	}{
+		{name: "default protected index", command: "git read-tree HEAD"},
+		{name: "explicit protected index", command: "GIT_INDEX_FILE=\"$PROTECTED_INDEX\" git read-tree HEAD", env: map[string]string{"PROTECTED_INDEX": protectedIndex}},
+		{name: "external index", command: "GIT_INDEX_FILE=\"$EXTERNAL_INDEX\" git read-tree HEAD", env: map[string]string{"EXTERNAL_INDEX": externalIndex}},
+		{name: "existing authorized temp index", command: ": >\"$GLM_WORKER_GIT_TEMP_ROOT/existing-index\"; GIT_INDEX_FILE=\"$GLM_WORKER_GIT_TEMP_ROOT/existing-index\" git read-tree HEAD"},
+		{name: "symlink to protected index", command: "ln -s \"$PROTECTED_INDEX\" \"$GLM_WORKER_GIT_TEMP_ROOT/symlink-index\"; GIT_INDEX_FILE=\"$GLM_WORKER_GIT_TEMP_ROOT/symlink-index\" git read-tree HEAD", env: map[string]string{"PROTECTED_INDEX": protectedIndex}},
+		{name: "worktree update option", command: "GIT_INDEX_FILE=\"$GLM_WORKER_GIT_TEMP_ROOT/snapshot-index\" git read-tree -u HEAD"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			guarded, _ := newGitAuthorityProductionRunner(t, root, tc.command, tc.env)
+			_, err := guarded.Run(state.WorkerRole, "worker-new", "worker-model", false, "high", "prompt", filepath.Join(t.TempDir(), "output"))
+			var guardErr *GitAuthorityGuardError
+			if !errors.As(err, &guardErr) || guardErr.Stage != "blocked-command" {
+				t.Fatalf("guard error = %#v", err)
+			}
+			if !containsGitAuthorityMutation(guardErr.Mutations, "command:read-tree") {
+				t.Fatalf("mutations = %v want command:read-tree", guardErr.Mutations)
+			}
+		})
+	}
+}
 func TestGitAuthorityGuardDetectsProxyBypassRefMutation(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixture is Unix-oriented")

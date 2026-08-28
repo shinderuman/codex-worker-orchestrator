@@ -23,6 +23,7 @@ func gitAuthorityClaudeWrapperScript(g *gitAuthorityGuard, claudeBin string) str
 	configValues := []string{"", "https://", "http://", "ssh://", "git://", "git@"}
 	result := "#!/bin/sh\n"
 	result += "PATH=" + shellSingleQuote(g.tempDir) + ":\"$PATH\"\nexport PATH\n"
+	result += "GLM_WORKER_GIT_TEMP_ROOT=" + shellSingleQuote(g.tempDir) + "\nexport GLM_WORKER_GIT_TEMP_ROOT\n"
 	result += "GIT_TERMINAL_PROMPT=0\nexport GIT_TERMINAL_PROMPT\n"
 	result += "GIT_ASKPASS=" + shellSingleQuote(g.denyPath) + "\nexport GIT_ASKPASS\n"
 	result += "SSH_ASKPASS=" + shellSingleQuote(g.denyPath) + "\nexport SSH_ASKPASS\n"
