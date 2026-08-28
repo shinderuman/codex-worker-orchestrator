@@ -23,7 +23,15 @@ func TestGuardRecoverableProcessError(t *testing.T) {
 	if body.Detail["completed_result_saved"] != true {
 		t.Fatalf("completed_result_saved = %#v", body.Detail["completed_result_saved"])
 	}
-	if body.Detail["phase"] != "worker-new" || body.Detail["task_id"] != "task-1" || body.Detail["repo_root"] != "/repo" {
-		t.Fatalf("detail = %#v", body.Detail)
+	assertGuardRecoveryDetailString(t, body.Detail, "phase", "worker-new")
+	assertGuardRecoveryDetailString(t, body.Detail, "task_id", "task-1")
+	assertGuardRecoveryDetailString(t, body.Detail, "repo_root", "/repo")
+}
+
+func assertGuardRecoveryDetailString(t *testing.T, detail map[string]any, key, want string) {
+	t.Helper()
+	got, ok := detail[key].(*string)
+	if !ok || got == nil || *got != want {
+		t.Fatalf("%s = %#v want %q", key, detail[key], want)
 	}
 }
