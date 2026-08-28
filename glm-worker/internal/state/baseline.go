@@ -8,6 +8,8 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 )
 
+const baselineUntrackedFile = "baseline-untracked"
+
 func CaptureGitBaseline(cfg config.AppConfig, state *StateStore) error {
 	commands := []struct {
 		name string
@@ -23,7 +25,7 @@ func CaptureGitBaseline(cfg config.AppConfig, state *StateStore) error {
 		command.Dir = cfg.RepoRoot
 		output, err := command.Output()
 		if err != nil {
-			if err := state.Remove("baseline-status", "baseline-worktree.patch", "baseline-index.patch"); err != nil {
+			if err := removeGitBaseline(state); err != nil {
 				return err
 			}
 			return nil
@@ -32,16 +34,31 @@ func CaptureGitBaseline(cfg config.AppConfig, state *StateStore) error {
 			return err
 		}
 	}
+	untracked := exec.Command("git", "ls-files", "-z", "--others", "--exclude-standard")
+	untracked.Dir = cfg.RepoRoot
+	untrackedOutput, err := untracked.Output()
+	if err != nil {
+		if err := removeGitBaseline(state); err != nil {
+			return err
+		}
+		return nil
+	}
+	if err := writeFileAtomic(state.Path(baselineUntrackedFile), untrackedOutput, 0o600); err != nil {
+		return err
+	}
 
 	head, unborn, err := resolveRepoHead(cfg.RepoRoot)
 	if err != nil {
-
 		return state.Remove("baseline-head")
 	}
 	if unborn {
 		return state.Remove("baseline-head")
 	}
 	return state.Write("baseline-head", head)
+}
+
+func removeGitBaseline(state *StateStore) error {
+	return state.Remove("baseline-status", "baseline-worktree.patch", "baseline-index.patch", baselineUntrackedFile)
 }
 
 func resolveRepoHead(repoRoot string) (head string, unborn bool, err error) {
