@@ -817,12 +817,10 @@ func (w *Workflow) buildReviewCheckpoint(
 	if err != nil {
 		return state.ResumeCheckpoint{}, "", false, err
 	}
-	reviewNavigation := w.reviewerDiffFirstContext(request, reviewNumber)
-	exhaustiveNavigation, err := w.exhaustiveSearchContext(request, activeTaskPath, state.ReviewerRole, reviewNumber+1)
+	reviewNavigation, err := w.reviewerNavigationContext(request, activeTaskPath, reviewNumber)
 	if err != nil {
 		return state.ResumeCheckpoint{}, "", false, err
 	}
-	reviewNavigation += exhaustiveNavigation
 	prompt := reviewerPrompt(
 		request,
 		decision,
