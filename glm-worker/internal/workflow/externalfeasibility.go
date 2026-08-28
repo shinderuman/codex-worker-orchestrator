@@ -9,6 +9,7 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskcontract"
 )
 
 type externalFeasibility struct {
@@ -26,24 +27,20 @@ type externalFeasibilityParseError struct {
 	reason string
 }
 
-const externalFeasibilitySectionHeading = "## External feasibility"
+const externalFeasibilitySectionHeading = taskcontract.ExternalFeasibilityHeading
 
 const (
-	externalFeasibilityStatusNotApplicable  = "not-applicable"
-	externalFeasibilityStatusPoC            = "poc"
-	externalFeasibilityStatusObservation    = "observation"
-	externalFeasibilityStatusImplementation = "implementation"
+	externalFeasibilityStatusNotApplicable  = taskcontract.StatusNotApplicable
+	externalFeasibilityStatusPoC            = taskcontract.StatusPoC
+	externalFeasibilityStatusObservation    = taskcontract.StatusObservation
+	externalFeasibilityStatusImplementation = taskcontract.StatusImplementation
 )
-
-const externalFeasibilityEvidenceProducer = "producer"
 
 const (
 	externalFeasibilityRejectMissing externalFeasibilityRejectKind = iota + 1
 	externalFeasibilityRejectMalformed
 	externalFeasibilityRejectUnverified
 )
-
-var externalFeasibilityFieldKeys = []string{"status", "assumption", "evidence-source", "evidence", "go"}
 
 var externalFeasibilityGuardSurface = guardSurface{
 	label:         "external feasibility宣言",
@@ -60,201 +57,25 @@ func (f externalFeasibility) pocStage() bool {
 
 func (e *externalFeasibilityParseError) Error() string { return e.reason }
 
-func leadingBackticks(line string) int {
-	count := 0
-	for count < len(line) && line[count] == '`' {
-		count++
-	}
-	return count
-}
-
 func parseExternalFeasibilityDeclaration(content []byte) (externalFeasibility, error) {
-	var decl externalFeasibility
-	lines := strings.Split(string(content), "\n")
-	headingAt, err := findExternalFeasibilitySection(lines)
+	declaration, err := taskcontract.ParseExternalFeasibility(content)
 	if err != nil {
-		return decl, err
-	}
-	values, err := parseExternalFeasibilityValues(lines, headingAt)
-	if err != nil {
-		return decl, err
-	}
-	return validateExternalFeasibilityFields(values)
-}
-
-func findExternalFeasibilitySection(lines []string) (int, error) {
-	headingAt := -1
-	sections := 0
-	fence := 0
-	for i, line := range lines {
-		if !externalFeasibilityLineOutsideFence(line, &fence) {
-			continue
+		var shared *taskcontract.FeasibilityError
+		if !errors.As(err, &shared) {
+			return externalFeasibility{}, err
 		}
-		if strings.HasPrefix(line, "## ") && strings.TrimSpace(line) == externalFeasibilitySectionHeading {
-			sections++
-			if headingAt < 0 {
-				headingAt = i
-			}
+		return externalFeasibility{}, &externalFeasibilityParseError{
+			kind:   externalFeasibilityRejectKind(shared.Kind),
+			reason: shared.Reason,
 		}
-	}
-	switch {
-	case sections == 0:
-		return -1, &externalFeasibilityParseError{
-			kind:   externalFeasibilityRejectMissing,
-			reason: "External feasibility節(" + externalFeasibilitySectionHeading + ")がありません",
-		}
-	case sections > 1:
-		return -1, &externalFeasibilityParseError{
-			kind:   externalFeasibilityRejectMalformed,
-			reason: fmt.Sprintf("External feasibility節が複数あります(%d節)", sections),
-		}
-	default:
-		return headingAt, nil
-	}
-}
-
-func externalFeasibilityLineOutsideFence(line string, fence *int) bool {
-	backticks := leadingBackticks(line)
-	if *fence > 0 {
-		if backticks >= *fence {
-			*fence = 0
-		}
-		return false
-	}
-	if backticks >= 3 {
-		*fence = backticks
-		return false
-	}
-	return true
-}
-
-func parseExternalFeasibilityValues(lines []string, headingAt int) (map[string]string, error) {
-	values := map[string]string{}
-	fence := 0
-	for i := headingAt + 1; i < len(lines); i++ {
-		line := lines[i]
-		if !externalFeasibilityLineOutsideFence(line, &fence) {
-			continue
-		}
-		if strings.HasPrefix(line, "## ") {
-			break
-		}
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" {
-			continue
-		}
-		if err := addExternalFeasibilityValue(values, trimmed, i+1); err != nil {
-			return nil, err
-		}
-	}
-	return values, nil
-}
-
-func addExternalFeasibilityValue(values map[string]string, line string, lineNumber int) error {
-	key, value, ok := strings.Cut(line, ":")
-	key = strings.TrimSpace(key)
-	value = strings.TrimSpace(value)
-	if !ok || !externalFeasibilityKnownKey(key) {
-		return &externalFeasibilityParseError{
-			kind:   externalFeasibilityRejectMalformed,
-			reason: fmt.Sprintf("External feasibility節の%d行目 %qがkey: value形式ではありません(使えるkey: %s)", lineNumber, line, strings.Join(externalFeasibilityFieldKeys, ", ")),
-		}
-	}
-	if _, dup := values[key]; dup {
-		return &externalFeasibilityParseError{
-			kind:   externalFeasibilityRejectMalformed,
-			reason: "External feasibility節のkey \"" + key + "\"が重複しています",
-		}
-	}
-	if value == "" {
-		return &externalFeasibilityParseError{
-			kind:   externalFeasibilityRejectMalformed,
-			reason: "External feasibility節のkey \"" + key + "\"のvalueが空です",
-		}
-	}
-	values[key] = value
-	return nil
-}
-
-func externalFeasibilityKnownKey(key string) bool {
-	for _, known := range externalFeasibilityFieldKeys {
-		if key == known {
-			return true
-		}
-	}
-	return false
-}
-
-func validateExternalFeasibilityFields(values map[string]string) (externalFeasibility, error) {
-	var decl externalFeasibility
-	status := values["status"]
-	if err := validateExternalFeasibilityStatus(status, values); err != nil {
-		return decl, err
 	}
 	return externalFeasibility{
-		status:         status,
-		assumption:     values["assumption"],
-		evidenceSource: values["evidence-source"],
-		evidence:       values["evidence"],
-		goDecision:     values["go"],
+		status:         declaration.Status,
+		assumption:     declaration.Assumption,
+		evidenceSource: declaration.EvidenceSource,
+		evidence:       declaration.Evidence,
+		goDecision:     declaration.GoDecision,
 	}, nil
-}
-
-func validateExternalFeasibilityStatus(status string, values map[string]string) error {
-	switch status {
-	case "":
-		return externalFeasibilityMalformed("External feasibility節にstatusがありません(not-applicable/poc/observation/implementation)")
-	case externalFeasibilityStatusNotApplicable:
-		return validateExternalFeasibilityNotApplicable(values)
-	case externalFeasibilityStatusPoC, externalFeasibilityStatusObservation:
-		return validateExternalFeasibilityExploration(status, values)
-	case externalFeasibilityStatusImplementation:
-		return validateExternalFeasibilityImplementation(values)
-	default:
-		return externalFeasibilityMalformed(fmt.Sprintf("External feasibilityのstatus %qは未知です(not-applicable/poc/observation/implementation)", status))
-	}
-}
-
-func validateExternalFeasibilityNotApplicable(values map[string]string) error {
-	for _, key := range externalFeasibilityFieldKeys[1:] {
-		if values[key] != "" {
-			return externalFeasibilityMalformed("not-applicableではstatus以外のkey(" + key + ")を書けません。外部前提がある場合はpoc/observation/implementationを宣言してください")
-		}
-	}
-	return nil
-}
-
-func validateExternalFeasibilityExploration(status string, values map[string]string) error {
-	if values["assumption"] == "" {
-		return externalFeasibilityMalformed(status + "では未検証外部前提を表すassumptionが必須です")
-	}
-	for _, key := range []string{"evidence-source", "evidence", "go"} {
-		if values[key] != "" {
-			return externalFeasibilityMalformed(status + "では" + key + "を書けません。implementation昇格は親Codexが宣言全体を書き換えて行います")
-		}
-	}
-	return nil
-}
-
-func validateExternalFeasibilityImplementation(values map[string]string) error {
-	if values["assumption"] == "" {
-		return externalFeasibilityMalformed("implementationでは前提とした外部成立性のassumptionが必須です")
-	}
-	if values["evidence-source"] == "" || values["evidence"] == "" || values["go"] == "" {
-		return externalFeasibilityUnverified("implementationはevidence-source・evidence・go(親Go判断)の全てが必須です。PoC結果をGLMだけでGoへ昇格させない")
-	}
-	if values["evidence-source"] != externalFeasibilityEvidenceProducer {
-		return externalFeasibilityUnverified("implementationのevidence-sourceは実producer由来の \"" + externalFeasibilityEvidenceProducer + "\" だけです(人工fixture・scripted packet・worker/reviewer PASSは不可)")
-	}
-	return nil
-}
-
-func externalFeasibilityMalformed(reason string) error {
-	return &externalFeasibilityParseError{kind: externalFeasibilityRejectMalformed, reason: reason}
-}
-
-func externalFeasibilityUnverified(reason string) error {
-	return &externalFeasibilityParseError{kind: externalFeasibilityRejectUnverified, reason: reason}
 }
 
 func (s guardSurface) unverifiedOutcome() string { return s.outcomePrefix + "_unverified" }
