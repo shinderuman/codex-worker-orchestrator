@@ -320,6 +320,7 @@ func taskStatusPtr(status state.TaskStatus) *string {
 		state.TaskStatusComplete,
 		state.TaskStatusRateLimited,
 		state.TaskStatusProviderUnavailable,
+		state.TaskStatusGuardRecoverable,
 		state.TaskStatusInterrupted:
 		value := string(status)
 		return &value
@@ -385,7 +386,7 @@ func fillStatusCheckpoint(st *state.StateStore, output *statusOutput) bool {
 			ElapsedMS:      elapsed,
 		}
 	}
-	return checkpoint.RateLimited || checkpoint.ProviderUnavailable || checkpoint.UserInterrupted
+	return checkpoint.RateLimited || checkpoint.ProviderUnavailable || checkpoint.UserInterrupted || checkpoint.GuardRecoverable
 }
 
 func statusProbesDetail(logs []state.ModelCallLog, now time.Time) *statusProbes {

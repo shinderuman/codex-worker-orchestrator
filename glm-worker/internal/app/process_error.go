@@ -28,6 +28,7 @@ const (
 	errorKindWorkerError             = "worker_error"
 	errorKindRateLimited             = "rate_limited"
 	errorKindProviderUnavailable     = "provider_unavailable"
+	errorKindGuardRecoverable        = "guard_recoverable"
 	errorKindInterrupted             = "interrupted"
 	errorKindStopEndpointAbsent      = "stop_endpoint_absent"
 	errorKindStopEndpointStale       = "stop_endpoint_stale"
@@ -89,6 +90,7 @@ func buildRuntimeProcessError(err error) (processErrorBody, bool) {
 	var workerErr *workflow.WorkerError
 	var rateLimit runner.ZaiRateLimitError
 	var providerUnavailable *runner.ProviderUnavailableError
+	var guardRecoverable *workflow.GuardRecoverableError
 	var interrupted *runner.InterruptedCallError
 	var stopEndpoint *StopEndpointError
 
@@ -110,6 +112,18 @@ func buildRuntimeProcessError(err error) (processErrorBody, bool) {
 			Kind:    errorKindProviderUnavailable,
 			Message: "provider stayed unavailable after probe budget; task is stopped and resumable",
 			Detail:  providerUnavailableDetail(providerUnavailable),
+		}, true
+	case errors.As(err, &guardRecoverable):
+		return processErrorBody{
+			Kind:    errorKindGuardRecoverable,
+			Message: "guard rejected the model call; inspect or repair the guard condition before resuming the same task",
+			Detail: map[string]any{
+				"phase":                  stringPtr(guardRecoverable.Phase),
+				"task_id":                stringPtr(guardRecoverable.TaskID),
+				"repo_root":              stringPtr(guardRecoverable.RepoRoot),
+				"resume_available":       true,
+				"completed_result_saved": guardRecoverable.ResultSaved,
+			},
 		}, true
 	case errors.As(err, &interrupted):
 		return processErrorBody{
