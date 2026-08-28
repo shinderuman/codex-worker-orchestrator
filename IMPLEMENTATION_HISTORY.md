@@ -197,3 +197,8 @@
 ## 2026-08-28 CLI help command integration
 
 - [x] ユーザー提示PR #26 commit `f3e9c604e463e5ed00221a58c258699dcd3539ad`をcurrent mainへ照合し、`glm-worker --help` / `-h`をrepository config・state・lock・model executionより前にJSON helpとして処理するentrypointと、helpへの余分な引数を非zero usage errorで拒否するtestを採用した。PR本文どおり一般的なunknown-option policyへ拡張していない。GPT proposalに対する親Sol独立diff reviewで指摘なし。GitHub Repository Lint、local固定Go full suite、race suite、repository harnesslint、source buildの`--help` / `-h` / `--help extra` smokeがPASS。CodeRabbit statusはauto review disabledによるskipのためreview証拠に含めていない。
+
+## 2026-08-28 Task 010 task splitting / milestone evaluation
+
+- [x] Task 009の保存済みtelemetryとtask-management再設計後データを対応付け、worker model時間79.2%、task-level outlier 669 / 408 / 387 turns、explicit-fix turns中央値59→0を再現した。outlierは単一invariantのwide surfaceまたは既存分割のintegration remediationで、turn数だけによる事前分割の品質改善証拠はなく、追加worker dispatch・独立review・親commit cycleでCodex touchpointが増える。既存RULESの独立責務ベース分割と現行provider-limit resume境界を維持し、hard cap・強制事前分割・強制semantic milestoneは不採用。将来のmilestone試行はearly-phase成果のrework集中を示す新証拠が得られた場合だけ別taskで判断し、session rotationはTask 105の別論点として維持する。
+- [x] Task 007後追いcommit `705656a`と`168d3d7`の責務誤帰属をrevision 2 artifactで訂正し、static verificationで主要集計・outlier対応・採否条件を再現した。旧Git authority blockerはGLM越権ではなくprotected repositoryのread-only probeとsystem temp fixture Git mutationを区別しないproduction guardの過剰判定だったと訂正し、commit `8ba455514b565570ed656727832e8700af551d37`後の回復runで`git branch --contains`、full Go suite、vet、harnesslint、commentlintをPASS。独立reviewerはLOW/PASS相当・production変更不要と判断した。terminal packetは旧task artifact pathを返したownership違反だけでfail closedしたため、親Codexがcurrent task artifact `task010-current-main-verification.md`と圧縮review結果を直接確認して採否を確定した。
