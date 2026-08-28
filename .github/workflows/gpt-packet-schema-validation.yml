@@ -25,19 +25,19 @@ jobs:
         with:
           go-version: ${{ steps.quality-tools.outputs.go_version }}
           cache: false
-      - name: Packet tests
-        id: packet-tests
+      - name: Changed package tests
+        id: changed-tests
         working-directory: glm-worker
         shell: bash
         run: |
           set +e
-          go test ./internal/packet -count=1 > ../.gpt-packet-test.log 2>&1
+          go test ./internal/packet ./internal/runner -count=1 > ../.gpt-packet-test.log 2>&1
           status=$?
           cat ../.gpt-packet-test.log
           printf 'status=%s\n' "$status" >> "$GITHUB_OUTPUT"
           exit 0
       - name: Save failure log
-        if: steps.packet-tests.outputs.status != '0'
+        if: steps.changed-tests.outputs.status != '0'
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
@@ -46,10 +46,10 @@ jobs:
             git commit -m 'ci: capture packet schema test failure'
             git push origin HEAD:gpt/packet-schema-contract
           fi
-      - name: Fail packet tests
-        if: steps.packet-tests.outputs.status != '0'
+      - name: Fail changed package tests
+        if: steps.changed-tests.outputs.status != '0'
         run: exit 1
       - name: Vet
-        if: steps.packet-tests.outputs.status == '0'
+        if: steps.changed-tests.outputs.status == '0'
         working-directory: glm-worker
         run: go vet ./...
