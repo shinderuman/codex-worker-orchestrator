@@ -20,8 +20,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-const bundleFormat = "glm-worker-task-bundle-v1"
-
 type bundleOutput struct {
 	TaskID           string   `json:"task_id"`
 	TaskStatus       string   `json:"task_status"`
@@ -61,6 +59,8 @@ type bundleCollector struct {
 	missing map[string]struct{}
 }
 
+const bundleFormat = "glm-worker-task-bundle-v1"
+
 var bundleAggregateDirs = map[string]bool{
 	"artifacts": true,
 	"events":    true,
@@ -76,8 +76,8 @@ func printBundle(cfg config.AppConfig, st *state.StateStore, requestedTaskID str
 	}
 
 	collector := newBundleCollector()
-	collector.collectTaskEvidence(cfg, st, task)
-	sessionIDs := collector.collectTaskSessions(cfg, st, task)
+	collector.collectTaskEvidence(st, task)
+	sessionIDs := collector.collectTaskSessions(st, task)
 	collector.collectClaudeTranscripts(cfg, sessionIDs)
 	if task.Current {
 		collector.collectCurrentState(cfg, st)
@@ -173,7 +173,7 @@ func newBundleCollector() *bundleCollector {
 	}
 }
 
-func (c *bundleCollector) collectTaskEvidence(cfg config.AppConfig, st *state.StateStore, task bundleTask) {
+func (c *bundleCollector) collectTaskEvidence(st *state.StateStore, task bundleTask) {
 	c.addFileIfPresent(st.ModelCallLogPath(task.ID), path.Join("task", "telemetry", task.ID+".jsonl"))
 	c.addFileIfPresent(st.TaskEventLogPath(task.ID), path.Join("task", "events", task.ID+".jsonl"))
 	c.addFileIfPresent(st.RoundLogPath(task.ID), path.Join("task", "rounds", task.ID+".jsonl"))
@@ -189,17 +189,16 @@ func (c *bundleCollector) collectTaskEvidence(cfg config.AppConfig, st *state.St
 	}
 	_ = c.addTreeIfPresent(st.ArtifactDir(task.ID), path.Join("task", "artifacts", task.ID))
 
-	if task.Stats.ModelCalls > 0 && !c.hasTaskAssociationEvidence(st, task.ID) {
+	if task.Stats.ModelCalls > 0 && !hasTaskAssociationEvidence(st, task.ID) {
 		c.addMissing("task/session-association")
 	}
-	_ = cfg
 }
 
-func (c *bundleCollector) hasTaskAssociationEvidence(st *state.StateStore, taskID string) bool {
+func hasTaskAssociationEvidence(st *state.StateStore, taskID string) bool {
 	return regularFileExists(st.ModelCallLogPath(taskID)) || regularFileExists(st.TaskEventLogPath(taskID))
 }
 
-func (c *bundleCollector) collectTaskSessions(cfg config.AppConfig, st *state.StateStore, task bundleTask) []string {
+func (c *bundleCollector) collectTaskSessions(st *state.StateStore, task bundleTask) []string {
 	sessions := make(map[string]struct{})
 	logs, err := st.ReadModelCallLogs(task.ID)
 	switch {
@@ -219,12 +218,11 @@ func (c *bundleCollector) collectTaskSessions(cfg config.AppConfig, st *state.St
 			if value := st.ReadOr(name, ""); value != "" {
 				sessions[value] = struct{}{}
 			}
-	}
+		}
 	}
 	if task.Stats.ModelCalls > 0 && len(sessions) == 0 {
 		c.addMissing("task/claude-session-ids")
 	}
-	_ = cfg
 	return sortedSet(sessions)
 }
 
@@ -260,20 +258,27 @@ func (c *bundleCollector) collectClaudeTranscripts(cfg config.AppConfig, session
 	if len(sessionIDs) == 0 {
 		return
 	}
+	matches, err := findClaudeTranscripts(cfg.ClaudeConfigDir, sessionIDs)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		c.addMissing("claude-transcripts/unavailable")
+	}
+	for _, sessionID := range sessionIDs {
+		c.addClaudeTranscriptMatches(sessionID, matches[sessionID])
+	}
+}
+
+func findClaudeTranscripts(configDir string, sessionIDs []string) (map[string][]string, error) {
 	targets := make(map[string]struct{}, len(sessionIDs))
 	for _, sessionID := range sessionIDs {
 		targets[sessionID] = struct{}{}
 	}
 	matches := make(map[string][]string, len(sessionIDs))
-	projectsRoot := filepath.Join(cfg.ClaudeConfigDir, "projects")
+	projectsRoot := filepath.Join(configDir, "projects")
 	err := filepath.WalkDir(projectsRoot, func(filePath string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
-		if entry.IsDir() {
-			return nil
-		}
-		if !entry.Type().IsRegular() || filepath.Ext(entry.Name()) != ".jsonl" {
+		if entry.IsDir() || !entry.Type().IsRegular() || filepath.Ext(entry.Name()) != ".jsonl" {
 			return nil
 		}
 		sessionID := strings.TrimSuffix(entry.Name(), ".jsonl")
@@ -282,21 +287,17 @@ func (c *bundleCollector) collectClaudeTranscripts(cfg config.AppConfig, session
 		}
 		return nil
 	})
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		c.addMissing("claude-transcripts/unavailable")
-	}
+	return matches, err
+}
 
-	for _, sessionID := range sessionIDs {
-		paths := matches[sessionID]
-		sort.Strings(paths)
-		if len(paths) == 0 {
-			c.addMissing(path.Join("claude-transcripts", safeArchiveComponent(sessionID)+".jsonl"))
-			continue
-		}
-		if len(paths) == 1 {
-			c.addFile(paths[0], path.Join("claude-transcripts", safeArchiveComponent(sessionID)+".jsonl"))
-			continue
-		}
+func (c *bundleCollector) addClaudeTranscriptMatches(sessionID string, paths []string) {
+	sort.Strings(paths)
+	switch len(paths) {
+	case 0:
+		c.addMissing(path.Join("claude-transcripts", safeArchiveComponent(sessionID)+".jsonl"))
+	case 1:
+		c.addFile(paths[0], path.Join("claude-transcripts", safeArchiveComponent(sessionID)+".jsonl"))
+	default:
 		for index, transcriptPath := range paths {
 			archivePath := path.Join("claude-transcripts", safeArchiveComponent(sessionID), fmt.Sprintf("%02d.jsonl", index+1))
 			c.addFile(transcriptPath, archivePath)
