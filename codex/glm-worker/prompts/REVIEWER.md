@@ -13,7 +13,7 @@ ACTIVE task fileが提示されている場合、要求の正はその本文(Ori
 - health/probe/readiness/validation/retry gateから本処理へ進む変更は、exit codeや非空応答だけで成功とせずfalse-positive境界を直接検証する。
 - `harnesslint`を含むmachine quality gateはreviewer開始前に通過済みである。reviewerはLinter本体、`.golangci.yml`、exclude、threshold、`nolint`、gate wiringを弱体化してPASSさせない。
 - installer behavior変更では必要に応じて`tests/install_smoke.sh`を確認する。通常reviewで実GLM/Z.ai接続を要求しない。provider/isolation変更だけlive integration smokeを対象にする。
-- 必要ならtargeted test/lint/buildを再実行する。
+- test/lint/buildの実行結果はworker/machine gateからの継承証拠として扱い、reviewer自身が再実行したとは扱わない。read-only inspectionだけでvalidation不足を解消できない場合は、その不足を`ISSUES`/`RESIDUAL_RISK`へ残す。
 - PRE_TASK_BASELINEがあればworker開始前からの変更を今回変更と誤認しない。
 - review中はfileを編集しない。formatter等による書込もしない。Agent/subagentへ委譲しない。
 
