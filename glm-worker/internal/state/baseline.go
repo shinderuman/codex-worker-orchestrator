@@ -8,6 +8,8 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 )
 
+const baselineUntrackedFile = "baseline-untracked"
+
 func CaptureGitBaseline(cfg config.AppConfig, state *StateStore) error {
 	commands := []struct {
 		name string
@@ -16,7 +18,6 @@ func CaptureGitBaseline(cfg config.AppConfig, state *StateStore) error {
 		{name: "baseline-status", args: []string{"status", "--porcelain=v1", "--untracked-files=all"}},
 		{name: "baseline-worktree.patch", args: []string{"diff", "--binary", "--no-ext-diff"}},
 		{name: "baseline-index.patch", args: []string{"diff", "--cached", "--binary", "--no-ext-diff"}},
-		{name: "baseline-untracked", args: []string{"ls-files", "-z", "--others", "--exclude-standard"}},
 	}
 
 	for _, item := range commands {
@@ -24,7 +25,7 @@ func CaptureGitBaseline(cfg config.AppConfig, state *StateStore) error {
 		command.Dir = cfg.RepoRoot
 		output, err := command.Output()
 		if err != nil {
-			if err := state.Remove("baseline-status", "baseline-worktree.patch", "baseline-index.patch", "baseline-untracked"); err != nil {
+			if err := removeGitBaseline(state); err != nil {
 				return err
 			}
 			return nil
@@ -32,6 +33,18 @@ func CaptureGitBaseline(cfg config.AppConfig, state *StateStore) error {
 		if err := state.Write(item.name, string(output)); err != nil {
 			return err
 		}
+	}
+	untracked := exec.Command("git", "ls-files", "-z", "--others", "--exclude-standard")
+	untracked.Dir = cfg.RepoRoot
+	untrackedOutput, err := untracked.Output()
+	if err != nil {
+		if err := removeGitBaseline(state); err != nil {
+			return err
+		}
+		return nil
+	}
+	if err := writeFileAtomic(state.Path(baselineUntrackedFile), untrackedOutput, 0o600); err != nil {
+		return err
 	}
 
 	head, unborn, err := resolveRepoHead(cfg.RepoRoot)
@@ -42,6 +55,10 @@ func CaptureGitBaseline(cfg config.AppConfig, state *StateStore) error {
 		return state.Remove("baseline-head")
 	}
 	return state.Write("baseline-head", head)
+}
+
+func removeGitBaseline(state *StateStore) error {
+	return state.Remove("baseline-status", "baseline-worktree.patch", "baseline-index.patch", baselineUntrackedFile)
 }
 
 func resolveRepoHead(repoRoot string) (head string, unborn bool, err error) {
