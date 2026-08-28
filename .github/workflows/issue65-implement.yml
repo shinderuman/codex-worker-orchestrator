@@ -1,0 +1,845 @@
+name: Issue 65 Implementation
+
+on:
+  push:
+    branches:
+      - gpt/issue-65-attributable-quality
+
+permissions:
+  contents: write
+
+jobs:
+  implement:
+    if: ${{ !contains(github.event.head_commit.message, 'Implement issue 65 attributable quality') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: gpt/issue-65-attributable-quality
+      - name: Read quality tool contract
+        id: quality-tools
+        run: |
+          GO_VERSION=$(awk -F': ' '$1 == "go" { print $2 }' quality-tools.yml)
+          printf 'go_version=%s\n' "$GO_VERSION" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ steps.quality-tools.outputs.go_version }}
+          cache: false
+      - name: Install quality tools
+        run: |
+          quality_bin="$(go env GOPATH)/bin"
+          QUALITY_TOOLS_BIN_DIR="$quality_bin" ./install-quality-tools.sh
+          printf '%s\n' "$quality_bin" >> "$GITHUB_PATH"
+      - name: Implement attributable model quality
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(text, old, new, label):
+              if text.count(old) != 1:
+                  raise SystemExit(f'{label}: expected one anchor, got {text.count(old)}')
+              return text.replace(old, new, 1)
+
+          # TaskCallLogs carries deterministic downstream quality attribution separately from convergence.
+          p = Path('glm-worker/internal/state/callstats.go')
+          s = p.read_text()
+          s = replace_once(s,
+          '''type TaskCallLogs struct {
+          \tTaskID            string
+          \tLogs              []ModelCallLog
+          \tConvergenceDeltas map[string]string
+          }
+          ''',
+          '''type TaskCallLogs struct {
+          \tTaskID            string
+          \tLogs              []ModelCallLog
+          \tConvergenceDeltas map[string]string
+          \tQualityOutcomes   map[string]string
+          }
+          ''', 'TaskCallLogs')
+          p.write_text(s)
+
+          # Rework model-routing evaluation so operational cells are not quality samples.
+          p = Path('glm-worker/internal/state/routingeval.go')
+          s = p.read_text()
+          s = replace_once(s,
+          '''type ModelRoutingSufficiency struct {
+          \tMinCalls int    `json:"min_calls_per_cell"`
+          \tMinTasks int    `json:"min_tasks_per_cell"`
+          \tRule     string `json:"rule"`
+          }
+          ''',
+          '''type ModelRoutingSufficiency struct {
+          \tMinQualityCalls int    `json:"min_quality_calls_per_group"`
+          \tMinQualityTasks int    `json:"min_quality_tasks_per_group"`
+          \tRule            string `json:"rule"`
+          }
+          ''', 'sufficiency struct')
+          s = replace_once(s,
+          '''\tCalls             int            `json:"calls"`
+          \tTasks             int            `json:"tasks"`
+          \tSessions          int            `json:"sessions"`
+          \tUsage             TokenUsage     `json:"usage"`
+          \tUsageUnknownCalls int            `json:"usage_unknown_calls"`
+          \tOutcomes          map[string]int `json:"outcomes"`
+          \tPacketStatuses    map[string]int `json:"packet_statuses"`
+          \tSufficient        bool           `json:"sufficient"`
+          }
+
+          type ModelRoutingAliasLink struct {
+          ''',
+          '''\tCalls             int            `json:"calls"`
+          \tTopLevelCalls     int            `json:"top_level_calls"`
+          \tTasks             int            `json:"tasks"`
+          \tSessions          int            `json:"sessions"`
+          \tUsage             TokenUsage     `json:"usage"`
+          \tUsageUnknownCalls int            `json:"usage_unknown_calls"`
+          \tOutcomes          map[string]int `json:"outcomes"`
+          \tPacketStatuses    map[string]int `json:"packet_statuses"`
+          }
+
+          type ModelRoutingQualityGroup struct {
+          \tRole             string         `json:"role"`
+          \tPhase            string         `json:"phase"`
+          \tEffectiveRisk    string         `json:"effective_risk"`
+          \tConvergenceDelta string         `json:"convergence_delta"`
+          \tResolvedModel    string         `json:"resolved_model"`
+          \tCalls            int            `json:"calls"`
+          \tTasks            int            `json:"tasks"`
+          \tOutcomes         map[string]int `json:"outcomes"`
+          \tSufficient       bool           `json:"sufficient"`
+          }
+
+          type ModelRoutingAliasLink struct {
+          ''', 'cell + quality group structs')
+          s = replace_once(s,
+          '''\tCells       []ModelRoutingCell      `json:"cells"`
+          \tAliasLinks  []ModelRoutingAliasLink `json:"alias_links"`
+          \tEvaluation  ModelRoutingEvaluation  `json:"evaluation"`
+          ''',
+          '''\tCells         []ModelRoutingCell         `json:"cells"`
+          \tQualityGroups []ModelRoutingQualityGroup `json:"quality_groups"`
+          \tAliasLinks    []ModelRoutingAliasLink    `json:"alias_links"`
+          \tEvaluation    ModelRoutingEvaluation     `json:"evaluation"`
+          ''', 'report groups')
+          s = replace_once(s,
+          '''type modelRoutingModelSamples struct {
+          \tcalls int
+          \ttasks map[string]bool
+          }
+
+          type modelRoutingBuilder struct {
+          \treport      ModelRoutingReport
+          \tcells       map[modelRoutingCellKey]*modelRoutingCellSamples
+          \taliasLinks  map[string]map[string]map[string]int
+          \tmodelGroups map[modelRoutingGroupKey]map[string]*modelRoutingModelSamples
+          \ttaskCalls   int
+          }
+
+          const (
+          \tModelRoutingUnknownModel    = "unknown"
+          \tModelRoutingUnknownRisk     = "unknown"
+          \tModelRoutingMinCallsPerCell = 20
+          \tModelRoutingMinTasksPerCell = 5
+          )
+          ''',
+          '''type modelRoutingModelSamples struct {
+          \tcalls    int
+          \ttasks    map[string]bool
+          \toutcomes map[string]int
+          }
+
+          type modelRoutingBuilder struct {
+          \treport        ModelRoutingReport
+          \tcells         map[modelRoutingCellKey]*modelRoutingCellSamples
+          \taliasLinks    map[string]map[string]map[string]int
+          \tqualityGroups map[modelRoutingGroupKey]map[string]*modelRoutingModelSamples
+          \ttaskCalls     int
+          }
+
+          const (
+          \tModelRoutingUnknownModel             = "unknown"
+          \tModelRoutingUnknownRisk              = "unknown"
+          \tModelRoutingMinQualityCallsPerGroup  = 20
+          \tModelRoutingMinQualityTasksPerGroup  = 5
+          \tModelRoutingQualityReviewPass        = "review_pass"
+          \tModelRoutingQualityReviewFixRequired = "review_fix_required"
+          )
+          ''', 'builder + constants')
+          s = replace_once(s,
+          '''const modelRoutingQualityMetric = "per-cell outcome and packet_status distributions (worker terminal packets: IMPLEMENTED, NEEDS_SOL_REVIEW, NEEDS_SOL_DECISION; reviewer packets: PASS, FIX_REQUIRED, NEEDS_SOL_REVIEW, NEEDS_SOL_DECISION) inside cells separated by role, normalized phase, effective risk, and the existing RoundRecord convergence delta class joined per call (unknown when the call cannot be uniquely joined to a round record); no composite quality score is defined"
+
+          const modelRoutingSufficiencyRule = "within one repository, a model quality comparison requires at least 2 distinct resolved models in the same role+normalized-phase+effective-risk+convergence-delta group, each with at least min_calls_per_cell task calls across at least min_tasks_per_cell distinct tasks; meeting these minimums only lists a group as a comparison candidate and is neither a statistical proof of model quality nor a downgrade criterion, below them the quality delta stays unknown or insufficient and cannot support downgrade, and alias-only contrast where the aliases resolve to the same resolved model is not model quality evidence"
+          ''',
+          '''const modelRoutingQualityMetric = "quality_groups contain only deterministic downstream review outcomes attributed to one producing worker call and its top-level resolved model: review_pass or review_fix_required; operational outcome and packet_status remain in cells for reliability/debugging and are not model-quality evidence; unresolved Sol routing, provider failures, ambiguous producing calls, and unattributable mixed-model results remain absent from quality_groups; no composite quality score is defined"
+
+          const modelRoutingSufficiencyRule = "within one repository, controlled model quality comparison uses alias-independent quality_groups only: effective risk and convergence delta must both be known, and at least 2 distinct resolved models in the same role+normalized-phase+effective-risk+convergence-delta group must each have at least min_quality_calls_per_group attributable downstream quality calls across at least min_quality_tasks_per_group distinct tasks; operational calls without attributable quality do not count, meeting the minimums only lists a comparison candidate and is neither statistical proof nor a routing/downgrade criterion"
+          ''', 'metric descriptions')
+          s = replace_once(s,
+          '''\tbuilder.absorbTasks(tasks)
+          \tbuilder.buildCells()
+          \tbuilder.buildAliasLinks()
+          \tbuilder.buildEvaluation()
+          ''',
+          '''\tbuilder.absorbTasks(tasks)
+          \tbuilder.buildCells()
+          \tbuilder.buildQualityGroups()
+          \tbuilder.buildAliasLinks()
+          \tbuilder.buildEvaluation()
+          ''', 'builder pipeline')
+          s = replace_once(s,
+          '''\t\t\tSufficiency: ModelRoutingSufficiency{
+          \t\t\t\tMinCalls: ModelRoutingMinCallsPerCell,
+          \t\t\t\tMinTasks: ModelRoutingMinTasksPerCell,
+          \t\t\t\tRule:     modelRoutingSufficiencyRule,
+          \t\t\t},
+          \t\t\tRecords:    CallRecordCounts{},
+          \t\t\tCells:      []ModelRoutingCell{},
+          \t\t\tAliasLinks: []ModelRoutingAliasLink{},
+          \t\t\tEvaluation: ModelRoutingEvaluation{QualityDelta: ModelRoutingQualityDeltaUnknown, Reasons: []string{}},
+          \t\t},
+          \t\tcells:       make(map[modelRoutingCellKey]*modelRoutingCellSamples),
+          \t\taliasLinks:  make(map[string]map[string]map[string]int),
+          \t\tmodelGroups: make(map[modelRoutingGroupKey]map[string]*modelRoutingModelSamples),
+          ''',
+          '''\t\t\tSufficiency: ModelRoutingSufficiency{
+          \t\t\t\tMinQualityCalls: ModelRoutingMinQualityCallsPerGroup,
+          \t\t\t\tMinQualityTasks: ModelRoutingMinQualityTasksPerGroup,
+          \t\t\t\tRule:            modelRoutingSufficiencyRule,
+          \t\t\t},
+          \t\t\tRecords:       CallRecordCounts{},
+          \t\t\tCells:         []ModelRoutingCell{},
+          \t\t\tQualityGroups: []ModelRoutingQualityGroup{},
+          \t\t\tAliasLinks:    []ModelRoutingAliasLink{},
+          \t\t\tEvaluation:    ModelRoutingEvaluation{QualityDelta: ModelRoutingQualityDeltaUnknown, Reasons: []string{}},
+          \t\t},
+          \t\tcells:         make(map[modelRoutingCellKey]*modelRoutingCellSamples),
+          \t\taliasLinks:    make(map[string]map[string]map[string]int),
+          \t\tqualityGroups: make(map[modelRoutingGroupKey]map[string]*modelRoutingModelSamples),
+          ''', 'builder initialization')
+          s = replace_once(s,
+          '''\tfor _, model := range routingResolvedModels(log) {
+          \t\tb.absorbCell(task.TaskID, log, group, model)
+          \t}
+          }
+          ''',
+          '''\towner := routingResultOwner(log)
+          \tfor _, model := range routingResolvedModels(log) {
+          \t\tb.absorbCell(task.TaskID, log, group, model, owner == model)
+          \t}
+          \tif outcome := routingQualityOutcome(task, log); outcome != "" && owner != "" && owner != ModelRoutingUnknownModel {
+          \t\tb.absorbQualityGroup(task.TaskID, group, owner, outcome)
+          \t}
+          }
+          ''', 'absorb log')
+          s = replace_once(s,
+          '''func routingResolvedModels(log ModelCallLog) []string {
+          \tif len(log.ResolvedModelUsage) > 0 {
+          \t\tmodels := make([]string, 0, len(log.ResolvedModelUsage))
+          \t\tfor model := range log.ResolvedModelUsage {
+          \t\t\tmodels = append(models, model)
+          \t\t}
+          \t\tslices.Sort(models)
+          \t\treturn models
+          \t}
+          \tif log.ResolvedModelID != "" {
+          \t\treturn []string{log.ResolvedModelID}
+          \t}
+          \treturn []string{ModelRoutingUnknownModel}
+          }
+          ''',
+          '''func routingResolvedModels(log ModelCallLog) []string {
+          \tseen := make(map[string]bool)
+          \tfor model := range log.ResolvedModelUsage {
+          \t\tseen[model] = true
+          \t}
+          \tif log.ResolvedModelID != "" {
+          \t\tseen[log.ResolvedModelID] = true
+          \t}
+          \tif len(seen) == 0 {
+          \t\treturn []string{ModelRoutingUnknownModel}
+          \t}
+          \tmodels := make([]string, 0, len(seen))
+          \tfor model := range seen {
+          \t\tmodels = append(models, model)
+          \t}
+          \tslices.Sort(models)
+          \treturn models
+          }
+
+          func routingResultOwner(log ModelCallLog) string {
+          \tif log.ResolvedModelID != "" {
+          \t\treturn log.ResolvedModelID
+          \t}
+          \tif len(log.ResolvedModelUsage) == 1 {
+          \t\tfor model := range log.ResolvedModelUsage {
+          \t\t\treturn model
+          \t\t}
+          \t}
+          \tif len(log.ResolvedModelUsage) == 0 {
+          \t\treturn ModelRoutingUnknownModel
+          \t}
+          \treturn ""
+          }
+
+          func routingQualityOutcome(task TaskCallLogs, log ModelCallLog) string {
+          \tif log.Role != WorkerRole || log.CallID == "" {
+          \t\treturn ""
+          \t}
+          \toutcome := task.QualityOutcomes[log.CallID]
+          \tswitch outcome {
+          \tcase ModelRoutingQualityReviewPass, ModelRoutingQualityReviewFixRequired:
+          \t\treturn outcome
+          \tdefault:
+          \t\treturn ""
+          \t}
+          }
+          ''', 'model participation and ownership')
+          s = replace_once(s,
+          '''func (b *modelRoutingBuilder) absorbCell(taskID string, log ModelCallLog, group modelRoutingGroupKey, model string) {
+          ''',
+          '''func (b *modelRoutingBuilder) absorbCell(taskID string, log ModelCallLog, group modelRoutingGroupKey, model string, ownsTopLevel bool) {
+          ''', 'absorbCell signature')
+          s = replace_once(s,
+          '''\tif log.SessionID != "" {
+          \t\tsamples.sessions[log.SessionID] = true
+          \t}
+          \taddInt(&samples.cell.Outcomes, log.Outcome, 1)
+          \taddInt(&samples.cell.PacketStatuses, log.PacketStatus, 1)
+          \tabsorbModelRoutingCellUsage(samples, log, model)
+          \tb.absorbAliasLink(group.role, log.ModelAlias, model)
+          \tb.absorbModelGroup(taskID, group, model)
+          }
+
+          func (b *modelRoutingBuilder) absorbModelGroup(taskID string, group modelRoutingGroupKey, model string) {
+          \tmodels := b.modelGroups[group]
+          \tif models == nil {
+          \t\tmodels = make(map[string]*modelRoutingModelSamples)
+          \t\tb.modelGroups[group] = models
+          \t}
+          \tif models[model] == nil {
+          \t\tmodels[model] = &modelRoutingModelSamples{tasks: make(map[string]bool)}
+          \t}
+          \tmodels[model].calls++
+          \tmodels[model].tasks[taskID] = true
+          }
+          ''',
+          '''\tif log.SessionID != "" {
+          \t\tsamples.sessions[log.SessionID] = true
+          \t}
+          \tif ownsTopLevel {
+          \t\tsamples.cell.TopLevelCalls++
+          \t\taddInt(&samples.cell.Outcomes, log.Outcome, 1)
+          \t\taddInt(&samples.cell.PacketStatuses, log.PacketStatus, 1)
+          \t}
+          \tabsorbModelRoutingCellUsage(samples, log, model)
+          \tb.absorbAliasLink(group.role, log.ModelAlias, model)
+          }
+
+          func (b *modelRoutingBuilder) absorbQualityGroup(taskID string, group modelRoutingGroupKey, model string, outcome string) {
+          \tmodels := b.qualityGroups[group]
+          \tif models == nil {
+          \t\tmodels = make(map[string]*modelRoutingModelSamples)
+          \t\tb.qualityGroups[group] = models
+          \t}
+          \tsamples := models[model]
+          \tif samples == nil {
+          \t\tsamples = &modelRoutingModelSamples{tasks: make(map[string]bool), outcomes: make(map[string]int)}
+          \t\tmodels[model] = samples
+          \t}
+          \tsamples.calls++
+          \tsamples.tasks[taskID] = true
+          \taddInt(&samples.outcomes, outcome, 1)
+          }
+          ''', 'cell result + quality sample')
+          s = replace_once(s,
+          '''func (b *modelRoutingBuilder) buildCells() {
+          \tfor _, samples := range b.cells {
+          \t\tsamples.cell.Tasks = len(samples.tasks)
+          \t\tsamples.cell.Sessions = len(samples.sessions)
+          \t\tsamples.cell.Sufficient = samples.cell.Calls >= ModelRoutingMinCallsPerCell &&
+          \t\t\tsamples.cell.Tasks >= ModelRoutingMinTasksPerCell
+          \t\tb.report.Cells = append(b.report.Cells, samples.cell)
+          \t}
+          \tslices.SortFunc(b.report.Cells, compareModelRoutingCell)
+          }
+          ''',
+          '''func (b *modelRoutingBuilder) buildCells() {
+          \tfor _, samples := range b.cells {
+          \t\tsamples.cell.Tasks = len(samples.tasks)
+          \t\tsamples.cell.Sessions = len(samples.sessions)
+          \t\tb.report.Cells = append(b.report.Cells, samples.cell)
+          \t}
+          \tslices.SortFunc(b.report.Cells, compareModelRoutingCell)
+          }
+
+          func (b *modelRoutingBuilder) buildQualityGroups() {
+          \tfor _, group := range sortedModelRoutingGroups(b.qualityGroups) {
+          \t\tmodels := make([]string, 0, len(b.qualityGroups[group]))
+          \t\tfor model := range b.qualityGroups[group] {
+          \t\t\tmodels = append(models, model)
+          \t\t}
+          \t\tslices.Sort(models)
+          \t\tfor _, model := range models {
+          \t\t\tsamples := b.qualityGroups[group][model]
+          \t\t\tb.report.QualityGroups = append(b.report.QualityGroups, ModelRoutingQualityGroup{
+          \t\t\t\tRole: group.role, Phase: group.phase, EffectiveRisk: group.risk, ConvergenceDelta: group.delta,
+          \t\t\t\tResolvedModel: model, Calls: samples.calls, Tasks: len(samples.tasks), Outcomes: samples.outcomes,
+          \t\t\t\tSufficient: routingQualityGroupSufficient(group, samples),
+          \t\t\t})
+          \t\t}
+          \t}
+          }
+
+          func routingQualityGroupSufficient(group modelRoutingGroupKey, samples *modelRoutingModelSamples) bool {
+          \treturn group.risk != ModelRoutingUnknownRisk && group.delta != RoundDeltaUnknown &&
+          \t\tsamples.calls >= ModelRoutingMinQualityCallsPerGroup && len(samples.tasks) >= ModelRoutingMinQualityTasksPerGroup
+          }
+          ''', 'build cells + quality groups')
+          s = s.replace('b.modelGroups', 'b.qualityGroups')
+          s = replace_once(s,
+          '''\tcase len(models) == 0:
+          \t\treasons = append(reasons, "no resolved model recorded with usage; resolved-model contrast is unmeasurable")
+          \tdefault:
+          \t\treasons = append(reasons, fmt.Sprintf(
+          \t\t\t"resolved-model contrast requires at least 2 distinct resolved models; observed only %s",
+          \t\t\tstrings.Join(models, ", ")))
+          ''',
+          '''\tcase len(models) == 0:
+          \t\treasons = append(reasons, "no attributable downstream quality evidence; operational outcome and packet_status are not model-quality evidence")
+          \tdefault:
+          \t\treasons = append(reasons, fmt.Sprintf(
+          \t\t\t"resolved-model quality contrast requires at least 2 distinct resolved models with attributable downstream evidence; observed only %s",
+          \t\t\tstrings.Join(models, ", ")))
+          ''', 'unknown evaluation reasons')
+          s = replace_once(s,
+          '''func routingGroupSufficientModels(group modelRoutingGroupKey, groupModels map[string]*modelRoutingModelSamples, models []string) ([]string, []string) {
+          \tcandidates := routingGroupCandidates(groupModels, models)
+          \tif len(candidates) < 2 {
+          \t\treturn nil, nil
+          \t}
+          \tsufficient := make([]string, 0, len(candidates))
+          \tshortfalls := make([]string, 0)
+          \tfor _, model := range candidates {
+          \t\tsamples := groupModels[model]
+          \t\tif samples.calls >= ModelRoutingMinCallsPerCell && len(samples.tasks) >= ModelRoutingMinTasksPerCell {
+          \t\t\tsufficient = append(sufficient, model)
+          \t\t\tcontinue
+          \t\t}
+          \t\tshortfalls = append(shortfalls, fmt.Sprintf(
+          \t\t\t"%s: %s has %d calls across %d tasks, below min %d calls / %d tasks",
+          \t\t\tmodelRoutingGroupLabel(group), model, samples.calls, len(samples.tasks),
+          \t\t\tModelRoutingMinCallsPerCell, ModelRoutingMinTasksPerCell))
+          \t}
+          \treturn sufficient, shortfalls
+          }
+          ''',
+          '''func routingGroupSufficientModels(group modelRoutingGroupKey, groupModels map[string]*modelRoutingModelSamples, models []string) ([]string, []string) {
+          \tcandidates := routingGroupCandidates(groupModels, models)
+          \tif len(candidates) < 2 {
+          \t\treturn nil, nil
+          \t}
+          \tif group.risk == ModelRoutingUnknownRisk || group.delta == RoundDeltaUnknown {
+          \t\treturn nil, []string{fmt.Sprintf("%s: controlled quality comparison requires known effective risk and convergence delta", modelRoutingGroupLabel(group))}
+          \t}
+          \tsufficient := make([]string, 0, len(candidates))
+          \tshortfalls := make([]string, 0)
+          \tfor _, model := range candidates {
+          \t\tsamples := groupModels[model]
+          \t\tif routingQualityGroupSufficient(group, samples) {
+          \t\t\tsufficient = append(sufficient, model)
+          \t\t\tcontinue
+          \t\t}
+          \t\tshortfalls = append(shortfalls, fmt.Sprintf(
+          \t\t\t"%s: %s has %d attributable quality calls across %d tasks, below min %d calls / %d tasks",
+          \t\t\tmodelRoutingGroupLabel(group), model, samples.calls, len(samples.tasks),
+          \t\t\tModelRoutingMinQualityCallsPerGroup, ModelRoutingMinQualityTasksPerGroup))
+          \t}
+          \treturn sufficient, shortfalls
+          }
+          ''', 'group sufficiency')
+          p.write_text(s)
+
+          # Derive only deterministic downstream review results for producing worker calls.
+          p = Path('glm-worker/internal/app/routingeval.go')
+          s = p.read_text()
+          s = replace_once(s,
+          '''\t\treadable++
+          \t\ttasks[index].ConvergenceDeltas = convergenceCallDeltas(records, tasks[index].Logs)
+          ''',
+          '''\t\treadable++
+          \t\ttasks[index].ConvergenceDeltas = convergenceCallDeltas(records, tasks[index].Logs)
+          \t\ttasks[index].QualityOutcomes = convergenceQualityOutcomes(records, tasks[index].Logs)
+          ''', 'attach quality outcomes')
+          anchor = '''func convergenceCallDeltas(records []state.RoundRecord, logs []state.ModelCallLog) map[string]string {
+          \trounds, _ := buildConvergenceRounds(records, logs)
+          \tdeltas := make(map[string]string)
+          \tfor _, round := range rounds {
+          \t\tfor _, entry := range round.reviewer {
+          \t\t\trecordConvergenceCallDelta(deltas, entry, round.delta.Class)
+          \t\t}
+          \t\tfor _, entry := range round.worker {
+          \t\t\trecordConvergenceCallDelta(deltas, entry, round.delta.Class)
+          \t\t}
+          \t}
+          \treturn deltas
+          }
+          '''
+          addition = anchor + '''
+          func convergenceQualityOutcomes(records []state.RoundRecord, logs []state.ModelCallLog) map[string]string {
+          \trounds, _ := buildConvergenceRounds(records, logs)
+          \toutcomes := make(map[string]string)
+          \tfor _, round := range rounds {
+          \t\tif round.gap || round.mismatch || len(round.worker) != 1 {
+          \t\t\tcontinue
+          \t\t}
+          \t\treview := convergenceReviewOutDetail(round)
+          \t\tif review.Outcome == nil {
+          \t\t\tcontinue
+          \t\t}
+          \t\tquality := ""
+          \t\tswitch *review.Outcome {
+          \t\tcase "PASS":
+          \t\t\tquality = state.ModelRoutingQualityReviewPass
+          \t\tcase "FIX_REQUIRED":
+          \t\t\tquality = state.ModelRoutingQualityReviewFixRequired
+          \t\tdefault:
+          \t\t\tcontinue
+          \t\t}
+          \t\tif callID := round.worker[0].CallID; callID != "" {
+          \t\t\toutcomes[callID] = quality
+          \t\t}
+          \t}
+          \treturn outcomes
+          }
+          '''
+          s = replace_once(s, anchor, addition, 'quality derivation')
+          p.write_text(s)
+
+          # Update state tests to the new machine contract and add focused regressions.
+          p = Path('glm-worker/internal/state/routingeval_test.go')
+          s = p.read_text()
+          s = replace_once(s,
+          '''\t\tPhase: phase, Role: role, ModelAlias: alias,
+          \t\tOutcome: "success", PacketStatus: "IMPLEMENTED",
+          ''',
+          '''\t\tPhase: phase, Role: role, ModelAlias: alias, ResolvedModelID: "glm-5.3",
+          \t\tOutcome: "success", PacketStatus: "IMPLEMENTED",
+          ''', 'fixture top-level model')
+          s = s.replace('report.Sufficiency.MinCalls != ModelRoutingMinCallsPerCell || report.Sufficiency.MinTasks != ModelRoutingMinTasksPerCell',
+                        'report.Sufficiency.MinQualityCalls != ModelRoutingMinQualityCallsPerGroup || report.Sufficiency.MinQualityTasks != ModelRoutingMinQualityTasksPerGroup')
+          s = s.replace('if workerCell.UsageUnknownCalls != 0 || workerCell.Sufficient {\n\t\tt.Fatalf("worker cell境界 = %#v", workerCell)\n\t}',
+                        'if workerCell.UsageUnknownCalls != 0 || workerCell.TopLevelCalls != 2 {\n\t\tt.Fatalf("worker cell境界 = %#v", workerCell)\n\t}')
+          old = '''\tif report.Evaluation.QualityDelta != ModelRoutingQualityDeltaInsufficient {
+          \t\tt.Fatalf("quality delta = %#v", report.Evaluation)
+          \t}
+          \tif len(report.Evaluation.ComparableGroups) != 0 {
+          \t\tt.Fatalf("comparable groups = %#v", report.Evaluation.ComparableGroups)
+          \t}
+          \tif len(report.Evaluation.Reasons) != 1 ||
+          \t\treport.Evaluation.Reasons[0] != "no role+normalized-phase+effective-risk+convergence-delta group contains at least 2 of the observed resolved models" {
+          \t\tt.Fatalf("reasons = %#v", report.Evaluation.Reasons)
+          \t}
+          }
+
+          func TestBuildModelRoutingReportSingleModelIsUnknown'''
+          new = '''\tif report.Evaluation.QualityDelta != ModelRoutingQualityDeltaUnknown {
+          \t\tt.Fatalf("quality delta = %#v", report.Evaluation)
+          \t}
+          \tif len(report.Evaluation.ComparableGroups) != 0 || len(report.QualityGroups) != 0 {
+          \t\tt.Fatalf("quality groups = %#v / %#v", report.Evaluation.ComparableGroups, report.QualityGroups)
+          \t}
+          \tif len(report.Evaluation.Reasons) != 1 ||
+          \t\treport.Evaluation.Reasons[0] != "no attributable downstream quality evidence; operational outcome and packet_status are not model-quality evidence" {
+          \t\tt.Fatalf("reasons = %#v", report.Evaluation.Reasons)
+          \t}
+          }
+
+          func TestBuildModelRoutingReportSingleModelIsUnknown'''
+          s = replace_once(s, old, new, 'aggregate evaluation')
+          old = '''\tif len(report.Evaluation.Reasons) != 2 {
+          \t\tt.Fatalf("reasons = %#v", report.Evaluation.Reasons)
+          \t}
+          \tif report.Evaluation.Reasons[0] != "resolved-model contrast requires at least 2 distinct resolved models; observed only glm-5.3" {
+          \t\tt.Fatalf("single model reason = %q", report.Evaluation.Reasons[0])
+          \t}
+          \tif report.Evaluation.Reasons[1] != "2 model aliases resolve to the same resolved model set (glm-5.3); alias-level differences are not model quality evidence" {
+          \t\tt.Fatalf("alias reason = %q", report.Evaluation.Reasons[1])
+          \t}
+          }
+          '''
+          new = '''\tif len(report.Evaluation.Reasons) != 1 ||
+          \t\treport.Evaluation.Reasons[0] != "no attributable downstream quality evidence; operational outcome and packet_status are not model-quality evidence" {
+          \t\tt.Fatalf("reasons = %#v", report.Evaluation.Reasons)
+          \t}
+          }
+          '''
+          s = replace_once(s, old, new, 'single model unknown')
+          s = replace_once(s,
+          '''\t\tentries := make([]ModelCallLog, 0, callsPerTask)
+          \t\tdeltas := make(map[string]string)
+          ''',
+          '''\t\tentries := make([]ModelCallLog, 0, callsPerTask)
+          \t\tdeltas := make(map[string]string)
+          \t\tquality := make(map[string]string)
+          ''', 'sufficient quality map')
+          s = replace_once(s,
+          '''\t\t\tentry.EffectiveRisk = risk
+          \t\t\tentry.ResolvedModelUsage = map[string]ResolvedModelUsage{
+          ''',
+          '''\t\t\tentry.EffectiveRisk = risk
+          \t\t\tentry.ResolvedModelID = model
+          \t\t\tentry.ResolvedModelUsage = map[string]ResolvedModelUsage{
+          ''', 'sufficient resolved model')
+          s = replace_once(s,
+          '''\t\t\tentries = append(entries, entry)
+          \t\t\tif delta != RoundDeltaUnknown {
+          \t\t\t\tdeltas[callID] = delta
+          \t\t\t}
+          \t\t}
+          \t\tlogs = append(logs, TaskCallLogs{TaskID: taskID, Logs: entries, ConvergenceDeltas: deltas})
+          ''',
+          '''\t\t\tentries = append(entries, entry)
+          \t\t\tquality[callID] = ModelRoutingQualityReviewPass
+          \t\t\tif delta != RoundDeltaUnknown {
+          \t\t\t\tdeltas[callID] = delta
+          \t\t\t}
+          \t\t}
+          \t\tlogs = append(logs, TaskCallLogs{TaskID: taskID, Logs: entries, ConvergenceDeltas: deltas, QualityOutcomes: quality})
+          ''', 'sufficient quality fixture')
+          old = '''\tfor _, cell := range report.Cells {
+          \t\tif !cell.Sufficient {
+          \t\t\tt.Fatalf("sufficient cellがないものがあります: %#v", cell)
+          \t\t}
+          \t\tif cell.EffectiveRisk != "HIGH" || cell.ConvergenceDelta != RoundDeltaSemantic {
+          \t\t\tt.Fatalf("cell軸が分離されていません: %#v", cell)
+          \t\t}
+          \t}
+          }
+          '''
+          new = '''\tif len(report.QualityGroups) != 2 {
+          \t\tt.Fatalf("quality groups = %#v", report.QualityGroups)
+          \t}
+          \tfor _, group := range report.QualityGroups {
+          \t\tif !group.Sufficient || group.EffectiveRisk != "HIGH" || group.ConvergenceDelta != RoundDeltaSemantic {
+          \t\t\tt.Fatalf("quality group = %#v", group)
+          \t\t}
+          \t}
+          }
+          '''
+          s = replace_once(s, old, new, 'comparable group assertions')
+          old = '''\t\t\tfor _, cell := range report.Cells {
+          \t\t\t\tif !cell.Sufficient {
+          \t\t\t\t\tt.Fatalf("sufficient cellがないものがあります: %#v", cell)
+          \t\t\t\t}
+          \t\t\t}
+          ''',
+          # Python tuple bug guard below
+          PY
+          
+          # Continue test edits with a second short Python block to keep anchors readable.
+          python3 - <<'PY'
+          from pathlib import Path
+          def replace_once(text, old, new, label):
+              if text.count(old) != 1:
+                  raise SystemExit(f'{label}: expected one anchor, got {text.count(old)}')
+              return text.replace(old, new, 1)
+          p = Path('glm-worker/internal/state/routingeval_test.go')
+          s = p.read_text()
+          old = '''\t\t\tfor _, cell := range report.Cells {
+          \t\t\t\tif !cell.Sufficient {
+          \t\t\t\t\tt.Fatalf("sufficient cellがないものがあります: %#v", cell)
+          \t\t\t\t}
+          \t\t\t}
+          '''
+          new = '''\t\t\tfor _, group := range report.QualityGroups {
+          \t\t\t\tif !group.Sufficient {
+          \t\t\t\t\tt.Fatalf("quality group should meet its own sample floor: %#v", group)
+          \t\t\t\t}
+          \t\t\t}
+          '''
+          s = replace_once(s, old, new, 'separated group sufficiency')
+          s = replace_once(s,
+          '''\t\tsmall[0].Logs[index].EffectiveRisk = "HIGH"
+          \t\tsmall[0].Logs[index].ResolvedModelUsage = map[string]ResolvedModelUsage{
+          ''',
+          '''\t\tsmall[0].Logs[index].EffectiveRisk = "HIGH"
+          \t\tsmall[0].Logs[index].ResolvedModelID = "glm-4.7"
+          \t\tsmall[0].Logs[index].ResolvedModelUsage = map[string]ResolvedModelUsage{
+          ''', 'small resolved model')
+          s = replace_once(s,
+          '''\tsmall[0].ConvergenceDeltas = deltas
+          \tlogs := append''',
+          '''\tsmall[0].ConvergenceDeltas = deltas
+          \tsmall[0].QualityOutcomes = map[string]string{
+          \t\t"call-small-0": ModelRoutingQualityReviewPass,
+          \t\t"call-small-1": ModelRoutingQualityReviewPass,
+          \t}
+          \tlogs := append''', 'small quality evidence')
+          s = s.replace('has 2 calls across 1 tasks, below min 20 calls / 5 tasks', 'has 2 attributable quality calls across 1 tasks, below min 20 calls / 5 tasks')
+
+          extra = r'''
+          func TestBuildModelRoutingReportMixedModelDoesNotDuplicateTopLevelVerdict(t *testing.T) {
+          \tbase := time.Date(2026, 8, 29, 9, 0, 0, 0, time.UTC)
+          \ttaskID := "dddddddd-1111-4111-8111-111111111111"
+          \tlog := routingLogFixture(taskID, "sess-mixed", "worker-new", WorkerRole, "opus", base)
+          \tlog.CallID = "call-mixed"
+          \tlog.EffectiveRisk = "HIGH"
+          \tlog.ResolvedModelID = "glm-5.3"
+          \tlog.ResolvedModelUsage = map[string]ResolvedModelUsage{
+          \t\t"glm-5.3": {InputTokens: 100, OutputTokens: 10},
+          \t\t"helper-model": {InputTokens: 50, OutputTokens: 5},
+          \t}
+          \treport := BuildModelRoutingReport([]TaskCallLogs{{
+          \t\tTaskID: taskID,
+          \t\tLogs: []ModelCallLog{log},
+          \t\tConvergenceDeltas: map[string]string{"call-mixed": RoundDeltaSemantic},
+          \t\tQualityOutcomes: map[string]string{"call-mixed": ModelRoutingQualityReviewFixRequired},
+          \t}})
+
+          \towner := routingCellOf(t, report.Cells, "worker", WorkerPhaseCategoryNew, "HIGH", RoundDeltaSemantic, "opus", "glm-5.3")
+          \thelper := routingCellOf(t, report.Cells, "worker", WorkerPhaseCategoryNew, "HIGH", RoundDeltaSemantic, "opus", "helper-model")
+          \tif owner.TopLevelCalls != 1 || owner.Outcomes["success"] != 1 || owner.PacketStatuses["IMPLEMENTED"] != 1 {
+          \t\tt.Fatalf("owner cell = %#v", owner)
+          \t}
+          \tif helper.TopLevelCalls != 0 || len(helper.Outcomes) != 0 || len(helper.PacketStatuses) != 0 {
+          \t\tt.Fatalf("nested model inherited top-level verdict: %#v", helper)
+          \t}
+          \tif len(report.QualityGroups) != 1 || report.QualityGroups[0].ResolvedModel != "glm-5.3" ||
+          \t\treport.QualityGroups[0].Outcomes[ModelRoutingQualityReviewFixRequired] != 1 {
+          \t\tt.Fatalf("quality attribution = %#v", report.QualityGroups)
+          \t}
+          }
+
+          func TestBuildModelRoutingReportUnknownConfoundersNeverComparable(t *testing.T) {
+          \tbase := time.Date(2026, 8, 29, 9, 0, 0, 0, time.UTC)
+          \tlogs := append(
+          \t\troutingSufficientFixture("eeeeeeee", "opus", "glm-5.3", "", RoundDeltaUnknown, base),
+          \t\troutingSufficientFixture("ffffffff", "haiku", "glm-4.7", "", RoundDeltaUnknown, base)...)
+          \treport := BuildModelRoutingReport(logs)
+          \tif report.Evaluation.QualityDelta != ModelRoutingQualityDeltaInsufficient || len(report.Evaluation.ComparableGroups) != 0 {
+          \t\tt.Fatalf("unknown confounders became comparable: %#v", report.Evaluation)
+          \t}
+          \tfor _, group := range report.QualityGroups {
+          \t\tif group.Sufficient {
+          \t\t\tt.Fatalf("unknown confounder group is sufficient: %#v", group)
+          \t\t}
+          \t}
+          }
+
+          func TestBuildModelRoutingReportOperationalFailuresDoNotSatisfyQuality(t *testing.T) {
+          \tbase := time.Date(2026, 8, 29, 9, 0, 0, 0, time.UTC)
+          \tlogs := append(
+          \t\troutingSufficientFixture("12121212", "opus", "glm-5.3", "HIGH", RoundDeltaSemantic, base),
+          \t\troutingSufficientFixture("34343434", "haiku", "glm-4.7", "HIGH", RoundDeltaSemantic, base)...)
+          \tfor i := range logs {
+          \t\tlogs[i].QualityOutcomes = nil
+          \t\tfor j := range logs[i].Logs {
+          \t\t\tlogs[i].Logs[j].Outcome = "rate_limited"
+          \t\t\tlogs[i].Logs[j].PacketStatus = ""
+          \t\t}
+          \t}
+          \treport := BuildModelRoutingReport(logs)
+          \tif len(report.QualityGroups) != 0 || report.Evaluation.QualityDelta != ModelRoutingQualityDeltaUnknown {
+          \t\tt.Fatalf("operational failures counted as quality evidence: %#v", report)
+          \t}
+          }
+
+          func TestBuildModelRoutingReportQualitySufficiencyAggregatesAcrossAliases(t *testing.T) {
+          \tbase := time.Date(2026, 8, 29, 9, 0, 0, 0, time.UTC)
+          \tleft := routingSufficientFixture("56565656", "opus", "glm-5.3", "HIGH", RoundDeltaSemantic, base)
+          \tfor i := range left {
+          \t\tfor j := range left[i].Logs {
+          \t\t\tif (i+j)%2 == 0 {
+          \t\t\t\tleft[i].Logs[j].ModelAlias = "sonnet"
+          \t\t\t}
+          \t\t}
+          \t}
+          \tlogs := append(left, routingSufficientFixture("78787878", "haiku", "glm-4.7", "HIGH", RoundDeltaSemantic, base)...)
+          \treport := BuildModelRoutingReport(logs)
+          \tif report.Evaluation.QualityDelta != ModelRoutingQualityDeltaComparable {
+          \t\tt.Fatalf("alias split changed quality aggregation: %#v", report.Evaluation)
+          \t}
+          \tgroups := 0
+          \tfor _, group := range report.QualityGroups {
+          \t\tif group.ResolvedModel == "glm-5.3" {
+          \t\t\tgroups++
+          \t\t\tif group.Calls != ModelRoutingMinQualityCallsPerGroup || !group.Sufficient {
+          \t\t\t\tt.Fatalf("alias-independent quality group = %#v", group)
+          \t\t\t}
+          \t\t}
+          \t}
+          \tif groups != 1 {
+          \t\tt.Fatalf("glm-5.3 quality groups = %d: %#v", groups, report.QualityGroups)
+          \t}
+          }
+          '''
+          s += extra.replace('          ', '')
+          p.write_text(s)
+
+          # Update app tests and add direct quality-link regression coverage.
+          p = Path('glm-worker/internal/app/routingeval_test.go')
+          s = p.read_text()
+          s = replace_once(s,
+          '''\t\tRole: state.WorkerRole, ModelAlias: "opus", Phase: "worker-new",
+          ''',
+          '''\t\tRole: state.WorkerRole, ModelAlias: "opus", ResolvedModelID: "glm-5.3", Phase: "worker-new",
+          ''', 'app worker resolved model')
+          s = replace_once(s,
+          '''\t\tRole: state.ReviewerRole, ModelAlias: "sonnet", Phase: "reviewer-1-risk-floor",
+          ''',
+          '''\t\tRole: state.ReviewerRole, ModelAlias: "sonnet", ResolvedModelID: "glm-5.3", Phase: "reviewer-1-risk-floor",
+          ''', 'app reviewer resolved model')
+          s = s.replace('sufficiency["min_calls_per_cell"].(float64) != state.ModelRoutingMinCallsPerCell ||\n\t\tsufficiency["min_tasks_per_cell"].(float64) != state.ModelRoutingMinTasksPerCell',
+                        'sufficiency["min_quality_calls_per_group"].(float64) != state.ModelRoutingMinQualityCallsPerGroup ||\n\t\tsufficiency["min_quality_tasks_per_group"].(float64) != state.ModelRoutingMinQualityTasksPerGroup')
+          s = s.replace('for _, key := range []string{"cells", "alias_links"}', 'for _, key := range []string{"cells", "quality_groups", "alias_links"}')
+          extra = r'''
+          func TestConvergenceQualityOutcomesRequiresUniqueWorkerAndTerminalIndependentReview(t *testing.T) {
+          \tbase := time.Date(2026, 8, 29, 9, 0, 0, 0, time.UTC)
+          \trecords := []state.RoundRecord{
+          \t\t{Seq: 1, WorkerPhase: state.RoundWorkerPhaseBaseline, CapturedAt: base, Snapshot: state.SnapshotDigest{Head: "h", IndexDigest: "i", WorktreeDigest: "w"}},
+          \t\t{Seq: 2, ReviewNumber: 1, WorkerPhase: "worker-new", CapturedAt: base.Add(30 * time.Minute), Snapshot: state.SnapshotDigest{Head: "h", IndexDigest: "i2", WorktreeDigest: "w2"}},
+          \t}
+          \tworker := state.ModelCallLog{CallType: state.CallTypeTask, CallID: "worker-1", Role: state.WorkerRole, Phase: "worker-new", PacketStatus: "IMPLEMENTED", StartedAt: base.Add(time.Minute)}
+          \treviewer := state.ModelCallLog{CallType: state.CallTypeTask, CallID: "reviewer-1", Role: state.ReviewerRole, Phase: "reviewer-1", PacketStatus: "FIX_REQUIRED", StartedAt: base.Add(40 * time.Minute)}
+
+          \tgot := convergenceQualityOutcomes(records, []state.ModelCallLog{worker, reviewer})
+          \tif got["worker-1"] != state.ModelRoutingQualityReviewFixRequired {
+          \t\tt.Fatalf("quality outcomes = %#v", got)
+          \t}
+
+          \treviewer.Phase = "reviewer-1-high-floor"
+          \treviewer.PacketStatus = "NEEDS_SOL_REVIEW"
+          \tif got := convergenceQualityOutcomes(records, []state.ModelCallLog{worker, reviewer}); len(got) != 0 {
+          \t\tt.Fatalf("forced high-floor Sol routing became quality evidence: %#v", got)
+          \t}
+
+          \tsecond := worker
+          \tsecond.CallID = "worker-2"
+          \tsecond.StartedAt = base.Add(2 * time.Minute)
+          \treviewer.Phase = "reviewer-1"
+          \treviewer.PacketStatus = "PASS"
+          \tif got := convergenceQualityOutcomes(records, []state.ModelCallLog{worker, second, reviewer}); len(got) != 0 {
+          \t\tt.Fatalf("ambiguous producing workers became quality evidence: %#v", got)
+          \t}
+          }
+          '''
+          s += extra.replace('          ', '')
+          p.write_text(s)
+          PY
+
+          gofmt -w glm-worker/internal/state/callstats.go glm-worker/internal/state/routingeval.go glm-worker/internal/state/routingeval_test.go glm-worker/internal/app/routingeval.go glm-worker/internal/app/routingeval_test.go
+          git diff --check
+      - name: Validate
+        run: |
+          (cd glm-worker && go test ./...)
+          (cd glm-worker && go vet ./...)
+          (cd glm-worker && go build ./...)
+          ./harnesslint
+      - name: Commit implementation
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add glm-worker/internal/state/callstats.go glm-worker/internal/state/routingeval.go glm-worker/internal/state/routingeval_test.go glm-worker/internal/app/routingeval.go glm-worker/internal/app/routingeval_test.go
+          git commit -m 'Implement issue 65 attributable quality'
+          git push origin HEAD:gpt/issue-65-attributable-quality
