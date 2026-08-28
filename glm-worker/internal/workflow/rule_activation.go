@@ -179,10 +179,7 @@ func (w *Workflow) currentRequiredWorkerRules() ([]workerRule, error) {
 	if w.config.CodexConfigDir == "" {
 		return nil, nil
 	}
-	baselineHead, err := w.state.Read("baseline-head")
-	if err != nil {
-		return nil, fmt.Errorf("deterministic rule baseline: %w", err)
-	}
+	baselineHead := w.state.ReadOr("baseline-head", "")
 	paths, err := w.collectChangedPaths(w.config.RepoRoot, baselineHead)
 	if err != nil {
 		return nil, fmt.Errorf("deterministic rule changes: %w", err)

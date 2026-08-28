@@ -19,13 +19,19 @@ fi
 exit 1
 EOF_CLAUDE
 chmod +x "$tmp/bin/claude"
-for tool in golangci-lint shellcheck shfmt; do
-	cat >"$tmp/bin/$tool" <<'EOF_TOOL'
+cat >"$tmp/bin/golangci-lint" <<'EOF_TOOL'
 #!/bin/sh
-exit 0
+printf '%s\n' 'golangci-lint has version 2.7.0 built with go1.25.4'
 EOF_TOOL
-	chmod +x "$tmp/bin/$tool"
-done
+cat >"$tmp/bin/shellcheck" <<'EOF_TOOL'
+#!/bin/sh
+printf '%s\n' 'version: 0.11.0'
+EOF_TOOL
+cat >"$tmp/bin/shfmt" <<'EOF_TOOL'
+#!/bin/sh
+printf '%s\n' 'v3.13.1'
+EOF_TOOL
+chmod +x "$tmp/bin/golangci-lint" "$tmp/bin/shellcheck" "$tmp/bin/shfmt"
 
 run_install() {
 	HOME="$home" \
@@ -56,13 +62,25 @@ cmp "$tmp/first.sha" "$tmp/second.sha"
 missing_bin="$tmp/missing-bin"
 mkdir -p "$missing_bin"
 ln -s "$(command -v dirname)" "$missing_bin/dirname"
-for tool in git go rsync cmp awk grep install golangci-lint; do
+for tool in git rsync cmp awk grep install; do
 	cat >"$missing_bin/$tool" <<'EOF_TOOL'
 #!/bin/sh
 exit 0
 EOF_TOOL
 	chmod +x "$missing_bin/$tool"
 done
+cat >"$missing_bin/go" <<'EOF_TOOL'
+#!/bin/sh
+case "${GOTOOLCHAIN:-}" in
+go1.22.12) printf '%s\n' 'go version go1.22.12 darwin/arm64' ;;
+*) printf '%s\n' 'go version go1.25.4 darwin/arm64' ;;
+esac
+EOF_TOOL
+cat >"$missing_bin/golangci-lint" <<'EOF_TOOL'
+#!/bin/sh
+printf '%s\n' 'golangci-lint has version 2.7.0 built with go1.25.4'
+EOF_TOOL
+chmod +x "$missing_bin/go" "$missing_bin/golangci-lint"
 missing_stderr="$tmp/missing.stderr"
 if PATH="$missing_bin" "$repo/install.sh" >"$tmp/missing.stdout" 2>"$missing_stderr"; then
 	printf '%s\n' 'install missing dependency: expected failure' >&2
@@ -70,9 +88,32 @@ if PATH="$missing_bin" "$repo/install.sh" >"$tmp/missing.stdout" 2>"$missing_std
 fi
 test ! -s "$tmp/missing.stdout"
 missing_command_error='required command not found: shellcheck'
-missing_brew_hint='install with Homebrew: brew install shellcheck'
+missing_brew_hint='install required versions with: ./install-quality-tools.sh'
 grep -Fxq "$missing_command_error" "$missing_stderr"
 grep -Fxq "$missing_brew_hint" "$missing_stderr"
+
+mismatch_bin="$tmp/mismatch-bin"
+cp -R "$missing_bin" "$mismatch_bin"
+rm "$mismatch_bin/awk"
+ln -s "$(command -v awk)" "$mismatch_bin/awk"
+cat >"$mismatch_bin/shellcheck" <<'EOF_TOOL'
+#!/bin/sh
+printf '%s\n' 'version: 0.10.0'
+EOF_TOOL
+cat >"$mismatch_bin/shfmt" <<'EOF_TOOL'
+#!/bin/sh
+printf '%s\n' 'v3.13.1'
+EOF_TOOL
+chmod +x "$mismatch_bin/shellcheck" "$mismatch_bin/shfmt"
+mismatch_stderr="$tmp/mismatch.stderr"
+if PATH="$mismatch_bin" "$repo/install.sh" >"$tmp/mismatch.stdout" 2>"$mismatch_stderr"; then
+	printf '%s\n' 'install version mismatch: expected failure' >&2
+	exit 1
+fi
+test ! -s "$tmp/mismatch.stdout"
+grep -Fq 'shellcheck=0.10.0' "$mismatch_stderr"
+grep -Fq 'required=0.11.0' "$mismatch_stderr"
+grep -Fq './install-quality-tools.sh' "$mismatch_stderr"
 
 standard_bin="$tmp/standard-bin"
 mkdir -p "$standard_bin"

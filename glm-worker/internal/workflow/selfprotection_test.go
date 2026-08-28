@@ -20,6 +20,9 @@ func TestIsCriticalPath(t *testing.T) {
 		{"glm-worker/cmd/harnesslint/main.go", true, "worker-entrypoint"},
 		{"harnesslint", true, "quality-policy"},
 		{".golangci.yml", true, "quality-policy"},
+		{"quality-tools.yml", true, "quality-policy"},
+		{".github/workflows/quality.yml", true, "quality-policy"},
+		{"install-quality-tools.sh", true, "quality-policy"},
 		{"IMPLEMENTATION_PLAN.local.md", true, "implementation-plan"},
 		{"codex/glm-worker/prompts/WORKER.md", true, "managed-prompts"},
 		{"glm-worker/internal/workflow/workflow_test.go", false, "test"},
@@ -39,6 +42,9 @@ func TestIsCriticalPath(t *testing.T) {
 func TestIsQualitySurface(t *testing.T) {
 	for _, path := range []string{
 		".golangci.yml",
+		"quality-tools.yml",
+		".github/workflows/quality.yml",
+		"install-quality-tools.sh",
 		"harnesslint",
 		"commentlint",
 		"glm-worker/internal/harnesslint/run.go",

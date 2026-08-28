@@ -4,6 +4,11 @@ import (
 	"strings"
 )
 
+type qualityWiringCheck struct {
+	path   string
+	tokens []string
+}
+
 func scanQualitySurface(root string, paths []string) ([]Violation, error) {
 	wiring, err := qualityWiringViolations(root, paths)
 	if err != nil {
@@ -32,14 +37,8 @@ func qualityWiringViolations(root string, paths []string) ([]Violation, error) {
 	return violations, nil
 }
 
-func qualityWiringChecks() []struct {
-	path   string
-	tokens []string
-} {
-	return []struct {
-		path   string
-		tokens []string
-	}{
+func qualityWiringChecks() []qualityWiringCheck {
+	checks := []qualityWiringCheck{
 		{
 			path: "glm-worker/internal/workflow/workflow.go",
 			tokens: []string{
@@ -60,6 +59,8 @@ func qualityWiringChecks() []struct {
 		{
 			path: "install.sh",
 			tokens: []string{
+				"quality-tools.yml",
+				"require_quality_tool",
 				"./cmd/harnesslint",
 				"./cmd/plancheck",
 				"for name in glm-worker commentlint harnesslint merge-json",
@@ -75,7 +76,44 @@ func qualityWiringChecks() []struct {
 		{
 			path: "harnesslint",
 			tokens: []string{
+				"quality-tools.yml",
+				"GOTOOLCHAIN",
+				"GOCACHE",
 				"run ./cmd/harnesslint",
+			},
+		},
+	}
+	return append(checks, qualityToolWiringChecks()...)
+}
+
+func qualityToolWiringChecks() []qualityWiringCheck {
+	return []qualityWiringCheck{
+		{
+			path: "quality-tools.yml",
+			tokens: []string{
+				"go:",
+				"lint-go:",
+				"golangci-lint:",
+				"shellcheck:",
+				"shfmt:",
+			},
+		},
+		{
+			path: ".github/workflows/quality.yml",
+			tokens: []string{
+				"quality-tools.yml",
+				"quality-tools.outputs.go_version",
+				"./install-quality-tools.sh",
+			},
+		},
+		{
+			path: "install-quality-tools.sh",
+			tokens: []string{
+				"quality-tools.yml",
+				"QUALITY_TOOLS_BIN_DIR",
+				"golangci-lint/releases/download",
+				"shellcheck/releases/download",
+				"go install",
 			},
 		},
 	}

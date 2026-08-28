@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
@@ -20,7 +21,12 @@ type commandRunner interface {
 	run(dir, name string, args ...string) (commandResult, error)
 }
 
-type realCommandRunner struct{}
+type realCommandRunner struct {
+	goToolchain       string
+	lintGoToolchain   string
+	goCache           string
+	golangciLintCache string
+}
 
 type missingToolError struct {
 	name string
@@ -34,9 +40,23 @@ func (e *missingToolError) Error() string {
 	return "required quality tool is missing: " + e.name
 }
 
-func (realCommandRunner) run(dir, name string, args ...string) (commandResult, error) {
-	command := exec.Command(name, args...)
+func (r realCommandRunner) run(dir, name string, args ...string) (commandResult, error) {
+	commandName := name
+	toolchain := r.goToolchain
+	switch name {
+	case "lint-go":
+		commandName = "go"
+		toolchain = r.lintGoToolchain
+	case "golangci-lint":
+		toolchain = r.lintGoToolchain
+	}
+	command := exec.Command(commandName, args...)
 	command.Dir = dir
+	command.Env = append(os.Environ(),
+		"GOTOOLCHAIN="+toolchain,
+		"GOCACHE="+r.goCache,
+		"GOLANGCI_LINT_CACHE="+r.golangciLintCache,
+	)
 	output, err := command.CombinedOutput()
 	if err == nil {
 		return commandResult{output: string(output)}, nil

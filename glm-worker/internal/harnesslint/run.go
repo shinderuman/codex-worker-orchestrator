@@ -9,11 +9,19 @@ import (
 )
 
 func Check(root string) (Report, error) {
-	return run(root, false, realCommandRunner{})
+	runner, err := newRealCommandRunner(root)
+	if err != nil {
+		return Report{}, err
+	}
+	return run(root, false, runner)
 }
 
 func Run(root string, fix bool) (Report, error) {
-	return run(root, fix, realCommandRunner{})
+	runner, err := newRealCommandRunner(root)
+	if err != nil {
+		return Report{}, err
+	}
+	return run(root, fix, runner)
 }
 
 func run(root string, fix bool, runner commandRunner) (Report, error) {
