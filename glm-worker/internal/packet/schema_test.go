@@ -20,8 +20,9 @@ func TestSchemaJSONRestrictedVocabulary(t *testing.T) {
 	allowedTypes := map[string]bool{"object": true, "array": true, "string": true, "number": true, "boolean": true}
 
 	for name, encoded := range map[string]func() (string, error){
-		"worker":   WorkerSchemaJSON,
-		"reviewer": ReviewerSchemaJSON,
+		"worker":      WorkerSchemaJSON,
+		"reviewer":    ReviewerSchemaJSON,
+		"risk-floor":  RiskFloorReviewerSchemaJSON,
 	} {
 		t.Run(name, func(t *testing.T) {
 			encoded, err := encoded()
@@ -135,10 +136,27 @@ func TestReviewerSchemaContents(t *testing.T) {
 	if _, ok := properties["decision"]; ok {
 		t.Fatal("reviewer schemaはworker専用fieldを持ってはいけません")
 	}
+}
+
+func TestRiskFloorReviewerSchemaContents(t *testing.T) {
+	encoded, err := RiskFloorReviewerSchemaJSON()
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	decoded := decodeSchema(t, encoded)
+	properties := decoded["properties"].(map[string]any)
+	status := properties["status"].(map[string]any)["enum"].([]any)
+	if len(status) != 1 || status[0] != string(StatusNeedsSolReview) {
+		t.Fatalf("risk-floor status enum = %v", status)
+	}
+	risk := properties["risk"].(map[string]any)["enum"].([]any)
+	if len(risk) != 1 || risk[0] != string(RiskHigh) {
+		t.Fatalf("risk-floor risk enum = %v", risk)
+	}
 	required := decoded["required"].([]any)
 	for _, want := range []string{
-		"status", "risk", "summary", "requirement_coverage", "invariants",
-		"test_evidence", "issues", "residual_risk", "targets", "artifacts",
+		"status", "risk", "summary", "requirement_coverage", "invariants", "test_evidence",
+		"issues", "residual_risk", "sol_question", "targets", "artifacts",
 	} {
 		found := false
 		for _, raw := range required {
@@ -148,12 +166,7 @@ func TestReviewerSchemaContents(t *testing.T) {
 			}
 		}
 		if !found {
-			t.Fatalf("reviewer requiredに%sがありません: %v", want, required)
-		}
-	}
-	for _, raw := range required {
-		if raw == "sol_question" {
-			t.Fatalf("通常reviewer schemaでstatus依存fieldを必須にできません: %v", required)
+			t.Fatalf("risk-floor requiredに%sがありません: %v", want, required)
 		}
 	}
 }
