@@ -8,8 +8,9 @@ import (
 )
 
 type TaskCallLogs struct {
-	TaskID string
-	Logs   []ModelCallLog
+	TaskID            string
+	Logs              []ModelCallLog
+	ConvergenceDeltas map[string]string
 }
 
 type CallRecordCounts struct {

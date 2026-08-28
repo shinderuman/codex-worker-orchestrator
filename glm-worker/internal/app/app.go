@@ -88,6 +88,7 @@ const (
 	ModeCodexLimit
 	ModeInstallSmoke
 	ModeQualityGate
+	ModeModelRouting
 )
 
 const fixOriginUsage = "[--origin codex-review|glm-reviewer|user-amendment|external-review|metadata-repair] [--accepted-scope current-diff]"
@@ -145,6 +146,9 @@ var commandParsers = map[string]commandParser{
 	"--call-outliers": func(args []string) (Command, error) {
 		return singleArgCommand(args, ModeCallOutliers, "usage: glm-worker --call-outliers")
 	},
+	"--model-routing": func(args []string) (Command, error) {
+		return singleArgCommand(args, ModeModelRouting, "usage: glm-worker --model-routing")
+	},
 	"--codex-limit": func(args []string) (Command, error) {
 		return singleArgCommand(args, ModeCodexLimit, "usage: glm-worker --codex-limit")
 	},
@@ -166,7 +170,7 @@ func usageError(format string, args ...any) *UsageError {
 
 func ParseCommand(args []string) (Command, error) {
 	if len(args) == 0 {
-		return Command{}, usageError("usage: glm-worker <instruction> | --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix-stdin <payload-bytes> [--sha256 <hex>] %s | --accept | --resume | --stop | --isolate | --status | --watch [--verbose] | --timeline [task-id] | --convergence [task-id] | --stats | --reset | --eval-ab <run-dir> | --call-outliers | --codex-limit | --check-wake-coalesce <parent-thread-id> <auto-resume-at-rfc3339> | --install-smoke %s | --quality-gate %s", fixOriginUsage, installSmokeUsage, qualityGateUsage)
+		return Command{}, usageError("usage: glm-worker <instruction> | --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix-stdin <payload-bytes> [--sha256 <hex>] %s | --accept | --resume | --stop | --isolate | --status | --watch [--verbose] | --timeline [task-id] | --convergence [task-id] | --stats | --reset | --eval-ab <run-dir> | --call-outliers | --codex-limit | --check-wake-coalesce <parent-thread-id> <auto-resume-at-rfc3339> | --install-smoke %s | --quality-gate %s | --model-routing", fixOriginUsage, installSmokeUsage, qualityGateUsage)
 	}
 	if parser, ok := commandParsers[args[0]]; ok {
 		return parser(args)
@@ -436,6 +440,8 @@ func executeStateless(cmd Command, cfg config.AppConfig, stdout io.Writer) (bool
 		return true, printEvalAB(state.AttachStateStore(cfg), cmd.Payload, stdout)
 	case ModeCallOutliers:
 		return true, printCallOutliers(state.AttachStateStore(cfg), stdout)
+	case ModeModelRouting:
+		return true, printModelRouting(state.AttachStateStore(cfg), stdout)
 	case ModeStop:
 		return true, requestStop(cfg, stdout)
 	case ModeCodexLimit:

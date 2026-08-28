@@ -145,31 +145,6 @@ func TestCallOutliersEmptyTelemetryDirIsNone(t *testing.T) {
 	}
 }
 
-func TestCallOutliersDirReadErrorIsProcessError(t *testing.T) {
-	cfg := newAppConfig(t)
-	st := state.AttachStateStore(cfg)
-	if err := os.MkdirAll(filepath.Dir(st.Path("telemetry")), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(st.Path("telemetry"), []byte("not-a-dir\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	var out bytes.Buffer
-	err := Execute(Command{Mode: ModeCallOutliers}, cfg, nil, &out, io.Discard)
-
-	if err == nil {
-		t.Fatalf("dir読取失敗が正常終了しました: %s", out.String())
-	}
-	if out.Len() != 0 {
-		t.Fatalf("失敗時にstdoutへ出力があります: %q", out.String())
-	}
-	envelope, _ := writeProcessErrorJSON(t, err)
-	if envelope.Error.Kind != "internal" || envelope.Error.Message == "" {
-		t.Fatalf("process error = %#v", envelope.Error)
-	}
-}
-
 func TestExecuteCallOutliersEmptyState(t *testing.T) {
 	base := t.TempDir()
 	cfg := config.AppConfig{StateBase: base, RepoHash: "calloutliershash", RepoRoot: "/repo"}

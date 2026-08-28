@@ -13,7 +13,8 @@ type LockProbe struct {
 }
 
 const (
-	statusNone = "none"
+	statusNone    = "none"
+	statusPartial = "partial"
 
 	LockHeld    LockState = "held"
 	LockFree    LockState = "free"

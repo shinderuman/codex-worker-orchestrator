@@ -46,6 +46,10 @@ blocked taskには、
 「permission received」だけで設計未確定taskをGLMへ投げないでください。
 ````
 
+## Resolved references
+
+- Task 013の完了証跡は`IMPLEMENTATION_HISTORY.md`の`2026-08-29 Task 013 worker model routing evaluation`を正とする。current codex-config telemetryはsingle resolved model `glm-5.3`だけで、alias差はmodel品質証拠にならず、routing変更はNo-Go。
+
 ## Purpose
 
 品質を維持してprovider costを最適化する。
@@ -68,7 +72,7 @@ GLM-4.7 sample不足。
 
 ## Dependencies
 
-- `IMPLEMENTATION_TASKS/013-worker-model-routing-evaluation.md`
+none
 
 ## Review findings
 
@@ -76,4 +80,4 @@ none
 
 ## Current boundary
 
-evidence/permission待ち。
+Task 013 evidenceはquality delta unknownでrouting変更を支持しない。複数resolved modelを同一repository・role・normalized phase・effective risk・convergence delta groupで比較できる実運用証拠とユーザー許可待ち。
