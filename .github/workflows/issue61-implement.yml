@@ -126,26 +126,23 @@ jobs:
           s = p.read_text()
           start = s.index('func TestGitAuthorityGuardAllowsFixtureGitOutsideProtectedRepo')
           end = s.index('func TestGitAuthorityGuardDetectsProxyBypassRefMutation', start)
-          replacement = r'''func TestGitAuthorityGuardAllowsFixtureGitInsideInvocationTempRoot(t *testing.T) {
+          replacement = r'''func TestGitAuthorityGuardRejectsFixtureGitOutsideInvocationTempRoot(t *testing.T) {
           if runtime.GOOS == "windows" {
               t.Skip("shell fixture is Unix-oriented")
           }
           root := newGitAuthorityRepo(t)
-          command := "fixture_root=\"$GLM_WORKER_GIT_TEMP_ROOT/fixture\"; " +
-              "git init -q \"$fixture_root/repo\"; " +
-              "git init --bare -q \"$fixture_root/remote.git\"; " +
-              "git -C \"$fixture_root/repo\" config user.email fixture@example.invalid; " +
-              "git -C \"$fixture_root/repo\" config user.name fixture; " +
-              "printf '%s\\n' fixture >\"$fixture_root/repo/tracked.txt\"; " +
-              "git -C \"$fixture_root/repo\" add tracked.txt; " +
-              "git -C \"$fixture_root/repo\" commit -q -m fixture; " +
-              "git -C \"$fixture_root/repo\" branch fixture-branch; " +
-              "git -C \"$fixture_root/repo\" remote add origin \"$fixture_root/remote.git\"; " +
-              "git -C \"$fixture_root/repo\" push -q origin HEAD:refs/heads/main; " +
-              "git -C \"$fixture_root/remote.git\" rev-parse refs/heads/main >/dev/null"
-          guarded, _ := newGitAuthorityProductionRunner(t, root, command, nil)
-          if _, err := guarded.Run(state.WorkerRole, "worker-new", "worker-model", false, "high", "prompt", filepath.Join(t.TempDir(), "output")); err != nil {
-              t.Fatalf("invocation temp fixture git failed: %v", err)
+          externalRoot := t.TempDir()
+          fixtureRepo := filepath.Join(externalRoot, "repo")
+          runGitAuthorityCommand(t, "", "init", "-q", fixtureRepo)
+          command := "git -C \"$EXTERNAL_ROOT/repo\" branch blocked"
+          guarded, _ := newGitAuthorityProductionRunner(t, root, command, map[string]string{"EXTERNAL_ROOT": externalRoot})
+          _, err := guarded.Run(state.WorkerRole, "worker-new", "worker-model", false, "high", "prompt", filepath.Join(t.TempDir(), "output"))
+          var guardErr *GitAuthorityGuardError
+          if !errors.As(err, &guardErr) || guardErr.Stage != "blocked-command" {
+              t.Fatalf("guard error = %#v", err)
+          }
+          if !containsGitAuthorityMutation(guardErr.Mutations, "command:branch") {
+              t.Fatalf("mutations = %v want command:branch", guardErr.Mutations)
           }
           }
 
