@@ -29,7 +29,21 @@ type structuredLinesOutput struct {
 }
 
 func Run(args []string) error {
-	return run(args, config.Load, instructionSurfaceRunnerFactory, os.Stdin, os.Stdout, os.Stderr)
+	return runEntry(args, config.Load, instructionSurfaceRunnerFactory, os.Stdin, os.Stdout, os.Stderr)
+}
+
+func runEntry(
+	args []string,
+	loadConfig func() (config.AppConfig, error),
+	runnerFactory RunnerFactory,
+	stdin io.Reader,
+	stdout io.Writer,
+	stderr io.Writer,
+) error {
+	if handled, err := runHelp(args, stdout); handled {
+		return err
+	}
+	return run(args, loadConfig, runnerFactory, stdin, stdout, stderr)
 }
 
 func streamOutputMode(mode CommandMode) bool {

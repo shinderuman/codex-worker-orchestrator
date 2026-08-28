@@ -193,3 +193,7 @@
 - [x] `quality-tools.yml`を実行用Go / lint解析用Go / golangci-lint / shellcheck / shfmt versionの単一authorityとし、root wrapper、installed workflow内harnesslint、installer、GitHub Actionsが同じcontractを使用する。version別Go/golangci cacheを分離し、version driftはlint findingではなくpreflight mismatchとして拒否する。`install-quality-tools.sh`をlocal/CI共通導入経路とし、installerの欠落・不一致errorから全固定tool導入commandを案内する。
 - [x] full testで露出したhardening後不整合を同期した。unborn Git repositoryでは`baseline-head`不在をerrorにせず既存empty-tree比較へ渡し、isolation統合後にunknown untracked surfaceを保持するresume testは現行HIGH risk floorの`NEEDS_SOL_REVIEW`を期待する。完了済み018へのstale dependencyも019から除去した。
 - [x] local実環境で`./harnesslint`、`go test ./...`、`go test -race ./...`、`go vet ./...`、`go build ./...`、`tests/install_smoke.sh`がPASS。固定toolを`~/.local/bin`へ導入し、runtime/managed fileのidempotent installも確認して親Codex commitへ同期した。ACTIVE 010の実装には未着手。
+
+## 2026-08-28 CLI help command integration
+
+- [x] ユーザー提示PR #26 commit `f3e9c604e463e5ed00221a58c258699dcd3539ad`をcurrent mainへ照合し、`glm-worker --help` / `-h`をrepository config・state・lock・model executionより前にJSON helpとして処理するentrypointと、helpへの余分な引数を非zero usage errorで拒否するtestを採用した。PR本文どおり一般的なunknown-option policyへ拡張していない。GPT proposalに対する親Sol独立diff reviewで指摘なし。GitHub Repository Lint、local固定Go full suite、race suite、repository harnesslint、source buildの`--help` / `-h` / `--help extra` smokeがPASS。CodeRabbit statusはauto review disabledによるskipのためreview証拠に含めていない。

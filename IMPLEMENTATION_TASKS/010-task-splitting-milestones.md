@@ -57,10 +57,15 @@ worker call長大化を機械的切断ではなく責務境界で抑える。
 
 none
 
+## External feasibility
+
+status: not-applicable
+
 ## Review findings
 
-none
+- 2026-08-28 execution recovery: 評価artifactの主要集計とoutlier対応は再現済みだが、Task 007後追いcommit `705656a` / `168d3d7`の責務説明を一括表記した軽微な誤帰属を訂正すること。production/source diffはなく、GLM環境でfull testを再実行するとtest fixture内の`git init` / `git config` / `git remote`をauthority guardが検出するため、回復callは既存証拠の静的検証とartifact訂正に限定し、同commandを再実行しないこと。
+- 2026-08-28 runtime blocker: 誤帰属は訂正済みartifactで解消し、主要集計も静的再計算で一致した。ただしno-testの静的回復callでもGit authority guardがmodel実行中の許可外subcommandを検出してworker terminal resultを拒否し、独立reviewerへ到達できない状態が3回再現した。Task 010の開始前境界に従い、current mainの実運用成立性懸念として修正せず停止し、修正担当・対応方針をユーザー判断へ戻す。
 
 ## Current boundary
 
-ACTIVE。Task 009の再現可能outlier reportは利用可能。2026-08-23 baselineはworker時間比率約81%と複数の累積400 turn超taskを示すが、分割効果は未確定。GPT hardening campaign完了後の通常Plan先頭task。ただし、最新`main`をローカルCodexで再読・動作確認して新HEADの実運用成立性を確認するまでは本taskの実装を開始しない。確認で懸念や不整合が出た場合は報告に留め、修正担当・対応方針はユーザー判断を待つ。問題がなければ通常開発再開時に本taskから継続する。
+ACTIVE。Task 009の再現可能outlier reportは利用可能。評価artifactではworker時間比率79.2%、task-level outlier 3件、task-management再設計前後のexplicit-fix turns中央値59→0を再現し、既存責務粒度基準と現行resume境界を維持、hard cap・強制分割・強制milestoneは不採用という結論候補まで作成済み。production/source変更はない。`glm-worker --help`誤起動はPR #26由来の専用entrypointで解消したが、Git authority guardがworker terminal resultを3回拒否し独立reviewerへ到達できないruntime blockerは残るため、修正担当・対応方針のユーザー判断待ち。Task 010は未完了のまま保持する。
