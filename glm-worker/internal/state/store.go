@@ -162,6 +162,7 @@ func taskStateFileNames() []string {
 		"baseline-head",
 		"baseline-worktree.patch",
 		"baseline-index.patch",
+		"accepted-fix-scope.json",
 		stopWorktreePatchFile,
 		stopIndexPatchFile,
 		isolationStateFile,

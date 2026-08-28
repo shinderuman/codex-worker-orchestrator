@@ -28,10 +28,11 @@ type Command struct {
 
 	SHA256 string
 
-	Origin   string
-	Role     string
-	Verify   VerifyArgs
-	Coalesce CoalesceArgs
+	Origin        string
+	AcceptedScope string
+	Role          string
+	Verify        VerifyArgs
+	Coalesce      CoalesceArgs
 }
 
 type VerifyArgs struct {
@@ -89,7 +90,7 @@ const (
 	ModeQualityGate
 )
 
-const fixOriginUsage = "[--origin codex-review|glm-reviewer|user-amendment|external-review|metadata-repair]"
+const fixOriginUsage = "[--origin codex-review|glm-reviewer|user-amendment|external-review|metadata-repair] [--accepted-scope current-diff]"
 
 const installSmokeUsage = "[--role worker|reviewer|fix|parent]"
 
@@ -275,6 +276,9 @@ func stdinPayloadCommand(mode CommandMode, args []string, usage string, allowOri
 }
 
 func applyStdinPayloadOption(command *Command, name, value, usage string, allowOrigin bool, seenSHA256 *bool) error {
+	if name == "--accepted-scope" {
+		return applyAcceptedScopeOption(command, value, usage, allowOrigin)
+	}
 	switch name {
 	case "--sha256":
 		if *seenSHA256 {
@@ -296,6 +300,14 @@ func applyStdinPayloadOption(command *Command, name, value, usage string, allowO
 	default:
 		return usageError("%s", usage)
 	}
+}
+
+func applyAcceptedScopeOption(command *Command, value, usage string, allowOrigin bool) error {
+	if !allowOrigin || command.AcceptedScope != "" || value != "current-diff" {
+		return usageError("%s", usage)
+	}
+	command.AcceptedScope = value
+	return nil
 }
 
 func parsePayloadSHA256(value string) (string, error) {
@@ -483,7 +495,7 @@ func executeWorkflow(cmd Command, cfg config.AppConfig, st *state.StateStore, rf
 	case ModeDecision:
 		return wf.ExecuteDecision(cmd.Payload)
 	case ModeFix:
-		return wf.ExecuteExplicitFix(cmd.Payload, cmd.Origin)
+		return wf.ExecuteExplicitFixWithScope(cmd.Payload, cmd.Origin, cmd.AcceptedScope)
 	case ModeResume:
 		return wf.ExecuteResume()
 	default:

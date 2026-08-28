@@ -221,7 +221,7 @@ func (w *Workflow) initializeNewTask(request string) (string, error) {
 	if err := w.state.Write("last-request", request); err != nil {
 		return "", err
 	}
-	if err := w.state.Remove("last-decision", "last-review", activeTaskStateKey); err != nil {
+	if err := w.state.Remove("last-decision", "last-review", activeTaskStateKey, acceptedFixScopeStateFile); err != nil {
 		return "", err
 	}
 
@@ -259,7 +259,7 @@ func (w *Workflow) ExecuteDecision(decision string) error {
 			return err
 		}
 		pocStage := decl.pocStage()
-		if err := w.state.Write("last-decision", decision); err != nil {
+		if err := w.replaceAcceptedScopeWithDecision(decision); err != nil {
 			return err
 		}
 		if err := w.state.SetTaskStatus(state.TaskStatusActive); err != nil {
@@ -288,7 +288,18 @@ func (w *Workflow) ExecuteDecision(decision string) error {
 	}))
 }
 
+func (w *Workflow) replaceAcceptedScopeWithDecision(decision string) error {
+	if err := w.state.Remove(acceptedFixScopeStateFile); err != nil {
+		return err
+	}
+	return w.state.Write("last-decision", decision)
+}
+
 func (w *Workflow) ExecuteExplicitFix(instruction, origin string) error {
+	return w.ExecuteExplicitFixWithScope(instruction, origin, "")
+}
+
+func (w *Workflow) ExecuteExplicitFixWithScope(instruction, origin, acceptedScope string) error {
 	return quietWhenParentFileGuardStopped(w.withTemp(func() error {
 		if w.state.Exists("pending-decision") {
 			return &WorkerError{Message: "task is waiting for Sol decision; resolve it before --fix"}
@@ -301,6 +312,7 @@ func (w *Workflow) ExecuteExplicitFix(instruction, origin string) error {
 		if err != nil {
 			return &WorkerError{Message: "no previous task for this repository"}
 		}
+		w.prepareAcceptedFixScope(acceptedScope)
 
 		decision := w.state.ReadOr("last-decision", "none")
 		review := w.state.ReadOr("last-review", "none")
@@ -2102,6 +2114,9 @@ func (w *Workflow) enforceRiskFloor(
 	reviewResult packet.Result,
 ) (packet.Result, bool, error) {
 	if !effectiveHigh || reviewResult.Status != packet.StatusPass {
+		return reviewResult, false, nil
+	}
+	if w.acceptedFixScopeCoversCurrent() {
 		return reviewResult, false, nil
 	}
 	reemitResult, stopped, err := w.riskFloorReemit(request, workerResult, reviewNumber, autoFixes, decision)
