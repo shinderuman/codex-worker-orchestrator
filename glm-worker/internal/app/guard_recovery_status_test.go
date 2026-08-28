@@ -39,6 +39,12 @@ func TestGuardRecoveryStatusIsVisibleAndResumable(t *testing.T) {
 	if !fillStatusCheckpoint(st, &output) {
 		t.Fatal("guard recovery checkpoint must set resume_available")
 	}
+	if !checkpointResumeAvailable(st) {
+		t.Fatal("stop endpoint must expose guard recovery as resumable")
+	}
+	if got := stopFinishedResult(st.TaskStatus()); got != "terminal" {
+		t.Fatalf("stop endpoint result = %q want terminal", got)
+	}
 	status := taskStatusPtr(st.TaskStatus())
 	if status == nil || *status != string(state.TaskStatusGuardRecoverable) {
 		t.Fatalf("task status = %v", status)
