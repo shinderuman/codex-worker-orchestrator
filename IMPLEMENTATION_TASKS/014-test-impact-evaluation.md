@@ -74,6 +74,10 @@ raw commandを保存しない原則を維持したまま、既存stream-json/eve
 
 検証品質を維持しながら無駄なtest costの有無を判断する。
 
+## External feasibility
+
+status: not-applicable
+
 ## Contract
 
 - 利用可能な一次証拠を先に明示し、deterministically得られる範囲だけchange/test category、call数、duration、failure/escaped outcomeを対応付ける
