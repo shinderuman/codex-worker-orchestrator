@@ -31,6 +31,24 @@ func (w *Workflow) saveGuardRecoverableState(
 		return err
 	}
 
+	checkpoint = w.guardRecoveryCheckpoint(checkpoint, execution)
+	if err := w.captureGuardRecoveryRetention(&checkpoint); err != nil {
+		return err
+	}
+	if err := w.state.SaveResumeCheckpoint(checkpoint); err != nil {
+		return err
+	}
+	if err := w.state.SetTaskStatus(state.TaskStatusGuardRecoverable); err != nil {
+		return err
+	}
+	w.recordGuardRecoverableCall(checkpoint, execution, outputPath)
+	return w.guardRecoverableError(checkpoint)
+}
+
+func (w *Workflow) guardRecoveryCheckpoint(
+	checkpoint state.ResumeCheckpoint,
+	execution modelCallExecution,
+) state.ResumeCheckpoint {
 	checkpoint.GuardRecoverable = true
 	checkpoint.GuardFailure = boundedText(execution.runErr.Error(), packet.MaxDiagnosticBytes)
 	checkpoint.RateLimited = false
@@ -43,7 +61,10 @@ func (w *Workflow) saveGuardRecoverableState(
 	checkpoint.UserInterrupted = false
 	checkpoint.CompletedResult = w.completedGuardWorkerResult(checkpoint, execution.runResult)
 	checkpoint.StopParentFiles = captureStopParentFiles(w.config.RepoRoot)
+	return checkpoint
+}
 
+func (w *Workflow) captureGuardRecoveryRetention(checkpoint *state.ResumeCheckpoint) error {
 	snapshot, err := state.CaptureGitSnapshot(w.config.RepoRoot)
 	if err != nil {
 		return err
@@ -54,14 +75,14 @@ func (w *Workflow) saveGuardRecoverableState(
 	}
 	checkpoint.StopGitSnapshot = &snapshot
 	checkpoint.StopDirtyFiles = files
+	return nil
+}
 
-	if err := w.state.SaveResumeCheckpoint(checkpoint); err != nil {
-		return err
-	}
-	if err := w.state.SetTaskStatus(state.TaskStatusGuardRecoverable); err != nil {
-		return err
-	}
-
+func (w *Workflow) recordGuardRecoverableCall(
+	checkpoint state.ResumeCheckpoint,
+	execution modelCallExecution,
+	outputPath string,
+) {
 	packetStatus := ""
 	if checkpoint.CompletedResult != nil {
 		packetStatus = string(checkpoint.CompletedResult.Status)
@@ -77,6 +98,9 @@ func (w *Workflow) saveGuardRecoverableState(
 		outputPath,
 		callDiagnostics{},
 	)
+}
+
+func (w *Workflow) guardRecoverableError(checkpoint state.ResumeCheckpoint) error {
 	taskID, _ := w.state.TaskID()
 	return &GuardRecoverableError{
 		Phase:       checkpoint.Phase,
@@ -95,11 +119,7 @@ func (w *Workflow) completedGuardWorkerResult(checkpoint state.ResumeCheckpoint,
 	if err != nil {
 		return nil
 	}
-	taskID, err := w.state.TaskID()
-	if err != nil {
-		return nil
-	}
-	if err := packet.ValidateArtifacts(result.Artifacts, w.state.ArtifactDir(taskID)); err != nil {
+	if err := w.validateCompletedGuardResult(result); err != nil {
 		return nil
 	}
 	return &result
@@ -109,45 +129,58 @@ func (w *Workflow) prepareGuardRecovery(checkpoint state.ResumeCheckpoint) (bool
 	if !checkpoint.GuardRecoverable {
 		return false, nil
 	}
-	stop := checkpoint.StopGitSnapshot
-	if stop == nil || stop.Head == "" || checkpoint.StopDirtyFiles == nil {
-		return false, &WorkerError{Phase: checkpoint.Phase, Message: "guard recovery checkpoint has no repository retention baseline"}
+	if err := validateGuardRecoveryRetention(checkpoint); err != nil {
+		return false, err
 	}
-
-	currentFiles, err := state.CaptureStopDirtyFiles(w.config.RepoRoot)
-	if err != nil {
-		return false, &WorkerError{Phase: checkpoint.Phase, Message: fmt.Sprintf("guard recovery cannot enumerate current dirty files: %v", err)}
+	if err := w.verifyGuardRecoveryDirty(checkpoint); err != nil {
+		return false, err
 	}
-	if diff := state.DescribeStopDirtyDiff(checkpoint.StopDirtyFiles, currentFiles); diff != "" {
-		return false, &WorkerError{Phase: checkpoint.Phase, Message: "guard recovery dirty work changed after stop: " + diff}
+	if err := w.verifyGuardRecoveryHead(checkpoint); err != nil {
+		return false, err
 	}
-
-	current, err := state.CaptureGitSnapshot(w.config.RepoRoot)
-	if err != nil {
-		return false, &WorkerError{Phase: checkpoint.Phase, Message: fmt.Sprintf("guard recovery cannot capture current repository snapshot: %v", err)}
-	}
-	reuseResult := current.Head == stop.Head
-	if current.Head != stop.Head {
-		if err := verifyHeadAncestry(w.config.RepoRoot, stop.Head, current.Head); err != nil {
-			return false, &WorkerError{Phase: checkpoint.Phase, Message: "guard recovery HEAD no longer descends from the stopped task HEAD"}
-		}
-		nonParent, err := headDeltaNonParentPaths(w.config.RepoRoot, stop.Head, current.Head)
-		if err != nil {
-			return false, &WorkerError{Phase: checkpoint.Phase, Message: fmt.Sprintf("guard recovery cannot classify parent repair delta: %v", err)}
-		}
-		reuseResult = len(nonParent) == 0
-	}
-
-	if !reuseResult || checkpoint.Stage != state.ResumeStageWorker || checkpoint.CompletedResult == nil {
-		return false, nil
-	}
-	if err := w.validateCompletedGuardResult(checkpoint, *checkpoint.CompletedResult); err != nil {
-		return false, nil
-	}
-	return true, nil
+	return w.guardRecoveryResultReusable(checkpoint), nil
 }
 
-func (w *Workflow) validateCompletedGuardResult(checkpoint state.ResumeCheckpoint, result packet.Result) error {
+func validateGuardRecoveryRetention(checkpoint state.ResumeCheckpoint) error {
+	if checkpoint.StopGitSnapshot != nil && checkpoint.StopGitSnapshot.Head != "" && checkpoint.StopDirtyFiles != nil {
+		return nil
+	}
+	return &WorkerError{Phase: checkpoint.Phase, Message: "guard recovery checkpoint has no repository retention baseline"}
+}
+
+func (w *Workflow) verifyGuardRecoveryDirty(checkpoint state.ResumeCheckpoint) error {
+	currentFiles, err := state.CaptureStopDirtyFiles(w.config.RepoRoot)
+	if err != nil {
+		return &WorkerError{Phase: checkpoint.Phase, Message: fmt.Sprintf("guard recovery cannot enumerate current dirty files: %v", err)}
+	}
+	if diff := state.DescribeStopDirtyDiff(checkpoint.StopDirtyFiles, currentFiles); diff != "" {
+		return &WorkerError{Phase: checkpoint.Phase, Message: "guard recovery dirty work changed after stop: " + diff}
+	}
+	return nil
+}
+
+func (w *Workflow) verifyGuardRecoveryHead(checkpoint state.ResumeCheckpoint) error {
+	current, err := state.CaptureGitSnapshot(w.config.RepoRoot)
+	if err != nil {
+		return &WorkerError{Phase: checkpoint.Phase, Message: fmt.Sprintf("guard recovery cannot capture current repository snapshot: %v", err)}
+	}
+	if current.Head == checkpoint.StopGitSnapshot.Head {
+		return nil
+	}
+	if err := verifyHeadAncestry(w.config.RepoRoot, checkpoint.StopGitSnapshot.Head, current.Head); err != nil {
+		return &WorkerError{Phase: checkpoint.Phase, Message: "guard recovery HEAD no longer descends from the stopped task HEAD"}
+	}
+	return nil
+}
+
+func (w *Workflow) guardRecoveryResultReusable(checkpoint state.ResumeCheckpoint) bool {
+	if checkpoint.Stage != state.ResumeStageWorker || checkpoint.CompletedResult == nil {
+		return false
+	}
+	return w.validateCompletedGuardResult(*checkpoint.CompletedResult) == nil
+}
+
+func (w *Workflow) validateCompletedGuardResult(result packet.Result) error {
 	if err := packet.ValidateWorkerResult(result); err != nil {
 		return err
 	}
