@@ -2,8 +2,10 @@ package workflow
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -37,7 +39,7 @@ func (w *Workflow) saveGuardRecoverableState(
 	checkpoint.ProviderUnavailable = false
 	checkpoint.ProviderUnavailableClassification = ""
 	checkpoint.ProviderUnavailableProbes = 0
-	checkpoint.ProviderUnavailableStartedAt = timeZero
+	checkpoint.ProviderUnavailableStartedAt = time.Time{}
 	checkpoint.UserInterrupted = false
 	checkpoint.CompletedResult = w.completedGuardWorkerResult(checkpoint, execution.runResult)
 	checkpoint.StopParentFiles = captureStopParentFiles(w.config.RepoRoot)
