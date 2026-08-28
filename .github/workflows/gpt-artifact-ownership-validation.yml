@@ -1,0 +1,36 @@
+name: GPT artifact ownership validation
+
+on:
+  push:
+    branches:
+      - gpt/artifact-ownership-recovery
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: gpt/artifact-ownership-recovery
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.25.4'
+          cache: false
+      - name: Go test
+        working-directory: glm-worker
+        run: go test ./...
+      - name: Go vet
+        working-directory: glm-worker
+        run: go vet ./...
+      - name: Remove temporary workflow
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/gpt-artifact-ownership-validation.yml
+          git commit -m 'ci: remove temporary artifact ownership validation'
+          git push origin HEAD:gpt/artifact-ownership-recovery
