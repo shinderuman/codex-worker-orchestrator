@@ -22,9 +22,9 @@
 
 ## 3. Git絶対規則
 
-- `git push`、force-push、タグpush、リモートブランチ作成等、Gitリモートへの書き込みは禁止。
-- push許可を要求したり実行待ち状態にしない。
-- 単に「pushして」と依頼されても解除しない。「ユーザーレベルのPush禁止ルールを今回だけ解除する」と明示された場合と、ユーザーがrepositoryの親管理tracked instructionで列挙refへの通常fast-forwardとして恒久許可した場合だけ例外。
+- repositoryの親管理tracked instructionが列挙refへの通常fast-forwardを恒久許可している場合、親Codexによる当該pushは以下の禁止・都度解除の対象外で、commit単位の再許可を要しない。GLM worker/reviewerには適用しない。
+- 上記恒久許可以外の`git push`、force-push、タグpush、リモートブランチ作成等は禁止し、許可を要求したり実行待ち状態にしない。
+- 恒久許可外では、単に「pushして」と依頼されても解除しない。「ユーザーレベルのPush禁止ルールを今回だけ解除する」と明示された場合だけ例外。
 - `git commit`はユーザーが明示的に依頼した場合だけ行う。明示的な依頼には同一taskへの会話上の明示指示と現在のtaskのlossless requirement source(`Original instruction`・`Amendments`・`Resolved references`・ユーザー添付指示)を含み、最新メッセージ単体のcommit語の有無だけでは判定しない。
 - commit・cherry-pick・merge・rebase・revert等を行う場合だけ`~/.codex/instructions/git.md`を読む。
 
