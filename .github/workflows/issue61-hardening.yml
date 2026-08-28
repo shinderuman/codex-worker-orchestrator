@@ -1,0 +1,89 @@
+name: Issue 61 Hardening
+
+on:
+  push:
+    branches:
+      - gpt/issue-61-temp-index-read-tree
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    if: ${{ !contains(github.event.head_commit.message, 'Harden issue 61 temp index target') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: gpt/issue-61-temp-index-read-tree
+      - name: Read quality tool contract
+        id: quality-tools
+        run: |
+          GO_VERSION=$(awk -F': ' '$1 == "go" { print $2 }' quality-tools.yml)
+          printf 'go_version=%s\n' "$GO_VERSION" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ steps.quality-tools.outputs.go_version }}
+          cache: false
+      - name: Install quality tools
+        run: |
+          quality_bin="$(go env GOPATH)/bin"
+          QUALITY_TOOLS_BIN_DIR="$quality_bin" ./install-quality-tools.sh
+          printf '%s\n' "$quality_bin" >> "$GITHUB_PATH"
+      - name: Harden target classification
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('glm-worker/internal/runner/git_authority_proxy.go')
+          s = p.read_text()
+          old = '''case "${GIT_INDEX_FILE:-}" in
+            /*) ;;
+            *) return 1 ;;
+          esac
+          index=$(git_guard_normalize_path "$GIT_INDEX_FILE" /) || return 1
+          '''
+          old = '\n'.join(line[10:] if line.startswith('          ') else line for line in old.splitlines())
+          new = '''case "${GIT_INDEX_FILE:-}" in
+            /*) ;;
+            *) return 1 ;;
+          esac
+          if [ -e "$GIT_INDEX_FILE" ] || [ -L "$GIT_INDEX_FILE" ]; then return 1; fi
+          index=$(git_guard_normalize_path "$GIT_INDEX_FILE" /) || return 1
+          '''
+          new = '\n'.join(line[10:] if line.startswith('          ') else line for line in new.splitlines())
+          if old not in s:
+              raise SystemExit('temp index target anchor not found')
+          p.write_text(s.replace(old, new, 1))
+
+          p = Path('glm-worker/internal/runner/git_authority_guard_test.go')
+          s = p.read_text()
+          anchor = '''\t\t{name: "external index", command: "GIT_INDEX_FILE=\\\"$EXTERNAL_INDEX\\\" git read-tree HEAD", env: map[string]string{"EXTERNAL_INDEX": externalIndex}},
+          \t\t{name: "worktree update option", command: "GIT_INDEX_FILE=\\\"$GLM_WORKER_GIT_TEMP_ROOT/snapshot-index\\\" git read-tree -u HEAD"},
+          '''
+          anchor = '\n'.join(line[10:] if line.startswith('          ') else line for line in anchor.splitlines()) + '\n'
+          replacement = '''\t\t{name: "external index", command: "GIT_INDEX_FILE=\\\"$EXTERNAL_INDEX\\\" git read-tree HEAD", env: map[string]string{"EXTERNAL_INDEX": externalIndex}},
+          \t\t{name: "existing authorized temp index", command: ": >\\\"$GLM_WORKER_GIT_TEMP_ROOT/existing-index\\\"; GIT_INDEX_FILE=\\\"$GLM_WORKER_GIT_TEMP_ROOT/existing-index\\\" git read-tree HEAD"},
+          \t\t{name: "symlink to protected index", command: "ln -s \\\"$PROTECTED_INDEX\\\" \\\"$GLM_WORKER_GIT_TEMP_ROOT/symlink-index\\\"; GIT_INDEX_FILE=\\\"$GLM_WORKER_GIT_TEMP_ROOT/symlink-index\\\" git read-tree HEAD", env: map[string]string{"PROTECTED_INDEX": protectedIndex}},
+          \t\t{name: "worktree update option", command: "GIT_INDEX_FILE=\\\"$GLM_WORKER_GIT_TEMP_ROOT/snapshot-index\\\" git read-tree -u HEAD"},
+          '''
+          replacement = '\n'.join(line[10:] if line.startswith('          ') else line for line in replacement.splitlines()) + '\n'
+          if anchor not in s:
+              raise SystemExit('read-tree rejection cases anchor not found')
+          p.write_text(s.replace(anchor, replacement, 1))
+          PY
+          gofmt -w glm-worker/internal/runner/git_authority_proxy.go glm-worker/internal/runner/git_authority_guard_test.go
+          git diff --check
+      - name: Validate
+        run: |
+          (cd glm-worker && go test ./...)
+          (cd glm-worker && go vet ./...)
+          (cd glm-worker && go build ./...)
+          ./harnesslint
+      - name: Commit hardening
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add glm-worker/internal/runner/git_authority_proxy.go glm-worker/internal/runner/git_authority_guard_test.go
+          git commit -m 'Harden issue 61 temp index target'
+          git push origin HEAD:gpt/issue-61-temp-index-read-tree
