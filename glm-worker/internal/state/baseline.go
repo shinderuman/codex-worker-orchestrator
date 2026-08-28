@@ -16,6 +16,7 @@ func CaptureGitBaseline(cfg config.AppConfig, state *StateStore) error {
 		{name: "baseline-status", args: []string{"status", "--porcelain=v1", "--untracked-files=all"}},
 		{name: "baseline-worktree.patch", args: []string{"diff", "--binary", "--no-ext-diff"}},
 		{name: "baseline-index.patch", args: []string{"diff", "--cached", "--binary", "--no-ext-diff"}},
+		{name: "baseline-untracked", args: []string{"ls-files", "-z", "--others", "--exclude-standard"}},
 	}
 
 	for _, item := range commands {
@@ -23,7 +24,7 @@ func CaptureGitBaseline(cfg config.AppConfig, state *StateStore) error {
 		command.Dir = cfg.RepoRoot
 		output, err := command.Output()
 		if err != nil {
-			if err := state.Remove("baseline-status", "baseline-worktree.patch", "baseline-index.patch"); err != nil {
+			if err := state.Remove("baseline-status", "baseline-worktree.patch", "baseline-index.patch", "baseline-untracked"); err != nil {
 				return err
 			}
 			return nil
@@ -35,7 +36,6 @@ func CaptureGitBaseline(cfg config.AppConfig, state *StateStore) error {
 
 	head, unborn, err := resolveRepoHead(cfg.RepoRoot)
 	if err != nil {
-
 		return state.Remove("baseline-head")
 	}
 	if unborn {
