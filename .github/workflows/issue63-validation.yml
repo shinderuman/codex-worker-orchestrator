@@ -46,3 +46,5 @@ jobs:
         with:
           name: issue63-validation
           path: ${{ runner.temp }}/issue63-validation
+
+# validation rerun after lint cleanup
