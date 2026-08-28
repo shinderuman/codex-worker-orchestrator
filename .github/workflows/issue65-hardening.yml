@@ -1,0 +1,100 @@
+name: Issue 65 Hardening
+
+on:
+  push:
+    branches:
+      - gpt/issue-65-attributable-quality
+
+permissions:
+  contents: write
+
+jobs:
+  hardening:
+    if: ${{ contains(github.event.head_commit.message, 'Harden issue 65 missing model usage') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: gpt/issue-65-attributable-quality
+      - name: Read quality tool contract
+        id: quality-tools
+        run: |
+          GO_VERSION=$(awk -F': ' '$1 == "go" { print $2 }' quality-tools.yml)
+          printf 'go_version=%s\n' "$GO_VERSION" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ steps.quality-tools.outputs.go_version }}
+          cache: false
+      - name: Install quality tools
+        run: |
+          quality_bin="$(go env GOPATH)/bin"
+          QUALITY_TOOLS_BIN_DIR="$quality_bin" ./install-quality-tools.sh
+          printf '%s\n' "$quality_bin" >> "$GITHUB_PATH"
+      - name: Patch missing usage attribution
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(text, old, new, label):
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected one anchor, got {count}')
+              return text.replace(old, new, 1)
+
+          p = Path('glm-worker/internal/state/routingeval.go')
+          s = p.read_text()
+          old = '''\tcase len(log.ResolvedModelUsage) > 0:
+          \t\tusage := log.ResolvedModelUsage[model]
+          \t\tsamples.cell.Usage.InputTokens += usage.InputTokens'''
+          new = '''\tcase len(log.ResolvedModelUsage) > 0:
+          \t\tusage, ok := log.ResolvedModelUsage[model]
+          \t\tif !ok {
+          \t\t\tsamples.cell.UsageUnknownCalls++
+          \t\t\treturn
+          \t\t}
+          \t\tsamples.cell.Usage.InputTokens += usage.InputTokens'''
+          s = replace_once(s, old, new, 'resolved usage lookup')
+          p.write_text(s)
+
+          p = Path('glm-worker/internal/state/routingeval_test.go')
+          s = p.read_text()
+          s += '''
+          func TestBuildModelRoutingReportMissingOwnerUsageStaysUnknown(t *testing.T) {
+          \tbase := time.Date(2026, 8, 29, 9, 0, 0, 0, time.UTC)
+          \ttaskID := "90909090-1111-4111-8111-111111111111"
+          \tlog := routingLogFixture(taskID, "sess-missing-owner", "worker-new", WorkerRole, "opus", base)
+          \tlog.CallID = "call-missing-owner"
+          \tlog.EffectiveRisk = "HIGH"
+          \tlog.ResolvedModelID = "glm-5.3"
+          \tlog.ResolvedModelUsage = map[string]ResolvedModelUsage{
+          \t\t"helper-model": {InputTokens: 50, OutputTokens: 5},
+          \t}
+          \treport := BuildModelRoutingReport([]TaskCallLogs{{TaskID: taskID, Logs: []ModelCallLog{log}}})
+          \towner := routingCellOf(t, report.Cells, "worker", WorkerPhaseCategoryNew, "HIGH", RoundDeltaUnknown, "opus", "glm-5.3")
+          \thelper := routingCellOf(t, report.Cells, "worker", WorkerPhaseCategoryNew, "HIGH", RoundDeltaUnknown, "opus", "helper-model")
+          \tif owner.Usage != (TokenUsage{}) || owner.UsageUnknownCalls != 1 || owner.TopLevelCalls != 1 {
+          \t\tt.Fatalf("owner usage = %#v", owner)
+          \t}
+          \tif helper.Usage.InputTokens != 50 || helper.Usage.OutputTokens != 5 || helper.UsageUnknownCalls != 0 {
+          \t\tt.Fatalf("helper usage = %#v", helper)
+          \t}
+          }
+          '''
+          p.write_text(s)
+          PY
+          gofmt -w glm-worker/internal/state/routingeval.go glm-worker/internal/state/routingeval_test.go
+          git diff --check
+      - name: Validate
+        run: |
+          (cd glm-worker && go test ./...)
+          (cd glm-worker && go vet ./...)
+          (cd glm-worker && go build ./...)
+          rm -f .github/workflows/issue65-hardening.yml
+          ./harnesslint
+      - name: Commit hardening
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add glm-worker/internal/state/routingeval.go glm-worker/internal/state/routingeval_test.go
+          git commit -m 'Harden issue 65 missing model usage attribution'
+          git push origin HEAD:gpt/issue-65-attributable-quality
