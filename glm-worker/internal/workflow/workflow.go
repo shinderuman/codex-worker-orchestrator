@@ -200,6 +200,8 @@ func (w *Workflow) validateNewTaskStart() error {
 		return &WorkerError{Message: "previous task is provider-unavailable; use --resume or --reset"}
 	case checkpoint.UserInterrupted:
 		return &WorkerError{Message: "previous task is interrupted; use --resume or --reset"}
+	case checkpoint.GuardRecoverable:
+		return &WorkerError{Message: "previous task stopped on a recoverable guard failure; repair the guard then use --resume or --reset"}
 	default:
 		return nil
 	}
@@ -371,10 +373,22 @@ func (w *Workflow) executeResume() error {
 	if err != nil {
 		return err
 	}
+	reuseCompletedResult, err := w.prepareGuardRecovery(checkpoint)
+	if err != nil {
+		return err
+	}
 	previousCheckpoint := checkpoint
+	completedResult := checkpoint.CompletedResult
 	checkpoint, stopped, err := w.prepareResumeCheckpoint(checkpoint, decl, pocResume)
 	if err != nil || stopped {
 		return err
+	}
+	clearGuardRecoveryState(&checkpoint)
+	if reuseCompletedResult && completedResult != nil {
+		if err := w.state.ClearResumeCheckpoint(); err != nil {
+			return err
+		}
+		return w.routeResumeResult(checkpoint, decl, *completedResult)
 	}
 
 	w.resetInstructionReadObservation()
@@ -390,8 +404,8 @@ func (w *Workflow) loadResumeCheckpoint() (state.ResumeCheckpoint, externalFeasi
 	if err != nil {
 		return state.ResumeCheckpoint{}, externalFeasibility{}, false, err
 	}
-	if !checkpoint.RateLimited && !checkpoint.ProviderUnavailable && !checkpoint.UserInterrupted {
-		return state.ResumeCheckpoint{}, externalFeasibility{}, false, &WorkerError{Message: "saved task is not stopped by Z.ai 5h limit, provider unavailability or user interruption"}
+	if !checkpoint.RateLimited && !checkpoint.ProviderUnavailable && !checkpoint.UserInterrupted && !checkpoint.GuardRecoverable {
+		return state.ResumeCheckpoint{}, externalFeasibility{}, false, &WorkerError{Message: "saved task is not stopped by Z.ai 5h limit, provider unavailability, user interruption or a recoverable guard failure"}
 	}
 	if !isKnownResumeStage(checkpoint.Stage) {
 		return state.ResumeCheckpoint{}, externalFeasibility{}, false, &WorkerError{Message: fmt.Sprintf("unknown resume stage: %s", checkpoint.Stage)}
@@ -546,6 +560,10 @@ func isResumeStopError(err error) bool {
 	if errors.As(err, &providerUnavailable) {
 		return true
 	}
+	var guardRecoverable *GuardRecoverableError
+	if errors.As(err, &guardRecoverable) {
+		return true
+	}
 	var limitErr runner.ZaiRateLimitError
 	return errors.As(err, &limitErr)
 }
@@ -558,6 +576,8 @@ func resumeCheckpointStatus(checkpoint state.ResumeCheckpoint) state.TaskStatus 
 		return state.TaskStatusRateLimited
 	case checkpoint.UserInterrupted:
 		return state.TaskStatusInterrupted
+	case checkpoint.GuardRecoverable:
+		return state.TaskStatusGuardRecoverable
 	default:
 		return state.TaskStatusActive
 	}
@@ -684,6 +704,8 @@ func resumeSourceOf(checkpoint state.ResumeCheckpoint) string {
 		return "provider-unavailable"
 	case checkpoint.RateLimited:
 		return "rate-limit"
+	case checkpoint.GuardRecoverable:
+		return "guard-recovery"
 	default:
 		return ""
 	}
@@ -1197,6 +1219,9 @@ func (w *Workflow) resolveModelCallFailure(
 	var interrupted *runner.InterruptedCallError
 	if errors.As(execution.runErr, &interrupted) {
 		return execution, w.interruptFromCall(checkpoint, execution.runResult, execution.startedAt, execution.completedAt, execution.runErr, outputPath)
+	}
+	if runner.IsRecoverableGuardFailure(execution.runErr) {
+		return execution, w.saveGuardRecoverableState(checkpoint, execution, outputPath)
 	}
 
 	failureClass := mergePlainFailureClass(
