@@ -95,18 +95,10 @@ func gitBranchOperationCategory(args []string) string {
 	if len(args) == 0 {
 		return state.OperationCategoryGitRead
 	}
-	switch args[0] {
-	case "--contains", "--no-contains", "--merged", "--no-merged", "--show-current", "--list", "-l", "--all", "-a", "--remotes", "-r":
+	if args[0] == "--show-current" || args[0] == "--contains" || strings.HasPrefix(args[0], "--contains=") {
 		return state.OperationCategoryGitRead
-	default:
-		if strings.HasPrefix(args[0], "--contains=") ||
-			strings.HasPrefix(args[0], "--no-contains=") ||
-			strings.HasPrefix(args[0], "--merged=") ||
-			strings.HasPrefix(args[0], "--no-merged=") {
-			return state.OperationCategoryGitRead
-		}
-		return ""
 	}
+	return ""
 }
 
 func goOperationCategory(args []string) string {
