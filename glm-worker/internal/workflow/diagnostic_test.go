@@ -65,7 +65,7 @@ func TestDiagnosticRecordsRiskFloorOnHighRiskReviewer(t *testing.T) {
 	if worker.EffectiveRisk != "" || worker.RiskFloorCategory != "" {
 		t.Fatalf("worker callへrisk floorが漏れている: %+v", worker)
 	}
-	reviewer := findLogByPhase(t, logs, "reviewer-1")
+	reviewer := findLogByPhase(t, logs, "reviewer-1-high-floor")
 	if reviewer.ReviewerReportedRisk != "LOW" || reviewer.EffectiveRisk != "HIGH" {
 		t.Fatalf("reviewer risk diag = %+v", reviewer)
 	}
@@ -426,7 +426,7 @@ func TestDiagnosticRiskFloorReemitCallHasNoFloorDiagnostics(t *testing.T) {
 		t.Fatal(err)
 	}
 	logs := taskLogs(t, st)
-	reviewer := findLogByPhase(t, logs, "reviewer-1")
+	reviewer := findLogByPhase(t, logs, "reviewer-1-high-floor")
 	if reviewer.EffectiveRisk != "HIGH" || reviewer.RiskFloorCategory != "worker-declared" {
 		t.Fatalf("reviewer floor diag = %+v", reviewer)
 	}
@@ -467,7 +467,7 @@ func TestDiagnosticPersistsWhenTelemetryContentDisabled(t *testing.T) {
 	if worker.WorkerReportedRisk != "HIGH" {
 		t.Fatalf("content無効時もworker報告riskは保持されるべき: %q", worker.WorkerReportedRisk)
 	}
-	reviewer := findLogByPhase(t, logs, "reviewer-1")
+	reviewer := findLogByPhase(t, logs, "reviewer-1-high-floor")
 	if reviewer.Prompt != "" || reviewer.Response != "" {
 		t.Fatalf("content無効時はreviewer contentも隠れるべき: %+v", reviewer)
 	}

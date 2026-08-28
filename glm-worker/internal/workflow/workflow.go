@@ -805,7 +805,11 @@ func (w *Workflow) buildReviewCheckpoint(
 		w.state.Exists("last-decision"),
 		w.state.Exists("last-review"),
 	)
+	floorActive := risk.high && !w.acceptedFixScopeCoversCurrent()
 	phase := fmt.Sprintf("reviewer-%d", reviewNumber)
+	if floorActive {
+		phase += "-high-floor"
+	}
 	activeTaskPath, err := w.ensureActiveTaskPath(phase)
 	if err != nil {
 		return state.ResumeCheckpoint{}, "", false, err
@@ -832,6 +836,9 @@ func (w *Workflow) buildReviewCheckpoint(
 		reviewNavigation,
 		activeTaskPath,
 	)
+	if floorActive {
+		prompt += reviewerHighRiskFloorPrompt(risk.source)
+	}
 	prompt, err = w.withCurrentRuleContext(prompt)
 	if err != nil {
 		return state.ResumeCheckpoint{}, "", false, err
@@ -852,7 +859,7 @@ func (w *Workflow) buildReviewCheckpoint(
 		AutoFixes:           autoFixes,
 		EffectiveRisk:       riskLabel(risk.high),
 		EffectiveRiskSource: risk.source,
-	}, decision, risk.high, nil
+	}, decision, floorActive, nil
 }
 
 func (w *Workflow) runReviewModel(checkpoint state.ResumeCheckpoint) (packet.Result, bool, error) {

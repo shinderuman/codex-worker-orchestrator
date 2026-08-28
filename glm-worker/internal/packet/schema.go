@@ -124,6 +124,17 @@ func reviewerSchema() *objectSchema {
 	}
 }
 
+func highFloorReviewerSchema() *objectSchema {
+	return &objectSchema{
+		Type: schemaTypeObject,
+		Properties: reviewerProperties(
+			stringProperty(string(StatusFixRequired), string(StatusNeedsSolReview), string(StatusNeedsSolDecision)),
+			riskProperty(),
+		),
+		Required: []string{"status", "risk", "targets", "artifacts"},
+	}
+}
+
 func riskFloorReviewerSchema() *objectSchema {
 	return &objectSchema{
 		Type: schemaTypeObject,
@@ -144,6 +155,10 @@ func WorkerSchemaJSON() (string, error) {
 
 func ReviewerSchemaJSON() (string, error) {
 	return schemaJSON(reviewerSchema())
+}
+
+func HighFloorReviewerSchemaJSON() (string, error) {
+	return schemaJSON(highFloorReviewerSchema())
 }
 
 func RiskFloorReviewerSchemaJSON() (string, error) {
