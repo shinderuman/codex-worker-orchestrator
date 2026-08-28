@@ -32,19 +32,22 @@ func TestReviewerGetsCurrentArtifactContext(t *testing.T) {
 	}
 	artifactDir := st.ArtifactDir(taskID)
 	prompt := r.prompts[0]
-	if !strings.Contains(prompt, "CURRENT_TASK_ARTIFACT_DIR: "+artifactDir) {
+	if !strings.Contains(prompt, reviewerArtifactPromptMarker+" "+artifactDir) {
 		t.Fatalf("reviewer prompt has no current artifact root: %q", prompt)
 	}
 	if strings.Contains(prompt, artifactPromptMarker) {
 		t.Fatalf("reviewer prompt contains worker artifact write context: %q", prompt)
 	}
-	if !strings.Contains(prompt, "他taskのartifact pathは参照証拠であり、ARTIFACTSへコピーしないでください") {
-		t.Fatalf("reviewer prompt has no prior-artifact ownership boundary: %q", prompt)
+	if !strings.Contains(prompt, priorArtifactReferenceMarker) {
+		t.Fatalf("reviewer prompt has no prior-artifact marker: %q", prompt)
 	}
 }
 
 func TestReviewerArtifactViolationCorrectionGetsCurrentRoot(t *testing.T) {
 	st := newStateStoreT(t)
+	if _, err := st.PrepareArtifactDir(); err != nil {
+		t.Fatal(err)
+	}
 	oldArtifact := filepath.Join(t.TempDir(), "old-task-artifact.md")
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: reviewerPacketWithArtifacts(oldArtifact)},
@@ -76,7 +79,7 @@ func TestReviewerArtifactViolationCorrectionGetsCurrentRoot(t *testing.T) {
 	}
 	artifactDir := st.ArtifactDir(taskID)
 	correction := r.prompts[1]
-	if !strings.Contains(correction, "CURRENT_TASK_ARTIFACT_DIR: "+artifactDir) {
+	if !strings.Contains(correction, reviewerArtifactPromptMarker+" "+artifactDir) {
 		t.Fatalf("correction prompt has no current artifact root: %q", correction)
 	}
 	if strings.Contains(correction, artifactPromptMarker) {
@@ -85,8 +88,8 @@ func TestReviewerArtifactViolationCorrectionGetsCurrentRoot(t *testing.T) {
 	if !strings.Contains(correction, oldArtifact) {
 		t.Fatalf("correction prompt lost rejected artifact evidence: %q", correction)
 	}
-	if !strings.Contains(correction, "違反内容に表示されたARTIFACTS pathは拒否された値であり、修正候補ではありません") {
-		t.Fatalf("correction prompt does not disambiguate rejected path: %q", correction)
+	if !strings.Contains(correction, rejectedArtifactMarker) {
+		t.Fatalf("correction prompt has no rejected-artifact marker: %q", correction)
 	}
 }
 
