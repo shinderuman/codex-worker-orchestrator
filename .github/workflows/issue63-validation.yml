@@ -1,0 +1,48 @@
+name: Issue 63 Validation
+
+on:
+  push:
+    branches:
+      - gpt/issue-63-active-feasibility
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Read quality tool contract
+        id: quality-tools
+        run: |
+          GO_VERSION=$(awk -F': ' '$1 == "go" { print $2 }' quality-tools.yml)
+          printf 'go_version=%s\n' "$GO_VERSION" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ steps.quality-tools.outputs.go_version }}
+          cache: false
+      - name: Install quality tools
+        run: |
+          quality_bin="$(go env GOPATH)/bin"
+          QUALITY_TOOLS_BIN_DIR="$quality_bin" ./install-quality-tools.sh
+          printf '%s\n' "$quality_bin" >> "$GITHUB_PATH"
+      - name: Capture validation
+        run: |
+          set +e
+          out="$RUNNER_TEMP/issue63-validation"
+          mkdir -p "$out"
+          (cd glm-worker && go test ./...) > "$out/test.log" 2>&1
+          test_status=$?
+          (cd glm-worker && go vet ./...) > "$out/vet.log" 2>&1
+          vet_status=$?
+          (cd glm-worker && go build ./...) > "$out/build.log" 2>&1
+          build_status=$?
+          ./harnesslint > "$out/harnesslint.json" 2> "$out/harnesslint.stderr"
+          lint_status=$?
+          printf 'test=%s\nvet=%s\nbuild=%s\nlint=%s\n' "$test_status" "$vet_status" "$build_status" "$lint_status" > "$out/status.txt"
+          exit 0
+      - uses: actions/upload-artifact@v6
+        with:
+          name: issue63-validation
+          path: ${{ runner.temp }}/issue63-validation
