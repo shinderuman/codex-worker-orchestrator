@@ -81,10 +81,11 @@ Task 021自身のためだけに通常implementation task同等の、
 - complexity responsibility、conditional convergence方針
 - Task 008測定ではmachine JSONのbytes/token proxy削減は不立証、意味保持は31/31（旧形式27/31）であり、継続採用根拠は単一contractとQuality Delta
 - Task 009 worker outlier report完了済み
+- Task 011でoperation categoryの10値閉集合と保存済みeventからのcategory別集計経路が成立済み。timeline JSON presentation拡張は必要性不立証として不採用。
 
 ## Dependencies
 
-- `IMPLEMENTATION_TASKS/011-operation-category-telemetry.md`
+none
 
 ## Review findings
 
@@ -92,4 +93,4 @@ none
 
 ## Current boundary
 
-測定task待ち。parent decision gateのため直接dispatch禁止。
+Task 011完了済み。Task 008/009/011等の測定artifactを親Codexが採否するdecision gate待ち。
