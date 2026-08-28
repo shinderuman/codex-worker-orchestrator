@@ -115,7 +115,13 @@ func TestClaudeRunnerStreamEventsAppendSanitizedMetadata(t *testing.T) {
 		t.Fatalf("event件数 = %d", len(records))
 	}
 	firstCall := records[0].CallID
-	if records[4].CallID == firstCall {
+	if first.CallID == "" || second.CallID == "" {
+		t.Fatalf("RunResult call IDs = %q / %q", first.CallID, second.CallID)
+	}
+	if firstCall != first.CallID || records[4].CallID != second.CallID {
+		t.Fatalf("event/result call IDs = %q/%q, %q/%q", firstCall, first.CallID, records[4].CallID, second.CallID)
+	}
+	if second.CallID == first.CallID {
 		t.Fatal("呼出ごとにcall_idが変わっていません")
 	}
 	for index, record := range records {
