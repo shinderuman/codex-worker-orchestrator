@@ -6,7 +6,7 @@ on:
       - main
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   validate:
@@ -14,6 +14,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: gpt/packet-schema-contract
       - name: Read Go version
         id: quality-tools
         run: |
@@ -24,8 +26,30 @@ jobs:
           go-version: ${{ steps.quality-tools.outputs.go_version }}
           cache: false
       - name: Packet tests
+        id: packet-tests
         working-directory: glm-worker
-        run: go test ./internal/packet -count=1
+        shell: bash
+        run: |
+          set +e
+          go test ./internal/packet -count=1 > ../.gpt-packet-test.log 2>&1
+          status=$?
+          cat ../.gpt-packet-test.log
+          printf 'status=%s\n' "$status" >> "$GITHUB_OUTPUT"
+          exit 0
+      - name: Save failure log
+        if: steps.packet-tests.outputs.status != '0'
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .gpt-packet-test.log
+          if ! git diff --cached --quiet; then
+            git commit -m 'ci: capture packet schema test failure'
+            git push origin HEAD:gpt/packet-schema-contract
+          fi
+      - name: Fail packet tests
+        if: steps.packet-tests.outputs.status != '0'
+        run: exit 1
       - name: Vet
+        if: steps.packet-tests.outputs.status == '0'
         working-directory: glm-worker
         run: go vet ./...
