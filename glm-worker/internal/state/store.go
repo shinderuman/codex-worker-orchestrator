@@ -28,6 +28,7 @@ const (
 	TaskStatusComplete            TaskStatus = "complete"
 	TaskStatusRateLimited         TaskStatus = "rate-limited"
 	TaskStatusProviderUnavailable TaskStatus = "provider-unavailable"
+	TaskStatusGuardRecoverable    TaskStatus = "guard-recoverable"
 
 	TaskStatusInterrupted TaskStatus = "interrupted"
 

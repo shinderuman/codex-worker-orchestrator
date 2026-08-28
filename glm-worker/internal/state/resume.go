@@ -27,12 +27,13 @@ type ResumeCheckpoint struct {
 	ActivatedRuleFiles      []string    `json:"activated_rule_files,omitempty"`
 	DecisionBoundaryApplied bool        `json:"decision_boundary_applied,omitempty"`
 
-	WorkerResult   *packet.Result `json:"worker_result,omitempty"`
-	ReviewNumber   int            `json:"review_number,omitempty"`
-	AutoFixes      int            `json:"auto_fixes,omitempty"`
-	RateLimited    bool           `json:"rate_limited"`
-	ResetAtCST     string         `json:"reset_at_cst,omitempty"`
-	ResetAtRFC3339 string         `json:"reset_at_rfc3339,omitempty"`
+	WorkerResult    *packet.Result `json:"worker_result,omitempty"`
+	CompletedResult *packet.Result `json:"completed_result,omitempty"`
+	ReviewNumber    int            `json:"review_number,omitempty"`
+	AutoFixes       int            `json:"auto_fixes,omitempty"`
+	RateLimited     bool           `json:"rate_limited"`
+	ResetAtCST      string         `json:"reset_at_cst,omitempty"`
+	ResetAtRFC3339  string         `json:"reset_at_rfc3339,omitempty"`
 
 	ResultCorrection bool `json:"result_correction,omitempty"`
 
@@ -49,6 +50,9 @@ type ResumeCheckpoint struct {
 	ProviderUnavailableClassification string    `json:"provider_unavailable_classification,omitempty"`
 	ProviderUnavailableProbes         int       `json:"provider_unavailable_probes,omitempty"`
 	ProviderUnavailableStartedAt      time.Time `json:"provider_unavailable_started_at,omitempty"`
+
+	GuardRecoverable bool   `json:"guard_recoverable,omitempty"`
+	GuardFailure     string `json:"guard_failure,omitempty"`
 
 	StopParentFiles *ParentFileStates `json:"stop_parent_files,omitempty"`
 
