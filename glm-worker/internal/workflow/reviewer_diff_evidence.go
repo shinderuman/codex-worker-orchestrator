@@ -8,14 +8,35 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
 const reviewerTaskDiffFile = "review-current-task.patch"
 
+func (w *Workflow) reviewerNavigationContext(request, activeTaskPath string, reviewNumber int) (string, error) {
+	diffPath, err := w.captureReviewerTaskDiff()
+	if err != nil {
+		return "", err
+	}
+	exhaustive, err := w.exhaustiveSearchContext(request, activeTaskPath, state.ReviewerRole, reviewNumber+1)
+	if err != nil {
+		return "", err
+	}
+	return renderReviewerTaskDiffEvidence(diffPath) + "\n" + w.reviewerDiffFirstContext(request, reviewNumber) + exhaustive, nil
+}
+
+func renderReviewerTaskDiffEvidence(path string) string {
+	return "REVIEW_CURRENT_TASK_DIFF:\nPATCH: " + path + "\nAUTHORITY: wrapper-baseline-to-review-start\nREAD_FIRST: true\nEND_REVIEW_CURRENT_TASK_DIFF"
+}
+
 func (w *Workflow) captureReviewerTaskDiff() (string, error) {
 	baseline, err := w.state.Read("baseline-head")
-	if err != nil || strings.TrimSpace(baseline) == "" {
-		return "", fmt.Errorf("review diff baseline head is unavailable: %w", err)
+	if err != nil {
+		return "", fmt.Errorf("read review diff baseline head: %w", err)
+	}
+	if strings.TrimSpace(baseline) == "" {
+		return "", errors.New("review diff baseline head is empty")
 	}
 	indexPatch, err := w.state.Read("baseline-index.patch")
 	if err != nil {
