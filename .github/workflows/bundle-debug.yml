@@ -1,0 +1,43 @@
+name: Bundle Debug
+
+on:
+  push:
+    branches:
+      - gpt/issue-59-bundle
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Read quality tool contract
+        id: quality-tools
+        run: |
+          GO_VERSION=$(awk -F': ' '$1 == "go" { print $2 }' quality-tools.yml)
+          printf 'go_version=%s\n' "$GO_VERSION" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ steps.quality-tools.outputs.go_version }}
+          cache: false
+      - name: Install quality tools
+        run: |
+          quality_bin="$(go env GOPATH)/bin"
+          QUALITY_TOOLS_BIN_DIR="$quality_bin" ./install-quality-tools.sh
+          printf '%s\n' "$quality_bin" >> "$GITHUB_PATH"
+      - name: Capture repository lint
+        run: |
+          set +e
+          ./harnesslint > harnesslint.json 2> harnesslint.stderr
+          status=$?
+          printf '%s\n' "$status" > harnesslint.exit
+          exit 0
+      - uses: actions/upload-artifact@v6
+        with:
+          name: bundle-debug
+          path: |
+            harnesslint.json
+            harnesslint.stderr
+            harnesslint.exit
