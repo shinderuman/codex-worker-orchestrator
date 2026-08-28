@@ -47,9 +47,12 @@ func TestReviewerTaskDiffCapturesCleanBaselineChange(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "tracked.txt"), []byte("line=task\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	path, err := w.captureReviewerTaskDiff()
+	path, available, err := w.captureReviewerTaskDiff()
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !available {
+		t.Fatal("review task diff unexpectedly unavailable")
 	}
 	patch := readReviewDiffT(t, path)
 	if !strings.Contains(patch, "-line=base") || !strings.Contains(patch, "+line=task") {
@@ -62,9 +65,12 @@ func TestReviewerTaskDiffSubtractsPreexistingWorktreeChange(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "tracked.txt"), []byte("line=preexisting\nline=task\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	path, err := w.captureReviewerTaskDiff()
+	path, available, err := w.captureReviewerTaskDiff()
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !available {
+		t.Fatal("review task diff unexpectedly unavailable")
 	}
 	patch := readReviewDiffT(t, path)
 	if !strings.Contains(patch, "+line=task") {
@@ -86,9 +92,12 @@ func TestReviewerTaskDiffIncludesOnlyTaskCreatedUntrackedFiles(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "new.txt"), []byte("created by task\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	path, err := w.captureReviewerTaskDiff()
+	path, available, err := w.captureReviewerTaskDiff()
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !available {
+		t.Fatal("review task diff unexpectedly unavailable")
 	}
 	patch := readReviewDiffT(t, path)
 	if !strings.Contains(patch, "new.txt") || !strings.Contains(patch, "+created by task") {
@@ -96,6 +105,22 @@ func TestReviewerTaskDiffIncludesOnlyTaskCreatedUntrackedFiles(t *testing.T) {
 	}
 	if strings.Contains(patch, "existing.txt") {
 		t.Fatalf("pre-existing untracked file leaked into task delta:\n%s", patch)
+	}
+}
+
+func TestReviewerTaskDiffUnavailableWithoutGitBaseline(t *testing.T) {
+	cfg := config.AppConfig{RepoRoot: t.TempDir(), RepoHash: "review-diff-none", StateBase: t.TempDir()}
+	st, err := state.NewStateStore(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := NewWorkflow(cfg, st, nil, nil)
+	path, available, err := w.captureReviewerTaskDiff()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if available || path != "" {
+		t.Fatalf("path=%q available=%v", path, available)
 	}
 }
 
