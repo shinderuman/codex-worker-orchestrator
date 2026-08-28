@@ -1,5 +1,0 @@
---- FAIL: TestReviewerSchemaContents (0.00s)
-    schema_test.go:151: reviewer requiredにsummaryがありません: [status risk targets artifacts]
-FAIL
-FAIL	github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet	0.007s
-FAIL

@@ -96,12 +96,15 @@ const readOnlyTools = "Read,Grep,Glob,WebFetch,WebSearch"
 var readOnlyDisallowedTools = []string{"Edit", "Write", "NotebookEdit", "Agent", "Bash"}
 
 var (
-	workerSchemaOnce   sync.Once
-	reviewerSchemaOnce sync.Once
-	workerSchemaValue  string
-	workerSchemaErr    error
-	reviewerSchemaVal  string
-	reviewerSchemaFail error
+	workerSchemaOnce            sync.Once
+	reviewerSchemaOnce          sync.Once
+	riskFloorReviewerSchemaOnce sync.Once
+	workerSchemaValue           string
+	workerSchemaErr             error
+	reviewerSchemaVal           string
+	reviewerSchemaFail          error
+	riskFloorReviewerSchemaVal  string
+	riskFloorReviewerSchemaErr  error
 )
 
 var essentialSettingEnvKeys = []string{
@@ -135,8 +138,14 @@ func (e *StructuredOutputError) RetryExhausted() bool {
 	return e.Subtype == subtypeStructuredOutputRetryExhausted
 }
 
-func structuredSchema(role state.SessionRole) (string, error) {
+func structuredSchema(role state.SessionRole, phase string) (string, error) {
 	if role == state.ReviewerRole {
+		if strings.HasSuffix(phase, "-risk-floor") {
+			riskFloorReviewerSchemaOnce.Do(func() {
+				riskFloorReviewerSchemaVal, riskFloorReviewerSchemaErr = packet.RiskFloorReviewerSchemaJSON()
+			})
+			return riskFloorReviewerSchemaVal, riskFloorReviewerSchemaErr
+		}
 		reviewerSchemaOnce.Do(func() {
 			reviewerSchemaVal, reviewerSchemaFail = packet.ReviewerSchemaJSON()
 		})
@@ -169,7 +178,7 @@ func (r *ClaudeRunner) Run(
 	if err != nil {
 		return result, err
 	}
-	inputs, err := r.prepareRunInputs(role, &result)
+	inputs, err := r.prepareRunInputs(role, phase, &result)
 	if err != nil {
 		return result, err
 	}
@@ -208,7 +217,7 @@ func (r *ClaudeRunner) prepareRunSession(role state.SessionRole, phase, model st
 	return result, taskID, sessionID, ready, nil
 }
 
-func (r *ClaudeRunner) prepareRunInputs(role state.SessionRole, result *RunResult) (runInputs, error) {
+func (r *ClaudeRunner) prepareRunInputs(role state.SessionRole, phase string, result *RunResult) (runInputs, error) {
 	systemFile := filepath.Join(r.config.PromptDir, promptFileName(role))
 	systemPrompt, err := os.ReadFile(systemFile)
 	if err != nil {
@@ -227,7 +236,7 @@ func (r *ClaudeRunner) prepareRunInputs(role state.SessionRole, result *RunResul
 	if err != nil {
 		return runInputs{}, err
 	}
-	schema, err := structuredSchema(role)
+	schema, err := structuredSchema(role, phase)
 	if err != nil {
 		return runInputs{}, fmt.Errorf("structured output schemaを構築できません: %w", err)
 	}
