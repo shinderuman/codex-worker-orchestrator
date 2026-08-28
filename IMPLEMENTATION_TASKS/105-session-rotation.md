@@ -65,11 +65,11 @@ Task 009/010のevidenceに基づく。
 
 ## Historical invariants
 
-session aging telemetry。Task 009 worker outlier report完了済み。
+session aging telemetry。Task 009 worker outlier report完了済み。Task 010では既存の責務ベース分割と現行resume境界を維持し、hard cap・強制事前分割・強制semantic milestoneは導入しないと決定済み。
 
 ## Dependencies
 
-- `IMPLEMENTATION_TASKS/010-task-splitting-milestones.md`
+none
 
 ## Review findings
 
