@@ -102,10 +102,11 @@ Task 012の目的は、
 ## Historical invariants
 
 - structured output compaction履歴、Task 001 lifecycle
+- Task 011でoperation categoryの10値閉集合と保存済みeventからのcategory別集計経路が成立済み。raw commandやpath本文を追加保存せず、timeline JSON presentation拡張は不採用。
 
 ## Dependencies
 
-- `IMPLEMENTATION_TASKS/011-operation-category-telemetry.md`
+none
 
 ## Review findings
 
