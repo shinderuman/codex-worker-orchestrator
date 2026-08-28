@@ -46,6 +46,7 @@
 - `NEEDS_SOL_DECISION`待ちへ`--accept`を使わない。判断は`--decision-stdin`で渡し、decision outcomeはglm-workerが自動確定する。
 - `--fix-stdin`では差戻しの実際の起点に合わせて`--origin codex-review|glm-reviewer|user-amendment|external-review|metadata-repair`を申告する。glm-worker reviewerのterminal result(`NEEDS_SOL_REVIEW`等)へ既に記載された指摘をそのまま差し戻すときは`glm-reviewer`、親Codex自身がterminal packet受領後の最終reviewで新たに検出した指摘のときだけ`codex-review`とする。userの修正要求・追加指示は`user-amendment`、repo外の外部reviewは`external-review`、`parent_metadata_*`等の親管理metadata修復は`metadata-repair`である。新規検出かreviewer既記載か確定できないときだけ申告を省略し、`unknown`として計上される。`codex-review`への推定fallbackは行わない。
 - stdin modeでは`--fix-stdin <payload-bytes> --sha256 <hex> --origin <値>`の対形式で渡す。`--origin`は観測申告であり、fix本文の内容・範囲を替わってはならない。
+- Sol High自身が現在のnon-parent diffを確認し、fix本文で撤回・縮小を指示する部分以外は受理済みと明示判断した場合だけ、`--fix-stdin`へ`--accepted-scope current-diff`を追加してよい。`--origin`やreviewerのPASSからこの受理を推測しない。不確実なら指定しない。glm-workerはfix開始時のchange setをscopeとして保存し、fix後のchange setがそのsubsetである場合だけ同一HIGH riskの再Sol escalationを省略する。新しい変更・別replacement・新規file内容・比較不能なbinary/dirty baselineがあれば通常のrisk floorへ戻る。
 
 ## 対象repoの生存判定
 

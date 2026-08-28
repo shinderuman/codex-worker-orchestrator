@@ -28,10 +28,11 @@ type Command struct {
 
 	SHA256 string
 
-	Origin   string
-	Role     string
-	Verify   VerifyArgs
-	Coalesce CoalesceArgs
+	Origin        string
+	AcceptedScope string
+	Role          string
+	Verify        VerifyArgs
+	Coalesce      CoalesceArgs
 }
 
 type VerifyArgs struct {
@@ -89,7 +90,7 @@ const (
 	ModeQualityGate
 )
 
-const fixOriginUsage = "[--origin codex-review|glm-reviewer|user-amendment|external-review|metadata-repair]"
+const fixOriginUsage = "[--origin codex-review|glm-reviewer|user-amendment|external-review|metadata-repair] [--accepted-scope current-diff]"
 
 const installSmokeUsage = "[--role worker|reviewer|fix|parent]"
 
@@ -293,6 +294,12 @@ func applyStdinPayloadOption(command *Command, name, value, usage string, allowO
 		}
 		command.Origin = value
 		return nil
+	case "--accepted-scope":
+		if !allowOrigin || command.AcceptedScope != "" || value != "current-diff" {
+			return usageError("%s", usage)
+		}
+		command.AcceptedScope = value
+		return nil
 	default:
 		return usageError("%s", usage)
 	}
@@ -483,7 +490,7 @@ func executeWorkflow(cmd Command, cfg config.AppConfig, st *state.StateStore, rf
 	case ModeDecision:
 		return wf.ExecuteDecision(cmd.Payload)
 	case ModeFix:
-		return wf.ExecuteExplicitFix(cmd.Payload, cmd.Origin)
+		return wf.ExecuteExplicitFixWithScope(cmd.Payload, cmd.Origin, cmd.AcceptedScope)
 	case ModeResume:
 		return wf.ExecuteResume()
 	default:
