@@ -312,6 +312,9 @@ func TestExecuteAcquiresAndReleasesLock(t *testing.T) {
 	if !st.Exists("lock") {
 		t.Fatal("lockファイルが作成されていません")
 	}
+	if accept := executeAccept(t, cfg); !accept.Accepted {
+		t.Fatal("lock解放後の次task開始前にparent reviewを解決できませんでした")
+	}
 
 	second := &fakeRunner{steps: []fakeStep{
 		{structured: implementedPacketApp("done")},
