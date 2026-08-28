@@ -58,6 +58,7 @@ type RunResult struct {
 	SystemPromptBytes  int
 	SystemPromptSHA256 string
 	InstructionReads   []string
+	CallID             string
 
 	PlainFailure ProviderFailureClass
 
@@ -183,8 +184,14 @@ func (r *ClaudeRunner) Run(
 		return result, err
 	}
 	args := r.buildRunArgs(role, taskID, sessionID, ready, model, readOnly, effort, prompt, inputs)
+	callID, callIDErr := state.NewUUID()
+	if callIDErr != nil {
+		state.WarnTaskEventSkip("call ID生成", callIDErr)
+	} else {
+		result.CallID = callID
+	}
 	ingester, stderrPath, runErr, err := r.executeRunCommand(
-		role, phase, model, taskID, sessionID, ready, args, inputs, outputPath,
+		role, phase, model, taskID, sessionID, callID, ready, args, inputs, outputPath,
 	)
 	if err != nil {
 		return result, err
@@ -283,7 +290,7 @@ func (r *ClaudeRunner) buildRunArgs(
 
 func (r *ClaudeRunner) executeRunCommand(
 	role state.SessionRole,
-	phase, model, taskID, sessionID string,
+	phase, model, taskID, sessionID, callID string,
 	ready bool,
 	args []string,
 	inputs runInputs,
@@ -301,7 +308,7 @@ func (r *ClaudeRunner) executeRunCommand(
 	}
 	defer func() { _ = devNull.Close() }()
 
-	ingester := r.newTaskEventIngester(taskID, role, phase, model, sessionID, ready)
+	ingester := r.newTaskEventIngester(taskID, callID, role, phase, model, sessionID, ready)
 	command := newProcessGroupCmd(r.config.ClaudeBin, args...)
 	command.Dir = r.config.RepoRoot
 	command.Stdin = devNull
@@ -440,16 +447,14 @@ func structuredOutputPresent(raw json.RawMessage) bool {
 }
 
 func (r *ClaudeRunner) newTaskEventIngester(
-	taskID string,
+	taskID, callID string,
 	role state.SessionRole,
 	phase string,
 	model string,
 	sessionID string,
 	resumed bool,
 ) *streamEventIngester {
-	callID, err := state.NewUUID()
-	if err != nil {
-		state.WarnTaskEventSkip("call ID生成", err)
+	if callID == "" {
 		return &streamEventIngester{closed: true}
 	}
 	ingester := newStreamEventIngester(r.state, taskID, callID, role, phase, model, sessionID, resumed)

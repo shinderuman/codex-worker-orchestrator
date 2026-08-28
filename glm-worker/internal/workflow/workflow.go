@@ -1919,6 +1919,7 @@ func (w *Workflow) buildModelCallLog(
 	}
 	promptContent, systemPromptContent, responseContent := w.telemetryContents(checkpoint.Prompt, runResult.SystemPrompt, response)
 	return state.ModelCallLog{
+		CallID:             runResult.CallID,
 		TaskID:             w.state.ReadOr("task.id", "unknown"),
 		CallType:           state.CallTypeTask,
 		SessionID:          modelSessionID(w.state, checkpoint.Role, runResult.SessionID),
