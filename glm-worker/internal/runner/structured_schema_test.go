@@ -55,3 +55,30 @@ func schemaRequiredForTest(t *testing.T, encoded string) map[string]bool {
 	}
 	return result
 }
+
+func TestStructuredSchemaHighFloorExcludesPass(t *testing.T) {
+	for _, phase := range []string{"reviewer-1-high-floor", "reviewer-1-high-floor-result-correct"} {
+		encoded, err := structuredSchema(state.ReviewerRole, phase)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var schema map[string]any
+		if err := json.Unmarshal([]byte(encoded), &schema); err != nil {
+			t.Fatal(err)
+		}
+		properties := schema["properties"].(map[string]any)
+		status := properties["status"].(map[string]any)["enum"].([]any)
+		got := map[string]bool{}
+		for _, value := range status {
+			got[value.(string)] = true
+		}
+		for _, want := range []string{"FIX_REQUIRED", "NEEDS_SOL_REVIEW", "NEEDS_SOL_DECISION"} {
+			if !got[want] {
+				t.Fatalf("phase %s status enum = %v", phase, status)
+			}
+		}
+		if got["PASS"] {
+			t.Fatalf("phase %s unexpectedly permits PASS: %v", phase, status)
+		}
+	}
+}

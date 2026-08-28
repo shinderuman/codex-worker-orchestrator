@@ -115,6 +115,14 @@ PRE_TASK_BASELINEのファイルはworker開始前の状態です。既存未コ
 `, request, decision, workerReport, reviewNumber, baseline, reviewNavigation, reviewerActiveTaskBlock(activeTaskPath))
 }
 
+func reviewerHighRiskFloorPrompt(source string) string {
+	return fmt.Sprintf(`
+WRAPPER_EFFECTIVE_RISK_FLOOR: HIGH
+RISK_FLOOR_SOURCE: %s
+このreviewではPASSを返せません。修正可能な不具合があればFIX_REQUIREDを返してください。actual diffが未解決Sol decision axisを選択している場合はNEEDS_SOL_DECISIONを返してください。それ以外で修正不要ならNEEDS_SOL_REVIEW / HIGHとしてSolが読むべき最小TARGETSとSOL_QUESTIONを同じreview結果へ含めてください。
+`, source)
+}
+
 func automaticFixPrompt(request string, decision string, reviewReport string, activeTaskPath string) string {
 	return fmt.Sprintf(`MODE: APPLY_REVIEW_FIX
 

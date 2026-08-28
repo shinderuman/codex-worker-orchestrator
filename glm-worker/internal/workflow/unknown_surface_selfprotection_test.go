@@ -58,7 +58,6 @@ func TestUnknownSurfaceRaisesRiskFloorBeforeCompletion(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: implementedPacket("done")},
-		{structured: passPacket()},
 		{structured: needsSolReviewPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
@@ -72,7 +71,52 @@ func TestUnknownSurfaceRaisesRiskFloorBeforeCompletion(t *testing.T) {
 	if st.TaskStatus() != state.TaskStatusWaitingSolReview {
 		t.Fatalf("status = %q", st.TaskStatus())
 	}
-	if got := strings.Join(r.phases, ","); got != "worker-new,reviewer-1,reviewer-1-risk-floor" {
+	if got := strings.Join(r.phases, ","); got != "worker-new,reviewer-1-high-floor" {
 		t.Fatalf("phases = %q", got)
+	}
+}
+
+func TestUnknownSurfaceHighFloorAllowsFixRequiredBeforeSolEscalation(t *testing.T) {
+	st := newStateStoreT(t)
+	r := &scriptedRunner{steps: []runnerStep{
+		{structured: implementedPacket("initial")},
+		{structured: fixRequiredPacket()},
+		{structured: implementedPacket("fixed")},
+		{structured: needsSolReviewPacket()},
+	}}
+	w := newWorkflowT(t, st, r)
+	w.collectChangedPaths = func(string, string) ([]string, error) {
+		return []string{"runtime/new-worker.py"}, nil
+	}
+	if err := w.ExecuteNewTask("request"); err != nil {
+		t.Fatal(err)
+	}
+	want := "worker-new,reviewer-1-high-floor,worker-auto-fix-1,reviewer-2-high-floor"
+	if got := strings.Join(r.phases, ","); got != want {
+		t.Fatalf("phases = %q, want %q", got, want)
+	}
+	if !strings.Contains(r.prompts[1], "WRAPPER_EFFECTIVE_RISK_FLOOR: HIGH") {
+		t.Fatalf("high-floor prompt missing: %s", r.prompts[1])
+	}
+}
+
+func TestKnownSafeLowRiskReviewKeepsNormalPassPath(t *testing.T) {
+	st := newStateStoreT(t)
+	r := &scriptedRunner{steps: []runnerStep{
+		{structured: implementedPacket("done")},
+		{structured: passPacket()},
+	}}
+	w := newWorkflowT(t, st, r)
+	w.collectChangedPaths = func(string, string) ([]string, error) {
+		return []string{"docs/guide.md"}, nil
+	}
+	if err := w.ExecuteNewTask("request"); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(r.phases, ","); got != "worker-new,reviewer-1" {
+		t.Fatalf("phases = %q", got)
+	}
+	if strings.Contains(r.prompts[1], "WRAPPER_EFFECTIVE_RISK_FLOOR") {
+		t.Fatalf("normal reviewer received high-floor prompt: %s", r.prompts[1])
 	}
 }

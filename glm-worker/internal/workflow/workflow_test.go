@@ -323,7 +323,7 @@ func TestQualityGateBlocksReviewerAndRoutesWorkerFix(t *testing.T) {
 	if err := w.ExecuteNewTask("request"); err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(r.phases, []string{"worker-new", "worker-auto-fix-1", "reviewer-2"}) {
+	if !reflect.DeepEqual(r.phases, []string{"worker-new", "worker-auto-fix-1", "reviewer-2-high-floor"}) {
 		t.Fatalf("phases = %v", r.phases)
 	}
 	if calls != 2 {
@@ -1722,7 +1722,7 @@ func TestFixRequiredWithoutTargetsCorrectsBeforeAutoFix(t *testing.T) {
 	if err := w.ExecuteNewTask("request"); err != nil {
 		t.Fatal(err)
 	}
-	wantPhases := []string{"worker-new", "reviewer-1", "reviewer-1" + resultCorrectionPhaseSuffix, "worker-auto-fix-1", "reviewer-2"}
+	wantPhases := []string{"worker-new", "reviewer-1-high-floor", "reviewer-1-high-floor" + resultCorrectionPhaseSuffix, "worker-auto-fix-1", "reviewer-2-high-floor"}
 	if strings.Join(r.phases, ",") != strings.Join(wantPhases, ",") {
 		t.Fatalf("phases = %v, want %v", r.phases, wantPhases)
 	}
@@ -1806,7 +1806,7 @@ func TestFixRequiredBlankTargetsElementCorrectsBeforeAutoFix(t *testing.T) {
 	if err := w.ExecuteNewTask("request"); err != nil {
 		t.Fatal(err)
 	}
-	wantPhases := []string{"worker-new", "reviewer-1", "reviewer-1" + resultCorrectionPhaseSuffix, "worker-auto-fix-1", "reviewer-2"}
+	wantPhases := []string{"worker-new", "reviewer-1-high-floor", "reviewer-1-high-floor" + resultCorrectionPhaseSuffix, "worker-auto-fix-1", "reviewer-2-high-floor"}
 	if strings.Join(r.phases, ",") != strings.Join(wantPhases, ",") {
 		t.Fatalf("phases = %v, want %v", r.phases, wantPhases)
 	}
@@ -1884,7 +1884,7 @@ func TestNeedsSolReviewNoneElementCorrectsBeforeSolReviewDispatch(t *testing.T) 
 	if err := w.ExecuteNewTask("request"); err != nil {
 		t.Fatal(err)
 	}
-	wantPhases := []string{"worker-new", "reviewer-1", "reviewer-1" + resultCorrectionPhaseSuffix}
+	wantPhases := []string{"worker-new", "reviewer-1-high-floor", "reviewer-1-high-floor" + resultCorrectionPhaseSuffix}
 	if strings.Join(r.phases, ",") != strings.Join(wantPhases, ",") {
 		t.Fatalf("phases = %v, want %v", r.phases, wantPhases)
 	}
