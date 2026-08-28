@@ -136,7 +136,7 @@ func resultCorrectionPrompt(reason string) string {
 作業・調査・テストをやり直さず、違反を修正した同じ内容の結果を再出力してください。
 各fieldのvalueは空にできず、改行を含められません。複数事項は同じvalue内でセミコロン区切りにしてください。
 結果全体は6 KiB・1 field 1536 bytes以内です。STATUSに応じた必須fieldを省略しないでください。
-大容量成果物の内容は再掲せず、ARTIFACTSには既に保存済みの絶対パスだけを指定してください。
+大容量成果物の内容は再掲しないでください。違反内容に表示されたARTIFACTS pathは拒否された値であり、修正候補ではありません。REPORT_ARTIFACT_DIRが提示されている場合、その配下以外のpathをARTIFACTSへ残さないでください。現在taskで報告すべきartifactがなければARTIFACTSは空にしてください。
 
 違反内容:
 %s
