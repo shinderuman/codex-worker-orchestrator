@@ -23,18 +23,22 @@ type FeasibilityError struct {
 const (
 	TasksDir                   = "IMPLEMENTATION_TASKS"
 	ExternalFeasibilityHeading = "## External feasibility"
+)
 
+const (
 	FeasibilityRejectMissing FeasibilityRejectKind = iota + 1
 	FeasibilityRejectMalformed
 	FeasibilityRejectUnverified
+)
 
+const (
 	StatusNotApplicable  = "not-applicable"
 	StatusPoC            = "poc"
 	StatusObservation    = "observation"
 	StatusImplementation = "implementation"
-
-	evidenceProducer = "producer"
 )
+
+const evidenceProducer = "producer"
 
 var feasibilityFieldKeys = []string{"status", "assumption", "evidence-source", "evidence", "go"}
 
