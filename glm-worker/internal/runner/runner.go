@@ -140,7 +140,7 @@ func (e *StructuredOutputError) RetryExhausted() bool {
 
 func structuredSchema(role state.SessionRole, phase string) (string, error) {
 	if role == state.ReviewerRole {
-		if strings.HasSuffix(phase, "-risk-floor") {
+		if strings.HasSuffix(phase, "risk-floor") {
 			riskFloorReviewerSchemaOnce.Do(func() {
 				riskFloorReviewerSchemaVal, riskFloorReviewerSchemaErr = packet.RiskFloorReviewerSchemaJSON()
 			})

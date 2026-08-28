@@ -1,9 +1,0 @@
-ok  	github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet	0.015s
---- FAIL: TestClaudePreflightInventoryMatchesRunnerSourceFlags (0.00s)
-    preflight_poc_test.go:412: 実装が渡すflag -risk-floorがpreflight inventoryにありません
-{"type":"warning","scope":"live_status","message":"live status snapshotの書込みに失敗したため以後のlive表示更新をskipします（task本体へ影響しません）","error":"open /tmp/TestClaudeRunnerStreamEventsBestEffortOnUnwritableLog4234646612/003/runnerhash/events/.tmp-1053419719: permission denied"}
-{"type":"warning","scope":"event_log","message":"passive event logの追記がcall当たり上限50000件に到達したため以後のevent記録をskipします（task本体へ影響しません）"}
-{"type":"warning","scope":"live_status","message":"live status snapshotの書込みに失敗したため以後のlive表示更新をskipします（task本体へ影響しません）","error":"rename /tmp/TestStreamEventIngesterLiveWriteFailureKeepsEventLog3943551697/001/runnerhash/events/.tmp-2586871072 /tmp/TestStreamEventIngesterLiveWriteFailureKeepsEventLog3943551697/001/runnerhash/events/t.live.json: file exists"}
-FAIL
-FAIL	github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner	3.244s
-FAIL
