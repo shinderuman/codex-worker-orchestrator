@@ -92,23 +92,44 @@ func workerSchema() *objectSchema {
 	}
 }
 
+func reviewerProperties(status *propertySchema, risk *propertySchema) map[string]*propertySchema {
+	return map[string]*propertySchema{
+		"status":               status,
+		"risk":                 risk,
+		"summary":              stringProperty(),
+		"requirement_coverage": stringProperty(),
+		"invariants":           stringProperty(),
+		"test_evidence":        stringProperty(),
+		"issues":               stringProperty(),
+		"residual_risk":        stringProperty(),
+		"sol_question":         stringProperty(),
+		"targets":              stringsProperty(),
+		"artifacts":            stringsProperty(),
+	}
+}
+
 func reviewerSchema() *objectSchema {
 	return &objectSchema{
 		Type: schemaTypeObject,
-		Properties: map[string]*propertySchema{
-			"status":               stringProperty(string(StatusPass), string(StatusFixRequired), string(StatusNeedsSolReview)),
-			"risk":                 riskProperty(),
-			"summary":              stringProperty(),
-			"requirement_coverage": stringProperty(),
-			"invariants":           stringProperty(),
-			"test_evidence":        stringProperty(),
-			"issues":               stringProperty(),
-			"residual_risk":        stringProperty(),
-			"sol_question":         stringProperty(),
-			"targets":              stringsProperty(),
-			"artifacts":            stringsProperty(),
-		},
+		Properties: reviewerProperties(
+			stringProperty(string(StatusPass), string(StatusFixRequired), string(StatusNeedsSolReview)),
+			riskProperty(),
+		),
 		Required: []string{"status", "risk", "targets", "artifacts"},
+	}
+}
+
+func riskFloorReviewerSchema() *objectSchema {
+	return &objectSchema{
+		Type: schemaTypeObject,
+		Properties: reviewerProperties(
+			stringProperty(string(StatusNeedsSolReview)),
+			stringProperty(string(RiskHigh)),
+		),
+		Required: []string{
+			"status", "risk", "summary", "requirement_coverage", "invariants",
+			"test_evidence", "issues", "residual_risk", "sol_question", "targets", "artifacts",
+		},
 	}
 }
 
@@ -118,6 +139,10 @@ func WorkerSchemaJSON() (string, error) {
 
 func ReviewerSchemaJSON() (string, error) {
 	return schemaJSON(reviewerSchema())
+}
+
+func RiskFloorReviewerSchemaJSON() (string, error) {
+	return schemaJSON(riskFloorReviewerSchema())
 }
 
 func schemaJSON(schema *objectSchema) (string, error) {
