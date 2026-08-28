@@ -1140,13 +1140,25 @@ func (w *Workflow) runModel(checkpoint state.ResumeCheckpoint) (packet.Result, e
 
 func (w *Workflow) prepareModelCall(checkpoint state.ResumeCheckpoint) (state.ResumeCheckpoint, string, parentFileGuard, error) {
 	outputPath := filepath.Join(w.temp, checkpoint.Phase+".log")
-	artifactDir, err := w.state.PrepareArtifactDir()
-	if err != nil {
-		return checkpoint, outputPath, parentFileGuard{}, err
-	}
-	checkpoint.Prompt = withArtifactContext(checkpoint.Prompt, artifactDir)
-	if checkpoint.OriginalPrompt != "" {
-		checkpoint.OriginalPrompt = withArtifactContext(checkpoint.OriginalPrompt, artifactDir)
+	if checkpoint.Role == state.WorkerRole {
+		artifactDir, err := w.state.PrepareArtifactDir()
+		if err != nil {
+			return checkpoint, outputPath, parentFileGuard{}, err
+		}
+		checkpoint.Prompt = withArtifactContext(checkpoint.Prompt, artifactDir)
+		if checkpoint.OriginalPrompt != "" {
+			checkpoint.OriginalPrompt = withArtifactContext(checkpoint.OriginalPrompt, artifactDir)
+		}
+	} else if checkpoint.Role == state.ReviewerRole {
+		taskID, err := w.state.TaskID()
+		if err != nil {
+			return checkpoint, outputPath, parentFileGuard{}, err
+		}
+		artifactDir := w.state.ArtifactDir(taskID)
+		checkpoint.Prompt = withReviewerArtifactContext(checkpoint.Prompt, artifactDir)
+		if checkpoint.OriginalPrompt != "" {
+			checkpoint.OriginalPrompt = withReviewerArtifactContext(checkpoint.OriginalPrompt, artifactDir)
+		}
 	}
 	if checkpoint.OriginalPrompt == "" {
 		checkpoint.OriginalPrompt = checkpoint.Prompt
