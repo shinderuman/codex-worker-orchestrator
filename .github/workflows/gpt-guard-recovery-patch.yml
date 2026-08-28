@@ -1,0 +1,79 @@
+name: GPT guard recovery branch patch
+
+on:
+  push:
+    branches:
+      - gpt/guard-failure-task-recovery
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: gpt/guard-failure-task-recovery
+          fetch-depth: 0
+      - name: Patch workflow recovery wiring
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('glm-worker/internal/workflow/workflow.go')
+          text = path.read_text()
+
+          replacements = [
+              (
+                  '''\tcase checkpoint.UserInterrupted:\n\t\treturn &WorkerError{Message: "previous task is interrupted; use --resume or --reset"}\n\tdefault:\n''',
+                  '''\tcase checkpoint.UserInterrupted:\n\t\treturn &WorkerError{Message: "previous task is interrupted; use --resume or --reset"}\n\tcase checkpoint.GuardRecoverable:\n\t\treturn &WorkerError{Message: "previous task stopped on a recoverable guard failure; repair the guard then use --resume or --reset"}\n\tdefault:\n''',
+              ),
+              (
+                  '''\tpreviousCheckpoint := checkpoint\n\tcheckpoint, stopped, err := w.prepareResumeCheckpoint(checkpoint, decl, pocResume)\n\tif err != nil || stopped {\n\t\treturn err\n\t}\n\n\tw.resetInstructionReadObservation()\n\tresult, err := w.runModel(checkpoint)\n''',
+                  '''\treuseCompletedResult, err := w.prepareGuardRecovery(checkpoint)\n\tif err != nil {\n\t\treturn err\n\t}\n\tpreviousCheckpoint := checkpoint\n\tcompletedResult := checkpoint.CompletedResult\n\tcheckpoint, stopped, err := w.prepareResumeCheckpoint(checkpoint, decl, pocResume)\n\tif err != nil || stopped {\n\t\treturn err\n\t}\n\tclearGuardRecoveryState(&checkpoint)\n\tif reuseCompletedResult && completedResult != nil {\n\t\tif err := w.state.ClearResumeCheckpoint(); err != nil {\n\t\t\treturn err\n\t\t}\n\t\treturn w.routeResumeResult(checkpoint, decl, *completedResult)\n\t}\n\n\tw.resetInstructionReadObservation()\n\tresult, err := w.runModel(checkpoint)\n''',
+              ),
+              (
+                  '''\tif !checkpoint.RateLimited && !checkpoint.ProviderUnavailable && !checkpoint.UserInterrupted {\n\t\treturn state.ResumeCheckpoint{}, externalFeasibility{}, false, &WorkerError{Message: "saved task is not stopped by Z.ai 5h limit, provider unavailability or user interruption"}\n\t}\n''',
+                  '''\tif !checkpoint.RateLimited && !checkpoint.ProviderUnavailable && !checkpoint.UserInterrupted && !checkpoint.GuardRecoverable {\n\t\treturn state.ResumeCheckpoint{}, externalFeasibility{}, false, &WorkerError{Message: "saved task is not stopped by Z.ai 5h limit, provider unavailability, user interruption or a recoverable guard failure"}\n\t}\n''',
+              ),
+              (
+                  '''\tvar providerUnavailable *runner.ProviderUnavailableError\n\tif errors.As(err, &providerUnavailable) {\n\t\treturn true\n\t}\n\tvar limitErr runner.ZaiRateLimitError\n''',
+                  '''\tvar providerUnavailable *runner.ProviderUnavailableError\n\tif errors.As(err, &providerUnavailable) {\n\t\treturn true\n\t}\n\tvar guardRecoverable *GuardRecoverableError\n\tif errors.As(err, &guardRecoverable) {\n\t\treturn true\n\t}\n\tvar limitErr runner.ZaiRateLimitError\n''',
+              ),
+              (
+                  '''\tcase checkpoint.UserInterrupted:\n\t\treturn state.TaskStatusInterrupted\n\tdefault:\n''',
+                  '''\tcase checkpoint.UserInterrupted:\n\t\treturn state.TaskStatusInterrupted\n\tcase checkpoint.GuardRecoverable:\n\t\treturn state.TaskStatusGuardRecoverable\n\tdefault:\n''',
+              ),
+              (
+                  '''\tcase checkpoint.RateLimited:\n\t\treturn "rate-limit"\n\tdefault:\n''',
+                  '''\tcase checkpoint.RateLimited:\n\t\treturn "rate-limit"\n\tcase checkpoint.GuardRecoverable:\n\t\treturn "guard-recovery"\n\tdefault:\n''',
+              ),
+              (
+                  '''\tvar interrupted *runner.InterruptedCallError\n\tif errors.As(execution.runErr, &interrupted) {\n\t\treturn execution, w.interruptFromCall(checkpoint, execution.runResult, execution.startedAt, execution.completedAt, execution.runErr, outputPath)\n\t}\n\n\tfailureClass := mergePlainFailureClass(\n''',
+                  '''\tvar interrupted *runner.InterruptedCallError\n\tif errors.As(execution.runErr, &interrupted) {\n\t\treturn execution, w.interruptFromCall(checkpoint, execution.runResult, execution.startedAt, execution.completedAt, execution.runErr, outputPath)\n\t}\n\tif runner.IsRecoverableGuardFailure(execution.runErr) {\n\t\treturn execution, w.saveGuardRecoverableState(checkpoint, execution, outputPath)\n\t}\n\n\tfailureClass := mergePlainFailureClass(\n''',
+              ),
+          ]
+
+          for old, new in replacements:
+              if new in text:
+                  continue
+              if old not in text:
+                  raise SystemExit('expected workflow.go anchor not found:\n' + old)
+              text = text.replace(old, new, 1)
+
+          path.write_text(text)
+          PY
+          gofmt -w glm-worker/internal/workflow/workflow.go
+          git diff --check
+      - name: Commit workflow recovery wiring
+        run: |
+          if git diff --quiet; then
+            exit 0
+          fi
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add glm-worker/internal/workflow/workflow.go
+          git commit -m 'feat: wire recoverable guard task resume'
+          git push origin HEAD:gpt/guard-failure-task-recovery
