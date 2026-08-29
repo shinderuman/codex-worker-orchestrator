@@ -1,0 +1,44 @@
+name: GPT Temporary 112 Interrupt State Patcher
+
+on:
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+      - name: Repair locked interrupt helper
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("glm-worker/internal/app/quality_gate.go")
+          s = p.read_text()
+          old = 'return markQualityGateInterrupted(st, final, "quality gate runner exited before persisting a terminal result")'
+          new = 'return markQualityGateInterrupted(st, runID, "quality gate runner exited before persisting a terminal result")'
+          if s.count(old) != 1:
+              raise SystemExit(f"expected one old call, got {s.count(old)}")
+          s = s.replace(old, new, 1)
+          marker = 'func markQualityGateInterruptedLocked(st *state.StateStore, record qualityGateRunRecord, reason string) (qualityGateRunRecord, error) {'
+          helper = 'func markQualityGateInterrupted(st *state.StateStore, runID, reason string) (qualityGateRunRecord, error) {\n\tlock, err := acquireQualityGateRunStateLock(st, runID)\n\tif err != nil {\n\t\treturn qualityGateRunRecord{}, err\n\t}\n\tdefer func() { _ = lock.Close() }()\n\n\trecord, err := readQualityGateRun(st, runID)\n\tif err != nil {\n\t\treturn qualityGateRunRecord{}, err\n\t}\n\tif record.Status != qualityGateStatusRunning {\n\t\treturn record, nil\n\t}\n\treturn markQualityGateInterruptedLocked(st, record, reason)\n}\n\n'
+          if s.count(marker) != 1:
+              raise SystemExit(f"expected one marker, got {s.count(marker)}")
+          s = s.replace(marker, helper + marker, 1)
+          p.write_text(s)
+          PY
+          gofmt -w glm-worker/internal/app/quality_gate.go
+          git diff --check
+      - name: Commit repair
+        run: |
+          git config user.name "web-gpt-repair"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add glm-worker/internal/app/quality_gate.go
+          git commit -m "fix: recheck quality-gate state before fallback interruption"
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
