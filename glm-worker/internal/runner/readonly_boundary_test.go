@@ -84,7 +84,7 @@ func TestClaudeRunnerReadOnlyRunExposesNoWriteCapableTool(t *testing.T) {
 	}
 }
 
-func TestClaudeRunnerWriteRunKeepsFullToolSurface(t *testing.T) {
+func TestClaudeRunnerWriteRunUsesExplicitWorkerToolSurface(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixtureはUnix系環境向け")
 	}
@@ -96,9 +96,12 @@ func TestClaudeRunnerWriteRunKeepsFullToolSurface(t *testing.T) {
 		t.Fatal(err)
 	}
 	arguments := readLines(t, os.Getenv("GLM_ARGS_FILE"))
+	if got := argumentAfter(arguments, "--tools"); got != workerTools {
+		t.Fatalf("write capability --tools = %q want %q: %#v", got, workerTools, arguments)
+	}
 	for _, argument := range arguments {
-		if argument == "--tools" || argument == "--disallowedTools" {
-			t.Fatalf("write capability runへtool制限が漏れています: %s: %#v", argument, arguments)
+		if argument == "--disallowedTools" {
+			t.Fatalf("write capability run should be bounded by its allowlist without reviewer deny rules: %#v", arguments)
 		}
 	}
 }
