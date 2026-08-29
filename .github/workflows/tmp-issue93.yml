@@ -28,7 +28,7 @@ jobs:
           agents = Path('codex/AGENTS.md')
           text = agents.read_text()
           old = '- GLM実行・待機 → `~/.codex/instructions/glm-execution.md`'
-          new = '- GLM実行・待機 → `~/.codex/instructions/glm-execution.md`\n- GLM実行中の待機・polling・進捗報告 → `~/.codex/instructions/glm-wait.md`'
+          new = '- GLM実行・待機 → `~/.codex/instructions/glm-execution.md`・`~/.codex/instructions/glm-wait.md`'
           if text.count(old) != 1:
               raise SystemExit(f'AGENTS replacement count={text.count(old)}')
           agents.write_text(text.replace(old, new, 1))
