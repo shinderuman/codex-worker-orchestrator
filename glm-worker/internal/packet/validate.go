@@ -95,6 +95,19 @@ func validateParentValidation(result Result) error {
 }
 
 func ValidateReviewerResult(result Result) error {
+	if err := validateReviewerStatusRisk(result); err != nil {
+		return err
+	}
+	if result.ParentValidation != nil || result.ParentValidationEvidence != "" {
+		return &constraintError{reason: "reviewer結果にparent validation fieldは指定できません"}
+	}
+	if err := validateFields(result, result.contractFields()); err != nil {
+		return err
+	}
+	return validateTargets(result)
+}
+
+func validateReviewerStatusRisk(result Result) error {
 	switch result.Status {
 	case StatusPass:
 		if result.Risk != RiskLow {
@@ -115,13 +128,7 @@ func ValidateReviewerResult(result Result) error {
 	default:
 		return &mismatchError{reason: fmt.Sprintf("reviewer結果のstatusとして許容されません: %q", string(result.Status))}
 	}
-	if result.ParentValidation != nil || result.ParentValidationEvidence != "" {
-		return &constraintError{reason: "reviewer結果にparent validation fieldは指定できません"}
-	}
-	if err := validateFields(result, result.contractFields()); err != nil {
-		return err
-	}
-	return validateTargets(result)
+	return nil
 }
 
 func validateTargets(result Result) error {
