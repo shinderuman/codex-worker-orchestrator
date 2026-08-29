@@ -15,16 +15,14 @@ func TestParentValidationFailureFixesBeforeIndependentReview(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: packetBody(packet.Result{
-			Status:              packet.StatusImplemented,
-			Risk:                packet.RiskLow,
-			Summary:             "initial",
-			RequirementCoverage: "covered",
-			Tests:               "sandbox could not execute required process test",
-			Unverified:          "parent process validation required",
-			ParentValidation: &packet.ParentValidationRequest{
-				Form:       packet.ParentValidationGoTest,
-				WorkingDir: "glm-worker",
-			},
+			Status:                     packet.StatusImplemented,
+			Risk:                       packet.RiskLow,
+			Summary:                    "initial",
+			RequirementCoverage:        "covered",
+			Tests:                      "sandbox could not execute required process test",
+			Unverified:                 "parent process validation required",
+			ParentValidation:           packet.ParentValidationGoTest,
+			ParentValidationWorkingDir: "glm-worker",
 		})},
 		{structured: implementedPacket("fixed")},
 		{structured: needsSolReviewPacket()},
@@ -106,17 +104,16 @@ func TestCheckpointParentValidationCannotBeDroppedOrChanged(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.ParentValidation == nil || !sameParentValidationRequest(*got.ParentValidation, *checkpoint.ParentValidation) || got.Risk != packet.RiskHigh {
+	gotRequest := got.ParentValidationRequest()
+	if gotRequest == nil || !sameParentValidationRequest(*gotRequest, *checkpoint.ParentValidation) || got.Risk != packet.RiskHigh {
 		t.Fatalf("checkpoint obligation was not preserved: %#v", got)
 	}
 
 	_, err = applyCheckpointParentValidation(checkpoint, packet.Result{
-		Status: packet.StatusImplemented,
-		Risk:   packet.RiskLow,
-		ParentValidation: &packet.ParentValidationRequest{
-			Form:       packet.ParentValidationGoTestRace,
-			WorkingDir: "glm-worker",
-		},
+		Status:                     packet.StatusImplemented,
+		Risk:                       packet.RiskLow,
+		ParentValidation:           packet.ParentValidationGoTestRace,
+		ParentValidationWorkingDir: "glm-worker",
 	})
 	if err == nil {
 		t.Fatal("worker changed the checkpoint-owned parent validation obligation")
