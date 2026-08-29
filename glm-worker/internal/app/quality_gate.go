@@ -75,12 +75,14 @@ type qualityGateStartIdentity struct {
 }
 
 const (
-	qualityGateRunDirectory  = "quality-gate-runs"
-	qualityGateRunFile       = "run.json"
-	qualityGateRunLog        = "gate.log"
-	qualityGateStatusRunning = "running"
-	qualityGateStatusPass    = "pass"
-	qualityGateStatusFail    = "fail"
+	qualityGateRunDirectory        = "quality-gate-runs"
+	qualityGateRunFile             = "run.json"
+	qualityGateRunLog              = "gate.log"
+	qualityGateStatusRunning       = "running"
+	qualityGateStatusPass          = "pass"
+	qualityGateStatusFail          = "fail"
+	qualityGateStatusInterrupted   = "interrupted"
+	qualityGateRunnerStartupGrace  = 30 * time.Second
 )
 
 var qualityGateForms = map[string][]string{
@@ -305,7 +307,7 @@ func qualityGateProcessOutcome(runErr error) (string, int) {
 	}
 	exitCode := exitErr.ExitCode()
 	if exitCode < 0 {
-		return errorKindInterrupted, exitCode
+		return qualityGateStatusInterrupted, exitCode
 	}
 	return qualityGateStatusFail, exitCode
 }
@@ -371,15 +373,24 @@ func reconcileQualityGateRun(st *state.StateStore, runID string) (qualityGateRun
 	if err != nil {
 		return qualityGateRunRecord{}, err
 	}
-	if record.Status == qualityGateStatusRunning && record.RunnerPID > 0 && !qualityGateProcessAlive(record.RunnerPID) {
-		return markQualityGateInterrupted(st, record, "quality gate runner is no longer running")
+	if record.Status != qualityGateStatusRunning {
+		return record, nil
+	}
+	if record.RunnerPID > 0 {
+		if !qualityGateProcessAlive(record.RunnerPID) {
+			return markQualityGateInterrupted(st, record, "quality gate runner is no longer running")
+		}
+		return record, nil
+	}
+	if time.Since(record.StartedAt) >= qualityGateRunnerStartupGrace {
+		return markQualityGateInterrupted(st, record, "quality gate runner did not publish its pid before startup grace elapsed")
 	}
 	return record, nil
 }
 
 func markQualityGateInterrupted(st *state.StateStore, record qualityGateRunRecord, reason string) (qualityGateRunRecord, error) {
 	completed := time.Now().UTC()
-	record.Status = errorKindInterrupted
+	record.Status = qualityGateStatusInterrupted
 	record.ExitCode = -1
 	record.CompletedAt = &completed
 	record.DurationMS = completed.Sub(record.StartedAt).Milliseconds()
