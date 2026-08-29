@@ -2,7 +2,6 @@ package app
 
 import (
 	"bytes"
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -172,19 +171,28 @@ func TestExecuteModelRoutingEmptyState(t *testing.T) {
 }
 
 func TestTelemetryScanDirReadErrorIsProcessError(t *testing.T) {
-	for _, mode := range []CommandMode{ModeCallOutliers, ModeModelRouting} {
-		t.Run(fmt.Sprintf("mode%d", mode), func(t *testing.T) {
+	tests := []struct {
+		name string
+		mode CommandMode
+		dir  func(*state.StateStore) string
+	}{
+		{name: "call-outliers-telemetry", mode: ModeCallOutliers, dir: func(st *state.StateStore) string { return st.Path("telemetry") }},
+		{name: "model-routing-telemetry", mode: ModeModelRouting, dir: func(st *state.StateStore) string { return st.Path("telemetry") }},
+		{name: "test-impact-events", mode: ModeTestImpact, dir: func(st *state.StateStore) string { return st.Path("events") }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
 			cfg := newAppConfig(t)
 			st := state.AttachStateStore(cfg)
-			if err := os.MkdirAll(filepath.Dir(st.Path("telemetry")), 0o700); err != nil {
+			if err := os.MkdirAll(filepath.Dir(test.dir(st)), 0o700); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.WriteFile(st.Path("telemetry"), []byte("not-a-dir\n"), 0o600); err != nil {
+			if err := os.WriteFile(test.dir(st), []byte("not-a-dir\n"), 0o600); err != nil {
 				t.Fatal(err)
 			}
 
 			var out bytes.Buffer
-			err := Execute(Command{Mode: mode}, cfg, nil, &out, io.Discard)
+			err := Execute(Command{Mode: test.mode}, cfg, nil, &out, io.Discard)
 
 			if err == nil {
 				t.Fatalf("dir読取失敗が正常終了しました: %s", out.String())

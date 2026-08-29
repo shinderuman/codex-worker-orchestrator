@@ -24,6 +24,10 @@ none
 
 repo-searchを管理可能なproduction featureとして配布する。
 
+## External feasibility
+
+status: not-applicable
+
 ## Contract
 
 - default/flag/CLI/help/config/installの一貫性

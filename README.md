@@ -143,6 +143,7 @@ glm-worker --reset
 glm-worker --eval-ab <run-dir>
 glm-worker --call-outliers
 glm-worker --model-routing
+glm-worker --test-impact
 glm-worker --codex-limit
 glm-worker --check-wake-coalesce <parent-thread-id> <resume-at-rfc3339>
 ```

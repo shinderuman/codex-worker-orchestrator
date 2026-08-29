@@ -89,6 +89,7 @@ const (
 	ModeInstallSmoke
 	ModeQualityGate
 	ModeModelRouting
+	ModeTestImpact
 	ModeBundle
 )
 
@@ -149,6 +150,9 @@ var commandParsers = map[string]commandParser{
 	},
 	"--model-routing": func(args []string) (Command, error) {
 		return singleArgCommand(args, ModeModelRouting, "usage: glm-worker --model-routing")
+	},
+	"--test-impact": func(args []string) (Command, error) {
+		return singleArgCommand(args, ModeTestImpact, "usage: glm-worker --test-impact")
 	},
 	"--codex-limit": func(args []string) (Command, error) {
 		return singleArgCommand(args, ModeCodexLimit, "usage: glm-worker --codex-limit")
@@ -436,24 +440,34 @@ func executeStateless(cmd Command, cfg config.AppConfig, stdout io.Writer) (bool
 	switch cmd.Mode {
 	case ModeWatch:
 		return true, printWatch(state.AttachStateStore(cfg), stdout, defaultWatchOptions(cmd.WatchVerbose))
-	case ModeTimeline:
-		return true, printTimeline(state.AttachStateStore(cfg), cmd.Payload, stdout)
-	case ModeConvergence:
-		return true, printConvergence(state.AttachStateStore(cfg), cmd.Payload, stdout)
-	case ModeEvalAB:
-		return true, printEvalAB(state.AttachStateStore(cfg), cmd.Payload, stdout)
-	case ModeCallOutliers:
-		return true, printCallOutliers(state.AttachStateStore(cfg), stdout)
-	case ModeModelRouting:
-		return true, printModelRouting(state.AttachStateStore(cfg), stdout)
-	case ModeBundle:
-		return true, printBundle(cfg, state.AttachStateStore(cfg), cmd.Payload, stdout)
 	case ModeStop:
 		return true, requestStop(cfg, stdout)
 	case ModeCodexLimit:
 		return true, printCodexLimit(cfg, stdout)
 	case ModeCheckWakeCoalesce:
 		return true, printCheckWakeCoalesce(cmd, cfg, stdout)
+	default:
+		return executeStatelessReport(cmd, cfg, stdout)
+	}
+}
+
+func executeStatelessReport(cmd Command, cfg config.AppConfig, stdout io.Writer) (bool, error) {
+	st := state.AttachStateStore(cfg)
+	switch cmd.Mode {
+	case ModeTimeline:
+		return true, printTimeline(st, cmd.Payload, stdout)
+	case ModeConvergence:
+		return true, printConvergence(st, cmd.Payload, stdout)
+	case ModeEvalAB:
+		return true, printEvalAB(st, cmd.Payload, stdout)
+	case ModeCallOutliers:
+		return true, printCallOutliers(st, stdout)
+	case ModeModelRouting:
+		return true, printModelRouting(st, stdout)
+	case ModeTestImpact:
+		return true, printTestImpact(st, stdout)
+	case ModeBundle:
+		return true, printBundle(cfg, st, cmd.Payload, stdout)
 	default:
 		return false, nil
 	}

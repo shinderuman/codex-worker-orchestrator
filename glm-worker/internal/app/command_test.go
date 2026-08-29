@@ -32,6 +32,7 @@ func TestParseCommandModes(t *testing.T) {
 		{name: "eval-ab", args: []string{"--eval-ab", "/tmp/ab-run"}, mode: ModeEvalAB, payload: "/tmp/ab-run"},
 		{name: "call-outliers", args: []string{"--call-outliers"}, mode: ModeCallOutliers},
 		{name: "model-routing", args: []string{"--model-routing"}, mode: ModeModelRouting},
+		{name: "test-impact", args: []string{"--test-impact"}, mode: ModeTestImpact},
 		{name: "codex-limit", args: []string{"--codex-limit"}, mode: ModeCodexLimit},
 	}
 
@@ -157,6 +158,7 @@ func TestParseCommandRejectsInvalidArguments(t *testing.T) {
 		{"--eval-ab", "dir", "extra"},
 		{"--call-outliers", "extra"},
 		{"--model-routing", "extra"},
+		{"--test-impact", "extra"},
 		{"--codex-limit", "extra"},
 	}
 

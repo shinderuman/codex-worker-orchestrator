@@ -66,9 +66,11 @@ Task 014のevidenceと許可に基づく。
 
 full test gate。
 
+Task 014は完了済み。既存event/telemetry/roundではtest call数・duration・failure outcomeまで測定できるがsuite-level coverageとper-suite failure / escaped contrastはunknownで、omission candidateは提示されなかった。このevidence不足をtest省略の根拠にしない。
+
 ## Dependencies
 
-- `IMPLEMENTATION_TASKS/014-test-impact-evaluation.md`
+none
 
 ## Review findings
 
@@ -76,4 +78,4 @@ none
 
 ## Current boundary
 
-evidence/permission待ち。
+Task 014のevidenceはtest省略判断に不十分。追加品質証拠とユーザー許可待ち。
