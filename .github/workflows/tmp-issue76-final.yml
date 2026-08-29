@@ -21,7 +21,9 @@ jobs:
           go-version: "1.25.4"
           cache: false
       - name: Apply patch
-        run: python3 .github/issue76_final_patch.py
+        run: |
+          python3 .github/issue76_final_patch.py
+          sed -i 's/containsString/containsSandboxString/g' glm-worker/internal/runner/git_authority_sandbox_test.go
       - name: Format
         working-directory: glm-worker
         run: gofmt -w internal/runner/git_authority_guard.go internal/runner/git_authority_claude_wrapper.go internal/runner/git_authority_sandbox.go internal/runner/git_authority_sandbox_test.go internal/runner/git_authority_temp_root_test.go internal/runner/instruction_surface_runner.go internal/runner/runner.go internal/runner/probe.go internal/runner/runner_test.go
