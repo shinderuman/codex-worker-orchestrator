@@ -20,6 +20,49 @@ jobs:
         with:
           go-version: "1.25.4"
           cache: false
+      - name: Adapt patch helper
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('.github/issue76_final_patch.py')
+          text = path.read_text()
+          old = '''p = Path("glm-worker/internal/runner/runner_test.go")
+s = p.read_text()
+if "isolationSettings(configDir)" not in s:
+    raise SystemExit("runner_test isolationSettings call not found")
+p.write_text(s.replace("isolationSettings(configDir)", "isolationSettings(configDir, nil)"))
+'''
+          new = '''p = Path("glm-worker/internal/runner/runner_test.go")
+s = p.read_text()
+needle = "isolationSettings("
+pos = 0
+changed = 0
+while True:
+    start = s.find(needle, pos)
+    if start < 0:
+        break
+    i = start + len(needle)
+    depth = 1
+    while i < len(s) and depth:
+        if s[i] == "(":
+            depth += 1
+        elif s[i] == ")":
+            depth -= 1
+        i += 1
+    if depth:
+        raise SystemExit("unterminated runner_test isolationSettings call")
+    close = i - 1
+    s = s[:close] + ", nil" + s[close:]
+    pos = close + len(", nil") + 1
+    changed += 1
+if changed == 0:
+    raise SystemExit("runner_test isolationSettings call not found")
+p.write_text(s)
+'''
+          if old not in text:
+              raise SystemExit('helper adaptation point not found')
+          path.write_text(text.replace(old, new, 1))
+          PY
       - name: Apply patch
         run: python3 .github/issue76_final_patch.py
       - name: Format
