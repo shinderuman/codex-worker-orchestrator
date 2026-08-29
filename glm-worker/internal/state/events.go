@@ -12,8 +12,15 @@ import (
 )
 
 type TaskValidationObservation struct {
-	Form string `json:"form"`
+	Form   string `json:"form"`
+	Result string `json:"result,omitempty"`
 }
+
+const (
+	ValidationResultPass    = "pass"
+	ValidationResultFail    = "fail"
+	ValidationResultUnknown = "unknown"
+)
 
 type TaskValidationEvent struct {
 	Attribution string `json:"attribution"`
