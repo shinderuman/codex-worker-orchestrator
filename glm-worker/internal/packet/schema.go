@@ -229,7 +229,7 @@ func validatePropertySchema(property *propertySchema, path string) {
 
 func validateScalarSchema(schema *scalarSchema, path string) {
 	if _, ok := scalarTypes[schema.Type]; !ok {
-		panic(fmt.Sprintf("%s: scalar type %qは許可list外です", path))
+		panic(fmt.Sprintf("%s: scalar type %qは許可list外です", path, schema.Type))
 	}
 	if len(schema.Enum) == 0 {
 		return
