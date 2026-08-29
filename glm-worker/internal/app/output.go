@@ -735,6 +735,11 @@ func parentAccept(st *state.StateStore, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
+	if resolved {
+		if err := st.SetTaskStatus(state.TaskStatusComplete); err != nil {
+			return err
+		}
+	}
 	return writeJSON(stdout, acceptOutput{Accepted: resolved})
 }
 
