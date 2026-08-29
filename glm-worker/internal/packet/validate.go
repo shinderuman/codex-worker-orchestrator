@@ -60,13 +60,33 @@ func ValidateWorkerResult(result Result) error {
 			return &constraintError{reason: "NEEDS_SOL_DECISIONのriskはHIGHにしてください"}
 		}
 	default:
-
 		return &mismatchError{reason: fmt.Sprintf("worker結果のstatusとして許容されません: %q", string(result.Status))}
+	}
+	if err := validateParentValidation(result); err != nil {
+		return err
 	}
 	if err := validateFields(result, result.contractFields()); err != nil {
 		return err
 	}
 	return validateTargets(result)
+}
+
+func validateParentValidation(result Result) error {
+	if result.ParentValidationEvidence != "" {
+		return &constraintError{reason: "parent_validation_evidenceはwrapper専用fieldです"}
+	}
+	if result.ParentValidation == "" {
+		return nil
+	}
+	if result.Status != StatusImplemented {
+		return &constraintError{reason: "parent_validationはIMPLEMENTEDだけで指定できます"}
+	}
+	switch result.ParentValidation {
+	case ParentValidationGoTest, ParentValidationGoTestRace:
+		return nil
+	default:
+		return &constraintError{reason: fmt.Sprintf("parent_validationは既知のparent gateだけを指定してください: %q", result.ParentValidation)}
+	}
 }
 
 func ValidateReviewerResult(result Result) error {
@@ -88,8 +108,10 @@ func ValidateReviewerResult(result Result) error {
 			return &constraintError{reason: "NEEDS_SOL_DECISIONのriskはHIGHにしてください"}
 		}
 	default:
-
 		return &mismatchError{reason: fmt.Sprintf("reviewer結果のstatusとして許容されません: %q", string(result.Status))}
+	}
+	if result.ParentValidation != "" || result.ParentValidationEvidence != "" {
+		return &constraintError{reason: "reviewer結果にparent validation fieldは指定できません"}
 	}
 	if err := validateFields(result, result.contractFields()); err != nil {
 		return err
