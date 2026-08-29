@@ -103,6 +103,8 @@ const subtypeStructuredOutputRetryExhausted = "error_max_structured_output_retri
 
 const highFloorPhaseMarker = "high-floor"
 
+const workerTools = "Read,Grep,Glob,Bash,Edit,Write,NotebookEdit,WebFetch,WebSearch,TaskCreate,TaskUpdate,TaskOutput"
+
 const readOnlyTools = "Read,Grep,Glob,WebFetch,WebSearch"
 
 var readOnlyDisallowedTools = []string{"Edit", "Write", "NotebookEdit", "Agent", "Bash"}
@@ -288,6 +290,10 @@ func (r *ClaudeRunner) buildRunArgs(
 	} else {
 		args = append(args, "--session-id", sessionID, "--name", r.sessionName(role, taskID))
 	}
+	tools := workerTools
+	if readOnly {
+		tools = readOnlyTools
+	}
 	args = append(args,
 		"--model", model,
 		"--effort", effort,
@@ -300,9 +306,10 @@ func (r *ClaudeRunner) buildRunArgs(
 		"--disable-slash-commands",
 		"--settings", inputs.isolationArgs,
 		"--json-schema", inputs.schema,
+		"--tools", tools,
 	)
 	if readOnly {
-		args = append(args, "--tools", readOnlyTools, "--disallowedTools")
+		args = append(args, "--disallowedTools")
 		args = append(args, readOnlyDisallowedTools...)
 	}
 	return append(args, "--append-system-prompt-file", inputs.systemFile, prompt)
@@ -566,7 +573,6 @@ func loadSettingEnv(claudeConfigDir string, overridePath string) (map[string]str
 			if value, ok := parsed.Env[key]; ok && value != "" {
 				result[key] = value
 			}
-		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, nil, fmt.Errorf("claude settings.jsonを読み込めません: %w", err)
 	}
