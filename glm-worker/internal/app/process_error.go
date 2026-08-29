@@ -185,12 +185,13 @@ func installSmokeFailDetail(err *InstallSmokeError) map[string]any {
 
 func qualityGateFailDetail(err *QualityGateError) map[string]any {
 	return map[string]any{
-		"exit_code":   err.ExitCode,
-		"form":        err.Form,
-		"command":     err.Command,
-		"working_dir": err.WorkingDir,
-		"duration_ms": err.DurationMS,
-		"log":         stringPtr(err.LogPath),
+		"validation_run_id": err.ValidationRunID,
+		"exit_code":         err.ExitCode,
+		"form":              err.Form,
+		"command":           err.Command,
+		"working_dir":       err.WorkingDir,
+		"duration_ms":       err.DurationMS,
+		"log":               stringPtr(err.LogPath),
 	}
 }
 
