@@ -8,11 +8,11 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/021-conditional-improvements.md`
+- `IMPLEMENTATION_TASKS/exhaustive-search-query-persistence-review.md`
 
 ## NEXT（優先順）
+- `IMPLEMENTATION_TASKS/021-conditional-improvements.md`
 - `IMPLEMENTATION_TASKS/022-final-verification.md`
-- `IMPLEMENTATION_TASKS/exhaustive-search-query-persistence-review.md`
 
 ## BLOCKED / USER_PERMISSION_WAIT
 
@@ -38,8 +38,8 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## 現在の停止理由
 
-Task 020を完了。ACTIVEへ昇格したTask 021は未着手で、ユーザー指定の停止境界により開始していない。
+Task 020を完了。post-run reviewでTask 020由来の未解決privacy/proof境界を追加実装taskとして先行させることを決定し、`exhaustive-search-query-persistence-review.md`をACTIVEへ昇格した。未着手。
 
 ## 次の親Codex操作
 
-ACTIVE `IMPLEMENTATION_TASKS/021-conditional-improvements.md`をrepository authorityとtask本文から再bootstrapして開始する。Task 020で保存した`exhaustive-search-query-persistence-review.md`はTask 022後のNEXTとして維持する。
+ACTIVE `IMPLEMENTATION_TASKS/exhaustive-search-query-persistence-review.md`をrepository authorityとtask本文から再bootstrapして通常workflowで開始する。Task 021 parent decision gateとTask 022 final verificationは開始しない。
