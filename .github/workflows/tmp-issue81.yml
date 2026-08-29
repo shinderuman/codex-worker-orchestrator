@@ -1,0 +1,49 @@
+name: Temporary issue 81 validation
+
+on:
+  push:
+    branches:
+      - gpt/run-control-81
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-validate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: gpt/run-control-81
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.25.4"
+          cache: false
+      - name: Apply instruction boundary
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('codex/instructions/glm-execution.md')
+          text = path.read_text()
+          old = '- taskへの追加指示・Sol判断の内容・review指摘の範囲変更は、次の呼出前にtask fileのAmendmentsへ追記してから委譲する。USER_REQUEST・decision本文・fix本文だけで要求を差し替えない。task完了前のtask file削除・history移行・plan昇格は行わない。'
+          new = '''- task fileの`## Amendments`へ永続化するのは、ユーザー追加指示・Sol判断・review指摘のうち、task固有の要求・制約・acceptance boundaryを意味的に変更する内容だけとする。そのsemantic deltaは省略・要約で意味を落とさず、次の呼出前にtask fileへ反映する。\n- start/resume許可、現在task後の停止境界、runtime preflight、待機・進捗報告、親Codexのreview/commit/Plan・History更新、最終報告形式などのrun-controlは親orchestrationの実行状態として扱い、ユーザーがdurable task contractへ含めると明示した場合を除き`## Amendments`へコピーしない。run-controlだけのメッセージではtask fileを変更しない。\n- 1つのユーザーメッセージにsemantic amendmentとrun-controlが混在する場合はsemantic amendmentだけをlosslessにtask fileへ分離し、メッセージ全体をamendmentとして転記しない。ACTIVE task fileへ既に置いたsubstantive requirementをUSER_REQUESTへ重複転記せず、USER_REQUESTはtask要旨・参照と今回のrun-controlだけに留める。task完了前のtask file削除・history移行・plan昇格は行わない。'''
+          if text.count(old) != 1:
+              raise SystemExit(f'replacement count={text.count(old)}')
+          path.write_text(text.replace(old, new, 1))
+          PY
+      - name: Test
+        working-directory: glm-worker
+        run: go test ./...
+      - name: Vet
+        working-directory: glm-worker
+        run: go vet ./...
+      - name: Commit instruction change
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add codex/instructions/glm-execution.md
+          git diff --cached --check
+          git commit -m 'Separate task amendments from run control'
+          git push origin HEAD:gpt/run-control-81
