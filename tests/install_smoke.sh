@@ -8,6 +8,10 @@ repo="$tmp/repo"
 home="$tmp/home"
 mkdir -p "$repo" "$home/.codex" "$home/.claude" "$tmp/bin"
 rsync -a --exclude .git "$source_root/" "$repo/"
+git -C "$repo" init -q
+git -C "$repo" add -A
+git -C "$repo" -c user.name=install-smoke -c user.email=install-smoke@example.invalid commit -qm fixture
+repo_revision=$(git -C "$repo" rev-parse HEAD)
 printf '%s\n' 'local_key = "keep"' >"$home/.codex/config.toml"
 printf '%s\n' '{"permissions":{"allow":["local"]},"env":{"LOCAL":"keep"}}' >"$home/.claude/settings.json"
 cat >"$tmp/bin/claude" <<'EOF_CLAUDE'
@@ -61,6 +65,13 @@ grep -q -- '--repo-search' "$tmp/repo-search-help.json"
 HOME="$home" GLM_WORKER_HOME="$home/.glm-worker" GLM_WORKER_REPO_SEARCH=0 "$home/.local/bin/glm-worker" --repo-search smoke >"$tmp/repo-search-disabled.json"
 grep -q '"status":"disabled"' "$tmp/repo-search-disabled.json"
 grep -q '"result":"disabled"' "$tmp/repo-search-disabled.json"
+(
+	cd "$repo"
+	HOME="$home" GLM_WORKER_HOME="$home/.glm-worker" "$home/.local/bin/glm-worker" --status
+) >"$tmp/runtime-status.json"
+grep -Fq "\"vcs_revision\":\"$repo_revision\"" "$tmp/runtime-status.json"
+grep -Fq '"vcs_modified":false' "$tmp/runtime-status.json"
+grep -Fq '"relationship":"same"' "$tmp/runtime-status.json"
 find "$home/.codex" "$home/.claude" "$home/.local/bin" -type f -exec shasum -a 256 {} \; | LC_ALL=C sort >"$tmp/first.sha"
 run_install
 find "$home/.codex" "$home/.claude" "$home/.local/bin" -type f -exec shasum -a 256 {} \; | LC_ALL=C sort >"$tmp/second.sha"
