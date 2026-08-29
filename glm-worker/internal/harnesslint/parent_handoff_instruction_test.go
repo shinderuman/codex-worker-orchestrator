@@ -35,6 +35,14 @@ func TestCanonicalParentHandoffIsRouted(t *testing.T) {
 				"allowed_actions",
 			},
 		},
+		{
+			path: "codex/instructions/task-request-boundary.md",
+			tokens: []string{
+				"glm-worker --handoff",
+				"required_action",
+				"allowed_actions",
+			},
+		},
 	}
 
 	for _, check := range checks {
