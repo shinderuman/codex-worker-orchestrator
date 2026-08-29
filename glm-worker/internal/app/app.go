@@ -76,6 +76,7 @@ const (
 	ModeStop
 	ModeIsolate
 	ModeStatus
+	ModeHandoff
 	ModeWatch
 	ModeTimeline
 	ModeConvergence
@@ -127,6 +128,9 @@ var commandParsers = map[string]commandParser{
 	},
 	"--status": func(args []string) (Command, error) {
 		return singleArgCommand(args, ModeStatus, "usage: glm-worker --status")
+	},
+	"--handoff": func(args []string) (Command, error) {
+		return singleArgCommand(args, ModeHandoff, "usage: glm-worker --handoff")
 	},
 	"--watch": watchCommand,
 	"--timeline": func(args []string) (Command, error) {
@@ -182,7 +186,7 @@ func usageError(format string, args ...any) *UsageError {
 
 func ParseCommand(args []string) (Command, error) {
 	if len(args) == 0 {
-		return Command{}, usageError("usage: glm-worker <instruction> | --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix-stdin <payload-bytes> [--sha256 <hex>] %s | --accept | --resume | --stop | --isolate | --status | --watch [--verbose] | --timeline [task-id] | --convergence [task-id] | --stats | --reset | --eval-ab <run-dir> | --call-outliers | --codex-limit | --repo-search <query> | --check-wake-coalesce <parent-thread-id> <auto-resume-at-rfc3339> | --install-smoke %s | --quality-gate %s | --model-routing | bundle [task-id]", fixOriginUsage, installSmokeUsage, qualityGateUsage)
+		return Command{}, usageError("usage: glm-worker <instruction> | --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix-stdin <payload-bytes> [--sha256 <hex>] %s | --accept | --resume | --stop | --isolate | --status | --handoff | --watch [--verbose] | --timeline [task-id] | --convergence [task-id] | --stats | --reset | --eval-ab <run-dir> | --call-outliers | --codex-limit | --repo-search <query> | --check-wake-coalesce <parent-thread-id> <auto-resume-at-rfc3339> | --install-smoke %s | --quality-gate %s | --model-routing | bundle [task-id]", fixOriginUsage, installSmokeUsage, qualityGateUsage)
 	}
 	if parser, ok := commandParsers[args[0]]; ok {
 		return parser(args)
@@ -426,6 +430,9 @@ func Execute(cmd Command, cfg config.AppConfig, rf RunnerFactory, stdout, _ io.W
 		return err
 	}
 	defer func() { _ = lock.Close() }()
+	if err := admitParentCommand(cmd, st); err != nil {
+		return err
+	}
 
 	if handled, err := executeLocked(cmd, cfg, st, stdout); handled {
 		return err
@@ -476,6 +483,8 @@ func executeStateOnly(cmd Command, cfg config.AppConfig, st *state.StateStore, s
 	switch cmd.Mode {
 	case ModeStatus:
 		return true, printStatus(st, stdout)
+	case ModeHandoff:
+		return true, printParentHandoff(st, stdout)
 	case ModeStats:
 		return true, printStats(st, stdout)
 	case ModeVerifyAutoResume:
