@@ -17,7 +17,7 @@ type validationSegmentScanner struct {
 }
 
 func validationObservationsForToolInput(toolName string, input json.RawMessage) []state.TaskValidationObservation {
-	if toolName != "Bash" || len(input) == 0 {
+	if toolName != bashToolName || len(input) == 0 {
 		return nil
 	}
 	var parsed struct {

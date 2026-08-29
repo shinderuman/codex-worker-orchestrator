@@ -16,12 +16,6 @@ type TaskValidationObservation struct {
 	Result string `json:"result,omitempty"`
 }
 
-const (
-	ValidationResultPass    = "pass"
-	ValidationResultFail    = "fail"
-	ValidationResultUnknown = "unknown"
-)
-
 type TaskValidationEvent struct {
 	Attribution string `json:"attribution"`
 	Source      string `json:"source"`
@@ -86,6 +80,12 @@ type TaskEventRecord struct {
 	NumTurns      int                    `json:"num_turns,omitempty"`
 	TotalCostUSD  float64                `json:"total_cost_usd,omitempty"`
 }
+
+const (
+	ValidationResultPass    = "pass"
+	ValidationResultFail    = "fail"
+	ValidationResultUnknown = "unknown"
+)
 
 const taskEventLogVersion = 1
 
