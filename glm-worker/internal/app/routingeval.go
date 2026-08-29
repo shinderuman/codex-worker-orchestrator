@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -52,6 +53,7 @@ func attachModelRoutingConvergenceDeltas(st *state.StateStore, tasks []state.Tas
 		}
 		readable++
 		tasks[index].ConvergenceDeltas = convergenceCallDeltas(records, tasks[index].Logs)
+		tasks[index].QualityOutcomes = convergenceQualityOutcomes(records, tasks[index].Logs)
 	}
 	if readable > 0 && scan.Status != statusPartial {
 		scan.Status = "ok"
@@ -71,6 +73,34 @@ func convergenceCallDeltas(records []state.RoundRecord, logs []state.ModelCallLo
 		}
 	}
 	return deltas
+}
+
+func convergenceQualityOutcomes(records []state.RoundRecord, logs []state.ModelCallLog) map[string]string {
+	rounds, _ := buildConvergenceRounds(records, logs)
+	outcomes := make(map[string]string)
+	for _, round := range rounds {
+		if round.gap || round.mismatch || len(round.worker) != 1 ||
+			round.worker[0].PacketStatus != string(packet.StatusImplemented) {
+			continue
+		}
+		review := convergenceReviewOutDetail(round)
+		if review.Outcome == nil {
+			continue
+		}
+		quality := ""
+		switch *review.Outcome {
+		case string(packet.StatusPass):
+			quality = state.ModelRoutingQualityReviewPass
+		case string(packet.StatusFixRequired):
+			quality = state.ModelRoutingQualityReviewFixRequired
+		default:
+			continue
+		}
+		if callID := round.worker[0].CallID; callID != "" {
+			outcomes[callID] = quality
+		}
+	}
+	return outcomes
 }
 
 func recordConvergenceCallDelta(deltas map[string]string, entry state.ModelCallLog, class string) {

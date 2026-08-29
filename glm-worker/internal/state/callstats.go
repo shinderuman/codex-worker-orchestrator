@@ -11,6 +11,7 @@ type TaskCallLogs struct {
 	TaskID            string
 	Logs              []ModelCallLog
 	ConvergenceDeltas map[string]string
+	QualityOutcomes   map[string]string
 }
 
 type CallRecordCounts struct {

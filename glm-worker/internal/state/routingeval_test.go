@@ -10,7 +10,7 @@ func routingLogFixture(taskID string, sessionID string, phase string, role Sessi
 	return ModelCallLog{
 		Version: modelCallLogVersion, CallType: CallTypeTask, TaskID: taskID, SessionID: sessionID,
 		StartedAt: startedAt, CompletedAt: startedAt.Add(time.Minute),
-		Phase: phase, Role: role, ModelAlias: alias,
+		Phase: phase, Role: role, ModelAlias: alias, ResolvedModelID: "glm-5.3",
 		Outcome: "success", PacketStatus: "IMPLEMENTED",
 		ResolvedModelUsage: map[string]ResolvedModelUsage{
 			"glm-5.3": {InputTokens: 1000, CacheReadInputTokens: 5000, OutputTokens: 200},
@@ -88,7 +88,7 @@ func TestBuildModelRoutingReportAggregatesCells(t *testing.T) {
 	if report.Records != (CallRecordCounts{Read: 6, Task: 5, Event: 1}) {
 		t.Fatalf("records = %#v", report.Records)
 	}
-	if report.Sufficiency.MinCalls != ModelRoutingMinCallsPerCell || report.Sufficiency.MinTasks != ModelRoutingMinTasksPerCell {
+	if report.Sufficiency.MinQualityCalls != ModelRoutingMinQualityCallsPerGroup || report.Sufficiency.MinQualityTasks != ModelRoutingMinQualityTasksPerGroup {
 		t.Fatalf("sufficiency = %#v", report.Sufficiency)
 	}
 	if report.Metrics.TreeUsage == "" || report.Metrics.Cost == "" || report.Metrics.Quality == "" || report.Sufficiency.Rule == "" {
@@ -102,7 +102,7 @@ func TestBuildModelRoutingReportAggregatesCells(t *testing.T) {
 	if workerCell.Usage.InputTokens != 2000 || workerCell.Usage.CacheReadInputTokens != 10000 || workerCell.Usage.OutputTokens != 400 {
 		t.Fatalf("worker cell usage = %#v", workerCell.Usage)
 	}
-	if workerCell.UsageUnknownCalls != 0 || workerCell.Sufficient {
+	if workerCell.UsageUnknownCalls != 0 || workerCell.TopLevelCalls != 2 {
 		t.Fatalf("worker cell境界 = %#v", workerCell)
 	}
 	if workerCell.Outcomes["success"] != 2 || workerCell.PacketStatuses["NEEDS_SOL_REVIEW"] != 1 || workerCell.PacketStatuses["IMPLEMENTED"] != 1 {
@@ -143,14 +143,14 @@ func TestBuildModelRoutingReportAggregatesCells(t *testing.T) {
 		t.Fatalf("worker alias link = %#v", report.AliasLinks[1])
 	}
 
-	if report.Evaluation.QualityDelta != ModelRoutingQualityDeltaInsufficient {
+	if report.Evaluation.QualityDelta != ModelRoutingQualityDeltaUnknown {
 		t.Fatalf("quality delta = %#v", report.Evaluation)
 	}
-	if len(report.Evaluation.ComparableGroups) != 0 {
-		t.Fatalf("comparable groups = %#v", report.Evaluation.ComparableGroups)
+	if len(report.Evaluation.ComparableGroups) != 0 || len(report.QualityGroups) != 0 {
+		t.Fatalf("quality groups = %#v / %#v", report.Evaluation.ComparableGroups, report.QualityGroups)
 	}
 	if len(report.Evaluation.Reasons) != 1 ||
-		report.Evaluation.Reasons[0] != "no role+normalized-phase+effective-risk+convergence-delta group contains at least 2 of the observed resolved models" {
+		report.Evaluation.Reasons[0] != "no attributable downstream quality evidence; operational outcome and packet_status are not model-quality evidence" {
 		t.Fatalf("reasons = %#v", report.Evaluation.Reasons)
 	}
 }
@@ -172,14 +172,9 @@ func TestBuildModelRoutingReportSingleModelIsUnknown(t *testing.T) {
 	if report.Evaluation.QualityDelta != ModelRoutingQualityDeltaUnknown {
 		t.Fatalf("quality delta = %#v", report.Evaluation)
 	}
-	if len(report.Evaluation.Reasons) != 2 {
+	if len(report.Evaluation.Reasons) != 1 ||
+		report.Evaluation.Reasons[0] != "no attributable downstream quality evidence; operational outcome and packet_status are not model-quality evidence" {
 		t.Fatalf("reasons = %#v", report.Evaluation.Reasons)
-	}
-	if report.Evaluation.Reasons[0] != "resolved-model contrast requires at least 2 distinct resolved models; observed only glm-5.3" {
-		t.Fatalf("single model reason = %q", report.Evaluation.Reasons[0])
-	}
-	if report.Evaluation.Reasons[1] != "2 model aliases resolve to the same resolved model set (glm-5.3); alias-level differences are not model quality evidence" {
-		t.Fatalf("alias reason = %q", report.Evaluation.Reasons[1])
 	}
 }
 
@@ -196,26 +191,29 @@ func TestBuildModelRoutingReportNoTaskCalls(t *testing.T) {
 }
 
 func routingSufficientFixture(prefix string, alias string, model string, risk string, delta string, base time.Time) []TaskCallLogs {
-	logs := make([]TaskCallLogs, 0, ModelRoutingMinTasksPerCell)
-	callsPerTask := ModelRoutingMinCallsPerCell / ModelRoutingMinTasksPerCell
-	for task := 0; task < ModelRoutingMinTasksPerCell; task++ {
+	logs := make([]TaskCallLogs, 0, ModelRoutingMinQualityTasksPerGroup)
+	callsPerTask := ModelRoutingMinQualityCallsPerGroup / ModelRoutingMinQualityTasksPerGroup
+	for task := 0; task < ModelRoutingMinQualityTasksPerGroup; task++ {
 		taskID := fmt.Sprintf("%s-1111-4111-8111-00000000000%d", prefix, task)
 		entries := make([]ModelCallLog, 0, callsPerTask)
 		deltas := make(map[string]string)
+		quality := make(map[string]string)
 		for call := 0; call < callsPerTask; call++ {
 			callID := fmt.Sprintf("call-%s-%d-%d", prefix, task, call)
 			entry := routingLogFixture(taskID, "sess-"+prefix, "worker-new", WorkerRole, alias, base.Add(time.Duration(task)*time.Hour+time.Duration(call)*time.Minute))
 			entry.CallID = callID
 			entry.EffectiveRisk = risk
+			entry.ResolvedModelID = model
 			entry.ResolvedModelUsage = map[string]ResolvedModelUsage{
 				model: {InputTokens: 100, OutputTokens: 10},
 			}
 			entries = append(entries, entry)
+			quality[callID] = ModelRoutingQualityReviewPass
 			if delta != RoundDeltaUnknown {
 				deltas[callID] = delta
 			}
 		}
-		logs = append(logs, TaskCallLogs{TaskID: taskID, Logs: entries, ConvergenceDeltas: deltas})
+		logs = append(logs, TaskCallLogs{TaskID: taskID, Logs: entries, ConvergenceDeltas: deltas, QualityOutcomes: quality})
 	}
 	return logs
 }
@@ -238,12 +236,12 @@ func TestBuildModelRoutingReportComparableGroup(t *testing.T) {
 	if len(report.Evaluation.Reasons) != 0 {
 		t.Fatalf("reasons = %#v", report.Evaluation.Reasons)
 	}
-	for _, cell := range report.Cells {
-		if !cell.Sufficient {
-			t.Fatalf("sufficient cellがないものがあります: %#v", cell)
-		}
-		if cell.EffectiveRisk != "HIGH" || cell.ConvergenceDelta != RoundDeltaSemantic {
-			t.Fatalf("cell軸が分離されていません: %#v", cell)
+	if len(report.QualityGroups) != 2 {
+		t.Fatalf("quality groups = %#v", report.QualityGroups)
+	}
+	for _, group := range report.QualityGroups {
+		if !group.Sufficient || group.EffectiveRisk != "HIGH" || group.ConvergenceDelta != RoundDeltaSemantic {
+			t.Fatalf("quality group = %#v", group)
 		}
 	}
 }
@@ -271,9 +269,9 @@ func TestBuildModelRoutingReportSeparatesRiskAndDeltaGroups(t *testing.T) {
 				report.Evaluation.Reasons[0] != "no role+normalized-phase+effective-risk+convergence-delta group contains at least 2 of the observed resolved models" {
 				t.Fatalf("reasons = %#v", report.Evaluation.Reasons)
 			}
-			for _, cell := range report.Cells {
-				if !cell.Sufficient {
-					t.Fatalf("sufficient cellがないものがあります: %#v", cell)
+			for _, group := range report.QualityGroups {
+				if !group.Sufficient {
+					t.Fatalf("quality group should meet its own sample floor: %#v", group)
 				}
 			}
 		})
@@ -322,12 +320,17 @@ func TestBuildModelRoutingReportInsufficientContrast(t *testing.T) {
 	for index := range small[0].Logs {
 		small[0].Logs[index].CallID = fmt.Sprintf("call-small-%d", index)
 		small[0].Logs[index].EffectiveRisk = "HIGH"
+		small[0].Logs[index].ResolvedModelID = "glm-4.7"
 		small[0].Logs[index].ResolvedModelUsage = map[string]ResolvedModelUsage{
 			"glm-4.7": {InputTokens: 100, OutputTokens: 10},
 		}
 		deltas[small[0].Logs[index].CallID] = RoundDeltaSemantic
 	}
 	small[0].ConvergenceDeltas = deltas
+	small[0].QualityOutcomes = map[string]string{
+		"call-small-0": ModelRoutingQualityReviewPass,
+		"call-small-1": ModelRoutingQualityReviewPass,
+	}
 	logs := append(routingSufficientFixture("aaaaaaaa", "opus", "glm-5.3", "HIGH", RoundDeltaSemantic, base), small...)
 
 	report := BuildModelRoutingReport(logs)
@@ -338,7 +341,7 @@ func TestBuildModelRoutingReportInsufficientContrast(t *testing.T) {
 	if len(report.Evaluation.ComparableGroups) != 0 {
 		t.Fatalf("comparable groups = %#v", report.Evaluation.ComparableGroups)
 	}
-	want := "worker/worker-new/risk=HIGH/delta=semantic-change: glm-4.7 has 2 calls across 1 tasks, below min 20 calls / 5 tasks"
+	want := "worker/worker-new/risk=HIGH/delta=semantic-change: glm-4.7 has 2 attributable quality calls across 1 tasks, below min 20 calls / 5 tasks"
 	found := false
 	for _, reason := range report.Evaluation.Reasons {
 		if reason == want {
@@ -347,5 +350,121 @@ func TestBuildModelRoutingReportInsufficientContrast(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("不足reasonがありません: %#v", report.Evaluation.Reasons)
+	}
+}
+
+func TestBuildModelRoutingReportMixedModelDoesNotDuplicateTopLevelVerdict(t *testing.T) {
+	base := time.Date(2026, 8, 29, 9, 0, 0, 0, time.UTC)
+	taskID := "dddddddd-1111-4111-8111-111111111111"
+	log := routingLogFixture(taskID, "sess-mixed", "worker-new", WorkerRole, "opus", base)
+	log.CallID = "call-mixed"
+	log.EffectiveRisk = "HIGH"
+	log.ResolvedModelID = "glm-5.3"
+	log.ResolvedModelUsage = map[string]ResolvedModelUsage{
+		"glm-5.3":      {InputTokens: 100, OutputTokens: 10},
+		"helper-model": {InputTokens: 50, OutputTokens: 5},
+	}
+	report := BuildModelRoutingReport([]TaskCallLogs{{
+		TaskID:            taskID,
+		Logs:              []ModelCallLog{log},
+		ConvergenceDeltas: map[string]string{"call-mixed": RoundDeltaSemantic},
+		QualityOutcomes:   map[string]string{"call-mixed": ModelRoutingQualityReviewFixRequired},
+	}})
+
+	owner := routingCellOf(t, report.Cells, "worker", WorkerPhaseCategoryNew, "HIGH", RoundDeltaSemantic, "opus", "glm-5.3")
+	helper := routingCellOf(t, report.Cells, "worker", WorkerPhaseCategoryNew, "HIGH", RoundDeltaSemantic, "opus", "helper-model")
+	if owner.TopLevelCalls != 1 || owner.Outcomes["success"] != 1 || owner.PacketStatuses["IMPLEMENTED"] != 1 {
+		t.Fatalf("owner cell = %#v", owner)
+	}
+	if helper.TopLevelCalls != 0 || len(helper.Outcomes) != 0 || len(helper.PacketStatuses) != 0 {
+		t.Fatalf("nested model inherited top-level verdict: %#v", helper)
+	}
+	if len(report.QualityGroups) != 1 || report.QualityGroups[0].ResolvedModel != "glm-5.3" ||
+		report.QualityGroups[0].Outcomes[ModelRoutingQualityReviewFixRequired] != 1 {
+		t.Fatalf("quality attribution = %#v", report.QualityGroups)
+	}
+}
+
+func TestBuildModelRoutingReportUnknownConfoundersNeverComparable(t *testing.T) {
+	base := time.Date(2026, 8, 29, 9, 0, 0, 0, time.UTC)
+	logs := append(
+		routingSufficientFixture("eeeeeeee", "opus", "glm-5.3", "", RoundDeltaUnknown, base),
+		routingSufficientFixture("ffffffff", "haiku", "glm-4.7", "", RoundDeltaUnknown, base)...)
+	report := BuildModelRoutingReport(logs)
+	if report.Evaluation.QualityDelta != ModelRoutingQualityDeltaInsufficient || len(report.Evaluation.ComparableGroups) != 0 {
+		t.Fatalf("unknown confounders became comparable: %#v", report.Evaluation)
+	}
+	for _, group := range report.QualityGroups {
+		if group.Sufficient {
+			t.Fatalf("unknown confounder group is sufficient: %#v", group)
+		}
+	}
+}
+
+func TestBuildModelRoutingReportOperationalFailuresDoNotSatisfyQuality(t *testing.T) {
+	base := time.Date(2026, 8, 29, 9, 0, 0, 0, time.UTC)
+	logs := append(
+		routingSufficientFixture("12121212", "opus", "glm-5.3", "HIGH", RoundDeltaSemantic, base),
+		routingSufficientFixture("34343434", "haiku", "glm-4.7", "HIGH", RoundDeltaSemantic, base)...)
+	for i := range logs {
+		logs[i].QualityOutcomes = nil
+		for j := range logs[i].Logs {
+			logs[i].Logs[j].Outcome = "rate_limited"
+			logs[i].Logs[j].PacketStatus = ""
+		}
+	}
+	report := BuildModelRoutingReport(logs)
+	if len(report.QualityGroups) != 0 || report.Evaluation.QualityDelta != ModelRoutingQualityDeltaUnknown {
+		t.Fatalf("operational failures counted as quality evidence: %#v", report)
+	}
+}
+
+func TestBuildModelRoutingReportQualitySufficiencyAggregatesAcrossAliases(t *testing.T) {
+	base := time.Date(2026, 8, 29, 9, 0, 0, 0, time.UTC)
+	left := routingSufficientFixture("56565656", "opus", "glm-5.3", "HIGH", RoundDeltaSemantic, base)
+	for i := range left {
+		for j := range left[i].Logs {
+			if (i+j)%2 == 0 {
+				left[i].Logs[j].ModelAlias = "sonnet"
+			}
+		}
+	}
+	left = append(left, routingSufficientFixture("78787878", "haiku", "glm-4.7", "HIGH", RoundDeltaSemantic, base)...)
+	report := BuildModelRoutingReport(left)
+	if report.Evaluation.QualityDelta != ModelRoutingQualityDeltaComparable {
+		t.Fatalf("alias split changed quality aggregation: %#v", report.Evaluation)
+	}
+	groups := 0
+	for _, group := range report.QualityGroups {
+		if group.ResolvedModel == "glm-5.3" {
+			groups++
+			if group.Calls != ModelRoutingMinQualityCallsPerGroup || !group.Sufficient {
+				t.Fatalf("alias-independent quality group = %#v", group)
+			}
+		}
+	}
+	if groups != 1 {
+		t.Fatalf("glm-5.3 quality groups = %d: %#v", groups, report.QualityGroups)
+	}
+}
+
+func TestBuildModelRoutingReportMissingOwnerUsageStaysUnknown(t *testing.T) {
+	base := time.Date(2026, 8, 29, 9, 0, 0, 0, time.UTC)
+	taskID := "90909090-1111-4111-8111-111111111111"
+	log := routingLogFixture(taskID, "sess-missing-owner", "worker-new", WorkerRole, "opus", base)
+	log.CallID = "call-missing-owner"
+	log.EffectiveRisk = "HIGH"
+	log.ResolvedModelID = "glm-5.3"
+	log.ResolvedModelUsage = map[string]ResolvedModelUsage{
+		"helper-model": {InputTokens: 50, OutputTokens: 5},
+	}
+	report := BuildModelRoutingReport([]TaskCallLogs{{TaskID: taskID, Logs: []ModelCallLog{log}}})
+	owner := routingCellOf(t, report.Cells, "worker", WorkerPhaseCategoryNew, "HIGH", RoundDeltaUnknown, "opus", "glm-5.3")
+	helper := routingCellOf(t, report.Cells, "worker", WorkerPhaseCategoryNew, "HIGH", RoundDeltaUnknown, "opus", "helper-model")
+	if owner.Usage != (TokenUsage{}) || owner.UsageUnknownCalls != 1 || owner.TopLevelCalls != 1 {
+		t.Fatalf("owner usage = %#v", owner)
+	}
+	if helper.Usage.InputTokens != 50 || helper.Usage.OutputTokens != 5 || helper.UsageUnknownCalls != 0 {
+		t.Fatalf("helper usage = %#v", helper)
 	}
 }
