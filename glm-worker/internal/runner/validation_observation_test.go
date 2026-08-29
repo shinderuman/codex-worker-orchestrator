@@ -45,12 +45,15 @@ func TestValidationObservationsDoNotWidenOperationCategory(t *testing.T) {
 
 func TestReduceStreamBlockStoresValidationWithoutRawCommand(t *testing.T) {
 	input := json.RawMessage(`{"command":"TOKEN=secret go test -race ./... | tail -1"}`)
-	input = json.RawMessage(strings.ReplaceAll(string(input), `\"`, `"`))
+	var normalized any
+	if err := json.Unmarshal(input, &normalized); err != nil {
+		t.Fatal(err)
+	}
 	raw, err := json.Marshal(map[string]any{
 		"type":  "tool_use",
 		"name":  "Bash",
 		"id":    "tool-1",
-		"input": input,
+		"input": normalized,
 	})
 	if err != nil {
 		t.Fatal(err)
