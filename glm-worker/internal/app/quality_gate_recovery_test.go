@@ -5,24 +5,53 @@ import (
 	"encoding/json"
 	"os"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
+type qualityGateSignalWriter struct {
+	mu    sync.Mutex
+	data  bytes.Buffer
+	once  sync.Once
+	wrote chan struct{}
+}
+
+func newQualityGateSignalWriter() *qualityGateSignalWriter {
+	return &qualityGateSignalWriter{wrote: make(chan struct{})}
+}
+
+func (w *qualityGateSignalWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	n, err := w.data.Write(p)
+	if n > 0 {
+		w.once.Do(func() { close(w.wrote) })
+	}
+	return n, err
+}
+
+func (w *qualityGateSignalWriter) String() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.data.String()
+}
+
 func TestQualityGateRecoveryCommandParsesRunSurfaces(t *testing.T) {
 	runID := strings.Repeat("a", 32)
-	for _, action := range []string{"status", "watch", "result"} {
+	for _, action := range []string{qualityGateActionStatus, qualityGateActionWatch, qualityGateActionResult} {
 		cmd, err := ParseCommand([]string{"--quality-gate", action, runID})
 		if err != nil {
 			t.Fatalf("%s parse: %v", action, err)
 		}
-		if cmd.Mode != ModeQualityGate || cmd.Payload != action+":"+runID {
+		if cmd.Mode != ModeQualityGate || cmd.Payload != action+qualityGateActionSeparator+runID {
 			t.Fatalf("%s command = %+v", action, cmd)
 		}
 	}
-	if _, err := ParseCommand([]string{"--quality-gate", "status", "../../state"}); err == nil {
+	if _, err := ParseCommand([]string{"--quality-gate", qualityGateActionStatus, "../../state"}); err == nil {
 		t.Fatal("path-like validation run id must fail closed")
 	}
 }
@@ -40,7 +69,7 @@ func TestQualityGateRunningIdentityMatchesOnlyExactSnapshot(t *testing.T) {
 		IndexDigest:     snapshot.IndexDigest,
 		WorktreeDigest:  snapshot.WorktreeDigest,
 		StartedAt:       time.Now().UTC(),
-		Status:          "running",
+		Status:          qualityGateStatusRunning,
 	}
 	if err := writeQualityGateRun(st, record); err != nil {
 		t.Fatal(err)
@@ -71,7 +100,7 @@ func TestQualityGateCompletedRunIsNotReused(t *testing.T) {
 		IndexDigest:     snapshot.IndexDigest,
 		WorktreeDigest:  snapshot.WorktreeDigest,
 		StartedAt:       time.Now().Add(-time.Second).UTC(),
-		Status:          "pass",
+		Status:          qualityGateStatusPass,
 	}
 	if err := writeQualityGateRun(st, record); err != nil {
 		t.Fatal(err)
@@ -114,7 +143,7 @@ func TestQualityGateStatusIsMachineReadableByRunID(t *testing.T) {
 		IndexDigest:     "index",
 		WorktreeDigest:  "worktree",
 		StartedAt:       time.Now().UTC(),
-		Status:          "running",
+		Status:          qualityGateStatusRunning,
 	}
 	if err := writeQualityGateRun(st, record); err != nil {
 		t.Fatal(err)
@@ -127,7 +156,100 @@ func TestQualityGateStatusIsMachineReadableByRunID(t *testing.T) {
 	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
 		t.Fatalf("status is not JSON: %v: %s", err, stdout.String())
 	}
-	if got.ValidationRunID != runID || got.Status != "running" {
+	if got.ValidationRunID != runID || got.Status != qualityGateStatusRunning {
 		t.Fatalf("status output = %+v", got)
+	}
+}
+
+func TestQualityGateConcurrentSameSnapshotAttachesAndStreamsRunID(t *testing.T) {
+	cfg, st := newQualityGateEnv(t)
+	previous := launchQualityGateRunner
+	defer func() { launchQualityGateRunner = previous }()
+
+	var launches atomic.Int32
+	release := make(chan struct{})
+	started := make(chan qualityGateRunRecord, 1)
+	launchQualityGateRunner = func(_ *state.StateStore, record qualityGateRunRecord) (qualityGateRunnerWait, error) {
+		launches.Add(1)
+		started <- record
+		return func() error {
+			<-release
+			completed := time.Now().UTC()
+			record.Status = qualityGateStatusPass
+			record.CompletedAt = &completed
+			record.DurationMS = completed.Sub(record.StartedAt).Milliseconds()
+			return writeQualityGateRun(st, record)
+		}, nil
+	}
+
+	firstDiagnostics := newQualityGateSignalWriter()
+	var firstOutput bytes.Buffer
+	firstErr := make(chan error, 1)
+	go func() {
+		firstErr <- dispatchMachineOutput(Command{Mode: ModeQualityGate, Payload: "go-test"}, cfg, defaultRunnerFactory, &firstOutput, firstDiagnostics)
+	}()
+
+	record := <-started
+	<-firstDiagnostics.wrote
+	if !strings.Contains(firstDiagnostics.String(), record.ValidationRunID) || !strings.Contains(firstDiagnostics.String(), `"attached":false`) {
+		t.Fatalf("first start event = %s", firstDiagnostics.String())
+	}
+
+	secondDiagnostics := newQualityGateSignalWriter()
+	var secondOutput bytes.Buffer
+	secondErr := make(chan error, 1)
+	go func() {
+		secondErr <- dispatchMachineOutput(Command{Mode: ModeQualityGate, Payload: "go-test"}, cfg, defaultRunnerFactory, &secondOutput, secondDiagnostics)
+	}()
+	<-secondDiagnostics.wrote
+	if launches.Load() != 1 {
+		t.Fatalf("same snapshot launched %d runners", launches.Load())
+	}
+	if !strings.Contains(secondDiagnostics.String(), record.ValidationRunID) || !strings.Contains(secondDiagnostics.String(), `"attached":true`) {
+		t.Fatalf("attach event = %s", secondDiagnostics.String())
+	}
+
+	close(release)
+	if err := <-firstErr; err != nil {
+		t.Fatalf("first quality gate: %v", err)
+	}
+	if err := <-secondErr; err != nil {
+		t.Fatalf("attached quality gate: %v", err)
+	}
+	for label, raw := range map[string][]byte{"first": firstOutput.Bytes(), "second": secondOutput.Bytes()} {
+		var out qualityGateOutput
+		if err := json.Unmarshal(raw, &out); err != nil {
+			t.Fatalf("%s output: %v: %s", label, err, raw)
+		}
+		if out.ValidationRunID != record.ValidationRunID || out.Status != qualityGateStatusPass {
+			t.Fatalf("%s output = %+v", label, out)
+		}
+	}
+}
+
+func TestQualityGateStatusMarksDeadRunnerInterrupted(t *testing.T) {
+	_, st := newQualityGateEnv(t)
+	runID := strings.Repeat("9", 32)
+	record := qualityGateRunRecord{
+		ValidationRunID: runID,
+		Form:            "go-test",
+		Repository:      "/repo",
+		StartedAt:       time.Now().Add(-time.Second).UTC(),
+		Status:          qualityGateStatusRunning,
+		RunnerPID:       2147483647,
+	}
+	if err := writeQualityGateRun(st, record); err != nil {
+		t.Fatal(err)
+	}
+	var stdout bytes.Buffer
+	if err := printQualityGateRun(st, runID, false, &stdout); err != nil {
+		t.Fatal(err)
+	}
+	var got qualityGateRunRecord
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != errorKindInterrupted || got.ExitCode != -1 || got.CompletedAt == nil || got.Log == "" {
+		t.Fatalf("reconciled record = %+v", got)
 	}
 }
