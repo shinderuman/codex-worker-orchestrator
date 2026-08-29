@@ -43,8 +43,6 @@ func (p ParentActionPlan) Allows(action ParentAction) bool {
 	return false
 }
 
-// AdmitsCommand preserves existing idempotent --accept behavior while keeping
-// AllowedActions limited to productive parent transitions for the handoff.
 func (p ParentActionPlan) AdmitsCommand(action ParentAction) bool {
 	if p.Allows(action) {
 		return true
@@ -72,18 +70,40 @@ func (s *StateStore) ParentActionPlan() (ParentActionPlan, error) {
 	if stopErr != nil {
 		return ParentActionPlan{}, lifecycleInconsistency(status, stopErr.Error())
 	}
+	return parentActionPlanForStatus(status, pending, openReview, stopKind)
+}
 
+func parentActionPlanForStatus(status TaskStatus, pending bool, openReview, stopKind string) (ParentActionPlan, error) {
 	switch status {
 	case TaskStatusWaitingDecision:
-		if !pending || openReview != string(packet.StatusNeedsSolDecision) || stopKind != "" {
-			return ParentActionPlan{}, lifecycleInconsistency(status, "waiting decision state does not match pending decision, parent review, and resume state")
-		}
-		return actionPlan(ParentActionDecision, "", ParentActionDecision), nil
+		return waitingDecisionActionPlan(status, pending, openReview, stopKind)
 	case TaskStatusWaitingSolReview:
-		if pending || openReview != string(packet.StatusNeedsSolReview) || stopKind != "" {
-			return ParentActionPlan{}, lifecycleInconsistency(status, "waiting review state does not match parent review and resume state")
-		}
-		return actionPlan(ParentActionReview, "", ParentActionAccept, ParentActionFix), nil
+		return waitingReviewActionPlan(status, pending, openReview, stopKind)
+	case TaskStatusComplete:
+		return completeActionPlan(status, pending, openReview, stopKind)
+	case TaskStatusActive, TaskStatusNone:
+		return inactiveParentActionPlan(status, pending, openReview, stopKind)
+	default:
+		return stoppedParentActionPlan(status, pending, openReview, stopKind)
+	}
+}
+
+func waitingDecisionActionPlan(status TaskStatus, pending bool, openReview, stopKind string) (ParentActionPlan, error) {
+	if !pending || openReview != string(packet.StatusNeedsSolDecision) || stopKind != "" {
+		return ParentActionPlan{}, lifecycleInconsistency(status, "waiting decision state does not match pending decision, parent review, and resume state")
+	}
+	return actionPlan(ParentActionDecision, "", ParentActionDecision), nil
+}
+
+func waitingReviewActionPlan(status TaskStatus, pending bool, openReview, stopKind string) (ParentActionPlan, error) {
+	if pending || openReview != string(packet.StatusNeedsSolReview) || stopKind != "" {
+		return ParentActionPlan{}, lifecycleInconsistency(status, "waiting review state does not match parent review and resume state")
+	}
+	return actionPlan(ParentActionReview, "", ParentActionAccept, ParentActionFix), nil
+}
+
+func stoppedParentActionPlan(status TaskStatus, pending bool, openReview, stopKind string) (ParentActionPlan, error) {
+	switch status {
 	case TaskStatusRateLimited:
 		return stoppedActionPlan(status, pending, openReview, stopKind, "rate-limited", ParentActionResume)
 	case TaskStatusProviderUnavailable:
@@ -92,16 +112,16 @@ func (s *StateStore) ParentActionPlan() (ParentActionPlan, error) {
 		return stoppedActionPlan(status, pending, openReview, stopKind, "interrupted", ParentActionResume)
 	case TaskStatusGuardRecoverable:
 		return stoppedActionPlan(status, pending, openReview, stopKind, "guard-recoverable", ParentActionRepairGuardThenResume)
-	case TaskStatusComplete:
-		return completeActionPlan(status, pending, openReview, stopKind)
-	case TaskStatusActive, TaskStatusNone:
-		if pending || openReview != "none" || stopKind != "" {
-			return ParentActionPlan{}, lifecycleInconsistency(status, "non-waiting task has unresolved parent or resume state")
-		}
-		return actionPlan(ParentActionNone, ""), nil
 	default:
 		return ParentActionPlan{}, lifecycleInconsistency(status, "unknown task status")
 	}
+}
+
+func inactiveParentActionPlan(status TaskStatus, pending bool, openReview, stopKind string) (ParentActionPlan, error) {
+	if pending || openReview != roundCommentNone || stopKind != "" {
+		return ParentActionPlan{}, lifecycleInconsistency(status, "non-waiting task has unresolved parent or resume state")
+	}
+	return actionPlan(ParentActionNone, ""), nil
 }
 
 func completeActionPlan(status TaskStatus, pending bool, openReview string, stopKind string) (ParentActionPlan, error) {
@@ -109,7 +129,7 @@ func completeActionPlan(status TaskStatus, pending bool, openReview string, stop
 		return ParentActionPlan{}, lifecycleInconsistency(status, "complete task has pending decision or resumable stop state")
 	}
 	switch openReview {
-	case "none":
+	case roundCommentNone:
 		return actionPlan(ParentActionNone, ""), nil
 	case string(packet.StatusPass):
 		return actionPlan(ParentActionAccept, "", ParentActionAccept), nil
@@ -130,7 +150,7 @@ func stoppedActionPlan(
 	expectedKind string,
 	required ParentAction,
 ) (ParentActionPlan, error) {
-	if pending || openReview != "none" || stopKind != expectedKind {
+	if pending || openReview != roundCommentNone || stopKind != expectedKind {
 		return ParentActionPlan{}, lifecycleInconsistency(status, "stopped task status does not match pending decision, parent review, and resume checkpoint")
 	}
 	return actionPlan(required, stopKind, ParentActionResume), nil
