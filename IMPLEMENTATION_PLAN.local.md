@@ -8,12 +8,12 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/020-repo-search-telemetry-eval.md`
+- `IMPLEMENTATION_TASKS/instruction-surface-guard-recovery-state.md`
 
 ## NEXT（優先順）
+- `IMPLEMENTATION_TASKS/020-repo-search-telemetry-eval.md`
 - `IMPLEMENTATION_TASKS/021-conditional-improvements.md`
 - `IMPLEMENTATION_TASKS/022-final-verification.md`
-- `IMPLEMENTATION_TASKS/instruction-surface-guard-recovery-state.md`
 
 ## BLOCKED / USER_PERMISSION_WAIT
 
@@ -39,8 +39,8 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## 現在の停止理由
 
-Task 019は完了。ユーザー指示によりACTIVE Task 020を開始せず停止。
+ユーザー指示により`instruction-surface-guard-recovery-state`を最優先ACTIVEへ変更。Task 020はNEXT先頭へ退避。
 
 ## 次の親Codex操作
 
-ユーザーが通常開発の継続を指示した場合、ACTIVE Task 020の開始条件と要求正本を再確認して開始する。
+ACTIVE `instruction-surface-guard-recovery-state`の開始条件と要求正本を再確認して開始する。完了後、Issue #111を resulting lifecycle に対して再評価する。
