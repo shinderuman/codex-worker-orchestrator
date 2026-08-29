@@ -9,13 +9,13 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-const modeRotateInstructionBaseline CommandMode = 100
-
 type instructionBaselineRotationOutput struct {
 	Rotated        bool   `json:"rotated"`
 	PreviousDigest string `json:"previous_digest"`
 	CurrentDigest  string `json:"current_digest"`
 }
+
+const modeRotateInstructionBaseline CommandMode = 100
 
 func init() {
 	commandParsers["--rotate-instruction-baseline"] = func(args []string) (Command, error) {
