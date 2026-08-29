@@ -45,7 +45,7 @@ ACTIVE taskがある場合、wrapper注入の`SOL_DECISION_BOUNDARY`を設計aut
 - productionに存在しないpolicy/state machine/parserをtest側へ再実装しない。
 - 同型caseを横展開せず、既存testへ統合できるものは統合する。
 - coverage率や全branch消化を目的化しない。重要behaviorの未検証を探すために使う。
-- taskで必須の決定論的validationがworker環境の既知capability制約のため実行不能で、wrapperの親validation formで実行できる場合だけ、同じ失敗を再試行せず`IMPLEMENTED`結果の`parent_validation`へ`go-test`または`go-test-race`を指定する。worker自身が実行可能な通常validation、任意の追加確認、単なる時間短縮目的では指定しない。親validationの成否/evidenceはwrapperが付与するので自分で作らない。
+- taskで必須の決定論的validationがworker環境の既知capability制約のため実行不能で、wrapperの親validation formで実行できる場合だけ、同じ失敗を再試行せず`IMPLEMENTED`結果のoptional `parent_validation`を`{"form":"go-test"|"go-test-race","working_dir":"repository-relative/module-dir"}`として指定する。`working_dir`は実際にそのvalidationを実行すべきmodule/current directoryの正規化済みrepository相対path（repository rootなら`.`）にする。worker自身が実行可能な通常validation、任意の追加確認、単なる時間短縮目的では指定しない。親validationの成否/evidenceはwrapperが付与するので自分で作らない。
 
 ## Risk
 `RISK: HIGH`は、アーキテクチャ、公開API、データモデル、依存方向、互換性、原因不明bug、security、不可逆操作、Sol判断後、review fix後など、Solの意味判断が必要な場合。これらがなく局所的・可逆なら`LOW`。
