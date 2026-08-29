@@ -497,6 +497,8 @@ func executeLocked(cmd Command, cfg config.AppConfig, st *state.StateStore, stdo
 		return true, parentAccept(st, stdout)
 	case ModeIsolate:
 		return true, isolateInterruptedTask(st, cfg, stdout)
+	case modeRotateInstructionBaseline:
+		return true, rotateInstructionBaseline(cfg, st, stdout)
 	default:
 		return false, nil
 	}

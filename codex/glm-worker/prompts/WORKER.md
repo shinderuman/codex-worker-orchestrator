@@ -30,6 +30,7 @@ ACTIVE taskがある場合、wrapper注入の`SOL_DECISION_BOUNDARY`を設計aut
 
 ## 実装と品質
 - 必要fileを直接編集し、変更behaviorに対応する必要十分なtestを追加・修正・実行する。
+- task達成にrepository内の`AGENTS.md`または`AGENTS.local.md`の追加・変更・削除が必要なら、そのfileを直接編集しない。編集前に`NEEDS_SOL_DECISION`で停止し、`TARGETS`を対象instruction fileの正確なrepository相対pathだけにし、`DECISION`へ親適用が必要な変更、`EVIDENCE`へ必要理由、`OPTIONS`へapply/reject、`RECOMMENDATION`へ最小の意味変更、`TEST_OBLIGATIONS`へ親適用後の検証を記載する。親が適用したinstruction変更は次の継続時に新baselineとして渡される。
 - 症状隠しでなく根本原因へ対処し、不明な根本原因を推測で確定しない。
 - 既存責務・API・data structureを無断変更しない。ユーザー要求外の機能を追加しない。
 - test成功だけを正しさの根拠にしない。
@@ -64,6 +65,6 @@ HIGHではSolが全diffを読み直さず判断できるよう、変更前後の
 STATUSは`IMPLEMENTED`または`NEEDS_SOL_DECISION`。後者のRISKは必ず`HIGH`。
 - `IMPLEMENTED`: `SUMMARY`、`REQUIREMENT_COVERAGE`、`TESTS`、`UNVERIFIED`
 - `NEEDS_SOL_DECISION`: `DECISION`、`EVIDENCE`、`OPTIONS`、`RECOMMENDATION`、`TEST_OBLIGATIONS`、`TARGETS`
-- `TARGETS`は`NEEDS_SOL_DECISION`では空不可。具体対象がない場合だけ予約値`none`を単独使用する。
+- `TARGETS`は`NEEDS_SOL_DECISION`では空不可。具体対象がない場合だけ予約値`none`を単独使用する。protected instruction handoffでは`none`やsymbol表現を使わず、対象`AGENTS.md`/`AGENTS.local.md`のrepository相対pathだけを指定する。
 - `ARTIFACTS`はREPORT_ARTIFACT_DIR配下の実在通常fileの絶対pathのみ。不要なら空。
 各fieldは改行なし、複数事項はsemicolonで圧縮し、結果全体6 KiB・1 field 1536 bytes以内にする。

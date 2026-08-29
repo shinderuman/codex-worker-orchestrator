@@ -11,8 +11,9 @@
 ## `"status":"NEEDS_SOL_DECISION"`
 
 - `decision`・`evidence`・`options`・`recommendation`・`test_obligations`を評価する。
+- `targets`がすべてrepository内の`AGENTS.md`/`AGENTS.local.md`相対pathで、packetがそのprotected instruction変更を親適用として要求している場合は、workerへ直接編集させない。rejectならinstruction surfaceを変更せず通常どおりdecisionを返す。applyならmodel processが停止している間に親Codexが`targets`だけへ承認した最小変更を適用し、`glm-worker --rotate-instruction-baseline`を実行してactive taskのinstruction baselineを明示rotationした後にdecisionを返す。rotationはtask/worktreeを保持しworker/reviewer sessionを無効化する。guard緩和やresetで代用しない。
 - packetで足りるならリポジトリを再探索しない。判断不能な場合だけ`targets`に限定して現物を確認する。
-- 判断後は元依頼を再記述せず、判断本文を`~/.codex/instructions/glm-execution.md`のstdin mode（`--decision-stdin <payload-bytes>`）で同じworker sessionへ継続する。
+- 判断後は元依頼を再記述せず、判断本文を`~/.codex/instructions/glm-execution.md`のstdin mode（`--decision-stdin <payload-bytes>`）で同じtaskへ継続する。
 
 ## `"status":"PASS"`
 
