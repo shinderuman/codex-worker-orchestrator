@@ -1,0 +1,44 @@
+name: Temporary Issue 79 Validation
+
+on:
+  push:
+    branches:
+      - gpt/pipeline-validation-79
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-validate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: gpt/pipeline-validation-79
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.25.4"
+          cache: false
+      - name: Patch
+        run: python3 .github/issue79_patch.py
+      - name: Format
+        working-directory: glm-worker
+        run: gofmt -w internal/state/events.go internal/runner/stream_events.go internal/runner/validation_observation.go internal/runner/validation_result_test.go
+      - name: Test
+        working-directory: glm-worker
+        run: go test ./...
+      - name: Vet
+        working-directory: glm-worker
+        run: go vet ./...
+      - name: Build
+        working-directory: glm-worker
+        run: go build ./...
+      - name: Commit
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add glm-worker
+          git diff --cached --quiet && exit 0
+          git commit -m 'Keep masked pipeline validation results unknown'
+          git push origin HEAD:gpt/pipeline-validation-79
