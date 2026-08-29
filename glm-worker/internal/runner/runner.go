@@ -25,9 +25,10 @@ type StructuredOutputError struct {
 }
 
 type ClaudeRunner struct {
-	config config.AppConfig
-	state  *state.StateStore
-	stop   *StopController
+	config      config.AppConfig
+	state       *state.StateStore
+	stop        *StopController
+	bashSandbox *gitBashSandboxPolicy
 }
 
 type TokenUsage struct {
@@ -96,7 +97,7 @@ type runInputs struct {
 	contextWindow contextWindowConfig
 }
 
-const isolationPolicyVersion = "claude-isolation-1"
+const isolationPolicyVersion = "claude-isolation-2"
 
 const subtypeStructuredOutputRetryExhausted = "error_max_structured_output_retries"
 
@@ -248,7 +249,7 @@ func (r *ClaudeRunner) prepareRunInputs(role state.SessionRole, phase, model str
 	systemPromptHash := sha256.Sum256(systemPrompt)
 	result.SystemPromptSHA256 = hex.EncodeToString(systemPromptHash[:])
 
-	isolationArgs, err := isolationSettings(r.config.ClaudeConfigDir)
+	isolationArgs, err := isolationSettings(r.config.ClaudeConfigDir, r.bashSandbox)
 	if err != nil {
 		return runInputs{}, err
 	}
@@ -520,7 +521,7 @@ func writeResultOutput(outputPath string, response string, summary string, stder
 	return os.WriteFile(outputPath, data, 0o600)
 }
 
-func isolationSettings(claudeConfigDir string) (string, error) {
+func isolationSettings(claudeConfigDir string, sandbox *gitBashSandboxPolicy) (string, error) {
 	configDir, err := resolveClaudeConfigDir(claudeConfigDir)
 	if err != nil {
 		return "", err
@@ -536,6 +537,9 @@ func isolationSettings(claudeConfigDir string) (string, error) {
 		"disableAllHooks":      true,
 		"disableBundledSkills": true,
 		"disableWorkflows":     true,
+	}
+	if sandbox != nil {
+		settings["sandbox"] = sandbox.settings()
 	}
 	encoded, err := json.Marshal(settings)
 	if err != nil {

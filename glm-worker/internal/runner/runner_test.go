@@ -473,7 +473,7 @@ func containsString(values []string, want string) bool {
 func TestIsolationSettingsBlocksAllScopesAndCustomizations(t *testing.T) {
 	claudeConfigDir := filepath.Join(t.TempDir(), "claude-home")
 
-	encoded, err := isolationSettings(claudeConfigDir)
+	encoded, err := isolationSettings(claudeConfigDir, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -505,7 +505,7 @@ func TestIsolationSettingsFallsBackToHomeForRules(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
-	encoded, err := isolationSettings("")
+	encoded, err := isolationSettings("", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
