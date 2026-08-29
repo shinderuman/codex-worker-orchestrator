@@ -1,0 +1,48 @@
+name: Temporary issue 93 validation
+
+on:
+  push:
+    branches:
+      - gpt/blocking-wait-93
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-validate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: gpt/blocking-wait-93
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.25.4"
+          cache: false
+      - name: Apply blocking wait boundary
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('codex/instructions/glm-execution.md')
+          text = path.read_text()
+          old = '- `~/.codex/config.toml`の`background_terminal_max_timeout`は`21600000`ms（6時間）を前提とする。'
+          new = '''- `~/.codex/config.toml`の`background_terminal_max_timeout`は`21600000`ms（6時間）を前提とし、起動した`glm-worker`は完了または意味のある状態変化まで最大待機時間のblocking waitで待つ。running確認だけの定期status/process pollや、状態が変わっていないことだけを伝える進捗報告を行わない。\n- tool session中断後の復旧、failure診断、制御が戻った時点の状態曖昧性解消に必要なstatus確認は行ってよい。完了、Sol判断/review、guard、rate/provider停止、user割り込み等で制御が戻った場合はその状態変化を扱う。'''
+          if text.count(old) != 1:
+              raise SystemExit(f'replacement count={text.count(old)}')
+          path.write_text(text.replace(old, new, 1))
+          PY
+      - name: Test
+        working-directory: glm-worker
+        run: go test ./...
+      - name: Vet
+        working-directory: glm-worker
+        run: go vet ./...
+      - name: Commit instruction change
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add codex/instructions/glm-execution.md
+          git diff --cached --check
+          git commit -m 'Use blocking wait for running glm-worker calls'
+          git push origin HEAD:gpt/blocking-wait-93
