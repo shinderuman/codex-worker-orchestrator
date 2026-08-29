@@ -1,0 +1,306 @@
+name: Temporary Issue 72 Patch
+
+on:
+  push:
+    branches:
+      - gpt/bundle-provenance-72
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: gpt/bundle-provenance-72
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.25.4"
+          cache: false
+      - name: Apply task-authority provenance patch
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          state = Path('glm-worker/internal/state/task_authority.go')
+          state.write_text(r'''package state
+
+import (
+    "fmt"
+    "os"
+    "path/filepath"
+)
+
+const taskAuthorityDir = "task-authority"
+
+func (s *StateStore) SaveCurrentTaskAuthority(taskPath string, content []byte) error {
+    if taskPath == "" {
+        return nil
+    }
+    taskID, err := s.TaskID()
+    if err != nil {
+        return err
+    }
+    dir := s.TaskAuthorityDir(taskID)
+    if err := os.MkdirAll(dir, 0o700); err != nil {
+        return fmt.Errorf("task authority directoryを作成できません: %w", err)
+    }
+    if err := writeFileAtomic(s.TaskAuthorityContentPath(taskID), content, 0o600); err != nil {
+        return fmt.Errorf("task authority contentを保存できません: %w", err)
+    }
+    if err := writeFileAtomic(s.TaskAuthorityPathPath(taskID), []byte(taskPath+"\n"), 0o600); err != nil {
+        return fmt.Errorf("task authority pathを保存できません: %w", err)
+    }
+    return nil
+}
+
+func (s *StateStore) TaskAuthorityDir(taskID string) string {
+    return s.Path(filepath.Join(taskAuthorityDir, taskID))
+}
+
+func (s *StateStore) TaskAuthorityPathPath(taskID string) string {
+    return filepath.Join(s.TaskAuthorityDir(taskID), "active-task.path")
+}
+
+func (s *StateStore) TaskAuthorityContentPath(taskID string) string {
+    return filepath.Join(s.TaskAuthorityDir(taskID), "active-task.md")
+}
+''')
+
+          state_test = Path('glm-worker/internal/state/task_authority_test.go')
+          state_test.write_text(r'''package state
+
+import (
+    "os"
+    "testing"
+)
+
+func TestSaveCurrentTaskAuthorityKeepsLatestTaskContract(t *testing.T) {
+    st := newStatsTestStore(t)
+    taskID, err := st.StartNewTask()
+    if err != nil {
+        t.Fatal(err)
+    }
+    if err := st.SaveCurrentTaskAuthority("IMPLEMENTATION_TASKS/014.md", []byte("first\n")); err != nil {
+        t.Fatal(err)
+    }
+    if err := st.SaveCurrentTaskAuthority("IMPLEMENTATION_TASKS/014.md", []byte("second\n")); err != nil {
+        t.Fatal(err)
+    }
+    path, err := os.ReadFile(st.TaskAuthorityPathPath(taskID))
+    if err != nil {
+        t.Fatal(err)
+    }
+    content, err := os.ReadFile(st.TaskAuthorityContentPath(taskID))
+    if err != nil {
+        t.Fatal(err)
+    }
+    if string(path) != "IMPLEMENTATION_TASKS/014.md\n" || string(content) != "second\n" {
+        t.Fatalf("authority snapshot = path:%q content:%q", path, content)
+    }
+}
+''')
+
+          p = Path('glm-worker/internal/workflow/externalfeasibility.go')
+          text = p.read_text()
+          old = '''\tcontent, err := os.ReadFile(filepath.Join(w.config.RepoRoot, filepath.FromSlash(activeTaskPath)))
+\tif err != nil {
+\t\treturn externalFeasibility{}, w.failClosedExternalFeasibility(phase, externalFeasibilityGuardSurface.unavailableOutcome(), "ACTIVE task file "+activeTaskPath+"のExternal feasibility宣言を読めません", err, !keepTaskStatus)
+\t}
+\tdecl, err := parseExternalFeasibilityDeclaration(content)
+'''
+          new = '''\tcontent, err := os.ReadFile(filepath.Join(w.config.RepoRoot, filepath.FromSlash(activeTaskPath)))
+\tif err != nil {
+\t\treturn externalFeasibility{}, w.failClosedExternalFeasibility(phase, externalFeasibilityGuardSurface.unavailableOutcome(), "ACTIVE task file "+activeTaskPath+"のExternal feasibility宣言を読めません", err, !keepTaskStatus)
+\t}
+\tif err := w.state.SaveCurrentTaskAuthority(activeTaskPath, content); err != nil {
+\t\treturn externalFeasibility{}, fmt.Errorf("ACTIVE task authority snapshotを保存できません: %w", err)
+\t}
+\tdecl, err := parseExternalFeasibilityDeclaration(content)
+'''
+          if old not in text:
+              raise SystemExit('external feasibility insertion point not found')
+          p.write_text(text.replace(old, new, 1))
+
+          p = Path('glm-worker/internal/app/bundle.go')
+          text = p.read_text()
+          old = '''var bundleAggregateDirs = map[string]bool{
+\t"artifacts": true,
+\t"events":    true,
+\t"rounds":    true,
+\t"stats":     true,
+\t"telemetry": true,
+}'''
+          new = '''var bundleAggregateDirs = map[string]bool{
+\t"artifacts":      true,
+\t"events":         true,
+\t"rounds":         true,
+\t"stats":          true,
+\t"task-authority": true,
+\t"telemetry":      true,
+}'''
+          if old not in text:
+              raise SystemExit('aggregate dir block not found')
+          text = text.replace(old, new, 1)
+
+          old = '''\tc.addFileIfPresent(st.TaskLiveStatusPath(task.ID), path.Join("task", "events", task.ID+".live.json"))
+\tc.addFileIfPresent(st.RoundLogPath(task.ID), path.Join("task", "rounds", task.ID+".jsonl"))
+\tif task.Current {'''
+          new = '''\tc.addFileIfPresent(st.TaskLiveStatusPath(task.ID), path.Join("task", "events", task.ID+".live.json"))
+\tc.addFileIfPresent(st.RoundLogPath(task.ID), path.Join("task", "rounds", task.ID+".jsonl"))
+\tif c.addFileIfPresent(st.TaskAuthorityPathPath(task.ID), path.Join("task", "authority", "active-task.path")) {
+\t\tif !c.addFileIfPresent(st.TaskAuthorityContentPath(task.ID), path.Join("task", "authority", "active-task.md")) {
+\t\t\tc.addMissing(path.Join("task", "authority", "active-task.md"))
+\t\t}
+\t}
+\tif task.Current {'''
+          if old not in text:
+              raise SystemExit('task evidence insertion point not found')
+          text = text.replace(old, new, 1)
+
+          old = '''\tarchivePath := path.Join("current-state", "repository-authority", filepath.ToSlash(activeTask))
+\tif !c.addRepositoryFile(cfg.RepoRoot, activeTask, archivePath) {
+\t\tc.addMissing(archivePath)
+\t}
+}'''
+          new = '''\tarchivePath := path.Join("current-state", "repository-authority", filepath.ToSlash(activeTask))
+\tif c.addRepositoryFile(cfg.RepoRoot, activeTask, archivePath) {
+\t\treturn
+\t}
+\ttaskID := st.ReadOr("task.id", "")
+\tif taskID != "" && taskAuthoritySnapshotMatches(st, taskID, activeTask) &&
+\t\tc.addFileIfPresent(st.TaskAuthorityContentPath(taskID), archivePath) {
+\t\treturn
+\t}
+\tc.addMissing(archivePath)
+}
+
+func taskAuthoritySnapshotMatches(st *state.StateStore, taskID, activeTask string) bool {
+\tdata, err := os.ReadFile(st.TaskAuthorityPathPath(taskID))
+\treturn err == nil && strings.TrimSpace(string(data)) == activeTask
+}'''
+          if old not in text:
+              raise SystemExit('repository authority fallback point not found')
+          p.write_text(text.replace(old, new, 1))
+
+          workflow_test = Path('glm-worker/internal/workflow/task_authority_snapshot_test.go')
+          workflow_test.write_text(r'''package workflow
+
+import (
+    "os"
+    "path/filepath"
+    "testing"
+)
+
+func TestExternalFeasibilitySnapshotsCurrentTaskAuthority(t *testing.T) {
+    st := newStateStoreT(t)
+    if _, err := st.StartNewTask(); err != nil {
+        t.Fatal(err)
+    }
+    w := newWorkflowT(t, st, &scriptedRunner{})
+    rel := filepath.ToSlash(filepath.Join("IMPLEMENTATION_TASKS", "014-test.md"))
+    full := filepath.Join(w.config.RepoRoot, filepath.FromSlash(rel))
+    if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+        t.Fatal(err)
+    }
+    content := []byte("# Task\n\n## External feasibility\nstatus: not-applicable\n")
+    if err := os.WriteFile(full, content, 0o600); err != nil {
+        t.Fatal(err)
+    }
+    if err := st.Write(activeTaskStateKey, rel); err != nil {
+        t.Fatal(err)
+    }
+    if _, err := w.gateExternalFeasibility("worker-new", false); err != nil {
+        t.Fatal(err)
+    }
+    taskID, err := st.TaskID()
+    if err != nil {
+        t.Fatal(err)
+    }
+    got, err := os.ReadFile(st.TaskAuthorityContentPath(taskID))
+    if err != nil {
+        t.Fatal(err)
+    }
+    if string(got) != string(content) {
+        t.Fatalf("authority snapshot = %q, want %q", got, content)
+    }
+}
+''')
+
+          bundle_test = Path('glm-worker/internal/app/bundle_authority_snapshot_test.go')
+          bundle_test.write_text(r'''package app
+
+import (
+    "bytes"
+    "encoding/json"
+    "os"
+    "path/filepath"
+    "testing"
+)
+
+func TestBundleUsesTaskAuthoritySnapshotAfterTaskFileRetirement(t *testing.T) {
+    cfg, st := newBundleTestState(t)
+    taskPath := "IMPLEMENTATION_TASKS/014-retired.md"
+    for rel, content := range map[string]string{
+        "IMPLEMENTATION_PLAN.local.md": "plan\n",
+        "IMPLEMENTATION_RULES.md":      "rules\n",
+        "IMPLEMENTATION_HISTORY.md":    "history\n",
+        taskPath:                       "# Task 014\n",
+    } {
+        writeBundleFile(t, filepath.Join(cfg.RepoRoot, filepath.FromSlash(rel)), content)
+    }
+    taskID, err := st.StartNewTask()
+    if err != nil {
+        t.Fatal(err)
+    }
+    if err := st.Write("active-task", taskPath); err != nil {
+        t.Fatal(err)
+    }
+    authority := []byte("# Task 014\n\nfinal authority\n")
+    if err := st.SaveCurrentTaskAuthority(taskPath, authority); err != nil {
+        t.Fatal(err)
+    }
+    if err := os.Remove(filepath.Join(cfg.RepoRoot, filepath.FromSlash(taskPath))); err != nil {
+        t.Fatal(err)
+    }
+
+    var stdout bytes.Buffer
+    if err := Execute(Command{Mode: ModeBundle}, cfg, nil, &stdout, nil); err != nil {
+        t.Fatal(err)
+    }
+    var output bundleOutput
+    if err := json.Unmarshal(stdout.Bytes(), &output); err != nil {
+        t.Fatal(err)
+    }
+    if output.EvidenceStatus != "complete" {
+        t.Fatalf("bundle incomplete: %v", output.Missing)
+    }
+    archive := readBundleArchive(t, output.ArchivePath)
+    repoAuthorityPath := "current-state/repository-authority/" + taskPath
+    if !bytes.Equal(archive[repoAuthorityPath], authority) {
+        t.Fatalf("repository authority = %q", archive[repoAuthorityPath])
+    }
+    if !bytes.Equal(archive["task/authority/active-task.md"], authority) {
+        t.Fatalf("task authority = %q", archive["task/authority/active-task.md"])
+    }
+    if got := string(archive["task/authority/active-task.path"]); got != taskPath+"\n" {
+        t.Fatalf("task authority path = %q task=%s", got, taskID)
+    }
+}
+''')
+          PY
+          gofmt -w glm-worker/internal/state/task_authority.go glm-worker/internal/state/task_authority_test.go glm-worker/internal/workflow/externalfeasibility.go glm-worker/internal/workflow/task_authority_snapshot_test.go glm-worker/internal/app/bundle.go glm-worker/internal/app/bundle_authority_snapshot_test.go
+          (cd glm-worker && go test ./internal/state ./internal/workflow ./internal/app ./internal/taskdiff)
+      - name: Commit patch
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add glm-worker/internal/state/task_authority.go glm-worker/internal/state/task_authority_test.go glm-worker/internal/workflow/externalfeasibility.go glm-worker/internal/workflow/task_authority_snapshot_test.go glm-worker/internal/app/bundle.go glm-worker/internal/app/bundle_authority_snapshot_test.go
+          git diff --cached --quiet && exit 0
+          git commit -m 'Preserve task authority in analysis bundles'
+          git push origin HEAD:gpt/bundle-provenance-72
