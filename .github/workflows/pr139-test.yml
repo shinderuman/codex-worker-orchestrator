@@ -1,0 +1,27 @@
+name: PR 139 temporary test
+
+on:
+  push:
+    branches:
+      - gpt/handoff-parent-routing-124
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Read Go version
+        id: quality-tools
+        run: |
+          GO_VERSION=$(awk -F': ' '$1 == "go" { print $2 }' quality-tools.yml)
+          printf 'go_version=%s\n' "$GO_VERSION" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ steps.quality-tools.outputs.go_version }}
+          cache: false
+      - name: Test handoff instruction integration
+        working-directory: glm-worker
+        run: go test ./internal/harnesslint/
