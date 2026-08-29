@@ -43,6 +43,23 @@ func (p ParentActionPlan) Allows(action ParentAction) bool {
 	return false
 }
 
+// AdmitsCommand preserves existing idempotent --accept behavior while keeping
+// AllowedActions limited to productive parent transitions for the handoff.
+func (p ParentActionPlan) AdmitsCommand(action ParentAction) bool {
+	if p.Allows(action) {
+		return true
+	}
+	if action != ParentActionAccept {
+		return false
+	}
+	switch p.RequiredAction {
+	case ParentActionDecision, ParentActionReview, ParentActionAccept:
+		return false
+	default:
+		return true
+	}
+}
+
 func (s *StateStore) ParentActionPlan() (ParentActionPlan, error) {
 	status := s.TaskStatus()
 	pending := s.Exists("pending-decision")
@@ -75,13 +92,29 @@ func (s *StateStore) ParentActionPlan() (ParentActionPlan, error) {
 		return stoppedActionPlan(status, pending, openReview, stopKind, "interrupted", ParentActionResume)
 	case TaskStatusGuardRecoverable:
 		return stoppedActionPlan(status, pending, openReview, stopKind, "guard-recoverable", ParentActionRepairGuardThenResume)
-	case TaskStatusActive, TaskStatusComplete, TaskStatusNone:
+	case TaskStatusComplete:
+		return completeActionPlan(status, pending, openReview, stopKind)
+	case TaskStatusActive, TaskStatusNone:
 		if pending || openReview != "none" || stopKind != "" {
 			return ParentActionPlan{}, lifecycleInconsistency(status, "non-waiting task has unresolved parent or resume state")
 		}
 		return actionPlan(ParentActionNone, ""), nil
 	default:
 		return ParentActionPlan{}, lifecycleInconsistency(status, "unknown task status")
+	}
+}
+
+func completeActionPlan(status TaskStatus, pending bool, openReview string, stopKind string) (ParentActionPlan, error) {
+	if pending || stopKind != "" {
+		return ParentActionPlan{}, lifecycleInconsistency(status, "complete task has pending decision or resumable stop state")
+	}
+	switch openReview {
+	case "none":
+		return actionPlan(ParentActionNone, ""), nil
+	case string(packet.StatusPass):
+		return actionPlan(ParentActionAccept, "", ParentActionAccept), nil
+	default:
+		return ParentActionPlan{}, lifecycleInconsistency(status, "complete task has a non-PASS parent review")
 	}
 }
 
