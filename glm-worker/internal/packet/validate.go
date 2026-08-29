@@ -85,13 +85,22 @@ func validateParentValidation(result Result) error {
 	if result.ParentValidation == "" || result.ParentValidationWorkingDir == "" {
 		return &constraintError{reason: "parent_validationとparent_validation_working_dirは同時に指定してください"}
 	}
-	switch result.ParentValidation {
-	case ParentValidationGoTest, ParentValidationGoTestRace:
-	default:
+	if !validParentValidationForm(result.ParentValidation) {
 		return &constraintError{reason: fmt.Sprintf("parent_validationは既知のparent gateだけを指定してください: %q", result.ParentValidation)}
 	}
-	workingDir := result.ParentValidationWorkingDir
-	if path.IsAbs(workingDir) || strings.Contains(workingDir, "\\") || path.Clean(workingDir) != workingDir || workingDir == ".." || strings.HasPrefix(workingDir, "../") {
+	return validateParentValidationWorkingDir(result.ParentValidationWorkingDir)
+}
+
+func validParentValidationForm(form string) bool {
+	return form == ParentValidationGoTest || form == ParentValidationGoTestRace
+}
+
+func validateParentValidationWorkingDir(workingDir string) error {
+	invalid := path.IsAbs(workingDir) ||
+		strings.Contains(workingDir, "\\") ||
+		path.Clean(workingDir) != workingDir ||
+		workingDir == ".." || strings.HasPrefix(workingDir, "../")
+	if invalid {
 		return &constraintError{reason: fmt.Sprintf("parent_validation_working_dirは正規化済みrepository相対pathで指定してください: %q", workingDir)}
 	}
 	return nil
