@@ -45,6 +45,7 @@ func TestValidationObservationsDoNotWidenOperationCategory(t *testing.T) {
 
 func TestReduceStreamBlockStoresValidationWithoutRawCommand(t *testing.T) {
 	input := json.RawMessage(`{"command":"TOKEN=secret go test -race ./... | tail -1"}`)
+	input = json.RawMessage(strings.ReplaceAll(string(input), `\"`, `"`))
 	raw, err := json.Marshal(map[string]any{
 		"type":  "tool_use",
 		"name":  "Bash",
