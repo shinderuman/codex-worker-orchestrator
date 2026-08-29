@@ -76,20 +76,23 @@ func validateParentValidation(result Result) error {
 	if result.ParentValidationEvidence != "" {
 		return &constraintError{reason: "parent_validation_evidenceはwrapper専用fieldです"}
 	}
-	if result.ParentValidation == nil {
+	if result.ParentValidation == "" && result.ParentValidationWorkingDir == "" {
 		return nil
 	}
 	if result.Status != StatusImplemented {
 		return &constraintError{reason: "parent_validationはIMPLEMENTEDだけで指定できます"}
 	}
-	switch result.ParentValidation.Form {
+	if result.ParentValidation == "" || result.ParentValidationWorkingDir == "" {
+		return &constraintError{reason: "parent_validationとparent_validation_working_dirは同時に指定してください"}
+	}
+	switch result.ParentValidation {
 	case ParentValidationGoTest, ParentValidationGoTestRace:
 	default:
-		return &constraintError{reason: fmt.Sprintf("parent_validation.formは既知のparent gateだけを指定してください: %q", result.ParentValidation.Form)}
+		return &constraintError{reason: fmt.Sprintf("parent_validationは既知のparent gateだけを指定してください: %q", result.ParentValidation)}
 	}
-	workingDir := result.ParentValidation.WorkingDir
-	if workingDir == "" || path.IsAbs(workingDir) || strings.Contains(workingDir, "\\") || path.Clean(workingDir) != workingDir || workingDir == ".." || strings.HasPrefix(workingDir, "../") {
-		return &constraintError{reason: fmt.Sprintf("parent_validation.working_dirは正規化済みrepository相対pathで指定してください: %q", workingDir)}
+	workingDir := result.ParentValidationWorkingDir
+	if path.IsAbs(workingDir) || strings.Contains(workingDir, "\\") || path.Clean(workingDir) != workingDir || workingDir == ".." || strings.HasPrefix(workingDir, "../") {
+		return &constraintError{reason: fmt.Sprintf("parent_validation_working_dirは正規化済みrepository相対pathで指定してください: %q", workingDir)}
 	}
 	return nil
 }
@@ -98,7 +101,7 @@ func ValidateReviewerResult(result Result) error {
 	if err := validateReviewerStatusRisk(result); err != nil {
 		return err
 	}
-	if result.ParentValidation != nil || result.ParentValidationEvidence != "" {
+	if result.ParentValidation != "" || result.ParentValidationWorkingDir != "" || result.ParentValidationEvidence != "" {
 		return &constraintError{reason: "reviewer結果にparent validation fieldは指定できません"}
 	}
 	if err := validateFields(result, result.contractFields()); err != nil {
