@@ -28,13 +28,15 @@ type gitAuthoritySnapshot struct {
 }
 
 type gitAuthorityGuard struct {
-	repoRoot   string
-	realGit    string
-	tempDir    string
-	proxyPath  string
-	denyPath   string
-	attemptLog string
-	before     gitAuthoritySnapshot
+	repoRoot      string
+	realGit       string
+	tempDir       string
+	workerTempDir string
+	proxyPath     string
+	denyPath      string
+	attemptLog    string
+	metadataPaths []string
+	before        gitAuthoritySnapshot
 }
 
 func (e *GitAuthorityGuardError) Error() string {
@@ -69,6 +71,11 @@ func prepareGitAuthorityGuard(repoRoot string) (*gitAuthorityGuard, error) {
 	if !before.active {
 		return guard, nil
 	}
+	metadataPaths, err := resolveGitAuthorityMetadataPaths(realGit, repoRoot)
+	if err != nil {
+		return nil, &GitAuthorityGuardError{Stage: "resolve-metadata", Cause: err}
+	}
+	guard.metadataPaths = metadataPaths
 	if err := guard.prepareProxy(); err != nil {
 		guard.cleanup()
 		return nil, err
@@ -82,13 +89,17 @@ func (g *gitAuthorityGuard) prepareProxy() error {
 		return &GitAuthorityGuardError{Stage: "prepare-command-proxy", Cause: err}
 	}
 	g.tempDir = tempDir
+	g.workerTempDir = filepath.Join(tempDir, "worker")
+	if err := os.MkdirAll(g.workerTempDir, 0o700); err != nil {
+		return &GitAuthorityGuardError{Stage: "prepare-command-proxy", Cause: err}
+	}
 	g.proxyPath = filepath.Join(tempDir, "git")
 	g.denyPath = filepath.Join(tempDir, "deny-git-transport")
 	g.attemptLog = filepath.Join(tempDir, "blocked-attempts")
 	if err := os.WriteFile(g.attemptLog, nil, 0o600); err != nil {
 		return &GitAuthorityGuardError{Stage: "prepare-command-proxy", Cause: err}
 	}
-	proxy := gitAuthorityProxyScript(g.realGit, g.attemptLog, g.repoRoot, g.tempDir)
+	proxy := gitAuthorityProxyScript(g.realGit, g.attemptLog, g.repoRoot, g.workerTempDir)
 	if err := os.WriteFile(g.proxyPath, []byte(proxy), 0o700); err != nil {
 		return &GitAuthorityGuardError{Stage: "prepare-command-proxy", Cause: err}
 	}

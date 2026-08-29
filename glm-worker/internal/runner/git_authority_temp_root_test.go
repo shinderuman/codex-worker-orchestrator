@@ -30,12 +30,16 @@ func TestGitAuthorityClaudeWrapperOwnsProcessTempRoot(t *testing.T) {
 	probe := filepath.Join(t.TempDir(), "probe.sh")
 	script := `#!/bin/sh
 set -eu
+[ "$CLAUDE_CODE_TMPDIR" = "$GLM_WORKER_GIT_TEMP_ROOT" ] || exit 19
 case "$TMPDIR" in
   "$GLM_WORKER_GIT_TEMP_ROOT"|"$GLM_WORKER_GIT_TEMP_ROOT"/*) ;;
   *) exit 20 ;;
 esac
 owned=$(mktemp -d)
 git init "$owned/repo" >/dev/null 2>&1
+sandbox_tmp="$GLM_WORKER_GIT_TEMP_ROOT/claude-test"
+mkdir -p "$sandbox_tmp"
+TMPDIR="$sandbox_tmp" git init "$sandbox_tmp/repo" >/dev/null 2>&1
 if git init "$1/external-repo" >/dev/null 2>&1; then
   exit 21
 else

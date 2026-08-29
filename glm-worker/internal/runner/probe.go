@@ -33,7 +33,7 @@ func (r *ClaudeRunner) Probe(model string) (ProbeResult, error) {
 		return ProbeResult{}, fmt.Errorf("probe modelを指定してください")
 	}
 
-	isolationArgs, err := isolationSettings(r.config.ClaudeConfigDir)
+	isolationArgs, err := isolationSettings(r.config.ClaudeConfigDir, nil)
 	if err != nil {
 		return ProbeResult{}, err
 	}
