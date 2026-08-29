@@ -66,11 +66,51 @@ func (w *Workflow) convergeParentValidation(checkpoint state.ResumeCheckpoint, r
 	if err != nil {
 		return packet.Result{}, err
 	}
-	if record.Status != "pass" {
-		return w.fixBeforeParentValidation(checkpoint, parentValidationFailureResult(record), request)
+	if err := w.validateParentValidationRecord(request, record); err != nil {
+		return packet.Result{}, err
 	}
-	result.ParentValidationEvidence = parentValidationEvidence(record)
-	return result, nil
+	switch record.Status {
+	case "pass":
+		result.ParentValidationEvidence = parentValidationEvidence(record)
+		return result, nil
+	case "fail":
+		return w.fixBeforeParentValidation(checkpoint, parentValidationFailureResult(record), request)
+	default:
+		return packet.Result{}, &WorkerError{
+			Phase:   "parent-validation",
+			Message: fmt.Sprintf("parent validation run %s ended with non-reviewable status %s", record.ValidationRunID, record.Status),
+		}
+	}
+}
+
+func (w *Workflow) validateParentValidationRecord(request packet.ParentValidationRequest, record parentValidationGateRecord) error {
+	resolvedRoot, err := filepath.EvalSymlinks(w.config.RepoRoot)
+	if err != nil {
+		return fmt.Errorf("parent validation repository rootを解決できません: %w", err)
+	}
+	recordRepository, err := filepath.EvalSymlinks(record.Repository)
+	if err != nil || filepath.Clean(recordRepository) != filepath.Clean(resolvedRoot) {
+		return &WorkerError{Phase: "parent-validation", Message: "parent validation evidenceのrepository identityがactive repositoryと一致しません"}
+	}
+	expectedWorkingDir, err := resolveParentValidationWorkingDir(w.config.RepoRoot, request.WorkingDir)
+	if err != nil {
+		return err
+	}
+	recordWorkingDir, err := filepath.EvalSymlinks(record.WorkingDir)
+	if err != nil || filepath.Clean(recordWorkingDir) != filepath.Clean(expectedWorkingDir) {
+		return &WorkerError{Phase: "parent-validation", Message: "parent validation evidenceのworking directoryが要求と一致しません"}
+	}
+	current, err := w.captureSnapshot(w.config.RepoRoot)
+	if err != nil {
+		return fmt.Errorf("parent validation後snapshotを取得できません: %w", err)
+	}
+	if record.Head != current.Head || record.IndexDigest != current.IndexDigest || record.WorktreeDigest != current.WorktreeDigest {
+		return &WorkerError{
+			Phase:   "parent-validation",
+			Message: "parent validation完了後にrepository snapshotが変化したためvalidation evidenceを採用できません",
+		}
+	}
+	return nil
 }
 
 func (w *Workflow) fixBeforeParentValidation(
