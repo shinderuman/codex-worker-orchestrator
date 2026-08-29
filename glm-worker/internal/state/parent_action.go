@@ -89,17 +89,21 @@ func parentActionPlanForStatus(status TaskStatus, pending bool, openReview, stop
 }
 
 func waitingDecisionActionPlan(status TaskStatus, pending bool, openReview, stopKind string) (ParentActionPlan, error) {
-	if !pending || openReview != string(packet.StatusNeedsSolDecision) || stopKind != "" {
+	if !pending || stopKind != "" || unexpectedOpenReview(openReview, packet.StatusNeedsSolDecision) {
 		return ParentActionPlan{}, lifecycleInconsistency(status, "waiting decision state does not match pending decision, parent review, and resume state")
 	}
 	return actionPlan(ParentActionDecision, "", ParentActionDecision), nil
 }
 
 func waitingReviewActionPlan(status TaskStatus, pending bool, openReview, stopKind string) (ParentActionPlan, error) {
-	if pending || openReview != string(packet.StatusNeedsSolReview) || stopKind != "" {
+	if pending || stopKind != "" || unexpectedOpenReview(openReview, packet.StatusNeedsSolReview) {
 		return ParentActionPlan{}, lifecycleInconsistency(status, "waiting review state does not match parent review and resume state")
 	}
 	return actionPlan(ParentActionReview, "", ParentActionAccept, ParentActionFix), nil
+}
+
+func unexpectedOpenReview(openReview string, expected packet.Status) bool {
+	return openReview != roundCommentNone && openReview != string(expected)
 }
 
 func stoppedParentActionPlan(status TaskStatus, pending bool, openReview, stopKind string) (ParentActionPlan, error) {
