@@ -69,6 +69,7 @@ USER_REQUEST・`SPECIFICATION.md`・既存`AGENTS.md`・直前のSol判断で未
 - バックアップ・大容量一時データ → `~/.codex/instructions/backup.md`
 - AGENTS系ファイル変更 → `~/.codex/instructions/agents-management.md`
 - GLM実行・待機 → `~/.codex/instructions/glm-execution.md`
+- ACTIVE task開始・再開時のuser指示とrun-control分離 → `~/.codex/instructions/task-request-boundary.md`
 - GLM packet・WORKER_ERROR処理 → `~/.codex/instructions/glm-packets.md`
 - GLM rate limit自動再開 → `~/.codex/instructions/glm-auto-resume.md`
 - 親Codex 5h Limit自動再開 → `~/.codex/instructions/codex-auto-resume.md`
