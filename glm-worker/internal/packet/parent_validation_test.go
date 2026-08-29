@@ -13,7 +13,10 @@ func TestWorkerParentValidationContract(t *testing.T) {
 		RequirementCoverage: "covered",
 		Tests:               "worker-capability tests passed",
 		Unverified:          "parent process test remains",
-		ParentValidation:    ParentValidationGoTest,
+		ParentValidation: &ParentValidationRequest{
+			Form:       ParentValidationGoTest,
+			WorkingDir: "glm-worker",
+		},
 	}
 	if err := ValidateWorkerResult(valid); err != nil {
 		t.Fatal(err)
@@ -22,14 +25,20 @@ func TestWorkerParentValidationContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(machine), `"parent_validation":"go-test"`) {
+	if !strings.Contains(string(machine), `"parent_validation":{"form":"go-test","working_dir":"glm-worker"}`) {
 		t.Fatalf("machine packet = %s", machine)
 	}
 
 	invalid := valid
-	invalid.ParentValidation = "arbitrary-shell"
+	invalid.ParentValidation = &ParentValidationRequest{Form: "arbitrary-shell", WorkingDir: "glm-worker"}
 	if err := ValidateWorkerResult(invalid); err == nil {
 		t.Fatal("unknown parent validation form was accepted")
+	}
+
+	outside := valid
+	outside.ParentValidation = &ParentValidationRequest{Form: ParentValidationGoTest, WorkingDir: "../outside"}
+	if err := ValidateWorkerResult(outside); err == nil {
+		t.Fatal("repository-external parent validation working directory was accepted")
 	}
 
 	withEvidence := valid
@@ -39,12 +48,12 @@ func TestWorkerParentValidationContract(t *testing.T) {
 	}
 }
 
-func TestWorkerSchemaBoundsParentValidationForms(t *testing.T) {
+func TestWorkerSchemaBoundsParentValidationRequest(t *testing.T) {
 	schema, err := WorkerSchemaJSON()
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, value := range []string{`"parent_validation"`, ParentValidationGoTest, ParentValidationGoTestRace} {
+	for _, value := range []string{`"parent_validation"`, `"form"`, `"working_dir"`, ParentValidationGoTest, ParentValidationGoTestRace} {
 		if !strings.Contains(schema, value) {
 			t.Fatalf("worker schema lacks %q: %s", value, schema)
 		}
