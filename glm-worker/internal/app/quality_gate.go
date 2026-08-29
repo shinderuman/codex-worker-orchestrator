@@ -66,10 +66,21 @@ type qualityGateRunnerWait func() error
 
 type qualityGateRunnerLauncher func(*state.StateStore, qualityGateRunRecord) (qualityGateRunnerWait, error)
 
+type qualityGateStartIdentity struct {
+	Form       string
+	GoArgs     []string
+	Repository string
+	WorkingDir string
+	Snapshot   state.GitSnapshot
+}
+
 const (
-	qualityGateRunDirectory = "quality-gate-runs"
-	qualityGateRunFile      = "run.json"
-	qualityGateRunLog       = "gate.log"
+	qualityGateRunDirectory  = "quality-gate-runs"
+	qualityGateRunFile       = "run.json"
+	qualityGateRunLog        = "gate.log"
+	qualityGateStatusRunning = "running"
+	qualityGateStatusPass    = "pass"
+	qualityGateStatusFail    = "fail"
 )
 
 var qualityGateForms = map[string][]string{
@@ -84,97 +95,119 @@ func (e *QualityGateError) Error() string {
 }
 
 func runQualityGate(payload string, st *state.StateStore, stdout io.Writer) error {
-	if action, runID, ok := splitQualityGateAction(payload); ok {
-		switch action {
-		case "status":
-			return printQualityGateRun(st, runID, false, stdout)
-		case "watch":
-			return printQualityGateRun(st, runID, true, stdout)
-		case "result":
-			return printQualityGateRun(st, runID, false, stdout)
-		case "internal-run":
-			return executeQualityGateRun(st, runID)
-		}
-	}
-	return startQualityGate(payload, st, stdout)
+	return runQualityGateWithDiagnostics(payload, st, stdout, io.Discard)
 }
 
-func startQualityGate(form string, st *state.StateStore, stdout io.Writer) error {
-	goArgs, ok := qualityGateForms[form]
-	if !ok {
-		return usageError("usage: glm-worker --quality-gate <go-test|go-test-race> | --quality-gate <status|watch|result> <validation-run-id>")
+func runQualityGateWithDiagnostics(payload string, st *state.StateStore, stdout, diagnostics io.Writer) error {
+	if action, runID, ok := splitQualityGateAction(payload); ok {
+		return runQualityGateAction(action, runID, st, stdout)
 	}
-	workingDir, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("quality gateの作業dirを取得できません: %w", err)
+	return startQualityGate(payload, st, stdout, diagnostics)
+}
+
+func runQualityGateAction(action, runID string, st *state.StateStore, stdout io.Writer) error {
+	switch action {
+	case qualityGateActionStatus, qualityGateActionResult:
+		return printQualityGateRun(st, runID, false, stdout)
+	case qualityGateActionWatch:
+		return printQualityGateRun(st, runID, true, stdout)
+	case qualityGateActionInternal:
+		if err := executeQualityGateRun(st, runID); err != nil {
+			return err
+		}
+		return printQualityGateRun(st, runID, false, stdout)
+	default:
+		return usageError("%s", qualityGateCommandUsage)
 	}
-	repository, err := qualityGateRepositoryRoot(workingDir)
+}
+
+func startQualityGate(form string, st *state.StateStore, stdout, diagnostics io.Writer) error {
+	identity, err := prepareQualityGateStart(form, st)
 	if err != nil {
 		return err
-	}
-	snapshot, err := state.CaptureGitSnapshot(repository)
-	if err != nil {
-		return fmt.Errorf("quality gate snapshotを取得できません: %w", err)
-	}
-	if err := os.MkdirAll(st.Path(qualityGateRunDirectory), 0o700); err != nil {
-		return fmt.Errorf("quality gate run directoryを作成できません: %w", err)
 	}
 	lock, err := acquireQualityGateStartLock(st)
 	if err != nil {
 		return err
 	}
-
-	if existing, found := findRunningQualityGateRun(st, form, repository, snapshot); found {
+	if existing, found := findRunningQualityGateRun(st, identity.Form, identity.Repository, identity.Snapshot); found {
 		_ = lock.Close()
-		_ = emitQualityGateStarted(existing.ValidationRunID, true)
-		return printQualityGateRun(st, existing.ValidationRunID, true, stdout)
+		_ = emitQualityGateStarted(diagnostics, existing.ValidationRunID, true)
+		final, err := waitQualityGateRun(st, existing.ValidationRunID)
+		if err != nil {
+			return err
+		}
+		return finishQualityGateCommand(final, qualityGateForms[final.Form], stdout)
 	}
-
-	runID, err := newValidationRunID()
+	record, err := newQualityGateRunRecord(identity)
 	if err != nil {
 		_ = lock.Close()
 		return err
-	}
-	record := qualityGateRunRecord{
-		ValidationRunID: runID,
-		Form:            form,
-		Repository:      repository,
-		WorkingDir:      workingDir,
-		Head:            snapshot.Head,
-		IndexDigest:     snapshot.IndexDigest,
-		WorktreeDigest:  snapshot.WorktreeDigest,
-		StartedAt:       time.Now().UTC(),
-		Status:          "running",
 	}
 	if err := writeQualityGateRun(st, record); err != nil {
 		_ = lock.Close()
 		return err
 	}
-
 	wait, err := launchQualityGateRunner(st, record)
 	if err != nil {
 		_ = lock.Close()
 		return failQualityGateLaunch(st, record, err)
 	}
 	_ = lock.Close()
-	_ = emitQualityGateStarted(runID, false)
+	_ = emitQualityGateStarted(diagnostics, record.ValidationRunID, false)
+	_ = wait()
+	final, err := reconcileQualityGateAfterWait(st, record.ValidationRunID)
+	if err != nil {
+		return err
+	}
+	return finishQualityGateCommand(final, identity.GoArgs, stdout)
+}
 
-	waitErr := wait()
-	final, readErr := reconcileQualityGateRun(st, runID)
-	if readErr != nil {
-		return readErr
+func prepareQualityGateStart(form string, st *state.StateStore) (qualityGateStartIdentity, error) {
+	goArgs, ok := qualityGateForms[form]
+	if !ok {
+		return qualityGateStartIdentity{}, usageError("%s", qualityGateCommandUsage)
 	}
-	if final.Status == "running" && waitErr != nil {
-		final.Status = "interrupted"
-		final.ExitCode = -1
-		completed := time.Now().UTC()
-		final.CompletedAt = &completed
-		final.DurationMS = completed.Sub(final.StartedAt).Milliseconds()
-		if err := writeQualityGateRun(st, final); err != nil {
-			return err
-		}
+	workingDir, err := os.Getwd()
+	if err != nil {
+		return qualityGateStartIdentity{}, fmt.Errorf("quality gateの作業dirを取得できません: %w", err)
 	}
-	return finishQualityGateCommand(final, goArgs, stdout)
+	repository, err := qualityGateRepositoryRoot(workingDir)
+	if err != nil {
+		return qualityGateStartIdentity{}, err
+	}
+	snapshot, err := state.CaptureGitSnapshot(repository)
+	if err != nil {
+		return qualityGateStartIdentity{}, fmt.Errorf("quality gate snapshotを取得できません: %w", err)
+	}
+	if err := os.MkdirAll(st.Path(qualityGateRunDirectory), 0o700); err != nil {
+		return qualityGateStartIdentity{}, fmt.Errorf("quality gate run directoryを作成できません: %w", err)
+	}
+	return qualityGateStartIdentity{
+		Form:       form,
+		GoArgs:     goArgs,
+		Repository: repository,
+		WorkingDir: workingDir,
+		Snapshot:   snapshot,
+	}, nil
+}
+
+func newQualityGateRunRecord(identity qualityGateStartIdentity) (qualityGateRunRecord, error) {
+	runID, err := newValidationRunID()
+	if err != nil {
+		return qualityGateRunRecord{}, err
+	}
+	return qualityGateRunRecord{
+		ValidationRunID: runID,
+		Form:            identity.Form,
+		Repository:      identity.Repository,
+		WorkingDir:      identity.WorkingDir,
+		Head:            identity.Snapshot.Head,
+		IndexDigest:     identity.Snapshot.IndexDigest,
+		WorktreeDigest:  identity.Snapshot.WorktreeDigest,
+		StartedAt:       time.Now().UTC(),
+		Status:          qualityGateStatusRunning,
+	}, nil
 }
 
 func launchQualityGateRunnerProcess(_ *state.StateStore, record qualityGateRunRecord) (qualityGateRunnerWait, error) {
@@ -182,7 +215,7 @@ func launchQualityGateRunnerProcess(_ *state.StateStore, record qualityGateRunRe
 	if err != nil {
 		return nil, fmt.Errorf("glm-worker executableを解決できません: %w", err)
 	}
-	child := exec.Command(executable, "--quality-gate", "internal-run", record.ValidationRunID)
+	child := exec.Command(executable, "--quality-gate", qualityGateActionInternal, record.ValidationRunID)
 	child.Dir = record.WorkingDir
 	child.Env = qualityGateEnv()
 	child.Stdout = io.Discard
@@ -194,47 +227,56 @@ func launchQualityGateRunnerProcess(_ *state.StateStore, record qualityGateRunRe
 }
 
 func executeQualityGateRun(st *state.StateStore, runID string) error {
-	record, err := readQualityGateRun(st, runID)
+	record, goArgs, active, err := beginQualityGateRun(st, runID)
+	if err != nil || !active {
+		return err
+	}
+	gateLog, runErr := runQualityGateProcess(record, goArgs)
+	final, err := completeQualityGateRun(st, record, gateLog, runErr)
 	if err != nil {
 		return err
 	}
-	if record.Status != "running" {
-		return nil
+	if final.Status != qualityGateStatusPass {
+		return qualityGateErrorFromRecord(final)
+	}
+	return nil
+}
+
+func beginQualityGateRun(st *state.StateStore, runID string) (qualityGateRunRecord, []string, bool, error) {
+	record, err := readQualityGateRun(st, runID)
+	if err != nil {
+		return qualityGateRunRecord{}, nil, false, err
+	}
+	if record.Status != qualityGateStatusRunning {
+		return record, nil, false, nil
 	}
 	goArgs, ok := qualityGateForms[record.Form]
 	if !ok {
-		return fmt.Errorf("quality gate run %s has unknown form %q", runID, record.Form)
+		return qualityGateRunRecord{}, nil, false, fmt.Errorf("quality gate run %s has unknown form %q", runID, record.Form)
 	}
 	record.RunnerPID = os.Getpid()
 	if err := writeQualityGateRun(st, record); err != nil {
-		return err
+		return qualityGateRunRecord{}, nil, false, err
 	}
+	return record, goArgs, true, nil
+}
 
+func runQualityGateProcess(record qualityGateRunRecord, goArgs []string) ([]byte, error) {
 	var gateLog bytes.Buffer
 	gate := exec.Command("go", goArgs...)
 	gate.Dir = record.WorkingDir
 	gate.Env = qualityGateEnv()
 	gate.Stdout = &gateLog
 	gate.Stderr = &gateLog
-	runErr := gate.Run()
+	err := gate.Run()
+	return gateLog.Bytes(), err
+}
 
-	status := "pass"
-	exitCode := 0
-	if runErr != nil {
-		status = "fail"
-		var exitErr *exec.ExitError
-		if errors.As(runErr, &exitErr) {
-			exitCode = exitErr.ExitCode()
-			if exitCode < 0 {
-				status = "interrupted"
-			}
-		} else {
-			exitCode = 1
-		}
-	}
-	logPath, logErr := writeQualityGateRunLog(st, runID, gateLog.Bytes())
+func completeQualityGateRun(st *state.StateStore, record qualityGateRunRecord, gateLog []byte, runErr error) (qualityGateRunRecord, error) {
+	status, exitCode := qualityGateProcessOutcome(runErr)
+	logPath, logErr := writeQualityGateRunLog(st, record.ValidationRunID, gateLog)
 	if logErr != nil {
-		status = "fail"
+		status = qualityGateStatusFail
 		if exitCode == 0 {
 			exitCode = 1
 		}
@@ -247,21 +289,37 @@ func executeQualityGateRun(st *state.StateStore, runID string) error {
 	record.DurationMS = completed.Sub(record.StartedAt).Milliseconds()
 	record.Log = logPath
 	if err := writeQualityGateRun(st, record); err != nil {
-		return err
+		return qualityGateRunRecord{}, err
 	}
-	evidence := filepath.ToSlash(filepath.Join(qualityGateRunDirectory, runID, qualityGateRunLog))
-	if logPath == "" {
-		evidence = ""
+	recordQualityGateValidation(st, record)
+	return record, nil
+}
+
+func qualityGateProcessOutcome(runErr error) (string, int) {
+	if runErr == nil {
+		return qualityGateStatusPass, 0
 	}
-	st.RecordValidation("quality-gate", record.Form, "", status, exitCode, record.DurationMS, evidence)
-	if status != "pass" {
-		return qualityGateErrorFromRecord(record)
+	var exitErr *exec.ExitError
+	if !errors.As(runErr, &exitErr) {
+		return qualityGateStatusFail, 1
 	}
-	return nil
+	exitCode := exitErr.ExitCode()
+	if exitCode < 0 {
+		return errorKindInterrupted, exitCode
+	}
+	return qualityGateStatusFail, exitCode
+}
+
+func reconcileQualityGateAfterWait(st *state.StateStore, runID string) (qualityGateRunRecord, error) {
+	final, err := reconcileQualityGateRun(st, runID)
+	if err != nil || final.Status != qualityGateStatusRunning {
+		return final, err
+	}
+	return markQualityGateInterrupted(st, final, "quality gate runner exited before persisting a terminal result")
 }
 
 func finishQualityGateCommand(record qualityGateRunRecord, goArgs []string, stdout io.Writer) error {
-	if record.Status != "pass" {
+	if record.Status != qualityGateStatusPass {
 		return qualityGateErrorFromRecord(record)
 	}
 	return writeJSON(stdout, qualityGateOutput{
@@ -288,13 +346,21 @@ func qualityGateErrorFromRecord(record qualityGateRunRecord) *QualityGateError {
 }
 
 func printQualityGateRun(st *state.StateStore, runID string, watch bool, stdout io.Writer) error {
+	record, err := reconcileQualityGateRun(st, runID)
+	if watch && err == nil {
+		record, err = waitQualityGateRun(st, runID)
+	}
+	if err != nil {
+		return err
+	}
+	return writeJSON(stdout, record)
+}
+
+func waitQualityGateRun(st *state.StateStore, runID string) (qualityGateRunRecord, error) {
 	for {
 		record, err := reconcileQualityGateRun(st, runID)
-		if err != nil {
-			return err
-		}
-		if !watch || record.Status != "running" {
-			return writeJSON(stdout, record)
+		if err != nil || record.Status != qualityGateStatusRunning {
+			return record, err
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
@@ -305,16 +371,27 @@ func reconcileQualityGateRun(st *state.StateStore, runID string) (qualityGateRun
 	if err != nil {
 		return qualityGateRunRecord{}, err
 	}
-	if record.Status == "running" && record.RunnerPID > 0 && !qualityGateProcessAlive(record.RunnerPID) {
-		completed := time.Now().UTC()
-		record.Status = "interrupted"
-		record.ExitCode = -1
-		record.CompletedAt = &completed
-		record.DurationMS = completed.Sub(record.StartedAt).Milliseconds()
-		if err := writeQualityGateRun(st, record); err != nil {
-			return qualityGateRunRecord{}, err
+	if record.Status == qualityGateStatusRunning && record.RunnerPID > 0 && !qualityGateProcessAlive(record.RunnerPID) {
+		return markQualityGateInterrupted(st, record, "quality gate runner is no longer running")
+	}
+	return record, nil
+}
+
+func markQualityGateInterrupted(st *state.StateStore, record qualityGateRunRecord, reason string) (qualityGateRunRecord, error) {
+	completed := time.Now().UTC()
+	record.Status = errorKindInterrupted
+	record.ExitCode = -1
+	record.CompletedAt = &completed
+	record.DurationMS = completed.Sub(record.StartedAt).Milliseconds()
+	if record.Log == "" {
+		if logPath, err := writeQualityGateRunLog(st, record.ValidationRunID, []byte(reason+"\n")); err == nil {
+			record.Log = logPath
 		}
 	}
+	if err := writeQualityGateRun(st, record); err != nil {
+		return qualityGateRunRecord{}, err
+	}
+	recordQualityGateValidation(st, record)
 	return record, nil
 }
 
@@ -328,14 +405,22 @@ func findRunningQualityGateRun(st *state.StateStore, form, repository string, sn
 			continue
 		}
 		record, err := reconcileQualityGateRun(st, entry.Name())
-		if err != nil || record.Status != "running" {
+		if err != nil || record.Status != qualityGateStatusRunning {
 			continue
 		}
-		if record.Form == form && record.Repository == repository && record.Head == snapshot.Head && record.IndexDigest == snapshot.IndexDigest && record.WorktreeDigest == snapshot.WorktreeDigest {
+		if sameQualityGateSnapshot(record, form, repository, snapshot) {
 			return record, true
 		}
 	}
 	return qualityGateRunRecord{}, false
+}
+
+func sameQualityGateSnapshot(record qualityGateRunRecord, form, repository string, snapshot state.GitSnapshot) bool {
+	return record.Form == form &&
+		record.Repository == repository &&
+		record.Head == snapshot.Head &&
+		record.IndexDigest == snapshot.IndexDigest &&
+		record.WorktreeDigest == snapshot.WorktreeDigest
 }
 
 func acquireQualityGateStartLock(st *state.StateStore) (*RepoLock, error) {
@@ -432,7 +517,7 @@ func writeQualityGateRunLog(st *state.StateStore, runID string, data []byte) (st
 
 func failQualityGateLaunch(st *state.StateStore, record qualityGateRunRecord, launchErr error) error {
 	completed := time.Now().UTC()
-	record.Status = "fail"
+	record.Status = qualityGateStatusFail
 	record.ExitCode = 1
 	record.CompletedAt = &completed
 	record.DurationMS = completed.Sub(record.StartedAt).Milliseconds()
@@ -442,10 +527,19 @@ func failQualityGateLaunch(st *state.StateStore, record qualityGateRunRecord, la
 	if err := writeQualityGateRun(st, record); err != nil {
 		return errors.Join(launchErr, err)
 	}
+	recordQualityGateValidation(st, record)
 	return qualityGateErrorFromRecord(record)
 }
 
-func emitQualityGateStarted(runID string, attached bool) error {
+func recordQualityGateValidation(st *state.StateStore, record qualityGateRunRecord) {
+	evidence := ""
+	if record.Log != "" {
+		evidence = filepath.ToSlash(filepath.Join(qualityGateRunDirectory, record.ValidationRunID, qualityGateRunLog))
+	}
+	st.RecordValidation("quality-gate", record.Form, "", record.Status, record.ExitCode, record.DurationMS, evidence)
+}
+
+func emitQualityGateStarted(diagnostics io.Writer, runID string, attached bool) error {
 	line, err := marshalEventLine(qualityGateStartedEvent{
 		Type:            "control",
 		Event:           "quality_gate_started",
@@ -455,7 +549,7 @@ func emitQualityGateStarted(runID string, attached bool) error {
 	if err != nil {
 		return err
 	}
-	_, err = os.Stderr.Write(line)
+	_, err = diagnostics.Write(line)
 	return err
 }
 
