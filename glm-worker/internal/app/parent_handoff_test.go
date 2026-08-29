@@ -1,0 +1,162 @@
+package app
+
+import (
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
+)
+
+func TestParseCommandParentHandoff(t *testing.T) {
+	command, err := ParseCommand([]string{"--handoff"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if command.Mode != ModeHandoff {
+		t.Fatalf("handoff command = %#v", command)
+	}
+	if _, err := ParseCommand([]string{"--handoff", "extra"}); err == nil {
+		t.Fatal("--handoff accepted an extra argument")
+	}
+}
+
+func TestParentHandoffPassRequiresAcceptThenBecomesNoAction(t *testing.T) {
+	cfg := newAppConfig(t)
+	st := startParentHandoffTask(t, cfg)
+	if err := state.CaptureGitBaseline(cfg, st); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetTaskStatus(state.TaskStatusComplete); err != nil {
+		t.Fatal(err)
+	}
+	st.RecordSolResult(packet.Result{Status: packet.StatusPass, Risk: packet.RiskLow}, state.ParentReviewProducer{})
+	taskID, err := st.TaskID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.RecordModelCallLog(state.ModelCallLog{
+		CallID:       "call-pass",
+		CallType:     state.CallTypeTask,
+		TaskID:       taskID,
+		Phase:        "reviewer-1",
+		Role:         state.ReviewerRole,
+		ModelAlias:   "haiku",
+		Outcome:      "success",
+		PacketStatus: string(packet.StatusPass),
+	})
+
+	var output parentHandoffOutput
+	executeCommandOutput(t, cfg, ModeHandoff, &output, "--handoff")
+	if !output.Consistent || output.RequiredAction == nil || *output.RequiredAction != string(state.ParentActionAccept) {
+		t.Fatalf("PASS handoff = %#v", output)
+	}
+	if len(output.AllowedActions) != 1 || output.AllowedActions[0] != string(state.ParentActionAccept) {
+		t.Fatalf("PASS allowed actions = %#v", output.AllowedActions)
+	}
+	if output.ParentReviewOpen == nil || *output.ParentReviewOpen != string(packet.StatusPass) {
+		t.Fatalf("PASS parent review = %#v", output.ParentReviewOpen)
+	}
+	if output.Snapshot == nil || output.Baseline == nil || output.Baseline.Status == "" || output.Baseline.WorktreePatch == "" || output.Baseline.IndexPatch == "" {
+		t.Fatalf("handoff evidence = %#v", output)
+	}
+	if output.LastMaterial == nil || output.LastMaterial.CallID == nil || *output.LastMaterial.CallID != "call-pass" {
+		t.Fatalf("last material = %#v", output.LastMaterial)
+	}
+
+	accepted, err := st.AcceptParentReview()
+	if err != nil || !accepted {
+		t.Fatalf("accept = %v err=%v", accepted, err)
+	}
+	output = buildParentHandoff(st)
+	if !output.Consistent || output.RequiredAction == nil || *output.RequiredAction != string(state.ParentActionNone) || output.ParentReviewOpen != nil {
+		t.Fatalf("accepted handoff = %#v", output)
+	}
+}
+
+func TestParentHandoffFailsClosedOnLifecycleContradiction(t *testing.T) {
+	cfg := newAppConfig(t)
+	st := startParentHandoffTask(t, cfg)
+	if err := st.SetTaskStatus(state.TaskStatusWaitingDecision); err != nil {
+		t.Fatal(err)
+	}
+
+	output := buildParentHandoff(st)
+	if output.Consistent || output.Inconsistency == nil || output.RequiredAction != nil || len(output.AllowedActions) != 0 {
+		t.Fatalf("contradictory handoff = %#v", output)
+	}
+	if !strings.Contains(*output.Inconsistency, "lifecycle inconsistency") {
+		t.Fatalf("inconsistency = %q", *output.Inconsistency)
+	}
+}
+
+func TestParentHandoffValidationReferencesMatchCurrentSnapshot(t *testing.T) {
+	cfg := newAppConfig(t)
+	st, err := state.NewStateStore(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := state.CaptureGitSnapshot(cfg.RepoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	matching := qualityGateRunRecord{
+		ValidationRunID: strings.Repeat("a", 32),
+		Form:            "go-test",
+		Repository:      cfg.RepoRoot,
+		WorkingDir:      cfg.RepoRoot,
+		Head:            snapshot.Head,
+		IndexDigest:     snapshot.IndexDigest,
+		WorktreeDigest:  snapshot.WorktreeDigest,
+		StartedAt:       now,
+		Status:          qualityGateStatusPass,
+		Log:             "/evidence/current/gate.log",
+	}
+	stale := matching
+	stale.ValidationRunID = strings.Repeat("b", 32)
+	stale.StartedAt = now.Add(time.Minute)
+	stale.WorktreeDigest = "stale-worktree"
+	stale.Log = "/evidence/stale/gate.log"
+	race := matching
+	race.ValidationRunID = strings.Repeat("c", 32)
+	race.Form = "go-test-race"
+	race.StartedAt = now.Add(2 * time.Minute)
+	race.Status = qualityGateStatusRunning
+	race.Log = "/evidence/race/gate.log"
+	for _, record := range []qualityGateRunRecord{matching, stale, race} {
+		if err := writeQualityGateRun(st, record); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	output := buildParentHandoff(st)
+	if !output.Consistent || len(output.Validations) != 2 {
+		t.Fatalf("validations = %#v", output.Validations)
+	}
+	if output.Validations[0].Form != "go-test" || output.Validations[0].ValidationRunID != matching.ValidationRunID || output.Validations[0].Log != matching.Log {
+		t.Fatalf("go-test validation = %#v", output.Validations[0])
+	}
+	if output.Validations[1].Form != "go-test-race" || output.Validations[1].ValidationRunID != race.ValidationRunID {
+		t.Fatalf("race validation = %#v", output.Validations[1])
+	}
+	for _, validation := range output.Validations {
+		if validation.ValidationRunID == stale.ValidationRunID {
+			t.Fatalf("stale snapshot validation leaked into handoff: %#v", validation)
+		}
+	}
+}
+
+func startParentHandoffTask(t *testing.T, cfg config.AppConfig) *state.StateStore {
+	t.Helper()
+	st, err := state.NewStateStore(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.StartNewTask(); err != nil {
+		t.Fatal(err)
+	}
+	return st
+}

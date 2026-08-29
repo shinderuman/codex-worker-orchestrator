@@ -8,6 +8,14 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 )
 
+type GitBaselineEvidence struct {
+	Head          string `json:"head,omitempty"`
+	Status        string `json:"status,omitempty"`
+	WorktreePatch string `json:"worktree_patch,omitempty"`
+	IndexPatch    string `json:"index_patch,omitempty"`
+	Untracked     string `json:"untracked,omitempty"`
+}
+
 const baselineUntrackedFile = "baseline-untracked"
 
 func CaptureGitBaseline(cfg config.AppConfig, state *StateStore) error {
@@ -87,6 +95,26 @@ func resolveRepoHead(repoRoot string) (head string, unborn bool, err error) {
 		return "", false, fmt.Errorf("HEAD symbolic target %s exists but does not peel to a commit", ref)
 	}
 	return "", true, nil
+}
+
+func (s *StateStore) BaselineEvidence() *GitBaselineEvidence {
+	evidence := GitBaselineEvidence{Head: s.ReadOr("baseline-head", "")}
+	if s.Exists("baseline-status") {
+		evidence.Status = s.Path("baseline-status")
+	}
+	if s.Exists("baseline-worktree.patch") {
+		evidence.WorktreePatch = s.Path("baseline-worktree.patch")
+	}
+	if s.Exists("baseline-index.patch") {
+		evidence.IndexPatch = s.Path("baseline-index.patch")
+	}
+	if s.Exists(baselineUntrackedFile) {
+		evidence.Untracked = s.Path(baselineUntrackedFile)
+	}
+	if evidence.Head == "" && evidence.Status == "" && evidence.WorktreePatch == "" && evidence.IndexPatch == "" && evidence.Untracked == "" {
+		return nil
+	}
+	return &evidence
 }
 
 func (s *StateStore) BaselineDescription() string {
