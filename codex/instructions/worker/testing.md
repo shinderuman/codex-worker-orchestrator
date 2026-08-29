@@ -2,6 +2,7 @@
 - 変更したbehaviorを直接保証するテストを同じ作業単位で追加・修正・実行する。
 - bug fixでは、再発防止に有効なら最小のregression testを追加する。
 - 正常系に加え、実際に成立し得る主要な失敗境界・境界値だけを確認する。全分岐・全異常系の網羅自体を目的にしない。
+- validationをPASSとして報告する場合、対象command自身の終了状態がその実行結果へ帰属できる形で実行する。`command | tail`、`command | grep`、`command; echo ...`、`command && echo ...`等の後段commandの終了状態を対象commandの成否として扱わない。出力を絞る必要がある場合は対象commandをlogへ実行して終了状態を保存し、表示後に保存した終了状態で終了する。
 - implementation detail、関数名、呼出順序、test runnerの内部動作、Markdownやpromptの自然言語本文をcontractとしてpinしない。
 - test専用にproduction相当のstate machine・policy・parserを再実装しない。production behaviorを直接呼んで検証する。
 - scenario・fixture・test helper自体を検証するためだけのtestを増やさない。
