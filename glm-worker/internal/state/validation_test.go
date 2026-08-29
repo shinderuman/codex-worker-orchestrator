@@ -45,7 +45,7 @@ func TestRecordValidationPersistsExplicitStandaloneAttribution(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	scanner := bufio.NewScanner(file)
 	if !scanner.Scan() {
 		t.Fatal("standalone validation record missing")
