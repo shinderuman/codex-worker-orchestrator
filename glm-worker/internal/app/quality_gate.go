@@ -61,7 +61,7 @@ func runQualityGate(form string, st *state.StateStore, stdout io.Writer) error {
 	gate.Stdout = &gateLog
 	gate.Stderr = &gateLog
 	runErr := gate.Run()
-	durationMS := time.Now().UTC().Sub(startedAt).Milliseconds()
+	durationMS := time.Since(startedAt).Milliseconds()
 
 	exitCode := 0
 	if runErr != nil {
@@ -78,6 +78,11 @@ func runQualityGate(form string, st *state.StateStore, stdout io.Writer) error {
 		result = "fail"
 	}
 	logPath := writeQualityGateLog(st, form, result, gateLog.Bytes())
+	evidence := ""
+	if logPath != "" {
+		evidence = filepath.ToSlash(filepath.Join(qualityGateLogDirectory, form+"-"+result+".log"))
+	}
+	st.RecordValidation("quality-gate", form, "", result, exitCode, durationMS, evidence)
 	if runErr != nil {
 		return &QualityGateError{
 			Form:       form,

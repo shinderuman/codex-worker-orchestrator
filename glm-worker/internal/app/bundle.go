@@ -18,27 +18,32 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskdiff"
 )
 
 type bundleOutput struct {
-	TaskID           string   `json:"task_id"`
-	TaskStatus       string   `json:"task_status"`
-	ArchivePath      string   `json:"archive_path"`
-	EvidenceStatus   string   `json:"evidence_status"`
-	ClaudeSessionIDs []string `json:"claude_session_ids"`
-	Missing          []string `json:"missing"`
+	TaskID             string   `json:"task_id"`
+	TaskStatus         string   `json:"task_status"`
+	ArchivePath        string   `json:"archive_path"`
+	EvidenceStatus     string   `json:"evidence_status"`
+	ClaudeSessionIDs   []string `json:"claude_session_ids"`
+	InFlightModelCalls int      `json:"in_flight_model_calls,omitempty"`
+	Missing            []string `json:"missing"`
+	Unattributed       []string `json:"unattributed,omitempty"`
 }
 
 type bundleManifest struct {
-	Format           string   `json:"format"`
-	TaskID           string   `json:"task_id"`
-	TaskStatus       string   `json:"task_status"`
-	CurrentTask      bool     `json:"current_task"`
-	EvidenceStatus   string   `json:"evidence_status"`
-	ClaudeSessionIDs []string `json:"claude_session_ids"`
-	Included         []string `json:"included"`
-	Missing          []string `json:"missing"`
-	CreatedAt        string   `json:"created_at"`
+	Format             string   `json:"format"`
+	TaskID             string   `json:"task_id"`
+	TaskStatus         string   `json:"task_status"`
+	CurrentTask        bool     `json:"current_task"`
+	EvidenceStatus     string   `json:"evidence_status"`
+	ClaudeSessionIDs   []string `json:"claude_session_ids"`
+	InFlightModelCalls int      `json:"in_flight_model_calls,omitempty"`
+	Included           []string `json:"included"`
+	Missing            []string `json:"missing"`
+	Unattributed       []string `json:"unattributed,omitempty"`
+	CreatedAt          string   `json:"created_at"`
 }
 
 type bundleTask struct {
@@ -55,18 +60,20 @@ type bundleEntry struct {
 }
 
 type bundleCollector struct {
-	entries map[string]bundleEntry
-	missing map[string]struct{}
+	entries      map[string]bundleEntry
+	missing      map[string]struct{}
+	unattributed map[string]struct{}
 }
 
-const bundleFormat = "glm-worker-task-bundle-v1"
+const bundleFormat = "glm-worker-task-bundle-v2"
 
 var bundleAggregateDirs = map[string]bool{
-	"artifacts": true,
-	"events":    true,
-	"rounds":    true,
-	"stats":     true,
-	"telemetry": true,
+	"artifacts":      true,
+	"events":         true,
+	"rounds":         true,
+	"stats":          true,
+	"task-authority": true,
+	"telemetry":      true,
 }
 
 func printBundle(cfg config.AppConfig, st *state.StateStore, requestedTaskID string, stdout io.Writer) error {
@@ -88,20 +95,24 @@ func printBundle(cfg config.AppConfig, st *state.StateStore, requestedTaskID str
 		return err
 	}
 	missing := collector.missingList()
+	unattributed := collector.unattributedList()
 	evidenceStatus := "complete"
 	if len(missing) > 0 {
 		evidenceStatus = "incomplete"
 	}
+	inFlightModelCalls := bundleInFlightModelCalls(st, task)
 	manifest := bundleManifest{
-		Format:           bundleFormat,
-		TaskID:           task.ID,
-		TaskStatus:       task.Status,
-		CurrentTask:      task.Current,
-		EvidenceStatus:   evidenceStatus,
-		ClaudeSessionIDs: sessionIDs,
-		Included:         collector.includedListWithManifest(),
-		Missing:          missing,
-		CreatedAt:        time.Now().UTC().Format(time.RFC3339Nano),
+		Format:             bundleFormat,
+		TaskID:             task.ID,
+		TaskStatus:         task.Status,
+		CurrentTask:        task.Current,
+		EvidenceStatus:     evidenceStatus,
+		ClaudeSessionIDs:   sessionIDs,
+		InFlightModelCalls: inFlightModelCalls,
+		Included:           collector.includedListWithManifest(),
+		Missing:            missing,
+		Unattributed:       unattributed,
+		CreatedAt:          time.Now().UTC().Format(time.RFC3339Nano),
 	}
 	manifestData, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
@@ -113,12 +124,14 @@ func printBundle(cfg config.AppConfig, st *state.StateStore, requestedTaskID str
 	}
 
 	return writeJSON(stdout, bundleOutput{
-		TaskID:           task.ID,
-		TaskStatus:       task.Status,
-		ArchivePath:      archivePath,
-		EvidenceStatus:   evidenceStatus,
-		ClaudeSessionIDs: sessionIDs,
-		Missing:          missing,
+		TaskID:             task.ID,
+		TaskStatus:         task.Status,
+		ArchivePath:        archivePath,
+		EvidenceStatus:     evidenceStatus,
+		ClaudeSessionIDs:   sessionIDs,
+		InFlightModelCalls: inFlightModelCalls,
+		Missing:            missing,
+		Unattributed:       unattributed,
 	})
 }
 
@@ -166,17 +179,45 @@ func currentBundleTask(st *state.StateStore, taskID string) bundleTask {
 	return bundleTask{ID: taskID, Status: status, Current: true, Stats: stats}
 }
 
+func bundleInFlightModelCalls(st *state.StateStore, task bundleTask) int {
+	if !task.Current || task.Stats.ModelCalls <= 0 {
+		return 0
+	}
+	logs, err := st.ReadModelCallLogs(task.ID)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return 0
+	}
+	finalized := 0
+	for _, log := range logs {
+		if log.CallType == "" || log.CallType == state.CallTypeTask {
+			finalized++
+		}
+	}
+	pending := task.Stats.ModelCalls - finalized
+	if pending < 0 {
+		return 0
+	}
+	return pending
+}
+
 func newBundleCollector() *bundleCollector {
 	return &bundleCollector{
-		entries: make(map[string]bundleEntry),
-		missing: make(map[string]struct{}),
+		entries:      make(map[string]bundleEntry),
+		missing:      make(map[string]struct{}),
+		unattributed: make(map[string]struct{}),
 	}
 }
 
 func (c *bundleCollector) collectTaskEvidence(st *state.StateStore, task bundleTask) {
 	c.addFileIfPresent(st.ModelCallLogPath(task.ID), path.Join("task", "telemetry", task.ID+".jsonl"))
 	c.addFileIfPresent(st.TaskEventLogPath(task.ID), path.Join("task", "events", task.ID+".jsonl"))
+	c.addFileIfPresent(st.TaskLiveStatusPath(task.ID), path.Join("task", "events", task.ID+".live.json"))
 	c.addFileIfPresent(st.RoundLogPath(task.ID), path.Join("task", "rounds", task.ID+".jsonl"))
+	if c.addFileIfPresent(st.TaskAuthorityPathPath(task.ID), path.Join("task", "authority", "active-task.path")) {
+		if !c.addFileIfPresent(st.TaskAuthorityContentPath(task.ID), path.Join("task", "authority", "active-task.md")) {
+			c.addMissing(path.Join("task", "authority", "active-task.md"))
+		}
+	}
 	if task.Current {
 		if !c.addFileIfPresent(st.Path("task-stats.json"), path.Join("task", "task-stats.json")) {
 			c.addMissing("task/task-stats.json")
@@ -317,14 +358,23 @@ func (c *bundleCollector) collectCurrentState(cfg config.AppConfig, st *state.St
 				if bundleAggregateDirs[name] {
 					continue
 				}
-				_ = c.addTreeIfPresent(filepath.Join(stateRoot, name), path.Join("current-state", "diagnostics", name))
+				_ = c.addUnattributedTreeIfPresent(
+					filepath.Join(stateRoot, name),
+					path.Join("current-state", "diagnostics", name),
+				)
 				continue
 			}
 			if entry.Type().IsRegular() {
-				c.addFile(filepath.Join(stateRoot, name), path.Join("current-state", "state", name))
+				archivePath := path.Join("current-state", "state", name)
+				c.addFile(filepath.Join(stateRoot, name), archivePath)
+				if name == "review-current-task.patch" {
+					c.addUnattributed(archivePath)
+				}
 			}
 		}
 	}
+
+	c.collectCurrentTaskDiff(cfg, st)
 
 	var status bytes.Buffer
 	if err := printStatus(st, &status); err != nil {
@@ -333,6 +383,16 @@ func (c *bundleCollector) collectCurrentState(cfg config.AppConfig, st *state.St
 		c.addData("current-state/status.json", status.Bytes())
 	}
 	c.collectRepositoryAuthority(cfg, st)
+}
+
+func (c *bundleCollector) collectCurrentTaskDiff(cfg config.AppConfig, st *state.StateStore) {
+	diff, available, err := taskdiff.Capture(cfg.RepoRoot, st)
+	switch {
+	case err != nil:
+		c.addMissing("current-state/snapshot/task-diff.patch")
+	case available:
+		c.addData("current-state/snapshot/task-diff.patch", diff)
+	}
 }
 
 func (c *bundleCollector) collectRepositoryAuthority(cfg config.AppConfig, st *state.StateStore) {
@@ -347,9 +407,20 @@ func (c *bundleCollector) collectRepositoryAuthority(cfg config.AppConfig, st *s
 		return
 	}
 	archivePath := path.Join("current-state", "repository-authority", filepath.ToSlash(activeTask))
-	if !c.addRepositoryFile(cfg.RepoRoot, activeTask, archivePath) {
-		c.addMissing(archivePath)
+	if c.addRepositoryFile(cfg.RepoRoot, activeTask, archivePath) {
+		return
 	}
+	taskID := st.ReadOr("task.id", "")
+	if taskID != "" && taskAuthoritySnapshotMatches(st, taskID, activeTask) &&
+		c.addFileIfPresent(st.TaskAuthorityContentPath(taskID), archivePath) {
+		return
+	}
+	c.addMissing(archivePath)
+}
+
+func taskAuthoritySnapshotMatches(st *state.StateStore, taskID, activeTask string) bool {
+	data, err := os.ReadFile(st.TaskAuthorityPathPath(taskID))
+	return err == nil && strings.TrimSpace(string(data)) == activeTask
 }
 
 func (c *bundleCollector) addRepositoryFile(repoRoot, rel, archivePath string) bool {
@@ -387,6 +458,14 @@ func (c *bundleCollector) addData(archivePath string, data []byte) {
 }
 
 func (c *bundleCollector) addTreeIfPresent(sourceRoot, archiveRoot string) bool {
+	return c.addTree(sourceRoot, archiveRoot, false)
+}
+
+func (c *bundleCollector) addUnattributedTreeIfPresent(sourceRoot, archiveRoot string) bool {
+	return c.addTree(sourceRoot, archiveRoot, true)
+}
+
+func (c *bundleCollector) addTree(sourceRoot, archiveRoot string, unattributed bool) bool {
 	info, err := os.Lstat(sourceRoot)
 	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		return false
@@ -402,7 +481,11 @@ func (c *bundleCollector) addTreeIfPresent(sourceRoot, archiveRoot string) bool 
 		if err != nil {
 			return nil
 		}
-		c.addFile(filePath, path.Join(archiveRoot, filepath.ToSlash(rel)))
+		archivePath := path.Join(archiveRoot, filepath.ToSlash(rel))
+		c.addFile(filePath, archivePath)
+		if unattributed {
+			c.addUnattributed(archivePath)
+		}
 		return nil
 	})
 	return true
@@ -414,8 +497,18 @@ func (c *bundleCollector) addMissing(value string) {
 	}
 }
 
+func (c *bundleCollector) addUnattributed(value string) {
+	if value != "" {
+		c.unattributed[value] = struct{}{}
+	}
+}
+
 func (c *bundleCollector) missingList() []string {
 	return sortedSet(c.missing)
+}
+
+func (c *bundleCollector) unattributedList() []string {
+	return sortedSet(c.unattributed)
 }
 
 func (c *bundleCollector) includedListWithManifest() []string {
