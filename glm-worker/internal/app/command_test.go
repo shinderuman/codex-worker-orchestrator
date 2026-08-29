@@ -34,6 +34,7 @@ func TestParseCommandModes(t *testing.T) {
 		{name: "model-routing", args: []string{"--model-routing"}, mode: ModeModelRouting},
 		{name: "test-impact", args: []string{"--test-impact"}, mode: ModeTestImpact},
 		{name: "codex-limit", args: []string{"--codex-limit"}, mode: ModeCodexLimit},
+		{name: "repo-search", args: []string{"--repo-search", "worker dispatch"}, mode: ModeRepoSearch, payload: "worker dispatch"},
 	}
 
 	for _, test := range tests {
@@ -160,6 +161,8 @@ func TestParseCommandRejectsInvalidArguments(t *testing.T) {
 		{"--model-routing", "extra"},
 		{"--test-impact", "extra"},
 		{"--codex-limit", "extra"},
+		{"--repo-search"},
+		{"--repo-search", "query", "extra"},
 	}
 
 	for _, args := range tests {

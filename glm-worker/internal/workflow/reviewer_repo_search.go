@@ -15,6 +15,7 @@ import (
 const (
 	reviewerRepoSearchPhase         = "reviewer-repo-search"
 	reviewerSearchDiffSufficient    = "diff-sufficient"
+	reviewerSearchDisabled          = "independent-search-disabled"
 	reviewerSearchHit               = "independent-search-hit"
 	reviewerSearchEmpty             = "independent-search-empty"
 	reviewerSearchErrorFallback     = "independent-search-error-fallback"
@@ -39,6 +40,9 @@ func (w *Workflow) reviewerDiffFirstContext(request string, reviewNumber int) st
 		w.recordRepoSearchOutcome(reviewerRepoSearchPhase, state.ReviewerRole, reviewNumber+1, reviewerSearchDiffSufficient, "", nil)
 		return renderReviewerDiffFirstNavigation(paths, reviewerSearchDiffSufficient, "", nil)
 	}
+	if !w.config.RepoSearch {
+		return renderReviewerDiffFirstNavigation(paths, reviewerSearchDisabled, "", nil)
+	}
 
 	impactTerms := collectReviewerDiffImpactTerms(w.config.RepoRoot, baseline)
 	query := reviewerIndependentSearchQuery(request, impactPaths, impactTerms)
@@ -46,7 +50,7 @@ func (w *Workflow) reviewerDiffFirstContext(request string, reviewNumber int) st
 	if search == nil {
 		search = reposearch.Search
 	}
-	report, searchErr := search(context.Background(), w.config.RepoRoot, query, reposearch.Options{MaxResults: repoSearchMaxResults})
+	report, searchErr := search(context.Background(), w.config.RepoRoot, query, reposearch.Options{MaxResults: RepoSearchMaxResults})
 	if searchErr != nil {
 		w.recordRepoSearchOutcome(reviewerRepoSearchPhase, state.ReviewerRole, reviewNumber+1, reviewerSearchErrorFallback, query, nil)
 		return renderReviewerDiffFirstNavigation(paths, reviewerSearchErrorFallback, query, nil)
@@ -198,7 +202,7 @@ func renderReviewerDiffFirstNavigation(paths []string, outcome string, query str
 		block.WriteByte('\n')
 	}
 	searchMode := "skipped"
-	if outcome != reviewerSearchDiffSufficient && outcome != reviewerSearchDiffErrorFallback {
+	if outcome != reviewerSearchDiffSufficient && outcome != reviewerSearchDiffErrorFallback && outcome != reviewerSearchDisabled {
 		searchMode = "performed"
 	}
 	block.WriteString("INDEPENDENT_SEARCH: ")

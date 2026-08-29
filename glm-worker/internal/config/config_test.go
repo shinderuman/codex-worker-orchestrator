@@ -107,6 +107,7 @@ func TestLoadBuildsConfigFromRepositoryAndEnvironment(t *testing.T) {
 	t.Setenv("GLM_WORKER_ESCALATED_EFFORT", "high")
 	t.Setenv("GLM_WORKER_MAX_AUTO_FIX_ROUNDS", "4")
 	t.Setenv("GLM_WORKER_TELEMETRY_CONTENT", "false")
+	t.Setenv("GLM_WORKER_REPO_SEARCH", "false")
 
 	loaded, err := Load()
 	if err != nil {
@@ -131,8 +132,20 @@ func TestLoadBuildsConfigFromRepositoryAndEnvironment(t *testing.T) {
 	if loaded.ClaudeBin != "claude-test" || loaded.CodexBin != "codex-test" || loaded.WorkerModel != "worker-test" || loaded.ReviewerModel != "reviewer-test" || loaded.HighRiskReviewerModel != "reviewer-high-test" {
 		t.Fatalf("runner config = %#v", loaded)
 	}
-	if loaded.RoutineEffort != "medium" || loaded.EscalatedEffort != "high" || loaded.MaxAutoFixRounds != 4 || loaded.TelemetryContent {
+	if loaded.RoutineEffort != "medium" || loaded.EscalatedEffort != "high" || loaded.MaxAutoFixRounds != 4 || loaded.TelemetryContent || loaded.RepoSearch {
 		t.Fatalf("workflow config = %#v", loaded)
+	}
+}
+
+func TestLoadDefaultsRepoSearchEnabled(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("GLM_WORKER_REPO_SEARCH", "")
+	loaded, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !loaded.RepoSearch {
+		t.Fatalf("RepoSearch = false, want default enabled")
 	}
 }
 

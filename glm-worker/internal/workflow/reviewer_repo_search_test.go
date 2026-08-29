@@ -17,7 +17,7 @@ import (
 func newReviewerSearchWorkflow(t *testing.T, paths []string) (*Workflow, *state.StateStore, string) {
 	t.Helper()
 	root := t.TempDir()
-	cfg := config.AppConfig{RepoRoot: root, RepoHash: "review-search-routing", StateBase: t.TempDir()}
+	cfg := config.AppConfig{RepoRoot: root, RepoHash: "review-search-routing", StateBase: t.TempDir(), RepoSearch: true}
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -52,7 +52,7 @@ func TestReviewerDiffFirstSkipsIndependentSearchForTestOnlyDiff(t *testing.T) {
 func TestReviewerDiffFirstSearchesImpactIndependentlyAndExcludesChangedPaths(t *testing.T) {
 	w, st, taskID := newReviewerSearchWorkflow(t, []string{"glm-worker/internal/workflow/workflow.go"})
 	w.repoSearch = func(_ context.Context, _ string, query string, opts reposearch.Options) (reposearch.Report, error) {
-		if !strings.Contains(query, "review impact paths: glm-worker/internal/workflow/workflow.go") || opts.MaxResults != repoSearchMaxResults {
+		if !strings.Contains(query, "review impact paths: glm-worker/internal/workflow/workflow.go") || opts.MaxResults != RepoSearchMaxResults {
 			t.Fatalf("query=%q opts=%#v", query, opts)
 		}
 		return reposearch.Report{Results: []reposearch.Result{
@@ -84,6 +84,28 @@ func TestReviewerDiffFirstSearchFailureFallsBackToDiffInspection(t *testing.T) {
 	block := w.reviewerDiffFirstContext("change reviewer dispatch", 1)
 	if !strings.Contains(block, "SEARCH_OUTCOME: independent-search-error-fallback") || !strings.Contains(block, "CHANGED_PATH: glm-worker/internal/workflow/workflow.go") {
 		t.Fatalf("block=%s", block)
+	}
+}
+
+func TestReviewerDiffFirstDisabledKeepsDiffNavigationWithoutSearch(t *testing.T) {
+	w, st, taskID := newReviewerSearchWorkflow(t, []string{"glm-worker/internal/workflow/workflow.go"})
+	w.config.RepoSearch = false
+	w.repoSearch = func(context.Context, string, string, reposearch.Options) (reposearch.Report, error) {
+		t.Fatal("disabled flagでsearchが実行されました")
+		return reposearch.Report{}, nil
+	}
+	block := w.reviewerDiffFirstContext("change reviewer dispatch", 1)
+	if !strings.Contains(block, "CHANGED_PATH: glm-worker/internal/workflow/workflow.go") {
+		t.Fatalf("diff changed-path navigationが消失しました: %s", block)
+	}
+	if !strings.Contains(block, "INDEPENDENT_SEARCH: skipped") || !strings.Contains(block, "SEARCH_OUTCOME: independent-search-disabled") {
+		t.Fatalf("disabled outcomeが明示されていません: %s", block)
+	}
+	if strings.Contains(block, "INDEPENDENT_QUERY") || strings.Contains(block, "IMPACT_CANDIDATE") {
+		t.Fatalf("disabled blockへsearch結果が混入しています: %s", block)
+	}
+	if _, err := os.Stat(st.TaskEventLogPath(taskID)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("disabled flagでsearch eventが記録されました: %v", err)
 	}
 }
 

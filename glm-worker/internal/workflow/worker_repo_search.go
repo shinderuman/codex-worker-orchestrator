@@ -21,11 +21,14 @@ const (
 	repoSearchHit           = "search-hit"
 	repoSearchEmptyFallback = "search-empty-fallback"
 	repoSearchErrorFallback = "search-error-fallback"
-	repoSearchMaxResults    = 8
+	RepoSearchMaxResults    = 8
 )
 
 func (w *Workflow) newWorkerTaskPrompt(request string, activeTaskPath string) string {
 	prompt := newTaskPrompt(request, activeTaskPath)
+	if !w.config.RepoSearch {
+		return prompt
+	}
 	search := w.repoSearch
 	if search == nil {
 		search = reposearch.Search
@@ -42,7 +45,7 @@ func routeWorkerRepoSearch(ctx context.Context, repoRoot string, request string,
 	if requestHasKnownRepoTarget(repoRoot, request) {
 		return "", repoSearchKnownSkip, nil
 	}
-	report, err := search(ctx, repoRoot, request, reposearch.Options{MaxResults: repoSearchMaxResults})
+	report, err := search(ctx, repoRoot, request, reposearch.Options{MaxResults: RepoSearchMaxResults})
 	if err != nil {
 		return "", repoSearchErrorFallback, nil
 	}

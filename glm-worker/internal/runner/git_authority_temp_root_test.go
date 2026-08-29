@@ -35,7 +35,7 @@ case "$TMPDIR" in
   "$GLM_WORKER_GIT_TEMP_ROOT"|"$GLM_WORKER_GIT_TEMP_ROOT"/*) ;;
   *) exit 20 ;;
 esac
-owned=$(mktemp -d)
+owned=$(mktemp -d "$GLM_WORKER_GIT_TEMP_ROOT/tmp.XXXXXXXXXX")
 git init "$owned/repo" >/dev/null 2>&1
 sandbox_tmp="$GLM_WORKER_GIT_TEMP_ROOT/claude-test"
 mkdir -p "$sandbox_tmp"

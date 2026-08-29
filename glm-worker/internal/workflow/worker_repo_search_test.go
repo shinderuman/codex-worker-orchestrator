@@ -53,7 +53,7 @@ func TestRouteWorkerRepoSearchDoesNotTreatBareDirectoryWordAsKnownTarget(t *test
 
 func TestRouteWorkerRepoSearchInjectsUnknownTargetCandidates(t *testing.T) {
 	search := func(_ context.Context, root string, query string, opts reposearch.Options) (reposearch.Report, error) {
-		if root != "/repo" || query != "find worker dispatch" || opts.MaxResults != repoSearchMaxResults {
+		if root != "/repo" || query != "find worker dispatch" || opts.MaxResults != RepoSearchMaxResults {
 			t.Fatalf("root=%q query=%q opts=%#v", root, query, opts)
 		}
 		return reposearch.Report{Results: []reposearch.Result{
@@ -102,7 +102,7 @@ func TestRouteWorkerRepoSearchFallsBackOnEmptyOrError(t *testing.T) {
 
 func TestNewWorkerTaskPromptRecordsRepoSearchTelemetry(t *testing.T) {
 	root := t.TempDir()
-	cfg := config.AppConfig{RepoRoot: root, RepoHash: "repo-search-routing", StateBase: t.TempDir()}
+	cfg := config.AppConfig{RepoRoot: root, RepoHash: "repo-search-routing", StateBase: t.TempDir(), RepoSearch: true}
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -145,5 +145,30 @@ func TestNewWorkerTaskPromptRecordsRepoSearchTelemetry(t *testing.T) {
 	}
 	if !event.Timestamp.Equal(fixed) || event.TaskID != taskID || event.Role != string(state.WorkerRole) {
 		t.Fatalf("event=%#v", event)
+	}
+}
+
+func TestNewWorkerTaskPromptDisabledSkipsRepoSearchEntirely(t *testing.T) {
+	root := t.TempDir()
+	cfg := config.AppConfig{RepoRoot: root, RepoHash: "repo-search-disabled", StateBase: t.TempDir()}
+	st, err := state.NewStateStore(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	taskID, err := st.StartNewTask()
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := NewWorkflow(cfg, st, nil, nil)
+	w.repoSearch = func(context.Context, string, string, reposearch.Options) (reposearch.Report, error) {
+		t.Fatal("disabled flagでsearchが実行されました")
+		return reposearch.Report{}, nil
+	}
+	prompt := w.newWorkerTaskPrompt("unknown worker target", "")
+	if prompt != newTaskPrompt("unknown worker target", "") {
+		t.Fatalf("disabled promptが導入前のprompt構築と一致しません: %s", prompt)
+	}
+	if _, err := os.Stat(st.TaskEventLogPath(taskID)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("disabled flagでeventが記録されました: %v", err)
 	}
 }

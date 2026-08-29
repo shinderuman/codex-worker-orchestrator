@@ -36,6 +36,7 @@ type AppConfig struct {
 	EscalatedEffort       string
 	MaxAutoFixRounds      int
 	TelemetryContent      bool
+	RepoSearch            bool
 }
 
 func RepoHashFor(root string) string {
@@ -70,6 +71,10 @@ func Load() (AppConfig, error) {
 	if err != nil {
 		return AppConfig{}, err
 	}
+	repoSearch, err := boolEnv("GLM_WORKER_REPO_SEARCH", true)
+	if err != nil {
+		return AppConfig{}, err
+	}
 
 	return AppConfig{
 		RepoRoot:               repoRoot,
@@ -91,6 +96,7 @@ func Load() (AppConfig, error) {
 		EscalatedEffort:        envOrDefault("GLM_WORKER_ESCALATED_EFFORT", "max"),
 		MaxAutoFixRounds:       rounds,
 		TelemetryContent:       telemetryContent,
+		RepoSearch:             repoSearch,
 	}, nil
 }
 

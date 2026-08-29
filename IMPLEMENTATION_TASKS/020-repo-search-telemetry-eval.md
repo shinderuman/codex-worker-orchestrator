@@ -18,6 +18,10 @@ none
 
 search導入のCodex ReductionとQuality Deltaを測定可能にする。
 
+## External feasibility
+
+status: not-applicable
+
 ## Contract
 
 - query category、hit/miss、result count、fallback、durationを秘密なしで記録
@@ -35,10 +39,11 @@ search導入のCodex ReductionとQuality Deltaを測定可能にする。
 ## Historical invariants
 
 - eval-ab read-only、telemetry exact-once
+- Task 019でdefault-on feature flag、read-only CLI、managed instruction、install wiringが完了済み。既存feature on/offとBM25 coreをtelemetry実装で再設計しない
 
 ## Dependencies
 
-- `IMPLEMENTATION_TASKS/019-repo-search-product-wiring.md`
+none
 
 ## Review findings
 

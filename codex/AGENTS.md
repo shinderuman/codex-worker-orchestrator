@@ -73,11 +73,12 @@ USER_REQUEST・`SPECIFICATION.md`・既存`AGENTS.md`・直前のSol判断で未
 - GLM packet・WORKER_ERROR処理 → `~/.codex/instructions/glm-packets.md`
 - GLM rate limit自動再開 → `~/.codex/instructions/glm-auto-resume.md`
 - 親Codex 5h Limit自動再開 → `~/.codex/instructions/codex-auto-resume.md`
-- GLM workerの安全停止・中断task保持の再開・割り込みtask実行(`--stop`/`--isolate`) → `~/.codex/instructions/glm-stop-isolate.md`
+- GLM停止・中断task再開・割り込みtask実行(`--stop`/`--isolate`) → `~/.codex/instructions/glm-stop-isolate.md`
 - 外部成立性のfeasibility gate → `~/.codex/instructions/feasibility-gate.md`
 - 安全停止・子task終端と親USER_REQUEST完了の区別 → `~/.codex/instructions/task-lifecycle.md`
 - 原因不明runtime failureの最小evidence保存 → `~/.codex/instructions/failure-evidence.md`
 - escaped bug/reviewの原因層分類 → `~/.codex/instructions/escaped-cause-layer.md`
-- Codex自身が例外的に直接編集 → `~/.codex/instructions/worker/`の該当ファイル
-- 直接編集・直接実行の許可境界 → `~/.codex/instructions/direct-edit.md`
-- capability必要quality gateの実行境界 → `~/.codex/instructions/quality-gate-capability.md`
+- Codex例外直接編集 → `~/.codex/instructions/worker/`の該当ファイル
+- 直接編集・実行の許可境界 → `~/.codex/instructions/direct-edit.md`
+- capability quality gate実行境界 → `~/.codex/instructions/quality-gate-capability.md`
+- repo-search運用 → `~/.codex/instructions/glm-repo-search.md`
