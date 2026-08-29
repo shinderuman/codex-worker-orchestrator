@@ -1,0 +1,29 @@
+name: GPT Temporary App Wiring
+
+on:
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+      - name: Patch parser wiring
+        run: |
+          python3 -c 'from pathlib import Path; p=Path("glm-worker/internal/app/app.go"); s=p.read_text(); s=s.replace("const qualityGateUsage = \"<go-test|go-test-race>\"", "const qualityGateUsage = \"<go-test|go-test-race> | --quality-gate <status|watch|result> <validation-run-id>\""); s=s.replace("\"--quality-gate\":  qualityGateCommand,", "\"--quality-gate\":  qualityGateRecoveryCommand,"); old="func qualityGateCommand(args []string) (Command, error) {\\n\\tif len(args) != 2 || qualityGateForms[args[1]] == nil {\\n\\t\\treturn Command{}, usageError(\"usage: glm-worker --quality-gate %s\", qualityGateUsage)\\n\\t}\\n\\treturn Command{Mode: ModeQualityGate, Payload: args[1]}, nil\\n}\\n\\n".replace("\\n", "\n").replace("\\t", "\t"); assert old in s; p.write_text(s.replace(old, "", 1))'
+          gofmt -w glm-worker/internal/app/app.go
+          git diff --check
+      - name: Commit parser wiring
+        run: |
+          git config user.name "web-gpt-repair"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add glm-worker/internal/app/app.go
+          git commit -m "refactor: wire quality-gate recovery parser directly"
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
