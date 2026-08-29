@@ -11,6 +11,7 @@ ACTIVE taskを開始・再開するとき、user messageをdurable task contract
 ## Run control
 
 - start/resume許可、現在task後の停止境界、runtime preflight、待機・進捗報告、親Codexのreview/commit/Plan・History更新、最終報告形式は親orchestrationの実行状態であり、userがdurable task contractへ含めると明示した場合を除き`## Amendments`へコピーしない。
+- ACTIVE taskの新規開始・再開前に既存glm-worker lifecycle stateから合法な次操作を判断する場合は、`glm-worker --handoff`の`consistent`・`required_action`・`allowed_actions`を正規入口とする。`consistent:false`では開始・再開可否を推測しない。repository lockやtask livenessの詳細診断が必要な場合だけ`--status`を追加で使う。
 - run-controlだけのmessageではtask fileを変更しない。
 - 1つのmessageにsemantic amendmentとrun-controlが混在する場合、semantic amendmentだけをlosslessに分離してtask fileへ反映し、message全体をamendmentとして転記しない。
 - user messageの意味を判定するためのgeneric classifier・追加model callは作らない。親Codexが通常の要求解釈として境界を判断する。
