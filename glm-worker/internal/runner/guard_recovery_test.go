@@ -27,6 +27,29 @@ func TestIsRecoverableGuardFailure(t *testing.T) {
 				&GitAuthorityGuardError{Stage: "blocked-command", Mutations: []string{"command:branch"}},
 				&InstructionSurfaceGuardError{Stage: "after-call-mutation", ChangedPaths: []string{"AGENTS.md"}, Restored: true},
 			),
+			want: true,
+		},
+		{
+			name: "restored instruction surface mutation only",
+			err:  &InstructionSurfaceGuardError{Stage: "after-call-mutation", ChangedPaths: []string{"codex/AGENTS.md"}, Restored: true},
+			want: true,
+		},
+		{
+			name: "instruction surface restore failed",
+			err:  &InstructionSurfaceGuardError{Stage: "restore-after-call", ChangedPaths: []string{"AGENTS.md"}, Cause: errors.New("restore failed")},
+			want: false,
+		},
+		{
+			name: "instruction surface baseline divergence",
+			err:  &InstructionSurfaceGuardError{Stage: "before-call-mismatch", ChangedPaths: []string{"AGENTS.md/AGENTS.local.md"}},
+			want: false,
+		},
+		{
+			name: "git mutation joined with unrestored instruction surface change",
+			err: errors.Join(
+				&GitAuthorityGuardError{Stage: "blocked-command", Mutations: []string{"command:branch"}},
+				&InstructionSurfaceGuardError{Stage: "verify-restored", ChangedPaths: []string{"AGENTS.md"}, Cause: errors.New("digest mismatch")},
+			),
 			want: false,
 		},
 		{

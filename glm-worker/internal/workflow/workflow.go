@@ -1341,6 +1341,10 @@ func (w *Workflow) resolveTransientModelFailure(
 		w.state.RecordProviderUnavailable(checkpoint.Model)
 		return execution, recErr
 	}
+	var guardRecoverable *GuardRecoverableError
+	if errors.As(recErr, &guardRecoverable) {
+		return execution, recErr
+	}
 	var limitErr runner.ZaiRateLimitError
 	if errors.As(recErr, &limitErr) {
 		return execution, recErr
@@ -1548,6 +1552,15 @@ func (w *Workflow) runResumedTask(checkpoint state.ResumeCheckpoint, outputPath 
 	var interrupted *runner.InterruptedCallError
 	if runErr != nil && errors.As(runErr, &interrupted) {
 		return false, result, startedAt, completedAt, runErr
+	}
+	if runErr != nil && runner.IsRecoverableGuardFailure(runErr) {
+		execution := modelCallExecution{
+			runResult:   result,
+			startedAt:   startedAt,
+			completedAt: completedAt,
+			runErr:      runErr,
+		}
+		return false, result, startedAt, completedAt, w.saveGuardRecoverableState(checkpoint, execution, outputPath)
 	}
 	if runErr == nil {
 		return true, result, startedAt, completedAt, nil

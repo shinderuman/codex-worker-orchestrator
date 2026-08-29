@@ -176,6 +176,9 @@ func resumePrompt(checkpoint state.ResumeCheckpoint) string {
 	if originalPrompt == "" {
 		originalPrompt = checkpoint.Prompt
 	}
+	if checkpoint.GuardRecoverable {
+		return guardRecoveryResumePrompt(originalPrompt)
+	}
 
 	reason := "Z.ai GLM Coding Planの5時間利用上限"
 	reasonCode := "plan-limit"
@@ -194,6 +197,18 @@ func resumePrompt(checkpoint state.ResumeCheckpoint) string {
 前回の指示:
 %s
 `, reasonCode, reason, originalPrompt)
+}
+
+func guardRecoveryResumePrompt(originalPrompt string) string {
+	return fmt.Sprintf(`RESUME_REASON: guard-recovery
+前回のClaude Code呼び出しは、guardが変更または操作を拒否したため中断しました。
+guardが汚染されたsessionを無効化したため、今回の呼び出しは新しいsessionで保存済みcheckpointから同じtaskのlifecycleを継続します。
+現在のworking treeには前回の途中変更が残っている可能性があります。破棄せず、保存済みcheckpointの内容と照合して続行してください。
+最初から調査・実装をやり直さず、未完了部分だけを進めて所定のPACKETまで完了してください。
+
+前回の指示:
+%s
+`, originalPrompt)
 }
 
 func riskFloorReemitPrompt() string {

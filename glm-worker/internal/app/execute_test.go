@@ -613,3 +613,84 @@ func TestExecuteCheckWakeCoalesceRejectsInvalidResumeTime(t *testing.T) {
 		t.Fatalf("process error kind = %q: %s", envelope.Error.Kind, errOut.String())
 	}
 }
+
+func TestInstructionMutationGuardRecoveryCLIAcceptance(t *testing.T) {
+	cfg := newAppConfig(t)
+	seedGitCommit(t, cfg.RepoRoot)
+	decisionWait := &fakeRunner{steps: []fakeStep{
+		{structured: needsSolDecisionPacketApp()},
+	}}
+	if err := Execute(Command{Mode: ModeNewTask, Payload: "request"}, cfg, decisionWait.factory(), io.Discard, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	waiting := executeStatusOutput(t, cfg)
+	statusString(t, "task_status", waiting.TaskStatus, string(state.TaskStatusWaitingDecision))
+	if !waiting.PendingDecision {
+		t.Fatal("decision待ち状態でpending_decisionがfalse")
+	}
+
+	guardRunner := &fakeRunner{steps: []fakeStep{
+		{structured: implementedPacketApp("decision done"), runErr: &runner.InstructionSurfaceGuardError{
+			Stage:        "after-call-mutation",
+			ChangedPaths: []string{"codex/AGENTS.md"},
+			Restored:     true,
+		}},
+	}}
+	err := Execute(Command{Mode: ModeDecision, Payload: "A案で進める"}, cfg, guardRunner.factory(), io.Discard, io.Discard)
+	var stopped *workflow.GuardRecoverableError
+	if !errors.As(err, &stopped) {
+		t.Fatalf("GuardRecoverableErrorを期待: %v", err)
+	}
+
+	stoppedStatus := executeStatusOutput(t, cfg)
+	statusString(t, "task_status", stoppedStatus.TaskStatus, string(state.TaskStatusGuardRecoverable))
+	if stoppedStatus.PendingDecision {
+		t.Fatal("guard停止後もpending_decisionがtrue")
+	}
+	if !stoppedStatus.ResumeAvailable {
+		t.Fatal("guard停止後にresume_availableがfalse")
+	}
+
+	assertGuardRecoveryCommandRejected(t, cfg, Command{Mode: ModeDecision, Payload: "再送"}, "no pending Sol decision")
+	assertGuardRecoveryCommandRejected(t, cfg, Command{Mode: ModeFix, Payload: "fix"}, "--fix is only available after NEEDS_SOL_REVIEW")
+	assertGuardRecoveryCommandRejected(t, cfg, Command{Mode: ModeNewTask, Payload: "replacement"}, "recoverable guard failure")
+
+	resumeRunner := &fakeRunner{steps: []fakeStep{
+		{structured: passPacketApp()},
+		{structured: needsSolReviewPacketApp()},
+	}}
+	if err := Execute(Command{Mode: ModeResume}, cfg, resumeRunner.factory(), io.Discard, io.Discard); err != nil {
+		t.Fatalf("same-task resumeが失敗: %v", err)
+	}
+	final := executeStatusOutput(t, cfg)
+	statusString(t, "task_status", final.TaskStatus, string(state.TaskStatusWaitingSolReview))
+	if final.ResumeAvailable || final.PendingDecision {
+		t.Fatalf("terminal状態 = resume:%v pending:%v", final.ResumeAvailable, final.PendingDecision)
+	}
+	if len(resumeRunner.prompts) != 2 {
+		t.Fatalf("保存済みworker resultを再利用し独立reviewとrisk floor再出力だけで閉じるべき: prompts=%d", len(resumeRunner.prompts))
+	}
+}
+
+func seedGitCommit(t *testing.T, repoRoot string) {
+	t.Helper()
+	command := exec.Command("git", "-C", repoRoot,
+		"-c", "user.email=guard-recovery@example.invalid",
+		"-c", "user.name=guard recovery test",
+		"commit", "-q", "--allow-empty", "-m", "seed")
+	if out, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("git commit: %v: %s", err, out)
+	}
+}
+
+func assertGuardRecoveryCommandRejected(t *testing.T, cfg config.AppConfig, cmd Command, wantIn string) {
+	t.Helper()
+	rejected := &fakeRunner{}
+	err := Execute(cmd, cfg, rejected.factory(), io.Discard, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), wantIn) {
+		t.Fatalf("mode %dを拒否する必要があります(%q): %v", cmd.Mode, wantIn, err)
+	}
+	if len(rejected.prompts) != 0 {
+		t.Fatalf("拒否されたcommandがmodel呼出を実行しました: %d", len(rejected.prompts))
+	}
+}
