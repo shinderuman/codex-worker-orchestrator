@@ -70,35 +70,25 @@ func riskProperty() *propertySchema {
 	return stringProperty(string(RiskLow), string(RiskHigh))
 }
 
-func parentValidationProperty() *propertySchema {
-	return &propertySchema{object: &objectSchema{
-		Type: schemaTypeObject,
-		Properties: map[string]*propertySchema{
-			"form":        stringProperty(ParentValidationGoTest, ParentValidationGoTestRace),
-			"working_dir": stringProperty(),
-		},
-		Required: []string{"form", "working_dir"},
-	}}
-}
-
 func workerSchema() *objectSchema {
 	return &objectSchema{
 		Type: schemaTypeObject,
 		Properties: map[string]*propertySchema{
-			"status":               stringProperty(string(StatusImplemented), string(StatusNeedsSolDecision)),
-			"risk":                 riskProperty(),
-			"summary":              stringProperty(),
-			"requirement_coverage": stringProperty(),
-			"tests":                stringProperty(),
-			"unverified":           stringProperty(),
-			"parent_validation":    parentValidationProperty(),
-			"decision":             stringProperty(),
-			"evidence":             stringProperty(),
-			"options":              stringProperty(),
-			"recommendation":       stringProperty(),
-			"test_obligations":     stringProperty(),
-			"targets":              stringsProperty(),
-			"artifacts":            stringsProperty(),
+			"status":                        stringProperty(string(StatusImplemented), string(StatusNeedsSolDecision)),
+			"risk":                          riskProperty(),
+			"summary":                       stringProperty(),
+			"requirement_coverage":          stringProperty(),
+			"tests":                         stringProperty(),
+			"unverified":                    stringProperty(),
+			"parent_validation":             stringProperty(ParentValidationGoTest, ParentValidationGoTestRace),
+			"parent_validation_working_dir": stringProperty(),
+			"decision":                      stringProperty(),
+			"evidence":                      stringProperty(),
+			"options":                       stringProperty(),
+			"recommendation":                stringProperty(),
+			"test_obligations":              stringProperty(),
+			"targets":                       stringsProperty(),
+			"artifacts":                     stringsProperty(),
 		},
 		Required: []string{"status", "risk", "targets", "artifacts"},
 	}
