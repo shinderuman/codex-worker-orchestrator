@@ -166,7 +166,7 @@ build_binaries() {
 	build_dir=$1
 	(
 		cd "$repo_root/glm-worker"
-		go build -buildvcs=false -trimpath -o "$build_dir/glm-worker" ./cmd/glm-worker
+		go build -trimpath -o "$build_dir/glm-worker" ./cmd/glm-worker
 		go build -buildvcs=false -trimpath -o "$build_dir/commentlint" ./cmd/commentlint
 		go build -buildvcs=false -trimpath -o "$build_dir/harnesslint" ./cmd/harnesslint
 		go build -buildvcs=false -trimpath -o "$build_dir/merge-json" ./cmd/merge-json
@@ -219,11 +219,11 @@ install_pull_hook() {
 	chmod +x "$repo_root/.githooks/post-merge"
 	current=$(git -C "$repo_root" config --local --get core.hooksPath || true)
 	if [ "$current" = '.githooks' ]; then
-		printf '%s\n' 'git hook: unchanged'
+		printf 'git hook: unchanged\n'
 		return
 	fi
 	git -C "$repo_root" config --local core.hooksPath .githooks
-	printf '%s\n' 'git hook: enabled'
+	printf 'git hook: enabled\n'
 }
 
 require git
