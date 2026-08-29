@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 )
@@ -75,18 +76,22 @@ func validateParentValidation(result Result) error {
 	if result.ParentValidationEvidence != "" {
 		return &constraintError{reason: "parent_validation_evidenceはwrapper専用fieldです"}
 	}
-	if result.ParentValidation == "" {
+	if result.ParentValidation == nil {
 		return nil
 	}
 	if result.Status != StatusImplemented {
 		return &constraintError{reason: "parent_validationはIMPLEMENTEDだけで指定できます"}
 	}
-	switch result.ParentValidation {
+	switch result.ParentValidation.Form {
 	case ParentValidationGoTest, ParentValidationGoTestRace:
-		return nil
 	default:
-		return &constraintError{reason: fmt.Sprintf("parent_validationは既知のparent gateだけを指定してください: %q", result.ParentValidation)}
+		return &constraintError{reason: fmt.Sprintf("parent_validation.formは既知のparent gateだけを指定してください: %q", result.ParentValidation.Form)}
 	}
+	workingDir := result.ParentValidation.WorkingDir
+	if workingDir == "" || path.IsAbs(workingDir) || strings.Contains(workingDir, "\\") || path.Clean(workingDir) != workingDir || workingDir == ".." || strings.HasPrefix(workingDir, "../") {
+		return &constraintError{reason: fmt.Sprintf("parent_validation.working_dirは正規化済みrepository相対pathで指定してください: %q", workingDir)}
+	}
+	return nil
 }
 
 func ValidateReviewerResult(result Result) error {
@@ -110,7 +115,7 @@ func ValidateReviewerResult(result Result) error {
 	default:
 		return &mismatchError{reason: fmt.Sprintf("reviewer結果のstatusとして許容されません: %q", string(result.Status))}
 	}
-	if result.ParentValidation != "" || result.ParentValidationEvidence != "" {
+	if result.ParentValidation != nil || result.ParentValidationEvidence != "" {
 		return &constraintError{reason: "reviewer結果にparent validation fieldは指定できません"}
 	}
 	if err := validateFields(result, result.contractFields()); err != nil {
