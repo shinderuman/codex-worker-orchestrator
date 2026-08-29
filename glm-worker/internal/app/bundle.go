@@ -68,11 +68,12 @@ type bundleCollector struct {
 const bundleFormat = "glm-worker-task-bundle-v2"
 
 var bundleAggregateDirs = map[string]bool{
-	"artifacts": true,
-	"events":    true,
-	"rounds":    true,
-	"stats":     true,
-	"telemetry": true,
+	"artifacts":      true,
+	"events":         true,
+	"rounds":         true,
+	"stats":          true,
+	"task-authority": true,
+	"telemetry":      true,
 }
 
 func printBundle(cfg config.AppConfig, st *state.StateStore, requestedTaskID string, stdout io.Writer) error {
@@ -212,6 +213,11 @@ func (c *bundleCollector) collectTaskEvidence(st *state.StateStore, task bundleT
 	c.addFileIfPresent(st.TaskEventLogPath(task.ID), path.Join("task", "events", task.ID+".jsonl"))
 	c.addFileIfPresent(st.TaskLiveStatusPath(task.ID), path.Join("task", "events", task.ID+".live.json"))
 	c.addFileIfPresent(st.RoundLogPath(task.ID), path.Join("task", "rounds", task.ID+".jsonl"))
+	if c.addFileIfPresent(st.TaskAuthorityPathPath(task.ID), path.Join("task", "authority", "active-task.path")) {
+		if !c.addFileIfPresent(st.TaskAuthorityContentPath(task.ID), path.Join("task", "authority", "active-task.md")) {
+			c.addMissing(path.Join("task", "authority", "active-task.md"))
+		}
+	}
 	if task.Current {
 		if !c.addFileIfPresent(st.Path("task-stats.json"), path.Join("task", "task-stats.json")) {
 			c.addMissing("task/task-stats.json")
@@ -401,9 +407,20 @@ func (c *bundleCollector) collectRepositoryAuthority(cfg config.AppConfig, st *s
 		return
 	}
 	archivePath := path.Join("current-state", "repository-authority", filepath.ToSlash(activeTask))
-	if !c.addRepositoryFile(cfg.RepoRoot, activeTask, archivePath) {
-		c.addMissing(archivePath)
+	if c.addRepositoryFile(cfg.RepoRoot, activeTask, archivePath) {
+		return
 	}
+	taskID := st.ReadOr("task.id", "")
+	if taskID != "" && taskAuthoritySnapshotMatches(st, taskID, activeTask) &&
+		c.addFileIfPresent(st.TaskAuthorityContentPath(taskID), archivePath) {
+		return
+	}
+	c.addMissing(archivePath)
+}
+
+func taskAuthoritySnapshotMatches(st *state.StateStore, taskID, activeTask string) bool {
+	data, err := os.ReadFile(st.TaskAuthorityPathPath(taskID))
+	return err == nil && strings.TrimSpace(string(data)) == activeTask
 }
 
 func (c *bundleCollector) addRepositoryFile(repoRoot, rel, archivePath string) bool {
