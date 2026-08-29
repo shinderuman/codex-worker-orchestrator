@@ -1,29 +1,30 @@
 package app
 
 import (
-	"errors"
+	"io"
 	"os"
+	"path/filepath"
 	"sort"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
 type parentHandoffOutput struct {
-	Version          int                      `json:"version"`
-	Consistent       bool                     `json:"consistent"`
-	Inconsistency    *string                  `json:"inconsistency"`
-	TaskID           *string                  `json:"task_id"`
-	TaskStatus       *string                  `json:"task_status"`
-	RequiredAction   *string                  `json:"required_action"`
-	AllowedActions   []string                 `json:"allowed_actions"`
-	ResumeKind       *string                  `json:"resume_kind"`
-	PendingDecision  bool                     `json:"pending_decision"`
-	ParentReviewOpen *string                  `json:"parent_review_open"`
-	BaselineHead     *string                  `json:"baseline_head"`
-	Snapshot         *state.SnapshotDigest    `json:"snapshot"`
-	ArtifactDir      *string                  `json:"artifact_dir"`
-	LastMaterial     *parentHandoffMaterial   `json:"last_material"`
-	Validation       *parentHandoffValidation `json:"validation"`
+	Version          int                        `json:"version"`
+	Consistent       bool                       `json:"consistent"`
+	Inconsistency    *string                    `json:"inconsistency"`
+	TaskID           *string                    `json:"task_id"`
+	TaskStatus       *string                    `json:"task_status"`
+	RequiredAction   *string                    `json:"required_action"`
+	AllowedActions   []string                   `json:"allowed_actions"`
+	ResumeKind       *string                    `json:"resume_kind"`
+	PendingDecision  bool                       `json:"pending_decision"`
+	ParentReviewOpen *string                    `json:"parent_review_open"`
+	Baseline         *state.GitBaselineEvidence `json:"baseline"`
+	Snapshot         *state.SnapshotDigest      `json:"snapshot"`
+	ArtifactDir      *string                    `json:"artifact_dir"`
+	LastMaterial     *parentHandoffMaterial     `json:"last_material"`
+	Validations      []parentHandoffValidation  `json:"validations"`
 }
 
 type parentHandoffMaterial struct {
@@ -48,14 +49,14 @@ type parentHandoffValidation struct {
 
 const parentHandoffVersion = 1
 
-func printParentHandoff(st *state.StateStore, stdout interface{ Write([]byte) (int, error) }) error {
-	output := buildParentHandoff(st)
-	return writeJSON(stdout, output)
+func printParentHandoff(st *state.StateStore, stdout io.Writer) error {
+	return writeJSON(stdout, buildParentHandoff(st))
 }
 
 func buildParentHandoff(st *state.StateStore) parentHandoffOutput {
 	taskID := st.ReadOr("task.id", "")
 	taskStatus := st.TaskStatus()
+	repoRoot := st.ReadOr("repo-root", "")
 	output := parentHandoffOutput{
 		Version:          parentHandoffVersion,
 		Consistent:       true,
@@ -64,15 +65,16 @@ func buildParentHandoff(st *state.StateStore) parentHandoffOutput {
 		AllowedActions:   []string{},
 		PendingDecision:  st.Exists("pending-decision"),
 		ParentReviewOpen: parentReviewPtr(st.OpenParentReviewLabel()),
-		BaselineHead:     stringPtr(st.ReadOr("baseline-head", "")),
+		Baseline:         st.BaselineEvidence(),
+		Validations:      []parentHandoffValidation{},
 	}
 	if taskID != "" {
 		output.ArtifactDir = stringPtr(st.ArtifactDir(taskID))
 	}
 	applyParentActionPlan(st, &output)
-	applyParentSnapshot(st, &output)
+	applyParentSnapshot(repoRoot, &output)
 	applyParentLastMaterial(st, taskID, &output)
-	output.Validation = latestParentValidation(st)
+	output.Validations = currentParentValidations(st, repoRoot, output.Snapshot)
 	return output
 }
 
@@ -90,8 +92,7 @@ func applyParentActionPlan(st *state.StateStore, output *parentHandoffOutput) {
 	output.ResumeKind = stringPtr(plan.ResumeKind)
 }
 
-func applyParentSnapshot(st *state.StateStore, output *parentHandoffOutput) {
-	repoRoot := st.ReadOr("repo-root", "")
+func applyParentSnapshot(repoRoot string, output *parentHandoffOutput) {
 	if repoRoot == "" {
 		markHandoffInconsistent(output, "repository root is unavailable")
 		return
@@ -132,35 +133,54 @@ func applyParentLastMaterial(st *state.StateStore, taskID string, output *parent
 	}
 }
 
-func latestParentValidation(st *state.StateStore) *parentHandoffValidation {
+func currentParentValidations(st *state.StateStore, repoRoot string, snapshot *state.SnapshotDigest) []parentHandoffValidation {
+	if repoRoot == "" || snapshot == nil {
+		return []parentHandoffValidation{}
+	}
 	entries, err := os.ReadDir(st.Path(qualityGateRunDirectory))
 	if err != nil {
-		return nil
+		return []parentHandoffValidation{}
 	}
-	records := make([]qualityGateRunRecord, 0, len(entries))
+	latestByForm := make(map[string]qualityGateRunRecord, len(qualityGateForms))
 	for _, entry := range entries {
 		if !entry.IsDir() || !validValidationRunID(entry.Name()) {
 			continue
 		}
 		record, err := readQualityGateRun(st, entry.Name())
-		if err == nil {
-			records = append(records, record)
+		if err != nil || !qualityGateMatchesHandoff(record, repoRoot, snapshot) {
+			continue
+		}
+		previous, found := latestByForm[record.Form]
+		if !found || previous.StartedAt.Before(record.StartedAt) {
+			latestByForm[record.Form] = record
 		}
 	}
-	if len(records) == 0 {
-		return nil
+	forms := make([]string, 0, len(latestByForm))
+	for form := range latestByForm {
+		forms = append(forms, form)
 	}
-	sort.Slice(records, func(i, j int) bool { return records[i].StartedAt.Before(records[j].StartedAt) })
-	record := records[len(records)-1]
-	return &parentHandoffValidation{
-		ValidationRunID: record.ValidationRunID,
-		Form:            record.Form,
-		Status:          record.Status,
-		Log:             record.Log,
-		Head:            record.Head,
-		IndexDigest:     record.IndexDigest,
-		WorktreeDigest:  record.WorktreeDigest,
+	sort.Strings(forms)
+	validations := make([]parentHandoffValidation, 0, len(forms))
+	for _, form := range forms {
+		record := latestByForm[form]
+		validations = append(validations, parentHandoffValidation{
+			ValidationRunID: record.ValidationRunID,
+			Form:            record.Form,
+			Status:          record.Status,
+			Log:             record.Log,
+			Head:            record.Head,
+			IndexDigest:     record.IndexDigest,
+			WorktreeDigest:  record.WorktreeDigest,
+		})
 	}
+	return validations
+}
+
+func qualityGateMatchesHandoff(record qualityGateRunRecord, repoRoot string, snapshot *state.SnapshotDigest) bool {
+	return filepath.Clean(record.Repository) == filepath.Clean(repoRoot) &&
+		record.Head == snapshot.Head &&
+		record.IndexDigest == snapshot.IndexDigest &&
+		record.WorktreeDigest == snapshot.WorktreeDigest
 }
 
 func parentReviewPtr(label string) *string {
@@ -178,8 +198,4 @@ func markHandoffInconsistent(output *parentHandoffOutput, detail string) {
 	output.RequiredAction = nil
 	output.AllowedActions = []string{}
 	output.ResumeKind = nil
-}
-
-func isMissingHandoffEvidence(err error) bool {
-	return errors.Is(err, os.ErrNotExist)
 }
