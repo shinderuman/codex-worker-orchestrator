@@ -195,6 +195,31 @@ func TestExecuteParentReviewAcceptIsSingleUse(t *testing.T) {
 	}
 }
 
+func TestExecuteParentReviewAcceptCompletesOnlyResolvedReview(t *testing.T) {
+	cfg, st := newParentReviewOpportunity(t)
+	if accept := executeAccept(t, cfg); !accept.Accepted {
+		t.Fatal("open reviewをacceptできませんでした")
+	}
+	if got := st.TaskStatus(); got != state.TaskStatusComplete {
+		t.Fatalf("accepted status = %q", got)
+	}
+
+	cfg = newAppConfig(t)
+	st, err := state.NewStateStore(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetTaskStatus(state.TaskStatusWaitingSolReview); err != nil {
+		t.Fatal(err)
+	}
+	if accept := executeAccept(t, cfg); accept.Accepted {
+		t.Fatal("open reviewなしのacceptが確定されました")
+	}
+	if got := st.TaskStatus(); got != state.TaskStatusWaitingSolReview {
+		t.Fatalf("no-op accept changed status = %q", got)
+	}
+}
+
 func TestExecuteParentReviewStatsExposeRework(t *testing.T) {
 	cfg, st := newParentReviewOpportunity(t)
 	applyParentReviewFix(t, cfg)
@@ -294,8 +319,15 @@ func TestExecuteNewTaskRejectsOpenParentReviewUntilAccepted(t *testing.T) {
 	if accept := executeAccept(t, cfg); !accept.Accepted {
 		t.Fatal("open parent reviewをacceptできませんでした")
 	}
-	if got := st.TaskStatus(); got != state.TaskStatusWaitingSolReview {
-		t.Fatalf("accept後のstale lifecycle status = %q want %q", got, state.TaskStatusWaitingSolReview)
+	if got := st.TaskStatus(); got != state.TaskStatusComplete {
+		t.Fatalf("accept後のlifecycle status = %q want %q", got, state.TaskStatusComplete)
+	}
+	completedStats, err := st.CurrentTaskStats()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if completedStats.Status != state.TaskStatusComplete {
+		t.Fatalf("accept後のstats status = %q want %q", completedStats.Status, state.TaskStatusComplete)
 	}
 
 	next := &fakeRunner{steps: []fakeStep{
