@@ -365,7 +365,11 @@ func (w *Workflow) runWorkerModelWithRuleActivation(checkpoint state.ResumeCheck
 		return packet.Result{}, err
 	}
 	mergeWorkerRuleSets(activated, w.observedWorkerRules())
-	return w.convergeWorkerRuleActivation(prepared, result, activated)
+	result, err = w.convergeWorkerRuleActivation(prepared, result, activated)
+	if err != nil {
+		return packet.Result{}, err
+	}
+	return w.convergeParentValidation(prepared, result)
 }
 
 func (w *Workflow) convergeWorkerRuleActivation(
