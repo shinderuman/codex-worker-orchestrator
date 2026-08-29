@@ -70,6 +70,17 @@ func riskProperty() *propertySchema {
 	return stringProperty(string(RiskLow), string(RiskHigh))
 }
 
+func parentValidationProperty() *propertySchema {
+	return &propertySchema{object: &objectSchema{
+		Type: schemaTypeObject,
+		Properties: map[string]*propertySchema{
+			"form":        stringProperty(ParentValidationGoTest, ParentValidationGoTestRace),
+			"working_dir": stringProperty(),
+		},
+		Required: []string{"form", "working_dir"},
+	}}
+}
+
 func workerSchema() *objectSchema {
 	return &objectSchema{
 		Type: schemaTypeObject,
@@ -80,7 +91,7 @@ func workerSchema() *objectSchema {
 			"requirement_coverage": stringProperty(),
 			"tests":                stringProperty(),
 			"unverified":           stringProperty(),
-			"parent_validation":    stringProperty(ParentValidationGoTest, ParentValidationGoTestRace),
+			"parent_validation":    parentValidationProperty(),
 			"decision":             stringProperty(),
 			"evidence":             stringProperty(),
 			"options":              stringProperty(),
@@ -218,7 +229,7 @@ func validatePropertySchema(property *propertySchema, path string) {
 
 func validateScalarSchema(schema *scalarSchema, path string) {
 	if _, ok := scalarTypes[schema.Type]; !ok {
-		panic(fmt.Sprintf("%s: scalar type %qは許可list外です", path, schema.Type))
+		panic(fmt.Sprintf("%s: scalar type %qは許可list外です", path))
 	}
 	if len(schema.Enum) == 0 {
 		return
