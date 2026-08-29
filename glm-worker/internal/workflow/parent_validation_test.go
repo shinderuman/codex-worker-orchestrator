@@ -19,7 +19,10 @@ func TestParentValidationFailureFixesBeforeIndependentReview(t *testing.T) {
 			RequirementCoverage: "covered",
 			Tests:               "sandbox could not execute required process test",
 			Unverified:          "parent process validation required",
-			ParentValidation:    packet.ParentValidationGoTest,
+			ParentValidation: &packet.ParentValidationRequest{
+				Form:       packet.ParentValidationGoTest,
+				WorkingDir: "glm-worker",
+			},
 		})},
 		{structured: implementedPacket("fixed")},
 		{structured: needsSolReviewPacket()},
@@ -30,10 +33,10 @@ func TestParentValidationFailureFixesBeforeIndependentReview(t *testing.T) {
 	previous := parentValidationGateRunner
 	defer func() { parentValidationGateRunner = previous }()
 	gateCalls := 0
-	parentValidationGateRunner = func(_ *Workflow, form string) (parentValidationGateRecord, error) {
+	parentValidationGateRunner = func(_ *Workflow, request packet.ParentValidationRequest) (parentValidationGateRecord, error) {
 		gateCalls++
-		if form != packet.ParentValidationGoTest {
-			t.Fatalf("parent validation form = %q", form)
+		if request.Form != packet.ParentValidationGoTest || request.WorkingDir != "glm-worker" {
+			t.Fatalf("parent validation request = %#v", request)
 		}
 		switch gateCalls {
 		case 1:
@@ -42,7 +45,8 @@ func TestParentValidationFailureFixesBeforeIndependentReview(t *testing.T) {
 			}
 			return parentValidationGateRecord{
 				ValidationRunID: "run-fail",
-				Form:            form,
+				Form:            request.Form,
+				WorkingDir:      "/repo/glm-worker",
 				Head:            "head-a",
 				IndexDigest:     "index-a",
 				WorktreeDigest:  "worktree-a",
@@ -56,7 +60,8 @@ func TestParentValidationFailureFixesBeforeIndependentReview(t *testing.T) {
 			}
 			return parentValidationGateRecord{
 				ValidationRunID: "run-pass",
-				Form:            form,
+				Form:            request.Form,
+				WorkingDir:      "/repo/glm-worker",
 				Head:            "head-a",
 				IndexDigest:     "index-a",
 				WorktreeDigest:  "worktree-b",
@@ -87,7 +92,10 @@ func TestParentValidationFailureFixesBeforeIndependentReview(t *testing.T) {
 }
 
 func TestCheckpointParentValidationCannotBeDroppedOrChanged(t *testing.T) {
-	checkpoint := stateCheckpointWithParentValidation(packet.ParentValidationGoTest)
+	checkpoint := stateCheckpointWithParentValidation(packet.ParentValidationRequest{
+		Form:       packet.ParentValidationGoTest,
+		WorkingDir: "glm-worker",
+	})
 
 	got, err := applyCheckpointParentValidation(checkpoint, packet.Result{
 		Status: packet.StatusImplemented,
@@ -96,20 +104,23 @@ func TestCheckpointParentValidationCannotBeDroppedOrChanged(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.ParentValidation != packet.ParentValidationGoTest || got.Risk != packet.RiskHigh {
+	if got.ParentValidation == nil || !sameParentValidationRequest(*got.ParentValidation, *checkpoint.ParentValidation) || got.Risk != packet.RiskHigh {
 		t.Fatalf("checkpoint obligation was not preserved: %#v", got)
 	}
 
 	_, err = applyCheckpointParentValidation(checkpoint, packet.Result{
-		Status:           packet.StatusImplemented,
-		Risk:             packet.RiskLow,
-		ParentValidation: packet.ParentValidationGoTestRace,
+		Status: packet.StatusImplemented,
+		Risk:   packet.RiskLow,
+		ParentValidation: &packet.ParentValidationRequest{
+			Form:       packet.ParentValidationGoTestRace,
+			WorkingDir: "glm-worker",
+		},
 	})
 	if err == nil {
 		t.Fatal("worker changed the checkpoint-owned parent validation obligation")
 	}
 }
 
-func stateCheckpointWithParentValidation(form string) state.ResumeCheckpoint {
-	return state.ResumeCheckpoint{ParentValidation: form}
+func stateCheckpointWithParentValidation(request packet.ParentValidationRequest) state.ResumeCheckpoint {
+	return state.ResumeCheckpoint{ParentValidation: cloneParentValidationRequest(&request)}
 }
