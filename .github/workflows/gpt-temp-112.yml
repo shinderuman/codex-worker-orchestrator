@@ -1,0 +1,31 @@
+name: GPT Temporary 112 Validation
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Read Go version
+        id: go
+        run: |
+          GO_VERSION=$(awk -F': ' '$1 == "go" { print $2 }' quality-tools.yml)
+          printf 'version=%s\n' "$GO_VERSION" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ steps.go.outputs.version }}
+          cache: false
+      - name: App tests
+        run: cd glm-worker && go test ./internal/app/...
+      - name: Full tests
+        run: cd glm-worker && go test ./...
+      - name: Vet and format
+        run: |
+          cd glm-worker
+          go vet ./...
+          test -z "$(gofmt -l .)"
