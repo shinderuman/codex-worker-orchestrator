@@ -20,6 +20,7 @@ func (s *StateStore) AcceptParentReview() (bool, error) {
 	}
 
 	previousStatus := s.TaskStatus()
+	stats.Status = TaskStatusComplete
 	if err := s.SetTaskStatus(TaskStatusComplete); err != nil {
 		return false, err
 	}
