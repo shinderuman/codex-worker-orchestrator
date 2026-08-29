@@ -16,7 +16,8 @@ func TestPrintRepoSearchReturnsMachineReadableCandidates(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skipf("git commandがないため実binary testをskipします: %v", err)
 	}
-	t.Setenv("GLM_WORKER_HOME", t.TempDir())
+	home := t.TempDir()
+	t.Setenv("GLM_WORKER_HOME", home)
 	cfg := config.AppConfig{RepoRoot: newRepoSearchGitRepo(t, "clireposearch"), RepoSearch: true}
 	var stdout bytes.Buffer
 	if err := printRepoSearch("clireposearch unique corpus", cfg, &stdout); err != nil {
@@ -37,6 +38,9 @@ func TestPrintRepoSearchReturnsMachineReadableCandidates(t *testing.T) {
 	}
 	if output.CacheStatus == "" || output.IndexedFiles <= 0 {
 		t.Fatalf("report metadata missing: %#v", output)
+	}
+	if _, err := os.Stat(filepath.Join(home, "search")); !os.IsNotExist(err) {
+		t.Fatalf("read-only repo search created cache state: %v", err)
 	}
 }
 
