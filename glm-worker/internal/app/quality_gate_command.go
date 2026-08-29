@@ -11,10 +11,6 @@ const (
 	qualityGateCommandUsage    = "usage: glm-worker --quality-gate <go-test|go-test-race> | --quality-gate <status|watch|result> <validation-run-id>"
 )
 
-func init() {
-	commandParsers["--quality-gate"] = qualityGateRecoveryCommand
-}
-
 func qualityGateRecoveryCommand(args []string) (Command, error) {
 	if len(args) == 2 && qualityGateForms[args[1]] != nil {
 		return Command{Mode: ModeQualityGate, Payload: args[1]}, nil
