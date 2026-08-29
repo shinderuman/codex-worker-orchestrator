@@ -199,7 +199,7 @@ func TestQualityGateConcurrentSameSnapshotAttachesAndStreamsRunID(t *testing.T) 
 	var secondOutput bytes.Buffer
 	secondErr := make(chan error, 1)
 	go func() {
-		secondErr <- dispatchMachineOutput(Command{Mode: ModeQualityGate, Payload: "go-test"}, cfg, defaultRunnerFactory, &secondOutput, secondDiagnostics)
+		secondErr <- startQualityGate("go-test", st, &secondOutput, secondDiagnostics)
 	}()
 	<-secondDiagnostics.wrote
 	if launches.Load() != 1 {
