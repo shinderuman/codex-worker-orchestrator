@@ -7,6 +7,7 @@
 - `GLM_WORKER_REPO_SEARCH`環境変数の真偽値で制御し、既定はenabled。不正な値は設定読込時にfail closedする。
 - 切替対象はworker promptへのBM25 navigation候補注入とreviewerの独立BM25 search。disabled時は両者を実行せず、repo-search導入前の通常repo inspectionへ戻る。
 - reviewerのdiff changed-path navigationとexhaustive search proofは品質境界として常時維持され、このflagでは無効化しない。
+- exhaustive proofを実際に要求するPlan taskでは、Original instruction / Amendments / Contract / Acceptance criteriaのいずれかへ `EXHAUSTIVE_SEARCH_REQUIRED: true` を独立した行として明示する。`exhaustive`等の自然言語や「proofを無効化しない」という保存要求だけではactivationしない。Planのないrepoでは同じmarkerを依頼本文の独立行として使う。
 
 ## CLI
 
