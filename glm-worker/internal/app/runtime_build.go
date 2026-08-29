@@ -7,13 +7,6 @@ import (
 	"strings"
 )
 
-const (
-	runtimeBuildSame        = "same"
-	runtimeBuildAncestor    = "ancestor"
-	runtimeBuildNotAncestor = "not-ancestor"
-	runtimeBuildUnknown     = "unknown"
-)
-
 type statusRuntimeBuild struct {
 	VCSRevision    *string `json:"vcs_revision"`
 	VCSModified    *bool   `json:"vcs_modified"`
@@ -25,6 +18,13 @@ type runtimeBuildSettings struct {
 	revision string
 	modified *bool
 }
+
+const (
+	runtimeBuildSame        = "same"
+	runtimeBuildAncestor    = "ancestor"
+	runtimeBuildNotAncestor = "not-ancestor"
+	runtimeBuildUnknown     = "unknown"
+)
 
 func currentRuntimeBuild(repoRoot string) statusRuntimeBuild {
 	settings := runtimeBuildSettings{}
