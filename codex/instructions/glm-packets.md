@@ -5,6 +5,7 @@
 ## 共通
 
 - 受理結果のmachine protocolはcompact 1行JSONで、keyは`status`・`risk`・status別契約field(`summary`・`decision`等のschemaと同じ語彙)・`targets`・`artifacts`・`sol_question`。空field・空配列のkeyは省かれる(`artifacts`key欠落=none、`targets`の`["none"]`=対象なしsentinel)。契約外のfieldは機械出力へ混入しない。
+- packet受理後などmaterial state transitionから次のlifecycle操作を選ぶ場合は、まず`glm-worker --handoff`を実行し、`consistent`・`required_action`・`allowed_actions`を合法な親操作の正規入口とする。`consistent:false`では次操作を推測しない。packet本文や`--status`の個別fieldからaction admissionを再構成せず、`--status`は追加の詳細診断が必要な場合だけ使う。
 - `artifacts`のkeyがあるなら、要求・判断・報告に必要な成果物だけを記載パスから確認し、packetへ全内容を転載しない。
 - 原因不明runtime failureの診断に必要なevidenceを求めた依頼では、`artifacts`参照先を`~/.codex/instructions/failure-evidence.md`の受理条件で必要範囲だけ確認する。
 
