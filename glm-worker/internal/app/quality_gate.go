@@ -75,14 +75,14 @@ type qualityGateStartIdentity struct {
 }
 
 const (
-	qualityGateRunDirectory        = "quality-gate-runs"
-	qualityGateRunFile             = "run.json"
-	qualityGateRunLog              = "gate.log"
-	qualityGateStatusRunning       = "running"
-	qualityGateStatusPass          = "pass"
-	qualityGateStatusFail          = "fail"
-	qualityGateStatusInterrupted   = "interrupted"
-	qualityGateRunnerStartupGrace  = 30 * time.Second
+	qualityGateRunDirectory       = "quality-gate-runs"
+	qualityGateRunFile            = "run.json"
+	qualityGateRunLog             = "gate.log"
+	qualityGateStatusRunning      = "running"
+	qualityGateStatusPass         = "pass"
+	qualityGateStatusFail         = "fail"
+	qualityGateStatusInterrupted  = "interrupted"
+	qualityGateRunnerStartupGrace = 30 * time.Second
 )
 
 var qualityGateForms = map[string][]string{
