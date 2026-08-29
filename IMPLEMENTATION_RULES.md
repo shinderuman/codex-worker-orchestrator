@@ -46,7 +46,7 @@ conversation context、compaction summary、internal TODOはsource of truthで�
 
 命名規則、Plan priority/ACTIVE/NEXT metadata、typo、意味を変えない明確化、History証跡、意味契約を変えないAmendment、parent-managed metadataの参照修正は代表例とする。parent maintenance中もACTIVEは主要な実装・調査・review対象を示し続け、一時task作成、ACTIVE退避、maintenance完了処理、元ACTIVE復帰を行わない。
 
-parent maintenanceは記録不要を意味しない。ユーザー要求をcompaction前に対象のRules / Plan / Task / Historyへ直接保存し、内容に応じた最小確認を行う。変更が単独で意味を持ち、即時固定が安全なら親Codexが小さな個別commitにできるが、GLMへcommit/pushさせずpushしない。
+parent maintenanceは記録不要を意味しない。ユーザー要求をcompaction前に対象のRules / Plan / Task / Historyへ直接保存し、内容に応じた最小確認を行う。変更が単独で意味を持ち、即時固定が安全なら親Codexが小さな個別commitにできる。GLMへcommit/pushさせず、final parent maintenance commit後は本fileのcommit / install workflowに従って親Codexが通常fast-forward pushする。
 
 parent-managed metadataを扱うguard、self-protection、production wiring自体の変更は、編集対象がparent-managed surfaceに関係していてもproduction behavior変更であるためparent maintenanceにしない。
 
@@ -139,7 +139,7 @@ task完了時は、必要証跡とescaped原因をHistoryへ追加し、task fil
 ## commit / install
 
 - GLMにcommit/pushさせない。独立review、必要なSol gate、指摘後再review、acceptance確認後だけ親Codexが単一taskをcommitする
-- Greptile日次reviewを有効にしている本repositoryでは、各task・review follow-up・独立parent maintenanceのfinal commit後に親Codexがcurrent `main`をremote `refs/heads/main`へ通常fast-forwardする。scheduled review自身はmainをpushせず、正常review完了時だけreview対象HEADへ`refs/heads/codex/greptile-reviewed`を通常fast-forwardする。この2 ref以外、GLMによるpush、force/non-fast-forwardは許可しない
+- Greptile日次reviewを有効にしている本repositoryでは、各task・review follow-up・独立parent maintenanceのfinal commit後に親Codexがcurrent `main`をremote `refs/heads/main`へ通常fast-forwardする。scheduled review自身はmainをpushせず、正常review完了時だけreview対象HEADを`refs/heads/codex/greptile-reviewed`へ通常fast-forwardする。GLM worker/reviewerにはrefを問わずpush authorityを付与しない。親Codexのforce/non-fast-forward、タグ、別remote ref操作は通常workflowへ含めず、ユーザーの個別指示scopeで扱う
 - main push失敗はGreptile補助reviewの未同期として明示し、review checkpointを進めない。通常開発をGreptile failureで完了扱いにも停止扱いにもせず、次の親orchestrationで未同期commitをまとめて通常fast-forwardする
 - task metadata同期はfinal HEADの機械postconditionを正とし、文書手順だけで保証したことにしない
 - runtimeへ影響するtaskはimplementation、test/review、commit後、適切な区切りで`install.sh`本配置、installed/source一致、そのinstalled状態で必要なproduction smokeまでをtask completion flowとして行う。複数task分を未配置のまま後続実運用へ進めず、最終taskまでinstall義務を延期しない
@@ -162,4 +162,4 @@ glm-worker/Codex/GLMだけが生成・消費するmachine dataを長期公開API
 - taskごとの独自state DB、filesystem watcher、daemonを追加しない
 - task fileをHistoryや進捗日記にしない
 - Planとtask fileへ詳細仕様を二重管理しない
-- ユーザー許可のない実Sol High本番A/B、benchmark目的の追加AI call、上記Greptile 2 ref以外へのpushを行わない
+- ユーザー許可のない実Sol High本番A/Bとbenchmark目的の追加AI callを行わない。Git remote writeは本fileのcommit / install節とユーザーの個別指示scopeに従い、GLM worker/reviewerへは許可しない

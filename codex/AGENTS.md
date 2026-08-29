@@ -20,11 +20,11 @@
 - リポジトリルートに`AGENTS.local.md`があれば作業前に読む。Git管理しないプロジェクト固有指示として扱う。
 - リポジトリ内のプロジェクト固有`AGENTS.md`も該当スコープで従う。
 
-## 3. Git絶対規則
+## 3. Git authority規則
 
-- repositoryの親管理tracked instructionが列挙refへの通常fast-forwardを恒久許可している場合、親Codexによる当該pushは以下の禁止・都度解除の対象外で、commit単位の再許可を要しない。GLM worker/reviewerには適用しない。
-- 上記恒久許可以外の`git push`、force-push、タグpush、リモートブランチ作成等は禁止し、許可を要求したり実行待ち状態にしない。
-- 恒久許可外では、単に「pushして」と依頼されても解除しない。「ユーザーレベルのPush禁止ルールを今回だけ解除する」と明示された場合だけ例外。
+- GLM worker/reviewerにはGit remote write authorityを付与しない。この制約は親Codexへ適用しない。
+- 親Codexの`git push`その他remote writeは許可対象である。現在taskのユーザー指示またはrepositoryの親管理tracked instructionのscopeで実行し、追加の解除文言やcommit単位の再許可を要しない。
+- 親Codexの通常pushはfast-forwardとする。force/non-fast-forward、タグ、remote branch作成はユーザーが対象refと操作を明示した場合だけ扱う。
 - `git commit`はユーザーが明示的に依頼した場合だけ行う。明示的な依頼には同一taskへの会話上の明示指示と現在のtaskのlossless requirement source(`Original instruction`・`Amendments`・`Resolved references`・ユーザー添付指示)を含み、最新メッセージ単体のcommit語の有無だけでは判定しない。
 - commit・cherry-pick・merge・rebase・revert等を行う場合だけ`~/.codex/instructions/git.md`を読む。
 

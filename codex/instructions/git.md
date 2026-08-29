@@ -16,8 +16,9 @@
 
 prefix: `feat` `fix` `refactor` `improve` `docs` `style` `test` `chore` `perf` `ci` `build` `revert`
 
-- `git push`等Gitリモートへの書き込みは禁止。
-- 「ユーザーレベルのPush禁止ルールを今回だけ解除する」と明示された場合と、後述のrepository恒久許可だけが例外。
+- GLM worker/reviewerによる`git push`その他Git remote writeは禁止する。この禁止は親Codexへ適用しない。
+- 親Codexによる`git push`その他Git remote writeは許可対象の通常操作である。現在taskへのユーザー指示またはrepositoryの親管理tracked instructionが要求・許可しているscopeで実行し、追加の解除文言やcommit単位の再許可を要求しない。
+- 親Codexの通常pushはfast-forwardを既定とする。force/non-fast-forward、タグ、remote branch作成は通常pushへ含めず、ユーザーが対象refと操作を明示した場合だけ扱う。
 
 ## commit authorization source
 
@@ -28,15 +29,15 @@ prefix: `feat` `fix` `refactor` `improve` `docs` `style` `test` `chore` `perf` `
 - commit許可がどのsourceにも存在しない場合は従来どおりcommitしない。過去にcommitした実績だけを将来のcommit許可へ拡張せず、commit語を含まない一般的な継続指示だけを無条件のcommit許可として扱わない。
 - 対象task外の変更、別task・別repositoryへのcommitはこの許可に含まれない。GLM worker/reviewerにcommitさせない。
 
-Gitリモートへの書き込みも同じauthorization sourceで判定する。
+## 親CodexのGit remote write authorization
 
-- ユーザーがrepository個別に、親管理tracked instruction(`IMPLEMENTATION_RULES.md`等)で対象refへの通常fast-forwardのみを恒久許可した場合は、そのrepositoryの当該refに限りpush禁止の明示的な例外として扱い、commit単位で再許可を要求しない。
-- 恒久許可refの受理集合は対象repositoryの親管理tracked instructionが唯一の正である。本codex-config repositoryではGreptile日次review運用のため、各task・review follow-up・独立parent maintenanceのfinal parent commit後のremote `refs/heads/main`通常fast-forwardと、正常review完了時のscheduled reviewによる`refs/heads/codex/greptile-reviewed`通常fast-forwardが恒久許可である。
-- この例外はforce/non-fast-forward、タグpush、列挙外ref、他repositoryへのremote書き込みへ拡張しない。GLM worker/reviewerによるpushは常に禁止する。
+- ユーザーの現在taskへ適用される明示指示と、repositoryの親管理tracked instruction(`IMPLEMENTATION_RULES.md`等)をauthorization sourceとする。
+- repositoryの親管理tracked instructionが対象refへの通常fast-forwardをworkflowとして定めている場合、親Codexはそのworkflowをcommit単位の再許可なしで実行する。本codex-config repositoryではGreptile日次review運用のため、各task・review follow-up・独立parent maintenanceのfinal parent commit後にremote `refs/heads/main`へ通常fast-forwardし、正常review完了時のscheduled reviewはreview対象HEADを`refs/heads/codex/greptile-reviewed`へ通常fast-forwardする。
+- ユーザーが別のremote writeを明示した場合は、その対象repository・ref・操作のscopeで扱う。GLM worker/reviewerにはremote write authorityを付与しない。
 
 ## tracked canonical planのcommit同期
 
-repository rootに親Codex管理のtracked canonical plan(`IMPLEMENTATION_PLAN.local.md`)が存在するrepositoryのcommitだけに適用する親Codex orchestration contractである。plan本文・`[x]`・優先順・現在状態の更新権限が親Codex専有であること、commit実行の承認条件、Gitリモートへの書込禁止、wrapperのplan file不変guardは本契約で変更しない。worker/reviewerへの個別checklist追加で代替しない。
+repository rootに親Codex管理のtracked canonical plan(`IMPLEMENTATION_PLAN.local.md`)が存在するrepositoryのcommitだけに適用する親Codex orchestration contractである。plan本文・`[x]`・優先順・現在状態の更新権限が親Codex専有であること、commit実行の承認条件、親CodexとGLMのGit remote write authority境界、wrapperのplan file不変guardは本契約で変更しない。worker/reviewerへの個別checklist追加で代替しない。
 
 planをtask commitへ含め、`[x]`を個別commit後だけに限定し、各commit直後にplanを更新する運用を同時に適用すると、commit前のplanに完了を書けない一方でcommit後の更新が別commitを待ち、HEADのplanが現在作業より一世代古いstale-by-oneになる。これを初回commitと同一commitへのamendからなる二段階で解消する。
 
