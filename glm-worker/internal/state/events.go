@@ -11,14 +11,30 @@ import (
 	"time"
 )
 
+type TaskValidationObservation struct {
+	Form string `json:"form"`
+}
+
+type TaskValidationEvent struct {
+	Attribution string `json:"attribution"`
+	Source      string `json:"source"`
+	Form        string `json:"form"`
+	Scope       string `json:"scope,omitempty"`
+	Result      string `json:"result"`
+	ExitCode    int    `json:"exit_code,omitempty"`
+	DurationMS  int64  `json:"duration_ms,omitempty"`
+	Evidence    string `json:"evidence,omitempty"`
+}
+
 type TaskBlockSummary struct {
-	Type              string `json:"type"`
-	Name              string `json:"name,omitempty"`
-	ToolID            string `json:"tool_id,omitempty"`
-	OperationCategory string `json:"operation_category,omitempty"`
-	Bytes             int    `json:"bytes"`
-	IsError           bool   `json:"is_error,omitempty"`
-	DurationMS        int64  `json:"duration_ms,omitempty"`
+	Type              string                      `json:"type"`
+	Name              string                      `json:"name,omitempty"`
+	ToolID            string                      `json:"tool_id,omitempty"`
+	OperationCategory string                      `json:"operation_category,omitempty"`
+	Validation        []TaskValidationObservation `json:"validation,omitempty"`
+	Bytes             int                         `json:"bytes"`
+	IsError           bool                        `json:"is_error,omitempty"`
+	DurationMS        int64                       `json:"duration_ms,omitempty"`
 }
 
 type TaskEventUsage struct {
@@ -56,6 +72,7 @@ type TaskEventRecord struct {
 	Compaction    *TaskCompactionSummary `json:"compaction,omitempty"`
 	Blocks        []TaskBlockSummary     `json:"blocks,omitempty"`
 	Usage         *TaskEventUsage        `json:"usage,omitempty"`
+	Validation    *TaskValidationEvent   `json:"validation,omitempty"`
 	IsError       bool                   `json:"is_error,omitempty"`
 	DurationMS    int64                  `json:"duration_ms,omitempty"`
 	DurationAPIMS int64                  `json:"duration_api_ms,omitempty"`

@@ -71,11 +71,12 @@ type streamMessage struct {
 }
 
 type streamBlock struct {
-	Type      string `json:"type"`
-	Name      string `json:"name"`
-	ID        string `json:"id"`
-	ToolUseID string `json:"tool_use_id"`
-	IsError   bool   `json:"is_error"`
+	Type      string          `json:"type"`
+	Name      string          `json:"name"`
+	ID        string          `json:"id"`
+	ToolUseID string          `json:"tool_use_id"`
+	IsError   bool            `json:"is_error"`
+	Input     json.RawMessage `json:"input"`
 }
 
 const streamResultType = "result"
@@ -165,7 +166,6 @@ func (g *streamEventIngester) ingestLine(line []byte) {
 	record := reduceStreamEvent(line, g.base, g.seq+1, g.now().UTC())
 	modelActivity := state.IsModelActivityEvent(record)
 	if progressOnlyStreamEvent(record) {
-
 		g.noteLiveActivity(record.Timestamp, modelActivity, false)
 		return
 	}
@@ -487,11 +487,12 @@ func reduceStreamBlocks(content []json.RawMessage) []state.TaskBlockSummary {
 			continue
 		}
 		blocks = append(blocks, state.TaskBlockSummary{
-			Type:    block.Type,
-			Name:    block.Name,
-			ToolID:  blockToolID(block),
-			Bytes:   len(raw),
-			IsError: block.IsError,
+			Type:       block.Type,
+			Name:       block.Name,
+			ToolID:     blockToolID(block),
+			Validation: validationObservationsForToolInput(block.Name, block.Input),
+			Bytes:      len(raw),
+			IsError:    block.IsError,
 		})
 	}
 	if len(blocks) == 0 {
