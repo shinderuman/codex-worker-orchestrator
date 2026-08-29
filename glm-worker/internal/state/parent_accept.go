@@ -2,10 +2,6 @@ package state
 
 import "fmt"
 
-// AcceptParentReview resolves the currently open parent review and transitions
-// the task lifecycle to complete as one recoverable operation. The lifecycle
-// write happens first so an outcome write failure can be retried against the
-// still-open review after rollback.
 func (s *StateStore) AcceptParentReview() (bool, error) {
 	stats, err := s.loadTaskStats()
 	if err != nil {
@@ -26,7 +22,7 @@ func (s *StateStore) AcceptParentReview() (bool, error) {
 	}
 	if err := s.writeTaskStats(stats); err != nil {
 		if rollbackErr := s.SetTaskStatus(previousStatus); rollbackErr != nil {
-			return false, fmt.Errorf("parent accept outcomeを保存できずtask status rollbackにも失敗しました: outcome=%v rollback=%v", err, rollbackErr)
+			return false, fmt.Errorf("parent accept outcomeを保存できずtask status rollbackにも失敗しました: outcome=%w rollback=%w", err, rollbackErr)
 		}
 		return false, fmt.Errorf("parent accept outcomeを保存できません: %w", err)
 	}
