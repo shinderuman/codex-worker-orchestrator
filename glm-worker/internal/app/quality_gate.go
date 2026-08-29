@@ -330,7 +330,7 @@ func reconcileQualityGateAfterWait(st *state.StateStore, runID string) (qualityG
 	if err != nil || final.Status != qualityGateStatusRunning {
 		return final, err
 	}
-	return markQualityGateInterrupted(st, final, "quality gate runner exited before persisting a terminal result")
+	return markQualityGateInterrupted(st, runID, "quality gate runner exited before persisting a terminal result")
 }
 
 func finishQualityGateCommand(record qualityGateRunRecord, goArgs []string, stdout io.Writer) error {
@@ -405,6 +405,23 @@ func reconcileQualityGateRun(st *state.StateStore, runID string) (qualityGateRun
 		return markQualityGateInterruptedLocked(st, record, "quality gate runner did not publish its pid before startup grace elapsed")
 	}
 	return record, nil
+}
+
+func markQualityGateInterrupted(st *state.StateStore, runID, reason string) (qualityGateRunRecord, error) {
+	lock, err := acquireQualityGateRunStateLock(st, runID)
+	if err != nil {
+		return qualityGateRunRecord{}, err
+	}
+	defer func() { _ = lock.Close() }()
+
+	record, err := readQualityGateRun(st, runID)
+	if err != nil {
+		return qualityGateRunRecord{}, err
+	}
+	if record.Status != qualityGateStatusRunning {
+		return record, nil
+	}
+	return markQualityGateInterruptedLocked(st, record, reason)
 }
 
 func markQualityGateInterruptedLocked(st *state.StateStore, record qualityGateRunRecord, reason string) (qualityGateRunRecord, error) {
