@@ -9,6 +9,35 @@ def replace(path, old, new):
     p.write_text(text.replace(old, new, 1))
 
 
+def add_nil_to_calls(path, function_name):
+    p = Path(path)
+    text = p.read_text()
+    needle = function_name + "("
+    pos = 0
+    changed = 0
+    while True:
+        start = text.find(needle, pos)
+        if start < 0:
+            break
+        i = start + len(needle)
+        depth = 1
+        while i < len(text) and depth:
+            if text[i] == "(":
+                depth += 1
+            elif text[i] == ")":
+                depth -= 1
+            i += 1
+        if depth:
+            raise SystemExit(f"unterminated {function_name} call: {path}")
+        close = i - 1
+        text = text[:close] + ", nil" + text[close:]
+        pos = close + len(", nil") + 1
+        changed += 1
+    if changed == 0:
+        raise SystemExit(f"{function_name} call not found: {path}")
+    p.write_text(text)
+
+
 replace(
     "glm-worker/internal/runner/git_authority_guard.go",
     """\ttempDir    string\n\tproxyPath  string\n\tdenyPath   string\n\tattemptLog string\n\tbefore     gitAuthoritySnapshot\n""",
@@ -63,20 +92,18 @@ replace(
     "func isolationSettings(claudeConfigDir string, sandbox *gitBashSandboxPolicy) (string, error) {",
 )
 needle = """\tsettings := map[string]any{\n\t\t\"claudeMdExcludes\": []string{\n\t\t\t\"**/CLAUDE.md\",\n\t\t\t\"**/CLAUDE.local.md\",\n\t\t\tfilepath.Join(configDir, \"CLAUDE.md\"),\n\t\t\tfilepath.Join(configDir, \"rules\", \"**\"),\n\t\t},\n\t\t\"autoMemoryEnabled\":    false,\n\t\t\"disableAllHooks\":      true,\n\t\t\"disableBundledSkills\": true,\n\t\t\"disableWorkflows\":     true,\n\t}\n"""
-replacement = needle + """\tif sandbox != nil {\n\t\tsettings[\"sandbox\"] = sandbox.settings()\n\t}\n"""
-replace("glm-worker/internal/runner/runner.go", needle, replacement)
+replace(
+    "glm-worker/internal/runner/runner.go",
+    needle,
+    needle + """\tif sandbox != nil {\n\t\tsettings[\"sandbox\"] = sandbox.settings()\n\t}\n""",
+)
 
 replace(
     "glm-worker/internal/runner/probe.go",
     "isolationSettings(r.config.ClaudeConfigDir)",
     "isolationSettings(r.config.ClaudeConfigDir, nil)",
 )
-
-p = Path("glm-worker/internal/runner/runner_test.go")
-s = p.read_text()
-if "isolationSettings(configDir)" not in s:
-    raise SystemExit("runner_test isolationSettings call not found")
-p.write_text(s.replace("isolationSettings(configDir)", "isolationSettings(configDir, nil)"))
+add_nil_to_calls("glm-worker/internal/runner/runner_test.go", "isolationSettings")
 
 replace(
     "glm-worker/internal/runner/git_authority_temp_root_test.go",
