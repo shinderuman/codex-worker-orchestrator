@@ -19,6 +19,7 @@ import (
 
 type statusOutput struct {
 	RepoRoot            *string                   `json:"repo_root"`
+	RuntimeBuild        statusRuntimeBuild        `json:"runtime_build"`
 	RepositoryLock      *string                   `json:"repository_lock"`
 	LockPID             *string                   `json:"lock_pid"`
 	TaskID              *string                   `json:"task_id"`
@@ -253,8 +254,10 @@ func printStatus(st *state.StateStore, stdout io.Writer) error {
 func buildStatusOutput(st *state.StateStore, taskID string, logs []state.ModelCallLog, logErr error) statusOutput {
 	probe := ProbeRepoLock(st.LockPath())
 	taskStatus := st.TaskStatus()
+	repoRoot := st.ReadOr("repo-root", "")
 	output := statusOutput{
-		RepoRoot:        stringPtr(st.ReadOr("repo-root", "")),
+		RepoRoot:        stringPtr(repoRoot),
+		RuntimeBuild:    currentRuntimeBuild(repoRoot),
 		RepositoryLock:  lockStatePtr(probe.State),
 		LockPID:         lockPIDPtr(probe.PID),
 		TaskID:          stringPtr(taskID),
