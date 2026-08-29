@@ -731,14 +731,9 @@ func resetState(st *state.StateStore, stdout io.Writer) error {
 }
 
 func parentAccept(st *state.StateStore, stdout io.Writer) error {
-	resolved, err := st.RecordParentOutcome(state.ParentOutcomeAccepted, "")
+	resolved, err := st.AcceptParentReview()
 	if err != nil {
 		return err
-	}
-	if resolved {
-		if err := st.SetTaskStatus(state.TaskStatusComplete); err != nil {
-			return err
-		}
 	}
 	return writeJSON(stdout, acceptOutput{Accepted: resolved})
 }
