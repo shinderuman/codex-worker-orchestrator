@@ -84,6 +84,45 @@ func TestParentActionPlanStoppedStates(t *testing.T) {
 	}
 }
 
+func TestParentActionPlanPassRequiresAcceptUntilResolved(t *testing.T) {
+	st := newParentActionTestStore(t)
+	if err := st.SetTaskStatus(TaskStatusComplete); err != nil {
+		t.Fatal(err)
+	}
+	st.RecordSolResult(packet.Result{Status: packet.StatusPass, Risk: packet.RiskLow}, ParentReviewProducer{})
+
+	plan, err := st.ParentActionPlan()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.RequiredAction != ParentActionAccept || !plan.Allows(ParentActionAccept) || plan.Allows(ParentActionFix) {
+		t.Fatalf("PASS plan = %#v", plan)
+	}
+
+	accepted, err := st.AcceptParentReview()
+	if err != nil || !accepted {
+		t.Fatalf("PASS accept = %v err=%v", accepted, err)
+	}
+	plan, err = st.ParentActionPlan()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.RequiredAction != ParentActionNone || len(plan.AllowedActions) != 0 {
+		t.Fatalf("accepted complete plan = %#v", plan)
+	}
+}
+
+func TestParentActionPlanPreservesIdempotentAcceptCommand(t *testing.T) {
+	st := newParentActionTestStore(t)
+	plan, err := st.ParentActionPlan()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.RequiredAction != ParentActionNone || plan.Allows(ParentActionAccept) || !plan.AdmitsCommand(ParentActionAccept) {
+		t.Fatalf("no-action plan = %#v", plan)
+	}
+}
+
 func TestParentActionPlanFailsClosedOnContradiction(t *testing.T) {
 	st := newParentActionTestStore(t)
 	if err := st.SetTaskStatus(TaskStatusWaitingDecision); err != nil {
@@ -95,13 +134,13 @@ func TestParentActionPlanFailsClosedOnContradiction(t *testing.T) {
 
 	st = newParentActionTestStore(t)
 	checkpoint := ResumeCheckpoint{
-		Stage:          ResumeStageWorker,
-		Phase:          "worker-new",
-		Role:           WorkerRole,
-		Model:          "opus",
-		Prompt:         "p",
-		Request:        "r",
-		RateLimited:    true,
+		Stage:           ResumeStageWorker,
+		Phase:           "worker-new",
+		Role:            WorkerRole,
+		Model:           "opus",
+		Prompt:          "p",
+		Request:         "r",
+		RateLimited:     true,
 		UserInterrupted: true,
 	}
 	if err := st.SaveResumeCheckpoint(checkpoint); err != nil {
