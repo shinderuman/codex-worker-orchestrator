@@ -37,7 +37,7 @@ func (e *InstallSmokeError) Error() string {
 	return fmt.Sprintf("install smokeが失敗しました (exit %d)", e.ExitCode)
 }
 
-func runInstallSmoke(role string, cfg config.AppConfig, _ *state.StateStore, stdout io.Writer) error {
+func runInstallSmoke(role string, cfg config.AppConfig, st *state.StateStore, stdout io.Writer) error {
 	script := filepath.Join(cfg.RepoRoot, "tests", "install_smoke.sh")
 	if _, err := os.Stat(script); err != nil {
 		return fmt.Errorf("install smoke scriptがありません: %s: %w", script, err)
@@ -53,12 +53,16 @@ func runInstallSmoke(role string, cfg config.AppConfig, _ *state.StateStore, std
 		if errors.As(err, &exitErr) {
 			exitCode = exitErr.ExitCode()
 		}
-		return &InstallSmokeError{Role: role, ExitCode: exitCode, DurationMS: time.Since(started).Milliseconds()}
+		durationMS := time.Since(started).Milliseconds()
+		st.RecordValidation("install-smoke", "install-smoke", role, "fail", exitCode, durationMS, "")
+		return &InstallSmokeError{Role: role, ExitCode: exitCode, DurationMS: durationMS}
 	}
+	durationMS := time.Since(started).Milliseconds()
+	st.RecordValidation("install-smoke", "install-smoke", role, "pass", 0, durationMS, "")
 	return writeJSON(stdout, installSmokeOutput{
 		Status:     "executed",
 		Result:     "pass",
 		Role:       role,
-		DurationMS: time.Since(started).Milliseconds(),
+		DurationMS: durationMS,
 	})
 }
