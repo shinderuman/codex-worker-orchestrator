@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 )
@@ -60,8 +61,10 @@ func ValidateWorkerResult(result Result) error {
 			return &constraintError{reason: "NEEDS_SOL_DECISIONのriskはHIGHにしてください"}
 		}
 	default:
-
 		return &mismatchError{reason: fmt.Sprintf("worker結果のstatusとして許容されません: %q", string(result.Status))}
+	}
+	if err := validateParentValidation(result); err != nil {
+		return err
 	}
 	if err := validateFields(result, result.contractFields()); err != nil {
 		return err
@@ -69,7 +72,54 @@ func ValidateWorkerResult(result Result) error {
 	return validateTargets(result)
 }
 
+func validateParentValidation(result Result) error {
+	if result.ParentValidationEvidence != "" {
+		return &constraintError{reason: "parent_validation_evidenceはwrapper専用fieldです"}
+	}
+	if result.ParentValidation == "" && result.ParentValidationWorkingDir == "" {
+		return nil
+	}
+	if result.Status != StatusImplemented {
+		return &constraintError{reason: "parent_validationはIMPLEMENTEDだけで指定できます"}
+	}
+	if result.ParentValidation == "" || result.ParentValidationWorkingDir == "" {
+		return &constraintError{reason: "parent_validationとparent_validation_working_dirは同時に指定してください"}
+	}
+	if !validParentValidationForm(result.ParentValidation) {
+		return &constraintError{reason: fmt.Sprintf("parent_validationは既知のparent gateだけを指定してください: %q", result.ParentValidation)}
+	}
+	return validateParentValidationWorkingDir(result.ParentValidationWorkingDir)
+}
+
+func validParentValidationForm(form string) bool {
+	return form == ParentValidationGoTest || form == ParentValidationGoTestRace
+}
+
+func validateParentValidationWorkingDir(workingDir string) error {
+	invalid := path.IsAbs(workingDir) ||
+		strings.Contains(workingDir, "\\") ||
+		path.Clean(workingDir) != workingDir ||
+		workingDir == ".." || strings.HasPrefix(workingDir, "../")
+	if invalid {
+		return &constraintError{reason: fmt.Sprintf("parent_validation_working_dirは正規化済みrepository相対pathで指定してください: %q", workingDir)}
+	}
+	return nil
+}
+
 func ValidateReviewerResult(result Result) error {
+	if err := validateReviewerStatusRisk(result); err != nil {
+		return err
+	}
+	if result.ParentValidation != "" || result.ParentValidationWorkingDir != "" || result.ParentValidationEvidence != "" {
+		return &constraintError{reason: "reviewer結果にparent validation fieldは指定できません"}
+	}
+	if err := validateFields(result, result.contractFields()); err != nil {
+		return err
+	}
+	return validateTargets(result)
+}
+
+func validateReviewerStatusRisk(result Result) error {
 	switch result.Status {
 	case StatusPass:
 		if result.Risk != RiskLow {
@@ -88,13 +138,9 @@ func ValidateReviewerResult(result Result) error {
 			return &constraintError{reason: "NEEDS_SOL_DECISIONのriskはHIGHにしてください"}
 		}
 	default:
-
 		return &mismatchError{reason: fmt.Sprintf("reviewer結果のstatusとして許容されません: %q", string(result.Status))}
 	}
-	if err := validateFields(result, result.contractFields()); err != nil {
-		return err
-	}
-	return validateTargets(result)
+	return nil
 }
 
 func validateTargets(result Result) error {

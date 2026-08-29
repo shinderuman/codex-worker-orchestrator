@@ -11,25 +11,33 @@ type Status string
 
 type Risk string
 
+type ParentValidationRequest struct {
+	Form       string
+	WorkingDir string
+}
+
 type Result struct {
-	Status              Status   `json:"status"`
-	Risk                Risk     `json:"risk"`
-	Summary             string   `json:"summary,omitempty"`
-	RequirementCoverage string   `json:"requirement_coverage,omitempty"`
-	Tests               string   `json:"tests,omitempty"`
-	Unverified          string   `json:"unverified,omitempty"`
-	Decision            string   `json:"decision,omitempty"`
-	Evidence            string   `json:"evidence,omitempty"`
-	Options             string   `json:"options,omitempty"`
-	Recommendation      string   `json:"recommendation,omitempty"`
-	TestObligations     string   `json:"test_obligations,omitempty"`
-	Invariants          string   `json:"invariants,omitempty"`
-	TestEvidence        string   `json:"test_evidence,omitempty"`
-	Issues              string   `json:"issues,omitempty"`
-	ResidualRisk        string   `json:"residual_risk,omitempty"`
-	SolQuestion         string   `json:"sol_question,omitempty"`
-	Targets             []string `json:"targets,omitempty"`
-	Artifacts           []string `json:"artifacts,omitempty"`
+	Status                     Status   `json:"status"`
+	Risk                       Risk     `json:"risk"`
+	Summary                    string   `json:"summary,omitempty"`
+	RequirementCoverage        string   `json:"requirement_coverage,omitempty"`
+	Tests                      string   `json:"tests,omitempty"`
+	Unverified                 string   `json:"unverified,omitempty"`
+	ParentValidation           string   `json:"parent_validation,omitempty"`
+	ParentValidationWorkingDir string   `json:"parent_validation_working_dir,omitempty"`
+	ParentValidationEvidence   string   `json:"parent_validation_evidence,omitempty"`
+	Decision                   string   `json:"decision,omitempty"`
+	Evidence                   string   `json:"evidence,omitempty"`
+	Options                    string   `json:"options,omitempty"`
+	Recommendation             string   `json:"recommendation,omitempty"`
+	TestObligations            string   `json:"test_obligations,omitempty"`
+	Invariants                 string   `json:"invariants,omitempty"`
+	TestEvidence               string   `json:"test_evidence,omitempty"`
+	Issues                     string   `json:"issues,omitempty"`
+	ResidualRisk               string   `json:"residual_risk,omitempty"`
+	SolQuestion                string   `json:"sol_question,omitempty"`
+	Targets                    []string `json:"targets,omitempty"`
+	Artifacts                  []string `json:"artifacts,omitempty"`
 }
 
 type mismatchError struct {
@@ -58,6 +66,11 @@ const (
 const (
 	RiskLow  Risk = "LOW"
 	RiskHigh Risk = "HIGH"
+)
+
+const (
+	ParentValidationGoTest     = "go-test"
+	ParentValidationGoTestRace = "go-test-race"
 )
 
 const ReportOnlyTargets = "PACKET"
@@ -127,6 +140,23 @@ func (r Result) contractFields() []contractField {
 	}
 }
 
+func (r Result) ParentValidationRequest() *ParentValidationRequest {
+	if r.ParentValidation == "" && r.ParentValidationWorkingDir == "" {
+		return nil
+	}
+	return &ParentValidationRequest{Form: r.ParentValidation, WorkingDir: r.ParentValidationWorkingDir}
+}
+
+func (r *Result) SetParentValidationRequest(request *ParentValidationRequest) {
+	if request == nil {
+		r.ParentValidation = ""
+		r.ParentValidationWorkingDir = ""
+		return
+	}
+	r.ParentValidation = request.Form
+	r.ParentValidationWorkingDir = request.WorkingDir
+}
+
 func (r Result) MachineJSON() ([]byte, error) {
 	object := map[string]any{
 		"status": string(r.Status),
@@ -136,6 +166,13 @@ func (r Result) MachineJSON() ([]byte, error) {
 		if value := field.value(r); value != "" {
 			object[field.machine] = value
 		}
+	}
+	if r.Status == StatusImplemented && r.ParentValidation != "" {
+		object["parent_validation"] = r.ParentValidation
+		object["parent_validation_working_dir"] = r.ParentValidationWorkingDir
+	}
+	if r.Status == StatusImplemented && r.ParentValidationEvidence != "" {
+		object["parent_validation_evidence"] = r.ParentValidationEvidence
 	}
 	if len(r.Targets) > 0 {
 		object["targets"] = r.Targets

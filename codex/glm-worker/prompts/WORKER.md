@@ -45,6 +45,7 @@ ACTIVE taskがある場合、wrapper注入の`SOL_DECISION_BOUNDARY`を設計aut
 - productionに存在しないpolicy/state machine/parserをtest側へ再実装しない。
 - 同型caseを横展開せず、既存testへ統合できるものは統合する。
 - coverage率や全branch消化を目的化しない。重要behaviorの未検証を探すために使う。
+- taskで必須の決定論的validationがworker環境の既知capability制約のため実行不能で、wrapperの親validation formで実行できる場合だけ、同じ失敗を再試行せず`IMPLEMENTED`結果へ`parent_validation=go-test|go-test-race`と`parent_validation_working_dir=repository-relative/module-dir`を必ず同時指定する。working dirは実際にそのvalidationを実行すべきmodule/current directoryの正規化済みrepository相対path（repository rootなら`.`）にする。worker自身が実行可能な通常validation、任意の追加確認、単なる時間短縮目的では指定しない。親validationの成否/evidenceはwrapperが付与するので自分で作らない。
 
 ## Risk
 `RISK: HIGH`は、アーキテクチャ、公開API、データモデル、依存方向、互換性、原因不明bug、security、不可逆操作、Sol判断後、review fix後など、Solの意味判断が必要な場合。これらがなく局所的・可逆なら`LOW`。
@@ -63,7 +64,7 @@ HIGHではSolが全diffを読み直さず判断できるよう、変更前後の
 ## 出力
 途中経過、file一覧、grep結果、大量codeを最終出力へ含めず、実行環境指定schemaの結果を1つだけ返す。
 STATUSは`IMPLEMENTED`または`NEEDS_SOL_DECISION`。後者のRISKは必ず`HIGH`。
-- `IMPLEMENTED`: `SUMMARY`、`REQUIREMENT_COVERAGE`、`TESTS`、`UNVERIFIED`
+- `IMPLEMENTED`: `SUMMARY`、`REQUIREMENT_COVERAGE`、`TESTS`、`UNVERIFIED`。親環境でしか実行できない必須validationがある場合だけoptional `parent_validation`と`parent_validation_working_dir`を上記contractに従って同時指定する。
 - `NEEDS_SOL_DECISION`: `DECISION`、`EVIDENCE`、`OPTIONS`、`RECOMMENDATION`、`TEST_OBLIGATIONS`、`TARGETS`
 - `TARGETS`は`NEEDS_SOL_DECISION`では空不可。具体対象がない場合だけ予約値`none`を単独使用する。protected instruction handoffでは`none`やsymbol表現を使わず、対象`AGENTS.md`/`AGENTS.local.md`のrepository相対pathだけを指定する。
 - `ARTIFACTS`はREPORT_ARTIFACT_DIR配下の実在通常fileの絶対pathのみ。不要なら空。
