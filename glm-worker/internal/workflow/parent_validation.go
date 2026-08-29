@@ -49,24 +49,24 @@ var parentValidationGateRunner = func(w *Workflow, request packet.ParentValidati
 }
 
 func (w *Workflow) convergeParentValidation(checkpoint state.ResumeCheckpoint, result packet.Result) (packet.Result, error) {
-	if result.Status != packet.StatusImplemented || result.ParentValidation == nil || result.ParentValidationEvidence != "" {
+	request := result.ParentValidationRequest()
+	if result.Status != packet.StatusImplemented || request == nil || result.ParentValidationEvidence != "" {
 		return result, nil
 	}
-	request := *result.ParentValidation
 
 	qualityReport, err := w.qualityGate(w.config.RepoRoot)
 	if err != nil {
 		return packet.Result{}, &WorkerError{Phase: "harnesslint", Message: fmt.Sprintf("harnesslint failed before parent validation: %v", err)}
 	}
 	if harnesslint.IsViolation(qualityReport) {
-		return w.fixBeforeParentValidation(checkpoint, qualityGateFixResult(qualityReport), request)
+		return w.fixBeforeParentValidation(checkpoint, qualityGateFixResult(qualityReport), *request)
 	}
 
-	record, err := parentValidationGateRunner(w, request)
+	record, err := parentValidationGateRunner(w, *request)
 	if err != nil {
 		return packet.Result{}, err
 	}
-	if err := w.validateParentValidationRecord(request, record); err != nil {
+	if err := w.validateParentValidationRecord(*request, record); err != nil {
 		return packet.Result{}, err
 	}
 	switch record.Status {
@@ -74,7 +74,7 @@ func (w *Workflow) convergeParentValidation(checkpoint state.ResumeCheckpoint, r
 		result.ParentValidationEvidence = parentValidationEvidence(record)
 		return result, nil
 	case "fail":
-		return w.fixBeforeParentValidation(checkpoint, parentValidationFailureResult(record), request)
+		return w.fixBeforeParentValidation(checkpoint, parentValidationFailureResult(record), *request)
 	default:
 		return packet.Result{}, &WorkerError{
 			Phase:   "parent-validation",
@@ -145,19 +145,20 @@ func applyCheckpointParentValidation(checkpoint state.ResumeCheckpoint, result p
 	if checkpoint.ParentValidation == nil || result.Status != packet.StatusImplemented {
 		return result, nil
 	}
-	if result.ParentValidation != nil && !sameParentValidationRequest(*result.ParentValidation, *checkpoint.ParentValidation) {
+	reported := result.ParentValidationRequest()
+	if reported != nil && !sameParentValidationRequest(*reported, *checkpoint.ParentValidation) {
 		return packet.Result{}, &WorkerError{
 			Phase: "parent-validation",
 			Message: fmt.Sprintf(
 				"worker changed the parent validation obligation from %s@%s to %s@%s",
 				checkpoint.ParentValidation.Form,
 				checkpoint.ParentValidation.WorkingDir,
-				result.ParentValidation.Form,
-				result.ParentValidation.WorkingDir,
+				reported.Form,
+				reported.WorkingDir,
 			),
 		}
 	}
-	result.ParentValidation = cloneParentValidationRequest(checkpoint.ParentValidation)
+	result.SetParentValidationRequest(checkpoint.ParentValidation)
 	result.ParentValidationEvidence = ""
 	result.Risk = packet.RiskHigh
 	return result, nil
