@@ -35,3 +35,13 @@ jobs:
           printf '%s\n' "$quality_bin" >> "$GITHUB_PATH"
       - name: Repository lint gate
         run: ./harnesslint
+      - name: GPT temporary full validation
+        run: |
+          ./commentlint
+          sh tests/install_smoke.sh
+          cd glm-worker
+          go test ./...
+          go test -race ./...
+          go vet ./...
+          go build ./...
+          test -z "$(gofmt -l .)"
