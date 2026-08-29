@@ -573,6 +573,7 @@ func loadSettingEnv(claudeConfigDir string, overridePath string) (map[string]str
 			if value, ok := parsed.Env[key]; ok && value != "" {
 				result[key] = value
 			}
+		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, nil, fmt.Errorf("claude settings.jsonを読み込めません: %w", err)
 	}
