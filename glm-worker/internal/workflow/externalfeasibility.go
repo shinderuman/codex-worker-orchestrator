@@ -93,6 +93,9 @@ func (w *Workflow) gateExternalFeasibility(phase string, keepTaskStatus bool) (e
 	if err != nil {
 		return externalFeasibility{}, w.failClosedExternalFeasibility(phase, externalFeasibilityGuardSurface.unavailableOutcome(), "ACTIVE task file "+activeTaskPath+"のExternal feasibility宣言を読めません", err, !keepTaskStatus)
 	}
+	if err := w.state.SaveCurrentTaskAuthority(activeTaskPath, content); err != nil {
+		return externalFeasibility{}, fmt.Errorf("ACTIVE task authority snapshotを保存できません: %w", err)
+	}
 	decl, err := parseExternalFeasibilityDeclaration(content)
 	if err == nil {
 		return decl, nil
