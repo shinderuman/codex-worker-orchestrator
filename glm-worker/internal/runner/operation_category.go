@@ -6,6 +6,8 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
+const bashToolName = "Bash"
+
 var shellProgramCategories = map[string]string{
 	"rg":            state.OperationCategorySearch,
 	"grep":          state.OperationCategorySearch,
@@ -26,7 +28,7 @@ func operationCategoryForTool(toolName string, command string) string {
 		return state.OperationCategoryFileWrite
 	case "Grep", "Glob":
 		return state.OperationCategorySearch
-	case "Bash":
+	case bashToolName:
 		return shellOperationCategory(command)
 	default:
 		return state.OperationCategoryOther

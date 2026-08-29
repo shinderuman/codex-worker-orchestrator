@@ -17,7 +17,7 @@ type validationSegmentScanner struct {
 }
 
 func validationObservationsForToolInput(toolName string, input json.RawMessage) []state.TaskValidationObservation {
-	if toolName != "Bash" || len(input) == 0 {
+	if toolName != bashToolName || len(input) == 0 {
 		return nil
 	}
 	var parsed struct {
@@ -226,4 +226,63 @@ func validValidationEnvRune(r rune, first bool) bool {
 		return true
 	}
 	return !first && r >= '0' && r <= '9'
+}
+
+func validationToolResultAttributable(toolName string, input json.RawMessage) bool {
+	if toolName != "Bash" || len(input) == 0 {
+		return false
+	}
+	var parsed struct {
+		Command string `json:"command"`
+	}
+	if err := json.Unmarshal(input, &parsed); err != nil || parsed.Command == "" {
+		return false
+	}
+	return validationCommandResultAttributable(parsed.Command)
+}
+
+func validationCommandResultAttributable(command string) bool {
+	if len(validationObservationsForCommand(command)) == 0 {
+		return false
+	}
+	scanner := validationSegmentScanner{command: command}
+	for index := 0; index < len(command); index++ {
+		if width := scanner.separatorWidth(index); width > 0 {
+			return false
+		}
+		if command[index] == '&' && !scanner.singleQuoted && !scanner.doubleQuoted && validationBackgroundAmpersand(command, index) {
+			return false
+		}
+	}
+	return true
+}
+
+func validationBackgroundAmpersand(command string, index int) bool {
+	if index > 0 && (command[index-1] == '>' || command[index-1] == '<') {
+		return false
+	}
+	if index+1 < len(command) && command[index+1] == '>' {
+		return false
+	}
+	return true
+}
+
+func validationObservationsWithToolResult(values []state.TaskValidationObservation, attributable bool, isError bool) []state.TaskValidationObservation {
+	if len(values) == 0 {
+		return nil
+	}
+	resultValue := state.ValidationResultUnknown
+	if attributable {
+		if isError {
+			resultValue = state.ValidationResultFail
+		} else {
+			resultValue = state.ValidationResultPass
+		}
+	}
+	result := make([]state.TaskValidationObservation, len(values))
+	copy(result, values)
+	for index := range result {
+		result[index].Result = resultValue
+	}
+	return result
 }

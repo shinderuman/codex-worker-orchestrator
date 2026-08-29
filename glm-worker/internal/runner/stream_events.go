@@ -32,15 +32,17 @@ type streamEventIngester struct {
 }
 
 type toolUseObservation struct {
-	toolID          string
-	timestamp       time.Time
-	name            string
-	command         string
-	category        string
-	purpose         string
-	background      bool
-	waitTaskID      string
-	instructionRead string
+	toolID                       string
+	timestamp                    time.Time
+	name                         string
+	command                      string
+	category                     string
+	purpose                      string
+	background                   bool
+	waitTaskID                   string
+	instructionRead              string
+	validation                   []state.TaskValidationObservation
+	validationResultAttributable bool
 }
 
 type liveToolDetail struct {
@@ -219,11 +221,13 @@ func (g *streamEventIngester) observeToolUse(block *state.TaskBlockSummary, at t
 		observation.purpose = detail.purpose
 		observation.background = detail.background
 		observation.waitTaskID = detail.waitTaskID
+		observation.validationResultAttributable = validationToolResultAttributable(block.Name, input)
 		if name, matched := workerInstructionReadName(observation.name, input, g.workerInstructionDir); matched {
 			observation.instructionRead = name
 		}
 	}
 	observation.category = operationCategoryForTool(block.Name, observation.command)
+	observation.validation = append([]state.TaskValidationObservation(nil), block.Validation...)
 	block.OperationCategory = observation.category
 	g.tools[block.ToolID] = observation
 	return true
@@ -300,6 +304,7 @@ func (g *streamEventIngester) observeToolResult(block *state.TaskBlockSummary, a
 		block.Name = observed.name
 	}
 	block.OperationCategory = observed.category
+	block.Validation = validationObservationsWithToolResult(observed.validation, observed.validationResultAttributable, block.IsError)
 	if !block.IsError && observed.instructionRead != "" {
 		g.instructionReads[observed.instructionRead] = struct{}{}
 	}
