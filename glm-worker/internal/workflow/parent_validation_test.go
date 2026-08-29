@@ -1,6 +1,8 @@
 package workflow
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -29,6 +31,10 @@ func TestParentValidationFailureFixesBeforeIndependentReview(t *testing.T) {
 	}}
 	w := newWorkflowT(t, st, r)
 	w.temp = t.TempDir()
+	workingDir := filepath.Join(w.config.RepoRoot, "glm-worker")
+	if err := os.MkdirAll(workingDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
 
 	previous := parentValidationGateRunner
 	defer func() { parentValidationGateRunner = previous }()
@@ -38,36 +44,32 @@ func TestParentValidationFailureFixesBeforeIndependentReview(t *testing.T) {
 		if request.Form != packet.ParentValidationGoTest || request.WorkingDir != "glm-worker" {
 			t.Fatalf("parent validation request = %#v", request)
 		}
+		record := parentValidationGateRecord{
+			Form:           request.Form,
+			Repository:     w.config.RepoRoot,
+			WorkingDir:     workingDir,
+			Head:           fixedSnapshot.Head,
+			IndexDigest:    fixedSnapshot.IndexDigest,
+			WorktreeDigest: fixedSnapshot.WorktreeDigest,
+		}
 		switch gateCalls {
 		case 1:
 			if !reflect.DeepEqual(r.phases, []string{"worker-new"}) {
 				t.Fatalf("first gate ran after unexpected model phases: %v", r.phases)
 			}
-			return parentValidationGateRecord{
-				ValidationRunID: "run-fail",
-				Form:            request.Form,
-				WorkingDir:      "/repo/glm-worker",
-				Head:            "head-a",
-				IndexDigest:     "index-a",
-				WorktreeDigest:  "worktree-a",
-				Status:          "fail",
-				ExitCode:        1,
-				Log:             "/evidence/run-fail/gate.log",
-			}, nil
+			record.ValidationRunID = "run-fail"
+			record.Status = "fail"
+			record.ExitCode = 1
+			record.Log = "/evidence/run-fail/gate.log"
+			return record, nil
 		case 2:
 			if !reflect.DeepEqual(r.phases, []string{"worker-new", "worker-auto-fix-1"}) {
 				t.Fatalf("second gate ran after reviewer or unexpected model phase: %v", r.phases)
 			}
-			return parentValidationGateRecord{
-				ValidationRunID: "run-pass",
-				Form:            request.Form,
-				WorkingDir:      "/repo/glm-worker",
-				Head:            "head-a",
-				IndexDigest:     "index-a",
-				WorktreeDigest:  "worktree-b",
-				Status:          "pass",
-				Log:             "/evidence/run-pass/gate.log",
-			}, nil
+			record.ValidationRunID = "run-pass"
+			record.Status = "pass"
+			record.Log = "/evidence/run-pass/gate.log"
+			return record, nil
 		default:
 			t.Fatalf("unexpected parent validation call %d", gateCalls)
 			return parentValidationGateRecord{}, nil
@@ -118,6 +120,32 @@ func TestCheckpointParentValidationCannotBeDroppedOrChanged(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("worker changed the checkpoint-owned parent validation obligation")
+	}
+}
+
+func TestParentValidationRecordRejectsStaleSnapshot(t *testing.T) {
+	st := newStateStoreT(t)
+	w := newWorkflowT(t, st, &scriptedRunner{})
+	workingDir := filepath.Join(w.config.RepoRoot, "glm-worker")
+	if err := os.MkdirAll(workingDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	record := parentValidationGateRecord{
+		ValidationRunID: "run-pass",
+		Form:            packet.ParentValidationGoTest,
+		Repository:      w.config.RepoRoot,
+		WorkingDir:      workingDir,
+		Head:            fixedSnapshot.Head,
+		IndexDigest:     fixedSnapshot.IndexDigest,
+		WorktreeDigest:  "stale-worktree",
+		Status:          "pass",
+	}
+	err := w.validateParentValidationRecord(packet.ParentValidationRequest{
+		Form:       packet.ParentValidationGoTest,
+		WorkingDir: "glm-worker",
+	}, record)
+	if err == nil || !strings.Contains(err.Error(), "snapshot") {
+		t.Fatalf("stale parent validation evidence was accepted: %v", err)
 	}
 }
 
