@@ -31,7 +31,7 @@ func printRepoSearch(query string, cfg config.AppConfig, stdout io.Writer) error
 	if !cfg.RepoSearch {
 		return writeJSON(stdout, repoSearchOutput{Status: "disabled", Result: "disabled", Results: []repoSearchResult{}})
 	}
-	report, err := reposearch.Search(context.Background(), cfg.RepoRoot, query, reposearch.Options{MaxResults: workflow.RepoSearchMaxResults})
+	report, err := reposearch.Search(context.Background(), cfg.RepoRoot, query, reposearch.Options{DisableCache: true, MaxResults: workflow.RepoSearchMaxResults})
 	if err != nil {
 		return fmt.Errorf("repo searchが失敗しました: %w", err)
 	}
