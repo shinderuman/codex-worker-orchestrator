@@ -54,6 +54,9 @@ func dispatchMachineOutput(cmd Command, cfg config.AppConfig, rf RunnerFactory, 
 	if streamOutputMode(cmd.Mode) {
 		return Execute(cmd, cfg, rf, stdout, stderr)
 	}
+	if cmd.Mode == ModeQualityGate {
+		return dispatchQualityGateMachineOutput(cmd, cfg, stdout, stderr)
+	}
 	output := newSingleShotOutput(stdout)
 	diagnostics := newStructuredLinesOutput(stderr)
 	restoreWarnings := state.RedirectStatsWarnings(diagnostics)
