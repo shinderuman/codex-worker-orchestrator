@@ -165,6 +165,33 @@ func TestBuildReportShowsUnknownReductionWithoutFabricatedPercent(t *testing.T) 
 	}
 }
 
+func TestBuildReportCarriesResolvedRepoSearchOnOrchestratedSideOnly(t *testing.T) {
+	spec := validSpec()
+	direct := validDirectRecord(spec)
+	orchestrated := validOrchestratedRecord(spec)
+	orchestrated.RepoSearch = RepoSearchMetrics{
+		Source: GLMUsageSourceTaskStats, TaskID: "task-1234",
+		Calls: 2, Hits: 1, Misses: 1, Results: 5, DurationMS: 900,
+	}
+	report := BuildReport(Compare(spec, direct, orchestrated))
+
+	if report.RepoSearch.Direct != nil {
+		t.Fatalf("direct modeはrepo-search routeを持たないためnull: %+v", report.RepoSearch.Direct)
+	}
+	if report.RepoSearch.Orchestrated == nil || report.RepoSearch.Orchestrated.Calls != 2 ||
+		report.RepoSearch.Orchestrated.Hits != 1 || report.RepoSearch.Orchestrated.DurationMS != 900 {
+		t.Fatalf("repo_search.orchestrated = %+v", report.RepoSearch.Orchestrated)
+	}
+}
+
+func TestBuildReportOmitsRepoSearchWhenNoRoutesRan(t *testing.T) {
+	report := BuildReport(compareFixture())
+
+	if report.RepoSearch.Direct != nil || report.RepoSearch.Orchestrated != nil {
+		t.Fatalf("repo-search実行がないpairはnull: %+v", report.RepoSearch)
+	}
+}
+
 func TestBuildReportJSONKeysAreStable(t *testing.T) {
 	data, err := json.Marshal(BuildReport(compareFixture()))
 	if err != nil {
@@ -176,7 +203,7 @@ func TestBuildReportJSONKeysAreStable(t *testing.T) {
 	}
 	want := []string{
 		"spec_id", "modes", "metadata", "measurement_boundary", "isolation",
-		"codex_reduction", "quality_delta", "time", "codex_usage", "glm_usage", "proxy_metrics",
+		"codex_reduction", "quality_delta", "time", "codex_usage", "glm_usage", "proxy_metrics", "repo_search",
 	}
 	if len(object) != len(want) {
 		t.Fatalf("key数 = %d want %d: %v", len(object), len(want), object)

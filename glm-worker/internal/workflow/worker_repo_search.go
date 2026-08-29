@@ -15,26 +15,44 @@ import (
 
 type repoSearchFunc func(context.Context, string, string, reposearch.Options) (reposearch.Report, error)
 
+type repoSearchTimer struct {
+	search  repoSearchFunc
+	now     func() time.Time
+	elapsed time.Duration
+}
+
 const (
-	repoSearchPhase         = "worker-repo-search"
-	repoSearchKnownSkip     = "known-target-skip"
-	repoSearchHit           = "search-hit"
-	repoSearchEmptyFallback = "search-empty-fallback"
-	repoSearchErrorFallback = "search-error-fallback"
+	repoSearchPhase         = state.RepoSearchCategoryWorkerNavigation
+	repoSearchKnownSkip     = state.RepoSearchOutcomeKnownTargetSkip
+	repoSearchHit           = state.RepoSearchOutcomeSearchHit
+	repoSearchEmptyFallback = state.RepoSearchOutcomeSearchEmptyFallback
+	repoSearchErrorFallback = state.RepoSearchOutcomeSearchErrorFallback
 	RepoSearchMaxResults    = 8
 )
+
+func (w *Workflow) newRepoSearchTimer() *repoSearchTimer {
+	search := w.repoSearch
+	if search == nil {
+		search = reposearch.Search
+	}
+	return &repoSearchTimer{search: search, now: w.now}
+}
+
+func (t *repoSearchTimer) run(ctx context.Context, repoRoot string, query string, opts reposearch.Options) (reposearch.Report, error) {
+	started := t.now()
+	report, err := t.search(ctx, repoRoot, query, opts)
+	t.elapsed = t.now().Sub(started)
+	return report, err
+}
 
 func (w *Workflow) newWorkerTaskPrompt(request string, activeTaskPath string) string {
 	prompt := newTaskPrompt(request, activeTaskPath)
 	if !w.config.RepoSearch {
 		return prompt
 	}
-	search := w.repoSearch
-	if search == nil {
-		search = reposearch.Search
-	}
-	block, outcome, results := routeWorkerRepoSearch(context.Background(), w.config.RepoRoot, request, search)
-	w.recordRepoSearchOutcome(repoSearchPhase, state.WorkerRole, 1, outcome, request, results)
+	timer := w.newRepoSearchTimer()
+	block, outcome, results := routeWorkerRepoSearch(context.Background(), w.config.RepoRoot, request, timer.run)
+	w.recordRepoSearchOutcome(repoSearchPhase, state.WorkerRole, 1, outcome, results, timer.elapsed)
 	if block == "" {
 		return prompt
 	}
@@ -107,7 +125,7 @@ func renderRepoSearchNavigation(results []reposearch.Result) string {
 	return block.String()
 }
 
-func (w *Workflow) recordRepoSearchOutcome(phase string, role state.SessionRole, seq int, outcome string, query string, results []reposearch.Result) {
+func (w *Workflow) recordRepoSearchOutcome(phase string, role state.SessionRole, seq int, outcome string, results []reposearch.Result, duration time.Duration) {
 	taskID, err := w.state.TaskID()
 	if err != nil {
 		return
@@ -126,11 +144,12 @@ func (w *Workflow) recordRepoSearchOutcome(phase string, role state.SessionRole,
 		Phase:       phase,
 		Seq:         seq,
 		Timestamp:   now().UTC(),
-		Kind:        "navigation",
+		Kind:        state.RepoSearchEventKind,
 		Subtype:     outcome,
-		SearchQuery: query,
 		SearchPaths: paths,
+		DurationMS:  duration.Milliseconds(),
 	}); err != nil {
 		state.WarnTaskEventSkip("repo-search route追記", err)
 	}
+	w.state.RecordRepoSearchOutcome(phase, outcome, len(results), duration)
 }

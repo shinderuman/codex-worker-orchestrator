@@ -36,9 +36,28 @@ func ResolveFromTaskStats(record RunRecord, all []state.TaskStats) (RunRecord, e
 		usage, proxy := GLMUsageFromTaskStats(stats)
 		record.GLMUsage = usage
 		record.Proxy = proxy
+		record.RepoSearch = RepoSearchMetricsFromTaskStats(stats)
 		return record, nil
 	}
 	return record, fmt.Errorf("glm_usageを解決できません: task %sのstatsが見つかりません", record.GLMUsage.TaskID)
+}
+
+func RepoSearchMetricsFromTaskStats(stats state.TaskStats) RepoSearchMetrics {
+	measure := state.RepoSearchMeasureFromStats(stats)
+	return RepoSearchMetrics{
+		Source:            GLMUsageSourceTaskStats,
+		TaskID:            stats.TaskID,
+		Calls:             measure.Calls,
+		QueriesByCategory: measure.QueriesByCategory,
+		Outcomes:          measure.Outcomes,
+		Hits:              measure.Hits,
+		Misses:            measure.Misses,
+		Fallbacks:         measure.Fallbacks,
+		Skips:             measure.Skips,
+		Other:             measure.Other,
+		Results:           measure.Results,
+		DurationMS:        measure.DurationMS,
+	}
 }
 
 func sumInt64Map(values map[string]int64) int64 {

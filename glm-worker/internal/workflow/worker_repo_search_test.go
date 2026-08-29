@@ -140,7 +140,7 @@ func TestNewWorkerTaskPromptRecordsRepoSearchTelemetry(t *testing.T) {
 	if event.Phase != repoSearchPhase || event.Kind != "navigation" || event.Subtype != repoSearchHit {
 		t.Fatalf("event=%#v", event)
 	}
-	if event.SearchQuery != "unknown worker target" || len(event.SearchPaths) != 1 || event.SearchPaths[0] != "internal/worker.go" {
+	if event.SearchQuery != "" || len(event.SearchPaths) != 1 || event.SearchPaths[0] != "internal/worker.go" {
 		t.Fatalf("search telemetry=%#v", event)
 	}
 	if !event.Timestamp.Equal(fixed) || event.TaskID != taskID || event.Role != string(state.WorkerRole) {
@@ -171,4 +171,107 @@ func TestNewWorkerTaskPromptDisabledSkipsRepoSearchEntirely(t *testing.T) {
 	if _, err := os.Stat(st.TaskEventLogPath(taskID)); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("disabled flagでeventが記録されました: %v", err)
 	}
+}
+
+func TestNewWorkerTaskPromptAccumulatesRepoSearchStatsWithDuration(t *testing.T) {
+	root := t.TempDir()
+	cfg := config.AppConfig{RepoRoot: root, RepoHash: "repo-search-stats", StateBase: t.TempDir(), RepoSearch: true}
+	st, err := state.NewStateStore(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	taskID, err := st.StartNewTask()
+	if err != nil {
+		t.Fatal(err)
+	}
+	current := time.Date(2026, 8, 30, 2, 0, 0, 0, time.UTC)
+	w := NewWorkflow(cfg, st, nil, nil)
+	w.now = func() time.Time {
+		current = current.Add(250 * time.Millisecond)
+		return current
+	}
+	w.repoSearch = func(context.Context, string, string, reposearch.Options) (reposearch.Report, error) {
+		return reposearch.Report{Results: []reposearch.Result{{Path: "internal/worker.go", Line: 9}}}, nil
+	}
+	if prompt := w.newWorkerTaskPrompt("unknown worker target", ""); !strings.Contains(prompt, "CANDIDATE: internal/worker.go:9") {
+		t.Fatalf("navigation missing: %s", prompt)
+	}
+	w.repoSearch = func(context.Context, string, string, reposearch.Options) (reposearch.Report, error) {
+		return reposearch.Report{}, errors.New("search unavailable")
+	}
+	w.newWorkerTaskPrompt("another unknown target", "")
+
+	stats, err := st.CurrentTaskStats()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.RepoSearchCalls != 2 || stats.RepoSearchQueriesByCategory[repoSearchPhase] != 2 {
+		t.Fatalf("repo-search stats = %+v", stats)
+	}
+	if stats.RepoSearchOutcomes[repoSearchHit] != 1 || stats.RepoSearchOutcomes[repoSearchErrorFallback] != 1 {
+		t.Fatalf("repo-search outcomes = %+v", stats.RepoSearchOutcomes)
+	}
+	if stats.RepoSearchResults != 1 || stats.RepoSearchDurationMS != 500 {
+		t.Fatalf("results=%d duration=%d want 1/500", stats.RepoSearchResults, stats.RepoSearchDurationMS)
+	}
+	events := readAllTaskEvents(t, st, taskID)
+	if len(events) != 2 || events[0].DurationMS != 250 || events[1].DurationMS != 250 {
+		t.Fatalf("event durations = %+v", events)
+	}
+}
+
+func TestNewWorkerTaskPromptKnownSkipRecordsZeroResultRoute(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "internal", "worker.go")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("package workflow\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.AppConfig{RepoRoot: root, RepoHash: "repo-search-known-skip", StateBase: t.TempDir(), RepoSearch: true}
+	st, err := state.NewStateStore(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.StartNewTask(); err != nil {
+		t.Fatal(err)
+	}
+	w := NewWorkflow(cfg, st, nil, nil)
+	w.repoSearch = func(context.Context, string, string, reposearch.Options) (reposearch.Report, error) {
+		t.Fatal("既知targetでsearchが実行されました")
+		return reposearch.Report{}, nil
+	}
+	w.newWorkerTaskPrompt("fix internal/worker.go", "")
+
+	stats, err := st.CurrentTaskStats()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.RepoSearchCalls != 1 || stats.RepoSearchOutcomes[repoSearchKnownSkip] != 1 ||
+		stats.RepoSearchResults != 0 || stats.RepoSearchDurationMS != 0 {
+		t.Fatalf("known-skip stats = %+v", stats)
+	}
+}
+
+func readAllTaskEvents(t *testing.T, st *state.StateStore, taskID string) []state.TaskEventRecord {
+	t.Helper()
+	file, err := os.Open(st.TaskEventLogPath(taskID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = file.Close() }()
+	var events []state.TaskEventRecord
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		event, err := state.ParseTaskEventLine(scanner.Bytes())
+		if err != nil {
+			t.Fatal(err)
+		}
+		events = append(events, event)
+	}
+	if err := scanner.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return events
 }

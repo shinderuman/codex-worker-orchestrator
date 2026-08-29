@@ -71,7 +71,7 @@ func TestReviewerDiffFirstSearchesImpactIndependentlyAndExcludesChangedPaths(t *
 		t.Fatalf("independence marker missing: %s", block)
 	}
 	event := readOnlyTaskEvent(t, st, taskID)
-	if event.Phase != reviewerRepoSearchPhase || event.Subtype != reviewerSearchHit || !strings.Contains(event.SearchQuery, "workflow.go") || len(event.SearchPaths) != 1 || event.SearchPaths[0] != "glm-worker/internal/workflow/prompts.go" {
+	if event.Phase != reviewerRepoSearchPhase || event.Subtype != reviewerSearchHit || event.SearchQuery != "" || len(event.SearchPaths) != 1 || event.SearchPaths[0] != "glm-worker/internal/workflow/prompts.go" {
 		t.Fatalf("event=%#v", event)
 	}
 }
@@ -84,6 +84,37 @@ func TestReviewerDiffFirstSearchFailureFallsBackToDiffInspection(t *testing.T) {
 	block := w.reviewerDiffFirstContext("change reviewer dispatch", 1)
 	if !strings.Contains(block, "SEARCH_OUTCOME: independent-search-error-fallback") || !strings.Contains(block, "CHANGED_PATH: glm-worker/internal/workflow/workflow.go") {
 		t.Fatalf("block=%s", block)
+	}
+}
+
+func TestReviewerDiffFirstRecordsRepoSearchStatsWithDuration(t *testing.T) {
+	w, st, taskID := newReviewerSearchWorkflow(t, []string{"glm-worker/internal/workflow/workflow.go"})
+	current := time.Date(2026, 8, 30, 3, 0, 0, 0, time.UTC)
+	w.now = func() time.Time {
+		current = current.Add(100 * time.Millisecond)
+		return current
+	}
+	w.repoSearch = func(context.Context, string, string, reposearch.Options) (reposearch.Report, error) {
+		return reposearch.Report{Results: []reposearch.Result{
+			{Path: "glm-worker/internal/workflow/workflow.go", Line: 50},
+			{Path: "glm-worker/internal/workflow/prompts.go", Line: 20},
+		}}, nil
+	}
+	w.reviewerDiffFirstContext("change reviewer dispatch", 1)
+
+	stats, err := st.CurrentTaskStats()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.RepoSearchCalls != 1 || stats.RepoSearchQueriesByCategory[reviewerRepoSearchPhase] != 1 {
+		t.Fatalf("repo-search stats = %+v", stats)
+	}
+	if stats.RepoSearchOutcomes[reviewerSearchHit] != 1 || stats.RepoSearchResults != 1 || stats.RepoSearchDurationMS != 100 {
+		t.Fatalf("repo-search outcomes = %+v", stats)
+	}
+	events := readAllTaskEvents(t, st, taskID)
+	if len(events) != 1 || events[0].DurationMS != 100 {
+		t.Fatalf("events = %+v", events)
 	}
 }
 

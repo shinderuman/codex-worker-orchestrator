@@ -146,10 +146,13 @@ glm-worker --model-routing
 glm-worker --test-impact
 glm-worker --codex-limit
 glm-worker --repo-search <query>
+glm-worker --repo-search-eval
 glm-worker --check-wake-coalesce <parent-thread-id> <resume-at-rfc3339>
 ```
 
 `glm-worker --repo-search <query>`はcurrent repositoryを既存BM25 coreでread-only検索し機械可読JSONを返す。repo-search feature全体は`GLM_WORKER_REPO_SEARCH`環境変数(既定enabled)で切り替わり、disabled時はworker/reviewerのsearch注入とCLI検索を実行しない。
+
+`glm-worker --repo-search-eval`は保存済みtask eventとtask statsだけを読むread-only評価reportを返す。worker/reviewer各search routeのquery category、hit/miss/fallback/skip、result count、durationをraw query/result本文なしで集計し、event logとtask statsの加法整合をcross-checkする。同じtask stats集計はfixed eval-ab基盤(`glm_usage`解決)経由でA/B reportの`repo_search` blockへ接続し、実benchmark runは実行しない。
 
 詳細な呼出条件・packet契約・auto-resume・stop/isolate・feasibility gate等は`codex/instructions/`が持つ。
 

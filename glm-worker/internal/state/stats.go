@@ -68,6 +68,12 @@ type TaskStats struct {
 	PacketRejectByCategory map[string]int `json:"packet_reject_by_category,omitempty"`
 	ProbeOutcome           map[string]int `json:"probe_outcome,omitempty"`
 
+	RepoSearchCalls             int            `json:"repo_search_calls,omitempty"`
+	RepoSearchQueriesByCategory map[string]int `json:"repo_search_queries_by_category,omitempty"`
+	RepoSearchOutcomes          map[string]int `json:"repo_search_outcomes,omitempty"`
+	RepoSearchResults           int            `json:"repo_search_results,omitempty"`
+	RepoSearchDurationMS        int64          `json:"repo_search_duration_ms,omitempty"`
+
 	TransientRetries int `json:"transient_retries,omitempty"`
 
 	ParentReviewOpen      *ParentReviewOpenState `json:"parent_review_open,omitempty"`
@@ -376,6 +382,19 @@ func (s *StateStore) RecordProbeOutcome(outcome string) {
 	}
 	s.UpdateTaskStats(func(stats *TaskStats) {
 		addInt(&stats.ProbeOutcome, outcome, 1)
+	})
+}
+
+func (s *StateStore) RecordRepoSearchOutcome(category string, outcome string, resultCount int, duration time.Duration) {
+	if category == "" || outcome == "" {
+		return
+	}
+	s.UpdateTaskStats(func(stats *TaskStats) {
+		stats.RepoSearchCalls++
+		addInt(&stats.RepoSearchQueriesByCategory, category, 1)
+		addInt(&stats.RepoSearchOutcomes, outcome, 1)
+		stats.RepoSearchResults += resultCount
+		stats.RepoSearchDurationMS += duration.Milliseconds()
 	})
 }
 

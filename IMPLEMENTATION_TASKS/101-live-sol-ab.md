@@ -85,11 +85,10 @@ orchestrator全体の最終価値を実測する。
 
 ## Historical invariants
 
-fixed eval-ab基盤。`glm-worker/internal/abeval/usage.go`の`GLMUsageFromTaskStats()`。Task 008の固定入力測定ではmachine JSONのCodex Reductionは不立証で、Direct Codex/Sol A/Bは未実施。
+fixed eval-ab基盤。`glm-worker/internal/abeval/usage.go`の`GLMUsageFromTaskStats()`。Task 008の固定入力測定ではmachine JSONのCodex Reductionは不立証で、Direct Codex/Sol A/Bは未実施。Task 020で保存済みrepo-search telemetryをoptional `repo_search` blockへ接続するfixed Eval hookが完了済み。
 
 ## Dependencies
 
-- `IMPLEMENTATION_TASKS/020-repo-search-telemetry-eval.md`
 - `IMPLEMENTATION_TASKS/022-final-verification.md`
 
 ## Review findings

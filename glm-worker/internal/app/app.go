@@ -93,6 +93,7 @@ const (
 	ModeTestImpact
 	ModeBundle
 	ModeRepoSearch
+	ModeRepoSearchEval
 )
 
 const fixOriginUsage = "[--origin codex-review|glm-reviewer|user-amendment|external-review|metadata-repair] [--accepted-scope current-diff]"
@@ -164,6 +165,9 @@ var commandParsers = map[string]commandParser{
 	},
 	"--repo-search": func(args []string) (Command, error) {
 		return requiredPayloadCommand(args, ModeRepoSearch, "usage: glm-worker --repo-search <query>")
+	},
+	"--repo-search-eval": func(args []string) (Command, error) {
+		return singleArgCommand(args, ModeRepoSearchEval, "usage: glm-worker --repo-search-eval")
 	},
 	"--install-smoke": installSmokeCommand,
 	"--quality-gate":  qualityGateRecoveryCommand,
@@ -472,6 +476,8 @@ func executeStatelessReport(cmd Command, cfg config.AppConfig, stdout io.Writer)
 		return true, printModelRouting(st, stdout)
 	case ModeTestImpact:
 		return true, printTestImpact(st, stdout)
+	case ModeRepoSearchEval:
+		return true, printRepoSearchEval(st, stdout)
 	case ModeBundle:
 		return true, printBundle(cfg, st, cmd.Payload, stdout)
 	default:

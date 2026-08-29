@@ -42,6 +42,23 @@ type RunRecord struct {
 	GLMUsage      GLMUsage      `json:"glm_usage"`
 	Quality       Quality       `json:"quality"`
 	Proxy         ProxyMetrics  `json:"proxy"`
+
+	RepoSearch RepoSearchMetrics `json:"-"`
+}
+
+type RepoSearchMetrics struct {
+	Source            string         `json:"source"`
+	TaskID            string         `json:"task_id,omitempty"`
+	Calls             int            `json:"calls"`
+	QueriesByCategory map[string]int `json:"queries_by_category,omitempty"`
+	Outcomes          map[string]int `json:"outcomes,omitempty"`
+	Hits              int            `json:"hits"`
+	Misses            int            `json:"misses"`
+	Fallbacks         int            `json:"fallbacks"`
+	Skips             int            `json:"skips"`
+	Other             int            `json:"other,omitempty"`
+	Results           int            `json:"results"`
+	DurationMS        int64          `json:"duration_ms"`
 }
 
 type Boundary struct {
@@ -110,6 +127,11 @@ func (u CodexUsage) Known() bool {
 
 func (u GLMUsage) IsZero() bool {
 	return u == GLMUsage{}
+}
+
+func (m RepoSearchMetrics) HasRecordedRoutes() bool {
+	return m.Calls != 0 || m.Results != 0 || m.DurationMS != 0 ||
+		len(m.QueriesByCategory) != 0 || len(m.Outcomes) != 0
 }
 
 func SpecSHA256(spec Spec) string {

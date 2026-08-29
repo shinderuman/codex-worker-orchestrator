@@ -60,6 +60,10 @@ Task 021自身のためだけに通常implementation task同等の、
 
 親Codexのdecision checkpointとして、品質証拠なしの複雑性増殖を防ぐ。
 
+## External feasibility
+
+status: not-applicable
+
 ## Contract
 
 - candidateごとにevidence、expected reduction、quality risk、rollbackを示す

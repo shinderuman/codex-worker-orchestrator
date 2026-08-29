@@ -1,6 +1,7 @@
 package abeval
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -84,5 +85,76 @@ func TestGLMUsageFromTaskStatsSumsAliasesPerKind(t *testing.T) {
 	}
 	if usage.Source != GLMUsageSourceTaskStats || usage.TaskID != "task-1234" {
 		t.Fatalf("source/task = %s/%s", usage.Source, usage.TaskID)
+	}
+}
+
+func repoSearchTaskStats(taskID string) state.TaskStats {
+	stats := fakeTaskStats(taskID)
+	stats.RepoSearchCalls = 3
+	stats.RepoSearchQueriesByCategory = map[string]int{
+		state.RepoSearchCategoryWorkerNavigation:    2,
+		state.RepoSearchCategoryReviewerIndependent: 1,
+	}
+	stats.RepoSearchOutcomes = map[string]int{
+		state.RepoSearchOutcomeSearchHit:        2,
+		state.RepoSearchOutcomeIndependentEmpty: 1,
+	}
+	stats.RepoSearchResults = 11
+	stats.RepoSearchDurationMS = 4200
+	return stats
+}
+
+func TestResolveFromTaskStatsFillsRepoSearchMetrics(t *testing.T) {
+	spec := validSpec()
+	record := validOrchestratedRecord(spec)
+	record.GLMUsage = GLMUsage{Source: GLMUsageSourceTaskStats, TaskID: "task-1234"}
+
+	resolved, err := ResolveFromTaskStats(record, []state.TaskStats{repoSearchTaskStats("task-1234")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	metrics := resolved.RepoSearch
+	if metrics.Source != GLMUsageSourceTaskStats || metrics.TaskID != "task-1234" {
+		t.Fatalf("source/task = %s/%s", metrics.Source, metrics.TaskID)
+	}
+	if metrics.Calls != 3 || metrics.Hits != 2 || metrics.Misses != 1 || metrics.Fallbacks != 0 || metrics.Skips != 0 {
+		t.Fatalf("metrics = %+v", metrics)
+	}
+	if metrics.Results != 11 || metrics.DurationMS != 4200 {
+		t.Fatalf("results/duration = %d/%d", metrics.Results, metrics.DurationMS)
+	}
+	if metrics.QueriesByCategory[state.RepoSearchCategoryWorkerNavigation] != 2 {
+		t.Fatalf("queries_by_category = %+v", metrics.QueriesByCategory)
+	}
+}
+
+func TestResolveFromTaskStatsKeepsZeroRepoSearchWhenNoRoutesRan(t *testing.T) {
+	spec := validSpec()
+	record := validOrchestratedRecord(spec)
+	record.GLMUsage = GLMUsage{Source: GLMUsageSourceTaskStats, TaskID: "task-1234"}
+
+	resolved, err := ResolveFromTaskStats(record, []state.TaskStats{fakeTaskStats("task-1234")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.RepoSearch.HasRecordedRoutes() {
+		t.Fatalf("repo-searchなしtaskで記録済みrouteが出ています: %+v", resolved.RepoSearch)
+	}
+}
+
+func TestLoadRecordRejectsParentProvidedRepoSearchBlock(t *testing.T) {
+	spec := validSpec()
+	path := writeRecordJSON(t, "orchestrated.json", validOrchestratedRecord(spec))
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	injected := []byte(strings.Replace(string(data), "{", `{"repo_search":{"calls":1},`, 1))
+	if err := os.WriteFile(path, injected, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := LoadRecord(path); err == nil || !strings.Contains(err.Error(), "unknown field") {
+		t.Fatalf("run記録へのrepo_search転記が拒否されていません: %v", err)
 	}
 }

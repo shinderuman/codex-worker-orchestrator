@@ -13,13 +13,13 @@ import (
 )
 
 const (
-	reviewerRepoSearchPhase         = "reviewer-repo-search"
-	reviewerSearchDiffSufficient    = "diff-sufficient"
-	reviewerSearchDisabled          = "independent-search-disabled"
-	reviewerSearchHit               = "independent-search-hit"
-	reviewerSearchEmpty             = "independent-search-empty"
-	reviewerSearchErrorFallback     = "independent-search-error-fallback"
-	reviewerSearchDiffErrorFallback = "diff-surface-error-fallback"
+	reviewerRepoSearchPhase         = state.RepoSearchCategoryReviewerIndependent
+	reviewerSearchDiffSufficient    = state.RepoSearchOutcomeDiffSufficient
+	reviewerSearchDisabled          = state.RepoSearchOutcomeIndependentDisabled
+	reviewerSearchHit               = state.RepoSearchOutcomeIndependentHit
+	reviewerSearchEmpty             = state.RepoSearchOutcomeIndependentEmpty
+	reviewerSearchErrorFallback     = state.RepoSearchOutcomeIndependentErrorFallback
+	reviewerSearchDiffErrorFallback = state.RepoSearchOutcomeDiffSurfaceErrorFallback
 	reviewerDiffImpactTermLimit     = 32
 )
 
@@ -31,13 +31,13 @@ func (w *Workflow) reviewerDiffFirstContext(request string, reviewNumber int) st
 	baseline := w.state.ReadOr("baseline-head", "")
 	paths, err := collector(w.config.RepoRoot, baseline)
 	if err != nil {
-		w.recordRepoSearchOutcome(reviewerRepoSearchPhase, state.ReviewerRole, reviewNumber+1, reviewerSearchDiffErrorFallback, "", nil)
+		w.recordRepoSearchOutcome(reviewerRepoSearchPhase, state.ReviewerRole, reviewNumber+1, reviewerSearchDiffErrorFallback, nil, 0)
 		return renderReviewerDiffFirstNavigation(nil, reviewerSearchDiffErrorFallback, "", nil)
 	}
 	paths = uniqueSortedPaths(paths)
 	impactPaths := reviewerImpactPaths(paths)
 	if len(impactPaths) == 0 {
-		w.recordRepoSearchOutcome(reviewerRepoSearchPhase, state.ReviewerRole, reviewNumber+1, reviewerSearchDiffSufficient, "", nil)
+		w.recordRepoSearchOutcome(reviewerRepoSearchPhase, state.ReviewerRole, reviewNumber+1, reviewerSearchDiffSufficient, nil, 0)
 		return renderReviewerDiffFirstNavigation(paths, reviewerSearchDiffSufficient, "", nil)
 	}
 	if !w.config.RepoSearch {
@@ -46,13 +46,10 @@ func (w *Workflow) reviewerDiffFirstContext(request string, reviewNumber int) st
 
 	impactTerms := collectReviewerDiffImpactTerms(w.config.RepoRoot, baseline)
 	query := reviewerIndependentSearchQuery(request, impactPaths, impactTerms)
-	search := w.repoSearch
-	if search == nil {
-		search = reposearch.Search
-	}
-	report, searchErr := search(context.Background(), w.config.RepoRoot, query, reposearch.Options{MaxResults: RepoSearchMaxResults})
+	timer := w.newRepoSearchTimer()
+	report, searchErr := timer.run(context.Background(), w.config.RepoRoot, query, reposearch.Options{MaxResults: RepoSearchMaxResults})
 	if searchErr != nil {
-		w.recordRepoSearchOutcome(reviewerRepoSearchPhase, state.ReviewerRole, reviewNumber+1, reviewerSearchErrorFallback, query, nil)
+		w.recordRepoSearchOutcome(reviewerRepoSearchPhase, state.ReviewerRole, reviewNumber+1, reviewerSearchErrorFallback, nil, timer.elapsed)
 		return renderReviewerDiffFirstNavigation(paths, reviewerSearchErrorFallback, query, nil)
 	}
 	candidates := excludeChangedPaths(report.Results, paths)
@@ -60,7 +57,7 @@ func (w *Workflow) reviewerDiffFirstContext(request string, reviewNumber int) st
 	if len(candidates) == 0 {
 		outcome = reviewerSearchEmpty
 	}
-	w.recordRepoSearchOutcome(reviewerRepoSearchPhase, state.ReviewerRole, reviewNumber+1, outcome, query, candidates)
+	w.recordRepoSearchOutcome(reviewerRepoSearchPhase, state.ReviewerRole, reviewNumber+1, outcome, candidates, timer.elapsed)
 	return renderReviewerDiffFirstNavigation(paths, outcome, query, candidates)
 }
 

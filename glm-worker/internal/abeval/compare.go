@@ -36,6 +36,7 @@ type Report struct {
 	CodexUsage          ReportCodexUsagePair  `json:"codex_usage"`
 	GLMUsage            ReportGLMUsagePair    `json:"glm_usage"`
 	ProxyMetrics        ReportProxyPair       `json:"proxy_metrics"`
+	RepoSearch          ReportRepoSearchPair  `json:"repo_search"`
 }
 
 type ReportMetadata struct {
@@ -79,6 +80,11 @@ type ReportGLMUsagePair struct {
 type ReportProxyPair struct {
 	Direct       *ProxyMetrics `json:"direct"`
 	Orchestrated *ProxyMetrics `json:"orchestrated"`
+}
+
+type ReportRepoSearchPair struct {
+	Direct       *RepoSearchMetrics `json:"direct"`
+	Orchestrated *RepoSearchMetrics `json:"orchestrated"`
 }
 
 const (
@@ -179,6 +185,10 @@ func BuildReport(c Comparison) Report {
 			Direct:       proxyPtr(c.Direct.Proxy),
 			Orchestrated: proxyPtr(c.Orchestrated.Proxy),
 		},
+		RepoSearch: ReportRepoSearchPair{
+			Direct:       nil,
+			Orchestrated: repoSearchPtr(c.Orchestrated.RepoSearch),
+		},
 	}
 }
 
@@ -194,6 +204,13 @@ func proxyPtr(proxy ProxyMetrics) *ProxyMetrics {
 		return nil
 	}
 	return &proxy
+}
+
+func repoSearchPtr(metrics RepoSearchMetrics) *RepoSearchMetrics {
+	if !metrics.HasRecordedRoutes() {
+		return nil
+	}
+	return &metrics
 }
 
 func requestSHA256(value string) string {
