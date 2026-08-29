@@ -80,6 +80,7 @@ func workerSchema() *objectSchema {
 			"requirement_coverage": stringProperty(),
 			"tests":                stringProperty(),
 			"unverified":           stringProperty(),
+			"parent_validation":    stringProperty(ParentValidationGoTest, ParentValidationGoTestRace),
 			"decision":             stringProperty(),
 			"evidence":             stringProperty(),
 			"options":              stringProperty(),
