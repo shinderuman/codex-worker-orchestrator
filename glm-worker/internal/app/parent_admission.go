@@ -9,21 +9,37 @@ import (
 )
 
 func admitParentCommand(cmd Command, st *state.StateStore) error {
-	plan, err := st.ParentActionPlan()
-	if err != nil {
-		return &workflow.WorkerError{Message: err.Error()}
-	}
-	if cmd.Mode == ModeNewTask {
-		if plan.RequiredAction == state.ParentActionNone {
+	if cmd.Mode != ModeNewTask {
+		action, parentCommand := commandParentAction(cmd.Mode)
+		if !parentCommand {
 			return nil
 		}
-		return parentActionDenied("new-task", plan)
+		plan, err := parentActionPlan(st)
+		if err != nil {
+			return err
+		}
+		if plan.AdmitsCommand(action) {
+			return nil
+		}
+		return parentActionDenied(string(action), plan)
 	}
-	action, parentCommand := commandParentAction(cmd.Mode)
-	if !parentCommand || plan.Allows(action) {
+
+	plan, err := parentActionPlan(st)
+	if err != nil {
+		return err
+	}
+	if plan.RequiredAction == state.ParentActionNone {
 		return nil
 	}
-	return parentActionDenied(string(action), plan)
+	return parentActionDenied("new-task", plan)
+}
+
+func parentActionPlan(st *state.StateStore) (state.ParentActionPlan, error) {
+	plan, err := st.ParentActionPlan()
+	if err != nil {
+		return state.ParentActionPlan{}, &workflow.WorkerError{Message: err.Error()}
+	}
+	return plan, nil
 }
 
 func commandParentAction(mode CommandMode) (state.ParentAction, bool) {
