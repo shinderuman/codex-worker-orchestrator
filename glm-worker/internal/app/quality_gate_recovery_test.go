@@ -297,3 +297,57 @@ func TestQualityGateStatusMarksRunnerWithoutPIDInterruptedAfterStartupGrace(t *t
 		t.Fatalf("runner without pid did not recover after startup grace: %+v", got)
 	}
 }
+
+func TestQualityGateReconcileDoesNotClobberTerminalResultWrittenUnderRunLock(t *testing.T) {
+	_, st := newQualityGateEnv(t)
+	runID := strings.Repeat("6", 32)
+	record := qualityGateRunRecord{
+		ValidationRunID: runID,
+		Form:            "go-test",
+		Repository:      "/repo",
+		StartedAt:       time.Now().Add(-time.Second).UTC(),
+		Status:          qualityGateStatusRunning,
+		RunnerPID:       2147483647,
+	}
+	if err := writeQualityGateRun(st, record); err != nil {
+		t.Fatal(err)
+	}
+
+	lock, err := acquireQualityGateRunStateLock(st, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reconciled := make(chan qualityGateRunRecord, 1)
+	reconcileErr := make(chan error, 1)
+	go func() {
+		got, err := reconcileQualityGateRun(st, runID)
+		if err != nil {
+			reconcileErr <- err
+			return
+		}
+		reconciled <- got
+	}()
+
+	completed := time.Now().UTC()
+	record.Status = qualityGateStatusPass
+	record.CompletedAt = &completed
+	record.ExitCode = 0
+	if err := writeQualityGateRun(st, record); err != nil {
+		_ = lock.Close()
+		t.Fatal(err)
+	}
+	if err := lock.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case err := <-reconcileErr:
+		t.Fatal(err)
+	case got := <-reconciled:
+		if got.Status != qualityGateStatusPass || got.CompletedAt == nil {
+			t.Fatalf("terminal result was clobbered by reconcile: %+v", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("reconcile did not complete after run-state lock release")
+	}
+}

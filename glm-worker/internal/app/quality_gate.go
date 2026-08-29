@@ -78,6 +78,7 @@ const (
 	qualityGateRunDirectory       = "quality-gate-runs"
 	qualityGateRunFile            = "run.json"
 	qualityGateRunLog             = "gate.log"
+	qualityGateRunStateLock       = "state.lock"
 	qualityGateStatusRunning      = "running"
 	qualityGateStatusPass         = "pass"
 	qualityGateStatusFail         = "fail"
@@ -245,6 +246,12 @@ func executeQualityGateRun(st *state.StateStore, runID string) error {
 }
 
 func beginQualityGateRun(st *state.StateStore, runID string) (qualityGateRunRecord, []string, bool, error) {
+	lock, err := acquireQualityGateRunStateLock(st, runID)
+	if err != nil {
+		return qualityGateRunRecord{}, nil, false, err
+	}
+	defer func() { _ = lock.Close() }()
+
 	record, err := readQualityGateRun(st, runID)
 	if err != nil {
 		return qualityGateRunRecord{}, nil, false, err
@@ -275,6 +282,12 @@ func runQualityGateProcess(record qualityGateRunRecord, goArgs []string) ([]byte
 }
 
 func completeQualityGateRun(st *state.StateStore, record qualityGateRunRecord, gateLog []byte, runErr error) (qualityGateRunRecord, error) {
+	lock, err := acquireQualityGateRunStateLock(st, record.ValidationRunID)
+	if err != nil {
+		return qualityGateRunRecord{}, err
+	}
+	defer func() { _ = lock.Close() }()
+
 	status, exitCode := qualityGateProcessOutcome(runErr)
 	logPath, logErr := writeQualityGateRunLog(st, record.ValidationRunID, gateLog)
 	if logErr != nil {
@@ -369,6 +382,12 @@ func waitQualityGateRun(st *state.StateStore, runID string) (qualityGateRunRecor
 }
 
 func reconcileQualityGateRun(st *state.StateStore, runID string) (qualityGateRunRecord, error) {
+	lock, err := acquireQualityGateRunStateLock(st, runID)
+	if err != nil {
+		return qualityGateRunRecord{}, err
+	}
+	defer func() { _ = lock.Close() }()
+
 	record, err := readQualityGateRun(st, runID)
 	if err != nil {
 		return qualityGateRunRecord{}, err
@@ -378,17 +397,17 @@ func reconcileQualityGateRun(st *state.StateStore, runID string) (qualityGateRun
 	}
 	if record.RunnerPID > 0 {
 		if !qualityGateProcessAlive(record.RunnerPID) {
-			return markQualityGateInterrupted(st, record, "quality gate runner is no longer running")
+			return markQualityGateInterruptedLocked(st, record, "quality gate runner is no longer running")
 		}
 		return record, nil
 	}
 	if time.Since(record.StartedAt) >= qualityGateRunnerStartupGrace {
-		return markQualityGateInterrupted(st, record, "quality gate runner did not publish its pid before startup grace elapsed")
+		return markQualityGateInterruptedLocked(st, record, "quality gate runner did not publish its pid before startup grace elapsed")
 	}
 	return record, nil
 }
 
-func markQualityGateInterrupted(st *state.StateStore, record qualityGateRunRecord, reason string) (qualityGateRunRecord, error) {
+func markQualityGateInterruptedLocked(st *state.StateStore, record qualityGateRunRecord, reason string) (qualityGateRunRecord, error) {
 	completed := time.Now().UTC()
 	record.Status = qualityGateStatusInterrupted
 	record.ExitCode = -1
@@ -435,7 +454,17 @@ func sameQualityGateSnapshot(record qualityGateRunRecord, form, repository strin
 }
 
 func acquireQualityGateStartLock(st *state.StateStore) (*RepoLock, error) {
-	path := st.Path(filepath.Join(qualityGateRunDirectory, "start.lock"))
+	return acquireQualityGateLock(st.Path(filepath.Join(qualityGateRunDirectory, "start.lock")))
+}
+
+func acquireQualityGateRunStateLock(st *state.StateStore, runID string) (*RepoLock, error) {
+	if !validValidationRunID(runID) {
+		return nil, fmt.Errorf("invalid validation run id")
+	}
+	return acquireQualityGateLock(st.Path(filepath.Join(qualityGateRunDirectory, runID, qualityGateRunStateLock)))
+}
+
+func acquireQualityGateLock(path string) (*RepoLock, error) {
 	for attempt := 0; attempt < 100; attempt++ {
 		lock, err := AcquireRepoLock(path)
 		if err == nil {
