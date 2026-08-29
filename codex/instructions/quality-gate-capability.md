@@ -15,6 +15,7 @@ glm-worker --quality-gate go-test-race
 - 子processの`GOFLAGS`は空に固定する。
 - 実行dirは呼出時current directoryで、入口側でrepositoryを選び直さない。
 - gate開始前に`validation_run_id`とexact snapshot（repository identity / HEAD / index digest / worktree digest）をstateへ保存する。
+- gateを新規開始または既存runへattachした直後、stderr JSONLの`quality_gate_started` control eventで`validation_run_id`と`attached`を通知する。stdoutのterminal resultは従来どおり単一JSON objectのまま保持する。
 - 成功はstdoutのJSON object 1件、失敗はstderrの`kind:"quality_gate_failed"` error JSONとnon-zero exitで返す。subprocess出力はrun ID単位のlog fileへ保存し、machine出力にはpathだけを載せる。
 - 同じformかつ同じexact snapshotのrunが`running`なら新しいgateを起動せず、そのrunへattachする。completed pass/failはcacheとして再利用せず、明示された新規実行は新しいrunとして扱う。
 - 呼出元のterminal/tool sessionを失った場合は、開始時に通知されたrun IDを使って`glm-worker --quality-gate status <validation_run_id>`、`watch <validation_run_id>`、`result <validation_run_id>`から同じrunの状態・完了結果・evidence pathを回収する。親が周期pollする運用にはしない。
