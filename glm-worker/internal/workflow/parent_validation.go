@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint"
@@ -43,30 +44,30 @@ type parentValidationProcessError struct {
 
 const parentValidationGateFailureKind = "quality_gate_failed"
 
-var parentValidationGateRunner = func(w *Workflow, form string) (parentValidationGateRecord, error) {
-	return w.runParentValidationGate(form)
+var parentValidationGateRunner = func(w *Workflow, request packet.ParentValidationRequest) (parentValidationGateRecord, error) {
+	return w.runParentValidationGate(request)
 }
 
 func (w *Workflow) convergeParentValidation(checkpoint state.ResumeCheckpoint, result packet.Result) (packet.Result, error) {
-	if result.Status != packet.StatusImplemented || result.ParentValidation == "" || result.ParentValidationEvidence != "" {
+	if result.Status != packet.StatusImplemented || result.ParentValidation == nil || result.ParentValidationEvidence != "" {
 		return result, nil
 	}
-	form := result.ParentValidation
+	request := *result.ParentValidation
 
 	qualityReport, err := w.qualityGate(w.config.RepoRoot)
 	if err != nil {
 		return packet.Result{}, &WorkerError{Phase: "harnesslint", Message: fmt.Sprintf("harnesslint failed before parent validation: %v", err)}
 	}
 	if harnesslint.IsViolation(qualityReport) {
-		return w.fixBeforeParentValidation(checkpoint, qualityGateFixResult(qualityReport), form)
+		return w.fixBeforeParentValidation(checkpoint, qualityGateFixResult(qualityReport), request)
 	}
 
-	record, err := parentValidationGateRunner(w, form)
+	record, err := parentValidationGateRunner(w, request)
 	if err != nil {
 		return packet.Result{}, err
 	}
 	if record.Status != "pass" {
-		return w.fixBeforeParentValidation(checkpoint, parentValidationFailureResult(record), form)
+		return w.fixBeforeParentValidation(checkpoint, parentValidationFailureResult(record), request)
 	}
 	result.ParentValidationEvidence = parentValidationEvidence(record)
 	return result, nil
@@ -75,12 +76,12 @@ func (w *Workflow) convergeParentValidation(checkpoint state.ResumeCheckpoint, r
 func (w *Workflow) fixBeforeParentValidation(
 	checkpoint state.ResumeCheckpoint,
 	failure packet.Result,
-	form string,
+	request packet.ParentValidationRequest,
 ) (packet.Result, error) {
 	if checkpoint.AutoFixes >= w.config.MaxAutoFixRounds {
 		return packet.Result{}, &WorkerError{
 			Phase:   "parent-validation",
-			Message: fmt.Sprintf("parent validation %s remains failing after the worker fix budget", form),
+			Message: fmt.Sprintf("parent validation %s remains failing after the worker fix budget", request.Form),
 		}
 	}
 	reviewNumber := checkpoint.ReviewNumber
@@ -91,7 +92,7 @@ func (w *Workflow) fixBeforeParentValidation(
 	if err != nil {
 		return packet.Result{}, err
 	}
-	fixCheckpoint.ParentValidation = form
+	fixCheckpoint.ParentValidation = cloneParentValidationRequest(&request)
 	w.state.RecordAutoFix()
 	fixed, stopped, err := w.runAutoFixCheckpoint(fixCheckpoint)
 	if err != nil || stopped {
@@ -101,38 +102,56 @@ func (w *Workflow) fixBeforeParentValidation(
 }
 
 func applyCheckpointParentValidation(checkpoint state.ResumeCheckpoint, result packet.Result) (packet.Result, error) {
-	if checkpoint.ParentValidation == "" || result.Status != packet.StatusImplemented {
+	if checkpoint.ParentValidation == nil || result.Status != packet.StatusImplemented {
 		return result, nil
 	}
-	if result.ParentValidation != "" && result.ParentValidation != checkpoint.ParentValidation {
+	if result.ParentValidation != nil && !sameParentValidationRequest(*result.ParentValidation, *checkpoint.ParentValidation) {
 		return packet.Result{}, &WorkerError{
 			Phase: "parent-validation",
 			Message: fmt.Sprintf(
-				"worker changed the parent validation obligation from %s to %s",
-				checkpoint.ParentValidation,
-				result.ParentValidation,
+				"worker changed the parent validation obligation from %s@%s to %s@%s",
+				checkpoint.ParentValidation.Form,
+				checkpoint.ParentValidation.WorkingDir,
+				result.ParentValidation.Form,
+				result.ParentValidation.WorkingDir,
 			),
 		}
 	}
-	result.ParentValidation = checkpoint.ParentValidation
+	result.ParentValidation = cloneParentValidationRequest(checkpoint.ParentValidation)
 	result.ParentValidationEvidence = ""
 	result.Risk = packet.RiskHigh
 	return result, nil
 }
 
-func (w *Workflow) runParentValidationGate(form string) (parentValidationGateRecord, error) {
+func cloneParentValidationRequest(request *packet.ParentValidationRequest) *packet.ParentValidationRequest {
+	if request == nil {
+		return nil
+	}
+	copy := *request
+	return &copy
+}
+
+func sameParentValidationRequest(left, right packet.ParentValidationRequest) bool {
+	return left.Form == right.Form && left.WorkingDir == right.WorkingDir
+}
+
+func (w *Workflow) runParentValidationGate(request packet.ParentValidationRequest) (parentValidationGateRecord, error) {
+	workingDir, err := resolveParentValidationWorkingDir(w.config.RepoRoot, request.WorkingDir)
+	if err != nil {
+		return parentValidationGateRecord{}, err
+	}
 	executable, err := os.Executable()
 	if err != nil {
 		return parentValidationGateRecord{}, fmt.Errorf("parent validation executableを解決できません: %w", err)
 	}
-	stdout, stderr, runErr := runParentValidationCommand(executable, w.config.RepoRoot, "--quality-gate", form)
+	stdout, stderr, runErr := runParentValidationCommand(executable, workingDir, "--quality-gate", request.Form)
 	runID, err := parentValidationRunID(stdout, stderr, runErr)
 	if err != nil {
 		return parentValidationGateRecord{}, err
 	}
 	recordOut, recordErrOut, recordErr := runParentValidationCommand(
 		executable,
-		w.config.RepoRoot,
+		workingDir,
 		"--quality-gate",
 		"result",
 		runID,
@@ -144,15 +163,39 @@ func (w *Workflow) runParentValidationGate(form string) (parentValidationGateRec
 	if err := json.Unmarshal(bytes.TrimSpace([]byte(recordOut)), &record); err != nil {
 		return parentValidationGateRecord{}, fmt.Errorf("parent validation run evidenceを解析できません: %w", err)
 	}
-	if record.ValidationRunID != runID || record.Form != form {
+	if record.ValidationRunID != runID || record.Form != request.Form || filepath.Clean(record.WorkingDir) != filepath.Clean(workingDir) {
 		return parentValidationGateRecord{}, fmt.Errorf("parent validation run identityが要求と一致しません")
 	}
 	return record, nil
 }
 
-func runParentValidationCommand(executable, repoRoot string, args ...string) (string, string, error) {
+func resolveParentValidationWorkingDir(repoRoot, relative string) (string, error) {
+	resolvedRoot, err := filepath.EvalSymlinks(repoRoot)
+	if err != nil {
+		return "", fmt.Errorf("parent validation repository rootを解決できません: %w", err)
+	}
+	candidate := filepath.Join(repoRoot, filepath.FromSlash(relative))
+	resolved, err := filepath.EvalSymlinks(candidate)
+	if err != nil {
+		return "", fmt.Errorf("parent validation working directoryを解決できません: %w", err)
+	}
+	rel, err := filepath.Rel(resolvedRoot, resolved)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("parent validation working directoryがrepository外です: %s", relative)
+	}
+	info, err := os.Stat(resolved)
+	if err != nil {
+		return "", fmt.Errorf("parent validation working directoryを確認できません: %w", err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("parent validation working directoryがdirectoryではありません: %s", relative)
+	}
+	return resolved, nil
+}
+
+func runParentValidationCommand(executable, workingDir string, args ...string) (string, string, error) {
 	cmd := exec.Command(executable, args...)
-	cmd.Dir = repoRoot
+	cmd.Dir = workingDir
 	cmd.Env = os.Environ()
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -195,9 +238,10 @@ func parentValidationRunID(stdout, stderr string, runErr error) (string, error) 
 
 func parentValidationEvidence(record parentValidationGateRecord) string {
 	return fmt.Sprintf(
-		"status=pass;form=%s;validation_run_id=%s;head=%s;index=%s;worktree=%s;log=%s",
+		"status=pass;form=%s;validation_run_id=%s;working_dir=%s;head=%s;index=%s;worktree=%s;log=%s",
 		record.Form,
 		record.ValidationRunID,
+		record.WorkingDir,
 		record.Head,
 		record.IndexDigest,
 		record.WorktreeDigest,
@@ -213,9 +257,10 @@ func parentValidationFailureResult(record parentValidationGateRecord) packet.Res
 		RequirementCoverage: "the implementation snapshot is not reviewable until the required parent gate passes",
 		Invariants:          "worker/reviewer capability boundaries remain unchanged; validation is bound to the exact repository snapshot",
 		TestEvidence: fmt.Sprintf(
-			"form=%s;validation_run_id=%s;exit_code=%d;head=%s;index=%s;worktree=%s;log=%s",
+			"form=%s;validation_run_id=%s;working_dir=%s;exit_code=%d;head=%s;index=%s;worktree=%s;log=%s",
 			record.Form,
 			record.ValidationRunID,
+			record.WorkingDir,
 			record.ExitCode,
 			record.Head,
 			record.IndexDigest,
