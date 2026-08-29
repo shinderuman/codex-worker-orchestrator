@@ -731,7 +731,7 @@ func resetState(st *state.StateStore, stdout io.Writer) error {
 }
 
 func parentAccept(st *state.StateStore, stdout io.Writer) error {
-	resolved, err := st.RecordParentOutcome(state.ParentOutcomeAccepted, "")
+	resolved, err := st.AcceptParentReview()
 	if err != nil {
 		return err
 	}
