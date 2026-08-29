@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
 func TestQualityGateRecordsTaskValidationEvidence(t *testing.T) {
+	useInlineQualityGateRunner(t)
 	shimDir, _ := writeQualityGateGoShim(t, filepath.Join(t.TempDir(), "absent-flag"))
 	t.Setenv("PATH", shimDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	_, st := newQualityGateEnv(t)
@@ -24,10 +26,11 @@ func TestQualityGateRecordsTaskValidationEvidence(t *testing.T) {
 	}
 	record := readSingleValidationEvent(t, st, taskID)
 	if record.Validation.Source != "quality-gate" || record.Validation.Form != "go-test" ||
-		record.Validation.Result != "pass" || record.Validation.Attribution != "task" {
+		record.Validation.Result != qualityGateStatusPass || record.Validation.Attribution != "task" {
 		t.Fatalf("validation = %#v", record.Validation)
 	}
-	if record.Validation.Evidence != "quality-gate-logs/go-test-pass.log" {
+	parts := strings.Split(record.Validation.Evidence, "/")
+	if len(parts) != 3 || parts[0] != qualityGateRunDirectory || !validValidationRunID(parts[1]) || parts[2] != qualityGateRunLog {
 		t.Fatalf("evidence = %q", record.Validation.Evidence)
 	}
 }

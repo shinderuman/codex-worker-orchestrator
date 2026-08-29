@@ -98,7 +98,7 @@ const fixOriginUsage = "[--origin codex-review|glm-reviewer|user-amendment|exter
 
 const installSmokeUsage = "[--role worker|reviewer|fix|parent]"
 
-const qualityGateUsage = "<go-test|go-test-race>"
+const qualityGateUsage = "<go-test|go-test-race> | --quality-gate <status|watch|result> <validation-run-id>"
 
 var commandParsers = map[string]commandParser{
 	"--decision": func([]string) (Command, error) {
@@ -162,7 +162,7 @@ var commandParsers = map[string]commandParser{
 		return requiredPayloadCommand(args, ModeRepoSearch, "usage: glm-worker --repo-search <query>")
 	},
 	"--install-smoke": installSmokeCommand,
-	"--quality-gate":  qualityGateCommand,
+	"--quality-gate":  qualityGateRecoveryCommand,
 	"bundle": func(args []string) (Command, error) {
 		return optionalPayloadCommand(args, ModeBundle, "usage: glm-worker bundle [task-id]")
 	},
@@ -260,13 +260,6 @@ func installSmokeCommand(args []string) (Command, error) {
 		return Command{Mode: ModeInstallSmoke, Role: args[2]}, nil
 	}
 	return Command{}, usageError("usage: glm-worker --install-smoke %s", installSmokeUsage)
-}
-
-func qualityGateCommand(args []string) (Command, error) {
-	if len(args) != 2 || qualityGateForms[args[1]] == nil {
-		return Command{}, usageError("usage: glm-worker --quality-gate %s", qualityGateUsage)
-	}
-	return Command{Mode: ModeQualityGate, Payload: args[1]}, nil
 }
 
 func stdinPayloadCommand(mode CommandMode, args []string, usage string, allowOrigin bool) (Command, error) {
