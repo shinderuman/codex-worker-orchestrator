@@ -137,11 +137,25 @@ func currentParentValidations(st *state.StateStore, repoRoot string, snapshot *s
 	if repoRoot == "" || snapshot == nil {
 		return []parentHandoffValidation{}
 	}
+	latestByForm := latestCurrentValidationRuns(st, repoRoot, snapshot)
+	forms := make([]string, 0, len(latestByForm))
+	for form := range latestByForm {
+		forms = append(forms, form)
+	}
+	sort.Strings(forms)
+	validations := make([]parentHandoffValidation, 0, len(forms))
+	for _, form := range forms {
+		validations = append(validations, parentHandoffValidationFromRun(latestByForm[form]))
+	}
+	return validations
+}
+
+func latestCurrentValidationRuns(st *state.StateStore, repoRoot string, snapshot *state.SnapshotDigest) map[string]qualityGateRunRecord {
+	latestByForm := make(map[string]qualityGateRunRecord, len(qualityGateForms))
 	entries, err := os.ReadDir(st.Path(qualityGateRunDirectory))
 	if err != nil {
-		return []parentHandoffValidation{}
+		return latestByForm
 	}
-	latestByForm := make(map[string]qualityGateRunRecord, len(qualityGateForms))
 	for _, entry := range entries {
 		if !entry.IsDir() || !validValidationRunID(entry.Name()) {
 			continue
@@ -155,25 +169,19 @@ func currentParentValidations(st *state.StateStore, repoRoot string, snapshot *s
 			latestByForm[record.Form] = record
 		}
 	}
-	forms := make([]string, 0, len(latestByForm))
-	for form := range latestByForm {
-		forms = append(forms, form)
+	return latestByForm
+}
+
+func parentHandoffValidationFromRun(record qualityGateRunRecord) parentHandoffValidation {
+	return parentHandoffValidation{
+		ValidationRunID: record.ValidationRunID,
+		Form:            record.Form,
+		Status:          record.Status,
+		Log:             record.Log,
+		Head:            record.Head,
+		IndexDigest:     record.IndexDigest,
+		WorktreeDigest:  record.WorktreeDigest,
 	}
-	sort.Strings(forms)
-	validations := make([]parentHandoffValidation, 0, len(forms))
-	for _, form := range forms {
-		record := latestByForm[form]
-		validations = append(validations, parentHandoffValidation{
-			ValidationRunID: record.ValidationRunID,
-			Form:            record.Form,
-			Status:          record.Status,
-			Log:             record.Log,
-			Head:            record.Head,
-			IndexDigest:     record.IndexDigest,
-			WorktreeDigest:  record.WorktreeDigest,
-		})
-	}
-	return validations
 }
 
 func qualityGateMatchesHandoff(record qualityGateRunRecord, repoRoot string, snapshot *state.SnapshotDigest) bool {
