@@ -219,11 +219,11 @@ install_pull_hook() {
 	chmod +x "$repo_root/.githooks/post-merge"
 	current=$(git -C "$repo_root" config --local --get core.hooksPath || true)
 	if [ "$current" = '.githooks' ]; then
-		printf 'git hook: unchanged\n'
+		printf '%s\n' 'git hook: unchanged'
 		return
 	fi
 	git -C "$repo_root" config --local core.hooksPath .githooks
-	printf 'git hook: enabled\n'
+	printf '%s\n' 'git hook: enabled'
 }
 
 require git
