@@ -249,7 +249,51 @@ func TestQualityGateStatusMarksDeadRunnerInterrupted(t *testing.T) {
 	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.Status != errorKindInterrupted || got.ExitCode != -1 || got.CompletedAt == nil || got.Log == "" {
+	if got.Status != qualityGateStatusInterrupted || got.ExitCode != -1 || got.CompletedAt == nil || got.Log == "" {
 		t.Fatalf("reconciled record = %+v", got)
+	}
+}
+
+func TestQualityGateStatusKeepsFreshRunnerWithoutPIDRunning(t *testing.T) {
+	_, st := newQualityGateEnv(t)
+	runID := strings.Repeat("8", 32)
+	record := qualityGateRunRecord{
+		ValidationRunID: runID,
+		Form:            "go-test",
+		Repository:      "/repo",
+		StartedAt:       time.Now().UTC(),
+		Status:          qualityGateStatusRunning,
+	}
+	if err := writeQualityGateRun(st, record); err != nil {
+		t.Fatal(err)
+	}
+	got, err := reconcileQualityGateRun(st, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != qualityGateStatusRunning || got.CompletedAt != nil {
+		t.Fatalf("fresh runner without pid was reconciled too early: %+v", got)
+	}
+}
+
+func TestQualityGateStatusMarksRunnerWithoutPIDInterruptedAfterStartupGrace(t *testing.T) {
+	_, st := newQualityGateEnv(t)
+	runID := strings.Repeat("7", 32)
+	record := qualityGateRunRecord{
+		ValidationRunID: runID,
+		Form:            "go-test",
+		Repository:      "/repo",
+		StartedAt:       time.Now().Add(-qualityGateRunnerStartupGrace - time.Second).UTC(),
+		Status:          qualityGateStatusRunning,
+	}
+	if err := writeQualityGateRun(st, record); err != nil {
+		t.Fatal(err)
+	}
+	got, err := reconcileQualityGateRun(st, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != qualityGateStatusInterrupted || got.ExitCode != -1 || got.CompletedAt == nil || got.Log == "" {
+		t.Fatalf("runner without pid did not recover after startup grace: %+v", got)
 	}
 }
