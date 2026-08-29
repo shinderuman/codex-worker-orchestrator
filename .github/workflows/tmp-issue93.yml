@@ -24,13 +24,16 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          path = Path('codex/instructions/glm-execution.md')
-          text = path.read_text()
-          old = '- `~/.codex/config.toml`の`background_terminal_max_timeout`は`21600000`ms（6時間）を前提とする。'
-          new = '''- `~/.codex/config.toml`の`background_terminal_max_timeout`は`21600000`ms（6時間）を前提とし、起動した`glm-worker`は完了または意味のある状態変化まで最大待機時間のblocking waitで待つ。running確認だけの定期status/process pollや、状態が変わっていないことだけを伝える進捗報告を行わない。\n- tool session中断後の復旧、failure診断、制御が戻った時点の状態曖昧性解消に必要なstatus確認は行ってよい。完了、Sol判断/review、guard、rate/provider停止、user割り込み等で制御が戻った場合はその状態変化を扱う。'''
+
+          agents = Path('codex/AGENTS.md')
+          text = agents.read_text()
+          old = '- GLM実行・待機 → `~/.codex/instructions/glm-execution.md`'
+          new = '- GLM実行・待機 → `~/.codex/instructions/glm-execution.md`\n- GLM実行中の待機・polling・進捗報告 → `~/.codex/instructions/glm-wait.md`'
           if text.count(old) != 1:
-              raise SystemExit(f'replacement count={text.count(old)}')
-          path.write_text(text.replace(old, new, 1))
+              raise SystemExit(f'AGENTS replacement count={text.count(old)}')
+          agents.write_text(text.replace(old, new, 1))
+
+          Path('codex/instructions/glm-wait.md').write_text('''# GLM実行中の待機\n\n`glm-worker`の通常task・resume・review/fix/decisionを起動した後、processの完了を待つ間だけ適用する。\n\n- `~/.codex/config.toml`の`background_terminal_max_timeout=21600000`msを前提とし、起動済みprocessは利用可能な最大待機時間のblocking waitで待つ。\n- runningであることを確認するだけの定期status/process pollを行わない。状態が変わっていないことだけを伝えるuser-visible進捗報告も行わない。\n- 完了、Sol判断/review、guard stop、rate/provider stop、user割り込みなど意味のある状態変化で制御が戻った時点から次の処理へ進む。\n- tool sessionが中断した後の復旧、failure診断、制御復帰時の状態が曖昧な場合は、必要な`glm-worker --status`等を実行してよい。定期liveness確認の代用にはしない。\n- 待機のためのtimer、background watcher、追加model call、runtime telemetryは追加しない。\n''')
           PY
       - name: Test
         working-directory: glm-worker
@@ -42,7 +45,7 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add codex/instructions/glm-execution.md
+          git add codex/AGENTS.md codex/instructions/glm-wait.md
           git diff --cached --check
           git commit -m 'Use blocking wait for running glm-worker calls'
           git push origin HEAD:gpt/blocking-wait-93
