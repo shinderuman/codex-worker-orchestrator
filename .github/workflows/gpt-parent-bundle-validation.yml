@@ -1,0 +1,35 @@
+name: GPT Parent Bundle Validation
+
+on:
+  push:
+    branches:
+      - gpt/fix-parent-bundle-readiness
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Read Go version
+        id: quality-tools
+        run: |
+          GO_VERSION=$(awk -F': ' '$1 == "go" { print $2 }' quality-tools.yml)
+          printf 'go_version=%s\n' "$GO_VERSION" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ steps.quality-tools.outputs.go_version }}
+          cache: false
+      - name: Focused app tests
+        working-directory: glm-worker
+        run: go test ./internal/app
+      - name: Full glm-worker tests
+        working-directory: glm-worker
+        run: go test ./...
+      - name: Vet and build
+        working-directory: glm-worker
+        run: |
+          go vet ./...
+          go build ./...
