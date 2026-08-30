@@ -118,6 +118,9 @@ func codexSourceIsGuardian(raw json.RawMessage) bool {
 
 func (c *bundleCollector) collectCodexEvidence(cfg config.AppConfig, task bundleTask) []bundleCodexSource {
 	association := resolveCodexAssociation(cfg.CodexConfigDir, task)
+	if association.ParentStatus != codexStatusIncluded {
+		c.addMissing(path.Join("codex-parent", "parent-session"))
+	}
 	threads := c.addCodexRolloutEvidence(association)
 	logs := c.addCodexLogEvidence(cfg.CodexConfigDir, task, threads, association.ParentStatus)
 	process := c.addCodexProcessEvidence(cfg.CodexConfigDir, task, threads, association.ParentStatus)
