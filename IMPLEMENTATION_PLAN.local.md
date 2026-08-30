@@ -8,16 +8,10 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/quality-surface-authorization-convergence.md`
+- `IMPLEMENTATION_TASKS/bundle-task-diff-committed-files.md`
 
 ## NEXT（優先順）
 
-- `IMPLEMENTATION_TASKS/finalize-check-module-cwd.md`
-- `IMPLEMENTATION_TASKS/normal-push-preflight-reduction.md`
-- `IMPLEMENTATION_TASKS/parent-capability-validation-churn.md`
-- `IMPLEMENTATION_TASKS/worker-repo-search-active-task-seed.md`
-- `IMPLEMENTATION_TASKS/reviewer-repo-search-parent-metadata.md`
-- `IMPLEMENTATION_TASKS/bundle-task-diff-committed-files.md`
 - `IMPLEMENTATION_TASKS/021-conditional-improvements.md`
 - `IMPLEMENTATION_TASKS/022-final-verification.md`
 
@@ -37,14 +31,5 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 ## 現在のGit境界
 
 - branch: `main`
-- current accepted implementation head before this queue maintenance: `612a8c799c2c8a7ffb7fac9b5c78fcfb97ef9ee9`
-- F1-F10 hardening、parent action/handoff、typed parent-capability validation、repo-search、Codex analysis bundle、target-repository lean context、wait instruction削減、actionable containment denial、bounded parent finalization surface、commentlint sandbox-safe launcherはすべてcurrent mainへ統合済み。詳細なcommit・validation・escaped原因は`IMPLEMENTATION_HISTORY.md`を正とする。
+- F1-F10 hardening、parent action/handoff、typed parent-capability validation、repo-search、Codex analysis bundle、target-repository lean context、wait instruction削減、actionable containment denial、bounded parent finalization surface、commentlint sandbox-safe launcherはcurrent mainへ統合済み。詳細なcommit・validation・escaped原因は`IMPLEMENTATION_HISTORY.md`を正とする。
 - preserved boundary: machine-readable lifecycle、snapshot/validation authority、parent-managed metadata guard、GLM commit/push禁止、parent Codex semantic authority、normal fast-forward Git safety、Direct Codex対orchestratedのCodex Reduction / Quality Delta最上位評価を維持する。
-
-## 現在の停止理由
-
-commentlint dogfoodと外部ログ監査を完了し、実装が必要なproduction findingだけをCodex実装taskへ分離してqueueした。Web GPTの測定・Acceptance trackerはこのPlanへ入れない。旧Codex長期threadには削除済みwait instruction等のstale contextが残るため、ユーザー指示により次の開発task開始時だけ新規Codex sessionへ移行し、そのsessionを以後の長期開発sessionとして継続する。旧sessionへ戻らず、定期session rotationも導入しない。
-
-## 次の親Codex操作
-
-新規Codex sessionでRules / Plan / ACTIVE `IMPLEMENTATION_TASKS/quality-surface-authorization-convergence.md`を読み、通常Codex + GLM workflowでこの1 taskを開始する。完了後も同じCodex sessionを継続し、Planの次taskへ進む。各taskのbundle/parent/Guardian evidenceは外部監査でCodex Reduction / Quality Deltaを評価できる形で保持する。
