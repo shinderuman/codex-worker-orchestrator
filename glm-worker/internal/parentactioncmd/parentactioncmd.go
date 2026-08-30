@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	usage             = "usage: glm-parent-action start | prepare <decision|fix> | decision <token> | fix <token> [--origin <origin>] [--accepted-scope current-diff] | accept | resume | finalize-check <go-test|go-test-race>"
+	usage             = "usage: glm-parent-action start | prepare <decision|fix> | decision <token> | fix <token> [--origin <origin>] [--accepted-scope current-diff] [--approval-only] | accept | resume | finalize-check <go-test|go-test-race>"
 	activeTaskRequest = "現在のACTIVE taskを実行してください。"
 	actionStart       = "start"
 	actionFix         = "fix"
@@ -176,32 +176,57 @@ func directWorkerArgs(action string) []string {
 }
 
 func validateFixOptions(options []string) error {
-	fixUsage := "usage: glm-parent-action fix <token> [--origin <origin>] [--accepted-scope current-diff]"
-	if len(options)%2 != 0 {
+	fixUsage := "usage: glm-parent-action fix <token> [--origin <origin>] [--accepted-scope current-diff] [--approval-only]"
+	pairs, approvalOnly, err := extractApprovalOnlyOption(options, fixUsage)
+	if err != nil {
+		return err
+	}
+	if len(pairs)%2 != 0 {
 		return fmt.Errorf("%s", fixUsage)
 	}
 	seen := map[string]bool{}
-	for index := 0; index < len(options); index += 2 {
-		name := options[index]
-		value := options[index+1]
-		if seen[name] {
+	for index := 0; index < len(pairs); index += 2 {
+		name := pairs[index]
+		if seen[name] || !validFixOptionPair(name, pairs[index+1]) {
 			return fmt.Errorf("%s", fixUsage)
 		}
 		seen[name] = true
-		switch name {
-		case "--origin":
-			if !state.ValidParentOrigin(value) {
-				return fmt.Errorf("%s", fixUsage)
-			}
-		case "--accepted-scope":
-			if value != "current-diff" {
-				return fmt.Errorf("%s", fixUsage)
-			}
-		default:
-			return fmt.Errorf("%s", fixUsage)
-		}
+	}
+	if approvalOnly && (!seen["--accepted-scope"] || seen["--origin"]) {
+		return fmt.Errorf("%s", fixUsage)
 	}
 	return nil
+}
+
+func validFixOptionPair(name, value string) bool {
+	switch name {
+	case "--origin":
+		return state.ValidParentOrigin(value)
+	case "--accepted-scope":
+		return value == "current-diff"
+	default:
+		return false
+	}
+}
+
+func extractApprovalOnlyOption(options []string, usage string) ([]string, bool, error) {
+	index := -1
+	for current, option := range options {
+		if option != "--approval-only" {
+			continue
+		}
+		if index >= 0 {
+			return nil, false, fmt.Errorf("%s", usage)
+		}
+		index = current
+	}
+	if index < 0 {
+		return options, false, nil
+	}
+	pairs := make([]string, 0, len(options)-1)
+	pairs = append(pairs, options[:index]...)
+	pairs = append(pairs, options[index+1:]...)
+	return pairs, true, nil
 }
 
 func runWorker(repoRoot string, args []string, stdin io.Reader, stdout, stderr io.Writer, extraEnv []string) error {
