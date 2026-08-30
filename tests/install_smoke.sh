@@ -2,6 +2,7 @@
 set -eu
 
 source_root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
+go_mod_cache=$(go env GOMODCACHE)
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/codex-install-smoke.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT HUP INT TERM
 repo="$tmp/repo"
@@ -39,6 +40,7 @@ chmod +x "$tmp/bin/golangci-lint" "$tmp/bin/shellcheck" "$tmp/bin/shfmt"
 
 run_install() {
 	HOME="$home" \
+		GOMODCACHE="$go_mod_cache" \
 		PATH="$tmp/bin:$PATH" \
 		CODEX_CONFIG_DIR="$home/.codex" \
 		GLM_WORKER_BIN_DIR="$home/.local/bin" \
