@@ -187,28 +187,26 @@ func validateFixOptions(options []string) error {
 	seen := map[string]bool{}
 	for index := 0; index < len(pairs); index += 2 {
 		name := pairs[index]
-		value := pairs[index+1]
-		if seen[name] {
+		if seen[name] || !validFixOptionPair(name, pairs[index+1]) {
 			return fmt.Errorf("%s", fixUsage)
 		}
 		seen[name] = true
-		switch name {
-		case "--origin":
-			if !state.ValidParentOrigin(value) {
-				return fmt.Errorf("%s", fixUsage)
-			}
-		case "--accepted-scope":
-			if value != "current-diff" {
-				return fmt.Errorf("%s", fixUsage)
-			}
-		default:
-			return fmt.Errorf("%s", fixUsage)
-		}
 	}
 	if approvalOnly && (!seen["--accepted-scope"] || seen["--origin"]) {
 		return fmt.Errorf("%s", fixUsage)
 	}
 	return nil
+}
+
+func validFixOptionPair(name, value string) bool {
+	switch name {
+	case "--origin":
+		return state.ValidParentOrigin(value)
+	case "--accepted-scope":
+		return value == "current-diff"
+	default:
+		return false
+	}
 }
 
 func extractApprovalOnlyOption(options []string, usage string) ([]string, bool, error) {
