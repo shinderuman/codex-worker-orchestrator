@@ -46,8 +46,9 @@ func TestNewWorkerTaskPromptUsesActiveTaskSeedForKnownTargetSkip(t *testing.T) {
 		return reposearch.Report{}, nil
 	}
 
-	prompt := w.newWorkerTaskPrompt("現在のACTIVE taskを実行してください。", activeTaskPath)
-	if !strings.Contains(prompt, "USER_REQUEST:\n現在のACTIVE taskを実行してください。") {
+	request := "現在のACTIVE taskを実行してください。"
+	prompt := w.newWorkerTaskPrompt(request, activeTaskPath)
+	if !strings.Contains(prompt, request) {
 		t.Fatalf("fixed parent transport changed: %s", prompt)
 	}
 	stats, err := st.CurrentTaskStats()
@@ -89,19 +90,20 @@ func TestNewWorkerTaskPromptSearchesFromActiveTaskAuthority(t *testing.T) {
 		t.Fatal(err)
 	}
 	w := NewWorkflow(cfg, st, nil, nil)
+	request := "現在のACTIVE taskを実行してください。"
 	w.repoSearch = func(_ context.Context, _ string, query string, _ reposearch.Options) (reposearch.Report, error) {
 		for _, want := range []string{"worker search routing", "ACTIVE_AUTHORITY_TOKEN", "glm-worker/internal/workflow/worker_repo_search.go"} {
 			if !strings.Contains(query, want) {
 				t.Fatalf("ACTIVE task seed lacks %q: %q", want, query)
 			}
 		}
-		if strings.Contains(query, "現在のACTIVE taskを実行してください。") || strings.Contains(query, "NOISE_TOKEN") || strings.Contains(query, "CONTRACT_NOISE") {
+		if strings.Contains(query, request) || strings.Contains(query, "NOISE_TOKEN") || strings.Contains(query, "CONTRACT_NOISE") {
 			t.Fatalf("unrelated transport/task prose leaked into search query: %q", query)
 		}
 		return reposearch.Report{Results: []reposearch.Result{{Path: "glm-worker/internal/workflow/worker_repo_search.go", Line: 1}}}, nil
 	}
 
-	prompt := w.newWorkerTaskPrompt("現在のACTIVE taskを実行してください。", activeTaskPath)
+	prompt := w.newWorkerTaskPrompt(request, activeTaskPath)
 	if !strings.Contains(prompt, "CANDIDATE: glm-worker/internal/workflow/worker_repo_search.go:1") {
 		t.Fatalf("navigation missing: %s", prompt)
 	}
