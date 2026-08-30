@@ -279,7 +279,7 @@ func classify(path string) (string, bool) {
 		return "", false
 	}
 	if extension == "" {
-		if base == "commentlint" || base == "harnesslint" || path == ".githooks/post-merge" {
+		if base == "commentlint" || base == "harnesslint" || base == "goquality" || path == ".githooks/post-merge" {
 			return sourceShell, true
 		}
 	}

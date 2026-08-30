@@ -47,6 +47,7 @@ func TestClassifyQualityFiles(t *testing.T) {
 		{".golangci.yml", "hash", true},
 		{"a.yaml", "hash", true},
 		{"harnesslint", "shell", true},
+		{"goquality", "shell", true},
 		{"go.sum", "", false},
 		{"README.md", "", false},
 		{"a.py", "unclassified", true},

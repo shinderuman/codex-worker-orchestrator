@@ -1,0 +1,24 @@
+#!/bin/sh
+set -eu
+repo_root=$(git rev-parse --show-toplevel)
+GO_VERSION=$(awk -F': ' '$1 == "go" { print $2 }' "$repo_root/quality-tools.yml")
+export GOTOOLCHAIN="go$GO_VERSION"
+export GOCACHE="${TMPDIR:-/tmp}/codex-worker-orchestrator-go-$GO_VERSION"
+
+if [ "$#" -ne 1 ]; then
+  echo "usage: $0 <vet|build>" >&2
+  exit 2
+fi
+
+case "$1" in
+  vet)
+    exec go -C "$repo_root/glm-worker" vet ./...
+    ;;
+  build)
+    exec go -C "$repo_root/glm-worker" build ./...
+    ;;
+  *)
+    echo "usage: $0 <vet|build>" >&2
+    exit 2
+    ;;
+esac
