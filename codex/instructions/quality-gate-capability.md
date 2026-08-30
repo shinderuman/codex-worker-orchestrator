@@ -23,7 +23,9 @@ glm-worker --quality-gate go-test-race
 
 ## sandbox内で実行するgate
 
-`go vet ./...`、`go build ./...`、gofmt、`harnesslint`、`commentlint`、Shell lint、`git diff`等、追加capabilityを必要としないcommandはsandbox内で実行する。capability根拠のないcommandへ昇格権限を広げない。
+`go vet ./...`・`go build ./...`相当の親final gateはrepository rootの固定入口`./goquality vet`・`./goquality build`をsandbox内で実行する。`goquality`は`quality-tools.yml`からrepository-authoritative Go versionを読み、`harnesslint`と同じ`${TMPDIR:-/tmp}`配下のdeterministic `GOCACHE`を使う。親Codexがtaskごとのcache pathを合成せず、homeのGo build cacheへ触るためだけにescalateしない。
+
+gofmt、`harnesslint`、`commentlint`、Shell lint、`git diff`等、その他の追加capabilityを必要としないcommandもsandbox内で実行する。capability根拠のないcommandへ昇格権限を広げない。
 
 `harnesslint`は`codex-worker-orchestrator`固有のrepository quality gateで、Go/Shell/Markdown/structured configとgate wiringを検査する。通常のGLM workflowではreviewerを呼ぶ前にwrapperがcheck-onlyで実行し、不合格ならreviewerへ進めない。formatter等の自動修正が必要ならworker側で`harnesslint --fix`を実行し、その後checkを通す。
 
