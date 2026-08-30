@@ -25,8 +25,8 @@ type Prepared struct {
 }
 
 func Prepare(repoRoot, action string) (Prepared, error) {
-	if !validAction(action) {
-		return Prepared{}, fmt.Errorf("parent action must be decision or fix")
+	if !validPayloadAction(action) {
+		return Prepared{}, fmt.Errorf("parent payload action must be start, decision, or fix")
 	}
 	stageDir := filepath.Join(repoRoot, StageDirName)
 	if err := ensureStageDir(stageDir); err != nil {
@@ -54,8 +54,8 @@ func Prepare(repoRoot, action string) (Prepared, error) {
 }
 
 func Consume(repoRoot, action, token string) ([]byte, error) {
-	if !validAction(action) {
-		return nil, fmt.Errorf("parent action must be decision or fix")
+	if !validPayloadAction(action) {
+		return nil, fmt.Errorf("parent payload action must be start, decision, or fix")
 	}
 	if !validToken(token) {
 		return nil, fmt.Errorf("invalid parent action token")
@@ -138,8 +138,8 @@ func payloadPath(stageDir, action, token string) string {
 	return filepath.Join(stageDir, action+"-"+token+".txt")
 }
 
-func validAction(action string) bool {
-	return action == "decision" || action == "fix"
+func validPayloadAction(action string) bool {
+	return action == "start" || action == "decision" || action == "fix"
 }
 
 func newToken() (string, error) {
