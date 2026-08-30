@@ -279,30 +279,44 @@ func stdinPayloadCommand(mode CommandMode, args []string, usage string, allowOri
 	if err != nil || payloadBytes <= 0 {
 		return Command{}, usageError("%s", usage)
 	}
-	command := Command{Mode: mode, StdinBytes: payloadBytes}
+	options, approvalOnly, err := extractStdinApprovalOnlyOption(args[2:], allowOrigin, usage)
+	if err != nil {
+		return Command{}, err
+	}
+	if len(options)%2 != 0 {
+		return Command{}, usageError("%s", usage)
+	}
+	command := Command{Mode: mode, StdinBytes: payloadBytes, ApprovalOnly: approvalOnly}
 	seenSHA256 := false
-	for index := 2; index < len(args); {
-		name := args[index]
-		if name == "--approval-only" {
-			if !allowOrigin || command.ApprovalOnly {
-				return Command{}, usageError("%s", usage)
-			}
-			command.ApprovalOnly = true
-			index++
-			continue
-		}
-		if index+1 >= len(args) {
-			return Command{}, usageError("%s", usage)
-		}
-		if err := applyStdinPayloadOption(&command, name, args[index+1], usage, allowOrigin, &seenSHA256); err != nil {
+	for index := 0; index < len(options); index += 2 {
+		if err := applyStdinPayloadOption(&command, options[index], options[index+1], usage, allowOrigin, &seenSHA256); err != nil {
 			return Command{}, err
 		}
-		index += 2
 	}
 	if command.ApprovalOnly && (command.AcceptedScope != "current-diff" || command.Origin != "") {
 		return Command{}, usageError("%s", usage)
 	}
 	return command, nil
+}
+
+func extractStdinApprovalOnlyOption(options []string, allow bool, usage string) ([]string, bool, error) {
+	index := -1
+	for current, option := range options {
+		if option != "--approval-only" {
+			continue
+		}
+		if !allow || index >= 0 {
+			return nil, false, usageError("%s", usage)
+		}
+		index = current
+	}
+	if index < 0 {
+		return options, false, nil
+	}
+	pairs := make([]string, 0, len(options)-1)
+	pairs = append(pairs, options[:index]...)
+	pairs = append(pairs, options[index+1:]...)
+	return pairs, true, nil
 }
 
 func applyStdinPayloadOption(command *Command, name, value, usage string, allowOrigin bool, seenSHA256 *bool) error {
