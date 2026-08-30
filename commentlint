@@ -1,4 +1,7 @@
 #!/bin/sh
 set -eu
 repo_root=$(git rev-parse --show-toplevel)
+GO_VERSION=$(awk -F': ' '$1 == "go" { print $2 }' "$repo_root/quality-tools.yml")
+export GOTOOLCHAIN="go$GO_VERSION"
+export GOCACHE="${TMPDIR:-/tmp}/codex-worker-orchestrator-go-$GO_VERSION"
 exec go -C "$repo_root/glm-worker" run ./cmd/commentlint "$@"

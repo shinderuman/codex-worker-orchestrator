@@ -115,6 +115,8 @@ func TestExecuteStartWithoutIdentityEnvRunsChildWithoutPropagation(t *testing.T)
 	cfg, _ := newParentActionIdentityTestState(t)
 	t.Setenv("CODEX_THREAD_ID", "")
 	t.Setenv("CODEX_SESSION_ID", "")
+	t.Setenv(state.ParentActionCodexThreadIDEnv, "")
+	t.Setenv(state.ParentActionCodexSessionIDEnv, "")
 	marker := writeParentActionWorkerStubWithCheck(t, cfg,
 		`test -z "$GLM_PARENT_ACTION_CODEX_THREAD_ID" && test -z "$GLM_PARENT_ACTION_CODEX_SESSION_ID"`)
 	if err := execute(cfg, []string{"start"}, nil, nil); err != nil {

@@ -8,10 +8,9 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/commentlint-sandbox-safe-launcher.md`
+- `IMPLEMENTATION_TASKS/codex-desktop-prompt-overhead-reduction.md`
 
 ## NEXT（優先順）
-- `IMPLEMENTATION_TASKS/codex-desktop-prompt-overhead-reduction.md`
 - `IMPLEMENTATION_TASKS/codex-instruction-conflict-reduction.md`
 - `IMPLEMENTATION_TASKS/glm-containment-denial-explanations.md`
 - `IMPLEMENTATION_TASKS/parent-finalization-choreography-reduction.md`
@@ -43,8 +42,8 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## 現在の停止理由
 
-次のCodex dogfoodより先に入れる固定prompt overhead・instruction conflict・containment denial・parent finalizationのproduction改善はすべて統合済み。4件とも残る実機Acceptanceは同じfresh-thread commentlint dogfood bundleで評価するため、commentlintを改善後の最初の観測runとしてACTIVEにする。
+commentlint task `314db004-148f-4b7d-b0e4-4a6dff90aa3a`は、ユーザー修正`a4a08e61f278aba451cadc408de98f74cad94e7f`の親承認経路で同一sessionから独立review PASSへ進み、Sol採用・parent accept・full test/race・sandbox内commentlint/harnesslint/vet/buildと実装commitを完了した。完了証跡をHistoryへ移し、次taskをACTIVEへ昇格したが未着手。ユーザー指定により今回のtaskだけで停止する。このrunは既存の親Codex threadなのでfresh-thread固定context削減の成立証拠とは扱わない。
 
 ## 次の親Codex操作
 
-ACTIVE `IMPLEMENTATION_TASKS/commentlint-sandbox-safe-launcher.md`だけを通常Codex + GLM workflowでdogfood実行する。完了後bundleを生成し、固定prompt overhead・instruction conflict・containment denial・parent finalizationの残存Acceptanceを順に評価する。bundle task diff修正はその後の独立taskとして残す。
+現在taskのcompletion flowとして本配置、clean/current sandbox smoke、bundle生成、通常fast-forward pushを行い、結果を報告して停止する。次の開始指示を受けた際はrepository authorityとACTIVEを再読し、未評価のfixed-context Acceptanceを確認する。finalize-checkのmodule cwd喪失と未評価のdogfood Acceptanceは後続taskへ保持する。

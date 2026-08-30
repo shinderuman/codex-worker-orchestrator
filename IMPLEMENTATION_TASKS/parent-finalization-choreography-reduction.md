@@ -63,7 +63,8 @@ none
 
 ## Review findings
 
-none
+- 2026-08-31 commentlint dogfood: `glm-parent-action finalize-check go-test`はrepository rootだけでなく`glm-worker` module rootから呼んでもchild cwdをrepository rootへ固定し、`pattern ./...: directory prefix . does not contain main module or its selected dependencies`で24 ms以内に失敗した。run IDは`4482b558cd68123c591154f20bf3e4c4`、module rootからの再現は`d32b0aa4939bdd8bee83e0125b9c2789`。`parentactioncmd.execute`→`runFinalizationCheck(cfg.RepoRoot, ...)`→`runResolvedWorker`の`command.Dir = repoRoot`でcaller module cwdを失うことを現物確認した。既存固定quality gateは呼出cwdで実行する契約であり、同じcommentlint snapshotのmodule full test run `4b643bc596bbb01b02745da7e5991742`はPASSしている。
+- 修正検討境界: repository identity/Git summary用rootとvalidation実行cwdを分離し、同一repo内の正当なmodule cwdを既存固定quality gateへ保持する。subdirectory moduleを持つ実repository fixtureでpublic CLIからchild cwdを検証し、任意command入口や無関係なgate変更は追加しない。今回のACTIVE commentlintには修正を混在させず、finalization cost削減のAcceptanceも未解決のまま保持する。
 
 ## Current boundary
 
