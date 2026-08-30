@@ -57,7 +57,7 @@ type gitAuthorityGuard struct {
 }
 
 const (
-	maxGitAuthorityRefChanges = 64
+	maxGitAuthorityRefChanges   = 64
 	guardStageAfterCallMutation = "after-call-mutation"
 )
 
