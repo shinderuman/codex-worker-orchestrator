@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -32,12 +33,7 @@ func TestGitAuthorityProxyReturnsActionableMutationDenial(t *testing.T) {
 	proxy := writeGitAuthorityTestScript(t, gitAuthorityProxyScript(realGit, attemptLog, repo, workerTemp))
 	command := exec.Command(proxy, "-C", repo, "commit", "--allow-empty", "-m", "blocked")
 	output, err := command.CombinedOutput()
-	if err == nil {
-		t.Fatal("blocked mutation unexpectedly succeeded")
-	}
-	if exitErr, ok := err.(*exec.ExitError); !ok || exitErr.ExitCode() != 97 {
-		t.Fatalf("exit = %v, output = %s", err, output)
-	}
+	assertGitAuthorityExit97(t, err, output)
 	if got := strings.TrimSpace(string(output)); got != mutationDenialJSON {
 		t.Fatalf("denial = %q", got)
 	}
@@ -63,16 +59,11 @@ func TestGitAuthorityProxyKeepsDenialWhenAttemptLogCannotBeWritten(t *testing.T)
 		t.Fatalf("git init: %v: %s", err, output)
 	}
 	workerTemp := t.TempDir()
-	attemptLog := t.TempDir() // directory: append must fail, but the denial must remain authoritative.
+	attemptLog := t.TempDir()
 	proxy := writeGitAuthorityTestScript(t, gitAuthorityProxyScript(realGit, attemptLog, repo, workerTemp))
 	command := exec.Command(proxy, "-C", repo, "branch", "blocked")
 	output, err := command.CombinedOutput()
-	if err == nil {
-		t.Fatal("blocked mutation unexpectedly succeeded")
-	}
-	if exitErr, ok := err.(*exec.ExitError); !ok || exitErr.ExitCode() != 97 {
-		t.Fatalf("exit = %v, output = %s", err, output)
-	}
+	assertGitAuthorityExit97(t, err, output)
 	if got := strings.TrimSpace(string(output)); got != mutationDenialJSON {
 		t.Fatalf("denial = %q", got)
 	}
@@ -82,17 +73,23 @@ func TestGitAuthorityTransportDenialIsActionableWithoutAttemptLog(t *testing.T) 
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixture is Unix-oriented")
 	}
-	attemptLog := t.TempDir() // force diagnostic append failure
+	attemptLog := t.TempDir()
 	deny := writeGitAuthorityTestScript(t, gitAuthorityDenyTransportScript(attemptLog))
 	output, err := exec.Command(deny, "unused").CombinedOutput()
-	if err == nil {
-		t.Fatal("transport denial unexpectedly succeeded")
-	}
-	if exitErr, ok := err.(*exec.ExitError); !ok || exitErr.ExitCode() != 97 {
-		t.Fatalf("exit = %v, output = %s", err, output)
-	}
+	assertGitAuthorityExit97(t, err, output)
 	if got := strings.TrimSpace(string(output)); got != transportDenialJSON {
 		t.Fatalf("denial = %q", got)
+	}
+}
+
+func assertGitAuthorityExit97(t *testing.T, err error, output []byte) {
+	t.Helper()
+	if err == nil {
+		t.Fatal("containment denial unexpectedly succeeded")
+	}
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 97 {
+		t.Fatalf("exit = %v, output = %s", err, output)
 	}
 }
 
