@@ -28,4 +28,4 @@ jobs:
           QUALITY_TOOLS_BIN_DIR="$quality_bin" ./install-quality-tools.sh
           printf '%s\n' "$quality_bin" >> "$GITHUB_PATH"
       - name: Installer smoke
-        run: ./tests/install_smoke.sh
+        run: sh -x ./tests/install_smoke.sh
