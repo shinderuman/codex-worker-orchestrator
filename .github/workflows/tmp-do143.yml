@@ -1,0 +1,40 @@
+name: tmp do143 patch
+
+on:
+  push:
+    branches:
+      - gpt/do-141-readonly-inspection-v2
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: gpt/do-141-readonly-inspection-v2
+          fetch-depth: 0
+      - name: Apply focused instruction patch
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('codex/instructions/git.md')
+          text = p.read_text()
+          anchor = '- GLM worker/reviewerによる`git push`その他Git remote writeは禁止する。この禁止は親Codexへ適用しない。\n'
+          insert = '''## Git metadataのsandbox実行境界\n\n- `git status`・`git diff`・`git show`・`git log`・`git rev-parse`等、Git metadataを変更しないread-only commandは通常sandbox内で実行する。\n- 現在taskのauthorization sourceが既に許可している`git add`・`git commit`・`git commit --amend`等、`.git` metadata/indexを変更することが既知の親Codex操作は、Codex Desktop sandboxで`.git`がread-onlyである場合、最初から既存のwritable/escalated execution boundaryで実行する。sandbox内で予測可能な`.git/index.lock: Operation not permitted`を一度発生させてから再試行しない。\n- このexecution boundaryは既存のGit semantic authorizationを一切拡張しない。commit/push/force/ref操作の許可は本fileのauthorization規則を正とし、未許可操作をwritable boundaryへ送る理由にしない。\n- shell command文字列を一般分類するparserは作らない。親workflowで既知のGit metadata mutationだけを対象にする。\n\n'''
+          if anchor not in text:
+              raise SystemExit('git instruction anchor not found')
+          p.write_text(text.replace(anchor, insert + anchor, 1))
+          PY
+      - name: Validate repository instruction surface
+        run: ./harnesslint
+      - name: Commit validated patch and remove temporary workflow
+        run: |
+          rm .github/workflows/tmp-do143.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add codex/instructions/git.md .github/workflows/tmp-do143.yml
+          git commit -m "fix: route authorized git mutations correctly"
+          git push origin HEAD:gpt/do-141-readonly-inspection-v2
