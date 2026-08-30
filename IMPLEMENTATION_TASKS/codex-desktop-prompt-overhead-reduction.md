@@ -29,6 +29,10 @@ CommentlintとBundle Diff以外の実装をお前が全部終えてその次にC
 - current upstream Codex sourceでは`skills.include_instructions`がmodel-visible Skills catalogの自動注入toggleとして存在し、2026-04-20導入済みで実機versionより前の機能である。
 - current/upstream issue evidenceでは`recommended_plugins=false`単独はrecommendation blockを止めず、`features.plugins=false`が既知の有効な停止境界である。実機workflowでpluginsを使用していないことを前提に採否する。
 
+## External feasibility
+
+status: not-applicable
+
 ## Purpose
 
 親Codex/Solが各turnで再処理する固定Desktop contextのうち、このrepositoryの通常workflowで使わない大きなoptional surfaceを安全に削減し、次のcommentlint dogfoodで実token削減を観測可能にする。
