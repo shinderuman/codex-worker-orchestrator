@@ -51,7 +51,7 @@ run_install() {
 }
 
 run_install
-for binary in glm-worker glm-parent-action commentlint harnesslint merge-json; do
+for binary in glm-worker glm-parent-action glm-codex-context commentlint harnesslint merge-json; do
 	test -x "$home/.local/bin/$binary"
 done
 test -f "$home/.codex/AGENTS.md"
@@ -67,6 +67,24 @@ grep -q -- '--repo-search' "$tmp/repo-search-help.json"
 HOME="$home" GLM_WORKER_HOME="$home/.glm-worker" GLM_WORKER_REPO_SEARCH=0 "$home/.local/bin/glm-worker" --repo-search smoke >"$tmp/repo-search-disabled.json"
 grep -q '"status":"disabled"' "$tmp/repo-search-disabled.json"
 grep -q '"result":"disabled"' "$tmp/repo-search-disabled.json"
+
+"$home/.local/bin/glm-codex-context" enable "$repo" >"$tmp/codex-context-enable.json"
+grep -q '"status":"enabled"' "$tmp/codex-context-enable.json"
+grep -q '"git_excluded":true' "$tmp/codex-context-enable.json"
+grep -q '"requires_new_thread":true' "$tmp/codex-context-enable.json"
+grep -Fxq 'include_instructions = false' "$repo/.codex/config.toml"
+grep -Fxq 'plugins = false' "$repo/.codex/config.toml"
+git -C "$repo" check-ignore -q -- .codex/config.toml
+if git -C "$repo" status --porcelain --untracked-files=all | grep -Fq '.codex/config.toml'; then
+	printf '%s\n' 'Codex context profile polluted target repository status' >&2
+	exit 1
+fi
+"$home/.local/bin/glm-codex-context" enable "$repo" >"$tmp/codex-context-enable-again.json"
+grep -q '"status":"enabled"' "$tmp/codex-context-enable-again.json"
+"$home/.local/bin/glm-codex-context" disable "$repo" >"$tmp/codex-context-disable.json"
+grep -q '"status":"disabled"' "$tmp/codex-context-disable.json"
+test ! -e "$repo/.codex/config.toml"
+
 (
 	cd "$repo"
 	HOME="$home" GLM_WORKER_HOME="$home/.glm-worker" "$home/.local/bin/glm-parent-action" prepare decision
