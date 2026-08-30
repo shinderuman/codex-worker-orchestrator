@@ -100,7 +100,7 @@ func TestResumeCheckpointRequiresModel(t *testing.T) {
 		t.Fatalf("save error = %v", err)
 	}
 
-	if err := os.WriteFile(st.Path(resumeStateFile), []byte("{\"version\":4,\"stage\":\"worker\",\"report_only\":false}"), 0o600); err != nil {
+	if err := os.WriteFile(st.Path(resumeStateFile), []byte("{\"version\":5,\"stage\":\"worker\",\"report_only\":false}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := st.LoadResumeCheckpoint(); err == nil || !strings.Contains(err.Error(), "model is required") {
@@ -116,6 +116,7 @@ func TestLoadResumeCheckpointRejectsLegacyVersions(t *testing.T) {
 		"v3 report-only no field":  `{"version":3,"stage":"auto-fix","phase":"worker-report-only-1","role":"worker","model":"opus","request":"req","rate_limited":true}`,
 		"v3 packet-compact suffix": `{"version":3,"stage":"auto-fix","phase":"worker-report-only-1-packet-compact","role":"worker","model":"opus","request":"req","rate_limited":true}`,
 		"v3 ordinary auto-fix":     `{"version":3,"stage":"auto-fix","phase":"worker-auto-fix-1","role":"worker","model":"opus","request":"req","rate_limited":true}`,
+		"v4 previous runtime":      `{"version":4,"stage":"reviewer","phase":"reviewer-1","role":"reviewer","model":"sonnet","request":"req","rate_limited":true,"report_only":false}`,
 	} {
 		if err := os.WriteFile(st.Path(resumeStateFile), []byte(legacy), 0o600); err != nil {
 			t.Fatal(err)
@@ -128,12 +129,12 @@ func TestLoadResumeCheckpointRejectsLegacyVersions(t *testing.T) {
 	}
 }
 
-func TestLoadResumeCheckpointV4RequiresExplicitReportOnly(t *testing.T) {
+func TestLoadResumeCheckpointV5RequiresExplicitReportOnly(t *testing.T) {
 	st := &StateStore{dir: t.TempDir()}
 	rejected := map[string]struct{ name, want string }{
-		`{"version":4,"stage":"auto-fix","phase":"worker-report-only-1","role":"worker","model":"opus","request":"req","rate_limited":true}`:                    {"v4 report-only風phase key欠落", "report_only keyがありません"},
-		`{"version":4,"stage":"auto-fix","phase":"worker-auto-fix-1","role":"worker","model":"opus","request":"req","rate_limited":true}`:                       {"v4 通常auto-fix key欠落", "report_only keyがありません"},
-		`{"version":4,"stage":"auto-fix","phase":"worker-auto-fix-1","role":"worker","model":"opus","request":"req","rate_limited":true,"report_only":"false"}`: {"v4 report_only非bool", "resume stateを読めません"},
+		`{"version":5,"stage":"auto-fix","phase":"worker-report-only-1","role":"worker","model":"opus","request":"req","rate_limited":true}`:                    {"v5 report-only風phase key欠落", "report_only keyがありません"},
+		`{"version":5,"stage":"auto-fix","phase":"worker-auto-fix-1","role":"worker","model":"opus","request":"req","rate_limited":true}`:                       {"v5 通常auto-fix key欠落", "report_only keyがありません"},
+		`{"version":5,"stage":"auto-fix","phase":"worker-auto-fix-1","role":"worker","model":"opus","request":"req","rate_limited":true,"report_only":"false"}`: {"v5 report_only非bool", "resume stateを読めません"},
 	}
 	for doc, tc := range rejected {
 		if err := os.WriteFile(st.Path(resumeStateFile), []byte(doc), 0o600); err != nil {
@@ -145,8 +146,8 @@ func TestLoadResumeCheckpointV4RequiresExplicitReportOnly(t *testing.T) {
 		}
 	}
 	accepted := map[string]bool{
-		`{"version":4,"stage":"auto-fix","phase":"worker-auto-fix-1","role":"worker","model":"opus","request":"req","rate_limited":true,"report_only":false}`:   false,
-		`{"version":4,"stage":"auto-fix","phase":"worker-report-only-1","role":"worker","model":"opus","request":"req","rate_limited":true,"report_only":true}`: true,
+		`{"version":5,"stage":"auto-fix","phase":"worker-auto-fix-1","role":"worker","model":"opus","request":"req","rate_limited":true,"report_only":false}`:   false,
+		`{"version":5,"stage":"auto-fix","phase":"worker-report-only-1","role":"worker","model":"opus","request":"req","rate_limited":true,"report_only":true}`: true,
 	}
 	for doc, wantReportOnly := range accepted {
 		if err := os.WriteFile(st.Path(resumeStateFile), []byte(doc), 0o600); err != nil {
@@ -209,8 +210,8 @@ func TestResumeCheckpointWithoutStopParentFiles(t *testing.T) {
 
 func TestResumeCheckpointTwoFileStopParentFilesFailsClosed(t *testing.T) {
 	st := &StateStore{dir: t.TempDir()}
-	legacy := `{"version":4,"stage":"reviewer","phase":"reviewer-1","role":"reviewer","model":"sonnet","prompt":"p","request":"r","rate_limited":true,"report_only":false,"stop_parent_files":{"plan":{"sha256":"a"},"history":{"sha256":"b"}}}`
-	if err := os.WriteFile(st.Path(resumeStateFile), []byte(legacy), 0o600); err != nil {
+	malformed := `{"version":5,"stage":"reviewer","phase":"reviewer-1","role":"reviewer","model":"sonnet","prompt":"p","request":"r","rate_limited":true,"report_only":false,"stop_parent_files":{"plan":{"sha256":"a"},"history":{"sha256":"b"}}}`
+	if err := os.WriteFile(st.Path(resumeStateFile), []byte(malformed), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := st.LoadResumeCheckpoint(); err == nil || !strings.Contains(err.Error(), "resume stateを読めません") {

@@ -1,7 +1,9 @@
 package workflow
 
 import (
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
@@ -64,7 +66,29 @@ func (w *Workflow) guardRecoveryCheckpoint(
 	checkpoint.UserInterrupted = false
 	checkpoint.CompletedResult = w.completedGuardWorkerResult(checkpoint, execution.runResult)
 	checkpoint.StopParentFiles = captureStopParentFiles(w.config.RepoRoot)
+	captureGuardRefEvidence(&checkpoint, execution.runErr)
 	return checkpoint
+}
+
+func captureGuardRefEvidence(checkpoint *state.ResumeCheckpoint, runErr error) {
+	var gitErr *runner.GitAuthorityGuardError
+	if !errors.As(runErr, &gitErr) || gitErr.RefBeforeDigest == "" {
+		return
+	}
+	checkpoint.GuardRefBeforeDigest = gitErr.RefBeforeDigest
+	checkpoint.GuardRefAfterDigest = gitErr.RefAfterDigest
+	checkpoint.GuardRefChangesTruncated = gitErr.RefChangesTruncated
+	checkpoint.GuardRefChanges = make([]state.GuardRefChange, 0, len(gitErr.RefChanges))
+	for _, change := range gitErr.RefChanges {
+		converted := state.GuardRefChange{Name: change.Name}
+		if change.Before != nil {
+			converted.Before = &state.GuardRefState{Name: change.Before.Name, ObjectID: change.Before.ObjectID, Symref: change.Before.Symref}
+		}
+		if change.After != nil {
+			converted.After = &state.GuardRefState{Name: change.After.Name, ObjectID: change.After.ObjectID, Symref: change.After.Symref}
+		}
+		checkpoint.GuardRefChanges = append(checkpoint.GuardRefChanges, converted)
+	}
 }
 
 func (w *Workflow) captureGuardRecoveryRetention(checkpoint *state.ResumeCheckpoint) error {
@@ -135,6 +159,9 @@ func (w *Workflow) prepareGuardRecovery(checkpoint state.ResumeCheckpoint) (bool
 	if err := validateGuardRecoveryRetention(checkpoint); err != nil {
 		return false, err
 	}
+	if err := w.verifyGuardRecoveryRefs(checkpoint); err != nil {
+		return false, err
+	}
 	if err := w.verifyGuardRecoveryDirty(checkpoint); err != nil {
 		return false, err
 	}
@@ -149,6 +176,42 @@ func validateGuardRecoveryRetention(checkpoint state.ResumeCheckpoint) error {
 		return nil
 	}
 	return &WorkerError{Phase: checkpoint.Phase, Message: "guard recovery checkpoint has no repository retention baseline"}
+}
+
+func (w *Workflow) verifyGuardRecoveryRefs(checkpoint state.ResumeCheckpoint) error {
+	if checkpoint.GuardRefBeforeDigest == "" {
+		return nil
+	}
+	if checkpoint.GuardRefAfterDigest == "" || len(checkpoint.GuardRefChanges) == 0 {
+		return &WorkerError{Phase: checkpoint.Phase, Message: "guard recovery ref evidence is incomplete"}
+	}
+	current, err := runner.CaptureGitAuthorityRefDigest(w.config.RepoRoot)
+	if err != nil {
+		return &WorkerError{Phase: checkpoint.Phase, Message: fmt.Sprintf("guard recovery cannot capture current refs: %v", err)}
+	}
+	if current == checkpoint.GuardRefBeforeDigest {
+		return nil
+	}
+	return &WorkerError{Phase: checkpoint.Phase, Message: "guard recovery refs are not restored to the pre-call state: " + describeGuardRefChanges(checkpoint.GuardRefChanges, checkpoint.GuardRefChangesTruncated)}
+}
+
+func describeGuardRefChanges(changes []state.GuardRefChange, truncated bool) string {
+	parts := make([]string, 0, len(changes)+1)
+	for _, change := range changes {
+		before := "<missing>"
+		after := "<missing>"
+		if change.Before != nil {
+			before = change.Before.ObjectID
+		}
+		if change.After != nil {
+			after = change.After.ObjectID
+		}
+		parts = append(parts, fmt.Sprintf("%s:%s->%s", change.Name, before, after))
+	}
+	if truncated {
+		parts = append(parts, "...")
+	}
+	return strings.Join(parts, ",")
 }
 
 func (w *Workflow) verifyGuardRecoveryDirty(checkpoint state.ResumeCheckpoint) error {
@@ -197,6 +260,10 @@ func (w *Workflow) validateCompletedGuardResult(result packet.Result) error {
 func clearGuardRecoveryState(checkpoint *state.ResumeCheckpoint) {
 	checkpoint.GuardRecoverable = false
 	checkpoint.GuardFailure = ""
+	checkpoint.GuardRefBeforeDigest = ""
+	checkpoint.GuardRefAfterDigest = ""
+	checkpoint.GuardRefChanges = nil
+	checkpoint.GuardRefChangesTruncated = false
 	checkpoint.CompletedResult = nil
 	checkpoint.StopGitSnapshot = nil
 	checkpoint.StopDirtyFiles = nil

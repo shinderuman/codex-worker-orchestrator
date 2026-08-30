@@ -6,6 +6,10 @@ import (
 )
 
 func TestIsRecoverableGuardFailure(t *testing.T) {
+	refChange := GitRefChange{
+		Name:  "refs/heads/bypass",
+		After: &GitRefState{Name: "refs/heads/bypass", ObjectID: "2222222222222222222222222222222222222222"},
+	}
 	tests := []struct {
 		name string
 		err  error
@@ -17,8 +21,41 @@ func TestIsRecoverableGuardFailure(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "protected repository mutation",
+			name: "refs mutation without retained evidence remains unsafe",
 			err:  &GitAuthorityGuardError{Stage: "after-call-mutation", Mutations: []string{"refs"}},
+			want: false,
+		},
+		{
+			name: "refs-only mutation with retained evidence is recoverable after repair",
+			err: &GitAuthorityGuardError{
+				Stage:           "after-call-mutation",
+				Mutations:       []string{"refs"},
+				RefBeforeDigest: "before",
+				RefAfterDigest:  "after",
+				RefChanges:      []GitRefChange{refChange},
+			},
+			want: true,
+		},
+		{
+			name: "refs mutation joined with blocked attempt remains recoverable after repair",
+			err: &GitAuthorityGuardError{
+				Stage:           "after-call-mutation",
+				Mutations:       []string{"command:branch", "refs"},
+				RefBeforeDigest: "before",
+				RefAfterDigest:  "after",
+				RefChanges:      []GitRefChange{refChange},
+			},
+			want: true,
+		},
+		{
+			name: "HEAD mutation stays non-recoverable",
+			err: &GitAuthorityGuardError{
+				Stage:           "after-call-mutation",
+				Mutations:       []string{"HEAD", "refs"},
+				RefBeforeDigest: "before",
+				RefAfterDigest:  "after",
+				RefChanges:      []GitRefChange{refChange},
+			},
 			want: false,
 		},
 		{
