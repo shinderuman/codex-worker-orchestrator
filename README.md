@@ -31,7 +31,7 @@ export PATH="$HOME/.local/bin:$PATH"
 
 - runtimeに必要なcommandの存在確認
 - `quality-tools.yml`に固定した実行用Go・lint解析用Go・lint tool versionの検証
-- `glm-worker` / `glm-parent-action` / `commentlint` / `harnesslint` / `merge-json`を`glm-worker` moduleからbuildして配置
+- `glm-worker` / `glm-parent-action` / `glm-codex-context` / `commentlint` / `harnesslint` / `merge-json`を`glm-worker` moduleからbuildして配置
 - `codex/`のmanaged fileを`~/.codex`へ同期し、前回manifestにのみ残るfileを削除
 - managed Codex configを既存`~/.codex/config.toml`へ反映
 - managed Claude settingsを既存`~/.claude/settings.json`へmerge
@@ -65,6 +65,7 @@ codex-worker-orchestrator/
 │   ├── cmd/
 │   │   ├── glm-worker/
 │   │   ├── glm-parent-action/
+│   │   ├── glm-codex-context/
 │   │   ├── commentlint/
 │   │   ├── harnesslint/
 │   │   └── merge-json/
@@ -122,6 +123,20 @@ glm-worker --install-smoke --role worker
 install smokeはtemp home/repositoryへinstallを2回行い、managed file、local設定保持、binary配置、idempotenceを確認する。provider credentialや実GLM/Z.ai接続は使わない。provider/isolation behaviorを変更した場合のlive integration確認とは分離する。
 
 `tests/parent-behavior-evals.json`は決定論的testで証明できないliveな親/model行動の入力registryだけを保持し、production contractを複製しない。
+
+## Target repository Codex context
+
+`glm-worker`を使うtarget repositoryだけCodex Desktopの固定contextを軽量化する場合は、target repositoryで次を実行する。
+
+```sh
+glm-codex-context enable
+glm-codex-context status
+glm-codex-context disable
+```
+
+各commandは末尾にrepository pathを明示することもできる。`enable`はtarget repositoryの`.codex/config.toml`へtool-owned local profileを作成し、Skills catalog自動注入、Plugins/recommended-plugin、Apps instructions、collaboration-mode instructionsを無効化する。permissions/environment contextは変更しない。fileはrepositoryの`.git/info/exclude`だけで除外し、tracked `.gitignore`は変更しないため他のcloneやrepositoryへ設定を伝播しない。
+
+既存の`.codex/config.toml`がtool-owned内容と一致しない場合は上書きせずfail closedする。`disable`もtool-owned内容だけを削除する。設定変更後は新しいCodex threadを開始する。通常はCodex Desktop自体の再起動を前提としない。別repositoryでは通常のCodex設定がそのまま使われる。
 
 ## CLI
 
