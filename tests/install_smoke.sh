@@ -2,13 +2,14 @@
 set -eu
 
 source_root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
+go_mod_cache=$(go env GOMODCACHE)
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/codex-install-smoke.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT HUP INT TERM
 repo="$tmp/repo"
 home="$tmp/home"
 mkdir -p "$repo" "$home/.codex" "$home/.claude" "$tmp/bin"
 rsync -a --exclude .git "$source_root/" "$repo/"
-git -C "$repo" init -q
+git -C "$repo" init -q -b main
 git -C "$repo" add -A
 git -C "$repo" -c user.name=install-smoke -c user.email=install-smoke@example.invalid commit -qm fixture
 repo_revision=$(git -C "$repo" rev-parse HEAD)
@@ -39,6 +40,7 @@ chmod +x "$tmp/bin/golangci-lint" "$tmp/bin/shellcheck" "$tmp/bin/shfmt"
 
 run_install() {
 	HOME="$home" \
+		GOMODCACHE="$go_mod_cache" \
 		PATH="$tmp/bin:$PATH" \
 		CODEX_CONFIG_DIR="$home/.codex" \
 		GLM_WORKER_BIN_DIR="$home/.local/bin" \
@@ -49,7 +51,7 @@ run_install() {
 }
 
 run_install
-for binary in glm-worker commentlint harnesslint merge-json; do
+for binary in glm-worker glm-parent-action commentlint harnesslint merge-json; do
 	test -x "$home/.local/bin/$binary"
 done
 test -f "$home/.codex/AGENTS.md"
@@ -67,6 +69,15 @@ grep -q '"status":"disabled"' "$tmp/repo-search-disabled.json"
 grep -q '"result":"disabled"' "$tmp/repo-search-disabled.json"
 (
 	cd "$repo"
+	HOME="$home" GLM_WORKER_HOME="$home/.glm-worker" "$home/.local/bin/glm-parent-action" prepare decision
+) >"$tmp/parent-action-prepare.json"
+grep -q '"status":"prepared"' "$tmp/parent-action-prepare.json"
+grep -q '"action":"decision"' "$tmp/parent-action-prepare.json"
+grep -Fq "$repo/.glm-worker-parent-actions/decision-" "$tmp/parent-action-prepare.json"
+rm -rf "$repo/.glm-worker-parent-actions"
+(
+	cd "$repo"
+	HOME="$home" GLM_WORKER_HOME="$home/.glm-worker" "$home/.local/bin/glm-worker" --reset >/dev/null
 	HOME="$home" GLM_WORKER_HOME="$home/.glm-worker" "$home/.local/bin/glm-worker" --status
 ) >"$tmp/runtime-status.json"
 grep -Fq "\"vcs_revision\":\"$repo_revision\"" "$tmp/runtime-status.json"

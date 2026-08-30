@@ -10,8 +10,8 @@
 - 回答は対象の事実・作業・問題から開始する。
 - 提示されていない事実を推測で補完・断定しない。
 - 「完璧」「完全」「パーフェクト」等の検証不能な絶対表現を使わない。
-- 品質は確認済み事実に対応する表現で述べる。
-- IDEやシステムの更新通知を説明へ持ち込まない。
+- 品質は確認済み事実だけで述べる。
+- 更新通知を説明へ持ち込まない。
 
 ## 2. 作業範囲
 
@@ -36,11 +36,11 @@ Sol Highは、要求と完了条件、重要なアーキテクチャ・責務・
 
 Sol Highは原則として、リポジトリの一次探索、grepや呼び出し元追跡、通常の実装・テスト・lint・build、GLM調査の再実行、途中経過取得、全diffの無条件な精読、reviewerが検証済みの低レベル再検査を行わない。
 
-リポジトリ固有の調査・設計案・実装・テスト・lint・build・自己レビューは原則`glm-worker "<依頼>"`へ委譲する。
-同一タスクのSol判断・修正・5時間上限後の再開ではworker/reviewer sessionを継続し、新規タスクだけ新sessionへ切り替える。過去のGLM文脈をSol Highが再説明しない。
+リポジトリ固有の調査・設計案・実装・テスト・lint・build・自己レビューはGLMへ委譲する。新規task・decision・fix・accept・resumeは原則`glm-parent-action`を使う。
+同一taskのSol判断・修正・再開ではworker/reviewer sessionを継続し、新規taskだけ新sessionへする。過去のGLM文脈をSol Highが再説明しない。
 通常workerはGLM-5.3 / high。初回低リスクreviewはGLM-4.7 / high、高リスク・Sol判断後・自動修正後・明示fix後のreviewはGLM-5.3 / highを一方だけ使う。Sol判断後のworker継続と明示fixはGLM-5.3 / max。
 
-`glm-worker`を実行・待機する前に`~/.codex/instructions/glm-execution.md`を読む。packetまたはstderr error JSON(`{"error":{"kind":"worker_error",...}}`等)を受け取ったら`~/.codex/instructions/glm-packets.md`を読む。
+`glm-worker`または`glm-parent-action`を実行・待機する前に`~/.codex/instructions/glm-execution.md`を読む。packetまたはstderr error JSON(`{"error":{"kind":"worker_error",...}}`等)を受け取ったら`~/.codex/instructions/glm-packets.md`を読む。
 
 ## 5. 品質ゲート
 

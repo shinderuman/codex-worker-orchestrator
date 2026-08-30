@@ -1,6 +1,6 @@
 # GLM実行と待機
 
-`glm-worker`を実行または待機する場合だけ適用する。目的は無意味なSol High再起動とpollingによるトークン消費を防ぐこと。
+`glm-worker`または`glm-parent-action`を実行・待機する場合だけ適用する。目的は無意味なSol High再起動とpolling・deterministic transportによるトークン消費を防ぐこと。
 
 ## 実行
 
@@ -15,7 +15,7 @@
 - repository rootへ`IMPLEMENTATION_PLAN.local.md`が存在するrepoでは、新規taskの要求はOriginal instruction・Amendments・Contract・Must not・Acceptance criteriaを備えたtask fileとして`IMPLEMENTATION_TASKS/`配下へ置き、Planの`## ACTIVE`節から1件だけ指す。USER_REQUESTへtask詳細を複製せず、task要旨と参照だけを渡す。wrapperは全worker/reviewer呼出で同じtask file本文を読ませる配線を持つ。
 - user指示をACTIVE taskのdurable requirementへ反映する境界は`~/.codex/instructions/task-request-boundary.md`に従う。task完了前のtask file削除・history移行・plan昇格は行わない。
 - `"status":"NEEDS_SOL_REVIEW"`の理由がACTIVE task解決失敗(`parent_metadata_active_unresolvable`)または親管理metadata検出(`parent_metadata_*`)のときは、GLM側の再実行で解決しない。PlanのACTIVE欄・参照task file・親管理metadata現物を親Codexが直接確認・修復してから同じtaskを再開する。
-- 理由が外部成立性宣言検証(`external_feasibility_missing`・`external_feasibility_malformed`・`external_feasibility_unverified`)のときもGLM側の再実行で解決しない。親Codexがtask fileへ`## External feasibility`宣言を追加・修正してから同じtaskを再開する。拒否時点のtask status・resume checkpoint・pending decisionは保持されるため、decision待ちは同じdecision本文を、rate limit・provider停止・--stop停止中は同じ`--resume`を再送してよい。`status: poc`/`observation`taskの完了は親Go/No-Go待ち(`NEEDS_SOL_DECISION`)として返るため、Go判断は宣言を`status: implementation`へ書き換えてから`--decision-stdin`で渡す。
+- 理由が外部成立性宣言検証(`external_feasibility_missing`・`external_feasibility_malformed`・`external_feasibility_unverified`)のときもGLM側の再実行で解決しない。親Codexがtask fileへ`## External feasibility`宣言を追加・修正してから同じtaskを再開する。拒否時点のtask status・resume checkpoint・pending decisionは保持されるため、decision待ちは同じdecision本文を、rate limit・provider停止・--stop停止中は同じresume actionを再送してよい。`status: poc`/`observation`taskの完了は親Go/No-Go待ち(`NEEDS_SOL_DECISION`)として返るため、Go判断は宣言を`status: implementation`へ書き換えてから`glm-parent-action decision`で渡す。
 - `AGENTS.md`や既存規約にある一般品質ゲートを依頼文へ列挙し直さず、タスク固有の完了条件・対象・除外事項・必要テストだけを明記する。
 - 正確な長い一覧や監査報告がpacket上限へ収まらない場合は、実行時に渡される`REPORT_ARTIFACT_DIR`へ保存させ、packetでは`artifacts`の絶対パスだけを受け取る。
 - 同一taskがSol判断待ち・review fix・rate limit中なら分割や新規起動へ切り替えず、保存済みtaskとsessionを継続する。
@@ -27,25 +27,24 @@
 - 判断は最低限、同一または意味的に重複した処理が反復しているか、今回限りではなく今後の通常loopでも再発するか、品質coverageを維持したまま実行回数・待ち時間・model/provider消費を減らせるか、expensive real executionとcheap contract/mock verificationを分離できるか、改善実装と保守costに見合うか、false success・flakiness・観測不能化を生まないかで行う。
 - 改善価値がある場合は現在ACTIVE taskへ無関係なrefactorとして混ぜず、semanticに独立したfollow-up taskとして通常Plan lifecycleへ追加する。一時的なmigration、一度限りの長時間処理、意図的に必要なintegration test、改善効果が小さいものはtask化しない。本節は既存のparent orchestration product化判断をmachine executionの反復costまで拡張した運用であり、独立した新frameworkではない。
 
-## decision/fix本文の送信
+## 親action surface
 
-- `--decision-stdin`・`--fix-stdin`で送る判断本文・修正指示本文を、`JSON.stringify`等でshell command文字列へ埋め込むことを禁止する。shellの二重引用符内ではbacktickと`$`がcommand substitution・展開され、本文の一部が失われたりcommand出力が本文へ混入した上で最初のNUL byteで切断されたりする。
-- 本文はstdin modeで送る。exec_commandは`tty: true`で起動する。`tty: false`のprocessはstdinが即時EOFとなり本文送信前にbyte数不足でfail closedするため、`tty: false`へのfallbackを禁止する。
-- 起動commandは本文を含まない固定形`glm-worker --decision-stdin <payload-bytes>`（fixは`--fix-stdin`）とし、shell interpolationを使わない固定文字列だけを構築する。terminal mode設定はglm-workerのinvocation内責務で、callerは`stty`・raw mode・echo等のterminal設定を一切行わない。command文字列へ入れてよい本文由来の情報はUTF-8 byte長と任意のSHA-256だけに限る。`<payload-bytes>`は本文のUTF-8 byte長で、tool orchestration内で`TextEncoder`相当から送信前に計算する。
-- 本文送信の開始条件は、glm-workerがstderrへ出すREADY control event行(`{"type":"control","event":"stdin_ready"}`)の確認だけである。control event行はglm-workerがTTY stdinのterminal設定適用に成功した直後に1回だけ出し、pipe/file等の非TTY stdinでは出ない。event未観測・event行の重複・processの先行終了では本文を未送信のままfail closedとし、event待ちの間に本文を先行writeしない。
-- event確認後、呼び出しがsession化してsession IDを返した場合は、末尾改行の有無に依存せず非emptyの`write_stdin`で本文全体を1回だけ送る。改行だけの追加writeを行わない。byte数が不足する入力はglm-workerがstate変更・model呼出前にfail closedする。
-- 送信前に本文のSHA-256を計算できる場合は`--sha256 <hex>`を併せ指定し、同じく送信前に照合させる。
-- 本文中のbacktick、dollar、single quote、double quote、NUL、改行を無変換で保持する。shell向けのescape・encode・quoteをやり直さない。
-- glm-workerがbyte数不足・sha256不一致で非zero終了した場合、本文の分割再送・短文化・`--decision`/`--fix`へのargv埋込みfallbackを行わない。argv埋込みmodeは廃止済みでusage errorによりfail closedするため、byte長・hashと送信内容の整合だけを確認し、同じstdin modeで再送する。
-- この固定wrapper command自体はCodex tool側でsandbox外実行する。glm-workerが既存task state/checkpoint/sessionを更新するためである。ただし毎回の再承認要求を本契約へ含めない。
-- 本文送信後は短時間pollingを挟まず、最大待機時間のblocking waitで完了を待つ。
+- Plan管理repositoryでcurrent ACTIVE taskを開始するときは、sandbox外で`glm-parent-action start`を1回だけ実行する。wrapperは固定semantic requestを既存glm-worker new-task admissionへ渡す。ACTIVE task本文をUSER_REQUESTへ複製しない。
+- decision・fixはsandbox内で`glm-parent-action prepare decision|fix`を実行し、JSONで返る既存staging fileのplaceholderだけをCodex標準の`apply_patch`でsemantic payloadへ置換する。file先頭のtoken binding headerは保持する。`cat`・heredoc・shell redirect・Python等の別write手段へ切り替えない。
+- 実actionはsandbox外で`glm-parent-action decision <token>`または`glm-parent-action fix <token> [--origin <値>] [--accepted-scope current-diff]`を実行する。file pathは受け取らず、prepareが発行したcrypto-random tokenだけを渡す。
+- staging rootはrepository直下の`.glm-worker-parent-actions/`に固定する。token形式不正、token binding不一致、placeholder未置換、symlink化されたdirectory/file、1 MiB超payloadはstate変更・model呼出前にfail closedする。
+- wrapperはpayloadをmemoryへ読み、staging fileを削除してからUTF-8 byte長・SHA-256を機械計算し、既存`glm-worker --decision-stdin`/`--fix-stdin`へ直接渡す。semantic本文中のbacktick、dollar、single quote、double quote、NUL、改行を無変換で保持する。
+- `glm-worker --decision-stdin`/`--fix-stdin`はrecovery/debug用に残すが、通常親workflowではbyte長・hash・TTY・`stdin_ready`・`write_stdin`・shell quotingを扱わず、旧transportへfallbackしない。
+- staging fileをconsumeした後にactionが失敗した場合は同じfile/tokenを再利用せず、新しいprepareから同じsemantic payloadを再送する。
+- action開始後は短時間pollingを挟まず、最大待機時間のblocking waitで完了を待つ。
 
 ## 親操作のoutcome申告
 
-- terminal packet(PASS・`NEEDS_SOL_REVIEW`・`NEEDS_SOL_DECISION`・fail closed結果)を受理して追加操作なしで当該taskを完了させるとき、次の作業へ移る前に`glm-worker --accept`を1回だけ実行する。`--accept`は観測記録専用でmodel呼出・Git操作を行わず、open opportunityがないときの再実行はno-opである。
-- `NEEDS_SOL_DECISION`待ちへ`--accept`を使わない。判断は`--decision-stdin`で渡し、decision outcomeはglm-workerが自動確定する。
-- `--fix-stdin`では差戻しの実際の起点に合わせて`--origin codex-review|glm-reviewer|user-amendment|external-review|metadata-repair`を申告する。glm-worker reviewerのterminal result(`NEEDS_SOL_REVIEW`等)へ既に記載された指摘をそのまま差し戻すときは`glm-reviewer`、親Codex自身がterminal packet受領後の最終reviewで新たに検出した指摘のときだけ`codex-review`とする。userの修正要求・追加指示は`user-amendment`、repo外の外部reviewは`external-review`、`parent_metadata_*`等の親管理metadata修復は`metadata-repair`である。新規検出かreviewer既記載か確定できないときだけ申告を省略し、`unknown`として計上される。`codex-review`への推定fallbackは行わない。
-- stdin modeでは`--fix-stdin <payload-bytes> --sha256 <hex> --origin <値>`の対形式で渡す。`--origin`は観測申告であり、fix本文の内容・範囲を替わってはならない。
+- terminal packet(PASS・`NEEDS_SOL_REVIEW`・`NEEDS_SOL_DECISION`・fail closed結果)を受理して追加操作なしで当該taskを完了させるとき、次の作業へ移る前に`glm-parent-action accept`を1回だけ実行する。underlying `--accept`は観測記録専用でmodel呼出・Git操作を行わず、open opportunityがないときの再実行はno-opである。
+- `NEEDS_SOL_DECISION`待ちへacceptを使わない。判断は`glm-parent-action decision`で渡し、decision outcomeはglm-workerが自動確定する。
+- fixでは差戻しの実際の起点に合わせて`--origin codex-review|glm-reviewer|user-amendment|external-review|metadata-repair`を申告する。glm-worker reviewerのterminal result(`NEEDS_SOL_REVIEW`等)へ既に記載された指摘をそのまま差し戻すときは`glm-reviewer`、親Codex自身がterminal packet受領後の最終reviewで新たに検出した指摘のときだけ`codex-review`とする。userの修正要求・追加指示は`user-amendment`、repo外の外部reviewは`external-review`、`parent_metadata_*`等の親管理metadata修復は`metadata-repair`である。新規検出かreviewer既記載か確定できないときだけ申告を省略し、`unknown`として計上される。`codex-review`への推定fallbackは行わない。
+- `--accepted-scope`は`current-diff`だけを許し、origin/accepted-scopeは観測申告であってfix本文の内容・範囲を替わってはならない。
+- recoverable taskの再開は`glm-parent-action resume`を使い、保存済みtask・phase・sessionを継続する。
 
 ## 対象repoの生存判定
 
@@ -57,7 +56,7 @@
 
 ## 待機
 
-- 完了待機の対象は当該taskを起動した主`glm-worker`呼出process(session)だけとする。主呼出はterminal・Sol/user attention状態でpacketを出力して終了するため、観測用の別commandを完了待機へ使わない。
+- 完了待機の対象は当該taskを起動した主`glm-parent-action`/`glm-worker`呼出process(session)だけとする。主呼出はterminal・Sol/user attention状態でpacketを出力して終了するため、観測用の別commandを完了待機へ使わない。
 - 主呼出のexec cell・session IDを失ったattach recovery時だけ`glm-worker --watch`で既存taskへ追加AI callなしでattachできる。`--watch`は現在taskのevent log保存済みJSONL行をそのまま流す読み取り専用JSONL streamであり、follow対象taskのauthoritative `task.status`が`active`を離れた時点(`waiting-decision`・`waiting-sol-review`・`complete`・`rate-limited`・`provider-unavailable`・`interrupted`)・別taskへの切替時に残eventを流して`watch_exit` control event(`{"type":"watch_exit","task_id":...,"status":...}`、task切替時は`new_task_id`付き)を出力しexit 0する。event log file不在時は`event_log_status` control event(`{"type":"event_log_status","status":"removed"}`)のみで正常終了する。permission等のfile不在以外のI/O失敗は正常終了せず、stderrのprocess error JSON(`kind:"internal"`)とnon-zero exitになる。resident monitorとして付けっぱなしにしない。
 - `--watch`が終了しても、`--status`等を固定間隔で繰り返すpollingへ追跡をfallbackさせない。
 - 最初の`functions.exec`等の呼び出しからbackground terminalで利用可能な最大待機時間を指定し、可能な限り同一tool orchestration内で完了までblocking waitする。
@@ -73,7 +72,7 @@
 
 - terminal payload二面表示の原因層はglm-worker内部emitではなく親tool orchestrationとDesktop表示である。glm-workerの主呼出は受理したterminal resultをstdoutへ1回だけ出力する。本契約手順が強制できるのはmodel contextへの流入を1回にすることまでであり、ユーザー可視描画回数はDesktop表示層の外部境界としてrepoから強制できない。structured JSON移行後も結果object全体が同じ境界で二度描画され得る前提を維持し、JSON化を解決根拠にしない。
 - 単一postconditionは「1 accepted terminal resultにつき、親tool orchestration全体でユーザー可視payloadは1回」である。repo内emitの再調査・原因境界の特定だけでこの症状を解消扱いしない。同一payloadのmodel context・永続contextへの二重流入や測定可能なCodex実消費増などの実害証拠がない限り、表示の再発をrepo内再調査・orchestration変更の理由にしない。
-- 長時間cell(主`glm-worker`呼出)では、`functions.exec`のorchestration内でnested `exec_command`・`write_stdin`の各outputを変数へ蓄積し、raw stdout・packetをtext・notify・image等の即時描画経路へ一切出さない。
+- 長時間cell(主`glm-parent-action`/`glm-worker`呼出)では、`functions.exec`のorchestration内でnested `exec_command`・`write_stdin`の各outputを変数へ蓄積し、raw stdout・packetをtext・notify・image等の即時描画経路へ一切出さない。
 - 蓄積した出力にstdin_ready control event行が含まれていてもtransport controlであり、受理対象のterminal payload・machine result・単一描画の本文へ含めない。
 - cell終端では、蓄積したraw terminal payloadをFunctionsのstoreへtask固有keyで保存し、cellの返り値は短いcaptured marker(`GLM_TERMINAL_CAPTURED <key>`)だけにする。
 - `functions.wait`でcell終端を受け取った後、別の短い同期`functions.exec`でstoreのload(key)を読み、text(raw)として1回だけ親へ渡す。この同期callで追加AI call・追加のglm-worker実行を行わない。
@@ -85,5 +84,5 @@
 - `detail.limit: ZAI_GLM_CODING_PLAN_5H`は正常な一時停止であり、`worker_error`にしない。`detail.reset_at_cst`は中国標準時（UTC+8）。
 - working tree、task state、session、resume checkpointを破棄・resetせず、新規taskとしてやり直さない。
 - `detail.auto_resume_available: true`なら`~/.codex/instructions/glm-auto-resume.md`を読み、現在のCodexタスクへ自動再開automationを作成または更新する。作成不能な場合だけ手動再開を案内する。
-- 手動再開指示では`glm-worker --resume`を使い、保存済みの同一task・phase・sessionから継続する。元依頼を再構成しない。
+- 手動再開指示では`glm-parent-action resume`を使い、保存済みの同一task・phase・sessionから継続する。元依頼を再構成しない。
 - 枠が未回復なら再び`kind: rate_limited`として状態を保持する。
