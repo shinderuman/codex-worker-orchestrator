@@ -65,4 +65,4 @@ none
 
 ## Current boundary
 
-未着手。固定prompt削減後、次のCodex dogfoodより先に完了する。
+Repository-managed instruction reductionはPR #171 / main `a96c0df65a5cb560043879e4742199fd35010253`でintegration済み。重複`glm-wait.md`を廃止し、canonical `glm-execution.md`の待機節から6時間・最大wait・`write_stdin`・`functions.wait`等の親timing choreographyを除去し、通常待機のtiming/heartbeat/poll cadenceをtool/runtime ownerへ戻した。explicit user status、terminal transition、失われたtool sessionの`--handoff`/bounded `--watch` recoveryは維持し、repository lint・harnesslint・full Go test/vet/build・offline install smokeを通過済み。残りはimmutable Desktop builtinとの実機組合せを次のfresh-thread commentlint dogfoodで観測し、60秒由来のperiodic model re-entry/livenessが再発しないこととQuality Deltaを確認することだけ。そこまでIssue #162と本taskは未完了のまま保持し、evidenceが実装欠陥を示さない限りproduction instructionへ再突入しない。
