@@ -168,6 +168,7 @@ build_binaries() {
 		cd "$repo_root/glm-worker"
 		go build -trimpath -o "$build_dir/glm-worker" ./cmd/glm-worker
 		go build -buildvcs=false -trimpath -o "$build_dir/glm-parent-action" ./cmd/glm-parent-action
+		go build -buildvcs=false -trimpath -o "$build_dir/glm-codex-context" ./cmd/glm-codex-context
 		go build -buildvcs=false -trimpath -o "$build_dir/commentlint" ./cmd/commentlint
 		go build -buildvcs=false -trimpath -o "$build_dir/harnesslint" ./cmd/harnesslint
 		go build -buildvcs=false -trimpath -o "$build_dir/merge-json" ./cmd/merge-json
@@ -178,7 +179,7 @@ build_binaries() {
 install_binaries() {
 	build_dir=$1
 	mkdir -p "$bin_dir"
-	for name in glm-worker glm-parent-action commentlint harnesslint merge-json; do
+	for name in glm-worker glm-parent-action glm-codex-context commentlint harnesslint merge-json; do
 		if [ -f "$bin_dir/$name" ] && cmp -s "$build_dir/$name" "$bin_dir/$name"; then
 			printf '%s: unchanged\n' "$name"
 		else
