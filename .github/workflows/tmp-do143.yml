@@ -16,6 +16,15 @@ jobs:
         with:
           ref: gpt/do-141-readonly-inspection-v2
           fetch-depth: 0
+      - name: Read Go version
+        id: go-version
+        run: |
+          GO_VERSION=$(awk -F': ' '$1 == "go" { print $2 }' quality-tools.yml)
+          printf 'version=%s\n' "$GO_VERSION" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ steps.go-version.outputs.version }}
+          cache: false
       - name: Apply focused instruction patch
         run: |
           python3 - <<'PY'
@@ -29,7 +38,10 @@ jobs:
           p.write_text(text.replace(anchor, insert + anchor, 1))
           PY
       - name: Validate repository instruction surface
-        run: ./harnesslint
+        working-directory: glm-worker
+        run: |
+          go test ./internal/workflow/... ./internal/harnesslint/...
+          git diff --check
       - name: Commit validated patch and remove temporary workflow
         run: |
           rm .github/workflows/tmp-do143.yml
