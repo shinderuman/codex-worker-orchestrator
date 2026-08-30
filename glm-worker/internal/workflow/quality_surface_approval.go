@@ -8,11 +8,23 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
+func (w *Workflow) qualitySurfaceApprovalPending() bool {
+	checkpoint, err := w.state.LoadResumeCheckpoint()
+	return err == nil && checkpoint.QualitySurfaceApprovalPending
+}
+
 func (w *Workflow) stopForQualitySurfaceApproval(checkpoint state.ResumeCheckpoint, result packet.Result) (bool, error) {
-	stopped, err := w.verifyQualitySurfaceBaseline(checkpoint.Phase)
-	if err != nil || !stopped {
-		return stopped, err
+	changed, reason, err := w.inspectQualitySurfaceBaseline()
+	if err != nil {
+		return true, w.failClosedQualitySurface(checkpoint.Phase, reason, err)
 	}
+	if !changed {
+		return false, nil
+	}
+	if err := w.validateCompletedGuardResult(result); err != nil {
+		return true, err
+	}
+
 	checkpoint.QualitySurfaceApprovalPending = true
 	checkpoint.CompletedResult = &result
 	checkpoint.StopParentFiles = captureStopParentFiles(w.config.RepoRoot)
@@ -22,7 +34,27 @@ func (w *Workflow) stopForQualitySurfaceApproval(checkpoint state.ResumeCheckpoi
 	if err := w.state.SaveResumeCheckpoint(checkpoint); err != nil {
 		return true, err
 	}
-	return true, nil
+	return true, w.failClosedQualitySurface(checkpoint.Phase, reason, nil)
+}
+
+func (w *Workflow) ExecuteQualitySurfaceApproval(acceptedScope string) error {
+	return w.withTemp(func() error {
+		if acceptedScope != acceptedFixScopeCurrentDiff {
+			return &WorkerError{Message: "quality-surface approval requires accepted scope current-diff"}
+		}
+		if w.state.TaskStatus() != state.TaskStatusWaitingSolReview {
+			return &WorkerError{Message: "quality-surface approval is only available while waiting for Sol review"}
+		}
+		w.prepareAcceptedFixScope(acceptedScope)
+		handled, err := w.resumeApprovedQualitySurface()
+		if err != nil {
+			return err
+		}
+		if !handled {
+			return &WorkerError{Message: "no retained quality-surface approval checkpoint is available"}
+		}
+		return nil
+	})
 }
 
 func (w *Workflow) resumeApprovedQualitySurface() (bool, error) {
@@ -38,6 +70,9 @@ func (w *Workflow) resumeApprovedQualitySurface() (bool, error) {
 	}
 	if checkpoint.CompletedResult == nil {
 		return true, &WorkerError{Phase: checkpoint.Phase, Message: "quality-surface approval checkpoint has no completed worker result"}
+	}
+	if err := w.validateCompletedGuardResult(*checkpoint.CompletedResult); err != nil {
+		return true, err
 	}
 	if err := validateGuardRecoveryRetention(checkpoint); err != nil {
 		return true, err
@@ -70,8 +105,8 @@ func (w *Workflow) resumeApprovedQualitySurface() (bool, error) {
 	}
 
 	activated := checkpointActivatedRules(checkpoint)
-	result, stopped, err = w.convergeWorkerRuleActivation(checkpoint, result, activated)
-	if err != nil || stopped {
+	result, err = w.convergeWorkerRuleActivation(checkpoint, result, activated)
+	if err != nil {
 		return true, err
 	}
 	switch checkpoint.Stage {
