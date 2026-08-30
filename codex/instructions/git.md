@@ -16,6 +16,13 @@
 
 prefix: `feat` `fix` `refactor` `improve` `docs` `style` `test` `chore` `perf` `ci` `build` `revert`
 
+## Git metadataのsandbox実行境界
+
+- `git status`・`git diff`・`git show`・`git log`・`git rev-parse`等、Git metadataを変更しないread-only commandは通常sandbox内で実行する。
+- 現在taskのauthorization sourceが既に許可している`git add`・`git commit`・`git commit --amend`等、`.git` metadata/indexを変更することが既知の親Codex操作は、Codex Desktop sandboxで`.git`がread-onlyである場合、最初から既存のwritable/escalated execution boundaryで実行する。sandbox内で予測可能な`.git/index.lock: Operation not permitted`を一度発生させてから再試行しない。
+- このexecution boundaryは既存のGit semantic authorizationを一切拡張しない。commit/push/force/ref操作の許可は本fileのauthorization規則を正とし、未許可操作をwritable boundaryへ送る理由にしない。
+- shell command文字列を一般分類するparserは作らない。親workflowで既知のGit metadata mutationだけを対象にする。
+
 - GLM worker/reviewerによる`git push`その他Git remote writeは禁止する。この禁止は親Codexへ適用しない。
 - 親Codexによる`git push`その他Git remote writeは許可対象の通常操作である。現在taskへのユーザー指示またはrepositoryの親管理tracked instructionが要求・許可しているscopeで実行し、追加の解除文言やcommit単位の再許可を要求しない。
 - 親Codexの通常pushはfast-forwardを既定とする。force/non-fast-forward、タグ、remote branch作成は通常pushへ含めず、ユーザーが対象refと操作を明示した場合だけ扱う。
