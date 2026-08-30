@@ -206,7 +206,7 @@ func validateFixOptions(options []string) error {
 		}
 		index += 2
 	}
-	if seen["--approval-only"] && !seen["--accepted-scope"] {
+	if seen["--approval-only"] && (!seen["--accepted-scope"] || seen["--origin"]) {
 		return fmt.Errorf("%s", fixUsage)
 	}
 	return nil
