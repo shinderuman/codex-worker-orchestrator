@@ -19,9 +19,7 @@ func TestPrepareConsumePreservesDecisionPayloadAndRemovesSlot(t *testing.T) {
 		t.Fatalf("staging path escaped repository slot: %q", prepared.Path)
 	}
 	payload := []byte("line1\n`$'\"\x00tail\n")
-	if err := os.WriteFile(prepared.Path, payload, 0o600); err != nil {
-		t.Fatal(err)
-	}
+	writePreparedPayload(t, prepared, payload)
 	got, err := Consume(repo, "decision", prepared.Token)
 	if err != nil {
 		t.Fatal(err)
@@ -72,6 +70,20 @@ func TestConsumeRejectsUnwrittenOrForgedSlots(t *testing.T) {
 	}
 }
 
+func TestConsumeRejectsRegularFileWithoutIssuedTokenBinding(t *testing.T) {
+	repo := t.TempDir()
+	prepared, err := Prepare(repo, "decision")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(prepared.Path, []byte("unrelated local file content"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Consume(repo, "decision", prepared.Token); err == nil {
+		t.Fatal("unbound regular file was accepted")
+	}
+}
+
 func TestConsumeRejectsSymlinkReplacement(t *testing.T) {
 	repo := t.TempDir()
 	prepared, err := Prepare(repo, "decision")
@@ -101,5 +113,13 @@ func TestPrepareRejectsSymlinkStageDirectory(t *testing.T) {
 	}
 	if _, err := Prepare(repo, "decision"); err == nil {
 		t.Fatal("symlink staging directory was accepted")
+	}
+}
+
+func writePreparedPayload(t *testing.T, prepared Prepared, payload []byte) {
+	t.Helper()
+	content := append([]byte(tokenHeader(prepared.Token)), payload...)
+	if err := os.WriteFile(prepared.Path, content, 0o600); err != nil {
+		t.Fatal(err)
 	}
 }
