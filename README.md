@@ -128,6 +128,8 @@ install smokeはtemp home/repositoryへinstallを2回行い、managed file、loc
 
 ```sh
 glm-worker "<task>"
+glm-worker --decision-file <payload-file>
+glm-worker --fix-file <payload-file> [--origin <origin>]
 glm-worker --decision-stdin <bytes> [--sha256 <sha256>]
 glm-worker --fix-stdin <bytes> [--sha256 <sha256>] [--origin <origin>]
 glm-worker --accept

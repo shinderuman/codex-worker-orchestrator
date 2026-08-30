@@ -15,7 +15,7 @@
 - repository rootへ`IMPLEMENTATION_PLAN.local.md`が存在するrepoでは、新規taskの要求はOriginal instruction・Amendments・Contract・Must not・Acceptance criteriaを備えたtask fileとして`IMPLEMENTATION_TASKS/`配下へ置き、Planの`## ACTIVE`節から1件だけ指す。USER_REQUESTへtask詳細を複製せず、task要旨と参照だけを渡す。wrapperは全worker/reviewer呼出で同じtask file本文を読ませる配線を持つ。
 - user指示をACTIVE taskのdurable requirementへ反映する境界は`~/.codex/instructions/task-request-boundary.md`に従う。task完了前のtask file削除・history移行・plan昇格は行わない。
 - `"status":"NEEDS_SOL_REVIEW"`の理由がACTIVE task解決失敗(`parent_metadata_active_unresolvable`)または親管理metadata検出(`parent_metadata_*`)のときは、GLM側の再実行で解決しない。PlanのACTIVE欄・参照task file・親管理metadata現物を親Codexが直接確認・修復してから同じtaskを再開する。
-- 理由が外部成立性宣言検証(`external_feasibility_missing`・`external_feasibility_malformed`・`external_feasibility_unverified`)のときもGLM側の再実行で解決しない。親Codexがtask fileへ`## External feasibility`宣言を追加・修正してから同じtaskを再開する。拒否時点のtask status・resume checkpoint・pending decisionは保持されるため、decision待ちは同じdecision本文を、rate limit・provider停止・--stop停止中は同じ`--resume`を再送してよい。`status: poc`/`observation`taskの完了は親Go/No-Go待ち(`NEEDS_SOL_DECISION`)として返るため、Go判断は宣言を`status: implementation`へ書き換えてから`--decision-stdin`で渡す。
+- 理由が外部成立性宣言検証(`external_feasibility_missing`・`external_feasibility_malformed`・`external_feasibility_unverified`)のときもGLM側の再実行で解決しない。親Codexがtask fileへ`## External feasibility`宣言を追加・修正してから同じtaskを再開する。拒否時点のtask status・resume checkpoint・pending decisionは保持されるため、decision待ちは同じdecision本文を`--decision-file`で、rate limit・provider停止・--stop停止中は同じ`--resume`を再送してよい。`status: poc`/`observation`taskの完了は親Go/No-Go待ち(`NEEDS_SOL_DECISION`)として返るため、Go判断は宣言を`status: implementation`へ書き換えてから`--decision-stdin`で渡す。
 - `AGENTS.md`や既存規約にある一般品質ゲートを依頼文へ列挙し直さず、タスク固有の完了条件・対象・除外事項・必要テストだけを明記する。
 - 正確な長い一覧や監査報告がpacket上限へ収まらない場合は、実行時に渡される`REPORT_ARTIFACT_DIR`へ保存させ、packetでは`artifacts`の絶対パスだけを受け取る。
 - 同一taskがSol判断待ち・review fix・rate limit中なら分割や新規起動へ切り替えず、保存済みtaskとsessionを継続する。
@@ -29,23 +29,20 @@
 
 ## decision/fix本文の送信
 
-- `--decision-stdin`・`--fix-stdin`で送る判断本文・修正指示本文を、`JSON.stringify`等でshell command文字列へ埋め込むことを禁止する。shellの二重引用符内ではbacktickと`$`がcommand substitution・展開され、本文の一部が失われたりcommand出力が本文へ混入した上で最初のNUL byteで切断されたりする。
-- 本文はstdin modeで送る。exec_commandは`tty: true`で起動する。`tty: false`のprocessはstdinが即時EOFとなり本文送信前にbyte数不足でfail closedするため、`tty: false`へのfallbackを禁止する。
-- 起動commandは本文を含まない固定形`glm-worker --decision-stdin <payload-bytes>`（fixは`--fix-stdin`）とし、shell interpolationを使わない固定文字列だけを構築する。terminal mode設定はglm-workerのinvocation内責務で、callerは`stty`・raw mode・echo等のterminal設定を一切行わない。command文字列へ入れてよい本文由来の情報はUTF-8 byte長と任意のSHA-256だけに限る。`<payload-bytes>`は本文のUTF-8 byte長で、tool orchestration内で`TextEncoder`相当から送信前に計算する。
-- 本文送信の開始条件は、glm-workerがstderrへ出すREADY control event行(`{"type":"control","event":"stdin_ready"}`)の確認だけである。control event行はglm-workerがTTY stdinのterminal設定適用に成功した直後に1回だけ出し、pipe/file等の非TTY stdinでは出ない。event未観測・event行の重複・processの先行終了では本文を未送信のままfail closedとし、event待ちの間に本文を先行writeしない。
-- event確認後、呼び出しがsession化してsession IDを返した場合は、末尾改行の有無に依存せず非emptyの`write_stdin`で本文全体を1回だけ送る。改行だけの追加writeを行わない。byte数が不足する入力はglm-workerがstate変更・model呼出前にfail closedする。
-- 送信前に本文のSHA-256を計算できる場合は`--sha256 <hex>`を併せ指定し、同じく送信前に照合させる。
-- 本文中のbacktick、dollar、single quote、double quote、NUL、改行を無変換で保持する。shell向けのescape・encode・quoteをやり直さない。
-- glm-workerがbyte数不足・sha256不一致で非zero終了した場合、本文の分割再送・短文化・`--decision`/`--fix`へのargv埋込みfallbackを行わない。argv埋込みmodeは廃止済みでusage errorによりfail closedするため、byte長・hashと送信内容の整合だけを確認し、同じstdin modeで再送する。
+- 通常の親操作は`glm-worker --decision-file <payload-file>`または`glm-worker --fix-file <payload-file> [--origin ...] [--accepted-scope current-diff]`を使う。file modeは既存のModeDecision/ModeFixと同じlifecycle admissionへ入り、別state machineを作らない。
+- 親Codexはsemantic本文をrepository外またはgitignoredな一時fileへそのまま書き、固定commandへfile pathとtyped metadataだけを渡す。本文のUTF-8 byte長・SHA-256・TTY raw mode・`stdin_ready`・exactly-once `write_stdin`を親側で計算・実行しない。本文をcommand argvへ埋め込まない。
+- glm-workerはfileをstate変更・model呼出より前に全byte読み込み、read failureまたはempty fileではfail closedする。file内容のbacktick、dollar、single quote、double quote、NUL、改行を無変換でsemantic payloadへ渡す。file自体の削除はcaller責務とし、glm-workerは任意pathを自動削除しない。
+- `--decision-stdin`・`--fix-stdin`はrecovery/debugまたはfile transportを使えない場合の互換経路として残す。stdin modeを使う場合だけ既存のpayload byte長・任意SHA-256・TTY READY・1回の`write_stdin`契約に従い、argv本文fallbackは行わない。通常loopでstdin modeを選ばない。
+- `--fix-file`の`--origin codex-review|glm-reviewer|user-amendment|external-review|metadata-repair`と`--accepted-scope current-diff`はstdin modeと同じ意味を持つ。
 - この固定wrapper command自体はCodex tool側でsandbox外実行する。glm-workerが既存task state/checkpoint/sessionを更新するためである。ただし毎回の再承認要求を本契約へ含めない。
-- 本文送信後は短時間pollingを挟まず、最大待機時間のblocking waitで完了を待つ。
+- 本文送信後は短時間pollingを挟まず、`glm-wait.md`の待機境界で完了を待つ。
 
 ## 親操作のoutcome申告
 
 - terminal packet(PASS・`NEEDS_SOL_REVIEW`・`NEEDS_SOL_DECISION`・fail closed結果)を受理して追加操作なしで当該taskを完了させるとき、次の作業へ移る前に`glm-worker --accept`を1回だけ実行する。`--accept`は観測記録専用でmodel呼出・Git操作を行わず、open opportunityがないときの再実行はno-opである。
-- `NEEDS_SOL_DECISION`待ちへ`--accept`を使わない。判断は`--decision-stdin`で渡し、decision outcomeはglm-workerが自動確定する。
-- `--fix-stdin`では差戻しの実際の起点に合わせて`--origin codex-review|glm-reviewer|user-amendment|external-review|metadata-repair`を申告する。glm-worker reviewerのterminal result(`NEEDS_SOL_REVIEW`等)へ既に記載された指摘をそのまま差し戻すときは`glm-reviewer`、親Codex自身がterminal packet受領後の最終reviewで新たに検出した指摘のときだけ`codex-review`とする。userの修正要求・追加指示は`user-amendment`、repo外の外部reviewは`external-review`、`parent_metadata_*`等の親管理metadata修復は`metadata-repair`である。新規検出かreviewer既記載か確定できないときだけ申告を省略し、`unknown`として計上される。`codex-review`への推定fallbackは行わない。
-- stdin modeでは`--fix-stdin <payload-bytes> --sha256 <hex> --origin <値>`の対形式で渡す。`--origin`は観測申告であり、fix本文の内容・範囲を替わってはならない。
+- `NEEDS_SOL_DECISION`待ちへ`--accept`を使わない。判断は`--decision-file`で渡し、decision outcomeはglm-workerが自動確定する。
+- `--fix-file`では差戻しの実際の起点に合わせて`--origin codex-review|glm-reviewer|user-amendment|external-review|metadata-repair`を申告する。glm-worker reviewerのterminal result(`NEEDS_SOL_REVIEW`等)へ既に記載された指摘をそのまま差し戻すときは`glm-reviewer`、親Codex自身がterminal packet受領後の最終reviewで新たに検出した指摘のときだけ`codex-review`とする。userの修正要求・追加指示は`user-amendment`、repo外の外部reviewは`external-review`、`parent_metadata_*`等の親管理metadata修復は`metadata-repair`である。新規検出かreviewer既記載か確定できないときだけ申告を省略し、`unknown`として計上される。`codex-review`への推定fallbackは行わない。
+- 通常のfile modeでは`--fix-file <payload-file> --origin <値>`の対形式で渡す。`--origin`は観測申告であり、fix本文の内容・範囲を替わってはならない。
 
 ## 対象repoの生存判定
 
