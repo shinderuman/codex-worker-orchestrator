@@ -20,6 +20,10 @@ CommentlintとBundle Diff以外の実装をお前が全部終えてその次にC
 - repository側`glm-execution.md`は、健康な長時間GLM処理ではperiodic model re-entry/livenessを避け、`glm-parent-action`の主呼出を長時間blockingさせる契約を持つ。
 - 直前のruntime改善はreal dogfoodで成功し、約67.7分と約18.3分の待機が各1 parent tool callで完了した。したがって目的はruntime waitを再実装することではなく、model-visible conflict/reasoning pressureを減らすこと。
 
+## External feasibility
+
+status: not-applicable
+
 ## Purpose
 
 親Codexが同一turnで相反するliveness/wait proseを解決するための不要なreasoningと将来のperiodic re-entry regression pressureを減らし、既に成立した長時間blocking behaviorを維持する。
