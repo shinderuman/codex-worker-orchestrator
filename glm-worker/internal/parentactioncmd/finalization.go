@@ -64,75 +64,64 @@ func runFinalizationCheck(repoRoot, form string, stdout io.Writer) error {
 }
 
 func runFinalizationCheckWithWorker(worker, repoRoot, form string, stdout io.Writer) error {
-	validation, failure := runFinalizationWorkerStep(worker, repoRoot, []string{"--quality-gate", form}, "validation")
+	validation, validationProbe, failure := collectFinalizationValidation(worker, repoRoot, form)
 	if failure != nil {
 		return writeFinalizationOutput(stdout, finalizationCheckOutput{Status: "blocked", Form: form, Failure: failure})
 	}
-	var validationProbe finalizationValidationProbe
-	if err := json.Unmarshal(validation, &validationProbe); err != nil || validationProbe.Status != "pass" || validationProbe.ValidationRunID == "" {
-		return writeFinalizationOutput(stdout, finalizationCheckOutput{
-			Status: "blocked",
-			Form:   form,
-			Failure: &finalizationFailure{
-				Stage:  "validation",
-				Reason: "invalid_validation_result",
-				Detail: compactFinalizationDiagnostic(string(validation)),
-			},
-		})
-	}
-
-	handoff, failure := runFinalizationWorkerStep(worker, repoRoot, []string{"--handoff"}, "handoff")
+	handoff, handoffProbe, failure := collectFinalizationHandoff(worker, repoRoot)
 	if failure != nil {
 		return writeFinalizationOutput(stdout, finalizationCheckOutput{Status: "blocked", Form: form, Validation: validation, Failure: failure})
 	}
-	var handoffProbe finalizationHandoffProbe
-	if err := json.Unmarshal(handoff, &handoffProbe); err != nil {
-		return writeFinalizationOutput(stdout, finalizationCheckOutput{
-			Status:     "blocked",
-			Form:       form,
-			Validation: validation,
-			Failure: &finalizationFailure{
-				Stage:  "handoff",
-				Reason: "invalid_handoff_result",
-				Detail: compactFinalizationDiagnostic(string(handoff)),
-			},
-		})
-	}
 	if !handoffProbe.Consistent {
 		return writeFinalizationOutput(stdout, finalizationCheckOutput{
-			Status:     "blocked",
-			Form:       form,
-			Validation: validation,
-			Handoff:    handoff,
-			Failure:    &finalizationFailure{Stage: "handoff", Reason: "lifecycle_inconsistent"},
+			Status: "blocked", Form: form, Validation: validation, Handoff: handoff,
+			Failure: &finalizationFailure{Stage: "handoff", Reason: "lifecycle_inconsistent"},
 		})
 	}
 	if !handoffContainsValidation(handoffProbe, validationProbe.ValidationRunID) {
 		return writeFinalizationOutput(stdout, finalizationCheckOutput{
-			Status:     "blocked",
-			Form:       form,
-			Validation: validation,
-			Handoff:    handoff,
-			Failure:    &finalizationFailure{Stage: "snapshot", Reason: "validation_not_current_for_snapshot"},
+			Status: "blocked", Form: form, Validation: validation, Handoff: handoff,
+			Failure: &finalizationFailure{Stage: "snapshot", Reason: "validation_not_current_for_snapshot"},
 		})
 	}
 	gitSummary, err := readFinalizationGitSummary(repoRoot)
 	if err != nil {
 		return writeFinalizationOutput(stdout, finalizationCheckOutput{
-			Status:     "blocked",
-			Form:       form,
-			Validation: validation,
-			Handoff:    handoff,
-			Failure:    &finalizationFailure{Stage: "git", Reason: "git_summary_unavailable", Detail: compactFinalizationDiagnostic(err.Error())},
+			Status: "blocked", Form: form, Validation: validation, Handoff: handoff,
+			Failure: &finalizationFailure{Stage: "git", Reason: "git_summary_unavailable", Detail: compactFinalizationDiagnostic(err.Error())},
 		})
 	}
 	return writeFinalizationOutput(stdout, finalizationCheckOutput{
-		Status:     "ready_for_parent_decision",
-		Form:       form,
-		Validation: validation,
-		Handoff:    handoff,
-		Git:        &gitSummary,
+		Status: "ready_for_parent_decision", Form: form, Validation: validation, Handoff: handoff, Git: &gitSummary,
 	})
+}
+
+func collectFinalizationValidation(worker, repoRoot, form string) (json.RawMessage, finalizationValidationProbe, *finalizationFailure) {
+	validation, failure := runFinalizationWorkerStep(worker, repoRoot, []string{"--quality-gate", form}, "validation")
+	if failure != nil {
+		return nil, finalizationValidationProbe{}, failure
+	}
+	var probe finalizationValidationProbe
+	if err := json.Unmarshal(validation, &probe); err != nil || probe.Status != "pass" || probe.ValidationRunID == "" {
+		return nil, finalizationValidationProbe{}, &finalizationFailure{
+			Stage: "validation", Reason: "invalid_validation_result", Detail: compactFinalizationDiagnostic(string(validation)),
+		}
+	}
+	return validation, probe, nil
+}
+
+func collectFinalizationHandoff(worker, repoRoot string) (json.RawMessage, finalizationHandoffProbe, *finalizationFailure) {
+	handoff, failure := runFinalizationWorkerStep(worker, repoRoot, []string{"--handoff"}, "handoff")
+	if failure != nil {
+		return nil, finalizationHandoffProbe{}, failure
+	}
+	var probe finalizationHandoffProbe
+	if err := json.Unmarshal(handoff, &probe); err != nil {
+		return nil, finalizationHandoffProbe{}, &finalizationFailure{
+			Stage: "handoff", Reason: "invalid_handoff_result", Detail: compactFinalizationDiagnostic(string(handoff)),
+		}
+	}
+	return handoff, probe, nil
 }
 
 func runFinalizationWorkerStep(worker, repoRoot string, args []string, stage string) (json.RawMessage, *finalizationFailure) {
