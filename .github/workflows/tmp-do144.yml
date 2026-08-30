@@ -69,7 +69,8 @@ jobs:
         run: |
           ./goquality vet
           ./goquality build
-          ./harnesslint
+          (cd glm-worker && go test ./internal/workflow/... ./internal/harnesslint/...)
+          git diff --check
       - name: Commit validated patch and remove temporary workflow
         run: |
           rm .github/workflows/tmp-do144.yml
