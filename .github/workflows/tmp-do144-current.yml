@@ -90,14 +90,14 @@ jobs:
           printf '%s\n' "$quality_bin" >> "$GITHUB_PATH"
       - name: Validate
         run: |
+          rm .github/workflows/tmp-do144-current.yml
           (cd glm-worker && go test ./internal/commentlint/... ./internal/workflow/... ./internal/harnesslint/...)
           ./goquality vet
           ./goquality build
           ./harnesslint
           git diff --check
-      - name: Commit and remove temporary workflow
+      - name: Commit
         run: |
-          rm .github/workflows/tmp-do144-current.yml
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add goquality codex/instructions/quality-gate-capability.md glm-worker/internal/commentlint/commentlint.go glm-worker/internal/commentlint/commentlint_test.go .github/workflows/tmp-do144-current.yml
