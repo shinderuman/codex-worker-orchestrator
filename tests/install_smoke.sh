@@ -77,6 +77,7 @@ grep -Fq "$repo/.glm-worker-parent-actions/decision-" "$tmp/parent-action-prepar
 rm -rf "$repo/.glm-worker-parent-actions"
 (
 	cd "$repo"
+	HOME="$home" GLM_WORKER_HOME="$home/.glm-worker" "$home/.local/bin/glm-worker" --reset >/dev/null
 	HOME="$home" GLM_WORKER_HOME="$home/.glm-worker" "$home/.local/bin/glm-worker" --status
 ) >"$tmp/runtime-status.json"
 grep -Fq "\"vcs_revision\":\"$repo_revision\"" "$tmp/runtime-status.json"
