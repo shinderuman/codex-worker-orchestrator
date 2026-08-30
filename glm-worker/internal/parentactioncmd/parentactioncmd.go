@@ -15,7 +15,10 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentaction"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
+
+const usage = "usage: glm-parent-action prepare <start|decision|fix> | start <token> | decision <token> | fix <token> [--origin <origin>] [--accepted-scope current-diff] | accept | resume"
 
 func Run(args []string, stdout, stderr io.Writer) int {
 	if err := run(args, stdout, stderr); err != nil {
@@ -31,7 +34,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 
 func run(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: glm-parent-action prepare <decision|fix> | <decision|fix> <token> [fix options]")
+		return fmt.Errorf("%s", usage)
 	}
 	cfg, err := config.Load()
 	if err != nil {
@@ -45,7 +48,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 
 func prepare(repoRoot string, args []string, stdout io.Writer) error {
 	if len(args) != 2 {
-		return fmt.Errorf("usage: glm-parent-action prepare <decision|fix>")
+		return fmt.Errorf("usage: glm-parent-action prepare <start|decision|fix>")
 	}
 	prepared, err := parentaction.Prepare(repoRoot, args[1])
 	if err != nil {
@@ -59,42 +62,68 @@ func prepare(repoRoot string, args []string, stdout io.Writer) error {
 
 func execute(repoRoot string, args []string, stdout, stderr io.Writer) error {
 	action := args[0]
-	if action != "decision" && action != "fix" {
-		return fmt.Errorf("parent action must be decision or fix")
+	switch action {
+	case "accept", "resume":
+		if len(args) != 1 {
+			return fmt.Errorf("usage: glm-parent-action %s", action)
+		}
+		return runWorker(repoRoot, directWorkerArgs(action), nil, stdout, stderr)
+	case "start", "decision", "fix":
+		return executePayloadAction(repoRoot, action, args[1:], stdout, stderr)
+	default:
+		return fmt.Errorf("%s", usage)
 	}
-	if len(args) < 2 {
-		return fmt.Errorf("usage: glm-parent-action %s <token> [fix options]", action)
+}
+
+func executePayloadAction(repoRoot, action string, args []string, stdout, stderr io.Writer) error {
+	if len(args) < 1 {
+		return fmt.Errorf("usage: glm-parent-action %s <token>", action)
 	}
-	if action == "decision" && len(args) != 2 {
-		return fmt.Errorf("usage: glm-parent-action decision <token>")
+	if action != "fix" && len(args) != 1 {
+		return fmt.Errorf("usage: glm-parent-action %s <token>", action)
 	}
 	if action == "fix" {
-		if err := validateFixOptions(args[2:]); err != nil {
+		if err := validateFixOptions(args[1:]); err != nil {
 			return err
 		}
 	}
-
 	worker, err := resolveGLMWorker()
 	if err != nil {
 		return err
 	}
-	payload, err := parentaction.Consume(repoRoot, action, args[1])
+	payload, err := parentaction.Consume(repoRoot, action, args[0])
 	if err != nil {
 		return err
+	}
+	workerArgs := payloadWorkerArgs(action, payload, args[1:])
+	return runResolvedWorker(worker, repoRoot, workerArgs, payloadStdin(action, payload), stdout, stderr)
+}
+
+func payloadWorkerArgs(action string, payload []byte, options []string) []string {
+	if action == "start" {
+		return []string{string(payload)}
 	}
 	digest := sha256.Sum256(payload)
 	mode := "--decision-stdin"
 	if action == "fix" {
 		mode = "--fix-stdin"
 	}
-	workerArgs := []string{mode, strconv.Itoa(len(payload)), "--sha256", hex.EncodeToString(digest[:])}
-	workerArgs = append(workerArgs, args[2:]...)
-	command := exec.Command(worker, workerArgs...)
-	command.Dir = repoRoot
-	command.Stdin = bytes.NewReader(payload)
-	command.Stdout = stdout
-	command.Stderr = stderr
-	return command.Run()
+	args := []string{mode, strconv.Itoa(len(payload)), "--sha256", hex.EncodeToString(digest[:])}
+	return append(args, options...)
+}
+
+func payloadStdin(action string, payload []byte) io.Reader {
+	if action == "start" {
+		return nil
+	}
+	return bytes.NewReader(payload)
+}
+
+func directWorkerArgs(action string) []string {
+	if action == "accept" {
+		return []string{"--accept"}
+	}
+	return []string{"--resume"}
 }
 
 func validateFixOptions(options []string) error {
@@ -104,15 +133,42 @@ func validateFixOptions(options []string) error {
 	seen := map[string]bool{}
 	for index := 0; index < len(options); index += 2 {
 		name := options[index]
-		if seen[name] || (name != "--origin" && name != "--accepted-scope") {
+		value := options[index+1]
+		if seen[name] {
 			return fmt.Errorf("usage: glm-parent-action fix <token> [--origin <origin>] [--accepted-scope current-diff]")
 		}
 		seen[name] = true
-		if options[index+1] == "" {
+		switch name {
+		case "--origin":
+			if !state.ValidParentOrigin(value) {
+				return fmt.Errorf("usage: glm-parent-action fix <token> [--origin <origin>] [--accepted-scope current-diff]")
+			}
+		case "--accepted-scope":
+			if value != "current-diff" {
+				return fmt.Errorf("usage: glm-parent-action fix <token> [--origin <origin>] [--accepted-scope current-diff]")
+			}
+		default:
 			return fmt.Errorf("usage: glm-parent-action fix <token> [--origin <origin>] [--accepted-scope current-diff]")
 		}
 	}
 	return nil
+}
+
+func runWorker(repoRoot string, args []string, stdin io.Reader, stdout, stderr io.Writer) error {
+	worker, err := resolveGLMWorker()
+	if err != nil {
+		return err
+	}
+	return runResolvedWorker(worker, repoRoot, args, stdin, stdout, stderr)
+}
+
+func runResolvedWorker(worker, repoRoot string, args []string, stdin io.Reader, stdout, stderr io.Writer) error {
+	command := exec.Command(worker, args...)
+	command.Dir = repoRoot
+	command.Stdin = stdin
+	command.Stdout = stdout
+	command.Stderr = stderr
+	return command.Run()
 }
 
 func resolveGLMWorker() (string, error) {
