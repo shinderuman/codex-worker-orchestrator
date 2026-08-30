@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strconv"
 	"strings"
 
@@ -19,8 +20,9 @@ import (
 type CommandMode int
 
 type Command struct {
-	Mode    CommandMode
-	Payload string
+	Mode        CommandMode
+	Payload     string
+	PayloadFile string
 
 	WatchVerbose bool
 
@@ -104,16 +106,22 @@ const qualityGateUsage = "<go-test|go-test-race> | --quality-gate <status|watch|
 
 var commandParsers = map[string]commandParser{
 	"--decision": func([]string) (Command, error) {
-		return Command{}, usageError("usage: glm-worker --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix-stdin <payload-bytes> [--sha256 <hex>] %s", fixOriginUsage)
+		return Command{}, usageError("usage: glm-worker --decision-file <payload-file> | --decision-stdin <payload-bytes> [--sha256 <hex>]")
 	},
 	"--fix": func([]string) (Command, error) {
-		return Command{}, usageError("usage: glm-worker --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix-stdin <payload-bytes> [--sha256 <hex>] %s", fixOriginUsage)
+		return Command{}, usageError("usage: glm-worker --fix-file <payload-file> %s | --fix-stdin <payload-bytes> [--sha256 <hex>] %s", fixOriginUsage, fixOriginUsage)
 	},
 	"--decision-stdin": func(args []string) (Command, error) {
 		return stdinPayloadCommand(ModeDecision, args, "usage: glm-worker --decision-stdin <payload-bytes> [--sha256 <hex>]", false)
 	},
 	"--fix-stdin": func(args []string) (Command, error) {
 		return stdinPayloadCommand(ModeFix, args, fmt.Sprintf("usage: glm-worker --fix-stdin <payload-bytes> [--sha256 <hex>] %s", fixOriginUsage), true)
+	},
+	"--decision-file": func(args []string) (Command, error) {
+		return filePayloadCommand(ModeDecision, args, "usage: glm-worker --decision-file <payload-file>", false)
+	},
+	"--fix-file": func(args []string) (Command, error) {
+		return filePayloadCommand(ModeFix, args, fmt.Sprintf("usage: glm-worker --fix-file <payload-file> %s", fixOriginUsage), true)
 	},
 	"--accept": func(args []string) (Command, error) {
 		return singleArgCommand(args, ModeAccept, "usage: glm-worker --accept")
@@ -190,7 +198,7 @@ func usageError(format string, args ...any) *UsageError {
 
 func ParseCommand(args []string) (Command, error) {
 	if len(args) == 0 {
-		return Command{}, usageError("usage: glm-worker <instruction> | --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix-stdin <payload-bytes> [--sha256 <hex>] %s | --accept | --resume | --stop | --isolate | --status | --handoff | --watch [--verbose] | --timeline [task-id] | --convergence [task-id] | --stats | --reset | --eval-ab <run-dir> | --call-outliers | --codex-limit | --repo-search <query> | --check-wake-coalesce <parent-thread-id> <auto-resume-at-rfc3339> | --install-smoke %s | --quality-gate %s | --model-routing | bundle [task-id]", fixOriginUsage, installSmokeUsage, qualityGateUsage)
+		return Command{}, usageError("usage: glm-worker <instruction> | --decision-file <payload-file> | --fix-file <payload-file> | --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix-stdin <payload-bytes> [--sha256 <hex>] %s | --accept | --resume | --stop | --isolate | --status | --handoff | --watch [--verbose] | --timeline [task-id] | --convergence [task-id] | --stats | --reset | --eval-ab <run-dir> | --call-outliers | --codex-limit | --repo-search <query> | --check-wake-coalesce <parent-thread-id> <auto-resume-at-rfc3339> | --install-smoke %s | --quality-gate %s | --model-routing | bundle [task-id]", fixOriginUsage, installSmokeUsage, qualityGateUsage)
 	}
 	if parser, ok := commandParsers[args[0]]; ok {
 		return parser(args)
@@ -221,6 +229,43 @@ func requiredPayloadCommand(args []string, mode CommandMode, usage string) (Comm
 		return Command{}, usageError("%s", usage)
 	}
 	return Command{Mode: mode, Payload: args[1]}, nil
+}
+
+func filePayloadCommand(mode CommandMode, args []string, usage string, allowFixOptions bool) (Command, error) {
+	if len(args) < 2 || strings.TrimSpace(args[1]) == "" {
+		return Command{}, usageError("%s", usage)
+	}
+	if !allowFixOptions {
+		if len(args) != 2 {
+			return Command{}, usageError("%s", usage)
+		}
+		return Command{Mode: mode, PayloadFile: args[1]}, nil
+	}
+	if len(args)%2 != 0 {
+		return Command{}, usageError("%s", usage)
+	}
+	command := Command{Mode: mode, PayloadFile: args[1]}
+	for index := 2; index < len(args); index += 2 {
+		if err := applyFilePayloadOption(&command, args[index], args[index+1], usage); err != nil {
+			return Command{}, err
+		}
+	}
+	return command, nil
+}
+
+func applyFilePayloadOption(command *Command, name, value, usage string) error {
+	switch name {
+	case "--origin":
+		if command.Origin != "" || !state.ValidParentOrigin(value) {
+			return usageError("%s", usage)
+		}
+		command.Origin = value
+		return nil
+	case "--accepted-scope":
+		return applyAcceptedScopeOption(command, value, usage, true)
+	default:
+		return usageError("%s", usage)
+	}
 }
 
 func watchCommand(args []string) (Command, error) {
@@ -343,6 +388,17 @@ func (e *StdinPayloadError) Error() string {
 	return e.Message
 }
 
+func readPayloadFile(path string) (string, error) {
+	payload, err := os.ReadFile(path)
+	if err != nil {
+		return "", &StdinPayloadError{Message: fmt.Sprintf("payload file read failed: %v", err)}
+	}
+	if len(payload) == 0 {
+		return "", &StdinPayloadError{Message: "payload file is empty"}
+	}
+	return string(payload), nil
+}
+
 func readStdinPayload(in io.Reader, want int64, expectedSHA string) (string, error) {
 	var buf bytes.Buffer
 	written, err := io.CopyN(&buf, in, want)
@@ -390,6 +446,13 @@ func run(
 	if err != nil {
 		return err
 	}
+	if cmd.PayloadFile != "" {
+		payload, fileErr := readPayloadFile(cmd.PayloadFile)
+		if fileErr != nil {
+			return fileErr
+		}
+		cmd.Payload = payload
+	}
 	if cmd.StdinBytes > 0 {
 		restore, rawApplied, err := enterStdinRawMode(stdin)
 		if err != nil {
@@ -416,6 +479,9 @@ func run(
 func Execute(cmd Command, cfg config.AppConfig, rf RunnerFactory, stdout, _ io.Writer) error {
 	if cmd.StdinBytes > 0 && cmd.Payload == "" {
 		return fmt.Errorf("stdin payload mode requires the payload to be read before execute")
+	}
+	if cmd.PayloadFile != "" && cmd.Payload == "" {
+		return fmt.Errorf("file payload mode requires the payload to be read before execute")
 	}
 	if handled, err := executeStateless(cmd, cfg, stdout); handled {
 		return err
