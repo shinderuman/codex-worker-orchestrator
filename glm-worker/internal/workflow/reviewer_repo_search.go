@@ -44,7 +44,7 @@ func (w *Workflow) reviewerDiffFirstContext(request string, reviewNumber int) st
 		return renderReviewerDiffFirstNavigation(paths, reviewerSearchDisabled, "", nil)
 	}
 
-	impactTerms := collectReviewerDiffImpactTerms(w.config.RepoRoot, baseline)
+	impactTerms := collectReviewerDiffImpactTerms(w.config.RepoRoot, baseline, reviewerDiffImpactPaths(paths))
 	query := reviewerIndependentSearchQuery(request, impactPaths, impactTerms)
 	timer := w.newRepoSearchTimer()
 	report, searchErr := timer.run(context.Background(), w.config.RepoRoot, query, reposearch.Options{MaxResults: RepoSearchMaxResults})
@@ -82,15 +82,28 @@ func reviewerImpactPaths(paths []string) []string {
 	return impact
 }
 
+func reviewerDiffImpactPaths(paths []string) []string {
+	filtered := make([]string, 0, len(paths))
+	for _, path := range paths {
+		if isParentManagedReviewPath(path) {
+			continue
+		}
+		filtered = append(filtered, path)
+	}
+	return filtered
+}
+
 func isParentManagedReviewPath(path string) bool {
 	return path == state.ParentRulesFile || path == state.ParentPlanFile || path == state.ParentHistoryFile || strings.HasPrefix(path, state.ParentTasksDir+"/")
 }
 
-func collectReviewerDiffImpactTerms(repoRoot, baseline string) []string {
-	if strings.TrimSpace(baseline) == "" {
+func collectReviewerDiffImpactTerms(repoRoot, baseline string, paths []string) []string {
+	if strings.TrimSpace(baseline) == "" || len(paths) == 0 {
 		return nil
 	}
-	output, err := exec.Command("git", "-C", repoRoot, "diff", "--unified=0", "--no-ext-diff", baseline, "--").Output()
+	args := []string{"-C", repoRoot, "diff", "--unified=0", "--no-ext-diff", baseline, "--"}
+	args = append(args, paths...)
+	output, err := exec.Command("git", args...).Output()
 	if err != nil {
 		return nil
 	}
