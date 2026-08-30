@@ -8,9 +8,10 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/021-conditional-improvements.md`
+- `IMPLEMENTATION_TASKS/commentlint-sandbox-safe-launcher.md`
 
 ## NEXT（優先順）
+- `IMPLEMENTATION_TASKS/021-conditional-improvements.md`
 - `IMPLEMENTATION_TASKS/022-final-verification.md`
 
 ## BLOCKED / USER_PERMISSION_WAIT
@@ -37,8 +38,8 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## 現在の停止理由
 
-exhaustive-search query persistence reviewを完了。Task 021は未着手。
+exhaustive-search query persistence reviewを完了。ユーザー指示により、Task 021へ入る前にIssue #142のcommentlint sandbox failureを通常implementation taskとして解消する。
 
 ## 次の親Codex操作
 
-ACTIVE `IMPLEMENTATION_TASKS/021-conditional-improvements.md`をrepository authorityとtask本文から再bootstrapして通常workflowで開始する。Task 022は開始しない。
+ACTIVE `IMPLEMENTATION_TASKS/commentlint-sandbox-safe-launcher.md`をrepository authorityとtask本文からbootstrapし、通常Codex + glm-worker workflowでこのtaskだけを完了する。Task 021は同じrunで開始しない。
