@@ -26,7 +26,7 @@ type Prepared struct {
 
 func Prepare(repoRoot, action string) (Prepared, error) {
 	if !validPayloadAction(action) {
-		return Prepared{}, fmt.Errorf("parent payload action must be start, decision, or fix")
+		return Prepared{}, fmt.Errorf("parent payload action must be decision or fix")
 	}
 	stageDir := filepath.Join(repoRoot, StageDirName)
 	if err := ensureStageDir(stageDir); err != nil {
@@ -55,7 +55,7 @@ func Prepare(repoRoot, action string) (Prepared, error) {
 
 func Consume(repoRoot, action, token string) ([]byte, error) {
 	if !validPayloadAction(action) {
-		return nil, fmt.Errorf("parent payload action must be start, decision, or fix")
+		return nil, fmt.Errorf("parent payload action must be decision or fix")
 	}
 	if !validToken(token) {
 		return nil, fmt.Errorf("invalid parent action token")
@@ -99,9 +99,6 @@ func Consume(repoRoot, action, token string) ([]byte, error) {
 	if len(payload) == 0 || bytes.Contains(payload, []byte(placeholder)) {
 		return nil, fmt.Errorf("parent action payload was not supplied completely")
 	}
-	if action == "start" && bytes.IndexByte(payload, 0) >= 0 {
-		return nil, fmt.Errorf("parent start payload cannot contain NUL")
-	}
 	if err := os.Remove(path); err != nil {
 		return nil, fmt.Errorf("consume parent action staging file: %w", err)
 	}
@@ -142,7 +139,7 @@ func payloadPath(stageDir, action, token string) string {
 }
 
 func validPayloadAction(action string) bool {
-	return action == "start" || action == "decision" || action == "fix"
+	return action == "decision" || action == "fix"
 }
 
 func newToken() (string, error) {
