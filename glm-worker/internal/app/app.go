@@ -30,6 +30,7 @@ type Command struct {
 
 	Origin        string
 	AcceptedScope string
+	ApprovalOnly  bool
 	Role          string
 	Verify        VerifyArgs
 	Coalesce      CoalesceArgs
@@ -96,7 +97,7 @@ const (
 	ModeRepoSearchEval
 )
 
-const fixOriginUsage = "[--origin codex-review|glm-reviewer|user-amendment|external-review|metadata-repair] [--accepted-scope current-diff]"
+const fixOriginUsage = "[--origin codex-review|glm-reviewer|user-amendment|external-review|metadata-repair] [--accepted-scope current-diff] [--approval-only]"
 
 const installSmokeUsage = "[--role worker|reviewer|fix|parent]"
 
@@ -278,16 +279,28 @@ func stdinPayloadCommand(mode CommandMode, args []string, usage string, allowOri
 	if err != nil || payloadBytes <= 0 {
 		return Command{}, usageError("%s", usage)
 	}
-	options := args[2:]
-	if len(options)%2 != 0 {
-		return Command{}, usageError("%s", usage)
-	}
 	command := Command{Mode: mode, StdinBytes: payloadBytes}
 	seenSHA256 := false
-	for index := 0; index < len(options); index += 2 {
-		if err := applyStdinPayloadOption(&command, options[index], options[index+1], usage, allowOrigin, &seenSHA256); err != nil {
+	for index := 2; index < len(args); {
+		name := args[index]
+		if name == "--approval-only" {
+			if !allowOrigin || command.ApprovalOnly {
+				return Command{}, usageError("%s", usage)
+			}
+			command.ApprovalOnly = true
+			index++
+			continue
+		}
+		if index+1 >= len(args) {
+			return Command{}, usageError("%s", usage)
+		}
+		if err := applyStdinPayloadOption(&command, name, args[index+1], usage, allowOrigin, &seenSHA256); err != nil {
 			return Command{}, err
 		}
+		index += 2
+	}
+	if command.ApprovalOnly && (command.AcceptedScope != "current-diff" || command.Origin != "") {
+		return Command{}, usageError("%s", usage)
 	}
 	return command, nil
 }
@@ -537,6 +550,9 @@ func executeWorkflow(cmd Command, cfg config.AppConfig, st *state.StateStore, rf
 	case ModeDecision:
 		return wf.ExecuteDecision(cmd.Payload)
 	case ModeFix:
+		if cmd.ApprovalOnly {
+			return wf.ExecuteQualitySurfaceApproval(cmd.AcceptedScope)
+		}
 		return wf.ExecuteExplicitFixWithScope(cmd.Payload, cmd.Origin, cmd.AcceptedScope)
 	case ModeResume:
 		return wf.ExecuteResume()
