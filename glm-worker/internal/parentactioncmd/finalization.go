@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -52,19 +54,46 @@ type finalizationHandoffProbe struct {
 
 const finalizationDiagnosticLimit = 2048
 
-func runFinalizationCheck(repoRoot, form string, stdout io.Writer) error {
+func runFinalizationCheck(repoRoot, validationDir, form string, stdout io.Writer) error {
 	if form != "go-test" && form != "go-test-race" {
 		return fmt.Errorf("usage: glm-parent-action finalize-check <go-test|go-test-race>")
+	}
+	validatedDir, err := finalizationValidationDir(repoRoot, validationDir)
+	if err != nil {
+		return err
 	}
 	worker, err := resolveGLMWorker()
 	if err != nil {
 		return err
 	}
-	return runFinalizationCheckWithWorker(worker, repoRoot, form, stdout)
+	return runFinalizationCheckWithWorker(worker, repoRoot, validatedDir, form, stdout)
 }
 
-func runFinalizationCheckWithWorker(worker, repoRoot, form string, stdout io.Writer) error {
-	validation, validationProbe, failure := collectFinalizationValidation(worker, repoRoot, form)
+func finalizationValidationDir(repoRoot, validationDir string) (string, error) {
+	repo, err := filepath.EvalSymlinks(repoRoot)
+	if err != nil {
+		return "", fmt.Errorf("resolve repository root: %w", err)
+	}
+	candidate, err := filepath.EvalSymlinks(validationDir)
+	if err != nil {
+		return "", fmt.Errorf("resolve finalize-check working directory: %w", err)
+	}
+	info, err := os.Stat(candidate)
+	if err != nil {
+		return "", fmt.Errorf("stat finalize-check working directory: %w", err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("finalize-check working directory is not a directory")
+	}
+	rel, err := filepath.Rel(repo, candidate)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("finalize-check working directory must be inside repository")
+	}
+	return candidate, nil
+}
+
+func runFinalizationCheckWithWorker(worker, repoRoot, validationDir, form string, stdout io.Writer) error {
+	validation, validationProbe, failure := collectFinalizationValidation(worker, validationDir, form)
 	if failure != nil {
 		return writeFinalizationOutput(stdout, finalizationCheckOutput{Status: "blocked", Form: form, Failure: failure})
 	}
@@ -96,8 +125,8 @@ func runFinalizationCheckWithWorker(worker, repoRoot, form string, stdout io.Wri
 	})
 }
 
-func collectFinalizationValidation(worker, repoRoot, form string) (json.RawMessage, finalizationValidationProbe, *finalizationFailure) {
-	validation, failure := runFinalizationWorkerStep(worker, repoRoot, []string{"--quality-gate", form}, "validation")
+func collectFinalizationValidation(worker, validationDir, form string) (json.RawMessage, finalizationValidationProbe, *finalizationFailure) {
+	validation, failure := runFinalizationWorkerStep(worker, validationDir, []string{"--quality-gate", form}, "validation")
 	if failure != nil {
 		return nil, finalizationValidationProbe{}, failure
 	}
@@ -124,10 +153,10 @@ func collectFinalizationHandoff(worker, repoRoot string) (json.RawMessage, final
 	return handoff, probe, nil
 }
 
-func runFinalizationWorkerStep(worker, repoRoot string, args []string, stage string) (json.RawMessage, *finalizationFailure) {
+func runFinalizationWorkerStep(worker, workingDir string, args []string, stage string) (json.RawMessage, *finalizationFailure) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	err := runResolvedWorker(worker, repoRoot, args, nil, &stdout, &stderr, nil)
+	err := runResolvedWorker(worker, workingDir, args, nil, &stdout, &stderr, nil)
 	if err != nil {
 		failure := &finalizationFailure{Stage: stage, Reason: "worker_command_failed", Detail: compactFinalizationDiagnostic(stderr.String())}
 		var exitErr *exec.ExitError
