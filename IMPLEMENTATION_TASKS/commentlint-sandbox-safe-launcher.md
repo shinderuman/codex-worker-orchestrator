@@ -3,7 +3,7 @@
 ## Original instruction
 
 ````text
-Issue #142 `[PLAN] Make commentlint sandbox-safe like harnesslint` を通常のCodex + GLM implementation taskとして解決する。
+`commentlint` launcherのsandbox compatibilityを通常のCodex + GLM implementation taskとして解決する。
 
 現状、repository rootの`harnesslint` launcherは`quality-tools.yml`からGo versionを読み、`GOTOOLCHAIN`と`${TMPDIR:-/tmp}`配下の`GOCACHE`を固定している。一方`commentlint` launcherはplain `go run`で、実運用ではCodex sandbox内から`~/Library/Caches/go-build`へアクセスして`operation not permitted`となり、親CodexがGuardian escalation付きで再実行した。
 
@@ -16,7 +16,6 @@ none
 
 ## Resolved references
 
-- GitHub Issue #142のProblem / Goal / Required direction / Acceptanceをこのtaskの発生根拠とする。
 - 現行`harnesslint` launcherのGo toolchain / cache setupを既存のrepository-owned実装例として扱う。
 
 ## Purpose
