@@ -1,0 +1,39 @@
+name: tmp do140 verify
+
+on:
+  push:
+    branches:
+      - gpt/do-140-code-mode-wait
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Read Go version
+        id: go-version
+        run: |
+          GO_VERSION=$(awk -F': ' '$1 == "go" { print $2 }' quality-tools.yml)
+          printf 'version=%s\n' "$GO_VERSION" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ steps.go-version.outputs.version }}
+          cache: false
+      - name: Remove temporary workflow
+        run: rm .github/workflows/tmp-do140-verify.yml
+      - name: Validate final tree
+        run: |
+          (cd glm-worker && go test ./internal/harnesslint/...)
+          git diff --check
+      - name: Commit final tree
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .github/workflows/tmp-do140-verify.yml
+          git commit -m "chore: remove do140 verification workflow"
+          git push origin HEAD:gpt/do-140-code-mode-wait
