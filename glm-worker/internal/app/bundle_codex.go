@@ -135,20 +135,9 @@ func (c *bundleCollector) collectCodexEvidence(cfg config.AppConfig, task bundle
 }
 
 func resolveCodexAssociation(codexHome string, task bundleTask) codexAssociation {
-	threadID := task.Stats.ParentCodexThreadID
-	basis := codexAssociationBasis
-	explicitThreadID := strings.TrimSpace(os.Getenv(bundleParentThreadIDEnv))
-	if explicitThreadID != "" {
-		if !state.ValidUUIDFormat(explicitThreadID) {
-			return codexAssociation{ParentStatus: codexStatusUnavailable, Detail: bundleParentThreadIDEnv + " is not a canonical UUID"}
-		}
-		if threadID != "" && threadID != explicitThreadID {
-			return codexAssociation{ParentStatus: codexStatusAmbiguous, Detail: "explicit bundle parent thread ID conflicts with the stored parent identity"}
-		}
-		if threadID == "" {
-			threadID = explicitThreadID
-			basis = codexExplicitAssociationBasis
-		}
+	threadID, basis, failure := selectCodexParentIdentity(task)
+	if failure != nil {
+		return *failure
 	}
 	if threadID == "" {
 		return codexAssociation{ParentStatus: codexStatusMissing, Detail: "parent Codex identity is not recorded for this task"}
@@ -160,12 +149,40 @@ func resolveCodexAssociation(codexHome string, task bundleTask) codexAssociation
 	if err != nil {
 		return codexAssociation{ParentStatus: codexStatusUnavailable, Basis: basis, Detail: "codex rollout enumeration failed: " + err.Error()}
 	}
+	return buildCodexAssociation(matchingCodexRollouts(rollouts, threadID), basis, task)
+}
+
+func selectCodexParentIdentity(task bundleTask) (string, string, *codexAssociation) {
+	threadID := task.Stats.ParentCodexThreadID
+	explicitThreadID := strings.TrimSpace(os.Getenv(bundleParentThreadIDEnv))
+	if explicitThreadID == "" {
+		return threadID, codexAssociationBasis, nil
+	}
+	if !state.ValidUUIDFormat(explicitThreadID) {
+		failure := codexAssociation{ParentStatus: codexStatusUnavailable, Detail: bundleParentThreadIDEnv + " is not a canonical UUID"}
+		return "", "", &failure
+	}
+	if threadID != "" && threadID != explicitThreadID {
+		failure := codexAssociation{ParentStatus: codexStatusAmbiguous, Detail: "explicit bundle parent thread ID conflicts with the stored parent identity"}
+		return "", "", &failure
+	}
+	if threadID != "" {
+		return threadID, codexAssociationBasis, nil
+	}
+	return explicitThreadID, codexExplicitAssociationBasis, nil
+}
+
+func matchingCodexRollouts(rollouts []codexRollout, threadID string) []codexRollout {
 	matches := make([]codexRollout, 0, 1)
 	for _, rollout := range rollouts {
 		if rollout.ID == threadID {
 			matches = append(matches, rollout)
 		}
 	}
+	return matches
+}
+
+func buildCodexAssociation(matches []codexRollout, basis string, task bundleTask) codexAssociation {
 	switch len(matches) {
 	case 0:
 		detail := "no rollout has session_meta.id equal to the stored parent thread ID"
@@ -174,28 +191,7 @@ func resolveCodexAssociation(codexHome string, task bundleTask) codexAssociation
 		}
 		return codexAssociation{ParentStatus: codexStatusMissing, Basis: basis, Detail: detail}
 	case 1:
-		start, end := taskWindow(task)
-		guardians, qualifying := selectCodexGuardianChildren(rollouts, matches[0], start, end)
-		detail := ""
-		if basis == codexExplicitAssociationBasis {
-			detail = "parent identity supplied explicitly for this bundle; task state was not modified"
-		}
-		association := codexAssociation{
-			ParentStatus:   codexStatusIncluded,
-			ParentPath:     matches[0].AbsolutePath,
-			ParentSource:   matches[0].HomeRelative,
-			ParentThreadID: matches[0].ID,
-			GuardianStatus: codexStatusIncluded,
-			Guardians:      guardians,
-			Basis:          basis,
-			Detail:         detail,
-		}
-		if qualifying > len(guardians) {
-			association.GuardianStatus = codexStatusAmbiguous
-			association.Guardians = nil
-			association.GuardianDetail = fmt.Sprintf("%d rollouts share a direct guardian thread ID", qualifying)
-		}
-		return association
+		return includedCodexAssociation(matches[0], basis, task)
 	default:
 		detail := fmt.Sprintf("%d rollouts share the stored parent thread ID", len(matches))
 		if basis == codexExplicitAssociationBasis {
@@ -203,6 +199,35 @@ func resolveCodexAssociation(codexHome string, task bundleTask) codexAssociation
 		}
 		return codexAssociation{ParentStatus: codexStatusAmbiguous, Basis: basis, Detail: detail}
 	}
+}
+
+func includedCodexAssociation(parent codexRollout, basis string, task bundleTask) codexAssociation {
+	start, end := taskWindow(task)
+	guardians, qualifying := selectCodexGuardianChildren([]codexRollout{parent}, parent, start, end)
+	rollouts, err := scanCodexRollouts(filepath.Dir(filepath.Dir(parent.AbsolutePath)))
+	if err == nil {
+		guardians, qualifying = selectCodexGuardianChildren(rollouts, parent, start, end)
+	}
+	detail := ""
+	if basis == codexExplicitAssociationBasis {
+		detail = "parent identity supplied explicitly for this bundle; task state was not modified"
+	}
+	association := codexAssociation{
+		ParentStatus:   codexStatusIncluded,
+		ParentPath:     parent.AbsolutePath,
+		ParentSource:   parent.HomeRelative,
+		ParentThreadID: parent.ID,
+		GuardianStatus: codexStatusIncluded,
+		Guardians:      guardians,
+		Basis:          basis,
+		Detail:         detail,
+	}
+	if qualifying > len(guardians) {
+		association.GuardianStatus = codexStatusAmbiguous
+		association.Guardians = nil
+		association.GuardianDetail = fmt.Sprintf("%d rollouts share a direct guardian thread ID", qualifying)
+	}
+	return association
 }
 
 func taskWindow(task bundleTask) (time.Time, time.Time) {
