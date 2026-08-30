@@ -168,7 +168,11 @@ func resolveCodexAssociation(codexHome string, task bundleTask) codexAssociation
 	}
 	switch len(matches) {
 	case 0:
-		return codexAssociation{ParentStatus: codexStatusMissing, Basis: basis, Detail: "no rollout has session_meta.id equal to the selected parent thread ID"}
+		detail := "no rollout has session_meta.id equal to the stored parent thread ID"
+		if basis == codexExplicitAssociationBasis {
+			detail = "no rollout has session_meta.id equal to the explicit bundle parent thread ID"
+		}
+		return codexAssociation{ParentStatus: codexStatusMissing, Basis: basis, Detail: detail}
 	case 1:
 		start, end := taskWindow(task)
 		guardians, qualifying := selectCodexGuardianChildren(rollouts, matches[0], start, end)
@@ -193,7 +197,11 @@ func resolveCodexAssociation(codexHome string, task bundleTask) codexAssociation
 		}
 		return association
 	default:
-		return codexAssociation{ParentStatus: codexStatusAmbiguous, Basis: basis, Detail: fmt.Sprintf("%d rollouts share the selected parent thread ID", len(matches))}
+		detail := fmt.Sprintf("%d rollouts share the stored parent thread ID", len(matches))
+		if basis == codexExplicitAssociationBasis {
+			detail = fmt.Sprintf("%d rollouts share the explicit bundle parent thread ID", len(matches))
+		}
+		return codexAssociation{ParentStatus: codexStatusAmbiguous, Basis: basis, Detail: detail}
 	}
 }
 
