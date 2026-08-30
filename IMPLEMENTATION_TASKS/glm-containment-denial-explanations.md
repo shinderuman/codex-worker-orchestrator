@@ -70,4 +70,4 @@ none
 
 ## Current boundary
 
-未着手。次のCodex+GLM dogfoodより先にWeb GPT側で完了する。
+repository-owned Git mutation/transport denialのproduction実装はPR #173 `4a27a709a1cf0bb6b766623daea5aff61fab51b3`で統合済み。blocked Git mutation/transportは`kind=containment_denial`・`owner=git-authority-guard`・stable reason・bounded `next_action`をstderrへ返し、exit 97とcontainment自体は維持する。`blocked-attempts`記録はbest-effortへ下げ、記録先へ書けなくてもauthoritative deny reasonを失わない。generic OS/Claude sandbox denialはrepository policyとして分類しない。残るAcceptanceは次のcommentlint dogfood bundleでcovered denialの同値再試行数を実測すること。
