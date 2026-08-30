@@ -20,7 +20,10 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-const usage = "usage: glm-parent-action prepare <start|decision|fix> | start <token> | decision <token> | fix <token> [--origin <origin>] [--accepted-scope current-diff] | accept | resume"
+const (
+	usage             = "usage: glm-parent-action start | prepare <decision|fix> | decision <token> | fix <token> [--origin <origin>] [--accepted-scope current-diff] | accept | resume"
+	activeTaskRequest = "現在のACTIVE taskを実装してください。"
+)
 
 func Run(args []string, stdout, stderr io.Writer) int {
 	if err := run(args, stdout, stderr); err != nil {
@@ -50,7 +53,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 
 func prepare(repoRoot string, args []string, stdout io.Writer) error {
 	if len(args) != 2 {
-		return fmt.Errorf("usage: glm-parent-action prepare <start|decision|fix>")
+		return fmt.Errorf("usage: glm-parent-action prepare <decision|fix>")
 	}
 	prepared, err := parentaction.Prepare(repoRoot, args[1])
 	if err != nil {
@@ -65,12 +68,12 @@ func prepare(repoRoot string, args []string, stdout io.Writer) error {
 func execute(repoRoot string, args []string, stdout, stderr io.Writer) error {
 	action := args[0]
 	switch action {
-	case "accept", "resume":
+	case "start", "accept", "resume":
 		if len(args) != 1 {
 			return fmt.Errorf("usage: glm-parent-action %s", action)
 		}
 		return runWorker(repoRoot, directWorkerArgs(action), nil, stdout, stderr)
-	case "start", "decision", "fix":
+	case "decision", "fix":
 		return executePayloadAction(repoRoot, action, args[1:], stdout, stderr)
 	default:
 		return fmt.Errorf("%s", usage)
@@ -98,13 +101,10 @@ func executePayloadAction(repoRoot, action string, args []string, stdout, stderr
 		return err
 	}
 	workerArgs := payloadWorkerArgs(action, payload, args[1:])
-	return runResolvedWorker(worker, repoRoot, workerArgs, payloadStdin(action, payload), stdout, stderr)
+	return runResolvedWorker(worker, repoRoot, workerArgs, bytes.NewReader(payload), stdout, stderr)
 }
 
 func payloadWorkerArgs(action string, payload []byte, options []string) []string {
-	if action == "start" {
-		return []string{string(payload)}
-	}
 	digest := sha256.Sum256(payload)
 	mode := "--decision-stdin"
 	if action == "fix" {
@@ -114,18 +114,15 @@ func payloadWorkerArgs(action string, payload []byte, options []string) []string
 	return append(args, options...)
 }
 
-func payloadStdin(action string, payload []byte) io.Reader {
-	if action == "start" {
-		return nil
-	}
-	return bytes.NewReader(payload)
-}
-
 func directWorkerArgs(action string) []string {
-	if action == "accept" {
+	switch action {
+	case "start":
+		return []string{activeTaskRequest}
+	case "accept":
 		return []string{"--accept"}
+	default:
+		return []string{"--resume"}
 	}
-	return []string{"--resume"}
 }
 
 func validateFixOptions(options []string) error {
