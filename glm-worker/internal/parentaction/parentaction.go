@@ -1,6 +1,7 @@
 package parentaction
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
@@ -95,8 +96,8 @@ func Consume(repoRoot, action, token string) ([]byte, error) {
 	if len(payload) > maxPayloadBytes {
 		return nil, fmt.Errorf("parent action payload exceeds %d bytes", maxPayloadBytes)
 	}
-	if len(payload) == 0 || string(payload) == placeholder {
-		return nil, fmt.Errorf("parent action payload was not supplied")
+	if len(payload) == 0 || bytes.Contains(payload, []byte(placeholder)) {
+		return nil, fmt.Errorf("parent action payload was not supplied completely")
 	}
 	if err := os.Remove(path); err != nil {
 		return nil, fmt.Errorf("consume parent action staging file: %w", err)
