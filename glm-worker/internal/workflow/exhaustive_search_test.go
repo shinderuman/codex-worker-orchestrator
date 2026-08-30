@@ -1,6 +1,7 @@
 package workflow
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -60,12 +61,13 @@ func TestExecuteNewTaskInjectsWorkerAndIndependentReviewerExhaustiveManifest(t *
 	if err := os.WriteFile(filepath.Join(repoRoot, "needle-target.txt"), []byte("needle implementation\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	w, r, _, _ := newPlanFileWorkflow(t, repoRoot, []runnerStep{
+	w, r, _, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
 		{structured: implementedPacket("done")},
 		{structured: passPacket()},
 	}, "", 0, nil)
 
-	if err := w.ExecuteNewTask("needle inspection"); err != nil {
+	request := "needle inspection bearer s3cr3t-credential"
+	if err := w.ExecuteNewTask(request); err != nil {
 		t.Fatal(err)
 	}
 	if len(r.prompts) != 2 {
@@ -106,6 +108,26 @@ func TestExecuteNewTaskInjectsWorkerAndIndependentReviewerExhaustiveManifest(t *
 	}
 	if !strings.Contains(r.prompts[1], "ROLE: reviewer") || !strings.Contains(r.prompts[1], "WORKER_EXHAUSTIVE_PROOF_AUTHORITY: none") {
 		t.Fatalf("reviewer独立proof markerがありません:\n%s", r.prompts[1])
+	}
+
+	events, rawLog := exhaustiveEventsFromLog(t, st)
+	if len(events) != 2 {
+		t.Fatalf("exhaustive event count=%d want=2: %s", len(events), rawLog)
+	}
+	phases := []string{workerExhaustiveSearchPhase, reviewerExhaustiveSearchPhase}
+	for i, event := range events {
+		if event.Phase != phases[i] || event.Subtype != exhaustiveSearchComplete {
+			t.Fatalf("event %d = %s/%s want %s/%s", i, event.Phase, event.Subtype, phases[i], exhaustiveSearchComplete)
+		}
+		if event.SearchQuery != "" {
+			t.Fatalf("event %dがraw queryを永続化しています: %q", i, event.SearchQuery)
+		}
+		if len(event.SearchPaths) != 1 || event.SearchPaths[0] != "needle-target.txt" {
+			t.Fatalf("event %dのmatch pathが証明を保持していません: %v", i, event.SearchPaths)
+		}
+	}
+	if strings.Contains(rawLog, "s3cr3t") || strings.Contains(rawLog, request) {
+		t.Fatalf("event logへrequest由来query dataが漏れています: %s", rawLog)
 	}
 }
 
@@ -211,6 +233,38 @@ func taskWithExhaustiveRequirement(content string) string {
 		return content[:insert] + "\n- " + exhaustiveSearchRequiredMarker + "\n" + content[insert:]
 	}
 	return content + "\n\n## Contract\n\n- " + exhaustiveSearchRequiredMarker + "\n"
+}
+
+func exhaustiveEventsFromLog(t *testing.T, st *state.StateStore) ([]state.TaskEventRecord, string) {
+	t.Helper()
+	taskID, err := st.TaskID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := os.Open(st.TaskEventLogPath(taskID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = file.Close() }()
+	var events []state.TaskEventRecord
+	var raw strings.Builder
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := scanner.Bytes()
+		raw.Write(line)
+		raw.WriteByte('\n')
+		event, err := state.ParseTaskEventLine(line)
+		if err != nil {
+			t.Fatalf("event parse失敗 %v: %s", err, line)
+		}
+		if event.Kind == "exhaustive-search" {
+			events = append(events, event)
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return events, raw.String()
 }
 
 func exhaustiveManifestPath(prompt string) string {

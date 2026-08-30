@@ -43,7 +43,7 @@ func (w *Workflow) exhaustiveSearchContext(request, activeTaskPath string, role 
 	if role == state.ReviewerRole {
 		phase = reviewerExhaustiveSearchPhase
 	}
-	w.recordExhaustiveSearchOutcome(phase, role, seq, query, report)
+	w.recordExhaustiveSearchOutcome(phase, role, seq, report)
 	return renderExhaustiveSearchProof(role, report, manifestPath), nil
 }
 
@@ -176,7 +176,7 @@ func renderExhaustiveSearchProof(role state.SessionRole, report reposearch.Exhau
 	return block.String()
 }
 
-func (w *Workflow) recordExhaustiveSearchOutcome(phase string, role state.SessionRole, seq int, query string, report reposearch.ExhaustiveReport) {
+func (w *Workflow) recordExhaustiveSearchOutcome(phase string, role state.SessionRole, seq int, report reposearch.ExhaustiveReport) {
 	taskID, err := w.state.TaskID()
 	if err != nil {
 		return
@@ -193,7 +193,6 @@ func (w *Workflow) recordExhaustiveSearchOutcome(phase string, role state.Sessio
 		Timestamp:   w.now().UTC(),
 		Kind:        "exhaustive-search",
 		Subtype:     exhaustiveSearchComplete,
-		SearchQuery: query,
 		SearchPaths: paths,
 	}); err != nil {
 		state.WarnTaskEventSkip("exhaustive search proof追記", err)

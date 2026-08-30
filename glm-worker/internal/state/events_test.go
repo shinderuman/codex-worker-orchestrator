@@ -81,6 +81,50 @@ func TestParseTaskEventLineRejectsCorruptAndOldVersion(t *testing.T) {
 	}
 }
 
+func TestLegacyRawQueryEventDecodesAlongsideEmptyQueryEvent(t *testing.T) {
+	st := newEventTestStore(t)
+	legacy := `{"version":1,"task_id":"task-1","call_id":"call-1","role":"worker","phase":"worker-exhaustive-search","seq":1,"timestamp":"2026-08-30T00:00:00Z","kind":"exhaustive-search","subtype":"full-corpus-proof","search_query":"legacy raw query","search_paths":["a.go"]}` + "\n"
+	if err := os.MkdirAll(filepath.Dir(st.TaskEventLogPath("task-1")), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(st.TaskEventLogPath("task-1"), []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AppendTaskEvent(TaskEventRecord{
+		TaskID: "task-1", CallID: "call-2", Role: "worker", Phase: "worker-exhaustive-search", Seq: 2,
+		Kind: "exhaustive-search", Subtype: "full-corpus-proof",
+		SearchPaths: []string{"b.go"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(st.TaskEventLogPath("task-1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("追記行数 = %d: %s", len(lines), data)
+	}
+	if lines[0] != strings.TrimSuffix(legacy, "\n") {
+		t.Fatalf("旧format行が書き換えられています: %s", lines[0])
+	}
+	upgraded, err := ParseTaskEventLine([]byte(lines[0]))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if upgraded.SearchQuery != "legacy raw query" {
+		t.Fatalf("旧format行の読取り = %#v", upgraded)
+	}
+	current, err := ParseTaskEventLine([]byte(lines[1]))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.SearchQuery != "" || len(current.SearchPaths) != 1 || current.SearchPaths[0] != "b.go" {
+		t.Fatalf("新format行の読取り = %#v", current)
+	}
+}
+
 func TestAppendTaskEventIsolatedPerTask(t *testing.T) {
 	st := newEventTestStore(t)
 	for _, taskID := range []string{"task-a", "task-b"} {
