@@ -23,6 +23,10 @@ CommentlintとBundle Diff以外の実装をお前が全部終えてその次にC
 - repository-owned git authority guardは現在、blocked subcommandをattempt logへ記録してexit 97するが、worker側へ返るstderr自体は説明を持たず、attempt log書込自体が拒否された場合は真のguard reasonが隠れる。
 - OS/Claude runtime sandbox等、repositoryがauthoritatively理由を説明できない拒否も存在するため、対象はrepository-owned boundaryに限定する。
 
+## External feasibility
+
+status: not-applicable
+
 ## Purpose
 
 檻を弱めず、repository-owned containmentが拒否した瞬間にowner/reason/既知の安全な次行動をcompactかつdeterministicに返し、GLMが同値commandを試し直す無駄を減らす。
