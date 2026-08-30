@@ -40,6 +40,9 @@ prefix: `feat` `fix` `refactor` `improve` `docs` `style` `test` `chore` `perf` `
 
 - ユーザーの現在taskへ適用される明示指示と、repositoryの親管理tracked instruction(`IMPLEMENTATION_RULES.md`等)をauthorization sourceとする。
 - repositoryの親管理tracked instructionが対象refへの通常fast-forwardをworkflowとして定めている場合、親Codexはそのworkflowをcommit単位の再許可なしで実行する。本codex-config repositoryではGreptile日次review運用のため、各task・review follow-up・独立parent maintenanceのfinal parent commit後にremote `refs/heads/main`へ通常fast-forwardし、正常review完了時のscheduled reviewはreview対象HEADを`refs/heads/codex/greptile-reviewed`へ通常fast-forwardする。
+- local final HEAD・clean postcondition・remote write authorizationが成立している通常の`git push origin main`では、push自体をremote fast-forward admission checkとして使う。通常経路で`git fetch origin main`・ahead/behind計算・`git merge-base --is-ancestor`等のremote preflightを無条件に先行させない。
+- 通常pushがnon-fast-forwardで拒否された場合、transport結果が曖昧な場合、その他push失敗時はremote mutation成功と扱わず親判断へ戻す。その後に必要な`fetch`・remote state確認・divergence inspectionを行う。自動merge/rebaseやforce系操作へ進まない。
+- publication以外の独立した理由でremote state確認が必要な場合の`fetch`やread-only inspectionは妨げない。削減対象は通常fast-forward publication前の重複した無条件preflightだけである。
 - ユーザーが別のremote writeを明示した場合は、その対象repository・ref・操作のscopeで扱う。GLM worker/reviewerにはremote write authorityを付与しない。
 
 ## tracked canonical planのcommit同期
