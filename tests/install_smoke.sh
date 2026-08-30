@@ -49,7 +49,7 @@ run_install() {
 }
 
 run_install
-for binary in glm-worker commentlint harnesslint merge-json; do
+for binary in glm-worker glm-parent-action commentlint harnesslint merge-json; do
 	test -x "$home/.local/bin/$binary"
 done
 test -f "$home/.codex/AGENTS.md"
@@ -65,6 +65,14 @@ grep -q -- '--repo-search' "$tmp/repo-search-help.json"
 HOME="$home" GLM_WORKER_HOME="$home/.glm-worker" GLM_WORKER_REPO_SEARCH=0 "$home/.local/bin/glm-worker" --repo-search smoke >"$tmp/repo-search-disabled.json"
 grep -q '"status":"disabled"' "$tmp/repo-search-disabled.json"
 grep -q '"result":"disabled"' "$tmp/repo-search-disabled.json"
+(
+	cd "$repo"
+	HOME="$home" GLM_WORKER_HOME="$home/.glm-worker" "$home/.local/bin/glm-parent-action" prepare decision
+) >"$tmp/parent-action-prepare.json"
+grep -q '"status":"prepared"' "$tmp/parent-action-prepare.json"
+grep -q '"action":"decision"' "$tmp/parent-action-prepare.json"
+grep -Fq "$repo/.glm-worker-parent-actions/decision-" "$tmp/parent-action-prepare.json"
+rm -rf "$repo/.glm-worker-parent-actions"
 (
 	cd "$repo"
 	HOME="$home" GLM_WORKER_HOME="$home/.glm-worker" "$home/.local/bin/glm-worker" --status
