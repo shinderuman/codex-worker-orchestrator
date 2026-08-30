@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/reposearch"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
@@ -22,12 +23,13 @@ type repoSearchTimer struct {
 }
 
 const (
-	repoSearchPhase         = state.RepoSearchCategoryWorkerNavigation
-	repoSearchKnownSkip     = state.RepoSearchOutcomeKnownTargetSkip
-	repoSearchHit           = state.RepoSearchOutcomeSearchHit
-	repoSearchEmptyFallback = state.RepoSearchOutcomeSearchEmptyFallback
-	repoSearchErrorFallback = state.RepoSearchOutcomeSearchErrorFallback
-	RepoSearchMaxResults    = 8
+	repoSearchPhase              = state.RepoSearchCategoryWorkerNavigation
+	repoSearchKnownSkip          = state.RepoSearchOutcomeKnownTargetSkip
+	repoSearchHit                = state.RepoSearchOutcomeSearchHit
+	repoSearchEmptyFallback      = state.RepoSearchOutcomeSearchEmptyFallback
+	repoSearchErrorFallback      = state.RepoSearchOutcomeSearchErrorFallback
+	RepoSearchMaxResults         = 8
+	workerRepoSearchSeedMaxBytes = 2048
 )
 
 func (w *Workflow) newRepoSearchTimer() *repoSearchTimer {
@@ -50,13 +52,58 @@ func (w *Workflow) newWorkerTaskPrompt(request string, activeTaskPath string) st
 	if !w.config.RepoSearch {
 		return prompt
 	}
+	searchRequest := workerRepoSearchRequest(w.config.RepoRoot, request, activeTaskPath)
 	timer := w.newRepoSearchTimer()
-	block, outcome, results := routeWorkerRepoSearch(context.Background(), w.config.RepoRoot, request, timer.run)
+	block, outcome, results := routeWorkerRepoSearch(context.Background(), w.config.RepoRoot, searchRequest, timer.run)
 	w.recordRepoSearchOutcome(repoSearchPhase, state.WorkerRole, 1, outcome, results, timer.elapsed)
 	if block == "" {
 		return prompt
 	}
 	return strings.TrimRight(prompt, "\n") + block
+}
+
+func workerRepoSearchRequest(repoRoot, request, activeTaskPath string) string {
+	if activeTaskPath == "" {
+		return request
+	}
+	data, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(activeTaskPath)))
+	if err != nil {
+		return request
+	}
+	if seed := activeTaskSearchSeed(string(data)); seed != "" {
+		return seed
+	}
+	return request
+}
+
+func activeTaskSearchSeed(task string) string {
+	var parts []string
+	section := ""
+	for _, raw := range strings.Split(task, "\n") {
+		line := strings.TrimSpace(raw)
+		if strings.HasPrefix(line, "# ") && len(parts) == 0 {
+			parts = append(parts, strings.TrimSpace(strings.TrimPrefix(line, "# ")))
+			continue
+		}
+		if strings.HasPrefix(line, "## ") {
+			section = strings.TrimSpace(strings.TrimPrefix(line, "## "))
+			continue
+		}
+		if line == "" || (section != "Purpose" && section != "Resolved references") {
+			continue
+		}
+		parts = append(parts, strings.TrimSpace(strings.TrimLeft(line, "-")))
+	}
+	seed := strings.Join(parts, " ")
+	seed = strings.Join(strings.Fields(seed), " ")
+	if len(seed) <= workerRepoSearchSeedMaxBytes {
+		return seed
+	}
+	seed = seed[:workerRepoSearchSeedMaxBytes]
+	for !utf8.ValidString(seed) {
+		seed = seed[:len(seed)-1]
+	}
+	return strings.TrimSpace(seed)
 }
 
 func routeWorkerRepoSearch(ctx context.Context, repoRoot string, request string, search repoSearchFunc) (string, string, []reposearch.Result) {
