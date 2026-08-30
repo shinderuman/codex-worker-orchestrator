@@ -21,6 +21,7 @@ type Prepared struct {
 const (
 	StageDirName    = ".glm-worker-parent-actions"
 	placeholder     = "__GLM_PARENT_ACTION_PAYLOAD__\n"
+	tokenHeaderKey  = "GLM_PARENT_ACTION_TOKEN:"
 	maxPayloadBytes = 1 << 20
 )
 
@@ -41,7 +42,8 @@ func Prepare(repoRoot, action string) (Prepared, error) {
 	if err != nil {
 		return Prepared{}, fmt.Errorf("create parent action staging file: %w", err)
 	}
-	if _, err := io.WriteString(file, placeholder); err != nil {
+	initial := tokenHeader(token) + placeholder
+	if _, err := io.WriteString(file, initial); err != nil {
 		_ = file.Close()
 		_ = os.Remove(path)
 		return Prepared{}, fmt.Errorf("initialize parent action staging file: %w", err)
@@ -65,15 +67,13 @@ func Consume(repoRoot, action, token string) ([]byte, error) {
 		return nil, err
 	}
 	path := payloadPath(stageDir, action, token)
-	payload, err := readRegularPayload(path)
+	raw, err := readRegularPayload(path, len(tokenHeader(token)))
 	if err != nil {
 		return nil, err
 	}
-	if len(payload) > maxPayloadBytes {
-		return nil, fmt.Errorf("parent action payload exceeds %d bytes", maxPayloadBytes)
-	}
-	if len(payload) == 0 || bytes.Contains(payload, []byte(placeholder)) {
-		return nil, fmt.Errorf("parent action payload was not supplied completely")
+	payload, err := decodePayload(raw, token)
+	if err != nil {
+		return nil, err
 	}
 	if err := os.Remove(path); err != nil {
 		return nil, fmt.Errorf("consume parent action staging file: %w", err)
@@ -81,7 +81,22 @@ func Consume(repoRoot, action, token string) ([]byte, error) {
 	return payload, nil
 }
 
-func readRegularPayload(path string) ([]byte, error) {
+func decodePayload(raw []byte, token string) ([]byte, error) {
+	header := []byte(tokenHeader(token))
+	if !bytes.HasPrefix(raw, header) {
+		return nil, fmt.Errorf("parent action staging token binding is invalid")
+	}
+	payload := raw[len(header):]
+	if len(payload) > maxPayloadBytes {
+		return nil, fmt.Errorf("parent action payload exceeds %d bytes", maxPayloadBytes)
+	}
+	if len(payload) == 0 || bytes.Contains(payload, []byte(placeholder)) {
+		return nil, fmt.Errorf("parent action payload was not supplied completely")
+	}
+	return payload, nil
+}
+
+func readRegularPayload(path string, headerBytes int) ([]byte, error) {
 	before, err := os.Lstat(path)
 	if err != nil {
 		return nil, fmt.Errorf("parent action staging file unavailable: %w", err)
@@ -102,7 +117,8 @@ func readRegularPayload(path string) ([]byte, error) {
 		_ = file.Close()
 		return nil, fmt.Errorf("parent action staging file changed while opening")
 	}
-	payload, readErr := io.ReadAll(io.LimitReader(file, maxPayloadBytes+1))
+	limit := int64(maxPayloadBytes + headerBytes + 1)
+	payload, readErr := io.ReadAll(io.LimitReader(file, limit))
 	closeErr := file.Close()
 	if readErr != nil {
 		return nil, fmt.Errorf("read parent action staging file: %w", readErr)
@@ -140,6 +156,10 @@ func validateStageDirInfo(info os.FileInfo) error {
 		return fmt.Errorf("parent action staging directory is not a real directory")
 	}
 	return nil
+}
+
+func tokenHeader(token string) string {
+	return tokenHeaderKey + token + "\n"
 }
 
 func payloadPath(stageDir, action, token string) string {
