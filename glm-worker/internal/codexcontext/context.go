@@ -95,6 +95,7 @@ func repositoryRoot(repo string) (string, error) {
 
 func enable(root string) (Result, error) {
 	configPath := filepath.Join(root, filepath.FromSlash(ProjectConfigRelativePath))
+	created := false
 	content, err := os.ReadFile(configPath)
 	switch {
 	case err == nil:
@@ -105,13 +106,16 @@ func enable(root string) (Result, error) {
 		if err := writeManagedConfig(configPath); err != nil {
 			return Result{}, err
 		}
+		created = true
 	default:
 		return Result{}, fmt.Errorf("read %s: %w", ProjectConfigRelativePath, err)
 	}
 	excluded, err := ensureGitExclude(root)
 	if err != nil {
-		if removeErr := removeManagedConfig(configPath); removeErr != nil {
-			return Result{}, fmt.Errorf("configure local Git exclude: %w; rollback project config: %v", err, removeErr)
+		if created {
+			if removeErr := removeManagedConfig(configPath); removeErr != nil {
+				return Result{}, fmt.Errorf("configure local Git exclude: %w; rollback project config: %v", err, removeErr)
+			}
 		}
 		return Result{}, fmt.Errorf("configure local Git exclude: %w", err)
 	}
