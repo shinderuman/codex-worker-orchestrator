@@ -1,0 +1,35 @@
+name: tmp do125 final
+
+on:
+  push:
+    branches:
+      - gpt/do-125-parent-action-file-v2
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Fix remaining normal-path instruction and remove helper
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('codex/instructions/glm-execution.md')
+          s = p.read_text()
+          old = 'Go判断は宣言を`status: implementation`へ書き換えてから`--decision-stdin`で渡す。'
+          new = 'Go判断は宣言を`status: implementation`へ書き換えてから`--decision-file`で渡す。'
+          if s.count(old) != 1:
+              raise SystemExit(f'expected exactly one old instruction, found {s.count(old)}')
+          p.write_text(s.replace(old, new, 1))
+          PY
+          rm .github/workflows/tmp-do125-final.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add codex/instructions/glm-execution.md .github/workflows/tmp-do125-final.yml
+          git commit -m 'fix: use file action for feasibility decision'
+          git push origin HEAD:gpt/do-125-parent-action-file-v2
