@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestPrepareConsumePreservesPayloadAndRemovesSlot(t *testing.T) {
+func TestPrepareConsumePreservesDecisionPayloadAndRemovesSlot(t *testing.T) {
 	repo := t.TempDir()
 	prepared, err := Prepare(repo, "decision")
 	if err != nil {
@@ -31,6 +31,23 @@ func TestPrepareConsumePreservesPayloadAndRemovesSlot(t *testing.T) {
 	}
 	if _, err := os.Lstat(prepared.Path); !os.IsNotExist(err) {
 		t.Fatalf("consumed staging file still exists: %v", err)
+	}
+}
+
+func TestStartRejectsNULBeforeConsumingSlot(t *testing.T) {
+	repo := t.TempDir()
+	prepared, err := Prepare(repo, "start")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(prepared.Path, []byte("task\x00tail"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Consume(repo, "start", prepared.Token); err == nil {
+		t.Fatal("NUL start payload was accepted")
+	}
+	if _, err := os.Lstat(prepared.Path); err != nil {
+		t.Fatalf("rejected start payload was consumed: %v", err)
 	}
 }
 
