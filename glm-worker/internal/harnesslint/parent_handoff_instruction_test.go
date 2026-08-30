@@ -28,7 +28,7 @@ func TestCanonicalParentHandoffIsRouted(t *testing.T) {
 			},
 		},
 		{
-			path: "codex/instructions/glm-wait.md",
+			path: "codex/instructions/glm-execution.md",
 			tokens: []string{
 				"glm-worker --handoff",
 				"required_action",

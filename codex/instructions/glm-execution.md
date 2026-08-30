@@ -5,7 +5,6 @@
 ## 実行
 
 - model実行またはstate変更を行うcommandはsandbox外、実装上read-onlyの`--status`・`--handoff`・`--stats`・`--watch`等のinspection/report commandはsandbox内で実行する。command名で推測せずside effectを正とする。
-- `~/.codex/config.toml`の`background_terminal_max_timeout`は`21600000`ms（6時間）を前提とする。
 - 同じ依頼を重複起動せず、GLM処理中にCodex自身が同じ調査・実装を代行しない。release・deploy等の直接許可が既にある場合でも、その途中で新たに必要になった開発変更は`~/.codex/instructions/direct-edit.md`の境界に従い新規taskへ切り出す。
 - 1回の新規taskには、同じ責務・変更理由・検証単位に属する要求だけを渡す。相互に独立したsubsystem・workstream・不具合群は別taskへ分けるが、同時変更しないと整合しない要求は分断しない。
 - 外部service・取得方式・実行環境等の未検証成立性が本番設計の前提になる依頼は、`~/.codex/instructions/feasibility-gate.md`を読んでから委譲内容を構成する。委譲前にACTIVE task file本文へ`## External feasibility`宣言節があることを確認する。宣言のないtaskはglm-workerがmodel呼出0回でfail closedする。
@@ -36,7 +35,6 @@
 - wrapperはpayloadをmemoryへ読み、staging fileを削除してからUTF-8 byte長・SHA-256を機械計算し、既存`glm-worker --decision-stdin`/`--fix-stdin`へ直接渡す。semantic本文中のbacktick、dollar、single quote、double quote、NUL、改行を無変換で保持する。
 - `glm-worker --decision-stdin`/`--fix-stdin`はrecovery/debug用に残すが、通常親workflowではbyte長・hash・TTY・`stdin_ready`・`write_stdin`・shell quotingを扱わず、旧transportへfallbackしない。
 - staging fileをconsumeした後にactionが失敗した場合は同じfile/tokenを再利用せず、新しいprepareから同じsemantic payloadを再送する。
-- action開始後は短時間pollingを挟まず、最大待機時間のblocking waitで完了を待つ。
 
 ## 親操作のoutcome申告
 
@@ -56,16 +54,10 @@
 
 ## 待機
 
-- 完了待機の対象は当該taskを起動した主`glm-parent-action`/`glm-worker`呼出process(session)だけとする。主呼出はterminal・Sol/user attention状態でpacketを出力して終了するため、観測用の別commandを完了待機へ使わない。
-- 主呼出のexec cell・session IDを失ったattach recovery時だけ`glm-worker --watch`で既存taskへ追加AI callなしでattachできる。`--watch`は現在taskのevent log保存済みJSONL行をそのまま流す読み取り専用JSONL streamであり、follow対象taskのauthoritative `task.status`が`active`を離れた時点(`waiting-decision`・`waiting-sol-review`・`complete`・`rate-limited`・`provider-unavailable`・`interrupted`)・別taskへの切替時に残eventを流して`watch_exit` control event(`{"type":"watch_exit","task_id":...,"status":...}`、task切替時は`new_task_id`付き)を出力しexit 0する。event log file不在時は`event_log_status` control event(`{"type":"event_log_status","status":"removed"}`)のみで正常終了する。permission等のfile不在以外のI/O失敗は正常終了せず、stderrのprocess error JSON(`kind:"internal"`)とnon-zero exitになる。resident monitorとして付けっぱなしにしない。
-- `--watch`が終了しても、`--status`等を固定間隔で繰り返すpollingへ追跡をfallbackさせない。
-- 最初の`functions.exec`等の呼び出しからbackground terminalで利用可能な最大待機時間を指定し、可能な限り同一tool orchestration内で完了までblocking waitする。
-- tool内部上限でcell ID（session ID）が返る場合も、1回のwaitに最大待機時間を使い、短時間・固定間隔でwaitを掛け直さない。同じtool orchestration内で最大待機を再開し、Sol Highへ制御を戻して`write_stdin`等を呼ぶ方式へ変換しない。
-- tool orchestrationやexec cellに対する短時間・固定間隔の反復wait、固定間隔の`write_stdin`、status・端末出力・生存確認を行わない。一定時間無出力であることだけを理由に失敗・再実行しない。
-- 無出力を理由にした定期進捗発言、進捗報告目的のwake・待機短縮・中断・GLMへの問い合わせをしない。必要な報告は最後に確認済みの状態だけで行う。前回報告からの経過時刻や待機継続だけを理由に、確認済みの状態に変化がなくても発言しない。
-- ユーザーが状態確認を明示した場合だけ中間状態を確認してよい。
-- 最大待機時間後も生存していれば、再調査・代替作業・重複起動をせず再び最大時間で待つ。完了や`RATE_LIMITED`を見逃さない現行動作を維持する。
-- 完了時はユーザーの追加入力を待たず、packet処理と可能な次工程を進める。ユーザーの判断・追加情報・許可が本当に必要な場合だけ停止する。
+- 通常の完了待機は当該taskを起動した主`glm-parent-action`/`glm-worker`呼出1件だけをownerとし、そのtool resultを待つ。待機時間・heartbeat・polling cadenceは親Codexが選ばず、tool/runtime境界へ委ねる。
+- 主呼出が継続中は、別の`--status`・`--watch`・terminal操作や経過時間だけを理由とする進捗発言を追加しない。無出力や経過時間だけを理由に中断・再実行・重複起動しない。ユーザーが状態確認を明示した場合は確認して応答してよい。
+- 主呼出のtool sessionを失った・中断した場合だけ`glm-worker --handoff`を1回実行し、`consistent`・`required_action`・`allowed_actions`を正規入口とする。`consistent:false`では操作を推測しない。handoffがcurrent taskを`active`かつ`required_action:"none"`として返した場合だけ`glm-worker --watch`をread-only attach recoveryに使い、詳細診断が必要な場合だけ`--status`を追加する。
+- terminal・Sol/user attention・rate/provider stop等の意味のある状態変化で制御が戻ったらpacketを処理し、可能な次工程へ進む。経過時間だけのliveness報告は行わない。
 - packet受理・個別commit・install完了は局所終端であり、親USER_REQUESTの完了か次の継続操作かは`~/.codex/instructions/task-lifecycle.md`を読んで判断する。
 
 ## 親tool orchestrationのterminal payload単一描画
