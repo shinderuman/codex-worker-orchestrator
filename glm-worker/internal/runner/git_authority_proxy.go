@@ -9,6 +9,17 @@ guard_root=__REPO_ROOT__
 temp_root=__TEMP_ROOT__
 guard_root=$(cd "$guard_root" 2>/dev/null && pwd -P)
 temp_root=$(cd "$temp_root" 2>/dev/null && pwd -P)
+git_guard_record_attempt() {
+  { printf '%s\n' "$1" >>"$attempt_log"; } 2>/dev/null || :
+}
+git_guard_deny() {
+  reason=$1
+  next_action=$2
+  attempt=$3
+  printf '{"error":{"kind":"containment_denial","owner":"git-authority-guard","reason":"%s","next_action":"%s"}}\n' "$reason" "$next_action" >&2
+  git_guard_record_attempt "$attempt"
+  exit 97
+}
 git_guard_normalize_path() {
   path=$1
   base=$2
@@ -291,8 +302,7 @@ git_guard_read_only() {
 }
 command_name=$(git_guard_command_name "$@")
 if [ -z "$guard_root" ] || [ -z "$temp_root" ]; then
-  printf '%s\n' '<guard-root>' >>"$attempt_log"
-  exit 97
+  git_guard_deny 'guard_scope_unavailable' 'stop_and_report_guard_state' '<guard-root>'
 fi
 scope=$(git_guard_scope "$@")
 if [ "$scope" = temp ]; then
@@ -307,8 +317,7 @@ if git_guard_read_only "$@"; then
   exec "$real_git" "$@"
 fi
 if [ -z "$command_name" ]; then command_name='<missing-subcommand>'; fi
-printf '%s\n' "$command_name" >>"$attempt_log"
-exit 97
+git_guard_deny 'git_mutation_blocked' 'continue_source_edits_or_read_only_git_parent_owns_git_mutation' "$command_name"
 `
 
 func gitAuthorityProxyScript(realGit, attemptLog, repoRoot, tempRoot string) string {
@@ -322,7 +331,8 @@ func gitAuthorityProxyScript(realGit, attemptLog, repoRoot, tempRoot string) str
 
 func gitAuthorityDenyTransportScript(attemptLog string) string {
 	return "#!/bin/sh\n" +
-		"printf '%s\\n' 'transport' >>" + shellSingleQuote(attemptLog) + "\n" +
+		"printf '%s\\n' '{\"error\":{\"kind\":\"containment_denial\",\"owner\":\"git-authority-guard\",\"reason\":\"git_transport_blocked\",\"next_action\":\"do_not_retry_transport_parent_owns_git_transport\"}}' >&2\n" +
+		"{ printf '%s\\n' 'transport' >>" + shellSingleQuote(attemptLog) + "; } 2>/dev/null || :\n" +
 		"exit 97\n"
 }
 
