@@ -255,7 +255,7 @@ func runResolvedWorker(worker, workingDir string, args []string, stdin io.Reader
 	}
 	done := make(chan struct{})
 	go forwardSignals(command.Process, signals, done)
-	err = command.Wait()
+	err := command.Wait()
 	close(done)
 	return err
 }
