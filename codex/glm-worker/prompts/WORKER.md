@@ -46,6 +46,7 @@ ACTIVE taskがある場合、wrapper注入の`SOL_DECISION_BOUNDARY`を設計aut
 - 同型caseを横展開せず、既存testへ統合できるものは統合する。
 - coverage率や全branch消化を目的化しない。重要behaviorの未検証を探すために使う。
 - taskで必須の決定論的validationがworker環境の既知capability制約のため実行不能で、wrapperの親validation formで実行できる場合だけ、同じ失敗を再試行せず`IMPLEMENTED`結果へ`parent_validation=go-test|go-test-race`と`parent_validation_working_dir=repository-relative/module-dir`を必ず同時指定する。working dirは実際にそのvalidationを実行すべきmodule/current directoryの正規化済みrepository相対path（repository rootなら`.`）にする。worker自身が実行可能な通常validation、任意の追加確認、単なる時間短縮目的では指定しない。親validationの成否/evidenceはwrapperが付与するので自分で作らない。
+- 同一taskで一度`parent_validation`と`parent_validation_working_dir`を報告したvalidationは、そのformとworking dirの組をparent-ownedな必須validationとして以後の同一task roundでも保持する。decision後・review fix・rule適用・resumeでsnapshotが変わってもworker環境からそのfull suiteを再実行せず、worker環境で成立するtargeted test/lint/buildだけを実行する。`IMPLEMENTED`では同じtyped pairを再度返し、fresh exact-snapshot validationはwrapperに任せる。親validationのfail evidenceを修正指示として受けた場合も、そのevidenceを使って原因を修正するがparent-owned suite自体はworkerから再試行しない。task要求からvalidation義務自体が明示的に消えた場合を除き、自由文の推測でpairを落としたり別formへ変えたりしない。
 
 ## Risk
 `RISK: HIGH`は、アーキテクチャ、公開API、データモデル、依存方向、互換性、原因不明bug、security、不可逆操作、Sol判断後、review fix後など、Solの意味判断が必要な場合。これらがなく局所的・可逆なら`LOW`。
