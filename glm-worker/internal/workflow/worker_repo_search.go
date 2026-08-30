@@ -52,9 +52,15 @@ func (w *Workflow) newWorkerTaskPrompt(request string, activeTaskPath string) st
 	if !w.config.RepoSearch {
 		return prompt
 	}
-	searchRequest := workerRepoSearchRequest(w.config.RepoRoot, request, activeTaskPath)
+	searchRequest, activeTaskSeed := workerRepoSearchRequest(w.config.RepoRoot, request, activeTaskPath)
 	timer := w.newRepoSearchTimer()
-	block, outcome, results := routeWorkerRepoSearch(context.Background(), w.config.RepoRoot, searchRequest, timer.run)
+	var block, outcome string
+	var results []reposearch.Result
+	if activeTaskSeed {
+		block, outcome, results = searchWorkerRepoNavigation(context.Background(), w.config.RepoRoot, searchRequest, timer.run)
+	} else {
+		block, outcome, results = routeWorkerRepoSearch(context.Background(), w.config.RepoRoot, searchRequest, timer.run)
+	}
 	w.recordRepoSearchOutcome(repoSearchPhase, state.WorkerRole, 1, outcome, results, timer.elapsed)
 	if block == "" {
 		return prompt
@@ -62,18 +68,18 @@ func (w *Workflow) newWorkerTaskPrompt(request string, activeTaskPath string) st
 	return strings.TrimRight(prompt, "\n") + block
 }
 
-func workerRepoSearchRequest(repoRoot, request, activeTaskPath string) string {
+func workerRepoSearchRequest(repoRoot, request, activeTaskPath string) (string, bool) {
 	if activeTaskPath == "" {
-		return request
+		return request, false
 	}
 	data, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(activeTaskPath)))
 	if err != nil {
-		return request
+		return request, false
 	}
 	if seed := activeTaskSearchSeed(string(data)); seed != "" {
-		return seed
+		return seed, true
 	}
-	return request
+	return request, false
 }
 
 func activeTaskSearchSeed(task string) string {
@@ -110,6 +116,10 @@ func routeWorkerRepoSearch(ctx context.Context, repoRoot string, request string,
 	if requestHasKnownRepoTarget(repoRoot, request) {
 		return "", repoSearchKnownSkip, nil
 	}
+	return searchWorkerRepoNavigation(ctx, repoRoot, request, search)
+}
+
+func searchWorkerRepoNavigation(ctx context.Context, repoRoot string, request string, search repoSearchFunc) (string, string, []reposearch.Result) {
 	report, err := search(ctx, repoRoot, request, reposearch.Options{MaxResults: RepoSearchMaxResults})
 	if err != nil {
 		return "", repoSearchErrorFallback, nil
