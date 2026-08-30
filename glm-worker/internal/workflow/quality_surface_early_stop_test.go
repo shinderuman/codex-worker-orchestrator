@@ -21,8 +21,6 @@ func TestQualitySurfaceApprovalStopsBeforeConvergenceAndReusesWorkerResult(t *te
 	writeScopeFile(t, repo, "commentlint", "#!/bin/sh\nexit 0\n")
 	gitScope(t, repo, "add", ".")
 	gitScope(t, repo, "commit", "-m", "baseline")
-	writeScopeFile(t, repo, "commentlint", "#!/bin/sh\nexit 1\n")
-	writeScopeFile(t, repo, "worker_change.go", "package sample\n")
 
 	codexDir := t.TempDir()
 	workerRules := filepath.Join(codexDir, "instructions", "worker")
@@ -34,15 +32,15 @@ func TestQualitySurfaceApprovalStopsBeforeConvergenceAndReusesWorkerResult(t *te
 	}
 
 	cfg := config.AppConfig{
-		RepoRoot:              repo,
-		RepoHash:              strings.Repeat("b", 64),
-		StateBase:             t.TempDir(),
-		CodexConfigDir:         codexDir,
-		WorkerModel:            "worker",
-		ReviewerModel:          "reviewer",
-		HighRiskReviewerModel:  "reviewer-high",
-		RoutineEffort:          "low",
-		MaxAutoFixRounds:       1,
+		RepoRoot:             repo,
+		RepoHash:             strings.Repeat("b", 64),
+		StateBase:            t.TempDir(),
+		CodexConfigDir:        codexDir,
+		WorkerModel:           "worker",
+		ReviewerModel:         "reviewer",
+		HighRiskReviewerModel: "reviewer-high",
+		RoutineEffort:         "low",
+		MaxAutoFixRounds:      1,
 	}
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -60,6 +58,9 @@ func TestQualitySurfaceApprovalStopsBeforeConvergenceAndReusesWorkerResult(t *te
 	if err := st.Write(activeTaskStateKey, ""); err != nil {
 		t.Fatal(err)
 	}
+
+	writeScopeFile(t, repo, "commentlint", "#!/bin/sh\nexit 1\n")
+	writeScopeFile(t, repo, "worker_change.go", "package sample\n")
 
 	runner := &scriptedRunner{steps: []runnerStep{
 		{structured: implementedPacket("rules applied")},
