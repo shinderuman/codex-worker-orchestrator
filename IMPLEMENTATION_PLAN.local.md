@@ -12,11 +12,11 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## NEXT（優先順）
 
-- `IMPLEMENTATION_TASKS/parent-capability-validation-churn.md`
 - `IMPLEMENTATION_TASKS/finalize-check-module-cwd.md`
-- `IMPLEMENTATION_TASKS/finalize-check-validation-reuse.md`
-- `IMPLEMENTATION_TASKS/reviewer-repo-search-parent-metadata.md`
 - `IMPLEMENTATION_TASKS/normal-push-preflight-reduction.md`
+- `IMPLEMENTATION_TASKS/parent-capability-validation-churn.md`
+- `IMPLEMENTATION_TASKS/worker-repo-search-active-task-seed.md`
+- `IMPLEMENTATION_TASKS/reviewer-repo-search-parent-metadata.md`
 - `IMPLEMENTATION_TASKS/bundle-task-diff-committed-files.md`
 - `IMPLEMENTATION_TASKS/021-conditional-improvements.md`
 - `IMPLEMENTATION_TASKS/022-final-verification.md`
@@ -43,7 +43,7 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## 現在の停止理由
 
-commentlint dogfoodは完了済み。後続監査で得たproduction findingをCodex実装taskへ分離してqueueした。Web GPTの測定・Acceptance trackerはこのPlanへ入れない。旧Codex長期threadには削除済みwait instruction等のstale contextが残るため、ユーザー指示により次の開発task開始時だけ新規Codex sessionへ移行し、そのsessionを以後の長期開発sessionとして継続する。旧sessionへ戻らず、定期session rotationも導入しない。
+commentlint dogfoodと外部ログ監査を完了し、実装が必要なproduction findingだけをCodex実装taskへ分離してqueueした。Web GPTの測定・Acceptance trackerはこのPlanへ入れない。旧Codex長期threadには削除済みwait instruction等のstale contextが残るため、ユーザー指示により次の開発task開始時だけ新規Codex sessionへ移行し、そのsessionを以後の長期開発sessionとして継続する。旧sessionへ戻らず、定期session rotationも導入しない。
 
 ## 次の親Codex操作
 
