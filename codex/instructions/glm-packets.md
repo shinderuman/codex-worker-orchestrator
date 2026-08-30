@@ -32,6 +32,7 @@
 - terminal packetのsemantic reviewが終わり、現snapshotへquality validationが必要な段階では、sandbox外で`glm-parent-action finalize-check <go-test|go-test-race>`を1回使う。既存quality gate、canonical handoff、current validation/snapshot照合、read-only local Git summaryを1 machine resultへまとめるため、同じ目的の`--quality-gate`→result/status→`--handoff`→`--status`往復を別々に行わない。
 - `status:"ready_for_parent_decision"`はvalidationとsnapshot整合を示すだけで、accept/fix・task完了・commit message・commit/push判断は親Codexが行う。`git.remote_state:"not_checked"`はremote freshnessを推測していないことを意味する。
 - `status:"blocked"`では`failure.stage`・`reason`と同梱済みevidenceだけを確認し、validation failure・lifecycle inconsistency・snapshot change・Git ambiguityを自動修復しない。
+- `~/.codex/instructions/git.md`が許可する通常fast-forward pushが成功した場合、そのpush自体をpublication結果として扱い、同じ成功を証明する目的だけの追加fetch・remote HEAD照合・post-push statusを行わない。push拒否・通信断等で成否が曖昧な場合だけ親判断へ戻す。install前のfinal HEAD・clean working tree等、git.mdが別目的で要求するlocal postconditionは省略しない。
 
 ## `{"error":{"kind":"worker_error",...}}`
 
