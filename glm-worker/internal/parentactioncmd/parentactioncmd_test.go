@@ -2,6 +2,7 @@ package parentactioncmd
 
 import (
 	"io"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -20,7 +21,7 @@ func TestPayloadWorkerArgsStartKeepsSemanticPayloadOneArgument(t *testing.T) {
 func TestPayloadWorkerArgsDecisionOwnsFraming(t *testing.T) {
 	payload := []byte("判断\n`$'\"")
 	args := payloadWorkerArgs("decision", payload, nil)
-	if len(args) != 4 || args[0] != "--decision-stdin" || args[1] != "15" || args[2] != "--sha256" || len(args[3]) != 64 {
+	if len(args) != 4 || args[0] != "--decision-stdin" || args[1] != strconv.Itoa(len(payload)) || args[2] != "--sha256" || len(args[3]) != 64 {
 		t.Fatalf("decision args = %#v", args)
 	}
 	got, err := io.ReadAll(payloadStdin("decision", payload))
