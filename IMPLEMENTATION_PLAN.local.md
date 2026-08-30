@@ -8,9 +8,10 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/commentlint-sandbox-safe-launcher.md`
+- `IMPLEMENTATION_TASKS/codex-analysis-evidence-bundle.md`
 
 ## NEXT（優先順）
+- `IMPLEMENTATION_TASKS/commentlint-sandbox-safe-launcher.md`
 - `IMPLEMENTATION_TASKS/021-conditional-improvements.md`
 - `IMPLEMENTATION_TASKS/022-final-verification.md`
 
@@ -38,8 +39,8 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## 現在の停止理由
 
-exhaustive-search query persistence reviewを完了。ユーザー指示により、Task 021へ入る前にIssue #142のcommentlint sandbox failureを通常implementation taskとして解消する。
+exhaustive-search query persistence reviewを完了。ユーザー指示により、今後のtask監査に必要な親Codex / Guardian / Codex host証拠を`glm-worker bundle`へ統合するIssue #147を、Issue #142およびTask 021より先に通常implementation taskとして解消する。
 
 ## 次の親Codex操作
 
-ACTIVE `IMPLEMENTATION_TASKS/commentlint-sandbox-safe-launcher.md`をrepository authorityとtask本文からbootstrapし、通常Codex + glm-worker workflowでこのtaskだけを完了する。Task 021は同じrunで開始しない。
+ACTIVE `IMPLEMENTATION_TASKS/codex-analysis-evidence-bundle.md`をrepository authorityとtask本文からbootstrapする。まず実機Mac上の`$CODEX_HOME`をread-only調査してcandidate evidence sourceの実在・schemaを確定し、その観測に基づいて通常Codex + glm-worker workflowでこのtaskだけを完了する。Issue #142 / Task 021は同じrunで開始しない。
