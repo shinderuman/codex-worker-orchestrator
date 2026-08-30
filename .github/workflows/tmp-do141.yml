@@ -1,0 +1,132 @@
+name: tmp do141 patch
+
+on:
+  push:
+    branches:
+      - gpt/do-141-readonly-inspection
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: gpt/do-141-readonly-inspection
+          fetch-depth: 0
+      - name: Read Go version
+        id: go-version
+        run: |
+          GO_VERSION=$(awk -F': ' '$1 == "go" { print $2 }' quality-tools.yml)
+          printf 'version=%s\n' "$GO_VERSION" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ steps.go-version.outputs.version }}
+          cache: false
+      - name: Apply focused patch
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          app = Path('glm-worker/internal/app/app.go')
+          text = app.read_text()
+          old = '''func executeStateless(cmd Command, cfg config.AppConfig, stdout io.Writer) (bool, error) {
+          \tswitch cmd.Mode {
+          \tcase ModeWatch:
+          \t\treturn true, printWatch(state.AttachStateStore(cfg), stdout, defaultWatchOptions(cmd.WatchVerbose))
+          \tcase ModeStop:
+          '''
+          new = '''func executeStateless(cmd Command, cfg config.AppConfig, stdout io.Writer) (bool, error) {
+          \tswitch cmd.Mode {
+          \tcase ModeStatus:
+          \t\treturn true, printStatus(state.AttachStateStore(cfg), stdout)
+          \tcase ModeHandoff:
+          \t\treturn true, printParentHandoff(state.AttachStateStore(cfg), stdout)
+          \tcase ModeStats:
+          \t\treturn true, printStats(state.AttachStateStore(cfg), stdout)
+          \tcase ModeWatch:
+          \t\treturn true, printWatch(state.AttachStateStore(cfg), stdout, defaultWatchOptions(cmd.WatchVerbose))
+          \tcase ModeStop:
+          '''
+          if old not in text:
+              raise SystemExit('executeStateless anchor not found')
+          text = text.replace(old, new, 1)
+          old = '''func executeStateOnly(cmd Command, cfg config.AppConfig, st *state.StateStore, stdout io.Writer) (bool, error) {
+          \tswitch cmd.Mode {
+          \tcase ModeStatus:
+          \t\treturn true, printStatus(st, stdout)
+          \tcase ModeHandoff:
+          \t\treturn true, printParentHandoff(st, stdout)
+          \tcase ModeStats:
+          \t\treturn true, printStats(st, stdout)
+          \tcase ModeVerifyAutoResume:
+          '''
+          new = '''func executeStateOnly(cmd Command, cfg config.AppConfig, st *state.StateStore, stdout io.Writer) (bool, error) {
+          \tswitch cmd.Mode {
+          \tcase ModeVerifyAutoResume:
+          '''
+          if old not in text:
+              raise SystemExit('executeStateOnly anchor not found')
+          app.write_text(text.replace(old, new, 1))
+
+          instruction = Path('codex/instructions/glm-execution.md')
+          text = instruction.read_text()
+          old = '- 外部GLM通信とClaude Codeユーザー設定アクセスが必要なため、最初からsandbox外で実行し、sandbox内へfallbackしない。'
+          new = '''- worker/reviewer起動、`--resume`、`--decision-stdin`、`--fix-stdin`、`--accept`等、外部GLM通信・Claude Codeユーザー設定アクセス・task state mutationを必要とするcommandは最初からsandbox外で実行し、sandbox内へfallbackしない。
+          - `--status`・`--handoff`・`--stats`・`--watch`・`--repo-search`・`--repo-search-eval`等、production実装が`AttachStateStore`またはstateless pathだけを使うread-only inspection/report commandはsandbox内で実行する。command名だけでread-onlyと推測せず、state write・provider call・archive/install等のside effectがあるcommandはこの例外へ含めない。'''
+          if old not in text:
+              raise SystemExit('glm-execution sandbox rule anchor not found')
+          instruction.write_text(text.replace(old, new, 1))
+          PY
+          cat > glm-worker/internal/app/read_only_inspection_test.go <<'EOF'
+          package app
+
+          import (
+          	"io"
+          	"os"
+          	"testing"
+
+          	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
+          )
+
+          func TestReadOnlyInspectionDoesNotRequireWritableStateStore(t *testing.T) {
+          	cfg := newAppConfig(t)
+          	st, err := state.NewStateStore(cfg)
+          	if err != nil {
+          		t.Fatal(err)
+          	}
+          	stateRoot := st.Path(".")
+          	if err := os.Chmod(stateRoot, 0o500); err != nil {
+          		t.Fatal(err)
+          	}
+          	t.Cleanup(func() { _ = os.Chmod(stateRoot, 0o700) })
+
+          	for _, args := range [][]string{{"--status"}, {"--handoff"}, {"--stats"}} {
+          		cmd, err := ParseCommand(args)
+          		if err != nil {
+          			t.Fatalf("ParseCommand(%v): %v", args, err)
+          		}
+          		if err := Execute(cmd, cfg, nil, io.Discard, io.Discard); err != nil {
+          			t.Fatalf("Execute(%v) with read-only state dir: %v", args, err)
+          		}
+          	}
+          }
+          EOF
+          gofmt -w glm-worker/internal/app/read_only_inspection_test.go glm-worker/internal/app/app.go
+      - name: Validate Go implementation
+        working-directory: glm-worker
+        run: |
+          go test ./internal/app/...
+          go test ./...
+          go vet ./...
+          go build ./...
+      - name: Commit validated patch and remove temporary workflow
+        run: |
+          rm .github/workflows/tmp-do141.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add glm-worker/internal/app/app.go glm-worker/internal/app/read_only_inspection_test.go codex/instructions/glm-execution.md .github/workflows/tmp-do141.yml
+          git commit -m "fix: keep inspection commands read-only"
+          git push origin HEAD:gpt/do-141-readonly-inspection
