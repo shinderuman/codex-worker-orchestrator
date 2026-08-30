@@ -446,6 +446,12 @@ func Execute(cmd Command, cfg config.AppConfig, rf RunnerFactory, stdout, _ io.W
 
 func executeStateless(cmd Command, cfg config.AppConfig, stdout io.Writer) (bool, error) {
 	switch cmd.Mode {
+	case ModeStatus:
+		return true, printStatus(state.AttachStateStore(cfg), stdout)
+	case ModeHandoff:
+		return true, printParentHandoff(state.AttachStateStore(cfg), stdout)
+	case ModeStats:
+		return true, printStats(state.AttachStateStore(cfg), stdout)
 	case ModeWatch:
 		return true, printWatch(state.AttachStateStore(cfg), stdout, defaultWatchOptions(cmd.WatchVerbose))
 	case ModeStop:
@@ -487,12 +493,6 @@ func executeStatelessReport(cmd Command, cfg config.AppConfig, stdout io.Writer)
 
 func executeStateOnly(cmd Command, cfg config.AppConfig, st *state.StateStore, stdout io.Writer) (bool, error) {
 	switch cmd.Mode {
-	case ModeStatus:
-		return true, printStatus(st, stdout)
-	case ModeHandoff:
-		return true, printParentHandoff(st, stdout)
-	case ModeStats:
-		return true, printStats(st, stdout)
 	case ModeVerifyAutoResume:
 		return true, printVerifyAutoResume(cmd, cfg, stdout)
 	case ModeInstallSmoke:
