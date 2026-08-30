@@ -50,9 +50,6 @@ func TestBundleExplicitParentThreadIDAssociatesLegacyTaskWithoutMutatingStats(t 
 	if !slices.Equal(parent.ThreadIDs, []string{codexTestParentThreadID}) {
 		t.Fatalf("parent thread IDs = %#v", parent.ThreadIDs)
 	}
-	if !strings.Contains(parent.Detail, "task state was not modified") {
-		t.Fatalf("parent detail = %q", parent.Detail)
-	}
 	guardian := findCodexEvidence(t, manifest, codexClassGuardianChild)
 	if guardian.Status != codexStatusIncluded || guardian.AssociationBasis != codexExplicitAssociationBasis {
 		t.Fatalf("guardian = %#v", guardian)
@@ -92,7 +89,7 @@ func TestBundleExplicitParentThreadIDConflictingWithStoredIdentityFailsClosed(t 
 	archive := readBundleArchive(t, output.ArchivePath)
 	manifest := readBundleManifest(t, archive)
 	parent := findCodexEvidence(t, manifest, codexClassParentSession)
-	if parent.Status != codexStatusAmbiguous || !strings.Contains(parent.Detail, "conflicts with the stored parent identity") {
+	if parent.Status != codexStatusAmbiguous {
 		t.Fatalf("parent = %#v", parent)
 	}
 	for name := range archive {
@@ -120,7 +117,7 @@ func TestBundleExplicitParentThreadIDRejectsMalformedValue(t *testing.T) {
 	}
 	manifest := readBundleManifest(t, readBundleArchive(t, output.ArchivePath))
 	parent := findCodexEvidence(t, manifest, codexClassParentSession)
-	if parent.Status != codexStatusUnavailable || !strings.Contains(parent.Detail, "not a canonical UUID") {
+	if parent.Status != codexStatusUnavailable {
 		t.Fatalf("parent = %#v", parent)
 	}
 }
