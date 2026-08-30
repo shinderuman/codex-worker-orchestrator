@@ -23,6 +23,7 @@ import (
 const (
 	usage             = "usage: glm-parent-action start | prepare <decision|fix> | decision <token> | fix <token> [--origin <origin>] [--accepted-scope current-diff] | accept | resume"
 	activeTaskRequest = "現在のACTIVE taskを実装してください。"
+	actionFix         = "fix"
 )
 
 func Run(args []string, stdout, stderr io.Writer) int {
@@ -31,7 +32,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		if errors.As(err, &exitErr) {
 			return childExitCode(exitErr)
 		}
-		fmt.Fprintln(stderr, err)
+		_, _ = fmt.Fprintln(stderr, err)
 		return 1
 	}
 	return 0
@@ -73,7 +74,7 @@ func execute(repoRoot string, args []string, stdout, stderr io.Writer) error {
 			return fmt.Errorf("usage: glm-parent-action %s", action)
 		}
 		return runWorker(repoRoot, directWorkerArgs(action), nil, stdout, stderr)
-	case "decision", "fix":
+	case "decision", actionFix:
 		return executePayloadAction(repoRoot, action, args[1:], stdout, stderr)
 	default:
 		return fmt.Errorf("%s", usage)
@@ -84,10 +85,10 @@ func executePayloadAction(repoRoot, action string, args []string, stdout, stderr
 	if len(args) < 1 {
 		return fmt.Errorf("usage: glm-parent-action %s <token>", action)
 	}
-	if action != "fix" && len(args) != 1 {
+	if action != actionFix && len(args) != 1 {
 		return fmt.Errorf("usage: glm-parent-action %s <token>", action)
 	}
-	if action == "fix" {
+	if action == actionFix {
 		if err := validateFixOptions(args[1:]); err != nil {
 			return err
 		}
@@ -107,7 +108,7 @@ func executePayloadAction(repoRoot, action string, args []string, stdout, stderr
 func payloadWorkerArgs(action string, payload []byte, options []string) []string {
 	digest := sha256.Sum256(payload)
 	mode := "--decision-stdin"
-	if action == "fix" {
+	if action == actionFix {
 		mode = "--fix-stdin"
 	}
 	args := []string{mode, strconv.Itoa(len(payload)), "--sha256", hex.EncodeToString(digest[:])}
@@ -126,28 +127,29 @@ func directWorkerArgs(action string) []string {
 }
 
 func validateFixOptions(options []string) error {
+	fixUsage := "usage: glm-parent-action fix <token> [--origin <origin>] [--accepted-scope current-diff]"
 	if len(options)%2 != 0 {
-		return fmt.Errorf("usage: glm-parent-action fix <token> [--origin <origin>] [--accepted-scope current-diff]")
+		return fmt.Errorf("%s", fixUsage)
 	}
 	seen := map[string]bool{}
 	for index := 0; index < len(options); index += 2 {
 		name := options[index]
 		value := options[index+1]
 		if seen[name] {
-			return fmt.Errorf("usage: glm-parent-action fix <token> [--origin <origin>] [--accepted-scope current-diff]")
+			return fmt.Errorf("%s", fixUsage)
 		}
 		seen[name] = true
 		switch name {
 		case "--origin":
 			if !state.ValidParentOrigin(value) {
-				return fmt.Errorf("usage: glm-parent-action fix <token> [--origin <origin>] [--accepted-scope current-diff]")
+				return fmt.Errorf("%s", fixUsage)
 			}
 		case "--accepted-scope":
 			if value != "current-diff" {
-				return fmt.Errorf("usage: glm-parent-action fix <token> [--origin <origin>] [--accepted-scope current-diff]")
+				return fmt.Errorf("%s", fixUsage)
 			}
 		default:
-			return fmt.Errorf("usage: glm-parent-action fix <token> [--origin <origin>] [--accepted-scope current-diff]")
+			return fmt.Errorf("%s", fixUsage)
 		}
 	}
 	return nil
