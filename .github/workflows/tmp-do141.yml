@@ -74,8 +74,7 @@ jobs:
           instruction = Path('codex/instructions/glm-execution.md')
           text = instruction.read_text()
           old = '- 外部GLM通信とClaude Codeユーザー設定アクセスが必要なため、最初からsandbox外で実行し、sandbox内へfallbackしない。'
-          new = '''- worker/reviewer起動、`--resume`、`--decision-stdin`、`--fix-stdin`、`--accept`等、外部GLM通信・Claude Codeユーザー設定アクセス・task state mutationを必要とするcommandは最初からsandbox外で実行し、sandbox内へfallbackしない。
-          - `--status`・`--handoff`・`--stats`・`--watch`・`--repo-search`・`--repo-search-eval`等、production実装が`AttachStateStore`またはstateless pathだけを使うread-only inspection/report commandはsandbox内で実行する。command名だけでread-onlyと推測せず、state write・provider call・archive/install等のside effectがあるcommandはこの例外へ含めない。'''
+          new = '- model実行またはstate変更を行うcommandはsandbox外、実装上read-onlyの`--status`・`--handoff`・`--stats`・`--watch`等のinspection/report commandはsandbox内で実行する。command名で推測せずside effectを正とする。'
           if old not in text:
               raise SystemExit('glm-execution sandbox rule anchor not found')
           instruction.write_text(text.replace(old, new, 1))
