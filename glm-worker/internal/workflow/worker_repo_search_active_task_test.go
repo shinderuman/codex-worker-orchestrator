@@ -18,16 +18,14 @@ func TestNewWorkerTaskPromptUsesActiveTaskSeedForKnownTargetSkip(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(root, state.ParentTasksDir), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, activeTaskPath), []byte(`# Task: repair commentlint launcher
-
-## Purpose
-
-Make commentlint use the repository toolchain.
-
-## Resolved references
-
-- commentlint
-`), 0o600); err != nil {
+	task := strings.Join([]string{
+		"# commentlint launcher",
+		"## Purpose",
+		"launcher target",
+		"## Resolved references",
+		"- commentlint",
+	}, "\n")
+	if err := os.WriteFile(filepath.Join(root, activeTaskPath), []byte(task), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(root, "commentlint"), []byte("#!/bin/sh\n"), 0o700); err != nil {
@@ -67,24 +65,18 @@ func TestNewWorkerTaskPromptSearchesFromActiveTaskAuthority(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(root, state.ParentTasksDir), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, activeTaskPath), []byte(`# Task: route worker repository search
-
-## Original instruction
-
-This deliberately long source must not be copied into the search seed.
-
-## Purpose
-
-Use ACTIVE task authority for worker navigation.
-
-## Resolved references
-
-- glm-worker/internal/workflow/worker_repo_search.go
-
-## Contract
-
-Preserve the compact parent transport.
-`), 0o600); err != nil {
+	task := strings.Join([]string{
+		"# worker search routing",
+		"## Original instruction",
+		"NOISE_TOKEN",
+		"## Purpose",
+		"ACTIVE_AUTHORITY_TOKEN",
+		"## Resolved references",
+		"- glm-worker/internal/workflow/worker_repo_search.go",
+		"## Contract",
+		"CONTRACT_NOISE",
+	}, "\n")
+	if err := os.WriteFile(filepath.Join(root, activeTaskPath), []byte(task), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -98,13 +90,13 @@ Preserve the compact parent transport.
 	}
 	w := NewWorkflow(cfg, st, nil, nil)
 	w.repoSearch = func(_ context.Context, _ string, query string, _ reposearch.Options) (reposearch.Report, error) {
-		for _, want := range []string{"route worker repository search", "Use ACTIVE task authority", "glm-worker/internal/workflow/worker_repo_search.go"} {
+		for _, want := range []string{"worker search routing", "ACTIVE_AUTHORITY_TOKEN", "glm-worker/internal/workflow/worker_repo_search.go"} {
 			if !strings.Contains(query, want) {
 				t.Fatalf("ACTIVE task seed lacks %q: %q", want, query)
 			}
 		}
-		if strings.Contains(query, "現在のACTIVE taskを実行してください。") || strings.Contains(query, "deliberately long source") {
-			t.Fatalf("generic transport or full task prose leaked into search query: %q", query)
+		if strings.Contains(query, "現在のACTIVE taskを実行してください。") || strings.Contains(query, "NOISE_TOKEN") || strings.Contains(query, "CONTRACT_NOISE") {
+			t.Fatalf("unrelated transport/task prose leaked into search query: %q", query)
 		}
 		return reposearch.Report{Results: []reposearch.Result{{Path: "glm-worker/internal/workflow/worker_repo_search.go", Line: 1}}}, nil
 	}
