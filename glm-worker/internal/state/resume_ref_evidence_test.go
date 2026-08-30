@@ -5,15 +5,15 @@ import "testing"
 func TestResumeCheckpointGuardRefEvidenceRoundTrip(t *testing.T) {
 	st := &StateStore{dir: t.TempDir()}
 	checkpoint := ResumeCheckpoint{
-		Stage:                   ResumeStageReview,
-		Phase:                   "reviewer-1",
-		Role:                    ReviewerRole,
-		Model:                   "sonnet",
-		ReadOnly:                true,
-		GuardRecoverable:        true,
-		GuardFailure:            "git authority guard failed: after-call-mutation: refs",
-		GuardRefBeforeDigest:    "before",
-		GuardRefAfterDigest:     "after",
+		Stage:                    ResumeStageReview,
+		Phase:                    "reviewer-1",
+		Role:                     ReviewerRole,
+		Model:                    "sonnet",
+		ReadOnly:                 true,
+		GuardRecoverable:         true,
+		GuardFailure:             "git authority guard failed: after-call-mutation: refs",
+		GuardRefBeforeDigest:     "before",
+		GuardRefAfterDigest:      "after",
 		GuardRefChangesTruncated: true,
 		GuardRefChanges: []GuardRefChange{{
 			Name:   "refs/heads/bypass",
