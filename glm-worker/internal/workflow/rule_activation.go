@@ -373,7 +373,15 @@ func (w *Workflow) convergeWorkerRuleActivation(
 	result packet.Result,
 	activated map[workerRule]struct{},
 ) (packet.Result, error) {
-	for round := 1; result.Status == packet.StatusImplemented; round++ {
+	for round := 1; ; round++ {
+		stopped, err := w.stopForQualitySurfaceApproval(checkpoint, result)
+		if err != nil || stopped {
+			return result, err
+		}
+		if result.Status != packet.StatusImplemented {
+			return result, nil
+		}
+
 		required, err := w.currentRequiredWorkerRules()
 		if err != nil {
 			return packet.Result{}, err
@@ -401,7 +409,6 @@ func (w *Workflow) convergeWorkerRuleActivation(
 		mergeWorkerRuleSets(activated, w.observedWorkerRules())
 		checkpoint = correction
 	}
-	return result, nil
 }
 
 func (w *Workflow) ruleActivationCorrectionCheckpoint(
