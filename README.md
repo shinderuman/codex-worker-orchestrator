@@ -125,11 +125,10 @@ install smokeはtemp home/repositoryへinstallを2回行い、managed file、loc
 
 ## CLI
 
-親Codexの通常lifecycle操作は`glm-parent-action`を使う。payloadを持つ`start`・`decision`・`fix`では、まず`prepare`がrepository内のignored staging fileとcrypto-random tokenを発行し、親がその既存fileを編集した後、実actionにはfile pathではなくtokenだけを渡す。wrapperがpayloadをmemoryへ取り込み、staging fileを削除してから既存`glm-worker` admissionへ委譲するため、sandbox外processへ任意local pathを読ませない。
+親Codexの通常lifecycle操作は`glm-parent-action`を使う。Plan管理repositoryの新規task開始はcurrent ACTIVE taskを固定要求で起動する1操作、semantic payloadを持つdecision/fixだけrepository内のbounded stagingを使う。
 
 ```sh
-glm-parent-action prepare start
-glm-parent-action start <token>
+glm-parent-action start
 
 glm-parent-action prepare decision
 glm-parent-action decision <token>
@@ -141,7 +140,7 @@ glm-parent-action accept
 glm-parent-action resume
 ```
 
-`prepare`のJSONが返す`path`は`.glm-worker-parent-actions/`配下だけで、通常の親Codex運用ではそのplaceholderを`apply_patch`でsemantic payloadへ置換する。実actionはpathを受け取らない。decision/fixのUTF-8 byte長・SHA-256・stdin framingはwrapperが処理する。
+`prepare decision|fix`のJSONが返す`path`は`.glm-worker-parent-actions/`配下だけで、通常の親Codex運用ではそのplaceholderを`apply_patch`でsemantic payloadへ置換する。実actionはpathを受け取らずcrypto-random tokenだけを受け取る。wrapperがpayloadをmemoryへ取り込みstaging fileを削除してから既存`glm-worker` admissionへ委譲するため、sandbox外processへ任意local pathを読ませない。decision/fixのUTF-8 byte長・SHA-256・stdin framingもwrapperが処理する。
 
 低レベル`glm-worker --decision-stdin` / `--fix-stdin`はrecovery/debug用途として残す。その他のinspection/reportや運用commandは`glm-worker`を直接使う。
 
