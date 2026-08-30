@@ -30,7 +30,8 @@
 
 - Plan管理repositoryでcurrent ACTIVE taskを開始するときは、sandbox外で`glm-parent-action start`を1回だけ実行する。wrapperは固定semantic requestを既存glm-worker new-task admissionへ渡す。ACTIVE task本文をUSER_REQUESTへ複製しない。
 - decision・fixはsandbox内で`glm-parent-action prepare decision|fix`を実行し、JSONで返る既存staging fileのplaceholderだけをCodex標準の`apply_patch`でsemantic payloadへ置換する。file先頭のtoken binding headerは保持する。`cat`・heredoc・shell redirect・Python等の別write手段へ切り替えない。
-- 実actionはsandbox外で`glm-parent-action decision <token>`または`glm-parent-action fix <token> [--origin <値>] [--accepted-scope current-diff]`を実行する。file pathは受け取らず、prepareが発行したcrypto-random tokenだけを渡す。
+- 実actionはsandbox外で`glm-parent-action decision <token>`または`glm-parent-action fix <token> [--origin <値>] [--accepted-scope current-diff] [--approval-only]`を実行する。file pathは受け取らず、prepareが発行したcrypto-random tokenだけを渡す。
+- quality policy surface変更で`NEEDS_SOL_REVIEW`停止し、親Codexがsemantic fixを要求せず停止時点のexact current diffだけを承認する場合は、`prepare fix`で通常どおりtoken-bound payloadを用意したうえで`glm-parent-action fix <token> --accepted-scope current-diff --approval-only`を使う。`--approval-only`はこの場合だけ使い、`--origin`を併用しない。semantic修正を要求する場合は従来の通常fixを使う。
 - staging rootはrepository直下の`.glm-worker-parent-actions/`に固定する。token形式不正、token binding不一致、placeholder未置換、symlink化されたdirectory/file、1 MiB超payloadはstate変更・model呼出前にfail closedする。
 - wrapperはpayloadをmemoryへ読み、staging fileを削除してからUTF-8 byte長・SHA-256を機械計算し、既存`glm-worker --decision-stdin`/`--fix-stdin`へ直接渡す。semantic本文中のbacktick、dollar、single quote、double quote、NUL、改行を無変換で保持する。
 - `glm-worker --decision-stdin`/`--fix-stdin`はrecovery/debug用に残すが、通常親workflowではbyte長・hash・TTY・`stdin_ready`・`write_stdin`・shell quotingを扱わず、旧transportへfallbackしない。
