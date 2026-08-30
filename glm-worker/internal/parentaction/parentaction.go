@@ -12,17 +12,17 @@ import (
 	"strings"
 )
 
-const (
-	StageDirName    = ".glm-worker-parent-actions"
-	placeholder     = "__GLM_PARENT_ACTION_PAYLOAD__\n"
-	maxPayloadBytes = 1 << 20
-)
-
 type Prepared struct {
 	Action string `json:"action"`
 	Token  string `json:"token"`
 	Path   string `json:"path"`
 }
+
+const (
+	StageDirName    = ".glm-worker-parent-actions"
+	placeholder     = "__GLM_PARENT_ACTION_PAYLOAD__\n"
+	maxPayloadBytes = 1 << 20
+)
 
 func Prepare(repoRoot, action string) (Prepared, error) {
 	if !validPayloadAction(action) {
@@ -65,6 +65,23 @@ func Consume(repoRoot, action, token string) ([]byte, error) {
 		return nil, err
 	}
 	path := payloadPath(stageDir, action, token)
+	payload, err := readRegularPayload(path)
+	if err != nil {
+		return nil, err
+	}
+	if len(payload) > maxPayloadBytes {
+		return nil, fmt.Errorf("parent action payload exceeds %d bytes", maxPayloadBytes)
+	}
+	if len(payload) == 0 || bytes.Contains(payload, []byte(placeholder)) {
+		return nil, fmt.Errorf("parent action payload was not supplied completely")
+	}
+	if err := os.Remove(path); err != nil {
+		return nil, fmt.Errorf("consume parent action staging file: %w", err)
+	}
+	return payload, nil
+}
+
+func readRegularPayload(path string) ([]byte, error) {
 	before, err := os.Lstat(path)
 	if err != nil {
 		return nil, fmt.Errorf("parent action staging file unavailable: %w", err)
@@ -85,22 +102,13 @@ func Consume(repoRoot, action, token string) ([]byte, error) {
 		_ = file.Close()
 		return nil, fmt.Errorf("parent action staging file changed while opening")
 	}
-	payload, err := io.ReadAll(io.LimitReader(file, maxPayloadBytes+1))
+	payload, readErr := io.ReadAll(io.LimitReader(file, maxPayloadBytes+1))
 	closeErr := file.Close()
-	if err != nil {
-		return nil, fmt.Errorf("read parent action staging file: %w", err)
+	if readErr != nil {
+		return nil, fmt.Errorf("read parent action staging file: %w", readErr)
 	}
 	if closeErr != nil {
 		return nil, fmt.Errorf("close parent action staging file: %w", closeErr)
-	}
-	if len(payload) > maxPayloadBytes {
-		return nil, fmt.Errorf("parent action payload exceeds %d bytes", maxPayloadBytes)
-	}
-	if len(payload) == 0 || bytes.Contains(payload, []byte(placeholder)) {
-		return nil, fmt.Errorf("parent action payload was not supplied completely")
-	}
-	if err := os.Remove(path); err != nil {
-		return nil, fmt.Errorf("consume parent action staging file: %w", err)
 	}
 	return payload, nil
 }
