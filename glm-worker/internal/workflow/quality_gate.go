@@ -122,6 +122,12 @@ func (w *Workflow) verifyQualitySurfaceBaseline(phase string) (bool, error) {
 	if strings.TrimSpace(baseline) == current {
 		return false, nil
 	}
+	if w.acceptedFixScopeContainsCurrent() {
+		if err := w.state.Write(qualitySurfaceBaselineStateKey, current); err != nil {
+			return true, w.failClosedQualitySurface(phase, "親承認済みquality policy baselineを保存できません", err)
+		}
+		return false, nil
+	}
 	return true, w.failClosedQualitySurface(phase, "workerがquality policy surfaceを変更しました", nil)
 }
 
@@ -146,7 +152,7 @@ func qualitySurfaceFailClosedResult(phase, reason string) packet.Result {
 		Issues:              reason,
 		ResidualRisk:        "quality policy変更の意図とtask差分をSol/GPTが直接確認する必要がある",
 		Targets:             []string{".golangci.yml, harnesslint/commentlint implementation and wrappers"},
-		SolQuestion:         "quality policy変更を通常taskから除外し、accepted baselineへ戻した上でtaskを再開する",
+		SolQuestion:         "quality policy変更を通常taskから除外するか、親がcurrent diffを明示承認して同一taskのfix/review経路へ進める",
 	}
 }
 
