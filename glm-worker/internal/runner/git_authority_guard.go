@@ -56,7 +56,10 @@ type gitAuthorityGuard struct {
 	before        gitAuthoritySnapshot
 }
 
-const maxGitAuthorityRefChanges = 64
+const (
+	maxGitAuthorityRefChanges = 64
+	guardStageAfterCallMutation = "after-call-mutation"
+)
 
 func (e *GitAuthorityGuardError) Error() string {
 	parts := []string{"git authority guard failed", e.Stage}
@@ -149,7 +152,7 @@ func (g *gitAuthorityGuard) verify() error {
 	}
 	stage := "blocked-command"
 	if len(snapshotMutations) > 0 {
-		stage = "after-call-mutation"
+		stage = guardStageAfterCallMutation
 	}
 	guardErr := &GitAuthorityGuardError{Stage: stage, Mutations: mutations}
 	if g.before.refsDigest != after.refsDigest {
