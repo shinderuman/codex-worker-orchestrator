@@ -16,11 +16,38 @@ func TestFixStdinAcceptsExplicitCurrentDiffScope(t *testing.T) {
 	}
 }
 
+func TestFixStdinAcceptsApprovalOnlyForCurrentDiff(t *testing.T) {
+	command, err := ParseCommand([]string{
+		"--fix-stdin", "12",
+		"--accepted-scope", "current-diff",
+		"--approval-only",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if command.Mode != ModeFix || command.AcceptedScope != "current-diff" || !command.ApprovalOnly {
+		t.Fatalf("command = %#v", command)
+	}
+}
+
 func TestAcceptedScopeIsFixOnlyAndClosedValue(t *testing.T) {
 	for _, args := range [][]string{
 		{"--decision-stdin", "12", "--accepted-scope", "current-diff"},
 		{"--fix-stdin", "12", "--accepted-scope", "anything-else"},
 		{"--fix-stdin", "12", "--accepted-scope", "current-diff", "--accepted-scope", "current-diff"},
+	} {
+		if _, err := ParseCommand(args); err == nil {
+			t.Fatalf("accepted invalid args: %v", args)
+		}
+	}
+}
+
+func TestApprovalOnlyRequiresCurrentDiffWithoutOrigin(t *testing.T) {
+	for _, args := range [][]string{
+		{"--fix-stdin", "12", "--approval-only"},
+		{"--fix-stdin", "12", "--accepted-scope", "current-diff", "--approval-only", "--approval-only"},
+		{"--fix-stdin", "12", "--origin", "glm-reviewer", "--accepted-scope", "current-diff", "--approval-only"},
+		{"--decision-stdin", "12", "--approval-only"},
 	} {
 		if _, err := ParseCommand(args); err == nil {
 			t.Fatalf("accepted invalid args: %v", args)
