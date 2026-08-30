@@ -177,21 +177,21 @@ func directWorkerArgs(action string) []string {
 
 func validateFixOptions(options []string) error {
 	fixUsage := "usage: glm-parent-action fix <token> [--origin <origin>] [--accepted-scope current-diff] [--approval-only]"
+	pairs, approvalOnly, err := extractApprovalOnlyOption(options, fixUsage)
+	if err != nil {
+		return err
+	}
+	if len(pairs)%2 != 0 {
+		return fmt.Errorf("%s", fixUsage)
+	}
 	seen := map[string]bool{}
-	for index := 0; index < len(options); {
-		name := options[index]
+	for index := 0; index < len(pairs); index += 2 {
+		name := pairs[index]
+		value := pairs[index+1]
 		if seen[name] {
 			return fmt.Errorf("%s", fixUsage)
 		}
 		seen[name] = true
-		if name == "--approval-only" {
-			index++
-			continue
-		}
-		if index+1 >= len(options) {
-			return fmt.Errorf("%s", fixUsage)
-		}
-		value := options[index+1]
 		switch name {
 		case "--origin":
 			if !state.ValidParentOrigin(value) {
@@ -204,12 +204,31 @@ func validateFixOptions(options []string) error {
 		default:
 			return fmt.Errorf("%s", fixUsage)
 		}
-		index += 2
 	}
-	if seen["--approval-only"] && (!seen["--accepted-scope"] || seen["--origin"]) {
+	if approvalOnly && (!seen["--accepted-scope"] || seen["--origin"]) {
 		return fmt.Errorf("%s", fixUsage)
 	}
 	return nil
+}
+
+func extractApprovalOnlyOption(options []string, usage string) ([]string, bool, error) {
+	index := -1
+	for current, option := range options {
+		if option != "--approval-only" {
+			continue
+		}
+		if index >= 0 {
+			return nil, false, fmt.Errorf("%s", usage)
+		}
+		index = current
+	}
+	if index < 0 {
+		return options, false, nil
+	}
+	pairs := make([]string, 0, len(options)-1)
+	pairs = append(pairs, options[:index]...)
+	pairs = append(pairs, options[index+1:]...)
+	return pairs, true, nil
 }
 
 func runWorker(repoRoot string, args []string, stdin io.Reader, stdout, stderr io.Writer, extraEnv []string) error {
@@ -236,7 +255,7 @@ func runResolvedWorker(worker, workingDir string, args []string, stdin io.Reader
 	}
 	done := make(chan struct{})
 	go forwardSignals(command.Process, signals, done)
-	err := command.Wait()
+	err = command.Wait()
 	close(done)
 	return err
 }
