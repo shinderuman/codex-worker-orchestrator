@@ -23,7 +23,7 @@ func isRecoverableGitAuthorityFailure(err GitAuthorityGuardError) bool {
 	if err.Stage == "blocked-command" {
 		return true
 	}
-	if err.Stage != "after-call-mutation" || err.RefBeforeDigest == "" || err.RefAfterDigest == "" || err.RefBeforeDigest == err.RefAfterDigest || len(err.RefChanges) == 0 {
+	if err.Stage != guardStageAfterCallMutation || err.RefBeforeDigest == "" || err.RefAfterDigest == "" || err.RefBeforeDigest == err.RefAfterDigest || len(err.RefChanges) == 0 {
 		return false
 	}
 	for _, mutation := range err.Mutations {
@@ -36,5 +36,5 @@ func isRecoverableGitAuthorityFailure(err GitAuthorityGuardError) bool {
 }
 
 func isRestoredInstructionSurfaceMutation(err InstructionSurfaceGuardError) bool {
-	return err.Stage == "after-call-mutation" && err.Restored
+	return err.Stage == guardStageAfterCallMutation && err.Restored
 }
