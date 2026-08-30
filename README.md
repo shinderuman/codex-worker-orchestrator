@@ -31,7 +31,7 @@ export PATH="$HOME/.local/bin:$PATH"
 
 - runtimeに必要なcommandの存在確認
 - `quality-tools.yml`に固定した実行用Go・lint解析用Go・lint tool versionの検証
-- `glm-worker` / `commentlint` / `harnesslint` / `merge-json`を`glm-worker` moduleからbuildして配置
+- `glm-worker` / `glm-parent-action` / `commentlint` / `harnesslint` / `merge-json`を`glm-worker` moduleからbuildして配置
 - `codex/`のmanaged fileを`~/.codex`へ同期し、前回manifestにのみ残るfileを削除
 - managed Codex configを既存`~/.codex/config.toml`へ反映
 - managed Claude settingsを既存`~/.claude/settings.json`へmerge
@@ -64,6 +64,7 @@ codex-worker-orchestrator/
 │   ├── go.mod
 │   ├── cmd/
 │   │   ├── glm-worker/
+│   │   ├── glm-parent-action/
 │   │   ├── commentlint/
 │   │   ├── harnesslint/
 │   │   └── merge-json/
@@ -124,7 +125,25 @@ install smokeはtemp home/repositoryへinstallを2回行い、managed file、loc
 
 ## CLI
 
-主要command:
+親Codexの通常lifecycle操作は`glm-parent-action`を使う。payloadを持つ`start`・`decision`・`fix`では、まず`prepare`がrepository内のignored staging fileとcrypto-random tokenを発行し、親がその既存fileを編集した後、実actionにはfile pathではなくtokenだけを渡す。wrapperがpayloadをmemoryへ取り込み、staging fileを削除してから既存`glm-worker` admissionへ委譲するため、sandbox外processへ任意local pathを読ませない。
+
+```sh
+glm-parent-action prepare start
+glm-parent-action start <token>
+
+glm-parent-action prepare decision
+glm-parent-action decision <token>
+
+glm-parent-action prepare fix
+glm-parent-action fix <token> [--origin <origin>] [--accepted-scope current-diff]
+
+glm-parent-action accept
+glm-parent-action resume
+```
+
+`prepare`のJSONが返す`path`は`.glm-worker-parent-actions/`配下だけで、通常の親Codex運用ではそのplaceholderを`apply_patch`でsemantic payloadへ置換する。実actionはpathを受け取らない。decision/fixのUTF-8 byte長・SHA-256・stdin framingはwrapperが処理する。
+
+低レベル`glm-worker --decision-stdin` / `--fix-stdin`はrecovery/debug用途として残す。その他のinspection/reportや運用commandは`glm-worker`を直接使う。
 
 ```sh
 glm-worker "<task>"
