@@ -1,0 +1,42 @@
+name: GPT Parent Wait Validation
+
+on:
+  pull_request:
+    paths:
+      - 'codex/**'
+      - 'glm-worker/internal/harnesslint/**'
+      - 'tests/install_smoke.sh'
+      - '.github/workflows/gpt-parent-wait-validation.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - name: Read quality tool contract
+        id: quality
+        shell: bash
+        run: |
+          GO_VERSION=$(awk -F': ' '$1 == "go" { print $2 }' quality-tools.yml)
+          printf 'go_version=%s\n' "$GO_VERSION" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ steps.quality.outputs.go_version }}
+          cache: false
+      - name: Install quality tools
+        run: |
+          quality_bin="$(go env GOPATH)/bin"
+          QUALITY_TOOLS_BIN_DIR="$quality_bin" ./install-quality-tools.sh
+          printf '%s\n' "$quality_bin" >> "$GITHUB_PATH"
+      - name: Validate
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./harnesslint
+          (cd glm-worker && go test ./...)
+          (cd glm-worker && go vet ./...)
+          (cd glm-worker && go build ./...)
+          ./tests/install_smoke.sh
