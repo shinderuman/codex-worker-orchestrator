@@ -67,4 +67,4 @@ none
 
 ## Current boundary
 
-未着手。次のCodex+GLM dogfoodより先にWeb GPT側で完了する。
+production implementationはPR #175 `bdf0e4cfa531ee00f5b64076af16a4d9d1361b22`で統合済み。`glm-parent-action finalize-check <go-test|go-test-race>`が既存blocking quality gate、canonical handoff、current-snapshot validation照合、read-only local Git summaryを1 machine-readable actionへ集約する。semantic accept/fix、task完了判断、commit message、commit/fetch/push、divergence修復は親Codex authorityのまま維持し、通常fast-forward push成功後の同一成功証明だけを目的とする追加fetch/remote HEAD/post-push statusは行わない。残るAcceptanceは次のcommentlint dogfood bundleでterminal returnからfinal completionまでのparent input/tool round tripを約3.35M input / 37 tool calls baselineと比較すること。
