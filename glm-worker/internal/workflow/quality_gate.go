@@ -101,34 +101,48 @@ func (w *Workflow) captureQualitySurfaceBaseline() error {
 	return w.state.Write(qualitySurfaceBaselineStateKey, digest)
 }
 
-func (w *Workflow) verifyQualitySurfaceBaseline(phase string) (bool, error) {
+func (w *Workflow) inspectQualitySurfaceBaseline() (bool, string, error) {
 	current, err := w.captureQualitySurface(w.config.RepoRoot)
 	if err != nil {
-		return true, w.failClosedQualitySurface(phase, "quality policy surfaceを再計測できません", err)
+		return false, "quality policy surfaceを再計測できません", err
 	}
 	if current == "" {
-		return false, nil
+		return false, "", nil
 	}
 	if !w.state.Exists(qualitySurfaceBaselineStateKey) {
 		if err := w.state.Write(qualitySurfaceBaselineStateKey, current); err != nil {
-			return true, w.failClosedQualitySurface(phase, "legacy taskのquality policy baselineを初期化できません", err)
+			return false, "legacy taskのquality policy baselineを初期化できません", err
 		}
-		return false, nil
+		return false, "", nil
 	}
 	baseline, err := w.state.Read(qualitySurfaceBaselineStateKey)
 	if err != nil {
-		return true, w.failClosedQualitySurface(phase, "worker開始時のquality policy baselineを読めません", err)
+		return false, "worker開始時のquality policy baselineを読めません", err
 	}
 	if strings.TrimSpace(baseline) == current {
-		return false, nil
+		return false, "", nil
 	}
 	if w.acceptedFixScopeContainsCurrent() {
 		if err := w.state.Write(qualitySurfaceBaselineStateKey, current); err != nil {
-			return true, w.failClosedQualitySurface(phase, "親承認済みquality policy baselineを保存できません", err)
+			return false, "親承認済みquality policy baselineを保存できません", err
 		}
+		return false, "", nil
+	}
+	return true, "workerがquality policy surfaceを変更しました", nil
+}
+
+func (w *Workflow) verifyQualitySurfaceBaseline(phase string) (bool, error) {
+	if w.qualitySurfaceApprovalPending() && !w.acceptedFixScopeContainsCurrent() {
+		return true, nil
+	}
+	changed, reason, err := w.inspectQualitySurfaceBaseline()
+	if err != nil {
+		return true, w.failClosedQualitySurface(phase, reason, err)
+	}
+	if !changed {
 		return false, nil
 	}
-	return true, w.failClosedQualitySurface(phase, "workerがquality policy surfaceを変更しました", nil)
+	return true, w.failClosedQualitySurface(phase, reason, nil)
 }
 
 func (w *Workflow) failClosedQualitySurface(phase, reason string, cause error) error {
