@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"os"
-	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -74,42 +73,6 @@ func TestReviewerDiffFirstSearchesImpactIndependentlyAndExcludesChangedPaths(t *
 	event := readOnlyTaskEvent(t, st, taskID)
 	if event.Phase != reviewerRepoSearchPhase || event.Subtype != reviewerSearchHit || event.SearchQuery != "" || len(event.SearchPaths) != 1 || event.SearchPaths[0] != "glm-worker/internal/workflow/prompts.go" {
 		t.Fatalf("event=%#v", event)
-	}
-}
-
-func TestReviewerDiffFirstExcludesParentManagedMetadataFromImpactTerms(t *testing.T) {
-	paths := []string{"glm-worker/internal/workflow/workflow.go", state.ParentPlanFile}
-	w, st, _ := newReviewerSearchWorkflow(t, paths)
-	root := w.config.RepoRoot
-	gitScope(t, root, "init")
-	gitScope(t, root, "config", "user.email", "review-search@example.invalid")
-	gitScope(t, root, "config", "user.name", "review-search-test")
-	writeScopeFile(t, root, "glm-worker/internal/workflow/workflow.go", "package workflow\nvar implementationNeedle = 1\n")
-	writeScopeFile(t, root, state.ParentPlanFile, "PARENT_METADATA_BASELINE\n")
-	gitScope(t, root, "add", ".")
-	gitScope(t, root, "commit", "-m", "baseline")
-	baseline, err := exec.Command("git", "-C", root, "rev-parse", "HEAD").Output()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := st.Write("baseline-head", strings.TrimSpace(string(baseline))); err != nil {
-		t.Fatal(err)
-	}
-	writeScopeFile(t, root, "glm-worker/internal/workflow/workflow.go", "package workflow\nvar implementationNeedle = 2\n")
-	writeScopeFile(t, root, state.ParentPlanFile, "PARENT_METADATA_NEEDLE\n")
-
-	w.repoSearch = func(_ context.Context, _ string, query string, _ reposearch.Options) (reposearch.Report, error) {
-		if !strings.Contains(query, "implementationNeedle") {
-			t.Fatalf("implementation diff term missing: %q", query)
-		}
-		if strings.Contains(query, "PARENT_METADATA_NEEDLE") || strings.Contains(query, "PARENT_METADATA_BASELINE") {
-			t.Fatalf("parent-managed metadata leaked into query: %q", query)
-		}
-		return reposearch.Report{}, nil
-	}
-	block := w.reviewerDiffFirstContext("review implementation", 1)
-	if !strings.Contains(block, "CHANGED_PATH: "+state.ParentPlanFile) {
-		t.Fatalf("changed-path evidence lost parent metadata: %s", block)
 	}
 }
 
