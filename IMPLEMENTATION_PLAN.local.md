@@ -16,6 +16,7 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 - `IMPLEMENTATION_TASKS/finalize-check-module-cwd.md`
 - `IMPLEMENTATION_TASKS/finalize-check-validation-reuse.md`
 - `IMPLEMENTATION_TASKS/reviewer-repo-search-parent-metadata.md`
+- `IMPLEMENTATION_TASKS/normal-push-preflight-reduction.md`
 - `IMPLEMENTATION_TASKS/bundle-task-diff-committed-files.md`
 - `IMPLEMENTATION_TASKS/021-conditional-improvements.md`
 - `IMPLEMENTATION_TASKS/022-final-verification.md`
