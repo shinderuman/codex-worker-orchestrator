@@ -12,6 +12,17 @@ import (
 	"strings"
 )
 
+type Result struct {
+	Status            string `json:"status"`
+	Action            string `json:"action"`
+	RepoRoot          string `json:"repo_root"`
+	ConfigPath        string `json:"config_path"`
+	GitExcluded       bool   `json:"git_excluded"`
+	RequiresNewThread bool   `json:"requires_new_thread"`
+	DesktopRestart    bool   `json:"desktop_restart_required"`
+	Detail            string `json:"detail,omitempty"`
+}
+
 const (
 	ProjectConfigRelativePath = ".codex/config.toml"
 	managedMarker             = "# managed-by: codex-worker-orchestrator glm-codex-context v1"
@@ -23,23 +34,16 @@ var managedConfig = []byte(managedMarker + `
 # This local project profile reduces Codex Desktop context for glm-worker tasks.
 # Start a new Codex thread after enabling or disabling it.
 
+include_apps_instructions = false
+include_collaboration_mode_instructions = false
+
 [skills]
 include_instructions = false
 
 [features]
+apps = false
 plugins = false
 `)
-
-type Result struct {
-	Status            string `json:"status"`
-	Action            string `json:"action"`
-	RepoRoot          string `json:"repo_root"`
-	ConfigPath        string `json:"config_path"`
-	GitExcluded       bool   `json:"git_excluded"`
-	RequiresNewThread bool   `json:"requires_new_thread"`
-	DesktopRestart    bool   `json:"desktop_restart_required"`
-	Detail            string `json:"detail,omitempty"`
-}
 
 func ManagedConfigContent() []byte {
 	return append([]byte(nil), managedConfig...)
@@ -114,7 +118,10 @@ func enable(root string) (Result, error) {
 	if err != nil {
 		if created {
 			if removeErr := removeManagedConfig(configPath); removeErr != nil {
-				return Result{}, fmt.Errorf("configure local Git exclude: %w; rollback project config: %v", err, removeErr)
+				return Result{}, errors.Join(
+					fmt.Errorf("configure local Git exclude: %w", err),
+					fmt.Errorf("rollback project config: %w", removeErr),
+				)
 			}
 		}
 		return Result{}, fmt.Errorf("configure local Git exclude: %w", err)
@@ -161,7 +168,7 @@ func disable(root string) (Result, error) {
 		GitExcluded:       excluded,
 		RequiresNewThread: true,
 		DesktopRestart:    false,
-		Detail:            "start a new Codex thread to return to normal inherited Skills/Plugins behavior",
+		Detail:            "start a new Codex thread to return to normal inherited Skills/Plugins/Apps/collaboration behavior",
 	}, nil
 }
 
@@ -206,13 +213,13 @@ func writeManagedConfig(path string) error {
 		return fmt.Errorf("create project config temp file: %w", err)
 	}
 	tmpPath := tmp.Name()
-	defer os.Remove(tmpPath)
+	defer func() { _ = os.Remove(tmpPath) }()
 	if _, err := tmp.Write(managedConfig); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return fmt.Errorf("write project config: %w", err)
 	}
 	if err := tmp.Chmod(0o644); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return fmt.Errorf("chmod project config: %w", err)
 	}
 	if err := tmp.Close(); err != nil {
@@ -265,15 +272,18 @@ func ensureGitExclude(root string) (bool, error) {
 		return false, err
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return false, err
+		return false, fmt.Errorf("create Git info directory: %w", err)
 	}
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("open local Git exclude: %w", err)
 	}
-	defer file.Close()
 	if _, err := fmt.Fprintf(file, "\n%s\n%s\n", excludeMarker, excludePattern); err != nil {
-		return false, err
+		_ = file.Close()
+		return false, fmt.Errorf("write local Git exclude: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		return false, fmt.Errorf("close local Git exclude: %w", err)
 	}
 	return gitExcluded(root)
 }
@@ -288,7 +298,7 @@ func removeGitExclude(root string) error {
 		return nil
 	}
 	if err != nil {
-		return err
+		return fmt.Errorf("read local Git exclude: %w", err)
 	}
 	lines := strings.Split(string(content), "\n")
 	out := make([]string, 0, len(lines))
@@ -303,7 +313,10 @@ func removeGitExclude(root string) error {
 	if next == string(content) {
 		return nil
 	}
-	return os.WriteFile(path, []byte(next), 0o644)
+	if err := os.WriteFile(path, []byte(next), 0o644); err != nil {
+		return fmt.Errorf("write local Git exclude: %w", err)
+	}
+	return nil
 }
 
 func gitExcluded(root string) (bool, error) {
