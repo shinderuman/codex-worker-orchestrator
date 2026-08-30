@@ -64,7 +64,7 @@ func (w *Workflow) guardRecoveryCheckpoint(
 	checkpoint.ProviderUnavailableProbes = 0
 	checkpoint.ProviderUnavailableStartedAt = time.Time{}
 	checkpoint.UserInterrupted = false
-	checkpoint.CompletedResult = w.completedGuardResult(checkpoint, execution.runResult)
+	checkpoint.CompletedResult = w.completedGuardWorkerResult(checkpoint, execution.runResult)
 	checkpoint.StopParentFiles = captureStopParentFiles(w.config.RepoRoot)
 	captureGuardRefEvidence(&checkpoint, execution.runErr)
 	return checkpoint
@@ -138,12 +138,15 @@ func (w *Workflow) guardRecoverableError(checkpoint state.ResumeCheckpoint) erro
 	}
 }
 
-func (w *Workflow) completedGuardResult(checkpoint state.ResumeCheckpoint, runResult runner.RunResult) *packet.Result {
+func (w *Workflow) completedGuardWorkerResult(checkpoint state.ResumeCheckpoint, runResult runner.RunResult) *packet.Result {
+	if checkpoint.Stage != state.ResumeStageWorker || checkpoint.Role != state.WorkerRole {
+		return nil
+	}
 	result, err := w.parseModelCallResult(checkpoint, runResult)
 	if err != nil {
 		return nil
 	}
-	if err := w.validateCompletedGuardResult(checkpoint, result); err != nil {
+	if err := w.validateCompletedGuardResult(result); err != nil {
 		return nil
 	}
 	return &result
@@ -237,24 +240,15 @@ func (w *Workflow) verifyGuardRecoveryHead(checkpoint state.ResumeCheckpoint) er
 }
 
 func (w *Workflow) guardRecoveryResultReusable(checkpoint state.ResumeCheckpoint) bool {
-	if checkpoint.CompletedResult == nil {
+	if checkpoint.Stage != state.ResumeStageWorker || checkpoint.CompletedResult == nil {
 		return false
 	}
-	return w.validateCompletedGuardResult(checkpoint, *checkpoint.CompletedResult) == nil
+	return w.validateCompletedGuardResult(*checkpoint.CompletedResult) == nil
 }
 
-func (w *Workflow) validateCompletedGuardResult(checkpoint state.ResumeCheckpoint, result packet.Result) error {
-	switch checkpoint.Role {
-	case state.WorkerRole:
-		if err := packet.ValidateWorkerResult(result); err != nil {
-			return err
-		}
-	case state.ReviewerRole:
-		if err := packet.ValidateReviewerResult(result); err != nil {
-			return err
-		}
-	default:
-		return fmt.Errorf("guard recovery result has unknown role: %s", checkpoint.Role)
+func (w *Workflow) validateCompletedGuardResult(result packet.Result) error {
+	if err := packet.ValidateWorkerResult(result); err != nil {
+		return err
 	}
 	taskID, err := w.state.TaskID()
 	if err != nil {
