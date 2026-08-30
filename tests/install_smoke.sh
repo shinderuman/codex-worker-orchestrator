@@ -9,7 +9,7 @@ repo="$tmp/repo"
 home="$tmp/home"
 mkdir -p "$repo" "$home/.codex" "$home/.claude" "$tmp/bin"
 rsync -a --exclude .git "$source_root/" "$repo/"
-git -C "$repo" init -q
+git -C "$repo" init -q -b main
 git -C "$repo" add -A
 git -C "$repo" -c user.name=install-smoke -c user.email=install-smoke@example.invalid commit -qm fixture
 repo_revision=$(git -C "$repo" rev-parse HEAD)
