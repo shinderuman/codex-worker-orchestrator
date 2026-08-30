@@ -373,42 +373,69 @@ func (w *Workflow) convergeWorkerRuleActivation(
 	result packet.Result,
 	activated map[workerRule]struct{},
 ) (packet.Result, error) {
-	for round := 1; ; round++ {
-		stopped, err := w.stopForQualitySurfaceApproval(checkpoint, result)
-		if err != nil || stopped {
-			return result, err
-		}
-		if result.Status != packet.StatusImplemented {
-			return result, nil
-		}
-
-		required, err := w.currentRequiredWorkerRules()
-		if err != nil {
-			return packet.Result{}, err
-		}
-		missing := missingWorkerRules(required, activated)
-		if len(missing) == 0 {
-			result, err = applyCheckpointParentValidation(checkpoint, result)
-			if err != nil {
-				return packet.Result{}, err
-			}
-			return w.convergeParentValidation(checkpoint, result)
-		}
-		correction, err := w.ruleActivationCorrectionCheckpoint(checkpoint, missing, round)
-		if err != nil {
-			return packet.Result{}, err
-		}
-		for _, rule := range missing {
-			activated[rule] = struct{}{}
-		}
-		w.resetInstructionReadObservation()
-		result, err = w.runModel(correction)
-		if err != nil {
-			return packet.Result{}, err
-		}
-		mergeWorkerRuleSets(activated, w.observedWorkerRules())
-		checkpoint = correction
+	stopped, err := w.stopForQualitySurfaceApproval(checkpoint, result)
+	if err != nil || stopped {
+		return result, err
 	}
+	return w.convergeApprovedWorkerRules(checkpoint, result, activated, 1)
+}
+
+func (w *Workflow) convergeApprovedWorkerRules(
+	checkpoint state.ResumeCheckpoint,
+	result packet.Result,
+	activated map[workerRule]struct{},
+	round int,
+) (packet.Result, error) {
+	if result.Status != packet.StatusImplemented {
+		return result, nil
+	}
+	required, err := w.currentRequiredWorkerRules()
+	if err != nil {
+		return packet.Result{}, err
+	}
+	missing := missingWorkerRules(required, activated)
+	if len(missing) == 0 {
+		return w.finishWorkerRuleConvergence(checkpoint, result)
+	}
+	return w.runWorkerRuleCorrection(checkpoint, result, activated, missing, round)
+}
+
+func (w *Workflow) finishWorkerRuleConvergence(
+	checkpoint state.ResumeCheckpoint,
+	result packet.Result,
+) (packet.Result, error) {
+	result, err := applyCheckpointParentValidation(checkpoint, result)
+	if err != nil {
+		return packet.Result{}, err
+	}
+	return w.convergeParentValidation(checkpoint, result)
+}
+
+func (w *Workflow) runWorkerRuleCorrection(
+	checkpoint state.ResumeCheckpoint,
+	_ packet.Result,
+	activated map[workerRule]struct{},
+	missing []workerRule,
+	round int,
+) (packet.Result, error) {
+	correction, err := w.ruleActivationCorrectionCheckpoint(checkpoint, missing, round)
+	if err != nil {
+		return packet.Result{}, err
+	}
+	for _, rule := range missing {
+		activated[rule] = struct{}{}
+	}
+	w.resetInstructionReadObservation()
+	result, err := w.runModel(correction)
+	if err != nil {
+		return packet.Result{}, err
+	}
+	mergeWorkerRuleSets(activated, w.observedWorkerRules())
+	stopped, err := w.stopForQualitySurfaceApproval(correction, result)
+	if err != nil || stopped {
+		return result, err
+	}
+	return w.convergeApprovedWorkerRules(correction, result, activated, round+1)
 }
 
 func (w *Workflow) ruleActivationCorrectionCheckpoint(
