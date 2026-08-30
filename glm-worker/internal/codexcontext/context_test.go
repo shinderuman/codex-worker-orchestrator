@@ -25,6 +25,17 @@ func TestEnableDisableManagedProjectConfig(t *testing.T) {
 	if !bytes.Equal(content, ManagedConfigContent()) {
 		t.Fatalf("unexpected managed config:\n%s", content)
 	}
+	for _, setting := range []string{
+		"include_apps_instructions = false",
+		"include_collaboration_mode_instructions = false",
+		"include_instructions = false",
+		"apps = false",
+		"plugins = false",
+	} {
+		if !strings.Contains(string(content), setting) {
+			t.Fatalf("managed config is missing %q:\n%s", setting, content)
+		}
+	}
 	if status := gitOutput(t, repo, "status", "--porcelain", "--untracked-files=all"); status != "" {
 		t.Fatalf("managed project config polluted git status: %q", status)
 	}
