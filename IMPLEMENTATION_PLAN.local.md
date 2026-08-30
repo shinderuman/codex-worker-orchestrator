@@ -8,11 +8,10 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/bundle-task-diff-committed-files.md`
+- `IMPLEMENTATION_TASKS/bundle-task-analysis-index.md`
 
 ## NEXT（優先順）
 
-- `IMPLEMENTATION_TASKS/bundle-task-analysis-index.md`
 - `IMPLEMENTATION_TASKS/021-conditional-improvements.md`
 - `IMPLEMENTATION_TASKS/022-final-verification.md`
 
@@ -32,5 +31,6 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 ## 現在のGit境界
 
 - branch: `main`
+- bundle task diff修正は独立review・Sol採否・current full test/raceを通過してcommit済み。完了taskをHistoryへ移し、bundle task analysis indexをACTIVEへ昇格した。ユーザー指定の停止境界に従い、昇格先は未着手のまま次回へ残す。
 - F1-F10 hardening、parent action/handoff、typed parent-capability validation、repo-search、Codex analysis bundle、target-repository lean context、wait instruction削減、actionable containment denial、bounded parent finalization surface、commentlint sandbox-safe launcherはcurrent mainへ統合済み。詳細なcommit・validation・escaped原因は`IMPLEMENTATION_HISTORY.md`を正とする。
 - preserved boundary: machine-readable lifecycle、snapshot/validation authority、parent-managed metadata guard、GLM commit/push禁止、parent Codex semantic authority、normal fast-forward Git safety、Direct Codex対orchestratedのCodex Reduction / Quality Delta最上位評価を維持する。

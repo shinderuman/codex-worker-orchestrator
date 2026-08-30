@@ -74,6 +74,9 @@ func TestBundleCurrentTaskCapturesFreshDiffLiveStateAndProvenance(t *testing.T) 
 	writeBundleFile(t, st.Path("review-current-task.patch"), "stale previous-task diff\n")
 	writeBundleFile(t, filepath.Join(st.Path("."), "quality-gate", "run.log"), "pass\n")
 	writeBundleFile(t, filepath.Join(cfg.RepoRoot, "tracked.txt"), "after\n")
+	writeBundleFile(t, filepath.Join(cfg.RepoRoot, "committed-during-task.txt"), "committed\n")
+	runBundleGit(t, cfg.RepoRoot, "add", "committed-during-task.txt")
+	runBundleGit(t, cfg.RepoRoot, "commit", "-qm", "task change")
 
 	var stdout bytes.Buffer
 	if err := Execute(Command{Mode: ModeBundle}, cfg, nil, &stdout, nil); err != nil {
@@ -94,6 +97,11 @@ func TestBundleCurrentTaskCapturesFreshDiffLiveStateAndProvenance(t *testing.T) 
 	freshDiff := archive["current-state/snapshot/task-diff.patch"]
 	if !bytes.Contains(freshDiff, []byte("+after")) {
 		t.Fatalf("fresh diff missing current tracked change:\n%s", freshDiff)
+	}
+	if !bytes.Contains(freshDiff, []byte("new file mode")) ||
+		!bytes.Contains(freshDiff, []byte("committed-during-task.txt")) ||
+		!bytes.Contains(freshDiff, []byte("+committed")) {
+		t.Fatalf("fresh diff missing task-created committed file:\n%s", freshDiff)
 	}
 	if _, ok := archive["task/events/"+taskID+".live.json"]; !ok {
 		t.Fatal("current live status is missing")

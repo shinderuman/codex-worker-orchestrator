@@ -137,8 +137,16 @@ esac
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", workerDir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	t.Setenv("EXPECTED_VALIDATION_DIR", moduleDir)
-	t.Setenv("EXPECTED_REPO_ROOT", repo)
+	resolvedModuleDir, err := filepath.EvalSymlinks(moduleDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolvedRepo, err := filepath.EvalSymlinks(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("EXPECTED_VALIDATION_DIR", resolvedModuleDir)
+	t.Setenv("EXPECTED_REPO_ROOT", resolvedRepo)
 	previous, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)

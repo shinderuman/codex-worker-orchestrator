@@ -16,6 +16,7 @@ func TestQualitySurfaceChangeStopsBeforeReviewer(t *testing.T) {
 	r := &scriptedRunner{steps: []runnerStep{{structured: implementedPacket("initial")}}}
 	var out bytes.Buffer
 	w := newWorkflowTWithOutput(t, st, r, &out)
+	runQualityGateGit(t, w.config.RepoRoot, "init")
 	calls := 0
 	w.captureQualitySurface = func(string) (string, error) {
 		calls++

@@ -33,7 +33,7 @@ func Capture(repoRoot string, st *state.StateStore) ([]byte, bool, error) {
 	if err != nil {
 		return nil, false, fmt.Errorf("capture task diff: %w", err)
 	}
-	diff, err = appendUntrackedDiff(repoRoot, st, diff)
+	diff, err = appendTaskCreatedDiff(repoRoot, indexPath, st, diff)
 	if err != nil {
 		return nil, false, err
 	}
@@ -89,7 +89,7 @@ func reconstructBaselineIndex(repoRoot string, base baseline) (string, func(), e
 	return indexPath, cleanup, nil
 }
 
-func appendUntrackedDiff(repoRoot string, st *state.StateStore, diff []byte) ([]byte, error) {
+func appendTaskCreatedDiff(repoRoot, indexPath string, st *state.StateStore, diff []byte) ([]byte, error) {
 	if !st.Exists("baseline-untracked") {
 		return diff, nil
 	}
@@ -97,11 +97,66 @@ func appendUntrackedDiff(repoRoot string, st *state.StateStore, diff []byte) ([]
 	if err != nil {
 		return nil, fmt.Errorf("read baseline untracked paths: %w", err)
 	}
-	untracked, err := taskCreatedUntrackedDiff(repoRoot, baselineUntracked)
+	tracked, err := taskCreatedTrackedPaths(repoRoot, indexPath, baselineUntracked)
 	if err != nil {
 		return nil, err
 	}
-	return append(diff, untracked...), nil
+	untracked, err := taskCreatedUntrackedPaths(repoRoot, baselineUntracked)
+	if err != nil {
+		return nil, err
+	}
+	var result bytes.Buffer
+	result.Write(diff)
+	if err := writeNewFilePatches(repoRoot, &result, tracked); err != nil {
+		return nil, err
+	}
+	if err := writeNewFilePatches(repoRoot, &result, untracked); err != nil {
+		return nil, err
+	}
+	return result.Bytes(), nil
+}
+
+func taskCreatedTrackedPaths(repoRoot, indexPath string, baselineRaw []byte) ([]string, error) {
+	currentRaw, err := exec.Command("git", "-C", repoRoot, "ls-files", "-z").Output()
+	if err != nil {
+		return nil, fmt.Errorf("list current tracked files: %w", err)
+	}
+	baselineIndexRaw, err := gitWithIndex(repoRoot, indexPath, nil, "ls-files", "-z")
+	if err != nil {
+		return nil, err
+	}
+	baselineIndex := nulPathSet(baselineIndexRaw)
+	baselineUntracked := nulPathSet(baselineRaw)
+	var result []string
+	for _, filePath := range splitNul(currentRaw) {
+		if _, ok := baselineIndex[filePath]; ok {
+			continue
+		}
+		if _, ok := baselineUntracked[filePath]; ok {
+			continue
+		}
+		if !worktreePathPresent(repoRoot, filePath) {
+			continue
+		}
+		result = append(result, filePath)
+	}
+	return result, nil
+}
+
+func taskCreatedUntrackedPaths(repoRoot string, baselineRaw []byte) ([]string, error) {
+	currentRaw, err := exec.Command("git", "-C", repoRoot, "ls-files", "-z", "--others", "--exclude-standard").Output()
+	if err != nil {
+		return nil, fmt.Errorf("list current untracked files: %w", err)
+	}
+	existed := nulPathSet(baselineRaw)
+	var result []string
+	for _, filePath := range splitNul(currentRaw) {
+		if _, ok := existed[filePath]; ok {
+			continue
+		}
+		result = append(result, filePath)
+	}
+	return result, nil
 }
 
 func gitWithIndex(repoRoot, indexPath string, stdin []byte, args ...string) ([]byte, error) {
@@ -117,27 +172,18 @@ func gitWithIndex(repoRoot, indexPath string, stdin []byte, args ...string) ([]b
 	return output, nil
 }
 
-func taskCreatedUntrackedDiff(repoRoot string, baselineRaw []byte) ([]byte, error) {
-	currentRaw, err := exec.Command("git", "-C", repoRoot, "ls-files", "-z", "--others", "--exclude-standard").Output()
-	if err != nil {
-		return nil, fmt.Errorf("list current untracked files: %w", err)
-	}
-	existed := nulPathSet(baselineRaw)
-	var result bytes.Buffer
-	for _, filePath := range splitNul(currentRaw) {
-		if _, ok := existed[filePath]; ok {
-			continue
-		}
-		patch, err := untrackedFilePatch(repoRoot, filePath)
+func writeNewFilePatches(repoRoot string, result *bytes.Buffer, paths []string) error {
+	for _, filePath := range paths {
+		patch, err := newFilePatch(repoRoot, filePath)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		result.Write(patch)
 	}
-	return result.Bytes(), nil
+	return nil
 }
 
-func untrackedFilePatch(repoRoot, filePath string) ([]byte, error) {
+func newFilePatch(repoRoot, filePath string) ([]byte, error) {
 	cmd := exec.Command("git", "-C", repoRoot, "diff", "--no-index", "--binary", "--", "/dev/null", filePath)
 	output, err := cmd.CombinedOutput()
 	if err == nil {
@@ -147,7 +193,12 @@ func untrackedFilePatch(repoRoot, filePath string) ([]byte, error) {
 	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
 		return output, nil
 	}
-	return nil, fmt.Errorf("capture untracked task diff for %s: %w: %s", filePath, err, strings.TrimSpace(string(output)))
+	return nil, fmt.Errorf("capture new file task diff for %s: %w: %s", filePath, err, strings.TrimSpace(string(output)))
+}
+
+func worktreePathPresent(repoRoot, filePath string) bool {
+	info, err := os.Lstat(filepath.Join(repoRoot, filePath))
+	return err == nil && !info.IsDir()
 }
 
 func nulPathSet(raw []byte) map[string]struct{} {

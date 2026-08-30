@@ -121,6 +121,7 @@ func TestQualitySurfaceApprovalStopsAgainAfterLaterOutOfScopeMutation(t *testing
 	gitScope(t, repo, "init")
 	gitScope(t, repo, "config", "user.email", "quality-restop@example.invalid")
 	gitScope(t, repo, "config", "user.name", "quality-restop-test")
+	writeScopeFile(t, repo, "glm-worker/go.mod", "module github.com/shinderuman/codex-worker-orchestrator/glm-worker\n")
 	writeScopeFile(t, repo, "commentlint", "#!/bin/sh\nexit 0\n")
 	gitScope(t, repo, "add", ".")
 	gitScope(t, repo, "commit", "-m", "baseline")
