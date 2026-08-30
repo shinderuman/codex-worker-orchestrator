@@ -1,0 +1,27 @@
+name: tmp do140
+
+on:
+  push:
+    branches:
+      - gpt/do-140-code-mode-wait
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Read Go version
+        id: go-version
+        run: |
+          GO_VERSION=$(awk -F': ' '$1 == "go" { print $2 }' quality-tools.yml)
+          printf 'version=%s\n' "$GO_VERSION" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ steps.go-version.outputs.version }}
+          cache: false
+      - name: Validate wait contract
+        working-directory: glm-worker
+        run: go test ./internal/harnesslint/...
