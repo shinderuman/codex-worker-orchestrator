@@ -12,10 +12,26 @@ import (
 	"strings"
 )
 
+type GitRefState struct {
+	Name     string `json:"name"`
+	ObjectID string `json:"object_id"`
+	Symref   string `json:"symref,omitempty"`
+}
+
+type GitRefChange struct {
+	Name   string       `json:"name"`
+	Before *GitRefState `json:"before,omitempty"`
+	After  *GitRefState `json:"after,omitempty"`
+}
+
 type GitAuthorityGuardError struct {
-	Stage     string
-	Mutations []string
-	Cause     error
+	Stage               string
+	Mutations           []string
+	RefBeforeDigest     string
+	RefAfterDigest      string
+	RefChanges          []GitRefChange
+	RefChangesTruncated bool
+	Cause               error
 }
 
 type gitAuthoritySnapshot struct {
@@ -23,6 +39,7 @@ type gitAuthoritySnapshot struct {
 	head         string
 	symbolicHead string
 	refsDigest   string
+	refs         []GitRefState
 	indexDigest  string
 	configDigest string
 }
@@ -38,6 +55,8 @@ type gitAuthorityGuard struct {
 	metadataPaths []string
 	before        gitAuthoritySnapshot
 }
+
+const maxGitAuthorityRefChanges = 64
 
 func (e *GitAuthorityGuardError) Error() string {
 	parts := []string{"git authority guard failed", e.Stage}
@@ -132,7 +151,13 @@ func (g *gitAuthorityGuard) verify() error {
 	if len(snapshotMutations) > 0 {
 		stage = "after-call-mutation"
 	}
-	return &GitAuthorityGuardError{Stage: stage, Mutations: mutations}
+	guardErr := &GitAuthorityGuardError{Stage: stage, Mutations: mutations}
+	if g.before.refsDigest != after.refsDigest {
+		guardErr.RefBeforeDigest = g.before.refsDigest
+		guardErr.RefAfterDigest = after.refsDigest
+		guardErr.RefChanges, guardErr.RefChangesTruncated = gitAuthorityRefChanges(g.before.refs, after.refs)
+	}
+	return guardErr
 }
 
 func gitAuthoritySnapshotMutations(before, after gitAuthoritySnapshot) []string {
@@ -153,6 +178,50 @@ func gitAuthoritySnapshotMutations(before, after gitAuthoritySnapshot) []string 
 		mutations = append(mutations, "local-config")
 	}
 	return mutations
+}
+
+func gitAuthorityRefChanges(before, after []GitRefState) ([]GitRefChange, bool) {
+	beforeByName := make(map[string]GitRefState, len(before))
+	afterByName := make(map[string]GitRefState, len(after))
+	names := make(map[string]struct{}, len(before)+len(after))
+	for _, ref := range before {
+		beforeByName[ref.Name] = ref
+		names[ref.Name] = struct{}{}
+	}
+	for _, ref := range after {
+		afterByName[ref.Name] = ref
+		names[ref.Name] = struct{}{}
+	}
+	ordered := make([]string, 0, len(names))
+	for name := range names {
+		ordered = append(ordered, name)
+	}
+	sort.Strings(ordered)
+
+	changes := make([]GitRefChange, 0)
+	truncated := false
+	for _, name := range ordered {
+		beforeRef, hadBefore := beforeByName[name]
+		afterRef, hasAfter := afterByName[name]
+		if hadBefore && hasAfter && beforeRef == afterRef {
+			continue
+		}
+		if len(changes) == maxGitAuthorityRefChanges {
+			truncated = true
+			break
+		}
+		change := GitRefChange{Name: name}
+		if hadBefore {
+			value := beforeRef
+			change.Before = &value
+		}
+		if hasAfter {
+			value := afterRef
+			change.After = &value
+		}
+		changes = append(changes, change)
+	}
+	return changes, truncated
 }
 
 func (g *gitAuthorityGuard) cleanup() {
@@ -182,6 +251,10 @@ func captureGitAuthoritySnapshot(realGit, repoRoot string) (gitAuthoritySnapshot
 	if err != nil {
 		return gitAuthoritySnapshot{}, err
 	}
+	parsedRefs, err := parseGitAuthorityRefs(refs)
+	if err != nil {
+		return gitAuthoritySnapshot{}, err
+	}
 	index, err := gitAuthorityOutput(realGit, repoRoot, "ls-files", "-s", "-z")
 	if err != nil {
 		return gitAuthoritySnapshot{}, err
@@ -195,9 +268,39 @@ func captureGitAuthoritySnapshot(realGit, repoRoot string) (gitAuthoritySnapshot
 		head:         strings.TrimSpace(string(head)),
 		symbolicHead: strings.TrimSpace(string(symbolicHead)),
 		refsDigest:   gitAuthorityDigest(refs),
+		refs:         parsedRefs,
 		indexDigest:  gitAuthorityDigest(index),
 		configDigest: gitAuthorityDigest(localConfig),
 	}, nil
+}
+
+func parseGitAuthorityRefs(data []byte) ([]GitRefState, error) {
+	text := strings.TrimSuffix(string(data), "\n")
+	if text == "" {
+		return []GitRefState{}, nil
+	}
+	lines := strings.Split(text, "\n")
+	refs := make([]GitRefState, 0, len(lines))
+	for _, line := range lines {
+		parts := strings.Split(line, "\x00")
+		if len(parts) != 3 || parts[0] == "" || parts[1] == "" {
+			return nil, fmt.Errorf("git for-each-ref output is malformed")
+		}
+		refs = append(refs, GitRefState{Name: parts[0], ObjectID: parts[1], Symref: parts[2]})
+	}
+	return refs, nil
+}
+
+func CaptureGitAuthorityRefDigest(repoRoot string) (string, error) {
+	realGit, err := exec.LookPath("git")
+	if err != nil {
+		return "", fmt.Errorf("resolve git for ref capture: %w", err)
+	}
+	refs, err := gitAuthorityOutput(realGit, repoRoot, "for-each-ref", "--sort=refname", "--format=%(refname)%00%(objectname)%00%(symref)")
+	if err != nil {
+		return "", err
+	}
+	return gitAuthorityDigest(refs), nil
 }
 
 func gitAuthorityOutput(realGit, repoRoot string, args ...string) ([]byte, error) {
