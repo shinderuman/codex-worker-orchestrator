@@ -1,6 +1,6 @@
 # GLM実行と待機
 
-`glm-worker`を実行または待機する場合だけ適用する。目的はSol Highのsemantic判断を維持しながら、transport・polling・deterministic caller作業によるトークン消費を減らすこと。
+`glm-worker`または`glm-parent-action`を実行・待機する場合だけ適用する。目的はSol Highのsemantic判断を維持しながら、transport・polling・deterministic caller作業によるトークン消費を減らすこと。
 
 ## 実行
 
@@ -31,19 +31,24 @@
 
 通常の親lifecycle操作は`glm-parent-action`を使う。親CodexはUTF-8 byte長、SHA-256、TTY、raw mode、`stdin_ready`、exactly-once `write_stdin`、shell quotingを扱わない。これらはrepository-owned wrapperと既存`glm-worker --decision-stdin`/`--fix-stdin`内部の責務である。
 
-### payloadを持つaction
+### 新規task開始
 
-新規task・decision・fixは次の固定手順だけを使う。
+- Plan管理repositoryでcurrent ACTIVE taskを開始するときは、sandbox外で`glm-parent-action start`を1回だけ実行する。wrapperは固定semantic requestを既存`glm-worker` new-task admissionへ渡し、ACTIVE task本文を要求authorityとして使わせる。
+- 新規task開始のためにpayload fileを作らず、USER_REQUESTへACTIVE task本文を複製しない。
 
-1. sandbox内で`glm-parent-action prepare start|decision|fix`を実行する。JSONの`token`とrepository内の`path`を受け取る。
-2. 返された既存staging fileのplaceholderを、Codex標準の`apply_patch`でsemantic payload本文へ置換する。`cat`・heredoc・shell redirect・Python等の別write手段へ切り替えない。
-3. state/model変更を行う実actionはsandbox外で`glm-parent-action start <token>`、`glm-parent-action decision <token>`、または`glm-parent-action fix <token> [--origin <値>] [--accepted-scope current-diff]`を実行する。
+### decision/fix payload
+
+decision・fixだけ次の固定手順を使う。
+
+1. sandbox内で`glm-parent-action prepare decision|fix`を実行し、JSONの`token`とrepository内の`path`を受け取る。
+2. 返された既存staging fileのplaceholderをCodex標準の`apply_patch`でsemantic payload本文へ置換する。`cat`・heredoc・shell redirect・Python等の別write手段へ切り替えない。
+3. state/model変更を行う実actionはsandbox外で`glm-parent-action decision <token>`または`glm-parent-action fix <token> [--origin <値>] [--accepted-scope current-diff]`を実行する。
 4. 実action開始後は`~/.codex/instructions/glm-wait.md`に従って同じprocessを最大待機境界で待つ。
 
 - staging pathはrepository root直下の`.glm-worker-parent-actions/`だけで、prepareがcrypto-random token付きregular fileを生成する。実actionはfile pathを受け取らずtokenだけを受け取る。親が任意pathを指定してsandbox外のprocessへ読ませる経路を作らない。
 - staging fileはGit管理外で、wrapperが内容をmemoryへ読み込んだ後、`glm-worker`を起動する前にconsume/removeする。action失敗後にpayloadを再送する必要があれば、新しいprepareからやり直す。
 - placeholder未置換、token形式不正、symlink化されたstaging directory/file、1 MiB超payloadはstate変更・model call前にfail closedする。
-- `start`本文はworkerへのsemantic task request、`decision`本文はSol判断、`fix`本文は修正指示そのものとし、wrapperが内容を生成・要約・書換えしない。
+- `decision`本文はSol判断、`fix`本文は修正指示そのものとし、wrapperが内容を生成・要約・書換えしない。
 - fixの`--origin`は`codex-review|glm-reviewer|user-amendment|external-review|metadata-repair`だけ、`--accepted-scope`は`current-diff`だけを許す。wrapperは同じ値を既存glm-worker admissionへ渡す。
 - direct `glm-worker --decision-stdin`/`--fix-stdin`はdebug/recovery用に残すが通常親workflowでは使わない。旧byte-count/READY/write_stdin choreographyへfallbackしない。
 
