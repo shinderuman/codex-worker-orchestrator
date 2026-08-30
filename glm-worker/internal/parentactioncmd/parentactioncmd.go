@@ -89,7 +89,11 @@ func execute(cfg config.AppConfig, args []string, stdout, stderr io.Writer) erro
 		if len(args) != 2 {
 			return fmt.Errorf("usage: glm-parent-action finalize-check <go-test|go-test-race>")
 		}
-		return runFinalizationCheck(cfg.RepoRoot, args[1], stdout)
+		validationDir, err := os.Getwd()
+		if err != nil {
+			return fmt.Errorf("resolve finalize-check working directory: %w", err)
+		}
+		return runFinalizationCheck(cfg.RepoRoot, validationDir, args[1], stdout)
 	default:
 		return fmt.Errorf("%s", usage)
 	}
@@ -208,9 +212,9 @@ func runWorker(repoRoot string, args []string, stdin io.Reader, stdout, stderr i
 	return runResolvedWorker(worker, repoRoot, args, stdin, stdout, stderr, extraEnv)
 }
 
-func runResolvedWorker(worker, repoRoot string, args []string, stdin io.Reader, stdout, stderr io.Writer, extraEnv []string) error {
+func runResolvedWorker(worker, workingDir string, args []string, stdin io.Reader, stdout, stderr io.Writer, extraEnv []string) error {
 	command := exec.Command(worker, args...)
-	command.Dir = repoRoot
+	command.Dir = workingDir
 	command.Env = append(os.Environ(), extraEnv...)
 	command.Stdin = stdin
 	command.Stdout = stdout
