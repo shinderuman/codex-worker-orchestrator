@@ -153,6 +153,12 @@ task完了時は、必要証跡とescaped原因をHistoryへ追加し、task fil
 - findingがあるrunは親taskへの送信成功前にcheckpointを進めず、送信失敗時は次回runで最後の成功地点からcatch upする。finding 0件は親taskを起こさずcheckpointだけを正常更新できる
 - scheduler移行・prompt変更の確認だけを理由にGreptile CLIを実行してcreditを消費せず、旧taskと新taskへautomationを二重登録しない
 
+## repository automation authority
+
+- ユーザーは親Codexがこのrepositoryに属するCodex app automationを作成・更新・削除することを恒久的に許可している。rate-limit自動再開、Codex limit wake、review scheduling等、現在taskまたはtracked repository workflowの実行に必要なautomationは、automation単位の追加確認を要求せず管理してよい
+- automation authorityはautomationのlifecycle管理だけを許可する。automation promptが後で実行できる操作は、その発火時に適用されるユーザー指示とrepository authorityのscopeを超えない。別repository、force/non-fast-forward Git操作、credential操作、購入、または無関係な外部変更へ拡張しない
+- 一回限りの再開automationは保存済みtask ID・同一checkout・resume可能stateを発火時に再検証し、条件不一致ならresumeせず削除または停止する。重複予約を作らず、完了・別state移行後は不要なautomationを削除または停止する
+
 ## machine-only data原則
 
 glm-worker/Codex/GLMだけが生成・消費するmachine dataを長期公開APIとして扱わない。旧parser、migration、fallback、deprecated推定、version bridge、dual protocolを「一応読める」だけで恒久追加しない。current schema validationは厳格に保ち、old versionは用途に応じreject/skip/reset/rebuild/delete/resume不能を選ぶ。active task保護と恒久互換を混同しない。

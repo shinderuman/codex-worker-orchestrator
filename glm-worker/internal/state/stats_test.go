@@ -317,3 +317,107 @@ func mergeInt64Test(dst, src map[string]int64) map[string]int64 {
 	}
 	return dst
 }
+
+func TestSetParentCodexIdentityPersistsValidatesAndFailsClosed(t *testing.T) {
+	st := &StateStore{dir: t.TempDir()}
+	taskID, err := st.StartNewTask()
+	if err != nil {
+		t.Fatal(err)
+	}
+	threadID := "01a0463c-d477-7410-9efd-cb34ff2e0b0e"
+	sessionID := "01a0463c-d477-7410-9efd-cb34ff2e0b0e"
+	if err := st.SetParentCodexIdentity(threadID, sessionID); err != nil {
+		t.Fatal(err)
+	}
+	stats, err := st.CurrentTaskStats()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.ParentCodexThreadID != threadID || stats.ParentCodexSessionID != sessionID || stats.TaskID != taskID {
+		t.Fatalf("identity = %#v", stats)
+	}
+
+	if err := st.SetParentCodexIdentity(threadID, sessionID); err != nil {
+		t.Fatalf("同一identityの再保存が失敗しました: %v", err)
+	}
+
+	if err := st.SetParentCodexIdentity("01a0244a-4ee4-7e71-b2e1-dec3bdda2120", sessionID); err == nil {
+		t.Fatal("矛盾するidentityを上書きしました")
+	}
+	after, err := st.CurrentTaskStats()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.ParentCodexThreadID != threadID {
+		t.Fatalf("fail closed後のidentity = %s", after.ParentCodexThreadID)
+	}
+}
+
+func TestValidUUIDFormatAcceptsCodexThreadIDs(t *testing.T) {
+	for _, id := range []string{
+		"01a0463c-d477-7410-9efd-cb34ff2e0b0e",
+		"019fbc5d-8f7d-7ca2-8be6-19d85487311b",
+	} {
+		if !ValidUUIDFormat(id) {
+			t.Fatalf("Codex thread IDが拒否されました: %s", id)
+		}
+		if ValidGeneratedUUID(id) {
+			t.Fatalf("UUIDv7が生成UUID検証を通りました: %s", id)
+		}
+	}
+	for _, id := range []string{
+		"",
+		"01A0463C-D477-7410-9EFD-CB34FF2E0B0E",
+		"01a0463cd47774109efdcb34ff2e0b0e",
+		"01a0463c-d477-7410-9efd-cb34ff2e0b0g",
+		"01a0463c-d477-7410-9efd-cb34ff2e0b0e-extra",
+	} {
+		if ValidUUIDFormat(id) {
+			t.Fatalf("不正なUUIDが受理されました: %q", id)
+		}
+	}
+}
+
+func TestSetParentCodexIdentityToleratesStatsMirrorFailures(t *testing.T) {
+	threadID := "01a0463c-d477-7410-9efd-cb34ff2e0b0e"
+	sessionID := "01a0463c-d477-7410-9efd-cb34ff2e0b0e"
+
+	t.Run("corrupted stats warn and continue", func(t *testing.T) {
+		st := &StateStore{dir: t.TempDir()}
+		if _, err := st.StartNewTask(); err != nil {
+			t.Fatal(err)
+		}
+		writeCorruptedTaskStats(t, st)
+		warnings, restore := captureStatsWarnings(t)
+		defer restore()
+		if err := st.SetParentCodexIdentity(threadID, sessionID); err != nil {
+			t.Fatalf("破損statsで操作がblockされました: %v", err)
+		}
+		requireStatsWarning(t, warnings, "task_stats")
+	})
+
+	t.Run("missing stats skip without blocking", func(t *testing.T) {
+		st := &StateStore{dir: t.TempDir()}
+		if err := st.SetParentCodexIdentity(threadID, sessionID); err != nil {
+			t.Fatalf("欠損statsで操作がblockされました: %v", err)
+		}
+	})
+
+	t.Run("write failure warns and continues", func(t *testing.T) {
+		root := t.TempDir()
+		st := &StateStore{dir: root}
+		if _, err := st.StartNewTask(); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(root, 0o500); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(root, 0o700) })
+		warnings, restore := captureStatsWarnings(t)
+		defer restore()
+		if err := st.SetParentCodexIdentity(threadID, sessionID); err != nil {
+			t.Fatalf("書込失敗で操作がblockされました: %v", err)
+		}
+		requireStatsWarning(t, warnings, "task_stats")
+	})
+}

@@ -28,6 +28,9 @@ type TaskStats struct {
 	ArchivedAt *time.Time `json:"archived_at,omitempty"`
 	Status     TaskStatus `json:"status"`
 
+	ParentCodexThreadID  string `json:"parent_codex_thread_id,omitempty"`
+	ParentCodexSessionID string `json:"parent_codex_session_id,omitempty"`
+
 	ModelCalls                              int              `json:"model_calls"`
 	ModelCallsByAlias                       map[string]int   `json:"model_calls_by_alias,omitempty"`
 	ModelDurationMSByAlias                  map[string]int64 `json:"model_duration_ms_by_alias,omitempty"`
@@ -87,6 +90,9 @@ const (
 	currentStatsFile = "task-stats.json"
 
 	taskStatsVersion = 3
+
+	ParentActionCodexThreadIDEnv  = "GLM_PARENT_ACTION_CODEX_THREAD_ID"
+	ParentActionCodexSessionIDEnv = "GLM_PARENT_ACTION_CODEX_SESSION_ID"
 )
 
 var errUnsupportedTaskStatsVersion = errors.New("unsupported task stats version")
@@ -258,6 +264,32 @@ func (s *StateStore) AllTaskStats() ([]TaskStats, error) {
 		return nil, err
 	}
 	return result, nil
+}
+
+func (s *StateStore) SetParentCodexIdentity(threadID, sessionID string) error {
+	stats, err := s.loadTaskStats()
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			warnStatsFailure("読み込み", err)
+		}
+		return nil
+	}
+	if stats.ParentCodexThreadID == threadID && stats.ParentCodexSessionID == sessionID {
+		return nil
+	}
+	if stats.ParentCodexThreadID != "" || stats.ParentCodexSessionID != "" {
+		return fmt.Errorf(
+			"保存済みparent Codex identityと矛盾します: stored thread=%s session=%s, observed thread=%s session=%s",
+			stats.ParentCodexThreadID, stats.ParentCodexSessionID, threadID, sessionID,
+		)
+	}
+	stats.ParentCodexThreadID = threadID
+	stats.ParentCodexSessionID = sessionID
+	if err := s.writeTaskStats(stats); err != nil {
+		warnStatsFailure("更新", err)
+		return nil
+	}
+	return nil
 }
 
 func (s *StateStore) RecordModelCall(role SessionRole, model string) {

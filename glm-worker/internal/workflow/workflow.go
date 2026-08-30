@@ -214,6 +214,9 @@ func (w *Workflow) initializeNewTask(request string) (string, error) {
 	if _, err := w.state.StartNewTask(); err != nil {
 		return "", err
 	}
+	if err := w.persistParentActionCodexIdentity(); err != nil {
+		return "", err
+	}
 	if err := state.CaptureGitBaseline(w.config, w.state); err != nil {
 		return "", err
 	}

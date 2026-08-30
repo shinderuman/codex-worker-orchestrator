@@ -27,7 +27,7 @@ func NewUUID() (string, error) {
 	), nil
 }
 
-func ValidGeneratedUUID(id string) bool {
+func ValidUUIDFormat(id string) bool {
 	if len(id) != 36 {
 		return false
 	}
@@ -43,7 +43,11 @@ func ValidGeneratedUUID(id string) bool {
 			}
 		}
 	}
-	return id[14] == '4' && strings.IndexByte("89ab", id[19]) >= 0
+	return true
+}
+
+func ValidGeneratedUUID(id string) bool {
+	return ValidUUIDFormat(id) && id[14] == '4' && strings.IndexByte("89ab", id[19]) >= 0
 }
 
 func isLowerHexDigit(char byte) bool {

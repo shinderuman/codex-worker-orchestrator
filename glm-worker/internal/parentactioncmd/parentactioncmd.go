@@ -23,6 +23,7 @@ import (
 const (
 	usage             = "usage: glm-parent-action start | prepare <decision|fix> | decision <token> | fix <token> [--origin <origin>] [--accepted-scope current-diff] | accept | resume"
 	activeTaskRequest = "現在のACTIVE taskを実行してください。"
+	actionStart       = "start"
 	actionFix         = "fix"
 )
 
@@ -49,7 +50,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 	if args[0] == "prepare" {
 		return prepare(cfg.RepoRoot, args, stdout)
 	}
-	return execute(cfg.RepoRoot, args, stdout, stderr)
+	return execute(cfg, args, stdout, stderr)
 }
 
 func prepare(repoRoot string, args []string, stdout io.Writer) error {
@@ -66,19 +67,58 @@ func prepare(repoRoot string, args []string, stdout io.Writer) error {
 	}{Status: "prepared", Prepared: prepared})
 }
 
-func execute(repoRoot string, args []string, stdout, stderr io.Writer) error {
+func execute(cfg config.AppConfig, args []string, stdout, stderr io.Writer) error {
 	action := args[0]
 	switch action {
-	case "start", "accept", "resume":
+	case actionStart, "accept", "resume":
 		if len(args) != 1 {
 			return fmt.Errorf("usage: glm-parent-action %s", action)
 		}
-		return runWorker(repoRoot, directWorkerArgs(action), nil, stdout, stderr)
+		if action == "resume" {
+			if err := persistParentCodexIdentity(cfg); err != nil {
+				return err
+			}
+		}
+		return runWorker(cfg.RepoRoot, directWorkerArgs(action), nil, stdout, stderr, startIdentityEnv(action))
 	case "decision", actionFix:
-		return executePayloadAction(repoRoot, action, args[1:], stdout, stderr)
+		if err := persistParentCodexIdentity(cfg); err != nil {
+			return err
+		}
+		return executePayloadAction(cfg.RepoRoot, action, args[1:], stdout, stderr)
 	default:
 		return fmt.Errorf("%s", usage)
 	}
+}
+
+func startIdentityEnv(action string) []string {
+	if action != actionStart {
+		return nil
+	}
+	threadID, sessionID, ok := codexIdentityFromEnv()
+	if !ok {
+		return nil
+	}
+	return []string{
+		state.ParentActionCodexThreadIDEnv + "=" + threadID,
+		state.ParentActionCodexSessionIDEnv + "=" + sessionID,
+	}
+}
+
+func persistParentCodexIdentity(cfg config.AppConfig) error {
+	threadID, sessionID, ok := codexIdentityFromEnv()
+	if !ok {
+		return nil
+	}
+	return state.AttachStateStore(cfg).SetParentCodexIdentity(threadID, sessionID)
+}
+
+func codexIdentityFromEnv() (string, string, bool) {
+	threadID := os.Getenv("CODEX_THREAD_ID")
+	sessionID := os.Getenv("CODEX_SESSION_ID")
+	if !state.ValidUUIDFormat(threadID) || !state.ValidUUIDFormat(sessionID) {
+		return "", "", false
+	}
+	return threadID, sessionID, true
 }
 
 func executePayloadAction(repoRoot, action string, args []string, stdout, stderr io.Writer) error {
@@ -102,7 +142,7 @@ func executePayloadAction(repoRoot, action string, args []string, stdout, stderr
 		return err
 	}
 	workerArgs := payloadWorkerArgs(action, payload, args[1:])
-	return runResolvedWorker(worker, repoRoot, workerArgs, bytes.NewReader(payload), stdout, stderr)
+	return runResolvedWorker(worker, repoRoot, workerArgs, bytes.NewReader(payload), stdout, stderr, nil)
 }
 
 func payloadWorkerArgs(action string, payload []byte, options []string) []string {
@@ -117,7 +157,7 @@ func payloadWorkerArgs(action string, payload []byte, options []string) []string
 
 func directWorkerArgs(action string) []string {
 	switch action {
-	case "start":
+	case actionStart:
 		return []string{activeTaskRequest}
 	case "accept":
 		return []string{"--accept"}
@@ -155,17 +195,18 @@ func validateFixOptions(options []string) error {
 	return nil
 }
 
-func runWorker(repoRoot string, args []string, stdin io.Reader, stdout, stderr io.Writer) error {
+func runWorker(repoRoot string, args []string, stdin io.Reader, stdout, stderr io.Writer, extraEnv []string) error {
 	worker, err := resolveGLMWorker()
 	if err != nil {
 		return err
 	}
-	return runResolvedWorker(worker, repoRoot, args, stdin, stdout, stderr)
+	return runResolvedWorker(worker, repoRoot, args, stdin, stdout, stderr, extraEnv)
 }
 
-func runResolvedWorker(worker, repoRoot string, args []string, stdin io.Reader, stdout, stderr io.Writer) error {
+func runResolvedWorker(worker, repoRoot string, args []string, stdin io.Reader, stdout, stderr io.Writer, extraEnv []string) error {
 	command := exec.Command(worker, args...)
 	command.Dir = repoRoot
+	command.Env = append(os.Environ(), extraEnv...)
 	command.Stdin = stdin
 	command.Stdout = stdout
 	command.Stderr = stderr

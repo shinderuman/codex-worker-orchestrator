@@ -33,17 +33,18 @@ type bundleOutput struct {
 }
 
 type bundleManifest struct {
-	Format             string   `json:"format"`
-	TaskID             string   `json:"task_id"`
-	TaskStatus         string   `json:"task_status"`
-	CurrentTask        bool     `json:"current_task"`
-	EvidenceStatus     string   `json:"evidence_status"`
-	ClaudeSessionIDs   []string `json:"claude_session_ids"`
-	InFlightModelCalls int      `json:"in_flight_model_calls,omitempty"`
-	Included           []string `json:"included"`
-	Missing            []string `json:"missing"`
-	Unattributed       []string `json:"unattributed,omitempty"`
-	CreatedAt          string   `json:"created_at"`
+	Format             string              `json:"format"`
+	TaskID             string              `json:"task_id"`
+	TaskStatus         string              `json:"task_status"`
+	CurrentTask        bool                `json:"current_task"`
+	EvidenceStatus     string              `json:"evidence_status"`
+	ClaudeSessionIDs   []string            `json:"claude_session_ids"`
+	InFlightModelCalls int                 `json:"in_flight_model_calls,omitempty"`
+	Included           []string            `json:"included"`
+	Missing            []string            `json:"missing"`
+	Unattributed       []string            `json:"unattributed,omitempty"`
+	CodexEvidence      []bundleCodexSource `json:"codex_evidence,omitempty"`
+	CreatedAt          string              `json:"created_at"`
 }
 
 type bundleTask struct {
@@ -65,7 +66,7 @@ type bundleCollector struct {
 	unattributed map[string]struct{}
 }
 
-const bundleFormat = "glm-worker-task-bundle-v2"
+const bundleFormat = "glm-worker-task-bundle-v3"
 
 var bundleAggregateDirs = map[string]bool{
 	"artifacts":      true,
@@ -86,6 +87,7 @@ func printBundle(cfg config.AppConfig, st *state.StateStore, requestedTaskID str
 	collector.collectTaskEvidence(st, task)
 	sessionIDs := collector.collectTaskSessions(st, task)
 	collector.collectClaudeTranscripts(cfg, sessionIDs)
+	codexEvidence := collector.collectCodexEvidence(cfg, task)
 	if task.Current {
 		collector.collectCurrentState(cfg, st)
 	}
@@ -112,6 +114,7 @@ func printBundle(cfg config.AppConfig, st *state.StateStore, requestedTaskID str
 		Included:           collector.includedListWithManifest(),
 		Missing:            missing,
 		Unattributed:       unattributed,
+		CodexEvidence:      codexEvidence,
 		CreatedAt:          time.Now().UTC().Format(time.RFC3339Nano),
 	}
 	manifestData, err := json.MarshalIndent(manifest, "", "  ")
