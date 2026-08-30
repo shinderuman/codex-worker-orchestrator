@@ -18,6 +18,10 @@ CommentlintとBundle DiffをCodex用に残すのはいい
 - current `taskdiff.Capture`はrecorded baseline indexからのtracked diffに、real repositoryで現在untrackedなfileだけを追加するため、baselineには無いがbundle時点でtracked/committed済みのfileがどちらにも入らない。
 - 次のcommentlint dogfood監査まではrecorded baseline/current Gitからdeterministic supplementary diffを作る運用でカバー可能なので、pre-dogfood Web GPT実装のblocking条件にはしない。
 
+## External feasibility
+
+status: not-applicable
+
 ## Purpose
 
 canonical bundleのfresh task diffだけでtask-owned changesを完全に監査できるようにし、task中に作成されてcommit済みのfileを取りこぼさない。
