@@ -72,7 +72,10 @@ grep -q '"result":"disabled"' "$tmp/repo-search-disabled.json"
 grep -q '"status":"enabled"' "$tmp/codex-context-enable.json"
 grep -q '"git_excluded":true' "$tmp/codex-context-enable.json"
 grep -q '"requires_new_thread":true' "$tmp/codex-context-enable.json"
+grep -Fxq 'include_apps_instructions = false' "$repo/.codex/config.toml"
+grep -Fxq 'include_collaboration_mode_instructions = false' "$repo/.codex/config.toml"
 grep -Fxq 'include_instructions = false' "$repo/.codex/config.toml"
+grep -Fxq 'apps = false' "$repo/.codex/config.toml"
 grep -Fxq 'plugins = false' "$repo/.codex/config.toml"
 git -C "$repo" check-ignore -q -- .codex/config.toml
 if git -C "$repo" status --porcelain --untracked-files=all | grep -Fq '.codex/config.toml'; then
