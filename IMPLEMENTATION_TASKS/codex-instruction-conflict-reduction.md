@@ -18,7 +18,7 @@ CommentlintとBundle Diff以外の実装をお前が全部終えてその次にC
 
 - 実機`codex-cli 0.150.0-alpha.8`のbuiltin base instructionsには「ongoing work中60秒以上commentary updateを空けない」と「60秒超のblocking sleep/waitを避ける」が実在する。
 - repository側`glm-execution.md`は、健康な長時間GLM処理ではperiodic model re-entry/livenessを避け、`glm-parent-action`の主呼出を長時間blockingさせる契約を持つ。
-- #140相当のruntime改善はreal dogfoodで成功し、約67.7分と約18.3分の待機が各1 parent tool callで完了した。したがって目的はruntime waitを再実装することではなく、model-visible conflict/reasoning pressureを減らすこと。
+- 直前のruntime改善はreal dogfoodで成功し、約67.7分と約18.3分の待機が各1 parent tool callで完了した。したがって目的はruntime waitを再実装することではなく、model-visible conflict/reasoning pressureを減らすこと。
 
 ## Purpose
 
@@ -48,7 +48,7 @@ CommentlintとBundle Diff以外の実装をお前が全部終えてその次にC
 
 ## Historical invariants
 
-- #140で成立したlong-blocking runtime behaviorを維持する。
+- real dogfoodで成立したlong-blocking runtime behaviorを維持する。
 - Quality Deltaを悪化させるprompt削減を行わない。
 
 ## Dependencies
