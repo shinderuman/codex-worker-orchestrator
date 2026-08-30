@@ -64,12 +64,12 @@ type ResumeCheckpoint struct {
 	ProviderUnavailableProbes         int       `json:"provider_unavailable_probes,omitempty"`
 	ProviderUnavailableStartedAt      time.Time `json:"provider_unavailable_started_at,omitempty"`
 
-	GuardRecoverable       bool             `json:"guard_recoverable,omitempty"`
-	GuardFailure           string           `json:"guard_failure,omitempty"`
-	GuardRefBeforeDigest   string           `json:"guard_ref_before_digest,omitempty"`
-	GuardRefAfterDigest    string           `json:"guard_ref_after_digest,omitempty"`
-	GuardRefChanges        []GuardRefChange `json:"guard_ref_changes,omitempty"`
-	GuardRefChangesCutOff  bool             `json:"guard_ref_changes_truncated,omitempty"`
+	GuardRecoverable         bool             `json:"guard_recoverable,omitempty"`
+	GuardFailure             string           `json:"guard_failure,omitempty"`
+	GuardRefBeforeDigest     string           `json:"guard_ref_before_digest,omitempty"`
+	GuardRefAfterDigest      string           `json:"guard_ref_after_digest,omitempty"`
+	GuardRefChanges          []GuardRefChange `json:"guard_ref_changes,omitempty"`
+	GuardRefChangesTruncated bool             `json:"guard_ref_changes_truncated,omitempty"`
 
 	QualitySurfaceApprovalPending bool `json:"quality_surface_approval_pending,omitempty"`
 
