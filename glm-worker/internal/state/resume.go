@@ -55,6 +55,8 @@ type ResumeCheckpoint struct {
 	GuardRecoverable bool   `json:"guard_recoverable,omitempty"`
 	GuardFailure     string `json:"guard_failure,omitempty"`
 
+	QualitySurfaceApprovalPending bool `json:"quality_surface_approval_pending,omitempty"`
+
 	StopParentFiles *ParentFileStates `json:"stop_parent_files,omitempty"`
 
 	StopGitSnapshot *GitSnapshot `json:"stop_git_snapshot,omitempty"`
