@@ -59,6 +59,14 @@ func (w *Workflow) prepareAcceptedFixScope(mode string) {
 }
 
 func (w *Workflow) acceptedFixScopeCoversCurrent() bool {
+	return w.acceptedFixScopeAllowsCurrent(true)
+}
+
+func (w *Workflow) acceptedFixScopeContainsCurrent() bool {
+	return w.acceptedFixScopeAllowsCurrent(false)
+}
+
+func (w *Workflow) acceptedFixScopeAllowsCurrent(consume bool) bool {
 	data, err := os.ReadFile(w.state.Path(acceptedFixScopeStateFile))
 	if err != nil {
 		return false
@@ -74,7 +82,9 @@ func (w *Workflow) acceptedFixScopeCoversCurrent() bool {
 	if err != nil || !changeSetSubset(current, scope.Changes) {
 		return false
 	}
-	_ = w.state.Remove(acceptedFixScopeStateFile)
+	if consume {
+		_ = w.state.Remove(acceptedFixScopeStateFile)
+	}
 	return true
 }
 
