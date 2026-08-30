@@ -59,15 +59,17 @@ func run(args []string) error {
 	if action == "decision" && len(args) != 2 {
 		return fmt.Errorf("usage: glm-parent-action decision <token>")
 	}
-	if action == "fix" && (len(args)-2)%2 != 0 {
-		return fmt.Errorf("usage: glm-parent-action fix <token> [--origin <origin>] [--accepted-scope current-diff]")
+	if action == "fix" {
+		if err := validateFixOptions(args[2:]); err != nil {
+			return err
+		}
 	}
 
-	payload, err := parentaction.Consume(cfg.RepoRoot, action, args[1])
+	worker, err := resolveGLMWorker()
 	if err != nil {
 		return err
 	}
-	worker, err := resolveGLMWorker()
+	payload, err := parentaction.Consume(cfg.RepoRoot, action, args[1])
 	if err != nil {
 		return err
 	}
@@ -84,6 +86,24 @@ func run(args []string) error {
 	command.Stdout = os.Stdout
 	command.Stderr = os.Stderr
 	return command.Run()
+}
+
+func validateFixOptions(options []string) error {
+	if len(options)%2 != 0 {
+		return fmt.Errorf("usage: glm-parent-action fix <token> [--origin <origin>] [--accepted-scope current-diff]")
+	}
+	seen := map[string]bool{}
+	for index := 0; index < len(options); index += 2 {
+		name := options[index]
+		if seen[name] || (name != "--origin" && name != "--accepted-scope") {
+			return fmt.Errorf("usage: glm-parent-action fix <token> [--origin <origin>] [--accepted-scope current-diff]")
+		}
+		seen[name] = true
+		if options[index+1] == "" {
+			return fmt.Errorf("usage: glm-parent-action fix <token> [--origin <origin>] [--accepted-scope current-diff]")
+		}
+	}
+	return nil
 }
 
 func resolveGLMWorker() (string, error) {
