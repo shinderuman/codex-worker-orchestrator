@@ -3,11 +3,9 @@
 ## Original instruction
 
 ````text
-Issue #147を通常のCodex + GLM implementation taskとして実行する。
-
 今後のtask監査でglm-worker/Claude側だけでなく、親Codex・Guardian・Codex host/runtimeの一次証拠も1つのanalysis bundleから取得できるようにする。
 
-このtaskは実装前に、実行中のMac上の`$CODEX_HOME`を親Codex自身がread-onlyで調査し、Issue #147に列挙されたCodex-local evidence sourceの実在・配置・schemaを確認する。Web/GitHub上の想定だけからcollectorを実装しない。
+このtaskは実装前に、実行中のMac上の`$CODEX_HOME`を親Codex自身がread-onlyで調査し、このtaskに列挙されたCodex-local evidence sourceの実在・配置・schemaを確認する。task記述上の想定だけからcollectorを実装しない。
 
 External feasibilityが`status: observation`の間はglm-workerへ実装dispatchしない。親Codexの実機調査で成立性を確認した後、producer evidenceと親Go判断を記録して`status: implementation`へ更新してから通常Codex + GLM workflowを開始する。
 ````
@@ -18,9 +16,8 @@ none
 
 ## Resolved references
 
-- GitHub Issue #147のProblem / Goal / Provenance / Required direction / Privacy / Acceptanceを発生根拠とする。
-- Issue #59で確立した`glm-worker bundle [task-id]`をcanonical analysis artifactとする境界を維持する。
-- Issue #140/#141/#143/#144で確認されたparent Codex / Guardian側のtoken・wait・sandbox evidenceを、今回の収集対象が必要になった実運用証拠として扱う。
+- 既存`glm-worker bundle [task-id]`をcanonical analysis artifactとする境界を維持する。
+- retained production evidenceで確認されたparent Codexのwait/re-entry、Guardian escalation、sandbox/tool retryの監査必要性を、このtaskの収集対象が必要になった実運用証拠として扱う。
 
 ## Purpose
 
@@ -29,7 +26,7 @@ none
 ## External feasibility
 
 status: observation
-assumption: Issue #147に列挙されたCodex-local evidence sourceの実在・配置・schemaは現在のMac上のCodex実体で未確認であり、実装前に親Codexが実producerをread-only観測して確定する必要がある
+assumption: このtaskに列挙されたCodex-local evidence sourceの実在・配置・schemaは現在のMac上のCodex実体で未確認であり、実装前に親Codexが実producerをread-only観測して確定する必要がある
 
 ## Feasibility procedure
 
@@ -44,7 +41,7 @@ assumption: Issue #147に列挙されたCodex-local evidence sourceの実在・�
 
 確認結果はtask artifactまたはHistoryに、少なくとも「observed / absent / schema-different / unsupported」をsourceごとに残す。
 
-Issue #147に書かれたpath/schemaは実装前のcandidateであり、実機観測と違う場合は実機を正とする。存在しないsourceのために推測parserや互換layerを作らない。
+このtaskに書かれたpath/schemaは実装前のcandidateであり、実機観測と違う場合は実機を正とする。存在しないsourceのために推測parserや互換layerを作らない。
 
 実装へ進める場合、親Codexが`## External feasibility`を次の契約へ更新する。
 
@@ -105,7 +102,7 @@ Issue #147に書かれたpath/schemaは実装前のcandidateであり、実機�
 
 ## Dependencies
 
-- Issue #59の既存bundle implementation
+- 既存`glm-worker bundle` implementation
 
 ## Review findings
 
@@ -113,4 +110,4 @@ none
 
 ## Current boundary
 
-未着手。Issue #142のcommentlint sandbox taskより先に、このtaskだけを通常Codex + GLM workflowで完了する。Task 021は同じrunで開始しない。
+未着手。commentlint sandbox taskより先に、このtaskだけを通常Codex + GLM workflowで完了する。Task 021は同じrunで開始しない。
