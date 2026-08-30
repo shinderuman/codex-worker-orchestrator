@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	usage             = "usage: glm-parent-action start | prepare <decision|fix> | decision <token> | fix <token> [--origin <origin>] [--accepted-scope current-diff] | accept | resume"
+	usage             = "usage: glm-parent-action start | prepare <decision|fix> | decision <token> | fix <token> [--origin <origin>] [--accepted-scope current-diff] | accept | resume | finalize-check <go-test|go-test-race>"
 	activeTaskRequest = "現在のACTIVE taskを実行してください。"
 	actionStart       = "start"
 	actionFix         = "fix"
@@ -85,6 +85,11 @@ func execute(cfg config.AppConfig, args []string, stdout, stderr io.Writer) erro
 			return err
 		}
 		return executePayloadAction(cfg.RepoRoot, action, args[1:], stdout, stderr)
+	case "finalize-check":
+		if len(args) != 2 {
+			return fmt.Errorf("usage: glm-parent-action finalize-check <go-test|go-test-race>")
+		}
+		return runFinalizationCheck(cfg.RepoRoot, args[1], stdout)
 	default:
 		return fmt.Errorf("%s", usage)
 	}

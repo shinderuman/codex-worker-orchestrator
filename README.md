@@ -153,9 +153,12 @@ glm-parent-action fix <token> [--origin <origin>] [--accepted-scope current-diff
 
 glm-parent-action accept
 glm-parent-action resume
+glm-parent-action finalize-check <go-test|go-test-race>
 ```
 
 `prepare decision|fix`のJSONが返す`path`は`.glm-worker-parent-actions/`配下だけで、通常の親Codex運用ではそのplaceholderを`apply_patch`でsemantic payloadへ置換する。実actionはpathを受け取らずcrypto-random tokenだけを受け取る。wrapperがpayloadをmemoryへ取り込みstaging fileを削除してから既存`glm-worker` admissionへ委譲するため、sandbox外processへ任意local pathを読ませない。decision/fixのUTF-8 byte長・SHA-256・stdin framingもwrapperが処理する。
+
+`finalize-check`は既存のblocking quality gateとcanonical `--handoff`を連続実行し、validationがcurrent snapshotへ対応することを確認して、validation・handoff・read-only local Git summaryを1件のJSONで返す。`status:"ready_for_parent_decision"`はsemantic acceptanceではなく親判断へ進める証拠であり、`status:"blocked"`は`failure.stage`/`reason`の境界へ親判断を戻す。accept/fix、commit message生成、commit、fetch、push、divergence修復は行わず、`git.remote_state`も`not_checked`として明示する。
 
 低レベル`glm-worker --decision-stdin` / `--fix-stdin`はrecovery/debug用途として残す。その他のinspection/reportや運用commandは`glm-worker`を直接使う。
 
