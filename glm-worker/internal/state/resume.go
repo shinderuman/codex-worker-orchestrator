@@ -12,6 +12,18 @@ import (
 
 type ResumeStage string
 
+type GuardRefState struct {
+	Name     string `json:"name"`
+	ObjectID string `json:"object_id"`
+	Symref   string `json:"symref,omitempty"`
+}
+
+type GuardRefChange struct {
+	Name   string         `json:"name"`
+	Before *GuardRefState `json:"before,omitempty"`
+	After  *GuardRefState `json:"after,omitempty"`
+}
+
 type ResumeCheckpoint struct {
 	Version                 int                             `json:"version"`
 	Stage                   ResumeStage                     `json:"stage"`
@@ -52,8 +64,12 @@ type ResumeCheckpoint struct {
 	ProviderUnavailableProbes         int       `json:"provider_unavailable_probes,omitempty"`
 	ProviderUnavailableStartedAt      time.Time `json:"provider_unavailable_started_at,omitempty"`
 
-	GuardRecoverable bool   `json:"guard_recoverable,omitempty"`
-	GuardFailure     string `json:"guard_failure,omitempty"`
+	GuardRecoverable       bool             `json:"guard_recoverable,omitempty"`
+	GuardFailure           string           `json:"guard_failure,omitempty"`
+	GuardRefBeforeDigest   string           `json:"guard_ref_before_digest,omitempty"`
+	GuardRefAfterDigest    string           `json:"guard_ref_after_digest,omitempty"`
+	GuardRefChanges        []GuardRefChange `json:"guard_ref_changes,omitempty"`
+	GuardRefChangesCutOff  bool             `json:"guard_ref_changes_truncated,omitempty"`
 
 	QualitySurfaceApprovalPending bool `json:"quality_surface_approval_pending,omitempty"`
 
@@ -66,7 +82,7 @@ type ResumeCheckpoint struct {
 
 const (
 	resumeStateFile    = "resume-state.json"
-	resumeStateVersion = 4
+	resumeStateVersion = 5
 )
 
 const (
@@ -118,7 +134,7 @@ func (s *StateStore) LoadResumeCheckpoint() (ResumeCheckpoint, error) {
 		return ResumeCheckpoint{}, fmt.Errorf("resume stateを読めません: %w", err)
 	}
 	if explicitReportOnly.ReportOnly == nil {
-		return ResumeCheckpoint{}, fmt.Errorf("resume state v4にreport_only keyがありません")
+		return ResumeCheckpoint{}, fmt.Errorf("resume state v5にreport_only keyがありません")
 	}
 	if checkpoint.Model == "" {
 		return ResumeCheckpoint{}, fmt.Errorf("resume state model is required")
