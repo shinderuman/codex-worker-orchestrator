@@ -7,7 +7,7 @@ import (
 
 func TestIsRecoverableGuardFailure(t *testing.T) {
 	refChange := GitRefChange{
-		Name: "refs/heads/bypass",
+		Name:  "refs/heads/bypass",
 		After: &GitRefState{Name: "refs/heads/bypass", ObjectID: "2222222222222222222222222222222222222222"},
 	}
 	tests := []struct {
