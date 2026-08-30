@@ -32,9 +32,9 @@ func TestQualitySurfaceApprovalStopsBeforeConvergenceAndReusesWorkerResult(t *te
 	}
 
 	cfg := config.AppConfig{
-		RepoRoot:             repo,
-		RepoHash:             strings.Repeat("b", 64),
-		StateBase:            t.TempDir(),
+		RepoRoot:              repo,
+		RepoHash:              strings.Repeat("b", 64),
+		StateBase:             t.TempDir(),
 		CodexConfigDir:        codexDir,
 		WorkerModel:           "worker",
 		ReviewerModel:         "reviewer",
