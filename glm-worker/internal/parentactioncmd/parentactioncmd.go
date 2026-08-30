@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	usage             = "usage: glm-parent-action start | prepare <decision|fix> | decision <token> | fix <token> [--origin <origin>] [--accepted-scope current-diff] | accept | resume | finalize-check <go-test|go-test-race>"
+	usage             = "usage: glm-parent-action start | prepare <decision|fix> | decision <token> | fix <token> [--origin <origin>] [--accepted-scope current-diff] [--approval-only] | accept | resume | finalize-check <go-test|go-test-race>"
 	activeTaskRequest = "現在のACTIVE taskを実行してください。"
 	actionStart       = "start"
 	actionFix         = "fix"
@@ -176,18 +176,22 @@ func directWorkerArgs(action string) []string {
 }
 
 func validateFixOptions(options []string) error {
-	fixUsage := "usage: glm-parent-action fix <token> [--origin <origin>] [--accepted-scope current-diff]"
-	if len(options)%2 != 0 {
-		return fmt.Errorf("%s", fixUsage)
-	}
+	fixUsage := "usage: glm-parent-action fix <token> [--origin <origin>] [--accepted-scope current-diff] [--approval-only]"
 	seen := map[string]bool{}
-	for index := 0; index < len(options); index += 2 {
+	for index := 0; index < len(options); {
 		name := options[index]
-		value := options[index+1]
 		if seen[name] {
 			return fmt.Errorf("%s", fixUsage)
 		}
 		seen[name] = true
+		if name == "--approval-only" {
+			index++
+			continue
+		}
+		if index+1 >= len(options) {
+			return fmt.Errorf("%s", fixUsage)
+		}
+		value := options[index+1]
 		switch name {
 		case "--origin":
 			if !state.ValidParentOrigin(value) {
@@ -200,6 +204,10 @@ func validateFixOptions(options []string) error {
 		default:
 			return fmt.Errorf("%s", fixUsage)
 		}
+		index += 2
+	}
+	if seen["--approval-only"] && !seen["--accepted-scope"] {
+		return fmt.Errorf("%s", fixUsage)
 	}
 	return nil
 }
