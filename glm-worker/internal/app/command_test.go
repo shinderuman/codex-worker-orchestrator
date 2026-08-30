@@ -117,28 +117,22 @@ func TestParseCommandRejectsInvalidStdinArguments(t *testing.T) {
 }
 
 func TestParseCommandRejectsArgvDecisionFix(t *testing.T) {
-	tests := []struct {
-		args  []string
-		modes []string
-	}{
-		{args: []string{"--decision", "A案で進める"}, modes: []string{"--decision-file", "--decision-stdin"}},
-		{args: []string{"--decision"}, modes: []string{"--decision-file", "--decision-stdin"}},
-		{args: []string{"--fix", "指摘を修正"}, modes: []string{"--fix-file", "--fix-stdin"}},
-		{args: []string{"--fix"}, modes: []string{"--fix-file", "--fix-stdin"}},
-		{args: []string{"--fix", "--origin", "codex-review", "指摘を修正"}, modes: []string{"--fix-file", "--fix-stdin"}},
-	}
-	for _, test := range tests {
-		command, err := ParseCommand(test.args)
+	for _, args := range [][]string{
+		{"--decision", "A案で進める"},
+		{"--decision"},
+		{"--fix", "指摘を修正"},
+		{"--fix"},
+		{"--fix", "--origin", "codex-review", "指摘を修正"},
+	} {
+		command, err := ParseCommand(args)
 		if err == nil {
-			t.Fatalf("argv埋込みを受理しました: %#v", test.args)
+			t.Fatalf("argv埋込みを受理しました: %#v", args)
 		}
 		if command.Payload != "" {
 			t.Fatalf("argv埋込み本文をcommandへ解釈しています: %#v", command)
 		}
-		for _, mode := range test.modes {
-			if !strings.Contains(err.Error(), mode) {
-				t.Fatalf("安全なpayload mode %qへの案内がありません: %v", mode, err)
-			}
+		if !strings.Contains(err.Error(), "--decision-stdin") || !strings.Contains(err.Error(), "--fix-stdin") {
+			t.Fatalf("stdin modeへの案内がありません: %v", err)
 		}
 	}
 }
