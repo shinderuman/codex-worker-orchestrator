@@ -8,9 +8,14 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/commentlint-sandbox-safe-launcher.md`
+- `IMPLEMENTATION_TASKS/codex-desktop-prompt-overhead-reduction.md`
 
 ## NEXT（優先順）
+- `IMPLEMENTATION_TASKS/codex-instruction-conflict-reduction.md`
+- `IMPLEMENTATION_TASKS/glm-containment-denial-explanations.md`
+- `IMPLEMENTATION_TASKS/parent-finalization-choreography-reduction.md`
+- `IMPLEMENTATION_TASKS/commentlint-sandbox-safe-launcher.md`
+- `IMPLEMENTATION_TASKS/bundle-task-diff-committed-files.md`
 - `IMPLEMENTATION_TASKS/021-conditional-improvements.md`
 - `IMPLEMENTATION_TASKS/022-final-verification.md`
 
@@ -38,8 +43,8 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## 現在の停止理由
 
-Codex analysis evidence bundle taskを完了した。次のACTIVE `IMPLEMENTATION_TASKS/commentlint-sandbox-safe-launcher.md`は未着手で停止している。
+post-task bundle監査で、次のCodex dogfoodより先に入れるべき固定prompt overhead、instruction conflict、containment denial、parent finalizationのCodex Reduction改善を確認した。commentlintは改善後の最初の観測runとして未着手のまま保持する。
 
 ## 次の親Codex操作
 
-次回はrepository authorityとACTIVE task本文を再読し、dependencyと開始条件を確認してcommentlint sandbox taskを通常workflowで開始する。Task 021は同じrunで開始しない。
+ACTIVE `IMPLEMENTATION_TASKS/codex-desktop-prompt-overhead-reduction.md`を完了し、続く3件のpre-dogfood改善を順に完了する。commentlintとbundle task diff修正は同じWeb GPT先行実装へ混ぜず、改善後のCodex + GLM dogfood用taskとして残す。
