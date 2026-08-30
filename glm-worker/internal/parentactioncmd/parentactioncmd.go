@@ -10,8 +10,10 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strconv"
+	"syscall"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentaction"
@@ -24,7 +26,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	if err := run(args, stdout, stderr); err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
-			return exitErr.ExitCode()
+			return childExitCode(exitErr)
 		}
 		fmt.Fprintln(stderr, err)
 		return 1
@@ -168,7 +170,39 @@ func runResolvedWorker(worker, repoRoot string, args []string, stdin io.Reader, 
 	command.Stdin = stdin
 	command.Stdout = stdout
 	command.Stderr = stderr
-	return command.Run()
+
+	signals := make(chan os.Signal, 4)
+	signal.Notify(signals, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+	defer signal.Stop(signals)
+	if err := command.Start(); err != nil {
+		return err
+	}
+	done := make(chan struct{})
+	go forwardSignals(command.Process, signals, done)
+	err := command.Wait()
+	close(done)
+	return err
+}
+
+func forwardSignals(process *os.Process, signals <-chan os.Signal, done <-chan struct{}) {
+	for {
+		select {
+		case received := <-signals:
+			_ = process.Signal(received)
+		case <-done:
+			return
+		}
+	}
+}
+
+func childExitCode(exitErr *exec.ExitError) int {
+	if status, ok := exitErr.Sys().(syscall.WaitStatus); ok && status.Signaled() {
+		return 128 + int(status.Signal())
+	}
+	if code := exitErr.ExitCode(); code >= 0 {
+		return code
+	}
+	return 1
 }
 
 func resolveGLMWorker() (string, error) {
