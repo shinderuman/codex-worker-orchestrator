@@ -27,6 +27,12 @@
 - `targets`と`sol_question`に限定して実コードまたはdiffを確認する。
 - 修正が必要ならCodex自身で編集せず、修正方針本文を`~/.codex/instructions/glm-execution.md`のstdin mode（`--fix-stdin <payload-bytes>`）で同じworker sessionへ差し戻す。修正後は独立reviewerまで自動再実行される。Sol自身が現diffの残存部分を受理し、fixが撤回・縮小だけなら`--accepted-scope current-diff`を付ける。不確実または新規変更を許すfixでは付けない。
 
+## finalization evidence
+
+- terminal packetのsemantic reviewが終わり、現snapshotへquality validationが必要な段階では、sandbox外で`glm-parent-action finalize-check <go-test|go-test-race>`を1回使う。既存quality gate、canonical handoff、current validation/snapshot照合、read-only local Git summaryを1 machine resultへまとめるため、同じ目的の`--quality-gate`→result/status→`--handoff`→`--status`往復を別々に行わない。
+- `status:"ready_for_parent_decision"`はvalidationとsnapshot整合を示すだけで、accept/fix・task完了・commit message・commit/push判断は親Codexが行う。`git.remote_state:"not_checked"`はremote freshnessを推測していないことを意味する。
+- `status:"blocked"`では`failure.stage`・`reason`と同梱済みevidenceだけを確認し、validation failure・lifecycle inconsistency・snapshot change・Git ambiguityを自動修復しない。
+
 ## `{"error":{"kind":"worker_error",...}}`
 
 - stderrのerror JSON(`kind`・`message`・`detail{phase,exit_code,output_tail}`)とnon-zero exitで示される。エラー要約を確認し、無関係なリポジトリ調査をSol Highが代行しない。
