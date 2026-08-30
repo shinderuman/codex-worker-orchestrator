@@ -149,7 +149,7 @@ func resolveCodexAssociation(codexHome string, task bundleTask) codexAssociation
 	if err != nil {
 		return codexAssociation{ParentStatus: codexStatusUnavailable, Basis: basis, Detail: "codex rollout enumeration failed: " + err.Error()}
 	}
-	return buildCodexAssociation(matchingCodexRollouts(rollouts, threadID), basis, task)
+	return buildCodexAssociation(matchingCodexRollouts(rollouts, threadID), rollouts, basis, task)
 }
 
 func selectCodexParentIdentity(task bundleTask) (string, string, *codexAssociation) {
@@ -182,7 +182,7 @@ func matchingCodexRollouts(rollouts []codexRollout, threadID string) []codexRoll
 	return matches
 }
 
-func buildCodexAssociation(matches []codexRollout, basis string, task bundleTask) codexAssociation {
+func buildCodexAssociation(matches, rollouts []codexRollout, basis string, task bundleTask) codexAssociation {
 	switch len(matches) {
 	case 0:
 		detail := "no rollout has session_meta.id equal to the stored parent thread ID"
@@ -191,7 +191,7 @@ func buildCodexAssociation(matches []codexRollout, basis string, task bundleTask
 		}
 		return codexAssociation{ParentStatus: codexStatusMissing, Basis: basis, Detail: detail}
 	case 1:
-		return includedCodexAssociation(matches[0], basis, task)
+		return includedCodexAssociation(matches[0], rollouts, basis, task)
 	default:
 		detail := fmt.Sprintf("%d rollouts share the stored parent thread ID", len(matches))
 		if basis == codexExplicitAssociationBasis {
@@ -201,13 +201,9 @@ func buildCodexAssociation(matches []codexRollout, basis string, task bundleTask
 	}
 }
 
-func includedCodexAssociation(parent codexRollout, basis string, task bundleTask) codexAssociation {
+func includedCodexAssociation(parent codexRollout, rollouts []codexRollout, basis string, task bundleTask) codexAssociation {
 	start, end := taskWindow(task)
-	guardians, qualifying := selectCodexGuardianChildren([]codexRollout{parent}, parent, start, end)
-	rollouts, err := scanCodexRollouts(filepath.Dir(filepath.Dir(parent.AbsolutePath)))
-	if err == nil {
-		guardians, qualifying = selectCodexGuardianChildren(rollouts, parent, start, end)
-	}
+	guardians, qualifying := selectCodexGuardianChildren(rollouts, parent, start, end)
 	detail := ""
 	if basis == codexExplicitAssociationBasis {
 		detail = "parent identity supplied explicitly for this bundle; task state was not modified"
