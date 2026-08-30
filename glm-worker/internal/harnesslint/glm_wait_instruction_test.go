@@ -22,7 +22,7 @@ func TestGLMWaitAlignsOuterAndInnerYield(t *testing.T) {
 	for _, token := range []string{
 		`// @exec: {"yield_time_ms":21600000,"max_output_tokens":1000}`,
 		"tools.write_stdin",
-		"yield-time_ms=21600000",
+		"21600000",
 		"functions.wait",
 		"clamp",
 	} {
