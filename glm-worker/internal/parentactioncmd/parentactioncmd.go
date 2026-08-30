@@ -22,7 +22,7 @@ import (
 
 const (
 	usage             = "usage: glm-parent-action start | prepare <decision|fix> | decision <token> | fix <token> [--origin <origin>] [--accepted-scope current-diff] | accept | resume"
-	activeTaskRequest = "現在のACTIVE taskを実装してください。"
+	activeTaskRequest = "現在のACTIVE taskを実行してください。"
 	actionFix         = "fix"
 )
 
