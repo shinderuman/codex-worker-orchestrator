@@ -29,9 +29,13 @@ func TestPayloadWorkerArgsDecisionOwnsFraming(t *testing.T) {
 }
 
 func TestValidateFixOptionsMatchesProductionDomain(t *testing.T) {
-	valid := []string{"--origin", "glm-reviewer", "--accepted-scope", "current-diff"}
-	if err := validateFixOptions(valid); err != nil {
-		t.Fatal(err)
+	for _, valid := range [][]string{
+		{"--origin", "glm-reviewer", "--accepted-scope", "current-diff"},
+		{"--accepted-scope", "current-diff", "--approval-only"},
+	} {
+		if err := validateFixOptions(valid); err != nil {
+			t.Fatalf("valid options rejected: %v: %v", valid, err)
+		}
 	}
 	for _, options := range [][]string{
 		{"--origin", "invented"},
@@ -39,6 +43,8 @@ func TestValidateFixOptionsMatchesProductionDomain(t *testing.T) {
 		{"--origin", "codex-review", "--origin", "glm-reviewer"},
 		{"--other", "value"},
 		{"--origin"},
+		{"--approval-only"},
+		{"--accepted-scope", "current-diff", "--approval-only", "--approval-only"},
 	} {
 		if err := validateFixOptions(options); err == nil {
 			t.Fatalf("invalid options accepted: %s", strings.Join(options, " "))
