@@ -92,4 +92,4 @@ none
 
 ## Current boundary
 
-未着手。次のCodex+GLM commentlint dogfoodより先にWeb GPT側で完了する。
+Production implementationはPR #169 / main `04b10110ab1b5793f0cf392c22557dbb37ca8402`でintegration済み。`glm-codex-context enable|disable|status`、target-repository local profile、Git cleanliness/conflict fail-closed、unit/lint/build/offline install smokeまで確認済み。残りは実機evidenceだけであり、他のpre-dogfood改善を完了した後、commentlintをfresh Codex threadで実行してbundleから設定反映、fixed-context reduction、Desktop restart要否、sandbox/Guardian/lifecycle維持、Quality Deltaを確認する。そこまで本taskとIssue #161は未完了のまま保持し、evidenceが実装欠陥を示さない限りproduction implementationへ再突入しない。
