@@ -8,11 +8,10 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/bundle-task-analysis-index.md`
+- `IMPLEMENTATION_TASKS/021-conditional-improvements.md`
 
 ## NEXT（優先順）
 
-- `IMPLEMENTATION_TASKS/021-conditional-improvements.md`
 - `IMPLEMENTATION_TASKS/022-final-verification.md`
 
 ## BLOCKED / USER_PERMISSION_WAIT
@@ -31,6 +30,6 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 ## 現在のGit境界
 
 - branch: `main`
-- 追加証跡収集task `4dc4ebd0-0fd7-45af-a41c-4257a2337d67`の実装・独立再review・Sol採用・現snapshotのfull test/race・parent acceptを通過してcommit済み。完了taskはHistoryへ移し、分析用索引をACTIVEへ昇格した。分析用索引は未着手で、本依頼はこれを開始せず停止する。発火済みautomationは削除済み。恒久的な自動再開許可はIMPLEMENTATION_RULES.mdを正とする。
+- 分析用索引task `70028e7d-ef53-4f70-8c7e-765d7fb78ee0`は実装・独立再review・Sol採用・現snapshotのfull test/race・parent acceptを通過してcommit済み。完了taskをHistoryへ移し、条件付き改善評価をACTIVEへ昇格した。昇格taskは未着手で、2026-09-01の依頼に従い開始せず停止する。恒久的な自動再開許可はIMPLEMENTATION_RULES.mdを正とする。
 - F1-F10 hardening、parent action/handoff、typed parent-capability validation、repo-search、Codex analysis bundle、target-repository lean context、wait instruction削減、actionable containment denial、bounded parent finalization surface、commentlint sandbox-safe launcherはcurrent mainへ統合済み。詳細なcommit・validation・escaped原因は`IMPLEMENTATION_HISTORY.md`を正とする。
 - preserved boundary: machine-readable lifecycle、snapshot/validation authority、parent-managed metadata guard、GLM commit/push禁止、parent Codex semantic authority、normal fast-forward Git safety、Direct Codex対orchestratedのCodex Reduction / Quality Delta最上位評価を維持する。

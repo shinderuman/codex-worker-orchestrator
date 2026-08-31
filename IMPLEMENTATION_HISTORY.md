@@ -11,6 +11,17 @@
 
 本文を更新できるのは親Codexだけとする。GLM worker/reviewerは読み取り専用で参照し、必要な更新候補と根拠をPACKETへ記載する。
 
+## 2026-09-01 bundleのtask単位分析索引
+
+- [x] `bundle-task-analysis-index`の実装・独立再review・Sol最終採用・full test/race・parent accept・commit同期を完了。原要求は削除した`IMPLEMENTATION_TASKS/bundle-task-analysis-index.md`のGit履歴に保持する。条件付き改善評価をACTIVEへ昇格し、ユーザー指定の停止境界に従い開始しない。
+- task ID: `70028e7d-ef53-4f70-8c7e-765d7fb78ee0`。bundle format v4へ`analysis-index.json`（index version 1）とmanifest参照を追加。対象window、親sessionとrollout byte範囲、wait function call数、累積input/cached input差分、validation run対応、既存event/stat/logに基づく再試行情報、task/session/unattributed/task-externalの証跡区分を同梱する。索引生成は原本・lifecycleにread-onlyで、追加model call・検証再実行・永続state machineを導入しない。
+- Sol採用: task validation eventを優先し、eventがない場合はround snapshot digest一致とwindow重複を併用して帰属させる。時刻重複だけはunattributedとし、cached inputをinputへ再加算しない。schemaはmachine analysis interfaceであり、validation・semantic acceptanceのauthorityや恒久互換APIへ昇格しない。
+- 検証: full go-test `1d38f5a6cb0a1cad24941249bbdc3a2a`とfull go-test-race `fa98d2f19ebf9073c78051a70ed19421`（121818 ms）はPASS。finalize-checkは`ready_for_parent_decision`。両gateはHEAD `c7daf04e70b78ea12f6cd5f441925b4eff5abc2f`、index digest `3a80771073290d60777a68abfc0d75473e806a5d6dc4d473c2e38cea12916db2`、worktree digest `6ebfee79905c770d4ba6ba6113f538237ed73eef7c224c3fbba51541fbafc8bf`へ一致し、以後の差分は親管理metadataのみ。worker/reviewerはtargeted bundle tests、harnesslint、commentlint、gofmt、build/vetの成功を報告した。独立再reviewは`NEEDS_SOL_REVIEW / HIGH`でschema採用を親へ上げ、親acceptは`accepted:true`。
+- 保存済み証跡の照合: task `314db004-148f-4b7d-b0e4-4a6dff90aa3a`のbundleから23検証runをtask 6件とtask-external 17件へ区分。親rollout 32446081 bytes中のwindowは1774137 bytes、waitは50回、input増分14183057、cached input増分14045568。workerのoffline再計算artifactはsession root配下`artifacts/70028e7d-ef53-4f70-8c7e-765d7fb78ee0/real-bundle-index-equivalence.json`。親は保存bundle原本のwait record数50を直接照合した。
+- completion前のmachine gate修正: declaration順、認知的複雑度、test-sizeを既存gateに従って修正し、threshold/policy変更は行わなかった。reviewer報告の軽量fixture反復3回は改善costに見合わず独立task化しない。
+- 本配置・production smoke: `install.sh`のfinal HEAD gateを通過し、実装commit `1a66bb2be5e8a5518e8119b7bbc8bc5c6199027e`のinstalled/source `relationship:same`、`vcs_modified:false`、task `complete`を確認。installed版で当該taskのbundle生成に成功し、collection全179件のbytes/SHA-256、索引のwindow 752603 bytes、wait 11回、input/cached差分を収録原本と照合した。39検証runはtask 2件とtask-external 37件に区分され、task 2件は上記full test/raceのrun IDへ一致した。原本の参照pathも確認し、生成後のtask identity/statusとclean working treeを確認した。この証跡追記による同一commitへのamendはHistoryだけを変更し、検証済みruntime実装は同一である。
+- 残余境界: rolloutのopen/read失敗はwindow/待機/token欄でunreadableを分離せずno-observation/missingへ縮退する。索引のcountは定義された記録数・観測差分であって課金額やtask外処理を除去した会計値ではない。原本を証拠の正とし、欠損を成功や品質評価の根拠へ変換しない。
+
 ## 2026-09-01 bundle解析に不足する実行時証跡の収集
 
 - [x] `bundle-analysis-evidence-capture`の実装・独立review・Sol最終採用・full test/race・parent accept・commit同期を完了。原要求は削除した`IMPLEMENTATION_TASKS/bundle-analysis-evidence-capture.md`のGit履歴に保持し、分析用索引をACTIVEへ昇格した。ユーザーの停止境界に従い次taskは開始しない。

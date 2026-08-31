@@ -54,6 +54,7 @@ type bundleManifest struct {
 	Unreadable         []string            `json:"unreadable,omitempty"`
 	CodexEvidence      []bundleCodexSource `json:"codex_evidence,omitempty"`
 	CollectionIndex    string              `json:"collection_index,omitempty"`
+	AnalysisIndex      string              `json:"analysis_index,omitempty"`
 	CreatedAt          string              `json:"created_at"`
 }
 
@@ -110,7 +111,7 @@ type bundleCollector struct {
 	lifecycleCollected bool
 }
 
-const bundleFormat = "glm-worker-task-bundle-v3"
+const bundleFormat = "glm-worker-task-bundle-v4"
 
 const bundleCollectionEntryPath = "collection.json"
 
@@ -150,11 +151,12 @@ func printBundle(cfg config.AppConfig, st *state.StateStore, requestedTaskID str
 	collector.collectTaskEvidence(st, task)
 	sessionIDs := collector.collectTaskSessions(st, task)
 	collector.collectClaudeTranscripts(cfg, sessionIDs)
-	codexEvidence := collector.collectCodexEvidence(cfg, task)
+	association, codexEvidence := collector.collectCodexEvidence(cfg, task)
 	if task.Current {
 		collector.collectCurrentState(cfg, st)
 	}
 	collector.markInProgressEvidence(task)
+	collector.addBundleAnalysisIndex(st, task, association)
 
 	archivePath, err := bundleArchivePath(cfg, task.ID)
 	if err != nil {
@@ -250,6 +252,7 @@ func buildBundleManifest(collector *bundleCollector, task bundleTask, sessionIDs
 		Unreadable:         summary.unreadable,
 		CodexEvidence:      codexEvidence,
 		CollectionIndex:    bundleCollectionEntryPath,
+		AnalysisIndex:      bundleAnalysisEntryPath,
 		CreatedAt:          time.Now().UTC().Format(time.RFC3339Nano),
 	}
 }

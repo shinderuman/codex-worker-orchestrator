@@ -119,7 +119,7 @@ func codexSourceIsGuardian(raw json.RawMessage) bool {
 	return source.Subagent != nil && source.Subagent.Other == "guardian"
 }
 
-func (c *bundleCollector) collectCodexEvidence(cfg config.AppConfig, task bundleTask) []bundleCodexSource {
+func (c *bundleCollector) collectCodexEvidence(cfg config.AppConfig, task bundleTask) (codexAssociation, []bundleCodexSource) {
 	association := resolveCodexAssociation(cfg.CodexConfigDir, task)
 	threads := c.addCodexRolloutEvidence(association)
 	logs := c.addCodexLogEvidence(cfg.CodexConfigDir, task, threads, association.ParentStatus, association.Basis)
@@ -131,7 +131,7 @@ func (c *bundleCollector) collectCodexEvidence(cfg config.AppConfig, task bundle
 		Sources: []string{"attachments"},
 		Detail:  "schema-different: no deterministic structured association from rollouts to attachment storage",
 	}
-	return []bundleCodexSource{codexParentSource(association), codexGuardianSource(association), logs, process, runtime, attachments}
+	return association, []bundleCodexSource{codexParentSource(association), codexGuardianSource(association), logs, process, runtime, attachments}
 }
 
 func resolveCodexAssociation(codexHome string, task bundleTask) codexAssociation {
