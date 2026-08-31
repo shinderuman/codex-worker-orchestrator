@@ -1,6 +1,7 @@
 package parentactioncmd
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -8,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentaction"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -25,6 +27,19 @@ func TestPayloadWorkerArgsDecisionOwnsFraming(t *testing.T) {
 	args := payloadWorkerArgs("decision", payload, nil)
 	if len(args) != 4 || args[0] != "--decision-stdin" || args[1] != strconv.Itoa(len(payload)) || args[2] != "--sha256" || len(args[3]) != 64 {
 		t.Fatalf("decision args = %#v", args)
+	}
+}
+
+func TestPayloadWorkerArgsMilestoneModes(t *testing.T) {
+	payload := []byte(`{"milestones":[]}`)
+	for action, wantMode := range map[string]string{
+		actionStartMilestones:  "--execution-milestones-stdin",
+		actionReviseMilestones: "--execution-milestones-revise-stdin",
+	} {
+		args := payloadWorkerArgs(action, payload, nil)
+		if len(args) != 4 || args[0] != wantMode || args[1] != strconv.Itoa(len(payload)) || args[2] != "--sha256" || len(args[3]) != 64 {
+			t.Fatalf("%s args = %#v", action, args)
+		}
 	}
 }
 
@@ -117,6 +132,22 @@ func TestExecuteStartPropagatesIdentityEnvToWorkerRun(t *testing.T) {
 	}
 }
 
+func TestExecuteStartMilestonesPropagatesIdentityEnvAndMode(t *testing.T) {
+	cfg, _ := newParentActionTestState(t)
+	t.Setenv("CODEX_THREAD_ID", codexIdentityTestThreadID)
+	t.Setenv("CODEX_SESSION_ID", codexIdentityTestThreadID)
+	payload := []byte(`{"request":"現在のACTIVE taskを実行してください。","milestones":[{"id":"a","scope":"a","acceptance":"a"},{"id":"b","scope":"b","acceptance":"b"}]}`)
+	token := prepareParentPayload(t, cfg, actionStartMilestones, payload)
+	marker := writeParentActionWorkerStubWithCheck(t, cfg,
+		`test "$GLM_PARENT_ACTION_CODEX_THREAD_ID" = "`+codexIdentityTestThreadID+`" && test "$GLM_PARENT_ACTION_CODEX_SESSION_ID" = "`+codexIdentityTestThreadID+`" && test "$1" = "--execution-milestones-stdin"`)
+	if err := execute(cfg, []string{actionStartMilestones, token}, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatal("milestone start did not invoke stub worker")
+	}
+}
+
 func TestExecuteStartWithoutIdentityEnvRunsChildWithoutPropagation(t *testing.T) {
 	cfg, _ := newParentActionIdentityTestState(t)
 	t.Setenv("CODEX_THREAD_ID", "")
@@ -183,6 +214,27 @@ func TestExecuteResumeIsNotBlockedByCorruptedTaskStats(t *testing.T) {
 	if _, err := os.Stat(marker); err != nil {
 		t.Fatal("stub worker was not invoked")
 	}
+}
+
+func prepareParentPayload(t *testing.T, cfg config.AppConfig, action string, payload []byte) string {
+	t.Helper()
+	prepared, err := parentaction.Prepare(cfg.RepoRoot, action)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(prepared.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	newline := bytes.IndexByte(raw, '\n')
+	if newline < 0 {
+		t.Fatal("prepared payload has no token header newline")
+	}
+	content := append(append([]byte(nil), raw[:newline+1]...), payload...)
+	if err := os.WriteFile(prepared.Path, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return prepared.Token
 }
 
 func newParentActionIdentityTestState(t *testing.T) (config.AppConfig, *state.StateStore) {

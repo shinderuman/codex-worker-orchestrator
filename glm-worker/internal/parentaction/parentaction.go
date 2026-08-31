@@ -27,7 +27,7 @@ const (
 
 func Prepare(repoRoot, action string) (Prepared, error) {
 	if !validPayloadAction(action) {
-		return Prepared{}, fmt.Errorf("parent payload action must be decision or fix")
+		return Prepared{}, fmt.Errorf("unsupported parent payload action %q", action)
 	}
 	stageDir := filepath.Join(repoRoot, StageDirName)
 	if err := ensureStageDir(stageDir); err != nil {
@@ -57,7 +57,7 @@ func Prepare(repoRoot, action string) (Prepared, error) {
 
 func Consume(repoRoot, action, token string) ([]byte, error) {
 	if !validPayloadAction(action) {
-		return nil, fmt.Errorf("parent payload action must be decision or fix")
+		return nil, fmt.Errorf("unsupported parent payload action %q", action)
 	}
 	if !validToken(token) {
 		return nil, fmt.Errorf("invalid parent action token")
@@ -167,7 +167,12 @@ func payloadPath(stageDir, action, token string) string {
 }
 
 func validPayloadAction(action string) bool {
-	return action == "decision" || action == "fix"
+	switch action {
+	case "decision", "fix", "start-milestones", "revise-milestones":
+		return true
+	default:
+		return false
+	}
 }
 
 func newToken() (string, error) {

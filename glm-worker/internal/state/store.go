@@ -34,6 +34,8 @@ const (
 	TaskStatusInterrupted TaskStatus = "interrupted"
 
 	TaskStatusNone TaskStatus = "none"
+
+	ExecutionMilestonesStateFile = "execution-milestones.json"
 )
 
 func NewStateStore(config config.AppConfig) (*StateStore, error) {
@@ -118,6 +120,7 @@ func (s *StateStore) StartNewTask() (string, error) {
 		"task.status",
 		"isolation.policy",
 		"baseline-head",
+		ExecutionMilestonesStateFile,
 		stopWorktreePatchFile,
 		stopIndexPatchFile,
 		isolationStateFile,
@@ -164,6 +167,7 @@ func taskStateFileNames() []string {
 		"baseline-worktree.patch",
 		"baseline-index.patch",
 		"accepted-fix-scope.json",
+		ExecutionMilestonesStateFile,
 		stopWorktreePatchFile,
 		stopIndexPatchFile,
 		isolationStateFile,

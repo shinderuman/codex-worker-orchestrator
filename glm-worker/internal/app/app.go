@@ -28,12 +28,13 @@ type Command struct {
 
 	SHA256 string
 
-	Origin        string
-	AcceptedScope string
-	ApprovalOnly  bool
-	Role          string
-	Verify        VerifyArgs
-	Coalesce      CoalesceArgs
+	Origin              string
+	AcceptedScope       string
+	ApprovalOnly        bool
+	ExecutionMilestones bool
+	Role                string
+	Verify              VerifyArgs
+	Coalesce            CoalesceArgs
 }
 
 type VerifyArgs struct {
@@ -95,6 +96,7 @@ const (
 	ModeBundle
 	ModeRepoSearch
 	ModeRepoSearchEval
+	ModeExecutionMilestonesRevise
 )
 
 const fixOriginUsage = "[--origin codex-review|glm-reviewer|user-amendment|external-review|metadata-repair] [--accepted-scope current-diff] [--approval-only]"
@@ -116,6 +118,8 @@ var commandParsers = map[string]commandParser{
 	"--fix-stdin": func(args []string) (Command, error) {
 		return stdinPayloadCommand(ModeFix, args, fmt.Sprintf("usage: glm-worker --fix-stdin <payload-bytes> [--sha256 <hex>] %s", fixOriginUsage), true)
 	},
+	"--execution-milestones-stdin":        executionMilestoneTaskCommand,
+	"--execution-milestones-revise-stdin": executionMilestoneRevisionCommand,
 	"--accept": func(args []string) (Command, error) {
 		return singleArgCommand(args, ModeAccept, "usage: glm-worker --accept")
 	},
@@ -191,7 +195,7 @@ func usageError(format string, args ...any) *UsageError {
 
 func ParseCommand(args []string) (Command, error) {
 	if len(args) == 0 {
-		return Command{}, usageError("usage: glm-worker <instruction> | --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix-stdin <payload-bytes> [--sha256 <hex>] %s | --accept | --resume | --stop | --isolate | --status | --handoff | --watch [--verbose] | --timeline [task-id] | --convergence [task-id] | --stats | --reset | --eval-ab <run-dir> | --call-outliers | --codex-limit | --repo-search <query> | --check-wake-coalesce <parent-thread-id> <auto-resume-at-rfc3339> | --install-smoke %s | --quality-gate %s | --model-routing | bundle [task-id]", fixOriginUsage, installSmokeUsage, qualityGateUsage)
+		return Command{}, usageError("usage: glm-worker <instruction> | --execution-milestones-stdin <payload-bytes> [--sha256 <hex>] | --execution-milestones-revise-stdin <payload-bytes> [--sha256 <hex>] | --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix-stdin <payload-bytes> [--sha256 <hex>] %s | --accept | --resume | --stop | --isolate | --status | --handoff | --watch [--verbose] | --timeline [task-id] | --convergence [task-id] | --stats | --reset | --eval-ab <run-dir> | --call-outliers | --codex-limit | --repo-search <query> | --check-wake-coalesce <parent-thread-id> <auto-resume-at-rfc3339> | --install-smoke %s | --quality-gate %s | --model-routing | bundle [task-id]", fixOriginUsage, installSmokeUsage, qualityGateUsage)
 	}
 	if parser, ok := commandParsers[args[0]]; ok {
 		return parser(args)
@@ -539,6 +543,8 @@ func executeLocked(cmd Command, cfg config.AppConfig, st *state.StateStore, stdo
 		return true, parentAccept(st, stdout)
 	case ModeIsolate:
 		return true, isolateInterruptedTask(st, cfg, stdout)
+	case ModeExecutionMilestonesRevise:
+		return true, executeExecutionMilestoneRevision(cmd, cfg, st, stdout)
 	case modeRotateInstructionBaseline:
 		return true, rotateInstructionBaseline(cfg, st, stdout)
 	default:
@@ -560,16 +566,16 @@ func executeWorkflow(cmd Command, cfg config.AppConfig, st *state.StateStore, rf
 
 	switch cmd.Mode {
 	case ModeNewTask:
-		return wf.ExecuteNewTask(cmd.Payload)
+		return executeNewTaskCommand(wf, cmd)
 	case ModeDecision:
-		return wf.ExecuteDecision(cmd.Payload)
+		return wf.ExecuteDecisionWithExecutionMilestones(cmd.Payload)
 	case ModeFix:
 		if cmd.ApprovalOnly {
-			return wf.ExecuteQualitySurfaceApproval(cmd.AcceptedScope)
+			return wf.ExecuteQualitySurfaceApprovalWithExecutionMilestones(cmd.AcceptedScope)
 		}
-		return wf.ExecuteExplicitFixWithScope(cmd.Payload, cmd.Origin, cmd.AcceptedScope)
+		return wf.ExecuteExplicitFixWithExecutionMilestones(cmd.Payload, cmd.Origin, cmd.AcceptedScope)
 	case ModeResume:
-		return wf.ExecuteResume()
+		return wf.ExecuteResumeWithExecutionMilestones()
 	default:
 		return fmt.Errorf("unsupported command mode")
 	}

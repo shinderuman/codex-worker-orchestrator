@@ -39,6 +39,7 @@ type ResumeCheckpoint struct {
 	ActivatedRuleFiles      []string                        `json:"activated_rule_files,omitempty"`
 	DecisionBoundaryApplied bool                            `json:"decision_boundary_applied,omitempty"`
 	ParentValidation        *packet.ParentValidationRequest `json:"parent_validation,omitempty"`
+	ExecutionMilestoneID    string                          `json:"execution_milestone_id,omitempty"`
 
 	WorkerResult    *packet.Result `json:"worker_result,omitempty"`
 	CompletedResult *packet.Result `json:"completed_result,omitempty"`

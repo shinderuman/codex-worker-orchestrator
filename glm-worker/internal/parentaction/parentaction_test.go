@@ -32,6 +32,25 @@ func TestPrepareConsumePreservesDecisionPayloadAndRemovesSlot(t *testing.T) {
 	}
 }
 
+func TestPrepareAcceptsMilestonePayloadActions(t *testing.T) {
+	for _, action := range []string{"start-milestones", "revise-milestones"} {
+		repo := t.TempDir()
+		prepared, err := Prepare(repo, action)
+		if err != nil {
+			t.Fatalf("%s prepare failed: %v", action, err)
+		}
+		payload := []byte(`{"milestones":[{"id":"a","scope":"a","acceptance":"a"},{"id":"b","scope":"b","acceptance":"b"}]}`)
+		writePreparedPayload(t, prepared, payload)
+		got, err := Consume(repo, action, prepared.Token)
+		if err != nil {
+			t.Fatalf("%s consume failed: %v", action, err)
+		}
+		if string(got) != string(payload) {
+			t.Fatalf("%s payload mismatch: %q", action, got)
+		}
+	}
+}
+
 func TestPrepareRejectsStartStaging(t *testing.T) {
 	if _, err := Prepare(t.TempDir(), "start"); err == nil {
 		t.Fatal("start unexpectedly uses file staging")
