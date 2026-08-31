@@ -36,6 +36,8 @@ const (
 	TaskStatusNone TaskStatus = "none"
 )
 
+const executionMilestonesStateFile = "execution-milestones.json"
+
 func NewStateStore(config config.AppConfig) (*StateStore, error) {
 	dir := filepath.Join(config.StateBase, config.RepoHash)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -118,6 +120,7 @@ func (s *StateStore) StartNewTask() (string, error) {
 		"task.status",
 		"isolation.policy",
 		"baseline-head",
+		executionMilestonesStateFile,
 		stopWorktreePatchFile,
 		stopIndexPatchFile,
 		isolationStateFile,
@@ -164,6 +167,7 @@ func taskStateFileNames() []string {
 		"baseline-worktree.patch",
 		"baseline-index.patch",
 		"accepted-fix-scope.json",
+		executionMilestonesStateFile,
 		stopWorktreePatchFile,
 		stopIndexPatchFile,
 		isolationStateFile,
