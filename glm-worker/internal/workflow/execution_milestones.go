@@ -63,6 +63,8 @@ const (
 	executionMilestoneVersion          = 1
 	executionMilestoneHeading          = "## Execution milestones"
 	executionMilestoneTaskAuthority    = "active-task:Contract,Must-not,Acceptance-criteria"
+	executionMilestoneStatusPending    = "pending"
+	executionMilestoneStatusComplete   = "complete"
 	maxExecutionMilestones             = 8
 	maxExecutionMilestoneText          = 2048
 	maxCompletedMilestonePromptSummary = 512
@@ -152,7 +154,7 @@ func (w *Workflow) completeExecutionMilestone(plan *executionMilestonePlan, resu
 	}
 	when := w.now().UTC()
 	record := &plan.Milestones[index]
-	record.Status = "complete"
+	record.Status = executionMilestoneStatusComplete
 	record.CompletedAt = &when
 	record.CompletedCallID = w.lastCallID
 	record.CompletedWorkerSessionID = w.state.ReadOr("worker.id", "")
@@ -209,7 +211,7 @@ func (w *Workflow) handleMissingExecutionMilestoneDefinitions(
 		}
 		return nil, false, nil
 	}
-	return nil, false, errors.New("Execution milestones cannot be removed after a milestone completed")
+	return nil, false, errors.New("execution milestones cannot be removed after a milestone completed")
 }
 
 func (w *Workflow) syncPresentExecutionMilestones(
@@ -286,7 +288,7 @@ func parseExecutionMilestoneDefinitions(task string) ([]executionMilestoneDefini
 	decoder := json.NewDecoder(strings.NewReader(section))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&doc); err != nil {
-		return nil, true, fmt.Errorf("decode Execution milestones JSON: %w", err)
+		return nil, true, fmt.Errorf("decode execution milestones JSON: %w", err)
 	}
 	if err := ensureExecutionMilestoneJSONEOF(decoder); err != nil {
 		return nil, true, err
@@ -305,7 +307,7 @@ func executionMilestoneSection(task string) (string, bool, error) {
 		line := strings.TrimSpace(raw)
 		if line == executionMilestoneHeading {
 			if start >= 0 {
-				return "", true, errors.New("Execution milestones section appears more than once")
+				return "", true, errors.New("execution milestones section appears more than once")
 			}
 			start = i + 1
 			continue
@@ -323,14 +325,14 @@ func executionMilestoneSection(task string) (string, bool, error) {
 
 func unwrapExecutionMilestoneJSON(section string) (string, error) {
 	if section == "" {
-		return "", errors.New("Execution milestones section is empty")
+		return "", errors.New("execution milestones section is empty")
 	}
 	if !strings.HasPrefix(section, "```json") {
 		return section, nil
 	}
 	section = strings.TrimSpace(strings.TrimPrefix(section, "```json"))
 	if !strings.HasSuffix(section, "```") {
-		return "", errors.New("Execution milestones JSON fence is not closed")
+		return "", errors.New("execution milestones JSON fence is not closed")
 	}
 	return strings.TrimSpace(strings.TrimSuffix(section, "```")), nil
 }
@@ -342,17 +344,17 @@ func ensureExecutionMilestoneJSONEOF(decoder *json.Decoder) error {
 		return nil
 	}
 	if err == nil {
-		return errors.New("Execution milestones JSON contains trailing data")
+		return errors.New("execution milestones JSON contains trailing data")
 	}
-	return fmt.Errorf("decode Execution milestones trailing data: %w", err)
+	return fmt.Errorf("decode execution milestones trailing data: %w", err)
 }
 
 func validateExecutionMilestoneDefinitions(definitions []executionMilestoneDefinition) error {
 	if len(definitions) < 2 {
-		return errors.New("Execution milestones requires at least two milestones; omit the section for a small task")
+		return errors.New("execution milestones requires at least two milestones; omit the section for a small task")
 	}
 	if len(definitions) > maxExecutionMilestones {
-		return fmt.Errorf("Execution milestones exceeds maximum of %d", maxExecutionMilestones)
+		return fmt.Errorf("execution milestones exceeds maximum of %d", maxExecutionMilestones)
 	}
 	seen := make(map[string]struct{}, len(definitions))
 	for index := range definitions {
@@ -392,7 +394,7 @@ func newExecutionMilestonePlan(taskID, activeTaskPath string, definitions []exec
 	for index, definition := range definitions {
 		milestones[index] = executionMilestoneRecord{
 			ID: definition.ID, Scope: definition.Scope, Acceptance: definition.Acceptance,
-			FreshWorker: definition.FreshWorker, Status: "pending",
+			FreshWorker: definition.FreshWorker, Status: executionMilestoneStatusPending,
 		}
 	}
 	return &executionMilestonePlan{
@@ -432,17 +434,28 @@ func validateStoredExecutionMilestonePlan(plan *executionMilestonePlan) error {
 	if plan.CurrentIndex < 0 || plan.CurrentIndex > len(plan.Milestones) {
 		return errors.New("invalid execution milestone current_index")
 	}
-	for index, milestone := range plan.Milestones {
-		want := "pending"
-		if index < plan.CurrentIndex {
-			want = "complete"
+	for index := range plan.Milestones {
+		if err := validateStoredExecutionMilestoneRecord(plan, index); err != nil {
+			return err
 		}
-		if milestone.Status != want {
-			return fmt.Errorf("milestone %q status %q does not match current_index", milestone.ID, milestone.Status)
-		}
-		if want == "complete" && (milestone.CompletedAt == nil || milestone.Snapshot == nil) {
-			return fmt.Errorf("completed milestone %q is missing durable completion evidence", milestone.ID)
-		}
+	}
+	return nil
+}
+
+func validateStoredExecutionMilestoneRecord(plan *executionMilestonePlan, index int) error {
+	milestone := plan.Milestones[index]
+	want := executionMilestoneStatusPending
+	if index < plan.CurrentIndex {
+		want = executionMilestoneStatusComplete
+	}
+	if milestone.Status != want {
+		return fmt.Errorf("milestone %q status %q does not match current_index", milestone.ID, milestone.Status)
+	}
+	if want != executionMilestoneStatusComplete {
+		return nil
+	}
+	if milestone.CompletedAt == nil || milestone.Snapshot == nil {
+		return fmt.Errorf("completed milestone %q is missing durable completion evidence", milestone.ID)
 	}
 	return nil
 }
@@ -482,7 +495,7 @@ func appendCompletedAndPendingExecutionMilestones(
 	for _, definition := range definitions[plan.CurrentIndex:] {
 		result = append(result, executionMilestoneRecord{
 			ID: definition.ID, Scope: definition.Scope, Acceptance: definition.Acceptance,
-			FreshWorker: definition.FreshWorker, Status: "pending",
+			FreshWorker: definition.FreshWorker, Status: executionMilestoneStatusPending,
 		})
 	}
 	return result
