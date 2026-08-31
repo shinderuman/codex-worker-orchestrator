@@ -93,10 +93,10 @@ func ReviseExecutionMilestones(
 	if err != nil {
 		return ExecutionMilestoneRevision{}, err
 	}
-	if err := saveExecutionMilestonePlan(st, plan); err != nil {
+	if err := bindStoppedCheckpointToExecutionMilestone(st, plan); err != nil {
 		return ExecutionMilestoneRevision{}, err
 	}
-	if err := bindStoppedCheckpointToExecutionMilestone(st, plan); err != nil {
+	if err := saveExecutionMilestonePlan(st, plan); err != nil {
 		return ExecutionMilestoneRevision{}, err
 	}
 	return executionMilestoneRevisionResult(plan), nil
