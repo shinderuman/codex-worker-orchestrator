@@ -11,6 +11,12 @@
 
 本文を更新できるのは親Codexだけとする。GLM worker/reviewerは読み取り専用で参照し、必要な更新候補と根拠をPACKETへ記載する。
 
+## 2026-09-01 bundle共同分析の承認済み4案を起票
+
+- [x] parent maintenanceとして、ユーザーが承認した案2・4・5・6だけを独立taskへ保存し、Planへ登録した。起票の完了証跡であり、各taskの実装完了を意味しない。原文と分析時点の証拠・要求は各taskのlossless sourceへ保持する。
+- 既存authorization ACTIVEとrouting評価の先行順序を維持した。新規分は評価区間を先に明確化する案5、既知環境制約による検証反復を減らす案2、packet形式修正を減らす案4、調査時の再parseを減らす案6の順とした。これは優先順だけでhard dependencyではない。案1・3は登録していない。
+- metadata参照18件の存在・一意性、ACTIVE不変、4taskの必須sectionと承認原文の保持、staged diffを確認した。production sourceは変更せず、GLM実装・test/build・runtime installは開始していない。
+
 ## 2026-09-01 bundleのtask単位分析索引
 
 - parent maintenance: 完了後の通常pushがauto-reviewから既存許可と矛盾する理由で拒否された。ユーザーは不整合のtask起票とpushを明示許可し、`authorization-context-inconsistency.md`をNEXTへ登録した。現ACTIVEは維持し、この調査taskは開始していない。別途依頼されたbundle共同分析のタスク案は、ユーザー提示までPlanへ登録しない。
