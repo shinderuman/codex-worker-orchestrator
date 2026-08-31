@@ -11,6 +11,11 @@
 
 本文を更新できるのは親Codexだけとする。GLM worker/reviewerは読み取り専用で参照し、必要な更新候補と根拠をPACKETへ記載する。
 
+## 2026-09-01 PoC/observation terminal packet契約違反を起票
+
+- [x] Dogfood task `2750ec82-8d56-47b9-b8f5-972d44dab43e`で確認したwrapper生成Go/No-Go packetの改行禁止違反を、`poc-observation-terminal-packet-contract.md`として独立起票した。model producerのbyte上限とresult-correction削減を扱う`packet-presubmit-byte-validation.md`とは分離する。
+- 未着手の`glm-flash-reviewer-routing.md`をNEXT先頭へ戻し、本bug taskをACTIVEへ昇格した。その他のNEXT相対順序は変更していない。source変更、regression test、GLM callは開始していない。
+
 ## 2026-09-01 許可済み操作の承認判定不整合
 
 - [x] `authorization-context-inconsistency`をread-only observationとして実施し、親Go/No-Go、task commit、Plan/History同期を完了した。task IDは`2750ec82-8d56-47b9-b8f5-972d44dab43e`、worker sessionは`d4c549ee-7920-4e50-8c52-7b47ada0376a`。原要求は削除した`IMPLEMENTATION_TASKS/authorization-context-inconsistency.md`のGit履歴に保持する。production source、設定、instruction surface、Git remoteへ変更を加えていない。
