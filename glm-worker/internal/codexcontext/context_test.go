@@ -32,6 +32,8 @@ func TestEnableDisableManagedProjectConfig(t *testing.T) {
 		"apps = false",
 		"plugins = false",
 		"default_exec_yield_time_ms = 21600000",
+		"root_agent_usage_hint_text = \"\"",
+		"multi_agent_mode_hint_text = \"\"",
 	} {
 		if !strings.Contains(string(content), setting) {
 			t.Fatalf("managed config is missing %q:\n%s", setting, content)
