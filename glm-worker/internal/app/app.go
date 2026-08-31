@@ -573,7 +573,7 @@ func executeWorkflow(cmd Command, cfg config.AppConfig, st *state.StateStore, rf
 		if cmd.ApprovalOnly {
 			return wf.ExecuteQualitySurfaceApprovalWithExecutionMilestones(cmd.AcceptedScope)
 		}
-		return wf.ExecuteExplicitFixWithScope(cmd.Payload, cmd.Origin, cmd.AcceptedScope)
+		return wf.ExecuteExplicitFixWithExecutionMilestones(cmd.Payload, cmd.Origin, cmd.AcceptedScope)
 	case ModeResume:
 		return wf.ExecuteResumeWithExecutionMilestones()
 	default:
