@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-func TestGLMWaitContractIsCompactAndToolOwned(t *testing.T) {
+func TestGLMWaitContractPinsLongBlockingBoundary(t *testing.T) {
 	_, source, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("test source path is unavailable")
@@ -29,7 +29,10 @@ func TestGLMWaitContractIsCompactAndToolOwned(t *testing.T) {
 		t.Fatal("glm-execution.md missing wait section")
 	}
 	for _, token := range []string{
-		"tool/runtime境界へ委ねる",
+		"// @exec: {\"yield_time_ms\":21600000,\"max_output_tokens\":1000}",
+		"background_terminal_max_timeout=21600000",
+		"tools.exec_command",
+		"tools.write_stdin",
 		"glm-worker --handoff",
 		"required_action",
 		"allowed_actions",
@@ -40,13 +43,11 @@ func TestGLMWaitContractIsCompactAndToolOwned(t *testing.T) {
 		}
 	}
 	for _, token := range []string{
-		"21600000",
-		"最大待機時間",
-		"functions.wait",
-		"tools.write_stdin",
+		"tool/runtime境界へ委ねる",
+		"yield-time_ms=60000",
 	} {
 		if strings.Contains(waitSection, token) {
-			t.Errorf("wait section retains parent timing transport %q", token)
+			t.Errorf("wait section retains failed short-wait contract %q", token)
 		}
 	}
 }
