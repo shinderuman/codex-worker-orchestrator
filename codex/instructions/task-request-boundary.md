@@ -27,8 +27,8 @@ ACTIVE taskを開始・再開するとき、user messageをdurable task contract
 ```
 
 - 実行はsandbox外で`glm-parent-action start-milestones <token>`を1回だけ使う。wrapperはmilestone stateをdelegation前に保存し、その後のdecision・fix・approval・resumeは既存actionを使って同一task lifecycleを継続する。
-- 実装途中でmaterially大きいと判明した場合はhealthyなin-flight callを止めない。`waiting-decision`、rate limit、provider unavailable、recoverable guard、明示stop等の自然な停止境界だけで`glm-parent-action prepare revise-milestones`を使い、placeholderを`{"milestones":[...]}`へ置換してからsandbox外で`glm-parent-action revise-milestones <token>`を実行する。完了済みmilestoneと停止中in-flight milestoneは変更しない。
-- milestone完了はtask完了ではない。最後のmilestone後も既存のtask-wide independent reviewer/Sol判断・validation・accept境界を維持する。次unitのfresh workerはcurrent Gitとdurable completion evidenceを正とし、完了済みunitを再実装しない。
+- 実装途中でmaterially大きいと判明した場合はhealthyなin-flight callを止めない。`waiting-decision`、`waiting-sol-review`、rate limit、provider unavailable、recoverable guard、明示stop等の自然な停止境界だけで`glm-parent-action prepare revise-milestones`を使い、placeholderを`{"milestones":[...]}`へ置換してからsandbox外で`glm-parent-action revise-milestones <token>`を実行する。完了済みmilestoneと停止中in-flight milestoneは変更しない。
+- milestone完了はtask完了ではない。最後のmilestone後も既存のtask-wide independent reviewer/Sol判断・validation・accept境界を維持する。次unitのfresh workerはcurrent Gitとdurable completion evidenceを正とし、新しいworkerになったことだけを理由に完了済みunitを再実装しない。明示semantic amendmentが完了済み範囲を変更した場合は、更新後task hashとcurrent milestoneのscope/acceptanceでそのdeltaを明示して扱う。
 
 ## 境界例
 
