@@ -258,14 +258,18 @@ func newAnalysisBundleFixture(t *testing.T) analysisBundleFixture {
 		t.Fatal(err)
 	}
 	st.RecordRateLimit("opus")
+	inWindowAt := time.Now().UTC()
+	if inWindowAt.Before(start) {
+		inWindowAt = start
+	}
 
 	inWindow := []string{
-		analysisTokenCountLine(t, start.Add(100*time.Microsecond), 26011, 6912),
-		analysisRolloutLine(t, start.Add(200*time.Microsecond), "response_item", map[string]any{"type": "function_call", "name": "wait"}),
-		analysisRolloutLine(t, start.Add(300*time.Microsecond), "response_item", map[string]any{"type": "custom_tool_call", "name": "exec"}),
-		analysisTokenCountLine(t, start.Add(400*time.Microsecond), 26511, 7912),
-		analysisRolloutLine(t, start.Add(500*time.Microsecond), "response_item", map[string]any{"type": "function_call", "name": "wait"}),
-		analysisRolloutLine(t, start.Add(600*time.Microsecond), "response_item", map[string]any{"type": "function_call", "name": "wait"}),
+		analysisTokenCountLine(t, inWindowAt, 26011, 6912),
+		analysisRolloutLine(t, inWindowAt, "response_item", map[string]any{"type": "function_call", "name": "wait"}),
+		analysisRolloutLine(t, inWindowAt, "response_item", map[string]any{"type": "custom_tool_call", "name": "exec"}),
+		analysisTokenCountLine(t, inWindowAt, 26511, 7912),
+		analysisRolloutLine(t, inWindowAt, "response_item", map[string]any{"type": "function_call", "name": "wait"}),
+		analysisRolloutLine(t, inWindowAt, "response_item", map[string]any{"type": "function_call", "name": "wait"}),
 	}
 	preWindow := []string{
 		analysisTokenCountLine(t, start.Add(-2*time.Hour), 25011, 5912),
@@ -281,7 +285,7 @@ func newAnalysisBundleFixture(t *testing.T) analysisBundleFixture {
 
 	digest := state.SnapshotDigest{Head: "head-round", IndexDigest: "index-round", WorktreeDigest: "worktree-round"}
 	if err := st.AppendRoundRecord(state.RoundRecord{
-		Version: 1, TaskID: taskID, WorkerPhase: "baseline", CapturedAt: start.Add(time.Millisecond), Snapshot: digest,
+		Version: 1, TaskID: taskID, WorkerPhase: "baseline", CapturedAt: inWindowAt, Snapshot: digest,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -292,11 +296,11 @@ func newAnalysisBundleFixture(t *testing.T) analysisBundleFixture {
 	st.RecordValidation("quality-gate", "go-test", "", state.ValidationResultPass, 0, state.ValidationExitSourceTarget, 1,
 		"quality-gate-runs/"+analysisRunEventLinked+"/gate.log")
 	writeAnalysisRun(t, st, analysisRunExternal, "go-test", "pass", start.Add(-3*time.Hour), start.Add(-2*time.Hour), state.GitSnapshot{})
-	writeAnalysisRun(t, st, analysisRunEventLinked, "go-test", "pass", start.Add(time.Millisecond), start.Add(2*time.Millisecond), state.GitSnapshot{})
-	writeAnalysisRun(t, st, analysisRunDigestMatched, "go-test-race", "pass", start.Add(3*time.Millisecond), start.Add(4*time.Millisecond), state.GitSnapshot{
+	writeAnalysisRun(t, st, analysisRunEventLinked, "go-test", "pass", inWindowAt, inWindowAt, state.GitSnapshot{})
+	writeAnalysisRun(t, st, analysisRunDigestMatched, "go-test-race", "pass", inWindowAt, inWindowAt, state.GitSnapshot{
 		Head: digest.Head, IndexDigest: digest.IndexDigest, WorktreeDigest: digest.WorktreeDigest,
 	})
-	writeAnalysisRun(t, st, analysisRunUnmatched, "go-test", "fail", start.Add(5*time.Millisecond), start.Add(6*time.Millisecond), state.GitSnapshot{})
+	writeAnalysisRun(t, st, analysisRunUnmatched, "go-test", "fail", inWindowAt, inWindowAt, state.GitSnapshot{})
 
 	guardedBefore := readAnalysisGuardedFiles(t, st, taskID)
 	var stdout bytes.Buffer
