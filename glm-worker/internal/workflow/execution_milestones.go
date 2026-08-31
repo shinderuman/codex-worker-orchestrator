@@ -70,31 +70,6 @@ type executionMilestonePlan struct {
 	UpdatedAt             time.Time                  `json:"updated_at"`
 }
 
-func (w *Workflow) initializeExecutionMilestones(activeTaskPath string) error {
-	if err := w.state.Remove(executionMilestoneStateFile); err != nil {
-		return err
-	}
-	if activeTaskPath == "" {
-		return nil
-	}
-	definitions, present, err := readExecutionMilestoneDefinitions(w.config.RepoRoot, activeTaskPath)
-	if err != nil {
-		return fmt.Errorf("execution milestones: %w", err)
-	}
-	if !present {
-		return nil
-	}
-	taskID, err := w.state.TaskID()
-	if err != nil {
-		return err
-	}
-	digest, err := executionMilestoneDefinitionDigest(definitions)
-	if err != nil {
-		return err
-	}
-	return w.saveExecutionMilestonePlan(newExecutionMilestonePlan(taskID, activeTaskPath, definitions, digest, w.now()))
-}
-
 func (w *Workflow) decorateExecutionMilestoneCheckpoint(checkpoint state.ResumeCheckpoint) (state.ResumeCheckpoint, error) {
 	if checkpoint.Role != state.WorkerRole || checkpoint.ReportOnly {
 		return checkpoint, nil
@@ -122,12 +97,8 @@ func (w *Workflow) advanceExecutionMilestone(request string, result packet.Resul
 	if plan.CurrentIndex >= len(plan.Milestones) {
 		return nil, nil
 	}
-
-	next := plan.Milestones[plan.CurrentIndex]
-	if next.FreshWorker {
-		if err := w.state.Remove("worker.id", "worker.ready"); err != nil {
-			return nil, fmt.Errorf("fresh worker for milestone %q: %w", next.ID, err)
-		}
+	if err := w.prepareNextExecutionMilestoneWorker(plan); err != nil {
+		return nil, err
 	}
 	checkpoint := w.nextExecutionMilestoneCheckpoint(request, plan)
 	nextResult, err := w.runWorkerModelWithRuleActivation(checkpoint)
@@ -135,6 +106,17 @@ func (w *Workflow) advanceExecutionMilestone(request string, result packet.Resul
 		return nil, err
 	}
 	return &nextResult, nil
+}
+
+func (w *Workflow) prepareNextExecutionMilestoneWorker(plan *executionMilestonePlan) error {
+	next := plan.Milestones[plan.CurrentIndex]
+	if !next.FreshWorker {
+		return nil
+	}
+	if err := w.state.Remove("worker.id", "worker.ready"); err != nil {
+		return fmt.Errorf("fresh worker for milestone %q: %w", next.ID, err)
+	}
+	return nil
 }
 
 func (w *Workflow) nextExecutionMilestoneCheckpoint(request string, plan *executionMilestonePlan) state.ResumeCheckpoint {
@@ -187,13 +169,9 @@ func (w *Workflow) completeExecutionMilestone(plan *executionMilestonePlan, resu
 }
 
 func (w *Workflow) syncExecutionMilestonePlan() (*executionMilestonePlan, bool, error) {
-	taskID, err := w.state.TaskID()
-	if err != nil {
-		return nil, false, nil
-	}
-	activeTaskPath := w.state.ReadOr(activeTaskStateKey, "")
-	if activeTaskPath == "" {
-		return nil, false, nil
+	taskID, activeTaskPath, err := w.executionMilestoneIdentity()
+	if err != nil || taskID == "" || activeTaskPath == "" {
+		return nil, false, err
 	}
 	definitions, present, err := readExecutionMilestoneDefinitions(w.config.RepoRoot, activeTaskPath)
 	if err != nil {
@@ -201,35 +179,52 @@ func (w *Workflow) syncExecutionMilestonePlan() (*executionMilestonePlan, bool, 
 	}
 	stored, storedErr := w.loadExecutionMilestonePlan()
 	if !present {
-		if errors.Is(storedErr, os.ErrNotExist) {
-			return nil, false, nil
-		}
-		if storedErr != nil {
-			return nil, false, storedErr
-		}
-		if stored.TaskID != taskID {
-			_ = w.state.Remove(executionMilestoneStateFile)
-			return nil, false, nil
-		}
-		if stored.CurrentIndex == 0 {
-			if err := w.state.Remove(executionMilestoneStateFile); err != nil {
-				return nil, false, err
-			}
-			return nil, false, nil
-		}
-		return nil, false, errors.New("Execution milestones cannot be removed after a milestone completed")
+		return w.handleMissingExecutionMilestoneDefinitions(taskID, stored, storedErr)
 	}
+	return w.syncPresentExecutionMilestones(taskID, activeTaskPath, definitions, stored, storedErr)
+}
 
+func (w *Workflow) executionMilestoneIdentity() (string, string, error) {
+	taskID, err := w.state.TaskID()
+	if err != nil {
+		return "", "", nil
+	}
+	return taskID, w.state.ReadOr(activeTaskStateKey, ""), nil
+}
+
+func (w *Workflow) handleMissingExecutionMilestoneDefinitions(
+	taskID string,
+	stored *executionMilestonePlan,
+	storedErr error,
+) (*executionMilestonePlan, bool, error) {
+	if errors.Is(storedErr, os.ErrNotExist) {
+		return nil, false, nil
+	}
+	if storedErr != nil {
+		return nil, false, storedErr
+	}
+	if stored.TaskID != taskID || stored.CurrentIndex == 0 {
+		if err := w.state.Remove(executionMilestoneStateFile); err != nil {
+			return nil, false, err
+		}
+		return nil, false, nil
+	}
+	return nil, false, errors.New("Execution milestones cannot be removed after a milestone completed")
+}
+
+func (w *Workflow) syncPresentExecutionMilestones(
+	taskID string,
+	activeTaskPath string,
+	definitions []executionMilestoneDefinition,
+	stored *executionMilestonePlan,
+	storedErr error,
+) (*executionMilestonePlan, bool, error) {
 	digest, err := executionMilestoneDefinitionDigest(definitions)
 	if err != nil {
 		return nil, false, err
 	}
-	if errors.Is(storedErr, os.ErrNotExist) || (storedErr == nil && (stored.TaskID != taskID || stored.ActiveTaskPath != activeTaskPath)) {
-		plan := newExecutionMilestonePlan(taskID, activeTaskPath, definitions, digest, w.now())
-		if err := w.saveExecutionMilestonePlan(plan); err != nil {
-			return nil, false, err
-		}
-		return plan, true, nil
+	if errors.Is(storedErr, os.ErrNotExist) || executionMilestoneIdentityChanged(stored, storedErr, taskID, activeTaskPath) {
+		return w.createExecutionMilestonePlan(taskID, activeTaskPath, definitions, digest)
 	}
 	if storedErr != nil {
 		return nil, false, storedErr
@@ -249,6 +244,23 @@ func (w *Workflow) syncExecutionMilestonePlan() (*executionMilestonePlan, bool, 
 	return stored, true, nil
 }
 
+func executionMilestoneIdentityChanged(stored *executionMilestonePlan, storedErr error, taskID, activeTaskPath string) bool {
+	return storedErr == nil && (stored.TaskID != taskID || stored.ActiveTaskPath != activeTaskPath)
+}
+
+func (w *Workflow) createExecutionMilestonePlan(
+	taskID string,
+	activeTaskPath string,
+	definitions []executionMilestoneDefinition,
+	digest string,
+) (*executionMilestonePlan, bool, error) {
+	plan := newExecutionMilestonePlan(taskID, activeTaskPath, definitions, digest, w.now())
+	if err := w.saveExecutionMilestonePlan(plan); err != nil {
+		return nil, false, err
+	}
+	return plan, true, nil
+}
+
 func readExecutionMilestoneDefinitions(repoRoot, activeTaskPath string) ([]executionMilestoneDefinition, bool, error) {
 	clean := filepath.Clean(filepath.FromSlash(activeTaskPath))
 	if clean == "." || filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
@@ -262,38 +274,14 @@ func readExecutionMilestoneDefinitions(repoRoot, activeTaskPath string) ([]execu
 }
 
 func parseExecutionMilestoneDefinitions(task string) ([]executionMilestoneDefinition, bool, error) {
-	lines := strings.Split(task, "\n")
-	start := -1
-	end := len(lines)
-	for i, raw := range lines {
-		line := strings.TrimSpace(raw)
-		if line == executionMilestoneHeading {
-			if start >= 0 {
-				return nil, true, errors.New("Execution milestones section appears more than once")
-			}
-			start = i + 1
-			continue
-		}
-		if start >= 0 && i >= start && strings.HasPrefix(line, "## ") {
-			end = i
-			break
-		}
+	section, present, err := executionMilestoneSection(task)
+	if err != nil || !present {
+		return nil, present, err
 	}
-	if start < 0 {
-		return nil, false, nil
+	section, err = unwrapExecutionMilestoneJSON(section)
+	if err != nil {
+		return nil, true, err
 	}
-	section := strings.TrimSpace(strings.Join(lines[start:end], "\n"))
-	if strings.HasPrefix(section, "```json") {
-		section = strings.TrimSpace(strings.TrimPrefix(section, "```json"))
-		if !strings.HasSuffix(section, "```") {
-			return nil, true, errors.New("Execution milestones JSON fence is not closed")
-		}
-		section = strings.TrimSpace(strings.TrimSuffix(section, "```"))
-	}
-	if section == "" {
-		return nil, true, errors.New("Execution milestones section is empty")
-	}
-
 	var doc executionMilestoneDocument
 	decoder := json.NewDecoder(strings.NewReader(section))
 	decoder.DisallowUnknownFields()
@@ -307,6 +295,44 @@ func parseExecutionMilestoneDefinitions(task string) ([]executionMilestoneDefini
 		return nil, true, err
 	}
 	return doc.Milestones, true, nil
+}
+
+func executionMilestoneSection(task string) (string, bool, error) {
+	lines := strings.Split(task, "\n")
+	start := -1
+	end := len(lines)
+	for i, raw := range lines {
+		line := strings.TrimSpace(raw)
+		if line == executionMilestoneHeading {
+			if start >= 0 {
+				return "", true, errors.New("Execution milestones section appears more than once")
+			}
+			start = i + 1
+			continue
+		}
+		if start >= 0 && i >= start && strings.HasPrefix(line, "## ") {
+			end = i
+			break
+		}
+	}
+	if start < 0 {
+		return "", false, nil
+	}
+	return strings.TrimSpace(strings.Join(lines[start:end], "\n")), true, nil
+}
+
+func unwrapExecutionMilestoneJSON(section string) (string, error) {
+	if section == "" {
+		return "", errors.New("Execution milestones section is empty")
+	}
+	if !strings.HasPrefix(section, "```json") {
+		return section, nil
+	}
+	section = strings.TrimSpace(strings.TrimPrefix(section, "```json"))
+	if !strings.HasSuffix(section, "```") {
+		return "", errors.New("Execution milestones JSON fence is not closed")
+	}
+	return strings.TrimSpace(strings.TrimSuffix(section, "```")), nil
 }
 
 func ensureExecutionMilestoneJSONEOF(decoder *json.Decoder) error {
@@ -330,23 +356,33 @@ func validateExecutionMilestoneDefinitions(definitions []executionMilestoneDefin
 	}
 	seen := make(map[string]struct{}, len(definitions))
 	for index := range definitions {
-		definition := &definitions[index]
-		definition.ID = strings.TrimSpace(definition.ID)
-		definition.Scope = strings.TrimSpace(definition.Scope)
-		definition.Acceptance = strings.TrimSpace(definition.Acceptance)
-		if !executionMilestoneIDPattern.MatchString(definition.ID) {
-			return fmt.Errorf("milestone %d has invalid id %q", index+1, definition.ID)
+		if err := normalizeExecutionMilestoneDefinition(&definitions[index], index, seen); err != nil {
+			return err
 		}
-		if _, exists := seen[definition.ID]; exists {
-			return fmt.Errorf("milestone id %q is duplicated", definition.ID)
-		}
-		seen[definition.ID] = struct{}{}
-		if definition.Scope == "" || definition.Acceptance == "" {
-			return fmt.Errorf("milestone %q requires non-empty scope and acceptance", definition.ID)
-		}
-		if len(definition.Scope) > maxExecutionMilestoneText || len(definition.Acceptance) > maxExecutionMilestoneText {
-			return fmt.Errorf("milestone %q scope/acceptance exceeds %d bytes", definition.ID, maxExecutionMilestoneText)
-		}
+	}
+	return nil
+}
+
+func normalizeExecutionMilestoneDefinition(
+	definition *executionMilestoneDefinition,
+	index int,
+	seen map[string]struct{},
+) error {
+	definition.ID = strings.TrimSpace(definition.ID)
+	definition.Scope = strings.TrimSpace(definition.Scope)
+	definition.Acceptance = strings.TrimSpace(definition.Acceptance)
+	if !executionMilestoneIDPattern.MatchString(definition.ID) {
+		return fmt.Errorf("milestone %d has invalid id %q", index+1, definition.ID)
+	}
+	if _, exists := seen[definition.ID]; exists {
+		return fmt.Errorf("milestone id %q is duplicated", definition.ID)
+	}
+	seen[definition.ID] = struct{}{}
+	if definition.Scope == "" || definition.Acceptance == "" {
+		return fmt.Errorf("milestone %q requires non-empty scope and acceptance", definition.ID)
+	}
+	if len(definition.Scope) > maxExecutionMilestoneText || len(definition.Acceptance) > maxExecutionMilestoneText {
+		return fmt.Errorf("milestone %q scope/acceptance exceeds %d bytes", definition.ID, maxExecutionMilestoneText)
 	}
 	return nil
 }
@@ -418,6 +454,16 @@ func reconcileExecutionMilestoneDefinitions(plan *executionMilestonePlan, defini
 	if len(definitions) <= plan.CurrentIndex {
 		return errors.New("revised execution milestone plan must retain a pending current/future milestone")
 	}
+	if err := validateCompletedExecutionMilestones(plan, definitions); err != nil {
+		return err
+	}
+	plan.Milestones = appendCompletedAndPendingExecutionMilestones(plan, definitions)
+	plan.DefinitionSHA256 = digest
+	plan.UpdatedAt = now.UTC()
+	return nil
+}
+
+func validateCompletedExecutionMilestones(plan *executionMilestonePlan, definitions []executionMilestoneDefinition) error {
 	for index := 0; index < plan.CurrentIndex; index++ {
 		old := plan.Milestones[index]
 		updated := definitions[index]
@@ -425,18 +471,21 @@ func reconcileExecutionMilestoneDefinitions(plan *executionMilestonePlan, defini
 			return fmt.Errorf("completed milestone %q is immutable", old.ID)
 		}
 	}
-	completed := append([]executionMilestoneRecord(nil), plan.Milestones[:plan.CurrentIndex]...)
-	pending := make([]executionMilestoneRecord, 0, len(definitions)-plan.CurrentIndex)
+	return nil
+}
+
+func appendCompletedAndPendingExecutionMilestones(
+	plan *executionMilestonePlan,
+	definitions []executionMilestoneDefinition,
+) []executionMilestoneRecord {
+	result := append([]executionMilestoneRecord(nil), plan.Milestones[:plan.CurrentIndex]...)
 	for _, definition := range definitions[plan.CurrentIndex:] {
-		pending = append(pending, executionMilestoneRecord{
+		result = append(result, executionMilestoneRecord{
 			ID: definition.ID, Scope: definition.Scope, Acceptance: definition.Acceptance,
 			FreshWorker: definition.FreshWorker, Status: "pending",
 		})
 	}
-	plan.Milestones = append(completed, pending...)
-	plan.DefinitionSHA256 = digest
-	plan.UpdatedAt = now.UTC()
-	return nil
+	return result
 }
 
 func executionMilestoneDefinitionDigest(definitions []executionMilestoneDefinition) (string, error) {
@@ -450,18 +499,7 @@ func executionMilestoneDefinitionDigest(definitions []executionMilestoneDefiniti
 
 func renderExecutionMilestonePrompt(base string, plan *executionMilestonePlan, index int) string {
 	milestone := plan.Milestones[index]
-	var completed strings.Builder
-	for _, item := range plan.Milestones[:index] {
-		completed.WriteString("- ")
-		completed.WriteString(item.ID)
-		completed.WriteString(": ")
-		completed.WriteString(truncateExecutionMilestonePromptText(item.Summary))
-		completed.WriteByte('\n')
-	}
-	completedText := "none"
-	if completed.Len() > 0 {
-		completedText = strings.TrimRight(completed.String(), "\n")
-	}
+	completedText := renderCompletedExecutionMilestones(plan.Milestones[:index])
 	return fmt.Sprintf(`%s
 
 EXECUTION_MILESTONE_CONTEXT:
@@ -485,6 +523,21 @@ RULES:
 - on the final milestone, integrate the full task and report task-wide requirement coverage/tests; task-wide independent review/Sol authority remains unchanged.
 END_EXECUTION_MILESTONE_CONTEXT
 `, strings.TrimRight(base, "\n"), executionMilestoneStateFile, executionMilestoneTaskAuthority, index+1, len(plan.Milestones), milestone.ID, index == len(plan.Milestones)-1, milestone.FreshWorker, completedText, milestone.Scope, milestone.Acceptance)
+}
+
+func renderCompletedExecutionMilestones(completed []executionMilestoneRecord) string {
+	if len(completed) == 0 {
+		return "none"
+	}
+	var output strings.Builder
+	for _, item := range completed {
+		output.WriteString("- ")
+		output.WriteString(item.ID)
+		output.WriteString(": ")
+		output.WriteString(truncateExecutionMilestonePromptText(item.Summary))
+		output.WriteByte('\n')
+	}
+	return strings.TrimRight(output.String(), "\n")
 }
 
 func truncateExecutionMilestonePromptText(value string) string {
