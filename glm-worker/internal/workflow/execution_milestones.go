@@ -1,12 +1,12 @@
 package workflow
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -14,26 +14,27 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
 const (
-	executionMilestoneStateFile = "execution-milestones.json"
-	executionMilestoneVersion   = 1
-	executionMilestoneHeading   = "## Execution milestones"
-	maxExecutionMilestones      = 8
-	maxExecutionMilestoneText   = 2048
+	executionMilestoneStateFile       = "execution-milestones.json"
+	executionMilestoneVersion         = 1
+	executionMilestoneHeading         = "## Execution milestones"
+	executionMilestoneTaskAuthority   = "active-task:Contract,Must-not,Acceptance-criteria"
+	maxExecutionMilestones            = 8
+	maxExecutionMilestoneText         = 2048
+	maxCompletedMilestonePromptSummary = 512
 )
 
 var executionMilestoneIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 
 type executionMilestoneDefinition struct {
-	ID         string `json:"id"`
-	Scope      string `json:"scope"`
-	Acceptance string `json:"acceptance"`
+	ID          string `json:"id"`
+	Scope       string `json:"scope"`
+	Acceptance  string `json:"acceptance"`
+	FreshWorker bool   `json:"fresh_worker,omitempty"`
 }
 
 type executionMilestoneDocument struct {
@@ -41,176 +42,204 @@ type executionMilestoneDocument struct {
 }
 
 type executionMilestoneRecord struct {
-	ID                  string             `json:"id"`
-	Scope               string             `json:"scope"`
-	Acceptance          string             `json:"acceptance"`
-	Status              string             `json:"status"`
-	CompletedAt         *time.Time          `json:"completed_at,omitempty"`
-	CompletedCallID     string             `json:"completed_call_id,omitempty"`
-	CompletedSessionID  string             `json:"completed_session_id,omitempty"`
-	Summary             string             `json:"summary,omitempty"`
-	RequirementCoverage string             `json:"requirement_coverage,omitempty"`
-	Tests               string             `json:"tests,omitempty"`
-	Unverified          string             `json:"unverified,omitempty"`
-	Artifacts           []string           `json:"artifacts,omitempty"`
-	Snapshot            *state.GitSnapshot `json:"snapshot,omitempty"`
+	ID                       string             `json:"id"`
+	Scope                    string             `json:"scope"`
+	Acceptance               string             `json:"acceptance"`
+	FreshWorker              bool               `json:"fresh_worker,omitempty"`
+	Status                   string             `json:"status"`
+	CompletedAt              *time.Time          `json:"completed_at,omitempty"`
+	CompletedCallID          string             `json:"completed_call_id,omitempty"`
+	CompletedWorkerSessionID string             `json:"completed_worker_session_id,omitempty"`
+	Summary                  string             `json:"summary,omitempty"`
+	RequirementCoverage      string             `json:"requirement_coverage,omitempty"`
+	Tests                    string             `json:"tests,omitempty"`
+	Unverified               string             `json:"unverified,omitempty"`
+	ParentValidationEvidence string             `json:"parent_validation_evidence,omitempty"`
+	Artifacts                []string           `json:"artifacts,omitempty"`
+	Snapshot                 *state.GitSnapshot `json:"snapshot,omitempty"`
 }
 
 type executionMilestonePlan struct {
-	Version                  int                             `json:"version"`
-	TaskID                   string                          `json:"task_id"`
-	ActiveTaskPath           string                          `json:"active_task_path"`
-	DefinitionSHA256         string                          `json:"definition_sha256"`
-	CurrentIndex             int                             `json:"current_index"`
-	Milestones               []executionMilestoneRecord      `json:"milestones"`
-	DeferredParentValidation *packet.ParentValidationRequest `json:"deferred_parent_validation,omitempty"`
-	UpdatedAt                time.Time                       `json:"updated_at"`
+	Version              int                        `json:"version"`
+	TaskID               string                     `json:"task_id"`
+	ActiveTaskPath       string                     `json:"active_task_path"`
+	TaskContractAuthority string                    `json:"task_contract_authority"`
+	DefinitionSHA256     string                     `json:"definition_sha256"`
+	CurrentIndex         int                        `json:"current_index"`
+	Milestones           []executionMilestoneRecord `json:"milestones"`
+	UpdatedAt            time.Time                  `json:"updated_at"`
 }
 
-type executionMilestoneRunner struct {
-	config config.AppConfig
-	state  *state.StateStore
-	base   ModelRunner
-	now    func() time.Time
-}
-
-// NewExecutionMilestoneRunner keeps one semantic task in the existing workflow while allowing
-// explicitly planned execution units to use fresh worker sessions. It adds no model call when the
-// ACTIVE task has no Execution milestones section.
-func NewExecutionMilestoneRunner(cfg config.AppConfig, st *state.StateStore, base ModelRunner) ModelRunner {
-	return &executionMilestoneRunner{config: cfg, state: st, base: base, now: time.Now}
-}
-
-func (r *executionMilestoneRunner) Probe(model string) (runner.ProbeResult, error) {
-	return r.base.Probe(model)
-}
-
-func (r *executionMilestoneRunner) Run(
-	role state.SessionRole,
-	phase string,
-	model string,
-	readOnly bool,
-	effort string,
-	prompt string,
-	outputPath string,
-) (runner.RunResult, error) {
-	if role != state.WorkerRole {
-		return r.base.Run(role, phase, model, readOnly, effort, prompt, outputPath)
+func (w *Workflow) initializeExecutionMilestones(activeTaskPath string) error {
+	if err := w.state.Remove(executionMilestoneStateFile); err != nil {
+		return err
 	}
-
-	plan, enabled, err := r.loadOrInitializePlan(phase)
+	if activeTaskPath == "" {
+		return nil
+	}
+	definitions, present, err := readExecutionMilestoneDefinitions(w.config.RepoRoot, activeTaskPath)
 	if err != nil {
-		return runner.RunResult{}, err
+		return fmt.Errorf("execution milestones: %w", err)
 	}
-	if !enabled || plan.CurrentIndex >= len(plan.Milestones) {
-		return r.base.Run(role, phase, model, readOnly, effort, prompt, outputPath)
+	if !present {
+		return nil
 	}
-
-	basePrompt := prompt
-	for plan.CurrentIndex < len(plan.Milestones) {
-		index := plan.CurrentIndex
-		currentPrompt := renderExecutionMilestonePrompt(basePrompt, plan, index)
-		currentOutput := outputPath
-		if index < len(plan.Milestones)-1 {
-			currentOutput = executionMilestoneOutputPath(outputPath, index)
-		}
-
-		result, runErr := r.base.Run(role, phase, model, readOnly, effort, currentPrompt, currentOutput)
-		if runErr != nil {
-			return result, runErr
-		}
-		parsed, parseErr := packet.ParseStructured(result.StructuredOutput)
-		if parseErr != nil || parsed.Status != packet.StatusImplemented {
-			// The owning workflow keeps semantic packet validation, result correction, Sol decisions,
-			// provider recovery and all non-IMPLEMENTED routing authority.
-			return result, nil
-		}
-
-		if index == len(plan.Milestones)-1 {
-			if err := applyDeferredParentValidation(&parsed, plan.DeferredParentValidation); err != nil {
-				return result, err
-			}
-			if data, err := parsed.MachineJSON(); err != nil {
-				return result, err
-			} else {
-				result.StructuredOutput = data
-			}
-		}
-
-		if err := r.completeMilestone(plan, index, result, parsed); err != nil {
-			return result, err
-		}
-		if index == len(plan.Milestones)-1 {
-			return result, nil
-		}
-
-		if err := r.state.Remove("worker.id", "worker.ready"); err != nil {
-			return result, fmt.Errorf("rotate worker session after execution milestone %q: %w", plan.Milestones[index].ID, err)
-		}
+	taskID, err := w.state.TaskID()
+	if err != nil {
+		return err
 	}
-	return runner.RunResult{}, errors.New("execution milestone runner reached an invalid terminal state")
+	digest, err := executionMilestoneDefinitionDigest(definitions)
+	if err != nil {
+		return err
+	}
+	return w.saveExecutionMilestonePlan(newExecutionMilestonePlan(taskID, activeTaskPath, definitions, digest, w.now()))
 }
 
-func (r *executionMilestoneRunner) loadOrInitializePlan(phase string) (*executionMilestonePlan, bool, error) {
-	taskID, err := r.state.TaskID()
+func (w *Workflow) decorateExecutionMilestoneCheckpoint(checkpoint state.ResumeCheckpoint) (state.ResumeCheckpoint, error) {
+	if checkpoint.Role != state.WorkerRole || checkpoint.ReportOnly {
+		return checkpoint, nil
+	}
+	plan, enabled, err := w.syncExecutionMilestonePlan()
+	if err != nil || !enabled || plan.CurrentIndex >= len(plan.Milestones) {
+		return checkpoint, err
+	}
+	checkpoint.Prompt = renderExecutionMilestonePrompt(checkpoint.Prompt, plan, plan.CurrentIndex)
+	checkpoint.OriginalPrompt = checkpoint.Prompt
+	return checkpoint, nil
+}
+
+func (w *Workflow) advanceExecutionMilestone(request string, result packet.Result) (bool, error) {
+	if result.Status != packet.StatusImplemented {
+		return false, nil
+	}
+	plan, enabled, err := w.syncExecutionMilestonePlan()
+	if err != nil || !enabled || plan.CurrentIndex >= len(plan.Milestones) {
+		return false, err
+	}
+	if err := w.completeExecutionMilestone(plan, result); err != nil {
+		return true, err
+	}
+	if plan.CurrentIndex >= len(plan.Milestones) {
+		return false, nil
+	}
+
+	next := plan.Milestones[plan.CurrentIndex]
+	if next.FreshWorker {
+		if err := w.state.Remove("worker.id", "worker.ready"); err != nil {
+			return true, fmt.Errorf("fresh worker for milestone %q: %w", next.ID, err)
+		}
+	}
+	checkpoint := w.nextExecutionMilestoneCheckpoint(request, plan)
+	return true, w.executeWorkerCheckpoint(request, checkpoint, false)
+}
+
+func (w *Workflow) nextExecutionMilestoneCheckpoint(request string, plan *executionMilestonePlan) state.ResumeCheckpoint {
+	decision := w.state.ReadOr("last-decision", "")
+	prompt := newTaskPrompt(request, plan.ActiveTaskPath)
+	effort := w.config.RoutineEffort
+	if decision != "" {
+		prompt = decisionPrompt(request, decision, plan.ActiveTaskPath)
+		effort = w.config.EscalatedEffort
+	}
+	return state.ResumeCheckpoint{
+		Stage:          state.ResumeStageWorker,
+		Phase:          fmt.Sprintf("worker-milestone-%d", plan.CurrentIndex+1),
+		Role:           state.WorkerRole,
+		Model:          w.config.WorkerModel,
+		ReadOnly:       false,
+		Effort:         effort,
+		Prompt:         prompt,
+		OriginalPrompt: prompt,
+		Request:        request,
+		Decision:       decision,
+	}
+}
+
+func (w *Workflow) completeExecutionMilestone(plan *executionMilestonePlan, result packet.Result) error {
+	index := plan.CurrentIndex
+	if index < 0 || index >= len(plan.Milestones) {
+		return errors.New("execution milestone completion index is invalid")
+	}
+	snapshot, err := w.captureSnapshot(w.config.RepoRoot)
+	if err != nil {
+		return fmt.Errorf("capture execution milestone snapshot: %w", err)
+	}
+	when := w.now().UTC()
+	record := &plan.Milestones[index]
+	record.Status = "complete"
+	record.CompletedAt = &when
+	record.CompletedCallID = w.lastCallID
+	record.CompletedWorkerSessionID = w.state.ReadOr("worker.id", "")
+	record.Summary = result.Summary
+	record.RequirementCoverage = result.RequirementCoverage
+	record.Tests = result.Tests
+	record.Unverified = result.Unverified
+	record.ParentValidationEvidence = result.ParentValidationEvidence
+	record.Artifacts = uniqueSortedStrings(result.Artifacts)
+	record.Snapshot = &snapshot
+	plan.CurrentIndex++
+	plan.UpdatedAt = when
+	return w.saveExecutionMilestonePlan(plan)
+}
+
+func (w *Workflow) syncExecutionMilestonePlan() (*executionMilestonePlan, bool, error) {
+	taskID, err := w.state.TaskID()
 	if err != nil {
 		return nil, false, nil
 	}
-	activeTaskPath := r.state.ReadOr(activeTaskStateKey, "")
+	activeTaskPath := w.state.ReadOr(activeTaskStateKey, "")
 	if activeTaskPath == "" {
 		return nil, false, nil
 	}
-
-	definitions, present, err := readExecutionMilestoneDefinitions(r.config.RepoRoot, activeTaskPath)
+	definitions, present, err := readExecutionMilestoneDefinitions(w.config.RepoRoot, activeTaskPath)
 	if err != nil {
-		return nil, false, fmt.Errorf("execution milestones for %s: %w", phase, err)
+		return nil, false, fmt.Errorf("execution milestones: %w", err)
 	}
-	stored, storedErr := r.loadStoredPlan()
+	stored, storedErr := w.loadExecutionMilestonePlan()
 	if !present {
-		if storedErr == nil && stored.TaskID == taskID {
-			return nil, false, fmt.Errorf("execution milestones disappeared from active task after execution began")
+		if errors.Is(storedErr, os.ErrNotExist) {
+			return nil, false, nil
 		}
-		if storedErr == nil && stored.TaskID != taskID {
-			_ = r.state.Remove(executionMilestoneStateFile)
+		if storedErr != nil {
+			return nil, false, storedErr
 		}
-		return nil, false, nil
+		if stored.TaskID != taskID {
+			_ = w.state.Remove(executionMilestoneStateFile)
+			return nil, false, nil
+		}
+		if stored.CurrentIndex == 0 {
+			if err := w.state.Remove(executionMilestoneStateFile); err != nil {
+				return nil, false, err
+			}
+			return nil, false, nil
+		}
+		return nil, false, errors.New("Execution milestones cannot be removed after a milestone completed")
 	}
 
 	digest, err := executionMilestoneDefinitionDigest(definitions)
 	if err != nil {
 		return nil, false, err
 	}
+	if errors.Is(storedErr, os.ErrNotExist) || (storedErr == nil && (stored.TaskID != taskID || stored.ActiveTaskPath != activeTaskPath)) {
+		plan := newExecutionMilestonePlan(taskID, activeTaskPath, definitions, digest, w.now())
+		if err := w.saveExecutionMilestonePlan(plan); err != nil {
+			return nil, false, err
+		}
+		return plan, true, nil
+	}
 	if storedErr != nil {
-		if !errors.Is(storedErr, os.ErrNotExist) {
-			return nil, false, storedErr
-		}
-		plan := newExecutionMilestonePlan(taskID, activeTaskPath, definitions, digest, r.now())
-		if err := r.savePlan(plan); err != nil {
-			return nil, false, err
-		}
-		return plan, true, nil
+		return nil, false, storedErr
 	}
-	if stored.TaskID != taskID || stored.ActiveTaskPath != activeTaskPath {
-		plan := newExecutionMilestonePlan(taskID, activeTaskPath, definitions, digest, r.now())
-		if err := r.savePlan(plan); err != nil {
-			return nil, false, err
-		}
-		return plan, true, nil
-	}
-	if stored.DefinitionSHA256 == digest {
-		if err := validateStoredExecutionMilestonePlan(stored); err != nil {
-			return nil, false, err
-		}
-		return stored, true, nil
-	}
-
-	if err := reconcileExecutionMilestoneDefinitions(stored, definitions, digest, r.now()); err != nil {
+	if err := validateStoredExecutionMilestonePlan(stored); err != nil {
 		return nil, false, err
 	}
-	if err := r.state.Remove("worker.id", "worker.ready"); err != nil {
-		return nil, false, fmt.Errorf("rotate worker session after milestone revision: %w", err)
+	if stored.DefinitionSHA256 == digest {
+		return stored, true, nil
 	}
-	if err := r.savePlan(stored); err != nil {
+	if err := reconcileExecutionMilestoneDefinitions(stored, definitions, digest, w.now()); err != nil {
+		return nil, false, err
+	}
+	if err := w.saveExecutionMilestonePlan(stored); err != nil {
 		return nil, false, err
 	}
 	return stored, true, nil
@@ -267,7 +296,7 @@ func parseExecutionMilestoneDefinitions(task string) ([]executionMilestoneDefini
 	if err := decoder.Decode(&doc); err != nil {
 		return nil, true, fmt.Errorf("decode Execution milestones JSON: %w", err)
 	}
-	if err := ensureJSONEOF(decoder); err != nil {
+	if err := ensureExecutionMilestoneJSONEOF(decoder); err != nil {
 		return nil, true, err
 	}
 	if err := validateExecutionMilestoneDefinitions(doc.Milestones); err != nil {
@@ -276,14 +305,16 @@ func parseExecutionMilestoneDefinitions(task string) ([]executionMilestoneDefini
 	return doc.Milestones, true, nil
 }
 
-func ensureJSONEOF(decoder *json.Decoder) error {
+func ensureExecutionMilestoneJSONEOF(decoder *json.Decoder) error {
 	var extra any
-	if err := decoder.Decode(&extra); err == nil {
-		return errors.New("Execution milestones JSON contains trailing data")
-	} else if !errors.Is(err, os.ErrClosed) && err.Error() != "EOF" {
-		return fmt.Errorf("decode Execution milestones trailing data: %w", err)
+	err := decoder.Decode(&extra)
+	if errors.Is(err, io.EOF) {
+		return nil
 	}
-	return nil
+	if err == nil {
+		return errors.New("Execution milestones JSON contains trailing data")
+	}
+	return fmt.Errorf("decode Execution milestones trailing data: %w", err)
 }
 
 func validateExecutionMilestoneDefinitions(definitions []executionMilestoneDefinition) error {
@@ -320,22 +351,19 @@ func newExecutionMilestonePlan(taskID, activeTaskPath string, definitions []exec
 	milestones := make([]executionMilestoneRecord, len(definitions))
 	for index, definition := range definitions {
 		milestones[index] = executionMilestoneRecord{
-			ID: definition.ID, Scope: definition.Scope, Acceptance: definition.Acceptance, Status: "pending",
+			ID: definition.ID, Scope: definition.Scope, Acceptance: definition.Acceptance,
+			FreshWorker: definition.FreshWorker, Status: "pending",
 		}
 	}
 	return &executionMilestonePlan{
-		Version:          executionMilestoneVersion,
-		TaskID:           taskID,
-		ActiveTaskPath:   activeTaskPath,
-		DefinitionSHA256: digest,
-		CurrentIndex:     0,
-		Milestones:       milestones,
-		UpdatedAt:        now.UTC(),
+		Version: executionMilestoneVersion, TaskID: taskID, ActiveTaskPath: activeTaskPath,
+		TaskContractAuthority: executionMilestoneTaskAuthority,
+		DefinitionSHA256: digest, CurrentIndex: 0, Milestones: milestones, UpdatedAt: now.UTC(),
 	}
 }
 
-func (r *executionMilestoneRunner) loadStoredPlan() (*executionMilestonePlan, error) {
-	data, err := os.ReadFile(r.state.Path(executionMilestoneStateFile))
+func (w *Workflow) loadExecutionMilestonePlan() (*executionMilestonePlan, error) {
+	data, err := os.ReadFile(w.state.Path(executionMilestoneStateFile))
 	if err != nil {
 		return nil, err
 	}
@@ -346,7 +374,7 @@ func (r *executionMilestoneRunner) loadStoredPlan() (*executionMilestonePlan, er
 	return &plan, nil
 }
 
-func (r *executionMilestoneRunner) savePlan(plan *executionMilestonePlan) error {
+func (w *Workflow) saveExecutionMilestonePlan(plan *executionMilestonePlan) error {
 	if err := validateStoredExecutionMilestonePlan(plan); err != nil {
 		return err
 	}
@@ -354,12 +382,12 @@ func (r *executionMilestoneRunner) savePlan(plan *executionMilestonePlan) error 
 	if err != nil {
 		return fmt.Errorf("encode execution milestone state: %w", err)
 	}
-	return r.state.Write(executionMilestoneStateFile, string(data))
+	return w.state.Write(executionMilestoneStateFile, string(data))
 }
 
 func validateStoredExecutionMilestonePlan(plan *executionMilestonePlan) error {
-	if plan.Version != executionMilestoneVersion || plan.TaskID == "" || plan.ActiveTaskPath == "" {
-		return errors.New("invalid execution milestone state identity/version")
+	if plan.Version != executionMilestoneVersion || plan.TaskID == "" || plan.ActiveTaskPath == "" || plan.TaskContractAuthority != executionMilestoneTaskAuthority {
+		return errors.New("invalid execution milestone state identity/version/authority")
 	}
 	if plan.CurrentIndex < 0 || plan.CurrentIndex > len(plan.Milestones) {
 		return errors.New("invalid execution milestone current_index")
@@ -371,6 +399,9 @@ func validateStoredExecutionMilestonePlan(plan *executionMilestonePlan) error {
 		}
 		if milestone.Status != want {
 			return fmt.Errorf("milestone %q status %q does not match current_index", milestone.ID, milestone.Status)
+		}
+		if want == "complete" && (milestone.CompletedAt == nil || milestone.Snapshot == nil) {
+			return fmt.Errorf("completed milestone %q is missing durable completion evidence", milestone.ID)
 		}
 	}
 	return nil
@@ -386,7 +417,7 @@ func reconcileExecutionMilestoneDefinitions(plan *executionMilestonePlan, defini
 	for index := 0; index < plan.CurrentIndex; index++ {
 		old := plan.Milestones[index]
 		updated := definitions[index]
-		if old.ID != updated.ID || old.Scope != updated.Scope || old.Acceptance != updated.Acceptance {
+		if old.ID != updated.ID || old.Scope != updated.Scope || old.Acceptance != updated.Acceptance || old.FreshWorker != updated.FreshWorker {
 			return fmt.Errorf("completed milestone %q is immutable", old.ID)
 		}
 	}
@@ -394,12 +425,12 @@ func reconcileExecutionMilestoneDefinitions(plan *executionMilestonePlan, defini
 	pending := make([]executionMilestoneRecord, 0, len(definitions)-plan.CurrentIndex)
 	for _, definition := range definitions[plan.CurrentIndex:] {
 		pending = append(pending, executionMilestoneRecord{
-			ID: definition.ID, Scope: definition.Scope, Acceptance: definition.Acceptance, Status: "pending",
+			ID: definition.ID, Scope: definition.Scope, Acceptance: definition.Acceptance,
+			FreshWorker: definition.FreshWorker, Status: "pending",
 		})
 	}
 	plan.Milestones = append(completed, pending...)
 	plan.DefinitionSHA256 = digest
-	plan.DeferredParentValidation = nil
 	plan.UpdatedAt = now.UTC()
 	return nil
 }
@@ -415,122 +446,53 @@ func executionMilestoneDefinitionDigest(definitions []executionMilestoneDefiniti
 
 func renderExecutionMilestonePrompt(base string, plan *executionMilestonePlan, index int) string {
 	milestone := plan.Milestones[index]
-	completed := make([]string, 0, index)
-	artifacts := make([]string, 0)
+	var completed strings.Builder
 	for _, item := range plan.Milestones[:index] {
-		completed = append(completed, item.ID)
-		artifacts = append(artifacts, item.Artifacts...)
+		completed.WriteString("- ")
+		completed.WriteString(item.ID)
+		completed.WriteString(": ")
+		completed.WriteString(truncateExecutionMilestonePromptText(item.Summary))
+		completed.WriteByte('\n')
 	}
 	completedText := "none"
-	if len(completed) > 0 {
-		completedText = strings.Join(completed, ",")
+	if completed.Len() > 0 {
+		completedText = strings.TrimRight(completed.String(), "\n")
 	}
-	artifactText := "none"
-	if len(artifacts) > 0 {
-		artifacts = uniqueSortedStrings(artifacts)
-		artifactText = strings.Join(artifacts, ",")
-	}
-	final := index == len(plan.Milestones)-1
 	return fmt.Sprintf(`%s
 
 EXECUTION_MILESTONE_CONTEXT:
-SOURCE_AUTHORITY: active-task-file
+STATE_FILE: %s
+TASK_CONTRACT_AUTHORITY: %s
 INDEX: %d/%d
 ID: %s
 FINAL_MILESTONE: %t
-COMPLETED_MILESTONES: %s
-COMPLETED_MILESTONE_ARTIFACTS: %s
+FRESH_WORKER_FOR_THIS_MILESTONE: %t
+COMPLETED_MILESTONES:
+%s
 SCOPE:
 %s
 ACCEPTANCE:
 %s
 RULES:
-- task-wide Original instruction / Amendments / Contract / Must not / Acceptance criteria remain authoritative.
-- implement and validate the current milestone only; do not start later milestones.
-- current Git/worktree already contains completed milestone results; do not reimplement them.
-- IMPLEMENTED means this milestone acceptance is satisfied. On the final milestone, integrate the full task and report task-wide requirement coverage/tests.
-- do not run an independent reviewer or add Sol ceremony for milestone completion; the wrapper retains task-wide final review authority.
+- task-wide Original instruction / Amendments / Contract / Must not / Acceptance criteria remain authoritative; this milestone cannot weaken or replace them.
+- implement and validate only the current milestone; do not start later milestones.
+- current Git/worktree and durable milestone state contain completed work; do not reimplement completed milestones unless the current milestone requires an integration correction.
+- IMPLEMENTED means the current milestone acceptance is satisfied. The wrapper records completion evidence and advances without an intermediate reviewer/Sol ceremony.
+- on the final milestone, integrate the full task and report task-wide requirement coverage/tests; task-wide independent review/Sol authority remains unchanged.
 END_EXECUTION_MILESTONE_CONTEXT
-`, strings.TrimRight(base, "\n"), index+1, len(plan.Milestones), milestone.ID, final, completedText, artifactText, milestone.Scope, milestone.Acceptance)
+`, strings.TrimRight(base, "\n"), executionMilestoneStateFile, executionMilestoneTaskAuthority, index+1, len(plan.Milestones), milestone.ID, index == len(plan.Milestones)-1, milestone.FreshWorker, completedText, milestone.Scope, milestone.Acceptance)
 }
 
-func (r *executionMilestoneRunner) completeMilestone(plan *executionMilestonePlan, index int, result runner.RunResult, parsed packet.Result) error {
-	if index != plan.CurrentIndex || index < 0 || index >= len(plan.Milestones) {
-		return errors.New("execution milestone completion index mismatch")
+func truncateExecutionMilestonePromptText(value string) string {
+	value = strings.Join(strings.Fields(value), " ")
+	if len(value) <= maxCompletedMilestonePromptSummary {
+		return value
 	}
-	snapshot, err := state.CaptureGitSnapshot(r.config.RepoRoot)
-	if err != nil {
-		return fmt.Errorf("capture execution milestone snapshot: %w", err)
+	runes := []rune(value)
+	for len(string(runes)) > maxCompletedMilestonePromptSummary && len(runes) > 0 {
+		runes = runes[:len(runes)-1]
 	}
-	when := r.now().UTC()
-	record := &plan.Milestones[index]
-	record.Status = "complete"
-	record.CompletedAt = &when
-	record.CompletedCallID = result.CallID
-	record.CompletedSessionID = result.SessionID
-	record.Summary = parsed.Summary
-	record.RequirementCoverage = parsed.RequirementCoverage
-	record.Tests = parsed.Tests
-	record.Unverified = parsed.Unverified
-	record.Artifacts = uniqueSortedStrings(parsed.Artifacts)
-	record.Snapshot = &snapshot
-	if request := parsed.ParentValidationRequest(); request != nil {
-		merged, err := mergeParentValidation(plan.DeferredParentValidation, request)
-		if err != nil {
-			return fmt.Errorf("milestone %q parent validation: %w", record.ID, err)
-		}
-		plan.DeferredParentValidation = merged
-	}
-	plan.CurrentIndex++
-	plan.UpdatedAt = when
-	return r.savePlan(plan)
-}
-
-func applyDeferredParentValidation(result *packet.Result, deferred *packet.ParentValidationRequest) error {
-	if deferred == nil {
-		return nil
-	}
-	merged, err := mergeParentValidation(deferred, result.ParentValidationRequest())
-	if err != nil {
-		return fmt.Errorf("merge deferred parent validation into final milestone: %w", err)
-	}
-	result.SetParentValidationRequest(merged)
-	return nil
-}
-
-func mergeParentValidation(left, right *packet.ParentValidationRequest) (*packet.ParentValidationRequest, error) {
-	if left == nil {
-		if right == nil {
-			return nil, nil
-		}
-		copy := *right
-		return &copy, nil
-	}
-	if right == nil {
-		copy := *left
-		return &copy, nil
-	}
-	if left.WorkingDir != right.WorkingDir {
-		return nil, fmt.Errorf("cannot preserve parent validations with different working directories %q and %q", left.WorkingDir, right.WorkingDir)
-	}
-	if left.Form == right.Form {
-		copy := *left
-		return &copy, nil
-	}
-	forms := map[string]bool{left.Form: true, right.Form: true}
-	if forms[packet.ParentValidationGoTest] && forms[packet.ParentValidationGoTestRace] {
-		return &packet.ParentValidationRequest{Form: packet.ParentValidationGoTestRace, WorkingDir: left.WorkingDir}, nil
-	}
-	return nil, fmt.Errorf("cannot preserve incompatible parent validation forms %q and %q", left.Form, right.Form)
-}
-
-func executionMilestoneOutputPath(outputPath string, index int) string {
-	if outputPath == "" {
-		return ""
-	}
-	ext := filepath.Ext(outputPath)
-	stem := strings.TrimSuffix(outputPath, ext)
-	return fmt.Sprintf("%s.milestone-%02d%s", stem, index+1, ext)
+	return string(runes) + "…"
 }
 
 func uniqueSortedStrings(values []string) []string {
@@ -548,7 +510,3 @@ func uniqueSortedStrings(values []string) []string {
 	sort.Strings(result)
 	return result
 }
-
-// Keep bytes imported deliberately close to the JSON EOF helper so malformed trailing JSON never
-// degrades into a second parse path.
-var _ = bytes.MinRead
