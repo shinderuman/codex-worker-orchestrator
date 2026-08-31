@@ -10,6 +10,5 @@ import (
 func instructionSurfaceRunnerFactory(cfg config.AppConfig, st *state.StateStore, stop *runner.StopController) workflow.ModelRunner {
 	base := runner.NewClaudeRunner(cfg, st)
 	base.AttachStopController(stop)
-	guarded := runner.NewInstructionSurfaceGuardRunner(base)
-	return workflow.NewExecutionMilestoneRunner(cfg, st, guarded)
+	return runner.NewInstructionSurfaceGuardRunner(base)
 }
