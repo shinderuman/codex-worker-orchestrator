@@ -19,12 +19,12 @@ import (
 )
 
 const (
-	executionMilestoneStateFile       = "execution-milestones.json"
-	executionMilestoneVersion         = 1
-	executionMilestoneHeading         = "## Execution milestones"
-	executionMilestoneTaskAuthority   = "active-task:Contract,Must-not,Acceptance-criteria"
-	maxExecutionMilestones            = 8
-	maxExecutionMilestoneText         = 2048
+	executionMilestoneStateFile        = "execution-milestones.json"
+	executionMilestoneVersion          = 1
+	executionMilestoneHeading          = "## Execution milestones"
+	executionMilestoneTaskAuthority    = "active-task:Contract,Must-not,Acceptance-criteria"
+	maxExecutionMilestones             = 8
+	maxExecutionMilestoneText          = 2048
 	maxCompletedMilestonePromptSummary = 512
 )
 
@@ -60,14 +60,14 @@ type executionMilestoneRecord struct {
 }
 
 type executionMilestonePlan struct {
-	Version              int                        `json:"version"`
-	TaskID               string                     `json:"task_id"`
-	ActiveTaskPath       string                     `json:"active_task_path"`
-	TaskContractAuthority string                    `json:"task_contract_authority"`
-	DefinitionSHA256     string                     `json:"definition_sha256"`
-	CurrentIndex         int                        `json:"current_index"`
-	Milestones           []executionMilestoneRecord `json:"milestones"`
-	UpdatedAt            time.Time                  `json:"updated_at"`
+	Version               int                        `json:"version"`
+	TaskID                string                     `json:"task_id"`
+	ActiveTaskPath        string                     `json:"active_task_path"`
+	TaskContractAuthority string                     `json:"task_contract_authority"`
+	DefinitionSHA256      string                     `json:"definition_sha256"`
+	CurrentIndex          int                        `json:"current_index"`
+	Milestones            []executionMilestoneRecord `json:"milestones"`
+	UpdatedAt             time.Time                  `json:"updated_at"`
 }
 
 func (w *Workflow) initializeExecutionMilestones(activeTaskPath string) error {
@@ -108,29 +108,33 @@ func (w *Workflow) decorateExecutionMilestoneCheckpoint(checkpoint state.ResumeC
 	return checkpoint, nil
 }
 
-func (w *Workflow) advanceExecutionMilestone(request string, result packet.Result) (bool, error) {
+func (w *Workflow) advanceExecutionMilestone(request string, result packet.Result) (*packet.Result, error) {
 	if result.Status != packet.StatusImplemented {
-		return false, nil
+		return nil, nil
 	}
 	plan, enabled, err := w.syncExecutionMilestonePlan()
 	if err != nil || !enabled || plan.CurrentIndex >= len(plan.Milestones) {
-		return false, err
+		return nil, err
 	}
 	if err := w.completeExecutionMilestone(plan, result); err != nil {
-		return true, err
+		return nil, err
 	}
 	if plan.CurrentIndex >= len(plan.Milestones) {
-		return false, nil
+		return nil, nil
 	}
 
 	next := plan.Milestones[plan.CurrentIndex]
 	if next.FreshWorker {
 		if err := w.state.Remove("worker.id", "worker.ready"); err != nil {
-			return true, fmt.Errorf("fresh worker for milestone %q: %w", next.ID, err)
+			return nil, fmt.Errorf("fresh worker for milestone %q: %w", next.ID, err)
 		}
 	}
 	checkpoint := w.nextExecutionMilestoneCheckpoint(request, plan)
-	return true, w.executeWorkerCheckpoint(request, checkpoint, false)
+	nextResult, err := w.runWorkerModelWithRuleActivation(checkpoint)
+	if err != nil {
+		return nil, err
+	}
+	return &nextResult, nil
 }
 
 func (w *Workflow) nextExecutionMilestoneCheckpoint(request string, plan *executionMilestonePlan) state.ResumeCheckpoint {
