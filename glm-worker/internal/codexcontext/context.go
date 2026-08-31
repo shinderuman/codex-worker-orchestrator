@@ -46,6 +46,10 @@ plugins = false
 
 [features.code_mode]
 default_exec_yield_time_ms = 21600000
+
+[features.multi_agent_v2]
+root_agent_usage_hint_text = ""
+multi_agent_mode_hint_text = ""
 `)
 
 func ManagedConfigContent() []byte {
