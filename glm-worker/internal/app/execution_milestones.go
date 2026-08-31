@@ -3,6 +3,7 @@ package app
 import (
 	"encoding/json"
 	"io"
+	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
@@ -35,7 +36,7 @@ func executeExecutionMilestoneRevision(
 	if err != nil {
 		return err
 	}
-	result, err := workflow.ReviseExecutionMilestones(cfg, st, definitions)
+	result, err := workflow.ReviseExecutionMilestones(cfg, st, definitions, time.Now().UTC())
 	if err != nil {
 		return err
 	}
