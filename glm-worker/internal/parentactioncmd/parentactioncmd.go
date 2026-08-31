@@ -23,11 +23,11 @@ import (
 const (
 	usage = "usage: glm-parent-action start | prepare <decision|fix|start-milestones|revise-milestones> | decision <token> | fix <token> [--origin <origin>] [--accepted-scope current-diff] [--approval-only] | start-milestones <token> | revise-milestones <token> | accept | resume | finalize-check <go-test|go-test-race>"
 
-	activeTaskRequest       = "現在のACTIVE taskを実行してください。"
-	actionStart             = "start"
-	actionFix               = "fix"
-	actionStartMilestones   = "start-milestones"
-	actionReviseMilestones  = "revise-milestones"
+	activeTaskRequest      = "現在のACTIVE taskを実行してください。"
+	actionStart            = "start"
+	actionFix              = "fix"
+	actionStartMilestones  = "start-milestones"
+	actionReviseMilestones = "revise-milestones"
 )
 
 func Run(args []string, stdout, stderr io.Writer) int {
