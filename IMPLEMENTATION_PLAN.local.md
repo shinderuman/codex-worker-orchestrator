@@ -8,11 +8,10 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/authorization-context-inconsistency.md`
+- `IMPLEMENTATION_TASKS/glm-flash-reviewer-routing.md`
 
 ## NEXT（優先順）
 
-- `IMPLEMENTATION_TASKS/glm-flash-reviewer-routing.md`
 - `IMPLEMENTATION_TASKS/bundle-analysis-window-boundaries.md`
 - `IMPLEMENTATION_TASKS/worker-validation-capability-routing.md`
 - `IMPLEMENTATION_TASKS/packet-presubmit-byte-validation.md`
@@ -36,6 +35,6 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 ## 現在のGit境界
 
 - branch: `main`
-- 分析用索引task `70028e7d-ef53-4f70-8c7e-765d7fb78ee0`は実装・独立再review・Sol採用・現snapshotのfull test/race・parent acceptを通過してcommit済み。完了taskはHistoryへ移行済み。2026-09-01の起票承認に基づき、authorizationの未着手ACTIVEとrouting評価の先行順序を維持し、bundle分析の承認済み4案をNEXTへ追加した。今回の依頼は起票・順序決定のみで、実装は開始せず停止する。恒久的な自動再開許可はIMPLEMENTATION_RULES.mdを正とする。
+- authorization不整合調査はread-only observation、親No-Go、task commit、Plan/History同期を完了した。原因・証拠・検証案・外部修正境界はHistoryを正とする。NEXT先頭のrouting評価をACTIVEへ昇格したが、ユーザー指定により実装・GLM callは開始せず停止する。恒久的な自動再開許可はIMPLEMENTATION_RULES.mdを正とする。
 - F1-F10 hardening、parent action/handoff、typed parent-capability validation、repo-search、Codex analysis bundle、target-repository lean context、wait instruction削減、actionable containment denial、bounded parent finalization surface、commentlint sandbox-safe launcherはcurrent mainへ統合済み。詳細なcommit・validation・escaped原因は`IMPLEMENTATION_HISTORY.md`を正とする。
 - preserved boundary: machine-readable lifecycle、snapshot/validation authority、parent-managed metadata guard、GLM commit/push禁止、parent Codex semantic authority、normal fast-forward Git safety、Direct Codex対orchestratedのCodex Reduction / Quality Delta最上位評価を維持する。

@@ -11,6 +11,15 @@
 
 本文を更新できるのは親Codexだけとする。GLM worker/reviewerは読み取り専用で参照し、必要な更新候補と根拠をPACKETへ記載する。
 
+## 2026-09-01 許可済み操作の承認判定不整合
+
+- [x] `authorization-context-inconsistency`をread-only observationとして実施し、親Go/No-Go、task commit、Plan/History同期を完了した。task IDは`2750ec82-8d56-47b9-b8f5-972d44dab43e`、worker sessionは`d4c549ee-7920-4e50-8c52-7b47ada0376a`。原要求は削除した`IMPLEMENTATION_TASKS/authorization-context-inconsistency.md`のGit履歴に保持する。production source、設定、instruction surface、Git remoteへ変更を加えていない。
+- 原証跡では、05:16前後のpush要求時にguardianへ配信されたtrusted contextはAGENTS系指示で、`IMPLEMENTATION_RULES.md`のcommit / install節と`codex/instructions/git.md`のdestination/refを含む通常push規則は入力されず、決定的turnのtranscript deltaも空だった。同guardianは`git push origin main`をremote publicationとして拒否し、05:22前後にはユーザーの同一turn上の`Pushはしていい`を受けて同commandを許可した。拒否は親orchestrationやGLM worker/reviewerではなくCodex Desktopのauto-review境界で発生した。
+- 原因層は、既存許可sourceの一部をguardianへ渡さないcontext伝達が主因、配信済みAGENTS規則をdestination/ref単位のegress許可として照合できなかったauto-review判断が副因である。同一commandのrisk評価がhighからmediumへ変動したため、一回の再承認やpush成功は恒久解消の証拠にしない。
+- 親Go/No-GoはNo-Goとした。repo側候補はuser-owned origin、`refs/heads/main`、通常fast-forwardに限定した許可をtrusted instructionへ明記する案だが、guardianの正式な再現・検証境界がなく効果は仮説である。文書追記だけで外部guardian挙動を保証せず、production変更へ進めない。修正責務候補はCodex Desktop / codex-auto-review側のtrusted context構成、transcript delta保持、remote destination照合、risk判定である。
+- 検証案は、正例を本repositoryのuser-owned originに対する`refs/heads/main`通常fast-forward、負例を別repository・別ref・remote branch作成・force・tag・credential操作として分離する。正例は今後の正当な通常push時のguardian判定とrollout証跡で観測し、再現目的の外部書込みは行わない。外部修正または複数回の安定観測までは残余riskを未解消として扱う。
+- observation結果のterminal変換では、`pocGoNoGoResult`が1536 bytes超のevidenceを`boundedText`へ渡し、同関数が挿入する改行を直後のpacket validatorが拒否した。workerの補正済みstructured responseとusageはtask telemetryへ保存済みで、repository snapshot不変も確認した。親は保存済みresponseから上記Go/No-Goを行い、stale化したtask stateだけを`glm-worker --reset`でarchive/resetした。このpacket経路不整合をauthorization問題のproduction修正へ混在させていない。
+
 ## 2026-09-01 bundle共同分析の承認済み4案を起票
 
 - [x] parent maintenanceとして、ユーザーが承認した案2・4・5・6だけを独立taskへ保存し、Planへ登録した。起票の完了証跡であり、各taskの実装完了を意味しない。原文と分析時点の証拠・要求は各taskのlossless sourceへ保持する。
