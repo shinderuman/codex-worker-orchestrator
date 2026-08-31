@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
 
 concurrency:
   group: repository-lint-${{ github.event.pull_request.number || github.ref }}
@@ -36,19 +37,20 @@ jobs:
       - name: Repository lint gate
         run: ./harnesslint
       - name: Diagnose full Go test suite
-        id: full-go
         working-directory: glm-worker
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set +e
           output="$(go test ./... 2>&1)"
           status=$?
           printf '%s\n' "$output"
-          failure="$(printf '%s\n' "$output" | awk '/^--- FAIL: / { print $3; exit }')"
-          package="$(printf '%s\n' "$output" | awk '$1 == "FAIL" && NF >= 2 { print $2; exit }')"
-          printf 'status=%s\n' "$status" >> "$GITHUB_OUTPUT"
-          printf 'failure=%s\n' "${failure:-unknown}" >> "$GITHUB_OUTPUT"
-          printf 'package=%s\n' "${package:-unknown}" >> "$GITHUB_OUTPUT"
-      - name: Full Go failure ${{ steps.full-go.outputs.package }} ${{ steps.full-go.outputs.failure }}
-        if: steps.full-go.outputs.status != '0'
-        run: exit 1
+          if [ "$status" -ne 0 ]; then
+            failure="$(printf '%s\n' "$output" | awk '/^--- FAIL: / { print $3; exit }')"
+            package="$(printf '%s\n' "$output" | awk '$1 == "FAIL" && NF >= 2 { print $2; exit }')"
+            excerpt="$(printf '%s\n' "$output" | grep -E '^--- FAIL:|^FAIL[[:space:]]|^[[:space:]]+[^[:space:]].*_test\.go:' | head -40)"
+            body="$(printf 'CI diagnostic from PR #210: full Go suite failed.\n\n- package: `%s`\n- first failing test: `%s`\n\n```text\n%s\n```' "${package:-unknown}" "${failure:-unknown}" "$excerpt")"
+            gh issue comment 205 --repo "$GITHUB_REPOSITORY" --body "$body"
+          fi
+          exit "$status"
