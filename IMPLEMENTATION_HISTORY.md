@@ -13,6 +13,7 @@
 
 ## 2026-09-01 bundleのtask単位分析索引
 
+- parent maintenance: 完了後の通常pushがauto-reviewから既存許可と矛盾する理由で拒否された。ユーザーは不整合のtask起票とpushを明示許可し、`authorization-context-inconsistency.md`をNEXTへ登録した。現ACTIVEは維持し、この調査taskは開始していない。別途依頼されたbundle共同分析のタスク案は、ユーザー提示までPlanへ登録しない。
 - [x] `bundle-task-analysis-index`の実装・独立再review・Sol最終採用・full test/race・parent accept・commit同期を完了。原要求は削除した`IMPLEMENTATION_TASKS/bundle-task-analysis-index.md`のGit履歴に保持する。条件付き改善評価をACTIVEへ昇格し、ユーザー指定の停止境界に従い開始しない。
 - task ID: `70028e7d-ef53-4f70-8c7e-765d7fb78ee0`。bundle format v4へ`analysis-index.json`（index version 1）とmanifest参照を追加。対象window、親sessionとrollout byte範囲、wait function call数、累積input/cached input差分、validation run対応、既存event/stat/logに基づく再試行情報、task/session/unattributed/task-externalの証跡区分を同梱する。索引生成は原本・lifecycleにread-onlyで、追加model call・検証再実行・永続state machineを導入しない。
 - Sol採用: task validation eventを優先し、eventがない場合はround snapshot digest一致とwindow重複を併用して帰属させる。時刻重複だけはunattributedとし、cached inputをinputへ再加算しない。schemaはmachine analysis interfaceであり、validation・semantic acceptanceのauthorityや恒久互換APIへ昇格しない。

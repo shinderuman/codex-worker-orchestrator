@@ -12,6 +12,7 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## NEXT（優先順）
 
+- `IMPLEMENTATION_TASKS/authorization-context-inconsistency.md`
 - `IMPLEMENTATION_TASKS/022-final-verification.md`
 
 ## BLOCKED / USER_PERMISSION_WAIT
