@@ -101,7 +101,7 @@ func TestExecutionMilestoneAuthorityFailsClosedOnTaskContractChange(t *testing.T
 		t.Fatal(err)
 	}
 	active, err := w.hasPendingExecutionMilestone()
-	if active || err == nil || !strings.Contains(err.Error(), "task contract changed") {
+	if !active || err == nil || !strings.Contains(err.Error(), "task contract changed") {
 		t.Fatalf("active=%v err=%v", active, err)
 	}
 }
@@ -130,7 +130,7 @@ func TestReviseExecutionMilestonesBindsStoppedResumeCheckpoint(t *testing.T) {
 		{ID: "remaining-a", Scope: "finish a", Acceptance: "a complete"},
 		{ID: "remaining-b", Scope: "finish b", Acceptance: "b complete"},
 	}
-	result, err := ReviseExecutionMilestones(w.config, st, definitions)
+	result, err := ReviseExecutionMilestones(w.config, st, definitions, testFixedTime)
 	if err != nil {
 		t.Fatal(err)
 	}
