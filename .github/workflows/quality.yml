@@ -33,8 +33,19 @@ jobs:
           quality_bin="$(go env GOPATH)/bin"
           QUALITY_TOOLS_BIN_DIR="$quality_bin" ./install-quality-tools.sh
           printf '%s\n' "$quality_bin" >> "$GITHUB_PATH"
+      - name: Capture repository lint diagnostics
+        id: diagnostic-lint
+        continue-on-error: true
+        run: ./harnesslint > harnesslint-diagnostics.txt 2>&1
+      - name: Upload repository lint diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: harnesslint-diagnostics
+          path: harnesslint-diagnostics.txt
       - name: Repository lint gate
-        run: ./harnesslint
+        if: always()
+        run: test "${{ steps.diagnostic-lint.outcome }}" = success
       - name: Full Go test suite
         working-directory: glm-worker
         run: go test ./...
