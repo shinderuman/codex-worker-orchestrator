@@ -188,7 +188,7 @@ func executionMilestonePromptBlock(plan *executionMilestonePlan) (string, error)
 		return "", fmt.Errorf("encode execution milestone prompt: %w", err)
 	}
 	return "\n\n" + executionMilestonePromptBegin + "\n" + string(data) + "\n" +
-		"ACTIVE task remains task-wide authority; implement only current.scope, satisfy current.acceptance, and do not reimplement completed milestones. Milestone completion never completes or weakens task-wide Acceptance.\n" +
+		"ACTIVE task remains task-wide authority; implement only current.scope and satisfy current.acceptance. Do not redo completed milestones merely because a new worker begins. If an explicit semantic amendment changed the ACTIVE task after a completed milestone, its recorded task_contract_sha256 will differ from the current task_contract_sha256; amendment work may touch that completed scope only when current.scope explicitly requires the semantic delta. Milestone completion never completes or weakens task-wide Acceptance.\n" +
 		executionMilestonePromptEnd + "\n", nil
 }
 
