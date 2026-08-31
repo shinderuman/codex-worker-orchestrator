@@ -77,6 +77,7 @@ func ReviseExecutionMilestones(
 	cfg config.AppConfig,
 	st *state.StateStore,
 	definitions []ExecutionMilestoneDefinition,
+	now time.Time,
 ) (ExecutionMilestoneRevision, error) {
 	if err := validateExecutionMilestoneDefinitions(definitions); err != nil {
 		return ExecutionMilestoneRevision{}, err
@@ -88,7 +89,7 @@ func ReviseExecutionMilestones(
 	if err != nil {
 		return ExecutionMilestoneRevision{}, err
 	}
-	plan, err = prepareExecutionMilestoneRevision(cfg, st, plan, definitions)
+	plan, err = prepareExecutionMilestoneRevision(cfg, st, plan, definitions, now.UTC())
 	if err != nil {
 		return ExecutionMilestoneRevision{}, err
 	}
@@ -119,6 +120,7 @@ func prepareExecutionMilestoneRevision(
 	st *state.StateStore,
 	plan *executionMilestonePlan,
 	definitions []ExecutionMilestoneDefinition,
+	now time.Time,
 ) (*executionMilestonePlan, error) {
 	taskID, err := st.TaskID()
 	if err != nil {
@@ -130,7 +132,7 @@ func prepareExecutionMilestoneRevision(
 		return nil, err
 	}
 	if plan == nil {
-		return newExecutionMilestonePlan(taskID, activeTaskPath, digest, definitions, time.Now().UTC()), nil
+		return newExecutionMilestonePlan(taskID, activeTaskPath, digest, definitions, now), nil
 	}
 	if plan.TaskID != taskID || plan.ActiveTaskPath != activeTaskPath {
 		return nil, fmt.Errorf("execution milestone plan does not belong to the active task")
@@ -139,7 +141,7 @@ func prepareExecutionMilestoneRevision(
 		return nil, err
 	}
 	plan.TaskContractSHA256 = digest
-	plan.UpdatedAt = time.Now().UTC()
+	plan.UpdatedAt = now
 	return plan, nil
 }
 
