@@ -35,6 +35,20 @@ jobs:
           printf '%s\n' "$quality_bin" >> "$GITHUB_PATH"
       - name: Repository lint gate
         run: ./harnesslint
-      - name: Full Go test suite
+      - name: Diagnose full Go test suite
+        id: full-go
         working-directory: glm-worker
-        run: go test ./...
+        shell: bash
+        run: |
+          set +e
+          output="$(go test ./... 2>&1)"
+          status=$?
+          printf '%s\n' "$output"
+          failure="$(printf '%s\n' "$output" | awk '/^--- FAIL: / { print $3; exit }')"
+          package="$(printf '%s\n' "$output" | awk '$1 == "FAIL" && NF >= 2 { print $2; exit }')"
+          printf 'status=%s\n' "$status" >> "$GITHUB_OUTPUT"
+          printf 'failure=%s\n' "${failure:-unknown}" >> "$GITHUB_OUTPUT"
+          printf 'package=%s\n' "${package:-unknown}" >> "$GITHUB_OUTPUT"
+      - name: Full Go failure ${{ steps.full-go.outputs.package }} ${{ steps.full-go.outputs.failure }}
+        if: steps.full-go.outputs.status != '0'
+        run: exit 1
