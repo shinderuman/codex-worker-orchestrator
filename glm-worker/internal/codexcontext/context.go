@@ -43,6 +43,9 @@ include_instructions = false
 [features]
 apps = false
 plugins = false
+
+[features.code_mode]
+default_exec_yield_time_ms = 21600000
 `)
 
 func ManagedConfigContent() []byte {
