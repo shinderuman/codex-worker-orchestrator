@@ -355,6 +355,10 @@ func (w *Workflow) runWorkerModelWithRuleActivation(checkpoint state.ResumeCheck
 		w.resetInstructionReadObservation()
 		return w.runModel(checkpoint)
 	}
+	checkpoint, err := w.decorateExecutionMilestoneCheckpoint(checkpoint)
+	if err != nil {
+		return packet.Result{}, err
+	}
 	prepared, activated, err := w.activateCheckpointRules(checkpoint)
 	if err != nil {
 		return packet.Result{}, err
@@ -377,7 +381,18 @@ func (w *Workflow) convergeWorkerRuleActivation(
 	if err != nil || stopped {
 		return result, err
 	}
-	return w.convergeApprovedWorkerRules(checkpoint, result, activated, 1)
+	result, err = w.convergeApprovedWorkerRules(checkpoint, result, activated, 1)
+	if err != nil {
+		return packet.Result{}, err
+	}
+	advanced, err := w.advanceExecutionMilestone(checkpoint.Request, result)
+	if err != nil {
+		return packet.Result{}, err
+	}
+	if advanced != nil {
+		return *advanced, nil
+	}
+	return result, nil
 }
 
 func (w *Workflow) convergeApprovedWorkerRules(
