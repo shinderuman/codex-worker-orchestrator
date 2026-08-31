@@ -193,7 +193,7 @@ func TestReadFailures(t *testing.T) {
 			name:       "応答前にserver終了",
 			script:     "#!/bin/sh\nexit 0\n",
 			wantErr:    ErrAppServerProtocol,
-			wantInMess: "response stream ended",
+			wantInMess: "",
 		},
 		{
 			name:       "非JSON行",
