@@ -46,7 +46,7 @@ func TestExecutionMilestoneExplicitFixCompletesCurrentUnitBeforeFinalReview(t *t
 	if err := w.ExecuteExplicitFixWithExecutionMilestones("repair the current milestone", "codex-review", ""); err != nil {
 		t.Fatal(err)
 	}
-	wantPhases := []string{"worker-explicit-fix", "worker-milestone-2", "reviewer-1", "reviewer-1-risk-floor"}
+	wantPhases := []string{"worker-explicit-fix", "worker-milestone-2", "reviewer-1-high-floor", "reviewer-1-risk-floor"}
 	if !reflect.DeepEqual(runner.phases, wantPhases) {
 		t.Fatalf("phases = %v want %v", runner.phases, wantPhases)
 	}
