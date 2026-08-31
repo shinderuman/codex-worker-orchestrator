@@ -105,6 +105,7 @@ func ReviseExecutionMilestones(
 func executionMilestoneRevisionStatusAllowed(status state.TaskStatus) bool {
 	switch status {
 	case state.TaskStatusWaitingDecision,
+		state.TaskStatusWaitingSolReview,
 		state.TaskStatusRateLimited,
 		state.TaskStatusProviderUnavailable,
 		state.TaskStatusGuardRecoverable,
