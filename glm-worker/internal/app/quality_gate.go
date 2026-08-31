@@ -51,6 +51,7 @@ type qualityGateRunRecord struct {
 	Status          string     `json:"status"`
 	RunnerPID       int        `json:"runner_pid,omitempty"`
 	ExitCode        int        `json:"exit_code,omitempty"`
+	ExitSource      string     `json:"exit_source,omitempty"`
 	DurationMS      int64      `json:"duration_ms,omitempty"`
 	Log             string     `json:"log,omitempty"`
 }
@@ -288,12 +289,13 @@ func completeQualityGateRun(st *state.StateStore, record qualityGateRunRecord, g
 	}
 	defer func() { _ = lock.Close() }()
 
-	status, exitCode := qualityGateProcessOutcome(runErr)
+	status, exitCode, exitSource := qualityGateProcessOutcome(runErr)
 	logPath, logErr := writeQualityGateRunLog(st, record.ValidationRunID, gateLog)
 	if logErr != nil {
 		status = qualityGateStatusFail
 		if exitCode == 0 {
 			exitCode = 1
+			exitSource = state.ValidationExitSourceWrapper
 		}
 		logPath = ""
 	}
@@ -301,6 +303,7 @@ func completeQualityGateRun(st *state.StateStore, record qualityGateRunRecord, g
 	record.Status = status
 	record.CompletedAt = &completed
 	record.ExitCode = exitCode
+	record.ExitSource = exitSource
 	record.DurationMS = completed.Sub(record.StartedAt).Milliseconds()
 	record.Log = logPath
 	if err := writeQualityGateRun(st, record); err != nil {
@@ -310,19 +313,19 @@ func completeQualityGateRun(st *state.StateStore, record qualityGateRunRecord, g
 	return record, nil
 }
 
-func qualityGateProcessOutcome(runErr error) (string, int) {
+func qualityGateProcessOutcome(runErr error) (string, int, string) {
 	if runErr == nil {
-		return qualityGateStatusPass, 0
+		return qualityGateStatusPass, 0, state.ValidationExitSourceTarget
 	}
 	var exitErr *exec.ExitError
 	if !errors.As(runErr, &exitErr) {
-		return qualityGateStatusFail, 1
+		return qualityGateStatusFail, 1, state.ValidationExitSourceWrapper
 	}
 	exitCode := exitErr.ExitCode()
 	if exitCode < 0 {
-		return qualityGateStatusInterrupted, exitCode
+		return qualityGateStatusInterrupted, exitCode, state.ValidationExitSourceUnknown
 	}
-	return qualityGateStatusFail, exitCode
+	return qualityGateStatusFail, exitCode, state.ValidationExitSourceTarget
 }
 
 func reconcileQualityGateAfterWait(st *state.StateStore, runID string) (qualityGateRunRecord, error) {
@@ -428,6 +431,7 @@ func markQualityGateInterruptedLocked(st *state.StateStore, record qualityGateRu
 	completed := time.Now().UTC()
 	record.Status = qualityGateStatusInterrupted
 	record.ExitCode = -1
+	record.ExitSource = state.ValidationExitSourceUnknown
 	record.CompletedAt = &completed
 	record.DurationMS = completed.Sub(record.StartedAt).Milliseconds()
 	if record.Log == "" {
@@ -576,6 +580,7 @@ func failQualityGateLaunch(st *state.StateStore, record qualityGateRunRecord, la
 	completed := time.Now().UTC()
 	record.Status = qualityGateStatusFail
 	record.ExitCode = 1
+	record.ExitSource = state.ValidationExitSourceWrapper
 	record.CompletedAt = &completed
 	record.DurationMS = completed.Sub(record.StartedAt).Milliseconds()
 	if logPath, err := writeQualityGateRunLog(st, record.ValidationRunID, []byte(launchErr.Error()+"\n")); err == nil {
@@ -593,7 +598,7 @@ func recordQualityGateValidation(st *state.StateStore, record qualityGateRunReco
 	if record.Log != "" {
 		evidence = filepath.ToSlash(filepath.Join(qualityGateRunDirectory, record.ValidationRunID, qualityGateRunLog))
 	}
-	st.RecordValidation("quality-gate", record.Form, "", record.Status, record.ExitCode, record.DurationMS, evidence)
+	st.RecordValidation("quality-gate", record.Form, "", record.Status, record.ExitCode, record.ExitSource, record.DurationMS, evidence)
 }
 
 func emitQualityGateStarted(diagnostics io.Writer, runID string, attached bool) error {

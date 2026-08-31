@@ -49,16 +49,18 @@ func runInstallSmoke(role string, cfg config.AppConfig, st *state.StateStore, st
 	command.Stderr = io.Discard
 	if err := command.Run(); err != nil {
 		exitCode := 1
+		exitSource := state.ValidationExitSourceWrapper
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
 			exitCode = exitErr.ExitCode()
+			exitSource = state.ValidationExitSourceTarget
 		}
 		durationMS := time.Since(started).Milliseconds()
-		st.RecordValidation("install-smoke", "install-smoke", role, "fail", exitCode, durationMS, "")
+		st.RecordValidation("install-smoke", "install-smoke", role, "fail", exitCode, exitSource, durationMS, "")
 		return &InstallSmokeError{Role: role, ExitCode: exitCode, DurationMS: durationMS}
 	}
 	durationMS := time.Since(started).Milliseconds()
-	st.RecordValidation("install-smoke", "install-smoke", role, "pass", 0, durationMS, "")
+	st.RecordValidation("install-smoke", "install-smoke", role, "pass", 0, state.ValidationExitSourceTarget, durationMS, "")
 	return writeJSON(stdout, installSmokeOutput{
 		Status:     "executed",
 		Result:     "pass",

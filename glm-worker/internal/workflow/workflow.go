@@ -46,6 +46,9 @@ type Workflow struct {
 
 	currentResumeSource string
 
+	pendingRetry *callRetryContext
+	lastCallID   string
+
 	lastProducer             state.ParentReviewProducer
 	observedInstructionReads map[string]struct{}
 }
@@ -53,6 +56,11 @@ type Workflow struct {
 type callDiagnostics struct {
 	reportedRisk           string
 	providerClassification string
+}
+
+type callRetryContext struct {
+	callID string
+	reason string
 }
 
 type modelCallExecution struct {
@@ -1418,6 +1426,7 @@ func (w *Workflow) handleInvalidModelResult(
 		correctCheckpoint.Prompt = correctPrompt
 		correctCheckpoint.OriginalPrompt = correctPrompt
 		correctCheckpoint.ResultCorrection = true
+		w.pendingRetry = &callRetryContext{callID: w.lastCallID, reason: "invalid-packet-result-correction"}
 		return w.runModel(correctCheckpoint)
 	}
 	return packet.Result{}, &WorkerError{
@@ -1516,8 +1525,13 @@ func (w *Workflow) recoverTransient(
 		return false, runner.RunResult{}, time.Time{}, time.Time{}, err
 	}
 	return w.recoveryLoop(checkpoint, classification, false, func() (bool, runner.RunResult, time.Time, time.Time, error) {
+		w.pendingRetry = &callRetryContext{callID: w.lastCallID, reason: transientRetryReason(classification)}
 		return w.runResumedTask(checkpoint, outputPath)
 	})
+}
+
+func transientRetryReason(classification string) string {
+	return "transient-provider-failure:" + classification
 }
 
 func (w *Workflow) gateResumeOnProbe(checkpoint state.ResumeCheckpoint) error {
@@ -1936,8 +1950,14 @@ func (w *Workflow) recordModelCall(
 	diag callDiagnostics,
 ) {
 	entry := w.buildModelCallLog(checkpoint, runResult, startedAt, completedAt, outcome, packetStatus, callErr, outputPath)
+	if entry.CallID == "" {
+		if callID, err := state.NewUUID(); err == nil {
+			entry.CallID = callID
+		}
+	}
 	w.applyCallDiagnostics(&entry, checkpoint, outcome, callErr, diag)
 	w.state.RecordModelCallLog(entry)
+	w.lastCallID = entry.CallID
 }
 
 func (w *Workflow) buildModelCallLog(
@@ -1989,17 +2009,22 @@ func (w *Workflow) buildModelCallLog(
 		ResponseBytes:                     len([]byte(response)),
 		ResponseSHA256:                    hex.EncodeToString(responseHash[:]),
 		Error:                             errorText,
-		TopLevelUsage: state.TokenUsage{
-			InputTokens:              runResult.TopLevelUsage.InputTokens,
-			CacheCreationInputTokens: runResult.TopLevelUsage.CacheCreationInputTokens,
-			CacheReadInputTokens:     runResult.TopLevelUsage.CacheReadInputTokens,
-			OutputTokens:             runResult.TopLevelUsage.OutputTokens,
-		},
-		WallDurationMS:      completedAt.Sub(startedAt).Milliseconds(),
-		ClaudeDurationMS:    runResult.DurationMS,
-		ClaudeAPIDurationMS: runResult.DurationAPIMS,
-		TopLevelTurns:       runResult.TopLevelTurns,
-		TotalCostUSD:        runResult.TotalCostUSD,
+		TopLevelUsage:                     topLevelUsage(runResult.TopLevelUsage),
+		Runtime:                           runResult.Runtime,
+		WallDurationMS:                    completedAt.Sub(startedAt).Milliseconds(),
+		ClaudeDurationMS:                  runResult.DurationMS,
+		ClaudeAPIDurationMS:               runResult.DurationAPIMS,
+		TopLevelTurns:                     runResult.TopLevelTurns,
+		TotalCostUSD:                      runResult.TotalCostUSD,
+	}
+}
+
+func topLevelUsage(usage runner.TokenUsage) state.TokenUsage {
+	return state.TokenUsage{
+		InputTokens:              usage.InputTokens,
+		CacheCreationInputTokens: usage.CacheCreationInputTokens,
+		CacheReadInputTokens:     usage.CacheReadInputTokens,
+		OutputTokens:             usage.OutputTokens,
 	}
 }
 
@@ -2046,6 +2071,11 @@ func (w *Workflow) applyCallDiagnostics(entry *state.ModelCallLog, checkpoint st
 	if w.currentResumeSource != "" {
 		entry.ResumeSource = w.currentResumeSource
 		w.currentResumeSource = ""
+	}
+	if w.pendingRetry != nil {
+		entry.RetryOf = w.pendingRetry.callID
+		entry.RetryReason = w.pendingRetry.reason
+		w.pendingRetry = nil
 	}
 	if outcome == "invalid_packet" && callErr != nil {
 		category := packet.RejectCategory(callErr)

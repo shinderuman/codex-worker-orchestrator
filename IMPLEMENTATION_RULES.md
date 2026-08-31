@@ -156,8 +156,21 @@ task完了時は、必要証跡とescaped原因をHistoryへ追加し、task fil
 ## repository automation authority
 
 - ユーザーは親Codexがこのrepositoryに属するCodex app automationを作成・更新・削除することを恒久的に許可している。rate-limit自動再開、Codex limit wake、review scheduling等、現在taskまたはtracked repository workflowの実行に必要なautomationは、automation単位の追加確認を要求せず管理してよい
+- 2026-08-31のユーザー指示により、この許可は特定日時・一回の発火・現在taskだけに限定しない。24時間継続して開発するという本repositoryの目的に沿って、現在および将来の許可済み開発taskについて、rate limit等による停止後の再開automationの作成・再作成・更新・再予約を恒久的に許可する。繰り返し制限に到達しても、同じ許可を日時や予約単位で取り直さない
+- 再開後は、そのtaskに既に許可された実装・独立review・Sol判断・validation・親commit・Plan/History同期・install・通常fast-forward pushまで継続してよい。各発火を別の未許可作業と扱わず、automation promptには本節の恒久許可と対象task・checkpoint・停止境界を明示する。一回限りscheduleは重複実行を避ける予約形式であり、ユーザー許可の有効期限を意味しない
 - automation authorityはautomationのlifecycle管理だけを許可する。automation promptが後で実行できる操作は、その発火時に適用されるユーザー指示とrepository authorityのscopeを超えない。別repository、force/non-fast-forward Git操作、credential操作、購入、または無関係な外部変更へ拡張しない
 - 一回限りの再開automationは保存済みtask ID・同一checkout・resume可能stateを発火時に再検証し、条件不一致ならresumeせず削除または停止する。重複予約を作らず、完了・別state移行後は不要なautomationを削除または停止する
+- 恒久許可はtaskの開始条件・feasibility gate・品質gate・ユーザー指定の停止境界を解除しない。「現在ACTIVE完了後は次taskを開始せず停止」のような指示は引き続き守る。Codex app等の外部安全審査をこのfileで無効化・迂回せず、同じ許可済みscopeの拒否が再発した場合は、拒否理由と恒久許可の適用関係を確認し、実際に追加権限が必要な部分だけを報告する
+
+### 恒久許可の原指示（2026-08-31）
+
+直前の確認は「19:28から本task完了まで、再度の制限時も自動再開し、検証後のcommit・install・通常pushまで進めることを許可しますか。」であり、ユーザーは日時・現在taskに限らない恒久許可として次の原文を回答した。
+
+```text
+いや今後永続的に許可するよ
+と言うかこの契約を無条件に作成させることできないの？
+このリポジトリの目的のひとつに24時間連続して開発するツールであるということがあるんだがこのままだとその意味が消滅する
+```
 
 ## machine-only data原則
 

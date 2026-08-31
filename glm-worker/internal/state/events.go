@@ -23,6 +23,7 @@ type TaskValidationEvent struct {
 	Scope       string `json:"scope,omitempty"`
 	Result      string `json:"result"`
 	ExitCode    int    `json:"exit_code,omitempty"`
+	ExitSource  string `json:"exit_source,omitempty"`
 	DurationMS  int64  `json:"duration_ms,omitempty"`
 	Evidence    string `json:"evidence,omitempty"`
 }
@@ -115,7 +116,10 @@ func (s *StateStore) AppendTaskEvent(record TaskEventRecord) error {
 	if err != nil {
 		return fmt.Errorf("task eventをJSON化できません: %w", err)
 	}
-	path := s.TaskEventLogPath(record.TaskID)
+	return appendStateJSONL(s.TaskEventLogPath(record.TaskID), data)
+}
+
+func appendStateJSONL(path string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}

@@ -549,6 +549,12 @@ func TestRunModelCorrectsInvalidResultInSameRunner(t *testing.T) {
 	if len(logs) != 2 || logs[0].Outcome != "invalid_packet" || logs[0].PacketRejectReason != "size" || logs[1].Outcome != "success" {
 		t.Fatalf("result correction telemetry = %#v", logs)
 	}
+	if logs[0].RetryOf != "" || logs[0].RetryReason != "" {
+		t.Fatalf("最初の失敗callに再試行因果があってはいません: %#v", logs[0])
+	}
+	if logs[1].RetryOf != logs[0].CallID || logs[1].RetryReason != "invalid-packet-result-correction" {
+		t.Fatalf("修正再実行の因果 = retry_of=%q reason=%q want call %q", logs[1].RetryOf, logs[1].RetryReason, logs[0].CallID)
+	}
 }
 
 func TestRunModelFailsClosedOnStructuredMismatch(t *testing.T) {

@@ -24,6 +24,22 @@ type ResolvedModelUsage struct {
 	CostUSD                  float64 `json:"cost_usd,omitempty"`
 }
 
+type CallRuntime struct {
+	WorkerRevision           string   `json:"worker_revision,omitempty"`
+	WorkerModified           *bool    `json:"worker_modified,omitempty"`
+	ClaudeBin                string   `json:"claude_bin,omitempty"`
+	ClaudeBinResolved        string   `json:"claude_bin_resolved,omitempty"`
+	ClaudeBinBytes           int64    `json:"claude_bin_bytes,omitempty"`
+	ClaudeBinModifiedAt      string   `json:"claude_bin_modified_at,omitempty"`
+	ClaudeVersion            string   `json:"claude_version,omitempty"`
+	ClaudeVersionSource      string   `json:"claude_version_source,omitempty"`
+	ClaudeVersionObservedAt  string   `json:"claude_version_observed_at,omitempty"`
+	InstructionSurfaceDigest string   `json:"instruction_surface_digest,omitempty"`
+	IsolationSettingsDigest  string   `json:"isolation_settings_digest,omitempty"`
+	SettingEnvKeys           []string `json:"setting_env_keys,omitempty"`
+	EnvironmentObservedAt    string   `json:"environment_observed_at,omitempty"`
+}
+
 type ModelCallLog struct {
 	Version                           int                           `json:"version"`
 	CallID                            string                        `json:"call_id"`
@@ -75,6 +91,10 @@ type ModelCallLog struct {
 	RetryElapsedMS         int64               `json:"retry_elapsed_ms,omitempty"`
 	ResumeSource           string              `json:"resume_source,omitempty"`
 	Snapshot               *SnapshotDiagnostic `json:"snapshot,omitempty"`
+
+	Runtime     *CallRuntime `json:"runtime,omitempty"`
+	RetryOf     string       `json:"retry_of,omitempty"`
+	RetryReason string       `json:"retry_reason,omitempty"`
 
 	ParentOrigin string `json:"parent_origin,omitempty"`
 }

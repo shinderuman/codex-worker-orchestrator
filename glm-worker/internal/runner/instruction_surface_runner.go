@@ -47,6 +47,7 @@ func (r *InstructionSurfaceGuardRunner) Run(
 		copyBase.bashSandbox = gitGuard.bashSandboxPolicy()
 		callBase = &copyBase
 	}
+	callBase.instructionSurfaceDigest = instructionBefore.digest
 
 	result, runErr := callBase.Run(role, phase, model, readOnly, effort, prompt, outputPath)
 	gitErr := gitGuard.verify()

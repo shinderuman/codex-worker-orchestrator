@@ -331,6 +331,27 @@ func writeBundleModelCall(t *testing.T, st *state.StateStore, taskID, sessionID 
 		StartedAt:   now,
 		CompletedAt: now,
 		Outcome:     "success",
+		Runtime: &state.CallRuntime{
+			WorkerRevision:      "fixture-revision",
+			ClaudeVersion:       "2.1.226",
+			ClaudeVersionSource: "session-transcript",
+		},
+	})
+}
+
+func writeBundleLegacyModelCall(t *testing.T, st *state.StateStore, taskID, sessionID string, role state.SessionRole, phase string) {
+	t.Helper()
+	now := time.Now().UTC()
+	st.RecordModelCallLog(state.ModelCallLog{
+		TaskID:      taskID,
+		CallType:    state.CallTypeTask,
+		SessionID:   sessionID,
+		Role:        role,
+		Phase:       phase,
+		ModelAlias:  "opus",
+		StartedAt:   now,
+		CompletedAt: now,
+		Outcome:     "success",
 	})
 }
 

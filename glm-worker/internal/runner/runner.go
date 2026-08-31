@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
@@ -29,6 +30,8 @@ type ClaudeRunner struct {
 	state       *state.StateStore
 	stop        *StopController
 	bashSandbox *gitBashSandboxPolicy
+
+	instructionSurfaceDigest string
 }
 
 type TokenUsage struct {
@@ -69,6 +72,8 @@ type RunResult struct {
 	ContextWindowSource               string
 
 	PlainFailure ProviderFailureClass
+
+	Runtime *state.CallRuntime
 
 	StructuredOutput json.RawMessage
 }
@@ -206,13 +211,14 @@ func (r *ClaudeRunner) Run(
 	} else {
 		result.CallID = callID
 	}
+	versionScope := r.beginClaudeVersionScope(sessionID)
 	ingester, stderrPath, runErr, err := r.executeRunCommand(
 		role, phase, model, taskID, sessionID, callID, ready, args, inputs, outputPath,
 	)
 	if err != nil {
 		return result, err
 	}
-	return r.finishRun(role, outputPath, stderrPath, ingester, result, runErr)
+	return r.finishRun(role, outputPath, stderrPath, ingester, result, runErr, versionScope)
 }
 
 func (r *ClaudeRunner) prepareRunSession(role state.SessionRole, phase, model string) (RunResult, string, string, bool, error) {
@@ -269,6 +275,7 @@ func (r *ClaudeRunner) prepareRunInputs(role state.SessionRole, phase, model str
 	if err != nil {
 		return runInputs{}, fmt.Errorf("structured output schemaを構築できません: %w", err)
 	}
+	result.Runtime = r.callRuntimeEnvironment(isolationArgs, settingEnv, time.Now())
 	return runInputs{
 		systemFile: systemFile, isolationArgs: isolationArgs,
 		settingEnv: settingEnv, envDeletes: envDeletes, schema: schema, contextWindow: contextWindow,
@@ -365,6 +372,7 @@ func (r *ClaudeRunner) finishRun(
 	ingester *streamEventIngester,
 	result RunResult,
 	runErr error,
+	versionScope claudeVersionScope,
 ) (RunResult, error) {
 	result.InstructionReads = ingester.instructionReadNames()
 	parsed, parseErr := parseCapturedStreamResult(ingester.result())
@@ -374,6 +382,7 @@ func (r *ClaudeRunner) finishRun(
 	if result.Response == "" {
 		result.PlainFailure = classifyPlainStdoutFailure(ingester.plainSignal())
 	}
+	r.observeCallClaudeVersion(versionScope, &result)
 	if err := writeResultOutput(outputPath, result.Response, streamResultSummary(parsed, parseErr), stderrPath); err != nil {
 		return result, err
 	}
@@ -384,6 +393,15 @@ func (r *ClaudeRunner) finishRun(
 		return result, err
 	}
 	return result, nil
+}
+
+func (r *ClaudeRunner) observeCallClaudeVersion(scope claudeVersionScope, result *RunResult) {
+	if result.Runtime == nil {
+		return
+	}
+	observedAt := time.Now().UTC()
+	result.Runtime.ClaudeVersionObservedAt = observedAt.Format(time.RFC3339Nano)
+	result.Runtime.ClaudeVersion, result.Runtime.ClaudeVersionSource = observeClaudeVersion(r.config.ClaudeConfigDir, scope)
 }
 
 func applyParsedRunResult(result *RunResult, parsed claudeJSONResult) {

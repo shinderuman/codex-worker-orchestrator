@@ -18,7 +18,7 @@ func TestRecordValidationUsesCurrentTaskEventWhenTaskExists(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	st.RecordValidation("quality-gate", "go-test", "", "pass", 0, 123, "quality-gate-logs/go-test-pass.log")
+	st.RecordValidation("quality-gate", "go-test", "", "pass", 0, ValidationExitSourceTarget, 123, "quality-gate-logs/go-test-pass.log")
 
 	data, err := os.ReadFile(st.TaskEventLogPath(taskID))
 	if err != nil {
@@ -39,7 +39,7 @@ func TestRecordValidationUsesCurrentTaskEventWhenTaskExists(t *testing.T) {
 
 func TestRecordValidationPersistsExplicitStandaloneAttribution(t *testing.T) {
 	st := newValidationTestStore(t)
-	st.RecordValidation("install-smoke", "install-smoke", "worker", "pass", 0, 42, "")
+	st.RecordValidation("install-smoke", "install-smoke", "worker", "pass", 0, ValidationExitSourceTarget, 42, "")
 
 	file, err := os.Open(st.Path(standaloneValidationFile))
 	if err != nil {

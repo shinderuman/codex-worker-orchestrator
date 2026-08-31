@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 )
@@ -191,13 +192,33 @@ func (s *StateStore) TaskStatus() TaskStatus {
 }
 
 func (s *StateStore) SetTaskStatus(status TaskStatus) error {
+	previous := s.TaskStatus()
 	if err := s.Write("task.status", string(status)); err != nil {
 		return err
 	}
 	s.UpdateTaskStats(func(stats *TaskStats) {
 		stats.Status = status
 	})
+	if previous != status {
+		s.appendTaskStatusLifecycle(previous, status)
+	}
 	return nil
+}
+
+func (s *StateStore) appendTaskStatusLifecycle(previous, next TaskStatus) {
+	taskID := s.ReadOr("task.id", "")
+	if taskID == "" {
+		return
+	}
+	record := TaskLifecycleRecord{
+		TaskID:    taskID,
+		Timestamp: time.Now().UTC(),
+		From:      string(previous),
+		To:        string(next),
+	}
+	if err := s.AppendTaskLifecycle(record); err != nil {
+		WarnTaskLifecycleSkip(err)
+	}
 }
 
 func (s *StateStore) SessionID(role SessionRole) (string, bool, error) {

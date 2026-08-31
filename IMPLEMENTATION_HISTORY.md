@@ -11,6 +11,40 @@
 
 本文を更新できるのは親Codexだけとする。GLM worker/reviewerは読み取り専用で参照し、必要な更新候補と根拠をPACKETへ記載する。
 
+## 2026-09-01 bundle解析に不足する実行時証跡の収集
+
+- [x] `bundle-analysis-evidence-capture`の実装・独立review・Sol最終採用・full test/race・parent accept・commit同期を完了。原要求は削除した`IMPLEMENTATION_TASKS/bundle-analysis-evidence-capture.md`のGit履歴に保持し、分析用索引をACTIVEへ昇格した。ユーザーの停止境界に従い次taskは開始しない。
+- task ID: `4dc4ebd0-0fd7-45af-a41c-4257a2337d67`。worker session: `c5c5f410-7166-4c53-aa0d-08968fd719a5`。reviewer session: `58b288a6-4216-470c-9742-0e50b8db8656`。rate limit後も同じsession/checkpointを継続し、追加benchmark callやrouting/model/provider変更は行わなかった。
+- 実装: per-call runtimeへworker build・binary属性・適用設定/指示識別情報を保存し、CLI versionは今回callのtranscript追加範囲からだけ取得する。開始時FileInfoと終了時同一open handleの`os.SameFile`、候補一意性、非縮退、prefix anchorを確認し、旧record・別inode置換・帰属不能を採用しない。開始/終了の観測時刻は分離する。既存task status遷移からlifecycle logを追記し、既知の再試行経路へ`retry_of`/`retry_reason`、固定検証入口へ`exit_source`を追加した。bundleは原本を保持し、`collection.json`へhash・bytes・収集時刻・JSONL観測境界を記録、collection成功とcoverage/scope/legacy理由を分離する。
+- 最終検証: full go-test `e3a40fde00d1efe4cc284be567f5992e` PASS、full go-test-race `dc397aceb6fb1432ce9fd739e17134e5` PASS（118430 ms）、finalize-check `ready_for_parent_decision`。両gateはHEAD `525fb913c2799286e57e0e2300dbe838a6e53733`、index digest `6106d36a2dcda69a2a84b99afc68690dbc54244923aa7b43587e4f17fd947a4e`、worktree digest `7a65c7a788b686e011ab2673e7d57edb10001395ec3b58beea2a166f9642e3c1`の同一snapshot。最終reviewはbuild/vet・harnesslint/commentlint・runner全体・state/app targetedのPASSを報告し、親は追加の同一full testを重複実行せずraceを実施した。以後の変更は親管理metadata同期のみ。
+- 最終review: `NEEDS_SOL_REVIEW / HIGH`、修正可能な未解決指摘なし。Solは対象差分と直接回帰testを確認して採用し、`glm-parent-action accept`は`accepted:true`。観測は診断用であり、task完了・検証admission・Git権限・retry policyのauthorityは変えていない。
+- 本配置確認: 実装commit `595af422346cada4b695a244c5de5ffcb1e84552`を`install.sh`で配置し、final HEAD gateとinstalled `--status`の`relationship:same`・`vcs_modified:false`・`task_status:complete`を確認。installed `bundle 4dc4ebd0-0fd7-45af-a41c-4257a2337d67`はmodel呼出なしで成功し、実archiveのcollection対象179件すべてのbytes/SHA-256が収録原本に一致、非index対象はmanifest/collectionの2件だけだった。実taskは旧runtimeで観測されたため`legacy-evidence:lifecycle`/`legacy-evidence:runtime`を保持し、`evidence_status:complete`と`coverage:open`を区別した。この確認後の差分は本Historyへの証跡追記だけで、実装は同一である。
+- review中の修正: exit_sourceが検体由来の非0終了コードまでwrapper由来へ上書きする問題、transcript探索helper重複、CLI versionをfile属性で代用する要求欠落、不正JSONLを正常recordへ数える境界不足、call前にseedした旧versionの誤帰属、同prefix別inode置換の誤帰属をcompletion前に解消した。原因層はworker実装・test/scenario・reviewerの横断的な要求照合不足。旧version testがcall前seedを成功期待していたこと、旧置換検出がpath/size/prefixだけであったことを一次証拠として残し、「すべてunknown側」というreviewer申告だけでは採用しなかった。一般prompt/gate変更は追加していない。
+- 残余境界: versionは追加範囲末尾32KiBに限定し窓外・断片・空file開始の最初の追記行等を取得できない場合がある。新規file開始時の外部swapやsame-inodeで先頭4KiB以外を書き換える同時変更をすべて検出する仕組みではない。4MiBを超えるJSONL行はbytesを保持して観測skipを明示し、manifest自体はcollection index対象外。artifacts配下のin-progress mark、stream-json versionの存在、親全処理の最終時刻等を未観測のまま保持し、解析側消費者は次taskの責務とする。pendingRetryの中断経路残存は後続callへ到達しないというreview確認範囲に限る。未観測を品質低下・routing変更や成功の根拠へ変換しない。
+- 五観点のproducer/再利用/追加/unknown/原本参照・詳細testは`/Users/shinderumanm/.glm-worker/sessions/4b1083bd6f6e13220f3e0d653377d694f010b8951c788559f19840a14a0df6d0/artifacts/4dc4ebd0-0fd7-45af-a41c-4257a2337d67/evidence-capture-report.md`。呼出の一次証拠は同session rootの`telemetry/4dc4ebd0-0fd7-45af-a41c-4257a2337d67.jsonl`、検証logは`quality-gate-runs/<validation_run_id>/gate.log`。
+- parent maintenance: ユーザーの恒久許可原文をRULESへ保存し、日時限定の一回許可と予約形式を区別した。以降の自動再開は再確認なしで予約・TOML/DB検証を通過し、発火済みautomationは削除済み。外部安全審査・品質gate・既存停止境界は解除していない。
+
+model call sequence（telemetryのalias。worker 10回、reviewer 6回）:
+
+| 順 | phase | model / effort | outcome |
+| --- | --- | --- | --- |
+| 1 | worker-new | opus / high | rate_limited |
+| 2 | worker-new | opus / high | invalid_packet |
+| 3 | worker-new-result-correct | opus / high | success |
+| 4 | reviewer-1-high-floor | sonnet / high | success |
+| 5 | worker-auto-fix-1 | opus / high | success |
+| 6 | reviewer-2-high-floor | sonnet / high | success |
+| 7 | worker-explicit-fix | opus / max | rate_limited |
+| 8 | worker-explicit-fix | opus / max | success |
+| 9 | reviewer-1-high-floor | sonnet / high | success |
+| 10 | worker-auto-fix-1 | opus / high | success |
+| 11 | reviewer-2-high-floor | sonnet / high | success |
+| 12 | worker-explicit-fix | opus / max | rate_limited |
+| 13 | worker-explicit-fix | opus / max | success |
+| 14 | reviewer-1-high-floor | sonnet / high | success |
+| 15 | worker-explicit-fix | opus / max | success |
+| 16 | reviewer-1-high-floor | sonnet / high | success |
+
 ## 重大インシデント / 再オープン中
 
 - [x] Task 019 repo-search product wiring: `GLM_WORKER_REPO_SEARCH`を既定enabledのbool configとして追加し、016 worker BM25 navigationとF9 reviewer独立BM25 searchだけを切替対象にした。disabled時は導入前prompt/searchへ戻し、diff changed-path navigationとF10 exhaustive proofは常時維持する。既存BM25 coreを直接利用するstateless read-only `glm-worker --repo-search <query>`、help/README、managed instruction、install配布・smokeを同期し、新telemetry/A/B hookはTask 020へ残した。task ID `de6da248-65d2-45a3-b40d-9aa47cf56b1f`、worker session `ed2c2881-132c-4326-af78-eefb006e13d5`、reviewer session `4348aa47-a20f-4ae0-91f6-1b71ad545402`で実装・独立reviewを行い、reviewer findingなし、Sol採用。親fixed `go test ./...` 75.1秒、`go test -race ./...` 122.0秒、vet/build/gofmt/commentlint/harnesslint、parent install smokeをPASS。capability境界外で不安定だったGit authority temp fixtureは`GLM_WORKER_GIT_TEMP_ROOT`配下の明示templateへ限定し、deny-by-defaultを変えずfull gateを回復した。

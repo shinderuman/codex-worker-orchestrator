@@ -162,6 +162,62 @@ func TestRecoveryFromPlainStdoutTransientSignal(t *testing.T) {
 	}
 }
 
+func TestRecoveryLinksRetryToFailedCall(t *testing.T) {
+	st := newStateStoreT(t)
+	recoveredRuntime := &state.CallRuntime{
+		WorkerRevision:           "recovered-revision",
+		ClaudeBinResolved:        "/resolved/claude",
+		InstructionSurfaceDigest: "instruction-digest",
+	}
+	r := &scriptedRunner{
+		steps: []runnerStep{
+			{
+				runErr: errors.New("exit status 1"),
+				result: runner.RunResult{PlainFailure: runner.ProviderFailureClass{
+					Kind:   runner.ProviderFailureTransient,
+					Detail: "http-503",
+				}},
+			},
+			{structured: implementedPacket("recovered"), result: runner.RunResult{Runtime: recoveredRuntime}},
+		},
+		probeErrs: []error{errProbeTransient, nil},
+	}
+	w, _ := newRecoveryWorkflowT(t, st, r)
+	w.temp = t.TempDir()
+
+	if _, err := w.runModel(workerCheckpoint()); err != nil {
+		t.Fatalf("回復成功を期待: %v", err)
+	}
+	taskID, _ := st.TaskID()
+	allLogs, logErr := st.ReadModelCallLogs(taskID)
+	if logErr != nil {
+		t.Fatal(logErr)
+	}
+	logs := make([]state.ModelCallLog, 0, 2)
+	for _, entry := range allLogs {
+		if entry.CallType == state.CallTypeTask {
+			logs = append(logs, entry)
+		}
+	}
+	if len(logs) != 2 {
+		t.Fatalf("task logs = %#v", logs)
+	}
+	if logs[0].Outcome != "transient_error" || logs[0].RetryOf != "" {
+		t.Fatalf("失敗call = %#v", logs[0])
+	}
+	if logs[1].Outcome != "success" || logs[1].RetryOf != logs[0].CallID {
+		t.Fatalf("再実行callの因果 = outcome=%q retry_of=%q want %q", logs[1].Outcome, logs[1].RetryOf, logs[0].CallID)
+	}
+	if !strings.HasPrefix(logs[1].RetryReason, "transient-provider-failure:") {
+		t.Fatalf("再試行理由 = %q", logs[1].RetryReason)
+	}
+	if logs[1].Runtime == nil || logs[1].Runtime.WorkerRevision != "recovered-revision" ||
+		logs[1].Runtime.ClaudeBinResolved != "/resolved/claude" ||
+		logs[1].Runtime.InstructionSurfaceDigest != "instruction-digest" {
+		t.Fatalf("再実行callのruntime = %#v", logs[1].Runtime)
+	}
+}
+
 func TestRecoveryAccountingSeparatesTaskAndProbeCalls(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{

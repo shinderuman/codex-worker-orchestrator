@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskdiff"
 )
@@ -26,10 +27,14 @@ type bundleOutput struct {
 	TaskStatus         string   `json:"task_status"`
 	ArchivePath        string   `json:"archive_path"`
 	EvidenceStatus     string   `json:"evidence_status"`
+	Coverage           string   `json:"coverage"`
+	CoverageReasons    []string `json:"coverage_reasons,omitempty"`
+	CoverageScope      []string `json:"coverage_scope"`
 	ClaudeSessionIDs   []string `json:"claude_session_ids"`
 	InFlightModelCalls int      `json:"in_flight_model_calls,omitempty"`
 	Missing            []string `json:"missing"`
 	Unattributed       []string `json:"unattributed,omitempty"`
+	Unreadable         []string `json:"unreadable,omitempty"`
 }
 
 type bundleManifest struct {
@@ -38,13 +43,38 @@ type bundleManifest struct {
 	TaskStatus         string              `json:"task_status"`
 	CurrentTask        bool                `json:"current_task"`
 	EvidenceStatus     string              `json:"evidence_status"`
+	Coverage           string              `json:"coverage"`
+	CoverageReasons    []string            `json:"coverage_reasons,omitempty"`
+	CoverageScope      []string            `json:"coverage_scope"`
 	ClaudeSessionIDs   []string            `json:"claude_session_ids"`
 	InFlightModelCalls int                 `json:"in_flight_model_calls,omitempty"`
 	Included           []string            `json:"included"`
 	Missing            []string            `json:"missing"`
 	Unattributed       []string            `json:"unattributed,omitempty"`
+	Unreadable         []string            `json:"unreadable,omitempty"`
 	CodexEvidence      []bundleCodexSource `json:"codex_evidence,omitempty"`
+	CollectionIndex    string              `json:"collection_index,omitempty"`
 	CreatedAt          string              `json:"created_at"`
+}
+
+type bundleCollectedEntry struct {
+	Path             string `json:"path"`
+	SHA256           string `json:"sha256"`
+	Bytes            int64  `json:"bytes"`
+	CollectedAt      string `json:"collected_at"`
+	SourceModifiedAt string `json:"source_modified_at,omitempty"`
+	Records          int    `json:"records,omitempty"`
+	InvalidRecords   int    `json:"invalid_records,omitempty"`
+	DroppedLines     int    `json:"dropped_lines,omitempty"`
+	RuntimeRecords   int    `json:"runtime_records,omitempty"`
+	TrailingFragment bool   `json:"trailing_fragment,omitempty"`
+	LastEventAt      string `json:"last_event_at,omitempty"`
+	InProgress       bool   `json:"in_progress,omitempty"`
+}
+
+type bundleCollectionIndex struct {
+	CollectorRevision string                 `json:"collector_revision,omitempty"`
+	Entries           []bundleCollectedEntry `json:"entries"`
 }
 
 type bundleTask struct {
@@ -54,28 +84,61 @@ type bundleTask struct {
 	Stats   state.TaskStats
 }
 
+type bundleEvidenceSummary struct {
+	missing            []string
+	unattributed       []string
+	unreadable         []string
+	evidenceStatus     string
+	coverage           string
+	coverageReasons    []string
+	inFlightModelCalls int
+	lifecycleCollected bool
+}
+
 type bundleEntry struct {
 	SourcePath  string
 	ArchivePath string
 	Data        []byte
+	InProgress  bool
 }
 
 type bundleCollector struct {
-	entries      map[string]bundleEntry
-	missing      map[string]struct{}
-	unattributed map[string]struct{}
+	entries            map[string]bundleEntry
+	missing            map[string]struct{}
+	unreadable         map[string]struct{}
+	unattributed       map[string]struct{}
+	lifecycleCollected bool
 }
 
 const bundleFormat = "glm-worker-task-bundle-v3"
 
+const bundleCollectionEntryPath = "collection.json"
+
+const (
+	bundleCoveragePartial = "partial"
+	bundleCoverageOpen    = "open"
+	bundleCoverageClosed  = "closed"
+)
+
 var bundleAggregateDirs = map[string]bool{
 	"artifacts":      true,
 	"events":         true,
+	"lifecycle":      true,
 	"rounds":         true,
 	"stats":          true,
 	"task-authority": true,
 	"telemetry":      true,
 }
+
+var bundleInProgressPrefixes = []string{
+	"task/telemetry/",
+	"task/events/",
+	"task/rounds/",
+	"task/lifecycle/",
+	"claude-transcripts/",
+}
+
+var bundleCoverageScope = []string{"task-status", "evidence-presence", "evidence-readability"}
 
 func printBundle(cfg config.AppConfig, st *state.StateStore, requestedTaskID string, stdout io.Writer) error {
 	task, err := selectBundleTask(st, requestedTaskID)
@@ -91,38 +154,14 @@ func printBundle(cfg config.AppConfig, st *state.StateStore, requestedTaskID str
 	if task.Current {
 		collector.collectCurrentState(cfg, st)
 	}
+	collector.markInProgressEvidence(task)
 
 	archivePath, err := bundleArchivePath(cfg, task.ID)
 	if err != nil {
 		return err
 	}
-	missing := collector.missingList()
-	unattributed := collector.unattributedList()
-	evidenceStatus := "complete"
-	if len(missing) > 0 {
-		evidenceStatus = "incomplete"
-	}
-	inFlightModelCalls := bundleInFlightModelCalls(st, task)
-	manifest := bundleManifest{
-		Format:             bundleFormat,
-		TaskID:             task.ID,
-		TaskStatus:         task.Status,
-		CurrentTask:        task.Current,
-		EvidenceStatus:     evidenceStatus,
-		ClaudeSessionIDs:   sessionIDs,
-		InFlightModelCalls: inFlightModelCalls,
-		Included:           collector.includedListWithManifest(),
-		Missing:            missing,
-		Unattributed:       unattributed,
-		CodexEvidence:      codexEvidence,
-		CreatedAt:          time.Now().UTC().Format(time.RFC3339Nano),
-	}
-	manifestData, err := json.MarshalIndent(manifest, "", "  ")
-	if err != nil {
-		return fmt.Errorf("bundle manifestをJSON化できません: %w", err)
-	}
-	collector.addData("manifest.json", append(manifestData, '\n'))
-	if err := writeBundleArchiveAtomically(archivePath, collector.entryList()); err != nil {
+	summary := collector.evidenceSummary(st, task)
+	if err := writeBundleArchive(collector, archivePath, task, sessionIDs, &summary, codexEvidence); err != nil {
 		return err
 	}
 
@@ -130,12 +169,139 @@ func printBundle(cfg config.AppConfig, st *state.StateStore, requestedTaskID str
 		TaskID:             task.ID,
 		TaskStatus:         task.Status,
 		ArchivePath:        archivePath,
-		EvidenceStatus:     evidenceStatus,
+		EvidenceStatus:     summary.evidenceStatus,
+		Coverage:           summary.coverage,
+		CoverageReasons:    summary.coverageReasons,
+		CoverageScope:      bundleCoverageScope,
 		ClaudeSessionIDs:   sessionIDs,
-		InFlightModelCalls: inFlightModelCalls,
-		Missing:            missing,
-		Unattributed:       unattributed,
+		InFlightModelCalls: summary.inFlightModelCalls,
+		Missing:            summary.missing,
+		Unattributed:       summary.unattributed,
+		Unreadable:         summary.unreadable,
 	})
+}
+
+func (c *bundleCollector) evidenceSummary(st *state.StateStore, task bundleTask) bundleEvidenceSummary {
+	missing := c.missingList()
+	summary := bundleEvidenceSummary{
+		missing:            missing,
+		unattributed:       c.unattributedList(),
+		unreadable:         c.unreadableList(),
+		evidenceStatus:     "complete",
+		inFlightModelCalls: bundleInFlightModelCalls(st, task),
+		lifecycleCollected: c.lifecycleCollected,
+	}
+	if len(missing) > 0 {
+		summary.evidenceStatus = "incomplete"
+	}
+	summary.coverage, summary.coverageReasons = bundleCoverage(task, summary.inFlightModelCalls, summary.missing, summary.unreadable, false)
+	if !c.lifecycleCollected {
+		summary.coverageReasons = append(summary.coverageReasons, "legacy-evidence:lifecycle")
+	}
+	return summary
+}
+
+func (s *bundleEvidenceSummary) mergeReadability(index bundleCollectionIndex, task bundleTask) {
+	s.coverage, s.coverageReasons = bundleCoverage(task, s.inFlightModelCalls, s.missing, s.unreadable, bundleIndexReadabilityAnomaly(index))
+	if !s.lifecycleCollected {
+		s.coverageReasons = append(s.coverageReasons, "legacy-evidence:lifecycle")
+	}
+	if bundleIndexLegacyRuntime(index) {
+		s.coverageReasons = append(s.coverageReasons, "legacy-evidence:runtime")
+	}
+}
+
+func bundleIndexReadabilityAnomaly(index bundleCollectionIndex) bool {
+	for _, entry := range index.Entries {
+		if entry.InProgress {
+			continue
+		}
+		if entry.TrailingFragment || entry.InvalidRecords > 0 || entry.DroppedLines > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func bundleIndexLegacyRuntime(index bundleCollectionIndex) bool {
+	for _, entry := range index.Entries {
+		if strings.HasPrefix(entry.Path, bundleTelemetryArchivePrefix) && entry.Records > 0 && entry.RuntimeRecords == 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func buildBundleManifest(collector *bundleCollector, task bundleTask, sessionIDs []string, summary bundleEvidenceSummary, codexEvidence []bundleCodexSource) bundleManifest {
+	return bundleManifest{
+		Format:             bundleFormat,
+		TaskID:             task.ID,
+		TaskStatus:         task.Status,
+		CurrentTask:        task.Current,
+		EvidenceStatus:     summary.evidenceStatus,
+		Coverage:           summary.coverage,
+		CoverageReasons:    summary.coverageReasons,
+		CoverageScope:      bundleCoverageScope,
+		ClaudeSessionIDs:   sessionIDs,
+		InFlightModelCalls: summary.inFlightModelCalls,
+		Included:           collector.includedListWithManifest(),
+		Missing:            summary.missing,
+		Unattributed:       summary.unattributed,
+		Unreadable:         summary.unreadable,
+		CodexEvidence:      codexEvidence,
+		CollectionIndex:    bundleCollectionEntryPath,
+		CreatedAt:          time.Now().UTC().Format(time.RFC3339Nano),
+	}
+}
+
+func writeBundleArchive(
+	collector *bundleCollector,
+	archivePath string,
+	task bundleTask,
+	sessionIDs []string,
+	summary *bundleEvidenceSummary,
+	codexEvidence []bundleCodexSource,
+) error {
+	buildManifest := func(index bundleCollectionIndex) bundleManifest {
+		summary.mergeReadability(index, task)
+		return buildBundleManifest(collector, task, sessionIDs, *summary, codexEvidence)
+	}
+	return writeBundleArchiveAtomically(archivePath, collector.entryList(), buildManifest)
+}
+
+func bundleCoverage(task bundleTask, inFlightModelCalls int, missing, unreadable []string, jsonlAnomaly bool) (string, []string) {
+	reasons := bundleCoverageReasons(task, inFlightModelCalls, missing, unreadable, jsonlAnomaly)
+	switch {
+	case len(missing) > 0 || len(unreadable) > 0 || jsonlAnomaly:
+		return bundleCoveragePartial, reasons
+	case task.Current || inFlightModelCalls > 0 || task.Status != string(state.TaskStatusComplete):
+		return bundleCoverageOpen, reasons
+	default:
+		return bundleCoverageClosed, reasons
+	}
+}
+
+func bundleCoverageReasons(task bundleTask, inFlightModelCalls int, missing, unreadable []string, jsonlAnomaly bool) []string {
+	reasons := make([]string, 0, 5)
+	if task.Current {
+		reasons = append(reasons, "task-current")
+	}
+	if inFlightModelCalls > 0 {
+		reasons = append(reasons, "in-flight-model-calls")
+	}
+	if task.Status != string(state.TaskStatusComplete) {
+		reasons = append(reasons, "task-status:"+task.Status)
+	}
+	if len(missing) > 0 {
+		reasons = append(reasons, "missing-evidence")
+	}
+	if len(unreadable) > 0 {
+		reasons = append(reasons, "unreadable-evidence")
+	}
+	if jsonlAnomaly {
+		reasons = append(reasons, "jsonl-anomaly")
+	}
+	return reasons
 }
 
 func selectBundleTask(st *state.StateStore, requestedTaskID string) (bundleTask, error) {
@@ -207,6 +373,7 @@ func newBundleCollector() *bundleCollector {
 	return &bundleCollector{
 		entries:      make(map[string]bundleEntry),
 		missing:      make(map[string]struct{}),
+		unreadable:   make(map[string]struct{}),
 		unattributed: make(map[string]struct{}),
 	}
 }
@@ -216,6 +383,7 @@ func (c *bundleCollector) collectTaskEvidence(st *state.StateStore, task bundleT
 	c.addFileIfPresent(st.TaskEventLogPath(task.ID), path.Join("task", "events", task.ID+".jsonl"))
 	c.addFileIfPresent(st.TaskLiveStatusPath(task.ID), path.Join("task", "events", task.ID+".live.json"))
 	c.addFileIfPresent(st.RoundLogPath(task.ID), path.Join("task", "rounds", task.ID+".jsonl"))
+	c.lifecycleCollected = c.addFileIfPresent(st.TaskLifecycleLogPath(task.ID), path.Join("task", "lifecycle", task.ID+".jsonl"))
 	if c.addFileIfPresent(st.TaskAuthorityPathPath(task.ID), path.Join("task", "authority", "active-task.path")) {
 		if !c.addFileIfPresent(st.TaskAuthorityContentPath(task.ID), path.Join("task", "authority", "active-task.md")) {
 			c.addMissing(path.Join("task", "authority", "active-task.md"))
@@ -302,36 +470,13 @@ func (c *bundleCollector) collectClaudeTranscripts(cfg config.AppConfig, session
 	if len(sessionIDs) == 0 {
 		return
 	}
-	matches, err := findClaudeTranscripts(cfg.ClaudeConfigDir, sessionIDs)
+	matches, err := runner.FindClaudeTranscriptPaths(cfg.ClaudeConfigDir, sessionIDs)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		c.addMissing("claude-transcripts/unavailable")
 	}
 	for _, sessionID := range sessionIDs {
 		c.addClaudeTranscriptMatches(sessionID, matches[sessionID])
 	}
-}
-
-func findClaudeTranscripts(configDir string, sessionIDs []string) (map[string][]string, error) {
-	targets := make(map[string]struct{}, len(sessionIDs))
-	for _, sessionID := range sessionIDs {
-		targets[sessionID] = struct{}{}
-	}
-	matches := make(map[string][]string, len(sessionIDs))
-	projectsRoot := filepath.Join(configDir, "projects")
-	err := filepath.WalkDir(projectsRoot, func(filePath string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if entry.IsDir() || !entry.Type().IsRegular() || filepath.Ext(entry.Name()) != ".jsonl" {
-			return nil
-		}
-		sessionID := strings.TrimSuffix(entry.Name(), ".jsonl")
-		if _, ok := targets[sessionID]; ok {
-			matches[sessionID] = append(matches[sessionID], filePath)
-		}
-		return nil
-	})
-	return matches, err
 }
 
 func (c *bundleCollector) addClaudeTranscriptMatches(sessionID string, paths []string) {
@@ -436,7 +581,13 @@ func (c *bundleCollector) addRepositoryFile(repoRoot, rel, archivePath string) b
 
 func (c *bundleCollector) addFileIfPresent(sourcePath, archivePath string) bool {
 	info, err := os.Lstat(sourcePath)
-	if err != nil || !info.Mode().IsRegular() {
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			c.addUnreadable(cleanArchivePath(archivePath))
+		}
+		return false
+	}
+	if !info.Mode().IsRegular() {
 		return false
 	}
 	c.addFile(sourcePath, archivePath)
@@ -506,8 +657,18 @@ func (c *bundleCollector) addUnattributed(value string) {
 	}
 }
 
+func (c *bundleCollector) addUnreadable(value string) {
+	if value != "" {
+		c.unreadable[value] = struct{}{}
+	}
+}
+
 func (c *bundleCollector) missingList() []string {
 	return sortedSet(c.missing)
+}
+
+func (c *bundleCollector) unreadableList() []string {
+	return sortedSet(c.unreadable)
 }
 
 func (c *bundleCollector) unattributedList() []string {
@@ -515,13 +676,37 @@ func (c *bundleCollector) unattributedList() []string {
 }
 
 func (c *bundleCollector) includedListWithManifest() []string {
-	result := make([]string, 0, len(c.entries)+1)
+	result := make([]string, 0, len(c.entries)+2)
 	for archivePath := range c.entries {
 		result = append(result, archivePath)
 	}
-	result = append(result, "manifest.json")
+	result = append(result, "manifest.json", bundleCollectionEntryPath)
 	sort.Strings(result)
 	return result
+}
+
+func (c *bundleCollector) markInProgressEvidence(task bundleTask) {
+	if !task.Current {
+		return
+	}
+	for archivePath, entry := range c.entries {
+		if bundleEvidenceStillAppending(archivePath) {
+			entry.InProgress = true
+			c.entries[archivePath] = entry
+		}
+	}
+}
+
+func bundleEvidenceStillAppending(archivePath string) bool {
+	if archivePath == "task/task-stats.json" {
+		return true
+	}
+	for _, prefix := range bundleInProgressPrefixes {
+		if strings.HasPrefix(archivePath, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *bundleCollector) entryList() []bundleEntry {
@@ -545,7 +730,7 @@ func bundleArchivePath(cfg config.AppConfig, taskID string) (string, error) {
 	return filepath.Join(absoluteDir, taskID+".zip"), nil
 }
 
-func writeBundleArchiveAtomically(archivePath string, entries []bundleEntry) error {
+func writeBundleArchiveAtomically(archivePath string, entries []bundleEntry, buildManifest func(bundleCollectionIndex) bundleManifest) error {
 	dir := filepath.Dir(archivePath)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("bundle export directoryを作成できません: %w", err)
@@ -564,13 +749,12 @@ func writeBundleArchiveAtomically(archivePath string, entries []bundleEntry) err
 		return err
 	}
 
+	index := bundleCollectionIndex{CollectorRevision: bundleCollectorRevision()}
 	zipWriter := zip.NewWriter(temp)
-	for _, entry := range entries {
-		if err := writeBundleEntry(zipWriter, entry); err != nil {
-			_ = zipWriter.Close()
-			_ = temp.Close()
-			return err
-		}
+	if err := writeBundleArchiveContents(zipWriter, entries, index, buildManifest); err != nil {
+		_ = zipWriter.Close()
+		_ = temp.Close()
+		return err
 	}
 	if err := zipWriter.Close(); err != nil {
 		_ = temp.Close()
@@ -589,28 +773,86 @@ func writeBundleArchiveAtomically(archivePath string, entries []bundleEntry) err
 	return nil
 }
 
-func writeBundleEntry(zipWriter *zip.Writer, entry bundleEntry) error {
+func writeBundleArchiveContents(
+	zipWriter *zip.Writer,
+	entries []bundleEntry,
+	index bundleCollectionIndex,
+	buildManifest func(bundleCollectionIndex) bundleManifest,
+) error {
+	for _, entry := range entries {
+		collected, err := writeBundleEntry(zipWriter, entry)
+		if err != nil {
+			return err
+		}
+		index.Entries = append(index.Entries, collected)
+	}
+	if err := appendBundleManifestEntry(zipWriter, buildManifest(index)); err != nil {
+		return err
+	}
+	return appendBundleCollectionIndex(zipWriter, index)
+}
+
+func appendBundleManifestEntry(zipWriter *zip.Writer, manifest bundleManifest) error {
+	data, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return fmt.Errorf("bundle manifestをJSON化できません: %w", err)
+	}
+	header := &zip.FileHeader{Name: "manifest.json", Method: zip.Deflate}
+	header.SetMode(0o600)
+	writer, err := zipWriter.CreateHeader(header)
+	if err != nil {
+		return fmt.Errorf("bundle entry manifest.jsonを作成できません: %w", err)
+	}
+	if _, err := writer.Write(append(data, '\n')); err != nil {
+		return fmt.Errorf("bundle entry manifest.jsonを書き込めません: %w", err)
+	}
+	return nil
+}
+
+func appendBundleCollectionIndex(zipWriter *zip.Writer, index bundleCollectionIndex) error {
+	data, err := json.MarshalIndent(index, "", "  ")
+	if err != nil {
+		return fmt.Errorf("bundle collection indexをJSON化できません: %w", err)
+	}
+	header := &zip.FileHeader{Name: bundleCollectionEntryPath, Method: zip.Deflate}
+	header.SetMode(0o600)
+	writer, err := zipWriter.CreateHeader(header)
+	if err != nil {
+		return fmt.Errorf("bundle entry %sを作成できません: %w", bundleCollectionEntryPath, err)
+	}
+	if _, err := writer.Write(append(data, '\n')); err != nil {
+		return fmt.Errorf("bundle entry %sを書き込めません: %w", bundleCollectionEntryPath, err)
+	}
+	return nil
+}
+
+func writeBundleEntry(zipWriter *zip.Writer, entry bundleEntry) (bundleCollectedEntry, error) {
+	collected := bundleCollectedEntry{
+		Path:        entry.ArchivePath,
+		CollectedAt: time.Now().UTC().Format(time.RFC3339Nano),
+		InProgress:  entry.InProgress,
+	}
+	if info, err := os.Lstat(entry.SourcePath); err == nil {
+		collected.SourceModifiedAt = info.ModTime().UTC().Format(time.RFC3339Nano)
+	}
 	header := &zip.FileHeader{Name: entry.ArchivePath, Method: zip.Deflate}
 	header.SetMode(0o600)
 	writer, err := zipWriter.CreateHeader(header)
 	if err != nil {
-		return fmt.Errorf("bundle entry %sを作成できません: %w", entry.ArchivePath, err)
+		return collected, fmt.Errorf("bundle entry %sを作成できません: %w", entry.ArchivePath, err)
 	}
+	measure := newBundleEntryMeasure(entry.ArchivePath)
 	if entry.SourcePath == "" {
-		if _, err := writer.Write(entry.Data); err != nil {
-			return fmt.Errorf("bundle entry %sを書き込めません: %w", entry.ArchivePath, err)
+		if _, err := measure.WriteTo(writer, entry.Data); err != nil {
+			return collected, fmt.Errorf("bundle entry %sを書き込めません: %w", entry.ArchivePath, err)
 		}
-		return nil
+	} else {
+		if err := measure.CopyFrom(writer, entry.SourcePath); err != nil {
+			return collected, err
+		}
 	}
-	file, err := os.Open(entry.SourcePath)
-	if err != nil {
-		return fmt.Errorf("bundle source %sを開けません: %w", entry.SourcePath, err)
-	}
-	defer func() { _ = file.Close() }()
-	if _, err := io.Copy(writer, file); err != nil {
-		return fmt.Errorf("bundle source %sをコピーできません: %w", entry.SourcePath, err)
-	}
-	return nil
+	measure.apply(&collected)
+	return collected, nil
 }
 
 func regularFileExists(filePath string) bool {

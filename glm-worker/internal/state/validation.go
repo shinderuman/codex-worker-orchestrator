@@ -9,13 +9,20 @@ import (
 
 const standaloneValidationFile = "validation-standalone.jsonl"
 
-func (s *StateStore) RecordValidation(source, form, scope, result string, exitCode int, durationMS int64, evidence string) {
+const (
+	ValidationExitSourceTarget  = "target-process"
+	ValidationExitSourceWrapper = "wrapper-synthesized"
+	ValidationExitSourceUnknown = "unknown"
+)
+
+func (s *StateStore) RecordValidation(source, form, scope, result string, exitCode int, exitSource string, durationMS int64, evidence string) {
 	validation := &TaskValidationEvent{
 		Source:     source,
 		Form:       form,
 		Scope:      scope,
 		Result:     result,
 		ExitCode:   exitCode,
+		ExitSource: exitSource,
 		DurationMS: durationMS,
 		Evidence:   evidence,
 	}
