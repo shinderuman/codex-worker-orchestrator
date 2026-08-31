@@ -18,18 +18,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-const (
-	executionMilestoneStateFile        = "execution-milestones.json"
-	executionMilestoneVersion          = 1
-	executionMilestoneHeading          = "## Execution milestones"
-	executionMilestoneTaskAuthority    = "active-task:Contract,Must-not,Acceptance-criteria"
-	maxExecutionMilestones             = 8
-	maxExecutionMilestoneText          = 2048
-	maxCompletedMilestonePromptSummary = 512
-)
-
-var executionMilestoneIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
-
 type executionMilestoneDefinition struct {
 	ID          string `json:"id"`
 	Scope       string `json:"scope"`
@@ -69,6 +57,18 @@ type executionMilestonePlan struct {
 	Milestones            []executionMilestoneRecord `json:"milestones"`
 	UpdatedAt             time.Time                  `json:"updated_at"`
 }
+
+const (
+	executionMilestoneStateFile        = "execution-milestones.json"
+	executionMilestoneVersion          = 1
+	executionMilestoneHeading          = "## Execution milestones"
+	executionMilestoneTaskAuthority    = "active-task:Contract,Must-not,Acceptance-criteria"
+	maxExecutionMilestones             = 8
+	maxExecutionMilestoneText          = 2048
+	maxCompletedMilestonePromptSummary = 512
+)
+
+var executionMilestoneIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 
 func (w *Workflow) decorateExecutionMilestoneCheckpoint(checkpoint state.ResumeCheckpoint) (state.ResumeCheckpoint, error) {
 	if checkpoint.Role != state.WorkerRole || checkpoint.ReportOnly {
@@ -169,9 +169,9 @@ func (w *Workflow) completeExecutionMilestone(plan *executionMilestonePlan, resu
 }
 
 func (w *Workflow) syncExecutionMilestonePlan() (*executionMilestonePlan, bool, error) {
-	taskID, activeTaskPath, err := w.executionMilestoneIdentity()
-	if err != nil || taskID == "" || activeTaskPath == "" {
-		return nil, false, err
+	taskID, activeTaskPath := w.executionMilestoneIdentity()
+	if taskID == "" || activeTaskPath == "" {
+		return nil, false, nil
 	}
 	definitions, present, err := readExecutionMilestoneDefinitions(w.config.RepoRoot, activeTaskPath)
 	if err != nil {
@@ -184,12 +184,12 @@ func (w *Workflow) syncExecutionMilestonePlan() (*executionMilestonePlan, bool, 
 	return w.syncPresentExecutionMilestones(taskID, activeTaskPath, definitions, stored, storedErr)
 }
 
-func (w *Workflow) executionMilestoneIdentity() (string, string, error) {
+func (w *Workflow) executionMilestoneIdentity() (string, string) {
 	taskID, err := w.state.TaskID()
 	if err != nil {
-		return "", "", nil
+		return "", ""
 	}
-	return taskID, w.state.ReadOr(activeTaskStateKey, ""), nil
+	return taskID, w.state.ReadOr(activeTaskStateKey, "")
 }
 
 func (w *Workflow) handleMissingExecutionMilestoneDefinitions(
