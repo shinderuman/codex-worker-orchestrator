@@ -89,6 +89,7 @@ REVIEW_FEEDBACK:
 }
 
 func reviewerPrompt(request string, decision string, workerReport string, reviewNumber int, baseline string, reviewNavigation string, activeTaskPath string) string {
+	workerReport, validationContext := reconcileReviewerWorkerReport(workerReport)
 	return fmt.Sprintf(`REVIEW_MODE: INDEPENDENT_REVIEW
 
 USER_REQUEST:
@@ -98,6 +99,8 @@ SOL_DECISION:
 %s
 
 WORKER_REPORT:
+%s
+
 %s
 
 REVIEW_NUMBER: %d
@@ -112,7 +115,7 @@ REVIEW_CURRENT_TASK_DIFFのREAD_FIRSTがtrueなら、そのPATCHをReadしてact
 INDEPENDENT_SEARCHがperformedの場合も候補はnavigation-onlyであり、worker search結果やworker reportをauthorityとして採用せず、現在のコードで独立検証してください。
 過去sessionの記憶より現在のコードを優先してください。
 PRE_TASK_BASELINEのファイルはworker開始前の状態です。既存未コミット変更と今回変更を区別する必要がある場合に参照してください。
-`, request, decision, workerReport, reviewNumber, baseline, reviewNavigation, reviewerActiveTaskBlock(activeTaskPath))
+`, request, decision, workerReport, validationContext, reviewNumber, baseline, reviewNavigation, reviewerActiveTaskBlock(activeTaskPath))
 }
 
 func reviewerHighRiskFloorPrompt(source string) string {
