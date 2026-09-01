@@ -17,3 +17,7 @@ func collectTaskChangedPaths(repoRoot string, st *state.StateStore) ([]string, e
 	}
 	return paths, nil
 }
+
+func collectChangedPaths(string, string) ([]string, error) {
+	return nil, fmt.Errorf("changed-path collection requires the captured task baseline state")
+}
