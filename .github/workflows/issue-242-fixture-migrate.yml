@@ -47,6 +47,19 @@ jobs:
                   text = re.sub(rf'\b(\w+)\.{field}\s*=\s*false\b', rf'\1.StopKind = state.ResumeStopNone', text)
                   text = re.sub(rf'!(\w+)\.{field}\b', rf'\1.StopKind != {kind}', text)
                   text = re.sub(rf'\b(\w+)\.{field}\b(?!\s*=)', rf'\1.StopKind == {kind}', text)
+              if path.name == 'report_only_snapshot_test.go':
+                  text = text.replace(
+                      'func TestReportOnlyV5MissingReportOnlyKeyRejectedBeforeRouting(t *testing.T) {',
+                      'func TestReportOnlyV5RejectedBeforeRouting(t *testing.T) {',
+                  )
+                  text = text.replace(
+                      'if err == nil || !strings.Contains(err.Error(), "report_only keyがありません") {',
+                      'if err == nil || !strings.Contains(err.Error(), "unsupported resume state version: 5") {',
+                  )
+                  text = text.replace(
+                      'v5 report_only欠落checkpointの拒否error = %v',
+                      'v5 checkpointの拒否error = %v',
+                  )
               if text != original:
                   path.write_text(text)
                   changed.append(str(path))
