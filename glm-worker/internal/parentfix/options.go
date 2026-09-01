@@ -15,6 +15,18 @@ type Options struct {
 var ErrInvalidOptions = errors.New("invalid parent fix options")
 
 func Extract(args []string) (Options, []string, error) {
+	options, pairs, err := extractApprovalOnly(args)
+	if err != nil {
+		return Options{}, nil, err
+	}
+	remaining, err := extractSemanticPairs(&options, pairs)
+	if err != nil || !validCombination(options) {
+		return Options{}, nil, ErrInvalidOptions
+	}
+	return options, remaining, nil
+}
+
+func extractApprovalOnly(args []string) (Options, []string, error) {
 	var options Options
 	pairs := make([]string, 0, len(args))
 	for _, arg := range args {
@@ -30,33 +42,42 @@ func Extract(args []string) (Options, []string, error) {
 	if len(pairs)%2 != 0 {
 		return Options{}, nil, ErrInvalidOptions
 	}
+	return options, pairs, nil
+}
 
+func extractSemanticPairs(options *Options, pairs []string) ([]string, error) {
 	remaining := make([]string, 0, len(pairs))
-	seenOrigin := false
-	seenScope := false
 	for index := 0; index < len(pairs); index += 2 {
-		name := pairs[index]
-		value := pairs[index+1]
-		switch name {
-		case "--origin":
-			if seenOrigin || !state.ValidParentOrigin(value) {
-				return Options{}, nil, ErrInvalidOptions
-			}
-			seenOrigin = true
-			options.Origin = value
-		case "--accepted-scope":
-			if seenScope || value != "current-diff" {
-				return Options{}, nil, ErrInvalidOptions
-			}
-			seenScope = true
-			options.AcceptedScope = value
-		default:
-			remaining = append(remaining, name, value)
+		handled, err := applySemanticPair(options, pairs[index], pairs[index+1])
+		if err != nil {
+			return nil, err
+		}
+		if !handled {
+			remaining = append(remaining, pairs[index], pairs[index+1])
 		}
 	}
+	return remaining, nil
+}
 
-	if options.ApprovalOnly && (options.AcceptedScope != "current-diff" || options.Origin != "") {
-		return Options{}, nil, ErrInvalidOptions
+func applySemanticPair(options *Options, name, value string) (bool, error) {
+	switch name {
+	case "--origin":
+		if options.Origin != "" || !state.ValidParentOrigin(value) {
+			return true, ErrInvalidOptions
+		}
+		options.Origin = value
+		return true, nil
+	case "--accepted-scope":
+		if options.AcceptedScope != "" || value != "current-diff" {
+			return true, ErrInvalidOptions
+		}
+		options.AcceptedScope = value
+		return true, nil
+	default:
+		return false, nil
 	}
-	return options, remaining, nil
+}
+
+func validCombination(options Options) bool {
+	return !options.ApprovalOnly || (options.AcceptedScope == "current-diff" && options.Origin == "")
 }
