@@ -225,7 +225,7 @@ func TestResumeInterruptedDirtyDriftFailsClosed(t *testing.T) {
 	if !errors.As(err, &workerErr) {
 		t.Fatalf("保持違反のresumeがWorkerErrorになりません: %v", err)
 	}
-	if after := retentionCheckpoint(t, st); !after.UserInterrupted || after.StopDirtyFiles == nil {
+	if after := retentionCheckpoint(t, st); after.StopKind != state.ResumeStopInterrupted || after.StopDirtyFiles == nil {
 		t.Fatalf("fail closedが保持checkpointを破壊しています: %#v", after)
 	}
 	if st.TaskStatus() != state.TaskStatusInterrupted {
