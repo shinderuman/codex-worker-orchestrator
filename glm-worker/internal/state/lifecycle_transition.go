@@ -82,7 +82,7 @@ func (s *StateStore) FinishReview(status TaskStatus) error {
 
 func (s *StateStore) WaitForSolReview() error {
 	switch s.TaskStatus() {
-	case TaskStatusActive, TaskStatusWaitingDecision, TaskStatusWaitingSolReview:
+	case TaskStatusNone, TaskStatusActive, TaskStatusWaitingDecision, TaskStatusWaitingSolReview:
 		return s.SetTaskStatus(TaskStatusWaitingSolReview)
 	default:
 		return fmt.Errorf("wait-for-sol-review transition is invalid from %s", s.TaskStatus())
@@ -136,6 +136,9 @@ func (s *StateStore) EnterStop(checkpoint ResumeCheckpoint) error {
 	}
 	resume, err := s.snapshotLifecycleFile(resumeStateFile)
 	if err != nil {
+		if info, statErr := os.Stat(s.Path(resumeStateFile)); statErr == nil && info.IsDir() {
+			return s.SaveResumeCheckpoint(checkpoint)
+		}
 		return err
 	}
 	pending, err := s.snapshotLifecycleFile("pending-decision")
