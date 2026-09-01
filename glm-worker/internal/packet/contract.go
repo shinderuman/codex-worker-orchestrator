@@ -84,7 +84,7 @@ var modelFieldContracts = map[machineField]machineFieldContract{
 	fieldArtifacts:                  {kind: machineFieldStrings},
 }
 
-type statusContract struct {
+type packetStatusContract struct {
 	risks        []Risk
 	resultFields []machineField
 	invalidRisk  func(Risk) string
@@ -99,7 +99,7 @@ var reviewerResultFields = []machineField{
 	fieldResidualRisk,
 }
 
-var statusContracts = map[Status]statusContract{
+var packetStatusContracts = map[Status]packetStatusContract{
 	StatusImplemented: {
 		risks: []Risk{RiskLow, RiskHigh},
 		resultFields: []machineField{
@@ -217,7 +217,7 @@ func invalidLowHighRisk(risk Risk) string {
 }
 
 func resultFieldsForStatus(status Status) []machineField {
-	if contract, ok := statusContracts[status]; ok {
+	if contract, ok := packetStatusContracts[status]; ok {
 		return contract.resultFields
 	}
 	return reviewerResultFields
@@ -243,7 +243,7 @@ func machineContractRisks(contract machineContract) []Risk {
 	seen := make(map[Risk]struct{})
 	var result []Risk
 	for _, status := range contract.statuses {
-		statusContract, ok := statusContracts[status]
+		statusContract, ok := packetStatusContracts[status]
 		if !ok {
 			panic(fmt.Sprintf("status %qにmachine contractがありません", status))
 		}
@@ -262,7 +262,7 @@ func schemaRequiredFields(contract machineContract) []machineField {
 	if contract.strictRequiredStatus == "" {
 		return []machineField{fieldStatus, fieldRisk, fieldTargets, fieldArtifacts}
 	}
-	statusContract, ok := statusContracts[contract.strictRequiredStatus]
+	statusContract, ok := packetStatusContracts[contract.strictRequiredStatus]
 	if !ok {
 		panic(fmt.Sprintf("strict required status %qにmachine contractがありません", contract.strictRequiredStatus))
 	}
@@ -281,7 +281,7 @@ func machineContractAllowsStatus(contract machineContract, status Status) bool {
 	return false
 }
 
-func statusAllowsRisk(contract statusContract, risk Risk) bool {
+func statusAllowsRisk(contract packetStatusContract, risk Risk) bool {
 	for _, allowed := range contract.risks {
 		if risk == allowed {
 			return true
@@ -294,7 +294,7 @@ func validateMachineStatusRisk(result Result, contract machineContract) error {
 	if !machineContractAllowsStatus(contract, result.Status) {
 		return &mismatchError{reason: fmt.Sprintf("%s結果のstatusとして許容されません: %q", contract.name, string(result.Status))}
 	}
-	statusContract := statusContracts[result.Status]
+	statusContract := packetStatusContracts[result.Status]
 	if statusAllowsRisk(statusContract, result.Risk) {
 		return nil
 	}
