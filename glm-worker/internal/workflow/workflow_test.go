@@ -106,6 +106,7 @@ func (r *scriptedRunner) Run(
 		result.StructuredOutput = json.RawMessage(step.structured)
 	}
 	if result.Response == "" {
+
 		result.Response = string(result.StructuredOutput)
 	}
 	return result, step.runErr
@@ -702,6 +703,7 @@ func TestRunModelFailsClosedOnStructuredOutputError(t *testing.T) {
 				t.Fatal("resume checkpointが残っています")
 			}
 			stats := currentStats(t, st)
+
 			if stats.StructuredRetryExhausted != c.wantRetryMetrics || stats.ResultCorrections != 0 {
 				t.Fatalf("stats = %#v", stats)
 			}
@@ -1899,7 +1901,7 @@ func TestNeedsSolDecisionMixedNoneTargetsCorrectsBeforeParentDispatch(t *testing
 		t.Fatalf("decision待ち状態へ遷移していません: status=%q pending=%v", st.TaskStatus(), st.Exists("pending-decision"))
 	}
 	if !strings.Contains(emitted.String(), `"status":"NEEDS_SOL_DECISION"`) || !strings.Contains(emitted.String(), `"targets":["t"]`) {
-		t.Fatalf("親境界の結果packetへ修正後targetsだけが伝わっていません: %s", emitted.String())
+		t.Fatalf("親境界の結果packetへ修正後targetsが伝わっていません: %s", emitted.String())
 	}
 	if strings.Contains(emitted.String(), `"none"`) {
 		t.Fatalf("none混在targetsが親境界へ流出しています: %s", emitted.String())
