@@ -43,7 +43,7 @@ func (w *Workflow) prepareAcceptedFixScope(mode string) {
 	if baselineHead == "" {
 		return
 	}
-	changes, err := captureAcceptedChangeSet(w.config.RepoRoot, baselineHead)
+	changes, err := w.captureAcceptedChangeSet(baselineHead)
 	if err != nil {
 		return
 	}
@@ -78,7 +78,7 @@ func (w *Workflow) acceptedFixScopeAllowsCurrent(consume bool) bool {
 	if scope.BaselineHead == "" || scope.BaselineHead != w.state.ReadOr("baseline-head", "") {
 		return false
 	}
-	current, err := captureAcceptedChangeSet(w.config.RepoRoot, scope.BaselineHead)
+	current, err := w.captureAcceptedChangeSet(scope.BaselineHead)
 	if err != nil || !changeSetSubset(current, scope.Changes) {
 		return false
 	}
@@ -151,11 +151,15 @@ func isParentManagedImplementationPath(path string) bool {
 		strings.HasPrefix(path, implementationTasksDir+"/")
 }
 
-func captureAcceptedChangeSet(repoRoot, baselineHead string) (map[string]int, error) {
-	paths, err := collectChangedPaths(repoRoot, baselineHead)
+func (w *Workflow) captureAcceptedChangeSet(baselineHead string) (map[string]int, error) {
+	paths, err := w.collectChangedPaths(w.config.RepoRoot, baselineHead)
 	if err != nil {
 		return nil, err
 	}
+	return captureAcceptedChangeSetForPaths(w.config.RepoRoot, baselineHead, paths)
+}
+
+func captureAcceptedChangeSetForPaths(repoRoot, baselineHead string, paths []string) (map[string]int, error) {
 	changes := make(map[string]int)
 	for _, path := range paths {
 		path = filepath.ToSlash(path)
