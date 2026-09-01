@@ -36,36 +36,6 @@ END_PARENT_VALIDATION_RECONCILIATION`, result.ParentValidation, reviewerUnverifi
 }
 
 func reviewerParentValidationResolved(result packet.Result) bool {
-	if result.Status != packet.StatusImplemented || result.ParentValidationEvidence == "" {
-		return false
-	}
-	if result.ParentValidation != packet.ParentValidationGoTest && result.ParentValidation != packet.ParentValidationGoTestRace {
-		return false
-	}
-
-	evidence := result.ParentValidationEvidence
-	return parentValidationEvidenceValue(evidence, "status") == "pass" &&
-		parentValidationEvidenceValue(evidence, "form") == result.ParentValidation &&
-		parentValidationEvidenceValue(evidence, "validation_run_id") != "" &&
-		parentValidationEvidenceValue(evidence, "head") != "" &&
-		parentValidationEvidenceValue(evidence, "index") != "" &&
-		parentValidationEvidenceValue(evidence, "worktree") != ""
-}
-
-func parentValidationEvidenceValue(evidence, key string) string {
-	prefix := key + "="
-	start := -1
-	if strings.HasPrefix(evidence, prefix) {
-		start = len(prefix)
-	} else if index := strings.Index(evidence, ";"+prefix); index >= 0 {
-		start = index + len(prefix) + 1
-	}
-	if start < 0 || start >= len(evidence) {
-		return ""
-	}
-	end := strings.IndexByte(evidence[start:], ';')
-	if end < 0 {
-		return evidence[start:]
-	}
-	return evidence[start : start+end]
+	return result.Status == packet.StatusImplemented &&
+		result.ParentValidationEvidence.ResolvedFor(result.ParentValidation)
 }
