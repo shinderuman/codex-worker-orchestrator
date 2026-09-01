@@ -42,7 +42,7 @@ jobs:
               text = path.read_text()
               original = text
               for field, kind in fields.items():
-                  text = re.sub(rf'\b{field}:\s*true,', f'StopKind: {kind},', text)
+                  text = re.sub(rf'\b{field}:\s*true\b', f'StopKind: {kind}', text)
                   text = re.sub(rf'!(\w+)\.{field}\b', rf'\1.StopKind != {kind}', text)
                   text = re.sub(rf'\b(\w+)\.{field}\b', rf'\1.StopKind == {kind}', text)
               if text != original:
