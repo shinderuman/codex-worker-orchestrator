@@ -59,8 +59,8 @@ func TestRunNoGoRejectsHeldRepositoryLock(t *testing.T) {
 	}
 	defer func() { _ = lock.Close() }()
 
-	if err := runNoGo(cfg, &bytes.Buffer{}); !errors.Is(err, repolock.ErrHeld) {
-		t.Fatalf("runNoGo error = %v, want ErrHeld", err)
+	if err := runNoGo(cfg, &bytes.Buffer{}); !errors.Is(err, repolock.ErrRepoLockHeld) {
+		t.Fatalf("runNoGo error = %v, want ErrRepoLockHeld", err)
 	}
 	if st.TaskStatus() != state.TaskStatusWaitingDecision || !st.Exists("pending-decision") {
 		t.Fatalf("contended no-go mutated state: status:%s pending:%v", st.TaskStatus(), st.Exists("pending-decision"))
