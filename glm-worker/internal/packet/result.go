@@ -58,65 +58,15 @@ type mismatchError struct {
 	reason string
 }
 
-type contractField struct {
-	machine string
-	value   func(Result) string
-}
-
 const (
 	MaxPacketBytes     = 6 * 1024
 	MaxFieldBytes      = 1536
 	MaxDiagnosticBytes = 6 * 1024
 )
 
-const (
-	StatusImplemented      Status = "IMPLEMENTED"
-	StatusNeedsSolDecision Status = "NEEDS_SOL_DECISION"
-	StatusPass             Status = "PASS"
-	StatusFixRequired      Status = "FIX_REQUIRED"
-	StatusNeedsSolReview   Status = "NEEDS_SOL_REVIEW"
-)
-
-const (
-	RiskLow  Risk = "LOW"
-	RiskHigh Risk = "HIGH"
-)
-
-const (
-	ParentValidationGoTest     = "go-test"
-	ParentValidationGoTestRace = "go-test-race"
-)
-
 const ReportOnlyTargets = "PACKET"
 
 const noneTargetsSentinel = "none"
-
-var implementedContractFields = []contractField{
-	{"summary", func(r Result) string { return r.Summary }},
-	{"requirement_coverage", func(r Result) string { return r.RequirementCoverage }},
-	{"tests", func(r Result) string { return r.Tests }},
-	{"unverified", func(r Result) string { return r.Unverified }},
-}
-
-var needsSolDecisionContractFields = []contractField{
-	{"decision", func(r Result) string { return r.Decision }},
-	{"evidence", func(r Result) string { return r.Evidence }},
-	{"options", func(r Result) string { return r.Options }},
-	{"recommendation", func(r Result) string { return r.Recommendation }},
-	{"test_obligations", func(r Result) string { return r.TestObligations }},
-}
-
-var reviewerContractFields = []contractField{
-	{"summary", func(r Result) string { return r.Summary }},
-	{"requirement_coverage", func(r Result) string { return r.RequirementCoverage }},
-	{"invariants", func(r Result) string { return r.Invariants }},
-	{"test_evidence", func(r Result) string { return r.TestEvidence }},
-	{"issues", func(r Result) string { return r.Issues }},
-	{"residual_risk", func(r Result) string { return r.ResidualRisk }},
-}
-
-var needsSolReviewContractFields = append(append([]contractField{}, reviewerContractFields...),
-	contractField{"sol_question", func(r Result) string { return r.SolQuestion }})
 
 func (e *mismatchError) Error() string {
 	return e.reason
@@ -139,19 +89,6 @@ func ParseStructured(data []byte) (Result, error) {
 		return Result{}, &mismatchError{reason: "structured_outputのstatusが空です"}
 	}
 	return result, nil
-}
-
-func (r Result) contractFields() []contractField {
-	switch r.Status {
-	case StatusImplemented:
-		return implementedContractFields
-	case StatusNeedsSolDecision:
-		return needsSolDecisionContractFields
-	case StatusNeedsSolReview:
-		return needsSolReviewContractFields
-	default:
-		return reviewerContractFields
-	}
 }
 
 func (r Result) ParentValidationRequest() *ParentValidationRequest {
@@ -189,26 +126,26 @@ func (e *ParentValidationEvidence) ResolvedFor(form string) bool {
 
 func (r Result) MachineJSON() ([]byte, error) {
 	object := map[string]any{
-		"status": string(r.Status),
-		"risk":   string(r.Risk),
+		string(fieldStatus): string(r.Status),
+		string(fieldRisk):   string(r.Risk),
 	}
-	for _, field := range r.contractFields() {
-		if value := field.value(r); value != "" {
-			object[field.machine] = value
+	for _, field := range resultFieldsForStatus(r.Status) {
+		if value := machineFieldValue(r, field); value != "" {
+			object[string(field)] = value
 		}
 	}
 	if r.Status == StatusImplemented && r.ParentValidation != "" {
-		object["parent_validation"] = r.ParentValidation
-		object["parent_validation_working_dir"] = r.ParentValidationWorkingDir
+		object[string(fieldParentValidation)] = r.ParentValidation
+		object[string(fieldParentValidationWorkingDir)] = r.ParentValidationWorkingDir
 	}
 	if r.Status == StatusImplemented && r.ParentValidationEvidence != nil {
-		object["parent_validation_evidence"] = r.ParentValidationEvidence
+		object[string(fieldParentValidationEvidence)] = r.ParentValidationEvidence
 	}
 	if len(r.Targets) > 0 {
-		object["targets"] = r.Targets
+		object[string(fieldTargets)] = r.Targets
 	}
 	if len(r.Artifacts) > 0 {
-		object["artifacts"] = r.Artifacts
+		object[string(fieldArtifacts)] = r.Artifacts
 	}
 	var buf bytes.Buffer
 	encoder := json.NewEncoder(&buf)
