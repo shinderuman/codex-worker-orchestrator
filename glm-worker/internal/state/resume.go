@@ -162,6 +162,7 @@ func (checkpoint *ResumeCheckpoint) ClearStop() {
 }
 
 func (checkpoint *ResumeCheckpoint) clearStopPayload() {
+	clearCompletedResult := checkpoint.StopKind == ResumeStopGuardRecoverable || !checkpoint.QualitySurfaceApprovalPending
 	checkpoint.ResetAtCST = ""
 	checkpoint.ResetAtRFC3339 = ""
 	checkpoint.ProviderUnavailableClassification = ""
@@ -172,7 +173,9 @@ func (checkpoint *ResumeCheckpoint) clearStopPayload() {
 	checkpoint.GuardRefAfterDigest = ""
 	checkpoint.GuardRefChanges = nil
 	checkpoint.GuardRefChangesTruncated = false
-	checkpoint.CompletedResult = nil
+	if clearCompletedResult {
+		checkpoint.CompletedResult = nil
+	}
 	checkpoint.StopGitSnapshot = nil
 	checkpoint.StopDirtyFiles = nil
 }
@@ -180,6 +183,9 @@ func (checkpoint *ResumeCheckpoint) clearStopPayload() {
 func (checkpoint ResumeCheckpoint) validateStopState() error {
 	if !checkpoint.StopKind.Valid() {
 		return fmt.Errorf("unknown resume stop kind: %q", checkpoint.StopKind)
+	}
+	if checkpoint.QualitySurfaceApprovalPending && checkpoint.StopKind != ResumeStopNone {
+		return fmt.Errorf("quality-surface approval checkpoint cannot also carry resume stop kind %q", checkpoint.StopKind)
 	}
 	if err := checkpoint.validateRateLimitStopPayload(); err != nil {
 		return err
@@ -206,9 +212,13 @@ func (checkpoint ResumeCheckpoint) validateProviderStopPayload() error {
 }
 
 func (checkpoint ResumeCheckpoint) validateGuardStopPayload() error {
-	if checkpoint.StopKind == ResumeStopGuardRecoverable || (checkpoint.GuardFailure == "" &&
-		checkpoint.GuardRefBeforeDigest == "" && checkpoint.GuardRefAfterDigest == "" &&
-		len(checkpoint.GuardRefChanges) == 0 && !checkpoint.GuardRefChangesTruncated && checkpoint.CompletedResult == nil) {
+	if checkpoint.StopKind == ResumeStopGuardRecoverable {
+		return nil
+	}
+	guardEvidence := checkpoint.GuardFailure != "" || checkpoint.GuardRefBeforeDigest != "" ||
+		checkpoint.GuardRefAfterDigest != "" || len(checkpoint.GuardRefChanges) != 0 || checkpoint.GuardRefChangesTruncated
+	guardResult := checkpoint.CompletedResult != nil && !checkpoint.QualitySurfaceApprovalPending
+	if !guardEvidence && !guardResult {
 		return nil
 	}
 	return fmt.Errorf("resume stop payload does not match stop kind %q: guard-recovery metadata is present", checkpoint.StopKind)
