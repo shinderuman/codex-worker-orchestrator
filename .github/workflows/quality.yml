@@ -46,6 +46,7 @@ jobs:
             glm-worker/internal/workflow/reviewer_repo_search.go
           git commit -m "workflow: route repository boundary captures through state owner"
           git push origin HEAD:web-gpt/issue-240-parent-authority-capture
+          rm .github/issue-240-codemod.py
       - name: Read quality tool contract
         id: quality-tools
         run: |
