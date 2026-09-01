@@ -44,14 +44,12 @@ type bundleAnalysisInterval struct {
 	Start    *string `json:"start"`
 	End      *string `json:"end"`
 	EndBasis string  `json:"end_basis,omitempty"`
-	Basis    string  `json:"basis"`
 }
 
 type bundleAnalysisSubsequents struct {
 	Status      string                         `json:"status"`
 	Attribution string                         `json:"attribution"`
 	Turns       []bundleAnalysisSubsequentTurn `json:"turns,omitempty"`
-	Basis       string                         `json:"basis"`
 }
 
 type bundleAnalysisSubsequentTurn struct {
@@ -80,13 +78,11 @@ type bundleAnalysisRollout struct {
 	WindowEndOffset   int64  `json:"window_end_offset,omitempty"`
 	WindowBytes       int64  `json:"window_bytes,omitempty"`
 	BaselineOffset    int64  `json:"baseline_offset,omitempty"`
-	Note              string `json:"note,omitempty"`
 }
 
 type bundleAnalysisCount struct {
 	Status string `json:"status"`
 	Count  int    `json:"count,omitempty"`
-	Basis  string `json:"basis"`
 }
 
 type bundleAnalysisTokenDelta struct {
@@ -95,13 +91,11 @@ type bundleAnalysisTokenDelta struct {
 	CachedInputTokens int64  `json:"cached_input_tokens,omitempty"`
 	BaselineAt        string `json:"baseline_at,omitempty"`
 	EndAt             string `json:"end_at,omitempty"`
-	Basis             string `json:"basis"`
 }
 
 type bundleAnalysisValidations struct {
 	Status string              `json:"status"`
 	Runs   []bundleAnalysisRun `json:"runs,omitempty"`
-	Rule   string              `json:"attribution_rule"`
 }
 
 type bundleAnalysisRun struct {
@@ -121,7 +115,6 @@ type bundleAnalysisRetries struct {
 	ValidationReruns  []bundleAnalysisRerun `json:"validation_reruns,omitempty"`
 	WorkerCounters    map[string]int        `json:"worker_counters,omitempty"`
 	ResumedModelCalls bundleAnalysisCount   `json:"resumed_model_calls"`
-	Basis             string                `json:"basis"`
 }
 
 type bundleAnalysisRerun struct {
@@ -242,13 +235,16 @@ const (
 )
 
 const (
-	analysisBasisTaskEventValidation = "task-event-validation"
-	analysisBasisRoundSnapshotDigest = "round-snapshot-digest"
-	analysisBasisWindowOverlap       = "window-overlap"
-	analysisBasisOutsideWindow       = "outside-window"
-	analysisBasisTaskScopedState     = "task-scoped-state-store"
-	analysisBasisModelCallSession    = "model-call-log-session"
-	analysisBasisCurrentState        = "bundle-time-current-state"
+	analysisBasisTaskEventValidation   = "task-event-validation"
+	analysisBasisRoundSnapshotDigest   = "round-snapshot-digest"
+	analysisBasisWindowOverlap         = "window-overlap"
+	analysisBasisOutsideWindow         = "outside-window"
+	analysisBasisTaskScopedState       = "task-scoped-state-store"
+	analysisBasisModelCallSession      = "model-call-log-session"
+	analysisBasisCurrentState          = "bundle-time-current-state"
+	analysisBasisParentRolloutWindow   = "parent-rollout-window"
+	analysisBasisGuardianWindowOverlap = "guardian-window-overlap"
+	analysisBasisParentLogWindow       = "parent-log-window"
 )
 
 const analysisWindowEndBasisArchivedAt = "archived-at"
@@ -259,39 +255,13 @@ const analysisExecutionEndBasisLifecycleComplete = "lifecycle-complete"
 
 const analysisExecutionEndBasisLifecycleInterrupted = "lifecycle-interrupted"
 
-const analysisWaitBasis = "count of response_item function_call records with name=wait in the parent rollout whose timestamp falls inside the task_execution interval inclusive of both bounds; waits observed after the terminal lifecycle boundary are excluded"
-
-const analysisTokenBasis = "delta of cumulative total_token_usage between the last token_count record at or before task_execution start and the last token_count record at or before task_execution end in the parent rollout; token observation counts, not billing amounts; cached input is reported separately and is not re-added to input; a record at or before a phase boundary belongs to the earlier phase so re-collection cannot change a terminal task's delta"
-
-const analysisFinalizationTokenBasis = "delta of cumulative total_token_usage between the task_execution end anchor and the last token_count record at or before the owning parent turn task_complete; parent-side token observation counts kept separate from GLM token schemas and never added to task consumption"
-
-const analysisSubsequentTokenBasis = "per turn, delta of cumulative total_token_usage between the last token_count record at or before the turn task_started and the last token_count record at or before the turn task_complete; omitted values mean no anchored observation; never added to task consumption"
-
-const analysisOpenObservationNote = "; task_execution has no terminal lifecycle boundary yet so the observation is bounded by the collection interval and may change until the task reaches a terminal lifecycle state"
-
-const analysisExecutionIntervalBasis = "start is task stats started_at; end is the final task lifecycle transition to complete or interrupted; records at or before the boundary timestamp belong to task_execution"
-
-const analysisFinalizationIntervalBasis = "starts strictly after the task_execution boundary and ends at the task_complete of the unique parent rollout turn containing the task start; the boundary record itself is counted in task_execution so phases never double count; an inverted boundary where the owning turn completes before the task terminal transition leaves this interval unknown"
-
-const analysisSubsequentIntervalBasis = "parent rollout turns whose task_started is after the owning turn task_complete; attribution to any GLM task is undetermined; enumeration is bounded by the collection interval end, so turns starting after that end are not listed and turns completing after it stay open with end null and no post-end anchors"
-
-const analysisCollectionIntervalBasis = "traditional collection range from task started_at to archived-at or bundle generation time; collection growth never changes terminal task_execution values"
-
 const analysisRetryAfterFail = "previous-task-validation-fail"
 
 const analysisRetryUnknown = "unknown"
 
-const analysisRolloutSpansTasksNote = "rollout spans multiple tasks and parent turns; analysis uses the collection interval byte range and anchored counter deltas instead of whole-file totals"
-
 const codexRolloutTaskStartedType = "task_started"
 
 const codexRolloutTaskCompleteType = "task_complete"
-
-const analysisValidationRule = "task-event-validation wins; otherwise round-snapshot-digest within the window attributes the run to the task; window-overlap without identity stays unattributed; runs outside the window are task-external"
-
-const analysisRetryBasis = "validation reruns derive from the task event validation sequence; counters come from task stats; resumed calls come from the model call logs"
-
-const analysisResumedCallsBasis = "model call logs with resumed=true for this task"
 
 const codexRolloutWaitCallName = "wait"
 
@@ -346,7 +316,6 @@ func buildBundleAnalysisIndex(st *state.StateStore, task bundleTask, collector *
 				Start:    analysisTimestamp(start),
 				End:      analysisTimestamp(collectionEnd),
 				EndBasis: collectionEndBasis,
-				Basis:    analysisCollectionIntervalBasis,
 			},
 		},
 		ParentSession:  analysisParentSession(association),
@@ -522,7 +491,7 @@ func observeAnalysisRolloutTurnBoundary(scan *bundleRolloutScan, payload codexRo
 }
 
 func analysisRolloutWindow(association codexAssociation, scan bundleRolloutScan, start time.Time) bundleAnalysisRollout {
-	rollout := bundleAnalysisRollout{Status: association.ParentStatus, Note: analysisRolloutSpansTasksNote}
+	rollout := bundleAnalysisRollout{Status: association.ParentStatus}
 	if association.ParentStatus != codexStatusIncluded || !scan.hasWindow {
 		return rollout
 	}
@@ -587,7 +556,6 @@ func analysisExecutionInterval(start time.Time, execution analysisExecutionBound
 	interval := bundleAnalysisInterval{
 		Status: execution.status,
 		Start:  analysisTimestamp(start),
-		Basis:  analysisExecutionIntervalBasis,
 	}
 	if execution.status == analysisStatusAvailable {
 		interval.End = analysisTimestamp(execution.end)
@@ -597,7 +565,7 @@ func analysisExecutionInterval(start time.Time, execution analysisExecutionBound
 }
 
 func analysisFinalizationInterval(execution analysisExecutionBoundary, owning analysisOwningTurn) bundleAnalysisInterval {
-	interval := bundleAnalysisInterval{Status: analysisStatusUnknown, Basis: analysisFinalizationIntervalBasis}
+	interval := bundleAnalysisInterval{Status: analysisStatusUnknown}
 	if owning.status != analysisStatusAvailable {
 		return interval
 	}
@@ -625,7 +593,6 @@ func analysisSubsequentRequests(association codexAssociation, scan bundleRollout
 	subsequent := bundleAnalysisSubsequents{
 		Status:      analysisStatusUnknown,
 		Attribution: analysisAttributionSubsequent,
-		Basis:       analysisSubsequentIntervalBasis + "; " + analysisSubsequentTokenBasis,
 	}
 	if association.ParentStatus != codexStatusIncluded || owning.status != analysisStatusAvailable {
 		return subsequent
@@ -663,7 +630,7 @@ func analysisSubsequentTurn(scan bundleRolloutScan, turn *analysisRolloutTurn, c
 	entry.Status = analysisStatusAvailable
 	completed := turn.CompletedAt.UTC().Format(time.RFC3339Nano)
 	entry.CompletedAt = &completed
-	delta := analysisAnchoredTokenDelta(scan, turn.StartedAt, turn.CompletedAt, analysisSubsequentTokenBasis)
+	delta := analysisAnchoredTokenDelta(scan, turn.StartedAt, turn.CompletedAt)
 	if delta.Status != analysisStatusAvailable {
 		return entry
 	}
@@ -675,7 +642,7 @@ func analysisSubsequentTurn(scan bundleRolloutScan, turn *analysisRolloutTurn, c
 }
 
 func analysisWaitCalls(association codexAssociation, scan bundleRolloutScan, start time.Time, execution analysisExecutionBoundary, collectionEnd time.Time) bundleAnalysisCount {
-	count := bundleAnalysisCount{Status: analysisStatusCounted, Basis: analysisWaitBasis}
+	count := bundleAnalysisCount{Status: analysisStatusCounted}
 	if association.ParentStatus != codexStatusIncluded {
 		count.Status = association.ParentStatus
 		return count
@@ -687,8 +654,6 @@ func analysisWaitCalls(association codexAssociation, scan bundleRolloutScan, sta
 	endBound := collectionEnd
 	if execution.status == analysisStatusAvailable {
 		endBound = execution.end
-	} else {
-		count.Basis += analysisOpenObservationNote
 	}
 	if !scan.hasWindow {
 		count.Status = analysisStatusNoObservation
@@ -707,7 +672,7 @@ func analysisWaitCalls(association codexAssociation, scan bundleRolloutScan, sta
 }
 
 func analysisExecutionTokenDelta(association codexAssociation, scan bundleRolloutScan, start time.Time, execution analysisExecutionBoundary, collectionEnd time.Time) bundleAnalysisTokenDelta {
-	delta := bundleAnalysisTokenDelta{Status: analysisStatusAvailable, Basis: analysisTokenBasis}
+	delta := bundleAnalysisTokenDelta{Status: analysisStatusAvailable}
 	if association.ParentStatus != codexStatusIncluded {
 		delta.Status = association.ParentStatus
 		return delta
@@ -719,10 +684,8 @@ func analysisExecutionTokenDelta(association codexAssociation, scan bundleRollou
 	endBound := collectionEnd
 	if execution.status == analysisStatusAvailable {
 		endBound = execution.end
-	} else {
-		delta.Basis += analysisOpenObservationNote
 	}
-	delta = analysisAnchoredTokenDelta(scan, start, endBound, delta.Basis)
+	delta = analysisAnchoredTokenDelta(scan, start, endBound)
 	if execution.status == analysisStatusOpen && delta.Status == analysisStatusAvailable {
 		delta.Status = analysisStatusOpen
 	}
@@ -730,15 +693,15 @@ func analysisExecutionTokenDelta(association codexAssociation, scan bundleRollou
 }
 
 func analysisFinalizationTokenDelta(association codexAssociation, scan bundleRolloutScan, execution analysisExecutionBoundary, owning analysisOwningTurn, interval bundleAnalysisInterval) bundleAnalysisTokenDelta {
-	delta := bundleAnalysisTokenDelta{Status: interval.Status, Basis: analysisFinalizationTokenBasis}
+	delta := bundleAnalysisTokenDelta{Status: interval.Status}
 	if association.ParentStatus != codexStatusIncluded || interval.Status != analysisStatusAvailable {
 		return delta
 	}
-	return analysisAnchoredTokenDelta(scan, execution.end, owning.turn.CompletedAt, analysisFinalizationTokenBasis)
+	return analysisAnchoredTokenDelta(scan, execution.end, owning.turn.CompletedAt)
 }
 
-func analysisAnchoredTokenDelta(scan bundleRolloutScan, baselineBound, endBound time.Time, basis string) bundleAnalysisTokenDelta {
-	delta := bundleAnalysisTokenDelta{Status: analysisStatusAvailable, Basis: basis}
+func analysisAnchoredTokenDelta(scan bundleRolloutScan, baselineBound, endBound time.Time) bundleAnalysisTokenDelta {
+	delta := bundleAnalysisTokenDelta{Status: analysisStatusAvailable}
 	baseline, hasBaseline := lastTokenAnchorAtOrBefore(scan, baselineBound)
 	end, hasEnd := lastTokenAnchorAtOrBefore(scan, endBound)
 	switch {
@@ -761,10 +724,7 @@ func analysisAnchoredTokenDelta(scan bundleRolloutScan, baselineBound, endBound 
 }
 
 func collectAnalysisValidationRuns(collector *bundleCollector, eventRuns map[string]analysisValidationEvent, roundSeqByDigest map[string]int, start, end time.Time) (bundleAnalysisValidations, map[string]struct{}) {
-	validations := bundleAnalysisValidations{
-		Status: analysisStatusNotCollected,
-		Rule:   analysisValidationRule,
-	}
+	validations := bundleAnalysisValidations{Status: analysisStatusNotCollected}
 	attributed := map[string]struct{}{}
 	runEntries := analysisRunArchiveEntries(collector)
 	if len(runEntries) == 0 {
@@ -944,7 +904,6 @@ func analysisRetries(st *state.StateStore, task bundleTask, eventRuns map[string
 	retries := bundleAnalysisRetries{
 		WorkerCounters:    analysisWorkerRetryCounters(task.Stats),
 		ResumedModelCalls: analysisResumedModelCalls(st, task.ID),
-		Basis:             analysisRetryBasis,
 	}
 	byRunID := make(map[string]bundleAnalysisRun, len(runs))
 	for _, run := range runs {
@@ -975,7 +934,7 @@ func analysisWorkerRetryCounters(stats state.TaskStats) map[string]int {
 }
 
 func analysisResumedModelCalls(st *state.StateStore, taskID string) bundleAnalysisCount {
-	count := bundleAnalysisCount{Status: analysisStatusAvailable, Basis: analysisResumedCallsBasis}
+	count := bundleAnalysisCount{Status: analysisStatusAvailable}
 	logs, err := st.ReadModelCallLogs(taskID)
 	if err != nil {
 		count.Status = analysisStatusMissing
@@ -1072,12 +1031,12 @@ func analysisParentEvidence(collector *bundleCollector, association codexAssocia
 	}
 	refs := []bundleAnalysisEvidenceRef{{
 		ArchivePath: codexRolloutArchivePath(association.ParentThreadID),
-		Basis:       association.Basis + "; " + analysisRolloutSpansTasksNote,
+		Basis:       association.Basis + ";" + analysisBasisParentRolloutWindow,
 	}}
 	for _, guardian := range association.Guardians {
 		refs = append(refs, bundleAnalysisEvidenceRef{
 			ArchivePath: codexGuardianArchivePath(guardian.ID),
-			Basis:       association.Basis + "; guardian child overlapping the task window",
+			Basis:       association.Basis + ";" + analysisBasisGuardianWindowOverlap,
 		})
 	}
 	logPaths := make([]string, 0)
@@ -1090,7 +1049,7 @@ func analysisParentEvidence(collector *bundleCollector, association codexAssocia
 	for _, logPath := range logPaths {
 		refs = append(refs, bundleAnalysisEvidenceRef{
 			ArchivePath: logPath,
-			Basis:       association.Basis + "; extracted bounded by the associated threads and the task window",
+			Basis:       association.Basis + ";" + analysisBasisParentLogWindow,
 		})
 	}
 	return refs
