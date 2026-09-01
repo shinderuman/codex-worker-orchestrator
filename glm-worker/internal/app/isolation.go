@@ -50,7 +50,7 @@ func isolationTaskID(st *state.StateStore) (string, error) {
 	if err != nil {
 		return "", &workflow.WorkerError{Phase: "isolate", Message: "隔離対象のinterrupted checkpointを読み込めません: " + err.Error()}
 	}
-	if !checkpoint.UserInterrupted || checkpoint.RateLimited || checkpoint.ProviderUnavailable {
+	if checkpoint.StopKind != state.ResumeStopInterrupted {
 		return "", &workflow.WorkerError{Phase: "isolate", Message: "隔離はuser interruptionによる--stop停止状態だけで受け付けます"}
 	}
 	return taskID, nil

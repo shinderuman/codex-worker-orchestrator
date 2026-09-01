@@ -45,27 +45,28 @@ func TestParentActionPlanWaitingStates(t *testing.T) {
 
 func TestParentActionPlanStoppedStates(t *testing.T) {
 	cases := []struct {
-		name       string
-		status     TaskStatus
-		checkpoint ResumeCheckpoint
-		required   ParentAction
-		kind       string
+		name     string
+		status   TaskStatus
+		stopKind ResumeStopKind
+		required ParentAction
 	}{
-		{name: "rate limited", status: TaskStatusRateLimited, checkpoint: ResumeCheckpoint{RateLimited: true}, required: ParentActionResume, kind: "rate-limited"},
-		{name: "provider unavailable", status: TaskStatusProviderUnavailable, checkpoint: ResumeCheckpoint{ProviderUnavailable: true}, required: ParentActionResume, kind: "provider-unavailable"},
-		{name: "interrupted", status: TaskStatusInterrupted, checkpoint: ResumeCheckpoint{UserInterrupted: true}, required: ParentActionResume, kind: "interrupted"},
-		{name: "guard recoverable", status: TaskStatusGuardRecoverable, checkpoint: ResumeCheckpoint{GuardRecoverable: true}, required: ParentActionRepairGuardThenResume, kind: "guard-recoverable"},
+		{name: "rate limited", status: TaskStatusRateLimited, stopKind: ResumeStopRateLimited, required: ParentActionResume},
+		{name: "provider unavailable", status: TaskStatusProviderUnavailable, stopKind: ResumeStopProviderUnavailable, required: ParentActionResume},
+		{name: "interrupted", status: TaskStatusInterrupted, stopKind: ResumeStopInterrupted, required: ParentActionResume},
+		{name: "guard recoverable", status: TaskStatusGuardRecoverable, stopKind: ResumeStopGuardRecoverable, required: ParentActionRepairGuardThenResume},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			st := newParentActionTestStore(t)
-			checkpoint := tc.checkpoint
-			checkpoint.Stage = ResumeStageWorker
-			checkpoint.Phase = "worker-new"
-			checkpoint.Role = WorkerRole
-			checkpoint.Model = "opus"
-			checkpoint.Prompt = "p"
-			checkpoint.Request = "r"
+			checkpoint := ResumeCheckpoint{
+				Stage:    ResumeStageWorker,
+				Phase:    "worker-new",
+				Role:     WorkerRole,
+				Model:    "opus",
+				Prompt:   "p",
+				Request:  "r",
+				StopKind: tc.stopKind,
+			}
 			if err := st.SaveResumeCheckpoint(checkpoint); err != nil {
 				t.Fatal(err)
 			}
@@ -77,7 +78,7 @@ func TestParentActionPlanStoppedStates(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if plan.RequiredAction != tc.required || plan.ResumeKind != tc.kind || !plan.Allows(ParentActionResume) {
+			if plan.RequiredAction != tc.required || plan.ResumeKind != string(tc.stopKind) || !plan.Allows(ParentActionResume) {
 				t.Fatalf("stop plan = %#v", plan)
 			}
 		})
@@ -134,14 +135,13 @@ func TestParentActionPlanFailsClosedOnContradiction(t *testing.T) {
 
 	st = newParentActionTestStore(t)
 	checkpoint := ResumeCheckpoint{
-		Stage:           ResumeStageWorker,
-		Phase:           "worker-new",
-		Role:            WorkerRole,
-		Model:           "opus",
-		Prompt:          "p",
-		Request:         "r",
-		RateLimited:     true,
-		UserInterrupted: true,
+		Stage:    ResumeStageWorker,
+		Phase:    "worker-new",
+		Role:     WorkerRole,
+		Model:    "opus",
+		Prompt:   "p",
+		Request:  "r",
+		StopKind: ResumeStopInterrupted,
 	}
 	if err := st.SaveResumeCheckpoint(checkpoint); err != nil {
 		t.Fatal(err)
@@ -150,7 +150,7 @@ func TestParentActionPlanFailsClosedOnContradiction(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := st.ParentActionPlan(); err == nil {
-		t.Fatal("checkpoint with multiple stop reasons was accepted")
+		t.Fatal("checkpoint stop kind inconsistent with task status was accepted")
 	}
 }
 

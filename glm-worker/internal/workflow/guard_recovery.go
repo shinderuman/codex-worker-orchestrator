@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
@@ -54,19 +53,15 @@ func (w *Workflow) guardRecoveryCheckpoint(
 	checkpoint state.ResumeCheckpoint,
 	execution modelCallExecution,
 ) state.ResumeCheckpoint {
-	checkpoint.GuardRecoverable = true
+	checkpoint.SetStopKind(state.ResumeStopGuardRecoverable)
 	checkpoint.GuardFailure = boundedText(execution.runErr.Error(), packet.MaxDiagnosticBytes)
-	checkpoint.RateLimited = false
-	checkpoint.ResetAtCST = ""
-	checkpoint.ResetAtRFC3339 = ""
-	checkpoint.ProviderUnavailable = false
-	checkpoint.ProviderUnavailableClassification = ""
-	checkpoint.ProviderUnavailableProbes = 0
-	checkpoint.ProviderUnavailableStartedAt = time.Time{}
-	checkpoint.UserInterrupted = false
 	checkpoint.CompletedResult = w.completedGuardWorkerResult(checkpoint, execution.runResult)
 	captureGuardRefEvidence(&checkpoint, execution.runErr)
 	return checkpoint
+}
+
+func clearGuardRecoveryState(checkpoint *state.ResumeCheckpoint) {
+	checkpoint.ClearStop()
 }
 
 func captureGuardRefEvidence(checkpoint *state.ResumeCheckpoint, runErr error) {
@@ -150,7 +145,7 @@ func (w *Workflow) completedGuardWorkerResult(checkpoint state.ResumeCheckpoint,
 }
 
 func (w *Workflow) prepareGuardRecovery(checkpoint state.ResumeCheckpoint) (bool, error) {
-	if !checkpoint.GuardRecoverable {
+	if checkpoint.StopKind != state.ResumeStopGuardRecoverable {
 		return false, nil
 	}
 	if err := validateGuardRecoveryRetention(checkpoint); err != nil {
@@ -252,16 +247,4 @@ func (w *Workflow) validateCompletedGuardResult(result packet.Result) error {
 		return err
 	}
 	return packet.ValidateArtifacts(result.Artifacts, w.state.ArtifactDir(taskID))
-}
-
-func clearGuardRecoveryState(checkpoint *state.ResumeCheckpoint) {
-	checkpoint.GuardRecoverable = false
-	checkpoint.GuardFailure = ""
-	checkpoint.GuardRefBeforeDigest = ""
-	checkpoint.GuardRefAfterDigest = ""
-	checkpoint.GuardRefChanges = nil
-	checkpoint.GuardRefChangesTruncated = false
-	checkpoint.CompletedResult = nil
-	checkpoint.StopGitSnapshot = nil
-	checkpoint.StopDirtyFiles = nil
 }

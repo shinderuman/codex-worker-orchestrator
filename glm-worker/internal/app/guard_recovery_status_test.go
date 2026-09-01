@@ -20,13 +20,13 @@ func TestGuardRecoveryStatusIsVisibleAndResumable(t *testing.T) {
 		t.Fatal(err)
 	}
 	checkpoint := state.ResumeCheckpoint{
-		Stage:            state.ResumeStageWorker,
-		Phase:            "worker-new",
-		Role:             state.WorkerRole,
-		Model:            "worker-model",
-		ReportOnly:       false,
-		GuardRecoverable: true,
-		GuardFailure:     "git authority guard failed: blocked-command",
+		Stage:        state.ResumeStageWorker,
+		Phase:        "worker-new",
+		Role:         state.WorkerRole,
+		Model:        "worker-model",
+		ReportOnly:   false,
+		StopKind:     state.ResumeStopGuardRecoverable,
+		GuardFailure: "git authority guard failed: blocked-command",
 	}
 	if err := st.SaveResumeCheckpoint(checkpoint); err != nil {
 		t.Fatal(err)

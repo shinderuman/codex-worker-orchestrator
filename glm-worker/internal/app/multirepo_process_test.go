@@ -158,7 +158,7 @@ func TestMultiRepositoryProcessIsolation(t *testing.T) {
 		t.Fatalf("repo Aがrate-limited stateになっていません: %s", statusA)
 	}
 	checkpointA := parseStateJSON(t, stateA, "resume-state.json")
-	if checkpointA["rate_limited"] != true || !strings.Contains(fmt.Sprint(checkpointA["request"]), "MRISOA2") {
+	if checkpointA["stop_kind"] != "rate-limited" || !strings.Contains(fmt.Sprint(checkpointA["request"]), "MRISOA2") {
 		t.Fatalf("repo Aのrate-limit checkpointが当該taskの停止状態を保持していません: %v", checkpointA["request"])
 	}
 	if _, err := os.Stat(filepath.Join(stateB, "resume-state.json")); !os.IsNotExist(err) {

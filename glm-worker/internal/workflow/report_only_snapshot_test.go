@@ -467,7 +467,7 @@ func TestReportOnlyRateLimitResumeVerifiesAgainstSameStartSnapshot(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !cp.RateLimited || !cp.ReportOnly || !cp.ReadOnly || cp.Phase != "worker-report-only-1" {
+	if cp.StopKind != state.ResumeStopRateLimited || !cp.ReportOnly || !cp.ReadOnly || cp.Phase != "worker-report-only-1" {
 		t.Fatalf("rate-limited checkpoint = %#v", cp)
 	}
 	startBeforeStop, err := w.state.LoadReportOnlyStartSnapshot()
@@ -611,7 +611,7 @@ func TestReportOnlyProviderUnavailableResumeVerifiesAgainstStartSnapshot(t *test
 		Request:                           "req",
 		ReviewNumber:                      1,
 		AutoFixes:                         1,
-		ProviderUnavailable:               true,
+		StopKind:                          state.ResumeStopProviderUnavailable,
 		ProviderUnavailableClassification: "http-503",
 	}); err != nil {
 		t.Fatal(err)
@@ -675,7 +675,7 @@ func TestReportOnlyResumeWithoutStartSnapshotFailsClosedBeforeCalls(t *testing.T
 		Request:        "req",
 		ReviewNumber:   1,
 		AutoFixes:      1,
-		RateLimited:    true,
+		StopKind:       state.ResumeStopRateLimited,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -770,7 +770,7 @@ func TestReportOnlyLegacyVersionCheckpointRejectedBeforeRouting(t *testing.T) {
 	}
 }
 
-func TestReportOnlyV5MissingReportOnlyKeyRejectedBeforeRouting(t *testing.T) {
+func TestReportOnlyV5RejectedBeforeRouting(t *testing.T) {
 	for _, phase := range []string{"worker-report-only-1", "worker-auto-fix-1"} {
 		t.Run(phase, func(t *testing.T) {
 			repoRoot := initMutationRepo(t)
@@ -794,8 +794,8 @@ func TestReportOnlyV5MissingReportOnlyKeyRejectedBeforeRouting(t *testing.T) {
 			w.captureSnapshot = state.CaptureGitSnapshot
 
 			err := w.ExecuteResume()
-			if err == nil || !strings.Contains(err.Error(), "report_only keyがありません") {
-				t.Fatalf("v5 report_only欠落checkpointの拒否error = %v", err)
+			if err == nil || !strings.Contains(err.Error(), "unsupported resume state version: 5") {
+				t.Fatalf("v5 checkpointの拒否error = %v", err)
 			}
 			if len(r.prompts) != 0 || len(r.probes) != 0 {
 				t.Fatalf("routing前に拒否しworker/probeを呼ばない: prompts=%d probes=%d", len(r.prompts), len(r.probes))
@@ -827,7 +827,7 @@ func TestAutoFixResumeWithoutReportOnlyPhaseKeepsLegacyFlow(t *testing.T) {
 		Request:        "req",
 		ReviewNumber:   1,
 		AutoFixes:      1,
-		RateLimited:    true,
+		StopKind:       state.ResumeStopRateLimited,
 	}); err != nil {
 		t.Fatal(err)
 	}

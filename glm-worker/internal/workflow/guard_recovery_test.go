@@ -23,7 +23,7 @@ func TestRecoverableGuardFailurePersistsTaskCheckpoint(t *testing.T) {
 		t.Fatalf("GuardRecoverableErrorを期待: %v", err)
 	}
 	checkpoint := retentionCheckpoint(t, st)
-	if st.TaskStatus() != state.TaskStatusGuardRecoverable || !checkpoint.GuardRecoverable {
+	if st.TaskStatus() != state.TaskStatusGuardRecoverable || checkpoint.StopKind != state.ResumeStopGuardRecoverable {
 		t.Fatalf("guard recovery state = status:%s checkpoint:%#v", st.TaskStatus(), checkpoint)
 	}
 	if checkpoint.CompletedResult == nil || checkpoint.CompletedResult.Status != "IMPLEMENTED" {
@@ -89,7 +89,7 @@ func TestGuardRecoveryDirtyDriftFailsClosed(t *testing.T) {
 		t.Fatalf("dirty driftでmodel callを実行しました: %d", len(resumeRunner.prompts))
 	}
 	checkpoint := retentionCheckpoint(t, st)
-	if !checkpoint.GuardRecoverable {
+	if checkpoint.StopKind != state.ResumeStopGuardRecoverable {
 		t.Fatal("fail closed must preserve guard recovery checkpoint")
 	}
 }
@@ -152,7 +152,7 @@ func TestRestoredInstructionMutationConvergesDecisionContinuationToGuardRecovery
 		t.Fatal("guard recovery stateがpending-decisionを残しています")
 	}
 	saved := retentionCheckpoint(t, st)
-	if !saved.GuardRecoverable || saved.Decision != "A案で進める" {
+	if saved.StopKind != state.ResumeStopGuardRecoverable || saved.Decision != "A案で進める" {
 		t.Fatalf("checkpoint = %#v", saved)
 	}
 	if saved.CompletedResult == nil || saved.CompletedResult.Status != "IMPLEMENTED" {
@@ -211,7 +211,7 @@ func TestRestoredInstructionMutationWithoutResultRerunsWorkerOnResume(t *testing
 		t.Fatal("resultを保存していない停止でResultSavedがtrue")
 	}
 	saved := retentionCheckpoint(t, st)
-	if saved.CompletedResult != nil || !saved.GuardRecoverable {
+	if saved.CompletedResult != nil || saved.StopKind != state.ResumeStopGuardRecoverable {
 		t.Fatalf("checkpoint = %#v", saved)
 	}
 
@@ -299,7 +299,7 @@ func TestTransientRetryRestoredInstructionMutationStopsGuardRecoverable(t *testi
 		t.Fatalf("status = %s want guard-recoverable", st.TaskStatus())
 	}
 	saved := retentionCheckpoint(t, st)
-	if !saved.GuardRecoverable || saved.CompletedResult == nil {
+	if saved.StopKind != state.ResumeStopGuardRecoverable || saved.CompletedResult == nil {
 		t.Fatalf("checkpoint = %#v", saved)
 	}
 }

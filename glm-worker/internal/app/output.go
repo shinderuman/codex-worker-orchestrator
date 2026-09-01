@@ -368,7 +368,7 @@ func fillStatusCheckpoint(st *state.StateStore, output *statusOutput) bool {
 	if err != nil {
 		return false
 	}
-	if checkpoint.RateLimited {
+	if checkpoint.StopKind == state.ResumeStopRateLimited {
 		output.RateLimited = statusRateLimit{
 			Limited:        true,
 			Phase:          checkpoint.Phase,
@@ -376,7 +376,7 @@ func fillStatusCheckpoint(st *state.StateStore, output *statusOutput) bool {
 			ResetAtRFC3339: stringPtr(checkpoint.ResetAtRFC3339),
 		}
 	}
-	if checkpoint.ProviderUnavailable {
+	if checkpoint.StopKind == state.ResumeStopProviderUnavailable {
 		elapsed := (*int64)(nil)
 		if !checkpoint.ProviderUnavailableStartedAt.IsZero() {
 			elapsed = msPtr(time.Since(checkpoint.ProviderUnavailableStartedAt))
@@ -389,7 +389,7 @@ func fillStatusCheckpoint(st *state.StateStore, output *statusOutput) bool {
 			ElapsedMS:      elapsed,
 		}
 	}
-	return checkpoint.RateLimited || checkpoint.ProviderUnavailable || checkpoint.UserInterrupted || checkpoint.GuardRecoverable
+	return checkpoint.IsStopped()
 }
 
 func statusProbesDetail(logs []state.ModelCallLog, now time.Time) *statusProbes {

@@ -209,14 +209,14 @@ func (w *Workflow) validateNewTaskStart() error {
 	if err != nil {
 		return nil
 	}
-	switch {
-	case checkpoint.RateLimited:
+	switch checkpoint.StopKind {
+	case state.ResumeStopRateLimited:
 		return &WorkerError{Message: "previous task is rate-limited; use --resume or --reset"}
-	case checkpoint.ProviderUnavailable:
+	case state.ResumeStopProviderUnavailable:
 		return &WorkerError{Message: "previous task is provider-unavailable; use --resume or --reset"}
-	case checkpoint.UserInterrupted:
+	case state.ResumeStopInterrupted:
 		return &WorkerError{Message: "previous task is interrupted; use --resume or --reset"}
-	case checkpoint.GuardRecoverable:
+	case state.ResumeStopGuardRecoverable:
 		return &WorkerError{Message: "previous task stopped on a recoverable guard failure; repair the guard then use --resume or --reset"}
 	default:
 		return nil
@@ -414,7 +414,7 @@ func (w *Workflow) executeResume() error {
 	if err != nil || stopped {
 		return err
 	}
-	clearGuardRecoveryState(&checkpoint)
+	checkpoint.ClearStop()
 	if reuseCompletedResult && completedResult != nil {
 		if err := w.state.ClearResumeCheckpoint(); err != nil {
 			return err
@@ -435,7 +435,7 @@ func (w *Workflow) loadResumeCheckpoint() (state.ResumeCheckpoint, externalFeasi
 	if err != nil {
 		return state.ResumeCheckpoint{}, externalFeasibility{}, false, err
 	}
-	if !checkpoint.RateLimited && !checkpoint.ProviderUnavailable && !checkpoint.UserInterrupted && !checkpoint.GuardRecoverable {
+	if !checkpoint.IsStopped() {
 		return state.ResumeCheckpoint{}, externalFeasibility{}, false, &WorkerError{Message: "saved task is not stopped by Z.ai 5h limit, provider unavailability, user interruption or a recoverable guard failure"}
 	}
 	if !isKnownResumeStage(checkpoint.Stage) {
@@ -453,7 +453,7 @@ func (w *Workflow) prepareResumeCheckpoint(
 	decl externalFeasibility,
 	pocResume bool,
 ) (state.ResumeCheckpoint, bool, error) {
-	if checkpoint.UserInterrupted {
+	if checkpoint.StopKind == state.ResumeStopInterrupted {
 		if err := w.verifyInterruptedRetention(checkpoint); err != nil {
 			return checkpoint, false, err
 		}
@@ -481,7 +481,6 @@ func (w *Workflow) prepareResumeCheckpoint(
 	if checkpoint.Stage == state.ResumeStageWorker {
 		checkpoint.ReadOnly = decl.pocStage()
 	}
-	clearResumeStopState(&checkpoint)
 	return checkpoint, false, nil
 }
 
@@ -497,7 +496,7 @@ func (w *Workflow) activateResumeRuleContext(checkpoint state.ResumeCheckpoint) 
 }
 
 func (w *Workflow) gateResumeProvider(checkpoint state.ResumeCheckpoint) error {
-	if !checkpoint.ProviderUnavailable {
+	if checkpoint.StopKind != state.ResumeStopProviderUnavailable {
 		return nil
 	}
 	if err := w.gateResumeOnProbe(checkpoint); err != nil {
@@ -511,7 +510,7 @@ func (w *Workflow) activateResume(checkpoint state.ResumeCheckpoint) error {
 		return err
 	}
 	w.state.RecordResume()
-	w.currentResumeSource = resumeSourceOf(checkpoint)
+	w.currentResumeSource = checkpoint.StopKind.ResumeSource()
 	return nil
 }
 
@@ -547,33 +546,22 @@ func (w *Workflow) handleResumeProbeError(checkpoint state.ResumeCheckpoint, err
 	return &WorkerError{Phase: checkpoint.Phase, Message: err.Error()}
 }
 
-func clearResumeStopState(checkpoint *state.ResumeCheckpoint) {
-	checkpoint.RateLimited = false
-	checkpoint.ResetAtCST = ""
-	checkpoint.ResetAtRFC3339 = ""
-	checkpoint.ProviderUnavailable = false
-	checkpoint.ProviderUnavailableClassification = ""
-	checkpoint.ProviderUnavailableProbes = 0
-	checkpoint.ProviderUnavailableStartedAt = time.Time{}
-	checkpoint.UserInterrupted = false
-}
-
 func (w *Workflow) handleResumeRunError(_ state.ResumeCheckpoint, previous state.ResumeCheckpoint, runErr error) error {
 	if isResumeStopError(runErr) {
 		return runErr
 	}
 	saved, loadErr := w.state.LoadResumeCheckpoint()
-	if loadErr != nil || resumeCheckpointStatus(saved) == state.TaskStatusActive {
+	if loadErr != nil || saved.StopKind.TaskStatus() == state.TaskStatusActive {
 		_ = w.attachStopRepositoryBoundary(&previous)
 		_ = w.state.SaveResumeCheckpoint(previous)
 	}
 
 	restoredStatus := state.TaskStatusActive
 	if loadErr == nil {
-		restoredStatus = resumeCheckpointStatus(saved)
+		restoredStatus = saved.StopKind.TaskStatus()
 	}
 	if restoredStatus == state.TaskStatusActive {
-		restoredStatus = resumeCheckpointStatus(previous)
+		restoredStatus = previous.StopKind.TaskStatus()
 	}
 	_ = w.state.SetTaskStatus(restoredStatus)
 	return runErr
@@ -597,21 +585,6 @@ func isResumeStopError(err error) bool {
 	}
 	var limitErr runner.ZaiRateLimitError
 	return errors.As(err, &limitErr)
-}
-
-func resumeCheckpointStatus(checkpoint state.ResumeCheckpoint) state.TaskStatus {
-	switch {
-	case checkpoint.ProviderUnavailable:
-		return state.TaskStatusProviderUnavailable
-	case checkpoint.RateLimited:
-		return state.TaskStatusRateLimited
-	case checkpoint.UserInterrupted:
-		return state.TaskStatusInterrupted
-	case checkpoint.GuardRecoverable:
-		return state.TaskStatusGuardRecoverable
-	default:
-		return state.TaskStatusActive
-	}
 }
 
 func (w *Workflow) routeResumeResult(
@@ -724,21 +697,6 @@ func isKnownResumeStage(stage state.ResumeStage) bool {
 		return true
 	default:
 		return false
-	}
-}
-
-func resumeSourceOf(checkpoint state.ResumeCheckpoint) string {
-	switch {
-	case checkpoint.UserInterrupted:
-		return "user-interrupt"
-	case checkpoint.ProviderUnavailable:
-		return "provider-unavailable"
-	case checkpoint.RateLimited:
-		return "rate-limit"
-	case checkpoint.GuardRecoverable:
-		return "guard-recovery"
-	default:
-		return ""
 	}
 }
 
@@ -1479,13 +1437,9 @@ func (w *Workflow) saveRateLimitedState(
 }
 
 func (w *Workflow) persistRateLimitedStop(checkpoint state.ResumeCheckpoint, limit runner.ZaiFiveHourLimit) (string, error) {
-	checkpoint.RateLimited = true
+	checkpoint.SetStopKind(state.ResumeStopRateLimited)
 	checkpoint.ResetAtCST = limit.ResetAtCST
 	checkpoint.ResetAtRFC3339 = limit.ResetAtRFC3339
-	checkpoint.ProviderUnavailable = false
-	checkpoint.ProviderUnavailableClassification = ""
-	checkpoint.ProviderUnavailableProbes = 0
-	checkpoint.ProviderUnavailableStartedAt = time.Time{}
 
 	_ = w.attachStopRepositoryBoundary(&checkpoint)
 	if err := w.state.SaveResumeCheckpoint(checkpoint); err != nil {
@@ -1739,11 +1693,10 @@ func (w *Workflow) backoffWait(sleeps int, deadline time.Time) (time.Duration, b
 }
 
 func (w *Workflow) saveProviderUnavailable(checkpoint state.ResumeCheckpoint, classification string, probes int, recoveryStart time.Time) (*runner.ProviderUnavailableError, error) {
-	checkpoint.ProviderUnavailable = true
+	checkpoint.SetStopKind(state.ResumeStopProviderUnavailable)
 	checkpoint.ProviderUnavailableClassification = classification
 	checkpoint.ProviderUnavailableProbes = probes
 	checkpoint.ProviderUnavailableStartedAt = recoveryStart
-	checkpoint.RateLimited = false
 
 	_ = w.attachStopRepositoryBoundary(&checkpoint)
 	if err := w.state.SaveResumeCheckpoint(checkpoint); err != nil {
@@ -1784,14 +1737,7 @@ func (w *Workflow) interruptBetweenCalls(checkpoint state.ResumeCheckpoint) erro
 }
 
 func (w *Workflow) persistInterruptedStop(checkpoint state.ResumeCheckpoint, cause error) error {
-	checkpoint.UserInterrupted = true
-	checkpoint.RateLimited = false
-	checkpoint.ResetAtCST = ""
-	checkpoint.ResetAtRFC3339 = ""
-	checkpoint.ProviderUnavailable = false
-	checkpoint.ProviderUnavailableClassification = ""
-	checkpoint.ProviderUnavailableProbes = 0
-	checkpoint.ProviderUnavailableStartedAt = time.Time{}
+	checkpoint.SetStopKind(state.ResumeStopInterrupted)
 
 	_ = w.attachStopRepositoryBoundary(&checkpoint)
 

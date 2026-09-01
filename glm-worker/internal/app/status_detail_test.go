@@ -167,7 +167,7 @@ func TestExecuteStatusDetailFallsBackToCheckpoint(t *testing.T) {
 					Model:                             "opus",
 					Prompt:                            "p",
 					Request:                           "req",
-					ProviderUnavailable:               true,
+					StopKind:                          state.ResumeStopProviderUnavailable,
 					ProviderUnavailableClassification: "http-503",
 					ProviderUnavailableProbes:         3,
 					ProviderUnavailableStartedAt:      time.Now().UTC().Add(-20 * time.Minute),
@@ -203,7 +203,7 @@ func TestExecuteStatusDetailFallsBackToCheckpoint(t *testing.T) {
 					Model:          "haiku",
 					Prompt:         "p",
 					Request:        "req",
-					RateLimited:    true,
+					StopKind:       state.ResumeStopRateLimited,
 					ResetAtCST:     "2026-08-16 14:06:34",
 					ResetAtRFC3339: "2026-08-16T14:06:34+08:00",
 				}); err != nil {

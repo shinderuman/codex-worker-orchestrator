@@ -1198,7 +1198,7 @@ func TestRunModelSurfacesZaiFiveHourLimit(t *testing.T) {
 	}
 
 	cp, cerr := st.LoadResumeCheckpoint()
-	if cerr != nil || !cp.RateLimited {
+	if cerr != nil || cp.StopKind != state.ResumeStopRateLimited {
 		t.Fatalf("resume checkpointがrate-limitedで保存されていません: %v", cerr)
 	}
 	if st.TaskStatus() != state.TaskStatusRateLimited {
@@ -1306,7 +1306,7 @@ func TestRateLimitStateSurvivesArtifactProtectionError(t *testing.T) {
 		t.Fatalf("artifact警告付きrate limit errorを期待: %v", err)
 	}
 	checkpoint, loadErr := st.LoadResumeCheckpoint()
-	if loadErr != nil || !checkpoint.RateLimited {
+	if loadErr != nil || checkpoint.StopKind != state.ResumeStopRateLimited {
 		t.Fatalf("rate-limit checkpointが保存されていません: checkpoint=%#v err=%v", checkpoint, loadErr)
 	}
 	if st.TaskStatus() != state.TaskStatusRateLimited {
@@ -1328,7 +1328,7 @@ func TestExecuteResumeContinuesAfterRateLimit(t *testing.T) {
 		Prompt:         "p",
 		OriginalPrompt: "p",
 		Request:        "req",
-		RateLimited:    true,
+		StopKind:       state.ResumeStopRateLimited,
 		ResetAtCST:     "2026-07-22 14:06:34",
 		ResetAtRFC3339: "2026-07-22T14:06:34+08:00",
 	}); err != nil {
@@ -1363,7 +1363,7 @@ func TestExecuteResumeRestoresRateLimitedStatusAfterRunnerError(t *testing.T) {
 		Prompt:         "p",
 		OriginalPrompt: "p",
 		Request:        "req",
-		RateLimited:    true,
+		StopKind:       state.ResumeStopRateLimited,
 		ResetAtCST:     "2026-07-22 14:06:34",
 		ResetAtRFC3339: "2026-07-22T14:06:34+08:00",
 	}
@@ -1388,7 +1388,7 @@ func TestExecuteResumeRestoresRateLimitedStatusAfterRunnerError(t *testing.T) {
 		t.Fatalf("status = %q", st.TaskStatus())
 	}
 	restored, loadErr := st.LoadResumeCheckpoint()
-	if loadErr != nil || !restored.RateLimited {
+	if loadErr != nil || restored.StopKind != state.ResumeStopRateLimited {
 		t.Fatalf("rate-limit checkpointが復元されていません: checkpoint=%#v err=%v", restored, loadErr)
 	}
 	if len(r.prompts) != 1 {
@@ -1411,7 +1411,7 @@ func TestExecuteResumeContinuesReviewerStage(t *testing.T) {
 		Request:        "request",
 		WorkerResult:   workerResultFromBody(`{"status":"IMPLEMENTED","risk":"LOW","summary":"done","requirement_coverage":"covered","tests":"pass","unverified":"none"}`),
 		ReviewNumber:   1,
-		RateLimited:    true,
+		StopKind:       state.ResumeStopRateLimited,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -1445,7 +1445,7 @@ func TestExecuteResumeContinuesAutoFixStage(t *testing.T) {
 		Request:        "request",
 		ReviewNumber:   1,
 		AutoFixes:      1,
-		RateLimited:    true,
+		StopKind:       state.ResumeStopRateLimited,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -1475,7 +1475,7 @@ func TestExecuteResumeRejectsUnknownStage(t *testing.T) {
 		Model:          "opus",
 		Prompt:         "prompt",
 		OriginalPrompt: "prompt",
-		RateLimited:    true,
+		StopKind:       state.ResumeStopRateLimited,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -1493,7 +1493,7 @@ func TestExecuteResumeRejectsUnknownStage(t *testing.T) {
 		t.Fatalf("不正stageでrunnerが呼ばれました: calls=%d", len(r.prompts))
 	}
 	checkpoint, loadErr := st.LoadResumeCheckpoint()
-	if loadErr != nil || !checkpoint.RateLimited || checkpoint.Stage != state.ResumeStage("unknown") {
+	if loadErr != nil || checkpoint.StopKind != state.ResumeStopRateLimited || checkpoint.Stage != state.ResumeStage("unknown") {
 		t.Fatalf("不正stageのcheckpointが保持されていません: checkpoint=%#v err=%v", checkpoint, loadErr)
 	}
 	if st.TaskStatus() != state.TaskStatusRateLimited {
@@ -1516,7 +1516,7 @@ func TestExecuteNewTaskRejectsPendingAndRateLimitedTasks(t *testing.T) {
 
 	t.Run("rate limited", func(t *testing.T) {
 		st := newStateStoreT(t)
-		if err := st.SaveResumeCheckpoint(state.ResumeCheckpoint{Model: "opus", RateLimited: true}); err != nil {
+		if err := st.SaveResumeCheckpoint(state.ResumeCheckpoint{Model: "opus", StopKind: state.ResumeStopRateLimited}); err != nil {
 			t.Fatal(err)
 		}
 		w := newWorkflowT(t, st, &scriptedRunner{})
@@ -2120,7 +2120,7 @@ func TestRiskFloorRejectsPassAfterResume(t *testing.T) {
 		Request:        "request",
 		WorkerResult:   workerResultFromBody(`{"status":"IMPLEMENTED","risk":"HIGH","summary":"done","requirement_coverage":"covered","tests":"pass","unverified":"none"}`),
 		ReviewNumber:   1,
-		RateLimited:    true,
+		StopKind:       state.ResumeStopRateLimited,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -2225,7 +2225,7 @@ func TestRiskFloorReemitResumeCompliant(t *testing.T) {
 		Request:         "request",
 		WorkerResult:    workerResultFromBody(workerPacketWithRisk("HIGH")),
 		ReviewNumber:    1,
-		RateLimited:     true,
+		StopKind:        state.ResumeStopRateLimited,
 		RiskFloorReemit: true,
 	}); err != nil {
 		t.Fatal(err)
@@ -2272,7 +2272,7 @@ func TestRiskFloorReemitResumeFailClosed(t *testing.T) {
 		Request:         "request",
 		WorkerResult:    workerResultFromBody(workerPacketWithRisk("HIGH")),
 		ReviewNumber:    1,
-		RateLimited:     true,
+		StopKind:        state.ResumeStopRateLimited,
 		RiskFloorReemit: true,
 	}); err != nil {
 		t.Fatal(err)

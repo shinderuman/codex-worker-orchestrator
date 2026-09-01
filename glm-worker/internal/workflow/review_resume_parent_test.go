@@ -112,7 +112,7 @@ func reviewResumeCheckpoint(stop *state.ParentFileStates) state.ResumeCheckpoint
 		Request:         "request",
 		WorkerResult:    workerResultFromBody(workerPacket()),
 		ReviewNumber:    1,
-		RateLimited:     true,
+		StopKind:        state.ResumeStopRateLimited,
 		StopParentFiles: stop,
 	}
 }
@@ -495,7 +495,7 @@ func TestFailedResumeCallRecapturesStopParentStates(t *testing.T) {
 		t.Fatal("plain error resumeはerrorを返す")
 	}
 	restored, err := st.LoadResumeCheckpoint()
-	if err != nil || !restored.RateLimited {
+	if err != nil || restored.StopKind != state.ResumeStopRateLimited {
 		t.Fatalf("失敗resume後もrate-limited checkpointが復元されるべき: %v", err)
 	}
 	wantStop := repoParentStates(t, repoRoot)
@@ -567,7 +567,7 @@ func TestReviewResumeCrashWindowTamperFailsClosed(t *testing.T) {
 		t.Fatalf("crash残存checkpointの直接resumeはgate errorになるべき: %v", err)
 	}
 
-	crashed.RateLimited = true
+	crashed.StopKind = state.ResumeStopRateLimited
 	if err := st.SaveResumeCheckpoint(crashed); err != nil {
 		t.Fatal(err)
 	}
@@ -606,7 +606,7 @@ func TestWorkerResumeParentUpdateDuringStopProceeds(t *testing.T) {
 		Prompt:         "p",
 		OriginalPrompt: "p",
 		Request:        "req",
-		RateLimited:    true,
+		StopKind:       state.ResumeStopRateLimited,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -643,7 +643,7 @@ func TestRateLimitStopRecordsStopParentFiles(t *testing.T) {
 		t.Fatalf("rate limit errorを期待: %v", err)
 	}
 	cp, err := st.LoadResumeCheckpoint()
-	if err != nil || !cp.RateLimited {
+	if err != nil || cp.StopKind != state.ResumeStopRateLimited {
 		t.Fatalf("resume checkpointがrate-limitedで保存されていません: %v", err)
 	}
 	want := repoParentStates(t, w.config.RepoRoot)

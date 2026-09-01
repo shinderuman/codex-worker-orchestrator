@@ -372,7 +372,7 @@ func TestReviewEndMutationAfterRateLimitResumeRejectsPass(t *testing.T) {
 		Request:        "request",
 		WorkerResult:   workerResultFromBody(workerPacket()),
 		ReviewNumber:   1,
-		RateLimited:    true,
+		StopKind:       state.ResumeStopRateLimited,
 	}); err != nil {
 		t.Fatal(err)
 	}
