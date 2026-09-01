@@ -39,11 +39,29 @@ export PATH="$HOME/.local/bin:$PATH"
 
 installerはrepository test suiteやlintを実行せず、Implementation Planの状態機械も持たない。`git pull --ff-only`後はpost-merge hookから再installされる。
 
+既定のmanaged Claude settingsはZ.aiのAnthropic互換endpointを使い、Claude Codeの`opus` / `sonnet` aliasをGLM-5.3、`haiku` aliasをGLM-4.7へ割り当てる。具体値は`claude/settings-managed.json`を正とし、認証情報はこのrepositoryで管理しない。
+
 ## Claude settings local override
 
 端末local overrideは既定で`${XDG_CONFIG_HOME:-$HOME/.config}/codex-config/claude-settings.local.json`。`CODEX_CONFIG_CLAUDE_SETTINGS_OVERRIDE`で変更できる。
 
 形式はtop-level `env` objectだけ。stringはset/overwrite、`null`はunset。installerは`~/.claude/.codex-config-claude-env-state.json`へ適用前baselineを保持し、前回overrideを復元してからmanaged defaultsと今回overrideを適用する。sidecarだけを単体削除しない。
+
+## 主なruntime設定
+
+通常はmanaged defaultsのまま使用する。必要な場合は次の環境変数で配置先・runner・model routing等を上書きできる。
+
+- `GLM_WORKER_HOME`（既定`~/.glm-worker`）: state、worktree、search cache、bundle exportの基点
+- `GLM_WORKER_PROMPT_DIR`（既定`~/.codex/glm-worker/prompts`）: worker/reviewer prompt配置先
+- `CODEX_CONFIG_DIR`（既定`~/.codex`）、`CLAUDE_CONFIG_DIR`（既定`~/.claude`）
+- `GLM_WORKER_CLAUDE_BIN`（既定`claude`）、`GLM_WORKER_CODEX_BIN`（既定`codex`）
+- `GLM_WORKER_WORKER_MODEL`（既定`opus`）、`GLM_WORKER_REVIEWER_MODEL`（既定`haiku`）、`GLM_WORKER_HIGH_RISK_REVIEWER_MODEL`（既定`sonnet`）
+- `GLM_WORKER_EFFORT`（既定`high`）、`GLM_WORKER_ESCALATED_EFFORT`（既定`max`）、`GLM_WORKER_MAX_AUTO_FIX_ROUNDS`（既定`2`）
+- `GLM_WORKER_TELEMETRY_CONTENT`（既定`true`）: prompt/system prompt/response本文をtelemetryへ保持するか
+- `GLM_WORKER_REPO_SEARCH`（既定`true`）: worker/reviewerのBM25 repo-search注入とCLI searchをまとめて切り替える
+- `GLM_WORKER_ENV_ALLOWLIST`: Claude child processへ追加で渡す環境変数名のcomma-separated list
+
+installer自身の配置先は`GLM_WORKER_BIN_DIR`、`CODEX_CONFIG_DIR`、`CLAUDE_SETTINGS_FILE`でも上書きできる。詳細な意味契約はproduction configと`codex/instructions/`を正とする。
 
 ## 構成
 
@@ -51,9 +69,12 @@ installerはrepository test suiteやlintを実行せず、Implementation Planの
 codex-worker-orchestrator/
 ├── AGENTS.md
 ├── install.sh
+├── install-quality-tools.sh
+├── quality-tools.yml
 ├── commentlint
 ├── harnesslint
 ├── .golangci.yml
+├── .github/workflows/quality.yml
 ├── codex/
 │   ├── AGENTS.md
 │   ├── config-managed.toml
@@ -68,7 +89,8 @@ codex-worker-orchestrator/
 │   │   ├── glm-codex-context/
 │   │   ├── commentlint/
 │   │   ├── harnesslint/
-│   │   └── merge-json/
+│   │   ├── merge-json/
+│   │   └── plancheck/
 │   └── internal/
 ├── claude/settings-managed.json
 ├── tests/
@@ -90,7 +112,7 @@ Go commandは薄い`cmd/<name>/main.go`とし、実装責務は`internal/`へ置
 
 `harnesslint`は標準Go lint群、`shellcheck`、`shfmt`、`commentlint`とrepository固有ruleを集約する。主な固有ruleは、prose contract pin、test-only production/state-machine、scenario self-test、追加Go module、thin wrapper、smoke scope逸脱、quality bypass、runtime Markdown肥大、stale authority、quality config弱体化、quality wiring欠落を対象とする。
 
-CI、root wrapper、`glm-worker`内部quality gate、installerは`quality-tools.yml`を同じversion authorityとして使う。version不一致はlint結果として扱わずpreflightで拒否する。
+CI、root wrapper、`glm-worker`内部quality gate、installerは`quality-tools.yml`を同じversion authorityとして使う。version不一致はlint結果として扱わずpreflightで拒否する。`.github/workflows/quality.yml`はpull request、main push、manual `workflow_dispatch`で`./harnesslint`と`cd glm-worker && go test ./...`を実行する。
 
 このrepositoryを`glm-worker`自身で変更する場合、worker終了後・reviewer開始前にwrapperがcheck-only quality gateを必ず通す。不合格ならreviewerへ進まずworker修正へ戻る。GLM task中の`.golangci.yml`、harnesslint/commentlint実装・entrypoint・wrapper変更は`quality-surface-dirty`で拒否する。gate wiring自体の削除も`quality-wiring`で拒否する。Linterのpolicy変更が必要なら通常task内で自己変更せず、具体的なfalse positive/negativeと最小再現を親へ報告する。
 
@@ -113,6 +135,8 @@ Codex sandboxではUnix socket bindを必要とするfull suiteだけ固定quali
 glm-worker --quality-gate go-test
 glm-worker --quality-gate go-test-race
 ```
+
+長時間validationはrun ID付きでstateへ記録され、`glm-worker --quality-gate status|watch|result <validation-run-id>`から再観測できる。
 
 installer/managed-file behaviorを変更した場合だけoffline install smokeを実行する。
 
@@ -140,37 +164,48 @@ glm-codex-context disable
 
 ## CLI
 
-親Codexの通常lifecycle操作は`glm-parent-action`を使う。Plan管理repositoryの新規task開始はcurrent ACTIVE taskを固定要求で起動する1操作、semantic payloadを持つdecision/fixだけrepository内のbounded stagingを使う。
+親Codexの通常lifecycle操作は`glm-parent-action`を使う。Plan管理repositoryの新規task開始はcurrent ACTIVE taskを固定要求で起動する1操作、semantic payloadを持つdecision/fixとexecution milestone start/revisionはrepository内のbounded stagingを使う。
 
 ```sh
 glm-parent-action start
 
+glm-parent-action prepare start-milestones
+glm-parent-action start-milestones <token>
+glm-parent-action prepare revise-milestones
+glm-parent-action revise-milestones <token>
+
 glm-parent-action prepare decision
 glm-parent-action decision <token>
+glm-parent-action no-go
 
 glm-parent-action prepare fix
-glm-parent-action fix <token> [--origin <origin>] [--accepted-scope current-diff]
+glm-parent-action fix <token> [--origin <origin>] [--accepted-scope current-diff] [--approval-only]
 
 glm-parent-action accept
 glm-parent-action resume
 glm-parent-action finalize-check <go-test|go-test-race>
 ```
 
-`prepare decision|fix`のJSONが返す`path`は`.glm-worker-parent-actions/`配下だけで、通常の親Codex運用ではそのplaceholderを`apply_patch`でsemantic payloadへ置換する。実actionはpathを受け取らずcrypto-random tokenだけを受け取る。wrapperがpayloadをmemoryへ取り込みstaging fileを削除してから既存`glm-worker` admissionへ委譲するため、sandbox外processへ任意local pathを読ませない。decision/fixのUTF-8 byte長・SHA-256・stdin framingもwrapperが処理する。
+`prepare decision|fix|start-milestones|revise-milestones`のJSONが返す`path`は`.glm-worker-parent-actions/`配下だけで、通常の親Codex運用ではそのplaceholderを`apply_patch`でsemantic payloadへ置換する。実actionはpathを受け取らずcrypto-random tokenだけを受け取る。wrapperがpayloadをmemoryへ取り込みstaging fileを削除してから既存`glm-worker`入口へ委譲するため、sandbox外processへ任意local pathを読ませない。UTF-8 byte長・SHA-256・stdin framingもwrapperが処理する。
+
+execution milestoneは1つのsemantic ACTIVE taskが大きい場合だけのruntime execution authorityで、task requirement自体を分割・複製しない。`no-go`はcurrent canonical parent action planがterminal observation no-goを許可している場合だけ成立する。詳細は`codex/instructions/task-request-boundary.md`と関連lifecycle instructionを正とする。
 
 `finalize-check`は既存のblocking quality gateとcanonical `--handoff`を連続実行し、validationがcurrent snapshotへ対応することを確認して、validation・handoff・read-only local Git summaryを1件のJSONで返す。`status:"ready_for_parent_decision"`はsemantic acceptanceではなく親判断へ進める証拠であり、`status:"blocked"`は`failure.stage`/`reason`の境界へ親判断を戻す。accept/fix、commit message生成、commit、fetch、push、divergence修復は行わず、`git.remote_state`も`not_checked`として明示する。
 
-低レベル`glm-worker --decision-stdin` / `--fix-stdin`はrecovery/debug用途として残す。その他のinspection/reportや運用commandは`glm-worker`を直接使う。
+低レベルstdin transportやinspection/report、recovery/debug commandは`glm-worker`を直接使う。`glm-worker`は成功時にmachine-readable JSONをstdoutへ1件返し、`--watch`だけJSON Lines streamを返す。失敗時はstdoutを空にしてstructured error JSONをstderrへ返す。
 
 ```sh
 glm-worker "<task>"
+glm-worker --execution-milestones-stdin <bytes> [--sha256 <sha256>]
+glm-worker --execution-milestones-revise-stdin <bytes> [--sha256 <sha256>]
 glm-worker --decision-stdin <bytes> [--sha256 <sha256>]
-glm-worker --fix-stdin <bytes> [--sha256 <sha256>] [--origin <origin>]
+glm-worker --fix-stdin <bytes> [--sha256 <sha256>] [--origin <origin>] [--accepted-scope current-diff] [--approval-only]
 glm-worker --accept
 glm-worker --resume
 glm-worker --stop
 glm-worker --isolate
 glm-worker --status
+glm-worker --handoff
 glm-worker --watch [--verbose]
 glm-worker --timeline [task-id]
 glm-worker --convergence [task-id]
@@ -184,17 +219,56 @@ glm-worker --codex-limit
 glm-worker --repo-search <query>
 glm-worker --repo-search-eval
 glm-worker --check-wake-coalesce <parent-thread-id> <resume-at-rfc3339>
+glm-worker --verify-auto-resume <automation-key> <resume-at-rfc3339> <thread-id>
+glm-worker --install-smoke [--role worker|reviewer|fix|parent]
+glm-worker --quality-gate <go-test|go-test-race>
+glm-worker --quality-gate <status|watch|result> <validation-run-id>
+glm-worker --rotate-instruction-baseline
+glm-worker bundle [task-id]
+glm-worker --help
 ```
 
 `glm-worker --repo-search <query>`はcurrent repositoryを既存BM25 coreでread-only検索し機械可読JSONを返す。repo-search feature全体は`GLM_WORKER_REPO_SEARCH`環境変数(既定enabled)で切り替わり、disabled時はworker/reviewerのsearch注入とCLI検索を実行しない。
 
 `glm-worker --repo-search-eval`は保存済みtask eventとtask statsだけを読むread-only評価reportを返す。worker/reviewer各search routeのquery category、hit/miss/fallback/skip、result count、durationをraw query/result本文なしで集計し、event logとtask statsの加法整合をcross-checkする。同じtask stats集計はfixed eval-ab基盤(`glm_usage`解決)経由でA/B reportの`repo_search` blockへ接続し、実benchmark runは実行しない。
 
-詳細な呼出条件・packet契約・auto-resume・stop/isolate・feasibility gate等は`codex/instructions/`が持つ。
+`--rotate-instruction-baseline`はactive taskがSol decision待ちのときだけ使える限定的なrecovery command。auto-resume検証、wake coalesce、quality-gate recovery等も親orchestration向けのspecialized commandであり、通常操作の手順は`codex/instructions/`を正とする。
+
+## Lifecycle / parent action
+
+lifecycle actionの合法性はstateのcanonical parent action planが決め、appとworkflowの両方が同じadmissionを使う。未解決の親actionやresume stateがある間は、新規taskを別taskとして開始できない。
+
+主な境界は次のとおり。
+
+- `waiting-decision`: decisionが必要。観測taskでcanonical planが許す場合だけ`no-go`も選べる
+- `waiting-sol-review`: parent reviewを`accept`または必要時`fix`で解消する
+- `complete`で未解決PASS reviewがある場合: `accept`で親outcomeを確定する
+- `rate-limited` / `provider-unavailable` / `interrupted`: 保存済みcheckpointを`resume`する
+- `guard-recoverable`: guardを修復してから`resume`する
+
+`glm-worker --handoff`はcurrent task/status、canonical required/allowed action、resume kind、parent review、Git baseline/current snapshot、latest material model call、current snapshotへ対応するvalidation evidenceを1件のJSONへまとめる。lifecycle stateが矛盾している場合は`consistent:false`としてfail closed情報を返す。`glm-parent-action finalize-check`はこのhandoffをvalidationと組み合わせる親向け入口である。
+
+`glm-worker --status`はrepo lock、task status/liveness、worker/reviewer session、parent wait state、current phase/model、rate limit/provider状態、resume可否、isolation等をread-only JSONで返す。同じrepoだけをlock単位とし、別repoのworkerは並列利用できる。
+
+`glm-worker --stop`はrunning ownerのrepo-local Unix socket endpointへ停止要求を送り、owner側の停止・checkpoint保存ackを待つ安全停止入口。正常なuser interruptionは`interrupted`とresume checkpointを残し、再開は同じcheckoutで`--resume`を使う。`--isolate`はこのuser interruption状態だけを対象に、元taskを保持したまま別task用のgit worktree/branchを作る。詳細な保持・統合手順は`codex/instructions/glm-stop-isolate.md`を正とする。
+
+## Evidence bundle
+
+currentまたはretained taskの診断・dogfood evidenceを1つのZIPへ収集する場合は次を使う。
+
+```sh
+glm-worker bundle [task-id]
+```
+
+task ID省略時はcurrent taskがあればそれを、current taskがなければretained stats上の最新taskを対象にする。ZIPは既定で`$GLM_WORKER_HOME/exports/<repo SHA-256>/<task-id>.zip`へatomicに配置され、command outputは`archive_path`とtask/evidence coverage summaryを返す。
+
+bundleにはtask telemetry/event/round/lifecycle/authority/artifact、関連Claude transcript、取得可能なparent Codex evidence、current taskではrepository authority/status/task diff等を収集する。`manifest.json`はtask/statusとevidence coverageを、`collection.json`は各entryの取得・readability情報を、`analysis-index.json`は親session window、validation、retry等の解析用indexを保持する。current/in-flight/未完了taskはcoverageが`open`、evidence欠損・readability anomalyは`partial`、完了済みretained taskで必要evidenceが揃う場合は`closed`となる。bundleは診断evidenceでありrepository contractの代替ではない。
 
 ## State
 
-repositoryごとのstateは`$GLM_WORKER_HOME/sessions/<repo SHA-256>/`。task/session/checkpoint/telemetry/artifactはrepo単位に分離し、同一repoの同時実行だけlockする。異なるrepoは並列利用できる。
+repositoryごとの主stateは`$GLM_WORKER_HOME/sessions/<repo SHA-256>/`。task/session/checkpoint/telemetry/artifactはrepo単位に分離し、同一repoの同時実行だけlockする。異なるrepoは並列利用できる。
+
+既定`GLM_WORKER_HOME=~/.glm-worker`では、隔離worktreeは`worktrees/`、repo-search cacheは`search/`、bundleは`exports/<repo SHA-256>/`へ分離する。state repository keyは解決済みrepository root pathのSHA-256であるため、別pathのworktreeは別state/lock/sessionを持つ。
 
 ## Self-protection
 
