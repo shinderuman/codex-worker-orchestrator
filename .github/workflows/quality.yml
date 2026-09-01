@@ -5,11 +5,10 @@ on:
   push:
     branches:
       - main
-      - web-gpt/issue-240-parent-authority-capture
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: repository-lint-${{ github.event.pull_request.number || github.ref }}
@@ -20,35 +19,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - name: Apply issue 240 codemod
-        if: "${{ github.event.head_commit.message != 'workflow: route repository boundary captures through state owner' }}"
-        run: |
-          python3 .github/issue-240-codemod.py
-          gofmt -w \
-            glm-worker/internal/state/parent_authority.go \
-            glm-worker/internal/state/parent_authority_test.go \
-            glm-worker/internal/workflow/workflow.go \
-            glm-worker/internal/workflow/workflow_test.go \
-            glm-worker/internal/workflow/workflow_snapshot_test.go \
-            glm-worker/internal/workflow/review_resume_parent_test.go \
-            glm-worker/internal/workflow/execution_milestones_test.go \
-            glm-worker/internal/workflow/planfile.go \
-            glm-worker/internal/workflow/reviewer_repo_search.go
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add \
-            glm-worker/internal/state/parent_authority.go \
-            glm-worker/internal/state/parent_authority_test.go \
-            glm-worker/internal/workflow/workflow.go \
-            glm-worker/internal/workflow/workflow_test.go \
-            glm-worker/internal/workflow/workflow_snapshot_test.go \
-            glm-worker/internal/workflow/review_resume_parent_test.go \
-            glm-worker/internal/workflow/execution_milestones_test.go \
-            glm-worker/internal/workflow/planfile.go \
-            glm-worker/internal/workflow/reviewer_repo_search.go
-          git commit -m "workflow: route repository boundary captures through state owner"
-          git push origin HEAD:web-gpt/issue-240-parent-authority-capture
-          rm .github/issue-240-codemod.py
       - name: Read quality tool contract
         id: quality-tools
         run: |
