@@ -50,7 +50,7 @@ var parentValidationGateRunner = func(w *Workflow, request packet.ParentValidati
 
 func (w *Workflow) convergeParentValidation(checkpoint state.ResumeCheckpoint, result packet.Result) (packet.Result, error) {
 	request := result.ParentValidationRequest()
-	if result.Status != packet.StatusImplemented || request == nil || result.ParentValidationEvidence != "" {
+	if result.Status != packet.StatusImplemented || request == nil || result.ParentValidationEvidence != nil {
 		return result, nil
 	}
 
@@ -159,7 +159,7 @@ func applyCheckpointParentValidation(checkpoint state.ResumeCheckpoint, result p
 		}
 	}
 	result.SetParentValidationRequest(checkpoint.ParentValidation)
-	result.ParentValidationEvidence = ""
+	result.ParentValidationEvidence = nil
 	result.Risk = packet.RiskHigh
 	return result, nil
 }
@@ -277,17 +277,20 @@ func parentValidationRunID(stdout, stderr string, runErr error) (string, error) 
 	return "", fmt.Errorf("parent validation command failed without structured quality-gate evidence: %w", runErr)
 }
 
-func parentValidationEvidence(record parentValidationGateRecord) string {
-	return fmt.Sprintf(
-		"status=pass;form=%s;validation_run_id=%s;working_dir=%s;head=%s;index=%s;worktree=%s;log=%s",
-		record.Form,
-		record.ValidationRunID,
-		record.WorkingDir,
-		record.Head,
-		record.IndexDigest,
-		record.WorktreeDigest,
-		record.Log,
-	)
+func parentValidationEvidence(record parentValidationGateRecord) *packet.ParentValidationEvidence {
+	return &packet.ParentValidationEvidence{
+		ValidationRunID: record.ValidationRunID,
+		Form:            record.Form,
+		Repository:      record.Repository,
+		WorkingDir:      record.WorkingDir,
+		Head:            record.Head,
+		IndexDigest:     record.IndexDigest,
+		WorktreeDigest:  record.WorktreeDigest,
+		Status:          record.Status,
+		ExitCode:        record.ExitCode,
+		DurationMS:      record.DurationMS,
+		Log:             record.Log,
+	}
 }
 
 func parentValidationFailureResult(record parentValidationGateRecord) packet.Result {

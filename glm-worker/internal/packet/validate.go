@@ -73,7 +73,7 @@ func ValidateWorkerResult(result Result) error {
 }
 
 func validateParentValidation(result Result) error {
-	if result.ParentValidationEvidence != "" {
+	if result.ParentValidationEvidence != nil {
 		return &constraintError{reason: "parent_validation_evidenceはwrapper専用fieldです"}
 	}
 	if result.ParentValidation == "" && result.ParentValidationWorkingDir == "" {
@@ -110,7 +110,7 @@ func ValidateReviewerResult(result Result) error {
 	if err := validateReviewerStatusRisk(result); err != nil {
 		return err
 	}
-	if result.ParentValidation != "" || result.ParentValidationWorkingDir != "" || result.ParentValidationEvidence != "" {
+	if result.ParentValidation != "" || result.ParentValidationWorkingDir != "" || result.ParentValidationEvidence != nil {
 		return &constraintError{reason: "reviewer結果にparent validation fieldは指定できません"}
 	}
 	if err := validateFields(result, result.contractFields()); err != nil {

@@ -22,11 +22,13 @@ func TestReviewerPromptReconcilesCurrentParentValidationEvidence(t *testing.T) {
 		ParentValidationEvidence: parentValidationEvidence(parentValidationGateRecord{
 			ValidationRunID: "run-pass",
 			Form:            packet.ParentValidationGoTest,
+			Repository:      "/repo",
 			WorkingDir:      "/repo/glm-worker",
 			Head:            "head",
 			IndexDigest:     "index",
 			WorktreeDigest:  "worktree",
 			Status:          "pass",
+			Log:             "/evidence/run-pass/gate.log",
 		}),
 	}
 	report, err := result.MachineJSON()
@@ -45,7 +47,7 @@ func TestReviewerPromptReconcilesCurrentParentValidationEvidence(t *testing.T) {
 	if strings.Contains(workerProjection, originalUnverified) {
 		t.Fatalf("authoritative worker projection retained stale unverified prose: %s", workerProjection)
 	}
-	if !strings.Contains(workerProjection, "parent validation go-test is resolved") || !strings.Contains(workerProjection, "validation_run_id=run-pass") {
+	if !strings.Contains(workerProjection, "parent validation go-test is resolved") || !strings.Contains(workerProjection, `"validation_run_id":"run-pass"`) {
 		t.Fatalf("worker projection lacks resolved current validation evidence: %s", workerProjection)
 	}
 	if !strings.Contains(prompt[markerIndex:], reviewerUnverifiedReferenceMarker+" "+originalUnverified) {
@@ -53,12 +55,31 @@ func TestReviewerPromptReconcilesCurrentParentValidationEvidence(t *testing.T) {
 	}
 }
 
-func TestReviewerPromptDoesNotReconcileMissingFailedOrMismatchedEvidence(t *testing.T) {
+func TestReviewerPromptDoesNotReconcileMissingFailedMismatchedOrIncompleteEvidence(t *testing.T) {
 	const originalUnverified = "parent validation still unverified"
-	cases := map[string]string{
-		"missing":       "",
-		"failed":        "status=fail;form=go-test;validation_run_id=run;head=head;index=index;worktree=worktree",
-		"form-mismatch": "status=pass;form=go-test-race;validation_run_id=run;head=head;index=index;worktree=worktree",
+	complete := parentValidationGateRecord{
+		ValidationRunID: "run",
+		Form:            packet.ParentValidationGoTest,
+		Repository:      "/repo",
+		WorkingDir:      "/repo/glm-worker",
+		Head:            "head",
+		IndexDigest:     "index",
+		WorktreeDigest:  "worktree",
+		Status:          "pass",
+		Log:             "/evidence/run/gate.log",
+	}
+	failed := complete
+	failed.Status = "fail"
+	mismatched := complete
+	mismatched.Form = packet.ParentValidationGoTestRace
+	incomplete := complete
+	incomplete.WorktreeDigest = ""
+
+	cases := map[string]*packet.ParentValidationEvidence{
+		"missing":       nil,
+		"failed":        parentValidationEvidence(failed),
+		"form-mismatch": parentValidationEvidence(mismatched),
+		"incomplete":    parentValidationEvidence(incomplete),
 	}
 	for name, evidence := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -102,13 +123,23 @@ func TestCheckpointMutationClearsPriorValidationBeforeReviewerReconciliation(t *
 		Unverified:                 "full gate must be rerun for the changed snapshot",
 		ParentValidation:           packet.ParentValidationGoTest,
 		ParentValidationWorkingDir: "glm-worker",
-		ParentValidationEvidence:   "status=pass;form=go-test;validation_run_id=stale;head=old;index=old;worktree=old",
+		ParentValidationEvidence: &packet.ParentValidationEvidence{
+			ValidationRunID: "stale",
+			Form:            packet.ParentValidationGoTest,
+			Repository:      "/repo",
+			WorkingDir:      "/repo/glm-worker",
+			Head:            "old",
+			IndexDigest:     "old",
+			WorktreeDigest:  "old",
+			Status:          "pass",
+			Log:             "/evidence/stale/gate.log",
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.ParentValidationEvidence != "" {
-		t.Fatalf("changed snapshot retained stale parent validation evidence: %q", result.ParentValidationEvidence)
+	if result.ParentValidationEvidence != nil {
+		t.Fatalf("changed snapshot retained stale parent validation evidence: %#v", result.ParentValidationEvidence)
 	}
 	report, err := result.MachineJSON()
 	if err != nil {

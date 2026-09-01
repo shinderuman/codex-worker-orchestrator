@@ -48,7 +48,7 @@ func TestWorkerParentValidationContract(t *testing.T) {
 	}
 
 	withEvidence := valid
-	withEvidence.ParentValidationEvidence = "forged"
+	withEvidence.ParentValidationEvidence = &ParentValidationEvidence{Status: "pass"}
 	if err := ValidateWorkerResult(withEvidence); err == nil {
 		t.Fatal("worker supplied wrapper-owned parent validation evidence")
 	}

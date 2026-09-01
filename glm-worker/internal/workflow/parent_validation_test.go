@@ -86,7 +86,7 @@ func TestParentValidationFailureFixesBeforeIndependentReview(t *testing.T) {
 	if !strings.Contains(r.prompts[1], "validation_run_id=run-fail") {
 		t.Fatalf("fix prompt lacks exact failed validation evidence: %s", r.prompts[1])
 	}
-	if !strings.Contains(r.prompts[2], "parent_validation_evidence") || !strings.Contains(r.prompts[2], "validation_run_id=run-pass") {
+	if !strings.Contains(r.prompts[2], "parent_validation_evidence") || !strings.Contains(r.prompts[2], `"validation_run_id":"run-pass"`) {
 		t.Fatalf("review prompt lacks passed parent validation evidence: %s", r.prompts[2])
 	}
 }
