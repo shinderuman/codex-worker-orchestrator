@@ -94,6 +94,8 @@ func TestLoadBuildsConfigFromRepositoryAndEnvironment(t *testing.T) {
 	stateHome := filepath.Join(t.TempDir(), "state")
 	promptDir := filepath.Join(t.TempDir(), "prompts")
 	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("CODEX_CONFIG_CLAUDE_SETTINGS_OVERRIDE", "")
 
 	t.Setenv("CLAUDE_CONFIG_DIR", "")
 	t.Setenv("GLM_WORKER_HOME", stateHome)
