@@ -1,30 +1,31 @@
 //go:build unix
 
-package app
+package repolock
 
 import (
+	"errors"
 	"path/filepath"
 	"testing"
 )
 
-func TestAcquireRepoLockSerializes(t *testing.T) {
+func TestAcquireSerializes(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "lock")
 
-	first, err := AcquireRepoLock(path)
+	first, err := Acquire(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = first.Close() }()
 
-	if _, err := AcquireRepoLock(path); err == nil {
-		t.Fatal("2つ目のロック取得は失敗する必要があります")
+	if _, err := Acquire(path); !errors.Is(err, ErrRepoLockHeld) {
+		t.Fatalf("2つ目のロック取得 error = %v, want ErrRepoLockHeld", err)
 	}
 }
 
-func TestAcquireRepoLockReusableAfterClose(t *testing.T) {
+func TestAcquireReusableAfterClose(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "lock")
 
-	first, err := AcquireRepoLock(path)
+	first, err := Acquire(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,7 +33,7 @@ func TestAcquireRepoLockReusableAfterClose(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	second, err := AcquireRepoLock(path)
+	second, err := Acquire(path)
 	if err != nil {
 		t.Fatalf("Close後の再取得に失敗しました: %v", err)
 	}

@@ -1,8 +1,9 @@
 package app
 
 import (
-	"errors"
 	"strings"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repolock"
 )
 
 type LockState string
@@ -11,6 +12,8 @@ type LockProbe struct {
 	State LockState
 	PID   string
 }
+
+type RepoLock = repolock.Lock
 
 const (
 	statusNone    = "none"
@@ -21,7 +24,8 @@ const (
 	LockUnknown LockState = "unknown"
 )
 
-var ErrRepoLockHeld = errors.New("another glm-worker is already running for this repository")
+var AcquireRepoLock = repolock.Acquire
+var ErrRepoLockHeld = repolock.ErrRepoLockHeld
 
 func parseLockPID(data []byte) string {
 	text := string(data)

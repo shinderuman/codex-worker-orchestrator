@@ -1,26 +1,23 @@
 //go:build !unix
 
-package app
+package repolock
 
-import (
-	"fmt"
-	"os"
-)
+import "os"
 
-type RepoLock struct {
+type Lock struct {
 	path string
 }
 
-func AcquireRepoLock(path string) (*RepoLock, error) {
+func Acquire(path string) (*Lock, error) {
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
 		return nil, ErrRepoLockHeld
 	}
 	file.Close()
-	return &RepoLock{path: path}, nil
+	return &Lock{path: path}, nil
 }
 
-func (l *RepoLock) Close() error {
+func (l *Lock) Close() error {
 	if l == nil {
 		return nil
 	}
