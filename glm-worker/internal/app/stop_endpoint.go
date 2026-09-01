@@ -231,7 +231,7 @@ func checkpointResumeAvailable(st *state.StateStore) bool {
 	if err != nil {
 		return false
 	}
-	return checkpoint.RateLimited || checkpoint.ProviderUnavailable || checkpoint.UserInterrupted || checkpoint.GuardRecoverable
+	return checkpoint.IsStopped()
 }
 
 func (*stopEndpointServer) writeResponse(conn net.Conn, response stopEndpointResponse) {
