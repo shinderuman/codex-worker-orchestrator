@@ -2093,15 +2093,11 @@ func workerError(phase string, outputPath string, runErr error) error {
 	}
 
 	return &WorkerError{
-		Phase:    checkpointPhaseFallback(phase),
+		Phase:    phase,
 		ExitCode: exitCode,
 		Tail:     packet.Tail(outputPath, 30),
 		Message:  runErr.Error(),
 	}
-}
-
-func checkpointPhaseFallback(phase string) string {
-	return phase
 }
 
 func machineReport(value packet.Result) (string, error) {
