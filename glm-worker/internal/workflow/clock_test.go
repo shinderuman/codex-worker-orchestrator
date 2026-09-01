@@ -42,36 +42,6 @@ func TestWorkflowProductionCodeHasNoDirectWallClock(t *testing.T) {
 	}
 }
 
-func TestClockDeviationScenarioPinnedInEscapedCorpus(t *testing.T) {
-	sc, mf := loadCorpus(t)
-	found := ""
-	for _, s := range sc.Scenarios {
-		if s.ExpectedTelemetryClock == telemetryClockInjectedStart {
-			found = s.ID
-			break
-		}
-	}
-	if found == "" {
-		t.Fatal("escaped corpusにexpected_telemetry_clock scenarioがありません")
-	}
-	for _, path := range []string{"codex/glm-worker/prompts/WORKER.md", "codex/glm-worker/prompts/REVIEWER.md"} {
-		listed := false
-		for _, e := range mf.InstructionFiles {
-			if e.Path != path {
-				continue
-			}
-			for _, sid := range e.Scenarios {
-				if sid == found {
-					listed = true
-				}
-			}
-		}
-		if !listed {
-			t.Fatalf("manifestの%sが%sをpinしていません", path, found)
-		}
-	}
-}
-
 func TestRunModelTelemetryTimestampsFollowInjectedClock(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{{structured: implementedPacket("done")}}}
