@@ -1,9 +1,6 @@
 package app
 
-import (
-	"errors"
-	"strings"
-)
+import "strings"
 
 type LockState string
 
@@ -20,8 +17,6 @@ const (
 	LockFree    LockState = "free"
 	LockUnknown LockState = "unknown"
 )
-
-var ErrRepoLockHeld = errors.New("another glm-worker is already running for this repository")
 
 func parseLockPID(data []byte) string {
 	text := string(data)
