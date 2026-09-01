@@ -344,11 +344,7 @@ func selectBundleTask(st *state.StateStore, requestedTaskID string) (bundleTask,
 
 func currentBundleTask(st *state.StateStore, taskID string) bundleTask {
 	stats, _ := st.CurrentTaskStats()
-	status := string(st.TaskStatus())
-	if status == string(state.TaskStatusNone) && stats.TaskID == taskID {
-		status = string(stats.Status)
-	}
-	return bundleTask{ID: taskID, Status: status, Current: true, Stats: stats}
+	return bundleTask{ID: taskID, Status: string(st.TaskStatus()), Current: true, Stats: stats}
 }
 
 func bundleInFlightModelCalls(st *state.StateStore, task bundleTask) int {
