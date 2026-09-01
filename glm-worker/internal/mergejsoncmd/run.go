@@ -4,7 +4,9 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/claudeoverride"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/settingsmerge"
 )
 
@@ -20,7 +22,15 @@ func Run(args []string, stdout io.Writer) error {
 	if flags.NArg() != 0 || *target == "" || *fragment == "" {
 		return fmt.Errorf("usage: merge-json -target <path> -fragment <path> [-env-override <path>]")
 	}
-	changed, err := settingsmerge.MergeFiles(*target, *fragment, *override)
+	overridePath := *override
+	if overridePath == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return fmt.Errorf("ホームディレクトリを取得できません: %w", err)
+		}
+		overridePath = claudeoverride.ResolvePath(home)
+	}
+	changed, err := settingsmerge.MergeFiles(*target, *fragment, overridePath)
 	if err != nil {
 		return err
 	}
