@@ -43,26 +43,20 @@ func finalHeadPlan(root string) (string, string, bool, error) {
 }
 
 func validateFinalHeadPlan(root string, plan string) error {
-	active, err := taskcontract.ActiveSectionEntries(plan)
+	schedule := taskcontract.ParsePlanSchedule(plan)
+	activePath, err := schedule.ValidateComplete()
 	if err != nil {
 		return err
 	}
-	if len(active) == 0 {
-		return fmt.Errorf("HEADの%sのACTIVE欄にtask fileがありません", implementationPlanFile)
-	}
-	if len(active) > 1 {
-		return fmt.Errorf("HEADの%sのACTIVE欄が一意ではありません(%d件)", implementationPlanFile, len(active))
-	}
-	activePath := active[0]
 	if err := validateFinalHeadTask(root, activePath); err != nil {
 		return err
 	}
-	scheduled, err := finalHeadScheduledTasks(root, plan)
-	if err != nil {
-		return err
-	}
-	if scheduled[activePath] {
-		return fmt.Errorf("HEADのplanのACTIVE task file %s がNEXT/BLOCKEDへ重複して記載されています", activePath)
+	for _, entries := range [][]string{schedule.Next, schedule.Blocked} {
+		for _, path := range entries {
+			if err := validateFinalHeadTask(root, path); err != nil {
+				return err
+			}
+		}
 	}
 	if err := validateFinalHeadBranch(root, plan); err != nil {
 		return err
@@ -70,40 +64,7 @@ func validateFinalHeadPlan(root string, plan string) error {
 	return validateFinalHeadTransition(plan)
 }
 
-func finalHeadScheduledTasks(root string, plan string) (map[string]bool, error) {
-	result := make(map[string]bool)
-	for _, section := range []string{"NEXT", "BLOCKED"} {
-		entries, err := finalHeadScheduleEntries(plan, section)
-		if err != nil {
-			return nil, err
-		}
-		for _, path := range entries {
-			if err := validateFinalHeadTask(root, path); err != nil {
-				return nil, err
-			}
-			result[path] = true
-		}
-	}
-	return result, nil
-}
-
-func finalHeadScheduleEntries(plan string, section string) ([]string, error) {
-	lines := finalHeadSectionLines(plan, section)
-	if len(lines) == 0 {
-		return nil, nil
-	}
-	synthetic := "## ACTIVE\n" + strings.Join(lines, "\n") + "\n"
-	entries, err := taskcontract.ActiveSectionEntries(synthetic)
-	if err != nil {
-		return nil, fmt.Errorf("HEADのplanの%s欄: %w", section, err)
-	}
-	return entries, nil
-}
-
 func validateFinalHeadTask(root string, path string) error {
-	if err := taskcontract.ValidateActiveTaskPath(path); err != nil {
-		return err
-	}
 	entry, err := finalHeadGitOutput(root, "ls-tree", "HEAD", "--", path)
 	if err != nil {
 		return fmt.Errorf("HEADのtask file %sを確認できません: %w", path, err)
@@ -158,7 +119,6 @@ func validateFinalHeadTransition(plan string) error {
 			if finalHeadTransitionPattern.MatchString(line) {
 				return fmt.Errorf("HEADのplanの現在状態記述が完了済みcommitの操作を未実施としています: %s", strings.TrimSpace(line))
 			}
-		}
 	}
 	return nil
 }
