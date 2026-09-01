@@ -1,0 +1,54 @@
+name: Issue 242 final cleanup
+
+on:
+  push:
+    branches:
+      - web-gpt/issue-242-canonical-stop-kind
+    paths:
+      - .github/workflows/issue-242-final-cleanup.yml
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    if: github.ref == 'refs/heads/web-gpt/issue-242-canonical-stop-kind'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: web-gpt/issue-242-canonical-stop-kind
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.25.4'
+          cache: false
+      - name: Remove unrelated no-op helper
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('glm-worker/internal/workflow/workflow.go')
+          text = path.read_text()
+          old_phase = 'Phase:    checkpointPhaseFallback(phase),'
+          if text.count(old_phase) != 1:
+              raise SystemExit(f'unexpected phase wrapper count: {text.count(old_phase)}')
+          text = text.replace(old_phase, 'Phase:    phase,')
+          helper = '''\nfunc checkpointPhaseFallback(phase string) string {\n\treturn phase\n}\n'''
+          if text.count(helper) != 1:
+              raise SystemExit(f'unexpected helper count: {text.count(helper)}')
+          text = text.replace(helper, '')
+          path.write_text(text)
+          PY
+          gofmt -w glm-worker/internal/workflow/workflow.go
+          cd glm-worker
+          go test ./internal/workflow
+      - name: Commit cleanup
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add glm-worker/internal/workflow/workflow.go
+          git commit -m 'chore: remove unrelated workflow no-op'
+          git push origin HEAD:web-gpt/issue-242-canonical-stop-kind
