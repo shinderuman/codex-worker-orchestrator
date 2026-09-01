@@ -24,6 +24,7 @@ func withArtifactContext(prompt string, artifactDir string) string {
 REPORT_ARTIFACT_DIR: %s
 %s
 結果へ収まらない正確な一覧・レポート・生成物だけをこのディレクトリへ保存してください。リポジトリへ追加しないでください。ARTIFACTSに記載できるのはこのREPORT_ARTIFACT_DIR配下の実在する通常ファイルだけです。WORKER_REPORT・過去artifact・入力に含まれる他taskのartifact pathは参照証拠であり、ARTIFACTSへコピーしないでください。大容量成果物が不要ならARTIFACTSは空にしてください。
+最終結果のreturn前にBash toolを利用できる場合は、候補packet JSONを一時fileへ保存してglm-worker --packet-check <file>でUTF-8 byte上限・必須field・改行を提出前に検証してください。ARTIFACTSへ記載する場合は--artifact-root <REPORT_ARTIFACT_DIR>も指定してください。違反はセミコロン圧縮や詳細のartifact退避で同じcall内で修正し、意味を保持してください。Bashを利用できないsessionではこの検証を省略し、提出後の現行検証に任せてください。
 `, strings.TrimRight(prompt, "\n"), artifactDir, priorArtifactReferenceMarker)
 }
 
@@ -165,7 +166,7 @@ func resultCorrectionPrompt(reason string) string {
 	return fmt.Sprintf(`直前の作業結果の内容は有効ですが、結果の意味検証に不合格でした。
 作業・調査・テストをやり直さず、違反を修正した同じ内容の結果を再出力してください。
 各fieldのvalueは空にできず、改行を含められません。複数事項は同じvalue内でセミコロン区切りにしてください。
-結果全体は6 KiB・1 field 1536 bytes以内です。STATUSに応じた必須fieldを省略しないでください。
+結果全体は6 KiB・1 field 1536 bytes以内です。STATUSに応じた必須fieldを省略しないでください。Bash toolを利用できる場合は、再出力の前に候補packet JSONをglm-worker --packet-checkで検証してから提出してください。
 %s
 大容量成果物の内容は再掲しないでください。違反内容に表示されたARTIFACTS pathは拒否された値であり、修正候補ではありません。REPORT_ARTIFACT_DIRまたはCURRENT_TASK_ARTIFACT_DIRが提示されている場合、その配下以外のpathをARTIFACTSへ残さないでください。現在taskで報告すべきartifactがなければARTIFACTSは空にしてください。
 

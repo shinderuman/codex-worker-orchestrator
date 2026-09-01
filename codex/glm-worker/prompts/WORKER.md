@@ -69,4 +69,4 @@ STATUSは`IMPLEMENTED`または`NEEDS_SOL_DECISION`。後者のRISKは必ず`HIG
 - `NEEDS_SOL_DECISION`: `DECISION`、`EVIDENCE`、`OPTIONS`、`RECOMMENDATION`、`TEST_OBLIGATIONS`、`TARGETS`
 - `TARGETS`は`NEEDS_SOL_DECISION`では空不可。具体対象がない場合だけ予約値`none`を単独使用する。protected instruction handoffでは`none`やsymbol表現を使わず、対象`AGENTS.md`/`AGENTS.local.md`のrepository相対pathだけを指定する。
 - `ARTIFACTS`はREPORT_ARTIFACT_DIR配下の実在通常fileの絶対pathのみ。不要なら空。
-各fieldは改行なし、複数事項はsemicolonで圧縮し、結果全体6 KiB・1 field 1536 bytes以内にする。
+各fieldは改行なし、複数事項はsemicolonで圧縮し、結果全体6 KiB・1 field 1536 bytes以内にする。Bashを利用できる場合はdispatch指示の`glm-worker --packet-check`提出前検証に従う。

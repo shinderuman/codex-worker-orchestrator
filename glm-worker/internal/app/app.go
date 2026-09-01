@@ -34,6 +34,7 @@ type Command struct {
 	ApprovalOnly        bool
 	ExecutionMilestones bool
 	Role                string
+	ArtifactRoot        string
 	Verify              VerifyArgs
 	Coalesce            CoalesceArgs
 }
@@ -98,6 +99,7 @@ const (
 	ModeRepoSearch
 	ModeRepoSearchEval
 	ModeExecutionMilestonesRevise
+	ModePacketCheck
 )
 
 const fixOriginUsage = "[--origin codex-review|glm-reviewer|user-amendment|external-review|metadata-repair] [--accepted-scope current-diff] [--approval-only]"
@@ -177,6 +179,7 @@ var commandParsers = map[string]commandParser{
 	},
 	"--install-smoke": installSmokeCommand,
 	"--quality-gate":  qualityGateRecoveryCommand,
+	"--packet-check":  packetCheckCommand,
 	"bundle": func(args []string) (Command, error) {
 		return optionalPayloadCommand(args, ModeBundle, "usage: glm-worker bundle [task-id]")
 	},
@@ -196,7 +199,7 @@ func usageError(format string, args ...any) *UsageError {
 
 func ParseCommand(args []string) (Command, error) {
 	if len(args) == 0 {
-		return Command{}, usageError("usage: glm-worker <instruction> | --execution-milestones-stdin <payload-bytes> [--sha256 <hex>] | --execution-milestones-revise-stdin <payload-bytes> [--sha256 <hex>] | --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix-stdin <payload-bytes> [--sha256 <hex>] %s | --accept | --resume | --stop | --isolate | --status | --handoff | --watch [--verbose] | --timeline [task-id] | --convergence [task-id] | --stats | --reset | --eval-ab <run-dir> | --call-outliers | --codex-limit | --repo-search <query> | --check-wake-coalesce <parent-thread-id> <auto-resume-at-rfc3339> | --install-smoke %s | --quality-gate %s | --model-routing | bundle [task-id]", fixOriginUsage, installSmokeUsage, qualityGateUsage)
+		return Command{}, usageError("usage: glm-worker <instruction> | --execution-milestones-stdin <payload-bytes> [--sha256 <hex>] | --execution-milestones-revise-stdin <payload-bytes> [--sha256 <hex>] | --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix-stdin <payload-bytes> [--sha256 <hex>] %s | --accept | --resume | --stop | --isolate | --status | --handoff | --watch [--verbose] | --timeline [task-id] | --convergence [task-id] | --stats | --reset | --eval-ab <run-dir> | --call-outliers | --codex-limit | --repo-search <query> | --check-wake-coalesce <parent-thread-id> <auto-resume-at-rfc3339> | --install-smoke %s | --quality-gate %s | --model-routing | --packet-check <packet.json> [--role worker|reviewer] [--artifact-root <dir>] | bundle [task-id]", fixOriginUsage, installSmokeUsage, qualityGateUsage)
 	}
 	if parser, ok := commandParsers[args[0]]; ok {
 		return parser(args)
@@ -456,6 +459,8 @@ func executeStateless(cmd Command, cfg config.AppConfig, stdout io.Writer) (bool
 		return true, requestStop(cfg, stdout)
 	case ModeCodexLimit:
 		return true, printCodexLimit(cfg, stdout)
+	case ModePacketCheck:
+		return true, printPacketCheck(cmd, stdout)
 	case ModeRepoSearch:
 		return true, printRepoSearch(cmd.Payload, cfg, stdout)
 	case ModeCheckWakeCoalesce:
