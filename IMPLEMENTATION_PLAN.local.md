@@ -8,11 +8,10 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/worker-validation-capability-routing.md`
+- `IMPLEMENTATION_TASKS/packet-presubmit-byte-validation.md`
 
 ## NEXT（優先順）
 
-- `IMPLEMENTATION_TASKS/packet-presubmit-byte-validation.md`
 - `IMPLEMENTATION_TASKS/bundle-retry-wait-diagnostics.md`
 - `IMPLEMENTATION_TASKS/021-conditional-improvements.md`
 - `IMPLEMENTATION_TASKS/022-final-verification.md`
@@ -33,7 +32,7 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 ## 現在のGit境界
 
 - branch: `main`
-- `bundle-analysis-window-boundaries.md`はanalysis-index version 2の区間分離、独立review、最終validationまでcurrent mainへ統合済み。`worker-validation-capability-routing.md`をACTIVEへ昇格したが、ユーザー指定の停止境界に従い実行は開始していない。
+- `worker-validation-capability-routing.md`はmanaged worker sandboxの既知cache/socket制約、固定cache入口優先、既知socket-bound検証のtyped parent validation委譲、未知failureのfail-closed境界をworker Go instructionへ統合し、独立reviewと現snapshot validationまで完了済み。`packet-presubmit-byte-validation.md`をACTIVEへ昇格したが、ユーザー指定の停止境界に従い実行は開始していない。
 - authorization不整合調査はread-only observationと親No-Goまで完了済み。production修正を行わない判断と外部修正境界は削除済みtask fileのGit履歴および保存bundle evidenceから回収する。恒久的な自動再開許可は`IMPLEMENTATION_RULES.md`を正とする。
 - F1-F10 hardening、parent action/handoff、typed parent-capability validation、repo-search、Codex analysis bundle、target-repository lean context、wait instruction削減、actionable containment denial、bounded parent finalization surface、commentlint sandbox-safe launcherはcurrent mainへ統合済み。詳細なcommit・validationはGit / CI、runtime・model evidenceはbundle / telemetryを正とする。
 - preserved boundary: machine-readable lifecycle、snapshot/validation authority、parent-managed metadata guard、GLM commit/push禁止、parent Codex semantic authority、normal fast-forward Git safety、Direct Codex対orchestratedのCodex Reduction / Quality Delta最上位評価を維持する。
