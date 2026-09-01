@@ -91,16 +91,13 @@ func captureGuardRefEvidence(checkpoint *state.ResumeCheckpoint, runErr error) {
 }
 
 func (w *Workflow) captureGuardRecoveryRetention(checkpoint *state.ResumeCheckpoint) error {
-	snapshot, err := state.CaptureRepositoryBoundarySnapshot(w.config.RepoRoot)
-	if err != nil {
+	if err := w.attachStopRepositoryBoundary(checkpoint); err != nil {
 		return err
 	}
 	files, err := state.CaptureStopDirtyFiles(w.config.RepoRoot)
 	if err != nil {
 		return err
 	}
-	checkpoint.StopGitSnapshot = &snapshot
-	checkpoint.StopParentFiles = snapshot.ParentFiles
 	checkpoint.StopDirtyFiles = files
 	return nil
 }
@@ -172,7 +169,7 @@ func (w *Workflow) prepareGuardRecovery(checkpoint state.ResumeCheckpoint) (bool
 }
 
 func validateGuardRecoveryRetention(checkpoint state.ResumeCheckpoint) error {
-	if checkpoint.StopGitSnapshot != nil && checkpoint.StopGitSnapshot.Head != "" && checkpoint.StopGitSnapshot.ParentFiles != nil && checkpoint.StopDirtyFiles != nil {
+	if checkpoint.StopGitSnapshot != nil && checkpoint.StopGitSnapshot.Head != "" && checkpoint.StopDirtyFiles != nil {
 		return nil
 	}
 	return &WorkerError{Phase: checkpoint.Phase, Message: "guard recovery checkpoint has no repository retention baseline"}
@@ -265,7 +262,6 @@ func clearGuardRecoveryState(checkpoint *state.ResumeCheckpoint) {
 	checkpoint.GuardRefChanges = nil
 	checkpoint.GuardRefChangesTruncated = false
 	checkpoint.CompletedResult = nil
-	checkpoint.StopParentFiles = nil
 	checkpoint.StopGitSnapshot = nil
 	checkpoint.StopDirtyFiles = nil
 }
