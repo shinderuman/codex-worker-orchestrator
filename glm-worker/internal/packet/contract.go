@@ -6,6 +6,24 @@ type machineField string
 
 type machineFieldKind uint8
 
+type machineFieldContract struct {
+	kind  machineFieldKind
+	value func(Result) string
+}
+
+type packetStatusContract struct {
+	risks        []Risk
+	resultFields []machineField
+	invalidRisk  func(Risk) string
+}
+
+type machineContract struct {
+	name                 string
+	modelFields          []machineField
+	statuses             []Status
+	strictRequiredStatus Status
+}
+
 const (
 	machineFieldString machineFieldKind = iota
 	machineFieldStrings
@@ -56,11 +74,6 @@ const (
 	ParentValidationGoTestRace = "go-test-race"
 )
 
-type machineFieldContract struct {
-	kind  machineFieldKind
-	value func(Result) string
-}
-
 var modelFieldContracts = map[machineField]machineFieldContract{
 	fieldStatus:                     {kind: machineFieldStatus},
 	fieldRisk:                       {kind: machineFieldRisk},
@@ -82,12 +95,6 @@ var modelFieldContracts = map[machineField]machineFieldContract{
 	fieldSolQuestion:                {kind: machineFieldString, value: func(r Result) string { return r.SolQuestion }},
 	fieldTargets:                    {kind: machineFieldStrings},
 	fieldArtifacts:                  {kind: machineFieldStrings},
-}
-
-type packetStatusContract struct {
-	risks        []Risk
-	resultFields []machineField
-	invalidRisk  func(Risk) string
 }
 
 var reviewerResultFields = []machineField{
@@ -141,13 +148,6 @@ var packetStatusContracts = map[Status]packetStatusContract{
 		),
 		invalidRisk: func(Risk) string { return "NEEDS_SOL_REVIEWのriskはHIGHにしてください" },
 	},
-}
-
-type machineContract struct {
-	name                 string
-	modelFields          []machineField
-	statuses             []Status
-	strictRequiredStatus Status
 }
 
 var workerModelFields = []machineField{
