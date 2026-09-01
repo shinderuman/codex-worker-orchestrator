@@ -45,34 +45,7 @@ var feasibilityFieldKeys = []string{"status", "assumption", "evidence-source", "
 func (e *FeasibilityError) Error() string { return e.Reason }
 
 func ActiveSectionEntries(planContent string) ([]string, error) {
-	lines := strings.Split(planContent, "\n")
-	inSection := false
-	var entries []string
-	for _, line := range lines {
-		if strings.HasPrefix(line, "## ") {
-			if inSection {
-				break
-			}
-			inSection = strings.TrimSpace(strings.TrimPrefix(line, "## ")) == "ACTIVE"
-			continue
-		}
-		if !inSection {
-			continue
-		}
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" {
-			continue
-		}
-		if !strings.HasPrefix(trimmed, "- ") {
-			return nil, fmt.Errorf("IMPLEMENTATION_PLAN.local.mdのACTIVE欄の行 %qがschedule list記法(`- `bulletとblank行のみ)へ違反しています", trimmed)
-		}
-		path, err := activeEntryPath(strings.TrimSpace(strings.TrimPrefix(trimmed, "- ")))
-		if err != nil {
-			return nil, err
-		}
-		entries = append(entries, path)
-	}
-	return entries, nil
+	return ParsePlanSchedule(planContent).ActiveEntries()
 }
 
 func ValidateActiveTaskPath(path string) error {
@@ -93,18 +66,6 @@ func ValidateActiveTaskPath(path string) error {
 		}
 	}
 	return nil
-}
-
-func activeEntryPath(item string) (string, error) {
-	switch strings.Count(item, "`") {
-	case 0:
-		return item, nil
-	case 2:
-		if strings.HasPrefix(item, "`") && strings.HasSuffix(item, "`") {
-			return item[1 : len(item)-1], nil
-		}
-	}
-	return "", fmt.Errorf("ACTIVE欄の項目 %qがbullet構文(逆引用符1組で囲まれた単一task path、または逆引用符なしの直書き)へ違反しています", item)
 }
 
 func ParseExternalFeasibility(content []byte) (ExternalFeasibility, error) {
