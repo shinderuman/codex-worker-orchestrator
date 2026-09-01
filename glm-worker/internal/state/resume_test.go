@@ -201,7 +201,7 @@ func TestLoadResumeCheckpointRejectsLegacyVersions(t *testing.T) {
 func TestLoadResumeCheckpointV6RequiresExplicitKeys(t *testing.T) {
 	st := &StateStore{dir: t.TempDir()}
 	rejected := map[string]struct{ name, want string }{
-		`{"version":6,"stage":"worker","model":"opus","stop_kind":"rate-limited"}`:                         {"report_only missing", "report_only keyがありません"},
+		`{"version":6,"stage":"worker","model":"opus","stop_kind":"rate-limited"}`:                       {"report_only missing", "report_only keyがありません"},
 		`{"version":6,"stage":"worker","model":"opus","report_only":false}`:                              {"stop_kind missing", "stop_kind keyがありません"},
 		`{"version":6,"stage":"worker","model":"opus","report_only":"false","stop_kind":"rate-limited"}`: {"report_only non-bool", "resume stateを読めません"},
 	}
