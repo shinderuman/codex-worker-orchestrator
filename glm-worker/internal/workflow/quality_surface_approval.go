@@ -113,10 +113,7 @@ func (w *Workflow) validateApprovedQualitySurfaceRetention(checkpoint state.Resu
 }
 
 func (w *Workflow) activateApprovedQualitySurface() error {
-	if err := w.state.ClearResumeCheckpoint(); err != nil {
-		return err
-	}
-	return w.state.SetTaskStatus(state.TaskStatusActive)
+	return w.state.ActivateQualitySurfaceApproval()
 }
 
 func (w *Workflow) routeApprovedQualitySurface(checkpoint state.ResumeCheckpoint, result packet.Result) error {

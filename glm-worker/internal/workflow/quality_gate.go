@@ -12,7 +12,6 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
 const qualitySurfaceBaselineStateKey = "quality-surface-baseline"
@@ -143,7 +142,7 @@ func (w *Workflow) verifyQualitySurfaceBaseline(phase string) (bool, error) {
 }
 
 func (w *Workflow) failClosedQualitySurface(phase, reason string, cause error) error {
-	if err := w.state.SetTaskStatus(state.TaskStatusWaitingSolReview); err != nil {
+	if err := w.state.WaitForSolReview(); err != nil {
 		return err
 	}
 	if cause != nil {

@@ -64,21 +64,12 @@ func (s *StateStore) CompleteObservationNoGo() (bool, error) {
 	}
 	addInt(&stats.ParentOutcomesByRisk, risk, 1)
 
-	previousStatus := s.TaskStatus()
-	if err := s.Remove("pending-decision"); err != nil {
-		return false, err
-	}
-	if err := s.SetTaskStatus(TaskStatusComplete); err != nil {
-		_ = s.Touch("pending-decision")
-		return false, err
-	}
-	if err := s.writeTaskStats(stats); err != nil {
-		rollbackStatusErr := s.SetTaskStatus(previousStatus)
-		rollbackPendingErr := s.Touch("pending-decision")
-		if rollbackStatusErr != nil || rollbackPendingErr != nil {
-			return false, fmt.Errorf("terminal no-go outcomeを保存できずstate rollbackにも失敗しました: %w", errors.Join(err, rollbackStatusErr, rollbackPendingErr))
+	result := s.commitParentCompletion(stats, true)
+	if result.transitionErr != nil {
+		if result.rollbackStatusErr != nil || result.rollbackPendingErr != nil {
+			return false, fmt.Errorf("terminal no-go outcomeを保存できずstate rollbackにも失敗しました: %w", errors.Join(result.transitionErr, result.rollbackStatusErr, result.rollbackPendingErr))
 		}
-		return false, fmt.Errorf("terminal no-go outcomeを保存できません: %w", err)
+		return false, fmt.Errorf("terminal no-go outcomeを保存できません: %w", result.transitionErr)
 	}
 
 	s.appendParentOutcomeEvent(stats.TaskID, ParentPhaseClose, ParentOutcomeNoGo, "", resolved)

@@ -15,16 +15,13 @@ func (s *StateStore) AcceptParentReview() (bool, error) {
 		return ok, resolveErr
 	}
 
-	previousStatus := s.TaskStatus()
 	stats.Status = TaskStatusComplete
-	if err := s.SetTaskStatus(TaskStatusComplete); err != nil {
-		return false, err
-	}
-	if err := s.writeTaskStats(stats); err != nil {
-		if rollbackErr := s.SetTaskStatus(previousStatus); rollbackErr != nil {
-			return false, fmt.Errorf("parent accept outcomeを保存できずtask status rollbackにも失敗しました: outcome=%w rollback=%w", err, rollbackErr)
+	result := s.commitParentCompletion(stats, false)
+	if result.transitionErr != nil {
+		if result.rollbackStatusErr != nil {
+			return false, fmt.Errorf("parent accept outcomeを保存できずtask status rollbackにも失敗しました: outcome=%w rollback=%w", result.transitionErr, result.rollbackStatusErr)
 		}
-		return false, fmt.Errorf("parent accept outcomeを保存できません: %w", err)
+		return false, fmt.Errorf("parent accept outcomeを保存できません: %w", result.transitionErr)
 	}
 
 	s.appendParentOutcomeEvent(stats.TaskID, ParentPhaseAccept, ParentOutcomeAccepted, "", resolved)

@@ -89,11 +89,7 @@ func (w *Workflow) prepareExecutionMilestoneDecision(decision string) (execution
 	if err := w.replaceAcceptedScopeWithDecision(decision); err != nil {
 		return executionMilestoneDecisionContext{}, err
 	}
-	if err := w.state.SetTaskStatus(state.TaskStatusActive); err != nil {
-		return executionMilestoneDecisionContext{}, err
-	}
-	w.state.RecordDecision()
-	if _, err := w.state.RecordParentOutcome(state.ParentOutcomeDecision, ""); err != nil {
+	if err := w.state.BeginParentDecision(); err != nil {
 		return executionMilestoneDecisionContext{}, err
 	}
 	return executionMilestoneDecisionContext{
@@ -284,10 +280,7 @@ func (w *Workflow) handleExecutionMilestoneWorkerResult(
 }
 
 func (w *Workflow) stopExecutionMilestoneForDecision(result packet.Result) error {
-	if err := w.state.Touch("pending-decision"); err != nil {
-		return err
-	}
-	if err := w.state.SetTaskStatus(state.TaskStatusWaitingDecision); err != nil {
+	if err := w.state.WaitForDecision(); err != nil {
 		return err
 	}
 	return w.emitResult(result)
@@ -298,10 +291,7 @@ func (w *Workflow) acceptExecutionMilestoneWorkerResult(
 	workerResult packet.Result,
 	checkpoint state.ResumeCheckpoint,
 ) error {
-	if err := w.state.Remove("pending-decision"); err != nil {
-		return err
-	}
-	if err := w.state.SetTaskStatus(state.TaskStatusActive); err != nil {
+	if err := w.state.ContinueAfterWorkerResult(); err != nil {
 		return err
 	}
 	advanced, err := w.advanceExecutionMilestone(request, workerResult, checkpoint)

@@ -281,12 +281,7 @@ func (w *Workflow) ExecuteDecision(decision string) error {
 		if err := w.replaceAcceptedScopeWithDecision(decision); err != nil {
 			return err
 		}
-		if err := w.state.SetTaskStatus(state.TaskStatusActive); err != nil {
-			return err
-		}
-		w.state.RecordDecision()
-
-		if _, err := w.state.RecordParentOutcome(state.ParentOutcomeDecision, ""); err != nil {
+		if err := w.state.BeginParentDecision(); err != nil {
 			return err
 		}
 
@@ -335,12 +330,7 @@ func (w *Workflow) ExecuteExplicitFixWithScope(instruction, origin, acceptedScop
 
 		decision := w.state.ReadOr("last-decision", "none")
 		review := w.state.ReadOr("last-review", "none")
-		if err := w.state.SetTaskStatus(state.TaskStatusActive); err != nil {
-			return err
-		}
-		w.state.RecordFix()
-
-		if _, err := w.state.RecordParentOutcome(state.ParentOutcomeFix, origin); err != nil {
+		if err := w.state.BeginParentFix(origin); err != nil {
 			return err
 		}
 
@@ -506,10 +496,9 @@ func (w *Workflow) gateResumeProvider(checkpoint state.ResumeCheckpoint) error {
 }
 
 func (w *Workflow) activateResume(checkpoint state.ResumeCheckpoint) error {
-	if err := w.state.SetTaskStatus(state.TaskStatusActive); err != nil {
+	if err := w.state.BeginResume(checkpoint); err != nil {
 		return err
 	}
-	w.state.RecordResume()
 	w.currentResumeSource = checkpoint.StopKind.ResumeSource()
 	return nil
 }
@@ -550,20 +539,8 @@ func (w *Workflow) handleResumeRunError(_ state.ResumeCheckpoint, previous state
 	if isResumeStopError(runErr) {
 		return runErr
 	}
-	saved, loadErr := w.state.LoadResumeCheckpoint()
-	if loadErr != nil || saved.StopKind.TaskStatus() == state.TaskStatusActive {
-		_ = w.attachStopRepositoryBoundary(&previous)
-		_ = w.state.SaveResumeCheckpoint(previous)
-	}
-
-	restoredStatus := state.TaskStatusActive
-	if loadErr == nil {
-		restoredStatus = saved.StopKind.TaskStatus()
-	}
-	if restoredStatus == state.TaskStatusActive {
-		restoredStatus = previous.StopKind.TaskStatus()
-	}
-	_ = w.state.SetTaskStatus(restoredStatus)
+	_ = w.attachStopRepositoryBoundary(&previous)
+	_ = w.state.RestoreResumeStop(previous)
 	return runErr
 }
 
@@ -706,18 +683,12 @@ func (w *Workflow) handleWorkerResult(request string, workerResult packet.Result
 	}
 	switch workerResult.Status {
 	case packet.StatusNeedsSolDecision:
-		if err := w.state.Touch("pending-decision"); err != nil {
-			return err
-		}
-		if err := w.state.SetTaskStatus(state.TaskStatusWaitingDecision); err != nil {
+		if err := w.state.WaitForDecision(); err != nil {
 			return err
 		}
 		return w.emitResult(workerResult)
 	case "IMPLEMENTED":
-		if err := w.state.Remove("pending-decision"); err != nil {
-			return err
-		}
-		if err := w.state.SetTaskStatus(state.TaskStatusActive); err != nil {
+		if err := w.state.ContinueAfterWorkerResult(); err != nil {
 			return err
 		}
 		return w.reviewUntilStable(request, workerResult, 1, 0, workerPhase)
@@ -895,7 +866,7 @@ func (w *Workflow) handleReviewResult(
 }
 
 func (w *Workflow) finishReview(status state.TaskStatus, result packet.Result) error {
-	if err := w.state.SetTaskStatus(status); err != nil {
+	if err := w.state.FinishReview(status); err != nil {
 		return err
 	}
 	return w.emitResult(result)
@@ -1073,19 +1044,13 @@ func (w *Workflow) handleAutoFixResult(
 	}
 	switch fixResult.Status {
 	case packet.StatusNeedsSolDecision:
-		if err := w.state.Touch("pending-decision"); err != nil {
-			return err
-		}
-		if err := w.state.SetTaskStatus(state.TaskStatusWaitingDecision); err != nil {
+		if err := w.state.WaitForDecision(); err != nil {
 			return err
 		}
 		return w.emitResult(fixResult)
 
 	case packet.StatusImplemented:
-		if err := w.state.Remove("pending-decision"); err != nil {
-			return err
-		}
-		if err := w.state.SetTaskStatus(state.TaskStatusActive); err != nil {
+		if err := w.state.ContinueAfterWorkerResult(); err != nil {
 			return err
 		}
 		return w.reviewUntilStable(
@@ -1442,10 +1407,7 @@ func (w *Workflow) persistRateLimitedStop(checkpoint state.ResumeCheckpoint, lim
 	checkpoint.ResetAtRFC3339 = limit.ResetAtRFC3339
 
 	_ = w.attachStopRepositoryBoundary(&checkpoint)
-	if err := w.state.SaveResumeCheckpoint(checkpoint); err != nil {
-		return "", err
-	}
-	if err := w.state.SetTaskStatus(state.TaskStatusRateLimited); err != nil {
+	if err := w.state.EnterStop(checkpoint); err != nil {
 		return "", err
 	}
 	w.state.RecordRateLimit(checkpoint.Model)
@@ -1699,10 +1661,7 @@ func (w *Workflow) saveProviderUnavailable(checkpoint state.ResumeCheckpoint, cl
 	checkpoint.ProviderUnavailableStartedAt = recoveryStart
 
 	_ = w.attachStopRepositoryBoundary(&checkpoint)
-	if err := w.state.SaveResumeCheckpoint(checkpoint); err != nil {
-		return nil, err
-	}
-	if err := w.state.SetTaskStatus(state.TaskStatusProviderUnavailable); err != nil {
+	if err := w.state.EnterStop(checkpoint); err != nil {
 		return nil, err
 	}
 	elapsed := w.now().Sub(recoveryStart)
@@ -1752,10 +1711,7 @@ func (w *Workflow) persistInterruptedStop(checkpoint state.ResumeCheckpoint, cau
 			return err
 		}
 	}
-	if err := w.state.SaveResumeCheckpoint(checkpoint); err != nil {
-		return err
-	}
-	if err := w.state.SetTaskStatus(state.TaskStatusInterrupted); err != nil {
+	if err := w.state.EnterStop(checkpoint); err != nil {
 		return err
 	}
 	_ = w.state.SecureArtifactDir()
@@ -2453,10 +2409,7 @@ func (w *Workflow) failClosedReportOnlySnapshot(stage state.SnapshotStage, start
 }
 
 func (w *Workflow) failClosedStopped(stage state.SnapshotStage, reason string, cause error, build func(state.SnapshotStage, string) packet.Result) error {
-	if err := w.state.ClearResumeCheckpoint(); err != nil {
-		return err
-	}
-	if err := w.state.SetTaskStatus(state.TaskStatusWaitingSolReview); err != nil {
+	if err := w.state.DiscardResumeAndWaitForSolReview(); err != nil {
 		return err
 	}
 	if cause != nil {
