@@ -757,7 +757,7 @@ func TestReportOnlyLegacyVersionCheckpointRejectedBeforeRouting(t *testing.T) {
 			w.captureSnapshot = state.CaptureGitSnapshot
 
 			err := w.ExecuteResume()
-			if err == nil || !strings.Contains(err.Error(), "unsupported resume state version: 3") {
+			if err == nil || !strings.Contains(err.Error(), "lifecycle inconsistency") {
 				t.Fatalf("v3 checkpointの拒否error = %v", err)
 			}
 			if len(r.prompts) != 0 || len(r.probes) != 0 {
@@ -794,7 +794,7 @@ func TestReportOnlyV5RejectedBeforeRouting(t *testing.T) {
 			w.captureSnapshot = state.CaptureGitSnapshot
 
 			err := w.ExecuteResume()
-			if err == nil || !strings.Contains(err.Error(), "unsupported resume state version: 5") {
+			if err == nil || !strings.Contains(err.Error(), "lifecycle inconsistency") {
 				t.Fatalf("v5 checkpointの拒否error = %v", err)
 			}
 			if len(r.prompts) != 0 || len(r.probes) != 0 {

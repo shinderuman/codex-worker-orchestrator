@@ -258,7 +258,7 @@ func TestResolveActiveTaskPathRejectsInvalidTargets(t *testing.T) {
 	}
 }
 
-func TestDecisionRejectsInvalidActiveThenSameDecisionResumes(t *testing.T) {
+func TestDecisionRetryAfterFailClosedReviewUsesCanonicalAdmission(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
 	decision := "同じ判断本文"
@@ -315,29 +315,18 @@ func TestDecisionRejectsInvalidActiveThenSameDecisionResumes(t *testing.T) {
 	}
 
 	writeActiveTaskFileContent(t, repoRoot)
-	if err := w.ExecuteDecision(decision); err != nil {
-		t.Fatal(err)
+	err = w.ExecuteDecision(decision)
+	if err == nil || !strings.Contains(err.Error(), "lifecycle inconsistency") {
+		t.Fatalf("fail-closed review後のdecision再実行error = %v", err)
 	}
-	if st.TaskStatus() != state.TaskStatusWaitingSolReview {
-		t.Fatalf("修復後の同じdecision再実行でreviewまで到達すべき: %q", st.TaskStatus())
+	if len(r.prompts) != 1 {
+		t.Fatalf("canonical admission拒否後にmodelが呼ばれました: %d", len(r.prompts))
 	}
-	if got := st.ReadOr("last-decision", ""); got != decision {
-		t.Fatalf("再実行後のlast-decision = %q want %q", got, decision)
+	if st.TaskStatus() != state.TaskStatusWaitingDecision || !st.Exists("pending-decision") {
+		t.Fatalf("canonical admission拒否後 = %q/pending=%v", st.TaskStatus(), st.Exists("pending-decision"))
 	}
-	if len(r.prompts) != 4 {
-		t.Fatalf("再実行はdecision worker・reviewer・risk floor再出力の3呼出を追加すべき: %d", len(r.prompts))
-	}
-	for i, prompt := range r.prompts[1:3] {
-		if !strings.Contains(prompt, "ACTIVE_TASK_FILE: "+activeTaskGuardPath) {
-			t.Fatalf("再実行prompt %dが要求源blockを欠いています:\n%s", i, prompt)
-		}
-	}
-	stats, err = st.CurrentTaskStats()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if stats.DecisionCommands != 1 {
-		t.Fatalf("再実行後のdecision呼出 = %d want 1(拒否は計上しない)", stats.DecisionCommands)
+	if got := st.ReadOr("last-decision", ""); got != "" {
+		t.Fatalf("canonical admission拒否後にlast-decisionが消費されています: %q", got)
 	}
 }
 
