@@ -67,7 +67,6 @@ type TaskEventRecord struct {
 	Timestamp   time.Time `json:"timestamp"`
 	Kind        string    `json:"kind"`
 	Subtype     string    `json:"subtype,omitempty"`
-	SearchQuery string    `json:"search_query,omitempty"`
 	SearchPaths []string  `json:"search_paths,omitempty"`
 
 	MessageModel  string                 `json:"message_model,omitempty"`

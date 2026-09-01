@@ -45,7 +45,7 @@ func TestReviewerDiffFirstSkipsIndependentSearchForTestOnlyDiff(t *testing.T) {
 		t.Fatalf("calls=%d block=%s", calls, block)
 	}
 	event := readOnlyTaskEvent(t, st, taskID)
-	if event.Phase != reviewerRepoSearchPhase || event.Subtype != reviewerSearchDiffSufficient || event.SearchQuery != "" || len(event.SearchPaths) != 0 {
+	if event.Phase != reviewerRepoSearchPhase || event.Subtype != reviewerSearchDiffSufficient || len(event.SearchPaths) != 0 {
 		t.Fatalf("event=%#v", event)
 	}
 }
@@ -72,7 +72,7 @@ func TestReviewerDiffFirstSearchesImpactIndependentlyAndExcludesChangedPaths(t *
 		t.Fatalf("independence marker missing: %s", block)
 	}
 	event := readOnlyTaskEvent(t, st, taskID)
-	if event.Phase != reviewerRepoSearchPhase || event.Subtype != reviewerSearchHit || event.SearchQuery != "" || len(event.SearchPaths) != 1 || event.SearchPaths[0] != "glm-worker/internal/workflow/prompts.go" {
+	if event.Phase != reviewerRepoSearchPhase || event.Subtype != reviewerSearchHit || len(event.SearchPaths) != 1 || event.SearchPaths[0] != "glm-worker/internal/workflow/prompts.go" {
 		t.Fatalf("event=%#v", event)
 	}
 }
@@ -209,6 +209,9 @@ func readOnlyTaskEvent(t *testing.T, st *state.StateStore, taskID string) state.
 	scanner := bufio.NewScanner(file)
 	if !scanner.Scan() {
 		t.Fatalf("event missing: %v", scanner.Err())
+	}
+	if strings.Contains(scanner.Text(), "\"search_query\"") {
+		t.Fatalf("reviewer repo-search eventがsearch_query keyを永続化しています: %s", scanner.Text())
 	}
 	event, err := state.ParseTaskEventLine(scanner.Bytes())
 	if err != nil {
