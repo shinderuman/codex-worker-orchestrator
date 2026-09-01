@@ -49,6 +49,16 @@ jobs:
                   text = re.sub(rf'\bcheckpoint\.{field}\s*=\s*false\b', 'checkpoint.StopKind = state.ResumeStopNone', text)
                   text = re.sub(rf'!checkpoint\.{field}\b', f'checkpoint.StopKind != {kind}', text)
                   text = re.sub(rf'\bcheckpoint\.{field}\b(?!\s*=)', f'checkpoint.StopKind == {kind}', text)
+              if path.name == 'multirepo_process_test.go':
+                  text = text.replace(
+                      'checkpointA["rate_limited"] != true || !strings.Contains(fmt.Sprint(checkpointA["request"]), "MRISOA2")',
+                      'checkpointA["stop_kind"] != "rate-limited" || !strings.Contains(fmt.Sprint(checkpointA["request"]), "MRISOA2")',
+                  )
+              if path.name == 'stop_process_test.go':
+                  text = text.replace(
+                      'checkpoint["user_interrupted"] != true || checkpoint["rate_limited"] == true',
+                      'checkpoint["stop_kind"] != "interrupted"',
+                  )
               if text != original:
                   path.write_text(text)
                   changed.append(str(path))
@@ -59,10 +69,11 @@ jobs:
           # surfaces named RateLimited/ProviderUnavailable are intentionally excluded.
           legacy_key = re.compile(r'\b(?:RateLimited|ProviderUnavailable|UserInterrupted|GuardRecoverable):\s*true\b')
           legacy_checkpoint = re.compile(r'\bcheckpoint\.(?:RateLimited|ProviderUnavailable|UserInterrupted|GuardRecoverable)\b')
+          raw_legacy = re.compile(r'\["(?:rate_limited|provider_unavailable|user_interrupted|guard_recoverable)"\]')
           leftovers = []
           for path in sorted(root.glob('*_test.go')):
               for number, line in enumerate(path.read_text().splitlines(), 1):
-                  if legacy_key.search(line) or legacy_checkpoint.search(line):
+                  if legacy_key.search(line) or legacy_checkpoint.search(line) or raw_legacy.search(line):
                       leftovers.append(f'{path}:{number}:{line.strip()}')
           if leftovers:
               print('remaining legacy checkpoint stop references:')
