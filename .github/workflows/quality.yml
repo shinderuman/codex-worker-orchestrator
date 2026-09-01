@@ -31,6 +31,7 @@ jobs:
             glm-worker/internal/workflow/workflow_test.go \
             glm-worker/internal/workflow/workflow_snapshot_test.go \
             glm-worker/internal/workflow/review_resume_parent_test.go \
+            glm-worker/internal/workflow/execution_milestones_test.go \
             glm-worker/internal/workflow/planfile.go \
             glm-worker/internal/workflow/reviewer_repo_search.go
           git config user.name "github-actions[bot]"
@@ -42,6 +43,7 @@ jobs:
             glm-worker/internal/workflow/workflow_test.go \
             glm-worker/internal/workflow/workflow_snapshot_test.go \
             glm-worker/internal/workflow/review_resume_parent_test.go \
+            glm-worker/internal/workflow/execution_milestones_test.go \
             glm-worker/internal/workflow/planfile.go \
             glm-worker/internal/workflow/reviewer_repo_search.go
           git commit -m "workflow: route repository boundary captures through state owner"
