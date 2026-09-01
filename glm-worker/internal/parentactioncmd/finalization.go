@@ -48,7 +48,9 @@ type finalizationHandoffProbe struct {
 	Consistent  bool `json:"consistent"`
 	Validations []struct {
 		ValidationRunID string `json:"validation_run_id"`
+		Form            string `json:"form"`
 		Status          string `json:"status"`
+		WorkingDir      string `json:"working_dir"`
 	} `json:"validations"`
 }
 
@@ -66,7 +68,25 @@ func runFinalizationCheck(repoRoot, validationDir, form string, stdout io.Writer
 	if err != nil {
 		return err
 	}
+	validatedDir, err = finalizationRoutedValidationDir(worker, repoRoot, validatedDir, form)
+	if err != nil {
+		return err
+	}
 	return runFinalizationCheckWithWorker(worker, repoRoot, validatedDir, form, stdout)
+}
+
+func finalizationRoutedValidationDir(worker, repoRoot, fallbackDir, form string) (string, error) {
+	_, handoff, failure := collectFinalizationHandoff(worker, repoRoot)
+	if failure != nil || !handoff.Consistent {
+		return fallbackDir, nil
+	}
+	for _, validation := range handoff.Validations {
+		if validation.Form != form || validation.Status != "pass" || validation.WorkingDir == "" {
+			continue
+		}
+		return finalizationValidationDir(repoRoot, validation.WorkingDir)
+	}
+	return fallbackDir, nil
 }
 
 func finalizationValidationDir(repoRoot, validationDir string) (string, error) {
