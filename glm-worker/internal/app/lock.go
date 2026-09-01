@@ -1,6 +1,10 @@
 package app
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repolock"
+)
 
 type LockState string
 
@@ -17,6 +21,11 @@ const (
 	LockFree    LockState = "free"
 	LockUnknown LockState = "unknown"
 )
+
+type RepoLock = repolock.Lock
+
+var AcquireRepoLock = repolock.Acquire
+var ErrRepoLockHeld = repolock.ErrHeld
 
 func parseLockPID(data []byte) string {
 	text := string(data)
