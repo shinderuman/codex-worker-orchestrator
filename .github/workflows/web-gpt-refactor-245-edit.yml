@@ -1,0 +1,12 @@
+name: web-gpt-refactor-245-edit
+on: push
+permissions:
+  contents: write
+jobs:
+  edit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: web-gpt/refactor-245-parent-action-admission
+      - run: echo ready
