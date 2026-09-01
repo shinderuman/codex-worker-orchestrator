@@ -1,6 +1,7 @@
 package state
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -10,8 +11,6 @@ import (
 
 const ParentOutcomeNoGo = "no-go"
 
-// ObservationNoGoEligible reports whether the current parent decision boundary
-// belongs to a read-only PoC/observation task that may be terminally withdrawn.
 func (s *StateStore) ObservationNoGoEligible() bool {
 	if s.TaskStatus() != TaskStatusWaitingDecision || !s.Exists("pending-decision") {
 		return false
@@ -35,8 +34,6 @@ func (s *StateStore) ObservationNoGoEligible() bool {
 	return declaration.Status == taskcontract.StatusPoC || declaration.Status == taskcontract.StatusObservation
 }
 
-// CompleteObservationNoGo resolves a pending PoC/observation Go/No-Go boundary
-// without another model dispatch. The caller must hold the repository lock.
 func (s *StateStore) CompleteObservationNoGo() (bool, error) {
 	if !s.ObservationNoGoEligible() {
 		return false, fmt.Errorf("terminal no-go is only available for a pending PoC/observation Sol decision")
@@ -79,7 +76,7 @@ func (s *StateStore) CompleteObservationNoGo() (bool, error) {
 		rollbackStatusErr := s.SetTaskStatus(previousStatus)
 		rollbackPendingErr := s.Touch("pending-decision")
 		if rollbackStatusErr != nil || rollbackPendingErr != nil {
-			return false, fmt.Errorf("terminal no-go outcomeを保存できずstate rollbackにも失敗しました: outcome=%w status=%v pending=%v", err, rollbackStatusErr, rollbackPendingErr)
+			return false, fmt.Errorf("terminal no-go outcomeを保存できずstate rollbackにも失敗しました: %w", errors.Join(err, rollbackStatusErr, rollbackPendingErr))
 		}
 		return false, fmt.Errorf("terminal no-go outcomeを保存できません: %w", err)
 	}
