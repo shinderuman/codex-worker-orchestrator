@@ -12,10 +12,7 @@ func (w *Workflow) captureRepositoryBoundary() (state.GitSnapshot, error) {
 
 func (w *Workflow) attachStopRepositoryBoundary(checkpoint *state.ResumeCheckpoint) error {
 	snapshot, err := w.captureRepositoryBoundary()
-	if err != nil {
-		return err
-	}
 	checkpoint.StopGitSnapshot = &snapshot
 	checkpoint.StopParentFiles = snapshot.ParentFiles
-	return nil
+	return err
 }
