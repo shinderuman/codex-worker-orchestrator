@@ -15,6 +15,16 @@ type noGoOutput struct {
 	Completed bool   `json:"completed"`
 }
 
+func executeNoGo(cfg config.AppConfig, args []string, stdout io.Writer) error {
+	if len(args) != 1 {
+		return fmt.Errorf("usage: glm-parent-action no-go")
+	}
+	if err := persistParentCodexIdentity(cfg); err != nil {
+		return err
+	}
+	return runNoGo(cfg, stdout)
+}
+
 func runNoGo(cfg config.AppConfig, stdout io.Writer) error {
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
