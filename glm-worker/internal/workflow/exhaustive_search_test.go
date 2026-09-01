@@ -119,15 +119,12 @@ func TestExecuteNewTaskInjectsWorkerAndIndependentReviewerExhaustiveManifest(t *
 		if event.Phase != phases[i] || event.Subtype != exhaustiveSearchComplete {
 			t.Fatalf("event %d = %s/%s want %s/%s", i, event.Phase, event.Subtype, phases[i], exhaustiveSearchComplete)
 		}
-		if event.SearchQuery != "" {
-			t.Fatalf("event %dがraw queryを永続化しています: %q", i, event.SearchQuery)
-		}
 		if len(event.SearchPaths) != 1 || event.SearchPaths[0] != "needle-target.txt" {
 			t.Fatalf("event %dのmatch pathが証明を保持していません: %v", i, event.SearchPaths)
 		}
 	}
-	if strings.Contains(rawLog, "s3cr3t") || strings.Contains(rawLog, request) {
-		t.Fatalf("event logへrequest由来query dataが漏れています: %s", rawLog)
+	if strings.Contains(rawLog, "\"search_query\"") || strings.Contains(rawLog, "s3cr3t") || strings.Contains(rawLog, request) {
+		t.Fatalf("event logへrequest由来query dataまたはobsolete keyが漏れています: %s", rawLog)
 	}
 }
 
