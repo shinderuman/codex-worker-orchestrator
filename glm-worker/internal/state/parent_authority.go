@@ -85,14 +85,16 @@ func captureParentTaskFileStates(repoRoot string) (ParentFileStates, error) {
 }
 
 func CaptureRepositoryBoundarySnapshot(repoRoot string) (GitSnapshot, error) {
-	snapshot, err := CaptureGitSnapshot(repoRoot)
-	if err != nil {
-		return GitSnapshot{}, err
+	snapshot, gitErr := CaptureGitSnapshot(repoRoot)
+	parentFiles, parentErr := CaptureParentFileStates(repoRoot)
+	if parentErr == nil {
+		snapshot.ParentFiles = &parentFiles
 	}
-	parentFiles, err := CaptureParentFileStates(repoRoot)
-	if err != nil {
-		return GitSnapshot{}, err
+	if gitErr != nil {
+		return snapshot, gitErr
 	}
-	snapshot.ParentFiles = &parentFiles
+	if parentErr != nil {
+		return snapshot, parentErr
+	}
 	return snapshot, nil
 }
