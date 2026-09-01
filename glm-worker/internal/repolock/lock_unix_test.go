@@ -17,8 +17,8 @@ func TestAcquireSerializes(t *testing.T) {
 	}
 	defer func() { _ = first.Close() }()
 
-	if _, err := Acquire(path); !errors.Is(err, ErrHeld) {
-		t.Fatalf("2つ目のロック取得 error = %v, want ErrHeld", err)
+	if _, err := Acquire(path); !errors.Is(err, ErrRepoLockHeld) {
+		t.Fatalf("2つ目のロック取得 error = %v, want ErrRepoLockHeld", err)
 	}
 }
 
