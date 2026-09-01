@@ -129,6 +129,9 @@ func TestLoadBuildsConfigFromRepositoryAndEnvironment(t *testing.T) {
 	if loaded.ClaudeConfigDir != filepath.Join(home, ".claude") {
 		t.Fatalf("ClaudeConfigDir = %q, want %q", loaded.ClaudeConfigDir, filepath.Join(home, ".claude"))
 	}
+	if loaded.ClaudeSettingsOverride != filepath.Join(home, ".config", "codex-config", "claude-settings.local.json") {
+		t.Fatalf("ClaudeSettingsOverride = %q", loaded.ClaudeSettingsOverride)
+	}
 	if loaded.ClaudeBin != "claude-test" || loaded.CodexBin != "codex-test" || loaded.WorkerModel != "worker-test" || loaded.ReviewerModel != "reviewer-test" || loaded.HighRiskReviewerModel != "reviewer-high-test" {
 		t.Fatalf("runner config = %#v", loaded)
 	}
@@ -256,33 +259,6 @@ func TestLoadLeavesEnvAllowlistNilByDefault(t *testing.T) {
 		t.Fatal(err)
 	} else if loaded.EnvAllowlist != nil {
 		t.Fatalf("EnvAllowlist = %#v, want nil", loaded.EnvAllowlist)
-	}
-}
-
-func TestResolveClaudeSettingsOverrideResolution(t *testing.T) {
-	tests := []struct {
-		name string
-		home string
-		env  map[string]string
-		want string
-	}{
-		{name: "default", home: "/h", want: "/h/.config/codex-config/claude-settings.local.json"},
-		{name: "xdg", home: "/h", env: map[string]string{"XDG_CONFIG_HOME": "/xdg"}, want: "/xdg/codex-config/claude-settings.local.json"},
-		{name: "explicit override", home: "/h", env: map[string]string{"CODEX_CONFIG_CLAUDE_SETTINGS_OVERRIDE": "/custom/o.json"}, want: "/custom/o.json"},
-		{name: "explicit overrides xdg", home: "/h", env: map[string]string{"XDG_CONFIG_HOME": "/xdg", "CODEX_CONFIG_CLAUDE_SETTINGS_OVERRIDE": "/c/o.json"}, want: "/c/o.json"},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			t.Setenv("XDG_CONFIG_HOME", "")
-			t.Setenv("CODEX_CONFIG_CLAUDE_SETTINGS_OVERRIDE", "")
-			for key, value := range test.env {
-				t.Setenv(key, value)
-			}
-			got := resolveClaudeSettingsOverride(test.home)
-			if got != test.want {
-				t.Fatalf("got %q, want %q", got, test.want)
-			}
-		})
 	}
 }
 
