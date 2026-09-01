@@ -121,7 +121,7 @@ func TestReviseExecutionMilestonesBindsStoppedResumeCheckpoint(t *testing.T) {
 	checkpoint := state.ResumeCheckpoint{
 		Stage: state.ResumeStageWorker, Phase: "worker-new", Role: state.WorkerRole,
 		Model: "opus", Prompt: "prompt", OriginalPrompt: "prompt", Request: "request",
-		RateLimited: true, ReportOnly: false,
+		StopKind: state.ResumeStopRateLimited, ReportOnly: false,
 	}
 	if err := st.SaveResumeCheckpoint(checkpoint); err != nil {
 		t.Fatal(err)
