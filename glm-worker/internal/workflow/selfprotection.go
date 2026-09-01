@@ -2,8 +2,6 @@ package workflow
 
 import (
 	"bytes"
-	"fmt"
-	"os/exec"
 	"sort"
 	"strings"
 )
@@ -19,10 +17,7 @@ type pathClass struct {
 	category string
 }
 
-const (
-	emptyTreeObject  = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
-	testPathCategory = "test"
-)
+const testPathCategory = "test"
 
 var classifiedFiles = map[string]pathClass{
 	"install.sh":                             {true, "installer"},
@@ -185,25 +180,6 @@ func classifySelfProtection(paths []string) selfProtectionDecision {
 	}
 	sort.Strings(cats)
 	return selfProtectionDecision{High: true, Source: strings.Join(cats, ","), HitPath: firstHit}
-}
-
-func collectChangedPaths(repoRoot, baselineHead string) ([]string, error) {
-	base := baselineHead
-	if strings.TrimSpace(base) == "" {
-		base = emptyTreeObject
-	}
-	tracked, err := exec.Command("git", "-C", repoRoot, "diff", "--no-renames", "--name-only", "-z", base).Output()
-	if err != nil {
-		return nil, fmt.Errorf("git diff --name-only: %w", err)
-	}
-	untracked, err := exec.Command("git", "-C", repoRoot, "ls-files", "-z", "--others", "--exclude-standard").Output()
-	if err != nil {
-		return nil, fmt.Errorf("git ls-files --others: %w", err)
-	}
-	paths := make([]string, 0, 16)
-	paths = append(paths, splitNul(tracked)...)
-	paths = append(paths, splitNul(untracked)...)
-	return paths, nil
 }
 
 func splitNul(b []byte) []string {
