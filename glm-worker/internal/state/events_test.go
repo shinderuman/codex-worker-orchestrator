@@ -81,7 +81,7 @@ func TestParseTaskEventLineRejectsCorruptAndOldVersion(t *testing.T) {
 	}
 }
 
-func TestLegacyRawQueryEventDecodesAlongsideEmptyQueryEvent(t *testing.T) {
+func TestLegacyRawQueryEventIgnoresObsoleteFieldAlongsideCurrentEvent(t *testing.T) {
 	st := newEventTestStore(t)
 	legacy := `{"version":1,"task_id":"task-1","call_id":"call-1","role":"worker","phase":"worker-exhaustive-search","seq":1,"timestamp":"2026-08-30T00:00:00Z","kind":"exhaustive-search","subtype":"full-corpus-proof","search_query":"legacy raw query","search_paths":["a.go"]}` + "\n"
 	if err := os.MkdirAll(filepath.Dir(st.TaskEventLogPath("task-1")), 0o700); err != nil {
@@ -109,19 +109,29 @@ func TestLegacyRawQueryEventDecodesAlongsideEmptyQueryEvent(t *testing.T) {
 	if lines[0] != strings.TrimSuffix(legacy, "\n") {
 		t.Fatalf("旧format行が書き換えられています: %s", lines[0])
 	}
-	upgraded, err := ParseTaskEventLine([]byte(lines[0]))
+	legacyRecord, err := ParseTaskEventLine([]byte(lines[0]))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if upgraded.SearchQuery != "legacy raw query" {
-		t.Fatalf("旧format行の読取り = %#v", upgraded)
+	if len(legacyRecord.SearchPaths) != 1 || legacyRecord.SearchPaths[0] != "a.go" {
+		t.Fatalf("旧format行のcurrent fields = %#v", legacyRecord)
+	}
+	remarshaled, err := json.Marshal(legacyRecord)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(remarshaled), "search_query") || strings.Contains(string(remarshaled), "legacy raw query") {
+		t.Fatalf("obsolete search_queryがcurrent schemaへ再露出しています: %s", remarshaled)
 	}
 	current, err := ParseTaskEventLine([]byte(lines[1]))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if current.SearchQuery != "" || len(current.SearchPaths) != 1 || current.SearchPaths[0] != "b.go" {
+	if len(current.SearchPaths) != 1 || current.SearchPaths[0] != "b.go" {
 		t.Fatalf("新format行の読取り = %#v", current)
+	}
+	if strings.Contains(lines[1], "search_query") {
+		t.Fatalf("current eventがsearch_query keyを永続化しています: %s", lines[1])
 	}
 }
 
