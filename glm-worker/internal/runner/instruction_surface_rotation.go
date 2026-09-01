@@ -36,7 +36,7 @@ func RotateInstructionSurfaceBaseline(cfg config.AppConfig, st *state.StateStore
 	if previousDigest == current.digest {
 		return InstructionBaselineRotation{}, &InstructionSurfaceGuardError{Stage: "parent-rotation-no-change", Cause: fmt.Errorf("instruction surface has not changed")}
 	}
-	if err := st.Remove("worker.id", "worker.ready", "reviewer.id", "reviewer.ready"); err != nil {
+	if err := st.InvalidateAllSessions(); err != nil {
 		return InstructionBaselineRotation{}, &InstructionSurfaceGuardError{Stage: "invalidate-parent-rotation-sessions", Cause: err}
 	}
 	if err := st.Write(instructionSurfaceBaselineStateKey, taskID+" "+current.digest); err != nil {
