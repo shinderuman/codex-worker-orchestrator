@@ -76,9 +76,7 @@ func TestTask011PublicSurfaceChoiceRoutesReviewerDecisionWithoutExtraCall(t *tes
 	}
 
 	st := newStateStoreT(t)
-	if err := st.Write("baseline-head", baseline); err != nil {
-		t.Fatal(err)
-	}
+	writeCleanTaskBaselineState(t, st, baseline)
 	if err := st.Write(activeTaskStateKey, task); err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +84,6 @@ func TestTask011PublicSurfaceChoiceRoutesReviewerDecisionWithoutExtraCall(t *tes
 	r := &scriptedRunner{}
 	w := newWorkflowTWithOutput(t, st, r, &output)
 	w.config.RepoRoot = repo
-	w.collectChangedPaths = collectChangedPaths
 	w.temp = t.TempDir()
 
 	workerResult := packet.Result{
@@ -97,7 +94,7 @@ func TestTask011PublicSurfaceChoiceRoutesReviewerDecisionWithoutExtraCall(t *tes
 		Tests:               "pass",
 		Unverified:          "none",
 	}
-	paths, err := collectChangedPaths(repo, baseline)
+	paths, err := collectTaskChangedPaths(repo, st)
 	if err != nil {
 		t.Fatal(err)
 	}

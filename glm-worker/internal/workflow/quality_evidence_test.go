@@ -123,9 +123,7 @@ func TestEffectiveRiskIncludesQualityEvidenceWeakening(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := st.Write("baseline-head", baseline); err != nil {
-		t.Fatal(err)
-	}
+	writeCleanTaskBaselineState(t, st, baseline)
 	workflow := NewWorkflow(cfg, st, nil, io.Discard)
 	risk := workflow.computeEffectiveRisk(packet.Result{Risk: packet.RiskLow}, 0, false, false)
 	if !risk.high || !strings.Contains(risk.source, "quality-evidence:track-a-evidence-removed") {
@@ -171,7 +169,9 @@ func newQualityEvidenceRegistryRepo(t *testing.T, status, positive string) (stri
 
 func qualityEvidenceDecisionForTest(t *testing.T, root, baseline string) qualityEvidenceDecision {
 	t.Helper()
-	paths, err := collectChangedPaths(root, baseline)
+	st := newStateStoreT(t)
+	writeCleanTaskBaselineState(t, st, baseline)
+	paths, err := collectTaskChangedPaths(root, st)
 	if err != nil {
 		t.Fatal(err)
 	}
