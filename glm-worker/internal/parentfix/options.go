@@ -16,35 +16,42 @@ var ErrInvalidOptions = errors.New("invalid parent fix options")
 
 func Extract(args []string) (Options, []string, error) {
 	var options Options
-	remaining := make([]string, 0, len(args))
+	pairs := make([]string, 0, len(args))
+	for _, arg := range args {
+		if arg != "--approval-only" {
+			pairs = append(pairs, arg)
+			continue
+		}
+		if options.ApprovalOnly {
+			return Options{}, nil, ErrInvalidOptions
+		}
+		options.ApprovalOnly = true
+	}
+	if len(pairs)%2 != 0 {
+		return Options{}, nil, ErrInvalidOptions
+	}
+
+	remaining := make([]string, 0, len(pairs))
 	seenOrigin := false
 	seenScope := false
-
-	for index := 0; index < len(args); {
-		switch args[index] {
-		case "--approval-only":
-			if options.ApprovalOnly {
-				return Options{}, nil, ErrInvalidOptions
-			}
-			options.ApprovalOnly = true
-			index++
+	for index := 0; index < len(pairs); index += 2 {
+		name := pairs[index]
+		value := pairs[index+1]
+		switch name {
 		case "--origin":
-			if seenOrigin || index+1 >= len(args) || !state.ValidParentOrigin(args[index+1]) {
+			if seenOrigin || !state.ValidParentOrigin(value) {
 				return Options{}, nil, ErrInvalidOptions
 			}
 			seenOrigin = true
-			options.Origin = args[index+1]
-			index += 2
+			options.Origin = value
 		case "--accepted-scope":
-			if seenScope || index+1 >= len(args) || args[index+1] != "current-diff" {
+			if seenScope || value != "current-diff" {
 				return Options{}, nil, ErrInvalidOptions
 			}
 			seenScope = true
-			options.AcceptedScope = args[index+1]
-			index += 2
+			options.AcceptedScope = value
 		default:
-			remaining = append(remaining, args[index])
-			index++
+			remaining = append(remaining, name, value)
 		}
 	}
 
