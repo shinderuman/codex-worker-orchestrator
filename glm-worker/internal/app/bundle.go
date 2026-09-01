@@ -402,7 +402,6 @@ func (c *bundleCollector) collectTaskSessions(st *state.StateStore, task bundleT
 			if log.SessionID != "" {
 				sessions[log.SessionID] = struct{}{}
 			}
-		}
 	case !errors.Is(err, os.ErrNotExist):
 		c.addMissing("task/telemetry/session-association-unreadable")
 	}
@@ -489,10 +488,12 @@ func (c *bundleCollector) collectCurrentState(cfg config.AppConfig, st *state.St
 				if bundleAggregateDirs[name] {
 					continue
 				}
-				_ = c.addUnattributedTreeIfPresent(
-					filepath.Join(stateRoot, name),
-					path.Join("current-state", "diagnostics", name),
-				)
+				if name == "quality-gate" {
+					_ = c.addUnattributedTreeIfPresent(
+						filepath.Join(stateRoot, name),
+						path.Join("current-state", "diagnostics", name),
+					)
+				}
 				continue
 			}
 			if entry.Type().IsRegular() {
@@ -504,6 +505,7 @@ func (c *bundleCollector) collectCurrentState(cfg config.AppConfig, st *state.St
 			}
 		}
 	}
+	c.collectCurrentValidationDiagnostics(st)
 
 	c.collectCurrentTaskDiff(cfg, st)
 
