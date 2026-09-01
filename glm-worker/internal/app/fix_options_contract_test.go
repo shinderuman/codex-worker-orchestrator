@@ -45,6 +45,7 @@ func TestFixStdinRejectsInvalidCanonicalSemanticOptionsDuringParsing(t *testing.
 		{"--fix-stdin", "12", "--accepted-scope", "current-diff", "--approval-only", "--origin", state.ParentOriginCodexReview},
 		{"--fix-stdin", "12", "--origin", state.ParentOriginCodexReview, "--origin", state.ParentOriginGLMReviewer},
 		{"--fix-stdin", "12", "--unknown", "value"},
+		{"--fix-stdin", "12", "--sha256", "--origin", state.ParentOriginCodexReview, strings.Repeat("a", 64)},
 	} {
 		if _, err := ParseCommand(args); err == nil {
 			t.Fatalf("ParseCommand(%v) unexpectedly succeeded", args)
