@@ -122,6 +122,42 @@ func TestChangedPathsKeepsTaskCreatedPathAfterCommit(t *testing.T) {
 	}
 }
 
+func TestChangedPathsSupportsCapturedUnbornBaseline(t *testing.T) {
+	root := t.TempDir()
+	repoRoot := filepath.Join(root, "repo")
+	if err := os.MkdirAll(repoRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, repoRoot, "init", "-q")
+	runGit(t, repoRoot, "config", "user.email", "test@example.com")
+	runGit(t, repoRoot, "config", "user.name", "Test")
+
+	cfg := config.AppConfig{
+		RepoRoot:  repoRoot,
+		RepoHash:  strings.Repeat("d", 64),
+		StateBase: filepath.Join(root, ".glm-worker", "sessions"),
+	}
+	st, err := state.NewStateStore(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := state.CaptureGitBaseline(cfg, st); err != nil {
+		t.Fatal(err)
+	}
+	if st.Exists("baseline-head") {
+		t.Fatal("unborn repository must not invent a baseline HEAD")
+	}
+
+	writeFile(t, filepath.Join(repoRoot, "created.txt"), "created\n")
+	paths, available, err := ChangedPaths(repoRoot, st)
+	if err != nil || !available {
+		t.Fatalf("unborn changed paths: available=%v err=%v", available, err)
+	}
+	if !pathSet(paths)["created.txt"] {
+		t.Fatalf("unborn changed paths = %v", paths)
+	}
+}
+
 func pathSet(paths []string) map[string]bool {
 	result := make(map[string]bool, len(paths))
 	for _, path := range paths {
