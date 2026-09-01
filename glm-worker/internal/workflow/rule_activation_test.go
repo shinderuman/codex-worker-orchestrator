@@ -193,9 +193,7 @@ func newRuleActivationWorkflowConfig(
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := st.Write("baseline-head", baseline); err != nil {
-		t.Fatal(err)
-	}
+	writeCleanTaskBaselineState(t, st, baseline)
 	return cfg, st
 }
 
