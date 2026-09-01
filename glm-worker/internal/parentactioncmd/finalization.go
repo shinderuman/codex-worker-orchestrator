@@ -54,7 +54,10 @@ type finalizationHandoffProbe struct {
 	} `json:"validations"`
 }
 
-const finalizationDiagnosticLimit = 2048
+const (
+	finalizationDiagnosticLimit      = 2048
+	finalizationValidationStatusPass = "pass"
+)
 
 func runFinalizationCheck(repoRoot, validationDir, form string, stdout io.Writer) error {
 	if form != "go-test" && form != "go-test-race" {
@@ -81,7 +84,7 @@ func finalizationRoutedValidationDir(worker, repoRoot, fallbackDir, form string)
 		return fallbackDir, nil
 	}
 	for _, validation := range handoff.Validations {
-		if validation.Form != form || validation.Status != "pass" || validation.WorkingDir == "" {
+		if validation.Form != form || validation.Status != finalizationValidationStatusPass || validation.WorkingDir == "" {
 			continue
 		}
 		return finalizationValidationDir(repoRoot, validation.WorkingDir)
@@ -151,7 +154,7 @@ func collectFinalizationValidation(worker, validationDir, form string) (json.Raw
 		return nil, finalizationValidationProbe{}, failure
 	}
 	var probe finalizationValidationProbe
-	if err := json.Unmarshal(validation, &probe); err != nil || probe.Status != "pass" || probe.ValidationRunID == "" {
+	if err := json.Unmarshal(validation, &probe); err != nil || probe.Status != finalizationValidationStatusPass || probe.ValidationRunID == "" {
 		return nil, finalizationValidationProbe{}, &finalizationFailure{
 			Stage: "validation", Reason: "invalid_validation_result", Detail: compactFinalizationDiagnostic(string(validation)),
 		}
@@ -196,7 +199,7 @@ func runFinalizationWorkerStep(worker, workingDir string, args []string, stage s
 
 func handoffContainsValidation(handoff finalizationHandoffProbe, validationRunID string) bool {
 	for _, validation := range handoff.Validations {
-		if validation.ValidationRunID == validationRunID && validation.Status == "pass" {
+		if validation.ValidationRunID == validationRunID && validation.Status == finalizationValidationStatusPass {
 			return true
 		}
 	}
