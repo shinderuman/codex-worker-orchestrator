@@ -41,6 +41,7 @@ type parentHandoffValidation struct {
 	ValidationRunID string `json:"validation_run_id"`
 	Form            string `json:"form"`
 	Status          string `json:"status"`
+	WorkingDir      string `json:"working_dir"`
 	Log             string `json:"log,omitempty"`
 	Head            string `json:"head"`
 	IndexDigest     string `json:"index_digest"`
@@ -177,6 +178,7 @@ func parentHandoffValidationFromRun(record qualityGateRunRecord) parentHandoffVa
 		ValidationRunID: record.ValidationRunID,
 		Form:            record.Form,
 		Status:          record.Status,
+		WorkingDir:      record.WorkingDir,
 		Log:             record.Log,
 		Head:            record.Head,
 		IndexDigest:     record.IndexDigest,

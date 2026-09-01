@@ -119,6 +119,7 @@ func TestParentHandoffValidationReferencesMatchCurrentSnapshot(t *testing.T) {
 	stale.ValidationRunID = strings.Repeat("b", 32)
 	stale.StartedAt = now.Add(time.Minute)
 	stale.WorktreeDigest = "stale-worktree"
+	stale.WorkingDir = "/evidence/stale/working-dir"
 	stale.Log = "/evidence/stale/gate.log"
 	race := matching
 	race.ValidationRunID = strings.Repeat("c", 32)
@@ -136,14 +137,14 @@ func TestParentHandoffValidationReferencesMatchCurrentSnapshot(t *testing.T) {
 	if !output.Consistent || len(output.Validations) != 2 {
 		t.Fatalf("validations = %#v", output.Validations)
 	}
-	if output.Validations[0].Form != "go-test" || output.Validations[0].ValidationRunID != matching.ValidationRunID || output.Validations[0].Log != matching.Log {
+	if output.Validations[0].Form != "go-test" || output.Validations[0].ValidationRunID != matching.ValidationRunID || output.Validations[0].WorkingDir != matching.WorkingDir || output.Validations[0].Log != matching.Log {
 		t.Fatalf("go-test validation = %#v", output.Validations[0])
 	}
-	if output.Validations[1].Form != "go-test-race" || output.Validations[1].ValidationRunID != race.ValidationRunID {
+	if output.Validations[1].Form != "go-test-race" || output.Validations[1].ValidationRunID != race.ValidationRunID || output.Validations[1].WorkingDir != race.WorkingDir {
 		t.Fatalf("race validation = %#v", output.Validations[1])
 	}
 	for _, validation := range output.Validations {
-		if validation.ValidationRunID == stale.ValidationRunID {
+		if validation.ValidationRunID == stale.ValidationRunID || validation.WorkingDir == stale.WorkingDir {
 			t.Fatalf("stale snapshot validation leaked into handoff: %#v", validation)
 		}
 	}
