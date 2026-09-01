@@ -1,0 +1,22 @@
+name: web-gpt-refactor-251-keyfix
+on: push
+permissions:
+  contents: write
+jobs:
+  edit:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: web-gpt/refactor-251-machine-contract-owner
+      - run: python3 .github/web-gpt-refactor-251-keyfix.py
+      - run: gofmt -w glm-worker/internal/packet/result_test.go
+      - name: Commit edit
+        run: |
+          if git diff --quiet; then exit 0; fi
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add glm-worker/internal/packet/result_test.go
+          git commit -m 'test: use canonical packet field keys'
+          git push origin HEAD:web-gpt/refactor-251-machine-contract-owner
