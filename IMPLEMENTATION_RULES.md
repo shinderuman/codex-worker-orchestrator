@@ -1,6 +1,6 @@
 # 実装task lifecycle規則
 
-このfileは長期間変わらないtask lifecycle、ownership、compaction、commit、review、history移行の規則だけを保持する。個別task仕様は書かない。
+このfileは長期間変わらないtask lifecycle、ownership、compaction、commit、review、exceptional decision記録の規則だけを保持する。個別task仕様は書かない。
 
 ## source-of-truth順位
 
@@ -10,7 +10,7 @@
 - `IMPLEMENTATION_RULES.md`
 - `IMPLEMENTATION_PLAN.local.md`
 - Planが示すACTIVE `IMPLEMENTATION_TASKS/*.md`
-- ACTIVE taskが明示参照する`IMPLEMENTATION_HISTORY.md`の必要箇所
+- ACTIVE taskが明示参照する`IMPLEMENTATION_HISTORY.md`のexceptional decision見出し
 - conversation context、compaction summary、internal TODO
 
 conversation context、compaction summary、internal TODOはsource of truthではなくcacheとして扱う。Git現物とPlan/Taskが矛盾する場合、親Codexが現物確認後にPlan/Taskを修正してから続行する。
@@ -23,7 +23,7 @@ conversation context、compaction summary、internal TODOはsource of truthで�
 - 各taskの`Original instruction`はimmutableなlossless requirement sourceとし、契機となったユーザー/親Codexのtask該当指示を可能な限り原文のまま保存する。要約、重複除去、理由の省略、実装TODOだけへの圧縮、「意味は同じ」という書換えを禁止する
 - 追加要求は旧本文を上書き・削除せず、日時または順序と原文を`Amendments`へappend-onlyで追記する。新旧要求が矛盾する場合も両方を保持し、最新Amendmentによるoverrideをderived `Contract`へ明示する
 - 「これ」「さっきの」「前のreview」等の会話依存参照はOriginal instructionを書き換えず、当時の解決結果を`Resolved references`へ分離して具体化する
-- task fileへ進捗日記を追加せず、requirement contractと最小の`Current boundary`だけを保持する。長い診断はartifact/telemetry、完了証跡はHistoryへ置く
+- task fileへ進捗日記を追加せず、requirement contractと最小の`Current boundary`だけを保持する。長い診断とruntime/model evidenceはartifact / bundle / telemetry、ordinary completionのcommit・diff・validation・install evidenceはGit / CI / bundleを正とし、Historyへ複製しない
 
 ## lossless sourceとderived contract
 
@@ -41,12 +41,12 @@ conversation context、compaction summary、internal TODOはsource of truthで�
 - GLM workerへの独立実装委譲、独立した長時間調査、通常実装task相当のreview/testを必要としない
 - 現ACTIVEの意味契約・acceptance criteriaを変更しない
 - 独立したrollback単位として管理する必要がない
-- Rules、Plan、Task metadata、History等のparent-managed surfaceだけで完結する
+- Rules、Plan、Task metadata、必要時のexceptional History decision等のparent-managed surfaceだけで完結する
 - 変更後の意味契約をそのtracked surface自体へ完全に保存できる
 
-命名規則、Plan priority/ACTIVE/NEXT metadata、typo、意味を変えない明確化、History証跡、意味契約を変えないAmendment、parent-managed metadataの参照修正は代表例とする。parent maintenance中もACTIVEは主要な実装・調査・review対象を示し続け、一時task作成、ACTIVE退避、maintenance完了処理、元ACTIVE復帰を行わない。
+命名規則、Plan priority/ACTIVE/NEXT metadata、typo、意味を変えない明確化、exceptional decision recordの参照修正、意味契約を変えないAmendment、parent-managed metadataの参照修正は代表例とする。parent maintenance中もACTIVEは主要な実装・調査・review対象を示し続け、一時task作成、ACTIVE退避、maintenance完了処理、元ACTIVE復帰を行わない。
 
-parent maintenanceは記録不要を意味しない。ユーザー要求をcompaction前に対象のRules / Plan / Task / Historyへ直接保存し、内容に応じた最小確認を行う。変更が単独で意味を持ち、即時固定が安全なら親Codexが小さな個別commitにできる。GLMへcommit/pushさせず、final parent maintenance commit後は本fileのcommit / install workflowに従って親Codexが通常fast-forward pushする。
+parent maintenanceは記録不要を意味しない。ユーザー要求をcompaction前に対象のRules / Plan / Taskへ直接保存し、内容に応じた最小確認を行う。Historyへ追加できるのは、production diffやcurrent Rules/taskだけでは表現されず、将来のtracked taskがactivation / adoption条件として明示参照するcross-taskの採否・Go/No-Go decisionだけとする。通常の作業・完了chronology、commit、validation、install、escaped defect診断をHistoryへappendしない。変更が単独で意味を持ち、即時固定が安全なら親Codexが小さな個別commitにできる。GLMへcommit/pushさせず、final parent maintenance commit後は本fileのcommit / install workflowに従って親Codexが通常fast-forward pushする。
 
 parent-managed metadataを扱うguard、self-protection、production wiring自体の変更は、編集対象がparent-managed surfaceに関係していてもproduction behavior変更であるためparent maintenanceにしない。
 
@@ -103,7 +103,7 @@ parent-managed metadataを扱うguard、self-protection、production wiring自�
 - `IMPLEMENTATION_RULES.md`全文
 - `IMPLEMENTATION_PLAN.local.md`全文
 - ACTIVE task file全文（Original instruction、Amendments、Resolved referencesを省略しない）
-- taskが明示したHistory見出しだけ
+- ACTIVE taskが明示参照したexceptional History見出しだけ
 
 NEXT taskは開始時まで全文を読む必要はない。
 
@@ -130,11 +130,13 @@ NEXT taskは開始時まで全文を読む必要はない。
 - `IMPLEMENTATION_TASKS/*.md`
 - `IMPLEMENTATION_HISTORY.md`
 
-GLM worker/reviewerは編集・生成・復元・削除せず、更新候補をstructured resultで返す。model実行中は不変、model停止中の親更新だけをparent-managed deltaとして扱い、worker/reviewer implementation surfaceの外部変更はfail closedにする。pathごとの分岐を増殖させずparent-managed implementation metadataの単一集合へ収束する。
+GLM worker/reviewerは編集・生成・復元・削除せず、更新候補をstructured resultで返す。model実行中は不変、model停止中の親更新だけをparent-managed deltaとして扱い、worker/reviewer implementation surfaceの外部変更はfail closedにする。pathごとの分岐を増殖させずparent-managed implementation metadataの単一集合へ収束する。Historyがこの集合に残る理由は、current BLOCKED taskから明示参照される少数の非diff decisionを保護するためであり、通常completion ledgerへ戻す理由にはしない。
 
 ## task完了
 
-task完了時は、必要証跡とescaped原因をHistoryへ追加し、task fileを削除し、Planからentryを削除し、NEXTをACTIVEへ昇格し、final HEAD上でPlan・ACTIVE file・Git境界が一致することを機械確認する。完了task fileを`IMPLEMENTATION_TASKS/`へ残さない。Git履歴が原要求を保持するためHistoryへ全文複製しない。
+ordinary task完了時はHistoryへ完了証跡やescaped原因を追記しない。完了task fileを削除し、Planからentryを削除してNEXTをACTIVEへ昇格し、final HEAD上でPlan・ACTIVE file・Git境界が一致することを機械確認する。完了task fileを`IMPLEMENTATION_TASKS/`へ残さない。Git履歴が原要求と実装diffを保持し、CIとbundle / telemetryがvalidation・runtime/model evidenceを保持する。
+
+Historyを更新できるのは、完了結果そのものではなく、そのtaskがproduction diffへ表現されないcross-task decisionを新たに確定し、将来のtracked taskがそのdecisionをactivation / adoption条件として明示参照する場合だけとする。その場合もdecision、最小根拠、再評価境界だけを残し、commit / validation chronologyや長い診断を複製しない。参照taskがなくなったrecordは削除する。
 
 ## commit / install
 
@@ -157,7 +159,7 @@ task完了時は、必要証跡とescaped原因をHistoryへ追加し、task fil
 
 - ユーザーは親Codexがこのrepositoryに属するCodex app automationを作成・更新・削除することを恒久的に許可している。rate-limit自動再開、Codex limit wake、review scheduling等、現在taskまたはtracked repository workflowの実行に必要なautomationは、automation単位の追加確認を要求せず管理してよい
 - 2026-08-31のユーザー指示により、この許可は特定日時・一回の発火・現在taskだけに限定しない。24時間継続して開発するという本repositoryの目的に沿って、現在および将来の許可済み開発taskについて、rate limit等による停止後の再開automationの作成・再作成・更新・再予約を恒久的に許可する。繰り返し制限に到達しても、同じ許可を日時や予約単位で取り直さない
-- 再開後は、そのtaskに既に許可された実装・独立review・Sol判断・validation・親commit・Plan/History同期・install・通常fast-forward pushまで継続してよい。各発火を別の未許可作業と扱わず、automation promptには本節の恒久許可と対象task・checkpoint・停止境界を明示する。一回限りscheduleは重複実行を避ける予約形式であり、ユーザー許可の有効期限を意味しない
+- 再開後は、そのtaskに既に許可された実装・独立review・Sol判断・validation・親commit・Plan/task metadata同期・install・通常fast-forward pushまで継続してよい。各発火を別の未許可作業と扱わず、automation promptには本節の恒久許可と対象task・checkpoint・停止境界を明示する。一回限りscheduleは重複実行を避ける予約形式であり、ユーザー許可の有効期限を意味しない
 - automation authorityはautomationのlifecycle管理だけを許可する。automation promptが後で実行できる操作は、その発火時に適用されるユーザー指示とrepository authorityのscopeを超えない。別repository、force/non-fast-forward Git操作、credential操作、購入、または無関係な外部変更へ拡張しない
 - 一回限りの再開automationは保存済みtask ID・同一checkout・resume可能stateを発火時に再検証し、条件不一致ならresumeせず削除または停止する。重複予約を作らず、完了・別state移行後は不要なautomationを削除または停止する
 - 恒久許可はtaskの開始条件・feasibility gate・品質gate・ユーザー指定の停止境界を解除しない。「現在ACTIVE完了後は次taskを開始せず停止」のような指示は引き続き守る。Codex app等の外部安全審査をこのfileで無効化・迂回せず、同じ許可済みscopeの拒否が再発した場合は、拒否理由と恒久許可の適用関係を確認し、実際に追加権限が必要な部分だけを報告する
