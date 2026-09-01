@@ -14,7 +14,9 @@ git -C "$repo" add -A
 git -C "$repo" -c user.name=install-smoke -c user.email=install-smoke@example.invalid commit -qm fixture
 repo_revision=$(git -C "$repo" rev-parse HEAD)
 printf '%s\n' 'local_key = "keep"' >"$home/.codex/config.toml"
-printf '%s\n' '{"permissions":{"allow":["local"]},"env":{"LOCAL":"keep"}}' >"$home/.claude/settings.json"
+printf '%s\n' '{"permissions":{"allow":["local"]},"env":{"LOCAL":"keep","REMOVE_ME":"local"}}' >"$home/.claude/settings.json"
+mkdir -p "$home/.config/codex-config"
+printf '%s\n' '{"env":{"LOCAL":"override","REMOVE_ME":null,"SMOKE_ADDED":"present"}}' >"$home/.config/codex-config/claude-settings.local.json"
 cat >"$tmp/bin/claude" <<'EOF_CLAUDE'
 #!/bin/sh
 if [ "${1:-}" = "--help" ]; then
@@ -58,7 +60,12 @@ test -f "$home/.codex/AGENTS.md"
 test -f "$home/.codex/glm-worker/prompts/WORKER.md"
 grep -q '^local_key = "keep"$' "$home/.codex/config.toml"
 grep -q '^background_terminal_max_timeout = ' "$home/.codex/config.toml"
-grep -q '"LOCAL": "keep"' "$home/.claude/settings.json"
+grep -q '"LOCAL": "override"' "$home/.claude/settings.json"
+grep -q '"SMOKE_ADDED": "present"' "$home/.claude/settings.json"
+if grep -q '"REMOVE_ME"' "$home/.claude/settings.json"; then
+	printf '%s\n' 'claude local override null deletion was not applied' >&2
+	exit 1
+fi
 grep -q '"permissions"' "$home/.claude/settings.json"
 cmp "$repo/codex/instructions/glm-repo-search.md" "$home/.codex/instructions/glm-repo-search.md"
 grep -q 'GLM_WORKER_REPO_SEARCH' "$home/.codex/instructions/glm-repo-search.md"
