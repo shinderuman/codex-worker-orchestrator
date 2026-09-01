@@ -130,6 +130,9 @@ func TestNewWorkerTaskPromptRecordsRepoSearchTelemetry(t *testing.T) {
 	if !scanner.Scan() {
 		t.Fatalf("repo-search event missing: %v", scanner.Err())
 	}
+	if strings.Contains(scanner.Text(), "\"search_query\"") {
+		t.Fatalf("worker repo-search eventがsearch_query keyを永続化しています: %s", scanner.Text())
+	}
 	event, err := state.ParseTaskEventLine(scanner.Bytes())
 	if err != nil {
 		t.Fatal(err)
@@ -140,7 +143,7 @@ func TestNewWorkerTaskPromptRecordsRepoSearchTelemetry(t *testing.T) {
 	if event.Phase != repoSearchPhase || event.Kind != "navigation" || event.Subtype != repoSearchHit {
 		t.Fatalf("event=%#v", event)
 	}
-	if event.SearchQuery != "" || len(event.SearchPaths) != 1 || event.SearchPaths[0] != "internal/worker.go" {
+	if len(event.SearchPaths) != 1 || event.SearchPaths[0] != "internal/worker.go" {
 		t.Fatalf("search telemetry=%#v", event)
 	}
 	if !event.Timestamp.Equal(fixed) || event.TaskID != taskID || event.Role != string(state.WorkerRole) {
