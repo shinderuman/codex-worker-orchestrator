@@ -40,6 +40,48 @@ func TestQualitySurfaceChangeStopsBeforeReviewer(t *testing.T) {
 	}
 }
 
+func TestMissingQualitySurfaceBaselineFailsClosedWithoutReconstruction(t *testing.T) {
+	st := newStateStoreT(t)
+	var out bytes.Buffer
+	w := newWorkflowTWithOutput(t, st, &scriptedRunner{}, &out)
+	w.captureQualitySurface = func(string) (string, error) { return "current", nil }
+
+	stopped, err := w.verifyQualitySurfaceBaseline("worker-new")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !stopped {
+		t.Fatal("applicable quality surface without baseline must fail closed")
+	}
+	if st.Exists(qualitySurfaceBaselineStateKey) {
+		t.Fatal("missing baseline was reconstructed from current quality surface")
+	}
+	if st.TaskStatus() != state.TaskStatusWaitingSolReview {
+		t.Fatalf("status = %s want waiting-sol-review", st.TaskStatus())
+	}
+	if !strings.Contains(out.String(), "quality policy baselineがありません") ||
+		!strings.Contains(out.String(), "required state quality-surface-baseline is missing") {
+		t.Fatalf("missing baseline reason is not explicit: %s", out.String())
+	}
+}
+
+func TestMissingQualitySurfaceBaselineIsNoOpWhenSurfaceDoesNotApply(t *testing.T) {
+	st := newStateStoreT(t)
+	w := newWorkflowT(t, st, &scriptedRunner{})
+	w.captureQualitySurface = func(string) (string, error) { return "", nil }
+
+	stopped, err := w.verifyQualitySurfaceBaseline("worker-new")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stopped {
+		t.Fatal("non-applicable quality surface must remain a no-op")
+	}
+	if st.Exists(qualitySurfaceBaselineStateKey) {
+		t.Fatal("non-applicable quality surface created a baseline")
+	}
+}
+
 func TestCaptureQualitySurfaceDigestTracksPolicyContent(t *testing.T) {
 	root := t.TempDir()
 	runQualityGateGit(t, root, "init")
