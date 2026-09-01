@@ -90,13 +90,13 @@ func TestParentCommandAdmissionPreservesAcceptNoOpAndResetEscape(t *testing.T) {
 func TestParentCommandAdmissionStoppedTaskRequiresResume(t *testing.T) {
 	st := newParentAdmissionStore(t)
 	checkpoint := state.ResumeCheckpoint{
-		Stage:       state.ResumeStageWorker,
-		Phase:       "worker-new",
-		Role:        state.WorkerRole,
-		Model:       "opus",
-		Prompt:      "p",
-		Request:     "r",
-		RateLimited: true,
+		Stage:    state.ResumeStageWorker,
+		Phase:    "worker-new",
+		Role:     state.WorkerRole,
+		Model:    "opus",
+		Prompt:   "p",
+		Request:  "r",
+		StopKind: state.ResumeStopRateLimited,
 	}
 	if err := st.SaveResumeCheckpoint(checkpoint); err != nil {
 		t.Fatal(err)

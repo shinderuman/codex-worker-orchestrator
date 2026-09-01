@@ -65,7 +65,7 @@ func stopWorkerCallWithToolChild(t *testing.T, env *multiRepoEnv) {
 		t.Fatalf("停止後の--status = %s", statusA)
 	}
 	checkpoint := parseStateJSON(t, stateA, "resume-state.json")
-	if checkpoint["user_interrupted"] != true || checkpoint["rate_limited"] == true {
+	if checkpoint["stop_kind"] != "interrupted" {
 		t.Fatalf("停止checkpoint = %#v", checkpoint)
 	}
 	if got, ok := checkpoint["prompt"].(string); !ok || !strings.Contains(got, "STOPW1") {

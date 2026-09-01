@@ -66,14 +66,14 @@ func seedInterruptedIsolationState(t *testing.T, st *state.StateStore, checkpoin
 
 func interruptedCheckpoint() state.ResumeCheckpoint {
 	return state.ResumeCheckpoint{
-		Stage:           state.ResumeStageWorker,
-		Phase:           "worker-new",
-		Role:            state.WorkerRole,
-		Model:           "opus",
-		Effort:          "high",
-		Prompt:          "p",
-		Request:         "req",
-		UserInterrupted: true,
+		Stage:    state.ResumeStageWorker,
+		Phase:    "worker-new",
+		Role:     state.WorkerRole,
+		Model:    "opus",
+		Effort:   "high",
+		Prompt:   "p",
+		Request:  "req",
+		StopKind: state.ResumeStopInterrupted,
 	}
 }
 
@@ -93,7 +93,7 @@ func TestIsolateRejectsNonUserInterruptedState(t *testing.T) {
 			status:  state.TaskStatusInterrupted,
 			checkpoint: func() state.ResumeCheckpoint {
 				checkpoint := interruptedCheckpoint()
-				checkpoint.RateLimited = true
+				checkpoint.StopKind = state.ResumeStopRateLimited
 				return checkpoint
 			},
 		},
@@ -103,7 +103,7 @@ func TestIsolateRejectsNonUserInterruptedState(t *testing.T) {
 			status:  state.TaskStatusInterrupted,
 			checkpoint: func() state.ResumeCheckpoint {
 				checkpoint := interruptedCheckpoint()
-				checkpoint.ProviderUnavailable = true
+				checkpoint.StopKind = state.ResumeStopProviderUnavailable
 				return checkpoint
 			},
 		},
@@ -203,7 +203,7 @@ func TestIsolateCreatesWorktreeAndSymmetricRecords(t *testing.T) {
 	if st.ReadOr("worker.id", "") != "" {
 		t.Fatal("隔離操作が元taskのsessionを書き換えています")
 	}
-	if checkpoint, cerr := st.LoadResumeCheckpoint(); cerr != nil || !checkpoint.UserInterrupted {
+	if checkpoint, cerr := st.LoadResumeCheckpoint(); cerr != nil || checkpoint.StopKind != state.ResumeStopInterrupted {
 		t.Fatalf("隔離操作が元taskのcheckpointを書き換えています: %#v err=%v", checkpoint, cerr)
 	}
 	if !st.Exists("task.id") {

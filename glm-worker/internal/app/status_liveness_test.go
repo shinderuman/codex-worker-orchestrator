@@ -120,15 +120,15 @@ func TestExecuteStatusRateLimitedResumeFieldsUnchanged(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := st.SaveResumeCheckpoint(state.ResumeCheckpoint{
-		Stage:       state.ResumeStageWorker,
-		Phase:       "worker-new",
-		Role:        state.WorkerRole,
-		Model:       "opus",
-		Effort:      "high",
-		Prompt:      "p",
-		Request:     "req",
-		RateLimited: true,
-		ResetAtCST:  "2026-08-15 10:00:00",
+		Stage:      state.ResumeStageWorker,
+		Phase:      "worker-new",
+		Role:       state.WorkerRole,
+		Model:      "opus",
+		Effort:     "high",
+		Prompt:     "p",
+		Request:    "req",
+		StopKind:   state.ResumeStopRateLimited,
+		ResetAtCST: "2026-08-15 10:00:00",
 	}); err != nil {
 		t.Fatal(err)
 	}

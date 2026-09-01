@@ -41,7 +41,7 @@ func TestExecuteStatusShowsProviderUnavailable(t *testing.T) {
 		Effort:                            "high",
 		Prompt:                            "p",
 		Request:                           "req",
-		ProviderUnavailable:               true,
+		StopKind:                          state.ResumeStopProviderUnavailable,
 		ProviderUnavailableClassification: "http-503",
 		ProviderUnavailableProbes:         4,
 		ProviderUnavailableStartedAt:      startedAt,
