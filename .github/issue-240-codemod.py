@@ -11,36 +11,13 @@ def replace_exact(path: str, old: str, new: str, count: int = 1) -> None:
 
 
 replace_exact(
-    "glm-worker/internal/workflow/planfile.go",
-    "func readParentFileState(repoRoot string, name string) (state.ParentFileState, error) {\n\treturn state.CaptureParentFileState(repoRoot, name)\n}\n\nfunc readParentFileStates(repoRoot string) (state.ParentFileStates, error) {\n\treturn state.CaptureParentFileStates(repoRoot)\n}\n\n",
-    "",
+    "glm-worker/internal/workflow/workflow_test.go",
+    "\tw.captureBoundarySnapshot = func(repoRoot string) (state.GitSnapshot, error) {\n\t\tsnapshot, err := w.captureSnapshot(repoRoot)\n\t\tif err != nil {\n\t\t\treturn snapshot, err\n\t\t}\n\t\tparents := state.ParentFileStates{}\n\t\tsnapshot.ParentFiles = &parents\n\t\treturn snapshot, nil\n\t}\n",
+    "\tw.captureBoundarySnapshot = func(repoRoot string) (state.GitSnapshot, error) {\n\t\tsnapshot, err := w.captureSnapshot(repoRoot)\n\t\tif err != nil {\n\t\t\treturn snapshot, err\n\t\t}\n\t\tparents, err := state.CaptureParentFileStates(repoRoot)\n\t\tif err != nil {\n\t\t\treturn snapshot, err\n\t\t}\n\t\tsnapshot.ParentFiles = &parents\n\t\treturn snapshot, nil\n\t}\n",
 )
 
 replace_exact(
-    "glm-worker/internal/workflow/reviewer_repo_search.go",
-    "isParentManagedReviewPath(path)",
-    "state.IsParentManagedPath(path)",
-    count=2,
-)
-replace_exact(
-    "glm-worker/internal/workflow/reviewer_repo_search.go",
-    "\nfunc isParentManagedReviewPath(path string) bool {\n\treturn state.IsParentManagedPath(path)\n}\n",
-    "",
-)
-
-replace_exact(
-    "glm-worker/internal/workflow/review_resume_parent_test.go",
-    "\tstates, err := readParentFileStates(repoRoot)\n",
-    "\tstates, err := state.CaptureParentFileStates(repoRoot)\n",
-)
-
-replace_exact(
-    "glm-worker/internal/workflow/workflow.go",
-    "!w.acceptReviewResumeParentDelta(saved, current, checkpoint)",
-    "!acceptReviewResumeParentDelta(saved, current, checkpoint)",
-)
-replace_exact(
-    "glm-worker/internal/workflow/workflow.go",
-    "func (w *Workflow) acceptReviewResumeParentDelta(saved, current state.GitSnapshot, checkpoint state.ResumeCheckpoint) bool {",
-    "func acceptReviewResumeParentDelta(saved, current state.GitSnapshot, checkpoint state.ResumeCheckpoint) bool {",
+    "glm-worker/internal/workflow/execution_milestones_test.go",
+    "\tw := NewWorkflow(cfg, st, runner, io.Discard)\n\tw.captureSnapshot = func(string) (state.GitSnapshot, error) { return fixedSnapshot, nil }\n\tw.collectChangedPaths = func(string, string) ([]string, error) { return nil, nil }\n",
+    "\tw := NewWorkflow(cfg, st, runner, io.Discard)\n\tw.captureSnapshot = func(string) (state.GitSnapshot, error) { return fixedSnapshot, nil }\n\tw.captureBoundarySnapshot = func(repoRoot string) (state.GitSnapshot, error) {\n\t\tsnapshot, err := w.captureSnapshot(repoRoot)\n\t\tif err != nil {\n\t\t\treturn snapshot, err\n\t\t}\n\t\tparents, err := state.CaptureParentFileStates(repoRoot)\n\t\tif err != nil {\n\t\t\treturn snapshot, err\n\t\t}\n\t\tsnapshot.ParentFiles = &parents\n\t\treturn snapshot, nil\n\t}\n\tw.collectChangedPaths = func(string, string) ([]string, error) { return nil, nil }\n",
 )
