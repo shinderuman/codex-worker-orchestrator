@@ -42,6 +42,9 @@ func TestQualitySurfaceChangeStopsBeforeReviewer(t *testing.T) {
 
 func TestMissingQualitySurfaceBaselineFailsClosedWithoutReconstruction(t *testing.T) {
 	st := newStateStoreT(t)
+	if err := st.Remove(qualitySurfaceBaselineStateKey); err != nil {
+		t.Fatal(err)
+	}
 	var out bytes.Buffer
 	w := newWorkflowTWithOutput(t, st, &scriptedRunner{}, &out)
 	w.captureQualitySurface = func(string) (string, error) { return "current", nil }
@@ -67,6 +70,9 @@ func TestMissingQualitySurfaceBaselineFailsClosedWithoutReconstruction(t *testin
 
 func TestMissingQualitySurfaceBaselineIsNoOpWhenSurfaceDoesNotApply(t *testing.T) {
 	st := newStateStoreT(t)
+	if err := st.Remove(qualitySurfaceBaselineStateKey); err != nil {
+		t.Fatal(err)
+	}
 	w := newWorkflowT(t, st, &scriptedRunner{})
 	w.captureQualitySurface = func(string) (string, error) { return "", nil }
 
