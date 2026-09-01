@@ -10,7 +10,7 @@ func TestResumeCheckpointGuardRefEvidenceRoundTrip(t *testing.T) {
 		Role:                     ReviewerRole,
 		Model:                    "sonnet",
 		ReadOnly:                 true,
-		GuardRecoverable:         true,
+		StopKind:                 ResumeStopGuardRecoverable,
 		GuardFailure:             "git authority guard failed: after-call-mutation: refs",
 		GuardRefBeforeDigest:     "before",
 		GuardRefAfterDigest:      "after",
@@ -28,7 +28,7 @@ func TestResumeCheckpointGuardRefEvidenceRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.GuardRefBeforeDigest != "before" || got.GuardRefAfterDigest != "after" || !got.GuardRefChangesTruncated || len(got.GuardRefChanges) != 1 {
+	if got.StopKind != ResumeStopGuardRecoverable || got.GuardRefBeforeDigest != "before" || got.GuardRefAfterDigest != "after" || !got.GuardRefChangesTruncated || len(got.GuardRefChanges) != 1 {
 		t.Fatalf("guard ref evidence = %#v", got)
 	}
 	change := got.GuardRefChanges[0]
