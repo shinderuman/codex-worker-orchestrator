@@ -31,7 +31,7 @@ export PATH="$HOME/.local/bin:$PATH"
 
 - runtimeに必要なcommandの存在確認
 - `quality-tools.yml`に固定した実行用Go・lint解析用Go・lint tool versionの検証
-- `glm-worker` / `glm-parent-action` / `glm-codex-context` / `commentlint` / `harnesslint` / `merge-json`を`glm-worker` moduleからbuildして配置
+- `glm-worker` / `glm-parent-action` / `glm-codex-context` / `commentlint` / `harnesslint`を`glm-worker` moduleからbuildして配置し、`merge-json` / `plancheck`はinstall中だけbuild-dirから実行
 - `codex/`のmanaged fileを`~/.codex`へ同期し、前回manifestにのみ残るfileを削除
 - managed Codex configを既存`~/.codex/config.toml`へ反映
 - managed Claude settingsを既存`~/.claude/settings.json`へmerge

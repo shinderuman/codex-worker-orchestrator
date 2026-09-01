@@ -179,7 +179,7 @@ build_binaries() {
 install_binaries() {
 	build_dir=$1
 	mkdir -p "$bin_dir"
-	for name in glm-worker glm-parent-action glm-codex-context commentlint harnesslint merge-json; do
+	for name in glm-worker glm-parent-action glm-codex-context commentlint harnesslint; do
 		if [ -f "$bin_dir/$name" ] && cmp -s "$build_dir/$name" "$bin_dir/$name"; then
 			printf '%s: unchanged\n' "$name"
 		else
@@ -203,8 +203,9 @@ verify_claude_cli() {
 }
 
 merge_claude_settings() {
+	build_dir=$1
 	mkdir -p "$(dirname "$claude_settings")"
-	result=$("$bin_dir/merge-json" -target "$claude_settings" -fragment "$repo_root/claude/settings-managed.json")
+	result=$("$build_dir/merge-json" -target "$claude_settings" -fragment "$repo_root/claude/settings-managed.json")
 	printf 'claude settings: %s\n' "$result"
 }
 
@@ -251,7 +252,7 @@ verify_claude_cli
 install_binaries "$build_dir"
 install_codex_files
 merge_codex_config
-merge_claude_settings
+merge_claude_settings "$build_dir"
 install_pull_hook
 mkdir -p "$glm_worker_home/sessions"
 rm -rf "$build_dir"
