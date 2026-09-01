@@ -118,12 +118,14 @@ func NewWorkflow(cfg config.AppConfig, st *state.StateStore, r ModelRunner, outp
 		output:                  output,
 		captureSnapshot:         state.CaptureGitSnapshot,
 		captureBoundarySnapshot: state.CaptureRepositoryBoundarySnapshot,
-		collectChangedPaths:     collectChangedPaths,
-		now:                     time.Now,
-		sleep:                   time.Sleep,
-		jitter:                  boundedBackoffJitter,
-		qualityGate:             runRepositoryQualityGate,
-		captureQualitySurface:   captureQualitySurfaceDigest,
+		collectChangedPaths: func(repoRoot, _ string) ([]string, error) {
+			return collectTaskChangedPaths(repoRoot, st)
+		},
+		now:                   time.Now,
+		sleep:                 time.Sleep,
+		jitter:                boundedBackoffJitter,
+		qualityGate:           runRepositoryQualityGate,
+		captureQualitySurface: captureQualitySurfaceDigest,
 	}
 }
 
