@@ -38,5 +38,5 @@ production実装へ進む前に、次を対象の不確実性・変動性・継�
 
 - 既存taskをACTIVATEする前に宣言を確認し、欠けていれば該当taskへ宣言を追加してから委譲する。宣言のないtask fileはdispatch時にfail closedする。
 - 新規task生成ではこの節を最初から含める。
-- PoC結果のGo/No-Goは親Codexが行い、Goならtask fileの宣言を`status: implementation`へ書き換えてから同じtaskを再開する。
+- PoC/observation結果のGo/No-Goは親Codexが行う。Goならtask fileの宣言を`status: implementation`へ書き換えて実producer evidenceと親Go判断を記録してから通常のdecision経路で同じtaskを再開する。No-Goなら`glm-worker --handoff`の`allowed_actions`に`no-go`があることを確認し、`glm-parent-action no-go`でmodel call 0のterminal撤退にする。同じNo-Goをdecisionとしてworkerへ再送しない。観測継続なら通常のdecision経路でread-only observationを継続する。
 - `not-applicable`宣言が誤っている場合(実際には未検証外部前提を含むtask)を機械検証で絶対防止はできない。この残余riskは宣言した親Codexの判断責任であり、Sol review・escaped review検知が第二防御である。
