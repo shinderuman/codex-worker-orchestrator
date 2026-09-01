@@ -167,12 +167,8 @@ func payloadPath(stageDir, action, token string) string {
 }
 
 func validPayloadAction(action string) bool {
-	switch action {
-	case "decision", "fix", "start-milestones", "revise-milestones":
-		return true
-	default:
-		return false
-	}
+	_, ok := LookupPayloadAction(action)
+	return ok
 }
 
 func newToken() (string, error) {
