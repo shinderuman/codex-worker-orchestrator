@@ -3,6 +3,7 @@ package state
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -236,4 +237,21 @@ func (s *StateStore) ReadModelCallLogs(taskID string) ([]ModelCallLog, error) {
 		return nil, err
 	}
 	return result, nil
+}
+
+func (s *StateStore) CountFinalizedTaskCalls(taskID string) (int, error) {
+	logs, err := s.ReadModelCallLogs(taskID)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	count := 0
+	for _, log := range logs {
+		if log.CallType == CallTypeTask {
+			count++
+		}
+	}
+	return count, nil
 }

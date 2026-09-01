@@ -351,15 +351,9 @@ func bundleInFlightModelCalls(st *state.StateStore, task bundleTask) int {
 	if !task.Current || task.Stats.ModelCalls <= 0 {
 		return 0
 	}
-	logs, err := st.ReadModelCallLogs(task.ID)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return 0
-	}
-	finalized := 0
-	for _, log := range logs {
-		if log.CallType == "" || log.CallType == state.CallTypeTask {
-			finalized++
-		}
+	finalized, err := st.CountFinalizedTaskCalls(task.ID)
+	if err != nil {
+		return task.Stats.ModelCalls
 	}
 	pending := task.Stats.ModelCalls - finalized
 	if pending < 0 {

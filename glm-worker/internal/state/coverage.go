@@ -1,11 +1,6 @@
 package state
 
 import (
-	"bufio"
-	"encoding/json"
-	"errors"
-	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 )
@@ -78,7 +73,7 @@ func (s *StateStore) ComputeTelemetryCoverage(tasks []TaskStats) TelemetryCovera
 			Archived:   task.ArchivedAt != nil,
 			StatsCalls: task.ModelCalls,
 		}
-		records, err := s.countTaskCallRecords(task.TaskID)
+		records, err := s.CountFinalizedTaskCalls(task.TaskID)
 		if err != nil {
 			entry.Unreadable = true
 		} else {
@@ -105,37 +100,6 @@ func (s *StateStore) ComputeTelemetryCoverage(tasks []TaskStats) TelemetryCovera
 	}
 	coverage.UsageKnown = coverage.Status == CoverageComplete
 	return coverage
-}
-
-func (s *StateStore) countTaskCallRecords(taskID string) (int, error) {
-	file, err := os.Open(s.ModelCallLogPath(taskID))
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return 0, nil
-		}
-		return 0, err
-	}
-	defer func() { _ = file.Close() }()
-
-	count := 0
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
-	for scanner.Scan() {
-		var record struct {
-			Version  int    `json:"version"`
-			CallType string `json:"call_type"`
-		}
-		if err := json.Unmarshal(scanner.Bytes(), &record); err != nil {
-			return 0, fmt.Errorf("telemetryを読めません: %w", err)
-		}
-		if record.Version == modelCallLogVersion && record.CallType == CallTypeTask {
-			count++
-		}
-	}
-	if err := scanner.Err(); err != nil {
-		return 0, err
-	}
-	return count, nil
 }
 
 func (s *StateStore) countOrphanTelemetryFiles(known map[string]bool) int {
