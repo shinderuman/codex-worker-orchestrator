@@ -63,7 +63,7 @@ func Load() (AppConfig, error) {
 	promptDir := envOrDefault("GLM_WORKER_PROMPT_DIR", filepath.Join(home, ".codex", "glm-worker", "prompts"))
 	codexConfigDir := envOrDefault("CODEX_CONFIG_DIR", filepath.Join(home, ".codex"))
 	claudeConfigDir := envOrDefault("CLAUDE_CONFIG_DIR", filepath.Join(home, ".claude"))
-	claudeSettingsOverride := resolveClaudeSettingsOverride(home)
+	claudeSettingsOverride := claudeoverride.ResolvePath(home)
 	envAllowlist := splitEnvList(os.Getenv("GLM_WORKER_ENV_ALLOWLIST"))
 	rounds, err := intEnv("GLM_WORKER_MAX_AUTO_FIX_ROUNDS", 2)
 	if err != nil {
@@ -128,10 +128,6 @@ func envOrDefault(name string, defaultValue string) string {
 		return value
 	}
 	return defaultValue
-}
-
-func resolveClaudeSettingsOverride(home string) string {
-	return claudeoverride.ResolvePath(home)
 }
 
 func splitEnvList(raw string) []string {
