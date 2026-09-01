@@ -12,13 +12,13 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-const emptyTreeObject = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
-
 type baseline struct {
 	head          string
 	indexPatch    []byte
 	worktreePatch []byte
 }
+
+const emptyTreeObject = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 
 func Capture(repoRoot string, st *state.StateStore) ([]byte, bool, error) {
 	base, available, err := loadBaseline(st)
