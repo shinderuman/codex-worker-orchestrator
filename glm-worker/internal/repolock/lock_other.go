@@ -11,7 +11,7 @@ type Lock struct {
 func Acquire(path string) (*Lock, error) {
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
-		return nil, ErrHeld
+		return nil, ErrRepoLockHeld
 	}
 	file.Close()
 	return &Lock{path: path}, nil
