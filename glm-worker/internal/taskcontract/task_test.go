@@ -31,33 +31,3 @@ func TestValidateActiveTaskPathContract(t *testing.T) {
 		}
 	}
 }
-
-func TestActiveSectionEntriesRejectsMalformedScheduleSyntax(t *testing.T) {
-	invalid := []string{
-		"plain text",
-		"* `IMPLEMENTATION_TASKS/a.md`",
-		"+ `IMPLEMENTATION_TASKS/a.md`",
-		"1. `IMPLEMENTATION_TASKS/a.md`",
-		"- `IMPLEMENTATION_TASKS/a.md",
-		"- `IMPLEMENTATION_TASKS/a.md` suffix",
-		"- prefix `IMPLEMENTATION_TASKS/a.md`",
-		"- `a.md` `b.md`",
-	}
-	for _, line := range invalid {
-		plan := "## ACTIVE\n\n" + line + "\n\n## NEXT\n"
-		if _, err := ActiveSectionEntries(plan); err == nil {
-			t.Errorf("activeSectionEntries accepted %q", line)
-		}
-	}
-}
-
-func TestActiveSectionEntriesAcceptsCanonicalForms(t *testing.T) {
-	plan := "## ACTIVE\n\n- `IMPLEMENTATION_TASKS/a.md`\n- IMPLEMENTATION_TASKS/b.md\n\n## NEXT\n"
-	entries, err := ActiveSectionEntries(plan)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(entries) != 2 || entries[0] != "IMPLEMENTATION_TASKS/a.md" || entries[1] != "IMPLEMENTATION_TASKS/b.md" {
-		t.Fatalf("entries = %v", entries)
-	}
-}

@@ -14,11 +14,10 @@ func TestTaskCorpusScheduleStateConformance(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read %s: %v", implementationPlanFile, err)
 	}
-	activeEntries, err := taskcontract.ActiveSectionEntries(string(planBytes))
-	if err != nil || len(activeEntries) != 1 {
-		t.Fatalf("plan ACTIVE解決が成立していません: entries=%v err=%v", activeEntries, err)
+	activeTask, err := taskcontract.ParsePlanSchedule(string(planBytes)).ActiveTask()
+	if err != nil {
+		t.Fatalf("plan ACTIVE解決が成立していません: %v", err)
 	}
-	activeTask := activeEntries[0]
 	info, err := os.Stat(filepath.Join(root, filepath.FromSlash(activeTask)))
 	if err != nil {
 		t.Fatalf("planのACTIVE task file %s を確認できません: %v", activeTask, err)
