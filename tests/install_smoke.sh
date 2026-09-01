@@ -7,7 +7,7 @@ tmp=$(mktemp -d "${TMPDIR:-/tmp}/codex-install-smoke.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT HUP INT TERM
 repo="$tmp/repo"
 home="$tmp/home"
-mkdir -p "$repo" "$home/.codex" "$home/.claude" "$tmp/bin"
+mkdir -p "$repo" "$home/.codex" "$home/.claude" "$home/.local/bin" "$tmp/bin"
 rsync -a --exclude .git "$source_root/" "$repo/"
 git -C "$repo" init -q -b main
 git -C "$repo" add -A
@@ -15,6 +15,13 @@ git -C "$repo" -c user.name=install-smoke -c user.email=install-smoke@example.in
 repo_revision=$(git -C "$repo" rev-parse HEAD)
 printf '%s\n' 'local_key = "keep"' >"$home/.codex/config.toml"
 printf '%s\n' '{"permissions":{"allow":["local"]},"env":{"LOCAL":"keep","REMOVE_ME":"local"}}' >"$home/.claude/settings.json"
+cat >"$home/.local/bin/merge-json" <<'EOF_STALE_MERGE_JSON'
+#!/bin/sh
+printf '%s\n' 'stale destination merge-json must not run' >&2
+exit 99
+EOF_STALE_MERGE_JSON
+chmod +x "$home/.local/bin/merge-json"
+stale_merge_json_hash=$(shasum -a 256 "$home/.local/bin/merge-json")
 cat >"$tmp/bin/claude" <<'EOF_CLAUDE'
 #!/bin/sh
 if [ "${1:-}" = "--help" ]; then
@@ -51,9 +58,13 @@ run_install() {
 }
 
 run_install
-for binary in glm-worker glm-parent-action glm-codex-context commentlint harnesslint merge-json; do
+for binary in glm-worker glm-parent-action glm-codex-context commentlint harnesslint; do
 	test -x "$home/.local/bin/$binary"
 done
+if [ "$(shasum -a 256 "$home/.local/bin/merge-json")" != "$stale_merge_json_hash" ]; then
+	printf '%s\n' 'destination merge-json was overwritten by install' >&2
+	exit 1
+fi
 test -f "$home/.codex/AGENTS.md"
 test -f "$home/.codex/glm-worker/prompts/WORKER.md"
 grep -q '^local_key = "keep"$' "$home/.codex/config.toml"
@@ -69,6 +80,10 @@ grep -q '"LOCAL": "override"' "$home/.claude/settings.json"
 grep -q '"SMOKE_ADDED": "present"' "$home/.claude/settings.json"
 if grep -q '"REMOVE_ME"' "$home/.claude/settings.json"; then
 	printf '%s\n' 'claude local override null deletion was not applied' >&2
+	exit 1
+fi
+if [ "$(shasum -a 256 "$home/.local/bin/merge-json")" != "$stale_merge_json_hash" ]; then
+	printf '%s\n' 'destination merge-json changed during reinstall' >&2
 	exit 1
 fi
 
