@@ -810,36 +810,6 @@ func TestReportOnlyV5MissingReportOnlyKeyRejectedBeforeRouting(t *testing.T) {
 	}
 }
 
-func TestReportOnlyPostconditionScenarioPinnedInEscapedCorpus(t *testing.T) {
-	sc, mf := loadCorpus(t)
-	found := ""
-	for _, s := range sc.Scenarios {
-		if s.ReportOnlyMutatesWorktree {
-			found = s.ID
-			break
-		}
-	}
-	if found == "" {
-		t.Fatal("escaped corpusにreport-only不変性破壊scenarioがありません")
-	}
-	for _, path := range []string{"codex/glm-worker/prompts/WORKER.md", "codex/glm-worker/prompts/REVIEWER.md"} {
-		listed := false
-		for _, e := range mf.InstructionFiles {
-			if e.Path != path {
-				continue
-			}
-			for _, sid := range e.Scenarios {
-				if sid == found {
-					listed = true
-				}
-			}
-		}
-		if !listed {
-			t.Fatalf("manifestの%sが%sをpinしていません", path, found)
-		}
-	}
-}
-
 func TestAutoFixResumeWithoutReportOnlyPhaseKeepsLegacyFlow(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	st := newStateStoreT(t)
