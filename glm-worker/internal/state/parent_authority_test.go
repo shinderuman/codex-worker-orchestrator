@@ -34,10 +34,10 @@ func TestIsParentManagedPathOwnsProtectionSet(t *testing.T) {
 func TestCaptureParentFileStatesEnumeratesCurrentProtectionSetDeterministically(t *testing.T) {
 	repo := t.TempDir()
 	files := map[string]string{
-		ParentRulesFile:                       "rules\n",
-		ParentHistoryFile:                     "history\n",
-		ParentTasksDir + "/z.md":              "z\n",
-		ParentTasksDir + "/nested/a.md":       "a\n",
+		ParentRulesFile:                 "rules\n",
+		ParentHistoryFile:               "history\n",
+		ParentTasksDir + "/z.md":        "z\n",
+		ParentTasksDir + "/nested/a.md": "a\n",
 	}
 	for name, content := range files {
 		path := filepath.Join(repo, filepath.FromSlash(name))

@@ -65,14 +65,6 @@ func (s guardSurface) activeUnresolvableOutcome() string {
 	return s.outcomePrefix + "_active_unresolvable"
 }
 
-func readParentFileState(repoRoot string, name string) (state.ParentFileState, error) {
-	return state.CaptureParentFileState(repoRoot, name)
-}
-
-func readParentFileStates(repoRoot string) (state.ParentFileStates, error) {
-	return state.CaptureParentFileStates(repoRoot)
-}
-
 func parentFileChangeReason(before, after state.ParentFileState) string {
 	switch {
 	case before.Exists && after.Exists:

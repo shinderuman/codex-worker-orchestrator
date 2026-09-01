@@ -67,7 +67,7 @@ func removeRepoParentPlan(t *testing.T, repoRoot string) {
 
 func repoParentStates(t *testing.T, repoRoot string) state.ParentFileStates {
 	t.Helper()
-	states, err := readParentFileStates(repoRoot)
+	states, err := state.CaptureParentFileStates(repoRoot)
 	if err != nil {
 		t.Fatal(err)
 	}

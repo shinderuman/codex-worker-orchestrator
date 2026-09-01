@@ -2381,7 +2381,7 @@ func (w *Workflow) verifyReviewResumeSnapshot(checkpoint state.ResumeCheckpoint)
 		return true, w.failClosedSnapshot(state.SnapshotStageReviewResume, saved, state.GitSnapshot{}, "resume時snapshot取得失敗", err)
 	}
 	comparison := state.CompareGitSnapshot(saved, current, state.SnapshotStageReviewResume, "")
-	if !comparison.Matched && !w.acceptReviewResumeParentDelta(saved, current, checkpoint) {
+	if !comparison.Matched && !acceptReviewResumeParentDelta(saved, current, checkpoint) {
 		if err := w.state.SaveSnapshotComparison(comparison); err != nil {
 			return true, w.failClosedSnapshot(state.SnapshotStageReviewResume, saved, current, "snapshot comparison保存失敗", err)
 		}
@@ -2404,7 +2404,7 @@ func (w *Workflow) verifyReviewResumeSnapshot(checkpoint state.ResumeCheckpoint)
 	return false, nil
 }
 
-func (w *Workflow) acceptReviewResumeParentDelta(saved, current state.GitSnapshot, checkpoint state.ResumeCheckpoint) bool {
+func acceptReviewResumeParentDelta(saved, current state.GitSnapshot, checkpoint state.ResumeCheckpoint) bool {
 	if !reviewResumeParentBaselineMatches(saved, current) || saved.ParentFiles == nil || checkpoint.StopParentFiles == nil || current.ParentFiles == nil {
 		return false
 	}
