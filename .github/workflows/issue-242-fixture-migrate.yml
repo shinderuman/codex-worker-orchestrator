@@ -43,8 +43,10 @@ jobs:
               original = text
               for field, kind in fields.items():
                   text = re.sub(rf'\b{field}:\s*true\b', f'StopKind: {kind}', text)
+                  text = re.sub(rf'\b(\w+)\.{field}\s*=\s*true\b', rf'\1.StopKind = {kind}', text)
+                  text = re.sub(rf'\b(\w+)\.{field}\s*=\s*false\b', rf'\1.StopKind = state.ResumeStopNone', text)
                   text = re.sub(rf'!(\w+)\.{field}\b', rf'\1.StopKind != {kind}', text)
-                  text = re.sub(rf'\b(\w+)\.{field}\b', rf'\1.StopKind == {kind}', text)
+                  text = re.sub(rf'\b(\w+)\.{field}\b(?!\s*=)', rf'\1.StopKind == {kind}', text)
               if text != original:
                   path.write_text(text)
                   changed.append(str(path))
