@@ -38,3 +38,5 @@ jobs:
       - name: Full Go test suite
         working-directory: glm-worker
         run: go test ./...
+      - name: Issue 255 installer smoke
+        run: ./tests/install_smoke.sh
