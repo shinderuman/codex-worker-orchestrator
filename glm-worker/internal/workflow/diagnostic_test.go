@@ -302,7 +302,7 @@ func TestDiagnosticRecordsResumeSourceRateLimit(t *testing.T) {
 	if err := st.SaveResumeCheckpoint(state.ResumeCheckpoint{
 		Stage: state.ResumeStageWorker, Phase: "worker-new", Role: state.WorkerRole,
 		Model: "opus", Effort: "high", Prompt: "p", OriginalPrompt: "p",
-		Request: "req", RateLimited: true,
+		Request: "req", StopKind: state.ResumeStopRateLimited,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -337,7 +337,7 @@ func TestDiagnosticRecordsResumeSourceProviderUnavailable(t *testing.T) {
 	if err := st.SaveResumeCheckpoint(state.ResumeCheckpoint{
 		Stage: state.ResumeStageWorker, Phase: "worker-new", Role: state.WorkerRole,
 		Model: "opus", Effort: "high", Prompt: "p", OriginalPrompt: "p",
-		Request: "req", ProviderUnavailable: true,
+		Request: "req", StopKind: state.ResumeStopProviderUnavailable,
 		ProviderUnavailableClassification: "http-503", ProviderUnavailableProbes: 4,
 	}); err != nil {
 		t.Fatal(err)
@@ -379,7 +379,7 @@ func TestDiagnosticResumePreservesSavedHighRiskFloor(t *testing.T) {
 		Request:             "request",
 		WorkerResult:        workerResultFromBody(workerPacket()),
 		ReviewNumber:        1,
-		RateLimited:         true,
+		StopKind:            state.ResumeStopRateLimited,
 		EffectiveRisk:       "HIGH",
 		EffectiveRiskSource: "worker-declared",
 	}); err != nil {
