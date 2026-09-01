@@ -3,7 +3,7 @@ package parentaction
 type Action string
 
 type PayloadAction struct {
-	Action      Action
+	Action     Action
 	WorkerMode string
 }
 
@@ -16,19 +16,19 @@ const (
 
 var payloadActions = map[Action]PayloadAction{
 	ActionDecision: {
-		Action:      ActionDecision,
+		Action:     ActionDecision,
 		WorkerMode: "--decision-stdin",
 	},
 	ActionFix: {
-		Action:      ActionFix,
+		Action:     ActionFix,
 		WorkerMode: "--fix-stdin",
 	},
 	ActionStartMilestones: {
-		Action:      ActionStartMilestones,
+		Action:     ActionStartMilestones,
 		WorkerMode: "--execution-milestones-stdin",
 	},
 	ActionReviseMilestones: {
-		Action:      ActionReviseMilestones,
+		Action:     ActionReviseMilestones,
 		WorkerMode: "--execution-milestones-revise-stdin",
 	},
 }
