@@ -2,8 +2,6 @@ package harnesslint
 
 import "testing"
 
-const fixtureProse = "this explanatory natural language sentence exists only to restate implementation reasoning inside production runtime data and should not proliferate"
-
 func TestProductionProseDataRejectsExplanationConstants(t *testing.T) {
 	root := fixtureRoot(t)
 	writeFixture(t, root, "glm-worker/internal/x/x.go", `package x
@@ -36,20 +34,17 @@ var analysisMetadata = struct { Basis, Note, Rule string }{
 	requireRulePath(t, ruleViolations(t, root), "production-prose-data", "glm-worker/internal/x/x.go")
 }
 
-func TestProductionProseDataRejectsGenericLargeCluster(t *testing.T) {
+func TestProductionProseDataRejectsExplanationHelperReturns(t *testing.T) {
 	root := fixtureRoot(t)
 	writeFixture(t, root, "glm-worker/internal/x/x.go", `package x
-var values = []string{
-	"this long natural language value is stored as production data and repeated enough times to form an implementation explanation registry rather than bounded state one",
-	"this long natural language value is stored as production data and repeated enough times to form an implementation explanation registry rather than bounded state two",
-	"this long natural language value is stored as production data and repeated enough times to form an implementation explanation registry rather than bounded state three",
-	"this long natural language value is stored as production data and repeated enough times to form an implementation explanation registry rather than bounded state four",
-	"this long natural language value is stored as production data and repeated enough times to form an implementation explanation registry rather than bounded state five",
-	"this long natural language value is stored as production data and repeated enough times to form an implementation explanation registry rather than bounded state six",
-	"this long natural language value is stored as production data and repeated enough times to form an implementation explanation registry rather than bounded state seven",
-	"this long natural language value is stored as production data and repeated enough times to form an implementation explanation registry rather than bounded state eight",
-	"this long natural language value is stored as production data and repeated enough times to form an implementation explanation registry rather than bounded state nine",
-	"this long natural language value is stored as production data and repeated enough times to form an implementation explanation registry rather than bounded state ten",
+func primaryBasis() string {
+	return "this explanatory natural language sentence restates runtime derivation behavior instead of returning a bounded machine code"
+}
+func fallbackNote() string {
+	return "this explanatory natural language sentence restates runtime derivation behavior instead of returning a bounded machine code"
+}
+func selectionRule() string {
+	return "this explanatory natural language sentence restates runtime derivation behavior instead of returning a bounded machine code"
 }
 `)
 	requireRulePath(t, ruleViolations(t, root), "production-prose-data", "glm-worker/internal/x/x.go")
