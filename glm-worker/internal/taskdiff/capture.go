@@ -12,6 +12,8 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
+const emptyTreeObject = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+
 type baseline struct {
 	head          string
 	indexPatch    []byte
@@ -41,7 +43,7 @@ func Capture(repoRoot string, st *state.StateStore) ([]byte, bool, error) {
 }
 
 func ChangedPaths(repoRoot string, st *state.StateStore) ([]string, bool, error) {
-	base, available, err := loadBaseline(st)
+	base, available, err := loadChangedPathBaseline(st)
 	if err != nil || !available {
 		return nil, available, err
 	}
@@ -65,6 +67,20 @@ func ChangedPaths(repoRoot string, st *state.StateStore) ([]string, bool, error)
 	return paths, true, nil
 }
 
+func loadChangedPathBaseline(st *state.StateStore) (baseline, bool, error) {
+	if !st.Exists("baseline-status") {
+		return baseline{}, false, nil
+	}
+	if st.Exists("baseline-head") {
+		return loadBaseline(st)
+	}
+	indexPatch, worktreePatch, err := loadBaselinePatches(st)
+	if err != nil {
+		return baseline{}, false, err
+	}
+	return baseline{head: emptyTreeObject, indexPatch: indexPatch, worktreePatch: worktreePatch}, true, nil
+}
+
 func loadBaseline(st *state.StateStore) (baseline, bool, error) {
 	if !st.Exists("baseline-head") || !st.Exists("baseline-status") {
 		return baseline{}, false, nil
@@ -76,19 +92,27 @@ func loadBaseline(st *state.StateStore) (baseline, bool, error) {
 	if strings.TrimSpace(head) == "" {
 		return baseline{}, false, nil
 	}
-	indexPatch, err := os.ReadFile(st.Path("baseline-index.patch"))
+	indexPatch, worktreePatch, err := loadBaselinePatches(st)
 	if err != nil {
-		return baseline{}, false, fmt.Errorf("read baseline index patch: %w", err)
-	}
-	worktreePatch, err := os.ReadFile(st.Path("baseline-worktree.patch"))
-	if err != nil {
-		return baseline{}, false, fmt.Errorf("read baseline worktree patch: %w", err)
+		return baseline{}, false, err
 	}
 	return baseline{
 		head:          strings.TrimSpace(head),
 		indexPatch:    indexPatch,
 		worktreePatch: worktreePatch,
 	}, true, nil
+}
+
+func loadBaselinePatches(st *state.StateStore) ([]byte, []byte, error) {
+	indexPatch, err := os.ReadFile(st.Path("baseline-index.patch"))
+	if err != nil {
+		return nil, nil, fmt.Errorf("read baseline index patch: %w", err)
+	}
+	worktreePatch, err := os.ReadFile(st.Path("baseline-worktree.patch"))
+	if err != nil {
+		return nil, nil, fmt.Errorf("read baseline worktree patch: %w", err)
+	}
+	return indexPatch, worktreePatch, nil
 }
 
 func reconstructBaselineIndex(repoRoot string, base baseline) (string, func(), error) {
