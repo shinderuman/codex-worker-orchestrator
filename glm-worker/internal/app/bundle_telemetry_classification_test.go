@@ -2,6 +2,7 @@ package app
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
@@ -48,7 +49,11 @@ func TestBundleInFlightModelCallsUnreadableTelemetryFailsSafe(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(st.ModelCallLogPath(taskID), []byte("{not json\n"), 0o600); err != nil {
+	path := st.ModelCallLogPath(taskID)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("{not json\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
