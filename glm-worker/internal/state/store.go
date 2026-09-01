@@ -111,12 +111,13 @@ func (s *StateStore) Remove(names ...string) error {
 
 func (s *StateStore) StartNewTask() (string, error) {
 	s.ArchiveCurrentStats()
+	if err := s.Remove("task.id"); err != nil {
+		return "", err
+	}
+	if err := s.InvalidateAllSessions(); err != nil {
+		return "", err
+	}
 	if err := s.Remove(
-		"task.id",
-		"worker.id",
-		"worker.ready",
-		"reviewer.id",
-		"reviewer.ready",
 		"task.status",
 		"isolation.policy",
 		"baseline-head",
@@ -256,10 +257,7 @@ func (s *StateStore) ResetSessionsForPolicy(currentPolicy string) error {
 	if s.IsolationPolicy() == currentPolicy {
 		return nil
 	}
-	return s.Remove(
-		"worker.id", "worker.ready",
-		"reviewer.id", "reviewer.ready",
-	)
+	return s.InvalidateAllSessions()
 }
 
 func (s *StateStore) IsolationPolicy() string {

@@ -64,5 +64,5 @@ func (r *InstructionSurfaceGuardRunner) Probe(model string) (ProbeResult, error)
 }
 
 func (r *InstructionSurfaceGuardRunner) invalidateSessions() {
-	_ = r.base.state.Remove("worker.id", "worker.ready", "reviewer.id", "reviewer.ready")
+	_ = r.base.state.InvalidateAllSessions()
 }
