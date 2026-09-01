@@ -94,7 +94,7 @@ func reviewerDiffImpactPaths(paths []string) []string {
 }
 
 func isParentManagedReviewPath(path string) bool {
-	return path == state.ParentRulesFile || path == state.ParentPlanFile || path == state.ParentHistoryFile || strings.HasPrefix(path, state.ParentTasksDir+"/")
+	return state.IsParentManagedPath(path)
 }
 
 func collectReviewerDiffImpactTerms(repoRoot, baseline string, paths []string) []string {
