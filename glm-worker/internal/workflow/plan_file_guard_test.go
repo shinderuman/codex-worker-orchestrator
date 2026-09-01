@@ -944,11 +944,11 @@ func TestPlanFileContractWiring(t *testing.T) {
 		"Git indexで追跡されているのにworking treeへ存在しない場合と",
 		"Git repository内で追跡判定自体ができない場合",
 		"未追跡で最初から存在しない他repositoryおよびGit管理外directoryでは通常作業を許可",
-		"親Codex専有のtracked archive",
-		"編集・生成・削除を行わず",
-		"全文を読まず必要な見出しだけを検索して読む",
-		"planが存在するrepositoryでは",
-		"planの無い旧repositoryとhistory未作成状態の通常作業は許可",
+		"bounded exceptional record",
+		"通常task完了時にHistoryを読んだり追記したりしない",
+		"GLM worker/reviewerは編集・生成・削除せず",
+		"ACTIVE taskが明示参照した見出しだけを読む",
+		"Historyへの通常完了移行は行わない",
 	} {
 		if !strings.Contains(string(agents), want) {
 			t.Errorf("root AGENTS.mdにplan/history契約文 %qがありません", want)

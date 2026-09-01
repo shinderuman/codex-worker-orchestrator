@@ -56,6 +56,13 @@ Task 021自身のためだけに通常implementation task同等の、
 必要なanalysisが大きい場合だけworkerへread-only調査を委譲してください。
 ````
 
+- 2026-09-01 parent maintenance:
+
+````text
+IMPLEMENTATION_HISTORY.mdは通常taskの完了ledgerではなく、将来のtracked taskが明示参照する非diffのcross-task decisionだけを保持するbounded exceptional recordへ変更する。
+Task 021の棄却結果も無条件にはHistoryへ追加せず、将来の採否を実際に拘束し、current Rules/task/Git/bundleだけでは十分に表現できないdecisionだけをcompactに残す。
+````
+
 ## Purpose
 
 親Codexのdecision checkpointとして、品質証拠なしの複雑性増殖を防ぐ。
@@ -68,17 +75,20 @@ status: not-applicable
 
 - candidateごとにevidence、expected reduction、quality risk、rollbackを示す
 - 親CodexがTask 008 / 009 / 011等のartifactから採用・棄却・data不足を判定する
-- 採用変更はsemantic filenameの個別taskへ分割し、棄却はHistoryへ記録する
+- 採用変更はsemantic filenameの個別taskへ分割する
+- 棄却は通常completion ledgerへ記録しない。将来のtracked taskが採否条件として明示参照し、current Rules/task/Git/bundleだけではdecisionを十分に表現できない場合だけ、`IMPLEMENTATION_HISTORY.md`へdecision・最小根拠・再評価境界をcompactに残す
 
 ## Must not
 
 - このumbrellaをそのままGLM実装taskへ渡さない
 - 通常implementation同等のGLM implementation、独立reviewer、Sol gateを機械的に回さない。大規模analysisだけread-only workerへ委譲できる
+- 採用/棄却chronologyをHistoryへ無条件appendしない
 
 ## Acceptance criteria
 
 - candidateの採用/棄却/保留を測定結果で決定
-- 採用分は新task file、棄却はHistoryへ記録
+- 採用分は新task fileへ分離
+- 棄却decisionをHistoryへ残す場合は、将来参照するtracked task、非diff decisionである理由、再評価境界が明確である
 
 ## Historical invariants
 

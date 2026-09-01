@@ -28,7 +28,7 @@ PoC判断をHistoryだけの受動記録にせず、再評価条件が成立し�
   - Claude CLI更新によるrunner/probeの実互換障害
   - 同種CLI互換障害で親Codexの診断・修復turnが反復
   - test-only preflight / inventory / live canaryが実際のflag・help driftを検出
-- activation時は完了済みPoCのHistory証跡と該当failure evidenceを読み、runtime gateのCodex Reduction、Quality Delta、false reject、全task停止riskを再計測する
+- activation時は`IMPLEMENTATION_HISTORY.md`の`2026-08-23 Claude CLI compatibility preflight` decision recordと該当failure evidenceを読み、runtime gateのCodex Reduction、Quality Delta、false reject、全task停止riskを再計測する。PoCの通常completion証跡はGit / CIから回収する
 - trigger成立だけでproduction実装を確定せず、runtime昇格・最小採用維持・撤退を新しい証拠で判断する
 
 ## Must not
@@ -49,7 +49,7 @@ PoC判断をHistoryだけの受動記録にせず、再評価条件が成立し�
 ## Historical invariants
 
 - 完了済みPoCはruntime gate不採用・test/inventory最小採用と判断済み
-- `IMPLEMENTATION_HISTORY.md`のClaude CLI compatibility preflight完了証跡をactivation時に明示参照する
+- `IMPLEMENTATION_HISTORY.md`にはこの非diff decisionと再評価境界だけを残し、PoCのcommit / validation chronologyは複製しない
 
 ## Dependencies
 

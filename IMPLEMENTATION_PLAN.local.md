@@ -1,6 +1,6 @@
 # codex-worker-orchestrator 実装index
 
-恒久workflowは `IMPLEMENTATION_RULES.md`、個別要求は `IMPLEMENTATION_TASKS/*.md`、完了証跡とescaped原因は `IMPLEMENTATION_HISTORY.md`を正とする。このfileへtask詳細・Web GPTの評価/Issue管理状態・完了chronologyを複製しない。
+恒久workflowは `IMPLEMENTATION_RULES.md`、個別要求は `IMPLEMENTATION_TASKS/*.md`を正とする。通常taskの完了証跡はGit、CI、bundle / telemetryから回収し、`IMPLEMENTATION_HISTORY.md`は将来taskが明示参照する非diffのcross-task decisionだけを保持する。このfileへtask詳細・Web GPTの評価/Issue管理状態・完了chronologyを複製しない。
 
 ## 最上位目的
 
@@ -35,7 +35,7 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 ## 現在のGit境界
 
 - branch: `main`
-- PoC/observation terminal Go/No-Go packet契約修正を完了し、完了証跡をHistoryへ移行した。`glm-flash-reviewer-routing.md`をACTIVEへ昇格したが、ユーザー指定の停止境界に従い実行は開始していない。
-- authorization不整合調査はread-only observation、親No-Go、task commit、Plan/History同期を完了した。原因・証拠・検証案・外部修正境界はHistoryを正とする。恒久的な自動再開許可はIMPLEMENTATION_RULES.mdを正とする。
-- F1-F10 hardening、parent action/handoff、typed parent-capability validation、repo-search、Codex analysis bundle、target-repository lean context、wait instruction削減、actionable containment denial、bounded parent finalization surface、commentlint sandbox-safe launcherはcurrent mainへ統合済み。詳細なcommit・validation・escaped原因は`IMPLEMENTATION_HISTORY.md`を正とする。
+- PoC/observation terminal Go/No-Go packet契約修正はcurrent mainへ統合済み。`glm-flash-reviewer-routing.md`をACTIVEへ昇格したが、ユーザー指定の停止境界に従い実行は開始していない。
+- authorization不整合調査はread-only observationと親No-Goまで完了済み。production修正を行わない判断と外部修正境界は削除済みtask fileのGit履歴および保存bundle evidenceから回収する。恒久的な自動再開許可は`IMPLEMENTATION_RULES.md`を正とする。
+- F1-F10 hardening、parent action/handoff、typed parent-capability validation、repo-search、Codex analysis bundle、target-repository lean context、wait instruction削減、actionable containment denial、bounded parent finalization surface、commentlint sandbox-safe launcherはcurrent mainへ統合済み。詳細なcommit・validationはGit / CI、runtime・model evidenceはbundle / telemetryを正とする。
 - preserved boundary: machine-readable lifecycle、snapshot/validation authority、parent-managed metadata guard、GLM commit/push禁止、parent Codex semantic authority、normal fast-forward Git safety、Direct Codex対orchestratedのCodex Reduction / Quality Delta最上位評価を維持する。

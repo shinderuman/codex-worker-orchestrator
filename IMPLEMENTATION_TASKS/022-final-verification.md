@@ -136,6 +136,13 @@ Task 022の開始条件をdynamic invariantにしてください。
 semantic filename導入後のtaskにも自動的に適用されるcontractにしてください。
 ````
 
+- 2026-09-01 parent maintenance:
+
+````text
+IMPLEMENTATION_HISTORY.mdは通常taskの完了ledgerではなく、将来taskが明示参照する非diffのcross-task decisionだけを保持するbounded exceptional recordへ変更する。
+Original instructionの「Plan/Task/History final consistency」は、current Rules/Plan/Task authorityの整合と、残存するexceptional History recordが実際のtracked task参照と一致していることの確認として解釈する。過去taskの完了chronologyをHistoryから再読するfinal gateにはしない。
+````
+
 ## Purpose
 
 局所PASSを全体contract完了と誤認せずrelease可能性を確認する。
@@ -145,20 +152,23 @@ semantic filename導入後のtaskにも自動的に適用されるcontractにし
 - 列挙gateをfreshに実行し証跡化
 - failureを原因taskへ戻す
 - installed binary / managed instructions / source HEADの最終一致とinstalled状態での必要なproduction smokeを再監査する
+- metadata整合ではcurrent Rules / Plan / Task参照を確認し、Historyは残存exceptional decision recordとそれを明示参照するtracked taskの対応だけを確認する。ordinary completion evidenceの再読・再構築はGit / CI / bundle authorityを使い、History ledgerを要求しない
 
 ## Must not
 
 - 新機能追加、failureのその場scope拡張、無許可live Evalを行わない
+- final verificationのためにordinary completion chronologyをHistoryへ復元・追記しない
 
 ## Acceptance criteria
 
 - 全gate成功、clean worktree、metadata整合
 - installed binary / managed instructions / source HEAD一致と必要なproduction smoke
+- exceptional History recordに参照切れ・通常completion ledgerの再導入がない
 - 独立reviewer、risk/contractに応じて必要なSol品質gate、commit
 
 ## Historical invariants
 
-- 全完了証跡の必要見出し
+- ordinary completion evidenceはGit / CI / bundleから回収し、Historyは明示参照される非diff decisionだけを保持する
 
 ## Dependencies
 
