@@ -44,10 +44,6 @@ var feasibilityFieldKeys = []string{"status", "assumption", "evidence-source", "
 
 func (e *FeasibilityError) Error() string { return e.Reason }
 
-func ActiveSectionEntries(planContent string) ([]string, error) {
-	return ParsePlanSchedule(planContent).ActiveEntries()
-}
-
 func ValidateActiveTaskPath(path string) error {
 	prefix := TasksDir + "/"
 	if !strings.HasPrefix(path, prefix) {
