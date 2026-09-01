@@ -23,6 +23,7 @@ type LifecycleInconsistencyError struct {
 const (
 	ParentActionNone                  ParentAction = "none"
 	ParentActionDecision              ParentAction = "decision"
+	ParentActionNoGo                  ParentAction = "no-go"
 	ParentActionReview                ParentAction = "parent-review"
 	ParentActionAccept                ParentAction = "accept"
 	ParentActionFix                   ParentAction = "fix"
@@ -70,7 +71,14 @@ func (s *StateStore) ParentActionPlan() (ParentActionPlan, error) {
 	if stopErr != nil {
 		return ParentActionPlan{}, lifecycleInconsistency(status, stopErr.Error())
 	}
-	return parentActionPlanForStatus(status, pending, openReview, stopKind)
+	plan, err := parentActionPlanForStatus(status, pending, openReview, stopKind)
+	if err != nil {
+		return ParentActionPlan{}, err
+	}
+	if status == TaskStatusWaitingDecision && s.ObservationNoGoEligible() {
+		plan.AllowedActions = append(plan.AllowedActions, ParentActionNoGo)
+	}
+	return plan, nil
 }
 
 func parentActionPlanForStatus(status TaskStatus, pending bool, openReview, stopKind string) (ParentActionPlan, error) {
