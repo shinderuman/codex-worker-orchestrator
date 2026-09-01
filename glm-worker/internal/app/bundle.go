@@ -22,10 +22,9 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskdiff"
 )
 
-type bundleOutput struct {
+type bundleEvidenceProjection struct {
 	TaskID             string   `json:"task_id"`
 	TaskStatus         string   `json:"task_status"`
-	ArchivePath        string   `json:"archive_path"`
 	EvidenceStatus     string   `json:"evidence_status"`
 	Coverage           string   `json:"coverage"`
 	CoverageReasons    []string `json:"coverage_reasons,omitempty"`
@@ -37,25 +36,20 @@ type bundleOutput struct {
 	Unreadable         []string `json:"unreadable,omitempty"`
 }
 
+type bundleOutput struct {
+	bundleEvidenceProjection
+	ArchivePath string `json:"archive_path"`
+}
+
 type bundleManifest struct {
-	Format             string              `json:"format"`
-	TaskID             string              `json:"task_id"`
-	TaskStatus         string              `json:"task_status"`
-	CurrentTask        bool                `json:"current_task"`
-	EvidenceStatus     string              `json:"evidence_status"`
-	Coverage           string              `json:"coverage"`
-	CoverageReasons    []string            `json:"coverage_reasons,omitempty"`
-	CoverageScope      []string            `json:"coverage_scope"`
-	ClaudeSessionIDs   []string            `json:"claude_session_ids"`
-	InFlightModelCalls int                 `json:"in_flight_model_calls,omitempty"`
-	Included           []string            `json:"included"`
-	Missing            []string            `json:"missing"`
-	Unattributed       []string            `json:"unattributed,omitempty"`
-	Unreadable         []string            `json:"unreadable,omitempty"`
-	CodexEvidence      []bundleCodexSource `json:"codex_evidence,omitempty"`
-	CollectionIndex    string              `json:"collection_index,omitempty"`
-	AnalysisIndex      string              `json:"analysis_index,omitempty"`
-	CreatedAt          string              `json:"created_at"`
+	Format string `json:"format"`
+	bundleEvidenceProjection
+	CurrentTask     bool                `json:"current_task"`
+	Included        []string            `json:"included"`
+	CodexEvidence   []bundleCodexSource `json:"codex_evidence,omitempty"`
+	CollectionIndex string              `json:"collection_index,omitempty"`
+	AnalysisIndex   string              `json:"analysis_index,omitempty"`
+	CreatedAt       string              `json:"created_at"`
 }
 
 type bundleCollectedEntry struct {
@@ -168,18 +162,8 @@ func printBundle(cfg config.AppConfig, st *state.StateStore, requestedTaskID str
 	}
 
 	return writeJSON(stdout, bundleOutput{
-		TaskID:             task.ID,
-		TaskStatus:         task.Status,
-		ArchivePath:        archivePath,
-		EvidenceStatus:     summary.evidenceStatus,
-		Coverage:           summary.coverage,
-		CoverageReasons:    summary.coverageReasons,
-		CoverageScope:      bundleCoverageScope,
-		ClaudeSessionIDs:   sessionIDs,
-		InFlightModelCalls: summary.inFlightModelCalls,
-		Missing:            summary.missing,
-		Unattributed:       summary.unattributed,
-		Unreadable:         summary.unreadable,
+		bundleEvidenceProjection: summary.projection(task, sessionIDs),
+		ArchivePath:              archivePath,
 	})
 }
 
@@ -201,6 +185,22 @@ func (c *bundleCollector) evidenceSummary(st *state.StateStore, task bundleTask)
 		summary.coverageReasons = append(summary.coverageReasons, "legacy-evidence:lifecycle")
 	}
 	return summary
+}
+
+func (s bundleEvidenceSummary) projection(task bundleTask, sessionIDs []string) bundleEvidenceProjection {
+	return bundleEvidenceProjection{
+		TaskID:             task.ID,
+		TaskStatus:         task.Status,
+		EvidenceStatus:     s.evidenceStatus,
+		Coverage:           s.coverage,
+		CoverageReasons:    s.coverageReasons,
+		CoverageScope:      bundleCoverageScope,
+		ClaudeSessionIDs:   sessionIDs,
+		InFlightModelCalls: s.inFlightModelCalls,
+		Missing:            s.missing,
+		Unattributed:       s.unattributed,
+		Unreadable:         s.unreadable,
+	}
 }
 
 func (s *bundleEvidenceSummary) mergeReadability(index bundleCollectionIndex, task bundleTask) {
@@ -236,24 +236,14 @@ func bundleIndexLegacyRuntime(index bundleCollectionIndex) bool {
 
 func buildBundleManifest(collector *bundleCollector, task bundleTask, sessionIDs []string, summary bundleEvidenceSummary, codexEvidence []bundleCodexSource) bundleManifest {
 	return bundleManifest{
-		Format:             bundleFormat,
-		TaskID:             task.ID,
-		TaskStatus:         task.Status,
-		CurrentTask:        task.Current,
-		EvidenceStatus:     summary.evidenceStatus,
-		Coverage:           summary.coverage,
-		CoverageReasons:    summary.coverageReasons,
-		CoverageScope:      bundleCoverageScope,
-		ClaudeSessionIDs:   sessionIDs,
-		InFlightModelCalls: summary.inFlightModelCalls,
-		Included:           collector.includedListWithManifest(),
-		Missing:            summary.missing,
-		Unattributed:       summary.unattributed,
-		Unreadable:         summary.unreadable,
-		CodexEvidence:      codexEvidence,
-		CollectionIndex:    bundleCollectionEntryPath,
-		AnalysisIndex:      bundleAnalysisEntryPath,
-		CreatedAt:          time.Now().UTC().Format(time.RFC3339Nano),
+		Format:                   bundleFormat,
+		bundleEvidenceProjection: summary.projection(task, sessionIDs),
+		CurrentTask:              task.Current,
+		Included:                 collector.includedListWithManifest(),
+		CodexEvidence:            codexEvidence,
+		CollectionIndex:          bundleCollectionEntryPath,
+		AnalysisIndex:            bundleAnalysisEntryPath,
+		CreatedAt:                time.Now().UTC().Format(time.RFC3339Nano),
 	}
 }
 
