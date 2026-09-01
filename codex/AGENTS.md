@@ -25,7 +25,7 @@
 - GLM worker/reviewerにはGit remote write authorityを付与しない。この制約は親Codexへ適用しない。
 - 親Codexの`git push`その他remote writeは許可対象である。現在taskのユーザー指示またはrepositoryの親管理tracked instructionのscopeで実行し、追加の解除文言やcommit単位の再許可を要しない。
 - 親Codexの通常pushはfast-forwardとする。force/non-fast-forward、タグ、remote branch作成はユーザーが対象refと操作を明示した場合だけ扱う。
-- `git commit`はユーザーが明示的に依頼した場合だけ行う。明示的な依頼には同一taskへの会話上の明示指示と現在のtaskのlossless requirement source(`Original instruction`・`Amendments`・`Resolved references`・ユーザー添付指示)を含み、最新メッセージ単体のcommit語の有無だけでは判定しない。
+- `git commit`は、同一taskのユーザー明示指示、ACTIVE taskのlossless requirement、または親管理tracked instructionが通常完了の親commitを明示する場合だけ行う。本repositoryでは`IMPLEMENTATION_RULES.md`の`commit / install`が後者で、taskごとの再許可は不要。過去実績・一般継続・別task/repository・任意fileは許可にしない。
 - commit・cherry-pick・merge・rebase・revert等を行う場合だけ`~/.codex/instructions/git.md`を読む。
 
 ## 4. Sol HighとGLMの分担

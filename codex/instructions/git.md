@@ -1,6 +1,6 @@
 # Git詳細規則
 - `git diff` / `git show` / `git log`を`head` / `tail`等へパイプしない。
-- 明示的な依頼がない限り`git commit`しない。
+- 明示的な依頼またはrepositoryの明示的な通常completion contractがない限り`git commit`しない。
 - `cherry-pick` / `merge` / `rebase` / `revert`を明示的に依頼された場合、その操作に必要なコミット作成は対象。
 - コミット前に`git diff --cached`を確認する。
 - コミットメッセージはstaged diffに存在する事実だけから作る。会話履歴・推測・diffにない効果を含めない。
@@ -29,11 +29,11 @@ prefix: `feat` `fix` `refactor` `improve` `docs` `style` `test` `chore` `perf` `
 
 ## commit authorization source
 
-「明示的な依頼がない限り`git commit`しない」という安全規則は維持する。明示的な依頼は文の配置場所ではなく、現在のtaskへ適用される明示的なユーザー意思の有無で判定する。
+commit authorityは文の配置場所ではなく、現在のrepository/taskへ適用される明示的なauthorization sourceの有無で判定する。
 
-- 明示的な依頼の受理集合は、同一taskへ適用される会話上の明示的なcommit指示と、現在のACTIVE taskのlossless requirement source(`Original instruction`・`Amendments`・`Resolved references`・ユーザー添付のlossless指示)である。
-- task requirementが対象taskのcommit完了までを明示的に要求し、scope・対象repository・task境界が一意な場合は、最新メッセージ単体にcommit語がなくても既存task lifecycleを継続し、commit語の再要求だけでorchestrationを停止しない。
-- commit許可がどのsourceにも存在しない場合は従来どおりcommitしない。過去にcommitした実績だけを将来のcommit許可へ拡張せず、commit語を含まない一般的な継続指示だけを無条件のcommit許可として扱わない。
+- 受理集合は、同一taskへ適用される会話上の明示的なcommit指示、現在のACTIVE taskのlossless requirement source(`Original instruction`・`Amendments`・`Resolved references`・ユーザー添付のlossless指示)、およびrepositoryの親管理tracked instructionが現在repository/taskの通常completionとして親Codex commitを明示している場合である。
+- task requirementが対象taskのcommit完了までを明示的に要求する場合、またはrepositoryの通常completion contractがcurrent taskのreview・必要なSol gate・acceptance確認後の親commitを明示する場合は、scope・対象repository・task境界が一意なら最新メッセージ単体にcommit語がなくても既存task lifecycleを継続し、commit語の再要求だけでorchestrationを停止しない。本repositoryでは`IMPLEMENTATION_RULES.md`の`commit / install`がこの通常completion authorityである。
+- commit許可がどのsourceにも存在しない場合はcommitしない。過去にcommitした実績、commit語を含まない一般的な継続指示、parent-managed authorityとして明示されていない任意のrepository fileだけを将来のcommit許可へ拡張しない。
 - 対象task外の変更、別task・別repositoryへのcommitはこの許可に含まれない。GLM worker/reviewerにcommitさせない。
 
 ## 親CodexのGit remote write authorization
