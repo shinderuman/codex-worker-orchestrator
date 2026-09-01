@@ -45,8 +45,16 @@ func TestExecuteRepoSearchEvalAggregatesRoutesWithoutRawQueries(t *testing.T) {
 	appendRepoSearchRouteEvent(t, st, taskID, state.TaskEventRecord{
 		Role: "worker", Phase: state.RepoSearchCategoryWorkerNavigation, Seq: 1,
 		Timestamp: base, Kind: state.RepoSearchEventKind, Subtype: state.RepoSearchOutcomeSearchHit,
-		SearchQuery: "raw-query-must-not-leak", SearchPaths: []string{"a.go", "b.go"}, DurationMS: 1200,
+		SearchPaths: []string{"a.go", "b.go"}, DurationMS: 1200,
 	})
+
+	eventData, err := os.ReadFile(st.TaskEventLogPath(taskID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(eventData), "search_query") {
+		t.Fatalf("current repo-search eventがsearch_query keyを永続化しています: %s", eventData)
+	}
 
 	decoded := executeRepoSearchEval(t, st)
 
@@ -96,8 +104,8 @@ func TestExecuteRepoSearchEvalAggregatesRoutesWithoutRawQueries(t *testing.T) {
 	if err := printRepoSearchEval(st, &rendered); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(rendered.String(), "raw-query-must-not-leak") {
-		t.Fatalf("eval出力へraw queryが漏れています: %s", rendered.String())
+	if strings.Contains(rendered.String(), "search_query") {
+		t.Fatalf("eval出力へobsolete raw query fieldが漏れています: %s", rendered.String())
 	}
 }
 
