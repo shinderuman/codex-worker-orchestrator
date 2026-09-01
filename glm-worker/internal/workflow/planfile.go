@@ -270,10 +270,7 @@ func (w *Workflow) verifyParentFileAfterCall(
 
 func (w *Workflow) failClosedParentFileGuard(phase string, surface guardSurface, outcome string, reason string, cause error) error {
 	w.recordParentFileEvent(phase, surface, outcome, reason, cause)
-	if err := w.state.ClearResumeCheckpoint(); err != nil {
-		return err
-	}
-	if err := w.state.SetTaskStatus(state.TaskStatusWaitingSolReview); err != nil {
+	if err := w.state.DiscardResumeAndWaitForSolReview(); err != nil {
 		return err
 	}
 	if cause != nil {

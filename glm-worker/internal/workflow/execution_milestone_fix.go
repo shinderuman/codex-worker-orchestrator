@@ -39,11 +39,7 @@ func (w *Workflow) executeExecutionMilestoneExplicitFix(instruction, origin, acc
 	w.prepareAcceptedFixScope(acceptedScope)
 	decision := w.state.ReadOr("last-decision", "none")
 	review := w.state.ReadOr("last-review", "none")
-	if err := w.state.SetTaskStatus(state.TaskStatusActive); err != nil {
-		return err
-	}
-	w.state.RecordFix()
-	if _, err := w.state.RecordParentOutcome(state.ParentOutcomeFix, origin); err != nil {
+	if err := w.state.BeginParentFix(origin); err != nil {
 		return err
 	}
 	prompt := explicitFixPrompt(request, decision, review, instruction, activeTaskPath)

@@ -36,13 +36,7 @@ func (w *Workflow) saveGuardRecoverableState(
 	if err := w.captureGuardRecoveryRetention(&checkpoint); err != nil {
 		return err
 	}
-	if err := w.state.SaveResumeCheckpoint(checkpoint); err != nil {
-		return err
-	}
-	if err := w.state.Remove("pending-decision"); err != nil {
-		return err
-	}
-	if err := w.state.SetTaskStatus(state.TaskStatusGuardRecoverable); err != nil {
+	if err := w.state.EnterStop(checkpoint); err != nil {
 		return err
 	}
 	w.recordGuardRecoverableCall(checkpoint, execution, outputPath)

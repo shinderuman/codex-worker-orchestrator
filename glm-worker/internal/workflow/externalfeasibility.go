@@ -144,7 +144,7 @@ func (w *Workflow) gateExternalFeasibility(phase string, keepTaskStatus bool) (e
 func (w *Workflow) failClosedExternalFeasibility(phase string, outcome string, reason string, cause error, moveToWaitingSolReview bool) error {
 	w.recordParentFileEvent(phase, externalFeasibilityGuardSurface, outcome, reason, cause)
 	if moveToWaitingSolReview {
-		if err := w.state.SetTaskStatus(state.TaskStatusWaitingSolReview); err != nil {
+		if err := w.state.WaitForSolReview(); err != nil {
 			return err
 		}
 	}
@@ -233,10 +233,7 @@ func (w *Workflow) routePoCWorkerResult(workerResult packet.Result) error {
 	if err := packet.ValidateWorkerResult(result); err != nil {
 		return err
 	}
-	if err := w.state.Touch("pending-decision"); err != nil {
-		return err
-	}
-	if err := w.state.SetTaskStatus(state.TaskStatusWaitingDecision); err != nil {
+	if err := w.state.WaitForDecision(); err != nil {
 		return err
 	}
 	return w.emitResult(result)

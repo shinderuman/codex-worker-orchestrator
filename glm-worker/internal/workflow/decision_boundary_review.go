@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
 const solDecisionBoundaryReviewMarker = "SOL_DECISION_BOUNDARY_REVIEW:"
@@ -61,8 +60,8 @@ func (w *Workflow) validateReviewerDecisionBoundary() error {
 }
 
 func (w *Workflow) finishReviewerDecision(result packet.Result) error {
-	if err := w.state.Touch("pending-decision"); err != nil {
+	if err := w.state.WaitForDecision(); err != nil {
 		return err
 	}
-	return w.finishReview(state.TaskStatusWaitingDecision, result)
+	return w.emitResult(result)
 }
