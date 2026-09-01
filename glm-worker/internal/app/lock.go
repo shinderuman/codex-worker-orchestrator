@@ -13,6 +13,8 @@ type LockProbe struct {
 	PID   string
 }
 
+type RepoLock = repolock.Lock
+
 const (
 	statusNone    = "none"
 	statusPartial = "partial"
@@ -21,8 +23,6 @@ const (
 	LockFree    LockState = "free"
 	LockUnknown LockState = "unknown"
 )
-
-type RepoLock = repolock.Lock
 
 var AcquireRepoLock = repolock.Acquire
 var ErrRepoLockHeld = repolock.ErrRepoLockHeld
