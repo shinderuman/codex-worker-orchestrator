@@ -27,19 +27,20 @@ type ModelRunner interface {
 }
 
 type Workflow struct {
-	config                config.AppConfig
-	state                 *state.StateStore
-	runner                ModelRunner
-	output                io.Writer
-	temp                  string
-	captureSnapshot       func(repoRoot string) (state.GitSnapshot, error)
-	collectChangedPaths   func(repoRoot, baselineHead string) ([]string, error)
-	now                   func() time.Time
-	sleep                 func(time.Duration)
-	jitter                func(base time.Duration) time.Duration
-	qualityGate           func(root string) (harnesslint.Report, error)
-	captureQualitySurface func(root string) (string, error)
-	repoSearch            repoSearchFunc
+	config                  config.AppConfig
+	state                   *state.StateStore
+	runner                  ModelRunner
+	output                  io.Writer
+	temp                    string
+	captureSnapshot         func(repoRoot string) (state.GitSnapshot, error)
+	captureBoundarySnapshot func(repoRoot string) (state.GitSnapshot, error)
+	collectChangedPaths     func(repoRoot, baselineHead string) ([]string, error)
+	now                     func() time.Time
+	sleep                   func(time.Duration)
+	jitter                  func(base time.Duration) time.Duration
+	qualityGate             func(root string) (harnesslint.Report, error)
+	captureQualitySurface   func(root string) (string, error)
+	repoSearch              repoSearchFunc
 
 	stop *runner.StopController
 
@@ -111,17 +112,18 @@ var transientBackoffSchedule = []time.Duration{
 
 func NewWorkflow(cfg config.AppConfig, st *state.StateStore, r ModelRunner, output io.Writer) *Workflow {
 	return &Workflow{
-		config:                cfg,
-		state:                 st,
-		runner:                r,
-		output:                output,
-		captureSnapshot:       state.CaptureGitSnapshot,
-		collectChangedPaths:   collectChangedPaths,
-		now:                   time.Now,
-		sleep:                 time.Sleep,
-		jitter:                boundedBackoffJitter,
-		qualityGate:           runRepositoryQualityGate,
-		captureQualitySurface: captureQualitySurfaceDigest,
+		config:                  cfg,
+		state:                   st,
+		runner:                  r,
+		output:                  output,
+		captureSnapshot:         state.CaptureGitSnapshot,
+		captureBoundarySnapshot: state.CaptureRepositoryBoundarySnapshot,
+		collectChangedPaths:     collectChangedPaths,
+		now:                     time.Now,
+		sleep:                   time.Sleep,
+		jitter:                  boundedBackoffJitter,
+		qualityGate:             runRepositoryQualityGate,
+		captureQualitySurface:   captureQualitySurfaceDigest,
 	}
 }
 
@@ -560,7 +562,7 @@ func (w *Workflow) handleResumeRunError(_ state.ResumeCheckpoint, previous state
 	}
 	saved, loadErr := w.state.LoadResumeCheckpoint()
 	if loadErr != nil || resumeCheckpointStatus(saved) == state.TaskStatusActive {
-		previous.StopParentFiles = captureStopParentFiles(w.config.RepoRoot)
+		_ = w.attachStopRepositoryBoundary(&previous)
 		_ = w.state.SaveResumeCheckpoint(previous)
 	}
 
@@ -1483,7 +1485,7 @@ func (w *Workflow) persistRateLimitedStop(checkpoint state.ResumeCheckpoint, lim
 	checkpoint.ProviderUnavailableProbes = 0
 	checkpoint.ProviderUnavailableStartedAt = time.Time{}
 
-	checkpoint.StopParentFiles = captureStopParentFiles(w.config.RepoRoot)
+	_ = w.attachStopRepositoryBoundary(&checkpoint)
 	if err := w.state.SaveResumeCheckpoint(checkpoint); err != nil {
 		return "", err
 	}
@@ -1741,7 +1743,7 @@ func (w *Workflow) saveProviderUnavailable(checkpoint state.ResumeCheckpoint, cl
 	checkpoint.ProviderUnavailableStartedAt = recoveryStart
 	checkpoint.RateLimited = false
 
-	checkpoint.StopParentFiles = captureStopParentFiles(w.config.RepoRoot)
+	_ = w.attachStopRepositoryBoundary(&checkpoint)
 	if err := w.state.SaveResumeCheckpoint(checkpoint); err != nil {
 		return nil, err
 	}
@@ -1789,13 +1791,10 @@ func (w *Workflow) persistInterruptedStop(checkpoint state.ResumeCheckpoint, cau
 	checkpoint.ProviderUnavailableProbes = 0
 	checkpoint.ProviderUnavailableStartedAt = time.Time{}
 
-	checkpoint.StopParentFiles = captureStopParentFiles(w.config.RepoRoot)
+	_ = w.attachStopRepositoryBoundary(&checkpoint)
 
-	if snapshot, snapErr := state.CaptureGitSnapshot(w.config.RepoRoot); snapErr == nil {
-		if files, filesErr := state.CaptureStopDirtyFiles(w.config.RepoRoot); filesErr == nil {
-			checkpoint.StopGitSnapshot = &snapshot
-			checkpoint.StopDirtyFiles = files
-		}
+	if files, filesErr := state.CaptureStopDirtyFiles(w.config.RepoRoot); filesErr == nil {
+		checkpoint.StopDirtyFiles = files
 	}
 
 	_ = state.CaptureStopPatches(w.config, w.state)
@@ -2354,13 +2353,9 @@ func (w *Workflow) verifyReviewStartSnapshot() (bool, error) {
 	if err != nil {
 		return true, w.failClosedSnapshot(state.SnapshotStageReviewStart, state.GitSnapshot{}, state.GitSnapshot{}, "worker-end snapshot読込失敗", err)
 	}
-	reviewStart, err := w.captureSnapshot(w.config.RepoRoot)
+	reviewStart, err := w.captureRepositoryBoundary()
 	if err != nil {
 		return true, w.failClosedSnapshot(state.SnapshotStageReviewStart, workerEnd, state.GitSnapshot{}, "review-start snapshot取得失敗", err)
-	}
-
-	if parentStates, parentErr := readParentFileStates(w.config.RepoRoot); parentErr == nil {
-		reviewStart.ParentFiles = &parentStates
 	}
 	if err := w.state.SaveReviewStartSnapshot(reviewStart); err != nil {
 		return true, w.failClosedSnapshot(state.SnapshotStageReviewStart, workerEnd, reviewStart, "review-start snapshot保存失敗", err)
@@ -2381,12 +2376,12 @@ func (w *Workflow) verifyReviewResumeSnapshot(checkpoint state.ResumeCheckpoint)
 	if err != nil {
 		return true, w.failClosedSnapshot(state.SnapshotStageReviewResume, state.GitSnapshot{}, state.GitSnapshot{}, "review-start snapshot読込失敗", err)
 	}
-	current, err := w.captureSnapshot(w.config.RepoRoot)
+	current, err := w.captureRepositoryBoundary()
 	if err != nil {
 		return true, w.failClosedSnapshot(state.SnapshotStageReviewResume, saved, state.GitSnapshot{}, "resume時snapshot取得失敗", err)
 	}
 	comparison := state.CompareGitSnapshot(saved, current, state.SnapshotStageReviewResume, "")
-	if !comparison.Matched && !w.acceptReviewResumeParentDelta(saved, current, checkpoint) {
+	if !comparison.Matched && !acceptReviewResumeParentDelta(saved, current, checkpoint) {
 		if err := w.state.SaveSnapshotComparison(comparison); err != nil {
 			return true, w.failClosedSnapshot(state.SnapshotStageReviewResume, saved, current, "snapshot comparison保存失敗", err)
 		}
@@ -2400,9 +2395,6 @@ func (w *Workflow) verifyReviewResumeSnapshot(checkpoint state.ResumeCheckpoint)
 		return true, w.failClosedSnapshot(state.SnapshotStageReviewResume, saved, current, "snapshot comparison保存失敗", err)
 	}
 	if comparison.ParentUpdateAccepted {
-		if parentStates, parentErr := readParentFileStates(w.config.RepoRoot); parentErr == nil {
-			current.ParentFiles = &parentStates
-		}
 		if err := w.state.SaveReviewStartSnapshot(current); err != nil {
 			return true, w.failClosedSnapshot(state.SnapshotStageReviewResume, saved, current, "review-start snapshot再固定保存失敗", err)
 		}
@@ -2412,14 +2404,11 @@ func (w *Workflow) verifyReviewResumeSnapshot(checkpoint state.ResumeCheckpoint)
 	return false, nil
 }
 
-func (w *Workflow) acceptReviewResumeParentDelta(saved, current state.GitSnapshot, checkpoint state.ResumeCheckpoint) bool {
-	if !reviewResumeParentBaselineMatches(saved, current) || saved.ParentFiles == nil || checkpoint.StopParentFiles == nil {
+func acceptReviewResumeParentDelta(saved, current state.GitSnapshot, checkpoint state.ResumeCheckpoint) bool {
+	if !reviewResumeParentBaselineMatches(saved, current) || saved.ParentFiles == nil || checkpoint.StopParentFiles == nil || current.ParentFiles == nil {
 		return false
 	}
-	now, err := readParentFileStates(w.config.RepoRoot)
-	if err != nil {
-		return false
-	}
+	now := *current.ParentFiles
 	changedDuringStop := false
 	for _, path := range parentStatePaths(*saved.ParentFiles, *checkpoint.StopParentFiles, now) {
 		reviewStart := state.FindParentFileState(*saved.ParentFiles, path)

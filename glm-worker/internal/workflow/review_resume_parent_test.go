@@ -67,7 +67,7 @@ func removeRepoParentPlan(t *testing.T, repoRoot string) {
 
 func repoParentStates(t *testing.T, repoRoot string) state.ParentFileStates {
 	t.Helper()
-	states, err := readParentFileStates(repoRoot)
+	states, err := state.CaptureParentFileStates(repoRoot)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,6 +137,18 @@ func newReviewResumeWorkflow(t *testing.T, st *state.StateStore, r *scriptedRunn
 	t.Helper()
 	w := newWorkflowT(t, st, r)
 	w.output = out
+	w.captureBoundarySnapshot = func(repoRoot string) (state.GitSnapshot, error) {
+		snapshot, err := w.captureSnapshot(repoRoot)
+		if err != nil {
+			return snapshot, err
+		}
+		parents, err := state.CaptureParentFileStates(repoRoot)
+		if err != nil {
+			return snapshot, err
+		}
+		snapshot.ParentFiles = &parents
+		return snapshot, nil
+	}
 	return w
 }
 

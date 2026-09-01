@@ -35,13 +35,23 @@ func (c *queueCapturer) capture(string) (state.GitSnapshot, error) {
 }
 
 func newSnapshotWorkflow(st *state.StateStore, r *scriptedRunner, out io.Writer) *Workflow {
-	return NewWorkflow(config.AppConfig{
+	w := NewWorkflow(config.AppConfig{
 		WorkerModel:           "opus",
 		ReviewerModel:         "haiku",
 		HighRiskReviewerModel: "sonnet",
 		RoutineEffort:         "high",
 		MaxAutoFixRounds:      2,
 	}, st, r, out)
+	w.captureBoundarySnapshot = func(repoRoot string) (state.GitSnapshot, error) {
+		snapshot, err := w.captureSnapshot(repoRoot)
+		if err != nil {
+			return snapshot, err
+		}
+		parents := state.ParentFileStates{}
+		snapshot.ParentFiles = &parents
+		return snapshot, nil
+	}
+	return w
 }
 
 func workerPacket() string {

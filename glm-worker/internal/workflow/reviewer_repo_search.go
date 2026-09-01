@@ -64,7 +64,7 @@ func (w *Workflow) reviewerDiffFirstContext(request string, reviewNumber int) st
 func reviewerImpactPaths(paths []string) []string {
 	impact := make([]string, 0, len(paths))
 	for _, path := range paths {
-		if isParentManagedReviewPath(path) {
+		if state.IsParentManagedPath(path) {
 			continue
 		}
 		critical, category := IsCriticalPath(path)
@@ -85,16 +85,12 @@ func reviewerImpactPaths(paths []string) []string {
 func reviewerDiffImpactPaths(paths []string) []string {
 	filtered := make([]string, 0, len(paths))
 	for _, path := range paths {
-		if isParentManagedReviewPath(path) {
+		if state.IsParentManagedPath(path) {
 			continue
 		}
 		filtered = append(filtered, path)
 	}
 	return filtered
-}
-
-func isParentManagedReviewPath(path string) bool {
-	return path == state.ParentRulesFile || path == state.ParentPlanFile || path == state.ParentHistoryFile || strings.HasPrefix(path, state.ParentTasksDir+"/")
 }
 
 func collectReviewerDiffImpactTerms(repoRoot, baseline string, paths []string) []string {

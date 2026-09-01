@@ -27,7 +27,6 @@ func (w *Workflow) stopForQualitySurfaceApproval(checkpoint state.ResumeCheckpoi
 
 	checkpoint.QualitySurfaceApprovalPending = true
 	checkpoint.CompletedResult = &result
-	checkpoint.StopParentFiles = captureStopParentFiles(w.config.RepoRoot)
 	if err := w.captureGuardRecoveryRetention(&checkpoint); err != nil {
 		return true, err
 	}

@@ -1,11 +1,8 @@
 package workflow
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -66,78 +63,6 @@ func (s guardSurface) violationOutcome() string   { return s.outcomePrefix + "_v
 func (s guardSurface) malformedOutcome() string   { return s.outcomePrefix + "_malformed" }
 func (s guardSurface) activeUnresolvableOutcome() string {
 	return s.outcomePrefix + "_active_unresolvable"
-}
-
-func readParentFileState(repoRoot string, name string) (state.ParentFileState, error) {
-	b, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(name)))
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return state.ParentFileState{Path: name}, nil
-		}
-		return state.ParentFileState{}, fmt.Errorf("read %s: %w", name, err)
-	}
-	sum := sha256.Sum256(b)
-	return state.ParentFileState{Path: name, Exists: true, SHA256: hex.EncodeToString(sum[:])}, nil
-}
-
-func readParentFileStates(repoRoot string) (state.ParentFileStates, error) {
-	rootFiles := []string{implementationRulesFile, implementationPlanFile, implementationHistoryFile}
-	states := make(state.ParentFileStates, 0, len(rootFiles)+8)
-	for _, name := range rootFiles {
-		s, err := readParentFileState(repoRoot, name)
-		if err != nil {
-			return nil, err
-		}
-		states = append(states, s)
-	}
-	taskStates, err := readParentTaskFileStates(repoRoot)
-	if err != nil {
-		return nil, err
-	}
-	states = append(states, taskStates...)
-	sort.Slice(states, func(i, j int) bool { return states[i].Path < states[j].Path })
-	return states, nil
-}
-
-func readParentTaskFileStates(repoRoot string) (state.ParentFileStates, error) {
-	dir := filepath.Join(repoRoot, implementationTasksDir)
-	if _, err := os.Stat(dir); err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("stat %s: %w", implementationTasksDir, err)
-	}
-	var states state.ParentFileStates
-	err := filepath.WalkDir(dir, func(path string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if entry.IsDir() {
-			return nil
-		}
-		rel, relErr := filepath.Rel(repoRoot, path)
-		if relErr != nil {
-			return relErr
-		}
-		s, readErr := readParentFileState(repoRoot, filepath.ToSlash(rel))
-		if readErr != nil {
-			return readErr
-		}
-		states = append(states, s)
-		return nil
-	})
-	if err != nil {
-		return nil, fmt.Errorf("enumerate %s: %w", implementationTasksDir, err)
-	}
-	return states, nil
-}
-
-func captureStopParentFiles(repoRoot string) *state.ParentFileStates {
-	states, err := readParentFileStates(repoRoot)
-	if err != nil {
-		return nil
-	}
-	return &states
 }
 
 func parentFileChangeReason(before, after state.ParentFileState) string {
@@ -249,14 +174,14 @@ func (w *Workflow) captureParentFileGuard(role state.SessionRole) (parentFileGua
 	if role != state.WorkerRole {
 		return parentFileGuard{}, false, nil
 	}
-	plan, err := readParentFileState(w.config.RepoRoot, implementationPlanFile)
+	plan, err := state.CaptureParentFileState(w.config.RepoRoot, implementationPlanFile)
 	if err != nil {
 		return parentFileGuard{}, true, w.failClosedParentFileGuard("parent-metadata-capture", parentMetadataGuardSurface, parentMetadataGuardSurface.unavailableOutcome(), "plan file baseline取得失敗のため不変性を確認できません", err)
 	}
 	if !plan.Exists {
 		return w.captureMissingPlanGuard()
 	}
-	states, err := readParentFileStates(w.config.RepoRoot)
+	states, err := state.CaptureParentFileStates(w.config.RepoRoot)
 	if err != nil {
 		return parentFileGuard{}, true, w.failClosedParentFileGuard("parent-metadata-capture", parentMetadataGuardSurface, parentMetadataGuardSurface.unavailableOutcome(), "親管理metadata baseline取得失敗のため不変性を確認できません", err)
 	}
@@ -315,7 +240,7 @@ func (w *Workflow) verifyParentFileAfterCall(
 	if checkpoint.Role != state.WorkerRole || !before.guarded {
 		return false, nil
 	}
-	after, err := readParentFileStates(w.config.RepoRoot)
+	after, err := state.CaptureParentFileStates(w.config.RepoRoot)
 	if err != nil {
 		w.recordModelCall(checkpoint, runResult, startedAt, completedAt, parentMetadataGuardSurface.unavailableOutcome(), "", err, outputPath, callDiagnostics{})
 		return true, w.failClosedParentFileGuard(checkpoint.Phase, parentMetadataGuardSurface, parentMetadataGuardSurface.unavailableOutcome(), "親管理metadata終了状態取得失敗のため不変性を確認できません", err)

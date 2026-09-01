@@ -65,7 +65,6 @@ func (w *Workflow) guardRecoveryCheckpoint(
 	checkpoint.ProviderUnavailableStartedAt = time.Time{}
 	checkpoint.UserInterrupted = false
 	checkpoint.CompletedResult = w.completedGuardWorkerResult(checkpoint, execution.runResult)
-	checkpoint.StopParentFiles = captureStopParentFiles(w.config.RepoRoot)
 	captureGuardRefEvidence(&checkpoint, execution.runErr)
 	return checkpoint
 }
@@ -92,15 +91,13 @@ func captureGuardRefEvidence(checkpoint *state.ResumeCheckpoint, runErr error) {
 }
 
 func (w *Workflow) captureGuardRecoveryRetention(checkpoint *state.ResumeCheckpoint) error {
-	snapshot, err := state.CaptureGitSnapshot(w.config.RepoRoot)
-	if err != nil {
+	if err := w.attachStopRepositoryBoundary(checkpoint); err != nil {
 		return err
 	}
 	files, err := state.CaptureStopDirtyFiles(w.config.RepoRoot)
 	if err != nil {
 		return err
 	}
-	checkpoint.StopGitSnapshot = &snapshot
 	checkpoint.StopDirtyFiles = files
 	return nil
 }
