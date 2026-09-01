@@ -71,8 +71,8 @@ func (w *Workflow) executeExecutionMilestoneDecision(decision string) error {
 }
 
 func (w *Workflow) prepareExecutionMilestoneDecision(decision string) (executionMilestoneDecisionContext, error) {
-	if w.state.TaskStatus() != state.TaskStatusWaitingDecision || !w.state.Exists("pending-decision") {
-		return executionMilestoneDecisionContext{}, &WorkerError{Message: "no pending Sol decision for this repository"}
+	if err := w.admitParentAction(state.ParentActionDecision); err != nil {
+		return executionMilestoneDecisionContext{}, err
 	}
 	request, err := w.state.Read("last-request")
 	if err != nil {
@@ -123,6 +123,9 @@ func (w *Workflow) ExecuteResumeWithExecutionMilestones() error {
 }
 
 func (w *Workflow) executeExecutionMilestoneResume() error {
+	if err := w.admitParentAction(state.ParentActionResume); err != nil {
+		return err
+	}
 	checkpoint, decl, pocResume, err := w.loadResumeCheckpoint()
 	if err != nil {
 		return err
