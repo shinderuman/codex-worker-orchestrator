@@ -204,12 +204,7 @@ verify_claude_cli() {
 
 merge_claude_settings() {
 	mkdir -p "$(dirname "$claude_settings")"
-	override_path="${CODEX_CONFIG_CLAUDE_SETTINGS_OVERRIDE:-${XDG_CONFIG_HOME:-$HOME/.config}/codex-config/claude-settings.local.json}"
-	if [ -f "$override_path" ]; then
-		result=$("$bin_dir/merge-json" -target "$claude_settings" -fragment "$repo_root/claude/settings-managed.json" -env-override "$override_path")
-	else
-		result=$("$bin_dir/merge-json" -target "$claude_settings" -fragment "$repo_root/claude/settings-managed.json")
-	fi
+	result=$("$bin_dir/merge-json" -target "$claude_settings" -fragment "$repo_root/claude/settings-managed.json")
 	printf 'claude settings: %s\n' "$result"
 }
 
