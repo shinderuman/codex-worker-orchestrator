@@ -298,7 +298,10 @@ func newWorkflowTWithOutput(t *testing.T, st *state.StateStore, r *scriptedRunne
 		if err != nil {
 			return snapshot, err
 		}
-		parents := state.ParentFileStates{}
+		parents, err := state.CaptureParentFileStates(repoRoot)
+		if err != nil {
+			return snapshot, err
+		}
 		snapshot.ParentFiles = &parents
 		return snapshot, nil
 	}
