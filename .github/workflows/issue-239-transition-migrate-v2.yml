@@ -10,6 +10,9 @@ on:
 permissions:
   contents: write
 
+env:
+  MIGRATION_ATTEMPT: "2"
+
 jobs:
   migrate:
     runs-on: ubuntu-latest
