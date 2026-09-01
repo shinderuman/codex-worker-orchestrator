@@ -399,19 +399,20 @@ func TestContractFieldsSingleSource(t *testing.T) {
 			if err := validate(result); err != nil {
 				t.Fatalf("全契約fieldを満たす正例が拒否されました: %v", err)
 			}
-			contract := result.contractFields()
+			contract := resultFieldsForStatus(status)
 			contractKeys := make(map[string]bool, len(contract))
 			for _, field := range contract {
-				contractKeys[field.machine] = true
-				setter, ok := textFieldSetters[field.machine]
+				machine := string(field)
+				contractKeys[machine] = true
+				setter, ok := textFieldSetters[machine]
 				if !ok {
-					t.Fatalf("contractFieldsにtextFieldSetters未対応のfieldがあります: %s", field.machine)
+					t.Fatalf("resultFieldsForStatusにtextFieldSetters未対応のfieldがあります: %s", machine)
 				}
 				blanked := fullyPopulatedResult(status)
 				setter(&blanked, " ")
 				err := validate(blanked)
-				if err == nil || !IsConstraintError(err) || !strings.Contains(err.Error(), "必須field "+field.machine) {
-					t.Fatalf("%sを空にした場合の必須field errorが出ていません: %v", field.machine, err)
+				if err == nil || !IsConstraintError(err) || !strings.Contains(err.Error(), "必須field "+machine) {
+					t.Fatalf("%sを空にした場合の必須field errorが出ていません: %v", machine, err)
 				}
 			}
 			for machine, setter := range textFieldSetters {
