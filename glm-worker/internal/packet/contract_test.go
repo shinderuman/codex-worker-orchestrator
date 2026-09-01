@@ -8,11 +8,11 @@ import (
 
 func TestMachineContractStatusAndRiskVocabulary(t *testing.T) {
 	cases := []struct {
-		name       string
-		contract   machineContract
-		statuses   []Status
-		risks      []Risk
-		required   []machineField
+		name     string
+		contract machineContract
+		statuses []Status
+		risks    []Risk
+		required []machineField
 	}{
 		{
 			name:     "worker",

@@ -124,7 +124,9 @@ var statusContracts = map[Status]statusContract{
 	StatusPass: {
 		risks:        []Risk{RiskLow},
 		resultFields: reviewerResultFields,
-		invalidRisk:  func(Risk) string { return "PASSのriskはLOWにしてください。高リスクならNEEDS_SOL_REVIEWを返してください" },
+		invalidRisk: func(Risk) string {
+			return "PASSのriskはLOWにしてください。高リスクならNEEDS_SOL_REVIEWを返してください"
+		},
 	},
 	StatusFixRequired: {
 		risks:        []Risk{RiskLow, RiskHigh},
@@ -132,17 +134,13 @@ var statusContracts = map[Status]statusContract{
 		invalidRisk:  invalidLowHighRisk,
 	},
 	StatusNeedsSolReview: {
-		risks: RiskSlice(RiskHigh),
+		risks: []Risk{RiskHigh},
 		resultFields: append(
 			append([]machineField(nil), reviewerResultFields...),
 			fieldSolQuestion,
 		),
 		invalidRisk: func(Risk) string { return "NEEDS_SOL_REVIEWのriskはHIGHにしてください" },
 	},
-}
-
-func RiskSlice(values ...Risk) []Risk {
-	return values
 }
 
 type machineContract struct {

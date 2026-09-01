@@ -66,89 +66,68 @@ func stringsProperty() *propertySchema {
 	return &propertySchema{array: &arraySchema{Type: schemaTypeArray, Items: scalarSchema{Type: schemaTypeString}}}
 }
 
-func riskProperty() *propertySchema {
-	return stringProperty(string(RiskLow), string(RiskHigh))
+func schemaPropertyForField(field machineField, contract machineContract) *propertySchema {
+	spec := machineFieldSpec(field)
+	switch spec.kind {
+	case machineFieldString:
+		return stringProperty()
+	case machineFieldStrings:
+		return stringsProperty()
+	case machineFieldStatus:
+		values := make([]string, 0, len(contract.statuses))
+		for _, status := range contract.statuses {
+			values = append(values, string(status))
+		}
+		return stringProperty(values...)
+	case machineFieldRisk:
+		risks := machineContractRisks(contract)
+		values := make([]string, 0, len(risks))
+		for _, risk := range risks {
+			values = append(values, string(risk))
+		}
+		return stringProperty(values...)
+	case machineFieldParentValidationForm:
+		return stringProperty(ParentValidationGoTest, ParentValidationGoTestRace)
+	default:
+		panic(fmt.Sprintf("machine field %qのschema kindが未対応です", field))
+	}
+}
+
+func schemaForMachineContract(contract machineContract) *objectSchema {
+	properties := make(map[string]*propertySchema, len(contract.modelFields))
+	for _, field := range contract.modelFields {
+		name := string(field)
+		if _, duplicate := properties[name]; duplicate {
+			panic(fmt.Sprintf("machine contract %sでfield %qが重複しています", contract.name, field))
+		}
+		properties[name] = schemaPropertyForField(field, contract)
+	}
+	requiredFields := schemaRequiredFields(contract)
+	required := make([]string, 0, len(requiredFields))
+	for _, field := range requiredFields {
+		required = append(required, string(field))
+	}
+	return &objectSchema{
+		Type:       schemaTypeObject,
+		Properties: properties,
+		Required:   required,
+	}
 }
 
 func workerSchema() *objectSchema {
-	return &objectSchema{
-		Type: schemaTypeObject,
-		Properties: map[string]*propertySchema{
-			"status":                        stringProperty(string(StatusImplemented), string(StatusNeedsSolDecision)),
-			"risk":                          riskProperty(),
-			"summary":                       stringProperty(),
-			"requirement_coverage":          stringProperty(),
-			"tests":                         stringProperty(),
-			"unverified":                    stringProperty(),
-			"parent_validation":             stringProperty(ParentValidationGoTest, ParentValidationGoTestRace),
-			"parent_validation_working_dir": stringProperty(),
-			"decision":                      stringProperty(),
-			"evidence":                      stringProperty(),
-			"options":                       stringProperty(),
-			"recommendation":                stringProperty(),
-			"test_obligations":              stringProperty(),
-			"targets":                       stringsProperty(),
-			"artifacts":                     stringsProperty(),
-		},
-		Required: []string{"status", "risk", "targets", "artifacts"},
-	}
-}
-
-func reviewerProperties(status *propertySchema, risk *propertySchema) map[string]*propertySchema {
-	return map[string]*propertySchema{
-		"status":               status,
-		"risk":                 risk,
-		"summary":              stringProperty(),
-		"requirement_coverage": stringProperty(),
-		"invariants":           stringProperty(),
-		"test_evidence":        stringProperty(),
-		"issues":               stringProperty(),
-		"residual_risk":        stringProperty(),
-		"sol_question":         stringProperty(),
-		"decision":             stringProperty(),
-		"evidence":             stringProperty(),
-		"options":              stringProperty(),
-		"recommendation":       stringProperty(),
-		"test_obligations":     stringProperty(),
-		"targets":              stringsProperty(),
-		"artifacts":            stringsProperty(),
-	}
+	return schemaForMachineContract(workerMachineContract)
 }
 
 func reviewerSchema() *objectSchema {
-	return &objectSchema{
-		Type: schemaTypeObject,
-		Properties: reviewerProperties(
-			stringProperty(string(StatusPass), string(StatusFixRequired), string(StatusNeedsSolReview), string(StatusNeedsSolDecision)),
-			riskProperty(),
-		),
-		Required: []string{"status", "risk", "targets", "artifacts"},
-	}
+	return schemaForMachineContract(reviewerMachineContract)
 }
 
 func highFloorReviewerSchema() *objectSchema {
-	return &objectSchema{
-		Type: schemaTypeObject,
-		Properties: reviewerProperties(
-			stringProperty(string(StatusFixRequired), string(StatusNeedsSolReview), string(StatusNeedsSolDecision)),
-			riskProperty(),
-		),
-		Required: []string{"status", "risk", "targets", "artifacts"},
-	}
+	return schemaForMachineContract(highFloorReviewerMachineContract)
 }
 
 func riskFloorReviewerSchema() *objectSchema {
-	return &objectSchema{
-		Type: schemaTypeObject,
-		Properties: reviewerProperties(
-			stringProperty(string(StatusNeedsSolReview)),
-			stringProperty(string(RiskHigh)),
-		),
-		Required: []string{
-			"status", "risk", "summary", "requirement_coverage", "invariants",
-			"test_evidence", "issues", "residual_risk", "sol_question", "targets", "artifacts",
-		},
-	}
+	return schemaForMachineContract(riskFloorReviewerMachineContract)
 }
 
 func WorkerSchemaJSON() (string, error) {

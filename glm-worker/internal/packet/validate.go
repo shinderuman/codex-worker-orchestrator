@@ -51,22 +51,13 @@ func RejectCategory(err error) string {
 }
 
 func ValidateWorkerResult(result Result) error {
-	switch result.Status {
-	case StatusImplemented:
-		if result.Risk != RiskLow && result.Risk != RiskHigh {
-			return &constraintError{reason: fmt.Sprintf("riskはLOWまたはHIGHで指定してください: %q", string(result.Risk))}
-		}
-	case StatusNeedsSolDecision:
-		if result.Risk != RiskHigh {
-			return &constraintError{reason: "NEEDS_SOL_DECISIONのriskはHIGHにしてください"}
-		}
-	default:
-		return &mismatchError{reason: fmt.Sprintf("worker結果のstatusとして許容されません: %q", string(result.Status))}
+	if err := validateMachineStatusRisk(result, workerMachineContract); err != nil {
+		return err
 	}
 	if err := validateParentValidation(result); err != nil {
 		return err
 	}
-	if err := validateFields(result, result.contractFields()); err != nil {
+	if err := validateFields(result, resultFieldsForStatus(result.Status)); err != nil {
 		return err
 	}
 	return validateTargets(result)
@@ -107,40 +98,16 @@ func validateParentValidationWorkingDir(workingDir string) error {
 }
 
 func ValidateReviewerResult(result Result) error {
-	if err := validateReviewerStatusRisk(result); err != nil {
+	if err := validateMachineStatusRisk(result, reviewerMachineContract); err != nil {
 		return err
 	}
 	if result.ParentValidation != "" || result.ParentValidationWorkingDir != "" || result.ParentValidationEvidence != nil {
 		return &constraintError{reason: "reviewer結果にparent validation fieldは指定できません"}
 	}
-	if err := validateFields(result, result.contractFields()); err != nil {
+	if err := validateFields(result, resultFieldsForStatus(result.Status)); err != nil {
 		return err
 	}
 	return validateTargets(result)
-}
-
-func validateReviewerStatusRisk(result Result) error {
-	switch result.Status {
-	case StatusPass:
-		if result.Risk != RiskLow {
-			return &constraintError{reason: "PASSのriskはLOWにしてください。高リスクならNEEDS_SOL_REVIEWを返してください"}
-		}
-	case StatusFixRequired:
-		if result.Risk != RiskLow && result.Risk != RiskHigh {
-			return &constraintError{reason: fmt.Sprintf("riskはLOWまたはHIGHで指定してください: %q", string(result.Risk))}
-		}
-	case StatusNeedsSolReview:
-		if result.Risk != RiskHigh {
-			return &constraintError{reason: "NEEDS_SOL_REVIEWのriskはHIGHにしてください"}
-		}
-	case StatusNeedsSolDecision:
-		if result.Risk != RiskHigh {
-			return &constraintError{reason: "NEEDS_SOL_DECISIONのriskはHIGHにしてください"}
-		}
-	default:
-		return &mismatchError{reason: fmt.Sprintf("reviewer結果のstatusとして許容されません: %q", string(result.Status))}
-	}
-	return nil
 }
 
 func validateTargets(result Result) error {
@@ -197,17 +164,17 @@ func validateNoneTarget(result Result, hasNone bool) error {
 	return nil
 }
 
-func validateFields(result Result, fields []contractField) error {
+func validateFields(result Result, fields []machineField) error {
 	for _, field := range fields {
-		value := field.value(result)
+		value := machineFieldValue(result, field)
 		if strings.TrimSpace(value) == "" {
-			return &constraintError{reason: fmt.Sprintf("結果に必須field %sがありません", field.machine)}
+			return &constraintError{reason: fmt.Sprintf("結果に必須field %sがありません", field)}
 		}
 		if strings.ContainsAny(value, "\n\r") {
-			return &constraintError{reason: fmt.Sprintf("field %sに改行を含められません: 複数事項は同じvalue内でセミコロン区切りにしてください", field.machine)}
+			return &constraintError{reason: fmt.Sprintf("field %sに改行を含められません: 複数事項は同じvalue内でセミコロン区切りにしてください", field)}
 		}
 		if len(value) > MaxFieldBytes {
-			return &constraintError{reason: fmt.Sprintf("field %sは%d bytes以内にしてください", field.machine, MaxFieldBytes)}
+			return &constraintError{reason: fmt.Sprintf("field %sは%d bytes以内にしてください", field, MaxFieldBytes)}
 		}
 	}
 	for _, value := range append(append([]string(nil), result.Targets...), result.Artifacts...) {
