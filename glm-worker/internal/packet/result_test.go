@@ -442,7 +442,7 @@ func TestContractFieldsSingleSource(t *testing.T) {
 			}
 			wantKeys := map[string]bool{"status": true, "risk": true, "targets": true, "artifacts": true}
 			for _, field := range contract {
-				wantKeys[field.machine] = true
+				wantKeys[string(field)] = true
 			}
 			gotKeys := make(map[string]bool, len(object))
 			for key := range object {
