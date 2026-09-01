@@ -41,26 +41,31 @@ jobs:
           for path in sorted(root.glob('*_test.go')):
               text = path.read_text()
               original = text
+              # All legacy boolean keys reported by typecheck in this package are
+              # ResumeCheckpoint literals. Do not rewrite similarly named statusOutput fields.
               for field, kind in fields.items():
                   text = re.sub(rf'\b{field}:\s*true\b', f'StopKind: {kind}', text)
-                  text = re.sub(rf'\b(\w+)\.{field}\s*=\s*true\b', rf'\1.StopKind = {kind}', text)
-                  text = re.sub(rf'\b(\w+)\.{field}\s*=\s*false\b', rf'\1.StopKind = state.ResumeStopNone', text)
-                  text = re.sub(rf'!(\w+)\.{field}\b', rf'\1.StopKind != {kind}', text)
-                  text = re.sub(rf'\b(\w+)\.{field}\b(?!\s*=)', rf'\1.StopKind == {kind}', text)
+                  text = re.sub(rf'\bcheckpoint\.{field}\s*=\s*true\b', f'checkpoint.StopKind = {kind}', text)
+                  text = re.sub(rf'\bcheckpoint\.{field}\s*=\s*false\b', 'checkpoint.StopKind = state.ResumeStopNone', text)
+                  text = re.sub(rf'!checkpoint\.{field}\b', f'checkpoint.StopKind != {kind}', text)
+                  text = re.sub(rf'\bcheckpoint\.{field}\b(?!\s*=)', f'checkpoint.StopKind == {kind}', text)
               if text != original:
                   path.write_text(text)
                   changed.append(str(path))
           print('changed files:')
           print('\n'.join(changed))
 
-          legacy = re.compile(r'(?:\.(?:RateLimited|ProviderUnavailable|UserInterrupted|GuardRecoverable)\b|\b(?:RateLimited|ProviderUnavailable|UserInterrupted|GuardRecoverable):)')
+          # Fail before tests if any removed checkpoint field still appears. Output/status
+          # surfaces named RateLimited/ProviderUnavailable are intentionally excluded.
+          legacy_key = re.compile(r'\b(?:RateLimited|ProviderUnavailable|UserInterrupted|GuardRecoverable):\s*true\b')
+          legacy_checkpoint = re.compile(r'\bcheckpoint\.(?:RateLimited|ProviderUnavailable|UserInterrupted|GuardRecoverable)\b')
           leftovers = []
           for path in sorted(root.glob('*_test.go')):
               for number, line in enumerate(path.read_text().splitlines(), 1):
-                  if legacy.search(line):
+                  if legacy_key.search(line) or legacy_checkpoint.search(line):
                       leftovers.append(f'{path}:{number}:{line.strip()}')
           if leftovers:
-              print('remaining legacy stop references:')
+              print('remaining legacy checkpoint stop references:')
               print('\n'.join(leftovers))
               raise SystemExit(1)
           PY
