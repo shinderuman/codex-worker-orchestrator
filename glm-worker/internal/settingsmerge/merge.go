@@ -9,12 +9,9 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-)
 
-type envOverride struct {
-	sets    map[string]string
-	deletes []string
-}
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/claudeoverride"
+)
 
 type overrideState struct {
 	Version int                    `json:"version"`
@@ -61,7 +58,7 @@ func mergeFilesWithWriter(targetPath, fragmentPath, overridePath string, writeFn
 	if err != nil {
 		return false, fmt.Errorf("fragment JSON: %w", err)
 	}
-	override, err := parseEnvOverride(overridePath)
+	override, err := claudeoverride.Load(overridePath)
 	if err != nil {
 		return false, fmt.Errorf("env override: %w", err)
 	}
@@ -178,75 +175,15 @@ func cloneMap(value map[string]any) map[string]any {
 	return result
 }
 
-func parseEnvOverride(path string) (envOverride, error) {
-	if path == "" {
-		return envOverride{}, nil
-	}
-	data, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return envOverride{}, nil
-	}
-	if err != nil {
-		return envOverride{}, err
-	}
-	var raw any
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return envOverride{}, fmt.Errorf("override JSON: %w", err)
-	}
-	return parseEnvOverrideValue(raw)
-}
-
-func parseEnvOverrideValue(value any) (envOverride, error) {
-	raw, ok := value.(map[string]any)
-	if !ok {
-		if value == nil {
-			return envOverride{}, fmt.Errorf("override JSON: top-level nullは許可されません")
-		}
-		return envOverride{}, fmt.Errorf("override JSON: top-levelはobjectのみ許可されます")
-	}
-	for key := range raw {
-		if key != "env" {
-			return envOverride{}, fmt.Errorf("top-level key %qは許可されません (envのみ)", key)
-		}
-	}
-	envValue, ok := raw["env"]
-	if !ok {
-		return envOverride{}, nil
-	}
-	if envValue == nil {
-		return envOverride{}, fmt.Errorf("override env: nullは許可されません (objectまたは空object)")
-	}
-	entries, ok := envValue.(map[string]any)
-	if !ok {
-		return envOverride{}, fmt.Errorf("override env: objectのみ許可されます")
-	}
-	return parseEnvEntries(entries)
-}
-
-func parseEnvEntries(entries map[string]any) (envOverride, error) {
-	override := envOverride{sets: make(map[string]string, len(entries))}
-	for key, value := range entries {
-		switch typed := value.(type) {
-		case string:
-			override.sets[key] = typed
-		case nil:
-			override.deletes = append(override.deletes, key)
-		default:
-			return envOverride{}, fmt.Errorf("override env %qはstringかnullのみ許可されます", key)
-		}
-	}
-	return override, nil
-}
-
-func applyEnvPatch(target map[string]any, override envOverride) {
-	if len(override.sets) == 0 && len(override.deletes) == 0 {
+func applyEnvPatch(target map[string]any, override claudeoverride.EnvOverride) {
+	if len(override.Sets) == 0 && len(override.Deletes) == 0 {
 		return
 	}
 	env := ensureEnvMap(target)
-	for _, key := range override.deletes {
+	for _, key := range override.Deletes {
 		delete(env, key)
 	}
-	for key, value := range override.sets {
+	for key, value := range override.Sets {
 		env[key] = value
 	}
 	target["env"] = env
@@ -310,16 +247,16 @@ func restoreEnvBaselines(target map[string]any, state overrideState) {
 	target["env"] = env
 }
 
-func snapshotEnvBaselines(target map[string]any, override envOverride) overrideState {
+func snapshotEnvBaselines(target map[string]any, override claudeoverride.EnvOverride) overrideState {
 	state := overrideState{Version: overrideStateVersion, Env: map[string]envBaseline{}}
-	if len(override.sets) == 0 && len(override.deletes) == 0 {
+	if len(override.Sets) == 0 && len(override.Deletes) == 0 {
 		return state
 	}
 	env, _ := target["env"].(map[string]any)
-	for key := range override.sets {
+	for key := range override.Sets {
 		state.Env[key] = envBaselineOf(env, key)
 	}
-	for _, key := range override.deletes {
+	for _, key := range override.Deletes {
 		state.Env[key] = envBaselineOf(env, key)
 	}
 	return state
