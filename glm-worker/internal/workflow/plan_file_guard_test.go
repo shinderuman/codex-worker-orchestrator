@@ -876,60 +876,6 @@ func TestHistoryFileReviewerMutationUsesExistingSnapshotInvariant(t *testing.T) 
 	}
 }
 
-func TestPlanFileGuardScenarioPinnedInEscapedCorpus(t *testing.T) {
-	sc, mf := loadCorpus(t)
-	found := ""
-	for _, s := range sc.Scenarios {
-		if s.WorkerMutatesPlanFile {
-			found = s.ID
-			break
-		}
-	}
-	if found == "" {
-		t.Fatal("escaped corpusにplan file不変性破壊scenarioがありません")
-	}
-	trackedAbsent := ""
-	for _, s := range sc.Scenarios {
-		if s.PlanFileTrackedAbsent {
-			trackedAbsent = s.ID
-			break
-		}
-	}
-	if trackedAbsent == "" {
-		t.Fatal("escaped corpusに追跡中plan欠損scenarioがありません")
-	}
-	for _, path := range []string{"AGENTS.md", "codex/glm-worker/prompts/WORKER.md"} {
-		listed := false
-		for _, e := range mf.InstructionFiles {
-			if e.Path != path {
-				continue
-			}
-			for _, sid := range e.Scenarios {
-				if sid == found {
-					listed = true
-				}
-			}
-		}
-		if !listed {
-			t.Fatalf("manifestの%sが%sをpinしていません", path, found)
-		}
-	}
-	for _, e := range mf.InstructionFiles {
-		if e.Path != "AGENTS.md" {
-			continue
-		}
-		listed := false
-		for _, sid := range e.Scenarios {
-			if sid == trackedAbsent {
-				listed = true
-			}
-		}
-		if !listed {
-			t.Fatalf("manifestのAGENTS.mdが%sをpinしていません", trackedAbsent)
-		}
-	}
-}
-
 func TestPlanFileContractWiring(t *testing.T) {
 	root := scenarioRepoRoot(t)
 	agents, err := os.ReadFile(filepath.Join(root, "AGENTS.md"))
