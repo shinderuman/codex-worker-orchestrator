@@ -9,6 +9,16 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
+func (c *bundleCollector) collectCurrentStateDirectory(stateRoot, name string) {
+	if bundleAggregateDirs[name] || name != "quality-gate" {
+		return
+	}
+	_ = c.addUnattributedTreeIfPresent(
+		filepath.Join(stateRoot, name),
+		path.Join("current-state", "diagnostics", name),
+	)
+}
+
 func (c *bundleCollector) collectCurrentValidationDiagnostics(st *state.StateStore) {
 	stats, err := st.CurrentTaskStats()
 	if err != nil || stats.TaskID == "" || stats.StartedAt.IsZero() {
