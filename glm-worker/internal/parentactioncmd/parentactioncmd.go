@@ -23,11 +23,8 @@ import (
 const (
 	usage = "usage: glm-parent-action start | prepare <decision|fix|start-milestones|revise-milestones> | decision <token> | fix <token> [--origin <origin>] [--accepted-scope current-diff] [--approval-only] | start-milestones <token> | revise-milestones <token> | no-go | accept | resume | finalize-check <go-test|go-test-race>"
 
-	activeTaskRequest      = "現在のACTIVE taskを実行してください。"
-	actionStart            = "start"
-	actionFix              = "fix"
-	actionStartMilestones  = "start-milestones"
-	actionReviseMilestones = "revise-milestones"
+	activeTaskRequest = "現在のACTIVE taskを実行してください。"
+	actionStart       = "start"
 )
 
 func Run(args []string, stdout, stderr io.Writer) int {
@@ -72,25 +69,21 @@ func prepare(repoRoot string, args []string, stdout io.Writer) error {
 
 func execute(cfg config.AppConfig, args []string, stdout, stderr io.Writer) error {
 	action := args[0]
+	if descriptor, ok := parentaction.LookupPayloadAction(action); ok {
+		extraEnv := []string(nil)
+		if descriptor.Action == parentaction.ActionStartMilestones {
+			extraEnv = startIdentityEnv(actionStart)
+		} else if err := persistParentCodexIdentity(cfg); err != nil {
+			return err
+		}
+		return executePayloadAction(cfg.RepoRoot, descriptor, args[1:], stdout, stderr, extraEnv)
+	}
+
 	switch action {
 	case "no-go":
 		return executeNoGo(cfg, args, stdout)
 	case actionStart, "accept", "resume":
 		return executeDirectWorkerAction(cfg, action, args, stdout, stderr)
-	case actionStartMilestones:
-		return executePayloadAction(
-			cfg.RepoRoot,
-			action,
-			args[1:],
-			stdout,
-			stderr,
-			startIdentityEnv(actionStart),
-		)
-	case "decision", actionFix, actionReviseMilestones:
-		if err := persistParentCodexIdentity(cfg); err != nil {
-			return err
-		}
-		return executePayloadAction(cfg.RepoRoot, action, args[1:], stdout, stderr, nil)
 	case "finalize-check":
 		if len(args) != 2 {
 			return fmt.Errorf("usage: glm-parent-action finalize-check <go-test|go-test-race>")
@@ -150,19 +143,20 @@ func codexIdentityFromEnv() (string, string, bool) {
 
 func executePayloadAction(
 	repoRoot string,
-	action string,
+	descriptor parentaction.PayloadAction,
 	args []string,
 	stdout io.Writer,
 	stderr io.Writer,
 	extraEnv []string,
 ) error {
+	action := string(descriptor.Action)
 	if len(args) < 1 {
 		return fmt.Errorf("usage: glm-parent-action %s <token>", action)
 	}
-	if action != actionFix && len(args) != 1 {
+	if descriptor.Action != parentaction.ActionFix && len(args) != 1 {
 		return fmt.Errorf("usage: glm-parent-action %s <token>", action)
 	}
-	if action == actionFix {
+	if descriptor.Action == parentaction.ActionFix {
 		if err := validateFixOptions(args[1:]); err != nil {
 			return err
 		}
@@ -175,22 +169,13 @@ func executePayloadAction(
 	if err != nil {
 		return err
 	}
-	workerArgs := payloadWorkerArgs(action, payload, args[1:])
+	workerArgs := payloadWorkerArgs(descriptor, payload, args[1:])
 	return runResolvedWorker(worker, repoRoot, workerArgs, bytes.NewReader(payload), stdout, stderr, extraEnv)
 }
 
-func payloadWorkerArgs(action string, payload []byte, options []string) []string {
+func payloadWorkerArgs(descriptor parentaction.PayloadAction, payload []byte, options []string) []string {
 	digest := sha256.Sum256(payload)
-	mode := "--decision-stdin"
-	switch action {
-	case actionFix:
-		mode = "--fix-stdin"
-	case actionStartMilestones:
-		mode = "--execution-milestones-stdin"
-	case actionReviseMilestones:
-		mode = "--execution-milestones-revise-stdin"
-	}
-	args := []string{mode, strconv.Itoa(len(payload)), "--sha256", hex.EncodeToString(digest[:])}
+	args := []string{descriptor.WorkerMode, strconv.Itoa(len(payload)), "--sha256", hex.EncodeToString(digest[:])}
 	return append(args, options...)
 }
 
