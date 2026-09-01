@@ -71,7 +71,7 @@ func TestClassifySelfProtectionAggregatesCategories(t *testing.T) {
 	}
 }
 
-func TestCollectChangedPaths(t *testing.T) {
+func TestCollectTaskChangedPaths(t *testing.T) {
 	dir := t.TempDir()
 	runGitTest(t, dir, "init")
 	runGitTest(t, dir, "config", "user.email", "t@example.com")
@@ -80,9 +80,12 @@ func TestCollectChangedPaths(t *testing.T) {
 	runGitTest(t, dir, "add", ".")
 	runGitTest(t, dir, "commit", "-m", "base")
 	baseline := runGitTest(t, dir, "rev-parse", "HEAD")
+	st := newStateStoreT(t)
+	writeCleanTaskBaselineState(t, st, baseline)
+
 	writeGitTestFile(t, dir, "README.md", "changed")
 	writeGitTestFile(t, dir, "harnesslint", "new")
-	paths, err := collectChangedPaths(dir, baseline)
+	paths, err := collectTaskChangedPaths(dir, st)
 	if err != nil {
 		t.Fatal(err)
 	}
