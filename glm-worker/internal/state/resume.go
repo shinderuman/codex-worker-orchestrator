@@ -151,13 +151,9 @@ func (checkpoint ResumeCheckpoint) IsStopped() bool {
 	return checkpoint.StopKind.IsStopped()
 }
 
-func (checkpoint *ResumeCheckpoint) SetStopKind(kind ResumeStopKind) error {
-	if !kind.IsStopped() {
-		return fmt.Errorf("invalid resume stop kind: %q", kind)
-	}
+func (checkpoint *ResumeCheckpoint) SetStopKind(kind ResumeStopKind) {
 	checkpoint.clearStopPayload()
 	checkpoint.StopKind = kind
-	return nil
 }
 
 func (checkpoint *ResumeCheckpoint) ClearStop() {
