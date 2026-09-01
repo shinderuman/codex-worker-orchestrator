@@ -48,7 +48,7 @@ blocked taskには、
 
 ## Resolved references
 
-- Task 012の完了証跡は`IMPLEMENTATION_HISTORY.md`の`2026-08-28 Task 012 compaction threshold evaluation`を正とする。保存済み20 task・69 call中のboundaryは4 call / 4件で、trigger直前context sizeとcompaction要約costはunknownのため、現時点の採否はNo-Go。明示許可後も同形式再測定と、必要なら別契約の観測追加を先に確定する。
+- Task 012のthreshold Go/No-Go decisionは`IMPLEMENTATION_HISTORY.md`の`2026-08-28 Task 012 compaction threshold evaluation`を正とする。保存済み20 task・69 call中のboundaryは4 call / 4件で、trigger直前context sizeとcompaction要約costはunknownのため、現時点の採否はNo-Go。明示許可後も同形式再測定と、必要なら別契約の観測追加を先に確定する。Task 012の通常completion証跡はGit / CI / bundle evidenceから回収する。
 
 ## Purpose
 
