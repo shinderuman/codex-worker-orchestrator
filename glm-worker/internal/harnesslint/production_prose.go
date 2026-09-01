@@ -10,18 +10,16 @@ import (
 	"unicode/utf8"
 )
 
-const (
-	productionProseMetadataMinCount = 3
-	productionProseMetadataMinRunes = 192
-	productionProseClusterMinCount  = 10
-	productionProseClusterMinRunes  = 1200
-)
-
 type productionProseOccurrence struct {
 	position token.Position
 	target   string
 	runes    int
 }
+
+const (
+	productionProseMetadataMinCount = 3
+	productionProseMetadataMinRunes = 192
+)
 
 func scanProductionProseData(root string, paths []string) ([]Violation, error) {
 	var violations []Violation
@@ -53,13 +51,11 @@ func productionProseDataViolation(set *token.FileSet, file *ast.File, path strin
 			metadata = append(metadata, occurrence)
 		}
 	}
-	if count, runes := proseOccurrenceSize(metadata); count >= productionProseMetadataMinCount && runes >= productionProseMetadataMinRunes {
-		return proseDataViolation(path, metadata[0], count, runes, "explanation metadata"), true
+	count, runes := proseOccurrenceSize(metadata)
+	if count < productionProseMetadataMinCount || runes < productionProseMetadataMinRunes {
+		return Violation{}, false
 	}
-	if count, runes := proseOccurrenceSize(occurrences); count >= productionProseClusterMinCount && runes >= productionProseClusterMinRunes {
-		return proseDataViolation(path, occurrences[0], count, runes, "production data"), true
-	}
-	return Violation{}, false
+	return proseDataViolation(path, metadata[0], count, runes), true
 }
 
 func productionProseOccurrences(set *token.FileSet, file *ast.File) []productionProseOccurrence {
@@ -67,17 +63,21 @@ func productionProseOccurrences(set *token.FileSet, file *ast.File) []production
 	for _, declaration := range file.Decls {
 		switch typed := declaration.(type) {
 		case *ast.GenDecl:
-			if typed.Tok == token.CONST || typed.Tok == token.VAR {
-				collectProseValueSpecs(set, typed.Specs, &occurrences)
-			}
+			collectProductionProseDeclaration(set, typed, &occurrences)
 		case *ast.FuncDecl:
-			if typed.Body == nil || prosePayloadFunction(typed.Name.Name) {
-				continue
+			if typed.Body != nil && !prosePayloadFunction(typed.Name.Name) {
+				collectFunctionProseData(set, typed, &occurrences)
 			}
-			collectFunctionProseData(set, typed, &occurrences)
 		}
 	}
 	return occurrences
+}
+
+func collectProductionProseDeclaration(set *token.FileSet, declaration *ast.GenDecl, occurrences *[]productionProseOccurrence) {
+	if declaration.Tok != token.CONST && declaration.Tok != token.VAR {
+		return
+	}
+	collectProseValueSpecs(set, declaration.Specs, occurrences)
 }
 
 func collectProseValueSpecs(set *token.FileSet, specs []ast.Spec, occurrences *[]productionProseOccurrence) {
@@ -87,77 +87,96 @@ func collectProseValueSpecs(set *token.FileSet, specs []ast.Spec, occurrences *[
 			continue
 		}
 		for index, value := range valueSpec.Values {
-			target := ""
-			if len(valueSpec.Names) > 0 {
-				nameIndex := index
-				if nameIndex >= len(valueSpec.Names) {
-					nameIndex = len(valueSpec.Names) - 1
-				}
-				target = valueSpec.Names[nameIndex].Name
-			}
-			collectProseDataExpression(set, value, target, occurrences)
+			collectProseDataExpression(set, value, valueSpecTarget(valueSpec, index), occurrences)
 		}
 	}
+}
+
+func valueSpecTarget(spec *ast.ValueSpec, index int) string {
+	if len(spec.Names) == 0 {
+		return ""
+	}
+	if index >= len(spec.Names) {
+		index = len(spec.Names) - 1
+	}
+	return spec.Names[index].Name
 }
 
 func collectFunctionProseData(set *token.FileSet, function *ast.FuncDecl, occurrences *[]productionProseOccurrence) {
 	ast.Inspect(function.Body, func(node ast.Node) bool {
 		switch typed := node.(type) {
 		case *ast.AssignStmt:
-			for index, value := range typed.Rhs {
-				target := function.Name.Name
-				if index < len(typed.Lhs) {
-					target = expressionTarget(typed.Lhs[index], target)
-				}
-				collectProseDataExpression(set, value, target, occurrences)
-			}
+			collectAssignmentProse(set, function.Name.Name, typed, occurrences)
 		case *ast.DeclStmt:
-			if declaration, ok := typed.Decl.(*ast.GenDecl); ok && (declaration.Tok == token.CONST || declaration.Tok == token.VAR) {
-				collectProseValueSpecs(set, declaration.Specs, occurrences)
-			}
+			collectDeclarationStatementProse(set, typed, occurrences)
 		case *ast.ReturnStmt:
-			for _, value := range typed.Results {
-				collectProseDataExpression(set, value, function.Name.Name, occurrences)
-			}
+			collectReturnProse(set, function.Name.Name, typed, occurrences)
 		}
 		return true
 	})
 }
 
+func collectAssignmentProse(set *token.FileSet, fallback string, assignment *ast.AssignStmt, occurrences *[]productionProseOccurrence) {
+	for index, value := range assignment.Rhs {
+		target := fallback
+		if index < len(assignment.Lhs) {
+			target = expressionTarget(assignment.Lhs[index], fallback)
+		}
+		collectProseDataExpression(set, value, target, occurrences)
+	}
+}
+
+func collectDeclarationStatementProse(set *token.FileSet, statement *ast.DeclStmt, occurrences *[]productionProseOccurrence) {
+	declaration, ok := statement.Decl.(*ast.GenDecl)
+	if !ok {
+		return
+	}
+	collectProductionProseDeclaration(set, declaration, occurrences)
+}
+
+func collectReturnProse(set *token.FileSet, target string, statement *ast.ReturnStmt, occurrences *[]productionProseOccurrence) {
+	for _, value := range statement.Results {
+		collectProseDataExpression(set, value, target, occurrences)
+	}
+}
+
 func collectProseDataExpression(set *token.FileSet, expression ast.Expr, target string, occurrences *[]productionProseOccurrence) {
 	switch typed := expression.(type) {
 	case *ast.BasicLit:
-		if typed.Kind != token.STRING {
-			return
-		}
-		value, err := strconv.Unquote(typed.Value)
-		if err != nil || !proseLike(value) {
-			return
-		}
-		*occurrences = append(*occurrences, productionProseOccurrence{
-			position: set.Position(typed.Pos()),
-			target:   target,
-			runes:    utf8.RuneCountInString(value),
-		})
+		collectProseLiteral(set, typed, target, occurrences)
 	case *ast.BinaryExpr:
 		collectProseDataExpression(set, typed.X, target, occurrences)
 		collectProseDataExpression(set, typed.Y, target, occurrences)
 	case *ast.ParenExpr:
 		collectProseDataExpression(set, typed.X, target, occurrences)
 	case *ast.CompositeLit:
-		for _, element := range typed.Elts {
-			if keyed, ok := element.(*ast.KeyValueExpr); ok {
-				key := expressionTarget(keyed.Key, "")
-				collectProseDataExpression(set, keyed.Value, combineTargets(target, key), occurrences)
-				continue
-			}
-			expression, ok := element.(ast.Expr)
-			if ok {
-				collectProseDataExpression(set, expression, target, occurrences)
-			}
-		}
-	case *ast.CallExpr, *ast.FuncLit:
+		collectCompositeProse(set, typed, target, occurrences)
+	}
+}
+
+func collectProseLiteral(set *token.FileSet, literal *ast.BasicLit, target string, occurrences *[]productionProseOccurrence) {
+	if literal.Kind != token.STRING {
 		return
+	}
+	value, err := strconv.Unquote(literal.Value)
+	if err != nil || !proseLike(value) {
+		return
+	}
+	*occurrences = append(*occurrences, productionProseOccurrence{
+		position: set.Position(literal.Pos()),
+		target:   target,
+		runes:    utf8.RuneCountInString(value),
+	})
+}
+
+func collectCompositeProse(set *token.FileSet, composite *ast.CompositeLit, target string, occurrences *[]productionProseOccurrence) {
+	for _, element := range composite.Elts {
+		if keyed, ok := element.(*ast.KeyValueExpr); ok {
+			key := expressionTarget(keyed.Key, "")
+			collectProseDataExpression(set, keyed.Value, combineTargets(target, key), occurrences)
+			continue
+		}
+		collectProseDataExpression(set, element, target, occurrences)
 	}
 }
 
@@ -168,13 +187,21 @@ func expressionTarget(expression ast.Expr, fallback string) string {
 	case *ast.SelectorExpr:
 		return typed.Sel.Name
 	case *ast.BasicLit:
-		if typed.Kind == token.STRING {
-			if value, err := strconv.Unquote(typed.Value); err == nil {
-				return value
-			}
-		}
+		return literalTarget(typed, fallback)
+	default:
+		return fallback
 	}
-	return fallback
+}
+
+func literalTarget(literal *ast.BasicLit, fallback string) string {
+	if literal.Kind != token.STRING {
+		return fallback
+	}
+	value, err := strconv.Unquote(literal.Value)
+	if err != nil {
+		return fallback
+	}
+	return value
 }
 
 func combineTargets(parent, child string) string {
@@ -209,15 +236,15 @@ func proseOccurrenceSize(occurrences []productionProseOccurrence) (int, int) {
 	return len(occurrences), runes
 }
 
-func proseDataViolation(path string, first productionProseOccurrence, count, runes int, role string) Violation {
+func proseDataViolation(path string, first productionProseOccurrence, count, runes int) Violation {
 	return Violation{
 		Rule:   "production-prose-data",
 		Path:   path,
 		Line:   first.position.Line,
 		Column: first.position.Column,
 		Message: fmt.Sprintf(
-			"%s contains %d long natural-language literals (%d runes) as %s; keep production state structural instead of accumulating explanatory prose",
-			first.target, count, runes, role,
+			"%s contains %d long natural-language literals (%d runes) as explanation metadata; keep production state structural instead of accumulating explanatory prose",
+			first.target, count, runes,
 		),
 	}
 }
