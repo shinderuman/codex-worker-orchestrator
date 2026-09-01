@@ -179,13 +179,13 @@ func resumePrompt(checkpoint state.ResumeCheckpoint) string {
 	if originalPrompt == "" {
 		originalPrompt = checkpoint.Prompt
 	}
-	if checkpoint.GuardRecoverable {
+	if checkpoint.StopKind == state.ResumeStopGuardRecoverable {
 		return guardRecoveryResumePrompt(originalPrompt)
 	}
 
 	reason := "Z.ai GLM Coding Planの5時間利用上限"
 	reasonCode := "plan-limit"
-	if checkpoint.ProviderUnavailable {
+	if checkpoint.StopKind == state.ResumeStopProviderUnavailable {
 		reason = "一時的なprovider障害"
 		reasonCode = "provider-unavailable"
 	}
