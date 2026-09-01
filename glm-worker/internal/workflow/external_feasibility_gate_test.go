@@ -411,7 +411,7 @@ func TestExternalFeasibilityReviewResumeGateFailsClosed(t *testing.T) {
 		Request:        "request",
 		WorkerResult:   workerResult,
 		ReviewNumber:   1,
-		RateLimited:    true,
+		StopKind:       state.ResumeStopRateLimited,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -429,7 +429,7 @@ func TestExternalFeasibilityReviewResumeGateFailsClosed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("拒否後にresume checkpointが保持されているべきです: %v", err)
 	}
-	if !saved.RateLimited || saved.WorkerResult == nil || saved.WorkerResult.Status != workerResult.Status || saved.WorkerResult.Summary != workerResult.Summary {
+	if saved.StopKind != state.ResumeStopRateLimited || saved.WorkerResult == nil || saved.WorkerResult.Status != workerResult.Status || saved.WorkerResult.Summary != workerResult.Summary {
 		t.Fatalf("拒否がreviewer resumeのcheckpoint内容を壊しています: %+v", saved)
 	}
 }
@@ -453,7 +453,7 @@ func TestExternalFeasibilityResumeGateFailsClosedBeforeProbe(t *testing.T) {
 		Prompt:                            "p",
 		OriginalPrompt:                    "p",
 		Request:                           "request",
-		ProviderUnavailable:               true,
+		StopKind:                          state.ResumeStopProviderUnavailable,
 		ProviderUnavailableClassification: "http_503",
 		ProviderUnavailableStartedAt:      time.Now().UTC(),
 	}); err != nil {
@@ -473,7 +473,7 @@ func TestExternalFeasibilityResumeGateFailsClosedBeforeProbe(t *testing.T) {
 		t.Fatalf("宣言gate拒否時はprobeも実行しない: %d", len(r.probes))
 	}
 	saved, err := st.LoadResumeCheckpoint()
-	if err != nil || !saved.ProviderUnavailable {
+	if err != nil || saved.StopKind != state.ResumeStopProviderUnavailable {
 		t.Fatalf("拒否後にresume checkpointが保持されているべきです: %v %+v", err, saved)
 	}
 }
@@ -511,7 +511,7 @@ func TestExternalFeasibilityInterruptedResumeRejectThenRepairResumes(t *testing.
 		t.Fatalf("拒否後のtask status = %q want interrupted(停止理由を保持)", st.TaskStatus())
 	}
 	saved, err := st.LoadResumeCheckpoint()
-	if err != nil || !saved.UserInterrupted || saved.StopGitSnapshot == nil {
+	if err != nil || saved.StopKind != state.ResumeStopInterrupted || saved.StopGitSnapshot == nil {
 		t.Fatalf("拒否後にinterrupted checkpointと保持基準が残っているべきです: %v %+v", err, saved)
 	}
 	pkt := lastPacketFromOutput(t, rejectOut.String())
@@ -555,7 +555,7 @@ func TestExternalFeasibilityPoCResumeUsesSavedSnapshot(t *testing.T) {
 		Prompt:         "p",
 		OriginalPrompt: "p",
 		Request:        "request",
-		RateLimited:    true,
+		StopKind:       state.ResumeStopRateLimited,
 		ReadOnly:       true,
 	}); err != nil {
 		t.Fatal(err)
@@ -610,7 +610,7 @@ func TestExternalFeasibilityPoCResumeWithoutSnapshotFailsClosed(t *testing.T) {
 		Prompt:         "p",
 		OriginalPrompt: "p",
 		Request:        "request",
-		RateLimited:    true,
+		StopKind:       state.ResumeStopRateLimited,
 		ReadOnly:       true,
 	}); err != nil {
 		t.Fatal(err)
