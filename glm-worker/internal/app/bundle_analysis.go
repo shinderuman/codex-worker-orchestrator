@@ -21,20 +21,48 @@ type bundleAnalysisIndex struct {
 	TaskID         string                    `json:"task_id"`
 	TaskStatus     string                    `json:"task_status"`
 	GeneratedAt    string                    `json:"generated_at"`
-	Window         bundleAnalysisWindow      `json:"window"`
+	Intervals      bundleAnalysisIntervals   `json:"intervals"`
 	ParentSession  bundleAnalysisParent      `json:"parent_session"`
 	RolloutWindow  bundleAnalysisRollout     `json:"parent_rollout_window"`
 	WaitCalls      bundleAnalysisCount       `json:"parent_wait_calls"`
 	TokenDelta     bundleAnalysisTokenDelta  `json:"parent_token_delta"`
+	Finalization   bundleAnalysisTokenDelta  `json:"parent_finalization"`
 	ValidationRuns bundleAnalysisValidations `json:"validation_runs"`
 	Retries        bundleAnalysisRetries     `json:"retries"`
 	Evidence       bundleAnalysisEvidence    `json:"evidence"`
 }
 
-type bundleAnalysisWindow struct {
-	Start    string `json:"start"`
-	End      string `json:"end"`
-	EndBasis string `json:"end_basis"`
+type bundleAnalysisIntervals struct {
+	TaskExecution      bundleAnalysisInterval    `json:"task_execution"`
+	ParentFinalization bundleAnalysisInterval    `json:"parent_finalization"`
+	SubsequentRequests bundleAnalysisSubsequents `json:"subsequent_requests"`
+	Collection         bundleAnalysisInterval    `json:"collection"`
+}
+
+type bundleAnalysisInterval struct {
+	Status   string  `json:"status"`
+	Start    *string `json:"start"`
+	End      *string `json:"end"`
+	EndBasis string  `json:"end_basis,omitempty"`
+	Basis    string  `json:"basis"`
+}
+
+type bundleAnalysisSubsequents struct {
+	Status      string                         `json:"status"`
+	Attribution string                         `json:"attribution"`
+	Turns       []bundleAnalysisSubsequentTurn `json:"turns,omitempty"`
+	Basis       string                         `json:"basis"`
+}
+
+type bundleAnalysisSubsequentTurn struct {
+	TurnID            string  `json:"turn_id"`
+	Status            string  `json:"status"`
+	StartedAt         string  `json:"started_at"`
+	CompletedAt       *string `json:"completed_at"`
+	InputTokens       int64   `json:"input_tokens,omitempty"`
+	CachedInputTokens int64   `json:"cached_input_tokens,omitempty"`
+	BaselineAt        string  `json:"baseline_at,omitempty"`
+	EndAt             string  `json:"end_at,omitempty"`
 }
 
 type bundleAnalysisParent struct {
@@ -115,22 +143,32 @@ type bundleAnalysisEvidenceRef struct {
 	Basis       string `json:"basis"`
 }
 
-type bundleRolloutWindowScan struct {
-	totalBytes     int64
-	windowStart    int64
-	windowEnd      int64
-	hasWindow      bool
-	baselineOffset int64
-	hasBaseline    bool
-	baselineInput  int64
-	baselineCached int64
-	baselineAt     string
-	endOffset      int64
-	hasEnd         bool
-	endInput       int64
-	endCached      int64
-	endAt          string
-	waitCalls      int
+type bundleRolloutScan struct {
+	totalBytes  int64
+	windowStart int64
+	windowEnd   int64
+	hasWindow   bool
+	turns       []analysisRolloutTurn
+	turnIndex   map[string]int
+	tokens      []analysisRolloutTokenAnchor
+	waits       []time.Time
+}
+
+type analysisRolloutTurn struct {
+	TurnID      string
+	StartedAt   time.Time
+	StartOffset int64
+	HasStart    bool
+	CompletedAt time.Time
+	HasComplete bool
+}
+
+type analysisRolloutTokenAnchor struct {
+	At     time.Time
+	RawAt  string
+	Offset int64
+	Input  int64
+	Cached int64
 }
 
 type codexRolloutScanLine struct {
@@ -140,8 +178,9 @@ type codexRolloutScanLine struct {
 }
 
 type codexRolloutEventPayload struct {
-	Type string                    `json:"type"`
-	Info *codexRolloutTokenPayload `json:"info"`
+	Type   string                    `json:"type"`
+	TurnID string                    `json:"turn_id"`
+	Info   *codexRolloutTokenPayload `json:"info"`
 }
 
 type codexRolloutTokenPayload struct {
@@ -165,7 +204,18 @@ type analysisValidationEvent struct {
 	At     time.Time
 }
 
-const bundleAnalysisIndexVersion = 1
+type analysisExecutionBoundary struct {
+	status   string
+	end      time.Time
+	endBasis string
+}
+
+type analysisOwningTurn struct {
+	status string
+	turn   *analysisRolloutTurn
+}
+
+const bundleAnalysisIndexVersion = 2
 
 const bundleAnalysisEntryPath = "analysis-index.json"
 
@@ -179,6 +229,8 @@ const (
 	analysisStatusNotCollected  = "not-collected"
 	analysisStatusCounterReset  = "counter-reset"
 	analysisStatusUnreadable    = "unreadable"
+	analysisStatusUnknown       = "unknown"
+	analysisStatusOpen          = "open"
 )
 
 const (
@@ -186,6 +238,7 @@ const (
 	analysisAttributionWindowUnmatched = "task-window-unattributed"
 	analysisAttributionExternal        = "task-external"
 	analysisAttributionUnknown         = "unknown"
+	analysisAttributionSubsequent      = "unattributed-subsequent-request"
 )
 
 const (
@@ -202,15 +255,37 @@ const analysisWindowEndBasisArchivedAt = "archived-at"
 
 const analysisWindowEndBasisBundleTime = "bundle-time"
 
-const analysisWaitBasis = "count of response_item function_call records with name=wait in the parent rollout whose timestamp falls inside the task window"
+const analysisExecutionEndBasisLifecycleComplete = "lifecycle-complete"
 
-const analysisTokenBasis = "delta of cumulative total_token_usage between the last token_count record at or before window start and the last token_count record at or before window end in the parent rollout; token observation counts, not billing amounts; cached input is reported separately and is not re-added to input"
+const analysisExecutionEndBasisLifecycleInterrupted = "lifecycle-interrupted"
+
+const analysisWaitBasis = "count of response_item function_call records with name=wait in the parent rollout whose timestamp falls inside the task_execution interval inclusive of both bounds; waits observed after the terminal lifecycle boundary are excluded"
+
+const analysisTokenBasis = "delta of cumulative total_token_usage between the last token_count record at or before task_execution start and the last token_count record at or before task_execution end in the parent rollout; token observation counts, not billing amounts; cached input is reported separately and is not re-added to input; a record at or before a phase boundary belongs to the earlier phase so re-collection cannot change a terminal task's delta"
+
+const analysisFinalizationTokenBasis = "delta of cumulative total_token_usage between the task_execution end anchor and the last token_count record at or before the owning parent turn task_complete; parent-side token observation counts kept separate from GLM token schemas and never added to task consumption"
+
+const analysisSubsequentTokenBasis = "per turn, delta of cumulative total_token_usage between the last token_count record at or before the turn task_started and the last token_count record at or before the turn task_complete; omitted values mean no anchored observation; never added to task consumption"
+
+const analysisOpenObservationNote = "; task_execution has no terminal lifecycle boundary yet so the observation is bounded by the collection interval and may change until the task reaches a terminal lifecycle state"
+
+const analysisExecutionIntervalBasis = "start is task stats started_at; end is the final task lifecycle transition to complete or interrupted; records at or before the boundary timestamp belong to task_execution"
+
+const analysisFinalizationIntervalBasis = "starts strictly after the task_execution boundary and ends at the task_complete of the unique parent rollout turn containing the task start; the boundary record itself is counted in task_execution so phases never double count; an inverted boundary where the owning turn completes before the task terminal transition leaves this interval unknown"
+
+const analysisSubsequentIntervalBasis = "parent rollout turns whose task_started is after the owning turn task_complete; attribution to any GLM task is undetermined; enumeration is bounded by the collection interval end, so turns starting after that end are not listed and turns completing after it stay open with end null and no post-end anchors"
+
+const analysisCollectionIntervalBasis = "traditional collection range from task started_at to archived-at or bundle generation time; collection growth never changes terminal task_execution values"
 
 const analysisRetryAfterFail = "previous-task-validation-fail"
 
 const analysisRetryUnknown = "unknown"
 
-const analysisRolloutSpansTasksNote = "rollout spans multiple tasks; analysis uses the window byte range and counter deltas instead of whole-file totals"
+const analysisRolloutSpansTasksNote = "rollout spans multiple tasks and parent turns; analysis uses the collection interval byte range and anchored counter deltas instead of whole-file totals"
+
+const codexRolloutTaskStartedType = "task_started"
+
+const codexRolloutTaskCompleteType = "task_complete"
 
 const analysisValidationRule = "task-event-validation wins; otherwise round-snapshot-digest within the window attributes the run to the task; window-overlap without identity stays unattributed; runs outside the window are task-external"
 
@@ -224,7 +299,7 @@ const codexRolloutFunctionCallType = "function_call"
 
 const codexRolloutTokenCountType = "token_count"
 
-func analysisWindow(task bundleTask) (time.Time, time.Time, string) {
+func analysisCollectionWindow(task bundleTask) (time.Time, time.Time, string) {
 	start := task.Stats.StartedAt.UTC()
 	end := time.Now().UTC()
 	endBasis := analysisWindowEndBasisBundleTime
@@ -233,6 +308,11 @@ func analysisWindow(task bundleTask) (time.Time, time.Time, string) {
 		endBasis = analysisWindowEndBasisArchivedAt
 	}
 	return start, end, endBasis
+}
+
+func analysisTimestamp(value time.Time) *string {
+	encoded := value.UTC().Format(time.RFC3339Nano)
+	return &encoded
 }
 
 func (c *bundleCollector) addBundleAnalysisIndex(st *state.StateStore, task bundleTask, association codexAssociation) {
@@ -244,25 +324,36 @@ func (c *bundleCollector) addBundleAnalysisIndex(st *state.StateStore, task bund
 }
 
 func buildBundleAnalysisIndex(st *state.StateStore, task bundleTask, collector *bundleCollector, association codexAssociation) bundleAnalysisIndex {
-	start, end, endBasis := analysisWindow(task)
-	rolloutScan := scanAnalysisRolloutWindow(collector, association, start, end)
+	start, collectionEnd, collectionEndBasis := analysisCollectionWindow(task)
+	execution := resolveAnalysisExecutionBoundary(st, task.ID)
+	rolloutScan := scanAnalysisRolloutWindow(collector, association, start, collectionEnd)
+	owning := resolveAnalysisOwningTurn(rolloutScan.turns, start)
+	finalizationInterval := analysisFinalizationInterval(execution, owning)
 	eventRuns := analysisTaskEventValidationRuns(st, task.ID)
 	roundSeqByDigest := analysisRoundDigestSeqs(st, task.ID)
-	validations, attributedRuns := collectAnalysisValidationRuns(collector, eventRuns, roundSeqByDigest, start, end)
+	validations, attributedRuns := collectAnalysisValidationRuns(collector, eventRuns, roundSeqByDigest, start, collectionEnd)
 	return bundleAnalysisIndex{
 		Version:     bundleAnalysisIndexVersion,
 		TaskID:      task.ID,
 		TaskStatus:  task.Status,
 		GeneratedAt: time.Now().UTC().Format(time.RFC3339Nano),
-		Window: bundleAnalysisWindow{
-			Start:    start.Format(time.RFC3339Nano),
-			End:      end.Format(time.RFC3339Nano),
-			EndBasis: endBasis,
+		Intervals: bundleAnalysisIntervals{
+			TaskExecution:      analysisExecutionInterval(start, execution),
+			ParentFinalization: finalizationInterval,
+			SubsequentRequests: analysisSubsequentRequests(association, rolloutScan, owning, collectionEnd),
+			Collection: bundleAnalysisInterval{
+				Status:   analysisStatusAvailable,
+				Start:    analysisTimestamp(start),
+				End:      analysisTimestamp(collectionEnd),
+				EndBasis: collectionEndBasis,
+				Basis:    analysisCollectionIntervalBasis,
+			},
 		},
 		ParentSession:  analysisParentSession(association),
-		RolloutWindow:  analysisRolloutWindow(association, rolloutScan),
-		WaitCalls:      analysisWaitCalls(association, rolloutScan),
-		TokenDelta:     analysisTokenDelta(association, rolloutScan),
+		RolloutWindow:  analysisRolloutWindow(association, rolloutScan, start),
+		WaitCalls:      analysisWaitCalls(association, rolloutScan, start, execution, collectionEnd),
+		TokenDelta:     analysisExecutionTokenDelta(association, rolloutScan, start, execution, collectionEnd),
+		Finalization:   analysisFinalizationTokenDelta(association, rolloutScan, execution, owning, finalizationInterval),
 		ValidationRuns: validations,
 		Retries:        analysisRetries(st, task, eventRuns, validations.Runs),
 		Evidence:       analysisEvidence(collector, association, attributedRuns, validations.Runs),
@@ -283,28 +374,28 @@ func analysisParentSession(association codexAssociation) bundleAnalysisParent {
 	return parent
 }
 
-func scanAnalysisRolloutWindow(collector *bundleCollector, association codexAssociation, start, end time.Time) bundleRolloutWindowScan {
+func scanAnalysisRolloutWindow(collector *bundleCollector, association codexAssociation, start, end time.Time) bundleRolloutScan {
 	if association.ParentStatus != codexStatusIncluded {
-		return bundleRolloutWindowScan{}
+		return bundleRolloutScan{}
 	}
 	if _, collected := collector.entries[codexRolloutArchivePath(association.ParentThreadID)]; !collected {
-		return bundleRolloutWindowScan{}
+		return bundleRolloutScan{}
 	}
 	scan, err := scanCodexRolloutWindow(association.ParentPath, start, end)
 	if err != nil {
-		return bundleRolloutWindowScan{}
+		return bundleRolloutScan{}
 	}
 	return scan
 }
 
-func scanCodexRolloutWindow(rolloutPath string, start, end time.Time) (bundleRolloutWindowScan, error) {
+func scanCodexRolloutWindow(rolloutPath string, start, end time.Time) (bundleRolloutScan, error) {
 	file, err := os.Open(rolloutPath)
 	if err != nil {
-		return bundleRolloutWindowScan{}, fmt.Errorf("parent rolloutを開けません: %w", err)
+		return bundleRolloutScan{}, fmt.Errorf("parent rolloutを開けません: %w", err)
 	}
 	defer func() { _ = file.Close() }()
 
-	scan := bundleRolloutWindowScan{}
+	scan := bundleRolloutScan{turnIndex: map[string]int{}}
 	reader := bufio.NewReaderSize(file, 64*1024)
 	for {
 		line, readErr := reader.ReadBytes('\n')
@@ -314,6 +405,7 @@ func scanCodexRolloutWindow(rolloutPath string, start, end time.Time) (bundleRol
 		}
 		if readErr != nil {
 			if errors.Is(readErr, io.EOF) {
+				scan.finalizeTurns()
 				return scan, nil
 			}
 			return scan, fmt.Errorf("parent rolloutを読めません: %w", readErr)
@@ -321,7 +413,24 @@ func scanCodexRolloutWindow(rolloutPath string, start, end time.Time) (bundleRol
 	}
 }
 
-func observeAnalysisRolloutLine(scan *bundleRolloutWindowScan, line []byte, start, end time.Time) {
+func (scan *bundleRolloutScan) finalizeTurns() {
+	turns := make([]analysisRolloutTurn, 0, len(scan.turns))
+	for _, turn := range scan.turns {
+		if turn.HasStart {
+			turns = append(turns, turn)
+		}
+	}
+	sort.Slice(turns, func(i, j int) bool {
+		if turns[i].StartedAt.Equal(turns[j].StartedAt) {
+			return turns[i].StartOffset < turns[j].StartOffset
+		}
+		return turns[i].StartedAt.Before(turns[j].StartedAt)
+	})
+	scan.turns = turns
+	scan.turnIndex = nil
+}
+
+func observeAnalysisRolloutLine(scan *bundleRolloutScan, line []byte, start, end time.Time) {
 	trimmed := strings.TrimRight(string(line), "\n")
 	if trimmed == "" {
 		return
@@ -334,13 +443,16 @@ func observeAnalysisRolloutLine(scan *bundleRolloutWindowScan, line []byte, star
 	if timestampErr != nil {
 		return
 	}
-	observeAnalysisRolloutInWindowRecord(scan, line, record, timestamp, start, end)
+	observeAnalysisRolloutInWindowRecord(scan, line, timestamp, start, end)
+	if record.Type == "response_item" {
+		observeAnalysisRolloutWait(scan, record.Payload, timestamp)
+	}
 	if record.Type == "event_msg" {
-		observeAnalysisRolloutTokenUsage(scan, record, timestamp, start, end)
+		observeAnalysisRolloutEvent(scan, record, timestamp)
 	}
 }
 
-func observeAnalysisRolloutInWindowRecord(scan *bundleRolloutWindowScan, line []byte, record codexRolloutScanLine, timestamp time.Time, start, end time.Time) {
+func observeAnalysisRolloutInWindowRecord(scan *bundleRolloutScan, line []byte, timestamp time.Time, start, end time.Time) {
 	if timestamp.Before(start) || timestamp.After(end) {
 		return
 	}
@@ -349,47 +461,67 @@ func observeAnalysisRolloutInWindowRecord(scan *bundleRolloutWindowScan, line []
 		scan.hasWindow = true
 	}
 	scan.windowEnd = scan.totalBytes + int64(len(line))
-	if record.Type == "response_item" {
-		observeAnalysisRolloutWait(scan, record.Payload)
-	}
 }
 
-func observeAnalysisRolloutWait(scan *bundleRolloutWindowScan, payload json.RawMessage) {
+func observeAnalysisRolloutWait(scan *bundleRolloutScan, payload json.RawMessage, timestamp time.Time) {
 	var item codexRolloutItemPayload
 	if err := json.Unmarshal(payload, &item); err != nil {
 		return
 	}
 	if item.Type == codexRolloutFunctionCallType && item.Name == codexRolloutWaitCallName {
-		scan.waitCalls++
+		scan.waits = append(scan.waits, timestamp)
 	}
 }
 
-func observeAnalysisRolloutTokenUsage(scan *bundleRolloutWindowScan, record codexRolloutScanLine, timestamp time.Time, start, end time.Time) {
+func observeAnalysisRolloutEvent(scan *bundleRolloutScan, record codexRolloutScanLine, timestamp time.Time) {
 	var payload codexRolloutEventPayload
-	if err := json.Unmarshal(record.Payload, &payload); err != nil || payload.Type != codexRolloutTokenCountType {
+	if err := json.Unmarshal(record.Payload, &payload); err != nil {
 		return
 	}
+	if payload.Type == codexRolloutTokenCountType {
+		observeAnalysisRolloutTokenAnchor(scan, payload, record, timestamp)
+		return
+	}
+	observeAnalysisRolloutTurnBoundary(scan, payload, timestamp)
+}
+
+func observeAnalysisRolloutTokenAnchor(scan *bundleRolloutScan, payload codexRolloutEventPayload, record codexRolloutScanLine, timestamp time.Time) {
 	usage := payload.Info
 	if usage == nil || usage.TotalTokenUsage == nil {
 		return
 	}
-	if !timestamp.After(end) {
-		scan.endOffset = scan.totalBytes
-		scan.hasEnd = true
-		scan.endInput = usage.TotalTokenUsage.InputTokens
-		scan.endCached = usage.TotalTokenUsage.CachedInputTokens
-		scan.endAt = record.Timestamp
+	scan.tokens = append(scan.tokens, analysisRolloutTokenAnchor{
+		At:     timestamp,
+		RawAt:  record.Timestamp,
+		Offset: scan.totalBytes,
+		Input:  usage.TotalTokenUsage.InputTokens,
+		Cached: usage.TotalTokenUsage.CachedInputTokens,
+	})
+}
+
+func observeAnalysisRolloutTurnBoundary(scan *bundleRolloutScan, payload codexRolloutEventPayload, timestamp time.Time) {
+	if payload.TurnID == "" {
+		return
 	}
-	if !timestamp.After(start) {
-		scan.baselineOffset = scan.totalBytes
-		scan.hasBaseline = true
-		scan.baselineInput = usage.TotalTokenUsage.InputTokens
-		scan.baselineCached = usage.TotalTokenUsage.CachedInputTokens
-		scan.baselineAt = record.Timestamp
+	index, known := scan.turnIndex[payload.TurnID]
+	if !known {
+		scan.turns = append(scan.turns, analysisRolloutTurn{TurnID: payload.TurnID})
+		index = len(scan.turns) - 1
+		scan.turnIndex[payload.TurnID] = index
+	}
+	turn := &scan.turns[index]
+	if payload.Type == codexRolloutTaskStartedType && !turn.HasStart {
+		turn.StartedAt = timestamp
+		turn.StartOffset = scan.totalBytes
+		turn.HasStart = true
+	}
+	if payload.Type == codexRolloutTaskCompleteType && !turn.HasComplete {
+		turn.CompletedAt = timestamp
+		turn.HasComplete = true
 	}
 }
 
-func analysisRolloutWindow(association codexAssociation, scan bundleRolloutWindowScan) bundleAnalysisRollout {
+func analysisRolloutWindow(association codexAssociation, scan bundleRolloutScan, start time.Time) bundleAnalysisRollout {
 	rollout := bundleAnalysisRollout{Status: association.ParentStatus, Note: analysisRolloutSpansTasksNote}
 	if association.ParentStatus != codexStatusIncluded || !scan.hasWindow {
 		return rollout
@@ -398,45 +530,232 @@ func analysisRolloutWindow(association codexAssociation, scan bundleRolloutWindo
 	rollout.WindowStartOffset = scan.windowStart
 	rollout.WindowEndOffset = scan.windowEnd
 	rollout.WindowBytes = scan.windowEnd - scan.windowStart
-	rollout.BaselineOffset = scan.baselineOffset
+	if baseline, found := lastTokenAnchorAtOrBefore(scan, start); found {
+		rollout.BaselineOffset = baseline.Offset
+	}
 	return rollout
 }
 
-func analysisWaitCalls(association codexAssociation, scan bundleRolloutWindowScan) bundleAnalysisCount {
+func lastTokenAnchorAtOrBefore(scan bundleRolloutScan, bound time.Time) (analysisRolloutTokenAnchor, bool) {
+	var found analysisRolloutTokenAnchor
+	observed := false
+	for _, anchor := range scan.tokens {
+		if anchor.At.After(bound) {
+			break
+		}
+		found = anchor
+		observed = true
+	}
+	return found, observed
+}
+
+func resolveAnalysisExecutionBoundary(st *state.StateStore, taskID string) analysisExecutionBoundary {
+	records, err := state.ReadTaskLifecycle(st.TaskLifecycleLogPath(taskID))
+	if err != nil || len(records) == 0 {
+		return analysisExecutionBoundary{status: analysisStatusUnknown}
+	}
+	last := records[len(records)-1]
+	switch last.To {
+	case string(state.TaskStatusComplete):
+		return analysisExecutionBoundary{status: analysisStatusAvailable, end: last.Timestamp, endBasis: analysisExecutionEndBasisLifecycleComplete}
+	case string(state.TaskStatusInterrupted):
+		return analysisExecutionBoundary{status: analysisStatusAvailable, end: last.Timestamp, endBasis: analysisExecutionEndBasisLifecycleInterrupted}
+	default:
+		return analysisExecutionBoundary{status: analysisStatusOpen}
+	}
+}
+
+func resolveAnalysisOwningTurn(turns []analysisRolloutTurn, taskStart time.Time) analysisOwningTurn {
+	var containing []*analysisRolloutTurn
+	for i := range turns {
+		turn := &turns[i]
+		if turn.StartedAt.After(taskStart) {
+			continue
+		}
+		if turn.HasComplete && turn.CompletedAt.Before(taskStart) {
+			continue
+		}
+		containing = append(containing, turn)
+	}
+	if len(containing) != 1 {
+		return analysisOwningTurn{status: analysisStatusUnknown}
+	}
+	return analysisOwningTurn{status: analysisStatusAvailable, turn: containing[0]}
+}
+
+func analysisExecutionInterval(start time.Time, execution analysisExecutionBoundary) bundleAnalysisInterval {
+	interval := bundleAnalysisInterval{
+		Status: execution.status,
+		Start:  analysisTimestamp(start),
+		Basis:  analysisExecutionIntervalBasis,
+	}
+	if execution.status == analysisStatusAvailable {
+		interval.End = analysisTimestamp(execution.end)
+		interval.EndBasis = execution.endBasis
+	}
+	return interval
+}
+
+func analysisFinalizationInterval(execution analysisExecutionBoundary, owning analysisOwningTurn) bundleAnalysisInterval {
+	interval := bundleAnalysisInterval{Status: analysisStatusUnknown, Basis: analysisFinalizationIntervalBasis}
+	if owning.status != analysisStatusAvailable {
+		return interval
+	}
+	if execution.status == analysisStatusUnknown {
+		return interval
+	}
+	if execution.status == analysisStatusOpen {
+		interval.Status = analysisStatusOpen
+		return interval
+	}
+	if !owning.turn.HasComplete {
+		interval.Status = analysisStatusOpen
+		return interval
+	}
+	if owning.turn.CompletedAt.Before(execution.end) {
+		return interval
+	}
+	interval.Status = analysisStatusAvailable
+	interval.Start = analysisTimestamp(execution.end)
+	interval.End = analysisTimestamp(owning.turn.CompletedAt)
+	return interval
+}
+
+func analysisSubsequentRequests(association codexAssociation, scan bundleRolloutScan, owning analysisOwningTurn, collectionEnd time.Time) bundleAnalysisSubsequents {
+	subsequent := bundleAnalysisSubsequents{
+		Status:      analysisStatusUnknown,
+		Attribution: analysisAttributionSubsequent,
+		Basis:       analysisSubsequentIntervalBasis + "; " + analysisSubsequentTokenBasis,
+	}
+	if association.ParentStatus != codexStatusIncluded || owning.status != analysisStatusAvailable {
+		return subsequent
+	}
+	if collectionEnd.IsZero() {
+		return subsequent
+	}
+	if !owning.turn.HasComplete {
+		subsequent.Status = analysisStatusOpen
+		return subsequent
+	}
+	subsequent.Status = analysisStatusAvailable
+	for i := range scan.turns {
+		turn := &scan.turns[i]
+		if !turn.StartedAt.After(owning.turn.CompletedAt) {
+			continue
+		}
+		if turn.StartedAt.After(collectionEnd) {
+			continue
+		}
+		subsequent.Turns = append(subsequent.Turns, analysisSubsequentTurn(scan, turn, collectionEnd))
+	}
+	return subsequent
+}
+
+func analysisSubsequentTurn(scan bundleRolloutScan, turn *analysisRolloutTurn, collectionEnd time.Time) bundleAnalysisSubsequentTurn {
+	entry := bundleAnalysisSubsequentTurn{
+		TurnID:    turn.TurnID,
+		Status:    analysisStatusOpen,
+		StartedAt: turn.StartedAt.UTC().Format(time.RFC3339Nano),
+	}
+	if !turn.HasComplete || turn.CompletedAt.After(collectionEnd) {
+		return entry
+	}
+	entry.Status = analysisStatusAvailable
+	completed := turn.CompletedAt.UTC().Format(time.RFC3339Nano)
+	entry.CompletedAt = &completed
+	delta := analysisAnchoredTokenDelta(scan, turn.StartedAt, turn.CompletedAt, analysisSubsequentTokenBasis)
+	if delta.Status != analysisStatusAvailable {
+		return entry
+	}
+	entry.InputTokens = delta.InputTokens
+	entry.CachedInputTokens = delta.CachedInputTokens
+	entry.BaselineAt = delta.BaselineAt
+	entry.EndAt = delta.EndAt
+	return entry
+}
+
+func analysisWaitCalls(association codexAssociation, scan bundleRolloutScan, start time.Time, execution analysisExecutionBoundary, collectionEnd time.Time) bundleAnalysisCount {
 	count := bundleAnalysisCount{Status: analysisStatusCounted, Basis: analysisWaitBasis}
 	if association.ParentStatus != codexStatusIncluded {
 		count.Status = association.ParentStatus
 		return count
 	}
+	if execution.status == analysisStatusUnknown {
+		count.Status = analysisStatusUnknown
+		return count
+	}
+	endBound := collectionEnd
+	if execution.status == analysisStatusAvailable {
+		endBound = execution.end
+	} else {
+		count.Basis += analysisOpenObservationNote
+	}
 	if !scan.hasWindow {
 		count.Status = analysisStatusNoObservation
 		return count
 	}
-	count.Count = scan.waitCalls
+	for _, at := range scan.waits {
+		if at.Before(start) || at.After(endBound) {
+			continue
+		}
+		count.Count++
+	}
+	if execution.status == analysisStatusOpen {
+		count.Status = analysisStatusOpen
+	}
 	return count
 }
 
-func analysisTokenDelta(association codexAssociation, scan bundleRolloutWindowScan) bundleAnalysisTokenDelta {
+func analysisExecutionTokenDelta(association codexAssociation, scan bundleRolloutScan, start time.Time, execution analysisExecutionBoundary, collectionEnd time.Time) bundleAnalysisTokenDelta {
 	delta := bundleAnalysisTokenDelta{Status: analysisStatusAvailable, Basis: analysisTokenBasis}
 	if association.ParentStatus != codexStatusIncluded {
 		delta.Status = association.ParentStatus
 		return delta
 	}
+	if execution.status == analysisStatusUnknown {
+		delta.Status = analysisStatusUnknown
+		return delta
+	}
+	endBound := collectionEnd
+	if execution.status == analysisStatusAvailable {
+		endBound = execution.end
+	} else {
+		delta.Basis += analysisOpenObservationNote
+	}
+	delta = analysisAnchoredTokenDelta(scan, start, endBound, delta.Basis)
+	if execution.status == analysisStatusOpen && delta.Status == analysisStatusAvailable {
+		delta.Status = analysisStatusOpen
+	}
+	return delta
+}
+
+func analysisFinalizationTokenDelta(association codexAssociation, scan bundleRolloutScan, execution analysisExecutionBoundary, owning analysisOwningTurn, interval bundleAnalysisInterval) bundleAnalysisTokenDelta {
+	delta := bundleAnalysisTokenDelta{Status: interval.Status, Basis: analysisFinalizationTokenBasis}
+	if association.ParentStatus != codexStatusIncluded || interval.Status != analysisStatusAvailable {
+		return delta
+	}
+	return analysisAnchoredTokenDelta(scan, execution.end, owning.turn.CompletedAt, analysisFinalizationTokenBasis)
+}
+
+func analysisAnchoredTokenDelta(scan bundleRolloutScan, baselineBound, endBound time.Time, basis string) bundleAnalysisTokenDelta {
+	delta := bundleAnalysisTokenDelta{Status: analysisStatusAvailable, Basis: basis}
+	baseline, hasBaseline := lastTokenAnchorAtOrBefore(scan, baselineBound)
+	end, hasEnd := lastTokenAnchorAtOrBefore(scan, endBound)
 	switch {
-	case !scan.hasBaseline || !scan.hasEnd:
+	case !hasBaseline || !hasEnd:
 		delta.Status = analysisStatusMissing
-	case scan.endOffset == scan.baselineOffset:
+	case end.Offset <= baseline.Offset:
 		delta.Status = analysisStatusNoObservation
-		delta.BaselineAt = scan.baselineAt
-	case scan.endInput < scan.baselineInput || scan.endCached < scan.baselineCached:
+		delta.BaselineAt = baseline.RawAt
+	case end.Input < baseline.Input || end.Cached < baseline.Cached:
 		delta.Status = analysisStatusCounterReset
-		delta.BaselineAt = scan.baselineAt
-		delta.EndAt = scan.endAt
+		delta.BaselineAt = baseline.RawAt
+		delta.EndAt = end.RawAt
 	default:
-		delta.InputTokens = scan.endInput - scan.baselineInput
-		delta.CachedInputTokens = scan.endCached - scan.baselineCached
-		delta.BaselineAt = scan.baselineAt
-		delta.EndAt = scan.endAt
+		delta.InputTokens = end.Input - baseline.Input
+		delta.CachedInputTokens = end.Cached - baseline.Cached
+		delta.BaselineAt = baseline.RawAt
+		delta.EndAt = end.RawAt
 	}
 	return delta
 }
