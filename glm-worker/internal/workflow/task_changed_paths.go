@@ -23,11 +23,6 @@ func collectExactTaskChangedPaths(repoRoot string, st *state.StateStore) ([]stri
 	return paths, nil
 }
 
-// collectTaskChangedPaths preserves the workflow's historical conservative
-// safety surface while making taskdiff.ChangedPaths the sole exact owner.
-// Reviewer navigation, deterministic rule activation, risk classification and
-// round telemetry intentionally retain baseline-HEAD/current-untracked
-// over-inclusion; consumers may filter this explicit superset further.
 func collectTaskChangedPaths(repoRoot string, st *state.StateStore) ([]string, error) {
 	exact, err := collectExactTaskChangedPaths(repoRoot, st)
 	if err != nil {
