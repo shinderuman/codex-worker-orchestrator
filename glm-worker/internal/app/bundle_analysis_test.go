@@ -429,7 +429,6 @@ func TestBundleAnalysisIndexValidationRunAttribution(t *testing.T) {
 		attribution string
 		bases       []string
 	}{
-		analysisRunExternal:      {analysisAttributionExternal, []string{analysisBasisOutsideWindow}},
 		analysisRunEventLinked:   {analysisAttributionTask, []string{analysisBasisTaskEventValidation}},
 		analysisRunDigestMatched: {analysisAttributionTask, []string{analysisBasisRoundSnapshotDigest, analysisBasisWindowOverlap}},
 		analysisRunUnmatched:     {analysisAttributionWindowUnmatched, []string{analysisBasisWindowOverlap}},
@@ -469,16 +468,16 @@ func TestBundleAnalysisIndexRetriesAndEvidence(t *testing.T) {
 		t.Fatalf("resumed calls = %#v", index.Retries.ResumedModelCalls)
 	}
 
-	if !slices.ContainsFunc(index.Evidence.TaskExternal, func(ref bundleAnalysisEvidenceRef) bool {
-		return ref.ArchivePath == "current-state/diagnostics/quality-gate-runs/"+analysisRunExternal+"/run.json"
-	}) {
-		t.Fatalf("task external = %#v", index.Evidence.TaskExternal)
+	for _, ref := range index.Evidence.TaskExternal {
+		if strings.Contains(ref.ArchivePath, analysisRunExternal) {
+			t.Fatalf("unrelated historical run remains task-external evidence: %s", ref.ArchivePath)
+		}
 	}
 	for _, ref := range index.Evidence.Unattributed {
 		if strings.Contains(ref.ArchivePath, analysisRunEventLinked) ||
 			strings.Contains(ref.ArchivePath, analysisRunDigestMatched) ||
 			strings.Contains(ref.ArchivePath, analysisRunExternal) {
-			t.Fatalf("explained run files remain unattributed: %s", ref.ArchivePath)
+			t.Fatalf("explained or unrelated run files remain unattributed: %s", ref.ArchivePath)
 		}
 	}
 	if !slices.ContainsFunc(index.Evidence.Unattributed, func(ref bundleAnalysisEvidenceRef) bool {

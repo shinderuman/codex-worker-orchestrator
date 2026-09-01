@@ -486,13 +486,7 @@ func (c *bundleCollector) collectCurrentState(cfg config.AppConfig, st *state.St
 		for _, entry := range entries {
 			name := entry.Name()
 			if entry.IsDir() {
-				if bundleAggregateDirs[name] {
-					continue
-				}
-				_ = c.addUnattributedTreeIfPresent(
-					filepath.Join(stateRoot, name),
-					path.Join("current-state", "diagnostics", name),
-				)
+				c.collectCurrentStateDirectory(stateRoot, name)
 				continue
 			}
 			if entry.Type().IsRegular() {
@@ -504,6 +498,7 @@ func (c *bundleCollector) collectCurrentState(cfg config.AppConfig, st *state.St
 			}
 		}
 	}
+	c.collectCurrentValidationDiagnostics(st)
 
 	c.collectCurrentTaskDiff(cfg, st)
 
