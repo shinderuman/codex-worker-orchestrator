@@ -48,7 +48,7 @@ blocked taskには、
 
 ## Resolved references
 
-- Task 013の完了証跡は`IMPLEMENTATION_HISTORY.md`の`2026-08-29 Task 013 worker model routing evaluation`を正とする。current codex-config telemetryはsingle resolved model `glm-5.3`だけで、alias差はmodel品質証拠にならず、routing変更はNo-Go。
+- Task 013のrouting Go/No-Go decisionは`IMPLEMENTATION_HISTORY.md`の`2026-08-29 Task 013 worker model routing evaluation`を正とする。current codex-config telemetryはsingle resolved model `glm-5.3`だけで、alias差はmodel品質証拠にならず、routing変更はNo-Go。Task 013の通常completion証跡はGit / CI / bundle evidenceから回収する。
 
 ## Purpose
 
