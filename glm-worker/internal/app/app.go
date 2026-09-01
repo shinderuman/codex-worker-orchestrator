@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentfix"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
@@ -275,7 +276,7 @@ func installSmokeCommand(args []string) (Command, error) {
 	return Command{}, usageError("usage: glm-worker --install-smoke %s", installSmokeUsage)
 }
 
-func stdinPayloadCommand(mode CommandMode, args []string, usage string, allowOrigin bool) (Command, error) {
+func stdinPayloadCommand(mode CommandMode, args []string, usage string, allowFixOptions bool) (Command, error) {
 	if len(args) < 2 {
 		return Command{}, usageError("%s", usage)
 	}
@@ -283,78 +284,44 @@ func stdinPayloadCommand(mode CommandMode, args []string, usage string, allowOri
 	if err != nil || payloadBytes <= 0 {
 		return Command{}, usageError("%s", usage)
 	}
-	options, approvalOnly, err := extractStdinApprovalOnlyOption(args[2:], allowOrigin, usage)
-	if err != nil {
-		return Command{}, err
+
+	semantic := parentfix.Options{}
+	options := args[2:]
+	if allowFixOptions {
+		semantic, options, err = parentfix.Extract(options)
+		if err != nil {
+			return Command{}, usageError("%s", usage)
+		}
 	}
 	if len(options)%2 != 0 {
 		return Command{}, usageError("%s", usage)
 	}
-	command := Command{Mode: mode, StdinBytes: payloadBytes, ApprovalOnly: approvalOnly}
+	command := Command{
+		Mode:          mode,
+		StdinBytes:    payloadBytes,
+		Origin:        semantic.Origin,
+		AcceptedScope: semantic.AcceptedScope,
+		ApprovalOnly:  semantic.ApprovalOnly,
+	}
 	seenSHA256 := false
 	for index := 0; index < len(options); index += 2 {
-		if err := applyStdinPayloadOption(&command, options[index], options[index+1], usage, allowOrigin, &seenSHA256); err != nil {
+		if err := applyStdinPayloadOption(&command, options[index], options[index+1], usage, &seenSHA256); err != nil {
 			return Command{}, err
 		}
-	}
-	if command.ApprovalOnly && (command.AcceptedScope != "current-diff" || command.Origin != "") {
-		return Command{}, usageError("%s", usage)
 	}
 	return command, nil
 }
 
-func extractStdinApprovalOnlyOption(options []string, allow bool, usage string) ([]string, bool, error) {
-	index := -1
-	for current, option := range options {
-		if option != "--approval-only" {
-			continue
-		}
-		if !allow || index >= 0 {
-			return nil, false, usageError("%s", usage)
-		}
-		index = current
-	}
-	if index < 0 {
-		return options, false, nil
-	}
-	pairs := make([]string, 0, len(options)-1)
-	pairs = append(pairs, options[:index]...)
-	pairs = append(pairs, options[index+1:]...)
-	return pairs, true, nil
-}
-
-func applyStdinPayloadOption(command *Command, name, value, usage string, allowOrigin bool, seenSHA256 *bool) error {
-	if name == "--accepted-scope" {
-		return applyAcceptedScopeOption(command, value, usage, allowOrigin)
-	}
-	switch name {
-	case "--sha256":
-		if *seenSHA256 {
-			return usageError("%s", usage)
-		}
-		digest, err := parsePayloadSHA256(value)
-		if err != nil {
-			return usageError("%s", usage)
-		}
-		command.SHA256 = digest
-		*seenSHA256 = true
-		return nil
-	case "--origin":
-		if !allowOrigin || command.Origin != "" || !state.ValidParentOrigin(value) {
-			return usageError("%s", usage)
-		}
-		command.Origin = value
-		return nil
-	default:
+func applyStdinPayloadOption(command *Command, name, value, usage string, seenSHA256 *bool) error {
+	if name != "--sha256" || *seenSHA256 {
 		return usageError("%s", usage)
 	}
-}
-
-func applyAcceptedScopeOption(command *Command, value, usage string, allowOrigin bool) error {
-	if !allowOrigin || command.AcceptedScope != "" || value != "current-diff" {
+	digest, err := parsePayloadSHA256(value)
+	if err != nil {
 		return usageError("%s", usage)
 	}
-	command.AcceptedScope = value
+	command.SHA256 = digest
+	*seenSHA256 = true
 	return nil
 }
 
