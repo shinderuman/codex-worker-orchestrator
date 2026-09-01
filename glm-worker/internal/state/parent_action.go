@@ -59,6 +59,22 @@ func (p ParentActionPlan) AdmitsCommand(action ParentAction) bool {
 	}
 }
 
+func (s *StateStore) AdmitParentAction(action ParentAction) (ParentActionPlan, bool, error) {
+	plan, err := s.ParentActionPlan()
+	if err != nil {
+		return ParentActionPlan{}, false, err
+	}
+	return plan, plan.AdmitsCommand(action), nil
+}
+
+func (s *StateStore) AdmitNewTask() (ParentActionPlan, bool, error) {
+	plan, err := s.ParentActionPlan()
+	if err != nil {
+		return ParentActionPlan{}, false, err
+	}
+	return plan, plan.RequiredAction == ParentActionNone, nil
+}
+
 func (kind ResumeStopKind) ParentAction() ParentAction {
 	switch kind {
 	case ResumeStopRateLimited, ResumeStopProviderUnavailable, ResumeStopInterrupted:

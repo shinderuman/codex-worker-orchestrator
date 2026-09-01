@@ -1504,6 +1504,9 @@ func TestExecuteResumeRejectsUnknownStage(t *testing.T) {
 func TestExecuteNewTaskRejectsPendingAndRateLimitedTasks(t *testing.T) {
 	t.Run("pending decision", func(t *testing.T) {
 		st := newStateStoreT(t)
+		if err := st.SetTaskStatus(state.TaskStatusWaitingDecision); err != nil {
+			t.Fatal(err)
+		}
 		if err := st.Touch("pending-decision"); err != nil {
 			t.Fatal(err)
 		}
@@ -1517,6 +1520,9 @@ func TestExecuteNewTaskRejectsPendingAndRateLimitedTasks(t *testing.T) {
 	t.Run("rate limited", func(t *testing.T) {
 		st := newStateStoreT(t)
 		if err := st.SaveResumeCheckpoint(state.ResumeCheckpoint{Model: "opus", StopKind: state.ResumeStopRateLimited}); err != nil {
+			t.Fatal(err)
+		}
+		if err := st.SetTaskStatus(state.TaskStatusRateLimited); err != nil {
 			t.Fatal(err)
 		}
 		w := newWorkflowT(t, st, &scriptedRunner{})

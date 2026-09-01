@@ -478,7 +478,7 @@ func TestExternalFeasibilityResumeGateFailsClosedBeforeProbe(t *testing.T) {
 	}
 }
 
-func TestExternalFeasibilityInterruptedResumeRejectThenRepairResumes(t *testing.T) {
+func TestExternalFeasibilityInterruptedResumeRejectThenRepairUsesCanonicalAdmission(t *testing.T) {
 	repo := newRetentionGitRepo(t)
 	taskPath := filepath.Join(repo, activeTaskGuardPath)
 	validTask := "# ACTIVE task\n\n" + feasibilityNotApplicableDecl + "\n\n## Contract\n\n- gate検証用seed\n"
@@ -522,17 +522,17 @@ func TestExternalFeasibilityInterruptedResumeRejectThenRepairResumes(t *testing.
 	if err := os.WriteFile(taskPath, []byte(validTask), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	resumeRunner := &scriptedRunner{steps: []runnerStep{
-		{structured: implementedPacket("resumed")},
-		{structured: passPacket()},
-		{structured: needsSolReviewPacket()},
-	}}
+	resumeRunner := &scriptedRunner{steps: []runnerStep{{structured: implementedPacket("resumed")}}}
 	resumeW := newGitWorkflowT(t, st, resumeRunner, repo)
-	if err := resumeW.ExecuteResume(); err != nil {
-		t.Fatalf("宣言修復後の同じ--resumeが保持照合を通過しません: %v", err)
+	err = resumeW.ExecuteResume()
+	if err == nil || !strings.Contains(err.Error(), "lifecycle inconsistency") {
+		t.Fatalf("fail-closed review後のresume再実行error = %v", err)
 	}
-	if st.TaskStatus() != state.TaskStatusWaitingSolReview {
-		t.Fatalf("修復後resumeのtask status = %q want waiting-sol-review", st.TaskStatus())
+	if len(resumeRunner.prompts) != 0 {
+		t.Fatalf("canonical admission拒否後にmodelが呼ばれました: %d", len(resumeRunner.prompts))
+	}
+	if st.TaskStatus() != state.TaskStatusInterrupted {
+		t.Fatalf("canonical admission拒否後のtask status = %q want interrupted", st.TaskStatus())
 	}
 }
 

@@ -18,11 +18,8 @@ func (w *Workflow) ExecuteExplicitFixWithExecutionMilestones(instruction, origin
 }
 
 func (w *Workflow) executeExecutionMilestoneExplicitFix(instruction, origin, acceptedScope string) error {
-	if w.state.Exists("pending-decision") {
-		return &WorkerError{Message: "task is waiting for Sol decision; resolve it before --fix"}
-	}
-	if w.state.TaskStatus() != state.TaskStatusWaitingSolReview {
-		return &WorkerError{Message: "--fix is only available after NEEDS_SOL_REVIEW; start a new task after PASS"}
+	if err := w.admitParentAction(state.ParentActionFix); err != nil {
+		return err
 	}
 	request, err := w.state.Read("last-request")
 	if err != nil {

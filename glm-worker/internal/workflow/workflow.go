@@ -199,28 +199,7 @@ func (w *Workflow) ExecuteNewTask(request string) error {
 }
 
 func (w *Workflow) validateNewTaskStart() error {
-	if w.state.Exists("pending-decision") {
-		return &WorkerError{Message: "previous task is waiting for Sol decision; use --decision or --reset"}
-	}
-	if open := w.state.OpenParentReviewLabel(); open != "none" {
-		return &WorkerError{Message: fmt.Sprintf("previous task has unresolved parent review (%s); resolve it explicitly with --accept (or --fix when rework is required) before starting a new task", open)}
-	}
-	checkpoint, err := w.state.LoadResumeCheckpoint()
-	if err != nil {
-		return nil
-	}
-	switch checkpoint.StopKind {
-	case state.ResumeStopRateLimited:
-		return &WorkerError{Message: "previous task is rate-limited; use --resume or --reset"}
-	case state.ResumeStopProviderUnavailable:
-		return &WorkerError{Message: "previous task is provider-unavailable; use --resume or --reset"}
-	case state.ResumeStopInterrupted:
-		return &WorkerError{Message: "previous task is interrupted; use --resume or --reset"}
-	case state.ResumeStopGuardRecoverable:
-		return &WorkerError{Message: "previous task stopped on a recoverable guard failure; repair the guard then use --resume or --reset"}
-	default:
-		return nil
-	}
+	return w.admitNewTask()
 }
 
 func (w *Workflow) initializeNewTask(request string) (string, error) {
@@ -259,8 +238,8 @@ func (w *Workflow) initializeNewTask(request string) (string, error) {
 
 func (w *Workflow) ExecuteDecision(decision string) error {
 	return quietWhenParentFileGuardStopped(w.withTemp(func() error {
-		if w.state.TaskStatus() != state.TaskStatusWaitingDecision || !w.state.Exists("pending-decision") {
-			return &WorkerError{Message: "no pending Sol decision for this repository"}
+		if err := w.admitParentAction(state.ParentActionDecision); err != nil {
+			return err
 		}
 
 		request, err := w.state.Read("last-request")
@@ -315,11 +294,8 @@ func (w *Workflow) ExecuteExplicitFix(instruction, origin string) error {
 
 func (w *Workflow) ExecuteExplicitFixWithScope(instruction, origin, acceptedScope string) error {
 	return quietWhenParentFileGuardStopped(w.withTemp(func() error {
-		if w.state.Exists("pending-decision") {
-			return &WorkerError{Message: "task is waiting for Sol decision; resolve it before --fix"}
-		}
-		if w.state.TaskStatus() != state.TaskStatusWaitingSolReview {
-			return &WorkerError{Message: "--fix is only available after NEEDS_SOL_REVIEW; start a new task after PASS"}
+		if err := w.admitParentAction(state.ParentActionFix); err != nil {
+			return err
 		}
 
 		request, err := w.state.Read("last-request")
@@ -390,6 +366,9 @@ func (w *Workflow) ExecuteResume() error {
 }
 
 func (w *Workflow) executeResume() error {
+	if err := w.admitParentAction(state.ParentActionResume); err != nil {
+		return err
+	}
 	checkpoint, decl, pocResume, err := w.loadResumeCheckpoint()
 	if err != nil {
 		return err
@@ -424,9 +403,6 @@ func (w *Workflow) loadResumeCheckpoint() (state.ResumeCheckpoint, externalFeasi
 	checkpoint, err := w.state.LoadResumeCheckpoint()
 	if err != nil {
 		return state.ResumeCheckpoint{}, externalFeasibility{}, false, err
-	}
-	if !checkpoint.IsStopped() {
-		return state.ResumeCheckpoint{}, externalFeasibility{}, false, &WorkerError{Message: "saved task is not stopped by Z.ai 5h limit, provider unavailability, user interruption or a recoverable guard failure"}
 	}
 	if !isKnownResumeStage(checkpoint.Stage) {
 		return state.ResumeCheckpoint{}, externalFeasibility{}, false, &WorkerError{Message: fmt.Sprintf("unknown resume stage: %s", checkpoint.Stage)}
