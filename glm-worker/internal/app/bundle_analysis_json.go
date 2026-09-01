@@ -71,8 +71,8 @@ func (value bundleAnalysisRetries) MarshalJSON() ([]byte, error) {
 		WorkerCounters    map[string]int        `json:"worker_counters,omitempty"`
 		ResumedModelCalls bundleAnalysisCount   `json:"resumed_model_calls"`
 	}{
-		ValidationReruns: value.ValidationReruns,
-		WorkerCounters: value.WorkerCounters,
+		ValidationReruns:  value.ValidationReruns,
+		WorkerCounters:    value.WorkerCounters,
 		ResumedModelCalls: value.ResumedModelCalls,
 	})
 }
