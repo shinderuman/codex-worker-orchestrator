@@ -20,18 +20,9 @@ func resolveActiveTaskPath(repoRoot string) (string, bool, error) {
 		}
 		return "", true, fmt.Errorf("read %s: %w", implementationPlanFile, err)
 	}
-	entries, err := taskcontract.ActiveSectionEntries(string(content))
+	schedule := taskcontract.ParsePlanSchedule(string(content))
+	path, err := schedule.ActiveTask()
 	if err != nil {
-		return "", true, err
-	}
-	if len(entries) == 0 {
-		return "", true, fmt.Errorf("%sのACTIVE欄にtask fileがありません", implementationPlanFile)
-	}
-	if len(entries) > 1 {
-		return "", true, fmt.Errorf("%sのACTIVE欄が一意ではありません(%d件)", implementationPlanFile, len(entries))
-	}
-	path := entries[0]
-	if err := taskcontract.ValidateActiveTaskPath(path); err != nil {
 		return "", true, err
 	}
 	info, err := os.Lstat(filepath.Join(repoRoot, filepath.FromSlash(path)))

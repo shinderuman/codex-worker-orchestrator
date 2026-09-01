@@ -83,6 +83,22 @@ func TestActiveTaskContractIgnoresNonActivePlaceholder(t *testing.T) {
 	}
 }
 
+func TestActiveTaskContractIgnoresMalformedNonActiveSchedule(t *testing.T) {
+	root := t.TempDir()
+	const activePath = "IMPLEMENTATION_TASKS/014-active.md"
+	plan := "## ACTIVE\n\n- `" + activePath + "`\n\n## BLOCKED\n\nnot a schedule bullet\n"
+	writeActiveTaskContractFile(t, root, implementationPlanPath, plan)
+	writeActiveTaskContractFile(t, root, activePath, "# task\n\n## External feasibility\n\nstatus: not-applicable\n")
+
+	violations, err := activeTaskContractViolations(root, []string{implementationPlanPath, activePath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(violations) != 0 {
+		t.Fatalf("non-ACTIVE schedule syntax changed active-task-contract admission: %+v", violations)
+	}
+}
+
 func writeActiveTaskContractFile(t *testing.T, root, path, content string) {
 	t.Helper()
 	absolute := filepath.Join(root, filepath.FromSlash(path))

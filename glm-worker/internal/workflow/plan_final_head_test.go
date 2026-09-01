@@ -53,6 +53,18 @@ func TestFinalHeadPlanRejectsDuplicateActiveSchedule(t *testing.T) {
 	}
 }
 
+func TestFinalHeadPlanRejectsMalformedNonActiveSchedule(t *testing.T) {
+	root := newFinalHeadRepo(t)
+	plan := strings.Replace(finalHeadFixturePlan("main", ""), "- `IMPLEMENTATION_TASKS/next.md`", "not a schedule bullet", 1)
+	writeFinalHeadFixture(t, root, plan, true)
+	commitFinalHeadFixture(t, root)
+
+	_, err := CheckFinalHeadPlan(root)
+	if err == nil || !strings.Contains(err.Error(), "NEXT欄") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
 func TestFinalHeadPlanRejectsTransitionalState(t *testing.T) {
 	root := newFinalHeadRepo(t)
 	plan := finalHeadFixturePlan("main", "") + "\n## 次の親Codex操作\n\n- install前に停止する\n"

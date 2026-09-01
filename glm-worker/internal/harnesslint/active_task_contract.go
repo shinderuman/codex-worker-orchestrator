@@ -1,7 +1,6 @@
 package harnesslint
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskcontract"
@@ -17,18 +16,9 @@ func activeTaskContractViolations(root string, paths []string) ([]Violation, err
 	if err != nil {
 		return nil, err
 	}
-	entries, err := taskcontract.ActiveSectionEntries(string(plan))
+	schedule := taskcontract.ParsePlanSchedule(string(plan))
+	taskPath, err := schedule.ActiveTask()
 	if err != nil {
-		return []Violation{activeTaskContractViolation(implementationPlanPath, err.Error())}, nil
-	}
-	if len(entries) != 1 {
-		return []Violation{activeTaskContractViolation(
-			implementationPlanPath,
-			fmt.Sprintf("Plan-selected ACTIVE task must be unique; got %d entries", len(entries)),
-		)}, nil
-	}
-	taskPath := entries[0]
-	if err := taskcontract.ValidateActiveTaskPath(taskPath); err != nil {
 		return []Violation{activeTaskContractViolation(implementationPlanPath, err.Error())}, nil
 	}
 	if !containsPath(paths, taskPath) {
