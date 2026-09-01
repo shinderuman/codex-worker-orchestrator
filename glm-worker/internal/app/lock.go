@@ -25,7 +25,7 @@ const (
 type RepoLock = repolock.Lock
 
 var AcquireRepoLock = repolock.Acquire
-var ErrRepoLockHeld = repolock.ErrHeld
+var ErrRepoLockHeld = repolock.ErrRepoLockHeld
 
 func parseLockPID(data []byte) string {
 	text := string(data)
