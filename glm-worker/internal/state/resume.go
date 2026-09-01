@@ -181,25 +181,37 @@ func (checkpoint ResumeCheckpoint) validateStopState() error {
 	if !checkpoint.StopKind.Valid() {
 		return fmt.Errorf("unknown resume stop kind: %q", checkpoint.StopKind)
 	}
-	if checkpoint.StopKind != ResumeStopRateLimited && (checkpoint.ResetAtCST != "" || checkpoint.ResetAtRFC3339 != "") {
-		return fmt.Errorf("resume stop payload does not match stop kind %q: rate-limit reset metadata is present", checkpoint.StopKind)
+	if err := checkpoint.validateRateLimitStopPayload(); err != nil {
+		return err
 	}
-	if checkpoint.StopKind != ResumeStopProviderUnavailable && (
-		checkpoint.ProviderUnavailableClassification != "" ||
-		checkpoint.ProviderUnavailableProbes != 0 ||
-		!checkpoint.ProviderUnavailableStartedAt.IsZero()) {
-		return fmt.Errorf("resume stop payload does not match stop kind %q: provider metadata is present", checkpoint.StopKind)
+	if err := checkpoint.validateProviderStopPayload(); err != nil {
+		return err
 	}
-	if checkpoint.StopKind != ResumeStopGuardRecoverable && (
-		checkpoint.GuardFailure != "" ||
-		checkpoint.GuardRefBeforeDigest != "" ||
-		checkpoint.GuardRefAfterDigest != "" ||
-		len(checkpoint.GuardRefChanges) != 0 ||
-		checkpoint.GuardRefChangesTruncated ||
-		checkpoint.CompletedResult != nil) {
-		return fmt.Errorf("resume stop payload does not match stop kind %q: guard-recovery metadata is present", checkpoint.StopKind)
+	return checkpoint.validateGuardStopPayload()
+}
+
+func (checkpoint ResumeCheckpoint) validateRateLimitStopPayload() error {
+	if checkpoint.StopKind == ResumeStopRateLimited || (checkpoint.ResetAtCST == "" && checkpoint.ResetAtRFC3339 == "") {
+		return nil
 	}
-	return nil
+	return fmt.Errorf("resume stop payload does not match stop kind %q: rate-limit reset metadata is present", checkpoint.StopKind)
+}
+
+func (checkpoint ResumeCheckpoint) validateProviderStopPayload() error {
+	if checkpoint.StopKind == ResumeStopProviderUnavailable || (checkpoint.ProviderUnavailableClassification == "" &&
+		checkpoint.ProviderUnavailableProbes == 0 && checkpoint.ProviderUnavailableStartedAt.IsZero()) {
+		return nil
+	}
+	return fmt.Errorf("resume stop payload does not match stop kind %q: provider metadata is present", checkpoint.StopKind)
+}
+
+func (checkpoint ResumeCheckpoint) validateGuardStopPayload() error {
+	if checkpoint.StopKind == ResumeStopGuardRecoverable || (checkpoint.GuardFailure == "" &&
+		checkpoint.GuardRefBeforeDigest == "" && checkpoint.GuardRefAfterDigest == "" &&
+		len(checkpoint.GuardRefChanges) == 0 && !checkpoint.GuardRefChangesTruncated && checkpoint.CompletedResult == nil) {
+		return nil
+	}
+	return fmt.Errorf("resume stop payload does not match stop kind %q: guard-recovery metadata is present", checkpoint.StopKind)
 }
 
 func (s *StateStore) SaveResumeCheckpoint(checkpoint ResumeCheckpoint) error {
