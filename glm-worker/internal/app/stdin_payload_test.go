@@ -92,6 +92,9 @@ func prepareWaitingDecisionState(t *testing.T, cfg config.AppConfig) *state.Stat
 	if _, err := st.StartNewTask(); err != nil {
 		t.Fatal(err)
 	}
+	if err := state.CaptureGitBaseline(cfg, st); err != nil {
+		t.Fatal(err)
+	}
 	if err := st.Write("last-request", "request"); err != nil {
 		t.Fatal(err)
 	}
@@ -111,6 +114,9 @@ func prepareWaitingSolReviewState(t *testing.T, cfg config.AppConfig) *state.Sta
 		t.Fatal(err)
 	}
 	if _, err := st.StartNewTask(); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.CaptureGitBaseline(cfg, st); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.Write("last-request", "request"); err != nil {
