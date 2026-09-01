@@ -40,6 +40,31 @@ func Capture(repoRoot string, st *state.StateStore) ([]byte, bool, error) {
 	return diff, true, nil
 }
 
+func ChangedPaths(repoRoot string, st *state.StateStore) ([]string, bool, error) {
+	base, available, err := loadBaseline(st)
+	if err != nil || !available {
+		return nil, available, err
+	}
+	indexPath, cleanup, err := reconstructBaselineIndex(repoRoot, base)
+	if err != nil {
+		return nil, false, err
+	}
+	defer cleanup()
+
+	trackedRaw, err := gitWithIndex(repoRoot, indexPath, nil, "diff", "--name-only", "-z", "--no-renames", "--")
+	if err != nil {
+		return nil, false, fmt.Errorf("capture task changed paths: %w", err)
+	}
+	paths := splitNul(trackedRaw)
+	tracked, untracked, err := taskCreatedPaths(repoRoot, indexPath, st)
+	if err != nil {
+		return nil, false, err
+	}
+	paths = appendUniquePaths(paths, tracked...)
+	paths = appendUniquePaths(paths, untracked...)
+	return paths, true, nil
+}
+
 func loadBaseline(st *state.StateStore) (baseline, bool, error) {
 	if !st.Exists("baseline-head") || !st.Exists("baseline-status") {
 		return baseline{}, false, nil
@@ -90,18 +115,7 @@ func reconstructBaselineIndex(repoRoot string, base baseline) (string, func(), e
 }
 
 func appendTaskCreatedDiff(repoRoot, indexPath string, st *state.StateStore, diff []byte) ([]byte, error) {
-	if !st.Exists("baseline-untracked") {
-		return diff, nil
-	}
-	baselineUntracked, err := os.ReadFile(st.Path("baseline-untracked"))
-	if err != nil {
-		return nil, fmt.Errorf("read baseline untracked paths: %w", err)
-	}
-	tracked, err := taskCreatedTrackedPaths(repoRoot, indexPath, baselineUntracked)
-	if err != nil {
-		return nil, err
-	}
-	untracked, err := taskCreatedUntrackedPaths(repoRoot, baselineUntracked)
+	tracked, untracked, err := taskCreatedPaths(repoRoot, indexPath, st)
 	if err != nil {
 		return nil, err
 	}
@@ -114,6 +128,25 @@ func appendTaskCreatedDiff(repoRoot, indexPath string, st *state.StateStore, dif
 		return nil, err
 	}
 	return result.Bytes(), nil
+}
+
+func taskCreatedPaths(repoRoot, indexPath string, st *state.StateStore) ([]string, []string, error) {
+	if !st.Exists("baseline-untracked") {
+		return nil, nil, nil
+	}
+	baselineUntracked, err := os.ReadFile(st.Path("baseline-untracked"))
+	if err != nil {
+		return nil, nil, fmt.Errorf("read baseline untracked paths: %w", err)
+	}
+	tracked, err := taskCreatedTrackedPaths(repoRoot, indexPath, baselineUntracked)
+	if err != nil {
+		return nil, nil, err
+	}
+	untracked, err := taskCreatedUntrackedPaths(repoRoot, baselineUntracked)
+	if err != nil {
+		return nil, nil, err
+	}
+	return tracked, untracked, nil
 }
 
 func taskCreatedTrackedPaths(repoRoot, indexPath string, baselineRaw []byte) ([]string, error) {
@@ -157,6 +190,21 @@ func taskCreatedUntrackedPaths(repoRoot string, baselineRaw []byte) ([]string, e
 		result = append(result, filePath)
 	}
 	return result, nil
+}
+
+func appendUniquePaths(paths []string, additions ...string) []string {
+	seen := make(map[string]struct{}, len(paths)+len(additions))
+	for _, path := range paths {
+		seen[path] = struct{}{}
+	}
+	for _, path := range additions {
+		if _, exists := seen[path]; exists {
+			continue
+		}
+		seen[path] = struct{}{}
+		paths = append(paths, path)
+	}
+	return paths
 }
 
 func gitWithIndex(repoRoot, indexPath string, stdin []byte, args ...string) ([]byte, error) {
