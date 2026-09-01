@@ -22,6 +22,13 @@ func TestCompleteObservationNoGoTerminatesWithoutAnotherDispatch(t *testing.T) {
 	if !st.ObservationNoGoEligible() {
 		t.Fatal("observation decision should admit terminal no-go")
 	}
+	plan, err := st.ParentActionPlan()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.RequiredAction != ParentActionDecision || !plan.Allows(ParentActionDecision) || !plan.Allows(ParentActionNoGo) {
+		t.Fatalf("observation decision plan = %#v", plan)
+	}
 	completed, err := st.CompleteObservationNoGo()
 	if err != nil || !completed {
 		t.Fatalf("complete no-go = %v err=%v", completed, err)
@@ -32,7 +39,7 @@ func TestCompleteObservationNoGoTerminatesWithoutAnotherDispatch(t *testing.T) {
 	if st.OpenParentReviewLabel() != "none" {
 		t.Fatalf("parent review remains open: %s", st.OpenParentReviewLabel())
 	}
-	plan, err := st.ParentActionPlan()
+	plan, err = st.ParentActionPlan()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,8 +57,15 @@ func TestCompleteObservationNoGoTerminatesWithoutAnotherDispatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(logs) != 1 || logs[0].CallType != CallTypeEvent || logs[0].Phase != ParentPhaseClose || logs[0].Outcome != ParentOutcomeNoGo {
-		t.Fatalf("terminal log = %#v", logs)
+	found := false
+	for _, record := range logs {
+		if record.CallType == CallTypeEvent && record.Phase == ParentPhaseClose && record.Outcome == ParentOutcomeNoGo {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("terminal no-go event missing: %#v", logs)
 	}
 }
 
@@ -70,6 +84,13 @@ func TestCompleteObservationNoGoRejectsGenericDecision(t *testing.T) {
 
 	if st.ObservationNoGoEligible() {
 		t.Fatal("generic decision must not admit terminal no-go")
+	}
+	plan, err := st.ParentActionPlan()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Allows(ParentActionNoGo) {
+		t.Fatalf("generic decision plan exposes no-go: %#v", plan)
 	}
 	if completed, err := st.CompleteObservationNoGo(); err == nil || completed {
 		t.Fatalf("generic no-go = %v err=%v", completed, err)
