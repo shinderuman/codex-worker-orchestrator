@@ -293,6 +293,15 @@ func newWorkflowTWithOutput(t *testing.T, st *state.StateStore, r *scriptedRunne
 	w.captureSnapshot = func(string) (state.GitSnapshot, error) {
 		return fixedSnapshot, nil
 	}
+	w.captureBoundarySnapshot = func(repoRoot string) (state.GitSnapshot, error) {
+		snapshot, err := w.captureSnapshot(repoRoot)
+		if err != nil {
+			return snapshot, err
+		}
+		parents := state.ParentFileStates{}
+		snapshot.ParentFiles = &parents
+		return snapshot, nil
+	}
 	w.collectChangedPaths = func(string, string) ([]string, error) {
 		return nil, nil
 	}

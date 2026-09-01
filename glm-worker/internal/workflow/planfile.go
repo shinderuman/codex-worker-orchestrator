@@ -73,14 +73,6 @@ func readParentFileStates(repoRoot string) (state.ParentFileStates, error) {
 	return state.CaptureParentFileStates(repoRoot)
 }
 
-func captureStopParentFiles(repoRoot string) *state.ParentFileStates {
-	states, err := state.CaptureParentFileStates(repoRoot)
-	if err != nil {
-		return nil
-	}
-	return &states
-}
-
 func parentFileChangeReason(before, after state.ParentFileState) string {
 	switch {
 	case before.Exists && after.Exists:
