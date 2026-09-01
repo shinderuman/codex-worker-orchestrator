@@ -20,7 +20,7 @@ func Acquire(path string) (*Lock, error) {
 
 	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		_ = file.Close()
-		return nil, ErrHeld
+		return nil, ErrRepoLockHeld
 	}
 
 	if err := file.Truncate(0); err == nil {
