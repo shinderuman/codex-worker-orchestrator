@@ -2,12 +2,31 @@ package app
 
 import (
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 )
 
-func TestBundleAnalysisJSONOmitsExplanatoryProse(t *testing.T) {
-	longText := strings.Repeat("explanatory-prose-", 80)
+func TestBundleAnalysisTypesDoNotCarryExplanationFields(t *testing.T) {
+	for name, value := range map[string]any{
+		"interval":    bundleAnalysisInterval{},
+		"subsequents": bundleAnalysisSubsequents{},
+		"rollout":     bundleAnalysisRollout{},
+		"count":       bundleAnalysisCount{},
+		"token-delta": bundleAnalysisTokenDelta{},
+		"validations": bundleAnalysisValidations{},
+		"retries":     bundleAnalysisRetries{},
+	} {
+		typeOf := reflect.TypeOf(value)
+		for _, field := range []string{"Basis", "Note", "Rule"} {
+			if _, found := typeOf.FieldByName(field); found {
+				t.Fatalf("%s retains explanation-only field %s", name, field)
+			}
+		}
+	}
+}
+
+func TestBundleAnalysisJSONRemainsStructural(t *testing.T) {
 	start := "2026-09-01T00:00:00Z"
 	end := "2026-09-01T00:01:00Z"
 	index := bundleAnalysisIndex{
@@ -17,24 +36,23 @@ func TestBundleAnalysisJSONOmitsExplanatoryProse(t *testing.T) {
 		Intervals: bundleAnalysisIntervals{
 			TaskExecution: bundleAnalysisInterval{
 				Status: analysisStatusAvailable, Start: &start, End: &end,
-				EndBasis: analysisExecutionEndBasisLifecycleComplete, Basis: longText,
+				EndBasis: analysisExecutionEndBasisLifecycleComplete,
 			},
-			ParentFinalization: bundleAnalysisInterval{Status: analysisStatusUnknown, Basis: longText},
+			ParentFinalization: bundleAnalysisInterval{Status: analysisStatusUnknown},
 			SubsequentRequests: bundleAnalysisSubsequents{
-				Status: analysisStatusAvailable, Attribution: analysisAttributionSubsequent, Basis: longText,
+				Status: analysisStatusAvailable, Attribution: analysisAttributionSubsequent,
 			},
-			Collection: bundleAnalysisInterval{Status: analysisStatusAvailable, Start: &start, End: &end, Basis: longText},
+			Collection: bundleAnalysisInterval{Status: analysisStatusAvailable, Start: &start, End: &end},
 		},
-		RolloutWindow: bundleAnalysisRollout{Status: analysisStatusAvailable, TotalBytes: 100, Note: longText},
-		WaitCalls:     bundleAnalysisCount{Status: analysisStatusCounted, Count: 2, Basis: longText},
-		TokenDelta:    bundleAnalysisTokenDelta{Status: analysisStatusAvailable, InputTokens: 10, Basis: longText},
-		Finalization:  bundleAnalysisTokenDelta{Status: analysisStatusAvailable, InputTokens: 5, Basis: longText},
+		RolloutWindow: bundleAnalysisRollout{Status: analysisStatusAvailable, TotalBytes: 100},
+		WaitCalls:     bundleAnalysisCount{Status: analysisStatusCounted, Count: 2},
+		TokenDelta:    bundleAnalysisTokenDelta{Status: analysisStatusAvailable, InputTokens: 10},
+		Finalization:  bundleAnalysisTokenDelta{Status: analysisStatusAvailable, InputTokens: 5},
 		ValidationRuns: bundleAnalysisValidations{
-			Status: analysisStatusAvailable, Rule: longText,
+			Status: analysisStatusAvailable,
 		},
 		Retries: bundleAnalysisRetries{
-			ResumedModelCalls: bundleAnalysisCount{Status: analysisStatusCounted, Count: 1, Basis: longText},
-			Basis:             longText,
+			ResumedModelCalls: bundleAnalysisCount{Status: analysisStatusCounted, Count: 1},
 		},
 	}
 
@@ -43,9 +61,9 @@ func TestBundleAnalysisJSONOmitsExplanatoryProse(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(data)
-	for _, forbidden := range []string{longText, `"basis":`, `"note":`, `"attribution_rule":`} {
+	for _, forbidden := range []string{`"basis":`, `"note":`, `"attribution_rule":`} {
 		if strings.Contains(text, forbidden) {
-			t.Fatalf("serialized analysis index retained explanatory contract %q: %s", forbidden, text)
+			t.Fatalf("serialized analysis index retained explanation-only contract %q: %s", forbidden, text)
 		}
 	}
 	for _, required := range []string{
