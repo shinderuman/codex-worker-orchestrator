@@ -48,7 +48,7 @@ func TestStopDuringRunningCallSavesInterruptedState(t *testing.T) {
 	if cerr != nil {
 		t.Fatal(cerr)
 	}
-	if !checkpoint.UserInterrupted || checkpoint.RateLimited || checkpoint.ProviderUnavailable {
+	if checkpoint.StopKind != state.ResumeStopInterrupted || checkpoint.StopKind == state.ResumeStopRateLimited || checkpoint.StopKind == state.ResumeStopProviderUnavailable {
 		t.Fatalf("停止理由がuser interruption単独になっていません: %#v", checkpoint)
 	}
 	if checkpoint.Phase != "worker-new" || checkpoint.Role != state.WorkerRole ||
@@ -137,7 +137,7 @@ func TestStopBeforeCallSavesInterruptedWithoutCallRecord(t *testing.T) {
 	}
 
 	checkpoint, cerr := st.LoadResumeCheckpoint()
-	if cerr != nil || !checkpoint.UserInterrupted {
+	if cerr != nil || checkpoint.StopKind != state.ResumeStopInterrupted {
 		t.Fatalf("中断checkpointが保存されていません: %#v err=%v", checkpoint, cerr)
 	}
 	if st.TaskStatus() != state.TaskStatusInterrupted {
@@ -184,7 +184,7 @@ func TestResumeAfterPreFirstCallStopStartsFreshSession(t *testing.T) {
 	if st.TaskStatus() != state.TaskStatusComplete {
 		t.Fatalf("task status = %s want complete", st.TaskStatus())
 	}
-	if checkpoint, cerr := st.LoadResumeCheckpoint(); cerr == nil && checkpoint.UserInterrupted {
+	if checkpoint, cerr := st.LoadResumeCheckpoint(); cerr == nil && checkpoint.StopKind == state.ResumeStopInterrupted {
 		t.Fatalf("再開済みcheckpointが中断状態のままです: %#v", checkpoint)
 	}
 	if len(resumeRunner.phases) == 0 || resumeRunner.phases[0] != "worker-new" {
@@ -217,7 +217,7 @@ func TestStopDuringBackoffSleepInterruptsWithoutCallRecord(t *testing.T) {
 		t.Fatalf("backoff停止後にprobeを実行しています: %v", r.probes)
 	}
 	checkpoint, cerr := st.LoadResumeCheckpoint()
-	if cerr != nil || !checkpoint.UserInterrupted || checkpoint.ProviderUnavailable {
+	if cerr != nil || checkpoint.StopKind != state.ResumeStopInterrupted || checkpoint.StopKind == state.ResumeStopProviderUnavailable {
 		t.Fatalf("停止状態 = %#v err=%v", checkpoint, cerr)
 	}
 	if st.TaskStatus() != state.TaskStatusInterrupted {
@@ -255,16 +255,16 @@ func seedInterruptedCheckpoint(t *testing.T, st *state.StateStore, sessionID str
 		t.Fatal(err)
 	}
 	checkpoint := state.ResumeCheckpoint{
-		Stage:           state.ResumeStageWorker,
-		Phase:           "worker-new",
-		Role:            state.WorkerRole,
-		Model:           "opus",
-		Effort:          "high",
-		Prompt:          "p",
-		OriginalPrompt:  "p",
-		Request:         "req",
-		ReportOnly:      false,
-		UserInterrupted: true,
+		Stage:          state.ResumeStageWorker,
+		Phase:          "worker-new",
+		Role:           state.WorkerRole,
+		Model:          "opus",
+		Effort:         "high",
+		Prompt:         "p",
+		OriginalPrompt: "p",
+		Request:        "req",
+		ReportOnly:     false,
+		StopKind:       state.ResumeStopInterrupted,
 	}
 	if repoRoot != "" {
 		snapshot, snapErr := state.CaptureGitSnapshot(repoRoot)
@@ -301,7 +301,7 @@ func TestResumeFromInterruptedCheckpoint(t *testing.T) {
 	if st.TaskStatus() != state.TaskStatusComplete {
 		t.Fatalf("task status = %s want complete", st.TaskStatus())
 	}
-	if checkpoint, err := st.LoadResumeCheckpoint(); err == nil && checkpoint.UserInterrupted {
+	if checkpoint, err := st.LoadResumeCheckpoint(); err == nil && checkpoint.StopKind == state.ResumeStopInterrupted {
 		t.Fatalf("再開済みcheckpointが中断状態のままです: %#v", checkpoint)
 	}
 }

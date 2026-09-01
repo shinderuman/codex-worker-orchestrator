@@ -57,7 +57,7 @@ func equalDurations(a, b []time.Duration) bool {
 
 func readRateLimitedFlag(st *state.StateStore) bool {
 	cp, err := st.LoadResumeCheckpoint()
-	return err == nil && cp.RateLimited
+	return err == nil && cp.StopKind == state.ResumeStopRateLimited
 }
 
 func TestRecoveryExhaustsToProviderUnavailable(t *testing.T) {
@@ -84,8 +84,8 @@ func TestRecoveryExhaustsToProviderUnavailable(t *testing.T) {
 		t.Fatalf("status = %q", st.TaskStatus())
 	}
 	cp, cerr := st.LoadResumeCheckpoint()
-	if cerr != nil || !cp.ProviderUnavailable || cp.ProviderUnavailableProbes != 4 ||
-		cp.ProviderUnavailableClassification != "http-503" || cp.RateLimited {
+	if cerr != nil || cp.StopKind != state.ResumeStopProviderUnavailable || cp.ProviderUnavailableProbes != 4 ||
+		cp.ProviderUnavailableClassification != "http-503" || cp.StopKind == state.ResumeStopRateLimited {
 		t.Fatalf("checkpoint = %#v err=%v", cp, cerr)
 	}
 	if !st.Exists("worker.ready") {
@@ -539,7 +539,7 @@ func TestProviderUnavailableTaskBlocksNewTask(t *testing.T) {
 	st := newStateStoreT(t)
 	if err := st.SaveResumeCheckpoint(state.ResumeCheckpoint{
 		Stage: state.ResumeStageWorker, Phase: "worker-new", Role: state.WorkerRole,
-		Model: "opus", Effort: "high", Prompt: "p", ProviderUnavailable: true,
+		Model: "opus", Effort: "high", Prompt: "p", StopKind: state.ResumeStopProviderUnavailable,
 		ProviderUnavailableClassification: "http-503", ProviderUnavailableProbes: 4,
 	}); err != nil {
 		t.Fatal(err)
@@ -569,7 +569,7 @@ func TestResumeFromProviderUnavailableRetriesSameSession(t *testing.T) {
 		Prompt:                            "p",
 		OriginalPrompt:                    "p",
 		Request:                           "req",
-		ProviderUnavailable:               true,
+		StopKind:                          state.ResumeStopProviderUnavailable,
 		ProviderUnavailableClassification: "http-503",
 		ProviderUnavailableProbes:         4,
 	}); err != nil {
@@ -612,7 +612,7 @@ func TestResumeFromProviderUnavailableRestoresStatusAfterRunnerError(t *testing.
 		Prompt:                            "p",
 		OriginalPrompt:                    "p",
 		Request:                           "req",
-		ProviderUnavailable:               true,
+		StopKind:                          state.ResumeStopProviderUnavailable,
 		ProviderUnavailableClassification: "http-503",
 		ProviderUnavailableProbes:         4,
 	}); err != nil {
@@ -636,7 +636,7 @@ func TestResumeFromProviderUnavailableRestoresStatusAfterRunnerError(t *testing.
 		t.Fatalf("resume失敗時はprovider-unavailable statusへ復元すべき: %q", st.TaskStatus())
 	}
 	restored, loadErr := st.LoadResumeCheckpoint()
-	if loadErr != nil || !restored.ProviderUnavailable {
+	if loadErr != nil || restored.StopKind != state.ResumeStopProviderUnavailable {
 		t.Fatalf("provider-unavailable checkpointが復元されていません: checkpoint=%#v err=%v", restored, loadErr)
 	}
 }
@@ -655,7 +655,7 @@ func seedProviderUnavailableCheckpoint(t *testing.T, st *state.StateStore) {
 		Prompt:                            "p",
 		OriginalPrompt:                    "p",
 		Request:                           "req",
-		ProviderUnavailable:               true,
+		StopKind:                          state.ResumeStopProviderUnavailable,
 		ProviderUnavailableClassification: "http-503",
 		ProviderUnavailableProbes:         4,
 	}); err != nil {
@@ -826,7 +826,7 @@ func TestRecoveryHitsFiveHourLimitSavesRateLimited(t *testing.T) {
 		t.Fatalf("5h上限到達時はprovider-unavailableでない: %v", err)
 	}
 	cp, cerr := st.LoadResumeCheckpoint()
-	if cerr != nil || !cp.RateLimited || cp.ProviderUnavailable {
+	if cerr != nil || cp.StopKind != state.ResumeStopRateLimited || cp.StopKind == state.ResumeStopProviderUnavailable {
 		t.Fatalf("checkpoint = %#v err=%v", cp, cerr)
 	}
 	if st.TaskStatus() != state.TaskStatusRateLimited {
@@ -864,8 +864,8 @@ func TestRecoveryProbeBlankResponseRetriesToProviderUnavailable(t *testing.T) {
 		t.Fatalf("本task resumeは1回(初回)だけのべき: %d", len(r.prompts))
 	}
 	cp, cerr := st.LoadResumeCheckpoint()
-	if cerr != nil || !cp.ProviderUnavailable || cp.ProviderUnavailableClassification != runner.ProbeContractFailure ||
-		cp.ProviderUnavailableProbes != 4 || cp.RateLimited {
+	if cerr != nil || cp.StopKind != state.ResumeStopProviderUnavailable || cp.ProviderUnavailableClassification != runner.ProbeContractFailure ||
+		cp.ProviderUnavailableProbes != 4 || cp.StopKind == state.ResumeStopRateLimited {
 		t.Fatalf("checkpoint = %#v err=%v", cp, cerr)
 	}
 	if !st.Exists("worker.ready") {
@@ -1025,7 +1025,7 @@ func TestResumeFromProviderUnavailableHitsFiveHourLimit(t *testing.T) {
 		t.Fatalf("RATE_LIMITEDを期待: %v", err)
 	}
 	cp, cerr := st.LoadResumeCheckpoint()
-	if cerr != nil || !cp.RateLimited || cp.ProviderUnavailable {
+	if cerr != nil || cp.StopKind != state.ResumeStopRateLimited || cp.StopKind == state.ResumeStopProviderUnavailable {
 		t.Fatalf("checkpoint = %#v err=%v", cp, cerr)
 	}
 	if st.TaskStatus() != state.TaskStatusRateLimited {
@@ -1055,7 +1055,7 @@ func TestRecoveryProbeFiveHourSignatureSavesRateLimited(t *testing.T) {
 		t.Fatalf("5h signature probeはprovider-unavailableでない: %v", err)
 	}
 	cp, cerr := st.LoadResumeCheckpoint()
-	if cerr != nil || !cp.RateLimited || cp.ProviderUnavailable {
+	if cerr != nil || cp.StopKind != state.ResumeStopRateLimited || cp.StopKind == state.ResumeStopProviderUnavailable {
 		t.Fatalf("checkpoint = %#v err=%v", cp, cerr)
 	}
 	if cp.ResetAtCST != "2026-07-22 14:06:34" || cp.ResetAtRFC3339 == "" {
@@ -1087,7 +1087,7 @@ func TestResumeProbeGateFiveHourSignatureSavesRateLimited(t *testing.T) {
 		t.Fatalf("RATE_LIMITEDを期待: %v", err)
 	}
 	cp, cerr := st.LoadResumeCheckpoint()
-	if cerr != nil || !cp.RateLimited || cp.ProviderUnavailable || cp.ProviderUnavailableClassification != "" {
+	if cerr != nil || cp.StopKind != state.ResumeStopRateLimited || cp.StopKind == state.ResumeStopProviderUnavailable || cp.ProviderUnavailableClassification != "" {
 		t.Fatalf("checkpoint = %#v err=%v", cp, cerr)
 	}
 	if st.TaskStatus() != state.TaskStatusRateLimited {
@@ -1194,7 +1194,7 @@ func TestRecoveryProbeBareHTTPNumberStaysProbeContract(t *testing.T) {
 		t.Fatalf("backoff = %v want %v", clock.sleeps, transientBackoffSchedule)
 	}
 	cp, cerr := st.LoadResumeCheckpoint()
-	if cerr != nil || !cp.ProviderUnavailable || cp.ProviderUnavailableClassification != runner.ProbeContractFailure {
+	if cerr != nil || cp.StopKind != state.ResumeStopProviderUnavailable || cp.ProviderUnavailableClassification != runner.ProbeContractFailure {
 		t.Fatalf("checkpoint = %#v err=%v", cp, cerr)
 	}
 }
@@ -1256,8 +1256,8 @@ func TestRecoveryProbeBareAuthWordStaysProbeContract(t *testing.T) {
 		t.Fatalf("本task resumeは1回(初回)だけのべき: %d", len(r.prompts))
 	}
 	cp, cerr := st.LoadResumeCheckpoint()
-	if cerr != nil || !cp.ProviderUnavailable || cp.ProviderUnavailableClassification != runner.ProbeContractFailure ||
-		cp.ProviderUnavailableProbes != 4 || cp.RateLimited {
+	if cerr != nil || cp.StopKind != state.ResumeStopProviderUnavailable || cp.ProviderUnavailableClassification != runner.ProbeContractFailure ||
+		cp.ProviderUnavailableProbes != 4 || cp.StopKind == state.ResumeStopRateLimited {
 		t.Fatalf("checkpoint = %#v err=%v", cp, cerr)
 	}
 	if !st.Exists("worker.ready") {
@@ -1295,7 +1295,7 @@ func TestResumeProbeGateBareAuthWordStaysUnavailable(t *testing.T) {
 		t.Fatalf("本task resumeも追加probe上限を超えない: prompts=%d probes=%d", len(r.prompts), len(r.probes))
 	}
 	cp, cerr := st.LoadResumeCheckpoint()
-	if cerr != nil || !cp.ProviderUnavailable || cp.ProviderUnavailableClassification != runner.ProbeContractFailure ||
+	if cerr != nil || cp.StopKind != state.ResumeStopProviderUnavailable || cp.ProviderUnavailableClassification != runner.ProbeContractFailure ||
 		cp.ProviderUnavailableProbes != 4 {
 		t.Fatalf("checkpoint = %#v err=%v", cp, cerr)
 	}

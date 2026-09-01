@@ -263,7 +263,7 @@ func TestSnapshotReviewResumeDriftFailsClosed(t *testing.T) {
 		Request:        "request",
 		WorkerResult:   workerResultFromBody(workerPacket()),
 		ReviewNumber:   1,
-		RateLimited:    true,
+		StopKind:       state.ResumeStopRateLimited,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -311,7 +311,7 @@ func TestSnapshotReviewResumeMatchResumesReviewer(t *testing.T) {
 		Request:        "request",
 		WorkerResult:   workerResultFromBody(workerPacket()),
 		ReviewNumber:   1,
-		RateLimited:    true,
+		StopKind:       state.ResumeStopRateLimited,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -436,7 +436,7 @@ func TestSnapshotCapturedOnWorkerResumePath(t *testing.T) {
 		Prompt:         "p",
 		OriginalPrompt: "p",
 		Request:        "req",
-		RateLimited:    true,
+		StopKind:       state.ResumeStopRateLimited,
 	}); err != nil {
 		t.Fatal(err)
 	}

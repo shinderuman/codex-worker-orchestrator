@@ -436,7 +436,7 @@ func seedRateLimitedWorkerCheckpoint(t *testing.T, st *state.StateStore, request
 		Prompt:         "p",
 		OriginalPrompt: "p",
 		Request:        request,
-		RateLimited:    true,
+		StopKind:       state.ResumeStopRateLimited,
 	}); err != nil {
 		t.Fatal(err)
 	}
