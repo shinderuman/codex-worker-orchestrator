@@ -21,6 +21,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Apply issue 240 codemod
+        if: github.event.head_commit.message != 'workflow: route repository boundary captures through state owner'
         run: |
           python3 .github/issue-240-codemod.py
           gofmt -w \
@@ -29,52 +30,14 @@ jobs:
             glm-worker/internal/workflow/workflow_snapshot_test.go \
             glm-worker/internal/workflow/review_resume_parent_test.go \
             glm-worker/internal/workflow/planfile.go
-          cat > .github/workflows/quality.yml <<'EOF'
-          name: Repository Lint
-
-          on:
-            pull_request:
-            push:
-              branches:
-                - main
-            workflow_dispatch:
-
-          permissions:
-            contents: read
-
-          concurrency:
-            group: repository-lint-${{ github.event.pull_request.number || github.ref }}
-            cancel-in-progress: true
-
-          jobs:
-            lint:
-              runs-on: ubuntu-latest
-              steps:
-                - uses: actions/checkout@v6
-                - name: Read quality tool contract
-                  id: quality-tools
-                  run: |
-                    GO_VERSION=$(awk -F': ' '$1 == "go" { print $2 }' quality-tools.yml)
-                    printf 'go_version=%s\n' "$GO_VERSION" >> "$GITHUB_OUTPUT"
-                - uses: actions/setup-go@v7
-                  with:
-                    go-version: ${{ steps.quality-tools.outputs.go_version }}
-                    cache: false
-                - name: Install quality tools
-                  run: |
-                    quality_bin="$(go env GOPATH)/bin"
-                    QUALITY_TOOLS_BIN_DIR="$quality_bin" ./install-quality-tools.sh
-                    printf '%s\n' "$quality_bin" >> "$GITHUB_PATH"
-                - name: Repository lint gate
-                  run: ./harnesslint
-                - name: Full Go test suite
-                  working-directory: glm-worker
-                  run: go test ./...
-          EOF
-          rm .github/issue-240-codemod.py
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
+          git add \
+            glm-worker/internal/workflow/workflow.go \
+            glm-worker/internal/workflow/workflow_test.go \
+            glm-worker/internal/workflow/workflow_snapshot_test.go \
+            glm-worker/internal/workflow/review_resume_parent_test.go \
+            glm-worker/internal/workflow/planfile.go
           git commit -m "workflow: route repository boundary captures through state owner"
           git push origin HEAD:web-gpt/issue-240-parent-authority-capture
       - name: Read quality tool contract
