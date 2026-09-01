@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/app"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repolock"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -30,7 +30,7 @@ func runNoGo(cfg config.AppConfig, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	lock, err := app.AcquireRepoLock(st.LockPath())
+	lock, err := repolock.Acquire(st.LockPath())
 	if err != nil {
 		return err
 	}
