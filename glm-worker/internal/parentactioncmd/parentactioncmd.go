@@ -74,23 +74,9 @@ func execute(cfg config.AppConfig, args []string, stdout, stderr io.Writer) erro
 	action := args[0]
 	switch action {
 	case "no-go":
-		if len(args) != 1 {
-			return fmt.Errorf("usage: glm-parent-action no-go")
-		}
-		if err := persistParentCodexIdentity(cfg); err != nil {
-			return err
-		}
-		return runNoGo(cfg, stdout)
+		return executeNoGo(cfg, args, stdout)
 	case actionStart, "accept", "resume":
-		if len(args) != 1 {
-			return fmt.Errorf("usage: glm-parent-action %s", action)
-		}
-		if action == "resume" {
-			if err := persistParentCodexIdentity(cfg); err != nil {
-				return err
-			}
-		}
-		return runWorker(cfg.RepoRoot, directWorkerArgs(action), nil, stdout, stderr, startIdentityEnv(action))
+		return executeDirectWorkerAction(cfg, action, args, stdout, stderr)
 	case actionStartMilestones:
 		return executePayloadAction(
 			cfg.RepoRoot,
@@ -117,6 +103,18 @@ func execute(cfg config.AppConfig, args []string, stdout, stderr io.Writer) erro
 	default:
 		return fmt.Errorf("%s", usage)
 	}
+}
+
+func executeDirectWorkerAction(cfg config.AppConfig, action string, args []string, stdout, stderr io.Writer) error {
+	if len(args) != 1 {
+		return fmt.Errorf("usage: glm-parent-action %s", action)
+	}
+	if action == "resume" {
+		if err := persistParentCodexIdentity(cfg); err != nil {
+			return err
+		}
+	}
+	return runWorker(cfg.RepoRoot, directWorkerArgs(action), nil, stdout, stderr, startIdentityEnv(action))
 }
 
 func startIdentityEnv(action string) []string {
