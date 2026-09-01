@@ -393,7 +393,7 @@ func (w *Workflow) startNextExecutionMilestone(
 ) error {
 	current := plan.Milestones[plan.CurrentIndex]
 	if current.FreshWorker {
-		if err := w.state.Remove("worker.id", "worker.ready"); err != nil {
+		if err := w.state.InvalidateSession(state.WorkerRole); err != nil {
 			return err
 		}
 	}
