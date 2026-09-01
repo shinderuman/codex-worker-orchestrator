@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint"
@@ -504,6 +505,41 @@ func oversizeImplementedPacket() string {
 		Tests:               "pass",
 		Unverified:          "none",
 	})
+}
+
+func TestBoundedTextKeepsSingleLineFieldContract(t *testing.T) {
+	omissionMarker := "[前方を省略] "
+	withinLimit := "そのまま返す観測値"
+	if got := boundedText(withinLimit, packet.MaxFieldBytes); got != withinLimit {
+		t.Fatalf("上限内の値は変更しない: %q", got)
+	}
+	for _, tc := range []struct {
+		name  string
+		value string
+	}{
+		{"ascii超過", strings.Repeat("x", packet.MaxFieldBytes+40)},
+		{"multibyte超過", strings.Repeat("あ", packet.MaxFieldBytes/3+13)},
+		{"切詰め境界がrune途中のmultibyte超過", "x" + strings.Repeat("あ", packet.MaxFieldBytes/3+13)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := boundedText(tc.value, packet.MaxFieldBytes)
+			if len(got) > packet.MaxFieldBytes {
+				t.Fatalf("出力がbyte上限を超えています: %d bytes", len(got))
+			}
+			if !strings.HasPrefix(got, omissionMarker) {
+				t.Fatalf("切詰め時に省略markerを先頭に置く: %q", got)
+			}
+			if strings.ContainsAny(got, "\n\r") {
+				t.Fatalf("切詰め出力に改行を含めている: %q", got)
+			}
+			if !utf8.ValidString(got) {
+				t.Fatal("切詰め出力が不正UTF-8です")
+			}
+			if !strings.HasSuffix(tc.value, got[len(omissionMarker):]) {
+				t.Fatal("切詰め出力は元の値の末尾を保持すべきです")
+			}
+		})
+	}
 }
 
 func TestRunModelCorrectsInvalidResultInSameRunner(t *testing.T) {

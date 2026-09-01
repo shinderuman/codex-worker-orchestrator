@@ -27,6 +27,12 @@ type externalFeasibilityParseError struct {
 	reason string
 }
 
+type pocGoNoGoBoilerplate struct {
+	decision       string
+	options        string
+	recommendation string
+}
+
 const externalFeasibilitySectionHeading = taskcontract.ExternalFeasibilityHeading
 
 const (
@@ -42,6 +48,10 @@ const (
 	externalFeasibilityRejectUnverified
 )
 
+const pocGoNoGoObservationFloorBytes = 512
+
+const pocGoNoGoFieldFloorBytes = 96
+
 var externalFeasibilityGuardSurface = guardSurface{
 	label:         "external feasibility宣言",
 	files:         "ACTIVE task fileの`## External feasibility`節",
@@ -49,6 +59,24 @@ var externalFeasibilityGuardSurface = guardSurface{
 	outcomePrefix: "external_feasibility",
 	invariants:    "ACTIVE task fileは`## External feasibility`節へstatus(not-applicable/poc/observation/implementation)を宣言し、implementationはevidence-source: producer・evidence・go(親Go判断)を伴う。poc/observationのworkerはread-only capabilityと開始前後snapshot同一性でproduction diffを禁止する。宣言内容の真偽は機械検証しない",
 	targets:       "ACTIVE task fileの`## External feasibility`節と現在の宣言status",
+}
+
+var pocGoNoGoBoilerplateTiers = []pocGoNoGoBoilerplate{
+	{
+		decision:       "実producer観測結果のGo/No-Go。implementation昇格は親Codexがtask fileのExternal feasibility宣言をstatus: implementation + evidence-source: producer + evidence + go へ書き換えてから行う",
+		options:        "Go: 親Codexが宣言をimplementationへmigrationして実装taskとして再委譲; No-Go: 撤退; 観測継続: 宣言をpoc/observationのまま再実行",
+		recommendation: "PoC結果だけではGLM側でimplementationへ昇格しないため、親Solが実producer evidenceで判断する",
+	},
+	{
+		decision:       "実producer観測結果のGo/No-Go。昇格は親が宣言をimplementation+producer evidence+goへ書き換えてから",
+		options:        "Go: 親が宣言をimplementationへmigrationして再委譲; No-Go: 撤退; 観測継続: 宣言のまま再実行",
+		recommendation: "GLM側では昇格せず親Solが実producer evidenceで判断",
+	},
+	{
+		decision:       "親が実producer観測のGo/No-Goを判断; 昇格は宣言書換後に親が実施",
+		options:        "Go: 宣言migration後に実装委譲; No-Go: 撤退; 観測継続: 再実行",
+		recommendation: "親Solが実producer evidenceで判断",
+	},
 }
 
 func (f externalFeasibility) pocStage() bool {
@@ -229,16 +257,111 @@ func pocGoNoGoResult(workerResult packet.Result) packet.Result {
 	if testObligations == "" {
 		testObligations = "Go判断は実producer由来の観測evidenceを前提とする"
 	}
-	return packet.Result{
+	boilerplate := pocGoNoGoBoilerplateTiers[0]
+	result := packet.Result{
 		Status:          packet.StatusNeedsSolDecision,
 		Risk:            packet.RiskHigh,
 		Summary:         boundedText("PoC/観測専用task(production diff無し)の結果を親Go/No-Goへ返します: "+workerResult.Summary, packet.MaxFieldBytes),
-		Decision:        "実producer観測結果のGo/No-Go。implementation昇格は親Codexがtask fileのExternal feasibility宣言をstatus: implementation + evidence-source: producer + evidence + go へ書き換えてから行う",
+		Decision:        boilerplate.decision,
 		Evidence:        boundedText("観測結果: "+strings.Join(observed, "; "), packet.MaxFieldBytes),
-		Options:         "Go: 親Codexが宣言をimplementationへmigrationして実装taskとして再委譲; No-Go: 撤退; 観測継続: 宣言をpoc/observationのまま再実行",
-		Recommendation:  "PoC結果だけではGLM側でimplementationへ昇格しないため、親Solが実producer evidenceで判断する",
+		Options:         boilerplate.options,
+		Recommendation:  boilerplate.recommendation,
 		TestObligations: boundedText(testObligations, packet.MaxFieldBytes),
 		Targets:         targets,
 		Artifacts:       workerResult.Artifacts,
 	}
+	return fitPoCResultPacketBudget(result)
+}
+
+func fitPoCResultPacketBudget(result packet.Result) packet.Result {
+	result = applyPoCCompactions(result)
+	if result.ByteSize() <= packet.MaxPacketBytes {
+		return result
+	}
+	return summarizePoCPassthrough(result)
+}
+
+func applyPoCCompactions(result packet.Result) packet.Result {
+	compactions := []func(*packet.Result) bool{
+		func(result *packet.Result) bool { return capPoCField(&result.Evidence, pocGoNoGoObservationFloorBytes) },
+		func(result *packet.Result) bool { return applyPoCBoilerplate(result, pocGoNoGoBoilerplateTiers[1]) },
+		func(result *packet.Result) bool {
+			return capPoCField(&result.TestObligations, pocGoNoGoObservationFloorBytes)
+		},
+		func(result *packet.Result) bool { return capPoCField(&result.Evidence, pocGoNoGoFieldFloorBytes) },
+		func(result *packet.Result) bool {
+			return capPoCField(&result.TestObligations, pocGoNoGoFieldFloorBytes)
+		},
+		func(result *packet.Result) bool { return applyPoCBoilerplate(result, pocGoNoGoBoilerplateTiers[2]) },
+	}
+	for over := result.ByteSize() - packet.MaxPacketBytes; over > 0; over = result.ByteSize() - packet.MaxPacketBytes {
+		reduced := false
+		for _, compact := range compactions {
+			if compact(&result) {
+				reduced = true
+				break
+			}
+		}
+		if !reduced {
+			return result
+		}
+	}
+	return result
+}
+
+func summarizePoCPassthrough(result packet.Result) packet.Result {
+	baseEvidence := result.Evidence
+	omittedTargets := 0
+	omittedArtifacts := 0
+	for {
+		result.Evidence = attachPoCOmissionCounts(baseEvidence, omittedTargets, omittedArtifacts)
+		if result.ByteSize() <= packet.MaxPacketBytes {
+			return result
+		}
+		if len(result.Artifacts) > 0 {
+			result.Artifacts = result.Artifacts[:len(result.Artifacts)-1]
+			omittedArtifacts++
+			continue
+		}
+		if len(result.Targets) > 1 {
+			result.Targets = result.Targets[:len(result.Targets)-1]
+			omittedTargets++
+			continue
+		}
+		return result
+	}
+}
+
+func attachPoCOmissionCounts(base string, omittedTargets int, omittedArtifacts int) string {
+	parts := make([]string, 0, 2)
+	if omittedTargets > 0 {
+		parts = append(parts, fmt.Sprintf("targets省略%d件", omittedTargets))
+	}
+	if omittedArtifacts > 0 {
+		parts = append(parts, fmt.Sprintf("artifacts省略%d件", omittedArtifacts))
+	}
+	if len(parts) == 0 {
+		return base
+	}
+	return boundedText(base+"; "+strings.Join(parts, "/"), pocGoNoGoFieldFloorBytes)
+}
+
+func capPoCField(field *string, maxBytes int) bool {
+	if len(*field) <= maxBytes {
+		return false
+	}
+	*field = boundedText(*field, maxBytes)
+	return true
+}
+
+func applyPoCBoilerplate(result *packet.Result, tier pocGoNoGoBoilerplate) bool {
+	current := len(result.Decision) + len(result.Options) + len(result.Recommendation)
+	shortened := len(tier.decision) + len(tier.options) + len(tier.recommendation)
+	if shortened >= current {
+		return false
+	}
+	result.Decision = tier.decision
+	result.Options = tier.options
+	result.Recommendation = tier.recommendation
+	return true
 }

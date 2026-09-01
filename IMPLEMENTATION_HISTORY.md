@@ -15,6 +15,11 @@
 
 - [x] Dogfood task `2750ec82-8d56-47b9-b8f5-972d44dab43e`で確認したwrapper生成Go/No-Go packetの改行禁止違反を、`poc-observation-terminal-packet-contract.md`として独立起票した。model producerのbyte上限とresult-correction削減を扱う`packet-presubmit-byte-validation.md`とは分離する。
 - 未着手の`glm-flash-reviewer-routing.md`をNEXT先頭へ戻し、本bug taskをACTIVEへ昇格した。その他のNEXT相対順序は変更していない。source変更、regression test、GLM callは開始していない。
+- [x] task `3ce73107-0c3a-4173-a4e2-27b1f955980c`で実装、独立review、Sol判断、parent acceptを完了した。原要求は削除した`IMPLEMENTATION_TASKS/poc-observation-terminal-packet-contract.md`のGit履歴に保持する。
+- `boundedText`の省略markerをsingle-lineへ変更し、UTF-8 rune境界を保持したbyte上限内の末尾切詰めへ修正した。PoC/observation Go/No-Go変換はpacket全体budgetに応じてevidence、test obligations、定型判断文を段階縮約し、通常帯ではtargets/artifactsを完全保持する。算術的な極端帯だけartifact末尾、target末尾の順に完全entry単位で省略し、各省略件数とtarget最低1件を保持して生成直後の現行validatorをPASSさせる。
+- Sol判断では、収容不能時のconstraint error伝播は「wrapper生成packetは必ずvalidator PASS」という要求を狭めるため不採用とした。wrapper fieldの意味保持付き縮約後も収まらない帯域は、現行schema内のbounded summarizationを許可し、対象存在・省略事実・Go/No-Go/観測継続の判断情報を維持するB2を採用した。独立再reviewは実装欠陥なし、残余riskは省略件数表現とartifact優先省略の実運用評価に限定し、親Solが受理した。
+- 原因層はcross-cutting invariant compositionとtest/scenarioである。field単体のbyte上限を担うhelperが改行を挿入し、直後のpacket validatorが改行を禁止する組合せをproduction経路で固定していなかった。再発防止として、短文、1536 bytes超、multibyte境界、target/artifact-heavy通常帯、両listの極端帯、production routeを現行validatorへ直接通すregression testを追加した。
+- 検証: full go-test `af2c52e7a3e210c670c948edc3231b45`、full go-test-race `ec5fe01ca1b050c59b39a5b1d67c9f7b`（108252 ms）は同一snapshot `1dd996c5a8d669693796f1a2cc0a7801e0975f5ba616df7626d6757b5c260f8c`でPASSした。worker/reviewerはtargeted tests、race、harnesslint、commentlint、gofmt、buildの成功を報告し、finalize-checkは`ready_for_parent_decision`、parent acceptは`accepted:true`だった。
 
 ## 2026-09-01 許可済み操作の承認判定不整合
 

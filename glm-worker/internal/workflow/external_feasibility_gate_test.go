@@ -3,12 +3,16 @@ package workflow
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
@@ -29,6 +33,8 @@ const (
 		"evidence: 人工fixtureへexact本文を直接与えたtest\n" +
 		"go: なし"
 )
+
+const pocOmissionMarker = "[前方を省略] "
 
 func writeFeasibilityActiveTask(t *testing.T, repoRoot string, declaration string) {
 	t.Helper()
@@ -637,4 +643,316 @@ func TestExternalFeasibilityDeclarationContextBudget(t *testing.T) {
 	if got := len(implementation); got > 512 {
 		t.Fatalf("implementation宣言 = %d bytes(<=512, token proxy %d)に収めてください", got, got/4)
 	}
+}
+
+func requireGoNoGoContract(t *testing.T, result packet.Result) {
+	t.Helper()
+	if err := packet.ValidateWorkerResult(result); err != nil {
+		t.Fatalf("Go/No-Go結果が現行packet validatorを通りません: %v", err)
+	}
+	if result.Status != packet.StatusNeedsSolDecision || result.Risk != packet.RiskHigh {
+		t.Fatalf("Go/No-Go結果 = %s/%s want NEEDS_SOL_DECISION/HIGH", result.Status, result.Risk)
+	}
+	for _, field := range []struct {
+		name  string
+		value string
+	}{
+		{"decision", result.Decision},
+		{"evidence", result.Evidence},
+		{"options", result.Options},
+		{"recommendation", result.Recommendation},
+		{"test_obligations", result.TestObligations},
+	} {
+		if field.value == "" {
+			t.Fatalf("必須field %sが空です", field.name)
+		}
+		if len(field.value) > packet.MaxFieldBytes {
+			t.Fatalf("field %sが%d bytes上限を超えています: %d bytes", field.name, packet.MaxFieldBytes, len(field.value))
+		}
+		if strings.ContainsAny(field.value, "\n\r") {
+			t.Fatalf("field %sに改行を含めています: %q", field.name, field.value)
+		}
+		if !utf8.ValidString(field.value) {
+			t.Fatalf("field %sが不正UTF-8です", field.name)
+		}
+	}
+	if !strings.Contains(result.Decision, "Go/No-Go") || !strings.Contains(result.Options, "No-Go") || !strings.Contains(result.Options, "観測継続") || result.Recommendation == "" {
+		t.Fatalf("親Go/No-Go判断に必要な意味情報が失われています: decision=%q options=%q", result.Decision, result.Options)
+	}
+}
+
+func TestPoCGoNoGoResultKeepsValidatorContract(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		summary    string
+		tests      string
+		unverified string
+	}{
+		{"短い観測結果", "観測した", "test pass", "none"},
+		{"1536 bytes超の観測結果", strings.Repeat("観", 500), strings.Repeat("検", 400), strings.Repeat("残", 100)},
+		{"切詰め境界がrune途中の観測結果", strings.Repeat("あ", 500), strings.Repeat("い", 399), "x" + strings.Repeat("う", 99)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			worker := packet.Result{
+				Status:              packet.StatusImplemented,
+				Risk:                packet.RiskLow,
+				Summary:             tc.summary,
+				RequirementCoverage: "covered",
+				Tests:               tc.tests,
+				Unverified:          tc.unverified,
+				Targets:             []string{"src/observe.go:Run"},
+			}
+			if err := packet.ValidateWorkerResult(worker); err != nil {
+				t.Fatalf("前提: PoC worker resultは現行validatorを通るべき: %v", err)
+			}
+			joined := "観測結果: " + tc.summary + "; " + tc.tests + "; " + tc.unverified
+			result := pocGoNoGoResult(worker)
+			requireGoNoGoContract(t, result)
+			if !slices.Equal(result.Targets, worker.Targets) {
+				t.Fatalf("対象targetsが保持されていません: %v", result.Targets)
+			}
+			if result.TestObligations != tc.tests {
+				t.Fatalf("test obligationsは上限内ならそのまま保持すべき: %q", result.TestObligations)
+			}
+			if len(joined) > packet.MaxFieldBytes {
+				if !strings.HasPrefix(result.Evidence, pocOmissionMarker) {
+					t.Fatalf("切詰めevidenceには省略markerが必要です: %q", result.Evidence)
+				}
+				if !strings.HasSuffix(joined, result.Evidence[len(pocOmissionMarker):]) {
+					t.Fatal("切詰めevidenceは観測内容の末尾を保持すべきです")
+				}
+			} else if result.Evidence != joined {
+				t.Fatalf("上限内の観測結果はそのまま保持すべきです: %q", result.Evidence)
+			}
+		})
+	}
+}
+
+func pocHeavyTargets(t *testing.T, count int, fillerLength int) []string {
+	t.Helper()
+	targets := make([]string, 0, count)
+	for i := range count {
+		targets = append(targets, fmt.Sprintf("glm-worker/internal/workflow/observation/evidence/path%02d.go:ObserveSymbol%02d-%s", i, i, strings.Repeat("x", fillerLength)))
+		if len(targets[i]) > packet.MaxFieldBytes {
+			t.Fatalf("前提: target要素は%d bytes以内であるべき: %d bytes", packet.MaxFieldBytes, len(targets[i]))
+		}
+	}
+	return targets
+}
+
+func TestPoCGoNoGoResultPassesValidatorOnTargetHeavyInput(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		summary      string
+		tests        string
+		unverified   string
+		targetCount  int
+		targetFiller int
+	}{
+		{"観測長文とtargets併存", strings.Repeat("観", 100), strings.Repeat("検", 512), strings.Repeat("残", 100), 14, 110},
+		{"tests上限と多量targets", "観測した", strings.Repeat("検", 512), "none", 12, 250},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			worker := packet.Result{
+				Status:              packet.StatusImplemented,
+				Risk:                packet.RiskLow,
+				Summary:             tc.summary,
+				RequirementCoverage: "covered",
+				Tests:               tc.tests,
+				Unverified:          tc.unverified,
+				Targets:             pocHeavyTargets(t, tc.targetCount, tc.targetFiller),
+				Artifacts:           []string{"/artifacts/poc/observation-report.txt"},
+			}
+			if err := packet.ValidateWorkerResult(worker); err != nil {
+				t.Fatalf("前提: PoC worker resultは現行validatorを通るべき: %v", err)
+			}
+			joined := "観測結果: " + tc.summary + "; " + tc.tests + "; " + tc.unverified
+			result := pocGoNoGoResult(worker)
+			requireGoNoGoContract(t, result)
+			if size := result.ByteSize(); size > packet.MaxPacketBytes {
+				t.Fatalf("packet全体が%d bytes上限を超えています: %d bytes", packet.MaxPacketBytes, size)
+			}
+			if !slices.Equal(result.Targets, worker.Targets) || !slices.Equal(result.Artifacts, worker.Artifacts) {
+				t.Fatal("通常帯の対象targetsとartifactsはそのまま保持すべきです")
+			}
+			if len(joined) > packet.MaxFieldBytes {
+				if len(result.Evidence) >= len(joined) {
+					t.Fatal("packet上限超過時はevidenceを縮小すべきです")
+				}
+				if !strings.HasPrefix(result.Evidence, pocOmissionMarker) || !strings.HasSuffix(joined, result.Evidence[len(pocOmissionMarker):]) {
+					t.Fatalf("縮約後もevidenceは省略markerと観測末尾を保持すべきです: %q", result.Evidence)
+				}
+			}
+		})
+	}
+}
+
+func requirePoCPassthroughSummarized(t *testing.T, result packet.Result, worker packet.Result) {
+	t.Helper()
+	if len(result.Targets) == 0 || len(result.Targets) > len(worker.Targets) {
+		t.Fatalf("完全なtarget entryを最低1件保持すべきです: %v", result.Targets)
+	}
+	if !slices.Equal(result.Targets, worker.Targets[:len(result.Targets)]) {
+		t.Fatalf("保持したtargetsは元のlistの先頭完全entryのままにすべきです: %v", result.Targets)
+	}
+	if len(result.Artifacts) > len(worker.Artifacts) || !slices.Equal(result.Artifacts, worker.Artifacts[:len(result.Artifacts)]) {
+		t.Fatalf("保持したartifactsは元のlistの先頭完全entryだけにすべきです: %v", result.Artifacts)
+	}
+	omittedTargets := len(worker.Targets) - len(result.Targets)
+	omittedArtifacts := len(worker.Artifacts) - len(result.Artifacts)
+	if omittedTargets > 0 && !strings.Contains(result.Evidence, fmt.Sprintf("targets省略%d件", omittedTargets)) {
+		t.Fatalf("省略したtargets件数がevidenceへ正確に明示されていません: %q", result.Evidence)
+	}
+	if omittedArtifacts > 0 && !strings.Contains(result.Evidence, fmt.Sprintf("artifacts省略%d件", omittedArtifacts)) {
+		t.Fatalf("省略したartifacts件数がevidenceへ正確に明示されていません: %q", result.Evidence)
+	}
+}
+
+func TestPoCGoNoGoResultSummarizesUnfittablePassthrough(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		targetCount    int
+		targetFiller   int
+		artifacts      []string
+		wantAllTargets bool
+	}{
+		{"targets極大でartifacts優先縮約", 4, 1374, []string{"/artifacts/poc/report-a.txt", "/artifacts/poc/report-b.txt"}, false},
+		{"artifactsだけの縮約で収まる", 19, 217, []string{
+			"/artifacts/poc/observation-report-" + strings.Repeat("a", 100) + ".txt",
+			"/artifacts/poc/observation-report-" + strings.Repeat("b", 100) + ".txt",
+		}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			worker := packet.Result{
+				Status:              packet.StatusImplemented,
+				Risk:                packet.RiskLow,
+				Summary:             "観測した",
+				RequirementCoverage: "covered",
+				Tests:               "検証した",
+				Unverified:          "none",
+				Targets:             pocHeavyTargets(t, tc.targetCount, tc.targetFiller),
+				Artifacts:           tc.artifacts,
+			}
+			if err := packet.ValidateWorkerResult(worker); err != nil {
+				t.Fatalf("前提: PoC worker resultは現行validatorを通るべき: %v", err)
+			}
+			result := pocGoNoGoResult(worker)
+			requireGoNoGoContract(t, result)
+			if size := result.ByteSize(); size > packet.MaxPacketBytes {
+				t.Fatalf("packet全体が%d bytes上限を超えています: %d bytes", packet.MaxPacketBytes, size)
+			}
+			requirePoCPassthroughSummarized(t, result, worker)
+			if tc.wantAllTargets {
+				if !slices.Equal(result.Targets, worker.Targets) {
+					t.Fatalf("artifacts優先縮約では全targetsを完全保持すべきです: %d/%d", len(result.Targets), len(worker.Targets))
+				}
+				if len(result.Artifacts) >= len(worker.Artifacts) {
+					t.Fatal("この形状ではartifactsの省略が発生しているべきです")
+				}
+			}
+			if result.TestObligations != worker.Tests {
+				t.Fatalf("短いtest obligationsはそのまま保持すべき: %q", result.TestObligations)
+			}
+		})
+	}
+}
+
+func TestExternalFeasibilityPoCOverlongObservationEmitsValidGoNoGoPacket(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		worker packet.Result
+	}{
+		{"観測長文", packet.Result{
+			Status:              packet.StatusImplemented,
+			Risk:                packet.RiskLow,
+			Summary:             strings.Repeat("観", 500),
+			RequirementCoverage: "covered",
+			Tests:               strings.Repeat("検", 400),
+			Unverified:          strings.Repeat("残", 100),
+		}},
+		{"target-heavy観測", packet.Result{
+			Status:              packet.StatusImplemented,
+			Risk:                packet.RiskLow,
+			Summary:             "観測した",
+			RequirementCoverage: "covered",
+			Tests:               strings.Repeat("検", 512),
+			Unverified:          "none",
+			Targets:             pocHeavyTargets(t, 12, 250),
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repoRoot := initMutationRepo(t)
+			writeFeasibilityActiveTask(t, repoRoot, feasibilityPoCDecl)
+			w, r, out, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
+				{structured: packetBody(tc.worker)},
+				{structured: passPacket()},
+			}, "", 0, nil)
+
+			if err := w.ExecuteNewTask("request"); err != nil {
+				t.Fatal(err)
+			}
+			if len(r.prompts) != 1 {
+				t.Fatalf("PoC taskはworker 1呼出だけ: %d(%v)", len(r.prompts), r.phases)
+			}
+			if st.TaskStatus() != state.TaskStatusWaitingDecision {
+				t.Fatalf("status = %q want waiting-decision", st.TaskStatus())
+			}
+			pkt := lastPacketFromOutput(t, out.String())
+			requireGoNoGoContract(t, pkt)
+			wantTargets := tc.worker.Targets
+			if len(wantTargets) == 0 {
+				wantTargets = []string{"none"}
+			}
+			if !slices.Equal(pkt.Targets, wantTargets) {
+				t.Fatalf("対象targetsが保持されていません: %v", pkt.Targets)
+			}
+			if !strings.HasPrefix(pkt.Evidence, pocOmissionMarker) {
+				t.Fatalf("1536 bytes超の観測から生成されたevidenceには省略markerが必要です: %q", pkt.Evidence)
+			}
+		})
+	}
+}
+
+func TestExternalFeasibilityPoCUnfittableTargetsEmitsValidGoNoGoPacket(t *testing.T) {
+	repoRoot := initMutationRepo(t)
+	writeFeasibilityActiveTask(t, repoRoot, feasibilityPoCDecl)
+	worker := packet.Result{
+		Status:              packet.StatusImplemented,
+		Risk:                packet.RiskLow,
+		Summary:             "観測した",
+		RequirementCoverage: "covered",
+		Tests:               "検証した",
+		Unverified:          "none",
+		Targets:             pocHeavyTargets(t, 4, 1394),
+	}
+	w, r, out, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
+		{structured: packetBody(worker)},
+		{structured: passPacket()},
+	}, "", 0, nil)
+
+	if err := w.ExecuteNewTask("request"); err != nil {
+		t.Fatal(err)
+	}
+	if len(r.prompts) != 1 {
+		t.Fatalf("PoC taskはworker 1呼出だけ: %d(%v)", len(r.prompts), r.phases)
+	}
+	if st.TaskStatus() != state.TaskStatusWaitingDecision {
+		t.Fatalf("status = %q want waiting-decision", st.TaskStatus())
+	}
+	pkt := lastPacketFromOutput(t, out.String())
+	requireGoNoGoContract(t, pkt)
+	if size := pkt.ByteSize(); size > packet.MaxPacketBytes {
+		t.Fatalf("packet全体が%d bytes上限を超えています: %d bytes", packet.MaxPacketBytes, size)
+	}
+	requirePoCPassthroughSummarized(t, pkt, withPoCDefaultTargets(worker))
+	if len(pkt.Targets) == len(worker.Targets) {
+		t.Fatal("極端帯ではtargetsの省略が発生しているべきです")
+	}
+}
+
+func withPoCDefaultTargets(worker packet.Result) packet.Result {
+	if len(worker.Targets) == 0 {
+		worker.Targets = []string{"none"}
+	}
+	return worker
 }

@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint"
@@ -2130,8 +2131,12 @@ func boundedText(value string, maxBytes int) string {
 	if len(value) <= maxBytes {
 		return value
 	}
-	prefix := "[前方を省略]\n"
-	return prefix + value[len(value)-(maxBytes-len(prefix)):]
+	prefix := "[前方を省略] "
+	start := len(value) - (maxBytes - len(prefix))
+	for start < len(value) && !utf8.RuneStart(value[start]) {
+		start++
+	}
+	return prefix + value[start:]
 }
 
 func workerError(phase string, outputPath string, runErr error) error {
