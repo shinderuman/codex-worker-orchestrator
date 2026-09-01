@@ -60,6 +60,10 @@ func (w *Workflow) guardRecoveryCheckpoint(
 	return checkpoint
 }
 
+func clearGuardRecoveryState(checkpoint *state.ResumeCheckpoint) {
+	checkpoint.ClearStop()
+}
+
 func captureGuardRefEvidence(checkpoint *state.ResumeCheckpoint, runErr error) {
 	var gitErr *runner.GitAuthorityGuardError
 	if !errors.As(runErr, &gitErr) || gitErr.RefBeforeDigest == "" {
