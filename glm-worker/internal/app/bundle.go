@@ -402,6 +402,7 @@ func (c *bundleCollector) collectTaskSessions(st *state.StateStore, task bundleT
 			if log.SessionID != "" {
 				sessions[log.SessionID] = struct{}{}
 			}
+		}
 	case !errors.Is(err, os.ErrNotExist):
 		c.addMissing("task/telemetry/session-association-unreadable")
 	}
