@@ -110,10 +110,7 @@ func (w *Workflow) inspectQualitySurfaceBaseline() (bool, string, error) {
 		return false, "", nil
 	}
 	if !w.state.Exists(qualitySurfaceBaselineStateKey) {
-		if err := w.state.Write(qualitySurfaceBaselineStateKey, current); err != nil {
-			return false, "legacy taskのquality policy baselineを初期化できません", err
-		}
-		return false, "", nil
+		return false, "worker開始時のquality policy baselineがありません", fmt.Errorf("required state %s is missing", qualitySurfaceBaselineStateKey)
 	}
 	baseline, err := w.state.Read(qualitySurfaceBaselineStateKey)
 	if err != nil {
