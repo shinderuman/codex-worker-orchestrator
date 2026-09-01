@@ -11,120 +11,80 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 )
 
-func TestExecuteFinalizationCheckRoutesFromCurrentHandoffValidation(t *testing.T) {
-	repo := newFinalizationTestRepo(t)
-	moduleDir := filepath.Join(repo, "module")
-	if err := os.MkdirAll(moduleDir, 0o700); err != nil {
-		t.Fatal(err)
+func TestExecuteFinalizationCheckRoutesOnlyMatchingCurrentHandoffValidation(t *testing.T) {
+	cases := []struct {
+		name        string
+		handoffForm string
+		wantModule  bool
+	}{
+		{name: "matching form routes to canonical module", handoffForm: "go-test", wantModule: true},
+		{name: "mismatched form keeps caller directory", handoffForm: "go-test-race", wantModule: false},
 	}
-	workerDir := t.TempDir()
-	worker := filepath.Join(workerDir, "glm-worker")
-	body := `#!/bin/sh
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := newFinalizationTestRepo(t)
+			moduleDir := filepath.Join(repo, "module")
+			if err := os.MkdirAll(moduleDir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			workerDir := t.TempDir()
+			worker := filepath.Join(workerDir, "glm-worker")
+			body := `#!/bin/sh
 set -eu
 case "$1" in
   --quality-gate)
-    test "$PWD" = "$EXPECTED_VALIDATION_DIR"
+    test "$PWD" = "$EXPECTED_GATE_DIR"
     test "$2" = "go-test"
-    printf '%s\n' '{"status":"pass","validation_run_id":"fresh-run","form":"go-test","command":"go test ./...","working_dir":"module","duration_ms":1,"log":"gate.log"}'
+    printf '%s\n' '{"status":"pass","validation_run_id":"fresh-run","form":"go-test","command":"go test ./...","working_dir":"current","duration_ms":1,"log":"gate.log"}'
     ;;
   --handoff)
     test "$PWD" = "$EXPECTED_REPO_ROOT"
-    printf '{"consistent":true,"validations":[{"validation_run_id":"route-run","form":"go-test","status":"pass","working_dir":"%s"},{"validation_run_id":"fresh-run","status":"pass"}]}\n' "$EXPECTED_VALIDATION_DIR"
+    printf '{"consistent":true,"validations":[{"validation_run_id":"route-run","form":"%s","status":"pass","working_dir":"%s"},{"validation_run_id":"fresh-run","status":"pass"}]}\n' "$HANDOFF_FORM" "$ROUTING_DIR"
     ;;
   *) exit 9 ;;
 esac
 `
-	if err := os.WriteFile(worker, []byte(body), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", workerDir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	resolvedModuleDir, err := filepath.EvalSymlinks(moduleDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	resolvedRepo, err := filepath.EvalSymlinks(repo)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("EXPECTED_VALIDATION_DIR", resolvedModuleDir)
-	t.Setenv("EXPECTED_REPO_ROOT", resolvedRepo)
-	previous, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(repo); err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = os.Chdir(previous) }()
+			if err := os.WriteFile(worker, []byte(body), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("PATH", workerDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+			resolvedModuleDir, err := filepath.EvalSymlinks(moduleDir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			resolvedRepo, err := filepath.EvalSymlinks(repo)
+			if err != nil {
+				t.Fatal(err)
+			}
+			expectedGateDir := resolvedRepo
+			if tc.wantModule {
+				expectedGateDir = resolvedModuleDir
+			}
+			t.Setenv("EXPECTED_GATE_DIR", expectedGateDir)
+			t.Setenv("EXPECTED_REPO_ROOT", resolvedRepo)
+			t.Setenv("HANDOFF_FORM", tc.handoffForm)
+			t.Setenv("ROUTING_DIR", resolvedModuleDir)
+			previous, err := os.Getwd()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chdir(repo); err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = os.Chdir(previous) }()
 
-	var output bytes.Buffer
-	if err := execute(config.AppConfig{RepoRoot: repo}, []string{"finalize-check", "go-test"}, &output, &output); err != nil {
-		t.Fatalf("execute: %v: %s", err, output.String())
-	}
-	var result finalizationCheckOutput
-	if err := json.Unmarshal(output.Bytes(), &result); err != nil {
-		t.Fatal(err)
-	}
-	if result.Status != "ready_for_parent_decision" || result.Failure != nil {
-		t.Fatalf("result = %#v", result)
-	}
-}
-
-func TestExecuteFinalizationCheckIgnoresMismatchedHandoffFormForRouting(t *testing.T) {
-	repo := newFinalizationTestRepo(t)
-	moduleDir := filepath.Join(repo, "module")
-	if err := os.MkdirAll(moduleDir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	workerDir := t.TempDir()
-	worker := filepath.Join(workerDir, "glm-worker")
-	body := `#!/bin/sh
-set -eu
-case "$1" in
-  --quality-gate)
-    test "$PWD" = "$EXPECTED_REPO_ROOT"
-    test "$2" = "go-test"
-    printf '%s\n' '{"status":"pass","validation_run_id":"fresh-run","form":"go-test","command":"go test ./...","working_dir":"repo","duration_ms":1,"log":"gate.log"}'
-    ;;
-  --handoff)
-    printf '{"consistent":true,"validations":[{"validation_run_id":"other-form","form":"go-test-race","status":"pass","working_dir":"%s"},{"validation_run_id":"fresh-run","status":"pass"}]}\n' "$EXPECTED_VALIDATION_DIR"
-    ;;
-  *) exit 9 ;;
-esac
-`
-	if err := os.WriteFile(worker, []byte(body), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", workerDir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	resolvedModuleDir, err := filepath.EvalSymlinks(moduleDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	resolvedRepo, err := filepath.EvalSymlinks(repo)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("EXPECTED_VALIDATION_DIR", resolvedModuleDir)
-	t.Setenv("EXPECTED_REPO_ROOT", resolvedRepo)
-	previous, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(repo); err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = os.Chdir(previous) }()
-
-	var output bytes.Buffer
-	if err := execute(config.AppConfig{RepoRoot: repo}, []string{"finalize-check", "go-test"}, &output, &output); err != nil {
-		t.Fatalf("execute: %v: %s", err, output.String())
-	}
-	var result finalizationCheckOutput
-	if err := json.Unmarshal(output.Bytes(), &result); err != nil {
-		t.Fatal(err)
-	}
-	if result.Status != "ready_for_parent_decision" || result.Failure != nil {
-		t.Fatalf("result = %#v", result)
+			var output bytes.Buffer
+			if err := execute(config.AppConfig{RepoRoot: repo}, []string{"finalize-check", "go-test"}, &output, &output); err != nil {
+				t.Fatalf("execute: %v: %s", err, output.String())
+			}
+			var result finalizationCheckOutput
+			if err := json.Unmarshal(output.Bytes(), &result); err != nil {
+				t.Fatal(err)
+			}
+			if result.Status != "ready_for_parent_decision" || result.Failure != nil {
+				t.Fatalf("result = %#v", result)
+			}
+		})
 	}
 }
 
