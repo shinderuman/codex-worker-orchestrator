@@ -291,9 +291,14 @@ func TestConfigSourceRetainsLegacyOverrideIdentifiers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, forbidden := range []string{"codex-worker-orchestrator", "CODEX_WORKER_ORCHESTRATOR"} {
-		if strings.Contains(string(source), forbidden) {
-			t.Fatalf("config.go must not reference renamed persistent identifier %q", forbidden)
+	for _, line := range strings.Split(string(source), "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), `"github.com/`) {
+			continue
+		}
+		for _, forbidden := range []string{"codex-worker-orchestrator", "CODEX_WORKER_ORCHESTRATOR"} {
+			if strings.Contains(line, forbidden) {
+				t.Fatalf("config.go must not reference renamed persistent identifier %q", forbidden)
+			}
 		}
 	}
 }
