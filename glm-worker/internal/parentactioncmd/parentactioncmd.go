@@ -169,11 +169,11 @@ func executePayloadAction(
 	if err != nil {
 		return err
 	}
-	workerArgs := payloadWorkerArgs(descriptor, payload, args[1:])
+	workerArgs := payloadWorkerArgsForDescriptor(descriptor, payload, args[1:])
 	return runResolvedWorker(worker, repoRoot, workerArgs, bytes.NewReader(payload), stdout, stderr, extraEnv)
 }
 
-func payloadWorkerArgs(descriptor parentaction.PayloadAction, payload []byte, options []string) []string {
+func payloadWorkerArgsForDescriptor(descriptor parentaction.PayloadAction, payload []byte, options []string) []string {
 	digest := sha256.Sum256(payload)
 	args := []string{descriptor.WorkerMode, strconv.Itoa(len(payload)), "--sha256", hex.EncodeToString(digest[:])}
 	return append(args, options...)
