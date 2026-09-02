@@ -1,11 +1,12 @@
 # GLM結果処理
 
-`glm-worker`からpacket(stdoutのmachine JSON 1行)またはprocess失敗(stderrのerror JSON 1行とnon-zero exit)を受け取った場合に適用する。
+`glm-worker`からpacket(stdoutのmachine JSON 1行)またはprocess失敗(stderrのerror JSON 1行とnon-zero exit)を受け取った場合、および`glm-parent-action`の親tool orchestrationからbounded terminal resultを受け取った場合に適用する。
 
 ## 共通
 
-- 受理結果のmachine protocolはcompact 1行JSONで、keyは`status`・`risk`・status別契約field(`summary`・`decision`等のschemaと同じ語彙)・`targets`・`artifacts`・`sol_question`。空field・空配列のkeyは省かれる(`artifacts`key欠落=none、`targets`の`["none"]`=対象なしsentinel)。契約外のfieldは機械出力へ混入しない。
-- packet受理後などmaterial state transitionから次のlifecycle操作を選ぶ場合は、まず`glm-worker --handoff`を実行し、`consistent`・`required_action`・`allowed_actions`を合法な親操作の正規入口とする。`consistent:false`では次操作を推測しない。packet本文や`--status`の個別fieldからaction admissionを再構成せず、`--status`は追加の詳細診断が必要な場合だけ使う。
+- worker packetのmachine protocolはcompact 1行JSONで、keyは`status`・`risk`・status別契約field(`summary`・`decision`等のschemaと同じ語彙)・`targets`・`artifacts`・`sol_question`。空field・空配列のkeyは省かれる(`artifacts`key欠落=none、`targets`の`["none"]`=対象なしsentinel)。契約外のfieldはworker packetへ混入しない。
+- 親tool orchestrationが`status:"parent_action_terminal"`を返した場合、`terminal`を元のauthoritative worker/action machine resultとして通常どおりsemantic処理し、同梱`handoff`だけをcanonical next-action authorityとして使う。envelopeの`status`をPASS/NEEDS_SOL_*等のsemantic statusの代用にしない。`finalize-check`は既存result内の`handoff`を同じauthorityとして扱う。
+- packet受理後などmaterial state transitionから次のlifecycle操作を選ぶ場合は、同じ親action resultにcanonical handoffが同梱されていればそれを使い、正常なhandoffを得る目的だけの追加`glm-worker --handoff`を行わない。direct `glm-worker` packet・tool session recovery等でhandoffが同梱されていない場合だけ`glm-worker --handoff`を実行する。いずれも`consistent`・`required_action`・`allowed_actions`を合法な親操作の正規入口とし、`consistent:false`では次操作を推測しない。packet本文や`--status`の個別fieldからaction admissionを再構成せず、`--status`は追加の詳細診断が必要な場合だけ使う。
 - `artifacts`のkeyがあるなら、要求・判断・報告に必要な成果物だけを記載パスから確認し、packetへ全内容を転載しない。
 - 原因不明runtime failureの診断に必要なevidenceを求めた依頼では、`artifacts`参照先を`~/.codex/instructions/failure-evidence.md`の受理条件で必要範囲だけ確認する。
 
@@ -14,7 +15,7 @@
 - `decision`・`evidence`・`options`・`recommendation`・`test_obligations`を評価する。
 - `targets`がすべてrepository内の`AGENTS.md`/`AGENTS.local.md`相対pathで、packetがそのprotected instruction変更を親適用として要求している場合は、workerへ直接編集させない。rejectならinstruction surfaceを変更せず通常どおりdecisionを返す。applyならmodel processが停止している間に親Codexが`targets`だけへ承認した最小変更を適用し、`glm-worker --rotate-instruction-baseline`を実行してactive taskのinstruction baselineを明示rotationした後にdecisionを返す。rotationはtask/worktreeを保持しworker/reviewer sessionを無効化する。guard緩和やresetで代用しない。
 - packetで足りるならリポジトリを再探索しない。判断不能な場合だけ`targets`に限定して現物を確認する。
-- `glm-worker --handoff`の`allowed_actions`に`no-go`が含まれ、Sol判断がPoC/observationのterminal No-Goなら`glm-parent-action no-go`を使う。これは追加model call 0でpending decisionを閉じ、implementationへ昇格せずtaskをcompleteにする。同じNo-Goを`decision`としてworkerへ再送しない。
+- canonical handoffの`allowed_actions`に`no-go`が含まれ、Sol判断がPoC/observationのterminal No-Goなら`glm-parent-action no-go`を使う。これは追加model call 0でpending decisionを閉じ、implementationへ昇格せずtaskをcompleteにする。同じNo-Goを`decision`としてworkerへ再送しない。
 - No-Go以外の判断後は元依頼を再記述せず、判断本文を`~/.codex/instructions/glm-execution.md`のstdin mode（`--decision-stdin <payload-bytes>`）で同じtaskへ継続する。PoC/observationのGoは`~/.codex/instructions/feasibility-gate.md`に従い、先にtask declarationを`status: implementation`へmigrationする。
 
 ## `"status":"PASS"`
