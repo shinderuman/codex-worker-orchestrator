@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"syscall"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/authoritybootstrapcmd"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentaction"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentfix"
@@ -22,7 +23,7 @@ import (
 )
 
 const (
-	usage = "usage: glm-parent-action start | prepare <decision|fix|start-milestones|revise-milestones> | decision <token> | fix <token> [--origin <origin>] [--accepted-scope current-diff] [--approval-only] | start-milestones <token> | revise-milestones <token> | no-go | accept | resume | finalize-check <go-test|go-test-race>"
+	usage = "usage: glm-parent-action authority <rules|plan|active> | start | prepare <decision|fix|start-milestones|revise-milestones> | decision <token> | fix <token> [--origin <origin>] [--accepted-scope current-diff] [--approval-only] | start-milestones <token> | revise-milestones <token> | no-go | accept | resume | finalize-check <go-test|go-test-race>"
 
 	activeTaskRequest = "現在のACTIVE taskを実行してください。"
 	actionStart       = "start"
@@ -43,6 +44,9 @@ func Run(args []string, stdout, stderr io.Writer) int {
 func run(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
 		return fmt.Errorf("%s", usage)
+	}
+	if args[0] == "authority" {
+		return authoritybootstrapcmd.Execute(args[1:], stdout)
 	}
 	cfg, err := config.Load()
 	if err != nil {
