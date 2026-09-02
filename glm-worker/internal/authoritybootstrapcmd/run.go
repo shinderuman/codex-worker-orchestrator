@@ -5,9 +5,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
+	"unicode/utf8"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskcontract"
 )
@@ -18,6 +18,13 @@ const (
 	usage     = "usage: glm-worker --authority <rules|plan|active>"
 )
 
+type Output struct {
+	AuthoritySnapshotSHA256 string `json:"authority_snapshot_sha256"`
+	AuthorityKind           string `json:"authority_kind"`
+	ActiveTask              string `json:"active_task"`
+	Content                 string `json:"content"`
+}
+
 type snapshot struct {
 	rules      []byte
 	plan       []byte
@@ -26,26 +33,27 @@ type snapshot struct {
 	hash       string
 }
 
-func Execute(args []string, stdout io.Writer) error {
+func Build(args []string) (Output, error) {
 	if len(args) != 1 || !validKind(args[0]) {
-		return fmt.Errorf("%s", usage)
+		return Output{}, fmt.Errorf("%s", usage)
 	}
 	cwd, err := os.Getwd()
 	if err != nil {
-		return fmt.Errorf("authority bootstrap: get cwd: %w", err)
+		return Output{}, fmt.Errorf("authority bootstrap: get cwd: %w", err)
 	}
 	root, err := findRepoRoot(cwd)
 	if err != nil {
-		return fmt.Errorf("authority bootstrap: %w", err)
+		return Output{}, fmt.Errorf("authority bootstrap: %w", err)
 	}
 	snap, err := loadSnapshot(root)
 	if err != nil {
-		return fmt.Errorf("authority bootstrap: %w", err)
+		return Output{}, fmt.Errorf("authority bootstrap: %w", err)
 	}
-	if err := writeSnapshotPart(stdout, args[0], snap); err != nil {
-		return fmt.Errorf("authority bootstrap: write output: %w", err)
+	output, err := snapshotPart(args[0], snap)
+	if err != nil {
+		return Output{}, fmt.Errorf("authority bootstrap: %w", err)
 	}
-	return nil
+	return output, nil
 }
 
 func validKind(kind string) bool {
@@ -115,7 +123,7 @@ func snapshotHash(rules []byte, plan []byte, activePath string, active []byte) s
 	return hex.EncodeToString(sum[:])
 }
 
-func writeSnapshotPart(w io.Writer, kind string, snap snapshot) error {
+func snapshotPart(kind string, snap snapshot) (Output, error) {
 	var content []byte
 	switch kind {
 	case "rules":
@@ -125,11 +133,15 @@ func writeSnapshotPart(w io.Writer, kind string, snap snapshot) error {
 	case "active":
 		content = snap.active
 	default:
-		return fmt.Errorf("unknown kind %q", kind)
+		return Output{}, fmt.Errorf("unknown kind %q", kind)
 	}
-	if _, err := fmt.Fprintf(w, "authority_snapshot_sha256=%s\nauthority_kind=%s\nactive_task=%s\n---\n", snap.hash, kind, snap.activePath); err != nil {
-		return err
+	if !utf8.Valid(content) {
+		return Output{}, fmt.Errorf("%s authority content is not valid UTF-8", kind)
 	}
-	_, err := w.Write(content)
-	return err
+	return Output{
+		AuthoritySnapshotSHA256: snap.hash,
+		AuthorityKind:           kind,
+		ActiveTask:              snap.activePath,
+		Content:                 string(content),
+	}, nil
 }
