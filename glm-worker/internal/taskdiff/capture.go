@@ -256,6 +256,13 @@ func writeNewFilePatches(repoRoot string, result *bytes.Buffer, paths []string) 
 }
 
 func newFilePatch(repoRoot, filePath string) ([]byte, error) {
+	path := filepath.Join(repoRoot, filePath)
+	if info, err := os.Lstat(path); err == nil && info.Mode()&os.ModeSymlink != 0 {
+		if targetInfo, targetErr := os.Stat(path); targetErr == nil && targetInfo.IsDir() {
+			return newDirectorySymlinkFilePatch(repoRoot, filePath)
+		}
+	}
+
 	cmd := exec.Command("git", "-C", repoRoot, "diff", "--no-index", "--binary", "--", "/dev/null", filePath)
 	output, err := cmd.CombinedOutput()
 	if err == nil {
@@ -266,6 +273,36 @@ func newFilePatch(repoRoot, filePath string) ([]byte, error) {
 		return output, nil
 	}
 	return nil, fmt.Errorf("capture new file task diff for %s: %w: %s", filePath, err, strings.TrimSpace(string(output)))
+}
+
+func newDirectorySymlinkFilePatch(repoRoot, filePath string) ([]byte, error) {
+	target, err := os.Readlink(filepath.Join(repoRoot, filePath))
+	if err != nil {
+		return nil, fmt.Errorf("read directory-target symlink %s: %w", filePath, err)
+	}
+	tempDir, err := os.MkdirTemp(os.Getenv("GLM_WORKER_GIT_TEMP_ROOT"), "glm-worker-task-diff-symlink-")
+	if err != nil {
+		return nil, fmt.Errorf("create directory-target symlink diff temp repo: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(tempDir) }()
+
+	tempPath := filepath.Join(tempDir, filepath.FromSlash(filePath))
+	if err := os.MkdirAll(filepath.Dir(tempPath), 0o700); err != nil {
+		return nil, fmt.Errorf("create directory-target symlink parent for %s: %w", filePath, err)
+	}
+	if err := os.Symlink(target, tempPath); err != nil {
+		return nil, fmt.Errorf("mirror directory-target symlink %s: %w", filePath, err)
+	}
+	for _, args := range [][]string{{"init", "-q"}, {"add", "--", filePath}} {
+		if output, err := exec.Command("git", append([]string{"-C", tempDir}, args...)...).CombinedOutput(); err != nil {
+			return nil, fmt.Errorf("prepare directory-target symlink patch for %s: git %s: %w: %s", filePath, strings.Join(args, " "), err, strings.TrimSpace(string(output)))
+		}
+	}
+	output, err := exec.Command("git", "-C", tempDir, "diff", "--cached", "--binary", "--no-ext-diff", "--no-renames", "--", filePath).CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("capture directory-target symlink patch for %s: %w: %s", filePath, err, strings.TrimSpace(string(output)))
+	}
+	return output, nil
 }
 
 func worktreePathPresent(repoRoot, filePath string) bool {
