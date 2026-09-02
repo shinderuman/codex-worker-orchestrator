@@ -291,25 +291,26 @@ func TestWatchVerboseModelIdleUsesLiveModelActivity(t *testing.T) {
 	requireModelIdleMS(t, renderWatchLive(t, st, taskID, tracker, snapshot.LastModelActivityAt.Add(240*time.Second)), 240000)
 }
 
-func TestWatchVerboseLegacySnapshotFallsBackToTracker(t *testing.T) {
+func TestWatchVerboseUnreadableSnapshotFallsBackToTracker(t *testing.T) {
 	st, _ := watchTestStore(t)
 	taskID := "12345678-aaaa-bbbb-cccc-dddddddddddd"
 	base := time.Date(2026, 8, 23, 9, 0, 0, 0, time.UTC)
 	tracker := newWatchToolTracker()
 	tracker.observe(state.TaskEventRecord{CallID: "call-1", Kind: "assistant", Timestamp: base, Blocks: []state.TaskBlockSummary{{Type: "tool_use", Name: "Bash", ToolID: "toolu_1"}}})
 
-	legacy := `{"updated_at":"` + base.Add(90*time.Second).Format(time.RFC3339Nano) + `","last_event_at":"` + base.Add(90*time.Second).Format(time.RFC3339Nano) + `","tools":[{"tool_id":"toolu_1","command":"sleep 295"}]}` + "\n"
+	unsupported := `{"version":999,"updated_at":"` + base.Add(90*time.Second).Format(time.RFC3339Nano) + `","last_event_at":"` + base.Add(90*time.Second).Format(time.RFC3339Nano) + `","tools":[{"tool_id":"toolu_1","command":"sleep 295"}]}` + "\n"
 	if err := os.MkdirAll(st.Path("events"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(st.TaskLiveStatusPath(taskID), []byte(legacy), 0o600); err != nil {
+	if err := os.WriteFile(st.TaskLiveStatusPath(taskID), []byte(unsupported), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
 	live := renderWatchLive(t, st, taskID, tracker, base.Add(150*time.Second))
 	requireModelIdleMS(t, live, 150000)
-	if bash := liveToolOf(t, live, "Bash"); bash.Command != "sleep 295" {
-		t.Fatalf("旧snapshotの詳細が落ちています: %#v", bash)
+	bash := liveToolOf(t, live, "Bash")
+	if bash.Command != "" || bash.Purpose != "" || bash.WaitTaskID != "" || bash.Background {
+		t.Fatalf("unsupported snapshotの詳細を使用しています: %#v", bash)
 	}
 }
 
