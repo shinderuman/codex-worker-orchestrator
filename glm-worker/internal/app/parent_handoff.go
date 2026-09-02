@@ -46,8 +46,8 @@ type parentHandoffMaterial struct {
 	Phase              string  `json:"phase"`
 	Outcome            string  `json:"outcome,omitempty"`
 	PacketStatus       string  `json:"packet_status,omitempty"`
-	PacketRejectReason string  `json:"packet_reject_reason,omitempty"`
-	PacketError        string  `json:"packet_error,omitempty"`
+	PacketRejectReason string  `json:"-"`
+	PacketError        string  `json:"-"`
 	Role               string  `json:"role,omitempty"`
 	Model              string  `json:"model,omitempty"`
 }
