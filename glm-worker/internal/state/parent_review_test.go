@@ -291,7 +291,7 @@ func TestComputeParentReworkSegmentsByOrigin(t *testing.T) {
 	now := time.Now().UTC()
 	taskCall := func(role SessionRole, model string, turns int, input int64, wall int64) ModelCallLog {
 		return ModelCallLog{
-			Version:        modelCallLogVersion,
+			Version:        ModelCallLogVersion,
 			CallType:       CallTypeTask,
 			TaskID:         taskID,
 			Phase:          "phase-" + model,
@@ -307,7 +307,7 @@ func TestComputeParentReworkSegmentsByOrigin(t *testing.T) {
 	}
 	parentEvent := func(phase string, outcome string, origin string) ModelCallLog {
 		return ModelCallLog{
-			Version:      modelCallLogVersion,
+			Version:      ModelCallLogVersion,
 			CallType:     CallTypeEvent,
 			TaskID:       taskID,
 			Phase:        phase,

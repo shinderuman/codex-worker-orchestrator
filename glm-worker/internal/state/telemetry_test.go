@@ -112,7 +112,7 @@ func TestReadModelCallLogsSkipsVersion1(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(logs) != 1 || logs[0].Version != modelCallLogVersion || logs[0].CallID != "current" {
+	if len(logs) != 1 || logs[0].Version != ModelCallLogVersion || logs[0].CallID != "current" {
 		t.Fatalf("version 1を除外したtelemetry = %#v", logs)
 	}
 }
@@ -185,7 +185,7 @@ func TestReadModelCallLogsMixedSchemaPreservesTokensAndDiagnostics(t *testing.T)
 		t.Fatal(err)
 	}
 	legacy := ModelCallLog{
-		Version:    modelCallLogVersion,
+		Version:    ModelCallLogVersion,
 		CallID:     "legacy",
 		CallType:   CallTypeTask,
 		TaskID:     taskID,

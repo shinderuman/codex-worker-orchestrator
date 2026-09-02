@@ -8,7 +8,7 @@ import (
 
 func routingLogFixture(taskID string, sessionID string, phase string, role SessionRole, alias string, startedAt time.Time) ModelCallLog {
 	return ModelCallLog{
-		Version: modelCallLogVersion, CallType: CallTypeTask, TaskID: taskID, SessionID: sessionID,
+		Version: ModelCallLogVersion, CallType: CallTypeTask, TaskID: taskID, SessionID: sessionID,
 		StartedAt: startedAt, CompletedAt: startedAt.Add(time.Minute),
 		Phase: phase, Role: role, ModelAlias: alias, ResolvedModelID: "glm-5.3",
 		Outcome: "success", PacketStatus: "IMPLEMENTED",
@@ -77,7 +77,7 @@ func TestBuildModelRoutingReportAggregatesCells(t *testing.T) {
 			TaskID: taskA,
 			Logs: []ModelCallLog{
 				workerA, reviewer, fallback, unusable,
-				{Version: modelCallLogVersion, CallType: CallTypeEvent, TaskID: taskA, Phase: "parent-fix", Role: WorkerRole, StartedAt: base, CompletedAt: base},
+				{Version: ModelCallLogVersion, CallType: CallTypeEvent, TaskID: taskA, Phase: "parent-fix", Role: WorkerRole, StartedAt: base, CompletedAt: base},
 			},
 		},
 		{TaskID: taskB, Logs: []ModelCallLog{workerB}},

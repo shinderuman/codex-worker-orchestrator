@@ -193,18 +193,18 @@ func TestComputeTelemetryCoverageSkipsOldVersionRecords(t *testing.T) {
 	st := &StateStore{dir: t.TempDir()}
 	taskID := "oldrecord1-1111-4222-8333-444444444444"
 	oldRecord, err := json.Marshal(map[string]any{
-		"version":   modelCallLogVersion - 1,
+		"version":   ModelCallLogVersion - 1,
 		"call_type": CallTypeTask,
 		"task_id":   taskID,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	currentRecord, err := json.Marshal(ModelCallLog{Version: modelCallLogVersion, CallType: CallTypeTask, TaskID: taskID})
+	currentRecord, err := json.Marshal(ModelCallLog{Version: ModelCallLogVersion, CallType: CallTypeTask, TaskID: taskID})
 	if err != nil {
 		t.Fatal(err)
 	}
-	noCallType, err := json.Marshal(ModelCallLog{Version: modelCallLogVersion, TaskID: taskID})
+	noCallType, err := json.Marshal(ModelCallLog{Version: ModelCallLogVersion, TaskID: taskID})
 	if err != nil {
 		t.Fatal(err)
 	}

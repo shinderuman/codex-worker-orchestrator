@@ -13,11 +13,11 @@ func TestCountFinalizedTaskCallsUsesCurrentExplicitTaskRecordsOnly(t *testing.T)
 
 	lines := make([]string, 0, 5)
 	for _, record := range []ModelCallLog{
-		{Version: modelCallLogVersion, TaskID: taskID, CallType: CallTypeTask},
-		{Version: modelCallLogVersion, TaskID: taskID, CallType: CallTypeProbe},
-		{Version: modelCallLogVersion, TaskID: taskID, CallType: CallTypeEvent},
-		{Version: modelCallLogVersion, TaskID: taskID},
-		{Version: modelCallLogVersion - 1, TaskID: taskID, CallType: CallTypeTask},
+		{Version: ModelCallLogVersion, TaskID: taskID, CallType: CallTypeTask},
+		{Version: ModelCallLogVersion, TaskID: taskID, CallType: CallTypeProbe},
+		{Version: ModelCallLogVersion, TaskID: taskID, CallType: CallTypeEvent},
+		{Version: ModelCallLogVersion, TaskID: taskID},
+		{Version: ModelCallLogVersion - 1, TaskID: taskID, CallType: CallTypeTask},
 	} {
 		data, err := json.Marshal(record)
 		if err != nil {

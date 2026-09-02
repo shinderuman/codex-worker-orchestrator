@@ -16,7 +16,7 @@ func callLogFixture(sessionID string, phase string, role SessionRole, resumed bo
 		modelAlias = "sonnet"
 	}
 	return ModelCallLog{
-		Version: modelCallLogVersion, CallType: CallTypeTask, CallID: phase + "-" + startedAt.Format("150405.000000000"),
+		Version: ModelCallLogVersion, CallType: CallTypeTask, CallID: phase + "-" + startedAt.Format("150405.000000000"),
 		TaskID: "task-fixture", SessionID: sessionID, StartedAt: startedAt,
 		CompletedAt: startedAt.Add(time.Duration(durationMS) * time.Millisecond),
 		Phase:       phase, Role: role, ModelAlias: modelAlias, Resumed: resumed,
@@ -78,9 +78,9 @@ func TestBuildCallOutlierReportSeparatesPhasesAndResume(t *testing.T) {
 				callLogFixture("sess-a", "worker-new-result-correct", WorkerRole, true, 2, 100, base.Add(2*time.Hour)),
 				callLogFixture("sess-a", "worker-explicit-fix", WorkerRole, true, 50, 2000, base.Add(3*time.Hour)),
 				callLogFixture("sess-ra", "reviewer-1", ReviewerRole, false, 10, 500, base.Add(4*time.Hour)),
-				{Version: modelCallLogVersion, CallType: CallTypeEvent, TaskID: taskA, Phase: "parent-fix", Role: WorkerRole, StartedAt: base, CompletedAt: base},
-				{Version: modelCallLogVersion, CallType: CallTypeProbe, TaskID: taskA, Phase: "worker-new-probe-1", Role: WorkerRole, StartedAt: base, CompletedAt: base},
-				{Version: modelCallLogVersion, CallType: "unknown", TaskID: taskA, Phase: "legacy", Role: WorkerRole, StartedAt: base, CompletedAt: base},
+				{Version: ModelCallLogVersion, CallType: CallTypeEvent, TaskID: taskA, Phase: "parent-fix", Role: WorkerRole, StartedAt: base, CompletedAt: base},
+				{Version: ModelCallLogVersion, CallType: CallTypeProbe, TaskID: taskA, Phase: "worker-new-probe-1", Role: WorkerRole, StartedAt: base, CompletedAt: base},
+				{Version: ModelCallLogVersion, CallType: "unknown", TaskID: taskA, Phase: "legacy", Role: WorkerRole, StartedAt: base, CompletedAt: base},
 			},
 		},
 		{

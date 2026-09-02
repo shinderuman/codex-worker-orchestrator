@@ -24,7 +24,7 @@ type bundleAnalysisIndex struct {
 	Intervals      bundleAnalysisIntervals   `json:"intervals"`
 	ParentSession  bundleAnalysisParent      `json:"parent_session"`
 	RolloutWindow  bundleAnalysisRollout     `json:"parent_rollout_window"`
-	WaitCalls      bundleAnalysisCount       `json:"parent_wait_calls"`
+	WaitCalls      bundleAnalysisWaitCalls   `json:"parent_wait_calls"`
 	TokenDelta     bundleAnalysisTokenDelta  `json:"parent_token_delta"`
 	Finalization   bundleAnalysisTokenDelta  `json:"parent_finalization"`
 	ValidationRuns bundleAnalysisValidations `json:"validation_runs"`
@@ -112,9 +112,80 @@ type bundleAnalysisRun struct {
 }
 
 type bundleAnalysisRetries struct {
-	ValidationReruns  []bundleAnalysisRerun `json:"validation_reruns,omitempty"`
-	WorkerCounters    map[string]int        `json:"worker_counters,omitempty"`
-	ResumedModelCalls bundleAnalysisCount   `json:"resumed_model_calls"`
+	ValidationReruns   []bundleAnalysisRerun        `json:"validation_reruns,omitempty"`
+	WorkerCounters     map[string]int               `json:"worker_counters,omitempty"`
+	ResumedModelCalls  bundleAnalysisCount          `json:"resumed_model_calls"`
+	ModelCallRelations bundleAnalysisModelRelations `json:"model_call_relations"`
+}
+
+type bundleAnalysisModelRelations struct {
+	Status           string                            `json:"status"`
+	Resolved         []bundleAnalysisRetryEdge         `json:"resolved,omitempty"`
+	Dangling         []bundleAnalysisRetryEdge         `json:"dangling,omitempty"`
+	Ambiguous        []bundleAnalysisAmbiguousRelation `json:"ambiguous,omitempty"`
+	Unlinked         []bundleAnalysisUnlinkedCall      `json:"unlinked,omitempty"`
+	DuplicateCallIDs []bundleAnalysisDuplicateCalls    `json:"duplicate_call_ids,omitempty"`
+}
+
+type bundleAnalysisRetryEdge struct {
+	CallID      string                    `json:"call_id"`
+	RetryOf     string                    `json:"retry_of"`
+	RetryReason string                    `json:"retry_reason,omitempty"`
+	Phase       string                    `json:"phase,omitempty"`
+	Outcome     string                    `json:"outcome,omitempty"`
+	Resumed     bool                      `json:"resumed"`
+	Source      bundleAnalysisRecordTrace `json:"source"`
+}
+
+type bundleAnalysisAmbiguousRelation struct {
+	CallID      string                    `json:"call_id"`
+	RetryOf     string                    `json:"retry_of,omitempty"`
+	RetryReason string                    `json:"retry_reason,omitempty"`
+	Phase       string                    `json:"phase,omitempty"`
+	Outcome     string                    `json:"outcome,omitempty"`
+	Resumed     bool                      `json:"resumed"`
+	Ambiguity   []string                  `json:"ambiguity"`
+	Source      bundleAnalysisRecordTrace `json:"source"`
+}
+
+type bundleAnalysisUnlinkedCall struct {
+	CallID      string                    `json:"call_id"`
+	Phase       string                    `json:"phase,omitempty"`
+	Outcome     string                    `json:"outcome,omitempty"`
+	Resumed     bool                      `json:"resumed"`
+	RetryReason string                    `json:"retry_reason,omitempty"`
+	Source      bundleAnalysisRecordTrace `json:"source"`
+}
+
+type bundleAnalysisDuplicateCalls struct {
+	CallID string `json:"call_id"`
+	Lines  []int  `json:"lines"`
+}
+
+type bundleAnalysisRecordTrace struct {
+	ArchivePath string `json:"archive_path"`
+	Lines       []int  `json:"lines"`
+}
+
+type bundleAnalysisWaitCalls struct {
+	Status           string                        `json:"status"`
+	Count            int                           `json:"count,omitempty"`
+	Calls            []bundleAnalysisWaitCall      `json:"calls,omitempty"`
+	DuplicateCallIDs []bundleAnalysisWaitDuplicate `json:"duplicate_call_ids,omitempty"`
+}
+
+type bundleAnalysisWaitCall struct {
+	CallID           string   `json:"call_id,omitempty"`
+	RequestedYieldMS *float64 `json:"requested_yield_ms,omitempty"`
+	YieldClass       string   `json:"yield_class"`
+	RequestLines     []int    `json:"request_lines"`
+	ReturnLines      []int    `json:"return_lines,omitempty"`
+}
+
+type bundleAnalysisWaitDuplicate struct {
+	CallID       string `json:"call_id"`
+	RequestLines []int  `json:"request_lines"`
+	ReturnLines  []int  `json:"return_lines"`
 }
 
 type bundleAnalysisRerun struct {
@@ -144,7 +215,20 @@ type bundleRolloutScan struct {
 	turns       []analysisRolloutTurn
 	turnIndex   map[string]int
 	tokens      []analysisRolloutTokenAnchor
-	waits       []time.Time
+	waits       []analysisRolloutWaitRequest
+	waitReturns []analysisRolloutWaitReturn
+}
+
+type analysisRolloutWaitRequest struct {
+	CallID  string
+	Line    int
+	At      time.Time
+	YieldMS *float64
+}
+
+type analysisRolloutWaitReturn struct {
+	CallID string
+	Line   int
 }
 
 type analysisRolloutTurn struct {
@@ -186,8 +270,10 @@ type codexRolloutTokenUsage struct {
 }
 
 type codexRolloutItemPayload struct {
-	Type string `json:"type"`
-	Name string `json:"name"`
+	Type      string `json:"type"`
+	Name      string `json:"name"`
+	CallID    string `json:"call_id"`
+	Arguments string `json:"arguments"`
 }
 
 type analysisValidationEvent struct {
@@ -208,7 +294,7 @@ type analysisOwningTurn struct {
 	turn   *analysisRolloutTurn
 }
 
-const bundleAnalysisIndexVersion = 2
+const bundleAnalysisIndexVersion = 3
 
 const bundleAnalysisEntryPath = "analysis-index.json"
 
@@ -259,6 +345,16 @@ const analysisRetryAfterFail = "previous-task-validation-fail"
 
 const analysisRetryUnknown = "unknown"
 
+const analysisAmbiguityTargetConflicted = "target_call_id_conflicted"
+
+const analysisAmbiguitySourceConflicted = "source_call_id_conflicted"
+
+const analysisWaitYieldClassShort = "short"
+
+const analysisWaitYieldClassBounded = "bounded"
+
+const analysisWaitYieldClassLong = "long"
+
 const codexRolloutTaskStartedType = "task_started"
 
 const codexRolloutTaskCompleteType = "task_complete"
@@ -266,6 +362,12 @@ const codexRolloutTaskCompleteType = "task_complete"
 const codexRolloutWaitCallName = "wait"
 
 const codexRolloutFunctionCallType = "function_call"
+
+const codexRolloutFunctionCallOutputType = "function_call_output"
+
+const analysisWaitShortBoundMS = 60000
+
+const analysisWaitLongBoundMS = 21600000
 
 const codexRolloutTokenCountType = "token_count"
 
@@ -301,6 +403,7 @@ func buildBundleAnalysisIndex(st *state.StateStore, task bundleTask, collector *
 	finalizationInterval := analysisFinalizationInterval(execution, owning)
 	eventRuns := analysisTaskEventValidationRuns(st, task.ID)
 	roundSeqByDigest := analysisRoundDigestSeqs(st, task.ID)
+	telemetry := scanAnalysisTelemetryCalls(st, task.ID)
 	validations, attributedRuns := collectAnalysisValidationRuns(collector, eventRuns, roundSeqByDigest, start, collectionEnd)
 	return bundleAnalysisIndex{
 		Version:     bundleAnalysisIndexVersion,
@@ -324,7 +427,7 @@ func buildBundleAnalysisIndex(st *state.StateStore, task bundleTask, collector *
 		TokenDelta:     analysisExecutionTokenDelta(association, rolloutScan, start, execution, collectionEnd),
 		Finalization:   analysisFinalizationTokenDelta(association, rolloutScan, execution, owning, finalizationInterval),
 		ValidationRuns: validations,
-		Retries:        analysisRetries(st, task, eventRuns, validations.Runs),
+		Retries:        analysisRetries(task, eventRuns, validations.Runs, telemetry),
 		Evidence:       analysisEvidence(collector, association, attributedRuns, validations.Runs),
 	}
 }
@@ -366,10 +469,12 @@ func scanCodexRolloutWindow(rolloutPath string, start, end time.Time) (bundleRol
 
 	scan := bundleRolloutScan{turnIndex: map[string]int{}}
 	reader := bufio.NewReaderSize(file, 64*1024)
+	lineNumber := 0
 	for {
 		line, readErr := reader.ReadBytes('\n')
 		if len(line) > 0 {
-			observeAnalysisRolloutLine(&scan, line, start, end)
+			lineNumber++
+			observeAnalysisRolloutLine(&scan, line, lineNumber, start, end)
 			scan.totalBytes += int64(len(line))
 		}
 		if readErr != nil {
@@ -399,7 +504,7 @@ func (scan *bundleRolloutScan) finalizeTurns() {
 	scan.turnIndex = nil
 }
 
-func observeAnalysisRolloutLine(scan *bundleRolloutScan, line []byte, start, end time.Time) {
+func observeAnalysisRolloutLine(scan *bundleRolloutScan, line []byte, lineNumber int, start, end time.Time) {
 	trimmed := strings.TrimRight(string(line), "\n")
 	if trimmed == "" {
 		return
@@ -414,7 +519,7 @@ func observeAnalysisRolloutLine(scan *bundleRolloutScan, line []byte, start, end
 	}
 	observeAnalysisRolloutInWindowRecord(scan, line, timestamp, start, end)
 	if record.Type == "response_item" {
-		observeAnalysisRolloutWait(scan, record.Payload, timestamp)
+		observeAnalysisRolloutWait(scan, record.Payload, timestamp, lineNumber)
 	}
 	if record.Type == "event_msg" {
 		observeAnalysisRolloutEvent(scan, record, timestamp)
@@ -432,14 +537,44 @@ func observeAnalysisRolloutInWindowRecord(scan *bundleRolloutScan, line []byte, 
 	scan.windowEnd = scan.totalBytes + int64(len(line))
 }
 
-func observeAnalysisRolloutWait(scan *bundleRolloutScan, payload json.RawMessage, timestamp time.Time) {
+func observeAnalysisRolloutWait(scan *bundleRolloutScan, payload json.RawMessage, timestamp time.Time, lineNumber int) {
 	var item codexRolloutItemPayload
 	if err := json.Unmarshal(payload, &item); err != nil {
 		return
 	}
-	if item.Type == codexRolloutFunctionCallType && item.Name == codexRolloutWaitCallName {
-		scan.waits = append(scan.waits, timestamp)
+	switch item.Type {
+	case codexRolloutFunctionCallType:
+		if item.Name != codexRolloutWaitCallName {
+			return
+		}
+		scan.waits = append(scan.waits, analysisRolloutWaitRequest{
+			CallID:  item.CallID,
+			Line:    lineNumber,
+			At:      timestamp,
+			YieldMS: analysisWaitRequestedYield(item.Arguments),
+		})
+	case codexRolloutFunctionCallOutputType:
+		if item.CallID == "" {
+			return
+		}
+		scan.waitReturns = append(scan.waitReturns, analysisRolloutWaitReturn{CallID: item.CallID, Line: lineNumber})
 	}
+}
+
+func analysisWaitRequestedYield(arguments string) *float64 {
+	if arguments == "" {
+		return nil
+	}
+	var parsed struct {
+		YieldTimeMS *float64 `json:"yield_time_ms"`
+	}
+	if err := json.Unmarshal([]byte(arguments), &parsed); err != nil {
+		return nil
+	}
+	if parsed.YieldTimeMS == nil || *parsed.YieldTimeMS < 0 {
+		return nil
+	}
+	return parsed.YieldTimeMS
 }
 
 func observeAnalysisRolloutEvent(scan *bundleRolloutScan, record codexRolloutScanLine, timestamp time.Time) {
@@ -641,34 +776,126 @@ func analysisSubsequentTurn(scan bundleRolloutScan, turn *analysisRolloutTurn, c
 	return entry
 }
 
-func analysisWaitCalls(association codexAssociation, scan bundleRolloutScan, start time.Time, execution analysisExecutionBoundary, collectionEnd time.Time) bundleAnalysisCount {
-	count := bundleAnalysisCount{Status: analysisStatusCounted}
+func analysisWaitCalls(association codexAssociation, scan bundleRolloutScan, start time.Time, execution analysisExecutionBoundary, collectionEnd time.Time) bundleAnalysisWaitCalls {
+	waits := bundleAnalysisWaitCalls{Status: analysisStatusCounted}
 	if association.ParentStatus != codexStatusIncluded {
-		count.Status = association.ParentStatus
-		return count
+		waits.Status = association.ParentStatus
+		return waits
 	}
 	if execution.status == analysisStatusUnknown {
-		count.Status = analysisStatusUnknown
-		return count
+		waits.Status = analysisStatusUnknown
+		return waits
+	}
+	if !scan.hasWindow {
+		waits.Status = analysisStatusNoObservation
+		return waits
 	}
 	endBound := collectionEnd
 	if execution.status == analysisStatusAvailable {
 		endBound = execution.end
 	}
-	if !scan.hasWindow {
-		count.Status = analysisStatusNoObservation
-		return count
+	waits.Calls, waits.DuplicateCallIDs = analysisWaitCallEntries(scan, start, endBound)
+	waits.Count = len(waits.Calls)
+	if execution.status == analysisStatusOpen {
+		waits.Status = analysisStatusOpen
 	}
-	for _, at := range scan.waits {
-		if at.Before(start) || at.After(endBound) {
+	return waits
+}
+
+func analysisWaitCallEntries(scan bundleRolloutScan, start, end time.Time) ([]bundleAnalysisWaitCall, []bundleAnalysisWaitDuplicate) {
+	returnLines := analysisWaitReturnLines(scan.waitReturns)
+	requestsByCall, order, anonymous := analysisGroupWaitRequests(scan.waits, start, end)
+	calls := make([]bundleAnalysisWaitCall, 0, len(order)+len(anonymous))
+	duplicates := make([]bundleAnalysisWaitDuplicate, 0)
+	for _, callID := range order {
+		entry, conflict := analysisWaitCallRecord(callID, requestsByCall[callID])
+		if conflict || len(returnLines[callID]) > 1 {
+			duplicates = append(duplicates, bundleAnalysisWaitDuplicate{
+				CallID:       callID,
+				RequestLines: entry.RequestLines,
+				ReturnLines:  returnLines[callID],
+			})
 			continue
 		}
-		count.Count++
+		entry.ReturnLines = returnLines[callID]
+		calls = append(calls, entry)
 	}
-	if execution.status == analysisStatusOpen {
-		count.Status = analysisStatusOpen
+	for _, request := range anonymous {
+		calls = append(calls, bundleAnalysisWaitCall{
+			RequestedYieldMS: request.YieldMS,
+			YieldClass:       analysisWaitYieldClass(request.YieldMS),
+			RequestLines:     []int{request.Line},
+		})
 	}
-	return count
+	sort.Slice(calls, func(i, j int) bool {
+		return calls[i].RequestLines[0] < calls[j].RequestLines[0]
+	})
+	return calls, duplicates
+}
+
+func analysisWaitReturnLines(waitReturns []analysisRolloutWaitReturn) map[string][]int {
+	returnLines := map[string][]int{}
+	for _, waitReturn := range waitReturns {
+		returnLines[waitReturn.CallID] = append(returnLines[waitReturn.CallID], waitReturn.Line)
+	}
+	return returnLines
+}
+
+func analysisGroupWaitRequests(requests []analysisRolloutWaitRequest, start, end time.Time) (map[string][]analysisRolloutWaitRequest, []string, []analysisRolloutWaitRequest) {
+	requestsByCall := map[string][]analysisRolloutWaitRequest{}
+	order := make([]string, 0)
+	anonymous := make([]analysisRolloutWaitRequest, 0)
+	for _, request := range requests {
+		if request.At.Before(start) || request.At.After(end) {
+			continue
+		}
+		if request.CallID == "" {
+			anonymous = append(anonymous, request)
+			continue
+		}
+		if _, known := requestsByCall[request.CallID]; !known {
+			order = append(order, request.CallID)
+		}
+		requestsByCall[request.CallID] = append(requestsByCall[request.CallID], request)
+	}
+	return requestsByCall, order, anonymous
+}
+
+func analysisWaitCallRecord(callID string, requests []analysisRolloutWaitRequest) (bundleAnalysisWaitCall, bool) {
+	entry := bundleAnalysisWaitCall{
+		CallID:           callID,
+		RequestedYieldMS: requests[0].YieldMS,
+		YieldClass:       analysisWaitYieldClass(requests[0].YieldMS),
+		RequestLines:     []int{requests[0].Line},
+	}
+	conflict := false
+	for _, request := range requests[1:] {
+		entry.RequestLines = append(entry.RequestLines, request.Line)
+		if !analysisWaitYieldEqual(requests[0].YieldMS, request.YieldMS) {
+			conflict = true
+		}
+	}
+	return entry, conflict
+}
+
+func analysisWaitYieldClass(yieldMS *float64) string {
+	switch {
+	case yieldMS == nil:
+		return analysisStatusUnknown
+	case *yieldMS < analysisWaitShortBoundMS:
+		return analysisWaitYieldClassShort
+	case *yieldMS < analysisWaitLongBoundMS:
+		return analysisWaitYieldClassBounded
+	default:
+		return analysisWaitYieldClassLong
+	}
+}
+
+func analysisWaitYieldEqual(left, right *float64) bool {
+	if left == nil || right == nil {
+		return left == right
+	}
+	return *left == *right
 }
 
 func analysisExecutionTokenDelta(association codexAssociation, scan bundleRolloutScan, start time.Time, execution analysisExecutionBoundary, collectionEnd time.Time) bundleAnalysisTokenDelta {
@@ -900,10 +1127,11 @@ func readAnalysisRunRecord(sourcePath string) (qualityGateRunRecord, error) {
 	return record, nil
 }
 
-func analysisRetries(st *state.StateStore, task bundleTask, eventRuns map[string]analysisValidationEvent, runs []bundleAnalysisRun) bundleAnalysisRetries {
+func analysisRetries(task bundleTask, eventRuns map[string]analysisValidationEvent, runs []bundleAnalysisRun, telemetry analysisTelemetryScan) bundleAnalysisRetries {
 	retries := bundleAnalysisRetries{
-		WorkerCounters:    analysisWorkerRetryCounters(task.Stats),
-		ResumedModelCalls: analysisResumedModelCalls(st, task.ID),
+		WorkerCounters:     analysisWorkerRetryCounters(task.Stats),
+		ResumedModelCalls:  analysisResumedModelCalls(telemetry),
+		ModelCallRelations: analysisModelCallRelations(telemetry, task.ID),
 	}
 	byRunID := make(map[string]bundleAnalysisRun, len(runs))
 	for _, run := range runs {
@@ -933,21 +1161,39 @@ func analysisWorkerRetryCounters(stats state.TaskStats) map[string]int {
 	return counters
 }
 
-func analysisResumedModelCalls(st *state.StateStore, taskID string) bundleAnalysisCount {
-	count := bundleAnalysisCount{Status: analysisStatusAvailable}
-	logs, err := st.ReadModelCallLogs(taskID)
-	if err != nil {
-		count.Status = analysisStatusMissing
+func analysisResumedModelCalls(telemetry analysisTelemetryScan) bundleAnalysisCount {
+	count := bundleAnalysisCount{Status: telemetry.status}
+	if telemetry.status != analysisStatusAvailable {
 		return count
 	}
-	resumed := 0
-	for _, log := range logs {
-		if log.Resumed {
-			resumed++
+	for _, call := range telemetry.calls {
+		if !call.conflicted() {
+			if call.Variants[0].Resumed {
+				count.Count++
+			}
+			continue
+		}
+		resumed, consistent := analysisConflictedCallResumed(call)
+		if !consistent {
+			count.Status = analysisStatusUnknown
+			count.Count = 0
+			return count
+		}
+		if resumed {
+			count.Count++
 		}
 	}
-	count.Count = resumed
 	return count
+}
+
+func analysisConflictedCallResumed(call analysisTelemetryCall) (bool, bool) {
+	resumed := call.Variants[0].Resumed
+	for _, variant := range call.Variants[1:] {
+		if variant.Resumed != resumed {
+			return false, false
+		}
+	}
+	return resumed, true
 }
 
 func analysisValidationReruns(eventRuns map[string]analysisValidationEvent, runs map[string]bundleAnalysisRun) []bundleAnalysisRerun {

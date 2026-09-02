@@ -100,7 +100,7 @@ type ModelCallLog struct {
 	ParentOrigin string `json:"parent_origin,omitempty"`
 }
 
-const modelCallLogVersion = 3
+const ModelCallLogVersion = 3
 
 const (
 	CallTypeTask  = "task"
@@ -110,7 +110,7 @@ const (
 
 func (s *StateStore) RecordModelCallLog(value ModelCallLog) {
 	if value.Version == 0 {
-		value.Version = modelCallLogVersion
+		value.Version = ModelCallLogVersion
 	}
 	if value.CallID == "" {
 		callID, err := NewUUID()
@@ -228,7 +228,7 @@ func (s *StateStore) ReadModelCallLogs(taskID string) ([]ModelCallLog, error) {
 		if err := json.Unmarshal(scanner.Bytes(), &value); err != nil {
 			return nil, fmt.Errorf("telemetryを読めません: %w", err)
 		}
-		if value.Version != modelCallLogVersion {
+		if value.Version != ModelCallLogVersion {
 			continue
 		}
 		result = append(result, value)

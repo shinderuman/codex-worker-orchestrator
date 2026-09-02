@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -91,8 +92,25 @@ func TestBundleAnalysisIndexWindowSummaries(t *testing.T) {
 	if index.ParentSession.Status != codexStatusIncluded || index.ParentSession.ThreadID != codexTestParentThreadID {
 		t.Fatalf("parent session = %#v", index.ParentSession)
 	}
-	if index.WaitCalls.Status != analysisStatusOpen || index.WaitCalls.Count != 3 {
+	if index.WaitCalls.Status != analysisStatusOpen || index.WaitCalls.Count != 3 || len(index.WaitCalls.Calls) != 3 {
 		t.Fatalf("wait calls = %#v", index.WaitCalls)
+	}
+	short := index.WaitCalls.Calls[0]
+	if short.CallID != "wait-analysis-short" || short.YieldClass != analysisWaitYieldClassShort ||
+		short.RequestedYieldMS == nil || *short.RequestedYieldMS != 1000 ||
+		!slices.Equal(short.RequestLines, []int{7}) || !slices.Equal(short.ReturnLines, []int{8}) {
+		t.Fatalf("short wait = %#v", short)
+	}
+	bounded := index.WaitCalls.Calls[1]
+	if bounded.CallID != "wait-analysis-bounded" || bounded.YieldClass != analysisWaitYieldClassBounded ||
+		bounded.RequestedYieldMS == nil || *bounded.RequestedYieldMS != 60000 ||
+		!slices.Equal(bounded.RequestLines, []int{11}) || len(bounded.ReturnLines) != 0 {
+		t.Fatalf("bounded wait = %#v", bounded)
+	}
+	unknown := index.WaitCalls.Calls[2]
+	if unknown.CallID != "wait-analysis-unknown" || unknown.YieldClass != analysisStatusUnknown ||
+		unknown.RequestedYieldMS != nil || !slices.Equal(unknown.RequestLines, []int{12}) {
+		t.Fatalf("unknown wait = %#v", unknown)
 	}
 	if index.TokenDelta.Status != analysisStatusOpen ||
 		index.TokenDelta.InputTokens != 500 || index.TokenDelta.CachedInputTokens != 1000 {
@@ -228,7 +246,7 @@ func TestBundleAnalysisRecollectionKeepsExecutionPinned(t *testing.T) {
 		*collection.End != archivedAt.Format(time.RFC3339Nano) {
 		t.Fatalf("collection interval = %#v", collection)
 	}
-	if third.TokenDelta != first.TokenDelta || third.WaitCalls != first.WaitCalls ||
+	if third.TokenDelta != first.TokenDelta || !reflect.DeepEqual(third.WaitCalls, first.WaitCalls) ||
 		third.Finalization != first.Finalization {
 		t.Fatalf("pinned values changed: %#v / %#v / %#v", third.TokenDelta, third.WaitCalls, third.Finalization)
 	}
@@ -451,7 +469,8 @@ func TestBundleAnalysisIndexValidationRunAttribution(t *testing.T) {
 }
 
 func TestBundleAnalysisIndexRetriesAndEvidence(t *testing.T) {
-	index := newAnalysisBundleFixture(t).index
+	fixture := newAnalysisBundleFixture(t)
+	index := fixture.index
 
 	if len(index.Retries.ValidationReruns) != 1 {
 		t.Fatalf("reruns = %#v", index.Retries.ValidationReruns)
@@ -466,6 +485,19 @@ func TestBundleAnalysisIndexRetriesAndEvidence(t *testing.T) {
 	}
 	if index.Retries.ResumedModelCalls.Status != analysisStatusAvailable || index.Retries.ResumedModelCalls.Count != 1 {
 		t.Fatalf("resumed calls = %#v", index.Retries.ResumedModelCalls)
+	}
+	relations := index.Retries.ModelCallRelations
+	if relations.Status != analysisStatusAvailable || len(relations.Resolved) != 1 ||
+		len(relations.Dangling) != 0 || len(relations.Ambiguous) != 0 ||
+		len(relations.Unlinked) != 0 || len(relations.DuplicateCallIDs) != 0 {
+		t.Fatalf("model call relations = %#v", relations)
+	}
+	edge := relations.Resolved[0]
+	if edge.CallID != "call-analysis-retry" || edge.RetryOf != "call-analysis-original" ||
+		edge.RetryReason != "invalid-packet-result-correction" || edge.Phase != "worker-new-result-correct" ||
+		edge.Outcome != "success" || !edge.Resumed ||
+		edge.Source.ArchivePath != "task/telemetry/"+fixture.taskID+".jsonl" || !slices.Equal(edge.Source.Lines, []int{2}) {
+		t.Fatalf("resolved edge = %#v", edge)
 	}
 
 	for _, ref := range index.Evidence.TaskExternal {
@@ -616,11 +648,12 @@ func newAnalysisBundleFixture(t *testing.T) analysisBundleFixture {
 
 	inWindow := []string{
 		analysisTokenCountLine(t, inWindowAt, 26011, 6912),
-		analysisRolloutLine(t, inWindowAt, "response_item", map[string]any{"type": "function_call", "name": "wait"}),
+		analysisWaitRequestLine(t, inWindowAt, "wait-analysis-short", `{"yield_time_ms":1000}`),
+		analysisWaitReturnLine(t, inWindowAt, "wait-analysis-short"),
 		analysisRolloutLine(t, inWindowAt, "response_item", map[string]any{"type": "custom_tool_call", "name": "exec"}),
 		analysisTokenCountLine(t, inWindowAt, 26511, 7912),
-		analysisRolloutLine(t, inWindowAt, "response_item", map[string]any{"type": "function_call", "name": "wait"}),
-		analysisRolloutLine(t, inWindowAt, "response_item", map[string]any{"type": "function_call", "name": "wait"}),
+		analysisWaitRequestLine(t, inWindowAt, "wait-analysis-bounded", `{"yield_time_ms":60000}`),
+		analysisWaitRequestLine(t, inWindowAt, "wait-analysis-unknown", ""),
 	}
 	preWindow := []string{
 		analysisTokenCountLine(t, start.Add(-2*time.Hour), 25011, 5912),
@@ -632,8 +665,7 @@ func newAnalysisBundleFixture(t *testing.T) analysisBundleFixture {
 	writeAnalysisRollout(t, codexHome, rolloutRel, codexTestParentThreadID, start.Add(-3*time.Hour), append(preWindow, inWindow...))
 
 	st.RecordModelCall(state.WorkerRole, "opus")
-	writeAnalysisModelCall(t, st, taskID, "session-worker", false)
-	writeAnalysisModelCall(t, st, taskID, "session-worker", true)
+	writeAnalysisRetryModelCalls(t, st, taskID, "session-worker")
 
 	digest := state.SnapshotDigest{Head: "head-round", IndexDigest: "index-round", WorktreeDigest: "worktree-round"}
 	if err := st.AppendRoundRecord(state.RoundRecord{
@@ -852,21 +884,43 @@ func writeAnalysisRollout(t *testing.T, home, rel, threadID string, metaTimestam
 	writeBundleFile(t, filepath.Join(home, filepath.FromSlash(rel)), string(encoded)+"\n"+strings.Join(lines, ""))
 }
 
-func writeAnalysisModelCall(t *testing.T, st *state.StateStore, taskID, sessionID string, resumed bool) {
+func writeAnalysisRetryModelCalls(t *testing.T, st *state.StateStore, taskID, sessionID string) {
 	t.Helper()
 	now := time.Now().UTC()
-	st.RecordModelCallLog(state.ModelCallLog{
+	base := state.ModelCallLog{
 		TaskID:      taskID,
 		CallType:    state.CallTypeTask,
+		CallID:      "call-analysis-original",
 		SessionID:   sessionID,
 		Role:        state.WorkerRole,
 		Phase:       "worker-new",
 		ModelAlias:  "opus",
 		StartedAt:   now,
 		CompletedAt: now,
-		Outcome:     "success",
-		Resumed:     resumed,
-	})
+		Outcome:     "invalid_packet",
+	}
+	st.RecordModelCallLog(base)
+	base.CallID = "call-analysis-retry"
+	base.Phase = "worker-new-result-correct"
+	base.Outcome = "success"
+	base.Resumed = true
+	base.RetryOf = "call-analysis-original"
+	base.RetryReason = "invalid-packet-result-correction"
+	st.RecordModelCallLog(base)
+}
+
+func analysisWaitRequestLine(t *testing.T, timestamp time.Time, callID, arguments string) string {
+	t.Helper()
+	payload := map[string]any{"type": "function_call", "name": "wait", "call_id": callID}
+	if arguments != "" {
+		payload["arguments"] = arguments
+	}
+	return analysisRolloutLine(t, timestamp, "response_item", payload)
+}
+
+func analysisWaitReturnLine(t *testing.T, timestamp time.Time, callID string) string {
+	t.Helper()
+	return analysisRolloutLine(t, timestamp, "response_item", map[string]any{"type": "function_call_output", "call_id": callID})
 }
 
 func writeAnalysisRun(t *testing.T, st *state.StateStore, runID, form, status string, startedAt, completedAt time.Time, snapshot state.GitSnapshot) {
