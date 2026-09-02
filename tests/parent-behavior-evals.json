@@ -64,6 +64,15 @@
       "evidence": "Primary evidence used for classification plus the parent classification and remedy-selection decision.",
       "run_policy": "explicit-user-authorization",
       "status": "not-run"
+    },
+    {
+      "id": "bounded-structured-evidence",
+      "contract_sources": ["codex/AGENTS.md"],
+      "positive": "For structured machine evidence, the parent performs the decision-relevant field/count/identifier projection inside the first tool call and keeps exact raw locators available for bounded follow-up without first injecting the whole corpus or record into Sol context.",
+      "negative": "Missing expected projection fields do not fall back to a whole document, and raw source/code/prose that is itself the semantic evidence remains inspectable through the minimum concrete region needed for the decision.",
+      "evidence": "Parent rollout showing the structured-evidence command/output sequence and exact raw references used for any bounded follow-up.",
+      "run_policy": "explicit-user-authorization",
+      "status": "not-run"
     }
   ]
 }
