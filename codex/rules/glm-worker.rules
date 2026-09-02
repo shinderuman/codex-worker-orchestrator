@@ -3,3 +3,27 @@ prefix_rule(
     decision = "allow",
     justification = "GLM Coding Plan worker: external model communication and persistent Claude Code sessions",
 )
+
+prefix_rule(
+    pattern = [
+        "glm-parent-action",
+        ["start", "decision", "fix", "start-milestones", "revise-milestones", "no-go", "accept", "resume", "finalize-check"],
+    ],
+    decision = "allow",
+    justification = "Managed GLM parent lifecycle facade: closed action vocabulary over glm-worker and existing lifecycle/staging gates",
+    match = [
+        ["glm-parent-action", "start"],
+        ["glm-parent-action", "decision", "token"],
+        ["glm-parent-action", "fix", "token", "--origin", "codex-review"],
+        ["glm-parent-action", "start-milestones", "token"],
+        ["glm-parent-action", "revise-milestones", "token"],
+        ["glm-parent-action", "no-go"],
+        ["glm-parent-action", "accept"],
+        ["glm-parent-action", "resume"],
+        ["glm-parent-action", "finalize-check", "go-test"],
+    ],
+    not_match = [
+        ["glm-parent-action", "prepare", "decision"],
+        ["glm-parent-action", "unknown"],
+    ],
+)
