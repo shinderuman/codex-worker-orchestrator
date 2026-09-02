@@ -12,12 +12,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskcontract"
 )
 
-const (
-	rulesFile = "IMPLEMENTATION_RULES.md"
-	planFile  = "IMPLEMENTATION_PLAN.local.md"
-	usage     = "usage: glm-worker --authority <rules|plan|active>"
-)
-
 type Output struct {
 	AuthoritySnapshotSHA256 string `json:"authority_snapshot_sha256"`
 	AuthorityKind           string `json:"authority_kind"`
@@ -32,6 +26,12 @@ type snapshot struct {
 	activePath string
 	hash       string
 }
+
+const (
+	rulesFile = "IMPLEMENTATION_RULES.md"
+	planFile  = "IMPLEMENTATION_PLAN.local.md"
+	usage     = "usage: glm-worker --authority <rules|plan|active>"
+)
 
 func Build(args []string) (Output, error) {
 	if len(args) != 1 || !validKind(args[0]) {
