@@ -64,16 +64,15 @@
 - terminal・Sol/user attention・rate/provider stop等の意味のある状態変化で制御が戻ったらpacketを処理し、可能な次工程へ進む。経過時間だけのliveness報告は行わない。
 - packet受理・個別commit・install完了は局所終端であり、親USER_REQUESTの完了か次の継続操作かは`~/.codex/instructions/task-lifecycle.md`を読んで判断する。
 
-## 親tool orchestrationのterminal payload単一描画
+## 親tool orchestrationのterminal result返却
 
-- terminal payload二面表示の原因層はglm-worker内部emitではなく親tool orchestrationとDesktop表示である。glm-workerの主呼出は受理したterminal resultをstdoutへ1回だけ出力する。本契約手順が強制できるのはmodel contextへの流入を1回にすることまでであり、ユーザー可視描画回数はDesktop表示層の外部境界としてrepoから強制できない。structured JSON移行後も結果object全体が同じ境界で二度描画され得る前提を維持し、JSON化を解決根拠にしない。
-- 単一postconditionは「1 accepted terminal resultにつき、親tool orchestration全体でユーザー可視payloadは1回」である。repo内emitの再調査・原因境界の特定だけでこの症状を解消扱いしない。同一payloadのmodel context・永続contextへの二重流入や測定可能なCodex実消費増などの実害証拠がない限り、表示の再発をrepo内再調査・orchestration変更の理由にしない。
-- 長時間cell(主`glm-parent-action`/`glm-worker`呼出)では、`functions.exec`のorchestration内でnested `exec_command`・`write_stdin`の各outputを変数へ蓄積し、raw stdout・packetをtext・notify・image等の即時描画経路へ一切出さない。
-- 蓄積した出力にstdin_ready control event行が含まれていてもtransport controlであり、受理対象のterminal payload・machine result・単一描画の本文へ含めない。
-- cell終端では、蓄積したraw terminal payloadをFunctionsのstoreへtask固有keyで保存し、cellの返り値は短いcaptured marker(`GLM_TERMINAL_CAPTURED <key>`)だけにする。
-- `functions.wait`でcell終端を受け取った後、別の短い同期`functions.exec`でstoreのload(key)を読み、text(raw)として1回だけ親へ渡す。この同期callで追加AI call・追加のglm-worker実行を行わない。
-- background cellの完了outputと`functions.wait`の双方へ同じraw payloadを流す運用は禁止する。repo側のPACKET/JSON blind dedupeと正当な別terminal resultの抑止も行わない。
-- 境界検証は追加AI callなしのdelayed markerと実`glm-worker` terminal resultを同じbackground exec→wait→同期取得境界で行う。これは契約手順のsemantics検証であり実Desktop rendererの継続的保証ではなく、単発live観測・模擬test・契約文面だけで解消済みと報告しない。表示が再発してもproducer stdout・telemetry・親tool outputが各1件ならrepo内emitの再調査を繰り返さず、model context二重流入の新証拠・測定可能なCodex実消費増・Quality Delta低下・Desktop側の調査可能な修正境界が得られた場合だけ再調査する。
+- terminal payload二面表示の原因層はglm-worker内部emitではなく親tool orchestrationとDesktop表示である。glm-workerの主呼出は受理したterminal resultをstdoutへ1回だけ出力する。本契約手順が強制するのはmodel contextへのaccepted terminal result流入を1回にすることであり、Desktopの同一描画が再発しても、それだけを理由にtransport-only model turnを追加しない。
+- 長時間cell(主`glm-parent-action`/`glm-worker`呼出)では、`functions.exec`のorchestration内でnested `exec_command`・`write_stdin`の各outputを変数へ蓄積し、raw stdout・packetをtext・notify・image等の即時描画経路へ出さない。stdin_ready等のtransport control event、進捗表示、重複echoはterminal resultへ含めず、owner commandが返したauthoritative machine JSONだけを機械抽出する。
+- `glm-parent-action start|decision|fix|resume|accept|no-go`が正常terminalへ到達した場合は、同じcode-mode cell内で直ちにread-onlyの`glm-worker --handoff`を1回実行する。terminal JSONとhandoff JSONをそれぞれparseし、handoffの`consistent`・`required_action`・`allowed_actions`をcanonical next-action authorityとして保持する。`consistent:false`も隠さず返し、次actionは実行しない。`glm-parent-action finalize-check`は既存machine result自身がcanonical `handoff`を同梱するため、二度目の`--handoff`を呼ばずそのfieldを使う。
+- cellの唯一のmodel-visible返り値はbounded machine resultとし、通常parent actionでは`{"status":"parent_action_terminal","terminal":<authoritative terminal JSON>,"handoff":<canonical handoff JSON>}`を返す。finalize-checkはhandoff重複を避けるため既存machine resultをそのまま返す。terminal/handoffが空・malformed・複数候補で一意に定まらない場合は任意のtextを選ばず、compactなtransport errorと利用可能なevidence referenceだけを返してfail closedする。
+- raw transcriptやlarge diagnosticは既存telemetry/artifact参照へ残し、envelopeへ丸ごとinlineしない。terminal packetの`NEEDS_SOL_DECISION`・`NEEDS_SOL_REVIEW`・PASS・failure semanticsは`terminal`内で損なわず、handoffはnext-action admission専用とする。
+- `functions.store`→`GLM_TERMINAL_CAPTURED <key>`→別model turn→`load(key)`はnormal pathで使わない。background orchestrationを`functions.wait`で受ける場合も、そのwait結果が上記bounded machine resultを直接親へ返す終端とし、同じbytesを取得するためだけの同期`functions.exec`/store loadを追加しない。
+- background cellの完了表示と`functions.wait`に同じbounded resultがUI上二重描画され得ても、model context二重流入・測定可能なCodex実消費増・Quality Delta低下の新証拠がない限り、repo側PACKET/JSON blind dedupeやstore/load再導入を行わない。
 
 ## rate limit停止(stderr error JSON `kind: rate_limited`)
 
