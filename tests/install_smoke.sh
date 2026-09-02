@@ -66,6 +66,10 @@ if [ "$(shasum -a 256 "$home/.local/bin/merge-json")" != "$stale_merge_json_hash
 	exit 1
 fi
 test -f "$home/.codex/AGENTS.md"
+test -f "$home/.codex/rules/glm-worker.rules"
+cmp "$repo/codex/rules/glm-worker.rules" "$home/.codex/rules/glm-worker.rules"
+grep -Fq '"glm-parent-action"' "$home/.codex/rules/glm-worker.rules"
+grep -Fq 'not_match = [' "$home/.codex/rules/glm-worker.rules"
 test -f "$home/.codex/glm-worker/prompts/WORKER.md"
 grep -q '^local_key = "keep"$' "$home/.codex/config.toml"
 grep -q '^background_terminal_max_timeout = ' "$home/.codex/config.toml"
