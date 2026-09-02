@@ -139,6 +139,12 @@ func TestCaptureKeepsTaskCreatedFileAcrossCommit(t *testing.T) {
 	if err := os.Symlink("seed.txt", filepath.Join(repoRoot, "file-link")); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.Mkdir(filepath.Join(repoRoot, "target-dir"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("target-dir", filepath.Join(repoRoot, "directory-link")); err != nil {
+		t.Fatal(err)
+	}
 	beforeCommit, available, err := Capture(repoRoot, st)
 	if err != nil {
 		t.Fatal(err)
@@ -146,7 +152,7 @@ func TestCaptureKeepsTaskCreatedFileAcrossCommit(t *testing.T) {
 	if !available {
 		t.Fatal("baseline unexpectedly unavailable")
 	}
-	runGit(t, repoRoot, "add", "created-during-task.txt", "dangling-link", "file-link")
+	runGit(t, repoRoot, "add", "created-during-task.txt", "dangling-link", "file-link", "directory-link")
 	runGit(t, repoRoot, "commit", "-qm", "task change")
 	afterCommit, available, err := Capture(repoRoot, st)
 	if err != nil {
@@ -165,6 +171,8 @@ func TestCaptureKeepsTaskCreatedFileAcrossCommit(t *testing.T) {
 			[]byte("+/nonexistent/task-target"),
 			[]byte("file-link"),
 			[]byte("+seed.txt"),
+			[]byte("directory-link"),
+			[]byte("+target-dir"),
 		} {
 			if !bytes.Contains(diff, want) {
 				t.Fatalf("diff missing %q:\n%s", want, diff)
