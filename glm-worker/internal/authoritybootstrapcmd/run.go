@@ -87,7 +87,15 @@ func loadSnapshot(root string) (snapshot, error) {
 	if err != nil {
 		return snapshot{}, err
 	}
-	active, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(activePath)))
+	activeFile := filepath.Join(root, filepath.FromSlash(activePath))
+	info, err := os.Lstat(activeFile)
+	if err != nil {
+		return snapshot{}, fmt.Errorf("inspect ACTIVE task %s: %w", activePath, err)
+	}
+	if !info.Mode().IsRegular() {
+		return snapshot{}, fmt.Errorf("ACTIVE task file %s is not a regular file (%s)", activePath, info.Mode().Type())
+	}
+	active, err := os.ReadFile(activeFile)
 	if err != nil {
 		return snapshot{}, fmt.Errorf("read ACTIVE task %s: %w", activePath, err)
 	}
