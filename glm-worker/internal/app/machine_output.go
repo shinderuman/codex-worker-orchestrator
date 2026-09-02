@@ -58,7 +58,15 @@ func runAuthorityBootstrap(args []string, stdout io.Writer) (bool, error) {
 	if err != nil {
 		return true, err
 	}
-	return true, writeJSON(stdout, output)
+	return true, writeValidatedMachineJSON(stdout, output)
+}
+
+func writeValidatedMachineJSON(target io.Writer, value any) error {
+	output := newSingleShotOutput(target)
+	if err := writeJSON(output, value); err != nil {
+		return err
+	}
+	return output.release()
 }
 
 func streamOutputMode(mode CommandMode) bool {

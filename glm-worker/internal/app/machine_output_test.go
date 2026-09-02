@@ -63,6 +63,23 @@ func TestSingleShotOutputRejectsSubprocessWiredToMachineStdout(t *testing.T) {
 	})
 }
 
+func TestEarlyCommandTrailingTextFailsBeforeRealStdoutRelease(t *testing.T) {
+	var target bytes.Buffer
+	output := newSingleShotOutput(&target)
+	if handled, err := runHelp([]string{"--help"}, output); !handled || err != nil {
+		t.Fatalf("runHelp: handled=%v err=%v", handled, err)
+	}
+	if _, err := output.Write([]byte("trailing plain text\n")); err != nil {
+		t.Fatal(err)
+	}
+	if err := output.release(); err == nil {
+		t.Fatal("早期commandのJSON + trailing text出力がreleaseされました")
+	}
+	if target.Len() != 0 {
+		t.Fatalf("契約違反出力が実stdoutへreleaseされました: %q", target.String())
+	}
+}
+
 func TestSingleShotOutputRejectsSubprocessTextAfterSerializedJSON(t *testing.T) {
 	if _, err := exec.LookPath("go"); err != nil {
 		t.Skipf("go commandがないためsubprocess再現をskipします: %v", err)

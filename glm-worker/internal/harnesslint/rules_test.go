@@ -1,18 +1,336 @@
 package harnesslint
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
 
+var entrypointRejectCases = []struct {
+	name   string
+	source string
+}{
+	{
+		name: "os.Args branch dispatch",
+		source: `package main
+
+import "example.com/root/internal/app"
+
+func main() {
+	if os.Args[1] == "--authority" {
+		os.Exit(app.BuildAuthority(os.Args[1:], os.Stdout))
+	}
+	os.Exit(app.Run(os.Args[1:]))
+}
+`,
+	},
+	{
+		name: "switch dispatch",
+		source: `package main
+
+import "example.com/root/internal/app"
+
+func main() {
+	switch os.Args[1] {
+	case "--authority":
+		os.Exit(app.BuildAuthority(os.Args[1:], os.Stdout))
+	default:
+		os.Exit(app.Run(os.Args[1:]))
+	}
+}
+`,
+	},
+	{
+		name: "config load",
+		source: `package main
+
+import (
+	"example.com/root/internal/app"
+	"example.com/root/internal/config"
+)
+
+func main() {
+	cfg := config.Load()
+	os.Exit(app.Run(cfg, os.Args[1:]))
+}
+`,
+	},
+	{
+		name: "persistence",
+		source: `package main
+
+import (
+	"os"
+
+	"example.com/root/internal/app"
+)
+
+func main() {
+	state, err := os.Create("state.json")
+	if err != nil {
+		os.Exit(1)
+	}
+	state.Close()
+	os.Exit(app.Run(os.Args[1:]))
+}
+`,
+	},
+	{
+		name: "http handler",
+		source: `package main
+
+import (
+	"net/http"
+
+	"example.com/root/internal/app"
+)
+
+func main() {
+	http.HandleFunc("/health", healthHandler)
+	os.Exit(app.Run(os.Args[1:]))
+}
+`,
+	},
+	{
+		name: "http server only",
+		source: `package main
+
+import (
+	"net/http"
+	"os"
+)
+
+func main() {
+	os.Exit(http.ListenAndServe(":8080", nil))
+}
+`,
+	},
+	{
+		name: "same-package config load",
+		source: `package main
+
+import (
+	"os"
+
+	"example.com/root/internal/app"
+)
+
+func main() {
+	cfg := app.LoadConfig()
+	os.Exit(app.Run(cfg, os.Args[1:]))
+}
+`,
+	},
+	{
+		name: "same-package double dispatch",
+		source: `package main
+
+import (
+	"os"
+
+	"example.com/root/internal/app"
+)
+
+func main() {
+	app.Prepare(os.Args[1:])
+	os.Exit(app.Run(os.Args[1:]))
+}
+`,
+	},
+	{
+		name: "unrelated nil branch",
+		source: `package main
+
+import (
+	"os"
+
+	"example.com/root/internal/app"
+)
+
+func main() {
+	if verbose != nil {
+		os.Exit(1)
+	}
+	os.Exit(app.Run(os.Args[1:]))
+}
+`,
+	},
+	{
+		name: "multi-result non-error branch",
+		source: `package main
+
+import (
+	"fmt"
+	"os"
+
+	"example.com/root/internal/app"
+)
+
+func main() {
+	cfg, err := app.Run(os.Args[1:])
+	if cfg != nil {
+		fmt.Fprintln(os.Stderr, cfg)
+		os.Exit(1)
+	}
+	if err != nil {
+		os.Exit(1)
+	}
+}
+`,
+	},
+	{
+		name: "single same-package config load",
+		source: `package main
+
+import "example.com/root/internal/app"
+
+func main() {
+	app.LoadConfig()
+}
+`,
+	},
+	{
+		name: "single feature command selector",
+		source: `package main
+
+import (
+	"os"
+
+	"example.com/root/internal/app"
+)
+
+func main() {
+	os.Exit(app.BuildAuthority(os.Args[1:]))
+}
+`,
+	},
+	{
+		name: "terminal state helper",
+		source: `package main
+
+import (
+	"os"
+
+	"example.com/root/internal/app"
+)
+
+func main() {
+	if err := app.Run(os.Args[1:]); err != nil {
+		_ = app.SaveState(err)
+		os.Exit(1)
+	}
+}
+`,
+	},
+	{
+		name: "unconditional early exit",
+		source: `package main
+
+import (
+	"os"
+
+	"example.com/root/internal/app"
+)
+
+func main() {
+	os.Exit(1)
+	os.Exit(app.Run(os.Args[1:]))
+}
+`,
+	},
+}
+
 func TestEntrypointThin(t *testing.T) {
 	root := fixtureRoot(t)
-	writeFixture(t, root, "glm-worker/cmd/good/main.go", "package main\nfunc main() { run() }\n")
+	writeFixture(t, root, "glm-worker/cmd/good/main.go", "package main\n\nimport \"example.com/root/internal/app\"\n\nfunc main() { os.Exit(app.Run(os.Args[1:])) }\n")
 	writeFixture(t, root, "glm-worker/cmd/bad/main.go", "package main\nfunc helper() {}\nfunc main() { helper() }\n")
 	violations := ruleViolations(t, root)
 	requireRulePath(t, violations, "entrypoint-thin", "glm-worker/cmd/bad/main.go")
+}
+
+func TestEntrypointThinRejectsCommandLogicInsideMain(t *testing.T) {
+	for index, testCase := range entrypointRejectCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			root := fixtureRoot(t)
+			path := fmt.Sprintf("glm-worker/cmd/case%d/main.go", index)
+			writeFixture(t, root, path, testCase.source)
+			requireRulePath(t, ruleViolations(t, root), "entrypoint-thin", path)
+		})
+	}
+}
+
+func TestEntrypointThinAllowsStartupDelegationAndTerminalErrorHandling(t *testing.T) {
+	cases := []struct {
+		name   string
+		source string
+	}{
+		{
+			name: "exit wrapped delegation",
+			source: `package main
+
+import (
+	"os"
+
+	"example.com/root/internal/app"
+)
+
+func main() {
+	os.Exit(app.Run(os.Args[1:], os.Stdout, os.Stderr))
+}
+`,
+		},
+		{
+			name: "stderr print and exit",
+			source: `package main
+
+import (
+	"fmt"
+	"os"
+
+	"example.com/root/internal/cmd"
+)
+
+func main() {
+	if err := cmd.Run(os.Args[1:], os.Stdout); err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		os.Exit(1)
+	}
+}
+`,
+		},
+		{
+			name: "delegated terminal error writer",
+			source: `package main
+
+import (
+	"os"
+
+	"example.com/root/internal/app"
+)
+
+func main() {
+	if err := app.Run(os.Args[1:]); err != nil {
+		_ = app.WriteProcessError(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+`,
+		},
+	}
+	for index, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			root := fixtureRoot(t)
+			path := fmt.Sprintf("glm-worker/cmd/case%d/main.go", index)
+			writeFixture(t, root, path, testCase.source)
+			for _, violation := range ruleViolations(t, root) {
+				if violation.Rule == "entrypoint-thin" && violation.Path == path {
+					t.Fatalf("thin entrypointが誤って拒否されました: %+v", violation)
+				}
+			}
+		})
+	}
 }
 
 func TestProseContractPin(t *testing.T) {

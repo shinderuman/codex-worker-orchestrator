@@ -31,6 +31,9 @@ func TestRunEntryHelpBypassesConfig(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			if err := validateSingleMachineJSONObject(stdout.Bytes()); err != nil {
+				t.Fatalf("help stdoutが単一JSON objectではありません: %v: %q", err, stdout.String())
+			}
 			var output helpOutput
 			if err := json.Unmarshal(stdout.Bytes(), &output); err != nil {
 				t.Fatal(err)

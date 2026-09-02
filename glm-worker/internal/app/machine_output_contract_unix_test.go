@@ -45,24 +45,33 @@ func TestDispatchCommandMachineOutputContract(t *testing.T) {
 		for _, args := range [][]string{{flag}, {flag, machineContractProbeArg}} {
 			name := strings.Join(args, " ")
 			t.Run(name, func(t *testing.T) {
-				outcome := runBinaryForMachineContract(t, binary, args, false)
+				outcome := runBinaryForMachineContract(t, binary, args, false, false)
 				requireMachineProcessContract(t, args, outcome)
 			})
 		}
 	}
 
 	t.Run("引数なし", func(t *testing.T) {
-		outcome := runBinaryForMachineContract(t, binary, nil, false)
+		outcome := runBinaryForMachineContract(t, binary, nil, false, false)
 		requireMachineProcessContract(t, nil, outcome)
 	})
 
 	t.Run("default payload mode", func(t *testing.T) {
-		outcome := runBinaryForMachineContract(t, binary, []string{machineContractProbeArg}, true)
+		outcome := runBinaryForMachineContract(t, binary, []string{machineContractProbeArg}, false, true)
 		requireMachineProcessContract(t, []string{machineContractProbeArg}, outcome)
 	})
+
+	earlyCommands := [][]string{{"--help"}, {"-h"}, {"--help", "extra"}, {"--authority", "active"}, {"--authority"}}
+	for _, args := range earlyCommands {
+		name := strings.Join(args, " ")
+		t.Run("early "+name, func(t *testing.T) {
+			outcome := runBinaryForMachineContract(t, binary, args, false, true)
+			requireMachineProcessContract(t, args, outcome)
+		})
+	}
 }
 
-func runBinaryForMachineContract(t *testing.T, binary string, args []string, breakStateHome bool) machineProcessOutcome {
+func runBinaryForMachineContract(t *testing.T, binary string, args []string, breakStateHome bool, seedAuthority bool) machineProcessOutcome {
 	t.Helper()
 	root := t.TempDir()
 	home := filepath.Join(root, "glm-home")
@@ -78,6 +87,9 @@ func runBinaryForMachineContract(t *testing.T, binary string, args []string, bre
 	cwd := filepath.Join(root, "cwd")
 	if err := os.Mkdir(cwd, 0o755); err != nil {
 		t.Fatal(err)
+	}
+	if seedAuthority {
+		seedAuthorityFiles(t, cwd)
 	}
 	codexConfig := filepath.Join(root, "codex-config")
 	claudeConfig := filepath.Join(root, "claude-config")
@@ -193,4 +205,22 @@ func dispatchCommandFlags(t *testing.T) map[string]bool {
 		t.Fatal("ParseCommand dispatchからflagを列挙できませんでした")
 	}
 	return flags
+}
+
+func seedAuthorityFiles(t *testing.T, cwd string) {
+	t.Helper()
+	files := map[string]string{
+		"IMPLEMENTATION_RULES.md":         "rules-body\n",
+		"IMPLEMENTATION_PLAN.local.md":    "# Plan\n\n## ACTIVE\n\n- `IMPLEMENTATION_TASKS/current.md`\n",
+		"IMPLEMENTATION_TASKS/current.md": "task-body\n",
+	}
+	for relativePath, content := range files {
+		path := filepath.Join(cwd, filepath.FromSlash(relativePath))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
 }

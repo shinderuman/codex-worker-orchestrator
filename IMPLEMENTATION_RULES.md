@@ -178,6 +178,11 @@ Historyを更新できるのは、完了結果そのものではなく、そのt
 
 glm-worker/Codex/GLMだけが生成・消費するmachine dataを長期公開APIとして扱わない。旧parser、migration、fallback、deprecated推定、version bridge、dual protocolを「一応読める」だけで恒久追加しない。current schema validationは厳格に保ち、old versionは用途に応じreject/skip/reset/rebuild/delete/resume不能を選ぶ。active task保護と恒久互換を混同しない。
 
+## repository structure invariants
+
+- Go commandは`cmd/<name>/main.go`を起動処理だけの薄いentrypointとし、feature固有のCLI分岐・command dispatch・設定解析・永続化・HTTP handlingを`main`へ置かない。実装責務は`internal/`配下のownerが持ち、この構造を`harnesslint`のentrypoint-thin ruleがAST構造判定で機械的に強制する
+- `glm-worker`の成功stdoutは`--watch`のJSON Lines streamingを除き単一のmachine-readable JSON objectとし、失敗時はstdoutを空に保ちstructured error JSONをstderrへ出す。help/bootstrap等のearly-return pathも含め、この契約を`glm-worker`内のsingle-object validatorが実stdoutへのrelease前に機械的に強制する
+
 ## 禁止
 
 - taskごとの独自state DB、filesystem watcher、daemonを追加しない
