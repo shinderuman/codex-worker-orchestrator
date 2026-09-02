@@ -91,6 +91,15 @@
       "evidence": "Parent rollout showing prepare output validation, exact apply_patch target, action invocation, and no intervening model turn or staging-file cat/sed read.",
       "run_policy": "explicit-user-authorization",
       "status": "not-run"
+    },
+    {
+      "id": "parent-action-terminal-handoff-return",
+      "contract_sources": ["codex/instructions/glm-execution.md", "codex/instructions/glm-packets.md"],
+      "positive": "When a blocking parent action reaches a material terminal boundary, the first parent model call receives the authoritative terminal machine result together with the canonical post-action handoff from the same tool orchestration, without a store/load transfer turn or immediate handoff-only retrieval.",
+      "negative": "Malformed or ambiguous terminal output or inconsistent handoff fails closed; healthy running work still remains inside the blocking orchestration, semantic terminal fields remain visible, and large raw diagnostics are not inlined merely to eliminate the transfer turn.",
+      "evidence": "Parent rollout showing blocking start/fix/resume/finalize-check completion, the first model-visible bounded result, embedded canonical handoff where applicable, and absence of GLM_TERMINAL_CAPTURED/store-load or immediate handoff-only model turns.",
+      "run_policy": "explicit-user-authorization",
+      "status": "not-run"
     }
   ]
 }
