@@ -236,12 +236,12 @@ func outcomeTotal(stats TaskStats) int {
 	return total
 }
 
-func TestOldTaskStatsArchiveStaysUnknownWithoutBackfill(t *testing.T) {
+func TestUnsupportedTaskStatsArchiveIsSkipped(t *testing.T) {
 	dir := t.TempDir()
 	st := &StateStore{dir: dir}
-	legacy := `{
+	obsolete := `{
   "version": 3,
-  "task_id": "legacy-task",
+  "task_id": "obsolete-task",
   "started_at": "2026-08-01T00:00:00Z",
   "status": "complete",
   "model_calls": 2,
@@ -262,7 +262,7 @@ func TestOldTaskStatsArchiveStaysUnknownWithoutBackfill(t *testing.T) {
 	if err := os.MkdirAll(historyDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(historyDir, "legacy-task.json"), []byte(legacy), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(historyDir, "obsolete-task.json"), []byte(obsolete), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -270,14 +270,8 @@ func TestOldTaskStatsArchiveStaysUnknownWithoutBackfill(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(all) != 1 || all[0].TaskID != "legacy-task" {
-		t.Fatalf("legacy archiveが読めていません: %#v", all)
-	}
-	if outcomeTotal(all[0]) != 0 || all[0].ParentReviewOpen != nil {
-		t.Fatalf("旧archiveへoutcomeを補完していません: %#v", all[0])
-	}
-	if all[0].PassPackets != 1 || all[0].FixCommands != 1 {
-		t.Fatalf("旧archiveの既存計数が変わっています: %#v", all[0])
+	if len(all) != 0 {
+		t.Fatalf("unsupported archiveをaggregationからskipしていません: %#v", all)
 	}
 }
 
@@ -374,7 +368,7 @@ func TestComputeParentReworkSegmentsByOrigin(t *testing.T) {
 	}
 	userAmendment := summary.ByOrigin[ParentOriginUserAmendment]
 	if userAmendment.Calls != 1 || userAmendment.WorkerCalls != 1 || userAmendment.Turns != 1 {
-		t.Fatalf("user-amendment rework = %#v", userAmendment)
+		t.Fatalf("user-amendment rework calls = %#v", userAmendment)
 	}
 	if _, exists := summary.ByOrigin[ParentOriginUnknown]; exists {
 		t.Fatalf("accept後の呼出はどのoriginへも帰属しません: %#v", summary.ByOrigin)
