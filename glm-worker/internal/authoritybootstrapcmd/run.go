@@ -14,7 +14,7 @@ import (
 const (
 	rulesFile = "IMPLEMENTATION_RULES.md"
 	planFile  = "IMPLEMENTATION_PLAN.local.md"
-	usage     = "usage: glm-parent-action authority <rules|plan|active>"
+	usage     = "usage: glm-worker --authority <rules|plan|active>"
 )
 
 type snapshot struct {
