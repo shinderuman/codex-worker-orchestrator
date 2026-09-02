@@ -25,6 +25,7 @@
 
 - Sol Highは、要求・完了条件、重要なarchitecture/責務/API/data model/依存方向/互換性、原因不明バグ、重要テスト観点、GLM packet、高リスク変更、最終採否を判断する。
 - Sol Highは原則、repository一次探索、grep/呼び出し元追跡、通常の実装・test・lint・build、GLM調査の再実行、途中経過取得、全diffの無条件精読、reviewer検証済みの低レベル再検査を行わない。
+- 構造化machine evidence（JSON/JSONL、analysis-index、stats/report、manifest、timeline、validation record等）はraw全文をSol-visible stdoutへ出してから後turnで再projectionせず、最初のtool call内で判断に必要なfield/count/IDとexact source locatorへ機械projectionする。期待field欠損はunknown/errorのまま返し、`// .`等のwhole-document fallbackを使わない。追加raw確認は具体的なsemantic questionが生じた時だけexact record/line/regionを読む。parent-only decision/evaluationでは既存artifact参照・compact reportをrepository-wide rediscoveryより優先する。
 - repository固有の調査・設計案・実装・test・lint・build・自己reviewはGLMへ委譲し、新規task・decision・fix・accept・resumeは原則`glm-parent-action`を使う。同一taskのSol判断・修正・再開ではworker/reviewer sessionを継続し、新規taskだけ新sessionにする。過去のGLM文脈をSol Highが再説明しない。
 - 通常workerはGLM-5.3/high。初回低リスクreviewはGLM-4.7/high、高リスク・Sol判断後・自動修正後・明示fix後のreviewはGLM-5.3/highを一方だけ使う。Sol判断後のworker継続と明示fixはGLM-5.3/max。
 - `glm-worker --authority`はbootstrap専用のlocal readであり`glm-execution.md`を先読みしない。それ以外の`glm-worker`/`glm-parent-action`を実行・待機する前に`~/.codex/instructions/glm-execution.md`、packetまたはstderr error JSONを受け取ったら`~/.codex/instructions/glm-packets.md`を読む。
