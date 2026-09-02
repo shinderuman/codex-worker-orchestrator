@@ -49,11 +49,11 @@ func TestLoadSnapshotAndRenderParts(t *testing.T) {
 
 func TestLoadSnapshotRejectsInvalidActiveSchedule(t *testing.T) {
 	tests := map[string]string{
-		"missing":   "# Plan\n## NEXT\n- `IMPLEMENTATION_TASKS/x.md`\n",
-		"empty":     "# Plan\n## ACTIVE\n\n## NEXT\n",
-		"multiple":  "# Plan\n## ACTIVE\n- `IMPLEMENTATION_TASKS/a.md`\n- `IMPLEMENTATION_TASKS/b.md`\n## NEXT\n",
+		"missing":    "# Plan\n## NEXT\n- `IMPLEMENTATION_TASKS/x.md`\n",
+		"empty":      "# Plan\n## ACTIVE\n\n## NEXT\n",
+		"multiple":   "# Plan\n## ACTIVE\n- `IMPLEMENTATION_TASKS/a.md`\n- `IMPLEMENTATION_TASKS/b.md`\n## NEXT\n",
 		"unexpected": "# Plan\n## ACTIVE\nACTIVE: IMPLEMENTATION_TASKS/a.md\n## NEXT\n",
-		"traversal": "# Plan\n## ACTIVE\n- `IMPLEMENTATION_TASKS/../secret.md`\n## NEXT\n",
+		"traversal":  "# Plan\n## ACTIVE\n- `IMPLEMENTATION_TASKS/../secret.md`\n## NEXT\n",
 	}
 	for name, plan := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -64,6 +64,23 @@ func TestLoadSnapshotRejectsInvalidActiveSchedule(t *testing.T) {
 				t.Fatal("loadSnapshot succeeded, want error")
 			}
 		})
+	}
+}
+
+func TestLoadSnapshotRejectsSymlinkActiveTask(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, root, rulesFile, "rules\n")
+	writeTestFile(t, root, planFile, "# Plan\n## ACTIVE\n- `IMPLEMENTATION_TASKS/current.md`\n")
+	writeTestFile(t, root, "target.md", "task-body\n")
+	link := filepath.Join(root, "IMPLEMENTATION_TASKS", "current.md")
+	if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(root, "target.md"), link); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadSnapshot(root); err == nil {
+		t.Fatal("loadSnapshot succeeded for symlink ACTIVE task")
 	}
 }
 
