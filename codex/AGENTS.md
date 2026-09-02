@@ -10,7 +10,7 @@
 
 - ユーザー依頼の範囲だけを扱い、機能追加・修正・改善・設定変更を勝手に拡張しない。重要な不足情報もリポジトリや既存資料で解決できない場合だけ確認する。
 - リポジトリルートに`AGENTS.local.md`があれば作業前に読む。Git管理しないプロジェクト固有指示として扱う。リポジトリ内の`AGENTS.md`も該当スコープで従う。
-- `IMPLEMENTATION_RULES.md`の再読境界では`glm-worker --authority rules` / `plan` / `active`を同一tool turnで並列実行し、3出力の`authority_snapshot_sha256`と`active_task`一致を確認して各本文を1回だけ読む。不一致・失敗は1回だけ再取得し、再び不一致なら停止する。注入済みAGENTSをdisk再読せず、authority path探索・`wc`等のsize probe・条件付きinstructionの先読みをしない。
+- `IMPLEMENTATION_RULES.md`の再読境界では`glm-worker --authority rules` / `plan` / `active`を同一tool turnで並列実行し、3出力の`authority_snapshot_sha256`と`active_task`一致を確認して各本文を1回だけ読む。個別の失敗・欠落はそのkindだけ1回再取得し、既取得結果とsnapshotが一致しなければ停止する。3件成功後のsnapshot不一致は3件を同一tool turnで1回だけ再取得し、再び不一致なら停止する。注入済みAGENTSをdisk再読せず、authority path探索・`wc`等のsize probe・条件付きinstructionの先読みをしない。
 
 ## 3. Git authority
 
