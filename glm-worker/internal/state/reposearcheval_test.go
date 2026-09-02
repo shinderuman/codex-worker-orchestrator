@@ -219,33 +219,22 @@ func TestBuildRepoSearchReportEmptyStateStaysUnknown(t *testing.T) {
 	}
 }
 
-func TestLegacyTaskStatsWithoutRepoSearchFieldsDecodeAfterUpgrade(t *testing.T) {
+func TestTaskStatsRejectsSameVersionWithoutCurrentSchemaRevision(t *testing.T) {
 	st := newRepoSearchEvalTestStore(t)
-	legacy := `{"version":3,"task_id":"legacy-upgrade-task","started_at":"2026-08-01T00:00:00Z","status":"active","model_calls":2}`
-	if err := st.Write("task-stats.json", legacy); err != nil {
+	obsolete := `{"version":3,"task_id":"obsolete-task","started_at":"2026-08-01T00:00:00Z","status":"active","model_calls":2}`
+	if err := st.Write("task-stats.json", obsolete); err != nil {
 		t.Fatal(err)
 	}
 
-	stats, err := st.CurrentTaskStats()
+	if _, err := st.CurrentTaskStats(); err == nil || !strings.Contains(err.Error(), "unsupported task stats version") {
+		t.Fatalf("same-version obsolete statsを拒否していません: %v", err)
+	}
+	all, err := st.AllTaskStats()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stats.ModelCalls != 2 || stats.RepoSearchCalls != 0 || stats.RepoSearchQueriesByCategory != nil || stats.RepoSearchOutcomes != nil ||
-		stats.RepoSearchResults != 0 || stats.RepoSearchDurationMS != 0 {
-		t.Fatalf("legacy stats = %+v", stats)
-	}
-	if repoSearchStatsHaveRecordedRoutes(stats) {
-		t.Fatalf("旧statsに記録済みrouteはありません: %+v", stats)
-	}
-	if measure := RepoSearchMeasureFromStats(stats); measure.Calls != 0 || measure.Hits != 0 || measure.Results != 0 {
-		t.Fatalf("legacy measure = %+v", measure)
-	}
-	all, err := st.AllTaskStats()
-	if err != nil || len(all) != 1 {
-		t.Fatalf("all stats = %+v err = %v", all, err)
-	}
-	if all[0].TaskID != "legacy-upgrade-task" || all[0].ModelCalls != 2 {
-		t.Fatalf("archive読み込み = %+v", all[0])
+	if len(all) != 0 {
+		t.Fatalf("unsupported current statsをaggregationからskipしていません: %+v", all)
 	}
 }
 
