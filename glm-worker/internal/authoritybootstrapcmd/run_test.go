@@ -1,14 +1,12 @@
 package authoritybootstrapcmd
 
 import (
-	"bytes"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
-func TestLoadSnapshotAndRenderParts(t *testing.T) {
+func TestLoadSnapshotAndBuildParts(t *testing.T) {
 	root := t.TempDir()
 	writeTestFile(t, root, rulesFile, "rules-body\n")
 	writeTestFile(t, root, planFile, "# Plan\n\n## ACTIVE\n\n- `IMPLEMENTATION_TASKS/current.md`\n\n## NEXT\n\n- `IMPLEMENTATION_TASKS/next.md`\n")
@@ -30,19 +28,21 @@ func TestLoadSnapshotAndRenderParts(t *testing.T) {
 		"plan":   "# Plan\n\n## ACTIVE\n\n- `IMPLEMENTATION_TASKS/current.md`\n\n## NEXT\n\n- `IMPLEMENTATION_TASKS/next.md`\n",
 		"active": "task-body\n",
 	} {
-		var out bytes.Buffer
-		if err := writeSnapshotPart(&out, kind, snap); err != nil {
-			t.Fatalf("writeSnapshotPart(%s): %v", kind, err)
+		output, err := snapshotPart(kind, snap)
+		if err != nil {
+			t.Fatalf("snapshotPart(%s): %v", kind, err)
 		}
-		text := out.String()
-		if !strings.Contains(text, "authority_snapshot_sha256="+snap.hash+"\n") {
-			t.Fatalf("%s output missing snapshot hash: %q", kind, text)
+		if output.AuthoritySnapshotSHA256 != snap.hash {
+			t.Fatalf("%s snapshot hash = %q, want %q", kind, output.AuthoritySnapshotSHA256, snap.hash)
 		}
-		if !strings.Contains(text, "authority_kind="+kind+"\n") {
-			t.Fatalf("%s output missing kind: %q", kind, text)
+		if output.AuthorityKind != kind {
+			t.Fatalf("%s authority kind = %q", kind, output.AuthorityKind)
 		}
-		if !strings.HasSuffix(text, want) {
-			t.Fatalf("%s output suffix = %q, want %q", kind, text, want)
+		if output.ActiveTask != "IMPLEMENTATION_TASKS/current.md" {
+			t.Fatalf("%s active task = %q", kind, output.ActiveTask)
+		}
+		if output.Content != want {
+			t.Fatalf("%s content = %q, want %q", kind, output.Content, want)
 		}
 	}
 }
@@ -94,7 +94,7 @@ func TestFindRepoRootFromNestedDirectory(t *testing.T) {
 	}
 	got, err := findRepoRoot(nested)
 	if err != nil {
-		t.Fatalf("findRepoRoot: %v", err)
+		t.Fatalf("findRepoRoot = %v", err)
 	}
 	if got != root {
 		t.Fatalf("findRepoRoot = %q, want %q", got, root)
