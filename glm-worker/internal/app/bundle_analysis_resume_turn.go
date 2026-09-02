@@ -10,14 +10,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-const codexRolloutItemCompletedType = "item_completed"
-
-const codexRolloutCommandExecutionType = "CommandExecution"
-
-const analysisWorkerStatusCommand = "glm-worker --status"
-
-const analysisParentResumeCommand = "glm-parent-action resume"
-
 type analysisResumeTurnEvidence struct {
 	statusTaskIDs      []string
 	continuationTaskID string
@@ -53,52 +45,62 @@ type analysisResumeStatus struct {
 	} `json:"rate_limited"`
 }
 
+const codexRolloutItemCompletedType = "item_completed"
+
+const codexRolloutCommandExecutionType = "CommandExecution"
+
+const analysisWorkerStatusCommand = "glm-worker --status"
+
+const analysisParentResumeCommand = "glm-parent-action resume"
+
 func resolveAnalysisTaskOwnership(association codexAssociation, turns []analysisRolloutTurn, taskStart, collectionEnd time.Time, taskID string) analysisTaskOwnership {
-	evidence := analysisResumeTurnEvidenceFromRollout(association, taskStart, collectionEnd)
-	var containing []*analysisRolloutTurn
-	for i := range turns {
-		turn := &turns[i]
-		if turn.StartedAt.After(taskStart) {
-			continue
-		}
-		if turn.HasComplete && turn.CompletedAt.Before(taskStart) {
-			continue
-		}
-		containing = append(containing, turn)
-	}
-	if len(containing) != 1 {
+	initial := resolveAnalysisOwningTurn(turns, taskStart)
+	if initial.status != analysisStatusAvailable || initial.turn == nil {
 		return analysisTaskOwnership{status: analysisStatusUnknown}
 	}
-
-	initial := containing[0]
 	ownership := analysisTaskOwnership{
 		status:  analysisStatusAvailable,
-		initial: initial,
-		final:   initial,
-		owned:   map[string]struct{}{initial.TurnID: {}},
+		initial: initial.turn,
+		final:   initial.turn,
+		owned:   map[string]struct{}{initial.turn.TurnID: {}},
 	}
+	evidence := analysisResumeTurnEvidenceFromRollout(association, taskStart, collectionEnd)
 	for i := range turns {
 		turn := &turns[i]
-		if turn.TurnID == initial.TurnID || !turn.StartedAt.After(initial.StartedAt) {
+		if !analysisContinuationCandidate(turn, ownership.initial) {
 			continue
 		}
-		turnEvidence := evidence[turn.TurnID]
-		if turnEvidence == nil {
-			continue
-		}
-		if turnEvidence.conflicted && (turnEvidence.continuationTaskID == taskID || analysisTaskIDPresent(turnEvidence.statusTaskIDs, taskID)) {
+		if analysisApplyContinuationTurn(&ownership, turn, evidence[turn.TurnID], taskID) {
 			return analysisTaskOwnership{status: analysisStatusUnknown}
 		}
-		if turnEvidence.continuationTaskID != taskID {
-			continue
-		}
-		if !ownership.final.HasComplete || turn.StartedAt.Before(ownership.final.CompletedAt) {
-			return analysisTaskOwnership{status: analysisStatusUnknown}
-		}
-		ownership.owned[turn.TurnID] = struct{}{}
-		ownership.final = turn
 	}
 	return ownership
+}
+
+func analysisContinuationCandidate(turn, initial *analysisRolloutTurn) bool {
+	return turn.TurnID != initial.TurnID && turn.StartedAt.After(initial.StartedAt)
+}
+
+func analysisApplyContinuationTurn(ownership *analysisTaskOwnership, turn *analysisRolloutTurn, evidence *analysisResumeTurnEvidence, taskID string) bool {
+	if evidence == nil {
+		return false
+	}
+	if evidence.conflicted && analysisResumeEvidenceTouchesTask(evidence, taskID) {
+		return true
+	}
+	if evidence.continuationTaskID != taskID {
+		return false
+	}
+	if !ownership.final.HasComplete || turn.StartedAt.Before(ownership.final.CompletedAt) {
+		return true
+	}
+	ownership.owned[turn.TurnID] = struct{}{}
+	ownership.final = turn
+	return false
+}
+
+func analysisResumeEvidenceTouchesTask(evidence *analysisResumeTurnEvidence, taskID string) bool {
+	return evidence.continuationTaskID == taskID || analysisTaskIDPresent(evidence.statusTaskIDs, taskID)
 }
 
 func analysisResumeTurnEvidenceFromRollout(association codexAssociation, start, end time.Time) map[string]*analysisResumeTurnEvidence {
@@ -124,38 +126,61 @@ func analysisResumeTurnEvidenceFromRollout(association codexAssociation, start, 
 }
 
 func analysisObserveResumeEvidenceLine(evidence map[string]*analysisResumeTurnEvidence, line []byte, start, end time.Time) {
-	var record codexRolloutScanLine
-	if err := json.Unmarshal(line, &record); err != nil || record.Type != "event_msg" {
-		return
-	}
-	timestamp, err := time.Parse(time.RFC3339Nano, record.Timestamp)
-	if err != nil || timestamp.Before(start) || timestamp.After(end) {
-		return
-	}
-	var event analysisRolloutCompletedEvent
-	if err := json.Unmarshal(record.Payload, &event); err != nil || event.Type != codexRolloutItemCompletedType || event.TurnID == "" || event.Item == nil {
-		return
-	}
-	item := event.Item
-	if item.Type != codexRolloutCommandExecutionType || item.ExitCode == nil || *item.ExitCode != 0 {
-		return
-	}
-	command, ok := analysisExactCompletedCommand(item.Command)
+	turnID, command, stdout, ok := analysisResumeCommandFromLine(line, start, end)
 	if !ok {
 		return
 	}
-	turnEvidence := evidence[event.TurnID]
+	turnEvidence := evidence[turnID]
 	if turnEvidence == nil {
 		turnEvidence = &analysisResumeTurnEvidence{}
-		evidence[event.TurnID] = turnEvidence
+		evidence[turnID] = turnEvidence
 	}
+	analysisRecordResumeCommand(turnEvidence, command, stdout)
+}
+
+func analysisResumeCommandFromLine(line []byte, start, end time.Time) (string, string, string, bool) {
+	var record codexRolloutScanLine
+	if err := json.Unmarshal(line, &record); err != nil || record.Type != "event_msg" {
+		return "", "", "", false
+	}
+	if !analysisTimestampWithin(record.Timestamp, start, end) {
+		return "", "", "", false
+	}
+	return analysisResumeCommandFromPayload(record.Payload)
+}
+
+func analysisTimestampWithin(raw string, start, end time.Time) bool {
+	timestamp, err := time.Parse(time.RFC3339Nano, raw)
+	return err == nil && !timestamp.Before(start) && !timestamp.After(end)
+}
+
+func analysisResumeCommandFromPayload(payload json.RawMessage) (string, string, string, bool) {
+	var event analysisRolloutCompletedEvent
+	if err := json.Unmarshal(payload, &event); err != nil || event.Type != codexRolloutItemCompletedType || event.TurnID == "" || event.Item == nil {
+		return "", "", "", false
+	}
+	command, ok := analysisSuccessfulExactCommand(event.Item)
+	if !ok {
+		return "", "", "", false
+	}
+	return event.TurnID, command, event.Item.Stdout, true
+}
+
+func analysisSuccessfulExactCommand(item *analysisRolloutCommandItem) (string, bool) {
+	if item.Type != codexRolloutCommandExecutionType || item.ExitCode == nil || *item.ExitCode != 0 {
+		return "", false
+	}
+	return analysisExactCompletedCommand(item.Command)
+}
+
+func analysisRecordResumeCommand(evidence *analysisResumeTurnEvidence, command, stdout string) {
 	switch command {
 	case analysisWorkerStatusCommand:
-		if taskID, valid := analysisResumeStatusTaskID(item.Stdout); valid {
-			turnEvidence.statusTaskIDs = analysisAppendUniqueTaskID(turnEvidence.statusTaskIDs, taskID)
+		if taskID, valid := analysisResumeStatusTaskID(stdout); valid {
+			evidence.statusTaskIDs = analysisAppendUniqueTaskID(evidence.statusTaskIDs, taskID)
 		}
 	case analysisParentResumeCommand:
-		analysisConfirmResumeEvidence(turnEvidence)
+		analysisConfirmResumeEvidence(evidence)
 	}
 }
 
@@ -221,6 +246,9 @@ func analysisTaskIDPresent(taskIDs []string, taskID string) bool {
 }
 
 func analysisTaskFinalizationInterval(execution analysisExecutionBoundary, ownership analysisTaskOwnership) bundleAnalysisInterval {
+	if analysisSingleOwnedTurn(ownership) {
+		return analysisFinalizationInterval(execution, analysisOwningTurn{status: ownership.status, turn: ownership.initial})
+	}
 	interval := bundleAnalysisInterval{Status: analysisStatusUnknown}
 	if ownership.status != analysisStatusAvailable || ownership.final == nil {
 		return interval
@@ -246,6 +274,9 @@ func analysisTaskFinalizationInterval(execution analysisExecutionBoundary, owner
 }
 
 func analysisTaskSubsequentRequests(association codexAssociation, scan bundleRolloutScan, ownership analysisTaskOwnership, collectionEnd time.Time) bundleAnalysisSubsequents {
+	if analysisSingleOwnedTurn(ownership) {
+		return analysisSubsequentRequests(association, scan, analysisOwningTurn{status: ownership.status, turn: ownership.initial}, collectionEnd)
+	}
 	subsequent := bundleAnalysisSubsequents{
 		Status:      analysisStatusUnknown,
 		Attribution: analysisAttributionSubsequent,
@@ -263,7 +294,7 @@ func analysisTaskSubsequentRequests(association codexAssociation, scan bundleRol
 	subsequent.Status = analysisStatusAvailable
 	for i := range scan.turns {
 		turn := &scan.turns[i]
-		if _, taskOwned := ownership.owned[turn.TurnID]; taskOwned {
+		if analysisTaskOwnsTurn(ownership, turn) {
 			continue
 		}
 		if !turn.StartedAt.After(ownership.initial.CompletedAt) || turn.StartedAt.After(collectionEnd) {
@@ -274,10 +305,22 @@ func analysisTaskSubsequentRequests(association codexAssociation, scan bundleRol
 	return subsequent
 }
 
+func analysisTaskOwnsTurn(ownership analysisTaskOwnership, turn *analysisRolloutTurn) bool {
+	_, owned := ownership.owned[turn.TurnID]
+	return owned
+}
+
 func analysisTaskFinalizationTokenDelta(association codexAssociation, scan bundleRolloutScan, execution analysisExecutionBoundary, ownership analysisTaskOwnership, interval bundleAnalysisInterval) bundleAnalysisTokenDelta {
+	if analysisSingleOwnedTurn(ownership) {
+		return analysisFinalizationTokenDelta(association, scan, execution, analysisOwningTurn{status: ownership.status, turn: ownership.initial}, interval)
+	}
 	delta := bundleAnalysisTokenDelta{Status: interval.Status}
 	if association.ParentStatus != codexStatusIncluded || interval.Status != analysisStatusAvailable || ownership.final == nil {
 		return delta
 	}
 	return analysisAnchoredTokenDelta(scan, execution.end, ownership.final.CompletedAt)
+}
+
+func analysisSingleOwnedTurn(ownership analysisTaskOwnership) bool {
+	return ownership.status == analysisStatusAvailable && ownership.initial != nil && ownership.final == ownership.initial
 }
