@@ -294,15 +294,18 @@ func analysisTaskSubsequentRequests(association codexAssociation, scan bundleRol
 	subsequent.Status = analysisStatusAvailable
 	for i := range scan.turns {
 		turn := &scan.turns[i]
-		if analysisTaskOwnsTurn(ownership, turn) {
-			continue
+		if analysisSubsequentCandidate(ownership, turn, collectionEnd) {
+			subsequent.Turns = append(subsequent.Turns, analysisSubsequentTurn(scan, turn, collectionEnd))
 		}
-		if !turn.StartedAt.After(ownership.initial.CompletedAt) || turn.StartedAt.After(collectionEnd) {
-			continue
-		}
-		subsequent.Turns = append(subsequent.Turns, analysisSubsequentTurn(scan, turn, collectionEnd))
 	}
 	return subsequent
+}
+
+func analysisSubsequentCandidate(ownership analysisTaskOwnership, turn *analysisRolloutTurn, collectionEnd time.Time) bool {
+	if analysisTaskOwnsTurn(ownership, turn) {
+		return false
+	}
+	return turn.StartedAt.After(ownership.initial.CompletedAt) && !turn.StartedAt.After(collectionEnd)
 }
 
 func analysisTaskOwnsTurn(ownership analysisTaskOwnership, turn *analysisRolloutTurn) bool {
