@@ -31,12 +31,10 @@ type parentHandoffRecoveryOutput struct {
 	Version          int                            `json:"version"`
 	Projection       string                         `json:"projection"`
 	Consistent       bool                           `json:"consistent"`
-	Inconsistency    *string                        `json:"inconsistency,omitempty"`
 	TaskID           *string                        `json:"task_id"`
 	TaskStatus       *string                        `json:"task_status"`
 	RequiredAction   *string                        `json:"required_action"`
 	AllowedActions   []string                       `json:"allowed_actions"`
-	ResumeKind       *string                        `json:"resume_kind"`
 	PendingDecision  bool                           `json:"pending_decision"`
 	ParentReviewOpen *string                        `json:"parent_review_open"`
 	LastMaterial     *parentHandoffRecoveryMaterial `json:"last_material"`
@@ -86,12 +84,10 @@ func projectParentHandoffRecovery(output parentHandoffOutput) parentHandoffRecov
 		Version:          output.Version,
 		Projection:       "recovery",
 		Consistent:       output.Consistent,
-		Inconsistency:    output.Inconsistency,
 		TaskID:           output.TaskID,
 		TaskStatus:       output.TaskStatus,
 		RequiredAction:   output.RequiredAction,
 		AllowedActions:   append([]string(nil), output.AllowedActions...),
-		ResumeKind:       output.ResumeKind,
 		PendingDecision:  output.PendingDecision,
 		ParentReviewOpen: output.ParentReviewOpen,
 	}
