@@ -47,7 +47,7 @@ func TestLoadSnapshotAndRenderParts(t *testing.T) {
 	}
 }
 
-func TestParseActivePathRejectsAmbiguousAndInvalidPlan(t *testing.T) {
+func TestLoadSnapshotRejectsInvalidActiveSchedule(t *testing.T) {
 	tests := map[string]string{
 		"missing":   "# Plan\n## NEXT\n- `IMPLEMENTATION_TASKS/x.md`\n",
 		"empty":     "# Plan\n## ACTIVE\n\n## NEXT\n",
@@ -57,8 +57,11 @@ func TestParseActivePathRejectsAmbiguousAndInvalidPlan(t *testing.T) {
 	}
 	for name, plan := range tests {
 		t.Run(name, func(t *testing.T) {
-			if _, err := parseActivePath([]byte(plan)); err == nil {
-				t.Fatal("parseActivePath succeeded, want error")
+			root := t.TempDir()
+			writeTestFile(t, root, rulesFile, "rules\n")
+			writeTestFile(t, root, planFile, plan)
+			if _, err := loadSnapshot(root); err == nil {
+				t.Fatal("loadSnapshot succeeded, want error")
 			}
 		})
 	}
