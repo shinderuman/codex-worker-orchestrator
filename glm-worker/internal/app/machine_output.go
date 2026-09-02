@@ -54,7 +54,11 @@ func runAuthorityBootstrap(args []string, stdout io.Writer) (bool, error) {
 	if len(args) == 0 || args[0] != "--authority" {
 		return false, nil
 	}
-	return true, authoritybootstrapcmd.Execute(args[1:], stdout)
+	output, err := authoritybootstrapcmd.Build(args[1:])
+	if err != nil {
+		return true, err
+	}
+	return true, writeJSON(stdout, output)
 }
 
 func streamOutputMode(mode CommandMode) bool {
