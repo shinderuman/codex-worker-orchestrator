@@ -41,21 +41,25 @@ type parentHandoffRecoveryOutput struct {
 }
 
 type parentHandoffMaterial struct {
-	CallID       *string `json:"call_id"`
-	CallType     string  `json:"call_type"`
-	Phase        string  `json:"phase"`
-	Outcome      string  `json:"outcome,omitempty"`
-	PacketStatus string  `json:"packet_status,omitempty"`
-	Role         string  `json:"role,omitempty"`
-	Model        string  `json:"model,omitempty"`
+	CallID             *string `json:"call_id"`
+	CallType           string  `json:"call_type"`
+	Phase              string  `json:"phase"`
+	Outcome            string  `json:"outcome,omitempty"`
+	PacketStatus       string  `json:"packet_status,omitempty"`
+	PacketRejectReason string  `json:"packet_reject_reason,omitempty"`
+	PacketError        string  `json:"packet_error,omitempty"`
+	Role               string  `json:"role,omitempty"`
+	Model              string  `json:"model,omitempty"`
 }
 
 type parentHandoffRecoveryMaterial struct {
-	CallID       *string `json:"call_id"`
-	CallType     string  `json:"call_type"`
-	Phase        string  `json:"phase"`
-	Outcome      string  `json:"outcome,omitempty"`
-	PacketStatus string  `json:"packet_status,omitempty"`
+	CallID             *string `json:"call_id"`
+	CallType           string  `json:"call_type"`
+	Phase              string  `json:"phase"`
+	Outcome            string  `json:"outcome,omitempty"`
+	PacketStatus       string  `json:"packet_status,omitempty"`
+	PacketRejectReason string  `json:"packet_reject_reason,omitempty"`
+	PacketError        string  `json:"packet_error,omitempty"`
 }
 
 type parentHandoffValidation struct {
@@ -93,11 +97,13 @@ func projectParentHandoffRecovery(output parentHandoffOutput) parentHandoffRecov
 	}
 	if output.LastMaterial != nil {
 		recovery.LastMaterial = &parentHandoffRecoveryMaterial{
-			CallID:       output.LastMaterial.CallID,
-			CallType:     output.LastMaterial.CallType,
-			Phase:        output.LastMaterial.Phase,
-			Outcome:      output.LastMaterial.Outcome,
-			PacketStatus: output.LastMaterial.PacketStatus,
+			CallID:             output.LastMaterial.CallID,
+			CallType:           output.LastMaterial.CallType,
+			Phase:              output.LastMaterial.Phase,
+			Outcome:            output.LastMaterial.Outcome,
+			PacketStatus:       output.LastMaterial.PacketStatus,
+			PacketRejectReason: output.LastMaterial.PacketRejectReason,
+			PacketError:        output.LastMaterial.PacketError,
 		}
 	}
 	return recovery
@@ -170,7 +176,7 @@ func applyParentLastMaterial(st *state.StateStore, taskID string, output *parent
 		if log.CallType == state.CallTypeProbe {
 			continue
 		}
-		output.LastMaterial = &parentHandoffMaterial{
+		material := &parentHandoffMaterial{
 			CallID:       stringPtr(log.CallID),
 			CallType:     string(log.CallType),
 			Phase:        log.Phase,
@@ -179,6 +185,11 @@ func applyParentLastMaterial(st *state.StateStore, taskID string, output *parent
 			Role:         string(log.Role),
 			Model:        log.ModelAlias,
 		}
+		if log.Outcome == "invalid_packet" {
+			material.PacketRejectReason = log.PacketRejectReason
+			material.PacketError = log.Error
+		}
+		output.LastMaterial = material
 		return
 	}
 }
