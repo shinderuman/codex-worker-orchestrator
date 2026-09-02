@@ -14,6 +14,7 @@ import (
 const (
 	rulesFile = "IMPLEMENTATION_RULES.md"
 	planFile  = "IMPLEMENTATION_PLAN.local.md"
+	usage     = "usage: glm-parent-action authority <rules|plan|active>"
 )
 
 type snapshot struct {
@@ -24,31 +25,26 @@ type snapshot struct {
 	hash       string
 }
 
-func Run(args []string, stdout io.Writer, stderr io.Writer) int {
+func Execute(args []string, stdout io.Writer) error {
 	if len(args) != 1 || !validKind(args[0]) {
-		_, _ = fmt.Fprintln(stderr, "usage: glm-authority-bootstrap <rules|plan|active>")
-		return 2
+		return fmt.Errorf("%s", usage)
 	}
 	cwd, err := os.Getwd()
 	if err != nil {
-		_, _ = fmt.Fprintf(stderr, "authority bootstrap: get cwd: %v\n", err)
-		return 1
+		return fmt.Errorf("authority bootstrap: get cwd: %w", err)
 	}
 	root, err := findRepoRoot(cwd)
 	if err != nil {
-		_, _ = fmt.Fprintf(stderr, "authority bootstrap: %v\n", err)
-		return 1
+		return fmt.Errorf("authority bootstrap: %w", err)
 	}
 	snap, err := loadSnapshot(root)
 	if err != nil {
-		_, _ = fmt.Fprintf(stderr, "authority bootstrap: %v\n", err)
-		return 1
+		return fmt.Errorf("authority bootstrap: %w", err)
 	}
 	if err := writeSnapshotPart(stdout, args[0], snap); err != nil {
-		_, _ = fmt.Fprintf(stderr, "authority bootstrap: write output: %v\n", err)
-		return 1
+		return fmt.Errorf("authority bootstrap: write output: %w", err)
 	}
-	return 0
+	return nil
 }
 
 func validKind(kind string) bool {
