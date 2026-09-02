@@ -90,6 +90,16 @@ parent-managed metadataを扱うguard、self-protection、production wiring自�
 - 判断対象は親の手作業だけでなくworker / reviewer / test / build / lint / smoke / provider probe / polling / resume verification等のmachine executionを含む。同一または実質同一の高コスト処理がtask wall-clockの主要部を占める一次証拠を得た場合、worker/reviewerは現taskを勝手に縮退・拡張せず観測を重複なく報告し、親Codexが再発性、coverage維持、expensive real executionとcheap contract verificationの分離、費用対効果、false success・flakiness・観測不能riskから独立task化を判断する
 - 初回棚卸しtaskを設けても、その完了をこの継続的判断義務の完了とは扱わない。この規則は通常orchestrationの恒久contractとして残す
 
+## Goal起点のproject orchestration
+
+- Plan管理repositoryは`IMPLEMENTATION_PLAN.local.md`のoptional `## GOAL`節を、project-levelのlosslessなGoal原文、append-only amendment、derived acceptance、bounded completion decisionの正本として使える。GOAL節がない既存repositoryのschedule・task lifecycle・CLI behaviorは変更しない
+- Goal受領時の初期task生成、priorityとdependencyに基づく選択、worker/reviewer結果・finding・user amendmentによる再計画、Goal acceptanceは親Codexのsemantic authorityとする。通常利用者へPlan fileの逐次編集、task選択、通常resume操作を要求しない
+- `glm-worker --project-state`はmodel呼出・state変更・repository lockを行わないread-only machine projectionとし、GOAL検証、schedule、dependency graph、next runnable、blocker、mechanical completion readinessを返す。Plan/Task編集、task昇格、replanning、completion acceptanceを行わない
+- current task pathへのdependencyはoutstanding、current treeに存在せずGit履歴でtrackedだったtask pathはfulfilledとする。未追跡参照、self dependency、cycle、malformed GOAL / schedule / task contractはfail closedとし、`runnableなし`や`complete`へ縮退しない
+- Goal進行中は既存どおりACTIVE taskを一意に要求する。mechanical completion readinessは、current ACTIVEのlifecycleがcompleteかつpending parent actionなし、NEXT / BLOCKEDが空、unresolved findingなし、current snapshot対応validation成功、clean working treeを最低条件とし、semantic Goal acceptanceと必要なinstall / Git publication判断を代替しない
+- 親Codexがmechanical readinessとGoal acceptanceを確認してbounded completion decisionをGOAL節へ記録したterminal Goalだけは、ACTIVE / NEXT / BLOCKEDが空のPlanを許可する。未完了GoalでACTIVE空を許可せず、単一worker PASSをproject completionへ昇格しない
+- 既存task state、checkpoint、parent action、worker/reviewer、Codex gate、rate-limit / Codex-limit recovery、telemetry、Plan/task guardを再利用し、Goal mode専用daemon、scheduler、state DB、第二正本を追加しない
+
 ## priorityとhard dependency
 
 - PlanのACTIVE / NEXTにおけるsource上の順序は変更可能な実行priorityだけを表す
@@ -135,6 +145,8 @@ GLM worker/reviewerは編集・生成・復元・削除せず、更新候補をs
 ## task完了
 
 ordinary task完了時はHistoryへ完了証跡やescaped原因を追記しない。完了task fileを削除し、Planからentryを削除してNEXTをACTIVEへ昇格し、final HEAD上でPlan・ACTIVE file・Git境界が一致することを機械確認する。完了task fileを`IMPLEMENTATION_TASKS/`へ残さない。Git履歴が原要求と実装diffを保持し、CIとbundle / telemetryがvalidation・runtime/model evidenceを保持する。
+
+Goal modeの最終taskだけは、上記Goal起点project orchestrationのterminal条件を満たす場合に限り、NEXT昇格ではなくcompleted GOALと空scheduleへ同期する。Goal未完了、mechanical readiness未充足、semantic acceptance未確定ではこの例外を使わない。
 
 Historyを更新できるのは、完了結果そのものではなく、そのtaskがproduction diffへ表現されないcross-task decisionを新たに確定し、将来のtracked taskがそのdecisionをactivation / adoption条件として明示参照する場合だけとする。その場合もdecision、最小根拠、再評価境界だけを残し、commit / validation chronologyや長い診断を複製しない。参照taskがなくなったrecordは削除する。
 

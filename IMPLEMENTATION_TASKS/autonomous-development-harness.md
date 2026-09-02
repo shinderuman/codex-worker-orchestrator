@@ -271,6 +271,7 @@ autonomous-development-harness.mdを022の前にやるようにしてくれ&#x20
 - 2026-09-03指示により、過去のPRODUCT DIRECTION、INTERFACE CANDIDATES、DURABLE DATA CANDIDATEおよび「将来の第一候補」は候補の記録に留まり、architecture評価の既定値・採用要件・実装仕様として扱わない。
 - 直前の「自由に採否を判断する」は実現方法の採否を意味し、Goal起点の自律開発機能自体をNo-Go候補に含めない。2026-09-03 user clarificationが、同日先行instructionと親No-Go判断をこの点でoverrideする。
 - 公開済みcommit `00f5a0d`と`ea7fb1a`は過去判断の履歴としてrewriteせず、本taskの再open、最新Amendment、Plan訂正、後続commitにより撤回を明示する。
+- 2026-09-03 parent architecture decision: canonical Goalは`IMPLEMENTATION_PLAN.local.md`のoptional `## GOAL`節、read-only machine surfaceは`glm-worker --project-state`とする。既存task lifecycleとparent semantic authorityを維持し、dependency未知参照・self dependency・cycleはfail closed、Goal進行中は単一ACTIVE、親acceptance後のterminal Goalだけcompleted GOALと空scheduleを許可する。新daemon・scheduler・state DB・第二正本は追加しない。
 
 ## Purpose
 
@@ -341,4 +342,4 @@ none
 
 ## Current boundary
 
-2026-09-03 user clarificationにより直前のNo-Goを撤回し、Goal起点の自律開発機能を実現するtaskとして再openする。旧No-Go commitはrewriteせず訂正履歴として残し、current implementationと実運用を再調査した親architecture決定後、既存機能を再利用するproduction実装へ進む。
+2026-09-03 user clarificationにより直前のNo-Goを撤回して再open。親architectureはoptional Plan GOAL + read-only `--project-state` + existing lifecycle reuseへ確定し、production implementation milestoneへ進む。旧No-Go commitはrewriteせず訂正履歴として残す。

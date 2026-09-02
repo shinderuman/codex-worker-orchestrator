@@ -29,7 +29,7 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 ## 現在のGit境界
 
 - branch: `main`
-- `autonomous-development-harness.md`は、実現方式の自由判断を機能自体の採否判断とした直前の解釈を撤回して再open。Goal起点でCodexがtask生成・選択・再計画を担い、既存state/resume/review/recoveryを再利用してproject completionまで継続する機能を実現する。022はNEXTへ戻し、本task完了後も開始しない。
+- `autonomous-development-harness.md`は直前の機能レベルNo-Goを撤回して再open。親architectureをoptional Plan GOAL、read-only `glm-worker --project-state`、既存lifecycle再利用へ確定し、production implementation milestoneへ移行する。022はNEXTにあり、本task完了後も開始しない。
 - retry edge・曖昧関係・requested wait分類を原本trace付きで辿る`analysis-index.json` v3とvalidationをcurrent mainへ統合済み。`021-conditional-improvements.md`のparent decision gateは新規採用taskなしで完了。
 - authorization不整合調査はread-only observationと親No-Goまで完了済み。production修正を行わない判断と外部修正境界は削除済みtask fileのGit履歴および保存bundle evidenceから回収する。恒久的な自動再開許可は`IMPLEMENTATION_RULES.md`を正とする。
 - F1-F10 hardening、parent action/handoff、typed parent-capability validation、repo-search、Codex analysis bundle、target-repository lean context、wait instruction削減、actionable containment denial、bounded parent finalization surface、commentlint sandbox-safe launcher、parent authority bootstrapはcurrent mainへ統合済み。詳細なcommit・validationはGit / CI、runtime・model evidenceはbundle / telemetryを正とする。
