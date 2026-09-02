@@ -399,8 +399,8 @@ func buildBundleAnalysisIndex(st *state.StateStore, task bundleTask, collector *
 	start, collectionEnd, collectionEndBasis := analysisCollectionWindow(task)
 	execution := resolveAnalysisExecutionBoundary(st, task.ID)
 	rolloutScan := scanAnalysisRolloutWindow(collector, association, start, collectionEnd)
-	owning := resolveAnalysisOwningTurn(rolloutScan.turns, start)
-	finalizationInterval := analysisFinalizationInterval(execution, owning)
+	ownership := resolveAnalysisTaskOwnership(association, rolloutScan.turns, start, collectionEnd, task.ID)
+	finalizationInterval := analysisTaskFinalizationInterval(execution, ownership)
 	eventRuns := analysisTaskEventValidationRuns(st, task.ID)
 	roundSeqByDigest := analysisRoundDigestSeqs(st, task.ID)
 	telemetry := scanAnalysisTelemetryCalls(st, task.ID)
@@ -413,7 +413,7 @@ func buildBundleAnalysisIndex(st *state.StateStore, task bundleTask, collector *
 		Intervals: bundleAnalysisIntervals{
 			TaskExecution:      analysisExecutionInterval(start, execution),
 			ParentFinalization: finalizationInterval,
-			SubsequentRequests: analysisSubsequentRequests(association, rolloutScan, owning, collectionEnd),
+			SubsequentRequests: analysisTaskSubsequentRequests(association, rolloutScan, ownership, collectionEnd),
 			Collection: bundleAnalysisInterval{
 				Status:   analysisStatusAvailable,
 				Start:    analysisTimestamp(start),
@@ -425,7 +425,7 @@ func buildBundleAnalysisIndex(st *state.StateStore, task bundleTask, collector *
 		RolloutWindow:  analysisRolloutWindow(association, rolloutScan, start),
 		WaitCalls:      analysisWaitCalls(association, rolloutScan, start, execution, collectionEnd),
 		TokenDelta:     analysisExecutionTokenDelta(association, rolloutScan, start, execution, collectionEnd),
-		Finalization:   analysisFinalizationTokenDelta(association, rolloutScan, execution, owning, finalizationInterval),
+		Finalization:   analysisTaskFinalizationTokenDelta(association, rolloutScan, execution, ownership, finalizationInterval),
 		ValidationRuns: validations,
 		Retries:        analysisRetries(task, eventRuns, validations.Runs, telemetry),
 		Evidence:       analysisEvidence(collector, association, attributedRuns, validations.Runs),
