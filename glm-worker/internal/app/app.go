@@ -138,10 +138,8 @@ var commandParsers = map[string]commandParser{
 	"--status": func(args []string) (Command, error) {
 		return singleArgCommand(args, ModeStatus, "usage: glm-worker --status")
 	},
-	"--handoff": func(args []string) (Command, error) {
-		return singleArgCommand(args, ModeHandoff, "usage: glm-worker --handoff")
-	},
-	"--watch": watchCommand,
+	"--handoff": parentHandoffCommand,
+	"--watch":   watchCommand,
 	"--timeline": func(args []string) (Command, error) {
 		return optionalPayloadCommand(args, ModeTimeline, "usage: glm-worker --timeline [task-id]")
 	},
@@ -199,7 +197,7 @@ func usageError(format string, args ...any) *UsageError {
 
 func ParseCommand(args []string) (Command, error) {
 	if len(args) == 0 {
-		return Command{}, usageError("usage: glm-worker <instruction> | --execution-milestones-stdin <payload-bytes> [--sha256 <hex>] | --execution-milestones-revise-stdin <payload-bytes> [--sha256 <hex>] | --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix-stdin <payload-bytes> [--sha256 <hex>] %s | --accept | --resume | --stop | --isolate | --status | --handoff | --watch [--verbose] | --timeline [task-id] | --convergence [task-id] | --stats | --reset | --verify-auto-resume <automation-key> <auto-resume-at-rfc3339> | --eval-ab <run-dir> | --call-outliers | --codex-limit | --repo-search <query> | --check-wake-coalesce <auto-resume-at-rfc3339> | --install-smoke %s | --quality-gate %s | --model-routing | --packet-check <packet.json> [--role worker|reviewer] [--artifact-root <dir>] | bundle [task-id]", fixOriginUsage, installSmokeUsage, qualityGateUsage)
+		return Command{}, usageError("usage: glm-worker <instruction> | --execution-milestones-stdin <payload-bytes> [--sha256 <hex>] | --execution-milestones-revise-stdin <payload-bytes> [--sha256 <hex>] | --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix-stdin <payload-bytes> [--sha256 <hex>] %s | --accept | --resume | --stop | --isolate | --status | --handoff [recovery] | --watch [--verbose] | --timeline [task-id] | --convergence [task-id] | --stats | --reset | --verify-auto-resume <automation-key> <auto-resume-at-rfc3339> | --eval-ab <run-dir> | --call-outliers | --codex-limit | --repo-search <query> | --check-wake-coalesce <auto-resume-at-rfc3339> | --install-smoke %s | --quality-gate %s | --model-routing | --packet-check <packet.json> [--role worker|reviewer] [--artifact-root <dir>] | bundle [task-id]", fixOriginUsage, installSmokeUsage, qualityGateUsage)
 	}
 	if parser, ok := commandParsers[args[0]]; ok {
 		return parser(args)
@@ -230,6 +228,16 @@ func requiredPayloadCommand(args []string, mode CommandMode, usage string) (Comm
 		return Command{}, usageError("%s", usage)
 	}
 	return Command{Mode: mode, Payload: args[1]}, nil
+}
+
+func parentHandoffCommand(args []string) (Command, error) {
+	if len(args) == 1 {
+		return Command{Mode: ModeHandoff}, nil
+	}
+	if len(args) == 2 && args[1] == "recovery" {
+		return Command{Mode: ModeHandoff, Payload: "recovery"}, nil
+	}
+	return Command{}, usageError("usage: glm-worker --handoff [recovery]")
 }
 
 func watchCommand(args []string) (Command, error) {
@@ -451,6 +459,9 @@ func executeStateless(cmd Command, cfg config.AppConfig, stdout io.Writer) (bool
 	case ModeStatus:
 		return true, printStatus(state.AttachStateStore(cfg), stdout)
 	case ModeHandoff:
+		if cmd.Payload == "recovery" {
+			return true, printParentHandoffRecovery(state.AttachStateStore(cfg), stdout)
+		}
 		return true, printParentHandoff(state.AttachStateStore(cfg), stdout)
 	case ModeStats:
 		return true, printStats(state.AttachStateStore(cfg), stdout)
