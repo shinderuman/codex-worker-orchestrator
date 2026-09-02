@@ -10,6 +10,7 @@
 
 - ユーザー依頼の範囲だけを扱い、機能追加・修正・改善・設定変更を勝手に拡張しない。重要な不足情報もリポジトリや既存資料で解決できない場合だけ確認する。
 - リポジトリルートに`AGENTS.local.md`があれば作業前に読む。Git管理しないプロジェクト固有指示として扱う。リポジトリ内の`AGENTS.md`も該当スコープで従う。
+- `IMPLEMENTATION_RULES.md`の再読境界では`glm-worker --authority rules` / `plan` / `active`を同一tool turnで並列実行し、3出力の`authority_snapshot_sha256`と`active_task`一致を確認して各本文を1回だけ読む。個別の失敗・欠落はそのkindだけ1回再取得し、既取得結果とsnapshotが一致しなければ停止する。3件成功後のsnapshot不一致は3件を同一tool turnで1回だけ再取得し、再び不一致なら停止する。注入済みAGENTSをdisk再読せず、authority path探索・`wc`等のsize probe・条件付きinstructionの先読みをしない。
 
 ## 3. Git authority
 
@@ -26,7 +27,7 @@
 - Sol Highは原則、repository一次探索、grep/呼び出し元追跡、通常の実装・test・lint・build、GLM調査の再実行、途中経過取得、全diffの無条件精読、reviewer検証済みの低レベル再検査を行わない。
 - repository固有の調査・設計案・実装・test・lint・build・自己reviewはGLMへ委譲し、新規task・decision・fix・accept・resumeは原則`glm-parent-action`を使う。同一taskのSol判断・修正・再開ではworker/reviewer sessionを継続し、新規taskだけ新sessionにする。過去のGLM文脈をSol Highが再説明しない。
 - 通常workerはGLM-5.3/high。初回低リスクreviewはGLM-4.7/high、高リスク・Sol判断後・自動修正後・明示fix後のreviewはGLM-5.3/highを一方だけ使う。Sol判断後のworker継続と明示fixはGLM-5.3/max。
-- `glm-worker`/`glm-parent-action`を実行・待機する前に`~/.codex/instructions/glm-execution.md`、packetまたはstderr error JSONを受け取ったら`~/.codex/instructions/glm-packets.md`を読む。
+- `glm-worker --authority`はbootstrap専用のlocal readであり`glm-execution.md`を先読みしない。それ以外の`glm-worker`/`glm-parent-action`を実行・待機する前に`~/.codex/instructions/glm-execution.md`、packetまたはstderr error JSONを受け取ったら`~/.codex/instructions/glm-packets.md`を読む。
 
 ## 5. 品質ゲート
 
@@ -49,7 +50,7 @@ USER_REQUEST・`SPECIFICATION.md`・既存`AGENTS.md`・直前のSol判断で未
 ## 7. 必要時だけ読む規則
 
 - Git履歴操作 → `git.md`、backup/大容量一時data → `backup.md`、AGENTS変更 → `agents-management.md`
-- GLM実行・待機 → `glm-execution.md`、task開始/再開のuser指示とrun-control → `task-request-boundary.md`、packet/WORKER_ERROR → `glm-packets.md`
+- `glm-worker --authority`以外のGLM実行・待機 → `glm-execution.md`、task開始/再開のuser指示とrun-control → `task-request-boundary.md`、packet/WORKER_ERROR → `glm-packets.md`
 - GLM rate limit再開 → `glm-auto-resume.md`、親Codex 5h Limit再開 → `codex-auto-resume.md`、停止/中断task/`--stop`/`--isolate` → `glm-stop-isolate.md`
 - 外部成立性 → `feasibility-gate.md`、安全停止・子task終端/親USER_REQUEST完了 → `task-lifecycle.md`、原因不明runtime failure → `failure-evidence.md`、escaped bug/review原因層 → `escaped-cause-layer.md`
 - Codex例外直接編集 → `worker/`該当file + `direct-edit.md`、quality gate → `quality-gate-capability.md`、repo-search → `glm-repo-search.md`
