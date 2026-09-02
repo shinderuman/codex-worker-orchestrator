@@ -8,7 +8,7 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/021-conditional-improvements.md`
+- `IMPLEMENTATION_TASKS/autonomous-development-harness.md`
 
 ## NEXT（優先順）
 
@@ -17,7 +17,6 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 ## BLOCKED / USER_PERMISSION_WAIT
 
 - `IMPLEMENTATION_TASKS/configurable-peak-pause-windows.md`
-- `IMPLEMENTATION_TASKS/autonomous-development-harness.md`
 - `IMPLEMENTATION_TASKS/desktop-terminal-payload-double-render-boundary.md`
 - `IMPLEMENTATION_TASKS/claude-cli-runtime-preflight-reevaluation.md`
 - `IMPLEMENTATION_TASKS/101-live-sol-ab.md`
@@ -30,7 +29,7 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 ## 現在のGit境界
 
 - branch: `main`
-- retry edge・曖昧関係・requested wait分類を原本trace付きで辿る`analysis-index.json` v3とvalidationをcurrent mainへ統合済み。`021-conditional-improvements.md`をACTIVEへ昇格したが、ユーザー指定の停止境界に従い実行は開始していない。
+- retry edge・曖昧関係・requested wait分類を原本trace付きで辿る`analysis-index.json` v3とvalidationをcurrent mainへ統合済み。`021-conditional-improvements.md`のparent decision gateは新規採用taskなしで完了。`autonomous-development-harness.md`をACTIVEへ昇格したが、ユーザー指定の停止境界に従い実行は開始していない。`022-final-verification.md`はNEXTとして維持している。
 - authorization不整合調査はread-only observationと親No-Goまで完了済み。production修正を行わない判断と外部修正境界は削除済みtask fileのGit履歴および保存bundle evidenceから回収する。恒久的な自動再開許可は`IMPLEMENTATION_RULES.md`を正とする。
 - F1-F10 hardening、parent action/handoff、typed parent-capability validation、repo-search、Codex analysis bundle、target-repository lean context、wait instruction削減、actionable containment denial、bounded parent finalization surface、commentlint sandbox-safe launcherはcurrent mainへ統合済み。詳細なcommit・validationはGit / CI、runtime・model evidenceはbundle / telemetryを正とする。
 - preserved boundary: machine-readable lifecycle、snapshot/validation authority、parent-managed metadata guard、GLM commit/push禁止、parent Codex semantic authority、normal fast-forward Git safety、Direct Codex対orchestratedのCodex Reduction / Quality Delta最上位評価を維持する。

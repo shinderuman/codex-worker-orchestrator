@@ -239,20 +239,35 @@ EXECUTION
 
 ## Amendments
 
-none
+- 2026-09-02 user instruction:
+
+````text
+autonomous-development-harness.mdを022の前にやるようにしてくれ&#x20;
+いまやってる021で発生したタスクがあるようであればそちらを優先で構わない
+````
 
 ## Resolved references
 
 - 「現在のglm-worker既存機能、contract、mechanical guard、production behavior」は、このtaskを将来再評価する時点のproduction実体と実運用証拠を指す。現時点のtask番号や固定commitへ束縛しない。
 - 「十分固まること」はこのtask単独で自動判定しない。ユーザーによる明示unblockと、その時点の親Codexによるproduction hardening状況の再評価を両方必要とする。
+- 2026-09-02時点で021由来の新規採用taskはないため、最新指示の条件付き優先対象は存在しない。「022」は`IMPLEMENTATION_TASKS/022-final-verification.md`を指す。
+- 親CodexはPlan記載のF1-F10 hardening、parent action / handoff、typed parent-capability validation、repo-search、analysis bundle、lean context、wait instruction削減、containment denial、parent finalization、commentlint launcherのcurrent main統合をproduction hardening成熟の一次証拠とし、unblock条件1を満たすと判断した。最新指示をunblock条件2の明示許可として扱う。
 
 ## Purpose
 
 Goalを入口としてCodexがliving planとdurable stateを管理し、glm-workerを小さく強いexecutorとして利用しながら、quota・session・compactionを跨いで長時間のdevelopment workflowを完了する上位Harness案を、将来の再検討対象として保持する。
 
+## External feasibility
+
+status: not-applicable
+
 ## Contract
 
-- 現時点では構想を保存するだけで、PoC・詳細設計・interface確定・production実装を開始しない
+- このtask自体は親Codexのarchitecture / decomposition gateとし、umbrellaのままGLM implementationへdispatchしない
+- current production実体、実運用、escaped bug、quota、telemetry、resume architecture、hardening状況を再評価し、builtinか独立Harnessか、責務境界、canonical state model、planning / scheduling、replanning、amendment、quota recovery、crash recovery、concurrency、repository配置、Git ownership、telemetry、A/B評価を親Codexが決定する
+- 大規模な一次調査だけread-only GLM workerへ委譲できる。高レバレッジなarchitecture、公開interface、state model、永続化、依存方向、互換性、Go / No-Goは親Codexが確定する
+- 採用したPoC・production implementation・validationは、semantic filenameと単一review可能責務を持つ個別taskへ分割し、Plan上で`IMPLEMENTATION_TASKS/022-final-verification.md`より前へ置く
+- architecture evaluationで成立性または費用対効果を支持できない場合は、実装taskを作らずNo-Goまたは追加evidence待ちの境界を明示する
 - 将来の第一候補はplanning、task scheduling、durable state、Codex supervision、resume/recovery、requirement amendment、project completionをglm-worker本体の外側へ分離する構成とする
 - Planは固定工程表ではなく、PoC、finding、追加要求、実装結果に応じてCodexが再構成するliving planとして検討する
 - conversation historyを正本にせず、goal、plan、task、unresolved finding、dependency、evidence、completionをdurable stateから復元できることを検討対象とする
@@ -263,9 +278,9 @@ Goalを入口としてCodexがliving planとdurable stateを管理し、glm-work
 ## Must not
 
 - 現在のACTIVE taskを中断しない
-- NEXTへ昇格しない
-- ユーザーの明示許可なしに自動unblockしない
-- glm-workerの既存機能とproduction hardeningが十分固まる前に着手しない
+- architecture / decomposition gateをumbrella implementationとして直接dispatchしない
+- 親architecture決定前にPoC、公開interface、state schema、production implementationを開始しない
+- 最新指示による優先変更を、021の中断または021由来でないtaskの無条件優先へ拡張しない
 - 現在のrepository固有運用をそのまま製品化しない
 - Markdown追加だけ、固定Plan消化、conversation context依存、giant agent化で解決しない
 - planning、scheduling、recovery、worker executionの責務を無検討に混在させない
@@ -275,11 +290,11 @@ Goalを入口としてCodexがliving planとdurable stateを管理し、glm-work
 
 ## Acceptance criteria
 
-- PlanのBLOCKED / USER_PERMISSION_WAITにのみ存在し、ACTIVE/NEXTへ含まれない
-- Original instructionがlosslessに保存されている
-- unblockにはproduction hardening成熟の再評価とユーザーの明示許可の両方が必要である
-- unblock時に再決定する責務分離、state model、planning/scheduling、quota recovery、Git ownership、telemetry、A/B評価観点を復元できる
-- 現時点ではPoC、詳細設計、source変更、scheduler変更を行っていない
+- 2026-09-02の優先変更指示がAmendmentsへlosslessに保存され、021由来の新規採用taskがないことと022参照が解決されている
+- production hardening成熟の再評価根拠とユーザーの明示許可がtracked metadataから回収できる
+- 責務分離、state model、planning / scheduling、replanning、amendment、quota / crash recovery、concurrency、repository配置、Git ownership、telemetry、A/B評価の採否とrollback境界が一次証拠付きで決定される
+- 採用範囲はsemanticな個別taskへ分割され、022より前の実行順としてPlanへ反映される。No-Goの場合は実装taskを作らない
+- architecture gate中はproduction source、scheduler、runtime stateを変更せず、GLMへproject-level semantic decision authorityを移さない
 
 ## Historical invariants
 
@@ -298,4 +313,4 @@ none
 
 ## Current boundary
 
-BLOCKED。二つのunblock条件を両方満たすまで、PoC・詳細設計・実装・NEXT昇格を行わない。
+二つのunblock条件を2026-09-02に充足。021完了後、022より先に実行する親architecture / decomposition gateとしてNEXT昇格可能。021由来の新規採用taskはない。現時点ではPoC・production実装を開始していない。
