@@ -29,7 +29,7 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 ## 現在のGit境界
 
 - branch: `main`
-- thin Go entrypointと`glm-worker` machine JSON outputを既存quality ownerでmechanical enforcementする変更をlocal mainへ統合済み。`autonomous-development-harness.md`はPlan上のACTIVEへ昇格済みだが、現在task完了後に停止するユーザー指示に従い同taskのworker/model callは開始していない。
+- `autonomous-development-harness.md`のread-only architecture評価と独立reviewを完了し、新規独立Harness・Planner・state model・schedulerはNo-Go、運用は現状維持と親Codexが判断済み。production変更と022前の追加taskはなく、task完了metadata同期後は022を開始せず停止する。
 - retry edge・曖昧関係・requested wait分類を原本trace付きで辿る`analysis-index.json` v3とvalidationをcurrent mainへ統合済み。`021-conditional-improvements.md`のparent decision gateは新規採用taskなしで完了。
 - authorization不整合調査はread-only observationと親No-Goまで完了済み。production修正を行わない判断と外部修正境界は削除済みtask fileのGit履歴および保存bundle evidenceから回収する。恒久的な自動再開許可は`IMPLEMENTATION_RULES.md`を正とする。
 - F1-F10 hardening、parent action/handoff、typed parent-capability validation、repo-search、Codex analysis bundle、target-repository lean context、wait instruction削減、actionable containment denial、bounded parent finalization surface、commentlint sandbox-safe launcher、parent authority bootstrapはcurrent mainへ統合済み。詳細なcommit・validationはGit / CI、runtime・model evidenceはbundle / telemetryを正とする。

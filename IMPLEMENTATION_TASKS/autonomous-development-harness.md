@@ -246,12 +246,20 @@ autonomous-development-harness.mdを022の前にやるようにしてくれ&#x20
 いまやってる021で発生したタスクがあるようであればそちらを優先で構わない
 ````
 
+- 2026-09-03 user instruction:
+
+````text
+- `autonomous-development-harness.md`は過去の構想をそのまま実装仕様として扱わず、current implementationと実運用を踏まえて再評価する。
+- 独立Harnessや新しいPlanner / state model / schedulerの導入を前提にせず、現状維持・既存機能の拡張・新規構成・No-Goを含めてCodex自身が採否を判断する。
+````
+
 ## Resolved references
 
 - 「現在のglm-worker既存機能、contract、mechanical guard、production behavior」は、このtaskを将来再評価する時点のproduction実体と実運用証拠を指す。現時点のtask番号や固定commitへ束縛しない。
 - 「十分固まること」はこのtask単独で自動判定しない。ユーザーによる明示unblockと、その時点の親Codexによるproduction hardening状況の再評価を両方必要とする。
 - 2026-09-02時点で021由来の新規採用taskはないため、最新指示の条件付き優先対象は存在しない。「022」は`IMPLEMENTATION_TASKS/022-final-verification.md`を指す。
 - 親CodexはPlan記載のF1-F10 hardening、parent action / handoff、typed parent-capability validation、repo-search、analysis bundle、lean context、wait instruction削減、containment denial、parent finalization、commentlint launcherのcurrent main統合をproduction hardening成熟の一次証拠とし、unblock条件1を満たすと判断した。最新指示をunblock条件2の明示許可として扱う。
+- 2026-09-03指示により、過去のPRODUCT DIRECTION、INTERFACE CANDIDATES、DURABLE DATA CANDIDATEおよび「将来の第一候補」は候補の記録に留まり、architecture評価の既定値・採用要件・実装仕様として扱わない。
 
 ## Purpose
 
@@ -268,7 +276,7 @@ status: not-applicable
 - 大規模な一次調査だけread-only GLM workerへ委譲できる。高レバレッジなarchitecture、公開interface、state model、永続化、依存方向、互換性、Go / No-Goは親Codexが確定する
 - 採用したPoC・production implementation・validationは、semantic filenameと単一review可能責務を持つ個別taskへ分割し、Plan上で`IMPLEMENTATION_TASKS/022-final-verification.md`より前へ置く
 - architecture evaluationで成立性または費用対効果を支持できない場合は、実装taskを作らずNo-Goまたは追加evidence待ちの境界を明示する
-- 将来の第一候補はplanning、task scheduling、durable state、Codex supervision、resume/recovery、requirement amendment、project completionをglm-worker本体の外側へ分離する構成とする
+- 現状維持、既存機能の限定拡張、新規構成、No-Goを同列の候補として比較し、独立Harness、新しいPlanner、state model、schedulerの導入を前提にしない。過去の「外側へ分離する第一候補」は2026-09-03 Amendmentにより評価上の優先を失う
 - Planは固定工程表ではなく、PoC、finding、追加要求、実装結果に応じてCodexが再構成するliving planとして検討する
 - conversation historyを正本にせず、goal、plan、task、unresolved finding、dependency、evidence、completionをdurable stateから復元できることを検討対象とする
 - 現行のPlan/Tasks/History運用は一次経験として再評価するが、そのfile構成やMarkdown中心設計を製品仕様として固定しない
@@ -286,6 +294,7 @@ status: not-applicable
 - planning、scheduling、recovery、worker executionの責務を無検討に混在させない
 - GLMへproject-level semantic decision authorityを移さない
 - interface候補やdata候補を確定済み仕様として扱わない
+- 独立Harness、新しいPlanner、state model、schedulerを導入前提として評価を進めない
 - GLMにcommit/pushさせない
 
 ## Acceptance criteria
@@ -293,6 +302,7 @@ status: not-applicable
 - 2026-09-02の優先変更指示がAmendmentsへlosslessに保存され、021由来の新規採用taskがないことと022参照が解決されている
 - production hardening成熟の再評価根拠とユーザーの明示許可がtracked metadataから回収できる
 - 責務分離、state model、planning / scheduling、replanning、amendment、quota / crash recovery、concurrency、repository配置、Git ownership、telemetry、A/B評価の採否とrollback境界が一次証拠付きで決定される
+- 現状維持、既存機能の限定拡張、新規構成、No-Goが同列に比較され、過去構想を既定解としない親Codex判断が記録される
 - 採用範囲はsemanticな個別taskへ分割され、022より前の実行順としてPlanへ反映される。No-Goの場合は実装taskを作らない
 - architecture gate中はproduction source、scheduler、runtime stateを変更せず、GLMへproject-level semantic decision authorityを移さない
 
@@ -313,4 +323,4 @@ none
 
 ## Current boundary
 
-二つのunblock条件を2026-09-02に充足。021完了後、022より先に実行する親architecture / decomposition gateとしてNEXT昇格可能。021由来の新規採用taskはない。現時点ではPoC・production実装を開始していない。
+2026-09-03の親architecture gateで、新規独立Harness・Planner・state model・schedulerはNo-Go、運用は現状維持と決定した。既存機能の限定拡張は、親の反復作業が主要コストである一次証拠を得た場合だけ個別semantic taskとして再評価する。production source・scheduler・runtime stateは変更せず、本taskから022より前へ追加するimplementation taskはない。独立review受理済みで、task完了metadata同期を残す。
