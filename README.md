@@ -130,14 +130,14 @@ execution milestoneは大きい1つのsemantic ACTIVE taskを2〜8 unitへ区切
 
 `finalize-check`はblocking quality gateとcanonical `--handoff`を連続実行し、current snapshotに対応するvalidation・handoff・read-only local Git summaryをJSONで返す。accept/fix、commit、fetch/pushやdivergence修復は行わない。
 
-低レベルtransport、inspection/report、recovery/debugは`glm-worker`を直接使う。全commandの現在一覧は`glm-worker --help`がJSONで返す。主要surface:
+低レベルtransport、inspection/report、recovery/debugは`glm-worker`を直接使う。全command一覧は`glm-worker --help`がJSONで返す。主要surface:
 
 ```sh
 glm-worker "<task>"
 glm-worker --decision-stdin <bytes> [--sha256 <sha256>]
 glm-worker --fix-stdin <bytes> [--sha256 <sha256>] [--origin <origin>] [--accepted-scope current-diff] [--approval-only]
 glm-worker --accept | --resume | --stop | --isolate | --reset
-glm-worker --status | --handoff | --watch [--verbose]
+glm-worker --status | --handoff | --project-state | --watch [--verbose]
 glm-worker --timeline [task-id] | --convergence [task-id] | --stats
 glm-worker --repo-search <query> | --repo-search-eval
 glm-worker --eval-ab <run-dir> | --call-outliers | --model-routing | --test-impact | --codex-limit

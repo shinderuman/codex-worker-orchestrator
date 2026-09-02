@@ -20,7 +20,7 @@ func TestReadOnlyInspectionDoesNotRequireWritableStateStore(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(stateRoot, 0o700) })
 
-	for _, args := range [][]string{{"--status"}, {"--handoff"}, {"--stats"}} {
+	for _, args := range [][]string{{"--status"}, {"--handoff"}, {"--stats"}, {"--project-state"}} {
 		cmd, err := ParseCommand(args)
 		if err != nil {
 			t.Fatalf("ParseCommand(%v): %v", args, err)

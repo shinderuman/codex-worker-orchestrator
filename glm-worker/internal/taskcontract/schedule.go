@@ -44,6 +44,16 @@ func (s PlanSchedule) ActiveEntries() ([]string, error) {
 	return append([]string(nil), s.Active...), nil
 }
 
+func (s PlanSchedule) NonActiveEntries() ([]string, []string, error) {
+	if s.nextErr != nil {
+		return nil, nil, s.nextErr
+	}
+	if s.blockedErr != nil {
+		return nil, nil, s.blockedErr
+	}
+	return append([]string(nil), s.Next...), append([]string(nil), s.Blocked...), nil
+}
+
 func (s PlanSchedule) ActiveTask() (string, error) {
 	if s.activeErr != nil {
 		return "", s.activeErr

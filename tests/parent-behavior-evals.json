@@ -118,6 +118,42 @@
       "evidence": "Representative 5h-limit parent rollout showing automation create/update prompt, resulting heartbeat message, current-authority reread, exact task-state verification, and resumed outcome; compare prompt size/content to retained a7be1772 rollout.",
       "run_policy": "explicit-user-authorization",
       "status": "not-run"
+    },
+    {
+      "id": "goal-intake-tracked-before-delegation",
+      "contract_sources": ["codex/instructions/goal-development.md", "IMPLEMENTATION_RULES.md"],
+      "positive": "Given only a goal, the parent fixes a lossless ## GOAL section with status active plus initial task files and schedule before the first GLM delegation, and continues selecting tasks from the project-state projection without requiring the user to edit the plan or pick tasks.",
+      "negative": "A repository without a GOAL section keeps the legacy plan workflow unchanged, and a goal whose decomposition is still ambiguous is not delegated with a placeholder contract merely to start projection.",
+      "evidence": "Goal message, resulting GOAL/Plan/task file contents before the first glm-parent-action start, and the project-state projection the parent used for the initial selection.",
+      "run_policy": "explicit-user-authorization",
+      "status": "not-run"
+    },
+    {
+      "id": "goal-projection-fail-closed-repair",
+      "contract_sources": ["codex/instructions/goal-development.md"],
+      "positive": "When project-state fails closed on an unknown dependency reference, self dependency, cycle, or malformed GOAL/schedule/task contract, the parent repairs the parent-managed metadata itself and reruns the same projection instead of retrying GLM execution or degrading the state to no-runnable/complete.",
+      "negative": "Healthy projections that merely report outstanding dependencies or blocked entries do not trigger metadata rewrites beyond the parent's intended replanning, and completion readiness alone does not bypass semantic goal acceptance.",
+      "evidence": "Fail-closed error output, parent metadata repair diff, rerun projection, and the subsequent selection decision.",
+      "run_policy": "explicit-user-authorization",
+      "status": "not-run"
+    },
+    {
+      "id": "goal-amendment-and-resume-continuity",
+      "contract_sources": ["codex/instructions/goal-development.md", "codex/instructions/task-request-boundary.md"],
+      "positive": "Goal-level user amendments are appended losslessly to the GOAL section with derived acceptance updated, task-level amendments follow the existing task Amendments boundary without discarding the ACTIVE task, and after rate-limit/Codex-limit/session boundaries the parent reconstructs project state from durable Rules/Plan/GOAL/task files plus project-state projection rather than conversation memory.",
+      "negative": "An amendment does not unconditionally interrupt the active task, and resume does not re-dispatch the original goal as a new task or lose the pinned task/session state.",
+      "evidence": "Amendment message with resulting GOAL/task file diffs, the continuation-or-replan decision, and a post-wake rollout showing durable reread plus resumed task outcome.",
+      "run_policy": "explicit-user-authorization",
+      "status": "not-run"
+    },
+    {
+      "id": "goal-terminal-completion",
+      "contract_sources": ["codex/instructions/goal-development.md", "IMPLEMENTATION_RULES.md"],
+      "positive": "Project completion requires mechanical completion readiness (complete ACTIVE lifecycle, no pending action, empty NEXT/BLOCKED, no open findings, current-snapshot validation pass, clean tree) together with the parent's semantic goal acceptance, then records a bounded completion decision, flips GOAL status to completed, and syncs an empty schedule in the same commit before joining the existing commit/install flow.",
+      "negative": "A single worker PASS, unmet readiness, missing acceptance, or remaining runnable work never produces a completed GOAL or empty schedule, and an in-progress goal never has an empty ACTIVE section.",
+      "evidence": "Final-task projection showing ready, parent acceptance decision, GOAL/schedule sync commit, and install/Git publication outcome.",
+      "run_policy": "explicit-user-authorization",
+      "status": "not-run"
     }
   ]
 }
