@@ -109,6 +109,15 @@
       "evidence": "Parent rollout around a GLM 5h limit showing the coalesce/verify command arguments, absence of env/list_threads discovery, and exact target-thread verification or compact fail-closed result.",
       "run_policy": "explicit-user-authorization",
       "status": "not-run"
+    },
+    {
+      "id": "compact-auto-resume-wake-prompt",
+      "contract_sources": ["codex/instructions/glm-auto-resume.md"],
+      "positive": "A GLM 5h resume automation persists only the repository root, exact expected glm-worker task ID, and any lossless non-derivable user run-control in its heartbeat prompt; after wake the parent rereads current repository authority and resumes only after exact task/state verification.",
+      "negative": "The persisted prompt does not duplicate authority reread steps, packet handling, review, validation, commit/install/push, Plan synchronization, scheduler identity/time, or inferred run-control, and stale prompt prose does not shadow current repository authority.",
+      "evidence": "Representative 5h-limit parent rollout showing automation create/update prompt, resulting heartbeat message, current-authority reread, exact task-state verification, and resumed outcome; compare prompt size/content to retained a7be1772 rollout.",
+      "run_policy": "explicit-user-authorization",
+      "status": "not-run"
     }
   ]
 }

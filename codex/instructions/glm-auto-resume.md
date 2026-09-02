@@ -21,6 +21,20 @@
 - automationの実行環境は`REPO_ROOT`と同じローカルcheckoutを選ぶ。別worktreeではrepo hashが変わりresume stateを参照できない。
 - 生のautomation directiveやRRULEを本文へ出力せず、利用可能なtool schemaに従う。
 
+### wake prompt contract
+
+- heartbeat promptはtask/workflow specificationではなくwake triggerと非導出stateのdurable carrierだけにする。current repository authorityから再取得できるreview・validation・Git・install・Plan同期・packet処理・authority再読手順をpromptへ複製しない。
+- prompt本文は次の固定形を使う。`run_control`はユーザーが明示した停止境界・継続境界など、current repository authorityへlosslessに永続化されておらずwake後にも必要な場合だけ2行目へ原文のまま追加し、存在しない場合は行自体を省略する。
+
+```text
+GLM 5h auto-resume trigger. repo_root=<REPO_ROOT>; expected_task_id=<TASK_ID>.
+run_control=<EXPLICIT_NON_DERIVABLE_USER_BOUNDARY>
+```
+
+- `AUTO_RESUME_KEY`・発火時刻・rruleはscheduler contractが既にdurableに保持するためpromptへ重複させない。thread identityも`CODEX_THREAD_ID`のcommand-boundary ownershipを使いpromptへ入れない。
+- createとupdateでは同じcompact prompt contractを使う。schedule更新だけを理由にworkflow proseを追加しない。必要な`run_control`をlosslessに保持できない場合は勝手に要約・推測せず予約をfail closedする。
+- wake promptはcurrent repository authorityより優先するauthorityではない。予約後にworkflow規則が更新されても古いprompt proseでshadowしない。
+
 ### 既存automationの更新
 
 - 同名のheartbeat automationが既に存在する場合、そのautomation IDへ絶対時刻anchorの`DTSTART`と`RRULE:FREQ=DAILY;COUNT=1`を直接updateする。placeholderを作り直さない。
@@ -56,6 +70,8 @@
 ## wake時
 
 本節はGLM resume automationの発火時と、coalesce判定でGLM automationを作らなかった場合にCodex 5h wakeの「作業を続けろ」で親実装taskが再開された場合の両方に適用する。手順3・5・6のautomation削除・停止・更新は、実GLM resume automationを作成済みのときだけ行い、coalesce時は対象automationが存在しないため`glm-worker --status`での一度の検証と`glm-worker --resume`とその結果処理だけを行う。
+
+wake promptはworkflow authorityとして読まない。commandを実行する前に、その時点のrepository authorityが要求するRules / Plan / exact ACTIVE taskを現在checkoutから再読し、generic workflowはそこからだけ取得する。promptから利用するのは`repo_root`・`expected_task_id`・存在する場合の`run_control`だけである。
 
 1. `REPO_ROOT`で`glm-worker --status`を実行する。
 2. 出力JSONの`task_id`が予約時(またはcoalesce判定時のrate-limit packet `detail.task_id`)の値と完全一致し、`task_status: rate-limited`、`resume_available: true`であることを確認する。expected task IDの正はrate-limit packetの`detail.task_id`だけであり、既存のcheckpoint・state・evidenceに期待値そのものが機械読取可能な形で保存されている場合以外は復元しない。packetの`detail.task_id`を照会できない場合は、当該repoにrate-limited/resume可能taskが1件だけであること・automation名・会話memoryなどの根拠からexpected task IDを推測してresumeしない(fail closed)。この場合は`glm-worker --resume`を実行せず、task IDを照合できなかった旨と手動`glm-worker --resume`によるmanual fallbackを報告して停止する。
