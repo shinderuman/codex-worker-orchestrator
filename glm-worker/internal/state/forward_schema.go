@@ -135,7 +135,7 @@ func (stats *TaskStats) UnmarshalJSON(data []byte) error {
 
 func (call ModelCallLog) MarshalJSON() ([]byte, error) {
 	return json.Marshal(modelCallLogWire{
-		SchemaRevision:   modelCallLogSchemaRevision,
+		SchemaRevision:    modelCallLogSchemaRevision,
 		modelCallLogAlias: modelCallLogAlias(call),
 	})
 }
