@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/authoritybootstrapcmd"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
@@ -40,10 +41,20 @@ func runEntry(
 	stdout io.Writer,
 	stderr io.Writer,
 ) error {
+	if handled, err := runAuthorityBootstrap(args, stdout); handled {
+		return err
+	}
 	if handled, err := runHelp(args, stdout); handled {
 		return err
 	}
 	return run(args, loadConfig, runnerFactory, stdin, stdout, stderr)
+}
+
+func runAuthorityBootstrap(args []string, stdout io.Writer) (bool, error) {
+	if len(args) == 0 || args[0] != "--authority" {
+		return false, nil
+	}
+	return true, authoritybootstrapcmd.Execute(args[1:], stdout)
 }
 
 func streamOutputMode(mode CommandMode) bool {
