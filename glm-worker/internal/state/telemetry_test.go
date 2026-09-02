@@ -178,26 +178,17 @@ func TestRecordProbeCallLogExcludedFromTaskAggregates(t *testing.T) {
 	}
 }
 
-func TestReadModelCallLogsMixedSchemaPreservesTokensAndDiagnostics(t *testing.T) {
+func TestReadModelCallLogsSkipsSameVersionWithoutCurrentSchemaRevision(t *testing.T) {
 	st := &StateStore{dir: t.TempDir()}
 	taskID, err := st.StartNewTask()
 	if err != nil {
 		t.Fatal(err)
 	}
-	legacy := ModelCallLog{
-		Version:    ModelCallLogVersion,
-		CallID:     "legacy",
-		CallType:   CallTypeTask,
-		TaskID:     taskID,
-		Phase:      "worker-new",
-		ModelAlias: "opus",
-		Outcome:    "success",
-		TopLevelUsage: TokenUsage{
-			InputTokens:  100,
-			OutputTokens: 50,
-		},
+	if err := os.MkdirAll(st.Path("telemetry"), 0o700); err != nil {
+		t.Fatal(err)
 	}
-	if err := st.appendModelCallLog(legacy); err != nil {
+	obsolete := `{"version":3,"call_id":"obsolete","call_type":"task","task_id":"` + taskID + `","phase":"worker-new","model_alias":"opus","outcome":"success","top_level_usage":{"input_tokens":100,"output_tokens":50}}` + "\n"
+	if err := os.WriteFile(st.ModelCallLogPath(taskID), []byte(obsolete), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	st.RecordModelCallLog(ModelCallLog{
@@ -217,29 +208,15 @@ func TestReadModelCallLogsMixedSchemaPreservesTokensAndDiagnostics(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(logs) != 2 {
-		t.Fatalf("両recordが読めるべき: %#v", logs)
+	if len(logs) != 1 || logs[0].CallID != "current" {
+		t.Fatalf("same-version obsolete recordをskipしていません: %#v", logs)
 	}
-	var legacyRec, currentRec ModelCallLog
-	for _, l := range logs {
-		switch l.CallID {
-		case "legacy":
-			legacyRec = l
-		case "current":
-			currentRec = l
-		}
+	current := logs[0]
+	if current.WorkerReportedRisk != "HIGH" || current.EffectiveRisk != "HIGH" || current.RiskFloorCategory != "worker-declared" {
+		t.Fatalf("current recordの診断fieldが失われた: %+v", current)
 	}
-	if legacyRec.WorkerReportedRisk != "" || legacyRec.EffectiveRisk != "" || legacyRec.RiskFloorCategory != "" {
-		t.Fatalf("旧recordの診断fieldは未観測(空)のべき: %+v", legacyRec)
-	}
-	if legacyRec.TopLevelUsage.InputTokens != 100 {
-		t.Fatalf("旧recordのtoken集計が失われた: %+v", legacyRec)
-	}
-	if currentRec.WorkerReportedRisk != "HIGH" || currentRec.EffectiveRisk != "HIGH" || currentRec.RiskFloorCategory != "worker-declared" {
-		t.Fatalf("新recordの診断fieldが失われた: %+v", currentRec)
-	}
-	if currentRec.TopLevelUsage.InputTokens != 20 {
-		t.Fatalf("新recordのtoken集計が失われた: %+v", currentRec)
+	if current.TopLevelUsage.InputTokens != 20 {
+		t.Fatalf("current recordのtoken集計が失われた: %+v", current)
 	}
 
 	stats, err := st.loadTaskStats()
@@ -250,6 +227,6 @@ func TestReadModelCallLogsMixedSchemaPreservesTokensAndDiagnostics(t *testing.T)
 		t.Fatalf("current recordのtoken集計 = %+v", stats.InputTokensByAlias)
 	}
 	if stats.InputTokensByAlias["opus"] != 0 {
-		t.Fatalf("legacyはstats未集計のべき: %+v", stats.InputTokensByAlias)
+		t.Fatalf("unsupported recordがstatsへ混ざっています: %+v", stats.InputTokensByAlias)
 	}
 }

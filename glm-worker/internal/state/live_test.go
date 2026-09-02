@@ -33,6 +33,13 @@ func TestTaskLiveStatusRoundtripAndPermissions(t *testing.T) {
 	if info.Mode().Perm() != 0o600 {
 		t.Fatalf("live status権限 = %v", info.Mode().Perm())
 	}
+	encoded, err := os.ReadFile(st.TaskLiveStatusPath("task-1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(encoded), `"version":1`) {
+		t.Fatalf("current live status versionがありません: %s", encoded)
+	}
 
 	read, err := st.ReadTaskLiveStatus("task-1")
 	if err != nil {
@@ -119,25 +126,18 @@ func TestIsModelActivityEventAcceptanceSet(t *testing.T) {
 	}
 }
 
-func TestTaskLiveStatusWithoutModelActivityFieldParsesZero(t *testing.T) {
+func TestTaskLiveStatusRejectsUnversionedShape(t *testing.T) {
 	st := newEventTestStore(t)
-	legacy := `{"updated_at":"2026-08-23T09:10:00Z","last_event_at":"2026-08-23T09:10:00Z","tools":[{"tool_id":"toolu_1","command":"sleep 295"}]}`
+	obsolete := `{"updated_at":"2026-08-23T09:10:00Z","last_event_at":"2026-08-23T09:10:00Z","tools":[{"tool_id":"toolu_1","command":"sleep 295"}]}`
 	if err := os.MkdirAll(st.Path("events"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(st.TaskLiveStatusPath("task-1"), []byte(legacy+"\n"), 0o600); err != nil {
+	if err := os.WriteFile(st.TaskLiveStatusPath("task-1"), []byte(obsolete+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	read, err := st.ReadTaskLiveStatus("task-1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !read.LastModelActivityAt.IsZero() {
-		t.Fatalf("旧snapshotのlast_model_activity_at = %v", read.LastModelActivityAt)
-	}
-	if read.LastEventAt.IsZero() || len(read.Tools) != 1 {
-		t.Fatalf("旧snapshotの既存fieldが読めていません: %#v", read)
+	if _, err := st.ReadTaskLiveStatus("task-1"); err == nil || !strings.Contains(err.Error(), "unsupported task live status version") {
+		t.Fatalf("unversioned live statusを拒否していません: %v", err)
 	}
 }
 

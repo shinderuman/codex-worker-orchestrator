@@ -498,7 +498,7 @@ func TestCaptureGitSnapshotExcludingEqualsFullWithoutParentFiles(t *testing.T) {
 	}
 }
 
-func TestSnapshotParentFieldsRoundTrip(t *testing.T) {
+func TestSnapshotParentFieldsRoundTripAndRejectsUnversionedShape(t *testing.T) {
 	st := &StateStore{dir: t.TempDir()}
 	parents := &ParentFileStates{
 		{Path: ParentRulesFile},
@@ -524,16 +524,12 @@ func TestSnapshotParentFieldsRoundTrip(t *testing.T) {
 		t.Fatalf("parent補助fieldのround-trip = %#v", loaded)
 	}
 
-	legacy := `{"head":"h","index_digest":"i","worktree_digest":"w"}` + "\n"
-	if err := os.WriteFile(st.Path(reviewStartSnapshotFile), []byte(legacy), 0o600); err != nil {
+	obsolete := `{"head":"h","index_digest":"i","worktree_digest":"w"}` + "\n"
+	if err := os.WriteFile(st.Path(reviewStartSnapshotFile), []byte(obsolete), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	legacyLoaded, err := st.LoadReviewStartSnapshot()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if legacyLoaded.WorktreeDigestExcludingParent != "" || legacyLoaded.ParentFiles != nil {
-		t.Fatalf("旧binary snapshot fileは追加field無しで読み込める必要があります: %#v", legacyLoaded)
+	if _, err := st.LoadReviewStartSnapshot(); err == nil || !strings.Contains(err.Error(), "unsupported git snapshot version") {
+		t.Fatalf("unversioned snapshotを拒否していません: %v", err)
 	}
 }
 
