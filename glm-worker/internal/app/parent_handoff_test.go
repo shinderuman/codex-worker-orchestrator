@@ -1,6 +1,9 @@
 package app
 
 import (
+	"bytes"
+	"encoding/json"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -15,11 +18,21 @@ func TestParseCommandParentHandoff(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if command.Mode != ModeHandoff {
+	if command.Mode != ModeHandoff || command.Payload != "" {
 		t.Fatalf("handoff command = %#v", command)
 	}
+	recovery, err := ParseCommand([]string{"--handoff", "recovery"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recovery.Mode != ModeHandoff || recovery.Payload != "recovery" {
+		t.Fatalf("recovery handoff command = %#v", recovery)
+	}
 	if _, err := ParseCommand([]string{"--handoff", "extra"}); err == nil {
-		t.Fatal("--handoff accepted an extra argument")
+		t.Fatal("--handoff accepted an unknown projection")
+	}
+	if _, err := ParseCommand([]string{"--handoff", "recovery", "extra"}); err == nil {
+		t.Fatal("--handoff recovery accepted an extra argument")
 	}
 }
 
@@ -73,6 +86,81 @@ func TestParentHandoffPassRequiresAcceptThenBecomesNoAction(t *testing.T) {
 	output = buildParentHandoff(st)
 	if !output.Consistent || output.RequiredAction == nil || *output.RequiredAction != string(state.ParentActionNone) || output.ParentReviewOpen != nil {
 		t.Fatalf("accepted handoff = %#v", output)
+	}
+}
+
+func TestParentHandoffRecoveryProjectionOmitsBroadEvidence(t *testing.T) {
+	cfg := newAppConfig(t)
+	st := startParentHandoffTask(t, cfg)
+	if err := state.CaptureGitBaseline(cfg, st); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetTaskStatus(state.TaskStatusComplete); err != nil {
+		t.Fatal(err)
+	}
+	st.RecordSolResult(packet.Result{Status: packet.StatusPass, Risk: packet.RiskLow}, state.ParentReviewProducer{})
+	taskID, err := st.TaskID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.RecordModelCallLog(state.ModelCallLog{
+		CallID:             "call-recovery",
+		CallType:           state.CallTypeTask,
+		TaskID:             taskID,
+		Phase:              "reviewer-1",
+		Role:               state.ReviewerRole,
+		ModelAlias:         "haiku",
+		Outcome:            "invalid_packet",
+		PacketStatus:       string(packet.StatusPass),
+		PacketRejectReason: "structured-output",
+		Error:              "packet validation failed",
+	})
+
+	var stdout bytes.Buffer
+	if err := Execute(Command{Mode: ModeHandoff, Payload: "recovery"}, cfg, nil, &stdout, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(stdout.Bytes(), &raw); err != nil {
+		t.Fatalf("recovery output is not JSON: %v\n%s", err, stdout.String())
+	}
+	for _, forbidden := range []string{"baseline", "snapshot", "artifact_dir", "validations", "resume_kind", "inconsistency"} {
+		if _, exists := raw[forbidden]; exists {
+			t.Fatalf("recovery output leaked %q: %s", forbidden, stdout.String())
+		}
+	}
+	if raw["projection"] != "recovery" || raw["consistent"] != true {
+		t.Fatalf("recovery identity = %s", stdout.String())
+	}
+	material, ok := raw["last_material"].(map[string]any)
+	if !ok || material["call_id"] != "call-recovery" || material["outcome"] != "invalid_packet" {
+		t.Fatalf("recovery material = %#v", raw["last_material"])
+	}
+	if material["packet_reject_reason"] != "structured-output" || material["packet_error"] != "packet validation failed" {
+		t.Fatalf("recovery diagnostics = %#v", material)
+	}
+	for _, forbidden := range []string{"role", "model"} {
+		if _, exists := material[forbidden]; exists {
+			t.Fatalf("recovery material leaked %q: %s", forbidden, stdout.String())
+		}
+	}
+
+	stdout.Reset()
+	if err := Execute(Command{Mode: ModeHandoff}, cfg, nil, &stdout, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	raw = nil
+	if err := json.Unmarshal(stdout.Bytes(), &raw); err != nil {
+		t.Fatalf("full handoff output is not JSON: %v\n%s", err, stdout.String())
+	}
+	material, ok = raw["last_material"].(map[string]any)
+	if !ok {
+		t.Fatalf("full handoff material = %#v", raw["last_material"])
+	}
+	for _, hidden := range []string{"packet_reject_reason", "packet_error"} {
+		if _, exists := material[hidden]; exists {
+			t.Fatalf("full handoff exposed recovery-only %q: %s", hidden, stdout.String())
+		}
 	}
 }
 

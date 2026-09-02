@@ -27,14 +27,39 @@ type parentHandoffOutput struct {
 	Validations      []parentHandoffValidation  `json:"validations"`
 }
 
+type parentHandoffRecoveryOutput struct {
+	Version          int                            `json:"version"`
+	Projection       string                         `json:"projection"`
+	Consistent       bool                           `json:"consistent"`
+	TaskID           *string                        `json:"task_id"`
+	TaskStatus       *string                        `json:"task_status"`
+	RequiredAction   *string                        `json:"required_action"`
+	AllowedActions   []string                       `json:"allowed_actions"`
+	PendingDecision  bool                           `json:"pending_decision"`
+	ParentReviewOpen *string                        `json:"parent_review_open"`
+	LastMaterial     *parentHandoffRecoveryMaterial `json:"last_material"`
+}
+
 type parentHandoffMaterial struct {
-	CallID       *string `json:"call_id"`
-	CallType     string  `json:"call_type"`
-	Phase        string  `json:"phase"`
-	Outcome      string  `json:"outcome,omitempty"`
-	PacketStatus string  `json:"packet_status,omitempty"`
-	Role         string  `json:"role,omitempty"`
-	Model        string  `json:"model,omitempty"`
+	CallID             *string `json:"call_id"`
+	CallType           string  `json:"call_type"`
+	Phase              string  `json:"phase"`
+	Outcome            string  `json:"outcome,omitempty"`
+	PacketStatus       string  `json:"packet_status,omitempty"`
+	PacketRejectReason string  `json:"-"`
+	PacketError        string  `json:"-"`
+	Role               string  `json:"role,omitempty"`
+	Model              string  `json:"model,omitempty"`
+}
+
+type parentHandoffRecoveryMaterial struct {
+	CallID             *string `json:"call_id"`
+	CallType           string  `json:"call_type"`
+	Phase              string  `json:"phase"`
+	Outcome            string  `json:"outcome,omitempty"`
+	PacketStatus       string  `json:"packet_status,omitempty"`
+	PacketRejectReason string  `json:"packet_reject_reason,omitempty"`
+	PacketError        string  `json:"packet_error,omitempty"`
 }
 
 type parentHandoffValidation struct {
@@ -52,6 +77,36 @@ const parentHandoffVersion = 1
 
 func printParentHandoff(st *state.StateStore, stdout io.Writer) error {
 	return writeJSON(stdout, buildParentHandoff(st))
+}
+
+func printParentHandoffRecovery(st *state.StateStore, stdout io.Writer) error {
+	return writeJSON(stdout, projectParentHandoffRecovery(buildParentHandoff(st)))
+}
+
+func projectParentHandoffRecovery(output parentHandoffOutput) parentHandoffRecoveryOutput {
+	recovery := parentHandoffRecoveryOutput{
+		Version:          output.Version,
+		Projection:       "recovery",
+		Consistent:       output.Consistent,
+		TaskID:           output.TaskID,
+		TaskStatus:       output.TaskStatus,
+		RequiredAction:   output.RequiredAction,
+		AllowedActions:   append([]string(nil), output.AllowedActions...),
+		PendingDecision:  output.PendingDecision,
+		ParentReviewOpen: output.ParentReviewOpen,
+	}
+	if output.LastMaterial != nil {
+		recovery.LastMaterial = &parentHandoffRecoveryMaterial{
+			CallID:             output.LastMaterial.CallID,
+			CallType:           output.LastMaterial.CallType,
+			Phase:              output.LastMaterial.Phase,
+			Outcome:            output.LastMaterial.Outcome,
+			PacketStatus:       output.LastMaterial.PacketStatus,
+			PacketRejectReason: output.LastMaterial.PacketRejectReason,
+			PacketError:        output.LastMaterial.PacketError,
+		}
+	}
+	return recovery
 }
 
 func buildParentHandoff(st *state.StateStore) parentHandoffOutput {
@@ -121,7 +176,7 @@ func applyParentLastMaterial(st *state.StateStore, taskID string, output *parent
 		if log.CallType == state.CallTypeProbe {
 			continue
 		}
-		output.LastMaterial = &parentHandoffMaterial{
+		material := &parentHandoffMaterial{
 			CallID:       stringPtr(log.CallID),
 			CallType:     string(log.CallType),
 			Phase:        log.Phase,
@@ -130,6 +185,11 @@ func applyParentLastMaterial(st *state.StateStore, taskID string, output *parent
 			Role:         string(log.Role),
 			Model:        log.ModelAlias,
 		}
+		if log.Outcome == "invalid_packet" {
+			material.PacketRejectReason = log.PacketRejectReason
+			material.PacketError = log.Error
+		}
+		output.LastMaterial = material
 		return
 	}
 }
