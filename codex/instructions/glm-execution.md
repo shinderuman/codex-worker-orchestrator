@@ -29,8 +29,9 @@
 ## 親action surface
 
 - Plan管理repositoryでcurrent ACTIVE taskを開始するときは、sandbox外で`glm-parent-action start`を1回だけ実行する。wrapperは固定semantic requestを既存glm-worker new-task admissionへ渡す。ACTIVE task本文をUSER_REQUESTへ複製しない。
-- decision・fixはsandbox内で`glm-parent-action prepare decision|fix`を実行し、JSONで返る既存staging fileのplaceholderだけをCodex標準の`apply_patch`でsemantic payloadへ置換する。file先頭のtoken binding headerは保持する。`cat`・heredoc・shell redirect・Python等の別write手段へ切り替えない。
-- 実actionはsandbox外で`glm-parent-action decision <token>`または`glm-parent-action fix <token> [--origin <値>] [--accepted-scope current-diff] [--approval-only]`を実行する。file pathは受け取らず、prepareが発行したcrypto-random tokenだけを渡す。
+- decision・fixのsemantic payloadを親Codexが確定した後は、`prepare -> placeholder apply_patch -> 実action`を1つのcode-mode/tool orchestration内で連続実行し、その間にSolへ戻らない。まずsandbox内で`glm-parent-action prepare decision|fix`を実行し、machine JSONが`status:"prepared"`、期待した`action`、現在のprepareが返した`token`・`path`を持ち、`path`がrepository直下の`.glm-worker-parent-actions/`内を指すことを機械確認する。parse失敗・欠落・不一致ならpatch/actionを行わず停止する。
+- prepare直後のstaging fileは再読しない。production prepare contractが作る既知のtoken binding headerと`__GLM_PARENT_ACTION_PAYLOAD__`だけを前提に、返されたexact `path`のplaceholderだけをCodex標準の`apply_patch`でsemantic payloadへ置換し、headerを保持する。patch失敗時は実actionを呼ばない。`cat`・`sed`・heredoc・shell redirect・Python等のread/write代替へ切り替えず、staging filenameを推測しない。
+- patch成功後、同じtool orchestration内でsandbox外の`glm-parent-action decision <token>`または`glm-parent-action fix <token> [--origin <値>] [--accepted-scope current-diff] [--approval-only]`へ進む。実actionは返されたexact tokenだけを使い、file pathは渡さない。長時間実actionの待機は下記「待機」の同一cell境界をそのまま使う。
 - quality policy surface変更で`NEEDS_SOL_REVIEW`停止し、親Codexがsemantic fixを要求せず停止時点のexact current diffだけを承認する場合は、`prepare fix`で通常どおりtoken-bound payloadを用意したうえで`glm-parent-action fix <token> --accepted-scope current-diff --approval-only`を使う。`--approval-only`はこの場合だけ使い、`--origin`を併用しない。semantic修正を要求する場合は従来の通常fixを使う。
 - staging rootはrepository直下の`.glm-worker-parent-actions/`に固定する。token形式不正、token binding不一致、placeholder未置換、symlink化されたdirectory/file、1 MiB超payloadはstate変更・model呼出前にfail closedする。
 - wrapperはpayloadをmemoryへ読み、staging fileを削除してからUTF-8 byte長・SHA-256を機械計算し、既存`glm-worker --decision-stdin`/`--fix-stdin`へ直接渡す。semantic本文中のbacktick、dollar、single quote、double quote、NUL、改行を無変換で保持する。

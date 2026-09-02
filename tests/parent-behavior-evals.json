@@ -82,6 +82,15 @@
       "evidence": "Parent rollout containing the NEEDS_SOL_REVIEW packet, initial target reads/diff hunks, any bounded expansion, and resulting Sol judgment.",
       "run_policy": "explicit-user-authorization",
       "status": "not-run"
+    },
+    {
+      "id": "staged-parent-action-single-orchestration",
+      "contract_sources": ["codex/instructions/glm-execution.md"],
+      "positive": "After the parent has semantically fixed a decision/fix payload, one tool orchestration validates prepare JSON, patches only the exact returned staging placeholder with standard apply_patch, and invokes the exact token-bound action without model re-entry between those deterministic steps.",
+      "negative": "Malformed prepare output, an unexpected action/path/token, or failed placeholder patch stops before action execution; the normal path does not reread the freshly prepared staging file or replace apply_patch with an alternate writer.",
+      "evidence": "Parent rollout showing prepare output validation, exact apply_patch target, action invocation, and no intervening model turn or staging-file cat/sed read.",
+      "run_policy": "explicit-user-authorization",
+      "status": "not-run"
     }
   ]
 }
