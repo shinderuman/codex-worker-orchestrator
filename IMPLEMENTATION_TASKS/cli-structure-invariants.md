@@ -7,6 +7,10 @@ JSON化、Mainの薄いエントリポイントというのも機械的に縛り
 IMPLEMENTATION_RULESを確認し、そこにJSON化、Mainの薄いエントリポイントというのが書かれていなければ記載する。
 ````
 
+## Amendments
+
+none
+
 ## Purpose
 
 `glm-worker`の新しいcommandやearly-return pathを追加した際に、reviewだけへ依存せず次の二つをrepository quality gateで機械的に守る。
