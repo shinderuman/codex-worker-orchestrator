@@ -1,7 +1,9 @@
 package app
 
 import (
+	"bufio"
 	"encoding/json"
+	"os"
 	"strings"
 	"time"
 
@@ -51,9 +53,87 @@ type analysisResumeStatus struct {
 	} `json:"rate_limited"`
 }
 
-func observeAnalysisRolloutContinuation(scan *bundleRolloutScan, payload json.RawMessage) {
+func resolveAnalysisTaskOwnership(association codexAssociation, turns []analysisRolloutTurn, taskStart, collectionEnd time.Time, taskID string) analysisTaskOwnership {
+	evidence := analysisResumeTurnEvidenceFromRollout(association, taskStart, collectionEnd)
+	var containing []*analysisRolloutTurn
+	for i := range turns {
+		turn := &turns[i]
+		if turn.StartedAt.After(taskStart) {
+			continue
+		}
+		if turn.HasComplete && turn.CompletedAt.Before(taskStart) {
+			continue
+		}
+		containing = append(containing, turn)
+	}
+	if len(containing) != 1 {
+		return analysisTaskOwnership{status: analysisStatusUnknown}
+	}
+
+	initial := containing[0]
+	ownership := analysisTaskOwnership{
+		status:  analysisStatusAvailable,
+		initial: initial,
+		final:   initial,
+		owned:   map[string]struct{}{initial.TurnID: {}},
+	}
+	for i := range turns {
+		turn := &turns[i]
+		if turn.TurnID == initial.TurnID || !turn.StartedAt.After(initial.StartedAt) {
+			continue
+		}
+		turnEvidence := evidence[turn.TurnID]
+		if turnEvidence == nil {
+			continue
+		}
+		if turnEvidence.conflicted && (turnEvidence.continuationTaskID == taskID || analysisTaskIDPresent(turnEvidence.statusTaskIDs, taskID)) {
+			return analysisTaskOwnership{status: analysisStatusUnknown}
+		}
+		if turnEvidence.continuationTaskID != taskID {
+			continue
+		}
+		if !ownership.final.HasComplete || turn.StartedAt.Before(ownership.final.CompletedAt) {
+			return analysisTaskOwnership{status: analysisStatusUnknown}
+		}
+		ownership.owned[turn.TurnID] = struct{}{}
+		ownership.final = turn
+	}
+	return ownership
+}
+
+func analysisResumeTurnEvidenceFromRollout(association codexAssociation, start, end time.Time) map[string]*analysisResumeTurnEvidence {
+	if association.ParentStatus != codexStatusIncluded || association.ParentPath == "" {
+		return nil
+	}
+	file, err := os.Open(association.ParentPath)
+	if err != nil {
+		return nil
+	}
+	defer func() { _ = file.Close() }()
+
+	evidence := map[string]*analysisResumeTurnEvidence{}
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
+	for scanner.Scan() {
+		analysisObserveResumeEvidenceLine(evidence, scanner.Bytes(), start, end)
+	}
+	if scanner.Err() != nil {
+		return nil
+	}
+	return evidence
+}
+
+func analysisObserveResumeEvidenceLine(evidence map[string]*analysisResumeTurnEvidence, line []byte, start, end time.Time) {
+	var record codexRolloutScanLine
+	if err := json.Unmarshal(line, &record); err != nil || record.Type != "event_msg" {
+		return
+	}
+	timestamp, err := time.Parse(time.RFC3339Nano, record.Timestamp)
+	if err != nil || timestamp.Before(start) || timestamp.After(end) {
+		return
+	}
 	var event analysisRolloutCompletedEvent
-	if err := json.Unmarshal(payload, &event); err != nil || event.Type != codexRolloutItemCompletedType || event.TurnID == "" || event.Item == nil {
+	if err := json.Unmarshal(record.Payload, &event); err != nil || event.Type != codexRolloutItemCompletedType || event.TurnID == "" || event.Item == nil {
 		return
 	}
 	item := event.Item
@@ -64,21 +144,18 @@ func observeAnalysisRolloutContinuation(scan *bundleRolloutScan, payload json.Ra
 	if !ok {
 		return
 	}
-	if scan.resumeTurns == nil {
-		scan.resumeTurns = map[string]*analysisResumeTurnEvidence{}
-	}
-	evidence := scan.resumeTurns[event.TurnID]
-	if evidence == nil {
-		evidence = &analysisResumeTurnEvidence{}
-		scan.resumeTurns[event.TurnID] = evidence
+	turnEvidence := evidence[event.TurnID]
+	if turnEvidence == nil {
+		turnEvidence = &analysisResumeTurnEvidence{}
+		evidence[event.TurnID] = turnEvidence
 	}
 	switch command {
 	case analysisWorkerStatusCommand:
 		if taskID, valid := analysisResumeStatusTaskID(item.Stdout); valid {
-			evidence.statusTaskIDs = analysisAppendUniqueTaskID(evidence.statusTaskIDs, taskID)
+			turnEvidence.statusTaskIDs = analysisAppendUniqueTaskID(turnEvidence.statusTaskIDs, taskID)
 		}
 	case analysisParentResumeCommand:
-		analysisConfirmResumeEvidence(evidence)
+		analysisConfirmResumeEvidence(turnEvidence)
 	}
 }
 
@@ -132,53 +209,6 @@ func analysisConfirmResumeEvidence(evidence *analysisResumeTurnEvidence) {
 	if evidence.continuationTaskID != taskID {
 		evidence.conflicted = true
 	}
-}
-
-func resolveAnalysisTaskOwnership(scan bundleRolloutScan, taskStart time.Time, taskID string) analysisTaskOwnership {
-	var containing []*analysisRolloutTurn
-	for i := range scan.turns {
-		turn := &scan.turns[i]
-		if turn.StartedAt.After(taskStart) {
-			continue
-		}
-		if turn.HasComplete && turn.CompletedAt.Before(taskStart) {
-			continue
-		}
-		containing = append(containing, turn)
-	}
-	if len(containing) != 1 {
-		return analysisTaskOwnership{status: analysisStatusUnknown}
-	}
-
-	initial := containing[0]
-	ownership := analysisTaskOwnership{
-		status:  analysisStatusAvailable,
-		initial: initial,
-		final:   initial,
-		owned:   map[string]struct{}{initial.TurnID: {}},
-	}
-	for i := range scan.turns {
-		turn := &scan.turns[i]
-		if turn.TurnID == initial.TurnID || !turn.StartedAt.After(initial.StartedAt) {
-			continue
-		}
-		evidence := scan.resumeTurns[turn.TurnID]
-		if evidence == nil {
-			continue
-		}
-		if evidence.conflicted && (evidence.continuationTaskID == taskID || analysisTaskIDPresent(evidence.statusTaskIDs, taskID)) {
-			return analysisTaskOwnership{status: analysisStatusUnknown}
-		}
-		if evidence.continuationTaskID != taskID {
-			continue
-		}
-		if !ownership.final.HasComplete || turn.StartedAt.Before(ownership.final.CompletedAt) {
-			return analysisTaskOwnership{status: analysisStatusUnknown}
-		}
-		ownership.owned[turn.TurnID] = struct{}{}
-		ownership.final = turn
-	}
-	return ownership
 }
 
 func analysisTaskIDPresent(taskIDs []string, taskID string) bool {
