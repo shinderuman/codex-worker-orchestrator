@@ -21,12 +21,12 @@ func TestParseCommandModes(t *testing.T) {
 		{name: "reset", args: []string{"--reset"}, mode: ModeReset},
 		{
 			name: "verify-auto-resume",
-			args: []string{"--verify-auto-resume", "key-1234", "2026-08-12T20:01:20+09:00", "thread-uuid"},
+			args: []string{"--verify-auto-resume", "key-1234", "2026-08-12T20:01:20+09:00"},
 			mode: ModeVerifyAutoResume,
 		},
 		{
 			name: "check-wake-coalesce",
-			args: []string{"--check-wake-coalesce", "thread-uuid", "2026-08-12T20:01:20+09:00"},
+			args: []string{"--check-wake-coalesce", "2026-08-12T20:01:20+09:00"},
 			mode: ModeCheckWakeCoalesce,
 		},
 		{name: "eval-ab", args: []string{"--eval-ab", "/tmp/ab-run"}, mode: ModeEvalAB, payload: "/tmp/ab-run"},
@@ -151,11 +151,9 @@ func TestParseCommandRejectsInvalidArguments(t *testing.T) {
 		{"--reset", "extra"},
 		{"--verify-auto-resume"},
 		{"--verify-auto-resume", "key"},
-		{"--verify-auto-resume", "key", "date"},
-		{"--verify-auto-resume", "key", "date", "thread", "extra"},
+		{"--verify-auto-resume", "key", "date", "thread"},
 		{"--check-wake-coalesce"},
-		{"--check-wake-coalesce", "thread"},
-		{"--check-wake-coalesce", "thread", "date", "extra"},
+		{"--check-wake-coalesce", "date", "thread"},
 		{"--eval-ab"},
 		{"--eval-ab", "dir", "extra"},
 		{"--call-outliers", "extra"},
@@ -179,7 +177,6 @@ func TestParseCommandVerifyAutoResumeArgs(t *testing.T) {
 		"--verify-auto-resume",
 		"glm-worker-resume-abcd1234-ef012345",
 		"2026-08-12T20:01:20+09:00",
-		"019f88f8-0e70-7d53-a2a3-f0c61666827c",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -193,15 +190,14 @@ func TestParseCommandVerifyAutoResumeArgs(t *testing.T) {
 	if command.Verify.RFC3339 != "2026-08-12T20:01:20+09:00" {
 		t.Fatalf("RFC3339 = %q", command.Verify.RFC3339)
 	}
-	if command.Verify.ThreadID != "019f88f8-0e70-7d53-a2a3-f0c61666827c" {
-		t.Fatalf("ThreadID = %q", command.Verify.ThreadID)
+	if command.Verify.ThreadID != "" {
+		t.Fatalf("thread IDをargvから受理しています: %q", command.Verify.ThreadID)
 	}
 }
 
 func TestParseCommandCheckWakeCoalesceArgs(t *testing.T) {
 	command, err := ParseCommand([]string{
 		"--check-wake-coalesce",
-		"019f88f8-0e70-7d53-a2a3-f0c61666827c",
 		"2026-08-26T15:17:55Z",
 	})
 	if err != nil {
@@ -210,8 +206,8 @@ func TestParseCommandCheckWakeCoalesceArgs(t *testing.T) {
 	if command.Mode != ModeCheckWakeCoalesce {
 		t.Fatalf("Mode = %d", command.Mode)
 	}
-	if command.Coalesce.ParentThreadID != "019f88f8-0e70-7d53-a2a3-f0c61666827c" {
-		t.Fatalf("ParentThreadID = %q", command.Coalesce.ParentThreadID)
+	if command.Coalesce.ParentThreadID != "" {
+		t.Fatalf("parent thread IDをargvから受理しています: %q", command.Coalesce.ParentThreadID)
 	}
 	if command.Coalesce.ResumeAtRFC3339 != "2026-08-26T15:17:55Z" {
 		t.Fatalf("ResumeAtRFC3339 = %q", command.Coalesce.ResumeAtRFC3339)
