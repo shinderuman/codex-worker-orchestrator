@@ -7,14 +7,6 @@ import (
 	"io"
 )
 
-const taskLiveStatusSchemaVersion = 1
-
-const gitSnapshotSchemaVersion = 1
-
-const taskStatsSchemaRevision = 1
-
-const modelCallLogSchemaRevision = 1
-
 type taskEventRecordAlias TaskEventRecord
 
 type taskLiveStatusAlias TaskLiveStatus
@@ -44,6 +36,14 @@ type modelCallLogWire struct {
 	SchemaRevision int `json:"schema_revision"`
 	modelCallLogAlias
 }
+
+const taskLiveStatusSchemaVersion = 1
+
+const gitSnapshotSchemaVersion = 1
+
+const taskStatsSchemaRevision = 1
+
+const modelCallLogSchemaRevision = 1
 
 func decodeCurrentStateJSON(data []byte, target any) error {
 	decoder := json.NewDecoder(bytes.NewReader(data))
