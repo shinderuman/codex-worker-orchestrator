@@ -8,10 +8,11 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/autonomous-development-harness.md`
+- `IMPLEMENTATION_TASKS/cli-structure-invariants.md`
 
 ## NEXT（優先順）
 
+- `IMPLEMENTATION_TASKS/autonomous-development-harness.md`
 - `IMPLEMENTATION_TASKS/022-final-verification.md`
 
 ## BLOCKED / USER_PERMISSION_WAIT
@@ -29,7 +30,8 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 ## 現在のGit境界
 
 - branch: `main`
-- retry edge・曖昧関係・requested wait分類を原本trace付きで辿る`analysis-index.json` v3とvalidationをcurrent mainへ統合済み。`021-conditional-improvements.md`のparent decision gateは新規採用taskなしで完了。`autonomous-development-harness.md`をACTIVEへ昇格したが、ユーザー指定の停止境界に従い実行は開始していない。`022-final-verification.md`はNEXTとして維持している。
+- Codex Reduction改善群の代表Dogfoodとして、thin Go entrypointと`glm-worker` machine JSON outputを既存quality ownerでmechanical enforcementする`cli-structure-invariants.md`をACTIVEに設定した。従来ACTIVEだった`autonomous-development-harness.md`はNEXT先頭へ戻し、`022-final-verification.md`より前という既存優先関係を維持する。
+- retry edge・曖昧関係・requested wait分類を原本trace付きで辿る`analysis-index.json` v3とvalidationをcurrent mainへ統合済み。`021-conditional-improvements.md`のparent decision gateは新規採用taskなしで完了。
 - authorization不整合調査はread-only observationと親No-Goまで完了済み。production修正を行わない判断と外部修正境界は削除済みtask fileのGit履歴および保存bundle evidenceから回収する。恒久的な自動再開許可は`IMPLEMENTATION_RULES.md`を正とする。
-- F1-F10 hardening、parent action/handoff、typed parent-capability validation、repo-search、Codex analysis bundle、target-repository lean context、wait instruction削減、actionable containment denial、bounded parent finalization surface、commentlint sandbox-safe launcherはcurrent mainへ統合済み。詳細なcommit・validationはGit / CI、runtime・model evidenceはbundle / telemetryを正とする。
+- F1-F10 hardening、parent action/handoff、typed parent-capability validation、repo-search、Codex analysis bundle、target-repository lean context、wait instruction削減、actionable containment denial、bounded parent finalization surface、commentlint sandbox-safe launcher、parent authority bootstrapはcurrent mainへ統合済み。詳細なcommit・validationはGit / CI、runtime・model evidenceはbundle / telemetryを正とする。
 - preserved boundary: machine-readable lifecycle、snapshot/validation authority、parent-managed metadata guard、GLM commit/push禁止、parent Codex semantic authority、normal fast-forward Git safety、Direct Codex対orchestratedのCodex Reduction / Quality Delta最上位評価を維持する。
