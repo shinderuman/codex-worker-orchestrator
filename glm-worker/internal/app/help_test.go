@@ -7,9 +7,9 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/authoritybootstrapcmd"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 )
 
@@ -53,7 +53,7 @@ func TestRunEntryHelpBypassesConfig(t *testing.T) {
 	}
 }
 
-func TestRunEntryAuthorityBypassesConfig(t *testing.T) {
+func TestRunEntryAuthorityBypassesConfigAndReturnsJSON(t *testing.T) {
 	root := t.TempDir()
 	writeAppTestFile(t, root, "IMPLEMENTATION_RULES.md", "rules-body\n")
 	writeAppTestFile(t, root, "IMPLEMENTATION_PLAN.local.md", "# Plan\n\n## ACTIVE\n\n- `IMPLEMENTATION_TASKS/current.md`\n")
@@ -87,9 +87,15 @@ func TestRunEntryAuthorityBypassesConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	output := stdout.String()
-	if !strings.Contains(output, "authority_kind=active\n") || !strings.Contains(output, "active_task=IMPLEMENTATION_TASKS/current.md\n") || !strings.HasSuffix(output, "task-body\n") {
-		t.Fatalf("authority output = %q", output)
+	if err := validateSingleMachineJSONObject(stdout.Bytes()); err != nil {
+		t.Fatalf("authority stdout violates machine contract: %v", err)
+	}
+	var output authoritybootstrapcmd.Output
+	if err := json.Unmarshal(stdout.Bytes(), &output); err != nil {
+		t.Fatal(err)
+	}
+	if output.AuthorityKind != "active" || output.ActiveTask != "IMPLEMENTATION_TASKS/current.md" || output.Content != "task-body\n" || output.AuthoritySnapshotSHA256 == "" {
+		t.Fatalf("authority output = %#v", output)
 	}
 }
 
