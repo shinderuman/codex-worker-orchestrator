@@ -25,7 +25,9 @@
 
 ## `"status":"NEEDS_SOL_REVIEW"`
 
-- `targets`と`sol_question`に限定して実コードまたはdiffを確認する。
+- `targets`と`sol_question`に限定して実コードまたはdiffを確認する。reviewer summaryだけを現物確認の代わりにしない。
+- `targets`がfile:line・symbol・行範囲等で絞られている場合、初手は`sol_question`に必要な各targetのchanged hunkまたは狭いsource近傍だけを読む。同一target fileの広い/全sourceと同じfileのfull diffを初手で重複取得せず、複数targetもbounded regionのまままとめる。
+- bounded target evidenceで具体的なsemantic判断に不足が生じた場合だけ、その不足を解く対象targetを段階的に拡張する。関連のないchanged fileやtarget外sourceを予防的に先読みしない。
 - 修正が必要ならCodex自身で編集せず、修正方針本文を`~/.codex/instructions/glm-execution.md`のstdin mode（`--fix-stdin <payload-bytes>`）で同じworker sessionへ差し戻す。修正後は独立reviewerまで自動再実行される。Sol自身が現diffの残存部分を受理し、fixが撤回・縮小だけなら`--accepted-scope current-diff`を付ける。不確実または新規変更を許すfixでは付けない。
 
 ## finalization evidence

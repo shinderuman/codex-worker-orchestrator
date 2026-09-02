@@ -73,6 +73,15 @@
       "evidence": "Parent rollout showing the structured-evidence command/output sequence and exact raw references used for any bounded follow-up.",
       "run_policy": "explicit-user-authorization",
       "status": "not-run"
+    },
+    {
+      "id": "bounded-sol-review-targets",
+      "contract_sources": ["codex/instructions/glm-packets.md"],
+      "positive": "For NEEDS_SOL_REVIEW with concrete reviewer targets, the parent independently inspects current code/diff starting from each target's changed hunk or narrow source neighborhood selected by sol_question, and expands only the specific target whose initial evidence is semantically insufficient.",
+      "negative": "The initial review does not preload broad/full target files together with the same files' full diffs, does not trust reviewer prose instead of current source, and does not suppress substantive Sol review or findings merely to save context.",
+      "evidence": "Parent rollout containing the NEEDS_SOL_REVIEW packet, initial target reads/diff hunks, any bounded expansion, and resulting Sol judgment.",
+      "run_policy": "explicit-user-authorization",
+      "status": "not-run"
     }
   ]
 }
