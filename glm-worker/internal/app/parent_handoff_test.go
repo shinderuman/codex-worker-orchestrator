@@ -104,16 +104,16 @@ func TestParentHandoffRecoveryProjectionOmitsBroadEvidence(t *testing.T) {
 		t.Fatal(err)
 	}
 	st.RecordModelCallLog(state.ModelCallLog{
-		CallID:            "call-recovery",
-		CallType:          state.CallTypeTask,
-		TaskID:            taskID,
-		Phase:             "reviewer-1",
-		Role:              state.ReviewerRole,
-		ModelAlias:        "haiku",
-		Outcome:           "invalid_packet",
-		PacketStatus:      string(packet.StatusPass),
+		CallID:             "call-recovery",
+		CallType:           state.CallTypeTask,
+		TaskID:             taskID,
+		Phase:              "reviewer-1",
+		Role:               state.ReviewerRole,
+		ModelAlias:         "haiku",
+		Outcome:            "invalid_packet",
+		PacketStatus:       string(packet.StatusPass),
 		PacketRejectReason: "structured-output",
-		Error:             "packet validation failed",
+		Error:              "packet validation failed",
 	})
 
 	var stdout bytes.Buffer
