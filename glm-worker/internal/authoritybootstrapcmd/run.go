@@ -8,7 +8,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskcontract"
 )
 
 const (
@@ -82,7 +83,7 @@ func loadSnapshot(root string) (snapshot, error) {
 	if err != nil {
 		return snapshot{}, fmt.Errorf("read %s: %w", planFile, err)
 	}
-	activePath, err := parseActivePath(plan)
+	activePath, err := taskcontract.ParsePlanSchedule(string(plan)).ActiveTask()
 	if err != nil {
 		return snapshot{}, err
 	}
@@ -97,56 +98,6 @@ func loadSnapshot(root string) (snapshot, error) {
 		activePath: activePath,
 		hash:       snapshotHash(rules, plan, activePath, active),
 	}, nil
-}
-
-func parseActivePath(plan []byte) (string, error) {
-	lines := strings.Split(string(plan), "\n")
-	inside := false
-	entries := make([]string, 0, 1)
-	for _, raw := range lines {
-		line := strings.TrimSpace(raw)
-		if line == "## ACTIVE" {
-			if inside {
-				return "", fmt.Errorf("duplicate ACTIVE section")
-			}
-			inside = true
-			continue
-		}
-		if !inside {
-			continue
-		}
-		if strings.HasPrefix(line, "## ") {
-			break
-		}
-		if line == "" {
-			continue
-		}
-		if !strings.HasPrefix(line, "- `") || !strings.HasSuffix(line, "`") {
-			return "", fmt.Errorf("unexpected ACTIVE entry %q", line)
-		}
-		entries = append(entries, strings.TrimSuffix(strings.TrimPrefix(line, "- `"), "`"))
-	}
-	if !inside {
-		return "", fmt.Errorf("ACTIVE section is missing")
-	}
-	if len(entries) != 1 {
-		return "", fmt.Errorf("ACTIVE section must contain exactly one task, got %d", len(entries))
-	}
-	activePath := entries[0]
-	if err := validateActivePath(activePath); err != nil {
-		return "", err
-	}
-	return activePath, nil
-}
-
-func validateActivePath(activePath string) error {
-	if !strings.HasPrefix(activePath, "IMPLEMENTATION_TASKS/") || !strings.HasSuffix(activePath, ".md") {
-		return fmt.Errorf("invalid ACTIVE task path %q", activePath)
-	}
-	if filepath.IsAbs(activePath) || filepath.Clean(activePath) != filepath.FromSlash(activePath) {
-		return fmt.Errorf("invalid ACTIVE task path %q", activePath)
-	}
-	return nil
 }
 
 func snapshotHash(rules []byte, plan []byte, activePath string, active []byte) string {
