@@ -100,6 +100,15 @@
       "evidence": "Parent rollout showing blocking start/fix/resume/finalize-check completion, the first model-visible bounded result, embedded canonical handoff where applicable, and absence of GLM_TERMINAL_CAPTURED/store-load or immediate handoff-only model turns.",
       "run_policy": "explicit-user-authorization",
       "status": "not-run"
+    },
+    {
+      "id": "auto-resume-current-thread-identity",
+      "contract_sources": ["codex/instructions/glm-auto-resume.md"],
+      "positive": "GLM auto-resume coalesce and post-creation verification consume the exact current parent thread from CODEX_THREAD_ID at the command boundary, without the parent scanning environment output, enumerating Desktop threads, or copying a thread ID into argv/model context.",
+      "negative": "Missing or invalid CODEX_THREAD_ID fails closed before coalesce/verification; the parent does not infer current thread ownership from task IDs, automation names, timestamps, conversation prose, or thread lists.",
+      "evidence": "Parent rollout around a GLM 5h limit showing the coalesce/verify command arguments, absence of env/list_threads discovery, and exact target-thread verification or compact fail-closed result.",
+      "run_policy": "explicit-user-authorization",
+      "status": "not-run"
     }
   ]
 }
