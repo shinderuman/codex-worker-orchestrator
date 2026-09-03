@@ -15,6 +15,7 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 - `IMPLEMENTATION_TASKS/codex-review-gap-telemetry.md`
 - `IMPLEMENTATION_TASKS/structured-validation-gate-telemetry.md`
 - `IMPLEMENTATION_TASKS/packet-validation-correction-recovery.md`
+- `IMPLEMENTATION_TASKS/telemetry-history-compact-summary.md`
 - `IMPLEMENTATION_TASKS/105-session-rotation.md`
 - `IMPLEMENTATION_TASKS/post-105-codex-efficiency-reevaluation.md`
 - `IMPLEMENTATION_TASKS/022-final-verification.md`
