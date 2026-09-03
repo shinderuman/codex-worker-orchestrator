@@ -11,6 +11,11 @@
 ## Amendments
 
 ````text
+履歴が見つからなかった場合の話だがAcceptanceに限らず、どういう状態のファイルなのかわからないため全体的にそのまま作業するべきではないと思う
+前段としてそのタスクのGo/No-Goを決めてから作業するべきだと思う
+````
+
+````text
 CommentlintとBundle Diff以外の実装をお前が全部終えてその次にCommentlintをやらせて観測するつもり
 ````
 
@@ -57,7 +62,7 @@ status: not-applicable
 
 ## Dependencies
 
-none
+- `IMPLEMENTATION_TASKS/unscheduled-task-state-reconciliation.md`
 
 ## Review findings
 

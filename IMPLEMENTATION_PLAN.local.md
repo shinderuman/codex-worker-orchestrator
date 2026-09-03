@@ -8,9 +8,23 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/022-final-verification.md`
+- `IMPLEMENTATION_TASKS/unscheduled-task-state-reconciliation.md`
 
 ## NEXT（優先順）
+
+- `IMPLEMENTATION_TASKS/task-corpus-schedule-closure.md`
+- `IMPLEMENTATION_TASKS/parent-codex-token-attribution.md`
+- `IMPLEMENTATION_TASKS/telemetry-history-cohort-query.md`
+- `IMPLEMENTATION_TASKS/telemetry-timeline-retention-fallback.md`
+- `IMPLEMENTATION_TASKS/codex-review-gap-telemetry.md`
+- `IMPLEMENTATION_TASKS/structured-validation-gate-telemetry.md`
+- `IMPLEMENTATION_TASKS/packet-validation-correction-recovery.md`
+- `IMPLEMENTATION_TASKS/codex-desktop-prompt-overhead-reduction.md`
+- `IMPLEMENTATION_TASKS/codex-instruction-conflict-reduction.md`
+- `IMPLEMENTATION_TASKS/glm-containment-denial-explanations.md`
+- `IMPLEMENTATION_TASKS/parent-finalization-choreography-reduction.md`
+- `IMPLEMENTATION_TASKS/105-session-rotation.md`
+- `IMPLEMENTATION_TASKS/022-final-verification.md`
 
 ## BLOCKED / USER_PERMISSION_WAIT
 
@@ -21,13 +35,12 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 - `IMPLEMENTATION_TASKS/102-model-routing-redesign.md`
 - `IMPLEMENTATION_TASKS/103-compaction-threshold-change.md`
 - `IMPLEMENTATION_TASKS/104-test-impact-selection.md`
-- `IMPLEMENTATION_TASKS/105-session-rotation.md`
 - `IMPLEMENTATION_TASKS/106-review-call-reduction.md`
 
 ## 現在のGit境界
 
 - branch: `main`
-- Goal起点orchestrationは実装・独立review・親semantic review・current snapshot validationを経てcurrent mainへ統合済み。完了task fileを削除し、`022-final-verification.md`をACTIVEへ昇格済み。ユーザー指示により022は開始せず停止する。
+- 2026-09-03のCodex/GLM telemetry調査に基づく観測・復旧改善を022の前段へ追加した。実装開始前のtask corpus監査で、2026-08-31の`171c0ff`が4件の未完了実機Acceptanceを「Web GPT側tracker」としてPlanから外した一方でtask fileを残し、現行validatorもPlanからtaskへの片方向確認しか行わないため未schedule状態が継続していたことを確認した。4件をNEXTへ戻し、逆方向closure guardを最初のACTIVEとする。最上位目的はCodex / Sol側の実消費削減であり、GLM token削減だけを理由に親Codex tokenやSol判断回数を増やさない。test省略、review省略、compaction閾値変更、model routingは追加観測だけで自動採用せずBLOCKEDを維持する。
 - retry edge・曖昧関係・requested wait分類を原本trace付きで辿る`analysis-index.json` v3とvalidationをcurrent mainへ統合済み。`021-conditional-improvements.md`のparent decision gateは新規採用taskなしで完了。
 - authorization不整合調査はread-only observationと親No-Goまで完了済み。production修正を行わない判断と外部修正境界は削除済みtask fileのGit履歴および保存bundle evidenceから回収する。恒久的な自動再開許可は`IMPLEMENTATION_RULES.md`を正とする。
 - F1-F10 hardening、parent action/handoff、typed parent-capability validation、repo-search、Codex analysis bundle、target-repository lean context、wait instruction削減、actionable containment denial、bounded parent finalization surface、commentlint sandbox-safe launcher、parent authority bootstrapはcurrent mainへ統合済み。詳細なcommit・validationはGit / CI、runtime・model evidenceはbundle / telemetryを正とする。
