@@ -10,8 +10,14 @@ type ReviewFindings struct {
 	None    bool
 }
 
+type TaskDependencyState struct {
+	Outstanding []string
+	Fulfilled   []string
+}
+
 const (
-	TaskDependenciesHeading = "## Dependencies"
+	TaskDependenciesHeading          = "## Dependencies"
+	TaskFulfilledDependenciesHeading = "## Fulfilled dependencies"
 
 	ReviewFindingsHeading = "## Review findings"
 
@@ -19,13 +25,45 @@ const (
 )
 
 func ParseTaskDependencies(content []byte) ([]string, error) {
+	state, err := ParseTaskDependencyState(content)
+	if err != nil {
+		return nil, err
+	}
+	return state.Outstanding, nil
+}
+
+func ParseTaskDependencyState(content []byte) (TaskDependencyState, error) {
 	lines := strings.Split(string(content), "\n")
-	headingAt, err := findUniqueTaskSection(lines, TaskDependenciesHeading)
+	outstanding, err := parseTaskDependencySection(lines, TaskDependenciesHeading, true)
+	if err != nil {
+		return TaskDependencyState{}, err
+	}
+	fulfilled, err := parseTaskDependencySection(lines, TaskFulfilledDependenciesHeading, false)
+	if err != nil {
+		return TaskDependencyState{}, err
+	}
+	fulfilledSet := make(map[string]struct{}, len(fulfilled))
+	for _, path := range fulfilled {
+		fulfilledSet[path] = struct{}{}
+	}
+	for _, path := range outstanding {
+		if _, exists := fulfilledSet[path]; exists {
+			return TaskDependencyState{}, fmt.Errorf("dependency %sが%sと%sの両方にあります", path, TaskDependenciesHeading, TaskFulfilledDependenciesHeading)
+		}
+	}
+	return TaskDependencyState{Outstanding: outstanding, Fulfilled: fulfilled}, nil
+}
+
+func parseTaskDependencySection(lines []string, heading string, required bool) ([]string, error) {
+	headingAt, err := findUniqueTaskSection(lines, heading)
 	if err != nil {
 		return nil, err
 	}
 	if headingAt < 0 {
-		return nil, fmt.Errorf("%s節がありません", TaskDependenciesHeading)
+		if required {
+			return nil, fmt.Errorf("%s節がありません", heading)
+		}
+		return nil, nil
 	}
 	return parseDependencyPaths(lines, headingAt)
 }
