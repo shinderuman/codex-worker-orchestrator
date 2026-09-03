@@ -53,8 +53,7 @@ Heartbeatの恒久許可が再承認なしで実際のautomation作成経路へ�
 ## External feasibility
 
 status: observation
-
-Codex app automation APIはrepository外境界である。repository側からcreate/update/verify transactionをどこまで機械強制できるかを先に実証し、実行可能な対策だけをimplementationへ進める。
+assumption: Codex app automation APIがPAUSED placeholder create、exact ID update、current-thread binding、persisted schedule verifyを許容し、repository側からcreate/update/verifyを一つのtransactionとして実証できる
 
 ## Contract
 

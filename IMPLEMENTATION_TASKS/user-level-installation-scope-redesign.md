@@ -41,9 +41,7 @@ repository固有・tool利用時固有・ユーザー全体の設定を適切な
 
 ## External feasibility
 
-status: observation
-
-Codexがtool利用時またはproject利用時だけinstructionを読み込むsupported mechanismはrepository外の製品境界を含む。local runtime・設定・既存実装を一次証拠として確認し、不足時だけ公式資料で成立性を検証する。特定候補が不成立でも本task自体をNo-Go終了せず、成立する別方式を選んで責務分離を実装する。
+status: not-applicable
 
 ## Contract
 
