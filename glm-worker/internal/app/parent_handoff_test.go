@@ -173,13 +173,13 @@ func TestParentHandoffRecoveryIncludesGuardDiagnostics(t *testing.T) {
 	before := &state.GuardRefState{Name: "refs/codex/turn-diffs/old", ObjectID: strings.Repeat("a", 40)}
 	after := &state.GuardRefState{Name: "refs/codex/turn-diffs/old", ObjectID: strings.Repeat("b", 40)}
 	checkpoint := state.ResumeCheckpoint{
-		Model:                       "glm-5.3",
-		StopKind:                    state.ResumeStopGuardRecoverable,
-		GuardFailure:                "git authority guard failed: after-call-mutation: refs",
-		GuardRefBeforeDigest:        "before",
-		GuardRefAfterDigest:         "after",
-		GuardRefChanges:             []state.GuardRefChange{{Name: "refs/codex/turn-diffs/old", Before: before, After: after}},
-		GuardRefChangesTruncated:    true,
+		Model:                    "glm-5.3",
+		StopKind:                 state.ResumeStopGuardRecoverable,
+		GuardFailure:             "git authority guard failed: after-call-mutation: refs",
+		GuardRefBeforeDigest:     "before",
+		GuardRefAfterDigest:      "after",
+		GuardRefChanges:          []state.GuardRefChange{{Name: "refs/codex/turn-diffs/old", Before: before, After: after}},
+		GuardRefChangesTruncated: true,
 	}
 	if err := st.SaveResumeCheckpoint(checkpoint); err != nil {
 		t.Fatal(err)
