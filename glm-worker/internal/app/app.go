@@ -96,6 +96,7 @@ const (
 	ModeModelRouting
 	ModeTestImpact
 	ModeBundle
+	ModeParentUsage
 	ModeRepoSearch
 	ModeRepoSearchEval
 	ModeExecutionMilestonesRevise
@@ -185,6 +186,9 @@ var commandParsers = map[string]commandParser{
 	"bundle": func(args []string) (Command, error) {
 		return optionalPayloadCommand(args, ModeBundle, "usage: glm-worker bundle [task-id]")
 	},
+	"--parent-usage": func(args []string) (Command, error) {
+		return optionalPayloadCommand(args, ModeParentUsage, "usage: glm-worker --parent-usage [task-id]")
+	},
 }
 
 func (e *UsageError) Error() string {
@@ -201,7 +205,7 @@ func usageError(format string, args ...any) *UsageError {
 
 func ParseCommand(args []string) (Command, error) {
 	if len(args) == 0 {
-		return Command{}, usageError("usage: glm-worker <instruction> | --execution-milestones-stdin <payload-bytes> [--sha256 <hex>] | --execution-milestones-revise-stdin <payload-bytes> [--sha256 <hex>] | --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix-stdin <payload-bytes> [--sha256 <hex>] %s | --accept | --resume | --stop | --isolate | --status | --handoff [recovery] | --project-state | --watch [--verbose] | --timeline [task-id] | --convergence [task-id] | --stats | --reset | --verify-auto-resume <automation-key> <auto-resume-at-rfc3339> | --eval-ab <run-dir> | --call-outliers | --codex-limit | --repo-search <query> | --check-wake-coalesce <auto-resume-at-rfc3339> | --install-smoke %s | --quality-gate %s | --model-routing | --packet-check <packet.json> [--role worker|reviewer] [--artifact-root <dir>] | bundle [task-id]", fixOriginUsage, installSmokeUsage, qualityGateUsage)
+		return Command{}, usageError("usage: glm-worker <instruction> | --execution-milestones-stdin <payload-bytes> [--sha256 <hex>] | --execution-milestones-revise-stdin <payload-bytes> [--sha256 <hex>] | --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix-stdin <payload-bytes> [--sha256 <hex>] %s | --accept | --resume | --stop | --isolate | --status | --handoff [recovery] | --project-state | --watch [--verbose] | --timeline [task-id] | --convergence [task-id] | --stats | --reset | --verify-auto-resume <automation-key> <auto-resume-at-rfc3339> | --eval-ab <run-dir> | --call-outliers | --codex-limit | --repo-search <query> | --check-wake-coalesce <auto-resume-at-rfc3339> | --install-smoke %s | --quality-gate %s | --model-routing | --packet-check <packet.json> [--role worker|reviewer] [--artifact-root <dir>] | bundle [task-id] | --parent-usage [task-id]", fixOriginUsage, installSmokeUsage, qualityGateUsage)
 	}
 	if parser, ok := commandParsers[args[0]]; ok {
 		return parser(args)
@@ -505,6 +509,8 @@ func executeStatelessReport(cmd Command, cfg config.AppConfig, stdout io.Writer)
 		return true, printRepoSearchEval(st, stdout)
 	case ModeBundle:
 		return true, printBundle(cfg, st, cmd.Payload, stdout)
+	case ModeParentUsage:
+		return true, printParentUsage(cfg, st, cmd.Payload, stdout)
 	default:
 		return false, nil
 	}

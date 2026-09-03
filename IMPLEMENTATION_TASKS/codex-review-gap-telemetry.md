@@ -53,6 +53,10 @@ status: not-applicable
 
 ## Dependencies
 
+none
+
+## Fulfilled dependencies
+
 - `IMPLEMENTATION_TASKS/parent-codex-token-attribution.md`
 
 ## Review findings

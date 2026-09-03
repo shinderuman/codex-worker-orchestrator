@@ -217,6 +217,18 @@ type bundleRolloutScan struct {
 	tokens      []analysisRolloutTokenAnchor
 	waits       []analysisRolloutWaitRequest
 	waitReturns []analysisRolloutWaitReturn
+	toolEvents  []analysisRolloutToolEvent
+	compactions []analysisRolloutCompaction
+}
+
+type analysisRolloutToolEvent struct {
+	At          time.Time
+	Call        bool
+	OutputBytes int64
+}
+
+type analysisRolloutCompaction struct {
+	At time.Time
 }
 
 type analysisRolloutWaitRequest struct {
@@ -241,11 +253,15 @@ type analysisRolloutTurn struct {
 }
 
 type analysisRolloutTokenAnchor struct {
-	At     time.Time
-	RawAt  string
-	Offset int64
-	Input  int64
-	Cached int64
+	At        time.Time
+	RawAt     string
+	Offset    int64
+	Line      int
+	Input     *int64
+	Cached    *int64
+	Output    *int64
+	Reasoning *int64
+	Total     *int64
 }
 
 type codexRolloutScanLine struct {
@@ -265,8 +281,11 @@ type codexRolloutTokenPayload struct {
 }
 
 type codexRolloutTokenUsage struct {
-	InputTokens       int64 `json:"input_tokens"`
-	CachedInputTokens int64 `json:"cached_input_tokens"`
+	InputTokens          *int64 `json:"input_tokens"`
+	CachedInputTokens    *int64 `json:"cached_input_tokens"`
+	OutputTokens         *int64 `json:"output_tokens"`
+	ReasoningOutputToken *int64 `json:"reasoning_output_tokens"`
+	TotalTokens          *int64 `json:"total_tokens"`
 }
 
 type codexRolloutItemPayload struct {
@@ -274,6 +293,11 @@ type codexRolloutItemPayload struct {
 	Name      string `json:"name"`
 	CallID    string `json:"call_id"`
 	Arguments string `json:"arguments"`
+}
+
+type codexRolloutToolPayload struct {
+	Type   string          `json:"type"`
+	Output json.RawMessage `json:"output"`
 }
 
 type analysisValidationEvent struct {
@@ -292,6 +316,13 @@ type analysisExecutionBoundary struct {
 type analysisOwningTurn struct {
 	status string
 	turn   *analysisRolloutTurn
+}
+
+type analysisCounterDelta struct {
+	Value             int64
+	Known             bool
+	MissingInBaseline bool
+	MissingInEnd      bool
 }
 
 const bundleAnalysisIndexVersion = 3
@@ -364,6 +395,12 @@ const codexRolloutWaitCallName = "wait"
 const codexRolloutFunctionCallType = "function_call"
 
 const codexRolloutFunctionCallOutputType = "function_call_output"
+
+const codexRolloutCustomToolCallType = "custom_tool_call"
+
+const codexRolloutCustomToolCallOutputType = "custom_tool_call_output"
+
+const codexRolloutCompactedType = "compacted"
 
 const analysisWaitShortBoundMS = 60000
 
@@ -520,9 +557,13 @@ func observeAnalysisRolloutLine(scan *bundleRolloutScan, line []byte, lineNumber
 	observeAnalysisRolloutInWindowRecord(scan, line, timestamp, start, end)
 	if record.Type == "response_item" {
 		observeAnalysisRolloutWait(scan, record.Payload, timestamp, lineNumber)
+		observeAnalysisRolloutToolActivity(scan, record.Payload, timestamp)
 	}
 	if record.Type == "event_msg" {
-		observeAnalysisRolloutEvent(scan, record, timestamp)
+		observeAnalysisRolloutEvent(scan, record, timestamp, lineNumber)
+	}
+	if record.Type == codexRolloutCompactedType {
+		scan.compactions = append(scan.compactions, analysisRolloutCompaction{At: timestamp})
 	}
 }
 
@@ -561,6 +602,43 @@ func observeAnalysisRolloutWait(scan *bundleRolloutScan, payload json.RawMessage
 	}
 }
 
+func observeAnalysisRolloutToolActivity(scan *bundleRolloutScan, payload json.RawMessage, timestamp time.Time) {
+	var item codexRolloutToolPayload
+	if err := json.Unmarshal(payload, &item); err != nil {
+		return
+	}
+	switch item.Type {
+	case codexRolloutFunctionCallType, codexRolloutCustomToolCallType:
+		scan.toolEvents = append(scan.toolEvents, analysisRolloutToolEvent{At: timestamp, Call: true})
+	case codexRolloutFunctionCallOutputType, codexRolloutCustomToolCallOutputType:
+		scan.toolEvents = append(scan.toolEvents, analysisRolloutToolEvent{
+			At:          timestamp,
+			OutputBytes: analysisToolOutputBytes(item.Output),
+		})
+	}
+}
+
+func analysisToolOutputBytes(raw json.RawMessage) int64 {
+	if len(raw) == 0 {
+		return 0
+	}
+	var text string
+	if err := json.Unmarshal(raw, &text); err == nil {
+		return int64(len(text))
+	}
+	var items []struct {
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(raw, &items); err != nil {
+		return 0
+	}
+	var total int64
+	for _, item := range items {
+		total += int64(len(item.Text))
+	}
+	return total
+}
+
 func analysisWaitRequestedYield(arguments string) *float64 {
 	if arguments == "" {
 		return nil
@@ -577,29 +655,33 @@ func analysisWaitRequestedYield(arguments string) *float64 {
 	return parsed.YieldTimeMS
 }
 
-func observeAnalysisRolloutEvent(scan *bundleRolloutScan, record codexRolloutScanLine, timestamp time.Time) {
+func observeAnalysisRolloutEvent(scan *bundleRolloutScan, record codexRolloutScanLine, timestamp time.Time, lineNumber int) {
 	var payload codexRolloutEventPayload
 	if err := json.Unmarshal(record.Payload, &payload); err != nil {
 		return
 	}
 	if payload.Type == codexRolloutTokenCountType {
-		observeAnalysisRolloutTokenAnchor(scan, payload, record, timestamp)
+		observeAnalysisRolloutTokenAnchor(scan, payload, record, timestamp, lineNumber)
 		return
 	}
 	observeAnalysisRolloutTurnBoundary(scan, payload, timestamp)
 }
 
-func observeAnalysisRolloutTokenAnchor(scan *bundleRolloutScan, payload codexRolloutEventPayload, record codexRolloutScanLine, timestamp time.Time) {
+func observeAnalysisRolloutTokenAnchor(scan *bundleRolloutScan, payload codexRolloutEventPayload, record codexRolloutScanLine, timestamp time.Time, lineNumber int) {
 	usage := payload.Info
 	if usage == nil || usage.TotalTokenUsage == nil {
 		return
 	}
 	scan.tokens = append(scan.tokens, analysisRolloutTokenAnchor{
-		At:     timestamp,
-		RawAt:  record.Timestamp,
-		Offset: scan.totalBytes,
-		Input:  usage.TotalTokenUsage.InputTokens,
-		Cached: usage.TotalTokenUsage.CachedInputTokens,
+		At:        timestamp,
+		RawAt:     record.Timestamp,
+		Offset:    scan.totalBytes,
+		Line:      lineNumber,
+		Input:     usage.TotalTokenUsage.InputTokens,
+		Cached:    usage.TotalTokenUsage.CachedInputTokens,
+		Output:    usage.TotalTokenUsage.OutputTokens,
+		Reasoning: usage.TotalTokenUsage.ReasoningOutputToken,
+		Total:     usage.TotalTokenUsage.TotalTokens,
 	})
 }
 
@@ -928,26 +1010,55 @@ func analysisFinalizationTokenDelta(association codexAssociation, scan bundleRol
 }
 
 func analysisAnchoredTokenDelta(scan bundleRolloutScan, baselineBound, endBound time.Time) bundleAnalysisTokenDelta {
-	delta := bundleAnalysisTokenDelta{Status: analysisStatusAvailable}
 	baseline, hasBaseline := lastTokenAnchorAtOrBefore(scan, baselineBound)
 	end, hasEnd := lastTokenAnchorAtOrBefore(scan, endBound)
+	delta := bundleAnalysisTokenDelta{Status: analysisStatusAvailable}
 	switch {
 	case !hasBaseline || !hasEnd:
 		delta.Status = analysisStatusMissing
 	case end.Offset <= baseline.Offset:
 		delta.Status = analysisStatusNoObservation
 		delta.BaselineAt = baseline.RawAt
-	case end.Input < baseline.Input || end.Cached < baseline.Cached:
+	case analysisAnchorsCounterReset(baseline, end):
 		delta.Status = analysisStatusCounterReset
 		delta.BaselineAt = baseline.RawAt
 		delta.EndAt = end.RawAt
 	default:
-		delta.InputTokens = end.Input - baseline.Input
-		delta.CachedInputTokens = end.Cached - baseline.Cached
+		delta.InputTokens = analysisCounterDeltaState(baseline.Input, end.Input).Value
+		delta.CachedInputTokens = analysisCounterDeltaState(baseline.Cached, end.Cached).Value
 		delta.BaselineAt = baseline.RawAt
 		delta.EndAt = end.RawAt
 	}
 	return delta
+}
+
+func analysisCounterDeltaState(baseline, end *int64) analysisCounterDelta {
+	switch {
+	case baseline == nil && end == nil:
+		return analysisCounterDelta{MissingInBaseline: true, MissingInEnd: true}
+	case baseline == nil:
+		return analysisCounterDelta{MissingInBaseline: true}
+	case end == nil:
+		return analysisCounterDelta{MissingInEnd: true}
+	default:
+		return analysisCounterDelta{Value: *end - *baseline, Known: true}
+	}
+}
+
+func analysisAnchorsCounterReset(baseline, end analysisRolloutTokenAnchor) bool {
+	pairs := [][2]*int64{
+		{baseline.Input, end.Input},
+		{baseline.Cached, end.Cached},
+		{baseline.Output, end.Output},
+		{baseline.Reasoning, end.Reasoning},
+		{baseline.Total, end.Total},
+	}
+	for _, pair := range pairs {
+		if pair[0] != nil && pair[1] != nil && *pair[1] < *pair[0] {
+			return true
+		}
+	}
+	return false
 }
 
 func collectAnalysisValidationRuns(collector *bundleCollector, eventRuns map[string]analysisValidationEvent, roundSeqByDigest map[string]int, start, end time.Time) (bundleAnalysisValidations, map[string]struct{}) {

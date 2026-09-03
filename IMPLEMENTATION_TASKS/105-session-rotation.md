@@ -85,8 +85,11 @@ session aging telemetry。Task 009 worker outlier report完了済み。Task 010�
 
 ## Dependencies
 
-- `IMPLEMENTATION_TASKS/parent-codex-token-attribution.md`
 - `IMPLEMENTATION_TASKS/telemetry-history-cohort-query.md`
+
+## Fulfilled dependencies
+
+- `IMPLEMENTATION_TASKS/parent-codex-token-attribution.md`
 
 ## Review findings
 
