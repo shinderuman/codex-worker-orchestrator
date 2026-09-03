@@ -220,7 +220,7 @@ func parentUsageAnchoredTokens(scan bundleRolloutScan, baselineBound, endBound t
 		return parentUsageTokens{Status: analysisStatusMissing, Reason: parentUsageReasonEndAnchor, BaselineAt: baseline.RawAt, BaselineSource: parentUsageSourceLocator(source, baseline.Line)}
 	case end.Offset <= baseline.Offset:
 		return parentUsageTokens{Status: analysisStatusNoObservation, BaselineAt: baseline.RawAt, BaselineSource: parentUsageSourceLocator(source, baseline.Line)}
-	case analysisAnchorsCounterReset(baseline, end):
+	case analysisCountersResetBetween(scan, baseline, end):
 		return parentUsageTokens{
 			Status:         analysisStatusCounterReset,
 			BaselineAt:     baseline.RawAt,

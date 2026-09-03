@@ -1019,7 +1019,7 @@ func analysisAnchoredTokenDelta(scan bundleRolloutScan, baselineBound, endBound 
 	case end.Offset <= baseline.Offset:
 		delta.Status = analysisStatusNoObservation
 		delta.BaselineAt = baseline.RawAt
-	case analysisAnchorsCounterReset(baseline, end):
+	case analysisCountersResetBetween(scan, baseline, end):
 		delta.Status = analysisStatusCounterReset
 		delta.BaselineAt = baseline.RawAt
 		delta.EndAt = end.RawAt
@@ -1059,6 +1059,42 @@ func analysisAnchorsCounterReset(baseline, end analysisRolloutTokenAnchor) bool 
 		}
 	}
 	return false
+}
+
+func analysisCountersResetBetween(scan bundleRolloutScan, baseline, end analysisRolloutTokenAnchor) bool {
+	lastKnown := baseline
+	for _, anchor := range scan.tokens {
+		if anchor.Offset <= baseline.Offset {
+			continue
+		}
+		if anchor.Offset > end.Offset {
+			break
+		}
+		if analysisAnchorsCounterReset(lastKnown, anchor) {
+			return true
+		}
+		lastKnown = analysisAnchorWithLastKnownFields(lastKnown, anchor)
+	}
+	return false
+}
+
+func analysisAnchorWithLastKnownFields(known, observed analysisRolloutTokenAnchor) analysisRolloutTokenAnchor {
+	if observed.Input != nil {
+		known.Input = observed.Input
+	}
+	if observed.Cached != nil {
+		known.Cached = observed.Cached
+	}
+	if observed.Output != nil {
+		known.Output = observed.Output
+	}
+	if observed.Reasoning != nil {
+		known.Reasoning = observed.Reasoning
+	}
+	if observed.Total != nil {
+		known.Total = observed.Total
+	}
+	return known
 }
 
 func collectAnalysisValidationRuns(collector *bundleCollector, eventRuns map[string]analysisValidationEvent, roundSeqByDigest map[string]int, start, end time.Time) (bundleAnalysisValidations, map[string]struct{}) {

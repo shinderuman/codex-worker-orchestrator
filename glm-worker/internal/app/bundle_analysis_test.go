@@ -603,6 +603,16 @@ func TestBundleAnalysisTokenDeltaDegradations(t *testing.T) {
 			status:   analysisStatusCounterReset,
 		},
 		{
+			name: "counter-reset-recovery",
+			lines: []string{
+				analysisTokenCountLine(t, start.Add(-time.Minute), 100, 50),
+				analysisTokenCountLine(t, start.Add(time.Minute), 40, 20),
+				analysisTokenCountLine(t, start.Add(90*time.Minute), 200, 100),
+			},
+			boundary: terminal,
+			status:   analysisStatusCounterReset,
+		},
+		{
 			name:     "execution-boundary-unknown",
 			lines:    []string{analysisTokenCountLine(t, start.Add(time.Minute), 100, 50)},
 			boundary: analysisExecutionBoundary{status: analysisStatusUnknown},
