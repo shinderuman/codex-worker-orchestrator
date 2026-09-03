@@ -86,6 +86,19 @@ type TaskStats struct {
 	ParentOutcomesByRisk  map[string]int         `json:"parent_outcomes_by_risk,omitempty"`
 }
 
+type TaskStatsEvidence struct {
+	TaskID string
+	Status TaskStatus
+	Proven bool
+}
+
+type taskStatsArchiveIdentity struct {
+	Version        int        `json:"version"`
+	SchemaRevision int        `json:"schema_revision"`
+	TaskID         string     `json:"task_id"`
+	Status         TaskStatus `json:"status"`
+}
+
 const (
 	currentStatsFile = "task-stats.json"
 
@@ -272,6 +285,27 @@ func (s *StateStore) AllTaskStats() ([]TaskStats, error) {
 		return nil, err
 	}
 	return result, nil
+}
+
+func (s *StateStore) ArchivedTaskStatsEvidence(taskID string) (TaskStatsEvidence, error) {
+	data, err := os.ReadFile(s.TaskStatsArchivePath(taskID))
+	if err != nil {
+		return TaskStatsEvidence{}, err
+	}
+	var identity taskStatsArchiveIdentity
+	if err := json.Unmarshal(data, &identity); err != nil {
+		return TaskStatsEvidence{}, fmt.Errorf("task stats archiveを読めません: %w", err)
+	}
+	if identity.Version != taskStatsVersion || identity.TaskID != taskID {
+		return TaskStatsEvidence{}, nil
+	}
+	if identity.SchemaRevision > taskStatsSchemaRevision {
+		return TaskStatsEvidence{}, fmt.Errorf("%w: version=%d schema_revision=%d", errUnsupportedTaskStatsVersion, identity.Version, identity.SchemaRevision)
+	}
+	if !identity.Status.Known() {
+		return TaskStatsEvidence{}, fmt.Errorf("task stats archiveを読めません: 未知のtask status %q", identity.Status)
+	}
+	return TaskStatsEvidence{TaskID: identity.TaskID, Status: identity.Status, Proven: true}, nil
 }
 
 func (s *StateStore) SetParentCodexIdentity(threadID, sessionID string) error {

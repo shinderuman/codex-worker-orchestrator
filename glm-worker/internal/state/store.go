@@ -38,6 +38,23 @@ const (
 	ExecutionMilestonesStateFile = "execution-milestones.json"
 )
 
+func (status TaskStatus) Known() bool {
+	switch status {
+	case TaskStatusNone,
+		TaskStatusActive,
+		TaskStatusWaitingDecision,
+		TaskStatusWaitingSolReview,
+		TaskStatusComplete,
+		TaskStatusRateLimited,
+		TaskStatusProviderUnavailable,
+		TaskStatusGuardRecoverable,
+		TaskStatusInterrupted:
+		return true
+	default:
+		return false
+	}
+}
+
 func NewStateStore(config config.AppConfig) (*StateStore, error) {
 	dir := filepath.Join(config.StateBase, config.RepoHash)
 	if err := os.MkdirAll(dir, 0o700); err != nil {

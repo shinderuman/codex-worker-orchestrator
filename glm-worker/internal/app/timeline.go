@@ -254,18 +254,14 @@ func timelineCurrentTaskStatsSource(st *state.StateStore) timelineSourceState {
 }
 
 func timelineArchivedTaskStatsSource(st *state.StateStore, taskID string) timelineSourceState {
-	all, err := st.AllTaskStats()
-	if err != nil {
-		return timelineSourceState{Status: statusUnreadable, Path: st.TaskStatsArchivePath(taskID)}
+	evidence, err := st.ArchivedTaskStatsEvidence(taskID)
+	sourceStatus := timelineSourceOK
+	if errors.Is(err, os.ErrNotExist) || (err == nil && !evidence.Proven) {
+		sourceStatus = statusNone
+	} else if err != nil {
+		sourceStatus = statusUnreadable
 	}
-	status := statusNone
-	for _, stats := range all {
-		if stats.TaskID == taskID {
-			status = timelineSourceOK
-			break
-		}
-	}
-	return timelineSourceState{Status: status, Path: st.TaskStatsArchivePath(taskID)}
+	return timelineSourceState{Status: sourceStatus, Path: st.TaskStatsArchivePath(taskID)}
 }
 
 func timelineLocator(taskID string, path string) string {
@@ -293,16 +289,11 @@ func timelineTaskStatus(st *state.StateStore, taskID string, explicit bool) *str
 	if taskID == st.ReadOr("task.id", "") {
 		return taskStatusPtr(st.TaskStatus())
 	}
-	all, err := st.AllTaskStats()
-	if err != nil {
+	evidence, err := st.ArchivedTaskStatsEvidence(taskID)
+	if err != nil || !evidence.Proven {
 		return nil
 	}
-	for _, stats := range all {
-		if stats.TaskID == taskID {
-			return taskStatusPtr(stats.Status)
-		}
-	}
-	return nil
+	return taskStatusPtr(evidence.Status)
 }
 
 func readTaskEventRecords(st *state.StateStore, taskID string) ([]state.TaskEventRecord, int, error) {

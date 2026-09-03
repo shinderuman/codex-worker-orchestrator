@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -470,6 +471,126 @@ func TestTimelineRetainedTaskWithMalformedTelemetryReportsUnreadable(t *testing.
 	}
 	if output.TaskStatus == nil || *output.TaskStatus != string(state.TaskStatusComplete) {
 		t.Fatalf("task_status = %#v", output.TaskStatus)
+	}
+}
+
+func retainedStatsArchiveJSON(version int, taskID string, status state.TaskStatus) string {
+	return fmt.Sprintf(`{
+  "version": %d,
+  "task_id": %q,
+  "started_at": "2026-09-01T16:24:06.607326Z",
+  "archived_at": "2026-09-01T21:01:31.686938Z",
+  "status": %q,
+  "parent_codex_thread_id": "01a05dc7-d229-79c0-8173-6a35081f6a05",
+  "model_calls": 8,
+  "worker_calls": 6,
+  "reviewer_calls": 2
+}
+`, version, taskID, status)
+}
+
+func writeRetainedStatsArchive(t *testing.T, st *state.StateStore, taskID string, archive string) {
+	t.Helper()
+	if err := os.WriteFile(st.TaskStatsArchivePath(taskID), []byte(archive), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestTimelineStatsOnlyRetainedTaskProvesTaskFromVersionThreeArchive(t *testing.T) {
+	cfg := newAppConfig(t)
+	st, err := state.NewStateStore(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldTaskID := retainTimelineTask(t, st, nil)
+	for _, status := range []state.TaskStatus{state.TaskStatusComplete, state.TaskStatusWaitingSolReview} {
+		writeRetainedStatsArchive(t, st, oldTaskID, retainedStatsArchiveJSON(3, oldTaskID, status))
+		var out bytes.Buffer
+		if err := printTimeline(st, oldTaskID, &out); err != nil {
+			t.Fatalf("stats-only retained taskが全体失敗しました(%s): %v", status, err)
+		}
+		decoded := decodeSingleLineJSON(t, out.String())
+		requireJSONKey(t, decoded, "task_status")
+		requireJSONKey(t, decoded, "coverage")
+		var output timelineOutput
+		if err := json.Unmarshal([]byte(strings.TrimSpace(out.String())), &output); err != nil {
+			t.Fatalf("timeline出力がmachine JSONではありません: %v: %q", err, out.String())
+		}
+		if output.TaskStatus == nil || *output.TaskStatus != string(status) {
+			t.Fatalf("task_status = %#v want %q", output.TaskStatus, status)
+		}
+		if output.Coverage.Sources.TaskStats.Status != timelineSourceOK || output.Coverage.Sources.TaskStats.Path != st.TaskStatsArchivePath(oldTaskID) {
+			t.Fatalf("coverage.sources.task_stats = %#v", output.Coverage.Sources.TaskStats)
+		}
+		if output.Coverage.Status != timelineStatusUnknown {
+			t.Fatalf("coverage.status = %#v", output.Coverage)
+		}
+		if len(output.Coverage.MissingSources) != 2 ||
+			output.Coverage.MissingSources[0] != "event_log" || output.Coverage.MissingSources[1] != "telemetry" {
+			t.Fatalf("coverage.missing_sources = %#v", output.Coverage.MissingSources)
+		}
+		if output.Calls != nil || output.ToolTotals != nil {
+			t.Fatalf("event logがないのにcall表示 = %#v", output)
+		}
+	}
+
+	writeRetainedStatsArchive(t, st, oldTaskID, retainedStatsArchiveJSON(3, oldTaskID, "mysterious-status"))
+	unknownOut := &bytes.Buffer{}
+	if err := printTimeline(st, oldTaskID, unknownOut); err == nil {
+		t.Fatalf("未知statusのstats-only archiveが存在証拠や成功JSONへ昇格しました: %s", unknownOut.String())
+	}
+	if body := unknownOut.String(); body != "" {
+		t.Fatalf("失敗時にstdoutへ出力しました: %s", body)
+	}
+}
+
+func TestTimelineRetainedTaskWithUnusableStatsArchiveReportsSourceState(t *testing.T) {
+	cfg := newAppConfig(t)
+	st, err := state.NewStateStore(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := timelineBaseTime()
+	oldTaskID := retainTimelineTask(t, st, func(taskID string) {
+		st.RecordModelCallLog(state.ModelCallLog{
+			TaskID: taskID, CallType: state.CallTypeTask, SessionID: "sess-old", Role: state.WorkerRole,
+			ModelAlias: "opus", StartedAt: base, CompletedAt: base.Add(4 * time.Second), WallDurationMS: 4000,
+		})
+	})
+	fixtures := []struct {
+		name            string
+		archive         string
+		wantStatsStatus string
+		wantMissing     []string
+	}{
+		{"malformed", "{\"version\":3,\"broken\n", statusUnreadable, []string{"event_log"}},
+		{"status-type-wrong", fmt.Sprintf("{\n  \"version\": 3,\n  \"task_id\": %q,\n  \"status\": 12\n}\n", oldTaskID), statusUnreadable, []string{"event_log"}},
+		{"status-missing", fmt.Sprintf("{\n  \"version\": 3,\n  \"task_id\": %q,\n  \"started_at\": \"2026-09-01T16:24:06.607326Z\"\n}\n", oldTaskID), statusUnreadable, []string{"event_log"}},
+		{"status-unknown", retainedStatsArchiveJSON(3, oldTaskID, "mysterious-status"), statusUnreadable, []string{"event_log"}},
+		{"future-schema-revision", fmt.Sprintf("{\n  \"version\": 3,\n  \"schema_revision\": 2,\n  \"task_id\": %q,\n  \"status\": %q\n}\n", oldTaskID, state.TaskStatusComplete), statusUnreadable, []string{"event_log"}},
+		{"unsupported-version", retainedStatsArchiveJSON(2, oldTaskID, state.TaskStatusComplete), statusNone, []string{"event_log", "task_stats"}},
+		{"foreign-task", retainedStatsArchiveJSON(3, "11111111-2222-4333-8444-555555555555", state.TaskStatusComplete), statusNone, []string{"event_log", "task_stats"}},
+	}
+	for _, fixture := range fixtures {
+		writeRetainedStatsArchive(t, st, oldTaskID, fixture.archive)
+		output := executeTimelineOutput(t, st, oldTaskID)
+		if output.Coverage.Sources.TaskStats.Status != fixture.wantStatsStatus {
+			t.Fatalf("%sのcoverage.sources.task_stats = %#v want %q", fixture.name, output.Coverage.Sources.TaskStats, fixture.wantStatsStatus)
+		}
+		if output.TaskStatus != nil {
+			t.Fatalf("%sのtask_status = %#v want nil", fixture.name, output.TaskStatus)
+		}
+		if len(output.Coverage.MissingSources) != len(fixture.wantMissing) {
+			t.Fatalf("%sのcoverage.missing_sources = %#v want %v", fixture.name, output.Coverage.MissingSources, fixture.wantMissing)
+		}
+		for index, source := range fixture.wantMissing {
+			if output.Coverage.MissingSources[index] != source {
+				t.Fatalf("%sのcoverage.missing_sources = %#v want %v", fixture.name, output.Coverage.MissingSources, fixture.wantMissing)
+			}
+		}
+		if aging := timelineAgingOf(t, output.SessionAging, "sess-old"); aging.Calls != 1 {
+			t.Fatalf("%sのsess-old aging = %#v", fixture.name, aging)
+		}
 	}
 }
 
