@@ -189,43 +189,30 @@ func (g *projectStateGraph) loadTask(path string) (*projectTaskNode, error) {
 	node := &projectTaskNode{path: path, content: content, visiting: true}
 	g.byPath[path] = node
 	g.nodes = append(g.nodes, node)
-	dependencies, err := taskcontract.ParseTaskDependencies(content)
+	dependencies, err := taskcontract.ParseTaskDependencyState(content)
 	if err != nil {
 		return nil, fmt.Errorf("task %s: %w", path, err)
 	}
-	for _, dependency := range dependencies {
+	for _, dependency := range dependencies.Fulfilled {
+		if dependency == path {
+			return nil, fmt.Errorf("task %sは自身へのfulfilled dependencyを持っています", path)
+		}
+		node.fulfilled = append(node.fulfilled, dependency)
+	}
+	for _, dependency := range dependencies.Outstanding {
 		if dependency == path {
 			return nil, fmt.Errorf("task %sは自身へのdependencyを持っています", path)
 		}
-		outstanding, err := g.classifyDependency(path, dependency)
-		if err != nil {
+		if !projectStateTaskExists(g.repoRoot, dependency) {
+			return nil, fmt.Errorf("task %sのdependency %sはcurrent treeに存在せず、%sにも明示されていません", path, dependency, taskcontract.TaskFulfilledDependenciesHeading)
+		}
+		if _, err := g.loadTask(dependency); err != nil {
 			return nil, err
 		}
-		if outstanding {
-			node.outstanding = append(node.outstanding, dependency)
-		} else {
-			node.fulfilled = append(node.fulfilled, dependency)
-		}
+		node.outstanding = append(node.outstanding, dependency)
 	}
 	node.visiting = false
 	return node, nil
-}
-
-func (g *projectStateGraph) classifyDependency(task, dependency string) (bool, error) {
-	if projectStateTaskExists(g.repoRoot, dependency) {
-		if _, err := g.loadTask(dependency); err != nil {
-			return false, err
-		}
-		return true, nil
-	}
-	tracked, err := projectStateGitTracked(g.repoRoot, dependency)
-	if err != nil {
-		return false, err
-	}
-	if !tracked {
-		return false, fmt.Errorf("task %sのdependency %sはcurrent treeにもGit履歴にも存在しません", task, dependency)
-	}
-	return false, nil
 }
 
 func readProjectStateTask(repoRoot, path string) ([]byte, error) {
@@ -250,15 +237,6 @@ func readProjectStateTask(repoRoot, path string) ([]byte, error) {
 func projectStateTaskExists(repoRoot, path string) bool {
 	info, err := os.Lstat(filepath.Join(repoRoot, filepath.FromSlash(path)))
 	return err == nil && info.Mode().IsRegular()
-}
-
-func projectStateGitTracked(repoRoot, path string) (bool, error) {
-	command := exec.Command("git", "-C", repoRoot, "log", "-1", "--format=%H", "--", path)
-	output, err := command.Output()
-	if err != nil {
-		return false, fmt.Errorf("git log %s: %w", path, err)
-	}
-	return strings.TrimSpace(string(output)) != "", nil
 }
 
 func (g *projectStateGraph) dependencies() []projectStateDependency {
