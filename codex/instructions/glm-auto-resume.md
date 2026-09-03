@@ -25,7 +25,7 @@
 
 ### wake prompt contract
 
-- heartbeat promptはtask/workflow specificationではなくwake triggerと非導出stateのdurable carrierだけにする。current repository authorityから再取得できるreview・validation・Git・install・Plan同期・packet処理・authority再読手順をpromptへ複製しない。
+- heartbeat promptはtask/workflow specificationではなくwake triggerと非導出stateのdurable carrierだけにする。current repository authorityから再取得できるreview・validation・install・Plan同期・packet処理・authority再読手順をpromptへ複製しない。
 - prompt本文は次の固定形を使う。`run_control`はユーザーが明示した停止境界・継続境界など、current repository authorityへlosslessに永続化されておらずwake後にも必要な場合だけ2行目へ原文のまま追加し、存在しない場合は行自体を省略する。
 
 ```text

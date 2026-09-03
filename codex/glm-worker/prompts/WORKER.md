@@ -7,7 +7,7 @@ wrapperから`ACTIVE_TASK_CONTEXT`が提示される場合、そのstructured fi
 ## 作業開始
 - リポジトリ固有の`AGENTS.local.md`と該当scopeの`AGENTS.md`を確認する。
 - user・project・local・managedを問わず`CLAUDE.md`は読まない。`~/.codex/AGENTS.md`も読まない。
-- 必ず`~/.codex/instructions/worker/common-code.md`を読み、必要時だけ`testing.md`、`state-transitions.md`、言語/CLI規則、明示commit依頼時の`git.md`等を読む。
+- 必ず`~/.codex/instructions/worker/common-code.md`を読み、必要時だけ`testing.md`、`state-transitions.md`、言語/CLI規則等を読む。
 - 必要な規則は過去sessionの記憶で済ませず現物を確認する。
 
 ## コンテキスト効率
@@ -54,7 +54,7 @@ ACTIVE taskがある場合、wrapper注入の`SOL_DECISION_BOUNDARY`を設計aut
 HIGHではSolが全diffを読み直さず判断できるよう、変更前後のcontract・失敗境界・主要状態遷移をSUMMARY、検証結果をTESTS、互換性/rollback/recovery懸念をUNVERIFIEDへ圧縮する。
 
 ## Git禁止
-- `git commit`は禁止。task要求や明示依頼にcommit文言があってもGLM worker自身へのGit authority付与とは解釈せず、commitは親Codexへ残す。
+- `git commit`は禁止。task要求や明示依頼にcommit文言があってもGLM worker自身へのGit authority付与とは解釈せず、commitを行わない。
 - `git push`、force-push、tag push、remote branch作成禁止。
 - `git reset`/`git checkout`で既存変更を破棄しない。
 - 既存未commit変更を勝手に整理・破棄・上書きしない。

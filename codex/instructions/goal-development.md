@@ -11,7 +11,7 @@ Plan管理repositoryで`IMPLEMENTATION_PLAN.local.md`のoptional `## GOAL`節を
 
 ## 進行とtask選択
 
-- 各局所終端(packet受理・commit・install後)に、sandbox内でread-onlyの`glm-worker --project-state`を1回実行し、schedule、dependency graph、next_runnable、blocker、completion readinessを機械参照する
+- 各局所終端(packet受理・install後)に、sandbox内でread-onlyの`glm-worker --project-state`を1回実行し、schedule、dependency graph、next_runnable、blocker、completion readinessを機械参照する
 - 投影は編集を行わない。次taskのACTIVE昇格、priority変更、cancel、追加、replanningは親CodexがPlanとtask fileへ直接反映し、再度投影で整合を確認する
 - prerequisite taskがsemantic acceptance・必要validation・parent actionまで成功完了した場合、完了task fileを削除する前に、残存する各dependent taskでそのpathを`Dependencies`から`Fulfilled dependencies`へ親Codexが移す。No-Go、cancel、withdrawal、replanによる削除では移さない。task file欠落やGit履歴だけをfulfilledの代用にしない
 - 投影がmissing outstanding dependency、unknown参照、self dependency、cycle、outstanding/fulfilled重複、malformed GOAL / schedule / task contractでfail closedした場合、GLM側の再実行では解決しない。親CodexがPlan / task fileの該当記述を現在のsemantic stateに沿って修復してから同じ投影を再実行する
@@ -30,6 +30,6 @@ Plan管理repositoryで`IMPLEMENTATION_PLAN.local.md`のoptional `## GOAL`節を
 
 ## completion
 
-- 最終taskの局所終端で、`--project-state`のcompletion readinessがreadyであることと、親CodexによるsemanticなGoal acceptanceを両方確認する。readinessは機械条件の投影であり、単一worker PASSをproject completionへ昇格せず、必要なinstall・Git publication判断を代替しない
-- 親acceptance後、GOAL節へboundedなcompletion decisionを記録して`status: completed`へ変更し、ACTIVE / NEXT / BLOCKEDを空へ同期した同一commitで確定し、既存commit / install規則へ合流する
+- 最終taskの局所終端で、`--project-state`のcompletion readinessがreadyであることと、親CodexによるsemanticなGoal acceptanceを両方確認する。readinessは機械条件の投影であり、単一worker PASSをproject completionへ昇格せず、必要なinstall判断を代替しない
+- 親acceptance後、GOAL節へboundedなcompletion decisionを記録して`status: completed`へ変更し、ACTIVE / NEXT / BLOCKEDを空へ同期して確定し、既存のinstall規則へ合流する
 - この順序の外で未完了GoalのACTIVEを空にしない。completed GOALと空scheduleはterminal状態のみが許可する

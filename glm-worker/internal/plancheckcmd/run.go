@@ -7,7 +7,7 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
 )
 
-const guidance = "IMPLEMENTATION_RULES.mdのtask完了契約に従いPlan・IMPLEMENTATION_TASKS・Historyを同期し、同一commitへamendしてからinstallすること。同期済みfinal HEADになるまでinstall・次task・handoffへ進まない"
+const guidance = "Plan・IMPLEMENTATION_TASKSを実状態へ同期し、同期済みfinal HEADでplancheckが通過してからinstall・次task・handoffへ進む"
 
 func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 	if len(args) != 1 {

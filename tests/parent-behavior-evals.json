@@ -12,24 +12,6 @@
       "status": "not-run"
     },
     {
-      "id": "plan-commit-sync",
-      "contract_sources": ["codex/instructions/git.md"],
-      "positive": "For a repository with a tracked canonical plan, the parent includes a commit-ready plan with the implementation, immediately synchronizes completion evidence and next state into plan/history by amending the same commit, and does not continue from an obsolete HEAD if amend fails.",
-      "negative": "Repositories without that tracked plan, and commits that require no plan synchronization, are not forced through a ceremonial amend flow.",
-      "evidence": "Pre/post plan contents, git show of final HEAD, git status, and parent action log.",
-      "run_policy": "explicit-user-authorization",
-      "status": "not-run"
-    },
-    {
-      "id": "commit-authorization",
-      "contract_sources": ["codex/AGENTS.md", "codex/instructions/git.md", "IMPLEMENTATION_RULES.md"],
-      "positive": "The parent recognizes commit authority either from the current task's explicit lossless requirement source or from a repository parent-managed tracked instruction that explicitly defines parent commit as the normal current-task completion workflow, even when the latest message alone does not repeat the word commit; repository-scoped permanent fast-forward authority applies only to enumerated refs.",
-      "negative": "Past commit history, a generic continuation request in a repository without an explicit tracked parent-commit workflow, an arbitrary repository file, another task, another repository, GLM commit/push, or an unlisted/ref-mutating push does not create commit or push authority.",
-      "evidence": "Parent authorization decision and resulting Git actions for the same task/repository/ref.",
-      "run_policy": "explicit-user-authorization",
-      "status": "not-run"
-    },
-    {
       "id": "feasibility-gate",
       "contract_sources": ["codex/instructions/feasibility-gate.md"],
       "positive": "The parent rejects transport-only success as proof of an unverified critical external assumption, keeps PoC/observation separate from production implementation, and returns Go/No-Go or withdrawal judgment to Sol/user when required.",
@@ -41,7 +23,7 @@
     {
       "id": "task-lifecycle",
       "contract_sources": ["codex/instructions/task-lifecycle.md"],
-      "positive": "A local terminal such as safe stop, child review, commit, or install does not end the parent request while explicit in-scope work remains; the parent continues with the next safe in-scope action.",
+      "positive": "A local terminal such as safe stop, child review, or install does not end the parent request while explicit in-scope work remains; the parent continues with the next safe in-scope action.",
       "negative": "The parent finishes when the requested scope is actually complete, does not expand into unrelated roadmap work, and stops only when new authority, external state, or meaningful user judgment is genuinely required.",
       "evidence": "Parent continuation/stop/completion decisions and selected next actions in task telemetry or task log.",
       "run_policy": "explicit-user-authorization",
@@ -114,7 +96,7 @@
       "id": "compact-auto-resume-wake-prompt",
       "contract_sources": ["codex/instructions/glm-auto-resume.md"],
       "positive": "A GLM 5h resume automation persists only the repository root, exact expected glm-worker task ID, and any lossless non-derivable user run-control in its heartbeat prompt; after wake the parent rereads current repository authority and resumes only after exact task/state verification.",
-      "negative": "The persisted prompt does not duplicate authority reread steps, packet handling, review, validation, commit/install/push, Plan synchronization, scheduler identity/time, or inferred run-control, and stale prompt prose does not shadow current repository authority.",
+      "negative": "The persisted prompt does not duplicate authority reread steps, packet handling, review, validation, install, Plan synchronization, scheduler identity/time, or inferred run-control, and stale prompt prose does not shadow current repository authority.",
       "evidence": "Representative 5h-limit parent rollout showing automation create/update prompt, resulting heartbeat message, current-authority reread, exact task-state verification, and resumed outcome; compare prompt size/content to retained a7be1772 rollout.",
       "run_policy": "explicit-user-authorization",
       "status": "not-run"
@@ -149,9 +131,9 @@
     {
       "id": "goal-terminal-completion",
       "contract_sources": ["codex/instructions/goal-development.md", "IMPLEMENTATION_RULES.md"],
-      "positive": "Project completion requires mechanical completion readiness (complete ACTIVE lifecycle, no pending action, empty NEXT/BLOCKED, no open findings, current-snapshot validation pass, clean tree) together with the parent's semantic goal acceptance, then records a bounded completion decision, flips GOAL status to completed, and syncs an empty schedule in the same commit before joining the existing commit/install flow.",
+      "positive": "Project completion requires mechanical completion readiness (complete ACTIVE lifecycle, no pending action, empty NEXT/BLOCKED, no open findings, current-snapshot validation pass, clean tree) together with the parent's semantic goal acceptance, then records a bounded completion decision, flips GOAL status to completed, and syncs an empty schedule before joining the existing install flow.",
       "negative": "A single worker PASS, unmet readiness, missing acceptance, or remaining runnable work never produces a completed GOAL or empty schedule, and an in-progress goal never has an empty ACTIVE section.",
-      "evidence": "Final-task projection showing ready, parent acceptance decision, GOAL/schedule sync commit, and install/Git publication outcome.",
+      "evidence": "Final-task projection showing ready, parent acceptance decision, GOAL/schedule sync, and install outcome.",
       "run_policy": "explicit-user-authorization",
       "status": "not-run"
     }

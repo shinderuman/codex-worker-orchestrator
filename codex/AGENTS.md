@@ -12,12 +12,9 @@
 - リポジトリルートに`AGENTS.local.md`があれば作業前に読む。Git管理しないプロジェクト固有指示として扱う。リポジトリ内の`AGENTS.md`も該当スコープで従う。
 - `IMPLEMENTATION_RULES.md`の再読境界では`glm-worker --authority rules` / `plan` / `active`を同一tool turnで並列実行し、3出力の`authority_snapshot_sha256`と`active_task`一致を確認して各本文を1回だけ読む。個別の失敗・欠落はそのkindだけ1回再取得し、既取得結果とsnapshotが一致しなければ停止する。3件成功後のsnapshot不一致は3件を同一tool turnで1回だけ再取得し、再び不一致なら停止する。注入済みAGENTSをdisk再読せず、authority path探索・`wc`等のsize probe・条件付きinstructionの先読みをしない。
 
-## 3. Git authority
+## 3. GLM Git restriction
 
-- GLM worker/reviewerにGit remote write authorityを付与しない。この制約は親Codexへ適用しない。
-- 親Codexのcommit authorityは、同一taskのユーザー明示指示、ACTIVE taskのlossless requirement、または親管理tracked instructionが通常完了の親commitを明示する場合だけ成立する。本repositoryでは`IMPLEMENTATION_RULES.md`の`commit / install`が通常completion authorityで、taskごとの再許可は不要。過去実績・一般継続・別task/repository・任意fileはauthorityにしない。
-- 親Codexの`git push`その他remote writeは、現在taskのユーザー指示または親管理tracked instructionのscopeで許可され、commit単位の再許可を要しない。通常pushはfast-forward。force/non-fast-forward、タグ、remote branch作成は対象refと操作をユーザーが明示した場合だけ扱う。
-- commit・cherry-pick・merge・rebase・revert等を行う場合だけ`~/.codex/instructions/git.md`を読む。
+- GLM worker/reviewerにGit remote write authorityを付与しない。
 
 ## 4. Sol HighとGLM
 

@@ -8,7 +8,7 @@ trap 'rm -rf "$tmp"' EXIT HUP INT TERM
 repo="$tmp/repo"
 home="$tmp/home"
 mkdir -p "$repo" "$home/.codex" "$home/.claude" "$home/.local/bin" "$tmp/bin"
-rsync -a --exclude .git "$source_root/" "$repo/"
+rsync -a --exclude .git --exclude .codex "$source_root/" "$repo/"
 git -C "$repo" init -q -b main
 git -C "$repo" add -A
 git -C "$repo" -c user.name=install-smoke -c user.email=install-smoke@example.invalid commit -qm fixture
@@ -68,8 +68,17 @@ fi
 test -f "$home/.codex/AGENTS.md"
 test -f "$home/.codex/rules/glm-worker.rules"
 cmp "$repo/codex/rules/glm-worker.rules" "$home/.codex/rules/glm-worker.rules"
+grep -Fq '"glm-worker"' "$home/.codex/rules/glm-worker.rules"
 grep -Fq '"glm-parent-action"' "$home/.codex/rules/glm-worker.rules"
-grep -Fq 'not_match = [' "$home/.codex/rules/glm-worker.rules"
+grep -Fq '"glm-codex-context"' "$home/.codex/rules/glm-worker.rules"
+if grep -Fq '"git"' "$home/.codex/rules/glm-worker.rules"; then
+	printf '%s\n' 'managed rules allow a git subcommand' >&2
+	exit 1
+fi
+if grep -Eq '(not_)?match = \[' "$home/.codex/rules/glm-worker.rules"; then
+	printf '%s\n' 'managed rules still pin a per-subcommand allow-list' >&2
+	exit 1
+fi
 test -f "$home/.codex/glm-worker/prompts/WORKER.md"
 grep -q '^local_key = "keep"$' "$home/.codex/config.toml"
 grep -q '^background_terminal_max_timeout = ' "$home/.codex/config.toml"
@@ -125,8 +134,17 @@ test ! -e "$repo/.codex/config.toml"
 ) >"$tmp/parent-action-prepare.json"
 grep -q '"status":"prepared"' "$tmp/parent-action-prepare.json"
 grep -q '"action":"decision"' "$tmp/parent-action-prepare.json"
-grep -Fq "$repo/.glm-worker-parent-actions/decision-" "$tmp/parent-action-prepare.json"
+repo_physical=$(CDPATH='' cd -- "$repo" && pwd -P)
+grep -Fq "$repo_physical/.glm-worker-parent-actions/decision-" "$tmp/parent-action-prepare.json"
 rm -rf "$repo/.glm-worker-parent-actions"
+if (
+	cd "$repo"
+	HOME="$home" GLM_WORKER_HOME="$home/.glm-worker" "$home/.local/bin/glm-parent-action" made-up-action
+) >"$tmp/parent-action-unknown.stdout" 2>"$tmp/parent-action-unknown.stderr"; then
+	printf '%s\n' 'glm-parent-action accepted an unknown action' >&2
+	exit 1
+fi
+test ! -s "$tmp/parent-action-unknown.stdout"
 (
 	cd "$repo"
 	HOME="$home" GLM_WORKER_HOME="$home/.glm-worker" "$home/.local/bin/glm-worker" --reset >/dev/null

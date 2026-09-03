@@ -22,6 +22,19 @@ func TestDirectWorkerArgsStartUsesCurrentActiveTask(t *testing.T) {
 	}
 }
 
+func TestRunRejectsUnknownActionNonZero(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if code := Run([]string{"made-up-action"}, &stdout, &stderr); code == 0 {
+		t.Fatal("未知actionがexit 0で受理されました")
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("失敗時にstdoutへ出力がありました: %q", stdout.String())
+	}
+	if stderr.Len() == 0 {
+		t.Fatal("拒否理由がstderrへ出力されていません")
+	}
+}
+
 func TestPayloadWorkerArgsDecisionOwnsFraming(t *testing.T) {
 	payload := []byte("判断\n`$'\"")
 	args := payloadWorkerArgs("decision", payload, nil)

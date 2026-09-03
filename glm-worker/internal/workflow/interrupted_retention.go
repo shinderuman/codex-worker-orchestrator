@@ -107,7 +107,7 @@ func (w *Workflow) verifyIsolationOriginHead(checkpoint state.ResumeCheckpoint, 
 
 func (w *Workflow) verifyIsolationTipIntegration(checkpoint state.ResumeCheckpoint, tip, currentHead string) error {
 	if err := verifyHeadAncestry(w.config.RepoRoot, tip, currentHead); err != nil {
-		return w.failClosedRetention(checkpoint, "隔離branchのtipが現在HEADへ統合されていません(通常mergeで統合してください。squash/cherry-pick統合は照合できません)", err)
+		return w.failClosedRetention(checkpoint, "隔離branchのtipが現在HEADへ統合されていません(保持照合は隔離branchのtipを現在HEADの祖先として含む統合済み状態だけを受理します)", err)
 	}
 	nonParent, err := headDeltaNonParentPaths(w.config.RepoRoot, tip, currentHead)
 	if err != nil {

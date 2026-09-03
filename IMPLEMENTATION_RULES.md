@@ -46,7 +46,7 @@ conversation context、compaction summary、internal TODOはsource of truthで�
 
 命名規則、Plan priority/ACTIVE/NEXT metadata、typo、意味を変えない明確化、exceptional decision recordの参照修正、意味契約を変えないAmendment、parent-managed metadataの参照修正は代表例とする。parent maintenance中もACTIVEは主要な実装・調査・review対象を示し続け、一時task作成、ACTIVE退避、maintenance完了処理、元ACTIVE復帰を行わない。
 
-parent maintenanceは記録不要を意味しない。ユーザー要求をcompaction前に対象のRules / Plan / Taskへ直接保存し、内容に応じた最小確認を行う。Historyへ追加できるのは、production diffやcurrent Rules/taskだけでは表現されず、将来のtracked taskがactivation / adoption条件として明示参照するcross-taskの採否・Go/No-Go decisionだけとする。通常の作業・完了chronology、commit、validation、install、escaped defect診断をHistoryへappendしない。変更が単独で意味を持ち、即時固定が安全なら親Codexが小さな個別commitにできる。GLMへcommit/pushさせず、final parent maintenance commit後は本fileのcommit / install workflowに従って親Codexが通常fast-forward pushする。
+parent maintenanceは記録不要を意味しない。ユーザー要求をcompaction前に対象のRules / Plan / Taskへ直接保存し、内容に応じた最小確認を行う。Historyへ追加できるのは、production diffやcurrent Rules/taskだけでは表現されず、将来のtracked taskがactivation / adoption条件として明示参照するcross-taskの採否・Go/No-Go decisionだけとする。通常の作業・完了chronology、commit、validation、install、escaped defect診断をHistoryへappendしない。変更が単独で意味を持ち、即時固定が安全なら小さな独立変更として記録できる。GLMへcommit/pushさせない。
 
 parent-managed metadataを扱うguard、self-protection、production wiring自体の変更は、編集対象がparent-managed surfaceに関係していてもproduction behavior変更であるためparent maintenanceにしない。
 
@@ -101,7 +101,7 @@ parent-managed metadataを扱うguard、self-protection、production wiring自�
 - task fileの`Dependencies`にあるpathはoutstanding、`Fulfilled dependencies`に親Codexが明示移動したpathだけをfulfilledとする。同じpathを両sectionへ置かず、current treeからtask fileが消えたこと、Git履歴にそのpathが存在すること、commit message・時刻・filename近接だけからfulfilledを推定しない。`Dependencies`のpathがcurrent treeに存在せずfulfilledにも明示されていない場合はunknownとしてfail closedする
 - prerequisite taskが通常のsemantic acceptance・必要validation・親action完了を経て成功完了した場合だけ、task file削除とschedule同期の前に、残存する各dependent taskでそのpathを`Dependencies`から`Fulfilled dependencies`へ親Codexが同一metadata同期として移す。No-Go、cancel、withdrawal、replanによる単純削除はfulfilledへ移さず、dependent側の要求自体を変更する必要がある場合は通常のtracked amendment/replanningとして扱う
 - self dependency、outstanding edgeのcycle、malformed GOAL / schedule / task contract、明示状態の矛盾はfail closedとし、`runnableなし`や`complete`へ縮退しない
-- Goal進行中は既存どおりACTIVE taskを一意に要求する。mechanical completion readinessは、current ACTIVEのlifecycleがcompleteかつpending parent actionなし、NEXT / BLOCKEDが空、unresolved findingなし、current snapshot対応validation成功、clean working treeを最低条件とし、semantic Goal acceptanceと必要なinstall / Git publication判断を代替しない
+- Goal進行中は既存どおりACTIVE taskを一意に要求する。mechanical completion readinessは、current ACTIVEのlifecycleがcompleteかつpending parent actionなし、NEXT / BLOCKEDが空、unresolved findingなし、current snapshot対応validation成功、clean working treeを最低条件とし、semantic Goal acceptanceと必要なinstall判断を代替しない
 - 親Codexがmechanical readinessとGoal acceptanceを確認してbounded completion decisionをGOAL節へ記録したterminal Goalだけは、ACTIVE / NEXT / BLOCKEDが空のPlanを許可する。未完了GoalでACTIVE空を許可せず、単一worker PASSをproject completionへ昇格しない
 - 既存task state、checkpoint、parent action、worker/reviewer、Codex gate、rate-limit / Codex-limit recovery、telemetry、Plan/task guardを再利用し、Goal mode専用daemon、scheduler、state DB、第二正本を追加しない
 
@@ -155,19 +155,17 @@ Goal modeの最終taskだけは、上記Goal起点project orchestrationのtermin
 
 Historyを更新できるのは、完了結果そのものではなく、そのtaskがproduction diffへ表現されないcross-task decisionを新たに確定し、将来のtracked taskがそのdecisionをactivation / adoption条件として明示参照する場合だけとする。その場合もdecision、最小根拠、再評価境界だけを残し、commit / validation chronologyや長い診断を複製しない。参照taskがなくなったrecordは削除する。
 
-## commit / install
+## install / validation
 
-- GLMにcommit/pushさせない。独立review、必要なSol gate、指摘後再review、acceptance確認後だけ親Codexが単一taskをcommitする
-- Greptile日次reviewを有効にしている本repositoryでは、各task・review follow-up・独立parent maintenanceのfinal commit後に親Codexがcurrent `main`をremote `refs/heads/main`へ通常fast-forwardする。scheduled review自身はmainをpushせず、正常review完了時だけreview対象HEADを`refs/heads/codex/greptile-reviewed`へ通常fast-forwardする。GLM worker/reviewerにはrefを問わずpush authorityを付与しない。親Codexのforce/non-fast-forward、タグ、別remote ref操作は通常workflowへ含めず、ユーザーの個別指示scopeで扱う
-- main push失敗はGreptile補助reviewの未同期として明示し、review checkpointを進めない。通常開発をGreptile failureで完了扱いにも停止扱いにもせず、次の親orchestrationで未同期commitをまとめて通常fast-forwardする
+- GLMにcommit/pushさせない
 - task metadata同期はfinal HEADの機械postconditionを正とし、文書手順だけで保証したことにしない
-- runtimeへ影響するtaskはimplementation、test/review、commit後、適切な区切りで`install.sh`本配置、installed/source一致、そのinstalled状態で必要なproduction smokeまでをtask completion flowとして行う。複数task分を未配置のまま後続実運用へ進めず、最終taskまでinstall義務を延期しない
+- runtimeへ影響するtaskはimplementation、test/review後、適切な区切りで`install.sh`本配置、installed/source一致、そのinstalled状態で必要なproduction smokeまでをtask completion flowとして行う。複数task分を未配置のまま後続実運用へ進めず、最終taskまでinstall義務を延期しない
 - source-only metadata変更はruntime install対象から除外する
 
 ## Greptile日次review
 
 - Greptile日次reviewは本repository固有の補助review orchestrationであり、`glm-worker` production機能へ統合しない
-- 日次schedulerは`codex-config` project所属のLuna Low専用taskだけを起動し、remote ref precondition、Standard CLI 1回実行、JSON/status検証、finding正規化、親実装taskへの1回送信、正常時のcheckpoint fast-forwardという機械処理だけを担当する
+- 日次schedulerは`codex-config` project所属のLuna Low専用taskだけを起動し、review入力precondition、Standard CLI 1回実行、JSON/status検証、finding正規化、親実装taskへの1回送信、正常時のcheckpoint更新という機械処理だけを担当する
 - 専用taskはfindingの最終採否、設計判断、自動修正、Task/Plan編集を行わない。findingの有効性・重複・Task化とGreptile継続利用価値は親CodexがGit現物と複数runの傾向から判断する
 - findingがあるrunは親taskへの送信成功前にcheckpointを進めず、送信失敗時は次回runで最後の成功地点からcatch upする。finding 0件は親taskを起こさずcheckpointだけを正常更新できる
 - scheduler移行・prompt変更の確認だけを理由にGreptile CLIを実行してcreditを消費せず、旧taskと新taskへautomationを二重登録しない
@@ -176,14 +174,14 @@ Historyを更新できるのは、完了結果そのものではなく、そのt
 
 - ユーザーは親Codexがこのrepositoryに属するCodex app automationを作成・更新・削除することを恒久的に許可している。rate-limit自動再開、Codex limit wake、review scheduling等、現在taskまたはtracked repository workflowの実行に必要なautomationは、automation単位の追加確認を要求せず管理してよい
 - 2026-08-31のユーザー指示により、この許可は特定日時・一回の発火・現在taskだけに限定しない。24時間継続して開発するという本repositoryの目的に沿って、現在および将来の許可済み開発taskについて、rate limit等による停止後の再開automationの作成・再作成・更新・再予約を恒久的に許可する。繰り返し制限に到達しても、同じ許可を日時や予約単位で取り直さない
-- 再開後は、そのtaskに既に許可された実装・独立review・Sol判断・validation・親commit・Plan/task metadata同期・install・通常fast-forward pushまで継続してよい。各発火を別の未許可作業と扱わず、automation promptには本節の恒久許可と対象task・checkpoint・停止境界を明示する。一回限りscheduleは重複実行を避ける予約形式であり、ユーザー許可の有効期限を意味しない
-- automation authorityはautomationのlifecycle管理だけを許可する。automation promptが後で実行できる操作は、その発火時に適用されるユーザー指示とrepository authorityのscopeを超えない。別repository、force/non-fast-forward Git操作、credential操作、購入、または無関係な外部変更へ拡張しない
+- 再開後は、そのtaskに既に許可された実装・独立review・Sol判断・validation・Plan/task metadata同期・installまで継続してよい。各発火を別の未許可作業と扱わず、automation promptには本節の恒久許可と対象task・checkpoint・停止境界を明示する。一回限りscheduleは重複実行を避ける予約形式であり、ユーザー許可の有効期限を意味しない
+- automation authorityはautomationのlifecycle管理だけを許可する。automation promptが後で実行できる操作は、その発火時に適用されるユーザー指示とrepository authorityのscopeを超えない。別repository、credential操作、購入、または無関係な外部変更へ拡張しない
 - 一回限りの再開automationは保存済みtask ID・同一checkout・resume可能stateを発火時に再検証し、条件不一致ならresumeせず削除または停止する。重複予約を作らず、完了・別state移行後は不要なautomationを削除または停止する
 - 恒久許可はtaskの開始条件・feasibility gate・品質gate・ユーザー指定の停止境界を解除しない。「現在ACTIVE完了後は次taskを開始せず停止」のような指示は引き続き守る。Codex app等の外部安全審査をこのfileで無効化・迂回せず、同じ許可済みscopeの拒否が再発した場合は、拒否理由と恒久許可の適用関係を確認し、実際に追加権限が必要な部分だけを報告する
 
 ### 恒久許可の原指示（2026-08-31）
 
-直前の確認は「19:28から本task完了まで、再度の制限時も自動再開し、検証後のcommit・install・通常pushまで進めることを許可しますか。」であり、ユーザーは日時・現在taskに限らない恒久許可として次の原文を回答した。
+直前の確認に対し、ユーザーは日時・現在taskに限らない恒久許可として次の原文を回答した。
 
 ```text
 いや今後永続的に許可するよ
@@ -205,4 +203,4 @@ glm-worker/Codex/GLMだけが生成・消費するmachine dataを長期公開API
 - taskごとの独自state DB、filesystem watcher、daemonを追加しない
 - task fileをHistoryや進捗日記にしない
 - Planとtask fileへ詳細仕様を二重管理しない
-- ユーザー許可のない実Sol High本番A/Bとbenchmark目的の追加AI callを行わない。Git remote writeは本fileのcommit / install節とユーザーの個別指示scopeに従い、GLM worker/reviewerへは許可しない
+- ユーザー許可のない実Sol High本番A/Bとbenchmark目的の追加AI callを行わない。GLM worker/reviewerへGit remote writeを許可しない

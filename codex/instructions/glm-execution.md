@@ -62,7 +62,7 @@
 - 主呼出が継続中は、別の`--status`・`--watch`・terminal操作や経過時間だけを理由とする進捗発言を追加しない。無出力や経過時間だけを理由に中断・再実行・重複起動しない。ユーザーが状態確認を明示した場合は確認して応答してよい。
 - 主呼出のtool sessionを失った・中断した場合だけ`glm-worker --handoff`を1回実行し、`consistent`・`required_action`・`allowed_actions`を正規入口とする。`consistent:false`では操作を推測しない。handoffがcurrent taskを`active`かつ`required_action:"none"`として返した場合だけ`glm-worker --watch`をread-only attach recoveryに使い、詳細診断が必要な場合だけ`--status`を追加する。
 - terminal・Sol/user attention・rate/provider stop等の意味のある状態変化で制御が戻ったらpacketを処理し、可能な次工程へ進む。経過時間だけのliveness報告は行わない。
-- packet受理・個別commit・install完了は局所終端であり、親USER_REQUESTの完了か次の継続操作かは`~/.codex/instructions/task-lifecycle.md`を読んで判断する。
+- packet受理・install完了は局所終端であり、親USER_REQUESTの完了か次の継続操作かは`~/.codex/instructions/task-lifecycle.md`を読んで判断する。
 
 ## 親tool orchestrationのterminal result返却
 
