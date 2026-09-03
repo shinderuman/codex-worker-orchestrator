@@ -12,13 +12,14 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## NEXT（優先順）
 
-- `IMPLEMENTATION_TASKS/install-smoke-failure-evidence.md`
 - `IMPLEMENTATION_TASKS/auto-resume-heartbeat-transaction.md`
+- `IMPLEMENTATION_TASKS/install-smoke-failure-evidence.md`
 - `IMPLEMENTATION_TASKS/codex-review-gap-telemetry.md`
 - `IMPLEMENTATION_TASKS/structured-validation-gate-telemetry.md`
 - `IMPLEMENTATION_TASKS/packet-validation-correction-recovery.md`
 - `IMPLEMENTATION_TASKS/telemetry-history-compact-summary.md`
 - `IMPLEMENTATION_TASKS/task-stats-revision-consumer-audit.md`
+- `IMPLEMENTATION_TASKS/user-level-installation-scope-redesign.md`
 - `IMPLEMENTATION_TASKS/105-session-rotation.md`
 - `IMPLEMENTATION_TASKS/post-105-codex-efficiency-reevaluation.md`
 - `IMPLEMENTATION_TASKS/022-final-verification.md`
