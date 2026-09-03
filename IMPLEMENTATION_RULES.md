@@ -65,7 +65,7 @@ parent-managed metadataを扱うguard、self-protection、production wiring自�
 
 ## task file必須構造
 
-全task fileは最低限、lossless sourceである`Original instruction`、append-onlyの`Amendments`、必要時の`Resolved references`、derived informationである`Purpose`、`Contract`、`Must not`、`Acceptance criteria`、および`Historical invariants`、`Dependencies`、未解決時の`Review findings`、`Current boundary`を持つ。schedule stateはPlanだけを正とし、task fileへ`Status`を持たせない。
+全task fileは最低限、lossless sourceである`Original instruction`、append-onlyの`Amendments`、必要時の`Resolved references`、derived informationである`Purpose`、`Contract`、`Must not`、`Acceptance criteria`、および`Historical invariants`、`Dependencies`、未解決時の`Review findings`、`Current boundary`を持つ。schedule stateはPlanだけを正とし、task fileへ`Status`を持たせない。Goal modeで成功済みdependency edgeを保持する必要があるtaskだけはoptional `Fulfilled dependencies`を持てる。欠落はfulfilledなしとして扱う。
 
 ## task filename
 
@@ -95,7 +95,9 @@ parent-managed metadataを扱うguard、self-protection、production wiring自�
 - Plan管理repositoryは`IMPLEMENTATION_PLAN.local.md`のoptional `## GOAL`節を、project-levelのlosslessなGoal原文、append-only amendment、derived acceptance、bounded completion decisionの正本として使える。GOAL節がない既存repositoryのschedule・task lifecycle・CLI behaviorは変更しない
 - Goal受領時の初期task生成、priorityとdependencyに基づく選択、worker/reviewer結果・finding・user amendmentによる再計画、Goal acceptanceは親Codexのsemantic authorityとする。通常利用者へPlan fileの逐次編集、task選択、通常resume操作を要求しない
 - `glm-worker --project-state`はmodel呼出・state変更・repository lockを行わないread-only machine projectionとし、GOAL検証、schedule、dependency graph、next runnable、blocker、mechanical completion readinessを返す。Plan/Task編集、task昇格、replanning、completion acceptanceを行わない
-- current task pathへのdependencyはoutstanding、current treeに存在せずGit履歴でtrackedだったtask pathはfulfilledとする。未追跡参照、self dependency、cycle、malformed GOAL / schedule / task contractはfail closedとし、`runnableなし`や`complete`へ縮退しない
+- task fileの`Dependencies`にあるpathはoutstanding、`Fulfilled dependencies`に親Codexが明示移動したpathだけをfulfilledとする。同じpathを両sectionへ置かず、current treeからtask fileが消えたこと、Git履歴にそのpathが存在すること、commit message・時刻・filename近接だけからfulfilledを推定しない。`Dependencies`のpathがcurrent treeに存在せずfulfilledにも明示されていない場合はunknownとしてfail closedする
+- prerequisite taskが通常のsemantic acceptance・必要validation・親action完了を経て成功完了した場合だけ、task file削除とschedule同期の前に、残存する各dependent taskでそのpathを`Dependencies`から`Fulfilled dependencies`へ親Codexが同一metadata同期として移す。No-Go、cancel、withdrawal、replanによる単純削除はfulfilledへ移さず、dependent側の要求自体を変更する必要がある場合は通常のtracked amendment/replanningとして扱う
+- self dependency、outstanding edgeのcycle、malformed GOAL / schedule / task contract、明示状態の矛盾はfail closedとし、`runnableなし`や`complete`へ縮退しない
 - Goal進行中は既存どおりACTIVE taskを一意に要求する。mechanical completion readinessは、current ACTIVEのlifecycleがcompleteかつpending parent actionなし、NEXT / BLOCKEDが空、unresolved findingなし、current snapshot対応validation成功、clean working treeを最低条件とし、semantic Goal acceptanceと必要なinstall / Git publication判断を代替しない
 - 親Codexがmechanical readinessとGoal acceptanceを確認してbounded completion decisionをGOAL節へ記録したterminal Goalだけは、ACTIVE / NEXT / BLOCKEDが空のPlanを許可する。未完了GoalでACTIVE空を許可せず、単一worker PASSをproject completionへ昇格しない
 - 既存task state、checkpoint、parent action、worker/reviewer、Codex gate、rate-limit / Codex-limit recovery、telemetry、Plan/task guardを再利用し、Goal mode専用daemon、scheduler、state DB、第二正本を追加しない
@@ -144,7 +146,7 @@ GLM worker/reviewerは編集・生成・復元・削除せず、更新候補をs
 
 ## task完了
 
-ordinary task完了時はHistoryへ完了証跡やescaped原因を追記しない。完了task fileを削除し、Planからentryを削除してNEXTをACTIVEへ昇格し、final HEAD上でPlan・ACTIVE file・Git境界が一致することを機械確認する。完了task fileを`IMPLEMENTATION_TASKS/`へ残さない。Git履歴が原要求と実装diffを保持し、CIとbundle / telemetryがvalidation・runtime/model evidenceを保持する。
+ordinary task完了時はHistoryへ完了証跡やescaped原因を追記しない。Goal modeでそのtaskをhard prerequisiteとして参照する残存taskがある場合は、成功完了が確定した同じparent metadata同期で該当edgeをdependent側の`Dependencies`から`Fulfilled dependencies`へ移してから完了task fileを削除する。その後Planからentryを削除してNEXTをACTIVEへ昇格し、final HEAD上でPlan・ACTIVE file・Git境界が一致することを機械確認する。完了task fileを`IMPLEMENTATION_TASKS/`へ残さない。Git履歴が原要求と実装diffを保持し、CIとbundle / telemetryがvalidation・runtime/model evidenceを保持する。
 
 Goal modeの最終taskだけは、上記Goal起点project orchestrationのterminal条件を満たす場合に限り、NEXT昇格ではなくcompleted GOALと空scheduleへ同期する。Goal未完了、mechanical readiness未充足、semantic acceptance未確定ではこの例外を使わない。
 
