@@ -15,12 +15,31 @@ import (
 type timelineOutput struct {
 	TaskID        string               `json:"task_id"`
 	TaskStatus    *string              `json:"task_status"`
+	Coverage      timelineCoverage     `json:"coverage"`
 	EventLog      timelineEventLog     `json:"event_log"`
 	SkippedEvents int                  `json:"skipped_events,omitempty"`
 	Telemetry     *string              `json:"telemetry"`
 	Calls         []timelineCall       `json:"calls"`
 	ToolTotals    []timelineTool       `json:"tool_totals"`
 	SessionAging  []state.SessionAging `json:"session_aging"`
+}
+
+type timelineCoverage struct {
+	Status         string               `json:"status"`
+	MissingSources []string             `json:"missing_sources,omitempty"`
+	Sources        timelineSourceStates `json:"sources"`
+}
+
+type timelineSourceStates struct {
+	EventLog  timelineSourceState `json:"event_log"`
+	Telemetry timelineSourceState `json:"telemetry"`
+	TaskStats timelineSourceState `json:"task_stats"`
+}
+
+type timelineSourceState struct {
+	Status  string `json:"status"`
+	Path    string `json:"path,omitempty"`
+	Records int    `json:"records,omitempty"`
 }
 
 type timelineEventLog struct {
@@ -73,6 +92,14 @@ type eventLogSkippedLine struct {
 	Error string `json:"error"`
 }
 
+const (
+	timelineStatusComplete = "complete"
+	timelineStatusPartial  = "partial"
+	timelineStatusUnknown  = "unknown"
+
+	timelineSourceOK = "ok"
+)
+
 func printTimeline(st *state.StateStore, taskIDArg string, stdout io.Writer) error {
 	explicit := taskIDArg != ""
 	taskID := taskIDArg
@@ -83,46 +110,173 @@ func printTimeline(st *state.StateStore, taskIDArg string, stdout io.Writer) err
 		return &UsageError{Message: fmt.Sprintf("task IDが生成されるUUID v4形式と一致しません: %q", taskID)}
 	}
 
+	records, skipped, eventErr := readTaskEventRecords(st, taskID)
+	if eventErr != nil && explicit && !errors.Is(eventErr, os.ErrNotExist) {
+		return fmt.Errorf("task %sのevent logを読めません: %w", taskID, eventErr)
+	}
+	logs, telemetryErr := readTimelineTelemetry(st, taskID)
+
 	output := timelineOutput{
 		TaskID:     taskID,
 		TaskStatus: timelineTaskStatus(st, taskID, explicit),
 	}
-	records, skipped, err := readTaskEventRecords(st, taskID)
-	switch {
-	case errors.Is(err, os.ErrNotExist):
-		if explicit {
-			return &NotFoundError{Message: fmt.Sprintf("task %sのevent logがありません: %v", taskID, err)}
-		}
-		output.EventLog = timelineEventLog{Status: statusNone}
-	case err != nil:
-		if explicit {
-			return fmt.Errorf("task %sのevent logを読めません: %w", taskID, err)
-		}
-		output.EventLog = timelineEventLog{Status: statusUnreadable}
-	default:
-		output.EventLog = timelineEventLog{Status: "ok", Path: stringPtr(st.TaskEventLogPath(taskID))}
+	output.EventLog = timelineEventLogState(st, taskID, eventErr)
+	if output.EventLog.Status == timelineSourceOK {
 		output.Calls = timelineCalls(records)
 		output.ToolTotals = timelineTools(state.SumCallTimelineTools(state.CallsFromTaskEvents(records)))
 		output.SkippedEvents = skipped
 	}
-
-	logs, logErr := readStatusTelemetry(st, taskID)
-	fillTimelineTelemetry(taskID, logErr, logs, &output)
+	fillTimelineTelemetry(taskID, telemetryErr, logs, &output)
+	statsSource := timelineTaskStatsSource(st, taskID)
+	if explicit && errors.Is(eventErr, os.ErrNotExist) && !timelineTaskProven(output.SessionAging, statsSource) {
+		return &NotFoundError{Message: fmt.Sprintf("task %sのevent logがありません: %v", taskID, eventErr)}
+	}
+	output.Coverage = buildTimelineCoverage(st, taskID, output.EventLog.Status, len(records), telemetryErr, len(logs), output.SessionAging, statsSource)
 	return writeJSON(stdout, output)
+}
+
+func timelineEventLogState(st *state.StateStore, taskID string, err error) timelineEventLog {
+	switch {
+	case err == nil:
+		return timelineEventLog{Status: timelineSourceOK, Path: stringPtr(st.TaskEventLogPath(taskID))}
+	case errors.Is(err, os.ErrNotExist):
+		return timelineEventLog{Status: statusNone}
+	default:
+		return timelineEventLog{Status: statusUnreadable}
+	}
+}
+
+func readTimelineTelemetry(st *state.StateStore, taskID string) ([]state.ModelCallLog, error) {
+	if taskID == "" {
+		return nil, nil
+	}
+	return st.ReadModelCallLogs(taskID)
 }
 
 func fillTimelineTelemetry(taskID string, logErr error, logs []state.ModelCallLog, output *timelineOutput) {
 	if taskID == "" {
 		return
 	}
-	if logErr != nil {
+	if logErr != nil && !errors.Is(logErr, os.ErrNotExist) {
 		unreadable := statusUnreadable
 		output.Telemetry = &unreadable
 		return
 	}
-	ok := "ok"
+	ok := timelineSourceOK
 	output.Telemetry = &ok
 	output.SessionAging = state.AgingFromModelCallLogs(logs)
+}
+
+func buildTimelineCoverage(st *state.StateStore, taskID string, eventLogStatus string, eventRecords int, telemetryErr error, telemetryRecords int, aging []state.SessionAging, statsSource timelineSourceState) timelineCoverage {
+	sources := timelineSourceStates{
+		EventLog:  timelineEventLogSource(st, taskID, eventLogStatus, eventRecords),
+		Telemetry: timelineTelemetrySource(st, taskID, telemetryErr, telemetryRecords),
+		TaskStats: statsSource,
+	}
+	return timelineCoverage{
+		Status:         timelineOverallStatus(eventLogStatus, aging),
+		MissingSources: timelineMissingSources(sources),
+		Sources:        sources,
+	}
+}
+
+func timelineOverallStatus(eventLogStatus string, aging []state.SessionAging) string {
+	switch {
+	case eventLogStatus == timelineSourceOK:
+		return timelineStatusComplete
+	case len(aging) > 0:
+		return timelineStatusPartial
+	default:
+		return timelineStatusUnknown
+	}
+}
+
+func timelineMissingSources(sources timelineSourceStates) []string {
+	missing := make([]string, 0, 3)
+	if sources.EventLog.Status == statusNone {
+		missing = append(missing, "event_log")
+	}
+	if sources.Telemetry.Status == statusNone {
+		missing = append(missing, "telemetry")
+	}
+	if sources.TaskStats.Status == statusNone {
+		missing = append(missing, "task_stats")
+	}
+	return missing
+}
+
+func timelineEventLogSource(st *state.StateStore, taskID string, status string, records int) timelineSourceState {
+	return timelineSourceState{
+		Status:  status,
+		Path:    timelineLocator(taskID, st.TaskEventLogPath(taskID)),
+		Records: records,
+	}
+}
+
+func timelineTelemetrySource(st *state.StateStore, taskID string, telemetryErr error, records int) timelineSourceState {
+	if taskID == "" {
+		return timelineSourceState{Status: statusNone}
+	}
+	status := timelineSourceOK
+	if telemetryErr != nil {
+		status = statusUnreadable
+		if errors.Is(telemetryErr, os.ErrNotExist) {
+			status = statusNone
+		}
+	}
+	return timelineSourceState{
+		Status:  status,
+		Path:    timelineLocator(taskID, st.ModelCallLogPath(taskID)),
+		Records: records,
+	}
+}
+
+func timelineTaskStatsSource(st *state.StateStore, taskID string) timelineSourceState {
+	if taskID == "" {
+		return timelineSourceState{Status: statusNone}
+	}
+	if taskID == st.ReadOr("task.id", "") {
+		return timelineCurrentTaskStatsSource(st)
+	}
+	return timelineArchivedTaskStatsSource(st, taskID)
+}
+
+func timelineCurrentTaskStatsSource(st *state.StateStore) timelineSourceState {
+	_, err := st.CurrentTaskStats()
+	status := timelineSourceOK
+	if err != nil {
+		status = statusUnreadable
+		if errors.Is(err, os.ErrNotExist) {
+			status = statusNone
+		}
+	}
+	return timelineSourceState{Status: status, Path: st.CurrentTaskStatsPath()}
+}
+
+func timelineArchivedTaskStatsSource(st *state.StateStore, taskID string) timelineSourceState {
+	all, err := st.AllTaskStats()
+	if err != nil {
+		return timelineSourceState{Status: statusUnreadable, Path: st.TaskStatsArchivePath(taskID)}
+	}
+	status := statusNone
+	for _, stats := range all {
+		if stats.TaskID == taskID {
+			status = timelineSourceOK
+			break
+		}
+	}
+	return timelineSourceState{Status: status, Path: st.TaskStatsArchivePath(taskID)}
+}
+
+func timelineLocator(taskID string, path string) string {
+	if taskID == "" {
+		return ""
+	}
+	return path
+}
+
+func timelineTaskProven(aging []state.SessionAging, statsSource timelineSourceState) bool {
+	return len(aging) > 0 || statsSource.Status == timelineSourceOK
 }
 
 func validTimelineTaskID(taskID string, explicit bool) bool {

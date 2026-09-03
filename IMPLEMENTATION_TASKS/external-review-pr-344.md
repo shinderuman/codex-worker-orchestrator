@@ -61,11 +61,7 @@ PR 344の外部review findingをcurrent repository authorityに対して検証�
 
 ## External feasibility
 
-status: verified
-
-- explicit fetch成功
-- proposal headのlocal参照成功
-- reviewed range両端のlocal参照成功
+status: not-applicable
 
 ## Contract
 

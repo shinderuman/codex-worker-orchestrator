@@ -8,11 +8,10 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/telemetry-timeline-retention-fallback.md`
+- `IMPLEMENTATION_TASKS/external-review-pr-344.md`
 
 ## NEXT（優先順）
 
-- `IMPLEMENTATION_TASKS/external-review-pr-344.md`
 - `IMPLEMENTATION_TASKS/codex-review-gap-telemetry.md`
 - `IMPLEMENTATION_TASKS/structured-validation-gate-telemetry.md`
 - `IMPLEMENTATION_TASKS/packet-validation-correction-recovery.md`

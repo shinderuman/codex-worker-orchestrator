@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -254,6 +255,9 @@ func TestTimelineCurrentTaskWithoutEvents(t *testing.T) {
 	if output.Calls != nil || output.ToolTotals != nil {
 		t.Fatalf("event logがないのにcall表示 = %#v", output)
 	}
+	if output.Coverage.Status != timelineStatusPartial || len(output.Coverage.MissingSources) != 1 || output.Coverage.MissingSources[0] != "event_log" {
+		t.Fatalf("event logなしtelemetryありのcoverage = %#v", output.Coverage)
+	}
 }
 
 func TestTimelineExplicitTask(t *testing.T) {
@@ -303,10 +307,169 @@ func TestTimelineExplicitTask(t *testing.T) {
 	if aging.Role != state.WorkerRole || aging.Calls != 1 {
 		t.Fatalf("sess-old aging = %#v", aging)
 	}
+	if output.Coverage.Status != timelineStatusComplete || output.Coverage.MissingSources != nil {
+		t.Fatalf("event logありのcoverage = %#v", output.Coverage)
+	}
+	if output.Coverage.Sources.EventLog.Status != timelineSourceOK || output.Coverage.Sources.EventLog.Records != 1 ||
+		output.Coverage.Sources.EventLog.Path != st.TaskEventLogPath(oldTaskID) {
+		t.Fatalf("event logありのcoverage.sources.event_log = %#v", output.Coverage.Sources.EventLog)
+	}
+	if output.Coverage.Sources.TaskStats.Status != timelineSourceOK || output.Coverage.Sources.TaskStats.Path != st.TaskStatsArchivePath(oldTaskID) {
+		t.Fatalf("event logありのcoverage.sources.task_stats = %#v", output.Coverage.Sources.TaskStats)
+	}
 
 	out := &bytes.Buffer{}
 	if err := printTimeline(st, "12345678-1234-4234-8123-123456789abc", out); err == nil {
 		t.Fatalf("存在しないtask IDがerrorになりません: %s", out.String())
+	}
+}
+
+func retainTimelineTask(t *testing.T, st *state.StateStore, record func(taskID string)) string {
+	t.Helper()
+	taskID, err := st.StartNewTask()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record != nil {
+		record(taskID)
+	}
+	if err := st.SetTaskStatus(state.TaskStatusComplete); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.StartNewTask(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(st.TaskEventLogPath(taskID)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		t.Fatal(err)
+	}
+	return taskID
+}
+
+func TestTimelineRetainedTaskReturnsPartialTelemetryTimeline(t *testing.T) {
+	cfg := newAppConfig(t)
+	st, err := state.NewStateStore(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := timelineBaseTime()
+	oldTaskID := retainTimelineTask(t, st, func(taskID string) {
+		st.RecordModelCallLog(state.ModelCallLog{
+			TaskID: taskID, CallType: state.CallTypeTask, SessionID: "sess-old", Role: state.WorkerRole,
+			ModelAlias: "opus", StartedAt: base, CompletedAt: base.Add(4 * time.Second), WallDurationMS: 4000,
+		})
+	})
+
+	var out bytes.Buffer
+	if err := printTimeline(st, oldTaskID, &out); err != nil {
+		t.Fatalf("retention済みtaskが全体失敗しました: %v", err)
+	}
+	decoded := decodeSingleLineJSON(t, out.String())
+	for _, key := range []string{"task_id", "coverage", "session_aging", "event_log"} {
+		requireJSONKey(t, decoded, key)
+	}
+	var output timelineOutput
+	if err := json.Unmarshal([]byte(strings.TrimSpace(out.String())), &output); err != nil {
+		t.Fatalf("timeline出力がmachine JSONではありません: %v: %q", err, out.String())
+	}
+
+	if output.Coverage.Status != timelineStatusPartial {
+		t.Fatalf("coverage.status = %#v", output.Coverage)
+	}
+	if len(output.Coverage.MissingSources) != 1 || output.Coverage.MissingSources[0] != "event_log" {
+		t.Fatalf("coverage.missing_sources = %#v", output.Coverage.MissingSources)
+	}
+	if output.Coverage.Sources.EventLog.Status != statusNone || output.Coverage.Sources.EventLog.Records != 0 ||
+		output.Coverage.Sources.EventLog.Path != st.TaskEventLogPath(oldTaskID) {
+		t.Fatalf("coverage.sources.event_log = %#v", output.Coverage.Sources.EventLog)
+	}
+	if output.Coverage.Sources.Telemetry.Status != timelineSourceOK || output.Coverage.Sources.Telemetry.Records != 1 ||
+		output.Coverage.Sources.Telemetry.Path != st.ModelCallLogPath(oldTaskID) {
+		t.Fatalf("coverage.sources.telemetry = %#v", output.Coverage.Sources.Telemetry)
+	}
+	if output.Coverage.Sources.TaskStats.Status != timelineSourceOK || output.Coverage.Sources.TaskStats.Path != st.TaskStatsArchivePath(oldTaskID) {
+		t.Fatalf("coverage.sources.task_stats = %#v", output.Coverage.Sources.TaskStats)
+	}
+	if output.TaskStatus == nil || *output.TaskStatus != string(state.TaskStatusComplete) {
+		t.Fatalf("task_status = %#v", output.TaskStatus)
+	}
+	if output.EventLog.Status != statusNone {
+		t.Fatalf("event_log = %#v", output.EventLog)
+	}
+	aging := timelineAgingOf(t, output.SessionAging, "sess-old")
+	if aging.Role != state.WorkerRole || aging.Calls != 1 {
+		t.Fatalf("sess-old aging = %#v", aging)
+	}
+	if output.Calls != nil || output.ToolTotals != nil {
+		t.Fatalf("event logがないのにcall表示 = %#v", output)
+	}
+}
+
+func TestTimelineRetainedTaskWithoutRecordsReturnsUnknownTimeline(t *testing.T) {
+	cfg := newAppConfig(t)
+	st, err := state.NewStateStore(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldTaskID := retainTimelineTask(t, st, nil)
+
+	output := executeTimelineOutput(t, st, oldTaskID)
+	if output.Coverage.Status != timelineStatusUnknown {
+		t.Fatalf("coverage.status = %#v", output.Coverage)
+	}
+	if len(output.Coverage.MissingSources) != 2 ||
+		output.Coverage.MissingSources[0] != "event_log" || output.Coverage.MissingSources[1] != "telemetry" {
+		t.Fatalf("coverage.missing_sources = %#v", output.Coverage.MissingSources)
+	}
+	if output.Coverage.Sources.Telemetry.Status != statusNone || output.Coverage.Sources.Telemetry.Path != st.ModelCallLogPath(oldTaskID) {
+		t.Fatalf("coverage.sources.telemetry = %#v", output.Coverage.Sources.Telemetry)
+	}
+	if output.Coverage.Sources.TaskStats.Status != timelineSourceOK {
+		t.Fatalf("coverage.sources.task_stats = %#v", output.Coverage.Sources.TaskStats)
+	}
+	if output.TaskStatus == nil || *output.TaskStatus != string(state.TaskStatusComplete) {
+		t.Fatalf("task_status = %#v", output.TaskStatus)
+	}
+	if output.Telemetry == nil || *output.Telemetry != timelineSourceOK {
+		t.Fatalf("telemetry = %#v", output.Telemetry)
+	}
+	if len(output.SessionAging) != 0 || output.Calls != nil {
+		t.Fatalf("recordがないのに表示 = %#v", output)
+	}
+}
+
+func TestTimelineRetainedTaskWithMalformedTelemetryReportsUnreadable(t *testing.T) {
+	cfg := newAppConfig(t)
+	st, err := state.NewStateStore(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldTaskID := retainTimelineTask(t, st, nil)
+	telemetryPath := st.ModelCallLogPath(oldTaskID)
+	if err := os.MkdirAll(filepath.Dir(telemetryPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(telemetryPath, []byte("{\"version\":3,\"broken\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	output := executeTimelineOutput(t, st, oldTaskID)
+	if output.Coverage.Status != timelineStatusUnknown {
+		t.Fatalf("coverage.status = %#v", output.Coverage)
+	}
+	if output.Coverage.Sources.Telemetry.Status != statusUnreadable {
+		t.Fatalf("coverage.sources.telemetry = %#v", output.Coverage.Sources.Telemetry)
+	}
+	if len(output.Coverage.MissingSources) != 1 || output.Coverage.MissingSources[0] != "event_log" {
+		t.Fatalf("coverage.missing_sources = %#v", output.Coverage.MissingSources)
+	}
+	if output.Telemetry == nil || *output.Telemetry != statusUnreadable {
+		t.Fatalf("telemetry = %#v", output.Telemetry)
+	}
+	if len(output.SessionAging) != 0 {
+		t.Fatalf("malformed telemetryからagingを生成しました: %#v", output.SessionAging)
+	}
+	if output.TaskStatus == nil || *output.TaskStatus != string(state.TaskStatusComplete) {
+		t.Fatalf("task_status = %#v", output.TaskStatus)
 	}
 }
 
@@ -415,6 +578,13 @@ func TestExecuteTimelineDoesNotCreateState(t *testing.T) {
 	}
 	if output.TaskID != "" || output.EventLog.Status != "none" {
 		t.Fatalf("timeline出力 = %#v", output)
+	}
+	if output.Coverage.Status != timelineStatusUnknown {
+		t.Fatalf("task不在のcoverage = %#v", output.Coverage)
+	}
+	if len(output.Coverage.MissingSources) != 3 ||
+		output.Coverage.Sources.EventLog.Path != "" || output.Coverage.Sources.Telemetry.Path != "" || output.Coverage.Sources.TaskStats.Path != "" {
+		t.Fatalf("task不在のcoverage sources = %#v", output.Coverage)
 	}
 	entries, err := os.ReadDir(base)
 	if err != nil {

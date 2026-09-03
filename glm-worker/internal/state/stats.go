@@ -233,6 +233,14 @@ func (s *StateStore) writeTaskStats(stats TaskStats) error {
 	return writeFileAtomic(s.Path(currentStatsFile), append(data, '\n'), 0o600)
 }
 
+func (s *StateStore) CurrentTaskStatsPath() string {
+	return s.Path(currentStatsFile)
+}
+
+func (s *StateStore) TaskStatsArchivePath(taskID string) string {
+	return s.Path(filepath.Join("stats", taskID+".json"))
+}
+
 func (s *StateStore) AllTaskStats() ([]TaskStats, error) {
 	result := make([]TaskStats, 0)
 	historyPaths, err := filepath.Glob(filepath.Join(s.dir, "stats", "*.json"))
