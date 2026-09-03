@@ -37,7 +37,11 @@ func commitProjectStateRepo(t *testing.T, repoRoot string) {
 }
 
 func projectStateTaskBody(dependencies string) string {
-	return "# Task\n\n## Review findings\n\nnone\n\n## Dependencies\n\n" + dependencies + "\n"
+	return projectStateTaskBodyWithFulfilled(dependencies, "none")
+}
+
+func projectStateTaskBodyWithFulfilled(dependencies, fulfilled string) string {
+	return "# Task\n\n## Review findings\n\nnone\n\n## Dependencies\n\n" + dependencies + "\n\n## Fulfilled dependencies\n\n" + fulfilled + "\n"
 }
 
 func TestProjectStatePlanAbsent(t *testing.T) {
@@ -195,6 +199,7 @@ func TestProjectStateGoalProgressionToTerminal(t *testing.T) {
 	if err := os.Remove(filepath.Join(cfg.RepoRoot, "IMPLEMENTATION_TASKS", "first.md")); err != nil {
 		t.Fatal(err)
 	}
+	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_TASKS/second.md", projectStateTaskBodyWithFulfilled("none", "- `IMPLEMENTATION_TASKS/first.md`"))
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", "# Plan\n\n## GOAL\n\nstatus: active\n\nGoal原文\n\n## ACTIVE\n\n- `IMPLEMENTATION_TASKS/second.md`\n\n## NEXT（優先順）\n\n## BLOCKED / USER_PERMISSION_WAIT\n")
 	commitProjectStateRepo(t, cfg.RepoRoot)
 	ready, err := buildProjectState(cfg, prepareCompletedGoalTaskState(t, cfg, "IMPLEMENTATION_TASKS/second.md"))
@@ -271,7 +276,21 @@ func TestProjectStateMalformedScheduleFailsClosed(t *testing.T) {
 	}
 }
 
-func TestProjectStateFulfilledDependencyViaGitHistory(t *testing.T) {
+func TestProjectStateExplicitFulfilledDependency(t *testing.T) {
+	cfg := newAppConfig(t)
+	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", "# Plan\n\n## ACTIVE\n\n- `IMPLEMENTATION_TASKS/first.md`\n\n## NEXT（優先順）\n\n## BLOCKED / USER_PERMISSION_WAIT\n")
+	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_TASKS/first.md", projectStateTaskBodyWithFulfilled("none", "- `IMPLEMENTATION_TASKS/done.md`"))
+	output, err := buildProjectState(cfg, state.AttachStateStore(cfg))
+	if err != nil {
+		t.Fatalf("buildProjectState: %v", err)
+	}
+	first := projectStateDependencyOf(t, output.Dependencies, "IMPLEMENTATION_TASKS/first.md")
+	if len(first.Fulfilled) != 1 || first.Fulfilled[0] != "IMPLEMENTATION_TASKS/done.md" || len(first.Outstanding) != 0 {
+		t.Fatalf("first = %#v", first)
+	}
+}
+
+func TestProjectStateDeletedDependencyViaGitHistoryFailsClosed(t *testing.T) {
 	cfg := newAppConfig(t)
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", "# Plan\n\n## ACTIVE\n\n- `IMPLEMENTATION_TASKS/first.md`\n\n## NEXT（優先順）\n\n## BLOCKED / USER_PERMISSION_WAIT\n")
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_TASKS/first.md", projectStateTaskBody("- `IMPLEMENTATION_TASKS/done.md`"))
@@ -280,13 +299,8 @@ func TestProjectStateFulfilledDependencyViaGitHistory(t *testing.T) {
 	if err := os.Remove(filepath.Join(cfg.RepoRoot, "IMPLEMENTATION_TASKS", "done.md")); err != nil {
 		t.Fatal(err)
 	}
-	output, err := buildProjectState(cfg, state.AttachStateStore(cfg))
-	if err != nil {
-		t.Fatalf("buildProjectState: %v", err)
-	}
-	first := projectStateDependencyOf(t, output.Dependencies, "IMPLEMENTATION_TASKS/first.md")
-	if len(first.Fulfilled) != 1 || first.Fulfilled[0] != "IMPLEMENTATION_TASKS/done.md" || len(first.Outstanding) != 0 {
-		t.Fatalf("first = %#v", first)
+	if _, err := buildProjectState(cfg, state.AttachStateStore(cfg)); err == nil {
+		t.Fatal("deleted dependency was accepted from Git history without explicit fulfillment")
 	}
 }
 
