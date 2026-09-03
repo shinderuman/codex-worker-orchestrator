@@ -18,6 +18,7 @@ none
 - 4件はproduction実装済みだがTask本文がfresh dogfoodによる実機Acceptance未完了を明記しており、完了fileの削除漏れではない
 - commit `171c0ff6be81d8609d29adfb684af2860c5e23ba`が4件を「Web GPTの測定・Acceptance tracker」としてPlanから意図的に除外した。後に外部trackerをcurrent implementation authorityとしないlifecycleへ移行しても再同期されなかった
 - `CheckFinalHeadPlan`、`active-task-contract`、`--project-state`はPlan列挙taskの存在・contract・dependencyを検査するが、Task directoryからPlanへの逆方向closureを検査しない
+- 親CodexのGo/No-Go照合では、4件ともproduction implementationに加えて後続bundle/telemetryとfollow-up commitで残存Acceptanceが成立していると判断し、再実装せず完了同期した
 
 ## Purpose
 
@@ -34,7 +35,7 @@ status: not-applicable
 - `--project-state`でもunscheduled、duplicate、missing/non-regular taskをmachine-readable failureとして扱い、runnable/completeへ縮退しない
 - schedule parser、task path validation、parent-managed metadata集合の既存ownerを再利用し、別index/file/stateを追加しない
 - completed taskは既存どおりtask file削除とPlan entry削除を同じmetadata同期で行う。外部Issue/Web GPT trackerをschedule authorityにしない
-- migrationとして判明した4件をPlanへ戻し、全current taskのclosureを成立させる
+- migrationでは判明した4件の状態を先に照合し、COMPLETEとしてfile/Planを同期削除した後の全current taskでclosureを成立させる
 
 ## Must not
 
