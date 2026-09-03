@@ -133,6 +133,7 @@ func validateFinalHeadTransition(plan string) error {
 			if finalHeadTransitionPattern.MatchString(line) {
 				return fmt.Errorf("HEADのplanの現在状態記述が完了済みcommitの操作を未実施としています: %s", strings.TrimSpace(line))
 			}
+		}
 	}
 	return nil
 }
