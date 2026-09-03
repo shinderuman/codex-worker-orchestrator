@@ -220,7 +220,7 @@ func parentUsageAnchoredTokens(scan bundleRolloutScan, baselineBound, endBound t
 		return parentUsageTokens{Status: analysisStatusMissing, Reason: parentUsageReasonEndAnchor, BaselineAt: baseline.RawAt, BaselineSource: parentUsageSourceLocator(source, baseline.Line)}
 	case end.Offset <= baseline.Offset:
 		return parentUsageTokens{Status: analysisStatusNoObservation, BaselineAt: baseline.RawAt, BaselineSource: parentUsageSourceLocator(source, baseline.Line)}
-	case analysisAnchorsCounterReset(baseline, end):
+	case parentUsageCountersResetBetween(scan, baseline, end):
 		return parentUsageTokens{
 			Status:         analysisStatusCounterReset,
 			BaselineAt:     baseline.RawAt,
@@ -242,6 +242,23 @@ func parentUsageAnchoredTokens(scan bundleRolloutScan, baselineBound, endBound t
 	tokens.ReasoningTokens, tokens.UnknownFields = parentUsageCounterField(parentUsageFieldReasoning, baseline.Reasoning, end.Reasoning, source, baseline, end, tokens.UnknownFields)
 	tokens.TotalTokens, tokens.UnknownFields = parentUsageCounterField(parentUsageFieldTotal, baseline.Total, end.Total, source, baseline, end, tokens.UnknownFields)
 	return tokens
+}
+
+func parentUsageCountersResetBetween(scan bundleRolloutScan, baseline, end analysisRolloutTokenAnchor) bool {
+	previous := baseline
+	for _, anchor := range scan.tokens {
+		if anchor.Offset <= baseline.Offset {
+			continue
+		}
+		if anchor.Offset > end.Offset {
+			break
+		}
+		if analysisAnchorsCounterReset(previous, anchor) {
+			return true
+		}
+		previous = anchor
+	}
+	return false
 }
 
 func parentUsageCounterField(field string, baseline, end *int64, source string, baselineAnchor, endAnchor analysisRolloutTokenAnchor, unknowns []parentUsageUnknownField) (int64, []parentUsageUnknownField) {
