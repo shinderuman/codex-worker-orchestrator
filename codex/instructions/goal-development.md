@@ -7,13 +7,14 @@ Plan管理repositoryで`IMPLEMENTATION_PLAN.local.md`のoptional `## GOAL`節を
 - GoalをUSER_REQUESTへ置いたまま作業を続けない。最初のGLM委譲前にGOAL節へ固定する。GOAL節はGoal原文のlosslessな保存、append-onlyのgoal amendments、derivedなacceptance criteria、そして`status: active`行を持つ
 - GOAL節とPlanは親Codex専有metadataであり、GLM worker/reviewerは編集しない
 - Goalのtask分解は通常の要求判断として行い、初期task file群を`IMPLEMENTATION_TASKS/`へ作成してPlanのACTIVE / NEXTへ置く。分割・tracked化の境界は`IMPLEMENTATION_RULES.md`の要求受領規則に従う
-- 先行成果物が必要なtask間依存は、各task fileの`Dependencies`へ`IMPLEMENTATION_TASKS/`相対pathで明示する
+- 先行成果物が必要なtask間依存は、各task fileの`Dependencies`へ`IMPLEMENTATION_TASKS/`相対pathで明示する。成功済みdependency edgeを保持する必要が生じた場合だけ`Fulfilled dependencies`を使い、作成時は欠落または`none`でよい
 
 ## 進行とtask選択
 
 - 各局所終端(packet受理・commit・install後)に、sandbox内でread-onlyの`glm-worker --project-state`を1回実行し、schedule、dependency graph、next_runnable、blocker、completion readinessを機械参照する
 - 投影は編集を行わない。次taskのACTIVE昇格、priority変更、cancel、追加、replanningは親CodexがPlanとtask fileへ直接反映し、再度投影で整合を確認する
-- 投影がunknown参照、self dependency、cycle、malformed GOAL / schedule / task contractでfail closedした場合、GLM側の再実行では解決しない。親CodexがPlan / task fileの該当記述を修復してから同じ投影を再実行する
+- prerequisite taskがsemantic acceptance・必要validation・parent actionまで成功完了した場合、完了task fileを削除する前に、残存する各dependent taskでそのpathを`Dependencies`から`Fulfilled dependencies`へ親Codexが移す。No-Go、cancel、withdrawal、replanによる削除では移さない。task file欠落やGit履歴だけをfulfilledの代用にしない
+- 投影がmissing outstanding dependency、unknown参照、self dependency、cycle、outstanding/fulfilled重複、malformed GOAL / schedule / task contractでfail closedした場合、GLM側の再実行では解決しない。親CodexがPlan / task fileの該当記述を現在のsemantic stateに沿って修復してから同じ投影を再実行する
 - 実行開始は`glm-parent-action start`、decision・fix・accept・resumeも既存の親actionをそのまま使う
 
 ## user amendment
