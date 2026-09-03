@@ -28,16 +28,19 @@ type parentHandoffOutput struct {
 }
 
 type parentHandoffRecoveryOutput struct {
-	Version          int                            `json:"version"`
-	Projection       string                         `json:"projection"`
-	Consistent       bool                           `json:"consistent"`
-	TaskID           *string                        `json:"task_id"`
-	TaskStatus       *string                        `json:"task_status"`
-	RequiredAction   *string                        `json:"required_action"`
-	AllowedActions   []string                       `json:"allowed_actions"`
-	PendingDecision  bool                           `json:"pending_decision"`
-	ParentReviewOpen *string                        `json:"parent_review_open"`
-	LastMaterial     *parentHandoffRecoveryMaterial `json:"last_material"`
+	Version                  int                            `json:"version"`
+	Projection               string                         `json:"projection"`
+	Consistent               bool                           `json:"consistent"`
+	TaskID                   *string                        `json:"task_id"`
+	TaskStatus               *string                        `json:"task_status"`
+	RequiredAction           *string                        `json:"required_action"`
+	AllowedActions           []string                       `json:"allowed_actions"`
+	PendingDecision          bool                           `json:"pending_decision"`
+	ParentReviewOpen         *string                        `json:"parent_review_open"`
+	LastMaterial             *parentHandoffRecoveryMaterial `json:"last_material"`
+	GuardFailure             string                         `json:"guard_failure,omitempty"`
+	GuardRefChanges          []state.GuardRefChange         `json:"guard_ref_changes,omitempty"`
+	GuardRefChangesTruncated bool                           `json:"guard_ref_changes_truncated,omitempty"`
 }
 
 type parentHandoffMaterial struct {
@@ -80,7 +83,9 @@ func printParentHandoff(st *state.StateStore, stdout io.Writer) error {
 }
 
 func printParentHandoffRecovery(st *state.StateStore, stdout io.Writer) error {
-	return writeJSON(stdout, projectParentHandoffRecovery(buildParentHandoff(st)))
+	recovery := projectParentHandoffRecovery(buildParentHandoff(st))
+	applyParentGuardRecovery(st, &recovery)
+	return writeJSON(stdout, recovery)
 }
 
 func projectParentHandoffRecovery(output parentHandoffOutput) parentHandoffRecoveryOutput {
@@ -107,6 +112,21 @@ func projectParentHandoffRecovery(output parentHandoffOutput) parentHandoffRecov
 		}
 	}
 	return recovery
+}
+
+func applyParentGuardRecovery(st *state.StateStore, output *parentHandoffRecoveryOutput) {
+	if output.TaskStatus == nil || *output.TaskStatus != string(state.TaskStatusGuardRecoverable) {
+		return
+	}
+	checkpoint, err := st.LoadResumeCheckpoint()
+	if err != nil || checkpoint.StopKind != state.ResumeStopGuardRecoverable {
+		return
+	}
+	output.GuardFailure = checkpoint.GuardFailure
+	if len(checkpoint.GuardRefChanges) != 0 {
+		output.GuardRefChanges = append([]state.GuardRefChange(nil), checkpoint.GuardRefChanges...)
+	}
+	output.GuardRefChangesTruncated = checkpoint.GuardRefChangesTruncated
 }
 
 func buildParentHandoff(st *state.StateStore) parentHandoffOutput {
