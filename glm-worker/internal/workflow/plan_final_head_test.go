@@ -101,6 +101,62 @@ func TestFinalHeadPlanRejectsTransitionalState(t *testing.T) {
 	}
 }
 
+func TestFinalHeadPlanRejectsUnscheduledTask(t *testing.T) {
+	root := newFinalHeadRepo(t)
+	writeFinalHeadFixture(t, root, finalHeadFixturePlan("main", ""), true)
+	writeFinalHeadFile(t, root, "IMPLEMENTATION_TASKS/unscheduled.md", "# stray\n")
+	commitFinalHeadFixture(t, root)
+
+	_, err := CheckFinalHeadPlan(root)
+	if err == nil || !strings.Contains(err.Error(), "closure") || !strings.Contains(err.Error(), "unscheduled.md") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestFinalHeadPlanAcceptsCompletionSync(t *testing.T) {
+	root := newFinalHeadRepo(t)
+	writeFinalHeadFixture(t, root, finalHeadFixturePlan("main", ""), true)
+	commitFinalHeadFixture(t, root)
+	if err := os.Remove(filepath.Join(root, "IMPLEMENTATION_TASKS", "next.md")); err != nil {
+		t.Fatal(err)
+	}
+	completed := strings.Replace(finalHeadFixturePlan("main", ""), "- `IMPLEMENTATION_TASKS/next.md`\n", "", 1)
+	writeFinalHeadFile(t, root, implementationPlanFile, completed)
+	commitFinalHeadFixture(t, root)
+
+	status, err := CheckFinalHeadPlan(root)
+	if err != nil || status != "plan final head: verified" {
+		t.Fatalf("status=%q err=%v", status, err)
+	}
+}
+
+func TestFinalHeadPlanRejectsNonRegularTaskAtHead(t *testing.T) {
+	root := newFinalHeadRepo(t)
+	writeFinalHeadFixture(t, root, finalHeadFixturePlan("main", ""), true)
+	link := filepath.Join(root, "IMPLEMENTATION_TASKS", "link.md")
+	if err := os.Symlink("active.md", link); err != nil {
+		t.Fatal(err)
+	}
+	commitFinalHeadFixture(t, root)
+
+	_, err := CheckFinalHeadPlan(root)
+	if err == nil || !strings.Contains(err.Error(), "regular fileではありません") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestFinalHeadPlanRejectsDuplicateNonActiveSchedule(t *testing.T) {
+	root := newFinalHeadRepo(t)
+	plan := finalHeadFixturePlan("main", "- `IMPLEMENTATION_TASKS/next.md`\n")
+	writeFinalHeadFixture(t, root, plan, true)
+	commitFinalHeadFixture(t, root)
+
+	_, err := CheckFinalHeadPlan(root)
+	if err == nil || !strings.Contains(err.Error(), "重複して列挙") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
 func TestFinalHeadPlanSkipsNonGitRepository(t *testing.T) {
 	status, err := CheckFinalHeadPlan(t.TempDir())
 	if err != nil || status != "plan final head: skipped (not a git repository)" {

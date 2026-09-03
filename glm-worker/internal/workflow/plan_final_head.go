@@ -58,10 +58,66 @@ func validateFinalHeadPlan(root string, plan string) error {
 			}
 		}
 	}
+	if err := validateFinalHeadScheduleClosure(root, schedule); err != nil {
+		return err
+	}
 	if err := validateFinalHeadBranch(root, plan); err != nil {
 		return err
 	}
 	return validateFinalHeadTransition(plan)
+}
+
+func validateFinalHeadScheduleClosure(root string, schedule taskcontract.PlanSchedule) error {
+	entries, err := finalHeadTaskCorpusEntries(root)
+	if err != nil {
+		return err
+	}
+	failures := schedule.ClosureFailures(entries)
+	if len(failures) == 0 {
+		return nil
+	}
+	reasons := make([]string, 0, len(failures))
+	for _, failure := range failures {
+		reasons = append(reasons, failure.Reason)
+	}
+	return fmt.Errorf("HEADのPlanとIMPLEMENTATION_TASKS corpusのclosureが成立しません: %s", strings.Join(reasons, "; "))
+}
+
+func finalHeadTaskCorpusEntries(root string) ([]taskcontract.TaskCorpusEntry, error) {
+	output, err := finalHeadGitOutput(root, "ls-tree", "-r", "-t", "-z", "HEAD", "--", taskcontract.TasksDir)
+	if err != nil {
+		return nil, fmt.Errorf("HEADのtask corpusを列挙できません: %w", err)
+	}
+	var entries []taskcontract.TaskCorpusEntry
+	for _, record := range strings.Split(output, "\x00") {
+		if record == "" {
+			continue
+		}
+		entry, ok, err := parseFinalHeadTaskCorpusRecord(record)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			entries = append(entries, entry)
+		}
+	}
+	return entries, nil
+}
+
+func parseFinalHeadTaskCorpusRecord(record string) (taskcontract.TaskCorpusEntry, bool, error) {
+	metadata, path, found := strings.Cut(record, "\t")
+	if !found {
+		return taskcontract.TaskCorpusEntry{}, false, fmt.Errorf("HEADのtask corpus entry %qを読み込めません", record)
+	}
+	if !strings.HasSuffix(path, ".md") {
+		return taskcontract.TaskCorpusEntry{}, false, nil
+	}
+	fields := strings.Fields(metadata)
+	if len(fields) < 2 {
+		return taskcontract.TaskCorpusEntry{}, false, fmt.Errorf("HEADのtask corpus entry %qを読み込めません", record)
+	}
+	regularBlob := (fields[0] == "100644" || fields[0] == "100755") && fields[1] == "blob"
+	return taskcontract.TaskCorpusEntry{Path: path, Regular: regularBlob}, true, nil
 }
 
 func validateFinalHeadActiveTask(root string, path string) error {

@@ -112,6 +112,9 @@ func buildProjectState(cfg config.AppConfig, st *state.StateStore) (projectState
 	if err != nil {
 		return output, err
 	}
+	if err := projectStateScheduleClosure(cfg.RepoRoot, schedule); err != nil {
+		return output, err
+	}
 	graph, err := buildProjectStateGraph(cfg.RepoRoot, append(append(append([]string{}, active...), next...), blocked...))
 	if err != nil {
 		return output, err
@@ -129,6 +132,22 @@ func buildProjectState(cfg config.AppConfig, st *state.StateStore) (projectState
 		output.Completion = completion
 	}
 	return output, nil
+}
+
+func projectStateScheduleClosure(repoRoot string, schedule taskcontract.PlanSchedule) error {
+	entries, err := taskcontract.EnumerateTaskCorpus(repoRoot)
+	if err != nil {
+		return err
+	}
+	failures := schedule.ClosureFailures(entries)
+	if len(failures) == 0 {
+		return nil
+	}
+	reasons := make([]string, 0, len(failures))
+	for _, failure := range failures {
+		reasons = append(reasons, failure.Reason)
+	}
+	return fmt.Errorf("scheduleとIMPLEMENTATION_TASKS corpusのclosureが成立しません: %s", strings.Join(reasons, "; "))
 }
 
 func readProjectStatePlan(repoRoot string) (*string, error) {

@@ -214,6 +214,9 @@ func TestProjectStateGoalProgressionToTerminal(t *testing.T) {
 		t.Fatalf("second = %#v", second)
 	}
 
+	if err := os.Remove(filepath.Join(cfg.RepoRoot, "IMPLEMENTATION_TASKS", "second.md")); err != nil {
+		t.Fatal(err)
+	}
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", "# Plan\n\n## GOAL\n\nstatus: completed\n\ncompletion decision: acceptance met\n\n## ACTIVE\n\n## NEXT（優先順）\n\n## BLOCKED / USER_PERMISSION_WAIT\n")
 	terminal, err := buildProjectState(cfg, state.AttachStateStore(cfg))
 	if err != nil {
@@ -343,5 +346,40 @@ func TestProjectStateParseCommand(t *testing.T) {
 	}
 	if _, err := ParseCommand([]string{"--project-state", "extra"}); err == nil {
 		t.Fatal("extra argument was accepted")
+	}
+}
+
+func TestProjectStateUnscheduledTaskFailsClosed(t *testing.T) {
+	cfg := newAppConfig(t)
+	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", "# Plan\n\n## ACTIVE\n\n- `IMPLEMENTATION_TASKS/first.md`\n\n## NEXT（優先順）\n\n## BLOCKED / USER_PERMISSION_WAIT\n")
+	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_TASKS/first.md", projectStateTaskBody("none"))
+	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_TASKS/stray.md", projectStateTaskBody("none"))
+	_, err := buildProjectState(cfg, state.AttachStateStore(cfg))
+	if err == nil || !strings.Contains(err.Error(), "closure") || !strings.Contains(err.Error(), "stray.md") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestProjectStateDuplicateScheduleFailsClosed(t *testing.T) {
+	cfg := newAppConfig(t)
+	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", "# Plan\n\n## ACTIVE\n\n- `IMPLEMENTATION_TASKS/first.md`\n\n## NEXT（優先順）\n\n- `IMPLEMENTATION_TASKS/second.md`\n- `IMPLEMENTATION_TASKS/second.md`\n\n## BLOCKED / USER_PERMISSION_WAIT\n")
+	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_TASKS/first.md", projectStateTaskBody("none"))
+	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_TASKS/second.md", projectStateTaskBody("none"))
+	_, err := buildProjectState(cfg, state.AttachStateStore(cfg))
+	if err == nil || !strings.Contains(err.Error(), "重複して列挙") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestProjectStateNonRegularTaskFailsClosed(t *testing.T) {
+	cfg := newAppConfig(t)
+	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", "# Plan\n\n## ACTIVE\n\n- `IMPLEMENTATION_TASKS/first.md`\n\n## NEXT（優先順）\n\n## BLOCKED / USER_PERMISSION_WAIT\n")
+	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_TASKS/first.md", projectStateTaskBody("none"))
+	if err := os.Symlink("first.md", filepath.Join(cfg.RepoRoot, "IMPLEMENTATION_TASKS", "link.md")); err != nil {
+		t.Fatal(err)
+	}
+	_, err := buildProjectState(cfg, state.AttachStateStore(cfg))
+	if err == nil || !strings.Contains(err.Error(), "regular fileではありません") {
+		t.Fatalf("err=%v", err)
 	}
 }
