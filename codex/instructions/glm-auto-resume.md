@@ -4,15 +4,17 @@
 
 ## Codex wakeとの重複排除(coalesce判定)
 
-- `detail.auto_resume_available: true`を確認したら、予約へ進む前に`REPO_ROOT`で`glm-worker --check-wake-coalesce <detail.auto_resume_at_rfc3339>`を1回だけ実行する。このcommand自身が現在processの`CODEX_THREAD_ID`をcanonicalな親thread identityとして読み、`~/.codex/automations/codex-5h-wake-*/automation.toml`のid・name・status・target_thread_id・prompt内の親thread ID・one-shot rruleと`~/.codex/sqlite/codex-dev.db`の`automations.next_run_at`を読み取り専用で照合し、machine JSON 1行の`decision`を返す。親Codexはthread IDを探索・copy・argvへ渡さない。
-- `decision: "coalesce"`は、現在の親実装taskへ「作業を続けろ」を送るACTIVEなCodex 5h wakeを機械確認でき、その次回発火時刻がGLM resume時刻以降10分以内であることを意味する。この場合はGLM resume automationの作成・更新・削除を一切行わず、coalesceしたwake automation ID・次回発火時刻・追加待ち時間を報告してrate limit停止の報告だけで終了する。次の「予約」へ進まない。
-- `decision: "create_glm_wake"`(wake不存在・対象thread不一致・PAUSED・entity不正・時刻が早すぎる・遅すぎる・検証不能・複数一致)は、次の「予約」へそのまま進む。commandがusage errorで失敗した場合は引数を1回だけ修正して再実行し、それでも読めなければ予約へ進む。`CODEX_THREAD_ID`欠落・空・invalidによる`not_found`はidentityを推測せずfail closedし、予約へ進まない。coalesce判定の結果だけで親判断や会話memoryによって予約を省略・復活させない。
+- `detail.auto_resume_available: true`を確認し、同じtaskをreset後も継続するというsemantic intentが確定したら、以降のcoalesce判定から予約後verifyまでを1回のcode-mode/tool orchestrationで実行する。最初のnested tool callとして`REPO_ROOT`で`glm-worker --check-wake-coalesce <detail.auto_resume_at_rfc3339>`を1回だけ実行し、machine JSON 1行をそのorchestration内でparseする。このcommand自身が現在processの`CODEX_THREAD_ID`をcanonicalな親thread identityとして読み、`~/.codex/automations/codex-5h-wake-*/automation.toml`のid・name・status・target_thread_id・prompt内の親thread ID・one-shot rruleと`~/.codex/sqlite/codex-dev.db`の`automations.next_run_at`を読み取り専用で照合する。親Codexはthread IDを探索・copy・argvへ渡さず、coalesce結果を単独のSol turnへ返してから予約を再開しない。
+- `decision: "coalesce"`は、現在の親実装taskへ「作業を続けろ」を送るACTIVEなCodex 5h wakeを機械確認でき、その次回発火時刻がGLM resume時刻以降10分以内であることを意味する。この場合は同じorchestration内でGLM resume automationの作成・更新・削除を一切行わず、coalesceしたwake automation ID・次回発火時刻・追加待ち時間だけをbounded resultとして返してrate limit停止の報告へ進む。次の「予約」へ進まない。
+- `decision: "create_glm_wake"`(wake不存在・対象thread不一致・PAUSED・entity不正・時刻が早すぎる・遅すぎる・検証不能・複数一致)は、Solへ戻らず同じorchestration内で次の「予約」へそのまま進む。commandがusage errorで失敗した場合は引数を1回だけ修正して再実行し、それでも読めなければ予約へ進む。`CODEX_THREAD_ID`欠落・空・invalidによる`not_found`はidentityを推測せずfail closedし、予約へ進まない。coalesce判定の結果だけで親判断や会話memoryによって予約を省略・復活させない。
 - 許容時間境界は固定値で記録する。coalesce条件は`GLM resume時刻 <= wake次回発火時刻 <= GLM resume時刻 + 10分`であり、下限はwakeがGLM reset前に発火してresumeを再びrate limit停止へ当てるのを防ぐ。上限10分は300分windowの3.3%・2026-08-26実測3分差の約3倍で、1 eventあたり親Codex turn 1回分の節約に対して許す追加待ち時間の上限である。この境界を自然言語の「近い」判断へ置き換えない。
 
 ## 予約
 
 - 本節はcoalesce判定が`decision: "create_glm_wake"`を返した場合だけ適用する。`decision: "coalesce"`の場合はGLM resume automationを作らない。
 - error JSONの`detail`に`auto_resume_available: true`・`auto_resume_at_rfc3339`・`auto_resume_key`・`task_id`・`repo_root`が揃っていることを確認する。
+- coalesce後の既存automation lookup、`automation_update`のcreate/update、返り値検査、`--verify-auto-resume`、失敗時cleanupは同じcode-mode/tool orchestration内で順番にawaitし、各stageの結果を次stageへ機械的に渡す。中間結果を`text()`等でSol-visible outputへ流して親modelへ戻らず、正常時は最終verifyまたはcoalesceのbounded postconditionだけを返す。lookup/create/update/verifyの間へcommentary・reasoning・通常assistant turnを挟まない。
+- 既存automation lookupも同じorchestration内だけで行い、同名automationのexact persisted IDを得られた場合だけupdate対象とする。name・時刻近接からIDを推測しない。lookup不能・複数一致・malformed entityは新規/更新を勝手に選ばずfail closedする。
 - Codex appの`automation_update`を使い、現在のローカルタスクへ紐づくheartbeat automationを作成または更新する。standalone taskやworktree automationは使わない。
 - automation名は`AUTO_RESUME_KEY`を使い、同名があれば新規作成せず更新する。
 - 実行時刻は`AUTO_RESUME_AT_RFC3339`が表す絶対時刻とする。offsetを捨てずUTCへ変換し、時刻前の固定間隔pollingは行わない。
@@ -64,26 +66,27 @@ run_control=<EXPLICIT_NON_DERIVABLE_USER_BOUNDARY>
 - この検証は保存済みautomation TOML実体(`~/.codex/automations/<key>/automation.toml`)のid・name・status ACTIVE・target_thread_id・rrule完全契約(UTC DTSTART + 改行 + `RRULE:FREQ=DAILY;COUNT=1`の正確な2行)と、`~/.codex/sqlite/codex-dev.db`の`automations.next_run_at`・id・status・rruleを期待ID・対象thread・status ACTIVE・絶対時刻で照合する。Codex appのSQLite automations表にthread_id列はなく、対象threadはTOMLのtarget_thread_idでのみ検証する。
 - 検証成功(exit 0と`--verify-auto-resume`結果JSON)だけが予約成功の根拠となる。この時点で初めてrate limit停止を報告してよい。
 - `CODEX_THREAD_ID`欠落・空・invalidによる`not_found`は対象threadを推測せずfail closedする。`env`全体のdump、`env | rg`、Desktop thread一覧、automation名、会話memory、task ID、時刻近接からcurrent threadを復元しない。
-- 検証失敗(stderr error JSON `kind: verification_failed`、exit 1)の場合、予約済みと報告しない。検証理由からschema引数の誤りを特定し、引数を修正して`automation_update`のupdate(二段階作成の場合は第二段階)を再試行する。再試行は最大1回まで。再試行後も失敗の場合、新規作成分のautomationを削除または停止し、作成不能として手動`glm-worker --resume`fallbackを明示する。
-- 検証不可(stderr error JSON `kind: verification_unavailable`、exit 1)の場合(sqlite3不在・DB/schema読取不能)、Codex app上のautomation表示で同じautomation ID・対象task・次回実行時刻が意図したJST時刻と一致することを確認した場合だけ予約成功とする。確認不能な場合は作成失敗とし、手動`glm-worker --resume`fallbackを明示する。
+- 検証失敗(stderr error JSON `kind: verification_failed`、exit 1)の場合、予約済みと報告しない。検証理由からschema引数の誤りを特定し、引数を修正して`automation_update`のupdate(二段階作成の場合は第二段階)を同じorchestration内で再試行する。再試行は最大1回まで。再試行後も失敗の場合、新規作成分のautomationを削除または停止し、作成不能として手動`glm-worker --resume`fallbackを明示する。
+- 検証不可(stderr error JSON `kind: verification_unavailable`、exit 1)の場合(sqlite3不在・DB/schema読取不能)、同じorchestration内のCodex app automation responseで同じautomation ID・対象task・次回実行時刻が意図したJST時刻と一致することを確認できた場合だけ予約成功とする。確認不能な場合は作成失敗とし、手動`glm-worker --resume`fallbackを明示する。
 
 ## wake時
 
-本節はGLM resume automationの発火時と、coalesce判定でGLM automationを作らなかった場合にCodex 5h wakeの「作業を続けろ」で親実装taskが再開された場合の両方に適用する。手順3・5・6のautomation削除・停止・更新は、実GLM resume automationを作成済みのときだけ行い、coalesce時は対象automationが存在しないため`glm-worker --status`での一度の検証と`glm-worker --resume`とその結果処理だけを行う。
+本節はGLM resume automationの発火時と、coalesce判定でGLM automationを作らなかった場合にCodex 5h wakeの「作業を続けろ」で親実装taskが再開された場合の両方に適用する。automation削除・停止・更新は、実GLM resume automationを作成済みのときだけ行う。
 
-wake promptはworkflow authorityとして読まない。commandを実行する前に、その時点のrepository authorityが要求するRules / Plan / exact ACTIVE taskを現在checkoutから再読し、generic workflowはそこからだけ取得する。promptから利用するのは`repo_root`・`expected_task_id`・存在する場合の`run_control`だけである。
+wake promptはworkflow authorityとして読まない。commandを実行する前に、その時点のrepository authorityが要求するRules / Plan / exact ACTIVE taskを現在checkoutから再読し、generic workflowはそこからだけ取得する。promptから利用するのは`repo_root`・`expected_task_id`・存在する場合の`run_control`だけである。authority再読が終わった後のmachine state検証からresume terminal/handoff取得までは、1回のcode-mode/tool orchestration内で連続実行し、その間にSolへ戻らない。
 
-1. `REPO_ROOT`で`glm-worker --status`を実行する。
-2. 出力JSONの`task_id`が予約時(またはcoalesce判定時のrate-limit packet `detail.task_id`)の値と完全一致し、`task_status: rate-limited`、`resume_available: true`であることを確認する。expected task IDの正はrate-limit packetの`detail.task_id`だけであり、既存のcheckpoint・state・evidenceに期待値そのものが機械読取可能な形で保存されている場合以外は復元しない。packetの`detail.task_id`を照会できない場合は、当該repoにrate-limited/resume可能taskが1件だけであること・automation名・会話memoryなどの根拠からexpected task IDを推測してresumeしない(fail closed)。この場合は`glm-worker --resume`を実行せず、task IDを照合できなかった旨と手動`glm-worker --resume`によるmanual fallbackを報告して停止する。
-3. task ID不一致、reset済み、rate limit以外のstatusなら`glm-worker --resume`を実行せず、実GLM resume automationを作成済みの場合は該当automationを削除または停止する。
-4. 条件が一致した場合だけ、同じcheckoutで`glm-worker --resume`をsandbox外実行する。
-5. 再びrate limit停止(error JSON `kind: rate_limited`)になった場合は、coalesce判定からやり直す。実GLM resume automationを作成済みの場合は、新しい`detail.auto_resume_at_rfc3339`で同じ`detail.auto_resume_key`のautomationを更新する。
-6. `PASS`、`NEEDS_SOL_DECISION`、`NEEDS_SOL_REVIEW`、`WORKER_ERROR`のいずれかへ進んだら、実GLM resume automationを作成済みの場合はそれを削除または停止し、通常のGLM packet処理を同じCodexタスクで継続する。
+1. 同じorchestrationの最初のnested tool callとして`REPO_ROOT`で`glm-worker --status`を実行し、出力を1 JSONとしてparseする。
+2. 出力JSONの`task_id`がwake promptの`expected_task_id`と完全一致し、`task_status: rate-limited`、`resume_available: true`であることを機械確認する。expected task IDの正は予約時rate-limit packetの`detail.task_id`をcompact wake promptへ保存した値だけであり、automation名・会話memory・現在唯一のrate-limited task・時刻近接から復元しない。
+3. task ID不一致、reset済み、rate limit以外のstatus、parse不能なら`glm-parent-action resume`を実行しない。実GLM resume automationを作成済みの場合は同じorchestration内で該当automationを削除または停止し、期待値と観測値だけのbounded mismatch resultを返して停止する。
+4. 条件が一致した場合だけ、Solへ戻らず同じcheckoutで`glm-parent-action resume`をsandbox外実行し、`glm-execution.md`のblocking parent-action terminal/handoff contractに従って同じorchestration内でterminal resultまで待つ。standalone `glm-worker --resume`へ切り替えない。
+5. 再びrate limit停止(error JSON `kind: rate_limited`)になった場合は、そのterminal detailを使って同じcode-mode flowでcoalesce判定から予約/更新/verifyまでやり直す。実GLM resume automationを作成済みの場合は、新しい`detail.auto_resume_at_rfc3339`で同じ`detail.auto_resume_key`のautomationを更新する。
+6. `PASS`、`NEEDS_SOL_DECISION`、`NEEDS_SOL_REVIEW`、`WORKER_ERROR`のいずれかへ進んだら、実GLM resume automationを作成済みの場合は同じorchestration内でそれを削除または停止し、terminal + canonical handoffだけを親へ返して通常のGLM packet処理を継続する。
 
 ## 不変条件
 
 - current parent thread identityの正は各auto-resume command processの`CODEX_THREAD_ID`だけとする。parentはthread ID取得のために`env`列挙・`env | rg`・Desktop `list_threads`等を実行せず、command引数へthread IDを手入力しない。identityが取得不能なら推測せず停止する。
 - coalesce判定は`glm-worker --check-wake-coalesce`のmachine JSON `decision`だけを根拠にし、automation名・会話memory・親判断だけでGLM wakeを作る・作らないを決めない。coalesceしてもCodex wakeとGLM resumeの責務・session ownershipは統合せず、Codex 5h wake側の登録・再予約・検証契約(`codex-auto-resume.md`)は変更しない。
+- deterministic scheduler stageの途中結果をSolへ返して次stageを選ばせない。semantic continuation intentが確定した後のcoalesce/lookup/create/update/verify、wake authority再読後のstatus/exact-match/resumeはそれぞれ1 parent tool orchestrationに畳む。
 - 新しい`glm-worker "<元依頼>"`を起動しない。
 - working tree、task state、worker/reviewer session、resume checkpointを破棄・resetしない。
 - 元依頼やSol判断を再構成せず、保存済みcheckpointからだけ再開する。
