@@ -164,6 +164,62 @@ func TestParentHandoffRecoveryProjectionOmitsBroadEvidence(t *testing.T) {
 	}
 }
 
+func TestParentHandoffRecoveryIncludesGuardDiagnostics(t *testing.T) {
+	cfg := newAppConfig(t)
+	st := startParentHandoffTask(t, cfg)
+	if err := st.SetTaskStatus(state.TaskStatusGuardRecoverable); err != nil {
+		t.Fatal(err)
+	}
+	before := &state.GuardRefState{Name: "refs/codex/turn-diffs/old", ObjectID: strings.Repeat("a", 40)}
+	after := &state.GuardRefState{Name: "refs/codex/turn-diffs/old", ObjectID: strings.Repeat("b", 40)}
+	checkpoint := state.ResumeCheckpoint{
+		Model:                       "glm-5.3",
+		StopKind:                    state.ResumeStopGuardRecoverable,
+		GuardFailure:                "git authority guard failed: after-call-mutation: refs",
+		GuardRefBeforeDigest:        "before",
+		GuardRefAfterDigest:         "after",
+		GuardRefChanges:             []state.GuardRefChange{{Name: "refs/codex/turn-diffs/old", Before: before, After: after}},
+		GuardRefChangesTruncated:    true,
+	}
+	if err := st.SaveResumeCheckpoint(checkpoint); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout bytes.Buffer
+	if err := Execute(Command{Mode: ModeHandoff, Payload: "recovery"}, cfg, nil, &stdout, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(stdout.Bytes(), &raw); err != nil {
+		t.Fatalf("recovery output is not JSON: %v\n%s", err, stdout.String())
+	}
+	if raw["guard_failure"] != checkpoint.GuardFailure || raw["guard_ref_changes_truncated"] != true {
+		t.Fatalf("guard diagnostics = %s", stdout.String())
+	}
+	changes, ok := raw["guard_ref_changes"].([]any)
+	if !ok || len(changes) != 1 {
+		t.Fatalf("guard ref changes = %#v", raw["guard_ref_changes"])
+	}
+	change, ok := changes[0].(map[string]any)
+	if !ok || change["name"] != "refs/codex/turn-diffs/old" {
+		t.Fatalf("guard ref change = %#v", changes[0])
+	}
+
+	stdout.Reset()
+	if err := Execute(Command{Mode: ModeHandoff}, cfg, nil, &stdout, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	raw = nil
+	if err := json.Unmarshal(stdout.Bytes(), &raw); err != nil {
+		t.Fatalf("full handoff output is not JSON: %v\n%s", err, stdout.String())
+	}
+	for _, hidden := range []string{"guard_failure", "guard_ref_changes", "guard_ref_changes_truncated"} {
+		if _, exists := raw[hidden]; exists {
+			t.Fatalf("full handoff exposed recovery-only %q: %s", hidden, stdout.String())
+		}
+	}
+}
+
 func TestParentHandoffFailsClosedOnLifecycleContradiction(t *testing.T) {
 	cfg := newAppConfig(t)
 	st := startParentHandoffTask(t, cfg)
