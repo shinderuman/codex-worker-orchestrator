@@ -15,17 +15,18 @@ type telemetryTaskError struct {
 }
 
 type telemetryScan struct {
-	Status          string               `json:"status"`
-	Dir             string               `json:"dir"`
-	Files           int                  `json:"files"`
-	IgnoredFiles    []string             `json:"ignored_files,omitempty"`
-	UnreadableTasks []telemetryTaskError `json:"unreadable_tasks,omitempty"`
+	Status               string               `json:"status"`
+	Dir                  string               `json:"dir"`
+	Files                int                  `json:"files"`
+	RecordsOutsidePeriod int                  `json:"records_outside_period,omitempty"`
+	IgnoredFiles         []string             `json:"ignored_files,omitempty"`
+	UnreadableTasks      []telemetryTaskError `json:"unreadable_tasks,omitempty"`
 
 	considered int
 	logs       []state.TaskCallLogs
 }
 
-func scanTelemetryTaskLogs(st *state.StateStore) (*telemetryScan, error) {
+func scanTelemetryTaskLogs(st *state.StateStore, filter state.TelemetryQueryFilter) (*telemetryScan, error) {
 	dir := st.Path("telemetry")
 	entries, err := os.ReadDir(dir)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -38,8 +39,11 @@ func scanTelemetryTaskLogs(st *state.StateStore) (*telemetryScan, error) {
 		if !strings.HasSuffix(name, ".jsonl") {
 			continue
 		}
-		scan.considered++
 		taskID := strings.TrimSuffix(name, ".jsonl")
+		if !filter.MatchesTask(taskID) {
+			continue
+		}
+		scan.considered++
 		if !state.ValidGeneratedUUID(taskID) {
 			scan.IgnoredFiles = append(scan.IgnoredFiles, name)
 			continue
@@ -47,6 +51,7 @@ func scanTelemetryTaskLogs(st *state.StateStore) (*telemetryScan, error) {
 		logs, readErr := st.ReadModelCallLogs(taskID)
 		if readErr == nil {
 			scan.Files++
+			logs = filterTelemetryLogsInPeriod(logs, filter, &scan.RecordsOutsidePeriod)
 			scan.logs = append(scan.logs, state.TaskCallLogs{TaskID: taskID, Logs: logs})
 			continue
 		}
@@ -60,4 +65,19 @@ func scanTelemetryTaskLogs(st *state.StateStore) (*telemetryScan, error) {
 		scan.Status = statusNone
 	}
 	return scan, nil
+}
+
+func filterTelemetryLogsInPeriod(logs []state.ModelCallLog, filter state.TelemetryQueryFilter, outsidePeriod *int) []state.ModelCallLog {
+	if !filter.HasPeriod() {
+		return logs
+	}
+	filtered := make([]state.ModelCallLog, 0, len(logs))
+	for _, log := range logs {
+		if filter.CoversTime(log.StartedAt) {
+			filtered = append(filtered, log)
+			continue
+		}
+		*outsidePeriod++
+	}
+	return filtered
 }

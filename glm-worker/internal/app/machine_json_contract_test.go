@@ -88,7 +88,7 @@ func statusRawJSON(t *testing.T, cfg config.AppConfig) map[string]any {
 func statsRawJSON(t *testing.T, st *state.StateStore) map[string]any {
 	t.Helper()
 	var out bytes.Buffer
-	if err := printStats(st, &out); err != nil {
+	if err := printStats(st, TelemetryQueryArgs{}, &out); err != nil {
 		t.Fatal(err)
 	}
 	return decodeSingleLineJSON(t, out.String())

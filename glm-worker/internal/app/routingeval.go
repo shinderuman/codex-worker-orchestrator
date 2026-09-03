@@ -23,7 +23,7 @@ type modelRoutingRoundsScan struct {
 }
 
 func printModelRouting(st *state.StateStore, stdout io.Writer) error {
-	scan, err := scanTelemetryTaskLogs(st)
+	scan, err := scanTelemetryTaskLogs(st, state.TelemetryQueryFilter{})
 	if err != nil {
 		return err
 	}

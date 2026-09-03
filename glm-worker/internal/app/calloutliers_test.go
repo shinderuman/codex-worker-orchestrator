@@ -16,7 +16,7 @@ import (
 func executeCallOutliers(t *testing.T, st *state.StateStore) map[string]any {
 	t.Helper()
 	var out bytes.Buffer
-	if err := printCallOutliers(st, &out); err != nil {
+	if err := printCallOutliers(st, TelemetryQueryArgs{}, &out); err != nil {
 		t.Fatal(err)
 	}
 	return decodeSingleLineJSON(t, out.String())
@@ -120,7 +120,7 @@ func TestExecuteCallOutliersAggregatesSavedTelemetry(t *testing.T) {
 	}
 
 	var rendered bytes.Buffer
-	if err := printCallOutliers(st, &rendered); err != nil {
+	if err := printCallOutliers(st, TelemetryQueryArgs{}, &rendered); err != nil {
 		t.Fatal(err)
 	}
 	for _, secret := range []string{"raw-prompt-must-not-leak", "raw-response-must-not-leak", "\"prompt\"", "\"response\""} {
@@ -148,30 +148,49 @@ func TestCallOutliersEmptyTelemetryDirIsNone(t *testing.T) {
 func TestExecuteCallOutliersEmptyState(t *testing.T) {
 	base := t.TempDir()
 	cfg := config.AppConfig{StateBase: base, RepoHash: "calloutliershash", RepoRoot: "/repo"}
-	cmd, err := ParseCommand([]string{"--call-outliers"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cmd.Mode != ModeCallOutliers {
-		t.Fatalf("command = %+v", cmd)
-	}
-	out := &bytes.Buffer{}
-	if err := Execute(cmd, cfg, nil, out, io.Discard); err != nil {
-		t.Fatal(err)
-	}
-	decoded := decodeSingleLineJSON(t, out.String())
-	telemetry, _ := decoded["telemetry"].(map[string]any)
-	if telemetry["status"] != "none" || telemetry["files"].(float64) != 0 {
-		t.Fatalf("telemetry = %#v", telemetry)
-	}
-	report, _ := decoded["report"].(map[string]any)
-	for _, key := range []string{"distributions", "models", "sessions", "tasks", "outlier_calls", "outlier_tasks"} {
-		value, ok := report[key].([]any)
-		if !ok || value == nil {
-			t.Fatalf("reportの%qが空配列ではありません: %#v", key, report[key])
+	for _, args := range [][]string{{"--call-outliers"}, {"--call-outliers", "history"}} {
+		cmd, err := ParseCommand(args)
+		if err != nil {
+			t.Fatal(err)
 		}
-		if len(value) != 0 {
-			t.Fatalf("reportの%qが空ではありません: %#v", key, value)
+		if cmd.Mode != ModeCallOutliers {
+			t.Fatalf("command = %+v", cmd)
+		}
+		out := &bytes.Buffer{}
+		if err := Execute(cmd, cfg, nil, out, io.Discard); err != nil {
+			t.Fatal(err)
+		}
+		decoded := decodeSingleLineJSON(t, out.String())
+		telemetry, _ := decoded["telemetry"].(map[string]any)
+		if telemetry["status"] != "none" {
+			t.Fatalf("%v telemetry = %#v", args, telemetry)
+		}
+		if cmd.Query.isHistory() {
+			if telemetry["files_considered"].(float64) != 0 {
+				t.Fatalf("history files_considered = %#v", telemetry)
+			}
+			cohorts, ok := telemetry["cohorts"].([]any)
+			if !ok || len(cohorts) != 0 {
+				t.Fatalf("history cohorts = %#v", telemetry["cohorts"])
+			}
+			reports, ok := decoded["reports"].([]any)
+			if !ok || len(reports) != 0 {
+				t.Fatalf("history reports = %#v", decoded["reports"])
+			}
+			continue
+		}
+		if telemetry["files"].(float64) != 0 {
+			t.Fatalf("telemetry = %#v", telemetry)
+		}
+		report, _ := decoded["report"].(map[string]any)
+		for _, key := range []string{"distributions", "models", "sessions", "tasks", "outlier_calls", "outlier_tasks"} {
+			value, ok := report[key].([]any)
+			if !ok || value == nil {
+				t.Fatalf("reportの%qが空配列ではありません: %#v", key, report[key])
+			}
+			if len(value) != 0 {
+				t.Fatalf("reportの%qが空ではありません: %#v", key, value)
+			}
 		}
 	}
 	entries, err := os.ReadDir(base)

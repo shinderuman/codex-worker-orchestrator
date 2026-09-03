@@ -79,7 +79,7 @@ func TestComputeTelemetryCoverageCompleteMatchesRawRecords(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	coverage := st.ComputeTelemetryCoverage(all)
+	coverage := st.ComputeTelemetryCoverage(all, "", nil)
 	if coverage.Status != CoverageComplete || !coverage.UsageKnown {
 		t.Fatalf("coverage = %s usageKnown=%v、completeではありません: %+v", coverage.Status, coverage.UsageKnown, coverage)
 	}
@@ -105,7 +105,7 @@ func TestComputeTelemetryCoverageZeroCallsWithoutTelemetryFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	coverage := st.ComputeTelemetryCoverage(all)
+	coverage := st.ComputeTelemetryCoverage(all, "", nil)
 	if coverage.Status != CoverageComplete || !coverage.UsageKnown {
 		t.Fatalf("0件taskはcompleteであるべきです: %+v", coverage)
 	}
@@ -129,7 +129,7 @@ func TestComputeTelemetryCoverageCurrentTaskRawShortageIsIncomplete(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	coverage := st.ComputeTelemetryCoverage(all)
+	coverage := st.ComputeTelemetryCoverage(all, "", nil)
 	if coverage.Status != CoverageIncomplete || coverage.UsageKnown {
 		t.Fatalf("現在taskのraw不足はincomplete/usage不明です: %+v", coverage)
 	}
@@ -147,7 +147,7 @@ func TestComputeTelemetryCoverageArchivedStatsOnlyTaskIsHistoricalGap(t *testing
 	gapTask := "ccc205d1-1111-4222-8333-444444444444"
 
 	all := []TaskStats{archivedStatsForCoverage(gapTask, 1)}
-	coverage := st.ComputeTelemetryCoverage(all)
+	coverage := st.ComputeTelemetryCoverage(all, "", nil)
 	if coverage.Status != CoverageIncomplete || coverage.UsageKnown {
 		t.Fatalf("historical gapありの集計はincomplete/usage不明です: %+v", coverage)
 	}
@@ -169,7 +169,7 @@ func TestComputeTelemetryCoverageExcessRecords(t *testing.T) {
 
 	current := archivedStatsForCoverage(taskID, 1)
 	current.ArchivedAt = nil
-	coverage := st.ComputeTelemetryCoverage([]TaskStats{current})
+	coverage := st.ComputeTelemetryCoverage([]TaskStats{current}, "", nil)
 	if coverage.Status != CoverageIncomplete || coverage.UsageKnown {
 		t.Fatalf("過剰recordだけでもusage総量の信頼はなくincompleteです: %+v", coverage)
 	}
@@ -182,7 +182,7 @@ func TestComputeTelemetryCoverageExcessRecords(t *testing.T) {
 	}
 
 	archived := archivedStatsForCoverage(taskID, 1)
-	coverage = st.ComputeTelemetryCoverage([]TaskStats{archived})
+	coverage = st.ComputeTelemetryCoverage([]TaskStats{archived}, "", nil)
 	entry = findCoverageEntry(t, coverage, archived.TaskID)
 	if entry.Classification() != CoverageIncomplete {
 		t.Fatalf("archive済みでも過剰recordはhistorical gapにしない: %s", entry.Classification())
@@ -214,7 +214,7 @@ func TestComputeTelemetryCoverageSkipsOldVersionRecords(t *testing.T) {
 		string(noCallType),
 	})
 
-	coverage := st.ComputeTelemetryCoverage([]TaskStats{{Version: taskStatsVersion, TaskID: taskID, ModelCalls: 1}})
+	coverage := st.ComputeTelemetryCoverage([]TaskStats{{Version: taskStatsVersion, TaskID: taskID, ModelCalls: 1}}, "", nil)
 	if coverage.RawRecords != 1 {
 		t.Fatalf("現行versionのtask recordだけを数える: %d", coverage.RawRecords)
 	}
@@ -228,7 +228,7 @@ func TestComputeTelemetryCoverageUnreadableTelemetryDoesNotInventCounts(t *testi
 	taskID := "broken0001-1111-4222-8333-444444444444"
 	writeTelemetryLinesForCoverage(t, st, taskID, []string{"{not json"})
 
-	coverage := st.ComputeTelemetryCoverage([]TaskStats{{Version: taskStatsVersion, TaskID: taskID, ModelCalls: 2}})
+	coverage := st.ComputeTelemetryCoverage([]TaskStats{{Version: taskStatsVersion, TaskID: taskID, ModelCalls: 2}}, "", nil)
 	if coverage.Status != CoverageUnreadable || coverage.UsageKnown {
 		t.Fatalf("読み取り不能fileはunreadable/usage不明です: %+v", coverage)
 	}
@@ -253,7 +253,7 @@ func TestComputeTelemetryCoverageOrphanTelemetryFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	coverage := st.ComputeTelemetryCoverage(all)
+	coverage := st.ComputeTelemetryCoverage(all, "", nil)
 	if coverage.OrphanFiles != 1 {
 		t.Fatalf("集計対象外telemetry fileを1件報告すべきです: %+v", coverage)
 	}
@@ -289,7 +289,7 @@ func TestComputeTelemetryCoverageArchivedFlowHistoricalGap(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	coverage := st.ComputeTelemetryCoverage(all)
+	coverage := st.ComputeTelemetryCoverage(all, "", nil)
 	if coverage.MissingCalls != 1 || coverage.StatsCalls != 2 || coverage.RawRecords != 1 {
 		t.Fatalf("archive済みgap 1件と現在task完全一致: %+v", coverage)
 	}

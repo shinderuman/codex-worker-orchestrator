@@ -34,7 +34,7 @@ func printTestImpact(st *state.StateStore, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	scan, err := scanTelemetryTaskLogs(st)
+	scan, err := scanTelemetryTaskLogs(st, state.TelemetryQueryFilter{})
 	if err != nil {
 		return err
 	}

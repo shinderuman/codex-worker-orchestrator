@@ -13,7 +13,7 @@ import (
 func executeStatsOutput(t *testing.T, st *state.StateStore) statsOutput {
 	t.Helper()
 	var out bytes.Buffer
-	if err := printStats(st, &out); err != nil {
+	if err := printStats(st, TelemetryQueryArgs{}, &out); err != nil {
 		t.Fatal(err)
 	}
 	var output statsOutput

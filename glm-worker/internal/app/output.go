@@ -97,6 +97,7 @@ type currentCallView struct {
 }
 
 type statsOutput struct {
+	Query                                   telemetryQueryView  `json:"query"`
 	Tasks                                   int                 `json:"tasks"`
 	ModelCalls                              int                 `json:"model_calls"`
 	ModelCallsByAlias                       map[string]int      `json:"model_calls_by_alias"`
@@ -181,6 +182,11 @@ type statsCurrentTask struct {
 	ID          *string `json:"id"`
 	Status      *string `json:"status"`
 	ArtifactDir *string `json:"artifact_dir"`
+}
+
+type statsHistoryOutput struct {
+	Query     telemetryQueryView         `json:"query"`
+	Telemetry state.TelemetryHistoryScan `json:"telemetry"`
 }
 
 type resetOutput struct {
@@ -464,13 +470,26 @@ func taskLiveness(probe LockProbe) *string {
 	}
 }
 
-func printStats(st *state.StateStore, stdout io.Writer) error {
+func printStats(st *state.StateStore, query TelemetryQueryArgs, stdout io.Writer) error {
+	if query.isHistory() {
+		return printStatsHistory(st, query, stdout)
+	}
 	all, err := st.AllTaskStats()
 	if err != nil {
 		return err
 	}
-	output := buildStatsOutput(st, all)
-	return writeJSON(stdout, output)
+	return writeJSON(stdout, buildStatsOutput(st, all, query))
+}
+
+func printStatsHistory(st *state.StateStore, query TelemetryQueryArgs, stdout io.Writer) error {
+	scan, err := st.ScanTelemetryHistory(query.Filter)
+	if err != nil {
+		return err
+	}
+	return writeJSON(stdout, statsHistoryOutput{
+		Query:     query.view(telemetryQueryPeriodBasisRecord),
+		Telemetry: *scan,
+	})
 }
 
 func newAggregateTaskStats() state.TaskStats {
@@ -541,16 +560,28 @@ func mergeTaskStats(aggregate *state.TaskStats, stats state.TaskStats) {
 	mergeIntMap(&aggregate.ParentOutcomesByRisk, stats.ParentOutcomesByRisk)
 }
 
-func buildStatsOutput(st *state.StateStore, all []state.TaskStats) statsOutput {
+func buildStatsOutput(st *state.StateStore, all []state.TaskStats, query TelemetryQueryArgs) statsOutput {
+	filtered := filterTaskStatsForQuery(all, query.Filter)
 	aggregate := newAggregateTaskStats()
-	for _, stats := range all {
+	for _, stats := range filtered {
 		mergeTaskStats(&aggregate, stats)
 	}
-	output := statsOutputFromAggregate(st, len(all), aggregate, probeCallCount(aggregate.ProbeOutcome))
-	output.TelemetryCoverage = statsCoverageDetail(st.ComputeTelemetryCoverage(all))
-	fillStatsParentReview(st, all, aggregate, &output)
+	output := statsOutputFromAggregate(st, len(filtered), aggregate, probeCallCount(aggregate.ProbeOutcome))
+	output.Query = query.view(telemetryQueryPeriodBasisTask)
+	output.TelemetryCoverage = statsCoverageDetail(
+		st.ComputeTelemetryCoverage(filtered, query.Filter.TaskID, taskStatsIDSet(all)),
+	)
+	fillStatsParentReview(st, filtered, aggregate, &output)
 	output.CurrentTask = statsCurrentTaskDetail(st)
 	return output
+}
+
+func taskStatsIDSet(all []state.TaskStats) map[string]bool {
+	ids := make(map[string]bool, len(all))
+	for _, stats := range all {
+		ids[stats.TaskID] = true
+	}
+	return ids
 }
 
 func probeCallCount(outcomes map[string]int) int {

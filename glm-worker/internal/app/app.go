@@ -37,6 +37,7 @@ type Command struct {
 	ArtifactRoot        string
 	Verify              VerifyArgs
 	Coalesce            CoalesceArgs
+	Query               TelemetryQueryArgs
 }
 
 type VerifyArgs struct {
@@ -48,6 +49,11 @@ type VerifyArgs struct {
 type CoalesceArgs struct {
 	ParentThreadID  string
 	ResumeAtRFC3339 string
+}
+
+type TelemetryQueryArgs struct {
+	Scope  string
+	Filter state.TelemetryQueryFilter
 }
 
 type UsageError struct {
@@ -110,6 +116,8 @@ const installSmokeUsage = "[--role worker|reviewer|fix|parent]"
 
 const qualityGateUsage = "<go-test|go-test-race> | --quality-gate <status|watch|result> <validation-run-id>"
 
+const telemetryQueryUsage = "[current|history] [--task <task-id>] [--since <rfc3339>] [--until <rfc3339>]"
+
 var commandParsers = map[string]commandParser{
 	"--decision": func([]string) (Command, error) {
 		return Command{}, usageError("usage: glm-worker --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix-stdin <payload-bytes> [--sha256 <hex>] %s", fixOriginUsage)
@@ -149,7 +157,7 @@ var commandParsers = map[string]commandParser{
 		return optionalPayloadCommand(args, ModeConvergence, "usage: glm-worker --convergence [task-id]")
 	},
 	"--stats": func(args []string) (Command, error) {
-		return singleArgCommand(args, ModeStats, "usage: glm-worker --stats")
+		return telemetryQueryCommand(args, ModeStats, "--stats")
 	},
 	"--reset": func(args []string) (Command, error) {
 		return singleArgCommand(args, ModeReset, "usage: glm-worker --reset")
@@ -160,7 +168,7 @@ var commandParsers = map[string]commandParser{
 		return requiredPayloadCommand(args, ModeEvalAB, "usage: glm-worker --eval-ab <run-dir>")
 	},
 	"--call-outliers": func(args []string) (Command, error) {
-		return singleArgCommand(args, ModeCallOutliers, "usage: glm-worker --call-outliers")
+		return telemetryQueryCommand(args, ModeCallOutliers, "--call-outliers")
 	},
 	"--model-routing": func(args []string) (Command, error) {
 		return singleArgCommand(args, ModeModelRouting, "usage: glm-worker --model-routing")
@@ -205,7 +213,7 @@ func usageError(format string, args ...any) *UsageError {
 
 func ParseCommand(args []string) (Command, error) {
 	if len(args) == 0 {
-		return Command{}, usageError("usage: glm-worker <instruction> | --execution-milestones-stdin <payload-bytes> [--sha256 <hex>] | --execution-milestones-revise-stdin <payload-bytes> [--sha256 <hex>] | --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix-stdin <payload-bytes> [--sha256 <hex>] %s | --accept | --resume | --stop | --isolate | --status | --handoff [recovery] | --project-state | --watch [--verbose] | --timeline [task-id] | --convergence [task-id] | --stats | --reset | --verify-auto-resume <automation-key> <auto-resume-at-rfc3339> | --eval-ab <run-dir> | --call-outliers | --codex-limit | --repo-search <query> | --check-wake-coalesce <auto-resume-at-rfc3339> | --install-smoke %s | --quality-gate %s | --model-routing | --packet-check <packet.json> [--role worker|reviewer] [--artifact-root <dir>] | bundle [task-id] | --parent-usage [task-id]", fixOriginUsage, installSmokeUsage, qualityGateUsage)
+		return Command{}, usageError("usage: glm-worker <instruction> | --execution-milestones-stdin <payload-bytes> [--sha256 <hex>] | --execution-milestones-revise-stdin <payload-bytes> [--sha256 <hex>] | --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix-stdin <payload-bytes> [--sha256 <hex>] %s | --accept | --resume | --stop | --isolate | --status | --handoff [recovery] | --project-state | --watch [--verbose] | --timeline [task-id] | --convergence [task-id] | --stats %s | --reset | --verify-auto-resume <automation-key> <auto-resume-at-rfc3339> | --eval-ab <run-dir> | --call-outliers %s | --codex-limit | --repo-search <query> | --check-wake-coalesce <auto-resume-at-rfc3339> | --install-smoke %s | --quality-gate %s | --model-routing | --packet-check <packet.json> [--role worker|reviewer] [--artifact-root <dir>] | bundle [task-id] | --parent-usage [task-id]", fixOriginUsage, telemetryQueryUsage, telemetryQueryUsage, installSmokeUsage, qualityGateUsage)
 	}
 	if parser, ok := commandParsers[args[0]]; ok {
 		return parser(args)
@@ -472,7 +480,7 @@ func executeStateless(cmd Command, cfg config.AppConfig, stdout io.Writer) (bool
 		}
 		return true, printParentHandoff(state.AttachStateStore(cfg), stdout)
 	case ModeStats:
-		return true, printStats(state.AttachStateStore(cfg), stdout)
+		return true, printStats(state.AttachStateStore(cfg), cmd.Query, stdout)
 	case ModeWatch:
 		return true, printWatch(state.AttachStateStore(cfg), stdout, defaultWatchOptions(cmd.WatchVerbose))
 	case ModeStop:
@@ -500,7 +508,7 @@ func executeStatelessReport(cmd Command, cfg config.AppConfig, stdout io.Writer)
 	case ModeEvalAB:
 		return true, printEvalAB(st, cmd.Payload, stdout)
 	case ModeCallOutliers:
-		return true, printCallOutliers(st, stdout)
+		return true, printCallOutliers(st, cmd.Query, stdout)
 	case ModeModelRouting:
 		return true, printModelRouting(st, stdout)
 	case ModeTestImpact:

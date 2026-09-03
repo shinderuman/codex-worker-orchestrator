@@ -172,13 +172,26 @@ func TestExecuteModelRoutingEmptyState(t *testing.T) {
 
 func TestTelemetryScanDirReadErrorIsProcessError(t *testing.T) {
 	tests := []struct {
-		name string
-		mode CommandMode
-		dir  func(*state.StateStore) string
+		name  string
+		mode  CommandMode
+		query TelemetryQueryArgs
+		dir   func(*state.StateStore) string
 	}{
 		{name: "call-outliers-telemetry", mode: ModeCallOutliers, dir: func(st *state.StateStore) string { return st.Path("telemetry") }},
 		{name: "model-routing-telemetry", mode: ModeModelRouting, dir: func(st *state.StateStore) string { return st.Path("telemetry") }},
 		{name: "test-impact-events", mode: ModeTestImpact, dir: func(st *state.StateStore) string { return st.Path("events") }},
+		{
+			name:  "stats-history-telemetry",
+			mode:  ModeStats,
+			query: TelemetryQueryArgs{Scope: state.TelemetryScopeHistory},
+			dir:   func(st *state.StateStore) string { return st.Path("telemetry") },
+		},
+		{
+			name:  "call-outliers-history-telemetry",
+			mode:  ModeCallOutliers,
+			query: TelemetryQueryArgs{Scope: state.TelemetryScopeHistory},
+			dir:   func(st *state.StateStore) string { return st.Path("telemetry") },
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -192,7 +205,7 @@ func TestTelemetryScanDirReadErrorIsProcessError(t *testing.T) {
 			}
 
 			var out bytes.Buffer
-			err := Execute(Command{Mode: test.mode}, cfg, nil, &out, io.Discard)
+			err := Execute(Command{Mode: test.mode, Query: test.query}, cfg, nil, &out, io.Discard)
 
 			if err == nil {
 				t.Fatalf("dir読取失敗が正常終了しました: %s", out.String())

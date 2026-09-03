@@ -60,12 +60,15 @@ func (c TaskCallCoverage) Classification() string {
 	return CoverageComplete
 }
 
-func (s *StateStore) ComputeTelemetryCoverage(tasks []TaskStats) TelemetryCoverage {
+func (s *StateStore) ComputeTelemetryCoverage(tasks []TaskStats, orphanTaskDomain string, orphanKnownTasks map[string]bool) TelemetryCoverage {
 	coverage := TelemetryCoverage{
 		Tasks:  make([]TaskCallCoverage, 0, len(tasks)),
 		Status: CoverageComplete,
 	}
-	known := make(map[string]bool, len(tasks))
+	known := orphanKnownTasks
+	if known == nil {
+		known = make(map[string]bool, len(tasks))
+	}
 	for _, task := range tasks {
 		known[task.TaskID] = true
 		entry := TaskCallCoverage{
@@ -94,7 +97,7 @@ func (s *StateStore) ComputeTelemetryCoverage(tasks []TaskStats) TelemetryCovera
 			}
 		}
 	}
-	coverage.OrphanFiles = s.countOrphanTelemetryFiles(known)
+	coverage.OrphanFiles = s.countOrphanTelemetryFiles(known, orphanTaskDomain)
 	if coverage.OrphanFiles > 0 && coverage.Status == CoverageComplete {
 		coverage.Status = CoverageIncomplete
 	}
@@ -102,14 +105,18 @@ func (s *StateStore) ComputeTelemetryCoverage(tasks []TaskStats) TelemetryCovera
 	return coverage
 }
 
-func (s *StateStore) countOrphanTelemetryFiles(known map[string]bool) int {
+func (s *StateStore) countOrphanTelemetryFiles(known map[string]bool, orphanTaskDomain string) int {
 	paths, err := filepath.Glob(filepath.Join(s.dir, "telemetry", "*.jsonl"))
 	if err != nil {
 		return 0
 	}
 	count := 0
 	for _, path := range paths {
-		if !known[strings.TrimSuffix(filepath.Base(path), ".jsonl")] {
+		taskID := strings.TrimSuffix(filepath.Base(path), ".jsonl")
+		if orphanTaskDomain != "" && taskID != orphanTaskDomain {
+			continue
+		}
+		if !known[taskID] {
 			count++
 		}
 	}
