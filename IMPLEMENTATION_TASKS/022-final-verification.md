@@ -174,6 +174,10 @@ Original instructionの「Plan/Task/History final consistency」は、current Ru
 
 - Final verification開始時点で、Plan上にTask 022自身以外の実行可能なunblocked implementation / evaluation taskが残っていないこと。BLOCKED / USER_PERMISSION_WAITは除外し、parent decision gateから生成された採用taskも完了していること
 
+## External feasibility
+
+status: not-applicable
+
 ## Review findings
 
 none

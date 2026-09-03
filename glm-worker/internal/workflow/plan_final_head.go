@@ -48,7 +48,7 @@ func validateFinalHeadPlan(root string, plan string) error {
 	if err != nil {
 		return err
 	}
-	if err := validateFinalHeadTask(root, activePath); err != nil {
+	if err := validateFinalHeadActiveTask(root, activePath); err != nil {
 		return err
 	}
 	for _, entries := range [][]string{schedule.Next, schedule.Blocked} {
@@ -62,6 +62,20 @@ func validateFinalHeadPlan(root string, plan string) error {
 		return err
 	}
 	return validateFinalHeadTransition(plan)
+}
+
+func validateFinalHeadActiveTask(root string, path string) error {
+	if err := validateFinalHeadTask(root, path); err != nil {
+		return err
+	}
+	content, err := finalHeadGitOutput(root, "show", "HEAD:"+path)
+	if err != nil {
+		return fmt.Errorf("HEADのACTIVE task file %sを読めません: %w", path, err)
+	}
+	if _, err := taskcontract.ParseExternalFeasibility([]byte(content)); err != nil {
+		return fmt.Errorf("HEADのACTIVE task contract %sを受理できません: %w", path, err)
+	}
+	return nil
 }
 
 func validateFinalHeadTask(root string, path string) error {
