@@ -30,6 +30,30 @@ func TestFinalHeadPlanRejectsMissingTask(t *testing.T) {
 	}
 }
 
+func TestFinalHeadPlanRejectsActiveTaskMissingExternalFeasibility(t *testing.T) {
+	root := newFinalHeadRepo(t)
+	writeFinalHeadFixture(t, root, finalHeadFixturePlan("main", ""), true)
+	writeFinalHeadFile(t, root, "IMPLEMENTATION_TASKS/active.md", "# active\n")
+	commitFinalHeadFixture(t, root)
+
+	_, err := CheckFinalHeadPlan(root)
+	if err == nil || !strings.Contains(err.Error(), "External feasibility") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestFinalHeadPlanReadsActiveContractFromHead(t *testing.T) {
+	root := newFinalHeadRepo(t)
+	writeFinalHeadFixture(t, root, finalHeadFixturePlan("main", ""), true)
+	commitFinalHeadFixture(t, root)
+	writeFinalHeadFile(t, root, "IMPLEMENTATION_TASKS/active.md", "# active\n")
+
+	status, err := CheckFinalHeadPlan(root)
+	if err != nil || status != "plan final head: verified" {
+		t.Fatalf("status=%q err=%v", status, err)
+	}
+}
+
 func TestFinalHeadPlanRejectsBranchMismatch(t *testing.T) {
 	root := newFinalHeadRepo(t)
 	writeFinalHeadFixture(t, root, finalHeadFixturePlan("other", ""), true)
@@ -104,7 +128,7 @@ func newFinalHeadRepo(t *testing.T) string {
 func writeFinalHeadFixture(t *testing.T, root string, plan string, includeNext bool) {
 	t.Helper()
 	writeFinalHeadFile(t, root, implementationPlanFile, plan)
-	writeFinalHeadFile(t, root, "IMPLEMENTATION_TASKS/active.md", "# active\n")
+	writeFinalHeadFile(t, root, "IMPLEMENTATION_TASKS/active.md", "# active\n\n## External feasibility\n\nstatus: not-applicable\n")
 	if includeNext {
 		writeFinalHeadFile(t, root, "IMPLEMENTATION_TASKS/next.md", "# next\n")
 	}
