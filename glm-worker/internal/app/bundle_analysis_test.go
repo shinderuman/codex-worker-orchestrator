@@ -633,9 +633,172 @@ func TestBundleAnalysisTokenDeltaDegradations(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			delta := analysisExecutionTokenDelta(codexAssociation{ParentStatus: codexStatusIncluded}, scan, start, tc.boundary, end)
+			delta := analysisExecutionTokenDelta(codexAssociation{ParentStatus: codexStatusIncluded}, scan, nil, start, tc.boundary, end)
 			if delta.Status != tc.status || delta.InputTokens != 0 || delta.CachedInputTokens != 0 {
 				t.Fatalf("delta = %#v", delta)
+			}
+		})
+	}
+}
+
+func TestBundleAnalysisUnreadableRolloutDistinctFromAbsentEvidence(t *testing.T) {
+	start := time.Date(2026, 9, 4, 1, 0, 0, 0, time.UTC)
+	end := start.Add(2 * time.Hour)
+	collector := newBundleCollector()
+	collector.entries[codexRolloutArchivePath(codexTestParentThreadID)] = bundleEntry{}
+	unreadable := codexAssociation{
+		ParentStatus:   codexStatusIncluded,
+		ParentThreadID: codexTestParentThreadID,
+		ParentPath:     filepath.Join(t.TempDir(), "unreadable-rollout"),
+		ParentSource:   "sessions/2026/09/04/rollout-unreadable.jsonl",
+	}
+	if err := os.Mkdir(unreadable.ParentPath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	scan, scanErr := scanAnalysisRolloutWindow(collector, unreadable, start, end)
+	if scanErr == nil {
+		t.Fatal("rollout scan errorがempty scanへ変換されました")
+	}
+	if len(scan.turns) != 0 || scan.hasWindow || len(scan.tokens) != 0 {
+		t.Fatalf("failed scan keeps partial observations: %#v", scan)
+	}
+	malformed := unreadable
+	malformed.ParentPath = filepath.Join(t.TempDir(), "malformed-rollout.jsonl")
+	writeBundleFile(t, malformed.ParentPath, analysisTokenCountLine(t, start.Add(time.Minute), 100, 50)+"{malformed\n")
+	malformedScan, malformedErr := scanAnalysisRolloutWindow(collector, malformed, start, end)
+	if malformedErr == nil {
+		t.Fatal("malformed rollout recordが成功扱いになりました")
+	}
+	if len(malformedScan.tokens) != 0 || malformedScan.hasWindow {
+		t.Fatalf("failed parse keeps partial observations: %#v", malformedScan)
+	}
+	if _, openErr := scanAnalysisRolloutWindow(collector, codexAssociation{
+		ParentStatus:   codexStatusIncluded,
+		ParentThreadID: codexTestParentThreadID,
+		ParentPath:     filepath.Join(t.TempDir(), "absent-rollout.jsonl"),
+	}, start, end); openErr == nil {
+		t.Fatal("absent rollout scan errorが握り潰されました")
+	}
+
+	readable := unreadable
+	readable.ParentPath = filepath.Join(t.TempDir(), "readable-rollout.jsonl")
+	writeBundleFile(t, readable.ParentPath, analysisTokenCountLine(t, start.Add(-time.Hour), 100, 50))
+	readableScan, readableErr := scanAnalysisRolloutWindow(collector, readable, start, end)
+	if readableErr != nil || readableScan.hasWindow {
+		t.Fatalf("readable rollout scan = %#v, %v", readableScan, readableErr)
+	}
+
+	execution := analysisExecutionBoundary{
+		status:   analysisStatusAvailable,
+		end:      end,
+		endBasis: analysisExecutionEndBasisLifecycleComplete,
+	}
+	window := analysisRolloutWindow(unreadable, scan, scanErr, start)
+	if window.Status != analysisStatusUnreadable ||
+		window.Reason != analysisReasonRolloutScanFailed ||
+		window.Source != unreadable.ParentSource ||
+		window.TotalBytes != 0 || window.WindowBytes != 0 {
+		t.Fatalf("rollout window = %#v", window)
+	}
+	encoded, err := json.Marshal(window)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(encoded), `"reason":"`+analysisReasonRolloutScanFailed+`"`) ||
+		!strings.Contains(string(encoded), `"source":"`+unreadable.ParentSource+`"`) {
+		t.Fatalf("unreadable rollout window JSON = %s", encoded)
+	}
+	if waits := analysisWaitCalls(unreadable, scan, scanErr, start, execution, end); waits.Status != analysisStatusUnreadable ||
+		waits.Count != 0 || len(waits.Calls) != 0 {
+		t.Fatalf("wait calls = %#v", waits)
+	}
+	if delta := analysisExecutionTokenDelta(unreadable, scan, scanErr, start, execution, end); delta.Status != analysisStatusUnreadable ||
+		delta.InputTokens != 0 || delta.BaselineAt != "" {
+		t.Fatalf("token delta = %#v", delta)
+	}
+	turn := &analysisRolloutTurn{
+		TurnID:      analysisOwningTurnID,
+		StartedAt:   start.Add(-time.Minute),
+		HasStart:    true,
+		CompletedAt: end,
+		HasComplete: true,
+	}
+	ownership := analysisTaskOwnership{
+		status:  analysisStatusAvailable,
+		initial: turn,
+		final:   turn,
+		owned:   map[string]struct{}{analysisOwningTurnID: {}},
+	}
+	finalizationWindow := bundleAnalysisInterval{
+		Status: analysisStatusAvailable,
+		Start:  analysisTimestamp(end.Add(-time.Minute)),
+		End:    analysisTimestamp(end),
+	}
+	if finalization := analysisTaskFinalizationTokenDelta(unreadable, scan, scanErr, execution, ownership, finalizationWindow); finalization.Status != analysisStatusUnreadable ||
+		finalization.InputTokens != 0 {
+		t.Fatalf("finalization delta = %#v", finalization)
+	}
+	if subsequent := analysisTaskSubsequentRequests(unreadable, scan, scanErr, ownership, end); subsequent.Status != analysisStatusUnreadable ||
+		subsequent.Attribution != analysisAttributionSubsequent || len(subsequent.Turns) != 0 {
+		t.Fatalf("subsequent requests = %#v", subsequent)
+	}
+
+	if window := analysisRolloutWindow(readable, readableScan, nil, start); window.Status != codexStatusIncluded {
+		t.Fatalf("readable rollout window = %#v", window)
+	}
+	if waits := analysisWaitCalls(readable, readableScan, nil, start, execution, end); waits.Status != analysisStatusNoObservation {
+		t.Fatalf("readable wait calls = %#v", waits)
+	}
+	if delta := analysisExecutionTokenDelta(readable, readableScan, nil, start, execution, end); delta.Status != analysisStatusNoObservation {
+		t.Fatalf("readable token delta = %#v", delta)
+	}
+	if subsequent := analysisTaskSubsequentRequests(readable, readableScan, nil, ownership, end); subsequent.Status != analysisStatusAvailable ||
+		len(subsequent.Turns) != 0 {
+		t.Fatalf("readable subsequent requests = %#v", subsequent)
+	}
+}
+
+func TestScanCodexRolloutWindowRejectsMalformedRecords(t *testing.T) {
+	start := time.Date(2026, 9, 4, 1, 0, 0, 0, time.UTC)
+	end := start.Add(2 * time.Hour)
+	cases := []struct {
+		name        string
+		lines       string
+		wantLocator string
+	}{
+		{
+			name:        "malformed-json-record",
+			lines:       analysisTokenCountLine(t, start.Add(time.Minute), 100, 50) + "{malformed\n",
+			wantLocator: "2行目",
+		},
+		{
+			name: "invalid-timestamp-record",
+			lines: analysisTokenCountLine(t, start.Add(time.Minute), 100, 50) +
+				`{"timestamp":"not-a-timestamp","type":"event_msg","payload":{}}` + "\n",
+			wantLocator: "2行目",
+		},
+		{
+			name: "blank-line-and-unrelated-record-tolerated",
+			lines: "\n" + analysisTokenCountLine(t, start.Add(time.Minute), 100, 50) +
+				analysisRolloutLine(t, start.Add(2*time.Minute), "unknown_record_type", map[string]any{"detail": true}),
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "rollout.jsonl")
+			writeBundleFile(t, path, tc.lines)
+			scan, err := scanCodexRolloutWindow(path, start, end)
+			if tc.wantLocator == "" {
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(scan.tokens) != 1 || !scan.hasWindow {
+					t.Fatalf("tolerated scan = %#v", scan)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.wantLocator) {
+				t.Fatalf("scan error = %v", err)
 			}
 		})
 	}

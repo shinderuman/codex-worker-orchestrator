@@ -340,7 +340,7 @@ func TestAnalysisWaitCallsDetailed(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	waits := analysisWaitCalls(codexAssociation{ParentStatus: codexStatusIncluded}, scan, start,
+	waits := analysisWaitCalls(codexAssociation{ParentStatus: codexStatusIncluded}, scan, nil, start,
 		analysisExecutionBoundary{status: analysisStatusAvailable, end: end}, end)
 
 	if waits.Status != analysisStatusCounted {

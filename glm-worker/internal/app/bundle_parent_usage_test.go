@@ -272,12 +272,12 @@ func TestParentUsageUnreadableRolloutDistinctFromAbsentEvidence(t *testing.T) {
 			t.Fatalf("execution interval = %#v", execution)
 		}
 		if execution.Tokens.Status != analysisStatusUnreadable ||
-			execution.Tokens.Reason != parentUsageReasonRolloutUnreadable ||
+			execution.Tokens.Reason != analysisReasonRolloutScanFailed ||
 			execution.Tokens.InputTokens != 0 || execution.Tokens.TotalTokens != 0 {
 			t.Fatalf("execution tokens = %#v", execution.Tokens)
 		}
 		if execution.Activity.Status != analysisStatusUnreadable ||
-			execution.Activity.Reason != parentUsageReasonRolloutUnreadable ||
+			execution.Activity.Reason != analysisReasonRolloutScanFailed ||
 			execution.Activity.Source != association.ParentSource ||
 			execution.Activity.ToolCalls != 0 || execution.Activity.ModelTurns != 0 {
 			t.Fatalf("execution activity = %#v", execution.Activity)
@@ -304,9 +304,9 @@ func TestParentUsageUnreadableRolloutDistinctFromAbsentEvidence(t *testing.T) {
 		finalization := parentUsageFinalizationInterval(association, scan, scanErr, executionBoundary, ownership, window)
 		if finalization.Status != analysisStatusAvailable ||
 			finalization.Tokens.Status != analysisStatusUnreadable ||
-			finalization.Tokens.Reason != parentUsageReasonRolloutUnreadable ||
+			finalization.Tokens.Reason != analysisReasonRolloutScanFailed ||
 			finalization.Activity.Status != analysisStatusUnreadable ||
-			finalization.Activity.Reason != parentUsageReasonRolloutUnreadable ||
+			finalization.Activity.Reason != analysisReasonRolloutScanFailed ||
 			finalization.Activity.Source != association.ParentSource {
 			t.Fatalf("finalization interval = %#v", finalization)
 		}

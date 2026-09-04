@@ -73,6 +73,8 @@ type bundleAnalysisParent struct {
 
 type bundleAnalysisRollout struct {
 	Status            string `json:"status"`
+	Reason            string `json:"reason,omitempty"`
+	Source            string `json:"source,omitempty"`
 	TotalBytes        int64  `json:"total_bytes,omitempty"`
 	WindowStartOffset int64  `json:"window_start_offset,omitempty"`
 	WindowEndOffset   int64  `json:"window_end_offset,omitempty"`
@@ -208,17 +210,25 @@ type bundleAnalysisEvidenceRef struct {
 }
 
 type bundleRolloutScan struct {
-	totalBytes  int64
-	windowStart int64
-	windowEnd   int64
-	hasWindow   bool
-	turns       []analysisRolloutTurn
-	turnIndex   map[string]int
-	tokens      []analysisRolloutTokenAnchor
-	waits       []analysisRolloutWaitRequest
-	waitReturns []analysisRolloutWaitReturn
-	toolEvents  []analysisRolloutToolEvent
-	compactions []analysisRolloutCompaction
+	totalBytes     int64
+	windowStart    int64
+	windowEnd      int64
+	hasWindow      bool
+	turns          []analysisRolloutTurn
+	turnIndex      map[string]int
+	tokens         []analysisRolloutTokenAnchor
+	waits          []analysisRolloutWaitRequest
+	waitReturns    []analysisRolloutWaitReturn
+	toolEvents     []analysisRolloutToolEvent
+	compactions    []analysisRolloutCompaction
+	resumeCommands []analysisRolloutResumeCommand
+}
+
+type analysisRolloutResumeCommand struct {
+	TurnID  string
+	Command string
+	Stdout  string
+	At      time.Time
 }
 
 type analysisRolloutToolEvent struct {
@@ -325,7 +335,7 @@ type analysisCounterDelta struct {
 	MissingInEnd      bool
 }
 
-const bundleAnalysisIndexVersion = 3
+const bundleAnalysisIndexVersion = 4
 
 const bundleAnalysisEntryPath = "analysis-index.json"
 
@@ -363,6 +373,8 @@ const (
 	analysisBasisGuardianWindowOverlap = "guardian-window-overlap"
 	analysisBasisParentLogWindow       = "parent-log-window"
 )
+
+const analysisReasonRolloutScanFailed = "rollout-scan-failed"
 
 const analysisWindowEndBasisArchivedAt = "archived-at"
 
@@ -435,8 +447,8 @@ func (c *bundleCollector) addBundleAnalysisIndex(st *state.StateStore, task bund
 func buildBundleAnalysisIndex(st *state.StateStore, task bundleTask, collector *bundleCollector, association codexAssociation) bundleAnalysisIndex {
 	start, collectionEnd, collectionEndBasis := analysisCollectionWindow(task)
 	execution := resolveAnalysisExecutionBoundary(st, task.ID)
-	rolloutScan := scanAnalysisRolloutWindow(collector, association, start, collectionEnd)
-	ownership := resolveAnalysisTaskOwnership(association, rolloutScan.turns, start, collectionEnd, task.ID)
+	rolloutScan, rolloutScanErr := scanAnalysisRolloutWindow(collector, association, start, collectionEnd)
+	ownership := resolveAnalysisTaskOwnership(rolloutScan, start, collectionEnd, task.ID)
 	finalizationInterval := analysisTaskFinalizationInterval(execution, ownership)
 	eventRuns := analysisTaskEventValidationRuns(st, task.ID)
 	roundSeqByDigest := analysisRoundDigestSeqs(st, task.ID)
@@ -450,7 +462,7 @@ func buildBundleAnalysisIndex(st *state.StateStore, task bundleTask, collector *
 		Intervals: bundleAnalysisIntervals{
 			TaskExecution:      analysisExecutionInterval(start, execution),
 			ParentFinalization: finalizationInterval,
-			SubsequentRequests: analysisTaskSubsequentRequests(association, rolloutScan, ownership, collectionEnd),
+			SubsequentRequests: analysisTaskSubsequentRequests(association, rolloutScan, rolloutScanErr, ownership, collectionEnd),
 			Collection: bundleAnalysisInterval{
 				Status:   analysisStatusAvailable,
 				Start:    analysisTimestamp(start),
@@ -459,10 +471,10 @@ func buildBundleAnalysisIndex(st *state.StateStore, task bundleTask, collector *
 			},
 		},
 		ParentSession:  analysisParentSession(association),
-		RolloutWindow:  analysisRolloutWindow(association, rolloutScan, start),
-		WaitCalls:      analysisWaitCalls(association, rolloutScan, start, execution, collectionEnd),
-		TokenDelta:     analysisExecutionTokenDelta(association, rolloutScan, start, execution, collectionEnd),
-		Finalization:   analysisTaskFinalizationTokenDelta(association, rolloutScan, execution, ownership, finalizationInterval),
+		RolloutWindow:  analysisRolloutWindow(association, rolloutScan, rolloutScanErr, start),
+		WaitCalls:      analysisWaitCalls(association, rolloutScan, rolloutScanErr, start, execution, collectionEnd),
+		TokenDelta:     analysisExecutionTokenDelta(association, rolloutScan, rolloutScanErr, start, execution, collectionEnd),
+		Finalization:   analysisTaskFinalizationTokenDelta(association, rolloutScan, rolloutScanErr, execution, ownership, finalizationInterval),
 		ValidationRuns: validations,
 		Retries:        analysisRetries(task, eventRuns, validations.Runs, telemetry),
 		Evidence:       analysisEvidence(collector, association, attributedRuns, validations.Runs),
@@ -483,18 +495,18 @@ func analysisParentSession(association codexAssociation) bundleAnalysisParent {
 	return parent
 }
 
-func scanAnalysisRolloutWindow(collector *bundleCollector, association codexAssociation, start, end time.Time) bundleRolloutScan {
+func scanAnalysisRolloutWindow(collector *bundleCollector, association codexAssociation, start, end time.Time) (bundleRolloutScan, error) {
 	if association.ParentStatus != codexStatusIncluded {
-		return bundleRolloutScan{}
+		return bundleRolloutScan{}, nil
 	}
 	if _, collected := collector.entries[codexRolloutArchivePath(association.ParentThreadID)]; !collected {
-		return bundleRolloutScan{}
+		return bundleRolloutScan{}, nil
 	}
 	scan, err := scanCodexRolloutWindow(association.ParentPath, start, end)
 	if err != nil {
-		return bundleRolloutScan{}
+		return bundleRolloutScan{}, err
 	}
-	return scan
+	return scan, nil
 }
 
 func scanCodexRolloutWindow(rolloutPath string, start, end time.Time) (bundleRolloutScan, error) {
@@ -511,7 +523,9 @@ func scanCodexRolloutWindow(rolloutPath string, start, end time.Time) (bundleRol
 		line, readErr := reader.ReadBytes('\n')
 		if len(line) > 0 {
 			lineNumber++
-			observeAnalysisRolloutLine(&scan, line, lineNumber, start, end)
+			if err := observeAnalysisRolloutLine(&scan, line, lineNumber, start, end); err != nil {
+				return scan, err
+			}
 			scan.totalBytes += int64(len(line))
 		}
 		if readErr != nil {
@@ -541,18 +555,18 @@ func (scan *bundleRolloutScan) finalizeTurns() {
 	scan.turnIndex = nil
 }
 
-func observeAnalysisRolloutLine(scan *bundleRolloutScan, line []byte, lineNumber int, start, end time.Time) {
+func observeAnalysisRolloutLine(scan *bundleRolloutScan, line []byte, lineNumber int, start, end time.Time) error {
 	trimmed := strings.TrimRight(string(line), "\n")
 	if trimmed == "" {
-		return
+		return nil
 	}
 	var record codexRolloutScanLine
 	if err := json.Unmarshal([]byte(trimmed), &record); err != nil {
-		return
+		return fmt.Errorf("parent rollout %d行目のJSONを解析できません: %w", lineNumber, err)
 	}
 	timestamp, timestampErr := time.Parse(time.RFC3339Nano, record.Timestamp)
 	if timestampErr != nil {
-		return
+		return fmt.Errorf("parent rollout %d行目のtimestampを解析できません: %w", lineNumber, timestampErr)
 	}
 	observeAnalysisRolloutInWindowRecord(scan, line, timestamp, start, end)
 	if record.Type == "response_item" {
@@ -565,6 +579,7 @@ func observeAnalysisRolloutLine(scan *bundleRolloutScan, line []byte, lineNumber
 	if record.Type == codexRolloutCompactedType {
 		scan.compactions = append(scan.compactions, analysisRolloutCompaction{At: timestamp})
 	}
+	return nil
 }
 
 func observeAnalysisRolloutInWindowRecord(scan *bundleRolloutScan, line []byte, timestamp time.Time, start, end time.Time) {
@@ -665,6 +680,20 @@ func observeAnalysisRolloutEvent(scan *bundleRolloutScan, record codexRolloutSca
 		return
 	}
 	observeAnalysisRolloutTurnBoundary(scan, payload, timestamp)
+	analysisObserveRolloutResumeCommand(scan, record.Payload, timestamp)
+}
+
+func analysisObserveRolloutResumeCommand(scan *bundleRolloutScan, payload json.RawMessage, timestamp time.Time) {
+	turnID, command, stdout, ok := analysisResumeCommandFromPayload(payload)
+	if !ok {
+		return
+	}
+	scan.resumeCommands = append(scan.resumeCommands, analysisRolloutResumeCommand{
+		TurnID:  turnID,
+		Command: command,
+		Stdout:  stdout,
+		At:      timestamp,
+	})
 }
 
 func observeAnalysisRolloutTokenAnchor(scan *bundleRolloutScan, payload codexRolloutEventPayload, record codexRolloutScanLine, timestamp time.Time, lineNumber int) {
@@ -707,9 +736,18 @@ func observeAnalysisRolloutTurnBoundary(scan *bundleRolloutScan, payload codexRo
 	}
 }
 
-func analysisRolloutWindow(association codexAssociation, scan bundleRolloutScan, start time.Time) bundleAnalysisRollout {
+func analysisRolloutWindow(association codexAssociation, scan bundleRolloutScan, scanErr error, start time.Time) bundleAnalysisRollout {
 	rollout := bundleAnalysisRollout{Status: association.ParentStatus}
-	if association.ParentStatus != codexStatusIncluded || !scan.hasWindow {
+	if association.ParentStatus != codexStatusIncluded {
+		return rollout
+	}
+	if scanErr != nil {
+		rollout.Status = analysisStatusUnreadable
+		rollout.Reason = analysisReasonRolloutScanFailed
+		rollout.Source = association.ParentSource
+		return rollout
+	}
+	if !scan.hasWindow {
 		return rollout
 	}
 	rollout.TotalBytes = scan.totalBytes
@@ -858,10 +896,14 @@ func analysisSubsequentTurn(scan bundleRolloutScan, turn *analysisRolloutTurn, c
 	return entry
 }
 
-func analysisWaitCalls(association codexAssociation, scan bundleRolloutScan, start time.Time, execution analysisExecutionBoundary, collectionEnd time.Time) bundleAnalysisWaitCalls {
+func analysisWaitCalls(association codexAssociation, scan bundleRolloutScan, scanErr error, start time.Time, execution analysisExecutionBoundary, collectionEnd time.Time) bundleAnalysisWaitCalls {
 	waits := bundleAnalysisWaitCalls{Status: analysisStatusCounted}
 	if association.ParentStatus != codexStatusIncluded {
 		waits.Status = association.ParentStatus
+		return waits
+	}
+	if scanErr != nil {
+		waits.Status = analysisStatusUnreadable
 		return waits
 	}
 	if execution.status == analysisStatusUnknown {
@@ -980,10 +1022,14 @@ func analysisWaitYieldEqual(left, right *float64) bool {
 	return *left == *right
 }
 
-func analysisExecutionTokenDelta(association codexAssociation, scan bundleRolloutScan, start time.Time, execution analysisExecutionBoundary, collectionEnd time.Time) bundleAnalysisTokenDelta {
+func analysisExecutionTokenDelta(association codexAssociation, scan bundleRolloutScan, scanErr error, start time.Time, execution analysisExecutionBoundary, collectionEnd time.Time) bundleAnalysisTokenDelta {
 	delta := bundleAnalysisTokenDelta{Status: analysisStatusAvailable}
 	if association.ParentStatus != codexStatusIncluded {
 		delta.Status = association.ParentStatus
+		return delta
+	}
+	if scanErr != nil {
+		delta.Status = analysisStatusUnreadable
 		return delta
 	}
 	if execution.status == analysisStatusUnknown {

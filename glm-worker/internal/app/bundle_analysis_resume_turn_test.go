@@ -149,8 +149,7 @@ func TestResolveAnalysisOwningTurnRequiresExactResumeEvidence(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			association := codexAssociation{ParentStatus: codexStatusIncluded, ParentPath: path}
-			ownership := resolveAnalysisTaskOwnership(association, scan.turns, start, start.Add(time.Hour), taskID)
+			ownership := resolveAnalysisTaskOwnership(scan, start, start.Add(time.Hour), taskID)
 			if ownership.status != tc.wantStatus {
 				t.Fatalf("owning status = %q want %q: %#v", ownership.status, tc.wantStatus, ownership)
 			}

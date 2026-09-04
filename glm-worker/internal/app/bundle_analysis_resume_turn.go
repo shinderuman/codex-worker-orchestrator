@@ -1,9 +1,7 @@
 package app
 
 import (
-	"bufio"
 	"encoding/json"
-	"os"
 	"strings"
 	"time"
 
@@ -53,7 +51,8 @@ const analysisWorkerStatusCommand = "glm-worker --status"
 
 const analysisParentResumeCommand = "glm-parent-action resume"
 
-func resolveAnalysisTaskOwnership(association codexAssociation, turns []analysisRolloutTurn, taskStart, collectionEnd time.Time, taskID string) analysisTaskOwnership {
+func resolveAnalysisTaskOwnership(scan bundleRolloutScan, taskStart, collectionEnd time.Time, taskID string) analysisTaskOwnership {
+	turns := scan.turns
 	initial := resolveAnalysisOwningTurn(turns, taskStart)
 	if initial.status != analysisStatusAvailable || initial.turn == nil {
 		return analysisTaskOwnership{status: analysisStatusUnknown}
@@ -64,7 +63,7 @@ func resolveAnalysisTaskOwnership(association codexAssociation, turns []analysis
 		final:   initial.turn,
 		owned:   map[string]struct{}{initial.turn.TurnID: {}},
 	}
-	evidence := analysisResumeTurnEvidenceFromRollout(association, taskStart, collectionEnd)
+	evidence := analysisResumeTurnEvidenceFromScan(scan, taskStart, collectionEnd)
 	for i := range turns {
 		turn := &turns[i]
 		if !analysisContinuationCandidate(turn, ownership.initial) {
@@ -103,55 +102,20 @@ func analysisResumeEvidenceTouchesTask(evidence *analysisResumeTurnEvidence, tas
 	return evidence.continuationTaskID == taskID || analysisTaskIDPresent(evidence.statusTaskIDs, taskID)
 }
 
-func analysisResumeTurnEvidenceFromRollout(association codexAssociation, start, end time.Time) map[string]*analysisResumeTurnEvidence {
-	if association.ParentStatus != codexStatusIncluded || association.ParentPath == "" {
-		return nil
-	}
-	file, err := os.Open(association.ParentPath)
-	if err != nil {
-		return nil
-	}
-	defer func() { _ = file.Close() }()
-
+func analysisResumeTurnEvidenceFromScan(scan bundleRolloutScan, start, end time.Time) map[string]*analysisResumeTurnEvidence {
 	evidence := map[string]*analysisResumeTurnEvidence{}
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
-	for scanner.Scan() {
-		analysisObserveResumeEvidenceLine(evidence, scanner.Bytes(), start, end)
-	}
-	if scanner.Err() != nil {
-		return nil
+	for _, resumeCommand := range scan.resumeCommands {
+		if resumeCommand.At.Before(start) || resumeCommand.At.After(end) {
+			continue
+		}
+		turnEvidence := evidence[resumeCommand.TurnID]
+		if turnEvidence == nil {
+			turnEvidence = &analysisResumeTurnEvidence{}
+			evidence[resumeCommand.TurnID] = turnEvidence
+		}
+		analysisRecordResumeCommand(turnEvidence, resumeCommand.Command, resumeCommand.Stdout)
 	}
 	return evidence
-}
-
-func analysisObserveResumeEvidenceLine(evidence map[string]*analysisResumeTurnEvidence, line []byte, start, end time.Time) {
-	turnID, command, stdout, ok := analysisResumeCommandFromLine(line, start, end)
-	if !ok {
-		return
-	}
-	turnEvidence := evidence[turnID]
-	if turnEvidence == nil {
-		turnEvidence = &analysisResumeTurnEvidence{}
-		evidence[turnID] = turnEvidence
-	}
-	analysisRecordResumeCommand(turnEvidence, command, stdout)
-}
-
-func analysisResumeCommandFromLine(line []byte, start, end time.Time) (string, string, string, bool) {
-	var record codexRolloutScanLine
-	if err := json.Unmarshal(line, &record); err != nil || record.Type != "event_msg" {
-		return "", "", "", false
-	}
-	if !analysisTimestampWithin(record.Timestamp, start, end) {
-		return "", "", "", false
-	}
-	return analysisResumeCommandFromPayload(record.Payload)
-}
-
-func analysisTimestampWithin(raw string, start, end time.Time) bool {
-	timestamp, err := time.Parse(time.RFC3339Nano, raw)
-	return err == nil && !timestamp.Before(start) && !timestamp.After(end)
 }
 
 func analysisResumeCommandFromPayload(payload json.RawMessage) (string, string, string, bool) {
@@ -273,7 +237,13 @@ func analysisTaskFinalizationInterval(execution analysisExecutionBoundary, owner
 	return interval
 }
 
-func analysisTaskSubsequentRequests(association codexAssociation, scan bundleRolloutScan, ownership analysisTaskOwnership, collectionEnd time.Time) bundleAnalysisSubsequents {
+func analysisTaskSubsequentRequests(association codexAssociation, scan bundleRolloutScan, scanErr error, ownership analysisTaskOwnership, collectionEnd time.Time) bundleAnalysisSubsequents {
+	if scanErr != nil {
+		return bundleAnalysisSubsequents{
+			Status:      analysisStatusUnreadable,
+			Attribution: analysisAttributionSubsequent,
+		}
+	}
 	if analysisSingleOwnedTurn(ownership) {
 		return analysisSubsequentRequests(association, scan, analysisOwningTurn{status: ownership.status, turn: ownership.initial}, collectionEnd)
 	}
@@ -313,7 +283,10 @@ func analysisTaskOwnsTurn(ownership analysisTaskOwnership, turn *analysisRollout
 	return owned
 }
 
-func analysisTaskFinalizationTokenDelta(association codexAssociation, scan bundleRolloutScan, execution analysisExecutionBoundary, ownership analysisTaskOwnership, interval bundleAnalysisInterval) bundleAnalysisTokenDelta {
+func analysisTaskFinalizationTokenDelta(association codexAssociation, scan bundleRolloutScan, scanErr error, execution analysisExecutionBoundary, ownership analysisTaskOwnership, interval bundleAnalysisInterval) bundleAnalysisTokenDelta {
+	if scanErr != nil {
+		return bundleAnalysisTokenDelta{Status: analysisStatusUnreadable}
+	}
 	if analysisSingleOwnedTurn(ownership) {
 		return analysisFinalizationTokenDelta(association, scan, execution, analysisOwningTurn{status: ownership.status, turn: ownership.initial}, interval)
 	}

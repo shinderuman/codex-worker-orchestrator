@@ -96,8 +96,6 @@ const parentUsageReasonMissingInBaseline = "missing-in-baseline-anchor"
 
 const parentUsageReasonMissingInEnd = "missing-in-end-anchor"
 
-const parentUsageReasonRolloutUnreadable = "rollout-scan-failed"
-
 const parentUsageIntervalStartInclusive = false
 
 const parentUsageIntervalStartExclusive = true
@@ -115,7 +113,7 @@ func buildParentUsageReport(cfg config.AppConfig, st *state.StateStore, task bun
 	execution := resolveAnalysisExecutionBoundary(st, task.ID)
 	association := resolveCodexAssociation(cfg.CodexConfigDir, task)
 	scan, scanErr := parentUsageRolloutScan(association, start, collectionEnd)
-	ownership := resolveAnalysisTaskOwnership(association, scan.turns, start, collectionEnd, task.ID)
+	ownership := resolveAnalysisTaskOwnership(scan, start, collectionEnd, task.ID)
 	finalization := analysisTaskFinalizationInterval(execution, ownership)
 	return parentUsageReport{
 		Version:       parentUsageReportVersion,
@@ -223,8 +221,8 @@ func parentUsageDegradedEvidence(interval parentUsageInterval, status string) pa
 }
 
 func parentUsageUnreadableEvidence(interval parentUsageInterval, source string) parentUsageInterval {
-	interval.Tokens = parentUsageTokens{Status: analysisStatusUnreadable, Reason: parentUsageReasonRolloutUnreadable}
-	interval.Activity = parentUsageActivity{Status: analysisStatusUnreadable, Reason: parentUsageReasonRolloutUnreadable, Source: source}
+	interval.Tokens = parentUsageTokens{Status: analysisStatusUnreadable, Reason: analysisReasonRolloutScanFailed}
+	interval.Activity = parentUsageActivity{Status: analysisStatusUnreadable, Reason: analysisReasonRolloutScanFailed, Source: source}
 	return interval
 }
 

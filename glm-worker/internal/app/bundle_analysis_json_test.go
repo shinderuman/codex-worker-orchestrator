@@ -122,7 +122,7 @@ func TestBundleAnalysisJSONRemainsStructural(t *testing.T) {
 		`"attribution":"unattributed-subsequent-request"`,
 		`"input_tokens":10`,
 		`"count":2`,
-		`"version":3`,
+		`"version":4`,
 		`"requested_yield_ms":1000`,
 		`"yield_class":"short"`,
 		`"request_lines":[47]`,
