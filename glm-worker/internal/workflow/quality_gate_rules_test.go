@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -27,22 +28,32 @@ func managedRulesFiles(t *testing.T) []string {
 
 func execPolicyAllows(t *testing.T, codexBin string, entries []string, argv []string) bool {
 	t.Helper()
-	for _, rulesFile := range entries {
-		out, err := exec.Command(codexBin, append([]string{"execpolicy", "check", "--rules", rulesFile, "--"}, argv...)...).Output()
-		if err != nil {
-			t.Fatalf("codex execpolicy check(%v, %s)が失敗しました: %v", argv, rulesFile, err)
-		}
-		var decision struct {
-			Decision string `json:"decision"`
-		}
-		if err := json.Unmarshal(out, &decision); err != nil {
-			t.Fatalf("codex execpolicy check(%v, %s)の出力がJSONではありません: %v: %s", argv, rulesFile, err, out)
-		}
-		if decision.Decision == "allow" {
-			return true
-		}
+	allowed, err := execPolicyCombinedAllow(codexBin, entries, argv)
+	if err != nil {
+		t.Fatalf("codex execpolicy check(%v, rules=%v)が失敗しました: %v", argv, entries, err)
 	}
-	return false
+	return allowed
+}
+
+func execPolicyCombinedAllow(codexBin string, entries []string, argv []string) (bool, error) {
+	args := make([]string, 0, 3+len(entries)*2+len(argv))
+	args = append(args, "execpolicy", "check")
+	for _, rulesFile := range entries {
+		args = append(args, "--rules", rulesFile)
+	}
+	args = append(args, "--")
+	args = append(args, argv...)
+	out, err := exec.Command(codexBin, args...).Output()
+	if err != nil {
+		return false, err
+	}
+	var decision struct {
+		Decision string `json:"decision"`
+	}
+	if err := json.Unmarshal(out, &decision); err != nil {
+		return false, fmt.Errorf("combined decisionの出力がJSONではありません: %w: %s", err, out)
+	}
+	return decision.Decision == "allow", nil
 }
 
 func TestManagedRulesAllowOnlyQualityGateEntrypoint(t *testing.T) {
@@ -136,6 +147,43 @@ func TestManagedRulesLeaveGitCommitToUserPolicy(t *testing.T) {
 	}
 	if !execPolicyAllows(t, codexBin, combined, argv) {
 		t.Fatal("ユーザーrulesとの併用でgit commitがallowになりません")
+	}
+}
+
+func TestExecPolicyCombinedCheckFailsClosed(t *testing.T) {
+	codexBin, err := exec.LookPath("codex")
+	if err != nil {
+		t.Skip("codex CLIがないためexecpolicy検証を省略します")
+	}
+	entries := managedRulesFiles(t)
+	badDir := t.TempDir()
+	malformedRules := filepath.Join(badDir, "malformed.rules")
+	if err := os.WriteFile(malformedRules, []byte("this is not valid rules\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stubCodex := filepath.Join(badDir, "codex")
+	stubScript := "#!/bin/sh\nprintf 'not json\\n'\n"
+	if err := os.WriteFile(stubCodex, []byte(stubScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	argv := []string{"glm-worker", "--quality-gate", "go-test"}
+	cases := []struct {
+		name     string
+		codexBin string
+		entries  []string
+	}{
+		{name: "malformed-rules-file", codexBin: codexBin, entries: append([]string{malformedRules}, entries...)},
+		{name: "missing-rules-file", codexBin: codexBin, entries: append([]string{filepath.Join(badDir, "missing.rules")}, entries...)},
+		{name: "malformed-output", codexBin: stubCodex, entries: entries},
+	}
+	for _, tc := range cases {
+		allowed, err := execPolicyCombinedAllow(tc.codexBin, tc.entries, argv)
+		if err == nil {
+			t.Fatalf("%s: combined checkがerrorを返しませんでした", tc.name)
+		}
+		if allowed {
+			t.Fatalf("%s: combined checkがallowへ縮退しています", tc.name)
+		}
 	}
 }
 
