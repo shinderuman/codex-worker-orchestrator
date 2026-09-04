@@ -27,7 +27,7 @@
 - 列挙結果が1件で、かつその実automation IDが期待keyと一致する場合だけ、新規作成せずその実automation IDへ絶対時刻update(UTCの`DTSTART:YYYYMMDDTHHMMSS` + `RRULE:FREQ=DAILY;COUNT=1` + status ACTIVE)を行う。`DTSTART;TZID=...`は使わない。実IDが期待keyと不一致の場合と列挙結果が複数件の場合はどれもupdateせずfail closedとし、Codex Desktop UIで人間が確認・整理するまで手動復旧を案内する。
 - 列挙結果が0件の場合だけ新規作成する。DTSTART付き即時createはCodex appへ拒否されるため、DTSTARTなし・status PAUSED・`RRULE:FREQ=HOURLY`のplaceholder作成と、成功応答に含まれる実automation IDの確認、その実IDへの絶対時刻update(UTCの`DTSTART:YYYYMMDDTHHMMSS` + `RRULE:FREQ=DAILY;COUNT=1` + status ACTIVE)の二段階で行う。`suggested_create`は候補カード表示のみなので呼ばない。作成応答の実automation IDが期待keyと不一致の場合は、返却されたその実IDだけをbest-effort削除してfail closedとする。
 - `automation_update`の返り値全体を文字列として検査する。`invalid`・`error`・`failed`・空文字列・`Rendered suggestion`のいずれかを含む場合は作成・更新失敗とする。content欄だけ読んで空出力を成功扱いにしない。
-- 最終確認として、`glm-worker --verify-auto-resume <実automation ID> <wake_atのRFC3339> <wake専用task自身のthread ID>`を実行する。exit 0と結果JSONだけを登録成功の根拠にする。
+- 最終確認として、`glm-worker --verify-auto-resume <実automation ID> <wake_atのRFC3339>`を実行する。thread IDを引数へ渡さず、commandが現在processの`CODEX_THREAD_ID`を読んで保存済みautomationの対象threadと照合する。exit 0と結果JSONだけを登録成功の根拠にする。
 - 検証失敗時は引数とtool schemaを1回だけ修正して再試行する。それでも失敗する場合は、作成済みautomationを作成時の実automation IDだけを対象に削除または停止し、手動復旧を案内してfail closedとする。
 
 ## wake専用taskの処理
@@ -37,7 +37,7 @@ schedulerから呼ばれたら、次の4操作をこの順序だけを行う。�
 1. 親実装taskのthread IDへ固定短文「作業を続けろ」を1回だけ送信する。thread IDが指定されていない場合は送信せずにfail closedで終了する。送信方法はCodex appの既存task間送信(Greptile専用taskが親taskへ使っている方式)を使う。
 2. `glm-worker --codex-limit`で次回5h windowの`resets_at`を取得する。`resets_at`が現在時刻以前の場合は1回だけ再取得し、それでも過去の場合はfail closedで終了する。
 3. wake_at = `resets_at` + 2分として、発火指示に渡された実`automation_id`のautomationを削除も新規作成もせず、同じautomation IDへ次回one-shot(UTCの`DTSTART:YYYYMMDDTHHMMSS`・`RRULE:FREQ=DAILY;COUNT=1`・status ACTIVE)を直接updateする。`automation_id`が渡されていない場合はupdateせずfail closedで終了する。`suggested_create`は候補カード表示のみであり永続automationではないため、呼ばない。
-4. update応答の検査後、`--verify-auto-resume <実automation ID> <wake_atのRFC3339> <自taskのthread ID>`で保存実体を確認して終了する。exit 0と結果JSONだけを次回予約成功の根拠とする。
+4. update応答の検査後、`--verify-auto-resume <実automation ID> <wake_atのRFC3339>`で保存実体を確認して終了する。thread IDを引数へ渡さず、commandが現在processの`CODEX_THREAD_ID`を読んで対象threadと照合する。exit 0と結果JSONだけを次回予約成功の根拠とする。
 
 親送信・reset取得・update・実体検証の失敗扱いは次による。
 

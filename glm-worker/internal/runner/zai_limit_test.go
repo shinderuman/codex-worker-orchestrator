@@ -3,7 +3,9 @@ package runner
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestDetectZaiFiveHourLimit(t *testing.T) {
@@ -22,6 +24,40 @@ func TestDetectZaiFiveHourLimit(t *testing.T) {
 	}
 	if limit.ResetAtRFC3339 != "2026-07-22T14:06:34+08:00" {
 		t.Fatalf("ResetAtRFC3339 = %q", limit.ResetAtRFC3339)
+	}
+}
+
+func TestAutoResumeScheduleSecondPrecision(t *testing.T) {
+	cases := []struct {
+		name        string
+		resetAt     string
+		wantResumed string
+	}{
+		{"second precision reset", "2026-07-22T14:06:34+08:00", "2026-07-22T14:08:34+08:00"},
+		{"sub-second reset", "2026-07-22T14:06:34.325+08:00", "2026-07-22T14:08:34+08:00"},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			limit := ZaiRateLimitError{Limit: ZaiFiveHourLimit{ResetAtRFC3339: c.resetAt}}
+			available, at := limit.AutoResumeSchedule()
+			if !available {
+				t.Fatal("expected auto resume schedule")
+			}
+			if at != c.wantResumed {
+				t.Fatalf("auto resume at = %q want %q", at, c.wantResumed)
+			}
+			if strings.Contains(at, ".") {
+				t.Fatalf("auto resume at must stay second precision: %q", at)
+			}
+			parsed, err := time.Parse(time.RFC3339, at)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if parsed.UnixMilli()%1000 != 0 {
+				t.Fatalf("auto resume at must align with a whole-second next_run_at: %q", at)
+			}
+		})
 	}
 }
 
