@@ -8,7 +8,7 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/parent-usage-report-evidence-integrity.md`
+- `IMPLEMENTATION_TASKS/bundle-analysis-rollout-read-failure.md`
 
 ## NEXT（優先順）
 

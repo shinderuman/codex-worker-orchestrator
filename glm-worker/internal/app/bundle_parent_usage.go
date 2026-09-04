@@ -96,6 +96,12 @@ const parentUsageReasonMissingInBaseline = "missing-in-baseline-anchor"
 
 const parentUsageReasonMissingInEnd = "missing-in-end-anchor"
 
+const parentUsageReasonRolloutUnreadable = "rollout-scan-failed"
+
+const parentUsageIntervalStartInclusive = false
+
+const parentUsageIntervalStartExclusive = true
+
 func printParentUsage(cfg config.AppConfig, st *state.StateStore, requestedTaskID string, stdout io.Writer) error {
 	task, err := selectBundleTask(st, requestedTaskID)
 	if err != nil {
@@ -108,7 +114,7 @@ func buildParentUsageReport(cfg config.AppConfig, st *state.StateStore, task bun
 	start, collectionEnd, _ := analysisCollectionWindow(task)
 	execution := resolveAnalysisExecutionBoundary(st, task.ID)
 	association := resolveCodexAssociation(cfg.CodexConfigDir, task)
-	scan := parentUsageRolloutScan(association, start, collectionEnd)
+	scan, scanErr := parentUsageRolloutScan(association, start, collectionEnd)
 	ownership := resolveAnalysisTaskOwnership(association, scan.turns, start, collectionEnd, task.ID)
 	finalization := analysisTaskFinalizationInterval(execution, ownership)
 	return parentUsageReport{
@@ -118,8 +124,8 @@ func buildParentUsageReport(cfg config.AppConfig, st *state.StateStore, task bun
 		GeneratedAt:   time.Now().UTC().Format(time.RFC3339Nano),
 		ParentSession: parentUsageParentSession(association),
 		Intervals: parentUsageIntervals{
-			TaskExecution:      parentUsageExecutionInterval(association, scan, start, execution, collectionEnd),
-			ParentFinalization: parentUsageFinalizationInterval(association, scan, execution, ownership, finalization),
+			TaskExecution:      parentUsageExecutionInterval(association, scan, scanErr, start, execution, collectionEnd),
+			ParentFinalization: parentUsageFinalizationInterval(association, scan, scanErr, execution, ownership, finalization),
 		},
 	}
 }
@@ -135,18 +141,18 @@ func parentUsageParentSession(association codexAssociation) parentUsageParent {
 	return parent
 }
 
-func parentUsageRolloutScan(association codexAssociation, start, end time.Time) bundleRolloutScan {
+func parentUsageRolloutScan(association codexAssociation, start, end time.Time) (bundleRolloutScan, error) {
 	if association.ParentStatus != codexStatusIncluded {
-		return bundleRolloutScan{}
+		return bundleRolloutScan{}, nil
 	}
 	scan, err := scanCodexRolloutWindow(association.ParentPath, start, end)
 	if err != nil {
-		return bundleRolloutScan{}
+		return bundleRolloutScan{}, err
 	}
-	return scan
+	return scan, nil
 }
 
-func parentUsageExecutionInterval(association codexAssociation, scan bundleRolloutScan, start time.Time, execution analysisExecutionBoundary, collectionEnd time.Time) parentUsageInterval {
+func parentUsageExecutionInterval(association codexAssociation, scan bundleRolloutScan, scanErr error, start time.Time, execution analysisExecutionBoundary, collectionEnd time.Time) parentUsageInterval {
 	interval := parentUsageInterval{
 		Status:   execution.status,
 		Start:    analysisTimestamp(start),
@@ -160,6 +166,9 @@ func parentUsageExecutionInterval(association codexAssociation, scan bundleRollo
 	if association.ParentStatus != codexStatusIncluded {
 		return parentUsageDegradedEvidence(interval, association.ParentStatus)
 	}
+	if scanErr != nil {
+		return parentUsageUnreadableEvidence(interval, association.ParentSource)
+	}
 	if execution.status == analysisStatusUnknown {
 		interval.Tokens.Reason = parentUsageReasonExecutionBoundary
 		interval.Activity.Reason = parentUsageReasonExecutionBoundary
@@ -170,7 +179,7 @@ func parentUsageExecutionInterval(association codexAssociation, scan bundleRollo
 		endBound = execution.end
 	}
 	interval.Tokens = parentUsageAnchoredTokens(scan, start, endBound, association.ParentSource)
-	interval.Activity = parentUsageIntervalActivity(scan, start, endBound, association.ParentSource)
+	interval.Activity = parentUsageIntervalActivity(scan, start, endBound, association.ParentSource, parentUsageIntervalStartInclusive)
 	if execution.status == analysisStatusOpen && interval.Tokens.Status == analysisStatusAvailable {
 		interval.Tokens.Status = analysisStatusOpen
 	}
@@ -180,7 +189,7 @@ func parentUsageExecutionInterval(association codexAssociation, scan bundleRollo
 	return interval
 }
 
-func parentUsageFinalizationInterval(association codexAssociation, scan bundleRolloutScan, execution analysisExecutionBoundary, ownership analysisTaskOwnership, interval bundleAnalysisInterval) parentUsageInterval {
+func parentUsageFinalizationInterval(association codexAssociation, scan bundleRolloutScan, scanErr error, execution analysisExecutionBoundary, ownership analysisTaskOwnership, interval bundleAnalysisInterval) parentUsageInterval {
 	report := parentUsageInterval{
 		Status:   interval.Status,
 		Start:    interval.Start,
@@ -192,6 +201,9 @@ func parentUsageFinalizationInterval(association codexAssociation, scan bundleRo
 	if association.ParentStatus != codexStatusIncluded {
 		return parentUsageDegradedEvidence(report, association.ParentStatus)
 	}
+	if scanErr != nil {
+		return parentUsageUnreadableEvidence(report, association.ParentSource)
+	}
 	if interval.Status != analysisStatusAvailable || ownership.final == nil {
 		if interval.Status == analysisStatusUnknown {
 			report.Tokens.Reason = parentUsageReasonFinalizationInterval
@@ -200,13 +212,19 @@ func parentUsageFinalizationInterval(association codexAssociation, scan bundleRo
 		return report
 	}
 	report.Tokens = parentUsageAnchoredTokens(scan, execution.end, ownership.final.CompletedAt, association.ParentSource)
-	report.Activity = parentUsageIntervalActivity(scan, execution.end, ownership.final.CompletedAt, association.ParentSource)
+	report.Activity = parentUsageIntervalActivity(scan, execution.end, ownership.final.CompletedAt, association.ParentSource, parentUsageIntervalStartExclusive)
 	return report
 }
 
 func parentUsageDegradedEvidence(interval parentUsageInterval, status string) parentUsageInterval {
 	interval.Tokens = parentUsageTokens{Status: status}
 	interval.Activity = parentUsageActivity{Status: status}
+	return interval
+}
+
+func parentUsageUnreadableEvidence(interval parentUsageInterval, source string) parentUsageInterval {
+	interval.Tokens = parentUsageTokens{Status: analysisStatusUnreadable, Reason: parentUsageReasonRolloutUnreadable}
+	interval.Activity = parentUsageActivity{Status: analysisStatusUnreadable, Reason: parentUsageReasonRolloutUnreadable, Source: source}
 	return interval
 }
 
@@ -262,25 +280,24 @@ func parentUsageCounterField(field string, baseline, end *int64, source string, 
 	})
 }
 
-func parentUsageIntervalActivity(scan bundleRolloutScan, start, end time.Time, source string) parentUsageActivity {
+func parentUsageIntervalActivity(scan bundleRolloutScan, start, end time.Time, source string, startExclusive bool) parentUsageActivity {
 	activity := parentUsageActivity{Status: analysisStatusCounted, Source: source}
 	if !scan.hasWindow {
 		activity.Status = analysisStatusNoObservation
 		return activity
 	}
-	activity.ModelTurns, activity.ToolCalls, activity.ToolResults, activity.Compactions, activity.ToolOutputBytes = parentUsageRolloutActivity(scan, start, end)
+	activity.ModelTurns, activity.ToolCalls, activity.ToolResults, activity.Compactions, activity.ToolOutputBytes = parentUsageRolloutActivity(scan, start, end, startExclusive)
 	return activity
 }
 
-func parentUsageRolloutActivity(scan bundleRolloutScan, start, end time.Time) (modelTurns, toolCalls, toolResults, compactions int, outputBytes int64) {
+func parentUsageRolloutActivity(scan bundleRolloutScan, start, end time.Time, startExclusive bool) (modelTurns, toolCalls, toolResults, compactions int, outputBytes int64) {
 	for i := range scan.turns {
-		turn := &scan.turns[i]
-		if parentUsageTurnOverlaps(turn, start, end) {
+		if parentUsageIntervalCountsTurn(&scan.turns[i], start, end, startExclusive) {
 			modelTurns++
 		}
 	}
 	for _, event := range scan.toolEvents {
-		if event.At.Before(start) || event.At.After(end) {
+		if !parentUsageEventWithinInterval(event.At, start, end, startExclusive) {
 			continue
 		}
 		if event.Call {
@@ -291,16 +308,29 @@ func parentUsageRolloutActivity(scan bundleRolloutScan, start, end time.Time) (m
 		outputBytes += event.OutputBytes
 	}
 	for _, compaction := range scan.compactions {
-		if !compaction.At.Before(start) && !compaction.At.After(end) {
+		if parentUsageEventWithinInterval(compaction.At, start, end, startExclusive) {
 			compactions++
 		}
 	}
 	return modelTurns, toolCalls, toolResults, compactions, outputBytes
 }
 
-func parentUsageTurnOverlaps(turn *analysisRolloutTurn, start, end time.Time) bool {
+func parentUsageEventWithinInterval(at, start, end time.Time, startExclusive bool) bool {
+	if at.After(end) {
+		return false
+	}
+	if startExclusive {
+		return at.After(start)
+	}
+	return !at.Before(start)
+}
+
+func parentUsageIntervalCountsTurn(turn *analysisRolloutTurn, start, end time.Time, startExclusive bool) bool {
 	if !turn.HasStart || turn.StartedAt.After(end) {
 		return false
+	}
+	if startExclusive {
+		return turn.StartedAt.After(start)
 	}
 	return !turn.HasComplete || !turn.CompletedAt.Before(start)
 }

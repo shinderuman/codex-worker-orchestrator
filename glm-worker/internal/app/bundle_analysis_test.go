@@ -56,6 +56,12 @@ const analysisStraddleTurnID = "turn-straddle"
 
 const analysisPostArchiveTurnID = "turn-post-archive"
 
+const analysisBoundaryTurnID = "turn-boundary"
+
+const analysisBoundaryStartTurnID = "turn-boundary-start"
+
+const analysisPostBoundaryTurnID = "turn-post-boundary"
+
 func TestBundleAnalysisIndexWindowSummaries(t *testing.T) {
 	fixture := newAnalysisBundleFixture(t)
 

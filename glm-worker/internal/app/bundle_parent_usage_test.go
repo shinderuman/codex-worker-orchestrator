@@ -87,7 +87,7 @@ func TestParentUsageReportIntervals(t *testing.T) {
 	}
 	finalizationActivity := finalization.Activity
 	if finalizationActivity.Status != analysisStatusCounted ||
-		finalizationActivity.ModelTurns != 1 || finalizationActivity.ToolCalls != 1 ||
+		finalizationActivity.ModelTurns != 0 || finalizationActivity.ToolCalls != 1 ||
 		finalizationActivity.ToolResults != 1 || finalizationActivity.Compactions != 0 ||
 		finalizationActivity.ToolOutputBytes != 10 {
 		t.Fatalf("finalization activity = %#v", finalizationActivity)
@@ -130,6 +130,187 @@ func TestParentUsageReportMatchesBundleAnalysis(t *testing.T) {
 		report.ParentSession.ThreadID != index.ParentSession.ThreadID {
 		t.Fatalf("parent session = %#v want bundle %#v", report.ParentSession, index.ParentSession)
 	}
+}
+
+func TestParentUsageSharedBoundaryPartition(t *testing.T) {
+	task := newAnalysisTerminalTask(t)
+	boundary := task.completeAt
+	lines := []string{
+		parentUsageTokenCountLine(t, task.start.Add(-time.Minute), 1000, 500, 240, 160, 1500),
+		analysisTurnLine(t, task.start.Add(-30*time.Second), codexRolloutTaskStartedType, analysisOwningTurnID),
+		parentUsageTokenCountLine(t, boundary.Add(-6*time.Minute), 1500, 700, 300, 200, 2300),
+		analysisTurnLine(t, boundary.Add(-5*time.Minute), codexRolloutTaskStartedType, analysisStraddleTurnID),
+		parentUsageToolCallLine(t, boundary.Add(-30*time.Second), "parent-usage-exec"),
+		parentUsageToolCallLine(t, boundary, "parent-usage-boundary"),
+		parentUsageToolOutputLine(t, boundary, "parent-usage-boundary", "0123456789"),
+		parentUsageCompactedLine(t, boundary),
+		parentUsageTokenCountLine(t, boundary, 2000, 1000, 400, 240, 3000),
+		analysisTurnLine(t, boundary, codexRolloutTaskStartedType, analysisBoundaryStartTurnID),
+		analysisTurnLine(t, boundary, codexRolloutTaskStartedType, analysisBoundaryTurnID),
+		analysisTurnLine(t, boundary, codexRolloutTaskCompleteType, analysisBoundaryTurnID),
+		analysisTurnLine(t, boundary.Add(time.Minute), codexRolloutTaskCompleteType, analysisBoundaryStartTurnID),
+		analysisTurnLine(t, boundary.Add(90*time.Second), codexRolloutTaskStartedType, analysisPostBoundaryTurnID),
+		parentUsageToolCallLine(t, boundary.Add(90*time.Second), "parent-usage-final"),
+		analysisTurnLine(t, boundary.Add(2*time.Minute), codexRolloutTaskCompleteType, analysisStraddleTurnID),
+		parentUsageTokenCountLine(t, boundary.Add(2*time.Minute), 2600, 1300, 480, 260, 3800),
+		parentUsageToolOutputLine(t, boundary.Add(2*time.Minute), "parent-usage-final", "abcd"),
+		analysisTurnLine(t, boundary.Add(2*time.Minute), codexRolloutTaskCompleteType, analysisPostBoundaryTurnID),
+		analysisTurnLine(t, boundary.Add(3*time.Minute), codexRolloutTaskCompleteType, analysisOwningTurnID),
+	}
+	writeAnalysisRollout(t, task.codexHome, analysisRolloutRel(), codexTestParentThreadID,
+		task.start.Add(-3*time.Hour), lines)
+
+	report := runParentUsageReport(t, task.cfg)
+	execution := report.Intervals.TaskExecution
+	if execution.Status != analysisStatusAvailable || execution.End == nil ||
+		*execution.End != boundary.Format(time.RFC3339Nano) {
+		t.Fatalf("execution interval = %#v", execution)
+	}
+	executionActivity := execution.Activity
+	if executionActivity.Status != analysisStatusCounted ||
+		executionActivity.ModelTurns != 4 || executionActivity.ToolCalls != 2 ||
+		executionActivity.ToolResults != 1 || executionActivity.Compactions != 1 ||
+		executionActivity.ToolOutputBytes != 10 {
+		t.Fatalf("execution activity = %#v", executionActivity)
+	}
+	executionTokens := execution.Tokens
+	if executionTokens.Status != analysisStatusAvailable ||
+		executionTokens.InputTokens != 1000 || executionTokens.CachedInputTokens != 500 ||
+		executionTokens.OutputTokens != 160 || executionTokens.ReasoningTokens != 80 ||
+		executionTokens.TotalTokens != 1500 {
+		t.Fatalf("execution tokens = %#v", executionTokens)
+	}
+	if executionTokens.EndAt != boundary.Format(time.RFC3339Nano) ||
+		executionTokens.EndSource != parentUsageSourceLocator(analysisRolloutRel(), 10) {
+		t.Fatalf("execution token anchors = %#v", executionTokens)
+	}
+
+	finalization := report.Intervals.ParentFinalization
+	if finalization.Status != analysisStatusAvailable || finalization.Start == nil || finalization.End == nil ||
+		*finalization.Start != boundary.Format(time.RFC3339Nano) ||
+		*finalization.End != boundary.Add(3*time.Minute).Format(time.RFC3339Nano) {
+		t.Fatalf("finalization interval = %#v", finalization)
+	}
+	finalizationActivity := finalization.Activity
+	if finalizationActivity.Status != analysisStatusCounted ||
+		finalizationActivity.ModelTurns != 1 || finalizationActivity.ToolCalls != 1 ||
+		finalizationActivity.ToolResults != 1 || finalizationActivity.Compactions != 0 ||
+		finalizationActivity.ToolOutputBytes != 4 {
+		t.Fatalf("finalization activity = %#v", finalizationActivity)
+	}
+	if executionActivity.ModelTurns+finalizationActivity.ModelTurns != 5 {
+		t.Fatalf("model turn partition = %#v / %#v", executionActivity, finalizationActivity)
+	}
+	finalizationTokens := finalization.Tokens
+	if finalizationTokens.Status != analysisStatusAvailable ||
+		finalizationTokens.InputTokens != 600 || finalizationTokens.CachedInputTokens != 300 ||
+		finalizationTokens.OutputTokens != 80 || finalizationTokens.ReasoningTokens != 20 ||
+		finalizationTokens.TotalTokens != 800 {
+		t.Fatalf("finalization tokens = %#v", finalizationTokens)
+	}
+	if finalizationTokens.BaselineAt != boundary.Format(time.RFC3339Nano) ||
+		finalizationTokens.BaselineSource != executionTokens.EndSource ||
+		finalizationTokens.EndSource != parentUsageSourceLocator(analysisRolloutRel(), 18) {
+		t.Fatalf("finalization token anchors = %#v", finalizationTokens)
+	}
+}
+
+func TestParentUsageUnreadableRolloutDistinctFromAbsentEvidence(t *testing.T) {
+	t.Run("readable-rollout-without-evidence", func(t *testing.T) {
+		task := newAnalysisTerminalTask(t)
+		writeAnalysisRollout(t, task.codexHome, analysisRolloutRel(), codexTestParentThreadID,
+			task.start.Add(-3*time.Hour), nil)
+
+		report := runParentUsageReport(t, task.cfg)
+		execution := report.Intervals.TaskExecution
+		if execution.Tokens.Status != analysisStatusMissing ||
+			execution.Tokens.Reason != parentUsageReasonBaselineAnchor {
+			t.Fatalf("execution tokens = %#v", execution.Tokens)
+		}
+		if execution.Activity.Status != analysisStatusNoObservation {
+			t.Fatalf("execution activity = %#v", execution.Activity)
+		}
+		finalization := report.Intervals.ParentFinalization
+		if finalization.Tokens.Status != analysisStatusUnknown ||
+			finalization.Tokens.Reason != parentUsageReasonFinalizationInterval ||
+			finalization.Activity.Status != analysisStatusUnknown ||
+			finalization.Activity.Reason != parentUsageReasonFinalizationInterval {
+			t.Fatalf("finalization interval = %#v", finalization)
+		}
+	})
+
+	t.Run("unreadable-rollout", func(t *testing.T) {
+		association := codexAssociation{
+			ParentStatus: codexStatusIncluded,
+			ParentPath:   filepath.Join(t.TempDir(), "unreadable-rollout"),
+			ParentSource: "sessions/2026/09/04/rollout-unreadable.jsonl",
+		}
+		if err := os.Mkdir(association.ParentPath, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		start := time.Now().UTC().Add(-time.Hour)
+		end := time.Now().UTC()
+		scan, scanErr := parentUsageRolloutScan(association, start, end)
+		if scanErr == nil {
+			t.Fatal("rollout scan errorが握り潰されました")
+		}
+		missing, missingErr := parentUsageRolloutScan(codexAssociation{
+			ParentStatus: codexStatusIncluded,
+			ParentPath:   filepath.Join(t.TempDir(), "absent-rollout.jsonl"),
+		}, start, end)
+		if missingErr == nil || missing.hasWindow {
+			t.Fatalf("absent rollout scan = %#v, %v", missing, missingErr)
+		}
+
+		executionBoundary := analysisExecutionBoundary{
+			status:   analysisStatusAvailable,
+			end:      start.Add(30 * time.Minute),
+			endBasis: analysisExecutionEndBasisLifecycleComplete,
+		}
+		execution := parentUsageExecutionInterval(association, scan, scanErr, start, executionBoundary, end)
+		if execution.Status != analysisStatusAvailable || execution.End == nil {
+			t.Fatalf("execution interval = %#v", execution)
+		}
+		if execution.Tokens.Status != analysisStatusUnreadable ||
+			execution.Tokens.Reason != parentUsageReasonRolloutUnreadable ||
+			execution.Tokens.InputTokens != 0 || execution.Tokens.TotalTokens != 0 {
+			t.Fatalf("execution tokens = %#v", execution.Tokens)
+		}
+		if execution.Activity.Status != analysisStatusUnreadable ||
+			execution.Activity.Reason != parentUsageReasonRolloutUnreadable ||
+			execution.Activity.Source != association.ParentSource ||
+			execution.Activity.ToolCalls != 0 || execution.Activity.ModelTurns != 0 {
+			t.Fatalf("execution activity = %#v", execution.Activity)
+		}
+
+		turn := &analysisRolloutTurn{
+			TurnID:      analysisOwningTurnID,
+			StartedAt:   start.Add(-time.Minute),
+			HasStart:    true,
+			CompletedAt: end,
+			HasComplete: true,
+		}
+		ownership := analysisTaskOwnership{
+			status:  analysisStatusAvailable,
+			initial: turn,
+			final:   turn,
+			owned:   map[string]struct{}{analysisOwningTurnID: {}},
+		}
+		window := bundleAnalysisInterval{
+			Status: analysisStatusAvailable,
+			Start:  analysisTimestamp(executionBoundary.end),
+			End:    analysisTimestamp(end),
+		}
+		finalization := parentUsageFinalizationInterval(association, scan, scanErr, executionBoundary, ownership, window)
+		if finalization.Status != analysisStatusAvailable ||
+			finalization.Tokens.Status != analysisStatusUnreadable ||
+			finalization.Tokens.Reason != parentUsageReasonRolloutUnreadable ||
+			finalization.Activity.Status != analysisStatusUnreadable ||
+			finalization.Activity.Reason != parentUsageReasonRolloutUnreadable ||
+			finalization.Activity.Source != association.ParentSource {
+			t.Fatalf("finalization interval = %#v", finalization)
+		}
+	})
 }
 
 func TestParentUsageCounterResetWithLocators(t *testing.T) {
