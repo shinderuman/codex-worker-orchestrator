@@ -19,11 +19,20 @@
 022の前での再評価タスクでも改めてタスクに積むべきものがなかったか精査するように
 ````
 
+### 2026-09-04 external review PR 345
+
+````text
+CodeRabbit: Document that the parent-only evaluation is a bounded exception to codex/AGENTS.md, limited to after 105-session-rotation and before 022, using only approved read-only commands and mechanical projections for data collection while reserving all semantic investigation, Quality Delta assessment, and Go/No-Go decisions for the parent Codex. Explicitly state whether glm-parent-action remains mandatory for any follow-up task actions.
+
+CodeRabbit: Define the comparable cohort identity and required snapshot fields for Codex Reduction and Quality Delta reporting, covering TaskID, SpecSHA256, SessionID, and relevant run conditions before using ResolveFromTaskStats. Specify how mismatched or missing identity fields are classified, and only add duplicate-match handling when evaluation inputs may contain duplicate task records.
+````
+
 ## Resolved references
 
 - 「このセッションの最初で行ったのと同じもの」は、GLM-Worker telemetry、Codex自身の `~/.codex/` 等に残るログを親Codexが直接解析し、目的を改善するtask候補とログ収集command拡充の要否を判断した2026-09-03の調査を指す
 - 調査・意味判断をGLM modelへ委譲しない。`glm-worker` commandが機能するか、何を出力するかの確認とread-only projectionの利用は許可する
 - 「意味のある停止」は、Task corpus閉包実装が品質ポリシー面を変更したため、GLM自身による品質基準の弱体化を防ぐguardがCodex reviewを要求した状態を指す。この個別停止は意図した安全境界として維持し、反復costや品質影響の新証拠が得られた場合だけ改善候補として再評価する
+- PR 345 CodeRabbit comments `3930465346` / `3930465350`: `https://github.com/shinderuman/codex-worker-orchestrator/pull/345#discussion_r3930465346`, `https://github.com/shinderuman/codex-worker-orchestrator/pull/345#discussion_r3930465350`
 
 ## Purpose
 
@@ -36,8 +45,12 @@ status: not-applicable
 ## Contract
 
 - `105-session-rotation.md`完了後、022開始前に親Codex自身が実行するparent-only evaluationとする。GLM modelへ調査・分析・採否判断を委譲しない
+- 本評価は`codex/AGENTS.md`の通常委譲原則に対する、105完了後から022開始前だけのbounded exceptionとする。データ収集は既承認のread-only commandとmachine projectionだけを使い、repository探索、semantic investigation、Quality Delta評価、Go/No-Goは親Codexが行う
+- 本評価から新しい実装taskを作った後のstart/decision/fix/accept/resumeは通常規則どおり`glm-parent-action`を必須とし、parent-only exceptionをfollow-up implementationへ拡張しない
 - GLM-Worker telemetry、bundle/analysis artifact、Codex rollout/session/archived-session等の `~/.codex/` 配下ログを、追加AI callなしのread-only commandと機械projectionを優先して解析する
 - Direct CodexとCodex + glm-workerについて、親Codex / Sol側の実token消費を第一指標、Quality Deltaを同格の最上位gateとして比較する。GLM token消費は補助指標とし、GLM token削減のためにCodex tokenやSol判断回数が増える案を採用しない
+- `ResolveFromTaskStats`のTaskIDはstats archive join keyとしてだけ使い、比較cohort identityの代用にしない。Codex Reduction / Quality Deltaの比較は同一`SpecSHA256`と同一の関連run conditions（repository/source snapshot、model・reasoning、評価入力・quality gate条件）を要求する。`SessionID`は独立run identityとして保持し、arm間一致を要求せず同一sessionの重複計上を禁止する
+- 必須identity/snapshot/run-conditionが欠けるrecordはunknown、値が異なるrecordは別cohort、同じTaskIDまたはSessionIDに複数候補があり一意に解決できない入力だけをambiguousとして除外する。通常state storeのtask ID一意archiveへ不要なduplicate fallbackを追加しない
 - parent attribution、history cohort query、timeline retention fallback、review gap、validation gate、packet correction、session rotationまでの新しい観測面を使い、開始時調査と同じ論点を再評価する
 - 105までの各taskで発生した停止、retry、fix、review、validation、parent return、過大outputと、作業中に検討したがTask化しなかった改善候補を棚卸しし、022前の取りこぼしがないか再精査する
 - 品質はreview outcome、escaped defect、validation/retry、Acceptance充足、原因不明failure等の観測可能なproxyで評価し、token削減だけを成功扱いしない

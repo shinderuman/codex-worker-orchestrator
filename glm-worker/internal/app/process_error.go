@@ -175,12 +175,23 @@ func buildPostRunProcessError(err error) (processErrorBody, bool) {
 }
 
 func installSmokeFailDetail(err *InstallSmokeError) map[string]any {
-	return map[string]any{
+	detail := map[string]any{
 		"exit_code":   err.ExitCode,
+		"exit_source": err.ExitSource,
 		"result":      "fail",
 		"role":        stringPtr(err.Role),
 		"duration_ms": err.DurationMS,
 	}
+	if err.Evidence != "" {
+		detail["evidence"] = err.Evidence
+	}
+	if err.EvidenceWarning != "" {
+		detail["evidence_warning"] = err.EvidenceWarning
+	}
+	if err.Truncated {
+		detail["truncated"] = true
+	}
+	return detail
 }
 
 func qualityGateFailDetail(err *QualityGateError) map[string]any {

@@ -8,10 +8,14 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/install-smoke-failure-evidence.md`
+- `IMPLEMENTATION_TASKS/codex-wake-registration-verification-identity.md`
 
 ## NEXT（優先順）
 
+- `IMPLEMENTATION_TASKS/parent-usage-report-evidence-integrity.md`
+- `IMPLEMENTATION_TASKS/telemetry-query-bounded-time-integrity.md`
+- `IMPLEMENTATION_TASKS/execpolicy-combined-rules-evaluation.md`
+- `IMPLEMENTATION_TASKS/finalize-check-parent-metadata-routing.md`
 - `IMPLEMENTATION_TASKS/codex-review-gap-telemetry.md`
 - `IMPLEMENTATION_TASKS/structured-validation-gate-telemetry.md`
 - `IMPLEMENTATION_TASKS/packet-validation-correction-recovery.md`

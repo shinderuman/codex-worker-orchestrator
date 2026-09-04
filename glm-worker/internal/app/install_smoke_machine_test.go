@@ -20,17 +20,35 @@ func newInstallSmokeEnv(t *testing.T) (config.AppConfig, *state.StateStore, stri
 	}
 	failFlagPath := filepath.Join(t.TempDir(), "fail")
 	countPath := filepath.Join(t.TempDir(), "count")
-	if err := os.MkdirAll(filepath.Join(repoRoot, "tests"), 0o755); err != nil {
-		t.Fatal(err)
-	}
 	script := "#!/bin/sh\nset -eu\n" +
 		"count=$(cat '" + countPath + "' 2>/dev/null || printf 0)\n" +
 		"count=$((count + 1))\n" +
 		"printf '%s\\n' \"$count\" >'" + countPath + "'\n" +
-		"if [ -f '" + failFlagPath + "' ]; then exit 1; fi\n"
-	if err := os.WriteFile(filepath.Join(repoRoot, "tests", "install_smoke.sh"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+		"if [ -f '" + failFlagPath + "' ]; then\n" +
+		"printf '%s\\n' 'install smoke stdout fixture'\n" +
+		"printf '%s\\n' 'assertion failed: install smoke fixture' >&2\n" +
+		"printf '%s\\n' 'SMOKE_TOKEN=fixture-secret-value' >&2\n" +
+		"printf '%s\\n' 'rejected sk-proj-AbC12345xY during install' >&2\n" +
+		"printf '%s\\n' 'pull https://Aladdin:OpenSesame@github.example.invalid/org/repo.git' >&2\n" +
+		"printf '%s\\n' 'ghp_AbC1defGHI456jklMNO789pqrSTU rejected' >&2\n" +
+		"printf '%s\\n' 'AKIAIOSFODNN7EXAMPLE rejected' >&2\n" +
+		"printf '%s\\n' 'kept https://github.example.invalid/org/repo.git and uuid 3f2504e0-4f89-11d3-9a0c-0305e82c3301' >&2\n" +
+		"exit 1\n" +
+		"fi\n"
+	writeInstallSmokeScript(t, repoRoot, script)
+	cfg, st := newInstallSmokeStateEnv(t, repoRoot)
+	return cfg, st, failFlagPath, countPath
+}
+
+func newInstallSmokeScriptEnv(t *testing.T, script string) (config.AppConfig, *state.StateStore) {
+	t.Helper()
+	repoRoot := t.TempDir()
+	writeInstallSmokeScript(t, repoRoot, script)
+	return newInstallSmokeStateEnv(t, repoRoot)
+}
+
+func newInstallSmokeStateEnv(t *testing.T, repoRoot string) (config.AppConfig, *state.StateStore) {
+	t.Helper()
 	cfg := config.AppConfig{
 		RepoRoot:  repoRoot,
 		RepoHash:  config.RepoHashFor(repoRoot),
@@ -41,7 +59,17 @@ func newInstallSmokeEnv(t *testing.T) (config.AppConfig, *state.StateStore, stri
 	if err != nil {
 		t.Fatal(err)
 	}
-	return cfg, st, failFlagPath, countPath
+	return cfg, st
+}
+
+func writeInstallSmokeScript(t *testing.T, repoRoot, script string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(repoRoot, "tests"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repoRoot, "tests", "install_smoke.sh"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func smokeInvocationCount(t *testing.T, path string) int {
