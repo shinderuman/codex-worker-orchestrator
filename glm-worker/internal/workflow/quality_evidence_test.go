@@ -115,6 +115,20 @@ func TestParentBehaviorEvalContractChangeRaisesRisk(t *testing.T) {
 	}
 }
 
+func TestParentBehaviorEvalRegistryParsesFromRepository(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join(scenarioRepoRoot(t), filepath.FromSlash(parentBehaviorEvalPath)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases, err := parseParentBehaviorEvalCases(data)
+	if err != nil {
+		t.Fatalf("live eval registry: %v", err)
+	}
+	if len(cases) == 0 {
+		t.Fatal("live eval registry has no cases")
+	}
+}
+
 func TestEffectiveRiskIncludesQualityEvidenceWeakening(t *testing.T) {
 	root, baseline := newQualityEvidenceRepo(t, qualityEvidenceGoTest("got", "1", true))
 	writeGitTestFile(t, root, "sample_test.go", qualityEvidenceGoTest("got", "1", false))

@@ -102,6 +102,15 @@
       "status": "not-run"
     },
     {
+      "id": "automation-response-structured-inspection",
+      "contract_sources": ["codex/instructions/glm-auto-resume.md", "codex/instructions/codex-auto-resume.md"],
+      "positive": "Automation create/update tool responses are judged by field semantics: isError:false with an explicit success message, exact automation ID, and expected mode/status is a success candidate that continues to update, verify, and cleanup within the same orchestration.",
+      "negative": "Field names or negated/zero values (isError:false, errorCount:0) are not treated as failure by raw substring; isError:true, explicit failure payloads, missing expected ID/mode/status, or malformed/ambiguous responses fail closed without leaving a PAUSED placeholder.",
+      "evidence": "Parent rollout of a rate-limit auto-resume reservation showing the structured tool-response judgment fields, same-orchestration update/verify continuation, and the final entity verification outcome.",
+      "run_policy": "explicit-user-authorization",
+      "status": "not-run"
+    },
+    {
       "id": "goal-intake-tracked-before-delegation",
       "contract_sources": ["codex/instructions/goal-development.md", "IMPLEMENTATION_RULES.md"],
       "positive": "Given only a goal, the parent fixes a lossless ## GOAL section with status active plus initial task files and schedule before the first GLM delegation, and continues selecting tasks from the project-state projection without requiring the user to edit the plan or pick tasks.",

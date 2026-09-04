@@ -54,11 +54,13 @@ run_control=<EXPLICIT_NON_DERIVABLE_USER_BOUNDARY>
 
 ### automation応答の検査
 
-- `automation_update`の返り値全体を文字列として必ず検査する。content欄だけを読み、空や短い出力を成功扱いしない。過去にinvalid arguments文字列をcontentだけ読んで空出力と誤認し、作成失敗を見落とした実障害がある。
-- 返り値に`invalid`、`error`、`failed`、空文字列、`Rendered suggestion`、候補カード表示のいずれかを含む場合は作成失敗とする。これらは予約成功ではない。
-- 明示的な作成・更新成功応答とautomation IDを含む場合だけ候補成功とする。候補成功は予約済みではなく、次項の実体検証を通る必要がある。
+- `automation_update`の応答はfield semanticsで構造的に検査する。応答全体を文字列化してfailure語のraw substring検査を行わない。content欄だけを読み、空や短い出力を成功扱いしない。過去にinvalid arguments文字列をcontentだけ読んで空出力と誤認し、作成失敗を見落とした実障害があり、2026-09-04には成功応答のfield名`isError`へのcase-insensitive `error` substring検査で成功を失敗へ誤判定し、PAUSED placeholderと追加round tripを残した。
+- top-levelの`isError` fieldを機械的に読む。`isError:true`は作成・更新失敗とする。`isError`の有無・値が判定不能なmalformed/ambiguous responseも失敗とする。`isError:false`は成功の必要条件であって成功そのものではなく、`errorCount:0`等の否定・zero値やfield名だけをraw substringでfailure語扱いしない。
+- `invalid`、`error`、`failed`は、content text内のmachine payload・message値として明示的に現れた場合だけ失敗とする。field名・否定値・zero値としての文字列出現を失敗根拠にしない。
+- 候補成功は、明示的な作成・更新成功message、exact automation ID、応答が報告する期待mode/statusが全て揃った場合だけとする。期待ID・mode/statusの欠損または不一致、空文字列、`Rendered suggestion`、候補カード表示、malformed/ambiguous responseは作成失敗とする。automation IDをname・時刻・会話memoryから推測しない。候補成功は予約済みではなく、次項の実体検証を通る必要がある。
+- 構造検査で候補成功となったcreate応答をfailure語の誤検出で失敗扱いにせず、同じorchestration内で第二段階update・実体検証・失敗時cleanupへそのまま継続する。誤判定によりACTIVE化前のPAUSED placeholderを残さない。
 - `suggested_create`は候補カードの表示のみでありautomation作成完了ではない。`suggested_create`を呼ばない、予約成功や作成成功の根拠にしない。
-- 返り値検査で見落としても、次項の実体検証が未作成・row欠損・不一致をFAILとして検出する二段防御である。automation tool応答はCodexのtool境界にあり`glm-worker`へ直接渡らないため、postcondition検証が最終的なfail-closed手段となる。
+- 応答検査で見落としても、次項の実体検証が未作成・row欠損・不一致をFAILとして検出する二段防御である。automation tool応答はCodexのtool境界にあり`glm-worker`へ直接渡らないため、postcondition検証が最終的なfail-closed手段となる。
 
 ### 候補成功後の実体検証
 

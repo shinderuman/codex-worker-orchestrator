@@ -8,11 +8,10 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/automation-response-structured-inspection.md`
+- `IMPLEMENTATION_TASKS/execpolicy-combined-rules-evaluation.md`
 
 ## NEXT（優先順）
 
-- `IMPLEMENTATION_TASKS/execpolicy-combined-rules-evaluation.md`
 - `IMPLEMENTATION_TASKS/finalize-check-parent-metadata-routing.md`
 - `IMPLEMENTATION_TASKS/codex-review-gap-telemetry.md`
 - `IMPLEMENTATION_TASKS/structured-validation-gate-telemetry.md`

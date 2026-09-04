@@ -26,7 +26,7 @@
 - 再利用できる既存automationは、`target_thread_id`がwake専用task自身のthread IDと完全一致するものだけとする。この列挙は発火前の既存scheduler再利用判定だけに使い、発火後のupdate・verify・PAUSED化へ流用しない。Codex appのautomation一覧、または`CODEX_CONFIG_DIR`の`automations/*/automation.toml`の`target_thread_id`を読んで列挙する。automation名だけの一致を再利用の根拠にしない。
 - 列挙結果が1件で、かつその実automation IDが期待keyと一致する場合だけ、新規作成せずその実automation IDへ絶対時刻update(UTCの`DTSTART:YYYYMMDDTHHMMSS` + `RRULE:FREQ=DAILY;COUNT=1` + status ACTIVE)を行う。`DTSTART;TZID=...`は使わない。実IDが期待keyと不一致の場合と列挙結果が複数件の場合はどれもupdateせずfail closedとし、Codex Desktop UIで人間が確認・整理するまで手動復旧を案内する。
 - 列挙結果が0件の場合だけ新規作成する。DTSTART付き即時createはCodex appへ拒否されるため、DTSTARTなし・status PAUSED・`RRULE:FREQ=HOURLY`のplaceholder作成と、成功応答に含まれる実automation IDの確認、その実IDへの絶対時刻update(UTCの`DTSTART:YYYYMMDDTHHMMSS` + `RRULE:FREQ=DAILY;COUNT=1` + status ACTIVE)の二段階で行う。`suggested_create`は候補カード表示のみなので呼ばない。作成応答の実automation IDが期待keyと不一致の場合は、返却されたその実IDだけをbest-effort削除してfail closedとする。
-- `automation_update`の返り値全体を文字列として検査する。`invalid`・`error`・`failed`・空文字列・`Rendered suggestion`のいずれかを含む場合は作成・更新失敗とする。content欄だけ読んで空出力を成功扱いにしない。
+- `automation_update`の応答はfield semanticsで構造的に検査し、応答全体を文字列化したfailure語のraw substring検査は行わない。top-level `isError:true`、content text内のmachine payload・message値としての明示的な`invalid`・`error`・`failed`、空文字列、`Rendered suggestion`、期待ID・mode/statusの欠損または不一致、malformed/ambiguous responseの場合は作成・更新失敗とする。field名や否定・zero値(`isError:false`・`errorCount:0`等)をraw substringでfailure語扱いしない。content欄だけ読んで空出力を成功扱いにしない。
 - 最終確認として、`glm-worker --verify-codex-wake <wake専用task自身のthread ID> <wake_atのRFC3339>`を実行する。このcommandはwake thread IDだけを引数に取り、期待key(`codex-5h-wake-<wake thread ID>`)を閉じたgrammarで導出して保存済みautomationのid・name・target_thread_id・status・時刻を照合する。automation keyや親thread IDをこのcommandへ渡さない。現在processの`CODEX_THREAD_ID`は親実装task側のidentityであり、Codex wake登録の検証では使わない。wake thread IDはCodex appのwake専用task作成・選択結果から得たexact identityだけを使い、`CODEX_THREAD_ID`・automation名・会話要約・時刻近接から推測しない。exit 0と結果JSONだけを登録成功の根拠にする。
 - 検証失敗時は引数とtool schemaを1回だけ修正して再試行する。それでも失敗する場合は、作成済みautomationを作成時の実automation IDだけを対象に削除または停止し、手動復旧を案内してfail closedとする。
 
@@ -42,7 +42,7 @@ schedulerから呼ばれたら、次の4操作をこの順序だけを行う。�
 親送信・reset取得・update・実体検証の失敗扱いは次による。
 
 - いずれかが失敗した場合、次回予約済みと報告せず、既存automationを削除しない。
-- `automation_update`の返り値全体を文字列として検査する。`invalid`・`error`・`failed`・空文字列・`Rendered suggestion`・`suggested_create`のいずれかを含む場合は更新失敗とする。content欄だけ読んで空出力を成功扱いにしない。候補カード表示を予約成功扱いしない。
+- `automation_update`の応答はfield semanticsで構造的に検査し、応答全体を文字列化したfailure語のraw substring検査は行わない。top-level `isError:true`、content text内のmachine payload・message値としての明示的な`invalid`・`error`・`failed`、空文字列、`Rendered suggestion`・`suggested_create`による候補カード表示、期待ID・mode/statusの欠損または不一致、malformed/ambiguous responseの場合は更新失敗とする。field名や否定・zero値(`isError:false`・`errorCount:0`等)をraw substringでfailure語扱いしない。content欄だけ読んで空出力を成功扱いにしない。候補カード表示を予約成功扱いしない。
 - 実体検証FAIL時は、検証理由から誤りを特定してupdateを最大1回だけ再試行できる。再試行後も失敗する場合はfail closedとする。
 - fail closedへ落つるとき、安全に停止できる場合は同じ実`automation_id`のautomationだけをPAUSED化し、明示的な復旧境界を残す。PAUSED化も失敗した場合は実automation IDを手動復旧案内へ明示する。`automation_id`が渡されていない場合はPAUSED化もせず、その旨を報告する。
 - 実体検証UNAVAILABLE時は、Codex appのautomation表示で同じautomation ID・対象task・次回実行時刻が意図したJST時刻と一致することを確認した場合だけ予約成功とする。確認不能な場合はfail closedとする。
