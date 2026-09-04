@@ -67,14 +67,15 @@ type TelemetryCohortScan struct {
 }
 
 type TelemetryHistoryScan struct {
-	Dir                  string                    `json:"dir"`
-	Status               string                    `json:"status"`
-	FilesConsidered      int                       `json:"files_considered"`
-	IgnoredFiles         []string                  `json:"ignored_files,omitempty"`
-	UnreadableFiles      []TelemetryFileError      `json:"unreadable_files,omitempty"`
-	RecordsOutsidePeriod int                       `json:"records_outside_period,omitempty"`
-	Malformed            TelemetryMalformedRecords `json:"malformed_records"`
-	Cohorts              []TelemetryCohortScan     `json:"cohorts"`
+	Dir                    string                    `json:"dir"`
+	Status                 string                    `json:"status"`
+	FilesConsidered        int                       `json:"files_considered"`
+	IgnoredFiles           []string                  `json:"ignored_files,omitempty"`
+	UnreadableFiles        []TelemetryFileError      `json:"unreadable_files,omitempty"`
+	RecordsOutsidePeriod   int                       `json:"records_outside_period,omitempty"`
+	RecordsUndatedExcluded int                       `json:"records_undated_excluded,omitempty"`
+	Malformed              TelemetryMalformedRecords `json:"malformed_records"`
+	Cohorts                []TelemetryCohortScan     `json:"cohorts"`
 
 	historyCohortLogs []TelemetryCohortCallLogs
 }
@@ -130,7 +131,14 @@ func (f TelemetryQueryFilter) MatchesTask(taskID string) bool {
 	return f.TaskID == "" || f.TaskID == taskID
 }
 
+func (f TelemetryQueryFilter) ExcludesUndated(at time.Time) bool {
+	return at.IsZero() && f.HasPeriod()
+}
+
 func (f TelemetryQueryFilter) CoversTime(at time.Time) bool {
+	if at.IsZero() {
+		return !f.HasPeriod()
+	}
 	if !f.Since.IsZero() && at.Before(f.Since) {
 		return false
 	}
@@ -225,6 +233,10 @@ func (s *TelemetryHistoryScan) absorbTelemetryHistoryLine(
 	var record ModelCallLog
 	if err := json.Unmarshal(line, (*modelCallLogAlias)(&record)); err != nil {
 		s.countTelemetryMalformed(telemetryMalformedReasonDecode)
+		return
+	}
+	if filter.ExcludesUndated(record.StartedAt) {
+		s.RecordsUndatedExcluded++
 		return
 	}
 	if !filter.CoversTime(record.StartedAt) {

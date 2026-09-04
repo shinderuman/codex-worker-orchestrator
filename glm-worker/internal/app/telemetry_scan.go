@@ -15,12 +15,13 @@ type telemetryTaskError struct {
 }
 
 type telemetryScan struct {
-	Status               string               `json:"status"`
-	Dir                  string               `json:"dir"`
-	Files                int                  `json:"files"`
-	RecordsOutsidePeriod int                  `json:"records_outside_period,omitempty"`
-	IgnoredFiles         []string             `json:"ignored_files,omitempty"`
-	UnreadableTasks      []telemetryTaskError `json:"unreadable_tasks,omitempty"`
+	Status                 string               `json:"status"`
+	Dir                    string               `json:"dir"`
+	Files                  int                  `json:"files"`
+	RecordsOutsidePeriod   int                  `json:"records_outside_period,omitempty"`
+	RecordsUndatedExcluded int                  `json:"records_undated_excluded,omitempty"`
+	IgnoredFiles           []string             `json:"ignored_files,omitempty"`
+	UnreadableTasks        []telemetryTaskError `json:"unreadable_tasks,omitempty"`
 
 	considered int
 	logs       []state.TaskCallLogs
@@ -51,7 +52,7 @@ func scanTelemetryTaskLogs(st *state.StateStore, filter state.TelemetryQueryFilt
 		logs, readErr := st.ReadModelCallLogs(taskID)
 		if readErr == nil {
 			scan.Files++
-			logs = filterTelemetryLogsInPeriod(logs, filter, &scan.RecordsOutsidePeriod)
+			logs = filterTelemetryLogsInPeriod(logs, filter, &scan.RecordsOutsidePeriod, &scan.RecordsUndatedExcluded)
 			scan.logs = append(scan.logs, state.TaskCallLogs{TaskID: taskID, Logs: logs})
 			continue
 		}
@@ -67,12 +68,16 @@ func scanTelemetryTaskLogs(st *state.StateStore, filter state.TelemetryQueryFilt
 	return scan, nil
 }
 
-func filterTelemetryLogsInPeriod(logs []state.ModelCallLog, filter state.TelemetryQueryFilter, outsidePeriod *int) []state.ModelCallLog {
+func filterTelemetryLogsInPeriod(logs []state.ModelCallLog, filter state.TelemetryQueryFilter, outsidePeriod *int, undatedExcluded *int) []state.ModelCallLog {
 	if !filter.HasPeriod() {
 		return logs
 	}
 	filtered := make([]state.ModelCallLog, 0, len(logs))
 	for _, log := range logs {
+		if filter.ExcludesUndated(log.StartedAt) {
+			*undatedExcluded++
+			continue
+		}
 		if filter.CoversTime(log.StartedAt) {
 			filtered = append(filtered, log)
 			continue

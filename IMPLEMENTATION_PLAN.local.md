@@ -8,7 +8,7 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/telemetry-query-bounded-time-integrity.md`
+- `IMPLEMENTATION_TASKS/automation-response-structured-inspection.md`
 
 ## NEXT（優先順）
 

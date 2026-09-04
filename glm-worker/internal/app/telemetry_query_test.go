@@ -129,7 +129,7 @@ func writeStatsHistoryArchive(t *testing.T, st *state.StateStore, taskID string,
 		"version":              3,
 		"schema_revision":      1,
 		"task_id":              taskID,
-		"started_at":           startedAt.Format(time.RFC3339),
+		"started_at":           startedAt.Format(time.RFC3339Nano),
 		"status":               "complete",
 		"model_calls":          modelCalls,
 		"model_calls_by_alias": map[string]any{"opus": modelCalls},
@@ -226,6 +226,98 @@ func TestStatsCurrentScopeTaskAndPeriodFilter(t *testing.T) {
 	defaultCoverage, _ := defaultDecoded["telemetry_coverage"].(map[string]any)
 	if defaultCoverage["orphan_files"].(float64) != 1 {
 		t.Fatalf("無filterのorphan = %#v", defaultCoverage)
+	}
+}
+
+func TestStatsCurrentScopeUndatedArchiveAndNanoBounds(t *testing.T) {
+	cfg := newAppConfig(t)
+	st := state.AttachStateStore(cfg)
+	base := time.Date(2026, 9, 1, 9, 0, 0, 0, time.UTC)
+	nanoBound := base.Add(123456789 * time.Nanosecond)
+	taskDated := "11111111-1111-4111-8111-111111111111"
+	taskUndated := "22222222-2222-4222-8222-222222222222"
+	writeStatsHistoryArchive(t, st, taskDated, nanoBound, 2)
+	undated := map[string]any{
+		"version":              3,
+		"schema_revision":      1,
+		"task_id":              taskUndated,
+		"status":               "complete",
+		"model_calls":          5,
+		"model_calls_by_alias": map[string]any{"opus": 5},
+	}
+	data, err := json.Marshal(undated)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(st.Path("stats/"+taskUndated+".json")), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(st.Path("stats/"+taskUndated+".json"), append(data, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var unboundedOut bytes.Buffer
+	cmd, err := ParseCommand([]string{"--stats"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Execute(cmd, cfg, nil, &unboundedOut, nil); err != nil {
+		t.Fatal(err)
+	}
+	unbounded := decodeSingleLineJSON(t, unboundedOut.String())
+	if unbounded["tasks"].(float64) != 2 || unbounded["model_calls"].(float64) != 7 {
+		t.Fatalf("無filterのstats = %#v", unbounded)
+	}
+
+	var untilOut bytes.Buffer
+	cmd, err = ParseCommand([]string{"--stats", "--until", base.Add(time.Hour).Format(time.RFC3339)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Execute(cmd, cfg, nil, &untilOut, nil); err != nil {
+		t.Fatal(err)
+	}
+	until := decodeSingleLineJSON(t, untilOut.String())
+	if until["tasks"].(float64) != 1 || until["model_calls"].(float64) != 2 {
+		t.Fatalf("until-only filterへ日時不明taskが混入しています: %#v", until)
+	}
+
+	var nanoOut bytes.Buffer
+	cmd, err = ParseCommand([]string{
+		"--stats",
+		"--since", nanoBound.Format(time.RFC3339Nano),
+		"--until", base.Add(time.Hour + 987654321*time.Nanosecond).Format(time.RFC3339Nano),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Execute(cmd, cfg, nil, &nanoOut, nil); err != nil {
+		t.Fatal(err)
+	}
+	nano := decodeSingleLineJSON(t, nanoOut.String())
+	nanoQuery, _ := nano["query"].(map[string]any)
+	if nanoQuery["since"] != "2026-09-01T09:00:00.123456789Z" || nanoQuery["until"] != "2026-09-01T10:00:00.987654321Z" {
+		t.Fatalf("nanosecond境界がviewへlosslessに出ていません: %#v", nanoQuery)
+	}
+	if nano["tasks"].(float64) != 1 || nano["model_calls"].(float64) != 2 {
+		t.Fatalf("nanosecond since境界のselection = %#v", nano)
+	}
+
+	var untilExactOut bytes.Buffer
+	cmd, err = ParseCommand([]string{"--stats", "--until", nanoBound.Format(time.RFC3339Nano)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Execute(cmd, cfg, nil, &untilExactOut, nil); err != nil {
+		t.Fatal(err)
+	}
+	untilExact := decodeSingleLineJSON(t, untilExactOut.String())
+	untilExactQuery, _ := untilExact["query"].(map[string]any)
+	if untilExactQuery["until"] != "2026-09-01T09:00:00.123456789Z" {
+		t.Fatalf("until-only nanosecond view = %#v", untilExactQuery)
+	}
+	if untilExact["tasks"].(float64) != 0 {
+		t.Fatalf("nanosecond until境界のselection = %#v", untilExact)
 	}
 }
 
@@ -432,5 +524,84 @@ func TestCallOutliersCurrentScopePeriodFilter(t *testing.T) {
 	records, _ := report["records"].(map[string]any)
 	if records["task_calls"].(float64) != 1 {
 		t.Fatalf("期間filter後の母集団 = %#v", records)
+	}
+}
+
+func TestCallOutliersUndatedRecordPeriodFilter(t *testing.T) {
+	cfg := newAppConfig(t)
+	st := state.AttachStateStore(cfg)
+	if err := os.MkdirAll(st.Path("telemetry"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	taskID := "55555555-5555-4555-8555-555555555555"
+	base := time.Date(2026, 9, 1, 9, 0, 0, 0, time.UTC)
+	lines := []string{
+		`{"version":3,"schema_revision":1,"call_id":"dated-in","call_type":"task","task_id":"` + taskID + `","started_at":"` + base.Format(time.RFC3339) + `","model_alias":"opus","top_level_turns":5}`,
+		`{"version":3,"schema_revision":1,"call_id":"undated","call_type":"task","task_id":"` + taskID + `","model_alias":"opus","top_level_turns":5}`,
+		`{"version":3,"schema_revision":1,"call_id":"dated-out","call_type":"task","task_id":"` + taskID + `","started_at":"` + base.Add(48*time.Hour).Format(time.RFC3339) + `","model_alias":"opus","top_level_turns":5}`,
+	}
+	if err := os.WriteFile(st.Path("telemetry/"+taskID+".jsonl"), []byte(strings.Join(lines, "\n")+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var boundedOut bytes.Buffer
+	cmd, err := ParseCommand([]string{"--call-outliers", "--until", base.Add(time.Hour).Format(time.RFC3339)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Execute(cmd, cfg, nil, &boundedOut, nil); err != nil {
+		t.Fatal(err)
+	}
+	bounded := decodeSingleLineJSON(t, boundedOut.String())
+	boundedTelemetry, _ := bounded["telemetry"].(map[string]any)
+	if boundedTelemetry["records_outside_period"].(float64) != 1 {
+		t.Fatalf("期間外record = %#v", boundedTelemetry)
+	}
+	if boundedTelemetry["records_undated_excluded"].(float64) != 1 {
+		t.Fatalf("日時不明除外record = %#v", boundedTelemetry)
+	}
+	boundedReport, _ := bounded["report"].(map[string]any)
+	boundedRecords, _ := boundedReport["records"].(map[string]any)
+	if boundedRecords["task_calls"].(float64) != 1 {
+		t.Fatalf("until-only filter後の母集団へ日時不明recordが混入しています: %#v", boundedRecords)
+	}
+
+	var historyOut bytes.Buffer
+	cmd, err = ParseCommand([]string{"--call-outliers", "history", "--until", base.Add(time.Hour).Format(time.RFC3339)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Execute(cmd, cfg, nil, &historyOut, nil); err != nil {
+		t.Fatal(err)
+	}
+	history := decodeSingleLineJSON(t, historyOut.String())
+	historyTelemetry, _ := history["telemetry"].(map[string]any)
+	if historyTelemetry["records_outside_period"].(float64) != 1 {
+		t.Fatalf("history期間外record = %#v", historyTelemetry)
+	}
+	if historyTelemetry["records_undated_excluded"].(float64) != 1 {
+		t.Fatalf("history日時不明除外record = %#v", historyTelemetry)
+	}
+
+	var unboundedOut bytes.Buffer
+	cmd, err = ParseCommand([]string{"--call-outliers"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Execute(cmd, cfg, nil, &unboundedOut, nil); err != nil {
+		t.Fatal(err)
+	}
+	unbounded := decodeSingleLineJSON(t, unboundedOut.String())
+	unboundedTelemetry, _ := unbounded["telemetry"].(map[string]any)
+	if _, ok := unboundedTelemetry["records_outside_period"]; ok {
+		t.Fatalf("無filterで期間外recordがあります: %#v", unboundedTelemetry)
+	}
+	if _, ok := unboundedTelemetry["records_undated_excluded"]; ok {
+		t.Fatalf("無filterで日時不明除外recordがあります: %#v", unboundedTelemetry)
+	}
+	unboundedReport, _ := unbounded["report"].(map[string]any)
+	unboundedRecords, _ := unboundedReport["records"].(map[string]any)
+	if unboundedRecords["task_calls"].(float64) != 3 {
+		t.Fatalf("無filterの母集団 = %#v", unboundedRecords)
 	}
 }

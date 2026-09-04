@@ -111,11 +111,11 @@ func (query TelemetryQueryArgs) view(periodBasis string) telemetryQueryView {
 	scope := query.resolvedScope()
 	view := telemetryQueryView{Scope: scope, TaskID: query.Filter.TaskID}
 	if !query.Filter.Since.IsZero() {
-		since := query.Filter.Since.UTC().Format(time.RFC3339)
+		since := query.Filter.Since.UTC().Format(time.RFC3339Nano)
 		view.Since = &since
 	}
 	if !query.Filter.Until.IsZero() {
-		until := query.Filter.Until.UTC().Format(time.RFC3339)
+		until := query.Filter.Until.UTC().Format(time.RFC3339Nano)
 		view.Until = &until
 	}
 	if query.Filter.HasPeriod() {

@@ -256,6 +256,57 @@ func TestScanTelemetryHistoryTaskAndPeriodFilter(t *testing.T) {
 	}
 }
 
+func TestScanTelemetryHistoryUndatedRecordPeriodFilter(t *testing.T) {
+	st := &StateStore{dir: t.TempDir()}
+	base := telemetryHistoryBase()
+	nanoBound := base.Add(123456789 * time.Nanosecond)
+	writeTelemetryHistoryFile(t, st, telemetryHistoryTaskOld,
+		oldCohortTaskRecord(telemetryHistoryTaskOld, "dated-second", base, 10, false),
+		marshalTelemetryHistoryLine(map[string]any{
+			"version": ModelCallLogVersion, "call_id": "dated-nano", "call_type": CallTypeTask,
+			"task_id": telemetryHistoryTaskOld, "started_at": nanoBound.Format(time.RFC3339Nano),
+			"model_alias": "opus", "top_level_turns": 10,
+		}),
+		marshalTelemetryHistoryLine(map[string]any{
+			"version": ModelCallLogVersion, "call_id": "undated", "call_type": CallTypeTask,
+			"task_id": telemetryHistoryTaskOld, "model_alias": "opus", "top_level_turns": 10,
+		}),
+	)
+
+	tests := []struct {
+		name    string
+		filter  TelemetryQueryFilter
+		read    int
+		outside int
+		undated int
+	}{
+		{name: "unbounded keeps undated", filter: TelemetryQueryFilter{}, read: 3, outside: 0, undated: 0},
+		{name: "since-only excludes undated", filter: TelemetryQueryFilter{Since: base.Add(-time.Hour)}, read: 2, outside: 0, undated: 1},
+		{name: "until-only excludes undated", filter: TelemetryQueryFilter{Until: base.Add(time.Hour)}, read: 2, outside: 0, undated: 1},
+		{name: "both bounds exclude undated", filter: TelemetryQueryFilter{Since: base.Add(-time.Hour), Until: base.Add(time.Hour)}, read: 2, outside: 0, undated: 1},
+		{name: "since nanosecond bound inclusive", filter: TelemetryQueryFilter{Since: nanoBound}, read: 1, outside: 1, undated: 1},
+		{name: "until nanosecond bound exclusive", filter: TelemetryQueryFilter{Until: nanoBound}, read: 1, outside: 1, undated: 1},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			scan, err := st.ScanTelemetryHistory(test.filter)
+			if err != nil {
+				t.Fatal(err)
+			}
+			cohort := findTelemetryHistoryCohort(t, scan, ModelCallLogVersion, 0)
+			if cohort.Records.Read != test.read {
+				t.Fatalf("期間内record = %d: %+v", cohort.Records.Read, cohort)
+			}
+			if scan.RecordsOutsidePeriod != test.outside {
+				t.Fatalf("期間外record = %d: %+v", scan.RecordsOutsidePeriod, scan)
+			}
+			if scan.RecordsUndatedExcluded != test.undated {
+				t.Fatalf("日時不明除外record = %d: %+v", scan.RecordsUndatedExcluded, scan)
+			}
+		})
+	}
+}
+
 func TestScanTelemetryHistoryExcludesNewerSchemaCohort(t *testing.T) {
 	st := &StateStore{dir: t.TempDir()}
 	base := telemetryHistoryBase()
