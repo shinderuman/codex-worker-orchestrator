@@ -882,17 +882,17 @@ func analysisSubsequentTurn(scan bundleRolloutScan, turn *analysisRolloutTurn, c
 	if !turn.HasComplete || turn.CompletedAt.After(collectionEnd) {
 		return entry
 	}
-	entry.Status = analysisStatusAvailable
 	completed := turn.CompletedAt.UTC().Format(time.RFC3339Nano)
 	entry.CompletedAt = &completed
 	delta := analysisAnchoredTokenDelta(scan, turn.StartedAt, turn.CompletedAt)
+	entry.Status = delta.Status
+	entry.BaselineAt = delta.BaselineAt
+	entry.EndAt = delta.EndAt
 	if delta.Status != analysisStatusAvailable {
 		return entry
 	}
 	entry.InputTokens = delta.InputTokens
 	entry.CachedInputTokens = delta.CachedInputTokens
-	entry.BaselineAt = delta.BaselineAt
-	entry.EndAt = delta.EndAt
 	return entry
 }
 
@@ -1070,10 +1070,16 @@ func analysisAnchoredTokenDelta(scan bundleRolloutScan, baselineBound, endBound 
 		delta.BaselineAt = baseline.RawAt
 		delta.EndAt = end.RawAt
 	default:
-		delta.InputTokens = analysisCounterDeltaState(baseline.Input, end.Input).Value
-		delta.CachedInputTokens = analysisCounterDeltaState(baseline.Cached, end.Cached).Value
+		input := analysisCounterDeltaState(baseline.Input, end.Input)
+		cached := analysisCounterDeltaState(baseline.Cached, end.Cached)
 		delta.BaselineAt = baseline.RawAt
 		delta.EndAt = end.RawAt
+		if !input.Known || !cached.Known {
+			delta.Status = analysisStatusUnknown
+			break
+		}
+		delta.InputTokens = input.Value
+		delta.CachedInputTokens = cached.Value
 	}
 	return delta
 }
