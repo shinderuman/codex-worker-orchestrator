@@ -10,21 +10,22 @@ import (
 )
 
 type parentHandoffOutput struct {
-	Version          int                        `json:"version"`
-	Consistent       bool                       `json:"consistent"`
-	Inconsistency    *string                    `json:"inconsistency"`
-	TaskID           *string                    `json:"task_id"`
-	TaskStatus       *string                    `json:"task_status"`
-	RequiredAction   *string                    `json:"required_action"`
-	AllowedActions   []string                   `json:"allowed_actions"`
-	ResumeKind       *string                    `json:"resume_kind"`
-	PendingDecision  bool                       `json:"pending_decision"`
-	ParentReviewOpen *string                    `json:"parent_review_open"`
-	Baseline         *state.GitBaselineEvidence `json:"baseline"`
-	Snapshot         *state.SnapshotDigest      `json:"snapshot"`
-	ArtifactDir      *string                    `json:"artifact_dir"`
-	LastMaterial     *parentHandoffMaterial     `json:"last_material"`
-	Validations      []parentHandoffValidation  `json:"validations"`
+	Version          int                            `json:"version"`
+	Consistent       bool                           `json:"consistent"`
+	Inconsistency    *string                        `json:"inconsistency"`
+	TaskID           *string                        `json:"task_id"`
+	TaskStatus       *string                        `json:"task_status"`
+	RequiredAction   *string                        `json:"required_action"`
+	AllowedActions   []string                       `json:"allowed_actions"`
+	ResumeKind       *string                        `json:"resume_kind"`
+	PendingDecision  bool                           `json:"pending_decision"`
+	ParentReviewOpen *string                        `json:"parent_review_open"`
+	Baseline         *state.GitBaselineEvidence     `json:"baseline"`
+	Snapshot         *state.SnapshotDigest          `json:"snapshot"`
+	ArtifactDir      *string                        `json:"artifact_dir"`
+	LastMaterial     *parentHandoffMaterial         `json:"last_material"`
+	Validations      []parentHandoffValidation      `json:"validations"`
+	RoutingEvidence  []parentHandoffRoutingEvidence `json:"routing_evidence"`
 }
 
 type parentHandoffRecoveryOutput struct {
@@ -76,7 +77,19 @@ type parentHandoffValidation struct {
 	WorktreeDigest  string `json:"worktree_digest"`
 }
 
+type parentHandoffRoutingEvidence struct {
+	ValidationRunID string `json:"validation_run_id"`
+	Form            string `json:"form"`
+	WorkingDir      string `json:"working_dir"`
+	SnapshotMatch   string `json:"snapshot_match"`
+}
+
 const parentHandoffVersion = 1
+
+const (
+	routingSnapshotMatchExact              = "exact"
+	routingSnapshotMatchParentMetadataOnly = "parent_metadata_only"
+)
 
 func printParentHandoff(st *state.StateStore, stdout io.Writer) error {
 	return writeJSON(stdout, buildParentHandoff(st))
@@ -143,6 +156,7 @@ func buildParentHandoff(st *state.StateStore) parentHandoffOutput {
 		ParentReviewOpen: parentReviewPtr(st.OpenParentReviewLabel()),
 		Baseline:         st.BaselineEvidence(),
 		Validations:      []parentHandoffValidation{},
+		RoutingEvidence:  []parentHandoffRoutingEvidence{},
 	}
 	if taskID != "" {
 		output.ArtifactDir = stringPtr(st.ArtifactDir(taskID))
@@ -151,6 +165,7 @@ func buildParentHandoff(st *state.StateStore) parentHandoffOutput {
 	applyParentSnapshot(repoRoot, &output)
 	applyParentLastMaterial(st, taskID, &output)
 	output.Validations = currentParentValidations(st, repoRoot, output.Snapshot)
+	output.RoutingEvidence = currentParentRoutingEvidence(st, repoRoot, taskID, output.Snapshot)
 	return output
 }
 
@@ -271,6 +286,70 @@ func qualityGateMatchesHandoff(record qualityGateRunRecord, repoRoot string, sna
 		record.Head == snapshot.Head &&
 		record.IndexDigest == snapshot.IndexDigest &&
 		record.WorktreeDigest == snapshot.WorktreeDigest
+}
+
+func currentParentRoutingEvidence(st *state.StateStore, repoRoot, taskID string, snapshot *state.SnapshotDigest) []parentHandoffRoutingEvidence {
+	if repoRoot == "" || snapshot == nil {
+		return []parentHandoffRoutingEvidence{}
+	}
+	latestByForm := latestRoutingEvidenceRuns(st, repoRoot, taskID, snapshot)
+	forms := make([]string, 0, len(latestByForm))
+	for form := range latestByForm {
+		forms = append(forms, form)
+	}
+	sort.Strings(forms)
+	evidence := make([]parentHandoffRoutingEvidence, 0, len(forms))
+	for _, form := range forms {
+		record := latestByForm[form]
+		evidence = append(evidence, parentHandoffRoutingEvidence{
+			ValidationRunID: record.ValidationRunID,
+			Form:            record.Form,
+			WorkingDir:      record.WorkingDir,
+			SnapshotMatch:   routingSnapshotMatch(record, repoRoot, snapshot),
+		})
+	}
+	return evidence
+}
+
+func latestRoutingEvidenceRuns(st *state.StateStore, repoRoot, taskID string, snapshot *state.SnapshotDigest) map[string]qualityGateRunRecord {
+	latestByForm := make(map[string]qualityGateRunRecord, len(qualityGateForms))
+	entries, err := os.ReadDir(st.Path(qualityGateRunDirectory))
+	if err != nil {
+		return latestByForm
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() || !validValidationRunID(entry.Name()) {
+			continue
+		}
+		record, err := readQualityGateRun(st, entry.Name())
+		if err != nil || record.Status != qualityGateStatusPass || record.TaskID != taskID {
+			continue
+		}
+		if routingSnapshotMatch(record, repoRoot, snapshot) == "" {
+			continue
+		}
+		previous, found := latestByForm[record.Form]
+		if !found || previous.StartedAt.Before(record.StartedAt) {
+			latestByForm[record.Form] = record
+		}
+	}
+	return latestByForm
+}
+
+func routingSnapshotMatch(record qualityGateRunRecord, repoRoot string, snapshot *state.SnapshotDigest) string {
+	if filepath.Clean(record.Repository) != filepath.Clean(repoRoot) ||
+		record.Head != snapshot.Head ||
+		record.IndexDigest != snapshot.IndexDigest {
+		return ""
+	}
+	if record.WorktreeDigest == snapshot.WorktreeDigest {
+		return routingSnapshotMatchExact
+	}
+	if record.WorktreeDigestExcludingParent != "" &&
+		record.WorktreeDigestExcludingParent == snapshot.WorktreeDigestExcludingParent {
+		return routingSnapshotMatchParentMetadataOnly
+	}
+	return ""
 }
 
 func parentReviewPtr(label string) *string {

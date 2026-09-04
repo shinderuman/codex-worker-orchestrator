@@ -13,12 +13,20 @@ import (
 )
 
 type finalizationCheckOutput struct {
-	Status     string                  `json:"status"`
-	Form       string                  `json:"form"`
-	Validation json.RawMessage         `json:"validation,omitempty"`
-	Handoff    json.RawMessage         `json:"handoff,omitempty"`
-	Git        *finalizationGitSummary `json:"git,omitempty"`
-	Failure    *finalizationFailure    `json:"failure,omitempty"`
+	Status     string                      `json:"status"`
+	Form       string                      `json:"form"`
+	Routing    *finalizationRoutingSummary `json:"routing,omitempty"`
+	Validation json.RawMessage             `json:"validation,omitempty"`
+	Handoff    json.RawMessage             `json:"handoff,omitempty"`
+	Git        *finalizationGitSummary     `json:"git,omitempty"`
+	Failure    *finalizationFailure        `json:"failure,omitempty"`
+}
+
+type finalizationRoutingSummary struct {
+	SelectedDir     string `json:"selected_dir"`
+	Basis           string `json:"basis"`
+	ValidationRunID string `json:"validation_run_id,omitempty"`
+	SnapshotMatch   string `json:"snapshot_match,omitempty"`
 }
 
 type finalizationFailure struct {
@@ -44,19 +52,32 @@ type finalizationValidationProbe struct {
 	ValidationRunID string `json:"validation_run_id"`
 }
 
+type finalizationRoutingEvidenceProbe struct {
+	ValidationRunID string `json:"validation_run_id"`
+	Form            string `json:"form"`
+	WorkingDir      string `json:"working_dir"`
+	SnapshotMatch   string `json:"snapshot_match"`
+}
+
+type finalizationHandoffValidationProbe struct {
+	ValidationRunID string `json:"validation_run_id"`
+	Form            string `json:"form"`
+	Status          string `json:"status"`
+	WorkingDir      string `json:"working_dir"`
+}
+
 type finalizationHandoffProbe struct {
-	Consistent  bool `json:"consistent"`
-	Validations []struct {
-		ValidationRunID string `json:"validation_run_id"`
-		Form            string `json:"form"`
-		Status          string `json:"status"`
-		WorkingDir      string `json:"working_dir"`
-	} `json:"validations"`
+	Consistent      bool                                 `json:"consistent"`
+	Validations     []finalizationHandoffValidationProbe `json:"validations"`
+	RoutingEvidence []finalizationRoutingEvidenceProbe   `json:"routing_evidence"`
 }
 
 const (
-	finalizationDiagnosticLimit      = 2048
-	finalizationValidationStatusPass = "pass"
+	finalizationDiagnosticLimit        = 2048
+	finalizationValidationStatusPass   = "pass"
+	finalizationRoutingBasisValidation = "current_task_validation"
+	finalizationRoutingBasisCaller     = "caller_cwd"
+	finalizationGoModFile              = "go.mod"
 )
 
 func runFinalizationCheck(repoRoot, validationDir, form string, stdout io.Writer) error {
@@ -71,30 +92,94 @@ func runFinalizationCheck(repoRoot, validationDir, form string, stdout io.Writer
 	if err != nil {
 		return err
 	}
-	validatedDir, err = finalizationRoutedValidationDir(worker, repoRoot, validatedDir, form)
-	if err != nil {
-		return err
+	routing, failure := finalizationRoutingDecision(worker, repoRoot, validatedDir, form)
+	if failure != nil {
+		return writeFinalizationOutput(stdout, finalizationCheckOutput{Status: "blocked", Form: form, Failure: failure})
 	}
-	return runFinalizationCheckWithWorker(worker, repoRoot, validatedDir, form, stdout)
+	return runFinalizationCheckWithWorker(worker, repoRoot, routing.SelectedDir, form, routing, stdout)
 }
 
-func finalizationRoutedValidationDir(worker, repoRoot, fallbackDir, form string) (string, error) {
+func finalizationRoutingDecision(worker, repoRoot, callerDir, form string) (*finalizationRoutingSummary, *finalizationFailure) {
+	evidence, evidenceFound := finalizationRoutingEvidenceCandidate(worker, repoRoot, form)
+	if evidenceFound {
+		selected, failure := finalizationVerifiedEvidenceDir(repoRoot, evidence)
+		if failure != nil {
+			return nil, failure
+		}
+		if selected != "" {
+			return &finalizationRoutingSummary{
+				SelectedDir:     selected,
+				Basis:           finalizationRoutingBasisValidation,
+				ValidationRunID: evidence.ValidationRunID,
+				SnapshotMatch:   evidence.SnapshotMatch,
+			}, nil
+		}
+	}
+	if finalizationDirIsModuleRoot(callerDir) {
+		return &finalizationRoutingSummary{SelectedDir: callerDir, Basis: finalizationRoutingBasisCaller}, nil
+	}
+	detail := "caller working directory has no " + finalizationGoModFile + ": " + callerDir
+	if evidenceFound {
+		detail = "routing evidence working directory has no " + finalizationGoModFile + ": " + evidence.WorkingDir + "; " + detail
+	}
+	return nil, &finalizationFailure{
+		Stage:  "routing",
+		Reason: "no_module_root_working_directory",
+		Detail: compactFinalizationDiagnostic(detail),
+	}
+}
+
+func finalizationRoutingEvidenceCandidate(worker, repoRoot, form string) (finalizationRoutingEvidenceProbe, bool) {
 	_, handoff, failure := collectFinalizationHandoff(worker, repoRoot)
 	if failure != nil || !handoff.Consistent {
-		return fallbackDir, nil
+		return finalizationRoutingEvidenceProbe{}, false
 	}
-	for _, validation := range handoff.Validations {
-		if validation.Form != form || validation.Status != finalizationValidationStatusPass || validation.WorkingDir == "" {
-			continue
+	for _, evidence := range handoff.RoutingEvidence {
+		if evidence.Form == form && evidence.WorkingDir != "" {
+			return evidence, true
 		}
-		return finalizationValidationDir(repoRoot, validation.WorkingDir)
 	}
-	return fallbackDir, nil
+	return finalizationRoutingEvidenceProbe{}, false
+}
+
+func finalizationVerifiedEvidenceDir(repoRoot string, evidence finalizationRoutingEvidenceProbe) (string, *finalizationFailure) {
+	resolved, err := filepath.EvalSymlinks(evidence.WorkingDir)
+	if err != nil {
+		return "", nil
+	}
+	info, err := os.Stat(resolved)
+	if err != nil || !info.IsDir() {
+		return "", nil
+	}
+	if finalizationDirOutsideRepository(repoRoot, resolved) {
+		return "", &finalizationFailure{
+			Stage:  "routing",
+			Reason: "routing_evidence_outside_repository",
+			Detail: compactFinalizationDiagnostic(resolved),
+		}
+	}
+	if !finalizationDirIsModuleRoot(resolved) {
+		return "", nil
+	}
+	return resolved, nil
+}
+
+func finalizationDirOutsideRepository(repoRoot, dir string) bool {
+	repo, err := filepath.EvalSymlinks(repoRoot)
+	if err != nil {
+		return true
+	}
+	rel, err := filepath.Rel(repo, dir)
+	return err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+func finalizationDirIsModuleRoot(dir string) bool {
+	info, err := os.Stat(filepath.Join(dir, finalizationGoModFile))
+	return err == nil && info.Mode().IsRegular()
 }
 
 func finalizationValidationDir(repoRoot, validationDir string) (string, error) {
-	repo, err := filepath.EvalSymlinks(repoRoot)
-	if err != nil {
+	if _, err := filepath.EvalSymlinks(repoRoot); err != nil {
 		return "", fmt.Errorf("resolve repository root: %w", err)
 	}
 	candidate, err := filepath.EvalSymlinks(validationDir)
@@ -108,43 +193,42 @@ func finalizationValidationDir(repoRoot, validationDir string) (string, error) {
 	if !info.IsDir() {
 		return "", fmt.Errorf("finalize-check working directory is not a directory")
 	}
-	rel, err := filepath.Rel(repo, candidate)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+	if finalizationDirOutsideRepository(repoRoot, candidate) {
 		return "", fmt.Errorf("finalize-check working directory must be inside repository")
 	}
 	return candidate, nil
 }
 
-func runFinalizationCheckWithWorker(worker, repoRoot, validationDir, form string, stdout io.Writer) error {
+func runFinalizationCheckWithWorker(worker, repoRoot, validationDir, form string, routing *finalizationRoutingSummary, stdout io.Writer) error {
 	validation, validationProbe, failure := collectFinalizationValidation(worker, validationDir, form)
 	if failure != nil {
-		return writeFinalizationOutput(stdout, finalizationCheckOutput{Status: "blocked", Form: form, Failure: failure})
+		return writeFinalizationOutput(stdout, finalizationCheckOutput{Status: "blocked", Form: form, Routing: routing, Failure: failure})
 	}
 	handoff, handoffProbe, failure := collectFinalizationHandoff(worker, repoRoot)
 	if failure != nil {
-		return writeFinalizationOutput(stdout, finalizationCheckOutput{Status: "blocked", Form: form, Validation: validation, Failure: failure})
+		return writeFinalizationOutput(stdout, finalizationCheckOutput{Status: "blocked", Form: form, Routing: routing, Validation: validation, Failure: failure})
 	}
 	if !handoffProbe.Consistent {
 		return writeFinalizationOutput(stdout, finalizationCheckOutput{
-			Status: "blocked", Form: form, Validation: validation, Handoff: handoff,
+			Status: "blocked", Form: form, Routing: routing, Validation: validation, Handoff: handoff,
 			Failure: &finalizationFailure{Stage: "handoff", Reason: "lifecycle_inconsistent"},
 		})
 	}
 	if !handoffContainsValidation(handoffProbe, validationProbe.ValidationRunID) {
 		return writeFinalizationOutput(stdout, finalizationCheckOutput{
-			Status: "blocked", Form: form, Validation: validation, Handoff: handoff,
+			Status: "blocked", Form: form, Routing: routing, Validation: validation, Handoff: handoff,
 			Failure: &finalizationFailure{Stage: "snapshot", Reason: "validation_not_current_for_snapshot"},
 		})
 	}
 	gitSummary, err := readFinalizationGitSummary(repoRoot)
 	if err != nil {
 		return writeFinalizationOutput(stdout, finalizationCheckOutput{
-			Status: "blocked", Form: form, Validation: validation, Handoff: handoff,
+			Status: "blocked", Form: form, Routing: routing, Validation: validation, Handoff: handoff,
 			Failure: &finalizationFailure{Stage: "git", Reason: "git_summary_unavailable", Detail: compactFinalizationDiagnostic(err.Error())},
 		})
 	}
 	return writeFinalizationOutput(stdout, finalizationCheckOutput{
-		Status: "ready_for_parent_decision", Form: form, Validation: validation, Handoff: handoff, Git: &gitSummary,
+		Status: "ready_for_parent_decision", Form: form, Routing: routing, Validation: validation, Handoff: handoff, Git: &gitSummary,
 	})
 }
 

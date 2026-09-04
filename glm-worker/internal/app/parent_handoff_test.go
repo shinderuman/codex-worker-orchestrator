@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -291,6 +292,152 @@ func TestParentHandoffValidationReferencesMatchCurrentSnapshot(t *testing.T) {
 		if validation.ValidationRunID == stale.ValidationRunID || validation.WorkingDir == stale.WorkingDir {
 			t.Fatalf("stale snapshot validation leaked into handoff: %#v", validation)
 		}
+	}
+}
+
+func TestParentHandoffRoutingEvidenceMatchesImplementationSnapshot(t *testing.T) {
+	const routingEvidenceTaskID = "12345678-1111-2222-3333-444444444444"
+	cases := []struct {
+		name        string
+		mutate      func(record *qualityGateRunRecord)
+		wantMatches bool
+		wantMatch   string
+	}{
+		{
+			name:        "exact snapshot match stays routing evidence",
+			mutate:      func(_ *qualityGateRunRecord) {},
+			wantMatches: true,
+			wantMatch:   routingSnapshotMatchExact,
+		},
+		{
+			name: "parent metadata drift stays routing evidence",
+			mutate: func(record *qualityGateRunRecord) {
+				record.WorktreeDigest = "parent-metadata-drift"
+			},
+			wantMatches: true,
+			wantMatch:   routingSnapshotMatchParentMetadataOnly,
+		},
+		{
+			name: "legacy record without parent-excluded digest matches exact only",
+			mutate: func(record *qualityGateRunRecord) {
+				record.WorktreeDigestExcludingParent = ""
+			},
+			wantMatches: true,
+			wantMatch:   routingSnapshotMatchExact,
+		},
+		{
+			name: "implementation drift drops routing evidence",
+			mutate: func(record *qualityGateRunRecord) {
+				record.WorktreeDigest = "parent-metadata-drift"
+				record.WorktreeDigestExcludingParent = "implementation-drift"
+			},
+			wantMatches: false,
+		},
+		{
+			name: "head change drops routing evidence",
+			mutate: func(record *qualityGateRunRecord) {
+				record.Head = "other-head"
+			},
+			wantMatches: false,
+		},
+		{
+			name: "index change drops routing evidence",
+			mutate: func(record *qualityGateRunRecord) {
+				record.IndexDigest = "other-index"
+			},
+			wantMatches: false,
+		},
+		{
+			name: "task change drops routing evidence",
+			mutate: func(record *qualityGateRunRecord) {
+				record.TaskID = "12345678-9999-8888-7777-666666666666"
+			},
+			wantMatches: false,
+		},
+		{
+			name: "failed validation is not routing evidence",
+			mutate: func(record *qualityGateRunRecord) {
+				record.Status = qualityGateStatusFail
+			},
+			wantMatches: false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := newAppConfig(t)
+			st, err := state.NewStateStore(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := st.Write("task.id", routingEvidenceTaskID); err != nil {
+				t.Fatal(err)
+			}
+			snapshot, err := state.CaptureGitSnapshot(cfg.RepoRoot)
+			if err != nil {
+				t.Fatal(err)
+			}
+			record := qualityGateRunRecord{
+				ValidationRunID:               strings.Repeat("a", 32),
+				Form:                          "go-test",
+				Repository:                    cfg.RepoRoot,
+				WorkingDir:                    filepath.Join(cfg.RepoRoot, "module"),
+				Head:                          snapshot.Head,
+				IndexDigest:                   snapshot.IndexDigest,
+				WorktreeDigest:                snapshot.WorktreeDigest,
+				WorktreeDigestExcludingParent: snapshot.WorktreeDigestExcludingParent,
+				TaskID:                        routingEvidenceTaskID,
+				StartedAt:                     time.Now().UTC(),
+				Status:                        qualityGateStatusPass,
+			}
+			tc.mutate(&record)
+			if err := writeQualityGateRun(st, record); err != nil {
+				t.Fatal(err)
+			}
+
+			output := buildParentHandoff(st)
+			if !output.Consistent {
+				t.Fatalf("handoff = %#v", output)
+			}
+			if !tc.wantMatches {
+				if len(output.RoutingEvidence) != 0 {
+					t.Fatalf("routing evidence = %#v", output.RoutingEvidence)
+				}
+				return
+			}
+			if len(output.RoutingEvidence) != 1 {
+				t.Fatalf("routing evidence = %#v", output.RoutingEvidence)
+			}
+			evidence := output.RoutingEvidence[0]
+			if evidence.ValidationRunID != record.ValidationRunID || evidence.Form != record.Form ||
+				evidence.WorkingDir != record.WorkingDir || evidence.SnapshotMatch != tc.wantMatch {
+				t.Fatalf("routing evidence = %#v", evidence)
+			}
+		})
+	}
+}
+
+func TestQualityGateRunRecordCarriesRoutingIdentity(t *testing.T) {
+	_, st := newQualityGateEnv(t)
+	taskID := "12345678-aaaa-bbbb-cccc-dddddddddddd"
+	if err := st.Write("task.id", taskID); err != nil {
+		t.Fatal(err)
+	}
+	identity, err := prepareQualityGateStart("go-test", st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if identity.TaskID != taskID {
+		t.Fatalf("identity = %#v", identity)
+	}
+	record, err := newQualityGateRunRecord(identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.TaskID != taskID {
+		t.Fatalf("record task id = %q", record.TaskID)
+	}
+	if record.WorktreeDigestExcludingParent == "" || record.WorktreeDigestExcludingParent != identity.Snapshot.WorktreeDigestExcludingParent {
+		t.Fatalf("record parent-excluded digest = %q", record.WorktreeDigestExcludingParent)
 	}
 }
 

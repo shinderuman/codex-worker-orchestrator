@@ -39,21 +39,23 @@ type qualityGateOutput struct {
 }
 
 type qualityGateRunRecord struct {
-	ValidationRunID string     `json:"validation_run_id"`
-	Form            string     `json:"form"`
-	Repository      string     `json:"repository"`
-	WorkingDir      string     `json:"working_dir"`
-	Head            string     `json:"head"`
-	IndexDigest     string     `json:"index_digest"`
-	WorktreeDigest  string     `json:"worktree_digest"`
-	StartedAt       time.Time  `json:"started_at"`
-	CompletedAt     *time.Time `json:"completed_at,omitempty"`
-	Status          string     `json:"status"`
-	RunnerPID       int        `json:"runner_pid,omitempty"`
-	ExitCode        int        `json:"exit_code,omitempty"`
-	ExitSource      string     `json:"exit_source,omitempty"`
-	DurationMS      int64      `json:"duration_ms,omitempty"`
-	Log             string     `json:"log,omitempty"`
+	ValidationRunID               string     `json:"validation_run_id"`
+	Form                          string     `json:"form"`
+	Repository                    string     `json:"repository"`
+	WorkingDir                    string     `json:"working_dir"`
+	Head                          string     `json:"head"`
+	IndexDigest                   string     `json:"index_digest"`
+	WorktreeDigest                string     `json:"worktree_digest"`
+	WorktreeDigestExcludingParent string     `json:"worktree_digest_excluding_parent,omitempty"`
+	TaskID                        string     `json:"task_id,omitempty"`
+	StartedAt                     time.Time  `json:"started_at"`
+	CompletedAt                   *time.Time `json:"completed_at,omitempty"`
+	Status                        string     `json:"status"`
+	RunnerPID                     int        `json:"runner_pid,omitempty"`
+	ExitCode                      int        `json:"exit_code,omitempty"`
+	ExitSource                    string     `json:"exit_source,omitempty"`
+	DurationMS                    int64      `json:"duration_ms,omitempty"`
+	Log                           string     `json:"log,omitempty"`
 }
 
 type qualityGateStartedEvent struct {
@@ -72,6 +74,7 @@ type qualityGateStartIdentity struct {
 	GoArgs     []string
 	Repository string
 	WorkingDir string
+	TaskID     string
 	Snapshot   state.GitSnapshot
 }
 
@@ -192,6 +195,7 @@ func prepareQualityGateStart(form string, st *state.StateStore) (qualityGateStar
 		GoArgs:     goArgs,
 		Repository: repository,
 		WorkingDir: workingDir,
+		TaskID:     st.ReadOr("task.id", ""),
 		Snapshot:   snapshot,
 	}, nil
 }
@@ -202,15 +206,17 @@ func newQualityGateRunRecord(identity qualityGateStartIdentity) (qualityGateRunR
 		return qualityGateRunRecord{}, err
 	}
 	return qualityGateRunRecord{
-		ValidationRunID: runID,
-		Form:            identity.Form,
-		Repository:      identity.Repository,
-		WorkingDir:      identity.WorkingDir,
-		Head:            identity.Snapshot.Head,
-		IndexDigest:     identity.Snapshot.IndexDigest,
-		WorktreeDigest:  identity.Snapshot.WorktreeDigest,
-		StartedAt:       time.Now().UTC(),
-		Status:          qualityGateStatusRunning,
+		ValidationRunID:               runID,
+		Form:                          identity.Form,
+		Repository:                    identity.Repository,
+		WorkingDir:                    identity.WorkingDir,
+		Head:                          identity.Snapshot.Head,
+		IndexDigest:                   identity.Snapshot.IndexDigest,
+		WorktreeDigest:                identity.Snapshot.WorktreeDigest,
+		WorktreeDigestExcludingParent: identity.Snapshot.WorktreeDigestExcludingParent,
+		TaskID:                        identity.TaskID,
+		StartedAt:                     time.Now().UTC(),
+		Status:                        qualityGateStatusRunning,
 	}, nil
 }
 

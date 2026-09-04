@@ -29,7 +29,7 @@ case "$1" in
 esac
 `)
 	var output bytes.Buffer
-	if err := runFinalizationCheckWithWorker(worker, repo, repo, "go-test", &output); err != nil {
+	if err := runFinalizationCheckWithWorker(worker, repo, repo, "go-test", nil, &output); err != nil {
 		t.Fatal(err)
 	}
 	var result finalizationCheckOutput
@@ -64,7 +64,7 @@ case "$1" in
 esac
 `)
 	var output bytes.Buffer
-	if err := runFinalizationCheckWithWorker(worker, repo, repo, "go-test", &output); err != nil {
+	if err := runFinalizationCheckWithWorker(worker, repo, repo, "go-test", nil, &output); err != nil {
 		t.Fatal(err)
 	}
 	var result finalizationCheckOutput
@@ -93,7 +93,7 @@ case "$1" in
 esac
 `)
 	var output bytes.Buffer
-	if err := runFinalizationCheckWithWorker(worker, repo, repo, "go-test", &output); err != nil {
+	if err := runFinalizationCheckWithWorker(worker, repo, repo, "go-test", nil, &output); err != nil {
 		t.Fatal(err)
 	}
 	var result finalizationCheckOutput
