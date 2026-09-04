@@ -41,6 +41,10 @@ const (
 	maxCoalesceDelay = 10 * time.Minute
 )
 
+func CodexWakeAutomationKey(wakeThreadID string) string {
+	return codexWakeKeyPrefix + wakeThreadID
+}
+
 func CheckCoalesce(params CoalesceParams, readDB DBReader) (CoalesceResult, error) {
 	if !keyPattern.MatchString(params.ParentThreadID) {
 		return CoalesceResult{}, fmt.Errorf("invalid parent thread ID format: %q", params.ParentThreadID)
@@ -124,7 +128,7 @@ func evaluateWakeCandidate(toml AutomationTOML, params CoalesceParams, resumeAt 
 		result.Reason = fmt.Sprintf("wake automation status is %q want ACTIVE", toml.Status)
 		return result, nil
 	}
-	if toml.ID != codexWakeKeyPrefix+toml.TargetThreadID {
+	if toml.ID != CodexWakeAutomationKey(toml.TargetThreadID) {
 		result.Reason = fmt.Sprintf("wake automation id %q does not bind to target_thread_id %q", toml.ID, toml.TargetThreadID)
 		return result, nil
 	}

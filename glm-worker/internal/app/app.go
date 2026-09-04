@@ -93,6 +93,7 @@ const (
 	ModeStats
 	ModeReset
 	ModeVerifyAutoResume
+	ModeVerifyCodexWake
 	ModeCheckWakeCoalesce
 	ModeEvalAB
 	ModeCallOutliers
@@ -117,6 +118,8 @@ const installSmokeUsage = "[--role worker|reviewer|fix|parent]"
 const qualityGateUsage = "<go-test|go-test-race> | --quality-gate <status|watch|result> <validation-run-id>"
 
 const telemetryQueryUsage = "[current|history] [--task <task-id>] [--since <rfc3339>] [--until <rfc3339>]"
+
+const verifyCodexWakeUsage = "usage: glm-worker --verify-codex-wake <wake-task-thread-id> <wake-at-rfc3339>"
 
 var commandParsers = map[string]commandParser{
 	"--decision": func([]string) (Command, error) {
@@ -163,6 +166,7 @@ var commandParsers = map[string]commandParser{
 		return singleArgCommand(args, ModeReset, "usage: glm-worker --reset")
 	},
 	"--verify-auto-resume":  verifyAutoResumeCommand,
+	"--verify-codex-wake":   verifyCodexWakeCommand,
 	"--check-wake-coalesce": checkWakeCoalesceCommand,
 	"--eval-ab": func(args []string) (Command, error) {
 		return requiredPayloadCommand(args, ModeEvalAB, "usage: glm-worker --eval-ab <run-dir>")
@@ -275,6 +279,19 @@ func verifyAutoResumeCommand(args []string) (Command, error) {
 		Verify: VerifyArgs{
 			Key:     args[1],
 			RFC3339: args[2],
+		},
+	}, nil
+}
+
+func verifyCodexWakeCommand(args []string) (Command, error) {
+	if len(args) != 3 || !state.ValidUUIDFormat(args[1]) {
+		return Command{}, usageError("%s", verifyCodexWakeUsage)
+	}
+	return Command{
+		Mode: ModeVerifyCodexWake,
+		Verify: VerifyArgs{
+			ThreadID: args[1],
+			RFC3339:  args[2],
 		},
 	}, nil
 }
@@ -528,6 +545,8 @@ func executeStateOnly(cmd Command, cfg config.AppConfig, st *state.StateStore, s
 	switch cmd.Mode {
 	case ModeVerifyAutoResume:
 		return true, printVerifyAutoResume(cmd, cfg, stdout)
+	case ModeVerifyCodexWake:
+		return true, printVerifyCodexWake(cmd, cfg, stdout)
 	case ModeInstallSmoke:
 		return true, runInstallSmoke(cmd.Role, cfg, st, stdout)
 	case ModeQualityGate:

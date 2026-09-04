@@ -489,6 +489,127 @@ created_at = 1
 	}
 }
 
+func TestRunVerifyCodexWakePassesWithParentProcessIdentity(t *testing.T) {
+	if _, err := exec.LookPath("sqlite3"); err != nil {
+		t.Skip("sqlite3 not installed")
+	}
+
+	cfg := newAppConfig(t)
+	parentThread := "01a0244a-4ee4-7e71-b2e1-dec3bdda2120"
+	wakeThread := "01a03a9e-10a0-7f11-801c-f04e5dbd5490"
+	wakeKey := autoresume.CodexWakeAutomationKey(wakeThread)
+	writeWakeAutomationTOML(t, cfg, wakeKey, wakeThread)
+	writeAutomationSchedulerRow(t, cfg, wakeKey, time.Date(2026, 8, 12, 11, 1, 20, 0, time.UTC).UnixMilli())
+
+	t.Setenv(codexThreadIDEnv, parentThread)
+	var out bytes.Buffer
+	err := run(
+		[]string{"--verify-codex-wake", wakeThread, "2026-08-12T20:01:20+09:00"},
+		func() (config.AppConfig, error) { return cfg, nil },
+		nil,
+		bytes.NewReader(nil),
+		&out,
+		io.Discard,
+	)
+	if err != nil {
+		t.Fatalf("parent process identityでwake登録検証が失敗しました: %v", err)
+	}
+	var output verifyAutoResumeOutput
+	if err := json.Unmarshal(out.Bytes(), &output); err != nil {
+		t.Fatalf("成功出力がmachine JSON 1行として読めません: %v: %q", err, out.String())
+	}
+	if output.AutomationKey != wakeKey || output.TargetThread != wakeThread ||
+		output.ExpectedAtUTC != "2026-08-12T11:01:20Z" || output.DBNextRunAtUTC != "2026-08-12T11:01:20Z" {
+		t.Fatalf("verify output = %+v", output)
+	}
+	if strings.Count(out.String(), "\n") != 1 {
+		t.Fatalf("出力はJSON 1行だけ: %q", out.String())
+	}
+}
+
+func TestRunVerifyCodexWakeFailsClosedOnIdentityMixups(t *testing.T) {
+	parentThread := "01a0244a-4ee4-7e71-b2e1-dec3bdda2120"
+	wakeThread := "01a03a9e-10a0-7f11-801c-f04e5dbd5490"
+	wakeKey := autoresume.CodexWakeAutomationKey(wakeThread)
+	rfc3339 := "2026-08-12T20:01:20+09:00"
+
+	tests := []struct {
+		name         string
+		args         []string
+		entityTarget string
+	}{
+		{"automation targeting the parent thread", []string{"--verify-codex-wake", wakeThread, rfc3339}, parentThread},
+		{"wrong wake thread ID", []string{"--verify-codex-wake", "01a05f46-47aa-77d2-912c-0d6b078cb856", rfc3339}, wakeThread},
+		{"glm auto-resume path stays bound to the parent process", []string{"--verify-auto-resume", wakeKey, rfc3339}, wakeThread},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			cfg := newAppConfig(t)
+			writeWakeAutomationTOML(t, cfg, wakeKey, test.entityTarget)
+			t.Setenv(codexThreadIDEnv, parentThread)
+
+			var out bytes.Buffer
+			err := run(
+				test.args,
+				func() (config.AppConfig, error) { return cfg, nil },
+				nil,
+				bytes.NewReader(nil),
+				&out,
+				io.Discard,
+			)
+			if err == nil {
+				t.Fatalf("identity mixupを受理しました: %s", out.String())
+			}
+			var verification *VerificationError
+			if !errors.As(err, &verification) || verification.Outcome != autoresume.Fail {
+				t.Fatalf("verification fail typed errorを期待: %v", err)
+			}
+			if out.String() != "" {
+				t.Fatalf("失敗時のstdoutは空のまま: %q", out.String())
+			}
+		})
+	}
+}
+
+func writeWakeAutomationTOML(t *testing.T, cfg config.AppConfig, key, targetThreadID string) {
+	t.Helper()
+	automationsDir := cfg.CodexConfigDir + "/automations/" + key
+	if err := os.MkdirAll(automationsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	tomlContent := `version = 1
+id = "` + key + `"
+kind = "heartbeat"
+name = "` + key + `"
+prompt = "wake"
+status = "ACTIVE"
+rrule = "DTSTART:20260812T110120\nRRULE:FREQ=DAILY;COUNT=1"
+target_thread_id = "` + targetThreadID + `"
+created_at = 1
+`
+	if err := os.WriteFile(automationsDir+"/automation.toml", []byte(tomlContent), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func writeAutomationSchedulerRow(t *testing.T, cfg config.AppConfig, key string, nextRunAtMS int64) {
+	t.Helper()
+	dbDir := cfg.CodexConfigDir + "/sqlite"
+	if err := os.MkdirAll(dbDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	dbPath := dbDir + "/codex-dev.db"
+	schema := `CREATE TABLE automations (id TEXT PRIMARY KEY, name TEXT NOT NULL, prompt TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'ACTIVE', next_run_at INTEGER, last_run_at INTEGER, cwds TEXT NOT NULL DEFAULT '[]', rrule TEXT NOT NULL, model TEXT, reasoning_effort TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, target_type TEXT, project_id TEXT);`
+	if err := exec.Command("sqlite3", dbPath, schema).Run(); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+	insert := `INSERT INTO automations (id, name, prompt, status, next_run_at, cwds, rrule, created_at, updated_at) VALUES ('` + key + `', '` + key + `', 'p', 'ACTIVE', ` + fmt.Sprintf("%d", nextRunAtMS) + `, '[]', 'DTSTART:20260812T110120' || char(10) || 'RRULE:FREQ=DAILY;COUNT=1', 1, 1);`
+	if err := exec.Command("sqlite3", dbPath, insert).Run(); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+}
+
 func TestExecuteCheckWakeCoalesceCoalescesActiveWake(t *testing.T) {
 	if _, err := exec.LookPath("sqlite3"); err != nil {
 		t.Skip("sqlite3 not installed")

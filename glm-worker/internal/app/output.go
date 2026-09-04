@@ -777,10 +777,19 @@ func (e *VerificationError) Error() string {
 }
 
 func printVerifyAutoResume(cmd Command, cfg config.AppConfig, stdout io.Writer) error {
+	return printAutomationVerification(cmd.Verify.Key, cmd.Verify.RFC3339, cmd.Verify.ThreadID, cfg, stdout)
+}
+
+func printVerifyCodexWake(cmd Command, cfg config.AppConfig, stdout io.Writer) error {
+	key := autoresume.CodexWakeAutomationKey(cmd.Verify.ThreadID)
+	return printAutomationVerification(key, cmd.Verify.RFC3339, cmd.Verify.ThreadID, cfg, stdout)
+}
+
+func printAutomationVerification(automationKey, expectedRFC3339, expectedThreadID string, cfg config.AppConfig, stdout io.Writer) error {
 	params := autoresume.Params{
-		AutomationKey:    cmd.Verify.Key,
-		ExpectedRFC3339:  cmd.Verify.RFC3339,
-		ExpectedThreadID: cmd.Verify.ThreadID,
+		AutomationKey:    automationKey,
+		ExpectedRFC3339:  expectedRFC3339,
+		ExpectedThreadID: expectedThreadID,
 		AutomationsDir:   filepath.Join(cfg.CodexConfigDir, "automations"),
 		DBPath:           filepath.Join(cfg.CodexConfigDir, "sqlite", "codex-dev.db"),
 	}

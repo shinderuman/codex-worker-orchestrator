@@ -154,6 +154,12 @@ func TestParseCommandRejectsInvalidArguments(t *testing.T) {
 		{"--verify-auto-resume"},
 		{"--verify-auto-resume", "key"},
 		{"--verify-auto-resume", "key", "date", "thread"},
+		{"--verify-codex-wake"},
+		{"--verify-codex-wake", "01a03a9e-10a0-7f11-801c-f04e5dbd5490"},
+		{"--verify-codex-wake", "01a03a9e-10a0-7f11-801c-f04e5dbd5490", "2026-08-26T15:17:55Z", "extra"},
+		{"--verify-codex-wake", "codex-5h-wake-01a03a9e-10a0-7f11-801c-f04e5dbd5490", "2026-08-26T15:17:55Z"},
+		{"--verify-codex-wake", "01A03A9E-10A0-7F11-801C-F04E5DBD5490", "2026-08-26T15:17:55Z"},
+		{"--verify-codex-wake", "not-a-thread-id", "2026-08-26T15:17:55Z"},
 		{"--check-wake-coalesce"},
 		{"--check-wake-coalesce", "date", "thread"},
 		{"--eval-ab"},
@@ -175,26 +181,49 @@ func TestParseCommandRejectsInvalidArguments(t *testing.T) {
 	}
 }
 
-func TestParseCommandVerifyAutoResumeArgs(t *testing.T) {
-	command, err := ParseCommand([]string{
-		"--verify-auto-resume",
-		"glm-worker-resume-abcd1234-ef012345",
-		"2026-08-12T20:01:20+09:00",
-	})
-	if err != nil {
-		t.Fatal(err)
+func TestParseCommandVerifyAutomationArgs(t *testing.T) {
+	tests := []struct {
+		name     string
+		args     []string
+		mode     CommandMode
+		key      string
+		threadID string
+	}{
+		{
+			name:     "auto resume takes the automation key only",
+			args:     []string{"--verify-auto-resume", "glm-worker-resume-abcd1234-ef012345", "2026-08-12T20:01:20+09:00"},
+			mode:     ModeVerifyAutoResume,
+			key:      "glm-worker-resume-abcd1234-ef012345",
+			threadID: "",
+		},
+		{
+			name:     "codex wake takes the wake thread ID only",
+			args:     []string{"--verify-codex-wake", "01a03a9e-10a0-7f11-801c-f04e5dbd5490", "2026-08-12T20:01:20+09:00"},
+			mode:     ModeVerifyCodexWake,
+			key:      "",
+			threadID: "01a03a9e-10a0-7f11-801c-f04e5dbd5490",
+		},
 	}
-	if command.Mode != ModeVerifyAutoResume {
-		t.Fatalf("Mode = %d", command.Mode)
-	}
-	if command.Verify.Key != "glm-worker-resume-abcd1234-ef012345" {
-		t.Fatalf("Key = %q", command.Verify.Key)
-	}
-	if command.Verify.RFC3339 != "2026-08-12T20:01:20+09:00" {
-		t.Fatalf("RFC3339 = %q", command.Verify.RFC3339)
-	}
-	if command.Verify.ThreadID != "" {
-		t.Fatalf("thread IDをargvから受理しています: %q", command.Verify.ThreadID)
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			command, err := ParseCommand(test.args)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if command.Mode != test.mode {
+				t.Fatalf("Mode = %d", command.Mode)
+			}
+			if command.Verify.Key != test.key {
+				t.Fatalf("Key = %q", command.Verify.Key)
+			}
+			if command.Verify.ThreadID != test.threadID {
+				t.Fatalf("ThreadID = %q", command.Verify.ThreadID)
+			}
+			if command.Verify.RFC3339 != "2026-08-12T20:01:20+09:00" {
+				t.Fatalf("RFC3339 = %q", command.Verify.RFC3339)
+			}
+		})
 	}
 }
 

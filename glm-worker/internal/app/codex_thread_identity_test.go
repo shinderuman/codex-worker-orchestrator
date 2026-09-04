@@ -47,6 +47,22 @@ func TestBindCurrentCodexThreadIdentityRejectsMissingOrInvalidEnvironment(t *tes
 	}
 }
 
+func TestBindCurrentCodexThreadIdentityLeavesCodexWakeVerificationUnbound(t *testing.T) {
+	wakeThreadID := "01a03a9e-10a0-7f11-801c-f04e5dbd5490"
+	for _, envValue := range []string{"01a05f46-47aa-77d2-912c-0d6b078cb856", "", "not-a-thread-id"} {
+		t.Run(envValue, func(t *testing.T) {
+			t.Setenv(codexThreadIDEnv, envValue)
+			cmd := Command{Mode: ModeVerifyCodexWake, Verify: VerifyArgs{ThreadID: wakeThreadID}}
+			if err := bindCurrentCodexThreadIdentity(&cmd); err != nil {
+				t.Fatal(err)
+			}
+			if cmd.Verify.ThreadID != wakeThreadID {
+				t.Fatalf("wake thread ID = %q", cmd.Verify.ThreadID)
+			}
+		})
+	}
+}
+
 func TestRunAutoResumeIdentityFailureStopsBeforeConfig(t *testing.T) {
 	t.Setenv(codexThreadIDEnv, "")
 	loaded := false

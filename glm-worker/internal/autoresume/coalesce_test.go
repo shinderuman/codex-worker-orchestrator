@@ -279,3 +279,10 @@ func TestCheckCoalesceCoalescesActiveWakeWithinWindow(t *testing.T) {
 		t.Fatalf("echo fields = %+v", result)
 	}
 }
+
+func TestCodexWakeAutomationKeyDerivation(t *testing.T) {
+	wakeThread := "01a03a9e-10a0-7f11-801c-f04e5dbd5490"
+	if got := CodexWakeAutomationKey(wakeThread); got != "codex-5h-wake-"+wakeThread {
+		t.Fatalf("key = %q", got)
+	}
+}
