@@ -53,6 +53,23 @@ const (
 )
 
 const (
+	ParentCauseParentOrchestration     = "parent-orchestration"
+	ParentCauseRequirementPreservation = "requirement-preservation"
+	ParentCauseWorker                  = "worker"
+	ParentCauseReviewer                = "reviewer"
+	ParentCauseSolGate                 = "sol-gate"
+	ParentCauseProductionWiring        = "production-wiring"
+	ParentCauseTestScenario            = "test-scenario"
+	ParentCauseCrossCuttingInvariant   = "cross-cutting-invariant"
+	ParentCauseUnknown                 = "unknown"
+)
+
+const (
+	CauseStatusNotDeclared   = "cause_not_declared"
+	CauseStatusMissingLegacy = "cause_missing_legacy"
+)
+
+const (
 	ParentPhaseAccept   = "parent-accept"
 	ParentPhaseFix      = "parent-fix"
 	ParentPhaseDecision = "parent-decision"
@@ -79,8 +96,18 @@ func ValidParentOrigin(value string) bool {
 	return false
 }
 
+func ValidParentCause(value string) bool {
+	switch value {
+	case ParentCauseParentOrchestration, ParentCauseRequirementPreservation, ParentCauseWorker,
+		ParentCauseReviewer, ParentCauseSolGate, ParentCauseProductionWiring, ParentCauseTestScenario,
+		ParentCauseCrossCuttingInvariant, ParentCauseUnknown:
+		return true
+	}
+	return false
+}
+
 func (stats *TaskStats) openParentReview(status string, risk string, producer ParentReviewProducer) {
-	_, _, _ = stats.resolveParentOutcome(ParentOutcomeUnknown, "")
+	_, _, _ = stats.resolveParentOutcome(ParentOutcomeUnknown, "", "")
 	stats.ParentReviewOpen = &ParentReviewOpenState{
 		PacketStatus: status,
 		Role:         producer.Role,
@@ -89,12 +116,14 @@ func (stats *TaskStats) openParentReview(status string, risk string, producer Pa
 	}
 }
 
-func (stats *TaskStats) resolveParentOutcome(kind, origin string) (ParentReviewOpenState, bool, error) {
+func (stats *TaskStats) resolveParentOutcome(kind, origin, cause string) (ParentReviewOpenState, bool, error) {
 	if !parentOutcomeKinds[kind] {
 		return ParentReviewOpenState{}, false, fmt.Errorf("unknown parent outcome kind: %s", kind)
 	}
-	if kind == ParentOutcomeFix && origin != "" && !ValidParentOrigin(origin) {
-		return ParentReviewOpenState{}, false, fmt.Errorf("unknown parent fix origin: %s", origin)
+	if kind == ParentOutcomeFix {
+		if err := validateParentFixDeclaration(origin, cause); err != nil {
+			return ParentReviewOpenState{}, false, err
+		}
 	}
 	open := stats.ParentReviewOpen
 	if open == nil {
@@ -111,6 +140,22 @@ func (stats *TaskStats) resolveParentOutcome(kind, origin string) (ParentReviewO
 		}
 		addInt(&stats.ParentFixOrigins, origin, 1)
 	}
+	stats.recordParentOutcomeFacets(resolved)
+	stats.ParentReviewOpen = nil
+	return resolved, true, nil
+}
+
+func validateParentFixDeclaration(origin, cause string) error {
+	if origin != "" && !ValidParentOrigin(origin) {
+		return fmt.Errorf("unknown parent fix origin: %s", origin)
+	}
+	if cause != "" && !ValidParentCause(cause) {
+		return fmt.Errorf("unknown parent fix cause: %s", cause)
+	}
+	return nil
+}
+
+func (stats *TaskStats) recordParentOutcomeFacets(resolved ParentReviewOpenState) {
 	unknownLabel := ParentOriginUnknown
 	model := resolved.ModelAlias
 	if model == "" {
@@ -122,11 +167,9 @@ func (stats *TaskStats) resolveParentOutcome(kind, origin string) (ParentReviewO
 		risk = unknownLabel
 	}
 	addInt(&stats.ParentOutcomesByRisk, risk, 1)
-	stats.ParentReviewOpen = nil
-	return resolved, true, nil
 }
 
-func (s *StateStore) RecordParentOutcome(kind, origin string) (bool, error) {
+func (s *StateStore) RecordParentOutcome(kind, origin, cause string) (bool, error) {
 	stats, err := s.loadTaskStats()
 	if err != nil {
 		stats, err = s.recoverTaskStats(err)
@@ -134,7 +177,7 @@ func (s *StateStore) RecordParentOutcome(kind, origin string) (bool, error) {
 			return false, nil
 		}
 	}
-	resolved, ok, resolveErr := stats.resolveParentOutcome(kind, origin)
+	resolved, ok, resolveErr := stats.resolveParentOutcome(kind, origin, cause)
 	if !ok || resolveErr != nil {
 		return ok, resolveErr
 	}
@@ -142,7 +185,7 @@ func (s *StateStore) RecordParentOutcome(kind, origin string) (bool, error) {
 		warnStatsFailure("parent outcome更新", err)
 		return false, nil
 	}
-	s.appendParentOutcomeEvent(stats.TaskID, parentPhaseOfKind(kind), kind, origin, resolved)
+	s.appendParentOutcomeEvent(stats.TaskID, parentPhaseOfKind(kind), kind, origin, cause, resolved)
 	return true, nil
 }
 
@@ -167,7 +210,7 @@ func parentPhaseOfKind(kind string) string {
 	}
 }
 
-func (s *StateStore) appendParentOutcomeEvent(taskID string, phase string, kind string, origin string, resolved ParentReviewOpenState) {
+func (s *StateStore) appendParentOutcomeEvent(taskID string, phase string, kind string, origin string, cause string, resolved ParentReviewOpenState) {
 	now := time.Now().UTC()
 	s.RecordModelCallLog(ModelCallLog{
 		TaskID:             taskID,
@@ -181,6 +224,7 @@ func (s *StateStore) appendParentOutcomeEvent(taskID string, phase string, kind 
 		ModelAlias:         resolved.ModelAlias,
 		WorkerReportedRisk: resolved.Risk,
 		ParentOrigin:       origin,
+		ParentCause:        cause,
 	})
 }
 

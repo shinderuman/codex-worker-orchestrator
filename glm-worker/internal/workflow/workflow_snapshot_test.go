@@ -410,7 +410,7 @@ func TestSnapshotCapturedOnExplicitFixPath(t *testing.T) {
 	}}
 	w := newWorkflowT(t, st, r)
 
-	if err := w.ExecuteExplicitFix("境界値を修正する", ""); err != nil {
+	if err := w.ExecuteExplicitFix("境界値を修正する", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	loaded, err := st.LoadWorkerEndSnapshot()

@@ -50,11 +50,11 @@ func TestRecordParentOutcomeResolvesOncePerOpportunity(t *testing.T) {
 	}
 	recordPacket(st, packet.StatusNeedsSolReview, packet.RiskLow, ParentReviewProducer{Role: "reviewer", Model: "haiku"})
 
-	resolved, err := st.RecordParentOutcome(ParentOutcomeFix, ParentOriginCodexReview)
+	resolved, err := st.RecordParentOutcome(ParentOutcomeFix, ParentOriginCodexReview, ParentCauseWorker)
 	if err != nil || !resolved {
 		t.Fatalf("fix outcome確定失敗: resolved=%v err=%v", resolved, err)
 	}
-	resolved, err = st.RecordParentOutcome(ParentOutcomeFix, ParentOriginCodexReview)
+	resolved, err = st.RecordParentOutcome(ParentOutcomeFix, ParentOriginCodexReview, ParentCauseWorker)
 	if err != nil || resolved {
 		t.Fatalf("同一opportunityの再確定が二重計上されました: resolved=%v err=%v", resolved, err)
 	}
@@ -65,6 +65,14 @@ func TestRecordParentOutcomeResolvesOncePerOpportunity(t *testing.T) {
 	}
 	if stats.ParentOutcomes[ParentOutcomeFix] != 1 || stats.ParentFixOrigins[ParentOriginCodexReview] != 1 {
 		t.Fatalf("outcome集計 = outcomes:%#v origins:%#v", stats.ParentOutcomes, stats.ParentFixOrigins)
+	}
+	logs, err := st.ReadModelCallLogs(st.ReadOr("task.id", ""))
+	if err != nil || len(logs) != 1 {
+		t.Fatalf("outcome eventが記録されていません: logs=%#v err=%v", logs, err)
+	}
+	if logs[0].ParentOrigin != ParentOriginCodexReview || logs[0].ParentCause != ParentCauseWorker ||
+		logs[0].Phase != ParentPhaseFix || logs[0].Outcome != ParentOutcomeFix {
+		t.Fatalf("outcome event = %#v", logs[0])
 	}
 	if stats.ParentOutcomesByModel["haiku"] != 1 || stats.ParentOutcomesByRisk["LOW"] != 1 {
 		t.Fatalf("model/risk別集計 = %#v / %#v", stats.ParentOutcomesByModel, stats.ParentOutcomesByRisk)
@@ -84,7 +92,7 @@ func TestRecordParentOutcomeDefaultsUndeclaredOriginToUnknown(t *testing.T) {
 	}
 	recordPacket(st, packet.StatusNeedsSolReview, packet.RiskLow, ParentReviewProducer{})
 
-	if _, err := st.RecordParentOutcome(ParentOutcomeFix, ""); err != nil {
+	if _, err := st.RecordParentOutcome(ParentOutcomeFix, "", ""); err != nil {
 		t.Fatal(err)
 	}
 	stats, err := st.loadTaskStats()
@@ -109,11 +117,14 @@ func TestRecordParentOutcomeRejectsInvalidKindAndOrigin(t *testing.T) {
 	}
 	recordPacket(st, packet.StatusNeedsSolReview, packet.RiskLow, ParentReviewProducer{})
 
-	if _, err := st.RecordParentOutcome("adopted", ""); err == nil {
+	if _, err := st.RecordParentOutcome("adopted", "", ""); err == nil {
 		t.Fatal("集合外outcome kindを拒否する必要があります")
 	}
-	if _, err := st.RecordParentOutcome(ParentOutcomeFix, "vibe"); err == nil {
+	if _, err := st.RecordParentOutcome(ParentOutcomeFix, "vibe", ""); err == nil {
 		t.Fatal("集合外originを拒否する必要があります")
+	}
+	if _, err := st.RecordParentOutcome(ParentOutcomeFix, ParentOriginGLMReviewer, "vibe"); err == nil {
+		t.Fatal("集合外causeを拒否する必要があります")
 	}
 	stats, err := st.loadTaskStats()
 	if err != nil {
@@ -131,7 +142,7 @@ func TestRecordParentOutcomeAcceptRejectsDecisionPacket(t *testing.T) {
 	}
 	recordPacket(st, packet.StatusNeedsSolDecision, packet.RiskLow, ParentReviewProducer{})
 
-	if _, err := st.RecordParentOutcome(ParentOutcomeAccepted, ""); err == nil {
+	if _, err := st.RecordParentOutcome(ParentOutcomeAccepted, "", ""); err == nil {
 		t.Fatal("decision packetへの--acceptを拒否する必要があります")
 	}
 	stats, err := st.loadTaskStats()

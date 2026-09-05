@@ -16,12 +16,41 @@ func TestExtractAcceptsCurrentFixGrammar(t *testing.T) {
 		state.ParentOriginExternalReview,
 		state.ParentOriginMetadataRepair,
 	} {
-		options, remaining, err := Extract([]string{"--origin", origin})
+		args := []string{"--origin", origin}
+		if origin == state.ParentOriginCodexReview {
+			args = append(args, "--cause", state.ParentCauseWorker)
+		}
+		options, remaining, err := Extract(args)
 		if err != nil {
 			t.Fatalf("origin %q: %v", origin, err)
 		}
-		if options.Origin != origin || options.AcceptedScope != "" || options.ApprovalOnly || len(remaining) != 0 {
+		wantCause := ""
+		if origin == state.ParentOriginCodexReview {
+			wantCause = state.ParentCauseWorker
+		}
+		if options.Origin != origin || options.Cause != wantCause ||
+			options.AcceptedScope != "" || options.ApprovalOnly || len(remaining) != 0 {
 			t.Fatalf("origin %q options = %#v remaining=%v", origin, options, remaining)
+		}
+	}
+
+	for _, cause := range []string{
+		state.ParentCauseParentOrchestration,
+		state.ParentCauseRequirementPreservation,
+		state.ParentCauseWorker,
+		state.ParentCauseReviewer,
+		state.ParentCauseSolGate,
+		state.ParentCauseProductionWiring,
+		state.ParentCauseTestScenario,
+		state.ParentCauseCrossCuttingInvariant,
+		state.ParentCauseUnknown,
+	} {
+		options, _, err := Extract([]string{"--origin", state.ParentOriginGLMReviewer, "--cause", cause})
+		if err != nil {
+			t.Fatalf("cause %q: %v", cause, err)
+		}
+		if options.Cause != cause {
+			t.Fatalf("cause %q options = %#v", cause, options)
 		}
 	}
 
@@ -29,7 +58,7 @@ func TestExtractAcceptsCurrentFixGrammar(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if options.AcceptedScope != "current-diff" || !options.ApprovalOnly || options.Origin != "" || len(remaining) != 0 {
+	if options.AcceptedScope != "current-diff" || !options.ApprovalOnly || options.Origin != "" || options.Cause != "" || len(remaining) != 0 {
 		t.Fatalf("approval options = %#v remaining=%v", options, remaining)
 	}
 }
@@ -53,12 +82,18 @@ func TestExtractRejectsInvalidFixGrammar(t *testing.T) {
 		{"--origin"},
 		{"--origin", "unknown"},
 		{"--origin", state.ParentOriginCodexReview, "--origin", state.ParentOriginGLMReviewer},
+		{"--origin", state.ParentOriginCodexReview},
 		{"--accepted-scope"},
 		{"--accepted-scope", "other"},
 		{"--accepted-scope", "current-diff", "--accepted-scope", "current-diff"},
 		{"--approval-only"},
 		{"--approval-only", "--approval-only", "--accepted-scope", "current-diff"},
 		{"--approval-only", "--accepted-scope", "current-diff", "--origin", state.ParentOriginCodexReview},
+		{"--approval-only", "--accepted-scope", "current-diff", "--cause", state.ParentCauseWorker},
+		{"--cause"},
+		{"--cause", "vibe"},
+		{"--cause", state.ParentCauseWorker, "--cause", state.ParentCauseReviewer},
+		{"--origin", state.ParentOriginGLMReviewer, "--cause", "legacy-layer"},
 	} {
 		if _, _, err := Extract(args); !errors.Is(err, ErrInvalidOptions) {
 			t.Fatalf("Extract(%v) error = %v, want ErrInvalidOptions", args, err)

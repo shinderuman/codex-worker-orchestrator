@@ -10,7 +10,7 @@ func (s *StateStore) AcceptParentReview() (bool, error) {
 			return false, nil
 		}
 	}
-	resolved, ok, resolveErr := stats.resolveParentOutcome(ParentOutcomeAccepted, "")
+	resolved, ok, resolveErr := stats.resolveParentOutcome(ParentOutcomeAccepted, "", "")
 	if !ok || resolveErr != nil {
 		return ok, resolveErr
 	}
@@ -24,6 +24,6 @@ func (s *StateStore) AcceptParentReview() (bool, error) {
 		return false, fmt.Errorf("parent accept outcomeを保存できません: %w", result.transitionErr)
 	}
 
-	s.appendParentOutcomeEvent(stats.TaskID, ParentPhaseAccept, ParentOutcomeAccepted, "", resolved)
+	s.appendParentOutcomeEvent(stats.TaskID, ParentPhaseAccept, ParentOutcomeAccepted, "", "", resolved)
 	return true, nil
 }

@@ -72,6 +72,6 @@ func (s *StateStore) CompleteObservationNoGo() (bool, error) {
 		return false, fmt.Errorf("terminal no-go outcomeを保存できません: %w", result.transitionErr)
 	}
 
-	s.appendParentOutcomeEvent(stats.TaskID, ParentPhaseClose, ParentOutcomeNoGo, "", resolved)
+	s.appendParentOutcomeEvent(stats.TaskID, ParentPhaseClose, ParentOutcomeNoGo, "", "", resolved)
 	return true, nil
 }

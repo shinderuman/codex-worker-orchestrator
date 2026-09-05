@@ -288,11 +288,11 @@ func (w *Workflow) replaceAcceptedScopeWithDecision(decision string) error {
 	return w.state.Write("last-decision", decision)
 }
 
-func (w *Workflow) ExecuteExplicitFix(instruction, origin string) error {
-	return w.ExecuteExplicitFixWithScope(instruction, origin, "")
+func (w *Workflow) ExecuteExplicitFix(instruction, origin, cause string) error {
+	return w.ExecuteExplicitFixWithScope(instruction, origin, cause, "")
 }
 
-func (w *Workflow) ExecuteExplicitFixWithScope(instruction, origin, acceptedScope string) error {
+func (w *Workflow) ExecuteExplicitFixWithScope(instruction, origin, cause, acceptedScope string) error {
 	return quietWhenParentFileGuardStopped(w.withTemp(func() error {
 		if err := w.admitParentAction(state.ParentActionFix); err != nil {
 			return err
@@ -306,7 +306,7 @@ func (w *Workflow) ExecuteExplicitFixWithScope(instruction, origin, acceptedScop
 
 		decision := w.state.ReadOr("last-decision", "none")
 		review := w.state.ReadOr("last-review", "none")
-		if err := w.state.BeginParentFix(origin); err != nil {
+		if err := w.state.BeginParentFix(origin, cause); err != nil {
 			return err
 		}
 

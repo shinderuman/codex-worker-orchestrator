@@ -436,7 +436,7 @@ func TestActiveTaskFileDeletionFailsClosedBeforeCall(t *testing.T) {
 	}
 	w, r, out := planFileDecisionWorkflow(t, st, repoRoot, "worker-explicit-fix", nil)
 
-	if err := w.ExecuteExplicitFix("fix", ""); err != nil {
+	if err := w.ExecuteExplicitFix("fix", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	if len(r.prompts) != 0 {
@@ -578,7 +578,7 @@ func TestExplicitFixAfterParentRepairResolvesActiveTask(t *testing.T) {
 
 	writePlanFileContent(t, repoRoot, planGuardSeed)
 
-	if err := w.ExecuteExplicitFix("修復後の継続", ""); err != nil {
+	if err := w.ExecuteExplicitFix("修復後の継続", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	if got := st.ReadOr(activeTaskStateKey, ""); got != activeTaskGuardPath {
@@ -604,7 +604,7 @@ func TestExplicitFixStillUnresolvableFailsClosedAgain(t *testing.T) {
 	if err := w.ExecuteNewTask("request"); err != nil {
 		t.Fatal(err)
 	}
-	if err := w.ExecuteExplicitFix("まだ修復されていない", ""); err != nil {
+	if err := w.ExecuteExplicitFix("まだ修復されていない", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	if len(r.prompts) != 0 {

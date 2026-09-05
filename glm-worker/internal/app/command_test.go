@@ -38,6 +38,8 @@ func TestParseCommandModes(t *testing.T) {
 		{name: "repo-search-eval", args: []string{"--repo-search-eval"}, mode: ModeRepoSearchEval},
 		{name: "parent-usage", args: []string{"--parent-usage"}, mode: ModeParentUsage},
 		{name: "parent-usage task", args: []string{"--parent-usage", "task-123"}, mode: ModeParentUsage, payload: "task-123"},
+		{name: "review-gap", args: []string{"--review-gap"}, mode: ModeReviewGap},
+		{name: "review-gap task", args: []string{"--review-gap", "task-123"}, mode: ModeReviewGap, payload: "task-123"},
 	}
 
 	for _, test := range tests {
@@ -172,6 +174,7 @@ func TestParseCommandRejectsInvalidArguments(t *testing.T) {
 		{"--repo-search", "query", "extra"},
 		{"--repo-search-eval", "extra"},
 		{"--parent-usage", "task-1", "extra"},
+		{"--review-gap", "task-1", "extra"},
 	}
 
 	for _, args := range tests {

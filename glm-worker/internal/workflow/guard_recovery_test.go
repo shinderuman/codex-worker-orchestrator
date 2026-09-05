@@ -165,7 +165,7 @@ func TestRestoredInstructionMutationConvergesDecisionContinuationToGuardRecovery
 	gateRunner := &scriptedRunner{}
 	gateWorkflow := newGitWorkflowT(t, st, gateRunner, repo)
 	assertGuardRecoveryRejected(t, gateRunner, "decision", gateWorkflow.ExecuteDecision("再送"), "no pending Sol decision for this repository")
-	assertGuardRecoveryRejected(t, gateRunner, "fix", gateWorkflow.ExecuteExplicitFix("fix", ""), "--fix is only available after NEEDS_SOL_REVIEW; start a new task after PASS")
+	assertGuardRecoveryRejected(t, gateRunner, "fix", gateWorkflow.ExecuteExplicitFix("fix", "", ""), "--fix is only available after NEEDS_SOL_REVIEW; start a new task after PASS")
 	assertGuardRecoveryRejected(t, gateRunner, "new task", gateWorkflow.ExecuteNewTask("replacement"), "previous task stopped on a recoverable guard failure; repair the guard then use --resume or --reset")
 
 	resumeRunner := &scriptedRunner{steps: []runnerStep{

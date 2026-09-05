@@ -8,6 +8,7 @@ import (
 
 type Options struct {
 	Origin        string
+	Cause         string
 	AcceptedScope string
 	ApprovalOnly  bool
 }
@@ -67,6 +68,12 @@ func applySemanticPair(options *Options, name, value string) (bool, error) {
 		}
 		options.Origin = value
 		return true, nil
+	case "--cause":
+		if options.Cause != "" || !state.ValidParentCause(value) {
+			return true, ErrInvalidOptions
+		}
+		options.Cause = value
+		return true, nil
 	case "--accepted-scope":
 		if options.AcceptedScope != "" || value != "current-diff" {
 			return true, ErrInvalidOptions
@@ -79,5 +86,11 @@ func applySemanticPair(options *Options, name, value string) (bool, error) {
 }
 
 func validCombination(options Options) bool {
-	return !options.ApprovalOnly || (options.AcceptedScope == "current-diff" && options.Origin == "")
+	if options.ApprovalOnly {
+		return options.AcceptedScope == "current-diff" && options.Origin == "" && options.Cause == ""
+	}
+	if options.Origin == state.ParentOriginCodexReview {
+		return options.Cause != ""
+	}
+	return true
 }

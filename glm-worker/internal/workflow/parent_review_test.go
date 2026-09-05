@@ -102,7 +102,7 @@ func TestExplicitFixRecordsOutcomeOnceDespiteReexecution(t *testing.T) {
 	failed := &scriptedRunner{steps: []runnerStep{{runErr: errors.New("boom")}}}
 	wf := newWorkflowT(t, st, failed)
 
-	err := wf.ExecuteExplicitFix("境界値を修正する", state.ParentOriginGLMReviewer)
+	err := wf.ExecuteExplicitFix("境界値を修正する", state.ParentOriginGLMReviewer, "")
 	if err == nil || !errors.As(err, &workerErr) {
 		t.Fatalf("fix実行中の失敗を伝播する必要があります: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestExplicitFixRecordsOutcomeOnceDespiteReexecution(t *testing.T) {
 
 	retry := &scriptedRunner{steps: []runnerStep{{runErr: errors.New("boom again")}}}
 	wf2 := newWorkflowT(t, st, retry)
-	err = wf2.ExecuteExplicitFix("境界値を修正する", state.ParentOriginGLMReviewer)
+	err = wf2.ExecuteExplicitFix("境界値を修正する", state.ParentOriginGLMReviewer, "")
 	if err == nil || !strings.Contains(err.Error(), "--fix is only available after NEEDS_SOL_REVIEW") {
 		t.Fatalf("status activeでの同一fix再実行はgateで拒否: %v", err)
 	}

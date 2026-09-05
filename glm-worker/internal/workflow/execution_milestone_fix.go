@@ -4,20 +4,20 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-func (w *Workflow) ExecuteExplicitFixWithExecutionMilestones(instruction, origin, acceptedScope string) error {
+func (w *Workflow) ExecuteExplicitFixWithExecutionMilestones(instruction, origin, cause, acceptedScope string) error {
 	active, err := w.hasPendingExecutionMilestone()
 	if err != nil {
 		return err
 	}
 	if !active {
-		return w.ExecuteExplicitFixWithScope(instruction, origin, acceptedScope)
+		return w.ExecuteExplicitFixWithScope(instruction, origin, cause, acceptedScope)
 	}
 	return quietWhenParentFileGuardStopped(w.withTemp(func() error {
-		return w.executeExecutionMilestoneExplicitFix(instruction, origin, acceptedScope)
+		return w.executeExecutionMilestoneExplicitFix(instruction, origin, cause, acceptedScope)
 	}))
 }
 
-func (w *Workflow) executeExecutionMilestoneExplicitFix(instruction, origin, acceptedScope string) error {
+func (w *Workflow) executeExecutionMilestoneExplicitFix(instruction, origin, cause, acceptedScope string) error {
 	if err := w.admitParentAction(state.ParentActionFix); err != nil {
 		return err
 	}
@@ -36,7 +36,7 @@ func (w *Workflow) executeExecutionMilestoneExplicitFix(instruction, origin, acc
 	w.prepareAcceptedFixScope(acceptedScope)
 	decision := w.state.ReadOr("last-decision", "none")
 	review := w.state.ReadOr("last-review", "none")
-	if err := w.state.BeginParentFix(origin); err != nil {
+	if err := w.state.BeginParentFix(origin, cause); err != nil {
 		return err
 	}
 	prompt := explicitFixPrompt(request, decision, review, instruction, activeTaskPath)

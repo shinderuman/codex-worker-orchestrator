@@ -31,7 +31,7 @@
 - Plan管理repositoryでcurrent ACTIVE taskを開始するときは、sandbox外で`glm-parent-action start`を1回だけ実行する。wrapperは固定semantic requestを既存glm-worker new-task admissionへ渡す。ACTIVE task本文をUSER_REQUESTへ複製しない。
 - decision・fixのsemantic payloadを親Codexが確定した後は、`prepare -> placeholder apply_patch -> 実action`を1つのcode-mode/tool orchestration内で連続実行し、その間にSolへ戻らない。まずsandbox内で`glm-parent-action prepare decision|fix`を実行し、machine JSONが`status:"prepared"`、期待した`action`、現在のprepareが返した`token`・`path`を持ち、`path`がrepository直下の`.glm-worker-parent-actions/`内を指すことを機械確認する。parse失敗・欠落・不一致ならpatch/actionを行わず停止する。
 - prepare直後のstaging fileは再読しない。production prepare contractが作る既知のtoken binding headerと`__GLM_PARENT_ACTION_PAYLOAD__`だけを前提に、返されたexact `path`のplaceholderだけをCodex標準の`apply_patch`でsemantic payloadへ置換し、headerを保持する。patch失敗時は実actionを呼ばない。`cat`・`sed`・heredoc・shell redirect・Python等のread/write代替へ切り替えず、staging filenameを推測しない。
-- patch成功後、同じtool orchestration内でsandbox外の`glm-parent-action decision <token>`または`glm-parent-action fix <token> [--origin <値>] [--accepted-scope current-diff] [--approval-only]`へ進む。実actionは返されたexact tokenだけを使い、file pathは渡さない。長時間実actionの待機は下記「待機」の同一cell境界をそのまま使う。
+- patch成功後、同じtool orchestration内でsandbox外の`glm-parent-action decision <token>`または`glm-parent-action fix <token> [--origin <値>] [--cause <値>] [--accepted-scope current-diff] [--approval-only]`へ進む。実actionは返されたexact tokenだけを使い、file pathは渡さない。長時間実actionの待機は下記「待機」の同一cell境界をそのまま使う。
 - quality policy surface変更で`NEEDS_SOL_REVIEW`停止し、親Codexがsemantic fixを要求せず停止時点のexact current diffだけを承認する場合は、`prepare fix`で通常どおりtoken-bound payloadを用意したうえで`glm-parent-action fix <token> --accepted-scope current-diff --approval-only`を使う。`--approval-only`はこの場合だけ使い、`--origin`を併用しない。semantic修正を要求する場合は従来の通常fixを使う。
 - staging rootはrepository直下の`.glm-worker-parent-actions/`に固定する。token形式不正、token binding不一致、placeholder未置換、symlink化されたdirectory/file、1 MiB超payloadはstate変更・model呼出前にfail closedする。
 - wrapperはpayloadをmemoryへ読み、staging fileを削除してからUTF-8 byte長・SHA-256を機械計算し、既存`glm-worker --decision-stdin`/`--fix-stdin`へ直接渡す。semantic本文中のbacktick、dollar、single quote、double quote、NUL、改行を無変換で保持する。
@@ -43,7 +43,8 @@
 - terminal packet(PASS・`NEEDS_SOL_REVIEW`・`NEEDS_SOL_DECISION`・fail closed結果)を受理して追加操作なしで当該taskを完了させるとき、次の作業へ移る前に`glm-parent-action accept`を1回だけ実行する。underlying `--accept`は観測記録専用でmodel呼出・Git操作を行わず、open opportunityがないときの再実行はno-opである。
 - `NEEDS_SOL_DECISION`待ちへacceptを使わない。判断は`glm-parent-action decision`で渡し、decision outcomeはglm-workerが自動確定する。
 - fixでは差戻しの実際の起点に合わせて`--origin codex-review|glm-reviewer|user-amendment|external-review|metadata-repair`を申告する。glm-worker reviewerのterminal result(`NEEDS_SOL_REVIEW`等)へ既に記載された指摘をそのまま差し戻すときは`glm-reviewer`、親Codex自身がterminal packet受領後の最終reviewで新たに検出した指摘のときだけ`codex-review`とする。userの修正要求・追加指示は`user-amendment`、repo外の外部reviewは`external-review`、`parent_metadata_*`等の親管理metadata修復は`metadata-repair`である。新規検出かreviewer既記載か確定できないときだけ申告を省略し、`unknown`として計上される。`codex-review`への推定fallbackは行わない。
-- `--accepted-scope`は`current-diff`だけを許し、origin/accepted-scopeは観測申告であってfix本文の内容・範囲を替わってはならない。
+- `--origin codex-review`のfixでは`--cause`（8層: parent-orchestration/requirement-preservation/worker/reviewer/sol-gate/production-wiring/test-scenario/cross-cutting-invariant、確定不能時はunknown）の申告も必須である。原因層は一次証拠に基づき親Codexが確定し、GLMへ推定・追加model callさせない。他originでは`--cause`は任意、`--approval-only`との併用は拒否される。fix roundのcategoryとsemantic/non-semanticはround recordから機械導出される。
+- `--accepted-scope`は`current-diff`だけを許し、origin/cause/accepted-scopeは観測申告であってfix本文の内容・範囲を替わってはならない。
 - recoverable taskの再開は`glm-parent-action resume`を使い、保存済みtask・phase・sessionを継続する。
 
 ## 対象repoの生存判定

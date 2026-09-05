@@ -30,6 +30,7 @@ type Command struct {
 	SHA256 string
 
 	Origin              string
+	Cause               string
 	AcceptedScope       string
 	ApprovalOnly        bool
 	ExecutionMilestones bool
@@ -104,6 +105,7 @@ const (
 	ModeTestImpact
 	ModeBundle
 	ModeParentUsage
+	ModeReviewGap
 	ModeRepoSearch
 	ModeRepoSearchEval
 	ModeExecutionMilestonesRevise
@@ -111,7 +113,7 @@ const (
 	ModeProjectState
 )
 
-const fixOriginUsage = "[--origin codex-review|glm-reviewer|user-amendment|external-review|metadata-repair] [--accepted-scope current-diff] [--approval-only]"
+const fixOriginUsage = "[--origin codex-review|glm-reviewer|user-amendment|external-review|metadata-repair] [--cause parent-orchestration|requirement-preservation|worker|reviewer|sol-gate|production-wiring|test-scenario|cross-cutting-invariant|unknown] [--accepted-scope current-diff] [--approval-only]"
 
 const installSmokeUsage = "[--role worker|reviewer|fix|parent]"
 
@@ -201,6 +203,9 @@ var commandParsers = map[string]commandParser{
 	"--parent-usage": func(args []string) (Command, error) {
 		return optionalPayloadCommand(args, ModeParentUsage, "usage: glm-worker --parent-usage [task-id]")
 	},
+	"--review-gap": func(args []string) (Command, error) {
+		return optionalPayloadCommand(args, ModeReviewGap, "usage: glm-worker --review-gap [task-id]")
+	},
 }
 
 func (e *UsageError) Error() string {
@@ -217,7 +222,7 @@ func usageError(format string, args ...any) *UsageError {
 
 func ParseCommand(args []string) (Command, error) {
 	if len(args) == 0 {
-		return Command{}, usageError("usage: glm-worker <instruction> | --execution-milestones-stdin <payload-bytes> [--sha256 <hex>] | --execution-milestones-revise-stdin <payload-bytes> [--sha256 <hex>] | --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix-stdin <payload-bytes> [--sha256 <hex>] %s | --accept | --resume | --stop | --isolate | --status | --handoff [recovery] | --project-state | --watch [--verbose] | --timeline [task-id] | --convergence [task-id] | --stats %s | --reset | --verify-auto-resume <automation-key> <auto-resume-at-rfc3339> | --eval-ab <run-dir> | --call-outliers %s | --codex-limit | --repo-search <query> | --check-wake-coalesce <auto-resume-at-rfc3339> | --install-smoke %s | --quality-gate %s | --model-routing | --packet-check <packet.json> [--role worker|reviewer] [--artifact-root <dir>] | bundle [task-id] | --parent-usage [task-id]", fixOriginUsage, telemetryQueryUsage, telemetryQueryUsage, installSmokeUsage, qualityGateUsage)
+		return Command{}, usageError("usage: glm-worker <instruction> | --execution-milestones-stdin <payload-bytes> [--sha256 <hex>] | --execution-milestones-revise-stdin <payload-bytes> [--sha256 <hex>] | --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix-stdin <payload-bytes> [--sha256 <hex>] %s | --accept | --resume | --stop | --isolate | --status | --handoff [recovery] | --project-state | --watch [--verbose] | --timeline [task-id] | --convergence [task-id] | --stats %s | --reset | --verify-auto-resume <automation-key> <auto-resume-at-rfc3339> | --eval-ab <run-dir> | --call-outliers %s | --codex-limit | --repo-search <query> | --check-wake-coalesce <auto-resume-at-rfc3339> | --install-smoke %s | --quality-gate %s | --model-routing | --packet-check <packet.json> [--role worker|reviewer] [--artifact-root <dir>] | bundle [task-id] | --parent-usage [task-id] | --review-gap [task-id]", fixOriginUsage, telemetryQueryUsage, telemetryQueryUsage, installSmokeUsage, qualityGateUsage)
 	}
 	if parser, ok := commandParsers[args[0]]; ok {
 		return parser(args)
@@ -342,6 +347,7 @@ func stdinPayloadCommand(mode CommandMode, args []string, usage string, allowFix
 		Mode:          mode,
 		StdinBytes:    payloadBytes,
 		Origin:        semantic.Origin,
+		Cause:         semantic.Cause,
 		AcceptedScope: semantic.AcceptedScope,
 		ApprovalOnly:  semantic.ApprovalOnly,
 	}
@@ -536,6 +542,8 @@ func executeStatelessReport(cmd Command, cfg config.AppConfig, stdout io.Writer)
 		return true, printBundle(cfg, st, cmd.Payload, stdout)
 	case ModeParentUsage:
 		return true, printParentUsage(cfg, st, cmd.Payload, stdout)
+	case ModeReviewGap:
+		return true, printReviewGap(cfg, st, cmd.Payload, stdout)
 	default:
 		return false, nil
 	}
@@ -594,7 +602,7 @@ func executeWorkflow(cmd Command, cfg config.AppConfig, st *state.StateStore, rf
 		if cmd.ApprovalOnly {
 			return wf.ExecuteQualitySurfaceApprovalWithExecutionMilestones(cmd.AcceptedScope)
 		}
-		return wf.ExecuteExplicitFixWithExecutionMilestones(cmd.Payload, cmd.Origin, cmd.AcceptedScope)
+		return wf.ExecuteExplicitFixWithExecutionMilestones(cmd.Payload, cmd.Origin, cmd.Cause, cmd.AcceptedScope)
 	case ModeResume:
 		return wf.ExecuteResumeWithExecutionMilestones()
 	default:

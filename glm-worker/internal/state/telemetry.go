@@ -98,6 +98,7 @@ type ModelCallLog struct {
 	RetryReason string       `json:"retry_reason,omitempty"`
 
 	ParentOrigin string `json:"parent_origin,omitempty"`
+	ParentCause  string `json:"parent_cause,omitempty"`
 }
 
 const ModelCallLogVersion = 3

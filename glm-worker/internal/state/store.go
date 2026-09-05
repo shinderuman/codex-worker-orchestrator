@@ -105,6 +105,14 @@ func (s *StateStore) ReadOr(name string, fallback string) string {
 	return value
 }
 
+func (s *StateStore) readExact(name string) string {
+	data, err := os.ReadFile(s.Path(name))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSuffix(string(data), "\n")
+}
+
 func (s *StateStore) Write(name string, value string) error {
 	if err := writeFileAtomic(s.Path(name), []byte(value+"\n"), 0o600); err != nil {
 		return fmt.Errorf("state %sを書き込めません: %w", name, err)

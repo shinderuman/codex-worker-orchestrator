@@ -22,7 +22,7 @@ import (
 )
 
 const (
-	usage = "usage: glm-parent-action start | prepare <decision|fix|start-milestones|revise-milestones> | decision <token> | fix <token> [--origin <origin>] [--accepted-scope current-diff] [--approval-only] | start-milestones <token> | revise-milestones <token> | no-go | accept | resume | finalize-check <go-test|go-test-race>"
+	usage = "usage: glm-parent-action start | prepare <decision|fix|start-milestones|revise-milestones> | decision <token> | fix <token> [--origin <origin>] [--cause <cause>] [--accepted-scope current-diff] [--approval-only] | start-milestones <token> | revise-milestones <token> | no-go | accept | resume | finalize-check <go-test|go-test-race>"
 
 	activeTaskRequest = "現在のACTIVE taskを実行してください。"
 	actionStart       = "start"
@@ -192,7 +192,7 @@ func directWorkerArgs(action string) []string {
 }
 
 func validateFixOptions(options []string) error {
-	fixUsage := "usage: glm-parent-action fix <token> [--origin <origin>] [--accepted-scope current-diff] [--approval-only]"
+	fixUsage := "usage: glm-parent-action fix <token> [--origin <origin>] [--cause <cause>] [--accepted-scope current-diff] [--approval-only]"
 	_, remaining, err := parentfix.Extract(options)
 	if err != nil || len(remaining) != 0 {
 		return fmt.Errorf("%s", fixUsage)

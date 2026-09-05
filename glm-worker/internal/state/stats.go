@@ -196,7 +196,7 @@ func (s *StateStore) ArchiveCurrentStats() {
 	now := time.Now().UTC()
 	stats.ArchivedAt = &now
 
-	resolved, hadOpen, _ := stats.resolveParentOutcome(ParentOutcomeUnknown, "")
+	resolved, hadOpen, _ := stats.resolveParentOutcome(ParentOutcomeUnknown, "", "")
 	data, err := json.MarshalIndent(stats, "", "  ")
 	if err != nil {
 		warnStatsFailure("archive JSON化", err)
@@ -208,7 +208,7 @@ func (s *StateStore) ArchiveCurrentStats() {
 		return
 	}
 	if hadOpen {
-		s.appendParentOutcomeEvent(stats.TaskID, ParentPhaseClose, ParentOutcomeUnknown, "", resolved)
+		s.appendParentOutcomeEvent(stats.TaskID, ParentPhaseClose, ParentOutcomeUnknown, "", "", resolved)
 	}
 	if err := s.Remove(currentStatsFile); err != nil {
 		warnStatsFailure("archive後削除", err)

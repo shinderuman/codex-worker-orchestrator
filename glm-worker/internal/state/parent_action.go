@@ -3,6 +3,7 @@ package state
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 )
@@ -95,10 +96,12 @@ func (s *StateStore) ParentActionPlan() (ParentActionPlan, error) {
 		return ParentActionPlan{}, lifecycleInconsistency(status, "resume checkpoint is unreadable")
 	}
 	stopKind := ResumeStopNone
+	pendingDecisionResume := false
 	if checkpointErr == nil {
 		stopKind = checkpoint.StopKind
+		pendingDecisionResume = pendingDecisionContinuesCheckpoint(pending, checkpoint, s.readExact("last-decision"))
 	}
-	plan, err := parentActionPlanForStatus(status, pending, openReview, stopKind)
+	plan, err := parentActionPlanForStatus(status, pending, pendingDecisionResume, openReview, stopKind)
 	if err != nil {
 		return ParentActionPlan{}, err
 	}
@@ -108,7 +111,7 @@ func (s *StateStore) ParentActionPlan() (ParentActionPlan, error) {
 	return plan, nil
 }
 
-func parentActionPlanForStatus(status TaskStatus, pending bool, openReview string, stopKind ResumeStopKind) (ParentActionPlan, error) {
+func parentActionPlanForStatus(status TaskStatus, pending bool, pendingDecisionResume bool, openReview string, stopKind ResumeStopKind) (ParentActionPlan, error) {
 	switch status {
 	case TaskStatusWaitingDecision:
 		return waitingDecisionActionPlan(status, pending, openReview, stopKind)
@@ -119,7 +122,7 @@ func parentActionPlanForStatus(status TaskStatus, pending bool, openReview strin
 	case TaskStatusActive, TaskStatusNone:
 		return inactiveParentActionPlan(status, pending, openReview, stopKind)
 	default:
-		return stoppedParentActionPlan(status, pending, openReview, stopKind)
+		return stoppedParentActionPlan(status, pending, pendingDecisionResume, openReview, stopKind)
 	}
 }
 
@@ -141,7 +144,7 @@ func unexpectedOpenReview(openReview string, expected packet.Status) bool {
 	return openReview != roundCommentNone && openReview != string(expected)
 }
 
-func stoppedParentActionPlan(status TaskStatus, pending bool, openReview string, stopKind ResumeStopKind) (ParentActionPlan, error) {
+func stoppedParentActionPlan(status TaskStatus, pending bool, pendingDecisionResume bool, openReview string, stopKind ResumeStopKind) (ParentActionPlan, error) {
 	switch status {
 	case TaskStatusRateLimited,
 		TaskStatusProviderUnavailable,
@@ -153,7 +156,7 @@ func stoppedParentActionPlan(status TaskStatus, pending bool, openReview string,
 	if !stopKind.IsStopped() || stopKind.TaskStatus() != status {
 		return ParentActionPlan{}, lifecycleInconsistency(status, "stopped task status does not match pending decision, parent review, and resume checkpoint")
 	}
-	return stoppedActionPlan(status, pending, openReview, stopKind, stopKind.ParentAction())
+	return stoppedActionPlan(status, pending, pendingDecisionResume, openReview, stopKind, stopKind.ParentAction())
 }
 
 func inactiveParentActionPlan(status TaskStatus, pending bool, openReview string, stopKind ResumeStopKind) (ParentActionPlan, error) {
@@ -184,14 +187,30 @@ func actionPlan(required ParentAction, resumeKind string, allowed ...ParentActio
 func stoppedActionPlan(
 	status TaskStatus,
 	pending bool,
+	pendingDecisionResume bool,
 	openReview string,
 	stopKind ResumeStopKind,
 	required ParentAction,
 ) (ParentActionPlan, error) {
-	if pending || openReview != roundCommentNone {
+	if pending && !pendingDecisionResume || openReview != roundCommentNone {
 		return ParentActionPlan{}, lifecycleInconsistency(status, "stopped task status does not match pending decision, parent review, and resume checkpoint")
 	}
 	return actionPlan(required, string(stopKind), ParentActionResume), nil
+}
+
+func pendingDecisionContinuesCheckpoint(pending bool, checkpoint ResumeCheckpoint, lastDecision string) bool {
+	if !pending {
+		return false
+	}
+	switch checkpoint.StopKind {
+	case ResumeStopRateLimited, ResumeStopProviderUnavailable, ResumeStopInterrupted:
+	default:
+		return false
+	}
+	if checkpoint.Stage != ResumeStageWorker || WorkerPhaseCategory(checkpoint.Phase) != WorkerPhaseCategoryDecision {
+		return false
+	}
+	return strings.TrimSpace(checkpoint.Decision) != "" && checkpoint.Decision == lastDecision
 }
 
 func lifecycleInconsistency(status TaskStatus, detail string) error {

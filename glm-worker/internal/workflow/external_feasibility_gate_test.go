@@ -383,7 +383,7 @@ func TestExternalFeasibilityFixGateFailsClosed(t *testing.T) {
 	}
 	w, r, out := planFileDecisionWorkflow(t, st, repoRoot, "", nil)
 
-	if err := w.ExecuteExplicitFix("fix", ""); err != nil {
+	if err := w.ExecuteExplicitFix("fix", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	requireFeasibilityFailClosed(t, st, r, out, externalFeasibilityGuardSurface.unverifiedOutcome(), state.TaskStatusWaitingSolReview)

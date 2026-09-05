@@ -20,11 +20,11 @@ func (s *StateStore) BeginParentDecision() error {
 		return err
 	}
 	s.RecordDecision()
-	_, err := s.RecordParentOutcome(ParentOutcomeDecision, "")
+	_, err := s.RecordParentOutcome(ParentOutcomeDecision, "", "")
 	return err
 }
 
-func (s *StateStore) BeginParentFix(origin string) error {
+func (s *StateStore) BeginParentFix(origin, cause string) error {
 	if s.TaskStatus() != TaskStatusWaitingSolReview || s.Exists("pending-decision") {
 		return fmt.Errorf("parent fix transition requires waiting-sol-review without pending decision")
 	}
@@ -32,7 +32,7 @@ func (s *StateStore) BeginParentFix(origin string) error {
 		return err
 	}
 	s.RecordFix()
-	_, err := s.RecordParentOutcome(ParentOutcomeFix, origin)
+	_, err := s.RecordParentOutcome(ParentOutcomeFix, origin, cause)
 	return err
 }
 

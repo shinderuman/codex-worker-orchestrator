@@ -27,12 +27,22 @@ CodeRabbit: Document that the parent-only evaluation is a bounded exception to c
 CodeRabbit: Define the comparable cohort identity and required snapshot fields for Codex Reduction and Quality Delta reporting, covering TaskID, SpecSHA256, SessionID, and relevant run conditions before using ResolveFromTaskStats. Specify how mismatched or missing identity fields are classified, and only add duplicate-match handling when evaluation inputs may contain duplicate task records.
 ````
 
+### 2026-09-04 prose-only control reevaluation boundary
+
+````text
+post-105-codex-efficiency-reevaluation.md
+で監査するものにそういうものは含まれているか
+あまりこのタスクの範囲を増やしすぎて監査がゆるくならないようにはしろ
+````
+
 ## Resolved references
 
 - 「このセッションの最初で行ったのと同じもの」は、GLM-Worker telemetry、Codex自身の `~/.codex/` 等に残るログを親Codexが直接解析し、目的を改善するtask候補とログ収集command拡充の要否を判断した2026-09-03の調査を指す
 - 調査・意味判断をGLM modelへ委譲しない。`glm-worker` commandが機能するか、何を出力するかの確認とread-only projectionの利用は許可する
 - 「意味のある停止」は、Task corpus閉包実装が品質ポリシー面を変更したため、GLM自身による品質基準の弱体化を防ぐguardがCodex reviewを要求した状態を指す。この個別停止は意図した安全境界として維持し、反復costや品質影響の新証拠が得られた場合だけ改善候補として再評価する
 - PR 345 CodeRabbit comments `3930465346` / `3930465350`: `https://github.com/shinderuman/codex-worker-orchestrator/pull/345#discussion_r3930465346`, `https://github.com/shinderuman/codex-worker-orchestrator/pull/345#discussion_r3930465350`
+- 「そういうもの」は、自由言語だけに依存するcontrolの残存・再導入、機械化済みcontrolのprose thinning、改善候補の捕捉とTask化の機械化を指す
+- 全completed task/current treeを再監査する責務は`prose-only-control-enforcement-audit.md`、機械化とinstruction削減はその後続taskが持つ。本taskはそれらを再実装・再分類せず、完了後から105までの回帰と実測効果だけを再評価する
 
 ## Purpose
 
@@ -53,6 +63,8 @@ status: not-applicable
 - 必須identity/snapshot/run-conditionが欠けるrecordはunknown、値が異なるrecordは別cohort、同じTaskIDまたはSessionIDに複数候補があり一意に解決できない入力だけをambiguousとして除外する。通常state storeのtask ID一意archiveへ不要なduplicate fallbackを追加しない
 - parent attribution、history cohort query、timeline retention fallback、review gap、validation gate、packet correction、session rotationまでの新しい観測面を使い、開始時調査と同じ論点を再評価する
 - 105までの各taskで発生した停止、retry、fix、review、validation、parent return、過大outputと、作業中に検討したがTask化しなかった改善候補を棚卸しし、022前の取りこぼしがないか再精査する
+- 先行auditのbounded control inventory、continuous improvement candidate/disposition state、mechanized-control registry、installed instruction size/token proxyを直接入力にし、audit完了後から105までに新しい`prose-only`/`partial` controlが導入されていないか、machine guardを自由言語で補っただけのfalse completionが再発していないか、instruction削減がCodex消費とQuality Deltaへどう影響したかだけを確認する
+- prose-only controlの全repository/Git履歴監査は再実行しない。先行inventory以後に変更されたcontrol、runtimeで違反・拒否・未処理candidateが観測されたcontrol、source locatorがstaleになったcontrolへ対象を限定する
 - 品質はreview outcome、escaped defect、validation/retry、Acceptance充足、原因不明failure等の観測可能なproxyで評価し、token削減だけを成功扱いしない
 - 現行commandで判断に必要なfield/source locatorが不足する場合は、ログ収集・projection command拡充の必要性をCodexが判断する
 - 実行可能なFindingがあればparent-managed Task fileとして具体的なContract / Must not / Acceptance criteriaを定義し、022より前のNEXTへ追加して作業サイクルを継続する。FindingごとにGo/No-Goを決め、未確定状態のまま実装へ進めない
@@ -65,6 +77,7 @@ status: not-applicable
 - raw prompt、raw response、tool result全文、巨大JSON/JSONLをSol-visible stdoutへ再投影しない
 - attribution不能値、counter reset、複数rollout候補、品質proxy欠損を便宜的に合算・成功扱いしない
 - Findingだけを理由に既存Taskへ無関係な変更を混ぜず、022開始後へ改善を先送りしない
+- 先行prose-only auditを本task内で最初から繰り返し、広いが浅い再監査にしない
 
 ## Acceptance criteria
 
@@ -74,6 +87,8 @@ status: not-applicable
 - ログ収集・projection command拡充の要否と、必要なら不足field・取得境界・stdout boundednessを具体化できる
 - Findingsがあれば全件をGo/No-Go判定し、GoのTaskをPlan上で022以前へ追加する。追加Task完了後も必要なら本評価を再実行するか、同等の再評価gateを最後の追加Taskへ明記する
 - 作業中に随時Task化されたFindingと、Task化しなかった候補の双方をsource locator付きで照合し、後者に未評価または根拠不足のまま放置された実行可能Findingがないことを確認する
+- audit baseline以後のcontrol delta、未処理candidate、機械guard違反、registry/locator driftだけを対象にprose-only回帰を確認し、全履歴再走査なしで対象件数・判定・exact locatorを報告できる
+- instruction thinning前後のinstalled byte/token proxyと、rule miss・retry・parent return・Quality Delta proxyを比較し、文字数削減だけを成功扱いしない
 - Findingsがなければ根拠付きで完了し、022以外の実行可能なunblocked taskが残っていないことを確認する
 
 ## Historical invariants
@@ -85,6 +100,7 @@ status: not-applicable
 ## Dependencies
 
 - `IMPLEMENTATION_TASKS/105-session-rotation.md`
+- `IMPLEMENTATION_TASKS/mechanized-control-prose-thinning.md`
 - 105より前にPlan上で実行するCodex telemetry改善taskがすべて完了していること
 
 ## Review findings

@@ -65,6 +65,56 @@ func TestDirectWorkflowAdmissionFailsClosedOnLifecycleInconsistency(t *testing.T
 	}
 }
 
+func TestDirectWorkflowResumeAdmissionFailsClosedOnInadmissiblePendingDecision(t *testing.T) {
+	cfg, st := newAdmissionTestWorkflowState(t)
+	if err := st.Write("last-request", "request"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Touch("pending-decision"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Write("last-decision", "decision-body"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SaveResumeCheckpoint(state.ResumeCheckpoint{
+		Stage:          state.ResumeStageWorker,
+		Phase:          "worker-new",
+		Role:           state.WorkerRole,
+		Model:          "opus",
+		Prompt:         "p",
+		OriginalPrompt: "p",
+		Request:        "request",
+		Decision:       "decision-body",
+		StopKind:       state.ResumeStopRateLimited,
+		ResetAtCST:     "2026-09-05 03:32:23",
+		ResetAtRFC3339: "2026-09-05T03:32:23+08:00",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetTaskStatus(state.TaskStatusRateLimited); err != nil {
+		t.Fatal(err)
+	}
+	r := &admissionTestRunner{}
+	w := NewWorkflow(cfg, st, r, io.Discard)
+
+	err := w.ExecuteResume()
+	if err == nil || !strings.Contains(err.Error(), "lifecycle inconsistency") {
+		t.Fatalf("ExecuteResume error = %v", err)
+	}
+	if r.calls != 0 {
+		t.Fatalf("model calls = %d, want 0", r.calls)
+	}
+	if got := st.TaskStatus(); got != state.TaskStatusRateLimited {
+		t.Fatalf("task status = %s, want rate-limited", got)
+	}
+	if !st.Exists("pending-decision") {
+		t.Fatal("rejected admission dropped pending-decision")
+	}
+	if _, cerr := st.LoadResumeCheckpoint(); cerr != nil {
+		t.Fatalf("rejected admission dropped resume checkpoint: %v", cerr)
+	}
+}
+
 func newAdmissionTestWorkflowState(t *testing.T) (config.AppConfig, *state.StateStore) {
 	t.Helper()
 	cfg := config.AppConfig{

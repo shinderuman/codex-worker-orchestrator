@@ -921,7 +921,7 @@ func TestExecuteExplicitFixRejectsCompletedTask(t *testing.T) {
 	}
 
 	w := newWorkflowT(t, st, &scriptedRunner{})
-	err := w.ExecuteExplicitFix("fix", "")
+	err := w.ExecuteExplicitFix("fix", "", "")
 	if err == nil || !strings.Contains(err.Error(), "only available after NEEDS_SOL_REVIEW") {
 		t.Fatalf("completed taskの--fixを拒否する必要があります: %v", err)
 	}
@@ -1069,7 +1069,7 @@ func TestExecuteExplicitFixContinuesSolReviewTask(t *testing.T) {
 	}}
 	w := newWorkflowT(t, st, r)
 
-	if err := w.ExecuteExplicitFix("境界値を修正する", ""); err != nil {
+	if err := w.ExecuteExplicitFix("境界値を修正する", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	if st.TaskStatus() != state.TaskStatusWaitingSolReview {
@@ -1393,6 +1393,133 @@ func TestExecuteResumeRestoresRateLimitedStatusAfterRunnerError(t *testing.T) {
 	}
 	if len(r.prompts) != 1 {
 		t.Fatalf("runner calls = %d", len(r.prompts))
+	}
+}
+
+func seedWaitingDecision(t *testing.T, st *state.StateStore) {
+	t.Helper()
+	if err := st.Write("last-request", "request"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Touch("pending-decision"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetTaskStatus(state.TaskStatusWaitingDecision); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func assertStoppedDecisionCheckpoint(t *testing.T, st *state.StateStore, status state.TaskStatus, stopKind state.ResumeStopKind) {
+	t.Helper()
+	if st.TaskStatus() != status || !st.Exists("pending-decision") {
+		t.Fatalf("停止直後のstate: status=%q pending=%t", st.TaskStatus(), st.Exists("pending-decision"))
+	}
+	checkpoint, cerr := st.LoadResumeCheckpoint()
+	if cerr != nil || checkpoint.Stage != state.ResumeStageWorker || checkpoint.Phase != "worker-decision" ||
+		checkpoint.StopKind != stopKind || checkpoint.Decision != "A案で進める" {
+		t.Fatalf("decision停止checkpoint = %#v err=%v", checkpoint, cerr)
+	}
+	if got := st.ReadOr("last-decision", ""); got != "A案で進める" {
+		t.Fatalf("last-decision = %q", got)
+	}
+	plan, perr := st.ParentActionPlan()
+	if perr != nil || plan.RequiredAction != state.ParentActionResume || !plan.Allows(state.ParentActionResume) {
+		t.Fatalf("decision停止のresume admission = %#v err=%v", plan, perr)
+	}
+}
+
+func resumeStoppedDecisionResolvingPending(t *testing.T, st *state.StateStore, newWorkflow func(*scriptedRunner) *Workflow) {
+	t.Helper()
+	resumeRunner := &scriptedRunner{steps: []runnerStep{
+		{structured: implementedPacket("decision resumed")},
+		{structured: needsSolReviewPacket()},
+	}}
+	if err := newWorkflow(resumeRunner).ExecuteResume(); err != nil {
+		t.Fatal(err)
+	}
+	if st.TaskStatus() != state.TaskStatusWaitingSolReview || st.Exists("pending-decision") {
+		t.Fatalf("resume後のstate: status=%q pending=%t", st.TaskStatus(), st.Exists("pending-decision"))
+	}
+	if len(resumeRunner.phases) == 0 || resumeRunner.phases[0] != "worker-decision" {
+		t.Fatalf("resume phases = %v", resumeRunner.phases)
+	}
+	if len(resumeRunner.prompts) == 0 || !strings.Contains(resumeRunner.prompts[0], "A案で進める") {
+		t.Fatalf("resume promptがdecisionを保持していません: %#v", resumeRunner.prompts)
+	}
+}
+
+func TestExecuteDecisionRateLimitResumeKeepsDecisionCheckpoint(t *testing.T) {
+	st := newStateStoreT(t)
+	seedWaitingDecision(t, st)
+	if err := st.Write("worker.id", "decision-session"); err != nil {
+		t.Fatal(err)
+	}
+	r := &scriptedRunner{steps: []runnerStep{{
+		output: zaiFiveHourLog,
+		runErr: errors.New("exit status 1"),
+	}}}
+	w := newWorkflowT(t, st, r)
+
+	err := w.ExecuteDecision("A案で進める")
+	var limitErr runner.ZaiRateLimitError
+	if !errors.As(err, &limitErr) {
+		t.Fatalf("rate limit errorを期待: %v", err)
+	}
+	assertStoppedDecisionCheckpoint(t, st, state.TaskStatusRateLimited, state.ResumeStopRateLimited)
+	if !st.Exists("worker.ready") || st.ReadOr("worker.id", "") != "decision-session" {
+		t.Fatal("rate limit停止が同一sessionを保持していません")
+	}
+	resumeStoppedDecisionResolvingPending(t, st, func(r *scriptedRunner) *Workflow { return newWorkflowT(t, st, r) })
+	if got := st.ReadOr("worker.id", ""); got != "decision-session" {
+		t.Fatalf("resumeがworker sessionを保持していません: %q", got)
+	}
+}
+
+func TestExecuteDecisionProviderUnavailableResumeKeepsDecisionCheckpoint(t *testing.T) {
+	st := newStateStoreT(t)
+	seedWaitingDecision(t, st)
+	r := &scriptedRunner{
+		steps:     []runnerStep{{output: "API Error: 503 Service Unavailable", runErr: errors.New("exit status 1")}},
+		probeErrs: []error{errProbeTransient, errProbeTransient, errProbeTransient, errProbeTransient},
+	}
+	w, _ := newRecoveryWorkflowT(t, st, r)
+
+	err := w.ExecuteDecision("A案で進める")
+	var pErr *runner.ProviderUnavailableError
+	if !errors.As(err, &pErr) {
+		t.Fatalf("provider unavailable errorを期待: %v", err)
+	}
+	assertStoppedDecisionCheckpoint(t, st, state.TaskStatusProviderUnavailable, state.ResumeStopProviderUnavailable)
+	resumeStoppedDecisionResolvingPending(t, st, func(r *scriptedRunner) *Workflow { return newWorkflowT(t, st, r) })
+}
+
+func TestExecuteDecisionInterruptResumeKeepsDecisionCheckpoint(t *testing.T) {
+	repo := newRetentionGitRepo(t)
+	st := newGitStateStoreT(t, repo)
+	seedWaitingDecision(t, st)
+	if err := st.Write("worker.id", "decision-session"); err != nil {
+		t.Fatal(err)
+	}
+	r := &scriptedRunner{steps: []runnerStep{{
+		result: runner.RunResult{SessionID: "decision-session"},
+		runErr: &runner.InterruptedCallError{Phase: "worker-decision"},
+	}}}
+	w := newGitWorkflowT(t, st, r, repo)
+	stop := attachStop(t, w)
+	r.onRun = func() { stop.Request() }
+
+	err := w.ExecuteDecision("A案で進める")
+	var stoppedErr *runner.InterruptedCallError
+	if !errors.As(err, &stoppedErr) {
+		t.Fatalf("interrupt errorを期待: %v", err)
+	}
+	assertStoppedDecisionCheckpoint(t, st, state.TaskStatusInterrupted, state.ResumeStopInterrupted)
+	if !st.Exists("worker.ready") || st.ReadOr("worker.id", "") != "decision-session" {
+		t.Fatal("interrupt停止が同一sessionを保持していません")
+	}
+	resumeStoppedDecisionResolvingPending(t, st, func(r *scriptedRunner) *Workflow { return newGitWorkflowT(t, st, r, repo) })
+	if got := st.ReadOr("worker.id", ""); got != "decision-session" {
+		t.Fatalf("resumeがworker sessionを保持していません: %q", got)
 	}
 }
 
@@ -2090,7 +2217,7 @@ func TestRiskFloorRejectsPassAfterExplicitFix(t *testing.T) {
 	}}
 	w := newWorkflowT(t, st, r)
 
-	if err := w.ExecuteExplicitFix("境界値を修正する", ""); err != nil {
+	if err := w.ExecuteExplicitFix("境界値を修正する", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	if st.TaskStatus() != state.TaskStatusWaitingSolReview {
