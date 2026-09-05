@@ -133,7 +133,7 @@ func (w *Workflow) executeExecutionMilestoneResume() error {
 	if err := w.validateExecutionMilestoneCheckpointAuthority(checkpoint); err != nil {
 		return err
 	}
-	reuseCompletedResult, err := w.prepareGuardRecovery(checkpoint)
+	reuseCompletedResult, err := w.prepareStoppedResultReuse(checkpoint)
 	if err != nil {
 		return err
 	}

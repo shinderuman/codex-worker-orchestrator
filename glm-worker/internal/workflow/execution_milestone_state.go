@@ -109,6 +109,7 @@ func executionMilestoneRevisionStatusAllowed(status state.TaskStatus) bool {
 		state.TaskStatusRateLimited,
 		state.TaskStatusProviderUnavailable,
 		state.TaskStatusGuardRecoverable,
+		state.TaskStatusQualityGateRecoverable,
 		state.TaskStatusInterrupted:
 		return true
 	default:

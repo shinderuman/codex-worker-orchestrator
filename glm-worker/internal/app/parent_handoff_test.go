@@ -221,6 +221,68 @@ func TestParentHandoffRecoveryIncludesGuardDiagnostics(t *testing.T) {
 	}
 }
 
+func TestParentHandoffRecoveryIncludesQualityGateDiagnostics(t *testing.T) {
+	cfg := newAppConfig(t)
+	st := startParentHandoffTask(t, cfg)
+	completed := packet.Result{Status: packet.StatusImplemented, Risk: packet.RiskLow, Summary: "implemented"}
+	checkpoint := state.ResumeCheckpoint{
+		Stage:              state.ResumeStageWorker,
+		Phase:              "worker-new",
+		Role:               state.WorkerRole,
+		Model:              "glm-5.3",
+		StopKind:           state.ResumeStopQualityGate,
+		QualityGateFailure: "quality tool version mismatch: golangci-lint=2.6.0, required=2.7.0",
+		CompletedResult:    &completed,
+	}
+	if err := st.SaveResumeCheckpoint(checkpoint); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetTaskStatus(state.TaskStatusQualityGateRecoverable); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout bytes.Buffer
+	if err := Execute(Command{Mode: ModeHandoff, Payload: "recovery"}, cfg, nil, &stdout, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(stdout.Bytes(), &raw); err != nil {
+		t.Fatalf("recovery output is not JSON: %v\n%s", err, stdout.String())
+	}
+	if raw["consistent"] != true {
+		t.Fatalf("recovery consistency = %s", stdout.String())
+	}
+	if raw["task_status"] != string(state.TaskStatusQualityGateRecoverable) {
+		t.Fatalf("recovery task status = %s", stdout.String())
+	}
+	if raw["required_action"] != string(state.ParentActionRepairQualityGateThenResume) {
+		t.Fatalf("recovery required action = %s", stdout.String())
+	}
+	allowed, ok := raw["allowed_actions"].([]any)
+	if !ok || len(allowed) != 1 || allowed[0] != string(state.ParentActionResume) {
+		t.Fatalf("recovery allowed actions = %#v", raw["allowed_actions"])
+	}
+	if raw["quality_gate_failure"] != checkpoint.QualityGateFailure {
+		t.Fatalf("quality gate diagnostics = %s", stdout.String())
+	}
+
+	stdout.Reset()
+	if err := Execute(Command{Mode: ModeHandoff}, cfg, nil, &stdout, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	raw = nil
+	if err := json.Unmarshal(stdout.Bytes(), &raw); err != nil {
+		t.Fatalf("full handoff output is not JSON: %v\n%s", err, stdout.String())
+	}
+	if raw["consistent"] != true || raw["task_status"] != string(state.TaskStatusQualityGateRecoverable) ||
+		raw["required_action"] != string(state.ParentActionRepairQualityGateThenResume) {
+		t.Fatalf("full handoff next action = %s", stdout.String())
+	}
+	if _, exists := raw["quality_gate_failure"]; exists {
+		t.Fatalf("full handoff exposed recovery-only quality gate failure: %s", stdout.String())
+	}
+}
+
 func TestParentHandoffStoppedDecisionContinuationAllowsResume(t *testing.T) {
 	cfg := newAppConfig(t)
 	st := startParentHandoffTask(t, cfg)

@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 )
 
 func TestResumeCheckpointPersists(t *testing.T) {
@@ -75,6 +77,7 @@ func TestResumeStopKindsRoundTripAndMappings(t *testing.T) {
 		{kind: ResumeStopProviderUnavailable, status: TaskStatusProviderUnavailable, source: "provider-unavailable"},
 		{kind: ResumeStopInterrupted, status: TaskStatusInterrupted, source: "user-interrupt"},
 		{kind: ResumeStopGuardRecoverable, status: TaskStatusGuardRecoverable, source: "guard-recovery"},
+		{kind: ResumeStopQualityGate, status: TaskStatusQualityGateRecoverable, source: "quality-gate-recovery"},
 	}
 	for _, tc := range cases {
 		t.Run(string(tc.kind), func(t *testing.T) {
@@ -89,6 +92,10 @@ func TestResumeStopKindsRoundTripAndMappings(t *testing.T) {
 				checkpoint.ProviderUnavailableStartedAt = time.Date(2026, 7, 22, 6, 0, 0, 0, time.UTC)
 			case ResumeStopGuardRecoverable:
 				checkpoint.GuardFailure = "blocked"
+			case ResumeStopQualityGate:
+				checkpoint.QualityGateFailure = "quality tool version mismatch"
+				completed := packet.Result{Status: packet.StatusImplemented}
+				checkpoint.CompletedResult = &completed
 			}
 			if err := st.SaveResumeCheckpoint(checkpoint); err != nil {
 				t.Fatal(err)
@@ -120,6 +127,8 @@ func TestResumeStopKindRejectsMalformedState(t *testing.T) {
 	}{
 		{name: "unknown kind", doc: `{"version":6,"stage":"worker","model":"opus","report_only":false,"stop_kind":"future-stop"}`, want: "unknown resume stop kind"},
 		{name: "provider payload mismatch", doc: `{"version":6,"stage":"worker","model":"opus","report_only":false,"stop_kind":"interrupted","provider_unavailable_probes":1}`, want: "provider metadata is present"},
+		{name: "quality-gate stop without payload", doc: `{"version":6,"stage":"worker","model":"opus","report_only":false,"stop_kind":"quality-gate-recoverable"}`, want: "quality-gate recovery checkpoint requires the gate failure and the completed worker result"},
+		{name: "quality-gate payload on other kind", doc: `{"version":6,"stage":"worker","model":"opus","report_only":false,"stop_kind":"interrupted","quality_gate_failure":"mismatch"}`, want: "quality-gate metadata is present"},
 	}
 	for _, tc := range docs {
 		t.Run(tc.name, func(t *testing.T) {

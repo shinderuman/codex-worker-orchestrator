@@ -148,7 +148,7 @@ func (s *StateStore) EnterStop(checkpoint ResumeCheckpoint) error {
 	if err := s.SaveResumeCheckpoint(checkpoint); err != nil {
 		return err
 	}
-	if checkpoint.StopKind == ResumeStopGuardRecoverable {
+	if checkpoint.StopKind == ResumeStopGuardRecoverable || checkpoint.StopKind == ResumeStopQualityGate {
 		if err := s.Remove("pending-decision"); err != nil {
 			return s.rollbackLifecycleFiles(err, resume)
 		}

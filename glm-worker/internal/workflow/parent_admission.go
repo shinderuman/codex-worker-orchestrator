@@ -68,6 +68,8 @@ func (w *Workflow) newTaskActionDenied(plan state.ParentActionPlan) error {
 		}
 	case state.ParentActionRepairGuardThenResume:
 		return &WorkerError{Message: "previous task stopped on a recoverable guard failure; repair the guard then use --resume or --reset"}
+	case state.ParentActionRepairQualityGateThenResume:
+		return &WorkerError{Message: "previous task stopped on a deterministic quality gate failure; repair the reported gate precondition then use --resume or --reset"}
 	}
 	return &WorkerError{Message: fmt.Sprintf("previous task requires parent action %s before starting a new task", plan.RequiredAction)}
 }

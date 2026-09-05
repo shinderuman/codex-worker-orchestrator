@@ -185,3 +185,32 @@ func TestWriteProcessErrorKindContract(t *testing.T) {
 		})
 	}
 }
+
+func TestWriteProcessErrorQualityGateRecoverable(t *testing.T) {
+	envelope, raw := writeProcessErrorJSON(t, &workflow.QualityGateRecoverableError{
+		Phase:       "worker-new",
+		Failure:     "quality tool version mismatch: golangci-lint=2.6.0, required=2.7.0",
+		TaskID:      "task-quality-1",
+		RepoRoot:    "/repo/root",
+		ResultSaved: true,
+	})
+	if envelope.Error.Kind != "quality_gate_recoverable" {
+		t.Fatalf("kind = %q: %s", envelope.Error.Kind, raw)
+	}
+	if envelope.Error.Message != "deterministic quality gate stopped the task after the completed worker result; task is stopped and resumable" {
+		t.Fatalf("message = %q: %s", envelope.Error.Message, raw)
+	}
+	for key, want := range map[string]any{
+		"phase":   "worker-new",
+		"failure": "quality tool version mismatch: golangci-lint=2.6.0, required=2.7.0",
+		"task_id": "task-quality-1", "repo_root": "/repo/root",
+		"resume_available": true, "completed_result_saved": true,
+	} {
+		if envelope.Error.Detail[key] != want {
+			t.Fatalf("detail[%s] = %#v want %#v: %s", key, envelope.Error.Detail[key], want, raw)
+		}
+	}
+	if len(envelope.Error.Detail) != 6 {
+		t.Fatalf("detail = %#v: %s", envelope.Error.Detail, raw)
+	}
+}

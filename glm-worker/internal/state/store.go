@@ -23,13 +23,14 @@ const (
 	WorkerRole   SessionRole = "worker"
 	ReviewerRole SessionRole = "reviewer"
 
-	TaskStatusActive              TaskStatus = "active"
-	TaskStatusWaitingDecision     TaskStatus = "waiting-decision"
-	TaskStatusWaitingSolReview    TaskStatus = "waiting-sol-review"
-	TaskStatusComplete            TaskStatus = "complete"
-	TaskStatusRateLimited         TaskStatus = "rate-limited"
-	TaskStatusProviderUnavailable TaskStatus = "provider-unavailable"
-	TaskStatusGuardRecoverable    TaskStatus = "guard-recoverable"
+	TaskStatusActive                 TaskStatus = "active"
+	TaskStatusWaitingDecision        TaskStatus = "waiting-decision"
+	TaskStatusWaitingSolReview       TaskStatus = "waiting-sol-review"
+	TaskStatusComplete               TaskStatus = "complete"
+	TaskStatusRateLimited            TaskStatus = "rate-limited"
+	TaskStatusProviderUnavailable    TaskStatus = "provider-unavailable"
+	TaskStatusGuardRecoverable       TaskStatus = "guard-recoverable"
+	TaskStatusQualityGateRecoverable TaskStatus = "quality-gate-recoverable"
 
 	TaskStatusInterrupted TaskStatus = "interrupted"
 
@@ -48,6 +49,7 @@ func (status TaskStatus) Known() bool {
 		TaskStatusRateLimited,
 		TaskStatusProviderUnavailable,
 		TaskStatusGuardRecoverable,
+		TaskStatusQualityGateRecoverable,
 		TaskStatusInterrupted:
 		return true
 	default:

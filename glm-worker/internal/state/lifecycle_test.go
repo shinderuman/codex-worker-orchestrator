@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 )
 
 func TestSetTaskStatusRecordsLifecycleTransitionsOnChangeOnly(t *testing.T) {
@@ -54,6 +55,55 @@ func TestSetTaskStatusSkipsLifecycleWithoutTaskIdentity(t *testing.T) {
 	}
 	if _, err := os.Stat(st.Path("lifecycle")); !os.IsNotExist(err) {
 		t.Fatalf("lifecycle log should not exist without a task: %v", err)
+	}
+}
+
+func TestEnterStopQualityGateClearsResidualPendingDecision(t *testing.T) {
+	st := newLifecycleTestStore(t)
+	if _, err := st.StartNewTask(); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetTaskStatus(TaskStatusActive); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Touch("pending-decision"); err != nil {
+		t.Fatal(err)
+	}
+	completed := packet.Result{Status: packet.StatusImplemented}
+	checkpoint := ResumeCheckpoint{
+		Stage:              ResumeStageWorker,
+		Phase:              "worker-decision",
+		Role:               WorkerRole,
+		Model:              "opus",
+		Request:            "request",
+		Decision:           "decision-body",
+		StopKind:           ResumeStopQualityGate,
+		QualityGateFailure: "quality tool version mismatch",
+		CompletedResult:    &completed,
+	}
+
+	if err := st.EnterStop(checkpoint); err != nil {
+		t.Fatal(err)
+	}
+	if st.Exists("pending-decision") {
+		t.Fatal("quality-gate stopが残存pending-decisionを行き止まり状態として残しています")
+	}
+	if st.TaskStatus() != TaskStatusQualityGateRecoverable {
+		t.Fatalf("status = %s want quality-gate-recoverable", st.TaskStatus())
+	}
+	plan, err := st.ParentActionPlan()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.RequiredAction != ParentActionRepairQualityGateThenResume || !plan.Allows(ParentActionResume) {
+		t.Fatalf("recovery plan = %#v", plan)
+	}
+	saved, err := st.LoadResumeCheckpoint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.Decision != "decision-body" {
+		t.Fatalf("checkpoint decision = %q", saved.Decision)
 	}
 }
 

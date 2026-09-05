@@ -373,12 +373,13 @@ func (w *Workflow) executeResume() error {
 	if err != nil {
 		return err
 	}
-	reuseCompletedResult, err := w.prepareGuardRecovery(checkpoint)
+	reuseCompletedResult, err := w.prepareStoppedResultReuse(checkpoint)
 	if err != nil {
 		return err
 	}
 	previousCheckpoint := checkpoint
 	completedResult := checkpoint.CompletedResult
+	stopKind := checkpoint.StopKind
 	checkpoint, stopped, err := w.prepareResumeCheckpoint(checkpoint, decl, pocResume)
 	if err != nil || stopped {
 		return err
@@ -387,6 +388,9 @@ func (w *Workflow) executeResume() error {
 	if reuseCompletedResult && completedResult != nil {
 		if err := w.state.ClearResumeCheckpoint(); err != nil {
 			return err
+		}
+		if stopKind == state.ResumeStopQualityGate {
+			return w.resumeQualityGateResult(checkpoint, *completedResult)
 		}
 		return w.routeResumeResult(checkpoint, decl, *completedResult)
 	}
@@ -557,6 +561,16 @@ func (w *Workflow) routeResumeResult(
 	}
 }
 
+func (w *Workflow) resumeQualityGateResult(checkpoint state.ResumeCheckpoint, result packet.Result) error {
+	if stopped, err := w.verifyQualitySurfaceBaseline(checkpoint.Phase); err != nil || stopped {
+		return err
+	}
+	if err := w.state.ContinueAfterWorkerResult(); err != nil {
+		return err
+	}
+	return w.reviewUntilStable(checkpoint.Request, result, checkpoint.ReviewNumber, checkpoint.AutoFixes, checkpoint.Phase)
+}
+
 func (w *Workflow) routeWorkerResumeResult(
 	checkpoint state.ResumeCheckpoint,
 	decl externalFeasibility,
@@ -684,7 +698,7 @@ func (w *Workflow) reviewUntilStable(
 	if err != nil || stopped {
 		return err
 	}
-	handled, err := w.handleRepositoryQualityViolation(request, workerResult, reviewNumber, autoFixes)
+	handled, err := w.handleRepositoryQualityViolation(request, workerResult, reviewNumber, autoFixes, workerPhase)
 	if err != nil || handled {
 		return err
 	}
@@ -805,10 +819,11 @@ func (w *Workflow) handleRepositoryQualityViolation(
 	workerResult packet.Result,
 	reviewNumber int,
 	autoFixes int,
+	workerPhase string,
 ) (bool, error) {
 	qualityReport, err := w.qualityGate(w.config.RepoRoot)
 	if err != nil {
-		return true, &WorkerError{Phase: "harnesslint", Message: fmt.Sprintf("harnesslint failed: %v", err)}
+		return true, w.saveQualityGateStop(request, workerResult, reviewNumber, autoFixes, workerPhase, err)
 	}
 	if !harnesslint.IsViolation(qualityReport) {
 		return false, nil

@@ -27,7 +27,7 @@ func (w *Workflow) stopForQualitySurfaceApproval(checkpoint state.ResumeCheckpoi
 
 	checkpoint.QualitySurfaceApprovalPending = true
 	checkpoint.CompletedResult = &result
-	if err := w.captureGuardRecoveryRetention(&checkpoint); err != nil {
+	if err := w.captureStopRetention(&checkpoint); err != nil {
 		return true, err
 	}
 	if err := w.state.SaveResumeCheckpoint(checkpoint); err != nil {

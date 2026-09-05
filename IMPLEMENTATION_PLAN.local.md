@@ -8,11 +8,10 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/post-worker-quality-gate-recovery.md`
+- `IMPLEMENTATION_TASKS/quality-surface-approval-review-continuation.md`
 
 ## NEXT（優先順）
 
-- `IMPLEMENTATION_TASKS/quality-surface-approval-review-continuation.md`
 - `IMPLEMENTATION_TASKS/quality-toolchain-preflight-before-model.md`
 - `IMPLEMENTATION_TASKS/markdown-derived-state-authority-audit.md`
 - `IMPLEMENTATION_TASKS/external-review-a70d35c-43e1da9-follow-up.md`
@@ -44,3 +43,7 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 - `IMPLEMENTATION_TASKS/103-compaction-threshold-change.md`
 - `IMPLEMENTATION_TASKS/104-test-impact-selection.md`
 - `IMPLEMENTATION_TASKS/106-review-call-reduction.md`
+
+## 現在のGit境界
+
+- branch: `main`

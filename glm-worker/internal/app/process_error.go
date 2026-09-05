@@ -26,6 +26,7 @@ const (
 	errorKindNotFound                = "not_found"
 	errorKindRepoLockHeld            = "repo_lock_held"
 	errorKindWorkerError             = "worker_error"
+	errorKindQualityGateRecoverable  = "quality_gate_recoverable"
 	errorKindRateLimited             = "rate_limited"
 	errorKindProviderUnavailable     = "provider_unavailable"
 	errorKindGuardRecoverable        = "guard_recoverable"
@@ -88,6 +89,7 @@ func buildInputProcessError(err error) (processErrorBody, bool) {
 
 func buildRuntimeProcessError(err error) (processErrorBody, bool) {
 	var workerErr *workflow.WorkerError
+	var qualityGateRecoverable *workflow.QualityGateRecoverableError
 	var rateLimit runner.ZaiRateLimitError
 	var providerUnavailable *runner.ProviderUnavailableError
 	var guardRecoverable *workflow.GuardRecoverableError
@@ -101,6 +103,8 @@ func buildRuntimeProcessError(err error) (processErrorBody, bool) {
 			Message: workerErr.Message,
 			Detail:  workerErrorDetail(workerErr),
 		}, true
+	case errors.As(err, &qualityGateRecoverable):
+		return qualityGateRecoverableProcessError(qualityGateRecoverable), true
 	case errors.As(err, &rateLimit):
 		return processErrorBody{
 			Kind:    errorKindRateLimited,
@@ -171,6 +175,21 @@ func buildPostRunProcessError(err error) (processErrorBody, bool) {
 		}, true
 	default:
 		return processErrorBody{}, false
+	}
+}
+
+func qualityGateRecoverableProcessError(err *workflow.QualityGateRecoverableError) processErrorBody {
+	return processErrorBody{
+		Kind:    errorKindQualityGateRecoverable,
+		Message: "deterministic quality gate stopped the task after the completed worker result; task is stopped and resumable",
+		Detail: map[string]any{
+			"phase":                  err.Phase,
+			"failure":                err.Failure,
+			"task_id":                stringPtr(err.TaskID),
+			"repo_root":              stringPtr(err.RepoRoot),
+			"resume_available":       true,
+			"completed_result_saved": err.ResultSaved,
+		},
 	}
 }
 

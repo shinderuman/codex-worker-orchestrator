@@ -42,6 +42,7 @@ type parentHandoffRecoveryOutput struct {
 	GuardFailure             string                         `json:"guard_failure,omitempty"`
 	GuardRefChanges          []state.GuardRefChange         `json:"guard_ref_changes,omitempty"`
 	GuardRefChangesTruncated bool                           `json:"guard_ref_changes_truncated,omitempty"`
+	QualityGateFailure       string                         `json:"quality_gate_failure,omitempty"`
 }
 
 type parentHandoffMaterial struct {
@@ -98,6 +99,7 @@ func printParentHandoff(st *state.StateStore, stdout io.Writer) error {
 func printParentHandoffRecovery(st *state.StateStore, stdout io.Writer) error {
 	recovery := projectParentHandoffRecovery(buildParentHandoff(st))
 	applyParentGuardRecovery(st, &recovery)
+	applyParentQualityGateRecovery(st, &recovery)
 	return writeJSON(stdout, recovery)
 }
 
@@ -140,6 +142,17 @@ func applyParentGuardRecovery(st *state.StateStore, output *parentHandoffRecover
 		output.GuardRefChanges = append([]state.GuardRefChange(nil), checkpoint.GuardRefChanges...)
 	}
 	output.GuardRefChangesTruncated = checkpoint.GuardRefChangesTruncated
+}
+
+func applyParentQualityGateRecovery(st *state.StateStore, output *parentHandoffRecoveryOutput) {
+	if output.TaskStatus == nil || *output.TaskStatus != string(state.TaskStatusQualityGateRecoverable) {
+		return
+	}
+	checkpoint, err := st.LoadResumeCheckpoint()
+	if err != nil || checkpoint.StopKind != state.ResumeStopQualityGate {
+		return
+	}
+	output.QualityGateFailure = checkpoint.QualityGateFailure
 }
 
 func buildParentHandoff(st *state.StateStore) parentHandoffOutput {

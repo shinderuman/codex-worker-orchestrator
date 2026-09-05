@@ -330,6 +330,7 @@ func taskStatusPtr(status state.TaskStatus) *string {
 		state.TaskStatusRateLimited,
 		state.TaskStatusProviderUnavailable,
 		state.TaskStatusGuardRecoverable,
+		state.TaskStatusQualityGateRecoverable,
 		state.TaskStatusInterrupted:
 		value := string(status)
 		return &value

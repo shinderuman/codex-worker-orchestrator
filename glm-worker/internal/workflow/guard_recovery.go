@@ -33,7 +33,7 @@ func (w *Workflow) saveGuardRecoverableState(
 	}
 
 	checkpoint = w.guardRecoveryCheckpoint(checkpoint, execution)
-	if err := w.captureGuardRecoveryRetention(&checkpoint); err != nil {
+	if err := w.captureStopRetention(&checkpoint); err != nil {
 		return err
 	}
 	if err := w.state.EnterStop(checkpoint); err != nil {
@@ -79,7 +79,7 @@ func captureGuardRefEvidence(checkpoint *state.ResumeCheckpoint, runErr error) {
 	}
 }
 
-func (w *Workflow) captureGuardRecoveryRetention(checkpoint *state.ResumeCheckpoint) error {
+func (w *Workflow) captureStopRetention(checkpoint *state.ResumeCheckpoint) error {
 	if err := w.attachStopRepositoryBoundary(checkpoint); err != nil {
 		return err
 	}
@@ -138,8 +138,10 @@ func (w *Workflow) completedGuardWorkerResult(checkpoint state.ResumeCheckpoint,
 	return &result
 }
 
-func (w *Workflow) prepareGuardRecovery(checkpoint state.ResumeCheckpoint) (bool, error) {
-	if checkpoint.StopKind != state.ResumeStopGuardRecoverable {
+func (w *Workflow) prepareStoppedResultReuse(checkpoint state.ResumeCheckpoint) (bool, error) {
+	switch checkpoint.StopKind {
+	case state.ResumeStopGuardRecoverable, state.ResumeStopQualityGate:
+	default:
 		return false, nil
 	}
 	if err := validateGuardRecoveryRetention(checkpoint); err != nil {
@@ -154,7 +156,11 @@ func (w *Workflow) prepareGuardRecovery(checkpoint state.ResumeCheckpoint) (bool
 	if err := w.verifyGuardRecoveryHead(checkpoint); err != nil {
 		return false, err
 	}
-	return w.guardRecoveryResultReusable(checkpoint), nil
+	reusable := w.guardRecoveryResultReusable(checkpoint)
+	if checkpoint.StopKind == state.ResumeStopQualityGate && !reusable {
+		return false, &WorkerError{Phase: checkpoint.Phase, Message: "quality-gate recovery checkpoint has no reusable worker result"}
+	}
+	return reusable, nil
 }
 
 func validateGuardRecoveryRetention(checkpoint state.ResumeCheckpoint) error {

@@ -70,6 +70,8 @@ type ResumeCheckpoint struct {
 	GuardRefChanges          []GuardRefChange `json:"guard_ref_changes,omitempty"`
 	GuardRefChangesTruncated bool             `json:"guard_ref_changes_truncated,omitempty"`
 
+	QualityGateFailure string `json:"quality_gate_failure,omitempty"`
+
 	QualitySurfaceApprovalPending bool `json:"quality_surface_approval_pending,omitempty"`
 
 	StopParentFiles *ParentFileStates `json:"stop_parent_files,omitempty"`
@@ -96,6 +98,7 @@ const (
 	ResumeStopProviderUnavailable ResumeStopKind = "provider-unavailable"
 	ResumeStopInterrupted         ResumeStopKind = "interrupted"
 	ResumeStopGuardRecoverable    ResumeStopKind = "guard-recoverable"
+	ResumeStopQualityGate         ResumeStopKind = "quality-gate-recoverable"
 )
 
 var ErrNoResumeCheckpoint = errors.New("resumable task is not available")
@@ -106,7 +109,8 @@ func (kind ResumeStopKind) Valid() bool {
 		ResumeStopRateLimited,
 		ResumeStopProviderUnavailable,
 		ResumeStopInterrupted,
-		ResumeStopGuardRecoverable:
+		ResumeStopGuardRecoverable,
+		ResumeStopQualityGate:
 		return true
 	default:
 		return false
@@ -127,6 +131,8 @@ func (kind ResumeStopKind) TaskStatus() TaskStatus {
 		return TaskStatusInterrupted
 	case ResumeStopGuardRecoverable:
 		return TaskStatusGuardRecoverable
+	case ResumeStopQualityGate:
+		return TaskStatusQualityGateRecoverable
 	default:
 		return TaskStatusActive
 	}
@@ -142,6 +148,8 @@ func (kind ResumeStopKind) ResumeSource() string {
 		return "user-interrupt"
 	case ResumeStopGuardRecoverable:
 		return "guard-recovery"
+	case ResumeStopQualityGate:
+		return "quality-gate-recovery"
 	default:
 		return ""
 	}
@@ -162,7 +170,9 @@ func (checkpoint *ResumeCheckpoint) ClearStop() {
 }
 
 func (checkpoint *ResumeCheckpoint) clearStopPayload() {
-	clearCompletedResult := checkpoint.StopKind == ResumeStopGuardRecoverable || !checkpoint.QualitySurfaceApprovalPending
+	clearCompletedResult := checkpoint.StopKind == ResumeStopGuardRecoverable ||
+		checkpoint.StopKind == ResumeStopQualityGate ||
+		!checkpoint.QualitySurfaceApprovalPending
 	checkpoint.ResetAtCST = ""
 	checkpoint.ResetAtRFC3339 = ""
 	checkpoint.ProviderUnavailableClassification = ""
@@ -173,6 +183,7 @@ func (checkpoint *ResumeCheckpoint) clearStopPayload() {
 	checkpoint.GuardRefAfterDigest = ""
 	checkpoint.GuardRefChanges = nil
 	checkpoint.GuardRefChangesTruncated = false
+	checkpoint.QualityGateFailure = ""
 	if clearCompletedResult {
 		checkpoint.CompletedResult = nil
 	}
@@ -193,7 +204,10 @@ func (checkpoint ResumeCheckpoint) validateStopState() error {
 	if err := checkpoint.validateProviderStopPayload(); err != nil {
 		return err
 	}
-	return checkpoint.validateGuardStopPayload()
+	if err := checkpoint.validateGuardStopPayload(); err != nil {
+		return err
+	}
+	return checkpoint.validateQualityGateStopPayload()
 }
 
 func (checkpoint ResumeCheckpoint) validateRateLimitStopPayload() error {
@@ -217,11 +231,24 @@ func (checkpoint ResumeCheckpoint) validateGuardStopPayload() error {
 	}
 	guardEvidence := checkpoint.GuardFailure != "" || checkpoint.GuardRefBeforeDigest != "" ||
 		checkpoint.GuardRefAfterDigest != "" || len(checkpoint.GuardRefChanges) != 0 || checkpoint.GuardRefChangesTruncated
-	guardResult := checkpoint.CompletedResult != nil && !checkpoint.QualitySurfaceApprovalPending
+	guardResult := checkpoint.CompletedResult != nil && !checkpoint.QualitySurfaceApprovalPending && checkpoint.StopKind != ResumeStopQualityGate
 	if !guardEvidence && !guardResult {
 		return nil
 	}
 	return fmt.Errorf("resume stop payload does not match stop kind %q: guard-recovery metadata is present", checkpoint.StopKind)
+}
+
+func (checkpoint ResumeCheckpoint) validateQualityGateStopPayload() error {
+	if checkpoint.StopKind == ResumeStopQualityGate {
+		if checkpoint.QualityGateFailure == "" || checkpoint.CompletedResult == nil {
+			return fmt.Errorf("quality-gate recovery checkpoint requires the gate failure and the completed worker result")
+		}
+		return nil
+	}
+	if checkpoint.QualityGateFailure != "" {
+		return fmt.Errorf("resume stop payload does not match stop kind %q: quality-gate metadata is present", checkpoint.StopKind)
+	}
+	return nil
 }
 
 func (s *StateStore) SaveResumeCheckpoint(checkpoint ResumeCheckpoint) error {

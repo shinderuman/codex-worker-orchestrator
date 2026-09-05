@@ -54,6 +54,7 @@ func TestParentActionPlanStoppedStates(t *testing.T) {
 		{name: "provider unavailable", status: TaskStatusProviderUnavailable, stopKind: ResumeStopProviderUnavailable, required: ParentActionResume},
 		{name: "interrupted", status: TaskStatusInterrupted, stopKind: ResumeStopInterrupted, required: ParentActionResume},
 		{name: "guard recoverable", status: TaskStatusGuardRecoverable, stopKind: ResumeStopGuardRecoverable, required: ParentActionRepairGuardThenResume},
+		{name: "quality gate recoverable", status: TaskStatusQualityGateRecoverable, stopKind: ResumeStopQualityGate, required: ParentActionRepairQualityGateThenResume},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -66,6 +67,11 @@ func TestParentActionPlanStoppedStates(t *testing.T) {
 				Prompt:   "p",
 				Request:  "r",
 				StopKind: tc.stopKind,
+			}
+			if tc.stopKind == ResumeStopQualityGate {
+				checkpoint.QualityGateFailure = "quality tool version mismatch"
+				completed := packet.Result{Status: packet.StatusImplemented}
+				checkpoint.CompletedResult = &completed
 			}
 			if err := st.SaveResumeCheckpoint(checkpoint); err != nil {
 				t.Fatal(err)
@@ -279,6 +285,15 @@ func TestParentActionPlanStoppedPendingDecisionFailsClosed(t *testing.T) {
 			lastDecision: "decision-body",
 		},
 		{
+			name:         "quality gate recoverable pending marker",
+			status:       TaskStatusQualityGateRecoverable,
+			role:         WorkerRole,
+			phase:        "worker-decision",
+			stopKind:     ResumeStopQualityGate,
+			decision:     "decision-body",
+			lastDecision: "decision-body",
+		},
+		{
 			name:         "stop kind status mismatch",
 			status:       TaskStatusRateLimited,
 			role:         WorkerRole,
@@ -343,6 +358,10 @@ func seedStoppedDecisionCheckpoint(t *testing.T, st *StateStore, role SessionRol
 	case ResumeStopProviderUnavailable:
 		checkpoint.ProviderUnavailableClassification = "http-503"
 		checkpoint.ProviderUnavailableProbes = 4
+	case ResumeStopQualityGate:
+		checkpoint.QualityGateFailure = "quality tool version mismatch"
+		completed := packet.Result{Status: packet.StatusImplemented}
+		checkpoint.CompletedResult = &completed
 	}
 	if err := st.SaveResumeCheckpoint(checkpoint); err != nil {
 		t.Fatal(err)

@@ -22,14 +22,15 @@ type LifecycleInconsistencyError struct {
 }
 
 const (
-	ParentActionNone                  ParentAction = "none"
-	ParentActionDecision              ParentAction = "decision"
-	ParentActionNoGo                  ParentAction = "no-go"
-	ParentActionReview                ParentAction = "parent-review"
-	ParentActionAccept                ParentAction = "accept"
-	ParentActionFix                   ParentAction = "fix"
-	ParentActionResume                ParentAction = "resume"
-	ParentActionRepairGuardThenResume ParentAction = "repair-guard-then-resume"
+	ParentActionNone                        ParentAction = "none"
+	ParentActionDecision                    ParentAction = "decision"
+	ParentActionNoGo                        ParentAction = "no-go"
+	ParentActionReview                      ParentAction = "parent-review"
+	ParentActionAccept                      ParentAction = "accept"
+	ParentActionFix                         ParentAction = "fix"
+	ParentActionResume                      ParentAction = "resume"
+	ParentActionRepairGuardThenResume       ParentAction = "repair-guard-then-resume"
+	ParentActionRepairQualityGateThenResume ParentAction = "repair-quality-gate-then-resume"
 )
 
 func (e *LifecycleInconsistencyError) Error() string {
@@ -82,6 +83,8 @@ func (kind ResumeStopKind) ParentAction() ParentAction {
 		return ParentActionResume
 	case ResumeStopGuardRecoverable:
 		return ParentActionRepairGuardThenResume
+	case ResumeStopQualityGate:
+		return ParentActionRepairQualityGateThenResume
 	default:
 		return ParentActionNone
 	}
@@ -149,7 +152,8 @@ func stoppedParentActionPlan(status TaskStatus, pending bool, pendingDecisionRes
 	case TaskStatusRateLimited,
 		TaskStatusProviderUnavailable,
 		TaskStatusInterrupted,
-		TaskStatusGuardRecoverable:
+		TaskStatusGuardRecoverable,
+		TaskStatusQualityGateRecoverable:
 	default:
 		return ParentActionPlan{}, lifecycleInconsistency(status, "unknown task status")
 	}
