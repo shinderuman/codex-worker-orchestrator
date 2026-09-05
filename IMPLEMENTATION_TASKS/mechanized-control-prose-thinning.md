@@ -13,7 +13,12 @@
 
 ## Amendments
 
-none
+### 2026-09-05
+
+````text
+お前はContractを違反する前提で可能な限り機械的にしたほうがよい
+これはこの問題に対しての話だけではない
+````
 
 ## Resolved references
 
@@ -37,6 +42,7 @@ status: not-applicable
 - registryと実装/test locatorのdrift、削除、owner不在をlintで検出し、古い説明が残り続けることも検出する
 - install後に実際に注入されるglobal/on-demand instructionのbyte/token proxyをbefore/after比較する
 - continuous improvement機能のmachine state/admissionが成立した後、その自由言語を同じ基準で薄くする
+- parent Contract違反を通常のfault modelとして扱い、正しい手順を選ぶことを親へ要求するprojectionではなく、誤action・欠落・順序違反をowner commandが拒否するcontrolだけを機械化済みとする
 
 ## Must not
 

@@ -85,7 +85,7 @@ session aging telemetry。Task 009 worker outlier report完了済み。Task 010�
 
 ## Dependencies
 
-none
+- `IMPLEMENTATION_TASKS/parent-codex-rollout-chain-attribution.md`
 
 ## Fulfilled dependencies
 

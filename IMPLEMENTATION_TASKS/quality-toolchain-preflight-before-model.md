@@ -58,12 +58,14 @@ status: not-applicable
 
 ## Dependencies
 
-none
+- `IMPLEMENTATION_TASKS/quality-surface-approval-review-continuation.md`
 
 ## Review findings
 
-none
+- 初回worker implementationはSolがquality基準を弱体化していないと確認済みだが、親Codexがreviewer前のquality-surface停止にterminal `accept`を誤適用し、task `ec36a7f1-10fa-46ab-b118-fb297a9cadc0`はworker 1件・reviewer 0件・validation 0件でfalse-completeになった
+- lifecycle defect自体は`IMPLEMENTATION_TASKS/quality-surface-approval-review-continuation.md`へ分離した
+- 復旧task `be2df76b-d921-4901-9636-dcb7aba14876`では初回implementation diffをdirty baselineとして保持したため、Sol承認後の`--approval-only`も`current diff is not covered by the parent-approved quality-surface scope`でfail closedし、reviewer未実行のまま正規継続不能になった
 
 ## Current boundary
 
-decision resume blocking defectの復旧後に実行する。
+初回implementation diff、復旧task/session/checkpointは保持されている。quality-surface変更はSol承認済みであり、基準値・lint rule・wrapperを変更しない。dirty implementation baselineでも承認後reviewへ正規継続できる機構が成立するまでNEXTで待機し、reset・再実装・terminal acceptを行わない。

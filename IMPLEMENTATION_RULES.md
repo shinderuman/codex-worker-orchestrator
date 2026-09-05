@@ -91,6 +91,7 @@ parent-managed metadataを扱うguard、self-protection、production wiring自�
 - 各taskの実行中に、Codex / Solの実消費、Quality Delta、不要なparent return、停止、retry、poll、再説明、重複validation、過大なmodel-visible output、観測欠損等の改善候補を新たに得た場合、親Codexはその意味のある状態遷移で再発性・削減効果・品質risk・実装費用を評価する。改善価値があれば現在taskへ混ぜず、現在task完了を待たずにparent-managedな独立taskとして022より前のPlanへ追加し、通常のGo/No-Goと作業サイクルへ含める。現在taskを中断して優先するのは、継続すると証拠喪失・品質低下・大幅な追加消費が生じる場合だけとする
 - 意図どおり作動した安全停止、必要なSol semantic gate、単発の外部limit、測定可能なCodex削減または品質維持へ結び付かない違和感は、発生しただけで改善task化しない。ただし同じ境界が反復してCodex / Sol消費の主要因になる、または品質を保ったままround tripを削減できる一次証拠が得られた場合は再評価する
 - 105後・022前のCodex効率再評価はこの随時判断の代替ではなくsafety netとする。同評価では、それまでのtask packet、telemetry、Codex rollout、停止/retry/fix/review/validation履歴を横断し、作業中に観測したがTask化しなかった候補を含めて取りこぼしがないか再精査する。新しい実行可能Findingがあれば022より前へ追加し、その完了後も必要な再評価を続ける
+- 022完了まではparent-only Codex効率中間再評価を最大5件のtask完了ごとに実行し、false-complete、正規復旧不能、または大きな重複model消費を伴う新規incident時は前倒しする。各回でCodex Reduction / Quality Delta、未Task化Finding、Plan priorityを再評価し、完了同期時に次回checkpointを022より前へ再配置する。105後の最終再評価は別に維持する
 - 初回棚卸しtaskを設けても、その完了をこの継続的判断義務の完了とは扱わない。この規則は通常orchestrationの恒久contractとして残す
 
 ## Goal起点のproject orchestration

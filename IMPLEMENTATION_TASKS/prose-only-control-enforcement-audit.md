@@ -21,6 +21,13 @@
 あとこの「課題を見つけたら課題化する」というのも機械化可能なら機械化すべきじゃないのか
 ````
 
+### 2026-09-05
+
+````text
+お前はContractを違反する前提で可能な限り機械的にしたほうがよい
+これはこの問題に対しての話だけではない
+````
+
 ## Resolved references
 
 - 既存Rulesは改善候補の随時Task化を要求していたが、親Codexはautomation拒否時に適用せず、ユーザー再指摘までTask化しなかった
@@ -46,6 +53,7 @@ status: not-applicable
 - audit結果をRules追記やchecklistで閉じず、個別taskのAcceptanceをproduction command/state/testへ結び付ける
 - machine-enforced分類では自由言語の重複手順量も計測し、機械ownerを指すcompact indexへ縮小可能かを判定する
 - 親Codexが一次証拠の分類とTask化を行い、この判断をGLMへ委譲する追加model callを作らない
+- 親CodexはContractを読み落とす・誤解する・誤actionを選ぶというthreat modelを全controlへ適用し、親の遵守を成立条件にしているmachine-enforced分類を認めない
 
 ## Must not
 
@@ -64,6 +72,7 @@ status: not-applicable
 - machine-enforced controlのprose byte/token負荷と重複手順が集計され、`mechanized-control-prose-thinning.md`の対象・非対象がexact locator付きで確定する
 - high-risk prose-only controlが全て022より前のPlanへ配置される
 - 代表的なmachine-enforced controlを誤って再実装対象にしないnegative evidenceがある
+- 親Codexが規定手順を飛ばし、誤ったparameter/action/orderを選んでもproduction admissionまたはpostconditionが成功を拒否するかを代表fixtureで確認する
 - 追加AI callなしのread-only evidence収集、親Codexのsemantic採否、独立reviewを完了する
 
 ## Historical invariants
