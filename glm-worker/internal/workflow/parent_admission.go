@@ -37,6 +37,8 @@ func (w *Workflow) parentActionDenied(action state.ParentAction) error {
 			return &WorkerError{Message: "task is waiting for Sol decision; resolve it before --fix"}
 		}
 		return &WorkerError{Message: "--fix is only available after NEEDS_SOL_REVIEW; start a new task after PASS"}
+	case state.ParentActionApproveSurface:
+		return &WorkerError{Message: "quality-surface approval is not pending; --approve-surface requires a stopped quality policy surface change"}
 	case state.ParentActionResume:
 		if _, err := w.state.LoadResumeCheckpoint(); err != nil {
 			return err
@@ -57,6 +59,8 @@ func (w *Workflow) newTaskActionDenied(plan state.ParentActionPlan) error {
 			label = "NEEDS_SOL_REVIEW"
 		}
 		return &WorkerError{Message: fmt.Sprintf("previous task has unresolved parent review (%s); resolve it explicitly with --accept (or --fix when rework is required) before starting a new task", label)}
+	case state.ParentActionApproveSurface:
+		return &WorkerError{Message: "previous task is waiting for quality policy surface approval; resolve it with glm-parent-action approve-surface --accepted-scope current-diff (or --fix) before starting a new task"}
 	case state.ParentActionResume:
 		switch plan.ResumeKind {
 		case "rate-limited":

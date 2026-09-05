@@ -38,6 +38,9 @@ func (w *Workflow) stopForQualitySurfaceApproval(checkpoint state.ResumeCheckpoi
 
 func (w *Workflow) ExecuteQualitySurfaceApproval(acceptedScope string) error {
 	return w.withTemp(func() error {
+		if err := w.admitParentAction(state.ParentActionApproveSurface); err != nil {
+			return err
+		}
 		if acceptedScope != acceptedFixScopeCurrentDiff {
 			return &WorkerError{Message: "quality-surface approval requires accepted scope current-diff"}
 		}

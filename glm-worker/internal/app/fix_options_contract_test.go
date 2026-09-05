@@ -21,28 +21,15 @@ func TestFixStdinUsesCanonicalSemanticOptionsAlongsideTransport(t *testing.T) {
 	if command.Mode != ModeFix || command.StdinBytes != 12 || command.SHA256 != digest {
 		t.Fatalf("transport command = %#v", command)
 	}
-	if command.Origin != state.ParentOriginExternalReview || command.AcceptedScope != "current-diff" || command.ApprovalOnly {
+	if command.Origin != state.ParentOriginExternalReview || command.AcceptedScope != "current-diff" {
 		t.Fatalf("semantic command = %#v", command)
-	}
-
-	approval, err := ParseCommand([]string{
-		"--fix-stdin", "12",
-		"--accepted-scope", "current-diff",
-		"--approval-only",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if approval.AcceptedScope != "current-diff" || !approval.ApprovalOnly || approval.Origin != "" {
-		t.Fatalf("approval command = %#v", approval)
 	}
 }
 
 func TestFixStdinRejectsInvalidCanonicalSemanticOptionsDuringParsing(t *testing.T) {
 	for _, args := range [][]string{
-		{"--fix-stdin", "12", "--approval-only"},
 		{"--fix-stdin", "12", "--accepted-scope", "other"},
-		{"--fix-stdin", "12", "--accepted-scope", "current-diff", "--approval-only", "--origin", state.ParentOriginCodexReview},
+		{"--fix-stdin", "12", "--accepted-scope", "current-diff", "--approval-only"},
 		{"--fix-stdin", "12", "--origin", state.ParentOriginCodexReview, "--origin", state.ParentOriginGLMReviewer},
 		{"--fix-stdin", "12", "--unknown", "value"},
 		{"--fix-stdin", "12", "--sha256", "--origin", state.ParentOriginCodexReview, strings.Repeat("a", 64)},

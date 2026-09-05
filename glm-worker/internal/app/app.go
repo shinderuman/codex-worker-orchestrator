@@ -32,7 +32,6 @@ type Command struct {
 	Origin              string
 	Cause               string
 	AcceptedScope       string
-	ApprovalOnly        bool
 	ExecutionMilestones bool
 	Role                string
 	ArtifactRoot        string
@@ -82,6 +81,7 @@ const (
 	ModeNewTask CommandMode = iota
 	ModeDecision
 	ModeFix
+	ModeApproveSurface
 	ModeAccept
 	ModeResume
 	ModeStop
@@ -113,7 +113,11 @@ const (
 	ModeProjectState
 )
 
-const fixOriginUsage = "[--origin codex-review|glm-reviewer|user-amendment|external-review|metadata-repair] [--cause parent-orchestration|requirement-preservation|worker|reviewer|sol-gate|production-wiring|test-scenario|cross-cutting-invariant|unknown] [--accepted-scope current-diff] [--approval-only]"
+const fixOriginUsage = "[--origin codex-review|glm-reviewer|user-amendment|external-review|metadata-repair] [--cause parent-orchestration|requirement-preservation|worker|reviewer|sol-gate|production-wiring|test-scenario|cross-cutting-invariant|unknown] [--accepted-scope current-diff]"
+
+const approveSurfaceUsage = "usage: glm-worker --approve-surface current-diff"
+
+const acceptedFixScopeCurrentDiffCLI = "current-diff"
 
 const installSmokeUsage = "[--role worker|reviewer|fix|parent]"
 
@@ -138,6 +142,12 @@ var commandParsers = map[string]commandParser{
 	},
 	"--execution-milestones-stdin":        executionMilestoneTaskCommand,
 	"--execution-milestones-revise-stdin": executionMilestoneRevisionCommand,
+	"--approve-surface": func(args []string) (Command, error) {
+		if len(args) != 2 || args[1] != acceptedFixScopeCurrentDiffCLI {
+			return Command{}, usageError("%s", approveSurfaceUsage)
+		}
+		return Command{Mode: ModeApproveSurface, AcceptedScope: acceptedFixScopeCurrentDiffCLI}, nil
+	},
 	"--accept": func(args []string) (Command, error) {
 		return singleArgCommand(args, ModeAccept, "usage: glm-worker --accept")
 	},
@@ -222,7 +232,7 @@ func usageError(format string, args ...any) *UsageError {
 
 func ParseCommand(args []string) (Command, error) {
 	if len(args) == 0 {
-		return Command{}, usageError("usage: glm-worker <instruction> | --execution-milestones-stdin <payload-bytes> [--sha256 <hex>] | --execution-milestones-revise-stdin <payload-bytes> [--sha256 <hex>] | --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix-stdin <payload-bytes> [--sha256 <hex>] %s | --accept | --resume | --stop | --isolate | --status | --handoff [recovery] | --project-state | --watch [--verbose] | --timeline [task-id] | --convergence [task-id] | --stats %s | --reset | --verify-auto-resume <automation-key> <auto-resume-at-rfc3339> | --eval-ab <run-dir> | --call-outliers %s | --codex-limit | --repo-search <query> | --check-wake-coalesce <auto-resume-at-rfc3339> | --install-smoke %s | --quality-gate %s | --model-routing | --packet-check <packet.json> [--role worker|reviewer] [--artifact-root <dir>] | bundle [task-id] | --parent-usage [task-id] | --review-gap [task-id]", fixOriginUsage, telemetryQueryUsage, telemetryQueryUsage, installSmokeUsage, qualityGateUsage)
+		return Command{}, usageError("usage: glm-worker <instruction> | --execution-milestones-stdin <payload-bytes> [--sha256 <hex>] | --execution-milestones-revise-stdin <payload-bytes> [--sha256 <hex>] | --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix-stdin <payload-bytes> [--sha256 <hex>] %s | --approve-surface current-diff | --accept | --resume | --stop | --isolate | --status | --handoff [recovery] | --project-state | --watch [--verbose] | --timeline [task-id] | --convergence [task-id] | --stats %s | --reset | --verify-auto-resume <automation-key> <auto-resume-at-rfc3339> | --eval-ab <run-dir> | --call-outliers %s | --codex-limit | --repo-search <query> | --check-wake-coalesce <auto-resume-at-rfc3339> | --install-smoke %s | --quality-gate %s | --model-routing | --packet-check <packet.json> [--role worker|reviewer] [--artifact-root <dir>] | bundle [task-id] | --parent-usage [task-id] | --review-gap [task-id]", fixOriginUsage, telemetryQueryUsage, telemetryQueryUsage, installSmokeUsage, qualityGateUsage)
 	}
 	if parser, ok := commandParsers[args[0]]; ok {
 		return parser(args)
@@ -349,7 +359,6 @@ func stdinPayloadCommand(mode CommandMode, args []string, usage string, allowFix
 		Origin:        semantic.Origin,
 		Cause:         semantic.Cause,
 		AcceptedScope: semantic.AcceptedScope,
-		ApprovalOnly:  semantic.ApprovalOnly,
 	}
 	seenSHA256 := false
 	for index := 0; index < len(options); index += 2 {
@@ -599,10 +608,9 @@ func executeWorkflow(cmd Command, cfg config.AppConfig, st *state.StateStore, rf
 	case ModeDecision:
 		return wf.ExecuteDecisionWithExecutionMilestones(cmd.Payload)
 	case ModeFix:
-		if cmd.ApprovalOnly {
-			return wf.ExecuteQualitySurfaceApprovalWithExecutionMilestones(cmd.AcceptedScope)
-		}
 		return wf.ExecuteExplicitFixWithExecutionMilestones(cmd.Payload, cmd.Origin, cmd.Cause, cmd.AcceptedScope)
+	case ModeApproveSurface:
+		return wf.ExecuteQualitySurfaceApprovalWithExecutionMilestones(cmd.AcceptedScope)
 	case ModeResume:
 		return wf.ExecuteResumeWithExecutionMilestones()
 	default:

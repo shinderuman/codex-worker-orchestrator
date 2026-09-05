@@ -10,22 +10,23 @@ import (
 )
 
 type parentHandoffOutput struct {
-	Version          int                            `json:"version"`
-	Consistent       bool                           `json:"consistent"`
-	Inconsistency    *string                        `json:"inconsistency"`
-	TaskID           *string                        `json:"task_id"`
-	TaskStatus       *string                        `json:"task_status"`
-	RequiredAction   *string                        `json:"required_action"`
-	AllowedActions   []string                       `json:"allowed_actions"`
-	ResumeKind       *string                        `json:"resume_kind"`
-	PendingDecision  bool                           `json:"pending_decision"`
-	ParentReviewOpen *string                        `json:"parent_review_open"`
-	Baseline         *state.GitBaselineEvidence     `json:"baseline"`
-	Snapshot         *state.SnapshotDigest          `json:"snapshot"`
-	ArtifactDir      *string                        `json:"artifact_dir"`
-	LastMaterial     *parentHandoffMaterial         `json:"last_material"`
-	Validations      []parentHandoffValidation      `json:"validations"`
-	RoutingEvidence  []parentHandoffRoutingEvidence `json:"routing_evidence"`
+	Version                  int                            `json:"version"`
+	Consistent               bool                           `json:"consistent"`
+	Inconsistency            *string                        `json:"inconsistency"`
+	TaskID                   *string                        `json:"task_id"`
+	TaskStatus               *string                        `json:"task_status"`
+	RequiredAction           *string                        `json:"required_action"`
+	AllowedActions           []string                       `json:"allowed_actions"`
+	RequiredActionParameters map[string]string              `json:"required_action_parameters,omitempty"`
+	ResumeKind               *string                        `json:"resume_kind"`
+	PendingDecision          bool                           `json:"pending_decision"`
+	ParentReviewOpen         *string                        `json:"parent_review_open"`
+	Baseline                 *state.GitBaselineEvidence     `json:"baseline"`
+	Snapshot                 *state.SnapshotDigest          `json:"snapshot"`
+	ArtifactDir              *string                        `json:"artifact_dir"`
+	LastMaterial             *parentHandoffMaterial         `json:"last_material"`
+	Validations              []parentHandoffValidation      `json:"validations"`
+	RoutingEvidence          []parentHandoffRoutingEvidence `json:"routing_evidence"`
 }
 
 type parentHandoffRecoveryOutput struct {
@@ -36,6 +37,7 @@ type parentHandoffRecoveryOutput struct {
 	TaskStatus               *string                        `json:"task_status"`
 	RequiredAction           *string                        `json:"required_action"`
 	AllowedActions           []string                       `json:"allowed_actions"`
+	RequiredActionParameters map[string]string              `json:"required_action_parameters,omitempty"`
 	PendingDecision          bool                           `json:"pending_decision"`
 	ParentReviewOpen         *string                        `json:"parent_review_open"`
 	LastMaterial             *parentHandoffRecoveryMaterial `json:"last_material"`
@@ -105,15 +107,16 @@ func printParentHandoffRecovery(st *state.StateStore, stdout io.Writer) error {
 
 func projectParentHandoffRecovery(output parentHandoffOutput) parentHandoffRecoveryOutput {
 	recovery := parentHandoffRecoveryOutput{
-		Version:          output.Version,
-		Projection:       "recovery",
-		Consistent:       output.Consistent,
-		TaskID:           output.TaskID,
-		TaskStatus:       output.TaskStatus,
-		RequiredAction:   output.RequiredAction,
-		AllowedActions:   append([]string(nil), output.AllowedActions...),
-		PendingDecision:  output.PendingDecision,
-		ParentReviewOpen: output.ParentReviewOpen,
+		Version:                  output.Version,
+		Projection:               "recovery",
+		Consistent:               output.Consistent,
+		TaskID:                   output.TaskID,
+		TaskStatus:               output.TaskStatus,
+		RequiredAction:           output.RequiredAction,
+		AllowedActions:           append([]string(nil), output.AllowedActions...),
+		RequiredActionParameters: output.RequiredActionParameters,
+		PendingDecision:          output.PendingDecision,
+		ParentReviewOpen:         output.ParentReviewOpen,
 	}
 	if output.LastMaterial != nil {
 		recovery.LastMaterial = &parentHandoffRecoveryMaterial{
@@ -192,6 +195,9 @@ func applyParentActionPlan(st *state.StateStore, output *parentHandoffOutput) {
 	output.RequiredAction = &required
 	for _, action := range plan.AllowedActions {
 		output.AllowedActions = append(output.AllowedActions, string(action))
+	}
+	if len(plan.RequiredActionParameters) != 0 {
+		output.RequiredActionParameters = plan.RequiredActionParameters
 	}
 	output.ResumeKind = stringPtr(plan.ResumeKind)
 }
@@ -379,5 +385,6 @@ func markHandoffInconsistent(output *parentHandoffOutput, detail string) {
 	}
 	output.RequiredAction = nil
 	output.AllowedActions = []string{}
+	output.RequiredActionParameters = nil
 	output.ResumeKind = nil
 }

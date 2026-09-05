@@ -118,7 +118,8 @@ glm-parent-action prepare decision
 glm-parent-action decision <token>
 glm-parent-action no-go
 glm-parent-action prepare fix
-glm-parent-action fix <token> [--origin <origin>] [--accepted-scope current-diff] [--approval-only]
+glm-parent-action fix <token> [--origin <origin>] [--accepted-scope current-diff]
+glm-parent-action approve-surface --accepted-scope current-diff
 glm-parent-action accept
 glm-parent-action resume
 glm-parent-action finalize-check <go-test|go-test-race>
@@ -126,7 +127,7 @@ glm-parent-action finalize-check <go-test|go-test-race>
 
 Plan管理repoの`start`はcurrent ACTIVE taskを固定要求で起動する。decision/fixとexecution milestone start/revisionは`.glm-worker-parent-actions/`内のtoken-bound stagingを使い、実actionはpathではなくcrypto-random tokenだけを受ける。wrapperはpayloadをmemoryへ取り込みstaging fileを削除後、UTF-8 byte長・SHA-256・stdin framingを処理して`glm-worker`へ渡す。
 
-execution milestoneは大きい1つのsemantic ACTIVE taskを2〜8 unitへ区切るruntime authorityで、task requirement自体を分割しない。`no-go`はcanonical parent action planがterminal observation no-goを許す場合だけ成立する。詳細は`codex/instructions/task-request-boundary.md`等を正とする。
+execution milestoneは大きい1つのsemantic ACTIVE taskを2〜8 unitへ区切るruntime authorityで、task requirement自体を分割しない。`no-go`はcanonical parent action planがterminal observation no-goを許す場合だけ成立する。詳細は`codex/instructions/`を正とする。
 
 `finalize-check`はblocking quality gateとcanonical `--handoff`を連続実行し、current snapshotに対応するvalidation・handoff・read-only local Git summaryをJSONで返す。accept/fix、commit、fetch/pushやdivergence修復は行わない。
 
@@ -135,7 +136,7 @@ execution milestoneは大きい1つのsemantic ACTIVE taskを2〜8 unitへ区切
 ```sh
 glm-worker "<task>"
 glm-worker --decision-stdin <bytes> [--sha256 <sha256>]
-glm-worker --fix-stdin <bytes> [--sha256 <sha256>] [--origin <origin>] [--accepted-scope current-diff] [--approval-only]
+glm-worker --fix-stdin <bytes> [--sha256 <sha256>] [--origin <origin>] [--accepted-scope current-diff]
 glm-worker --accept | --resume | --stop | --isolate | --reset
 glm-worker --status | --handoff | --project-state | --watch [--verbose]
 glm-worker --timeline [task-id] | --convergence [task-id] | --stats

@@ -22,10 +22,11 @@ import (
 )
 
 const (
-	usage = "usage: glm-parent-action start | prepare <decision|fix|start-milestones|revise-milestones> | decision <token> | fix <token> [--origin <origin>] [--cause <cause>] [--accepted-scope current-diff] [--approval-only] | start-milestones <token> | revise-milestones <token> | no-go | accept | resume | finalize-check <go-test|go-test-race>"
+	usage = "usage: glm-parent-action start | prepare <decision|fix|start-milestones|revise-milestones> | decision <token> | fix <token> [--origin <origin>] [--cause <cause>] [--accepted-scope current-diff] | approve-surface --accepted-scope current-diff | start-milestones <token> | revise-milestones <token> | no-go | accept | resume | finalize-check <go-test|go-test-race>"
 
 	activeTaskRequest = "現在のACTIVE taskを実行してください。"
 	actionStart       = "start"
+	actionApprove     = "approve-surface"
 )
 
 func Run(args []string, stdout, stderr io.Writer) int {
@@ -83,6 +84,8 @@ func execute(cfg config.AppConfig, args []string, stdout, stderr io.Writer) erro
 	switch action {
 	case "no-go":
 		return executeNoGo(cfg, args, stdout)
+	case actionApprove:
+		return executeApproveSurfaceAction(cfg, args[1:], stdout, stderr)
 	case actionStart, "accept", "resume":
 		return executeDirectWorkerAction(cfg, action, args, stdout, stderr)
 	case "finalize-check":
@@ -97,6 +100,16 @@ func execute(cfg config.AppConfig, args []string, stdout, stderr io.Writer) erro
 	default:
 		return fmt.Errorf("%s", usage)
 	}
+}
+
+func executeApproveSurfaceAction(cfg config.AppConfig, args []string, stdout, stderr io.Writer) error {
+	if len(args) != 2 || args[0] != "--accepted-scope" || args[1] != "current-diff" {
+		return fmt.Errorf("usage: glm-parent-action approve-surface --accepted-scope current-diff")
+	}
+	if err := persistParentCodexIdentity(cfg); err != nil {
+		return err
+	}
+	return runWorker(cfg.RepoRoot, directWorkerArgs(actionApprove), nil, stdout, stderr, nil)
 }
 
 func executeDirectWorkerAction(cfg config.AppConfig, action string, args []string, stdout, stderr io.Writer) error {
@@ -184,6 +197,8 @@ func directWorkerArgs(action string) []string {
 	switch action {
 	case actionStart:
 		return []string{activeTaskRequest}
+	case actionApprove:
+		return []string{"--approve-surface", "current-diff"}
 	case "accept":
 		return []string{"--accept"}
 	default:
@@ -192,7 +207,7 @@ func directWorkerArgs(action string) []string {
 }
 
 func validateFixOptions(options []string) error {
-	fixUsage := "usage: glm-parent-action fix <token> [--origin <origin>] [--cause <cause>] [--accepted-scope current-diff] [--approval-only]"
+	fixUsage := "usage: glm-parent-action fix <token> [--origin <origin>] [--cause <cause>] [--accepted-scope current-diff]"
 	_, remaining, err := parentfix.Extract(options)
 	if err != nil || len(remaining) != 0 {
 		return fmt.Errorf("%s", fixUsage)

@@ -102,7 +102,7 @@ func TestManagedRulesAllowInstalledGLMRuntimeCommands(t *testing.T) {
 		{argv: []string{"glm-parent-action", "fix", "token"}, wantAllow: true},
 		{argv: []string{"glm-parent-action", "fix", "token", "--origin", "codex-review"}, wantAllow: true},
 		{argv: []string{"glm-parent-action", "fix", "token", "--origin", "glm-reviewer", "--accepted-scope", "current-diff"}, wantAllow: true},
-		{argv: []string{"glm-parent-action", "fix", "token", "--origin", "metadata-repair", "--accepted-scope", "current-diff", "--approval-only"}, wantAllow: true},
+		{argv: []string{"glm-parent-action", "approve-surface", "--accepted-scope", "current-diff"}, wantAllow: true},
 		{argv: []string{"glm-parent-action", "start-milestones", "token"}, wantAllow: true},
 		{argv: []string{"glm-parent-action", "revise-milestones", "token"}, wantAllow: true},
 		{argv: []string{"glm-parent-action", "no-go"}, wantAllow: true},

@@ -29,7 +29,7 @@ func TestExtractAcceptsCurrentFixGrammar(t *testing.T) {
 			wantCause = state.ParentCauseWorker
 		}
 		if options.Origin != origin || options.Cause != wantCause ||
-			options.AcceptedScope != "" || options.ApprovalOnly || len(remaining) != 0 {
+			options.AcceptedScope != "" || len(remaining) != 0 {
 			t.Fatalf("origin %q options = %#v remaining=%v", origin, options, remaining)
 		}
 	}
@@ -54,12 +54,12 @@ func TestExtractAcceptsCurrentFixGrammar(t *testing.T) {
 		}
 	}
 
-	options, remaining, err := Extract([]string{"--accepted-scope", "current-diff", "--approval-only"})
+	options, remaining, err := Extract([]string{"--accepted-scope", "current-diff"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if options.AcceptedScope != "current-diff" || !options.ApprovalOnly || options.Origin != "" || options.Cause != "" || len(remaining) != 0 {
-		t.Fatalf("approval options = %#v remaining=%v", options, remaining)
+	if options.AcceptedScope != "current-diff" || options.Origin != "" || options.Cause != "" || len(remaining) != 0 {
+		t.Fatalf("accepted scope options = %#v remaining=%v", options, remaining)
 	}
 }
 
@@ -87,9 +87,7 @@ func TestExtractRejectsInvalidFixGrammar(t *testing.T) {
 		{"--accepted-scope", "other"},
 		{"--accepted-scope", "current-diff", "--accepted-scope", "current-diff"},
 		{"--approval-only"},
-		{"--approval-only", "--approval-only", "--accepted-scope", "current-diff"},
-		{"--approval-only", "--accepted-scope", "current-diff", "--origin", state.ParentOriginCodexReview},
-		{"--approval-only", "--accepted-scope", "current-diff", "--cause", state.ParentCauseWorker},
+		{"--approval-only", "--accepted-scope", "current-diff"},
 		{"--cause"},
 		{"--cause", "vibe"},
 		{"--cause", state.ParentCauseWorker, "--cause", state.ParentCauseReviewer},

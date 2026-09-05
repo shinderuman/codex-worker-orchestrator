@@ -39,6 +39,8 @@ func commandParentAction(mode CommandMode) (state.ParentAction, bool) {
 		return state.ParentActionDecision, true
 	case ModeFix:
 		return state.ParentActionFix, true
+	case ModeApproveSurface:
+		return state.ParentActionApproveSurface, true
 	case ModeAccept:
 		return state.ParentActionAccept, true
 	case ModeResume:
@@ -57,7 +59,12 @@ func parentActionDenied(cmd Command, plan state.ParentActionPlan, st *state.Stat
 			return &workflow.WorkerError{Message: "task is waiting for Sol decision; resolve it before --fix"}
 		}
 		return &workflow.WorkerError{Message: "--fix is only available after NEEDS_SOL_REVIEW; start a new task after PASS"}
+	case ModeApproveSurface:
+		return &workflow.WorkerError{Message: "quality-surface approval is not pending; --approve-surface requires a stopped quality policy surface change"}
 	case ModeAccept:
+		if plan.RequiredAction == state.ParentActionApproveSurface {
+			return &workflow.WorkerError{Message: "task is waiting for quality policy surface approval; resolve it with --approve-surface current-diff (or --fix) before --accept"}
+		}
 		return &workflow.WorkerError{Message: "pending Sol decision must be resolved with --decision before --accept"}
 	case ModeResume:
 		return resumeActionDenied(st)
@@ -85,6 +92,8 @@ func newTaskActionDenied(plan state.ParentActionPlan, st *state.StateStore) erro
 			label = "NEEDS_SOL_REVIEW"
 		}
 		return &workflow.WorkerError{Message: fmt.Sprintf("previous task has unresolved parent review (%s); resolve it explicitly with --accept (or --fix when rework is required) before starting a new task", label)}
+	case state.ParentActionApproveSurface:
+		return &workflow.WorkerError{Message: "previous task is waiting for quality policy surface approval; resolve it with glm-parent-action approve-surface --accepted-scope current-diff (or --fix) before starting a new task"}
 	case state.ParentActionResume:
 		switch plan.ResumeKind {
 		case "rate-limited":

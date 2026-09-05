@@ -7,11 +7,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskdiff"
 )
 
 type acceptedFixScope struct {
@@ -36,15 +38,15 @@ var zeroContextHunk = regexp.MustCompile(`^@@ -([0-9]+)(?:,[0-9]+)? \+[0-9]+(?:,
 
 func (w *Workflow) prepareAcceptedFixScope(mode string) {
 	_ = w.state.Remove(acceptedFixScopeStateFile)
-	if mode != acceptedFixScopeCurrentDiff || !w.acceptedFixScopeBaselineSafe() {
+	if mode != acceptedFixScopeCurrentDiff {
 		return
 	}
 	baselineHead := w.state.ReadOr("baseline-head", "")
 	if baselineHead == "" {
 		return
 	}
-	changes, err := w.captureAcceptedChangeSet(baselineHead)
-	if err != nil {
+	changes, err := w.captureAcceptedChangeSet()
+	if err != nil || len(changes) == 0 {
 		return
 	}
 	data, err := json.Marshal(acceptedFixScope{
@@ -78,7 +80,7 @@ func (w *Workflow) acceptedFixScopeAllowsCurrent(consume bool) bool {
 	if scope.BaselineHead == "" || scope.BaselineHead != w.state.ReadOr("baseline-head", "") {
 		return false
 	}
-	current, err := w.captureAcceptedChangeSet(scope.BaselineHead)
+	current, err := w.captureAcceptedChangeSet()
 	if err != nil || !changeSetSubset(current, scope.Changes) {
 		return false
 	}
@@ -86,61 +88,6 @@ func (w *Workflow) acceptedFixScopeAllowsCurrent(consume bool) bool {
 		_ = w.state.Remove(acceptedFixScopeStateFile)
 	}
 	return true
-}
-
-func (w *Workflow) acceptedFixScopeBaselineSafe() bool {
-	data, err := os.ReadFile(w.state.Path("baseline-status"))
-	if err != nil {
-		return false
-	}
-	for _, line := range strings.Split(strings.TrimRight(string(data), "\n"), "\n") {
-		if line == "" {
-			continue
-		}
-		paths, ok := porcelainStatusPaths(line)
-		if !ok {
-			return false
-		}
-		for _, path := range paths {
-			if !isParentManagedImplementationPath(path) {
-				return false
-			}
-		}
-	}
-	return true
-}
-
-func porcelainStatusPaths(line string) ([]string, bool) {
-	if len(line) < 4 || line[2] != ' ' {
-		return nil, false
-	}
-	value := strings.TrimSpace(line[3:])
-	if value == "" {
-		return nil, false
-	}
-	parts := strings.Split(value, " -> ")
-	paths := make([]string, 0, len(parts))
-	for _, raw := range parts {
-		path, ok := porcelainPath(raw)
-		if !ok {
-			return nil, false
-		}
-		paths = append(paths, path)
-	}
-	return paths, true
-}
-
-func porcelainPath(value string) (string, bool) {
-	value = strings.TrimSpace(value)
-	if strings.HasPrefix(value, `"`) {
-		decoded, err := strconv.Unquote(value)
-		if err != nil {
-			return "", false
-		}
-		value = decoded
-	}
-	value = filepath.ToSlash(value)
-	return value, value != ""
 }
 
 func isParentManagedImplementationPath(path string) bool {
@@ -151,26 +98,36 @@ func isParentManagedImplementationPath(path string) bool {
 		strings.HasPrefix(path, implementationTasksDir+"/")
 }
 
-func (w *Workflow) captureAcceptedChangeSet(baselineHead string) (map[string]int, error) {
-	paths, err := w.collectChangedPaths(w.config.RepoRoot, baselineHead)
+func (w *Workflow) captureAcceptedChangeSet() (map[string]int, error) {
+	paths, err := w.collectChangedPaths(w.config.RepoRoot, w.state.ReadOr("baseline-head", ""))
 	if err != nil {
 		return nil, err
 	}
-	return captureAcceptedChangeSetForPaths(w.config.RepoRoot, baselineHead, paths)
+	return captureAcceptedChangeSetForPaths(w.config.RepoRoot, w.state, paths)
 }
 
-func captureAcceptedChangeSetForPaths(repoRoot, baselineHead string, paths []string) (map[string]int, error) {
-	changes := make(map[string]int)
+func captureAcceptedChangeSetForPaths(repoRoot string, st *state.StateStore, paths []string) (map[string]int, error) {
+	scopePaths := make([]string, 0, len(paths))
 	for _, path := range paths {
+		if !isParentManagedImplementationPath(filepath.ToSlash(path)) {
+			scopePaths = append(scopePaths, path)
+		}
+	}
+	changes := make(map[string]int)
+	if len(scopePaths) == 0 {
+		return changes, nil
+	}
+	patches, err := taskdiff.BaselineWorktreePathPatches(repoRoot, st, scopePaths)
+	if err != nil {
+		return nil, err
+	}
+	for _, path := range scopePaths {
 		path = filepath.ToSlash(path)
-		if isParentManagedImplementationPath(path) {
+		patch, differs := patches[path]
+		if !differs {
 			continue
 		}
-		patch, err := exec.Command("git", "-C", repoRoot, "diff", "--no-renames", "--unified=0", "--no-ext-diff", "--no-color", baselineHead, "--", path).Output()
-		if err != nil {
-			return nil, fmt.Errorf("accepted scope diff %s: %w", path, err)
-		}
-		if len(patch) == 0 {
+		if patch == nil {
 			if err := addUntrackedScopeChange(changes, repoRoot, path); err != nil {
 				return nil, err
 			}

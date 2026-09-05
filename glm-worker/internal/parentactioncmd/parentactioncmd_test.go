@@ -59,7 +59,7 @@ func TestPayloadWorkerArgsMilestoneModes(t *testing.T) {
 func TestValidateFixOptionsMatchesProductionDomain(t *testing.T) {
 	for _, valid := range [][]string{
 		{"--origin", "glm-reviewer", "--accepted-scope", "current-diff"},
-		{"--accepted-scope", "current-diff", "--approval-only"},
+		{"--accepted-scope", "current-diff"},
 	} {
 		if err := validateFixOptions(valid); err != nil {
 			t.Fatalf("valid options rejected: %v: %v", valid, err)
@@ -72,11 +72,49 @@ func TestValidateFixOptionsMatchesProductionDomain(t *testing.T) {
 		{"--other", "value"},
 		{"--origin"},
 		{"--approval-only"},
-		{"--accepted-scope", "current-diff", "--approval-only", "--approval-only"},
+		{"--accepted-scope", "current-diff", "--approval-only"},
 	} {
 		if err := validateFixOptions(options); err == nil {
 			t.Fatalf("invalid options accepted: %s", strings.Join(options, " "))
 		}
+	}
+}
+
+func TestDirectWorkerArgsApproveSurfaceUsesDedicatedMode(t *testing.T) {
+	args := directWorkerArgs(actionApprove)
+	if len(args) != 2 || args[0] != "--approve-surface" || args[1] != "current-diff" {
+		t.Fatalf("approve-surface args = %#v", args)
+	}
+}
+
+func TestApproveSurfaceUsageRequiresExactScope(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if code := Run([]string{"approve-surface"}, &stdout, &stderr); code == 0 {
+		t.Fatal("scope省略がexit 0で受理されました")
+	}
+	if !strings.Contains(stderr.String(), "usage: glm-parent-action approve-surface --accepted-scope current-diff") {
+		t.Fatalf("usage出力がありません: %q", stderr.String())
+	}
+	if code := Run([]string{"approve-surface", "--accepted-scope", "other"}, &stdout, &stderr); code == 0 {
+		t.Fatal("scope otherがexit 0で受理されました")
+	}
+}
+
+func TestApproveSurfaceValidInvocationPassesUsageValidation(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"approve-surface", "--accepted-scope", "current-diff"}, &stdout, &stderr)
+	if code == 0 {
+		t.Fatal("glm-worker不在環境でexit 0にはならない")
+	}
+	if strings.Contains(stderr.String(), "usage:") {
+		t.Fatalf("正規のapprove-surface引数がusage error扱いされました: %q", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "glm-worker executable not found") {
+		t.Fatalf("usage検証通過後のworker解決まで到達していません: %q", stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("失敗時にstdoutへ出力がありました: %q", stdout.String())
 	}
 }
 

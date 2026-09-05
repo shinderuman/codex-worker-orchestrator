@@ -222,3 +222,222 @@ func TestQualitySurfaceApprovalStopsAgainAfterLaterOutOfScopeMutation(t *testing
 		t.Fatalf("checkpoint = %#v", saved)
 	}
 }
+
+func TestQualitySurfaceApprovalGeneratesTaskScopeOnProductionDirtyBaseline(t *testing.T) {
+	repo := t.TempDir()
+	gitScope(t, repo, "init")
+	gitScope(t, repo, "config", "user.email", "dirty-scope@example.invalid")
+	gitScope(t, repo, "config", "user.name", "dirty-scope-test")
+	writeScopeFile(t, repo, "glm-worker/go.mod", "module github.com/shinderuman/codex-worker-orchestrator/glm-worker\n")
+	writeScopeFile(t, repo, "commentlint", "#!/bin/sh\nexit 0\n")
+	writeScopeFile(t, repo, "preexisting_code.go", "package sample\n\nvar retained = 1\n")
+	gitScope(t, repo, "add", ".")
+	gitScope(t, repo, "commit", "-m", "baseline")
+
+	writeScopeFile(t, repo, "preexisting_code.go", "package sample\n\nvar retained = 1\nvar recoveredImplementation = 2\n")
+
+	codexDir := t.TempDir()
+	workerRules := filepath.Join(codexDir, "instructions", "worker")
+	if err := os.MkdirAll(workerRules, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workerRules, "go.md"), []byte("apply go contract\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.AppConfig{
+		RepoRoot:              repo,
+		RepoHash:              strings.Repeat("d", 64),
+		StateBase:             t.TempDir(),
+		CodexConfigDir:        codexDir,
+		WorkerModel:           "worker",
+		ReviewerModel:         "reviewer",
+		HighRiskReviewerModel: "reviewer-high",
+		RoutineEffort:         "low",
+		MaxAutoFixRounds:      1,
+	}
+	st, err := state.NewStateStore(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.StartNewTask(); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.CaptureGitBaseline(cfg, st); err != nil {
+		t.Fatal(err)
+	}
+	baseline, err := captureQualitySurfaceDigest(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Write(qualitySurfaceBaselineStateKey, baseline); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Write(activeTaskStateKey, ""); err != nil {
+		t.Fatal(err)
+	}
+
+	writeScopeFile(t, repo, "commentlint", "#!/bin/sh\nexit 1\n")
+	writeScopeFile(t, repo, "worker_change.go", "package sample\n")
+
+	runner := &scriptedRunner{steps: []runnerStep{
+		{structured: implementedPacket("rules applied")},
+		{structured: passPacket()},
+	}}
+	var output bytes.Buffer
+	w := NewWorkflow(cfg, st, runner, &output)
+	w.qualityGate = func(string) (harnesslint.Report, error) {
+		return harnesslint.Report{Status: "pass"}, nil
+	}
+
+	checkpoint := state.ResumeCheckpoint{
+		Stage: state.ResumeStageWorker, Phase: "worker-new", Role: state.WorkerRole,
+		Model: "worker", Effort: "low", Prompt: "work", OriginalPrompt: "work", Request: "task",
+	}
+	result := packet.Result{
+		Status: packet.StatusImplemented, Risk: packet.RiskLow, Summary: "implemented",
+		RequirementCoverage: "covered", Tests: "pass", Unverified: "none",
+	}
+	if _, err := w.convergeWorkerRuleActivation(checkpoint, result, map[workerRule]struct{}{}); err != nil {
+		t.Fatal(err)
+	}
+	if st.TaskStatus() != state.TaskStatusWaitingSolReview {
+		t.Fatalf("status = %s", st.TaskStatus())
+	}
+
+	w.prepareAcceptedFixScope(acceptedFixScopeCurrentDiff)
+	scope, err := os.ReadFile(st.Path(acceptedFixScopeStateFile))
+	if err != nil {
+		t.Fatalf("production dirty baselineで承認scopeが生成されませんでした: %v", err)
+	}
+	scopeText := string(scope)
+	if !strings.Contains(scopeText, "commentlint") || !strings.Contains(scopeText, "worker_change.go") {
+		t.Fatalf("承認scopeにtask diffが含まれていません: %s", scopeText)
+	}
+	if strings.Contains(scopeText, "preexisting_code.go") {
+		t.Fatalf("承認scopeへbaseline以前のdiffが混入しました: %s", scopeText)
+	}
+
+	output.Reset()
+	if err := w.ExecuteQualitySurfaceApproval(acceptedFixScopeCurrentDiff); err != nil {
+		t.Fatal(err)
+	}
+	for _, phase := range runner.phases {
+		if phase == "worker-explicit-fix" {
+			t.Fatalf("承認actionがworkerを再実行しました: %v", runner.phases)
+		}
+	}
+	if len(runner.phases) != 2 || runner.phases[0] != "worker-new-rule-activation-1" || runner.phases[1] != "reviewer-1" {
+		t.Fatalf("phases = %v", runner.phases)
+	}
+	if st.TaskStatus() != state.TaskStatusComplete {
+		t.Fatalf("status = %s", st.TaskStatus())
+	}
+}
+
+func TestQualitySurfaceApprovalScopesPostBaselinePreexistingEdits(t *testing.T) {
+	repo := t.TempDir()
+	gitScope(t, repo, "init")
+	gitScope(t, repo, "config", "user.email", "dirty-restop@example.invalid")
+	gitScope(t, repo, "config", "user.name", "dirty-restop-test")
+	writeScopeFile(t, repo, "glm-worker/go.mod", "module github.com/shinderuman/codex-worker-orchestrator/glm-worker\n")
+	writeScopeFile(t, repo, "commentlint", "#!/bin/sh\nexit 0\n")
+	writeScopeFile(t, repo, "preexisting_code.go", "package sample\n\nvar retained = 1\n")
+	gitScope(t, repo, "add", ".")
+	gitScope(t, repo, "commit", "-m", "baseline")
+
+	writeScopeFile(t, repo, "preexisting_code.go", "package sample\n\nvar retained = 1\nvar recoveredImplementation = 2\n")
+
+	codexDir := t.TempDir()
+	workerRules := filepath.Join(codexDir, "instructions", "worker")
+	if err := os.MkdirAll(workerRules, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workerRules, "go.md"), []byte("apply go contract\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.AppConfig{
+		RepoRoot:              repo,
+		RepoHash:              strings.Repeat("e", 64),
+		StateBase:             t.TempDir(),
+		CodexConfigDir:        codexDir,
+		WorkerModel:           "worker",
+		ReviewerModel:         "reviewer",
+		HighRiskReviewerModel: "reviewer-high",
+		RoutineEffort:         "low",
+		MaxAutoFixRounds:      1,
+	}
+	st, err := state.NewStateStore(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.StartNewTask(); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.CaptureGitBaseline(cfg, st); err != nil {
+		t.Fatal(err)
+	}
+	baseline, err := captureQualitySurfaceDigest(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Write(qualitySurfaceBaselineStateKey, baseline); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Write(activeTaskStateKey, ""); err != nil {
+		t.Fatal(err)
+	}
+
+	writeScopeFile(t, repo, "commentlint", "#!/bin/sh\nexit 1\n")
+	writeScopeFile(t, repo, "preexisting_code.go", "package sample\n\nvar retained = 1\nvar recoveredImplementation = 2\nvar recoveredTaskEdit = 3\n")
+
+	runner := &scriptedRunner{steps: []runnerStep{
+		{structured: implementedPacket("rules applied")},
+		{structured: passPacket()},
+	}}
+	var output bytes.Buffer
+	w := NewWorkflow(cfg, st, runner, &output)
+	w.qualityGate = func(string) (harnesslint.Report, error) {
+		return harnesslint.Report{Status: "pass"}, nil
+	}
+
+	checkpoint := state.ResumeCheckpoint{
+		Stage: state.ResumeStageWorker, Phase: "worker-new", Role: state.WorkerRole,
+		Model: "worker", Effort: "low", Prompt: "work", OriginalPrompt: "work", Request: "task",
+	}
+	result := packet.Result{
+		Status: packet.StatusImplemented, Risk: packet.RiskLow, Summary: "implemented",
+		RequirementCoverage: "covered", Tests: "pass", Unverified: "none",
+	}
+	if _, err := w.convergeWorkerRuleActivation(checkpoint, result, map[workerRule]struct{}{}); err != nil {
+		t.Fatal(err)
+	}
+	if st.TaskStatus() != state.TaskStatusWaitingSolReview {
+		t.Fatalf("status = %s", st.TaskStatus())
+	}
+
+	w.prepareAcceptedFixScope(acceptedFixScopeCurrentDiff)
+	scope, err := os.ReadFile(st.Path(acceptedFixScopeStateFile))
+	if err != nil {
+		t.Fatalf("pre-existing fileへのtask追記があってもscopeが生成されません: %v", err)
+	}
+	scopeText := string(scope)
+	if !strings.Contains(scopeText, "recoveredTaskEdit") {
+		t.Fatalf("承認scopeにpre-existing fileへのtask追記が含まれていません: %s", scopeText)
+	}
+	if strings.Contains(scopeText, "recoveredImplementation") {
+		t.Fatalf("承認scopeへbaseline以前のdiffが混入しました: %s", scopeText)
+	}
+
+	output.Reset()
+	if err := w.ExecuteQualitySurfaceApproval(acceptedFixScopeCurrentDiff); err != nil {
+		t.Fatalf("pre-existing fileへのtask追記が承認できない: %v", err)
+	}
+	if len(runner.phases) != 2 || runner.phases[0] != "worker-new-rule-activation-1" || runner.phases[1] != "reviewer-1" {
+		t.Fatalf("phases = %v", runner.phases)
+	}
+	if st.TaskStatus() != state.TaskStatusComplete {
+		t.Fatalf("status = %s", st.TaskStatus())
+	}
+}

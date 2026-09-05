@@ -10,7 +10,7 @@
 
 ## Amendments
 
-none
+- cleanなdetached worktreeでcurrent HEAD validationを完了しても、`install.sh`の`plancheck`はPlanの`現在のGit境界branch: main`とのliteral不一致でinstall前に停止する。dirtyなmainで未review WIPをbuildしないため現状はstash/restoreが必要になる。current HEADへ束縛されたclean install sourceを正規に選べるようにし、branch表記を弱めたりdirty implementationを配置したりせず、この余分な親操作と失敗turnを除去すること。
 
 ## Resolved references
 

@@ -1,6 +1,7 @@
 package state
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
@@ -41,6 +42,82 @@ func TestParentActionPlanWaitingStates(t *testing.T) {
 			t.Fatalf("review plan = %#v", plan)
 		}
 	})
+}
+
+func TestParentActionPlanQualitySurfaceApprovalRequiresDedicatedAction(t *testing.T) {
+	st := newParentActionTestStore(t)
+	if err := st.SaveResumeCheckpoint(qualitySurfaceApprovalCheckpoint()); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetTaskStatus(TaskStatusWaitingSolReview); err != nil {
+		t.Fatal(err)
+	}
+	st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolReview, Risk: packet.RiskHigh}, ParentReviewProducer{Role: string(WorkerRole)})
+
+	plan, err := st.ParentActionPlan()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.RequiredAction != ParentActionApproveSurface || !plan.Allows(ParentActionApproveSurface) || !plan.Allows(ParentActionFix) {
+		t.Fatalf("quality-surface approval plan = %#v", plan)
+	}
+	if plan.Allows(ParentActionAccept) || plan.Allows(ParentActionDecision) || plan.Allows(ParentActionResume) {
+		t.Fatalf("quality-surface approval plan must not allow terminal accept: %#v", plan)
+	}
+	if plan.RequiredActionParameters["accepted-scope"] != "current-diff" {
+		t.Fatalf("quality-surface approval parameters = %#v", plan.RequiredActionParameters)
+	}
+	if _, admitted, err := st.AdmitParentAction(ParentActionAccept); err != nil || admitted {
+		t.Fatalf("terminal accept admission = %v err=%v; reviewer未実行のacceptはfail closedであるべき", admitted, err)
+	}
+	if _, admitted, err := st.AdmitParentAction(ParentActionApproveSurface); err != nil || !admitted {
+		t.Fatalf("approve-surface admission = %v err=%v", admitted, err)
+	}
+	if _, admitted, err := st.AdmitParentAction(ParentActionFix); err != nil || !admitted {
+		t.Fatalf("explicit fix admission = %v err=%v", admitted, err)
+	}
+	if err := st.ActivateQualitySurfaceApproval(); err != nil {
+		t.Fatal(err)
+	}
+	if st.TaskStatus() != TaskStatusActive {
+		t.Fatalf("status after activation = %s", st.TaskStatus())
+	}
+	if _, err := st.LoadResumeCheckpoint(); !errors.Is(err, ErrNoResumeCheckpoint) {
+		t.Fatalf("activation must consume the pending checkpoint: %v", err)
+	}
+}
+
+func TestParentActionPlanWaitingReviewWithoutApprovalKeepsSolAccept(t *testing.T) {
+	st := newParentActionTestStore(t)
+	if err := st.SetTaskStatus(TaskStatusWaitingSolReview); err != nil {
+		t.Fatal(err)
+	}
+	st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolReview, Risk: packet.RiskHigh}, ParentReviewProducer{Role: string(ReviewerRole)})
+
+	plan, err := st.ParentActionPlan()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.RequiredAction != ParentActionReview || !plan.Allows(ParentActionAccept) || plan.Allows(ParentActionApproveSurface) || len(plan.RequiredActionParameters) != 0 {
+		t.Fatalf("reviewer waiting plan = %#v", plan)
+	}
+}
+
+func qualitySurfaceApprovalCheckpoint() ResumeCheckpoint {
+	result := packet.Result{
+		Status: packet.StatusImplemented, Risk: packet.RiskLow, Summary: "implemented",
+		RequirementCoverage: "covered", Tests: "pass", Unverified: "none",
+	}
+	return ResumeCheckpoint{
+		Stage:                         ResumeStageWorker,
+		Phase:                         "worker-new",
+		Role:                          WorkerRole,
+		Model:                         "opus",
+		Prompt:                        "p",
+		Request:                       "r",
+		CompletedResult:               &result,
+		QualitySurfaceApprovalPending: true,
+	}
 }
 
 func TestParentActionPlanStoppedStates(t *testing.T) {

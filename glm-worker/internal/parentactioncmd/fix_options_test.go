@@ -23,7 +23,7 @@ func TestInvalidFixOptionsAreRejectedBeforeStagedPayloadConsumption(t *testing.T
 	err = executePayloadAction(
 		repoRoot,
 		descriptor,
-		[]string{prepared.Token, "--approval-only"},
+		[]string{prepared.Token, "--accepted-scope", "current-diff", "--approval-only"},
 		&output,
 		&output,
 		nil,

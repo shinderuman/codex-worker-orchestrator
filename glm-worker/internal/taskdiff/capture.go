@@ -67,6 +67,49 @@ func ChangedPaths(repoRoot string, st *state.StateStore) ([]string, bool, error)
 	return paths, true, nil
 }
 
+func BaselineWorktreePathPatches(repoRoot string, st *state.StateStore, paths []string) (map[string][]byte, error) {
+	base, available, err := loadChangedPathBaseline(st)
+	if err != nil {
+		return nil, err
+	}
+	if !available {
+		return nil, fmt.Errorf("captured task baseline is unavailable")
+	}
+	indexPath, cleanup, err := reconstructBaselineIndex(repoRoot, base)
+	if err != nil {
+		return nil, err
+	}
+	defer cleanup()
+
+	patches := make(map[string][]byte, len(paths))
+	for _, path := range paths {
+		patch, err := gitWithIndex(repoRoot, indexPath, nil, "diff", "--no-renames", "--unified=0", "--no-ext-diff", "--no-color", "--", path)
+		if err != nil {
+			return nil, fmt.Errorf("capture task baseline diff %s: %w", path, err)
+		}
+		if len(patch) != 0 {
+			patches[path] = patch
+			continue
+		}
+		tracked, err := baselineIndexHasPath(repoRoot, indexPath, path)
+		if err != nil {
+			return nil, err
+		}
+		if !tracked {
+			patches[path] = nil
+		}
+	}
+	return patches, nil
+}
+
+func baselineIndexHasPath(repoRoot, indexPath, path string) (bool, error) {
+	raw, err := gitWithIndex(repoRoot, indexPath, nil, "ls-files", "-z", "--", path)
+	if err != nil {
+		return false, fmt.Errorf("list task baseline index path %s: %w", path, err)
+	}
+	return len(bytes.TrimSpace(raw)) != 0, nil
+}
+
 func loadChangedPathBaseline(st *state.StateStore) (baseline, bool, error) {
 	if !st.Exists("baseline-status") {
 		return baseline{}, false, nil

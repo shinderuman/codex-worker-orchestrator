@@ -11,9 +11,10 @@ import (
 type ParentAction string
 
 type ParentActionPlan struct {
-	RequiredAction ParentAction   `json:"required_action"`
-	AllowedActions []ParentAction `json:"allowed_actions"`
-	ResumeKind     string         `json:"resume_kind,omitempty"`
+	RequiredAction           ParentAction      `json:"required_action"`
+	AllowedActions           []ParentAction    `json:"allowed_actions"`
+	ResumeKind               string            `json:"resume_kind,omitempty"`
+	RequiredActionParameters map[string]string `json:"required_action_parameters,omitempty"`
 }
 
 type LifecycleInconsistencyError struct {
@@ -26,12 +27,17 @@ const (
 	ParentActionDecision                    ParentAction = "decision"
 	ParentActionNoGo                        ParentAction = "no-go"
 	ParentActionReview                      ParentAction = "parent-review"
+	ParentActionApproveSurface              ParentAction = "approve-surface"
 	ParentActionAccept                      ParentAction = "accept"
 	ParentActionFix                         ParentAction = "fix"
 	ParentActionResume                      ParentAction = "resume"
 	ParentActionRepairGuardThenResume       ParentAction = "repair-guard-then-resume"
 	ParentActionRepairQualityGateThenResume ParentAction = "repair-quality-gate-then-resume"
 )
+
+const approveSurfaceScopeParameter = "accepted-scope"
+
+var approveSurfaceParameters = map[string]string{approveSurfaceScopeParameter: "current-diff"}
 
 func (e *LifecycleInconsistencyError) Error() string {
 	return fmt.Sprintf("lifecycle inconsistency for task status %s: %s", e.Status, e.Detail)
@@ -54,7 +60,7 @@ func (p ParentActionPlan) AdmitsCommand(action ParentAction) bool {
 		return false
 	}
 	switch p.RequiredAction {
-	case ParentActionDecision, ParentActionReview, ParentActionAccept:
+	case ParentActionDecision, ParentActionReview, ParentActionApproveSurface, ParentActionAccept:
 		return false
 	default:
 		return true
@@ -100,11 +106,13 @@ func (s *StateStore) ParentActionPlan() (ParentActionPlan, error) {
 	}
 	stopKind := ResumeStopNone
 	pendingDecisionResume := false
+	qualitySurfaceApproval := false
 	if checkpointErr == nil {
 		stopKind = checkpoint.StopKind
 		pendingDecisionResume = pendingDecisionContinuesCheckpoint(pending, checkpoint, s.readExact("last-decision"))
+		qualitySurfaceApproval = checkpoint.QualitySurfaceApprovalPending && !checkpoint.IsStopped()
 	}
-	plan, err := parentActionPlanForStatus(status, pending, pendingDecisionResume, openReview, stopKind)
+	plan, err := parentActionPlanForStatus(status, pending, pendingDecisionResume, openReview, stopKind, qualitySurfaceApproval)
 	if err != nil {
 		return ParentActionPlan{}, err
 	}
@@ -114,12 +122,12 @@ func (s *StateStore) ParentActionPlan() (ParentActionPlan, error) {
 	return plan, nil
 }
 
-func parentActionPlanForStatus(status TaskStatus, pending bool, pendingDecisionResume bool, openReview string, stopKind ResumeStopKind) (ParentActionPlan, error) {
+func parentActionPlanForStatus(status TaskStatus, pending bool, pendingDecisionResume bool, openReview string, stopKind ResumeStopKind, qualitySurfaceApproval bool) (ParentActionPlan, error) {
 	switch status {
 	case TaskStatusWaitingDecision:
 		return waitingDecisionActionPlan(status, pending, openReview, stopKind)
 	case TaskStatusWaitingSolReview:
-		return waitingReviewActionPlan(status, pending, openReview, stopKind)
+		return waitingReviewActionPlan(status, pending, openReview, stopKind, qualitySurfaceApproval)
 	case TaskStatusComplete:
 		return completeActionPlan(status, pending, openReview, stopKind)
 	case TaskStatusActive, TaskStatusNone:
@@ -136,9 +144,16 @@ func waitingDecisionActionPlan(status TaskStatus, pending bool, openReview strin
 	return actionPlan(ParentActionDecision, "", ParentActionDecision), nil
 }
 
-func waitingReviewActionPlan(status TaskStatus, pending bool, openReview string, stopKind ResumeStopKind) (ParentActionPlan, error) {
+func waitingReviewActionPlan(status TaskStatus, pending bool, openReview string, stopKind ResumeStopKind, qualitySurfaceApproval bool) (ParentActionPlan, error) {
 	if pending || stopKind != ResumeStopNone || unexpectedOpenReview(openReview, packet.StatusNeedsSolReview) {
 		return ParentActionPlan{}, lifecycleInconsistency(status, "waiting review state does not match parent review and resume state")
+	}
+	if qualitySurfaceApproval {
+		return ParentActionPlan{
+			RequiredAction:           ParentActionApproveSurface,
+			AllowedActions:           []ParentAction{ParentActionApproveSurface, ParentActionFix},
+			RequiredActionParameters: approveSurfaceParameters,
+		}, nil
 	}
 	return actionPlan(ParentActionReview, "", ParentActionAccept, ParentActionFix), nil
 }

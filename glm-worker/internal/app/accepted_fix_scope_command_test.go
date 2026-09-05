@@ -30,16 +30,12 @@ func TestFixStdinParsesCauseWithOrigin(t *testing.T) {
 	}
 }
 
-func TestFixStdinAcceptsApprovalOnlyForCurrentDiff(t *testing.T) {
-	command, err := ParseCommand([]string{
-		"--fix-stdin", "12",
-		"--accepted-scope", "current-diff",
-		"--approval-only",
-	})
+func TestApproveSurfaceRequiresExactCurrentDiffScope(t *testing.T) {
+	command, err := ParseCommand([]string{"--approve-surface", "current-diff"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if command.Mode != ModeFix || command.AcceptedScope != "current-diff" || !command.ApprovalOnly {
+	if command.Mode != ModeApproveSurface || command.AcceptedScope != "current-diff" {
 		t.Fatalf("command = %#v", command)
 	}
 }
@@ -53,6 +49,7 @@ func TestAcceptedScopeIsFixOnlyAndClosedValue(t *testing.T) {
 		{"--fix-stdin", "12", "--origin", "codex-review"},
 		{"--fix-stdin", "12", "--origin", "codex-review", "--cause", "legacy-layer"},
 		{"--fix-stdin", "12", "--origin", "glm-reviewer", "--cause", "worker", "--cause", "reviewer"},
+		{"--fix-stdin", "12", "--accepted-scope", "current-diff", "--approval-only"},
 	} {
 		if _, err := ParseCommand(args); err == nil {
 			t.Fatalf("accepted invalid args: %v", args)
@@ -60,13 +57,12 @@ func TestAcceptedScopeIsFixOnlyAndClosedValue(t *testing.T) {
 	}
 }
 
-func TestApprovalOnlyRequiresCurrentDiffWithoutOrigin(t *testing.T) {
+func TestApproveSurfaceRejectsOtherScopesAndOptions(t *testing.T) {
 	for _, args := range [][]string{
-		{"--fix-stdin", "12", "--approval-only"},
-		{"--fix-stdin", "12", "--accepted-scope", "current-diff", "--approval-only", "--approval-only"},
-		{"--fix-stdin", "12", "--origin", "glm-reviewer", "--accepted-scope", "current-diff", "--approval-only"},
-		{"--fix-stdin", "12", "--cause", "worker", "--accepted-scope", "current-diff", "--approval-only"},
-		{"--decision-stdin", "12", "--approval-only"},
+		{"--approve-surface"},
+		{"--approve-surface", "other-scope"},
+		{"--approve-surface", "current-diff", "current-diff"},
+		{"--approve-surface", "--accepted-scope", "current-diff"},
 	} {
 		if _, err := ParseCommand(args); err == nil {
 			t.Fatalf("accepted invalid args: %v", args)

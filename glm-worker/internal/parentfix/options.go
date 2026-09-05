@@ -10,40 +10,20 @@ type Options struct {
 	Origin        string
 	Cause         string
 	AcceptedScope string
-	ApprovalOnly  bool
 }
 
 var ErrInvalidOptions = errors.New("invalid parent fix options")
 
 func Extract(args []string) (Options, []string, error) {
-	options, pairs, err := extractApprovalOnly(args)
-	if err != nil {
-		return Options{}, nil, err
+	options := Options{}
+	if len(args)%2 != 0 {
+		return Options{}, nil, ErrInvalidOptions
 	}
-	remaining, err := extractSemanticPairs(&options, pairs)
+	remaining, err := extractSemanticPairs(&options, args)
 	if err != nil || !validCombination(options) {
 		return Options{}, nil, ErrInvalidOptions
 	}
 	return options, remaining, nil
-}
-
-func extractApprovalOnly(args []string) (Options, []string, error) {
-	var options Options
-	pairs := make([]string, 0, len(args))
-	for _, arg := range args {
-		if arg != "--approval-only" {
-			pairs = append(pairs, arg)
-			continue
-		}
-		if options.ApprovalOnly {
-			return Options{}, nil, ErrInvalidOptions
-		}
-		options.ApprovalOnly = true
-	}
-	if len(pairs)%2 != 0 {
-		return Options{}, nil, ErrInvalidOptions
-	}
-	return options, pairs, nil
 }
 
 func extractSemanticPairs(options *Options, pairs []string) ([]string, error) {
@@ -86,9 +66,6 @@ func applySemanticPair(options *Options, name, value string) (bool, error) {
 }
 
 func validCombination(options Options) bool {
-	if options.ApprovalOnly {
-		return options.AcceptedScope == "current-diff" && options.Origin == "" && options.Cause == ""
-	}
 	if options.Origin == state.ParentOriginCodexReview {
 		return options.Cause != ""
 	}

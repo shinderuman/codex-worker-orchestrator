@@ -199,6 +199,9 @@ func (w *Workflow) ExecuteQualitySurfaceApprovalWithExecutionMilestones(accepted
 }
 
 func (w *Workflow) executeExecutionMilestoneQualitySurfaceApproval(acceptedScope string) error {
+	if err := w.admitParentAction(state.ParentActionApproveSurface); err != nil {
+		return err
+	}
 	if acceptedScope != acceptedFixScopeCurrentDiff {
 		return &WorkerError{Message: "quality-surface approval requires accepted scope current-diff"}
 	}
