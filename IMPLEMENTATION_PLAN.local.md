@@ -8,11 +8,10 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/decision-rate-limit-resume-coherence.md`
+- `IMPLEMENTATION_TASKS/quality-toolchain-preflight-before-model.md`
 
 ## NEXT（優先順）
 
-- `IMPLEMENTATION_TASKS/quality-toolchain-preflight-before-model.md`
 - `IMPLEMENTATION_TASKS/post-worker-quality-gate-recovery.md`
 - `IMPLEMENTATION_TASKS/external-review-a70d35c-43e1da9-follow-up.md`
 - `IMPLEMENTATION_TASKS/prose-only-control-enforcement-audit.md`

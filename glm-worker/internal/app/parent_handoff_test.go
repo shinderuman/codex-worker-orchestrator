@@ -221,6 +221,56 @@ func TestParentHandoffRecoveryIncludesGuardDiagnostics(t *testing.T) {
 	}
 }
 
+func TestParentHandoffStoppedDecisionContinuationAllowsResume(t *testing.T) {
+	cfg := newAppConfig(t)
+	st := startParentHandoffTask(t, cfg)
+	if err := st.Write("last-request", "request"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Touch("pending-decision"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Write("last-decision", "decision-body"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SaveResumeCheckpoint(state.ResumeCheckpoint{
+		Stage:          state.ResumeStageWorker,
+		Phase:          "worker-decision",
+		Role:           state.WorkerRole,
+		Model:          "opus",
+		Prompt:         "p",
+		OriginalPrompt: "p",
+		Request:        "request",
+		Decision:       "decision-body",
+		StopKind:       state.ResumeStopRateLimited,
+		ResetAtCST:     "2026-09-05 03:32:23",
+		ResetAtRFC3339: "2026-09-05T03:32:23+08:00",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetTaskStatus(state.TaskStatusRateLimited); err != nil {
+		t.Fatal(err)
+	}
+
+	var output parentHandoffOutput
+	executeCommandOutput(t, cfg, ModeHandoff, &output, "--handoff")
+	if !output.Consistent || output.Inconsistency != nil {
+		t.Fatalf("stopped decision continuation handoff = %#v", output)
+	}
+	if output.RequiredAction == nil || *output.RequiredAction != string(state.ParentActionResume) {
+		t.Fatalf("stopped decision continuation required action = %#v", output.RequiredAction)
+	}
+	if len(output.AllowedActions) != 1 || output.AllowedActions[0] != string(state.ParentActionResume) {
+		t.Fatalf("stopped decision continuation allowed actions = %#v", output.AllowedActions)
+	}
+	if output.ResumeKind == nil || *output.ResumeKind != string(state.ResumeStopRateLimited) {
+		t.Fatalf("stopped decision continuation resume kind = %#v", output.ResumeKind)
+	}
+	if !output.PendingDecision || output.TaskStatus == nil || *output.TaskStatus != string(state.TaskStatusRateLimited) {
+		t.Fatalf("stopped decision continuation task state = %#v", output)
+	}
+}
+
 func TestParentHandoffFailsClosedOnLifecycleContradiction(t *testing.T) {
 	cfg := newAppConfig(t)
 	st := startParentHandoffTask(t, cfg)
