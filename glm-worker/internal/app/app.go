@@ -591,6 +591,9 @@ func executeLocked(cmd Command, cfg config.AppConfig, st *state.StateStore, stdo
 }
 
 func executeWorkflow(cmd Command, cfg config.AppConfig, st *state.StateStore, rf RunnerFactory, stdout io.Writer) error {
+	if err := preflightQualityToolchain(cfg, st); err != nil {
+		return err
+	}
 	controller := runner.NewStopController()
 	stopServer, err := startStopEndpoint(st, controller)
 	if err != nil {

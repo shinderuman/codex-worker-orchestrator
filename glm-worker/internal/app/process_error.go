@@ -38,6 +38,7 @@ const (
 	errorKindCodexLimitUnavailable   = "codex_limit_unavailable"
 	errorKindInstallSmokeFailed      = "install_smoke_failed"
 	errorKindQualityGateFailed       = "quality_gate_failed"
+	errorKindQualityPreflightFailed  = "quality_preflight_failed"
 	errorKindMachineOutputViolation  = "machine_output_violation"
 	errorKindInternal                = "internal"
 )
@@ -151,6 +152,7 @@ func buildPostRunProcessError(err error) (processErrorBody, bool) {
 	var codexLimit *CodexLimitError
 	var smokeFail *InstallSmokeError
 	var qualityGateFail *QualityGateError
+	var qualityPreflightFail *QualityPreflightError
 
 	switch {
 	case errors.As(err, &verification):
@@ -173,6 +175,12 @@ func buildPostRunProcessError(err error) (processErrorBody, bool) {
 			Message: qualityGateFail.Error(),
 			Detail:  qualityGateFailDetail(qualityGateFail),
 		}, true
+	case errors.As(err, &qualityPreflightFail):
+		return processErrorBody{
+			Kind:    errorKindQualityPreflightFailed,
+			Message: qualityPreflightFail.Error(),
+			Detail:  qualityPreflightFailDetail(qualityPreflightFail),
+		}, true
 	default:
 		return processErrorBody{}, false
 	}
@@ -191,6 +199,25 @@ func qualityGateRecoverableProcessError(err *workflow.QualityGateRecoverableErro
 			"completed_result_saved": err.ResultSaved,
 		},
 	}
+}
+
+func qualityPreflightFailDetail(err *QualityPreflightError) map[string]any {
+	detail := map[string]any{
+		"repair":            qualityToolRepairEntry,
+		"version_authority": qualityToolVersionAuthority,
+		"classification":    err.Classification,
+		"duration_ms":       err.DurationMS,
+		"model_calls":       0,
+	}
+	if err.Tool != "" {
+		detail["tool"] = err.Tool
+		detail["observed"] = err.Observed
+		detail["required"] = err.Required
+	}
+	if err.Cause != nil {
+		detail["cause"] = err.Cause.Error()
+	}
+	return detail
 }
 
 func installSmokeFailDetail(err *InstallSmokeError) map[string]any {

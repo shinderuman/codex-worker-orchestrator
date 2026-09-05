@@ -104,6 +104,7 @@ type statsOutput struct {
 	ProbeCalls                              int                 `json:"probe_calls"`
 	TotalAICalls                            int                 `json:"total_ai_calls"`
 	TelemetryCoverage                       statsCoverage       `json:"telemetry_coverage"`
+	Preflight                               statsPreflight      `json:"preflight"`
 	ModelDurationMSByAlias                  map[string]int64    `json:"model_duration_ms_by_alias"`
 	InputTokensByAlias                      map[string]int64    `json:"input_tokens_by_alias"`
 	CacheCreationInputTokensByAlias         map[string]int64    `json:"cache_creation_input_tokens_by_alias"`
@@ -165,6 +166,19 @@ type statsCoverageTask struct {
 	RawRecords     int    `json:"raw_records"`
 	MissingCalls   int    `json:"missing_calls"`
 	ExcessRecords  int    `json:"excess_records"`
+}
+
+type statsPreflight struct {
+	Status            string     `json:"status"`
+	PassCount         int        `json:"pass_count"`
+	FailureCount      int        `json:"failure_count"`
+	AvoidedModelCalls int        `json:"avoided_model_calls"`
+	TotalDurationMS   int64      `json:"total_duration_ms"`
+	MaxDurationMS     int64      `json:"max_duration_ms"`
+	LastDurationMS    int64      `json:"last_duration_ms"`
+	LastOutcome       string     `json:"last_outcome"`
+	LastAt            *time.Time `json:"last_at,omitempty"`
+	Error             string     `json:"error,omitempty"`
 }
 
 type statsParentRework struct {
@@ -572,6 +586,7 @@ func buildStatsOutput(st *state.StateStore, all []state.TaskStats, query Telemet
 	output.TelemetryCoverage = statsCoverageDetail(
 		st.ComputeTelemetryCoverage(filtered, query.Filter.TaskID, taskStatsIDSet(all)),
 	)
+	fillStatsPreflight(st, &output)
 	fillStatsParentReview(st, filtered, aggregate, &output)
 	output.CurrentTask = statsCurrentTaskDetail(st)
 	return output
@@ -671,6 +686,33 @@ func statsCoverageDetail(coverage state.TelemetryCoverage) statsCoverage {
 		})
 	}
 	return detail
+}
+
+func fillStatsPreflight(st *state.StateStore, output *statsOutput) {
+	stats, err := st.LoadPreflightStats()
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			output.Preflight = statsPreflight{Status: statusNone}
+			return
+		}
+		output.Preflight = statsPreflight{Status: "unknown", Error: err.Error()}
+		return
+	}
+	detail := statsPreflight{
+		Status:            "ok",
+		PassCount:         stats.PassCount,
+		FailureCount:      stats.FailureCount,
+		AvoidedModelCalls: stats.AvoidedModelCalls,
+		TotalDurationMS:   stats.TotalDurationMS,
+		MaxDurationMS:     stats.MaxDurationMS,
+		LastDurationMS:    stats.LastDurationMS,
+		LastOutcome:       stats.LastOutcome,
+	}
+	if !stats.LastAt.IsZero() {
+		lastAt := stats.LastAt
+		detail.LastAt = &lastAt
+	}
+	output.Preflight = detail
 }
 
 func fillStatsParentReview(st *state.StateStore, all []state.TaskStats, _ state.TaskStats, output *statsOutput) {

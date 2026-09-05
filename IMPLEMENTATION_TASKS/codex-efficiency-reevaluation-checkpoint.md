@@ -17,11 +17,42 @@ post-105-codex-efficiency-reevaluation.mdを定期的にやってほしいんだ
 数ターンごとにやってる監査と同様にMarkdownのチェックをするべきなんじゃないの
 ````
 
+### 2026-09-06
+
+````text
+どう考えてもCodexのトークン消費量が多すぎる
+なにか進め方がおかしい
+直ちに見直せ
+````
+
+````text
+さっきのGLMのリセットが回復してからのタイミングでCodexの残りも100%だった
+一瞬で45%を使い果たしている
+どう考えても異常だ
+直ちに見直せ
+````
+
+````text
+過去まで見る必要はない
+このGLMリセット後が異常すぎると言っている
+直ちに見直せ
+````
+
+````text
+復活してからの作業がなにかおかしいのは間違いない
+直ちに見直せ
+````
+
 ## Resolved references
 
 - 2026-09-05の中間再評価完了後、最大5 task完了以内に再実行するcheckpoint
 - `post-105-codex-efficiency-reevaluation.md`は105完了後・022直前の最終safety netとして別に維持する
 - Markdown確認は`markdown-derived-state-authority-audit.md`の初回inventory完了後、このcheckpointへ固定項目として統合する。`post-105-codex-efficiency-reevaluation.md`の監査範囲は広げない
+- 2026-09-06 06:30 JST時点でCodex 5h bucketは45%消費、weekly bucketは68%消費だった。ユーザー観測では同日のGLM rate-limit復帰時点で5h残量は100%だった
+- 復帰後区間では、既知のauthority本文、review packet、handoff/finalization JSON、広いdiff/source出力を親model-visible contextへ繰り返し展開し、競合統合時に既review済み範囲も再検証した
+- 本checkpoint中の既存task横断`rg`も17,690 token相当を生成し、8,000 tokenで切断された。検索対象を絞らずstdout上限だけを設定しても親Codex消費を防げない再現証拠である
+- 長いsessionで細粒度のtool returnを多数発生させ、固定instruction・圧縮履歴・追加証拠を親model turnごとに再入力した。個別要因への厳密配賦は現行telemetryでは不能だが、parent turn増加が消費を乗算するため独立の抑制対象とする
+- 未Task化Findingは`parent-model-visible-evidence-projection.md`へGoとし、現在ACTIVEのsemantic checkpointを再開する前の最優先実装候補へ置く
 
 ## Purpose
 
@@ -71,4 +102,4 @@ none
 
 ## Current boundary
 
-2026-09-05中間再評価後、Plan上で先行する最大5 task完了後にACTIVE化する。
+2026-09-06の異常消費を受け、現在ACTIVE task完了直後にACTIVE化する。復帰後区間だけをboundedに再評価し、全履歴の再走査は行わない。

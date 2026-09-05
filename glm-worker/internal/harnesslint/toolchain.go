@@ -16,7 +16,89 @@ type qualityToolVersions struct {
 	Shfmt        string
 }
 
+type QualityToolVersionMismatch struct {
+	Tool     string
+	Observed string
+	Required string
+}
+
+type MissingToolError struct {
+	Name string
+}
+
+type QualityToolCommandError struct {
+	Tool string
+}
+
+type QualityToolTimeoutError struct {
+	Tool string
+}
+
+type QualityToolContractError struct {
+	Cause error
+}
+
+type QualityToolFailure interface {
+	error
+	QualityToolClassification() string
+}
+
+const (
+	QualityToolEnvironmentFailure = "environment"
+
+	QualityToolInternalFailure = "internal"
+)
+
 var semanticVersion = regexp.MustCompile(`[0-9]+\.[0-9]+\.[0-9]+`)
+
+func (e *QualityToolVersionMismatch) Error() string {
+	return fmt.Sprintf("quality tool version mismatch: %s=%s, required=%s", e.Tool, e.Observed, e.Required)
+}
+
+func (*QualityToolVersionMismatch) QualityToolClassification() string {
+	return QualityToolEnvironmentFailure
+}
+
+func (e *MissingToolError) Error() string {
+	return "required quality tool is missing: " + e.Name
+}
+
+func (*MissingToolError) QualityToolClassification() string {
+	return QualityToolEnvironmentFailure
+}
+
+func (e *QualityToolCommandError) Error() string {
+	return "quality tool version command failed: " + e.Tool
+}
+
+func (*QualityToolCommandError) QualityToolClassification() string {
+	return QualityToolEnvironmentFailure
+}
+
+func (e *QualityToolTimeoutError) Error() string {
+	return "quality tool version command timed out: " + e.Tool
+}
+
+func (*QualityToolTimeoutError) QualityToolClassification() string {
+	return QualityToolEnvironmentFailure
+}
+
+func (e *QualityToolContractError) Error() string {
+	return e.Cause.Error()
+}
+
+func (e *QualityToolContractError) Unwrap() error {
+	return e.Cause
+}
+
+func (*QualityToolContractError) QualityToolClassification() string {
+	return QualityToolInternalFailure
+}
+
+func PreflightQualityTools(root string) error {
+	_, err := newRealCommandRunner(root)
+	return err
+}
 
 func newRealCommandRunner(root string) (realCommandRunner, error) {
 	versions, err := loadQualityToolVersions(root)
@@ -39,13 +121,13 @@ func newRealCommandRunner(root string) (realCommandRunner, error) {
 func loadQualityToolVersions(root string) (qualityToolVersions, error) {
 	data, err := os.ReadFile(filepath.Join(root, "quality-tools.yml"))
 	if err != nil {
-		return qualityToolVersions{}, fmt.Errorf("read quality tool contract: %w", err)
+		return qualityToolVersions{}, &QualityToolContractError{Cause: fmt.Errorf("read quality tool contract: %w", err)}
 	}
 	values := map[string]string{}
 	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
 		key, value, ok := strings.Cut(line, ": ")
 		if !ok || key == "" || value == "" {
-			return qualityToolVersions{}, fmt.Errorf("invalid quality tool contract entry: %q", line)
+			return qualityToolVersions{}, &QualityToolContractError{Cause: fmt.Errorf("invalid quality tool contract entry: %q", line)}
 		}
 		values[key] = value
 	}
@@ -57,12 +139,12 @@ func loadQualityToolVersions(root string) (qualityToolVersions, error) {
 		Shfmt:        values["shfmt"],
 	}
 	if versions.Go == "" || versions.LintGo == "" || versions.GolangCILint == "" || versions.Shellcheck == "" || versions.Shfmt == "" {
-		return qualityToolVersions{}, fmt.Errorf("quality tool contract is incomplete")
+		return qualityToolVersions{}, &QualityToolContractError{Cause: fmt.Errorf("quality tool contract is incomplete")}
 	}
 	return versions, nil
 }
 
-func validateQualityToolVersions(root string, versions qualityToolVersions, runner commandRunner) error {
+func validateQualityToolVersions(root string, versions qualityToolVersions, runner versionCommandRunner) error {
 	checks := []struct {
 		name string
 		args []string
@@ -75,16 +157,16 @@ func validateQualityToolVersions(root string, versions qualityToolVersions, runn
 		{name: "shfmt", args: []string{"--version"}, want: versions.Shfmt},
 	}
 	for _, check := range checks {
-		result, err := runner.run(root, check.name, check.args...)
+		result, err := runner.runVersion(root, check.name, check.args...)
 		if err != nil {
 			return err
 		}
 		if result.exitCode != 0 {
-			return fmt.Errorf("quality tool version command failed: %s", check.name)
+			return &QualityToolCommandError{Tool: check.name}
 		}
 		got := semanticVersion.FindString(result.output)
 		if got != check.want {
-			return fmt.Errorf("quality tool version mismatch: %s=%s, required=%s", check.name, got, check.want)
+			return &QualityToolVersionMismatch{Tool: check.name, Observed: got, Required: check.want}
 		}
 	}
 	return nil

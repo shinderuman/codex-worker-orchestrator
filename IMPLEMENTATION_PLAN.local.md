@@ -8,16 +8,16 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/quality-toolchain-preflight-before-model.md`
+- `IMPLEMENTATION_TASKS/parent-model-visible-evidence-projection.md`
 
 ## NEXT（優先順）
 
+- `IMPLEMENTATION_TASKS/codex-efficiency-reevaluation-checkpoint.md`
 - `IMPLEMENTATION_TASKS/watch-terminal-error-orphan-exit.md`
 - `IMPLEMENTATION_TASKS/markdown-derived-state-authority-audit.md`
 - `IMPLEMENTATION_TASKS/external-review-a70d35c-43e1da9-follow-up.md`
 - `IMPLEMENTATION_TASKS/parent-codex-rollout-chain-attribution.md`
 - `IMPLEMENTATION_TASKS/telemetry-history-compact-summary.md`
-- `IMPLEMENTATION_TASKS/codex-efficiency-reevaluation-checkpoint.md`
 - `IMPLEMENTATION_TASKS/auto-resume-heartbeat-transaction.md`
 - `IMPLEMENTATION_TASKS/prose-only-control-enforcement-audit.md`
 - `IMPLEMENTATION_TASKS/task-stats-revision-consumer-audit.md`

@@ -1,6 +1,7 @@
 package harnesslint
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -8,8 +9,10 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type commandResult struct {
@@ -21,6 +24,10 @@ type commandRunner interface {
 	run(dir, name string, args ...string) (commandResult, error)
 }
 
+type versionCommandRunner interface {
+	runVersion(dir, name string, args ...string) (commandResult, error)
+}
+
 type realCommandRunner struct {
 	goToolchain       string
 	lintGoToolchain   string
@@ -28,28 +35,25 @@ type realCommandRunner struct {
 	golangciLintCache string
 }
 
-type missingToolError struct {
-	name string
-}
-
 var golangCILine = regexp.MustCompile(`^(.+?):(\d+):(\d+):\s*(.+?)(?:\s+\(([^()]+)\))?$`)
 var golangCILineOnly = regexp.MustCompile(`^(.+?):(\d+):\s*(.+?)(?:\s+\(([^()]+)\))?$`)
 var shellcheckLine = regexp.MustCompile(`^(.+?):(\d+):(\d+):\s*[^:]+:\s*(.+?)(?:\s+\[([A-Z0-9]+)\])?$`)
 
-func (e *missingToolError) Error() string {
-	return "required quality tool is missing: " + e.name
+var versionCommandTimeout = 10 * time.Second
+
+func (r realCommandRunner) commandSpec(name string) (string, string) {
+	switch name {
+	case "lint-go":
+		return "go", r.lintGoToolchain
+	case "golangci-lint":
+		return name, r.lintGoToolchain
+	default:
+		return name, r.goToolchain
+	}
 }
 
 func (r realCommandRunner) run(dir, name string, args ...string) (commandResult, error) {
-	commandName := name
-	toolchain := r.goToolchain
-	switch name {
-	case "lint-go":
-		commandName = "go"
-		toolchain = r.lintGoToolchain
-	case "golangci-lint":
-		toolchain = r.lintGoToolchain
-	}
+	commandName, toolchain := r.commandSpec(name)
 	command := exec.Command(commandName, args...)
 	command.Dir = dir
 	command.Env = append(os.Environ(),
@@ -63,13 +67,60 @@ func (r realCommandRunner) run(dir, name string, args ...string) (commandResult,
 	}
 	var notFound *exec.Error
 	if errors.As(err, &notFound) {
-		return commandResult{}, &missingToolError{name: name}
+		return commandResult{}, &MissingToolError{Name: name}
 	}
 	var exitError *exec.ExitError
 	if errors.As(err, &exitError) {
 		return commandResult{output: string(output), exitCode: exitError.ExitCode()}, nil
 	}
 	return commandResult{}, err
+}
+
+func (r realCommandRunner) runVersion(dir, name string, args ...string) (commandResult, error) {
+	commandName, toolchain := r.commandSpec(name)
+	ctx, cancel := context.WithTimeout(context.Background(), versionCommandTimeout)
+	defer cancel()
+	command := exec.CommandContext(ctx, commandName, args...)
+	command.Dir = dir
+	command.Env = commandEnv(os.Environ(),
+		"GOTOOLCHAIN="+toolchain,
+		"GOCACHE="+r.goCache,
+		"GOLANGCI_LINT_CACHE="+r.golangciLintCache,
+		"GOPROXY=off",
+		"GOTELEMETRY=off",
+	)
+	output, err := command.CombinedOutput()
+	if ctx.Err() != nil {
+		return commandResult{}, &QualityToolTimeoutError{Tool: name}
+	}
+	if err == nil {
+		return commandResult{output: string(output)}, nil
+	}
+	var notFound *exec.Error
+	if errors.As(err, &notFound) {
+		return commandResult{}, &MissingToolError{Name: name}
+	}
+	var exitError *exec.ExitError
+	if errors.As(err, &exitError) {
+		return commandResult{output: string(output), exitCode: exitError.ExitCode()}, nil
+	}
+	return commandResult{}, err
+}
+
+func commandEnv(environ []string, overrides ...string) []string {
+	overrideKeys := make([]string, len(overrides))
+	for index, entry := range overrides {
+		key, _, _ := strings.Cut(entry, "=")
+		overrideKeys[index] = key
+	}
+	filtered := make([]string, 0, len(environ)+len(overrides))
+	for _, entry := range environ {
+		key, _, _ := strings.Cut(entry, "=")
+		if !slices.Contains(overrideKeys, key) {
+			filtered = append(filtered, entry)
+		}
+	}
+	return append(filtered, overrides...)
 }
 
 func runExternalChecks(root string, paths []string, runner commandRunner) ([]Violation, error) {
