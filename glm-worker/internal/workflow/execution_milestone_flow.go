@@ -59,7 +59,7 @@ func (w *Workflow) ExecuteDecisionWithExecutionMilestones(decision string) error
 }
 
 func (w *Workflow) executeExecutionMilestoneDecision(decision string) error {
-	context, err := w.prepareExecutionMilestoneDecision(decision)
+	context, rollback, err := w.prepareExecutionMilestoneDecision(decision)
 	if err != nil {
 		return err
 	}
@@ -67,34 +67,38 @@ func (w *Workflow) executeExecutionMilestoneDecision(decision string) error {
 	if err != nil {
 		return err
 	}
-	return w.executeExecutionMilestoneWorkerCheckpoint(context.request, checkpoint, context.pocStage)
+	return w.rollbackWhenPreCallGuardFailure(
+		rollback,
+		w.executeExecutionMilestoneWorkerCheckpoint(context.request, checkpoint, context.pocStage),
+	)
 }
 
-func (w *Workflow) prepareExecutionMilestoneDecision(decision string) (executionMilestoneDecisionContext, error) {
+func (w *Workflow) prepareExecutionMilestoneDecision(decision string) (executionMilestoneDecisionContext, state.ParentActionRollback, error) {
 	if err := w.admitParentAction(state.ParentActionDecision); err != nil {
-		return executionMilestoneDecisionContext{}, err
+		return executionMilestoneDecisionContext{}, state.ParentActionRollback{}, err
 	}
 	request, err := w.state.Read("last-request")
 	if err != nil {
-		return executionMilestoneDecisionContext{}, &WorkerError{Message: "original request is missing"}
+		return executionMilestoneDecisionContext{}, state.ParentActionRollback{}, &WorkerError{Message: "original request is missing"}
 	}
 	activeTaskPath, err := w.gateDecisionActiveTask()
 	if err != nil {
-		return executionMilestoneDecisionContext{}, err
+		return executionMilestoneDecisionContext{}, state.ParentActionRollback{}, err
 	}
 	decl, err := w.gateExternalFeasibility("worker-decision", true)
 	if err != nil {
-		return executionMilestoneDecisionContext{}, err
+		return executionMilestoneDecisionContext{}, state.ParentActionRollback{}, err
 	}
 	if err := w.replaceAcceptedScopeWithDecision(decision); err != nil {
-		return executionMilestoneDecisionContext{}, err
+		return executionMilestoneDecisionContext{}, state.ParentActionRollback{}, err
 	}
-	if err := w.state.BeginParentDecision(); err != nil {
-		return executionMilestoneDecisionContext{}, err
+	rollback, err := w.state.BeginParentDecision()
+	if err != nil {
+		return executionMilestoneDecisionContext{}, state.ParentActionRollback{}, err
 	}
 	return executionMilestoneDecisionContext{
 		request: request, activeTaskPath: activeTaskPath, pocStage: decl.pocStage(),
-	}, nil
+	}, rollback, nil
 }
 
 func (w *Workflow) executionMilestoneDecisionCheckpoint(

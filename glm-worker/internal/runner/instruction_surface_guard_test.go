@@ -164,6 +164,64 @@ func TestInstructionSurfaceGuardRunnerRestoresMutationAndDropsSession(t *testing
 	}
 }
 
+func TestInstructionSurfaceGuardRunnerMismatchSkipsModelCall(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fixture is Unix-oriented")
+	}
+	root := t.TempDir()
+	writeInstructionGuardFile(t, root, "AGENTS.local.md", "accepted")
+	promptDir := t.TempDir()
+	writeInstructionGuardFile(t, promptDir, "WORKER.md", "system")
+	markerPath := filepath.Join(t.TempDir(), "model-call-marker")
+	commandPath := filepath.Join(t.TempDir(), "fake-claude")
+	commandScript := "#!/bin/sh\nprintf '%s\\n' marker-created >\"" + markerPath + "\"\n"
+	if err := os.WriteFile(commandPath, []byte(commandScript), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	st := newTestStateStore(t)
+	if err := st.Write("task.id", "task-one"); err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range []struct{ key, value string }{
+		{"worker.id", "worker-session"},
+		{"worker.ready", "1"},
+		{"reviewer.id", "reviewer-session"},
+		{"reviewer.ready", "1"},
+	} {
+		if err := st.Write(item.key, item.value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	base := NewClaudeRunner(config.AppConfig{
+		RepoRoot:        root,
+		RepoShort:       "guarded",
+		PromptDir:       promptDir,
+		ClaudeBin:       commandPath,
+		ClaudeConfigDir: t.TempDir(),
+	}, st)
+	if _, err := base.prepareInstructionSurfaceGuard(); err != nil {
+		t.Fatal(err)
+	}
+	writeInstructionGuardFile(t, root, "AGENTS.local.md", "parent-rotated")
+
+	guarded := NewInstructionSurfaceGuardRunner(base)
+	_, err := guarded.Run(state.WorkerRole, "worker-decision", "worker-model", false, "high", "prompt", filepath.Join(t.TempDir(), "output"))
+	var guardErr *InstructionSurfaceGuardError
+	if !errors.As(err, &guardErr) || guardErr.Stage != "before-call-mismatch" {
+		t.Fatalf("guarded run error = %#v", err)
+	}
+	if _, statErr := os.Lstat(markerPath); !os.IsNotExist(statErr) {
+		t.Fatalf("model command was invoked before the guard rejected the call: %v", statErr)
+	}
+	if got := readInstructionGuardFile(t, root, "AGENTS.local.md"); got != "parent-rotated" {
+		t.Fatalf("pre-call mismatch must not rewrite the instruction surface: %q", got)
+	}
+	if !st.Exists("worker.id") || !st.Exists("worker.ready") || !st.Exists("reviewer.id") || !st.Exists("reviewer.ready") {
+		t.Fatal("pre-call guard failure dropped a model session that no model call observed")
+	}
+}
+
 func newInstructionGuardRunner(t *testing.T, root, taskID string) *ClaudeRunner {
 	t.Helper()
 	st := newTestStateStore(t)

@@ -36,7 +36,8 @@ func (w *Workflow) executeExecutionMilestoneExplicitFix(instruction, origin, cau
 	w.prepareAcceptedFixScope(acceptedScope)
 	decision := w.state.ReadOr("last-decision", "none")
 	review := w.state.ReadOr("last-review", "none")
-	if err := w.state.BeginParentFix(origin, cause); err != nil {
+	rollback, err := w.state.BeginParentFix(origin, cause)
+	if err != nil {
 		return err
 	}
 	prompt := explicitFixPrompt(request, decision, review, instruction, activeTaskPath)
@@ -50,5 +51,8 @@ func (w *Workflow) executeExecutionMilestoneExplicitFix(instruction, origin, cau
 		Model: w.config.WorkerModel, ReadOnly: decl.pocStage(), Effort: w.config.EscalatedEffort,
 		Prompt: prompt, OriginalPrompt: prompt, Request: request, Decision: decision,
 	}
-	return w.executeExecutionMilestoneWorkerCheckpoint(request, checkpoint, decl.pocStage())
+	return w.rollbackWhenPreCallGuardFailure(
+		rollback,
+		w.executeExecutionMilestoneWorkerCheckpoint(request, checkpoint, decl.pocStage()),
+	)
 }

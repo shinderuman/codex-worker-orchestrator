@@ -38,3 +38,42 @@ func isRecoverableGitAuthorityFailure(err GitAuthorityGuardError) bool {
 func isRestoredInstructionSurfaceMutation(err InstructionSurfaceGuardError) bool {
 	return err.Stage == guardStageAfterCallMutation && err.Restored
 }
+
+func IsPreCallGuardFailure(err error) bool {
+	var instructionErr *InstructionSurfaceGuardError
+	if errors.As(err, &instructionErr) {
+		return isPreCallInstructionGuardStage(instructionErr.Stage)
+	}
+	var gitErr *GitAuthorityGuardError
+	if errors.As(err, &gitErr) {
+		return isPreCallGitGuardStage(gitErr.Stage)
+	}
+	return false
+}
+
+func isPreCallInstructionGuardStage(stage string) bool {
+	switch stage {
+	case "capture-before-call",
+		"unsupported-instruction-symlink",
+		"read-task-identity",
+		"read-task-baseline",
+		"before-call-mismatch",
+		"persist-task-baseline":
+		return true
+	default:
+		return false
+	}
+}
+
+func isPreCallGitGuardStage(stage string) bool {
+	switch stage {
+	case "resolve-git",
+		"capture-before-call",
+		"resolve-metadata",
+		"prepare-command-proxy",
+		"prepare-claude-wrapper":
+		return true
+	default:
+		return false
+	}
+}

@@ -53,6 +53,8 @@ type Workflow struct {
 
 	lastProducer             state.ParentReviewProducer
 	observedInstructionReads map[string]struct{}
+
+	modelCallAttempts int
 }
 
 type callDiagnostics struct {
@@ -78,6 +80,7 @@ type WorkerError struct {
 	ExitCode int
 	Tail     string
 	Message  string
+	cause    error
 }
 
 type effectiveRisk struct {
@@ -159,6 +162,10 @@ func (e *WorkerError) Error() string {
 		return "worker error"
 	}
 	return e.Message
+}
+
+func (e *WorkerError) Unwrap() error {
+	return e.cause
 }
 
 func (w *Workflow) ExecuteNewTask(request string) error {
@@ -260,7 +267,8 @@ func (w *Workflow) ExecuteDecision(decision string) error {
 		if err := w.replaceAcceptedScopeWithDecision(decision); err != nil {
 			return err
 		}
-		if err := w.state.BeginParentDecision(); err != nil {
+		rollback, err := w.state.BeginParentDecision()
+		if err != nil {
 			return err
 		}
 
@@ -277,8 +285,18 @@ func (w *Workflow) ExecuteDecision(decision string) error {
 			Request:        request,
 			Decision:       decision,
 		}
-		return w.executeWorkerCheckpointWithExhaustiveContext(request, activeTaskPath, checkpoint, pocStage)
+		return w.rollbackWhenPreCallGuardFailure(
+			rollback,
+			w.executeWorkerCheckpointWithExhaustiveContext(request, activeTaskPath, checkpoint, pocStage),
+		)
 	}))
+}
+
+func (w *Workflow) rollbackWhenPreCallGuardFailure(rollback state.ParentActionRollback, err error) error {
+	if err == nil || w.modelCallAttempts != 1 || !runner.IsPreCallGuardFailure(err) {
+		return err
+	}
+	return w.state.RollbackParentAction(rollback, err)
 }
 
 func (w *Workflow) replaceAcceptedScopeWithDecision(decision string) error {
@@ -306,7 +324,8 @@ func (w *Workflow) ExecuteExplicitFixWithScope(instruction, origin, cause, accep
 
 		decision := w.state.ReadOr("last-decision", "none")
 		review := w.state.ReadOr("last-review", "none")
-		if err := w.state.BeginParentFix(origin, cause); err != nil {
+		rollback, err := w.state.BeginParentFix(origin, cause)
+		if err != nil {
 			return err
 		}
 
@@ -333,7 +352,10 @@ func (w *Workflow) ExecuteExplicitFixWithScope(instruction, origin, cause, accep
 			Request:        request,
 			Decision:       decision,
 		}
-		return w.executeWorkerCheckpointWithExhaustiveContext(request, activeTaskPath, checkpoint, pocStage)
+		return w.rollbackWhenPreCallGuardFailure(
+			rollback,
+			w.executeWorkerCheckpointWithExhaustiveContext(request, activeTaskPath, checkpoint, pocStage),
+		)
 	}))
 }
 
@@ -1155,6 +1177,7 @@ func (w *Workflow) invokeModelCall(
 	guardBefore parentFileGuard,
 ) (modelCallExecution, error) {
 	execution := modelCallExecution{startedAt: w.now().UTC()}
+	w.modelCallAttempts++
 	execution.runResult, execution.runErr = w.runner.Run(
 		checkpoint.Role,
 		checkpoint.Phase,
@@ -1305,7 +1328,11 @@ func (w *Workflow) finalizeModelCallState(
 		}
 		_ = w.state.ClearResumeCheckpoint()
 		_ = w.state.RemoveUnreadySession(checkpoint.Role)
-		return workerError(checkpoint.Phase, outputPath, execution.runErr)
+		failure := workerError(checkpoint.Phase, outputPath, execution.runErr)
+		if runner.IsPreCallGuardFailure(execution.runErr) {
+			failure.cause = execution.runErr
+		}
+		return failure
 	}
 	if err := w.state.ClearResumeCheckpoint(); err != nil {
 		w.recordModelCall(checkpoint, execution.runResult, execution.startedAt, execution.completedAt, "state_error", "", err, outputPath, callDiagnostics{})
@@ -1463,6 +1490,7 @@ func (w *Workflow) runResumedTask(checkpoint state.ResumeCheckpoint, outputPath 
 
 	w.state.RecordTransientRetry()
 	w.state.RecordModelCall(checkpoint.Role, checkpoint.Model)
+	w.modelCallAttempts++
 	result, runErr := w.runner.Run(
 		checkpoint.Role,
 		checkpoint.Phase,
@@ -2033,7 +2061,7 @@ func boundedText(value string, maxBytes int) string {
 	return prefix + value[start:]
 }
 
-func workerError(phase string, outputPath string, runErr error) error {
+func workerError(phase string, outputPath string, runErr error) *WorkerError {
 	exitCode := 1
 	if value, ok := runErr.(interface{ ExitCode() int }); ok {
 		exitCode = value.ExitCode()

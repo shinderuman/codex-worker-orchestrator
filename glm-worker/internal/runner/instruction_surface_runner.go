@@ -25,12 +25,10 @@ func (r *InstructionSurfaceGuardRunner) Run(
 ) (RunResult, error) {
 	instructionBefore, err := r.base.prepareInstructionSurfaceGuard()
 	if err != nil {
-		r.invalidateSessions()
 		return RunResult{}, err
 	}
 	gitGuard, err := prepareGitAuthorityGuard(r.base.config.RepoRoot)
 	if err != nil {
-		r.invalidateSessions()
 		return RunResult{}, err
 	}
 	defer gitGuard.cleanup()
@@ -39,7 +37,6 @@ func (r *InstructionSurfaceGuardRunner) Run(
 	if gitGuard.before.active {
 		wrappedClaude, wrapErr := gitGuard.prepareClaudeWrapper(r.base.config.ClaudeBin)
 		if wrapErr != nil {
-			r.invalidateSessions()
 			return RunResult{}, wrapErr
 		}
 		copyBase := *r.base

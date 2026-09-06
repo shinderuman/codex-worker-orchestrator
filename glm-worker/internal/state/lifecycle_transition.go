@@ -12,28 +12,71 @@ type lifecycleFileSnapshot struct {
 	exists bool
 }
 
-func (s *StateStore) BeginParentDecision() error {
-	if s.TaskStatus() != TaskStatusWaitingDecision || !s.Exists("pending-decision") {
-		return fmt.Errorf("parent decision transition requires waiting-decision with pending decision")
-	}
-	if err := s.SetTaskStatus(TaskStatusActive); err != nil {
-		return err
-	}
-	s.RecordDecision()
-	_, err := s.RecordParentOutcome(ParentOutcomeDecision, "", "")
-	return err
+type ParentActionRollback struct {
+	status  TaskStatus
+	pending lifecycleFileSnapshot
 }
 
-func (s *StateStore) BeginParentFix(origin, cause string) error {
-	if s.TaskStatus() != TaskStatusWaitingSolReview || s.Exists("pending-decision") {
-		return fmt.Errorf("parent fix transition requires waiting-sol-review without pending decision")
+func (s *StateStore) BeginParentDecision() (ParentActionRollback, error) {
+	if s.TaskStatus() != TaskStatusWaitingDecision || !s.Exists("pending-decision") {
+		return ParentActionRollback{}, fmt.Errorf("parent decision transition requires waiting-decision with pending decision")
+	}
+	rollback, err := s.snapshotParentActionRollback()
+	if err != nil {
+		return ParentActionRollback{}, err
 	}
 	if err := s.SetTaskStatus(TaskStatusActive); err != nil {
-		return err
+		return ParentActionRollback{}, s.rollbackParentAction(rollback, err)
+	}
+	s.RecordDecision()
+	if _, err := s.RecordParentOutcome(ParentOutcomeDecision, "", ""); err != nil {
+		return ParentActionRollback{}, s.rollbackParentAction(rollback, err)
+	}
+	return rollback, nil
+}
+
+func (s *StateStore) BeginParentFix(origin, cause string) (ParentActionRollback, error) {
+	if s.TaskStatus() != TaskStatusWaitingSolReview || s.Exists("pending-decision") {
+		return ParentActionRollback{}, fmt.Errorf("parent fix transition requires waiting-sol-review without pending decision")
+	}
+	rollback, err := s.snapshotParentActionRollback()
+	if err != nil {
+		return ParentActionRollback{}, err
+	}
+	if err := s.SetTaskStatus(TaskStatusActive); err != nil {
+		return ParentActionRollback{}, s.rollbackParentAction(rollback, err)
 	}
 	s.RecordFix()
-	_, err := s.RecordParentOutcome(ParentOutcomeFix, origin, cause)
-	return err
+	if _, err := s.RecordParentOutcome(ParentOutcomeFix, origin, cause); err != nil {
+		return ParentActionRollback{}, s.rollbackParentAction(rollback, err)
+	}
+	return rollback, nil
+}
+
+func (s *StateStore) RollbackParentAction(rollback ParentActionRollback, cause error) error {
+	return s.rollbackParentAction(rollback, cause)
+}
+
+func (s *StateStore) snapshotParentActionRollback() (ParentActionRollback, error) {
+	pending, err := s.snapshotLifecycleFile("pending-decision")
+	if err != nil {
+		return ParentActionRollback{}, err
+	}
+	return ParentActionRollback{status: s.TaskStatus(), pending: pending}, nil
+}
+
+func (s *StateStore) rollbackParentAction(rollback ParentActionRollback, cause error) error {
+	if err := s.restoreLifecycleFile(rollback.pending); err != nil {
+		return joinParentActionRollbackFailure(cause, err)
+	}
+	if err := s.SetTaskStatus(rollback.status); err != nil {
+		return joinParentActionRollbackFailure(cause, err)
+	}
+	return cause
+}
+
+func joinParentActionRollbackFailure(cause error, rollbackErr error) error {
+	return fmt.Errorf("parent action begin failed and rollback failed: begin=%w rollback=%w", cause, rollbackErr)
 }
 
 func (s *StateStore) WaitForDecision() error {

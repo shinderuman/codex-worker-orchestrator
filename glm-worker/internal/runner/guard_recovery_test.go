@@ -104,3 +104,35 @@ func TestIsRecoverableGuardFailure(t *testing.T) {
 		})
 	}
 }
+
+func TestIsPreCallGuardFailure(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{name: "instruction baseline mismatch", err: &InstructionSurfaceGuardError{Stage: "before-call-mismatch", ChangedPaths: []string{"AGENTS.md/AGENTS.local.md"}}, want: true},
+		{name: "instruction baseline read failure", err: &InstructionSurfaceGuardError{Stage: "read-task-baseline", Cause: errors.New("unreadable")}, want: true},
+		{name: "instruction surface capture failure", err: &InstructionSurfaceGuardError{Stage: "capture-before-call", Cause: errors.New("walk failed")}, want: true},
+		{name: "instruction symlink rejection", err: &InstructionSurfaceGuardError{Stage: "unsupported-instruction-symlink", ChangedPaths: []string{"AGENTS.local.md"}}, want: true},
+		{name: "git snapshot capture failure", err: &GitAuthorityGuardError{Stage: "capture-before-call", Cause: errors.New("git failed")}, want: true},
+		{name: "git command proxy preparation failure", err: &GitAuthorityGuardError{Stage: "prepare-command-proxy", Cause: errors.New("no temp dir")}, want: true},
+		{name: "git claude wrapper preparation failure", err: &GitAuthorityGuardError{Stage: "prepare-claude-wrapper", Cause: errors.New("wrapper unwritable")}, want: true},
+		{name: "restored after-call mutation", err: &InstructionSurfaceGuardError{Stage: "after-call-mutation", ChangedPaths: []string{"AGENTS.md"}, Restored: true}, want: false},
+		{name: "after-call restore failure", err: &InstructionSurfaceGuardError{Stage: "restore-after-call", ChangedPaths: []string{"AGENTS.md"}, Cause: errors.New("restore failed")}, want: false},
+		{name: "after-call verify failure", err: &InstructionSurfaceGuardError{Stage: "verify-restored", ChangedPaths: []string{"AGENTS.md"}, Cause: errors.New("digest mismatch")}, want: false},
+		{name: "blocked git command after call", err: &GitAuthorityGuardError{Stage: "blocked-command", Mutations: []string{"command:branch"}}, want: false},
+		{name: "git refs mutated after call", err: &GitAuthorityGuardError{Stage: "after-call-mutation", Mutations: []string{"refs"}}, want: false},
+		{name: "parent baseline rotation failure", err: &InstructionSurfaceGuardError{Stage: "parent-rotation-no-change", Cause: errors.New("unchanged")}, want: false},
+		{name: "plain error", err: errors.New("unrelated"), want: false},
+		{name: "no error", err: nil, want: false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := IsPreCallGuardFailure(test.err); got != test.want {
+				t.Fatalf("IsPreCallGuardFailure() = %v want %v", got, test.want)
+			}
+		})
+	}
+}

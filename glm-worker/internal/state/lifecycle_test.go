@@ -1,6 +1,7 @@
 package state
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -104,6 +105,95 @@ func TestEnterStopQualityGateClearsResidualPendingDecision(t *testing.T) {
 	}
 	if saved.Decision != "decision-body" {
 		t.Fatalf("checkpoint decision = %q", saved.Decision)
+	}
+}
+
+func TestBeginParentDecisionRollbackRestoresWaitingDecision(t *testing.T) {
+	st := newLifecycleTestStore(t)
+	if _, err := st.StartNewTask(); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetTaskStatus(TaskStatusWaitingDecision); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Touch("pending-decision"); err != nil {
+		t.Fatal(err)
+	}
+
+	rollback, err := st.BeginParentDecision()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.TaskStatus() != TaskStatusActive || !st.Exists("pending-decision") {
+		t.Fatalf("begin state: status=%s pending=%t", st.TaskStatus(), st.Exists("pending-decision"))
+	}
+
+	cause := errors.New("repository instruction surface guard failed: before-call-mismatch")
+	if err := st.RollbackParentAction(rollback, cause); !errors.Is(err, cause) {
+		t.Fatalf("rollback error = %v", err)
+	}
+	if st.TaskStatus() != TaskStatusWaitingDecision || !st.Exists("pending-decision") {
+		t.Fatalf("rollback state: status=%s pending=%t", st.TaskStatus(), st.Exists("pending-decision"))
+	}
+	plan, planErr := st.ParentActionPlan()
+	if planErr != nil || plan.RequiredAction != ParentActionDecision {
+		t.Fatalf("rollback plan = %#v err=%v", plan, planErr)
+	}
+}
+
+func TestBeginParentFixRollbackRestoresWaitingSolReview(t *testing.T) {
+	st := newLifecycleTestStore(t)
+	if _, err := st.StartNewTask(); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetTaskStatus(TaskStatusWaitingSolReview); err != nil {
+		t.Fatal(err)
+	}
+
+	rollback, err := st.BeginParentFix(ParentOriginGLMReviewer, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.TaskStatus() != TaskStatusActive || st.Exists("pending-decision") {
+		t.Fatalf("begin state: status=%s pending=%t", st.TaskStatus(), st.Exists("pending-decision"))
+	}
+
+	cause := errors.New("repository instruction surface guard failed: before-call-mismatch")
+	if err := st.RollbackParentAction(rollback, cause); !errors.Is(err, cause) {
+		t.Fatalf("rollback error = %v", err)
+	}
+	if st.TaskStatus() != TaskStatusWaitingSolReview || st.Exists("pending-decision") {
+		t.Fatalf("rollback state: status=%s pending=%t", st.TaskStatus(), st.Exists("pending-decision"))
+	}
+	plan, planErr := st.ParentActionPlan()
+	if planErr != nil || !plan.Allows(ParentActionFix) {
+		t.Fatalf("rollback plan = %#v err=%v", plan, planErr)
+	}
+}
+
+func TestBeginParentDecisionInternalFailureRollsBack(t *testing.T) {
+	st := newLifecycleTestStore(t)
+	if _, err := st.StartNewTask(); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetTaskStatus(TaskStatusWaitingDecision); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Touch("pending-decision"); err != nil {
+		t.Fatal(err)
+	}
+	stateDir := filepath.Dir(st.Path("task.status"))
+	if err := os.Chmod(stateDir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(stateDir, 0o700) })
+
+	_, err := st.BeginParentDecision()
+	if err == nil || !strings.Contains(err.Error(), "parent action begin failed and rollback failed") {
+		t.Fatalf("begin failure error = %v", err)
+	}
+	if st.TaskStatus() != TaskStatusWaitingDecision || !st.Exists("pending-decision") {
+		t.Fatalf("failed begin state: status=%s pending=%t", st.TaskStatus(), st.Exists("pending-decision"))
 	}
 }
 
