@@ -8,11 +8,10 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/parent-codex-rollout-chain-attribution.md`
+- `IMPLEMENTATION_TASKS/105-session-rotation.md`
 
 ## NEXT（優先順）
 
-- `IMPLEMENTATION_TASKS/105-session-rotation.md`
 - `IMPLEMENTATION_TASKS/codex-efficiency-reevaluation-checkpoint.md`
 - `IMPLEMENTATION_TASKS/watch-terminal-error-orphan-exit.md`
 - `IMPLEMENTATION_TASKS/markdown-derived-state-authority-audit.md`

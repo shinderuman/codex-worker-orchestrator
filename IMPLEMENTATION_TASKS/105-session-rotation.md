@@ -107,12 +107,13 @@ session aging telemetry。Task 009 worker outlier report完了済み。Task 010�
 
 ## Dependencies
 
-- `IMPLEMENTATION_TASKS/parent-codex-rollout-chain-attribution.md`
+none
 
 ## Fulfilled dependencies
 
 - `IMPLEMENTATION_TASKS/parent-codex-token-attribution.md`
 - `IMPLEMENTATION_TASKS/telemetry-history-cohort-query.md`
+- `IMPLEMENTATION_TASKS/parent-codex-rollout-chain-attribution.md`
 
 ## Review findings
 
@@ -120,4 +121,4 @@ none
 
 ## Current boundary
 
-恒久運用をユーザー許可済み。現在の異常消費対策task完了直後にACTIVE化し、採用済みrotationを機械化する。fresh evidenceは採否ではなく閾値調整に用いる。
+恒久運用をユーザー許可済み。依存taskはすべて完了し、採用済みrotationの機械化を開始できる。fresh evidenceは採否ではなく閾値調整に用いる。
