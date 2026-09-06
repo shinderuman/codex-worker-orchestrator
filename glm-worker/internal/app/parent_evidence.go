@@ -466,6 +466,10 @@ func (p *parentEvidenceProjector) projectAuthority(request parentEvidenceAuthori
 		)
 		body.Content = ""
 	}
+	if body.Content != "" {
+		part.Bytes = len(body.Content)
+		part.TokenProxy = state.ParentEvidenceTokenProxy(part.Bytes)
+	}
 	part.Locator = "authority:" + request.Kind
 	part.Authority = &body
 	return p.recordPart(part, surface)
@@ -543,8 +547,15 @@ func (p *parentEvidenceProjector) projectValidations() parentEvidencePart {
 		part.Status = parentEvidencePartUnknown
 		part.Reason = "no validation run matches the current snapshot"
 	} else {
+		rendered, marshalErr := json.Marshal(records)
+		if marshalErr != nil {
+			part.Status = parentEvidencePartError
+			part.Reason = marshalErr.Error()
+			return p.recordPart(part, state.ParentEvidenceSurfaceValidations)
+		}
 		part.Status = parentEvidencePartProjected
-		part.Bytes = len(records)
+		part.Bytes = len(rendered)
+		part.TokenProxy = state.ParentEvidenceTokenProxy(part.Bytes)
 	}
 	part.Digest = parentEvidenceStringDigest(fmt.Sprintf("%v", records))
 	return p.recordPart(part, state.ParentEvidenceSurfaceValidations)
@@ -571,7 +582,14 @@ func (p *parentEvidenceProjector) projectTelemetry() parentEvidencePart {
 		Summary:    state.SummarizeParentEvidence(records),
 	}
 	part.Telemetry = &body
-	part.Bytes = body.Records
+	rendered, marshalErr := json.Marshal(body)
+	if marshalErr != nil {
+		part.Status = parentEvidencePartError
+		part.Reason = marshalErr.Error()
+		return p.recordPart(part, state.ParentEvidenceSurfaceEvidenceTelemetry)
+	}
+	part.Bytes = len(rendered)
+	part.TokenProxy = state.ParentEvidenceTokenProxy(part.Bytes)
 	part.Digest = parentEvidenceStringDigest(fmt.Sprintf("%d:%d", body.Records, body.ModelCalls))
 	return p.recordPart(part, state.ParentEvidenceSurfaceEvidenceTelemetry)
 }
