@@ -261,15 +261,15 @@ func (w *Workflow) verifyParkIntegration(record state.ParkRecord) (string, error
 }
 
 func (w *Workflow) verifyParkHeadProvenance(record state.ParkRecord, current state.GitSnapshot) (string, error) {
-	if current.Head == record.Head {
-		return "head-unchanged", nil
-	}
 	tip, tipErr := state.ResolveBranchTip(w.config.RepoRoot, record.Branch)
 	if tipErr == nil && tip != record.Head {
 		if err := verifyHeadAncestry(w.config.RepoRoot, tip, current.Head); err != nil {
 			return "", &WorkerError{Phase: "unpark", Message: "割込みbranchの成果が現在HEADへ統合されていないため復帰できません(統合後にunparkしてください): " + err.Error()}
 		}
 		return "interrupt-integrated", nil
+	}
+	if current.Head == record.Head {
+		return "head-unchanged", nil
 	}
 	if err := verifyHeadAncestry(w.config.RepoRoot, record.Head, current.Head); err != nil {
 		return "", &WorkerError{Phase: "unpark", Message: "park後のHEAD移動がpark基準commitを祖先に含みません: " + err.Error()}
