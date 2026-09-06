@@ -19,9 +19,9 @@ const (
 	maxSnippetRunes = 200
 )
 
-func rankDocuments(docs []doc, queryTokens []string, limit int, pathWeight float64) []Result {
+func rankDocuments(docs []doc, queryTokens []string, limit int, pathWeight float64) ([]Result, int) {
 	if len(docs) == 0 {
-		return nil
+		return nil, 0
 	}
 	contentStats := buildFieldStatistics(docs, queryTokens, func(entry doc) map[string]int { return entry.ContentTF }, func(entry doc) int { return entry.ContentLength })
 	pathStats := buildFieldStatistics(docs, queryTokens, func(entry doc) map[string]int { return entry.PathTF }, func(entry doc) int { return entry.PathLength })
@@ -39,6 +39,7 @@ func rankDocuments(docs []doc, queryTokens []string, limit int, pathWeight float
 			PathScore:    pathScore,
 		})
 	}
+	candidates := len(results)
 	sort.Slice(results, func(i, j int) bool {
 		if results[i].Score != results[j].Score {
 			return results[i].Score > results[j].Score
@@ -48,7 +49,7 @@ func rankDocuments(docs []doc, queryTokens []string, limit int, pathWeight float
 	if len(results) > limit {
 		results = results[:limit]
 	}
-	return results
+	return results, candidates
 }
 
 func buildFieldStatistics(docs []doc, tokens []string, frequencies func(doc) map[string]int, length func(doc) int) fieldStatistics {

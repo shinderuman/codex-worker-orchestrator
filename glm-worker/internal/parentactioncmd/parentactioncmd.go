@@ -22,7 +22,7 @@ import (
 )
 
 const (
-	usage = "usage: glm-parent-action start | prepare <decision|fix|start-milestones|revise-milestones> | decision <token> | fix <token> [--origin <origin>] [--cause <cause>] [--accepted-scope current-diff] | approve-surface --accepted-scope current-diff | start-milestones <token> | revise-milestones <token> | no-go | accept | resume | finalize-check <go-test|go-test-race>"
+	usage = "usage: glm-parent-action start | prepare <decision|fix|start-milestones|revise-milestones> | decision <token> | fix <token> [--origin <origin>] [--cause <cause>] [--accepted-scope current-diff] | approve-surface --accepted-scope current-diff | start-milestones <token> | revise-milestones <token> | no-go | accept | resume | park | unpark | evidence <manifest.json> | finalize-check <go-test|go-test-race>"
 
 	activeTaskRequest = "現在のACTIVE taskを実行してください。"
 	actionStart       = "start"
@@ -88,6 +88,8 @@ func execute(cfg config.AppConfig, args []string, stdout, stderr io.Writer) erro
 		return executeApproveSurfaceAction(cfg, args[1:], stdout, stderr)
 	case actionStart, "accept", "resume":
 		return executeDirectWorkerAction(cfg, action, args, stdout, stderr)
+	case "park", "unpark", "evidence":
+		return executeParentReadOrParkAction(cfg, args, stdout, stderr)
 	case "finalize-check":
 		if len(args) != 2 {
 			return fmt.Errorf("usage: glm-parent-action finalize-check <go-test|go-test-race>")
@@ -99,6 +101,29 @@ func execute(cfg config.AppConfig, args []string, stdout, stderr io.Writer) erro
 		return runFinalizationCheck(cfg.RepoRoot, validationDir, args[1], stdout)
 	default:
 		return fmt.Errorf("%s", usage)
+	}
+}
+
+func executeParentReadOrParkAction(cfg config.AppConfig, args []string, stdout, stderr io.Writer) error {
+	switch args[0] {
+	case "park":
+		if len(args) != 1 {
+			return fmt.Errorf("usage: glm-parent-action park")
+		}
+		return runWorker(cfg.RepoRoot, []string{"--park"}, nil, stdout, stderr, nil)
+	case "unpark":
+		if len(args) != 1 {
+			return fmt.Errorf("usage: glm-parent-action unpark")
+		}
+		return runWorker(cfg.RepoRoot, []string{"--unpark"}, nil, stdout, stderr, nil)
+	default:
+		if len(args) != 2 {
+			return fmt.Errorf("usage: glm-parent-action evidence <manifest.json>")
+		}
+		if _, err := os.Stat(args[1]); err != nil {
+			return fmt.Errorf("evidence manifestを確認できません: %w", err)
+		}
+		return runWorker(cfg.RepoRoot, []string{"--evidence", args[1]}, nil, stdout, stderr, nil)
 	}
 }
 

@@ -21,26 +21,27 @@ type processErrorEnvelope struct {
 }
 
 const (
-	errorKindUsage                   = "usage"
-	errorKindStdinPayload            = "stdin_payload"
-	errorKindNotFound                = "not_found"
-	errorKindRepoLockHeld            = "repo_lock_held"
-	errorKindWorkerError             = "worker_error"
-	errorKindQualityGateRecoverable  = "quality_gate_recoverable"
-	errorKindRateLimited             = "rate_limited"
-	errorKindProviderUnavailable     = "provider_unavailable"
-	errorKindGuardRecoverable        = "guard_recoverable"
-	errorKindInterrupted             = "interrupted"
-	errorKindStopEndpointAbsent      = "stop_endpoint_absent"
-	errorKindStopEndpointStale       = "stop_endpoint_stale"
-	errorKindVerificationFailed      = "verification_failed"
-	errorKindVerificationUnavailable = "verification_unavailable"
-	errorKindCodexLimitUnavailable   = "codex_limit_unavailable"
-	errorKindInstallSmokeFailed      = "install_smoke_failed"
-	errorKindQualityGateFailed       = "quality_gate_failed"
-	errorKindQualityPreflightFailed  = "quality_preflight_failed"
-	errorKindMachineOutputViolation  = "machine_output_violation"
-	errorKindInternal                = "internal"
+	errorKindUsage                     = "usage"
+	errorKindStdinPayload              = "stdin_payload"
+	errorKindNotFound                  = "not_found"
+	errorKindRepoLockHeld              = "repo_lock_held"
+	errorKindWorkerError               = "worker_error"
+	errorKindQualityGateRecoverable    = "quality_gate_recoverable"
+	errorKindRateLimited               = "rate_limited"
+	errorKindProviderUnavailable       = "provider_unavailable"
+	errorKindGuardRecoverable          = "guard_recoverable"
+	errorKindInterrupted               = "interrupted"
+	errorKindStopEndpointAbsent        = "stop_endpoint_absent"
+	errorKindStopEndpointStale         = "stop_endpoint_stale"
+	errorKindVerificationFailed        = "verification_failed"
+	errorKindVerificationUnavailable   = "verification_unavailable"
+	errorKindCodexLimitUnavailable     = "codex_limit_unavailable"
+	errorKindInstallSmokeFailed        = "install_smoke_failed"
+	errorKindQualityGateFailed         = "quality_gate_failed"
+	errorKindQualityPreflightFailed    = "quality_preflight_failed"
+	errorKindMachineOutputViolation    = "machine_output_violation"
+	errorKindDuplicateParentProjection = "duplicate_parent_projection"
+	errorKindInternal                  = "internal"
 )
 
 func WriteProcessError(w io.Writer, err error) error {
@@ -65,6 +66,7 @@ func buildInputProcessError(err error) (processErrorBody, bool) {
 	var notFound *NotFoundError
 	var stdinPayload *StdinPayloadError
 	var outputViolation *MachineOutputViolationError
+	var duplicateProjection *DuplicateParentProjectionError
 
 	switch {
 	case errors.As(err, &usage):
@@ -73,6 +75,17 @@ func buildInputProcessError(err error) (processErrorBody, bool) {
 		return processErrorBody{Kind: errorKindStdinPayload, Message: stdinPayload.Message}, true
 	case errors.As(err, &notFound):
 		return processErrorBody{Kind: errorKindNotFound, Message: notFound.Message}, true
+	case errors.As(err, &duplicateProjection):
+		return processErrorBody{
+			Kind:    errorKindDuplicateParentProjection,
+			Message: duplicateProjection.Error(),
+			Detail: map[string]any{
+				"surface":       duplicateProjection.Surface,
+				"digest":        duplicateProjection.Digest,
+				"owner_call_id": duplicateProjection.OwnerCallID,
+				"batch_command": parentEvidenceBatchCommand,
+			},
+		}, true
 	case errors.Is(err, ErrRepoLockHeld):
 		return processErrorBody{Kind: errorKindRepoLockHeld, Message: ErrRepoLockHeld.Error()}, true
 	case errors.Is(err, state.ErrNoResumeCheckpoint):

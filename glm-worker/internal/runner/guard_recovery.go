@@ -5,6 +5,11 @@ import (
 	"strings"
 )
 
+const (
+	instructionSurfaceGuardErrorPrefix = "repository instruction surface guard failed"
+	gitAuthorityGuardErrorPrefix       = "git authority guard failed"
+)
+
 func IsRecoverableGuardFailure(err error) bool {
 	var gitErr *GitAuthorityGuardError
 	hasGitFailure := errors.As(err, &gitErr)
@@ -49,6 +54,26 @@ func IsPreCallGuardFailure(err error) bool {
 		return isPreCallGitGuardStage(gitErr.Stage)
 	}
 	return false
+}
+
+func IsPreCallGuardFailureText(text string) bool {
+	if stage, ok := guardErrorStageFromText(text, instructionSurfaceGuardErrorPrefix); ok {
+		return isPreCallInstructionGuardStage(stage)
+	}
+	stage, ok := guardErrorStageFromText(text, gitAuthorityGuardErrorPrefix)
+	if !ok {
+		return false
+	}
+	return isPreCallGitGuardStage(stage)
+}
+
+func guardErrorStageFromText(text string, prefix string) (string, bool) {
+	rest, found := strings.CutPrefix(text, prefix+":")
+	if !found {
+		return "", false
+	}
+	stage, _, _ := strings.Cut(strings.TrimPrefix(rest, " "), ":")
+	return stage, true
 }
 
 func isPreCallInstructionGuardStage(stage string) bool {

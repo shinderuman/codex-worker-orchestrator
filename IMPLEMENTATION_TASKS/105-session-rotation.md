@@ -17,6 +17,19 @@ compactionとは別論点。
 
 ## Amendments
 
+- 2026-09-06 permanent operation authorization:
+
+````text
+じゃあ恒久的にセッションを新しく作るのを許可するのでそういう運用にしろ
+````
+
+- 2026-09-06 adopted operating rule:
+
+  - 通常は2 task完了ごとに親Codex sessionをrotationする
+  - HIGH risk task、compaction発生、親5h枠10%以上消費、親model return 5回超、複数回のreview修正・競合復旧・Sol判断、過大model-visible outputのいずれかでは1 taskでrotationする
+  - rotationごとのuser再承認を求めない
+  - GLM in-flight処理を再起動せず、同じsaved projectのlocal checkoutとcanonical ACTIVE task/runtime stateを新しいCodex taskへ引き継ぐ
+
 - 2026-09-03 user permission and priority:
 
 ````text
@@ -57,26 +70,35 @@ blocked taskには、
 
 ## Purpose
 
-長寿命sessionの品質/cost劣化がある場合だけ対策する。
+長寿命sessionで親context再入力が累積する前に、task境界でCodex sessionを機械的にrotationし、品質判断を維持したまま親Codex実消費を抑える。
+
+## External feasibility
+
+status: not-applicable
 
 ## Contract
 
-- `parent-codex-token-attribution.md`と`telemetry-history-cohort-query.md`のfresh evidenceを使い、session age、compaction、親model/tool turn、model-visible tool bytes、task boundary、Codex review outcomeの関係を比較する
+- defaultは2 task完了ごととし、HIGH risk task、compaction、親5h枠10%以上消費、親model return 5回超、複数回のreview修正・競合復旧・Sol判断、過大model-visible outputのいずれかでは1 task完了時または安全なparent handoff境界でrotationする
+- ユーザーの恒久許可をauthorityとしてrotationごとの再承認を求めず、新しいCodex taskを同じsaved projectのlocal checkoutに作成する
+- `parent-codex-token-attribution.md`と`telemetry-history-cohort-query.md`のfresh evidenceを使い、閾値を調整する。ただしrotation採用自体をNo-Goへ戻さない
 - session継続とrotation後bootstrap / authority再読の双方をCodex total tokenで比較し、GLM token削減だけを採用根拠にしない
-- 品質proxyとattributionが十分な場合だけ、既存lifecycleへ収まるbounded rotation ruleを実装する。証拠が不足またはCodex tokenが増える場合はNo-Goとして完了する
+- 新sessionはPlan ACTIVE task、Git現物、runtime task/session IDだけから再開し、旧会話の自由文を要求正本として複製しない
 - 既存state、checkpoint、resume、parent actionを再利用し、rotation専用daemon / DBを追加しない
 
 ## Must not
 
-- 無条件rotation、tokenだけのhard cap、compaction閾値変更を導入しない
+- task境界を無視した無条件rotation、tokenだけのhard cap、compaction閾値変更を導入しない
+- healthyなGLM in-flight処理を新規task/sessionとして再起動しない
+- rotation先を別worktreeにして現在checkoutに紐づくruntime stateを失わない
 - GLM token削減のために親Codex token、Sol判断、要求再説明、authority再読を増やす設計を採用しない
 - 品質proxyが悪化する条件、counter resetやtask attributionがunknownな条件を改善扱いしない
 
 ## Acceptance criteria
 
-- fresh telemetryで継続/rotationのCodex total tokenと品質proxyを比較し、source locator付きの採否根拠が得られる
-- 採用時は既存lifecycleに統合したbounded rule、rollback、tests、独立reviewを完了する
-- No-Go時はproduction behaviorを変更せず、再評価に必要な欠損fieldを明示する
+- default 2 taskと早期1 task triggerがtask completion/handoff lifecycleから新しいCodex taskを一度だけ作成し、重複を防ぐ
+- rotation先が同じsaved projectのlocal checkout、同じPlan ACTIVE、同じGLM task/session stateを参照し、in-flight処理を再起動しない
+- fresh telemetryで継続/rotationのCodex total tokenと品質proxyを比較し、source locator付きで閾値を調整できる
+- 既存lifecycleに統合したbounded rule、rollback、tests、独立reviewを完了する
 - いずれの結論でもGLM token単独の改善を成功条件にしない
 
 ## Historical invariants
@@ -98,4 +120,4 @@ none
 
 ## Current boundary
 
-ユーザー許可済み。dependencies完了後にfresh evidenceで採否する。
+恒久運用をユーザー許可済み。現在の異常消費対策task完了直後にACTIVE化し、採用済みrotationを機械化する。fresh evidenceは採否ではなく閾値調整に用いる。

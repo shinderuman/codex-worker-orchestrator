@@ -27,6 +27,7 @@ type Report struct {
 	Warnings     []string
 	IndexedFiles int
 	SkippedFiles int
+	Candidates   int
 }
 
 type Options struct {
@@ -43,6 +44,10 @@ type Options struct {
 	PathWeight *float64
 
 	ExcludeDirs []string
+
+	PathPrefixes []string
+
+	Symbols []string
 }
 
 type searchSettings struct {
@@ -53,6 +58,8 @@ type searchSettings struct {
 	maxTotalBytes int
 	pathWeight    float64
 	excludeDirs   map[string]bool
+	pathPrefixes  []string
+	symbols       []string
 }
 
 const (
@@ -131,6 +138,10 @@ func resolveSettings(opts Options) (searchSettings, error) {
 	if err != nil {
 		return searchSettings{}, err
 	}
+	pathPrefixes, symbols, err := resolveScopes(opts.PathPrefixes, opts.Symbols)
+	if err != nil {
+		return searchSettings{}, err
+	}
 	cacheRoot, err := resolveCacheRoot(opts)
 	if err != nil {
 		return searchSettings{}, err
@@ -143,7 +154,27 @@ func resolveSettings(opts Options) (searchSettings, error) {
 		maxTotalBytes: maxTotalBytes,
 		pathWeight:    pathWeight,
 		excludeDirs:   excludeDirs,
+		pathPrefixes:  pathPrefixes,
+		symbols:       symbols,
 	}, nil
+}
+
+func resolveScopes(pathPrefixes []string, symbols []string) ([]string, []string, error) {
+	for _, prefix := range pathPrefixes {
+		clean := filepath.ToSlash(filepath.Clean(prefix))
+		if clean == "" || clean == "." || clean == ".." || strings.HasPrefix(clean, "../") || strings.HasPrefix(clean, "/") {
+			return nil, nil, fmt.Errorf("%w: PathPrefixesはrepository相対のpath prefixを指定してください: %q", ErrInvalidOptions, prefix)
+		}
+	}
+	resolved := make([]string, 0, len(symbols))
+	for _, symbol := range symbols {
+		tokens := tokenize(symbol)
+		if len(tokens) == 0 {
+			return nil, nil, fmt.Errorf("%w: Symbolsは識別子として有効な値を指定してください: %q", ErrInvalidOptions, symbol)
+		}
+		resolved = append(resolved, tokens...)
+	}
+	return pathPrefixes, resolved, nil
 }
 
 func resolvePathWeight(requested *float64) (float64, error) {
@@ -204,7 +235,8 @@ func attemptSearch(ctx context.Context, root string, queryTokens []string, setti
 	if err != nil || raced {
 		return Report{}, raced, err
 	}
-	results := rankDocuments(index.docs, queryTokens, settings.limit, settings.pathWeight)
+	scoped := scopeDocuments(index.docs, settings)
+	results, candidates := rankDocuments(scoped, queryTokens, settings.limit, settings.pathWeight)
 	warnings := attachSnippets(root, results, queryTokens)
 	raced, err = fingerprintUnchanged(ctx, root, settings.excludeDirs, before)
 	if err != nil || raced {
@@ -225,7 +257,42 @@ func attemptSearch(ctx context.Context, root string, queryTokens []string, setti
 		Warnings:     warnings,
 		IndexedFiles: index.indexed,
 		SkippedFiles: index.skipped,
+		Candidates:   candidates,
 	}, false, nil
+}
+
+func scopeDocuments(docs []doc, settings searchSettings) []doc {
+	if len(settings.pathPrefixes) == 0 && len(settings.symbols) == 0 {
+		return docs
+	}
+	scoped := make([]doc, 0, len(docs))
+	for _, entry := range docs {
+		if documentInScope(entry, settings) {
+			scoped = append(scoped, entry)
+		}
+	}
+	return scoped
+}
+
+func documentInScope(entry doc, settings searchSettings) bool {
+	for _, prefix := range settings.pathPrefixes {
+		if pathHasPrefix(entry.Path, prefix) {
+			return true
+		}
+	}
+	for _, symbol := range settings.symbols {
+		if entry.ContentTF[symbol] > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func pathHasPrefix(path string, prefix string) bool {
+	if path == prefix {
+		return true
+	}
+	return strings.HasPrefix(path, strings.TrimSuffix(prefix, "/")+"/")
 }
 
 func resolveCanonicalRoot(ctx context.Context, repoRoot string) (string, error) {

@@ -47,6 +47,92 @@ func TestLoadSnapshotAndBuildParts(t *testing.T) {
 	}
 }
 
+func TestBuildWithKnownContentSHA256SuppressesUnchangedBody(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, root, rulesFile, "rules-body\n")
+	writeTestFile(t, root, planFile, "# Plan\n\n## ACTIVE\n\n- `IMPLEMENTATION_TASKS/current.md`\n")
+	writeTestFile(t, root, "IMPLEMENTATION_TASKS/current.md", "task-body\n")
+
+	original, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(root); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(original); err != nil {
+			t.Errorf("restore cwd: %v", err)
+		}
+	})
+
+	first, err := Build([]string{"active"})
+	if err != nil {
+		t.Fatalf("Build first: %v", err)
+	}
+	if first.ContentMatch != ContentMatchUnknown || first.ContentSHA256 == "" || first.Content != "task-body\n" {
+		t.Fatalf("first projection = %#v", first)
+	}
+
+	unchanged, err := Build([]string{"active", knownContentSHA256Flag, first.ContentSHA256})
+	if err != nil {
+		t.Fatalf("Build unchanged: %v", err)
+	}
+	if unchanged.ContentMatch != ContentMatchUnchanged {
+		t.Fatalf("content match = %q, want unchanged", unchanged.ContentMatch)
+	}
+	if unchanged.Content != "" {
+		t.Fatalf("unchanged projection still carries %d content bytes", len(unchanged.Content))
+	}
+	if unchanged.AuthoritySnapshotSHA256 != first.AuthoritySnapshotSHA256 || unchanged.ActiveTask != first.ActiveTask {
+		t.Fatalf("unchanged projection = %#v", unchanged)
+	}
+
+	writeTestFile(t, root, "IMPLEMENTATION_TASKS/current.md", "task-body-2\n")
+	changed, err := Build([]string{"active", knownContentSHA256Flag, first.ContentSHA256})
+	if err != nil {
+		t.Fatalf("Build changed: %v", err)
+	}
+	if changed.ContentMatch != ContentMatchChanged || changed.Content != "task-body-2\n" {
+		t.Fatalf("changed projection = %#v", changed)
+	}
+	if changed.AuthoritySnapshotSHA256 == first.AuthoritySnapshotSHA256 {
+		t.Fatal("snapshot hash did not change with content")
+	}
+}
+
+func TestBuildRejectsMalformedKnownContentSHA256(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, root, rulesFile, "rules\n")
+	writeTestFile(t, root, planFile, "# Plan\n## ACTIVE\n- `IMPLEMENTATION_TASKS/current.md`\n")
+	writeTestFile(t, root, "IMPLEMENTATION_TASKS/current.md", "body\n")
+
+	original, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(root); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(original); err != nil {
+			t.Errorf("restore cwd: %v", err)
+		}
+	})
+
+	for _, args := range [][]string{
+		{"active", knownContentSHA256Flag},
+		{"active", knownContentSHA256Flag, "short"},
+		{"active", knownContentSHA256Flag, "zz"},
+		{"active", "--unknown-flag", "value"},
+		{"rules", "plan"},
+	} {
+		if _, err := Build(args); err == nil {
+			t.Fatalf("Build(%v) succeeded, want usage error", args)
+		}
+	}
+}
+
 func TestLoadSnapshotRejectsInvalidActiveSchedule(t *testing.T) {
 	tests := map[string]string{
 		"missing":    "# Plan\n## NEXT\n- `IMPLEMENTATION_TASKS/x.md`\n",

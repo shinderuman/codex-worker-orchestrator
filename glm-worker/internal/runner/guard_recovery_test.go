@@ -136,3 +136,30 @@ func TestIsPreCallGuardFailure(t *testing.T) {
 		})
 	}
 }
+
+func TestIsPreCallGuardFailureText(t *testing.T) {
+	tests := []struct {
+		name string
+		text string
+		want bool
+	}{
+		{name: "instruction baseline mismatch", text: (&InstructionSurfaceGuardError{Stage: "before-call-mismatch", ChangedPaths: []string{"AGENTS.md/AGENTS.local.md"}}).Error(), want: true},
+		{name: "instruction baseline read failure", text: (&InstructionSurfaceGuardError{Stage: "read-task-baseline", Cause: errors.New("unreadable")}).Error(), want: true},
+		{name: "git snapshot capture failure", text: (&GitAuthorityGuardError{Stage: "capture-before-call", Cause: errors.New("git failed")}).Error(), want: true},
+		{name: "git resolve failure", text: (&GitAuthorityGuardError{Stage: "resolve-git", Cause: errors.New("missing")}).Error(), want: true},
+		{name: "restored after-call mutation", text: (&InstructionSurfaceGuardError{Stage: "after-call-mutation", ChangedPaths: []string{"AGENTS.md"}, Restored: true}).Error(), want: false},
+		{name: "blocked git command", text: (&GitAuthorityGuardError{Stage: "blocked-command", Mutations: []string{"command:branch"}}).Error(), want: false},
+		{name: "after-call restore failure", text: (&InstructionSurfaceGuardError{Stage: "restore-after-call", ChangedPaths: []string{"AGENTS.md"}, Cause: errors.New("restore failed")}).Error(), want: false},
+		{name: "unrelated error text", text: "transient provider failure: timeout", want: false},
+		{name: "guard prefix without stage", text: instructionSurfaceGuardErrorPrefix + ":", want: false},
+		{name: "empty text", text: "", want: false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := IsPreCallGuardFailureText(test.text); got != test.want {
+				t.Fatalf("IsPreCallGuardFailureText() = %v want %v", got, test.want)
+			}
+		})
+	}
+}

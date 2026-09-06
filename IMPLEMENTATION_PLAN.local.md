@@ -8,7 +8,7 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/parent-model-visible-evidence-projection.md`
+- `IMPLEMENTATION_TASKS/105-session-rotation.md`
 
 ## NEXT（優先順）
 
@@ -29,7 +29,6 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 - `IMPLEMENTATION_TASKS/mechanized-control-prose-thinning.md`
 - `IMPLEMENTATION_TASKS/packet-validation-correction-recovery.md`
 - `IMPLEMENTATION_TASKS/user-level-installation-scope-redesign.md`
-- `IMPLEMENTATION_TASKS/105-session-rotation.md`
 - `IMPLEMENTATION_TASKS/structured-validation-gate-telemetry.md`
 - `IMPLEMENTATION_TASKS/post-105-codex-efficiency-reevaluation.md`
 - `IMPLEMENTATION_TASKS/022-final-verification.md`

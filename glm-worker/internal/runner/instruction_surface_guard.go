@@ -34,7 +34,7 @@ type InstructionSurfaceGuardError struct {
 const instructionSurfaceBaselineStateKey = "instruction-surface-baseline-v1"
 
 func (e *InstructionSurfaceGuardError) Error() string {
-	parts := []string{"repository instruction surface guard failed", e.Stage}
+	parts := []string{instructionSurfaceGuardErrorPrefix, e.Stage}
 	if len(e.ChangedPaths) > 0 {
 		parts = append(parts, strings.Join(e.ChangedPaths, ","))
 	}

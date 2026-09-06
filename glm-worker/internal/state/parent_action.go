@@ -31,6 +31,8 @@ const (
 	ParentActionAccept                      ParentAction = "accept"
 	ParentActionFix                         ParentAction = "fix"
 	ParentActionResume                      ParentAction = "resume"
+	ParentActionPark                        ParentAction = "park"
+	ParentActionUnpark                      ParentAction = "unpark"
 	ParentActionRepairGuardThenResume       ParentAction = "repair-guard-then-resume"
 	ParentActionRepairQualityGateThenResume ParentAction = "repair-quality-gate-then-resume"
 )
@@ -128,6 +130,8 @@ func parentActionPlanForStatus(status TaskStatus, pending bool, pendingDecisionR
 		return waitingDecisionActionPlan(status, pending, openReview, stopKind)
 	case TaskStatusWaitingSolReview:
 		return waitingReviewActionPlan(status, pending, openReview, stopKind, qualitySurfaceApproval)
+	case TaskStatusParked:
+		return parkedActionPlan(status, pending, openReview, stopKind)
 	case TaskStatusComplete:
 		return completeActionPlan(status, pending, openReview, stopKind)
 	case TaskStatusActive, TaskStatusNone:
@@ -141,7 +145,7 @@ func waitingDecisionActionPlan(status TaskStatus, pending bool, openReview strin
 	if !pending || stopKind != ResumeStopNone || unexpectedOpenReview(openReview, packet.StatusNeedsSolDecision) {
 		return ParentActionPlan{}, lifecycleInconsistency(status, "waiting decision state does not match pending decision, parent review, and resume state")
 	}
-	return actionPlan(ParentActionDecision, "", ParentActionDecision), nil
+	return actionPlan(ParentActionDecision, "", ParentActionDecision, ParentActionPark), nil
 }
 
 func waitingReviewActionPlan(status TaskStatus, pending bool, openReview string, stopKind ResumeStopKind, qualitySurfaceApproval bool) (ParentActionPlan, error) {
@@ -151,11 +155,21 @@ func waitingReviewActionPlan(status TaskStatus, pending bool, openReview string,
 	if qualitySurfaceApproval {
 		return ParentActionPlan{
 			RequiredAction:           ParentActionApproveSurface,
-			AllowedActions:           []ParentAction{ParentActionApproveSurface, ParentActionFix},
+			AllowedActions:           []ParentAction{ParentActionApproveSurface, ParentActionFix, ParentActionPark},
 			RequiredActionParameters: approveSurfaceParameters,
 		}, nil
 	}
-	return actionPlan(ParentActionReview, "", ParentActionAccept, ParentActionFix), nil
+	return actionPlan(ParentActionReview, "", ParentActionAccept, ParentActionFix, ParentActionPark), nil
+}
+
+func parkedActionPlan(status TaskStatus, _ bool, openReview string, stopKind ResumeStopKind) (ParentActionPlan, error) {
+	if stopKind != ResumeStopNone {
+		return ParentActionPlan{}, lifecycleInconsistency(status, "parked task must not carry a resumable stop checkpoint")
+	}
+	if openReview != roundCommentNone && openReview != string(packet.StatusNeedsSolReview) && openReview != string(packet.StatusNeedsSolDecision) {
+		return ParentActionPlan{}, lifecycleInconsistency(status, "parked task has an unexpected parent review label")
+	}
+	return actionPlan(ParentActionUnpark, "", ParentActionUnpark), nil
 }
 
 func unexpectedOpenReview(openReview string, expected packet.Status) bool {

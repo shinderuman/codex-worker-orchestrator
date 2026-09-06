@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/abeval"
@@ -47,6 +48,20 @@ type statusOutput struct {
 	Isolation *statusIsolation `json:"isolation,omitempty"`
 
 	IsolationOrigin *statusIsolationOrigin `json:"isolation_origin,omitempty"`
+
+	Parked *statusParked `json:"parked,omitempty"`
+}
+
+type statusParked struct {
+	ParkID          string `json:"park_id"`
+	FromStatus      string `json:"from_status"`
+	TaskID          string `json:"task_id"`
+	Worktree        string `json:"worktree"`
+	Branch          string `json:"branch"`
+	RepoRoot        string `json:"repo_root"`
+	CreatedAt       string `json:"created_at"`
+	WorkerSession   string `json:"worker_session,omitempty"`
+	ReviewerSession string `json:"reviewer_session,omitempty"`
 }
 
 type statusIsolation struct {
@@ -271,6 +286,39 @@ func printStatus(st *state.StateStore, stdout io.Writer) error {
 	return writeJSON(stdout, output)
 }
 
+func printStatusLeased(st *state.StateStore, stdout io.Writer) error {
+	taskID := st.ReadOr("task.id", "")
+	logs, logErr := readStatusTelemetry(st, taskID)
+	output := buildStatusOutput(st, taskID, logs, logErr)
+	digest := parentStatusReadDigest(st)
+	return finishParentRead(st, state.ParentEvidenceSurfaceStatus, digest, func() (int, error) {
+		return writeMeasuredJSON(stdout, output)
+	})
+}
+
+func parentStatusReadDigest(st *state.StateStore) string {
+	probe := ProbeRepoLock(st.LockPath())
+	checkpointAvailable := false
+	if checkpoint, err := st.LoadResumeCheckpoint(); err == nil {
+		checkpointAvailable = checkpoint.IsStopped()
+	}
+	isolation := ""
+	if record, err := st.LoadIsolationRecord(); err == nil {
+		isolation = record.IsolationID + record.Branch + record.OriginHead
+	}
+	return parentEvidenceStringDigest(
+		st.ReadOr("task.id", ""),
+		string(st.TaskStatus()),
+		st.ReadOr("worker.id", ""),
+		st.ReadOr("reviewer.id", ""),
+		strconv.FormatBool(st.Exists("pending-decision")),
+		st.OpenParentReviewLabel(),
+		strconv.FormatBool(checkpointAvailable),
+		isolation,
+		string(probe.State),
+	)
+}
+
 func buildStatusOutput(st *state.StateStore, taskID string, logs []state.ModelCallLog, logErr error) statusOutput {
 	probe := ProbeRepoLock(st.LockPath())
 	taskStatus := st.TaskStatus()
@@ -299,9 +347,28 @@ func buildStatusOutput(st *state.StateStore, taskID string, logs []state.ModelCa
 	fillStatusTaskDetail(st, taskID, &output)
 	output.ResumeAvailable = fillStatusCheckpoint(st, &output)
 	fillStatusIsolation(st, &output)
+	fillStatusParked(st, &output)
 	output.Probes = statusProbesDetail(logs, time.Now())
 	fillStatusTelemetry(taskID, logErr, logs, &output)
 	return output
+}
+
+func fillStatusParked(st *state.StateStore, output *statusOutput) {
+	record, err := st.LoadParkRecord()
+	if err != nil {
+		return
+	}
+	output.Parked = &statusParked{
+		ParkID:          record.ParkID,
+		FromStatus:      string(record.FromStatus),
+		TaskID:          record.TaskID,
+		Worktree:        record.Worktree,
+		Branch:          record.Branch,
+		RepoRoot:        record.RepoRoot,
+		CreatedAt:       record.CreatedAt,
+		WorkerSession:   record.WorkerSessionID,
+		ReviewerSession: record.ReviewerSessionID,
+	}
 }
 
 func fillStatusIsolation(st *state.StateStore, output *statusOutput) {
@@ -345,7 +412,8 @@ func taskStatusPtr(status state.TaskStatus) *string {
 		state.TaskStatusProviderUnavailable,
 		state.TaskStatusGuardRecoverable,
 		state.TaskStatusQualityGateRecoverable,
-		state.TaskStatusInterrupted:
+		state.TaskStatusInterrupted,
+		state.TaskStatusParked:
 		value := string(status)
 		return &value
 	}

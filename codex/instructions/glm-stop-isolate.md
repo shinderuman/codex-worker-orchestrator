@@ -1,6 +1,6 @@
 # GLM workerの安全停止・中断task保持・割り込みtask実行
 
-`glm-worker --stop`で実行中taskを停止する、user interruption後の中断taskを`--resume`で再開する、または停止中の元taskを保持したまま同じrepoで割り込みtaskを実行する(`--isolate`)場合だけ適用する。通常のrate limit・provider障害によるresumeは`glm-auto-resume.md`・`glm-execution.md`側の契約を使う。
+`glm-worker --stop`で実行中taskを停止する、user interruption後の中断taskを`--resume`で再開する、停止中の元taskを保持したまま同じrepoで割り込みtaskを実行する(`--isolate`)、または親判断待ちtaskを`park/unpark`で一時退避して優先割り込みtaskへ差し替える場合だけ適用する。通常のrate limit・provider障害によるresumeは`glm-auto-resume.md`・`glm-execution.md`側の契約を使う。
 
 ## GLM workerの安全停止 (`--stop`)
 
@@ -24,3 +24,11 @@
 - Plan(`IMPLEMENTATION_PLAN.local.md`)を持つrepoでは、隔離worktreeのPlan ACTIVEも元task fileを指したままcheck outされるため、USER_REQUESTだけでは割り込みtaskの要求正本を特定できない。割り込みtaskのtask diffが`IMPLEMENTATION_TASKS/`配下の変更を含む場合、実効riskはimplementation-tasks critical pathでHIGHに固定されreviewer PASSがrisk floorで拒否される。Plan編集を含む割り込みtaskは実risk HIGHでwaiting-sol-reviewへ昇格するのが正常終端である。
 - 割り込みtask成果の統合方法とそのconflict解決は本契約で指定しない。元taskは、外部で統合済みの状態が`--resume`保持照合の実質検証(記録の元task・元repo・作成HEADが現在task・repo・停止時HEADと一致、記録branchが解決可能でそのtipが現在HEADへ統合済み、統合後のbranch tipから現在HEADまでが親管理metadata更新だけ、隔離worktree側stateの出自記録と対称)を通過した場合だけ再開できる。reviewer段階中断taskのreview resumeはHEAD移動を許さないため、統合によるHEAD移動後は再開できない。統合済み割り込みtask fileがdiffへ載るため、統合後の元task resumeは実risk HIGHとなりwaiting-sol-reviewへ昇格し得る。
 - 隔離worktree側state dir(出自記録)は元task完了まで削除しない。glm-workerは隔離worktree・branchの寿命を管理しない。
+
+## 親判断待ちtaskの割込み退避 (`park` / `unpark`)
+
+- `waiting-sol-review`(quality policy surface approval待ちを含む)または`waiting-decision`で親判断待ちのtaskを、判断を保留したまま優先割り込みtaskへ差し替えるときは`glm-parent-action park`を使う。running taskの`--stop`/`--isolate`へ意味を混ぜない。実行中(active)taskや停止系statusは拒否される。
+- parkはworker/reviewer session、task state、HEAD、task baseline(3軸index定義)、worktree dirty/untracked本文、親metadata除外基準をcanonical restore artifact(state内park記録 + 本文copy)へ固定し、割り込みtask実行checkout(git worktree + branch `glm-worker/park/...`)を作ってtask statusを`parked`へ遷移させる。元checkoutのdirty fileはその場に保持され、割り込みworktreeはそれを含まない。
+- 割り込みtaskは`--isolate`と同じ運用でworktree側から投入する(Plan ACTIVE・`IMPLEMENTATION_TASKS/`変更の扱いも`--isolate`節に従う)。元repo側ではparked taskの新規task開始が`unpark`要求として拒否され、worktree側stateは独立する。
+- 割り込みtask完了・統合後、元repoで`glm-parent-action unpark`を実行する。unparkは保持基準(dirty/untracked不変)と統合provenance(HEAD不変、割り込みbranch tipの統合、または親管理metadataだけの移動のいずれか)を機械検証し、合格した場合だけ同一session・同一taskを`parked`前status(waiting-sol-review/waiting-decision)へ復帰させる。保持対象変化やprovenance不成立はfail closedし、taskはparkedのまま残るため、統合結果を修正してから同じ`unpark`を再試行する。No-Go・旧task完了・手動index操作を要求しない。
+- 復帰後の判断は通常どおり`glm-parent-action decision|fix|approve-surface|accept`で渡す。park記録・割り込みworktreeの寿命はglm-workerが管理しない。元task完了後に親が削除する。

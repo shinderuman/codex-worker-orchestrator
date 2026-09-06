@@ -104,9 +104,19 @@ cmp "$repo/codex/instructions/glm-repo-search.md" "$home/.codex/instructions/glm
 grep -q 'GLM_WORKER_REPO_SEARCH' "$home/.codex/instructions/glm-repo-search.md"
 HOME="$home" GLM_WORKER_HOME="$home/.glm-worker" "$home/.local/bin/glm-worker" --help >"$tmp/repo-search-help.json"
 grep -q -- '--repo-search' "$tmp/repo-search-help.json"
-HOME="$home" GLM_WORKER_HOME="$home/.glm-worker" GLM_WORKER_REPO_SEARCH=0 "$home/.local/bin/glm-worker" --repo-search smoke >"$tmp/repo-search-disabled.json"
+HOME="$home" GLM_WORKER_HOME="$home/.glm-worker" GLM_WORKER_REPO_SEARCH=0 "$home/.local/bin/glm-worker" --repo-search smoke --scope cmd --budget 512 >"$tmp/repo-search-disabled.json"
 grep -q '"status":"disabled"' "$tmp/repo-search-disabled.json"
 grep -q '"result":"disabled"' "$tmp/repo-search-disabled.json"
+cat >"$tmp/evidence-manifest.json" <<'EOF_EVIDENCE'
+{"version":1,"reason":"install smoke evidence entrance","status":{}}
+EOF_EVIDENCE
+(
+	cd "$repo"
+	HOME="$home" GLM_WORKER_HOME="$home/.glm-worker" "$home/.local/bin/glm-parent-action" evidence "$tmp/evidence-manifest.json"
+) >"$tmp/parent-evidence.json"
+grep -q '"status":"ok"' "$tmp/parent-evidence.json"
+grep -q '"kind":"status"' "$tmp/parent-evidence.json"
+grep -q '"owner_call_id":"' "$tmp/parent-evidence.json"
 
 "$home/.local/bin/glm-codex-context" enable "$repo" >"$tmp/codex-context-enable.json"
 grep -q '"status":"enabled"' "$tmp/codex-context-enable.json"

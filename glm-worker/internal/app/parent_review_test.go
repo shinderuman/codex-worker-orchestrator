@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"strings"
 	"testing"
@@ -148,9 +149,19 @@ func TestExecuteParentReviewOpensOpportunity(t *testing.T) {
 	if err := Execute(Command{Mode: ModeStatus}, cfg, nil, &statusOut, io.Discard); err != nil {
 		t.Fatal(err)
 	}
-	status := executeStatusOutput(t, cfg)
+	var status statusOutput
+	if err := json.Unmarshal(statusOut.Bytes(), &status); err != nil {
+		t.Fatalf("status出力がmachine JSONではありません: %v: %q", err, statusOut.String())
+	}
 	if status.ParentReviewOpen == nil || *status.ParentReviewOpen != "NEEDS_SOL_REVIEW" {
 		t.Fatalf("status出力のparent_review_open = %#v: %q", status.ParentReviewOpen, statusOut.String())
+	}
+
+	var duplicateOut bytes.Buffer
+	repeatErr := Execute(Command{Mode: ModeStatus}, cfg, nil, &duplicateOut, io.Discard)
+	var duplicate *DuplicateParentProjectionError
+	if !errors.As(repeatErr, &duplicate) || duplicate.Surface != state.ParentEvidenceSurfaceStatus {
+		t.Fatalf("review待ち中の同一status再読はduplicate projectionとして拒否される必要があります: %v", repeatErr)
 	}
 }
 

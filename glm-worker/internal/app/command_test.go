@@ -34,7 +34,7 @@ func TestParseCommandModes(t *testing.T) {
 		{name: "model-routing", args: []string{"--model-routing"}, mode: ModeModelRouting},
 		{name: "test-impact", args: []string{"--test-impact"}, mode: ModeTestImpact},
 		{name: "codex-limit", args: []string{"--codex-limit"}, mode: ModeCodexLimit},
-		{name: "repo-search", args: []string{"--repo-search", "worker dispatch"}, mode: ModeRepoSearch, payload: "worker dispatch"},
+		{name: "repo-search", args: []string{"--repo-search", "worker dispatch", "--scope", "internal/workflow", "--budget", "2048"}, mode: ModeRepoSearch, payload: "worker dispatch"},
 		{name: "repo-search-eval", args: []string{"--repo-search-eval"}, mode: ModeRepoSearchEval},
 		{name: "parent-usage", args: []string{"--parent-usage"}, mode: ModeParentUsage},
 		{name: "parent-usage task", args: []string{"--parent-usage", "task-123"}, mode: ModeParentUsage, payload: "task-123"},

@@ -94,15 +94,22 @@ const (
 	routingSnapshotMatchParentMetadataOnly = "parent_metadata_only"
 )
 
-func printParentHandoff(st *state.StateStore, stdout io.Writer) error {
-	return writeJSON(stdout, buildParentHandoff(st))
+func printParentHandoffLeased(st *state.StateStore, stdout io.Writer) error {
+	value := buildParentHandoff(st)
+	digest, _ := parentEvidenceDigest(value)
+	return finishParentRead(st, state.ParentEvidenceSurfaceHandoff, digest, func() (int, error) {
+		return writeMeasuredJSON(stdout, value)
+	})
 }
 
-func printParentHandoffRecovery(st *state.StateStore, stdout io.Writer) error {
-	recovery := projectParentHandoffRecovery(buildParentHandoff(st))
-	applyParentGuardRecovery(st, &recovery)
-	applyParentQualityGateRecovery(st, &recovery)
-	return writeJSON(stdout, recovery)
+func printParentHandoffRecoveryLeased(st *state.StateStore, stdout io.Writer) error {
+	value := projectParentHandoffRecovery(buildParentHandoff(st))
+	applyParentGuardRecovery(st, &value)
+	applyParentQualityGateRecovery(st, &value)
+	digest, _ := parentEvidenceDigest(value)
+	return finishParentRead(st, state.ParentEvidenceSurfaceHandoffRecovery, digest, func() (int, error) {
+		return writeMeasuredJSON(stdout, value)
+	})
 }
 
 func projectParentHandoffRecovery(output parentHandoffOutput) parentHandoffRecoveryOutput {

@@ -20,6 +20,7 @@ ACTIVE task fileが提示されている場合、要求の正はその本文(Ori
 ## コンテキスト効率
 - 必要な独立検証は省略しないが、巨大diff/file/logはsymbol・行範囲・失敗箇所を優先する。
 - 成功ログは要約し、worker報告や確認済み出力を無意味に再掲・再読しない。
+- `REVIEWED_BOUNDARY`で`reviewed(round N)`と分類されたfileは過去review roundとhead/index/worktree identityが完全一致する既検証範囲である。再review対象は`new-boundary`file(競合合成・fix差分)に絞り、identity不一致や記録のないfileは検証済み扱いにしない(fail closed)。
 
 ## Test review
 - behaviorを直接保証しているかを見る。test数やcoverage率の多さ自体を品質根拠にしない。

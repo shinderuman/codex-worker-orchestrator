@@ -52,7 +52,7 @@ post-105-codex-efficiency-reevaluation.mdを定期的にやってほしいんだ
 - 復帰後区間では、既知のauthority本文、review packet、handoff/finalization JSON、広いdiff/source出力を親model-visible contextへ繰り返し展開し、競合統合時に既review済み範囲も再検証した
 - 本checkpoint中の既存task横断`rg`も17,690 token相当を生成し、8,000 tokenで切断された。検索対象を絞らずstdout上限だけを設定しても親Codex消費を防げない再現証拠である
 - 長いsessionで細粒度のtool returnを多数発生させ、固定instruction・圧縮履歴・追加証拠を親model turnごとに再入力した。個別要因への厳密配賦は現行telemetryでは不能だが、parent turn増加が消費を乗算するため独立の抑制対象とする
-- 未Task化Findingは`parent-model-visible-evidence-projection.md`へGoとし、現在ACTIVEのsemantic checkpointを再開する前の最優先実装候補へ置く
+- 2026-09-06の判断ではFindingを`parent-model-visible-evidence-projection.md`へGoとして切り出した。要求と採否の対象は同task fileのGit履歴から回収する
 
 ## Purpose
 

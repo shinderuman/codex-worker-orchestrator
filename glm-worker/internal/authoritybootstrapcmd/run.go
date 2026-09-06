@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskcontract"
@@ -16,7 +17,9 @@ type Output struct {
 	AuthoritySnapshotSHA256 string `json:"authority_snapshot_sha256"`
 	AuthorityKind           string `json:"authority_kind"`
 	ActiveTask              string `json:"active_task"`
-	Content                 string `json:"content"`
+	ContentSHA256           string `json:"content_sha256"`
+	ContentMatch            string `json:"content_match"`
+	Content                 string `json:"content,omitempty"`
 }
 
 type snapshot struct {
@@ -28,14 +31,23 @@ type snapshot struct {
 }
 
 const (
+	ContentMatchUnknown   = "unknown"
+	ContentMatchUnchanged = "unchanged"
+	ContentMatchChanged   = "changed"
+)
+
+const knownContentSHA256Flag = "--known-content-sha256"
+
+const (
 	rulesFile = "IMPLEMENTATION_RULES.md"
 	planFile  = "IMPLEMENTATION_PLAN.local.md"
-	usage     = "usage: glm-worker --authority <rules|plan|active>"
+	usage     = "usage: glm-worker --authority <rules|plan|active> [--known-content-sha256 <hex>]"
 )
 
 func Build(args []string) (Output, error) {
-	if len(args) != 1 || !validKind(args[0]) {
-		return Output{}, fmt.Errorf("%s", usage)
+	kind, knownContentSHA, err := parseArguments(args)
+	if err != nil {
+		return Output{}, err
 	}
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -45,15 +57,61 @@ func Build(args []string) (Output, error) {
 	if err != nil {
 		return Output{}, fmt.Errorf("authority bootstrap: %w", err)
 	}
+	return BuildFromRoot(root, kind, knownContentSHA)
+}
+
+func BuildFromRoot(root string, kind string, knownContentSHA string) (Output, error) {
+	if !validKind(kind) {
+		return Output{}, fmt.Errorf("%s", usage)
+	}
+	if knownContentSHA != "" && !validContentSHA256(knownContentSHA) {
+		return Output{}, fmt.Errorf("%s", usage)
+	}
 	snap, err := loadSnapshot(root)
 	if err != nil {
 		return Output{}, fmt.Errorf("authority bootstrap: %w", err)
 	}
-	output, err := snapshotPart(args[0], snap)
+	output, err := snapshotPart(kind, snap)
 	if err != nil {
 		return Output{}, fmt.Errorf("authority bootstrap: %w", err)
 	}
-	return output, nil
+	return applyKnownContent(output, knownContentSHA), nil
+}
+
+func parseArguments(args []string) (string, string, error) {
+	if len(args) == 1 && validKind(args[0]) {
+		return args[0], "", nil
+	}
+	if len(args) == 3 && validKind(args[0]) && args[1] == knownContentSHA256Flag && validContentSHA256(args[2]) {
+		return args[0], strings.ToLower(args[2]), nil
+	}
+	return "", "", fmt.Errorf("%s", usage)
+}
+
+func validContentSHA256(value string) bool {
+	if len(value) != 64 {
+		return false
+	}
+	for _, c := range value {
+		if !strings.ContainsRune("0123456789abcdefABCDEF", c) {
+			return false
+		}
+	}
+	return true
+}
+
+func applyKnownContent(output Output, knownContentSHA string) Output {
+	if knownContentSHA == "" {
+		output.ContentMatch = ContentMatchUnknown
+		return output
+	}
+	if knownContentSHA == output.ContentSHA256 {
+		output.ContentMatch = ContentMatchUnchanged
+		output.Content = ""
+		return output
+	}
+	output.ContentMatch = ContentMatchChanged
+	return output
 }
 
 func validKind(kind string) bool {
@@ -138,10 +196,13 @@ func snapshotPart(kind string, snap snapshot) (Output, error) {
 	if !utf8.Valid(content) {
 		return Output{}, fmt.Errorf("%s authority content is not valid UTF-8", kind)
 	}
+	contentSum := sha256.Sum256(content)
 	return Output{
 		AuthoritySnapshotSHA256: snap.hash,
 		AuthorityKind:           kind,
 		ActiveTask:              snap.activePath,
+		ContentSHA256:           hex.EncodeToString(contentSum[:]),
+		ContentMatch:            ContentMatchUnknown,
 		Content:                 string(content),
 	}, nil
 }

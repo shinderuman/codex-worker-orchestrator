@@ -86,7 +86,7 @@ glm-worker --quality-gate go-test
 glm-worker --quality-gate go-test-race
 ```
 
-validationはrun ID付きでstateへ記録され、`glm-worker --quality-gate status|watch|result <validation-run-id>`で再観測できる。installer/managed-file behavior変更時だけ`glm-worker --install-smoke --role worker`を使う。smokeはtemp home/repoへoffline installを2回行い、managed file、local設定保持、binary、idempotenceを検証し、provider credentialや実GLM/Z.ai接続は使わない。
+validationはrun ID付きでstateへ記録され、`glm-worker --quality-gate status|watch|result <validation-run-id>`で再観測できる。installer/managed-file behavior変更時だけ`glm-worker --install-smoke --role worker`を使う。smokeはoffline installを2回行い、provider credentialや実GLM/Z.ai接続は使わない。
 
 このrepository自身を`glm-worker`で変更するとworker終了後・reviewer前にcheck-only gateを必ず通す。quality policy surfaceの自己変更はmachine gateでfail closedする。他repositoryへこのrepository固有`harnesslint`は適用しない。
 
@@ -122,6 +122,9 @@ glm-parent-action fix <token> [--origin <origin>] [--accepted-scope current-diff
 glm-parent-action approve-surface --accepted-scope current-diff
 glm-parent-action accept
 glm-parent-action resume
+glm-parent-action park
+glm-parent-action unpark
+glm-parent-action evidence <manifest.json>
 glm-parent-action finalize-check <go-test|go-test-race>
 ```
 
@@ -140,30 +143,31 @@ glm-worker --fix-stdin <bytes> [--sha256 <sha256>] [--origin <origin>] [--accept
 glm-worker --accept | --resume | --stop | --isolate | --reset
 glm-worker --status | --handoff | --project-state | --watch [--verbose]
 glm-worker --timeline [task-id] | --convergence [task-id] | --stats
-glm-worker --repo-search <query> | --repo-search-eval
+glm-worker --repo-search <question> --scope <path|symbol:<identifier>> [--scope ...] --budget <bytes> | --repo-search-eval
 glm-worker --eval-ab <run-dir> | --call-outliers | --model-routing | --test-impact | --codex-limit
 glm-worker bundle [task-id]
 ```
 
-execution-milestone stdin、auto-resume verification/wake coalesce、install smoke、quality-gate recovery、instruction-baseline rotation等のspecialized surfaceも`--help`へ含まれる。通常親workflowでは対応する`glm-parent-action`/`codex/instructions/`を使う。
+specialized surface(milestone stdin、auto-resume検証、install smoke、gate recovery、baseline rotation等)も`--help`へ含まれる。通常親workflowでは対応する`glm-parent-action`/`codex/instructions/`を使う。
 
 `glm-worker`は成功時stdoutへmachine-readable JSON 1件を返し、`--watch`だけJSON Lines stream。失敗時stdoutを空にしてstructured error JSONをstderrへ返す。
 
 `--reset`はcurrent task statsをarchiveしてtask/session/checkpoint stateを明示的に破棄するrecovery操作で、model callは行わない。
 
-`--repo-search`はcurrent repoをBM25 coreでread-only検索する。`GLM_WORKER_REPO_SEARCH=false`ではworker/reviewer search注入とCLI searchをまとめて無効化する。`--repo-search-eval`は保存済みtask event/statsだけからquery category、outcome、result count、durationと整合性を集計し、実benchmarkは走らせない。
+`--repo-search`はcurrent repoをBM25 coreでread-only検索する。question・scope・budget必須、候補・budget超過時は`refinement_required`と理由を返す。`GLM_WORKER_REPO_SEARCH=false`ではworker/reviewer search注入とCLI searchをまとめて無効化する。`--repo-search-eval`は保存済みtask event/statsだけからquery category、outcome、result count、durationと整合性を集計し、実benchmarkは走らせない。
 
 ## Lifecycle / parent action
 
 合法な親actionはstateのcanonical parent action planが決め、app/workflowが同じadmissionを使う。未解決action/resume stateがある間は新規taskを開始できない。
 
-- `waiting-decision` → decision（観測taskでplanが許す場合だけ`no-go`）
-- `waiting-sol-review` → `accept`または`fix`
+- `waiting-decision` → decision（観測taskでplanが許す場合だけ`no-go`）または`park`
+- `waiting-sol-review` → `accept`・`fix`または`park`
+- `parked` → 割込みtask統合後に`unpark`
 - `complete` + unresolved PASS review → `accept`
 - `rate-limited` / `provider-unavailable` / `interrupted` → saved checkpointを`resume`
 - `guard-recoverable` → guard修復後`resume`
 
-`--handoff`はtask/status、required/allowed action、resume kind、parent review、Git baseline/current snapshot、latest material call、current validation evidenceをJSONへまとめる。lifecycle矛盾時は`consistent:false`。`--status`はrepo lock、task liveness/session/phase/model、parent wait、rate limit/provider、resume/isolation等をread-only JSONで返す。
+`--handoff`はtask/status、required/allowed action、resume kind、parent review、Git snapshot、validation evidenceをJSONへまとめ、lifecycle矛盾時は`consistent:false`。`--status`はrepo lock、task liveness、parent wait、rate limit/provider、resume/isolation等をread-only JSONで返す。
 
 `--stop`はrepo-local Unix socketへ停止要求しowner ackを待つ安全停止入口。user interruptionは`interrupted`とresume checkpointを残し、同じcheckoutで`--resume`する。`--isolate`はこの状態だけを対象に元taskを保持した別task用git worktree/branchを作る。詳細は`codex/instructions/glm-stop-isolate.md`。
 
@@ -173,7 +177,7 @@ execution-milestone stdin、auto-resume verification/wake coalesce、install smo
 glm-worker bundle [task-id]
 ```
 
-task ID省略時はcurrent taskかretained stats最新task。ZIPは既定`$GLM_WORKER_HOME/exports/<repo SHA-256>/<task-id>.zip`へatomic配置、outputは`archive_path`/summary。telemetry/event/round/lifecycle/authority/artifact、Claude transcript、parent evidence、current taskはauthority/status/diff等。`manifest.json`/`collection.json`/`analysis-index.json`がmetadataを持つ。coverageはcurrent/in-flight/未完了=`open`、欠損/anomaly=`partial`、完了evidence揃えば`closed`。
+task ID省略時はcurrent taskかretained stats最新task。ZIPは既定`$GLM_WORKER_HOME/exports/<repo SHA-256>/<task-id>.zip`へatomic配置。telemetry/event/lifecycle/authority/artifact、Claude transcript、parent evidence等を格納し、`manifest.json`等がmetadataを持つ。coverageは未完了=`open`、欠損=`partial`、完了evidence揃えば`closed`。
 
 `analysis-index.json`=version 4。`task_execution`=started_at〜lifecycle最終遷移、`parent_finalization`=直後〜task開始を含む唯一親turn`task_complete`、`subsequent_requests`=当該turn完了後開始turn一覧(`unattributed-subsequent-request`・不加算)、`collection`=採取範囲(archived-at/bundle-time)境界以下は前区間。token delta=cumulative counter anchor差分・二重計上なし。`parent_token_delta`/`parent_wait_calls`=task_execution固定・再採取不変。`parent_finalization`/subsequent turn別観測=分離。turn対応=`task_started`/`task_complete`+turn_id。証拠欠損=`unknown`・未終端=`open`・推定値なし・rollout open/read/parse失敗=`unreadable`(reason=`rollout-scan-failed`+source、不在と区別)。`subsequent_requests`=終端で切り、終端後開始は列挙外、終端前開始で完了が終端後は`open`。current=進行、archive=固定。owning turnの`task_complete`がterminal遷移前に来る逆転=`parent_finalization`=`unknown`。
 `retries.model_call_relations`:因果は明示的非空`retry_of`のみ。target在=`resolved`/不在=`dangling`/`retry_of`なしの`resumed`/`retry_reason`のみ=`unlinked`・`resumed_model_calls`はedge数と分離(競合IDもresumed一致なら加算、値競合は`unknown`)。関係は`call_id`/`retry_of`/`retry_reason`/`phase`/`outcome`/`resumed`+`archive_path`/1-based行trace。同一`call_id`の同一内容重複は1 recordへ畳み全行trace、競合IDをsource/targetにする明示関係と競合sourceの`resumed`/`retry_reason` variantは`ambiguous`relation(`retry_of`任意、`ambiguity`配列=`source_call_id_conflicted`/`target_call_id_conflicted`両立可)を行trace付きで集計外。時刻・近接・phase不使用。

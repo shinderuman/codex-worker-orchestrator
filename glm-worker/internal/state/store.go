@@ -34,6 +34,8 @@ const (
 
 	TaskStatusInterrupted TaskStatus = "interrupted"
 
+	TaskStatusParked TaskStatus = "parked"
+
 	TaskStatusNone TaskStatus = "none"
 
 	ExecutionMilestonesStateFile = "execution-milestones.json"
@@ -50,7 +52,8 @@ func (status TaskStatus) Known() bool {
 		TaskStatusProviderUnavailable,
 		TaskStatusGuardRecoverable,
 		TaskStatusQualityGateRecoverable,
-		TaskStatusInterrupted:
+		TaskStatusInterrupted,
+		TaskStatusParked:
 		return true
 	default:
 		return false

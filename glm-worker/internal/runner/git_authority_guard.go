@@ -62,7 +62,7 @@ const (
 )
 
 func (e *GitAuthorityGuardError) Error() string {
-	parts := []string{"git authority guard failed", e.Stage}
+	parts := []string{gitAuthorityGuardErrorPrefix, e.Stage}
 	if len(e.Mutations) > 0 {
 		parts = append(parts, strings.Join(e.Mutations, ","))
 	}

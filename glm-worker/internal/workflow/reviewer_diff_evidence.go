@@ -16,7 +16,11 @@ func (w *Workflow) reviewerNavigationContext(request, activeTaskPath string, rev
 	if err != nil {
 		return "", err
 	}
-	return renderReviewerTaskDiffEvidence(diffPath, diffAvailable) + "\n" + w.reviewerDiffFirstContext(request, reviewNumber) + exhaustive, nil
+	boundary := w.reviewedBoundaryContext(w.config.RepoRoot, reviewNumber)
+	if boundary != "" {
+		boundary += "\n"
+	}
+	return renderReviewerTaskDiffEvidence(diffPath, diffAvailable) + "\n" + boundary + w.reviewerDiffFirstContext(request, reviewNumber) + exhaustive, nil
 }
 
 func renderReviewerTaskDiffEvidence(path string, available bool) string {

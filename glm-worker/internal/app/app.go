@@ -38,6 +38,9 @@ type Command struct {
 	Verify              VerifyArgs
 	Coalesce            CoalesceArgs
 	Query               TelemetryQueryArgs
+	SearchScopes        []string
+	SearchBudgetBytes   int
+	EvidenceManifest    string
 }
 
 type VerifyArgs struct {
@@ -86,6 +89,8 @@ const (
 	ModeResume
 	ModeStop
 	ModeIsolate
+	ModePark
+	ModeUnpark
 	ModeStatus
 	ModeHandoff
 	ModeWatch
@@ -111,6 +116,7 @@ const (
 	ModeExecutionMilestonesRevise
 	ModePacketCheck
 	ModeProjectState
+	ModeEvidence
 )
 
 const fixOriginUsage = "[--origin codex-review|glm-reviewer|user-amendment|external-review|metadata-repair] [--cause parent-orchestration|requirement-preservation|worker|reviewer|sol-gate|production-wiring|test-scenario|cross-cutting-invariant|unknown] [--accepted-scope current-diff]"
@@ -120,6 +126,12 @@ const approveSurfaceUsage = "usage: glm-worker --approve-surface current-diff"
 const acceptedFixScopeCurrentDiffCLI = "current-diff"
 
 const installSmokeUsage = "[--role worker|reviewer|fix|parent]"
+
+const repoSearchUsage = "usage: glm-worker --repo-search <question> --scope <path|symbol:<identifier>> [--scope ...] --budget <bytes>"
+
+const evidenceUsage = "usage: glm-worker --evidence <manifest.json>"
+
+const repoSearchMaxBudgetBytes = 64 * 1024
 
 const qualityGateUsage = "<go-test|go-test-race> | --quality-gate <status|watch|result> <validation-run-id>"
 
@@ -160,6 +172,12 @@ var commandParsers = map[string]commandParser{
 	"--isolate": func(args []string) (Command, error) {
 		return singleArgCommand(args, ModeIsolate, "usage: glm-worker --isolate")
 	},
+	"--park": func(args []string) (Command, error) {
+		return singleArgCommand(args, ModePark, "usage: glm-worker --park")
+	},
+	"--unpark": func(args []string) (Command, error) {
+		return singleArgCommand(args, ModeUnpark, "usage: glm-worker --unpark")
+	},
 	"--status": func(args []string) (Command, error) {
 		return singleArgCommand(args, ModeStatus, "usage: glm-worker --status")
 	},
@@ -195,9 +213,8 @@ var commandParsers = map[string]commandParser{
 	"--codex-limit": func(args []string) (Command, error) {
 		return singleArgCommand(args, ModeCodexLimit, "usage: glm-worker --codex-limit")
 	},
-	"--repo-search": func(args []string) (Command, error) {
-		return requiredPayloadCommand(args, ModeRepoSearch, "usage: glm-worker --repo-search <query>")
-	},
+	"--repo-search": repoSearchCommand,
+	"--evidence":    evidenceCommand,
 	"--repo-search-eval": func(args []string) (Command, error) {
 		return singleArgCommand(args, ModeRepoSearchEval, "usage: glm-worker --repo-search-eval")
 	},
@@ -232,7 +249,7 @@ func usageError(format string, args ...any) *UsageError {
 
 func ParseCommand(args []string) (Command, error) {
 	if len(args) == 0 {
-		return Command{}, usageError("usage: glm-worker <instruction> | --execution-milestones-stdin <payload-bytes> [--sha256 <hex>] | --execution-milestones-revise-stdin <payload-bytes> [--sha256 <hex>] | --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix-stdin <payload-bytes> [--sha256 <hex>] %s | --approve-surface current-diff | --accept | --resume | --stop | --isolate | --status | --handoff [recovery] | --project-state | --watch [--verbose] | --timeline [task-id] | --convergence [task-id] | --stats %s | --reset | --verify-auto-resume <automation-key> <auto-resume-at-rfc3339> | --eval-ab <run-dir> | --call-outliers %s | --codex-limit | --repo-search <query> | --check-wake-coalesce <auto-resume-at-rfc3339> | --install-smoke %s | --quality-gate %s | --model-routing | --packet-check <packet.json> [--role worker|reviewer] [--artifact-root <dir>] | bundle [task-id] | --parent-usage [task-id] | --review-gap [task-id]", fixOriginUsage, telemetryQueryUsage, telemetryQueryUsage, installSmokeUsage, qualityGateUsage)
+		return Command{}, usageError("usage: glm-worker <instruction> | --execution-milestones-stdin <payload-bytes> [--sha256 <hex>] | --execution-milestones-revise-stdin <payload-bytes> [--sha256 <hex>] | --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix-stdin <payload-bytes> [--sha256 <hex>] %s | --approve-surface current-diff | --accept | --resume | --stop | --isolate | --status | --handoff [recovery] | --recover-parent-action | --project-state | --evidence <manifest.json> | --watch [--verbose] | --timeline [task-id] | --convergence [task-id] | --stats %s | --reset | --verify-auto-resume <automation-key> <auto-resume-at-rfc3339> | --eval-ab <run-dir> | --call-outliers %s | --codex-limit | --repo-search %s | --check-wake-coalesce <auto-resume-at-rfc3339> | --install-smoke %s | --quality-gate %s | --model-routing | --packet-check <packet.json> [--role worker|reviewer] [--artifact-root <dir>] | bundle [task-id] | --parent-usage [task-id] | --review-gap [task-id]", fixOriginUsage, telemetryQueryUsage, telemetryQueryUsage, repoSearchUsage, installSmokeUsage, qualityGateUsage)
 	}
 	if parser, ok := commandParsers[args[0]]; ok {
 		return parser(args)
@@ -263,6 +280,13 @@ func requiredPayloadCommand(args []string, mode CommandMode, usage string) (Comm
 		return Command{}, usageError("%s", usage)
 	}
 	return Command{Mode: mode, Payload: args[1]}, nil
+}
+
+func evidenceCommand(args []string) (Command, error) {
+	if len(args) != 2 {
+		return Command{}, usageError("%s", evidenceUsage)
+	}
+	return Command{Mode: ModeEvidence, EvidenceManifest: args[1]}, nil
 }
 
 func parentHandoffCommand(args []string) (Command, error) {
@@ -331,6 +355,48 @@ func installSmokeCommand(args []string) (Command, error) {
 		return Command{Mode: ModeInstallSmoke, Role: args[2]}, nil
 	}
 	return Command{}, usageError("usage: glm-worker --install-smoke %s", installSmokeUsage)
+}
+
+func repoSearchCommand(args []string) (Command, error) {
+	if len(args) < 2 || args[1] == "" || len(args[2:])%2 != 0 {
+		return Command{}, usageError("%s", repoSearchUsage)
+	}
+	command := Command{Mode: ModeRepoSearch, Payload: args[1]}
+	seenBudget := false
+	for index := 2; index < len(args); index += 2 {
+		budgetSeen, err := applyRepoSearchOption(&command, args[index], args[index+1])
+		if err != nil {
+			return Command{}, err
+		}
+		seenBudget = seenBudget || budgetSeen
+	}
+	if len(command.SearchScopes) == 0 || !seenBudget {
+		return Command{}, usageError("%s", repoSearchUsage)
+	}
+	return command, nil
+}
+
+func applyRepoSearchOption(command *Command, name string, value string) (bool, error) {
+	switch name {
+	case "--scope":
+		if value == "" {
+			return false, usageError("%s", repoSearchUsage)
+		}
+		command.SearchScopes = append(command.SearchScopes, value)
+		return false, nil
+	case "--budget":
+		budget, err := strconv.Atoi(value)
+		if err != nil || budget <= 0 || budget > repoSearchMaxBudgetBytes {
+			return false, usageError("%s", repoSearchUsage)
+		}
+		if command.SearchBudgetBytes != 0 {
+			return false, usageError("%s", repoSearchUsage)
+		}
+		command.SearchBudgetBytes = budget
+		return true, nil
+	default:
+		return false, usageError("%s", repoSearchUsage)
+	}
 }
 
 func stdinPayloadCommand(mode CommandMode, args []string, usage string, allowFixOptions bool) (Command, error) {
@@ -505,12 +571,12 @@ func Execute(cmd Command, cfg config.AppConfig, rf RunnerFactory, stdout, _ io.W
 func executeStateless(cmd Command, cfg config.AppConfig, stdout io.Writer) (bool, error) {
 	switch cmd.Mode {
 	case ModeStatus:
-		return true, printStatus(state.AttachStateStore(cfg), stdout)
+		return true, printStatusLeased(state.AttachStateStore(cfg), stdout)
 	case ModeHandoff:
 		if cmd.Payload == "recovery" {
-			return true, printParentHandoffRecovery(state.AttachStateStore(cfg), stdout)
+			return true, printParentHandoffRecoveryLeased(state.AttachStateStore(cfg), stdout)
 		}
-		return true, printParentHandoff(state.AttachStateStore(cfg), stdout)
+		return true, printParentHandoffLeased(state.AttachStateStore(cfg), stdout)
 	case ModeStats:
 		return true, printStats(state.AttachStateStore(cfg), cmd.Query, stdout)
 	case ModeWatch:
@@ -521,13 +587,24 @@ func executeStateless(cmd Command, cfg config.AppConfig, stdout io.Writer) (bool
 		return true, printCodexLimit(cfg, stdout)
 	case ModePacketCheck, ModeProjectState:
 		return true, executeStatelessProjection(cmd, cfg, stdout)
-	case ModeRepoSearch:
-		return true, printRepoSearch(cmd.Payload, cfg, stdout)
+	case ModeRepoSearch, ModeEvidence:
+		return true, executeParentReadCommand(cmd, cfg, stdout)
 	case ModeCheckWakeCoalesce:
 		return true, printCheckWakeCoalesce(cmd, cfg, stdout)
 	default:
 		return executeStatelessReport(cmd, cfg, stdout)
 	}
+}
+
+func executeParentReadCommand(cmd Command, cfg config.AppConfig, stdout io.Writer) error {
+	if cmd.Mode == ModeEvidence {
+		return printParentEvidence(cmd, cfg, state.AttachStateStore(cfg), stdout)
+	}
+	return printRepoSearch(repoSearchRequest{
+		Question:    cmd.Payload,
+		Scopes:      cmd.SearchScopes,
+		BudgetBytes: cmd.SearchBudgetBytes,
+	}, cfg, state.AttachStateStore(cfg), stdout)
 }
 
 func executeStatelessReport(cmd Command, cfg config.AppConfig, stdout io.Writer) (bool, error) {
@@ -581,10 +658,16 @@ func executeLocked(cmd Command, cfg config.AppConfig, st *state.StateStore, stdo
 		return true, parentAccept(st, stdout)
 	case ModeIsolate:
 		return true, isolateInterruptedTask(st, cfg, stdout)
+	case ModePark:
+		return true, workflow.NewWorkflow(cfg, st, nil, stdout).ExecutePark(stdout)
+	case ModeUnpark:
+		return true, workflow.NewWorkflow(cfg, st, nil, stdout).ExecuteUnpark(stdout)
 	case ModeExecutionMilestonesRevise:
 		return true, executeExecutionMilestoneRevision(cmd, cfg, st, stdout)
 	case modeRotateInstructionBaseline:
 		return true, rotateInstructionBaseline(cfg, st, stdout)
+	case modeRecoverParentAction:
+		return true, recoverInterruptedParentAction(st, stdout)
 	default:
 		return false, nil
 	}

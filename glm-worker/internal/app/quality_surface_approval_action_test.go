@@ -61,7 +61,7 @@ func TestParentHandoffQualitySurfaceApprovalIsSoleRequiredAction(t *testing.T) {
 	if !output.Consistent || output.RequiredAction == nil || *output.RequiredAction != string(state.ParentActionApproveSurface) {
 		t.Fatalf("quality-surface approval handoff = %#v", output)
 	}
-	if len(output.AllowedActions) != 2 || output.AllowedActions[0] != string(state.ParentActionApproveSurface) || output.AllowedActions[1] != string(state.ParentActionFix) {
+	if len(output.AllowedActions) != 3 || output.AllowedActions[0] != string(state.ParentActionApproveSurface) || output.AllowedActions[1] != string(state.ParentActionFix) || output.AllowedActions[2] != string(state.ParentActionPark) {
 		t.Fatalf("quality-surface approval allowed actions = %#v", output.AllowedActions)
 	}
 	if output.RequiredActionParameters["accepted-scope"] != "current-diff" {

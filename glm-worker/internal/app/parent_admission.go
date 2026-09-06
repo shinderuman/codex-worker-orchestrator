@@ -45,6 +45,10 @@ func commandParentAction(mode CommandMode) (state.ParentAction, bool) {
 		return state.ParentActionAccept, true
 	case ModeResume:
 		return state.ParentActionResume, true
+	case ModePark:
+		return state.ParentActionPark, true
+	case ModeUnpark:
+		return state.ParentActionUnpark, true
 	default:
 		return state.ParentActionNone, false
 	}
@@ -68,11 +72,23 @@ func parentActionDenied(cmd Command, plan state.ParentActionPlan, st *state.Stat
 		return &workflow.WorkerError{Message: "pending Sol decision must be resolved with --decision before --accept"}
 	case ModeResume:
 		return resumeActionDenied(st)
+	case ModePark, ModeUnpark:
+		return parkActionDenied(cmd, plan)
 	case ModeNewTask:
 		return newTaskActionDenied(plan, st)
 	default:
 		return &workflow.WorkerError{Message: fmt.Sprintf("parent action %d is not admitted", cmd.Mode)}
 	}
+}
+
+func parkActionDenied(cmd Command, plan state.ParentActionPlan) error {
+	if cmd.Mode == ModeUnpark {
+		return &workflow.WorkerError{Message: "no parked task is available to unpark in this repository"}
+	}
+	if plan.RequiredAction == state.ParentActionUnpark {
+		return &workflow.WorkerError{Message: "task is already parked; run the interrupt task in the parked worktree or unpark before parking again"}
+	}
+	return &workflow.WorkerError{Message: "park is only available while the task waits for a Sol decision or Sol review; use --decision, --fix, --approve-surface or --accept instead"}
 }
 
 func resumeActionDenied(st *state.StateStore) error {
@@ -107,6 +123,8 @@ func newTaskActionDenied(plan state.ParentActionPlan, st *state.StateStore) erro
 		return &workflow.WorkerError{Message: "previous task stopped on a recoverable guard failure; repair the guard then use --resume or --reset"}
 	case state.ParentActionRepairQualityGateThenResume:
 		return &workflow.WorkerError{Message: "previous task stopped on a deterministic quality gate failure; repair the reported gate precondition then use --resume or --reset"}
+	case state.ParentActionUnpark:
+		return &workflow.WorkerError{Message: "previous task is parked for an interrupt task; unpark it (after integrating the interrupt work) or run the interrupt task inside the parked worktree"}
 	}
 	return &workflow.WorkerError{Message: fmt.Sprintf("previous task requires parent action %s before starting a new task", plan.RequiredAction)}
 }
