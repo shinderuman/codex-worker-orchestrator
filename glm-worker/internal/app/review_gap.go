@@ -377,6 +377,10 @@ func reviewGapFillCategories(fix *reviewGapFix, previous *state.RoundRecord, rou
 		fix.CategoryReason = reviewGapReasonRoundCaptureError
 		return
 	}
+	if previous == nil {
+		fix.CategoryReason = reviewGapReasonPreviousRoundMissing
+		return
+	}
 	changed := reviewGapChangedPaths(previous, round)
 	if len(changed) == 0 {
 		fix.CategoryReason = reviewGapReasonNoChangedPaths
