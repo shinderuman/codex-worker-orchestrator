@@ -38,6 +38,10 @@ type codexRollout struct {
 	ParentThreadID string
 	GuardianSource bool
 	FirstTimestamp time.Time
+	LastTimestamp  time.Time
+	Cwd            string
+	Originator     string
+	SourceRaw      string
 }
 
 type codexSessionMeta struct {
@@ -49,6 +53,8 @@ type codexSessionMeta struct {
 type codexSessionMetaPayload struct {
 	ID             string          `json:"id"`
 	ParentThreadID string          `json:"parent_thread_id"`
+	Cwd            string          `json:"cwd"`
+	Originator     string          `json:"originator"`
 	Source         json.RawMessage `json:"source"`
 }
 
@@ -76,6 +82,7 @@ type codexAssociation struct {
 	ParentPath     string
 	ParentSource   string
 	ParentThreadID string
+	ParentChain    []codexRollout
 	GuardianStatus string
 	GuardianDetail string
 	Guardians      []codexRollout
@@ -107,6 +114,29 @@ const (
 
 	codexBackgroundTerminalMaxTimeoutKey = "background_terminal_max_timeout"
 )
+
+func (association codexAssociation) rolloutChain() []codexRollout {
+	if len(association.ParentChain) > 0 {
+		return association.ParentChain
+	}
+	if association.ParentPath == "" {
+		return nil
+	}
+	return []codexRollout{{AbsolutePath: association.ParentPath, HomeRelative: association.ParentSource}}
+}
+
+func (association codexAssociation) parentSources() []string {
+	chain := association.rolloutChain()
+	sources := make([]string, 0, len(chain))
+	for _, member := range chain {
+		sources = append(sources, member.HomeRelative)
+	}
+	return sources
+}
+
+func (association codexAssociation) parentSourceLabel() string {
+	return strings.Join(association.parentSources(), ";")
+}
 
 func codexSourceIsGuardian(raw json.RawMessage) bool {
 	if len(raw) == 0 {
@@ -193,12 +223,34 @@ func buildCodexAssociation(matches, rollouts []codexRollout, basis string, task 
 	case 1:
 		return includedCodexAssociation(matches[0], rollouts, basis, task)
 	default:
-		detail := fmt.Sprintf("%d rollouts share the stored parent thread ID", len(matches))
-		if basis == codexExplicitAssociationBasis {
-			detail = fmt.Sprintf("%d rollouts share the explicit bundle parent thread ID", len(matches))
+		chain, reason := resolveCodexRolloutChain(matches)
+		if reason != "" {
+			return ambiguousCodexChainAssociation(matches, basis, reason)
 		}
-		return codexAssociation{ParentStatus: codexStatusAmbiguous, Basis: basis, Detail: detail}
+		return includedCodexChainAssociation(chain, rollouts, basis, task)
 	}
+}
+
+func ambiguousCodexChainAssociation(matches []codexRollout, basis, reason string) codexAssociation {
+	detail := fmt.Sprintf("%d rollouts share the stored parent thread ID; %s", len(matches), reason)
+	if basis == codexExplicitAssociationBasis {
+		detail = fmt.Sprintf("%d rollouts share the explicit bundle parent thread ID; %s", len(matches), reason)
+	}
+	return codexAssociation{ParentStatus: codexStatusAmbiguous, Basis: basis, Detail: detail}
+}
+
+func includedCodexChainAssociation(chain, rollouts []codexRollout, basis string, task bundleTask) codexAssociation {
+	association := includedCodexAssociation(chain[0], rollouts, basis, task)
+	association.ParentChain = chain
+	if len(chain) > 1 {
+		chainDetail := fmt.Sprintf("stored parent thread ID resolves to an ordered rollout chain of %d files", len(chain))
+		if association.Detail == "" {
+			association.Detail = chainDetail
+		} else {
+			association.Detail = association.Detail + "; " + chainDetail
+		}
+	}
+	return association
 }
 
 func includedCodexAssociation(parent codexRollout, rollouts []codexRollout, basis string, task bundleTask) codexAssociation {
@@ -213,6 +265,7 @@ func includedCodexAssociation(parent codexRollout, rollouts []codexRollout, basi
 		ParentPath:     parent.AbsolutePath,
 		ParentSource:   parent.HomeRelative,
 		ParentThreadID: parent.ID,
+		ParentChain:    []codexRollout{parent},
 		GuardianStatus: codexStatusIncluded,
 		Guardians:      guardians,
 		Basis:          basis,
@@ -330,7 +383,21 @@ func readCodexRolloutMeta(codexHome, filePath string) (codexRollout, bool) {
 		ParentThreadID: meta.Payload.ParentThreadID,
 		GuardianSource: codexSourceIsGuardian(meta.Payload.Source),
 		FirstTimestamp: first,
+		Cwd:            meta.Payload.Cwd,
+		Originator:     meta.Payload.Originator,
+		SourceRaw:      codexCompactRawJSON(meta.Payload.Source),
 	}, true
+}
+
+func codexCompactRawJSON(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var buffer bytes.Buffer
+	if err := json.Compact(&buffer, raw); err != nil {
+		return string(raw)
+	}
+	return buffer.String()
 }
 
 func codexRolloutLastTimestamp(filePath string) (time.Time, bool) {
@@ -388,7 +455,10 @@ func (c *bundleCollector) addCodexRolloutEvidence(association codexAssociation) 
 	if association.ParentStatus != codexStatusIncluded {
 		return threads
 	}
-	c.addFile(association.ParentPath, codexRolloutArchivePath(association.ParentThreadID))
+	chain := association.rolloutChain()
+	for index, member := range chain {
+		c.addFile(member.AbsolutePath, codexRolloutArchivePathAt(association.ParentThreadID, index))
+	}
 	threads = append(threads, association.ParentThreadID)
 	for _, guardian := range association.Guardians {
 		c.addFile(guardian.AbsolutePath, codexGuardianArchivePath(guardian.ID))
@@ -399,6 +469,22 @@ func (c *bundleCollector) addCodexRolloutEvidence(association codexAssociation) 
 
 func codexRolloutArchivePath(threadID string) string {
 	return path.Join("codex-parent", "rollouts", safeArchiveComponent(threadID)+".jsonl")
+}
+
+func codexRolloutArchivePathAt(threadID string, index int) string {
+	if index == 0 {
+		return codexRolloutArchivePath(threadID)
+	}
+	return path.Join("codex-parent", "rollouts", fmt.Sprintf("%s-%d.jsonl", safeArchiveComponent(threadID), index+1))
+}
+
+func (association codexAssociation) rolloutArchivePaths() []string {
+	chain := association.rolloutChain()
+	paths := make([]string, 0, len(chain))
+	for index := range chain {
+		paths = append(paths, codexRolloutArchivePathAt(association.ParentThreadID, index))
+	}
+	return paths
 }
 
 func codexGuardianArchivePath(threadID string) string {
@@ -414,8 +500,8 @@ func codexParentSource(association codexAssociation) bundleCodexSource {
 	if association.ParentStatus != codexStatusIncluded {
 		return source
 	}
-	source.Sources = []string{association.ParentSource}
-	source.ArchivePaths = []string{codexRolloutArchivePath(association.ParentThreadID)}
+	source.Sources = association.parentSources()
+	source.ArchivePaths = association.rolloutArchivePaths()
 	source.ThreadIDs = []string{association.ParentThreadID}
 	source.SpansTasks = true
 	source.AssociationBasis = association.Basis

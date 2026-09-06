@@ -19,11 +19,18 @@ type parentUsageReport struct {
 }
 
 type parentUsageParent struct {
-	ThreadID         string `json:"thread_id,omitempty"`
-	Status           string `json:"status"`
-	AssociationBasis string `json:"association_basis,omitempty"`
-	RolloutSource    string `json:"rollout_source,omitempty"`
-	Detail           string `json:"detail,omitempty"`
+	ThreadID         string                   `json:"thread_id,omitempty"`
+	Status           string                   `json:"status"`
+	AssociationBasis string                   `json:"association_basis,omitempty"`
+	RolloutSource    string                   `json:"rollout_source,omitempty"`
+	RolloutChain     []parentUsageRolloutFile `json:"rollout_chain,omitempty"`
+	Detail           string                   `json:"detail,omitempty"`
+}
+
+type parentUsageRolloutFile struct {
+	Source       string `json:"source"`
+	FirstEventAt string `json:"first_event_at"`
+	LastEventAt  string `json:"last_event_at"`
 }
 
 type parentUsageIntervals struct {
@@ -136,14 +143,30 @@ func parentUsageParentSession(association codexAssociation) parentUsageParent {
 	parent.ThreadID = association.ParentThreadID
 	parent.AssociationBasis = association.Basis
 	parent.RolloutSource = association.ParentSource
+	chain := association.rolloutChain()
+	if len(chain) > 1 {
+		parent.RolloutChain = parentUsageRolloutChain(chain)
+	}
 	return parent
+}
+
+func parentUsageRolloutChain(chain []codexRollout) []parentUsageRolloutFile {
+	files := make([]parentUsageRolloutFile, 0, len(chain))
+	for _, member := range chain {
+		files = append(files, parentUsageRolloutFile{
+			Source:       member.HomeRelative,
+			FirstEventAt: member.FirstTimestamp.UTC().Format(time.RFC3339Nano),
+			LastEventAt:  member.LastTimestamp.UTC().Format(time.RFC3339Nano),
+		})
+	}
+	return files
 }
 
 func parentUsageRolloutScan(association codexAssociation, start, end time.Time) (bundleRolloutScan, error) {
 	if association.ParentStatus != codexStatusIncluded {
 		return bundleRolloutScan{}, nil
 	}
-	scan, err := scanCodexRolloutWindow(association.ParentPath, start, end)
+	scan, err := scanCodexRolloutChainWindow(association.rolloutChain(), start, end)
 	if err != nil {
 		return bundleRolloutScan{}, err
 	}
@@ -165,7 +188,7 @@ func parentUsageExecutionInterval(association codexAssociation, scan bundleRollo
 		return parentUsageDegradedEvidence(interval, association.ParentStatus)
 	}
 	if scanErr != nil {
-		return parentUsageUnreadableEvidence(interval, association.ParentSource)
+		return parentUsageUnreadableEvidence(interval, association.parentSourceLabel())
 	}
 	if execution.status == analysisStatusUnknown {
 		interval.Tokens.Reason = parentUsageReasonExecutionBoundary
@@ -176,8 +199,8 @@ func parentUsageExecutionInterval(association codexAssociation, scan bundleRollo
 	if execution.status == analysisStatusAvailable {
 		endBound = execution.end
 	}
-	interval.Tokens = parentUsageAnchoredTokens(scan, start, endBound, association.ParentSource)
-	interval.Activity = parentUsageIntervalActivity(scan, start, endBound, association.ParentSource, parentUsageIntervalStartInclusive)
+	interval.Tokens = parentUsageAnchoredTokens(scan, start, endBound, association.parentSourceLabel())
+	interval.Activity = parentUsageIntervalActivity(scan, start, endBound, association.parentSourceLabel(), parentUsageIntervalStartInclusive)
 	if execution.status == analysisStatusOpen && interval.Tokens.Status == analysisStatusAvailable {
 		interval.Tokens.Status = analysisStatusOpen
 	}
@@ -200,7 +223,7 @@ func parentUsageFinalizationInterval(association codexAssociation, scan bundleRo
 		return parentUsageDegradedEvidence(report, association.ParentStatus)
 	}
 	if scanErr != nil {
-		return parentUsageUnreadableEvidence(report, association.ParentSource)
+		return parentUsageUnreadableEvidence(report, association.parentSourceLabel())
 	}
 	if interval.Status != analysisStatusAvailable || ownership.final == nil {
 		if interval.Status == analysisStatusUnknown {
@@ -209,8 +232,8 @@ func parentUsageFinalizationInterval(association codexAssociation, scan bundleRo
 		}
 		return report
 	}
-	report.Tokens = parentUsageAnchoredTokens(scan, execution.end, ownership.final.CompletedAt, association.ParentSource)
-	report.Activity = parentUsageIntervalActivity(scan, execution.end, ownership.final.CompletedAt, association.ParentSource, parentUsageIntervalStartExclusive)
+	report.Tokens = parentUsageAnchoredTokens(scan, execution.end, ownership.final.CompletedAt, association.parentSourceLabel())
+	report.Activity = parentUsageIntervalActivity(scan, execution.end, ownership.final.CompletedAt, association.parentSourceLabel(), parentUsageIntervalStartExclusive)
 	return report
 }
 
@@ -233,49 +256,67 @@ func parentUsageAnchoredTokens(scan bundleRolloutScan, baselineBound, endBound t
 	case !hasBaseline:
 		return parentUsageTokens{Status: analysisStatusMissing, Reason: parentUsageReasonBaselineAnchor, BaselineSource: source}
 	case !hasEnd:
-		return parentUsageTokens{Status: analysisStatusMissing, Reason: parentUsageReasonEndAnchor, BaselineAt: baseline.RawAt, BaselineSource: parentUsageSourceLocator(source, baseline.Line)}
+		return parentUsageTokens{Status: analysisStatusMissing, Reason: parentUsageReasonEndAnchor, BaselineAt: baseline.RawAt, BaselineSource: parentUsageSourceLocator(baseline.Source, baseline.Line)}
 	case end.Offset <= baseline.Offset:
-		return parentUsageTokens{Status: analysisStatusNoObservation, BaselineAt: baseline.RawAt, BaselineSource: parentUsageSourceLocator(source, baseline.Line)}
-	case analysisCountersResetBetween(scan, baseline, end):
+		return parentUsageTokens{Status: analysisStatusNoObservation, BaselineAt: baseline.RawAt, BaselineSource: parentUsageSourceLocator(baseline.Source, baseline.Line)}
+	}
+	segments := analysisTokenSegments(scan, baseline, end)
+	if analysisSegmentsCounterReset(scan, segments) {
 		return parentUsageTokens{
 			Status:         analysisStatusCounterReset,
 			BaselineAt:     baseline.RawAt,
 			EndAt:          end.RawAt,
-			BaselineSource: parentUsageSourceLocator(source, baseline.Line),
-			EndSource:      parentUsageSourceLocator(source, end.Line),
+			BaselineSource: parentUsageSourceLocator(baseline.Source, baseline.Line),
+			EndSource:      parentUsageSourceLocator(end.Source, end.Line),
 		}
 	}
 	tokens := parentUsageTokens{
 		Status:         analysisStatusAvailable,
 		BaselineAt:     baseline.RawAt,
 		EndAt:          end.RawAt,
-		BaselineSource: parentUsageSourceLocator(source, baseline.Line),
-		EndSource:      parentUsageSourceLocator(source, end.Line),
+		BaselineSource: parentUsageSourceLocator(baseline.Source, baseline.Line),
+		EndSource:      parentUsageSourceLocator(end.Source, end.Line),
 	}
-	tokens.InputTokens, tokens.UnknownFields = parentUsageCounterField(parentUsageFieldInput, baseline.Input, end.Input, source, baseline, end, tokens.UnknownFields)
-	tokens.CachedInputTokens, tokens.UnknownFields = parentUsageCounterField(parentUsageFieldCached, baseline.Cached, end.Cached, source, baseline, end, tokens.UnknownFields)
-	tokens.OutputTokens, tokens.UnknownFields = parentUsageCounterField(parentUsageFieldOutput, baseline.Output, end.Output, source, baseline, end, tokens.UnknownFields)
-	tokens.ReasoningTokens, tokens.UnknownFields = parentUsageCounterField(parentUsageFieldReasoning, baseline.Reasoning, end.Reasoning, source, baseline, end, tokens.UnknownFields)
-	tokens.TotalTokens, tokens.UnknownFields = parentUsageCounterField(parentUsageFieldTotal, baseline.Total, end.Total, source, baseline, end, tokens.UnknownFields)
+	tokens.InputTokens, tokens.UnknownFields = parentUsageSegmentField(parentUsageFieldInput, analysisAnchorInput, segments, tokens.UnknownFields)
+	tokens.CachedInputTokens, tokens.UnknownFields = parentUsageSegmentField(parentUsageFieldCached, analysisAnchorCached, segments, tokens.UnknownFields)
+	tokens.OutputTokens, tokens.UnknownFields = parentUsageSegmentField(parentUsageFieldOutput, analysisAnchorOutput, segments, tokens.UnknownFields)
+	tokens.ReasoningTokens, tokens.UnknownFields = parentUsageSegmentField(parentUsageFieldReasoning, analysisAnchorReasoning, segments, tokens.UnknownFields)
+	tokens.TotalTokens, tokens.UnknownFields = parentUsageSegmentField(parentUsageFieldTotal, analysisAnchorTotal, segments, tokens.UnknownFields)
 	return tokens
 }
 
-func parentUsageCounterField(field string, baseline, end *int64, source string, baselineAnchor, endAnchor analysisRolloutTokenAnchor, unknowns []parentUsageUnknownField) (int64, []parentUsageUnknownField) {
-	delta := analysisCounterDeltaState(baseline, end)
-	if delta.Known {
-		return delta.Value, unknowns
+func parentUsageSegmentField(field string, accessor func(*analysisRolloutTokenAnchor) *int64, segments []analysisTokenSegment, unknowns []parentUsageUnknownField) (int64, []parentUsageUnknownField) {
+	var total int64
+	for _, segment := range segments {
+		if segment.baseline != nil {
+			delta := analysisCounterDeltaState(accessor(segment.baseline), accessor(segment.end))
+			if delta.Known {
+				total += delta.Value
+				continue
+			}
+			reason := parentUsageReasonMissingInEnd
+			missing := segment.end
+			if delta.MissingInBaseline {
+				reason = parentUsageReasonMissingInBaseline
+				missing = segment.baseline
+			}
+			return 0, append(unknowns, parentUsageUnknownField{
+				Field:  field,
+				Reason: reason,
+				Source: parentUsageSourceLocator(missing.Source, missing.Line),
+			})
+		}
+		value := accessor(segment.end)
+		if value == nil {
+			return 0, append(unknowns, parentUsageUnknownField{
+				Field:  field,
+				Reason: parentUsageReasonMissingInEnd,
+				Source: parentUsageSourceLocator(segment.end.Source, segment.end.Line),
+			})
+		}
+		total += *value
 	}
-	reason := parentUsageReasonMissingInEnd
-	missing := endAnchor
-	if delta.MissingInBaseline {
-		reason = parentUsageReasonMissingInBaseline
-		missing = baselineAnchor
-	}
-	return 0, append(unknowns, parentUsageUnknownField{
-		Field:  field,
-		Reason: reason,
-		Source: parentUsageSourceLocator(source, missing.Line),
-	})
+	return total, unknowns
 }
 
 func parentUsageIntervalActivity(scan bundleRolloutScan, start, end time.Time, source string, startExclusive bool) parentUsageActivity {

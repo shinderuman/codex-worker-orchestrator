@@ -64,11 +64,13 @@ type bundleAnalysisSubsequentTurn struct {
 }
 
 type bundleAnalysisParent struct {
-	ThreadID           string `json:"thread_id,omitempty"`
-	Status             string `json:"status"`
-	AssociationBasis   string `json:"association_basis,omitempty"`
-	RolloutArchivePath string `json:"rollout_archive_path,omitempty"`
-	Detail             string `json:"detail,omitempty"`
+	ThreadID            string   `json:"thread_id,omitempty"`
+	Status              string   `json:"status"`
+	AssociationBasis    string   `json:"association_basis,omitempty"`
+	RolloutArchivePath  string   `json:"rollout_archive_path,omitempty"`
+	RolloutArchivePaths []string `json:"rollout_archive_paths,omitempty"`
+	RolloutSources      []string `json:"rollout_sources,omitempty"`
+	Detail              string   `json:"detail,omitempty"`
 }
 
 type bundleAnalysisRollout struct {
@@ -214,6 +216,7 @@ type bundleRolloutScan struct {
 	windowStart    int64
 	windowEnd      int64
 	hasWindow      bool
+	fileCount      int
 	turns          []analysisRolloutTurn
 	turnIndex      map[string]int
 	tokens         []analysisRolloutTokenAnchor
@@ -267,6 +270,8 @@ type analysisRolloutTokenAnchor struct {
 	RawAt     string
 	Offset    int64
 	Line      int
+	File      int
+	Source    string
 	Input     *int64
 	Cached    *int64
 	Output    *int64
@@ -288,6 +293,7 @@ type codexRolloutEventPayload struct {
 
 type codexRolloutTokenPayload struct {
 	TotalTokenUsage *codexRolloutTokenUsage `json:"total_token_usage"`
+	LastTokenUsage  *codexRolloutTokenUsage `json:"last_token_usage"`
 }
 
 type codexRolloutTokenUsage struct {
@@ -335,7 +341,13 @@ type analysisCounterDelta struct {
 	MissingInEnd      bool
 }
 
-const bundleAnalysisIndexVersion = 4
+type analysisTokenSegment struct {
+	file     int
+	baseline *analysisRolloutTokenAnchor
+	end      *analysisRolloutTokenAnchor
+}
+
+const bundleAnalysisIndexVersion = 5
 
 const bundleAnalysisEntryPath = "analysis-index.json"
 
@@ -492,6 +504,10 @@ func analysisParentSession(association codexAssociation) bundleAnalysisParent {
 	parent.ThreadID = association.ParentThreadID
 	parent.AssociationBasis = association.Basis
 	parent.RolloutArchivePath = codexRolloutArchivePath(association.ParentThreadID)
+	if len(association.rolloutChain()) > 1 {
+		parent.RolloutArchivePaths = association.rolloutArchivePaths()
+		parent.RolloutSources = association.parentSources()
+	}
 	return parent
 }
 
@@ -499,10 +515,13 @@ func scanAnalysisRolloutWindow(collector *bundleCollector, association codexAsso
 	if association.ParentStatus != codexStatusIncluded {
 		return bundleRolloutScan{}, nil
 	}
-	if _, collected := collector.entries[codexRolloutArchivePath(association.ParentThreadID)]; !collected {
-		return bundleRolloutScan{}, nil
+	chain := association.rolloutChain()
+	for index := range chain {
+		if _, collected := collector.entries[codexRolloutArchivePathAt(association.ParentThreadID, index)]; !collected {
+			return bundleRolloutScan{}, nil
+		}
 	}
-	scan, err := scanCodexRolloutWindow(association.ParentPath, start, end)
+	scan, err := scanCodexRolloutChainWindow(chain, start, end)
 	if err != nil {
 		return bundleRolloutScan{}, err
 	}
@@ -510,30 +529,45 @@ func scanAnalysisRolloutWindow(collector *bundleCollector, association codexAsso
 }
 
 func scanCodexRolloutWindow(rolloutPath string, start, end time.Time) (bundleRolloutScan, error) {
-	file, err := os.Open(rolloutPath)
+	return scanCodexRolloutChainWindow([]codexRollout{{AbsolutePath: rolloutPath}}, start, end)
+}
+
+func scanCodexRolloutChainWindow(chain []codexRollout, start, end time.Time) (bundleRolloutScan, error) {
+	scan := bundleRolloutScan{turnIndex: map[string]int{}}
+	for _, member := range chain {
+		if err := scanCodexRolloutChainMember(&scan, member, start, end); err != nil {
+			return scan, err
+		}
+	}
+	scan.finalizeTurns()
+	return scan, nil
+}
+
+func scanCodexRolloutChainMember(scan *bundleRolloutScan, member codexRollout, start, end time.Time) error {
+	file, err := os.Open(member.AbsolutePath)
 	if err != nil {
-		return bundleRolloutScan{}, fmt.Errorf("parent rolloutを開けません: %w", err)
+		return fmt.Errorf("parent rolloutを開けません: %w", err)
 	}
 	defer func() { _ = file.Close() }()
 
-	scan := bundleRolloutScan{turnIndex: map[string]int{}}
+	fileIndex := scan.fileCount
+	scan.fileCount++
 	reader := bufio.NewReaderSize(file, 64*1024)
 	lineNumber := 0
 	for {
 		line, readErr := reader.ReadBytes('\n')
 		if len(line) > 0 {
 			lineNumber++
-			if err := observeAnalysisRolloutLine(&scan, line, lineNumber, start, end); err != nil {
-				return scan, err
+			if err := observeAnalysisRolloutLine(scan, line, lineNumber, fileIndex, member.HomeRelative, start, end); err != nil {
+				return err
 			}
 			scan.totalBytes += int64(len(line))
 		}
 		if readErr != nil {
 			if errors.Is(readErr, io.EOF) {
-				scan.finalizeTurns()
-				return scan, nil
+				return nil
 			}
-			return scan, fmt.Errorf("parent rolloutを読めません: %w", readErr)
+			return fmt.Errorf("parent rolloutを読めません: %w", readErr)
 		}
 	}
 }
@@ -555,7 +589,7 @@ func (scan *bundleRolloutScan) finalizeTurns() {
 	scan.turnIndex = nil
 }
 
-func observeAnalysisRolloutLine(scan *bundleRolloutScan, line []byte, lineNumber int, start, end time.Time) error {
+func observeAnalysisRolloutLine(scan *bundleRolloutScan, line []byte, lineNumber, fileIndex int, source string, start, end time.Time) error {
 	trimmed := strings.TrimRight(string(line), "\n")
 	if trimmed == "" {
 		return nil
@@ -574,7 +608,7 @@ func observeAnalysisRolloutLine(scan *bundleRolloutScan, line []byte, lineNumber
 		observeAnalysisRolloutToolActivity(scan, record.Payload, timestamp)
 	}
 	if record.Type == "event_msg" {
-		observeAnalysisRolloutEvent(scan, record, timestamp, lineNumber)
+		observeAnalysisRolloutEvent(scan, record, timestamp, lineNumber, fileIndex, source)
 	}
 	if record.Type == codexRolloutCompactedType {
 		scan.compactions = append(scan.compactions, analysisRolloutCompaction{At: timestamp})
@@ -670,13 +704,13 @@ func analysisWaitRequestedYield(arguments string) *float64 {
 	return parsed.YieldTimeMS
 }
 
-func observeAnalysisRolloutEvent(scan *bundleRolloutScan, record codexRolloutScanLine, timestamp time.Time, lineNumber int) {
+func observeAnalysisRolloutEvent(scan *bundleRolloutScan, record codexRolloutScanLine, timestamp time.Time, lineNumber, fileIndex int, source string) {
 	var payload codexRolloutEventPayload
 	if err := json.Unmarshal(record.Payload, &payload); err != nil {
 		return
 	}
 	if payload.Type == codexRolloutTokenCountType {
-		observeAnalysisRolloutTokenAnchor(scan, payload, record, timestamp, lineNumber)
+		observeAnalysisRolloutTokenAnchor(scan, payload, record, timestamp, lineNumber, fileIndex, source)
 		return
 	}
 	observeAnalysisRolloutTurnBoundary(scan, payload, timestamp)
@@ -696,7 +730,7 @@ func analysisObserveRolloutResumeCommand(scan *bundleRolloutScan, payload json.R
 	})
 }
 
-func observeAnalysisRolloutTokenAnchor(scan *bundleRolloutScan, payload codexRolloutEventPayload, record codexRolloutScanLine, timestamp time.Time, lineNumber int) {
+func observeAnalysisRolloutTokenAnchor(scan *bundleRolloutScan, payload codexRolloutEventPayload, record codexRolloutScanLine, timestamp time.Time, lineNumber, fileIndex int, source string) {
 	usage := payload.Info
 	if usage == nil || usage.TotalTokenUsage == nil {
 		return
@@ -706,6 +740,8 @@ func observeAnalysisRolloutTokenAnchor(scan *bundleRolloutScan, payload codexRol
 		RawAt:     record.Timestamp,
 		Offset:    scan.totalBytes,
 		Line:      lineNumber,
+		File:      fileIndex,
+		Source:    source,
 		Input:     usage.TotalTokenUsage.InputTokens,
 		Cached:    usage.TotalTokenUsage.CachedInputTokens,
 		Output:    usage.TotalTokenUsage.OutputTokens,
@@ -744,7 +780,7 @@ func analysisRolloutWindow(association codexAssociation, scan bundleRolloutScan,
 	if scanErr != nil {
 		rollout.Status = analysisStatusUnreadable
 		rollout.Reason = analysisReasonRolloutScanFailed
-		rollout.Source = association.ParentSource
+		rollout.Source = strings.Join(association.parentSources(), ";")
 		return rollout
 	}
 	if !scan.hasWindow {
@@ -1065,17 +1101,119 @@ func analysisAnchoredTokenDelta(scan bundleRolloutScan, baselineBound, endBound 
 	case end.Offset <= baseline.Offset:
 		delta.Status = analysisStatusNoObservation
 		delta.BaselineAt = baseline.RawAt
-	case analysisCountersResetBetween(scan, baseline, end):
+	}
+	if delta.Status != analysisStatusAvailable {
+		return delta
+	}
+	segments := analysisTokenSegments(scan, baseline, end)
+	if analysisSegmentsCounterReset(scan, segments) {
 		delta.Status = analysisStatusCounterReset
 		delta.BaselineAt = baseline.RawAt
 		delta.EndAt = end.RawAt
-	default:
-		delta.InputTokens = analysisCounterDeltaState(baseline.Input, end.Input).Value
-		delta.CachedInputTokens = analysisCounterDeltaState(baseline.Cached, end.Cached).Value
-		delta.BaselineAt = baseline.RawAt
-		delta.EndAt = end.RawAt
+		return delta
 	}
+	delta.InputTokens = analysisSegmentFieldSum(segments, analysisAnchorInput)
+	delta.CachedInputTokens = analysisSegmentFieldSum(segments, analysisAnchorCached)
+	delta.BaselineAt = baseline.RawAt
+	delta.EndAt = end.RawAt
 	return delta
+}
+
+func analysisTokenSegments(scan bundleRolloutScan, baseline, end analysisRolloutTokenAnchor) []analysisTokenSegment {
+	if baseline.File == end.File {
+		return []analysisTokenSegment{{file: baseline.File, baseline: &baseline, end: &end}}
+	}
+	segments := make([]analysisTokenSegment, 0, end.File-baseline.File+1)
+	for file := baseline.File; file <= end.File; file++ {
+		_, last := analysisFileTokenAnchorBounds(scan, file)
+		if file == baseline.File {
+			if last == nil {
+				continue
+			}
+			segments = append(segments, analysisTokenSegment{file: file, baseline: &baseline, end: last})
+			continue
+		}
+		if file == end.File {
+			segments = append(segments, analysisTokenSegment{file: file, baseline: nil, end: &end})
+			continue
+		}
+		if last == nil {
+			continue
+		}
+		segments = append(segments, analysisTokenSegment{file: file, baseline: nil, end: last})
+	}
+	return segments
+}
+
+func analysisFileTokenAnchorBounds(scan bundleRolloutScan, file int) (*analysisRolloutTokenAnchor, *analysisRolloutTokenAnchor) {
+	var first, last *analysisRolloutTokenAnchor
+	for index := range scan.tokens {
+		if scan.tokens[index].File < file {
+			continue
+		}
+		if scan.tokens[index].File > file {
+			break
+		}
+		if first == nil {
+			first = &scan.tokens[index]
+		}
+		last = &scan.tokens[index]
+	}
+	return first, last
+}
+
+func analysisSegmentsCounterReset(scan bundleRolloutScan, segments []analysisTokenSegment) bool {
+	for _, segment := range segments {
+		from := segment.baseline
+		if from == nil {
+			first, _ := analysisFileTokenAnchorBounds(scan, segment.file)
+			if first == nil {
+				continue
+			}
+			from = first
+		}
+		if from.Offset == segment.end.Offset {
+			continue
+		}
+		if analysisCountersResetBetween(scan, *from, *segment.end) {
+			return true
+		}
+	}
+	return false
+}
+
+func analysisAnchorInput(anchor *analysisRolloutTokenAnchor) *int64 {
+	return anchor.Input
+}
+
+func analysisAnchorCached(anchor *analysisRolloutTokenAnchor) *int64 {
+	return anchor.Cached
+}
+
+func analysisAnchorOutput(anchor *analysisRolloutTokenAnchor) *int64 {
+	return anchor.Output
+}
+
+func analysisAnchorReasoning(anchor *analysisRolloutTokenAnchor) *int64 {
+	return anchor.Reasoning
+}
+
+func analysisAnchorTotal(anchor *analysisRolloutTokenAnchor) *int64 {
+	return anchor.Total
+}
+
+func analysisSegmentFieldSum(segments []analysisTokenSegment, field func(*analysisRolloutTokenAnchor) *int64) int64 {
+	var total int64
+	for _, segment := range segments {
+		if segment.baseline != nil {
+			total += analysisCounterDeltaState(field(segment.baseline), field(segment.end)).Value
+			continue
+		}
+		if value := field(segment.end); value != nil {
+			total += *value
+		}
+	}
+	return total
 }
 
 func analysisCounterDeltaState(baseline, end *int64) analysisCounterDelta {

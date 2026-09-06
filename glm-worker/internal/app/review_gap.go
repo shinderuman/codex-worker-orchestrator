@@ -482,11 +482,11 @@ func buildReviewGapReworkInterval(evidence reviewGapTaskEvidence) reviewGapRewor
 	if evidence.scanErr != nil {
 		interval.Status = analysisStatusUnreadable
 		interval.Reason = reviewGapReasonRolloutScanFailed
-		interval.Activity = parentUsageActivity{Status: analysisStatusUnreadable, Reason: reviewGapReasonRolloutScanFailed, Source: evidence.association.ParentSource}
+		interval.Activity = parentUsageActivity{Status: analysisStatusUnreadable, Reason: reviewGapReasonRolloutScanFailed, Source: evidence.association.parentSourceLabel()}
 		return interval
 	}
-	interval.Tokens = parentUsageAnchoredTokens(evidence.scan, fromAt, event.StartedAt, evidence.association.ParentSource)
-	interval.Activity = parentUsageIntervalActivity(evidence.scan, fromAt, event.StartedAt, evidence.association.ParentSource, parentUsageIntervalStartExclusive)
+	interval.Tokens = parentUsageAnchoredTokens(evidence.scan, fromAt, event.StartedAt, evidence.association.parentSourceLabel())
+	interval.Activity = parentUsageIntervalActivity(evidence.scan, fromAt, event.StartedAt, evidence.association.parentSourceLabel(), parentUsageIntervalStartExclusive)
 	interval.Status = interval.Tokens.Status
 	if interval.Activity.Status != analysisStatusCounted && interval.Tokens.Status == analysisStatusAvailable {
 		interval.Status = interval.Activity.Status
