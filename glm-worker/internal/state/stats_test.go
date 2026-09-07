@@ -326,7 +326,7 @@ func TestSetParentCodexIdentityPersistsValidatesAndFailsClosed(t *testing.T) {
 	}
 	threadID := "01a0463c-d477-7410-9efd-cb34ff2e0b0e"
 	sessionID := "01a0463c-d477-7410-9efd-cb34ff2e0b0e"
-	if err := st.SetParentCodexIdentity(threadID, sessionID); err != nil {
+	if err := st.SetParentCodexIdentity(threadID, sessionID, nil); err != nil {
 		t.Fatal(err)
 	}
 	stats, err := st.CurrentTaskStats()
@@ -337,11 +337,11 @@ func TestSetParentCodexIdentityPersistsValidatesAndFailsClosed(t *testing.T) {
 		t.Fatalf("identity = %#v", stats)
 	}
 
-	if err := st.SetParentCodexIdentity(threadID, sessionID); err != nil {
+	if err := st.SetParentCodexIdentity(threadID, sessionID, nil); err != nil {
 		t.Fatalf("同一identityの再保存が失敗しました: %v", err)
 	}
 
-	if err := st.SetParentCodexIdentity("01a0244a-4ee4-7e71-b2e1-dec3bdda2120", sessionID); err == nil {
+	if err := st.SetParentCodexIdentity("01a0244a-4ee4-7e71-b2e1-dec3bdda2120", sessionID, nil); err == nil {
 		t.Fatal("矛盾するidentityを上書きしました")
 	}
 	after, err := st.CurrentTaskStats()
@@ -390,7 +390,7 @@ func TestSetParentCodexIdentityToleratesStatsMirrorFailures(t *testing.T) {
 		writeCorruptedTaskStats(t, st)
 		warnings, restore := captureStatsWarnings(t)
 		defer restore()
-		if err := st.SetParentCodexIdentity(threadID, sessionID); err != nil {
+		if err := st.SetParentCodexIdentity(threadID, sessionID, nil); err != nil {
 			t.Fatalf("破損statsで操作がblockされました: %v", err)
 		}
 		requireStatsWarning(t, warnings, "task_stats")
@@ -398,7 +398,7 @@ func TestSetParentCodexIdentityToleratesStatsMirrorFailures(t *testing.T) {
 
 	t.Run("missing stats skip without blocking", func(t *testing.T) {
 		st := &StateStore{dir: t.TempDir()}
-		if err := st.SetParentCodexIdentity(threadID, sessionID); err != nil {
+		if err := st.SetParentCodexIdentity(threadID, sessionID, nil); err != nil {
 			t.Fatalf("欠損statsで操作がblockされました: %v", err)
 		}
 	})
@@ -415,7 +415,7 @@ func TestSetParentCodexIdentityToleratesStatsMirrorFailures(t *testing.T) {
 		t.Cleanup(func() { _ = os.Chmod(root, 0o700) })
 		warnings, restore := captureStatsWarnings(t)
 		defer restore()
-		if err := st.SetParentCodexIdentity(threadID, sessionID); err != nil {
+		if err := st.SetParentCodexIdentity(threadID, sessionID, nil); err != nil {
 			t.Fatalf("書込失敗で操作がblockされました: %v", err)
 		}
 		requireStatsWarning(t, warnings, "task_stats")

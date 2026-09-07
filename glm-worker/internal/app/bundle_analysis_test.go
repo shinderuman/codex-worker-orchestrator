@@ -385,7 +385,7 @@ func TestBundleAnalysisSharedRolloutTwoTasks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := st.SetParentCodexIdentity(codexTestParentThreadID, codexTestParentSessionID); err != nil {
+	if err := st.SetParentCodexIdentity(codexTestParentThreadID, codexTestParentSessionID, nil); err != nil {
 		t.Fatal(err)
 	}
 	firstStart := time.Now().UTC().Add(-3 * time.Hour)
@@ -396,7 +396,7 @@ func TestBundleAnalysisSharedRolloutTwoTasks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := st.SetParentCodexIdentity(codexTestParentThreadID, codexTestParentSessionID); err != nil {
+	if err := st.SetParentCodexIdentity(codexTestParentThreadID, codexTestParentSessionID, nil); err != nil {
 		t.Fatal(err)
 	}
 	secondStart := firstStart.Add(40 * time.Minute)
@@ -816,7 +816,7 @@ func newAnalysisBundleFixture(t *testing.T) analysisBundleFixture {
 		t.Fatal(err)
 	}
 	start := stats.StartedAt.UTC()
-	if err := st.SetParentCodexIdentity(codexTestParentThreadID, codexTestParentSessionID); err != nil {
+	if err := st.SetParentCodexIdentity(codexTestParentThreadID, codexTestParentSessionID, nil); err != nil {
 		t.Fatal(err)
 	}
 	st.RecordRateLimit("opus")
@@ -891,7 +891,7 @@ func newAnalysisTerminalTask(t *testing.T) analysisTerminalTask {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := st.SetParentCodexIdentity(codexTestParentThreadID, codexTestParentSessionID); err != nil {
+	if err := st.SetParentCodexIdentity(codexTestParentThreadID, codexTestParentSessionID, nil); err != nil {
 		t.Fatal(err)
 	}
 	start := time.Now().UTC().Add(-2 * time.Hour)

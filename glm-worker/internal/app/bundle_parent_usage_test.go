@@ -419,7 +419,7 @@ func TestParentUsageIdentityDegradations(t *testing.T) {
 			t.Fatal(err)
 		}
 		start := stats.StartedAt.UTC()
-		if err := st.SetParentCodexIdentity(codexTestParentThreadID, codexTestParentSessionID); err != nil {
+		if err := st.SetParentCodexIdentity(codexTestParentThreadID, codexTestParentSessionID, nil); err != nil {
 			t.Fatal(err)
 		}
 		for _, rel := range []string{
@@ -469,7 +469,7 @@ func TestParentUsageOpenTaskReportsProgress(t *testing.T) {
 		t.Fatal(err)
 	}
 	start := stats.StartedAt.UTC()
-	if err := st.SetParentCodexIdentity(codexTestParentThreadID, codexTestParentSessionID); err != nil {
+	if err := st.SetParentCodexIdentity(codexTestParentThreadID, codexTestParentSessionID, nil); err != nil {
 		t.Fatal(err)
 	}
 	inWindow := time.Now().UTC()

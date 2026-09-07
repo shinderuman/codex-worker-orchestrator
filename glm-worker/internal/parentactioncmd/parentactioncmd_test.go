@@ -217,7 +217,7 @@ func TestExecuteStartWithoutIdentityEnvRunsChildWithoutPropagation(t *testing.T)
 
 func TestExecuteResumeFailsClosedOnConflictingParentCodexIdentity(t *testing.T) {
 	cfg, st := newParentActionIdentityTestState(t)
-	if err := st.SetParentCodexIdentity("01a0244a-4ee4-7e71-b2e1-dec3bdda2120", "01a0244a-4ee4-7e71-b2e1-dec3bdda2120"); err != nil {
+	if err := st.SetParentCodexIdentity("01a0244a-4ee4-7e71-b2e1-dec3bdda2120", "01a0244a-4ee4-7e71-b2e1-dec3bdda2120", nil); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("CODEX_THREAD_ID", codexIdentityTestThreadID)

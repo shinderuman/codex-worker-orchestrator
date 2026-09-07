@@ -1,0 +1,468 @@
+package state
+
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+)
+
+func TestDecideSessionRotationRuleTable(t *testing.T) {
+	base := func() SessionRotationSignals {
+		return SessionRotationSignals{
+			Terminal:                SessionRotationTerminalAccept,
+			AcceptedTasks:           1,
+			CurrentAcceptedRisk:     "LOW",
+			Rollout:                 &SessionRotationRolloutSignals{ModelTurns: 1, ToolOutputBytes: 1, Compactions: 0, Source: "rollout.jsonl"},
+			MaterialEvents:          1,
+			MaterialEventsAvailable: true,
+			Limit:                   &SessionRotationLimitSignals{UsedDeltaPoints: 0, LimitID: "codex"},
+			LimitSource:             "rotation/marker.json",
+		}
+	}
+	tests := []struct {
+		name   string
+		mutate func(*SessionRotationSignals)
+		want   bool
+		reason string
+	}{
+		{"first accepted task stays on session", func(s *SessionRotationSignals) { s.AcceptedTasks = 1 }, false, ""},
+		{"second accepted task rotates by default", func(s *SessionRotationSignals) { s.AcceptedTasks = 2 }, true, SessionRotationReasonDefaultTwoTasks},
+		{"high risk accept rotates on first task", func(s *SessionRotationSignals) { s.CurrentAcceptedRisk = "HIGH" }, true, SessionRotationReasonHighRisk},
+		{"high risk is not an accept terminal on no-go", func(s *SessionRotationSignals) {
+			s.Terminal = SessionRotationTerminalNoGo
+			s.CurrentAcceptedRisk = "HIGH"
+		}, false, ""},
+		{"no-go does not count accepted tasks", func(s *SessionRotationSignals) {
+			s.Terminal = SessionRotationTerminalNoGo
+			s.AcceptedTasks = 2
+		}, false, ""},
+		{"single compaction rotates", func(s *SessionRotationSignals) { s.Rollout.Compactions = 1 }, true, SessionRotationReasonCompaction},
+		{"five model turns stay on session", func(s *SessionRotationSignals) { s.Rollout.ModelTurns = 5 }, false, ""},
+		{"six model turns rotate", func(s *SessionRotationSignals) { s.Rollout.ModelTurns = 6 }, true, SessionRotationReasonModelTurns},
+		{"tool output below threshold stays", func(s *SessionRotationSignals) { s.Rollout.ToolOutputBytes = 262143 }, false, ""},
+		{"tool output at threshold rotates", func(s *SessionRotationSignals) { s.Rollout.ToolOutputBytes = 262144 }, true, SessionRotationReasonToolOutputBytes},
+		{"single material event stays", func(s *SessionRotationSignals) { s.MaterialEvents = 1 }, false, ""},
+		{"two material events rotate", func(s *SessionRotationSignals) { s.MaterialEvents = 2 }, true, SessionRotationReasonRepeatedEvents},
+		{"limit delta below ten points stays", func(s *SessionRotationSignals) { s.Limit.UsedDeltaPoints = 9.999 }, false, ""},
+		{"limit delta at ten points rotates", func(s *SessionRotationSignals) { s.Limit.UsedDeltaPoints = 10 }, true, SessionRotationReasonLimitWindow},
+		{"limit window reset does not rotate on delta", func(s *SessionRotationSignals) {
+			s.Limit.WindowReset = true
+			s.Limit.UsedDeltaPoints = 80
+		}, false, ""},
+		{"rollout evidence missing rotates conservatively", func(s *SessionRotationSignals) {
+			s.Rollout = nil
+			s.RolloutUnavailableField = SessionRotationEvidenceFieldRolloutAssociation
+			s.RolloutUnavailableSrc = "no rollout"
+		}, true, SessionRotationReasonEvidenceUnavailable},
+		{"material event evidence missing rotates conservatively", func(s *SessionRotationSignals) {
+			s.MaterialEventsAvailable = false
+			s.MaterialEvents = 0
+		}, true, SessionRotationReasonEvidenceUnavailable},
+		{"live limit evidence missing rotates conservatively", func(s *SessionRotationSignals) {
+			s.Limit = nil
+			s.LimitUnavailableFields = []string{SessionRotationEvidenceFieldLimitLive}
+		}, true, SessionRotationReasonEvidenceUnavailable},
+		{"saved limit baseline missing rotates conservatively", func(s *SessionRotationSignals) {
+			s.Limit = nil
+			s.LimitUnavailableFields = []string{SessionRotationEvidenceFieldLimitBaseline}
+		}, true, SessionRotationReasonEvidenceUnavailable},
+		{"limit id mismatch rotates conservatively", func(s *SessionRotationSignals) {
+			s.Limit = nil
+			s.LimitUnavailableFields = []string{SessionRotationEvidenceFieldLimitWindow}
+		}, true, SessionRotationReasonEvidenceUnavailable},
+		{"real trigger wins over missing evidence", func(s *SessionRotationSignals) {
+			s.Rollout = nil
+			s.RolloutUnavailableField = SessionRotationEvidenceFieldRolloutAssociation
+			s.AcceptedTasks = 2
+		}, true, SessionRotationReasonDefaultTwoTasks},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			signals := base()
+			tc.mutate(&signals)
+			decision := DecideSessionRotation(signals)
+			if decision.Required != tc.want || decision.Reason != tc.reason {
+				t.Fatalf("decision = required:%v reason:%q want required:%v reason:%q", decision.Required, decision.Reason, tc.want, tc.reason)
+			}
+			if tc.want && len(decision.Evidence) == 0 {
+				t.Fatalf("required decision carries no evidence: %#v", decision)
+			}
+		})
+	}
+}
+
+func TestSessionRotationMarkerSchemaValidation(t *testing.T) {
+	validDirective := func() *SessionRotationDirective {
+		return &SessionRotationDirective{
+			DirectiveID: "0f4a9b31-52c8-4d7e-9a31-6b2f5c8d1e40",
+			TaskID:      "12345678-aaaa-bbbb-cccc-dddddddddddd",
+			Terminal:    SessionRotationTerminalAccept,
+			Epoch:       "12345678-aaaa-bbbb-cccc-dddddddddddd:accept",
+			Reason:      SessionRotationReasonDefaultTwoTasks,
+			Evidence:    []SessionRotationEvidence{{Trigger: SessionRotationReasonDefaultTwoTasks, Field: "accepted_tasks", Value: "2"}},
+			CreatedAt:   "2026-09-07T00:00:00Z",
+		}
+	}
+	base := func() SessionRotationMarker {
+		return SessionRotationMarker{
+			Version:        sessionRotationMarkerVersion,
+			ParentThreadID: "01a0463c-d477-7410-9efd-cb34ff2e0b0e",
+			State:          SessionRotationStatePending,
+			Directive:      validDirective(),
+			UpdatedAt:      "2026-09-07T00:00:00Z",
+		}
+	}
+	tests := []struct {
+		name   string
+		mutate func(*SessionRotationMarker)
+		extra  string
+	}{
+		{"unknown field is rejected", nil, `,"unexpected":1}`},
+		{"bad version is rejected", func(m *SessionRotationMarker) { m.Version = 2 }, ""},
+		{"bad thread id is rejected", func(m *SessionRotationMarker) { m.ParentThreadID = "not-a-uuid" }, ""},
+		{"pending without directive is rejected", func(m *SessionRotationMarker) { m.Directive = nil }, ""},
+		{"pending with issued record is rejected", func(m *SessionRotationMarker) {
+			m.Issued = &SessionRotationIssued{BoundThreadID: "01a0463c-d477-7410-9efd-cb34ff2e0b0f", IssuedAt: "2026-09-07T00:00:00Z"}
+		}, ""},
+		{"issued without bound thread is rejected", func(m *SessionRotationMarker) {
+			m.State = SessionRotationStateIssued
+			m.Directive = nil
+		}, ""},
+		{"directive without generated uuid is rejected", func(m *SessionRotationMarker) { m.Directive.DirectiveID = "0f4a9b31-52c8-9d7e-9a31-6b2f5c8d1e40" }, ""},
+		{"directive epoch mismatch is rejected", func(m *SessionRotationMarker) { m.Directive.Epoch = "other:accept" }, ""},
+		{"directive unknown reason is rejected", func(m *SessionRotationMarker) { m.Directive.Reason = "vibe" }, ""},
+		{"directive unknown terminal is rejected", func(m *SessionRotationMarker) {
+			m.Directive.Terminal = "park"
+			m.Directive.Epoch = m.Directive.TaskID + ":park"
+		}, ""},
+		{"baseline without limit id is rejected", func(m *SessionRotationMarker) {
+			m.LimitBaseline = &SessionLimitBaseline{WindowResetsAt: 100, UsedPercent: 10, CapturedAt: "2026-09-07T00:00:00Z"}
+		}, ""},
+		{"baseline over hundred percent is rejected", func(m *SessionRotationMarker) {
+			m.LimitBaseline = &SessionLimitBaseline{LimitID: "codex", WindowResetsAt: 100, UsedPercent: 101, CapturedAt: "2026-09-07T00:00:00Z"}
+		}, ""},
+		{"last evaluation without task is rejected", func(m *SessionRotationMarker) {
+			m.LastEvaluation = &SessionRotationEvaluationRecord{Terminal: SessionRotationTerminalAccept, At: "2026-09-07T00:00:00Z"}
+		}, ""},
+		{"missing updated_at is rejected", func(m *SessionRotationMarker) { m.UpdatedAt = "" }, ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			marker := base()
+			if tc.mutate != nil {
+				tc.mutate(&marker)
+			}
+			data, err := json.Marshal(marker)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.extra != "" {
+				data = append(data[:len(data)-1], []byte(tc.extra)...)
+			}
+			if _, err := decodeSessionRotationMarker(data); err == nil {
+				t.Fatalf("invalid markerが受理されました: %s", data)
+			}
+		})
+	}
+	if _, err := decodeSessionRotationMarker(func() []byte {
+		data, _ := json.Marshal(base())
+		return data
+	}()); err != nil {
+		t.Fatalf("valid markerが拒否されました: %v", err)
+	}
+}
+
+func TestSessionRotationCommitPersistsDirectiveOncePerEpoch(t *testing.T) {
+	st := &StateStore{dir: t.TempDir()}
+	threadID := "01a0463c-d477-7410-9efd-cb34ff2e0b0e"
+	first := &SessionRotationEvaluation{
+		ParentThreadID: threadID,
+		TaskID:         "12345678-aaaa-bbbb-cccc-dddddddddddd",
+		Terminal:       SessionRotationTerminalAccept,
+		Decision:       SessionRotationDecision{Required: true, Reason: SessionRotationReasonDefaultTwoTasks, Evidence: []SessionRotationEvidence{{Trigger: SessionRotationReasonDefaultTwoTasks}}},
+	}
+	if err := st.commitSessionRotation(first); err != nil {
+		t.Fatal(err)
+	}
+	marker, err := st.LoadSessionRotationMarker(threadID)
+	if err != nil || marker == nil || marker.State != SessionRotationStatePending || marker.Directive == nil {
+		t.Fatalf("first commit後のmarker = %#v err=%v", marker, err)
+	}
+	firstDirective := marker.Directive.DirectiveID
+
+	second := &SessionRotationEvaluation{
+		ParentThreadID: threadID,
+		TaskID:         "87654321-aaaa-bbbb-cccc-dddddddddddd",
+		Terminal:       SessionRotationTerminalAccept,
+		Decision:       SessionRotationDecision{Required: true, Reason: SessionRotationReasonRepeatedEvents},
+	}
+	if err := st.commitSessionRotation(second); err != nil {
+		t.Fatal(err)
+	}
+	marker, err = st.LoadSessionRotationMarker(threadID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if marker.Directive.DirectiveID != firstDirective {
+		t.Fatalf("同一thread内の再評価がdirectiveを作り直しました: %s -> %s", firstDirective, marker.Directive.DirectiveID)
+	}
+	if marker.LastEvaluation == nil || marker.LastEvaluation.TaskID != second.TaskID || !marker.LastEvaluation.Required {
+		t.Fatalf("last evaluation = %#v", marker.LastEvaluation)
+	}
+
+	notRequired := &SessionRotationEvaluation{
+		ParentThreadID: threadID,
+		TaskID:         "87654321-aaaa-bbbb-cccc-dddddddddddd",
+		Terminal:       SessionRotationTerminalAccept,
+		Decision:       SessionRotationDecision{Required: false},
+	}
+	if err := st.commitSessionRotation(notRequired); err != nil {
+		t.Fatal(err)
+	}
+	marker, err = st.LoadSessionRotationMarker(threadID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if marker.State != SessionRotationStatePending || marker.Directive.DirectiveID != firstDirective {
+		t.Fatalf("not-required評価がpending directiveを壊しました: %#v", marker)
+	}
+	if marker.LastEvaluation.Required {
+		t.Fatalf("last evaluation = %#v", marker.LastEvaluation)
+	}
+
+	baseline := &SessionLimitBaseline{LimitID: "codex", WindowResetsAt: 1787685137, UsedPercent: 20, CapturedAt: "2026-09-07T00:00:00Z"}
+	if err := st.commitSessionRotation(&SessionRotationEvaluation{
+		ParentThreadID:      threadID,
+		TaskID:              "87654321-aaaa-bbbb-cccc-dddddddddddd",
+		Terminal:            SessionRotationTerminalAccept,
+		Decision:            SessionRotationDecision{Required: false},
+		LimitBaselineUpdate: baseline,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	marker, err = st.LoadSessionRotationMarker(threadID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if marker.LimitBaseline == nil || marker.LimitBaseline.WindowResetsAt != baseline.WindowResetsAt {
+		t.Fatalf("baseline更新が保存されていません: %#v", marker.LimitBaseline)
+	}
+
+	if err := st.commitSessionRotation(&SessionRotationEvaluation{
+		ParentThreadID: "invalid",
+		TaskID:         "12345678-aaaa-bbbb-cccc-dddddddddddd",
+		Terminal:       SessionRotationTerminalAccept,
+	}); err == nil {
+		t.Fatal("invalid parent thread identityがfail closedしませんでした")
+	}
+}
+
+func TestSessionRotationMarkerFileIsThreadKeyedAndAtomic(t *testing.T) {
+	st := &StateStore{dir: t.TempDir()}
+	threadID := "01a0463c-d477-7410-9efd-cb34ff2e0b0e"
+	other := "01a0244a-4ee4-7e71-b2e1-dec3bdda2120"
+	if st.SessionRotationMarkerPath(threadID) != filepath.Join(st.dir, "rotation", threadID+".json") {
+		t.Fatalf("marker path = %s", st.SessionRotationMarkerPath(threadID))
+	}
+	reading := SessionLimitReading{LimitID: "codex", UsedPercent: 10, ResetsAt: 1787685137, CapturedAt: time.Now().UTC()}
+	if err := st.SaveSessionLimitBaseline(threadID, reading); err != nil {
+		t.Fatal(err)
+	}
+	first, err := st.LoadSessionRotationMarker(threadID)
+	if err != nil || first == nil || first.LimitBaseline == nil || first.LimitBaseline.UsedPercent != 10 {
+		t.Fatalf("baseline保存後のmarker = %#v err=%v", first, err)
+	}
+	firstUpdatedAt := first.UpdatedAt
+
+	if err := st.SaveSessionLimitBaseline(threadID, reading); err != nil {
+		t.Fatal(err)
+	}
+	same, err := st.LoadSessionRotationMarker(threadID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if same.UpdatedAt != firstUpdatedAt {
+		t.Fatalf("同一windowのbaseline再保存がmarkerを更新しました: %s -> %s", firstUpdatedAt, same.UpdatedAt)
+	}
+
+	reset := SessionLimitReading{LimitID: "codex", UsedPercent: 3, ResetsAt: 1787685137 + 3600, CapturedAt: time.Now().UTC()}
+	if err := st.SaveSessionLimitBaseline(threadID, reset); err != nil {
+		t.Fatal(err)
+	}
+	updated, err := st.LoadSessionRotationMarker(threadID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.LimitBaseline.WindowResetsAt != reset.ResetsAt || updated.LimitBaseline.UsedPercent != 3 {
+		t.Fatalf("window reset後のbaseline = %#v", updated.LimitBaseline)
+	}
+
+	if _, err := st.LoadSessionRotationMarker(other); err != nil {
+		t.Fatal(err)
+	}
+	if entries, err := os.ReadDir(filepath.Join(st.dir, "rotation")); err != nil || len(entries) != 1 {
+		t.Fatalf("rotation dir = %#v err=%v", entries, err)
+	}
+
+	if err := os.WriteFile(filepath.Join(st.dir, "rotation", other+".json"), []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.LoadSessionRotationMarker(other); err == nil {
+		t.Fatal("schema不正なmarkerがfail closedしませんでした")
+	}
+}
+
+func TestSessionRotationIssuedOnBindCoversOtherThreadsOnly(t *testing.T) {
+	st := &StateStore{dir: t.TempDir()}
+	oldThread := "01a0463c-d477-7410-9efd-cb34ff2e0b0e"
+	newThread := "01a0244a-4ee4-7e71-b2e1-dec3bdda2120"
+	for _, thread := range []string{oldThread, newThread} {
+		if err := st.commitSessionRotation(&SessionRotationEvaluation{
+			ParentThreadID: thread,
+			TaskID:         "12345678-aaaa-bbbb-cccc-dddddddddddd",
+			Terminal:       SessionRotationTerminalAccept,
+			Decision:       SessionRotationDecision{Required: true, Reason: SessionRotationReasonCompaction},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := st.MarkSessionRotationIssuedOnBind(newThread); err != nil {
+		t.Fatal(err)
+	}
+	issued, err := st.LoadSessionRotationMarker(oldThread)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if issued.State != SessionRotationStateIssued || issued.Issued == nil || issued.Issued.BoundThreadID != newThread {
+		t.Fatalf("旧thread marker = %#v", issued)
+	}
+	if issued.Directive == nil {
+		t.Fatalf("issued markerがdirective記録を失いました: %#v", issued)
+	}
+	current, err := st.LoadSessionRotationMarker(newThread)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.State != SessionRotationStatePending {
+		t.Fatalf("bindしたthread自身のpending directiveが変化しました: %#v", current)
+	}
+}
+
+func TestAcceptParentReviewRotationTransaction(t *testing.T) {
+	seed := func(t *testing.T) *StateStore {
+		t.Helper()
+		st := &StateStore{dir: t.TempDir()}
+		if _, err := st.StartNewTask(); err != nil {
+			t.Fatal(err)
+		}
+		if err := st.SetTaskStatus(TaskStatusComplete); err != nil {
+			t.Fatal(err)
+		}
+		st.UpdateTaskStats(func(stats *TaskStats) {
+			stats.openParentReview("PASS", "LOW", ParentReviewProducer{})
+		})
+		return st
+	}
+	threadID := "01a0463c-d477-7410-9efd-cb34ff2e0b0e"
+
+	t.Run("required decision writes marker inside accept", func(t *testing.T) {
+		st := seed(t)
+		accepted, err := st.AcceptParentReview(func(string) (*SessionRotationEvaluation, error) {
+			return &SessionRotationEvaluation{
+				ParentThreadID: threadID,
+				TaskID:         st.ReadOr("task.id", ""),
+				Terminal:       SessionRotationTerminalAccept,
+				Decision:       SessionRotationDecision{Required: true, Reason: SessionRotationReasonCompaction},
+			}, nil
+		})
+		if err != nil || !accepted {
+			t.Fatalf("accept = %v err=%v", accepted, err)
+		}
+		marker, err := st.LoadSessionRotationMarker(threadID)
+		if err != nil || marker == nil || marker.State != SessionRotationStatePending || marker.Directive == nil {
+			t.Fatalf("accept後のmarker = %#v err=%v", marker, err)
+		}
+	})
+
+	t.Run("evaluation failure rolls the terminal back", func(t *testing.T) {
+		st := seed(t)
+		before, err := st.CurrentTaskStats()
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = st.AcceptParentReview(func(string) (*SessionRotationEvaluation, error) {
+			return nil, os.ErrPermission
+		})
+		if err == nil {
+			t.Fatal("評価errorがacceptをfail closedしませんでした")
+		}
+		if got := st.TaskStatus(); got != TaskStatusComplete {
+			t.Fatalf("rollback後のstatus = %q", got)
+		}
+		after, err := st.CurrentTaskStats()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if after.ParentReviewOpen == nil || after.ParentOutcomes[ParentOutcomeAccepted] != 0 {
+			t.Fatalf("rollback後のstats = %#v (before=%#v)", after, before)
+		}
+		retry, err := st.AcceptParentReview(func(string) (*SessionRotationEvaluation, error) {
+			return &SessionRotationEvaluation{
+				ParentThreadID: threadID,
+				TaskID:         st.ReadOr("task.id", ""),
+				Terminal:       SessionRotationTerminalAccept,
+				Decision:       SessionRotationDecision{Required: false},
+			}, nil
+		})
+		if err != nil || !retry {
+			t.Fatalf("再試行accept = %v err=%v", retry, err)
+		}
+		marker, err := st.LoadSessionRotationMarker(threadID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if marker == nil || marker.State != "" || marker.LastEvaluation == nil || marker.LastEvaluation.Required {
+			t.Fatalf("not-required accept後のmarker = %#v", marker)
+		}
+	})
+}
+
+func TestProjectSessionRotationStates(t *testing.T) {
+	st := &StateStore{dir: t.TempDir()}
+	unbound, err := st.ProjectSessionRotation("")
+	if err != nil || unbound.State != SessionRotationProjectionUnavailable || unbound.Reason == "" {
+		t.Fatalf("unbound projection = %#v err=%v", unbound, err)
+	}
+	threadID := "01a0463c-d477-7410-9efd-cb34ff2e0b0e"
+	absent, err := st.ProjectSessionRotation(threadID)
+	if err != nil || absent.State != SessionRotationProjectionUnavailable {
+		t.Fatalf("absent projection = %#v err=%v", absent, err)
+	}
+	if err := st.commitSessionRotation(&SessionRotationEvaluation{
+		ParentThreadID: threadID,
+		TaskID:         "12345678-aaaa-bbbb-cccc-dddddddddddd",
+		Terminal:       SessionRotationTerminalAccept,
+		Decision:       SessionRotationDecision{Required: true, Reason: SessionRotationReasonModelTurns},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	pending, err := st.ProjectSessionRotation(threadID)
+	if err != nil || pending.State != SessionRotationProjectionPending || pending.Directive == nil {
+		t.Fatalf("pending projection = %#v err=%v", pending, err)
+	}
+	if pending.Directive.Reason != SessionRotationReasonModelTurns {
+		t.Fatalf("pending directive = %#v", pending.Directive)
+	}
+	if err := st.MarkSessionRotationIssuedOnBind("01a0244a-4ee4-7e71-b2e1-dec3bdda2120"); err != nil {
+		t.Fatal(err)
+	}
+	issued, err := st.ProjectSessionRotation(threadID)
+	if err != nil || issued.State != SessionRotationProjectionNotRequired || issued.Directive != nil {
+		t.Fatalf("issued projection = %#v err=%v", issued, err)
+	}
+	if _, err := st.ProjectSessionRotation("bad"); err == nil {
+		t.Fatal("invalid thread identityがfail closedしませんでした")
+	}
+}

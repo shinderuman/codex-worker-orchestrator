@@ -109,6 +109,9 @@ func newParentReviewOpportunity(t *testing.T) (config.AppConfig, *state.StateSto
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := st.SetParentCodexIdentity(codexTestParentThreadID, codexTestParentSessionID, nil); err != nil {
+		t.Fatal(err)
+	}
 	return cfg, st
 }
 

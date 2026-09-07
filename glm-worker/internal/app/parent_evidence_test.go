@@ -413,3 +413,36 @@ func newParentEvidenceFixture(t *testing.T) *parentEvidenceFixture {
 	}
 	return &parentEvidenceFixture{repoRoot: dir, cfg: cfg, st: st}
 }
+
+func TestParentEvidenceHandoffPartCarriesSessionRotation(t *testing.T) {
+	cfg, st, threadID := seedSessionRotationAccept(t)
+	marker, err := st.LoadSessionRotationMarker(threadID)
+	if err != nil || marker == nil || marker.Directive == nil {
+		t.Fatalf("marker = %#v err=%v", marker, err)
+	}
+	manifestPath := filepath.Join(t.TempDir(), "evidence-manifest.json")
+	if err := os.WriteFile(manifestPath, []byte(`{"version":1,"reason":"rotation","handoff":{}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout bytes.Buffer
+	if err := printParentEvidence(Command{Mode: ModeEvidence, EvidenceManifest: manifestPath}, cfg, st, &stdout); err != nil {
+		t.Fatalf("printParentEvidence: %v", err)
+	}
+	var output parentEvidenceOutput
+	if err := json.Unmarshal(stdout.Bytes(), &output); err != nil {
+		t.Fatalf("evidence output is not valid JSON: %v: %s", err, stdout.String())
+	}
+	if len(output.Parts) != 1 || output.Parts[0].Handoff == nil {
+		t.Fatalf("handoff part = %#v raw=%s", output.Parts, stdout.String())
+	}
+	var handoff parentHandoffOutput
+	if err := json.Unmarshal(output.Parts[0].Handoff, &handoff); err != nil {
+		t.Fatalf("handoff part JSON: %v", err)
+	}
+	if handoff.SessionRotation == nil || handoff.SessionRotation.State != state.SessionRotationProjectionPending {
+		t.Fatalf("evidence handoff session_rotation = %#v", handoff.SessionRotation)
+	}
+	if handoff.SessionRotation.Directive == nil || handoff.SessionRotation.Directive.DirectiveID != marker.Directive.DirectiveID {
+		t.Fatalf("evidence handoff directive = %#v want %s", handoff.SessionRotation.Directive, marker.Directive.DirectiveID)
+	}
+}

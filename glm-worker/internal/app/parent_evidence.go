@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -13,8 +14,10 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/authoritybootstrapcmd"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/codexlimit"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/reposearch"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
@@ -173,6 +176,8 @@ const (
 	parentEvidenceMaxSourceLines   = 2000
 	parentEvidenceMaxBudgetBytes   = 256 * 1024
 	parentEvidenceTelemetryFile    = "parent-evidence.jsonl"
+
+	sessionRotationGuardOutcome = "guard_recoverable"
 )
 
 var parentEvidenceBodyStrippers = []func(*parentEvidencePart) bool{
@@ -890,4 +895,222 @@ func gitTrimmedOutput(dir string, args ...string) (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(string(output)), nil
+}
+
+func EvaluateSessionRotationTerminal(
+	cfg config.AppConfig,
+	st *state.StateStore,
+	terminal string,
+	acceptedRisk string,
+) (*state.SessionRotationEvaluation, error) {
+	stats, err := st.CurrentTaskStats()
+	if err != nil {
+		return nil, err
+	}
+	if !state.ValidUUIDFormat(stats.ParentCodexThreadID) {
+		return nil, fmt.Errorf("session rotation requires a bound parent Codex thread identity: %q", stats.ParentCodexThreadID)
+	}
+	acceptedTasks, err := sessionRotationAcceptedTaskCount(st, stats.ParentCodexThreadID)
+	if err != nil {
+		return nil, err
+	}
+	signals := state.SessionRotationSignals{
+		Terminal:            terminal,
+		AcceptedTasks:       acceptedTasks,
+		CurrentAcceptedRisk: acceptedRisk,
+	}
+	sessionRotationRolloutSignals(cfg, stats, &signals)
+	sessionRotationMaterialEventSignals(st, stats.TaskID, &signals)
+	baselineUpdate, err := sessionRotationLimitSignals(cfg, st, stats.ParentCodexThreadID, &signals)
+	if err != nil {
+		return nil, err
+	}
+	decision := state.DecideSessionRotation(signals)
+	sessionRotationAttachMaterialEventSources(st, stats.TaskID, signals, &decision)
+	return &state.SessionRotationEvaluation{
+		ParentThreadID:      stats.ParentCodexThreadID,
+		TaskID:              stats.TaskID,
+		Terminal:            terminal,
+		Decision:            decision,
+		AcceptedTasks:       acceptedTasks,
+		LimitBaselineUpdate: baselineUpdate,
+	}, nil
+}
+
+func sessionRotationAttachMaterialEventSources(st *state.StateStore, taskID string, signals state.SessionRotationSignals, decision *state.SessionRotationDecision) {
+	for index := range decision.Evidence {
+		if decision.Evidence[index].Trigger != state.SessionRotationReasonRepeatedEvents &&
+			decision.Evidence[index].Field != state.SessionRotationEvidenceFieldMaterialEvents {
+			continue
+		}
+		locator := st.ModelCallLogPath(taskID)
+		if len(signals.MaterialEventSourceIDs) != 0 {
+			locator += ":" + strings.Join(signals.MaterialEventSourceIDs, ",")
+		}
+		decision.Evidence[index].Source = locator
+	}
+}
+
+func sessionRotationAcceptedTaskCount(st *state.StateStore, threadID string) (int, error) {
+	all, err := st.AllTaskStats()
+	if err != nil {
+		return 0, err
+	}
+	count := 0
+	for _, stats := range all {
+		if stats.ParentCodexThreadID != threadID {
+			continue
+		}
+		if stats.Status == state.TaskStatusComplete && stats.ParentOutcomes[state.ParentOutcomeAccepted] > 0 {
+			count++
+		}
+	}
+	return count, nil
+}
+
+func sessionRotationRolloutSignals(cfg config.AppConfig, stats state.TaskStats, signals *state.SessionRotationSignals) {
+	task := bundleTask{ID: stats.TaskID, Status: string(stats.Status), Stats: stats}
+	association := resolveCodexAssociation(cfg.CodexConfigDir, task)
+	if association.ParentStatus != codexStatusIncluded {
+		signals.RolloutUnavailableField = state.SessionRotationEvidenceFieldRolloutAssociation
+		signals.RolloutUnavailableSrc = association.Detail
+		return
+	}
+	chain := association.rolloutChain()
+	start := sessionRotationChainStart(chain)
+	end := time.Now().UTC()
+	scan, err := scanCodexRolloutChainWindow(chain, start, end)
+	if err != nil {
+		signals.RolloutUnavailableField = state.SessionRotationEvidenceFieldRolloutScan
+		signals.RolloutUnavailableSrc = association.parentSourceLabel()
+		return
+	}
+	turns, _, _, compactions, outputBytes := parentUsageRolloutActivity(scan, start, end, false)
+	signals.Rollout = &state.SessionRotationRolloutSignals{
+		ModelTurns:      turns,
+		ToolOutputBytes: outputBytes,
+		Compactions:     compactions,
+		Source:          association.parentSourceLabel(),
+	}
+}
+
+func sessionRotationChainStart(chain []codexRollout) time.Time {
+	var start time.Time
+	for _, member := range chain {
+		if member.FirstTimestamp.IsZero() {
+			continue
+		}
+		if start.IsZero() || member.FirstTimestamp.Before(start) {
+			start = member.FirstTimestamp
+		}
+	}
+	return start
+}
+
+func sessionRotationMaterialEventSignals(st *state.StateStore, taskID string, signals *state.SessionRotationSignals) {
+	logs, err := st.ReadModelCallLogs(taskID)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		signals.MaterialEventsAvailable = false
+		return
+	}
+	count, ids := sessionRotationMaterialEvents(logs)
+	signals.MaterialEvents = count
+	signals.MaterialEventsAvailable = true
+	signals.MaterialEventSourceIDs = ids
+}
+
+func sessionRotationMaterialEvents(logs []state.ModelCallLog) (int, []string) {
+	seen := make(map[string]bool, len(logs))
+	ids := make([]string, 0, 2)
+	for _, log := range logs {
+		if !sessionRotationMaterialEvent(log) || seen[log.CallID] {
+			continue
+		}
+		seen[log.CallID] = true
+		ids = append(ids, log.CallID)
+	}
+	return len(ids), ids
+}
+
+func sessionRotationMaterialEvent(log state.ModelCallLog) bool {
+	if log.Outcome == sessionRotationGuardOutcome {
+		return true
+	}
+	if log.CallType != state.CallTypeEvent {
+		return false
+	}
+	if log.Phase == state.ParentPhaseDecision && log.Outcome == state.ParentOutcomeDecision {
+		return true
+	}
+	return log.Phase == state.ParentPhaseFix &&
+		log.Outcome == state.ParentOutcomeFix &&
+		(log.ParentOrigin == state.ParentOriginGLMReviewer || log.ParentOrigin == state.ParentOriginCodexReview)
+}
+
+func sessionRotationLimitSignals(
+	cfg config.AppConfig,
+	st *state.StateStore,
+	threadID string,
+	signals *state.SessionRotationSignals,
+) (*state.SessionLimitBaseline, error) {
+	marker, err := st.LoadSessionRotationMarker(threadID)
+	if err != nil {
+		return nil, err
+	}
+	snapshot, liveErr := codexlimit.Read(cfg.CodexBin)
+	if liveErr != nil {
+		signals.LimitUnavailableFields = []string{state.SessionRotationEvidenceFieldLimitLive}
+		signals.LimitSource = liveErr.Error()
+		return nil, nil
+	}
+	if snapshot.LimitID == "" || snapshot.FiveHour.UsedPercent == nil || snapshot.FiveHour.ResetsAt == nil {
+		signals.LimitUnavailableFields = []string{state.SessionRotationEvidenceFieldLimitLive}
+		return nil, nil
+	}
+	if marker == nil || marker.LimitBaseline == nil {
+		signals.LimitUnavailableFields = []string{state.SessionRotationEvidenceFieldLimitBaseline}
+		return nil, nil
+	}
+	baseline := marker.LimitBaseline
+	if baseline.LimitID != snapshot.LimitID {
+		signals.LimitUnavailableFields = []string{state.SessionRotationEvidenceFieldLimitWindow}
+		return nil, nil
+	}
+	if baseline.WindowResetsAt != *snapshot.FiveHour.ResetsAt {
+		return sessionLimitBaselineFromSnapshot(snapshot), nil
+	}
+	signals.Limit = &state.SessionRotationLimitSignals{
+		UsedDeltaPoints: float64(*snapshot.FiveHour.UsedPercent - baseline.UsedPercent),
+		LimitID:         snapshot.LimitID,
+		BaselineUsed:    baseline.UsedPercent,
+		LiveUsed:        *snapshot.FiveHour.UsedPercent,
+		ResetsAt:        *snapshot.FiveHour.ResetsAt,
+	}
+	signals.LimitSource = st.SessionRotationMarkerPath(threadID)
+	return nil, nil
+}
+
+func sessionLimitBaselineFromSnapshot(snapshot codexlimit.Snapshot) *state.SessionLimitBaseline {
+	return &state.SessionLimitBaseline{
+		LimitID:        snapshot.LimitID,
+		WindowResetsAt: *snapshot.FiveHour.ResetsAt,
+		UsedPercent:    *snapshot.FiveHour.UsedPercent,
+		CapturedAt:     time.Now().UTC().Format(time.RFC3339Nano),
+	}
+}
+
+func ReadSessionLimitForIdentityBind(cfg config.AppConfig) *state.SessionLimitReading {
+	snapshot, err := codexlimit.Read(cfg.CodexBin)
+	if err != nil {
+		return nil
+	}
+	if snapshot.LimitID == "" || snapshot.FiveHour.UsedPercent == nil || snapshot.FiveHour.ResetsAt == nil {
+		return nil
+	}
+	return &state.SessionLimitReading{
+		LimitID:     snapshot.LimitID,
+		UsedPercent: *snapshot.FiveHour.UsedPercent,
+		ResetsAt:    *snapshot.FiveHour.ResetsAt,
+		CapturedAt:  time.Now().UTC(),
+	}
 }

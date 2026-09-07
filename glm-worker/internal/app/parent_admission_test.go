@@ -62,7 +62,7 @@ func TestParentCommandAdmissionPreservesPassAcceptance(t *testing.T) {
 	if err := admitParentCommand(Command{Mode: ModeNewTask}, st); err == nil {
 		t.Fatal("new task admitted before PASS acceptance")
 	}
-	if _, err := st.AcceptParentReview(); err != nil {
+	if _, err := st.AcceptParentReview(nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := admitParentCommand(Command{Mode: ModeNewTask}, st); err != nil {

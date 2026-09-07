@@ -13,6 +13,8 @@ import (
 
 func TestRunNoGoCompletesObservationWithoutWorker(t *testing.T) {
 	cfg, st := newParentActionIdentityTestState(t)
+	t.Setenv("CODEX_THREAD_ID", codexIdentityTestThreadID)
+	t.Setenv("CODEX_SESSION_ID", codexIdentityTestThreadID)
 	if err := st.SaveCurrentTaskAuthority("IMPLEMENTATION_TASKS/observation.md", []byte("# observation\n\n## External feasibility\n\nstatus: observation\nassumption: representative producer behavior\n")); err != nil {
 		t.Fatal(err)
 	}

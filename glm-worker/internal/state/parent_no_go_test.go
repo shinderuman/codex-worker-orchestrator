@@ -29,7 +29,7 @@ func TestCompleteObservationNoGoTerminatesWithoutAnotherDispatch(t *testing.T) {
 	if plan.RequiredAction != ParentActionDecision || !plan.Allows(ParentActionDecision) || !plan.Allows(ParentActionNoGo) {
 		t.Fatalf("observation decision plan = %#v", plan)
 	}
-	completed, err := st.CompleteObservationNoGo()
+	completed, err := st.CompleteObservationNoGo(nil)
 	if err != nil || !completed {
 		t.Fatalf("complete no-go = %v err=%v", completed, err)
 	}
@@ -92,7 +92,7 @@ func TestCompleteObservationNoGoRejectsGenericDecision(t *testing.T) {
 	if plan.Allows(ParentActionNoGo) {
 		t.Fatalf("generic decision plan exposes no-go: %#v", plan)
 	}
-	if completed, err := st.CompleteObservationNoGo(); err == nil || completed {
+	if completed, err := st.CompleteObservationNoGo(nil); err == nil || completed {
 		t.Fatalf("generic no-go = %v err=%v", completed, err)
 	}
 	if st.TaskStatus() != TaskStatusWaitingDecision || !st.Exists("pending-decision") {

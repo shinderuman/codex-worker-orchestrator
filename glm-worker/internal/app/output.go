@@ -875,8 +875,10 @@ func resetState(st *state.StateStore, stdout io.Writer) error {
 	})
 }
 
-func parentAccept(st *state.StateStore, stdout io.Writer) error {
-	resolved, err := st.AcceptParentReview()
+func parentAccept(cfg config.AppConfig, st *state.StateStore, stdout io.Writer) error {
+	resolved, err := st.AcceptParentReview(func(acceptedRisk string) (*state.SessionRotationEvaluation, error) {
+		return EvaluateSessionRotationTerminal(cfg, st, state.SessionRotationTerminalAccept, acceptedRisk)
+	})
 	if err != nil {
 		return err
 	}

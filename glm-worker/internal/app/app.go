@@ -655,7 +655,7 @@ func executeLocked(cmd Command, cfg config.AppConfig, st *state.StateStore, stdo
 	case ModeReset:
 		return true, resetState(st, stdout)
 	case ModeAccept:
-		return true, parentAccept(st, stdout)
+		return true, parentAccept(cfg, st, stdout)
 	case ModeIsolate:
 		return true, isolateInterruptedTask(st, cfg, stdout)
 	case ModePark:

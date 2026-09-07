@@ -34,7 +34,7 @@ func TestBundleAssociatesCodexParentRolloutByIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	start := stats.StartedAt.UTC()
-	if err := st.SetParentCodexIdentity(codexTestParentThreadID, codexTestParentSessionID); err != nil {
+	if err := st.SetParentCodexIdentity(codexTestParentThreadID, codexTestParentSessionID, nil); err != nil {
 		t.Fatal(err)
 	}
 	writeBundleAuthority(t, cfg, st, "IMPLEMENTATION_TASKS/current.md")
@@ -153,7 +153,7 @@ func TestBundleCodexParentAmbiguousWhenDuplicateRolloutIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	start := stats.StartedAt.UTC()
-	if err := st.SetParentCodexIdentity(codexTestParentThreadID, codexTestParentSessionID); err != nil {
+	if err := st.SetParentCodexIdentity(codexTestParentThreadID, codexTestParentSessionID, nil); err != nil {
 		t.Fatal(err)
 	}
 	writeCodexRollout(t, codexHome, "sessions/2026/08/30/rollout-live-"+codexTestParentThreadID+".jsonl",
@@ -249,7 +249,7 @@ func TestBundleCodexArchivedTaskKeepsStoredIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	start := stats.StartedAt.UTC()
-	if err := st.SetParentCodexIdentity(codexTestParentThreadID, codexTestParentSessionID); err != nil {
+	if err := st.SetParentCodexIdentity(codexTestParentThreadID, codexTestParentSessionID, nil); err != nil {
 		t.Fatal(err)
 	}
 	writeCodexRollout(t, codexHome, "sessions/2026/08/30/rollout-live-"+codexTestParentThreadID+".jsonl",
@@ -318,7 +318,7 @@ func TestBundleCodexLogExtractionBoundedByThreadAndTaskWindow(t *testing.T) {
 		t.Fatal(err)
 	}
 	start := stats.StartedAt.UTC()
-	if err := st.SetParentCodexIdentity(codexTestParentThreadID, codexTestParentSessionID); err != nil {
+	if err := st.SetParentCodexIdentity(codexTestParentThreadID, codexTestParentSessionID, nil); err != nil {
 		t.Fatal(err)
 	}
 	writeCodexRollout(t, codexHome, "sessions/2026/08/30/rollout-live-"+codexTestParentThreadID+".jsonl",
@@ -373,7 +373,7 @@ func TestBundleCodexLogFailureLeavesNoPartialLogEntries(t *testing.T) {
 		t.Fatal(err)
 	}
 	start := stats.StartedAt.UTC()
-	if err := st.SetParentCodexIdentity(codexTestParentThreadID, codexTestParentSessionID); err != nil {
+	if err := st.SetParentCodexIdentity(codexTestParentThreadID, codexTestParentSessionID, nil); err != nil {
 		t.Fatal(err)
 	}
 	writeCodexRollout(t, codexHome, "sessions/2026/08/30/rollout-live-"+codexTestParentThreadID+".jsonl",
@@ -424,7 +424,7 @@ func TestBundleCodexDuplicateGuardianThreadIDIsAmbiguous(t *testing.T) {
 				t.Fatal(err)
 			}
 			start := stats.StartedAt.UTC()
-			if err := st.SetParentCodexIdentity(codexTestParentThreadID, codexTestParentSessionID); err != nil {
+			if err := st.SetParentCodexIdentity(codexTestParentThreadID, codexTestParentSessionID, nil); err != nil {
 				t.Fatal(err)
 			}
 			writeCodexRollout(t, codexHome, "sessions/2026/08/30/rollout-live-"+codexTestParentThreadID+".jsonl",

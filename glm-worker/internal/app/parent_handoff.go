@@ -10,41 +10,43 @@ import (
 )
 
 type parentHandoffOutput struct {
-	Version                  int                            `json:"version"`
-	Consistent               bool                           `json:"consistent"`
-	Inconsistency            *string                        `json:"inconsistency"`
-	TaskID                   *string                        `json:"task_id"`
-	TaskStatus               *string                        `json:"task_status"`
-	RequiredAction           *string                        `json:"required_action"`
-	AllowedActions           []string                       `json:"allowed_actions"`
-	RequiredActionParameters map[string]string              `json:"required_action_parameters,omitempty"`
-	ResumeKind               *string                        `json:"resume_kind"`
-	PendingDecision          bool                           `json:"pending_decision"`
-	ParentReviewOpen         *string                        `json:"parent_review_open"`
-	Baseline                 *state.GitBaselineEvidence     `json:"baseline"`
-	Snapshot                 *state.SnapshotDigest          `json:"snapshot"`
-	ArtifactDir              *string                        `json:"artifact_dir"`
-	LastMaterial             *parentHandoffMaterial         `json:"last_material"`
-	Validations              []parentHandoffValidation      `json:"validations"`
-	RoutingEvidence          []parentHandoffRoutingEvidence `json:"routing_evidence"`
+	Version                  int                              `json:"version"`
+	Consistent               bool                             `json:"consistent"`
+	Inconsistency            *string                          `json:"inconsistency"`
+	TaskID                   *string                          `json:"task_id"`
+	TaskStatus               *string                          `json:"task_status"`
+	RequiredAction           *string                          `json:"required_action"`
+	AllowedActions           []string                         `json:"allowed_actions"`
+	RequiredActionParameters map[string]string                `json:"required_action_parameters,omitempty"`
+	ResumeKind               *string                          `json:"resume_kind"`
+	PendingDecision          bool                             `json:"pending_decision"`
+	ParentReviewOpen         *string                          `json:"parent_review_open"`
+	Baseline                 *state.GitBaselineEvidence       `json:"baseline"`
+	Snapshot                 *state.SnapshotDigest            `json:"snapshot"`
+	ArtifactDir              *string                          `json:"artifact_dir"`
+	LastMaterial             *parentHandoffMaterial           `json:"last_material"`
+	Validations              []parentHandoffValidation        `json:"validations"`
+	RoutingEvidence          []parentHandoffRoutingEvidence   `json:"routing_evidence"`
+	SessionRotation          *state.SessionRotationProjection `json:"session_rotation"`
 }
 
 type parentHandoffRecoveryOutput struct {
-	Version                  int                            `json:"version"`
-	Projection               string                         `json:"projection"`
-	Consistent               bool                           `json:"consistent"`
-	TaskID                   *string                        `json:"task_id"`
-	TaskStatus               *string                        `json:"task_status"`
-	RequiredAction           *string                        `json:"required_action"`
-	AllowedActions           []string                       `json:"allowed_actions"`
-	RequiredActionParameters map[string]string              `json:"required_action_parameters,omitempty"`
-	PendingDecision          bool                           `json:"pending_decision"`
-	ParentReviewOpen         *string                        `json:"parent_review_open"`
-	LastMaterial             *parentHandoffRecoveryMaterial `json:"last_material"`
-	GuardFailure             string                         `json:"guard_failure,omitempty"`
-	GuardRefChanges          []state.GuardRefChange         `json:"guard_ref_changes,omitempty"`
-	GuardRefChangesTruncated bool                           `json:"guard_ref_changes_truncated,omitempty"`
-	QualityGateFailure       string                         `json:"quality_gate_failure,omitempty"`
+	Version                  int                              `json:"version"`
+	Projection               string                           `json:"projection"`
+	Consistent               bool                             `json:"consistent"`
+	TaskID                   *string                          `json:"task_id"`
+	TaskStatus               *string                          `json:"task_status"`
+	RequiredAction           *string                          `json:"required_action"`
+	AllowedActions           []string                         `json:"allowed_actions"`
+	RequiredActionParameters map[string]string                `json:"required_action_parameters,omitempty"`
+	PendingDecision          bool                             `json:"pending_decision"`
+	ParentReviewOpen         *string                          `json:"parent_review_open"`
+	LastMaterial             *parentHandoffRecoveryMaterial   `json:"last_material"`
+	SessionRotation          *state.SessionRotationProjection `json:"session_rotation"`
+	GuardFailure             string                           `json:"guard_failure,omitempty"`
+	GuardRefChanges          []state.GuardRefChange           `json:"guard_ref_changes,omitempty"`
+	GuardRefChangesTruncated bool                             `json:"guard_ref_changes_truncated,omitempty"`
+	QualityGateFailure       string                           `json:"quality_gate_failure,omitempty"`
 }
 
 type parentHandoffMaterial struct {
@@ -124,6 +126,7 @@ func projectParentHandoffRecovery(output parentHandoffOutput) parentHandoffRecov
 		RequiredActionParameters: output.RequiredActionParameters,
 		PendingDecision:          output.PendingDecision,
 		ParentReviewOpen:         output.ParentReviewOpen,
+		SessionRotation:          output.SessionRotation,
 	}
 	if output.LastMaterial != nil {
 		recovery.LastMaterial = &parentHandoffRecoveryMaterial{
@@ -180,6 +183,7 @@ func buildParentHandoff(st *state.StateStore) parentHandoffOutput {
 		Baseline:         st.BaselineEvidence(),
 		Validations:      []parentHandoffValidation{},
 		RoutingEvidence:  []parentHandoffRoutingEvidence{},
+		SessionRotation:  &state.SessionRotationProjection{State: state.SessionRotationProjectionUnavailable},
 	}
 	if taskID != "" {
 		output.ArtifactDir = stringPtr(st.ArtifactDir(taskID))
@@ -187,9 +191,23 @@ func buildParentHandoff(st *state.StateStore) parentHandoffOutput {
 	applyParentActionPlan(st, &output)
 	applyParentSnapshot(repoRoot, &output)
 	applyParentLastMaterial(st, taskID, &output)
+	applyParentSessionRotation(st, &output)
 	output.Validations = currentParentValidations(st, repoRoot, output.Snapshot)
 	output.RoutingEvidence = currentParentRoutingEvidence(st, repoRoot, taskID, output.Snapshot)
 	return output
+}
+
+func applyParentSessionRotation(st *state.StateStore, output *parentHandoffOutput) {
+	threadID := ""
+	if stats, err := st.CurrentTaskStats(); err == nil {
+		threadID = stats.ParentCodexThreadID
+	}
+	projection, err := st.ProjectSessionRotation(threadID)
+	if err != nil {
+		markHandoffInconsistent(output, "session rotation projection is unavailable: "+err.Error())
+		return
+	}
+	output.SessionRotation = &projection
 }
 
 func applyParentActionPlan(st *state.StateStore, output *parentHandoffOutput) {

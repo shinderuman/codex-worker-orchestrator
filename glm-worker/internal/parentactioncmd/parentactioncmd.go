@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"syscall"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/app"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentaction"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentfix"
@@ -168,7 +169,9 @@ func persistParentCodexIdentity(cfg config.AppConfig) error {
 	if !ok {
 		return nil
 	}
-	return state.AttachStateStore(cfg).SetParentCodexIdentity(threadID, sessionID)
+	return state.AttachStateStore(cfg).SetParentCodexIdentity(threadID, sessionID, func() *state.SessionLimitReading {
+		return app.ReadSessionLimitForIdentityBind(cfg)
+	})
 }
 
 func codexIdentityFromEnv() (string, string, bool) {

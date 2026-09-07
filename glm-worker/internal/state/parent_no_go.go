@@ -34,7 +34,7 @@ func (s *StateStore) ObservationNoGoEligible() bool {
 	return declaration.Status == taskcontract.StatusPoC || declaration.Status == taskcontract.StatusObservation
 }
 
-func (s *StateStore) CompleteObservationNoGo() (bool, error) {
+func (s *StateStore) CompleteObservationNoGo(evaluate SessionRotationEvaluator) (bool, error) {
 	if !s.ObservationNoGoEligible() {
 		return false, fmt.Errorf("terminal no-go is only available for a pending PoC/observation Sol decision")
 	}
@@ -64,7 +64,7 @@ func (s *StateStore) CompleteObservationNoGo() (bool, error) {
 	}
 	addInt(&stats.ParentOutcomesByRisk, risk, 1)
 
-	result := s.commitParentCompletion(stats, true)
+	result := s.commitParentCompletion(stats, true, sessionRotationBuildFor(evaluate, resolved.Risk))
 	if result.transitionErr != nil {
 		if result.rollbackStatusErr != nil || result.rollbackPendingErr != nil {
 			return false, fmt.Errorf("terminal no-go outcomeを保存できずstate rollbackにも失敗しました: %w", errors.Join(result.transitionErr, result.rollbackStatusErr, result.rollbackPendingErr))

@@ -183,7 +183,7 @@ func TestParentActionPlanPassRequiresAcceptUntilResolved(t *testing.T) {
 		t.Fatalf("PASS plan = %#v", plan)
 	}
 
-	accepted, err := st.AcceptParentReview()
+	accepted, err := st.AcceptParentReview(nil)
 	if err != nil || !accepted {
 		t.Fatalf("PASS accept = %v err=%v", accepted, err)
 	}

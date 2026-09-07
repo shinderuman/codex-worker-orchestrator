@@ -77,7 +77,7 @@ func newReviewGapCorrelatedFixture(t *testing.T) (config.AppConfig, string, revi
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := st.SetParentCodexIdentity(codexTestParentThreadID, codexTestParentSessionID); err != nil {
+	if err := st.SetParentCodexIdentity(codexTestParentThreadID, codexTestParentSessionID, nil); err != nil {
 		t.Fatal(err)
 	}
 	start := time.Now().UTC().Add(-2 * time.Hour)
@@ -298,7 +298,7 @@ func TestReviewGapCounterResetNotSummed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := st.SetParentCodexIdentity(codexTestParentThreadID, codexTestParentSessionID); err != nil {
+	if err := st.SetParentCodexIdentity(codexTestParentThreadID, codexTestParentSessionID, nil); err != nil {
 		t.Fatal(err)
 	}
 	start := time.Now().UTC().Add(-1 * time.Hour)

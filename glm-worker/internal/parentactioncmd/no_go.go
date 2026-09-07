@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/app"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repolock"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
@@ -43,7 +44,9 @@ func runNoGo(cfg config.AppConfig, stdout io.Writer) error {
 	if !plan.Allows(state.ParentActionNoGo) {
 		return fmt.Errorf("terminal no-go is not allowed for the current task")
 	}
-	completed, err := st.CompleteObservationNoGo()
+	completed, err := st.CompleteObservationNoGo(func(string) (*state.SessionRotationEvaluation, error) {
+		return app.EvaluateSessionRotationTerminal(cfg, st, state.SessionRotationTerminalNoGo, "")
+	})
 	if err != nil {
 		return err
 	}

@@ -51,6 +51,7 @@ USER_REQUEST・`SPECIFICATION.md`・既存`AGENTS.md`・直前のSol判断で未
 - `glm-worker --authority`以外のGLM実行・待機 → `glm-execution.md`、task開始/再開のuser指示とrun-control → `task-request-boundary.md`、Goal起点開発 → `goal-development.md`、packet/WORKER_ERROR → `glm-packets.md`
 - 親model-visible evidence取得・`glm-parent-action evidence` → `glm-parent-evidence.md`
 - GLM rate limit再開 → `glm-auto-resume.md`、親Codex 5h Limit再開 → `codex-auto-resume.md`、停止/中断task/`--stop`/`--isolate` → `glm-stop-isolate.md`
+- 親session rotation・handoff `session_rotation` pending directive → `session-rotation.md`
 - 外部成立性 → `feasibility-gate.md`、安全停止・子task終端/親USER_REQUEST完了 → `task-lifecycle.md`、原因不明runtime failure → `failure-evidence.md`、escaped bug/review原因層 → `escaped-cause-layer.md`
 - Codex例外直接編集 → `worker/`該当file + `direct-edit.md`、quality gate → `quality-gate-capability.md`、repo-search → `glm-repo-search.md`
 

@@ -22,6 +22,7 @@ type Window struct {
 }
 
 type Snapshot struct {
+	LimitID              string  `json:"limit_id"`
 	FiveHour             Window  `json:"five_hour"`
 	Weekly               *Window `json:"weekly"`
 	PlanType             *string `json:"plan_type"`
@@ -221,10 +222,14 @@ func buildSnapshot(result *json.RawMessage) (Snapshot, error) {
 	}
 	snapshot := decoded.RateLimits
 	if snapshot == nil {
-		snapshot = decoded.RateLimitsByLimitID["codex"]
-	}
-	if snapshot == nil {
-		return Snapshot{}, fmt.Errorf("%w: result has no codex limit entry", ErrRateLimitsRead)
+		byID := decoded.RateLimitsByLimitID["codex"]
+		if byID == nil {
+			return Snapshot{}, fmt.Errorf("%w: result has no codex limit entry", ErrRateLimitsRead)
+		}
+		if byID.LimitID == "" {
+			byID.LimitID = "codex"
+		}
+		snapshot = byID
 	}
 
 	fiveHour, err := selectWindow(snapshot, fiveHourWindowMins)
@@ -236,6 +241,7 @@ func buildSnapshot(result *json.RawMessage) (Snapshot, error) {
 	}
 
 	output := Snapshot{
+		LimitID:              snapshot.LimitID,
 		FiveHour:             toWindow(fiveHour, fiveHourWindowMins),
 		PlanType:             snapshot.PlanType,
 		RateLimitReachedType: snapshot.RateLimitReachedType,

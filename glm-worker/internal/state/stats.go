@@ -308,7 +308,7 @@ func (s *StateStore) ArchivedTaskStatsEvidence(taskID string) (TaskStatsEvidence
 	return TaskStatsEvidence{TaskID: identity.TaskID, Status: identity.Status, Proven: true}, nil
 }
 
-func (s *StateStore) SetParentCodexIdentity(threadID, sessionID string) error {
+func (s *StateStore) SetParentCodexIdentity(threadID, sessionID string, readSessionLimit func() *SessionLimitReading) error {
 	stats, err := s.loadTaskStats()
 	if err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
@@ -317,7 +317,7 @@ func (s *StateStore) SetParentCodexIdentity(threadID, sessionID string) error {
 		return nil
 	}
 	if stats.ParentCodexThreadID == threadID && stats.ParentCodexSessionID == sessionID {
-		return nil
+		return s.MarkSessionRotationIssuedOnBind(threadID)
 	}
 	if stats.ParentCodexThreadID != "" || stats.ParentCodexSessionID != "" {
 		return fmt.Errorf(
@@ -325,13 +325,20 @@ func (s *StateStore) SetParentCodexIdentity(threadID, sessionID string) error {
 			stats.ParentCodexThreadID, stats.ParentCodexSessionID, threadID, sessionID,
 		)
 	}
+	if readSessionLimit != nil {
+		if reading := readSessionLimit(); reading != nil {
+			if err := s.SaveSessionLimitBaseline(threadID, *reading); err != nil {
+				return err
+			}
+		}
+	}
 	stats.ParentCodexThreadID = threadID
 	stats.ParentCodexSessionID = sessionID
 	if err := s.writeTaskStats(stats); err != nil {
 		warnStatsFailure("更新", err)
 		return nil
 	}
-	return nil
+	return s.MarkSessionRotationIssuedOnBind(threadID)
 }
 
 func (s *StateStore) RecordModelCall(role SessionRole, model string) {

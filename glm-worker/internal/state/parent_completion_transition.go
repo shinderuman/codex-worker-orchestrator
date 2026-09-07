@@ -6,8 +6,13 @@ type parentCompletionTransitionResult struct {
 	rollbackPendingErr error
 }
 
-func (s *StateStore) commitParentCompletion(stats TaskStats, clearPending bool) parentCompletionTransitionResult {
+type SessionRotationEvaluator func(acceptedRisk string) (*SessionRotationEvaluation, error)
+
+type sessionRotationBuild func() (*SessionRotationEvaluation, error)
+
+func (s *StateStore) commitParentCompletion(stats TaskStats, clearPending bool, build sessionRotationBuild) parentCompletionTransitionResult {
 	previousStatus := s.TaskStatus()
+	originalStats, originalStatsErr := s.loadTaskStats()
 	if clearPending {
 		if err := s.Remove("pending-decision"); err != nil {
 			return parentCompletionTransitionResult{transitionErr: err}
@@ -30,5 +35,34 @@ func (s *StateStore) commitParentCompletion(stats TaskStats, clearPending bool) 
 		}
 		return result
 	}
+	if build != nil {
+		evaluation, err := build()
+		if err == nil {
+			err = s.commitSessionRotation(evaluation)
+		}
+		if err != nil {
+			return s.rollbackParentCompletionWithRotation(previousStatus, originalStats, originalStatsErr, clearPending, err)
+		}
+	}
 	return parentCompletionTransitionResult{}
+}
+
+func (s *StateStore) rollbackParentCompletionWithRotation(
+	previousStatus TaskStatus,
+	originalStats TaskStats,
+	originalStatsErr error,
+	clearPending bool,
+	transitionErr error,
+) parentCompletionTransitionResult {
+	result := parentCompletionTransitionResult{transitionErr: transitionErr}
+	if originalStatsErr == nil {
+		result.rollbackStatusErr = s.writeTaskStats(originalStats)
+	}
+	if err := s.SetTaskStatus(previousStatus); err != nil {
+		result.rollbackStatusErr = err
+	}
+	if clearPending {
+		result.rollbackPendingErr = s.Touch("pending-decision")
+	}
+	return result
 }

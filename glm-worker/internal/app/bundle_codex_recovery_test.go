@@ -69,7 +69,7 @@ func TestBundleExplicitParentThreadIDConflictingWithStoredIdentityFailsClosed(t 
 	if _, err := st.StartNewTask(); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.SetParentCodexIdentity(codexTestParentThreadID, codexTestParentSessionID); err != nil {
+	if err := st.SetParentCodexIdentity(codexTestParentThreadID, codexTestParentSessionID, nil); err != nil {
 		t.Fatal(err)
 	}
 	writeBundleAuthority(t, cfg, st, "IMPLEMENTATION_TASKS/current.md")

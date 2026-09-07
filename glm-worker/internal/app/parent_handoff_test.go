@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -80,7 +81,7 @@ func TestParentHandoffPassRequiresAcceptThenBecomesNoAction(t *testing.T) {
 		t.Fatalf("last material = %#v", output.LastMaterial)
 	}
 
-	accepted, err := st.AcceptParentReview()
+	accepted, err := st.AcceptParentReview(nil)
 	if err != nil || !accepted {
 		t.Fatalf("accept = %v err=%v", accepted, err)
 	}
@@ -563,4 +564,167 @@ func startParentHandoffTask(t *testing.T, cfg config.AppConfig) *state.StateStor
 		t.Fatal(err)
 	}
 	return st
+}
+
+func seedSessionRotationAccept(t *testing.T) (config.AppConfig, *state.StateStore, string) {
+	t.Helper()
+	cfg := newAppConfig(t)
+	st, err := state.NewStateStore(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.StartNewTask(); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetTaskStatus(state.TaskStatusComplete); err != nil {
+		t.Fatal(err)
+	}
+	st.UpdateTaskStats(func(stats *state.TaskStats) {
+		stats.ParentReviewOpen = &state.ParentReviewOpenState{PacketStatus: "PASS", Risk: "LOW"}
+	})
+	if err := st.SetParentCodexIdentity(codexTestParentThreadID, codexTestParentSessionID, nil); err != nil {
+		t.Fatal(err)
+	}
+	var accept acceptOutput
+	executeCommandOutput(t, cfg, ModeAccept, &accept, "accept")
+	if !accept.Accepted {
+		t.Fatal("open reviewをacceptできませんでした")
+	}
+	return cfg, st, codexTestParentThreadID
+}
+
+func TestSessionRotationAcceptWritesPendingDirectiveProjectedByHandoff(t *testing.T) {
+	cfg, st, threadID := seedSessionRotationAccept(t)
+
+	marker, err := st.LoadSessionRotationMarker(threadID)
+	if err != nil || marker == nil {
+		t.Fatalf("accept後のmarker = %#v err=%v", marker, err)
+	}
+	if marker.State != state.SessionRotationStatePending || marker.Directive == nil {
+		t.Fatalf("marker = %#v", marker)
+	}
+	if marker.Directive.Reason != state.SessionRotationReasonEvidenceUnavailable {
+		t.Fatalf("directive reason = %q", marker.Directive.Reason)
+	}
+	if marker.LastEvaluation == nil || !marker.LastEvaluation.Required {
+		t.Fatalf("last evaluation = %#v", marker.LastEvaluation)
+	}
+
+	var output parentHandoffOutput
+	executeCommandOutput(t, cfg, ModeHandoff, &output, "--handoff")
+	if !output.Consistent || output.SessionRotation == nil {
+		t.Fatalf("handoff session_rotation = %#v consistent=%v", output.SessionRotation, output.Consistent)
+	}
+	if output.SessionRotation.State != state.SessionRotationProjectionPending || output.SessionRotation.Directive == nil {
+		t.Fatalf("session_rotation projection = %#v", output.SessionRotation)
+	}
+	if output.SessionRotation.Directive.DirectiveID != marker.Directive.DirectiveID {
+		t.Fatalf("projected directive = %#v want %s", output.SessionRotation.Directive, marker.Directive.DirectiveID)
+	}
+	if output.SessionRotation.Directive.Epoch != marker.Directive.TaskID+":"+marker.Directive.Terminal {
+		t.Fatalf("projected directive epoch = %#v", output.SessionRotation.Directive)
+	}
+}
+
+func TestSessionRotationRecoveryHandoffCarriesProjection(t *testing.T) {
+	cfg, _, _ := seedSessionRotationAccept(t)
+
+	var out bytes.Buffer
+	if err := Execute(Command{Mode: ModeHandoff, Payload: "recovery"}, cfg, nil, &out, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	var recovery parentHandoffRecoveryOutput
+	if err := json.Unmarshal([]byte(strings.TrimSpace(out.String())), &recovery); err != nil {
+		t.Fatalf("recovery handoff出力がmachine JSONではありません: %v: %q", err, out.String())
+	}
+	if recovery.SessionRotation == nil || recovery.SessionRotation.State != state.SessionRotationProjectionPending {
+		t.Fatalf("recovery session_rotation = %#v", recovery.SessionRotation)
+	}
+}
+
+func TestSessionRotationRepeatedHandoffWritesNothingAndReturnsSameDirective(t *testing.T) {
+	cfg, st, threadID := seedSessionRotationAccept(t)
+
+	var first parentHandoffOutput
+	executeCommandOutput(t, cfg, ModeHandoff, &first, "--handoff")
+	markerBefore, err := os.ReadFile(st.SessionRotationMarkerPath(threadID))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var second parentHandoffOutput
+	executeCommandOutput(t, cfg, ModeHandoff, &second, "--handoff")
+	if second.SessionRotation == nil || second.SessionRotation.Directive == nil {
+		t.Fatalf("再読のsession_rotation = %#v", second.SessionRotation)
+	}
+	if second.SessionRotation.Directive.DirectiveID != first.SessionRotation.Directive.DirectiveID {
+		t.Fatalf("再読が別directiveを返しました: %s -> %s", first.SessionRotation.Directive.DirectiveID, second.SessionRotation.Directive.DirectiveID)
+	}
+	markerAfter, err := os.ReadFile(st.SessionRotationMarkerPath(threadID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(markerBefore, markerAfter) {
+		t.Fatal("handoff読み出しがrotation markerを更新しました")
+	}
+}
+
+func TestSessionRotationAcceptFailsClosedWithoutParentIdentity(t *testing.T) {
+	cfg := newAppConfig(t)
+	st, err := state.NewStateStore(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.StartNewTask(); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetTaskStatus(state.TaskStatusComplete); err != nil {
+		t.Fatal(err)
+	}
+	st.UpdateTaskStats(func(stats *state.TaskStats) {
+		stats.ParentReviewOpen = &state.ParentReviewOpenState{PacketStatus: "PASS", Risk: "LOW"}
+	})
+
+	err = Execute(Command{Mode: ModeAccept}, cfg, nil, io.Discard, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "session rotation") {
+		t.Fatalf("identity欠損のacceptがfail closedしませんでした: %v", err)
+	}
+	if got := st.TaskStatus(); got != state.TaskStatusComplete {
+		t.Fatalf("fail closed後のstatus = %q", got)
+	}
+	stats, err := st.CurrentTaskStats()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.ParentReviewOpen == nil || stats.ParentOutcomes[state.ParentOutcomeAccepted] != 0 {
+		t.Fatalf("fail closed後のstats = %#v", stats)
+	}
+}
+
+func TestSessionRotationNewThreadBindRetiresOldDirective(t *testing.T) {
+	cfg, st, oldThread := seedSessionRotationAccept(t)
+
+	if _, err := st.StartNewTask(); err != nil {
+		t.Fatal(err)
+	}
+	newThread := "01a0244a-4ee4-7e71-b2e1-dec3bdda2120"
+	if err := st.SetParentCodexIdentity(newThread, newThread, nil); err != nil {
+		t.Fatal(err)
+	}
+	retired, err := st.LoadSessionRotationMarker(oldThread)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if retired.State != state.SessionRotationStateIssued || retired.Issued == nil || retired.Issued.BoundThreadID != newThread {
+		t.Fatalf("旧directive = %#v", retired)
+	}
+
+	var output parentHandoffOutput
+	executeCommandOutput(t, cfg, ModeHandoff, &output, "--handoff")
+	if !output.Consistent || output.SessionRotation == nil {
+		t.Fatalf("handoff session_rotation = %#v", output.SessionRotation)
+	}
+	if output.SessionRotation.State == state.SessionRotationProjectionPending || output.SessionRotation.Directive != nil {
+		t.Fatalf("新thread bind後に旧directiveが再投影されました: %#v", output.SessionRotation)
+	}
 }
