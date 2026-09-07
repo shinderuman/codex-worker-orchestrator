@@ -99,9 +99,12 @@ status: not-applicable
 
 ## Dependencies
 
-- `IMPLEMENTATION_TASKS/105-session-rotation.md`
 - `IMPLEMENTATION_TASKS/mechanized-control-prose-thinning.md`
 - 105より前にPlan上で実行するCodex telemetry改善taskがすべて完了していること
+
+## Fulfilled dependencies
+
+- `IMPLEMENTATION_TASKS/105-session-rotation.md`
 
 ## Review findings
 

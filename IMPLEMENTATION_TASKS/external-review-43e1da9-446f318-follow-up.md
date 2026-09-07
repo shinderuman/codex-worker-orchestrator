@@ -189,4 +189,4 @@ none
 
 ## Current boundary
 
-全transport preconditionとreview完了を確認し、全findingを固定済み。実行可能なNEXT先頭。現在ACTIVE 105の保存済みGLM taskを変更・再起動せず、105完了後に新規taskとして開始する。
+全transport preconditionとreview完了を確認し、全findingを固定済み。105完了後にACTIVEへ昇格済みで、新規GLM taskとして開始できる。
