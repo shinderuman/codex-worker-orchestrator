@@ -19,6 +19,8 @@ const telemetryQueryPeriodBasisRecord = "record-started-at"
 
 const telemetryQueryPeriodBasisTask = "task-started-at"
 
+const telemetryQueryCompactFlag = "--compact"
+
 func telemetryQueryCommand(args []string, mode CommandMode, flag string) (Command, error) {
 	query, err := parseTelemetryQueryArgs(args[1:])
 	if err != nil {
@@ -33,11 +35,15 @@ func parseTelemetryQueryArgs(args []string) (TelemetryQueryArgs, error) {
 	if err != nil {
 		return TelemetryQueryArgs{}, err
 	}
-	for index := 0; index < len(rest); index += 2 {
-		if index+1 >= len(rest) {
-			return TelemetryQueryArgs{}, fmt.Errorf("option %s requires a value", rest[index])
+	options, err := takeTelemetryQueryCompactFlag(&query, rest)
+	if err != nil {
+		return TelemetryQueryArgs{}, err
+	}
+	for index := 0; index < len(options); index += 2 {
+		if index+1 >= len(options) {
+			return TelemetryQueryArgs{}, fmt.Errorf("option %s requires a value", options[index])
 		}
-		if err := applyTelemetryQueryOption(&query, rest[index], rest[index+1]); err != nil {
+		if err := applyTelemetryQueryOption(&query, options[index], options[index+1]); err != nil {
 			return TelemetryQueryArgs{}, err
 		}
 	}
@@ -45,6 +51,21 @@ func parseTelemetryQueryArgs(args []string) (TelemetryQueryArgs, error) {
 		return TelemetryQueryArgs{}, fmt.Errorf("--since must be before --until")
 	}
 	return query, nil
+}
+
+func takeTelemetryQueryCompactFlag(query *TelemetryQueryArgs, args []string) ([]string, error) {
+	options := make([]string, 0, len(args))
+	for _, arg := range args {
+		if arg != telemetryQueryCompactFlag {
+			options = append(options, arg)
+			continue
+		}
+		if query.Compact {
+			return nil, fmt.Errorf("--compact is given twice")
+		}
+		query.Compact = true
+	}
+	return options, nil
 }
 
 func applyTelemetryQueryScope(query *TelemetryQueryArgs, args []string) ([]string, error) {

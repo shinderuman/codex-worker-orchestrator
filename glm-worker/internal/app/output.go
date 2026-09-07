@@ -553,7 +553,10 @@ func taskLiveness(probe LockProbe) *string {
 	}
 }
 
-func printStats(st *state.StateStore, query TelemetryQueryArgs, stdout io.Writer) error {
+func printStats(cfg config.AppConfig, st *state.StateStore, query TelemetryQueryArgs, stdout io.Writer) error {
+	if query.Compact {
+		return printTelemetryCompactSummary(cfg, st, query, stdout)
+	}
 	if query.isHistory() {
 		return printStatsHistory(st, query, stdout)
 	}

@@ -204,7 +204,7 @@ func TestPrintStatsAggregatesAndSortsModelAliases(t *testing.T) {
 		TopLevelTurns: 2,
 	})
 
-	output := executeStatsOutput(t, st)
+	output := executeStatsOutput(t, cfg, st)
 	if len(output.ModelCallsByAlias) != 3 || output.ModelCallsByAlias["haiku"] != 1 || output.ModelCallsByAlias["opus"] != 1 || output.ModelCallsByAlias["sonnet"] != 1 {
 		t.Fatalf("model別stats = %#v", output.ModelCallsByAlias)
 	}

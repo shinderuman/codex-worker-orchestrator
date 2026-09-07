@@ -56,6 +56,10 @@ status: not-applicable
 
 ## Dependencies
 
+none
+
+## Fulfilled dependencies
+
 - `IMPLEMENTATION_TASKS/telemetry-history-compact-summary.md`
 
 ## Review findings

@@ -27,13 +27,14 @@ func TestParseCommandTelemetryQueryArgs(t *testing.T) {
 	}
 
 	tests := []struct {
-		name   string
-		args   []string
-		mode   CommandMode
-		scope  string
-		taskID string
-		since  time.Time
-		until  time.Time
+		name    string
+		args    []string
+		mode    CommandMode
+		scope   string
+		taskID  string
+		since   time.Time
+		until   time.Time
+		compact bool
 	}{
 		{name: "stats default", args: []string{"--stats"}, mode: ModeStats, scope: state.TelemetryScopeCurrent},
 		{name: "stats history", args: []string{"--stats", "history"}, mode: ModeStats, scope: state.TelemetryScopeHistory},
@@ -48,6 +49,19 @@ func TestParseCommandTelemetryQueryArgs(t *testing.T) {
 			args:  []string{"--call-outliers", "current", "--task", taskID, "--since", since},
 			mode:  ModeCallOutliers,
 			scope: state.TelemetryScopeCurrent, taskID: taskID, since: sinceAt,
+		},
+		{name: "stats compact", args: []string{"--stats", "--compact"}, mode: ModeStats, scope: state.TelemetryScopeCurrent, compact: true},
+		{
+			name:  "stats history compact with filters",
+			args:  []string{"--stats", "history", "--task", taskID, "--since", since, "--compact"},
+			mode:  ModeStats,
+			scope: state.TelemetryScopeHistory, taskID: taskID, since: sinceAt, compact: true,
+		},
+		{
+			name:  "call-outliers history compact before options",
+			args:  []string{"--call-outliers", "history", "--compact", "--until", until},
+			mode:  ModeCallOutliers,
+			scope: state.TelemetryScopeHistory, until: untilAt, compact: true,
 		},
 	}
 	for _, test := range tests {
@@ -68,6 +82,9 @@ func TestParseCommandTelemetryQueryArgs(t *testing.T) {
 			if !command.Query.Filter.Since.Equal(test.since) || !command.Query.Filter.Until.Equal(test.until) {
 				t.Fatalf("period = %v / %v", command.Query.Filter.Since, command.Query.Filter.Until)
 			}
+			if command.Query.Compact != test.compact {
+				t.Fatalf("compact = %v", command.Query.Compact)
+			}
 		})
 	}
 }
@@ -86,6 +103,8 @@ func TestParseCommandRejectsInvalidTelemetryQuery(t *testing.T) {
 		{"--stats", "--task", taskID, "--task", taskID},
 		{"--stats", "--since", since, "--since", since},
 		{"--stats", "history", "extra"},
+		{"--stats", "--compact", "--compact"},
+		{"--stats", "--compact", "extra"},
 		{"--call-outliers", "history", "--until"},
 		{"--call-outliers", "CURRENT"},
 	} {
@@ -107,10 +126,10 @@ func TestStatsExplicitCurrentScopeMatchesDefaultOutput(t *testing.T) {
 	st.RecordModelCall(state.WorkerRole, "opus")
 
 	var defaultOut, explicitOut bytes.Buffer
-	if err := printStats(st, TelemetryQueryArgs{}, &defaultOut); err != nil {
+	if err := printStats(cfg, st, TelemetryQueryArgs{}, &defaultOut); err != nil {
 		t.Fatal(err)
 	}
-	if err := printStats(st, TelemetryQueryArgs{Scope: state.TelemetryScopeCurrent}, &explicitOut); err != nil {
+	if err := printStats(cfg, st, TelemetryQueryArgs{Scope: state.TelemetryScopeCurrent}, &explicitOut); err != nil {
 		t.Fatal(err)
 	}
 	if defaultOut.String() != explicitOut.String() {

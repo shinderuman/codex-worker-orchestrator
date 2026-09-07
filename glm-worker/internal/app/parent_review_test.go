@@ -245,7 +245,7 @@ func TestExecuteParentReviewStatsExposeRework(t *testing.T) {
 	if err := Execute(Command{Mode: ModeStats}, cfg, nil, &statsOut, io.Discard); err != nil {
 		t.Fatal(err)
 	}
-	output := executeStatsOutput(t, st)
+	output := executeStatsOutput(t, cfg, st)
 	if output.ParentOutcomes[state.ParentOutcomeAccepted] != 1 || output.ParentOutcomes[state.ParentOutcomeFix] != 1 {
 		t.Fatalf("parent_outcomes = %#v: %q", output.ParentOutcomes, statsOut.String())
 	}

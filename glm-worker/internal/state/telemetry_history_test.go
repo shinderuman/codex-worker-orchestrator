@@ -48,7 +48,7 @@ func oldCohortTaskRecord(taskID string, callID string, startedAt time.Time, turn
 func currentCohortTaskRecord(callID string, startedAt time.Time) string {
 	return marshalTelemetryHistoryLine(map[string]any{
 		"version":          ModelCallLogVersion,
-		"schema_revision":  modelCallLogSchemaRevision,
+		"schema_revision":  ModelCallLogSchemaRevision,
 		"call_id":          callID,
 		"call_type":        CallTypeTask,
 		"task_id":          telemetryHistoryTaskCurrent,
@@ -178,7 +178,7 @@ func TestScanTelemetryHistorySeparatesCohorts(t *testing.T) {
 		t.Fatalf("旧cohort resolved model = %+v", aggregates.CallTreesByResolvedModel)
 	}
 
-	currentCohort := findTelemetryHistoryCohort(t, scan, ModelCallLogVersion, modelCallLogSchemaRevision)
+	currentCohort := findTelemetryHistoryCohort(t, scan, ModelCallLogVersion, ModelCallLogSchemaRevision)
 	if !currentCohort.CurrentSchema || currentCohort.ExcludedReason != TelemetryExclusionCurrentSchema {
 		t.Fatalf("current cohortの除外分類 = %+v", currentCohort)
 	}
@@ -250,7 +250,7 @@ func TestScanTelemetryHistoryTaskAndPeriodFilter(t *testing.T) {
 	if oldCohort.Coverage.TaskCallsWithUsage != 0 || oldCohort.Coverage.TaskCallsMissingUsage != 1 {
 		t.Fatalf("期間filter後のcoverage = %+v", oldCohort.Coverage)
 	}
-	currentCohort := findTelemetryHistoryCohort(t, periodFiltered, ModelCallLogVersion, modelCallLogSchemaRevision)
+	currentCohort := findTelemetryHistoryCohort(t, periodFiltered, ModelCallLogVersion, ModelCallLogSchemaRevision)
 	if currentCohort.Records.Read != 1 {
 		t.Fatalf("期間filter後のcurrent cohort = %+v", currentCohort)
 	}
@@ -317,7 +317,7 @@ func TestScanTelemetryHistoryExcludesNewerSchemaCohort(t *testing.T) {
 			"model_alias": "opus", "top_level_turns": 5, "tree_usage": map[string]any{"input_tokens": 9},
 		}),
 		marshalTelemetryHistoryLine(map[string]any{
-			"version": ModelCallLogVersion, "schema_revision": modelCallLogSchemaRevision + 1,
+			"version": ModelCallLogVersion, "schema_revision": ModelCallLogSchemaRevision + 1,
 			"call_id": "future-revision", "call_type": CallTypeTask,
 			"task_id": telemetryHistoryTaskCurrent, "started_at": base.Format(time.RFC3339),
 			"model_alias": "opus", "top_level_turns": 5,

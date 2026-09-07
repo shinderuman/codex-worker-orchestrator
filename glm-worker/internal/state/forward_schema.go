@@ -43,7 +43,7 @@ const gitSnapshotSchemaVersion = 1
 
 const taskStatsSchemaRevision = 1
 
-const modelCallLogSchemaRevision = 1
+const ModelCallLogSchemaRevision = 1
 
 func decodeCurrentStateJSON(data []byte, target any) error {
 	decoder := json.NewDecoder(bytes.NewReader(data))
@@ -135,7 +135,7 @@ func (stats *TaskStats) UnmarshalJSON(data []byte) error {
 
 func (call ModelCallLog) MarshalJSON() ([]byte, error) {
 	return json.Marshal(modelCallLogWire{
-		SchemaRevision:    modelCallLogSchemaRevision,
+		SchemaRevision:    ModelCallLogSchemaRevision,
 		modelCallLogAlias: modelCallLogAlias(call),
 	})
 }
@@ -148,7 +148,7 @@ func (call *ModelCallLog) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &header); err != nil {
 		return err
 	}
-	if header.Version != ModelCallLogVersion || header.SchemaRevision != modelCallLogSchemaRevision {
+	if header.Version != ModelCallLogVersion || header.SchemaRevision != ModelCallLogSchemaRevision {
 		*call = ModelCallLog{Version: header.Version}
 		if header.Version == ModelCallLogVersion {
 			call.Version = 0

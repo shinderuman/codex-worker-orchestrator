@@ -273,7 +273,7 @@ func newTelemetryCohortAccumulator(key telemetryCohortKey) *telemetryCohortAccum
 		scan: TelemetryCohortScan{
 			Version:        key.version,
 			SchemaRevision: key.schemaRevision,
-			CurrentSchema:  key.version == ModelCallLogVersion && key.schemaRevision == modelCallLogSchemaRevision,
+			CurrentSchema:  key.version == ModelCallLogVersion && key.schemaRevision == ModelCallLogSchemaRevision,
 			FileNames:      []string{},
 		},
 		fileNames: make(map[string]bool),
@@ -284,7 +284,7 @@ func newTelemetryCohortAccumulator(key telemetryCohortKey) *telemetryCohortAccum
 	case cohort.scan.CurrentSchema:
 		cohort.scan.ExcludedReason = TelemetryExclusionCurrentSchema
 	case key.version > ModelCallLogVersion ||
-		(key.version == ModelCallLogVersion && key.schemaRevision > modelCallLogSchemaRevision):
+		(key.version == ModelCallLogVersion && key.schemaRevision > ModelCallLogSchemaRevision):
 		cohort.scan.ExcludedReason = TelemetryExclusionNewerSchema
 	}
 	return cohort

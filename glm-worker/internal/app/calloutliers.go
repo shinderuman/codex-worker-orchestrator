@@ -3,6 +3,7 @@ package app
 import (
 	"io"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -24,7 +25,10 @@ type callOutliersHistoryOutput struct {
 	Reports   []callOutliersHistoryReport `json:"reports"`
 }
 
-func printCallOutliers(st *state.StateStore, query TelemetryQueryArgs, stdout io.Writer) error {
+func printCallOutliers(cfg config.AppConfig, st *state.StateStore, query TelemetryQueryArgs, stdout io.Writer) error {
+	if query.Compact {
+		return printTelemetryCompactSummary(cfg, st, query, stdout)
+	}
 	if query.isHistory() {
 		return printCallOutliersHistory(st, query, stdout)
 	}

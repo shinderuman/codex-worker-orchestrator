@@ -251,7 +251,7 @@ func TestStatsOutputIncludesPreflightAggregate(t *testing.T) {
 		t.Fatal("mismatchを検出できません")
 	}
 
-	output := executeStatsOutput(t, st)
+	output := executeStatsOutput(t, cfg, st)
 	if output.Preflight.Status != "ok" {
 		t.Fatalf("preflight status = %q: %+v", output.Preflight.Status, output.Preflight)
 	}
@@ -277,7 +277,7 @@ func TestStatsOutputPreflightStatusUnknownOnMalformedAggregate(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	output := executeStatsOutput(t, st)
+	output := executeStatsOutput(t, cfg, st)
 	if output.Preflight.Status != "unknown" || output.Preflight.Error == "" {
 		t.Fatalf("preflight = %+v", output.Preflight)
 	}
@@ -293,7 +293,7 @@ func TestStatsOutputPreflightStatusNoneWithoutAttempts(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	output := executeStatsOutput(t, st)
+	output := executeStatsOutput(t, cfg, st)
 	if output.Preflight.Status != statusNone {
 		t.Fatalf("preflight = %+v", output.Preflight)
 	}

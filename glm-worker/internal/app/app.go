@@ -55,8 +55,9 @@ type CoalesceArgs struct {
 }
 
 type TelemetryQueryArgs struct {
-	Scope  string
-	Filter state.TelemetryQueryFilter
+	Scope   string
+	Filter  state.TelemetryQueryFilter
+	Compact bool
 }
 
 type UsageError struct {
@@ -135,7 +136,7 @@ const repoSearchMaxBudgetBytes = 64 * 1024
 
 const qualityGateUsage = "<go-test|go-test-race> | --quality-gate <status|watch|result> <validation-run-id>"
 
-const telemetryQueryUsage = "[current|history] [--task <task-id>] [--since <rfc3339>] [--until <rfc3339>]"
+const telemetryQueryUsage = "[current|history] [--task <task-id>] [--since <rfc3339>] [--until <rfc3339>] [--compact]"
 
 const verifyCodexWakeUsage = "usage: glm-worker --verify-codex-wake <wake-task-thread-id> <wake-at-rfc3339>"
 
@@ -578,7 +579,7 @@ func executeStateless(cmd Command, cfg config.AppConfig, stdout io.Writer) (bool
 		}
 		return true, printParentHandoffLeased(state.AttachStateStore(cfg), stdout)
 	case ModeStats:
-		return true, printStats(state.AttachStateStore(cfg), cmd.Query, stdout)
+		return true, printStats(cfg, state.AttachStateStore(cfg), cmd.Query, stdout)
 	case ModeWatch:
 		return true, printWatch(state.AttachStateStore(cfg), stdout, defaultWatchOptions(cmd.WatchVerbose))
 	case ModeStop:
@@ -617,7 +618,7 @@ func executeStatelessReport(cmd Command, cfg config.AppConfig, stdout io.Writer)
 	case ModeEvalAB:
 		return true, printEvalAB(st, cmd.Payload, stdout)
 	case ModeCallOutliers:
-		return true, printCallOutliers(st, cmd.Query, stdout)
+		return true, printCallOutliers(cfg, st, cmd.Query, stdout)
 	case ModeModelRouting:
 		return true, printModelRouting(st, stdout)
 	case ModeTestImpact:

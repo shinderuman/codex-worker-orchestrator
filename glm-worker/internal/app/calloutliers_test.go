@@ -13,10 +13,10 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-func executeCallOutliers(t *testing.T, st *state.StateStore) map[string]any {
+func executeCallOutliers(t *testing.T, cfg config.AppConfig, st *state.StateStore) map[string]any {
 	t.Helper()
 	var out bytes.Buffer
-	if err := printCallOutliers(st, TelemetryQueryArgs{}, &out); err != nil {
+	if err := printCallOutliers(cfg, st, TelemetryQueryArgs{}, &out); err != nil {
 		t.Fatal(err)
 	}
 	return decodeSingleLineJSON(t, out.String())
@@ -57,7 +57,7 @@ func TestExecuteCallOutliersAggregatesSavedTelemetry(t *testing.T) {
 	taskC := "33333333-3333-4333-8333-333333333333"
 	recordCallOutliersFixture(t, st, taskC, base.Add(3*time.Hour))
 
-	decoded := executeCallOutliers(t, st)
+	decoded := executeCallOutliers(t, cfg, st)
 
 	telemetry, _ := decoded["telemetry"].(map[string]any)
 	if telemetry["status"] != "ok" {
@@ -120,7 +120,7 @@ func TestExecuteCallOutliersAggregatesSavedTelemetry(t *testing.T) {
 	}
 
 	var rendered bytes.Buffer
-	if err := printCallOutliers(st, TelemetryQueryArgs{}, &rendered); err != nil {
+	if err := printCallOutliers(cfg, st, TelemetryQueryArgs{}, &rendered); err != nil {
 		t.Fatal(err)
 	}
 	for _, secret := range []string{"raw-prompt-must-not-leak", "raw-response-must-not-leak", "\"prompt\"", "\"response\""} {
@@ -137,7 +137,7 @@ func TestCallOutliersEmptyTelemetryDirIsNone(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	decoded := executeCallOutliers(t, st)
+	decoded := executeCallOutliers(t, cfg, st)
 
 	telemetry, _ := decoded["telemetry"].(map[string]any)
 	if telemetry["status"] != "none" || telemetry["files"].(float64) != 0 {
@@ -222,7 +222,7 @@ func TestCallOutliersPartialOnUnreadableTelemetry(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	decoded := executeCallOutliers(t, st)
+	decoded := executeCallOutliers(t, cfg, st)
 
 	telemetry, _ := decoded["telemetry"].(map[string]any)
 	if telemetry["status"] != "partial" {
@@ -266,7 +266,7 @@ func TestCallOutliersIgnoresNonTaskTelemetryFiles(t *testing.T) {
 		}
 	}
 
-	decoded := executeCallOutliers(t, st)
+	decoded := executeCallOutliers(t, cfg, st)
 
 	telemetry, _ := decoded["telemetry"].(map[string]any)
 	if telemetry["status"] != "ok" {

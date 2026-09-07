@@ -29,8 +29,8 @@ var taskStatusSurfaces = []struct {
 	{"--status.task_status", func(t *testing.T, cfg config.AppConfig, _ *state.StateStore) any {
 		return requireJSONKey(t, statusRawJSON(t, cfg), "task_status")
 	}},
-	{"--stats.current_task.status", func(t *testing.T, _ config.AppConfig, st *state.StateStore) any {
-		return requireJSONKey(t, statsCurrentTaskJSON(t, st), "status")
+	{"--stats.current_task.status", func(t *testing.T, cfg config.AppConfig, st *state.StateStore) any {
+		return requireJSONKey(t, statsCurrentTaskJSON(t, cfg, st), "status")
 	}},
 	{"--timeline.task_status", func(t *testing.T, _ config.AppConfig, st *state.StateStore) any {
 		return requireJSONKey(t, timelineRawJSON(t, st), "task_status")
@@ -85,10 +85,10 @@ func statusRawJSON(t *testing.T, cfg config.AppConfig) map[string]any {
 	return decodeSingleLineJSON(t, out.String())
 }
 
-func statsRawJSON(t *testing.T, st *state.StateStore) map[string]any {
+func statsRawJSON(t *testing.T, cfg config.AppConfig, st *state.StateStore) map[string]any {
 	t.Helper()
 	var out bytes.Buffer
-	if err := printStats(st, TelemetryQueryArgs{}, &out); err != nil {
+	if err := printStats(cfg, st, TelemetryQueryArgs{}, &out); err != nil {
 		t.Fatal(err)
 	}
 	return decodeSingleLineJSON(t, out.String())
@@ -204,9 +204,9 @@ func convergenceRawJSON(t *testing.T, st *state.StateStore) map[string]any {
 	return decodeSingleLineJSON(t, out.String())
 }
 
-func statsCurrentTaskJSON(t *testing.T, st *state.StateStore) map[string]any {
+func statsCurrentTaskJSON(t *testing.T, cfg config.AppConfig, st *state.StateStore) map[string]any {
 	t.Helper()
-	decoded := statsRawJSON(t, st)
+	decoded := statsRawJSON(t, cfg, st)
 	currentTask, ok := decoded["current_task"].(map[string]any)
 	if !ok {
 		t.Fatalf("current_taskがJSON objectではありません: %#v", decoded["current_task"])
@@ -303,7 +303,7 @@ func TestStatsRawJSONContract(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		decoded := statsRawJSON(t, st)
+		decoded := statsRawJSON(t, cfg, st)
 		assertStatsMapFieldsAreObjects(t, decoded)
 		for _, key := range statsMapAggregateFields {
 			if entries := decoded[key].(map[string]any); len(entries) != 0 {
@@ -331,7 +331,7 @@ func TestStatsRawJSONContract(t *testing.T) {
 		st.RecordModelCall(state.WorkerRole, "opus")
 		st.RecordRateLimit("opus")
 
-		decoded := statsRawJSON(t, st)
+		decoded := statsRawJSON(t, cfg, st)
 		assertStatsMapFieldsAreObjects(t, decoded)
 		modelCalls, ok := decoded["model_calls_by_alias"].(map[string]any)
 		if !ok || modelCalls["opus"] != float64(1) {
