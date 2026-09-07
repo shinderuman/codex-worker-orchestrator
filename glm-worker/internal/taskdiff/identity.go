@@ -3,60 +3,62 @@ package taskdiff
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
 type FileIdentity struct {
-	Path        string `json:"path"`
-	HeadBlob    string `json:"head_blob"`
-	IndexBlob   string `json:"index_blob"`
-	WorktreeSHA string `json:"worktree_sha256"`
+	Path           string `json:"path"`
+	HeadDigest     string `json:"head_digest"`
+	IndexDigest    string `json:"index_digest"`
+	WorktreeDigest string `json:"worktree_digest"`
 }
 
 func FileIdentities(repoRoot string, paths []string) ([]FileIdentity, error) {
 	identities := make([]FileIdentity, 0, len(paths))
 	for _, path := range paths {
 		identity := FileIdentity{Path: path}
-		headBlob, err := trimmedGitOutput(repoRoot, "rev-parse", "--verify", "HEAD:"+path)
-		if err != nil {
-			headBlob = ""
-		}
-		identity.HeadBlob = headBlob
-		identity.IndexBlob = indexBlobIdentity(repoRoot, path)
-		worktreeSHA, err := worktreeContentSHA(repoRoot, path)
+		identity.HeadDigest = headEntryDigest(repoRoot, path)
+		identity.IndexDigest = indexEntriesDigest(repoRoot, path)
+		worktreeDigest, err := worktreeContentDigest(repoRoot, path)
 		if err != nil {
 			return nil, err
 		}
-		identity.WorktreeSHA = worktreeSHA
+		identity.WorktreeDigest = worktreeDigest
 		identities = append(identities, identity)
 	}
 	return identities, nil
 }
 
 func SameFileIdentity(before, after FileIdentity) bool {
-	return before.HeadBlob == after.HeadBlob &&
-		before.IndexBlob == after.IndexBlob &&
-		before.WorktreeSHA == after.WorktreeSHA
+	return before.HeadDigest == after.HeadDigest &&
+		before.IndexDigest == after.IndexDigest &&
+		before.WorktreeDigest == after.WorktreeDigest
 }
 
-func indexBlobIdentity(repoRoot string, path string) string {
-	command := exec.Command("git", "-C", repoRoot, "ls-files", "-s", "--", path)
-	output, err := command.Output()
-	if err != nil {
+func headEntryDigest(repoRoot string, path string) string {
+	output, err := exec.Command("git", "-C", repoRoot, "ls-tree", "-z", "HEAD", "--", path).Output()
+	if err != nil || len(output) == 0 {
 		return ""
 	}
-	fields := strings.Fields(string(output))
-	if len(fields) < 2 {
-		return ""
-	}
-	return fields[1]
+	return contentDigest(output)
 }
 
-func worktreeContentSHA(repoRoot string, rel string) (string, error) {
+func indexEntriesDigest(repoRoot string, path string) string {
+	output, err := exec.Command("git", "-C", repoRoot, "ls-files", "-s", "-z", "--", path).Output()
+	if err != nil || len(output) == 0 {
+		return ""
+	}
+	return contentDigest(output)
+}
+
+func worktreeContentDigest(repoRoot string, rel string) (string, error) {
 	abs, err := joinWithinRepo(repoRoot, rel)
 	if err != nil {
 		return "", err
@@ -68,15 +70,31 @@ func worktreeContentSHA(repoRoot string, rel string) (string, error) {
 		}
 		return "", err
 	}
-	if !info.Mode().IsRegular() {
-		return "", nil
+	hasher := sha256.New()
+	hasher.Write(strconv.AppendUint(make([]byte, 0, 12), uint64(info.Mode()), 10))
+	hasher.Write([]byte{0})
+	mode := info.Mode()
+	if mode&os.ModeSymlink != 0 {
+		target, err := os.Readlink(abs)
+		if err != nil {
+			return "", err
+		}
+		hasher.Write([]byte(target))
+		return hex.EncodeToString(hasher.Sum(nil)), nil
 	}
-	content, err := os.ReadFile(abs)
-	if err != nil {
-		return "", err
+	if mode.IsRegular() {
+		content, err := os.ReadFile(abs)
+		if err != nil {
+			return "", err
+		}
+		hasher.Write(content)
 	}
+	return hex.EncodeToString(hasher.Sum(nil)), nil
+}
+
+func contentDigest(content []byte) string {
 	sum := sha256.Sum256(content)
-	return hex.EncodeToString(sum[:]), nil
+	return hex.EncodeToString(sum[:])
 }
 
 func joinWithinRepo(repoRoot string, rel string) (string, error) {
@@ -90,21 +108,39 @@ func joinWithinRepo(repoRoot string, rel string) (string, error) {
 	}
 	abs := filepath.Join(root, filepath.FromSlash(clean))
 	canonical, err := filepath.EvalSymlinks(abs)
-	if err != nil {
+	if err == nil {
+		if !withinRepoRoot(root, canonical) {
+			return "", fmt.Errorf("path %qがrepository境界を越えています", rel)
+		}
+		return abs, nil
+	}
+	if !errors.Is(err, fs.ErrNotExist) {
 		return "", err
 	}
-	if canonical != root && !strings.HasPrefix(canonical, root+string(filepath.Separator)) {
-		return "", fmt.Errorf("path %qがrepository境界を越えています", rel)
-	}
-	return canonical, nil
+	return resolveDeletedPathWithinRepo(root, abs, rel)
 }
 
-func trimmedGitOutput(dir string, args ...string) (string, error) {
-	command := exec.Command("git", args...)
-	command.Dir = dir
-	output, err := command.Output()
-	if err != nil {
-		return "", err
+func resolveDeletedPathWithinRepo(root string, abs string, rel string) (string, error) {
+	current := abs
+	for {
+		parent := filepath.Dir(current)
+		if parent == current {
+			return abs, nil
+		}
+		canonicalParent, err := filepath.EvalSymlinks(parent)
+		if err == nil {
+			if !withinRepoRoot(root, canonicalParent) {
+				return "", fmt.Errorf("path %qがrepository境界を越えています", rel)
+			}
+			return abs, nil
+		}
+		if !errors.Is(err, fs.ErrNotExist) {
+			return "", err
+		}
+		current = parent
 	}
-	return strings.TrimSpace(string(output)), nil
+}
+
+func withinRepoRoot(root string, path string) bool {
+	return path == root || strings.HasPrefix(path, root+string(filepath.Separator))
 }

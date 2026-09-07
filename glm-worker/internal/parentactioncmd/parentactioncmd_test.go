@@ -340,3 +340,36 @@ func writeParentActionWorkerStubWithCheck(t *testing.T, cfg config.AppConfig, ch
 	t.Setenv("GLM_TEST_STATS", st.Path("task-stats.json"))
 	return marker
 }
+
+func TestEvidenceActionPassesAbsoluteManifestPathToWorker(t *testing.T) {
+	cfg, _ := newParentActionTestState(t)
+	workDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workDir, "evidence-manifest.json"), []byte(`{"version":1,"reason":"absolute path","status":{}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	original, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(workDir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(original); err != nil {
+			t.Errorf("restore cwd: %v", err)
+		}
+	})
+	expectedManifestPath, err := filepath.Abs("evidence-manifest.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	marker := writeParentActionWorkerStubWithCheck(t, cfg,
+		`test "$1" = "--evidence" && test "$2" = "`+expectedManifestPath+`"`)
+
+	if err := execute(cfg, []string{"evidence", "evidence-manifest.json"}, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatal("stub worker was not invoked with the absolute manifest path")
+	}
+}

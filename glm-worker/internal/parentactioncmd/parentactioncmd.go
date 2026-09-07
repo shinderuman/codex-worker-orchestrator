@@ -121,10 +121,14 @@ func executeParentReadOrParkAction(cfg config.AppConfig, args []string, stdout, 
 		if len(args) != 2 {
 			return fmt.Errorf("usage: glm-parent-action evidence <manifest.json>")
 		}
-		if _, err := os.Stat(args[1]); err != nil {
+		manifestPath, absErr := filepath.Abs(args[1])
+		if absErr != nil {
+			return fmt.Errorf("evidence manifestの絶対pathを解決できません: %w", absErr)
+		}
+		if _, err := os.Stat(manifestPath); err != nil {
 			return fmt.Errorf("evidence manifestを確認できません: %w", err)
 		}
-		return runWorker(cfg.RepoRoot, []string{"--evidence", args[1]}, nil, stdout, stderr, nil)
+		return runWorker(cfg.RepoRoot, []string{"--evidence", manifestPath}, nil, stdout, stderr, nil)
 	}
 }
 

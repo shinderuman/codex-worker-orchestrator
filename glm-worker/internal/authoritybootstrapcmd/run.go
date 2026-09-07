@@ -67,6 +67,7 @@ func BuildFromRoot(root string, kind string, knownContentSHA string) (Output, er
 	if knownContentSHA != "" && !validContentSHA256(knownContentSHA) {
 		return Output{}, fmt.Errorf("%s", usage)
 	}
+	knownContentSHA = strings.ToLower(knownContentSHA)
 	snap, err := loadSnapshot(root)
 	if err != nil {
 		return Output{}, fmt.Errorf("authority bootstrap: %w", err)

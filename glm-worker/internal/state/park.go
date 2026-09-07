@@ -71,6 +71,21 @@ func (s *StateStore) SaveParkOrigin(origin ParkOrigin) error {
 	return writeJSONStateFile(s.Path(parkOriginFile), origin)
 }
 
+func (s *StateStore) ClearParkRecord() error {
+	return s.Remove(parkStateFile)
+}
+
+func (s *StateStore) RemoveParkContent() error {
+	if err := os.RemoveAll(s.Path(parkContentDir)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("park本文保持directoryを削除できません: %w", err)
+	}
+	return nil
+}
+
+func (s *StateStore) RemoveParkOrigin() error {
+	return s.Remove(parkOriginFile)
+}
+
 func (s *StateStore) LoadParkOrigin() (ParkOrigin, error) {
 	var origin ParkOrigin
 	if err := readJSONStateFile(s.Path(parkOriginFile), &origin); err != nil {

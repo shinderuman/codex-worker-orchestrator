@@ -93,6 +93,12 @@ func printRepoSearch(request repoSearchRequest, cfg config.AppConfig, st *state.
 		fmt.Sprintf("%v", request.Scopes),
 		repoSearchResultsDigest(results),
 	)
+	return withParentEvidenceLedgerLock(st, func() error {
+		return serveRepoSearchResult(st, request, report, results, digest, stdout)
+	})
+}
+
+func serveRepoSearchResult(st *state.StateStore, request repoSearchRequest, report reposearch.Report, results []repoSearchResult, digest string, stdout io.Writer) error {
 	decision, entry, decisionErr := decideParentRead(st, state.ParentEvidenceSurfaceSearch, digest)
 	if decisionErr != nil {
 		return decisionErr
@@ -107,6 +113,9 @@ func printRepoSearch(request repoSearchRequest, cfg config.AppConfig, st *state.
 	}
 	output := buildRepoSearchOutput(request, report, results)
 	if output.Status == repoSearchResultRequired {
+		if writeErr := writeJSON(stdout, output); writeErr != nil {
+			return writeErr
+		}
 		rendered, _ := json.Marshal(output)
 		recordParentEvidence(st, state.ParentEvidenceRecord{
 			Surface: state.ParentEvidenceSurfaceSearch, Origin: state.ParentEvidenceOriginStandalone,
@@ -114,7 +123,7 @@ func printRepoSearch(request repoSearchRequest, cfg config.AppConfig, st *state.
 			Reason: output.Reason,
 		})
 		saveParentEvidenceLedger(st, state.ParentEvidenceSurfaceSearch, digest, state.ParentEvidenceOriginStandalone, "")
-		return writeJSON(stdout, output)
+		return nil
 	}
 	written, writeErr := writeMeasuredJSON(stdout, output)
 	if writeErr != nil {

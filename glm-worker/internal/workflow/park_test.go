@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"os/exec"
 
 	"path/filepath"
 	"strings"
@@ -276,5 +277,45 @@ func TestUnparkWithoutParkedTaskIsRejected(t *testing.T) {
 	var workerErr *WorkerError
 	if !errors.As(err, &workerErr) {
 		t.Fatalf("unpark error = %T, want WorkerError: %v", err, err)
+	}
+}
+
+func TestUnparkCleansParkCycleArtifacts(t *testing.T) {
+	fixture := newParkFixture(t)
+	parked := fixture.park(t)
+
+	if _, err := os.Stat(fixture.st.ParkContentPath("parked-dirty.md")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.st.AttachSiblingStore(config.RepoHashFor(fixture.worktree)).LoadParkOrigin(); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout bytes.Buffer
+	if err := fixture.w.ExecuteUnpark(&stdout); err != nil {
+		t.Fatalf("ExecuteUnpark: %v", err)
+	}
+
+	if fixture.st.TaskStatus() != state.TaskStatusWaitingSolReview {
+		t.Fatalf("task status = %s, want restored", fixture.st.TaskStatus())
+	}
+	if _, err := os.Stat(fixture.worktree); !os.IsNotExist(err) {
+		t.Fatalf("interrupt worktree still exists: %v", err)
+	}
+	branchList := exec.Command("git", "-C", fixture.repo, "branch", "--list", parked.Branch)
+	if output, err := branchList.Output(); err != nil || strings.TrimSpace(string(output)) != "" {
+		t.Fatalf("park branch %s still exists: %v %q", parked.Branch, err, output)
+	}
+	if _, err := fixture.st.LoadParkRecord(); !errors.Is(err, state.ErrNoParkRecord) {
+		t.Fatalf("park record still exists: %v", err)
+	}
+	if _, err := os.Stat(fixture.st.ParkContentPath("parked-dirty.md")); !os.IsNotExist(err) {
+		t.Fatalf("park content copy still exists: %v", err)
+	}
+	if _, err := fixture.st.AttachSiblingStore(config.RepoHashFor(fixture.worktree)).LoadParkOrigin(); !errors.Is(err, state.ErrNoParkRecord) {
+		t.Fatalf("park origin record still exists: %v", err)
+	}
+	if content, err := os.ReadFile(filepath.Join(fixture.repo, "parked-dirty.md")); err != nil || string(content) != "parked task working set\n" {
+		t.Fatalf("parked working set changed: %q err = %v", string(content), err)
 	}
 }

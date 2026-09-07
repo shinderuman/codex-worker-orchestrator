@@ -108,6 +108,8 @@ func passPacketApp() string {
 
 func newAppConfig(t *testing.T) config.AppConfig {
 	t.Helper()
+	t.Setenv(state.ParentActionCodexThreadIDEnv, "")
+	t.Setenv(state.ParentActionCodexSessionIDEnv, "")
 	return config.AppConfig{
 		StateBase:             t.TempDir(),
 		RepoHash:              "apphash",

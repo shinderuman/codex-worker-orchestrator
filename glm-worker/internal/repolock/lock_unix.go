@@ -30,6 +30,24 @@ func Acquire(path string) (*Lock, error) {
 	return &Lock{file: file}, nil
 }
 
+func AcquireWait(path string) (*Lock, error) {
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, fmt.Errorf("GLM worker lockを開けません: %w", err)
+	}
+
+	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX); err != nil {
+		_ = file.Close()
+		return nil, fmt.Errorf("GLM worker lockを取得できません: %w", err)
+	}
+
+	if err := file.Truncate(0); err == nil {
+		_, _ = fmt.Fprintf(file, "%d\n", os.Getpid())
+	}
+
+	return &Lock{file: file}, nil
+}
+
 func (l *Lock) Close() error {
 	if l == nil || l.file == nil {
 		return nil

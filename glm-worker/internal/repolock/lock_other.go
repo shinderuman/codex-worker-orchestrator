@@ -2,7 +2,10 @@
 
 package repolock
 
-import "os"
+import (
+	"os"
+	"time"
+)
 
 type Lock struct {
 	path string
@@ -15,6 +18,16 @@ func Acquire(path string) (*Lock, error) {
 	}
 	file.Close()
 	return &Lock{path: path}, nil
+}
+
+func AcquireWait(path string) (*Lock, error) {
+	for {
+		lock, err := Acquire(path)
+		if err == nil {
+			return lock, nil
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 }
 
 func (l *Lock) Close() error {

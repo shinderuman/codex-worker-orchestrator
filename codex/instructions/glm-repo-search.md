@@ -11,7 +11,7 @@
 
 ## CLI
 
-- `glm-worker --repo-search <question> --scope <path|symbol:<identifier>> [--scope ...] --budget <bytes>`はcurrent repositoryを既存BM25 coreだけでread-only検索し、機械可読JSONを返す。model呼出・state変更・repository lock取得を行わない。semantic questionと対象scopeとbyte budgetは必須入力であり、裸query形式は受理しない。
+- `glm-worker --repo-search <question> --scope <path|symbol:<identifier>> [--scope ...] --budget <bytes>`はcurrent repositoryを既存BM25 coreだけでread-only検索し、機械可読JSONを返す。model呼出・repository lock取得・repositoryとtask lifecycle stateの変更は行わない。enabled時の検索はparent-evidence telemetryの記録とparent-evidence ledgerへの配信digest保存というevidence状態を書く。semantic questionと対象scopeとbyte budgetは必須入力であり、裸query形式は受理しない。
 - flag disabled時は検索を実行せず、disabledを明示するJSONを返す。
 - 候補がcandidate上限(50)またはbudgetを超える場合は本文を切断せず`refinement_required`と理由を返す。`--scope`の追加・絞り込みかbudget引き上げで再依頼する。切断済み本文をbounded projection扱いしない。
 - 出力の`results`はBM25上位候補(path・line・score)でありnavigation-onlyである。コード確認の代替にせず、対象の現物を確認してから扱う。

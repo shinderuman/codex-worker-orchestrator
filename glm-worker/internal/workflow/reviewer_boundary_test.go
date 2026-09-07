@@ -67,7 +67,7 @@ func TestReviewedBoundaryContextMarksOnlyIdenticalBlobsReviewed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if identities[0].HeadBlob == "" || identities[0].WorktreeSHA == "" {
+	if identities[0].HeadDigest == "" || identities[0].WorktreeDigest == "" {
 		t.Fatalf("identities = %#v", identities[0])
 	}
 }

@@ -162,6 +162,12 @@ func (s *StateStore) StartNewTask() (string, error) {
 	); err != nil {
 		return "", err
 	}
+	if err := s.ClearParentEvidenceLedger(); err != nil {
+		return "", err
+	}
+	if err := s.AdvanceParentEvidenceLease(); err != nil {
+		return "", err
+	}
 
 	taskID, err := NewUUID()
 	if err != nil {

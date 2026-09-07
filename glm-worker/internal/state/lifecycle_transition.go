@@ -115,6 +115,9 @@ func (s *StateStore) WaitForDecision() error {
 	if err != nil {
 		return err
 	}
+	if err := s.AdvanceParentEvidenceLease(); err != nil {
+		return err
+	}
 	if err := s.Touch("pending-decision"); err != nil {
 		return err
 	}
@@ -148,16 +151,27 @@ func (s *StateStore) FinishReview(status TaskStatus) error {
 	if s.TaskStatus() != TaskStatusActive {
 		return fmt.Errorf("review transition requires active task, got %s", s.TaskStatus())
 	}
+	if status == TaskStatusWaitingSolReview {
+		if err := s.AdvanceParentEvidenceLease(); err != nil {
+			return err
+		}
+	}
 	return s.SetTaskStatus(status)
 }
 
 func (s *StateStore) WaitForSolReview() error {
-	switch s.TaskStatus() {
+	previous := s.TaskStatus()
+	switch previous {
 	case TaskStatusNone, TaskStatusActive, TaskStatusWaitingDecision, TaskStatusWaitingSolReview:
-		return s.SetTaskStatus(TaskStatusWaitingSolReview)
 	default:
 		return fmt.Errorf("wait-for-sol-review transition is invalid from %s", s.TaskStatus())
 	}
+	if previous != TaskStatusWaitingSolReview {
+		if err := s.AdvanceParentEvidenceLease(); err != nil {
+			return err
+		}
+	}
+	return s.SetTaskStatus(TaskStatusWaitingSolReview)
 }
 
 func (s *StateStore) DiscardResumeAndWaitForSolReview() error {

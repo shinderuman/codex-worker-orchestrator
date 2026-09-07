@@ -102,6 +102,8 @@ type parentEvidencePart struct {
 	Search      *parentEvidenceSearchBody    `json:"search,omitempty"`
 	Diff        *parentEvidenceDiffBody      `json:"diff,omitempty"`
 	Source      *parentEvidenceSourceBody    `json:"source,omitempty"`
+
+	ledgerSurface string `json:"-"`
 }
 
 type parentEvidenceAuthorityBody struct {
@@ -152,10 +154,11 @@ type parentEvidenceSourceBody struct {
 }
 
 type parentEvidenceProjector struct {
-	cfg         config.AppConfig
-	st          *state.StateStore
-	ownerCallID string
-	output      parentEvidenceOutput
+	cfg           config.AppConfig
+	st            *state.StateStore
+	ownerCallID   string
+	output        parentEvidenceOutput
+	pendingClaims []state.ParentEvidenceLedgerEntry
 }
 
 const (
@@ -212,17 +215,63 @@ func printParentEvidence(cmd Command, cfg config.AppConfig, st *state.StateStore
 	}
 	projector := &parentEvidenceProjector{cfg: cfg, st: st, ownerCallID: ownerCallID}
 	projector.project(manifest)
-	output := projector.output
-	applyParentEvidenceTotalBudget(&output)
-	written, writeErr := writeMeasuredJSON(stdout, output)
-	if writeErr != nil {
-		return writeErr
-	}
-	recordParentEvidence(st, state.ParentEvidenceRecord{
-		Surface: state.ParentEvidenceSurfaceEvidenceTelemetry, Origin: state.ParentEvidenceOriginEvidence,
-		OwnerCallID: ownerCallID, Bytes: written, Outcome: state.ParentEvidenceOutcomeProjected,
-		Reason: manifest.Reason, Locator: st.Path(parentEvidenceTelemetryFile),
+	return commitParentEvidenceProjection(projector, stdout, manifest.Reason)
+}
+
+func commitParentEvidenceProjection(p *parentEvidenceProjector, stdout io.Writer, reason string) error {
+	return withParentEvidenceLedgerLock(p.st, func() error {
+		if parentEvidenceLeaseActive(p.st) {
+			if err := degradeDuplicateParentEvidenceParts(p); err != nil {
+				return err
+			}
+		}
+		output := p.output
+		applyParentEvidenceTotalBudget(&output)
+		written, writeErr := writeMeasuredJSON(stdout, output)
+		if writeErr != nil {
+			return writeErr
+		}
+		for _, claim := range p.pendingClaims {
+			saveParentEvidenceLedger(p.st, claim.Surface, claim.Digest, claim.Origin, claim.OwnerCallID)
+		}
+		recordParentEvidence(p.st, state.ParentEvidenceRecord{
+			Surface: state.ParentEvidenceSurfaceEvidenceTelemetry, Origin: state.ParentEvidenceOriginEvidence,
+			OwnerCallID: p.ownerCallID, Bytes: written, Outcome: state.ParentEvidenceOutcomeProjected,
+			Reason: reason, Locator: p.st.Path(parentEvidenceTelemetryFile),
+		})
+		return nil
 	})
+}
+
+func degradeDuplicateParentEvidenceParts(p *parentEvidenceProjector) error {
+	claimed := make(map[string]bool, len(p.pendingClaims))
+	for index := range p.output.Parts {
+		part := &p.output.Parts[index]
+		if part.Digest == "" {
+			continue
+		}
+		key := part.ledgerSurface + "\x00" + part.Digest
+		_, delivered, err := p.st.ParentEvidenceDelivered(part.ledgerSurface, part.Digest)
+		if err != nil {
+			return err
+		}
+		if !delivered && !claimed[key] {
+			claimed[key] = true
+			continue
+		}
+		hadBody := parentEvidencePartHasBody(part)
+		clearParentEvidencePartBody(part)
+		part.Reason = parentEvidenceUnchangedReason
+		if hadBody {
+			part.Bytes = 0
+			part.TokenProxy = 0
+		}
+		recordParentEvidence(p.st, state.ParentEvidenceRecord{
+			Surface: part.ledgerSurface, Origin: state.ParentEvidenceOriginEvidence,
+			OwnerCallID: p.ownerCallID, Digest: part.Digest, Outcome: state.ParentEvidenceOutcomeDuplicate,
+			Reason: parentEvidenceUnchangedReason, Locator: part.Locator,
+		})
+	}
 	return nil
 }
 
@@ -425,16 +474,27 @@ func (p *parentEvidenceProjector) recordPart(part parentEvidencePart, surface st
 	if part.TokenProxy == 0 {
 		part.TokenProxy = state.ParentEvidenceTokenProxy(part.Bytes)
 	}
+	part.ledgerSurface = surface
 	recordParentEvidence(p.st, state.ParentEvidenceRecord{
 		Surface: surface, Origin: state.ParentEvidenceOriginEvidence,
 		OwnerCallID: p.ownerCallID, Digest: part.Digest, Bytes: part.Bytes,
 		TokenProxy: part.TokenProxy, Outcome: part.Status, Reason: part.Reason, Locator: part.Locator,
 	})
+	if part.Digest != "" {
+		p.appendPendingClaim(surface, part.Digest)
+	}
 	return part
 }
 
-func (p *parentEvidenceProjector) saveLedger(surface, digest string) {
-	saveParentEvidenceLedger(p.st, surface, digest, state.ParentEvidenceOriginEvidence, p.ownerCallID)
+func (p *parentEvidenceProjector) appendPendingClaim(surface, digest string) {
+	for _, claim := range p.pendingClaims {
+		if claim.Surface == surface && claim.Digest == digest {
+			return
+		}
+	}
+	p.pendingClaims = append(p.pendingClaims, state.ParentEvidenceLedgerEntry{
+		Surface: surface, Digest: digest, Origin: state.ParentEvidenceOriginEvidence, OwnerCallID: p.ownerCallID,
+	})
 }
 
 func (p *parentEvidenceProjector) projectAuthority(request parentEvidenceAuthorityRequest) parentEvidencePart {
@@ -471,6 +531,10 @@ func (p *parentEvidenceProjector) projectAuthority(request parentEvidenceAuthori
 		)
 		body.Content = ""
 	}
+	if body.Content != "" {
+		part.Bytes = len(body.Content)
+		part.TokenProxy = state.ParentEvidenceTokenProxy(part.Bytes)
+	}
 	part.Locator = "authority:" + request.Kind
 	part.Authority = &body
 	return p.recordPart(part, surface)
@@ -482,7 +546,6 @@ func (p *parentEvidenceProjector) projectHandoff(request parentEvidenceHandoffRe
 	part := parentEvidencePart{Kind: "handoff", Digest: digest, Locator: "handoff:current-state"}
 	if !request.Force && request.KnownDigest != "" && request.KnownDigest == digest {
 		part.Status = parentEvidencePartUnchanged
-		p.saveLedger(state.ParentEvidenceSurfaceHandoff, digest)
 		return p.recordPart(part, state.ParentEvidenceSurfaceHandoff)
 	}
 	data, err := json.Marshal(value)
@@ -495,7 +558,6 @@ func (p *parentEvidenceProjector) projectHandoff(request parentEvidenceHandoffRe
 	part.Handoff = json.RawMessage(data)
 	part.Bytes = len(data)
 	part.TokenProxy = state.ParentEvidenceTokenProxy(part.Bytes)
-	p.saveLedger(state.ParentEvidenceSurfaceHandoff, digest)
 	return p.recordPart(part, state.ParentEvidenceSurfaceHandoff)
 }
 
@@ -516,7 +578,6 @@ func (p *parentEvidenceProjector) projectStatus() parentEvidencePart {
 	part.Bytes = len(data)
 	part.TokenProxy = state.ParentEvidenceTokenProxy(part.Bytes)
 	part.Locator = "status:current-state"
-	p.saveLedger(state.ParentEvidenceSurfaceStatus, part.Digest)
 	return p.recordPart(part, state.ParentEvidenceSurfaceStatus)
 }
 
@@ -548,8 +609,15 @@ func (p *parentEvidenceProjector) projectValidations() parentEvidencePart {
 		part.Status = parentEvidencePartUnknown
 		part.Reason = "no validation run matches the current snapshot"
 	} else {
+		rendered, marshalErr := json.Marshal(records)
+		if marshalErr != nil {
+			part.Status = parentEvidencePartError
+			part.Reason = marshalErr.Error()
+			return p.recordPart(part, state.ParentEvidenceSurfaceValidations)
+		}
 		part.Status = parentEvidencePartProjected
-		part.Bytes = len(records)
+		part.Bytes = len(rendered)
+		part.TokenProxy = state.ParentEvidenceTokenProxy(part.Bytes)
 	}
 	part.Digest = parentEvidenceStringDigest(fmt.Sprintf("%v", records))
 	return p.recordPart(part, state.ParentEvidenceSurfaceValidations)
@@ -576,7 +644,14 @@ func (p *parentEvidenceProjector) projectTelemetry() parentEvidencePart {
 		Summary:    state.SummarizeParentEvidence(records),
 	}
 	part.Telemetry = &body
-	part.Bytes = body.Records
+	rendered, marshalErr := json.Marshal(body)
+	if marshalErr != nil {
+		part.Status = parentEvidencePartError
+		part.Reason = marshalErr.Error()
+		return p.recordPart(part, state.ParentEvidenceSurfaceEvidenceTelemetry)
+	}
+	part.Bytes = len(rendered)
+	part.TokenProxy = state.ParentEvidenceTokenProxy(part.Bytes)
 	part.Digest = parentEvidenceStringDigest(fmt.Sprintf("%d:%d", body.Records, body.ModelCalls))
 	return p.recordPart(part, state.ParentEvidenceSurfaceEvidenceTelemetry)
 }
@@ -625,7 +700,6 @@ func (p *parentEvidenceProjector) projectSearch(request parentEvidenceSearchRequ
 	}
 	part.Search = &body
 	part.Locator = "reposearch:" + request.Question
-	p.saveLedger(state.ParentEvidenceSurfaceSearch, part.Digest)
 	return p.recordPart(part, state.ParentEvidenceSurfaceSearch)
 }
 
@@ -858,6 +932,15 @@ func stripParentEvidencePartBody(part *parentEvidencePart) bool {
 	part.Bytes = 0
 	part.TokenProxy = 0
 	return true
+}
+
+func parentEvidencePartHasBody(part *parentEvidencePart) bool {
+	for _, strip := range parentEvidenceBodyStrippers {
+		if strip(part) {
+			return true
+		}
+	}
+	return false
 }
 
 func clearParentEvidencePartBody(part *parentEvidencePart) {

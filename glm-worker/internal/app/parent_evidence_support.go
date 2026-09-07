@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repolock"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -22,6 +23,8 @@ type parentReadDecision int
 const parentEvidenceBatchCommand = "glm-parent-action evidence <manifest.json>"
 
 const parentEvidenceUnchangedReason = "identical projection was already delivered within this decision lease"
+
+const parentEvidenceLedgerLockFile = "parent-evidence-ledger.lock"
 
 const (
 	parentReadServe parentReadDecision = iota
@@ -84,14 +87,27 @@ func decideParentRead(st *state.StateStore, surface, digest string) (parentReadD
 	if !parentEvidenceStorePresent(st) || !parentEvidenceLeaseActive(st) {
 		return parentReadServe, state.ParentEvidenceLedgerEntry{}, nil
 	}
-	entry, found, err := st.LoadParentEvidenceLedgerEntry(surface)
+	entry, delivered, err := st.ParentEvidenceDelivered(surface, digest)
 	if err != nil {
 		return parentReadServe, entry, err
 	}
-	if !found || entry.Digest != digest {
-		return parentReadServe, entry, nil
+	if !delivered {
+		return parentReadServe, state.ParentEvidenceLedgerEntry{}, nil
 	}
 	return parentReadDuplicate, entry, nil
+}
+
+func withParentEvidenceLedgerLock(st *state.StateStore, body func() error) error {
+	if !parentEvidenceStorePresent(st) || !parentEvidenceLeaseActive(st) {
+		return body()
+	}
+	lock, err := repolock.AcquireWait(st.Path(parentEvidenceLedgerLockFile))
+	if err != nil {
+		state.WarnParentEvidenceLedgerSkip(err)
+		return body()
+	}
+	defer func() { _ = lock.Close() }()
+	return body()
 }
 
 func writeMeasuredJSON(stdout io.Writer, value any) (int, error) {
@@ -109,7 +125,7 @@ func writeMeasuredJSON(stdout io.Writer, value any) (int, error) {
 }
 
 func saveParentEvidenceLedger(st *state.StateStore, surface, digest, origin, ownerCallID string) {
-	if !parentEvidenceStorePresent(st) {
+	if !parentEvidenceStorePresent(st) || !parentEvidenceLeaseActive(st) {
 		return
 	}
 	if err := st.SaveParentEvidenceLedgerEntry(state.ParentEvidenceLedgerEntry{
@@ -120,26 +136,28 @@ func saveParentEvidenceLedger(st *state.StateStore, surface, digest, origin, own
 }
 
 func finishParentRead(st *state.StateStore, surface, digest string, render func() (int, error)) error {
-	decision, entry, err := decideParentRead(st, surface, digest)
-	if err != nil {
-		return err
-	}
-	if decision == parentReadDuplicate {
+	return withParentEvidenceLedgerLock(st, func() error {
+		decision, entry, err := decideParentRead(st, surface, digest)
+		if err != nil {
+			return err
+		}
+		if decision == parentReadDuplicate {
+			recordParentEvidence(st, state.ParentEvidenceRecord{
+				Surface: surface, Origin: state.ParentEvidenceOriginStandalone,
+				Digest: digest, Outcome: state.ParentEvidenceOutcomeDuplicate,
+				Reason: parentEvidenceUnchangedReason, OwnerCallID: entry.OwnerCallID,
+			})
+			return &DuplicateParentProjectionError{Surface: surface, Digest: digest, OwnerCallID: entry.OwnerCallID}
+		}
+		written, renderErr := render()
+		if renderErr != nil {
+			return renderErr
+		}
 		recordParentEvidence(st, state.ParentEvidenceRecord{
 			Surface: surface, Origin: state.ParentEvidenceOriginStandalone,
-			Digest: digest, Outcome: state.ParentEvidenceOutcomeDuplicate,
-			Reason: parentEvidenceUnchangedReason, OwnerCallID: entry.OwnerCallID,
+			Digest: digest, Bytes: written, Outcome: state.ParentEvidenceOutcomeProjected,
 		})
-		return &DuplicateParentProjectionError{Surface: surface, Digest: digest, OwnerCallID: entry.OwnerCallID}
-	}
-	written, renderErr := render()
-	if renderErr != nil {
-		return renderErr
-	}
-	recordParentEvidence(st, state.ParentEvidenceRecord{
-		Surface: surface, Origin: state.ParentEvidenceOriginStandalone,
-		Digest: digest, Bytes: written, Outcome: state.ParentEvidenceOutcomeProjected,
+		saveParentEvidenceLedger(st, surface, digest, state.ParentEvidenceOriginStandalone, "")
+		return nil
 	})
-	saveParentEvidenceLedger(st, surface, digest, state.ParentEvidenceOriginStandalone, "")
-	return nil
 }

@@ -200,8 +200,7 @@ func (w *Workflow) persistParkOrigin(record state.ParkRecord) error {
 }
 
 func (w *Workflow) removeParkWorktree(record state.ParkRecord) {
-	_ = exec.Command("git", "-C", w.config.RepoRoot, "worktree", "remove", "--force", record.Worktree).Run()
-	_ = exec.Command("git", "-C", w.config.RepoRoot, "branch", "-D", record.Branch).Run()
+	_ = w.removeParkWorktreeChecked(record)
 }
 
 func (w *Workflow) ExecuteUnpark(stdout io.Writer) error {
@@ -220,6 +219,7 @@ func (w *Workflow) ExecuteUnpark(stdout io.Writer) error {
 	if err != nil {
 		return &WorkerError{Phase: "unpark", Message: "park状態からの復帰に失敗しました: " + err.Error()}
 	}
+	cleanupNote := w.cleanupParkResources(record)
 	w.state.RecordModelCallLog(state.ModelCallLog{
 		TaskID:      record.TaskID,
 		CallType:    state.CallTypeEvent,
@@ -227,7 +227,7 @@ func (w *Workflow) ExecuteUnpark(stdout io.Writer) error {
 		CompletedAt: w.now().UTC(),
 		Phase:       "unpark",
 		Outcome:     "unparked",
-		Error:       boundedText(fmt.Sprintf("unparked to %s; integration %s", restored, integration), 4096),
+		Error:       boundedText(fmt.Sprintf("unparked to %s; integration %s; %s", restored, integration, cleanupNote), 4096),
 	})
 	return writeJSONTo(stdout, unparkOutput{
 		Result:         "unparked",
@@ -237,6 +237,43 @@ func (w *Workflow) ExecuteUnpark(stdout io.Writer) error {
 		Integration:    integration,
 		RepoRoot:       record.RepoRoot,
 	})
+}
+
+func (w *Workflow) cleanupParkResources(record state.ParkRecord) string {
+	notes := make([]string, 0, 4)
+	if err := w.removeParkWorktreeChecked(record); err != nil {
+		notes = append(notes, "worktree cleanup: "+err.Error())
+	} else {
+		notes = append(notes, "worktree cleaned")
+	}
+	if err := w.state.ClearParkRecord(); err != nil {
+		notes = append(notes, "park record cleanup: "+err.Error())
+	} else {
+		notes = append(notes, "park record cleaned")
+	}
+	if err := w.state.RemoveParkContent(); err != nil {
+		notes = append(notes, "park content cleanup: "+err.Error())
+	} else {
+		notes = append(notes, "park content cleaned")
+	}
+	if err := w.state.AttachSiblingStore(config.RepoHashFor(record.Worktree)).RemoveParkOrigin(); err != nil {
+		notes = append(notes, "park origin cleanup: "+err.Error())
+	} else {
+		notes = append(notes, "park origin cleaned")
+	}
+	return strings.Join(notes, "; ")
+}
+
+func (w *Workflow) removeParkWorktreeChecked(record state.ParkRecord) error {
+	remove := exec.Command("git", "-C", w.config.RepoRoot, "worktree", "remove", "--force", record.Worktree)
+	if output, err := remove.CombinedOutput(); err != nil {
+		return fmt.Errorf("git worktree remove %s: %w: %s", record.Worktree, err, strings.TrimSpace(string(output)))
+	}
+	delBranch := exec.Command("git", "-C", w.config.RepoRoot, "branch", "-D", record.Branch)
+	if output, err := delBranch.CombinedOutput(); err != nil {
+		return fmt.Errorf("git branch -D %s: %w: %s", record.Branch, err, strings.TrimSpace(string(output)))
+	}
+	return nil
 }
 
 func (w *Workflow) verifyParkIntegration(record state.ParkRecord) (string, error) {
@@ -261,15 +298,15 @@ func (w *Workflow) verifyParkIntegration(record state.ParkRecord) (string, error
 }
 
 func (w *Workflow) verifyParkHeadProvenance(record state.ParkRecord, current state.GitSnapshot) (string, error) {
-	if current.Head == record.Head {
-		return "head-unchanged", nil
-	}
 	tip, tipErr := state.ResolveBranchTip(w.config.RepoRoot, record.Branch)
 	if tipErr == nil && tip != record.Head {
 		if err := verifyHeadAncestry(w.config.RepoRoot, tip, current.Head); err != nil {
 			return "", &WorkerError{Phase: "unpark", Message: "割込みbranchの成果が現在HEADへ統合されていないため復帰できません(統合後にunparkしてください): " + err.Error()}
 		}
 		return "interrupt-integrated", nil
+	}
+	if current.Head == record.Head {
+		return "head-unchanged", nil
 	}
 	if err := verifyHeadAncestry(w.config.RepoRoot, record.Head, current.Head); err != nil {
 		return "", &WorkerError{Phase: "unpark", Message: "park後のHEAD移動がpark基準commitを祖先に含みません: " + err.Error()}

@@ -160,11 +160,13 @@ func resolveSettings(opts Options) (searchSettings, error) {
 }
 
 func resolveScopes(pathPrefixes []string, symbols []string) ([]string, []string, error) {
+	resolvedPrefixes := make([]string, 0, len(pathPrefixes))
 	for _, prefix := range pathPrefixes {
 		clean := filepath.ToSlash(filepath.Clean(prefix))
 		if clean == "" || clean == "." || clean == ".." || strings.HasPrefix(clean, "../") || strings.HasPrefix(clean, "/") {
 			return nil, nil, fmt.Errorf("%w: PathPrefixesはrepository相対のpath prefixを指定してください: %q", ErrInvalidOptions, prefix)
 		}
+		resolvedPrefixes = append(resolvedPrefixes, clean)
 	}
 	resolved := make([]string, 0, len(symbols))
 	for _, symbol := range symbols {
@@ -174,7 +176,7 @@ func resolveScopes(pathPrefixes []string, symbols []string) ([]string, []string,
 		}
 		resolved = append(resolved, tokens...)
 	}
-	return pathPrefixes, resolved, nil
+	return resolvedPrefixes, resolved, nil
 }
 
 func resolvePathWeight(requested *float64) (float64, error) {

@@ -197,3 +197,39 @@ func writeTestFile(t *testing.T, root string, relativePath string, content strin
 		t.Fatalf("WriteFile(%s): %v", relativePath, err)
 	}
 }
+
+func TestBuildFromRootNormalizesUppercaseKnownContentSHA(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, root, rulesFile, "rules-body\n")
+	writeTestFile(t, root, planFile, "# Plan\n\n## ACTIVE\n\n- `IMPLEMENTATION_TASKS/current.md`\n")
+	writeTestFile(t, root, "IMPLEMENTATION_TASKS/current.md", "task-body\n")
+
+	base, err := BuildFromRoot(root, "active", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	upper := makeUpperHex(base.ContentSHA256)
+	if upper == base.ContentSHA256 {
+		t.Fatal("fixture digest is already lowercase only")
+	}
+	normalized, err := BuildFromRoot(root, "active", upper)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if normalized.ContentMatch != ContentMatchUnchanged {
+		t.Fatalf("content match = %q, want unchanged for uppercase known digest", normalized.ContentMatch)
+	}
+	if normalized.Content != "" {
+		t.Fatalf("unchanged projection still carries %d content bytes", len(normalized.Content))
+	}
+}
+
+func makeUpperHex(value string) string {
+	upper := []rune(value)
+	for index, char := range upper {
+		if char >= 'a' && char <= 'f' {
+			upper[index] = char - 'a' + 'A'
+		}
+	}
+	return string(upper)
+}

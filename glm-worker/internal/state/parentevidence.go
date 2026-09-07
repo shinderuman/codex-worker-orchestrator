@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -29,8 +31,10 @@ type ParentEvidenceLedgerEntry struct {
 	ProjectedAt time.Time `json:"projected_at"`
 }
 type parentEvidenceLedgerFile struct {
-	Version int                                  `json:"version"`
-	Entries map[string]ParentEvidenceLedgerEntry `json:"entries"`
+	Version int                                    `json:"version"`
+	TaskID  string                                 `json:"task_id"`
+	Lease   int64                                  `json:"lease"`
+	Entries map[string][]ParentEvidenceLedgerEntry `json:"entries"`
 }
 type ParentEvidenceSummary struct {
 	Records             int            `json:"records"`
@@ -43,6 +47,10 @@ type ParentEvidenceSummary struct {
 	Refinements         int            `json:"refinements"`
 	Errors              int            `json:"errors"`
 	BySurface           map[string]int `json:"by_surface"`
+}
+type parentEvidenceLedgerScopeID struct {
+	taskID string
+	lease  int64
 }
 
 const (
@@ -72,8 +80,9 @@ const (
 
 const parentEvidenceFile = "parent-evidence.jsonl"
 const parentEvidenceLedgerPath = "parent-evidence-ledger.json"
+const parentEvidenceLeasePath = "parent-evidence-lease"
 const parentEvidenceRecordVersion = 1
-const parentEvidenceLedgerVersion = 1
+const parentEvidenceLedgerVersion = 2
 
 func ParentEvidenceTokenProxy(bytes int) int {
 	if bytes <= 0 {
@@ -198,15 +207,34 @@ func SummarizeParentEvidence(records []ParentEvidenceRecord) ParentEvidenceSumma
 }
 
 func (s *StateStore) SaveParentEvidenceLedgerEntry(entry ParentEvidenceLedgerEntry) error {
+	scope, err := s.parentEvidenceLedgerScope()
+	if err != nil {
+		return err
+	}
 	ledger, err := s.loadParentEvidenceLedger()
 	if err != nil {
 		return err
 	}
 	if ledger.Entries == nil {
-		ledger.Entries = map[string]ParentEvidenceLedgerEntry{}
+		ledger.Entries = map[string][]ParentEvidenceLedgerEntry{}
 	}
 	entry.ProjectedAt = time.Now().UTC()
-	ledger.Entries[entry.Surface] = entry
+	appended := false
+	entries := ledger.Entries[entry.Surface]
+	for index := range entries {
+		if entries[index].Digest == entry.Digest {
+			entries[index] = entry
+			appended = true
+			break
+		}
+	}
+	if !appended {
+		entries = append(entries, entry)
+	}
+	ledger.Entries[entry.Surface] = entries
+	ledger.Version = parentEvidenceLedgerVersion
+	ledger.TaskID = scope.taskID
+	ledger.Lease = scope.lease
 	data, err := json.Marshal(ledger)
 	if err != nil {
 		return fmt.Errorf("parent evidence ledgerをJSON化できません: %w", err)
@@ -214,20 +242,43 @@ func (s *StateStore) SaveParentEvidenceLedgerEntry(entry ParentEvidenceLedgerEnt
 	return writeFileAtomic(s.Path(parentEvidenceLedgerPath), append(data, '\n'), 0o600)
 }
 
-func (s *StateStore) LoadParentEvidenceLedgerEntry(surface string) (ParentEvidenceLedgerEntry, bool, error) {
+func (s *StateStore) ParentEvidenceDelivered(surface string, digest string) (ParentEvidenceLedgerEntry, bool, error) {
 	ledger, err := s.loadParentEvidenceLedger()
 	if err != nil {
 		return ParentEvidenceLedgerEntry{}, false, err
 	}
-	entry, found := ledger.Entries[surface]
-	return entry, found, nil
+	for _, entry := range ledger.Entries[surface] {
+		if entry.Digest == digest {
+			return entry, true, nil
+		}
+	}
+	return ParentEvidenceLedgerEntry{}, false, nil
+}
+
+func (s *StateStore) ClearParentEvidenceLedger() error {
+	if err := os.Remove(s.Path(parentEvidenceLedgerPath)); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("parent evidence ledgerを削除できません: %w", err)
+	}
+	return nil
+}
+
+func (s *StateStore) parentEvidenceLedgerScope() (parentEvidenceLedgerScopeID, error) {
+	lease, err := s.ParentEvidenceLeaseEpoch()
+	if err != nil {
+		return parentEvidenceLedgerScopeID{}, err
+	}
+	return parentEvidenceLedgerScopeID{taskID: s.ReadOr("task.id", ""), lease: lease}, nil
 }
 
 func (s *StateStore) loadParentEvidenceLedger() (parentEvidenceLedgerFile, error) {
+	scope, err := s.parentEvidenceLedgerScope()
+	if err != nil {
+		return parentEvidenceLedgerFile{}, err
+	}
 	data, err := os.ReadFile(s.Path(parentEvidenceLedgerPath))
 	if err != nil {
 		if os.IsNotExist(err) {
-			return parentEvidenceLedgerFile{Version: parentEvidenceLedgerVersion}, nil
+			return parentEvidenceLedgerFile{}, nil
 		}
 		return parentEvidenceLedgerFile{}, err
 	}
@@ -236,7 +287,42 @@ func (s *StateStore) loadParentEvidenceLedger() (parentEvidenceLedgerFile, error
 		return parentEvidenceLedgerFile{}, fmt.Errorf("parent evidence ledgerを読めません: %w", err)
 	}
 	if ledger.Version != parentEvidenceLedgerVersion {
-		return parentEvidenceLedgerFile{}, fmt.Errorf("unsupported parent evidence ledger version: %d", ledger.Version)
+		return parentEvidenceLedgerFile{}, nil
+	}
+	if ledger.TaskID != scope.taskID || ledger.Lease != scope.lease {
+		return parentEvidenceLedgerFile{}, nil
 	}
 	return ledger, nil
+}
+
+func (s *StateStore) ParentEvidenceLeaseEpoch() (int64, error) {
+	data, err := os.ReadFile(s.Path(parentEvidenceLeasePath))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("parent evidence leaseを読めません: %w", err)
+	}
+	epoch, parseErr := strconv.ParseInt(strings.TrimSpace(string(data)), 10, 64)
+	if parseErr != nil {
+		return 0, fmt.Errorf("parent evidence leaseを読めません: %w", parseErr)
+	}
+	return epoch, nil
+}
+
+func (s *StateStore) AdvanceParentEvidenceLease() error {
+	epoch, err := s.ParentEvidenceLeaseEpoch()
+	if err != nil {
+		return err
+	}
+	next := epoch + 1
+	if err := writeFileAtomic(s.Path(parentEvidenceLeasePath), []byte(strconv.FormatInt(next, 10)+"\n"), 0o600); err != nil {
+		WarnParentEvidenceLeaseSkip(err)
+		return err
+	}
+	return nil
+}
+
+func WarnParentEvidenceLeaseSkip(err error) {
+	writeStatsWarningEvent("parent_evidence_lease", "parent evidence leaseの更新に失敗したため旧leaseの配信記録が残る場合があります", err)
 }

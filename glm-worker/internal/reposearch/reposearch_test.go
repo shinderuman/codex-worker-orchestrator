@@ -524,3 +524,20 @@ func TestSearchPathWeightControlsPathRanking(t *testing.T) {
 		}
 	}
 }
+
+func TestSearchNormalizesUnusualScopePrefixes(t *testing.T) {
+	dir := initRepo(t)
+	writeTestFile(t, filepath.Join(dir, "alpha", "doc.txt"), "needle one\n")
+	writeTestFile(t, filepath.Join(dir, "beta", "needle.txt"), "unrelated content\n")
+	commitAll(t, dir, "init")
+
+	for _, rawScope := range []string{"./alpha", "alpha//", "alpha/./"} {
+		scoped, err := Search(context.Background(), dir, "needle", Options{DisableCache: true, PathPrefixes: []string{rawScope}})
+		if err != nil {
+			t.Fatalf("scope %q: %v", rawScope, err)
+		}
+		if got := resultPaths(scoped); len(got) != 1 || got[0] != "alpha/doc.txt" {
+			t.Fatalf("scope %q results = %v, want [alpha/doc.txt]", rawScope, got)
+		}
+	}
+}
