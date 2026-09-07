@@ -98,8 +98,17 @@ none
 
 ## Review findings
 
-none
+- 評価期間は前回checkpoint完了commit `20ab28a0238f670b6f6d584d79f56d59633fd5a3` の2026-09-05T15:06:38+09:00から2026-09-08T05:21:38+09:00まで。current telemetry cohortは6 task、43 model calls（worker 32 / reviewer 11）、prompt 231,701,803 tokens、output 957,726 tokens、top-level turns 1,846。query locatorは`glm-worker --stats --since 2026-09-05T15:06:38+09:00`、telemetry locatorは`/Users/shinderumanm/.glm-worker/sessions/4b1083bd6f6e13220f3e0d653377d694f010b8951c788559f19840a14a0df6d0/telemetry`
+- usage coverageは43 stats calls / 43 raw recordsだがorphan file 89件により`incomplete`、usage totalsはunknown。focused outlier queryは48 task-call recordsでeligible outlier 0件だったが、coverage不足とpopulation ruleのため低コスト化の証拠にはしない
+- 同期間はrate limit 7、resume 9、decision 6、fix 2、`NEEDS_SOL_DECISION` 5、`NEEDS_SOL_REVIEW` 7、PASS 0、parent outcomesはaccept 5 / decision 5 / fix 2、packet missing-field reject 2、snapshot mismatch 0、provider unavailable 0。Codex-review起点fix 2件を含むため、review/test/Sol gate縮小とmodel routing変更を支持するQuality Delta証拠はない
+- 直前task `b4e2882b-3a5e-4e82-a01d-c14a9f9ee519` のparent usageは879,016 tokens、model turn 1、tool call/result各14、model-visible tool output 56,674 bytes、compaction 0。exact rollout locatorは`sessions/2026/09/08/rollout-2026-09-08T04-27-43-01a07d57-3791-7632-9b6a-4b0e687181f3.jsonl:50`から`:159`。parent finalizationは観測時点でopenのため全task parent totalはunknown
+- Direct Codex対Codex + glm-workerの同一cohort A/Bは引き続きunknown。2026-09-08のlive 5h usageは40%、weekly usageは20%だったが、durable interval attributionがないため改善達成とは判定しない
+- Go: `telemetry-history-compact-summary.md`を第1優先へ移し、raw history / outlier展開とtask別反復を1回のbounded projectionへ置換する。orphan coverageは同taskと後続`task-stats-revision-consumer-audit.md`で扱い、新規重複taskはNo-Go
+- Go: `watch-terminal-error-orphan-exit.md`、`markdown-derived-state-authority-audit.md`、`external-review-a70d35c-43e1da9-follow-up.md`、`auto-resume-heartbeat-transaction.md`を次の4件とする。実事故、incremental Markdown checkpointの前提、既知quality finding、7 rate-limit / 9 resumeの順でCodex削減とQuality Deltaを両立する
+- Go: `prose-only-control-enforcement-audit.md`以下の既存enforcement chain、`packet-validation-correction-recovery.md`、`structured-validation-gate-telemetry.md`はcoverageを維持する。今回の観測は責務追加ではなく既存taskでcoverされるため新規Finding taskは作らない
+- No-Go: review/test省略、model routing、compaction threshold、実Sol A/Bはquality比較またはユーザー許可が不足するためBLOCKEDを維持する。packet compaction 0だけを閾値変更の根拠にしない
+- 次回checkpointは最初の5 task完了後となる位置へ`codex-efficiency-control-loop-checkpoint.md`を追加し、`post-105-codex-efficiency-reevaluation.md`は022直前に維持する
 
 ## Current boundary
 
-2026-09-06の異常消費を受け、現在ACTIVE task完了直後にACTIVE化する。復帰後区間だけをboundedに再評価し、全履歴の再走査は行わない。
+追加AI callなしのbounded再評価、全FindingのGo/No-Go、Plan再優先付け、次回checkpoint追加、dependency metadata修復を完了した。完了同期後は`telemetry-history-compact-summary.md`をACTIVEへ昇格する。

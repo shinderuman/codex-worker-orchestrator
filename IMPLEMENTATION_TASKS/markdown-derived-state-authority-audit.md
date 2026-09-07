@@ -97,7 +97,11 @@ status: not-applicable
 
 ## Dependencies
 
-`IMPLEMENTATION_TASKS/quality-toolchain-preflight-before-model.md`
+none
+
+## Fulfilled dependencies
+
+- `IMPLEMENTATION_TASKS/quality-toolchain-preflight-before-model.md`
 
 ## Review findings
 
