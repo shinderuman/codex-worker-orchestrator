@@ -3,6 +3,7 @@ package parentactioncmd
 import (
 	"bytes"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
@@ -11,6 +12,9 @@ import (
 
 func TestPushBindingRemoteWriteRequiresParentCompletionBoundary(t *testing.T) {
 	fixture := newPushBindingFixture(t)
+	if err := os.MkdirAll(filepath.Join(fixture.repo, "IMPLEMENTATION_TASKS"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	writePushBindingFile(t, fixture.repo, "IMPLEMENTATION_PLAN.local.md", pushAuthorizationInitialPlan(fixture.branch))
 	writePushBindingFile(t, fixture.repo, "IMPLEMENTATION_TASKS/active.md", "# active\n\n## External feasibility\n\nstatus: not-applicable\n")
 	writePushBindingFile(t, fixture.repo, "IMPLEMENTATION_TASKS/next.md", "# next\n\n## External feasibility\n\nstatus: not-applicable\n")
