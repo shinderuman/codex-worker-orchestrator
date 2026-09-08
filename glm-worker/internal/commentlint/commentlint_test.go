@@ -48,6 +48,8 @@ func TestClassifyQualityFiles(t *testing.T) {
 		{"a.yaml", "hash", true},
 		{"harnesslint", "shell", true},
 		{"goquality", "shell", true},
+		{".githooks/post-merge", "shell", true},
+		{".githooks/pre-push", "shell", true},
 		{"go.sum", "", false},
 		{"README.md", "", false},
 		{"a.py", "unclassified", true},
