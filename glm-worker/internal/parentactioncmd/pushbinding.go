@@ -97,7 +97,9 @@ func runPushBinding(repoRoot string, args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	return json.NewEncoder(stdout).Encode(buildPushBinding(repoRoot, options))
+	output := buildPushBinding(repoRoot, options)
+	applyCurrentParentPushAuthorization(repoRoot, &output)
+	return json.NewEncoder(stdout).Encode(output)
 }
 
 func parsePushBindingOptions(args []string) (pushBindingOptions, error) {
