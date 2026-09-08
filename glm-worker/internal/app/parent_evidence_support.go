@@ -123,16 +123,15 @@ func writeMeasuredJSON(stdout io.Writer, value any) (int, error) {
 	return len(data), nil
 }
 
-func saveParentEvidenceLedger(st *state.StateStore, surface, digest, origin, ownerCallID string) error {
+func saveParentEvidenceLedger(st *state.StateStore, surface, digest, origin, ownerCallID string) {
 	if !parentEvidenceStorePresent(st) || !parentEvidenceLeaseActive(st) {
-		return nil
+		return
 	}
 	if err := st.SaveParentEvidenceLedgerEntry(state.ParentEvidenceLedgerEntry{
 		Surface: surface, Digest: digest, Origin: origin, OwnerCallID: ownerCallID,
 	}); err != nil {
-		return fmt.Errorf("parent evidence ledgerを保存できません: %w", err)
+		state.WarnParentEvidenceLedgerSkip(err)
 	}
-	return nil
 }
 
 func finishParentRead(st *state.StateStore, surface, digest string, render func() (int, error)) error {
@@ -157,6 +156,7 @@ func finishParentRead(st *state.StateStore, surface, digest string, render func(
 			Surface: surface, Origin: state.ParentEvidenceOriginStandalone,
 			Digest: digest, Bytes: written, Outcome: state.ParentEvidenceOutcomeProjected,
 		})
-		return saveParentEvidenceLedger(st, surface, digest, state.ParentEvidenceOriginStandalone, "")
+		saveParentEvidenceLedger(st, surface, digest, state.ParentEvidenceOriginStandalone, "")
+		return nil
 	})
 }
