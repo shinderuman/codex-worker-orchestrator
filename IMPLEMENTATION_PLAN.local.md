@@ -8,10 +8,11 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/prose-only-control-enforcement-audit.md`
+- `IMPLEMENTATION_TASKS/parent-git-push-completion-binding.md`
 
 ## NEXT（優先順）
 
+- `IMPLEMENTATION_TASKS/prose-only-control-enforcement-audit.md`
 - `IMPLEMENTATION_TASKS/watch-terminal-error-orphan-exit.md`
 - `IMPLEMENTATION_TASKS/markdown-derived-state-authority-audit.md`
 - `IMPLEMENTATION_TASKS/external-review-a70d35c-43e1da9-follow-up.md`

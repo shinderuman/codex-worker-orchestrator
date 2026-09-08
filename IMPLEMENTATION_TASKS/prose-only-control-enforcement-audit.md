@@ -35,6 +35,13 @@
 だからいままで許可しなくてできていたことができないと言い張るのがおかしいだろ
 ````
 
+### 2026-09-08（session rotation後）
+
+````text
+Pushはいつするの？
+どうしてPushしてない状態が放置されてるの？バグじゃないの？
+````
+
 ## Resolved references
 
 - 既存Rulesは改善候補の随時Task化を要求していたが、親Codexはautomation拒否時に適用せず、ユーザー再指摘までTask化しなかった
@@ -43,6 +50,7 @@
 - 機械化済みcontrolの長い手続き説明も固定contextを圧迫し、他の重要規則を見落とす要因になる。全削除ではなく、目的・machine owner・根拠locator・残余の親判断だけを残すthinningが必要である
 - GLM Git mutation禁止、parent-managed metadata不変、packet schema、reviewer session分離、quality-gate snapshot bindingにはproduction guard/testが存在するため、prose-only候補と混同しない
 - 2026-09-08、runtime変更の通常completion工程である`./install.sh`が外部安全審査により明示承認不足として一度拒否された。同じcommandは既存authorityを再提示した再実行で成功したため、installer capability不足ではなく親completion authorityの伝達・判定がproseに依存する再発事例として扱う
+- 2026-09-08、`parent-git-push-completion-binding`完了後もlocal `main`が`origin/main`より3 commit aheadのままtask metadata同期とsession rotationへ進んだ。`glm-parent-action push-binding`は手動実行時に`authorization:user_decision_required`を返したが、通常の`accept`・task完了・rotation遷移が同commandとremote-sync-pending解消を必須postconditionにしていないため、機械controlとしてはpartialである
 
 ## Purpose
 
@@ -98,4 +106,4 @@ none
 
 ## Current boundary
 
-ACTIVEとして、2026-09-08の`install.sh` false rejectionを含むpreliminary gap 5件から一次監査を開始し、既知taskのcontractを補正してから実装サイクルへ進む。
+`parent-git-push-completion-binding`のfalse-complete修復後にACTIVE化し、2026-09-08の`install.sh` false rejectionを含むpreliminary gapから一次監査を開始する。
