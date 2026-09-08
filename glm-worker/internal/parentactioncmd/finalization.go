@@ -350,6 +350,9 @@ func finalizationRemoteState(repoRoot, branch string, detached bool) (*finalizat
 	}
 	upstream, err := resolveGitUpstream(repoRoot, branch)
 	if err != nil {
+		if errors.Is(err, errGitRemoteURLMissing) {
+			return remote, finalizationRemoteStateUnverified
+		}
 		return remote, finalizationRemoteStateNoUpstream
 	}
 	remote.RemoteName = upstream.RemoteName

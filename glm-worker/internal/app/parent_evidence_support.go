@@ -20,11 +20,15 @@ type DuplicateParentProjectionError struct {
 
 type parentReadDecision int
 
+type parentEvidenceReadScope struct {
+	taskID     string
+	taskStatus state.TaskStatus
+	leaseEpoch int64
+}
+
 const parentEvidenceBatchCommand = "glm-parent-action evidence <manifest.json>"
 
 const parentEvidenceUnchangedReason = "identical projection was already delivered within this decision lease"
-
-const parentEvidenceLedgerLockFile = "parent-evidence-ledger.lock"
 
 const (
 	parentReadServe parentReadDecision = iota
@@ -39,12 +43,39 @@ func (e *DuplicateParentProjectionError) Error() string {
 }
 
 func parentEvidenceLeaseActive(st *state.StateStore) bool {
-	switch st.TaskStatus() {
+	return parentEvidenceStatusHasLease(st.TaskStatus())
+}
+
+func parentEvidenceStatusHasLease(status state.TaskStatus) bool {
+	switch status {
 	case state.TaskStatusWaitingDecision, state.TaskStatusWaitingSolReview, state.TaskStatusParked:
 		return true
 	default:
 		return false
 	}
+}
+
+func captureParentEvidenceReadScope(st *state.StateStore) (parentEvidenceReadScope, error) {
+	epoch, err := st.ParentEvidenceLeaseEpoch()
+	if err != nil {
+		return parentEvidenceReadScope{}, err
+	}
+	return parentEvidenceReadScope{
+		taskID:     st.ReadOr("task.id", ""),
+		taskStatus: st.TaskStatus(),
+		leaseEpoch: epoch,
+	}, nil
+}
+
+func validateParentEvidenceReadScope(st *state.StateStore, scope parentEvidenceReadScope) error {
+	epoch, err := st.ParentEvidenceLeaseEpoch()
+	if err != nil {
+		return err
+	}
+	if epoch != scope.leaseEpoch || st.ReadOr("task.id", "") != scope.taskID || st.TaskStatus() != scope.taskStatus {
+		return fmt.Errorf("parent evidence scope changed during projection; request fresh evidence")
+	}
+	return nil
 }
 
 func parentEvidenceDigest(value any) (string, int) {
@@ -101,10 +132,21 @@ func withParentEvidenceLedgerLock(st *state.StateStore, body func() error) error
 	if !parentEvidenceStorePresent(st) || !parentEvidenceLeaseActive(st) {
 		return body()
 	}
-	lock, err := repolock.AcquireWait(st.Path(parentEvidenceLedgerLockFile))
+	lock, err := repolock.AcquireWait(st.Path(state.ParentEvidenceLedgerLockFile))
 	if err != nil {
-		state.WarnParentEvidenceLedgerSkip(err)
+		return fmt.Errorf("parent evidence ledger lockを取得できません: %w", err)
+	}
+	defer func() { _ = lock.Close() }()
+	return body()
+}
+
+func withParentEvidenceReadScopeLock(st *state.StateStore, scope parentEvidenceReadScope, body func() error) error {
+	if !parentEvidenceStorePresent(st) || (!parentEvidenceStatusHasLease(scope.taskStatus) && !parentEvidenceLeaseActive(st)) {
 		return body()
+	}
+	lock, err := repolock.AcquireWait(st.Path(state.ParentEvidenceLedgerLockFile))
+	if err != nil {
+		return fmt.Errorf("parent evidence ledger lockを取得できません: %w", err)
 	}
 	defer func() { _ = lock.Close() }()
 	return body()
@@ -136,7 +178,18 @@ func saveParentEvidenceLedger(st *state.StateStore, surface, digest, origin, own
 }
 
 func finishParentRead(st *state.StateStore, surface, digest string, render func() (int, error)) error {
-	return withParentEvidenceLedgerLock(st, func() error {
+	scope, err := captureParentEvidenceReadScope(st)
+	if err != nil {
+		return err
+	}
+	return finishParentReadInScope(st, scope, surface, digest, render)
+}
+
+func finishParentReadInScope(st *state.StateStore, scope parentEvidenceReadScope, surface, digest string, render func() (int, error)) error {
+	return withParentEvidenceReadScopeLock(st, scope, func() error {
+		if err := validateParentEvidenceReadScope(st, scope); err != nil {
+			return err
+		}
 		decision, entry, err := decideParentRead(st, surface, digest)
 		if err != nil {
 			return err

@@ -3,6 +3,8 @@
 package repolock
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"time"
 )
@@ -14,7 +16,10 @@ type Lock struct {
 func Acquire(path string) (*Lock, error) {
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
-		return nil, ErrRepoLockHeld
+		if errors.Is(err, os.ErrExist) {
+			return nil, ErrRepoLockHeld
+		}
+		return nil, fmt.Errorf("GLM worker lockを作成できません: %w", err)
 	}
 	file.Close()
 	return &Lock{path: path}, nil
@@ -25,6 +30,9 @@ func AcquireWait(path string) (*Lock, error) {
 		lock, err := Acquire(path)
 		if err == nil {
 			return lock, nil
+		}
+		if !errors.Is(err, ErrRepoLockHeld) {
+			return nil, err
 		}
 		time.Sleep(20 * time.Millisecond)
 	}

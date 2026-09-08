@@ -287,11 +287,15 @@ func printStatus(st *state.StateStore, stdout io.Writer) error {
 }
 
 func printStatusLeased(st *state.StateStore, stdout io.Writer) error {
+	scope, err := captureParentEvidenceReadScope(st)
+	if err != nil {
+		return err
+	}
 	taskID := st.ReadOr("task.id", "")
 	logs, logErr := readStatusTelemetry(st, taskID)
 	output := buildStatusOutput(st, taskID, logs, logErr)
 	digest := parentStatusReadDigest(st)
-	return finishParentRead(st, state.ParentEvidenceSurfaceStatus, digest, func() (int, error) {
+	return finishParentReadInScope(st, scope, state.ParentEvidenceSurfaceStatus, digest, func() (int, error) {
 		return writeMeasuredJSON(stdout, output)
 	})
 }

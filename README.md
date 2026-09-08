@@ -1,6 +1,6 @@
 # codex-worker-orchestrator
 
-Codex(Sol High)を判断・orchestrationへ集中させ、repository調査・実装・test・reviewを`glm-worker`経由のGLM worker/reviewerへ委譲するための環境。
+Codexを判断・orchestrationへ集中させ、調査・実装・test・reviewを`glm-worker`経由でGLMへ委譲する環境。
 
 運用契約の正は配置先`~/.codex/AGENTS.md`と`~/.codex/instructions/`、worker/reviewer行動契約は`codex/glm-worker/prompts/`、決定論的な挙動はproduction実装と対応testで保持する。READMEはcontractの第二正本にしない。
 
@@ -61,7 +61,7 @@ codex-worker-orchestrator/
 └── .githooks/post-merge
 ```
 
-Go commandは薄い`cmd/<name>/main.go`、実装責務は`internal/`へ置く。Go moduleは`glm-worker/go.mod`だけをcanonicalとする。
+Goのentrypointは`cmd/<name>/main.go`、実装は`internal/`、moduleは`glm-worker/go.mod`。
 
 ## Quality gate / Test
 
@@ -97,7 +97,9 @@ validationはrun ID付きでstateへ記録され、`glm-worker --quality-gate st
 target repositoryだけCodex Desktopの固定contextを軽量化する場合:
 
 ```sh
-glm-codex-context enable|status|disable [repository]
+glm-codex-context enable [repository]
+glm-codex-context status [repository]
+glm-codex-context disable [repository]
 ```
 
 `enable`は`.codex/config.toml`へtool-owned local profileを作り、Skills catalog自動注入、Plugins/recommended-plugin、Apps instructions、collaboration-mode instructionsを無効化する。permissions/environment contextは変えず、`.git/info/exclude`だけで除外する。既存fileがtool-owned内容と一致しなければ上書きせずfail closedし、`disable`もtool-owned内容だけを削除する。変更後は新しいCodex threadを開始する。

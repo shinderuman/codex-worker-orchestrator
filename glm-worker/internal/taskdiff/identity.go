@@ -142,5 +142,6 @@ func resolveDeletedPathWithinRepo(root string, abs string, rel string) (string, 
 }
 
 func withinRepoRoot(root string, path string) bool {
-	return path == root || strings.HasPrefix(path, root+string(filepath.Separator))
+	rel, err := filepath.Rel(root, path)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }

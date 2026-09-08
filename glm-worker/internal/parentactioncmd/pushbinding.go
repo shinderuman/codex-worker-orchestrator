@@ -84,6 +84,7 @@ const (
 	pushBindingAuthorizationRequired           = "user_decision_required"
 	pushBindingExecutorParentOnly              = "parent_codex_surface_only"
 	pushBindingOIDLength                       = 40
+	pushBindingFailureExpectedOIDStale         = "expected_oid_not_current_head"
 )
 
 var (
@@ -143,6 +144,11 @@ func buildPushBinding(repoRoot string, options pushBindingOptions) pushBindingOu
 	output.ExpectedOID = target.LocalOID
 	if options.ExpectedOID != "" {
 		output.ExpectedOID = options.ExpectedOID
+		if options.ExpectedOID != strings.ToLower(target.LocalOID) {
+			output.Status = "blocked"
+			output.Failure = &finalizationFailure{Stage: "postcondition", Reason: pushBindingFailureExpectedOIDStale}
+			return output
+		}
 	}
 	output.RemoteProbe = pushBindingProbeRemote(repoRoot, target.RemoteName, target.RemoteRef)
 	output.Classification = pushBindingClassify(repoRoot, output.RemoteProbe, output.ExpectedOID, options.AttemptOutcome)

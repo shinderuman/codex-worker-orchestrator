@@ -518,7 +518,7 @@ func scanAnalysisRolloutWindow(collector *bundleCollector, association codexAsso
 	chain := association.rolloutChain()
 	for index := range chain {
 		if _, collected := collector.entries[codexRolloutArchivePathAt(association.ParentThreadID, index)]; !collected {
-			return bundleRolloutScan{}, nil
+			return bundleRolloutScan{}, fmt.Errorf("collected parent rollout evidence is missing: %s", codexRolloutArchivePathAt(association.ParentThreadID, index))
 		}
 	}
 	scan, err := scanCodexRolloutChainWindow(chain, start, end)

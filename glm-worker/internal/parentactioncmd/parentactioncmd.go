@@ -19,11 +19,12 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentaction"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentfix"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repolock"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
 const (
-	usage = "usage: glm-parent-action start | prepare <decision|fix|start-milestones|revise-milestones> | decision <token> | fix <token> [--origin <origin>] [--cause <cause>] [--accepted-scope current-diff] | approve-surface --accepted-scope current-diff | start-milestones <token> | revise-milestones <token> | no-go | accept | resume | park | unpark | evidence <manifest.json> | finalize-check <go-test|go-test-race> | push-binding [--expected-oid <oid>] [--attempt-outcome <none|completed|rejected|network-error|non-fast-forward>]"
+	usage = "usage: glm-parent-action start [--rotation-claim <claim-id>] | rotation-claim <directive-id> | rotation-bind <directive-id> <claim-id> <new-thread-id> | rotation-fail <directive-id> <claim-id> | prepare <decision|fix|start-milestones|revise-milestones> | decision <token> | fix <token> [--origin <origin>] [--cause <cause>] [--accepted-scope current-diff] | approve-surface --accepted-scope current-diff | start-milestones <token> [--rotation-claim <claim-id>] | revise-milestones <token> | no-go | accept | resume | park | unpark | evidence <manifest.json> | finalize-check <go-test|go-test-race> | push-binding [--expected-oid <oid>] [--attempt-outcome <none|completed|rejected|network-error|non-fast-forward>]"
 
 	activeTaskRequest = "現在のACTIVE taskを実行してください。"
 	actionStart       = "start"
@@ -76,6 +77,11 @@ func execute(cfg config.AppConfig, args []string, stdout, stderr io.Writer) erro
 		extraEnv := []string(nil)
 		if descriptor.Action == parentaction.ActionStartMilestones {
 			extraEnv = startIdentityEnv(actionStart)
+			var err error
+			args, extraEnv, err = rotationMilestoneStartArgs(args, extraEnv)
+			if err != nil {
+				return err
+			}
 		} else if err := persistParentCodexIdentity(cfg); err != nil {
 			return err
 		}
@@ -83,6 +89,8 @@ func execute(cfg config.AppConfig, args []string, stdout, stderr io.Writer) erro
 	}
 
 	switch action {
+	case "rotation-claim", "rotation-bind", "rotation-fail":
+		return executeSessionRotationAction(cfg, args, stdout)
 	case "no-go":
 		return executeNoGo(cfg, args, stdout)
 	case actionApprove:
@@ -96,6 +104,16 @@ func execute(cfg config.AppConfig, args []string, stdout, stderr io.Writer) erro
 	default:
 		return fmt.Errorf("%s", usage)
 	}
+}
+
+func rotationMilestoneStartArgs(args, env []string) ([]string, []string, error) {
+	if len(args) == 2 {
+		return args, env, nil
+	}
+	if len(args) == 4 && args[2] == "--rotation-claim" && state.ValidGeneratedUUID(args[3]) {
+		return args[:2], append(env, state.SessionRotationClaimIDEnv+"="+args[3]), nil
+	}
+	return nil, nil, fmt.Errorf("usage: glm-parent-action start-milestones <token> [--rotation-claim <claim-id>]")
 }
 
 func executeGitEvidenceAction(cfg config.AppConfig, args []string, stdout io.Writer) error {
@@ -150,7 +168,10 @@ func executeApproveSurfaceAction(cfg config.AppConfig, args []string, stdout, st
 }
 
 func executeDirectWorkerAction(cfg config.AppConfig, action string, args []string, stdout, stderr io.Writer) error {
-	if len(args) != 1 {
+	extraEnv := startIdentityEnv(action)
+	if action == actionStart && len(args) == 3 && args[1] == "--rotation-claim" && state.ValidGeneratedUUID(args[2]) {
+		extraEnv = append(extraEnv, state.SessionRotationClaimIDEnv+"="+args[2])
+	} else if len(args) != 1 {
 		return fmt.Errorf("usage: glm-parent-action %s", action)
 	}
 	if action == "resume" {
@@ -158,7 +179,66 @@ func executeDirectWorkerAction(cfg config.AppConfig, action string, args []strin
 			return err
 		}
 	}
-	return runWorker(cfg.RepoRoot, directWorkerArgs(action), nil, stdout, stderr, startIdentityEnv(action))
+	return runWorker(cfg.RepoRoot, directWorkerArgs(action), nil, stdout, stderr, extraEnv)
+}
+
+func executeSessionRotationAction(cfg config.AppConfig, args []string, stdout io.Writer) error {
+	threadID, _, ok := codexIdentityFromEnv()
+	if !ok {
+		return fmt.Errorf("current Codex thread identity is unavailable")
+	}
+	st, err := state.NewStateStore(cfg)
+	if err != nil {
+		return err
+	}
+	lock, err := repolock.Acquire(st.LockPath())
+	if err != nil {
+		return err
+	}
+	defer func() { _ = lock.Close() }()
+	switch args[0] {
+	case "rotation-claim":
+		return executeSessionRotationClaim(st, threadID, args, stdout)
+	case "rotation-bind":
+		return executeSessionRotationBind(st, threadID, args, stdout)
+	case "rotation-fail":
+		return executeSessionRotationFail(st, threadID, args, stdout)
+	}
+	return fmt.Errorf("%s", usage)
+}
+
+func executeSessionRotationClaim(st *state.StateStore, threadID string, args []string, stdout io.Writer) error {
+	if len(args) != 2 || !state.ValidGeneratedUUID(args[1]) {
+		return fmt.Errorf("usage: glm-parent-action rotation-claim <directive-id>")
+	}
+	claim, err := st.ClaimSessionRotation(threadID, args[1])
+	if err != nil {
+		return err
+	}
+	return json.NewEncoder(stdout).Encode(struct {
+		Status string `json:"status"`
+		state.SessionRotationClaim
+	}{Status: "claimed", SessionRotationClaim: claim})
+}
+
+func executeSessionRotationBind(st *state.StateStore, threadID string, args []string, stdout io.Writer) error {
+	if len(args) != 4 || !state.ValidGeneratedUUID(args[1]) || !state.ValidGeneratedUUID(args[2]) || !state.ValidUUIDFormat(args[3]) {
+		return fmt.Errorf("usage: glm-parent-action rotation-bind <directive-id> <claim-id> <new-thread-id>")
+	}
+	if err := st.BindSessionRotationClaim(threadID, args[1], args[2], args[3]); err != nil {
+		return err
+	}
+	return json.NewEncoder(stdout).Encode(map[string]string{"status": "bound", "claim_id": args[2], "bound_thread_id": args[3]})
+}
+
+func executeSessionRotationFail(st *state.StateStore, threadID string, args []string, stdout io.Writer) error {
+	if len(args) != 3 || !state.ValidGeneratedUUID(args[1]) || !state.ValidGeneratedUUID(args[2]) {
+		return fmt.Errorf("usage: glm-parent-action rotation-fail <directive-id> <claim-id>")
+	}
+	if err := st.ReleaseSessionRotationClaim(threadID, args[1], args[2]); err != nil {
+		return err
+	}
+	return json.NewEncoder(stdout).Encode(map[string]string{"status": "pending", "directive_id": args[1]})
 }
 
 func startIdentityEnv(action string) []string {

@@ -189,3 +189,26 @@ func TestFileIdentitiesRejectPathBeyondRepository(t *testing.T) {
 		t.Fatal("symlink escape path must be rejected")
 	}
 }
+
+func TestRepositoryContainmentHandlesFilesystemRootAndSiblings(t *testing.T) {
+	volumeRoot := filepath.VolumeName(t.TempDir()) + string(filepath.Separator)
+	repo := filepath.Join(volumeRoot, "repo")
+	for _, tc := range []struct {
+		name string
+		root string
+		path string
+		want bool
+	}{
+		{"filesystem-root", volumeRoot, filepath.Join(volumeRoot, "tracked.md"), true},
+		{"root-itself", volumeRoot, volumeRoot, true},
+		{"nested", repo, filepath.Join(repo, "dir", "tracked.md"), true},
+		{"prefix-sibling", repo, filepath.Join(volumeRoot, "repo-other", "tracked.md"), false},
+		{"parent", repo, volumeRoot, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := withinRepoRoot(tc.root, tc.path); got != tc.want {
+				t.Fatalf("containment root=%q path=%q: got %v, want %v", tc.root, tc.path, got, tc.want)
+			}
+		})
+	}
+}

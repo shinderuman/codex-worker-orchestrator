@@ -372,9 +372,16 @@ func buildTelemetryCompactStats(filtered []state.TaskStats, membership map[strin
 }
 
 func buildTelemetryCompactParentUsage(cfg config.AppConfig, st *state.StateStore, filtered []state.TaskStats) telemetryCompactParentUsage {
+	return buildTelemetryCompactParentUsageWithScans(cfg, st, filtered, scanCodexRollouts, scanCodexRolloutChainWindow)
+}
+
+func buildTelemetryCompactParentUsageWithScans(cfg config.AppConfig, st *state.StateStore, filtered []state.TaskStats, enumerate func(string) ([]codexRollout, error), scanChain func([]codexRollout, time.Time, time.Time) (bundleRolloutScan, error)) telemetryCompactParentUsage {
 	usage := telemetryCompactParentUsage{ByStatus: make(map[string]int)}
+	batch := newParentUsageBatch(cfg.CodexConfigDir, filtered, enumerate, scanChain)
 	for _, stats := range filtered {
-		report := buildParentUsageReport(cfg, st, bundleTask{ID: stats.TaskID, Status: string(stats.Status), Stats: stats})
+		task := bundleTask{ID: stats.TaskID, Status: string(stats.Status), Stats: stats}
+		evidence := batch.evidence(task)
+		report := buildParentUsageReportFromScan(st, task, evidence.association, evidence.scan, evidence.err)
 		usage.ByStatus[report.ParentSession.Status+"/"+report.Intervals.TaskExecution.Tokens.Status]++
 		switch {
 		case report.ParentSession.Status == codexStatusAmbiguous:

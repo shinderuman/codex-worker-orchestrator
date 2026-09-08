@@ -210,7 +210,9 @@ func (w *Workflow) validateNewTaskStart() error {
 }
 
 func (w *Workflow) initializeNewTask(request string) (string, error) {
-	if _, err := w.state.StartNewTask(); err != nil {
+	claimID := os.Getenv(state.SessionRotationClaimIDEnv)
+	threadID := os.Getenv(state.ParentActionCodexThreadIDEnv)
+	if err := w.initializeNewTaskState(threadID, claimID); err != nil {
 		return "", err
 	}
 	if err := w.persistParentActionCodexIdentity(); err != nil {
@@ -241,6 +243,15 @@ func (w *Workflow) initializeNewTask(request string) (string, error) {
 		return "", err
 	}
 	return activeTaskPath, nil
+}
+
+func (w *Workflow) initializeNewTaskState(threadID, claimID string) error {
+	if claimID == "" {
+		_, err := w.state.StartNewTask()
+		return err
+	}
+	_, err := w.state.StartSessionRotationTask(threadID, claimID)
+	return err
 }
 
 func (w *Workflow) ExecuteDecision(decision string) error {
@@ -1139,11 +1150,22 @@ func (w *Workflow) prepareModelCall(checkpoint state.ResumeCheckpoint) (state.Re
 	if err := w.state.SaveResumeCheckpoint(checkpoint); err != nil {
 		return checkpoint, outputPath, guardBefore, err
 	}
+	if err := w.acknowledgeSessionRotationStart(checkpoint); err != nil {
+		return checkpoint, outputPath, guardBefore, err
+	}
 	if w.stopRequested() {
 		return checkpoint, outputPath, guardBefore, w.interruptBetweenCalls(checkpoint)
 	}
 	w.state.RecordModelCall(checkpoint.Role, checkpoint.Model)
 	return checkpoint, outputPath, guardBefore, nil
+}
+
+func (w *Workflow) acknowledgeSessionRotationStart(checkpoint state.ResumeCheckpoint) error {
+	claimID := os.Getenv(state.SessionRotationClaimIDEnv)
+	if checkpoint.Phase != "worker-new" || claimID == "" {
+		return nil
+	}
+	return w.state.AcknowledgeSessionRotationClaim(claimID, os.Getenv(state.ParentActionCodexThreadIDEnv))
 }
 
 func (w *Workflow) applyModelArtifactContext(checkpoint *state.ResumeCheckpoint) error {

@@ -159,6 +159,8 @@ type parentEvidenceProjector struct {
 	ownerCallID   string
 	output        parentEvidenceOutput
 	pendingClaims []state.ParentEvidenceLedgerEntry
+	leaseEpoch    int64
+	leaseErr      error
 }
 
 const (
@@ -220,27 +222,63 @@ func printParentEvidence(cmd Command, cfg config.AppConfig, st *state.StateStore
 
 func commitParentEvidenceProjection(p *parentEvidenceProjector, stdout io.Writer, reason string) error {
 	return withParentEvidenceLedgerLock(p.st, func() error {
-		if parentEvidenceLeaseActive(p.st) {
-			if err := degradeDuplicateParentEvidenceParts(p); err != nil {
-				return err
-			}
+		return commitParentEvidenceProjectionLocked(p, stdout, reason)
+	})
+}
+
+func commitParentEvidenceProjectionLocked(p *parentEvidenceProjector, stdout io.Writer, reason string) error {
+	if err := validateParentEvidenceProjectionScope(p); err != nil {
+		return err
+	}
+	if parentEvidenceLeaseActive(p.st) {
+		if err := degradeDuplicateParentEvidenceParts(p); err != nil {
+			return err
 		}
-		output := p.output
-		applyParentEvidenceTotalBudget(&output)
-		written, writeErr := writeMeasuredJSON(stdout, output)
-		if writeErr != nil {
-			return writeErr
-		}
-		for _, claim := range p.pendingClaims {
+	}
+	output := p.output
+	applyParentEvidenceTotalBudget(&output)
+	written, err := writeMeasuredJSON(stdout, output)
+	if err != nil {
+		return err
+	}
+	saveSurvivingParentEvidenceClaims(p, output.Parts)
+	recordParentEvidence(p.st, state.ParentEvidenceRecord{
+		Surface: state.ParentEvidenceSurfaceEvidenceTelemetry, Origin: state.ParentEvidenceOriginEvidence,
+		OwnerCallID: p.ownerCallID, Bytes: written, Outcome: state.ParentEvidenceOutcomeProjected,
+		Reason: reason, Locator: p.st.Path(parentEvidenceTelemetryFile),
+	})
+	return nil
+}
+
+func validateParentEvidenceProjectionScope(p *parentEvidenceProjector) error {
+	if p.leaseErr != nil {
+		return p.leaseErr
+	}
+	epoch, err := p.st.ParentEvidenceLeaseEpoch()
+	if err != nil {
+		return err
+	}
+	if epoch != p.leaseEpoch || p.st.ReadOr("task.id", "") != p.output.TaskID || string(p.st.TaskStatus()) != p.output.TaskStatus {
+		return fmt.Errorf("parent evidence scope changed during projection; request fresh evidence")
+	}
+	return nil
+}
+
+func saveSurvivingParentEvidenceClaims(p *parentEvidenceProjector, parts []parentEvidencePart) {
+	for _, claim := range p.pendingClaims {
+		if parentEvidenceClaimSurvivesBudget(parts, claim) {
 			saveParentEvidenceLedger(p.st, claim.Surface, claim.Digest, claim.Origin, claim.OwnerCallID)
 		}
-		recordParentEvidence(p.st, state.ParentEvidenceRecord{
-			Surface: state.ParentEvidenceSurfaceEvidenceTelemetry, Origin: state.ParentEvidenceOriginEvidence,
-			OwnerCallID: p.ownerCallID, Bytes: written, Outcome: state.ParentEvidenceOutcomeProjected,
-			Reason: reason, Locator: p.st.Path(parentEvidenceTelemetryFile),
-		})
-		return nil
-	})
+	}
+}
+
+func parentEvidenceClaimSurvivesBudget(parts []parentEvidencePart, claim state.ParentEvidenceLedgerEntry) bool {
+	for _, part := range parts {
+		if part.ledgerSurface == claim.Surface && part.Digest == claim.Digest && part.Status != parentEvidencePartRefinement {
+			return true
+		}
+	}
+	return false
 }
 
 func degradeDuplicateParentEvidenceParts(p *parentEvidenceProjector) error {
@@ -410,6 +448,7 @@ func parentEvidenceRelativePath(path string) bool {
 }
 
 func (p *parentEvidenceProjector) project(manifest parentEvidenceManifest) {
+	p.leaseEpoch, p.leaseErr = p.st.ParentEvidenceLeaseEpoch()
 	p.output = parentEvidenceOutput{
 		Version:     parentEvidenceManifestVersion,
 		OwnerCallID: p.ownerCallID,
@@ -990,10 +1029,11 @@ func EvaluateSessionRotationTerminal(
 	if err != nil {
 		return nil, err
 	}
-	if !state.ValidUUIDFormat(stats.ParentCodexThreadID) {
-		return nil, fmt.Errorf("session rotation requires a bound parent Codex thread identity: %q", stats.ParentCodexThreadID)
+	identity, err := st.CurrentParentCodexIdentity()
+	if err != nil {
+		return nil, fmt.Errorf("session rotation requires a bound parent Codex thread identity: %w", err)
 	}
-	acceptedTasks, err := sessionRotationAcceptedTaskCount(st, stats.ParentCodexThreadID)
+	acceptedTasks, err := sessionRotationAcceptedTaskCount(st, identity.ThreadID)
 	if err != nil {
 		return nil, err
 	}
@@ -1004,14 +1044,14 @@ func EvaluateSessionRotationTerminal(
 	}
 	sessionRotationRolloutSignals(cfg, stats, &signals)
 	sessionRotationMaterialEventSignals(st, stats.TaskID, &signals)
-	baselineUpdate, err := sessionRotationLimitSignals(cfg, st, stats.ParentCodexThreadID, &signals)
+	baselineUpdate, err := sessionRotationLimitSignals(cfg, st, identity.ThreadID, &signals)
 	if err != nil {
 		return nil, err
 	}
 	decision := state.DecideSessionRotation(signals)
 	sessionRotationAttachMaterialEventSources(st, stats.TaskID, signals, &decision)
 	return &state.SessionRotationEvaluation{
-		ParentThreadID:      stats.ParentCodexThreadID,
+		ParentThreadID:      identity.ThreadID,
 		TaskID:              stats.TaskID,
 		Terminal:            terminal,
 		Decision:            decision,

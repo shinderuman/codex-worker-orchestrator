@@ -120,7 +120,7 @@ func TestSessionRotationMarkerSchemaValidation(t *testing.T) {
 		extra  string
 	}{
 		{"unknown field is rejected", nil, `,"unexpected":1}`},
-		{"bad version is rejected", func(m *SessionRotationMarker) { m.Version = 2 }, ""},
+		{"bad version is rejected", func(m *SessionRotationMarker) { m.Version = 3 }, ""},
 		{"bad thread id is rejected", func(m *SessionRotationMarker) { m.ParentThreadID = "not-a-uuid" }, ""},
 		{"pending without directive is rejected", func(m *SessionRotationMarker) { m.Directive = nil }, ""},
 		{"pending with issued record is rejected", func(m *SessionRotationMarker) {
@@ -314,7 +314,7 @@ func TestSessionRotationMarkerFileIsThreadKeyedAndAtomic(t *testing.T) {
 	}
 }
 
-func TestSessionRotationIssuedOnBindCoversOtherThreadsOnly(t *testing.T) {
+func TestSessionRotationClaimBindAcknowledgeCoversOnlyClaimedDirective(t *testing.T) {
 	st := &StateStore{dir: t.TempDir()}
 	oldThread := "01a0463c-d477-7410-9efd-cb34ff2e0b0e"
 	newThread := "01a0244a-4ee4-7e71-b2e1-dec3bdda2120"
@@ -328,7 +328,28 @@ func TestSessionRotationIssuedOnBindCoversOtherThreadsOnly(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := st.MarkSessionRotationIssuedOnBind(newThread); err != nil {
+	oldMarker, err := st.LoadSessionRotationMarker(oldThread)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claim, err := st.ClaimSessionRotation(oldThread, oldMarker.Directive.DirectiveID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	duplicate, err := st.ClaimSessionRotation(oldThread, oldMarker.Directive.DirectiveID)
+	if err != nil || duplicate.ClaimID != claim.ClaimID || duplicate.TargetTaskID != claim.TargetTaskID {
+		t.Fatalf("duplicate claim = %#v err=%v", duplicate, err)
+	}
+	if err := st.BindSessionRotationClaim(oldThread, oldMarker.Directive.DirectiveID, claim.ClaimID, newThread); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.StartSessionRotationTask(newThread, claim.ClaimID); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetParentCodexIdentity(newThread, newThread, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AcknowledgeSessionRotationClaim(claim.ClaimID, newThread); err != nil {
 		t.Fatal(err)
 	}
 	issued, err := st.LoadSessionRotationMarker(oldThread)
@@ -455,7 +476,33 @@ func TestProjectSessionRotationStates(t *testing.T) {
 	if pending.Directive.Reason != SessionRotationReasonModelTurns {
 		t.Fatalf("pending directive = %#v", pending.Directive)
 	}
-	if err := st.MarkSessionRotationIssuedOnBind("01a0244a-4ee4-7e71-b2e1-dec3bdda2120"); err != nil {
+	newThread := "01a0244a-4ee4-7e71-b2e1-dec3bdda2120"
+	marker, err := st.LoadSessionRotationMarker(threadID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claim, err := st.ClaimSessionRotation(threadID, marker.Directive.DirectiveID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := st.ProjectSessionRotation(threadID)
+	if err != nil || claimed.State != SessionRotationStateClaimed || claimed.Claim == nil {
+		t.Fatalf("claimed projection = %#v err=%v", claimed, err)
+	}
+	if err := st.BindSessionRotationClaim(threadID, marker.Directive.DirectiveID, claim.ClaimID, newThread); err != nil {
+		t.Fatal(err)
+	}
+	bound, err := st.ProjectSessionRotation(threadID)
+	if err != nil || bound.State != SessionRotationStateBound || bound.Claim.BoundThreadID != newThread {
+		t.Fatalf("bound projection = %#v err=%v", bound, err)
+	}
+	if _, err := st.StartSessionRotationTask(newThread, claim.ClaimID); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetParentCodexIdentity(newThread, newThread, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AcknowledgeSessionRotationClaim(claim.ClaimID, newThread); err != nil {
 		t.Fatal(err)
 	}
 	issued, err := st.ProjectSessionRotation(threadID)
@@ -464,5 +511,123 @@ func TestProjectSessionRotationStates(t *testing.T) {
 	}
 	if _, err := st.ProjectSessionRotation("bad"); err == nil {
 		t.Fatal("invalid thread identityがfail closedしませんでした")
+	}
+}
+
+func TestSessionRotationCreationFailureReleaseAndRetry(t *testing.T) {
+	st := &StateStore{dir: t.TempDir()}
+	oldThread := "01a0463c-d477-7410-9efd-cb34ff2e0b0e"
+	if err := st.commitSessionRotation(&SessionRotationEvaluation{
+		ParentThreadID: oldThread, TaskID: "12345678-aaaa-bbbb-cccc-dddddddddddd", Terminal: SessionRotationTerminalAccept,
+		Decision: SessionRotationDecision{Required: true, Reason: SessionRotationReasonCompaction},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	marker, _ := st.LoadSessionRotationMarker(oldThread)
+	first, err := st.ClaimSessionRotation(oldThread, marker.Directive.DirectiveID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	idempotent, err := st.ClaimSessionRotation(oldThread, marker.Directive.DirectiveID)
+	if err != nil || idempotent.ClaimID != first.ClaimID || idempotent.TargetTaskID != first.TargetTaskID {
+		t.Fatalf("idempotent claim = %#v err=%v", idempotent, err)
+	}
+	if err := st.ReleaseSessionRotationClaim(oldThread, marker.Directive.DirectiveID, first.ClaimID); err != nil {
+		t.Fatal(err)
+	}
+	retry, err := st.ClaimSessionRotation(oldThread, marker.Directive.DirectiveID)
+	if err != nil || retry.ClaimID == first.ClaimID {
+		t.Fatalf("retry claim = %#v err=%v", retry, err)
+	}
+	if err := st.ReleaseSessionRotationClaim(oldThread, marker.Directive.DirectiveID, retry.ClaimID); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestValidateNewTaskRotationPreservesNormalPathAndRejectsOldThread(t *testing.T) {
+	st := &StateStore{dir: t.TempDir()}
+	if _, err := st.StartNewTask(); err != nil {
+		t.Fatal(err)
+	}
+	oldThread := "01a0463c-d477-7410-9efd-cb34ff2e0b0e"
+	newThread := "01a0244a-4ee4-7e71-b2e1-dec3bdda2120"
+	if err := st.SetParentCodexIdentity(oldThread, oldThread, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.ValidateNewTaskRotation(oldThread, ""); err != nil {
+		t.Fatalf("通常new-task pathが拒否されました: %v", err)
+	}
+	if err := st.commitSessionRotation(&SessionRotationEvaluation{
+		ParentThreadID: oldThread, TaskID: st.ReadOr("task.id", ""), Terminal: SessionRotationTerminalAccept,
+		Decision: SessionRotationDecision{Required: true, Reason: SessionRotationReasonCompaction},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	marker, _ := st.LoadSessionRotationMarker(oldThread)
+	if err := st.ValidateNewTaskRotation(oldThread, ""); err == nil {
+		t.Fatal("pending directive中に旧threadのstartが受理されました")
+	}
+	claim, err := st.ClaimSessionRotation(oldThread, marker.Directive.DirectiveID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.BindSessionRotationClaim(oldThread, marker.Directive.DirectiveID, claim.ClaimID, newThread); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.ValidateNewTaskRotation(oldThread, claim.ClaimID); err == nil {
+		t.Fatal("claimを旧threadが使用できました")
+	}
+	if err := st.ValidateNewTaskRotation(newThread, claim.ClaimID); err != nil {
+		t.Fatalf("bound new threadが拒否されました: %v", err)
+	}
+}
+
+func TestSessionRotationIssuedStartRetriesOnlyFromActiveCheckpoint(t *testing.T) {
+	st := &StateStore{dir: t.TempDir()}
+	if _, err := st.StartNewTask(); err != nil {
+		t.Fatal(err)
+	}
+	oldThread := "01a0463c-d477-7410-9efd-cb34ff2e0b0e"
+	newThread := "01a0244a-4ee4-7e71-b2e1-dec3bdda2120"
+	if err := st.SetParentCodexIdentity(oldThread, oldThread, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.commitSessionRotation(&SessionRotationEvaluation{
+		ParentThreadID: oldThread, TaskID: st.ReadOr("task.id", ""), Terminal: SessionRotationTerminalAccept,
+		Decision: SessionRotationDecision{Required: true, Reason: SessionRotationReasonCompaction},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	marker, _ := st.LoadSessionRotationMarker(oldThread)
+	claim, err := st.ClaimSessionRotation(oldThread, marker.Directive.DirectiveID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.BindSessionRotationClaim(oldThread, marker.Directive.DirectiveID, claim.ClaimID, newThread); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.StartSessionRotationTask(newThread, claim.ClaimID); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetParentCodexIdentity(newThread, newThread, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SaveResumeCheckpoint(ResumeCheckpoint{Stage: ResumeStageWorker, Phase: "worker-new", Role: WorkerRole, Model: "opus"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AcknowledgeSessionRotationClaim(claim.ClaimID, newThread); err != nil {
+		t.Fatal(err)
+	}
+	if resume, err := st.AdmitNewTaskRotation(newThread, claim.ClaimID); err != nil || !resume {
+		t.Fatalf("active checkpoint retry = %v, %v", resume, err)
+	}
+	if _, err := st.AdmitNewTaskRotation(newThread, ""); err == nil {
+		t.Fatal("active rotated task accepted retry without claim")
+	}
+	if err := st.SetTaskStatus(TaskStatusComplete); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.AdmitNewTaskRotation(newThread, claim.ClaimID); err == nil {
+		t.Fatal("completed rotated task accepted duplicate start")
 	}
 }

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -97,19 +98,27 @@ const (
 )
 
 func printParentHandoffLeased(st *state.StateStore, stdout io.Writer) error {
+	scope, err := captureParentEvidenceReadScope(st)
+	if err != nil {
+		return err
+	}
 	value := buildParentHandoff(st)
 	digest, _ := parentEvidenceDigest(value)
-	return finishParentRead(st, state.ParentEvidenceSurfaceHandoff, digest, func() (int, error) {
+	return finishParentReadInScope(st, scope, state.ParentEvidenceSurfaceHandoff, digest, func() (int, error) {
 		return writeMeasuredJSON(stdout, value)
 	})
 }
 
 func printParentHandoffRecoveryLeased(st *state.StateStore, stdout io.Writer) error {
+	scope, err := captureParentEvidenceReadScope(st)
+	if err != nil {
+		return err
+	}
 	value := projectParentHandoffRecovery(buildParentHandoff(st))
 	applyParentGuardRecovery(st, &value)
 	applyParentQualityGateRecovery(st, &value)
 	digest, _ := parentEvidenceDigest(value)
-	return finishParentRead(st, state.ParentEvidenceSurfaceHandoffRecovery, digest, func() (int, error) {
+	return finishParentReadInScope(st, scope, state.ParentEvidenceSurfaceHandoffRecovery, digest, func() (int, error) {
 		return writeMeasuredJSON(stdout, value)
 	})
 }
@@ -199,8 +208,11 @@ func buildParentHandoff(st *state.StateStore) parentHandoffOutput {
 
 func applyParentSessionRotation(st *state.StateStore, output *parentHandoffOutput) {
 	threadID := ""
-	if stats, err := st.CurrentTaskStats(); err == nil {
-		threadID = stats.ParentCodexThreadID
+	if identity, err := st.CurrentParentCodexIdentity(); err == nil {
+		threadID = identity.ThreadID
+	} else if !errors.Is(err, os.ErrNotExist) {
+		markHandoffInconsistent(output, "parent Codex identity is unavailable: "+err.Error())
+		return
 	}
 	projection, err := st.ProjectSessionRotation(threadID)
 	if err != nil {

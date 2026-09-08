@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
@@ -18,6 +19,13 @@ func (w *Workflow) admitParentAction(action state.ParentAction) error {
 }
 
 func (w *Workflow) admitNewTask() error {
+	resume, err := w.state.AdmitNewTaskRotation(os.Getenv(state.ParentActionCodexThreadIDEnv), os.Getenv(state.SessionRotationClaimIDEnv))
+	if err != nil {
+		return &WorkerError{Message: err.Error()}
+	}
+	if resume {
+		return nil
+	}
 	plan, admitted, err := w.state.AdmitNewTask()
 	if err != nil {
 		return &WorkerError{Message: err.Error()}

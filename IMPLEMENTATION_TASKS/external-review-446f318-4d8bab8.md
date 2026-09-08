@@ -384,9 +384,38 @@ none
 
 ## Review findings
 
-未検証。PR #351 / #352の一次証拠取得後にCodexが分類する。
+固定rangeとcurrent authorityへ照合した結果は次のとおり。番号はreview origin内で独立に保持し、重複root causeもoriginを統合しない。
+
+### GPT / PR #352
+
+- GPT-1 valid: pending directive後も旧threadから開始でき、作成前のdurable atomic/idempotent claimがない。`state/session_rotation.go`、parent admission、`glm-parent-action`、session rotation instructionへclaim・bind・予定task ID・途中失敗retry・ack/retireを実装した
+- GPT-2 valid: rollout chain memberにusable total counter anchorがなくてもchainを採用できる。全memberのlast total anchorを必須化した
+- GPT-3 valid: stale `--expected-oid`がremoteと一致すればcurrent HEAD未反映でもpostcondition成功になり得る。expected OIDとcurrent HEAD不一致をremote probe前にblockした
+- GPT-4 valid: parent evidence ledger lock取得失敗後も本文を出力していた。active evidence leaseではlock失敗を本文未出力のerrorにした
+
+### CodeRabbit / PR #351
+
+- CodeRabbit-1 valid: session rotationをthread作成前にdurableかつatomic/idempotentにclaimせず、retry/concurrent readerが複数threadを作成できる。GPT-1と同じ実装で対応し、同一claim retry・duplicate start・failure/recoveryを固定した
+- CodeRabbit-2 valid: bundle analysisで収集済みrollout chain member欠損をsuccessful empty scanとしていた。archive path付きunreadable errorへ変更した
+- CodeRabbit-3 current HEADでresolved: rollout境界をまたぐ継続cumulative counterを採用するとtokenを過大計上する。既存`counter-continues-across-boundary` testとboundary判定が既に拒否しており、全member anchor testを追加した
+- CodeRabbit-4 valid: total output budgetでbodyを除去したpartもdigest配信済みとしてclaimした。最終出力でbodyが残るclaimだけを保存し、除去partの単独retryを可能にした
+- CodeRabbit-5 valid: task-stats mirror読取失敗でauthoritative parent identityをhandoffから失った。taskから独立したcanonical identityをatomic保存し、task-statsをbest-effort mirrorにした
+- CodeRabbit-6 valid: telemetry compact summaryがtaskごとにrollout列挙・本文走査を反復した。1 request内で列挙1回、同一parent chain走査1回へbatch化し、task別interval判定を維持した
+- CodeRabbit-7 valid: remote URL欠損を`no_upstream`へ誤分類した。upstream設定済みでURL欠損の場合は`unverified`へ分類した
+- CodeRabbit-8 valid: non-Unix repo lockが全`OpenFile` errorをcontention扱いし無限retryし得た。`os.ErrExist`だけをheld扱いし、その他を即時errorにした
+- CodeRabbit-9 valid: parent evidence projection後からclaim保存までにlease遷移が競合し、旧本文を新leaseで配信済みにできた。projection開始scopeを保存し、同じledger lock下でtask/status/lease一致を再検証した。lease遷移も同lockへ統合した
+- CodeRabbit-10 valid: repository rootがseparator/root pathの場合に文字列prefix containmentが誤判定し得た。`filepath.Rel`によるroot/sibling判定へ変更した
+- CodeRabbit-11 valid: park cleanup失敗後もunpark成功を返し、resource leakと非retryable stateを作った。cleanup完了までparkedを維持し、検証済みsnapshot checkpointから部分cleanupをretry可能にした
+- CodeRabbit-12 valid: park branch tip解決errorがhead-unchangedへfall throughした。tip errorをfail closedにし、cleanup前branch/worktree tipとdirty状態を固定した
+- CodeRabbit-13 valid: `codex-efficiency-control-loop-checkpoint.md`のparent-only例外がfollow-up source変更まで直接実行可能に読めた。evidence評価・採否・priority更新だけへ限定し、新規task/actionは`glm-parent-action`を必須化した
+- CodeRabbit-14 valid: READMEの`enable|status|disable`がcopy可能な実commandではなかった。3 commandへ分離した
+- CodeRabbit-style non-actionable: exported doc comment追加はrepositoryのsource comment全面禁止contractと衝突するstyle preferenceなので適用しない
+
+### Greptile / PR #351
+
+- Greptile-1 valid: rollout chain memberのtoken anchor欠損を拒否しない。GPT-2と同じsource修正・独立originのfindingとして保持する
+- Greptile-2 valid: park cleanup失敗を成功扱いしてresourceを残し、再試行不能になる。CodeRabbit-11と同じsource修正・独立originのfindingとして保持する
 
 ## Current boundary
 
 `main@fbec16bf818c1e7a026a53f2d50032b216016d25`から開始する。割込み前WIPはstash commit `52142520412baf69346cd35bcc9f6607952a5ca7`、元GLM taskは`7fefc2cd-48a0-4887-a679-50978a0ae237` rate-limited、auto-resumeは削除済み。
-

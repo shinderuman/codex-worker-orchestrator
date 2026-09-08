@@ -23,6 +23,13 @@ type ParkRecord struct {
 	Worktree          string               `json:"worktree"`
 	Branch            string               `json:"branch"`
 	InterruptTaskID   string               `json:"interrupt_task_id,omitempty"`
+	Cleanup           *ParkCleanup         `json:"cleanup,omitempty"`
+}
+
+type ParkCleanup struct {
+	Integration string      `json:"integration"`
+	Snapshot    GitSnapshot `json:"snapshot"`
+	BranchTip   string      `json:"branch_tip"`
 }
 
 type ParkOrigin struct {
@@ -133,6 +140,10 @@ func (s *StateStore) LeaveParked() (TaskStatus, error) {
 	}
 	if err := s.SetTaskStatus(record.FromStatus); err != nil {
 		return "", err
+	}
+	if err := s.ClearParkRecord(); err != nil {
+		rollbackErr := s.SetTaskStatus(TaskStatusParked)
+		return "", errors.Join(err, rollbackErr)
 	}
 	return record.FromStatus, nil
 }

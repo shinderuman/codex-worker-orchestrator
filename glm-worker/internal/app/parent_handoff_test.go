@@ -704,11 +704,12 @@ func TestSessionRotationAcceptFailsClosedWithoutParentIdentity(t *testing.T) {
 func TestSessionRotationNewThreadBindRetiresOldDirective(t *testing.T) {
 	cfg, st, oldThread := seedSessionRotationAccept(t)
 
-	if _, err := st.StartNewTask(); err != nil {
-		t.Fatal(err)
-	}
-	newThread := "01a0244a-4ee4-7e71-b2e1-dec3bdda2120"
-	if err := st.SetParentCodexIdentity(newThread, newThread, nil); err != nil {
+	newThread := prepareNextRotatedTask(t, st)
+	next := &fakeRunner{steps: []fakeStep{
+		{structured: implementedPacketApp("next")},
+		{structured: passPacketApp()},
+	}}
+	if err := Execute(Command{Mode: ModeNewTask, Payload: "request2"}, cfg, next.factory(), io.Discard, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	retired, err := st.LoadSessionRotationMarker(oldThread)
@@ -726,5 +727,91 @@ func TestSessionRotationNewThreadBindRetiresOldDirective(t *testing.T) {
 	}
 	if output.SessionRotation.State == state.SessionRotationProjectionPending || output.SessionRotation.Directive != nil {
 		t.Fatalf("新thread bind後に旧directiveが再投影されました: %#v", output.SessionRotation)
+	}
+}
+
+func prepareNextRotatedTask(t *testing.T, st *state.StateStore) string {
+	t.Helper()
+	identity, err := st.CurrentParentCodexIdentity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	marker, err := st.LoadSessionRotationMarker(identity.ThreadID)
+	if err != nil || marker == nil || marker.Directive == nil {
+		t.Fatalf("rotation marker = %#v, err=%v", marker, err)
+	}
+	claim, err := st.ClaimSessionRotation(identity.ThreadID, marker.Directive.DirectiveID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	newThread := "01a0244a-4ee4-7e71-b2e1-dec3bdda2120"
+	if err := st.BindSessionRotationClaim(identity.ThreadID, marker.Directive.DirectiveID, claim.ClaimID, newThread); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(state.ParentActionCodexThreadIDEnv, newThread)
+	t.Setenv(state.ParentActionCodexSessionIDEnv, newThread)
+	t.Setenv(state.SessionRotationClaimIDEnv, claim.ClaimID)
+	return newThread
+}
+
+func TestSessionRotationPendingRejectsNewTaskBeforeMutation(t *testing.T) {
+	cfg, st, threadID := seedSessionRotationAccept(t)
+	beforeTaskID := st.ReadOr("task.id", "")
+	t.Setenv(state.ParentActionCodexThreadIDEnv, threadID)
+	t.Setenv(state.ParentActionCodexSessionIDEnv, threadID)
+	runner := &fakeRunner{}
+	err := Execute(Command{Mode: ModeNewTask, Payload: "must not run"}, cfg, runner.factory(), io.Discard, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "session rotation") {
+		t.Fatalf("pending rotation admitted: %v", err)
+	}
+	if len(runner.prompts) != 0 || st.ReadOr("task.id", "") != beforeTaskID {
+		t.Fatal("rejected start changed task or invoked model")
+	}
+}
+
+func TestSessionRotationHandoffSurvivesUnreadableStatsMirror(t *testing.T) {
+	_, st, threadID := seedSessionRotationAccept(t)
+	if err := os.WriteFile(st.CurrentTaskStatsPath(), []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	output := buildParentHandoff(st)
+	if output.SessionRotation == nil || output.SessionRotation.ParentThreadID != threadID || output.SessionRotation.State != state.SessionRotationProjectionPending {
+		t.Fatalf("rotation disappeared with stats mirror: %#v", output.SessionRotation)
+	}
+	if err := st.ValidateNewTaskRotation(threadID, ""); err == nil {
+		t.Fatal("unreadable stats bypassed rotation")
+	}
+}
+
+func TestSessionRotationStartResumesAfterTaskSwitch(t *testing.T) {
+	cfg, st, oldThread := seedSessionRotationAccept(t)
+	marker, err := st.LoadSessionRotationMarker(oldThread)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claim, err := st.ClaimSessionRotation(oldThread, marker.Directive.DirectiveID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	newThread := "01a0244a-4ee4-7e71-b2e1-dec3bdda2120"
+	if err := st.BindSessionRotationClaim(oldThread, marker.Directive.DirectiveID, claim.ClaimID, newThread); err != nil {
+		t.Fatal(err)
+	}
+	if taskID, err := st.StartSessionRotationTask(newThread, claim.ClaimID); err != nil || taskID != claim.TargetTaskID {
+		t.Fatalf("interrupted task switch = %s, %v", taskID, err)
+	}
+	t.Setenv(state.ParentActionCodexThreadIDEnv, newThread)
+	t.Setenv(state.ParentActionCodexSessionIDEnv, newThread)
+	t.Setenv(state.SessionRotationClaimIDEnv, claim.ClaimID)
+	runner := &fakeRunner{steps: []fakeStep{{structured: implementedPacketApp("resumed")}, {structured: passPacketApp()}}}
+	if err := Execute(Command{Mode: ModeNewTask, Payload: "request2"}, cfg, runner.factory(), io.Discard, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	retired, err := st.LoadSessionRotationMarker(oldThread)
+	if err != nil || retired.State != state.SessionRotationStateIssued || st.ReadOr("task.id", "") != claim.TargetTaskID {
+		t.Fatalf("resumed rotation = marker:%#v task:%s err:%v", retired, st.ReadOr("task.id", ""), err)
+	}
+	if err := Execute(Command{Mode: ModeNewTask, Payload: "duplicate"}, cfg, (&fakeRunner{}).factory(), io.Discard, io.Discard); err == nil {
+		t.Fatal("acknowledged claim was accepted twice")
 	}
 }

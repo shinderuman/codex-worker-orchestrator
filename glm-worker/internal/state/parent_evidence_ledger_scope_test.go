@@ -4,8 +4,10 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repolock"
 )
 
 func newLedgerScopeStore(t *testing.T) *StateStore {
@@ -130,5 +132,53 @@ func TestParentEvidenceLedgerResetsOnUnsupportedVersion(t *testing.T) {
 	}
 	if _, delivered, err := st.ParentEvidenceDelivered(ParentEvidenceSurfaceSearch, "digest-a"); err != nil || delivered {
 		t.Fatalf("unsupported ledger version delivered=%v err=%v, want strict reset", delivered, err)
+	}
+}
+
+func TestParentEvidenceLeaseTransitionWaitsForDelivery(t *testing.T) {
+	for _, rotate := range []bool{false, true} {
+		name := "advance"
+		if rotate {
+			name = "rotate"
+		}
+		t.Run(name, func(t *testing.T) {
+			st := newLedgerScopeStore(t)
+			lock, err := repolock.Acquire(st.Path(ParentEvidenceLedgerLockFile))
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = lock.Close() })
+			started := make(chan struct{})
+			done := make(chan error, 1)
+			go func() {
+				close(started)
+				if rotate {
+					done <- st.RotateParentEvidenceLease()
+				} else {
+					done <- st.AdvanceParentEvidenceLease()
+				}
+			}()
+			<-started
+			select {
+			case err := <-done:
+				t.Fatalf("lease changed while delivery lock held: %v", err)
+			case <-time.After(50 * time.Millisecond):
+			}
+			claimLedgerDigest(t, st, "in-flight-body")
+			if err := lock.Close(); err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case err := <-done:
+				if err != nil {
+					t.Fatal(err)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("lease transition did not finish after delivery")
+			}
+			if _, delivered, err := st.ParentEvidenceDelivered(ParentEvidenceSurfaceSearch, "in-flight-body"); err != nil || delivered {
+				t.Fatalf("old delivery survived lease transition: delivered=%v err=%v", delivered, err)
+			}
+		})
 	}
 }

@@ -199,6 +199,23 @@ func TestExecuteStartMilestonesPropagatesIdentityEnvAndMode(t *testing.T) {
 	}
 }
 
+func TestExecuteStartMilestonesPropagatesRotationClaim(t *testing.T) {
+	cfg, _ := newParentActionTestState(t)
+	t.Setenv("CODEX_THREAD_ID", codexIdentityTestThreadID)
+	t.Setenv("CODEX_SESSION_ID", codexIdentityTestThreadID)
+	payload := []byte(`{"request":"現在のACTIVE taskを実行してください。","milestones":[{"id":"a","scope":"a","acceptance":"a"},{"id":"b","scope":"b","acceptance":"b"}]}`)
+	token := prepareParentPayload(t, cfg, actionStartMilestones, payload)
+	claimID := "0f4a9b31-52c8-4d7e-9a31-6b2f5c8d1e40"
+	marker := writeParentActionWorkerStubWithCheck(t, cfg,
+		`test "$GLM_SESSION_ROTATION_CLAIM_ID" = "`+claimID+`" && test "$1" = "--execution-milestones-stdin" && test "$#" = "4"`)
+	if err := execute(cfg, []string{actionStartMilestones, token, "--rotation-claim", claimID}, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatal("rotation claim was not propagated to milestone start")
+	}
+}
+
 func TestExecuteStartWithoutIdentityEnvRunsChildWithoutPropagation(t *testing.T) {
 	cfg, _ := newParentActionIdentityTestState(t)
 	t.Setenv("CODEX_THREAD_ID", "")

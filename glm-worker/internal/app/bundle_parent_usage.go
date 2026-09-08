@@ -117,9 +117,14 @@ func printParentUsage(cfg config.AppConfig, st *state.StateStore, requestedTaskI
 
 func buildParentUsageReport(cfg config.AppConfig, st *state.StateStore, task bundleTask) parentUsageReport {
 	start, collectionEnd, _ := analysisCollectionWindow(task)
-	execution := resolveAnalysisExecutionBoundary(st, task.ID)
 	association := resolveCodexAssociation(cfg.CodexConfigDir, task)
 	scan, scanErr := parentUsageRolloutScan(association, start, collectionEnd)
+	return buildParentUsageReportFromScan(st, task, association, scan, scanErr)
+}
+
+func buildParentUsageReportFromScan(st *state.StateStore, task bundleTask, association codexAssociation, scan bundleRolloutScan, scanErr error) parentUsageReport {
+	start, collectionEnd, _ := analysisCollectionWindow(task)
+	execution := resolveAnalysisExecutionBoundary(st, task.ID)
 	ownership := resolveAnalysisTaskOwnership(scan, start, collectionEnd, task.ID)
 	finalization := analysisTaskFinalizationInterval(execution, ownership)
 	return parentUsageReport{

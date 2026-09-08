@@ -165,6 +165,10 @@ func (c *bundleCollector) collectCodexEvidence(cfg config.AppConfig, task bundle
 }
 
 func resolveCodexAssociation(codexHome string, task bundleTask) codexAssociation {
+	return resolveCodexAssociationWithScan(codexHome, task, scanCodexRollouts)
+}
+
+func resolveCodexAssociationWithScan(codexHome string, task bundleTask, scan func(string) ([]codexRollout, error)) codexAssociation {
 	threadID, basis, failure := selectCodexParentIdentity(task)
 	if failure != nil {
 		return *failure
@@ -175,7 +179,7 @@ func resolveCodexAssociation(codexHome string, task bundleTask) codexAssociation
 	if !codexDirExists(codexHome) {
 		return codexAssociation{ParentStatus: codexStatusUnavailable, Basis: basis, Detail: "codex home is not present"}
 	}
-	rollouts, err := scanCodexRollouts(codexHome)
+	rollouts, err := scan(codexHome)
 	if err != nil {
 		return codexAssociation{ParentStatus: codexStatusUnavailable, Basis: basis, Detail: "codex rollout enumeration failed: " + err.Error()}
 	}

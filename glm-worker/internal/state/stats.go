@@ -86,6 +86,13 @@ type TaskStats struct {
 	ParentOutcomesByRisk  map[string]int         `json:"parent_outcomes_by_risk,omitempty"`
 }
 
+type ParentCodexIdentity struct {
+	Version   int    `json:"version"`
+	TaskID    string `json:"task_id"`
+	ThreadID  string `json:"thread_id"`
+	SessionID string `json:"session_id"`
+}
+
 type TaskStatsEvidence struct {
 	TaskID string
 	Status TaskStatus
@@ -100,12 +107,15 @@ type taskStatsArchiveIdentity struct {
 }
 
 const (
-	currentStatsFile = "task-stats.json"
+	currentStatsFile        = "task-stats.json"
+	parentCodexIdentityFile = "parent-codex-identity.json"
 
-	taskStatsVersion = 3
+	taskStatsVersion           = 3
+	parentCodexIdentityVersion = 1
 
 	ParentActionCodexThreadIDEnv  = "GLM_PARENT_ACTION_CODEX_THREAD_ID"
 	ParentActionCodexSessionIDEnv = "GLM_PARENT_ACTION_CODEX_SESSION_ID"
+	SessionRotationClaimIDEnv     = "GLM_SESSION_ROTATION_CLAIM_ID"
 )
 
 var errUnsupportedTaskStatsVersion = errors.New("unsupported task stats version")
@@ -309,36 +319,127 @@ func (s *StateStore) ArchivedTaskStatsEvidence(taskID string) (TaskStatsEvidence
 }
 
 func (s *StateStore) SetParentCodexIdentity(threadID, sessionID string, readSessionLimit func() *SessionLimitReading) error {
-	stats, err := s.loadTaskStats()
-	if err != nil {
-		if !errors.Is(err, os.ErrNotExist) {
-			warnStatsFailure("読み込み", err)
-		}
+	if !ValidUUIDFormat(threadID) || !ValidUUIDFormat(sessionID) {
+		return fmt.Errorf("parent Codex identityが不正です: thread=%s session=%s", threadID, sessionID)
+	}
+	taskID := s.ReadOr("task.id", "")
+	if taskID == "" {
 		return nil
 	}
-	if stats.ParentCodexThreadID == threadID && stats.ParentCodexSessionID == sessionID {
-		return s.MarkSessionRotationIssuedOnBind(threadID)
+	bound, err := s.parentCodexIdentityAlreadyBound(taskID, threadID, sessionID)
+	if err != nil || bound {
+		return err
 	}
-	if stats.ParentCodexThreadID != "" || stats.ParentCodexSessionID != "" {
-		return fmt.Errorf(
-			"保存済みparent Codex identityと矛盾します: stored thread=%s session=%s, observed thread=%s session=%s",
-			stats.ParentCodexThreadID, stats.ParentCodexSessionID, threadID, sessionID,
-		)
+	stats, mirrorAvailable, legacyBound, err := s.parentCodexLegacyIdentity(taskID, threadID, sessionID)
+	if err != nil {
+		return err
 	}
-	if readSessionLimit != nil {
-		if reading := readSessionLimit(); reading != nil {
-			if err := s.SaveSessionLimitBaseline(threadID, *reading); err != nil {
-				return err
-			}
-		}
+	identity := ParentCodexIdentity{Version: parentCodexIdentityVersion, TaskID: taskID, ThreadID: threadID, SessionID: sessionID}
+	if legacyBound {
+		return s.writeParentCodexIdentity(identity)
+	}
+	if err := s.captureParentCodexLimitBaseline(threadID, readSessionLimit); err != nil {
+		return err
+	}
+	if err := s.writeParentCodexIdentity(identity); err != nil {
+		return err
+	}
+	if !mirrorAvailable {
+		return nil
 	}
 	stats.ParentCodexThreadID = threadID
 	stats.ParentCodexSessionID = sessionID
 	if err := s.writeTaskStats(stats); err != nil {
 		warnStatsFailure("更新", err)
-		return nil
 	}
-	return s.MarkSessionRotationIssuedOnBind(threadID)
+	return nil
+}
+
+func (s *StateStore) parentCodexIdentityAlreadyBound(taskID, threadID, sessionID string) (bool, error) {
+	identity, err := s.readParentCodexIdentity()
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if identity.TaskID != taskID || identity.ThreadID != threadID || identity.SessionID != sessionID {
+		return false, fmt.Errorf(
+			"保存済みparent Codex identityと矛盾します: stored thread=%s session=%s, observed thread=%s session=%s",
+			identity.ThreadID, identity.SessionID, threadID, sessionID,
+		)
+	}
+	return true, nil
+}
+
+func (s *StateStore) parentCodexLegacyIdentity(taskID, threadID, sessionID string) (TaskStats, bool, bool, error) {
+	stats, err := s.loadTaskStats()
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			warnStatsFailure("読み込み", err)
+		}
+		return TaskStats{}, false, false, nil
+	}
+	if stats.ParentCodexThreadID == "" && stats.ParentCodexSessionID == "" {
+		return stats, true, false, nil
+	}
+	if stats.TaskID != taskID || stats.ParentCodexThreadID != threadID || stats.ParentCodexSessionID != sessionID {
+		return TaskStats{}, false, false, fmt.Errorf(
+			"保存済みparent Codex identityと矛盾します: stored thread=%s session=%s, observed thread=%s session=%s",
+			stats.ParentCodexThreadID, stats.ParentCodexSessionID, threadID, sessionID,
+		)
+	}
+	return stats, true, true, nil
+}
+
+func (s *StateStore) captureParentCodexLimitBaseline(threadID string, readSessionLimit func() *SessionLimitReading) error {
+	if readSessionLimit != nil {
+		if reading := readSessionLimit(); reading != nil {
+			return s.SaveSessionLimitBaseline(threadID, *reading)
+		}
+	}
+	return nil
+}
+
+func (s *StateStore) CurrentParentCodexIdentity() (ParentCodexIdentity, error) {
+	identity, err := s.readParentCodexIdentity()
+	if !errors.Is(err, os.ErrNotExist) {
+		return identity, err
+	}
+	stats, statsErr := s.loadTaskStats()
+	if statsErr != nil {
+		return ParentCodexIdentity{}, statsErr
+	}
+	if stats.ParentCodexThreadID == "" && stats.ParentCodexSessionID == "" {
+		return ParentCodexIdentity{}, os.ErrNotExist
+	}
+	if stats.TaskID != s.ReadOr("task.id", "") || !ValidUUIDFormat(stats.ParentCodexThreadID) || !ValidUUIDFormat(stats.ParentCodexSessionID) {
+		return ParentCodexIdentity{}, fmt.Errorf("既存taskのparent Codex identityが不正です")
+	}
+	return ParentCodexIdentity{Version: parentCodexIdentityVersion, TaskID: stats.TaskID, ThreadID: stats.ParentCodexThreadID, SessionID: stats.ParentCodexSessionID}, nil
+}
+
+func (s *StateStore) readParentCodexIdentity() (ParentCodexIdentity, error) {
+	data, err := os.ReadFile(s.Path(parentCodexIdentityFile))
+	if err != nil {
+		return ParentCodexIdentity{}, err
+	}
+	var identity ParentCodexIdentity
+	if err := json.Unmarshal(data, &identity); err != nil {
+		return ParentCodexIdentity{}, fmt.Errorf("parent Codex identityを読めません: %w", err)
+	}
+	if identity.Version != parentCodexIdentityVersion || identity.TaskID == "" || identity.TaskID != s.ReadOr("task.id", "") || !ValidUUIDFormat(identity.ThreadID) || !ValidUUIDFormat(identity.SessionID) {
+		return ParentCodexIdentity{}, fmt.Errorf("parent Codex identityのschemaが不正です")
+	}
+	return identity, nil
+}
+
+func (s *StateStore) writeParentCodexIdentity(identity ParentCodexIdentity) error {
+	data, err := json.MarshalIndent(identity, "", "  ")
+	if err != nil {
+		return fmt.Errorf("parent Codex identityをJSON化できません: %w", err)
+	}
+	return writeFileAtomic(s.Path(parentCodexIdentityFile), append(data, '\n'), 0o600)
 }
 
 func (s *StateStore) RecordModelCall(role SessionRole, model string) {

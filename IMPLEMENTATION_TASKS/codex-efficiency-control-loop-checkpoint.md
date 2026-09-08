@@ -68,6 +68,7 @@ status: not-applicable
 ## Contract
 
 - 親Codexだけが追加AI callなしで実行し、GLM modelへ分析・採否・priority判断を委譲しない
+- parent-only例外は既存evidenceの評価・採否・Plan priority更新までに限定する。新規taskの開始、decision、fix、accept、resumeは通常の`glm-parent-action`を使い、評価を契機にしたsource/test/config修正へ直接実行権限を拡張しない
 - 前回checkpointのGit locator以後のCodex/GLM telemetry、parent usage、review/fix/validation、停止/recovery、未Task化Findingを既存bounded machine projectionで比較する
 - Markdown初回監査が完了していれば、そのGit locator以後のtracked Markdown差分と未解決authority候補だけを確認する
 - session rotationが過剰な頻度で発生し、再bootstrap・authority再投影・cache loss・parent finalization分断によってCodex tokenを増やしていないかをbounded evidenceで評価する

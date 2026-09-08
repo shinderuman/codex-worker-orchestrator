@@ -150,21 +150,47 @@ func codexChainOverlappingRanges(ordered []codexRollout) string {
 }
 
 func codexChainCounterBoundaries(ordered []codexRollout) string {
+	if reason := codexChainRequireCounterAnchors(ordered); reason != "" {
+		return reason
+	}
 	for i := 1; i < len(ordered); i++ {
-		signal, err := codexRolloutFirstCounterSignal(ordered[i].AbsolutePath)
+		if reason := codexChainCounterBoundaryReason(ordered[i-1], ordered[i]); reason != "" {
+			return reason
+		}
+	}
+	return ""
+}
+
+func codexChainRequireCounterAnchors(ordered []codexRollout) string {
+	for _, member := range ordered {
+		lastTotal, err := codexRolloutLastCounterTotal(member.AbsolutePath)
 		if err != nil {
-			return "rollout chain candidate cannot be read: " + ordered[i].HomeRelative + ": " + err.Error()
+			return "rollout chain candidate cannot be read: " + member.HomeRelative + ": " + err.Error()
 		}
-		if !signal.HasAnchor || codexChainCounterRestarted(signal, nil) {
-			continue
+		if lastTotal == nil {
+			return "rollout chain candidate has no usable token counter anchor: " + member.HomeRelative
 		}
-		previousTotal, prevErr := codexRolloutLastCounterTotal(ordered[i-1].AbsolutePath)
-		if prevErr != nil {
-			return "rollout chain candidate cannot be read: " + ordered[i-1].HomeRelative + ": " + prevErr.Error()
-		}
-		if !codexChainCounterRestarted(signal, previousTotal) {
-			return "rollout chain boundary does not restart a self-contained token counter: " + ordered[i].HomeRelative
-		}
+	}
+	return ""
+}
+
+func codexChainCounterBoundaryReason(previous, current codexRollout) string {
+	signal, err := codexRolloutFirstCounterSignal(current.AbsolutePath)
+	if err != nil {
+		return "rollout chain candidate cannot be read: " + current.HomeRelative + ": " + err.Error()
+	}
+	if !signal.HasAnchor {
+		return "rollout chain candidate has no usable token counter anchor: " + current.HomeRelative
+	}
+	if codexChainCounterRestarted(signal, nil) {
+		return ""
+	}
+	previousTotal, err := codexRolloutLastCounterTotal(previous.AbsolutePath)
+	if err != nil {
+		return "rollout chain candidate cannot be read: " + previous.HomeRelative + ": " + err.Error()
+	}
+	if !codexChainCounterRestarted(signal, previousTotal) {
+		return "rollout chain boundary does not restart a self-contained token counter: " + current.HomeRelative
 	}
 	return ""
 }

@@ -409,15 +409,21 @@ func TestSetParentCodexIdentityToleratesStatsMirrorFailures(t *testing.T) {
 		if _, err := st.StartNewTask(); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.Chmod(root, 0o500); err != nil {
+		if err := os.Remove(st.CurrentTaskStatsPath()); err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() { _ = os.Chmod(root, 0o700) })
+		if err := os.Mkdir(st.CurrentTaskStatsPath(), 0o700); err != nil {
+			t.Fatal(err)
+		}
 		warnings, restore := captureStatsWarnings(t)
 		defer restore()
 		if err := st.SetParentCodexIdentity(threadID, sessionID, nil); err != nil {
 			t.Fatalf("書込失敗で操作がblockされました: %v", err)
 		}
 		requireStatsWarning(t, warnings, "task_stats")
+		identity, err := st.CurrentParentCodexIdentity()
+		if err != nil || identity.ThreadID != threadID {
+			t.Fatalf("authoritative identity = %#v err=%v", identity, err)
+		}
 	})
 }

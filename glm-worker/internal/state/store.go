@@ -140,6 +140,27 @@ func (s *StateStore) Remove(names ...string) error {
 }
 
 func (s *StateStore) StartNewTask() (string, error) {
+	taskID, err := NewUUID()
+	if err != nil {
+		return "", err
+	}
+	return s.startNewTaskWithID(taskID, false)
+}
+
+func (s *StateStore) startNewTaskWithID(taskID string, resume bool) (string, error) {
+	if !ValidGeneratedUUID(taskID) {
+		return "", fmt.Errorf("new task IDが不正です: %s", taskID)
+	}
+	if resume {
+		stats, err := s.loadTaskStats()
+		if err != nil || stats.TaskID != taskID {
+			s.InitializeTaskStats(taskID)
+		}
+		if err := s.SetTaskStatus(TaskStatusActive); err != nil {
+			return "", err
+		}
+		return taskID, nil
+	}
 	s.ArchiveCurrentStats()
 	if err := s.Remove("task.id"); err != nil {
 		return "", err
@@ -149,6 +170,7 @@ func (s *StateStore) StartNewTask() (string, error) {
 	}
 	if err := s.Remove(
 		"task.status",
+		parentCodexIdentityFile,
 		"isolation.policy",
 		"baseline-head",
 		ExecutionMilestonesStateFile,
@@ -162,17 +184,10 @@ func (s *StateStore) StartNewTask() (string, error) {
 	); err != nil {
 		return "", err
 	}
-	if err := s.ClearParentEvidenceLedger(); err != nil {
-		return "", err
-	}
-	if err := s.AdvanceParentEvidenceLease(); err != nil {
+	if err := s.RotateParentEvidenceLease(); err != nil {
 		return "", err
 	}
 
-	taskID, err := NewUUID()
-	if err != nil {
-		return "", err
-	}
 	if err := s.Write("task.id", taskID); err != nil {
 		return "", err
 	}
@@ -192,6 +207,7 @@ func taskStateFileNames() []string {
 		"reviewer.id",
 		"reviewer.ready",
 		"task.status",
+		parentCodexIdentityFile,
 		"isolation.policy",
 
 		"active-task",

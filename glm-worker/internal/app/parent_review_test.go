@@ -343,6 +343,7 @@ func TestExecuteNewTaskRejectsOpenParentReviewUntilAccepted(t *testing.T) {
 	if completedStats.Status != state.TaskStatusComplete {
 		t.Fatalf("accept後のstats status = %q want %q", completedStats.Status, state.TaskStatusComplete)
 	}
+	prepareNextRotatedTask(t, st)
 
 	next := &fakeRunner{steps: []fakeStep{
 		{structured: implementedPacketApp("next")},

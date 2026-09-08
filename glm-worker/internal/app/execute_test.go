@@ -320,6 +320,7 @@ func TestExecuteAcquiresAndReleasesLock(t *testing.T) {
 	if accept := executeAccept(t, cfg); !accept.Accepted {
 		t.Fatal("lock解放後の次task開始前にparent reviewを解決できませんでした")
 	}
+	prepareNextRotatedTask(t, st)
 
 	second := &fakeRunner{steps: []fakeStep{
 		{structured: implementedPacketApp("done")},

@@ -319,3 +319,106 @@ func TestUnparkCleansParkCycleArtifacts(t *testing.T) {
 		t.Fatalf("parked working set changed: %q err = %v", string(content), err)
 	}
 }
+
+func TestUnparkRetriesAfterPartialCleanup(t *testing.T) {
+	for _, scenario := range []string{"unchanged", "head-changed", "dirty-changed", "branch-recreated"} {
+		t.Run(scenario, func(t *testing.T) {
+			fixture := newParkFixture(t)
+			parked := fixture.park(t)
+			originPath := fixture.st.AttachSiblingStore(config.RepoHashFor(fixture.worktree)).Path("park.origin.json")
+			if err := os.Remove(originPath); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Mkdir(originPath, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			blocker := filepath.Join(originPath, "block-cleanup")
+			if err := os.WriteFile(blocker, []byte("block"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			var stdout bytes.Buffer
+			if err := fixture.w.ExecuteUnpark(&stdout); err == nil || !strings.Contains(err.Error(), "cleanup") {
+				t.Fatalf("partial cleanup error = %v", err)
+			}
+			if stdout.Len() != 0 || fixture.st.TaskStatus() != state.TaskStatusParked {
+				t.Fatalf("partial cleanup reports success: status=%s output=%s", fixture.st.TaskStatus(), stdout.String())
+			}
+			record, err := fixture.st.LoadParkRecord()
+			if err != nil || record.Cleanup == nil || record.Cleanup.BranchTip == "" {
+				t.Fatalf("verified cleanup not persisted: %#v, %v", record, err)
+			}
+			if _, err := state.ResolveBranchTip(fixture.repo, parked.Branch); err == nil {
+				t.Fatal("expected branch removed before origin cleanup failure")
+			}
+			if err := os.Remove(blocker); err != nil {
+				t.Fatal(err)
+			}
+			switch scenario {
+			case "head-changed":
+				runRetentionGit(t, fixture.repo, "commit", "--allow-empty", "-q", "-m", "after cleanup checkpoint")
+			case "dirty-changed":
+				if err := os.WriteFile(filepath.Join(fixture.repo, "parked-dirty.md"), []byte("changed"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			case "branch-recreated":
+				runRetentionGit(t, fixture.repo, "commit", "--allow-empty", "-q", "-m", "another tip")
+				runRetentionGit(t, fixture.repo, "branch", parked.Branch, "HEAD")
+				runRetentionGit(t, fixture.repo, "reset", "--soft", record.Cleanup.Snapshot.Head)
+			}
+			err = fixture.w.ExecuteUnpark(&stdout)
+			if scenario != "unchanged" {
+				if err == nil || fixture.st.TaskStatus() != state.TaskStatusParked || stdout.Len() != 0 {
+					t.Fatalf("changed cleanup inputs accepted: err=%v status=%s output=%s", err, fixture.st.TaskStatus(), stdout.String())
+				}
+				return
+			}
+			if err != nil || fixture.st.TaskStatus() != state.TaskStatusWaitingSolReview {
+				t.Fatalf("retry did not complete: err=%v status=%s", err, fixture.st.TaskStatus())
+			}
+			if _, err := fixture.st.LoadParkRecord(); !errors.Is(err, state.ErrNoParkRecord) {
+				t.Fatalf("retry leaves park record: %v", err)
+			}
+		})
+	}
+}
+
+func TestUnparkRejectsMissingBranchBeforeCleanupVerification(t *testing.T) {
+	fixture := newParkFixture(t)
+	parked := fixture.park(t)
+	runRetentionGit(t, fixture.repo, "worktree", "remove", fixture.worktree)
+	runRetentionGit(t, fixture.repo, "branch", "-D", parked.Branch)
+	var stdout bytes.Buffer
+	err := fixture.w.ExecuteUnpark(&stdout)
+	if err == nil || !strings.Contains(err.Error(), "tip") || fixture.st.TaskStatus() != state.TaskStatusParked {
+		t.Fatalf("missing branch accepted: err=%v status=%s", err, fixture.st.TaskStatus())
+	}
+	record, err := fixture.st.LoadParkRecord()
+	if err != nil || record.Cleanup != nil {
+		t.Fatalf("unverified cleanup checkpoint persisted: %#v, %v", record, err)
+	}
+}
+
+func TestUnparkPreservesDirtyInterruptWorktree(t *testing.T) {
+	fixture := newParkFixture(t)
+	fixture.park(t)
+	path := filepath.Join(fixture.worktree, "unfinished.md")
+	if err := os.WriteFile(path, []byte("unfinished interrupt work"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var stdout bytes.Buffer
+	if err := fixture.w.ExecuteUnpark(&stdout); err == nil {
+		t.Fatal("dirty interrupt worktree was removed")
+	}
+	if content, err := os.ReadFile(path); err != nil || string(content) != "unfinished interrupt work" {
+		t.Fatalf("interrupt work not preserved: %q, %v", content, err)
+	}
+	if fixture.st.TaskStatus() != state.TaskStatusParked || stdout.Len() != 0 {
+		t.Fatal("failed cleanup reported success")
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := fixture.w.ExecuteUnpark(&stdout); err != nil {
+		t.Fatalf("clean worktree retry failed: %v", err)
+	}
+}

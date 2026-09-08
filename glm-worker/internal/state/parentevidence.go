@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repolock"
 )
 
 type ParentEvidenceRecord struct {
@@ -81,6 +83,7 @@ const (
 const parentEvidenceFile = "parent-evidence.jsonl"
 const parentEvidenceLedgerPath = "parent-evidence-ledger.json"
 const parentEvidenceLeasePath = "parent-evidence-lease"
+const ParentEvidenceLedgerLockFile = "parent-evidence-ledger.lock"
 const parentEvidenceRecordVersion = 1
 const parentEvidenceLedgerVersion = 2
 
@@ -311,6 +314,27 @@ func (s *StateStore) ParentEvidenceLeaseEpoch() (int64, error) {
 }
 
 func (s *StateStore) AdvanceParentEvidenceLease() error {
+	lock, err := repolock.AcquireWait(s.Path(ParentEvidenceLedgerLockFile))
+	if err != nil {
+		return fmt.Errorf("parent evidence ledger lockを取得できません: %w", err)
+	}
+	defer func() { _ = lock.Close() }()
+	return s.advanceParentEvidenceLeaseUnlocked()
+}
+
+func (s *StateStore) RotateParentEvidenceLease() error {
+	lock, err := repolock.AcquireWait(s.Path(ParentEvidenceLedgerLockFile))
+	if err != nil {
+		return fmt.Errorf("parent evidence ledger lockを取得できません: %w", err)
+	}
+	defer func() { _ = lock.Close() }()
+	if err := s.ClearParentEvidenceLedger(); err != nil {
+		return err
+	}
+	return s.advanceParentEvidenceLeaseUnlocked()
+}
+
+func (s *StateStore) advanceParentEvidenceLeaseUnlocked() error {
 	epoch, err := s.ParentEvidenceLeaseEpoch()
 	if err != nil {
 		return err

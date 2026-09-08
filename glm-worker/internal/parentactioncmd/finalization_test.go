@@ -246,6 +246,27 @@ func TestFinalizationGitSummaryClassifiesRemoteSyncState(t *testing.T) {
 	}
 }
 
+func TestFinalizationGitSummaryKeepsMissingRemoteURLUnverified(t *testing.T) {
+	fixture := newPushBindingFixture(t)
+	runFinalizationGit(t, fixture.repo, "config", "--unset", "remote.origin.url")
+	summary, err := readFinalizationGitSummary(fixture.repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.RemoteState != finalizationRemoteStateUnverified {
+		t.Fatalf("configured upstream with missing remote URL = %#v", summary)
+	}
+
+	runFinalizationGit(t, fixture.repo, "config", "--unset", "branch."+fixture.branch+".remote")
+	summary, err = readFinalizationGitSummary(fixture.repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.RemoteState != finalizationRemoteStateNoUpstream {
+		t.Fatalf("missing upstream = %#v", summary)
+	}
+}
+
 func newFinalizationTestRepo(t *testing.T) string {
 	t.Helper()
 	repo := t.TempDir()
