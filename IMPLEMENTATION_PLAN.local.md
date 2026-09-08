@@ -8,7 +8,7 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/parent-git-push-completion-binding.md`
+- `IMPLEMENTATION_TASKS/prose-only-control-enforcement-audit.md`
 
 ## NEXT（優先順）
 
@@ -17,7 +17,6 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 - `IMPLEMENTATION_TASKS/external-review-a70d35c-43e1da9-follow-up.md`
 - `IMPLEMENTATION_TASKS/auto-resume-heartbeat-transaction.md`
 - `IMPLEMENTATION_TASKS/codex-efficiency-control-loop-checkpoint.md`
-- `IMPLEMENTATION_TASKS/prose-only-control-enforcement-audit.md`
 - `IMPLEMENTATION_TASKS/task-stats-revision-consumer-audit.md`
 - `IMPLEMENTATION_TASKS/continuous-improvement-task-capture.md`
 - `IMPLEMENTATION_TASKS/user-requirement-ingress-binding.md`

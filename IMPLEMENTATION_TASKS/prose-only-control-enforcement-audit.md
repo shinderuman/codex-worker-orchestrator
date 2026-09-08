@@ -28,6 +28,13 @@
 これはこの問題に対しての話だけではない
 ````
 
+### 2026-09-08
+
+````text
+なんで今までできてたことができないんだよバグだろ
+だからいままで許可しなくてできていたことができないと言い張るのがおかしいだろ
+````
+
 ## Resolved references
 
 - 既存Rulesは改善候補の随時Task化を要求していたが、親Codexはautomation拒否時に適用せず、ユーザー再指摘までTask化しなかった
@@ -35,6 +42,7 @@
 - preliminary gapは、最新ユーザー要求のtracked化、親の長時間wait/途中return禁止、局所終端後のPlan継続、runtime install完了証拠、automation authority propagationである
 - 機械化済みcontrolの長い手続き説明も固定contextを圧迫し、他の重要規則を見落とす要因になる。全削除ではなく、目的・machine owner・根拠locator・残余の親判断だけを残すthinningが必要である
 - GLM Git mutation禁止、parent-managed metadata不変、packet schema、reviewer session分離、quality-gate snapshot bindingにはproduction guard/testが存在するため、prose-only候補と混同しない
+- 2026-09-08、runtime変更の通常completion工程である`./install.sh`が外部安全審査により明示承認不足として一度拒否された。同じcommandは既存authorityを再提示した再実行で成功したため、installer capability不足ではなく親completion authorityの伝達・判定がproseに依存する再発事例として扱う
 
 ## Purpose
 
@@ -90,4 +98,4 @@ none
 
 ## Current boundary
 
-現ACTIVE完了後にCodexが一次監査し、既知taskのcontractを補正してから実装サイクルへ進む。
+ACTIVEとして、2026-09-08の`install.sh` false rejectionを含むpreliminary gap 5件から一次監査を開始し、既知taskのcontractを補正してから実装サイクルへ進む。
