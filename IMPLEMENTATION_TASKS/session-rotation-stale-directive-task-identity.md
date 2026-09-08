@@ -23,6 +23,10 @@ none
 
 pending rotation directiveの発行後に追加taskが完了してからrotationする正常経路で、古いdirective task IDとcurrent completed task IDの差によりrotationが回復不能になることを防ぐ。
 
+## External feasibility
+
+status: not-applicable
+
 ## Contract
 
 - claim時またはstart admissionで、rotation元として認めるcurrent completed task identityをauthoritative stateから一意に拘束する
