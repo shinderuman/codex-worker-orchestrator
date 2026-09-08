@@ -556,14 +556,27 @@ func (s *StateStore) admitClaimedSessionRotation(callerThreadID, claimID string)
 	if marker.State != SessionRotationStateBound {
 		return false, fmt.Errorf("session rotation claimは開始に使用できません: %s", marker.State)
 	}
-	switch currentTaskID {
-	case marker.Directive.TaskID:
-		return false, nil
-	case marker.Claim.TargetTaskID:
-		return true, nil
-	default:
+	if !s.sessionRotationSourceTaskAdmitted(marker, currentTaskID) {
 		return false, fmt.Errorf("session rotation開始中のtask identityが一致しません")
 	}
+	return currentTaskID == marker.Claim.TargetTaskID, nil
+}
+
+func (s *StateStore) sessionRotationSourceTaskAdmitted(marker *SessionRotationMarker, currentTaskID string) bool {
+	if currentTaskID == marker.Directive.TaskID || currentTaskID == marker.Claim.TargetTaskID {
+		return true
+	}
+	if currentTaskID == "" {
+		return false
+	}
+	evaluation := marker.LastEvaluation
+	if evaluation == nil || evaluation.TaskID != currentTaskID || !evaluation.Required {
+		return false
+	}
+	if evaluation.Terminal != SessionRotationTerminalAccept && evaluation.Terminal != SessionRotationTerminalNoGo {
+		return false
+	}
+	return s.TaskStatus() == TaskStatusComplete
 }
 
 func (s *StateStore) sessionRotationStartRetryable() bool {
@@ -669,7 +682,7 @@ func (s *StateStore) StartSessionRotationTask(callerThreadID, claimID string) (s
 	if marker.State != SessionRotationStateBound {
 		return "", fmt.Errorf("session rotation claimは開始に使用できません: %s", marker.State)
 	}
-	if currentTaskID != marker.Directive.TaskID && currentTaskID != marker.Claim.TargetTaskID && currentTaskID != "" {
+	if currentTaskID != "" && !s.sessionRotationSourceTaskAdmitted(marker, currentTaskID) {
 		return "", fmt.Errorf("session rotation開始中のtask identityが一致しません")
 	}
 	return s.startNewTaskWithID(marker.Claim.TargetTaskID, currentTaskID == marker.Claim.TargetTaskID)

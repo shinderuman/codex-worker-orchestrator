@@ -8,6 +8,13 @@ import (
 	"time"
 )
 
+type boundRotationAfterLaterTaskSeed struct {
+	st        *StateStore
+	oldThread string
+	newThread string
+	claim     SessionRotationClaim
+}
+
 func TestDecideSessionRotationRuleTable(t *testing.T) {
 	base := func() SessionRotationSignals {
 		return SessionRotationSignals{
@@ -562,6 +569,191 @@ func TestSessionRotationCreationFailureReleaseAndRetry(t *testing.T) {
 	}
 	if err := st.ReleaseSessionRotationClaim(oldThread, marker.Directive.DirectiveID, retry.ClaimID); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestSessionRotationStartAcceptsLatestEvaluationAfterLaterCompletedTask(t *testing.T) {
+	seed := seedBoundRotationAfterLaterTask(t, true, TaskStatusComplete)
+	resume, err := seed.st.AdmitNewTaskRotation(seed.newThread, seed.claim.ClaimID)
+	if err != nil || resume {
+		t.Fatalf("latest evaluation admission = resume:%v err:%v", resume, err)
+	}
+	if err := seed.st.ValidateNewTaskRotation(seed.newThread, seed.claim.ClaimID); err != nil {
+		t.Fatalf("latest terminal evaluationからのstart admissionが拒否されました: %v", err)
+	}
+	started, err := seed.st.StartSessionRotationTask(seed.newThread, seed.claim.ClaimID)
+	if err != nil || started != seed.claim.TargetTaskID {
+		t.Fatalf("rotation start = %s err=%v", started, err)
+	}
+	if current := seed.st.ReadOr("task.id", ""); current != seed.claim.TargetTaskID {
+		t.Fatalf("started task = %s", current)
+	}
+	if err := seed.st.SetParentCodexIdentity(seed.newThread, seed.newThread, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := seed.st.AcknowledgeSessionRotationClaim(seed.claim.ClaimID, seed.newThread); err != nil {
+		t.Fatal(err)
+	}
+	issued, err := seed.st.LoadSessionRotationMarker(seed.oldThread)
+	if err != nil || issued.State != SessionRotationStateIssued || issued.Issued == nil || issued.Issued.BoundThreadID != seed.newThread {
+		t.Fatalf("issued marker = %#v err=%v", issued, err)
+	}
+}
+
+func seedBoundRotationAfterLaterTask(t *testing.T, laterRequired bool, laterStatus TaskStatus) boundRotationAfterLaterTaskSeed {
+	t.Helper()
+	st := &StateStore{dir: t.TempDir()}
+	oldThread := "01a0463c-d477-7410-9efd-cb34ff2e0b0e"
+	newThread := "01a0244a-4ee4-7e71-b2e1-dec3bdda2120"
+	directiveTask, err := st.StartNewTask()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.commitSessionRotation(&SessionRotationEvaluation{
+		ParentThreadID: oldThread, TaskID: directiveTask, Terminal: SessionRotationTerminalAccept,
+		Decision: SessionRotationDecision{Required: true, Reason: SessionRotationReasonDefaultTwoTasks},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	laterTask, err := st.StartNewTask()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetTaskStatus(laterStatus); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.commitSessionRotation(&SessionRotationEvaluation{
+		ParentThreadID: oldThread, TaskID: laterTask, Terminal: SessionRotationTerminalAccept,
+		Decision: SessionRotationDecision{Required: laterRequired, Reason: SessionRotationReasonDefaultTwoTasks},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	marker, err := st.LoadSessionRotationMarker(oldThread)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claim, err := st.ClaimSessionRotation(oldThread, marker.Directive.DirectiveID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.BindSessionRotationClaim(oldThread, marker.Directive.DirectiveID, claim.ClaimID, newThread); err != nil {
+		t.Fatal(err)
+	}
+	return boundRotationAfterLaterTaskSeed{st: st, oldThread: oldThread, newThread: newThread, claim: claim}
+}
+
+func TestSessionRotationLatestEvaluationAdmissionFailsClosed(t *testing.T) {
+	t.Run("active later task is not a rotation source", func(t *testing.T) {
+		seed := seedBoundRotationAfterLaterTask(t, true, TaskStatusActive)
+		if err := seed.st.ValidateNewTaskRotation(seed.newThread, seed.claim.ClaimID); err == nil {
+			t.Fatal("未完了taskをrotation元としたstartが受理されました")
+		}
+	})
+	t.Run("not-required evaluation is not a rotation source", func(t *testing.T) {
+		seed := seedBoundRotationAfterLaterTask(t, false, TaskStatusComplete)
+		if err := seed.st.ValidateNewTaskRotation(seed.newThread, seed.claim.ClaimID); err == nil {
+			t.Fatal("not-required evaluationをrotation元としたstartが受理されました")
+		}
+	})
+	t.Run("task newer than the evaluation fails closed", func(t *testing.T) {
+		seed := seedBoundRotationAfterLaterTask(t, true, TaskStatusComplete)
+		if _, err := seed.st.StartNewTask(); err != nil {
+			t.Fatal(err)
+		}
+		if err := seed.st.SetTaskStatus(TaskStatusComplete); err != nil {
+			t.Fatal(err)
+		}
+		if err := seed.st.ValidateNewTaskRotation(seed.newThread, seed.claim.ClaimID); err == nil {
+			t.Fatal("最新evaluationと一致しないtaskからのstartが受理されました")
+		}
+		if _, err := seed.st.StartSessionRotationTask(seed.newThread, seed.claim.ClaimID); err == nil {
+			t.Fatal("最新evaluationと一致しないtaskからのstart実行が受理されました")
+		}
+	})
+	t.Run("unknown terminal evaluation fails closed", func(t *testing.T) {
+		seed := seedBoundRotationAfterLaterTask(t, true, TaskStatusComplete)
+		marker, err := seed.st.LoadSessionRotationMarker(seed.oldThread)
+		if err != nil {
+			t.Fatal(err)
+		}
+		marker.LastEvaluation.Terminal = "park"
+		if err := seed.st.writeSessionRotationMarker(marker); err != nil {
+			t.Fatal(err)
+		}
+		if err := seed.st.ValidateNewTaskRotation(seed.newThread, seed.claim.ClaimID); err == nil {
+			t.Fatal("未知terminal評価をrotation元としたstartが受理されました")
+		}
+		if _, err := seed.st.StartSessionRotationTask(seed.newThread, seed.claim.ClaimID); err == nil {
+			t.Fatal("未知terminal評価からのstart実行が受理されました")
+		}
+	})
+}
+
+func TestSessionRotationStaleDirectiveBoundClaimRetryFixture(t *testing.T) {
+	st := &StateStore{dir: t.TempDir()}
+	parentThread := "01a07e12-7651-76a0-92d4-c244e4963f62"
+	boundThread := "01a08268-2c7d-72a0-9aa1-605eed066ce9"
+	directiveTask := "38bc5f3b-e938-4540-a798-7af2e506f085"
+	completedTask := "7fefc2cd-48a0-4887-a679-50978a0ae237"
+	claimID := "9115ac5c-d4e1-48b2-8f48-e79a553d396f"
+	targetTask := "cffc13b4-f630-43e1-a2d8-aa3d8103b34d"
+	marker := &SessionRotationMarker{
+		Version:        sessionRotationMarkerVersion,
+		ParentThreadID: parentThread,
+		State:          SessionRotationStateBound,
+		Directive: &SessionRotationDirective{
+			DirectiveID: "84e3f02e-cf23-4cc8-aaee-f3fb42aad71e",
+			TaskID:      directiveTask,
+			Terminal:    SessionRotationTerminalAccept,
+			Epoch:       directiveTask + ":" + SessionRotationTerminalAccept,
+			Reason:      SessionRotationReasonDefaultTwoTasks,
+			Evidence:    []SessionRotationEvidence{{Trigger: SessionRotationReasonDefaultTwoTasks, Field: "accepted_tasks", Value: "2"}},
+			CreatedAt:   "2026-09-08T00:00:00Z",
+		},
+		Claim: &SessionRotationClaim{
+			ClaimID:          claimID,
+			ClaimantThreadID: parentThread,
+			TargetTaskID:     targetTask,
+			ClaimedAt:        "2026-09-08T00:00:00Z",
+			BoundThreadID:    boundThread,
+			BoundAt:          "2026-09-08T00:00:00Z",
+		},
+		LastEvaluation: &SessionRotationEvaluationRecord{
+			TaskID:   completedTask,
+			Terminal: SessionRotationTerminalAccept,
+			Required: true,
+			Reason:   SessionRotationReasonDefaultTwoTasks,
+			At:       "2026-09-08T00:00:00Z",
+		},
+	}
+	if err := st.writeSessionRotationMarker(marker); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.startNewTaskWithID(completedTask, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetTaskStatus(TaskStatusComplete); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.ValidateNewTaskRotation(boundThread, claimID); err != nil {
+		t.Fatalf("現行bound claimと同型fixtureのstart admissionが拒否されました: %v", err)
+	}
+	started, err := st.StartSessionRotationTask(boundThread, claimID)
+	if err != nil || started != targetTask {
+		t.Fatalf("retry start = %s err=%v", started, err)
+	}
+	if current := st.ReadOr("task.id", ""); current != targetTask {
+		t.Fatalf("started task = %s", current)
+	}
+	if err := st.SetParentCodexIdentity(boundThread, boundThread, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AcknowledgeSessionRotationClaim(claimID, boundThread); err != nil {
+		t.Fatal(err)
+	}
+	issued, err := st.LoadSessionRotationMarker(parentThread)
+	if err != nil || issued.State != SessionRotationStateIssued || issued.Issued == nil || issued.Issued.BoundThreadID != boundThread {
+		t.Fatalf("issued marker = %#v err=%v", issued, err)
 	}
 }
 
