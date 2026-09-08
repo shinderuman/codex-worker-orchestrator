@@ -85,38 +85,6 @@ func (s *StateStore) AdmitNewTask() (ParentActionPlan, bool, error) {
 	return plan, plan.RequiredAction == ParentActionNone, nil
 }
 
-func (s *StateStore) AdmitNewTaskForParentThread(threadID string) (ParentActionPlan, bool, error) {
-	plan, admitted, err := s.AdmitNewTask()
-	if err != nil || !admitted {
-		return plan, admitted, err
-	}
-	stats, err := s.CurrentTaskStats()
-	if err != nil {
-		if s.TaskStatus() == TaskStatusNone {
-			return plan, true, nil
-		}
-		return ParentActionPlan{}, false, err
-	}
-	parentThreadID := stats.ParentCodexThreadID
-	if !ValidUUIDFormat(parentThreadID) {
-		return plan, true, nil
-	}
-	marker, err := s.LoadSessionRotationMarker(parentThreadID)
-	if err != nil {
-		return ParentActionPlan{}, false, err
-	}
-	if marker == nil || marker.State != SessionRotationStatePending {
-		return plan, true, nil
-	}
-	if !ValidUUIDFormat(threadID) {
-		return plan, false, fmt.Errorf("session rotation is pending for parent Codex thread %s; start the next task from a new Codex thread with a bound thread identity", parentThreadID)
-	}
-	if threadID == parentThreadID {
-		return plan, false, fmt.Errorf("session rotation is pending for parent Codex thread %s; the next task must start from a different Codex thread", parentThreadID)
-	}
-	return plan, true, nil
-}
-
 func (kind ResumeStopKind) ParentAction() ParentAction {
 	switch kind {
 	case ResumeStopRateLimited, ResumeStopProviderUnavailable, ResumeStopInterrupted:

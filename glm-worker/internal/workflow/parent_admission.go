@@ -2,7 +2,6 @@ package workflow
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
@@ -19,7 +18,7 @@ func (w *Workflow) admitParentAction(action state.ParentAction) error {
 }
 
 func (w *Workflow) admitNewTask() error {
-	plan, admitted, err := w.state.AdmitNewTaskForParentThread(parentCodexThreadForAdmission())
+	plan, admitted, err := w.state.AdmitNewTask()
 	if err != nil {
 		return &WorkerError{Message: err.Error()}
 	}
@@ -27,13 +26,6 @@ func (w *Workflow) admitNewTask() error {
 		return nil
 	}
 	return w.newTaskActionDenied(plan)
-}
-
-func parentCodexThreadForAdmission() string {
-	if threadID := os.Getenv(state.ParentActionCodexThreadIDEnv); threadID != "" {
-		return threadID
-	}
-	return os.Getenv("CODEX_THREAD_ID")
 }
 
 func (w *Workflow) parentActionDenied(action state.ParentAction) error {
