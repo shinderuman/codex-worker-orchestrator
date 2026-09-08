@@ -188,7 +188,7 @@ func TestPushBindingClassifiesRemoteRefMismatchWhenRefMissing(t *testing.T) {
 	}
 }
 
-func TestPushBindingPostconditionUsesExpectedOIDOverLocalHEAD(t *testing.T) {
+func TestPushBindingRejectsExpectedOIDThatIsNotCurrentHEAD(t *testing.T) {
 	fixture := newPushBindingFixture(t)
 	writePushBindingFile(t, fixture.repo, "binding.txt", "base\nsecond\n")
 	runFinalizationGit(t, fixture.repo, "commit", "-q", "-am", "second")
@@ -197,11 +197,12 @@ func TestPushBindingPostconditionUsesExpectedOIDOverLocalHEAD(t *testing.T) {
 		t.Fatal(err)
 	}
 	result := decodePushBindingOutput(t, output)
-	if result.Classification != pushBindingClassificationSynced || result.ExpectedOID != fixture.baseOID {
+	if result.Status != "blocked" || result.ExpectedOID != fixture.baseOID || result.Failure == nil ||
+		result.Failure.Stage != "postcondition" || result.Failure.Reason != pushBindingFailureExpectedOIDStale {
 		t.Fatalf("result = %#v", result)
 	}
-	if result.Postcondition == nil || !result.Postcondition.Met || result.Postcondition.ExpectedOID != fixture.baseOID {
-		t.Fatalf("postcondition = %#v", result.Postcondition)
+	if result.Target == nil || result.Target.LocalOID == fixture.baseOID || result.Classification != "" || result.Postcondition != nil {
+		t.Fatalf("stale expected oid produced a positive postcondition: %#v", result)
 	}
 }
 
