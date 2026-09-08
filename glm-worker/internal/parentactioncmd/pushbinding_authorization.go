@@ -43,7 +43,13 @@ func blockPushBindingRemoteWrite(output *pushBindingOutput, failure *finalizatio
 }
 
 func parentPushAuthorizationFailure(cfg config.AppConfig, expectedOID string) *finalizationFailure {
-	st := state.AttachStateStore(cfg)
+	st, err := state.NewStateStore(cfg)
+	if err != nil {
+		return &finalizationFailure{
+			Stage: "authorization", Reason: pushBindingFailureParentCompletionStateError,
+			Detail: compactFinalizationDiagnostic(err.Error()),
+		}
+	}
 	lock, err := repolock.Acquire(st.LockPath())
 	if err != nil {
 		return &finalizationFailure{
@@ -53,6 +59,10 @@ func parentPushAuthorizationFailure(cfg config.AppConfig, expectedOID string) *f
 	}
 	defer func() { _ = lock.Close() }()
 
+	status := st.TaskStatus()
+	if status == state.TaskStatusNone || status == state.TaskStatusComplete {
+		return nil
+	}
 	plan, err := st.ParentActionPlan()
 	if err != nil {
 		return &finalizationFailure{
