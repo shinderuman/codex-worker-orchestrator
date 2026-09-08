@@ -11,8 +11,8 @@ import (
 )
 
 const (
-	pushBindingFailureParentCompletionNotReady   = "parent_completion_not_ready"
-	pushBindingFailureParentCompletionStateError = "parent_completion_state_unreadable"
+	pushBindingFailureParentCompletionNotReady    = "parent_completion_not_ready"
+	pushBindingFailureParentCompletionStateError  = "parent_completion_state_unreadable"
 	pushBindingFailureParentCompletionHeadChanged = "parent_completion_head_changed"
 )
 
