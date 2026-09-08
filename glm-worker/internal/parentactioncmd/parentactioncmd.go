@@ -24,7 +24,7 @@ import (
 )
 
 const (
-	usage = "usage: glm-parent-action start [--rotation-claim <claim-id>] | rotation-claim <directive-id> | rotation-bind <directive-id> <claim-id> <new-thread-id> | rotation-fail <directive-id> <claim-id> | prepare <decision|fix|start-milestones|revise-milestones> | decision <token> | fix <token> [--origin <origin>] [--cause <cause>] [--accepted-scope current-diff] | approve-surface --accepted-scope current-diff | start-milestones <token> [--rotation-claim <claim-id>] | revise-milestones <token> | no-go | accept | resume | park | unpark | evidence <manifest.json> | finalize-check <go-test|go-test-race> | push-binding [--expected-oid <oid>] [--attempt-outcome <none|completed|rejected|network-error|non-fast-forward>]"
+	usage = "usage: glm-parent-action start [--rotation-claim <claim-id>] | rotation-claim <directive-id> | rotation-bind <directive-id> <claim-id> <new-thread-id> | rotation-fail <directive-id> <claim-id> | prepare <decision|fix|start-milestones|revise-milestones> | decision <token> | fix <token> [--origin <origin>] [--cause <cause>] [--accepted-scope current-diff] | approve-surface --accepted-scope current-diff | start-milestones <token> [--rotation-claim <claim-id>] | revise-milestones <token> | no-go | accept | complete | resume | park | unpark | evidence <manifest.json> | finalize-check <go-test|go-test-race> | push-binding [--expected-oid <oid>] [--attempt-outcome <none|completed|rejected|network-error|non-fast-forward>]"
 
 	activeTaskRequest = "現在のACTIVE taskを実行してください。"
 	actionStart       = "start"
@@ -74,18 +74,7 @@ func prepare(repoRoot string, args []string, stdout io.Writer) error {
 func execute(cfg config.AppConfig, args []string, stdout, stderr io.Writer) error {
 	action := args[0]
 	if descriptor, ok := parentaction.LookupPayloadAction(action); ok {
-		extraEnv := []string(nil)
-		if descriptor.Action == parentaction.ActionStartMilestones {
-			extraEnv = startIdentityEnv(actionStart)
-			var err error
-			args, extraEnv, err = rotationMilestoneStartArgs(args, extraEnv)
-			if err != nil {
-				return err
-			}
-		} else if err := persistParentCodexIdentity(cfg); err != nil {
-			return err
-		}
-		return executePayloadAction(cfg.RepoRoot, descriptor, args[1:], stdout, stderr, extraEnv)
+		return executeStagedPayloadAction(cfg, descriptor, args, stdout, stderr)
 	}
 
 	switch action {
@@ -93,6 +82,8 @@ func execute(cfg config.AppConfig, args []string, stdout, stderr io.Writer) erro
 		return executeSessionRotationAction(cfg, args, stdout)
 	case "no-go":
 		return executeNoGo(cfg, args, stdout)
+	case "complete":
+		return executeComplete(cfg, args, stdout)
 	case actionApprove:
 		return executeApproveSurfaceAction(cfg, args[1:], stdout, stderr)
 	case actionStart, "accept", "resume":
@@ -114,6 +105,21 @@ func rotationMilestoneStartArgs(args, env []string) ([]string, []string, error) 
 		return args[:2], append(env, state.SessionRotationClaimIDEnv+"="+args[3]), nil
 	}
 	return nil, nil, fmt.Errorf("usage: glm-parent-action start-milestones <token> [--rotation-claim <claim-id>]")
+}
+
+func executeStagedPayloadAction(cfg config.AppConfig, descriptor parentaction.PayloadAction, args []string, stdout, stderr io.Writer) error {
+	extraEnv := []string(nil)
+	if descriptor.Action == parentaction.ActionStartMilestones {
+		extraEnv = startIdentityEnv(actionStart)
+		var err error
+		args, extraEnv, err = rotationMilestoneStartArgs(args, extraEnv)
+		if err != nil {
+			return err
+		}
+	} else if err := persistParentCodexIdentity(cfg); err != nil {
+		return err
+	}
+	return executePayloadAction(cfg.RepoRoot, descriptor, args[1:], stdout, stderr, extraEnv)
 }
 
 func executeGitEvidenceAction(cfg config.AppConfig, args []string, stdout io.Writer) error {

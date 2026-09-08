@@ -25,6 +25,52 @@ func CheckFinalHeadPlan(root string) (string, error) {
 	return "plan final head: verified", nil
 }
 
+func CheckParentCompletionHead(root string) (string, error) {
+	plan, status, ok, err := finalHeadPlan(root)
+	if err != nil {
+		return "", err
+	}
+	if !ok {
+		return "plan completion head: " + status, nil
+	}
+	goal, err := taskcontract.ParsePlanGoal(plan)
+	if err != nil {
+		return "", err
+	}
+	if goal.Present && goal.Status == taskcontract.GoalStatusCompleted {
+		if err := validateGoalTerminalFinalHeadPlan(root, plan); err != nil {
+			return "", err
+		}
+		return "plan completion head: verified", nil
+	}
+	if err := validateFinalHeadPlan(root, plan); err != nil {
+		return "", err
+	}
+	return "plan completion head: verified", nil
+}
+
+func validateGoalTerminalFinalHeadPlan(root string, plan string) error {
+	schedule := taskcontract.ParsePlanSchedule(plan)
+	active, activeErr := schedule.ActiveEntries()
+	next, blocked, nonActiveErr := schedule.NonActiveEntries()
+	if activeErr != nil {
+		return activeErr
+	}
+	if nonActiveErr != nil {
+		return nonActiveErr
+	}
+	if len(active) > 0 || len(next) > 0 || len(blocked) > 0 {
+		return fmt.Errorf("completed GOALのHEAD planはACTIVE/NEXT/BLOCKEDを空にする必要があります(active=%d next=%d blocked=%d)", len(active), len(next), len(blocked))
+	}
+	if err := validateFinalHeadScheduleClosure(root, schedule); err != nil {
+		return err
+	}
+	if err := validateFinalHeadBranch(root, plan); err != nil {
+		return err
+	}
+	return validateFinalHeadTransition(plan)
+}
+
 func finalHeadPlan(root string) (string, string, bool, error) {
 	if _, err := finalHeadGitOutput(root, "rev-parse", "--git-dir"); err != nil {
 		return "", "skipped (not a git repository)", false, nil

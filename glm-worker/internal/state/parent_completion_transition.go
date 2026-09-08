@@ -10,7 +10,7 @@ type SessionRotationEvaluator func(acceptedRisk string) (*SessionRotationEvaluat
 
 type sessionRotationBuild func() (*SessionRotationEvaluation, error)
 
-func (s *StateStore) commitParentCompletion(stats TaskStats, clearPending bool, build sessionRotationBuild) parentCompletionTransitionResult {
+func (s *StateStore) commitParentCompletion(stats TaskStats, status TaskStatus, clearPending bool, build sessionRotationBuild) parentCompletionTransitionResult {
 	previousStatus := s.TaskStatus()
 	originalStats, originalStatsErr := s.loadTaskStats()
 	if clearPending {
@@ -18,7 +18,7 @@ func (s *StateStore) commitParentCompletion(stats TaskStats, clearPending bool, 
 			return parentCompletionTransitionResult{transitionErr: err}
 		}
 	}
-	if err := s.SetTaskStatus(TaskStatusComplete); err != nil {
+	if err := s.SetTaskStatus(status); err != nil {
 		result := parentCompletionTransitionResult{transitionErr: err}
 		if clearPending {
 			result.rollbackPendingErr = s.Touch("pending-decision")

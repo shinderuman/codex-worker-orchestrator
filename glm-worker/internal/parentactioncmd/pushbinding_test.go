@@ -46,7 +46,7 @@ func TestPushBindingClassifiesSyncedPostcondition(t *testing.T) {
 	}
 }
 
-func TestPushBindingClassifiesLocalCleanAheadWithUserDecisionEntry(t *testing.T) {
+func TestPushBindingClassifiesLocalCleanAheadWithParentStandingAuthorityEntry(t *testing.T) {
 	fixture := newPushBindingFixture(t)
 	writePushBindingFile(t, fixture.repo, "binding.txt", "base\nsecond\n")
 	runFinalizationGit(t, fixture.repo, "commit", "-q", "-am", "second")
@@ -64,7 +64,7 @@ func TestPushBindingClassifiesLocalCleanAheadWithUserDecisionEntry(t *testing.T)
 	if result.Postcondition != nil && result.Postcondition.Met {
 		t.Fatalf("postcondition = %#v", result.Postcondition)
 	}
-	if result.RemoteWrite == nil || result.RemoteWrite.Authorization != pushBindingAuthorizationRequired ||
+	if result.RemoteWrite == nil || result.RemoteWrite.Authorization != pushBindingAuthorizationStanding ||
 		result.RemoteWrite.Executor != pushBindingExecutorParentOnly ||
 		result.RemoteWrite.RemoteRef != "refs/heads/"+fixture.branch ||
 		result.RemoteWrite.ExpectedOID != result.Target.LocalOID {

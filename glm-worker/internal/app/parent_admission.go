@@ -77,6 +77,9 @@ func parentActionDenied(cmd Command, plan state.ParentActionPlan, st *state.Stat
 		if plan.RequiredAction == state.ParentActionApproveSurface {
 			return &workflow.WorkerError{Message: "task is waiting for quality policy surface approval; resolve it with --approve-surface current-diff (or --fix) before --accept"}
 		}
+		if plan.RequiredAction == state.ParentActionComplete {
+			return &workflow.WorkerError{Message: "task is awaiting parent completion; run the parent push and glm-parent-action complete before starting further actions"}
+		}
 		return &workflow.WorkerError{Message: "pending Sol decision must be resolved with --decision before --accept"}
 	case ModeResume:
 		return resumeActionDenied(st)
@@ -118,14 +121,11 @@ func newTaskActionDenied(plan state.ParentActionPlan, st *state.StateStore) erro
 		return &workflow.WorkerError{Message: fmt.Sprintf("previous task has unresolved parent review (%s); resolve it explicitly with --accept (or --fix when rework is required) before starting a new task", label)}
 	case state.ParentActionApproveSurface:
 		return &workflow.WorkerError{Message: "previous task is waiting for quality policy surface approval; resolve it with glm-parent-action approve-surface --accepted-scope current-diff (or --fix) before starting a new task"}
+	case state.ParentActionComplete:
+		return &workflow.WorkerError{Message: "previous task is awaiting parent completion; finish the parent push and run glm-parent-action complete before starting a new task"}
 	case state.ParentActionResume:
-		switch plan.ResumeKind {
-		case "rate-limited":
-			return &workflow.WorkerError{Message: "previous task is rate-limited; use --resume or --reset"}
-		case "provider-unavailable":
-			return &workflow.WorkerError{Message: "previous task is provider-unavailable; use --resume or --reset"}
-		case "interrupted":
-			return &workflow.WorkerError{Message: "previous task is interrupted; use --resume or --reset"}
+		if message, ok := resumeDeniedMessage(plan.ResumeKind); ok {
+			return &workflow.WorkerError{Message: message}
 		}
 	case state.ParentActionRepairGuardThenResume:
 		return &workflow.WorkerError{Message: "previous task stopped on a recoverable guard failure; repair the guard then use --resume or --reset"}
@@ -135,4 +135,16 @@ func newTaskActionDenied(plan state.ParentActionPlan, st *state.StateStore) erro
 		return &workflow.WorkerError{Message: "previous task is parked for an interrupt task; unpark it (after integrating the interrupt work) or run the interrupt task inside the parked worktree"}
 	}
 	return &workflow.WorkerError{Message: fmt.Sprintf("previous task requires parent action %s before starting a new task", plan.RequiredAction)}
+}
+
+func resumeDeniedMessage(resumeKind string) (string, bool) {
+	switch resumeKind {
+	case "rate-limited":
+		return "previous task is rate-limited; use --resume or --reset", true
+	case "provider-unavailable":
+		return "previous task is provider-unavailable; use --resume or --reset", true
+	case "interrupted":
+		return "previous task is interrupted; use --resume or --reset", true
+	}
+	return "", false
 }

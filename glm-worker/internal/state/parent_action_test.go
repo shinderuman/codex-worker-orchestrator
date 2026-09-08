@@ -183,7 +183,7 @@ func TestParentActionPlanPassRequiresAcceptUntilResolved(t *testing.T) {
 		t.Fatalf("PASS plan = %#v", plan)
 	}
 
-	accepted, err := st.AcceptParentReview(nil)
+	accepted, err := st.AcceptParentReview()
 	if err != nil || !accepted {
 		t.Fatalf("PASS accept = %v err=%v", accepted, err)
 	}
@@ -191,8 +191,26 @@ func TestParentActionPlanPassRequiresAcceptUntilResolved(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if plan.RequiredAction != ParentActionComplete || !plan.Allows(ParentActionComplete) || plan.Allows(ParentActionAccept) || plan.AdmitsCommand(ParentActionAccept) {
+		t.Fatalf("awaiting plan = %#v", plan)
+	}
+	if st.TaskStatus() != TaskStatusAwaitingParentCompletion {
+		t.Fatalf("accepted status = %q", st.TaskStatus())
+	}
+
+	completed, err := st.CompleteParentAwaiting(nil)
+	if err != nil || !completed {
+		t.Fatalf("awaiting completion = %v err=%v", completed, err)
+	}
+	plan, err = st.ParentActionPlan()
+	if err != nil {
+		t.Fatal(err)
+	}
 	if plan.RequiredAction != ParentActionNone || len(plan.AllowedActions) != 0 {
-		t.Fatalf("accepted complete plan = %#v", plan)
+		t.Fatalf("completed plan = %#v", plan)
+	}
+	if st.TaskStatus() != TaskStatusComplete {
+		t.Fatalf("completed status = %q", st.TaskStatus())
 	}
 }
 

@@ -320,6 +320,11 @@ func TestExecuteAcquiresAndReleasesLock(t *testing.T) {
 	if accept := executeAccept(t, cfg); !accept.Accepted {
 		t.Fatal("lock解放後の次task開始前にparent reviewを解決できませんでした")
 	}
+	if _, err := st.CompleteParentAwaiting(func(acceptedRisk string) (*state.SessionRotationEvaluation, error) {
+		return EvaluateSessionRotationTerminal(cfg, st, state.SessionRotationTerminalAccept, acceptedRisk)
+	}); err != nil {
+		t.Fatal(err)
+	}
 	prepareNextRotatedTask(t, st)
 
 	second := &fakeRunner{steps: []fakeStep{

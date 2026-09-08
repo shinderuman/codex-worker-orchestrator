@@ -388,9 +388,27 @@ func TestAcceptParentReviewRotationTransaction(t *testing.T) {
 	}
 	threadID := "01a0463c-d477-7410-9efd-cb34ff2e0b0e"
 
-	t.Run("required decision writes marker inside accept", func(t *testing.T) {
+	t.Run("accept awaits without issuing rotation", func(t *testing.T) {
 		st := seed(t)
-		accepted, err := st.AcceptParentReview(func(string) (*SessionRotationEvaluation, error) {
+		accepted, err := st.AcceptParentReview()
+		if err != nil || !accepted {
+			t.Fatalf("accept = %v err=%v", accepted, err)
+		}
+		if got := st.TaskStatus(); got != TaskStatusAwaitingParentCompletion {
+			t.Fatalf("accept後のstatus = %q", got)
+		}
+		marker, err := st.LoadSessionRotationMarker(threadID)
+		if err != nil || marker != nil {
+			t.Fatalf("acceptがrotation markerを書きました: %#v err=%v", marker, err)
+		}
+	})
+
+	t.Run("required decision writes marker inside completion", func(t *testing.T) {
+		st := seed(t)
+		if _, err := st.AcceptParentReview(); err != nil {
+			t.Fatal(err)
+		}
+		completed, err := st.CompleteParentAwaiting(func(string) (*SessionRotationEvaluation, error) {
 			return &SessionRotationEvaluation{
 				ParentThreadID: threadID,
 				TaskID:         st.ReadOr("task.id", ""),
@@ -398,38 +416,41 @@ func TestAcceptParentReviewRotationTransaction(t *testing.T) {
 				Decision:       SessionRotationDecision{Required: true, Reason: SessionRotationReasonCompaction},
 			}, nil
 		})
-		if err != nil || !accepted {
-			t.Fatalf("accept = %v err=%v", accepted, err)
+		if err != nil || !completed {
+			t.Fatalf("completion = %v err=%v", completed, err)
 		}
 		marker, err := st.LoadSessionRotationMarker(threadID)
 		if err != nil || marker == nil || marker.State != SessionRotationStatePending || marker.Directive == nil {
-			t.Fatalf("accept後のmarker = %#v err=%v", marker, err)
+			t.Fatalf("completion後のmarker = %#v err=%v", marker, err)
 		}
 	})
 
 	t.Run("evaluation failure rolls the terminal back", func(t *testing.T) {
 		st := seed(t)
+		if _, err := st.AcceptParentReview(); err != nil {
+			t.Fatal(err)
+		}
 		before, err := st.CurrentTaskStats()
 		if err != nil {
 			t.Fatal(err)
 		}
-		_, err = st.AcceptParentReview(func(string) (*SessionRotationEvaluation, error) {
+		_, err = st.CompleteParentAwaiting(func(string) (*SessionRotationEvaluation, error) {
 			return nil, os.ErrPermission
 		})
 		if err == nil {
-			t.Fatal("評価errorがacceptをfail closedしませんでした")
+			t.Fatal("評価errorがcompletionをfail closedしませんでした")
 		}
-		if got := st.TaskStatus(); got != TaskStatusComplete {
+		if got := st.TaskStatus(); got != TaskStatusAwaitingParentCompletion {
 			t.Fatalf("rollback後のstatus = %q", got)
 		}
 		after, err := st.CurrentTaskStats()
 		if err != nil {
 			t.Fatal(err)
 		}
-		if after.ParentReviewOpen == nil || after.ParentOutcomes[ParentOutcomeAccepted] != 0 {
+		if after.Status != TaskStatusAwaitingParentCompletion || after.ParentOutcomes[ParentOutcomeAccepted] != 1 {
 			t.Fatalf("rollback後のstats = %#v (before=%#v)", after, before)
 		}
-		retry, err := st.AcceptParentReview(func(string) (*SessionRotationEvaluation, error) {
+		retry, err := st.CompleteParentAwaiting(func(string) (*SessionRotationEvaluation, error) {
 			return &SessionRotationEvaluation{
 				ParentThreadID: threadID,
 				TaskID:         st.ReadOr("task.id", ""),
@@ -438,14 +459,14 @@ func TestAcceptParentReviewRotationTransaction(t *testing.T) {
 			}, nil
 		})
 		if err != nil || !retry {
-			t.Fatalf("再試行accept = %v err=%v", retry, err)
+			t.Fatalf("再試行completion = %v err=%v", retry, err)
 		}
 		marker, err := st.LoadSessionRotationMarker(threadID)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if marker == nil || marker.State != "" || marker.LastEvaluation == nil || marker.LastEvaluation.Required {
-			t.Fatalf("not-required accept後のmarker = %#v", marker)
+			t.Fatalf("not-required completion後のmarker = %#v", marker)
 		}
 	})
 }

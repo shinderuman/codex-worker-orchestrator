@@ -5,15 +5,15 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/app"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repolock"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
 type noGoOutput struct {
-	Status    string `json:"status"`
-	Completed bool   `json:"completed"`
+	Status     string `json:"status"`
+	TaskStatus string `json:"task_status"`
+	Completed  bool   `json:"completed"`
 }
 
 func executeNoGo(cfg config.AppConfig, args []string, stdout io.Writer) error {
@@ -44,11 +44,9 @@ func runNoGo(cfg config.AppConfig, stdout io.Writer) error {
 	if !plan.Allows(state.ParentActionNoGo) {
 		return fmt.Errorf("terminal no-go is not allowed for the current task")
 	}
-	completed, err := st.CompleteObservationNoGo(func(string) (*state.SessionRotationEvaluation, error) {
-		return app.EvaluateSessionRotationTerminal(cfg, st, state.SessionRotationTerminalNoGo, "")
-	})
+	awaited, err := st.AwaitObservationNoGo()
 	if err != nil {
 		return err
 	}
-	return json.NewEncoder(stdout).Encode(noGoOutput{Status: "no-go", Completed: completed})
+	return json.NewEncoder(stdout).Encode(noGoOutput{Status: "no-go", TaskStatus: string(st.TaskStatus()), Completed: st.TaskStatus() == state.TaskStatusComplete && awaited})
 }

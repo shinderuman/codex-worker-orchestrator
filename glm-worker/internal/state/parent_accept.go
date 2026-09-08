@@ -2,7 +2,7 @@ package state
 
 import "fmt"
 
-func (s *StateStore) AcceptParentReview(evaluate SessionRotationEvaluator) (bool, error) {
+func (s *StateStore) AcceptParentReview() (bool, error) {
 	stats, err := s.loadTaskStats()
 	if err != nil {
 		stats, err = s.recoverTaskStats(err)
@@ -15,8 +15,10 @@ func (s *StateStore) AcceptParentReview(evaluate SessionRotationEvaluator) (bool
 		return ok, resolveErr
 	}
 
-	stats.Status = TaskStatusComplete
-	result := s.commitParentCompletion(stats, false, sessionRotationBuildFor(evaluate, resolved.Risk))
+	stats.Status = TaskStatusAwaitingParentCompletion
+	stats.AcceptedRisk = resolved.Risk
+	stats.CompletionTerminal = SessionRotationTerminalAccept
+	result := s.commitParentCompletion(stats, TaskStatusAwaitingParentCompletion, false, nil)
 	if result.transitionErr != nil {
 		if result.rollbackStatusErr != nil {
 			return false, fmt.Errorf("parent accept outcomeを保存できずtask status rollbackにも失敗しました: outcome=%w rollback=%w", result.transitionErr, result.rollbackStatusErr)

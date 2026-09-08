@@ -11,7 +11,7 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-func TestRunNoGoCompletesObservationWithoutWorker(t *testing.T) {
+func TestRunNoGoAwaitsObservationCompletionWithoutWorker(t *testing.T) {
 	cfg, st := newParentActionIdentityTestState(t)
 	t.Setenv("CODEX_THREAD_ID", codexIdentityTestThreadID)
 	t.Setenv("CODEX_SESSION_ID", codexIdentityTestThreadID)
@@ -34,11 +34,24 @@ func TestRunNoGoCompletesObservationWithoutWorker(t *testing.T) {
 	if err := json.Unmarshal(stdout.Bytes(), &output); err != nil {
 		t.Fatal(err)
 	}
-	if output.Status != "no-go" || !output.Completed {
+	if output.Status != "no-go" || output.Completed || output.TaskStatus != string(state.TaskStatusAwaitingParentCompletion) {
 		t.Fatalf("output = %#v", output)
 	}
-	if st.TaskStatus() != state.TaskStatusComplete || st.Exists("pending-decision") {
-		t.Fatalf("terminal state = status:%s pending:%v", st.TaskStatus(), st.Exists("pending-decision"))
+	if st.TaskStatus() != state.TaskStatusAwaitingParentCompletion || st.Exists("pending-decision") {
+		t.Fatalf("awaiting state = status:%s pending:%v", st.TaskStatus(), st.Exists("pending-decision"))
+	}
+	plan, err := st.ParentActionPlan()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.RequiredAction != state.ParentActionComplete {
+		t.Fatalf("awaiting plan = %#v", plan)
+	}
+	if _, err := st.CompleteParentAwaiting(nil); err != nil {
+		t.Fatal(err)
+	}
+	if st.TaskStatus() != state.TaskStatusComplete {
+		t.Fatalf("completion status = %s", st.TaskStatus())
 	}
 }
 

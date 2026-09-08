@@ -29,6 +29,7 @@ const (
 	ParentActionReview                      ParentAction = "parent-review"
 	ParentActionApproveSurface              ParentAction = "approve-surface"
 	ParentActionAccept                      ParentAction = "accept"
+	ParentActionComplete                    ParentAction = "complete"
 	ParentActionFix                         ParentAction = "fix"
 	ParentActionResume                      ParentAction = "resume"
 	ParentActionPark                        ParentAction = "park"
@@ -62,7 +63,7 @@ func (p ParentActionPlan) AdmitsCommand(action ParentAction) bool {
 		return false
 	}
 	switch p.RequiredAction {
-	case ParentActionDecision, ParentActionReview, ParentActionApproveSurface, ParentActionAccept:
+	case ParentActionDecision, ParentActionReview, ParentActionApproveSurface, ParentActionAccept, ParentActionComplete:
 		return false
 	default:
 		return true
@@ -130,6 +131,8 @@ func (s *StateStore) parentActionPlanForStatus(status TaskStatus, pending bool, 
 		return waitingDecisionActionPlan(status, pending, openReview, stopKind)
 	case TaskStatusWaitingSolReview:
 		return waitingReviewActionPlan(status, pending, openReview, stopKind, qualitySurfaceApproval)
+	case TaskStatusAwaitingParentCompletion:
+		return awaitingParentCompletionActionPlan(status, pending, openReview, stopKind)
 	case TaskStatusParked:
 		return s.parkedActionPlan(status, pending, openReview, stopKind)
 	case TaskStatusComplete:
@@ -160,6 +163,13 @@ func waitingReviewActionPlan(status TaskStatus, pending bool, openReview string,
 		}, nil
 	}
 	return actionPlan(ParentActionReview, "", ParentActionAccept, ParentActionFix, ParentActionPark), nil
+}
+
+func awaitingParentCompletionActionPlan(status TaskStatus, pending bool, openReview string, stopKind ResumeStopKind) (ParentActionPlan, error) {
+	if pending || stopKind != ResumeStopNone || openReview != roundCommentNone {
+		return ParentActionPlan{}, lifecycleInconsistency(status, "awaiting parent completion task has unresolved parent or resume state")
+	}
+	return actionPlan(ParentActionComplete, "", ParentActionComplete), nil
 }
 
 func (s *StateStore) parkedActionPlan(status TaskStatus, pending bool, openReview string, stopKind ResumeStopKind) (ParentActionPlan, error) {

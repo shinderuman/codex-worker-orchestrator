@@ -164,6 +164,87 @@ func TestFinalHeadPlanSkipsNonGitRepository(t *testing.T) {
 	}
 }
 
+func TestParentCompletionHeadAcceptsNextTaskPromotion(t *testing.T) {
+	root := newFinalHeadRepo(t)
+	writeFinalHeadFixture(t, root, finalHeadFixturePlan("main", ""), true)
+	commitFinalHeadFixture(t, root)
+	if err := os.Remove(filepath.Join(root, "IMPLEMENTATION_TASKS", "active.md")); err != nil {
+		t.Fatal(err)
+	}
+	writeFinalHeadFile(t, root, "IMPLEMENTATION_TASKS/next.md", "# next\n\n## External feasibility\n\nstatus: not-applicable\n")
+	writeFinalHeadFile(t, root, implementationPlanFile, completionPromotedFixturePlan("main"))
+	commitFinalHeadFixture(t, root)
+
+	status, err := CheckParentCompletionHead(root)
+	if err != nil || status != "plan completion head: verified" {
+		t.Fatalf("status=%q err=%v", status, err)
+	}
+}
+
+func TestParentCompletionHeadAcceptsNonGitRepositorySkip(t *testing.T) {
+	status, err := CheckParentCompletionHead(t.TempDir())
+	if err != nil || status != "plan completion head: skipped (not a git repository)" {
+		t.Fatalf("status=%q err=%v", status, err)
+	}
+}
+
+func TestParentCompletionHeadAcceptsCompletedGoalTerminalPlan(t *testing.T) {
+	root := newFinalHeadRepo(t)
+	writeFinalHeadFixture(t, root, finalHeadFixturePlan("main", ""), true)
+	commitFinalHeadFixture(t, root)
+	if err := os.Remove(filepath.Join(root, "IMPLEMENTATION_TASKS", "active.md")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(root, "IMPLEMENTATION_TASKS", "next.md")); err != nil {
+		t.Fatal(err)
+	}
+	writeFinalHeadFile(t, root, implementationPlanFile, completionGoalTerminalFixturePlan("main", ""))
+	commitFinalHeadFixture(t, root)
+
+	status, err := CheckParentCompletionHead(root)
+	if err != nil || status != "plan completion head: verified" {
+		t.Fatalf("status=%q err=%v", status, err)
+	}
+}
+
+func TestParentCompletionHeadRejectsGoalTerminalWithLeftoverScheduleOrTask(t *testing.T) {
+	root := newFinalHeadRepo(t)
+	writeFinalHeadFixture(t, root, finalHeadFixturePlan("main", ""), true)
+	commitFinalHeadFixture(t, root)
+	if err := os.Remove(filepath.Join(root, "IMPLEMENTATION_TASKS", "active.md")); err != nil {
+		t.Fatal(err)
+	}
+	writeFinalHeadFile(t, root, implementationPlanFile, completionGoalTerminalFixturePlan("main", "- `IMPLEMENTATION_TASKS/next.md`\n"))
+	commitFinalHeadFixture(t, root)
+
+	_, err := CheckParentCompletionHead(root)
+	if err == nil || !strings.Contains(err.Error(), "空にする必要があります") {
+		t.Fatalf("leftover NEXT err=%v", err)
+	}
+
+	writeFinalHeadFile(t, root, implementationPlanFile, completionGoalTerminalFixturePlan("main", ""))
+	commitFinalHeadFixture(t, root)
+
+	_, err = CheckParentCompletionHead(root)
+	if err == nil || !strings.Contains(err.Error(), "closure") {
+		t.Fatalf("leftover task file err=%v", err)
+	}
+}
+
+func completionPromotedFixturePlan(branch string) string {
+	return "# plan\n\n## ACTIVE\n\n- `IMPLEMENTATION_TASKS/next.md`\n\n" +
+		"## NEXT（優先順）\n\n## BLOCKED / USER_PERMISSION_WAIT\n\n" +
+		"## 現在のGit境界\n\n- branch: `" + branch + "`\n\n" +
+		"## 現在の停止理由\n\nなし\n"
+}
+
+func completionGoalTerminalFixturePlan(branch string, nextEntries string) string {
+	return "# plan\n\n## GOAL\n\nstatus: completed\n\nGoal原文\n\n" +
+		"## ACTIVE\n\n## NEXT（優先順）\n\n" + nextEntries + "\n## BLOCKED / USER_PERMISSION_WAIT\n\n" +
+		"## 現在のGit境界\n\n- branch: `" + branch + "`\n\n" +
+		"## 現在の停止理由\n\nなし\n"
+}
+
 func finalHeadFixturePlan(branch string, extraNext string) string {
 	return "# plan\n\n## ACTIVE\n\n- `IMPLEMENTATION_TASKS/active.md`\n\n" +
 		"## NEXT（優先順）\n\n- `IMPLEMENTATION_TASKS/next.md`\n" + extraNext + "\n" +

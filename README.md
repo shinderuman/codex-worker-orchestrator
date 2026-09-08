@@ -118,19 +118,20 @@ glm-parent-action revise-milestones <token>
 glm-parent-action no-go
 glm-parent-action approve-surface --accepted-scope current-diff
 glm-parent-action accept
+glm-parent-action complete
 glm-parent-action resume
 glm-parent-action park
 glm-parent-action unpark
 glm-parent-action evidence <manifest.json>
 glm-parent-action finalize-check <go-test|go-test-race>
-glm-parent-action push-binding [--expected-oid <oid>] [--attempt-outcome <none|completed|rejected|network-error|non-fast-forward>]
+glm-parent-action push-binding
 ```
 
 Plan管理repoの`start`はcurrent ACTIVE taskを固定要求で起動する。decision/fixとexecution milestone start/revisionは`.glm-worker-parent-actions/`内のtoken-bound stagingを使い、実actionはpathではなくcrypto-random tokenだけを受ける。wrapperはpayloadをmemoryへ取り込みstaging fileを削除後、UTF-8 byte長・SHA-256・stdin framingを処理して`glm-worker`へ渡す。
 
 execution milestoneは大きい1つのsemantic ACTIVE taskを2〜8 unitへ区切るruntime authorityで、task requirement自体を分割しない。`no-go`はcanonical parent action planがterminal observation no-goを許す場合だけ成立する。詳細は`codex/instructions/`を正とする。
 
-`finalize-check`はblocking quality gateとcanonical `--handoff`を連続実行し、current snapshotに対応するvalidation・handoff・read-only local Git summaryをJSONで返す。accept/fix、commit、fetch/pushやdivergence修復は行わない。`push-binding`はread-onlyでremote同期分類とpostconditionを返し、remote writeは行わない。
+`finalize-check`はquality gateと`--handoff`を連続実行し、validation・handoff・read-only Git summaryをJSONで返す。`push-binding`はremote同期分類とpostconditionを返す。`accept`はreview採用のみを記録して`awaiting-parent-completion`へ遷移させ、metadata同期とpush後の`complete`だけがlive remote postconditionを検証して完了・rotation評価へ進める。GLMはremote writeしない。
 
 低レベルtransport、inspection/report、recovery/debugは`glm-worker`を直接使う。全一覧は`glm-worker --help`がJSONで返す。主要surface:
 

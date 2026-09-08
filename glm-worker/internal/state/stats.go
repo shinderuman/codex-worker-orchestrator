@@ -84,6 +84,8 @@ type TaskStats struct {
 	ParentFixOrigins      map[string]int         `json:"parent_fix_origins,omitempty"`
 	ParentOutcomesByModel map[string]int         `json:"parent_outcomes_by_model,omitempty"`
 	ParentOutcomesByRisk  map[string]int         `json:"parent_outcomes_by_risk,omitempty"`
+	AcceptedRisk          string                 `json:"accepted_risk,omitempty"`
+	CompletionTerminal    string                 `json:"completion_terminal,omitempty"`
 }
 
 type ParentCodexIdentity struct {

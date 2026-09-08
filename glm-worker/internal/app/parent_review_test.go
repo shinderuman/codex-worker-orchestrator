@@ -199,13 +199,17 @@ func TestExecuteParentReviewFixThenAcceptRecordsOutcomes(t *testing.T) {
 }
 
 func TestExecuteParentReviewAcceptIsSingleUse(t *testing.T) {
-	cfg, _ := newParentReviewOpportunity(t)
+	cfg, st := newParentReviewOpportunity(t)
 	applyParentReviewFix(t, cfg)
 	if first := executeAccept(t, cfg); !first.Accepted {
-		t.Fatal("最初のacceptが確定されませんでした")
+		t.Fatalf("最初のaccept = %#v", first)
 	}
-	if retry := executeAccept(t, cfg); retry.Accepted {
-		t.Fatal("同一opportunityのaccept再実行が二重確定されました")
+	if got := st.TaskStatus(); got != state.TaskStatusAwaitingParentCompletion {
+		t.Fatalf("accept後のstatus = %q", got)
+	}
+	retryErr := Execute(Command{Mode: ModeAccept}, cfg, nil, io.Discard, io.Discard)
+	if retryErr == nil || !strings.Contains(retryErr.Error(), "awaiting parent completion") {
+		t.Fatalf("同一opportunityのaccept再実行が拒否されませんでした: %v", retryErr)
 	}
 }
 
@@ -214,7 +218,7 @@ func TestExecuteParentReviewAcceptCompletesOnlyResolvedReview(t *testing.T) {
 	if accept := executeAccept(t, cfg); !accept.Accepted {
 		t.Fatal("open reviewをacceptできませんでした")
 	}
-	if got := st.TaskStatus(); got != state.TaskStatusComplete {
+	if got := st.TaskStatus(); got != state.TaskStatusAwaitingParentCompletion {
 		t.Fatalf("accepted status = %q", got)
 	}
 
@@ -333,15 +337,33 @@ func TestExecuteNewTaskRejectsOpenParentReviewUntilAccepted(t *testing.T) {
 	if accept := executeAccept(t, cfg); !accept.Accepted {
 		t.Fatal("open parent reviewをacceptできませんでした")
 	}
-	if got := st.TaskStatus(); got != state.TaskStatusComplete {
-		t.Fatalf("accept後のlifecycle status = %q want %q", got, state.TaskStatusComplete)
+	if got := st.TaskStatus(); got != state.TaskStatusAwaitingParentCompletion {
+		t.Fatalf("accept後のlifecycle status = %q want %q", got, state.TaskStatusAwaitingParentCompletion)
 	}
-	completedStats, err := st.CurrentTaskStats()
+	awaitingStats, err := st.CurrentTaskStats()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if completedStats.Status != state.TaskStatusComplete {
-		t.Fatalf("accept後のstats status = %q want %q", completedStats.Status, state.TaskStatusComplete)
+	if awaitingStats.Status != state.TaskStatusAwaitingParentCompletion {
+		t.Fatalf("accept後のstats status = %q want %q", awaitingStats.Status, state.TaskStatusAwaitingParentCompletion)
+	}
+
+	awaiting := &fakeRunner{steps: []fakeStep{
+		{structured: implementedPacketApp("must not run while awaiting")},
+		{structured: passPacketApp()},
+	}}
+	err = Execute(Command{Mode: ModeNewTask, Payload: "request2"}, cfg, awaiting.factory(), io.Discard, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "awaiting parent completion") || len(awaiting.prompts) != 0 {
+		t.Fatalf("awaiting中の新task開始がfail closedしませんでした: %v prompts=%d", err, len(awaiting.prompts))
+	}
+
+	if _, err := st.CompleteParentAwaiting(func(acceptedRisk string) (*state.SessionRotationEvaluation, error) {
+		return EvaluateSessionRotationTerminal(cfg, st, state.SessionRotationTerminalAccept, acceptedRisk)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got := st.TaskStatus(); got != state.TaskStatusComplete {
+		t.Fatalf("completion後のlifecycle status = %q", got)
 	}
 	prepareNextRotatedTask(t, st)
 

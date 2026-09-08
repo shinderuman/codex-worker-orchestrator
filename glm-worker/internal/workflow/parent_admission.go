@@ -69,6 +69,8 @@ func (w *Workflow) newTaskActionDenied(plan state.ParentActionPlan) error {
 		return &WorkerError{Message: fmt.Sprintf("previous task has unresolved parent review (%s); resolve it explicitly with --accept (or --fix when rework is required) before starting a new task", label)}
 	case state.ParentActionApproveSurface:
 		return &WorkerError{Message: "previous task is waiting for quality policy surface approval; resolve it with glm-parent-action approve-surface --accepted-scope current-diff (or --fix) before starting a new task"}
+	case state.ParentActionComplete:
+		return &WorkerError{Message: "previous task is awaiting parent completion; finish the parent push and run glm-parent-action complete before starting a new task"}
 	case state.ParentActionResume:
 		switch plan.ResumeKind {
 		case "rate-limited":

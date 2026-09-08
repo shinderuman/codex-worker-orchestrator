@@ -81,13 +81,24 @@ func TestParentHandoffPassRequiresAcceptThenBecomesNoAction(t *testing.T) {
 		t.Fatalf("last material = %#v", output.LastMaterial)
 	}
 
-	accepted, err := st.AcceptParentReview(nil)
+	accepted, err := st.AcceptParentReview()
 	if err != nil || !accepted {
 		t.Fatalf("accept = %v err=%v", accepted, err)
 	}
 	output = buildParentHandoff(st)
+	if !output.Consistent || output.RequiredAction == nil || *output.RequiredAction != string(state.ParentActionComplete) || output.ParentReviewOpen != nil {
+		t.Fatalf("awaiting handoff = %#v", output)
+	}
+	if len(output.AllowedActions) != 1 || output.AllowedActions[0] != string(state.ParentActionComplete) {
+		t.Fatalf("awaiting allowed actions = %#v", output.AllowedActions)
+	}
+
+	if _, err := st.CompleteParentAwaiting(nil); err != nil {
+		t.Fatal(err)
+	}
+	output = buildParentHandoff(st)
 	if !output.Consistent || output.RequiredAction == nil || *output.RequiredAction != string(state.ParentActionNone) || output.ParentReviewOpen != nil {
-		t.Fatalf("accepted handoff = %#v", output)
+		t.Fatalf("completed handoff = %#v", output)
 	}
 }
 
@@ -590,6 +601,11 @@ func seedSessionRotationAccept(t *testing.T) (config.AppConfig, *state.StateStor
 	if !accept.Accepted {
 		t.Fatal("open reviewをacceptできませんでした")
 	}
+	if _, err := st.CompleteParentAwaiting(func(acceptedRisk string) (*state.SessionRotationEvaluation, error) {
+		return EvaluateSessionRotationTerminal(cfg, st, state.SessionRotationTerminalAccept, acceptedRisk)
+	}); err != nil {
+		t.Fatal(err)
+	}
 	return cfg, st, codexTestParentThreadID
 }
 
@@ -669,7 +685,7 @@ func TestSessionRotationRepeatedHandoffWritesNothingAndReturnsSameDirective(t *t
 	}
 }
 
-func TestSessionRotationAcceptFailsClosedWithoutParentIdentity(t *testing.T) {
+func TestSessionRotationCompletionFailsClosedWithoutParentIdentity(t *testing.T) {
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -685,18 +701,23 @@ func TestSessionRotationAcceptFailsClosedWithoutParentIdentity(t *testing.T) {
 		stats.ParentReviewOpen = &state.ParentReviewOpenState{PacketStatus: "PASS", Risk: "LOW"}
 	})
 
-	err = Execute(Command{Mode: ModeAccept}, cfg, nil, io.Discard, io.Discard)
-	if err == nil || !strings.Contains(err.Error(), "session rotation") {
-		t.Fatalf("identity欠損のacceptがfail closedしませんでした: %v", err)
+	if _, err := st.AcceptParentReview(); err != nil {
+		t.Fatal(err)
 	}
-	if got := st.TaskStatus(); got != state.TaskStatusComplete {
+	_, err = st.CompleteParentAwaiting(func(acceptedRisk string) (*state.SessionRotationEvaluation, error) {
+		return EvaluateSessionRotationTerminal(cfg, st, state.SessionRotationTerminalAccept, acceptedRisk)
+	})
+	if err == nil || !strings.Contains(err.Error(), "session rotation") {
+		t.Fatalf("identity欠損のcompletionがfail closedしませんでした: %v", err)
+	}
+	if got := st.TaskStatus(); got != state.TaskStatusAwaitingParentCompletion {
 		t.Fatalf("fail closed後のstatus = %q", got)
 	}
 	stats, err := st.CurrentTaskStats()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stats.ParentReviewOpen == nil || stats.ParentOutcomes[state.ParentOutcomeAccepted] != 0 {
+	if stats.ParentOutcomes[state.ParentOutcomeAccepted] != 1 {
 		t.Fatalf("fail closed後のstats = %#v", stats)
 	}
 }

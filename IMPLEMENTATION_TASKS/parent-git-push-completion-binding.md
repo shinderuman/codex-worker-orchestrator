@@ -22,6 +22,18 @@ Pushはいつするの？
 なにかPushに関する不具合解消のタスクやっていたよな？お前なにしてくれてるの？？
 ````
 
+### 2026-09-08（authority訂正）
+
+````text
+改めていうがCodexのPushは許可している
+GLMのPushは許可してない
+Codexは監督者、GLMは作業者だからだ
+監督者を飛び越えて作業者がリモートにPush作業するのはおかしいだろ
+レビューをせずに作業を「完了」させているということなんだから
+なんて勘違いしてるんだよ
+ちゃんと直せ
+````
+
 ## Resolved references
 
 - 2026-09-08、local `main` のcommit `f9c4c14` と`1cc47a1`を`origin/main`へ通常pushする親操作が外部安全審査で拒否された
@@ -29,6 +41,7 @@ Pushはいつするの？
 - 初回実装で`glm-parent-action push-binding`はexact remote/ref・authorization state・remote postconditionを返すようになった
 - 初回完了直後、local `main`が`origin/main`より3 commit aheadのままtask metadata同期とsession rotationへ進んだ。新sessionで手動実行した`push-binding`は`authorization:user_decision_required`を返しており、判定commandの存在だけでは通常completion lifecycleを拘束できていない
 - 2026-09-08、親Codexがcurrent HEAD `4d8bab88b4ad59f3483cd98422ad09fe4cac553e`を`origin/refs/heads/main`へ通常pushし、installed `push-binding --expected-oid ... --attempt-outcome completed`が`classification:synced`、`postcondition.met:true`を返した。即時のremote差異は解消したが、親が手動で気付くことへ依存するlifecycle gapは未解消である
+- 2026-09-08、ユーザーは監督者であるCodexの通常pushを恒久許可済みであり、remote write禁止は作業者/reviewerであるGLMだけに適用すると再確認した。Codexまで`user_decision_required`へ戻した初回解釈はauthority境界の誤りである
 
 ## Purpose
 
@@ -38,15 +51,16 @@ Pushはいつするの？
 
 status: implementation
 
-assumption: Codex appの外部安全審査に対し、repository側からauthority不足とpush後postconditionを機械判定できる境界、および再利用可能なremote write authorization scopeが存在する
+assumption: 親Codexの恒久push authorityとGLMのremote write禁止を分離し、review後の親completion pushとremote postconditionを機械的に拘束できる境界が存在する
 evidence-source: producer
-evidence: 2026-09-08の実Codex app安全審査はorigin/mainへのpushを明示承認不足として拒否した。repository側ではexact remote/ref・ahead/behind・last outcome・ls-remoteによるpostconditionを判定可能だが、Codex app側のauthorization自体は外部責務である。初回実装後の実completionで、手動`push-binding`を呼ばないままaccept・task同期・rotationへ進める残存gapを確認した
-go: 2026-09-08 Sol High判断。repository側のpreflight・remote-sync-pending分類・postconditionに加え、通常completionとrotationのadmissionを機械bindingする。Codex app認可は外部責務としてpositive判定せず、明示的なtarget-bound authorizationがない場合はpush前かつtask advance前にexact remote/ref付きでユーザー判断へ戻す
+evidence: 2026-09-08の実completionで、初回`push-binding`実装後も手動commandを呼ばないままaccept・task同期・rotationへ進みlocal mainが3 commit aheadになった。その後、親Codexによる通常pushは成功し、live remote postconditionもmet:trueになった。ユーザーはCodexのpushは恒久許可済み、GLMのpushは禁止と明示した
+go: 2026-09-08 Sol High判断。review・Sol採否・validation後に親Codexがcommit/install/metadata同期と通常pushを行い、live remote postcondition成功後だけtask完了・rotation・次task開始を許可する。GLM worker/reviewerにはremote write authorityもpush実行surfaceも与えない
 
 ## Contract
 
-- 通常completionがpushを要求する場合、remote/refと必要なauthorizationを実行前に一意にし、不足時は外部writeを試行する前にexact target付きでユーザー判断へ戻す
-- remote-sync-pendingが未解消の間は、task metadata同期、次task開始、session rotation完了のいずれも成功扱いにしない
+- 親Codexはreview・Sol採否・必要validationを終え、implementation commit・install/smoke・task metadata同期commitを確定した後、configured upstreamのexact remote/refへ通常pushする。既存の恒久authorityに対する都度のユーザー承認を要求しない
+- GLM worker/reviewerはremote writeを実行せず、親Codexのreview・採否・commit・push責務を代行しない
+- remote-sync-pendingが未解消の間は、親USER_REQUESTのtask完了、次taskのmodel開始、session rotation完了のいずれも成功扱いにしない。review結果の受理・親accept・local commit・install・metadata同期はpush前の必要工程として妨げない
 - push拒否・network failure・non-fast-forward・remote postcondition不一致をlocal task完了やremote同期成功へ縮退しない
 - local commit、ahead/behind、対象remote/ref、last push outcomeをbounded machine evidenceとして次の正規actionへ渡す
 - 既存parent action / project state / completion postconditionへ最小統合し、別daemon・DBを追加しない
@@ -59,11 +73,14 @@ go: 2026-09-08 Sol High判断。repository側のpreflight・remote-sync-pending�
 - `main`、`origin`、default branchを暗黙固定しない
 - push失敗後に別command、別transport、force pushで同じwriteを迂回しない
 - `push-binding`を親が任意に呼ぶ手順説明だけで再完了扱いにしない
+- 親Codexの恒久push authorityを`user_decision_required`へ縮退し、同じ許可をtask/remote/refごとに取り直さない
+- GLMから到達可能なremote write commandやcredentialを追加しない
 
 ## Acceptance criteria
 
-- authorization不足はpush前かつtask advance前に停止し、exact remote/refを伴うユーザー判断入口を返す
-- remote-sync-pendingのまま`accept`後metadata同期・次task開始・session rotation完了を試みる代表scenarioがfail closedする
+- 親Codexの恒久authority下で、review/validation前のpushは拒否され、review/validation・commit/install/metadata同期後のconfigured upstreamへの通常pushは追加承認なしで正規工程として実行される
+- remote-sync-pendingのまま親USER_REQUEST完了・次task model開始・session rotation完了を試みる代表scenarioがfail closedし、親accept・local metadata同期はpush前工程として成立する
+- GLM worker/reviewerからremote writeを試みる代表scenarioがmodel実行前またはcommand admissionで拒否される
 - push成功時はexpected local commitがexpected remote refへ到達したpostconditionを確認する
 - rejection、network failure、non-fast-forward、remote ref mismatch、local clean but aheadをremote-sync-pendingとして区別するtestがある
 - independent reviewer、Sol semantic review、必要なvalidation、commit/install/smokeを完了する
@@ -83,4 +100,4 @@ none
 
 ## Current boundary
 
-false-completeとして直ちにACTIVE再開する。remote-sync-pendingを通常completion・task advance・session rotationの機械postconditionへ統合し、このtask完了後にprose-only control auditへ戻る。
+false-completeとしてACTIVE再開中。Codex/GLM authorityを上記の監督者/作業者モデルへ訂正し、review後の親pushとremote postconditionを親USER_REQUEST完了・次task model開始・rotation完了へ機械bindingする。

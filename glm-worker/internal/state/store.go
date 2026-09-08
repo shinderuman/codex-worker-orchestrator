@@ -23,14 +23,15 @@ const (
 	WorkerRole   SessionRole = "worker"
 	ReviewerRole SessionRole = "reviewer"
 
-	TaskStatusActive                 TaskStatus = "active"
-	TaskStatusWaitingDecision        TaskStatus = "waiting-decision"
-	TaskStatusWaitingSolReview       TaskStatus = "waiting-sol-review"
-	TaskStatusComplete               TaskStatus = "complete"
-	TaskStatusRateLimited            TaskStatus = "rate-limited"
-	TaskStatusProviderUnavailable    TaskStatus = "provider-unavailable"
-	TaskStatusGuardRecoverable       TaskStatus = "guard-recoverable"
-	TaskStatusQualityGateRecoverable TaskStatus = "quality-gate-recoverable"
+	TaskStatusActive                   TaskStatus = "active"
+	TaskStatusWaitingDecision          TaskStatus = "waiting-decision"
+	TaskStatusWaitingSolReview         TaskStatus = "waiting-sol-review"
+	TaskStatusAwaitingParentCompletion TaskStatus = "awaiting-parent-completion"
+	TaskStatusComplete                 TaskStatus = "complete"
+	TaskStatusRateLimited              TaskStatus = "rate-limited"
+	TaskStatusProviderUnavailable      TaskStatus = "provider-unavailable"
+	TaskStatusGuardRecoverable         TaskStatus = "guard-recoverable"
+	TaskStatusQualityGateRecoverable   TaskStatus = "quality-gate-recoverable"
 
 	TaskStatusInterrupted TaskStatus = "interrupted"
 
@@ -47,6 +48,7 @@ func (status TaskStatus) Known() bool {
 		TaskStatusActive,
 		TaskStatusWaitingDecision,
 		TaskStatusWaitingSolReview,
+		TaskStatusAwaitingParentCompletion,
 		TaskStatusComplete,
 		TaskStatusRateLimited,
 		TaskStatusProviderUnavailable,

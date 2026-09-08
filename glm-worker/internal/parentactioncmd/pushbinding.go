@@ -81,7 +81,7 @@ const (
 	pushBindingClassificationNetworkFailure    = "remote_sync_pending_network_failure"
 	pushBindingClassificationNonFastForward    = "remote_sync_pending_non_fast_forward"
 	pushBindingClassificationRemoteRefMismatch = "remote_sync_pending_remote_ref_mismatch"
-	pushBindingAuthorizationRequired           = "user_decision_required"
+	pushBindingAuthorizationStanding           = "parent_standing_authority"
 	pushBindingExecutorParentOnly              = "parent_codex_surface_only"
 	pushBindingOIDLength                       = 40
 	pushBindingFailureExpectedOIDStale         = "expected_oid_not_current_head"
@@ -159,7 +159,7 @@ func buildPushBinding(repoRoot string, options pushBindingOptions) pushBindingOu
 	}
 	if output.Classification != pushBindingClassificationSynced {
 		output.RemoteWrite = &pushBindingRemoteWrite{
-			Authorization: pushBindingAuthorizationRequired,
+			Authorization: pushBindingAuthorizationStanding,
 			Executor:      pushBindingExecutorParentOnly,
 			RemoteName:    target.RemoteName,
 			RemoteRef:     target.RemoteRef,

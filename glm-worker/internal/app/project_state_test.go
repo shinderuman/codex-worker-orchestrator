@@ -121,6 +121,43 @@ func TestProjectStateGoalActiveCompletionUnmet(t *testing.T) {
 	}
 }
 
+func TestProjectStateAwaitingParentCompletionIsNotReady(t *testing.T) {
+	cfg := newAppConfig(t)
+	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", "# Plan\n\n## GOAL\n\nstatus: active\n\nGoal原文\n\n## ACTIVE\n\n- `IMPLEMENTATION_TASKS/final.md`\n\n## NEXT（優先順）\n\n## BLOCKED / USER_PERMISSION_WAIT\n")
+	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_TASKS/final.md", projectStateTaskBody("none"))
+	commitProjectStateRepo(t, cfg.RepoRoot)
+	st, err := state.NewStateStore(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.StartNewTask(); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Write("active-task", "IMPLEMENTATION_TASKS/final.md"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetTaskStatus(state.TaskStatusAwaitingParentCompletion); err != nil {
+		t.Fatal(err)
+	}
+	output, err := buildProjectState(cfg, st)
+	if err != nil {
+		t.Fatalf("buildProjectState: %v", err)
+	}
+	if output.Completion == nil || output.Completion.Ready {
+		t.Fatalf("completion = %#v", output.Completion)
+	}
+	unmet := strings.Join(output.Completion.Unmet, ",")
+	for _, want := range []string{"task_not_complete", "pending_parent_action"} {
+		if !strings.Contains(unmet, want) {
+			t.Fatalf("unmet = %q", unmet)
+		}
+	}
+	if output.Completion.TaskStatus != string(state.TaskStatusAwaitingParentCompletion) ||
+		output.Completion.RequiredAction != string(state.ParentActionComplete) {
+		t.Fatalf("completion = %#v", output.Completion)
+	}
+}
+
 func TestProjectStateGoalCompletionReady(t *testing.T) {
 	cfg := newAppConfig(t)
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", "# Plan\n\n## GOAL\n\nstatus: active\n\nGoal原文\n\n## ACTIVE\n\n- `IMPLEMENTATION_TASKS/final.md`\n\n## NEXT（優先順）\n\n## BLOCKED / USER_PERMISSION_WAIT\n")

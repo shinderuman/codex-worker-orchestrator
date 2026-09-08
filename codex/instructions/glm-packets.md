@@ -17,7 +17,7 @@
 - `decision`・`evidence`・`options`・`recommendation`・`test_obligations`を評価する。
 - `targets`がすべてrepository内の`AGENTS.md`/`AGENTS.local.md`相対pathで、packetがそのprotected instruction変更を親適用として要求している場合は、workerへ直接編集させない。rejectならinstruction surfaceを変更せず通常どおりdecisionを返す。applyならmodel processが停止している間に親Codexが`targets`だけへ承認した最小変更を適用し、`glm-worker --rotate-instruction-baseline`を実行してactive taskのinstruction baselineを明示rotationした後にdecisionを返す。rotationはtask/worktreeを保持しworker/reviewer sessionを無効化する。guard緩和やresetで代用しない。
 - packetで足りるならリポジトリを再探索しない。判断不能な場合だけ`targets`に限定して現物を確認する。
-- canonical handoffの`allowed_actions`に`no-go`が含まれ、Sol判断がPoC/observationのterminal No-Goなら`glm-parent-action no-go`を使う。これは追加model call 0でpending decisionを閉じ、implementationへ昇格せずtaskをcompleteにする。同じNo-Goを`decision`としてworkerへ再送しない。
+- canonical handoffの`allowed_actions`に`no-go`が含まれ、Sol判断がPoC/observationのterminal No-Goなら`glm-parent-action no-go`を使う。これは追加model call 0でpending decisionを閉じ、implementationへ昇格せずtaskをawaiting-parent-completionへ遷移させる。完了確定とrotation評価はacceptと同じくmetadata同期とpush後の`complete`成功後のみ行われ、rotation terminalはno-goとして記録される。同じNo-Goを`decision`としてworkerへ再送しない。
 - No-Go以外の判断後は元依頼を再記述せず、判断本文を`~/.codex/instructions/glm-execution.md`のstdin mode（`--decision-stdin <payload-bytes>`）で同じtaskへ継続する。PoC/observationのGoは`~/.codex/instructions/feasibility-gate.md`に従い、先にtask declarationを`status: implementation`へmigrationする。
 
 ## `"status":"PASS"`
@@ -39,7 +39,9 @@
 - terminal packetのsemantic reviewが終わり、現snapshotへquality validationが必要な段階では、sandbox外で`glm-parent-action finalize-check <go-test|go-test-race>`を1回使う。既存quality gate、canonical handoff、current validation/snapshot照合、read-only local Git summaryを1 machine resultへまとめるため、同じ目的の`--quality-gate`→result/status→`--handoff`→`--status`往復を別々に行わない。
 - `status:"ready_for_parent_decision"`はvalidationとsnapshot整合を示すだけで、accept/fix・task完了判断は親Codexが行う。`git.remote_state`はlocal tracking ref basisのremote同期分類(`synced`・`remote_sync_pending_ahead`等)であり、live remote照会を意味しない。
 - `status:"blocked"`では`failure.stage`・`reason`と同梱済みevidenceだけを確認し、validation failure・lifecycle inconsistency・snapshot change・Git ambiguityを自動修復しない。
-- task完了がremote同期を要求する場合、外部write試行前に`glm-parent-action push-binding`でexact remote/refと`remote_sync_pending_*`分類を確認する。remote writeは親Codex surfaceのみで実行し、GLM worker/reviewerへ委ねない。現在のユーザー指示からexact remote/refにbindされた明示authorizationを供給できない場合は`remote_write`の判断入口をユーザーへ返し、外部writeを試行しない。試行後は`--expected-oid`と親が観測した`--attempt-outcome <none|completed|rejected|network-error|non-fast-forward>`で同じactionへ分類させ、`postcondition.met:true`(expected local OIDとlive remote ref一致)だけをremote同期成功として扱う。
+- review結果のsemantic採用後、`glm-parent-action accept`は採用の事実だけを記録しtaskを`awaiting-parent-completion`へ遷移させる。acceptはpushより前に行い、この時点でtaskをcompleteにせずsession rotationも評価しない。
+- awaiting中は親Codexがimplementation commit・install/smoke・完了task file削除とPlan次task昇格を含むparent metadata同期commit・configured upstreamのexact remote/refへの通常pushを行う。remote writeは監督者のみの恒久authorityで、task/remote/refごとの追加承認を要求しない。GLM worker/reviewerとrepository production commandはgit pushを実行しない。push試行の前後で`glm-parent-action push-binding`を使い、`--expected-oid`と親が観測した`--attempt-outcome <none|completed|rejected|network-error|non-fast-forward>`で`remote_sync_pending_*`分類と`postcondition`を確認する。
+- metadata同期commitとpushの後、`glm-parent-action complete`がfinal HEAD・clean tree・完了metadata transition・configured upstream target・live `git ls-remote` postcondition(remote OID==final HEAD)を検証する。全条件成立時だけtaskがcompleteになりsession rotationを評価/発行する。ahead/diverged・network failure・remote ref mismatch・remote_unresolvableではstateがawaitingのまま保持され、`remote_sync`のremote_name・remote_ref・expected_oid・classification・postconditionがmachine evidenceとして返るので、同じ`complete`を再試行する。awaiting中・final HEAD未同期の新task開始・rotation完了・親USER_REQUEST完了はfail closedする。no upstream・detached HEADはremote差異の対象がないnot-applicableとして完了を妨げない。
 
 ## `{"error":{"kind":"worker_error",...}}`
 
