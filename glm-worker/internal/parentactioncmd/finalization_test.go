@@ -39,8 +39,11 @@ esac
 	if result.Status != "ready_for_parent_decision" || result.Failure != nil {
 		t.Fatalf("result = %#v", result)
 	}
-	if result.Git == nil || result.Git.Head == "" || result.Git.Detached || result.Git.RemoteState != "not_checked" {
+	if result.Git == nil || result.Git.Head == "" || result.Git.Detached || result.Git.RemoteState != finalizationRemoteStateNoUpstream {
 		t.Fatalf("git = %#v", result.Git)
+	}
+	if result.Git.Remote == nil || result.Git.Remote.Basis != finalizationRemoteBasisTrackingRef {
+		t.Fatalf("remote = %#v", result.Git.Remote)
 	}
 	if result.Git.UntrackedChanges != 1 || result.Git.Clean {
 		t.Fatalf("git = %#v", result.Git)
@@ -197,6 +200,49 @@ func TestExecuteRejectsInvalidFinalizationForm(t *testing.T) {
 	var output bytes.Buffer
 	if err := execute(cfg, []string{"finalize-check", "unknown"}, &output, &output); err == nil || !strings.Contains(err.Error(), "finalize-check") {
 		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestFinalizationGitSummaryClassifiesRemoteSyncState(t *testing.T) {
+	fixture := newPushBindingFixture(t)
+	summary, err := readFinalizationGitSummary(fixture.repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.RemoteState != finalizationRemoteStateSynced || summary.Remote == nil {
+		t.Fatalf("summary = %#v", summary)
+	}
+	if summary.Remote.Basis != finalizationRemoteBasisTrackingRef || summary.Remote.Ahead != 0 ||
+		summary.Remote.Behind != 0 || summary.Remote.TrackingOID != fixture.baseOID ||
+		summary.Remote.LastOperation != "push" || summary.Remote.LastOperationOID != fixture.baseOID {
+		t.Fatalf("remote = %#v", summary.Remote)
+	}
+
+	writePushBindingFile(t, fixture.repo, "binding.txt", "base\nsecond\n")
+	runFinalizationGit(t, fixture.repo, "commit", "-q", "-am", "second")
+	summary, err = readFinalizationGitSummary(fixture.repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.RemoteState != finalizationRemoteStatePendingAhead || summary.Remote == nil ||
+		summary.Remote.Ahead != 1 || summary.Remote.Behind != 0 {
+		t.Fatalf("ahead summary = %#v", summary)
+	}
+
+	runFinalizationGit(t, fixture.repo, "checkout", "-q", "-b", "side")
+	writePushBindingFile(t, fixture.repo, "side.txt", "side\n")
+	runFinalizationGit(t, fixture.repo, "add", "side.txt")
+	runFinalizationGit(t, fixture.repo, "commit", "-q", "-m", "divergent")
+	runFinalizationGit(t, fixture.repo, "push", "-q", "origin", "side:refs/heads/"+fixture.branch)
+	runFinalizationGit(t, fixture.repo, "checkout", "-q", fixture.branch)
+	runFinalizationGit(t, fixture.repo, "branch", "-q", "-D", "side")
+	summary, err = readFinalizationGitSummary(fixture.repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.RemoteState != finalizationRemoteStatePendingDiverg || summary.Remote == nil ||
+		summary.Remote.Behind != 1 {
+		t.Fatalf("diverged summary = %#v", summary)
 	}
 }
 

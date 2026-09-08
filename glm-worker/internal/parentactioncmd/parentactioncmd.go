@@ -23,7 +23,7 @@ import (
 )
 
 const (
-	usage = "usage: glm-parent-action start | prepare <decision|fix|start-milestones|revise-milestones> | decision <token> | fix <token> [--origin <origin>] [--cause <cause>] [--accepted-scope current-diff] | approve-surface --accepted-scope current-diff | start-milestones <token> | revise-milestones <token> | no-go | accept | resume | park | unpark | evidence <manifest.json> | finalize-check <go-test|go-test-race>"
+	usage = "usage: glm-parent-action start | prepare <decision|fix|start-milestones|revise-milestones> | decision <token> | fix <token> [--origin <origin>] [--cause <cause>] [--accepted-scope current-diff] | approve-surface --accepted-scope current-diff | start-milestones <token> | revise-milestones <token> | no-go | accept | resume | park | unpark | evidence <manifest.json> | finalize-check <go-test|go-test-race> | push-binding [--expected-oid <oid>] [--attempt-outcome <none|completed|rejected|network-error|non-fast-forward>]"
 
 	activeTaskRequest = "現在のACTIVE taskを実行してください。"
 	actionStart       = "start"
@@ -91,18 +91,25 @@ func execute(cfg config.AppConfig, args []string, stdout, stderr io.Writer) erro
 		return executeDirectWorkerAction(cfg, action, args, stdout, stderr)
 	case "park", "unpark", "evidence":
 		return executeParentReadOrParkAction(cfg, args, stdout, stderr)
-	case "finalize-check":
-		if len(args) != 2 {
-			return fmt.Errorf("usage: glm-parent-action finalize-check <go-test|go-test-race>")
-		}
-		validationDir, err := os.Getwd()
-		if err != nil {
-			return fmt.Errorf("resolve finalize-check working directory: %w", err)
-		}
-		return runFinalizationCheck(cfg.RepoRoot, validationDir, args[1], stdout)
+	case "finalize-check", "push-binding":
+		return executeGitEvidenceAction(cfg, args, stdout)
 	default:
 		return fmt.Errorf("%s", usage)
 	}
+}
+
+func executeGitEvidenceAction(cfg config.AppConfig, args []string, stdout io.Writer) error {
+	if args[0] == "push-binding" {
+		return runPushBinding(cfg.RepoRoot, args[1:], stdout)
+	}
+	if len(args) != 2 {
+		return fmt.Errorf("usage: glm-parent-action finalize-check <go-test|go-test-race>")
+	}
+	validationDir, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("resolve finalize-check working directory: %w", err)
+	}
+	return runFinalizationCheck(cfg.RepoRoot, validationDir, args[1], stdout)
 }
 
 func executeParentReadOrParkAction(cfg config.AppConfig, args []string, stdout, stderr io.Writer) error {

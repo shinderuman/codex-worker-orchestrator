@@ -97,9 +97,7 @@ validationはrun ID付きでstateへ記録され、`glm-worker --quality-gate st
 target repositoryだけCodex Desktopの固定contextを軽量化する場合:
 
 ```sh
-glm-codex-context enable [repository]
-glm-codex-context status [repository]
-glm-codex-context disable [repository]
+glm-codex-context enable|status|disable [repository]
 ```
 
 `enable`は`.codex/config.toml`へtool-owned local profileを作り、Skills catalog自動注入、Plugins/recommended-plugin、Apps instructions、collaboration-mode instructionsを無効化する。permissions/environment contextは変えず、`.git/info/exclude`だけで除外する。既存fileがtool-owned内容と一致しなければ上書きせずfail closedし、`disable`もtool-owned内容だけを削除する。変更後は新しいCodex threadを開始する。
@@ -110,15 +108,12 @@ glm-codex-context disable [repository]
 
 ```sh
 glm-parent-action start
-glm-parent-action prepare start-milestones
-glm-parent-action start-milestones <token>
-glm-parent-action prepare revise-milestones
-glm-parent-action revise-milestones <token>
-glm-parent-action prepare decision
+glm-parent-action prepare <decision|fix|start-milestones|revise-milestones>
 glm-parent-action decision <token>
-glm-parent-action no-go
-glm-parent-action prepare fix
 glm-parent-action fix <token> [--origin <origin>] [--accepted-scope current-diff]
+glm-parent-action start-milestones <token>
+glm-parent-action revise-milestones <token>
+glm-parent-action no-go
 glm-parent-action approve-surface --accepted-scope current-diff
 glm-parent-action accept
 glm-parent-action resume
@@ -126,15 +121,16 @@ glm-parent-action park
 glm-parent-action unpark
 glm-parent-action evidence <manifest.json>
 glm-parent-action finalize-check <go-test|go-test-race>
+glm-parent-action push-binding [--expected-oid <oid>] [--attempt-outcome <none|completed|rejected|network-error|non-fast-forward>]
 ```
 
 Plan管理repoの`start`はcurrent ACTIVE taskを固定要求で起動する。decision/fixとexecution milestone start/revisionは`.glm-worker-parent-actions/`内のtoken-bound stagingを使い、実actionはpathではなくcrypto-random tokenだけを受ける。wrapperはpayloadをmemoryへ取り込みstaging fileを削除後、UTF-8 byte長・SHA-256・stdin framingを処理して`glm-worker`へ渡す。
 
 execution milestoneは大きい1つのsemantic ACTIVE taskを2〜8 unitへ区切るruntime authorityで、task requirement自体を分割しない。`no-go`はcanonical parent action planがterminal observation no-goを許す場合だけ成立する。詳細は`codex/instructions/`を正とする。
 
-`finalize-check`はblocking quality gateとcanonical `--handoff`を連続実行し、current snapshotに対応するvalidation・handoff・read-only local Git summaryをJSONで返す。accept/fix、commit、fetch/pushやdivergence修復は行わない。
+`finalize-check`はblocking quality gateとcanonical `--handoff`を連続実行し、current snapshotに対応するvalidation・handoff・read-only local Git summaryをJSONで返す。accept/fix、commit、fetch/pushやdivergence修復は行わない。`push-binding`はread-onlyでremote同期分類とpostconditionを返し、remote writeは行わない。
 
-低レベルtransport、inspection/report、recovery/debugは`glm-worker`を直接使う。全command一覧は`glm-worker --help`がJSONで返す。主要surface:
+低レベルtransport、inspection/report、recovery/debugは`glm-worker`を直接使う。全一覧は`glm-worker --help`がJSONで返す。主要surface:
 
 ```sh
 glm-worker "<task>"
@@ -148,7 +144,7 @@ glm-worker --eval-ab <run-dir> | --call-outliers | --model-routing | --test-impa
 glm-worker bundle [task-id]
 ```
 
-specialized surface(milestone stdin、auto-resume検証、install smoke、gate recovery、baseline rotation等)も`--help`へ含まれる。通常親workflowでは対応する`glm-parent-action`/`codex/instructions/`を使う。
+specialized surface(milestone stdin、auto-resume検証、install smoke、gate recovery、baseline rotation等)も`--help`へ含まれる。
 
 `glm-worker`は成功時stdoutへmachine-readable JSON 1件を返し、`--watch`だけJSON Lines stream。失敗時stdoutを空にしてstructured error JSONをstderrへ返す。
 

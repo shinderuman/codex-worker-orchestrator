@@ -37,14 +37,27 @@ type finalizationFailure struct {
 }
 
 type finalizationGitSummary struct {
-	Head             string `json:"head"`
-	Branch           string `json:"branch,omitempty"`
-	Detached         bool   `json:"detached"`
-	Clean            bool   `json:"clean"`
-	StagedChanges    int    `json:"staged_changes"`
-	UnstagedChanges  int    `json:"unstaged_changes"`
-	UntrackedChanges int    `json:"untracked_changes"`
-	RemoteState      string `json:"remote_state"`
+	Head             string                 `json:"head"`
+	Branch           string                 `json:"branch,omitempty"`
+	Detached         bool                   `json:"detached"`
+	Clean            bool                   `json:"clean"`
+	StagedChanges    int                    `json:"staged_changes"`
+	UnstagedChanges  int                    `json:"unstaged_changes"`
+	UntrackedChanges int                    `json:"untracked_changes"`
+	RemoteState      string                 `json:"remote_state"`
+	Remote           *finalizationGitRemote `json:"remote"`
+}
+
+type finalizationGitRemote struct {
+	Basis            string `json:"basis"`
+	RemoteName       string `json:"remote_name,omitempty"`
+	RemoteRef        string `json:"remote_ref,omitempty"`
+	TrackingRef      string `json:"tracking_ref,omitempty"`
+	TrackingOID      string `json:"tracking_oid,omitempty"`
+	Ahead            int    `json:"ahead,omitempty"`
+	Behind           int    `json:"behind,omitempty"`
+	LastOperation    string `json:"last_operation,omitempty"`
+	LastOperationOID string `json:"last_operation_oid,omitempty"`
 }
 
 type finalizationValidationProbe struct {
@@ -73,11 +86,18 @@ type finalizationHandoffProbe struct {
 }
 
 const (
-	finalizationDiagnosticLimit        = 2048
-	finalizationValidationStatusPass   = "pass"
-	finalizationRoutingBasisValidation = "current_task_validation"
-	finalizationRoutingBasisCaller     = "caller_cwd"
-	finalizationGoModFile              = "go.mod"
+	finalizationDiagnosticLimit          = 2048
+	finalizationValidationStatusPass     = "pass"
+	finalizationRoutingBasisValidation   = "current_task_validation"
+	finalizationRoutingBasisCaller       = "caller_cwd"
+	finalizationGoModFile                = "go.mod"
+	finalizationRemoteBasisTrackingRef   = "local_tracking_ref"
+	finalizationRemoteStateNoUpstream    = "no_upstream"
+	finalizationRemoteStateTrackingMiss  = "tracking_ref_missing"
+	finalizationRemoteStateUnverified    = "unverified"
+	finalizationRemoteStateSynced        = "synced"
+	finalizationRemoteStatePendingAhead  = "remote_sync_pending_ahead"
+	finalizationRemoteStatePendingDiverg = "remote_sync_pending_diverged"
 )
 
 func runFinalizationCheck(repoRoot, validationDir, form string, stdout io.Writer) error {
@@ -295,14 +315,13 @@ func readFinalizationGitSummary(repoRoot string) (finalizationGitSummary, error)
 	if err != nil {
 		return finalizationGitSummary{}, err
 	}
-	branch, branchErr := gitFinalizationOutput(repoRoot, "symbolic-ref", "--short", "-q", "HEAD")
-	detached := false
+	branchOutput, branchErr := gitFinalizationOutput(repoRoot, "rev-parse", "--abbrev-ref", "HEAD")
 	if branchErr != nil {
-		var exitErr *exec.ExitError
-		if !errors.As(branchErr, &exitErr) {
-			return finalizationGitSummary{}, branchErr
-		}
-		detached = true
+		return finalizationGitSummary{}, branchErr
+	}
+	branch := strings.TrimSpace(branchOutput)
+	detached := branch == "HEAD"
+	if detached {
 		branch = ""
 	}
 	status, err := gitFinalizationOutput(repoRoot, "status", "--porcelain=v1", "--untracked-files=all")
@@ -310,6 +329,7 @@ func readFinalizationGitSummary(repoRoot string) (finalizationGitSummary, error)
 		return finalizationGitSummary{}, err
 	}
 	staged, unstaged, untracked := countFinalizationStatus(status)
+	remote, remoteState := finalizationRemoteState(repoRoot, strings.TrimSpace(branch), detached)
 	return finalizationGitSummary{
 		Head:             strings.TrimSpace(head),
 		Branch:           strings.TrimSpace(branch),
@@ -318,8 +338,71 @@ func readFinalizationGitSummary(repoRoot string) (finalizationGitSummary, error)
 		StagedChanges:    staged,
 		UnstagedChanges:  unstaged,
 		UntrackedChanges: untracked,
-		RemoteState:      "not_checked",
+		RemoteState:      remoteState,
+		Remote:           remote,
 	}, nil
+}
+
+func finalizationRemoteState(repoRoot, branch string, detached bool) (*finalizationGitRemote, string) {
+	remote := &finalizationGitRemote{Basis: finalizationRemoteBasisTrackingRef}
+	if detached || branch == "" {
+		return remote, finalizationRemoteStateNoUpstream
+	}
+	upstream, err := resolveGitUpstream(repoRoot, branch)
+	if err != nil {
+		return remote, finalizationRemoteStateNoUpstream
+	}
+	remote.RemoteName = upstream.RemoteName
+	remote.RemoteRef = upstream.RemoteRef
+	remote.TrackingRef = upstream.TrackingRef
+	remote.TrackingOID = upstream.TrackingOID
+	remote.LastOperation, remote.LastOperationOID = gitTrackingLastOperation(repoRoot, upstream.TrackingRef)
+	if upstream.TrackingOID == "" {
+		return remote, finalizationRemoteStateTrackingMiss
+	}
+	ahead, behind, err := gitAheadBehind(repoRoot, upstream.TrackingRef)
+	if err != nil {
+		return remote, finalizationRemoteStateUnverified
+	}
+	remote.Ahead = ahead
+	remote.Behind = behind
+	switch {
+	case behind > 0:
+		return remote, finalizationRemoteStatePendingDiverg
+	case ahead > 0:
+		return remote, finalizationRemoteStatePendingAhead
+	default:
+		return remote, finalizationRemoteStateSynced
+	}
+}
+
+func gitTrackingLastOperation(repoRoot, trackingRef string) (string, string) {
+	if trackingRef == "" {
+		return "", ""
+	}
+	output, err := gitFinalizationOutput(repoRoot, "log", "-g", "-n", "1", "--format=%H%x09%gs", trackingRef)
+	if err != nil {
+		return "", ""
+	}
+	fields := strings.SplitN(strings.TrimSpace(output), "\t", 2)
+	if len(fields) != 2 {
+		return "", ""
+	}
+	return gitReflogOperation(fields[1]), fields[0]
+}
+
+func gitReflogOperation(subject string) string {
+	switch {
+	case strings.HasPrefix(subject, "update by push"):
+		return "push"
+	case strings.HasPrefix(subject, "pull"):
+		return "pull"
+	case strings.HasPrefix(subject, "fetch"):
+		return "fetch"
+	case strings.HasPrefix(subject, "clone"):
+		return "clone"
+	}
+	return ""
 }
 
 func gitFinalizationOutput(repoRoot string, args ...string) (string, error) {

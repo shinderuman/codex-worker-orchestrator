@@ -22,21 +22,12 @@ none
 
 ## External feasibility
 
-status: poc
+status: implementation
 
-unknown:
-
-- Codex appの外部安全審査へrepository側から渡せる明示authority fieldと、repository内で機械化可能な境界
-- default branch pushのユーザー承認をtask単位・branch単位・継続workflow単位のどこまで再利用できるか
-
-go_criteria:
-
-- 安全審査を迂回せず、push前のauthority不足とpush後のremote同期postconditionを親workflowから機械判定できる
-- 拒否時にlocal commitと対象remote/refを保持したremote-sync-pending状態または同等の一意な再開入口を構成できる
-
-no_go_criteria:
-
-- repository側に観測・制御可能な境界がなく、外部製品変更または都度のユーザー承認だけが唯一の成立手段である
+assumption: Codex appの外部安全審査に対し、repository側からauthority不足とpush後postconditionを機械判定できる境界、および再利用可能なremote write authorization scopeが存在する
+evidence-source: producer
+evidence: 2026-09-08の実Codex app安全審査はorigin/mainへのpushを明示承認不足として拒否し、2026-09-08のread-only実remote照会ではrefs/heads/main=304cd16301d7f84a3362191403f3c82a605c2d4b、local HEAD=d864873b5cf1921089d926456010fa52d911304eで1 commit aheadだった。PoCはrepository側でexact remote/ref・ahead/behind・last outcome・ls-remoteによるpostconditionを判定可能だが、Codex app側の再利用可能なtarget-bound authorization scopeは観測・制御できないと確認した
+go: 2026-09-08 Sol High判断。repository側のpreflight・remote-sync-pending分類・postconditionを実装へ進め、Codex app認可は外部責務としてpositive判定せず、明示的なtarget-bound authorizationがない場合はpush前にexact remote/ref付きでユーザー判断へ戻す
 
 ## Contract
 

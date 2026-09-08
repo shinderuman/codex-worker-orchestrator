@@ -37,8 +37,9 @@
 ## finalization evidence
 
 - terminal packetのsemantic reviewが終わり、現snapshotへquality validationが必要な段階では、sandbox外で`glm-parent-action finalize-check <go-test|go-test-race>`を1回使う。既存quality gate、canonical handoff、current validation/snapshot照合、read-only local Git summaryを1 machine resultへまとめるため、同じ目的の`--quality-gate`→result/status→`--handoff`→`--status`往復を別々に行わない。
-- `status:"ready_for_parent_decision"`はvalidationとsnapshot整合を示すだけで、accept/fix・task完了判断は親Codexが行う。`git.remote_state:"not_checked"`はremote freshnessを推測していないことを意味する。
+- `status:"ready_for_parent_decision"`はvalidationとsnapshot整合を示すだけで、accept/fix・task完了判断は親Codexが行う。`git.remote_state`はlocal tracking ref basisのremote同期分類(`synced`・`remote_sync_pending_ahead`等)であり、live remote照会を意味しない。
 - `status:"blocked"`では`failure.stage`・`reason`と同梱済みevidenceだけを確認し、validation failure・lifecycle inconsistency・snapshot change・Git ambiguityを自動修復しない。
+- task完了がremote同期を要求する場合、外部write試行前に`glm-parent-action push-binding`でexact remote/refと`remote_sync_pending_*`分類を確認する。remote writeは親Codex surfaceのみで実行し、GLM worker/reviewerへ委ねない。現在のユーザー指示からexact remote/refにbindされた明示authorizationを供給できない場合は`remote_write`の判断入口をユーザーへ返し、外部writeを試行しない。試行後は`--expected-oid`と親が観測した`--attempt-outcome <none|completed|rejected|network-error|non-fast-forward>`で同じactionへ分類させ、`postcondition.met:true`(expected local OIDとlive remote ref一致)だけをremote同期成功として扱う。
 
 ## `{"error":{"kind":"worker_error",...}}`
 
