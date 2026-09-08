@@ -150,12 +150,24 @@ func codexChainOverlappingRanges(ordered []codexRollout) string {
 }
 
 func codexChainCounterBoundaries(ordered []codexRollout) string {
+	for _, member := range ordered {
+		lastTotal, err := codexRolloutLastCounterTotal(member.AbsolutePath)
+		if err != nil {
+			return "rollout chain candidate cannot be read: " + member.HomeRelative + ": " + err.Error()
+		}
+		if lastTotal == nil {
+			return "rollout chain candidate has no usable token counter anchor: " + member.HomeRelative
+		}
+	}
 	for i := 1; i < len(ordered); i++ {
 		signal, err := codexRolloutFirstCounterSignal(ordered[i].AbsolutePath)
 		if err != nil {
 			return "rollout chain candidate cannot be read: " + ordered[i].HomeRelative + ": " + err.Error()
 		}
-		if !signal.HasAnchor || codexChainCounterRestarted(signal, nil) {
+		if !signal.HasAnchor {
+			return "rollout chain candidate has no usable token counter anchor: " + ordered[i].HomeRelative
+		}
+		if codexChainCounterRestarted(signal, nil) {
 			continue
 		}
 		previousTotal, prevErr := codexRolloutLastCounterTotal(ordered[i-1].AbsolutePath)
