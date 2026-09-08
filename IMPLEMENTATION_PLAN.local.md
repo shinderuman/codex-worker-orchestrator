@@ -8,11 +8,10 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/parent-git-push-completion-binding.md`
+- `IMPLEMENTATION_TASKS/generic-repository-harness-boundary.md`
 
 ## NEXT（優先順）
 
-- `IMPLEMENTATION_TASKS/generic-repository-harness-boundary.md`
 - `IMPLEMENTATION_TASKS/prose-only-control-enforcement-audit.md`
 - `IMPLEMENTATION_TASKS/watch-terminal-error-orphan-exit.md`
 - `IMPLEMENTATION_TASKS/markdown-derived-state-authority-audit.md`
