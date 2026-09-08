@@ -103,8 +103,7 @@ func withParentEvidenceLedgerLock(st *state.StateStore, body func() error) error
 	}
 	lock, err := repolock.AcquireWait(st.Path(parentEvidenceLedgerLockFile))
 	if err != nil {
-		state.WarnParentEvidenceLedgerSkip(err)
-		return body()
+		return fmt.Errorf("parent evidence ledger lockを取得できません: %w", err)
 	}
 	defer func() { _ = lock.Close() }()
 	return body()
@@ -124,15 +123,16 @@ func writeMeasuredJSON(stdout io.Writer, value any) (int, error) {
 	return len(data), nil
 }
 
-func saveParentEvidenceLedger(st *state.StateStore, surface, digest, origin, ownerCallID string) {
+func saveParentEvidenceLedger(st *state.StateStore, surface, digest, origin, ownerCallID string) error {
 	if !parentEvidenceStorePresent(st) || !parentEvidenceLeaseActive(st) {
-		return
+		return nil
 	}
 	if err := st.SaveParentEvidenceLedgerEntry(state.ParentEvidenceLedgerEntry{
 		Surface: surface, Digest: digest, Origin: origin, OwnerCallID: ownerCallID,
 	}); err != nil {
-		state.WarnParentEvidenceLedgerSkip(err)
+		return fmt.Errorf("parent evidence ledgerを保存できません: %w", err)
 	}
+	return nil
 }
 
 func finishParentRead(st *state.StateStore, surface, digest string, render func() (int, error)) error {
@@ -157,7 +157,6 @@ func finishParentRead(st *state.StateStore, surface, digest string, render func(
 			Surface: surface, Origin: state.ParentEvidenceOriginStandalone,
 			Digest: digest, Bytes: written, Outcome: state.ParentEvidenceOutcomeProjected,
 		})
-		saveParentEvidenceLedger(st, surface, digest, state.ParentEvidenceOriginStandalone, "")
-		return nil
+		return saveParentEvidenceLedger(st, surface, digest, state.ParentEvidenceOriginStandalone, "")
 	})
 }
