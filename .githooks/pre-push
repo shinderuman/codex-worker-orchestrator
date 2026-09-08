@@ -1,0 +1,33 @@
+#!/bin/sh
+set -eu
+
+remote_name=$1
+zero_oid=0000000000000000000000000000000000000000
+ref_count=0
+
+reject_push() {
+	printf 'push rejected by parent completion guard: %s\n' "$1" >&2
+	exit 1
+}
+
+command -v glm-parent-action >/dev/null 2>&1 || reject_push 'glm-parent-action is not installed'
+
+while read -r local_ref local_oid remote_ref remote_oid; do
+	ref_count=$((ref_count + 1))
+	[ "$local_oid" != "$zero_oid" ] || reject_push 'ref deletion is not an admitted parent completion push'
+
+	output=$(glm-parent-action push-binding --expected-oid "$local_oid") || reject_push 'push binding could not be evaluated'
+	printf '%s\n' "$output" | grep -F "\"remote_name\":\"$remote_name\"" >/dev/null || reject_push 'push remote does not match the configured upstream'
+	printf '%s\n' "$output" | grep -F "\"remote_ref\":\"$remote_ref\"" >/dev/null || reject_push 'push ref does not match the configured upstream'
+
+	if printf '%s\n' "$output" | grep -F '"authorization":"parent_standing_authority"' >/dev/null; then
+		:
+	elif printf '%s\n' "$output" | grep -F '"classification":"synced"' >/dev/null; then
+		:
+	else
+		reject_push 'review, validation, and completion metadata are not ready for remote write'
+	fi
+
+done
+
+[ "$ref_count" -eq 1 ] || reject_push 'parent completion push must update exactly one configured ref'
