@@ -37,7 +37,7 @@ func applyCurrentParentPushAuthorization(repoRoot string, output *pushBindingOut
 }
 
 func blockPushBindingRemoteWrite(output *pushBindingOutput, failure *finalizationFailure) {
-	output.Status = "blocked"
+	output.Status = completePushStatusBlocked
 	output.RemoteWrite = nil
 	output.Failure = failure
 }
