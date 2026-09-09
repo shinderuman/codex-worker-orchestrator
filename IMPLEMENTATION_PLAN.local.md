@@ -43,4 +43,4 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## 現在のGit境界
 
-- branch: `main`
+- branch: `glm-worker/park/770b3b17`
