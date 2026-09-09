@@ -42,6 +42,10 @@ Pushはいつするの？
 どうしてPushしてない状態が放置されてるの？バグじゃないの？
 ````
 
+### 2026-09-10
+
+- `permission-convergence-active-task-continuation`でcanonical install executionを既存task admissionへbindした`glm-parent-action install`が実装された。2026-09-08の`./install.sh` false rejectionは同actionのproduction admission/testを現行evidenceとして分類し、relative `./install.sh` ruleや別permission state machineを再実装しない。親/modelのdenial解釈は`execution-permission.md`とparent behavior eval registryに残るため、machine-enforcedとsemantic-parent-only/external-unenforceableを分離して評価する
+
 ## Resolved references
 
 - 既存Rulesは改善候補の随時Task化を要求していたが、親Codexはautomation拒否時に適用せず、ユーザー再指摘までTask化しなかった

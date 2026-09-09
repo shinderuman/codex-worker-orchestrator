@@ -11,6 +11,7 @@
 ## Amendments
 
 - cleanなdetached worktreeでcurrent HEAD validationを完了しても、`install.sh`の`plancheck`はPlanの`現在のGit境界branch: main`とのliteral不一致でinstall前に停止する。dirtyなmainで未review WIPをbuildしないため現状はstash/restoreが必要になる。current HEADへ束縛されたclean install sourceを正規に選べるようにし、branch表記を弱めたりdirty implementationを配置したりせず、この余分な親操作と失敗turnを除去すること。
+- 2026-09-10の`permission-convergence-active-task-continuation`で、canonical install実行入口は`glm-parent-action install`へ収束した。本taskは同actionを再実装せず、runtime対象判定、current HEAD/source digest、installed一致、smoke evidenceをcomplete前の必須postconditionへbindする責務だけを持つ。relative `./install.sh` allow、別install command、別permission stateを追加しない
 
 ## Resolved references
 
@@ -32,6 +33,7 @@ status: not-applicable
 - runtime対象ではcurrent HEAD/source digestに束縛されたinstall、installed一致、必要smoke evidenceが揃うまでcompletionを許可しない
 - metadata-only taskはinstall不要を機械的に区別する
 - install失敗evidenceと再実行は既存structured pathを再利用する
+- install executionは既存`glm-parent-action install`を再利用し、そのactionが`complete`と並列にallowedである現状から、runtime対象時だけ必要evidenceを満たす順序へbindする
 
 ## Must not
 

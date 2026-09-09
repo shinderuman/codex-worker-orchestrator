@@ -8,10 +8,11 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/architecture-responsibility-overdesign-audit.md`
+- `IMPLEMENTATION_TASKS/permission-convergence-active-task-continuation.md`
 
 ## NEXT（優先順）
 
+- `IMPLEMENTATION_TASKS/architecture-responsibility-overdesign-audit.md`
 - `IMPLEMENTATION_TASKS/prose-only-control-enforcement-audit.md`
 - `IMPLEMENTATION_TASKS/watch-terminal-error-orphan-exit.md`
 - `IMPLEMENTATION_TASKS/markdown-derived-state-authority-audit.md`

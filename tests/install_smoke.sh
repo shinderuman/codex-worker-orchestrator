@@ -79,6 +79,9 @@ if grep -Eq '(not_)?match = \[' "$home/.codex/rules/glm-worker.rules"; then
 	printf '%s\n' 'managed rules still pin a per-subcommand allow-list' >&2
 	exit 1
 fi
+test -f "$home/.codex/instructions/execution-permission.md"
+cmp "$repo/codex/instructions/execution-permission.md" "$home/.codex/instructions/execution-permission.md"
+grep -q 'execution denial' "$home/.codex/instructions/execution-permission.md"
 test -f "$home/.codex/glm-worker/prompts/WORKER.md"
 grep -q '^local_key = "keep"$' "$home/.codex/config.toml"
 grep -q '^background_terminal_max_timeout = ' "$home/.codex/config.toml"
@@ -155,6 +158,14 @@ if (
 	exit 1
 fi
 test ! -s "$tmp/parent-action-unknown.stdout"
+if (
+	cd "$repo"
+	HOME="$home" GLM_WORKER_HOME="$home/.glm-worker" "$home/.local/bin/glm-parent-action" install
+) >"$tmp/parent-action-install.stdout" 2>"$tmp/parent-action-install.stderr"; then
+	printf '%s\n' 'glm-parent-action install admitted without an awaiting task' >&2
+	exit 1
+fi
+grep -q 'install is not admitted' "$tmp/parent-action-install.stderr"
 (
 	cd "$repo"
 	HOME="$home" GLM_WORKER_HOME="$home/.glm-worker" "$home/.local/bin/glm-worker" --reset >/dev/null

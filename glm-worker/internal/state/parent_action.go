@@ -30,6 +30,7 @@ const (
 	ParentActionApproveSurface              ParentAction = "approve-surface"
 	ParentActionAccept                      ParentAction = "accept"
 	ParentActionComplete                    ParentAction = "complete"
+	ParentActionInstall                     ParentAction = "install"
 	ParentActionFix                         ParentAction = "fix"
 	ParentActionResume                      ParentAction = "resume"
 	ParentActionPark                        ParentAction = "park"
@@ -169,7 +170,7 @@ func awaitingParentCompletionActionPlan(status TaskStatus, pending bool, openRev
 	if pending || stopKind != ResumeStopNone || openReview != roundCommentNone {
 		return ParentActionPlan{}, lifecycleInconsistency(status, "awaiting parent completion task has unresolved parent or resume state")
 	}
-	return actionPlan(ParentActionComplete, "", ParentActionComplete), nil
+	return actionPlan(ParentActionComplete, "", ParentActionComplete, ParentActionInstall), nil
 }
 
 func (s *StateStore) parkedActionPlan(status TaskStatus, pending bool, openReview string, stopKind ResumeStopKind) (ParentActionPlan, error) {

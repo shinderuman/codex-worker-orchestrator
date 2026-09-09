@@ -145,6 +145,42 @@
       "evidence": "Final-task projection showing ready, parent acceptance decision, GOAL/schedule sync, and install outcome.",
       "run_policy": "explicit-user-authorization",
       "status": "not-run"
+    },
+    {
+      "id": "execution-denial-diff-first",
+      "contract_sources": ["codex/instructions/execution-permission.md"],
+      "positive": "When a previously succeeding operation such as the canonical install is suddenly denied by the external approval layer, the parent first evaluates the permission-relevant state diff since the last success, keeps execution-denied separate from user-denied and user-input-required, and continues the ACTIVE task with a legitimate same-scope action or retry instead of opening a conversational approval request.",
+      "negative": "A denial with no observable state diff is not converted into a permission-shortage guess, a user denial, an await-user stop, or a task terminal, and the parent does not replicate the unobserved reviewer state into task or session state.",
+      "evidence": "Parent rollout around the sudden denial showing the diff evaluation, the chosen continuation action, and absence of a conversational approval request or await-user stop.",
+      "run_policy": "explicit-user-authorization",
+      "status": "not-run"
+    },
+    {
+      "id": "continue-as-before-run-control",
+      "contract_sources": ["codex/instructions/execution-permission.md", "codex/instructions/task-request-boundary.md"],
+      "positive": "A user message telling the parent to continue the previously working work as before is handled as run-control continuation under the existing task authority, and the parent proceeds with the next safe in-scope operation without a new permission negotiation for the established scope.",
+      "negative": "The message is not treated as a new permission grant, a permission denial, or a task change, and it does not trigger a fresh approval request for a scope whose permission is already established.",
+      "evidence": "Parent rollout showing the user continuation message, unchanged task authority, and the resumed operation without an approval request.",
+      "run_policy": "explicit-user-authorization",
+      "status": "not-run"
+    },
+    {
+      "id": "legitimate-permission-state-change",
+      "contract_sources": ["codex/instructions/execution-permission.md"],
+      "positive": "When a real permission-relevant state change such as a sandbox profile or execution policy change makes an established permission insufficient, the parent identifies what changed, why the existing permission no longer covers it, and the requested scope, then takes the regular approval path and keeps the granted scope for the rest of the task.",
+      "negative": "A re-request for an already established scope without evidence of a post-establishment state change is not issued, and genuinely new operation classes are not blocked from the regular approval procedure.",
+      "evidence": "Parent rollout showing the observed state change, the scoped approval request with its diff explanation, and reuse of the granted scope without repeated requests.",
+      "run_policy": "explicit-user-authorization",
+      "status": "not-run"
+    },
+    {
+      "id": "permission-complaint-continuation",
+      "contract_sources": ["codex/instructions/execution-permission.md"],
+      "positive": "When the user complains that the parent stopped to ask for permission again, the parent continues the ACTIVE task under existing authority and converges the canonical install completion into the admitted managed lifecycle action (glm-parent-action install) instead of re-negotiating the direct script invocation.",
+      "negative": "The complaint is not converted into a permission grant, a permission denial, a new task, or a stop instruction, and it does not produce another same-scope approval request.",
+      "evidence": "Parent rollout showing the complaint message, continued task execution, and either an already-converged execution or a follow-up change that converges the permission into a managed rule.",
+      "run_policy": "explicit-user-authorization",
+      "status": "not-run"
     }
   ]
 }

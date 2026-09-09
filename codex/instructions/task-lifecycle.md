@@ -17,6 +17,7 @@ monitor/automationの安全停止、GLM child task、個別install等の局所�
 ## 停止条件
 
 - 新しい権限、Codexの外で変わる外部状態、意味のあるユーザー判断が本当に必要な場合だけ停止する。
+- 外部実行層のexecution denialとpermission再交渉は`~/.codex/instructions/execution-permission.md`に従う。denialだけを新しい権限必要やuser判断必要へ変換しない。
 - 停止時はcheckpoint・session・working treeを保持し、残作業とblockerを報告する。局所終端の成功報告で親USER_REQUESTの完了報告を代用しない。
 
 ## 範囲規律
