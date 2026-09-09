@@ -38,6 +38,7 @@
 - branch・HEAD・dirty stateはworktreeごとに異なり、完了証跡はGit / CI / bundle / telemetryが既に正であるため、同節は削除しPlanへ再作成しない方針を親Codexが選択した
 - 本taskの「これ以外」はrepository内のtracked Markdown全体を指し、同種の可変状態・完了履歴・machine evidenceの手動複製を監査対象とする
 - 「数ターンごとにやってる監査」は`codex-efficiency-reevaluation-checkpoint.md`の最大5 task完了以内のcheckpointを指す。model turn数ではなく既存のtask完了cadenceへ統合する
+- 2026-09-10、Plan Git境界branch文字列をcanonical stateとするproduction検証(`validateFinalHeadBranch`)とPlan節要件は`architecture-responsibility-overdesign-audit`で削除された。初回inventoryは残るtracked Markdown全体を対象とする
 
 ## Purpose
 

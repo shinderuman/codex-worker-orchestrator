@@ -65,4 +65,4 @@ none
 
 ## Current boundary
 
-auditで実行可能なapp/command ingress surfaceを確定してから実装する。
+外部turn identity成立性のobservation中はruntime state machineを実装しない。Codex app境界でuser turn identityまたは同等のbounded bindingが取得できる一次証拠が得られた場合だけ再評価候補とする。

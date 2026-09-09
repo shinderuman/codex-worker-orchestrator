@@ -18,6 +18,7 @@
 - Rulesはruntime影響taskのcommit後に`install.sh`本配置、source/installed一致、production smokeを要求する
 - `--install-smoke`は実行結果をstructured validationとして保存できるが、task completion/finalize-checkがruntime影響判定とcurrent HEAD対応install evidenceを必須にする機械状態は確認できない
 - 過去`023-installed-state-verification.md`とinstall smoke関連taskは個別検証を導入したが、親が実行を忘れることをinstruction以外で拒否する残存境界を監査する必要がある
+- 2026-09-10の`architecture-responsibility-overdesign-audit`でplancheck/completeがPlanの現在のGit境界branch文字列を比較する検証をproductionから削除した。Amendment第1段のdetached worktree false rejection境界は解消済みであり、残る責務はinstall完了postcondition bindingのみ
 
 ## Purpose
 

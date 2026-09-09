@@ -56,6 +56,7 @@ post-105-codex-efficiency-reevaluation.mdを定期的にやってほしいんだ
 - `markdown-derived-state-authority-audit.md`完了後は、同taskが残す初回Git locator以後のtracked Markdown差分と未解決authority候補だけを確認する
 - `post-105-codex-efficiency-reevaluation.md`は105完了後・022直前の最終safety netとして別に維持する
 - session rotationの評価はrotation回数、trigger理由、taskあたりparent turn / tool output / token、rotation直後のauthority/bootstrap再投影量、cache/read attribution、同一task継続時との比較可能性を対象にする
+- `continuous-improvement-task-capture.md`は2026-09-10のarchitecture auditでdurable candidate state machine・admission blockingを不採用とし、随時捕捉はRules「parent orchestrationのproduct化判断」恒久契約と本checkpointの取りこぼし再精査へ移管して削除した
 
 ## Purpose
 

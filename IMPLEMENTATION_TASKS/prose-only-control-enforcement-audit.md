@@ -77,6 +77,7 @@ status: not-applicable
 - machine-enforced分類では自由言語の重複手順量も計測し、機械ownerを指すcompact indexへ縮小可能かを判定する
 - 親Codexが一次証拠の分類とTask化を行い、この判断をGLMへ委譲する追加model callを作らない
 - 親CodexはContractを読み落とす・誤解する・誤actionを選ぶというthreat modelを全controlへ適用し、親の遵守を成立条件にしているmachine-enforced分類を認めない
+- 本auditの産出はcontrol追加のdefault入口ではない。新規mechanizationは責務・correctness/safety・deterministic観測/強制可能性・追加state/recovery cost・benefitのdisposition gateを通過したものだけtask化する
 
 ## Must not
 

@@ -41,7 +41,6 @@ status: not-applicable
 - `partial`、`prose-only`、`external-unenforceable`は未強制部分を削らず、先に対応taskまたは外部境界を解決する
 - registryと実装/test locatorのdrift、削除、owner不在をlintで検出し、古い説明が残り続けることも検出する
 - install後に実際に注入されるglobal/on-demand instructionのbyte/token proxyをbefore/after比較する
-- continuous improvement機能のmachine state/admissionが成立した後、その自由言語を同じ基準で薄くする
 - parent Contract違反を通常のfault modelとして扱い、正しい手順を選ぶことを親へ要求するprojectionではなく、誤action・欠落・順序違反をowner commandが拒否するcontrolだけを機械化済みとする
 
 ## Must not
@@ -69,12 +68,8 @@ status: not-applicable
 ## Dependencies
 
 - `IMPLEMENTATION_TASKS/prose-only-control-enforcement-audit.md`
-- `IMPLEMENTATION_TASKS/continuous-improvement-task-capture.md`
-- `IMPLEMENTATION_TASKS/user-requirement-ingress-binding.md`
 - `IMPLEMENTATION_TASKS/codex-instruction-conflict-reduction.md`
 - `IMPLEMENTATION_TASKS/parent-plan-continuation-enforcement.md`
-- `IMPLEMENTATION_TASKS/runtime-install-completion-binding.md`
-- `IMPLEMENTATION_TASKS/auto-resume-heartbeat-transaction.md`
 
 ## Review findings
 
