@@ -65,9 +65,6 @@ func validateGoalTerminalFinalHeadPlan(root string, plan string) error {
 	if err := validateFinalHeadScheduleClosure(root, schedule); err != nil {
 		return err
 	}
-	if err := validateFinalHeadBranch(root, plan); err != nil {
-		return err
-	}
 	return validateFinalHeadTransition(plan)
 }
 
@@ -105,9 +102,6 @@ func validateFinalHeadPlan(root string, plan string) error {
 		}
 	}
 	if err := validateFinalHeadScheduleClosure(root, schedule); err != nil {
-		return err
-	}
-	if err := validateFinalHeadBranch(root, plan); err != nil {
 		return err
 	}
 	return validateFinalHeadTransition(plan)
@@ -192,45 +186,8 @@ func validateFinalHeadTask(root string, path string) error {
 	return nil
 }
 
-func validateFinalHeadBranch(root string, plan string) error {
-	want, err := finalHeadBoundaryBranch(plan)
-	if err != nil {
-		return err
-	}
-	got, err := finalHeadGitOutput(root, "branch", "--show-current")
-	if err != nil {
-		return fmt.Errorf("current branch確認に失敗しました: %w", err)
-	}
-	got = strings.TrimSpace(got)
-	if want == got {
-		return nil
-	}
-	if got == "" {
-		got = "detached HEAD"
-	}
-	return fmt.Errorf("HEADのplanのGit境界branch %sが現在のbranch(%s)と矛盾しています", want, got)
-}
-
-func finalHeadBoundaryBranch(plan string) (string, error) {
-	for _, line := range finalHeadSectionLines(plan, "現在のGit境界") {
-		trimmed := strings.TrimSpace(line)
-		if !strings.HasPrefix(trimmed, "- branch:") {
-			continue
-		}
-		value := strings.TrimSpace(strings.TrimPrefix(trimmed, "- branch:"))
-		if strings.HasPrefix(value, "`") && strings.HasSuffix(value, "`") && len(value) >= 2 {
-			value = value[1 : len(value)-1]
-		}
-		if value == "" || strings.Contains(value, "`") {
-			return "", fmt.Errorf("HEADのplanのGit境界branchを解決できません: %q", trimmed)
-		}
-		return value, nil
-	}
-	return "", fmt.Errorf("HEADのplanに現在のGit境界branchがありません")
-}
-
 func validateFinalHeadTransition(plan string) error {
-	for _, section := range []string{"現在のGit境界", "現在の停止理由", "次の親Codex操作"} {
+	for _, section := range []string{"現在の停止理由", "次の親Codex操作"} {
 		for _, line := range finalHeadSectionLines(plan, section) {
 			if finalHeadTransitionPattern.MatchString(line) {
 				return fmt.Errorf("HEADのplanの現在状態記述が完了済みcommitの操作を未実施としています: %s", strings.TrimSpace(line))

@@ -536,20 +536,17 @@ func completeInitialPlan() string {
 	return "# plan\n\n## ACTIVE\n\n- `IMPLEMENTATION_TASKS/active.md`\n\n" +
 		"## NEXT（優先順）\n\n- `IMPLEMENTATION_TASKS/next.md`\n\n" +
 		"## BLOCKED / USER_PERMISSION_WAIT\n\n" +
-		"## 現在のGit境界\n\n- branch: `main`\n\n" +
 		"## 現在の停止理由\n\nなし\n"
 }
 
 func completePromotedPlan() string {
 	return "# plan\n\n## ACTIVE\n\n- `IMPLEMENTATION_TASKS/next.md`\n\n" +
 		"## NEXT（優先順）\n\n## BLOCKED / USER_PERMISSION_WAIT\n\n" +
-		"## 現在のGit境界\n\n- branch: `main`\n\n" +
 		"## 現在の停止理由\n\nなし\n"
 }
 
 func completeUnscheduledPlan() string {
 	return "# plan\n\n## ACTIVE\n\n## NEXT（優先順）\n\n## BLOCKED / USER_PERMISSION_WAIT\n\n" +
-		"## 現在のGit境界\n\n- branch: `main`\n\n" +
 		"## 現在の停止理由\n\nなし\n"
 }
 

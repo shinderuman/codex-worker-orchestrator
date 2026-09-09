@@ -10,7 +10,7 @@ import (
 
 func TestFinalHeadPlanVerified(t *testing.T) {
 	root := newFinalHeadRepo(t)
-	writeFinalHeadFixture(t, root, finalHeadFixturePlan("main", ""), true)
+	writeFinalHeadFixture(t, root, finalHeadFixturePlan(""), true)
 	commitFinalHeadFixture(t, root)
 
 	status, err := CheckFinalHeadPlan(root)
@@ -21,7 +21,7 @@ func TestFinalHeadPlanVerified(t *testing.T) {
 
 func TestFinalHeadPlanRejectsMissingTask(t *testing.T) {
 	root := newFinalHeadRepo(t)
-	writeFinalHeadFixture(t, root, finalHeadFixturePlan("main", ""), false)
+	writeFinalHeadFixture(t, root, finalHeadFixturePlan(""), false)
 	commitFinalHeadFixture(t, root)
 
 	_, err := CheckFinalHeadPlan(root)
@@ -32,7 +32,7 @@ func TestFinalHeadPlanRejectsMissingTask(t *testing.T) {
 
 func TestFinalHeadPlanRejectsActiveTaskMissingExternalFeasibility(t *testing.T) {
 	root := newFinalHeadRepo(t)
-	writeFinalHeadFixture(t, root, finalHeadFixturePlan("main", ""), true)
+	writeFinalHeadFixture(t, root, finalHeadFixturePlan(""), true)
 	writeFinalHeadFile(t, root, "IMPLEMENTATION_TASKS/active.md", "# active\n")
 	commitFinalHeadFixture(t, root)
 
@@ -44,7 +44,7 @@ func TestFinalHeadPlanRejectsActiveTaskMissingExternalFeasibility(t *testing.T) 
 
 func TestFinalHeadPlanReadsActiveContractFromHead(t *testing.T) {
 	root := newFinalHeadRepo(t)
-	writeFinalHeadFixture(t, root, finalHeadFixturePlan("main", ""), true)
+	writeFinalHeadFixture(t, root, finalHeadFixturePlan(""), true)
 	commitFinalHeadFixture(t, root)
 	writeFinalHeadFile(t, root, "IMPLEMENTATION_TASKS/active.md", "# active\n")
 
@@ -54,20 +54,36 @@ func TestFinalHeadPlanReadsActiveContractFromHead(t *testing.T) {
 	}
 }
 
-func TestFinalHeadPlanRejectsBranchMismatch(t *testing.T) {
+func TestFinalHeadPlanAcceptsParkBranchWithoutPlanBranchString(t *testing.T) {
 	root := newFinalHeadRepo(t)
-	writeFinalHeadFixture(t, root, finalHeadFixturePlan("other", ""), true)
+	writeFinalHeadFixture(t, root, finalHeadFixturePlan(""), true)
+	commitFinalHeadFixture(t, root)
+	runFinalHeadGit(t, root, "checkout", "-q", "-b", "glm-worker/park/770b3b17")
+
+	status, err := CheckFinalHeadPlan(root)
+	if err != nil || status != "plan final head: verified" {
+		t.Fatalf("status=%q err=%v", status, err)
+	}
+	if _, err := CheckParentCompletionHead(root); err != nil {
+		t.Fatalf("completion head err=%v", err)
+	}
+}
+
+func TestFinalHeadPlanAcceptsLegacyGitBoundarySection(t *testing.T) {
+	root := newFinalHeadRepo(t)
+	plan := strings.Replace(finalHeadFixturePlan(""), "## 現在の停止理由", "## 現在のGit境界\n\n- branch: `glm-worker/park/770b3b17`\n\n## 現在の停止理由", 1)
+	writeFinalHeadFixture(t, root, plan, true)
 	commitFinalHeadFixture(t, root)
 
-	_, err := CheckFinalHeadPlan(root)
-	if err == nil || !strings.Contains(err.Error(), "branch other") {
-		t.Fatalf("err=%v", err)
+	status, err := CheckFinalHeadPlan(root)
+	if err != nil || status != "plan final head: verified" {
+		t.Fatalf("status=%q err=%v", status, err)
 	}
 }
 
 func TestFinalHeadPlanRejectsDuplicateActiveSchedule(t *testing.T) {
 	root := newFinalHeadRepo(t)
-	plan := finalHeadFixturePlan("main", "- `IMPLEMENTATION_TASKS/active.md`\n")
+	plan := finalHeadFixturePlan("- `IMPLEMENTATION_TASKS/active.md`\n")
 	writeFinalHeadFixture(t, root, plan, true)
 	commitFinalHeadFixture(t, root)
 
@@ -79,7 +95,7 @@ func TestFinalHeadPlanRejectsDuplicateActiveSchedule(t *testing.T) {
 
 func TestFinalHeadPlanRejectsMalformedNonActiveSchedule(t *testing.T) {
 	root := newFinalHeadRepo(t)
-	plan := strings.Replace(finalHeadFixturePlan("main", ""), "- `IMPLEMENTATION_TASKS/next.md`", "not a schedule bullet", 1)
+	plan := strings.Replace(finalHeadFixturePlan(""), "- `IMPLEMENTATION_TASKS/next.md`", "not a schedule bullet", 1)
 	writeFinalHeadFixture(t, root, plan, true)
 	commitFinalHeadFixture(t, root)
 
@@ -91,7 +107,7 @@ func TestFinalHeadPlanRejectsMalformedNonActiveSchedule(t *testing.T) {
 
 func TestFinalHeadPlanRejectsTransitionalState(t *testing.T) {
 	root := newFinalHeadRepo(t)
-	plan := finalHeadFixturePlan("main", "") + "\n## 次の親Codex操作\n\n- install前に停止する\n"
+	plan := finalHeadFixturePlan("") + "\n## 次の親Codex操作\n\n- install前に停止する\n"
 	writeFinalHeadFixture(t, root, plan, true)
 	commitFinalHeadFixture(t, root)
 
@@ -103,7 +119,7 @@ func TestFinalHeadPlanRejectsTransitionalState(t *testing.T) {
 
 func TestFinalHeadPlanRejectsUnscheduledTask(t *testing.T) {
 	root := newFinalHeadRepo(t)
-	writeFinalHeadFixture(t, root, finalHeadFixturePlan("main", ""), true)
+	writeFinalHeadFixture(t, root, finalHeadFixturePlan(""), true)
 	writeFinalHeadFile(t, root, "IMPLEMENTATION_TASKS/unscheduled.md", "# stray\n")
 	commitFinalHeadFixture(t, root)
 
@@ -115,12 +131,12 @@ func TestFinalHeadPlanRejectsUnscheduledTask(t *testing.T) {
 
 func TestFinalHeadPlanAcceptsCompletionSync(t *testing.T) {
 	root := newFinalHeadRepo(t)
-	writeFinalHeadFixture(t, root, finalHeadFixturePlan("main", ""), true)
+	writeFinalHeadFixture(t, root, finalHeadFixturePlan(""), true)
 	commitFinalHeadFixture(t, root)
 	if err := os.Remove(filepath.Join(root, "IMPLEMENTATION_TASKS", "next.md")); err != nil {
 		t.Fatal(err)
 	}
-	completed := strings.Replace(finalHeadFixturePlan("main", ""), "- `IMPLEMENTATION_TASKS/next.md`\n", "", 1)
+	completed := strings.Replace(finalHeadFixturePlan(""), "- `IMPLEMENTATION_TASKS/next.md`\n", "", 1)
 	writeFinalHeadFile(t, root, implementationPlanFile, completed)
 	commitFinalHeadFixture(t, root)
 
@@ -132,7 +148,7 @@ func TestFinalHeadPlanAcceptsCompletionSync(t *testing.T) {
 
 func TestFinalHeadPlanRejectsNonRegularTaskAtHead(t *testing.T) {
 	root := newFinalHeadRepo(t)
-	writeFinalHeadFixture(t, root, finalHeadFixturePlan("main", ""), true)
+	writeFinalHeadFixture(t, root, finalHeadFixturePlan(""), true)
 	link := filepath.Join(root, "IMPLEMENTATION_TASKS", "link.md")
 	if err := os.Symlink("active.md", link); err != nil {
 		t.Fatal(err)
@@ -147,7 +163,7 @@ func TestFinalHeadPlanRejectsNonRegularTaskAtHead(t *testing.T) {
 
 func TestFinalHeadPlanRejectsDuplicateNonActiveSchedule(t *testing.T) {
 	root := newFinalHeadRepo(t)
-	plan := finalHeadFixturePlan("main", "- `IMPLEMENTATION_TASKS/next.md`\n")
+	plan := finalHeadFixturePlan("- `IMPLEMENTATION_TASKS/next.md`\n")
 	writeFinalHeadFixture(t, root, plan, true)
 	commitFinalHeadFixture(t, root)
 
@@ -166,13 +182,13 @@ func TestFinalHeadPlanSkipsNonGitRepository(t *testing.T) {
 
 func TestParentCompletionHeadAcceptsNextTaskPromotion(t *testing.T) {
 	root := newFinalHeadRepo(t)
-	writeFinalHeadFixture(t, root, finalHeadFixturePlan("main", ""), true)
+	writeFinalHeadFixture(t, root, finalHeadFixturePlan(""), true)
 	commitFinalHeadFixture(t, root)
 	if err := os.Remove(filepath.Join(root, "IMPLEMENTATION_TASKS", "active.md")); err != nil {
 		t.Fatal(err)
 	}
 	writeFinalHeadFile(t, root, "IMPLEMENTATION_TASKS/next.md", "# next\n\n## External feasibility\n\nstatus: not-applicable\n")
-	writeFinalHeadFile(t, root, implementationPlanFile, completionPromotedFixturePlan("main"))
+	writeFinalHeadFile(t, root, implementationPlanFile, completionPromotedFixturePlan())
 	commitFinalHeadFixture(t, root)
 
 	status, err := CheckParentCompletionHead(root)
@@ -190,7 +206,7 @@ func TestParentCompletionHeadAcceptsNonGitRepositorySkip(t *testing.T) {
 
 func TestParentCompletionHeadAcceptsCompletedGoalTerminalPlan(t *testing.T) {
 	root := newFinalHeadRepo(t)
-	writeFinalHeadFixture(t, root, finalHeadFixturePlan("main", ""), true)
+	writeFinalHeadFixture(t, root, finalHeadFixturePlan(""), true)
 	commitFinalHeadFixture(t, root)
 	if err := os.Remove(filepath.Join(root, "IMPLEMENTATION_TASKS", "active.md")); err != nil {
 		t.Fatal(err)
@@ -198,7 +214,7 @@ func TestParentCompletionHeadAcceptsCompletedGoalTerminalPlan(t *testing.T) {
 	if err := os.Remove(filepath.Join(root, "IMPLEMENTATION_TASKS", "next.md")); err != nil {
 		t.Fatal(err)
 	}
-	writeFinalHeadFile(t, root, implementationPlanFile, completionGoalTerminalFixturePlan("main", ""))
+	writeFinalHeadFile(t, root, implementationPlanFile, completionGoalTerminalFixturePlan(""))
 	commitFinalHeadFixture(t, root)
 
 	status, err := CheckParentCompletionHead(root)
@@ -209,12 +225,12 @@ func TestParentCompletionHeadAcceptsCompletedGoalTerminalPlan(t *testing.T) {
 
 func TestParentCompletionHeadRejectsGoalTerminalWithLeftoverScheduleOrTask(t *testing.T) {
 	root := newFinalHeadRepo(t)
-	writeFinalHeadFixture(t, root, finalHeadFixturePlan("main", ""), true)
+	writeFinalHeadFixture(t, root, finalHeadFixturePlan(""), true)
 	commitFinalHeadFixture(t, root)
 	if err := os.Remove(filepath.Join(root, "IMPLEMENTATION_TASKS", "active.md")); err != nil {
 		t.Fatal(err)
 	}
-	writeFinalHeadFile(t, root, implementationPlanFile, completionGoalTerminalFixturePlan("main", "- `IMPLEMENTATION_TASKS/next.md`\n"))
+	writeFinalHeadFile(t, root, implementationPlanFile, completionGoalTerminalFixturePlan("- `IMPLEMENTATION_TASKS/next.md`\n"))
 	commitFinalHeadFixture(t, root)
 
 	_, err := CheckParentCompletionHead(root)
@@ -222,7 +238,7 @@ func TestParentCompletionHeadRejectsGoalTerminalWithLeftoverScheduleOrTask(t *te
 		t.Fatalf("leftover NEXT err=%v", err)
 	}
 
-	writeFinalHeadFile(t, root, implementationPlanFile, completionGoalTerminalFixturePlan("main", ""))
+	writeFinalHeadFile(t, root, implementationPlanFile, completionGoalTerminalFixturePlan(""))
 	commitFinalHeadFixture(t, root)
 
 	_, err = CheckParentCompletionHead(root)
@@ -231,25 +247,22 @@ func TestParentCompletionHeadRejectsGoalTerminalWithLeftoverScheduleOrTask(t *te
 	}
 }
 
-func completionPromotedFixturePlan(branch string) string {
+func completionPromotedFixturePlan() string {
 	return "# plan\n\n## ACTIVE\n\n- `IMPLEMENTATION_TASKS/next.md`\n\n" +
 		"## NEXT（優先順）\n\n## BLOCKED / USER_PERMISSION_WAIT\n\n" +
-		"## 現在のGit境界\n\n- branch: `" + branch + "`\n\n" +
 		"## 現在の停止理由\n\nなし\n"
 }
 
-func completionGoalTerminalFixturePlan(branch string, nextEntries string) string {
+func completionGoalTerminalFixturePlan(nextEntries string) string {
 	return "# plan\n\n## GOAL\n\nstatus: completed\n\nGoal原文\n\n" +
 		"## ACTIVE\n\n## NEXT（優先順）\n\n" + nextEntries + "\n## BLOCKED / USER_PERMISSION_WAIT\n\n" +
-		"## 現在のGit境界\n\n- branch: `" + branch + "`\n\n" +
 		"## 現在の停止理由\n\nなし\n"
 }
 
-func finalHeadFixturePlan(branch string, extraNext string) string {
+func finalHeadFixturePlan(extraNext string) string {
 	return "# plan\n\n## ACTIVE\n\n- `IMPLEMENTATION_TASKS/active.md`\n\n" +
 		"## NEXT（優先順）\n\n- `IMPLEMENTATION_TASKS/next.md`\n" + extraNext + "\n" +
 		"## BLOCKED / USER_PERMISSION_WAIT\n\n" +
-		"## 現在のGit境界\n\n- branch: `" + branch + "`\n\n" +
 		"## 現在の停止理由\n\nなし\n"
 }
 
