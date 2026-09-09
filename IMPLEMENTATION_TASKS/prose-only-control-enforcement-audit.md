@@ -51,6 +51,9 @@ Pushはいつするの？
 - GLM Git mutation禁止、parent-managed metadata不変、packet schema、reviewer session分離、quality-gate snapshot bindingにはproduction guard/testが存在するため、prose-only候補と混同しない
 - 2026-09-08、runtime変更の通常completion工程である`./install.sh`が外部安全審査により明示承認不足として一度拒否された。同じcommandは既存authorityを再提示した再実行で成功したため、installer capability不足ではなく親completion authorityの伝達・判定がproseに依存する再発事例として扱う
 - 2026-09-08、`parent-git-push-completion-binding`完了後もlocal `main`が`origin/main`より3 commit aheadのままtask metadata同期とsession rotationへ進んだ。`glm-parent-action push-binding`は手動実行時に`authorization:user_decision_required`を返したが、通常の`accept`・task完了・rotation遷移が同commandとremote-sync-pending解消を必須postconditionにしていないため、機械controlとしてはpartialである
+- External review PR 354のF003は、`rotation-fail`が新規Codex taskの作成失敗確定をmarker stateで保持せず、directiveとclaimだけでpendingへ解放できるため、`session-rotation.md`の「作成失敗が確定した場合だけ」というprose controlをproduction admissionが強制していないと指摘した。marker schema、旧markerの扱い、CLI拒否意味、bind再試行を一体で監査する。
+- GPT proposal PR 355は、push authorizationをcompletion lifecycleへgateしpre-push hookを追加する案を提示した。現行completion bindingとの重複・不足、管理repoと非管理repoの境界、hook分類とinstaller wiringを本auditで評価し、proposal branchはblind applyしない。
+- External review PR 354のF005はcurrent production pathでは不成立とSol reviewしたが、`SaveSessionLimitBaseline`と`AcknowledgeSessionRotationClaim`はいずれもmarker全体のread-modify-writeであり、外側repository lockまたはcall orderingを将来失うとstale writeがstateを巻き戻し得る。現行callerのlock ownership・順序がproduction admissionで維持されるかを監査し、prose依存またはpartialなら独立修正taskへ分離する。
 
 ## Purpose
 
