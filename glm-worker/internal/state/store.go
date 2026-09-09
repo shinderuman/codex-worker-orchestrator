@@ -42,6 +42,8 @@ const (
 	ExecutionMilestonesStateFile = "execution-milestones.json"
 )
 
+var removeStatePath = os.Remove
+
 func (status TaskStatus) Known() bool {
 	switch status {
 	case TaskStatusNone,
@@ -133,7 +135,7 @@ func (s *StateStore) Touch(name string) error {
 
 func (s *StateStore) Remove(names ...string) error {
 	for _, name := range names {
-		err := os.Remove(s.Path(name))
+		err := removeStatePath(s.Path(name))
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("state %sを削除できません: %w", name, err)
 		}

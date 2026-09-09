@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 )
 
 type lifecycleFileSnapshot struct {
@@ -174,6 +176,72 @@ func (s *StateStore) WaitForSolReview() error {
 	return s.SetTaskStatus(TaskStatusWaitingSolReview)
 }
 
+func (s *StateStore) WaitForQualitySurfaceReview(phase string) error {
+	pending, err := s.snapshotLifecycleFile("pending-decision")
+	if err != nil {
+		return err
+	}
+	if pending.exists {
+		if err := s.verifyPendingDecisionContinuation(phase); err != nil {
+			return err
+		}
+	}
+	if err := s.Remove("pending-decision"); err != nil {
+		return err
+	}
+	if err := s.WaitForSolReview(); err != nil {
+		return s.rollbackLifecycleFiles(err, pending)
+	}
+	return nil
+}
+
+func (s *StateStore) verifyPendingDecisionContinuation(phase string) error {
+	if WorkerPhaseCategory(phase) != WorkerPhaseCategoryDecision {
+		return fmt.Errorf("quality-surface review wait cannot clear a pending decision outside the worker-decision continuation, got %s", phase)
+	}
+	if decision, err := s.Read("last-decision"); err != nil || decision == "" {
+		return fmt.Errorf("quality-surface review wait requires the saved decision binding behind the pending decision marker")
+	}
+	return nil
+}
+
+func (s *StateStore) EnterQualitySurfaceApprovalWait(checkpoint ResumeCheckpoint) error {
+	if s.TaskStatus() != TaskStatusActive {
+		return fmt.Errorf("quality-surface approval wait requires an active task, got %s", s.TaskStatus())
+	}
+	if !checkpoint.QualitySurfaceApprovalPending || checkpoint.IsStopped() {
+		return fmt.Errorf("quality-surface approval wait requires an unstopped approval checkpoint")
+	}
+	if checkpoint.CompletedResult == nil {
+		return fmt.Errorf("quality-surface approval wait requires a completed worker result")
+	}
+	resume, err := s.snapshotLifecycleFile(resumeStateFile)
+	if err != nil {
+		return err
+	}
+	pending, err := s.snapshotLifecycleFile("pending-decision")
+	if err != nil {
+		return err
+	}
+	lease, err := s.snapshotLifecycleFile(parentEvidenceLeasePath)
+	if err != nil {
+		return err
+	}
+	if err := s.SaveResumeCheckpoint(checkpoint); err != nil {
+		return err
+	}
+	if err := s.Remove("pending-decision"); err != nil {
+		return s.rollbackLifecycleFiles(err, resume)
+	}
+	if err := s.AdvanceParentEvidenceLease(); err != nil {
+		return s.rollbackLifecycleFiles(err, resume, pending, lease)
+	}
+	if err := s.SetTaskStatus(TaskStatusWaitingSolReview); err != nil {
+		return s.rollbackLifecycleFiles(err, resume, pending, lease)
+	}
+	return nil
+}
+
 func (s *StateStore) DiscardResumeAndWaitForSolReview() error {
 	resume, err := s.snapshotLifecycleFile(resumeStateFile)
 	if err != nil {
@@ -199,17 +267,42 @@ func (s *StateStore) ActivateQualitySurfaceApproval() error {
 	if !checkpoint.QualitySurfaceApprovalPending || checkpoint.IsStopped() {
 		return fmt.Errorf("quality-surface activation requires retained approval checkpoint")
 	}
+	stats, err := s.snapshotLifecycleFile(currentStatsFile)
+	if err != nil {
+		return err
+	}
 	resume, err := s.snapshotLifecycleFile(resumeStateFile)
 	if err != nil {
 		return err
 	}
-	if err := s.ClearResumeCheckpoint(); err != nil {
+	if err := s.closeApprovedQualitySurfaceReview(); err != nil {
 		return err
 	}
+	if err := s.ClearResumeCheckpoint(); err != nil {
+		return s.rollbackLifecycleFiles(err, stats, resume)
+	}
 	if err := s.SetTaskStatus(TaskStatusActive); err != nil {
-		return s.rollbackLifecycleFiles(err, resume)
+		return s.rollbackLifecycleFiles(err, stats, resume)
 	}
 	return nil
+}
+
+func (s *StateStore) closeApprovedQualitySurfaceReview() error {
+	switch label := s.OpenParentReviewLabel(); label {
+	case roundCommentNone:
+		return nil
+	case string(packet.StatusNeedsSolReview):
+		resolved, err := s.RecordParentOutcome(ParentOutcomeAccepted, "", "")
+		if err != nil {
+			return fmt.Errorf("quality-surface activation cannot close the open parent review: %w", err)
+		}
+		if !resolved || s.OpenParentReviewLabel() != roundCommentNone {
+			return fmt.Errorf("quality-surface activation could not close the open %s review", packet.StatusNeedsSolReview)
+		}
+		return nil
+	default:
+		return fmt.Errorf("quality-surface activation requires no open parent review or an open %s review, got %s", packet.StatusNeedsSolReview, label)
+	}
 }
 
 func (s *StateStore) EnterStop(checkpoint ResumeCheckpoint) error {

@@ -157,7 +157,7 @@ func (w *Workflow) verifyQualitySurfaceBaseline(phase string) (bool, error) {
 }
 
 func (w *Workflow) failClosedQualitySurface(phase, reason string, cause error) error {
-	if err := w.state.WaitForSolReview(); err != nil {
+	if err := w.state.WaitForQualitySurfaceReview(phase); err != nil {
 		return err
 	}
 	if cause != nil {

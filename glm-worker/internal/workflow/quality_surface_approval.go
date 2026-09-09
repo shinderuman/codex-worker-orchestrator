@@ -30,10 +30,10 @@ func (w *Workflow) stopForQualitySurfaceApproval(checkpoint state.ResumeCheckpoi
 	if err := w.captureStopRetention(&checkpoint); err != nil {
 		return true, err
 	}
-	if err := w.state.SaveResumeCheckpoint(checkpoint); err != nil {
+	if err := w.state.EnterQualitySurfaceApprovalWait(checkpoint); err != nil {
 		return true, err
 	}
-	return true, w.failClosedQualitySurface(checkpoint.Phase, reason, nil)
+	return true, w.emitResult(qualitySurfaceFailClosedResult(checkpoint.Phase, reason))
 }
 
 func (w *Workflow) ExecuteQualitySurfaceApproval(acceptedScope string) error {

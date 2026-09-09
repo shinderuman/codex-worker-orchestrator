@@ -8,6 +8,35 @@ import (
 	"strings"
 )
 
+var writeFileAtomic = func(path string, data []byte, mode os.FileMode) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+
+	file, err := os.CreateTemp(filepath.Dir(path), ".tmp-*")
+	if err != nil {
+		return err
+	}
+	tempPath := file.Name()
+
+	defer func() {
+		_ = file.Close()
+		_ = os.Remove(tempPath)
+	}()
+
+	if _, err := file.Write(data); err != nil {
+		return err
+	}
+	if err := file.Chmod(mode); err != nil {
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+
+	return os.Rename(tempPath, path)
+}
+
 func NewUUID() (string, error) {
 	var value [16]byte
 	if _, err := rand.Read(value[:]); err != nil {
@@ -52,33 +81,4 @@ func ValidGeneratedUUID(id string) bool {
 
 func isLowerHexDigit(char byte) bool {
 	return (char >= '0' && char <= '9') || (char >= 'a' && char <= 'f')
-}
-
-func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return err
-	}
-
-	file, err := os.CreateTemp(filepath.Dir(path), ".tmp-*")
-	if err != nil {
-		return err
-	}
-	tempPath := file.Name()
-
-	defer func() {
-		_ = file.Close()
-		_ = os.Remove(tempPath)
-	}()
-
-	if _, err := file.Write(data); err != nil {
-		return err
-	}
-	if err := file.Chmod(mode); err != nil {
-		return err
-	}
-	if err := file.Close(); err != nil {
-		return err
-	}
-
-	return os.Rename(tempPath, path)
 }
