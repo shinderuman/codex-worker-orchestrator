@@ -844,3 +844,21 @@ func TestSessionRotationIssuedStartRetriesOnlyFromActiveCheckpoint(t *testing.T)
 		t.Fatal("completed rotated task accepted duplicate start")
 	}
 }
+
+func TestAdmitNewTaskRotationSkipsVanishedRotationMarker(t *testing.T) {
+	st := &StateStore{dir: t.TempDir()}
+	if _, err := st.StartNewTask(); err != nil {
+		t.Fatal(err)
+	}
+	vanished := "01a0463c-d477-7410-9efd-cb34ff2e0b0e"
+	if err := os.MkdirAll(st.Path(sessionRotationDirectory), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(st.Path(sessionRotationDirectory), "missing.json"), st.SessionRotationMarkerPath(vanished)); err != nil {
+		t.Fatal(err)
+	}
+	admitted, err := st.AdmitNewTaskRotation("01a0244a-4ee4-7e71-b2e1-dec3bdda2120", "")
+	if err != nil || admitted {
+		t.Fatalf("消失marker列入時のadmission = %v, %v", admitted, err)
+	}
+}

@@ -326,12 +326,21 @@ func parentUsageSegmentField(field string, accessor func(*analysisRolloutTokenAn
 
 func parentUsageIntervalActivity(scan bundleRolloutScan, start, end time.Time, source string, startExclusive bool) parentUsageActivity {
 	activity := parentUsageActivity{Status: analysisStatusCounted, Source: source}
-	if !scan.hasWindow {
+	if !parentUsageWindowObserved(scan, start, end, startExclusive) {
 		activity.Status = analysisStatusNoObservation
 		return activity
 	}
 	activity.ModelTurns, activity.ToolCalls, activity.ToolResults, activity.Compactions, activity.ToolOutputBytes = parentUsageRolloutActivity(scan, start, end, startExclusive)
 	return activity
+}
+
+func parentUsageWindowObserved(scan bundleRolloutScan, start, end time.Time, startExclusive bool) bool {
+	for _, at := range scan.windowRecords {
+		if parentUsageEventWithinInterval(at, start, end, startExclusive) {
+			return true
+		}
+	}
+	return false
 }
 
 func parentUsageRolloutActivity(scan bundleRolloutScan, start, end time.Time, startExclusive bool) (modelTurns, toolCalls, toolResults, compactions int, outputBytes int64) {

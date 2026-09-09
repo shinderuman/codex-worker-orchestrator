@@ -650,7 +650,7 @@ func (s *StateStore) incompleteSessionRotationTarget(callerThreadID string) (boo
 		if err != nil {
 			return false, err
 		}
-		if sessionRotationMarkerTargets(marker, callerThreadID, currentTaskID) {
+		if marker != nil && sessionRotationMarkerTargets(marker, callerThreadID, currentTaskID) {
 			return true, nil
 		}
 	}

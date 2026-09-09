@@ -49,6 +49,16 @@ func requireStatsWarning(t *testing.T, buf *bytes.Buffer, scope string) {
 	t.Fatalf("scope %qのwarningが出ませんでした: %q", scope, buf.String())
 }
 
+func requireStatsWarningOperation(t *testing.T, buf *bytes.Buffer, operation string) {
+	t.Helper()
+	for _, event := range capturedWarnings(t, buf) {
+		if event.Scope == "task_stats" && strings.Contains(event.Message, operation) {
+			return
+		}
+	}
+	t.Fatalf("scope task_statsのoperation %qを含むwarningが出ませんでした: %q", operation, buf.String())
+}
+
 func writeCorruptedTaskStats(t *testing.T, st *StateStore) {
 	t.Helper()
 	if err := os.WriteFile(st.Path(currentStatsFile), []byte("{not json"), 0o600); err != nil {
@@ -404,23 +414,17 @@ func TestSetParentCodexIdentityToleratesStatsMirrorFailures(t *testing.T) {
 	})
 
 	t.Run("write failure warns and continues", func(t *testing.T) {
-		root := t.TempDir()
-		st := &StateStore{dir: root}
+		st := &StateStore{dir: t.TempDir()}
 		if _, err := st.StartNewTask(); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.Remove(st.CurrentTaskStatsPath()); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.Mkdir(st.CurrentTaskStatsPath(), 0o700); err != nil {
-			t.Fatal(err)
-		}
+		failWritesFor(t, st, currentStatsFile)
 		warnings, restore := captureStatsWarnings(t)
 		defer restore()
 		if err := st.SetParentCodexIdentity(threadID, sessionID, nil); err != nil {
 			t.Fatalf("書込失敗で操作がblockされました: %v", err)
 		}
-		requireStatsWarning(t, warnings, "task_stats")
+		requireStatsWarningOperation(t, warnings, "更新")
 		identity, err := st.CurrentParentCodexIdentity()
 		if err != nil || identity.ThreadID != threadID {
 			t.Fatalf("authoritative identity = %#v err=%v", identity, err)

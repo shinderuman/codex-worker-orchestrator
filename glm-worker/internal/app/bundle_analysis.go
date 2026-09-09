@@ -216,6 +216,7 @@ type bundleRolloutScan struct {
 	windowStart    int64
 	windowEnd      int64
 	hasWindow      bool
+	windowRecords  []time.Time
 	fileCount      int
 	turns          []analysisRolloutTurn
 	turnIndex      map[string]int
@@ -625,6 +626,7 @@ func observeAnalysisRolloutInWindowRecord(scan *bundleRolloutScan, line []byte, 
 		scan.hasWindow = true
 	}
 	scan.windowEnd = scan.totalBytes + int64(len(line))
+	scan.windowRecords = append(scan.windowRecords, timestamp)
 }
 
 func observeAnalysisRolloutWait(scan *bundleRolloutScan, payload json.RawMessage, timestamp time.Time, lineNumber int) {

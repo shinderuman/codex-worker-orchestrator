@@ -77,6 +77,45 @@ func TestParentUsageBatchPreservesTaskIntervals(t *testing.T) {
 	}
 }
 
+func TestParentUsageBatchReportsNoObservationForIntervalWithoutRecords(t *testing.T) {
+	fixture := newAnalysisTerminalTask(t)
+	writeAnalysisRollout(t, fixture.codexHome, analysisRolloutRel(), codexTestParentThreadID,
+		fixture.start.Add(-3*time.Hour), parentUsagePhaseLines(t, fixture.start, fixture.completeAt))
+	task, err := selectBundleTask(fixture.st, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	noRecords := task.Stats
+	noRecords.TaskID = "no-rollout-record-task"
+	noRecords.StartedAt = fixture.completeAt.Add(20 * time.Minute)
+	if err := fixture.st.AppendTaskLifecycle(state.TaskLifecycleRecord{
+		Version:   1,
+		TaskID:    noRecords.TaskID,
+		Timestamp: fixture.completeAt.Add(30 * time.Minute),
+		From:      string(state.TaskStatusActive),
+		To:        string(state.TaskStatusComplete),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	batch := newParentUsageBatch(fixture.codexHome, []state.TaskStats{task.Stats, noRecords}, scanCodexRollouts, scanCodexRolloutChainWindow)
+	withRecords := bundleTask{ID: task.ID, Status: string(task.Status), Stats: task.Stats}
+	recordedEvidence := batch.evidence(withRecords)
+	recorded := buildParentUsageReportFromScan(fixture.st, withRecords, recordedEvidence.association, recordedEvidence.scan, recordedEvidence.err)
+	if recorded.Intervals.TaskExecution.Activity.Status != analysisStatusCounted {
+		t.Fatalf("recordあり区間のactivity = %#v", recorded.Intervals.TaskExecution.Activity)
+	}
+	withoutRecords := bundleTask{ID: noRecords.TaskID, Status: string(noRecords.Status), Stats: noRecords}
+	batchedEvidence := batch.evidence(withoutRecords)
+	batched := buildParentUsageReportFromScan(fixture.st, withoutRecords, batchedEvidence.association, batchedEvidence.scan, batchedEvidence.err)
+	perTask := buildParentUsageReport(fixture.cfg, fixture.st, withoutRecords)
+	if batched.Intervals.TaskExecution.Activity.Status != analysisStatusNoObservation {
+		t.Fatalf("batched recordなし区間のactivity = %#v", batched.Intervals.TaskExecution.Activity)
+	}
+	if perTask.Intervals.TaskExecution.Activity.Status != analysisStatusNoObservation {
+		t.Fatalf("per-task recordなし区間のactivity = %#v", perTask.Intervals.TaskExecution.Activity)
+	}
+}
+
 func TestTelemetryCompactParentUsageRetainsScanFailure(t *testing.T) {
 	for _, failure := range []string{"enumeration", "content"} {
 		t.Run(failure, func(t *testing.T) {
