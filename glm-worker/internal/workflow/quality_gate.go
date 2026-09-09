@@ -12,12 +12,20 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 )
 
 const qualitySurfaceBaselineStateKey = "quality-surface-baseline"
 
 func runRepositoryQualityGate(root string) (harnesslint.Report, error) {
-	if root == "" || !harnesslint.AppliesTo(root) {
+	if root == "" {
+		return harnesslint.Report{Status: "pass", Violations: []harnesslint.Violation{}}, nil
+	}
+	qualityToolsApply, err := repositoryharness.QualityToolsApply(root)
+	if err != nil {
+		return harnesslint.Report{}, err
+	}
+	if !qualityToolsApply {
 		return harnesslint.Report{Status: "pass", Violations: []harnesslint.Violation{}}, nil
 	}
 	if _, err := harnesslint.Run(root, true); err != nil {
@@ -27,7 +35,14 @@ func runRepositoryQualityGate(root string) (harnesslint.Report, error) {
 }
 
 func captureQualitySurfaceDigest(root string) (string, error) {
-	if root == "" || !harnesslint.AppliesTo(root) {
+	if root == "" {
+		return "", nil
+	}
+	qualityToolsApply, err := repositoryharness.QualityToolsApply(root)
+	if err != nil {
+		return "", err
+	}
+	if !qualityToolsApply {
 		return "", nil
 	}
 	command := exec.Command("git", "-C", root, "ls-files", "-z", "--cached", "--others", "--exclude-standard")

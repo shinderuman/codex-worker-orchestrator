@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -304,6 +306,7 @@ func newBundleTestState(t *testing.T) (config.AppConfig, *state.StateStore) {
 	if err := os.MkdirAll(repoRoot, 0o700); err != nil {
 		t.Fatal(err)
 	}
+	initBundleGitRepository(t, repoRoot)
 	cfg := config.AppConfig{
 		RepoRoot:        repoRoot,
 		RepoHash:        strings.Repeat("a", 64),
@@ -316,6 +319,22 @@ func newBundleTestState(t *testing.T) (config.AppConfig, *state.StateStore) {
 		t.Fatal(err)
 	}
 	return cfg, st
+}
+
+func initBundleGitRepository(t *testing.T, repoRoot string) {
+	t.Helper()
+	run := func(args ...string) {
+		command := exec.Command("git", append([]string{"-C", repoRoot}, args...)...)
+		if output, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, output)
+		}
+	}
+	run("init", "-q")
+	run("config", "user.email", "test@example.com")
+	run("config", "user.name", "test")
+	writeBundleFile(t, filepath.Join(repoRoot, repositoryharness.MarkerPath), repositoryharness.MarkerContent)
+	run("add", "--", repositoryharness.MarkerPath)
+	run("commit", "-q", "-m", "base")
 }
 
 func writeBundleModelCall(t *testing.T, st *state.StateStore, taskID, sessionID string, role state.SessionRole, phase string) {

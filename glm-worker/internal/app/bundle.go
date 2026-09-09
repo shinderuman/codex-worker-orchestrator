@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskdiff"
@@ -522,6 +523,10 @@ func (c *bundleCollector) collectCurrentTaskDiff(cfg config.AppConfig, st *state
 }
 
 func (c *bundleCollector) collectRepositoryAuthority(cfg config.AppConfig, st *state.StateStore) {
+	decision, err := repositoryharness.Evaluate(cfg.RepoRoot)
+	if err != nil || !decision.Active {
+		return
+	}
 	for _, rel := range []string{"IMPLEMENTATION_PLAN.local.md", "IMPLEMENTATION_RULES.md", "IMPLEMENTATION_HISTORY.md"} {
 		archivePath := path.Join("current-state", "repository-authority", filepath.ToSlash(rel))
 		if !c.addRepositoryFile(cfg.RepoRoot, rel, archivePath) {

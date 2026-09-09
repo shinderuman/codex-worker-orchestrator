@@ -281,6 +281,9 @@ func newWorkflowT(t *testing.T, st *state.StateStore, r *scriptedRunner) *Workfl
 
 func newWorkflowTWithOutput(t *testing.T, st *state.StateStore, r *scriptedRunner, output io.Writer) *Workflow {
 	t.Helper()
+	repoRoot := t.TempDir()
+	gitIn(t, repoRoot, "init", "-q")
+	trackRepositoryHarnessMarker(t, repoRoot)
 	w := NewWorkflow(config.AppConfig{
 		WorkerModel:           "opus",
 		ReviewerModel:         "haiku",
@@ -288,7 +291,7 @@ func newWorkflowTWithOutput(t *testing.T, st *state.StateStore, r *scriptedRunne
 		RoutineEffort:         "high",
 		MaxAutoFixRounds:      2,
 		TelemetryContent:      true,
-		RepoRoot:              t.TempDir(),
+		RepoRoot:              repoRoot,
 	}, st, r, output)
 	w.captureSnapshot = func(string) (state.GitSnapshot, error) {
 		return fixedSnapshot, nil

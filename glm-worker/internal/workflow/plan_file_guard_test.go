@@ -277,17 +277,17 @@ func TestPlanFileTrackingIndeterminateFailsClosedBeforeCall(t *testing.T) {
 	if pkt.Status != "NEEDS_SOL_REVIEW" || pkt.Risk != "HIGH" {
 		t.Fatalf("packet = %s/%s want NEEDS_SOL_REVIEW/HIGH:\n%s", pkt.Status, pkt.Risk, out.String())
 	}
-	if !strings.Contains(out.String(), "Git追跡判定に失敗") {
-		t.Fatalf("追跡判定失敗理由が出力されていません:\n%s", out.String())
+	if !strings.Contains(out.String(), "repository harness適用境界を評価できません") {
+		t.Fatalf("git追跡不能時の境界評価fail closed理由が出力されていません:\n%s", out.String())
 	}
 	events := 0
 	for _, l := range taskLogs(t, st) {
-		if l.Outcome == "parent_metadata_unavailable" && strings.HasSuffix(l.Phase, parentMetadataGuardSurface.eventSuffix) {
+		if l.Outcome == repositoryHarnessGuardSurface.unavailableOutcome() && strings.HasSuffix(l.Phase, repositoryHarnessGuardSurface.eventSuffix) {
 			events++
 		}
 	}
 	if events != 1 {
-		t.Fatalf("parent_metadata_unavailable event = %d want 1", events)
+		t.Fatalf("repository_harness_unavailable event = %d want 1", events)
 	}
 }
 

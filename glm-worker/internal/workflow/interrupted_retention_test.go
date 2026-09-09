@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
@@ -44,7 +45,11 @@ func newRetentionGitRepo(t *testing.T) string {
 	if err := os.WriteFile(filepath.Join(repo, "tracked.md"), []byte("base\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(repo, repositoryharness.MarkerPath), []byte(repositoryharness.MarkerContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	run("add", "tracked.md")
+	run("add", "--", repositoryharness.MarkerPath)
 	run("commit", "-q", "-m", "initial")
 	return repo
 }

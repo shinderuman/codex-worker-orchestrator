@@ -47,6 +47,16 @@ func (w *Workflow) resolveAndPinActiveTask() (string, error) {
 	if w.activeTaskStateSet() {
 		return w.readActiveTaskState(), nil
 	}
+	harnessActive, err := w.repositoryHarnessActive()
+	if err != nil {
+		return "", err
+	}
+	if !harnessActive {
+		if err := w.state.Write(activeTaskStateKey, ""); err != nil {
+			return "", err
+		}
+		return "", nil
+	}
 	activeTaskPath, wired, err := resolveActiveTaskPath(w.config.RepoRoot)
 	if err != nil {
 		return "", err

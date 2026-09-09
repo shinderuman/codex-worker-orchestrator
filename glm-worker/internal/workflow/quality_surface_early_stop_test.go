@@ -10,6 +10,7 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -122,6 +123,7 @@ func TestQualitySurfaceApprovalStopsAgainAfterLaterOutOfScopeMutation(t *testing
 	gitScope(t, repo, "config", "user.email", "quality-restop@example.invalid")
 	gitScope(t, repo, "config", "user.name", "quality-restop-test")
 	writeScopeFile(t, repo, "glm-worker/go.mod", "module github.com/shinderuman/codex-worker-orchestrator/glm-worker\n")
+	writeScopeFile(t, repo, repositoryharness.MarkerPath, repositoryharness.MarkerContent)
 	writeScopeFile(t, repo, "commentlint", "#!/bin/sh\nexit 0\n")
 	gitScope(t, repo, "add", ".")
 	gitScope(t, repo, "commit", "-m", "baseline")
@@ -229,6 +231,7 @@ func TestQualitySurfaceApprovalGeneratesTaskScopeOnProductionDirtyBaseline(t *te
 	gitScope(t, repo, "config", "user.email", "dirty-scope@example.invalid")
 	gitScope(t, repo, "config", "user.name", "dirty-scope-test")
 	writeScopeFile(t, repo, "glm-worker/go.mod", "module github.com/shinderuman/codex-worker-orchestrator/glm-worker\n")
+	writeScopeFile(t, repo, repositoryharness.MarkerPath, repositoryharness.MarkerContent)
 	writeScopeFile(t, repo, "commentlint", "#!/bin/sh\nexit 0\n")
 	writeScopeFile(t, repo, "preexisting_code.go", "package sample\n\nvar retained = 1\n")
 	gitScope(t, repo, "add", ".")
@@ -341,6 +344,7 @@ func TestQualitySurfaceApprovalScopesPostBaselinePreexistingEdits(t *testing.T) 
 	gitScope(t, repo, "config", "user.email", "dirty-restop@example.invalid")
 	gitScope(t, repo, "config", "user.name", "dirty-restop-test")
 	writeScopeFile(t, repo, "glm-worker/go.mod", "module github.com/shinderuman/codex-worker-orchestrator/glm-worker\n")
+	writeScopeFile(t, repo, repositoryharness.MarkerPath, repositoryharness.MarkerContent)
 	writeScopeFile(t, repo, "commentlint", "#!/bin/sh\nexit 0\n")
 	writeScopeFile(t, repo, "preexisting_code.go", "package sample\n\nvar retained = 1\n")
 	gitScope(t, repo, "add", ".")

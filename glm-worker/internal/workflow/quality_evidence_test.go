@@ -9,6 +9,7 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -152,6 +153,7 @@ func newQualityEvidenceRepo(t *testing.T, testContent string) (string, string) {
 	runGitTest(t, root, "config", "user.email", "quality@example.invalid")
 	runGitTest(t, root, "config", "user.name", "quality evidence")
 	writeGitTestFile(t, root, "sample_test.go", testContent)
+	writeGitTestFile(t, root, repositoryharness.MarkerPath, repositoryharness.MarkerContent)
 	runGitTest(t, root, "add", ".")
 	runGitTest(t, root, "commit", "-m", "baseline")
 	return root, runGitTest(t, root, "rev-parse", "HEAD")

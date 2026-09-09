@@ -50,6 +50,8 @@ func TestClassifyQualityFiles(t *testing.T) {
 		{"goquality", "shell", true},
 		{"go.sum", "", false},
 		{"README.md", "", false},
+		{".glm-worker-repository-harness", "", false},
+		{"sub/.glm-worker-repository-harness", "unclassified", true},
 		{"a.py", "unclassified", true},
 	}
 	for _, item := range cases {

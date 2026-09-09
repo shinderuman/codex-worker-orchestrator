@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 )
 
 type multiRepoEnv struct {
@@ -363,7 +365,10 @@ func newMultiRepoGitRepo(t *testing.T, dir string, marker string) string {
 	if err := os.WriteFile(filepath.Join(dir, "corpus.md"), []byte(document), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	run("add", "corpus.md")
+	if err := os.WriteFile(filepath.Join(dir, repositoryharness.MarkerPath), []byte(repositoryharness.MarkerContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run("add", "corpus.md", repositoryharness.MarkerPath)
 	run("commit", "-q", "-m", "initial")
 	return dir
 }

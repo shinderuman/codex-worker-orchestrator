@@ -4,12 +4,14 @@ import (
 	"errors"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -29,6 +31,12 @@ func newQualityContractConfig(t *testing.T) config.AppConfig {
 	}
 	if err := os.WriteFile(marker, []byte("module github.com/shinderuman/codex-worker-orchestrator/glm-worker\n"), 0o644); err != nil {
 		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfg.RepoRoot, repositoryharness.MarkerPath), []byte(repositoryharness.MarkerContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := exec.Command("git", "-C", cfg.RepoRoot, "add", "--", repositoryharness.MarkerPath).CombinedOutput(); err != nil {
+		t.Fatalf("git add marker: %v: %s", err, out)
 	}
 	return cfg
 }

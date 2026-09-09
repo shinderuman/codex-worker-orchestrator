@@ -191,6 +191,7 @@ exercise milestones
 		t.Fatal(err)
 	}
 	writePlanWithActive(t, repo, "## ACTIVE\n\n- `"+taskRelative+"`\n")
+	trackRepositoryHarnessMarker(t, repo)
 	gitScope(t, repo, "add", ".")
 	gitScope(t, repo, "commit", "-m", "baseline")
 

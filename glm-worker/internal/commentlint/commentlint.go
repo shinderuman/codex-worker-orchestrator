@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 )
 
 type Violation struct {
@@ -71,7 +72,11 @@ const (
 )
 
 func Check(root string) (Report, error) {
-	if !harnesslint.AppliesTo(root) {
+	qualityToolsApply, err := repositoryharness.QualityToolsApply(root)
+	if err != nil {
+		return Report{}, err
+	}
+	if !qualityToolsApply {
 		return Run(root, false)
 	}
 	quality, err := harnesslint.Check(root)
@@ -275,7 +280,7 @@ func classify(path string) (string, bool) {
 	case ".md", ".json", ".txt", ".sum":
 		return "", false
 	}
-	if base == "LICENSE" {
+	if nonSourcePath(path, base) {
 		return "", false
 	}
 	if extension == "" {
@@ -284,6 +289,10 @@ func classify(path string) (string, bool) {
 		}
 	}
 	return "unclassified", true
+}
+
+func nonSourcePath(path, base string) bool {
+	return base == "LICENSE" || path == repositoryharness.MarkerPath
 }
 
 func readRegular(root, path string) ([]byte, os.FileMode, error) {

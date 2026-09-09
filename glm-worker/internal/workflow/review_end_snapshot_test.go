@@ -51,6 +51,7 @@ func initMutationRepo(t *testing.T) string {
 	if err := os.WriteFile(filepath.Join(repoRoot, "tracked.txt"), []byte("base\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	trackRepositoryHarnessMarker(t, repoRoot)
 	gitIn(t, repoRoot, "add", ".")
 	gitIn(t, repoRoot, "commit", "-q", "-m", "base")
 	return repoRoot

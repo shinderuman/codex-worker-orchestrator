@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
@@ -19,6 +20,7 @@ type parentFileGuard struct {
 	files    state.ParentFileStates
 	guarded  bool
 	planOnly bool
+	marker   repositoryharness.MarkerGuard
 }
 
 type guardSurface struct {
@@ -174,12 +176,21 @@ func (w *Workflow) captureParentFileGuard(role state.SessionRole) (parentFileGua
 	if role != state.WorkerRole {
 		return parentFileGuard{}, false, nil
 	}
+	marker, harnessActive, stopped, err := w.captureRepositoryHarnessBoundary()
+	if stopped {
+		return parentFileGuard{}, true, err
+	}
+	if !harnessActive {
+		return parentFileGuard{}, false, nil
+	}
 	plan, err := state.CaptureParentFileState(w.config.RepoRoot, implementationPlanFile)
 	if err != nil {
 		return parentFileGuard{}, true, w.failClosedParentFileGuard("parent-metadata-capture", parentMetadataGuardSurface, parentMetadataGuardSurface.unavailableOutcome(), "plan file baseline取得失敗のため不変性を確認できません", err)
 	}
 	if !plan.Exists {
-		return w.captureMissingPlanGuard()
+		guard, stopped, err := w.captureMissingPlanGuard()
+		guard.marker = marker
+		return guard, stopped, err
 	}
 	states, err := state.CaptureParentFileStates(w.config.RepoRoot)
 	if err != nil {
@@ -198,7 +209,22 @@ func (w *Workflow) captureParentFileGuard(role state.SessionRole) (parentFileGua
 	if activePath := w.readActiveTaskState(); activePath != "" && !activeTaskFileExists(w.config.RepoRoot, activePath) {
 		return parentFileGuard{}, true, w.failClosedParentFileGuard("parent-metadata-capture", parentMetadataGuardSurface, parentMetadataGuardSurface.missingOutcome(), "task開始時に固定したACTIVE task file "+activePath+"がworking treeへ存在しません", nil)
 	}
-	return parentFileGuard{files: states, guarded: true}, false, nil
+	return parentFileGuard{files: states, guarded: true, marker: marker}, false, nil
+}
+
+func (w *Workflow) captureRepositoryHarnessMarkerGuard() (repositoryharness.MarkerGuard, bool, error) {
+	decision, err := repositoryharness.Evaluate(w.config.RepoRoot)
+	if err != nil {
+		return repositoryharness.MarkerGuard{}, true, w.failClosedRepositoryHarness("repository-harness-capture", repositoryHarnessGuardSurface.unavailableOutcome(), "opt-in marker境界を評価できません", err)
+	}
+	if !decision.Active {
+		return repositoryharness.MarkerGuard{}, true, w.failClosedRepositoryHarness("repository-harness-capture", repositoryHarnessOutcome(decision.Reason), repositoryHarnessInactiveReason(decision.Reason), nil)
+	}
+	marker, err := repositoryharness.CaptureMarker(w.config.RepoRoot)
+	if err != nil {
+		return repositoryharness.MarkerGuard{}, true, w.failClosedRepositoryHarness("repository-harness-capture", repositoryHarnessGuardSurface.unavailableOutcome(), "opt-in marker baseline取得失敗のため不変性を確認できません", err)
+	}
+	return marker, false, nil
 }
 
 func (w *Workflow) captureMissingPlanGuard() (parentFileGuard, bool, error) {
@@ -240,6 +266,9 @@ func (w *Workflow) verifyParentFileAfterCall(
 	if checkpoint.Role != state.WorkerRole || !before.guarded {
 		return false, nil
 	}
+	if stopped, err := w.verifyRepositoryHarnessMarkerAfterCall(checkpoint, before.marker, runResult, startedAt, completedAt, runErr, outputPath); stopped {
+		return true, err
+	}
 	after, err := state.CaptureParentFileStates(w.config.RepoRoot)
 	if err != nil {
 		w.recordModelCall(checkpoint, runResult, startedAt, completedAt, parentMetadataGuardSurface.unavailableOutcome(), "", err, outputPath, callDiagnostics{})
@@ -266,6 +295,44 @@ func (w *Workflow) verifyParentFileAfterCall(
 	}
 	w.recordModelCall(checkpoint, runResult, startedAt, completedAt, parentMetadataGuardSurface.violationOutcome(), "", violation, outputPath, callDiagnostics{})
 	return true, w.failClosedParentFileGuard(checkpoint.Phase, parentMetadataGuardSurface, parentMetadataGuardSurface.mismatchOutcome(), violation.Error(), nil)
+}
+
+func (w *Workflow) verifyRepositoryHarnessMarkerAfterCall(
+	checkpoint state.ResumeCheckpoint,
+	before repositoryharness.MarkerGuard,
+	runResult runner.RunResult,
+	startedAt time.Time,
+	completedAt time.Time,
+	runErr error,
+	outputPath string,
+) (bool, error) {
+	afterMarker, err := repositoryharness.CaptureMarker(w.config.RepoRoot)
+	if err != nil {
+		w.recordModelCall(checkpoint, runResult, startedAt, completedAt, repositoryHarnessGuardSurface.unavailableOutcome(), "", err, outputPath, callDiagnostics{})
+		return true, w.failClosedRepositoryHarness(checkpoint.Phase, repositoryHarnessGuardSurface.unavailableOutcome(), "呼出後のopt-in marker終了状態取得失敗のため不変性を確認できません", err)
+	}
+	if !repositoryharness.SameMarkerGuard(before, afterMarker) {
+		violation := fmt.Errorf("worker呼出中にrepository harness opt-in marker(%s)が変化しました", repositoryharness.MarkerPath)
+		if runErr != nil {
+			violation = fmt.Errorf("%w; 呼出error: %w", violation, runErr)
+		}
+		w.recordModelCall(checkpoint, runResult, startedAt, completedAt, repositoryHarnessGuardSurface.violationOutcome(), "", violation, outputPath, callDiagnostics{})
+		return true, w.failClosedRepositoryHarness(checkpoint.Phase, repositoryHarnessGuardSurface.mismatchOutcome(), violation.Error(), nil)
+	}
+	decision, err := repositoryharness.Evaluate(w.config.RepoRoot)
+	if err != nil {
+		w.recordModelCall(checkpoint, runResult, startedAt, completedAt, repositoryHarnessGuardSurface.unavailableOutcome(), "", err, outputPath, callDiagnostics{})
+		return true, w.failClosedRepositoryHarness(checkpoint.Phase, repositoryHarnessGuardSurface.unavailableOutcome(), "呼出後のopt-in marker境界を評価できません", err)
+	}
+	if !decision.Active {
+		violation := fmt.Errorf("worker呼出中にrepository harness opt-in marker(%s)が無効化されました(%s)", repositoryharness.MarkerPath, decision.Reason)
+		if runErr != nil {
+			violation = fmt.Errorf("%w; 呼出error: %w", violation, runErr)
+		}
+		w.recordModelCall(checkpoint, runResult, startedAt, completedAt, repositoryHarnessGuardSurface.violationOutcome(), "", violation, outputPath, callDiagnostics{})
+		return true, w.failClosedRepositoryHarness(checkpoint.Phase, repositoryHarnessOutcome(decision.Reason), violation.Error(), nil)
+	}
+	return false, nil
 }
 
 func (w *Workflow) failClosedParentFileGuard(phase string, surface guardSurface, outcome string, reason string, cause error) error {

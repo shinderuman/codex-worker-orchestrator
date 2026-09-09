@@ -17,6 +17,7 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
@@ -228,19 +229,16 @@ func (w *Workflow) initializeNewTask(request string) (string, error) {
 	if err := w.state.Write("last-request", request); err != nil {
 		return "", err
 	}
-	if err := w.state.Remove("last-decision", "last-review", activeTaskStateKey, acceptedFixScopeStateFile); err != nil {
+	if err := w.state.Remove("last-decision", "last-review", activeTaskStateKey, acceptedFixScopeStateFile, repositoryharness.ActivationStateKey); err != nil {
 		return "", err
 	}
 
-	activeTaskPath, wired, err := resolveActiveTaskPath(w.config.RepoRoot)
+	if _, err := w.pinRepositoryHarnessActivation(); err != nil {
+		return "", w.failClosedRepositoryHarness("worker-new", repositoryHarnessGuardSurface.unavailableOutcome(), "repository harness適用境界を評価できません", err)
+	}
+	activeTaskPath, err := w.resolveAndPinActiveTask()
 	if err != nil {
 		return "", w.failClosedActiveTaskResolution("worker-new", err)
-	}
-	if !wired {
-		activeTaskPath = ""
-	}
-	if err := w.state.Write(activeTaskStateKey, activeTaskPath); err != nil {
-		return "", err
 	}
 	return activeTaskPath, nil
 }
@@ -1028,6 +1026,13 @@ func (w *Workflow) computeEffectiveRisk(workerResult packet.Result, autoFixes in
 }
 
 func (w *Workflow) riskSurfaceDecisions() (selfProtectionDecision, qualityEvidenceDecision) {
+	harnessActive, err := w.repositoryHarnessActive()
+	if err != nil {
+		return selfProtectionDecision{High: true, Source: "classify-error", HitPath: err.Error()}, qualityEvidenceDecision{}
+	}
+	if !harnessActive {
+		return selfProtectionDecision{}, qualityEvidenceDecision{}
+	}
 	baselineHead, _ := w.state.Read("baseline-head")
 	paths, err := w.collectChangedPaths(w.config.RepoRoot, baselineHead)
 	if err != nil {

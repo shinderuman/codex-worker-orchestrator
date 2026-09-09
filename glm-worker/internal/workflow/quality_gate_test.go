@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -92,6 +93,7 @@ func TestCaptureQualitySurfaceDigestTracksPolicyContent(t *testing.T) {
 	root := t.TempDir()
 	runQualityGateGit(t, root, "init")
 	writeQualityGateFile(t, root, "glm-worker/go.mod", "module github.com/shinderuman/codex-worker-orchestrator/glm-worker\n")
+	writeQualityGateFile(t, root, repositoryharness.MarkerPath, repositoryharness.MarkerContent)
 	writeQualityGateFile(t, root, ".golangci.yml", "version: one\n")
 	runQualityGateGit(t, root, "add", ".")
 

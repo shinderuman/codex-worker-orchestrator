@@ -7,6 +7,7 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -41,7 +42,14 @@ func (e *QualityPreflightError) Error() string {
 }
 
 func preflightQualityToolchain(cfg config.AppConfig, st *state.StateStore) error {
-	if cfg.RepoRoot == "" || !harnesslint.AppliesTo(cfg.RepoRoot) {
+	if cfg.RepoRoot == "" {
+		return nil
+	}
+	qualityToolsApply, err := repositoryharness.QualityToolsApply(cfg.RepoRoot)
+	if err != nil {
+		return newQualityPreflightError(err, 0)
+	}
+	if !qualityToolsApply {
 		return nil
 	}
 	startedAt := time.Now().UTC()
