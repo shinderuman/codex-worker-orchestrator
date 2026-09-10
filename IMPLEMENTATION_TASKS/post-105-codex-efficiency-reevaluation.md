@@ -43,6 +43,7 @@ post-105-codex-efficiency-reevaluation.md
 - PR 345 CodeRabbit comments `3930465346` / `3930465350`: `https://github.com/shinderuman/codex-worker-orchestrator/pull/345#discussion_r3930465346`, `https://github.com/shinderuman/codex-worker-orchestrator/pull/345#discussion_r3930465350`
 - 「そういうもの」は、自由言語だけに依存するcontrolの残存・再導入、機械化済みcontrolのprose thinning、改善候補の捕捉とTask化の機械化を指す
 - 全completed task/current treeを再監査する先行control-enforcement workと、機械化・instruction削減の後続workはrepository Plan外で完了させる。本taskはそれらを再実装・再分類せず、完了後から105までの回帰と実測効果だけを再評価する
+- 先行bounded control inventoryのcanonical cross-task decisionは`IMPLEMENTATION_HISTORY.md`の`2026-09-11 prose-only control enforcement audit` headingとする。本taskはそのinventoryを再作成せず、同heading以後のdeltaだけを評価する
 
 ## Purpose
 
