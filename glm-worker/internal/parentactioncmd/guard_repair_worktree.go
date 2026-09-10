@@ -2,6 +2,7 @@ package parentactioncmd
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -17,6 +18,13 @@ type guardRepairWorktreeSnapshot struct {
 	dirty  []state.StopDirtyFile
 	parent state.ParentFileStates
 	git    state.GitSnapshot
+}
+
+type guardRepairFileBackup struct {
+	path    string
+	content []byte
+	mode    os.FileMode
+	exists  bool
 }
 
 func createGuardRepairWorktree(cfg config.AppConfig) (string, func(), error) {
@@ -161,6 +169,78 @@ func validateGuardRepairPath(worktree, path string) (bool, error) {
 		return false, fmt.Errorf("guard repair cannot create untracked repair files: %s: %s", path, strings.TrimSpace(string(output)))
 	}
 	return strings.HasSuffix(path, "_test.go"), nil
+}
+
+func copyGuardRepairChangesWithRollback(worktree, repoRoot string, changed []string) (func() error, error) {
+	backups, err := captureGuardRepairFiles(repoRoot, changed)
+	if err != nil {
+		return nil, err
+	}
+	rollback := func() error { return restoreGuardRepairFiles(repoRoot, backups) }
+	if err := copyGuardRepairChanges(worktree, repoRoot, changed); err != nil {
+		return nil, errors.Join(err, rollback())
+	}
+	return rollback, nil
+}
+
+func captureGuardRepairFiles(repoRoot string, paths []string) ([]guardRepairFileBackup, error) {
+	backups := make([]guardRepairFileBackup, 0, len(paths))
+	for _, path := range paths {
+		if !guardrepair.IsAllowed(path) {
+			return nil, fmt.Errorf("refuse out-of-scope guard repair backup: %s", path)
+		}
+		full, err := joinRepairRoot(repoRoot, path)
+		if err != nil {
+			return nil, err
+		}
+		info, err := os.Lstat(full)
+		if errors.Is(err, os.ErrNotExist) {
+			backups = append(backups, guardRepairFileBackup{path: path})
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		if !info.Mode().IsRegular() {
+			return nil, fmt.Errorf("guard repair original path must be a regular file or absent: %s", path)
+		}
+		content, err := os.ReadFile(full)
+		if err != nil {
+			return nil, err
+		}
+		backups = append(backups, guardRepairFileBackup{path: path, content: content, mode: info.Mode().Perm(), exists: true})
+	}
+	return backups, nil
+}
+
+func restoreGuardRepairFiles(repoRoot string, backups []guardRepairFileBackup) error {
+	var restoreErr error
+	for i := len(backups) - 1; i >= 0; i-- {
+		backup := backups[i]
+		full, err := joinRepairRoot(repoRoot, backup.path)
+		if err != nil {
+			restoreErr = errors.Join(restoreErr, err)
+			continue
+		}
+		if !backup.exists {
+			if err := os.Remove(full); err != nil && !errors.Is(err, os.ErrNotExist) {
+				restoreErr = errors.Join(restoreErr, err)
+			}
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			restoreErr = errors.Join(restoreErr, err)
+			continue
+		}
+		if err := os.WriteFile(full, backup.content, backup.mode); err != nil {
+			restoreErr = errors.Join(restoreErr, err)
+			continue
+		}
+		if err := os.Chmod(full, backup.mode); err != nil {
+			restoreErr = errors.Join(restoreErr, err)
+		}
+	}
+	return restoreErr
 }
 
 func copyGuardRepairChanges(worktree, repoRoot string, changed []string) error {
