@@ -14,10 +14,17 @@ import (
 
 func trackRepositoryHarnessMarker(t *testing.T, repoRoot string) {
 	t.Helper()
+	goMod := filepath.Join(repoRoot, "glm-worker", "go.mod")
+	if err := os.MkdirAll(filepath.Dir(goMod), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(goMod, []byte("module github.com/shinderuman/codex-worker-orchestrator/glm-worker\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(repoRoot, repositoryharness.MarkerPath), []byte(repositoryharness.MarkerContent), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	markerGit(t, repoRoot, "add", "--", repositoryharness.MarkerPath)
+	markerGit(t, repoRoot, "add", "--", repositoryharness.MarkerPath, "glm-worker/go.mod")
 }
 
 func markerGit(t *testing.T, repoRoot string, args ...string) {
