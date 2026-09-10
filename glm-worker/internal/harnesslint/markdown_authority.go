@@ -10,6 +10,11 @@ const markdownDerivedStateRule = "markdown-derived-state"
 
 var readmePinnedVersionPattern = regexp.MustCompile(`(?m)^- (?:Go|golangci-lint|shellcheck|shfmt)\s+[^\n]*\d+\.\d+`)
 
+type markdownFence struct {
+	marker byte
+	width  int
+}
+
 func markdownDerivedStateViolations(root string, paths []string) ([]Violation, error) {
 	var violations []Violation
 	for _, path := range paths {
@@ -67,18 +72,13 @@ func markdownDerivedViolation(path string, line int, message string) Violation {
 
 func markdownLevelTwoHeadings(data []byte) map[string]int {
 	result := map[string]int{}
-	fence := ""
+	var fence markdownFence
 	for index, raw := range strings.Split(string(data), "\n") {
 		line := strings.TrimSpace(raw)
-		if marker := markdownFenceMarker(line); marker != "" {
-			if fence == "" {
-				fence = marker
-			} else if marker == fence {
-				fence = ""
-			}
+		if updateMarkdownFence(line, &fence) {
 			continue
 		}
-		if fence != "" || !strings.HasPrefix(line, "## ") {
+		if fence.width != 0 || !strings.HasPrefix(line, "## ") {
 			continue
 		}
 		result[strings.TrimSpace(strings.TrimPrefix(line, "## "))] = index + 1
@@ -86,35 +86,53 @@ func markdownLevelTwoHeadings(data []byte) map[string]int {
 	return result
 }
 
-func markdownFenceMarker(line string) string {
-	if strings.HasPrefix(line, "```") {
-		return "```"
+func updateMarkdownFence(line string, fence *markdownFence) bool {
+	marker, width := markdownFenceRun(line)
+	if width < 3 {
+		return false
 	}
-	if strings.HasPrefix(line, "~~~") {
-		return "~~~"
+	if fence.width == 0 {
+		fence.marker = marker
+		fence.width = width
+		return true
 	}
-	return ""
+	if marker != fence.marker || width < fence.width {
+		return false
+	}
+	rest := strings.TrimSpace(line[width:])
+	if rest != "" {
+		return false
+	}
+	*fence = markdownFence{}
+	return true
+}
+
+func markdownFenceRun(line string) (byte, int) {
+	if line == "" || (line[0] != '`' && line[0] != '~') {
+		return 0, 0
+	}
+	marker := line[0]
+	width := 0
+	for width < len(line) && line[width] == marker {
+		width++
+	}
+	return marker, width
 }
 
 func markdownSectionBody(data []byte, heading string) string {
 	lines := strings.Split(string(data), "\n")
 	inSection := false
-	fence := ""
+	var fence markdownFence
 	var body []string
 	for _, raw := range lines {
 		line := strings.TrimSpace(raw)
-		if marker := markdownFenceMarker(line); marker != "" {
-			if fence == "" {
-				fence = marker
-			} else if marker == fence {
-				fence = ""
-			}
+		if updateMarkdownFence(line, &fence) {
 			if inSection {
 				body = append(body, line)
 			}
 			continue
 		}
-		if fence == "" && strings.HasPrefix(line, "## ") {
+		if fence.width == 0 && strings.HasPrefix(line, "## ") {
 			name := strings.TrimSpace(strings.TrimPrefix(line, "## "))
 			if inSection {
 				break
