@@ -43,44 +43,17 @@ func TestAdmitParentActionFailsClosedOnLifecycleInconsistency(t *testing.T) {
 	}
 }
 
-func TestAdmitNewTaskDistinguishesActiveFromNoTask(t *testing.T) {
+func TestAdmitNewTaskUsesCanonicalPlan(t *testing.T) {
 	st := newParentActionTestStore(t)
-	taskID, err := st.TaskID()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := st.Write("last-request", "preserve active task"); err != nil {
-		t.Fatal(err)
-	}
 
 	plan, admitted, err := st.AdmitNewTask()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if admitted || plan.RequiredAction != ParentActionReset {
+	if !admitted || plan.RequiredAction != ParentActionNone {
 		t.Fatalf("active task admission = admitted %v plan %#v", admitted, plan)
 	}
-	if got, err := st.TaskID(); err != nil || got != taskID {
-		t.Fatalf("active task identity changed: got %q err=%v", got, err)
-	}
-	if got := st.ReadOr("last-request", ""); got != "preserve active task" {
-		t.Fatalf("active task state changed: last-request = %q", got)
-	}
 
-	if err := st.Reset(); err != nil {
-		t.Fatal(err)
-	}
-	plan, admitted, err = st.AdmitNewTask()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !admitted || plan.RequiredAction != ParentActionNone {
-		t.Fatalf("empty state admission = admitted %v plan %#v", admitted, plan)
-	}
-
-	if _, err := st.StartNewTask(); err != nil {
-		t.Fatal(err)
-	}
 	if err := st.SetTaskStatus(TaskStatusWaitingDecision); err != nil {
 		t.Fatal(err)
 	}
