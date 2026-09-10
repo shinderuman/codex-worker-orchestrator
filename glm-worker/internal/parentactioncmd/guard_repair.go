@@ -73,7 +73,11 @@ func reusableGuardRepairRecord(cfg config.AppConfig, st *state.StateStore) (stat
 	if err != nil {
 		return state.GuardRepairRecord{}, false
 	}
-	if record.Status == state.GuardRepairReady || record.Status == state.GuardRepairComplete {
+	if record.Status == state.GuardRepairRunning {
+		return record, true
+	}
+	if record.Status == state.GuardRepairReady || record.Status == state.GuardRepairComplete ||
+		record.Status == state.GuardRepairFailed && record.RepairedDigest != "" {
 		return record, record.RepairedDigest != "" && digest == record.RepairedDigest
 	}
 	return record, digest == record.RelevantDigest
@@ -141,6 +145,7 @@ func performBoundedGuardRepair(cfg config.AppConfig, st *state.StateStore, recor
 	record.Status = state.GuardRepairReady
 	record.RepairedDigest = repairedDigest
 	if err := st.SaveGuardRepairRecord(record); err != nil {
+		record.RepairedDigest = ""
 		return record, markGuardRepairFailed(st, record, errors.Join(err, rollback()))
 	}
 	return record, nil
@@ -308,12 +313,11 @@ func resumeWithRepairedWorker(
 	}
 	worker, cleanup, err := buildGuardRepairWorker(cfg)
 	if err != nil {
-		failure := markGuardRepairFailed(st, record, errors.Join(initialErr, err))
-		return errors.Join(failure, lock.Close())
+		return errors.Join(initialErr, err, lock.Close())
 	}
 	if err := lock.Close(); err != nil {
 		cleanup()
-		return markGuardRepairFailed(st, record, errors.Join(initialErr, err))
+		return errors.Join(initialErr, err)
 	}
 	defer cleanup()
 
