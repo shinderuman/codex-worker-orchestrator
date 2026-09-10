@@ -133,7 +133,7 @@ func ParseReviewFindings(content []byte) (ReviewFindings, error) {
 		return ReviewFindings{}, err
 	}
 	if headingAt < 0 {
-		return ReviewFindings{}, fmt.Errorf("%s節がありません", ReviewFindingsHeading)
+		return ReviewFindings{None: true}, nil
 	}
 	return ReviewFindings{Present: true, None: reviewFindingsBody(lines, headingAt) == reviewFindingsNone}, nil
 }
