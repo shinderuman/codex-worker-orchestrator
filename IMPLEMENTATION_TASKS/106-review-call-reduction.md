@@ -56,13 +56,21 @@ blocked taskには、
 削減候補は存在するが、非semantic roundを省略・downgradeしてもqualityを維持できる比較証拠はない。BLOCKEDを維持し、Task 009 / parent review outcome telemetryの結果でCodex差し戻しや後続欠陥が増えない条件を確定してから具体化すること。
 ````
 
+### 2026-09-10 user permission
+
+````text
+なおBLOCKEDも進められるなら進めてよい
+````
+
+本taskについてユーザー許可は受領済み。quality comparisonが成立するまでreviewer省略・downgradeを導入しない。
+
 ## Purpose
 
 review品質を維持してmodel callを削減する。
 
 ## Contract
 
-convergence/quality evidenceと明示許可に基づく。
+convergence/quality evidenceに基づく。
 
 ## Must not
 
@@ -70,7 +78,7 @@ reviewer省略を先行導入しない。
 
 ## Acceptance criteria
 
-許可原文をAmendmentsへ保存し、Task 008 / 009 artifactを読んでconcrete Contract / Must not / Acceptance criteria / rollbackを確定してからACTIVE候補にする。
+同一snapshot / verification-only / non-semantic roundを縮小してもQuality Deltaが悪化しない比較証拠が得られた後、Task 008 / 009 artifactを読んでconcrete Contract / Must not / Acceptance criteria / rollbackを確定してからACTIVE候補にする。
 
 ## Historical invariants
 
@@ -86,4 +94,4 @@ none
 
 ## Current boundary
 
-2026-08-23 baselineで非semantic review候補は観測したが品質比較証拠とpermissionがないため、evidence/permission待ちを維持。
+ユーザー許可は2026-09-10に受領済み。2026-08-23 baselineでは非semantic review候補はあるが品質比較証拠がないため、evidence待ちとしてBLOCKEDを維持する。
