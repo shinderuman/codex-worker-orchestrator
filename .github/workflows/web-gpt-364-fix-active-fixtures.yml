@@ -1,0 +1,81 @@
+name: Web GPT 364 Fix Active Fixtures
+
+on:
+  push:
+    branches:
+      - web-gpt/364-quality-scope-fail-closed
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Align active repository fixtures with quality identity
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          workflow = Path("glm-worker/internal/workflow/repository_harness_boundary_test.go")
+          text = workflow.read_text()
+          old = '''func trackRepositoryHarnessMarker(t *testing.T, repoRoot string) {
+          \tt.Helper()
+          \tif err := os.WriteFile(filepath.Join(repoRoot, repositoryharness.MarkerPath), []byte(repositoryharness.MarkerContent), 0o644); err != nil {
+          \t\tt.Fatal(err)
+          \t}
+          \tmarkerGit(t, repoRoot, "add", "--", repositoryharness.MarkerPath)
+          }
+          '''
+          new = '''func trackRepositoryHarnessMarker(t *testing.T, repoRoot string) {
+          \tt.Helper()
+          \tgoMod := filepath.Join(repoRoot, "glm-worker", "go.mod")
+          \tif err := os.MkdirAll(filepath.Dir(goMod), 0o755); err != nil {
+          \t\tt.Fatal(err)
+          \t}
+          \tif err := os.WriteFile(goMod, []byte("module github.com/shinderuman/codex-worker-orchestrator/glm-worker\\n"), 0o644); err != nil {
+          \t\tt.Fatal(err)
+          \t}
+          \tif err := os.WriteFile(filepath.Join(repoRoot, repositoryharness.MarkerPath), []byte(repositoryharness.MarkerContent), 0o644); err != nil {
+          \t\tt.Fatal(err)
+          \t}
+          \tmarkerGit(t, repoRoot, "add", "--", repositoryharness.MarkerPath, "glm-worker/go.mod")
+          }
+          '''
+          if old not in text:
+              raise SystemExit("workflow marker helper pattern not found")
+          workflow.write_text(text.replace(old, new, 1))
+
+          app = Path("glm-worker/internal/app/multirepo_process_test.go")
+          text = app.read_text()
+          old = '''\tif err := os.WriteFile(filepath.Join(dir, repositoryharness.MarkerPath), []byte(repositoryharness.MarkerContent), 0o644); err != nil {
+          \t\tt.Fatal(err)
+          \t}
+          \trun("add", "corpus.md", repositoryharness.MarkerPath)
+          '''
+          new = '''\tgoMod := filepath.Join(dir, "glm-worker", "go.mod")
+          \tif err := os.MkdirAll(filepath.Dir(goMod), 0o755); err != nil {
+          \t\tt.Fatal(err)
+          \t}
+          \tif err := os.WriteFile(goMod, []byte("module github.com/shinderuman/codex-worker-orchestrator/glm-worker\\n"), 0o644); err != nil {
+          \t\tt.Fatal(err)
+          \t}
+          \tif err := os.WriteFile(filepath.Join(dir, repositoryharness.MarkerPath), []byte(repositoryharness.MarkerContent), 0o644); err != nil {
+          \t\tt.Fatal(err)
+          \t}
+          \trun("add", "corpus.md", repositoryharness.MarkerPath, "glm-worker/go.mod")
+          '''
+          if old not in text:
+              raise SystemExit("multi-repo fixture pattern not found")
+          app.write_text(text.replace(old, new, 1))
+          PY
+          gofmt -w glm-worker/internal/workflow/repository_harness_boundary_test.go glm-worker/internal/app/multirepo_process_test.go
+          rm .github/workflows/web-gpt-364-fix-active-fixtures.yml
+          git config user.name "web-gpt"
+          git config user.email "web-gpt@users.noreply.github.com"
+          git add -A
+          git commit -m "test: align active repository fixtures with quality identity"
+          git push origin HEAD:web-gpt/364-quality-scope-fail-closed
