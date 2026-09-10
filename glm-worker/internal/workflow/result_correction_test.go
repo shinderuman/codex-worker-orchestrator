@@ -73,7 +73,7 @@ func TestRunModelUsesSecondCorrectionOnlyForNewViolation(t *testing.T) {
 	if stats.ModelCalls != 3 || stats.ResultCorrections != 2 {
 		t.Fatalf("stats = %#v", stats)
 	}
-	if st.Exists(resultCorrectionStateFile) {
+	if st.Exists(state.ResultCorrectionStateFile) {
 		t.Fatal("成功後にresult correction stateが残っています")
 	}
 }
@@ -95,7 +95,7 @@ func TestRunModelStopsOnRepeatedFirstCorrectionViolation(t *testing.T) {
 	if len(r.prompts) != 2 {
 		t.Fatalf("同一違反へ追加補正を実行しています: calls=%d", len(r.prompts))
 	}
-	if st.Exists(resultCorrectionStateFile) {
+	if st.Exists(state.ResultCorrectionStateFile) {
 		t.Fatal("terminal failure後にresult correction stateが残っています")
 	}
 	if _, loadErr := st.LoadResumeCheckpoint(); !errors.Is(loadErr, state.ErrNoResumeCheckpoint) {
@@ -170,7 +170,7 @@ func TestRunModelCorrectionFailsClosedOnSnapshotChange(t *testing.T) {
 	if len(r.prompts) != 2 {
 		t.Fatalf("snapshot変更後に追加model callしています: calls=%d", len(r.prompts))
 	}
-	if st.Exists(resultCorrectionStateFile) {
+	if st.Exists(state.ResultCorrectionStateFile) {
 		t.Fatal("snapshot boundary failure後にresult correction stateが残っています")
 	}
 }
