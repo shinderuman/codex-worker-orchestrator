@@ -1,5 +1,6 @@
 name: Web GPT Issue 461 Validation
 
+# Branch-only temporary validation workflow for issue 461.
 on:
   push:
     branches:
