@@ -1,0 +1,26 @@
+name: Web GPT 377 Edit
+on:
+  push:
+    branches: [web-gpt/377-architecture-responsibility-audit]
+permissions:
+  contents: write
+jobs:
+  edit:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Apply architecture edit
+        run: |
+          python3 .github/web-gpt-377-edit.py
+          gofmt -w glm-worker/internal/workflow/workflow.go glm-worker/internal/workflow/resume_flow.go glm-worker/internal/workflow/review_flow.go glm-worker/internal/app/app.go glm-worker/internal/app/command_registry_test.go
+          git diff --check
+      - name: Commit
+        run: |
+          git config user.name web-gpt
+          git config user.email web-gpt@users.noreply.github.com
+          git add glm-worker/internal/workflow/workflow.go glm-worker/internal/workflow/resume_flow.go glm-worker/internal/workflow/review_flow.go glm-worker/internal/app/app.go glm-worker/internal/app/command_registry_test.go
+          git commit -m 'Clarify workflow and CLI responsibility boundaries'
+          git push
