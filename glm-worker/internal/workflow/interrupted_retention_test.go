@@ -46,18 +46,11 @@ func newRetentionGitRepo(t *testing.T) string {
 	if err := os.WriteFile(filepath.Join(repo, "tracked.md"), []byte("base\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	goMod := filepath.Join(repo, "glm-worker", "go.mod")
-	if err := os.MkdirAll(filepath.Dir(goMod), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(goMod, []byte("module github.com/shinderuman/codex-worker-orchestrator/glm-worker\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
 	if err := os.WriteFile(filepath.Join(repo, repositoryharness.MarkerPath), []byte(repositoryharness.MarkerContent), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	run("add", "tracked.md")
-	run("add", "--", repositoryharness.MarkerPath, "glm-worker/go.mod")
+	run("add", "--", repositoryharness.MarkerPath)
 	run("commit", "-q", "-m", "initial")
 	return repo
 }

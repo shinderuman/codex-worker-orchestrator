@@ -10,21 +10,25 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 )
 
 type multiRepoEnv struct {
-	binary    string
-	home      string
-	promptDir string
-	claudeCfg string
-	override  string
-	repoA     string
-	repoB     string
-	stubA     string
-	stubB     string
+	binary     string
+	home       string
+	promptDir  string
+	claudeCfg  string
+	override   string
+	qualityBin string
+	repoA      string
+	repoB      string
+	stubA      string
+	stubB      string
 }
 
 type multiRepoResult struct {
@@ -289,17 +293,20 @@ func newMultiRepoEnv(t *testing.T) *multiRepoEnv {
 
 	root := t.TempDir()
 	env := &multiRepoEnv{
-		binary:    binary,
-		home:      filepath.Join(root, "glm-home"),
-		promptDir: filepath.Join(root, "prompts"),
-		claudeCfg: filepath.Join(root, "claude-config"),
-		override:  filepath.Join(root, "absent-claude-override.json"),
+		binary:     binary,
+		home:       filepath.Join(root, "glm-home"),
+		promptDir:  filepath.Join(root, "prompts"),
+		claudeCfg:  filepath.Join(root, "claude-config"),
+		override:   filepath.Join(root, "absent-claude-override.json"),
+		qualityBin: filepath.Join(root, "quality-bin"),
 	}
-	for _, dir := range []string{env.home, env.promptDir, env.claudeCfg} {
+	for _, dir := range []string{env.home, env.promptDir, env.claudeCfg, env.qualityBin} {
 		if err := os.Mkdir(dir, 0o700); err != nil {
 			t.Fatal(err)
 		}
 	}
+	writeMultiRepoQualityToolStubs(t, env.qualityBin)
+
 	for _, prompt := range []struct{ name, body string }{
 		{"WORKER.md", "stub worker system prompt\n"},
 		{"REVIEWER.md", "stub reviewer system prompt\n"},
@@ -368,6 +375,87 @@ func newMultiRepoGitRepo(t *testing.T, dir string, marker string) string {
 	return dir
 }
 
+func activateMultiRepoRepositoryHarness(t *testing.T, repoRoot, qualityBin string) {
+	t.Helper()
+	sourceRoot := multiRepoSourceRepositoryRoot(t)
+	for _, path := range []string{
+		".golangci.yml",
+		".github/workflows/quality.yml",
+		".githooks/post-merge",
+		"harnesslint",
+		"install.sh",
+		"install-quality-tools.sh",
+		"glm-worker/internal/workflow/workflow.go",
+		"glm-worker/internal/workflow/quality_gate.go",
+	} {
+		copyMultiRepoFixtureFile(t, sourceRoot, repoRoot, path)
+	}
+	goVersion := strings.TrimPrefix(runtime.Version(), "go")
+	qualityTools := fmt.Sprintf("go: %s\nlint-go: %s\ngolangci-lint: 2.7.0\nshellcheck: 0.11.0\nshfmt: 3.13.0\n", goVersion, goVersion)
+	if err := os.WriteFile(filepath.Join(repoRoot, "quality-tools.yml"), []byte(qualityTools), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	commentlint := "#!/bin/sh\nprintf '%s\\n' '{\"status\":\"pass\",\"fixed\":0,\"violations\":[]}'\n"
+	if err := os.WriteFile(filepath.Join(repoRoot, "commentlint"), []byte(commentlint), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repoRoot, repositoryharness.MarkerPath), []byte(repositoryharness.MarkerContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	command := exec.Command("git", "-C", repoRoot, "add", ".")
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("git add active harness fixture: %v: %s", err, output)
+	}
+	command = exec.Command("git", "-C", repoRoot, "commit", "-q", "-m", "activate repository harness")
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("git commit active harness fixture: %v: %s", err, output)
+	}
+	_ = qualityBin
+}
+
+func multiRepoSourceRepositoryRoot(t *testing.T) string {
+	t.Helper()
+	moduleRoot, err := filepath.Abs("../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return filepath.Dir(moduleRoot)
+}
+
+func copyMultiRepoFixtureFile(t *testing.T, sourceRoot, targetRoot, path string) {
+	t.Helper()
+	source := filepath.Join(sourceRoot, filepath.FromSlash(path))
+	target := filepath.Join(targetRoot, filepath.FromSlash(path))
+	data, err := os.ReadFile(source)
+	if err != nil {
+		t.Fatalf("read fixture %s: %v", path, err)
+	}
+	info, err := os.Stat(source)
+	if err != nil {
+		t.Fatalf("stat fixture %s: %v", path, err)
+	}
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, data, info.Mode().Perm()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func writeMultiRepoQualityToolStubs(t *testing.T, dir string) {
+	t.Helper()
+	tools := map[string]string{
+		"golangci-lint": "#!/bin/sh\nif [ \"$1\" = version ]; then echo 'golangci-lint has version 2.7.0'; fi\nexit 0\n",
+		"shellcheck":    "#!/bin/sh\nif [ \"$1\" = --version ]; then echo 'ShellCheck version 0.11.0'; fi\nexit 0\n",
+		"shfmt":         "#!/bin/sh\nif [ \"$1\" = --version ]; then echo 'v3.13.0'; fi\nexit 0\n",
+	}
+	for name, body := range tools {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 func writeMultiRepoStubClaude(t *testing.T, dir string) string {
 	t.Helper()
 	if err := os.Mkdir(dir, 0o700); err != nil {
@@ -400,7 +488,7 @@ func (e *multiRepoEnv) childEnv(repo string) []string {
 		stub = e.stubB
 	}
 	return []string{
-		"PATH=" + os.Getenv("PATH"),
+		"PATH=" + e.qualityBin + string(os.PathListSeparator) + os.Getenv("PATH"),
 		"HOME=" + e.home,
 		"TMPDIR=" + e.home,
 		"GLM_WORKER_HOME=" + e.home,

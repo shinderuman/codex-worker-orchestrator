@@ -14,6 +14,7 @@ import (
 func setupStoppedIsolationTask(t *testing.T) (*multiRepoEnv, string, string) {
 	t.Helper()
 	env := newMultiRepoEnv(t)
+	activateMultiRepoRepositoryHarness(t, env.repoA, env.qualityBin)
 	env.setStubMode(t, env.stubA, "dirty-hold")
 
 	holder := startIsolationHolder(t, env)
