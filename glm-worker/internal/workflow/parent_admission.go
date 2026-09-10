@@ -36,17 +36,6 @@ func (w *Workflow) admitNewTask() error {
 	return w.newTaskActionDenied(plan)
 }
 
-func (w *Workflow) admitParentAction(action state.ParentAction) error {
-	_, admitted, err := w.state.AdmitParentAction(action)
-	if err != nil {
-		return &WorkerError{Message: err.Error()}
-	}
-	if admitted {
-		return nil
-	}
-	return w.parentActionDenied(action)
-}
-
 func (w *Workflow) parentActionDenied(action state.ParentAction) error {
 	switch action {
 	case state.ParentActionDecision:
