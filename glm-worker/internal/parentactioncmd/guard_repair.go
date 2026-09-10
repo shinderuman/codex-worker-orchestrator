@@ -60,6 +60,9 @@ func executeInitialResume(cfg config.AppConfig, extraEnv []string) (*bytes.Buffe
 }
 
 func currentGuardRepairRecord(st *state.StateStore) (state.GuardRepairRecord, bool) {
+	if st.TaskStatus() != state.TaskStatusGuardRecoverable {
+		return state.GuardRepairRecord{}, false
+	}
 	record, err := st.LoadGuardRepairRecord()
 	if err != nil || record.TaskID != st.ReadOr("task.id", "") {
 		return state.GuardRepairRecord{}, false
@@ -279,8 +282,9 @@ func resumeWithRepairedWorker(
 	defer cleanup()
 	env := appendEnv(extraEnv, state.GuardRepairParentActionEnv, state.GuardRepairRebuiltResume)
 	resumeErr := runResolvedWorker(worker, cfg.RepoRoot, []string{"--resume"}, nil, stdout, stderr, env)
-	if resumeErr != nil && st.TaskStatus() == state.TaskStatusGuardRecoverable {
-		return markGuardRepairFailed(st, record, errors.Join(resumeErr, fmt.Errorf("repaired worker did not leave guard-recoverable state")))
+	if st.TaskStatus() == state.TaskStatusGuardRecoverable {
+		failure := fmt.Errorf("repaired worker did not leave guard-recoverable state")
+		return markGuardRepairFailed(st, record, errors.Join(resumeErr, failure))
 	}
 	record.Status = state.GuardRepairComplete
 	record.OriginalResumeObserved = true
