@@ -294,6 +294,9 @@ func persistRuntimeInstallCompletionAfterSmoke(cfg config.AppConfig, st *state.S
 	if err := verifyRuntimeInstalledFiles(cfg, current.Paths); err != nil {
 		return runtimeInstallFailure(runtimeInstallFailureInstalled, err.Error())
 	}
+	if err := verifyRuntimeMergedConfigFiles(cfg, current.Paths); err != nil {
+		return runtimeInstallFailure(runtimeInstallFailureInstalled, err.Error())
+	}
 	installedRevision, failure := verifyInstalledRuntime(cfg, current.Head, current.Head)
 	if failure != nil {
 		return failure
@@ -341,6 +344,9 @@ func verifyRuntimeInstallCompletion(cfg config.AppConfig, st *state.StateStore) 
 		return failure
 	}
 	if err := verifyRuntimeInstalledFiles(cfg, requirement.Paths); err != nil {
+		return runtimeInstallFailure(runtimeInstallFailureInstalled, err.Error())
+	}
+	if err := verifyRuntimeMergedConfigFiles(cfg, requirement.Paths); err != nil {
 		return runtimeInstallFailure(runtimeInstallFailureInstalled, err.Error())
 	}
 	_, failure = verifyInstalledRuntime(cfg, evidence.InstalledRevision, requirement.Head)
