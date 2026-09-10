@@ -20,7 +20,8 @@ func TestMarkdownDerivedStateRejectsPlanCurrentStateSections(t *testing.T) {
 func TestMarkdownDerivedStateIgnoresQuotedHistoricalHeadings(t *testing.T) {
 	root := t.TempDir()
 	path := "IMPLEMENTATION_TASKS/a.md"
-	writeMarkdownAuthorityFixture(t, root, path, "# Task\n\n## Original instruction\n\n````text\n## Current boundary\n## Review findings\nnone\n````\n")
+	content := "# Task\n\n## Original instruction\n\n````text\n## Current boundary\n\n```text\n## Review findings\nnone\n```\n\n## Review findings\nnone\n````\n"
+	writeMarkdownAuthorityFixture(t, root, path, content)
 	violations, err := markdownDerivedStatePathViolations(root, path)
 	if err != nil {
 		t.Fatal(err)
