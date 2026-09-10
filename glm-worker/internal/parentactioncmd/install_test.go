@@ -19,6 +19,22 @@ func newInstallActionRepo(t *testing.T) (config.AppConfig, *state.StateStore) {
 	cfg, st := newParentActionTestState(t)
 	initInstallActionGitRepo(t, cfg.RepoRoot)
 	writeRepositoryHarnessMarker(t, cfg.RepoRoot)
+	if err := os.WriteFile(filepath.Join(cfg.RepoRoot, installScriptName), []byte("#!/bin/sh\n# baseline install fixture\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command("git", "-C", cfg.RepoRoot, "add", "-A").CombinedOutput(); err != nil {
+		t.Fatalf("git add baseline: %v: %s", err, output)
+	}
+	if output, err := exec.Command("git", "-C", cfg.RepoRoot, "commit", "-q", "-m", "baseline").CombinedOutput(); err != nil {
+		t.Fatalf("git commit baseline: %v: %s", err, output)
+	}
+	if _, err := st.StartNewTask(); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.CaptureGitBaseline(cfg, st); err != nil {
+		t.Fatal(err)
+	}
+	writeInstallRuntimeProbeStub(t)
 	return cfg, st
 }
 
@@ -57,6 +73,32 @@ func writeInstallActionScript(t *testing.T, repoRoot, body string, mode os.FileM
 	if output, err := exec.Command("git", "-C", repoRoot, "add", "--", installScriptName).CombinedOutput(); err != nil {
 		t.Fatalf("git add install.sh: %v: %s", err, output)
 	}
+	if output, err := exec.Command("git", "-C", repoRoot, "commit", "-q", "-m", "runtime change").CombinedOutput(); err != nil {
+		t.Fatalf("git commit install.sh: %v: %s", err, output)
+	}
+}
+
+func writeInstallRuntimeProbeStub(t *testing.T) {
+	t.Helper()
+	binDir := t.TempDir()
+	stub := `#!/bin/sh
+case "${1:-}" in
+--status)
+  head=$(git -C "$PWD" rev-parse HEAD)
+  printf '{"runtime_build":{"vcs_revision":"%s","vcs_modified":false,"repository_head":"%s","relationship":"same"}}\n' "$head" "$head"
+  ;;
+--install-smoke)
+  printf '%s\n' '{"status":"executed","result":"pass","role":"parent","duration_ms":1}'
+  ;;
+*)
+  exit 2
+  ;;
+esac
+`
+	if err := os.WriteFile(filepath.Join(binDir, "glm-worker"), []byte(stub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 }
 
 func runInstallAction(t *testing.T, cfg config.AppConfig, args ...string) (installOutput, string, error) {
@@ -82,22 +124,70 @@ func TestExecuteInstallRunsTrackedRepositoryInstallScript(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if output.Status != installStatusInstalled || output.Failure != nil {
+	if output.Status != installStatusInstalled || !output.Required || output.Failure != nil {
 		t.Fatalf("first install output = %#v", output)
 	}
 	if st.TaskStatus() != state.TaskStatusAwaitingParentCompletion {
 		t.Fatalf("install mutated task status: %s", st.TaskStatus())
+	}
+	if _, err := st.LoadRuntimeInstallEvidence(); err != nil {
+		t.Fatalf("runtime install evidence = %v", err)
 	}
 
 	repeated, _, err := runInstallAction(t, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if repeated.Status != installStatusInstalled || repeated.Failure != nil {
+	if repeated.Status != installStatusInstalled || !repeated.Required || repeated.Failure != nil {
 		t.Fatalf("repeated install output = %#v", repeated)
 	}
 	if st.TaskStatus() != state.TaskStatusAwaitingParentCompletion {
 		t.Fatalf("repeated install mutated task status: %s", st.TaskStatus())
+	}
+}
+
+func TestExecuteInstallSkipsMetadataOnlyTask(t *testing.T) {
+	cfg, st := newInstallActionRepo(t)
+	if err := os.WriteFile(filepath.Join(cfg.RepoRoot, "README.md"), []byte("metadata\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command("git", "-C", cfg.RepoRoot, "add", "README.md").CombinedOutput(); err != nil {
+		t.Fatalf("git add metadata: %v: %s", err, output)
+	}
+	if output, err := exec.Command("git", "-C", cfg.RepoRoot, "commit", "-q", "-m", "metadata").CombinedOutput(); err != nil {
+		t.Fatalf("git commit metadata: %v: %s", err, output)
+	}
+	if err := st.SetTaskStatus(state.TaskStatusAwaitingParentCompletion); err != nil {
+		t.Fatal(err)
+	}
+
+	output, stderr, err := runInstallAction(t, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if output.Status != installStatusNotRequired || output.Required || output.Failure != nil {
+		t.Fatalf("metadata install output = %#v", output)
+	}
+	if stderr != "" {
+		t.Fatalf("metadata install executed child output: %q", stderr)
+	}
+}
+
+func TestExecuteInstallRejectsDirtyRuntimeSource(t *testing.T) {
+	cfg, st := newInstallActionRepo(t)
+	if err := os.WriteFile(filepath.Join(cfg.RepoRoot, installScriptName), []byte("#!/bin/sh\nexit 7\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetTaskStatus(state.TaskStatusAwaitingParentCompletion); err != nil {
+		t.Fatal(err)
+	}
+
+	output, _, err := runInstallAction(t, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if output.Status != installStatusGuardRejected || !output.Required || output.Failure == nil || output.Failure.Reason != runtimeInstallFailureDirty {
+		t.Fatalf("dirty runtime output = %#v", output)
 	}
 }
 
@@ -142,10 +232,12 @@ func TestExecuteInstallAdmissionRestrictedToAwaitingParentCompletion(t *testing.
 		t.Run(tc.name, func(t *testing.T) {
 			cfg, st := newInstallActionRepo(t)
 			writeInstallActionScript(t, cfg.RepoRoot, "#!/bin/sh\nexit 0\n", 0o755)
-			if tc.status != state.TaskStatusNone {
-				if err := st.SetTaskStatus(tc.status); err != nil {
+			if tc.status == state.TaskStatusNone {
+				if err := st.Remove("task.id", "task.status"); err != nil {
 					t.Fatal(err)
 				}
+			} else if err := st.SetTaskStatus(tc.status); err != nil {
+				t.Fatal(err)
 			}
 
 			output, _, err := runInstallAction(t, cfg)
@@ -163,7 +255,15 @@ func TestExecuteInstallRejectsForeignRepositoryWithSameLifecycleState(t *testing
 	foreignRoot := t.TempDir()
 	initInstallActionGitRepo(t, foreignRoot)
 	executed := filepath.Join(foreignRoot, "foreign-install-executed")
-	writeInstallActionScript(t, foreignRoot, "#!/bin/sh\ntouch '"+executed+"'\nexit 0\n", 0o755)
+	if err := os.WriteFile(filepath.Join(foreignRoot, installScriptName), []byte("#!/bin/sh\ntouch '"+executed+"'\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command("git", "-C", foreignRoot, "add", installScriptName).CombinedOutput(); err != nil {
+		t.Fatalf("git add foreign install: %v: %s", err, output)
+	}
+	if output, err := exec.Command("git", "-C", foreignRoot, "commit", "-q", "-m", "foreign").CombinedOutput(); err != nil {
+		t.Fatalf("git commit foreign install: %v: %s", err, output)
+	}
 	foreignCfg, _ := newParentActionTestState(t)
 	foreignCfg.RepoRoot = foreignRoot
 	foreignCfg.RepoHash = strings.Repeat("b", 64)
@@ -199,12 +299,19 @@ func TestExecuteInstallBlocksUnsafeInstallScript(t *testing.T) {
 		{
 			name:   "missing script",
 			reason: "install_script_missing",
-			setup:  func(*testing.T, string) {},
+			setup: func(t *testing.T, repoRoot string) {
+				if err := os.Remove(filepath.Join(repoRoot, installScriptName)); err != nil {
+					t.Fatal(err)
+				}
+			},
 		},
 		{
 			name:   "symlink script",
 			reason: "install_script_symlink",
 			setup: func(t *testing.T, repoRoot string) {
+				if err := os.Remove(filepath.Join(repoRoot, installScriptName)); err != nil {
+					t.Fatal(err)
+				}
 				target := filepath.Join(repoRoot, "install-target.sh")
 				if err := os.WriteFile(target, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 					t.Fatal(err)
@@ -218,8 +325,8 @@ func TestExecuteInstallBlocksUnsafeInstallScript(t *testing.T) {
 			name:   "untracked script",
 			reason: "install_script_untracked",
 			setup: func(t *testing.T, repoRoot string) {
-				if err := os.WriteFile(filepath.Join(repoRoot, installScriptName), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-					t.Fatal(err)
+				if output, err := exec.Command("git", "-C", repoRoot, "rm", "-q", "--cached", installScriptName).CombinedOutput(); err != nil {
+					t.Fatalf("git rm cached install.sh: %v: %s", err, output)
 				}
 			},
 		},
@@ -227,6 +334,9 @@ func TestExecuteInstallBlocksUnsafeInstallScript(t *testing.T) {
 			name:   "not a regular file",
 			reason: "install_script_not_regular",
 			setup: func(t *testing.T, repoRoot string) {
+				if err := os.Remove(filepath.Join(repoRoot, installScriptName)); err != nil {
+					t.Fatal(err)
+				}
 				if err := os.Mkdir(filepath.Join(repoRoot, installScriptName), 0o755); err != nil {
 					t.Fatal(err)
 				}
@@ -266,11 +376,14 @@ func TestExecuteInstallReturnsChildFailureWithoutTaskTransition(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if output.Status != installStatusFailed || output.Failure == nil || output.Failure.Reason != "install_script_failed" || output.Failure.ExitCode != 3 {
+	if output.Status != installStatusFailed || !output.Required || output.Failure == nil || output.Failure.Reason != "install_script_failed" || output.Failure.ExitCode != 3 {
 		t.Fatalf("child failure output = %#v", output)
 	}
 	if st.TaskStatus() != state.TaskStatusAwaitingParentCompletion {
 		t.Fatalf("child failure mutated task status: %s", st.TaskStatus())
+	}
+	if _, err := st.LoadRuntimeInstallEvidence(); err == nil {
+		t.Fatal("failed install retained completion evidence")
 	}
 
 	plan, err := st.ParentActionPlan()
@@ -293,7 +406,7 @@ func TestExecuteInstallReturnsStartFailureWithoutTaskTransition(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if output.Status != installStatusFailed || output.Failure == nil || output.Failure.Reason != "install_script_start_failed" {
+	if output.Status != installStatusFailed || !output.Required || output.Failure == nil || output.Failure.Reason != "install_script_start_failed" {
 		t.Fatalf("start failure output = %#v", output)
 	}
 	if st.TaskStatus() != state.TaskStatusAwaitingParentCompletion {

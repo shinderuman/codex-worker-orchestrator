@@ -85,6 +85,9 @@ func runComplete(cfg config.AppConfig, stdout io.Writer) error {
 	}
 	verification := verifyParentCompletion(cfg.RepoRoot, st)
 	if verification.failure == nil {
+		verification.failure = verifyRuntimeInstallCompletion(cfg, st)
+	}
+	if verification.failure == nil {
 		verification.failure = verifyCompletionUnchanged(cfg.RepoRoot, verification.gitRepo, verification.verifiedHead)
 	}
 	if verification.failure != nil {

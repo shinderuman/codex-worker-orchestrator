@@ -147,6 +147,9 @@ func TestExecuteInstallReleasesRepositoryLockOnRejectedAndFailedPaths(t *testing
 
 	t.Run("guard rejected", func(t *testing.T) {
 		cfg, st := newInstallActionRepo(t)
+		if err := os.Remove(filepath.Join(cfg.RepoRoot, installScriptName)); err != nil {
+			t.Fatal(err)
+		}
 		if err := st.SetTaskStatus(state.TaskStatusAwaitingParentCompletion); err != nil {
 			t.Fatal(err)
 		}
