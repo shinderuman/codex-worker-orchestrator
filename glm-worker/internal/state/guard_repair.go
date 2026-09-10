@@ -97,7 +97,8 @@ func (record GuardRepairRecord) sameRecovery(next GuardRepairRecord) bool {
 		return true
 	}
 	ready := record.Status == GuardRepairReady || record.Status == GuardRepairComplete
-	return ready && record.RepairedDigest != "" && record.RepairedDigest == next.RelevantDigest
+	return ready && record.Phase == next.Phase && record.Failure == next.Failure &&
+		record.RepairedDigest != "" && record.RepairedDigest == next.RelevantDigest
 }
 
 func (s *StateStore) SaveGuardRepairRecord(record GuardRepairRecord) error {
