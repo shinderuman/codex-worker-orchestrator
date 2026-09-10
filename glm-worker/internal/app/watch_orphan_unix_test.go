@@ -259,6 +259,86 @@ func TestWatchOrphanDefersToCompetitorWinningLeaseRace(t *testing.T) {
 	}
 }
 
+func TestWatchOrphanRevalidatesTaskStateAfterLeaseAcquisition(t *testing.T) {
+	newTaskID := "87654321-aaaa-bbbb-cccc-dddddddddddd"
+	tests := []struct {
+		name        string
+		mutate      func(*state.StateStore) error
+		wantStatus  string
+		wantNewTask string
+	}{
+		{
+			name: "terminal-status",
+			mutate: func(st *state.StateStore) error {
+				return st.SetTaskStatus(state.TaskStatusComplete)
+			},
+			wantStatus: string(state.TaskStatusComplete),
+		},
+		{
+			name: "task-switched",
+			mutate: func(st *state.StateStore) error {
+				return st.Write("task.id", newTaskID)
+			},
+			wantStatus:  "task-switched",
+			wantNewTask: newTaskID,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			st, _ := watchTestStore(t)
+			writeTaskEventLines(t, st, watchOrphanTaskID,
+				state.TaskEventRecord{TaskID: watchOrphanTaskID, CallID: "call-error", Role: "worker", Phase: "worker-explicit-fix", Kind: "result", Subtype: "error_max_turns"},
+			)
+			seedOrphanTerminalTelemetry(t, st, watchOrphanTaskID)
+			opts := watchTestOptions(false, time.Millisecond, nil)
+			opts.acquireLease = func(path string) (*repoLockLease, error) {
+				competitor, err := os.OpenFile(path, os.O_CREATE|os.O_RDONLY, 0o600)
+				if err != nil {
+					return nil, err
+				}
+				if err := syscall.Flock(int(competitor.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+					_ = competitor.Close()
+					return nil, err
+				}
+				if err := test.mutate(st); err != nil {
+					_ = syscall.Flock(int(competitor.Fd()), syscall.LOCK_UN)
+					_ = competitor.Close()
+					return nil, err
+				}
+				if err := syscall.Flock(int(competitor.Fd()), syscall.LOCK_UN); err != nil {
+					_ = competitor.Close()
+					return nil, err
+				}
+				if err := competitor.Close(); err != nil {
+					return nil, err
+				}
+				return AcquireRepoLockLease(path)
+			}
+
+			out := &bytes.Buffer{}
+			terminal, err := watchTerminal(st, watchOrphanTaskID, out, opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !terminal {
+				t.Fatal("lease取得前のtask state変更がterminalへ反映されません")
+			}
+			events := parseWatchEvents(t, out.String())
+			exit := requireWatchEvent(t, events, "watch_exit")
+			if got := watchString(t, exit, "status"); got != test.wantStatus {
+				t.Fatalf("watch_exit status = %q want %q", got, test.wantStatus)
+			}
+			if got, _ := exit["status"].(string); got == watchStatusOrphanTerminal {
+				t.Fatalf("更新後stateをstale orphan-terminalとして出力しました: %#v", exit)
+			}
+			if test.wantNewTask != "" && watchString(t, exit, "new_task_id") != test.wantNewTask {
+				t.Fatalf("watch_exit new_task_id = %#v", exit)
+			}
+		})
+	}
+}
+
 func TestWatchHoldsAttachWhileRepoLockHeldThenOrphansAfterRelease(t *testing.T) {
 	st, _ := watchTestStore(t)
 	writeTaskEventLines(t, st, watchOrphanTaskID,
