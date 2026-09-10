@@ -33,10 +33,9 @@ func TestGLMWaitContractPinsLongBlockingBoundary(t *testing.T) {
 		"background_terminal_max_timeout=21600000",
 		"tools.exec_command",
 		"tools.write_stdin",
-		"glm-worker --handoff",
-		"required_action",
-		"allowed_actions",
-		"glm-worker --watch",
+		"glm-parent-action wait",
+		"parent-wait",
+		"owner_lost:true",
 	} {
 		if !strings.Contains(waitSection, token) {
 			t.Errorf("wait section missing %q", token)
@@ -45,6 +44,7 @@ func TestGLMWaitContractPinsLongBlockingBoundary(t *testing.T) {
 	for _, token := range []string{
 		"tool/runtime境界へ委ねる",
 		"yield-time_ms=60000",
+		"glm-worker --watch",
 	} {
 		if strings.Contains(waitSection, token) {
 			t.Errorf("wait section retains failed short-wait contract %q", token)

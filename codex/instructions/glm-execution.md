@@ -57,12 +57,10 @@
 
 ## 待機
 
-- 通常の完了待機は当該taskを起動した主`glm-parent-action`/`glm-worker`呼出1件だけをownerとし、そのtool resultを待つ。
-- 長時間の主呼出を起動するcode-mode cellは、外側cell先頭へ`// @exec: {"yield_time_ms":21600000,"max_output_tokens":1000}`を指定する。`~/.codex/config.toml`の`background_terminal_max_timeout=21600000`と同じ6時間境界を使い、outer cellを短いyieldで終了させない。
-- 内側の初回`tools.exec_command`も`yield_time_ms=21600000`で待つ。hostがrunning session IDを返した場合は同じcode-mode cellを終了せず、空の`tools.write_stdin`を`yield_time_ms=21600000`で同じsessionへ送り、terminal・Sol/user attention・rate/provider stop等の意味のある状態変化まで同一tool orchestration内に留まる。running状態だけをSolへ返さない。
-- 主呼出が継続中は、別の`--status`・`--watch`・terminal操作や経過時間だけを理由とする進捗発言を追加しない。無出力や経過時間だけを理由に中断・再実行・重複起動しない。ユーザーが状態確認を明示した場合は確認して応答してよい。
-- 主呼出のtool sessionを失った・中断した場合だけ`glm-worker --handoff`を1回実行し、`consistent`・`required_action`・`allowed_actions`を正規入口とする。`consistent:false`では操作を推測しない。handoffがcurrent taskを`active`かつ`required_action:"none"`として返した場合だけ`glm-worker --watch`をread-only attach recoveryに使い、詳細診断が必要な場合だけ`--status`を追加する。
-- terminal・Sol/user attention・rate/provider stop等の意味のある状態変化で制御が戻ったらpacketを処理し、可能な次工程へ進む。経過時間だけのliveness報告は行わない。
+- model実行を伴う主`glm-parent-action`はruntimeの`parent-wait` leaseをworker起動前から返却まで保持し、同じrepoでの重複owner起動を拒否する。worker自身のrepository lockと合わせ、通常の完了待機ownershipはprocess/state側で固定する。ユーザーが状態確認を明示した場合のread-only `glm-worker --status`は妨げない。
+- Desktop/tool transport境界だけはrepository runtimeから変更できないため、長時間の主呼出または`glm-parent-action wait`を実行するcode-mode cellで外側`// @exec: {"yield_time_ms":21600000,"max_output_tokens":1000}`と`background_terminal_max_timeout=21600000`を使う。内側`tools.exec_command`がrunning sessionを返す場合の`tools.write_stdin`も同じ長時間yieldを使う。この数値はlifecycle/poll policyではなくimmutable host transportとの接続条件である。
+- 主tool sessionを失った・detachした場合は、status/watch loopや再起動へ切り替えず`glm-parent-action wait`を1回だけ実行する。`wait`は`parent-wait` leaseとrepository lockの解放をruntime内部でblocking waitし、無変化livenessを出力せず、task/modelを起動せずに最後にcanonical recovery `handoff`を含む1個のJSONだけを返す。両lock解放後も`task_status:"active"`なら`owner_lost:true`として明示的なrecovery境界を返し、同じtaskを新規起動しない。
+- 主呼出または`wait`が継続中は、経過時間だけを理由に別のstatus/watch/terminal操作・進捗発言・短周期pollを追加しない。terminal、Sol/user attention、rate/provider stop、user interruptionだけを制御復帰境界とする。
 - packet受理・install完了は局所終端であり、親USER_REQUESTの完了か次の継続操作かは`~/.codex/instructions/task-lifecycle.md`を読んで判断する。
 
 ## 親tool orchestrationのterminal result返却

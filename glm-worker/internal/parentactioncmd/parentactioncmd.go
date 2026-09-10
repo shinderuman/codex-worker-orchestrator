@@ -24,7 +24,7 @@ import (
 )
 
 const (
-	usage = "usage: glm-parent-action start [--rotation-claim <claim-id>] | rotation-claim <directive-id> | rotation-bind <directive-id> <claim-id> <new-thread-id> | rotation-fail <directive-id> <claim-id> | prepare <decision|fix|start-milestones|revise-milestones> | decision <token> | fix <token> [--origin <origin>] [--cause <cause>] [--accepted-scope current-diff] | approve-surface --accepted-scope current-diff | start-milestones <token> [--rotation-claim <claim-id>] | revise-milestones <token> | no-go | accept | complete | install | resume | park | unpark | evidence <manifest.json> | finalize-check <go-test|go-test-race> | push-binding [--expected-oid <oid>] [--attempt-outcome <none|completed|rejected|network-error|non-fast-forward>]"
+	usage = "usage: glm-parent-action start [--rotation-claim <claim-id>] | rotation-claim <directive-id> | rotation-bind <directive-id> <claim-id> <new-thread-id> | rotation-fail <directive-id> <claim-id> | prepare <decision|fix|start-milestones|revise-milestones> | decision <token> | fix <token> [--origin <origin>] [--cause <cause>] [--accepted-scope current-diff] | approve-surface --accepted-scope current-diff | start-milestones <token> [--rotation-claim <claim-id>] | revise-milestones <token> | no-go | accept | complete | install | resume | wait | park | unpark | evidence <manifest.json> | finalize-check <go-test|go-test-race> | push-binding [--expected-oid <oid>] [--attempt-outcome <none|completed|rejected|network-error|non-fast-forward>]"
 
 	activeTaskRequest = "現在のACTIVE taskを実行してください。"
 	actionStart       = "start"
@@ -86,6 +86,8 @@ func execute(cfg config.AppConfig, args []string, stdout, stderr io.Writer) erro
 		return executeComplete(cfg, args, stdout)
 	case "install":
 		return executeInstall(cfg, args, stdout, stderr)
+	case "wait":
+		return executeParentWait(cfg, args, stdout, stderr)
 	case actionApprove:
 		return executeApproveSurfaceAction(cfg, args[1:], stdout, stderr)
 	case actionStart, "accept", "resume":
@@ -121,7 +123,12 @@ func executeStagedPayloadAction(cfg config.AppConfig, descriptor parentaction.Pa
 	} else if err := persistParentCodexIdentity(cfg); err != nil {
 		return err
 	}
-	return executePayloadAction(cfg.RepoRoot, descriptor, args[1:], stdout, stderr, extraEnv)
+	if descriptor.Action == parentaction.ActionReviseMilestones {
+		return executePayloadAction(cfg.RepoRoot, descriptor, args[1:], stdout, stderr, extraEnv)
+	}
+	return withParentWaitLease(cfg, func() error {
+		return executePayloadAction(cfg.RepoRoot, descriptor, args[1:], stdout, stderr, extraEnv)
+	})
 }
 
 func executeGitEvidenceAction(cfg config.AppConfig, args []string, stdout io.Writer) error {
@@ -172,7 +179,9 @@ func executeApproveSurfaceAction(cfg config.AppConfig, args []string, stdout, st
 	if err := persistParentCodexIdentity(cfg); err != nil {
 		return err
 	}
-	return runWorker(cfg.RepoRoot, directWorkerArgs(actionApprove), nil, stdout, stderr, nil)
+	return withParentWaitLease(cfg, func() error {
+		return runWorker(cfg.RepoRoot, directWorkerArgs(actionApprove), nil, stdout, stderr, nil)
+	})
 }
 
 func executeDirectWorkerAction(cfg config.AppConfig, action string, args []string, stdout, stderr io.Writer) error {
@@ -186,7 +195,14 @@ func executeDirectWorkerAction(cfg config.AppConfig, action string, args []strin
 		if err := persistParentCodexIdentity(cfg); err != nil {
 			return err
 		}
-		return executeResumeWithGuardRepair(cfg, stdout, stderr, extraEnv)
+		return withParentWaitLease(cfg, func() error {
+			return executeResumeWithGuardRepair(cfg, stdout, stderr, extraEnv)
+		})
+	}
+	if action == actionStart {
+		return withParentWaitLease(cfg, func() error {
+			return runWorker(cfg.RepoRoot, directWorkerArgs(action), nil, stdout, stderr, extraEnv)
+		})
 	}
 	return runWorker(cfg.RepoRoot, directWorkerArgs(action), nil, stdout, stderr, extraEnv)
 }
