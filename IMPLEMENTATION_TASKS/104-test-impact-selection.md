@@ -71,11 +71,3 @@ Task 014は完了済み。既存event/telemetry/roundではtest call数・durati
 ## Dependencies
 
 none
-
-## Review findings
-
-none
-
-## Current boundary
-
-Task 014のevidenceはtest省略判断に不十分。追加品質証拠とユーザー許可待ち。
