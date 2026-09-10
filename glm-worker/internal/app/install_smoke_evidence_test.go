@@ -317,6 +317,20 @@ func TestInstallSmokeSuccessWritesNoEvidenceArtifact(t *testing.T) {
 	}
 }
 
+func TestInstallSmokeEvidenceRedactsAuthorizationValues(t *testing.T) {
+	input := "Authorization: Basic dXNlcjpwYXNz\nAuthorization=Bearer secret-token-value\nkept ordinary output\n"
+	got := sanitizeInstallSmokeEvidence([]byte(input))
+	if strings.Contains(got, "dXNlcjpwYXNz") || strings.Contains(got, "secret-token-value") {
+		t.Fatalf("authorization credentialがevidenceへ残っています: %q", got)
+	}
+	if !strings.Contains(got, "Authorization: [redacted]") || !strings.Contains(got, "Authorization=[redacted]") {
+		t.Fatalf("authorization valueが期待どおりredactされていません: %q", got)
+	}
+	if !strings.Contains(got, "kept ordinary output") {
+		t.Fatalf("authorization以外の行が過剰にredactされています: %q", got)
+	}
+}
+
 func TestInstallSmokeEvidenceRetentionKeepsRecentRuns(t *testing.T) {
 	cfg, st, failFlagPath, _ := newInstallSmokeEnv(t)
 	if err := os.WriteFile(failFlagPath, []byte("fail\n"), 0o600); err != nil {
@@ -339,8 +353,8 @@ func TestInstallSmokeEvidenceRetentionKeepsRecentRuns(t *testing.T) {
 			runs++
 		}
 	}
-	if runs != retainedInstallSmokeEvidenceRuns+1 {
-		t.Fatalf("保持されたevidence run数 = %d want %d", runs, retainedInstallSmokeEvidenceRuns+1)
+	if runs != retainedInstallSmokeEvidenceRuns {
+		t.Fatalf("保持されたevidence run数 = %d want %d", runs, retainedInstallSmokeEvidenceRuns)
 	}
 }
 

@@ -217,6 +217,9 @@ func TestTimelineSkipsCorruptLines(t *testing.T) {
 	if output.SkippedEvents != 1 {
 		t.Fatalf("skipped_events = %d", output.SkippedEvents)
 	}
+	if output.Coverage.Status != timelineStatusPartial {
+		t.Fatalf("skipped eventを含むcoverage = %#v", output.Coverage)
+	}
 	if len(output.Calls) != 1 {
 		t.Fatalf("calls = %#v", output.Calls)
 	}

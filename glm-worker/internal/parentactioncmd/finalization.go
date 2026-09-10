@@ -163,6 +163,13 @@ func finalizationRoutingEvidenceCandidate(worker, repoRoot, form string) (finali
 }
 
 func finalizationVerifiedEvidenceDir(repoRoot string, evidence finalizationRoutingEvidenceProbe) (string, *finalizationFailure) {
+	if finalizationDirLexicallyOutsideRepository(repoRoot, evidence.WorkingDir) {
+		return "", &finalizationFailure{
+			Stage:  "routing",
+			Reason: "routing_evidence_outside_repository",
+			Detail: compactFinalizationDiagnostic(evidence.WorkingDir),
+		}
+	}
 	resolved, err := filepath.EvalSymlinks(evidence.WorkingDir)
 	if err != nil {
 		return "", nil
@@ -182,6 +189,19 @@ func finalizationVerifiedEvidenceDir(repoRoot string, evidence finalizationRouti
 		return "", nil
 	}
 	return resolved, nil
+}
+
+func finalizationDirLexicallyOutsideRepository(repoRoot, dir string) bool {
+	repo, err := filepath.Abs(repoRoot)
+	if err != nil {
+		return true
+	}
+	candidate, err := filepath.Abs(dir)
+	if err != nil {
+		return true
+	}
+	rel, err := filepath.Rel(repo, candidate)
+	return err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 func finalizationDirOutsideRepository(repoRoot, dir string) bool {

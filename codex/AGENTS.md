@@ -43,6 +43,7 @@ USER_REQUEST・`SPECIFICATION.md`・既存`AGENTS.md`・直前のSol判断で未
 
 - Codex自身は原則ソース・test・設定・documentを直接編集せず、GLMの変更に問題があればGLMへ差し戻す。小規模・機械的でも直接編集へ切り替えない。
 - ユーザーがCodex自身による直接編集・直接実行を明示した場合だけ例外とし、必要時に`~/.codex/instructions/worker/`の該当規則と`~/.codex/instructions/direct-edit.md`を読む。
+- `IMPLEMENTATION_RULES.md`の`parent maintenance`条件をすべて満たすparent-managed metadata editは、その規則を当該metadata editの明示的な直接編集authorityとして扱う狭い例外とする。対象はRules / Plan / Task metadataと同節で許可されたexceptional History decisionに限り、production code・test・設定・prompt・production wiringの直接編集へ拡張しない。
 - 直接実行の許可は明示された行為・成果物・変更理由だけに限定し、同一session/目的/releaseや運用・release・deploy・live確認の許可から新たな設計・実装変更へ拡張しない。
 
 ## 7. 必要時だけ読む規則

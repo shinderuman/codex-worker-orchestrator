@@ -131,7 +131,7 @@ func printTimeline(st *state.StateStore, taskIDArg string, stdout io.Writer) err
 	if explicit && errors.Is(eventErr, os.ErrNotExist) && !timelineTaskProven(output.SessionAging, statsSource) {
 		return &NotFoundError{Message: fmt.Sprintf("task %sのevent logがありません: %v", taskID, eventErr)}
 	}
-	output.Coverage = buildTimelineCoverage(st, taskID, output.EventLog.Status, len(records), telemetryErr, len(logs), output.SessionAging, statsSource)
+	output.Coverage = buildTimelineCoverage(st, taskID, output.EventLog.Status, len(records), skipped, telemetryErr, len(logs), output.SessionAging, statsSource)
 	return writeJSON(stdout, output)
 }
 
@@ -167,24 +167,24 @@ func fillTimelineTelemetry(taskID string, logErr error, logs []state.ModelCallLo
 	output.SessionAging = state.AgingFromModelCallLogs(logs)
 }
 
-func buildTimelineCoverage(st *state.StateStore, taskID string, eventLogStatus string, eventRecords int, telemetryErr error, telemetryRecords int, aging []state.SessionAging, statsSource timelineSourceState) timelineCoverage {
+func buildTimelineCoverage(st *state.StateStore, taskID string, eventLogStatus string, eventRecords, skippedEvents int, telemetryErr error, telemetryRecords int, aging []state.SessionAging, statsSource timelineSourceState) timelineCoverage {
 	sources := timelineSourceStates{
 		EventLog:  timelineEventLogSource(st, taskID, eventLogStatus, eventRecords),
 		Telemetry: timelineTelemetrySource(st, taskID, telemetryErr, telemetryRecords),
 		TaskStats: statsSource,
 	}
 	return timelineCoverage{
-		Status:         timelineOverallStatus(eventLogStatus, aging),
+		Status:         timelineOverallStatus(eventLogStatus, skippedEvents, aging),
 		MissingSources: timelineMissingSources(sources),
 		Sources:        sources,
 	}
 }
 
-func timelineOverallStatus(eventLogStatus string, aging []state.SessionAging) string {
+func timelineOverallStatus(eventLogStatus string, skippedEvents int, aging []state.SessionAging) string {
 	switch {
-	case eventLogStatus == timelineSourceOK:
+	case eventLogStatus == timelineSourceOK && skippedEvents == 0:
 		return timelineStatusComplete
-	case len(aging) > 0:
+	case eventLogStatus == timelineSourceOK || len(aging) > 0:
 		return timelineStatusPartial
 	default:
 		return timelineStatusUnknown

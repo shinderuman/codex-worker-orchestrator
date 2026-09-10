@@ -355,7 +355,7 @@ func qualityGateMatchesHandoff(record qualityGateRunRecord, repoRoot string, sna
 }
 
 func currentParentRoutingEvidence(st *state.StateStore, repoRoot, taskID string, snapshot *state.SnapshotDigest) []parentHandoffRoutingEvidence {
-	if repoRoot == "" || snapshot == nil {
+	if repoRoot == "" || taskID == "" || snapshot == nil {
 		return []parentHandoffRoutingEvidence{}
 	}
 	latestByForm := latestRoutingEvidenceRuns(st, repoRoot, taskID, snapshot)

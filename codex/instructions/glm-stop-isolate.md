@@ -23,7 +23,7 @@
 - 元repo側`--status`の`isolation`に現在の隔離先(worktree・branch・作成HEAD)が出る。記録は現在の隔離先を指す単一pointerで、隔離済みstateへの再`--isolate`はworktree・branch・隔離側出自記録の生存を確認して同じmachine結果を冪等に返す。worktree・branchが既に無いstale記録や破損記録は上書きせずfail closedする。記録は新規task開始で消える。
 - Plan(`IMPLEMENTATION_PLAN.local.md`)を持つrepoでは、隔離worktreeのPlan ACTIVEも元task fileを指したままcheck outされるため、USER_REQUESTだけでは割り込みtaskの要求正本を特定できない。割り込みtaskのtask diffが`IMPLEMENTATION_TASKS/`配下の変更を含む場合、実効riskはimplementation-tasks critical pathでHIGHに固定されreviewer PASSがrisk floorで拒否される。Plan編集を含む割り込みtaskは実risk HIGHでwaiting-sol-reviewへ昇格するのが正常終端である。
 - 割り込みtask成果の統合方法とそのconflict解決は本契約で指定しない。元taskは、外部で統合済みの状態が`--resume`保持照合の実質検証(記録の元task・元repo・作成HEADが現在task・repo・停止時HEADと一致、記録branchが解決可能でそのtipが現在HEADへ統合済み、統合後のbranch tipから現在HEADまでが親管理metadata更新だけ、隔離worktree側stateの出自記録と対称)を通過した場合だけ再開できる。reviewer段階中断taskのreview resumeはHEAD移動を許さないため、統合によるHEAD移動後は再開できない。統合済み割り込みtask fileがdiffへ載るため、統合後の元task resumeは実risk HIGHとなりwaiting-sol-reviewへ昇格し得る。
-- 隔離worktree側state dir(出自記録)は元task完了まで削除しない。glm-workerは隔離worktree・branchの寿命を管理しない。
+- 隔離worktree側state dir(出自記録)と隔離branchは、元taskのresume保持照合が完了し元taskが完了するまで削除しない。glm-workerは隔離worktree・branchの寿命を管理しない。
 
 ## 親判断待ちtaskの割込み退避 (`park` / `unpark`)
 

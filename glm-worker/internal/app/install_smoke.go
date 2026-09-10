@@ -72,7 +72,7 @@ var installSmokeRedactions = []installSmokeRedaction{
 		replacement: `$1$2` + installSmokeRedactedValue,
 	},
 	{
-		pattern:     regexp.MustCompile(`(?i)\b(authorization\s*:\s*)(?:bearer\s+)?[^\s,;&]+`),
+		pattern:     regexp.MustCompile(`(?i)\b(authorization\s*[=:]\s*)[^\r\n]*`),
 		replacement: `$1` + installSmokeRedactedValue,
 	},
 	{
@@ -224,7 +224,7 @@ func pruneInstallSmokeEvidence(st *state.StateStore, currentRunID string) error 
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].mtime.After(entries[j].mtime) })
 	for index, entry := range entries {
-		if index < retainedInstallSmokeEvidenceRuns {
+		if index < retainedInstallSmokeEvidenceRuns-1 {
 			continue
 		}
 		if err := os.RemoveAll(entry.path); err != nil {
