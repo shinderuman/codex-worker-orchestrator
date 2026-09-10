@@ -53,9 +53,7 @@ func executeParentWait(cfg config.AppConfig, args []string, stdout, stderr io.Wr
 	if err != nil {
 		return fmt.Errorf("wait for worker owner: %w", err)
 	}
-	if err := worker.Close(); err != nil {
-		return err
-	}
+	defer func() { _ = worker.Close() }()
 
 	handoff, err := parentWaitHandoff(cfg, stderr)
 	if err != nil {
