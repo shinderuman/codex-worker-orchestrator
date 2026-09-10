@@ -98,7 +98,7 @@ func prepareGuardRepairForResume(cfg config.AppConfig, st *state.StateStore, rec
 	case state.GuardRepairRequested:
 		return performBoundedGuardRepair(cfg, st, record)
 	case state.GuardRepairReady:
-		return validateReadyGuardRepair(cfg, record)
+		return validateReadyGuardRepair(cfg, st, record)
 	case state.GuardRepairRunning:
 		return record, fmt.Errorf("guard repair strategy is already running; unchanged recovery is not repeated")
 	case state.GuardRepairFailed:
@@ -110,7 +110,14 @@ func prepareGuardRepairForResume(cfg config.AppConfig, st *state.StateStore, rec
 	}
 }
 
-func validateReadyGuardRepair(cfg config.AppConfig, record state.GuardRepairRecord) (state.GuardRepairRecord, error) {
+func validateReadyGuardRepair(cfg config.AppConfig, st *state.StateStore, record state.GuardRepairRecord) (state.GuardRepairRecord, error) {
+	checkpoint, err := currentGuardRepairCheckpoint(st, record, record.Phase)
+	if err != nil || checkpoint.StopGitSnapshot == nil {
+		return record, fmt.Errorf("guard repair ready state no longer matches original checkpoint")
+	}
+	if err := validateGuardRepairDirtyOrigin(cfg.RepoRoot, checkpoint); err != nil {
+		return record, err
+	}
 	currentDigest, err := guardrepair.RelevantDigest(cfg.RepoRoot)
 	if err != nil {
 		return record, err
