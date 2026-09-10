@@ -14,18 +14,10 @@ type qualitySurfaceRecoveryOutput struct {
 	Repair     string `json:"repair"`
 }
 
-const modeRecoverQualitySurface CommandMode = 102
-
 const (
 	qualitySurfaceRepairDecisionWait   = "quality-surface-decision-wait"
 	qualitySurfaceRepairApprovedReview = "approved-quality-surface-review"
 )
-
-func init() {
-	commandParsers["--recover-quality-surface"] = func(args []string) (Command, error) {
-		return requiredPayloadCommand(args, modeRecoverQualitySurface, "usage: glm-worker --recover-quality-surface <task-id>")
-	}
-}
 
 func recoverQualitySurfaceLifecycle(st *state.StateStore, expectedTaskID string, stdout io.Writer) error {
 	taskID, err := st.TaskID()

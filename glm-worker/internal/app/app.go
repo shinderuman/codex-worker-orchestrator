@@ -118,6 +118,9 @@ const (
 	ModePacketCheck
 	ModeProjectState
 	ModeEvidence
+	modeRotateInstructionBaseline
+	modeRecoverParentAction
+	modeRecoverQualitySurface
 )
 
 const fixOriginUsage = "[--origin codex-review|glm-reviewer|user-amendment|external-review|metadata-repair] [--cause parent-orchestration|requirement-preservation|worker|reviewer|sol-gate|production-wiring|test-scenario|cross-cutting-invariant|unknown] [--accepted-scope current-diff]"
@@ -193,6 +196,15 @@ var commandParsers = map[string]commandParser{
 	},
 	"--reset": func(args []string) (Command, error) {
 		return singleArgCommand(args, ModeReset, "usage: glm-worker --reset")
+	},
+	"--rotate-instruction-baseline": func(args []string) (Command, error) {
+		return singleArgCommand(args, modeRotateInstructionBaseline, "usage: glm-worker --rotate-instruction-baseline")
+	},
+	"--recover-parent-action": func(args []string) (Command, error) {
+		return singleArgCommand(args, modeRecoverParentAction, "usage: glm-worker --recover-parent-action")
+	},
+	"--recover-quality-surface": func(args []string) (Command, error) {
+		return requiredPayloadCommand(args, modeRecoverQualitySurface, "usage: glm-worker --recover-quality-surface <task-id>")
 	},
 	"--verify-auto-resume":  verifyAutoResumeCommand,
 	"--verify-codex-wake":   verifyCodexWakeCommand,

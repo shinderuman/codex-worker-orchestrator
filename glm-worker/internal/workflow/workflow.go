@@ -224,7 +224,7 @@ func (w *Workflow) initializeNewTask(request string) (string, error) {
 	if err := w.state.Write("last-request", request); err != nil {
 		return "", err
 	}
-	if err := w.state.Remove("last-decision", "last-review", activeTaskStateKey, acceptedFixScopeStateFile, repositoryharness.ActivationStateKey); err != nil {
+	if err := w.state.Remove(repositoryharness.ActivationStateKey); err != nil {
 		return "", err
 	}
 
