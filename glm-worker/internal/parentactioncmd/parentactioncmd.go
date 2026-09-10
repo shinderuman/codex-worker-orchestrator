@@ -123,6 +123,9 @@ func executeStagedPayloadAction(cfg config.AppConfig, descriptor parentaction.Pa
 	} else if err := persistParentCodexIdentity(cfg); err != nil {
 		return err
 	}
+	if descriptor.Action == parentaction.ActionReviseMilestones {
+		return executePayloadAction(cfg.RepoRoot, descriptor, args[1:], stdout, stderr, extraEnv)
+	}
 	return withParentWaitLease(cfg, func() error {
 		return executePayloadAction(cfg.RepoRoot, descriptor, args[1:], stdout, stderr, extraEnv)
 	})
