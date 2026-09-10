@@ -1,9 +1,6 @@
 package runner
 
 import (
-	"errors"
-	"fmt"
-	"os"
 	"os/exec"
 	"path/filepath"
 
@@ -93,21 +90,3 @@ func guardRepairSandboxPolicy(guard *gitAuthorityGuard, repoRoot string) *gitBas
 	)
 	return policy
 }
-
-func guardRepairDeniedPath(policy *gitBashSandboxPolicy, path string) bool {
-	absolute, err := filepath.Abs(path)
-	if err != nil {
-		return false
-	}
-	for _, denied := range policy.denyWrite {
-		candidate, err := filepath.Abs(denied)
-		if err == nil && candidate == absolute {
-			return true
-		}
-	}
-	return false
-}
-
-var _ = errors.Join
-var _ = fmt.Errorf
-var _ = os.DevNull
