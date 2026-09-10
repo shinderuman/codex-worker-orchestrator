@@ -54,11 +54,3 @@ PoC判断をHistoryだけの受動記録にせず、再評価条件が成立し�
 ## Dependencies
 
 none
-
-## Review findings
-
-none
-
-## Current boundary
-
-再評価trigger未観測のためBLOCKED。通常作業では開始しない。
