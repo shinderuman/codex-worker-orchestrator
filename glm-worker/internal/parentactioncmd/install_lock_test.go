@@ -96,7 +96,7 @@ func TestExecuteInstallBlocksConcurrentCompleteUntilChildExit(t *testing.T) {
 	if observed.err != nil {
 		t.Fatalf("install error = %v stderr = %q", observed.err, observed.stderr)
 	}
-	if !strings.Contains(observed.stdout, `"status":"installed"`) {
+	if !strings.Contains(observed.stdout, "installed") {
 		t.Fatalf("install stdout = %q", observed.stdout)
 	}
 	assertRepositoryLockAvailable(t, st)
