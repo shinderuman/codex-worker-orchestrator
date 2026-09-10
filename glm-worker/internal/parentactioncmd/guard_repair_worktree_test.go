@@ -10,6 +10,20 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
+func TestValidateGuardRepairPathsRequiresTestInEachSourcePackage(t *testing.T) {
+	worktree := newGuardRepairPathRepo(t)
+	runnerSource := "glm-worker/internal/runner/git_authority_guard.go"
+	workflowTest := "glm-worker/internal/workflow/guard_recovery_test.go"
+	if err := validateGuardRepairPaths(worktree, []string{runnerSource, workflowTest}); err == nil {
+		t.Fatal("runner source with only workflow test unexpectedly accepted")
+	}
+
+	runnerTest := "glm-worker/internal/runner/git_authority_guard_test.go"
+	if err := validateGuardRepairPaths(worktree, []string{runnerSource, runnerTest}); err != nil {
+		t.Fatalf("same-package repair test rejected: %v", err)
+	}
+}
+
 func TestCopyGuardRepairChangesRollsBackPartialFailure(t *testing.T) {
 	repo := t.TempDir()
 	worktree := t.TempDir()
@@ -123,6 +137,24 @@ func TestIntegrateGuardRepairCandidateRollsBackAfterCheckpointLoss(t *testing.T)
 	if restored.StopKind != state.ResumeStopGuardRecoverable || restored.Phase != checkpoint.Phase {
 		t.Fatalf("restored checkpoint = %#v", restored)
 	}
+}
+
+func newGuardRepairPathRepo(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	for _, path := range []string{
+		"glm-worker/internal/runner/git_authority_guard.go",
+		"glm-worker/internal/runner/git_authority_guard_test.go",
+		"glm-worker/internal/workflow/guard_recovery_test.go",
+	} {
+		writeGuardRepairTestFile(t, root, path, "package fixture\n")
+	}
+	runFinalizationGit(t, root, "init", "-q")
+	runFinalizationGit(t, root, "config", "user.email", "guard-repair@example.invalid")
+	runFinalizationGit(t, root, "config", "user.name", "guard repair test")
+	runFinalizationGit(t, root, "add", ".")
+	runFinalizationGit(t, root, "commit", "-q", "-m", "initial")
+	return root
 }
 
 func writeGuardRepairTestFile(t *testing.T, root, path, content string) {
