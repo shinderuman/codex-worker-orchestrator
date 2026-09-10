@@ -250,7 +250,7 @@ func usageError(format string, args ...any) *UsageError {
 
 func ParseCommand(args []string) (Command, error) {
 	if len(args) == 0 {
-		return Command{}, usageError("usage: glm-worker <instruction> | --execution-milestones-stdin <payload-bytes> [--sha256 <hex>] | --execution-milestones-revise-stdin <payload-bytes> [--sha256 <hex>] | --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix-stdin <payload-bytes> [--sha256 <hex>] %s | --approve-surface current-diff | --accept | --resume | --stop | --isolate | --status | --handoff [recovery] | --recover-parent-action | --recover-quality-surface <task-id> | --project-state | --evidence <manifest.json> | --watch [--verbose] | --timeline [task-id] | --convergence [task-id] | --stats %s | --reset | --verify-auto-resume <automation-key> <auto-resume-at-rfc3339> | --verify-codex-wake <wake-task-thread-id> <wake-at-rfc3339> | --eval-ab <run-dir> | --call-outliers %s | --codex-limit | --repo-search %s | --check-wake-coalesce <auto-resume-at-rfc3339> | --install-smoke %s | --quality-gate %s | --model-routing | --packet-check <packet.json> [--role worker|reviewer] [--artifact-root <dir>] | bundle [task-id] | --parent-usage [task-id] | --review-gap [task-id]", fixOriginUsage, telemetryQueryUsage, telemetryQueryUsage, repoSearchUsage, installSmokeUsage, qualityGateUsage)
+		return Command{}, usageError("usage: glm-worker <instruction> | <command>; run glm-worker --help for command list")
 	}
 	if parser, ok := commandParsers[args[0]]; ok {
 		return parser(args)
