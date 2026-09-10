@@ -1,0 +1,32 @@
+name: Web GPT 366 Targeted Validation
+
+on:
+  push:
+    branches:
+      - web-gpt/366-install-repository-lock
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - name: Read quality tool contract
+        id: quality-tools
+        run: |
+          GO_VERSION=$(awk -F': ' '$1 == "go" { print $2 }' quality-tools.yml)
+          printf 'go_version=%s\n' "$GO_VERSION" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ steps.quality-tools.outputs.go_version }}
+          cache: false
+      - name: Go format check
+        run: |
+          output=$(gofmt -l glm-worker/internal/parentactioncmd/install.go glm-worker/internal/parentactioncmd/install_lock_test.go)
+          test -z "$output" || { printf '%s\n' "$output"; exit 1; }
+      - name: Parent action tests
+        working-directory: glm-worker
+        run: go test ./internal/parentactioncmd
