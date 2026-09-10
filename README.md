@@ -85,3 +85,7 @@ go build ./...
 `glm-worker`のnamespaced runtime state、task event、telemetry、bundle/analysis artifactはproduction implementationがschema authorityです。現在のtask ID、HEAD、branch、dirty state、rate-limit/provider state、validation evidence、bundle schema versionや集計値をREADMEへsnapshotとして保存しません。
 
 現在値はGitとlive projectionから取得し、過去のordinary completionはGit/CI/bundleから回収します。外部providerやCodex/Claude側で独立に変わる仕様・version・quota等もREADMEへcurrent valueを固定せず、実行時または該当taskのfeasibility確認でlive authorityを参照します。
+
+## License
+
+MIT License。詳細は`LICENSE`。
