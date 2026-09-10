@@ -2,6 +2,7 @@ package parentactioncmd
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -29,6 +30,31 @@ func TestRuntimeInstallPathClassification(t *testing.T) {
 		if got := runtimeInstallPath(tc.path); got != tc.want {
 			t.Fatalf("runtimeInstallPath(%q) = %v want %v", tc.path, got, tc.want)
 		}
+	}
+}
+
+func TestRuntimeInstallRequirementMixedDiffKeepsOnlyRuntimePaths(t *testing.T) {
+	cfg, st := newInstallActionRepo(t)
+	writeInstallActionScript(t, cfg.RepoRoot, "#!/bin/sh\nexit 0\n", 0o755)
+	if err := os.WriteFile(filepath.Join(cfg.RepoRoot, "README.md"), []byte("metadata\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command("git", "-C", cfg.RepoRoot, "add", "README.md").CombinedOutput(); err != nil {
+		t.Fatalf("git add metadata: %v: %s", err, output)
+	}
+	if output, err := exec.Command("git", "-C", cfg.RepoRoot, "commit", "-q", "-m", "metadata change").CombinedOutput(); err != nil {
+		t.Fatalf("git commit metadata: %v: %s", err, output)
+	}
+
+	requirement, err := runtimeInstallRequirementForTask(cfg.RepoRoot, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !requirement.Required {
+		t.Fatal("mixed diff did not require runtime install")
+	}
+	if len(requirement.Paths) != 1 || requirement.Paths[0] != installScriptName {
+		t.Fatalf("mixed diff runtime paths = %#v", requirement.Paths)
 	}
 }
 
@@ -138,6 +164,37 @@ func TestVerifyRuntimeInstalledFilesRejectsManagedInstructionDrift(t *testing.T)
 	}
 	if err := verifyRuntimeInstalledFiles(cfg, []string{"codex/instructions/example.md"}); err == nil {
 		t.Fatal("stale managed instruction was accepted")
+	}
+}
+
+func TestVerifyRuntimeInstalledFilesHandlesManagedInstructionDeletion(t *testing.T) {
+	cfg, _ := newInstallActionRepo(t)
+	cfg.CodexConfigDir = t.TempDir()
+	installedPath := filepath.Join(cfg.CodexConfigDir, "instructions", "removed.md")
+	if err := os.MkdirAll(filepath.Dir(installedPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(installedPath, []byte("stale\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	paths := []string{"codex/instructions/removed.md"}
+	if err := verifyRuntimeInstalledFiles(cfg, paths); err == nil {
+		t.Fatal("installed managed instruction surviving source deletion was accepted")
+	}
+	if err := os.Remove(installedPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyRuntimeInstalledFiles(cfg, paths); err != nil {
+		t.Fatalf("matching managed deletion was rejected: %v", err)
+	}
+}
+
+func TestRunRuntimeInstallSmokeRejectsFailedInstalledSmoke(t *testing.T) {
+	cfg, _ := newInstallActionRepo(t)
+	writeInstalledRuntimeProbeStub(t, "unused")
+	failure := runRuntimeInstallSmoke(cfg)
+	if failure == nil || failure.Reason != runtimeInstallFailureSmoke {
+		t.Fatalf("failed installed smoke = %#v", failure)
 	}
 }
 
