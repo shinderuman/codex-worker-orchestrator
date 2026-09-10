@@ -10,6 +10,8 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
+var captureCurrentGuardRecoveryRefDigest = runner.CaptureGitAuthorityRefDigest
+
 type GuardRecoverableError struct {
 	Phase       string
 	Failure     string
@@ -184,9 +186,11 @@ func (w *Workflow) verifyGuardRecoveryRefs(checkpoint state.ResumeCheckpoint) er
 	if checkpoint.GuardRefAfterDigest == "" || len(checkpoint.GuardRefChanges) == 0 {
 		return &WorkerError{Phase: checkpoint.Phase, Message: "guard recovery ref evidence is incomplete"}
 	}
-	current, err := runner.CaptureGitAuthorityRefDigest(w.config.RepoRoot)
+	current, err := captureCurrentGuardRecoveryRefDigest(w.config.RepoRoot)
 	if err != nil {
-		return &WorkerError{Phase: checkpoint.Phase, Message: fmt.Sprintf("guard recovery cannot capture current refs: %v", err)}
+		failure := &WorkerError{Phase: checkpoint.Phase, Message: fmt.Sprintf("guard recovery cannot capture current refs: %v", err)}
+		w.requestGuardRepair(checkpoint, failure)
+		return failure
 	}
 	if !checkpoint.GuardRefChangesTruncated && guardRefChangesOnlyVolatile(checkpoint.GuardRefChanges) {
 		if checkpoint.GuardRefStopDigest == "" {
