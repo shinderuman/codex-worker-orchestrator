@@ -348,10 +348,13 @@ func resumeWithRepairedWorker(
 		failure := markGuardRepairFailed(st, record, errors.Join(resumeErr, fmt.Errorf("repaired worker did not leave guard-recoverable state")))
 		return errors.Join(failure, lock.Close())
 	}
+	if resumeErr != nil {
+		return errors.Join(resumeErr, lock.Close())
+	}
 	record.Status = state.GuardRepairComplete
 	record.OriginalResumeObserved = true
 	saveErr := st.SaveGuardRepairRecord(record)
-	return errors.Join(resumeErr, saveErr, lock.Close())
+	return errors.Join(saveErr, lock.Close())
 }
 
 func appendEnv(env []string, key, value string) []string {
