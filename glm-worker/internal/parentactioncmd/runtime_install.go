@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskdiff"
 )
@@ -226,6 +227,13 @@ func persistRuntimeInstallCompletion(cfg config.AppConfig, st *state.StateStore,
 }
 
 func verifyRuntimeInstallCompletion(cfg config.AppConfig, st *state.StateStore) *finalizationFailure {
+	decision, err := repositoryharness.Evaluate(cfg.RepoRoot)
+	if err != nil {
+		return runtimeInstallFailure(runtimeInstallFailureClassification, err.Error())
+	}
+	if !decision.Active {
+		return nil
+	}
 	requirement, err := runtimeInstallRequirementForTask(cfg.RepoRoot, st)
 	if err != nil {
 		return runtimeInstallFailure(runtimeInstallFailureClassification, err.Error())
