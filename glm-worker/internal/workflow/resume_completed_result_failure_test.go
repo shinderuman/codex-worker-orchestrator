@@ -22,7 +22,10 @@ func TestResumeRetainsCompletedResultWhenRoutingFails(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	resumeRunner := &scriptedRunner{steps: []runnerStep{{structured: passPacket()}}}
+	resumeRunner := &scriptedRunner{steps: []runnerStep{
+		{structured: passPacket()},
+		{structured: needsSolReviewPacket()},
+	}}
 	resumeWorkflow := newGitWorkflowT(t, st, resumeRunner, repo)
 	if err := resumeWorkflow.ExecuteResume(); err == nil {
 		t.Fatal("routing failureを期待")
@@ -35,7 +38,7 @@ func TestResumeRetainsCompletedResultWhenRoutingFails(t *testing.T) {
 	if after.StopKind != state.ResumeStopGuardRecoverable || after.CompletedResult == nil {
 		t.Fatalf("routing failure後にreusable checkpointが失われました: %#v", after)
 	}
-	if len(resumeRunner.phases) != 1 || resumeRunner.phases[0] != "reviewer-1" {
+	if len(resumeRunner.phases) != 2 || resumeRunner.phases[0] != "reviewer-1-high-floor" || resumeRunner.phases[1] != "reviewer-1-risk-floor" {
 		t.Fatalf("reusable worker resultを再実行せずreviewへ進むべき: phases=%v", resumeRunner.phases)
 	}
 }
