@@ -103,7 +103,7 @@ func (w *Workflow) prepareResumeCheckpoint(
 	}
 	checkpoint = activatedCheckpoint
 	if checkpoint.Stage == state.ResumeStageWorker {
-		checkpoint.ReadOnly = decl.pocStage()
+		checkpoint.ReadOnly = checkpoint.ResultCorrection || decl.pocStage()
 	}
 	return checkpoint, false, nil
 }
