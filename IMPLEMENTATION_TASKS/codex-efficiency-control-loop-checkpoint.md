@@ -102,11 +102,3 @@ status: not-applicable
 ## Dependencies
 
 none
-
-## Review findings
-
-none
-
-## Current boundary
-
-先行する最大5 taskの完了後にACTIVE化する。incident前倒し条件が成立した場合はPlan priorityを親Codexが再評価する。
