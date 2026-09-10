@@ -79,11 +79,3 @@ reviewer FIX_REQUIRED率、risk floor。完了済みparent review outcome teleme
 ## Dependencies
 
 none
-
-## Review findings
-
-none
-
-## Current boundary
-
-2026-08-23 baselineで非semantic review候補は観測したが品質比較証拠とpermissionがないため、evidence/permission待ちを維持。
