@@ -188,28 +188,16 @@ func modulePathToken(value string) (string, string, bool) {
 		return value[:end], value[end:], true
 	}
 
-	quote := value[0]
-	for end := 1; end < len(value); end++ {
-		if value[end] != quote {
-			continue
-		}
-		if quote == '"' {
-			backslashes := 0
-			for index := end - 1; index >= 0 && value[index] == '\\'; index-- {
-				backslashes++
-			}
-			if backslashes%2 != 0 {
-				continue
-			}
-		}
-		token := value[:end+1]
-		path, err := strconv.Unquote(token)
-		if err != nil {
-			return "", "", false
-		}
-		return path, value[end+1:], true
+	end := strings.IndexByte(value[1:], value[0])
+	if end < 0 {
+		return "", "", false
 	}
-	return "", "", false
+	end++
+	path, err := strconv.Unquote(value[:end+1])
+	if err != nil {
+		return "", "", false
+	}
+	return path, value[end+1:], true
 }
 
 func isSpace(value byte) bool {
