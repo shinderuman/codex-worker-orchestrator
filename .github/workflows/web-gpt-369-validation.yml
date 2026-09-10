@@ -6,40 +6,13 @@ on:
       - web-gpt/369-runtime-install-completion
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - name: Apply fixture repairs
-        if: "${{ github.event.head_commit.message == 'ci: apply runtime fixture basics' }}"
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          parent = Path('glm-worker/internal/parentactioncmd/parentactioncmd_test.go')
-          text = parent.read_text()
-          old = 'StateBase: filepath.Join(root, "sessions"),'
-          new = 'StateBase: filepath.Join(t.TempDir(), "sessions"),'
-          if text.count(old) != 1:
-              raise SystemExit(f'parent fixture match count: {text.count(old)}')
-          parent.write_text(text.replace(old, new, 1))
-
-          install = Path('glm-worker/internal/parentactioncmd/install_test.go')
-          text = install.read_text()
-          old = '[]byte("#!/bin/sh\\nexit 0\\n"), 0o755)'
-          new = '[]byte("#!/bin/sh\\n# baseline install fixture\\nexit 0\\n"), 0o755)'
-          if text.count(old) < 1:
-              raise SystemExit('install baseline fixture not found')
-          install.write_text(text.replace(old, new, 1))
-          PY
-          git config user.name shinderuman
-          git config user.email shinderuman@gmail.com
-          git add glm-worker/internal/parentactioncmd/parentactioncmd_test.go glm-worker/internal/parentactioncmd/install_test.go
-          git commit -m 'test: repair runtime install fixture basics'
-          git push origin HEAD:web-gpt/369-runtime-install-completion
       - name: Read quality tool contract
         id: quality-tools
         run: |
@@ -59,5 +32,5 @@ jobs:
       - name: Full Go test suite
         working-directory: glm-worker
         run: go test ./...
-      - name: Install smoke
-        run: ./tests/install_smoke.sh
+      - name: Install smoke trace
+        run: sh -x ./tests/install_smoke.sh
