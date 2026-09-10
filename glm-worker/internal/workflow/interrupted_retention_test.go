@@ -98,7 +98,7 @@ func newGitWorkflowT(t *testing.T, st *state.StateStore, r *scriptedRunner, repo
 	w.qualityGate = func(string) (harnesslint.Report, error) {
 		return harnesslint.Report{Status: "pass", Violations: []harnesslint.Violation{}}, nil
 	}
-	w.captureQualitySurface = func(string) (string, error) { return "quality-baseline", nil }
+	w.captureQualitySurface = func(string) (string, error) { return "", nil }
 	clock := newFakeClock()
 	w.now = clock.nowFunc
 	w.sleep = clock.sleepFunc
