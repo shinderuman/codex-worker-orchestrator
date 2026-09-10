@@ -185,6 +185,7 @@ func (s *StateStore) startNewTaskWithID(taskID string, resume bool) (string, err
 		reviewStartSnapshotFile,
 		reportOnlyStartSnapshotFile,
 		snapshotComparisonFile,
+		guardRepairStateFile,
 	); err != nil {
 		return "", err
 	}
@@ -234,6 +235,7 @@ func taskStateFileNames() []string {
 		reviewStartSnapshotFile,
 		reportOnlyStartSnapshotFile,
 		snapshotComparisonFile,
+		guardRepairStateFile,
 	}
 }
 
