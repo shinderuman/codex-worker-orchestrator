@@ -25,7 +25,7 @@ jobs:
           cache: false
       - name: Go format check
         run: |
-          output=$(gofmt -l glm-worker/internal/repositoryharness/repositoryharness.go glm-worker/internal/repositoryharness/repositoryharness_test.go glm-worker/internal/app/quality_preflight.go glm-worker/internal/app/process_error.go glm-worker/internal/app/quality_scope_preflight_test.go glm-worker/internal/commentlint/repository_scope_test.go)
+          output=$(gofmt -l glm-worker/internal/repositoryharness/repositoryharness.go glm-worker/internal/repositoryharness/repositoryharness_test.go glm-worker/internal/app/quality_preflight.go glm-worker/internal/app/process_error.go glm-worker/internal/app/quality_scope_preflight_test.go glm-worker/internal/app/multirepo_process_test.go glm-worker/internal/commentlint/repository_scope_test.go glm-worker/internal/workflow/repository_harness_boundary_test.go)
           test -z "$output" || { printf '%s\n' "$output"; exit 1; }
       - name: Targeted tests
         working-directory: glm-worker
