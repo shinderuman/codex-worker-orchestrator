@@ -32,6 +32,12 @@ func (w *Workflow) runModel(checkpoint state.ResumeCheckpoint) (packet.Result, e
 	if err := w.finalizeModelCallState(checkpoint, outputPath, execution); err != nil {
 		return packet.Result{}, err
 	}
+	if checkpoint.ResultCorrection {
+		if err := w.validateResultCorrectionBoundary(checkpoint); err != nil {
+			w.recordModelCall(checkpoint, execution.runResult, execution.startedAt, execution.completedAt, "invalid_packet", "", err, outputPath, callDiagnostics{})
+			return packet.Result{}, err
+		}
+	}
 
 	result, err := w.parseModelCallResult(checkpoint, execution.runResult)
 	if err != nil {
@@ -45,6 +51,12 @@ func (w *Workflow) runModel(checkpoint state.ResumeCheckpoint) (packet.Result, e
 	if err := packet.ValidateArtifacts(result.Artifacts, w.state.ArtifactDir(taskID)); err != nil {
 		return w.handleInvalidModelResult(checkpoint, outputPath, execution, err)
 	}
+	if checkpoint.ResultCorrection {
+		if err := w.clearResultCorrectionRecord(); err != nil {
+			w.recordModelCall(checkpoint, execution.runResult, execution.startedAt, execution.completedAt, "state_error", "", err, outputPath, callDiagnostics{})
+			return packet.Result{}, err
+		}
+	}
 	w.recordModelCall(checkpoint, execution.runResult, execution.startedAt, execution.completedAt, "success", string(result.Status), nil, outputPath, callDiagnostics{reportedRisk: string(result.Risk)})
 	w.lastProducer = state.ParentReviewProducer{Role: string(checkpoint.Role), Model: checkpoint.Model}
 	return result, nil
@@ -52,6 +64,9 @@ func (w *Workflow) runModel(checkpoint state.ResumeCheckpoint) (packet.Result, e
 
 func (w *Workflow) prepareModelCall(checkpoint state.ResumeCheckpoint) (state.ResumeCheckpoint, string, parentFileGuard, error) {
 	outputPath := filepath.Join(w.temp, checkpoint.Phase+".log")
+	if err := w.validateResultCorrectionBoundary(checkpoint); err != nil {
+		return checkpoint, outputPath, parentFileGuard{}, err
+	}
 	if err := w.applyModelArtifactContext(&checkpoint); err != nil {
 		return checkpoint, outputPath, parentFileGuard{}, err
 	}
@@ -311,16 +326,11 @@ func (w *Workflow) handleInvalidModelResult(
 	resultErr error,
 ) (packet.Result, error) {
 	w.recordModelCall(checkpoint, execution.runResult, execution.startedAt, execution.completedAt, "invalid_packet", "", resultErr, outputPath, callDiagnostics{})
-	if packet.IsConstraintError(resultErr) && !checkpoint.ResultCorrection {
-		w.state.RecordResultCorrection()
-		correctCheckpoint := checkpoint
-		correctCheckpoint.Phase += resultCorrectionPhaseSuffix
-		correctPrompt := resultCorrectionPrompt(resultErr.Error())
-		correctCheckpoint.Prompt = correctPrompt
-		correctCheckpoint.OriginalPrompt = correctPrompt
-		correctCheckpoint.ResultCorrection = true
-		w.pendingRetry = &callRetryContext{callID: w.lastCallID, reason: "invalid-packet-result-correction"}
-		return w.runModel(correctCheckpoint)
+	if packet.IsConstraintError(resultErr) {
+		return w.handleResultCorrectionViolation(checkpoint, resultErr)
+	}
+	if checkpoint.ResultCorrection {
+		_ = w.clearResultCorrectionRecord()
 	}
 	return packet.Result{}, &WorkerError{
 		Phase:   checkpoint.Phase + "-format",
