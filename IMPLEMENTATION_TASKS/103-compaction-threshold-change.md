@@ -46,14 +46,6 @@ blocked taskには、
 「permission received」だけで設計未確定taskをGLMへ投げないでください。
 ````
 
-### 2026-09-10 user permission
-
-````text
-なおBLOCKEDも進められるなら進めてよい
-````
-
-本taskについてユーザー許可は受領済み。再測定とconcrete Contract確定前にthresholdを変更しない。
-
 ## Resolved references
 
 - Task 012のthreshold Go/No-Go decisionは`IMPLEMENTATION_HISTORY.md`の`2026-08-28 Task 012 compaction threshold evaluation`を正とする。保存済み20 task・69 call中のboundaryは4 call / 4件で、trigger直前context sizeとcompaction要約costはunknownのため、現時点の採否はNo-Go。明示許可後も同形式再測定と、必要なら別契約の観測追加を先に確定する。Task 012の通常completion証跡はGit / CI / bundle evidenceから回収する。
@@ -64,7 +56,7 @@ blocked taskには、
 
 ## Contract
 
-Task 012のevidenceと再測定に基づく。
+Task 012のevidenceと明示許可に基づく。
 
 ## Must not
 
@@ -72,7 +64,7 @@ Task 012のevidenceと再測定に基づく。
 
 ## Acceptance criteria
 
-activation時にTask 012 artifactを読み、同形式再測定と必要な観測追加を行い、concrete Contract / Must not / Acceptance criteriaを確定してからACTIVE候補にする。
+許可原文をAmendmentsへ保存し、Task 012 artifactを読んでconcrete Contract / Must not / Acceptance criteriaを確定してからACTIVE候補にする。
 
 ## Historical invariants
 
@@ -88,4 +80,4 @@ none
 
 ## Current boundary
 
-ユーザー許可は2026-09-10に受領済み。Task 012 evidenceはNo-Goで、再測定とconcrete Contract確定が未了のためBLOCKEDを維持する。
+Task 012 evidenceはNo-Go。permissionと、activation時のconcrete Contract / Must not / Acceptance criteria確定待ち。

@@ -67,14 +67,6 @@ blocked taskには、
 「permission received」だけで設計未確定taskをGLMへ投げないでください。
 ````
 
-### 2026-09-10 user permission
-
-````text
-なおBLOCKEDも進められるなら進めてよい
-````
-
-本taskについてユーザー明示許可は受領済みとする。022完了とprerequisite artifact再読・concrete Contract確定は引き続き必要。
-
 ## Purpose
 
 orchestrator全体の最終価値を実測する。
@@ -85,11 +77,11 @@ orchestrator全体の最終価値を実測する。
 
 ## Must not
 
-022完了とprerequisite artifact再読・concrete Contract確定前に実行しない。
+明示許可なしに実行しない。
 
 ## Acceptance criteria
 
-022完了後、prerequisite artifactを読んでconcrete Contract / Must not / Acceptance criteriaを確定してからACTIVE候補にする。その後、再現可能A/Bと採否。
+許可受領時は原文をAmendmentsへ保存し、prerequisite artifactを読んでconcrete Contract / Must not / Acceptance criteriaを確定してからACTIVE候補にする。その後、再現可能A/Bと採否。
 
 ## Historical invariants
 
@@ -105,4 +97,4 @@ none
 
 ## Current boundary
 
-ユーザー許可は2026-09-10に受領済み。022完了とprerequisite artifact再読・concrete Contract確定待ちのためBLOCKEDを維持する。
+ユーザー許可待ち。
