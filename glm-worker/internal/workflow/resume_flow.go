@@ -173,6 +173,9 @@ func (w *Workflow) handleResumeRunError(_ state.ResumeCheckpoint, previous state
 	if isResumeStopError(runErr) {
 		return runErr
 	}
+	if _, terminal := ResultCorrectionFailureFromError(runErr); terminal {
+		return runErr
+	}
 	_ = w.attachStopRepositoryBoundary(&previous)
 	_ = w.state.RestoreResumeStop(previous)
 	return runErr
