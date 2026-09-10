@@ -1,4 +1,4 @@
-name: Web GPT 358 validation
+name: Web GPT 358 final validation
 
 on:
   push:
@@ -8,13 +8,22 @@ on:
       - .github/workflows/web-gpt-358-edit.yml
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Remove temporary edit machinery
+        run: |
+          git rm .github/web-gpt-358-edit.py .github/workflows/web-gpt-358-edit.yml
+          git config user.name web-gpt
+          git config user.email web-gpt@users.noreply.github.com
+          git commit -m 'Remove temporary #358 edit machinery'
+          git push
       - name: Read quality tool contract
         id: quality-tools
         run: |
