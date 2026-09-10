@@ -177,6 +177,9 @@ func (w *Workflow) verifyGuardRecoveryRefs(checkpoint state.ResumeCheckpoint) er
 	if checkpoint.GuardRefAfterDigest == "" || len(checkpoint.GuardRefChanges) == 0 {
 		return &WorkerError{Phase: checkpoint.Phase, Message: "guard recovery ref evidence is incomplete"}
 	}
+	if !checkpoint.GuardRefChangesTruncated && guardRefChangesOnlyVolatile(checkpoint.GuardRefChanges) {
+		return nil
+	}
 	current, err := runner.CaptureGitAuthorityRefDigest(w.config.RepoRoot)
 	if err != nil {
 		return &WorkerError{Phase: checkpoint.Phase, Message: fmt.Sprintf("guard recovery cannot capture current refs: %v", err)}
@@ -185,6 +188,15 @@ func (w *Workflow) verifyGuardRecoveryRefs(checkpoint state.ResumeCheckpoint) er
 		return nil
 	}
 	return &WorkerError{Phase: checkpoint.Phase, Message: "guard recovery refs are not restored to the pre-call state: " + describeGuardRefChanges(checkpoint.GuardRefChanges, checkpoint.GuardRefChangesTruncated)}
+}
+
+func guardRefChangesOnlyVolatile(changes []state.GuardRefChange) bool {
+	for _, change := range changes {
+		if !runner.IsVolatileCodexDesktopRef(change.Name) {
+			return false
+		}
+	}
+	return len(changes) > 0
 }
 
 func describeGuardRefChanges(changes []state.GuardRefChange, truncated bool) string {

@@ -9,7 +9,125 @@ glm処理中というわけでもなく永久に返ってこないコマンド�
 
 ## Amendments
 
-none
+### 2026-09-10
+
+````text
+現在行っている `refs/codex/*` の過去状態復元・digest逆算・SQLite/rollout履歴探索を直ちに打ち切ってください。
+
+これは説明要求ではありません。開発作業へ戻るためのrun-control指示です。
+
+既に次の事実は十分に確定しています。
+
+- guardはGit ref集合を固定比較している
+- Codex Desktop自身が `refs/codex/turn-diffs/*` を継続的に追加・削除・更新する
+- `refs/codex/snapshots/*` もDesktop管理の可変refである
+- そのため保存済みfull-ref digestを過去状態へ復元しようとしても、Desktopが並行して状態を変更するため収束しない
+- HEAD / index / worktreeの変更とは別問題である
+- 同じ復元を何度繰り返しても開発作業へ戻れない
+
+したがって、これ以上次を行ってはなりません。
+```text
+- 過去のfull-ref digestに一致する集合の探索
+- 削除済みDesktop ref名のSQLite/rollout履歴からの復元
+- refs/codex/turn-diffs/* の手動復元
+- refs/codex/snapshots/* の手動復元
+- digest一致候補の総当たり
+- 同じguard recoveryの反復
+- resume-state.jsonを現在digestへ合わせるだけの応急処置
+- この処理を行うためのユーザーへの追加許可要求
+```
+
+## 今すぐ行う修正
+
+guard実装を修正し、Codex Desktopが所有するvolatile ref namespaceである次の2つをGit authority ref digestおよびguard ref-change判定から除外してください。
+```text
+refs/codex/turn-diffs/*
+refs/codex/snapshots/*
+```
+
+`refs/codex/*` 全体を除外してはいけません。
+
+Desktop内部で自動生成・世代交代することが確認できた上記namespaceだけを対象としてください。
+
+HEAD、index、worktree、およびrepositoryがauthorityとして実際に利用するrefの検証は維持してください。
+
+## 必須regression test
+
+少なくとも以下を追加してください。
+
+### 1. turn-diffs追加
+
+guard snapshot取得後に
+```text
+refs/codex/turn-diffs/*
+```
+
+が追加されてもguard failureにならない。
+
+### 2. turn-diffs削除・更新
+
+同namespaceのrefが削除またはOID変更されてもguard failureにならない。
+
+### 3. snapshots変更
+```text
+refs/codex/snapshots/*
+```
+
+の追加・削除・更新でもguard failureにならない。
+
+### 4. repository authority ref
+
+Desktop volatile namespaceではない監視対象refが変更された場合は、従来どおりguard failureになる。
+
+### 5. HEAD / index / worktree
+
+これらの保護は従来どおり機能する。
+
+## recovery loopの再発防止
+
+同一guard failureについて、同じ復元処理を何度も反復してはなりません。
+
+差分が上記Desktop volatile namespaceだけであることを機械的に確認できた場合は、それをauthority mutationとして扱わず処理を継続してください。
+
+volatile namespace以外の差分が存在する場合だけ、既存の正規guard recoveryを使用してください。
+
+「過去digestに戻るまで探索を続ける」という処理を作ってはいけません。
+
+## 現在taskの継続
+
+このguard修正とtestを完了したら、保存済みの現在taskの実装差分を維持したまま正規経路から現在taskへ戻り、開発作業を継続してください。
+
+現在taskを破棄しないでください。\
+NEXTへ飛ばないでください。\
+新しいtaskを勝手に作らないでください。
+
+この修正のためにユーザーへ新しいpermissionの文言を要求して作業停止してはいけません。
+
+実行基盤上で通常の技術的手続が必要なら既存authorityの範囲で実行してください。
+
+本当にhost execution layerそのものが操作を拒否した場合は、その拒否をuser permission不足へ変換せず、既存の技術的実行経路で処理を継続してください。
+
+## トークン浪費防止
+
+ここから先、原因調査だけを目的とした追加探索は禁止します。
+
+原因は既に実装修正に十分な粒度まで特定されています。
+
+次の作業は調査ではなく、
+```text
+guard source修正
+→ regression test
+→ validation
+→ 現在task resume
+→ 現在taskの実装作業
+```
+
+です。
+
+過去のDesktop内部refを復元することは成果物ではありません。
+
+開発作業を進めてください。
+````
 
 ## Resolved references
 

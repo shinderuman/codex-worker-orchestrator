@@ -21,6 +21,8 @@ type watchOptions struct {
 
 	openEventLog func(path string) (*os.File, error)
 	statEventLog func(path string) (os.FileInfo, error)
+	probeLock    func(path string) LockProbe
+	acquireLease func(path string) (*repoLockLease, error)
 }
 
 type watchStartEvent struct {
@@ -42,7 +44,22 @@ type watchExitEvent struct {
 	NewTaskID *string `json:"new_task_id,omitempty"`
 }
 
+type watchOrphanExitEvent struct {
+	Type           string                         `json:"type"`
+	TaskID         string                         `json:"task_id"`
+	Status         string                         `json:"status"`
+	Consistent     bool                           `json:"consistent"`
+	Inconsistency  *string                        `json:"inconsistency"`
+	RequiredAction *string                        `json:"required_action"`
+	AllowedActions []string                       `json:"allowed_actions"`
+	ResumeKind     *string                        `json:"resume_kind"`
+	LastMaterial   *parentHandoffRecoveryMaterial `json:"last_material"`
+	ArtifactDir    *string                        `json:"artifact_dir"`
+}
+
 const defaultWatchFollowInterval = 500 * time.Millisecond
+
+const watchStatusOrphanTerminal = "orphan-terminal"
 
 func (o watchOptions) openLog(path string) (*os.File, error) {
 	if o.openEventLog != nil {
@@ -56,6 +73,20 @@ func (o watchOptions) statLog(path string) (os.FileInfo, error) {
 		return o.statEventLog(path)
 	}
 	return os.Stat(path)
+}
+
+func (o watchOptions) probe(path string) LockProbe {
+	if o.probeLock != nil {
+		return o.probeLock(path)
+	}
+	return ProbeRepoLock(path)
+}
+
+func (o watchOptions) lease(path string) (*repoLockLease, error) {
+	if o.acquireLease != nil {
+		return o.acquireLease(path)
+	}
+	return AcquireRepoLockLease(path)
 }
 
 func defaultWatchOptions(verbose bool) watchOptions {
@@ -94,66 +125,129 @@ func printWatch(st *state.StateStore, stdout io.Writer, opts watchOptions) error
 	return watchTaskEvents(st, taskID, file, path, stdout, opts)
 }
 
-func watchTerminal(st *state.StateStore, taskID string) (watchExitEvent, bool) {
+func watchTerminal(st *state.StateStore, taskID string, stdout io.Writer, opts watchOptions) (bool, error) {
 	current := st.ReadOr("task.id", "")
 	if current != "" && current != taskID {
-		return watchExitEvent{
+		return true, writeWatchEvent(stdout, watchExitEvent{
 			Type: "watch_exit", TaskID: taskID, Status: "task-switched", NewTaskID: &current,
-		}, true
+		})
 	}
 	if status := st.TaskStatus(); status != state.TaskStatusActive {
-		return watchExitEvent{Type: "watch_exit", TaskID: taskID, Status: string(status)}, true
+		return true, writeWatchEvent(stdout, watchExitEvent{Type: "watch_exit", TaskID: taskID, Status: string(status)})
 	}
-	return watchExitEvent{}, false
+	return watchOrphanTerminal(st, taskID, stdout, opts)
+}
+
+func watchOrphanTerminal(st *state.StateStore, taskID string, stdout io.Writer, opts watchOptions) (bool, error) {
+	if opts.probe(st.LockPath()).State != LockFree {
+		return false, nil
+	}
+	material := watchOrphanMaterial(st, taskID)
+	if material == nil || material.Outcome != modelCallOutcomeError {
+		return false, nil
+	}
+	lease, err := opts.lease(st.LockPath())
+	if err != nil {
+		return false, nil
+	}
+	defer lease.Release()
+	material = watchOrphanMaterial(st, taskID)
+	if material == nil || material.Outcome != modelCallOutcomeError {
+		return false, nil
+	}
+	return true, writeWatchEvent(stdout, buildWatchOrphanExitEvent(st, taskID, *material))
+}
+
+func watchOrphanMaterial(st *state.StateStore, taskID string) *state.ModelCallLog {
+	logs, err := readStatusTelemetry(st, taskID)
+	if err != nil {
+		return nil
+	}
+	return lastParentActionMaterial(logs)
+}
+
+func buildWatchOrphanExitEvent(st *state.StateStore, taskID string, log state.ModelCallLog) watchOrphanExitEvent {
+	event := watchOrphanExitEvent{
+		Type:           "watch_exit",
+		TaskID:         taskID,
+		Status:         watchStatusOrphanTerminal,
+		Consistent:     true,
+		AllowedActions: []string{},
+		LastMaterial:   recoveryMaterialFromHandoff(parentHandoffMaterialFromLog(log)),
+		ArtifactDir:    stringPtr(st.ArtifactDir(taskID)),
+	}
+	plan, err := st.ParentActionPlan()
+	if err != nil {
+		event.Consistent = false
+		event.Inconsistency = stringPtr(err.Error())
+		return event
+	}
+	required := string(plan.RequiredAction)
+	event.RequiredAction = &required
+	for _, action := range plan.AllowedActions {
+		event.AllowedActions = append(event.AllowedActions, string(action))
+	}
+	event.ResumeKind = stringPtr(plan.ResumeKind)
+	return event
 }
 
 func watchTaskEvents(st *state.StateStore, taskID string, file *os.File, path string, stdout io.Writer, opts watchOptions) error {
-	pending, status, exitEvent, err := prepareWatchTaskEvents(st, taskID, file, stdout, opts)
+	pending, status, terminal, err := prepareWatchTaskEvents(st, taskID, file, stdout, opts)
 	if err != nil {
 		return err
 	}
-	if exitEvent != nil {
-		return writeWatchEvent(stdout, *exitEvent)
+	if terminal {
+		return nil
 	}
 	for {
-		if waitWatchTick(opts.stop, opts.followInterval) {
+		var done bool
+		pending, done, err = watchTaskTick(st, taskID, file, path, stdout, pending, &status, opts)
+		if err != nil {
+			return err
+		}
+		if done {
 			return nil
-		}
-		removed, err := watchEventLogRemoved(path, opts)
-		if err != nil {
-			return err
-		}
-		if removed {
-			return writeWatchEvent(stdout, watchLogStatusEvent{Type: "event_log_status", Status: "removed"})
-		}
-		exitEvent, terminal := watchTerminal(st, taskID)
-		pending, err = drainTaskEvents(file, stdout, pending, status.tracker.observe)
-		if err != nil {
-			return err
-		}
-		if err := status.refresh(false); err != nil {
-			return err
-		}
-		if terminal {
-			return writeWatchEvent(stdout, exitEvent)
 		}
 	}
 }
 
-func prepareWatchTaskEvents(st *state.StateStore, taskID string, file *os.File, stdout io.Writer, opts watchOptions) ([]byte, watchLiveStatus, *watchExitEvent, error) {
+func watchTaskTick(st *state.StateStore, taskID string, file *os.File, path string, stdout io.Writer, pending []byte, status *watchLiveStatus, opts watchOptions) ([]byte, bool, error) {
+	if waitWatchTick(opts.stop, opts.followInterval) {
+		return pending, true, nil
+	}
+	removed, err := watchEventLogRemoved(path, opts)
+	if err != nil {
+		return pending, false, err
+	}
+	if removed {
+		return pending, true, writeWatchEvent(stdout, watchLogStatusEvent{Type: "event_log_status", Status: "removed"})
+	}
+	pending, err = drainTaskEvents(file, stdout, pending, status.tracker.observe)
+	if err != nil {
+		return pending, false, err
+	}
+	if err := status.refresh(false); err != nil {
+		return pending, false, err
+	}
+	terminal, err := watchTerminal(st, taskID, stdout, opts)
+	if err != nil {
+		return pending, false, err
+	}
+	return pending, terminal, nil
+}
+
+func prepareWatchTaskEvents(st *state.StateStore, taskID string, file *os.File, stdout io.Writer, opts watchOptions) ([]byte, watchLiveStatus, bool, error) {
 	tracker := newWatchToolTracker()
 	pending, err := drainTaskEvents(file, stdout, nil, tracker.observe)
 	status := watchLiveStatus{st: st, taskID: taskID, stdout: stdout, tracker: tracker, opts: opts}
 	if err != nil {
-		return nil, status, nil, err
+		return nil, status, false, err
 	}
 	if err := status.refresh(true); err != nil {
-		return nil, status, nil, err
+		return nil, status, false, err
 	}
-	if exitEvent, terminal := watchTerminal(st, taskID); terminal {
-		return pending, status, &exitEvent, nil
-	}
-	return pending, status, nil, nil
+	terminal, err := watchTerminal(st, taskID, stdout, opts)
+	return pending, status, terminal, err
 }
 
 func waitWatchTick(stop <-chan struct{}, interval time.Duration) bool {

@@ -138,17 +138,24 @@ func projectParentHandoffRecovery(output parentHandoffOutput) parentHandoffRecov
 		SessionRotation:          output.SessionRotation,
 	}
 	if output.LastMaterial != nil {
-		recovery.LastMaterial = &parentHandoffRecoveryMaterial{
-			CallID:             output.LastMaterial.CallID,
-			CallType:           output.LastMaterial.CallType,
-			Phase:              output.LastMaterial.Phase,
-			Outcome:            output.LastMaterial.Outcome,
-			PacketStatus:       output.LastMaterial.PacketStatus,
-			PacketRejectReason: output.LastMaterial.PacketRejectReason,
-			PacketError:        output.LastMaterial.PacketError,
-		}
+		recovery.LastMaterial = recoveryMaterialFromHandoff(output.LastMaterial)
 	}
 	return recovery
+}
+
+func recoveryMaterialFromHandoff(material *parentHandoffMaterial) *parentHandoffRecoveryMaterial {
+	if material == nil {
+		return nil
+	}
+	return &parentHandoffRecoveryMaterial{
+		CallID:             material.CallID,
+		CallType:           material.CallType,
+		Phase:              material.Phase,
+		Outcome:            material.Outcome,
+		PacketStatus:       material.PacketStatus,
+		PacketRejectReason: material.PacketRejectReason,
+		PacketError:        material.PacketError,
+	}
 }
 
 func applyParentGuardRecovery(st *state.StateStore, output *parentHandoffRecoveryOutput) {
@@ -263,26 +270,29 @@ func applyParentLastMaterial(st *state.StateStore, taskID string, output *parent
 		return
 	}
 	for index := len(logs) - 1; index >= 0; index-- {
-		log := logs[index]
-		if log.CallType == state.CallTypeProbe {
+		if logs[index].CallType == state.CallTypeProbe {
 			continue
 		}
-		material := &parentHandoffMaterial{
-			CallID:       stringPtr(log.CallID),
-			CallType:     string(log.CallType),
-			Phase:        log.Phase,
-			Outcome:      log.Outcome,
-			PacketStatus: log.PacketStatus,
-			Role:         string(log.Role),
-			Model:        log.ModelAlias,
-		}
-		if log.Outcome == "invalid_packet" {
-			material.PacketRejectReason = log.PacketRejectReason
-			material.PacketError = log.Error
-		}
-		output.LastMaterial = material
+		output.LastMaterial = parentHandoffMaterialFromLog(logs[index])
 		return
 	}
+}
+
+func parentHandoffMaterialFromLog(log state.ModelCallLog) *parentHandoffMaterial {
+	material := &parentHandoffMaterial{
+		CallID:       stringPtr(log.CallID),
+		CallType:     string(log.CallType),
+		Phase:        log.Phase,
+		Outcome:      log.Outcome,
+		PacketStatus: log.PacketStatus,
+		Role:         string(log.Role),
+		Model:        log.ModelAlias,
+	}
+	if log.Outcome == "invalid_packet" {
+		material.PacketRejectReason = log.PacketRejectReason
+		material.PacketError = log.Error
+	}
+	return material
 }
 
 func currentParentValidations(st *state.StateStore, repoRoot string, snapshot *state.SnapshotDigest) []parentHandoffValidation {

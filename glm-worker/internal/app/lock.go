@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repolock"
@@ -26,6 +27,7 @@ const (
 
 var AcquireRepoLock = repolock.Acquire
 var ErrRepoLockHeld = repolock.ErrRepoLockHeld
+var ErrRepoLockLeaseUnavailable = errors.New("repo lock leaseはこのplatformで取得できません")
 
 func parseLockPID(data []byte) string {
 	text := string(data)
