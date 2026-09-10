@@ -1,0 +1,88 @@
+name: Web GPT 364 Repair Fixtures V2
+
+on:
+  push:
+    branches:
+      - web-gpt/364-quality-scope-fail-closed
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Repair focused fixtures
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path("glm-worker/internal/workflow/interrupted_retention_test.go")
+          s = p.read_text()
+          s = s.replace('''\t"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"\n''', '''\t"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"\n\t"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint"\n''', 1)
+          old = '''\tif err := os.WriteFile(filepath.Join(repo, repositoryharness.MarkerPath), []byte(repositoryharness.MarkerContent), 0o644); err != nil {
+          \t\tt.Fatal(err)
+          \t}
+          \trun("add", "tracked.md")
+          \trun("add", "--", repositoryharness.MarkerPath)
+          '''
+          new = '''\tgoMod := filepath.Join(repo, "glm-worker", "go.mod")
+          \tif err := os.MkdirAll(filepath.Dir(goMod), 0o755); err != nil {
+          \t\tt.Fatal(err)
+          \t}
+          \tif err := os.WriteFile(goMod, []byte("module github.com/shinderuman/codex-worker-orchestrator/glm-worker\\n"), 0o644); err != nil {
+          \t\tt.Fatal(err)
+          \t}
+          \tif err := os.WriteFile(filepath.Join(repo, repositoryharness.MarkerPath), []byte(repositoryharness.MarkerContent), 0o644); err != nil {
+          \t\tt.Fatal(err)
+          \t}
+          \trun("add", "tracked.md")
+          \trun("add", "--", repositoryharness.MarkerPath, "glm-worker/go.mod")
+          '''
+          if old not in s:
+              raise SystemExit("retention repo pattern not found")
+          s = s.replace(old, new, 1)
+          old = '''\tw.temp = t.TempDir()
+          \tclock := newFakeClock()
+          '''
+          new = '''\tw.temp = t.TempDir()
+          \tw.qualityGate = func(string) (harnesslint.Report, error) {
+          \t\treturn harnesslint.Report{Status: "pass", Violations: []harnesslint.Violation{}}, nil
+          \t}
+          \tw.captureQualitySurface = func(string) (string, error) { return "quality-baseline", nil }
+          \tclock := newFakeClock()
+          '''
+          if old not in s:
+              raise SystemExit("newGitWorkflowT pattern not found")
+          p.write_text(s.replace(old, new, 1))
+
+          p = Path("glm-worker/internal/app/multirepo_process_test.go")
+          s = p.read_text()
+          old = '''\tgoMod := filepath.Join(dir, "glm-worker", "go.mod")
+          \tif err := os.MkdirAll(filepath.Dir(goMod), 0o755); err != nil {
+          \t\tt.Fatal(err)
+          \t}
+          \tif err := os.WriteFile(goMod, []byte("module github.com/shinderuman/codex-worker-orchestrator/glm-worker\\n"), 0o644); err != nil {
+          \t\tt.Fatal(err)
+          \t}
+          \tif err := os.WriteFile(filepath.Join(dir, repositoryharness.MarkerPath), []byte(repositoryharness.MarkerContent), 0o644); err != nil {
+          \t\tt.Fatal(err)
+          \t}
+          \trun("add", "corpus.md", repositoryharness.MarkerPath, "glm-worker/go.mod")
+          '''
+          new = '''\trun("add", "corpus.md")
+          '''
+          if old not in s:
+              raise SystemExit("multi repo active fixture pattern not found")
+          p.write_text(s.replace(old, new, 1))
+          PY
+          gofmt -w glm-worker/internal/workflow/interrupted_retention_test.go glm-worker/internal/app/multirepo_process_test.go
+          rm .github/workflows/web-gpt-364-repair-fixtures-v2.yml
+          git config user.name "web-gpt"
+          git config user.email "web-gpt@users.noreply.github.com"
+          git add -A
+          git commit -m "test: separate generic and active quality fixtures"
+          git push origin HEAD:web-gpt/364-quality-scope-fail-closed
