@@ -10,8 +10,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-var captureCurrentGuardRecoveryRefDigest = runner.CaptureGitAuthorityRefDigest
-
 type GuardRecoverableError struct {
 	Phase       string
 	Failure     string
@@ -19,6 +17,8 @@ type GuardRecoverableError struct {
 	RepoRoot    string
 	ResultSaved bool
 }
+
+var captureCurrentGuardRecoveryRefDigest = runner.CaptureGitAuthorityRefDigest
 
 func (e *GuardRecoverableError) Error() string {
 	return fmt.Sprintf("guard failure stopped task at %s; parent repair is required before --resume: %s", e.Phase, e.Failure)
