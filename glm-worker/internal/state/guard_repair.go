@@ -32,7 +32,6 @@ const (
 	GuardRepairRequested GuardRepairStatus = "requested"
 	GuardRepairRunning   GuardRepairStatus = "running"
 	GuardRepairReady     GuardRepairStatus = "ready"
-	GuardRepairResuming  GuardRepairStatus = "resuming"
 	GuardRepairFailed    GuardRepairStatus = "failed"
 	GuardRepairComplete  GuardRepairStatus = "complete"
 
@@ -44,7 +43,7 @@ var ErrNoGuardRepairRecord = errors.New("guard repair record is not available")
 
 func (status GuardRepairStatus) Valid() bool {
 	switch status {
-	case GuardRepairRequested, GuardRepairRunning, GuardRepairReady, GuardRepairResuming, GuardRepairFailed, GuardRepairComplete:
+	case GuardRepairRequested, GuardRepairRunning, GuardRepairReady, GuardRepairFailed, GuardRepairComplete:
 		return true
 	default:
 		return false
@@ -68,9 +67,9 @@ func (record GuardRepairRecord) validate() error {
 }
 
 func (record GuardRepairRecord) validateCompletion() error {
-	repaired := record.Status == GuardRepairReady || record.Status == GuardRepairResuming || record.Status == GuardRepairComplete
-	if repaired && record.RepairedDigest == "" {
-		return fmt.Errorf("repaired guard repair record requires repaired digest")
+	ready := record.Status == GuardRepairReady || record.Status == GuardRepairComplete
+	if ready && record.RepairedDigest == "" {
+		return fmt.Errorf("ready guard repair record requires repaired digest")
 	}
 	if record.Status == GuardRepairComplete && !record.OriginalResumeObserved {
 		return fmt.Errorf("complete guard repair record requires original resume evidence")
@@ -100,8 +99,8 @@ func (record GuardRepairRecord) sameRecovery(next GuardRepairRecord) bool {
 	if record.Fingerprint == next.Fingerprint && record.RelevantDigest == next.RelevantDigest {
 		return true
 	}
-	repaired := record.Status == GuardRepairReady || record.Status == GuardRepairResuming || record.Status == GuardRepairComplete
-	return repaired && record.Phase == next.Phase && record.Failure == next.Failure &&
+	ready := record.Status == GuardRepairReady || record.Status == GuardRepairComplete
+	return ready && record.Phase == next.Phase && record.Failure == next.Failure &&
 		record.RepairedDigest != "" && record.RepairedDigest == next.RelevantDigest
 }
 
@@ -142,27 +141,17 @@ func (s *StateStore) LoadGuardRepairRecord() (GuardRepairRecord, error) {
 	return record, nil
 }
 
-func (s *StateStore) markGuardRepairResumeStarted(checkpoint ResumeCheckpoint) error {
-	if checkpoint.StopKind != ResumeStopGuardRecoverable {
-		return nil
-	}
-	record, err := s.LoadGuardRepairRecord()
-	if errors.Is(err, ErrNoGuardRepairRecord) {
-		return nil
-	}
+func (s *StateStore) TaskResumeCommands() (int, error) {
+	stats, err := s.loadTaskStats()
 	if err != nil {
-		return err
-	}
-	if record.Status != GuardRepairReady {
-		return nil
+		return 0, err
 	}
 	taskID, err := s.TaskID()
 	if err != nil {
-		return err
+		return 0, err
 	}
-	if record.TaskID != taskID || record.Phase != checkpoint.Phase {
-		return fmt.Errorf("ready guard repair does not match resumed task checkpoint")
+	if stats.TaskID != taskID {
+		return 0, fmt.Errorf("task resume counter belongs to %s instead of %s", stats.TaskID, taskID)
 	}
-	record.Status = GuardRepairResuming
-	return s.SaveGuardRepairRecord(record)
+	return stats.ResumeCommands, nil
 }
