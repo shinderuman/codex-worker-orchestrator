@@ -3,16 +3,13 @@ package harnesslint
 import (
 	"regexp"
 	"strings"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskcontract"
 )
 
 type markdownFence struct {
 	marker byte
 	width  int
-}
-
-type markdownSection struct {
-	line int
-	body string
 }
 
 const markdownDerivedStateRule = "markdown-derived-state"
@@ -67,10 +64,14 @@ func markdownTaskDerivedStateViolations(path string, data []byte, headings map[s
 	if line, ok := headings["Current boundary"]; ok {
 		violations = append(violations, markdownDerivedViolation(path, line, "task schedule/current state belongs to the Plan or runtime state, not a handwritten Current boundary"))
 	}
-	for _, section := range markdownSections(data, "Review findings") {
-		if section.body == "none" {
-			violations = append(violations, markdownDerivedViolation(path, section.line, "omit Review findings when there are no unresolved findings"))
-		}
+	findings, err := taskcontract.ParseReviewFindings(data)
+	if err != nil {
+		line := headings["Review findings"]
+		violations = append(violations, markdownDerivedViolation(path, line, "Review findings must have one live, unambiguous section: "+err.Error()))
+		return violations
+	}
+	if findings.Present && findings.None {
+		violations = append(violations, markdownDerivedViolation(path, headings["Review findings"], "omit Review findings when there are no unresolved findings"))
 	}
 	return violations
 }
@@ -152,47 +153,4 @@ func markdownFenceRun(line string) (byte, int) {
 		width++
 	}
 	return marker, width
-}
-
-func markdownSections(data []byte, heading string) []markdownSection {
-	lines := strings.Split(string(data), "\n")
-	var sections []markdownSection
-	var fence markdownFence
-	sectionLine := 0
-	var body []string
-
-	flush := func() {
-		if sectionLine == 0 {
-			return
-		}
-		sections = append(sections, markdownSection{
-			line: sectionLine,
-			body: strings.TrimSpace(strings.Join(body, "\n")),
-		})
-		sectionLine = 0
-		body = nil
-	}
-
-	for index, raw := range lines {
-		line := strings.TrimSpace(raw)
-		if updateMarkdownFence(line, &fence) {
-			if sectionLine != 0 {
-				body = append(body, line)
-			}
-			continue
-		}
-		if fence.width == 0 && strings.HasPrefix(line, "## ") {
-			flush()
-			name := strings.TrimSpace(strings.TrimPrefix(line, "## "))
-			if name == heading {
-				sectionLine = index + 1
-			}
-			continue
-		}
-		if sectionLine != 0 && line != "" {
-			body = append(body, line)
-		}
-	}
-	flush()
-	return sections
 }
