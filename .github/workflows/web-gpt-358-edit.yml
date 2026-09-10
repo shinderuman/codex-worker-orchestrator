@@ -6,6 +6,7 @@ on:
       - web-gpt/358-external-review-follow-up
     paths:
       - .github/workflows/web-gpt-358-edit.yml
+      - .github/web-gpt-358-edit.py
 
 permissions:
   contents: write
@@ -21,10 +22,10 @@ jobs:
         run: python3 .github/web-gpt-358-edit.py
       - name: Format and commit
         run: |
-          gofmt -w glm-worker/internal/app/bundle_analysis.go glm-worker/internal/app/parent_handoff.go glm-worker/internal/parentactioncmd/finalization.go glm-worker/internal/app/execute_test.go
+          gofmt -w glm-worker/internal/app/bundle_analysis_review_test.go glm-worker/internal/app/timeline_test.go glm-worker/internal/app/command_test.go glm-worker/internal/app/parent_handoff_test.go glm-worker/internal/parentactioncmd/finalization_test.go glm-worker/internal/harnesslint/external_review_contract_test.go
           git diff --check
           git config user.name web-gpt
           git config user.email web-gpt@users.noreply.github.com
-          git add glm-worker/internal/app/bundle_analysis.go glm-worker/internal/app/parent_handoff.go glm-worker/internal/parentactioncmd/finalization.go glm-worker/internal/app/execute_test.go codex/AGENTS.md codex/instructions/glm-stop-isolate.md
-          git commit -m 'Apply remaining external review fixes'
+          git add glm-worker/internal/app/bundle_analysis_review_test.go glm-worker/internal/app/timeline_test.go glm-worker/internal/app/command_test.go glm-worker/internal/app/parent_handoff_test.go glm-worker/internal/parentactioncmd/finalization_test.go glm-worker/internal/harnesslint/external_review_contract_test.go
+          git commit -m 'Add external review regression coverage'
           git push
