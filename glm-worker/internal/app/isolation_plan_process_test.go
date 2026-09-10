@@ -19,6 +19,7 @@ const (
 func setupPlanLifecycleIsolation(t *testing.T) (*multiRepoEnv, string, string, string, []byte, []byte) {
 	t.Helper()
 	env := newMultiRepoEnv(t)
+	activateMultiRepoRepositoryHarness(t, env.repoA, env.qualityBin)
 	originalTaskBody := []byte("# 元task\n\n割り込み前に実行中だったtask本文。\n\n## External feasibility\n\nstatus: not-applicable\n")
 	planBody := []byte("# 計画\n\n## ACTIVE\n\n- `" + planOriginalTaskPath + "`\n")
 	if err := os.MkdirAll(filepath.Join(env.repoA, "IMPLEMENTATION_TASKS"), 0o755); err != nil {
@@ -66,7 +67,7 @@ func TestIsolatePlanLifecycleProcessSeries(t *testing.T) {
 	}
 
 	interruptionTaskBody := []byte("# 割り込みtask\n\n隔離worktreeで実行するtask本文。\n\n## External feasibility\n\nstatus: not-applicable\n")
-	switchedPlan := []byte("# 計画\n\n## ACTIVE\n\n- `" + planInterruptionTaskPath + "`\n")
+	switchedPlan := []byte("# 計画\n\n## ACTIVE\n\n- `" + planInterruptionTaskPath + "`\n\n## BLOCKED\n\n- `" + planOriginalTaskPath + "`\n")
 	if err := os.WriteFile(filepath.Join(worktree, planInterruptionTaskPath), interruptionTaskBody, 0o644); err != nil {
 		t.Fatal(err)
 	}

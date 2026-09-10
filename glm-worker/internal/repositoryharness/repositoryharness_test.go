@@ -1,6 +1,7 @@
 package repositoryharness
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -149,11 +150,9 @@ func TestQualityToolsApplyRequiresMarkerAndModule(t *testing.T) {
 	trackMarker(t, root)
 
 	applies, err := QualityToolsApply(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if applies {
-		t.Fatal("module identityなしのmarkerのみではquality toolchainを適用しない")
+	var scopeErr *QualityScopeError
+	if applies || !errors.As(err, &scopeErr) || scopeErr.Reason != QualityScopeModuleMissing {
+		t.Fatalf("missing module result = applies:%v err:%v", applies, err)
 	}
 
 	goModDir := filepath.Join(root, filepath.FromSlash("glm-worker"))
@@ -171,6 +170,42 @@ func TestQualityToolsApplyRequiresMarkerAndModule(t *testing.T) {
 	}
 	if !applies {
 		t.Fatal("markerとmodule identityが揃えばquality toolchainを適用する")
+	}
+}
+
+func TestQualityToolsApplyRejectsMismatchedModuleAfterOptIn(t *testing.T) {
+	root := t.TempDir()
+	gitInit(t, root)
+	trackMarker(t, root)
+	if err := os.MkdirAll(filepath.Join(root, "glm-worker"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "glm-worker", "go.mod"), []byte("module example.com/foreign\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	applies, err := QualityToolsApply(root)
+	var scopeErr *QualityScopeError
+	if applies || !errors.As(err, &scopeErr) || scopeErr.Reason != QualityScopeModuleMismatch {
+		t.Fatalf("mismatched module result = applies:%v err:%v", applies, err)
+	}
+}
+
+func TestQualityToolsApplyReportsHarnessEvaluationFailure(t *testing.T) {
+	root := t.TempDir()
+	gitInit(t, root)
+	trackMarker(t, root)
+	if err := os.RemoveAll(filepath.Join(root, ".git")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".git"), []byte("invalid\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	applies, err := QualityToolsApply(root)
+	var scopeErr *QualityScopeError
+	if applies || !errors.As(err, &scopeErr) || scopeErr.Reason != QualityScopeEvaluationFailed || scopeErr.Cause == nil {
+		t.Fatalf("evaluation failure result = applies:%v err:%v", applies, err)
 	}
 }
 

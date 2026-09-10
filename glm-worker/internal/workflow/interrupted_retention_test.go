@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
@@ -94,6 +95,10 @@ func newGitWorkflowT(t *testing.T, st *state.StateStore, r *scriptedRunner, repo
 		RepoRoot:              repo,
 	}, st, r, io.Discard)
 	w.temp = t.TempDir()
+	w.qualityGate = func(string) (harnesslint.Report, error) {
+		return harnesslint.Report{Status: "pass", Violations: []harnesslint.Violation{}}, nil
+	}
+	w.captureQualitySurface = func(string) (string, error) { return "", nil }
 	clock := newFakeClock()
 	w.now = clock.nowFunc
 	w.sleep = clock.sleepFunc
