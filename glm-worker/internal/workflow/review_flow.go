@@ -1,7 +1,9 @@
 package workflow
 
 import (
+	"errors"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint"
@@ -324,7 +326,10 @@ func (w *Workflow) riskSurfaceDecisions() (selfProtectionDecision, qualityEviden
 	if !harnessActive {
 		return selfProtectionDecision{}, qualityEvidenceDecision{}
 	}
-	baselineHead, _ := w.state.Read("baseline-head")
+	baselineHead, err := w.state.Read("baseline-head")
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return selfProtectionDecision{High: true, Source: "classify-error", HitPath: err.Error()}, qualityEvidenceDecision{}
+	}
 	paths, err := w.collectChangedPaths(w.config.RepoRoot, baselineHead)
 	if err != nil {
 		return selfProtectionDecision{High: true, Source: "classify-error", HitPath: err.Error()}, qualityEvidenceDecision{}

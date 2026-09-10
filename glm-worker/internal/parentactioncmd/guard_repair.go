@@ -79,7 +79,7 @@ func reusableGuardRepairRecord(cfg config.AppConfig, st *state.StateStore) (stat
 		return state.GuardRepairRecord{}, false
 	}
 	if record.Status == state.GuardRepairRunning {
-		return record, true
+		return record, digest == record.RelevantDigest
 	}
 	if record.Status == state.GuardRepairReady || record.Status == state.GuardRepairComplete ||
 		record.Status == state.GuardRepairFailed && record.RepairedDigest != "" {
@@ -95,7 +95,15 @@ func prepareGuardRepairForResume(cfg config.AppConfig, st *state.StateStore, rec
 	case state.GuardRepairReady:
 		return validateReadyGuardRepair(cfg, st, record)
 	case state.GuardRepairRunning:
-		return record, fmt.Errorf("guard repair strategy is already running; unchanged recovery is not repeated")
+		currentDigest, err := guardrepair.RelevantDigest(cfg.RepoRoot)
+		if err != nil {
+			return record, err
+		}
+		if currentDigest != record.RelevantDigest {
+			return record, fmt.Errorf("interrupted guard repair source changed; unchanged recovery is not repeated")
+		}
+		record.Status = state.GuardRepairRequested
+		return performBoundedGuardRepair(cfg, st, record)
 	case state.GuardRepairFailed:
 		return record, fmt.Errorf("guard repair strategy already failed for this evidence; unchanged recovery is not repeated")
 	case state.GuardRepairComplete:

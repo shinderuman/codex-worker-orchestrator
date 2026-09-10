@@ -3,6 +3,8 @@ package harnesslint
 import (
 	"regexp"
 	"strings"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskcontract"
 )
 
 type markdownFence struct {
@@ -62,8 +64,14 @@ func markdownTaskDerivedStateViolations(path string, data []byte, headings map[s
 	if line, ok := headings["Current boundary"]; ok {
 		violations = append(violations, markdownDerivedViolation(path, line, "task schedule/current state belongs to the Plan or runtime state, not a handwritten Current boundary"))
 	}
-	if line, ok := headings["Review findings"]; ok && markdownSectionBody(data, "Review findings") == "none" {
-		violations = append(violations, markdownDerivedViolation(path, line, "omit Review findings when there are no unresolved findings"))
+	findings, err := taskcontract.ParseReviewFindings(data)
+	if err != nil {
+		line := headings["Review findings"]
+		violations = append(violations, markdownDerivedViolation(path, line, "Review findings must have one live, unambiguous section: "+err.Error()))
+		return violations
+	}
+	if findings.Present && findings.None {
+		violations = append(violations, markdownDerivedViolation(path, headings["Review findings"], "omit Review findings when there are no unresolved findings"))
 	}
 	return violations
 }
@@ -145,32 +153,4 @@ func markdownFenceRun(line string) (byte, int) {
 		width++
 	}
 	return marker, width
-}
-
-func markdownSectionBody(data []byte, heading string) string {
-	lines := strings.Split(string(data), "\n")
-	inSection := false
-	var fence markdownFence
-	var body []string
-	for _, raw := range lines {
-		line := strings.TrimSpace(raw)
-		if updateMarkdownFence(line, &fence) {
-			if inSection {
-				body = append(body, line)
-			}
-			continue
-		}
-		if fence.width == 0 && strings.HasPrefix(line, "## ") {
-			name := strings.TrimSpace(strings.TrimPrefix(line, "## "))
-			if inSection {
-				break
-			}
-			inSection = name == heading
-			continue
-		}
-		if inSection && line != "" {
-			body = append(body, line)
-		}
-	}
-	return strings.TrimSpace(strings.Join(body, "\n"))
 }
