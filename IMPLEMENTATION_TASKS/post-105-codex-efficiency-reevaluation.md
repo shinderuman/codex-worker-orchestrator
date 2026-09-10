@@ -105,11 +105,3 @@ status: not-applicable
 ## Fulfilled dependencies
 
 - `IMPLEMENTATION_TASKS/105-session-rotation.md`
-
-## Review findings
-
-none
-
-## Current boundary
-
-105完了後まで開始禁止。実行時は親Codex自身が評価する。
