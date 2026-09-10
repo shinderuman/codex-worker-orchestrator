@@ -1,6 +1,7 @@
 package parentactioncmd
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -33,9 +34,7 @@ func TestCurrentGuardRepairRecordIgnoredAfterTaskLeavesGuardRecovery(t *testing.
 
 func TestExecuteResumeUsesReadyRepairWithoutRepeatingNormalResume(t *testing.T) {
 	cfg, st, record := newGuardRepairLifecycleState(t)
-	statusPath := strconv.Quote(st.Path("task.status"))
-	source := fmt.Sprintf("package main\nimport \"os\"\nfunc main() { if err := os.WriteFile(%s, []byte(\"active\\n\"), 0600); err != nil { os.Exit(2) } }\n", statusPath)
-	writeGuardRepairWorkerModule(t, cfg.RepoRoot, source)
+	writeGuardRepairWorkerModule(t, cfg.RepoRoot, guardRepairLifecycleWorkerSource(t, st, state.TaskStatusActive, true))
 	persistReadyGuardRepair(t, cfg, st, &record)
 	marker := installFailingNormalWorker(t)
 
@@ -114,11 +113,27 @@ func TestResumeWithRepairedWorkerRequiresGuardRecoveryStateExit(t *testing.T) {
 	}
 }
 
-func TestResumeWithRepairedWorkerRecordsOriginalResumeAfterStateExit(t *testing.T) {
+func TestResumeWithRepairedWorkerRejectsStateExitWithoutResumeLifecycleEvidence(t *testing.T) {
 	cfg, st, record := newGuardRepairLifecycleState(t)
-	statusPath := strconv.Quote(st.Path("task.status"))
-	source := fmt.Sprintf("package main\nimport \"os\"\nfunc main() { if err := os.WriteFile(%s, []byte(\"active\\n\"), 0600); err != nil { os.Exit(2) } }\n", statusPath)
-	writeGuardRepairWorkerModule(t, cfg.RepoRoot, source)
+	writeGuardRepairWorkerModule(t, cfg.RepoRoot, guardRepairLifecycleWorkerSource(t, st, state.TaskStatusActive, false))
+	persistReadyGuardRepair(t, cfg, st, &record)
+
+	err := resumeWithRepairedWorker(cfg, st, record, io.Discard, io.Discard, nil, errors.New("initial self-block"))
+	if err == nil || !strings.Contains(err.Error(), "did not enter original resume lifecycle") {
+		t.Fatalf("state-only exit was accepted as original resume evidence: %v", err)
+	}
+	got, loadErr := st.LoadGuardRepairRecord()
+	if loadErr != nil {
+		t.Fatal(loadErr)
+	}
+	if got.Status != state.GuardRepairFailed || got.OriginalResumeObserved {
+		t.Fatalf("state-only exit recorded repair completion: %#v", got)
+	}
+}
+
+func TestResumeWithRepairedWorkerRecordsOriginalResumeAfterLifecycleEntry(t *testing.T) {
+	cfg, st, record := newGuardRepairLifecycleState(t)
+	writeGuardRepairWorkerModule(t, cfg.RepoRoot, guardRepairLifecycleWorkerSource(t, st, state.TaskStatusActive, true))
 	persistReadyGuardRepair(t, cfg, st, &record)
 
 	if err := resumeWithRepairedWorker(cfg, st, record, io.Discard, io.Discard, nil, errors.New("initial self-block")); err != nil {
@@ -201,6 +216,29 @@ func persistReadyGuardRepair(t *testing.T, cfg config.AppConfig, st *state.State
 	if err := st.SaveResumeCheckpoint(checkpoint); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func guardRepairLifecycleWorkerSource(t *testing.T, st *state.StateStore, status state.TaskStatus, recordResume bool) string {
+	t.Helper()
+	body := fmt.Sprintf("if err := os.WriteFile(%s, []byte(%q), 0600); err != nil { os.Exit(2) }", strconv.Quote(st.Path("task.status")), string(status)+"\n")
+	if recordResume {
+		data, err := os.ReadFile(st.Path("task-stats.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var stats state.TaskStats
+		if err := json.Unmarshal(data, &stats); err != nil {
+			t.Fatal(err)
+		}
+		stats.ResumeCommands++
+		data, err = json.MarshalIndent(stats, "", "  ")
+		if err != nil {
+			t.Fatal(err)
+		}
+		data = append(data, '\n')
+		body += fmt.Sprintf("; if err := os.WriteFile(%s, []byte(%q), 0600); err != nil { os.Exit(3) }", strconv.Quote(st.Path("task-stats.json")), string(data))
+	}
+	return "package main\nimport \"os\"\nfunc main() { " + body + " }\n"
 }
 
 func writeGuardRepairWorkerModule(t *testing.T, repoRoot, source string) {
