@@ -10,6 +10,11 @@ type markdownFence struct {
 	width  int
 }
 
+type markdownSection struct {
+	line int
+	body string
+}
+
 const markdownDerivedStateRule = "markdown-derived-state"
 
 var readmePinnedVersionPattern = regexp.MustCompile(`^- (?:Go|golangci-lint|shellcheck|shfmt)\s+[^\n]*\d+\.\d+`)
@@ -62,8 +67,10 @@ func markdownTaskDerivedStateViolations(path string, data []byte, headings map[s
 	if line, ok := headings["Current boundary"]; ok {
 		violations = append(violations, markdownDerivedViolation(path, line, "task schedule/current state belongs to the Plan or runtime state, not a handwritten Current boundary"))
 	}
-	if line, ok := headings["Review findings"]; ok && markdownSectionBody(data, "Review findings") == "none" {
-		violations = append(violations, markdownDerivedViolation(path, line, "omit Review findings when there are no unresolved findings"))
+	for _, section := range markdownSections(data, "Review findings") {
+		if section.body == "none" {
+			violations = append(violations, markdownDerivedViolation(path, section.line, "omit Review findings when there are no unresolved findings"))
+		}
 	}
 	return violations
 }
@@ -147,30 +154,45 @@ func markdownFenceRun(line string) (byte, int) {
 	return marker, width
 }
 
-func markdownSectionBody(data []byte, heading string) string {
+func markdownSections(data []byte, heading string) []markdownSection {
 	lines := strings.Split(string(data), "\n")
-	inSection := false
+	var sections []markdownSection
 	var fence markdownFence
+	sectionLine := 0
 	var body []string
-	for _, raw := range lines {
+
+	flush := func() {
+		if sectionLine == 0 {
+			return
+		}
+		sections = append(sections, markdownSection{
+			line: sectionLine,
+			body: strings.TrimSpace(strings.Join(body, "\n")),
+		})
+		sectionLine = 0
+		body = nil
+	}
+
+	for index, raw := range lines {
 		line := strings.TrimSpace(raw)
 		if updateMarkdownFence(line, &fence) {
-			if inSection {
+			if sectionLine != 0 {
 				body = append(body, line)
 			}
 			continue
 		}
 		if fence.width == 0 && strings.HasPrefix(line, "## ") {
+			flush()
 			name := strings.TrimSpace(strings.TrimPrefix(line, "## "))
-			if inSection {
-				break
+			if name == heading {
+				sectionLine = index + 1
 			}
-			inSection = name == heading
 			continue
 		}
-		if inSection && line != "" {
+		if sectionLine != 0 && line != "" {
 			body = append(body, line)
 		}
 	}
-	return strings.TrimSpace(strings.Join(body, "\n"))
+	flush()
+	return sections
 }
