@@ -20,6 +20,11 @@ type QualityPreflightError struct {
 	DurationMS     int64
 }
 
+type RepositoryHarnessPreflightError struct {
+	Reason string
+	Cause  error
+}
+
 type qualityPreflightFunc func(root string) error
 
 const qualityToolRepairEntry = "./install-quality-tools.sh"
@@ -41,13 +46,24 @@ func (e *QualityPreflightError) Error() string {
 	)
 }
 
+func (e *RepositoryHarnessPreflightError) Error() string {
+	if e.Cause != nil {
+		return fmt.Sprintf("repository harness quality scope invalid before any model call (%s): %v", e.Reason, e.Cause)
+	}
+	return fmt.Sprintf("repository harness quality scope invalid before any model call (%s)", e.Reason)
+}
+
+func (e *RepositoryHarnessPreflightError) Unwrap() error {
+	return e.Cause
+}
+
 func preflightQualityToolchain(cfg config.AppConfig, st *state.StateStore) error {
 	if cfg.RepoRoot == "" {
 		return nil
 	}
 	qualityToolsApply, err := repositoryharness.QualityToolsApply(cfg.RepoRoot)
 	if err != nil {
-		return newQualityPreflightError(err, 0)
+		return newRepositoryHarnessPreflightError(err)
 	}
 	if !qualityToolsApply {
 		return nil
@@ -60,6 +76,15 @@ func preflightQualityToolchain(cfg config.AppConfig, st *state.StateStore) error
 		return nil
 	}
 	return newQualityPreflightError(preflightErr, duration)
+}
+
+func newRepositoryHarnessPreflightError(cause error) *RepositoryHarnessPreflightError {
+	preflightErr := &RepositoryHarnessPreflightError{Reason: repositoryharness.QualityScopeEvaluationFailed, Cause: cause}
+	var scopeErr *repositoryharness.QualityScopeError
+	if errors.As(cause, &scopeErr) {
+		preflightErr.Reason = scopeErr.Reason
+	}
+	return preflightErr
 }
 
 func newQualityPreflightError(cause error, duration time.Duration) *QualityPreflightError {
