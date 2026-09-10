@@ -29,9 +29,9 @@ type runtimeInstallRequirement struct {
 
 type installedRuntimeProbe struct {
 	RuntimeBuild struct {
-		VCSRevision *string `json:"vcs_revision"`
-		VCSModified *bool   `json:"vcs_modified"`
-		Relationship string `json:"relationship"`
+		VCSRevision  *string `json:"vcs_revision"`
+		VCSModified  *bool   `json:"vcs_modified"`
+		Relationship string  `json:"relationship"`
 	} `json:"runtime_build"`
 }
 
