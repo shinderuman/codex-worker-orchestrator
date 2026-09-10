@@ -139,9 +139,18 @@ func verifyRuntimeInstalledFiles(cfg config.AppConfig, paths []string) error {
 		if !ok {
 			continue
 		}
-		source, err := os.ReadFile(filepath.Join(cfg.RepoRoot, filepath.FromSlash(sourcePath)))
+		sourceFile := filepath.Join(cfg.RepoRoot, filepath.FromSlash(sourcePath))
+		source, err := os.ReadFile(sourceFile)
 		if err != nil {
-			return fmt.Errorf("read managed source %s: %w", sourcePath, err)
+			if !errors.Is(err, os.ErrNotExist) {
+				return fmt.Errorf("read managed source %s: %w", sourcePath, err)
+			}
+			if _, installedErr := os.Lstat(installedPath); errors.Is(installedErr, os.ErrNotExist) {
+				continue
+			} else if installedErr != nil {
+				return fmt.Errorf("stat installed managed file %s: %w", installedPath, installedErr)
+			}
+			return fmt.Errorf("installed managed file remains after source deletion: %s", sourcePath)
 		}
 		installed, err := os.ReadFile(installedPath)
 		if err != nil {
@@ -245,7 +254,7 @@ func recordRuntimeInstallValidation(st *state.StateStore, taskID string, require
 	return nil
 }
 
-func persistRuntimeInstallCompletion(cfg config.AppConfig, st *state.StateStore, requirement runtimeInstallRequirement) *finalizationFailure {
+func persistRuntimeInstallCompletionAfterSmoke(cfg config.AppConfig, st *state.StateStore, requirement runtimeInstallRequirement) *finalizationFailure {
 	current, err := runtimeInstallRequirementForTask(cfg.RepoRoot, st)
 	if err != nil {
 		return runtimeInstallFailure(runtimeInstallFailureClassification, err.Error())
@@ -258,9 +267,6 @@ func persistRuntimeInstallCompletion(cfg config.AppConfig, st *state.StateStore,
 	}
 	installedRevision, failure := verifyInstalledRuntime(cfg, current.Head, current.Head)
 	if failure != nil {
-		return failure
-	}
-	if failure := runRuntimeInstallSmoke(cfg); failure != nil {
 		return failure
 	}
 	taskID, err := st.TaskID()
