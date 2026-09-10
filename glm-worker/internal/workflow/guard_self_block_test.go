@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
@@ -71,5 +72,34 @@ func TestGuardRecoveryRefCaptureSelfBlockRequestsBoundedRepairOnce(t *testing.T)
 	}
 	if third.Fingerprint == first.Fingerprint || third.RelevantDigest == first.RelevantDigest {
 		t.Fatalf("repair-relevant source変更が新しいevidenceとして扱われません: first=%#v third=%#v", first, third)
+	}
+}
+
+func TestGuardRecoveryRefCaptureReportsRepairPersistenceFailure(t *testing.T) {
+	repo := newRetentionGitRepo(t)
+	st := newGitStateStoreT(t, repo)
+	stopRunner := &scriptedRunner{steps: []runnerStep{{structured: implementedPacket("done"), runErr: legacyVolatileRefError()}}}
+	stopWorkflow := newGitWorkflowT(t, st, stopRunner, repo)
+	if _, err := stopWorkflow.runModel(workerCheckpoint()); err == nil {
+		t.Fatal("guard failure stopを期待")
+	}
+
+	oldCapture := captureCurrentGuardRecoveryRefDigest
+	captureCurrentGuardRecoveryRefDigest = func(string) (string, error) {
+		return "", errors.New("guard implementation cannot enumerate protected refs")
+	}
+	defer func() { captureCurrentGuardRecoveryRefDigest = oldCapture }()
+	t.Setenv(state.GuardRepairParentActionEnv, state.GuardRepairParentActionResume)
+	if err := os.Mkdir(st.Path("guard-repair.json"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	resumeWorkflow := newGitWorkflowT(t, st, &scriptedRunner{}, repo)
+	err := resumeWorkflow.ExecuteResume()
+	if err == nil {
+		t.Fatal("repair persistence failureを期待")
+	}
+	if !strings.Contains(err.Error(), "guard recovery cannot capture current refs") || !strings.Contains(err.Error(), "persist guard repair request") {
+		t.Fatalf("original failureとpersistence failureが保持されていません: %v", err)
 	}
 }
