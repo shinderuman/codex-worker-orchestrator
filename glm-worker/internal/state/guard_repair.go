@@ -140,7 +140,3 @@ func (s *StateStore) LoadGuardRepairRecord() (GuardRepairRecord, error) {
 	}
 	return record, nil
 }
-
-func (s *StateStore) ClearGuardRepairRecord() error {
-	return s.Remove(guardRepairStateFile)
-}
