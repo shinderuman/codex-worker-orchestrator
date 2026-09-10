@@ -40,6 +40,7 @@ const (
 	TaskStatusNone TaskStatus = "none"
 
 	ExecutionMilestonesStateFile = "execution-milestones.json"
+	ResultCorrectionStateFile    = "result-correction.json"
 )
 
 var removeStatePath = os.Remove
@@ -206,6 +207,7 @@ func newTaskTransitionStateFileNames() []string {
 		"baseline-index.patch",
 		"accepted-fix-scope.json",
 		ExecutionMilestonesStateFile,
+		ResultCorrectionStateFile,
 		stopWorktreePatchFile,
 		stopIndexPatchFile,
 		isolationStateFile,
