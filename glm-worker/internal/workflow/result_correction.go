@@ -10,12 +10,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-const (
-	resultCorrectionStateFile = "result-correction.json"
-	resultCorrectionVersion   = 1
-	maxResultCorrections      = 2
-)
-
 type resultCorrectionRecord struct {
 	Version        int                  `json:"version"`
 	TaskID         string               `json:"task_id"`
@@ -36,19 +30,30 @@ type ResultCorrectionFailure struct {
 	BoundaryMismatch string               `json:"boundary_mismatch,omitempty"`
 }
 
+const (
+	resultCorrectionStateFile = "result-correction.json"
+	resultCorrectionVersion   = 1
+	maxResultCorrections      = 2
+)
+
 func (e *ResultCorrectionFailure) Error() string {
+	var message string
 	switch e.Reason {
 	case "budget_exhausted":
-		return fmt.Sprintf("result correction budget exhausted after %d correction attempts", e.Attempts)
+		message = fmt.Sprintf("result correction budget exhausted after %d correction attempts", e.Attempts)
 	case "repeated_violation":
-		return fmt.Sprintf("result correction did not converge after %d correction attempt", e.Attempts)
+		message = fmt.Sprintf("result correction did not converge after %d correction attempt", e.Attempts)
 	case "boundary_changed":
-		return "result correction boundary changed: " + e.BoundaryMismatch
+		message = "result correction boundary changed: " + e.BoundaryMismatch
 	case "boundary_unavailable":
-		return "result correction boundary is unavailable: " + e.BoundaryMismatch
+		message = "result correction boundary is unavailable: " + e.BoundaryMismatch
 	default:
-		return "result correction failed"
+		message = "result correction failed"
 	}
+	if len(e.Violations) != 0 {
+		message += ": " + strings.Join(e.Violations, "; ")
+	}
+	return message
 }
 
 func NewResultCorrectionWorkerError(phase string, failure *ResultCorrectionFailure) *WorkerError {
