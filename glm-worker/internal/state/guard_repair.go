@@ -71,6 +71,9 @@ func (record GuardRepairRecord) validateCompletion() error {
 	if ready && record.RepairedDigest == "" {
 		return fmt.Errorf("ready guard repair record requires repaired digest")
 	}
+	if record.Status == GuardRepairComplete && !record.OriginalResumeObserved {
+		return fmt.Errorf("complete guard repair record requires original resume evidence")
+	}
 	if record.OriginalResumeObserved && record.Status != GuardRepairComplete {
 		return fmt.Errorf("original resume evidence requires complete guard repair status")
 	}
