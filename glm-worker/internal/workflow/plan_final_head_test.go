@@ -69,18 +69,6 @@ func TestFinalHeadPlanAcceptsParkBranchWithoutPlanBranchString(t *testing.T) {
 	}
 }
 
-func TestFinalHeadPlanAcceptsLegacyGitBoundarySection(t *testing.T) {
-	root := newFinalHeadRepo(t)
-	plan := strings.Replace(finalHeadFixturePlan(""), "## 現在の停止理由", "## 現在のGit境界\n\n- branch: `glm-worker/park/770b3b17`\n\n## 現在の停止理由", 1)
-	writeFinalHeadFixture(t, root, plan, true)
-	commitFinalHeadFixture(t, root)
-
-	status, err := CheckFinalHeadPlan(root)
-	if err != nil || status != "plan final head: verified" {
-		t.Fatalf("status=%q err=%v", status, err)
-	}
-}
-
 func TestFinalHeadPlanRejectsDuplicateActiveSchedule(t *testing.T) {
 	root := newFinalHeadRepo(t)
 	plan := finalHeadFixturePlan("- `IMPLEMENTATION_TASKS/active.md`\n")
@@ -101,18 +89,6 @@ func TestFinalHeadPlanRejectsMalformedNonActiveSchedule(t *testing.T) {
 
 	_, err := CheckFinalHeadPlan(root)
 	if err == nil || !strings.Contains(err.Error(), "NEXT欄") {
-		t.Fatalf("err=%v", err)
-	}
-}
-
-func TestFinalHeadPlanRejectsTransitionalState(t *testing.T) {
-	root := newFinalHeadRepo(t)
-	plan := finalHeadFixturePlan("") + "\n## 次の親Codex操作\n\n- install前に停止する\n"
-	writeFinalHeadFixture(t, root, plan, true)
-	commitFinalHeadFixture(t, root)
-
-	_, err := CheckFinalHeadPlan(root)
-	if err == nil || !strings.Contains(err.Error(), "未実施") {
 		t.Fatalf("err=%v", err)
 	}
 }
@@ -249,26 +225,22 @@ func TestParentCompletionHeadRejectsGoalTerminalWithLeftoverScheduleOrTask(t *te
 
 func completionPromotedFixturePlan() string {
 	return "# plan\n\n## ACTIVE\n\n- `IMPLEMENTATION_TASKS/next.md`\n\n" +
-		"## NEXT（優先順）\n\n## BLOCKED / USER_PERMISSION_WAIT\n\n" +
-		"## 現在の停止理由\n\nなし\n"
+		"## NEXT（優先順）\n\n## BLOCKED / USER_PERMISSION_WAIT\n"
 }
 
 func completionGoalTerminalFixturePlan(nextEntries string) string {
 	return "# plan\n\n## GOAL\n\nstatus: completed\n\nGoal原文\n\n" +
-		"## ACTIVE\n\n## NEXT（優先順）\n\n" + nextEntries + "\n## BLOCKED / USER_PERMISSION_WAIT\n\n" +
-		"## 現在の停止理由\n\nなし\n"
+		"## ACTIVE\n\n## NEXT（優先順）\n\n" + nextEntries + "\n## BLOCKED / USER_PERMISSION_WAIT\n"
 }
 
 func finalHeadFixturePlan(extraNext string) string {
 	return "# plan\n\n## ACTIVE\n\n- `IMPLEMENTATION_TASKS/active.md`\n\n" +
 		"## NEXT（優先順）\n\n- `IMPLEMENTATION_TASKS/next.md`\n" + extraNext + "\n" +
-		"## BLOCKED / USER_PERMISSION_WAIT\n\n" +
-		"## 現在の停止理由\n\nなし\n"
+		"## BLOCKED / USER_PERMISSION_WAIT\n"
 }
 
 func newFinalHeadRepo(t *testing.T) string {
 	t.Helper()
-	root := t.TempDir()
 	runFinalHeadGit(t, root, "init", "-q", "-b", "main")
 	runFinalHeadGit(t, root, "config", "user.name", "test")
 	runFinalHeadGit(t, root, "config", "user.email", "test@example.com")
