@@ -1,4 +1,4 @@
-name: Web GPT 370 Validation
+name: Web GPT 370 Validation v2
 
 on:
   push:
