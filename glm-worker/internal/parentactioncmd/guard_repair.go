@@ -36,6 +36,11 @@ func executeResumeWithGuardRepair(cfg config.AppConfig, stdout, stderr io.Writer
 		copyOutput(stderr, initialStderr)
 		return nil
 	}
+	if err := requestSelfBlockedGuardRepair(cfg, st, initialStderr.Bytes()); err != nil {
+		copyOutput(stdout, initialStdout)
+		copyOutput(stderr, initialStderr)
+		return errors.Join(initialErr, err)
+	}
 
 	record, ok := reusableGuardRepairRecord(cfg, st)
 	if !ok {
