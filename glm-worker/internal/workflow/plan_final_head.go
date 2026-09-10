@@ -3,13 +3,10 @@ package workflow
 import (
 	"fmt"
 	"os/exec"
-	"regexp"
 	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskcontract"
 )
-
-var finalHeadTransitionPattern = regexp.MustCompile(`(^|[^[:alnum:]_])(amend|install)(する)?(の|直)?前`)
 
 func CheckFinalHeadPlan(root string) (string, error) {
 	plan, status, ok, err := finalHeadPlan(root)
@@ -62,10 +59,7 @@ func validateGoalTerminalFinalHeadPlan(root string, plan string) error {
 	if len(active) > 0 || len(next) > 0 || len(blocked) > 0 {
 		return fmt.Errorf("completed GOALのHEAD planはACTIVE/NEXT/BLOCKEDを空にする必要があります(active=%d next=%d blocked=%d)", len(active), len(next), len(blocked))
 	}
-	if err := validateFinalHeadScheduleClosure(root, schedule); err != nil {
-		return err
-	}
-	return validateFinalHeadTransition(plan)
+	return validateFinalHeadScheduleClosure(root, schedule)
 }
 
 func finalHeadPlan(root string) (string, string, bool, error) {
@@ -101,10 +95,7 @@ func validateFinalHeadPlan(root string, plan string) error {
 			}
 		}
 	}
-	if err := validateFinalHeadScheduleClosure(root, schedule); err != nil {
-		return err
-	}
-	return validateFinalHeadTransition(plan)
+	return validateFinalHeadScheduleClosure(root, schedule)
 }
 
 func validateFinalHeadScheduleClosure(root string, schedule taskcontract.PlanSchedule) error {
@@ -184,36 +175,6 @@ func validateFinalHeadTask(root string, path string) error {
 		return fmt.Errorf("HEADのplanが参照するtask file %s がHEAD treeへregular fileとして存在しません", path)
 	}
 	return nil
-}
-
-func validateFinalHeadTransition(plan string) error {
-	for _, section := range []string{"現在の停止理由", "次の親Codex操作"} {
-		for _, line := range finalHeadSectionLines(plan, section) {
-			if finalHeadTransitionPattern.MatchString(line) {
-				return fmt.Errorf("HEADのplanの現在状態記述が完了済みcommitの操作を未実施としています: %s", strings.TrimSpace(line))
-			}
-		}
-	}
-	return nil
-}
-
-func finalHeadSectionLines(plan string, sectionPrefix string) []string {
-	var result []string
-	inSection := false
-	for _, line := range strings.Split(plan, "\n") {
-		if strings.HasPrefix(line, "## ") {
-			if inSection {
-				break
-			}
-			heading := strings.TrimSpace(strings.TrimPrefix(line, "## "))
-			inSection = strings.HasPrefix(heading, sectionPrefix)
-			continue
-		}
-		if inSection {
-			result = append(result, line)
-		}
-	}
-	return result
 }
 
 func finalHeadGitOutput(root string, args ...string) (string, error) {

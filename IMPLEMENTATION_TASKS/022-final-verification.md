@@ -177,11 +177,3 @@ Original instructionの「Plan/Task/History final consistency」は、current Ru
 ## External feasibility
 
 status: not-applicable
-
-## Review findings
-
-none
-
-## Current boundary
-
-最終段階まで開始禁止。

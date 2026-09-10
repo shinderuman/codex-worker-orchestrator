@@ -61,11 +61,3 @@ none
 ## Fulfilled dependencies
 
 - `IMPLEMENTATION_TASKS/telemetry-history-compact-summary.md`
-
-## Review findings
-
-none
-
-## Current boundary
-
-telemetry history compact summary完了後、105より前にauditする。実装前にconsumer単位のGo/No-Goを確定する。

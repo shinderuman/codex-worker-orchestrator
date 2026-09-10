@@ -248,11 +248,3 @@ none
 ## Dependencies
 
 none
-
-## Review findings
-
-none
-
-## Current boundary
-
-BLOCKED。ユーザーの明示GOと残る3条件を満たすまで、PoC・詳細設計・実装・NEXT昇格を行わない。

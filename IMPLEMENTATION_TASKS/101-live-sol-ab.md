@@ -90,11 +90,3 @@ fixed eval-ab基盤。`glm-worker/internal/abeval/usage.go`の`GLMUsageFromTaskS
 ## Dependencies
 
 - `IMPLEMENTATION_TASKS/022-final-verification.md`
-
-## Review findings
-
-none
-
-## Current boundary
-
-ユーザー許可待ち。

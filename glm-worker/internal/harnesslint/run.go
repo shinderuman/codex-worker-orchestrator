@@ -79,6 +79,10 @@ func checkRules(root string, paths []string) ([]Violation, error) {
 	if err != nil {
 		return nil, err
 	}
+	markdownAuthorityViolations, err := markdownDerivedStateViolations(root, paths)
+	if err != nil {
+		return nil, err
+	}
 	qualityViolations, err := scanQualitySurface(root, paths)
 	if err != nil {
 		return nil, err
@@ -98,6 +102,7 @@ func checkRules(root string, paths []string) ([]Violation, error) {
 	violations := append([]Violation{}, goViolations...)
 	violations = append(violations, proseDataViolations...)
 	violations = append(violations, textViolations...)
+	violations = append(violations, markdownAuthorityViolations...)
 	violations = append(violations, qualityViolations...)
 	violations = append(violations, taskViolations...)
 	violations = append(violations, activeTaskViolations...)

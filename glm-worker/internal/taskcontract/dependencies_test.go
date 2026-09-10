@@ -79,12 +79,19 @@ func TestParseTaskDependenciesRejectsMalformedReference(t *testing.T) {
 }
 
 func TestParseReviewFindings(t *testing.T) {
+	absent, err := ParseReviewFindings([]byte("# Task\n"))
+	if err != nil {
+		t.Fatalf("ParseReviewFindings absent: %v", err)
+	}
+	if absent.Present || !absent.None {
+		t.Fatalf("absent findings = %#v", absent)
+	}
 	none, err := ParseReviewFindings([]byte("# Task\n\n## Review findings\n\nnone\n"))
 	if err != nil {
-		t.Fatalf("ParseReviewFindings: %v", err)
+		t.Fatalf("ParseReviewFindings legacy none: %v", err)
 	}
 	if !none.Present || !none.None {
-		t.Fatalf("findings = %#v", none)
+		t.Fatalf("legacy findings = %#v", none)
 	}
 	open, err := ParseReviewFindings([]byte("# Task\n\n## Review findings\n\n- workerが契約外fileへ触れた\n"))
 	if err != nil {
@@ -92,9 +99,6 @@ func TestParseReviewFindings(t *testing.T) {
 	}
 	if !open.Present || open.None {
 		t.Fatalf("findings = %#v", open)
-	}
-	if _, err := ParseReviewFindings([]byte("# Task\n")); err == nil {
-		t.Fatal("task without Review findings section was accepted")
 	}
 	if _, err := ParseReviewFindings([]byte("# Task\n\n## Review findings\n\nnone\n\n## Review findings\n\nnone\n")); err == nil {
 		t.Fatal("duplicate Review findings section was accepted")
