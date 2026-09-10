@@ -73,11 +73,3 @@ compactionとsession agingを分離。
 ## Dependencies
 
 none
-
-## Review findings
-
-none
-
-## Current boundary
-
-Task 012 evidenceはNo-Go。permissionと、activation時のconcrete Contract / Must not / Acceptance criteria確定待ち。
