@@ -1,6 +1,10 @@
 package repositoryharness
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 func TestModuleDirectivePathAcceptsEquivalentModuleForms(t *testing.T) {
 	for _, tc := range []struct {
@@ -34,5 +38,27 @@ func TestModuleDirectivePathRejectsDifferentOrMalformedDirective(t *testing.T) {
 		if ok && got == repositoryModulePath {
 			t.Fatalf("moduleDirectivePath(%q) accepted repository identity", line)
 		}
+	}
+}
+
+func TestQualityToolsApplyAcceptsEquivalentModuleDirective(t *testing.T) {
+	root := t.TempDir()
+	gitInit(t, root)
+	trackMarker(t, root)
+	moduleDir := filepath.Join(root, "glm-worker")
+	if err := os.MkdirAll(moduleDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	goMod := "module \"" + repositoryModulePath + "\" // repository module\n\ngo 1.22\n"
+	if err := os.WriteFile(filepath.Join(moduleDir, "go.mod"), []byte(goMod), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	applies, err := QualityToolsApply(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !applies {
+		t.Fatal("equivalent module directive should preserve repository quality scope")
 	}
 }
