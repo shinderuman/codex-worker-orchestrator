@@ -41,7 +41,10 @@ func executeInstall(cfg config.AppConfig, args []string, stdout, stderr io.Write
 	if len(args) != 1 {
 		return fmt.Errorf("usage: glm-parent-action install")
 	}
-	st := state.AttachStateStore(cfg)
+	st, err := state.NewStateStore(cfg)
+	if err != nil {
+		return err
+	}
 	attempt, err := runRuntimeInstallAttempt(cfg, st, stderr)
 	if err != nil {
 		return err
