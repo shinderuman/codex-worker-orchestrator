@@ -37,10 +37,16 @@ func (w *Workflow) executeResume() error {
 		if err := w.state.ClearResumeCheckpoint(); err != nil {
 			return err
 		}
+		var routeErr error
 		if stopKind == state.ResumeStopQualityGate {
-			return w.resumeQualityGateResult(checkpoint, *completedResult)
+			routeErr = w.resumeQualityGateResult(checkpoint, *completedResult)
+		} else {
+			routeErr = w.routeResumeResult(checkpoint, decl, *completedResult)
 		}
-		return w.routeResumeResult(checkpoint, decl, *completedResult)
+		if routeErr != nil {
+			return w.handleResumeRunError(checkpoint, previousCheckpoint, routeErr)
+		}
+		return nil
 	}
 
 	w.resetInstructionReadObservation()
