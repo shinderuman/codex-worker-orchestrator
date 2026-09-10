@@ -203,30 +203,39 @@ EXECUTION
 
 ## Amendments
 
-none
+### 2026-09-10 user GO
+
+````text
+なおBLOCKEDも進められるなら進めてよい
+````
+
+この発言を本taskの明示GOとして扱う。他のBLOCKED taskについても、別のevidence/dependency条件まで解除したものとは解釈しない。
 
 ## Resolved references
 
-- 「現在のmodel / Claude接続先local override」「既存resume機構」「既存one-shot resume scheduling contract」は、このtaskをunblockする時点のproduction実体を指す。現時点の実装へ固定しない。
-- provider仕様は変動し得るため、このtask本文の背景説明を現行仕様の証拠として使わず、着手時にZ.ai公式情報を改めて確認する。
+- 「現在のmodel / Claude接続先local override」「既存resume機構」「既存one-shot resume scheduling contract」は、このtaskをunblockする時点のproduction実体を指す。
+- 2026-09-10のZ.ai公式 `https://zcode.z.ai/en/docs/configuration` / `https://zcode.z.ai/en/docs/usage-stats` では、Coding Planに5-hour poolとweekly quotaがあり、off-peak reset-cardのwindowとusage thresholdはdynamic parameterで、アプリ表示を正とする旨が明記されている。したがってprovider時刻をproduction codeへhardcodeせずuser configurationとする原方針を維持する。
+- current runtimeでは `glm-worker/internal/workflow/workflow.go` の `ModelRunner.Run` がworker / reviewer / auto-fixのmodel execution共通境界となり、`runner.StopController` がin-flight stopを扱う。`state.ResumeCheckpoint` / `ResumeStopKind` はrate-limit、provider-unavailable、user interruption等を区別して同一task/session resume stateを保持する。
+- 設計再reviewでは、pause admissionをrepository Planやpromptへ入れずmodel-call共通境界へ置く。in-flight boundaryは既存StopControllerのprocess interruption機構を再利用可能性としてPoCするが、停止理由はuser interruptionへ潰さず `scheduled-pause` 相当の独立machine stateとする。
+- account-level local configuration、default OFF、read-only non-GLM command非対象、既存resume/wake再利用、新daemon/cron/polling禁止を維持する。
+- 以上によりBLOCKED CONDITION 1〜4は2026-09-10時点で満たした。production implementationへ進む前のlive PoC requirementは未充足であり、NEXT化後の最初の作業境界とする。
 
 ## Purpose
 
-端末/account単位で設定したpause window中のGLM消費を、安全なin-flight停止と同一task再開を含めて抑制する完全opt-in機能を、将来の実装候補として保持する。
+端末/account単位で設定したpause window中のGLM消費を、安全なin-flight停止と同一task再開を含めて抑制する完全opt-in機能を実装可能か、まず実経路PoCで確定する。
 
 ## Contract
 
-- 現時点では要求保存だけを行い、設計確定・PoC・実装・NEXT昇格を行わない
-- default OFFとし、設定なしの既存behaviorを将来実装時にも維持する
-- provider固有の時間帯やquota policyをproduction codeへhardcodeせず、端末/account単位のlocal configurationを第一候補として再評価する
-- worker、reviewer、auto-fixを含む全GLM invocationの共通choke pointで、call開始可否と次のpause境界をdeterministicに強制する方向を優先する
+- default OFFとし、設定なしの既存behaviorを維持する
+- provider固有の時間帯やquota policyをproduction codeへhardcodeせず、端末/account単位のlocal configurationを第一候補とする
+- worker、reviewer、auto-fixを含む全GLM invocationの共通choke pointで、call開始可否と次のpause境界をdeterministicに強制する
 - pause開始時のin-flight callをsafe stopし、task、phase、session、worktree、checkpointを保持した別理由のmachine stateとして扱う
-- pause終了後は既存checkpoint/resume/wake機構を最大限再利用し、新しいdaemon、cron、polling subsystemを安易に追加しない
-- 本実装前に、worker/reviewer/auto-fix、境界race、他provider停止との重複、crash recoveryを含む実経路PoCを必須とする
+- pause終了後は既存checkpoint/resume/wake機構を最大限再利用し、新しいdaemon、cron、polling subsystemを追加しない
+- production実装前に、worker/reviewer/auto-fix、境界race、他provider停止との重複、crash recoveryを含むlive PoCを実施し、失敗時はimplementationへ進まずBLOCKEDへ戻す
 
 ## Must not
 
-- ユーザーの明示GOなしに自動unblock、PoC、設計、実装を開始しない
+- live PoC成功前にproduction featureを実装しない
 - Z.aiの現行仕様や時刻を恒久codeへ固定しない
 - scheduled pauseをuser interruptionやrate limitへ潰して停止理由を失わない
 - prompt遵守だけでpauseを保証しない
@@ -235,10 +244,11 @@ none
 
 ## Acceptance criteria
 
-- taskはPlanのBLOCKEDにだけ存在し、ACTIVE/NEXTには存在しない
-- Original instructionがlosslessに保存されている
-- unblockにはユーザーの明示GO、最新Z.ai公式仕様確認、現行resume/stop/scheduler architecture確認、設計再reviewの全条件が必要である
-- 将来実装時のdefault OFF、共通enforcement、in-flight safe stop、state/session/worktree保持、既存resume再利用、事前PoCの条件が明記されている
+- live PoCで実行中GLM callを時刻境界相当でsafe stopし、checkpoint / task state / worktree / sessionを保持できる
+- worker / reviewer / auto-fixの各phaseで停止・resumeが成立し、非中断実行と意味的に同等の最終結果へ収束する
+- stop直前/直後、call終了競合、rate limit/provider unavailable重複、process crash recoveryの代表境界を確認する
+- PoC成功後にだけproduction Contractを最終化し、default OFF、account-level config、共通enforcement、独立stop reason、既存resume再利用をtestで固定する
+- PoC失敗または外部制約判明時はfalse-completeせず、一次証拠付きでBLOCKEDへ戻す
 
 ## Historical invariants
 
@@ -255,4 +265,4 @@ none
 
 ## Current boundary
 
-BLOCKED。ユーザーの明示GOと残る3条件を満たすまで、PoC・詳細設計・実装・NEXT昇格を行わない。
+BLOCKED CONDITION 1〜4は2026-09-10に解消。Plan NEXTへ昇格し、最初にlive safe-stop/resume PoCを行う。PoC成功前にproduction implementationへ進まない。

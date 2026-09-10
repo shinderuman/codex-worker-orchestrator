@@ -46,6 +46,14 @@ blocked taskには、
 「permission received」だけで設計未確定taskをGLMへ投げないでください。
 ````
 
+### 2026-09-10 user permission
+
+````text
+なおBLOCKEDも進められるなら進めてよい
+````
+
+本taskについてユーザー許可は受領済み。実測品質証拠が揃うまでrouting変更は開始しない。
+
 ## Resolved references
 
 - Task 013のrouting Go/No-Go decisionは`IMPLEMENTATION_HISTORY.md`の`2026-08-29 Task 013 worker model routing evaluation`を正とする。current codex-config telemetryはsingle resolved model `glm-5.3`だけで、alias差はmodel品質証拠にならず、routing変更はNo-Go。Task 013の通常completion証跡はGit / CI / bundle evidenceから回収する。
@@ -64,7 +72,7 @@ sample不足downgradeをしない。
 
 ## Acceptance criteria
 
-許可原文をAmendmentsへ保存し、Task 013 artifactを読んでconcrete Contract / Must not / Acceptance criteriaを確定してからACTIVE候補にする。
+複数resolved modelを同一repository・role・normalized phase・effective risk・convergence delta groupで比較できる実運用証拠が得られた後、Task 013 artifactを読んでconcrete Contract / Must not / Acceptance criteriaを確定してからACTIVE候補にする。
 
 ## Historical invariants
 
@@ -80,4 +88,4 @@ none
 
 ## Current boundary
 
-Task 013 evidenceはquality delta unknownでrouting変更を支持しない。複数resolved modelを同一repository・role・normalized phase・effective risk・convergence delta groupで比較できる実運用証拠とユーザー許可待ち。
+ユーザー許可は2026-09-10に受領済み。Task 013 evidenceはquality delta unknownでrouting変更を支持しないため、比較可能な複数resolved modelの実運用品質証拠待ちとしてBLOCKEDを維持する。
