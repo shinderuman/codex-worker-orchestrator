@@ -316,6 +316,10 @@ func resumeWithRepairedWorker(
 	if err != nil {
 		return errors.Join(initialErr, err, lock.Close())
 	}
+	resumeCommandsBefore, err := st.TaskResumeCommands()
+	if err != nil {
+		return errors.Join(initialErr, err, lock.Close())
+	}
 	worker, cleanup, err := buildGuardRepairWorker(cfg)
 	if err != nil {
 		return errors.Join(initialErr, err, lock.Close())
@@ -334,6 +338,11 @@ func resumeWithRepairedWorker(
 	}
 	if st.ReadOr("task.id", "") != record.TaskID {
 		return errors.Join(resumeErr, fmt.Errorf("original task changed before guard repair resume completed"), lock.Close())
+	}
+	resumeCommandsAfter, counterErr := st.TaskResumeCommands()
+	if counterErr != nil || resumeCommandsAfter <= resumeCommandsBefore {
+		failure := markGuardRepairFailed(st, record, errors.Join(resumeErr, counterErr, fmt.Errorf("repaired worker did not enter original resume lifecycle")))
+		return errors.Join(failure, lock.Close())
 	}
 	if st.TaskStatus() == state.TaskStatusGuardRecoverable {
 		failure := markGuardRepairFailed(st, record, errors.Join(resumeErr, fmt.Errorf("repaired worker did not leave guard-recoverable state")))
