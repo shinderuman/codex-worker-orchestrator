@@ -241,6 +241,7 @@ func finalHeadFixturePlan(extraNext string) string {
 
 func newFinalHeadRepo(t *testing.T) string {
 	t.Helper()
+	root := t.TempDir()
 	runFinalHeadGit(t, root, "init", "-q", "-b", "main")
 	runFinalHeadGit(t, root, "config", "user.name", "test")
 	runFinalHeadGit(t, root, "config", "user.email", "test@example.com")
