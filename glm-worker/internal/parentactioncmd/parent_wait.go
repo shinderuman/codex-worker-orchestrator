@@ -11,16 +11,16 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-const parentWaitLockFile = "parent-wait.lock"
-
-const parentWaitStatusReleased = "released"
-
 type parentWaitOutput struct {
 	Status     string           `json:"status"`
 	TaskStatus state.TaskStatus `json:"task_status"`
 	OwnerLost  bool             `json:"owner_lost"`
 	Handoff    json.RawMessage  `json:"handoff"`
 }
+
+const parentWaitLockFile = "parent-wait.lock"
+
+const parentWaitStatusReleased = "released"
 
 func withParentWaitLease(cfg config.AppConfig, body func() error) error {
 	st, err := state.NewStateStore(cfg)
