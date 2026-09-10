@@ -1,0 +1,37 @@
+name: Web GPT 370 Refine
+
+on:
+  push:
+    branches:
+      - web-gpt/370-parent-wait-runtime-enforcement
+
+permissions:
+  contents: write
+
+jobs:
+  refine:
+    if: "${{ github.event.head_commit.message == 'ci: refine parent wait lease scope' }}"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Restrict wait lease to model-running staged actions
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('glm-worker/internal/parentactioncmd/parentactioncmd.go')
+          s = p.read_text()
+          old = "\treturn withParentWaitLease(cfg, func() error {\n\t\treturn executePayloadAction(cfg.RepoRoot, descriptor, args[1:], stdout, stderr, extraEnv)\n\t})\n"
+          new = "\tif descriptor.Action == parentaction.ActionReviseMilestones {\n\t\treturn executePayloadAction(cfg.RepoRoot, descriptor, args[1:], stdout, stderr, extraEnv)\n\t}\n\treturn withParentWaitLease(cfg, func() error {\n\t\treturn executePayloadAction(cfg.RepoRoot, descriptor, args[1:], stdout, stderr, extraEnv)\n\t})\n"
+          if old not in s:
+              raise SystemExit('staged action wait wrapper not found')
+          p.write_text(s.replace(old, new, 1))
+          PY
+          gofmt -w glm-worker/internal/parentactioncmd/parentactioncmd.go
+          git config user.name shinderuman
+          git config user.email shinderuman@gmail.com
+          git add glm-worker/internal/parentactioncmd/parentactioncmd.go
+          git commit -m 'refactor: limit parent wait lease to model execution'
+          git push origin HEAD:web-gpt/370-parent-wait-runtime-enforcement
