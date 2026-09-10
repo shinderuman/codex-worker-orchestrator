@@ -94,6 +94,31 @@ func TestRequestGuardRepairPreservesReadyRepairForRepairedSource(t *testing.T) {
 	}
 }
 
+func TestRequestGuardRepairDoesNotReuseReadyRepairForDifferentFailure(t *testing.T) {
+	st := newGuardRepairStateStore(t)
+	record := guardRepairRecordForTest()
+	record.Status = GuardRepairReady
+	record.RepairedDigest = "digest-repaired"
+	if err := st.SaveGuardRepairRecord(record); err != nil {
+		t.Fatal(err)
+	}
+	request := guardRepairRecordForTest()
+	request.Phase = "reviewer-1"
+	request.Failure = "different guard failure"
+	request.Fingerprint = "fingerprint-different"
+	request.RelevantDigest = "digest-repaired"
+	if err := st.RequestGuardRepair(request); err != nil {
+		t.Fatal(err)
+	}
+	got, err := st.LoadGuardRepairRecord()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != GuardRepairRequested || got.Phase != request.Phase || got.Failure != request.Failure || got.Fingerprint != request.Fingerprint {
+		t.Fatalf("different failure was suppressed by prior repaired digest: %#v", got)
+	}
+}
+
 func TestGuardRepairCompleteRequiresObservedOriginalResume(t *testing.T) {
 	st := newGuardRepairStateStore(t)
 	record := guardRepairRecordForTest()
