@@ -36,14 +36,7 @@ func TestExecuteResumeUsesReadyRepairWithoutRepeatingNormalResume(t *testing.T) 
 	statusPath := strconv.Quote(st.Path("task.status"))
 	source := fmt.Sprintf("package main\nimport \"os\"\nfunc main() { if err := os.WriteFile(%s, []byte(\"active\\n\"), 0600); err != nil { os.Exit(2) } }\n", statusPath)
 	writeGuardRepairWorkerModule(t, cfg.RepoRoot, source)
-	digest, err := guardrepair.RelevantDigest(cfg.RepoRoot)
-	if err != nil {
-		t.Fatal(err)
-	}
-	record.RepairedDigest = digest
-	if err := st.SaveGuardRepairRecord(record); err != nil {
-		t.Fatal(err)
-	}
+	persistReadyGuardRepair(t, cfg, st, &record)
 	marker := installFailingNormalWorker(t)
 
 	if err := executeResumeWithGuardRepair(cfg, io.Discard, io.Discard, nil); err != nil {
@@ -87,6 +80,7 @@ func TestExecuteResumeDoesNotRepeatFailedRepairEvidence(t *testing.T) {
 func TestResumeWithRepairedWorkerRequiresGuardRecoveryStateExit(t *testing.T) {
 	cfg, st, record := newGuardRepairLifecycleState(t)
 	writeGuardRepairWorkerModule(t, cfg.RepoRoot, "package main\nfunc main() {}\n")
+	persistReadyGuardRepair(t, cfg, st, &record)
 
 	err := resumeWithRepairedWorker(cfg, st, record, io.Discard, io.Discard, nil, errors.New("initial self-block"))
 	if err == nil {
@@ -106,6 +100,7 @@ func TestResumeWithRepairedWorkerRecordsOriginalResumeAfterStateExit(t *testing.
 	statusPath := strconv.Quote(st.Path("task.status"))
 	source := fmt.Sprintf("package main\nimport \"os\"\nfunc main() { if err := os.WriteFile(%s, []byte(\"active\\n\"), 0600); err != nil { os.Exit(2) } }\n", statusPath)
 	writeGuardRepairWorkerModule(t, cfg.RepoRoot, source)
+	persistReadyGuardRepair(t, cfg, st, &record)
 
 	if err := resumeWithRepairedWorker(cfg, st, record, io.Discard, io.Discard, nil, errors.New("initial self-block")); err != nil {
 		t.Fatal(err)
@@ -125,6 +120,9 @@ func TestResumeWithRepairedWorkerRecordsOriginalResumeAfterStateExit(t *testing.
 func newGuardRepairLifecycleState(t *testing.T) (config.AppConfig, *state.StateStore, state.GuardRepairRecord) {
 	t.Helper()
 	root := t.TempDir()
+	runFinalizationGit(t, root, "init", "-q")
+	runFinalizationGit(t, root, "config", "user.email", "guard-repair@example.invalid")
+	runFinalizationGit(t, root, "config", "user.name", "guard repair test")
 	cfg := config.AppConfig{
 		RepoRoot:  root,
 		StateBase: t.TempDir(),
@@ -153,6 +151,37 @@ func newGuardRepairLifecycleState(t *testing.T) (config.AppConfig, *state.StateS
 		RepairedDigest: "digest-after",
 	}
 	return cfg, st, record
+}
+
+func persistReadyGuardRepair(t *testing.T, cfg config.AppConfig, st *state.StateStore, record *state.GuardRepairRecord) {
+	t.Helper()
+	digest, err := guardrepair.RelevantDigest(cfg.RepoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record.RepairedDigest = digest
+	if err := st.SaveGuardRepairRecord(*record); err != nil {
+		t.Fatal(err)
+	}
+	dirty, err := state.CaptureStopDirtyFiles(cfg.RepoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkpoint := state.ResumeCheckpoint{
+		Stage:           state.ResumeStageWorker,
+		Phase:           record.Phase,
+		Role:            state.WorkerRole,
+		Model:           "worker-model",
+		Prompt:          "prompt",
+		Request:         "request",
+		StopKind:        state.ResumeStopGuardRecoverable,
+		GuardFailure:    record.Failure,
+		StopGitSnapshot: &state.GitSnapshot{Head: "stopped"},
+		StopDirtyFiles:  dirty,
+	}
+	if err := st.SaveResumeCheckpoint(checkpoint); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func writeGuardRepairWorkerModule(t *testing.T, repoRoot, source string) {
