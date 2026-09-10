@@ -21,19 +21,18 @@ type resultCorrectionRecord struct {
 }
 
 type ResultCorrectionFailure struct {
-	Reason            string               `json:"reason"`
-	Attempts          int                  `json:"attempts"`
-	TaskID            string               `json:"task_id"`
-	SessionID         string               `json:"session_id"`
-	Snapshot          state.SnapshotDigest `json:"snapshot"`
-	Violations        []string             `json:"violations"`
+	Reason           string               `json:"reason"`
+	Attempts         int                  `json:"attempts"`
+	TaskID           string               `json:"task_id"`
+	SessionID        string               `json:"session_id"`
+	Snapshot         state.SnapshotDigest `json:"snapshot"`
+	Violations       []string             `json:"violations"`
 	BoundaryMismatch string               `json:"boundary_mismatch,omitempty"`
 }
 
 const (
-	resultCorrectionStateFile = "result-correction.json"
-	resultCorrectionVersion   = 1
-	maxResultCorrections      = 2
+	resultCorrectionVersion = 1
+	maxResultCorrections    = 2
 )
 
 func (e *ResultCorrectionFailure) Error() string {
@@ -209,12 +208,12 @@ func (w *Workflow) resultCorrectionTerminalFailure(
 	currentViolations []string,
 ) error {
 	failure := &ResultCorrectionFailure{
-		Reason:            reason,
-		Attempts:          record.Attempts,
-		TaskID:            record.TaskID,
-		SessionID:         record.SessionID,
-		Snapshot:          record.Snapshot,
-		Violations:        appendUniqueViolations(record.SeenViolations, currentViolations),
+		Reason:           reason,
+		Attempts:         record.Attempts,
+		TaskID:           record.TaskID,
+		SessionID:        record.SessionID,
+		Snapshot:         record.Snapshot,
+		Violations:       appendUniqueViolations(record.SeenViolations, currentViolations),
 		BoundaryMismatch: mismatch,
 	}
 	_ = w.state.ClearResumeCheckpoint()
@@ -227,11 +226,11 @@ func (w *Workflow) saveResultCorrectionRecord(record *resultCorrectionRecord) er
 	if err != nil {
 		return err
 	}
-	return w.state.Write(resultCorrectionStateFile, string(data))
+	return w.state.Write(state.ResultCorrectionStateFile, string(data))
 }
 
 func (w *Workflow) loadResultCorrectionRecord() (*resultCorrectionRecord, error) {
-	data, err := w.state.Read(resultCorrectionStateFile)
+	data, err := w.state.Read(state.ResultCorrectionStateFile)
 	if err != nil {
 		return nil, err
 	}
@@ -246,7 +245,7 @@ func (w *Workflow) loadResultCorrectionRecord() (*resultCorrectionRecord, error)
 }
 
 func (w *Workflow) clearResultCorrectionRecord() error {
-	return w.state.Remove(resultCorrectionStateFile)
+	return w.state.Remove(state.ResultCorrectionStateFile)
 }
 
 func snapshotDigest(snapshot state.GitSnapshot) state.SnapshotDigest {
