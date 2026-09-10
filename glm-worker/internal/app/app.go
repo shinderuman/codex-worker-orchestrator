@@ -134,8 +134,6 @@ const evidenceUsage = "usage: glm-worker --evidence <manifest.json>"
 
 const repoSearchMaxBudgetBytes = 64 * 1024
 
-const qualityGateUsage = "<go-test|go-test-race> | --quality-gate <status|watch|result> <validation-run-id>"
-
 const telemetryQueryUsage = "[current|history] [--task <task-id>] [--since <rfc3339>] [--until <rfc3339>] [--compact]"
 
 const verifyCodexWakeUsage = "usage: glm-worker --verify-codex-wake <wake-task-thread-id> <wake-at-rfc3339>"
