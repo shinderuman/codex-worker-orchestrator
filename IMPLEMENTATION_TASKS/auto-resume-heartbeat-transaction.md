@@ -121,7 +121,3 @@ none
 
 - `a595057`の完了判定はauthority再伝達scenarioの再発を防げておらずfalse-completeだった
 - `e1b5c74`と`a595057`の正しいinstruction/testが存在しても親Codexがrate-limit分岐でそれを読まなければ全transactionを迂回でき、自由言語だけでは再発防止になっていない
-
-## Current boundary
-
-停止中の同一GLM sessionは再起動しない。2026-09-05に誤作成したautomationだけを正規transactionで置換・検証し、現ACTIVE完了後に本taskを再開してauthority propagationとschedule transactionをproduction pathで機械化する。
