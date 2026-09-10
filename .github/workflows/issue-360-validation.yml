@@ -30,6 +30,8 @@ jobs:
           printf '%s\n' "$quality_bin" >> "$GITHUB_PATH"
       - name: Comment lint
         run: ./commentlint
+      - name: Gofmt diagnostic
+        run: gofmt -d glm-worker/internal/workflow/result_correction.go
       - name: Harness lint
         run: ./harnesslint
       - name: Go vet
