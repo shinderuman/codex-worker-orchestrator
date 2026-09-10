@@ -35,7 +35,6 @@ const (
 	ParentActionResume                      ParentAction = "resume"
 	ParentActionPark                        ParentAction = "park"
 	ParentActionUnpark                      ParentAction = "unpark"
-	ParentActionReset                       ParentAction = "reset"
 	ParentActionRepairGuardThenResume       ParentAction = "repair-guard-then-resume"
 	ParentActionRepairQualityGateThenResume ParentAction = "repair-quality-gate-then-resume"
 )
@@ -84,9 +83,6 @@ func (s *StateStore) AdmitNewTask() (ParentActionPlan, bool, error) {
 	plan, err := s.ParentActionPlan()
 	if err != nil {
 		return ParentActionPlan{}, false, err
-	}
-	if s.TaskStatus() == TaskStatusActive {
-		return actionPlan(ParentActionReset, ""), false, nil
 	}
 	return plan, plan.RequiredAction == ParentActionNone, nil
 }
