@@ -385,6 +385,7 @@ func activateMultiRepoRepositoryHarness(t *testing.T, repoRoot, qualityBin strin
 		"harnesslint",
 		"install.sh",
 		"install-quality-tools.sh",
+		"glm-worker/go.mod",
 		"glm-worker/internal/workflow/workflow.go",
 		"glm-worker/internal/workflow/quality_gate.go",
 	} {
