@@ -65,7 +65,7 @@ func runGuardRepairModel(
 	prompt string,
 ) (runner.RunResult, error) {
 	base := runner.NewClaudeRunner(cfg, st)
-	guarded := runner.NewInstructionSurfaceGuardRunner(base)
+	guarded := runner.NewGuardRepairRunner(base)
 	temp, err := os.MkdirTemp("", "glm-guard-repair-model-*")
 	if err != nil {
 		return runner.RunResult{}, err
