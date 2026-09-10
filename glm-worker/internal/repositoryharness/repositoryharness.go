@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -51,7 +52,7 @@ const (
 
 const repositoryGoModPath = "glm-worker/go.mod"
 
-const repositoryModuleLine = "module github.com/shinderuman/codex-worker-orchestrator/glm-worker"
+const repositoryModulePath = "github.com/shinderuman/codex-worker-orchestrator/glm-worker"
 
 func (e *QualityScopeError) Error() string {
 	if e.Cause != nil {
@@ -149,11 +150,70 @@ func validateRepositoryModule(root string) error {
 		return &QualityScopeError{Reason: QualityScopeModuleUnreadable, Cause: fmt.Errorf("read %s: %w", repositoryGoModPath, err)}
 	}
 	for _, line := range strings.Split(string(data), "\n") {
-		if strings.TrimSpace(line) == repositoryModuleLine {
+		modulePath, ok := moduleDirectivePath(line)
+		if ok && modulePath == repositoryModulePath {
 			return nil
 		}
 	}
 	return &QualityScopeError{Reason: QualityScopeModuleMismatch}
+}
+
+func moduleDirectivePath(line string) (string, bool) {
+	line = strings.TrimSpace(line)
+	if !strings.HasPrefix(line, "module") || len(line) == len("module") || !isSpace(line[len("module")]) {
+		return "", false
+	}
+	rest := strings.TrimSpace(line[len("module"):])
+	if rest == "" {
+		return "", false
+	}
+
+	path, remaining, ok := modulePathToken(rest)
+	if !ok {
+		return "", false
+	}
+	remaining = strings.TrimSpace(remaining)
+	if remaining != "" && !strings.HasPrefix(remaining, "//") {
+		return "", false
+	}
+	return path, true
+}
+
+func modulePathToken(value string) (string, string, bool) {
+	if value[0] != '"' && value[0] != '`' {
+		end := strings.IndexAny(value, " \t\r\n")
+		if end < 0 {
+			return value, "", true
+		}
+		return value[:end], value[end:], true
+	}
+
+	quote := value[0]
+	for end := 1; end < len(value); end++ {
+		if value[end] != quote {
+			continue
+		}
+		if quote == '"' {
+			backslashes := 0
+			for index := end - 1; index >= 0 && value[index] == '\\'; index-- {
+				backslashes++
+			}
+			if backslashes%2 != 0 {
+				continue
+			}
+		}
+		token := value[:end+1]
+		path, err := strconv.Unquote(token)
+		if err != nil {
+			return "", "", false
+		}
+		return path, value[end+1:], true
+	}
+	return "", "", false
+}
+
+func isSpace(value byte) bool {
+	return value == ' ' || value == '\t' || value == '\r' || value == '\n'
 }
 
 func CaptureMarker(root string) (MarkerGuard, error) {
