@@ -8,11 +8,12 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/watch-terminal-error-orphan-exit.md`
+- `IMPLEMENTATION_TASKS/execution-continuity-permission-convergence-guard-recovery.md`
 
 ## NEXT（優先順）
 
 - `IMPLEMENTATION_TASKS/external-review-a70d35c-43e1da9-follow-up.md`
+- `IMPLEMENTATION_TASKS/architecture-responsibility-overdesign-audit.md`
 - `IMPLEMENTATION_TASKS/prose-only-control-enforcement-audit.md`
 - `IMPLEMENTATION_TASKS/markdown-derived-state-authority-audit.md`
 - `IMPLEMENTATION_TASKS/auto-resume-heartbeat-transaction.md`
