@@ -189,7 +189,9 @@ func (w *Workflow) verifyGuardRecoveryRefs(checkpoint state.ResumeCheckpoint) er
 	current, err := captureCurrentGuardRecoveryRefDigest(w.config.RepoRoot)
 	if err != nil {
 		failure := &WorkerError{Phase: checkpoint.Phase, Message: fmt.Sprintf("guard recovery cannot capture current refs: %v", err)}
-		w.requestGuardRepair(checkpoint, failure)
+		if repairErr := w.requestGuardRepair(checkpoint, failure); repairErr != nil {
+			return errors.Join(failure, fmt.Errorf("persist guard repair request: %w", repairErr))
+		}
 		return failure
 	}
 	if !checkpoint.GuardRefChangesTruncated && guardRefChangesOnlyVolatile(checkpoint.GuardRefChanges) {
