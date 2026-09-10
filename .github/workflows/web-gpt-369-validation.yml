@@ -27,15 +27,10 @@ jobs:
           quality_bin="$(go env GOPATH)/bin"
           QUALITY_TOOLS_BIN_DIR="$quality_bin" ./install-quality-tools.sh
           printf '%s\n' "$quality_bin" >> "$GITHUB_PATH"
-      - name: Install smoke admission diagnostic
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          path = Path('tests/install_smoke.sh')
-          text = path.read_text()
-          needle = '''grep -q 'install is not admitted' "$tmp/parent-action-install.stderr"'''
-          if text.count(needle) != 1:
-              raise SystemExit('admission assertion not found')
-          path.write_text(text.replace(needle, '''cat "$tmp/parent-action-install.stderr" >&2\n''' + needle, 1))
-          PY
-          sh -x ./tests/install_smoke.sh
+      - name: Repository lint gate
+        run: ./harnesslint
+      - name: Full Go test suite
+        working-directory: glm-worker
+        run: go test ./...
+      - name: Install smoke
+        run: ./tests/install_smoke.sh
