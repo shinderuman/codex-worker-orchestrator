@@ -195,6 +195,18 @@ func TestExecuteFinalizationCheckRejectsWorkingDirectoryOutsideRepository(t *tes
 	}
 }
 
+func TestFinalizationVerifiedEvidenceDirRejectsLexicallyOutsideMissingPath(t *testing.T) {
+	repo := newFinalizationTestRepo(t)
+	outside := filepath.Join(t.TempDir(), "missing-module")
+	selected, failure := finalizationVerifiedEvidenceDir(repo, finalizationRoutingEvidenceProbe{WorkingDir: outside})
+	if selected != "" {
+		t.Fatalf("outside routing evidence selected = %q", selected)
+	}
+	if failure == nil || failure.Stage != "routing" || failure.Reason != "routing_evidence_outside_repository" {
+		t.Fatalf("outside missing routing evidence did not fail closed: %#v", failure)
+	}
+}
+
 func TestExecuteRejectsInvalidFinalizationForm(t *testing.T) {
 	cfg, _ := newParentActionTestState(t)
 	var output bytes.Buffer

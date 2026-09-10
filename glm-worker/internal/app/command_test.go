@@ -55,6 +55,13 @@ func TestParseCommandModes(t *testing.T) {
 	}
 }
 
+func TestParseCommandTopLevelUsageIncludesVerifyCodexWake(t *testing.T) {
+	_, err := ParseCommand(nil)
+	if err == nil || !strings.Contains(err.Error(), "--verify-codex-wake <wake-task-thread-id> <wake-at-rfc3339>") {
+		t.Fatalf("top-level usageに--verify-codex-wakeがありません: %v", err)
+	}
+}
+
 func TestParseCommandStdinPayloadModes(t *testing.T) {
 	digest := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 

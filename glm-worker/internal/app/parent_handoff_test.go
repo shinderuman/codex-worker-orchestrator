@@ -540,6 +540,42 @@ func TestParentHandoffRoutingEvidenceMatchesImplementationSnapshot(t *testing.T)
 	}
 }
 
+func TestParentHandoffRejectsRoutingEvidenceWithoutTaskID(t *testing.T) {
+	cfg := newAppConfig(t)
+	st, err := state.NewStateStore(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := state.CaptureGitSnapshot(cfg.RepoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := qualityGateRunRecord{
+		ValidationRunID:               strings.Repeat("b", 32),
+		Form:                          "go-test",
+		Repository:                    cfg.RepoRoot,
+		WorkingDir:                    filepath.Join(cfg.RepoRoot, "module"),
+		Head:                          snapshot.Head,
+		IndexDigest:                   snapshot.IndexDigest,
+		WorktreeDigest:                snapshot.WorktreeDigest,
+		WorktreeDigestExcludingParent: snapshot.WorktreeDigestExcludingParent,
+		StartedAt:                     time.Now().UTC(),
+		Status:                        qualityGateStatusPass,
+	}
+	if err := writeQualityGateRun(st, record); err != nil {
+		t.Fatal(err)
+	}
+	digest := &state.SnapshotDigest{
+		Head:                          snapshot.Head,
+		IndexDigest:                   snapshot.IndexDigest,
+		WorktreeDigest:                snapshot.WorktreeDigest,
+		WorktreeDigestExcludingParent: snapshot.WorktreeDigestExcludingParent,
+	}
+	if got := currentParentRoutingEvidence(st, cfg.RepoRoot, "", digest); len(got) != 0 {
+		t.Fatalf("taskless routing evidence leaked: %#v", got)
+	}
+}
+
 func TestQualityGateRunRecordCarriesRoutingIdentity(t *testing.T) {
 	_, st := newQualityGateEnv(t)
 	taskID := "12345678-aaaa-bbbb-cccc-dddddddddddd"
