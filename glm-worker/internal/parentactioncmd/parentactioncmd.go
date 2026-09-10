@@ -186,6 +186,7 @@ func executeDirectWorkerAction(cfg config.AppConfig, action string, args []strin
 		if err := persistParentCodexIdentity(cfg); err != nil {
 			return err
 		}
+		return executeResumeWithGuardRepair(cfg, stdout, stderr, extraEnv)
 	}
 	return runWorker(cfg.RepoRoot, directWorkerArgs(action), nil, stdout, stderr, extraEnv)
 }
