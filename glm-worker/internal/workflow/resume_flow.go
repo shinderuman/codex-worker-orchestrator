@@ -103,9 +103,16 @@ func (w *Workflow) prepareResumeCheckpoint(
 	}
 	checkpoint = activatedCheckpoint
 	if checkpoint.Stage == state.ResumeStageWorker {
-		checkpoint.ReadOnly = checkpoint.ResultCorrection || decl.pocStage()
+		checkpoint.ReadOnly = resumeWorkerReadOnly(checkpoint, decl)
 	}
 	return checkpoint, false, nil
+}
+
+func resumeWorkerReadOnly(checkpoint state.ResumeCheckpoint, decl externalFeasibility) bool {
+	if checkpoint.ResultCorrection {
+		return true
+	}
+	return decl.pocStage()
 }
 
 func (w *Workflow) activateResumeRuleContext(checkpoint state.ResumeCheckpoint) (state.ResumeCheckpoint, error) {
