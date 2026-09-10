@@ -1,7 +1,6 @@
 package parentactioncmd
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -18,15 +17,18 @@ import (
 )
 
 type installOutput struct {
-	Status  string               `json:"status"`
-	Failure *finalizationFailure `json:"failure,omitempty"`
+	Status   string               `json:"status"`
+	Required bool                 `json:"required"`
+	Failure  *finalizationFailure `json:"failure,omitempty"`
 }
 
 const (
-	installStatusInstalled     = "installed"
-	installStatusFailed        = "install_failed"
-	installStatusGuardRejected = "install_guard_rejected"
-	installScriptName          = "install.sh"
+	installStatusInstalled          = "installed"
+	installStatusNotRequired        = "not_required"
+	installStatusFailed             = "install_failed"
+	installStatusVerificationFailed = "install_verification_failed"
+	installStatusGuardRejected      = "install_guard_rejected"
+	installScriptName               = "install.sh"
 )
 
 func executeInstall(cfg config.AppConfig, args []string, stdout, stderr io.Writer) error {
@@ -48,13 +50,45 @@ func executeInstall(cfg config.AppConfig, args []string, stdout, stderr io.Write
 		return fmt.Errorf("install is not admitted for the current task (required action %s)", plan.RequiredAction)
 	}
 	if failure := installRepositoryGuard(cfg.RepoRoot); failure != nil {
-		return json.NewEncoder(stdout).Encode(installOutput{Status: installStatusGuardRejected, Failure: failure})
+		return writeInstallOutput(stdout, installOutput{Status: installStatusGuardRejected, Failure: failure})
 	}
 	script, failure := installScriptGuard(cfg.RepoRoot)
 	if failure != nil {
-		return json.NewEncoder(stdout).Encode(installOutput{Status: installStatusGuardRejected, Failure: failure})
+		return writeInstallOutput(stdout, installOutput{Status: installStatusGuardRejected, Failure: failure})
 	}
-	return runInstallScript(script, cfg.RepoRoot, stdout, stderr)
+	requirement, err := runtimeInstallRequirementForTask(cfg.RepoRoot, st)
+	if err != nil {
+		return writeInstallOutput(stdout, installOutput{
+			Status: installStatusGuardRejected,
+			Failure: runtimeInstallFailure(runtimeInstallFailureClassification, err.Error()),
+		})
+	}
+	if !requirement.Required {
+		return writeInstallOutput(stdout, installOutput{Status: installStatusNotRequired})
+	}
+	if !pushBindingTreeClean(cfg.RepoRoot) {
+		return writeInstallOutput(stdout, installOutput{
+			Status:   installStatusGuardRejected,
+			Required: true,
+			Failure:  runtimeInstallFailure(runtimeInstallFailureDirty, "runtime install requires a clean committed source tree"),
+		})
+	}
+	if err := st.ClearRuntimeInstallEvidence(); err != nil {
+		return writeInstallOutput(stdout, installOutput{
+			Status:   installStatusVerificationFailed,
+			Required: true,
+			Failure:  runtimeInstallFailure(runtimeInstallFailureEvidence, err.Error()),
+		})
+	}
+	output := runInstallScript(script, cfg.RepoRoot, stderr)
+	output.Required = true
+	if output.Status != installStatusInstalled {
+		return writeInstallOutput(stdout, output)
+	}
+	if failure := persistRuntimeInstallCompletion(cfg, st, requirement); failure != nil {
+		return writeInstallOutput(stdout, installOutput{Status: installStatusVerificationFailed, Required: true, Failure: failure})
+	}
+	return writeInstallOutput(stdout, installOutput{Status: installStatusInstalled, Required: true})
 }
 
 func installRepositoryGuard(repoRoot string) *finalizationFailure {
@@ -86,7 +120,7 @@ func installScriptGuard(repoRoot string) (string, *finalizationFailure) {
 	return script, nil
 }
 
-func runInstallScript(script, repoRoot string, stdout, stderr io.Writer) error {
+func runInstallScript(script, repoRoot string, stderr io.Writer) installOutput {
 	command := exec.Command(script)
 	command.Dir = repoRoot
 	command.Stdout = stderr
@@ -96,17 +130,17 @@ func runInstallScript(script, repoRoot string, stdout, stderr io.Writer) error {
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer signal.Stop(signals)
 	if err := command.Start(); err != nil {
-		return json.NewEncoder(stdout).Encode(installOutput{
+		return installOutput{
 			Status:  installStatusFailed,
 			Failure: &finalizationFailure{Stage: "install", Reason: "install_script_start_failed", Detail: compactFinalizationDiagnostic(err.Error())},
-		})
+		}
 	}
 	done := make(chan struct{})
 	go forwardSignals(command.Process, signals, done)
 	err := command.Wait()
 	close(done)
 	if err == nil {
-		return json.NewEncoder(stdout).Encode(installOutput{Status: installStatusInstalled})
+		return installOutput{Status: installStatusInstalled}
 	}
 	failure := &finalizationFailure{Stage: "install", Reason: "install_script_failed"}
 	var exitErr *exec.ExitError
@@ -115,5 +149,5 @@ func runInstallScript(script, repoRoot string, stdout, stderr io.Writer) error {
 	} else {
 		failure.Detail = compactFinalizationDiagnostic(err.Error())
 	}
-	return json.NewEncoder(stdout).Encode(installOutput{Status: installStatusFailed, Failure: failure})
+	return installOutput{Status: installStatusFailed, Failure: failure}
 }
