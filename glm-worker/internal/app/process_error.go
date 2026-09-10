@@ -295,6 +295,26 @@ func workerErrorDetail(err *workflow.WorkerError) map[string]any {
 	if err.Tail != "" {
 		detail["output_tail"] = err.Tail
 	}
+	if correction, ok := workflow.ResultCorrectionFailureFromError(err); ok {
+		detail["failure_class"] = "result_correction_" + correction.Reason
+		detail["terminal"] = true
+		detail["resume_available"] = false
+		detail["additional_correction_available"] = false
+		detail["correction_attempts"] = correction.Attempts
+		if correction.TaskID != "" {
+			detail["task_id"] = correction.TaskID
+		}
+		if correction.SessionID != "" {
+			detail["session_id"] = correction.SessionID
+		}
+		detail["snapshot"] = correction.Snapshot
+		if len(correction.Violations) != 0 {
+			detail["violations"] = append([]string(nil), correction.Violations...)
+		}
+		if correction.BoundaryMismatch != "" {
+			detail["boundary_mismatch"] = correction.BoundaryMismatch
+		}
+	}
 	return detail
 }
 

@@ -298,5 +298,5 @@ func validateMachineStatusRisk(result Result, contract machineContract) error {
 	if statusAllowsRisk(statusContract, result.Risk) {
 		return nil
 	}
-	return &constraintError{reason: statusContract.invalidRisk(result.Risk)}
+	return newConstraintError("risk:"+string(result.Status), statusContract.invalidRisk(result.Risk))
 }

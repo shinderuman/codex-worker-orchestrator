@@ -103,9 +103,16 @@ func (w *Workflow) prepareResumeCheckpoint(
 	}
 	checkpoint = activatedCheckpoint
 	if checkpoint.Stage == state.ResumeStageWorker {
-		checkpoint.ReadOnly = decl.pocStage()
+		checkpoint.ReadOnly = resumeWorkerReadOnly(checkpoint, decl)
 	}
 	return checkpoint, false, nil
+}
+
+func resumeWorkerReadOnly(checkpoint state.ResumeCheckpoint, decl externalFeasibility) bool {
+	if checkpoint.ResultCorrection {
+		return true
+	}
+	return decl.pocStage()
 }
 
 func (w *Workflow) activateResumeRuleContext(checkpoint state.ResumeCheckpoint) (state.ResumeCheckpoint, error) {
@@ -171,6 +178,9 @@ func (w *Workflow) handleResumeProbeError(checkpoint state.ResumeCheckpoint, err
 
 func (w *Workflow) handleResumeRunError(_ state.ResumeCheckpoint, previous state.ResumeCheckpoint, runErr error) error {
 	if isResumeStopError(runErr) {
+		return runErr
+	}
+	if _, terminal := ResultCorrectionFailureFromError(runErr); terminal {
 		return runErr
 	}
 	_ = w.attachStopRepositoryBoundary(&previous)
