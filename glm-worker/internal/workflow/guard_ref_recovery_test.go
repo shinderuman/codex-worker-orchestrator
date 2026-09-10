@@ -37,6 +37,9 @@ func TestRefMutationGuardStopPersistsEvidenceAndRequiresExactRepair(t *testing.T
 	if checkpoint.GuardRefBeforeDigest != beforeDigest || checkpoint.GuardRefAfterDigest != "different-after-digest" || len(checkpoint.GuardRefChanges) != 1 {
 		t.Fatalf("ref evidence not retained: %#v", checkpoint)
 	}
+	if checkpoint.GuardRefStopDigest == "" {
+		t.Fatal("stop-time ref authority digest was not retained")
+	}
 	if checkpoint.CompletedResult == nil {
 		t.Fatal("completed worker result should remain reusable after exact ref repair")
 	}
@@ -95,22 +98,17 @@ func TestRefMutationGuardRecoveryAcceptsOnlyUntruncatedVolatileEvidence(t *testi
 func TestRefMutationGuardRecoveryResumesLegacyVolatileFailure(t *testing.T) {
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)
-	refErr := &runner.GitAuthorityGuardError{
-		Stage:           "after-call-mutation",
-		Mutations:       []string{"refs"},
-		RefBeforeDigest: "legacy-full-ref-before",
-		RefAfterDigest:  "legacy-full-ref-after",
-		RefChanges: []runner.GitRefChange{
-			{Name: "refs/codex/turn-diffs/fixture"},
-			{Name: "refs/codex/snapshots/fixture"},
-		},
-	}
+	refErr := legacyVolatileRefError()
 	stopRunner := &scriptedRunner{steps: []runnerStep{{structured: implementedPacket("done"), runErr: refErr}}}
 	stopWorkflow := newGitWorkflowT(t, st, stopRunner, repo)
 	_, err := stopWorkflow.runModel(workerCheckpoint())
 	var stopped *GuardRecoverableError
 	if !errors.As(err, &stopped) {
 		t.Fatalf("volatile legacy failure should enter guard recovery: %v", err)
+	}
+	checkpoint := retentionCheckpoint(t, st)
+	if checkpoint.GuardRefStopDigest == "" {
+		t.Fatal("legacy volatile failure did not retain stop-time authority refs")
 	}
 
 	resumeRunner := &scriptedRunner{steps: []runnerStep{{structured: passPacket()}}}
@@ -121,6 +119,46 @@ func TestRefMutationGuardRecoveryResumesLegacyVolatileFailure(t *testing.T) {
 	}
 	if len(resumeRunner.phases) != 1 || resumeRunner.phases[0] != "reviewer-1" {
 		t.Fatalf("resume phases = %v", resumeRunner.phases)
+	}
+}
+
+func TestRefMutationGuardRecoveryRejectsPostStopNonvolatileMutationForLegacyVolatileFailure(t *testing.T) {
+	repo := newRetentionGitRepo(t)
+	st := newGitStateStoreT(t, repo)
+	stopRunner := &scriptedRunner{steps: []runnerStep{{structured: implementedPacket("done"), runErr: legacyVolatileRefError()}}}
+	stopWorkflow := newGitWorkflowT(t, st, stopRunner, repo)
+	_, err := stopWorkflow.runModel(workerCheckpoint())
+	var stopped *GuardRecoverableError
+	if !errors.As(err, &stopped) {
+		t.Fatalf("volatile legacy failure should enter guard recovery: %v", err)
+	}
+
+	runRetentionGit(t, repo, "branch", "post-stop-authority-change")
+	blockedRunner := &scriptedRunner{}
+	blockedWorkflow := newGitWorkflowT(t, st, blockedRunner, repo)
+	err = blockedWorkflow.ExecuteResume()
+	var workerErr *WorkerError
+	if !errors.As(err, &workerErr) || !strings.Contains(workerErr.Message, "refs changed after stop") {
+		t.Fatalf("post-stop nonvolatile ref mutation must fail closed: %v", err)
+	}
+	if len(blockedRunner.prompts) != 0 {
+		t.Fatalf("post-stop ref mutation dispatched model calls: %d", len(blockedRunner.prompts))
+	}
+	if st.TaskStatus() != state.TaskStatusGuardRecoverable {
+		t.Fatalf("status after rejected resume = %s", st.TaskStatus())
+	}
+}
+
+func legacyVolatileRefError() *runner.GitAuthorityGuardError {
+	return &runner.GitAuthorityGuardError{
+		Stage:           "after-call-mutation",
+		Mutations:       []string{"refs"},
+		RefBeforeDigest: "legacy-full-ref-before",
+		RefAfterDigest:  "legacy-full-ref-after",
+		RefChanges: []runner.GitRefChange{
+			{Name: "refs/codex/turn-diffs/fixture"},
+			{Name: "refs/codex/snapshots/fixture"},
+		},
 	}
 }
 
