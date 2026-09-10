@@ -11,13 +11,14 @@ import (
 )
 
 type resultCorrectionRecord struct {
-	Version        int                  `json:"version"`
-	TaskID         string               `json:"task_id"`
-	Role           state.SessionRole    `json:"role"`
-	SessionID      string               `json:"session_id"`
-	Snapshot       state.SnapshotDigest `json:"snapshot"`
-	Attempts       int                  `json:"attempts"`
-	SeenViolations []string             `json:"seen_violations"`
+	Version           int                  `json:"version"`
+	TaskID            string               `json:"task_id"`
+	Role              state.SessionRole    `json:"role"`
+	SessionID         string               `json:"session_id"`
+	Snapshot          state.SnapshotDigest `json:"snapshot"`
+	Attempts          int                  `json:"attempts"`
+	SeenViolationKeys []string             `json:"seen_violation_keys"`
+	SeenViolations    []string             `json:"seen_violations"`
 }
 
 type ResultCorrectionFailure struct {
@@ -31,7 +32,7 @@ type ResultCorrectionFailure struct {
 }
 
 const (
-	resultCorrectionVersion = 1
+	resultCorrectionVersion = 2
 	maxResultCorrections    = 2
 )
 
@@ -76,8 +77,9 @@ func (w *Workflow) handleResultCorrectionViolation(
 	resultErr error,
 ) (packet.Result, error) {
 	violations := packet.ConstraintReasons(resultErr)
+	violationKeys := packet.ConstraintViolationKeys(resultErr)
 	if !checkpoint.ResultCorrection {
-		record, err := w.newResultCorrectionRecord(checkpoint, violations)
+		record, err := w.newResultCorrectionRecord(checkpoint, violationKeys, violations)
 		if err != nil {
 			return packet.Result{}, err
 		}
@@ -95,11 +97,12 @@ func (w *Workflow) handleResultCorrectionViolation(
 	if record.Attempts >= maxResultCorrections {
 		return packet.Result{}, w.resultCorrectionTerminalFailure(checkpoint, record, "budget_exhausted", "", violations)
 	}
-	if !hasNewConstraintViolation(record.SeenViolations, violations) {
+	if !hasNewConstraintViolation(record.SeenViolationKeys, violationKeys) {
 		return packet.Result{}, w.resultCorrectionTerminalFailure(checkpoint, record, "repeated_violation", "", violations)
 	}
 
 	record.Attempts++
+	record.SeenViolationKeys = appendUniqueViolations(record.SeenViolationKeys, violationKeys)
 	record.SeenViolations = appendUniqueViolations(record.SeenViolations, violations)
 	if err := w.saveResultCorrectionRecord(record); err != nil {
 		return packet.Result{}, err
@@ -108,7 +111,11 @@ func (w *Workflow) handleResultCorrectionViolation(
 	return w.runModel(w.nextResultCorrectionCheckpoint(checkpoint, resultErr.Error()))
 }
 
-func (w *Workflow) newResultCorrectionRecord(checkpoint state.ResumeCheckpoint, violations []string) (*resultCorrectionRecord, error) {
+func (w *Workflow) newResultCorrectionRecord(
+	checkpoint state.ResumeCheckpoint,
+	violationKeys []string,
+	violations []string,
+) (*resultCorrectionRecord, error) {
 	taskID, err := w.state.TaskID()
 	if err != nil {
 		return nil, err
@@ -122,13 +129,14 @@ func (w *Workflow) newResultCorrectionRecord(checkpoint state.ResumeCheckpoint, 
 		return nil, err
 	}
 	return &resultCorrectionRecord{
-		Version:        resultCorrectionVersion,
-		TaskID:         taskID,
-		Role:           checkpoint.Role,
-		SessionID:      sessionID,
-		Snapshot:       snapshotDigest(snapshot),
-		Attempts:       1,
-		SeenViolations: appendUniqueViolations(nil, violations),
+		Version:           resultCorrectionVersion,
+		TaskID:            taskID,
+		Role:              checkpoint.Role,
+		SessionID:         sessionID,
+		Snapshot:          snapshotDigest(snapshot),
+		Attempts:          1,
+		SeenViolationKeys: appendUniqueViolations(nil, violationKeys),
+		SeenViolations:    appendUniqueViolations(nil, violations),
 	}, nil
 }
 
@@ -238,7 +246,13 @@ func (w *Workflow) loadResultCorrectionRecord() (*resultCorrectionRecord, error)
 	if err := json.Unmarshal([]byte(data), &record); err != nil {
 		return nil, err
 	}
-	if record.Version != resultCorrectionVersion || record.TaskID == "" || record.SessionID == "" || record.Attempts < 1 || record.Attempts > maxResultCorrections {
+	if record.Version != resultCorrectionVersion ||
+		record.TaskID == "" ||
+		record.SessionID == "" ||
+		record.Attempts < 1 ||
+		record.Attempts > maxResultCorrections ||
+		len(record.SeenViolationKeys) == 0 ||
+		len(record.SeenViolations) == 0 {
 		return nil, fmt.Errorf("invalid result correction state")
 	}
 	return &record, nil
