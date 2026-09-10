@@ -29,35 +29,78 @@
 
 ## 2026-09-11 prose-only control enforcement audit
 
-このrecordは`5c7b265ad89057dcb8367ca44f464bd053a5230e:IMPLEMENTATION_TASKS/prose-only-control-enforcement-audit.md`で要求されたbounded inventoryのcross-task decisionである。分類は「proseに規則があるか」ではなく、親Codexがその規則を読み落とす・誤parameter/action/orderを選ぶ前提でproduction admission/postconditionが違反を拒否できるかで決める。
+このrecordは`5c7b265ad89057dcb8367ca44f464bd053a5230e:IMPLEMENTATION_TASKS/prose-only-control-enforcement-audit.md`のbounded inventoryである。PR #391時点の14-control inventoryはtop-level instruction surfaceとproduction admissionの横断が不足していたため、current main `6bc5096aee058acadfb7a3886257e3a4f65551ff`で再監査した。
+
+監査scopeは`AGENTS.md`、`codex/AGENTS.md`、`IMPLEMENTATION_RULES.md`、current PlanのACTIVE/NEXT/BLOCKED、`codex/instructions/*.md`全件、`codex/instructions/worker/*.md`、関連する`workflow` / `state` / `parentactioncmd` / `packet` / `runner` / `app` production owner、completed/current task/Issueの既存ownerである。分類基準は「proseに規則があるか」ではなく、親Codex/workerがその規則を読み落とす・誤parameter/action/orderを選ぶ前提でproduction admission/postconditionが違反を拒否できるかとする。
 
 ### Bounded inventory
 
-14 controlを分類した。`machine-enforced=7`、`partial=4`、`prose-only=1`、`semantic-parent-only=1`、`external-unenforceable=1`。
+29 logical controlを分類した。`machine-enforced=13`、`partial=9`、`prose-only=1`、`semantic-parent-only=3`、`external-unenforceable=3`。
 
-- `parent-metadata-integrity` — `machine-enforced`。ownerは`glm-worker/internal/workflow/planfile.go::captureParentFileGuard` / `verifyParentFileAfterCall`とStateStore parent-file snapshot。worker/reviewerが親managed metadataを変えればmodel call後guardで停止する。文字列存在testではなくproduction call境界のbefore/after検証を根拠にする。
-- `worker-git-snapshot-safety` — `machine-enforced`。ownerはworkflowのrepository snapshot/guardと`glm-worker/internal/state`のsnapshot state。HEAD/index/worktree driftはresume/review/finalizationのadmissionで一致を要求し、instructionの「Gitを触るな」だけを成立条件にしない。
-- `packet-schema` — `machine-enforced`。ownerは`glm-worker/internal/packet/schema.go`、`contract.go`、`result.go`と`glm-worker/internal/workflow/model_call.go::parseModelCallResult` / `handleInvalidModelResult`。`glm-worker/internal/packet/*_test.go`はschema/status constraint rejectionを検証し、prompt内schema記載だけをevidenceにしない。
-- `reviewer-session-separation` — `machine-enforced`。ownerはrole別session/state lifecycleとrunner invocation。worker/reviewer roleは別session identity/stateで扱い、reviewer再利用をinstructionだけに依存させない。session invalidation/role separation testをproduction evidenceとする。
-- `quality-snapshot-binding` — `machine-enforced`。ownerはquality-gate/finalizationのrepository snapshot evidenceと`glm-worker/internal/parentactioncmd/finalization.go`。routing/working-dir/head/index/worktree evidenceがcurrent task境界と一致しない成功結果はfinalizationへ通さない。
-- `remote-completion-sync` — `machine-enforced`。ownerは`glm-worker/internal/parentactioncmd/complete.go::verifyParentCompletion` / `verifyCompletionRemoteSync` / `verifyCompletionUnchanged`。`complete_test.go::TestCompleteKeepsAwaitingWhileFinalHeadIsAhead`、`TestCompleteKeepsAwaitingForRemoteFailures`、`TestVerifyCompletionUnchangedDetectsRaceBeforeTransition`がwrong/missing remote postconditionをproductionで拒否する。過去のmanual `push-binding`だけに依存したpartial状態はcurrent implementationでは解消済みであり、再実装しない。
-- `session-rotation-claim-bind-start` — `machine-enforced`。ownerは`glm-worker/internal/state/session_rotation.go::ClaimSessionRotation` / `BindSessionRotationClaim` / `AcknowledgeSessionRotationClaim`と`glm-worker/internal/workflow/model_call.go::acknowledgeSessionRotationStart`。directive/claim/thread/target task identityとstate順序をproductionで照合し、wrong claim/bind/startは拒否する。
-- `session-rotation-fail-proof` — `partial`。`glm-worker/internal/parentactioncmd/parentactioncmd.go::executeSessionRotationFail`は`state/session_rotation.go::ReleaseSessionRotationClaim`へ委譲するが、後者はmatching claimed stateだけでpendingへ戻し、「新thread作成失敗が確定した」というmachine evidenceを要求しない。作成結果unknownで解放可能なのはstate correctness gapなので独立修正対象とする。
-- `runtime-install-completion` — `partial`。canonical install execution自体は既存`glm-parent-action install`に集約済みだが、runtime変更taskのterminal completionがcurrent HEAD/source digest・installed一致・必要smoke evidenceを必須postconditionとしてまだ束縛していない。旧source `5c7b265ad89057dcb8367ca44f464bd053a5230e:IMPLEMENTATION_TASKS/runtime-install-completion-binding.md`の責務へ統合し、別permission pathを作らない。
-- `parent-wait-ownership` — `prose-only`。長時間model実行中の親Codex途中return/短周期poll/liveness turn禁止は親instruction依存が残る。旧source `5c7b265ad89057dcb8367ca44f464bd053a5230e:IMPLEMENTATION_TASKS/codex-instruction-conflict-reduction.md`のruntime wait ownershipとして独立処理する。
-- `parent-plan-continuation` — `partial`。Plan/project-stateのdeterministic projectionは存在するが、局所task/install終端後に継続許可scopeが残る状態でUSER_REQUEST完了を宣言する親returnをterminal postconditionが拒否しない。旧source `5c7b265ad89057dcb8367ca44f464bd053a5230e:IMPLEMENTATION_TASKS/parent-plan-continuation-enforcement.md`の責務へ統合する。
-- `automation-authority-transaction` — `partial`。repository側には`IMPLEMENTATION_TASKS/auto-resume-heartbeat-transaction.md`のspec/state/verify contractがあるが、外部Codex appのautomation作成・wake delivery境界をrepository processだけで完全に強制できない。active atomic transactionを正とし、別automation state machineを追加しない。
-- `continuous-improvement-capture` — `semantic-parent-only`。改善候補の採否・task化はworkflow preferenceとsemantic productization判断であり、2026-09-10 architecture auditでdurable candidate admission state machineを不採用とした。`IMPLEMENTATION_RULES.md`のparent orchestration product化判断と`IMPLEMENTATION_TASKS/codex-efficiency-control-loop-checkpoint.md`のbounded取りこぼし再精査をownerとし、LLMがproseを読み落とし得ることだけを理由にhard lifecycle stateへ昇格しない。
-- `user-requirement-ingress` — `external-unenforceable`。repository processが信頼できるuser-turn identity/bindingを取得できない現状では、latest user requirementのtracked化をmachine-enforcedと宣言するとfalse guaranteeになる。`IMPLEMENTATION_TASKS/user-requirement-ingress-binding.md`をMEASURE FIRST / BLOCKEDの再評価境界として維持し、一次証拠が得られるまでruntime state machineを実装しない。
+#### machine-enforced
 
-External reviewで懸念されたsession-rotation markerのread-modify-write競合は、current caller/state順序を再確認したが独立したlive prose controlとして成立する再現pathを確認できなかった。`rotation-claim` / `rotation-bind` / `rotation-fail`はrepository lock配下、new-task start acknowledgeはbound target identityを照合する。将来callerがこのserialization/phase ownershipを外す変更をする場合は、その変更自身のtestで再評価する。現時点では追加state/recoveryを作らない。
+- `parent-metadata-integrity` — ownerは`glm-worker/internal/workflow/planfile.go`のparent-file before/after guardとStateStore parent-file snapshot。worker/reviewerによるparent-managed metadata mutationはproduction model-call境界で拒否される。
+- `worker-git-authority-snapshot` — ownerは`glm-worker/internal/runner/git_authority_guard.go`とworkflow/state repository snapshot。HEAD/index/protected ref/config/worktree authority driftをproduction guard/recoveryで検出し、worker instructionだけを成立条件にしない。
+- `packet-schema-result` — ownerは`glm-worker/internal/packet/schema.go` / `contract.go` / `result.go`と`workflow/model_call.go`のparse/retry path。不正status/field/contractはproduction packet acceptanceで拒否される。
+- `reviewer-session-capability-separation` — ownerはrole別session/state lifecycleとrunner invocation。worker/reviewerのsession/capabilityをproductionで分離し、prompt上のrole宣言だけに依存しない。
+- `quality-snapshot-binding` — ownerはquality-gate snapshot evidenceと`glm-worker/internal/parentactioncmd/finalization.go`。routing/working-dir/HEAD/index/worktree evidenceがcurrent task境界と一致しない成功はfinalizationへ通らない。
+- `remote-completion-sync` — ownerは`glm-worker/internal/parentactioncmd/complete.go::verifyParentCompletion` / `verifyCompletionRemoteSync` / `verifyCompletionUnchanged`。remote未同期・raceをterminal completionとして受理しない。
+- `session-rotation-claim-bind-start` — ownerは`glm-worker/internal/state/session_rotation.go`と`workflow/model_call.go::acknowledgeSessionRotationStart`。directive/claim/thread/target-task identityと順序をproduction stateで検証する。
+- `external-feasibility-admission` — ownerは`glm-worker/internal/workflow/externalfeasibility.go::ensureExternalFeasibility`。taskのExternal feasibility status/evidenceと変更前Go/No-Go境界をmachine admissionへ結び、最終Go/No-Go判断だけを親semantic authorityに残す。
+- `repo-search-exhaustive-activation` — ownerは`glm-worker/internal/workflow/exhaustive_search.go`とrepo-search command/state。opt-in、exhaustive marker、search evidenceをproduction pathで扱い、`glm-repo-search.md`だけをauthorityにしない。
+- `stop-isolate-park-lifecycle` — ownerはStateStore stop/isolate/park stateと`glm-worker` command lifecycle。canonical停止・隔離・park/unparkはmachine state transitionを持ち、任意killを正常系にしない。
+- `orphan-watch-terminalization` — ownerは`glm-worker/internal/app`のwatch/orphan terminal pathとそのregression tests。terminal childを親のliveness proseだけに依存して待ち続けない。
+- `parent-action-staging-admission` — ownerは`glm-worker/internal/parentactioncmd`のaction parser/staging/lifecycle checks。decision/fix/accept/resume/finalize等の合法順序・token/staging条件をmachine admissionで拒否できる。
+- `parent-evidence-projection-dedup` — ownerは`glm-parent-action evidence`とparent evidence state。canonical structured evidenceはbounded projection、authority snapshot binding、duplicate projection rejectionを持つ。任意shell readまで全面禁止できるとは分類しない。
+
+#### partial
+
+- `session-rotation-fail-proof` — matching claimだけで`rotation-fail`をpendingへ戻せ、new-thread作成失敗確定のmachine evidenceを要求しない。ownerは#390。
+- `runtime-install-completion` — canonical install actionはmachine化済みだが、runtime変更taskのterminal completionとcurrent HEAD/source digest/installed一致/smoke evidenceの束縛が未完了。ownerは#369。
+- `parent-plan-continuation` — project-state projectionはmachine化済みだが、継続許可scopeが残る局所terminalをUSER_REQUEST terminalへ誤変換する親returnを完全には拒否しない。ownerは#371。
+- `glm-auto-resume-automation-transaction` — repository側はwake spec/coalesce/verifyを持つが、Codex app create/update/wake deliveryは外部境界を含む。ownerはcurrent `IMPLEMENTATION_TASKS/auto-resume-heartbeat-transaction.md`。#339はre-entry choreographyの別ownerであり重複しない。
+- `codex-auto-resume-automation-transaction` — `codex-auto-resume.md`はexpected key、PAUSED placeholder、UTC one-shot update、exact returned ID、failure cleanupを親proseで要求するが、repository側の`--codex-limit` / `--verify-codex-wake`の間をmachine transactionとして束縛していない。新規ownerは#394。
+- `failure-artifact-confidentiality` — `failure-evidence.md`はcredential/token/cookie/session ID/個人情報をartifact保存前に除去するよう要求するが、`glm-worker/internal/packet/validate.go::ValidateArtifacts`はpath、regular file、symlink containment、duplicateだけを検証し内容のsensitive admissionを持たない。新規ownerは#395。
+- `sol-review-evidence-before-accept` — `glm-packets.md`は`NEEDS_SOL_REVIEW`で親Solがtargets/current source/diffを実査するよう要求する。#316はそのread量をbounded化したが、`glm-worker/internal/state/parent_review.go::ParentReviewOpenState` / `resolveParentOutcome`はmatching current review evidence未取得でも`accept`を成立させられる。新規ownerは#396。
+- `execution-permission-convergence` — known canonical operationはmanaged `glm-parent-action`/execpolicyへ収束しているが、外部approval/sandbox denialの意味分類や新しいexecution boundaryはrepository単独では完全強制できない。既存permission-convergence implementationを再実装せず、`execution-permission.md`のsemantic/external residualだけを残す。
+- `user-global-instruction-config-ownership` — installer/tool-owned scopeとuser-owned global Codex/Claude settingsの境界は一部production ownershipを持つが、global instruction mutation全体は親操作を含む。`agents-management.md`の対象を含め、ownerは#362。別のglobal-config state machineを作らない。
+
+#### prose-only
+
+- `parent-wait-ownership` — 長時間GLM処理中の途中return、短周期poll、liveness turn、重複起動の禁止は親instruction依存が残る。ownerは#370。
+
+#### semantic-parent-only
+
+- `continuous-improvement-capture` — 改善候補の採否/task化はworkflow preferenceとsemantic productization判断である。architecture auditでdurable candidate admission state machineを不採用とし、`IMPLEMENTATION_RULES.md`のproduct化判断と`IMPLEMENTATION_TASKS/codex-efficiency-control-loop-checkpoint.md`のbounded取りこぼし再精査をownerとする。non-blocking captureを含む再評価は同checkpointで行い、prose違反可能性だけを理由にhard lifecycle stateへ昇格しない。
+- `escaped-cause-semantic-classification` — `escaped-cause-layer.md`が要求する「どの原因層へ再発防止を置くか」は一次証拠を入力にしたsemantic判断でありgeneric classifierへ置換しない。machine evidence取得・task lifecycleと区別する。
+- `goal-task-review-semantic-disposition` — Goalの妥当性、質問/run-control/新要求の意味分類、Sol reviewのfinding採否そのものは親semantic authorityに残す。machine layerはidentity/state/action admissibilityだけを強制し、意味判断をregexやauto-acceptへ移さない。
+
+#### external-unenforceable
+
+- `user-requirement-ingress` — repository processが信頼できるuser-turn identity/bindingを取得できない現状では、最新要求のtracked化を完全machine-enforcedと宣言できない。`IMPLEMENTATION_TASKS/user-requirement-ingress-binding.md`をMEASURE FIRST/BLOCKEDの再評価境界とする。
+- `direct-edit-user-authority` — `direct-edit.md`の「ユーザーがCodex自身の直接編集を明示したか」は同じtrusted user-turn identity制約を持つ。別taskを増やさず`user-requirement-ingress-binding.md`の外部境界へ統合する。repositoryが親の任意host editを完全監視できると偽らない。
+- `backup-destructive-host-operation` — `backup.md`のcopy/checksum後だけ元backupを削除する規則は重要なdata-loss境界だが、repository process外の任意`cp`/`mv`/`rm`をrepo helper追加だけで強制不能である。user-global shell policyを本repository都合で全面拘束するwrapper/daemonは責務とriskが不相応なので新規mechanizationを作らず、外部host-operation boundaryとして残す。
+
+### Gap disposition
+
+旧14-control inventoryで既知ownerだった#369/#370/#371/#372と、当時新規に切った#390は維持する。再監査で新たに成立したhigh-risk gapは#394 `Mechanize Codex 5h wake scheduling transaction`、#395 `Enforce sensitive failure-artifact admission`、#396 `Bind Sol review evidence before parent accept`へ独立DO化した。
+
+#394は外部Codex automation writeとのtransaction境界、#395はartifact confidentiality、#396はSol review Quality Delta admissionであり、互いに別owner/別failure domainを持つため#368内の一括implementationへ混在させない。各Issueはproduction command/state/testをAcceptanceに持ち、単なるinstruction追記では閉じない。
+
+`backup-destructive-host-operation`、trusted user-turn identityに依存する`user-requirement-ingress`/`direct-edit-user-authority`はrepository単独のproduction gateを作るとfalse guaranteeまたはuser-global authority侵害になるためtask化しない。`continuous-improvement-capture`等のsemantic判断も同様にhard state machine化しない。これは見落としではなくdisposition gateの結果である。
+
+### Instruction-presence vs production evidence
+
+instruction文字列を検査するtestはrouting/install/prose driftの検出には使えるが、control成立の証拠には数えない。`machine-enforced`分類は上記production ownerの拒否/postcondition/state transitionとbehavior testを根拠にする。代表negative evidenceはpacket invalid-result rejection、Git authority guard、finalization snapshot/remote-sync rejection、session-rotation identity admission、external-feasibility admissionであり、これらを新規mechanization対象へ戻さない。
+
+代表positive gap evidenceは、`ValidateArtifacts`がartifact path/symlinkだけを検査しsecret内容を受理可能であること、`ParentReviewOpenState`がreview evidence proofを持たず`NEEDS_SOL_REVIEW` acceptをgateしないこと、Codex 5h wakeでmachine-generated create/update transaction specが存在しないことである。
 
 ### Prose thinning input
 
-machine-enforced controlの手続き説明が重複する主要candidate surfaceを、installed sourceのUTF-8 file byte数でbounded proxy化した。`codex/AGENTS.md` 7,794 bytes、`codex/instructions/glm-execution.md` 18,998、`glm-packets.md` 11,230、`quality-gate-capability.md` 5,183、`session-rotation.md` 4,185、`execution-permission.md` 4,564、合計51,954 bytes。token値はtokenizer exact値ではなく比較用`ceil(bytes/4)` proxyで約12,989 tokensとする。
+既存の主要重複surface proxyはcurrent sourceでも、`codex/AGENTS.md`約7.8KB、`codex/instructions/glm-execution.md`18,998 bytes、`glm-packets.md`11,230、`quality-gate-capability.md`5,183、`session-rotation.md`4,185、`execution-permission.md`4,564で約52KB / `ceil(bytes/4)`約13k-token proxyである。加えて再監査で、まだpartialの`glm-auto-resume.md`17,452 bytesと`codex-auto-resume.md`12,056 bytesを確認した。
 
-重複手続きgroupは少なくとも4つある: packet手順(`AGENTS.md` / `glm-execution.md` / `glm-packets.md`)、parent action/permission(`AGENTS.md` / `execution-permission.md`)、quality gate(`AGENTS.md` / `quality-gate-capability.md`)、session rotation(`AGENTS.md` / `session-rotation.md`)。thinningでは目的・machine owner・provenance・残余semantic judgmentを残し、上の`partial` / `prose-only` / `semantic-parent-only` / `external-unenforceable`をmachine-enforced扱いで薄くしない。
+重複procedure groupはpacket(`AGENTS.md` / `glm-execution.md` / `glm-packets.md`)、parent action/permission(`AGENTS.md` / `execution-permission.md`)、quality gate(`AGENTS.md` / `quality-gate-capability.md`)、session rotation(`AGENTS.md` / `session-rotation.md`)、auto-resume(GLM/Codex各instructionとmachine spec/verify)である。#372ではmachine ownerへ移った手続きだけをcompact indexへ縮め、#369/#370/#371/#390/#394/#395/#396やACTIVE automation transactionなど未解決partial/prose-only controlをmachine-enforced扱いで先に薄くしない。
 
 ### Reevaluation boundary
 
-`IMPLEMENTATION_TASKS/post-105-codex-efficiency-reevaluation.md`はこのheadingを先行bounded inventoryとして参照し、その後のcontrol delta、未処理candidate、machine guard違反、locator driftだけを再評価する。全履歴inventoryを再実行しない。machine-enforced controlのcompact registry化と実際のinstruction thinningは、このrecordを入力にする後続の専用mechanization/thinning責務で行い、本auditでは新しいruntime registry/stateを追加しない。
+`IMPLEMENTATION_TASKS/post-105-codex-efficiency-reevaluation.md`はこのheadingを先行bounded inventoryとして参照し、以後はこのbaseline後のcontrol delta、未処理candidate、machine guard違反、locator driftを評価する。新しいparent instruction、new state-changing parent action、new external automation/file mutation boundaryが追加された場合は「既存inventory外だから対象外」とせず、同じthreat modelで分類する。
