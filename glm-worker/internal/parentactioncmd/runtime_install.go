@@ -208,7 +208,16 @@ func verifyInstalledRuntime(cfg config.AppConfig, installedHead, currentHead str
 	return *probe.RuntimeBuild.VCSRevision, nil
 }
 
-func runRuntimeInstallSmoke(cfg config.AppConfig) *finalizationFailure {
+func runRuntimeInstallSmoke(cfg config.AppConfig, st *state.StateStore) *finalizationFailure {
+	taskID, err := st.TaskID()
+	if err != nil {
+		return runtimeInstallFailure(runtimeInstallFailureSmoke, err.Error())
+	}
+	logPath := st.TaskEventLogPath(taskID)
+	offset, err := runtimeInstallEventOffset(logPath)
+	if err != nil {
+		return runtimeInstallFailure(runtimeInstallFailureSmoke, err.Error())
+	}
 	worker, err := resolveGLMWorker()
 	if err != nil {
 		return runtimeInstallFailure(runtimeInstallFailureSmoke, err.Error())
@@ -222,7 +231,46 @@ func runRuntimeInstallSmoke(cfg config.AppConfig) *finalizationFailure {
 	if err := json.Unmarshal(stdout.Bytes(), &probe); err != nil || probe.Status != "executed" || probe.Result != state.ValidationResultPass {
 		return runtimeInstallFailure(runtimeInstallFailureSmoke, "install smoke did not return a pass result")
 	}
+	if err := verifyFreshInstallSmokeEvent(logPath, offset, taskID); err != nil {
+		return runtimeInstallFailure(runtimeInstallFailureSmoke, err.Error())
+	}
 	return nil
+}
+
+func runtimeInstallEventOffset(path string) (int64, error) {
+	info, err := os.Stat(path)
+	if err == nil {
+		return info.Size(), nil
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		return 0, nil
+	}
+	return 0, fmt.Errorf("install smoke validation logを確認できません: %w", err)
+}
+
+func verifyFreshInstallSmokeEvent(path string, offset int64, taskID string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("install smoke validation eventを読めません: %w", err)
+	}
+	if offset < 0 || offset > int64(len(data)) {
+		return fmt.Errorf("install smoke validation log boundaryが不正です")
+	}
+	for _, line := range bytes.Split(data[offset:], []byte{'\n'}) {
+		if len(bytes.TrimSpace(line)) == 0 {
+			continue
+		}
+		record, err := state.ParseTaskEventLine(line)
+		if err != nil {
+			return err
+		}
+		validation := record.Validation
+		if record.TaskID == taskID && validation != nil && validation.Attribution == "task" && validation.Source == "install-smoke" &&
+			validation.Form == "install-smoke" && validation.Scope == "parent" && validation.Result == state.ValidationResultPass {
+			return nil
+		}
+	}
+	return fmt.Errorf("fresh install smoke pass validation eventがありません")
 }
 
 func persistRuntimeInstallCompletion(cfg config.AppConfig, st *state.StateStore, requirement runtimeInstallRequirement) *finalizationFailure {
@@ -240,7 +288,7 @@ func persistRuntimeInstallCompletion(cfg config.AppConfig, st *state.StateStore,
 	if failure != nil {
 		return failure
 	}
-	if failure := runRuntimeInstallSmoke(cfg); failure != nil {
+	if failure := runRuntimeInstallSmoke(cfg, st); failure != nil {
 		return failure
 	}
 	taskID, err := st.TaskID()
