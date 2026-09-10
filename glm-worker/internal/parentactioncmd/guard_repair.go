@@ -9,6 +9,7 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/guardrepair"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repolock"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -26,7 +27,7 @@ type guardRepairCandidate struct {
 func executeResumeWithGuardRepair(cfg config.AppConfig, stdout, stderr io.Writer, extraEnv []string) error {
 	st := state.AttachStateStore(cfg)
 	if record, ok := reusableGuardRepairRecord(cfg, st); ok {
-		return continueGuardRepair(cfg, st, record, stdout, stderr, extraEnv, errors.New(record.Failure))
+		return resumeWithRepairedWorker(cfg, st, record, stdout, stderr, extraEnv, errors.New(record.Failure))
 	}
 
 	initialStdout, initialStderr, initialErr := executeInitialResume(cfg, extraEnv)
@@ -42,7 +43,7 @@ func executeResumeWithGuardRepair(cfg config.AppConfig, stdout, stderr io.Writer
 		copyOutput(stderr, initialStderr)
 		return initialErr
 	}
-	return continueGuardRepair(cfg, st, record, stdout, stderr, extraEnv, initialErr)
+	return resumeWithRepairedWorker(cfg, st, record, stdout, stderr, extraEnv, initialErr)
 }
 
 func executeInitialResume(cfg config.AppConfig, extraEnv []string) (*bytes.Buffer, *bytes.Buffer, error) {
@@ -76,21 +77,6 @@ func reusableGuardRepairRecord(cfg config.AppConfig, st *state.StateStore) (stat
 		return record, record.RepairedDigest != "" && digest == record.RepairedDigest
 	}
 	return record, digest == record.RelevantDigest
-}
-
-func continueGuardRepair(
-	cfg config.AppConfig,
-	st *state.StateStore,
-	record state.GuardRepairRecord,
-	stdout, stderr io.Writer,
-	extraEnv []string,
-	initialErr error,
-) error {
-	record, err := prepareGuardRepairForResume(cfg, st, record)
-	if err != nil {
-		return errors.Join(initialErr, err)
-	}
-	return resumeWithRepairedWorker(cfg, st, record, stdout, stderr, extraEnv, initialErr)
 }
 
 func prepareGuardRepairForResume(cfg config.AppConfig, st *state.StateStore, record state.GuardRepairRecord) (state.GuardRepairRecord, error) {
@@ -141,19 +127,23 @@ func performBoundedGuardRepair(cfg config.AppConfig, st *state.StateStore, recor
 		return record, markGuardRepairFailed(st, record, err)
 	}
 	defer candidate.cleanup()
-	if err := integrateGuardRepairCandidate(cfg, st, record, origin, candidate); err != nil {
+	rollback, err := integrateGuardRepairCandidate(cfg, st, record, origin, candidate)
+	if err != nil {
 		return record, markGuardRepairFailed(st, record, err)
 	}
 	repairedDigest, err := guardrepair.RelevantDigest(cfg.RepoRoot)
 	if err != nil {
-		return record, markGuardRepairFailed(st, record, err)
+		return record, markGuardRepairFailed(st, record, errors.Join(err, rollback()))
 	}
 	if repairedDigest == record.RelevantDigest {
-		return record, markGuardRepairFailed(st, record, fmt.Errorf("guard repair produced no relevant source change"))
+		return record, markGuardRepairFailed(st, record, errors.Join(fmt.Errorf("guard repair produced no relevant source change"), rollback()))
 	}
 	record.Status = state.GuardRepairReady
 	record.RepairedDigest = repairedDigest
-	return record, st.SaveGuardRepairRecord(record)
+	if err := st.SaveGuardRepairRecord(record); err != nil {
+		return record, markGuardRepairFailed(st, record, errors.Join(err, rollback()))
+	}
+	return record, nil
 }
 
 func markGuardRepairRunning(st *state.StateStore, record *state.GuardRepairRecord) error {
@@ -206,23 +196,30 @@ func integrateGuardRepairCandidate(
 	record state.GuardRepairRecord,
 	origin guardRepairOrigin,
 	candidate guardRepairCandidate,
-) error {
+) (func() error, error) {
 	if err := validateOriginalRepairBoundary(cfg, record, origin.boundary); err != nil {
-		return err
+		return nil, err
 	}
-	if err := copyGuardRepairChanges(candidate.worktree, cfg.RepoRoot, candidate.changed); err != nil {
-		return err
+	rollbackFiles, err := copyGuardRepairChangesWithRollback(candidate.worktree, cfg.RepoRoot, candidate.changed)
+	if err != nil {
+		return nil, err
+	}
+	rollback := func() error {
+		return errors.Join(rollbackFiles(), st.SaveResumeCheckpoint(origin.checkpoint))
 	}
 	checkpoint, err := currentGuardRepairCheckpoint(st, record, origin.checkpoint.Phase)
 	if err != nil {
-		return err
+		return nil, errors.Join(err, rollback())
 	}
 	postRepairDirty, err := state.CaptureStopDirtyFiles(cfg.RepoRoot)
 	if err != nil {
-		return err
+		return nil, errors.Join(err, rollback())
 	}
 	checkpoint.StopDirtyFiles = postRepairDirty
-	return st.SaveResumeCheckpoint(checkpoint)
+	if err := st.SaveResumeCheckpoint(checkpoint); err != nil {
+		return nil, errors.Join(err, rollback())
+	}
+	return rollback, nil
 }
 
 func validateOriginalRepairBoundary(cfg config.AppConfig, record state.GuardRepairRecord, original state.GitSnapshot) error {
@@ -301,28 +298,42 @@ func resumeWithRepairedWorker(
 	extraEnv []string,
 	initialErr error,
 ) error {
+	lock, err := repolock.AcquireWait(st.LockPath())
+	if err != nil {
+		return errors.Join(initialErr, err)
+	}
+	record, err = prepareGuardRepairForResume(cfg, st, record)
+	if err != nil {
+		return errors.Join(initialErr, err, lock.Close())
+	}
 	worker, cleanup, err := buildGuardRepairWorker(cfg)
 	if err != nil {
+		failure := markGuardRepairFailed(st, record, errors.Join(initialErr, err))
+		return errors.Join(failure, lock.Close())
+	}
+	if err := lock.Close(); err != nil {
+		cleanup()
 		return markGuardRepairFailed(st, record, errors.Join(initialErr, err))
 	}
 	defer cleanup()
+
 	env := appendEnv(extraEnv, state.GuardRepairParentActionEnv, state.GuardRepairRebuiltResume)
 	resumeErr := runResolvedWorker(worker, cfg.RepoRoot, []string{"--resume"}, nil, stdout, stderr, env)
+	lock, err = repolock.AcquireWait(st.LockPath())
+	if err != nil {
+		return errors.Join(resumeErr, err)
+	}
+	if st.ReadOr("task.id", "") != record.TaskID {
+		return errors.Join(resumeErr, fmt.Errorf("original task changed before guard repair resume completed"), lock.Close())
+	}
 	if st.TaskStatus() == state.TaskStatusGuardRecoverable {
-		failure := fmt.Errorf("repaired worker did not leave guard-recoverable state")
-		return markGuardRepairFailed(st, record, errors.Join(resumeErr, failure))
+		failure := markGuardRepairFailed(st, record, errors.Join(resumeErr, fmt.Errorf("repaired worker did not leave guard-recoverable state")))
+		return errors.Join(failure, lock.Close())
 	}
 	record.Status = state.GuardRepairComplete
 	record.OriginalResumeObserved = true
-	if err := st.SaveGuardRepairRecord(record); err != nil {
-		return errors.Join(resumeErr, err)
-	}
-	return resumeErr
-}
-
-func sameGuardRepairRecord(a, b state.GuardRepairRecord) bool {
-	return a.TaskID == b.TaskID && a.Fingerprint == b.Fingerprint && a.Strategy == b.Strategy &&
-		a.RelevantDigest == b.RelevantDigest && a.UpdatedAt.Equal(b.UpdatedAt)
+	saveErr := st.SaveGuardRepairRecord(record)
+	return errors.Join(resumeErr, saveErr, lock.Close())
 }
 
 func appendEnv(env []string, key, value string) []string {
