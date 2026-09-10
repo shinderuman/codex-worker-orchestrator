@@ -146,6 +146,7 @@ func (w *Workflow) nextResultCorrectionCheckpoint(checkpoint state.ResumeCheckpo
 	checkpoint.Prompt = prompt
 	checkpoint.OriginalPrompt = prompt
 	checkpoint.ResultCorrection = true
+	checkpoint.ReadOnly = true
 	w.pendingRetry = &callRetryContext{callID: w.lastCallID, reason: "invalid-packet-result-correction"}
 	return checkpoint
 }
