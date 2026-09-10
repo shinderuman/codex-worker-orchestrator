@@ -17,6 +17,9 @@ func admitParentCommand(cmd Command, st *state.StateStore) error {
 		if resume {
 			return nil
 		}
+		if st.TaskStatus() == state.TaskStatusActive {
+			return &workflow.WorkerError{Message: "previous task is still active; run glm-worker --reset before starting a new task"}
+		}
 		plan, admitted, err := st.AdmitNewTask()
 		if err != nil {
 			return &workflow.WorkerError{Message: err.Error()}

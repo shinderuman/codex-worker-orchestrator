@@ -150,6 +150,11 @@ func TestMultiRepositoryProcessIsolation(t *testing.T) {
 	if probe := ProbeRepoLock(filepath.Join(stateA, "lock")); probe.State != LockFree {
 		t.Fatalf("repo A process終了後にlockが解放されていません: %s", probe.State)
 	}
+	resetLost := env.run(t, env.repoA, "--reset")
+	if resetLost.code != 0 || !strings.Contains(resetLost.stdout, `"status":"reset"`) {
+		t.Fatalf("repo A owner-lost taskのresetが失敗しました: code=%d stdout=%s stderr=%s", resetLost.code, resetLost.stdout, resetLost.stderr)
+	}
+	assertStateDirUnchanged(t, stateB, snapshotB)
 
 	env.setStubMode(t, env.stubA, "ratelimit")
 	rateLimited := env.run(t, env.repoA, "repo A second task after recovery marker MRISOA2")
