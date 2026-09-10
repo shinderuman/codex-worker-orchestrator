@@ -39,6 +39,7 @@ const (
 	errorKindInstallSmokeFailed        = "install_smoke_failed"
 	errorKindQualityGateFailed         = "quality_gate_failed"
 	errorKindQualityPreflightFailed    = "quality_preflight_failed"
+	errorKindRepositoryHarnessFailed   = "repository_harness_failed"
 	errorKindMachineOutputViolation    = "machine_output_violation"
 	errorKindDuplicateParentProjection = "duplicate_parent_projection"
 	errorKindInternal                  = "internal"
@@ -166,6 +167,7 @@ func buildPostRunProcessError(err error) (processErrorBody, bool) {
 	var smokeFail *InstallSmokeError
 	var qualityGateFail *QualityGateError
 	var qualityPreflightFail *QualityPreflightError
+	var repositoryHarnessFail *RepositoryHarnessPreflightError
 
 	switch {
 	case errors.As(err, &verification):
@@ -194,6 +196,12 @@ func buildPostRunProcessError(err error) (processErrorBody, bool) {
 			Message: qualityPreflightFail.Error(),
 			Detail:  qualityPreflightFailDetail(qualityPreflightFail),
 		}, true
+	case errors.As(err, &repositoryHarnessFail):
+		return processErrorBody{
+			Kind:    errorKindRepositoryHarnessFailed,
+			Message: repositoryHarnessFail.Error(),
+			Detail:  repositoryHarnessFailDetail(repositoryHarnessFail),
+		}, true
 	default:
 		return processErrorBody{}, false
 	}
@@ -212,6 +220,17 @@ func qualityGateRecoverableProcessError(err *workflow.QualityGateRecoverableErro
 			"completed_result_saved": err.ResultSaved,
 		},
 	}
+}
+
+func repositoryHarnessFailDetail(err *RepositoryHarnessPreflightError) map[string]any {
+	detail := map[string]any{
+		"reason":      err.Reason,
+		"model_calls": 0,
+	}
+	if err.Cause != nil {
+		detail["cause"] = err.Cause.Error()
+	}
+	return detail
 }
 
 func qualityPreflightFailDetail(err *QualityPreflightError) map[string]any {
