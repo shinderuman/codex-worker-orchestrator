@@ -1,0 +1,63 @@
+name: Web GPT 377 Fix Validate
+on:
+  push:
+    branches: [web-gpt/377-architecture-responsibility-audit]
+permissions:
+  contents: write
+jobs:
+  validate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Fix moved imports and remove temporary workflow
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('glm-worker/internal/workflow/model_call.go')
+          s=p.read_text().replace('\t"fmt"\n', '\t"fmt"\n\t"os"\n', 1)
+          p.write_text(s)
+          p=Path('glm-worker/internal/workflow/workflow.go')
+          s=p.read_text()
+          for imp in ['\t"crypto/sha256"\n','\t"encoding/hex"\n','\t"errors"\n','\t"path/filepath"\n','\t"strings"\n']:
+              s=s.replace(imp,'',1)
+          p.write_text(s)
+          PY
+          gofmt -w glm-worker/internal/workflow/model_call.go glm-worker/internal/workflow/workflow.go
+          rm -f .github/workflows/web-gpt-377-fix-validate.yml
+          git diff --check
+          git config user.name web-gpt
+          git config user.email web-gpt@users.noreply.github.com
+          git add -A
+          git commit -m 'Fix workflow responsibility split imports'
+          git push
+      - name: Read quality tool contract
+        id: quality-tools
+        run: |
+          GO_VERSION=$(awk -F': ' '$1 == "go" { print $2 }' quality-tools.yml)
+          printf 'go_version=%s\n' "$GO_VERSION" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ steps.quality-tools.outputs.go_version }}
+          cache: false
+      - name: Install quality tools
+        run: |
+          quality_bin="$(go env GOPATH)/bin"
+          QUALITY_TOOLS_BIN_DIR="$quality_bin" ./install-quality-tools.sh
+          printf '%s\n' "$quality_bin" >> "$GITHUB_PATH"
+      - name: Targeted architecture tests
+        working-directory: glm-worker
+        run: go test ./internal/app ./internal/workflow
+      - name: Repository lint gate
+        run: ./harnesslint
+      - name: Full Go test suite
+        working-directory: glm-worker
+        run: go test ./...
+      - name: Full Go vet
+        working-directory: glm-worker
+        run: go vet ./...
+      - name: Full Go build
+        working-directory: glm-worker
+        run: go build ./...
