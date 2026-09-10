@@ -12,6 +12,7 @@ import (
 	"syscall"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repolock"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
@@ -32,7 +33,14 @@ func executeInstall(cfg config.AppConfig, args []string, stdout, stderr io.Write
 	if len(args) != 1 {
 		return fmt.Errorf("usage: glm-parent-action install")
 	}
-	plan, err := state.AttachStateStore(cfg).ParentActionPlan()
+	st := state.AttachStateStore(cfg)
+	lock, err := repolock.Acquire(st.LockPath())
+	if err != nil {
+		return err
+	}
+	defer func() { _ = lock.Close() }()
+
+	plan, err := st.ParentActionPlan()
 	if err != nil {
 		return err
 	}
