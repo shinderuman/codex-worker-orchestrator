@@ -1,10 +1,9 @@
 package app
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"os"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/guardrepair"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
@@ -13,12 +12,13 @@ import (
 const guardRepairFailureLimit = 4096
 
 type guardRepairRequestRunner struct {
-	base  workflow.ModelRunner
-	state *state.StateStore
+	base     workflow.ModelRunner
+	state    *state.StateStore
+	repoRoot string
 }
 
-func newGuardRepairRequestRunner(base workflow.ModelRunner, st *state.StateStore) workflow.ModelRunner {
-	return &guardRepairRequestRunner{base: base, state: st}
+func newGuardRepairRequestRunner(base workflow.ModelRunner, st *state.StateStore, repoRoot string) workflow.ModelRunner {
+	return &guardRepairRequestRunner{base: base, state: st, repoRoot: repoRoot}
 }
 
 func (r *guardRepairRequestRunner) Run(
@@ -50,13 +50,9 @@ func (r *guardRepairRequestRunner) recordRequest(phase string, failure error) {
 	if len(text) > guardRepairFailureLimit {
 		text = text[:guardRepairFailureLimit]
 	}
-	sum := sha256.Sum256([]byte(taskID + "\x00" + phase + "\x00" + text))
-	_ = r.state.RequestGuardRepair(state.GuardRepairRecord{
-		TaskID:      taskID,
-		Phase:       phase,
-		Fingerprint: hex.EncodeToString(sum[:]),
-		Strategy:    state.GuardRepairStrategySourcePatch,
-		Status:      state.GuardRepairRequested,
-		Failure:     text,
-	})
+	record, err := guardrepair.NewRecord(r.repoRoot, taskID, phase, text)
+	if err != nil {
+		return
+	}
+	_ = r.state.RequestGuardRepair(record)
 }
