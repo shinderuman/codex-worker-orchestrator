@@ -137,11 +137,80 @@ func TestParentWaitLeaseRejectsDuplicateModelRunningOwner(t *testing.T) {
 	}
 }
 
+func TestExecuteStartOwnsParentWaitLeaseUntilWorkerTerminal(t *testing.T) {
+	cfg, st := newParentActionTestState(t)
+	entered := filepath.Join(t.TempDir(), "worker-entered")
+	release := filepath.Join(t.TempDir(), "worker-release")
+	writeBlockingParentActionWorkerStub(t, entered, release)
+
+	var stdout, stderr bytes.Buffer
+	done := make(chan error, 1)
+	go func() { done <- execute(cfg, []string{"start"}, &stdout, &stderr) }()
+	waitForFile(t, entered)
+
+	lock, err := repolock.Acquire(st.Path(parentWaitLockFile))
+	if !errors.Is(err, repolock.ErrRepoLockHeld) {
+		if lock != nil {
+			_ = lock.Close()
+		}
+		t.Fatalf("production start did not retain parent wait lease: %v", err)
+	}
+	if err := os.WriteFile(release, []byte("release\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("production start did not return after worker terminal")
+	}
+
+	lock, err = repolock.Acquire(st.Path(parentWaitLockFile))
+	if err != nil {
+		t.Fatalf("parent wait lease remained held after worker terminal: %v", err)
+	}
+	if err := lock.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestParentWaitRejectsExtraArguments(t *testing.T) {
 	cfg, _ := newParentActionTestState(t)
 	if err := executeParentWait(cfg, []string{"wait", "extra"}, &bytes.Buffer{}, &bytes.Buffer{}); err == nil {
 		t.Fatal("extra wait argument was accepted")
 	}
+}
+
+func writeBlockingParentActionWorkerStub(t *testing.T, entered, release string) {
+	t.Helper()
+	bin := t.TempDir()
+	script := `#!/bin/sh
+set -eu
+touch "$GLM_WAIT_ENTERED"
+while [ ! -f "$GLM_WAIT_RELEASE" ]; do
+  sleep 0.01
+done
+`
+	if err := os.WriteFile(filepath.Join(bin, "glm-worker"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("GLM_WAIT_ENTERED", entered)
+	t.Setenv("GLM_WAIT_RELEASE", release)
+}
+
+func waitForFile(t *testing.T, path string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(path); err == nil {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for %s", path)
 }
 
 func writeParentWaitWorkerStub(t *testing.T) {
