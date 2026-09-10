@@ -23,7 +23,7 @@ conversation context、compaction summary、internal TODOはsource of truthで�
 - 各taskの`Original instruction`はimmutableなlossless requirement sourceとし、契機となったユーザー/親Codexのtask該当指示を可能な限り原文のまま保存する。要約、重複除去、理由の省略、実装TODOだけへの圧縮、「意味は同じ」という書換えを禁止する
 - 追加要求は旧本文を上書き・削除せず、日時または順序と原文を`Amendments`へappend-onlyで追記する。新旧要求が矛盾する場合も両方を保持し、最新Amendmentによるoverrideをderived `Contract`へ明示する
 - 「これ」「さっきの」「前のreview」等の会話依存参照はOriginal instructionを書き換えず、当時の解決結果を`Resolved references`へ分離して具体化する
-- task fileへ進捗日記を追加せず、requirement contractと最小の`Current boundary`だけを保持する。長い診断とruntime/model evidenceはartifact / bundle / telemetry、ordinary completionのcommit・diff・validation・install evidenceはGit / CI / bundleを正とし、Historyへ複製しない
+- task fileへ進捗日記、current schedule/status/branch/HEAD/dirty state、ordinary completion evidenceのsnapshotを追加しない。長い診断とruntime/model evidenceはartifact / bundle / telemetry、ordinary completionのcommit・diff・validation・install evidenceはGit / CI / bundleを正とし、Historyへ複製しない
 
 ## lossless sourceとderived contract
 
@@ -32,6 +32,15 @@ conversation context、compaction summary、internal TODOはsource of truthで�
 - 長い指示を複数taskへ分割する場合、各taskの要求・理由・禁止事項・完了条件を理解するために必要な原文sectionをlosslessに保存する。共通前提を暗黙依存にせず、必要部分を含めるかtrackedな共通sourceを明示参照する
 - derived sectionへOriginal instruction全文を複製せず、compactな作業・review indexとして維持する
 - RULES変更が既存taskへretroactiveに影響する場合はmigration要否を判定し、矛盾するtask metadataを更新して同じcontractで実行可能なことを確認してから完了する
+
+## Markdown authority
+
+- tracked Markdownは規範contract、不変の設計根拠、lossless requirement、canonical schedule/decisionだけを保持する。Git/state/telemetry/generated artifactから再取得できるcurrent valueやordinary chronologyを手動複製しない
+- task scheduleとpriorityはPlan、runtime lifecycleはstate/live projection、branch/HEAD/dirty stateとordinary completionはGit/CI/bundleを正とする。task fileへ`Current boundary`を設けない
+- `Review findings`は実際に未解決findingがある場合だけtask fileへ置く。未解決findingがない状態はsection欠落を正とし、`none`という可変negative snapshotを維持しない
+- READMEは利用者向け入口とcanonical locatorを示し、tool version、command inventory、state transition、schema version等の変更可能なcurrent実装一覧を第二正本として保持しない
+- repository sourceから導出した値をMarkdownへ残す必要がある場合だけdeterministic generatorを唯一の更新経路にし、canonical inputとのexact一致をmachine gateで検証する。生成値を残さない場合はgenerator/state mirrorを追加しない
+- machine gateはsection禁止、参照閉包、schedule closure、generated source/output一致等の決定可能な性質だけを扱い、任意の自然言語とcurrent実装の意味的一致を保証したことにしない
 
 ## parent maintenance
 
@@ -65,7 +74,7 @@ parent-managed metadataを扱うguard、self-protection、production wiring自�
 
 ## task file必須構造
 
-全task fileは最低限、lossless sourceである`Original instruction`、append-onlyの`Amendments`、必要時の`Resolved references`、derived informationである`Purpose`、`Contract`、`Must not`、`Acceptance criteria`、および`Historical invariants`、`Dependencies`、未解決時の`Review findings`、`Current boundary`を持つ。schedule stateはPlanだけを正とし、task fileへ`Status`を持たせない。Goal modeで成功済みdependency edgeを保持する必要があるtaskだけはoptional `Fulfilled dependencies`を持てる。欠落はfulfilledなしとして扱う。
+全task fileは最低限、lossless sourceである`Original instruction`、append-onlyの`Amendments`、必要時の`Resolved references`、derived informationである`Purpose`、`Contract`、`Must not`、`Acceptance criteria`、および`Historical invariants`、`Dependencies`を持つ。未解決findingがある場合だけ`Review findings`を追加する。schedule stateはPlanだけを正とし、task fileへ`Status`や`Current boundary`を持たせない。Goal modeで成功済みdependency edgeを保持する必要があるtaskだけはoptional `Fulfilled dependencies`を持てる。欠落はfulfilledなしとして扱う。
 
 ## task filename
 
