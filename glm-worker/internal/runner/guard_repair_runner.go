@@ -50,10 +50,6 @@ func (r *GuardRepairRunner) Run(
 	return result, runErr
 }
 
-func (r *GuardRepairRunner) Probe(model string) (ProbeResult, error) {
-	return r.base.Probe(model)
-}
-
 func prepareGuardRepairGitEnforcement(repoRoot string) (*gitAuthorityGuard, error) {
 	realGit, err := exec.LookPath("git")
 	if err != nil {
