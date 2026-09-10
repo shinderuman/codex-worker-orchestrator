@@ -14,13 +14,13 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 - `IMPLEMENTATION_TASKS/codex-efficiency-control-loop-checkpoint.md`
 - `IMPLEMENTATION_TASKS/task-stats-revision-consumer-audit.md`
+- `IMPLEMENTATION_TASKS/configurable-peak-pause-windows.md`
 - `IMPLEMENTATION_TASKS/post-105-codex-efficiency-reevaluation.md`
 - `IMPLEMENTATION_TASKS/022-final-verification.md`
 
 ## BLOCKED / USER_PERMISSION_WAIT
 
 - `IMPLEMENTATION_TASKS/user-requirement-ingress-binding.md`
-- `IMPLEMENTATION_TASKS/configurable-peak-pause-windows.md`
 - `IMPLEMENTATION_TASKS/claude-cli-runtime-preflight-reevaluation.md`
 - `IMPLEMENTATION_TASKS/101-live-sol-ab.md`
 - `IMPLEMENTATION_TASKS/102-model-routing-redesign.md`
