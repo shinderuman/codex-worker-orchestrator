@@ -36,5 +36,3 @@ jobs:
       - name: Full Go test suite
         working-directory: glm-worker
         run: go test ./...
-
-# validation revision 3
