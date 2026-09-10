@@ -172,21 +172,7 @@ func (s *StateStore) startNewTaskWithID(taskID string, resume bool) (string, err
 	if err := s.InvalidateAllSessions(); err != nil {
 		return "", err
 	}
-	if err := s.Remove(
-		"task.status",
-		parentCodexIdentityFile,
-		"isolation.policy",
-		"baseline-head",
-		ExecutionMilestonesStateFile,
-		stopWorktreePatchFile,
-		stopIndexPatchFile,
-		isolationStateFile,
-		workerEndSnapshotFile,
-		reviewStartSnapshotFile,
-		reportOnlyStartSnapshotFile,
-		snapshotComparisonFile,
-		guardRepairStateFile,
-	); err != nil {
+	if err := s.Remove(newTaskTransitionStateFileNames()...); err != nil {
 		return "", err
 	}
 	if err := s.RotateParentEvidenceLease(); err != nil {
@@ -204,17 +190,11 @@ func (s *StateStore) startNewTaskWithID(taskID string, resume bool) (string, err
 	return taskID, nil
 }
 
-func taskStateFileNames() []string {
+func newTaskTransitionStateFileNames() []string {
 	return []string{
-		"task.id",
-		"worker.id",
-		"worker.ready",
-		"reviewer.id",
-		"reviewer.ready",
 		"task.status",
 		parentCodexIdentityFile,
 		"isolation.policy",
-
 		"active-task",
 		"last-request",
 		"last-decision",
@@ -229,7 +209,6 @@ func taskStateFileNames() []string {
 		stopWorktreePatchFile,
 		stopIndexPatchFile,
 		isolationStateFile,
-		isolationOriginStateFile,
 		resumeStateFile,
 		workerEndSnapshotFile,
 		reviewStartSnapshotFile,
@@ -237,6 +216,18 @@ func taskStateFileNames() []string {
 		snapshotComparisonFile,
 		guardRepairStateFile,
 	}
+}
+
+func taskStateFileNames() []string {
+	names := []string{
+		"task.id",
+		"worker.id",
+		"worker.ready",
+		"reviewer.id",
+		"reviewer.ready",
+		isolationOriginStateFile,
+	}
+	return append(names, newTaskTransitionStateFileNames()...)
 }
 
 func (s *StateStore) TaskID() (string, error) {

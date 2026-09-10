@@ -15,14 +15,6 @@ type instructionBaselineRotationOutput struct {
 	CurrentDigest  string `json:"current_digest"`
 }
 
-const modeRotateInstructionBaseline CommandMode = 100
-
-func init() {
-	commandParsers["--rotate-instruction-baseline"] = func(args []string) (Command, error) {
-		return singleArgCommand(args, modeRotateInstructionBaseline, "usage: glm-worker --rotate-instruction-baseline")
-	}
-}
-
 func rotateInstructionBaseline(cfg config.AppConfig, st *state.StateStore, stdout io.Writer) error {
 	if st.TaskStatus() != state.TaskStatusWaitingDecision || !st.Exists("pending-decision") {
 		return fmt.Errorf("instruction baseline rotation is only available while the active task is waiting for a Sol decision")

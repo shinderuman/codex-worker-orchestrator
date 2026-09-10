@@ -14,15 +14,7 @@ type parentActionRecoveryOutput struct {
 	TaskStatus string `json:"task_status"`
 }
 
-const modeRecoverParentAction CommandMode = 101
-
 const modelCallOutcomeError = "error"
-
-func init() {
-	commandParsers["--recover-parent-action"] = func(args []string) (Command, error) {
-		return singleArgCommand(args, modeRecoverParentAction, "usage: glm-worker --recover-parent-action")
-	}
-}
 
 func recoverInterruptedParentAction(st *state.StateStore, stdout io.Writer) error {
 	taskID, err := st.TaskID()
