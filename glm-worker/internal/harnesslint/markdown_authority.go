@@ -2,8 +2,6 @@ package harnesslint
 
 import (
 	"bytes"
-	"fmt"
-	"path/filepath"
 	"regexp"
 	"strings"
 )
@@ -129,12 +127,4 @@ func markdownSectionBody(data []byte, heading string) string {
 		}
 	}
 	return strings.TrimSpace(strings.Join(body, "\n"))
-}
-
-func markdownAuthorityFixturePath(root, path string) string {
-	return filepath.Join(root, filepath.FromSlash(path))
-}
-
-func markdownAuthorityDiagnostic(path string, line int) string {
-	return fmt.Sprintf("%s:%d", path, line)
 }
