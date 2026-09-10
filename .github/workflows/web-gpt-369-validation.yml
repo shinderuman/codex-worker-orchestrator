@@ -14,7 +14,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Apply fixture repairs
-        if: "${{ github.event.head_commit.message == 'ci: run #369 fixture repairs' }}"
+        if: "${{ github.event.head_commit.message == 'ci: apply runtime fixture basics' }}"
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -33,24 +33,12 @@ jobs:
           new = '[]byte("#!/bin/sh\\n# baseline install fixture\\nexit 0\\n"), 0o755)'
           if text.count(old) < 1:
               raise SystemExit('install baseline fixture not found')
-          text = text.replace(old, new, 1)
-          old = '''t.Run("guard rejected", func(t *testing.T) {
-              cfg, st := newInstallActionRepo(t)
-              if err := st.SetTaskStatus(state.TaskStatusAwaitingParentCompletion); err != nil {'''
-          new = '''t.Run("guard rejected", func(t *testing.T) {
-              cfg, st := newInstallActionRepo(t)
-              if err := os.Remove(filepath.Join(cfg.RepoRoot, installScriptName)); err != nil {
-                  t.Fatal(err)
-              }
-              if err := st.SetTaskStatus(state.TaskStatusAwaitingParentCompletion); err != nil {'''
-          if text.count(old) != 1:
-              raise SystemExit(f'guard fixture match count: {text.count(old)}')
           install.write_text(text.replace(old, new, 1))
           PY
           git config user.name shinderuman
           git config user.email shinderuman@gmail.com
           git add glm-worker/internal/parentactioncmd/parentactioncmd_test.go glm-worker/internal/parentactioncmd/install_test.go
-          git commit -m 'test: repair runtime install fixtures'
+          git commit -m 'test: repair runtime install fixture basics'
           git push origin HEAD:web-gpt/369-runtime-install-completion
       - name: Read quality tool contract
         id: quality-tools
