@@ -1,0 +1,29 @@
+name: Web GPT 370 Run Patch
+
+on:
+  push:
+    branches:
+      - web-gpt/370-parent-wait-runtime-enforcement
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.head_commit.message == 'ci: execute parent wait patch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Recover and execute patch payload
+        shell: bash
+        run: |
+          sed -n "/python3 <<'PY'/,/^          PY$/p" .github/workflows/web-gpt-370-patch.yml | sed '1d;$d;s/^          //' >/tmp/patch.py
+          python3 /tmp/patch.py
+          gofmt -w glm-worker/internal/parentactioncmd/parentactioncmd.go glm-worker/internal/parentactioncmd/parent_wait.go glm-worker/internal/parentactioncmd/parent_wait_test.go glm-worker/internal/harnesslint/glm_wait_instruction_test.go
+          git config user.name shinderuman
+          git config user.email shinderuman@gmail.com
+          git add glm-worker/internal/parentactioncmd/parentactioncmd.go glm-worker/internal/parentactioncmd/parent_wait.go glm-worker/internal/parentactioncmd/parent_wait_test.go glm-worker/internal/harnesslint/glm_wait_instruction_test.go codex/instructions/glm-execution.md
+          git commit -m 'feat: bind parent waiting to runtime owner lease'
+          git push origin HEAD:web-gpt/370-parent-wait-runtime-enforcement
