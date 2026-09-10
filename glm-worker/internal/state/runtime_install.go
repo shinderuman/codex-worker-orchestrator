@@ -6,11 +6,6 @@ import (
 	"os"
 )
 
-const (
-	runtimeInstallEvidenceFile    = "runtime-install-evidence.json"
-	runtimeInstallEvidenceVersion = 1
-)
-
 type RuntimeInstallEvidence struct {
 	Version           int    `json:"version"`
 	TaskID            string `json:"task_id"`
@@ -19,6 +14,11 @@ type RuntimeInstallEvidence struct {
 	InstalledRevision string `json:"installed_revision"`
 	SmokeResult       string `json:"smoke_result"`
 }
+
+const (
+	runtimeInstallEvidenceFile    = "runtime-install-evidence.json"
+	runtimeInstallEvidenceVersion = 1
+)
 
 func (s *StateStore) SaveRuntimeInstallEvidence(evidence RuntimeInstallEvidence) error {
 	if err := validateRuntimeInstallEvidence(evidence); err != nil {
