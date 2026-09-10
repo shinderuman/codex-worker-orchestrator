@@ -19,7 +19,7 @@ func newInstallActionRepo(t *testing.T) (config.AppConfig, *state.StateStore) {
 	cfg, st := newParentActionTestState(t)
 	initInstallActionGitRepo(t, cfg.RepoRoot)
 	writeRepositoryHarnessMarker(t, cfg.RepoRoot)
-	if err := os.WriteFile(filepath.Join(cfg.RepoRoot, installScriptName), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(cfg.RepoRoot, installScriptName), []byte("#!/bin/sh\n# baseline install fixture\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if output, err := exec.Command("git", "-C", cfg.RepoRoot, "add", "-A").CombinedOutput(); err != nil {

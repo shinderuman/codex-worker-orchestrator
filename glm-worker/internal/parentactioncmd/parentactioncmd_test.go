@@ -320,7 +320,7 @@ func newParentActionTestState(t *testing.T) (config.AppConfig, *state.StateStore
 	cfg := config.AppConfig{
 		RepoRoot:  root,
 		RepoHash:  strings.Repeat("a", 64),
-		StateBase: filepath.Join(root, "sessions"),
+		StateBase: filepath.Join(t.TempDir(), "sessions"),
 	}
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
