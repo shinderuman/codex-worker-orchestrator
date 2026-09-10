@@ -1,19 +1,18 @@
 package harnesslint
 
 import (
-	"bytes"
 	"regexp"
 	"strings"
 )
-
-const markdownDerivedStateRule = "markdown-derived-state"
-
-var readmePinnedVersionPattern = regexp.MustCompile(`(?m)^- (?:Go|golangci-lint|shellcheck|shfmt)\s+[^\n]*\d+\.\d+`)
 
 type markdownFence struct {
 	marker byte
 	width  int
 }
+
+const markdownDerivedStateRule = "markdown-derived-state"
+
+var readmePinnedVersionPattern = regexp.MustCompile(`^- (?:Go|golangci-lint|shellcheck|shfmt)\s+[^\n]*\d+\.\d+`)
 
 func markdownDerivedStateViolations(root string, paths []string) ([]Violation, error) {
 	var violations []Violation
@@ -36,34 +35,64 @@ func markdownDerivedStatePathViolations(root, path string) ([]Violation, error) 
 		return nil, err
 	}
 	headings := markdownLevelTwoHeadings(data)
-	var violations []Violation
-
 	switch {
 	case path == "IMPLEMENTATION_PLAN.local.md":
-		for _, heading := range []string{"現在のGit境界", "現在の停止理由", "次の親Codex操作"} {
-			if line, ok := headings[heading]; ok {
-				violations = append(violations, markdownDerivedViolation(path, line, "Plan must not duplicate live Git or transition state in a handwritten section"))
-			}
-		}
+		return markdownPlanDerivedStateViolations(path, headings), nil
 	case strings.HasPrefix(path, "IMPLEMENTATION_TASKS/"):
-		if line, ok := headings["Current boundary"]; ok {
-			violations = append(violations, markdownDerivedViolation(path, line, "task schedule/current state belongs to the Plan or runtime state, not a handwritten Current boundary"))
-		}
-		if line, ok := headings["Review findings"]; ok && markdownSectionBody(data, "Review findings") == "none" {
-			violations = append(violations, markdownDerivedViolation(path, line, "omit Review findings when there are no unresolved findings"))
-		}
+		return markdownTaskDerivedStateViolations(path, data, headings), nil
 	case path == "README.md":
-		for _, heading := range []string{"CLI", "Lifecycle / parent action", "Evidence bundle / State"} {
-			if line, ok := headings[heading]; ok {
-				violations = append(violations, markdownDerivedViolation(path, line, "README must point to live CLI/source authority instead of mirroring mutable implementation inventory"))
-			}
-		}
-		if match := readmePinnedVersionPattern.FindIndex(data); match != nil {
-			line := bytes.Count(data[:match[0]], []byte("\n")) + 1
-			violations = append(violations, markdownDerivedViolation(path, line, "README must point to quality-tools.yml instead of pinning tool versions"))
+		return markdownReadmeDerivedStateViolations(path, data, headings), nil
+	default:
+		return nil, nil
+	}
+}
+
+func markdownPlanDerivedStateViolations(path string, headings map[string]int) []Violation {
+	var violations []Violation
+	for _, heading := range []string{"現在のGit境界", "現在の停止理由", "次の親Codex操作"} {
+		if line, ok := headings[heading]; ok {
+			violations = append(violations, markdownDerivedViolation(path, line, "Plan must not duplicate live Git or transition state in a handwritten section"))
 		}
 	}
-	return violations, nil
+	return violations
+}
+
+func markdownTaskDerivedStateViolations(path string, data []byte, headings map[string]int) []Violation {
+	var violations []Violation
+	if line, ok := headings["Current boundary"]; ok {
+		violations = append(violations, markdownDerivedViolation(path, line, "task schedule/current state belongs to the Plan or runtime state, not a handwritten Current boundary"))
+	}
+	if line, ok := headings["Review findings"]; ok && markdownSectionBody(data, "Review findings") == "none" {
+		violations = append(violations, markdownDerivedViolation(path, line, "omit Review findings when there are no unresolved findings"))
+	}
+	return violations
+}
+
+func markdownReadmeDerivedStateViolations(path string, data []byte, headings map[string]int) []Violation {
+	var violations []Violation
+	for _, heading := range []string{"CLI", "Lifecycle / parent action", "Evidence bundle / State"} {
+		if line, ok := headings[heading]; ok {
+			violations = append(violations, markdownDerivedViolation(path, line, "README must point to live CLI/source authority instead of mirroring mutable implementation inventory"))
+		}
+	}
+	if line := markdownPinnedVersionLine(data); line > 0 {
+		violations = append(violations, markdownDerivedViolation(path, line, "README must point to quality-tools.yml instead of pinning tool versions"))
+	}
+	return violations
+}
+
+func markdownPinnedVersionLine(data []byte) int {
+	var fence markdownFence
+	for index, raw := range strings.Split(string(data), "\n") {
+		line := strings.TrimSpace(raw)
+		if updateMarkdownFence(line, &fence) || fence.width != 0 {
+			continue
+		}
+		if readmePinnedVersionPattern.MatchString(line) {
+			return index + 1
+		}
+	}
+	return 0
 }
 
 func markdownDerivedViolation(path string, line int, message string) Violation {
@@ -99,8 +128,7 @@ func updateMarkdownFence(line string, fence *markdownFence) bool {
 	if marker != fence.marker || width < fence.width {
 		return false
 	}
-	rest := strings.TrimSpace(line[width:])
-	if rest != "" {
+	if strings.TrimSpace(line[width:]) != "" {
 		return false
 	}
 	*fence = markdownFence{}
