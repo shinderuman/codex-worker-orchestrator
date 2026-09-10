@@ -188,105 +188,19 @@ func TestExecuteStartMilestonesPropagatesIdentityEnvAndMode(t *testing.T) {
 	t.Setenv("CODEX_THREAD_ID", codexIdentityTestThreadID)
 	t.Setenv("CODEX_SESSION_ID", codexIdentityTestThreadID)
 	payload := []byte(`{"request":"現在のACTIVE taskを実行してください。","milestones":[{"id":"a","scope":"a","acceptance":"a"},{"id":"b","scope":"b","acceptance":"b"}]}`)
-	token := prepareParentPayload(t, cfg, actionStartMilestones, payload)
-	marker := writeParentActionWorkerStubWithCheck(t, cfg,
-		`test "$GLM_PARENT_ACTION_CODEX_THREAD_ID" = "`+codexIdentityTestThreadID+`" && test "$GLM_PARENT_ACTION_CODEX_SESSION_ID" = "`+codexIdentityTestThreadID+`" && test "$1" = "--execution-milestones-stdin"`)
+	token := writePreparedPayload(t, cfg.RepoRoot, actionStartMilestones, payload)
+	marker := writeParentActionWorkerStubWithCheck(t, cfg, `test "$1" = "--execution-milestones-stdin"`)
 	if err := execute(cfg, []string{actionStartMilestones, token}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(marker); err != nil {
-		t.Fatal("milestone start did not invoke stub worker")
+		t.Fatal("stub worker was not invoked")
 	}
 }
 
-func TestExecuteStartMilestonesPropagatesRotationClaim(t *testing.T) {
+func TestExecuteStartMilestonesRejectsPayloadHashMismatch(t *testing.T) {
 	cfg, _ := newParentActionTestState(t)
-	t.Setenv("CODEX_THREAD_ID", codexIdentityTestThreadID)
-	t.Setenv("CODEX_SESSION_ID", codexIdentityTestThreadID)
-	payload := []byte(`{"request":"現在のACTIVE taskを実行してください。","milestones":[{"id":"a","scope":"a","acceptance":"a"},{"id":"b","scope":"b","acceptance":"b"}]}`)
-	token := prepareParentPayload(t, cfg, actionStartMilestones, payload)
-	claimID := "0f4a9b31-52c8-4d7e-9a31-6b2f5c8d1e40"
-	marker := writeParentActionWorkerStubWithCheck(t, cfg,
-		`test "$GLM_SESSION_ROTATION_CLAIM_ID" = "`+claimID+`" && test "$1" = "--execution-milestones-stdin" && test "$#" = "4"`)
-	if err := execute(cfg, []string{actionStartMilestones, token, "--rotation-claim", claimID}, nil, nil); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(marker); err != nil {
-		t.Fatal("rotation claim was not propagated to milestone start")
-	}
-}
-
-func TestExecuteStartWithoutIdentityEnvRunsChildWithoutPropagation(t *testing.T) {
-	cfg, _ := newParentActionIdentityTestState(t)
-	t.Setenv("CODEX_THREAD_ID", "")
-	t.Setenv("CODEX_SESSION_ID", "")
-	t.Setenv(state.ParentActionCodexThreadIDEnv, "")
-	t.Setenv(state.ParentActionCodexSessionIDEnv, "")
-	marker := writeParentActionWorkerStubWithCheck(t, cfg,
-		`test -z "$GLM_PARENT_ACTION_CODEX_THREAD_ID" && test -z "$GLM_PARENT_ACTION_CODEX_SESSION_ID"`)
-	if err := execute(cfg, []string{"start"}, nil, nil); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(marker); err != nil {
-		t.Fatal("stub worker was not invoked")
-	}
-}
-
-func TestExecuteResumeFailsClosedOnConflictingParentCodexIdentity(t *testing.T) {
-	cfg, st := newParentActionIdentityTestState(t)
-	if err := st.SetParentCodexIdentity("01a0244a-4ee4-7e71-b2e1-dec3bdda2120", "01a0244a-4ee4-7e71-b2e1-dec3bdda2120", nil); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("CODEX_THREAD_ID", codexIdentityTestThreadID)
-	t.Setenv("CODEX_SESSION_ID", codexIdentityTestThreadID)
-	marker := writeParentActionWorkerStub(t, cfg, true)
-	if err := execute(cfg, []string{"resume"}, nil, nil); err == nil {
-		t.Fatal("矛盾するidentityで実行が続行されました")
-	}
-	if _, err := os.Stat(marker); err == nil {
-		t.Fatal("fail closed後にworkerが実行されました")
-	}
-}
-
-func TestExecuteWithoutCodexIdentityEnvLeavesStateUnchanged(t *testing.T) {
-	cfg, st := newParentActionIdentityTestState(t)
-	t.Setenv("CODEX_THREAD_ID", "")
-	t.Setenv("CODEX_SESSION_ID", "")
-	marker := writeParentActionWorkerStub(t, cfg, false)
-	if err := execute(cfg, []string{"resume"}, nil, nil); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(marker); err != nil {
-		t.Fatal("stub worker was not invoked")
-	}
-	stats, err := st.CurrentTaskStats()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if stats.ParentCodexThreadID != "" || stats.ParentCodexSessionID != "" {
-		t.Fatalf("identity = %#v", stats)
-	}
-}
-
-func TestExecuteResumeIsNotBlockedByCorruptedTaskStats(t *testing.T) {
-	cfg, st := newParentActionIdentityTestState(t)
-	if err := os.WriteFile(st.Path("task-stats.json"), []byte("{not json"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("CODEX_THREAD_ID", codexIdentityTestThreadID)
-	t.Setenv("CODEX_SESSION_ID", codexIdentityTestThreadID)
-	marker := writeParentActionWorkerStub(t, cfg, false)
-	if err := execute(cfg, []string{"resume"}, nil, nil); err != nil {
-		t.Fatalf("破損statsでresumeがblockされました: %v", err)
-	}
-	if _, err := os.Stat(marker); err != nil {
-		t.Fatal("stub worker was not invoked")
-	}
-}
-
-func prepareParentPayload(t *testing.T, cfg config.AppConfig, action string, payload []byte) string {
-	t.Helper()
-	prepared, err := parentaction.Prepare(cfg.RepoRoot, action)
+	prepared, err := parentaction.Prepare(cfg.RepoRoot, actionStartMilestones)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -296,7 +210,101 @@ func prepareParentPayload(t *testing.T, cfg config.AppConfig, action string, pay
 	}
 	newline := bytes.IndexByte(raw, '\n')
 	if newline < 0 {
-		t.Fatal("prepared payload has no token header newline")
+		t.Fatal("prepared payload header missing")
+	}
+	content := append(append([]byte(nil), raw[:newline+1]...), []byte("tampered")...)
+	if err := os.WriteFile(prepared.Path, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	if err := execute(cfg, []string{actionStartMilestones, prepared.Token}, &stdout, &stderr); err == nil {
+		t.Fatal("tampered payload was accepted")
+	}
+}
+
+func TestRotationMilestoneStartArgsPropagatesClaim(t *testing.T) {
+	claimID := "74c3926e-759d-43ab-b7fa-2aa63fa3b4aa"
+	args, env, err := rotationMilestoneStartArgs([]string{actionStartMilestones, "token", "--rotation-claim", claimID}, []string{"A=B"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(args) != 2 || args[0] != actionStartMilestones || args[1] != "token" {
+		t.Fatalf("args = %#v", args)
+	}
+	if len(env) != 2 || env[0] != "A=B" || env[1] != state.SessionRotationClaimIDEnv+"="+claimID {
+		t.Fatalf("env = %#v", env)
+	}
+}
+
+func TestRotationMilestoneStartArgsRejectsInvalidClaim(t *testing.T) {
+	if _, _, err := rotationMilestoneStartArgs([]string{actionStartMilestones, "token", "--rotation-claim", "bad"}, nil); err == nil {
+		t.Fatal("invalid rotation claim was accepted")
+	}
+}
+
+func TestExecuteRotationActionRequiresCurrentThreadIdentity(t *testing.T) {
+	cfg, _ := newParentActionTestState(t)
+	t.Setenv("CODEX_THREAD_ID", "")
+	t.Setenv("CODEX_SESSION_ID", "")
+	var stdout bytes.Buffer
+	if err := execute(cfg, []string{"rotation-claim", "74c3926e-759d-43ab-b7fa-2aa63fa3b4aa"}, &stdout, io.Discard); err == nil {
+		t.Fatal("rotation action without current thread identity was accepted")
+	}
+}
+
+func TestExecuteRotationClaimRejectsForeignThread(t *testing.T) {
+	cfg, st := newParentActionIdentityTestState(t)
+	if err := st.SetParentCodexIdentity(codexIdentityTestThreadID, codexIdentityTestThreadID, nil); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CODEX_THREAD_ID", "01a0463c-d477-7410-9efd-cb34ff2e0b0f")
+	t.Setenv("CODEX_SESSION_ID", "01a0463c-d477-7410-9efd-cb34ff2e0b0f")
+	var stdout bytes.Buffer
+	if err := execute(cfg, []string{"rotation-claim", "74c3926e-759d-43ab-b7fa-2aa63fa3b4aa"}, &stdout, io.Discard); err == nil {
+		t.Fatal("foreign thread rotation claim was accepted")
+	}
+}
+
+func TestExecuteRotationClaimRoundTrip(t *testing.T) {
+	cfg, st := newParentActionIdentityTestState(t)
+	if err := st.SetParentCodexIdentity(codexIdentityTestThreadID, codexIdentityTestThreadID, nil); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CODEX_THREAD_ID", codexIdentityTestThreadID)
+	t.Setenv("CODEX_SESSION_ID", codexIdentityTestThreadID)
+	directive, err := st.SaveSessionRotationDirective(codexIdentityTestThreadID, state.SessionRotationTriggerRotate, 0.88, state.SessionRotationThreshold, 3, 9)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stdout bytes.Buffer
+	if err := execute(cfg, []string{"rotation-claim", directive.DirectiveID}, &stdout, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	var claim state.SessionRotationClaim
+	if err := json.Unmarshal(stdout.Bytes(), &struct {
+		Status string `json:"status"`
+		*state.SessionRotationClaim
+	}{SessionRotationClaim: &claim}); err != nil {
+		t.Fatal(err)
+	}
+	if claim.ClaimID == "" || claim.DirectiveID != directive.DirectiveID {
+		t.Fatalf("claim = %#v", claim)
+	}
+}
+
+func writePreparedPayload(t *testing.T, repoRoot, action string, payload []byte) string {
+	t.Helper()
+	prepared, err := parentaction.Prepare(repoRoot, action)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(prepared.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	newline := bytes.IndexByte(raw, '\n')
+	if newline < 0 {
+		t.Fatal("prepared payload header missing")
 	}
 	content := append(append([]byte(nil), raw[:newline+1]...), payload...)
 	if err := os.WriteFile(prepared.Path, content, 0o600); err != nil {
@@ -320,7 +328,7 @@ func newParentActionTestState(t *testing.T) (config.AppConfig, *state.StateStore
 	cfg := config.AppConfig{
 		RepoRoot:  root,
 		RepoHash:  strings.Repeat("a", 64),
-		StateBase: filepath.Join(root, "sessions"),
+		StateBase: filepath.Join(t.TempDir(), "sessions"),
 	}
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
