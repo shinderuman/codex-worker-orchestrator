@@ -134,21 +134,27 @@ func validateGuardRepairChanges(worktree string, changed []string, before, after
 }
 
 func validateGuardRepairPaths(worktree string, changed []string) error {
-	hasSource := false
-	hasTest := false
+	sourceDirs := map[string]struct{}{}
+	testDirs := map[string]struct{}{}
 	for _, path := range changed {
 		isTest, err := validateGuardRepairPath(worktree, path)
 		if err != nil {
 			return err
 		}
+		dir := filepath.Dir(filepath.FromSlash(path))
 		if isTest {
-			hasTest = true
+			testDirs[dir] = struct{}{}
 		} else {
-			hasSource = true
+			sourceDirs[dir] = struct{}{}
 		}
 	}
-	if !hasSource || !hasTest {
+	if len(sourceDirs) == 0 || len(testDirs) == 0 {
 		return fmt.Errorf("guard repair requires both production source and corresponding test changes")
+	}
+	for dir := range sourceDirs {
+		if _, ok := testDirs[dir]; !ok {
+			return fmt.Errorf("guard repair source package has no corresponding test change: %s", filepath.ToSlash(dir))
+		}
 	}
 	return nil
 }
