@@ -36,56 +36,101 @@ func executeInstall(cfg config.AppConfig, args []string, stdout, stderr io.Write
 		return fmt.Errorf("usage: glm-parent-action install")
 	}
 	st := state.AttachStateStore(cfg)
+	var requirement runtimeInstallRequirement
+	var expectedTaskID string
+	output, err := func() (installOutput, error) {
+		lock, err := repolock.Acquire(st.LockPath())
+		if err != nil {
+			return installOutput{}, err
+		}
+		defer func() { _ = lock.Close() }()
+
+		plan, err := st.ParentActionPlan()
+		if err != nil {
+			return installOutput{}, err
+		}
+		if !plan.Allows(state.ParentActionInstall) {
+			return installOutput{}, fmt.Errorf("install is not admitted for the current task (required action %s)", plan.RequiredAction)
+		}
+		if failure := installRepositoryGuard(cfg.RepoRoot); failure != nil {
+			return installOutput{Status: installStatusGuardRejected, Failure: failure}, nil
+		}
+		script, failure := installScriptGuard(cfg.RepoRoot)
+		if failure != nil {
+			return installOutput{Status: installStatusGuardRejected, Failure: failure}, nil
+		}
+		requirement, err = runtimeInstallRequirementForTask(cfg.RepoRoot, st)
+		if err != nil {
+			return installOutput{
+				Status:  installStatusGuardRejected,
+				Failure: runtimeInstallFailure(runtimeInstallFailureClassification, err.Error()),
+			}, nil
+		}
+		if !requirement.Required {
+			return installOutput{Status: installStatusNotRequired}, nil
+		}
+		expectedTaskID, err = st.TaskID()
+		if err != nil {
+			return installOutput{
+				Status:   installStatusVerificationFailed,
+				Required: true,
+				Failure:  runtimeInstallFailure(runtimeInstallFailureEvidence, err.Error()),
+			}, nil
+		}
+		if !pushBindingTreeClean(cfg.RepoRoot) {
+			return installOutput{
+				Status:   installStatusGuardRejected,
+				Required: true,
+				Failure:  runtimeInstallFailure(runtimeInstallFailureDirty, "runtime install requires a clean committed source tree"),
+			}, nil
+		}
+		if err := st.ClearRuntimeInstallEvidence(); err != nil {
+			return installOutput{
+				Status:   installStatusVerificationFailed,
+				Required: true,
+				Failure:  runtimeInstallFailure(runtimeInstallFailureEvidence, err.Error()),
+			}, nil
+		}
+		result := runInstallScript(script, cfg.RepoRoot, stderr)
+		result.Required = true
+		return result, nil
+	}()
+	if err != nil {
+		return err
+	}
+	if output.Status != installStatusInstalled || !output.Required {
+		return writeInstallOutput(stdout, output)
+	}
+
+	if failure := runRuntimeInstallSmoke(cfg); failure != nil {
+		return writeInstallOutput(stdout, installOutput{Status: installStatusVerificationFailed, Required: true, Failure: failure})
+	}
+
 	lock, err := repolock.Acquire(st.LockPath())
 	if err != nil {
 		return err
 	}
 	defer func() { _ = lock.Close() }()
-
 	plan, err := st.ParentActionPlan()
 	if err != nil {
 		return err
 	}
 	if !plan.Allows(state.ParentActionInstall) {
-		return fmt.Errorf("install is not admitted for the current task (required action %s)", plan.RequiredAction)
-	}
-	if failure := installRepositoryGuard(cfg.RepoRoot); failure != nil {
-		return writeInstallOutput(stdout, installOutput{Status: installStatusGuardRejected, Failure: failure})
-	}
-	script, failure := installScriptGuard(cfg.RepoRoot)
-	if failure != nil {
-		return writeInstallOutput(stdout, installOutput{Status: installStatusGuardRejected, Failure: failure})
-	}
-	requirement, err := runtimeInstallRequirementForTask(cfg.RepoRoot, st)
-	if err != nil {
-		return writeInstallOutput(stdout, installOutput{
-			Status: installStatusGuardRejected,
-			Failure: runtimeInstallFailure(runtimeInstallFailureClassification, err.Error()),
-		})
-	}
-	if !requirement.Required {
-		return writeInstallOutput(stdout, installOutput{Status: installStatusNotRequired})
-	}
-	if !pushBindingTreeClean(cfg.RepoRoot) {
-		return writeInstallOutput(stdout, installOutput{
-			Status:   installStatusGuardRejected,
-			Required: true,
-			Failure:  runtimeInstallFailure(runtimeInstallFailureDirty, "runtime install requires a clean committed source tree"),
-		})
-	}
-	if err := st.ClearRuntimeInstallEvidence(); err != nil {
 		return writeInstallOutput(stdout, installOutput{
 			Status:   installStatusVerificationFailed,
 			Required: true,
-			Failure:  runtimeInstallFailure(runtimeInstallFailureEvidence, err.Error()),
+			Failure:  runtimeInstallFailure(runtimeInstallFailureStale, "task state changed while install smoke was running"),
 		})
 	}
-	output := runInstallScript(script, cfg.RepoRoot, stderr)
-	output.Required = true
-	if output.Status != installStatusInstalled {
-		return writeInstallOutput(stdout, output)
+	currentTaskID, err := st.TaskID()
+	if err != nil || currentTaskID != expectedTaskID {
+		return writeInstallOutput(stdout, installOutput{
+			Status:   installStatusVerificationFailed,
+			Required: true,
+			Failure:  runtimeInstallFailure(runtimeInstallFailureStale, "task identity changed while install smoke was running"),
+		})
 	}
-	if failure := persistRuntimeInstallCompletion(cfg, st, requirement); failure != nil {
+	if failure := persistRuntimeInstallCompletionAfterSmoke(cfg, st, requirement); failure != nil {
 		return writeInstallOutput(stdout, installOutput{Status: installStatusVerificationFailed, Required: true, Failure: failure})
 	}
 	return writeInstallOutput(stdout, installOutput{Status: installStatusInstalled, Required: true})
