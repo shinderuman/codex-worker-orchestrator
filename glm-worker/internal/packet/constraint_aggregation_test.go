@@ -8,12 +8,12 @@ import (
 
 func TestValidateWorkerResultAggregatesIndependentConstraintViolations(t *testing.T) {
 	result := Result{
-		Status:   StatusImplemented,
-		Risk:     Risk("MEDIUM"),
-		Summary:  "line one\nline two",
-		Tests:    "",
+		Status:     StatusImplemented,
+		Risk:       Risk("MEDIUM"),
+		Summary:    "line one\nline two",
+		Tests:      "",
 		Unverified: "none",
-		Targets:  []string{"file.go:10", "file.go:10"},
+		Targets:    []string{"file.go:10", "file.go:10"},
 	}
 
 	err := ValidateWorkerResult(result)
