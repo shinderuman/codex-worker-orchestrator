@@ -289,17 +289,17 @@ func TestWaitForQualitySurfaceReviewRejectsForeignPendingDecision(t *testing.T) 
 	tests := []struct {
 		name   string
 		phase  string
-		mutate func(st *StateStore)
+		mutate func(t *testing.T, st *StateStore)
 	}{
 		{
 			name:   "phase is outside the decision continuation",
 			phase:  "worker-new",
-			mutate: func(_ *StateStore) {},
+			mutate: func(_ *testing.T, _ *StateStore) {},
 		},
 		{
 			name:  "saved decision binding is missing",
 			phase: "worker-decision",
-			mutate: func(st *StateStore) {
+			mutate: func(t *testing.T, st *StateStore) {
 				if err := st.Remove("last-decision"); err != nil {
 					t.Fatal(err)
 				}
@@ -313,7 +313,7 @@ func TestWaitForQualitySurfaceReviewRejectsForeignPendingDecision(t *testing.T) 
 				t.Fatal(err)
 			}
 			seedQualitySurfaceDecisionRun(t, st)
-			test.mutate(st)
+			test.mutate(t, st)
 
 			if err := st.WaitForQualitySurfaceReview(test.phase); err == nil {
 				t.Fatal("foreign pending decision must be rejected")
