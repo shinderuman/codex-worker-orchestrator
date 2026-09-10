@@ -25,7 +25,10 @@ type guardRepairCandidate struct {
 
 func executeResumeWithGuardRepair(cfg config.AppConfig, stdout, stderr io.Writer, extraEnv []string) error {
 	st := state.AttachStateStore(cfg)
-	before, beforeErr := st.LoadGuardRepairRecord()
+	if record, ok := reusableGuardRepairRecord(cfg, st); ok {
+		return continueGuardRepair(cfg, st, record, stdout, stderr, extraEnv, errors.New(record.Failure))
+	}
+
 	initialStdout, initialStderr, initialErr := executeInitialResume(cfg, extraEnv)
 	if initialErr == nil {
 		copyOutput(stdout, initialStdout)
@@ -33,23 +36,13 @@ func executeResumeWithGuardRepair(cfg config.AppConfig, stdout, stderr io.Writer
 		return nil
 	}
 
-	record, ok := currentGuardRepairRecord(st)
+	record, ok := reusableGuardRepairRecord(cfg, st)
 	if !ok {
 		copyOutput(stdout, initialStdout)
 		copyOutput(stderr, initialStderr)
 		return initialErr
 	}
-	if repeatedRequestedRepair(before, beforeErr, record) {
-		copyOutput(stdout, initialStdout)
-		copyOutput(stderr, initialStderr)
-		return fmt.Errorf("guard repair strategy already requested for unchanged failure and evidence: %w", initialErr)
-	}
-
-	record, err := prepareGuardRepairForResume(cfg, st, record)
-	if err != nil {
-		return errors.Join(initialErr, err)
-	}
-	return resumeWithRepairedWorker(cfg, st, record, stdout, stderr, extraEnv, initialErr)
+	return continueGuardRepair(cfg, st, record, stdout, stderr, extraEnv, initialErr)
 }
 
 func executeInitialResume(cfg config.AppConfig, extraEnv []string) (*bytes.Buffer, *bytes.Buffer, error) {
@@ -70,8 +63,34 @@ func currentGuardRepairRecord(st *state.StateStore) (state.GuardRepairRecord, bo
 	return record, true
 }
 
-func repeatedRequestedRepair(before state.GuardRepairRecord, beforeErr error, current state.GuardRepairRecord) bool {
-	return beforeErr == nil && before.Status == state.GuardRepairRequested && current.Status == state.GuardRepairRequested && sameGuardRepairRecord(before, current)
+func reusableGuardRepairRecord(cfg config.AppConfig, st *state.StateStore) (state.GuardRepairRecord, bool) {
+	record, ok := currentGuardRepairRecord(st)
+	if !ok {
+		return state.GuardRepairRecord{}, false
+	}
+	digest, err := guardrepair.RelevantDigest(cfg.RepoRoot)
+	if err != nil {
+		return state.GuardRepairRecord{}, false
+	}
+	if record.Status == state.GuardRepairReady || record.Status == state.GuardRepairComplete {
+		return record, record.RepairedDigest != "" && digest == record.RepairedDigest
+	}
+	return record, digest == record.RelevantDigest
+}
+
+func continueGuardRepair(
+	cfg config.AppConfig,
+	st *state.StateStore,
+	record state.GuardRepairRecord,
+	stdout, stderr io.Writer,
+	extraEnv []string,
+	initialErr error,
+) error {
+	record, err := prepareGuardRepairForResume(cfg, st, record)
+	if err != nil {
+		return errors.Join(initialErr, err)
+	}
+	return resumeWithRepairedWorker(cfg, st, record, stdout, stderr, extraEnv, initialErr)
 }
 
 func prepareGuardRepairForResume(cfg config.AppConfig, st *state.StateStore, record state.GuardRepairRecord) (state.GuardRepairRecord, error) {
