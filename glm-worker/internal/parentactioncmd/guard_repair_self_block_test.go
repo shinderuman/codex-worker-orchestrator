@@ -14,7 +14,7 @@ func TestRequestSelfBlockedGuardRepairRecordsSameGuardFamily(t *testing.T) {
 		t.Fatal(err)
 	}
 	failure := "git authority guard failed: capture-before-call: cannot enumerate protected refs"
-	stderr := []byte(`{"error":{"kind":"worker_error","message":"` + failure + `"}}`)
+	stderr := []byte("{\"error\":{\"kind\":\"worker_error\",\"message\":\"" + failure + "\"}}")
 
 	if err := requestSelfBlockedGuardRepair(cfg, st, stderr); err != nil {
 		t.Fatal(err)
@@ -37,7 +37,7 @@ func TestRequestSelfBlockedGuardRepairIgnoresDifferentGuardFamily(t *testing.T) 
 	if err := st.SaveResumeCheckpoint(checkpoint); err != nil {
 		t.Fatal(err)
 	}
-	stderr := []byte(`{"error":{"kind":"worker_error","message":"repository instruction surface guard failed: before-call-mismatch: changed"}}`)
+	stderr := []byte("{\"error\":{\"kind\":\"worker_error\",\"message\":\"repository instruction surface guard failed: before-call-mismatch: changed\"}}")
 
 	if err := requestSelfBlockedGuardRepair(cfg, st, stderr); err != nil {
 		t.Fatal(err)
@@ -53,7 +53,7 @@ func TestRequestSelfBlockedGuardRepairIgnoresNonPreCallFailure(t *testing.T) {
 	if err := st.SaveResumeCheckpoint(checkpoint); err != nil {
 		t.Fatal(err)
 	}
-	stderr := []byte(`{"error":{"kind":"worker_error","message":"git authority guard failed: after-call-mutation: refs changed"}}`)
+	stderr := []byte("{\"error\":{\"kind\":\"worker_error\",\"message\":\"git authority guard failed: after-call-mutation: refs changed\"}}")
 
 	if err := requestSelfBlockedGuardRepair(cfg, st, stderr); err != nil {
 		t.Fatal(err)
