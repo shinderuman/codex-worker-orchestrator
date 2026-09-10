@@ -77,6 +77,25 @@ func TestExecuteResumeDoesNotRepeatFailedRepairEvidence(t *testing.T) {
 	}
 }
 
+func TestExecuteResumeDoesNotRepeatFailedRepairedEvidence(t *testing.T) {
+	cfg, st, record := newGuardRepairLifecycleState(t)
+	writeGuardRepairWorkerModule(t, cfg.RepoRoot, "package main\nfunc main() {}\n")
+	persistReadyGuardRepair(t, cfg, st, &record)
+	record.Status = state.GuardRepairFailed
+	if err := st.SaveGuardRepairRecord(record); err != nil {
+		t.Fatal(err)
+	}
+	marker := installFailingNormalWorker(t)
+
+	err := executeResumeWithGuardRepair(cfg, io.Discard, io.Discard, nil)
+	if err == nil || !strings.Contains(err.Error(), "already failed") {
+		t.Fatalf("failed repaired evidence did not converge without redispatch: %v", err)
+	}
+	if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("failed repaired evidence redispatched the broken normal resume")
+	}
+}
+
 func TestResumeWithRepairedWorkerRequiresGuardRecoveryStateExit(t *testing.T) {
 	cfg, st, record := newGuardRepairLifecycleState(t)
 	writeGuardRepairWorkerModule(t, cfg.RepoRoot, "package main\nfunc main() {}\n")
