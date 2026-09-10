@@ -67,6 +67,25 @@ func IsPreCallGuardFailureText(text string) bool {
 	return isPreCallGitGuardStage(stage)
 }
 
+func SameGuardFailureFamilyText(first, second string) bool {
+	firstFamily, ok := guardFailureFamilyFromText(first)
+	if !ok {
+		return false
+	}
+	secondFamily, ok := guardFailureFamilyFromText(second)
+	return ok && firstFamily == secondFamily
+}
+
+func guardFailureFamilyFromText(text string) (string, bool) {
+	if _, ok := guardErrorStageFromText(text, instructionSurfaceGuardErrorPrefix); ok {
+		return instructionSurfaceGuardErrorPrefix, true
+	}
+	if _, ok := guardErrorStageFromText(text, gitAuthorityGuardErrorPrefix); ok {
+		return gitAuthorityGuardErrorPrefix, true
+	}
+	return "", false
+}
+
 func guardErrorStageFromText(text string, prefix string) (string, bool) {
 	rest, found := strings.CutPrefix(text, prefix+":")
 	if !found {
