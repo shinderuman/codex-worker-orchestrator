@@ -88,6 +88,13 @@ func (w *Workflow) captureStopRetention(checkpoint *state.ResumeCheckpoint) erro
 		return err
 	}
 	checkpoint.StopDirtyFiles = files
+	if checkpoint.StopKind == state.ResumeStopGuardRecoverable && checkpoint.GuardRefBeforeDigest != "" {
+		digest, err := runner.CaptureGitAuthorityRefDigest(w.config.RepoRoot)
+		if err != nil {
+			return fmt.Errorf("capture guard stop refs: %w", err)
+		}
+		checkpoint.GuardRefStopDigest = digest
+	}
 	return nil
 }
 
@@ -177,12 +184,18 @@ func (w *Workflow) verifyGuardRecoveryRefs(checkpoint state.ResumeCheckpoint) er
 	if checkpoint.GuardRefAfterDigest == "" || len(checkpoint.GuardRefChanges) == 0 {
 		return &WorkerError{Phase: checkpoint.Phase, Message: "guard recovery ref evidence is incomplete"}
 	}
-	if !checkpoint.GuardRefChangesTruncated && guardRefChangesOnlyVolatile(checkpoint.GuardRefChanges) {
-		return nil
-	}
 	current, err := runner.CaptureGitAuthorityRefDigest(w.config.RepoRoot)
 	if err != nil {
 		return &WorkerError{Phase: checkpoint.Phase, Message: fmt.Sprintf("guard recovery cannot capture current refs: %v", err)}
+	}
+	if !checkpoint.GuardRefChangesTruncated && guardRefChangesOnlyVolatile(checkpoint.GuardRefChanges) {
+		if checkpoint.GuardRefStopDigest == "" {
+			return &WorkerError{Phase: checkpoint.Phase, Message: "guard recovery legacy volatile ref evidence has no stop-time authority baseline"}
+		}
+		if current == checkpoint.GuardRefStopDigest {
+			return nil
+		}
+		return &WorkerError{Phase: checkpoint.Phase, Message: "guard recovery refs changed after stop"}
 	}
 	if current == checkpoint.GuardRefBeforeDigest {
 		return nil
