@@ -10,259 +10,207 @@ def replace_once(path: str, old: str, new: str) -> None:
     file.write_text(text.replace(old, new, 1))
 
 
-replace_once(
-    "glm-worker/internal/app/bundle_analysis.go",
-    """\tentry.Status = analysisStatusAvailable
-\tcompleted := turn.CompletedAt.UTC().Format(time.RFC3339Nano)
-\tentry.CompletedAt = &completed
-\tdelta := analysisAnchoredTokenDelta(scan, turn.StartedAt, turn.CompletedAt)
-\tif delta.Status != analysisStatusAvailable {
-\t\treturn entry
-\t}
-\tentry.InputTokens = delta.InputTokens
-\tentry.CachedInputTokens = delta.CachedInputTokens
-\tentry.BaselineAt = delta.BaselineAt
-\tentry.EndAt = delta.EndAt
-""",
-    """\tcompleted := turn.CompletedAt.UTC().Format(time.RFC3339Nano)
-\tentry.CompletedAt = &completed
-\tdelta := analysisAnchoredTokenDelta(scan, turn.StartedAt, turn.CompletedAt)
-\tentry.Status = delta.Status
-\tentry.BaselineAt = delta.BaselineAt
-\tentry.EndAt = delta.EndAt
-\tif delta.Status != analysisStatusAvailable {
-\t\treturn entry
-\t}
-\tentry.InputTokens = delta.InputTokens
-\tentry.CachedInputTokens = delta.CachedInputTokens
-""",
+def create_once(path: str, content: str) -> None:
+    file = Path(path)
+    if file.exists():
+        raise SystemExit(f"{path}: already exists")
+    file.write_text(content)
+
+
+create_once(
+    "glm-worker/internal/app/bundle_analysis_review_test.go",
+    '''package app
+
+import (
+\t"testing"
+\t"time"
 )
 
-replace_once(
-    "glm-worker/internal/app/bundle_analysis.go",
-    """\tdelta.InputTokens = analysisSegmentFieldSum(segments, analysisAnchorInput)
-\tdelta.CachedInputTokens = analysisSegmentFieldSum(segments, analysisAnchorCached)
-\tdelta.BaselineAt = baseline.RawAt
-\tdelta.EndAt = end.RawAt
-\treturn delta
-""",
-    """\tinputTokens, inputKnown := analysisSegmentFieldSum(segments, analysisAnchorInput)
-\tcachedInputTokens, cachedInputKnown := analysisSegmentFieldSum(segments, analysisAnchorCached)
-\tdelta.BaselineAt = baseline.RawAt
-\tdelta.EndAt = end.RawAt
-\tif !inputKnown || !cachedInputKnown {
-\t\tdelta.Status = analysisStatusUnknown
-\t\treturn delta
+func TestAnalysisSubsequentTurnPropagatesCounterReset(t *testing.T) {
+\tstart := time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC)
+\tend := start.Add(time.Minute)
+\tbaselineInput, baselineCached := int64(100), int64(50)
+\tresetInput, resetCached := int64(40), int64(20)
+\tscan := bundleRolloutScan{
+\t\ttokens: []analysisRolloutTokenAnchor{
+\t\t\t{At: start, RawAt: start.Format(time.RFC3339Nano), Offset: 10, Input: &baselineInput, Cached: &baselineCached},
+\t\t\t{At: end, RawAt: end.Format(time.RFC3339Nano), Offset: 20, Input: &resetInput, Cached: &resetCached},
+\t\t},
 \t}
-\tdelta.InputTokens = inputTokens
-\tdelta.CachedInputTokens = cachedInputTokens
-\treturn delta
-""",
-)
+\tturn := analysisRolloutTurn{
+\t\tTurnID:      "turn-review-reset",
+\t\tStartedAt:   start,
+\t\tHasStart:    true,
+\t\tCompletedAt: end,
+\t\tHasComplete: true,
+\t}
 
-replace_once(
-    "glm-worker/internal/app/bundle_analysis.go",
-    """func analysisSegmentFieldSum(segments []analysisTokenSegment, field func(*analysisRolloutTokenAnchor) *int64) int64 {
-\tvar total int64
-\tfor _, segment := range segments {
-\t\tif segment.baseline != nil {
-\t\t\ttotal += analysisCounterDeltaState(field(segment.baseline), field(segment.end)).Value
-\t\t\tcontinue
-\t\t}
-\t\tif value := field(segment.end); value != nil {
-\t\t\ttotal += *value
-\t\t}
+\tgot := analysisSubsequentTurn(scan, &turn, end)
+\tif got.Status != analysisStatusCounterReset {
+\t\tt.Fatalf("status = %q want %q: %#v", got.Status, analysisStatusCounterReset, got)
 \t}
-\treturn total
+\tif got.InputTokens != 0 || got.CachedInputTokens != 0 {
+\t\tt.Fatalf("unavailable delta leaked token values: %#v", got)
+\t}
+\tif got.BaselineAt == "" || got.EndAt == "" {
+\t\tt.Fatalf("counter reset lost anchor evidence: %#v", got)
+\t}
 }
-""",
-    """func analysisSegmentFieldSum(segments []analysisTokenSegment, field func(*analysisRolloutTokenAnchor) *int64) (int64, bool) {
-\tvar total int64
-\tfor _, segment := range segments {
-\t\tif segment.baseline != nil {
-\t\t\tdelta := analysisCounterDeltaState(field(segment.baseline), field(segment.end))
-\t\t\tif !delta.Known {
-\t\t\t\treturn 0, false
-\t\t\t}
-\t\t\ttotal += delta.Value
-\t\t\tcontinue
-\t\t}
-\t\tvalue := field(segment.end)
-\t\tif value == nil {
-\t\t\treturn 0, false
-\t\t}
-\t\ttotal += *value
+
+func TestAnalysisAnchoredTokenDeltaMarksMissingEndpointFieldUnknown(t *testing.T) {
+\tstart := time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC)
+\tend := start.Add(time.Minute)
+\tbaselineInput, baselineCached := int64(100), int64(50)
+\tendInput := int64(200)
+\tscan := bundleRolloutScan{
+\t\ttokens: []analysisRolloutTokenAnchor{
+\t\t\t{At: start, RawAt: start.Format(time.RFC3339Nano), Offset: 10, Input: &baselineInput, Cached: &baselineCached},
+\t\t\t{At: end, RawAt: end.Format(time.RFC3339Nano), Offset: 20, Input: &endInput},
+\t\t},
 \t}
-\treturn total, true
+
+\tgot := analysisAnchoredTokenDelta(scan, start, end)
+\tif got.Status != analysisStatusUnknown {
+\t\tt.Fatalf("status = %q want %q: %#v", got.Status, analysisStatusUnknown, got)
+\t}
+\tif got.InputTokens != 0 || got.CachedInputTokens != 0 {
+\t\tt.Fatalf("unknown delta leaked token values: %#v", got)
+\t}
+\tif got.BaselineAt == "" || got.EndAt == "" {
+\t\tt.Fatalf("unknown delta lost anchor evidence: %#v", got)
+\t}
 }
-""",
+''',
 )
 
 replace_once(
-    "glm-worker/internal/app/parent_handoff.go",
-    """func currentParentRoutingEvidence(st *state.StateStore, repoRoot, taskID string, snapshot *state.SnapshotDigest) []parentHandoffRoutingEvidence {
-\tif repoRoot == "" || snapshot == nil {
-""",
-    """func currentParentRoutingEvidence(st *state.StateStore, repoRoot, taskID string, snapshot *state.SnapshotDigest) []parentHandoffRoutingEvidence {
-\tif repoRoot == "" || taskID == "" || snapshot == nil {
-""",
-)
-
-replace_once(
-    "glm-worker/internal/parentactioncmd/finalization.go",
-    """func finalizationVerifiedEvidenceDir(repoRoot string, evidence finalizationRoutingEvidenceProbe) (string, *finalizationFailure) {
-\tresolved, err := filepath.EvalSymlinks(evidence.WorkingDir)
-""",
-    """func finalizationVerifiedEvidenceDir(repoRoot string, evidence finalizationRoutingEvidenceProbe) (string, *finalizationFailure) {
-\tif finalizationDirLexicallyOutsideRepository(repoRoot, evidence.WorkingDir) {
-\t\treturn "", &finalizationFailure{
-\t\t\tStage:  "routing",
-\t\t\tReason: "routing_evidence_outside_repository",
-\t\t\tDetail: compactFinalizationDiagnostic(evidence.WorkingDir),
-\t\t}
+    "glm-worker/internal/app/timeline_test.go",
+    '''\tif output.SkippedEvents != 1 {
+\t\tt.Fatalf("skipped_events = %d", output.SkippedEvents)
 \t}
-\tresolved, err := filepath.EvalSymlinks(evidence.WorkingDir)
-""",
+\tif len(output.Calls) != 1 {
+''',
+    '''\tif output.SkippedEvents != 1 {
+\t\tt.Fatalf("skipped_events = %d", output.SkippedEvents)
+\t}
+\tif output.Coverage.Status != timelineStatusPartial {
+\t\tt.Fatalf("skipped eventを含むcoverage = %#v", output.Coverage)
+\t}
+\tif len(output.Calls) != 1 {
+''',
 )
 
 replace_once(
-    "glm-worker/internal/parentactioncmd/finalization.go",
-    """func finalizationDirOutsideRepository(repoRoot, dir string) bool {
-""",
-    """func finalizationDirLexicallyOutsideRepository(repoRoot, dir string) bool {
-\trepo, err := filepath.Abs(repoRoot)
+    "glm-worker/internal/app/command_test.go",
+    '''func TestParseCommandStdinPayloadModes(t *testing.T) {
+''',
+    '''func TestParseCommandTopLevelUsageIncludesVerifyCodexWake(t *testing.T) {
+\t_, err := ParseCommand(nil)
+\tif err == nil || !strings.Contains(err.Error(), "--verify-codex-wake <wake-task-thread-id> <wake-at-rfc3339>") {
+\t\tt.Fatalf("top-level usageに--verify-codex-wakeがありません: %v", err)
+\t}
+}
+
+func TestParseCommandStdinPayloadModes(t *testing.T) {
+''',
+)
+
+replace_once(
+    "glm-worker/internal/app/parent_handoff_test.go",
+    '''func TestQualityGateRunRecordCarriesRoutingIdentity(t *testing.T) {
+''',
+    '''func TestParentHandoffRejectsRoutingEvidenceWithoutTaskID(t *testing.T) {
+\tcfg := newAppConfig(t)
+\tst, err := state.NewStateStore(cfg)
 \tif err != nil {
-\t\treturn true
+\t\tt.Fatal(err)
 \t}
-\tcandidate, err := filepath.Abs(dir)
+\tsnapshot, err := state.CaptureGitSnapshot(cfg.RepoRoot)
 \tif err != nil {
-\t\treturn true
+\t\tt.Fatal(err)
 \t}
-\trel, err := filepath.Rel(repo, candidate)
-\treturn err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator))
+\trecord := qualityGateRunRecord{
+\t\tValidationRunID:               strings.Repeat("b", 32),
+\t\tForm:                          "go-test",
+\t\tRepository:                    cfg.RepoRoot,
+\t\tWorkingDir:                    filepath.Join(cfg.RepoRoot, "module"),
+\t\tHead:                          snapshot.Head,
+\t\tIndexDigest:                   snapshot.IndexDigest,
+\t\tWorktreeDigest:                snapshot.WorktreeDigest,
+\t\tWorktreeDigestExcludingParent: snapshot.WorktreeDigestExcludingParent,
+\t\tStartedAt:                     time.Now().UTC(),
+\t\tStatus:                        qualityGateStatusPass,
+\t}
+\tif err := writeQualityGateRun(st, record); err != nil {
+\t\tt.Fatal(err)
+\t}
+\tdigest := &state.SnapshotDigest{
+\t\tHead:                          snapshot.Head,
+\t\tIndexDigest:                   snapshot.IndexDigest,
+\t\tWorktreeDigest:                snapshot.WorktreeDigest,
+\t\tWorktreeDigestExcludingParent: snapshot.WorktreeDigestExcludingParent,
+\t}
+\tif got := currentParentRoutingEvidence(st, cfg.RepoRoot, "", digest); len(got) != 0 {
+\t\tt.Fatalf("taskless routing evidence leaked: %#v", got)
+\t}
 }
 
-func finalizationDirOutsideRepository(repoRoot, dir string) bool {
-""",
+func TestQualityGateRunRecordCarriesRoutingIdentity(t *testing.T) {
+''',
 )
 
 replace_once(
-    "glm-worker/internal/app/execute_test.go",
-    """func TestRunVerifyCodexWakeFailsClosedOnIdentityMixups(t *testing.T) {
-\tparentThread := "01a0244a-4ee4-7e71-b2e1-dec3bdda2120"
-\twakeThread := "01a03a9e-10a0-7f11-801c-f04e5dbd5490"
-\twakeKey := autoresume.CodexWakeAutomationKey(wakeThread)
-\trfc3339 := "2026-08-12T20:01:20+09:00"
-
-\ttests := []struct {
-\t\tname         string
-\t\targs         []string
-\t\tentityTarget string
-\t}{
-\t\t{"automation targeting the parent thread", []string{"--verify-codex-wake", wakeThread, rfc3339}, parentThread},
-\t\t{"wrong wake thread ID", []string{"--verify-codex-wake", "01a05f46-47aa-77d2-912c-0d6b078cb856", rfc3339}, wakeThread},
-\t\t{"glm auto-resume path stays bound to the parent process", []string{"--verify-auto-resume", wakeKey, rfc3339}, wakeThread},
+    "glm-worker/internal/parentactioncmd/finalization_test.go",
+    '''func TestExecuteRejectsInvalidFinalizationForm(t *testing.T) {
+''',
+    '''func TestFinalizationVerifiedEvidenceDirRejectsLexicallyOutsideMissingPath(t *testing.T) {
+\trepo := newFinalizationTestRepo(t)
+\toutside := filepath.Join(t.TempDir(), "missing-module")
+\tselected, failure := finalizationVerifiedEvidenceDir(repo, finalizationRoutingEvidenceProbe{WorkingDir: outside})
+\tif selected != "" {
+\t\tt.Fatalf("outside routing evidence selected = %q", selected)
 \t}
-
-\tfor _, test := range tests {
-\t\tt.Run(test.name, func(t *testing.T) {
-\t\t\tcfg := newAppConfig(t)
-\t\t\twriteWakeAutomationTOML(t, cfg, wakeKey, test.entityTarget)
-\t\t\tt.Setenv(codexThreadIDEnv, parentThread)
-
-\t\t\tvar out bytes.Buffer
-\t\t\terr := run(
-\t\t\t\ttest.args,
-\t\t\t\tfunc() (config.AppConfig, error) { return cfg, nil },
-\t\t\t\tnil,
-\t\t\t\tbytes.NewReader(nil),
-\t\t\t\t&out,
-\t\t\t\tio.Discard,
-\t\t\t)
-\t\t\tif err == nil {
-\t\t\t\tt.Fatalf("identity mixupを受理しました: %s", out.String())
-\t\t\t}
-\t\t\tvar verification *VerificationError
-\t\t\tif !errors.As(err, &verification) || verification.Outcome != autoresume.Fail {
-\t\t\t\tt.Fatalf("verification fail typed errorを期待: %v", err)
-\t\t\t}
-\t\t\tif out.String() != "" {
-\t\t\t\tt.Fatalf("失敗時のstdoutは空のまま: %q", out.String())
-\t\t\t}
-\t\t})
+\tif failure == nil || failure.Stage != "routing" || failure.Reason != "routing_evidence_outside_repository" {
+\t\tt.Fatalf("outside missing routing evidence did not fail closed: %#v", failure)
 \t}
 }
-""",
-    """func TestRunVerifyCodexWakeFailsClosedOnIdentityMixups(t *testing.T) {
-\tif _, err := exec.LookPath("sqlite3"); err != nil {
-\t\tt.Skip("sqlite3 not installed")
-\t}
 
-\tparentThread := "01a0244a-4ee4-7e71-b2e1-dec3bdda2120"
-\twakeThread := "01a03a9e-10a0-7f11-801c-f04e5dbd5490"
-\twrongWakeThread := "01a05f46-47aa-77d2-912c-0d6b078cb856"
-\twakeKey := autoresume.CodexWakeAutomationKey(wakeThread)
-\trfc3339 := "2026-08-12T20:01:20+09:00"
-\tnextRunAt := time.Date(2026, 8, 12, 11, 1, 20, 0, time.UTC).UnixMilli()
+func TestExecuteRejectsInvalidFinalizationForm(t *testing.T) {
+''',
+)
 
-\ttests := []struct {
-\t\tname          string
-\t\targs          []string
-\t\tautomationKey string
-\t\tentityTarget  string
-\t}{
-\t\t{"automation targeting the parent thread", []string{"--verify-codex-wake", wakeThread, rfc3339}, wakeKey, parentThread},
-\t\t{"wrong wake thread ID", []string{"--verify-codex-wake", wrongWakeThread, rfc3339}, autoresume.CodexWakeAutomationKey(wrongWakeThread), wakeThread},
-\t\t{"glm auto-resume path stays bound to the parent process", []string{"--verify-auto-resume", wakeKey, rfc3339}, wakeKey, wakeThread},
-\t}
+create_once(
+    "glm-worker/internal/harnesslint/external_review_contract_test.go",
+    '''package harnesslint
 
-\tfor _, test := range tests {
-\t\tt.Run(test.name, func(t *testing.T) {
-\t\t\tcfg := newAppConfig(t)
-\t\t\twriteWakeAutomationTOML(t, cfg, test.automationKey, test.entityTarget)
-\t\t\twriteAutomationSchedulerRow(t, cfg, test.automationKey, nextRunAt)
-\t\t\tt.Setenv(codexThreadIDEnv, parentThread)
+import (
+\t"strings"
+\t"testing"
+)
 
-\t\t\tvar out bytes.Buffer
-\t\t\terr := run(
-\t\t\t\ttest.args,
-\t\t\t\tfunc() (config.AppConfig, error) { return cfg, nil },
-\t\t\t\tnil,
-\t\t\t\tbytes.NewReader(nil),
-\t\t\t\t&out,
-\t\t\t\tio.Discard,
-\t\t\t)
-\t\t\tif err == nil {
-\t\t\t\tt.Fatalf("identity mixupを受理しました: %s", out.String())
-\t\t\t}
-\t\t\tvar verification *VerificationError
-\t\t\tif !errors.As(err, &verification) || verification.Outcome != autoresume.Fail {
-\t\t\t\tt.Fatalf("verification fail typed errorを期待: %v", err)
-\t\t\t}
-\t\t\tif out.String() != "" {
-\t\t\t\tt.Fatalf("失敗時のstdoutは空のまま: %q", out.String())
-\t\t\t}
-\t\t})
+func TestParentMaintenanceDirectEditAuthorityIsScoped(t *testing.T) {
+\tagents := readExecutionPermissionFile(t, "codex", "AGENTS.md")
+\tfor _, token := range []string{
+\t\t"parent maintenance",
+\t\t"parent-managed metadata edit",
+\t\t"production code・test・設定・prompt・production wiringの直接編集へ拡張しない",
+\t} {
+\t\tif !strings.Contains(agents, token) {
+\t\t\tt.Fatalf("codex/AGENTS.md missing parent-maintenance authority token %q", token)
+\t\t}
 \t}
 }
-""",
-)
 
-replace_once(
-    "codex/AGENTS.md",
-    """- ユーザーがCodex自身による直接編集・直接実行を明示した場合だけ例外とし、必要時に`~/.codex/instructions/worker/`の該当規則と`~/.codex/instructions/direct-edit.md`を読む。
-- 直接実行の許可は明示された行為・成果物・変更理由だけに限定し、同一session/目的/releaseや運用・release・deploy・live確認の許可から新たな設計・実装変更へ拡張しない。
-""",
-    """- ユーザーがCodex自身による直接編集・直接実行を明示した場合だけ例外とし、必要時に`~/.codex/instructions/worker/`の該当規則と`~/.codex/instructions/direct-edit.md`を読む。
-- `IMPLEMENTATION_RULES.md`の`parent maintenance`条件をすべて満たすparent-managed metadata editは、その規則を当該metadata editの明示的な直接編集authorityとして扱う狭い例外とする。対象はRules / Plan / Task metadataと同節で許可されたexceptional History decisionに限り、production code・test・設定・prompt・production wiringの直接編集へ拡張しない。
-- 直接実行の許可は明示された行為・成果物・変更理由だけに限定し、同一session/目的/releaseや運用・release・deploy・live確認の許可から新たな設計・実装変更へ拡張しない。
-""",
-)
-
-replace_once(
-    "codex/instructions/glm-stop-isolate.md",
-    """- 隔離worktree側state dir(出自記録)は元task完了まで削除しない。glm-workerは隔離worktree・branchの寿命を管理しない。
-""",
-    """- 隔離worktree側state dir(出自記録)と隔離branchは、元taskのresume保持照合が完了し元taskが完了するまで削除しない。glm-workerは隔離worktree・branchの寿命を管理しない。
-""",
+func TestIsolationInstructionRetainsBranchUntilOriginalTaskCompletes(t *testing.T) {
+\tcontract := readExecutionPermissionFile(t, "codex", "instructions", "glm-stop-isolate.md")
+\tfor _, token := range []string{
+\t\t"隔離branch",
+\t\t"元taskのresume保持照合が完了し元taskが完了するまで削除しない",
+\t} {
+\t\tif !strings.Contains(contract, token) {
+\t\t\tt.Fatalf("glm-stop-isolate.md missing branch lifetime token %q", token)
+\t\t}
+\t}
+}
+''',
 )
