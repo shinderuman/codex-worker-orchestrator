@@ -9,12 +9,18 @@ import (
 	"strings"
 )
 
-const maxConstraintReasons = 16
-
 type constraintError struct {
 	reason  string
 	reasons []string
 }
+
+type constraintCollector struct {
+	reasons []string
+	seen    map[string]struct{}
+	omitted int
+}
+
+const maxConstraintReasons = 16
 
 func (e *constraintError) Error() string {
 	return e.reason
@@ -37,12 +43,6 @@ func ConstraintReasons(err error) []string {
 		return nil
 	}
 	return []string{target.reason}
-}
-
-type constraintCollector struct {
-	reasons []string
-	seen    map[string]struct{}
-	omitted int
 }
 
 func newConstraintCollector() *constraintCollector {
