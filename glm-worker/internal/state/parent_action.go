@@ -89,10 +89,8 @@ func (s *StateStore) AdmitNewTask() (ParentActionPlan, bool, error) {
 
 func (kind ResumeStopKind) ParentAction() ParentAction {
 	switch kind {
-	case ResumeStopRateLimited, ResumeStopProviderUnavailable, ResumeStopInterrupted:
+	case ResumeStopRateLimited, ResumeStopProviderUnavailable, ResumeStopInterrupted, ResumeStopGuardRecoverable:
 		return ParentActionResume
-	case ResumeStopGuardRecoverable:
-		return ParentActionRepairGuardThenResume
 	case ResumeStopQualityGate:
 		return ParentActionRepairQualityGateThenResume
 	default:
