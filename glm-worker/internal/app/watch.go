@@ -126,6 +126,14 @@ func printWatch(st *state.StateStore, stdout io.Writer, opts watchOptions) error
 }
 
 func watchTerminal(st *state.StateStore, taskID string, stdout io.Writer, opts watchOptions) (bool, error) {
+	terminal, err := watchTaskTerminalState(st, taskID, stdout)
+	if terminal || err != nil {
+		return terminal, err
+	}
+	return watchOrphanTerminal(st, taskID, stdout, opts)
+}
+
+func watchTaskTerminalState(st *state.StateStore, taskID string, stdout io.Writer) (bool, error) {
 	current := st.ReadOr("task.id", "")
 	if current != "" && current != taskID {
 		return true, writeWatchEvent(stdout, watchExitEvent{
@@ -135,7 +143,7 @@ func watchTerminal(st *state.StateStore, taskID string, stdout io.Writer, opts w
 	if status := st.TaskStatus(); status != state.TaskStatusActive {
 		return true, writeWatchEvent(stdout, watchExitEvent{Type: "watch_exit", TaskID: taskID, Status: string(status)})
 	}
-	return watchOrphanTerminal(st, taskID, stdout, opts)
+	return false, nil
 }
 
 func watchOrphanTerminal(st *state.StateStore, taskID string, stdout io.Writer, opts watchOptions) (bool, error) {
@@ -151,6 +159,10 @@ func watchOrphanTerminal(st *state.StateStore, taskID string, stdout io.Writer, 
 		return false, nil
 	}
 	defer lease.Release()
+	terminal, err := watchTaskTerminalState(st, taskID, stdout)
+	if terminal || err != nil {
+		return terminal, err
+	}
 	material = watchOrphanMaterial(st, taskID)
 	if material == nil || material.Outcome != modelCallOutcomeError {
 		return false, nil
