@@ -14,7 +14,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Apply fixture repairs
-        if: github.event.head_commit.message == 'ci: apply #369 fixture repairs'
+        if: "${{ github.event.head_commit.message == 'ci: run #369 fixture repairs' }}"
         run: |
           python3 - <<'PY'
           from pathlib import Path
