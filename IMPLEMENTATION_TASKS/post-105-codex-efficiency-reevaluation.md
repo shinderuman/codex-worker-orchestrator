@@ -42,7 +42,7 @@ post-105-codex-efficiency-reevaluation.md
 - 「意味のある停止」は、Task corpus閉包実装が品質ポリシー面を変更したため、GLM自身による品質基準の弱体化を防ぐguardがCodex reviewを要求した状態を指す。この個別停止は意図した安全境界として維持し、反復costや品質影響の新証拠が得られた場合だけ改善候補として再評価する
 - PR 345 CodeRabbit comments `3930465346` / `3930465350`: `https://github.com/shinderuman/codex-worker-orchestrator/pull/345#discussion_r3930465346`, `https://github.com/shinderuman/codex-worker-orchestrator/pull/345#discussion_r3930465350`
 - 「そういうもの」は、自由言語だけに依存するcontrolの残存・再導入、機械化済みcontrolのprose thinning、改善候補の捕捉とTask化の機械化を指す
-- 全completed task/current treeを再監査する責務は`prose-only-control-enforcement-audit.md`、機械化とinstruction削減はその後続taskが持つ。本taskはそれらを再実装・再分類せず、完了後から105までの回帰と実測効果だけを再評価する
+- 全completed task/current treeを再監査する先行control-enforcement workと、機械化・instruction削減の後続workはrepository Plan外で完了させる。本taskはそれらを再実装・再分類せず、完了後から105までの回帰と実測効果だけを再評価する
 
 ## Purpose
 
@@ -99,7 +99,7 @@ status: not-applicable
 
 ## Dependencies
 
-- `IMPLEMENTATION_TASKS/mechanized-control-prose-thinning.md`
+- Plan外で完了するcontrol mechanization / instruction thinningがcurrent treeへ統合済みであること
 - 105より前にPlan上で実行するCodex telemetry改善taskがすべて完了していること
 
 ## Fulfilled dependencies
