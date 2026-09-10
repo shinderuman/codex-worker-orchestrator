@@ -46,21 +46,13 @@ blocked taskには、
 「permission received」だけで設計未確定taskをGLMへ投げないでください。
 ````
 
-### 2026-09-10 user permission
-
-````text
-なおBLOCKEDも進められるなら進めてよい
-````
-
-本taskについてユーザー許可は受領済み。品質証拠が不足した状態ではtest省略を開始しない。
-
 ## Purpose
 
 verification cost削減可能性を安全に採否する。
 
 ## Contract
 
-Task 014のevidenceと追加品質証拠に基づく。
+Task 014のevidenceと許可に基づく。
 
 ## Must not
 
@@ -68,7 +60,7 @@ Task 014のevidenceと追加品質証拠に基づく。
 
 ## Acceptance criteria
 
-追加品質証拠が得られた後、Task 014 artifactを読んでconcrete selection Contract / Must not / Acceptance criteria / rollbackを確定してからACTIVE候補にする。
+許可原文をAmendmentsへ保存し、Task 014 artifactを読んでconcrete selection Contract / Must not / Acceptance criteria / rollbackを確定してからACTIVE候補にする。
 
 ## Historical invariants
 
@@ -86,4 +78,4 @@ none
 
 ## Current boundary
 
-ユーザー許可は2026-09-10に受領済み。Task 014のevidenceはtest省略判断に不十分なため、追加品質証拠待ちとしてBLOCKEDを維持する。
+Task 014のevidenceはtest省略判断に不十分。追加品質証拠とユーザー許可待ち。
