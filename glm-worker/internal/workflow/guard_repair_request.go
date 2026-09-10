@@ -8,19 +8,19 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-func (w *Workflow) requestGuardRepair(checkpoint state.ResumeCheckpoint, failure error) {
+func (w *Workflow) requestGuardRepair(checkpoint state.ResumeCheckpoint, failure error) error {
 	if failure == nil || checkpoint.StopKind != state.ResumeStopGuardRecoverable ||
 		os.Getenv(state.GuardRepairParentActionEnv) != state.GuardRepairParentActionResume {
-		return
+		return nil
 	}
 	taskID, err := w.state.TaskID()
 	if err != nil {
-		return
+		return err
 	}
 	text := boundedText(failure.Error(), packet.MaxDiagnosticBytes)
 	record, err := guardrepair.NewRecord(w.config.RepoRoot, taskID, checkpoint.Phase, text)
 	if err != nil {
-		return
+		return err
 	}
-	_ = w.state.RequestGuardRepair(record)
+	return w.state.RequestGuardRepair(record)
 }
