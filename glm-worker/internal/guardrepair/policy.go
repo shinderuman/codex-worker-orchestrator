@@ -76,14 +76,14 @@ func RelevantDigest(repoRoot string) (string, error) {
 		content, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(path)))
 		if err != nil {
 			if os.IsNotExist(err) {
-				fmt.Fprintf(h, "%s\x00<missing>\x00", path)
+				_, _ = h.Write([]byte(path + "\x00<missing>\x00"))
 				continue
 			}
 			return "", fmt.Errorf("read guard repair scope %s: %w", path, err)
 		}
-		fmt.Fprintf(h, "%s\x00", path)
-		h.Write(content)
-		h.Write([]byte{0})
+		_, _ = h.Write([]byte(path + "\x00"))
+		_, _ = h.Write(content)
+		_, _ = h.Write([]byte{0})
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
