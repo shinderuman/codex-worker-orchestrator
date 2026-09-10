@@ -22,6 +22,8 @@ jobs:
         with:
           go-version: ${{ steps.quality-tools.outputs.go_version }}
           cache: false
+      - name: Show gofmt diff
+        run: gofmt -d glm-worker/internal/parentactioncmd/runtime_install.go
       - name: Install quality tools
         run: |
           quality_bin="$(go env GOPATH)/bin"
