@@ -44,6 +44,32 @@ func IsAllowed(path string) bool {
 	return false
 }
 
+func ChangedDirtyPaths(before, after []state.StopDirtyFile) []string {
+	beforeByPath := make(map[string]state.StopDirtyFile, len(before))
+	for _, file := range before {
+		beforeByPath[file.Path] = file
+	}
+	afterByPath := make(map[string]state.StopDirtyFile, len(after))
+	for _, file := range after {
+		afterByPath[file.Path] = file
+	}
+	seen := make(map[string]struct{}, len(beforeByPath)+len(afterByPath))
+	var paths []string
+	for path, old := range beforeByPath {
+		seen[path] = struct{}{}
+		if current, ok := afterByPath[path]; !ok || current != old {
+			paths = append(paths, path)
+		}
+	}
+	for path := range afterByPath {
+		if _, ok := seen[path]; !ok {
+			paths = append(paths, path)
+		}
+	}
+	sort.Strings(paths)
+	return paths
+}
+
 func RelevantDigest(repoRoot string) (string, error) {
 	h := sha256.New()
 	for _, path := range AllowedPaths() {
