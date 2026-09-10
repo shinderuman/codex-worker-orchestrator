@@ -2,7 +2,7 @@ package state
 
 import "testing"
 
-func TestGuardRepairCompleteRequiresObservedOriginalResume(t *testing.T) {
+func TestGuardRepairCompleteRejectsMissingOriginalResumeEvidence(t *testing.T) {
 	st := newGuardRepairStateStore(t)
 	record := guardRepairRecordForTest()
 	record.Status = GuardRepairComplete
