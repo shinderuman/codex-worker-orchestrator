@@ -12,10 +12,12 @@ import (
 type constraintError struct {
 	reason  string
 	reasons []string
+	keys    []string
 }
 
 type constraintCollector struct {
 	reasons []string
+	keys    []string
 	seen    map[string]struct{}
 	omitted int
 }
@@ -24,6 +26,10 @@ const maxConstraintReasons = 16
 
 func (e *constraintError) Error() string {
 	return e.reason
+}
+
+func newConstraintError(key, reason string) *constraintError {
+	return &constraintError{reason: reason, reasons: []string{reason}, keys: []string{key}}
 }
 
 func IsConstraintError(err error) bool {
@@ -45,6 +51,20 @@ func ConstraintReasons(err error) []string {
 	return []string{target.reason}
 }
 
+func ConstraintViolationKeys(err error) []string {
+	var target *constraintError
+	if !errors.As(err, &target) {
+		return nil
+	}
+	if len(target.keys) != 0 {
+		return append([]string(nil), target.keys...)
+	}
+	if target.reason == "" {
+		return nil
+	}
+	return []string{target.reason}
+}
+
 func newConstraintCollector() *constraintCollector {
 	return &constraintCollector{seen: make(map[string]struct{})}
 }
@@ -54,17 +74,18 @@ func (c *constraintCollector) add(err error) error {
 		return nil
 	}
 	reasons := ConstraintReasons(err)
-	if len(reasons) == 0 {
+	keys := ConstraintViolationKeys(err)
+	if len(reasons) == 0 || len(keys) != len(reasons) {
 		return err
 	}
-	for _, reason := range reasons {
-		c.addReason(reason)
+	for index, reason := range reasons {
+		c.addReason(keys[index], reason)
 	}
 	return nil
 }
 
-func (c *constraintCollector) addReason(reason string) {
-	if reason == "" {
+func (c *constraintCollector) addReason(key, reason string) {
+	if key == "" || reason == "" {
 		return
 	}
 	if _, exists := c.seen[reason]; exists {
@@ -76,6 +97,7 @@ func (c *constraintCollector) addReason(reason string) {
 		return
 	}
 	c.reasons = append(c.reasons, reason)
+	c.keys = append(c.keys, key)
 }
 
 func (c *constraintCollector) err() error {
@@ -89,6 +111,7 @@ func (c *constraintCollector) err() error {
 	return &constraintError{
 		reason:  strings.Join(display, "; "),
 		reasons: append([]string(nil), c.reasons...),
+		keys:    append([]string(nil), c.keys...),
 	}
 }
 
@@ -139,19 +162,19 @@ func ValidateWorkerResult(result Result) error {
 
 func validateParentValidation(result Result) error {
 	if result.ParentValidationEvidence != nil {
-		return &constraintError{reason: "parent_validation_evidenceはwrapper専用fieldです"}
+		return newConstraintError("parent-validation-evidence", "parent_validation_evidenceはwrapper専用fieldです")
 	}
 	if result.ParentValidation == "" && result.ParentValidationWorkingDir == "" {
 		return nil
 	}
 	if result.Status != StatusImplemented {
-		return &constraintError{reason: "parent_validationはIMPLEMENTEDだけで指定できます"}
+		return newConstraintError("parent-validation-status", "parent_validationはIMPLEMENTEDだけで指定できます")
 	}
 	if result.ParentValidation == "" || result.ParentValidationWorkingDir == "" {
-		return &constraintError{reason: "parent_validationとparent_validation_working_dirは同時に指定してください"}
+		return newConstraintError("parent-validation-pair", "parent_validationとparent_validation_working_dirは同時に指定してください")
 	}
 	if !validParentValidationForm(result.ParentValidation) {
-		return &constraintError{reason: fmt.Sprintf("parent_validationは既知のparent gateだけを指定してください: %q", result.ParentValidation)}
+		return newConstraintError("parent-validation-form", fmt.Sprintf("parent_validationは既知のparent gateだけを指定してください: %q", result.ParentValidation))
 	}
 	return validateParentValidationWorkingDir(result.ParentValidationWorkingDir)
 }
@@ -166,7 +189,7 @@ func validateParentValidationWorkingDir(workingDir string) error {
 		path.Clean(workingDir) != workingDir ||
 		workingDir == ".." || strings.HasPrefix(workingDir, "../")
 	if invalid {
-		return &constraintError{reason: fmt.Sprintf("parent_validation_working_dirは正規化済みrepository相対pathで指定してください: %q", workingDir)}
+		return newConstraintError("parent-validation-working-dir", fmt.Sprintf("parent_validation_working_dirは正規化済みrepository相対pathで指定してください: %q", workingDir))
 	}
 	return nil
 }
@@ -190,7 +213,7 @@ func ValidateReviewerResult(result Result) error {
 
 func validateReviewerParentValidation(result Result) error {
 	if result.ParentValidation != "" || result.ParentValidationWorkingDir != "" || result.ParentValidationEvidence != nil {
-		return &constraintError{reason: "reviewer結果にparent validation fieldは指定できません"}
+		return newConstraintError("reviewer-parent-validation", "reviewer結果にparent validation fieldは指定できません")
 	}
 	return nil
 }
@@ -200,7 +223,7 @@ func validateTargets(result Result) error {
 		if result.Status == StatusImplemented {
 			return nil
 		}
-		return &constraintError{reason: fmt.Sprintf("%sのTARGETSは空にできません: Solが読むべき最小対象をfile:symbol/行範囲で指定してください", string(result.Status))}
+		return newConstraintError("targets-empty", fmt.Sprintf("%sのTARGETSは空にできません: Solが読むべき最小対象をfile:symbol/行範囲で指定してください", string(result.Status)))
 	}
 	collector := newConstraintCollector()
 	seen := make(map[string]struct{}, len(result.Targets))
@@ -221,21 +244,21 @@ func validateTargets(result Result) error {
 func validateTargetElement(result Result, element string, seen map[string]struct{}) (bool, error) {
 	trimmed := strings.TrimSpace(element)
 	if trimmed == "" {
-		return false, &constraintError{reason: "TARGETSの要素は空・空白のみにできません: 具体対象または予約値none/PACKETを指定してください"}
+		return false, newConstraintError("targets-element-empty", "TARGETSの要素は空・空白のみにできません: 具体対象または予約値none/PACKETを指定してください")
 	}
 	if _, duplicate := seen[trimmed]; duplicate {
-		return false, &constraintError{reason: "TARGETSの要素が重複しています: 各対象は1回だけ指定してください"}
+		return false, newConstraintError("targets-duplicate", "TARGETSの要素が重複しています: 各対象は1回だけ指定してください")
 	}
 	seen[trimmed] = struct{}{}
 	if strings.EqualFold(trimmed, noneTargetsSentinel) {
 		if element != noneTargetsSentinel {
-			return false, &constraintError{reason: "TARGETSの予約値noneは小文字厳密表現のnoneだけを要素にできます: 大小文字・空白の変形は使えません"}
+			return false, newConstraintError("targets-none-case", "TARGETSの予約値noneは小文字厳密表現のnoneだけを要素にできます: 大小文字・空白の変形は使えません")
 		}
 		return true, nil
 	}
 	if strings.EqualFold(trimmed, ReportOnlyTargets) &&
 		(result.Status != StatusFixRequired || element != ReportOnlyTargets || len(result.Targets) != 1) {
-		return false, &constraintError{reason: "TARGETSの予約値PACKETはFIX_REQUIREDの報告再出力専用です: 実装修正では具体対象を指定してください"}
+		return false, newConstraintError("targets-packet-reserved", "TARGETSの予約値PACKETはFIX_REQUIREDの報告再出力専用です: 実装修正では具体対象を指定してください")
 	}
 	return false, nil
 }
@@ -245,10 +268,10 @@ func validateNoneTarget(result Result, hasNone bool) error {
 		return nil
 	}
 	if len(result.Targets) > 1 {
-		return &constraintError{reason: "TARGETSの予約値noneは具体対象と混在できません: 対象が概念的なときはnoneだけを要素にしてください"}
+		return newConstraintError("targets-none-mixed", "TARGETSの予約値noneは具体対象と混在できません: 対象が概念的なときはnoneだけを要素にしてください")
 	}
 	if result.Status == StatusNeedsSolReview {
-		return &constraintError{reason: "NEEDS_SOL_REVIEWのTARGETSはnoneにできません: Solが読むべき最小対象をfile:symbol/行範囲で指定してください"}
+		return newConstraintError("targets-none-review", "NEEDS_SOL_REVIEWのTARGETSはnoneにできません: Solが読むべき最小対象をfile:symbol/行範囲で指定してください")
 	}
 	return nil
 }
@@ -258,26 +281,26 @@ func validateFields(result Result, fields []machineField) error {
 	for _, field := range fields {
 		value := machineFieldValue(result, field)
 		if strings.TrimSpace(value) == "" {
-			collector.addReason(fmt.Sprintf("結果に必須field %sがありません", field))
+			collector.addReason("missing-field:"+string(field), fmt.Sprintf("結果に必須field %sがありません", field))
 			continue
 		}
 		if strings.ContainsAny(value, "\n\r") {
-			collector.addReason(fmt.Sprintf("field %sに改行を含められません: 複数事項は同じvalue内でセミコロン区切りにしてください", field))
+			collector.addReason("multiline-field:"+string(field), fmt.Sprintf("field %sに改行を含められません: 複数事項は同じvalue内でセミコロン区切りにしてください", field))
 		}
 		if len(value) > MaxFieldBytes {
-			collector.addReason(fmt.Sprintf("field %sは%d bytes以内にしてください", field, MaxFieldBytes))
+			collector.addReason("field-size:"+string(field), fmt.Sprintf("field %sは%d bytes以内にしてください", field, MaxFieldBytes))
 		}
 	}
 	for _, value := range append(append([]string(nil), result.Targets...), result.Artifacts...) {
 		if strings.ContainsAny(value, "\n\r") {
-			collector.addReason("TARGETS/ARTIFACTSの各要素に改行を含められません")
+			collector.addReason("list-element-multiline", "TARGETS/ARTIFACTSの各要素に改行を含められません")
 		}
 		if len(value) > MaxFieldBytes {
-			collector.addReason(fmt.Sprintf("TARGETS/ARTIFACTSの各要素は%d bytes以内にしてください", MaxFieldBytes))
+			collector.addReason("list-element-size", fmt.Sprintf("TARGETS/ARTIFACTSの各要素は%d bytes以内にしてください", MaxFieldBytes))
 		}
 	}
 	if size := result.ByteSize(); size > MaxPacketBytes {
-		collector.addReason(fmt.Sprintf("結果全体はmachine JSONで%d bytes以内にしてください: %d bytes", MaxPacketBytes, size))
+		collector.addReason("packet-size", fmt.Sprintf("結果全体はmachine JSONで%d bytes以内にしてください: %d bytes", MaxPacketBytes, size))
 	}
 	return collector.err()
 }
@@ -294,7 +317,7 @@ func ValidateArtifacts(artifacts []string, root string) error {
 	root = filepath.Clean(root)
 	resolvedRoot, err := filepath.EvalSymlinks(root)
 	if err != nil {
-		return &constraintError{reason: fmt.Sprintf("artifact rootを確認できません: %v", err)}
+		return newConstraintError("artifact-root", fmt.Sprintf("artifact rootを確認できません: %v", err))
 	}
 	collector := newConstraintCollector()
 	seen := make(map[string]struct{})
@@ -308,26 +331,26 @@ func ValidateArtifacts(artifacts []string, root string) error {
 
 func validateArtifactPath(path, root, resolvedRoot string, seen map[string]struct{}) error {
 	if path == "" || !filepath.IsAbs(path) || filepath.Clean(path) != path {
-		return &constraintError{reason: fmt.Sprintf("ARTIFACTSは正規化済み絶対パスを指定してください: %q", path)}
+		return newConstraintError("artifact-path", fmt.Sprintf("ARTIFACTSは正規化済み絶対パスを指定してください: %q", path))
 	}
 	if !pathWithinRoot(root, path) {
-		return &constraintError{reason: fmt.Sprintf("ARTIFACTSは現在taskのartifact dir配下だけを指定してください: %s", path)}
+		return newConstraintError("artifact-outside-root", fmt.Sprintf("ARTIFACTSは現在taskのartifact dir配下だけを指定してください: %s", path))
 	}
 	if _, exists := seen[path]; exists {
-		return &constraintError{reason: fmt.Sprintf("ARTIFACTSのパスが重複しています: %s", path)}
+		return newConstraintError("artifact-duplicate", fmt.Sprintf("ARTIFACTSのパスが重複しています: %s", path))
 	}
 	seen[path] = struct{}{}
 
 	info, err := os.Lstat(path)
 	if err != nil {
-		return &constraintError{reason: fmt.Sprintf("ARTIFACTSのファイルを確認できません: %s: %v", path, err)}
+		return newConstraintError("artifact-file", fmt.Sprintf("ARTIFACTSのファイルを確認できません: %s: %v", path, err))
 	}
 	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
-		return &constraintError{reason: fmt.Sprintf("ARTIFACTSは実在する通常ファイルだけを指定してください: %s", path)}
+		return newConstraintError("artifact-regular-file", fmt.Sprintf("ARTIFACTSは実在する通常ファイルだけを指定してください: %s", path))
 	}
 	resolvedPath, err := filepath.EvalSymlinks(path)
 	if err != nil || !pathWithinRoot(resolvedRoot, resolvedPath) {
-		return &constraintError{reason: fmt.Sprintf("ARTIFACTSの解決先がartifact dir外です: %s", path)}
+		return newConstraintError("artifact-resolved-outside-root", fmt.Sprintf("ARTIFACTSの解決先がartifact dir外です: %s", path))
 	}
 	return nil
 }
