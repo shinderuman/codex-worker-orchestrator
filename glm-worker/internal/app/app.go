@@ -134,8 +134,6 @@ const evidenceUsage = "usage: glm-worker --evidence <manifest.json>"
 
 const repoSearchMaxBudgetBytes = 64 * 1024
 
-const qualityGateUsage = "<go-test|go-test-race> | --quality-gate <status|watch|result> <validation-run-id>"
-
 const telemetryQueryUsage = "[current|history] [--task <task-id>] [--since <rfc3339>] [--until <rfc3339>] [--compact]"
 
 const verifyCodexWakeUsage = "usage: glm-worker --verify-codex-wake <wake-task-thread-id> <wake-at-rfc3339>"
@@ -250,7 +248,7 @@ func usageError(format string, args ...any) *UsageError {
 
 func ParseCommand(args []string) (Command, error) {
 	if len(args) == 0 {
-		return Command{}, usageError("usage: glm-worker <instruction> | --execution-milestones-stdin <payload-bytes> [--sha256 <hex>] | --execution-milestones-revise-stdin <payload-bytes> [--sha256 <hex>] | --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix-stdin <payload-bytes> [--sha256 <hex>] %s | --approve-surface current-diff | --accept | --resume | --stop | --isolate | --status | --handoff [recovery] | --recover-parent-action | --recover-quality-surface <task-id> | --project-state | --evidence <manifest.json> | --watch [--verbose] | --timeline [task-id] | --convergence [task-id] | --stats %s | --reset | --verify-auto-resume <automation-key> <auto-resume-at-rfc3339> | --verify-codex-wake <wake-task-thread-id> <wake-at-rfc3339> | --eval-ab <run-dir> | --call-outliers %s | --codex-limit | --repo-search %s | --check-wake-coalesce <auto-resume-at-rfc3339> | --install-smoke %s | --quality-gate %s | --model-routing | --packet-check <packet.json> [--role worker|reviewer] [--artifact-root <dir>] | bundle [task-id] | --parent-usage [task-id] | --review-gap [task-id]", fixOriginUsage, telemetryQueryUsage, telemetryQueryUsage, repoSearchUsage, installSmokeUsage, qualityGateUsage)
+		return Command{}, usageError("usage: glm-worker <instruction> | <command>; run glm-worker --help for command list")
 	}
 	if parser, ok := commandParsers[args[0]]; ok {
 		return parser(args)

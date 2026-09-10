@@ -29,3 +29,24 @@ func writeQualityFile(t *testing.T, root, path, content string) {
 		t.Fatal(err)
 	}
 }
+
+func TestQualityWiringPackageAllowsResponsibilitySplit(t *testing.T) {
+	root := t.TempDir()
+	workflowPath := "glm-worker/internal/workflow/workflow.go"
+	reviewPath := "glm-worker/internal/workflow/review_flow.go"
+	writeQualityFile(t, root, workflowPath, "package workflow\nfunc start() { w.captureQualitySurfaceBaseline(); w.verifyQualitySurfaceBaseline(workerPhase) }\n")
+	writeQualityFile(t, root, reviewPath, "package workflow\nfunc review() { w.qualityGate(w.config.RepoRoot); harnesslint.IsViolation(qualityReport) }\n")
+	present := map[string]bool{workflowPath: true, reviewPath: true}
+	violations, err := qualityWiringPackageViolations(root, present, "glm-worker/internal/workflow/", []string{
+		"w.captureQualitySurfaceBaseline()",
+		"w.verifyQualitySurfaceBaseline(workerPhase)",
+		"w.qualityGate(w.config.RepoRoot)",
+		"harnesslint.IsViolation(qualityReport)",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(violations) != 0 {
+		t.Fatalf("violations = %+v", violations)
+	}
+}

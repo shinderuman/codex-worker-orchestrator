@@ -27,6 +27,16 @@ func qualityWiringViolations(root string, paths []string) ([]Violation, error) {
 		present[path] = true
 	}
 	var violations []Violation
+	workflowViolations, err := qualityWiringPackageViolations(root, present, "glm-worker/internal/workflow/", []string{
+		"w.captureQualitySurfaceBaseline()",
+		"w.verifyQualitySurfaceBaseline(workerPhase)",
+		"w.qualityGate(w.config.RepoRoot)",
+		"harnesslint.IsViolation(qualityReport)",
+	})
+	if err != nil {
+		return nil, err
+	}
+	violations = append(violations, workflowViolations...)
 	for _, check := range qualityWiringChecks() {
 		current, err := qualityWiringCheckViolations(root, present, check.path, check.tokens)
 		if err != nil {
@@ -39,15 +49,6 @@ func qualityWiringViolations(root string, paths []string) ([]Violation, error) {
 
 func qualityWiringChecks() []qualityWiringCheck {
 	checks := []qualityWiringCheck{
-		{
-			path: "glm-worker/internal/workflow/workflow.go",
-			tokens: []string{
-				"w.captureQualitySurfaceBaseline()",
-				"w.verifyQualitySurfaceBaseline(workerPhase)",
-				"w.qualityGate(w.config.RepoRoot)",
-				"harnesslint.IsViolation(qualityReport)",
-			},
-		},
 		{
 			path: "glm-worker/internal/workflow/quality_gate.go",
 			tokens: []string{
@@ -118,6 +119,42 @@ func qualityToolWiringChecks() []qualityWiringCheck {
 			},
 		},
 	}
+}
+
+func qualityWiringPackageViolations(root string, present map[string]bool, prefix string, tokens []string) ([]Violation, error) {
+	found := make(map[string]bool, len(tokens))
+	packageFound := false
+	for path := range present {
+		if !strings.HasPrefix(path, prefix) || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			continue
+		}
+		packageFound = true
+		data, err := readRegularFile(root, path)
+		if err != nil {
+			return nil, err
+		}
+		text := string(data)
+		for _, token := range tokens {
+			if strings.Contains(text, token) {
+				found[token] = true
+			}
+		}
+	}
+	path := strings.TrimSuffix(prefix, "/")
+	if !packageFound {
+		return []Violation{{Rule: "quality-wiring", Path: path, Line: 1, Column: 1, Message: "required quality-gate package is missing"}}, nil
+	}
+	var violations []Violation
+	for _, token := range tokens {
+		if found[token] {
+			continue
+		}
+		violations = append(violations, Violation{
+			Rule: "quality-wiring", Path: path, Line: 1, Column: 1,
+			Message: "required quality-gate wiring is missing: " + token,
+		})
+	}
+	return violations, nil
 }
 
 func qualityWiringCheckViolations(root string, present map[string]bool, path string, tokens []string) ([]Violation, error) {
