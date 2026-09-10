@@ -215,6 +215,7 @@ func newTaskTransitionStateFileNames() []string {
 		reportOnlyStartSnapshotFile,
 		snapshotComparisonFile,
 		guardRepairStateFile,
+		runtimeInstallEvidenceFile,
 	}
 }
 
