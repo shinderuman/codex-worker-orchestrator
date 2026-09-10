@@ -1,0 +1,57 @@
+name: Web GPT 369 Patch
+
+on:
+  push:
+    branches:
+      - web-gpt/369-runtime-install-completion
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: "${{ github.event.head_commit.message == 'ci: apply merged config verification' }}"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Bind merged config verification
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('glm-worker/internal/parentactioncmd/runtime_install.go')
+          text = path.read_text()
+          old = '''\tif err := verifyRuntimeInstalledFiles(cfg, current.Paths); err != nil {
+          \t\treturn runtimeInstallFailure(runtimeInstallFailureInstalled, err.Error())
+          \t}
+          \tinstalledRevision, failure := verifyInstalledRuntime(cfg, current.Head, current.Head)'''
+          new = '''\tif err := verifyRuntimeInstalledFiles(cfg, current.Paths); err != nil {
+          \t\treturn runtimeInstallFailure(runtimeInstallFailureInstalled, err.Error())
+          \t}
+          \tif err := verifyRuntimeMergedConfigFiles(cfg, current.Paths); err != nil {
+          \t\treturn runtimeInstallFailure(runtimeInstallFailureInstalled, err.Error())
+          \t}
+          \tinstalledRevision, failure := verifyInstalledRuntime(cfg, current.Head, current.Head)'''
+          if text.count(old) != 1:
+              raise SystemExit(f'post-install match count: {text.count(old)}')
+          text = text.replace(old, new, 1)
+          old = '''\tif err := verifyRuntimeInstalledFiles(cfg, requirement.Paths); err != nil {
+          \t\treturn runtimeInstallFailure(runtimeInstallFailureInstalled, err.Error())
+          \t}
+          \t_, failure = verifyInstalledRuntime(cfg, evidence.InstalledRevision, requirement.Head)'''
+          new = '''\tif err := verifyRuntimeInstalledFiles(cfg, requirement.Paths); err != nil {
+          \t\treturn runtimeInstallFailure(runtimeInstallFailureInstalled, err.Error())
+          \t}
+          \tif err := verifyRuntimeMergedConfigFiles(cfg, requirement.Paths); err != nil {
+          \t\treturn runtimeInstallFailure(runtimeInstallFailureInstalled, err.Error())
+          \t}
+          \t_, failure = verifyInstalledRuntime(cfg, evidence.InstalledRevision, requirement.Head)'''
+          if text.count(old) != 1:
+              raise SystemExit(f'completion match count: {text.count(old)}')
+          path.write_text(text.replace(old, new, 1))
+          PY
+          gofmt -w glm-worker/internal/parentactioncmd/runtime_install.go glm-worker/internal/parentactioncmd/runtime_install_config.go glm-worker/internal/parentactioncmd/runtime_install_config_test.go
+          git config user.name shinderuman
+          git config user.email shinderuman@gmail.com
+          git add glm-worker/internal/parentactioncmd/runtime_install.go glm-worker/internal/parentactioncmd/runtime_install_config.go glm-worker/internal/parentactioncmd/runtime_install_config_test.go
+          git commit -m 'fix: bind merged configuration to runtime install evidence'
+          git push origin HEAD:web-gpt/369-runtime-install-completion
