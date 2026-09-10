@@ -9,10 +9,9 @@ import (
 )
 
 const (
-	GuardRepairParentActionEnv     = "GLM_WORKER_PARENT_ACTION"
-	GuardRepairParentActionResume  = "resume"
-	GuardRepairRebuiltResume       = "guard-repair-resume"
-	GuardRepairStrategySourcePatch = "bounded-guard-source-repair-v1"
+	GuardRepairParentActionEnv    = "GLM_WORKER_PARENT_ACTION"
+	GuardRepairParentActionResume = "resume"
+	GuardRepairRebuiltResume      = "guard-repair-resume"
 )
 
 type GuardRepairStatus string
@@ -22,6 +21,7 @@ const (
 	GuardRepairRunning   GuardRepairStatus = "running"
 	GuardRepairReady     GuardRepairStatus = "ready"
 	GuardRepairFailed    GuardRepairStatus = "failed"
+	GuardRepairComplete  GuardRepairStatus = "complete"
 )
 
 type GuardRepairRecord struct {
@@ -45,7 +45,7 @@ var ErrNoGuardRepairRecord = errors.New("guard repair record is not available")
 
 func (status GuardRepairStatus) Valid() bool {
 	switch status {
-	case GuardRepairRequested, GuardRepairRunning, GuardRepairReady, GuardRepairFailed:
+	case GuardRepairRequested, GuardRepairRunning, GuardRepairReady, GuardRepairFailed, GuardRepairComplete:
 		return true
 	default:
 		return false
@@ -54,7 +54,8 @@ func (status GuardRepairStatus) Valid() bool {
 
 func (s *StateStore) RequestGuardRepair(record GuardRepairRecord) error {
 	existing, err := s.LoadGuardRepairRecord()
-	if err == nil && existing.TaskID == record.TaskID && existing.Fingerprint == record.Fingerprint && existing.Strategy == record.Strategy {
+	if err == nil && existing.TaskID == record.TaskID && existing.Fingerprint == record.Fingerprint &&
+		existing.Strategy == record.Strategy && existing.RelevantDigest == record.RelevantDigest {
 		return nil
 	}
 	if err != nil && !errors.Is(err, ErrNoGuardRepairRecord) {
@@ -65,7 +66,7 @@ func (s *StateStore) RequestGuardRepair(record GuardRepairRecord) error {
 }
 
 func (s *StateStore) SaveGuardRepairRecord(record GuardRepairRecord) error {
-	if record.TaskID == "" || record.Phase == "" || record.Fingerprint == "" || record.Strategy == "" || record.Failure == "" {
+	if record.TaskID == "" || record.Phase == "" || record.Fingerprint == "" || record.Strategy == "" || record.Failure == "" || record.RelevantDigest == "" {
 		return fmt.Errorf("guard repair record identity is incomplete")
 	}
 	if !record.Status.Valid() {
@@ -98,7 +99,7 @@ func (s *StateStore) LoadGuardRepairRecord() (GuardRepairRecord, error) {
 	if record.Version != guardRepairStateVersion {
 		return GuardRepairRecord{}, fmt.Errorf("unsupported guard repair record version: %d", record.Version)
 	}
-	if record.TaskID == "" || record.Phase == "" || record.Fingerprint == "" || record.Strategy == "" || record.Failure == "" || !record.Status.Valid() {
+	if record.TaskID == "" || record.Phase == "" || record.Fingerprint == "" || record.Strategy == "" || record.Failure == "" || record.RelevantDigest == "" || !record.Status.Valid() {
 		return GuardRepairRecord{}, fmt.Errorf("guard repair record is incomplete")
 	}
 	return record, nil
