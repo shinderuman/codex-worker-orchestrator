@@ -8,17 +8,12 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/prose-only-control-enforcement-audit.md`
+- `IMPLEMENTATION_TASKS/auto-resume-heartbeat-transaction.md`
 
 ## NEXT（優先順）
 
-- `IMPLEMENTATION_TASKS/auto-resume-heartbeat-transaction.md`
 - `IMPLEMENTATION_TASKS/codex-efficiency-control-loop-checkpoint.md`
-- `IMPLEMENTATION_TASKS/runtime-install-completion-binding.md`
 - `IMPLEMENTATION_TASKS/task-stats-revision-consumer-audit.md`
-- `IMPLEMENTATION_TASKS/codex-instruction-conflict-reduction.md`
-- `IMPLEMENTATION_TASKS/parent-plan-continuation-enforcement.md`
-- `IMPLEMENTATION_TASKS/mechanized-control-prose-thinning.md`
 - `IMPLEMENTATION_TASKS/post-105-codex-efficiency-reevaluation.md`
 - `IMPLEMENTATION_TASKS/022-final-verification.md`
 

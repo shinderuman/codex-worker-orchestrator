@@ -17,6 +17,7 @@ none
 - `001-requirement-task-lifecycle.md`は新規ユーザー要求を次のGLM call前にtask fileへ固定する契約を導入した
 - current harnessはACTIVE task fileの存在・構造・hashとworker/reviewerによる読取りを検証するが、直近ユーザーmessageのsemantic deltaがAmendmentまたは別taskへ反映されたかは認識できない
 - 今回も改善Task化の追加指示がRulesに存在したまま、親Codexが外部拒否を復旧して次へ進もうとした
+- 先行control-enforcement auditはrepository Plan外で実装されるためtask path dependencyとして保持しない。再評価時はcurrent treeの実装結果を一次証拠とする
 
 ## Purpose
 
@@ -57,7 +58,7 @@ assumption: Codex appがrepository commandへuser turn identityまたは親がlo
 
 ## Dependencies
 
-- `IMPLEMENTATION_TASKS/prose-only-control-enforcement-audit.md`
+- 先行control-enforcement workがcurrent treeへ統合済みであること
 
 ## Review findings
 
