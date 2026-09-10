@@ -22,6 +22,11 @@ type MarkerGuard struct {
 	SHA256  string
 }
 
+type QualityScopeError struct {
+	Reason string
+	Cause  error
+}
+
 const MarkerPath = ".glm-worker-repository-harness"
 
 const MarkerContent = "github.com/shinderuman/codex-worker-orchestrator/repository-harness/v1\n"
@@ -37,9 +42,27 @@ const (
 	ReasonUntracked       = "untracked"
 )
 
+const (
+	QualityScopeEvaluationFailed = "evaluation-failed"
+	QualityScopeModuleMissing    = "module-missing"
+	QualityScopeModuleMismatch   = "module-mismatch"
+	QualityScopeModuleUnreadable = "module-unreadable"
+)
+
 const repositoryGoModPath = "glm-worker/go.mod"
 
 const repositoryModuleLine = "module github.com/shinderuman/codex-worker-orchestrator/glm-worker"
+
+func (e *QualityScopeError) Error() string {
+	if e.Cause != nil {
+		return fmt.Sprintf("repository quality scope invalid (%s): %v", e.Reason, e.Cause)
+	}
+	return fmt.Sprintf("repository quality scope invalid (%s)", e.Reason)
+}
+
+func (e *QualityScopeError) Unwrap() error {
+	return e.Cause
+}
 
 func Evaluate(root string) (Decision, error) {
 	if root == "" {
@@ -104,27 +127,33 @@ func gitWorktreePresent(root string) (bool, error) {
 
 func QualityToolsApply(root string) (bool, error) {
 	decision, err := Evaluate(root)
-	if err != nil || !decision.Active {
+	if err != nil {
+		return false, &QualityScopeError{Reason: QualityScopeEvaluationFailed, Cause: err}
+	}
+	if !decision.Active {
+		return false, nil
+	}
+	if err := validateRepositoryModule(root); err != nil {
 		return false, err
 	}
-	return repositoryModulePresent(root)
+	return true, nil
 }
 
-func repositoryModulePresent(root string) (bool, error) {
+func validateRepositoryModule(root string) error {
 	goMod := filepath.Join(root, filepath.FromSlash(repositoryGoModPath))
 	data, err := os.ReadFile(goMod)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return false, nil
+			return &QualityScopeError{Reason: QualityScopeModuleMissing}
 		}
-		return false, fmt.Errorf("read %s: %w", repositoryGoModPath, err)
+		return &QualityScopeError{Reason: QualityScopeModuleUnreadable, Cause: fmt.Errorf("read %s: %w", repositoryGoModPath, err)}
 	}
 	for _, line := range strings.Split(string(data), "\n") {
 		if strings.TrimSpace(line) == repositoryModuleLine {
-			return true, nil
+			return nil
 		}
 	}
-	return false, nil
+	return &QualityScopeError{Reason: QualityScopeModuleMismatch}
 }
 
 func CaptureMarker(root string) (MarkerGuard, error) {
