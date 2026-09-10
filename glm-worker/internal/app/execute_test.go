@@ -539,25 +539,33 @@ func TestRunVerifyCodexWakePassesWithParentProcessIdentity(t *testing.T) {
 }
 
 func TestRunVerifyCodexWakeFailsClosedOnIdentityMixups(t *testing.T) {
+	if _, err := exec.LookPath("sqlite3"); err != nil {
+		t.Skip("sqlite3 not installed")
+	}
+
 	parentThread := "01a0244a-4ee4-7e71-b2e1-dec3bdda2120"
 	wakeThread := "01a03a9e-10a0-7f11-801c-f04e5dbd5490"
+	wrongWakeThread := "01a05f46-47aa-77d2-912c-0d6b078cb856"
 	wakeKey := autoresume.CodexWakeAutomationKey(wakeThread)
 	rfc3339 := "2026-08-12T20:01:20+09:00"
+	nextRunAt := time.Date(2026, 8, 12, 11, 1, 20, 0, time.UTC).UnixMilli()
 
 	tests := []struct {
-		name         string
-		args         []string
-		entityTarget string
+		name          string
+		args          []string
+		automationKey string
+		entityTarget  string
 	}{
-		{"automation targeting the parent thread", []string{"--verify-codex-wake", wakeThread, rfc3339}, parentThread},
-		{"wrong wake thread ID", []string{"--verify-codex-wake", "01a05f46-47aa-77d2-912c-0d6b078cb856", rfc3339}, wakeThread},
-		{"glm auto-resume path stays bound to the parent process", []string{"--verify-auto-resume", wakeKey, rfc3339}, wakeThread},
+		{"automation targeting the parent thread", []string{"--verify-codex-wake", wakeThread, rfc3339}, wakeKey, parentThread},
+		{"wrong wake thread ID", []string{"--verify-codex-wake", wrongWakeThread, rfc3339}, autoresume.CodexWakeAutomationKey(wrongWakeThread), wakeThread},
+		{"glm auto-resume path stays bound to the parent process", []string{"--verify-auto-resume", wakeKey, rfc3339}, wakeKey, wakeThread},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			cfg := newAppConfig(t)
-			writeWakeAutomationTOML(t, cfg, wakeKey, test.entityTarget)
+			writeWakeAutomationTOML(t, cfg, test.automationKey, test.entityTarget)
+			writeAutomationSchedulerRow(t, cfg, test.automationKey, nextRunAt)
 			t.Setenv(codexThreadIDEnv, parentThread)
 
 			var out bytes.Buffer

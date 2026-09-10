@@ -920,17 +920,17 @@ func analysisSubsequentTurn(scan bundleRolloutScan, turn *analysisRolloutTurn, c
 	if !turn.HasComplete || turn.CompletedAt.After(collectionEnd) {
 		return entry
 	}
-	entry.Status = analysisStatusAvailable
 	completed := turn.CompletedAt.UTC().Format(time.RFC3339Nano)
 	entry.CompletedAt = &completed
 	delta := analysisAnchoredTokenDelta(scan, turn.StartedAt, turn.CompletedAt)
+	entry.Status = delta.Status
+	entry.BaselineAt = delta.BaselineAt
+	entry.EndAt = delta.EndAt
 	if delta.Status != analysisStatusAvailable {
 		return entry
 	}
 	entry.InputTokens = delta.InputTokens
 	entry.CachedInputTokens = delta.CachedInputTokens
-	entry.BaselineAt = delta.BaselineAt
-	entry.EndAt = delta.EndAt
 	return entry
 }
 
@@ -1114,10 +1114,16 @@ func analysisAnchoredTokenDelta(scan bundleRolloutScan, baselineBound, endBound 
 		delta.EndAt = end.RawAt
 		return delta
 	}
-	delta.InputTokens = analysisSegmentFieldSum(segments, analysisAnchorInput)
-	delta.CachedInputTokens = analysisSegmentFieldSum(segments, analysisAnchorCached)
+	inputTokens, inputKnown := analysisSegmentFieldSum(segments, analysisAnchorInput)
+	cachedInputTokens, cachedInputKnown := analysisSegmentFieldSum(segments, analysisAnchorCached)
 	delta.BaselineAt = baseline.RawAt
 	delta.EndAt = end.RawAt
+	if !inputKnown || !cachedInputKnown {
+		delta.Status = analysisStatusUnknown
+		return delta
+	}
+	delta.InputTokens = inputTokens
+	delta.CachedInputTokens = cachedInputTokens
 	return delta
 }
 
@@ -1204,18 +1210,24 @@ func analysisAnchorTotal(anchor *analysisRolloutTokenAnchor) *int64 {
 	return anchor.Total
 }
 
-func analysisSegmentFieldSum(segments []analysisTokenSegment, field func(*analysisRolloutTokenAnchor) *int64) int64 {
+func analysisSegmentFieldSum(segments []analysisTokenSegment, field func(*analysisRolloutTokenAnchor) *int64) (int64, bool) {
 	var total int64
 	for _, segment := range segments {
 		if segment.baseline != nil {
-			total += analysisCounterDeltaState(field(segment.baseline), field(segment.end)).Value
+			delta := analysisCounterDeltaState(field(segment.baseline), field(segment.end))
+			if !delta.Known {
+				return 0, false
+			}
+			total += delta.Value
 			continue
 		}
-		if value := field(segment.end); value != nil {
-			total += *value
+		value := field(segment.end)
+		if value == nil {
+			return 0, false
 		}
+		total += *value
 	}
-	return total
+	return total, true
 }
 
 func analysisCounterDeltaState(baseline, end *int64) analysisCounterDelta {
