@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -114,6 +115,23 @@ func runtimeSourceDigest(repoRoot string, paths []string) (string, error) {
 	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
+func runtimeChangedBetween(repoRoot, fromHead, toHead string) (bool, error) {
+	if fromHead == toHead {
+		return false, nil
+	}
+	command := exec.Command("git", "-C", repoRoot, "diff", "--name-only", "-z", "--no-renames", fromHead, toHead, "--")
+	output, err := command.Output()
+	if err != nil {
+		return false, fmt.Errorf("runtime install head comparison: %w", err)
+	}
+	for _, raw := range bytes.Split(output, []byte{0}) {
+		if len(raw) != 0 && runtimeInstallPath(string(raw)) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func verifyRuntimeInstalledFiles(cfg config.AppConfig, paths []string) error {
 	for _, sourcePath := range paths {
 		installedPath, ok := installedManagedPath(cfg, sourcePath)
@@ -153,7 +171,7 @@ func installedManagedPath(cfg config.AppConfig, sourcePath string) (string, bool
 	}
 }
 
-func verifyInstalledRuntime(cfg config.AppConfig, head string) (string, *finalizationFailure) {
+func verifyInstalledRuntime(cfg config.AppConfig, installedHead, currentHead string) (string, *finalizationFailure) {
 	worker, err := resolveGLMWorker()
 	if err != nil {
 		return "", runtimeInstallFailure(runtimeInstallFailureInstalled, err.Error())
@@ -168,8 +186,24 @@ func verifyInstalledRuntime(cfg config.AppConfig, head string) (string, *finaliz
 		return "", runtimeInstallFailure(runtimeInstallFailureInstalled, "installed glm-worker status is not valid JSON")
 	}
 	if probe.RuntimeBuild.VCSRevision == nil || probe.RuntimeBuild.VCSModified == nil || *probe.RuntimeBuild.VCSModified ||
-		probe.RuntimeBuild.Relationship != "same" || *probe.RuntimeBuild.VCSRevision != head {
-		return "", runtimeInstallFailure(runtimeInstallFailureInstalled, "installed glm-worker revision does not match current HEAD")
+		*probe.RuntimeBuild.VCSRevision != installedHead {
+		return "", runtimeInstallFailure(runtimeInstallFailureInstalled, "installed glm-worker revision does not match install evidence")
+	}
+	if installedHead == currentHead {
+		if probe.RuntimeBuild.Relationship != "same" {
+			return "", runtimeInstallFailure(runtimeInstallFailureInstalled, "installed glm-worker is not current")
+		}
+		return *probe.RuntimeBuild.VCSRevision, nil
+	}
+	if probe.RuntimeBuild.Relationship != "ancestor" {
+		return "", runtimeInstallFailure(runtimeInstallFailureInstalled, "installed glm-worker revision is not an ancestor of current HEAD")
+	}
+	changed, err := runtimeChangedBetween(cfg.RepoRoot, installedHead, currentHead)
+	if err != nil {
+		return "", runtimeInstallFailure(runtimeInstallFailureInstalled, err.Error())
+	}
+	if changed {
+		return "", runtimeInstallFailure(runtimeInstallFailureStale, "runtime source changed after install evidence")
 	}
 	return *probe.RuntimeBuild.VCSRevision, nil
 }
@@ -202,7 +236,7 @@ func persistRuntimeInstallCompletion(cfg config.AppConfig, st *state.StateStore,
 	if err := verifyRuntimeInstalledFiles(cfg, current.Paths); err != nil {
 		return runtimeInstallFailure(runtimeInstallFailureInstalled, err.Error())
 	}
-	installedRevision, failure := verifyInstalledRuntime(cfg, current.Head)
+	installedRevision, failure := verifyInstalledRuntime(cfg, current.Head, current.Head)
 	if failure != nil {
 		return failure
 	}
@@ -249,14 +283,21 @@ func verifyRuntimeInstallCompletion(cfg config.AppConfig, st *state.StateStore) 
 	if err != nil {
 		return runtimeInstallFailure(runtimeInstallFailureEvidence, err.Error())
 	}
-	if evidence.TaskID != taskID || evidence.Head != requirement.Head || evidence.SourceDigest != requirement.SourceDigest ||
-		evidence.InstalledRevision != requirement.Head || evidence.SmokeResult != state.ValidationResultPass {
+	if evidence.TaskID != taskID || evidence.SourceDigest != requirement.SourceDigest || evidence.InstalledRevision != evidence.Head ||
+		evidence.SmokeResult != state.ValidationResultPass {
 		return runtimeInstallFailure(runtimeInstallFailureStale, "runtime install evidence does not match current task source")
+	}
+	changed, err := runtimeChangedBetween(cfg.RepoRoot, evidence.Head, requirement.Head)
+	if err != nil {
+		return runtimeInstallFailure(runtimeInstallFailureStale, err.Error())
+	}
+	if changed {
+		return runtimeInstallFailure(runtimeInstallFailureStale, "runtime source changed after install evidence")
 	}
 	if err := verifyRuntimeInstalledFiles(cfg, requirement.Paths); err != nil {
 		return runtimeInstallFailure(runtimeInstallFailureInstalled, err.Error())
 	}
-	if _, failure := verifyInstalledRuntime(cfg, requirement.Head); failure != nil {
+	if _, failure := verifyInstalledRuntime(cfg, evidence.InstalledRevision, requirement.Head); failure != nil {
 		return failure
 	}
 	return nil
