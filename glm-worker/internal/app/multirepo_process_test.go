@@ -365,17 +365,7 @@ func newMultiRepoGitRepo(t *testing.T, dir string, marker string) string {
 	if err := os.WriteFile(filepath.Join(dir, "corpus.md"), []byte(document), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	goMod := filepath.Join(dir, "glm-worker", "go.mod")
-	if err := os.MkdirAll(filepath.Dir(goMod), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(goMod, []byte("module github.com/shinderuman/codex-worker-orchestrator/glm-worker\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, repositoryharness.MarkerPath), []byte(repositoryharness.MarkerContent), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	run("add", "corpus.md", repositoryharness.MarkerPath, "glm-worker/go.mod")
+	run("add", "corpus.md")
 	run("commit", "-q", "-m", "initial")
 	return dir
 }
