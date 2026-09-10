@@ -17,6 +17,9 @@ func admitParentCommand(cmd Command, st *state.StateStore) error {
 		if resume {
 			return nil
 		}
+		if st.TaskStatus() == state.TaskStatusActive {
+			return &workflow.WorkerError{Message: "previous task is still active; run glm-worker --reset before starting a new task"}
+		}
 		plan, admitted, err := st.AdmitNewTask()
 		if err != nil {
 			return &workflow.WorkerError{Message: err.Error()}
@@ -133,8 +136,6 @@ func newTaskActionDenied(plan state.ParentActionPlan, st *state.StateStore) erro
 		return &workflow.WorkerError{Message: "previous task stopped on a deterministic quality gate failure; repair the reported gate precondition then use --resume or --reset"}
 	case state.ParentActionUnpark:
 		return &workflow.WorkerError{Message: "previous task is parked for an interrupt task; unpark it (after integrating the interrupt work) or run the interrupt task inside the parked worktree"}
-	case state.ParentActionReset:
-		return &workflow.WorkerError{Message: "previous task is still active without an execution owner; run glm-worker --reset before starting a new task"}
 	}
 	return &workflow.WorkerError{Message: fmt.Sprintf("previous task requires parent action %s before starting a new task", plan.RequiredAction)}
 }
