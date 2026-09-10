@@ -137,10 +137,11 @@ func TestMultiRepositoryProcessIsolation(t *testing.T) {
 	stateB := env.waitStateDir(t, env.repoB, nil)
 
 	taskA1 := readStateFile(t, stateA, "task.id")
+	workerA1 := readStateFile(t, stateA, "worker.id")
 	assertRepoLockSemantics(t, env, stateA, stateB, taskA1, taskB)
 	assertSameRepoSecondProcessDenied(t, env, env.repoA)
 	assertNoCrossContamination(t, stateA, stateB,
-		[]string{taskA1, readStateFile(t, stateA, "worker.id"), "MRISOA1"},
+		[]string{taskA1, workerA1, "MRISOA1"},
 		[]string{taskB, readStateFile(t, stateB, "worker.id"), readStateFile(t, stateB, "reviewer.id"), "MRISOB"},
 	)
 	snapshotB := snapshotStateDir(t, stateB)
@@ -150,6 +151,30 @@ func TestMultiRepositoryProcessIsolation(t *testing.T) {
 	if probe := ProbeRepoLock(filepath.Join(stateA, "lock")); probe.State != LockFree {
 		t.Fatalf("repo A process終了後にlockが解放されていません: %s", probe.State)
 	}
+
+	deniedStart := env.run(t, env.repoA, "repo A second task after recovery marker MRISOA2")
+	if deniedStart.code != 1 || !strings.Contains(deniedStart.stderr, "glm-worker --reset") {
+		t.Fatalf("owner-lost active task上のnew-task startが拒否されません: code=%d stderr=%s", deniedStart.code, deniedStart.stderr)
+	}
+	if got := readStateFile(t, stateA, "task.id"); got != taskA1 {
+		t.Fatalf("拒否されたnew-task startがtask.idを変更しました: want=%s got=%s", taskA1, got)
+	}
+	if got := readStateFile(t, stateA, "worker.id"); got != workerA1 {
+		t.Fatalf("拒否されたnew-task startがworker.idを変更しました: want=%s got=%s", workerA1, got)
+	}
+	if got := readStateFile(t, stateA, "last-request"); !strings.Contains(got, "MRISOA1") {
+		t.Fatalf("拒否されたnew-task startが既存requestを変更しました: %s", got)
+	}
+	assertStateDirUnchanged(t, stateB, snapshotB)
+
+	resetLost := env.run(t, env.repoA, "--reset")
+	if resetLost.code != 0 || !strings.Contains(resetLost.stdout, `"status":"reset"`) {
+		t.Fatalf("owner-lost active taskの明示resetが失敗しました: code=%d stdout=%s stderr=%s", resetLost.code, resetLost.stdout, resetLost.stderr)
+	}
+	if _, err := os.Stat(filepath.Join(stateA, "task.id")); !os.IsNotExist(err) {
+		t.Fatalf("owner-lost active taskのreset後もtask.idが残っています: %v", err)
+	}
+	assertStateDirUnchanged(t, stateB, snapshotB)
 
 	env.setStubMode(t, env.stubA, "ratelimit")
 	rateLimited := env.run(t, env.repoA, "repo A second task after recovery marker MRISOA2")
