@@ -9,8 +9,11 @@ import (
 	"strings"
 )
 
+const maxConstraintReasons = 16
+
 type constraintError struct {
-	reason string
+	reason  string
+	reasons []string
 }
 
 func (e *constraintError) Error() string {
@@ -20,6 +23,73 @@ func (e *constraintError) Error() string {
 func IsConstraintError(err error) bool {
 	var target *constraintError
 	return errors.As(err, &target)
+}
+
+func ConstraintReasons(err error) []string {
+	var target *constraintError
+	if !errors.As(err, &target) {
+		return nil
+	}
+	if len(target.reasons) != 0 {
+		return append([]string(nil), target.reasons...)
+	}
+	if target.reason == "" {
+		return nil
+	}
+	return []string{target.reason}
+}
+
+type constraintCollector struct {
+	reasons []string
+	seen    map[string]struct{}
+	omitted int
+}
+
+func newConstraintCollector() *constraintCollector {
+	return &constraintCollector{seen: make(map[string]struct{})}
+}
+
+func (c *constraintCollector) add(err error) error {
+	if err == nil {
+		return nil
+	}
+	reasons := ConstraintReasons(err)
+	if len(reasons) == 0 {
+		return err
+	}
+	for _, reason := range reasons {
+		c.addReason(reason)
+	}
+	return nil
+}
+
+func (c *constraintCollector) addReason(reason string) {
+	if reason == "" {
+		return
+	}
+	if _, exists := c.seen[reason]; exists {
+		return
+	}
+	c.seen[reason] = struct{}{}
+	if len(c.reasons) >= maxConstraintReasons {
+		c.omitted++
+		return
+	}
+	c.reasons = append(c.reasons, reason)
+}
+
+func (c *constraintCollector) err() error {
+	if len(c.reasons) == 0 {
+		return nil
+	}
+	display := append([]string(nil), c.reasons...)
+	if c.omitted != 0 {
+		display = append(display, fmt.Sprintf("ほか%d件の独立した違反があります", c.omitted))
+	}
+	return &constraintError{
+		reason:  strings.Join(display, "; "),
+		reasons: append([]string(nil), c.reasons...),
+	}
 }
 
 func RejectCategory(err error) string {
@@ -51,16 +121,20 @@ func RejectCategory(err error) string {
 }
 
 func ValidateWorkerResult(result Result) error {
-	if err := validateMachineStatusRisk(result, workerMachineContract); err != nil {
+	collector := newConstraintCollector()
+	if err := collector.add(validateMachineStatusRisk(result, workerMachineContract)); err != nil {
 		return err
 	}
-	if err := validateParentValidation(result); err != nil {
+	if err := collector.add(validateParentValidation(result)); err != nil {
 		return err
 	}
-	if err := validateFields(result, resultFieldsForStatus(result.Status)); err != nil {
+	if err := collector.add(validateFields(result, resultFieldsForStatus(result.Status))); err != nil {
 		return err
 	}
-	return validateTargets(result)
+	if err := collector.add(validateTargets(result)); err != nil {
+		return err
+	}
+	return collector.err()
 }
 
 func validateParentValidation(result Result) error {
@@ -98,16 +172,27 @@ func validateParentValidationWorkingDir(workingDir string) error {
 }
 
 func ValidateReviewerResult(result Result) error {
-	if err := validateMachineStatusRisk(result, reviewerMachineContract); err != nil {
+	collector := newConstraintCollector()
+	if err := collector.add(validateMachineStatusRisk(result, reviewerMachineContract)); err != nil {
 		return err
 	}
+	if err := collector.add(validateReviewerParentValidation(result)); err != nil {
+		return err
+	}
+	if err := collector.add(validateFields(result, resultFieldsForStatus(result.Status))); err != nil {
+		return err
+	}
+	if err := collector.add(validateTargets(result)); err != nil {
+		return err
+	}
+	return collector.err()
+}
+
+func validateReviewerParentValidation(result Result) error {
 	if result.ParentValidation != "" || result.ParentValidationWorkingDir != "" || result.ParentValidationEvidence != nil {
 		return &constraintError{reason: "reviewer結果にparent validation fieldは指定できません"}
 	}
-	if err := validateFields(result, resultFieldsForStatus(result.Status)); err != nil {
-		return err
-	}
-	return validateTargets(result)
+	return nil
 }
 
 func validateTargets(result Result) error {
@@ -117,16 +202,20 @@ func validateTargets(result Result) error {
 		}
 		return &constraintError{reason: fmt.Sprintf("%sのTARGETSは空にできません: Solが読むべき最小対象をfile:symbol/行範囲で指定してください", string(result.Status))}
 	}
+	collector := newConstraintCollector()
 	seen := make(map[string]struct{}, len(result.Targets))
 	hasNone := false
 	for _, element := range result.Targets {
 		isNone, err := validateTargetElement(result, element, seen)
-		if err != nil {
-			return err
+		if collectErr := collector.add(err); collectErr != nil {
+			return collectErr
 		}
 		hasNone = hasNone || isNone
 	}
-	return validateNoneTarget(result, hasNone)
+	if err := collector.add(validateNoneTarget(result, hasNone)); err != nil {
+		return err
+	}
+	return collector.err()
 }
 
 func validateTargetElement(result Result, element string, seen map[string]struct{}) (bool, error) {
@@ -165,30 +254,32 @@ func validateNoneTarget(result Result, hasNone bool) error {
 }
 
 func validateFields(result Result, fields []machineField) error {
+	collector := newConstraintCollector()
 	for _, field := range fields {
 		value := machineFieldValue(result, field)
 		if strings.TrimSpace(value) == "" {
-			return &constraintError{reason: fmt.Sprintf("結果に必須field %sがありません", field)}
+			collector.addReason(fmt.Sprintf("結果に必須field %sがありません", field))
+			continue
 		}
 		if strings.ContainsAny(value, "\n\r") {
-			return &constraintError{reason: fmt.Sprintf("field %sに改行を含められません: 複数事項は同じvalue内でセミコロン区切りにしてください", field)}
+			collector.addReason(fmt.Sprintf("field %sに改行を含められません: 複数事項は同じvalue内でセミコロン区切りにしてください", field))
 		}
 		if len(value) > MaxFieldBytes {
-			return &constraintError{reason: fmt.Sprintf("field %sは%d bytes以内にしてください", field, MaxFieldBytes)}
+			collector.addReason(fmt.Sprintf("field %sは%d bytes以内にしてください", field, MaxFieldBytes))
 		}
 	}
 	for _, value := range append(append([]string(nil), result.Targets...), result.Artifacts...) {
 		if strings.ContainsAny(value, "\n\r") {
-			return &constraintError{reason: "TARGETS/ARTIFACTSの各要素に改行を含められません"}
+			collector.addReason("TARGETS/ARTIFACTSの各要素に改行を含められません")
 		}
 		if len(value) > MaxFieldBytes {
-			return &constraintError{reason: fmt.Sprintf("TARGETS/ARTIFACTSの各要素は%d bytes以内にしてください", MaxFieldBytes)}
+			collector.addReason(fmt.Sprintf("TARGETS/ARTIFACTSの各要素は%d bytes以内にしてください", MaxFieldBytes))
 		}
 	}
 	if size := result.ByteSize(); size > MaxPacketBytes {
-		return &constraintError{reason: fmt.Sprintf("結果全体はmachine JSONで%d bytes以内にしてください: %d bytes", MaxPacketBytes, size)}
+		collector.addReason(fmt.Sprintf("結果全体はmachine JSONで%d bytes以内にしてください: %d bytes", MaxPacketBytes, size))
 	}
-	return nil
+	return collector.err()
 }
 
 func IsReportOnlyFix(result Result) bool {
@@ -205,13 +296,14 @@ func ValidateArtifacts(artifacts []string, root string) error {
 	if err != nil {
 		return &constraintError{reason: fmt.Sprintf("artifact rootを確認できません: %v", err)}
 	}
+	collector := newConstraintCollector()
 	seen := make(map[string]struct{})
 	for _, path := range artifacts {
-		if err := validateArtifactPath(path, root, resolvedRoot, seen); err != nil {
+		if err := collector.add(validateArtifactPath(path, root, resolvedRoot, seen)); err != nil {
 			return err
 		}
 	}
-	return nil
+	return collector.err()
 }
 
 func validateArtifactPath(path, root, resolvedRoot string, seen map[string]struct{}) error {
