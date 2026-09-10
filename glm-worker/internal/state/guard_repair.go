@@ -8,21 +8,7 @@ import (
 	"time"
 )
 
-const (
-	GuardRepairParentActionEnv    = "GLM_WORKER_PARENT_ACTION"
-	GuardRepairParentActionResume = "resume"
-	GuardRepairRebuiltResume      = "guard-repair-resume"
-)
-
 type GuardRepairStatus string
-
-const (
-	GuardRepairRequested GuardRepairStatus = "requested"
-	GuardRepairRunning   GuardRepairStatus = "running"
-	GuardRepairReady     GuardRepairStatus = "ready"
-	GuardRepairFailed    GuardRepairStatus = "failed"
-	GuardRepairComplete  GuardRepairStatus = "complete"
-)
 
 type GuardRepairRecord struct {
 	Version                int               `json:"version"`
@@ -39,6 +25,16 @@ type GuardRepairRecord struct {
 }
 
 const (
+	GuardRepairParentActionEnv    = "GLM_WORKER_PARENT_ACTION"
+	GuardRepairParentActionResume = "resume"
+	GuardRepairRebuiltResume      = "guard-repair-resume"
+
+	GuardRepairRequested GuardRepairStatus = "requested"
+	GuardRepairRunning   GuardRepairStatus = "running"
+	GuardRepairReady     GuardRepairStatus = "ready"
+	GuardRepairFailed    GuardRepairStatus = "failed"
+	GuardRepairComplete  GuardRepairStatus = "complete"
+
 	guardRepairStateFile    = "guard-repair.json"
 	guardRepairStateVersion = 1
 )
@@ -54,16 +50,37 @@ func (status GuardRepairStatus) Valid() bool {
 	}
 }
 
+func (record GuardRepairRecord) validate() error {
+	if record.TaskID == "" || record.Phase == "" || record.Fingerprint == "" || record.Strategy == "" {
+		return fmt.Errorf("guard repair record identity is incomplete")
+	}
+	if record.Failure == "" || record.RelevantDigest == "" {
+		return fmt.Errorf("guard repair record evidence is incomplete")
+	}
+	if !record.Status.Valid() {
+		return fmt.Errorf("guard repair record has invalid status %q", record.Status)
+	}
+	if err := record.validateCompletion(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (record GuardRepairRecord) validateCompletion() error {
+	ready := record.Status == GuardRepairReady || record.Status == GuardRepairComplete
+	if ready && record.RepairedDigest == "" {
+		return fmt.Errorf("ready guard repair record requires repaired digest")
+	}
+	if record.OriginalResumeObserved && record.Status != GuardRepairComplete {
+		return fmt.Errorf("original resume evidence requires complete guard repair status")
+	}
+	return nil
+}
+
 func (s *StateStore) RequestGuardRepair(record GuardRepairRecord) error {
 	existing, err := s.LoadGuardRepairRecord()
-	if err == nil && existing.TaskID == record.TaskID && existing.Strategy == record.Strategy {
-		if existing.Fingerprint == record.Fingerprint && existing.RelevantDigest == record.RelevantDigest {
-			return nil
-		}
-		if existing.RepairedDigest != "" && existing.RepairedDigest == record.RelevantDigest &&
-			(existing.Status == GuardRepairReady || existing.Status == GuardRepairComplete) {
-			return nil
-		}
+	if err == nil && existing.sameRecovery(record) {
+		return nil
 	}
 	if err != nil && !errors.Is(err, ErrNoGuardRepairRecord) {
 		return err
@@ -72,18 +89,20 @@ func (s *StateStore) RequestGuardRepair(record GuardRepairRecord) error {
 	return s.SaveGuardRepairRecord(record)
 }
 
+func (record GuardRepairRecord) sameRecovery(next GuardRepairRecord) bool {
+	if record.TaskID != next.TaskID || record.Strategy != next.Strategy {
+		return false
+	}
+	if record.Fingerprint == next.Fingerprint && record.RelevantDigest == next.RelevantDigest {
+		return true
+	}
+	ready := record.Status == GuardRepairReady || record.Status == GuardRepairComplete
+	return ready && record.RepairedDigest != "" && record.RepairedDigest == next.RelevantDigest
+}
+
 func (s *StateStore) SaveGuardRepairRecord(record GuardRepairRecord) error {
-	if record.TaskID == "" || record.Phase == "" || record.Fingerprint == "" || record.Strategy == "" || record.Failure == "" || record.RelevantDigest == "" {
-		return fmt.Errorf("guard repair record identity is incomplete")
-	}
-	if !record.Status.Valid() {
-		return fmt.Errorf("guard repair record has invalid status %q", record.Status)
-	}
-	if (record.Status == GuardRepairReady || record.Status == GuardRepairComplete) && record.RepairedDigest == "" {
-		return fmt.Errorf("ready guard repair record requires repaired digest")
-	}
-	if record.OriginalResumeObserved && record.Status != GuardRepairComplete {
-		return fmt.Errorf("original resume evidence requires complete guard repair status")
+	if err := record.validate(); err != nil {
+		return err
 	}
 	record.Version = guardRepairStateVersion
 	record.UpdatedAt = time.Now().UTC()
@@ -112,14 +131,8 @@ func (s *StateStore) LoadGuardRepairRecord() (GuardRepairRecord, error) {
 	if record.Version != guardRepairStateVersion {
 		return GuardRepairRecord{}, fmt.Errorf("unsupported guard repair record version: %d", record.Version)
 	}
-	if record.TaskID == "" || record.Phase == "" || record.Fingerprint == "" || record.Strategy == "" || record.Failure == "" || record.RelevantDigest == "" || !record.Status.Valid() {
-		return GuardRepairRecord{}, fmt.Errorf("guard repair record is incomplete")
-	}
-	if (record.Status == GuardRepairReady || record.Status == GuardRepairComplete) && record.RepairedDigest == "" {
-		return GuardRepairRecord{}, fmt.Errorf("ready guard repair record requires repaired digest")
-	}
-	if record.OriginalResumeObserved && record.Status != GuardRepairComplete {
-		return GuardRepairRecord{}, fmt.Errorf("original resume evidence requires complete guard repair status")
+	if err := record.validate(); err != nil {
+		return GuardRepairRecord{}, err
 	}
 	return record, nil
 }
