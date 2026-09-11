@@ -84,6 +84,9 @@ func terminalProjectContinuation(st *state.StateStore) projectContinuationObliga
 	if status != state.TaskStatusNone && status != state.TaskStatusComplete {
 		return unknownProjectContinuation(projectContinuationReasonGoalLifecycleInconsistent)
 	}
+	if status == state.TaskStatusNone && st.ReadOr("active-task", "") != "" {
+		return unknownProjectContinuation(projectContinuationReasonGoalLifecycleInconsistent)
+	}
 	plan, err := st.ParentActionPlan()
 	if err != nil || plan.RequiredAction != state.ParentActionNone {
 		return unknownProjectContinuation(projectContinuationReasonGoalLifecycleInconsistent)

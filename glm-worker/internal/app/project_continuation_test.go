@@ -221,3 +221,22 @@ func TestProjectStateJSONIncludesCanonicalContinuation(t *testing.T) {
 		t.Fatalf("continuation JSON = %#v body=%s", output.Continuation, stdout.String())
 	}
 }
+func TestProjectContinuationTerminalRejectsStaleRuntimeTask(t *testing.T) {
+	cfg := newAppConfig(t)
+	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", projectContinuationPlan("completed", nil, nil, nil))
+	st, err := state.NewStateStore(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Write("active-task", "IMPLEMENTATION_TASKS/stale.md"); err != nil {
+		t.Fatal(err)
+	}
+	output, err := buildProjectState(cfg, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	obligation := deriveProjectContinuation(output, st)
+	if obligation.State != projectContinuationUnknown || obligation.Reason != projectContinuationReasonGoalLifecycleInconsistent {
+		t.Fatalf("stale runtime task with completed goal = %#v", obligation)
+	}
+}
