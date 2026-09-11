@@ -54,7 +54,48 @@ jobs:
           '''
           if text.count(duplicate) != 1:
               raise SystemExit('expected exactly one duplicated session invalidation block')
-          path.write_text(text.replace(duplicate, '', 1))
+          text = text.replace(duplicate, '', 1)
+
+          resume = '''\tif resume {
+          \t\tstats, err := s.loadTaskStats()
+          \t\tif err != nil || stats.TaskID != taskID {
+          \t\t\ts.InitializeTaskStats(taskID)
+          \t\t}
+          \t\tif _, err := s.loadParentReviewState(); err != nil {
+          \t\t\treturn "", fmt.Errorf("session rotation retry cannot verify parent review state: %w", err)
+          \t\t}
+          \t\tif err := s.SetTaskStatus(TaskStatusActive); err != nil {
+          \t\t\treturn "", err
+          \t\t}
+          \t\treturn taskID, nil
+          \t}
+          '''
+          if text.count(resume) != 1:
+              raise SystemExit('expected session rotation resume branch exactly once')
+          text = text.replace(resume, '''\tif resume {
+          \t\treturn s.resumeTaskWithID(taskID)
+          \t}
+          ''', 1)
+          marker = '''func newTaskTransitionStateFileNames() []string {
+          '''
+          helper = '''func (s *StateStore) resumeTaskWithID(taskID string) (string, error) {
+          \tstats, err := s.loadTaskStats()
+          \tif err != nil || stats.TaskID != taskID {
+          \t\ts.InitializeTaskStats(taskID)
+          \t}
+          \tif _, err := s.loadParentReviewState(); err != nil {
+          \t\treturn "", fmt.Errorf("session rotation retry cannot verify parent review state: %w", err)
+          \t}
+          \tif err := s.SetTaskStatus(TaskStatusActive); err != nil {
+          \t\treturn "", err
+          \t}
+          \treturn taskID, nil
+          }
+
+          '''
+          if text.count(marker) != 1:
+              raise SystemExit('expected newTaskTransitionStateFileNames exactly once')
+          path.write_text(text.replace(marker, helper + marker, 1))
 
           path = Path('glm-worker/internal/state/parent_review.go')
           text = path.read_text()
@@ -95,19 +136,30 @@ jobs:
           if text.count(old) != 1:
               raise SystemExit('expected RecordParentOutcome saved form exactly once')
           path.write_text(text.replace(old, new, 1))
+
+          changed = 0
+          for path in Path('glm-worker').rglob('*_test.go'):
+              lines = path.read_text().splitlines(keepends=True)
+              out = []
+              file_changed = False
+              for line in lines:
+                  stripped = line.strip()
+                  if '.RecordSolResult(' in stripped and stripped.endswith(')') and not stripped.startswith('if err :=') and not stripped.startswith('_ ='):
+                      indent = line[:len(line) - len(line.lstrip())]
+                      out.append(f'{indent}if err := {stripped}; err != nil {{\n')
+                      out.append(f'{indent}\tt.Fatal(err)\n')
+                      out.append(f'{indent}}}\n')
+                      changed += 1
+                      file_changed = True
+                  else:
+                      out.append(line)
+              if file_changed:
+                  path.write_text(''.join(out))
+          if changed != 35:
+              raise SystemExit(f'expected to update 35 unchecked RecordSolResult calls, got {changed}')
           PY
-          gofmt -w \
-            glm-worker/internal/state/lifecycle_transition.go \
-            glm-worker/internal/state/parent_accept.go \
-            glm-worker/internal/state/parent_action.go \
-            glm-worker/internal/state/parent_no_go.go \
-            glm-worker/internal/state/parent_review.go \
-            glm-worker/internal/state/parent_review_authority_test.go \
-            glm-worker/internal/state/parent_review_state.go \
-            glm-worker/internal/state/quality_surface_recovery.go \
-            glm-worker/internal/state/stats.go \
-            glm-worker/internal/state/store.go \
-            glm-worker/internal/workflow/workflow.go
+          mapfile -t go_files < <(git diff --name-only -- '*.go')
+          gofmt -w "${go_files[@]}"
           rm .github/workflows/web-gpt-400-rebuild.yml
       - name: Read quality tool contract
         id: quality-tools
