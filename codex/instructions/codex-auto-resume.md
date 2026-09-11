@@ -45,14 +45,15 @@
 
 schedulerから呼ばれたら、次の4操作をこの順序だけを行う。発火済みautomationの削除と新規作成は行わない。
 
-1. 親実装taskのthread IDへ固定短文「作業を続けろ」を1回だけ送信する。thread IDが指定されていない場合は送信せずにfail closedで終了する。送信方法はCodex appの既存task間送信(Greptile専用taskが親taskへ使っている方式)を使う。
-2. 発火指示に渡されたexact `automation_id`とwake専用task自身のthread IDを使い、`glm-worker --codex-wake-plan <wake-thread-id> --fired-automation-id <automation-id>`を実行する。`CODEX_THREAD_ID`とwake threadが一致しない場合、ID欠落、wrong/stale ID、reset evidence不正は外部write前にfail closedする。
-3. 「wake transaction relay」に従い、machineが返した同じautomation IDへのwriteだけを実行し、raw tool responseをmachine validationへ戻す。削除・新規create・ID探索・時刻再計算を行わない。
-4. machine outputが`status=verified`になった場合だけ次回予約成功として終了する。`failed`、command error、保存実体取得不能を成功へ読み替えない。
+1. 発火指示に渡されたexact `automation_id`とwake専用task自身のthread IDを使い、`glm-worker --codex-wake-plan <wake-thread-id> --fired-automation-id <automation-id>`を実行する。`CODEX_THREAD_ID`とwake threadが一致しない場合、ID欠落、wrong/stale ID、reset evidence不正は親実装taskへ送信する前にfail closedする。
+2. 「wake transaction relay」に従い、machineが返した同じautomation IDへのwriteだけを実行し、raw tool responseをmachine validationへ戻す。削除・新規create・ID探索・時刻再計算を行わない。machine outputが`status=verified`になるまで親実装taskを起こさない。
+3. machine outputが`status=verified`になった場合だけ、親実装taskのthread IDへ固定短文「作業を続けろ」を1回だけ送信する。thread IDが指定されていない場合は送信せずにfail closedで終了する。送信方法はCodex appの既存task間送信(Greptile専用taskが親taskへ使っている方式)を使う。
+4. `status=verified`かつ親送信が成功した場合だけwake処理成功として終了する。`failed`、command error、保存実体取得不能を成功へ読み替えない。
 
 親送信・machine transaction・実体検証の失敗扱いは次による。
 
-- いずれかが失敗した場合、次回予約済みと報告せず、machineが明示したcleanup以外で既存automationを変更しない。
+- machine transactionまたは実体検証が失敗した場合、親実装taskへ送信せず、次回予約済みと報告せず、machineが明示したcleanup以外で既存automationを変更しない。
+- `status=verified`後の親送信だけが失敗した場合、verified済みの次回予約を変更せず、親送信失敗として報告して終了する。親が再開したとは報告しない。
 - `automation_update`の応答判定、retry回数、PAUSED化、保存実体検証はmachine transaction outputだけを正とする。親がfailure語、status、schedule、IDを独自判定して続行しない。
 - 実体検証`UNAVAILABLE`は成功ではない。UI表示や時刻の目視一致で`verified`へ昇格させず、fail closedとする。
 
