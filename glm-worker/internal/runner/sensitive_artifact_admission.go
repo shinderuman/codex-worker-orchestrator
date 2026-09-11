@@ -2,6 +2,7 @@ package runner
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 
@@ -18,8 +19,11 @@ func (e *SensitiveArtifactError) Error() string {
 }
 
 func validateSensitiveResultArtifacts(base *ClaudeRunner, result RunResult, providerValues []SensitiveArtifactValue) error {
-	artifacts, ok := sensitiveArtifactPaths(base, result)
-	if !ok {
+	artifacts, err := sensitiveArtifactPaths(base, result)
+	if err != nil {
+		return err
+	}
+	if len(artifacts) == 0 {
 		return nil
 	}
 	values, err := sensitiveArtifactCandidates(base, providerValues)
@@ -29,19 +33,41 @@ func validateSensitiveResultArtifacts(base *ClaudeRunner, result RunResult, prov
 	return validateSensitiveArtifactContents(artifacts, values)
 }
 
-func sensitiveArtifactPaths(base *ClaudeRunner, result RunResult) ([]string, bool) {
-	parsed, err := packet.ParseStructured(result.StructuredOutput)
-	if err != nil || len(parsed.Artifacts) == 0 {
-		return nil, false
+func sensitiveArtifactPaths(base *ClaudeRunner, result RunResult) ([]string, error) {
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(result.StructuredOutput, &object); err != nil {
+		return nil, nil
+	}
+	rawArtifacts, ok := object["artifacts"]
+	if !ok {
+		return nil, nil
+	}
+	var entries []json.RawMessage
+	if err := json.Unmarshal(rawArtifacts, &entries); err != nil || len(entries) == 0 {
+		return nil, nil
 	}
 	taskID, err := base.state.TaskID()
 	if err != nil {
-		return nil, false
+		return nil, fmt.Errorf("artifact sensitive admission unavailable: task-artifact-root")
 	}
-	if err := packet.ValidateArtifacts(parsed.Artifacts, base.state.ArtifactDir(taskID)); err != nil {
-		return nil, false
+	root := base.state.ArtifactDir(taskID)
+	artifacts := make([]string, 0, len(entries))
+	seen := make(map[string]struct{}, len(entries))
+	for _, entry := range entries {
+		var path string
+		if err := json.Unmarshal(entry, &path); err != nil {
+			continue
+		}
+		if _, duplicate := seen[path]; duplicate {
+			continue
+		}
+		if err := packet.ValidateArtifacts([]string{path}, root); err != nil {
+			continue
+		}
+		seen[path] = struct{}{}
+		artifacts = append(artifacts, path)
 	}
-	return parsed.Artifacts, true
+	return artifacts, nil
 }
 
 func sensitiveArtifactCandidates(base *ClaudeRunner, providerValues []SensitiveArtifactValue) ([]SensitiveArtifactValue, error) {
