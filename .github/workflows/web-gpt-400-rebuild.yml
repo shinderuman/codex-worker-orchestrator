@@ -49,7 +49,7 @@ jobs:
           end = text.index('\nfunc ', start + 1)
           section = text[start:end]
           old_seed = '''\tst, err := state.NewStateStore(cfg)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n'''
-          new_seed = old_seed + '''\tif _, err := st.StartNewTask(); err != nil {\n\t\tt.Fatal(err)\n\t}\n\tif err := st.RecordSolResult(packet.Result{Status: packet.StatusPass, Risk: packet.RiskLow}, state.ParentReviewProducer{}); err != nil {\n\t\tt.Fatal(err)\n\t}\n'''
+          new_seed = old_seed + '''\tif _, err := st.StartNewTask(); err != nil {\n\t\tt.Fatal(err)\n\t}\n\tif err := st.RecordSolResult(packet.Result{Status: packet.StatusPass, Risk: packet.RiskLow}, state.ParentReviewProducer{}); err != nil {\n\t\tt.Fatal(err)\n\t}\n\tif err := st.SetTaskStatus(state.TaskStatusComplete); err != nil {\n\t\tt.Fatal(err)\n\t}\n'''
           if section.count(old_seed) != 1:
               raise SystemExit(f'machine output seed patch target count = {section.count(old_seed)}')
           section = section.replace(old_seed, new_seed, 1)
