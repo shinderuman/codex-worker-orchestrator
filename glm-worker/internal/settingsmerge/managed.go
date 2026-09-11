@@ -157,22 +157,34 @@ func restorePreviousManagedValues(target map[string]any, previous []managedValue
 }
 
 func applyDesiredManagedValues(target map[string]any, desired []managedLeaf, previous map[string]managedValueState) (managedState, error) {
+	baselines, err := managedBaselinesForDesired(target, desired, previous)
+	if err != nil {
+		return managedState{}, err
+	}
 	next := managedState{Version: managedStateVersion, Values: make([]managedValueState, 0, len(desired))}
-	for _, leaf := range desired {
-		baseline, err := managedBaselineForLeaf(target, leaf, previous)
-		if err != nil {
-			return managedState{}, err
-		}
+	for index, leaf := range desired {
 		if err := setManagedValue(target, leaf.Path, cloneJSONValue(leaf.Value)); err != nil {
 			return managedState{}, err
 		}
 		next.Values = append(next.Values, managedValueState{
 			Path:     append([]string(nil), leaf.Path...),
-			Baseline: baseline,
+			Baseline: baselines[index],
 			Applied:  cloneJSONValue(leaf.Value),
 		})
 	}
 	return next, nil
+}
+
+func managedBaselinesForDesired(target map[string]any, desired []managedLeaf, previous map[string]managedValueState) ([]valueBaseline, error) {
+	baselines := make([]valueBaseline, 0, len(desired))
+	for _, leaf := range desired {
+		baseline, err := managedBaselineForLeaf(target, leaf, previous)
+		if err != nil {
+			return nil, err
+		}
+		baselines = append(baselines, baseline)
+	}
+	return baselines, nil
 }
 
 func managedBaselineForLeaf(target map[string]any, leaf managedLeaf, previous map[string]managedValueState) (valueBaseline, error) {
