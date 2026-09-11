@@ -79,19 +79,11 @@ legacy_global_agents_matches_repository() {
 	if cmp -s "$repo_root/codex/AGENTS.md" "$target"; then
 		return 0
 	fi
-	history=$(mktemp "${TMPDIR:-/tmp}/codex-agents-history.XXXXXX")
-	if ! git -C "$repo_root" log --format=%H -- codex/AGENTS.md >"$history"; then
-		rm -f "$history"
-		return 1
-	fi
-	while IFS= read -r revision; do
-		[ -n "$revision" ] || continue
+	for revision in $(git -C "$repo_root" log --format=%H -- codex/AGENTS.md); do
 		if git -C "$repo_root" show "$revision:codex/AGENTS.md" 2>/dev/null | cmp -s - "$target"; then
-			rm -f "$history"
 			return 0
 		fi
-	done <"$history"
-	rm -f "$history"
+	done
 	return 1
 }
 
