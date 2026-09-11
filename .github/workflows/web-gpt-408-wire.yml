@@ -10,7 +10,6 @@ permissions:
 
 jobs:
   patch:
-    if: github.event.head_commit.message == 'Stage Issue 408 installer wiring patch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
