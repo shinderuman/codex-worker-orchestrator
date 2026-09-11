@@ -24,7 +24,7 @@ import (
 )
 
 const (
-	usage = "usage: glm-parent-action start [--rotation-claim <claim-id>] | rotation-claim <directive-id> | rotation-bind <directive-id> <claim-id> <new-thread-id> | rotation-fail <directive-id> <claim-id> | prepare <decision|fix|start-milestones|revise-milestones> | decision <token> | fix <token> [--origin <origin>] [--cause <cause>] [--accepted-scope current-diff] | approve-surface --accepted-scope current-diff | start-milestones <token> [--rotation-claim <claim-id>] | revise-milestones <token> | no-go | accept | complete | install | resume | wait | park | unpark | evidence <manifest.json> | finalize-check <go-test|go-test-race> | push-binding [--expected-oid <oid>] [--attempt-outcome <none|completed|rejected|network-error|non-fast-forward>]"
+	usage = "usage: glm-parent-action start [--rotation-claim <claim-id>] | rotation-claim <directive-id> | rotation-bind <directive-id> <claim-id> <new-thread-id> | rotation-fail <directive-id> <claim-id> --creation-result-json <json> | prepare <decision|fix|start-milestones|revise-milestones> | decision <token> | fix <token> [--origin <origin>] [--cause <cause>] [--accepted-scope current-diff] | approve-surface --accepted-scope current-diff | start-milestones <token> [--rotation-claim <claim-id>] | revise-milestones <token> | no-go | accept | complete | install | resume | wait | park | unpark | evidence <manifest.json> | finalize-check <go-test|go-test-race> | push-binding [--expected-oid <oid>] [--attempt-outcome <none|completed|rejected|network-error|non-fast-forward>]"
 
 	activeTaskRequest = "現在のACTIVE taskを実行してください。"
 	actionStart       = "start"
@@ -257,10 +257,14 @@ func executeSessionRotationBind(st *state.StateStore, threadID string, args []st
 }
 
 func executeSessionRotationFail(st *state.StateStore, threadID string, args []string, stdout io.Writer) error {
-	if len(args) != 3 || !state.ValidGeneratedUUID(args[1]) || !state.ValidGeneratedUUID(args[2]) {
-		return fmt.Errorf("usage: glm-parent-action rotation-fail <directive-id> <claim-id>")
+	if len(args) != 5 || !state.ValidGeneratedUUID(args[1]) || !state.ValidGeneratedUUID(args[2]) || args[3] != "--creation-result-json" {
+		return fmt.Errorf("%s", sessionRotationFailUsage)
 	}
-	if err := st.ReleaseSessionRotationClaim(threadID, args[1], args[2]); err != nil {
+	result, err := decodeSessionRotationCreationResult(args[4])
+	if err != nil {
+		return err
+	}
+	if err := st.ReleaseSessionRotationClaim(threadID, args[1], args[2], result); err != nil {
 		return err
 	}
 	return json.NewEncoder(stdout).Encode(map[string]string{"status": "pending", "directive_id": args[1]})
