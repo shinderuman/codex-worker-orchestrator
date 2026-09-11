@@ -7,5 +7,5 @@ import (
 )
 
 func main() {
-	os.Exit(cliinstallcmd.Main())
+	os.Exit(cliinstallcmd.Run(os.Args[1:], os.Stdout, os.Stderr))
 }
