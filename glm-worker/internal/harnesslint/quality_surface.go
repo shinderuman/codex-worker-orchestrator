@@ -65,7 +65,7 @@ func qualityWiringChecks() []qualityWiringCheck {
 				"./cmd/harnesslint",
 				"./cmd/plancheck",
 				"for name in glm-worker glm-parent-action glm-codex-context commentlint harnesslint",
-				"\"$build_dir/merge-json\" -target",
+				"\"$build_dir/merge-json\" -fragment",
 				"\"$build_dir/plancheck\" \"$repo_root\"",
 			},
 		},
