@@ -217,7 +217,14 @@ func status(root string) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	if agentsState == "conflict" || (state == "enabled") != (agentsState == "enabled") {
+	agentsIgnored := false
+	if agentsState == "enabled" {
+		agentsIgnored, err = projectAgentsIgnored(root)
+		if err != nil {
+			return Result{}, err
+		}
+	}
+	if agentsState == "conflict" || (state == "enabled") != (agentsState == "enabled") || (agentsState == "enabled" && !agentsIgnored) {
 		state = "conflict"
 		detail = "project config and project-scoped AGENTS bootstrap ownership do not match"
 	}
