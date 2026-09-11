@@ -1,0 +1,42 @@
+name: Web GPT Issue 408 Validation
+
+on:
+  push:
+    branches:
+      - web-gpt/issue-408-codex-install-ownership
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Read quality tool contract
+        id: quality-tools
+        run: |
+          GO_VERSION=$(awk -F': ' '$1 == "go" { print $2 }' quality-tools.yml)
+          printf 'go_version=%s\n' "$GO_VERSION" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ steps.quality-tools.outputs.go_version }}
+          cache: false
+      - name: Install quality tools
+        run: |
+          quality_bin="$(go env GOPATH)/bin"
+          QUALITY_TOOLS_BIN_DIR="$quality_bin" ./install-quality-tools.sh
+          printf '%s\n' "$quality_bin" >> "$GITHUB_PATH"
+      - name: commentlint
+        run: ./commentlint
+      - name: harnesslint
+        run: ./harnesslint
+      - name: goquality vet
+        run: ./goquality vet
+      - name: goquality build
+        run: ./goquality build
+      - name: Go test suite
+        working-directory: glm-worker
+        run: go test ./...
+      - name: Installer smoke
+        run: ./tests/install_smoke.sh
