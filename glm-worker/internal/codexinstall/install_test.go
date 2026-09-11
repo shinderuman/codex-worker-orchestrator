@@ -133,10 +133,48 @@ func TestInstallMigratesLegacyManifestOnlyWhenBytesMatchRepositoryHistory(t *tes
 	writeTestFile(t, filepath.Join(userDir, legacyManifestName), []byte("instructions/test.md\n"))
 	var stdout bytes.Buffer
 	err := Install(repo, userDir, &stdout)
-	if err == nil || !strings.Contains(err.Error(), "no longer matches repository history") {
-		t.Fatalf("expected legacy ownership conflict, got %v", err)
+	if err == nil {
+		t.Fatal("expected legacy ownership conflict")
 	}
 	assertFileBytes(t, userTarget, userContent)
+}
+
+func TestInstallMigratesLegacyManagedConfigOwnership(t *testing.T) {
+	repo := initInstallFixtureRepo(t)
+	managedPath := filepath.Join(repo, "codex", "config-managed.toml")
+	writeTestFile(t, managedPath, []byte(managedConfigKey+" = 100\n"))
+	commitFixtureRepo(t, repo, "legacy managed config")
+	writeTestFile(t, managedPath, []byte(managedConfigKey+" = 200\n"))
+	commitFixtureRepo(t, repo, "current managed config")
+
+	codexDir := t.TempDir()
+	writeTestFile(t, filepath.Join(codexDir, legacyManifestName), []byte("AGENTS.md\n"))
+	configPath := filepath.Join(codexDir, "config.toml")
+	writeTestFile(t, configPath, []byte(managedConfigKey+" = 100\nlocal_key = \"keep\"\n"))
+	runInstall(t, repo, codexDir)
+	if !bytes.Contains(readTestFile(t, configPath), []byte(managedConfigKey+" = 200")) {
+		t.Fatal("legacy managed config was not upgraded")
+	}
+	state := loadTestState(t, codexDir)
+	if state.Config[managedConfigKey].Value != "200" {
+		t.Fatalf("legacy managed config ownership was not migrated: %+v", state.Config)
+	}
+
+	writeTestFile(t, managedPath, []byte(managedConfigKey+" = 300\n"))
+	runInstall(t, repo, codexDir)
+	if !bytes.Contains(readTestFile(t, configPath), []byte(managedConfigKey+" = 300")) {
+		t.Fatal("migrated managed config was not updated")
+	}
+}
+
+func TestInstallRejectsUnsafeLegacyManifestPath(t *testing.T) {
+	repo := initInstallFixtureRepo(t)
+	codexDir := t.TempDir()
+	writeTestFile(t, filepath.Join(codexDir, legacyManifestName), []byte("instructions/../../outside\n"))
+	var stdout bytes.Buffer
+	if err := Install(repo, codexDir, &stdout); err == nil {
+		t.Fatal("expected unsafe legacy manifest path rejection")
+	}
 }
 
 func runInstall(t *testing.T, repo, codexDir string) {

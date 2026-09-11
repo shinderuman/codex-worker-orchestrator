@@ -10,12 +10,6 @@ import (
 	"strings"
 )
 
-const (
-	stateVersion       = 1
-	stateRelativePath  = "codex-worker-orchestrator/install-state.json"
-	legacyManifestName = ".codex-config-managed-files"
-)
-
 type managedFileRecord struct {
 	Path   string `json:"path"`
 	SHA256 string `json:"sha256"`
@@ -36,6 +30,12 @@ type legacyManifest struct {
 	Present bool
 	Paths   map[string]bool
 }
+
+const (
+	stateVersion       = 1
+	stateRelativePath  = "codex-worker-orchestrator/install-state.json"
+	legacyManifestName = ".codex-config-managed-files"
+)
 
 func statePath(codexDir string) string {
 	return filepath.Join(codexDir, filepath.FromSlash(stateRelativePath))
@@ -62,10 +62,15 @@ func loadState(codexDir string) (installState, bool, error) {
 	}
 	seen := map[string]bool{}
 	for _, record := range state.Files {
-		if record.Path == "" || record.SHA256 == "" || seen[record.Path] {
+		if err := validateManagedRelativePath(record.Path); err != nil || record.SHA256 == "" || seen[record.Path] {
 			return installState{}, false, fmt.Errorf("invalid Codex install state file record %q", record.Path)
 		}
 		seen[record.Path] = true
+	}
+	for key, record := range state.Config {
+		if key != managedConfigKey || record.Value == "" || record.LineSHA256 == "" {
+			return installState{}, false, fmt.Errorf("invalid Codex install state config record %q", key)
+		}
 	}
 	return state, true, nil
 }
@@ -85,7 +90,7 @@ func loadLegacyManifest(codexDir string) (legacyManifest, error) {
 		if path == "" {
 			continue
 		}
-		if !supportedLegacyManagedPath(path) {
+		if err := validateManagedRelativePath(path); err != nil || !supportedLegacyManagedPath(path) {
 			return legacyManifest{}, fmt.Errorf("legacy Codex managed-file manifest contains unsupported path %q", path)
 		}
 		paths[path] = true
@@ -128,4 +133,15 @@ func stateFileMap(state installState) map[string]managedFileRecord {
 		records[record.Path] = record
 	}
 	return records
+}
+
+func validateManagedRelativePath(path string) error {
+	if path == "" || filepath.IsAbs(path) || strings.Contains(path, "\\") {
+		return fmt.Errorf("invalid managed Codex relative path")
+	}
+	clean := filepath.ToSlash(filepath.Clean(filepath.FromSlash(path)))
+	if clean == "." || clean != path || strings.HasPrefix(clean, "../") {
+		return fmt.Errorf("invalid managed Codex relative path")
+	}
+	return nil
 }

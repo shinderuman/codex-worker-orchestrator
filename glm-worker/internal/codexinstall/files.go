@@ -119,14 +119,7 @@ func requireCurrentPathOwnership(repoRoot, codexDir string, file desiredFile, re
 	target := filepath.Join(codexDir, filepath.FromSlash(file.Path))
 	info, err := os.Lstat(target)
 	if errors.Is(err, os.ErrNotExist) {
-		if stateExists {
-			if _, owned := records[file.Path]; owned {
-				return fmt.Errorf("managed Codex file is missing; refusing silent recreation: %s", file.Path)
-			}
-		} else if legacy.Paths[file.Path] {
-			return fmt.Errorf("legacy managed Codex file is missing; refusing silent recreation: %s", file.Path)
-		}
-		return nil
+		return requireMissingPathOwnership(file.Path, records, stateExists, legacy)
 	}
 	if err != nil {
 		return fmt.Errorf("stat installed Codex file %s: %w", file.Path, err)
@@ -134,27 +127,44 @@ func requireCurrentPathOwnership(repoRoot, codexDir string, file desiredFile, re
 	if !info.Mode().IsRegular() {
 		return fmt.Errorf("refusing to overwrite non-regular Codex path %s", file.Path)
 	}
-	if record, owned := records[file.Path]; owned {
+	return requireExistingPathOwnership(repoRoot, target, file.Path, records, stateExists, legacy)
+}
+
+func requireMissingPathOwnership(path string, records map[string]managedFileRecord, stateExists bool, legacy legacyManifest) error {
+	if stateExists {
+		if _, owned := records[path]; owned {
+			return fmt.Errorf("managed Codex file is missing; refusing silent recreation: %s", path)
+		}
+		return nil
+	}
+	if legacy.Paths[path] {
+		return fmt.Errorf("legacy managed Codex file is missing; refusing silent recreation: %s", path)
+	}
+	return nil
+}
+
+func requireExistingPathOwnership(repoRoot, target, path string, records map[string]managedFileRecord, stateExists bool, legacy legacyManifest) error {
+	if record, owned := records[path]; owned {
 		actual, err := digestFile(target)
 		if err != nil {
 			return err
 		}
 		if actual != record.SHA256 {
-			return fmt.Errorf("managed Codex file was modified after install; refusing to overwrite: %s", file.Path)
+			return fmt.Errorf("managed Codex file was modified after install; refusing to overwrite: %s", path)
 		}
 		return nil
 	}
-	if !stateExists && legacy.Paths[file.Path] {
-		matches, err := managedPathMatchesRepositoryHistory(repoRoot, file.Path, target)
+	if !stateExists && legacy.Paths[path] {
+		matches, err := managedPathMatchesRepositoryHistory(repoRoot, path, target)
 		if err != nil {
 			return err
 		}
 		if matches {
 			return nil
 		}
-		return fmt.Errorf("legacy managed Codex file no longer matches repository history; refusing to overwrite: %s", file.Path)
+		return fmt.Errorf("legacy managed Codex file no longer matches repository history; refusing to overwrite: %s", path)
 	}
-	return fmt.Errorf("refusing to overwrite preexisting Codex file without tool ownership: %s", file.Path)
+	return fmt.Errorf("refusing to overwrite preexisting Codex file without tool ownership: %s", path)
 }
 
 func planObsoleteStateFiles(codexDir string, records map[string]managedFileRecord, desired map[string]desiredFile, plan *fileInstallPlan) {

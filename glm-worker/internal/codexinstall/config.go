@@ -4,11 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 )
-
-const managedConfigKey = "background_terminal_max_timeout"
 
 type configAssignment struct {
 	Index int
@@ -25,7 +24,9 @@ type configInstallPlan struct {
 	Preserved bool
 }
 
-func buildConfigInstallPlan(repoRoot, codexDir string, state installState) (configInstallPlan, error) {
+const managedConfigKey = "background_terminal_max_timeout"
+
+func buildConfigInstallPlan(repoRoot, codexDir string, state installState, stateExists bool, legacy legacyManifest) (configInstallPlan, error) {
 	managedPath := filepath.Join(repoRoot, "codex", "config-managed.toml")
 	managedData, err := os.ReadFile(managedPath)
 	if err != nil {
@@ -49,7 +50,7 @@ func buildConfigInstallPlan(repoRoot, codexDir string, state installState) (conf
 	if previouslyOwned {
 		return planPreviouslyOwnedConfig(plan, data, current, currentFound, managedAssignment, managedFound, previous)
 	}
-	return planUnownedConfig(plan, data, current, currentFound, managedAssignment, managedFound)
+	return planUnownedConfig(repoRoot, plan, data, current, currentFound, managedAssignment, managedFound, !stateExists && legacy.Present)
 }
 
 func planPreviouslyOwnedConfig(plan configInstallPlan, data []byte, current configAssignment, currentFound bool, managed configAssignment, managedFound bool, previous managedConfigRecord) (configInstallPlan, error) {
@@ -78,9 +79,12 @@ func planPreviouslyOwnedConfig(plan configInstallPlan, data []byte, current conf
 	return plan, nil
 }
 
-func planUnownedConfig(plan configInstallPlan, data []byte, current configAssignment, currentFound bool, managed configAssignment, managedFound bool) (configInstallPlan, error) {
+func planUnownedConfig(repoRoot string, plan configInstallPlan, data []byte, current configAssignment, currentFound bool, managed configAssignment, managedFound bool, legacyInstall bool) (configInstallPlan, error) {
 	if !managedFound {
 		return plan, nil
+	}
+	if legacyInstall {
+		return planLegacyConfig(repoRoot, plan, data, current, currentFound, managed)
 	}
 	if currentFound {
 		if current.Value != managed.Value {
@@ -93,6 +97,58 @@ func planUnownedConfig(plan configInstallPlan, data []byte, current configAssign
 	plan.Changed = true
 	plan.Record = &managedConfigRecord{Value: managed.Value, LineSHA256: digestBytes([]byte(nextLine))}
 	return plan, nil
+}
+
+func planLegacyConfig(repoRoot string, plan configInstallPlan, data []byte, current configAssignment, currentFound bool, managed configAssignment) (configInstallPlan, error) {
+	if !currentFound {
+		return configInstallPlan{}, fmt.Errorf("legacy managed Codex config key is missing; refusing silent recreation: %s", managedConfigKey)
+	}
+	matches, err := legacyManagedConfigValueMatchesRepositoryHistory(repoRoot, current.Value)
+	if err != nil {
+		return configInstallPlan{}, err
+	}
+	if !matches {
+		return configInstallPlan{}, fmt.Errorf("legacy managed Codex config key no longer matches repository history: %s", managedConfigKey)
+	}
+	nextLine := assignmentLine(managedConfigKey, managed.Value, lineEnding(current.Line))
+	plan.Next = replaceAssignmentLine(data, current.Index, nextLine)
+	plan.Changed = string(plan.Next) != string(data)
+	plan.Record = &managedConfigRecord{Value: managed.Value, LineSHA256: digestBytes([]byte(nextLine))}
+	return plan, nil
+}
+
+func legacyManagedConfigValueMatchesRepositoryHistory(repoRoot, value string) (bool, error) {
+	const sourcePath = "codex/config-managed.toml"
+	current, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(sourcePath)))
+	if err == nil {
+		assignment, found, parseErr := findTopLevelAssignment(current, managedConfigKey)
+		if parseErr != nil {
+			return false, parseErr
+		}
+		if found && assignment.Value == value {
+			return true, nil
+		}
+	}
+	command := exec.Command("git", "-C", repoRoot, "log", "--format=%H", "--", sourcePath)
+	output, err := command.Output()
+	if err != nil {
+		return false, fmt.Errorf("enumerate managed Codex config history: %w", err)
+	}
+	for _, revision := range strings.Fields(string(output)) {
+		show := exec.Command("git", "-C", repoRoot, "show", revision+":"+sourcePath)
+		data, showErr := show.Output()
+		if showErr != nil {
+			continue
+		}
+		assignment, found, parseErr := findTopLevelAssignment(data, managedConfigKey)
+		if parseErr != nil {
+			return false, parseErr
+		}
+		if found && assignment.Value == value {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func applyConfigInstallPlan(plan configInstallPlan, output func(string, ...any)) error {
@@ -118,7 +174,7 @@ func readOptionalFile(path string) ([]byte, os.FileMode, error) {
 		return nil, 0, fmt.Errorf("stat Codex config: %w", err)
 	}
 	if !info.Mode().IsRegular() {
-		return nil, 0, fmt.Errorf("Codex config is not a regular file: %s", path)
+		return nil, 0, fmt.Errorf("codex config is not a regular file: %s", path)
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {

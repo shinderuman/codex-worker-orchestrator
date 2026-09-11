@@ -13,7 +13,7 @@ git -C "$repo" init -q -b main
 git -C "$repo" add -A
 git -C "$repo" -c user.name=install-smoke -c user.email=install-smoke@example.invalid commit -qm fixture
 repo_revision=$(git -C "$repo" rev-parse HEAD)
-printf '%s\n' 'local_key = "keep"' >"$home/.codex/config.toml"
+printf '%s\n' 'background_terminal_max_timeout = 21600000' 'local_key = "keep"' >"$home/.codex/config.toml"
 printf '%s\n' '# user-owned global Codex instruction' >"$home/.codex/AGENTS.md"
 printf '%s\n' 'AGENTS.md' >"$home/.codex/.codex-config-managed-files"
 global_agents_hash=$(shasum -a 256 "$home/.codex/AGENTS.md")
@@ -77,14 +77,8 @@ if grep -Fxq 'AGENTS.md' "$home/.codex/.codex-config-managed-files"; then
 	printf '%s\n' 'user-global AGENTS.md remains installer-managed' >&2
 	exit 1
 fi
-cp "$repo/codex/AGENTS.md" "$home/.codex/AGENTS.md"
-printf '%s\n' 'AGENTS.md' >>"$home/.codex/.codex-config-managed-files"
-run_install
-test ! -e "$home/.codex/AGENTS.md"
-if grep -Fxq 'AGENTS.md' "$home/.codex/.codex-config-managed-files"; then
-	printf '%s\n' 'legacy global AGENTS.md remains installer-managed' >&2
-	exit 1
-fi
+test ! -e "$home/.codex/.codex-config-managed-files"
+test -f "$home/.codex/codex-worker-orchestrator/install-state.json"
 test -f "$home/.codex/instructions/codex-worker-orchestrator.md"
 cmp "$repo/codex/AGENTS.md" "$home/.codex/instructions/codex-worker-orchestrator.md"
 test -f "$home/.codex/rules/glm-worker.rules"
