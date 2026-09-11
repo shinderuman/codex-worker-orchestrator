@@ -153,7 +153,10 @@ func RejectCategory(err error) string {
 	if errors.As(err, &constraint) && constraint.category != "" {
 		return constraint.category
 	}
-	msg := strings.ToLower(err.Error())
+	return rejectCategoryForMessage(strings.ToLower(err.Error()))
+}
+
+func rejectCategoryForMessage(msg string) string {
 	switch {
 	case strings.Contains(msg, "artifacts") || strings.Contains(msg, "artifact"):
 		return "artifacts"
