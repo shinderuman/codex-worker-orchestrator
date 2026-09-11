@@ -40,6 +40,15 @@ func CheckParentCompletionHead(root string) (string, error) {
 		}
 		return "plan completion head: verified", nil
 	}
+	if goal.Present && goal.Status == taskcontract.GoalStatusActive {
+		blockedOnly, err := validateBlockedOnlyFinalHeadPlan(root, plan)
+		if err != nil {
+			return "", err
+		}
+		if blockedOnly {
+			return "plan completion head: verified", nil
+		}
+	}
 	if err := validateFinalHeadPlan(root, plan); err != nil {
 		return "", err
 	}
@@ -60,6 +69,33 @@ func validateGoalTerminalFinalHeadPlan(root string, plan string) error {
 		return fmt.Errorf("completed GOALのHEAD planはACTIVE/NEXT/BLOCKEDを空にする必要があります(active=%d next=%d blocked=%d)", len(active), len(next), len(blocked))
 	}
 	return validateFinalHeadScheduleClosure(root, schedule)
+}
+
+func validateBlockedOnlyFinalHeadPlan(root string, plan string) (bool, error) {
+	schedule := taskcontract.ParsePlanSchedule(plan)
+	active, err := schedule.ActiveEntries()
+	if err != nil {
+		return false, err
+	}
+	next, blocked, err := schedule.NonActiveEntries()
+	if err != nil {
+		return false, err
+	}
+	if len(active) != 0 || len(next) != 0 || len(blocked) == 0 {
+		return false, nil
+	}
+	for _, path := range blocked {
+		if err := taskcontract.ValidateActiveTaskPath(path); err != nil {
+			return true, err
+		}
+		if err := validateFinalHeadTask(root, path); err != nil {
+			return true, err
+		}
+	}
+	if err := validateFinalHeadScheduleClosure(root, schedule); err != nil {
+		return true, err
+	}
+	return true, nil
 }
 
 func finalHeadPlan(root string) (string, string, bool, error) {
@@ -157,7 +193,7 @@ func validateFinalHeadActiveTask(root string, path string) error {
 	}
 	content, err := finalHeadGitOutput(root, "show", "HEAD:"+path)
 	if err != nil {
-		return fmt.Errorf("HEADのACTIVE task file %sを読めません: %w", path, err)
+		return fmt.Errorf("HEADのACTIVE task contract %sを読めません: %w", path, err)
 	}
 	if _, err := taskcontract.ParseExternalFeasibility([]byte(content)); err != nil {
 		return fmt.Errorf("HEADのACTIVE task contract %sを受理できません: %w", path, err)
