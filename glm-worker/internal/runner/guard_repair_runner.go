@@ -49,7 +49,7 @@ func (r *GuardRepairRunner) Run(
 		_ = r.base.state.InvalidateAllSessions()
 	}
 	if attemptErr != nil || len(attempts) != 0 {
-		return result, errors.Join(runErr, artifactErr, &GitAuthorityGuardError{
+		return result, errors.Join(artifactErr, &GitAuthorityGuardError{
 			Stage:     "repair-boundary",
 			Mutations: attempts,
 			Cause:     attemptErr,
