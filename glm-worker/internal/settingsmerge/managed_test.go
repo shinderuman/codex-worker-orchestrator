@@ -34,6 +34,37 @@ func TestManagedSettingsRestoreAbsentBaselineOnRetire(t *testing.T) {
 	assertContains(t, target, `"other": "keep"`)
 }
 
+func TestManagedSettingsRetireSiblingKeysRemovesToolCreatedParent(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "settings.json")
+	fragment := filepath.Join(dir, "managed.json")
+	writeTestFile(t, target, `{"other":"keep"}`)
+	writeTestFile(t, fragment, `{"env":{"A":"one","B":"two"}}`)
+
+	if _, err := MergeFiles(target, fragment, ""); err != nil {
+		t.Fatal(err)
+	}
+	state, err := loadManagedState(ManagedStatePath(target))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(state.Values) != 2 {
+		t.Fatalf("managed values=%d, want 2", len(state.Values))
+	}
+	for _, record := range state.Values {
+		if record.Baseline.Exists || record.Baseline.FirstMissingPrefix != 1 {
+			t.Fatalf("sibling baseline at %v = %+v, want missing parent baseline", record.Path, record.Baseline)
+		}
+	}
+
+	writeTestFile(t, fragment, `{}`)
+	if _, err := MergeFiles(target, fragment, ""); err != nil {
+		t.Fatal(err)
+	}
+	assertJSONMissing(t, target, []string{"env"})
+	assertJSONValue(t, target, []string{"other"}, "keep")
+}
+
 func TestManagedSettingsRestorePreexistingValueOnRetire(t *testing.T) {
 	for _, original := range []string{"user", "managed"} {
 		t.Run(original, func(t *testing.T) {
