@@ -45,16 +45,20 @@ jobs:
           if text.count(old_import) != 1:
               raise SystemExit('machine output import patch target missing')
           text = text.replace(old_import, new_import, 1)
-          old_seed = '''\tst, err := state.NewStateStore(cfg)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tif err := os.WriteFile(st.Path("task-stats.json"), []byte("not json\\n"), 0o600); err != nil {\n'''
-          new_seed = '''\tst, err := state.NewStateStore(cfg)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\tif _, err := st.StartNewTask(); err != nil {\n\t\tt.Fatal(err)\n\t}\n\tif err := st.RecordSolResult(packet.Result{Status: packet.StatusPass, Risk: packet.RiskLow}, state.ParentReviewProducer{}); err != nil {\n\t\tt.Fatal(err)\n\t}\n\tif err := os.WriteFile(st.Path("task-stats.json"), []byte("not json\\n"), 0o600); err != nil {\n'''
-          if text.count(old_seed) != 1:
-              raise SystemExit('machine output seed patch target missing')
-          text = text.replace(old_seed, new_seed, 1)
+          start = text.index('func TestDispatchReleasesTypedStatsWarningThroughMachineStderr')
+          end = text.index('\nfunc ', start + 1)
+          section = text[start:end]
+          old_seed = '''\tst, err := state.NewStateStore(cfg)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n'''
+          new_seed = old_seed + '''\tif _, err := st.StartNewTask(); err != nil {\n\t\tt.Fatal(err)\n\t}\n\tif err := st.RecordSolResult(packet.Result{Status: packet.StatusPass, Risk: packet.RiskLow}, state.ParentReviewProducer{}); err != nil {\n\t\tt.Fatal(err)\n\t}\n'''
+          if section.count(old_seed) != 1:
+              raise SystemExit(f'machine output seed patch target count = {section.count(old_seed)}')
+          section = section.replace(old_seed, new_seed, 1)
           old_expect = '''\tif got, want := strings.TrimSpace(stdout.String()), "{\\\"accepted\\\":false}"; got != want {\n'''
           new_expect = '''\tif got, want := strings.TrimSpace(stdout.String()), "{\\\"accepted\\\":true}"; got != want {\n'''
-          if text.count(old_expect) != 1:
+          if section.count(old_expect) != 1:
               raise SystemExit('machine output expectation patch target missing')
-          path.write_text(text.replace(old_expect, new_expect, 1))
+          section = section.replace(old_expect, new_expect, 1)
+          path.write_text(text[:start] + section + text[end:])
           PY
           mapfile -t go_files < <(git diff --name-only -- '*.go')
           gofmt -w "${go_files[@]}"
