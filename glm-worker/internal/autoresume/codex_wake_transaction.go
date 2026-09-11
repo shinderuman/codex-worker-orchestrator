@@ -247,6 +247,14 @@ func decodeCodexWakeTransaction(token string) (codexWakeTransaction, string, err
 	return transaction, digest, nil
 }
 
+func CodexWakeTransactionContext(token string) (string, bool, error) {
+	transaction, _, err := decodeCodexWakeTransaction(token)
+	if err != nil {
+		return "", false, err
+	}
+	return transaction.WakeThreadID, transaction.WakeInvocation, nil
+}
+
 func validateCodexWakeTransaction(transaction codexWakeTransaction) error {
 	if transaction.Version != codexWakeTransactionVersion || !codexWakeThreadPattern.MatchString(transaction.WakeThreadID) {
 		return fmt.Errorf("invalid transaction identity")
