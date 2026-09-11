@@ -32,6 +32,10 @@ func (r *InstructionSurfaceGuardRunner) Run(
 		return RunResult{}, err
 	}
 	defer gitGuard.cleanup()
+	providerValues, err := SensitiveArtifactValues(r.base.config)
+	if err != nil {
+		return RunResult{}, errors.New("artifact sensitive admission unavailable: provider-runtime")
+	}
 
 	callBase := r.base
 	if gitGuard.before.active {
@@ -47,7 +51,7 @@ func (r *InstructionSurfaceGuardRunner) Run(
 	callBase.instructionSurfaceDigest = instructionBefore.digest
 
 	result, runErr := callBase.Run(role, phase, model, readOnly, effort, prompt, outputPath)
-	artifactErr := validateSensitiveResultArtifacts(r.base, result)
+	artifactErr := validateSensitiveResultArtifacts(r.base, result, providerValues)
 	gitErr := gitGuard.verify()
 	instructionErr := r.base.verifyInstructionSurfaceGuard(instructionBefore)
 	if artifactErr != nil || gitErr != nil || instructionErr != nil {
