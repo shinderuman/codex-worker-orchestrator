@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/claudeoverride"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/cliinstall"
@@ -14,13 +13,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/settingsmerge"
 )
-
-type topLevelTOMLScanState struct {
-	quote       byte
-	escaped     bool
-	squareDepth int
-	curlyDepth  int
-}
 
 func verifyRuntimeMergedConfigFiles(cfg config.AppConfig, _ []string) error {
 	// Some focused unit fixtures intentionally omit installer destinations. A
@@ -45,134 +37,6 @@ func verifyRuntimeMergedConfigFiles(cfg config.AppConfig, _ []string) error {
 		return fmt.Errorf("verify repository CLI installation: %w", err)
 	}
 	return nil
-}
-
-func verifyInstalledCodexManagedConfig(cfg config.AppConfig) error {
-	managed, err := os.ReadFile(filepath.Join(cfg.RepoRoot, "codex", "config-managed.toml"))
-	if err != nil {
-		return fmt.Errorf("read managed Codex config: %w", err)
-	}
-	installed, err := os.ReadFile(filepath.Join(cfg.CodexConfigDir, "config.toml"))
-	if err != nil {
-		return fmt.Errorf("read installed Codex config: %w", err)
-	}
-	managedValues, err := topLevelTOMLAssignments(managed)
-	if err != nil {
-		return fmt.Errorf("managed Codex config: %w", err)
-	}
-	installedValues, err := topLevelTOMLAssignments(installed)
-	if err != nil {
-		return fmt.Errorf("installed Codex config: %w", err)
-	}
-	for key, expected := range managedValues {
-		if actual, ok := installedValues[key]; !ok || actual != expected {
-			return fmt.Errorf("installed Codex config does not match managed value: %s", key)
-		}
-	}
-	return nil
-}
-
-func topLevelTOMLAssignments(data []byte) (map[string]string, error) {
-	values := map[string]string{}
-	for _, raw := range strings.Split(string(data), "\n") {
-		stop, err := addTopLevelTOMLAssignment(values, strings.TrimSpace(raw))
-		if err != nil {
-			return nil, err
-		}
-		if stop {
-			break
-		}
-	}
-	if len(values) == 0 {
-		return nil, fmt.Errorf("no managed top-level assignments")
-	}
-	return values, nil
-}
-
-func addTopLevelTOMLAssignment(values map[string]string, line string) (bool, error) {
-	if line == "" || strings.HasPrefix(line, "#") {
-		return false, nil
-	}
-	if strings.HasPrefix(line, "[") {
-		return true, nil
-	}
-	key, value, ok := strings.Cut(line, "=")
-	if !ok {
-		return false, nil
-	}
-	key = strings.TrimSpace(key)
-	value = strings.TrimSpace(value)
-	if key == "" || value == "" {
-		return false, fmt.Errorf("invalid top-level assignment %q", line)
-	}
-	if topLevelTOMLValueContinues(value) {
-		return false, fmt.Errorf("multiline top-level assignment is not supported: %q", key)
-	}
-	if _, duplicate := values[key]; duplicate {
-		return false, fmt.Errorf("duplicate top-level assignment %q", key)
-	}
-	values[key] = value
-	return false, nil
-}
-
-func topLevelTOMLValueContinues(value string) bool {
-	value = strings.TrimSpace(value)
-	if strings.HasPrefix(value, `"""`) || strings.HasPrefix(value, "'''") {
-		return true
-	}
-	state := topLevelTOMLScanState{}
-	for i := 0; i < len(value); i++ {
-		ch := value[i]
-		if state.quote != 0 {
-			state.consumeQuoted(ch)
-			continue
-		}
-		if ch == '#' {
-			return state.hasOpenContainer()
-		}
-		state.consumeUnquoted(ch)
-		if state.invalidDepth() {
-			return true
-		}
-	}
-	return state.quote != 0 || state.hasOpenContainer()
-}
-
-func (state *topLevelTOMLScanState) consumeQuoted(ch byte) {
-	if state.quote == '"' && state.escaped {
-		state.escaped = false
-		return
-	}
-	if state.quote == '"' && ch == '\\' {
-		state.escaped = true
-		return
-	}
-	if ch == state.quote {
-		state.quote = 0
-	}
-}
-
-func (state *topLevelTOMLScanState) consumeUnquoted(ch byte) {
-	switch ch {
-	case '"', '\'':
-		state.quote = ch
-	case '[':
-		state.squareDepth++
-	case ']':
-		state.squareDepth--
-	case '{':
-		state.curlyDepth++
-	case '}':
-		state.curlyDepth--
-	}
-}
-
-func (state topLevelTOMLScanState) hasOpenContainer() bool {
-	return state.squareDepth != 0 || state.curlyDepth != 0
-}
-
-func (state topLevelTOMLScanState) invalidDepth() bool {
-	return state.squareDepth < 0 || state.curlyDepth < 0
 }
 
 func verifyInstalledClaudeManagedSettings(cfg config.AppConfig) error {
