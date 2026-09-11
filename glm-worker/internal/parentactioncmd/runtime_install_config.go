@@ -72,6 +72,9 @@ func topLevelTOMLAssignments(data []byte) (map[string]string, error) {
 		if key == "" || value == "" {
 			return nil, fmt.Errorf("invalid top-level assignment %q", line)
 		}
+		if topLevelTOMLValueContinues(value) {
+			return nil, fmt.Errorf("multiline top-level assignment is not supported: %q", key)
+		}
 		if _, duplicate := values[key]; duplicate {
 			return nil, fmt.Errorf("duplicate top-level assignment %q", key)
 		}
@@ -81,6 +84,52 @@ func topLevelTOMLAssignments(data []byte) (map[string]string, error) {
 		return nil, fmt.Errorf("no managed top-level assignments")
 	}
 	return values, nil
+}
+
+func topLevelTOMLValueContinues(value string) bool {
+	value = strings.TrimSpace(value)
+	if strings.HasPrefix(value, `"""`) || strings.HasPrefix(value, "'''") {
+		return true
+	}
+	var quote byte
+	escaped := false
+	squareDepth := 0
+	curlyDepth := 0
+	for i := 0; i < len(value); i++ {
+		ch := value[i]
+		if quote != 0 {
+			if quote == '"' && escaped {
+				escaped = false
+				continue
+			}
+			if quote == '"' && ch == '\\' {
+				escaped = true
+				continue
+			}
+			if ch == quote {
+				quote = 0
+			}
+			continue
+		}
+		switch ch {
+		case '"', '\'':
+			quote = ch
+		case '#':
+			return squareDepth != 0 || curlyDepth != 0
+		case '[':
+			squareDepth++
+		case ']':
+			squareDepth--
+		case '{':
+			curlyDepth++
+		case '}':
+			curlyDepth--
+		}
+		if squareDepth < 0 || curlyDepth < 0 {
+			return true
+		}
+	}
+	return quote != 0 || squareDepth != 0 || curlyDepth != 0
 }
 
 func verifyInstalledClaudeManagedSettings(cfg config.AppConfig) error {
@@ -164,6 +213,23 @@ func verifyManagedClaudeEnv(installed, managed map[string]any, override claudeov
 		actual, exists := installed[key]
 		if !exists || !reflect.DeepEqual(actual, expected) {
 			return fmt.Errorf("env.%s mismatch", key)
+		}
+	}
+	for key, expected := range override.Sets {
+		if _, covered := managed[key]; covered {
+			continue
+		}
+		actual, exists := installed[key]
+		if !exists || !reflect.DeepEqual(actual, expected) {
+			return fmt.Errorf("env.%s mismatch", key)
+		}
+	}
+	for _, key := range override.Deletes {
+		if _, covered := managed[key]; covered {
+			continue
+		}
+		if _, exists := installed[key]; exists {
+			return fmt.Errorf("env.%s should be deleted by local override", key)
 		}
 	}
 	return nil
