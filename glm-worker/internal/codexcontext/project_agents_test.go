@@ -25,7 +25,7 @@ func TestProjectAgentsOverrideLifecyclePreservesRepositoryAgents(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantInstruction := filepath.ToSlash(filepath.Join(codexHome, "instructions", "codex-worker-orchestrator.md"))
-	if !strings.Contains(string(override), wantInstruction) || !strings.Contains(string(override), "repository rootにAGENTS.mdが存在する場合") {
+	if !bytes.HasPrefix(override, []byte(projectAgentsManagedMarker+"\n")) || !strings.Contains(string(override), wantInstruction) {
 		t.Fatalf("managed project AGENTS bootstrap = %q", override)
 	}
 	if ignored, err := projectAgentsIgnored(repo); err != nil || !ignored {
@@ -55,7 +55,7 @@ func TestEnableRefusesUserOwnedAgentsOverrideAndRollsBackConfig(t *testing.T) {
 
 	var stdout bytes.Buffer
 	err := Run([]string{"enable", repo}, &stdout)
-	if err == nil || !strings.Contains(err.Error(), "refusing to overwrite existing AGENTS.override.md") {
+	if err == nil || !strings.Contains(err.Error(), "overwrite") || !strings.Contains(err.Error(), ProjectAgentsOverrideRelativePath) {
 		t.Fatalf("expected project AGENTS conflict, got %v", err)
 	}
 	current, readErr := os.ReadFile(overridePath)
@@ -77,7 +77,7 @@ func TestStatusFailsClosedWhenManagedProjectSurfacesDiverge(t *testing.T) {
 		t.Fatal(err)
 	}
 	status := runAction(t, "status", repo)
-	if status.Status != "conflict" {
+	if status.Status != contextStateConflict {
 		t.Fatalf("status = %+v", status)
 	}
 }
@@ -120,7 +120,7 @@ func TestStatusFailsClosedWhenManagedProjectAgentsIsNotIgnored(t *testing.T) {
 		t.Fatal(err)
 	}
 	status := runAction(t, "status", repo)
-	if status.Status != "conflict" {
+	if status.Status != contextStateConflict {
 		t.Fatalf("status = %+v", status)
 	}
 }
