@@ -178,8 +178,7 @@ func TestInvalidOwnershipStateFailsClosed(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(statePath), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	data := `{"version":1,"binaries":{"unknown":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}`
-	data = strings.ReplaceAll(data, `\"`, `"`)
+	data := "{\"version\":1,\"binaries\":{\"unknown\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}}"
 	if err := os.WriteFile(statePath, []byte(data), 0o600); err != nil {
 		t.Fatal(err)
 	}
