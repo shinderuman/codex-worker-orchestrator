@@ -72,7 +72,7 @@ target_needs_install() {
 	tool_name=$1
 	required_version=$2
 	target=$3
-	if [ ! -e "$target" ]; then
+	if [ ! -e "$target" ] && [ ! -L "$target" ]; then
 		return 0
 	fi
 	if [ ! -x "$target" ]; then
