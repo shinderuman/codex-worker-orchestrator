@@ -69,13 +69,10 @@ func legacyRepositoryBinary(path, name string) (bool, error) {
 	if err != nil {
 		return false, nil
 	}
-	return legacyBuildInfoMatches(info, name), nil
+	return legacyBuildInfoMatches(info.Path, info.Main.Path, name), nil
 }
 
-func legacyBuildInfoMatches(info *buildinfo.BuildInfo, name string) bool {
-	if info == nil {
-		return false
-	}
+func legacyBuildInfoMatches(commandPath, modulePath, name string) bool {
 	expectedCommand := repositoryModulePath + "/cmd/" + name
-	return info.Path == expectedCommand && info.Main.Path == repositoryModulePath
+	return commandPath == expectedCommand && modulePath == repositoryModulePath
 }
