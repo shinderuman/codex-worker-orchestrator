@@ -16,11 +16,11 @@ type SensitiveArtifactError struct {
 	Category string
 }
 
+const sensitiveArtifactScanChunkBytes = 64 * 1024
+
 func (e *SensitiveArtifactError) Error() string {
 	return "artifact containing machine-known sensitive value was rejected: " + e.Category
 }
-
-const sensitiveArtifactScanChunkBytes = 64 * 1024
 
 func validateSensitiveResultArtifacts(base *ClaudeRunner, result RunResult, providerValues []SensitiveArtifactValue) error {
 	artifacts, pathErr := sensitiveArtifactPaths(base, result)
@@ -118,14 +118,19 @@ func sensitiveArtifactFileCategory(path string, values []SensitiveArtifactValue)
 	if err != nil {
 		return "", err
 	}
-	defer file.Close()
-
-	maxValueBytes := 0
-	for _, candidate := range values {
-		if len(candidate.Value) > maxValueBytes {
-			maxValueBytes = len(candidate.Value)
-		}
+	category, scanErr := scanSensitiveArtifactFile(file, values)
+	closeErr := file.Close()
+	if scanErr != nil {
+		return "", scanErr
 	}
+	if closeErr != nil {
+		return "", closeErr
+	}
+	return category, nil
+}
+
+func scanSensitiveArtifactFile(file *os.File, values []SensitiveArtifactValue) (string, error) {
+	maxValueBytes := maxSensitiveArtifactValueBytes(values)
 	if maxValueBytes == 0 {
 		return "", nil
 	}
@@ -141,10 +146,7 @@ func sensitiveArtifactFileCategory(path string, values []SensitiveArtifactValue)
 			if category := sensitiveArtifactCategory(window, values); category != "" {
 				return category, nil
 			}
-			keep := maxValueBytes - 1
-			if keep > len(window) {
-				keep = len(window)
-			}
+			keep := min(maxValueBytes-1, len(window))
 			carry = append(carry[:0], window[len(window)-keep:]...)
 		}
 		if readErr != nil {
@@ -154,6 +156,16 @@ func sensitiveArtifactFileCategory(path string, values []SensitiveArtifactValue)
 			return "", readErr
 		}
 	}
+}
+
+func maxSensitiveArtifactValueBytes(values []SensitiveArtifactValue) int {
+	maxValueBytes := 0
+	for _, candidate := range values {
+		if len(candidate.Value) > maxValueBytes {
+			maxValueBytes = len(candidate.Value)
+		}
+	}
+	return maxValueBytes
 }
 
 func sensitiveArtifactCategory(content []byte, values []SensitiveArtifactValue) string {
