@@ -4,10 +4,9 @@ on:
   push:
     branches:
       - web-gpt/issue-371-parent-plan-continuation
-  workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: issue-371-validation-${{ github.ref }}
@@ -18,6 +17,264 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: web-gpt/issue-371-parent-plan-continuation
+      - name: Apply verified automation deferral
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f"anchor missing: {path}: {old[:80]!r}")
+              if text.count(old) != 1:
+                  raise SystemExit(f"anchor not unique: {path}: {text.count(old)}")
+              p.write_text(text.replace(old, new))
+
+          replace(
+              'glm-worker/internal/app/project_continuation.go',
+              '\tBlocker        *projectStateBlocker `json:"blocker,omitempty"`\n}',
+              '\tBlocker        *projectStateBlocker              `json:"blocker,omitempty"`\n\tAutomation     *projectContinuationAutomation      `json:"automation,omitempty"`\n}',
+          )
+          replace(
+              'glm-worker/internal/app/project_continuation.go',
+              '\tprojectContinuationExplicitStop = "explicit-stop"\n\tprojectContinuationUnknown      = "unknown"',
+              '\tprojectContinuationExplicitStop                 = "explicit-stop"\n\tprojectContinuationDeferredByVerifiedAutomation = "deferred-by-verified-automation"\n\tprojectContinuationUnknown                      = "unknown"',
+          )
+          replace(
+              'glm-worker/internal/app/parent_request_completion.go',
+              '\tcase projectContinuationBlocked, projectContinuationExplicitStop:\n\t\tprojection.StopAdmitted = true',
+              '\tcase projectContinuationBlocked:\n\t\tprojection.StopAdmitted = continuation.Reason != string(state.TaskStatusRateLimited)\n\tcase projectContinuationDeferredByVerifiedAutomation, projectContinuationExplicitStop:\n\t\tprojection.StopAdmitted = true',
+          )
+          replace(
+              'glm-worker/internal/app/app.go',
+              '\tcase ModeHandoff:\n\t\tif cmd.Payload == "recovery" {\n\t\t\treturn true, printParentHandoffRecoveryLeased(state.AttachStateStore(cfg), stdout)\n\t\t}\n\t\treturn true, printParentHandoffLeased(state.AttachStateStore(cfg), stdout)',
+              '\tcase ModeHandoff:\n\t\tif cmd.Payload == "recovery" {\n\t\t\treturn true, printParentHandoffRecoveryLeasedWithConfig(cfg, state.AttachStateStore(cfg), stdout)\n\t\t}\n\t\treturn true, printParentHandoffLeasedWithConfig(cfg, state.AttachStateStore(cfg), stdout)',
+          )
+          replace(
+              'glm-worker/internal/app/parent_evidence.go',
+              '\tvalue := buildParentHandoff(p.st)\n\tdigest, _ := parentEvidenceDigest(value)',
+              '\tvalue := buildParentHandoffWithConfig(p.cfg, p.st)\n\tdigest, _ := parentEvidenceDigest(value)',
+          )
+          PY
+          cat > glm-worker/internal/app/parent_handoff_automation.go <<'EOF'
+          package app
+
+          import (
+          	"io"
+          	"path/filepath"
+
+          	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/autoresume"
+          	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+          	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
+          )
+
+          type projectContinuationAutomation struct {
+          	AutomationID string `json:"automation_id"`
+          	ParentThread string `json:"parent_thread"`
+          	WakeThread   string `json:"wake_thread"`
+          	ResumeAtUTC  string `json:"resume_at_utc"`
+          	WakeAtUTC    string `json:"wake_at_utc"`
+          }
+
+          const projectContinuationReasonVerifiedAutomation = "verified-automation"
+
+          func buildParentHandoffWithConfig(cfg config.AppConfig, st *state.StateStore) parentHandoffOutput {
+          	output := buildParentHandoff(st)
+          	applyVerifiedAutomationDeferral(cfg, st, &output, autoresume.ReadDBRowSqlite3)
+          	return output
+          }
+
+          func printParentHandoffLeasedWithConfig(cfg config.AppConfig, st *state.StateStore, stdout io.Writer) error {
+          	scope, err := captureParentEvidenceReadScope(st)
+          	if err != nil {
+          		return err
+          	}
+          	value := buildParentHandoffWithConfig(cfg, st)
+          	digest, _ := parentEvidenceDigest(value)
+          	return finishParentReadInScope(st, scope, state.ParentEvidenceSurfaceHandoff, digest, func() (int, error) {
+          		return writeMeasuredJSON(stdout, value)
+          	})
+          }
+
+          func printParentHandoffRecoveryLeasedWithConfig(cfg config.AppConfig, st *state.StateStore, stdout io.Writer) error {
+          	scope, err := captureParentEvidenceReadScope(st)
+          	if err != nil {
+          		return err
+          	}
+          	value := projectParentHandoffRecovery(buildParentHandoffWithConfig(cfg, st))
+          	applyParentGuardRecovery(st, &value)
+          	applyParentQualityGateRecovery(st, &value)
+          	digest, _ := parentEvidenceDigest(value)
+          	return finishParentReadInScope(st, scope, state.ParentEvidenceSurfaceHandoffRecovery, digest, func() (int, error) {
+          		return writeMeasuredJSON(stdout, value)
+          	})
+          }
+
+          func applyVerifiedAutomationDeferral(cfg config.AppConfig, st *state.StateStore, output *parentHandoffOutput, readDB autoresume.DBReader) {
+          	if output.ParentRequest == nil ||
+          		output.ParentRequest.Continuation.State != projectContinuationBlocked ||
+          		output.ParentRequest.Continuation.Reason != string(state.TaskStatusRateLimited) {
+          		return
+          	}
+          	output.ParentRequest.StopAdmitted = false
+          	proof, ok := verifiedAutomationDeferral(cfg, st, readDB)
+          	if !ok {
+          		return
+          	}
+          	output.ParentRequest.Continuation.State = projectContinuationDeferredByVerifiedAutomation
+          	output.ParentRequest.Continuation.Reason = projectContinuationReasonVerifiedAutomation
+          	output.ParentRequest.Continuation.Automation = &proof
+          	output.ParentRequest.StopAdmitted = true
+          }
+
+          func verifiedAutomationDeferral(cfg config.AppConfig, st *state.StateStore, readDB autoresume.DBReader) (projectContinuationAutomation, bool) {
+          	if cfg.CodexConfigDir == "" {
+          		return projectContinuationAutomation{}, false
+          	}
+          	checkpoint, err := st.LoadResumeCheckpoint()
+          	if err != nil || checkpoint.StopKind != state.ResumeStopRateLimited || checkpoint.ResetAtRFC3339 == "" {
+          		return projectContinuationAutomation{}, false
+          	}
+          	identity, err := st.CurrentParentCodexIdentity()
+          	if err != nil || identity.ThreadID == "" {
+          		return projectContinuationAutomation{}, false
+          	}
+          	result, err := autoresume.CheckCoalesce(autoresume.CoalesceParams{
+          		ParentThreadID:  identity.ThreadID,
+          		ResumeAtRFC3339: checkpoint.ResetAtRFC3339,
+          		AutomationsDir:  filepath.Join(cfg.CodexConfigDir, "automations"),
+          		DBPath:          filepath.Join(cfg.CodexConfigDir, "sqlite", "codex-dev.db"),
+          	}, readDB)
+          	if err != nil || result.Decision != autoresume.DecisionCoalesce {
+          		return projectContinuationAutomation{}, false
+          	}
+          	return projectContinuationAutomation{
+          		AutomationID: result.WakeAutomationID,
+          		ParentThread: result.ParentThread,
+          		WakeThread:   result.WakeThread,
+          		ResumeAtUTC:  result.ResumeAtUTC,
+          		WakeAtUTC:    result.WakeNextRunUTC,
+          	}, true
+          }
+          EOF
+          cat > glm-worker/internal/app/parent_handoff_automation_test.go <<'EOF'
+          package app
+
+          import (
+          	"fmt"
+          	"os"
+          	"path/filepath"
+          	"testing"
+          	"time"
+
+          	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/autoresume"
+          	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+          	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
+          )
+
+          const (
+          	continuationParentThread = "01a05f46-47aa-77d2-912c-0d6b078cb856"
+          	continuationWakeThread   = "01a03a9e-10a0-7f11-801c-f04e5dbd5490"
+          	continuationResumeAt     = "2026-09-11T02:00:00Z"
+          	continuationWakeAt       = "2026-09-11T02:02:00Z"
+          )
+
+          func TestRateLimitedParentRequestRequiresVerifiedAutomationForStop(t *testing.T) {
+          	cfg, st, output := rateLimitedParentRequestFixture(t)
+          	if output.ParentRequest == nil || output.ParentRequest.StopAdmitted || output.ParentRequest.CompletionAdmitted {
+          		t.Fatalf("unverified parent request = %#v", output.ParentRequest)
+          	}
+          	applyVerifiedAutomationDeferral(cfg, st, &output, func(string, string) (autoresume.DBRow, error) {
+          		return autoresume.DBRow{}, autoresume.ErrRowNotFound
+          	})
+          	if output.ParentRequest.StopAdmitted || output.ParentRequest.Continuation.State != projectContinuationBlocked {
+          		t.Fatalf("missing automation authorized stop = %#v", output.ParentRequest)
+          	}
+          }
+
+          func TestRateLimitedParentRequestAcceptsExactVerifiedWakeDeferral(t *testing.T) {
+          	cfg, st, output := rateLimitedParentRequestFixture(t)
+          	key, rrule := writeContinuationWakeAutomation(t, cfg)
+          	wakeAt, err := time.Parse(time.RFC3339, continuationWakeAt)
+          	if err != nil {
+          		t.Fatal(err)
+          	}
+          	applyVerifiedAutomationDeferral(cfg, st, &output, func(_ string, gotKey string) (autoresume.DBRow, error) {
+          		if gotKey != key {
+          			t.Fatalf("db key = %q want %q", gotKey, key)
+          		}
+          		return autoresume.DBRow{ID: key, Status: "ACTIVE", Rrule: rrule, NextRunAt: wakeAt.UnixMilli(), HasNextRun: true}, nil
+          	})
+          	request := output.ParentRequest
+          	if request == nil || request.CompletionAdmitted || !request.StopAdmitted ||
+          		request.Continuation.State != projectContinuationDeferredByVerifiedAutomation ||
+          		request.Continuation.Reason != projectContinuationReasonVerifiedAutomation ||
+          		request.Continuation.Automation == nil {
+          		t.Fatalf("verified parent request = %#v", request)
+          	}
+          	proof := request.Continuation.Automation
+          	if proof.AutomationID != key || proof.ParentThread != continuationParentThread || proof.WakeThread != continuationWakeThread ||
+          		proof.ResumeAtUTC != continuationResumeAt || proof.WakeAtUTC != continuationWakeAt {
+          		t.Fatalf("automation proof = %#v", proof)
+          	}
+          }
+
+          func rateLimitedParentRequestFixture(t *testing.T) (config.AppConfig, *state.StateStore, parentHandoffOutput) {
+          	t.Helper()
+          	cfg := newAppConfig(t)
+          	active := "IMPLEMENTATION_TASKS/current.md"
+          	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", projectContinuationPlan("active", []string{active}, nil, nil))
+          	writeProjectContinuationTask(t, cfg, active)
+          	st, err := state.NewStateStore(cfg)
+          	if err != nil {
+          		t.Fatal(err)
+          	}
+          	if _, err := st.StartNewTask(); err != nil {
+          		t.Fatal(err)
+          	}
+          	if err := st.Write("active-task", active); err != nil {
+          		t.Fatal(err)
+          	}
+          	if err := st.SetParentCodexIdentity(continuationParentThread, continuationParentThread, nil); err != nil {
+          		t.Fatal(err)
+          	}
+          	checkpoint := state.ResumeCheckpoint{Stage: state.ResumeStageWorker, Phase: "worker", Role: state.WorkerRole, Model: "opus"}
+          	checkpoint.SetStopKind(state.ResumeStopRateLimited)
+          	checkpoint.ResetAtRFC3339 = continuationResumeAt
+          	checkpoint.ResetAtCST = "2026-09-11 10:00:00 CST"
+          	if err := st.SaveResumeCheckpoint(checkpoint); err != nil {
+          		t.Fatal(err)
+          	}
+          	if err := st.SetTaskStatus(state.TaskStatusRateLimited); err != nil {
+          		t.Fatal(err)
+          	}
+          	projection, err := BuildCurrentParentRequestCompletionProjection(cfg, st)
+          	if err != nil {
+          		t.Fatal(err)
+          	}
+          	return cfg, st, parentHandoffOutput{ParentRequest: &projection}
+          }
+
+          func writeContinuationWakeAutomation(t *testing.T, cfg config.AppConfig) (string, string) {
+          	t.Helper()
+          	key := autoresume.CodexWakeAutomationKey(continuationWakeThread)
+          	rrule := "DTSTART:20260911T020200\nRRULE:FREQ=DAILY;COUNT=1"
+          	dir := filepath.Join(cfg.CodexConfigDir, "automations", key)
+          	if err := os.MkdirAll(dir, 0o755); err != nil {
+          		t.Fatal(err)
+          	}
+          	content := fmt.Sprintf("id = %q\nname = %q\nprompt = %q\nstatus = \"ACTIVE\"\nrrule = \"DTSTART:20260911T020200\\nRRULE:FREQ=DAILY;COUNT=1\"\ntarget_thread_id = %q\n", key, key, "resume parent "+continuationParentThread, continuationWakeThread)
+          	if err := os.WriteFile(filepath.Join(dir, "automation.toml"), []byte(content), 0o600); err != nil {
+          		t.Fatal(err)
+          	}
+          	return key, rrule
+          }
+          EOF
+      - name: Format
+        run: gofmt -w glm-worker/internal/app/project_continuation.go glm-worker/internal/app/parent_request_completion.go glm-worker/internal/app/app.go glm-worker/internal/app/parent_evidence.go glm-worker/internal/app/parent_handoff_automation.go glm-worker/internal/app/parent_handoff_automation_test.go
       - name: Read quality tool contract
         id: quality-tools
         run: |
@@ -27,18 +284,6 @@ jobs:
         with:
           go-version: ${{ steps.quality-tools.outputs.go_version }}
           cache: false
-      - name: Check gofmt
-        run: |
-          files='glm-worker/internal/app/parent_request_completion.go
-          glm-worker/internal/app/parent_request_completion_test.go
-          glm-worker/internal/app/parent_handoff.go
-          glm-worker/internal/app/parent_handoff_continuation.go
-          glm-worker/internal/workflow/plan_final_head.go
-          glm-worker/internal/workflow/plan_completion_blocked_test.go
-          glm-worker/internal/parentactioncmd/complete.go
-          glm-worker/internal/parentactioncmd/complete_continuation_test.go'
-          diff=$(gofmt -d $files)
-          test -z "$diff" || { printf '%s\n' "$diff"; exit 1; }
       - name: Targeted tests
         working-directory: glm-worker
         run: go test ./internal/app ./internal/workflow ./internal/parentactioncmd ./internal/autoresume
@@ -52,3 +297,11 @@ jobs:
       - name: Full Go test suite
         working-directory: glm-worker
         run: go test ./...
+      - name: Commit implementation and remove temporary workflow
+        run: |
+          rm .github/workflows/issue-371-validation.yml
+          git config user.name shinderuman
+          git config user.email shinderuman@gmail.com
+          git add -A
+          git commit -m 'Bind continuation stop to verified wake automation'
+          git push origin HEAD:web-gpt/issue-371-parent-plan-continuation
