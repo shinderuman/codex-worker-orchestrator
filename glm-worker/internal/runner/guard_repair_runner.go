@@ -30,6 +30,10 @@ func (r *GuardRepairRunner) Run(
 		return RunResult{}, err
 	}
 	defer gitGuard.cleanup()
+	providerValues, err := SensitiveArtifactValues(r.base.config)
+	if err != nil {
+		return RunResult{}, errors.New("artifact sensitive admission unavailable: provider-runtime")
+	}
 
 	wrappedClaude, err := gitGuard.prepareClaudeWrapper(r.base.config.ClaudeBin)
 	if err != nil {
@@ -39,7 +43,7 @@ func (r *GuardRepairRunner) Run(
 	copyBase.config.ClaudeBin = wrappedClaude
 	copyBase.bashSandbox = guardRepairSandboxPolicy(gitGuard, r.base.config.RepoRoot)
 	result, runErr := copyBase.Run(role, phase, model, readOnly, effort, prompt, outputPath)
-	artifactErr := validateSensitiveResultArtifacts(r.base, result)
+	artifactErr := validateSensitiveResultArtifacts(r.base, result, providerValues)
 	attempts, attemptErr := readGitAuthorityAttempts(gitGuard.attemptLog)
 	if artifactErr != nil || attemptErr != nil || len(attempts) != 0 {
 		_ = r.base.state.InvalidateAllSessions()
