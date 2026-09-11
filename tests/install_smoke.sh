@@ -134,7 +134,7 @@ grep -q '"status":"ok"' "$tmp/parent-evidence.json"
 grep -q '"kind":"status"' "$tmp/parent-evidence.json"
 grep -q '"owner_call_id":"' "$tmp/parent-evidence.json"
 
-"$home/.local/bin/glm-codex-context" enable "$repo" >"$tmp/codex-context-enable.json"
+HOME="$home" "$home/.local/bin/glm-codex-context" enable "$repo" >"$tmp/codex-context-enable.json"
 grep -q '"status":"enabled"' "$tmp/codex-context-enable.json"
 grep -q '"git_excluded":true' "$tmp/codex-context-enable.json"
 grep -q '"requires_new_thread":true' "$tmp/codex-context-enable.json"
@@ -152,9 +152,9 @@ if git -C "$repo" status --porcelain --untracked-files=all | grep -Eq '(.codex/c
 	printf '%s\n' 'Codex context profile polluted target repository status' >&2
 	exit 1
 fi
-"$home/.local/bin/glm-codex-context" enable "$repo" >"$tmp/codex-context-enable-again.json"
+HOME="$home" "$home/.local/bin/glm-codex-context" enable "$repo" >"$tmp/codex-context-enable-again.json"
 grep -q '"status":"enabled"' "$tmp/codex-context-enable-again.json"
-"$home/.local/bin/glm-codex-context" disable "$repo" >"$tmp/codex-context-disable.json"
+HOME="$home" "$home/.local/bin/glm-codex-context" disable "$repo" >"$tmp/codex-context-disable.json"
 grep -q '"status":"disabled"' "$tmp/codex-context-disable.json"
 test ! -e "$repo/.codex/config.toml"
 test ! -e "$repo/AGENTS.override.md"
