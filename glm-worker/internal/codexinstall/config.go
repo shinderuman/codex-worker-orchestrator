@@ -104,7 +104,7 @@ func planLegacyConfig(repoRoot string, plan configInstallPlan, data []byte, curr
 	if !currentFound {
 		return configInstallPlan{}, fmt.Errorf("legacy managed Codex config key is missing; refusing silent recreation: %s", managedConfigKey)
 	}
-	matches, err := legacyManagedConfigValueMatchesRepositoryHistory(repoRoot, current.Value)
+	matches, err := legacyManagedConfigLineMatchesRepositoryHistory(repoRoot, current.Line)
 	if err != nil {
 		return configInstallPlan{}, err
 	}
@@ -118,7 +118,7 @@ func planLegacyConfig(repoRoot string, plan configInstallPlan, data []byte, curr
 	return plan, nil
 }
 
-func legacyManagedConfigValueMatchesRepositoryHistory(repoRoot string, value string) (bool, error) {
+func legacyManagedConfigLineMatchesRepositoryHistory(repoRoot, line string) (bool, error) {
 	const sourcePath = "codex/config-managed.toml"
 	current, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(sourcePath)))
 	if err == nil {
@@ -126,7 +126,7 @@ func legacyManagedConfigValueMatchesRepositoryHistory(repoRoot string, value str
 		if parseErr != nil {
 			return false, parseErr
 		}
-		if found && assignment.Value == value {
+		if found && line == assignmentLine(managedConfigKey, assignment.Value, "\n") {
 			return true, nil
 		}
 	}
@@ -145,7 +145,7 @@ func legacyManagedConfigValueMatchesRepositoryHistory(repoRoot string, value str
 		if parseErr != nil {
 			return false, parseErr
 		}
-		if found && assignment.Value == value {
+		if found && line == assignmentLine(managedConfigKey, assignment.Value, "\n") {
 			return true, nil
 		}
 	}
