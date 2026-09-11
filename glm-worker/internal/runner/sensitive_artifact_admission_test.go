@@ -22,11 +22,12 @@ func TestSensitiveArtifactAdmissionRejectsEffectiveProviderAuthToken(t *testing.
 	if err := os.WriteFile(filepath.Join(cfg.ClaudeConfigDir, "settings.json"), []byte(`{"env":{"ANTHROPIC_AUTH_TOKEN":"`+secret+`"}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	providerValues := sensitiveArtifactProviderValues(t, cfg)
 	if err := os.WriteFile(artifact, []byte("response header: "+secret), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	err := validateSensitiveResultArtifacts(&ClaudeRunner{config: cfg, state: st}, sensitiveArtifactResult(t, artifact))
+	err := validateSensitiveResultArtifacts(&ClaudeRunner{config: cfg, state: st}, sensitiveArtifactResult(t, artifact), providerValues)
 	var sensitive *SensitiveArtifactError
 	if !errors.As(err, &sensitive) || sensitive.Category != SensitiveArtifactProviderAuthToken {
 		t.Fatalf("error = %v", err)
@@ -41,11 +42,12 @@ func TestSensitiveArtifactAdmissionRejectsAllowlistedProviderAPIKey(t *testing.T
 	cfg, st, artifact := sensitiveArtifactTestState(t)
 	cfg.EnvAllowlist = []string{"ANTHROPIC_API_KEY"}
 	t.Setenv("ANTHROPIC_API_KEY", secret)
+	providerValues := sensitiveArtifactProviderValues(t, cfg)
 	if err := os.WriteFile(artifact, []byte("payload="+secret), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	err := validateSensitiveResultArtifacts(&ClaudeRunner{config: cfg, state: st}, sensitiveArtifactResult(t, artifact))
+	err := validateSensitiveResultArtifacts(&ClaudeRunner{config: cfg, state: st}, sensitiveArtifactResult(t, artifact), providerValues)
 	var sensitive *SensitiveArtifactError
 	if !errors.As(err, &sensitive) || sensitive.Category != SensitiveArtifactProviderAPIKey {
 		t.Fatalf("error = %v", err)
@@ -56,10 +58,11 @@ func TestSensitiveArtifactAdmissionIgnoresUnforwardedParentAPIKey(t *testing.T) 
 	const secret = "parent-only-api-secret-395"
 	cfg, st, artifact := sensitiveArtifactTestState(t)
 	t.Setenv("ANTHROPIC_API_KEY", secret)
+	providerValues := sensitiveArtifactProviderValues(t, cfg)
 	if err := os.WriteFile(artifact, []byte("payload="+secret), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := validateSensitiveResultArtifacts(&ClaudeRunner{config: cfg, state: st}, sensitiveArtifactResult(t, artifact)); err != nil {
+	if err := validateSensitiveResultArtifacts(&ClaudeRunner{config: cfg, state: st}, sensitiveArtifactResult(t, artifact), providerValues); err != nil {
 		t.Fatalf("unforwarded parent env was treated as a runtime credential: %v", err)
 	}
 }
@@ -74,7 +77,7 @@ func TestSensitiveArtifactAdmissionRejectsLiveParentActionToken(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = validateSensitiveResultArtifacts(&ClaudeRunner{config: cfg, state: st}, sensitiveArtifactResult(t, artifact))
+	err = validateSensitiveResultArtifacts(&ClaudeRunner{config: cfg, state: st}, sensitiveArtifactResult(t, artifact), nil)
 	var sensitive *SensitiveArtifactError
 	if !errors.As(err, &sensitive) || sensitive.Category != "parent-action-token" {
 		t.Fatalf("error = %v", err)
@@ -92,12 +95,22 @@ func TestSensitiveArtifactAdmissionAcceptsSanitizedArtifact(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(cfg.ClaudeConfigDir, "settings.json"), []byte(`{"env":{"ANTHROPIC_AUTH_TOKEN":"secret-not-present"}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	providerValues := sensitiveArtifactProviderValues(t, cfg)
 	if err := os.WriteFile(artifact, []byte("status=502; authorization=[REDACTED]"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := validateSensitiveResultArtifacts(&ClaudeRunner{config: cfg, state: st}, sensitiveArtifactResult(t, artifact)); err != nil {
+	if err := validateSensitiveResultArtifacts(&ClaudeRunner{config: cfg, state: st}, sensitiveArtifactResult(t, artifact), providerValues); err != nil {
 		t.Fatalf("sanitized artifact rejected: %v", err)
 	}
+}
+
+func sensitiveArtifactProviderValues(t *testing.T, cfg config.AppConfig) []SensitiveArtifactValue {
+	t.Helper()
+	values, err := SensitiveArtifactValues(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return values
 }
 
 func sensitiveArtifactTestState(t *testing.T) (config.AppConfig, *state.StateStore, string) {
