@@ -137,6 +137,33 @@ jobs:
               raise SystemExit('expected RecordParentOutcome saved form exactly once')
           path.write_text(text.replace(old, new, 1))
 
+          path = Path('glm-worker/internal/state/parent_review_state.go')
+          text = path.read_text()
+          needle = '''\tif kind == ParentOutcomeFix {
+          \t\tif err := validateParentFixDeclaration(origin, cause); err != nil {
+          \t\t\treturn ParentReviewOpenState{}, false, err
+          \t\t}
+          \t}
+          \tstate, err := s.loadParentReviewState()
+          '''
+          replacement = '''\tif kind == ParentOutcomeFix {
+          \t\tif err := validateParentFixDeclaration(origin, cause); err != nil {
+          \t\t\treturn ParentReviewOpenState{}, false, err
+          \t\t}
+          \t}
+          \ttaskID, taskErr := s.Read("task.id")
+          \tif errors.Is(taskErr, os.ErrNotExist) || taskID == "" {
+          \t\treturn ParentReviewOpenState{}, false, nil
+          \t}
+          \tif taskErr != nil {
+          \t\treturn ParentReviewOpenState{}, false, taskErr
+          \t}
+          \tstate, err := s.loadParentReviewState()
+          '''
+          if text.count(needle) != 1:
+              raise SystemExit('expected resolveParentReviewState load boundary exactly once')
+          path.write_text(text.replace(needle, replacement, 1))
+
           changed = 0
           for path in Path('glm-worker').rglob('*_test.go'):
               lines = path.read_text().splitlines(keepends=True)
@@ -167,6 +194,152 @@ jobs:
           text = text.replace(old_sig, new_sig, 1)
           text = text.replace('recordPacket(st, ', 'recordPacket(t, st, ')
           path.write_text(text)
+
+          helper_path = Path('glm-worker/internal/app/parent_review_state_fixture_test.go')
+          helper_path.write_text('''package app
+
+          import (
+          \t"fmt"
+          \t"testing"
+
+          \t"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
+          )
+
+          func seedParentReviewStateForTest(t *testing.T, st *state.StateStore, taskID string) {
+          \tt.Helper()
+          \tvalue := fmt.Sprintf(`{"version":1,"task_id":%q}`, taskID)
+          \tif err := st.Write("parent-review-state.json", value); err != nil {
+          \t\tt.Fatal(err)
+          \t}
+          }
+          ''')
+
+          path = Path('glm-worker/internal/app/parent_handoff_test.go')
+          text = path.read_text()
+          task_block = '''\t\t\tif err := st.Write("task.id", routingEvidenceTaskID); err != nil {
+          \t\t\t\tt.Fatal(err)
+          \t\t\t}
+          '''
+          if text.count(task_block) != 1:
+              raise SystemExit('expected routing evidence task fixture exactly once')
+          text = text.replace(task_block, task_block + '\t\t\tseedParentReviewStateForTest(t, st, routingEvidenceTaskID)\n', 1)
+          mirror_block = '''\tst.UpdateTaskStats(func(stats *state.TaskStats) {
+          \t\tstats.ParentReviewOpen = &state.ParentReviewOpenState{PacketStatus: "PASS", Risk: "LOW"}
+          \t})
+          '''
+          canonical_block = '''\tif err := st.RecordSolResult(packet.Result{Status: packet.StatusPass, Risk: packet.RiskLow}, state.ParentReviewProducer{}); err != nil {
+          \t\tt.Fatal(err)
+          \t}
+          '''
+          if text.count(mirror_block) != 2:
+              raise SystemExit(f'expected two app PASS mirror fixtures, got {text.count(mirror_block)}')
+          path.write_text(text.replace(mirror_block, canonical_block))
+
+          path = Path('glm-worker/internal/app/quality_preflight_test.go')
+          text = path.read_text()
+          task_block = '''\tif err := st.Write("task.id", taskID); err != nil {
+          \t\tt.Fatal(err)
+          \t}
+          '''
+          if text.count(task_block) < 1:
+              raise SystemExit('expected preflight task fixture')
+          path.write_text(text.replace(task_block, task_block + '\tseedParentReviewStateForTest(t, st, taskID)\n', 1))
+
+          for name in ('glm-worker/internal/app/watch_orphan_test.go', 'glm-worker/internal/app/watch_orphan_unix_test.go'):
+              path = Path(name)
+              text = path.read_text()
+              block = '''if err := st.Write("task.id", watchOrphanTaskID); err != nil {
+          \t\t\tt.Fatal(err)
+          \t\t}
+          ''' if name.endswith('_unix_test.go') else '''if err := st.Write("task.id", watchOrphanTaskID); err != nil {
+          \t\tt.Fatal(err)
+          \t}
+          '''
+              count = text.count(block)
+              if count == 0:
+                  raise SystemExit(f'expected watch orphan task fixture in {name}')
+              insertion = block + ('\t\tseedParentReviewStateForTest(t, st, watchOrphanTaskID)\n' if name.endswith('_unix_test.go') else '\tseedParentReviewStateForTest(t, st, watchOrphanTaskID)\n')
+              path.write_text(text.replace(block, insertion))
+
+          path = Path('glm-worker/internal/state/parent_action_parked_origin_test.go')
+          text = path.read_text()
+          old = '''func setParkedReviewLabel(t *testing.T, st *StateStore, label string) {
+          \tt.Helper()
+          \tst.UpdateTaskStats(func(stats *TaskStats) {
+          \t\tstats.ParentReviewOpen = &ParentReviewOpenState{PacketStatus: label}
+          \t})
+          }
+          '''
+          new = '''func setParkedReviewLabel(t *testing.T, st *StateStore, label string) {
+          \tt.Helper()
+          \tcurrent, err := st.loadParentReviewState()
+          \tif err != nil {
+          \t\tt.Fatal(err)
+          \t}
+          \tif label == roundCommentNone {
+          \t\tcurrent.Open = nil
+          \t} else {
+          \t\tcurrent.Open = &ParentReviewOpenState{PacketStatus: label}
+          \t}
+          \tif err := st.writeParentReviewState(current); err != nil {
+          \t\tt.Fatal(err)
+          \t}
+          }
+          '''
+          if text.count(old) != 1:
+              raise SystemExit('expected parked review mirror helper exactly once')
+          path.write_text(text.replace(old, new, 1))
+
+          path = Path('glm-worker/internal/state/session_rotation_test.go')
+          text = path.read_text()
+          old = '''\t\tst.UpdateTaskStats(func(stats *TaskStats) {
+          \t\t\tstats.openParentReview("PASS", "LOW", ParentReviewProducer{})
+          \t\t})
+          '''
+          new = '''\t\tif err := st.openParentReviewState("PASS", "LOW", ParentReviewProducer{}); err != nil {
+          \t\t\tt.Fatal(err)
+          \t\t}
+          '''
+          if text.count(old) != 1:
+              raise SystemExit('expected session rotation mirror fixture exactly once')
+          path.write_text(text.replace(old, new, 1))
+
+          path = Path('glm-worker/internal/state/quality_surface_recovery_test.go')
+          text = path.read_text()
+          old = '''\tseedApprovedQualitySurfaceActivation(t, st)
+          \tfailWritesFor(t, st, currentStatsFile)
+
+          \terr := st.ActivateQualitySurfaceApproval()
+          '''
+          new = '''\tseedApprovedQualitySurfaceActivation(t, st)
+          \tfailWritesFor(t, st, parentReviewStateFile)
+
+          \terr := st.ActivateQualitySurfaceApproval()
+          '''
+          if text.count(old) != 1:
+              raise SystemExit('expected quality surface close failure injection exactly once')
+          path.write_text(text.replace(old, new, 1))
+
+          path = Path('glm-worker/internal/workflow/quality_surface_parent_approval_test.go')
+          text = path.read_text()
+          old = '''\tst, err := state.NewStateStore(cfg)
+          \tif err != nil {
+          \t\tt.Fatal(err)
+          \t}
+          \tif err := state.CaptureGitBaseline(cfg, st); err != nil {
+          '''
+          new = '''\tst, err := state.NewStateStore(cfg)
+          \tif err != nil {
+          \t\tt.Fatal(err)
+          \t}
+          \tif _, err := st.StartNewTask(); err != nil {
+          \t\tt.Fatal(err)
+          \t}
+          \tif err := state.CaptureGitBaseline(cfg, st); err != nil {
+          '''
+          if text.count(old) != 1:
+              raise SystemExit('expected quality surface parent approval setup exactly once')
+          path.write_text(text.replace(old, new, 1))
           PY
           mapfile -t go_files < <(git diff --name-only -- '*.go')
           gofmt -w "${go_files[@]}"
