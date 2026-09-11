@@ -101,6 +101,7 @@ build_binaries() {
 		go build -buildvcs=false -trimpath -o "$build_dir/glm-parent-action" ./cmd/glm-parent-action
 		go build -buildvcs=false -trimpath -o "$build_dir/glm-codex-context" ./cmd/glm-codex-context
 		go build -buildvcs=false -trimpath -o "$build_dir/codex-install" ./cmd/codex-install
+		go build -buildvcs=false -trimpath -o "$build_dir/repo-cli-install" ./cmd/repo-cli-install
 		go build -buildvcs=false -trimpath -o "$build_dir/commentlint" ./cmd/commentlint
 		go build -buildvcs=false -trimpath -o "$build_dir/harnesslint" ./cmd/harnesslint
 		go build -buildvcs=false -trimpath -o "$build_dir/merge-json" ./cmd/merge-json
@@ -110,15 +111,7 @@ build_binaries() {
 
 install_binaries() {
 	build_dir=$1
-	mkdir -p "$bin_dir"
-	for name in glm-worker glm-parent-action glm-codex-context commentlint harnesslint; do
-		if [ -f "$bin_dir/$name" ] && cmp -s "$build_dir/$name" "$bin_dir/$name"; then
-			printf '%s: unchanged\n' "$name"
-		else
-			install -m 0755 "$build_dir/$name" "$bin_dir/$name"
-			printf 'installed: %s\n' "$bin_dir/$name"
-		fi
-	done
+	"$build_dir/repo-cli-install" -mode install -build-dir "$build_dir" -bin-dir "$bin_dir"
 }
 
 verify_claude_cli() {
