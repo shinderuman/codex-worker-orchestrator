@@ -175,19 +175,28 @@ func removeProjectAgentsExclude(root string) error {
 	}
 	separatorBlock := []byte("\n" + projectAgentsSeparatorMarker + "\n" + projectAgentsExcludePattern + "\n")
 	regularBlock := []byte(projectAgentsExcludeMarker + "\n" + projectAgentsExcludePattern + "\n")
-	var next []byte
-	switch {
-	case bytes.HasSuffix(content, separatorBlock):
-		next = content[:len(content)-len(separatorBlock)]
-	case bytes.HasSuffix(content, regularBlock):
-		next = content[:len(content)-len(regularBlock)]
-	default:
+	next, found := removeProjectAgentsExcludeBlock(content, separatorBlock)
+	if !found {
+		next, found = removeProjectAgentsExcludeBlock(content, regularBlock)
+	}
+	if !found {
 		return nil
 	}
 	if err := os.WriteFile(path, next, 0o644); err != nil {
 		return fmt.Errorf("write local Git exclude: %w", err)
 	}
 	return nil
+}
+
+func removeProjectAgentsExcludeBlock(content, block []byte) ([]byte, bool) {
+	index := bytes.Index(content, block)
+	if index < 0 {
+		return content, false
+	}
+	next := make([]byte, 0, len(content)-len(block))
+	next = append(next, content[:index]...)
+	next = append(next, content[index+len(block):]...)
+	return next, true
 }
 
 func projectAgentsIgnored(root string) (bool, error) {
