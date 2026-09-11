@@ -69,7 +69,7 @@ func readOptionalRegularStateFile(path string) ([]byte, bool, error) {
 		return nil, false, fmt.Errorf("stat Codex install state: %w", err)
 	}
 	if !info.Mode().IsRegular() {
-		return nil, false, fmt.Errorf("Codex install state is not a regular file")
+		return nil, false, fmt.Errorf("codex install state is not a regular file")
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
