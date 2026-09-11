@@ -40,20 +40,21 @@ func (r *InstructionSurfaceGuardRunner) Run(
 			return RunResult{}, wrapErr
 		}
 		copyBase := *r.base
-		copyBase.config.ClaudeBin = wrappedClaude
+		copyBase.config.CludeBin = wrappedClaude
 		copyBase.bashSandbox = gitGuard.bashSandboxPolicy()
 		callBase = &copyBase
 	}
 	callBase.instructionSurfaceDigest = instructionBefore.digest
 
 	result, runErr := callBase.Run(role, phase, model, readOnly, effort, prompt, outputPath)
+	artifactErr := validateSensitiveResultArtifacts(r.base, result)
 	gitErr := gitGuard.verify()
 	instructionErr := r.base.verifyInstructionSurfaceGuard(instructionBefore)
 	if gitErr != nil || instructionErr != nil {
 		r.invalidateSessions()
-		return result, errors.Join(gitErr, instructionErr)
+		return result, errors.Join(runErr, artifactErr, gitErr, instructionErr)
 	}
-	return result, runErr
+	return result, errors.Join(runErr, artifactErr)
 }
 
 func (r *InstructionSurfaceGuardRunner) Probe(model string) (ProbeResult, error) {
