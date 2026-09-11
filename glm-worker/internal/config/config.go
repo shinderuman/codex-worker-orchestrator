@@ -61,7 +61,7 @@ func Load() (AppConfig, error) {
 
 	claudeLocation, err := claudesettings.Resolve(home, os.Getenv("CLAUDE_CONFIG_DIR"), os.Getenv("CLAUDE_SETTINGS_FILE"))
 	if err != nil {
-		return AppConfig{}, fmt.Errorf("Claude settings location: %w", err)
+		return AppConfig{}, fmt.Errorf("claude settings location: %w", err)
 	}
 	repoHashString := RepoHashFor(repoRoot)
 
