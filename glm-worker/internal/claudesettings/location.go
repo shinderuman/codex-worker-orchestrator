@@ -18,6 +18,12 @@ func Resolve(home, configDir, settingsPath string) (Location, error) {
 		configDir = filepath.Join(home, ".claude")
 		return Location{ConfigDir: configDir, SettingsPath: filepath.Join(configDir, "settings.json")}, nil
 	}
+	if configuredDir && !filepath.IsAbs(configDir) {
+		return Location{}, fmt.Errorf("CLAUDE_CONFIG_DIR must be absolute: %s", configDir)
+	}
+	if configuredPath && !filepath.IsAbs(settingsPath) {
+		return Location{}, fmt.Errorf("CLAUDE_SETTINGS_FILE must be absolute: %s", settingsPath)
+	}
 	if configuredDir && !configuredPath {
 		configDir = filepath.Clean(configDir)
 		return Location{ConfigDir: configDir, SettingsPath: filepath.Join(configDir, "settings.json")}, nil
