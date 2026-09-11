@@ -33,6 +33,9 @@ type realCommandRunner struct {
 	lintGoToolchain   string
 	goCache           string
 	golangciLintCache string
+	golangciLintPath  string
+	shellcheckPath    string
+	shfmtPath         string
 }
 
 var golangCILine = regexp.MustCompile(`^(.+?):(\d+):(\d+):\s*(.+?)(?:\s+\(([^()]+)\))?$`)
@@ -46,7 +49,11 @@ func (r realCommandRunner) commandSpec(name string) (string, string) {
 	case "lint-go":
 		return "go", r.lintGoToolchain
 	case "golangci-lint":
-		return name, r.lintGoToolchain
+		return r.golangciLintPath, r.lintGoToolchain
+	case "shellcheck":
+		return r.shellcheckPath, r.goToolchain
+	case "shfmt":
+		return r.shfmtPath, r.goToolchain
 	default:
 		return name, r.goToolchain
 	}
