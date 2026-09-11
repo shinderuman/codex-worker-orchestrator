@@ -1,0 +1,221 @@
+name: Web GPT Issue 407 Supported Bootstrap Patch
+
+on:
+  push:
+    branches:
+      - web-gpt/issue-407-project-scoped-agents
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.head_commit.message == 'Apply supported Issue 407 project bootstrap'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Apply exact patch
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('glm-worker/internal/codexcontext/context.go')
+          text = path.read_text()
+          old = '''var managedConfig = []byte(managedMarker + `
+# This local project profile reduces Codex Desktop context for glm-worker tasks.
+# Start a new Codex thread after enabling or disabling it.
+
+include_apps_instructions = false
+'''
+          new = '''var managedConfig = []byte(managedMarker + `
+# This local project profile reduces Codex Desktop context for glm-worker tasks.
+# Start a new Codex thread after enabling or disabling it.
+
+developer_instructions = "When glm-worker or glm-parent-action is used in this repository, first read and follow the tool-owned parent instruction at $CODEX_HOME/instructions/codex-worker-orchestrator.md (default ~/.codex/instructions/codex-worker-orchestrator.md). Treat that installed file as the single source of truth for parent/tool rules."
+
+include_apps_instructions = false
+'''
+          if old not in text:
+              raise SystemExit('managedConfig anchor missing')
+          text = text.replace(old, new, 1)
+
+          old = '''func enable(root string) (Result, error) {
+\tconfigPath := filepath.Join(root, filepath.FromSlash(ProjectConfigRelativePath))
+\tconfigCreated, err := ensureManagedConfig(configPath)
+\tif err != nil {
+\t\treturn Result{}, err
+\t}
+\tagentsCreated, err := enableProjectAgentsOverride(root)
+\tif err != nil {
+\t\treturn Result{}, rollbackProjectContextEnable(root, configPath, configCreated, false, err)
+\t}
+\texcluded, err := ensureGitExclude(root)
+\tif err != nil {
+\t\tcause := fmt.Errorf("configure local Git exclude: %w", err)
+\t\treturn Result{}, rollbackProjectContextEnable(root, configPath, configCreated, agentsCreated, cause)
+\t}
+'''
+          new = '''func enable(root string) (Result, error) {
+\tconfigPath := filepath.Join(root, filepath.FromSlash(ProjectConfigRelativePath))
+\tconfigCreated, err := ensureManagedConfig(configPath)
+\tif err != nil {
+\t\treturn Result{}, err
+\t}
+\texcluded, err := ensureGitExclude(root)
+\tif err != nil {
+\t\tcause := fmt.Errorf("configure local Git exclude: %w", err)
+\t\treturn Result{}, rollbackProjectContextEnable(configPath, configCreated, cause)
+\t}
+'''
+          if old not in text:
+              raise SystemExit('enable anchor missing')
+          text = text.replace(old, new, 1)
+
+          old = '''func rollbackProjectContextEnable(root, configPath string, configCreated, agentsCreated bool, cause error) error {
+\terrs := []error{cause}
+\tif agentsCreated {
+\t\tif err := disableProjectAgentsOverride(root); err != nil {
+\t\t\terrs = append(errs, fmt.Errorf("rollback project AGENTS bootstrap: %w", err))
+\t\t}
+\t}
+\tif configCreated {
+'''
+          new = '''func rollbackProjectContextEnable(configPath string, configCreated bool, cause error) error {
+\terrs := []error{cause}
+\tif configCreated {
+'''
+          if old not in text:
+              raise SystemExit('rollback anchor missing')
+          text = text.replace(old, new, 1)
+
+          old = '''func disable(root string) (Result, error) {
+\tif err := validateProjectAgentsDisable(root); err != nil {
+\t\treturn Result{}, err
+\t}
+\tconfigPath := filepath.Join(root, filepath.FromSlash(ProjectConfigRelativePath))
+'''
+          new = '''func disable(root string) (Result, error) {
+\tconfigPath := filepath.Join(root, filepath.FromSlash(ProjectConfigRelativePath))
+'''
+          if old not in text:
+              raise SystemExit('disable prelude anchor missing')
+          text = text.replace(old, new, 1)
+
+          old = '''\tif err := disableProjectAgentsOverride(root); err != nil {
+\t\treturn Result{}, err
+\t}
+\tif err := removeGitExclude(root); err != nil {
+'''
+          new = '''\tif err := removeGitExclude(root); err != nil {
+'''
+          if old not in text:
+              raise SystemExit('disable agents anchor missing')
+          text = text.replace(old, new, 1)
+
+          old = '''\tagentsState, err := managedProjectAgentsState(root)
+\tif err != nil {
+\t\treturn Result{}, err
+\t}
+\tif agentsState == contextStateConflict || (state == contextStateEnabled) != (agentsState == contextStateEnabled) {
+\t\tstate = contextStateConflict
+\t\tdetail = "project config and project-scoped AGENTS bootstrap ownership do not match"
+\t}
+'''
+          if old not in text:
+              raise SystemExit('status agents anchor missing')
+          text = text.replace(old, '', 1)
+
+          start = text.find('func managedProjectAgentsState(root string) (string, error) {')
+          if start < 0:
+              raise SystemExit('managedProjectAgentsState missing')
+          end = text.find('\nfunc writeManagedConfig', start)
+          if end < 0:
+              raise SystemExit('writeManagedConfig anchor missing')
+          text = text[:start] + text[end+1:]
+          path.write_text(text)
+
+          path = Path('glm-worker/internal/codexcontext/context_test.go')
+          text = path.read_text()
+          anchor = '''func TestEnableRefusesExistingProjectConfig(t *testing.T) {'''
+          test = '''func TestEnablePreservesRepositoryAgentsWithoutOverride(t *testing.T) {
+\trepo := initTestRepo(t)
+\trootAgents := filepath.Join(repo, "AGENTS.md")
+\toriginal := []byte("# repository instructions\\n")
+\tif err := os.WriteFile(rootAgents, original, 0o644); err != nil {
+\t\tt.Fatal(err)
+\t}
+
+\trunAction(t, "enable", repo)
+\tcurrent, err := os.ReadFile(rootAgents)
+\tif err != nil {
+\t\tt.Fatal(err)
+\t}
+\tif !bytes.Equal(current, original) {
+\t\tt.Fatalf("repository AGENTS changed: %q", current)
+\t}
+\tif _, err := os.Stat(filepath.Join(repo, "AGENTS.override.md")); !os.IsNotExist(err) {
+\t\tt.Fatalf("project AGENTS override was created: %v", err)
+\t}
+\tconfig, err := os.ReadFile(filepath.Join(repo, filepath.FromSlash(ProjectConfigRelativePath)))
+\tif err != nil {
+\t\tt.Fatal(err)
+\t}
+\tif !strings.Contains(string(config), "developer_instructions = ") || !strings.Contains(string(config), "codex-worker-orchestrator.md") {
+\t\tt.Fatalf("managed config is missing project-scoped tool bootstrap:\\n%s", config)
+\t}
+}
+
+'''
+          if anchor not in text:
+              raise SystemExit('context test anchor missing')
+          text = text.replace(anchor, test + anchor, 1)
+          path.write_text(text)
+
+          path = Path('tests/install_smoke.sh')
+          text = path.read_text()
+          old = '''test -f "$repo/AGENTS.override.md"
+grep -Fq "$home/.codex/instructions/codex-worker-orchestrator.md" "$repo/AGENTS.override.md"
+grep -Fq 'managed-by:' "$repo/AGENTS.override.md"
+git -C "$repo" check-ignore -q -- .codex/config.toml
+git -C "$repo" check-ignore -q -- AGENTS.override.md
+if git -C "$repo" status --porcelain --untracked-files=all | grep -Eq '(.codex/config.toml|AGENTS.override.md)'; then
+'''
+          new = '''grep -Fq 'developer_instructions = ' "$repo/.codex/config.toml"
+grep -Fq 'codex-worker-orchestrator.md' "$repo/.codex/config.toml"
+test ! -e "$repo/AGENTS.override.md"
+git -C "$repo" check-ignore -q -- .codex/config.toml
+if git -C "$repo" status --porcelain --untracked-files=all | grep -Fq '.codex/config.toml'; then
+'''
+          if old not in text:
+              raise SystemExit('install smoke project bootstrap anchor missing')
+          text = text.replace(old, new, 1)
+          path.write_text(text)
+
+          path = Path('README.md')
+          text = path.read_text()
+          old = '- project/tool-scoped Codex親規則の正本: `codex/AGENTS.md`（repository root `AGENTS.md`または`glm-codex-context`のproject bootstrapから参照）'
+          new = '- project/tool-scoped Codex親規則の正本: `codex/AGENTS.md`（repository root `AGENTS.md`または`glm-codex-context`のproject-scoped `developer_instructions` bootstrapから参照）'
+          if old not in text:
+              raise SystemExit('README authority anchor missing')
+          path.write_text(text.replace(old, new, 1))
+
+          path = Path('codex/instructions/agents-management.md')
+          text = path.read_text()
+          old = '- `glm-codex-context`で他repositoryへglm-worker用contextを有効化する場合は、tool-owned project-scoped bootstrapからinstalled namespaced instructionへ到達させ、global AGENTSへruleを戻さない。'
+          new = '- `glm-codex-context`で他repositoryへglm-worker用contextを有効化する場合は、tool-owned project-scoped `.codex/config.toml`の`developer_instructions` bootstrapからinstalled namespaced instructionへ到達させる。既存repository `AGENTS.md`のsupported discoveryを置換せず、global AGENTSへruleを戻さない。'
+          if old not in text:
+              raise SystemExit('agents management anchor missing')
+          path.write_text(text.replace(old, new, 1))
+          PY
+          rm -f glm-worker/internal/codexcontext/project_agents.go glm-worker/internal/codexcontext/project_agents_test.go
+          rm -f .github/workflows/web-gpt-407-supported-bootstrap-patch.yml
+          git diff --check
+      - name: Commit patch
+        run: |
+          git config user.name shinderuman
+          git config user.email shinderuman@gmail.com
+          git add -A
+          git commit -m 'Use supported project developer instructions for Issue 407'
+          git push origin HEAD:web-gpt/issue-407-project-scoped-agents
