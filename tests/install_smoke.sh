@@ -143,12 +143,11 @@ grep -Fxq 'include_collaboration_mode_instructions = false' "$repo/.codex/config
 grep -Fxq 'include_instructions = false' "$repo/.codex/config.toml"
 grep -Fxq 'apps = false' "$repo/.codex/config.toml"
 grep -Fxq 'plugins = false' "$repo/.codex/config.toml"
-test -f "$repo/AGENTS.override.md"
-grep -Fq "$home/.codex/instructions/codex-worker-orchestrator.md" "$repo/AGENTS.override.md"
-grep -Fq 'managed-by:' "$repo/AGENTS.override.md"
+grep -Fq 'developer_instructions = ' "$repo/.codex/config.toml"
+grep -Fq 'instructions/codex-worker-orchestrator.md' "$repo/.codex/config.toml"
+test ! -e "$repo/AGENTS.override.md"
 git -C "$repo" check-ignore -q -- .codex/config.toml
-git -C "$repo" check-ignore -q -- AGENTS.override.md
-if git -C "$repo" status --porcelain --untracked-files=all | grep -Eq '(.codex/config.toml|AGENTS.override.md)'; then
+if git -C "$repo" status --porcelain --untracked-files=all | grep -Fq '.codex/config.toml'; then
 	printf '%s\n' 'Codex context profile polluted target repository status' >&2
 	exit 1
 fi
