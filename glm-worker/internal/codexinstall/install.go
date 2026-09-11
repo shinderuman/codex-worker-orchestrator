@@ -56,27 +56,7 @@ func legacyForInstall(codexDir string, stateExists bool) (legacyManifest, error)
 }
 
 func applyInstall(preparation installPreparation, stdout io.Writer) error {
-	output := func(format string, args ...any) {
-		_, _ = fmt.Fprintf(stdout, format, args...)
-	}
-	files, err := applyFileInstallPlan(preparation.codexDir, preparation.filePlan, output)
-	if err != nil {
-		return err
-	}
-	if err := applyConfigInstallPlan(preparation.configPlan, output); err != nil {
-		return err
-	}
-	next := installState{Version: stateVersion, Files: files, Config: map[string]managedConfigRecord{}}
-	if preparation.configPlan.Record != nil {
-		next.Config[managedConfigKey] = *preparation.configPlan.Record
-	}
-	if err := writeState(preparation.codexDir, next); err != nil {
-		return err
-	}
-	if preparation.stateExists {
-		return nil
-	}
-	return removeLegacyManifest(preparation.codexDir, preparation.legacy.Present)
+	return applyInstallWithStateWriter(preparation, stdout, writeState)
 }
 
 func writeAtomic(path string, data []byte, mode os.FileMode) error {

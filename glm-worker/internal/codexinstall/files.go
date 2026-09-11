@@ -97,6 +97,9 @@ func buildFileInstallPlan(repoRoot, codexDir string, state installState, stateEx
 		return fileInstallPlan{}, err
 	}
 	records := stateFileMap(state)
+	if err := validateFilePlanAncestors(codexDir, desired, state, legacy); err != nil {
+		return fileInstallPlan{}, err
+	}
 	desiredByPath := make(map[string]desiredFile, len(desired))
 	for _, file := range desired {
 		desiredByPath[file.Path] = file
@@ -113,6 +116,25 @@ func buildFileInstallPlan(repoRoot, codexDir string, state installState, stateEx
 		return fileInstallPlan{}, err
 	}
 	return plan, nil
+}
+
+func validateFilePlanAncestors(codexDir string, desired []desiredFile, state installState, legacy legacyManifest) error {
+	paths := map[string]bool{}
+	for _, file := range desired {
+		paths[file.Path] = true
+	}
+	for _, record := range state.Files {
+		paths[record.Path] = true
+	}
+	for path := range legacy.Paths {
+		paths[path] = true
+	}
+	for path := range paths {
+		if err := validateManagedPathAncestors(codexDir, path); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func requireCurrentPathOwnership(repoRoot, codexDir string, file desiredFile, records map[string]managedFileRecord, stateExists bool, legacy legacyManifest) error {

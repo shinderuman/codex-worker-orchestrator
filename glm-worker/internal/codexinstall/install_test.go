@@ -3,6 +3,7 @@ package codexinstall
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -175,6 +176,50 @@ func TestInstallRejectsUnsafeLegacyManifestPath(t *testing.T) {
 	if err := Install(repo, codexDir, &stdout); err == nil {
 		t.Fatal("expected unsafe legacy manifest path rejection")
 	}
+}
+
+func TestInstallRejectsSymlinkedManagedAncestor(t *testing.T) {
+	repo := initInstallFixtureRepo(t)
+	codexDir := t.TempDir()
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(codexDir, "instructions")); err != nil {
+		t.Fatal(err)
+	}
+	var stdout bytes.Buffer
+	if err := Install(repo, codexDir, &stdout); err == nil {
+		t.Fatal("expected symlinked managed ancestor rejection")
+	}
+	if entries, err := os.ReadDir(outside); err != nil || len(entries) != 0 {
+		t.Fatalf("managed install escaped Codex directory: entries=%v err=%v", entries, err)
+	}
+}
+
+func TestInstallRollsBackWhenStateCommitFails(t *testing.T) {
+	repo := initInstallFixtureRepo(t)
+	codexDir := t.TempDir()
+	runInstall(t, repo, codexDir)
+	target := filepath.Join(codexDir, "instructions", "test.md")
+	configPath := filepath.Join(codexDir, "config.toml")
+	stateFile := statePath(codexDir)
+	oldTarget := append([]byte(nil), readTestFile(t, target)...)
+	oldConfig := append([]byte(nil), readTestFile(t, configPath)...)
+	oldState := append([]byte(nil), readTestFile(t, stateFile)...)
+
+	writeTestFile(t, filepath.Join(repo, "codex", "instructions", "test.md"), []byte("# tool instruction changed\n"))
+	writeTestFile(t, filepath.Join(repo, "codex", "config-managed.toml"), []byte(managedConfigKey+" = 21600001\n"))
+	preparation, err := prepareInstall(repo, codexDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stdout bytes.Buffer
+	stateFailure := errors.New("state commit failed")
+	err = applyInstallWithStateWriter(preparation, &stdout, func(string, installState) error { return stateFailure })
+	if !errors.Is(err, stateFailure) {
+		t.Fatalf("expected state failure, got %v", err)
+	}
+	assertFileBytes(t, target, oldTarget)
+	assertFileBytes(t, configPath, oldConfig)
+	assertFileBytes(t, stateFile, oldState)
 }
 
 func runInstall(t *testing.T, repo, codexDir string) {
