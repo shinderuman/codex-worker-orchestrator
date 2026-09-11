@@ -62,48 +62,87 @@ func mergeFilesWithWriter(targetPath, fragmentPath, overridePath string, writeFn
 	if err != nil {
 		return false, fmt.Errorf("env override: %w", err)
 	}
-	statePath := statePathFor(targetPath)
-	previous, err := loadOverrideState(statePath)
+	overrideStatePath := statePathFor(targetPath)
+	previousOverride, err := loadOverrideState(overrideStatePath)
 	if err != nil {
 		return false, fmt.Errorf("env override state: %w", err)
 	}
+	managedStatePath := ManagedStatePath(targetPath)
+	previousManaged, err := loadManagedState(managedStatePath)
+	if err != nil {
+		return false, fmt.Errorf("managed state: %w", err)
+	}
+
 	before := cloneMap(target)
-	restoreEnvBaselines(target, previous)
-	deepMerge(target, fragment)
-	next := snapshotEnvBaselines(target, override)
-	applyEnvPatch(target, override)
-	plans, targetChanged, stateChanged, err := planWrites(targetPath, statePath, targetMode, target, next, before, previous)
+	restoreEnvBaselines(target, previousOverride)
+	nextManaged, err := reconcileManagedValues(target, previousManaged, fragment)
 	if err != nil {
 		return false, err
 	}
-	if !targetChanged && !stateChanged {
+	nextOverride := snapshotEnvBaselines(target, override)
+	applyEnvPatch(target, override)
+	plans, changed, err := planWrites(
+		targetPath,
+		overrideStatePath,
+		managedStatePath,
+		targetMode,
+		target,
+		nextOverride,
+		nextManaged,
+		before,
+		previousOverride,
+		previousManaged,
+	)
+	if err != nil {
+		return false, err
+	}
+	if !changed {
 		return false, nil
 	}
 	if err := commitTransaction(plans, writeFn); err != nil {
 		return false, err
 	}
-	return targetChanged, nil
+	return true, nil
 }
 
-func planWrites(targetPath, statePath string, targetMode os.FileMode, target map[string]any, next overrideState, before map[string]any, previous overrideState) ([]plannedWrite, bool, bool, error) {
+func planWrites(
+	targetPath string,
+	overrideStatePath string,
+	managedStatePath string,
+	targetMode os.FileMode,
+	target map[string]any,
+	nextOverride overrideState,
+	nextManaged managedState,
+	before map[string]any,
+	previousOverride overrideState,
+	previousManaged managedState,
+) ([]plannedWrite, bool, error) {
 	targetChanged := !reflect.DeepEqual(before, target)
-	stateChanged := !reflect.DeepEqual(next, previous)
-	plans := make([]plannedWrite, 0, 2)
+	overrideStateChanged := !reflect.DeepEqual(nextOverride, previousOverride)
+	managedStateChanged := !reflect.DeepEqual(nextManaged, previousManaged)
+	plans := make([]plannedWrite, 0, 3)
 	if targetChanged {
 		data, err := marshalObject(target)
 		if err != nil {
-			return nil, false, false, err
+			return nil, false, err
 		}
 		plans = append(plans, plannedWrite{path: targetPath, data: data, mode: targetMode})
 	}
-	if stateChanged {
-		data, err := marshalObject(next)
+	if overrideStateChanged {
+		data, err := marshalObject(nextOverride)
 		if err != nil {
-			return nil, false, false, err
+			return nil, false, err
 		}
-		plans = append(plans, plannedWrite{path: statePath, data: data, mode: 0o600})
+		plans = append(plans, plannedWrite{path: overrideStatePath, data: data, mode: 0o600})
 	}
-	return plans, targetChanged, stateChanged, nil
+	if managedStateChanged {
+		data, err := marshalObject(nextManaged)
+		if err != nil {
+			return nil, false, err
+		}
+		plans = append(plans, plannedWrite{path: managedStatePath, data: data, mode: 0o600})
+	}
+	return plans, targetChanged || overrideStateChanged || managedStateChanged, nil
 }
 
 func marshalObject(value any) ([]byte, error) {
@@ -168,6 +207,10 @@ func cloneMap(value map[string]any) map[string]any {
 	for key, item := range value {
 		if child, ok := item.(map[string]any); ok {
 			result[key] = cloneMap(child)
+			continue
+		}
+		if child, ok := item.([]any); ok {
+			result[key] = cloneJSONValue(child)
 			continue
 		}
 		result[key] = item
