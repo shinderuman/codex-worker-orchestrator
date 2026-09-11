@@ -58,6 +58,45 @@ jobs:
           if section.count(old_expect) != 1:
               raise SystemExit('machine output expectation patch target missing')
           section = section.replace(old_expect, new_expect, 1)
+          old_warning = '''\tlines := strings.Split(strings.TrimRight(stderr.String(), "\\n"), "\\n")
+\tif len(lines) != 1 {
+\t\tt.Fatalf("machine stderrへ出力された行数 = %d want 1: %q", len(lines), stderr.String())
+\t}
+\tvar event struct {
+\t\tType    string `json:"type"`
+\t\tScope   string `json:"scope"`
+\t\tMessage string `json:"message"`
+\t\tError   string `json:"error"`
+\t}
+\tif err := json.Unmarshal([]byte(lines[0]), &event); err != nil {
+\t\tt.Fatalf("machine stderr行がJSON objectとして解析できません: %v: %q", err, lines[0])
+\t}
+\tif event.Type != "warning" || event.Scope != "task_stats" || event.Message == "" || event.Error == "" {
+\t\tt.Fatalf("typed warning eventの契約が守られていません: %#v", event)
+\t}
+'''
+          new_warning = '''\tlines := strings.Split(strings.TrimRight(stderr.String(), "\\n"), "\\n")
+\tif len(lines) != 2 {
+\t\tt.Fatalf("machine stderrへ出力された行数 = %d want 2: %q", len(lines), stderr.String())
+\t}
+\tfor _, line := range lines {
+\t\tvar event struct {
+\t\t\tType    string `json:"type"`
+\t\t\tScope   string `json:"scope"`
+\t\t\tMessage string `json:"message"`
+\t\t\tError   string `json:"error"`
+\t\t}
+\t\tif err := json.Unmarshal([]byte(line), &event); err != nil {
+\t\t\tt.Fatalf("machine stderr行がJSON objectとして解析できません: %v: %q", err, line)
+\t\t}
+\t\tif event.Type != "warning" || event.Scope != "task_stats" || event.Message == "" || event.Error == "" {
+\t\t\tt.Fatalf("typed warning eventの契約が守られていません: %#v", event)
+\t\t}
+\t}
+'''
+          if section.count(old_warning) != 1:
+              raise SystemExit('machine output warning patch target missing')
+          section = section.replace(old_warning, new_warning, 1)
           path.write_text(text[:start] + section + text[end:])
           PY
           mapfile -t go_files < <(git diff --name-only -- '*.go')
