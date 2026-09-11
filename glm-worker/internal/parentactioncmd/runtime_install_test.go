@@ -9,6 +9,7 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/cliinstall"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/codexinstall"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/settingsmerge"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
@@ -69,7 +70,7 @@ func TestCompleteRequiresRuntimeInstallEvidenceAndAllowsMetadataHeadAdvance(t *t
 	}
 	writeRuntimeInstallHarnessMarker(t, fixture.repo)
 	writeRuntimeInstallSource(t, fixture.repo, "version=1\n")
-	installRuntimeManagedConfigs(t, fixture)
+	installRuntimeManagedConfigs(t, fixture.repo, &fixture.cfg)
 	runFinalizationGit(t, fixture.repo, "add", "-A")
 	runFinalizationGit(t, fixture.repo, "commit", "-q", "-m", "runtime")
 	installedHead := completeFixtureHead(t, fixture.repo)
@@ -177,27 +178,27 @@ func writeRuntimeInstallSource(t *testing.T, repo, content string) {
 	}
 }
 
-func installRuntimeManagedConfigs(t *testing.T, fixture *completeFixture) {
+func installRuntimeManagedConfigs(t *testing.T, repo string, cfg *config.AppConfig) {
 	t.Helper()
 	codexDir := t.TempDir()
 	claudeDir := t.TempDir()
-	writeRuntimeSurfaceFile(t, fixture.repo, "codex/AGENTS.md", "# agents\n", 0o644)
-	writeRuntimeSurfaceFile(t, fixture.repo, "codex/instructions/example.md", "current\n", 0o644)
-	writeRuntimeSurfaceFile(t, fixture.repo, "codex/rules/glm-worker.rules", "prefix_rule(pattern=[\"glm-worker\"], decision=\"allow\")\n", 0o644)
-	writeRuntimeSurfaceFile(t, fixture.repo, "codex/glm-worker/prompts/WORKER.md", "worker\n", 0o644)
-	writeRuntimeSurfaceFile(t, fixture.repo, "codex/config-managed.toml", "background_terminal_max_timeout = 21600000\n", 0o644)
-	if err := codexinstall.Install(fixture.repo, codexDir, io.Discard); err != nil {
+	writeRuntimeSurfaceFile(t, repo, "codex/AGENTS.md", "# agents\n", 0o644)
+	writeRuntimeSurfaceFile(t, repo, "codex/instructions/example.md", "current\n", 0o644)
+	writeRuntimeSurfaceFile(t, repo, "codex/rules/glm-worker.rules", "prefix_rule(pattern=[\"glm-worker\"], decision=\"allow\")\n", 0o644)
+	writeRuntimeSurfaceFile(t, repo, "codex/glm-worker/prompts/WORKER.md", "worker\n", 0o644)
+	writeRuntimeSurfaceFile(t, repo, "codex/config-managed.toml", "background_terminal_max_timeout = 21600000\n", 0o644)
+	if err := codexinstall.Install(repo, codexDir, io.Discard); err != nil {
 		t.Fatal(err)
 	}
-	managedClaude := filepath.Join(fixture.repo, "claude", "settings-managed.json")
-	writeRuntimeSurfaceFile(t, fixture.repo, "claude/settings-managed.json", `{"env":{"REPOSITORY":"managed"}}`, 0o644)
+	managedClaude := filepath.Join(repo, "claude", "settings-managed.json")
+	writeRuntimeSurfaceFile(t, repo, "claude/settings-managed.json", `{"env":{"REPOSITORY":"managed"}}`, 0o644)
 	claudeSettings := filepath.Join(claudeDir, "settings.json")
 	if _, err := settingsmerge.MergeFiles(claudeSettings, managedClaude, ""); err != nil {
 		t.Fatal(err)
 	}
-	fixture.cfg.CodexConfigDir = codexDir
-	fixture.cfg.ClaudeConfigDir = claudeDir
-	fixture.cfg.ClaudeSettingsPath = claudeSettings
+	cfg.CodexConfigDir = codexDir
+	cfg.ClaudeConfigDir = claudeDir
+	cfg.ClaudeSettingsPath = claudeSettings
 }
 
 func writeInstalledRuntimeProbeStub(t *testing.T, revision string) {
