@@ -67,7 +67,7 @@ func TestBuildTestImpactReportUsesStructuredValidationEvidence(t *testing.T) {
 		t.Fatalf("validations = %#v", report.Tasks)
 	}
 	test := findTestImpactValidation(t, report.Tasks[0].Validations, ValidationGateClassTest, "go-test")
-	if test.Runs != 2 || test.Initial != 1 || test.Retries != 1 || test.Pass != 1 || test.Unknown != 1 || test.MeasuredSumMS != 2000 {
+	if test.Runs != 2 || test.Initial != 1 || test.Retries != 1 || test.Pass != 1 || test.Unknown != 1 || test.Measured != 1 || test.MeasuredSumMS != 800 {
 		t.Fatalf("go-test measure = %#v", test)
 	}
 	unknown := findTestImpactValidation(t, report.Tasks[0].Validations, ValidationGateClassUnknown, "custom-check")
