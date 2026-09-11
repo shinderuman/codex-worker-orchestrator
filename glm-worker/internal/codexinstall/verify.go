@@ -17,7 +17,7 @@ func Verify(repoRoot, codexDir string) error {
 		return err
 	}
 	if !stateExists {
-		return fmt.Errorf("Codex install ownership state is missing")
+		return fmt.Errorf("codex install ownership state is missing")
 	}
 	desired, err := collectDesiredFiles(repoRoot)
 	if err != nil {
@@ -50,7 +50,7 @@ func verifyInstalledFiles(codexDir string, desired []desiredFile, state installS
 		delete(records, file.Path)
 	}
 	for path := range records {
-		return fmt.Errorf("Codex ownership state retains retired managed file: %s", path)
+		return fmt.Errorf("codex ownership state retains retired managed file: %s", path)
 	}
 	return nil
 }
@@ -75,7 +75,7 @@ func verifyInstalledConfig(repoRoot, codexDir string, state installState) error 
 	record, owned := state.Config[managedConfigKey]
 	if !managedFound {
 		if owned {
-			return fmt.Errorf("Codex ownership state retains retired managed config key: %s", managedConfigKey)
+			return fmt.Errorf("codex ownership state retains retired managed config key: %s", managedConfigKey)
 		}
 		return nil
 	}
