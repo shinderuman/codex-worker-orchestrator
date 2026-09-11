@@ -21,10 +21,10 @@ func TestParentEvidenceMatchingSourceEnablesReviewAccept(t *testing.T) {
 		Version: parentEvidenceManifestVersion,
 		Reason:  "inspect exact review target",
 		Source: []parentEvidenceSourceRequest{{
-			Question: "inspect target",
-			Path: "review.go",
-			LineStart: 1,
-			LineEnd: 3,
+			Question:    "inspect target",
+			Path:        "review.go",
+			LineStart:   1,
+			LineEnd:     3,
 			BudgetBytes: 4096,
 		}},
 	})
@@ -56,10 +56,10 @@ func TestParentEvidenceUnrelatedSourceDoesNotProveReview(t *testing.T) {
 		Version: parentEvidenceManifestVersion,
 		Reason:  "inspect unrelated source",
 		Source: []parentEvidenceSourceRequest{{
-			Question: "unrelated",
-			Path: "other.go",
-			LineStart: 1,
-			LineEnd: 2,
+			Question:    "unrelated",
+			Path:        "other.go",
+			LineStart:   1,
+			LineEnd:     2,
 			BudgetBytes: 4096,
 		}},
 	})
@@ -86,10 +86,10 @@ func TestParentEvidenceSourceMustCoverTargetRange(t *testing.T) {
 		Version: parentEvidenceManifestVersion,
 		Reason:  "inspect too narrow source",
 		Source: []parentEvidenceSourceRequest{{
-			Question: "too narrow",
-			Path: "review.go",
-			LineStart: 1,
-			LineEnd: 2,
+			Question:    "too narrow",
+			Path:        "review.go",
+			LineStart:   1,
+			LineEnd:     2,
 			BudgetBytes: 4096,
 		}},
 	})
@@ -116,10 +116,10 @@ func TestParentEvidenceSnapshotChangeCannotCreateProof(t *testing.T) {
 		Version: parentEvidenceManifestVersion,
 		Reason:  "stale snapshot",
 		Source: []parentEvidenceSourceRequest{{
-			Question: "stale",
-			Path: "review.go",
-			LineStart: 1,
-			LineEnd: 3,
+			Question:    "stale",
+			Path:        "review.go",
+			LineStart:   1,
+			LineEnd:     3,
 			BudgetBytes: 4096,
 		}},
 	})
@@ -196,10 +196,10 @@ func newParentEvidenceReviewStore(t *testing.T) (config.AppConfig, *state.StateS
 func openParentEvidenceReview(t *testing.T, st *state.StateStore, snapshot state.SnapshotDigest, target string) {
 	t.Helper()
 	result := packet.Result{
-		Status: packet.StatusNeedsSolReview,
-		Risk: packet.RiskHigh,
+		Status:      packet.StatusNeedsSolReview,
+		Risk:        packet.RiskHigh,
 		SolQuestion: "Inspect the current target and decide whether to accept.",
-		Targets: []string{target},
+		Targets:     []string{target},
 	}
 	if err := st.RecordSolResultWithReviewSnapshot(result, state.ParentReviewProducer{Role: string(state.ReviewerRole), Model: "reviewer"}, snapshot); err != nil {
 		t.Fatal(err)

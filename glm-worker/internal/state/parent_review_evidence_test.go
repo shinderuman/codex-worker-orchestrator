@@ -107,7 +107,7 @@ func TestParentReviewEvidenceMissingBindingFailsClosed(t *testing.T) {
 	st, _, _ := newBoundParentReviewTestStore(t)
 	if err := st.RecordSolResult(packet.Result{
 		Status: packet.StatusNeedsSolReview,
-		Risk: packet.RiskHigh,
+		Risk:   packet.RiskHigh,
 	}, ParentReviewProducer{}); err != nil {
 		t.Fatal(err)
 	}
@@ -173,10 +173,10 @@ func newBoundParentReviewTestStore(t *testing.T) (*StateStore, string, SnapshotD
 func openBoundReviewForTest(t *testing.T, st *StateStore, snapshot SnapshotDigest, target string) {
 	t.Helper()
 	result := packet.Result{
-		Status: packet.StatusNeedsSolReview,
-		Risk: packet.RiskHigh,
+		Status:      packet.StatusNeedsSolReview,
+		Risk:        packet.RiskHigh,
 		SolQuestion: "Inspect the current target and decide whether to accept.",
-		Targets: []string{target},
+		Targets:     []string{target},
 	}
 	if err := st.RecordSolResultWithReviewSnapshot(result, ParentReviewProducer{Role: string(ReviewerRole), Model: "reviewer"}, snapshot); err != nil {
 		t.Fatal(err)
