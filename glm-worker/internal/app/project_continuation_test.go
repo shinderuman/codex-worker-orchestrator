@@ -119,7 +119,10 @@ func TestProjectContinuationBlockedOnlyUsesCanonicalBlocker(t *testing.T) {
 func TestProjectContinuationTerminalRequiresCompletedGoalAndSettledLifecycle(t *testing.T) {
 	cfg := newAppConfig(t)
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", projectContinuationPlan("completed", nil, nil, nil))
-	st := state.AttachStateStore(cfg)
+	st, err := state.NewStateStore(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
 	output, err := buildProjectState(cfg, st)
 	if err != nil {
 		t.Fatal(err)
