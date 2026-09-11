@@ -10,6 +10,7 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/claudeoverride"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/settingsmerge"
 )
 
 type topLevelTOMLScanState struct {
@@ -164,13 +165,17 @@ func (state topLevelTOMLScanState) invalidDepth() bool {
 }
 
 func verifyInstalledClaudeManagedSettings(cfg config.AppConfig) error {
-	managed, err := readJSONObject(filepath.Join(cfg.RepoRoot, "claude", "settings-managed.json"))
+	managedPath := filepath.Join(cfg.RepoRoot, "claude", "settings-managed.json")
+	managed, err := readJSONObject(managedPath)
 	if err != nil {
 		return fmt.Errorf("read managed Claude settings: %w", err)
 	}
 	settingsPath := os.Getenv("CLAUDE_SETTINGS_FILE")
 	if settingsPath == "" {
 		settingsPath = filepath.Join(cfg.ClaudeConfigDir, "settings.json")
+	}
+	if err := settingsmerge.VerifyManagedInstallation(settingsPath, managedPath, cfg.ClaudeSettingsOverride); err != nil {
+		return fmt.Errorf("verify managed Claude settings ownership: %w", err)
 	}
 	installed, err := readJSONObject(settingsPath)
 	if err != nil {
