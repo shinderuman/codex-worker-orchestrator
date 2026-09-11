@@ -256,7 +256,7 @@ func (g *streamEventIngester) bindValidationObservations(values []state.TaskVali
 		}
 		bound[index].SnapshotID = snapshotID
 		bound[index].Phase = g.base.Phase
-		key := bound[index].GateClass + "\x00" + bound[index].Suite + "\x00" + snapshotID
+		key := g.base.TaskID + "\x00" + bound[index].GateClass + "\x00" + bound[index].Suite + "\x00" + snapshotID
 		if g.validationAttempts[key] == 0 {
 			bound[index].Attempt = state.ValidationAttemptInitial
 		} else {

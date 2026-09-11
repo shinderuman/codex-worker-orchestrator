@@ -26,10 +26,11 @@ type StructuredOutputError struct {
 }
 
 type ClaudeRunner struct {
-	config      config.AppConfig
-	state       *state.StateStore
-	stop        *StopController
-	bashSandbox *gitBashSandboxPolicy
+	config             config.AppConfig
+	state              *state.StateStore
+	stop               *StopController
+	bashSandbox        *gitBashSandboxPolicy
+	validationAttempts map[string]int
 
 	instructionSurfaceDigest string
 }
@@ -180,7 +181,7 @@ func structuredSchema(role state.SessionRole, phase string) (string, error) {
 }
 
 func NewClaudeRunner(cfg config.AppConfig, st *state.StateStore) *ClaudeRunner {
-	return &ClaudeRunner{config: cfg, state: st}
+	return &ClaudeRunner{config: cfg, state: st, validationAttempts: make(map[string]int)}
 }
 
 func (r *ClaudeRunner) AttachStopController(stop *StopController) {
@@ -507,6 +508,7 @@ func (r *ClaudeRunner) newTaskEventIngester(
 		return &streamEventIngester{closed: true}
 	}
 	ingester := newStreamEventIngester(r.state, taskID, callID, role, phase, model, sessionID, resumed)
+	ingester.validationAttempts = r.validationAttempts
 	ingester.workerInstructionDir = filepath.Join(r.config.CodexConfigDir, "instructions", "worker")
 	return ingester
 }
