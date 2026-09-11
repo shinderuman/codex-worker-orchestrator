@@ -37,6 +37,8 @@ var managedConfig = []byte(managedMarker + `
 # This local project profile reduces Codex Desktop context for glm-worker tasks.
 # Start a new Codex thread after enabling or disabling it.
 
+developer_instructions = "When glm-worker or glm-parent-action is used in this repository, first read and follow instructions/codex-worker-orchestrator.md from the active Codex configuration directory. Resolve that directory as CODEX_CONFIG_DIR when set by this toolchain, otherwise CODEX_HOME when set, otherwise ~/.codex. Treat that installed file as the single source of truth for parent/tool rules; do not duplicate its rule body here."
+
 include_apps_instructions = false
 include_collaboration_mode_instructions = false
 
@@ -113,14 +115,10 @@ func enable(root string) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	agentsCreated, err := enableProjectAgentsOverride(root)
-	if err != nil {
-		return Result{}, rollbackProjectContextEnable(root, configPath, configCreated, false, err)
-	}
 	excluded, err := ensureGitExclude(root)
 	if err != nil {
 		cause := fmt.Errorf("configure local Git exclude: %w", err)
-		return Result{}, rollbackProjectContextEnable(root, configPath, configCreated, agentsCreated, cause)
+		return Result{}, rollbackProjectContextEnable(configPath, configCreated, cause)
 	}
 	return Result{
 		Status:            contextStateEnabled,
@@ -151,13 +149,8 @@ func ensureManagedConfig(configPath string) (bool, error) {
 	}
 }
 
-func rollbackProjectContextEnable(root, configPath string, configCreated, agentsCreated bool, cause error) error {
+func rollbackProjectContextEnable(configPath string, configCreated bool, cause error) error {
 	errs := []error{cause}
-	if agentsCreated {
-		if err := disableProjectAgentsOverride(root); err != nil {
-			errs = append(errs, fmt.Errorf("rollback project AGENTS bootstrap: %w", err))
-		}
-	}
 	if configCreated {
 		if err := removeManagedConfig(configPath); err != nil {
 			errs = append(errs, fmt.Errorf("rollback project config: %w", err))
@@ -167,9 +160,6 @@ func rollbackProjectContextEnable(root, configPath string, configCreated, agents
 }
 
 func disable(root string) (Result, error) {
-	if err := validateProjectAgentsDisable(root); err != nil {
-		return Result{}, err
-	}
 	configPath := filepath.Join(root, filepath.FromSlash(ProjectConfigRelativePath))
 	content, err := os.ReadFile(configPath)
 	switch {
@@ -183,9 +173,6 @@ func disable(root string) (Result, error) {
 	case errors.Is(err, os.ErrNotExist):
 	default:
 		return Result{}, fmt.Errorf("read %s: %w", ProjectConfigRelativePath, err)
-	}
-	if err := disableProjectAgentsOverride(root); err != nil {
-		return Result{}, err
 	}
 	if err := removeGitExclude(root); err != nil {
 		return Result{}, fmt.Errorf("remove local Git exclude: %w", err)
@@ -211,14 +198,6 @@ func status(root string) (Result, error) {
 	state, detail, err := managedConfigState(configPath)
 	if err != nil {
 		return Result{}, err
-	}
-	agentsState, err := managedProjectAgentsState(root)
-	if err != nil {
-		return Result{}, err
-	}
-	if agentsState == contextStateConflict || (state == contextStateEnabled) != (agentsState == contextStateEnabled) {
-		state = contextStateConflict
-		detail = "project config and project-scoped AGENTS bootstrap ownership do not match"
 	}
 	excluded, err := gitExcluded(root)
 	if err != nil {
@@ -248,21 +227,6 @@ func managedConfigState(configPath string) (string, string, error) {
 	default:
 		return "", "", fmt.Errorf("read %s: %w", ProjectConfigRelativePath, err)
 	}
-}
-
-func managedProjectAgentsState(root string) (string, error) {
-	state, err := projectAgentsOverrideState(root)
-	if err != nil || state != contextStateEnabled {
-		return state, err
-	}
-	ignored, err := projectAgentsIgnored(root)
-	if err != nil {
-		return "", err
-	}
-	if !ignored {
-		return contextStateConflict, nil
-	}
-	return contextStateEnabled, nil
 }
 
 func writeManagedConfig(path string) error {
