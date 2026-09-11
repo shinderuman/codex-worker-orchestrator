@@ -37,6 +37,7 @@ type Command struct {
 	ArtifactRoot        string
 	Verify              VerifyArgs
 	Coalesce            CoalesceArgs
+	CodexWake           CodexWakeArgs
 	Query               TelemetryQueryArgs
 	SearchScopes        []string
 	SearchBudgetBytes   int
@@ -121,6 +122,8 @@ const (
 	modeRotateInstructionBaseline
 	modeRecoverParentAction
 	modeRecoverQualitySurface
+	ModeCodexWakePlan
+	ModeCodexWakeResponse
 )
 
 const fixOriginUsage = "[--origin codex-review|glm-reviewer|user-amendment|external-review|metadata-repair] [--cause parent-orchestration|requirement-preservation|worker|reviewer|sol-gate|production-wiring|test-scenario|cross-cutting-invariant|unknown] [--accepted-scope current-diff]"
@@ -261,6 +264,9 @@ func usageError(format string, args ...any) *UsageError {
 func ParseCommand(args []string) (Command, error) {
 	if len(args) == 0 {
 		return Command{}, usageError("usage: glm-worker <instruction> | <command>; run glm-worker --help for command list")
+	}
+	if parser, ok := codexWakeCommandParsers[args[0]]; ok {
+		return parser(args)
 	}
 	if parser, ok := commandParsers[args[0]]; ok {
 		return parser(args)
@@ -603,7 +609,7 @@ func executeStateless(cmd Command, cfg config.AppConfig, stdout io.Writer) (bool
 	case ModeCheckWakeCoalesce:
 		return true, printCheckWakeCoalesce(cmd, cfg, stdout)
 	default:
-		return executeStatelessReport(cmd, cfg, stdout)
+		return executeCodexWakeStateless(cmd, cfg, stdout)
 	}
 }
 
