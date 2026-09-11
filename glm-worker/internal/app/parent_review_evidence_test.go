@@ -181,7 +181,8 @@ func TestParentReviewEvidenceClaimCoverage(t *testing.T) {
 		{
 			Kind: "diff", Digest: "diff-digest", Locator: "git diff HEAD -- symbol.go",
 			Diff: &parentEvidenceDiffBody{
-				Paths: []string{"symbol.go"}, Body: "diff body",
+				Paths: []string{"symbol.go"},
+				Body:  "diff --git a/symbol.go b/symbol.go\n--- a/symbol.go\n+++ b/symbol.go\n@@ -8,6 +8,6 @@ func TargetSymbol() {\n context\n-old\n+new\n context\n",
 				Files: []parentEvidenceDiffFile{{Path: "symbol.go", Status: "M", HeadBlob: "blob", WorktreeSHA: "sha"}},
 			},
 		},
@@ -192,6 +193,15 @@ func TestParentReviewEvidenceClaimCoverage(t *testing.T) {
 	}
 	if _, ok := parentReviewEvidenceClaims([]string{"review.go:16"}, parts); ok {
 		t.Fatal("source outside requested target range counted as proof")
+	}
+	if _, ok := parentReviewEvidenceClaims([]string{"symbol.go:OtherSymbol"}, parts); ok {
+		t.Fatal("unrelated same-file diff counted as symbol proof")
+	}
+	if !parentReviewDiffCoversTarget("symbol.go:10-12", *parts[1].Diff) {
+		t.Fatal("visible diff hunk did not cover numeric target")
+	}
+	if parentReviewDiffCoversTarget("symbol.go:20", *parts[1].Diff) {
+		t.Fatal("unrelated same-file diff counted as line proof")
 	}
 	parts[0].Source.Content = ""
 	if _, ok := parentReviewEvidenceClaims([]string{"review.go:10"}, parts); ok {
