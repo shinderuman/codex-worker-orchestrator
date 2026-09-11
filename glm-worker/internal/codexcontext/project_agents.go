@@ -43,11 +43,11 @@ func projectAgentsOverrideState(root string) (string, error) {
 	content, err := os.ReadFile(path)
 	switch {
 	case err == nil && bytes.HasPrefix(content, []byte(projectAgentsManagedMarker+"\n")):
-		return "enabled", nil
+		return contextStateEnabled, nil
 	case err == nil:
-		return "conflict", nil
+		return contextStateConflict, nil
 	case errors.Is(err, os.ErrNotExist):
-		return "disabled", nil
+		return contextStateDisabled, nil
 	default:
 		return "", fmt.Errorf("read %s: %w", ProjectAgentsOverrideRelativePath, err)
 	}
@@ -58,7 +58,7 @@ func enableProjectAgentsOverride(root string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if state == "conflict" {
+	if state == contextStateConflict {
 		return false, fmt.Errorf("refusing to overwrite existing %s", ProjectAgentsOverrideRelativePath)
 	}
 	if tracked, err := projectAgentsOverrideTracked(root); err != nil {
@@ -71,7 +71,7 @@ func enableProjectAgentsOverride(root string) (bool, error) {
 		return false, err
 	}
 	path := filepath.Join(root, ProjectAgentsOverrideRelativePath)
-	created := state == "disabled"
+	created := state == contextStateDisabled
 	if current, readErr := os.ReadFile(path); readErr == nil && bytes.Equal(current, content) {
 		return false, ensureProjectAgentsExclude(root)
 	}
@@ -92,7 +92,7 @@ func validateProjectAgentsDisable(root string) error {
 	if err != nil {
 		return err
 	}
-	if state == "conflict" {
+	if state == contextStateConflict {
 		return fmt.Errorf("refusing to remove existing %s because it is not owned by glm-codex-context", ProjectAgentsOverrideRelativePath)
 	}
 	return nil
@@ -175,7 +175,7 @@ func removeProjectAgentsExclude(root string) error {
 	}
 	separatorBlock := []byte("\n" + projectAgentsSeparatorMarker + "\n" + projectAgentsExcludePattern + "\n")
 	regularBlock := []byte(projectAgentsExcludeMarker + "\n" + projectAgentsExcludePattern + "\n")
-	next := content
+	var next []byte
 	switch {
 	case bytes.HasSuffix(content, separatorBlock):
 		next = content[:len(content)-len(separatorBlock)]
