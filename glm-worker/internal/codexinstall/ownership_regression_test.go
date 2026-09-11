@@ -72,6 +72,24 @@ func TestInstallDoesNotClaimPreexistingEqualConfigValue(t *testing.T) {
 	assertFileBytes(t, configPath, original)
 }
 
+func TestInstallRecognizesQuotedUserOwnedConfigKey(t *testing.T) {
+	repo := initInstallFixtureRepo(t)
+	codexDir := t.TempDir()
+	configPath := filepath.Join(codexDir, "config.toml")
+	original := []byte("\"" + managedConfigKey + "\" = 5\nlocal_key = \"keep\"\n")
+	writeTestFile(t, configPath, original)
+
+	var stdout bytes.Buffer
+	err := Install(repo, codexDir, &stdout)
+	if err == nil || !strings.Contains(err.Error(), "user-owned Codex config key") {
+		t.Fatalf("expected quoted user-owned key conflict, got %v", err)
+	}
+	assertFileBytes(t, configPath, original)
+	if _, err := os.Stat(statePath(codexDir)); !os.IsNotExist(err) {
+		t.Fatalf("state exists after quoted config ownership conflict: %v", err)
+	}
+}
+
 func TestInstallRollbackRestoresLegacyManifestAndSuppressesSuccessOutput(t *testing.T) {
 	repo := initInstallFixtureRepo(t)
 	codexDir := t.TempDir()
