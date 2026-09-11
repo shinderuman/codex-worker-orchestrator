@@ -141,18 +141,7 @@ merge_claude_settings() {
 }
 
 install_pull_hook() {
-	if ! git -C "$repo_root" rev-parse --git-dir >/dev/null 2>&1; then
-		printf '%s\n' 'git hook: skipped'
-		return
-	fi
-	chmod +x "$repo_root/.githooks/post-merge"
-	current=$(git -C "$repo_root" config --local --get core.hooksPath || true)
-	if [ "$current" = '.githooks' ]; then
-		printf '%s\n' 'git hook: unchanged'
-		return
-	fi
-	git -C "$repo_root" config --local core.hooksPath .githooks
-	printf '%s\n' 'git hook: enabled'
+	sh "$repo_root/scripts/manage-pull-hook.sh" install "$repo_root"
 }
 
 require git
