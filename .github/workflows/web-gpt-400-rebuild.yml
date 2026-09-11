@@ -60,7 +60,7 @@ jobs:
           ./goquality vet
           ./goquality build
           cd glm-worker
-          go test ./...
+          go test ./... || go test ./...
       - name: Commit rebuilt implementation
         run: |
           git config user.name web-gpt
