@@ -32,6 +32,10 @@ func (r *InstructionSurfaceGuardRunner) Run(
 		return RunResult{}, err
 	}
 	defer gitGuard.cleanup()
+	providerValues, err := SensitiveArtifactValues(r.base.config)
+	if err != nil {
+		return RunResult{}, errors.New("artifact sensitive admission unavailable: provider-runtime")
+	}
 
 	callBase := r.base
 	if gitGuard.before.active {
@@ -47,13 +51,16 @@ func (r *InstructionSurfaceGuardRunner) Run(
 	callBase.instructionSurfaceDigest = instructionBefore.digest
 
 	result, runErr := callBase.Run(role, phase, model, readOnly, effort, prompt, outputPath)
+	artifactErr := validateSensitiveResultArtifacts(r.base, result, providerValues)
 	gitErr := gitGuard.verify()
 	instructionErr := r.base.verifyInstructionSurfaceGuard(instructionBefore)
-	if gitErr != nil || instructionErr != nil {
+	if artifactErr != nil || gitErr != nil || instructionErr != nil {
 		r.invalidateSessions()
-		return result, errors.Join(gitErr, instructionErr)
 	}
-	return result, runErr
+	if gitErr != nil || instructionErr != nil {
+		return result, errors.Join(artifactErr, gitErr, instructionErr)
+	}
+	return result, errors.Join(runErr, artifactErr)
 }
 
 func (r *InstructionSurfaceGuardRunner) Probe(model string) (ProbeResult, error) {
