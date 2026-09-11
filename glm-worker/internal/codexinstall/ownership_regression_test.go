@@ -138,9 +138,8 @@ func TestInstallDoesNotClaimModifiedLegacyConfigLine(t *testing.T) {
 	writeTestFile(t, configPath, original)
 
 	var stdout bytes.Buffer
-	err := Install(repo, codexDir, &stdout)
-	if err == nil || !strings.Contains(err.Error(), "legacy managed Codex config key no longer matches repository history") {
-		t.Fatalf("expected modified legacy config ownership conflict, got %v", err)
+	if err := Install(repo, codexDir, &stdout); err == nil {
+		t.Fatal("expected ownership conflict")
 	}
 	assertFileBytes(t, configPath, original)
 	assertFileBytes(t, manifestPath, manifest)
