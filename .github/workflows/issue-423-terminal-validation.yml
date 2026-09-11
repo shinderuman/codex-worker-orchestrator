@@ -1,0 +1,104 @@
+name: Issue 423 Terminal Validation
+
+on:
+  push:
+    branches:
+      - web-gpt/issue-423-continuation-obligation
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: web-gpt/issue-423-continuation-obligation
+          fetch-depth: 0
+      - name: Read quality tool contract
+        id: quality-tools
+        run: |
+          GO_VERSION=$(awk -F': ' '$1 == "go" { print $2 }' quality-tools.yml)
+          printf 'go_version=%s\n' "$GO_VERSION" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ steps.quality-tools.outputs.go_version }}
+          cache: false
+      - name: Apply terminal fail-closed regression
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('glm-worker/internal/app/project_continuation.go')
+          text = path.read_text()
+          old = '''\tif status != state.TaskStatusNone && status != state.TaskStatusComplete {
+\t\treturn unknownProjectContinuation(projectContinuationReasonGoalLifecycleInconsistent)
+\t}
+\tplan, err := st.ParentActionPlan()
+'''
+          new = '''\tif status != state.TaskStatusNone && status != state.TaskStatusComplete {
+\t\treturn unknownProjectContinuation(projectContinuationReasonGoalLifecycleInconsistent)
+\t}
+\tif status == state.TaskStatusNone && st.ReadOr("active-task", "") != "" {
+\t\treturn unknownProjectContinuation(projectContinuationReasonGoalLifecycleInconsistent)
+\t}
+\tplan, err := st.ParentActionPlan()
+'''
+          if text.count(old) != 1:
+              raise SystemExit(f'terminal lifecycle anchor count: {text.count(old)}')
+          path.write_text(text.replace(old, new, 1))
+
+          test_path = Path('glm-worker/internal/app/project_continuation_test.go')
+          test = test_path.read_text()
+          addition = r'''
+func TestProjectContinuationTerminalRejectsStaleRuntimeTask(t *testing.T) {
+\tcfg := newAppConfig(t)
+\twriteProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", projectContinuationPlan("completed", nil, nil, nil))
+\tst, err := state.NewStateStore(cfg)
+\tif err != nil {
+\t\tt.Fatal(err)
+\t}
+\tif err := st.Write("active-task", "IMPLEMENTATION_TASKS/stale.md"); err != nil {
+\t\tt.Fatal(err)
+\t}
+\toutput, err := buildProjectState(cfg, st)
+\tif err != nil {
+\t\tt.Fatal(err)
+\t}
+\tobligation := deriveProjectContinuation(output, st)
+\tif obligation.State != projectContinuationUnknown || obligation.Reason != projectContinuationReasonGoalLifecycleInconsistent {
+\t\tt.Fatalf("stale runtime task with completed goal = %#v", obligation)
+\t}
+}
+'''
+          name = 'func TestProjectContinuationTerminalRejectsStaleRuntimeTask('
+          if name in test:
+              raise SystemExit('stale runtime regression already exists')
+          test_path.write_text(test.rstrip() + '\n' + addition)
+          PY
+          gofmt -w glm-worker/internal/app/project_continuation.go glm-worker/internal/app/project_continuation_test.go
+      - name: Targeted tests
+        working-directory: glm-worker
+        run: go test ./internal/app
+      - name: Install quality tools
+        run: |
+          quality_bin="$(go env GOPATH)/bin"
+          QUALITY_TOOLS_BIN_DIR="$quality_bin" ./install-quality-tools.sh
+          printf '%s\n' "$quality_bin" >> "$GITHUB_PATH"
+      - name: Repository validation
+        run: |
+          ./commentlint
+          ./harnesslint
+          ./goquality vet
+          ./goquality build
+          cd glm-worker
+          go test ./...
+      - name: Commit validated fix
+        run: |
+          git rm .github/workflows/issue-423-terminal-validation.yml
+          git config user.name web-gpt
+          git config user.email web-gpt@users.noreply.github.com
+          git add glm-worker/internal/app/project_continuation.go glm-worker/internal/app/project_continuation_test.go
+          git commit -m "Fail closed on stale terminal runtime state"
+          git push origin HEAD:web-gpt/issue-423-continuation-obligation
