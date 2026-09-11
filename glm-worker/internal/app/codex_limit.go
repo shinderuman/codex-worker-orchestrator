@@ -19,11 +19,19 @@ func (e *CodexLimitError) Error() string {
 }
 
 func printCodexLimit(cfg config.AppConfig, stdout io.Writer) error {
-	snapshot, err := codexlimit.Read(cfg.CodexBin)
+	snapshot, err := readCodexLimitSnapshot(cfg)
 	if err != nil {
-		return &CodexLimitError{Phase: codexLimitPhase(err), Reason: err.Error()}
+		return err
 	}
 	return writeJSON(stdout, snapshot)
+}
+
+func readCodexLimitSnapshot(cfg config.AppConfig) (codexlimit.Snapshot, error) {
+	snapshot, err := codexlimit.Read(cfg.CodexBin)
+	if err != nil {
+		return codexlimit.Snapshot{}, &CodexLimitError{Phase: codexLimitPhase(err), Reason: err.Error()}
+	}
+	return snapshot, nil
 }
 
 func codexLimitPhase(err error) string {
