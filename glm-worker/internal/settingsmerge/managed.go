@@ -81,66 +81,87 @@ func loadManagedState(path string) (managedState, error) {
 func validateManagedState(state managedState) error {
 	seen := make(map[string]bool, len(state.Values))
 	for _, record := range state.Values {
-		if len(record.Path) == 0 {
-			return fmt.Errorf("managed state contains an empty path")
+		if err := validateManagedValueState(record, seen); err != nil {
+			return err
 		}
-		if !record.Baseline.Exists && (record.Baseline.FirstMissingPrefix < 1 || record.Baseline.FirstMissingPrefix > len(record.Path)) {
-			return fmt.Errorf("managed state contains invalid baseline at %s", managedPathDisplay(record.Path))
+	}
+	return nil
+}
+
+func validateManagedValueState(record managedValueState, seen map[string]bool) error {
+	if len(record.Path) == 0 {
+		return fmt.Errorf("managed state contains an empty path")
+	}
+	key := managedPathKey(record.Path)
+	if seen[key] {
+		return fmt.Errorf("managed state contains duplicate path %s", managedPathDisplay(record.Path))
+	}
+	seen[key] = true
+	if record.Baseline.Exists {
+		if record.Baseline.FirstMissingPrefix != 0 {
+			return fmt.Errorf("managed state contains invalid existing baseline at %s", managedPathDisplay(record.Path))
 		}
-		if record.Baseline.Exists && record.Baseline.FirstMissingPrefix != 0 {
-			return fmt.Errorf("managed state contains inconsistent baseline at %s", managedPathDisplay(record.Path))
-		}
-		key := managedPathKey(record.Path)
-		if seen[key] {
-			return fmt.Errorf("managed state contains duplicate path %s", managedPathDisplay(record.Path))
-		}
-		seen[key] = true
+		return nil
+	}
+	if record.Baseline.FirstMissingPrefix < 1 || record.Baseline.FirstMissingPrefix > len(record.Path) {
+		return fmt.Errorf("managed state contains invalid missing baseline at %s", managedPathDisplay(record.Path))
 	}
 	return nil
 }
 
 func reconcileManagedValues(target map[string]any, previous managedState, fragment map[string]any) (managedState, error) {
 	desired := flattenManagedObject(fragment)
-	desiredByPath := make(map[string]managedLeaf, len(desired))
-	for _, leaf := range desired {
-		desiredByPath[managedPathKey(leaf.Path)] = leaf
+	desiredByPath := indexManagedLeaves(desired)
+	previousByPath := indexManagedValues(previous.Values)
+	if err := restorePreviousManagedValues(target, previous.Values, desiredByPath); err != nil {
+		return managedState{}, err
 	}
-	previousByPath := make(map[string]managedValueState, len(previous.Values))
-	for _, record := range previous.Values {
-		previousByPath[managedPathKey(record.Path)] = record
-	}
+	return applyDesiredManagedValues(target, desired, previousByPath)
+}
 
-	for _, record := range previous.Values {
-		key := managedPathKey(record.Path)
-		_, remainsManaged := desiredByPath[key]
+func indexManagedLeaves(leaves []managedLeaf) map[string]managedLeaf {
+	indexed := make(map[string]managedLeaf, len(leaves))
+	for _, leaf := range leaves {
+		indexed[managedPathKey(leaf.Path)] = leaf
+	}
+	return indexed
+}
+
+func indexManagedValues(values []managedValueState) map[string]managedValueState {
+	indexed := make(map[string]managedValueState, len(values))
+	for _, value := range values {
+		indexed[managedPathKey(value.Path)] = value
+	}
+	return indexed
+}
+
+func restorePreviousManagedValues(target map[string]any, previous []managedValueState, desired map[string]managedLeaf) error {
+	for _, record := range previous {
 		current, exists, err := managedValueAt(target, record.Path)
 		if err != nil {
-			return managedState{}, err
+			return err
 		}
 		unchanged := exists && reflect.DeepEqual(current, record.Applied)
+		_, remainsManaged := desired[managedPathKey(record.Path)]
 		if remainsManaged && !unchanged {
-			return managedState{}, fmt.Errorf("managed Claude setting was modified after install; refusing to overwrite: %s", managedPathDisplay(record.Path))
+			return fmt.Errorf("managed Claude setting was modified after install; refusing to overwrite: %s", managedPathDisplay(record.Path))
 		}
 		if !unchanged {
 			continue
 		}
 		if err := restoreManagedBaseline(target, record.Path, record.Baseline); err != nil {
-			return managedState{}, err
+			return err
 		}
 	}
+	return nil
+}
 
+func applyDesiredManagedValues(target map[string]any, desired []managedLeaf, previous map[string]managedValueState) (managedState, error) {
 	next := managedState{Version: managedStateVersion, Values: make([]managedValueState, 0, len(desired))}
 	for _, leaf := range desired {
-		key := managedPathKey(leaf.Path)
-		baseline := valueBaseline{}
-		if previousRecord, ok := previousByPath[key]; ok {
-			baseline = previousRecord.Baseline
-		} else {
-			var err error
-			baseline, err = captureManagedBaseline(target, leaf.Path)
-			if err != nil {
-				return managedState{}, err
-			}
+		baseline, err := managedBaselineForLeaf(target, leaf, previous)
+		if err != nil {
+			return managedState{}, err
 		}
 		if err := setManagedValue(target, leaf.Path, cloneJSONValue(leaf.Value)); err != nil {
 			return managedState{}, err
@@ -154,9 +175,17 @@ func reconcileManagedValues(target map[string]any, previous managedState, fragme
 	return next, nil
 }
 
+func managedBaselineForLeaf(target map[string]any, leaf managedLeaf, previous map[string]managedValueState) (valueBaseline, error) {
+	if record, ok := previous[managedPathKey(leaf.Path)]; ok {
+		return record.Baseline, nil
+	}
+	return captureManagedBaseline(target, leaf.Path)
+}
+
 func flattenManagedObject(fragment map[string]any) []managedLeaf {
 	var leaves []managedLeaf
-	for _, key := range sortedMapKeys(fragment) {
+	keys := sortedMapKeys(fragment)
+	for _, key := range keys {
 		flattenManagedValue([]string{key}, fragment[key], &leaves)
 	}
 	return leaves
@@ -241,7 +270,7 @@ func restoreManagedBaseline(target map[string]any, path []string, baseline value
 	if err := deleteManagedValue(target, path); err != nil {
 		return err
 	}
-	for depth := len(path) - 1; depth >= baseline.FirstMissingPrefix && baseline.FirstMissingPrefix > 0; depth-- {
+	for depth := len(path) - 1; depth >= baseline.FirstMissingPrefix; depth-- {
 		prefix := path[:depth]
 		value, exists, err := managedValueAt(target, prefix)
 		if err != nil {
@@ -331,39 +360,53 @@ func verifyManagedInstallation(target, fragment map[string]any, state managedSta
 	if len(state.Values) != len(desired) {
 		return fmt.Errorf("managed state path count=%d, expected=%d", len(state.Values), len(desired))
 	}
-	stateByPath := make(map[string]managedValueState, len(state.Values))
-	for _, record := range state.Values {
-		stateByPath[managedPathKey(record.Path)] = record
-	}
-	deleted := make(map[string]bool, len(override.Deletes))
-	for _, key := range override.Deletes {
-		deleted[key] = true
-	}
+	stateByPath := indexManagedValues(state.Values)
+	deleted := deletedOverrideKeys(override.Deletes)
 	for _, leaf := range desired {
-		record, ok := stateByPath[managedPathKey(leaf.Path)]
-		if !ok {
-			return fmt.Errorf("managed state is missing path %s", managedPathDisplay(leaf.Path))
-		}
-		if !reflect.DeepEqual(record.Applied, leaf.Value) {
-			return fmt.Errorf("managed state applied value mismatch at %s", managedPathDisplay(leaf.Path))
-		}
-		expected := leaf.Value
-		expectedExists := true
-		if len(leaf.Path) == 2 && leaf.Path[0] == "env" {
-			key := leaf.Path[1]
-			if deleted[key] {
-				expectedExists = false
-			} else if value, overridden := override.Sets[key]; overridden {
-				expected = value
-			}
-		}
-		actual, exists, err := managedValueAt(target, leaf.Path)
-		if err != nil {
+		if err := verifyManagedLeaf(target, leaf, stateByPath, override.Sets, deleted); err != nil {
 			return err
-		}
-		if exists != expectedExists || exists && !reflect.DeepEqual(actual, expected) {
-			return fmt.Errorf("installed managed Claude setting mismatch at %s", managedPathDisplay(leaf.Path))
 		}
 	}
 	return nil
+}
+
+func deletedOverrideKeys(keys []string) map[string]bool {
+	deleted := make(map[string]bool, len(keys))
+	for _, key := range keys {
+		deleted[key] = true
+	}
+	return deleted
+}
+
+func verifyManagedLeaf(target map[string]any, leaf managedLeaf, state map[string]managedValueState, sets map[string]string, deleted map[string]bool) error {
+	record, ok := state[managedPathKey(leaf.Path)]
+	if !ok {
+		return fmt.Errorf("managed state is missing path %s", managedPathDisplay(leaf.Path))
+	}
+	if !reflect.DeepEqual(record.Applied, leaf.Value) {
+		return fmt.Errorf("managed state applied value mismatch at %s", managedPathDisplay(leaf.Path))
+	}
+	expected, expectedExists := effectiveManagedValue(leaf, sets, deleted)
+	actual, exists, err := managedValueAt(target, leaf.Path)
+	if err != nil {
+		return err
+	}
+	if exists != expectedExists || exists && !reflect.DeepEqual(actual, expected) {
+		return fmt.Errorf("installed managed Claude setting mismatch at %s", managedPathDisplay(leaf.Path))
+	}
+	return nil
+}
+
+func effectiveManagedValue(leaf managedLeaf, sets map[string]string, deleted map[string]bool) (any, bool) {
+	if len(leaf.Path) != 2 || leaf.Path[0] != "env" {
+		return leaf.Value, true
+	}
+	key := leaf.Path[1]
+	if deleted[key] {
+		return nil, false
+	}
+	if value, overridden := sets[key]; overridden {
+		return value, true
+	}
+	return leaf.Value, true
 }
