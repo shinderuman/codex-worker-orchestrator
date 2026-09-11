@@ -45,7 +45,13 @@ func executeInstall(cfg config.AppConfig, args []string, stdout, stderr io.Write
 	if err != nil {
 		return err
 	}
-	attempt, err := runRuntimeInstallAttempt(cfg, st, stderr)
+	lock, err := repolock.Acquire(st.LockPath())
+	if err != nil {
+		return err
+	}
+	defer func() { _ = lock.Close() }()
+
+	attempt, err := runRuntimeInstallAttemptLocked(cfg, st, stderr)
 	if err != nil {
 		return err
 	}
@@ -55,16 +61,7 @@ func executeInstall(cfg config.AppConfig, args []string, stdout, stderr io.Write
 	if failure := runRuntimeInstallSmoke(cfg); failure != nil {
 		return writeInstallOutput(stdout, installOutput{Status: installStatusVerificationFailed, Required: true, Failure: failure})
 	}
-	return finalizeRuntimeInstallAfterSmoke(cfg, st, attempt, stdout)
-}
-
-func runRuntimeInstallAttempt(cfg config.AppConfig, st *state.StateStore, stderr io.Writer) (runtimeInstallAttempt, error) {
-	lock, err := repolock.Acquire(st.LockPath())
-	if err != nil {
-		return runtimeInstallAttempt{}, err
-	}
-	defer func() { _ = lock.Close() }()
-	return runRuntimeInstallAttemptLocked(cfg, st, stderr)
+	return finalizeRuntimeInstallAfterSmokeLocked(cfg, st, attempt, stdout)
 }
 
 func runRuntimeInstallAttemptLocked(cfg config.AppConfig, st *state.StateStore, stderr io.Writer) (runtimeInstallAttempt, error) {
@@ -119,12 +116,7 @@ func runRuntimeInstallAttemptLocked(cfg config.AppConfig, st *state.StateStore, 
 	return runtimeInstallAttempt{requirement: requirement, taskID: taskID, output: output}, nil
 }
 
-func finalizeRuntimeInstallAfterSmoke(cfg config.AppConfig, st *state.StateStore, attempt runtimeInstallAttempt, stdout io.Writer) error {
-	lock, err := repolock.Acquire(st.LockPath())
-	if err != nil {
-		return err
-	}
-	defer func() { _ = lock.Close() }()
+func finalizeRuntimeInstallAfterSmokeLocked(cfg config.AppConfig, st *state.StateStore, attempt runtimeInstallAttempt, stdout io.Writer) error {
 	if failure := validateRuntimeInstallPostSmoke(st, attempt.taskID); failure != nil {
 		return writeInstallOutput(stdout, installOutput{Status: installStatusVerificationFailed, Required: true, Failure: failure})
 	}
