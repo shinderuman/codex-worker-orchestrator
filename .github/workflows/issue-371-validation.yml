@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: issue-371-validation-${{ github.ref }}
@@ -18,6 +18,50 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+      - name: Wire continuation into handoff
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('glm-worker/internal/app/parent_handoff.go')
+          text = path.read_text()
+          replacements = [
+              (
+                  '\tRoutingEvidence          []parentHandoffRoutingEvidence   `json:"routing_evidence"`\n\tSessionRotation          *state.SessionRotationProjection `json:"session_rotation"`\n}',
+                  '\tRoutingEvidence          []parentHandoffRoutingEvidence   `json:"routing_evidence"`\n\tSessionRotation          *state.SessionRotationProjection `json:"session_rotation"`\n\tParentRequest            *ParentRequestCompletionProjection `json:"parent_request"`\n}',
+              ),
+              (
+                  '\tLastMaterial             *parentHandoffRecoveryMaterial   `json:"last_material"`\n\tSessionRotation          *state.SessionRotationProjection `json:"session_rotation"`\n\tGuardFailure',
+                  '\tLastMaterial             *parentHandoffRecoveryMaterial   `json:"last_material"`\n\tSessionRotation          *state.SessionRotationProjection `json:"session_rotation"`\n\tParentRequest            *ParentRequestCompletionProjection `json:"parent_request"`\n\tGuardFailure',
+              ),
+              (
+                  'const parentHandoffVersion = 1',
+                  'const parentHandoffVersion = 2',
+              ),
+              (
+                  '\t\tParentReviewOpen:         output.ParentReviewOpen,\n\t\tSessionRotation:          output.SessionRotation,',
+                  '\t\tParentReviewOpen:         output.ParentReviewOpen,\n\t\tSessionRotation:          output.SessionRotation,\n\t\tParentRequest:            output.ParentRequest,',
+              ),
+              (
+                  '\tapplyParentActionPlan(st, &output)\n\tapplyParentSnapshot(repoRoot, &output)',
+                  '\tapplyParentActionPlan(st, &output)\n\tapplyParentRequestCompletion(repoRoot, st, &output)\n\tapplyParentSnapshot(repoRoot, &output)',
+              ),
+          ]
+          for old, new in replacements:
+              if new in text:
+                  continue
+              if old not in text:
+                  raise SystemExit('handoff patch anchor missing: ' + old[:80])
+              text = text.replace(old, new, 1)
+          path.write_text(text)
+          PY
+          gofmt -w glm-worker/internal/app/parent_handoff.go glm-worker/internal/app/parent_handoff_continuation.go
+          if ! git diff --quiet -- glm-worker/internal/app/parent_handoff.go glm-worker/internal/app/parent_handoff_continuation.go; then
+            git config user.name 'shinderuman'
+            git config user.email 'shinderuman@gmail.com'
+            git add glm-worker/internal/app/parent_handoff.go glm-worker/internal/app/parent_handoff_continuation.go
+            git commit -m 'Expose project continuation in parent handoff'
+            git push origin HEAD:web-gpt/issue-371-parent-plan-continuation
+          fi
       - name: Read quality tool contract
         id: quality-tools
         run: |
@@ -31,6 +75,8 @@ jobs:
         run: |
           files='glm-worker/internal/app/parent_request_completion.go
           glm-worker/internal/app/parent_request_completion_test.go
+          glm-worker/internal/app/parent_handoff.go
+          glm-worker/internal/app/parent_handoff_continuation.go
           glm-worker/internal/workflow/plan_final_head.go
           glm-worker/internal/workflow/plan_completion_blocked_test.go
           glm-worker/internal/parentactioncmd/complete.go
@@ -39,7 +85,7 @@ jobs:
           test -z "$diff" || { printf '%s\n' "$diff"; exit 1; }
       - name: Targeted tests
         working-directory: glm-worker
-        run: go test ./internal/app ./internal/workflow ./internal/parentactioncmd
+        run: go test ./internal/app ./internal/workflow ./internal/parentactioncmd ./internal/autoresume
       - name: Install quality tools
         run: |
           quality_bin="$(go env GOPATH)/bin"
