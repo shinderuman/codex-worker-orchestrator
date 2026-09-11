@@ -3,12 +3,26 @@ set -eu
 
 repo_root=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 contract="$repo_root/quality-tools.yml"
-bin_dir="${QUALITY_TOOLS_BIN_DIR:-$HOME/.local/bin}"
-go_version=$(awk -F': ' '$1 == "go" { print $2 }' "$contract")
-lint_go_version=$(awk -F': ' '$1 == "lint-go" { print $2 }' "$contract")
-golangci_version=$(awk -F': ' '$1 == "golangci-lint" { print $2 }' "$contract")
-shellcheck_version=$(awk -F': ' '$1 == "shellcheck" { print $2 }' "$contract")
-shfmt_version=$(awk -F': ' '$1 == "shfmt" { print $2 }' "$contract")
+contract_value() {
+	awk -F': ' -v key="$1" '$1 == key { print $2; exit }' "$contract"
+}
+
+tool_namespace=$(contract_value namespace)
+default_bin_dir=$(contract_value default-bin-dir)
+go_version=$(contract_value go)
+lint_go_version=$(contract_value lint-go)
+golangci_version=$(contract_value golangci-lint)
+shellcheck_version=$(contract_value shellcheck)
+shfmt_version=$(contract_value shfmt)
+
+if [ -n "${QUALITY_TOOLS_BIN_DIR:-}" ]; then
+	case "$QUALITY_TOOLS_BIN_DIR" in
+	/*) bin_dir=$QUALITY_TOOLS_BIN_DIR ;;
+	*) bin_dir="$repo_root/$QUALITY_TOOLS_BIN_DIR" ;;
+	esac
+else
+	bin_dir="$HOME/$default_bin_dir"
+fi
 
 for command_name in go curl tar awk install uname mktemp; do
 	if ! command -v "$command_name" >/dev/null 2>&1; then
@@ -40,23 +54,71 @@ Linux:x86_64)
 	;;
 esac
 
+quality_tool_path() {
+	printf '%s/%s-%s-%s\n' "$bin_dir" "$tool_namespace" "$1" "$2"
+}
+
+quality_tool_version() {
+	tool_name=$1
+	tool_path=$2
+	case "$tool_name" in
+	golangci-lint) "$tool_path" version ;;
+	shellcheck) "$tool_path" --version ;;
+	shfmt) "$tool_path" --version ;;
+	esac | awk 'match($0, /[0-9]+\.[0-9]+\.[0-9]+/) { print substr($0, RSTART, RLENGTH); exit }'
+}
+
+target_needs_install() {
+	tool_name=$1
+	required_version=$2
+	target=$3
+	if [ ! -e "$target" ]; then
+		return 0
+	fi
+	if [ ! -x "$target" ]; then
+		printf 'quality tool collision: %s exists and is not executable; refusing to overwrite\n' "$target" >&2
+		exit 1
+	fi
+	observed=$(quality_tool_version "$tool_name" "$target" || true)
+	if [ "$observed" = "$required_version" ]; then
+		printf '%s: unchanged (%s)\n' "$tool_name" "$target"
+		return 1
+	fi
+	printf 'quality tool collision: %s exists with version %s, required %s; refusing to overwrite\n' "$target" "${observed:-unknown}" "$required_version" >&2
+	exit 1
+}
+
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/codex-quality-tools.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT HUP INT TERM
 mkdir -p "$bin_dir"
 
 GOTOOLCHAIN="go$go_version" go version >/dev/null
 GOTOOLCHAIN="go$lint_go_version" go version >/dev/null
-GOTOOLCHAIN="go$go_version" GOBIN="$bin_dir" go install "mvdan.cc/sh/v3/cmd/shfmt@v$shfmt_version"
 
-golangci_archive="golangci-lint-$golangci_version-$golangci_platform.tar.gz"
-curl -sSfL "https://github.com/golangci/golangci-lint/releases/download/v$golangci_version/$golangci_archive" -o "$tmp/golangci-lint.tar.gz"
-tar -xzf "$tmp/golangci-lint.tar.gz" -C "$tmp"
-install -m 0755 "$tmp/golangci-lint-$golangci_version-$golangci_platform/golangci-lint" "$bin_dir/golangci-lint"
+shfmt_target=$(quality_tool_path shfmt "$shfmt_version")
+if target_needs_install shfmt "$shfmt_version" "$shfmt_target"; then
+	mkdir -p "$tmp/go-bin"
+	GOTOOLCHAIN="go$go_version" GOBIN="$tmp/go-bin" go install "mvdan.cc/sh/v3/cmd/shfmt@v$shfmt_version"
+	install -m 0755 "$tmp/go-bin/shfmt" "$shfmt_target"
+	printf 'installed: %s\n' "$shfmt_target"
+fi
 
-shellcheck_archive="shellcheck-v$shellcheck_version.$shellcheck_platform.tar.xz"
-curl -sSfL "https://github.com/koalaman/shellcheck/releases/download/v$shellcheck_version/$shellcheck_archive" -o "$tmp/shellcheck.tar.xz"
-tar -xJf "$tmp/shellcheck.tar.xz" -C "$tmp"
-install -m 0755 "$tmp/shellcheck-v$shellcheck_version/shellcheck" "$bin_dir/shellcheck"
+golangci_target=$(quality_tool_path golangci-lint "$golangci_version")
+if target_needs_install golangci-lint "$golangci_version" "$golangci_target"; then
+	golangci_archive="golangci-lint-$golangci_version-$golangci_platform.tar.gz"
+	curl -sSfL "https://github.com/golangci/golangci-lint/releases/download/v$golangci_version/$golangci_archive" -o "$tmp/golangci-lint.tar.gz"
+	tar -xzf "$tmp/golangci-lint.tar.gz" -C "$tmp"
+	install -m 0755 "$tmp/golangci-lint-$golangci_version-$golangci_platform/golangci-lint" "$golangci_target"
+	printf 'installed: %s\n' "$golangci_target"
+fi
 
-printf 'quality tools installed: %s\n' "$bin_dir"
-printf 'ensure PATH includes: %s\n' "$bin_dir"
+shellcheck_target=$(quality_tool_path shellcheck "$shellcheck_version")
+if target_needs_install shellcheck "$shellcheck_version" "$shellcheck_target"; then
+	shellcheck_archive="shellcheck-v$shellcheck_version.$shellcheck_platform.tar.xz"
+	curl -sSfL "https://github.com/koalaman/shellcheck/releases/download/v$shellcheck_version/$shellcheck_archive" -o "$tmp/shellcheck.tar.xz"
+	tar -xJf "$tmp/shellcheck.tar.xz" -C "$tmp"
+	install -m 0755 "$tmp/shellcheck-v$shellcheck_version/shellcheck" "$shellcheck_target"
+	printf 'installed: %s\n' "$shellcheck_target"
+fi
+
+printf 'quality tools ready: %s\n' "$bin_dir"
