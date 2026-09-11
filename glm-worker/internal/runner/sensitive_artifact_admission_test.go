@@ -165,7 +165,15 @@ func sensitiveArtifactTestState(t *testing.T) (config.AppConfig, *state.StateSto
 
 func sensitiveArtifactResult(t *testing.T, artifacts ...string) RunResult {
 	t.Helper()
-	structured, err := json.Marshal(map[string]any{"artifacts": artifacts})
+	structured, err := json.Marshal(map[string]any{
+		"status":               "IMPLEMENTED",
+		"risk":                 "LOW",
+		"summary":              "done",
+		"requirement_coverage": "covered",
+		"tests":                "pass",
+		"unverified":           "none",
+		"artifacts":            artifacts,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
