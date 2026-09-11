@@ -185,7 +185,7 @@ func appendTestImpactBlockValidations(
 			}
 			observations = append(observations, testImpactValidationObservation{
 				Validation: validation,
-				DurationMS: block.DurationMS,
+				DurationMS: attributableTestImpactValidationDuration(block.DurationMS, validation.Result),
 				Locator: fmt.Sprintf(
 					"events/%s.jsonl:seq=%d:block=%d:validation=%d",
 					taskID, record.Seq, blockIndex, validationIndex,
@@ -194,6 +194,13 @@ func appendTestImpactBlockValidations(
 		}
 	}
 	return observations
+}
+
+func attributableTestImpactValidationDuration(durationMS int64, result string) int64 {
+	if result != ValidationResultPass && result != ValidationResultFail {
+		return 0
+	}
+	return durationMS
 }
 
 func testImpactValidationBlockEligible(callID string, block TaskBlockSummary, resultIDs map[string]struct{}) bool {
