@@ -9,7 +9,7 @@ home="$tmp/home"
 shared="$home/.local/bin"
 fake="$tmp/fake-bin"
 mkdir -p "$repo" "$shared" "$fake"
-cp "$source_root/install-quality-tools.sh" "$source_root/quality-tools.yml" "$repo/"
+cp "$source_root/install-quality-tools.sh" "$source_root/install.sh" "$source_root/quality-tools.yml" "$repo/"
 
 for tool in shfmt golangci-lint shellcheck; do
 	cat >"$shared/$tool" <<EOF_USER_TOOL
@@ -155,3 +155,22 @@ fi
 grep -Fq 'quality tool collision:' "$tmp/collision.stderr"
 test "$(shasum -a 256 "$new_shfmt")" = "$collision_hash"
 assert_user_tools_unchanged
+
+preflight_bin="$tmp/preflight-bin"
+preflight_owned="$tmp/preflight-owned"
+mkdir -p "$preflight_bin" "$preflight_owned"
+cat >"$preflight_bin/golangci-lint" <<'EOF_TOOL'
+#!/bin/sh
+printf '%s\n' 'golangci-lint has version 2.7.0 built with go1.25.4'
+EOF_TOOL
+chmod +x "$preflight_bin/golangci-lint"
+preflight_collision="$preflight_owned/codex-worker-orchestrator-golangci-lint-2.7.0"
+printf '%s\n' 'do not overwrite this canonical collision' >"$preflight_collision"
+preflight_collision_hash=$(shasum -a 256 "$preflight_collision")
+if HOME="$home" QUALITY_TOOLS_BIN_DIR="$preflight_owned" PATH="$preflight_bin:$fake:$PATH" "$repo/install.sh" >"$tmp/preflight-collision.stdout" 2>"$tmp/preflight-collision.stderr"; then
+	printf '%s\n' 'installer canonical collision was silently overwritten' >&2
+	exit 1
+fi
+test ! -s "$tmp/preflight-collision.stdout"
+grep -Fq 'quality tool collision:' "$tmp/preflight-collision.stderr"
+test "$(shasum -a 256 "$preflight_collision")" = "$preflight_collision_hash"
