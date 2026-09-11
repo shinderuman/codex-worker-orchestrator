@@ -15,26 +15,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/codexlimit"
 )
 
-const (
-	codexWakeTransactionVersion = 1
-	codexWakeSafetyMargin        = 2 * time.Minute
-
-	CodexWakeStatusWriteRequired = "write_required"
-	CodexWakeStatusVerified      = "verified"
-	CodexWakeStatusFailed        = "failed"
-
-	codexWakeStageCreate = "create_placeholder"
-	codexWakeStageUpdate = "update_one_shot"
-
-	codexWakeExternalBoundary = "external-unenforceable"
-	codexWakeTool             = "automation_update"
-	codexWakePaused           = "PAUSED"
-	codexWakeActive           = "ACTIVE"
-	codexWakePlaceholderRRule = "RRULE:FREQ=HOURLY"
-)
-
-var codexWakeThreadPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
-
 type CodexWakeWriteSpec struct {
 	Boundary       string `json:"boundary"`
 	Tool           string `json:"tool"`
@@ -74,6 +54,26 @@ type codexWakeTransaction struct {
 	WakeInvocation       bool   `json:"wake_invocation"`
 	Attempt              int    `json:"attempt"`
 }
+
+const (
+	codexWakeTransactionVersion = 1
+	codexWakeSafetyMargin        = 2 * time.Minute
+
+	CodexWakeStatusWriteRequired = "write_required"
+	CodexWakeStatusVerified      = "verified"
+	CodexWakeStatusFailed        = "failed"
+
+	codexWakeStageCreate = "create_placeholder"
+	codexWakeStageUpdate = "update_one_shot"
+
+	codexWakeExternalBoundary = "external-unenforceable"
+	codexWakeTool             = "automation_update"
+	codexWakePaused           = "PAUSED"
+	codexWakeActive           = "ACTIVE"
+	codexWakePlaceholderRRule = "RRULE:FREQ=HOURLY"
+)
+
+var codexWakeThreadPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
 func BuildCodexWakeTransaction(snapshot codexlimit.Snapshot, wakeThreadID, firedAutomationID, automationsDir string, now time.Time) (CodexWakeOutput, error) {
 	if !codexWakeThreadPattern.MatchString(wakeThreadID) {
