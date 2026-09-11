@@ -3,7 +3,7 @@ set -eu
 
 repo_root=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 quality_tools_file="$repo_root/quality-tools.yml"
-codex_dir="${CODEX_CONFIG_DIR:-$HOME/.codex}"
+codex_dir="${CODEX_CONFIG_DIR:-${CODEX_HOME:-$HOME/.codex}}"
 bin_dir="${GLM_WORKER_BIN_DIR:-$HOME/.local/bin}"
 claude_settings="${CLAUDE_SETTINGS_FILE:-$HOME/.claude/settings.json}"
 glm_worker_home="${GLM_WORKER_HOME:-$HOME/.glm-worker}"
@@ -73,13 +73,27 @@ copy_tree() {
 	rsync -a "$src/" "$dst/"
 }
 
+legacy_global_agents_matches_repository() {
+	target=$1
+	[ -f "$target" ] || return 1
+	if cmp -s "$repo_root/codex/AGENTS.md" "$target"; then
+		return 0
+	fi
+	for revision in $(git -C "$repo_root" log --format=%H -- codex/AGENTS.md); do
+		if git -C "$repo_root" show "$revision:codex/AGENTS.md" 2>/dev/null | cmp -s - "$target"; then
+			return 0
+		fi
+	done
+	return 1
+}
+
 install_codex_files() {
 	manifest_file="$codex_dir/.codex-config-managed-files"
 	current_manifest=$(mktemp "${TMPDIR:-/tmp}/codex-managed-current.XXXXXX")
 	previous_manifest=$(mktemp "${TMPDIR:-/tmp}/codex-managed-previous.XXXXXX")
 	trap 'rm -f "$current_manifest" "$previous_manifest"' EXIT HUP INT TERM
 	{
-		printf '%s\n' 'AGENTS.md'
+		printf '%s\n' 'instructions/codex-worker-orchestrator.md'
 		(
 			cd "$repo_root/codex"
 			find instructions -type f -print
@@ -94,6 +108,14 @@ install_codex_files() {
 	fi
 	while IFS= read -r relative_path; do
 		[ -n "$relative_path" ] || continue
+		if [ "$relative_path" = 'AGENTS.md' ]; then
+			target="$codex_dir/AGENTS.md"
+			if legacy_global_agents_matches_repository "$target"; then
+				rm -f "$target"
+				printf 'removed legacy managed: %s\n' "$target"
+			fi
+			continue
+		fi
 		if ! grep -Fqx "$relative_path" "$current_manifest"; then
 			target="$codex_dir/$relative_path"
 			if [ -f "$target" ] || [ -L "$target" ]; then
@@ -102,8 +124,8 @@ install_codex_files() {
 			fi
 		fi
 	done <"$previous_manifest"
-	copy_file "$repo_root/codex/AGENTS.md" "$codex_dir/AGENTS.md"
 	copy_tree "$repo_root/codex/instructions" "$codex_dir/instructions"
+	copy_file "$repo_root/codex/AGENTS.md" "$codex_dir/instructions/codex-worker-orchestrator.md"
 	copy_file "$repo_root/codex/rules/glm-worker.rules" "$codex_dir/rules/glm-worker.rules"
 	copy_tree "$repo_root/codex/glm-worker/prompts" "$codex_dir/glm-worker/prompts"
 	mkdir -p "$codex_dir"

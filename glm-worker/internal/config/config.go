@@ -60,8 +60,8 @@ func Load() (AppConfig, error) {
 	repoHashString := RepoHashFor(repoRoot)
 
 	stateHome := envOrDefault("GLM_WORKER_HOME", filepath.Join(home, ".glm-worker"))
-	promptDir := envOrDefault("GLM_WORKER_PROMPT_DIR", filepath.Join(home, ".codex", "glm-worker", "prompts"))
-	codexConfigDir := envOrDefault("CODEX_CONFIG_DIR", filepath.Join(home, ".codex"))
+	codexConfigDir := envOrDefault("CODEX_CONFIG_DIR", envOrDefault("CODEX_HOME", filepath.Join(home, ".codex")))
+	promptDir := envOrDefault("GLM_WORKER_PROMPT_DIR", filepath.Join(codexConfigDir, "glm-worker", "prompts"))
 	claudeConfigDir := envOrDefault("CLAUDE_CONFIG_DIR", filepath.Join(home, ".claude"))
 	claudeSettingsOverride := claudeoverride.ResolvePath(home)
 	envAllowlist := splitEnvList(os.Getenv("GLM_WORKER_ENV_ALLOWLIST"))

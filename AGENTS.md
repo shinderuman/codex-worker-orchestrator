@@ -1,5 +1,7 @@
 # このリポジトリの作業bootstrap規則
 
+- 親Codexは、このrepositoryで作業を開始・再開する時に`codex/AGENTS.md`をproject-scoped parent/tool instructionの唯一の正本として読む。Codexがrepository root `AGENTS.md`を自動注入するsupported project scopeからこの参照へ到達し、user-global `~/.codex/AGENTS.md`へrepository固有ruleを要求しない。
+- `codex/AGENTS.md`と本fileへ同じrule本文を複製しない。本fileはrepository bootstrapとparent/tool instruction正本への参照だけを所有し、`codex/AGENTS.md`はinstallerによりuser-global AGENTSへ配置されない。
 - 作業開始時と再開時(Sol判断後の継続・review修正・provider障害やrate limit上限後のresume)に、repository rootへ`IMPLEMENTATION_PLAN.local.md`が存在するか確認する。
 - 存在する場合だけ必ず読み、未完了作業と進行状態の唯一の正として扱う。過去sessionの記憶や推測をこれより優先しない。計画本文を他fileへ複製しない。
 - `IMPLEMENTATION_PLAN.local.md`はGit管理するtracked canonical sourceとし、公開`.gitignore`へ追加しない。

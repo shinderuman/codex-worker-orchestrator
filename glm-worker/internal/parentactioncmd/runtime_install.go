@@ -186,7 +186,7 @@ func installedManagedPath(cfg config.AppConfig, sourcePath string) (string, bool
 	}
 	switch {
 	case sourcePath == "codex/AGENTS.md":
-		return filepath.Join(cfg.CodexConfigDir, "AGENTS.md"), true
+		return filepath.Join(cfg.CodexConfigDir, "instructions", "codex-worker-orchestrator.md"), true
 	case strings.HasPrefix(sourcePath, "codex/instructions/"):
 		return filepath.Join(cfg.CodexConfigDir, filepath.FromSlash(strings.TrimPrefix(sourcePath, "codex/"))), true
 	case sourcePath == "codex/rules/glm-worker.rules":

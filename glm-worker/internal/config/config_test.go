@@ -142,6 +142,73 @@ func TestLoadBuildsConfigFromRepositoryAndEnvironment(t *testing.T) {
 	}
 }
 
+func TestLoadUsesCodexHomeForCodexPaths(t *testing.T) {
+	repository := filepath.Join(t.TempDir(), "repository")
+	if err := os.MkdirAll(repository, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	command := exec.Command("git", "init", "--quiet", repository)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, output)
+	}
+	previousDirectory, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(repository); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(previousDirectory) })
+
+	t.Setenv("HOME", t.TempDir())
+	codexHome := filepath.Join(t.TempDir(), "codex-home")
+	t.Setenv("CODEX_HOME", codexHome)
+	t.Setenv("CODEX_CONFIG_DIR", "")
+	t.Setenv("GLM_WORKER_PROMPT_DIR", "")
+	loaded, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.CodexConfigDir != codexHome {
+		t.Fatalf("CodexConfigDir = %q, want %q", loaded.CodexConfigDir, codexHome)
+	}
+	wantPromptDir := filepath.Join(codexHome, "glm-worker", "prompts")
+	if loaded.PromptDir != wantPromptDir {
+		t.Fatalf("PromptDir = %q, want %q", loaded.PromptDir, wantPromptDir)
+	}
+}
+
+func TestLoadCodexConfigDirOverridesCodexHome(t *testing.T) {
+	repository := filepath.Join(t.TempDir(), "repository")
+	if err := os.MkdirAll(repository, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	command := exec.Command("git", "init", "--quiet", repository)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, output)
+	}
+	previousDirectory, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(repository); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(previousDirectory) })
+
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("CODEX_HOME", filepath.Join(t.TempDir(), "codex-home"))
+	override := filepath.Join(t.TempDir(), "codex-config")
+	t.Setenv("CODEX_CONFIG_DIR", override)
+	loaded, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.CodexConfigDir != override {
+		t.Fatalf("CodexConfigDir = %q, want %q", loaded.CodexConfigDir, override)
+	}
+}
+
 func TestLoadDefaultsRepoSearchEnabled(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("GLM_WORKER_REPO_SEARCH", "")
