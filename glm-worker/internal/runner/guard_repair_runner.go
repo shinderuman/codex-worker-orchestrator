@@ -41,8 +41,10 @@ func (r *GuardRepairRunner) Run(
 	result, runErr := copyBase.Run(role, phase, model, readOnly, effort, prompt, outputPath)
 	artifactErr := validateSensitiveResultArtifacts(r.base, result)
 	attempts, attemptErr := readGitAuthorityAttempts(gitGuard.attemptLog)
-	if attemptErr != nil || len(attempts) != 0 {
+	if artifactErr != nil || attemptErr != nil || len(attempts) != 0 {
 		_ = r.base.state.InvalidateAllSessions()
+	}
+	if attemptErr != nil || len(attempts) != 0 {
 		return result, errors.Join(runErr, artifactErr, &GitAuthorityGuardError{
 			Stage:     "repair-boundary",
 			Mutations: attempts,
