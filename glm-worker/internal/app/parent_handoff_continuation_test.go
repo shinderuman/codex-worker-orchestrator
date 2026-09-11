@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 
@@ -32,6 +33,13 @@ func TestParentHandoffCarriesPostLocalContinuation(t *testing.T) {
 	if recovery.ParentRequest == nil || recovery.ParentRequest.Continuation.Task != next ||
 		recovery.ParentRequest.Continuation.RequiredAction != projectContinuationActionStart {
 		t.Fatalf("recovery parent request = %#v", recovery.ParentRequest)
+	}
+	var recoveryOutput bytes.Buffer
+	if err := printParentHandoffRecoveryLeased(st, &recoveryOutput); err != nil {
+		t.Fatalf("legacy recovery handoff = %v", err)
+	}
+	if !strings.Contains(recoveryOutput.String(), `"projection":"recovery"`) {
+		t.Fatalf("legacy recovery output = %s", recoveryOutput.String())
 	}
 }
 
