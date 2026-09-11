@@ -133,11 +133,22 @@ func ensureProjectAgentsExclude(root string) error {
 	if err != nil {
 		return err
 	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("create Git info directory: %w", err)
+	}
+	existing, err := os.ReadFile(path)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("read local Git exclude: %w", err)
+	}
+	separator := ""
+	if len(existing) > 0 && !bytes.HasSuffix(existing, []byte("\n")) {
+		separator = "\n"
+	}
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
 		return fmt.Errorf("open local Git exclude: %w", err)
 	}
-	if _, err := fmt.Fprintf(file, "\n%s\n%s\n", projectAgentsExcludeMarker, projectAgentsExcludePattern); err != nil {
+	if _, err := fmt.Fprintf(file, "%s%s\n%s\n", separator, projectAgentsExcludeMarker, projectAgentsExcludePattern); err != nil {
 		_ = file.Close()
 		return fmt.Errorf("write local Git exclude: %w", err)
 	}
