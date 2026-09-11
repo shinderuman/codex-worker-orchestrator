@@ -26,6 +26,8 @@ func TestEnableDisableManagedProjectConfig(t *testing.T) {
 		t.Fatalf("unexpected managed config:\n%s", content)
 	}
 	for _, setting := range []string{
+		"developer_instructions = ",
+		"instructions/codex-worker-orchestrator.md",
 		"include_apps_instructions = false",
 		"include_collaboration_mode_instructions = false",
 		"include_instructions = false",
@@ -38,6 +40,9 @@ func TestEnableDisableManagedProjectConfig(t *testing.T) {
 		if !strings.Contains(string(content), setting) {
 			t.Fatalf("managed config is missing %q:\n%s", setting, content)
 		}
+	}
+	if _, err := os.Stat(filepath.Join(repo, "AGENTS.override.md")); !os.IsNotExist(err) {
+		t.Fatalf("enable created AGENTS.override.md: %v", err)
 	}
 	if status := gitOutput(t, repo, "status", "--porcelain", "--untracked-files=all"); status != "" {
 		t.Fatalf("managed project config polluted git status: %q", status)
@@ -62,6 +67,45 @@ func TestEnableDisableManagedProjectConfig(t *testing.T) {
 	}
 	if status := gitOutput(t, repo, "status", "--porcelain", "--untracked-files=all"); status != "" {
 		t.Fatalf("disable polluted git status: %q", status)
+	}
+}
+
+func TestEnablePreservesRepositoryAgents(t *testing.T) {
+	repo := initTestRepo(t)
+	rootAgents := filepath.Join(repo, "AGENTS.md")
+	original := []byte("# repository instructions\n")
+	if err := os.WriteFile(rootAgents, original, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	runAction(t, "enable", repo)
+	current, err := os.ReadFile(rootAgents)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(current, original) {
+		t.Fatalf("repository AGENTS changed: %q", current)
+	}
+	if _, err := os.Stat(filepath.Join(repo, "AGENTS.override.md")); !os.IsNotExist(err) {
+		t.Fatalf("enable created AGENTS.override.md: %v", err)
+	}
+}
+
+func TestEnablePreservesUserOwnedAgentsOverride(t *testing.T) {
+	repo := initTestRepo(t)
+	overridePath := filepath.Join(repo, "AGENTS.override.md")
+	original := []byte("# user repository override\n")
+	if err := os.WriteFile(overridePath, original, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	runAction(t, "enable", repo)
+	current, err := os.ReadFile(overridePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(current, original) {
+		t.Fatalf("user-owned AGENTS.override.md changed: %q", current)
 	}
 }
 
