@@ -57,6 +57,7 @@ func sensitiveArtifactCandidates(base *ClaudeRunner, providerValues []SensitiveA
 }
 
 func validateSensitiveArtifactContents(artifacts []string, values []SensitiveArtifactValue) error {
+	rejectedCategory := ""
 	for _, path := range artifacts {
 		content, err := os.ReadFile(path)
 		if err != nil {
@@ -69,7 +70,12 @@ func validateSensitiveArtifactContents(artifacts []string, values []SensitiveArt
 		if err := os.Remove(path); err != nil {
 			return fmt.Errorf("artifact sensitive admission cleanup failed: %s", category)
 		}
-		return &SensitiveArtifactError{Category: category}
+		if rejectedCategory == "" {
+			rejectedCategory = category
+		}
+	}
+	if rejectedCategory != "" {
+		return &SensitiveArtifactError{Category: rejectedCategory}
 	}
 	return nil
 }
