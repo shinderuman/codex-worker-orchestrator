@@ -17,14 +17,14 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 )
 
+type codexWakeErrorWriter struct {
+	err error
+}
+
 const (
 	testAppCodexWakeThread = "01a03a9e-10a0-7f11-801c-f04e5dbd5490"
 	testAppOtherThread     = "01a05f46-47aa-77d2-912c-0d6b078cb856"
 )
-
-type codexWakeErrorWriter struct {
-	err error
-}
 
 func (w codexWakeErrorWriter) Write([]byte) (int, error) {
 	return 0, w.err
