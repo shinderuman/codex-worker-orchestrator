@@ -1,0 +1,90 @@
+name: Web GPT Issue 396 Test Integration Patch
+
+on:
+  push:
+    branches:
+      - web-gpt/issue-396-sol-review-evidence
+    paths:
+      - .github/workflows/web-gpt-396-test-integration-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: web-gpt/issue-396-sol-review-evidence
+      - name: Apply fixes
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("glm-worker/internal/workflow/review_flow.go")
+          text = path.read_text()
+          old = """func (w *Workflow) finishReview(status state.TaskStatus, result packet.Result) error {
+          \tif err := w.state.FinishReview(status); err != nil {
+          \t\treturn err
+          \t}
+          \tif result.Status == packet.StatusNeedsSolReview {
+          \t\treturn w.emitReviewResult(result)
+          \t}
+          \treturn w.emitResult(result)
+          }
+          """
+          new = """func (w *Workflow) finishReview(status state.TaskStatus, result packet.Result) error {
+          \tif err := w.state.FinishReview(status); err != nil {
+          \t\treturn err
+          \t}
+          \tif result.Status == packet.StatusNeedsSolReview && w.lastProducer.Role == string(state.ReviewerRole) {
+          \t\treturn w.emitReviewResult(result)
+          \t}
+          \treturn w.emitResult(result)
+          }
+          """
+          if text.count(old) != 1:
+              raise SystemExit("finishReview source mismatch")
+          path.write_text(text.replace(old, new))
+
+          path = Path("glm-worker/internal/app/execute_test.go")
+          text = path.read_text()
+          old = """func initGitRepo(t *testing.T) string {
+          \tt.Helper()
+          \tdir := t.TempDir()
+          \tif out, err := exec.Command("git", "init", "--quiet", dir).CombinedOutput(); err != nil {
+          \t\tt.Fatalf("git init: %v: %s", err, out)
+          \t}
+          \treturn dir
+          }
+          """
+          new = """func initGitRepo(t *testing.T) string {
+          \tt.Helper()
+          \tdir := t.TempDir()
+          \tif out, err := exec.Command("git", "init", "--quiet", dir).CombinedOutput(); err != nil {
+          \t\tt.Fatalf("git init: %v: %s", err, out)
+          \t}
+          \tif out, err := exec.Command(
+          \t\t"git", "-C", dir,
+          \t\t"-c", "user.name=app test",
+          \t\t"-c", "user.email=app-test@example.invalid",
+          \t\t"commit", "--quiet", "--allow-empty", "-m", "seed",
+          \t).CombinedOutput(); err != nil {
+          \t\tt.Fatalf("git seed commit: %v: %s", err, out)
+          \t}
+          \treturn dir
+          }
+          """
+          if text.count(old) != 1:
+              raise SystemExit("initGitRepo source mismatch")
+          path.write_text(text.replace(old, new))
+          PY
+      - name: Commit
+        run: |
+          rm .github/workflows/web-gpt-396-test-integration-patch.yml
+          git config user.name shinderuman
+          git config user.email shinderuman@gmail.com
+          git add glm-worker/internal/workflow/review_flow.go glm-worker/internal/app/execute_test.go .github/workflows/web-gpt-396-test-integration-patch.yml
+          git commit -m 'Bind review evidence only to reviewer results'
+          git push origin HEAD:web-gpt/issue-396-sol-review-evidence
