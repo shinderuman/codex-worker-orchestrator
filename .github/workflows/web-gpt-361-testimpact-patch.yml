@@ -1,0 +1,27 @@
+name: Web GPT Issue 361 Test Impact Patch
+
+on:
+  push:
+    branches:
+      - web-gpt/issue-361-structured-validation-telemetry
+    paths:
+      - .github/workflows/web-gpt-361-testimpact-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Apply patch
+        run: python3 .github/scripts/web-gpt-361-testimpact-patch.py
+      - name: Commit patch
+        run: |
+          git config user.name "Web GPT"
+          git config user.email "web-gpt@users.noreply.github.com"
+          git rm .github/workflows/web-gpt-361-testimpact-patch.yml .github/scripts/web-gpt-361-testimpact-patch.py
+          git add glm-worker/internal/state/testimpact.go
+          git commit -m "Use structured validation evidence in test impact"
+          git push
