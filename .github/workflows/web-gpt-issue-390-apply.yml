@@ -1,0 +1,503 @@
+name: Web GPT Issue 390 Apply
+
+on:
+  push:
+    branches:
+      - web-gpt/issue-390-rotation-failure-proof
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: web-gpt/issue-390-rotation-failure-proof
+          fetch-depth: 0
+      - name: Read Go version
+        id: go-version
+        run: |
+          GO_VERSION=$(awk -F': ' '$1 == "go" { print $2 }' quality-tools.yml)
+          printf 'version=%s\n' "$GO_VERSION" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ steps.go-version.outputs.version }}
+          cache: false
+      - name: Apply bounded creation-failure proof
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected one replacement, found {count}")
+              p.write_text(text.replace(old, new, 1))
+
+          path = "glm-worker/internal/state/session_rotation.go"
+          replace_once(
+              path,
+              '\tIssued         *SessionRotationIssued           `json:"issued,omitempty"`\n\tLimitBaseline',
+              '\tIssued         *SessionRotationIssued           `json:"issued,omitempty"`\n\tLastCreationOutcome *SessionRotationCreationOutcome `json:"last_creation_outcome,omitempty"`\n\tLimitBaseline',
+          )
+          replace_once(
+              path,
+              'if marker.Version == 1 {\n\t\tmarker.Version = sessionRotationMarkerVersion\n\t}',
+              'if marker.Version == 1 || marker.Version == 2 {\n\t\tmarker.Version = sessionRotationMarkerVersion\n\t}',
+          )
+          replace_once(
+              path,
+              '\tif marker.Directive != nil {\n\t\tif err := marker.Directive.validate(); err != nil {\n\t\t\treturn err\n\t\t}\n\t}\n\tif marker.LimitBaseline != nil {',
+              '\tif marker.Directive != nil {\n\t\tif err := marker.Directive.validate(); err != nil {\n\t\t\treturn err\n\t\t}\n\t}\n\tif marker.LastCreationOutcome != nil {\n\t\tif marker.Directive == nil {\n\t\t\treturn fmt.Errorf("session rotation creation outcomeにdirectiveがありません")\n\t\t}\n\t\tif err := marker.LastCreationOutcome.validate(); err != nil {\n\t\t\treturn err\n\t\t}\n\t}\n\tif marker.LimitBaseline != nil {',
+          )
+          replace_once(path, 'const sessionRotationMarkerVersion = 2', 'const sessionRotationMarkerVersion = 3')
+          replace_once(
+              path,
+              '''func (s *StateStore) ReleaseSessionRotationClaim(parentThreadID, directiveID, claimID string) error {
+\tmarker, err := s.LoadSessionRotationMarker(parentThreadID)
+\tif err != nil {
+\t\treturn err
+\t}
+\tif marker == nil || marker.Directive == nil || marker.Claim == nil || marker.Directive.DirectiveID != directiveID || marker.Claim.ClaimID != claimID {
+\t\treturn fmt.Errorf("session rotation claimが一致しません")
+\t}
+\tif marker.State != SessionRotationStateClaimed {
+\t\treturn fmt.Errorf("bind済みまたは完了済みのsession rotation claimはreleaseできません: %s", marker.State)
+\t}
+\tmarker.State = SessionRotationStatePending
+\tmarker.Claim = nil
+\treturn s.writeSessionRotationMarker(marker)
+}''',
+              '''func (s *StateStore) ReleaseSessionRotationClaim(parentThreadID, directiveID, claimID string, result SessionRotationCreationResult) error {
+\tmarker, err := s.LoadSessionRotationMarker(parentThreadID)
+\tif err != nil {
+\t\treturn err
+\t}
+\tif marker == nil || marker.Directive == nil || marker.Claim == nil || marker.Directive.DirectiveID != directiveID || marker.Claim.ClaimID != claimID {
+\t\treturn fmt.Errorf("session rotation claimが一致しません")
+\t}
+\tif marker.State != SessionRotationStateClaimed {
+\t\treturn fmt.Errorf("bind済みまたは完了済みのsession rotation claimはreleaseできません: %s", marker.State)
+\t}
+\tif err := result.validateForRelease(parentThreadID, directiveID, claimID, marker.Claim.TargetTaskID); err != nil {
+\t\treturn err
+\t}
+\tmarker.LastCreationOutcome = newSessionRotationCreationOutcome(result)
+\tmarker.State = SessionRotationStatePending
+\tmarker.Claim = nil
+\treturn s.writeSessionRotationMarker(marker)
+}''',
+          )
+
+          Path("glm-worker/internal/state/session_rotation_failure.go").write_text(r'''package state
+
+import (
+	"fmt"
+	"time"
+)
+
+const (
+	SessionRotationCreationResultVersion = 1
+	SessionRotationCreationOutcomeFailed = "failed"
+)
+
+type SessionRotationCreationResult struct {
+	Version        int    `json:"version"`
+	Outcome        string `json:"outcome"`
+	ParentThreadID string `json:"parent_thread_id"`
+	DirectiveID    string `json:"directive_id"`
+	ClaimID        string `json:"claim_id"`
+	TargetTaskID   string `json:"target_task_id"`
+}
+
+type SessionRotationCreationOutcome struct {
+	Version        int    `json:"version"`
+	Outcome        string `json:"outcome"`
+	ParentThreadID string `json:"parent_thread_id"`
+	DirectiveID    string `json:"directive_id"`
+	ClaimID        string `json:"claim_id"`
+	TargetTaskID   string `json:"target_task_id"`
+	RecordedAt     string `json:"recorded_at"`
+}
+
+func (result SessionRotationCreationResult) validateForRelease(parentThreadID, directiveID, claimID, targetTaskID string) error {
+	if err := validateSessionRotationCreationIdentity(result.Version, result.Outcome, result.ParentThreadID, result.DirectiveID, result.ClaimID, result.TargetTaskID); err != nil {
+		return err
+	}
+	if result.ParentThreadID != parentThreadID || result.DirectiveID != directiveID || result.ClaimID != claimID || result.TargetTaskID != targetTaskID {
+		return fmt.Errorf("session rotation creation resultがcurrent claim identityと一致しません")
+	}
+	return nil
+}
+
+func validateSessionRotationCreationIdentity(version int, outcome, parentThreadID, directiveID, claimID, targetTaskID string) error {
+	if version != SessionRotationCreationResultVersion {
+		return fmt.Errorf("session rotation creation result versionが未対応です: %d", version)
+	}
+	if outcome != SessionRotationCreationOutcomeFailed {
+		return fmt.Errorf("session rotation creation outcomeはconfirmed failureではありません: %q", outcome)
+	}
+	if !ValidUUIDFormat(parentThreadID) || !ValidGeneratedUUID(directiveID) || !ValidGeneratedUUID(claimID) || !ValidGeneratedUUID(targetTaskID) {
+		return fmt.Errorf("session rotation creation resultのidentityが不正です")
+	}
+	return nil
+}
+
+func newSessionRotationCreationOutcome(result SessionRotationCreationResult) *SessionRotationCreationOutcome {
+	return &SessionRotationCreationOutcome{
+		Version:        result.Version,
+		Outcome:        result.Outcome,
+		ParentThreadID: result.ParentThreadID,
+		DirectiveID:    result.DirectiveID,
+		ClaimID:        result.ClaimID,
+		TargetTaskID:   result.TargetTaskID,
+		RecordedAt:     time.Now().UTC().Format(time.RFC3339Nano),
+	}
+}
+
+func (outcome *SessionRotationCreationOutcome) validate() error {
+	if outcome == nil {
+		return nil
+	}
+	if err := validateSessionRotationCreationIdentity(outcome.Version, outcome.Outcome, outcome.ParentThreadID, outcome.DirectiveID, outcome.ClaimID, outcome.TargetTaskID); err != nil {
+		return err
+	}
+	if _, err := time.Parse(time.RFC3339Nano, outcome.RecordedAt); err != nil {
+		return fmt.Errorf("session rotation creation outcomeのrecorded_atが不正です: %w", err)
+	}
+	return nil
+}
+''')
+
+          path = "glm-worker/internal/parentactioncmd/parentactioncmd.go"
+          replace_once(
+              path,
+              'rotation-fail <directive-id> <claim-id> |',
+              'rotation-fail <directive-id> <claim-id> --creation-result-json <json> |',
+          )
+          replace_once(
+              path,
+              '''func executeSessionRotationFail(st *state.StateStore, threadID string, args []string, stdout io.Writer) error {
+\tif len(args) != 3 || !state.ValidGeneratedUUID(args[1]) || !state.ValidGeneratedUUID(args[2]) {
+\t\treturn fmt.Errorf("usage: glm-parent-action rotation-fail <directive-id> <claim-id>")
+\t}
+\tif err := st.ReleaseSessionRotationClaim(threadID, args[1], args[2]); err != nil {
+\t\treturn err
+\t}
+\treturn json.NewEncoder(stdout).Encode(map[string]string{"status": "pending", "directive_id": args[1]})
+}''',
+              '''func executeSessionRotationFail(st *state.StateStore, threadID string, args []string, stdout io.Writer) error {
+\tif len(args) != 5 || !state.ValidGeneratedUUID(args[1]) || !state.ValidGeneratedUUID(args[2]) || args[3] != "--creation-result-json" {
+\t\treturn fmt.Errorf("%s", sessionRotationFailUsage)
+\t}
+\tresult, err := decodeSessionRotationCreationResult(args[4])
+\tif err != nil {
+\t\treturn err
+\t}
+\tif err := st.ReleaseSessionRotationClaim(threadID, args[1], args[2], result); err != nil {
+\t\treturn err
+\t}
+\treturn json.NewEncoder(stdout).Encode(map[string]string{"status": "pending", "directive_id": args[1]})
+}''',
+          )
+
+          Path("glm-worker/internal/parentactioncmd/session_rotation_failure.go").write_text(r'''package parentactioncmd
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
+)
+
+const sessionRotationFailUsage = "usage: glm-parent-action rotation-fail <directive-id> <claim-id> --creation-result-json <json>"
+
+func decodeSessionRotationCreationResult(raw string) (state.SessionRotationCreationResult, error) {
+	var result state.SessionRotationCreationResult
+	decoder := json.NewDecoder(bytes.NewReader([]byte(raw)))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&result); err != nil {
+		return result, fmt.Errorf("session rotation creation result JSONが不正です: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return result, fmt.Errorf("session rotation creation result JSONに余分な値があります")
+		}
+		return result, fmt.Errorf("session rotation creation result JSONが不正です: %w", err)
+	}
+	return result, nil
+}
+''')
+
+          test_path = "glm-worker/internal/state/session_rotation_test.go"
+          replace_once(
+              test_path,
+              'if err := st.ReleaseSessionRotationClaim(oldThread, marker.Directive.DirectiveID, first.ClaimID); err != nil {',
+              'if err := st.ReleaseSessionRotationClaim(oldThread, marker.Directive.DirectiveID, first.ClaimID, sessionRotationFailedCreationResult(oldThread, marker.Directive.DirectiveID, first)); err != nil {',
+          )
+          replace_once(
+              test_path,
+              'if err := st.ReleaseSessionRotationClaim(oldThread, marker.Directive.DirectiveID, retry.ClaimID); err != nil {',
+              'if err := st.ReleaseSessionRotationClaim(oldThread, marker.Directive.DirectiveID, retry.ClaimID, sessionRotationFailedCreationResult(oldThread, marker.Directive.DirectiveID, retry)); err != nil {',
+          )
+          replace_once(test_path, 'm.Version = 3', 'm.Version = 4')
+
+          Path("glm-worker/internal/state/session_rotation_failure_test.go").write_text(r'''package state
+
+import (
+	"encoding/json"
+	"testing"
+)
+
+func seedClaimedSessionRotation(t *testing.T) (*StateStore, string, *SessionRotationMarker, SessionRotationClaim) {
+	t.Helper()
+	st := &StateStore{dir: t.TempDir()}
+	parentThread := "01a0463c-d477-7410-9efd-cb34ff2e0b0e"
+	if err := st.commitSessionRotation(&SessionRotationEvaluation{
+		ParentThreadID: parentThread,
+		TaskID:         "12345678-aaaa-bbbb-cccc-dddddddddddd",
+		Terminal:       SessionRotationTerminalAccept,
+		Decision: SessionRotationDecision{
+			Required: true,
+			Reason:   SessionRotationReasonCompaction,
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	marker, err := st.LoadSessionRotationMarker(parentThread)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claim, err := st.ClaimSessionRotation(parentThread, marker.Directive.DirectiveID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return st, parentThread, marker, claim
+}
+
+func sessionRotationFailedCreationResult(parentThreadID, directiveID string, claim SessionRotationClaim) SessionRotationCreationResult {
+	return SessionRotationCreationResult{
+		Version:        SessionRotationCreationResultVersion,
+		Outcome:        SessionRotationCreationOutcomeFailed,
+		ParentThreadID: parentThreadID,
+		DirectiveID:    directiveID,
+		ClaimID:        claim.ClaimID,
+		TargetTaskID:   claim.TargetTaskID,
+	}
+}
+
+func TestReleaseSessionRotationClaimRequiresBoundConfirmedFailure(t *testing.T) {
+	mutations := []struct {
+		name   string
+		mutate func(*SessionRotationCreationResult)
+	}{
+		{"unknown outcome", func(r *SessionRotationCreationResult) { r.Outcome = "unknown" }},
+		{"unsupported version", func(r *SessionRotationCreationResult) { r.Version++ }},
+		{"wrong parent", func(r *SessionRotationCreationResult) { r.ParentThreadID = "01a0244a-4ee4-7e71-b2e1-dec3bdda2120" }},
+		{"wrong directive", func(r *SessionRotationCreationResult) { r.DirectiveID = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee" }},
+		{"wrong claim", func(r *SessionRotationCreationResult) { r.ClaimID = "bbbbbbbb-cccc-4ddd-8eee-ffffffffffff" }},
+		{"wrong target", func(r *SessionRotationCreationResult) { r.TargetTaskID = "cccccccc-dddd-4eee-8fff-aaaaaaaaaaaa" }},
+	}
+	for _, tc := range mutations {
+		t.Run(tc.name, func(t *testing.T) {
+			st, parentThread, marker, claim := seedClaimedSessionRotation(t)
+			result := sessionRotationFailedCreationResult(parentThread, marker.Directive.DirectiveID, claim)
+			tc.mutate(&result)
+			if err := st.ReleaseSessionRotationClaim(parentThread, marker.Directive.DirectiveID, claim.ClaimID, result); err == nil {
+				t.Fatal("creation failure proofなしでclaimがreleaseされました")
+			}
+			current, err := st.LoadSessionRotationMarker(parentThread)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if current.State != SessionRotationStateClaimed || current.Claim == nil || current.Claim.ClaimID != claim.ClaimID || current.LastCreationOutcome != nil {
+				t.Fatalf("拒否後のmarker = %#v", current)
+			}
+		})
+	}
+}
+
+func TestReleaseSessionRotationClaimRejectsWrongCommandIdentity(t *testing.T) {
+	st, parentThread, marker, claim := seedClaimedSessionRotation(t)
+	result := sessionRotationFailedCreationResult(parentThread, marker.Directive.DirectiveID, claim)
+	wrongDirective := "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+	wrongClaim := "bbbbbbbb-cccc-4ddd-8eee-ffffffffffff"
+	wrongParent := "01a0244a-4ee4-7e71-b2e1-dec3bdda2120"
+	for _, call := range []func() error{
+		func() error { return st.ReleaseSessionRotationClaim(parentThread, wrongDirective, claim.ClaimID, result) },
+		func() error { return st.ReleaseSessionRotationClaim(parentThread, marker.Directive.DirectiveID, wrongClaim, result) },
+		func() error { return st.ReleaseSessionRotationClaim(wrongParent, marker.Directive.DirectiveID, claim.ClaimID, result) },
+	} {
+		if err := call(); err == nil {
+			t.Fatal("wrong command identityがreleaseを通過しました")
+		}
+	}
+	current, err := st.LoadSessionRotationMarker(parentThread)
+	if err != nil || current.State != SessionRotationStateClaimed || current.Claim == nil || current.Claim.ClaimID != claim.ClaimID {
+		t.Fatalf("wrong identity拒否後のmarker = %#v err=%v", current, err)
+	}
+}
+
+func TestReleaseSessionRotationClaimPersistsFailureAndRejectsStaleRetry(t *testing.T) {
+	st, parentThread, marker, first := seedClaimedSessionRotation(t)
+	firstResult := sessionRotationFailedCreationResult(parentThread, marker.Directive.DirectiveID, first)
+	if err := st.ReleaseSessionRotationClaim(parentThread, marker.Directive.DirectiveID, first.ClaimID, firstResult); err != nil {
+		t.Fatal(err)
+	}
+	pending, err := st.LoadSessionRotationMarker(parentThread)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pending.State != SessionRotationStatePending || pending.Claim != nil || pending.LastCreationOutcome == nil {
+		t.Fatalf("confirmed failure後のmarker = %#v", pending)
+	}
+	if pending.LastCreationOutcome.ClaimID != first.ClaimID || pending.LastCreationOutcome.TargetTaskID != first.TargetTaskID || pending.LastCreationOutcome.Outcome != SessionRotationCreationOutcomeFailed {
+		t.Fatalf("persisted creation outcome = %#v", pending.LastCreationOutcome)
+	}
+
+	retry, err := st.ClaimSessionRotation(parentThread, marker.Directive.DirectiveID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if retry.ClaimID == first.ClaimID || retry.TargetTaskID == first.TargetTaskID {
+		t.Fatalf("retry claimが更新されていません: first=%#v retry=%#v", first, retry)
+	}
+	if err := st.ReleaseSessionRotationClaim(parentThread, marker.Directive.DirectiveID, retry.ClaimID, firstResult); err == nil {
+		t.Fatal("stale failure proofが新しいclaimをreleaseしました")
+	}
+	claimed, err := st.LoadSessionRotationMarker(parentThread)
+	if err != nil || claimed.State != SessionRotationStateClaimed || claimed.Claim == nil || claimed.Claim.ClaimID != retry.ClaimID {
+		t.Fatalf("stale proof拒否後のmarker = %#v err=%v", claimed, err)
+	}
+
+	retryResult := sessionRotationFailedCreationResult(parentThread, marker.Directive.DirectiveID, retry)
+	if err := st.ReleaseSessionRotationClaim(parentThread, marker.Directive.DirectiveID, retry.ClaimID, retryResult); err != nil {
+		t.Fatal(err)
+	}
+	pending, err = st.LoadSessionRotationMarker(parentThread)
+	if err != nil || pending.LastCreationOutcome == nil || pending.LastCreationOutcome.ClaimID != retry.ClaimID {
+		t.Fatalf("retry failure outcome = %#v err=%v", pending, err)
+	}
+}
+
+func TestReleaseSessionRotationClaimRejectsBoundAndIssuedState(t *testing.T) {
+	t.Run("bound", func(t *testing.T) {
+		st, parentThread, marker, claim := seedClaimedSessionRotation(t)
+		newThread := "01a0244a-4ee4-7e71-b2e1-dec3bdda2120"
+		if err := st.BindSessionRotationClaim(parentThread, marker.Directive.DirectiveID, claim.ClaimID, newThread); err != nil {
+			t.Fatal(err)
+		}
+		result := sessionRotationFailedCreationResult(parentThread, marker.Directive.DirectiveID, claim)
+		if err := st.ReleaseSessionRotationClaim(parentThread, marker.Directive.DirectiveID, claim.ClaimID, result); err == nil {
+			t.Fatal("bound claimがreleaseされました")
+		}
+	})
+
+	t.Run("issued", func(t *testing.T) {
+		st, parentThread, marker, claim := seedClaimedSessionRotation(t)
+		newThread := "01a0244a-4ee4-7e71-b2e1-dec3bdda2120"
+		if err := st.BindSessionRotationClaim(parentThread, marker.Directive.DirectiveID, claim.ClaimID, newThread); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := st.StartSessionRotationTask(newThread, claim.ClaimID); err != nil {
+			t.Fatal(err)
+		}
+		if err := st.SetParentCodexIdentity(newThread, newThread, nil); err != nil {
+			t.Fatal(err)
+		}
+		if err := st.AcknowledgeSessionRotationClaim(claim.ClaimID, newThread); err != nil {
+			t.Fatal(err)
+		}
+		result := sessionRotationFailedCreationResult(parentThread, marker.Directive.DirectiveID, claim)
+		if err := st.ReleaseSessionRotationClaim(parentThread, marker.Directive.DirectiveID, claim.ClaimID, result); err == nil {
+			t.Fatal("issued claimがreleaseされました")
+		}
+	})
+}
+
+func TestSessionRotationMarkerMigratesOldVersionsWithoutCreationOutcome(t *testing.T) {
+	st, _, marker, _ := seedClaimedSessionRotation(t)
+	marker.LastCreationOutcome = nil
+	for _, version := range []int{1, 2} {
+		marker.Version = version
+		data, err := json.Marshal(marker)
+		if err != nil {
+			t.Fatal(err)
+		}
+		decoded, err := decodeSessionRotationMarker(data)
+		if err != nil {
+			t.Fatalf("version %d marker migration: %v", version, err)
+		}
+		if decoded.Version != sessionRotationMarkerVersion || decoded.LastCreationOutcome != nil {
+			t.Fatalf("version %d migration result = %#v", version, decoded)
+		}
+	}
+}
+''')
+
+          Path("glm-worker/internal/parentactioncmd/session_rotation_failure_test.go").write_text(r'''package parentactioncmd
+
+import "testing"
+
+func TestDecodeSessionRotationCreationResultStrictJSON(t *testing.T) {
+	valid := `{"version":1,"outcome":"failed","parent_thread_id":"01a0463c-d477-7410-9efd-cb34ff2e0b0e","directive_id":"aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee","claim_id":"bbbbbbbb-cccc-4ddd-8eee-ffffffffffff","target_task_id":"cccccccc-dddd-4eee-8fff-aaaaaaaaaaaa"}`
+	result, err := decodeSessionRotationCreationResult(valid)
+	if err != nil || result.Outcome != "failed" {
+		t.Fatalf("valid creation result = %#v err=%v", result, err)
+	}
+	if _, err := decodeSessionRotationCreationResult(valid[:len(valid)-1] + `,"extra":true}`); err == nil {
+		t.Fatal("unknown fieldを含むcreation resultが受理されました")
+	}
+	if _, err := decodeSessionRotationCreationResult(valid + ` {}`); err == nil {
+		t.Fatal("trailing JSON valueを含むcreation resultが受理されました")
+	}
+}
+''')
+
+          instruction = Path("codex/instructions/session-rotation.md")
+          text = instruction.read_text()
+          old = '3. thread作成成功後、旧threadで`glm-parent-action rotation-bind <directive-id> <claim-id> <new-thread-id>`を実行する。作成失敗が確定した場合だけ`glm-parent-action rotation-fail <directive-id> <claim-id>`でclaimを解放して再試行する。作成結果が不明なら解放・再作成せず、作成済みthreadを確認する。'
+          new = '3. thread作成成功後、旧threadで`glm-parent-action rotation-bind <directive-id> <claim-id> <new-thread-id>`を実行する。作成失敗が確定した場合だけ、current parent/directive/claim/target taskへ束縛したcreation result (`version=1`, `outcome=failed`)を`glm-parent-action rotation-fail <directive-id> <claim-id> --creation-result-json <json>`へ渡す。作成結果が不明なら`rotation-fail`は使わず、claimを保持したまま作成済みthreadを確認する。'
+          if text.count(old) != 1:
+              raise SystemExit(f"session-rotation.md: expected one instruction replacement, found {text.count(old)}")
+          instruction.write_text(text.replace(old, new, 1))
+          PY
+      - name: Remove temporary workflow from final tree
+        run: git rm .github/workflows/web-gpt-issue-390-apply.yml
+      - name: Format Go changes
+        run: |
+          gofmt -w \
+            glm-worker/internal/state/session_rotation.go \
+            glm-worker/internal/state/session_rotation_failure.go \
+            glm-worker/internal/state/session_rotation_test.go \
+            glm-worker/internal/state/session_rotation_failure_test.go \
+            glm-worker/internal/parentactioncmd/parentactioncmd.go \
+            glm-worker/internal/parentactioncmd/session_rotation_failure.go \
+            glm-worker/internal/parentactioncmd/session_rotation_failure_test.go
+      - name: Targeted tests
+        working-directory: glm-worker
+        run: go test ./internal/state ./internal/parentactioncmd
+      - name: Install quality tools
+        run: |
+          quality_bin="$(go env GOPATH)/bin"
+          QUALITY_TOOLS_BIN_DIR="$quality_bin" ./install-quality-tools.sh
+          printf '%s\n' "$quality_bin" >> "$GITHUB_PATH"
+      - name: Repository lint gate
+        run: ./harnesslint
+      - name: Full Go test suite
+        working-directory: glm-worker
+        run: go test ./...
+      - name: Commit implementation
+        run: |
+          git config user.name "web-gpt"
+          git config user.email "web-gpt@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "Bind rotation claim release to creation failure proof"
+          git push origin HEAD:web-gpt/issue-390-rotation-failure-proof
