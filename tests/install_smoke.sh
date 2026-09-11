@@ -14,6 +14,9 @@ git -C "$repo" add -A
 git -C "$repo" -c user.name=install-smoke -c user.email=install-smoke@example.invalid commit -qm fixture
 repo_revision=$(git -C "$repo" rev-parse HEAD)
 printf '%s\n' 'local_key = "keep"' >"$home/.codex/config.toml"
+printf '%s\n' '# user-owned global Codex instruction' >"$home/.codex/AGENTS.md"
+printf '%s\n' 'AGENTS.md' >"$home/.codex/.codex-config-managed-files"
+global_agents_hash=$(shasum -a 256 "$home/.codex/AGENTS.md")
 printf '%s\n' '{"permissions":{"allow":["local"]},"env":{"LOCAL":"keep","REMOVE_ME":"local"}}' >"$home/.claude/settings.json"
 cat >"$home/.local/bin/merge-json" <<'EOF_STALE_MERGE_JSON'
 #!/bin/sh
@@ -66,6 +69,16 @@ if [ "$(shasum -a 256 "$home/.local/bin/merge-json")" != "$stale_merge_json_hash
 	exit 1
 fi
 test -f "$home/.codex/AGENTS.md"
+if [ "$(shasum -a 256 "$home/.codex/AGENTS.md")" != "$global_agents_hash" ]; then
+	printf '%s\n' 'user-global AGENTS.md changed during install/upgrade' >&2
+	exit 1
+fi
+if grep -Fxq 'AGENTS.md' "$home/.codex/.codex-config-managed-files"; then
+	printf '%s\n' 'user-global AGENTS.md remains installer-managed' >&2
+	exit 1
+fi
+test -f "$home/.codex/instructions/codex-worker-orchestrator.md"
+cmp "$repo/codex/AGENTS.md" "$home/.codex/instructions/codex-worker-orchestrator.md"
 test -f "$home/.codex/rules/glm-worker.rules"
 cmp "$repo/codex/rules/glm-worker.rules" "$home/.codex/rules/glm-worker.rules"
 grep -Fq '"glm-worker"' "$home/.codex/rules/glm-worker.rules"
@@ -130,8 +143,12 @@ grep -Fxq 'include_collaboration_mode_instructions = false' "$repo/.codex/config
 grep -Fxq 'include_instructions = false' "$repo/.codex/config.toml"
 grep -Fxq 'apps = false' "$repo/.codex/config.toml"
 grep -Fxq 'plugins = false' "$repo/.codex/config.toml"
+test -f "$repo/AGENTS.override.md"
+grep -Fq "$home/.codex/instructions/codex-worker-orchestrator.md" "$repo/AGENTS.override.md"
+grep -Fq 'repository rootにAGENTS.mdが存在する場合' "$repo/AGENTS.override.md"
 git -C "$repo" check-ignore -q -- .codex/config.toml
-if git -C "$repo" status --porcelain --untracked-files=all | grep -Fq '.codex/config.toml'; then
+git -C "$repo" check-ignore -q -- AGENTS.override.md
+if git -C "$repo" status --porcelain --untracked-files=all | grep -Eq '(.codex/config.toml|AGENTS.override.md)'; then
 	printf '%s\n' 'Codex context profile polluted target repository status' >&2
 	exit 1
 fi
@@ -140,6 +157,7 @@ grep -q '"status":"enabled"' "$tmp/codex-context-enable-again.json"
 "$home/.local/bin/glm-codex-context" disable "$repo" >"$tmp/codex-context-disable.json"
 grep -q '"status":"disabled"' "$tmp/codex-context-disable.json"
 test ! -e "$repo/.codex/config.toml"
+test ! -e "$repo/AGENTS.override.md"
 
 (
 	cd "$repo"

@@ -121,8 +121,20 @@ func enable(root string) (Result, error) {
 	default:
 		return Result{}, fmt.Errorf("read %s: %w", ProjectConfigRelativePath, err)
 	}
+	agentsCreated, err := enableProjectAgentsOverride(root)
+	if err != nil {
+		if created {
+			if removeErr := removeManagedConfig(configPath); removeErr != nil {
+				return Result{}, errors.Join(err, fmt.Errorf("rollback project config: %w", removeErr))
+			}
+		}
+		return Result{}, err
+	}
 	excluded, err := ensureGitExclude(root)
 	if err != nil {
+		if agentsCreated {
+			_ = disableProjectAgentsOverride(root)
+		}
 		if created {
 			if removeErr := removeManagedConfig(configPath); removeErr != nil {
 				return Result{}, errors.Join(
@@ -146,6 +158,9 @@ func enable(root string) (Result, error) {
 }
 
 func disable(root string) (Result, error) {
+	if err := validateProjectAgentsDisable(root); err != nil {
+		return Result{}, err
+	}
 	configPath := filepath.Join(root, filepath.FromSlash(ProjectConfigRelativePath))
 	content, err := os.ReadFile(configPath)
 	switch {
@@ -159,6 +174,9 @@ func disable(root string) (Result, error) {
 	case errors.Is(err, os.ErrNotExist):
 	default:
 		return Result{}, fmt.Errorf("read %s: %w", ProjectConfigRelativePath, err)
+	}
+	if err := disableProjectAgentsOverride(root); err != nil {
+		return Result{}, err
 	}
 	if err := removeGitExclude(root); err != nil {
 		return Result{}, fmt.Errorf("remove local Git exclude: %w", err)
@@ -194,6 +212,14 @@ func status(root string) (Result, error) {
 	case errors.Is(err, os.ErrNotExist):
 	case err != nil:
 		return Result{}, fmt.Errorf("read %s: %w", ProjectConfigRelativePath, err)
+	}
+	agentsState, err := projectAgentsOverrideState(root)
+	if err != nil {
+		return Result{}, err
+	}
+	if agentsState == "conflict" || (state == "enabled") != (agentsState == "enabled") {
+		state = "conflict"
+		detail = "project config and project-scoped AGENTS bootstrap ownership do not match"
 	}
 	excluded, err := gitExcluded(root)
 	if err != nil {
