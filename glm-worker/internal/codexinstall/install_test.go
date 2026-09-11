@@ -121,6 +121,7 @@ func TestInstallMigratesLegacyManifestOnlyWhenBytesMatchRepositoryHistory(t *tes
 	target := filepath.Join(codexDir, "instructions", "test.md")
 	writeTestFile(t, target, legacyContent)
 	writeTestFile(t, filepath.Join(codexDir, legacyManifestName), []byte("instructions/test.md\n"))
+	writeTestFile(t, filepath.Join(codexDir, "config.toml"), []byte(managedConfigKey+" = 21600000\n"))
 	runInstall(t, repo, codexDir)
 	assertFileBytes(t, target, []byte("# current tool instruction\n"))
 	if _, err := os.Stat(filepath.Join(codexDir, legacyManifestName)); !os.IsNotExist(err) {
@@ -132,6 +133,7 @@ func TestInstallMigratesLegacyManifestOnlyWhenBytesMatchRepositoryHistory(t *tes
 	userContent := []byte("# user replacement\n")
 	writeTestFile(t, userTarget, userContent)
 	writeTestFile(t, filepath.Join(userDir, legacyManifestName), []byte("instructions/test.md\n"))
+	writeTestFile(t, filepath.Join(userDir, "config.toml"), []byte(managedConfigKey+" = 21600000\n"))
 	var stdout bytes.Buffer
 	err := Install(repo, userDir, &stdout)
 	if err == nil {
@@ -175,6 +177,37 @@ func TestInstallRejectsUnsafeLegacyManifestPath(t *testing.T) {
 	var stdout bytes.Buffer
 	if err := Install(repo, codexDir, &stdout); err == nil {
 		t.Fatal("expected unsafe legacy manifest path rejection")
+	}
+}
+
+func TestInstallRejectsSymlinkedUserConfig(t *testing.T) {
+	repo := initInstallFixtureRepo(t)
+	codexDir := t.TempDir()
+	targetDir := t.TempDir()
+	target := filepath.Join(targetDir, "config.toml")
+	original := []byte("local_key = \"keep\"\n")
+	writeTestFile(t, target, original)
+	if err := os.Symlink(target, filepath.Join(codexDir, "config.toml")); err != nil {
+		t.Fatal(err)
+	}
+	var stdout bytes.Buffer
+	if err := Install(repo, codexDir, &stdout); err == nil {
+		t.Fatal("expected symlinked user config rejection")
+	}
+	assertFileBytes(t, target, original)
+}
+
+func TestInstallRejectsSymlinkedLegacyManifest(t *testing.T) {
+	repo := initInstallFixtureRepo(t)
+	codexDir := t.TempDir()
+	target := filepath.Join(t.TempDir(), "manifest")
+	writeTestFile(t, target, []byte("instructions/test.md\n"))
+	if err := os.Symlink(target, filepath.Join(codexDir, legacyManifestName)); err != nil {
+		t.Fatal(err)
+	}
+	var stdout bytes.Buffer
+	if err := Install(repo, codexDir, &stdout); err == nil {
+		t.Fatal("expected symlinked legacy manifest rejection")
 	}
 }
 

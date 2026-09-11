@@ -166,7 +166,7 @@ func applyConfigInstallPlan(plan configInstallPlan, output func(string, ...any))
 }
 
 func readOptionalFile(path string) ([]byte, os.FileMode, error) {
-	info, err := os.Stat(path)
+	info, err := os.Lstat(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, 0o644, nil
 	}

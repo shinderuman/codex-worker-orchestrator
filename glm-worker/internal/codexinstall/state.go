@@ -124,10 +124,17 @@ func validateInstallStateConfig(records map[string]managedConfigRecord) error {
 
 func loadLegacyManifest(codexDir string) (legacyManifest, error) {
 	path := filepath.Join(codexDir, legacyManifestName)
-	data, err := os.ReadFile(path)
+	info, err := os.Lstat(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return legacyManifest{Paths: map[string]bool{}}, nil
 	}
+	if err != nil {
+		return legacyManifest{}, fmt.Errorf("stat legacy Codex managed-file manifest: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return legacyManifest{}, fmt.Errorf("legacy Codex managed-file manifest is not a regular file")
+	}
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return legacyManifest{}, fmt.Errorf("read legacy Codex managed-file manifest: %w", err)
 	}
