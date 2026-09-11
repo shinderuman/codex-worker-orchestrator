@@ -30,6 +30,10 @@ const (
 )
 
 func BuildCurrentParentRequestCompletionProjection(cfg config.AppConfig, st *state.StateStore) (ParentRequestCompletionProjection, error) {
+	status := st.TaskStatus()
+	if status == state.TaskStatusAwaitingParentCompletion || status == state.TaskStatusComplete {
+		return BuildParentRequestCompletionProjection(cfg)
+	}
 	output, err := buildProjectState(cfg, st)
 	if err != nil {
 		return ParentRequestCompletionProjection{}, err
