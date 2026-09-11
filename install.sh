@@ -55,133 +55,9 @@ verify_go_toolchain() {
 	fi
 }
 
-copy_file() {
-	src=$1
-	dst=$2
-	mkdir -p "$(dirname "$dst")"
-	if [ -f "$dst" ] && cmp -s "$src" "$dst"; then
-		return
-	fi
-	cp -p "$src" "$dst"
-	printf 'updated: %s\n' "$dst"
-}
-
-copy_tree() {
-	src=$1
-	dst=$2
-	mkdir -p "$dst"
-	rsync -a "$src/" "$dst/"
-}
-
-legacy_global_agents_matches_repository() {
-	target=$1
-	[ -f "$target" ] || return 1
-	if cmp -s "$repo_root/codex/AGENTS.md" "$target"; then
-		return 0
-	fi
-	for revision in $(git -C "$repo_root" log --format=%H -- codex/AGENTS.md); do
-		if git -C "$repo_root" show "$revision:codex/AGENTS.md" 2>/dev/null | cmp -s - "$target"; then
-			return 0
-		fi
-	done
-	return 1
-}
-
-install_codex_files() {
-	manifest_file="$codex_dir/.codex-config-managed-files"
-	current_manifest=$(mktemp "${TMPDIR:-/tmp}/codex-managed-current.XXXXXX")
-	previous_manifest=$(mktemp "${TMPDIR:-/tmp}/codex-managed-previous.XXXXXX")
-	trap 'rm -f "$current_manifest" "$previous_manifest"' EXIT HUP INT TERM
-	{
-		printf '%s\n' 'instructions/codex-worker-orchestrator.md'
-		(
-			cd "$repo_root/codex"
-			find instructions -type f -print
-			printf '%s\n' 'rules/glm-worker.rules'
-			find glm-worker/prompts -type f -print
-		)
-	} | LC_ALL=C sort -u >"$current_manifest"
-	if [ -f "$manifest_file" ]; then
-		cp "$manifest_file" "$previous_manifest"
-	else
-		: >"$previous_manifest"
-	fi
-	while IFS= read -r relative_path; do
-		[ -n "$relative_path" ] || continue
-		if [ "$relative_path" = 'AGENTS.md' ]; then
-			target="$codex_dir/AGENTS.md"
-			if legacy_global_agents_matches_repository "$target"; then
-				rm -f "$target"
-				printf 'removed legacy managed: %s\n' "$target"
-			fi
-			continue
-		fi
-		if ! grep -Fqx "$relative_path" "$current_manifest"; then
-			target="$codex_dir/$relative_path"
-			if [ -f "$target" ] || [ -L "$target" ]; then
-				rm -f "$target"
-				printf 'removed: %s\n' "$target"
-			fi
-		fi
-	done <"$previous_manifest"
-	copy_tree "$repo_root/codex/instructions" "$codex_dir/instructions"
-	copy_file "$repo_root/codex/AGENTS.md" "$codex_dir/instructions/codex-worker-orchestrator.md"
-	copy_file "$repo_root/codex/rules/glm-worker.rules" "$codex_dir/rules/glm-worker.rules"
-	copy_tree "$repo_root/codex/glm-worker/prompts" "$codex_dir/glm-worker/prompts"
-	mkdir -p "$codex_dir"
-	cp "$current_manifest" "$manifest_file"
-	rm -f "$current_manifest" "$previous_manifest"
-	trap - EXIT HUP INT TERM
-}
-
-merge_codex_config() {
-	config_file="$codex_dir/config.toml"
-	managed_file="$repo_root/codex/config-managed.toml"
-	managed_value=$(awk -F= '
-        /^[[:space:]]*background_terminal_max_timeout[[:space:]]*=/ {
-            value = $2
-            gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
-            print value
-            exit
-        }
-    ' "$managed_file")
-	if [ -z "$managed_value" ]; then
-		printf '%s\n' 'background_terminal_max_timeout is missing from config-managed.toml' >&2
-		exit 1
-	fi
-	tmp=$(mktemp "${TMPDIR:-/tmp}/codex-worker-orchestrator.XXXXXX")
-	trap 'rm -f "$tmp"' EXIT HUP INT TERM
-	if [ -f "$config_file" ]; then
-		awk -v value="$managed_value" '
-            BEGIN { top = 1; written = 0 }
-            top && /^[[:space:]]*background_terminal_max_timeout[[:space:]]*=/ {
-                if (!written) { print "background_terminal_max_timeout = " value; written = 1 }
-                next
-            }
-            top && /^[[:space:]]*\[/ {
-                if (!written) { print "background_terminal_max_timeout = " value; print ""; written = 1 }
-                top = 0
-            }
-            { print }
-            END {
-                if (!written) {
-                    if (NR > 0) { print "" }
-                    print "background_terminal_max_timeout = " value
-                }
-            }
-        ' "$config_file" >"$tmp"
-	else
-		printf 'background_terminal_max_timeout = %s\n' "$managed_value" >"$tmp"
-	fi
-	if [ -f "$config_file" ] && cmp -s "$tmp" "$config_file"; then
-		rm -f "$tmp"
-		trap - EXIT HUP INT TERM
-		return
-	fi
-	mkdir -p "$(dirname "$config_file")"
-	mv "$tmp" "$config_file"
-	trap - EXIT HUP INT TERM
-	printf 'updated: %s\n' "$config_file"
+install_codex_configuration() {
+	build_dir=$1
+	"$build_dir/codex-install" --repo-root "$repo_root" --codex-dir "$codex_dir"
 }
 
 build_binaries() {
@@ -191,6 +67,7 @@ build_binaries() {
 		go build -trimpath -o "$build_dir/glm-worker" ./cmd/glm-worker
 		go build -buildvcs=false -trimpath -o "$build_dir/glm-parent-action" ./cmd/glm-parent-action
 		go build -buildvcs=false -trimpath -o "$build_dir/glm-codex-context" ./cmd/glm-codex-context
+		go build -buildvcs=false -trimpath -o "$build_dir/codex-install" ./cmd/codex-install
 		go build -buildvcs=false -trimpath -o "$build_dir/commentlint" ./cmd/commentlint
 		go build -buildvcs=false -trimpath -o "$build_dir/harnesslint" ./cmd/harnesslint
 		go build -buildvcs=false -trimpath -o "$build_dir/merge-json" ./cmd/merge-json
@@ -272,8 +149,7 @@ build_binaries "$build_dir"
 "$build_dir/plancheck" "$repo_root"
 verify_claude_cli
 install_binaries "$build_dir"
-install_codex_files
-merge_codex_config
+install_codex_configuration "$build_dir"
 merge_claude_settings "$build_dir"
 install_pull_hook
 mkdir -p "$glm_worker_home/sessions"

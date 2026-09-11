@@ -13,6 +13,7 @@ var processStreamOwners = map[string]map[string]int{
 	"glm-worker/cmd/glm-worker/main.go":         {"Stderr": 1},
 	"glm-worker/cmd/glm-parent-action/main.go":  {"Stdout": 1, "Stderr": 1},
 	"glm-worker/cmd/glm-codex-context/main.go":  {"Stdout": 1, "Stderr": 1},
+	"glm-worker/cmd/codex-install/main.go":      {"Stdout": 1, "Stderr": 1},
 	"glm-worker/cmd/commentlint/main.go":        {"Stdout": 1, "Stderr": 1},
 	"glm-worker/cmd/harnesslint/main.go":        {"Stdout": 1, "Stderr": 1},
 	"glm-worker/cmd/merge-json/main.go":         {"Stdout": 1, "Stderr": 1},
