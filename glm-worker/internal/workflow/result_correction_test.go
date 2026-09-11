@@ -115,9 +115,7 @@ func TestRunModelStopsOnRepeatedFirstCorrectionViolation(t *testing.T) {
 		t.Fatalf("同一違反へ追加補正を実行しています: calls=%d", len(r.prompts))
 	}
 	assertNoCorrectionRecoveryAction(t, st)
-	if st.Exists(state.ResultCorrectionStateFile) {
-		t.Fatal("terminal failure後にresult correction stateが残っています")
-	}
+	assertTerminalCorrectionState(t, w, "repeated_violation")
 }
 
 func TestRunModelCorrectionBudgetExhaustionIsTerminal(t *testing.T) {
@@ -158,6 +156,7 @@ func TestRunModelCorrectionBudgetExhaustionIsTerminal(t *testing.T) {
 				t.Fatalf("terminal failure後status = %s", st.TaskStatus())
 			}
 			assertNoCorrectionRecoveryAction(t, st)
+			assertTerminalCorrectionState(t, w, "budget_exhausted")
 		})
 	}
 }
@@ -190,8 +189,37 @@ func TestRunModelCorrectionFailsClosedOnSnapshotChange(t *testing.T) {
 		t.Fatalf("snapshot変更後に追加model callしています: calls=%d", len(r.prompts))
 	}
 	assertNoCorrectionRecoveryAction(t, st)
-	if st.Exists(state.ResultCorrectionStateFile) {
-		t.Fatal("snapshot boundary failure後にresult correction stateが残っています")
+	assertTerminalCorrectionState(t, w, "boundary_changed")
+}
+
+func TestTerminalCorrectionStateBlocksFreshModelAdmission(t *testing.T) {
+	st := newStateStoreT(t)
+	r := &scriptedRunner{steps: []runnerStep{
+		{structured: constraintViolatingImplementedPacket()},
+		{structured: constraintViolatingImplementedPacket()},
+		{structured: implementedPacket("must-not-run")},
+	}}
+	w := newWorkflowT(t, st, r)
+	w.temp = t.TempDir()
+	if _, err := w.runModel(baseCorrectionCheckpoint()); err == nil {
+		t.Fatal("terminal correction failureを期待")
+	}
+	if _, err := w.runModel(baseCorrectionCheckpoint()); err == nil {
+		t.Fatal("terminal correction stateがfresh model callを許可しました")
+	}
+	if len(r.prompts) != 2 {
+		t.Fatalf("terminal latch後にmodel callが実行されました: %d", len(r.prompts))
+	}
+}
+
+func assertTerminalCorrectionState(t *testing.T, w *Workflow, reason string) {
+	t.Helper()
+	record, err := w.loadResultCorrectionRecord()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.Terminal == nil || record.Terminal.Reason != reason {
+		t.Fatalf("terminal correction state = %#v", record)
 	}
 }
 
