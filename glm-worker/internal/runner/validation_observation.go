@@ -8,8 +8,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-const validationTypeScriptSuite = "tsc"
-
 type validationSegmentScanner struct {
 	command      string
 	start        int
@@ -17,6 +15,8 @@ type validationSegmentScanner struct {
 	doubleQuoted bool
 	escaped      bool
 }
+
+const validationTypeScriptSuite = "tsc"
 
 func validationObservationsForToolInput(toolName string, input json.RawMessage) []state.TaskValidationObservation {
 	if toolName != bashToolName || len(input) == 0 {
