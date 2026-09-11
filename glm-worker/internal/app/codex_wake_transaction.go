@@ -98,12 +98,33 @@ func printCodexWakePlan(cmd Command, cfg config.AppConfig, stdout io.Writer) err
 	if err != nil {
 		return err
 	}
-	return writeJSON(stdout, output)
+	if err := persistCodexWakeToken(cfg.CodexConfigDir, output.Token); err != nil {
+		return err
+	}
+	if err := writeJSON(stdout, output); err != nil {
+		removeCodexWakeToken(cfg.CodexConfigDir, output.Token)
+		return err
+	}
+	return nil
 }
 
 func printCodexWakeResponse(cmd Command, cfg config.AppConfig, stdout io.Writer) error {
-	wakeThreadID, wakeInvocation, contextErr := autoresume.CodexWakeTransactionContext(cmd.CodexWake.Token)
-	if contextErr == nil && wakeInvocation {
+	lease, err := beginCodexWakeToken(cfg.CodexConfigDir, cmd.CodexWake.Token)
+	if err != nil {
+		return err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			lease.rollback()
+		}
+	}()
+
+	wakeThreadID, wakeInvocation, err := autoresume.CodexWakeTransactionContext(cmd.CodexWake.Token)
+	if err != nil {
+		return err
+	}
+	if wakeInvocation {
 		if err := requireCodexWakeInvocationThread(wakeThreadID); err != nil {
 			return err
 		}
@@ -116,7 +137,21 @@ func printCodexWakeResponse(cmd Command, cfg config.AppConfig, stdout io.Writer)
 		dbPath,
 		autoresume.ReadDBRowSqlite3,
 	)
-	return writeJSON(stdout, output)
+	if output.Token != "" {
+		if err := persistCodexWakeToken(cfg.CodexConfigDir, output.Token); err != nil {
+			return err
+		}
+	}
+	if err := lease.commit(); err != nil {
+		removeCodexWakeToken(cfg.CodexConfigDir, output.Token)
+		return err
+	}
+	committed = true
+	if err := writeJSON(stdout, output); err != nil {
+		removeCodexWakeToken(cfg.CodexConfigDir, output.Token)
+		return err
+	}
+	return nil
 }
 
 func requireCodexWakeInvocationThread(wakeThreadID string) error {
