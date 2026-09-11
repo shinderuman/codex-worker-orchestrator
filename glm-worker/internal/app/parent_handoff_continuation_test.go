@@ -69,7 +69,7 @@ func TestParentHandoffCarriesRateLimitStopFromCanonicalLifecycle(t *testing.T) {
 	}
 
 	output := buildParentHandoff(st)
-	if !output.Consistent || output.ParentRequest == nil || output.ParentRequest.CompletionAdmitted || !output.ParentRequest.StopAdmitted {
+	if !output.Consistent || output.ParentRequest == nil || output.ParentRequest.CompletionAdmitted || output.ParentRequest.StopAdmitted {
 		t.Fatalf("handoff = %#v", output)
 	}
 	continuation := output.ParentRequest.Continuation
