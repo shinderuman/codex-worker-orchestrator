@@ -34,7 +34,7 @@ jobs:
           printf 'QUALITY_TOOLS_BIN_DIR=%s\n' "$quality_bin" >> "$GITHUB_ENV"
           QUALITY_TOOLS_BIN_DIR="$quality_bin" ./install-quality-tools.sh
       - name: Quality tool ownership smoke
-        run: ./tests/install_quality_tools_smoke.sh
+        run: sh ./tests/install_quality_tools_smoke.sh
       - name: Repository lint gate
         run: ./harnesslint
       - name: Full Go test suite
