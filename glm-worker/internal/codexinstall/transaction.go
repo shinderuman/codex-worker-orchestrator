@@ -1,6 +1,7 @@
 package codexinstall
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -23,8 +24,9 @@ func applyInstallWithStateWriter(preparation installPreparation, stdout io.Write
 	if err != nil {
 		return err
 	}
+	var pendingOutput bytes.Buffer
 	output := func(format string, args ...any) {
-		_, _ = fmt.Fprintf(stdout, format, args...)
+		_, _ = fmt.Fprintf(&pendingOutput, format, args...)
 	}
 	files, err := applyFileInstallPlan(preparation.codexDir, preparation.filePlan, output)
 	if err != nil {
@@ -33,6 +35,11 @@ func applyInstallWithStateWriter(preparation installPreparation, stdout io.Write
 	if err := applyConfigInstallPlan(preparation.configPlan, output); err != nil {
 		return rollbackInstall(backups, err)
 	}
+	if !preparation.stateExists {
+		if err := removeLegacyManifest(preparation.codexDir, preparation.legacy.Present); err != nil {
+			return rollbackInstall(backups, err)
+		}
+	}
 	next := installState{Version: stateVersion, Files: files, Config: map[string]managedConfigRecord{}}
 	if preparation.configPlan.Record != nil {
 		next.Config[managedConfigKey] = *preparation.configPlan.Record
@@ -40,10 +47,8 @@ func applyInstallWithStateWriter(preparation installPreparation, stdout io.Write
 	if err := writeStateFn(preparation.codexDir, next); err != nil {
 		return rollbackInstall(backups, err)
 	}
-	if preparation.stateExists {
-		return nil
-	}
-	return removeLegacyManifest(preparation.codexDir, preparation.legacy.Present)
+	_, _ = io.Copy(stdout, &pendingOutput)
+	return nil
 }
 
 func captureInstallBackups(preparation installPreparation) ([]installBackup, error) {
@@ -69,6 +74,9 @@ func installMutationPaths(preparation installPreparation) []string {
 	}
 	if preparation.configPlan.Changed {
 		unique[preparation.configPlan.Path] = true
+	}
+	if !preparation.stateExists && preparation.legacy.Present {
+		unique[filepath.Join(preparation.codexDir, legacyManifestName)] = true
 	}
 	paths := make([]string, 0, len(unique))
 	for path := range unique {
