@@ -12,7 +12,7 @@ func TestCompleteReturnsImmediateParentContinuation(t *testing.T) {
 
 	output := runCompleteCommand(t, fixture)
 	if output.Status != completeStatusComplete || !output.Completed {
-		t.Fatalf("output = %#v", output)
+		t.Fatalf("output = %#v failure=%#v", output, output.Failure)
 	}
 	if output.ParentRequest == nil || output.ParentRequest.CompletionAdmitted || output.ParentRequest.StopAdmitted ||
 		output.ParentRequest.Continuation.State != "continue-now" ||
@@ -28,7 +28,7 @@ func TestCompleteReturnsBlockedParentStopWithoutCompletion(t *testing.T) {
 
 	output := runCompleteCommand(t, fixture)
 	if output.Status != completeStatusComplete || !output.Completed {
-		t.Fatalf("output = %#v", output)
+		t.Fatalf("output = %#v failure=%#v", output, output.Failure)
 	}
 	if output.ParentRequest == nil || output.ParentRequest.CompletionAdmitted || !output.ParentRequest.StopAdmitted ||
 		output.ParentRequest.Continuation.State != "blocked" ||
@@ -43,7 +43,7 @@ func TestCompleteAdmitsParentCompletionOnlyForTerminalGoal(t *testing.T) {
 
 	output := runCompleteCommand(t, fixture)
 	if output.Status != completeStatusComplete || !output.Completed {
-		t.Fatalf("output = %#v", output)
+		t.Fatalf("output = %#v failure=%#v", output, output.Failure)
 	}
 	if output.ParentRequest == nil || !output.ParentRequest.CompletionAdmitted || !output.ParentRequest.StopAdmitted ||
 		output.ParentRequest.Continuation.State != "terminal" {
