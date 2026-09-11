@@ -32,7 +32,7 @@ jobs:
         working-directory: glm-worker
         run: go test ./internal/harnesslint
       - name: Quality tool ownership smoke
-        run: ./tests/install_quality_tools_smoke.sh
+        run: sh ./tests/install_quality_tools_smoke.sh
       - name: commentlint
         run: ./commentlint
       - name: harnesslint
