@@ -32,6 +32,43 @@ func TestInstallRemovesUnmodifiedRetiredManagedFile(t *testing.T) {
 	}
 }
 
+func TestInstallMigratesObsoleteLegacyFileOnlyWithOwnershipProof(t *testing.T) {
+	repo := initInstallFixtureRepo(t)
+	legacySource := filepath.Join(repo, "codex", "instructions", "retired.md")
+	legacyContent := []byte("# historical managed instruction\n")
+	writeTestFile(t, legacySource, legacyContent)
+	commitFixtureRepo(t, repo, "add historical managed instruction")
+	if err := os.Remove(legacySource); err != nil {
+		t.Fatal(err)
+	}
+	commitFixtureRepo(t, repo, "retire historical managed instruction")
+
+	ownedDir := t.TempDir()
+	ownedTarget := filepath.Join(ownedDir, "instructions", "retired.md")
+	writeTestFile(t, ownedTarget, legacyContent)
+	writeTestFile(t, filepath.Join(ownedDir, legacyManifestName), []byte("instructions/retired.md\n"))
+	writeTestFile(t, filepath.Join(ownedDir, "config.toml"), []byte(managedConfigKey+" = 21600000\n"))
+	runInstall(t, repo, ownedDir)
+	if _, err := os.Stat(ownedTarget); !os.IsNotExist(err) {
+		t.Fatalf("proven obsolete legacy file remains: %v", err)
+	}
+
+	userDir := t.TempDir()
+	userTarget := filepath.Join(userDir, "instructions", "retired.md")
+	userContent := []byte("# user changed retired instruction\n")
+	writeTestFile(t, userTarget, userContent)
+	writeTestFile(t, filepath.Join(userDir, legacyManifestName), []byte("instructions/retired.md\n"))
+	writeTestFile(t, filepath.Join(userDir, "config.toml"), []byte(managedConfigKey+" = 21600000\n"))
+	runInstall(t, repo, userDir)
+	assertFileBytes(t, userTarget, userContent)
+	state := loadTestState(t, userDir)
+	for _, record := range state.Files {
+		if record.Path == "instructions/retired.md" {
+			t.Fatalf("user-modified obsolete legacy file became tool-owned: %+v", record)
+		}
+	}
+}
+
 func TestInstallRetiresOwnedConfigKeyWithoutChangingUserConfig(t *testing.T) {
 	repo := initInstallFixtureRepo(t)
 	codexDir := t.TempDir()
