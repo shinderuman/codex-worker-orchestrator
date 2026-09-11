@@ -53,9 +53,9 @@ func TestFinalVerificationOrderingViolations(t *testing.T) {
 			name: "task with outstanding dependency after final verification is not runnable",
 			plan: planSchedule(activePath, []string{finalPath, semanticPath}, []string{blockedPath}),
 			files: map[string]string{
-				activePath:  "# active\n",
-				finalPath:   noDependencies,
-				blockedPath: noDependencies,
+				activePath:   "# active\n",
+				finalPath:    noDependencies,
+				blockedPath:  noDependencies,
 				semanticPath: "# task\n\n## Dependencies\n\n- `" + blockedPath + "`\n",
 			},
 		},
