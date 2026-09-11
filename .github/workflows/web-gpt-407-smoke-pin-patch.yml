@@ -1,0 +1,38 @@
+name: Web GPT Issue 407 Smoke Pin Patch
+
+on:
+  push:
+    branches:
+      - web-gpt/issue-407-project-scoped-agents
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: web-gpt/issue-407-project-scoped-agents
+          fetch-depth: 0
+      - name: Replace prose pin
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('tests/install_smoke.sh')
+          s = p.read_text()
+          old = "grep -Fq 'repository rootにAGENTS.mdが存在する場合' \"$repo/AGENTS.override.md\"\n"
+          new = "grep -Fq '<!-- managed-by: codex-worker-orchestrator glm-codex-context v1 -->' \"$repo/AGENTS.override.md\"\n"
+          if s.count(old) != 1:
+              raise SystemExit(f'anchor count={s.count(old)}')
+          p.write_text(s.replace(old, new, 1))
+          Path('.github/workflows/web-gpt-407-smoke-pin-patch.yml').unlink()
+          PY
+      - name: Commit patch
+        run: |
+          git config user.name shinderuman
+          git config user.email shinderuman@gmail.com
+          git add -A
+          git commit -m 'Use structural AGENTS smoke evidence'
+          git push origin HEAD:web-gpt/issue-407-project-scoped-agents
