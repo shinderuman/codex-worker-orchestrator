@@ -1,0 +1,32 @@
+name: Web GPT Issue 407 Status Patch
+
+on:
+  push:
+    branches:
+      - web-gpt/issue-407-project-scoped-agents
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: web-gpt/issue-407-project-scoped-agents
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: glm-worker/go.mod
+      - name: Apply exact status patch
+        run: python3 .github/web-gpt-407-status-patch.py
+      - name: Format Go changes
+        run: gofmt -w glm-worker/internal/codexcontext/context.go
+      - name: Commit patch
+        run: |
+          git config user.name shinderuman
+          git config user.email shinderuman@gmail.com
+          git add -A
+          git commit -m 'Fail closed on unmanaged project AGENTS bootstrap status'
+          git push origin HEAD:web-gpt/issue-407-project-scoped-agents
