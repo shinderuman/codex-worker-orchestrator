@@ -1,6 +1,9 @@
 package app
 
-import "github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
+import (
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskcontract"
+)
 
 type projectContinuationObligation struct {
 	State          string               `json:"state"`
@@ -19,19 +22,19 @@ const (
 )
 
 const (
-	projectContinuationReasonPlanAbsent                 = "plan-absent"
-	projectContinuationReasonProjectStateIncomplete     = "project-state-incomplete"
-	projectContinuationReasonLifecycleInconsistent      = "lifecycle-inconsistent"
-	projectContinuationReasonUserInterruption           = "user-interruption"
-	projectContinuationReasonGoalCompleted              = "goal-completed"
-	projectContinuationReasonGoalLifecycleInconsistent  = "goal-lifecycle-inconsistent"
-	projectContinuationReasonActiveTaskUnresolved       = "active-task-unresolved"
-	projectContinuationReasonActiveTaskNotStarted       = "active-task-not-started"
-	projectContinuationReasonActiveTaskMismatch         = "active-task-mismatch"
-	projectContinuationReasonCurrentTask                = "current-task"
-	projectContinuationReasonContinuationScopeUnbound   = "continuation-scope-unbound"
-	projectContinuationReasonNextRunnable               = "next-runnable"
-	projectContinuationReasonGoalAcceptancePending      = "goal-acceptance-pending"
+	projectContinuationReasonPlanAbsent                  = "plan-absent"
+	projectContinuationReasonProjectStateIncomplete      = "project-state-incomplete"
+	projectContinuationReasonLifecycleInconsistent       = "lifecycle-inconsistent"
+	projectContinuationReasonUserInterruption            = "user-interruption"
+	projectContinuationReasonGoalCompleted               = "goal-completed"
+	projectContinuationReasonGoalLifecycleInconsistent   = "goal-lifecycle-inconsistent"
+	projectContinuationReasonActiveTaskUnresolved        = "active-task-unresolved"
+	projectContinuationReasonActiveTaskNotStarted        = "active-task-not-started"
+	projectContinuationReasonActiveTaskMismatch          = "active-task-mismatch"
+	projectContinuationReasonCurrentTask                 = "current-task"
+	projectContinuationReasonContinuationScopeUnbound    = "continuation-scope-unbound"
+	projectContinuationReasonNextRunnable                = "next-runnable"
+	projectContinuationReasonGoalAcceptancePending       = "goal-acceptance-pending"
 	projectContinuationReasonCompletionStateInconsistent = "completion-state-inconsistent"
 )
 
@@ -46,7 +49,7 @@ func deriveProjectContinuation(output projectStateOutput, st *state.StateStore) 
 	if output.Goal == nil || output.Schedule == nil {
 		return unknownProjectContinuation(projectContinuationReasonProjectStateIncomplete)
 	}
-	if output.Goal.Present && output.Goal.Status == "completed" {
+	if output.Goal.Present && output.Goal.Status == taskcontract.GoalStatusCompleted {
 		return terminalProjectContinuation(st)
 	}
 	if len(output.Schedule.Active) != 1 {
