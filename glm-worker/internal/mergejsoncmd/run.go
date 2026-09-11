@@ -24,25 +24,10 @@ func Run(args []string, stdout io.Writer) error {
 		return fmt.Errorf("usage: merge-json [-target <path>] -fragment <path> [-env-override <path>]")
 	}
 
-	targetPath := *target
-	overridePath := *override
-	if targetPath == "" || overridePath == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return fmt.Errorf("ホームディレクトリを取得できません: %w", err)
-		}
-		if targetPath == "" {
-			location, err := claudesettings.Resolve(home, os.Getenv("CLAUDE_CONFIG_DIR"), os.Getenv("CLAUDE_SETTINGS_FILE"))
-			if err != nil {
-				return fmt.Errorf("Claude settings location: %w", err)
-			}
-			targetPath = location.SettingsPath
-		}
-		if overridePath == "" {
-			overridePath = claudeoverride.ResolvePath(home)
-		}
+	targetPath, overridePath, err := resolveMergePaths(*target, *override)
+	if err != nil {
+		return err
 	}
-
 	changed, err := settingsmerge.MergeFiles(targetPath, *fragment, overridePath)
 	if err != nil {
 		return err
@@ -53,4 +38,25 @@ func Run(args []string, stdout io.Writer) error {
 	}
 	_, err = fmt.Fprintln(stdout, result)
 	return err
+}
+
+func resolveMergePaths(targetPath, overridePath string) (string, string, error) {
+	if targetPath != "" && overridePath != "" {
+		return targetPath, overridePath, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", "", fmt.Errorf("ホームディレクトリを取得できません: %w", err)
+	}
+	if targetPath == "" {
+		location, err := claudesettings.Resolve(home, os.Getenv("CLAUDE_CONFIG_DIR"), os.Getenv("CLAUDE_SETTINGS_FILE"))
+		if err != nil {
+			return "", "", fmt.Errorf("claude settings location: %w", err)
+		}
+		targetPath = location.SettingsPath
+	}
+	if overridePath == "" {
+		overridePath = claudeoverride.ResolvePath(home)
+	}
+	return targetPath, overridePath, nil
 }
