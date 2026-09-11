@@ -13,7 +13,7 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 21
+    timeout-minutes: 22
     steps:
       - uses: actions/checkout@v6
       - name: Read quality tool contract
@@ -41,5 +41,3 @@ jobs:
       - name: Full Go test suite
         working-directory: glm-worker
         run: go test ./...
-
-# rerun after declaration-order fix
