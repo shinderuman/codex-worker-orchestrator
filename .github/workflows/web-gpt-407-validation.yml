@@ -40,5 +40,3 @@ jobs:
         run: go test ./...
       - name: Installer smoke
         run: ./tests/install_smoke.sh
-
-# Rerun current Issue 407 production head after lint fixes.
