@@ -9,7 +9,7 @@ READMEはcurrent runtime stateや実装inventoryの第二正本ではありま�
 - repository作業規則: `AGENTS.md`、`IMPLEMENTATION_RULES.md`
 - repository内の現在のtask schedule: `IMPLEMENTATION_PLAN.local.md`
 - 個別task requirement: `IMPLEMENTATION_TASKS/*.md`
-- project/tool-scoped Codex親規則の正本: `codex/AGENTS.md`（repository root `AGENTS.md`または`glm-codex-context`のproject bootstrapから参照）
+- project/tool-scoped Codex親規則の正本: `codex/AGENTS.md`（repository root `AGENTS.md`または`glm-codex-context`のproject-scoped `developer_instructions` bootstrapから参照）
 - on-demand Codex契約: `codex/instructions/`
 - worker/reviewer契約: `codex/glm-worker/prompts/`
 - deterministic behavior: `glm-worker/internal/`のproduction codeと対応test
