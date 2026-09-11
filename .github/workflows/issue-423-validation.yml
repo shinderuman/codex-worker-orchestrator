@@ -55,8 +55,28 @@ jobs:
           if text.count(old) != 1:
               raise SystemExit(f'final return anchor count: {text.count(old)}')
           text = text.replace(old, new, 1)
-
           path.write_text(text)
+
+          continuation_path = Path('glm-worker/internal/app/project_continuation.go')
+          continuation = continuation_path.read_text()
+          old = 'import "github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"\n'
+          new = 'import (\n\t"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"\n\t"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskcontract"\n)\n'
+          if continuation.count(old) != 1:
+              raise SystemExit(f'continuation import anchor count: {continuation.count(old)}')
+          continuation = continuation.replace(old, new, 1)
+          old = 'output.Goal.Status == "completed"'
+          new = 'output.Goal.Status == taskcontract.GoalStatusCompleted'
+          if continuation.count(old) != 1:
+              raise SystemExit(f'goal status anchor count: {continuation.count(old)}')
+          continuation_path.write_text(continuation.replace(old, new, 1))
+
+          test_path = Path('glm-worker/internal/app/project_continuation_test.go')
+          test = test_path.read_text()
+          old = '\twriteProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", projectContinuationPlan("completed", nil, nil, nil))\n\tst := state.AttachStateStore(cfg)\n\toutput, err := buildProjectState(cfg, st)\n'
+          new = '\twriteProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", projectContinuationPlan("completed", nil, nil, nil))\n\tst, err := state.NewStateStore(cfg)\n\tif err != nil {\n\t\tt.Fatal(err)\n\t}\n\toutput, err := buildProjectState(cfg, st)\n'
+          if test.count(old) != 1:
+              raise SystemExit(f'terminal fixture anchor count: {test.count(old)}')
+          test_path.write_text(test.replace(old, new, 1))
           PY
           gofmt -w glm-worker/internal/app/project_state.go glm-worker/internal/app/project_continuation.go glm-worker/internal/app/project_continuation_test.go
       - name: Targeted tests
