@@ -50,11 +50,10 @@ func (r *InstructionSurfaceGuardRunner) Run(
 	artifactErr := validateSensitiveResultArtifacts(r.base, result)
 	gitErr := gitGuard.verify()
 	instructionErr := r.base.verifyInstructionSurfaceGuard(instructionBefore)
-	if gitErr != nil || instructionErr != nil {
+	if artifactErr != nil || gitErr != nil || instructionErr != nil {
 		r.invalidateSessions()
-		return result, errors.Join(runErr, artifactErr, gitErr, instructionErr)
 	}
-	return result, errors.Join(runErr, artifactErr)
+	return result, errors.Join(runErr, artifactErr, gitErr, instructionErr)
 }
 
 func (r *InstructionSurfaceGuardRunner) Probe(model string) (ProbeResult, error) {
