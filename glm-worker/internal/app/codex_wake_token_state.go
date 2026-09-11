@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 type codexWakeTokenLease struct {
 	activePath string
 	leasePath  string
+	lock       *repoLockLease
 }
 
 const codexWakeTokenStateDir = "glm-worker-wake-transactions"
@@ -44,22 +46,48 @@ func persistCodexWakeToken(codexConfigDir, token string) error {
 func beginCodexWakeToken(codexConfigDir, token string) (codexWakeTokenLease, error) {
 	dir := filepath.Join(codexConfigDir, codexWakeTokenStateDir)
 	active := codexWakeTokenPath(dir, token)
-	data, err := os.ReadFile(active)
+	leasePath := active + ".inflight"
+	lock, err := AcquireRepoLockLease(active + ".lock")
 	if err != nil {
+		return codexWakeTokenLease{}, fmt.Errorf("claim wake transaction token lock: %w", err)
+	}
+	lease := codexWakeTokenLease{activePath: active, leasePath: leasePath, lock: lock}
+	data, err := os.ReadFile(active)
+	if errors.Is(err, os.ErrNotExist) {
+		data, err = os.ReadFile(leasePath)
+		if err == nil {
+			if err := validateCodexWakeTokenState(data, token); err != nil {
+				lease.releaseLock()
+				return codexWakeTokenLease{}, err
+			}
+			return lease, nil
+		}
+	}
+	if err != nil {
+		lease.releaseLock()
 		return codexWakeTokenLease{}, fmt.Errorf("wake transaction token is not active: %w", err)
 	}
-	stored := trimSingleTrailingNewline(data)
-	if subtle.ConstantTimeCompare(stored, []byte(token)) != 1 {
-		return codexWakeTokenLease{}, fmt.Errorf("wake transaction token does not match trusted state")
+	if err := validateCodexWakeTokenState(data, token); err != nil {
+		lease.releaseLock()
+		return codexWakeTokenLease{}, err
 	}
-	lease := active + ".inflight"
-	if err := os.Rename(active, lease); err != nil {
+	if err := os.Rename(active, leasePath); err != nil {
+		lease.releaseLock()
 		return codexWakeTokenLease{}, fmt.Errorf("claim wake transaction token: %w", err)
 	}
-	return codexWakeTokenLease{activePath: active, leasePath: lease}, nil
+	return lease, nil
+}
+
+func validateCodexWakeTokenState(data []byte, token string) error {
+	stored := trimSingleTrailingNewline(data)
+	if subtle.ConstantTimeCompare(stored, []byte(token)) != 1 {
+		return fmt.Errorf("wake transaction token does not match trusted state")
+	}
+	return nil
 }
 
 func (lease codexWakeTokenLease) commit() error {
+	defer lease.releaseLock()
 	if err := os.Remove(lease.leasePath); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("finalize wake transaction token: %w", err)
 	}
@@ -68,6 +96,13 @@ func (lease codexWakeTokenLease) commit() error {
 
 func (lease codexWakeTokenLease) rollback() {
 	_ = os.Rename(lease.leasePath, lease.activePath)
+	lease.releaseLock()
+}
+
+func (lease codexWakeTokenLease) releaseLock() {
+	if lease.lock != nil {
+		lease.lock.Release()
+	}
 }
 
 func removeCodexWakeToken(codexConfigDir, token string) {

@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"strings"
 	"testing"
@@ -16,10 +17,18 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 )
 
+type codexWakeErrorWriter struct {
+	err error
+}
+
 const (
 	testAppCodexWakeThread = "01a03a9e-10a0-7f11-801c-f04e5dbd5490"
 	testAppOtherThread     = "01a05f46-47aa-77d2-912c-0d6b078cb856"
 )
+
+func (w codexWakeErrorWriter) Write([]byte) (int, error) {
+	return 0, w.err
+}
 
 func TestParseCodexWakeCommands(t *testing.T) {
 	plan, err := ParseCommand([]string{"--codex-wake-plan", testAppCodexWakeThread})
@@ -106,9 +115,11 @@ func TestCodexWakeInvocationRejectsCrossThreadContext(t *testing.T) {
 	if err := printCodexWakeResponse(cmd, cfg, io.Discard); err == nil {
 		t.Fatal("cross-thread wake response was accepted")
 	}
-	if _, err := beginCodexWakeToken(cfg.CodexConfigDir, plan.Token); err != nil {
+	lease, err := beginCodexWakeToken(cfg.CodexConfigDir, plan.Token)
+	if err != nil {
 		t.Fatalf("rejected cross-thread response consumed token: %v", err)
 	}
+	lease.rollback()
 }
 
 func TestCodexWakeRegistrationResponseDoesNotBindParentThread(t *testing.T) {
@@ -173,6 +184,64 @@ func TestCodexWakeResponseConsumesTokenOnce(t *testing.T) {
 	}
 }
 
+func TestCodexWakeResponseOutputFailureKeepsInputTokenRetryable(t *testing.T) {
+	plan := testAppCodexWakePlan(t)
+	cfg := config.AppConfig{CodexConfigDir: t.TempDir()}
+	if err := persistCodexWakeToken(cfg.CodexConfigDir, plan.Token); err != nil {
+		t.Fatal(err)
+	}
+	cmd := Command{
+		Mode:      ModeCodexWakeResponse,
+		Payload:   testAppCodexWakeCreateResponse(t, plan.ExpectedAutomationID),
+		CodexWake: CodexWakeArgs{Token: plan.Token},
+	}
+	writeErr := errors.New("injected response output failure")
+	if err := printCodexWakeResponse(cmd, cfg, codexWakeErrorWriter{err: writeErr}); !errors.Is(err, writeErr) {
+		t.Fatalf("output failure = %v, want %v", err, writeErr)
+	}
+
+	var stdout bytes.Buffer
+	if err := printCodexWakeResponse(cmd, cfg, &stdout); err != nil {
+		t.Fatalf("retry with original token failed: %v", err)
+	}
+	var output autoresume.CodexWakeOutput
+	if err := json.Unmarshal(stdout.Bytes(), &output); err != nil {
+		t.Fatal(err)
+	}
+	if output.Status != autoresume.CodexWakeStatusWriteRequired || output.Token == "" {
+		t.Fatalf("retry output = %#v", output)
+	}
+	lease, err := beginCodexWakeToken(cfg.CodexConfigDir, output.Token)
+	if err != nil {
+		t.Fatalf("successor token was not persisted after successful retry: %v", err)
+	}
+	lease.rollback()
+	if err := printCodexWakeResponse(cmd, cfg, io.Discard); err == nil {
+		t.Fatal("input token remained replayable after successful response delivery")
+	}
+}
+
+func TestCodexWakeResponseRecoversInterruptedTokenClaim(t *testing.T) {
+	plan := testAppCodexWakePlan(t)
+	cfg := config.AppConfig{CodexConfigDir: t.TempDir()}
+	if err := persistCodexWakeToken(cfg.CodexConfigDir, plan.Token); err != nil {
+		t.Fatal(err)
+	}
+	lease, err := beginCodexWakeToken(cfg.CodexConfigDir, plan.Token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease.releaseLock()
+
+	cmd := Command{Mode: ModeCodexWakeResponse, Payload: `{}`, CodexWake: CodexWakeArgs{Token: plan.Token}}
+	if err := printCodexWakeResponse(cmd, cfg, io.Discard); err != nil {
+		t.Fatalf("orphaned inflight token was not recovered: %v", err)
+	}
+	if err := printCodexWakeResponse(cmd, cfg, io.Discard); err == nil {
+		t.Fatal("recovered token was replayable after successful response delivery")
+	}
+}
+
 func testAppCodexWakePlan(t *testing.T) autoresume.CodexWakeOutput {
 	t.Helper()
 	now := time.Date(2026, 9, 11, 2, 0, 0, 0, time.UTC)
@@ -185,6 +254,27 @@ func testAppCodexWakePlan(t *testing.T) autoresume.CodexWakeOutput {
 		t.Fatal(err)
 	}
 	return plan
+}
+
+func testAppCodexWakeCreateResponse(t *testing.T, automationID string) string {
+	t.Helper()
+	facts, err := json.Marshal(map[string]string{
+		"automation_id": automationID,
+		"mode":          "create",
+		"status":        "PAUSED",
+		"message":       "created successfully",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	envelope, err := json.Marshal(map[string]any{
+		"isError": false,
+		"content": []map[string]string{{"type": "text", "text": string(facts)}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(envelope)
 }
 
 func forgeCodexWakeToken(t *testing.T, token string) string {

@@ -992,15 +992,83 @@ func parentReviewSourceCoversTarget(target string, source parentEvidenceSourceBo
 }
 
 func parentReviewDiffCoversTarget(target string, diff parentEvidenceDiffBody) bool {
+	target = strings.TrimSpace(target)
 	for _, file := range diff.Files {
-		if !parentReviewTargetMatchesPath(target, file.Path) || file.Status == analysisStatusUnknown {
-			continue
-		}
-		if file.HeadBlob != "" || file.IndexBlob != "" || file.WorktreeSHA != "" {
+		if parentReviewDiffFileCoversTarget(target, file, diff.Body) {
 			return true
 		}
 	}
 	return false
+}
+
+func parentReviewDiffFileCoversTarget(target string, file parentEvidenceDiffFile, body string) bool {
+	if !parentReviewTargetMatchesPath(target, file.Path) || file.Status == analysisStatusUnknown {
+		return false
+	}
+	if file.HeadBlob == "" && file.IndexBlob == "" && file.WorktreeSHA == "" {
+		return false
+	}
+	suffix := strings.TrimSpace(strings.TrimPrefix(target, file.Path))
+	if suffix == "" || !strings.HasPrefix(suffix, ":") {
+		return true
+	}
+	locator := strings.TrimSpace(strings.TrimPrefix(suffix, ":"))
+	section := parentReviewDiffFileSection(body, file.Path)
+	if section == "" {
+		return false
+	}
+	if start, end, ok := parentReviewNumericRange(locator); ok {
+		return parentReviewDiffSectionCoversLines(section, start, end)
+	}
+	return locator != "" && strings.Contains(section, locator)
+}
+
+func parentReviewDiffFileSection(body, path string) string {
+	marker := "diff --git a/" + path + " b/" + path
+	start := strings.Index(body, marker)
+	if start < 0 {
+		return ""
+	}
+	section := body[start:]
+	if next := strings.Index(section[len(marker):], "\ndiff --git "); next >= 0 {
+		return section[:len(marker)+next]
+	}
+	return section
+}
+
+func parentReviewDiffSectionCoversLines(section string, start, end int) bool {
+	for _, line := range strings.Split(section, "\n") {
+		hunkStart, hunkEnd, ok := parentReviewDiffHunkCurrentRange(line)
+		if ok && start >= hunkStart && end <= hunkEnd {
+			return true
+		}
+	}
+	return false
+}
+
+func parentReviewDiffHunkCurrentRange(line string) (int, int, bool) {
+	if !strings.HasPrefix(line, "@@ ") {
+		return 0, 0, false
+	}
+	fields := strings.Fields(line)
+	if len(fields) < 3 || !strings.HasPrefix(fields[2], "+") {
+		return 0, 0, false
+	}
+	value := strings.TrimPrefix(fields[2], "+")
+	parts := strings.SplitN(value, ",", 2)
+	start, ok := parentReviewPositiveLine(parts[0])
+	if !ok {
+		return 0, 0, false
+	}
+	count := 1
+	if len(parts) == 2 {
+		parsed, err := strconv.Atoi(parts[1])
+		if err != nil || parsed <= 0 {
+			return 0, 0, false
+		}
+		count = parsed
+	}
+	return start, start + count - 1, true
 }
 
 func parentReviewTargetMatchesPath(target, path string) bool {
