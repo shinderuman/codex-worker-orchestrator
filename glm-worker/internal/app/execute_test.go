@@ -130,6 +130,14 @@ func initGitRepo(t *testing.T) string {
 	if out, err := exec.Command("git", "init", "--quiet", dir).CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v: %s", err, out)
 	}
+	if out, err := exec.Command(
+		"git", "-C", dir,
+		"-c", "user.name=app test",
+		"-c", "user.email=app-test@example.invalid",
+		"commit", "--quiet", "--allow-empty", "-m", "seed",
+	).CombinedOutput(); err != nil {
+		t.Fatalf("git seed commit: %v: %s", err, out)
+	}
 	return dir
 }
 

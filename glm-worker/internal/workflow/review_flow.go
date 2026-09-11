@@ -184,7 +184,7 @@ func (w *Workflow) finishReview(status state.TaskStatus, result packet.Result) e
 	if err := w.state.FinishReview(status); err != nil {
 		return err
 	}
-	if result.Status == packet.StatusNeedsSolReview {
+	if result.Status == packet.StatusNeedsSolReview && w.lastProducer.Role == string(state.ReviewerRole) {
 		return w.emitReviewResult(result)
 	}
 	return w.emitResult(result)
