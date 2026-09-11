@@ -28,6 +28,9 @@ const (
 	managedMarker             = "# managed-by: codex-worker-orchestrator glm-codex-context v1"
 	excludeMarker             = "# codex-worker-orchestrator glm-codex-context v1"
 	excludePattern            = "/.codex/config.toml"
+	contextStateEnabled       = "enabled"
+	contextStateDisabled      = "disabled"
+	contextStateConflict      = "conflict"
 )
 
 var managedConfig = []byte(managedMarker + `
@@ -106,47 +109,21 @@ func repositoryRoot(repo string) (string, error) {
 
 func enable(root string) (Result, error) {
 	configPath := filepath.Join(root, filepath.FromSlash(ProjectConfigRelativePath))
-	created := false
-	content, err := os.ReadFile(configPath)
-	switch {
-	case err == nil:
-		if !IsManagedConfig(content) {
-			return Result{}, fmt.Errorf("refusing to overwrite existing %s; merge the lean Codex settings explicitly or disable/remove the existing project config first", ProjectConfigRelativePath)
-		}
-	case errors.Is(err, os.ErrNotExist):
-		if err := writeManagedConfig(configPath); err != nil {
-			return Result{}, err
-		}
-		created = true
-	default:
-		return Result{}, fmt.Errorf("read %s: %w", ProjectConfigRelativePath, err)
+	configCreated, err := ensureManagedConfig(configPath)
+	if err != nil {
+		return Result{}, err
 	}
 	agentsCreated, err := enableProjectAgentsOverride(root)
 	if err != nil {
-		if created {
-			if removeErr := removeManagedConfig(configPath); removeErr != nil {
-				return Result{}, errors.Join(err, fmt.Errorf("rollback project config: %w", removeErr))
-			}
-		}
-		return Result{}, err
+		return Result{}, rollbackProjectContextEnable(root, configPath, configCreated, false, err)
 	}
 	excluded, err := ensureGitExclude(root)
 	if err != nil {
-		if agentsCreated {
-			_ = disableProjectAgentsOverride(root)
-		}
-		if created {
-			if removeErr := removeManagedConfig(configPath); removeErr != nil {
-				return Result{}, errors.Join(
-					fmt.Errorf("configure local Git exclude: %w", err),
-					fmt.Errorf("rollback project config: %w", removeErr),
-				)
-			}
-		}
-		return Result{}, fmt.Errorf("configure local Git exclude: %w", err)
+		cause := fmt.Errorf("configure local Git exclude: %w", err)
+		return Result{}, rollbackProjectContextEnable(root, configPath, configCreated, agentsCreated, cause)
 	}
 	return Result{
-		Status:            "enabled",
+		Status:            contextStateEnabled,
 		Action:            "enable",
 		RepoRoot:          root,
 		ConfigPath:        configPath,
@@ -155,6 +132,38 @@ func enable(root string) (Result, error) {
 		DesktopRestart:    false,
 		Detail:            "start a new Codex thread in this repository; unrelated repositories keep their normal Codex context",
 	}, nil
+}
+
+func ensureManagedConfig(configPath string) (bool, error) {
+	content, err := os.ReadFile(configPath)
+	switch {
+	case err == nil && !IsManagedConfig(content):
+		return false, fmt.Errorf("refusing to overwrite existing %s; merge the lean Codex settings explicitly or disable/remove the existing project config first", ProjectConfigRelativePath)
+	case err == nil:
+		return false, nil
+	case errors.Is(err, os.ErrNotExist):
+		if err := writeManagedConfig(configPath); err != nil {
+			return false, err
+		}
+		return true, nil
+	default:
+		return false, fmt.Errorf("read %s: %w", ProjectConfigRelativePath, err)
+	}
+}
+
+func rollbackProjectContextEnable(root, configPath string, configCreated, agentsCreated bool, cause error) error {
+	errs := []error{cause}
+	if agentsCreated {
+		if err := disableProjectAgentsOverride(root); err != nil {
+			errs = append(errs, fmt.Errorf("rollback project AGENTS bootstrap: %w", err))
+		}
+	}
+	if configCreated {
+		if err := removeManagedConfig(configPath); err != nil {
+			errs = append(errs, fmt.Errorf("rollback project config: %w", err))
+		}
+	}
+	return errors.Join(errs...)
 }
 
 func disable(root string) (Result, error) {
@@ -186,7 +195,7 @@ func disable(root string) (Result, error) {
 		return Result{}, err
 	}
 	return Result{
-		Status:            "disabled",
+		Status:            contextStateDisabled,
 		Action:            "disable",
 		RepoRoot:          root,
 		ConfigPath:        configPath,
@@ -199,33 +208,16 @@ func disable(root string) (Result, error) {
 
 func status(root string) (Result, error) {
 	configPath := filepath.Join(root, filepath.FromSlash(ProjectConfigRelativePath))
-	content, err := os.ReadFile(configPath)
-	state := "disabled"
-	detail := "no glm-codex-context managed project config"
-	switch {
-	case err == nil && IsManagedConfig(content):
-		state = "enabled"
-		detail = "lean project context is configured; setting changes apply to new Codex threads"
-	case err == nil:
-		state = "conflict"
-		detail = "project config exists but is not owned by glm-codex-context"
-	case errors.Is(err, os.ErrNotExist):
-	case err != nil:
-		return Result{}, fmt.Errorf("read %s: %w", ProjectConfigRelativePath, err)
-	}
-	agentsState, err := projectAgentsOverrideState(root)
+	state, detail, err := managedConfigState(configPath)
 	if err != nil {
 		return Result{}, err
 	}
-	agentsIgnored := false
-	if agentsState == "enabled" {
-		agentsIgnored, err = projectAgentsIgnored(root)
-		if err != nil {
-			return Result{}, err
-		}
+	agentsState, err := managedProjectAgentsState(root)
+	if err != nil {
+		return Result{}, err
 	}
-	if agentsState == "conflict" || (state == "enabled") != (agentsState == "enabled") || (agentsState == "enabled" && !agentsIgnored) {
-		state = "conflict"
+	if agentsState == contextStateConflict || (state == contextStateEnabled) != (agentsState == contextStateEnabled) {
+		state = contextStateConflict
 		detail = "project config and project-scoped AGENTS bootstrap ownership do not match"
 	}
 	excluded, err := gitExcluded(root)
@@ -242,6 +234,35 @@ func status(root string) (Result, error) {
 		DesktopRestart:    false,
 		Detail:            detail,
 	}, nil
+}
+
+func managedConfigState(configPath string) (string, string, error) {
+	content, err := os.ReadFile(configPath)
+	switch {
+	case err == nil && IsManagedConfig(content):
+		return contextStateEnabled, "lean project context is configured; setting changes apply to new Codex threads", nil
+	case err == nil:
+		return contextStateConflict, "project config exists but is not owned by glm-codex-context", nil
+	case errors.Is(err, os.ErrNotExist):
+		return contextStateDisabled, "no glm-codex-context managed project config", nil
+	default:
+		return "", "", fmt.Errorf("read %s: %w", ProjectConfigRelativePath, err)
+	}
+}
+
+func managedProjectAgentsState(root string) (string, error) {
+	state, err := projectAgentsOverrideState(root)
+	if err != nil || state != contextStateEnabled {
+		return state, err
+	}
+	ignored, err := projectAgentsIgnored(root)
+	if err != nil {
+		return "", err
+	}
+	if !ignored {
+		return contextStateConflict, nil
+	}
+	return contextStateEnabled, nil
 }
 
 func writeManagedConfig(path string) error {
