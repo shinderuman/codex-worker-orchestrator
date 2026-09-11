@@ -12,15 +12,16 @@ import (
 )
 
 type SessionRotationMarker struct {
-	Version        int                              `json:"version"`
-	ParentThreadID string                           `json:"parent_thread_id"`
-	State          string                           `json:"state"`
-	Directive      *SessionRotationDirective        `json:"directive,omitempty"`
-	Claim          *SessionRotationClaim            `json:"claim,omitempty"`
-	Issued         *SessionRotationIssued           `json:"issued,omitempty"`
-	LimitBaseline  *SessionLimitBaseline            `json:"limit_baseline,omitempty"`
-	LastEvaluation *SessionRotationEvaluationRecord `json:"last_evaluation,omitempty"`
-	UpdatedAt      string                           `json:"updated_at"`
+	Version             int                              `json:"version"`
+	ParentThreadID      string                           `json:"parent_thread_id"`
+	State               string                           `json:"state"`
+	Directive           *SessionRotationDirective        `json:"directive,omitempty"`
+	Claim               *SessionRotationClaim            `json:"claim,omitempty"`
+	Issued              *SessionRotationIssued           `json:"issued,omitempty"`
+	LastCreationOutcome *SessionRotationCreationOutcome  `json:"last_creation_outcome,omitempty"`
+	LimitBaseline       *SessionLimitBaseline            `json:"limit_baseline,omitempty"`
+	LastEvaluation      *SessionRotationEvaluationRecord `json:"last_evaluation,omitempty"`
+	UpdatedAt           string                           `json:"updated_at"`
 }
 
 type SessionRotationClaim struct {
@@ -131,7 +132,7 @@ type SessionRotationEvaluation struct {
 	LimitBaselineUpdate *SessionLimitBaseline
 }
 
-const sessionRotationMarkerVersion = 2
+const sessionRotationMarkerVersion = 3
 
 const (
 	SessionRotationStatePending = "pending"
@@ -205,7 +206,7 @@ func decodeSessionRotationMarker(data []byte) (*SessionRotationMarker, error) {
 	if err := decoder.Decode(&marker); err != nil {
 		return nil, fmt.Errorf("session rotation markerのschemaが不正です: %w", err)
 	}
-	if marker.Version == 1 {
+	if marker.Version == 1 || marker.Version == 2 {
 		marker.Version = sessionRotationMarkerVersion
 	}
 	if err := marker.validate(); err != nil {
@@ -252,7 +253,7 @@ func (marker *SessionRotationMarker) validateLifecycle() error {
 	if marker.Claim != nil && (!ValidGeneratedUUID(marker.Claim.ClaimID) || !ValidUUIDFormat(marker.Claim.ClaimantThreadID) || !ValidGeneratedUUID(marker.Claim.TargetTaskID) || marker.Claim.ClaimedAt == "") {
 		return fmt.Errorf("session rotation claimが不正です")
 	}
-	return nil
+	return marker.validateCreationOutcome()
 }
 
 func (marker *SessionRotationMarker) validateStateRecords() error {
@@ -433,7 +434,7 @@ func reusableSessionRotationClaim(marker *SessionRotationMarker, parentThreadID 
 	return *marker.Claim, true
 }
 
-func (s *StateStore) ReleaseSessionRotationClaim(parentThreadID, directiveID, claimID string) error {
+func (s *StateStore) ReleaseSessionRotationClaim(parentThreadID, directiveID, claimID string, result SessionRotationCreationResult) error {
 	marker, err := s.LoadSessionRotationMarker(parentThreadID)
 	if err != nil {
 		return err
@@ -444,6 +445,10 @@ func (s *StateStore) ReleaseSessionRotationClaim(parentThreadID, directiveID, cl
 	if marker.State != SessionRotationStateClaimed {
 		return fmt.Errorf("bind済みまたは完了済みのsession rotation claimはreleaseできません: %s", marker.State)
 	}
+	if err := result.validateForRelease(parentThreadID, directiveID, claimID, marker.Claim.TargetTaskID); err != nil {
+		return err
+	}
+	marker.LastCreationOutcome = newSessionRotationCreationOutcome(result)
 	marker.State = SessionRotationStatePending
 	marker.Claim = nil
 	return s.writeSessionRotationMarker(marker)

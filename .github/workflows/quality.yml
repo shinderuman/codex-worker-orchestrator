@@ -1,98 +1,33 @@
 name: Repository Lint
 
 on:
+  pull_request:
   push:
     branches:
-      - web-gpt/issue-390-rotation-failure-proof
+      - main
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: repository-lint-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-        with:
-          ref: web-gpt/issue-390-rotation-failure-proof
-          fetch-depth: 0
       - name: Read quality tool contract
-        id: quality_tools
+        id: quality-tools
         run: |
           GO_VERSION=$(awk -F': ' '$1 == "go" { print $2 }' quality-tools.yml)
           printf 'go_version=%s\n' "$GO_VERSION" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-go@v7
         with:
-          go-version: ${{ steps.quality_tools.outputs.go_version }}
+          go-version: ${{ steps.quality-tools.outputs.go_version }}
           cache: false
-      - name: Apply implementation script
-        run: |
-          python3 - <<'PY_RUNNER'
-          from pathlib import Path
-          workflow = Path('.github/workflows/web-gpt-issue-390-apply.yml').read_text()
-          marker = "          python3 - <<'PY'\n"
-          start = workflow.index(marker) + len(marker)
-          end = workflow.index("\n          PY\n", start)
-          lines = workflow[start:end].splitlines()
-          script = "\n".join(line[10:] if line.startswith("          ") else line for line in lines)
-          exec(compile(script, 'issue-390-apply.py', 'exec'))
-          test_path = Path('glm-worker/internal/state/session_rotation_failure_test.go')
-          test_text = test_path.read_text()
-          old = 'st, _, marker, _ := seedClaimedSessionRotation(t)'
-          if test_text.count(old) != 1:
-              raise SystemExit(f'expected one migration-test fixture replacement, found {test_text.count(old)}')
-          test_path.write_text(test_text.replace(old, '_, _, marker, _ := seedClaimedSessionRotation(t)', 1))
-          PY_RUNNER
-      - name: Fix lint findings
-        run: |
-          python3 - <<'PY_LINT'
-          from pathlib import Path
-          state_path = Path('glm-worker/internal/state/session_rotation.go')
-          state_text = state_path.read_text()
-          old_validation = "\tif marker.LastCreationOutcome != nil {\n\t\tif marker.Directive == nil {\n\t\t\treturn fmt.Errorf(\"session rotation creation outcomeにdirectiveがありません\")\n\t\t}\n\t\tif err := marker.LastCreationOutcome.validate(); err != nil {\n\t\t\treturn err\n\t\t}\n\t}\n"
-          if state_text.count(old_validation) != 1:
-              raise SystemExit(f'expected one creation outcome validation block, found {state_text.count(old_validation)}')
-          state_path.write_text(state_text.replace(old_validation, '', 1))
-          failure_path = Path('glm-worker/internal/state/session_rotation_failure.go')
-          failure_text = failure_path.read_text()
-          const_block = "const (\n\tSessionRotationCreationResultVersion = 1\n\tSessionRotationCreationOutcomeFailed = \"failed\"\n)\n\n"
-          if failure_text.count(const_block) != 1:
-              raise SystemExit(f'expected one creation result const block, found {failure_text.count(const_block)}')
-          failure_text = failure_text.replace(const_block, '', 1)
-          type_anchor = "type SessionRotationCreationOutcome struct {\n\tVersion        int    `json:\"version\"`\n\tOutcome        string `json:\"outcome\"`\n\tParentThreadID string `json:\"parent_thread_id\"`\n\tDirectiveID    string `json:\"directive_id\"`\n\tClaimID        string `json:\"claim_id\"`\n\tTargetTaskID   string `json:\"target_task_id\"`\n\tRecordedAt     string `json:\"recorded_at\"`\n}\n\n"
-          if failure_text.count(type_anchor) != 1:
-              raise SystemExit(f'expected one creation outcome type, found {failure_text.count(type_anchor)}')
-          failure_text = failure_text.replace(type_anchor, type_anchor + const_block, 1)
-          helper = "func (marker *SessionRotationMarker) validateCreationOutcome() error {\n\tif marker.LastCreationOutcome == nil {\n\t\treturn nil\n\t}\n\tif marker.Directive == nil {\n\t\treturn fmt.Errorf(\"session rotation creation outcomeにdirectiveがありません\")\n\t}\n\treturn marker.LastCreationOutcome.validate()\n}\n\n"
-          anchor = 'func (result SessionRotationCreationResult) validateForRelease('
-          if failure_text.count(anchor) != 1:
-              raise SystemExit(f'expected one validateForRelease anchor, found {failure_text.count(anchor)}')
-          failure_path.write_text(failure_text.replace(anchor, helper + anchor, 1))
-          state_text = state_path.read_text()
-          old_lifecycle = "func (marker *SessionRotationMarker) validateLifecycle() error {\n\tif err := marker.validateStateRecords(); err != nil {\n\t\treturn err\n\t}\n\tif marker.Claim != nil && (!ValidGeneratedUUID(marker.Claim.ClaimID) || !ValidUUIDFormat(marker.Claim.ClaimantThreadID) || !ValidGeneratedUUID(marker.Claim.TargetTaskID) || marker.Claim.ClaimedAt == \"\") {\n\t\treturn fmt.Errorf(\"session rotation claimが不正です\")\n\t}\n\treturn nil\n}"
-          new_lifecycle = old_lifecycle[:-len("\treturn nil\n}")] + "\treturn marker.validateCreationOutcome()\n}"
-          if state_text.count(old_lifecycle) != 1:
-              raise SystemExit(f'expected one validateLifecycle block, found {state_text.count(old_lifecycle)}')
-          state_path.write_text(state_text.replace(old_lifecycle, new_lifecycle, 1))
-          PY_LINT
-      - name: Restore final workflow tree
-        run: |
-          git show 1be9db709e97c3055689bb0f3c1eca42040473c2:.github/workflows/quality.yml > .github/workflows/quality.yml
-          git rm .github/workflows/web-gpt-issue-390-apply.yml
-          git rm .github/workflows/web-gpt-issue-390-run.yml
-      - name: Format Go changes
-        run: |
-          gofmt -w \
-            glm-worker/internal/state/session_rotation.go \
-            glm-worker/internal/state/session_rotation_failure.go \
-            glm-worker/internal/state/session_rotation_test.go \
-            glm-worker/internal/state/session_rotation_failure_test.go \
-            glm-worker/internal/parentactioncmd/parentactioncmd.go \
-            glm-worker/internal/parentactioncmd/session_rotation_failure.go \
-            glm-worker/internal/parentactioncmd/session_rotation_failure_test.go
-      - name: Targeted tests
-        working-directory: glm-worker
-        run: go test ./internal/state ./internal/parentactioncmd
       - name: Install quality tools
         run: |
           quality_bin="$(go env GOPATH)/bin"
@@ -103,11 +38,3 @@ jobs:
       - name: Full Go test suite
         working-directory: glm-worker
         run: go test ./...
-      - name: Commit implementation
-        run: |
-          git config user.name "web-gpt"
-          git config user.email "web-gpt@users.noreply.github.com"
-          git add -A
-          git diff --cached --check
-          git commit -m "Bind rotation claim release to creation failure proof"
-          git push origin HEAD:web-gpt/issue-390-rotation-failure-proof

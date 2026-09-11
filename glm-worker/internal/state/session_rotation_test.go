@@ -127,7 +127,7 @@ func TestSessionRotationMarkerSchemaValidation(t *testing.T) {
 		extra  string
 	}{
 		{"unknown field is rejected", nil, `,"unexpected":1}`},
-		{"bad version is rejected", func(m *SessionRotationMarker) { m.Version = 3 }, ""},
+		{"bad version is rejected", func(m *SessionRotationMarker) { m.Version = 4 }, ""},
 		{"bad thread id is rejected", func(m *SessionRotationMarker) { m.ParentThreadID = "not-a-uuid" }, ""},
 		{"pending without directive is rejected", func(m *SessionRotationMarker) { m.Directive = nil }, ""},
 		{"pending with issued record is rejected", func(m *SessionRotationMarker) {
@@ -560,14 +560,14 @@ func TestSessionRotationCreationFailureReleaseAndRetry(t *testing.T) {
 	if err != nil || idempotent.ClaimID != first.ClaimID || idempotent.TargetTaskID != first.TargetTaskID {
 		t.Fatalf("idempotent claim = %#v err=%v", idempotent, err)
 	}
-	if err := st.ReleaseSessionRotationClaim(oldThread, marker.Directive.DirectiveID, first.ClaimID); err != nil {
+	if err := st.ReleaseSessionRotationClaim(oldThread, marker.Directive.DirectiveID, first.ClaimID, sessionRotationFailedCreationResult(oldThread, marker.Directive.DirectiveID, first)); err != nil {
 		t.Fatal(err)
 	}
 	retry, err := st.ClaimSessionRotation(oldThread, marker.Directive.DirectiveID)
 	if err != nil || retry.ClaimID == first.ClaimID {
 		t.Fatalf("retry claim = %#v err=%v", retry, err)
 	}
-	if err := st.ReleaseSessionRotationClaim(oldThread, marker.Directive.DirectiveID, retry.ClaimID); err != nil {
+	if err := st.ReleaseSessionRotationClaim(oldThread, marker.Directive.DirectiveID, retry.ClaimID, sessionRotationFailedCreationResult(oldThread, marker.Directive.DirectiveID, retry)); err != nil {
 		t.Fatal(err)
 	}
 }
