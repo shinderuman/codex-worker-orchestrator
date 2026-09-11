@@ -245,21 +245,35 @@ jobs:
               raise SystemExit('expected preflight task fixture')
           path.write_text(text.replace(task_block, task_block + '\tseedParentReviewStateForTest(t, st, taskID)\n', 1))
 
-          for name in ('glm-worker/internal/app/watch_orphan_test.go', 'glm-worker/internal/app/watch_orphan_unix_test.go'):
-              path = Path(name)
-              text = path.read_text()
-              block = '''if err := st.Write("task.id", watchOrphanTaskID); err != nil {
-          \t\t\tt.Fatal(err)
-          \t\t}
-          ''' if name.endswith('_unix_test.go') else '''if err := st.Write("task.id", watchOrphanTaskID); err != nil {
+          path = Path('glm-worker/internal/app/watch_test.go')
+          text = path.read_text()
+          watch_task = '''\tif err := st.Write("task.id", "12345678-aaaa-bbbb-cccc-dddddddddddd"); err != nil {
           \t\tt.Fatal(err)
           \t}
           '''
-              count = text.count(block)
-              if count == 0:
-                  raise SystemExit(f'expected watch orphan task fixture in {name}')
-              insertion = block + ('\t\tseedParentReviewStateForTest(t, st, watchOrphanTaskID)\n' if name.endswith('_unix_test.go') else '\tseedParentReviewStateForTest(t, st, watchOrphanTaskID)\n')
-              path.write_text(text.replace(block, insertion))
+          if text.count(watch_task) != 1:
+              raise SystemExit('expected watchTestStore task fixture exactly once')
+          path.write_text(text.replace(watch_task, watch_task + '\tseedParentReviewStateForTest(t, st, "12345678-aaaa-bbbb-cccc-dddddddddddd")\n', 1))
+
+          path = Path('glm-worker/internal/app/watch_orphan_test.go')
+          text = path.read_text()
+          orphan_task = '''\tif err := st.Write("task.id", watchOrphanTaskID); err != nil {
+          \t\tt.Fatal(err)
+          \t}
+          '''
+          if text.count(orphan_task) != 1:
+              raise SystemExit('expected direct watch orphan task fixture exactly once')
+          path.write_text(text.replace(orphan_task, orphan_task + '\tseedParentReviewStateForTest(t, st, watchOrphanTaskID)\n', 1))
+
+          path = Path('glm-worker/internal/app/watch_orphan_unix_test.go')
+          text = path.read_text()
+          unix_task = '''\t\t\tif err := st.Write("task.id", watchOrphanTaskID); err != nil {
+          \t\t\t\tt.Fatal(err)
+          \t\t\t}
+          '''
+          if text.count(unix_task) != 1:
+              raise SystemExit(f'expected direct unix watch task fixture once, got {text.count(unix_task)}')
+          path.write_text(text.replace(unix_task, unix_task + '\t\t\tseedParentReviewStateForTest(t, st, watchOrphanTaskID)\n', 1))
 
           path = Path('glm-worker/internal/state/parent_action_parked_origin_test.go')
           text = path.read_text()
