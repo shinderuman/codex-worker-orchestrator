@@ -14,14 +14,15 @@ import (
 )
 
 type projectStateOutput struct {
-	Version      int                      `json:"version"`
-	PlanPresent  bool                     `json:"plan_present"`
-	Goal         *projectStateGoal        `json:"goal,omitempty"`
-	Schedule     *projectStateSchedule    `json:"schedule,omitempty"`
-	Dependencies []projectStateDependency `json:"dependencies"`
-	NextRunnable *string                  `json:"next_runnable"`
-	Blockers     []projectStateBlocker    `json:"blockers"`
-	Completion   *projectStateCompletion  `json:"completion,omitempty"`
+	Version      int                           `json:"version"`
+	PlanPresent  bool                          `json:"plan_present"`
+	Goal         *projectStateGoal             `json:"goal,omitempty"`
+	Schedule     *projectStateSchedule         `json:"schedule,omitempty"`
+	Dependencies []projectStateDependency      `json:"dependencies"`
+	NextRunnable *string                       `json:"next_runnable"`
+	Blockers     []projectStateBlocker         `json:"blockers"`
+	Completion   *projectStateCompletion       `json:"completion,omitempty"`
+	Continuation projectContinuationObligation `json:"continuation"`
 }
 
 type projectStateGoal struct {
@@ -72,7 +73,7 @@ type projectStateGraph struct {
 	byPath   map[string]*projectTaskNode
 }
 
-const projectStateVersion = 1
+const projectStateVersion = 2
 
 func printProjectState(cfg config.AppConfig, st *state.StateStore, stdout io.Writer) error {
 	output, err := buildProjectState(cfg, st)
@@ -94,6 +95,7 @@ func buildProjectState(cfg config.AppConfig, st *state.StateStore) (projectState
 		Version:      projectStateVersion,
 		Dependencies: []projectStateDependency{},
 		Blockers:     []projectStateBlocker{},
+		Continuation: unknownProjectContinuation(projectContinuationReasonPlanAbsent),
 	}
 	planContent, err := readProjectStatePlan(cfg.RepoRoot)
 	if err != nil {
@@ -131,6 +133,7 @@ func buildProjectState(cfg config.AppConfig, st *state.StateStore) (projectState
 		}
 		output.Completion = completion
 	}
+	output.Continuation = deriveProjectContinuation(output, st)
 	return output, nil
 }
 
