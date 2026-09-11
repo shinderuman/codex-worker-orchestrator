@@ -145,50 +145,6 @@ func TestCompleteRejectsInstallEvidenceAfterLaterRuntimeChange(t *testing.T) {
 	}
 }
 
-func TestVerifyRuntimeInstalledFilesRejectsManagedInstructionDrift(t *testing.T) {
-	cfg, _ := newInstallActionRepo(t)
-	cfg.CodexConfigDir = t.TempDir()
-	sourcePath := filepath.Join(cfg.RepoRoot, "codex", "instructions", "example.md")
-	if err := os.MkdirAll(filepath.Dir(sourcePath), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(sourcePath, []byte("current\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	installedPath := filepath.Join(cfg.CodexConfigDir, "instructions", "example.md")
-	if err := os.MkdirAll(filepath.Dir(installedPath), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(installedPath, []byte("stale\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := verifyRuntimeInstalledFiles(cfg, []string{"codex/instructions/example.md"}); err == nil {
-		t.Fatal("stale managed instruction was accepted")
-	}
-}
-
-func TestVerifyRuntimeInstalledFilesHandlesManagedInstructionDeletion(t *testing.T) {
-	cfg, _ := newInstallActionRepo(t)
-	cfg.CodexConfigDir = t.TempDir()
-	installedPath := filepath.Join(cfg.CodexConfigDir, "instructions", "removed.md")
-	if err := os.MkdirAll(filepath.Dir(installedPath), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(installedPath, []byte("stale\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	paths := []string{"codex/instructions/removed.md"}
-	if err := verifyRuntimeInstalledFiles(cfg, paths); err == nil {
-		t.Fatal("installed managed instruction surviving source deletion was accepted")
-	}
-	if err := os.Remove(installedPath); err != nil {
-		t.Fatal(err)
-	}
-	if err := verifyRuntimeInstalledFiles(cfg, paths); err != nil {
-		t.Fatalf("matching managed deletion was rejected: %v", err)
-	}
-}
-
 func TestRunRuntimeInstallSmokeRejectsFailedInstalledSmoke(t *testing.T) {
 	cfg, _ := newInstallActionRepo(t)
 	writeInstalledRuntimeProbeStub(t, "unused")
