@@ -1,0 +1,131 @@
+name: Web GPT Issue 396 Legacy Test Patch
+
+on:
+  push:
+    branches:
+      - web-gpt/issue-396-sol-review-evidence
+    paths:
+      - .github/workflows/web-gpt-396-legacy-test-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: web-gpt/issue-396-sol-review-evidence
+      - name: Apply test updates
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("glm-worker/internal/app/parent_review_test.go")
+          text = path.read_text()
+          old = """func executeAccept(t *testing.T, cfg config.AppConfig) acceptOutput {
+          \tt.Helper()
+          \tvar accept acceptOutput
+          \texecuteCommandOutput(t, cfg, ModeAccept, &accept, "accept")
+          \treturn accept
+          }
+          """
+          new = """func executeAccept(t *testing.T, cfg config.AppConfig) acceptOutput {
+          \tt.Helper()
+          \tst, err := state.NewStateStore(cfg)
+          \tif err != nil {
+          \t\tt.Fatal(err)
+          \t}
+          \tbinding, err := st.CurrentParentReviewBinding()
+          \tif err != nil {
+          \t\tt.Fatal(err)
+          \t}
+          \tif binding != nil && binding.Proof == nil {
+          \t\tif err := st.MarkParentReviewEvidence(binding.ID, "parent-review-test-evidence", []state.ParentReviewEvidenceClaim{{
+          \t\t\tKind: "source", Digest: "parent-review-test-evidence", Locator: "legacy parent review test",
+          \t\t}}); err != nil {
+          \t\t\tt.Fatal(err)
+          \t\t}
+          \t}
+          \tvar accept acceptOutput
+          \texecuteCommandOutput(t, cfg, ModeAccept, &accept, "accept")
+          \treturn accept
+          }
+          """
+          if text.count(old) != 1:
+              raise SystemExit("executeAccept source mismatch")
+          path.write_text(text.replace(old, new))
+
+          path = Path("glm-worker/internal/app/parent_review_evidence_test.go")
+          text = path.read_text()
+          old = """import (
+          \t"bytes"
+          \t"encoding/json"
+          \t"os"
+          \t"os/exec"
+          \t"path/filepath"
+          \t"testing"
+          """
+          new = """import (
+          \t"bytes"
+          \t"encoding/json"
+          \t"io"
+          \t"os"
+          \t"os/exec"
+          \t"path/filepath"
+          \t"strings"
+          \t"testing"
+          """
+          if text.count(old) != 1:
+              raise SystemExit("import source mismatch")
+          text = text.replace(old, new)
+          marker = "func TestParentEvidenceMatchingSourceEnablesReviewAccept(t *testing.T) {\n"
+          test = """func TestExecuteAcceptRequiresProjectedReviewEvidence(t *testing.T) {
+          \tcfg, st, snapshot := newParentEvidenceReviewStore(t)
+          \topenParentEvidenceReview(t, st, snapshot, "review.go:2")
+
+          \tif err := Execute(Command{Mode: ModeAccept}, cfg, nil, io.Discard, io.Discard); err == nil || !strings.Contains(err.Error(), "requires matching current target evidence") {
+          \t\tt.Fatalf("accept without projected evidence = %v", err)
+          \t}
+
+          \tmanifestPath := writeParentReviewEvidenceManifest(t, parentEvidenceManifest{
+          \t\tVersion: parentEvidenceManifestVersion,
+          \t\tReason:  "inspect exact review target",
+          \t\tSource: []parentEvidenceSourceRequest{{
+          \t\t\tQuestion:    "inspect target",
+          \t\t\tPath:        "review.go",
+          \t\t\tLineStart:   1,
+          \t\t\tLineEnd:     3,
+          \t\t\tBudgetBytes: 4096,
+          \t\t}},
+          \t})
+          \tif err := printParentEvidence(Command{EvidenceManifest: manifestPath}, cfg, st, &bytes.Buffer{}); err != nil {
+          \t\tt.Fatal(err)
+          \t}
+          \tvar stdout bytes.Buffer
+          \tif err := Execute(Command{Mode: ModeAccept}, cfg, nil, &stdout, io.Discard); err != nil {
+          \t\tt.Fatal(err)
+          \t}
+          \tvar output acceptOutput
+          \tif err := json.Unmarshal(stdout.Bytes(), &output); err != nil {
+          \t\tt.Fatal(err)
+          \t}
+          \tif !output.Accepted {
+          \t\tt.Fatalf("accept after projected evidence = %#v", output)
+          \t}
+          }
+
+          """
+          if text.count(marker) != 1:
+              raise SystemExit("test insertion marker mismatch")
+          path.write_text(text.replace(marker, test + marker))
+          PY
+      - name: Commit
+        run: |
+          rm .github/workflows/web-gpt-396-legacy-test-patch.yml
+          git config user.name shinderuman
+          git config user.email shinderuman@gmail.com
+          git add glm-worker/internal/app/parent_review_test.go glm-worker/internal/app/parent_review_evidence_test.go .github/workflows/web-gpt-396-legacy-test-patch.yml
+          git commit -m 'Update accept tests for review evidence contract'
+          git push origin HEAD:web-gpt/issue-396-sol-review-evidence
