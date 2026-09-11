@@ -167,10 +167,28 @@ func loadQualityToolVersions(root string) (qualityToolVersions, error) {
 		Shellcheck:    values["shellcheck"],
 		Shfmt:         values["shfmt"],
 	}
-	if versions.Namespace == "" || versions.DefaultBinDir == "" || versions.Go == "" || versions.LintGo == "" || versions.GolangCILint == "" || versions.Shellcheck == "" || versions.Shfmt == "" {
+	if !versions.complete() {
 		return qualityToolVersions{}, &QualityToolContractError{Cause: fmt.Errorf("quality tool contract is incomplete")}
 	}
 	return versions, nil
+}
+
+func (versions qualityToolVersions) complete() bool {
+	values := []string{
+		versions.Namespace,
+		versions.DefaultBinDir,
+		versions.Go,
+		versions.LintGo,
+		versions.GolangCILint,
+		versions.Shellcheck,
+		versions.Shfmt,
+	}
+	for _, value := range values {
+		if value == "" {
+			return false
+		}
+	}
+	return true
 }
 
 func validateQualityToolVersions(root string, versions qualityToolVersions, runner versionCommandRunner) error {
