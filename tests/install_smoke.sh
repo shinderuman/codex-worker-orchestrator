@@ -196,7 +196,14 @@ grep -Fq '"relationship":"same"' "$tmp/runtime-status.json"
 find "$home/.codex" "$home/.claude" "$home/.local/bin" -type f -exec shasum -a 256 {} \; | LC_ALL=C sort >"$tmp/first.sha"
 run_install
 find "$home/.codex" "$home/.claude" "$home/.local/bin" -type f -exec shasum -a 256 {} \; | LC_ALL=C sort >"$tmp/second.sha"
-cmp "$tmp/first.sha" "$tmp/second.sha"
+if ! cmp "$tmp/first.sha" "$tmp/second.sha"; then
+	printf '%s\n' 'installer idempotence hash drift:' >&2
+	printf '%s\n' '--- before' >&2
+	cat "$tmp/first.sha" >&2
+	printf '%s\n' '--- after' >&2
+	cat "$tmp/second.sha" >&2
+	exit 1
+fi
 
 missing_bin="$tmp/missing-bin"
 mkdir -p "$missing_bin"
