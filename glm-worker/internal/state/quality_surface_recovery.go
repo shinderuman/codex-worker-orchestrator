@@ -34,7 +34,11 @@ func (s *StateStore) RecoverQualitySurfaceDecisionWait(expectedTaskID string) er
 	if err := retainedDecisionWaitApprovalCheckpoint(checkpoint); err != nil {
 		return err
 	}
-	switch label := s.OpenParentReviewLabel(); label {
+	label, err := s.CurrentParentReviewLabel()
+	if err != nil {
+		return fmt.Errorf("quality-surface decision wait recovery cannot read parent review state: %w", err)
+	}
+	switch label {
 	case roundCommentNone, string(packet.StatusNeedsSolReview):
 	default:
 		return fmt.Errorf("quality-surface decision wait recovery requires no open parent review or an open %s review, got %s", packet.StatusNeedsSolReview, label)
@@ -73,14 +77,22 @@ func (s *StateStore) RecoverApprovedQualitySurfaceReview(expectedTaskID string) 
 	if s.Exists("pending-decision") {
 		return fmt.Errorf("approved quality-surface review recovery requires no leftover pending decision marker")
 	}
-	if label := s.OpenParentReviewLabel(); label != string(packet.StatusNeedsSolReview) {
+	label, err := s.CurrentParentReviewLabel()
+	if err != nil {
+		return fmt.Errorf("approved quality-surface review recovery cannot read parent review state: %w", err)
+	}
+	if label != string(packet.StatusNeedsSolReview) {
 		return fmt.Errorf("approved quality-surface review recovery requires a stale %s parent review, got %s", packet.StatusNeedsSolReview, label)
 	}
 	resolved, err := s.RecordParentOutcome(ParentOutcomeAccepted, "", "")
 	if err != nil {
 		return fmt.Errorf("approved quality-surface review recovery cannot close the stale parent review: %w", err)
 	}
-	if !resolved || s.OpenParentReviewLabel() != roundCommentNone {
+	after, err := s.CurrentParentReviewLabel()
+	if err != nil {
+		return fmt.Errorf("approved quality-surface review recovery cannot verify parent review closure: %w", err)
+	}
+	if !resolved || after != roundCommentNone {
 		return fmt.Errorf("approved quality-surface review recovery could not close the stale %s parent review", packet.StatusNeedsSolReview)
 	}
 	return nil

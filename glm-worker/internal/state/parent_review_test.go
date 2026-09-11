@@ -10,8 +10,10 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 )
 
-func recordPacket(st *StateStore, status packet.Status, risk packet.Risk, producer ParentReviewProducer) {
-	st.RecordSolResult(packet.Result{Status: status, Risk: risk}, producer)
+func recordPacket(t *testing.T, st *StateStore, status packet.Status, risk packet.Risk, producer ParentReviewProducer) {
+	if err := st.RecordSolResult(packet.Result{Status: status, Risk: risk}, producer); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestRecordSolResultOpensParentReviewOpportunity(t *testing.T) {
@@ -20,7 +22,7 @@ func TestRecordSolResultOpensParentReviewOpportunity(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	recordPacket(st, packet.StatusNeedsSolReview, packet.RiskHigh, ParentReviewProducer{Role: "reviewer", Model: "sonnet"})
+	recordPacket(t, st, packet.StatusNeedsSolReview, packet.RiskHigh, ParentReviewProducer{Role: "reviewer", Model: "sonnet"})
 
 	stats, err := st.loadTaskStats()
 	if err != nil {
@@ -48,7 +50,7 @@ func TestRecordParentOutcomeResolvesOncePerOpportunity(t *testing.T) {
 	if _, err := st.StartNewTask(); err != nil {
 		t.Fatal(err)
 	}
-	recordPacket(st, packet.StatusNeedsSolReview, packet.RiskLow, ParentReviewProducer{Role: "reviewer", Model: "haiku"})
+	recordPacket(t, st, packet.StatusNeedsSolReview, packet.RiskLow, ParentReviewProducer{Role: "reviewer", Model: "haiku"})
 
 	resolved, err := st.RecordParentOutcome(ParentOutcomeFix, ParentOriginCodexReview, ParentCauseWorker)
 	if err != nil || !resolved {
@@ -90,7 +92,7 @@ func TestRecordParentOutcomeDefaultsUndeclaredOriginToUnknown(t *testing.T) {
 	if _, err := st.StartNewTask(); err != nil {
 		t.Fatal(err)
 	}
-	recordPacket(st, packet.StatusNeedsSolReview, packet.RiskLow, ParentReviewProducer{})
+	recordPacket(t, st, packet.StatusNeedsSolReview, packet.RiskLow, ParentReviewProducer{})
 
 	if _, err := st.RecordParentOutcome(ParentOutcomeFix, "", ""); err != nil {
 		t.Fatal(err)
@@ -115,7 +117,7 @@ func TestRecordParentOutcomeRejectsInvalidKindAndOrigin(t *testing.T) {
 	if _, err := st.StartNewTask(); err != nil {
 		t.Fatal(err)
 	}
-	recordPacket(st, packet.StatusNeedsSolReview, packet.RiskLow, ParentReviewProducer{})
+	recordPacket(t, st, packet.StatusNeedsSolReview, packet.RiskLow, ParentReviewProducer{})
 
 	if _, err := st.RecordParentOutcome("adopted", "", ""); err == nil {
 		t.Fatal("集合外outcome kindを拒否する必要があります")
@@ -140,7 +142,7 @@ func TestRecordParentOutcomeAcceptRejectsDecisionPacket(t *testing.T) {
 	if _, err := st.StartNewTask(); err != nil {
 		t.Fatal(err)
 	}
-	recordPacket(st, packet.StatusNeedsSolDecision, packet.RiskLow, ParentReviewProducer{})
+	recordPacket(t, st, packet.StatusNeedsSolDecision, packet.RiskLow, ParentReviewProducer{})
 
 	if _, err := st.RecordParentOutcome(ParentOutcomeAccepted, "", ""); err == nil {
 		t.Fatal("decision packetへの--acceptを拒否する必要があります")
@@ -160,7 +162,7 @@ func TestArchiveClosesOpenParentReviewAsUnknown(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	recordPacket(st, packet.StatusPass, packet.RiskLow, ParentReviewProducer{Role: "reviewer", Model: "haiku"})
+	recordPacket(t, st, packet.StatusPass, packet.RiskLow, ParentReviewProducer{Role: "reviewer", Model: "haiku"})
 
 	secondTask, err := st.StartNewTask()
 	if err != nil {
@@ -204,8 +206,8 @@ func TestSupersededOpenOpportunityCountsUnknown(t *testing.T) {
 	if _, err := st.StartNewTask(); err != nil {
 		t.Fatal(err)
 	}
-	recordPacket(st, packet.StatusNeedsSolReview, packet.RiskLow, ParentReviewProducer{Role: "reviewer", Model: "haiku"})
-	recordPacket(st, packet.StatusPass, packet.RiskHigh, ParentReviewProducer{Role: "reviewer", Model: "sonnet"})
+	recordPacket(t, st, packet.StatusNeedsSolReview, packet.RiskLow, ParentReviewProducer{Role: "reviewer", Model: "haiku"})
+	recordPacket(t, st, packet.StatusPass, packet.RiskHigh, ParentReviewProducer{Role: "reviewer", Model: "sonnet"})
 
 	stats, err := st.loadTaskStats()
 	if err != nil {

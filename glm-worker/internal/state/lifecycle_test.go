@@ -288,7 +288,9 @@ func TestRecoverParentActionBeginRejectsLifecycleContradictions(t *testing.T) {
 			target: TaskStatusWaitingDecision,
 			seed: func(t *testing.T, st *StateStore) {
 				t.Helper()
-				st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolReview, Risk: packet.RiskLow}, ParentReviewProducer{})
+				if err := st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolReview, Risk: packet.RiskLow}, ParentReviewProducer{}); err != nil {
+					t.Fatal(err)
+				}
 			},
 		},
 		{

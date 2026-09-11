@@ -333,7 +333,9 @@ func seedApprovedQualitySurfaceActivation(t *testing.T, st *StateStore) {
 	if err := st.SaveResumeCheckpoint(qualitySurfaceDecisionCheckpoint()); err != nil {
 		t.Fatal(err)
 	}
-	st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolReview, Risk: packet.RiskHigh}, ParentReviewProducer{Role: "worker", Model: "opus"})
+	if err := st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolReview, Risk: packet.RiskHigh}, ParentReviewProducer{Role: "worker", Model: "opus"}); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestActivateQualitySurfaceApprovalClosesOpenParentReview(t *testing.T) {
@@ -375,7 +377,9 @@ func TestActivateQualitySurfaceApprovalRejectsOpenDecisionReview(t *testing.T) {
 	if err := st.SaveResumeCheckpoint(qualitySurfaceDecisionCheckpoint()); err != nil {
 		t.Fatal(err)
 	}
-	st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolDecision, Risk: packet.RiskHigh}, ParentReviewProducer{Role: "worker", Model: "opus"})
+	if err := st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolDecision, Risk: packet.RiskHigh}, ParentReviewProducer{Role: "worker", Model: "opus"}); err != nil {
+		t.Fatal(err)
+	}
 
 	if err := st.ActivateQualitySurfaceApproval(); err == nil {
 		t.Fatal("open Sol decision review must block activation")
@@ -394,7 +398,7 @@ func TestActivateQualitySurfaceApprovalAbortsWhenReviewCloseFails(t *testing.T) 
 		t.Fatal(err)
 	}
 	seedApprovedQualitySurfaceActivation(t, st)
-	failWritesFor(t, st, currentStatsFile)
+	failWritesFor(t, st, parentReviewStateFile)
 
 	err := st.ActivateQualitySurfaceApproval()
 	if err == nil {
@@ -479,7 +483,9 @@ func TestRecoverQualitySurfaceDecisionWaitRepairsLeftoverMarker(t *testing.T) {
 	if err := st.SaveResumeCheckpoint(qualitySurfaceDecisionCheckpoint()); err != nil {
 		t.Fatal(err)
 	}
-	st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolReview, Risk: packet.RiskHigh}, ParentReviewProducer{Role: "worker", Model: "opus"})
+	if err := st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolReview, Risk: packet.RiskHigh}, ParentReviewProducer{Role: "worker", Model: "opus"}); err != nil {
+		t.Fatal(err)
+	}
 
 	if _, err := st.ParentActionPlan(); err == nil {
 		t.Fatal("leftover marker must keep the task inconsistent before recovery")
@@ -589,7 +595,9 @@ func TestRecoverQualitySurfaceDecisionWaitRejectsForeignConditions(t *testing.T)
 			status: TaskStatusWaitingSolReview,
 			mutate: func(t *testing.T, st *StateStore) {
 				t.Helper()
-				st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolDecision, Risk: packet.RiskHigh}, ParentReviewProducer{Role: "worker", Model: "opus"})
+				if err := st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolDecision, Risk: packet.RiskHigh}, ParentReviewProducer{Role: "worker", Model: "opus"}); err != nil {
+					t.Fatal(err)
+				}
 			},
 		},
 	}
@@ -643,7 +651,9 @@ func TestRecoverApprovedQualitySurfaceReviewClosesStaleReview(t *testing.T) {
 	if err := st.SaveResumeCheckpoint(stoppedAutoFixCheckpoint()); err != nil {
 		t.Fatal(err)
 	}
-	st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolReview, Risk: packet.RiskHigh}, ParentReviewProducer{Role: "worker", Model: "opus"})
+	if err := st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolReview, Risk: packet.RiskHigh}, ParentReviewProducer{Role: "worker", Model: "opus"}); err != nil {
+		t.Fatal(err)
+	}
 
 	if _, err := st.ParentActionPlan(); err == nil {
 		t.Fatal("stale open review must keep the stopped task inconsistent before recovery")
@@ -681,7 +691,9 @@ func TestRecoverApprovedQualitySurfaceReviewRejectsTaskIDMismatch(t *testing.T) 
 	if err := st.SaveResumeCheckpoint(stoppedAutoFixCheckpoint()); err != nil {
 		t.Fatal(err)
 	}
-	st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolReview, Risk: packet.RiskHigh}, ParentReviewProducer{Role: "worker", Model: "opus"})
+	if err := st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolReview, Risk: packet.RiskHigh}, ParentReviewProducer{Role: "worker", Model: "opus"}); err != nil {
+		t.Fatal(err)
+	}
 
 	if err := st.RecoverApprovedQualitySurfaceReview("00000000-0000-4000-8000-000000000000"); err == nil {
 		t.Fatal("task ID mismatch must be rejected")
@@ -702,7 +714,9 @@ func TestRecoverApprovedQualitySurfaceReviewRejectsLeftoverPendingDecision(t *te
 	if err := st.SaveResumeCheckpoint(stoppedAutoFixCheckpoint()); err != nil {
 		t.Fatal(err)
 	}
-	st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolReview, Risk: packet.RiskHigh}, ParentReviewProducer{Role: "worker", Model: "opus"})
+	if err := st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolReview, Risk: packet.RiskHigh}, ParentReviewProducer{Role: "worker", Model: "opus"}); err != nil {
+		t.Fatal(err)
+	}
 	if err := st.Touch("pending-decision"); err != nil {
 		t.Fatal(err)
 	}
@@ -777,7 +791,9 @@ func TestRecoverApprovedQualitySurfaceReviewRejectsForeignConditions(t *testing.
 			status: TaskStatusRateLimited,
 			mutate: func(t *testing.T, st *StateStore) {
 				t.Helper()
-				st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolDecision, Risk: packet.RiskHigh}, ParentReviewProducer{Role: "worker", Model: "opus"})
+				if err := st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolDecision, Risk: packet.RiskHigh}, ParentReviewProducer{Role: "worker", Model: "opus"}); err != nil {
+					t.Fatal(err)
+				}
 			},
 		},
 	}

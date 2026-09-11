@@ -17,7 +17,9 @@ func TestAwaitObservationNoGoDefersCompletionWithoutAnotherDispatch(t *testing.T
 	if err := st.Touch("pending-decision"); err != nil {
 		t.Fatal(err)
 	}
-	st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolDecision, Risk: packet.RiskHigh}, ParentReviewProducer{Role: string(WorkerRole), Model: "opus"})
+	if err := st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolDecision, Risk: packet.RiskHigh}, ParentReviewProducer{Role: string(WorkerRole), Model: "opus"}); err != nil {
+		t.Fatal(err)
+	}
 
 	if !st.ObservationNoGoEligible() {
 		t.Fatal("observation decision should admit terminal no-go")
@@ -96,7 +98,9 @@ func TestAwaitObservationNoGoRejectsGenericDecision(t *testing.T) {
 	if err := st.Touch("pending-decision"); err != nil {
 		t.Fatal(err)
 	}
-	st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolDecision, Risk: packet.RiskHigh}, ParentReviewProducer{})
+	if err := st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolDecision, Risk: packet.RiskHigh}, ParentReviewProducer{}); err != nil {
+		t.Fatal(err)
+	}
 
 	if st.ObservationNoGoEligible() {
 		t.Fatal("generic decision must not admit terminal no-go")

@@ -34,7 +34,9 @@ func seedQualitySurfaceDecisionWaitLeftover(t *testing.T, st *state.StateStore) 
 	}); err != nil {
 		t.Fatal(err)
 	}
-	st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolReview, Risk: packet.RiskHigh}, state.ParentReviewProducer{Role: "worker", Model: "opus"})
+	if err := st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolReview, Risk: packet.RiskHigh}, state.ParentReviewProducer{Role: "worker", Model: "opus"}); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func seedStaleApprovedQualitySurfaceReview(t *testing.T, st *state.StateStore) {
@@ -53,7 +55,9 @@ func seedStaleApprovedQualitySurfaceReview(t *testing.T, st *state.StateStore) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolReview, Risk: packet.RiskHigh}, state.ParentReviewProducer{Role: "worker", Model: "opus"})
+	if err := st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolReview, Risk: packet.RiskHigh}, state.ParentReviewProducer{Role: "worker", Model: "opus"}); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestRecoverQualitySurfaceCommandRepairsDecisionWaitLeftover(t *testing.T) {

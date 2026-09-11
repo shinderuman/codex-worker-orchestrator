@@ -38,9 +38,18 @@ func parkFromStatus(t *testing.T, st *StateStore, from TaskStatus) {
 
 func setParkedReviewLabel(t *testing.T, st *StateStore, label string) {
 	t.Helper()
-	st.UpdateTaskStats(func(stats *TaskStats) {
-		stats.ParentReviewOpen = &ParentReviewOpenState{PacketStatus: label}
-	})
+	current, err := st.loadParentReviewState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if label == roundCommentNone {
+		current.Open = nil
+	} else {
+		current.Open = &ParentReviewOpenState{PacketStatus: label}
+	}
+	if err := st.writeParentReviewState(current); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestParkedPlanRequiresDecisionOriginPendingDecision(t *testing.T) {

@@ -86,6 +86,7 @@ var parentOutcomeKinds = map[string]bool{
 	ParentOutcomeFix:      true,
 	ParentOutcomeDecision: true,
 	ParentOutcomeUnknown:  true,
+	ParentOutcomeNoGo:     true,
 }
 
 func ValidParentOrigin(value string) bool {
@@ -133,14 +134,7 @@ func (stats *TaskStats) resolveParentOutcome(kind, origin, cause string) (Parent
 		return ParentReviewOpenState{}, false, fmt.Errorf("pending Sol decision must be resolved with --decision before --accept")
 	}
 	resolved := *open
-	addInt(&stats.ParentOutcomes, kind, 1)
-	if kind == ParentOutcomeFix {
-		if origin == "" {
-			origin = ParentOriginUnknown
-		}
-		addInt(&stats.ParentFixOrigins, origin, 1)
-	}
-	stats.recordParentOutcomeFacets(resolved)
+	stats.recordParentOutcome(kind, origin, resolved)
 	stats.ParentReviewOpen = nil
 	return resolved, true, nil
 }
@@ -153,6 +147,17 @@ func validateParentFixDeclaration(origin, cause string) error {
 		return fmt.Errorf("unknown parent fix cause: %s", cause)
 	}
 	return nil
+}
+
+func (stats *TaskStats) recordParentOutcome(kind, origin string, resolved ParentReviewOpenState) {
+	addInt(&stats.ParentOutcomes, kind, 1)
+	if kind == ParentOutcomeFix {
+		if origin == "" {
+			origin = ParentOriginUnknown
+		}
+		addInt(&stats.ParentFixOrigins, origin, 1)
+	}
+	stats.recordParentOutcomeFacets(resolved)
 }
 
 func (stats *TaskStats) recordParentOutcomeFacets(resolved ParentReviewOpenState) {
@@ -170,31 +175,20 @@ func (stats *TaskStats) recordParentOutcomeFacets(resolved ParentReviewOpenState
 }
 
 func (s *StateStore) RecordParentOutcome(kind, origin, cause string) (bool, error) {
-	stats, err := s.loadTaskStats()
+	taskID, err := s.TaskID()
 	if err != nil {
-		stats, err = s.recoverTaskStats(err)
-		if err != nil {
-			return false, nil
-		}
+		return false, err
 	}
-	resolved, ok, resolveErr := stats.resolveParentOutcome(kind, origin, cause)
-	if !ok || resolveErr != nil {
-		return ok, resolveErr
+	resolved, ok, err := s.resolveParentReviewState(kind, origin, cause)
+	if !ok || err != nil {
+		return ok, err
 	}
-	if err := s.writeTaskStats(stats); err != nil {
-		warnStatsFailure("parent outcome更新", err)
-		return false, nil
-	}
-	s.appendParentOutcomeEvent(stats.TaskID, parentPhaseOfKind(kind), kind, origin, cause, resolved)
+	s.UpdateTaskStats(func(stats *TaskStats) {
+		stats.ParentReviewOpen = nil
+		stats.recordParentOutcome(kind, origin, resolved)
+	})
+	s.appendParentOutcomeEvent(taskID, parentPhaseOfKind(kind), kind, origin, cause, resolved)
 	return true, nil
-}
-
-func (s *StateStore) OpenParentReviewLabel() string {
-	stats, err := s.loadTaskStats()
-	if err != nil || stats.ParentReviewOpen == nil {
-		return "none"
-	}
-	return stats.ParentReviewOpen.PacketStatus
 }
 
 func parentPhaseOfKind(kind string) string {

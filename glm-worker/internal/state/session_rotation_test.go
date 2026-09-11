@@ -388,9 +388,9 @@ func TestAcceptParentReviewRotationTransaction(t *testing.T) {
 		if err := st.SetTaskStatus(TaskStatusComplete); err != nil {
 			t.Fatal(err)
 		}
-		st.UpdateTaskStats(func(stats *TaskStats) {
-			stats.openParentReview("PASS", "LOW", ParentReviewProducer{})
-		})
+		if err := st.openParentReviewState("PASS", "LOW", ParentReviewProducer{}); err != nil {
+			t.Fatal(err)
+		}
 		return st
 	}
 	threadID := "01a0463c-d477-7410-9efd-cb34ff2e0b0e"

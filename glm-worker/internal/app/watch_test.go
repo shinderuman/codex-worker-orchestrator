@@ -46,6 +46,7 @@ func watchTestStore(t *testing.T) (*state.StateStore, config.AppConfig) {
 	if err := st.Write("task.id", "12345678-aaaa-bbbb-cccc-dddddddddddd"); err != nil {
 		t.Fatal(err)
 	}
+	seedParentReviewStateForTest(t, st, "12345678-aaaa-bbbb-cccc-dddddddddddd")
 	if err := st.SetTaskStatus(state.TaskStatusActive); err != nil {
 		t.Fatal(err)
 	}

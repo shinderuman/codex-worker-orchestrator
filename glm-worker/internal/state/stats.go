@@ -582,7 +582,10 @@ func (s *StateStore) RecordRepoSearchOutcome(category string, outcome string, re
 	})
 }
 
-func (s *StateStore) RecordSolResult(value packet.Result, producer ParentReviewProducer) {
+func (s *StateStore) RecordSolResult(value packet.Result, producer ParentReviewProducer) error {
+	if err := s.openParentReviewState(string(value.Status), string(value.Risk), producer); err != nil {
+		return err
+	}
 	s.UpdateTaskStats(func(stats *TaskStats) {
 		stats.SolPacketBytes += value.ByteSize()
 		switch value.Status {
@@ -595,6 +598,7 @@ func (s *StateStore) RecordSolResult(value packet.Result, producer ParentReviewP
 		}
 		stats.openParentReview(string(value.Status), string(value.Risk), producer)
 	})
+	return nil
 }
 
 func (s *StateStore) Reset() error {

@@ -17,6 +17,7 @@ type lifecycleFileSnapshot struct {
 type ParentActionRollback struct {
 	status  TaskStatus
 	pending lifecycleFileSnapshot
+	review  lifecycleFileSnapshot
 }
 
 func (s *StateStore) BeginParentDecision() (ParentActionRollback, error) {
@@ -68,7 +69,11 @@ func (s *StateStore) RecoverParentActionBegin(target TaskStatus) error {
 	} else if !errors.Is(err, ErrNoResumeCheckpoint) {
 		return err
 	}
-	if label := s.OpenParentReviewLabel(); label != roundCommentNone {
+	label, err := s.CurrentParentReviewLabel()
+	if err != nil {
+		return fmt.Errorf("parent action recovery cannot read parent review state: %w", err)
+	}
+	if label != roundCommentNone {
 		return fmt.Errorf("parent action recovery requires no open parent review, got %s", label)
 	}
 	pending := s.Exists("pending-decision")
@@ -92,10 +97,17 @@ func (s *StateStore) snapshotParentActionRollback() (ParentActionRollback, error
 	if err != nil {
 		return ParentActionRollback{}, err
 	}
-	return ParentActionRollback{status: s.TaskStatus(), pending: pending}, nil
+	review, err := s.snapshotLifecycleFile(parentReviewStateFile)
+	if err != nil {
+		return ParentActionRollback{}, err
+	}
+	return ParentActionRollback{status: s.TaskStatus(), pending: pending, review: review}, nil
 }
 
 func (s *StateStore) rollbackParentAction(rollback ParentActionRollback, cause error) error {
+	if err := s.restoreLifecycleFile(rollback.review); err != nil {
+		return joinParentActionRollbackFailure(cause, err)
+	}
 	if err := s.restoreLifecycleFile(rollback.pending); err != nil {
 		return joinParentActionRollbackFailure(cause, err)
 	}
@@ -271,6 +283,10 @@ func (s *StateStore) ActivateQualitySurfaceApproval() error {
 	if err != nil {
 		return err
 	}
+	review, err := s.snapshotLifecycleFile(parentReviewStateFile)
+	if err != nil {
+		return err
+	}
 	resume, err := s.snapshotLifecycleFile(resumeStateFile)
 	if err != nil {
 		return err
@@ -279,16 +295,20 @@ func (s *StateStore) ActivateQualitySurfaceApproval() error {
 		return err
 	}
 	if err := s.ClearResumeCheckpoint(); err != nil {
-		return s.rollbackLifecycleFiles(err, stats, resume)
+		return s.rollbackLifecycleFiles(err, stats, review, resume)
 	}
 	if err := s.SetTaskStatus(TaskStatusActive); err != nil {
-		return s.rollbackLifecycleFiles(err, stats, resume)
+		return s.rollbackLifecycleFiles(err, stats, review, resume)
 	}
 	return nil
 }
 
 func (s *StateStore) closeApprovedQualitySurfaceReview() error {
-	switch label := s.OpenParentReviewLabel(); label {
+	label, err := s.CurrentParentReviewLabel()
+	if err != nil {
+		return fmt.Errorf("quality-surface activation cannot read parent review state: %w", err)
+	}
+	switch label {
 	case roundCommentNone:
 		return nil
 	case string(packet.StatusNeedsSolReview):
@@ -296,7 +316,11 @@ func (s *StateStore) closeApprovedQualitySurfaceReview() error {
 		if err != nil {
 			return fmt.Errorf("quality-surface activation cannot close the open parent review: %w", err)
 		}
-		if !resolved || s.OpenParentReviewLabel() != roundCommentNone {
+		after, err := s.CurrentParentReviewLabel()
+		if err != nil {
+			return fmt.Errorf("quality-surface activation cannot verify parent review closure: %w", err)
+		}
+		if !resolved || after != roundCommentNone {
 			return fmt.Errorf("quality-surface activation could not close the open %s review", packet.StatusNeedsSolReview)
 		}
 		return nil

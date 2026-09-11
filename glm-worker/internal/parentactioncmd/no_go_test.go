@@ -24,7 +24,9 @@ func TestRunNoGoAwaitsObservationCompletionWithoutWorker(t *testing.T) {
 	if err := st.Touch("pending-decision"); err != nil {
 		t.Fatal(err)
 	}
-	st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolDecision, Risk: packet.RiskHigh}, state.ParentReviewProducer{Role: string(state.WorkerRole), Model: "opus"})
+	if err := st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolDecision, Risk: packet.RiskHigh}, state.ParentReviewProducer{Role: string(state.WorkerRole), Model: "opus"}); err != nil {
+		t.Fatal(err)
+	}
 
 	var stdout bytes.Buffer
 	if err := execute(cfg, []string{"no-go"}, &stdout, nil); err != nil {
@@ -66,7 +68,9 @@ func TestRunNoGoRejectsHeldRepositoryLock(t *testing.T) {
 	if err := st.Touch("pending-decision"); err != nil {
 		t.Fatal(err)
 	}
-	st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolDecision, Risk: packet.RiskHigh}, state.ParentReviewProducer{Role: string(state.WorkerRole), Model: "opus"})
+	if err := st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolDecision, Risk: packet.RiskHigh}, state.ParentReviewProducer{Role: string(state.WorkerRole), Model: "opus"}); err != nil {
+		t.Fatal(err)
+	}
 
 	lock, err := repolock.Acquire(st.LockPath())
 	if err != nil {
@@ -93,7 +97,9 @@ func TestRunNoGoRejectsGenericDecision(t *testing.T) {
 	if err := st.Touch("pending-decision"); err != nil {
 		t.Fatal(err)
 	}
-	st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolDecision, Risk: packet.RiskHigh}, state.ParentReviewProducer{})
+	if err := st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolDecision, Risk: packet.RiskHigh}, state.ParentReviewProducer{}); err != nil {
+		t.Fatal(err)
+	}
 
 	if err := execute(cfg, []string{"no-go"}, &bytes.Buffer{}, nil); err == nil {
 		t.Fatal("generic decision accepted terminal no-go")
