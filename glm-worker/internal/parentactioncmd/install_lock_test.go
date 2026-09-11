@@ -74,6 +74,31 @@ func assertRepositoryLockAvailable(t *testing.T, st *state.StateStore) {
 	}
 }
 
+func writeBlockingInstallSmokeProbe(t *testing.T) {
+	t.Helper()
+	binDir := t.TempDir()
+	stub := `#!/bin/sh
+case "${1:-}" in
+--status)
+  head=$(git -C "$PWD" rev-parse HEAD)
+  printf '{"runtime_build":{"vcs_revision":"%s","vcs_modified":false,"repository_head":"%s","relationship":"same"}}\n' "$head" "$head"
+  ;;
+--install-smoke)
+  touch "$PWD/install-smoke-started"
+  while [ ! -e "$PWD/install-smoke-release" ]; do sleep 0.01; done
+  printf '%s\n' '{"status":"executed","result":"pass","role":"parent","duration_ms":1}'
+  ;;
+*)
+  exit 2
+  ;;
+esac
+`
+	if err := os.WriteFile(filepath.Join(binDir, "glm-worker"), []byte(stub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
 func TestExecuteInstallBlocksConcurrentCompleteUntilChildExit(t *testing.T) {
 	cfg, st := newInstallActionRepo(t)
 	writeInstallActionScript(t, cfg.RepoRoot, "#!/bin/sh\ntouch install-started\nwhile [ ! -e install-release ]; do sleep 0.01; done\nexit 0\n", 0o755)
@@ -128,6 +153,44 @@ func TestExecuteInstallRejectsConcurrentInstallWhileChildRuns(t *testing.T) {
 	}
 	if string(runs) != "run\n" {
 		t.Fatalf("install child executions = %q", runs)
+	}
+	assertRepositoryLockAvailable(t, st)
+}
+
+func TestExecuteInstallHoldsRepositoryLockThroughSmoke(t *testing.T) {
+	cfg, st := newInstallActionRepo(t)
+	writeInstallActionScript(t, cfg.RepoRoot, "#!/bin/sh\nexit 0\n", 0o755)
+	writeBlockingInstallSmokeProbe(t)
+	if err := st.SetTaskStatus(state.TaskStatusAwaitingParentCompletion); err != nil {
+		t.Fatal(err)
+	}
+
+	first := startBlockingInstall(cfg)
+	waitForInstallPath(t, filepath.Join(cfg.RepoRoot, "install-smoke-started"))
+
+	var completeOutput bytes.Buffer
+	if err := runComplete(cfg, &completeOutput); !errors.Is(err, repolock.ErrRepoLockHeld) {
+		t.Fatalf("complete entered during install smoke: err=%v output=%q", err, completeOutput.String())
+	}
+	var secondStdout bytes.Buffer
+	var secondStderr bytes.Buffer
+	if err := execute(cfg, []string{"install"}, &secondStdout, &secondStderr); !errors.Is(err, repolock.ErrRepoLockHeld) {
+		t.Fatalf("second install entered during install smoke: err=%v stdout=%q stderr=%q", err, secondStdout.String(), secondStderr.String())
+	}
+
+	if err := os.WriteFile(filepath.Join(cfg.RepoRoot, "install-smoke-release"), []byte("release\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case observed := <-first:
+		if observed.err != nil {
+			t.Fatalf("install error = %v stderr = %q", observed.err, observed.stderr)
+		}
+		if !strings.Contains(observed.stdout, "installed") {
+			t.Fatalf("install stdout = %q", observed.stdout)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("install smoke did not exit after release")
 	}
 	assertRepositoryLockAvailable(t, st)
 }

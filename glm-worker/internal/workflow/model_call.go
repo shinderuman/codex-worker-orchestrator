@@ -330,7 +330,7 @@ func (w *Workflow) handleInvalidModelResult(
 		return w.handleResultCorrectionViolation(checkpoint, resultErr)
 	}
 	if checkpoint.ResultCorrection {
-		_ = w.clearResultCorrectionRecord()
+		return packet.Result{}, w.resultCorrectionInvalidResponseFailure(checkpoint, resultErr)
 	}
 	return packet.Result{}, &WorkerError{
 		Phase:   checkpoint.Phase + "-format",

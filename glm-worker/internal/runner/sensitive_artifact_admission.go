@@ -2,7 +2,10 @@ package runner
 
 import (
 	"bytes"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
@@ -13,35 +16,66 @@ type SensitiveArtifactError struct {
 	Category string
 }
 
+const sensitiveArtifactScanChunkBytes = 64 * 1024
+
 func (e *SensitiveArtifactError) Error() string {
 	return "artifact containing machine-known sensitive value was rejected: " + e.Category
 }
 
 func validateSensitiveResultArtifacts(base *ClaudeRunner, result RunResult, providerValues []SensitiveArtifactValue) error {
-	artifacts, ok := sensitiveArtifactPaths(base, result)
-	if !ok {
-		return nil
+	artifacts, pathErr := sensitiveArtifactPaths(base, result)
+	if len(artifacts) == 0 {
+		return pathErr
 	}
 	values, err := sensitiveArtifactCandidates(base, providerValues)
 	if err != nil {
 		return err
 	}
-	return validateSensitiveArtifactContents(artifacts, values)
+	if err := validateSensitiveArtifactContents(artifacts, values); err != nil {
+		return err
+	}
+	return pathErr
 }
 
-func sensitiveArtifactPaths(base *ClaudeRunner, result RunResult) ([]string, bool) {
-	parsed, err := packet.ParseStructured(result.StructuredOutput)
-	if err != nil || len(parsed.Artifacts) == 0 {
-		return nil, false
+func sensitiveArtifactPaths(base *ClaudeRunner, result RunResult) ([]string, error) {
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(result.StructuredOutput, &object); err != nil {
+		return nil, nil
+	}
+	rawArtifacts, ok := object["artifacts"]
+	if !ok {
+		return nil, nil
+	}
+	var entries []json.RawMessage
+	if err := json.Unmarshal(rawArtifacts, &entries); err != nil || len(entries) == 0 {
+		return nil, nil
 	}
 	taskID, err := base.state.TaskID()
 	if err != nil {
-		return nil, false
+		return nil, fmt.Errorf("artifact sensitive admission unavailable: task-artifact-root")
 	}
-	if err := packet.ValidateArtifacts(parsed.Artifacts, base.state.ArtifactDir(taskID)); err != nil {
-		return nil, false
+	root := base.state.ArtifactDir(taskID)
+	artifacts := make([]string, 0, len(entries))
+	seen := make(map[string]struct{}, len(entries))
+	var validationErr error
+	for _, entry := range entries {
+		var path string
+		if err := json.Unmarshal(entry, &path); err != nil {
+			continue
+		}
+		if _, duplicate := seen[path]; duplicate {
+			continue
+		}
+		if err := packet.ValidateArtifacts([]string{path}, root); err != nil {
+			if validationErr == nil {
+				validationErr = err
+			}
+			continue
+		}
+		seen[path] = struct{}{}
+		artifacts = append(artifacts, path)
 	}
-	return parsed.Artifacts, true
+	return artifacts, validationErr
 }
 
 func sensitiveArtifactCandidates(base *ClaudeRunner, providerValues []SensitiveArtifactValue) ([]SensitiveArtifactValue, error) {
@@ -59,11 +93,10 @@ func sensitiveArtifactCandidates(base *ClaudeRunner, providerValues []SensitiveA
 func validateSensitiveArtifactContents(artifacts []string, values []SensitiveArtifactValue) error {
 	rejectedCategory := ""
 	for _, path := range artifacts {
-		content, err := os.ReadFile(path)
+		category, err := sensitiveArtifactFileCategory(path, values)
 		if err != nil {
 			return fmt.Errorf("artifact sensitive admission unavailable: artifact-content")
 		}
-		category := sensitiveArtifactCategory(content, values)
 		if category == "" {
 			continue
 		}
@@ -78,6 +111,61 @@ func validateSensitiveArtifactContents(artifacts []string, values []SensitiveArt
 		return &SensitiveArtifactError{Category: rejectedCategory}
 	}
 	return nil
+}
+
+func sensitiveArtifactFileCategory(path string, values []SensitiveArtifactValue) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	category, scanErr := scanSensitiveArtifactFile(file, values)
+	closeErr := file.Close()
+	if scanErr != nil {
+		return "", scanErr
+	}
+	if closeErr != nil {
+		return "", closeErr
+	}
+	return category, nil
+}
+
+func scanSensitiveArtifactFile(file *os.File, values []SensitiveArtifactValue) (string, error) {
+	maxValueBytes := maxSensitiveArtifactValueBytes(values)
+	if maxValueBytes == 0 {
+		return "", nil
+	}
+
+	chunk := make([]byte, sensitiveArtifactScanChunkBytes)
+	carry := make([]byte, 0, maxValueBytes-1)
+	for {
+		n, readErr := file.Read(chunk)
+		if n > 0 {
+			window := make([]byte, len(carry)+n)
+			copy(window, carry)
+			copy(window[len(carry):], chunk[:n])
+			if category := sensitiveArtifactCategory(window, values); category != "" {
+				return category, nil
+			}
+			keep := min(maxValueBytes-1, len(window))
+			carry = append(carry[:0], window[len(window)-keep:]...)
+		}
+		if readErr != nil {
+			if errors.Is(readErr, io.EOF) {
+				return "", nil
+			}
+			return "", readErr
+		}
+	}
+}
+
+func maxSensitiveArtifactValueBytes(values []SensitiveArtifactValue) int {
+	maxValueBytes := 0
+	for _, candidate := range values {
+		if len(candidate.Value) > maxValueBytes {
+			maxValueBytes = len(candidate.Value)
+		}
+	}
+	return maxValueBytes
 }
 
 func sensitiveArtifactCategory(content []byte, values []SensitiveArtifactValue) string {

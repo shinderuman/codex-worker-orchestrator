@@ -1,6 +1,7 @@
 package autoresume
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -50,6 +51,7 @@ type codexWakeTransaction struct {
 	ExpectedAutomationID string `json:"expected_automation_id"`
 	ResetAtRFC3339       string `json:"reset_at_rfc3339"`
 	WakeAtRFC3339        string `json:"wake_at_rfc3339"`
+	Nonce                string `json:"nonce"`
 	CreatedByTransaction bool   `json:"created_by_transaction"`
 	WakeInvocation       bool   `json:"wake_invocation"`
 	Attempt              int    `json:"attempt"`
@@ -58,6 +60,7 @@ type codexWakeTransaction struct {
 const (
 	codexWakeTransactionVersion = 1
 	codexWakeSafetyMargin       = 2 * time.Minute
+	codexWakeNonceBytes         = 16
 
 	CodexWakeStatusWriteRequired = "write_required"
 	CodexWakeStatusVerified      = "verified"
@@ -73,13 +76,20 @@ const (
 	codexWakePlaceholderRRule = "RRULE:FREQ=HOURLY"
 )
 
-var codexWakeThreadPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+var (
+	codexWakeThreadPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+	codexWakeNoncePattern  = regexp.MustCompile(`^[0-9a-f]{32}$`)
+)
 
 func BuildCodexWakeTransaction(snapshot codexlimit.Snapshot, wakeThreadID, firedAutomationID, automationsDir string, now time.Time) (CodexWakeOutput, error) {
 	if !codexWakeThreadPattern.MatchString(wakeThreadID) {
 		return CodexWakeOutput{}, fmt.Errorf("invalid wake thread ID: %q", wakeThreadID)
 	}
 	resetAt, wakeAt, err := codexWakeTimes(snapshot, now)
+	if err != nil {
+		return CodexWakeOutput{}, err
+	}
+	nonce, err := newCodexWakeNonce()
 	if err != nil {
 		return CodexWakeOutput{}, err
 	}
@@ -91,6 +101,7 @@ func BuildCodexWakeTransaction(snapshot codexlimit.Snapshot, wakeThreadID, fired
 		ExpectedAutomationID: expectedID,
 		ResetAtRFC3339:       resetAt.Format(time.RFC3339),
 		WakeAtRFC3339:        wakeAt.Format(time.RFC3339),
+		Nonce:                nonce,
 		Attempt:              1,
 	}
 	if firedAutomationID != "" {
@@ -113,6 +124,14 @@ func BuildCodexWakeTransaction(snapshot codexlimit.Snapshot, wakeThreadID, fired
 	}
 	transaction.Stage = codexWakeStageCreate
 	return codexWakeWriteOutput(transaction, codexWakeCreateSpec(transaction)), nil
+}
+
+func newCodexWakeNonce() (string, error) {
+	value := make([]byte, codexWakeNonceBytes)
+	if _, err := rand.Read(value); err != nil {
+		return "", fmt.Errorf("generate wake transaction nonce: %w", err)
+	}
+	return hex.EncodeToString(value), nil
 }
 
 func codexWakeTimes(snapshot codexlimit.Snapshot, now time.Time) (time.Time, time.Time, error) {
@@ -261,6 +280,9 @@ func validateCodexWakeTransaction(transaction codexWakeTransaction) error {
 	}
 	if transaction.ExpectedAutomationID != CodexWakeAutomationKey(transaction.WakeThreadID) {
 		return fmt.Errorf("transaction automation identity mismatch")
+	}
+	if !codexWakeNoncePattern.MatchString(transaction.Nonce) {
+		return fmt.Errorf("invalid transaction nonce")
 	}
 	if transaction.Stage != codexWakeStageCreate && transaction.Stage != codexWakeStageUpdate {
 		return fmt.Errorf("invalid transaction stage %q", transaction.Stage)

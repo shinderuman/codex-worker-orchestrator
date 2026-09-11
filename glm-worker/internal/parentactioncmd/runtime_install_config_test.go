@@ -34,6 +34,17 @@ func TestVerifyInstalledCodexManagedConfigPreservesLocalKeysButRejectsManagedDri
 	}
 }
 
+func TestTopLevelTOMLAssignmentsRejectsMultilineValues(t *testing.T) {
+	for _, input := range []string{
+		"managed = [\n  1,\n  2,\n]\n",
+		"managed = \"\"\"line one\nline two\"\"\"\n",
+	} {
+		if _, err := topLevelTOMLAssignments([]byte(input)); err == nil {
+			t.Fatalf("multiline managed TOML value was accepted: %q", input)
+		}
+	}
+}
+
 func TestVerifyInstalledClaudeManagedSettingsAppliesLocalOverride(t *testing.T) {
 	repo := t.TempDir()
 	claudeDir := t.TempDir()
@@ -64,6 +75,44 @@ func TestVerifyInstalledClaudeManagedSettingsAppliesLocalOverride(t *testing.T) 
 	}
 	if err := verifyInstalledClaudeManagedSettings(cfg); err == nil {
 		t.Fatal("stale managed Claude value was accepted")
+	}
+}
+
+func TestVerifyInstalledClaudeManagedSettingsChecksOverrideOnlyEnvKeys(t *testing.T) {
+	repo := t.TempDir()
+	claudeDir := t.TempDir()
+	overrideDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(repo, "claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	managed := `{"env":{"A":"managed"}}`
+	if err := os.WriteFile(filepath.Join(repo, "claude", "settings-managed.json"), []byte(managed), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	overridePath := filepath.Join(overrideDir, "claude-settings.local.json")
+	if err := os.WriteFile(overridePath, []byte(`{"env":{"ONLY":"override","REMOVE":null}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	installedPath := filepath.Join(claudeDir, "settings.json")
+	cfg := config.AppConfig{RepoRoot: repo, ClaudeConfigDir: claudeDir, ClaudeSettingsOverride: overridePath}
+
+	if err := os.WriteFile(installedPath, []byte(`{"env":{"A":"managed","ONLY":"override"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyInstalledClaudeManagedSettings(cfg); err != nil {
+		t.Fatalf("valid override-only env state rejected: %v", err)
+	}
+	if err := os.WriteFile(installedPath, []byte(`{"env":{"A":"managed"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyInstalledClaudeManagedSettings(cfg); err == nil {
+		t.Fatal("missing override-only set key was accepted")
+	}
+	if err := os.WriteFile(installedPath, []byte(`{"env":{"A":"managed","ONLY":"override","REMOVE":"stale"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyInstalledClaudeManagedSettings(cfg); err == nil {
+		t.Fatal("retained override-only delete key was accepted")
 	}
 }
 

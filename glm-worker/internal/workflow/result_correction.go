@@ -11,14 +11,15 @@ import (
 )
 
 type resultCorrectionRecord struct {
-	Version           int                  `json:"version"`
-	TaskID            string               `json:"task_id"`
-	Role              state.SessionRole    `json:"role"`
-	SessionID         string               `json:"session_id"`
-	Snapshot          state.SnapshotDigest `json:"snapshot"`
-	Attempts          int                  `json:"attempts"`
-	SeenViolationKeys []string             `json:"seen_violation_keys"`
-	SeenViolations    []string             `json:"seen_violations"`
+	Version           int                      `json:"version"`
+	TaskID            string                   `json:"task_id,omitempty"`
+	Role              state.SessionRole        `json:"role,omitempty"`
+	SessionID         string                   `json:"session_id,omitempty"`
+	Snapshot          state.SnapshotDigest     `json:"snapshot,omitempty"`
+	Attempts          int                      `json:"attempts,omitempty"`
+	SeenViolationKeys []string                 `json:"seen_violation_keys,omitempty"`
+	SeenViolations    []string                 `json:"seen_violations,omitempty"`
+	Terminal          *ResultCorrectionFailure `json:"terminal,omitempty"`
 }
 
 type ResultCorrectionFailure struct {
@@ -43,6 +44,8 @@ func (e *ResultCorrectionFailure) Error() string {
 		message = fmt.Sprintf("result correction budget exhausted after %d correction attempts", e.Attempts)
 	case "repeated_violation":
 		message = fmt.Sprintf("result correction did not converge after %d correction attempt", e.Attempts)
+	case "invalid_response":
+		message = "result correction returned an invalid non-constraint response"
 	case "boundary_changed":
 		message = "result correction boundary changed: " + e.BoundaryMismatch
 	case "boundary_unavailable":
@@ -152,12 +155,12 @@ func (w *Workflow) nextResultCorrectionCheckpoint(checkpoint state.ResumeCheckpo
 }
 
 func (w *Workflow) validateResultCorrectionBoundary(checkpoint state.ResumeCheckpoint) error {
-	if !checkpoint.ResultCorrection {
-		return nil
+	record, err := w.resultCorrectionBoundaryRecord(checkpoint)
+	if err != nil || record == nil {
+		return err
 	}
-	record, err := w.loadResultCorrectionRecord()
-	if err != nil {
-		return w.resultCorrectionBoundaryFailure(checkpoint, nil, "boundary_unavailable", err.Error())
+	if !checkpoint.ResultCorrection {
+		return NewResultCorrectionWorkerError(checkpoint.Phase, resultCorrectionFailureFromRecord(record, "boundary_changed", "active correction state requires a correction checkpoint", nil))
 	}
 	if checkpoint.Role != record.Role {
 		return w.resultCorrectionBoundaryFailure(checkpoint, record, "boundary_changed", fmt.Sprintf("role=%s want=%s", checkpoint.Role, record.Role))
@@ -190,6 +193,26 @@ func (w *Workflow) validateResultCorrectionBoundary(checkpoint state.ResumeCheck
 	return nil
 }
 
+func (w *Workflow) resultCorrectionBoundaryRecord(checkpoint state.ResumeCheckpoint) (*resultCorrectionRecord, error) {
+	if !w.state.Exists(state.ResultCorrectionStateFile) {
+		if checkpoint.ResultCorrection {
+			return nil, w.resultCorrectionBoundaryFailure(checkpoint, nil, "boundary_unavailable", "result correction state is missing")
+		}
+		return nil, nil
+	}
+	record, err := w.loadResultCorrectionRecord()
+	if err != nil {
+		if checkpoint.ResultCorrection {
+			return nil, w.resultCorrectionBoundaryFailure(checkpoint, nil, "boundary_unavailable", err.Error())
+		}
+		return nil, NewResultCorrectionWorkerError(checkpoint.Phase, &ResultCorrectionFailure{Reason: "boundary_unavailable", BoundaryMismatch: err.Error()})
+	}
+	if record.Terminal != nil {
+		return nil, NewResultCorrectionWorkerError(checkpoint.Phase, record.Terminal)
+	}
+	return record, nil
+}
+
 func (w *Workflow) resultCorrectionBoundaryFailure(
 	checkpoint state.ResumeCheckpoint,
 	record *resultCorrectionRecord,
@@ -198,15 +221,9 @@ func (w *Workflow) resultCorrectionBoundaryFailure(
 ) error {
 	failure := &ResultCorrectionFailure{Reason: reason, BoundaryMismatch: mismatch}
 	if record != nil {
-		failure.Attempts = record.Attempts
-		failure.TaskID = record.TaskID
-		failure.SessionID = record.SessionID
-		failure.Snapshot = record.Snapshot
-		failure.Violations = append([]string(nil), record.SeenViolations...)
+		failure = resultCorrectionFailureFromRecord(record, reason, mismatch, nil)
 	}
-	_ = w.state.ClearResumeCheckpoint()
-	_ = w.clearResultCorrectionRecord()
-	return NewResultCorrectionWorkerError(checkpoint.Phase, failure)
+	return w.persistResultCorrectionTerminal(checkpoint, failure)
 }
 
 func (w *Workflow) resultCorrectionTerminalFailure(
@@ -216,7 +233,20 @@ func (w *Workflow) resultCorrectionTerminalFailure(
 	mismatch string,
 	currentViolations []string,
 ) error {
-	failure := &ResultCorrectionFailure{
+	failure := resultCorrectionFailureFromRecord(record, reason, mismatch, currentViolations)
+	return w.persistResultCorrectionTerminal(checkpoint, failure)
+}
+
+func (w *Workflow) resultCorrectionInvalidResponseFailure(checkpoint state.ResumeCheckpoint, resultErr error) error {
+	record, err := w.loadResultCorrectionRecord()
+	if err != nil {
+		return w.resultCorrectionBoundaryFailure(checkpoint, nil, "boundary_unavailable", err.Error())
+	}
+	return w.resultCorrectionTerminalFailure(checkpoint, record, "invalid_response", "", []string{resultErr.Error()})
+}
+
+func resultCorrectionFailureFromRecord(record *resultCorrectionRecord, reason, mismatch string, currentViolations []string) *ResultCorrectionFailure {
+	return &ResultCorrectionFailure{
 		Reason:           reason,
 		Attempts:         record.Attempts,
 		TaskID:           record.TaskID,
@@ -225,9 +255,18 @@ func (w *Workflow) resultCorrectionTerminalFailure(
 		Violations:       appendUniqueViolations(record.SeenViolations, currentViolations),
 		BoundaryMismatch: mismatch,
 	}
-	_ = w.state.ClearResumeCheckpoint()
-	_ = w.clearResultCorrectionRecord()
-	return NewResultCorrectionWorkerError(checkpoint.Phase, failure)
+}
+
+func (w *Workflow) persistResultCorrectionTerminal(checkpoint state.ResumeCheckpoint, failure *ResultCorrectionFailure) error {
+	terminal := &resultCorrectionRecord{Version: resultCorrectionVersion, Terminal: failure}
+	workerErr := NewResultCorrectionWorkerError(checkpoint.Phase, failure)
+	if err := w.saveResultCorrectionRecord(terminal); err != nil {
+		return fmt.Errorf("%w; persist terminal correction state: %w", workerErr, err)
+	}
+	if err := w.state.ClearResumeCheckpoint(); err != nil {
+		return fmt.Errorf("%w; clear resume checkpoint: %w", workerErr, err)
+	}
+	return workerErr
 }
 
 func (w *Workflow) saveResultCorrectionRecord(record *resultCorrectionRecord) error {
@@ -247,8 +286,16 @@ func (w *Workflow) loadResultCorrectionRecord() (*resultCorrectionRecord, error)
 	if err := json.Unmarshal([]byte(data), &record); err != nil {
 		return nil, err
 	}
-	if record.Version != resultCorrectionVersion ||
-		record.TaskID == "" ||
+	if record.Version != resultCorrectionVersion {
+		return nil, fmt.Errorf("invalid result correction state")
+	}
+	if record.Terminal != nil {
+		if record.Terminal.Reason == "" {
+			return nil, fmt.Errorf("invalid terminal result correction state")
+		}
+		return &record, nil
+	}
+	if record.TaskID == "" ||
 		record.SessionID == "" ||
 		record.Attempts < 1 ||
 		record.Attempts > maxResultCorrections ||

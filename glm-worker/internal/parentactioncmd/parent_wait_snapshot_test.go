@@ -49,6 +49,16 @@ func TestParentWaitHoldsRepositoryLockThroughRecoveryHandoff(t *testing.T) {
 	}
 }
 
+func TestValidateParentWaitRecoveryHandoffRejectsIncompleteObject(t *testing.T) {
+	if err := validateParentWaitRecoveryHandoff([]byte(`{}`)); err == nil {
+		t.Fatal("empty recovery handoff must be rejected")
+	}
+	valid := []byte(`{"projection":"recovery","consistent":true,"task_id":"task-1","task_status":"waiting-sol-review","required_action":"parent-review","allowed_actions":["accept"]}`)
+	if err := validateParentWaitRecoveryHandoff(valid); err != nil {
+		t.Fatalf("valid recovery handoff rejected: %v", err)
+	}
+}
+
 func writeBlockingParentWaitHandoffStub(t *testing.T, entered, release string) {
 	t.Helper()
 	bin := t.TempDir()
@@ -59,7 +69,7 @@ if [ "${1:-}" = "--handoff" ] && [ "${2:-}" = "recovery" ]; then
   while [ ! -f "$GLM_HANDOFF_RELEASE" ]; do
     sleep 0.01
   done
-  printf '%s\n' '{"consistent":true,"required_action":"parent-review","allowed_actions":["accept"]}'
+  printf '%s\n' '{"projection":"recovery","consistent":true,"task_id":"task-1","task_status":"waiting-sol-review","required_action":"parent-review","allowed_actions":["accept"]}'
   exit 0
 fi
 exit 2

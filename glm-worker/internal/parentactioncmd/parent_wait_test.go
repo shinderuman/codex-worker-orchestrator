@@ -218,7 +218,7 @@ func writeParentWaitWorkerStub(t *testing.T) {
 	bin := t.TempDir()
 	script := `#!/bin/sh
 if [ "${1:-}" = "--handoff" ] && [ "${2:-}" = "recovery" ]; then
-  printf '%s\n' '{"consistent":true,"required_action":"parent-review","allowed_actions":["accept"]}'
+  printf '%s\n' '{"projection":"recovery","consistent":true,"task_id":"task-1","task_status":"waiting-sol-review","required_action":"parent-review","allowed_actions":["accept"]}'
   exit 0
 fi
 exit 2

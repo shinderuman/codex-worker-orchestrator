@@ -2,6 +2,9 @@ package app
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"strings"
@@ -63,7 +66,7 @@ func TestParseCodexWakeCommandsRejectsInvalidInputs(t *testing.T) {
 	}
 }
 
-func TestCodexWakeResponseDispatchIsStateless(t *testing.T) {
+func TestCodexWakeResponseRequiresTrustedTokenState(t *testing.T) {
 	cmd := Command{
 		Mode:      ModeCodexWakeResponse,
 		Payload:   `{}`,
@@ -71,18 +74,11 @@ func TestCodexWakeResponseDispatchIsStateless(t *testing.T) {
 	}
 	var stdout bytes.Buffer
 	handled, err := executeStateless(cmd, config.AppConfig{CodexConfigDir: t.TempDir()}, &stdout)
-	if err != nil {
-		t.Fatal(err)
+	if !handled || err == nil {
+		t.Fatalf("untrusted token admission = handled:%v err:%v", handled, err)
 	}
-	if !handled {
-		t.Fatal("Codex wake response command was not dispatched")
-	}
-	var output autoresume.CodexWakeOutput
-	if err := json.Unmarshal(stdout.Bytes(), &output); err != nil {
-		t.Fatal(err)
-	}
-	if output.Status != autoresume.CodexWakeStatusFailed {
-		t.Fatalf("output = %#v", output)
+	if stdout.Len() != 0 {
+		t.Fatalf("untrusted token produced output: %q", stdout.String())
 	}
 }
 
@@ -100,11 +96,18 @@ func TestCodexWakeInvocationRejectsCrossThreadContext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	cfg := config.AppConfig{CodexConfigDir: t.TempDir()}
+	if err := persistCodexWakeToken(cfg.CodexConfigDir, plan.Token); err != nil {
+		t.Fatal(err)
+	}
 
 	t.Setenv(codexThreadIDEnv, testAppOtherThread)
 	cmd := Command{Mode: ModeCodexWakeResponse, Payload: `{}`, CodexWake: CodexWakeArgs{Token: plan.Token}}
-	if err := printCodexWakeResponse(cmd, config.AppConfig{CodexConfigDir: t.TempDir()}, io.Discard); err == nil {
+	if err := printCodexWakeResponse(cmd, cfg, io.Discard); err == nil {
 		t.Fatal("cross-thread wake response was accepted")
+	}
+	if _, err := beginCodexWakeToken(cfg.CodexConfigDir, plan.Token); err != nil {
+		t.Fatalf("rejected cross-thread response consumed token: %v", err)
 	}
 }
 
@@ -121,11 +124,15 @@ func TestCodexWakeRegistrationResponseDoesNotBindParentThread(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	cfg := config.AppConfig{CodexConfigDir: t.TempDir()}
+	if err := persistCodexWakeToken(cfg.CodexConfigDir, plan.Token); err != nil {
+		t.Fatal(err)
+	}
 
 	t.Setenv(codexThreadIDEnv, testAppOtherThread)
 	cmd := Command{Mode: ModeCodexWakeResponse, Payload: `{}`, CodexWake: CodexWakeArgs{Token: plan.Token}}
 	var stdout bytes.Buffer
-	if err := printCodexWakeResponse(cmd, config.AppConfig{CodexConfigDir: t.TempDir()}, &stdout); err != nil {
+	if err := printCodexWakeResponse(cmd, cfg, &stdout); err != nil {
 		t.Fatal(err)
 	}
 	var output autoresume.CodexWakeOutput
@@ -135,4 +142,70 @@ func TestCodexWakeRegistrationResponseDoesNotBindParentThread(t *testing.T) {
 	if output.Status != autoresume.CodexWakeStatusFailed {
 		t.Fatalf("output = %#v", output)
 	}
+}
+
+func TestCodexWakeResponseRejectsForgedTokenWithRecomputedChecksum(t *testing.T) {
+	plan := testAppCodexWakePlan(t)
+	cfg := config.AppConfig{CodexConfigDir: t.TempDir()}
+	if err := persistCodexWakeToken(cfg.CodexConfigDir, plan.Token); err != nil {
+		t.Fatal(err)
+	}
+	forged := forgeCodexWakeToken(t, plan.Token)
+	cmd := Command{Mode: ModeCodexWakeResponse, Payload: `{}`, CodexWake: CodexWakeArgs{Token: forged}}
+	if err := printCodexWakeResponse(cmd, cfg, io.Discard); err == nil {
+		t.Fatal("forged token with recomputed checksum was accepted")
+	}
+}
+
+func TestCodexWakeResponseConsumesTokenOnce(t *testing.T) {
+	plan := testAppCodexWakePlan(t)
+	cfg := config.AppConfig{CodexConfigDir: t.TempDir()}
+	if err := persistCodexWakeToken(cfg.CodexConfigDir, plan.Token); err != nil {
+		t.Fatal(err)
+	}
+	cmd := Command{Mode: ModeCodexWakeResponse, Payload: `{}`, CodexWake: CodexWakeArgs{Token: plan.Token}}
+	var stdout bytes.Buffer
+	if err := printCodexWakeResponse(cmd, cfg, &stdout); err != nil {
+		t.Fatal(err)
+	}
+	if err := printCodexWakeResponse(cmd, cfg, io.Discard); err == nil {
+		t.Fatal("consumed wake token was replayed")
+	}
+}
+
+func testAppCodexWakePlan(t *testing.T) autoresume.CodexWakeOutput {
+	t.Helper()
+	now := time.Date(2026, 9, 11, 2, 0, 0, 0, time.UTC)
+	reset := now.Add(time.Hour)
+	resetEpoch := reset.Unix()
+	resetRFC3339 := reset.Format(time.RFC3339)
+	snapshot := codexlimit.Snapshot{FiveHour: codexlimit.Window{ResetsAt: &resetEpoch, ResetsAtRFC3339: &resetRFC3339}}
+	plan, err := autoresume.BuildCodexWakeTransaction(snapshot, testAppCodexWakeThread, "", t.TempDir()+"/missing", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return plan
+}
+
+func forgeCodexWakeToken(t *testing.T, token string) string {
+	t.Helper()
+	encoded, _, ok := strings.Cut(token, ".")
+	if !ok {
+		t.Fatal("token has no checksum")
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var value map[string]any
+	if err := json.Unmarshal(payload, &value); err != nil {
+		t.Fatal(err)
+	}
+	value["attempt"] = float64(2)
+	payload, err = json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(payload)
+	return base64.RawURLEncoding.EncodeToString(payload) + "." + hex.EncodeToString(sum[:])
 }

@@ -110,6 +110,81 @@ func TestSensitiveArtifactAdmissionRemovesEveryRejectedArtifact(t *testing.T) {
 	}
 }
 
+func TestSensitiveArtifactAdmissionScansSafeArtifactsFromInvalidList(t *testing.T) {
+	const secret = "provider-auth-secret-invalid-list-395"
+	values := []SensitiveArtifactValue{{Category: SensitiveArtifactProviderAuthToken, Value: secret}}
+	for _, tc := range []struct {
+		name      string
+		artifacts func(string) []any
+	}{
+		{
+			name: "duplicate",
+			artifacts: func(path string) []any {
+				return []any{path, path}
+			},
+		},
+		{
+			name: "mixed invalid path",
+			artifacts: func(path string) []any {
+				return []any{path, "relative-outside.txt"}
+			},
+		},
+		{
+			name: "mixed invalid type",
+			artifacts: func(path string) []any {
+				return []any{path, 7}
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, st, artifact := sensitiveArtifactTestState(t)
+			if err := os.WriteFile(artifact, []byte("secret="+secret), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			structured, err := json.Marshal(map[string]any{
+				"status":    "IMPLEMENTED",
+				"risk":      "LOW",
+				"artifacts": tc.artifacts(artifact),
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = validateSensitiveResultArtifacts(&ClaudeRunner{config: cfg, state: st}, RunResult{StructuredOutput: structured}, values)
+			var sensitive *SensitiveArtifactError
+			if !errors.As(err, &sensitive) || sensitive.Category != SensitiveArtifactProviderAuthToken {
+				t.Fatalf("error = %v", err)
+			}
+			if _, statErr := os.Stat(artifact); !errors.Is(statErr, os.ErrNotExist) {
+				t.Fatalf("sensitive artifact remained after invalid list: %v", statErr)
+			}
+		})
+	}
+}
+
+func TestSensitiveArtifactAdmissionScansArtifactsFromOtherwiseInvalidPacket(t *testing.T) {
+	const secret = "provider-auth-secret-invalid-packet-395"
+	cfg, st, artifact := sensitiveArtifactTestState(t)
+	if err := os.WriteFile(artifact, []byte("secret="+secret), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	structured, err := json.Marshal(map[string]any{"artifacts": []string{artifact}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = validateSensitiveResultArtifacts(
+		&ClaudeRunner{config: cfg, state: st},
+		RunResult{StructuredOutput: structured},
+		[]SensitiveArtifactValue{{Category: SensitiveArtifactProviderAuthToken, Value: secret}},
+	)
+	var sensitive *SensitiveArtifactError
+	if !errors.As(err, &sensitive) {
+		t.Fatalf("error = %v", err)
+	}
+	if _, statErr := os.Stat(artifact); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("sensitive artifact remained after invalid packet: %v", statErr)
+	}
+}
+
 func TestSensitiveArtifactAdmissionAcceptsSanitizedArtifact(t *testing.T) {
 	cfg, st, artifact := sensitiveArtifactTestState(t)
 	if err := os.MkdirAll(cfg.ClaudeConfigDir, 0o700); err != nil {
