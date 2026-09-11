@@ -20,6 +20,21 @@ jobs:
           fetch-depth: 0
       - name: Rebuild implementation
         run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('.github/issue400_rebuild.py')
+          text = path.read_text()
+          old = '''seed_after_task_write(
+              "glm-worker/internal/app/watch_orphan_test.go",
+              "watchOrphanTaskID",
+              "seedParentReviewStateForTest(t, st, watchOrphanTaskID)",
+              1,
+          )'''
+          new = old.rsplit('    1,', 1)[0] + '    2,\n)'
+          if text.count(old) != 1:
+              raise SystemExit('watch_orphan fixture count patch target missing')
+          path.write_text(text.replace(old, new, 1))
+          PY
           python3 .github/issue400_rebuild.py
           mapfile -t go_files < <(git diff --name-only -- '*.go')
           gofmt -w "${go_files[@]}"
