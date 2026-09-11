@@ -227,8 +227,6 @@ var commandParsers = map[string]commandParser{
 	"--codex-limit": func(args []string) (Command, error) {
 		return singleArgCommand(args, ModeCodexLimit, "usage: glm-worker --codex-limit")
 	},
-	"--codex-wake-plan":           codexWakePlanCommand,
-	"--codex-wake-response-stdin": codexWakeResponseCommand,
 	"--repo-search": repoSearchCommand,
 	"--evidence":    evidenceCommand,
 	"--repo-search-eval": func(args []string) (Command, error) {
@@ -266,6 +264,9 @@ func usageError(format string, args ...any) *UsageError {
 func ParseCommand(args []string) (Command, error) {
 	if len(args) == 0 {
 		return Command{}, usageError("usage: glm-worker <instruction> | <command>; run glm-worker --help for command list")
+	}
+	if parser, ok := codexWakeCommandParsers[args[0]]; ok {
+		return parser(args)
 	}
 	if parser, ok := commandParsers[args[0]]; ok {
 		return parser(args)
@@ -601,10 +602,6 @@ func executeStateless(cmd Command, cfg config.AppConfig, stdout io.Writer) (bool
 		return true, requestStop(cfg, stdout)
 	case ModeCodexLimit:
 		return true, printCodexLimit(cfg, stdout)
-	case ModeCodexWakePlan:
-		return true, printCodexWakePlan(cmd, cfg, stdout)
-	case ModeCodexWakeResponse:
-		return true, printCodexWakeResponse(cmd, cfg, stdout)
 	case ModePacketCheck, ModeProjectState:
 		return true, executeStatelessProjection(cmd, cfg, stdout)
 	case ModeRepoSearch, ModeEvidence:
@@ -612,7 +609,7 @@ func executeStateless(cmd Command, cfg config.AppConfig, stdout io.Writer) (bool
 	case ModeCheckWakeCoalesce:
 		return true, printCheckWakeCoalesce(cmd, cfg, stdout)
 	default:
-		return executeStatelessReport(cmd, cfg, stdout)
+		return executeCodexWakeStateless(cmd, cfg, stdout)
 	}
 }
 
