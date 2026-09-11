@@ -1,4 +1,4 @@
-name: Web GPT Issue 407 Smoke Debug
+name: Web GPT Issue 407 Smoke Env Patch
 
 on:
   push:
@@ -6,26 +6,33 @@ on:
       - web-gpt/issue-407-project-scoped-agents
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  smoke:
+  patch:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - name: Read quality tool contract
-        id: quality-tools
-        run: |
-          GO_VERSION=$(awk -F': ' '$1 == "go" { print $2 }' quality-tools.yml)
-          printf 'go_version=%s\n' "$GO_VERSION" >> "$GITHUB_OUTPUT"
-      - uses: actions/setup-go@v7
         with:
-          go-version: ${{ steps.quality-tools.outputs.go_version }}
-          cache: false
-      - name: Install quality tools
+          ref: web-gpt/issue-407-project-scoped-agents
+          fetch-depth: 0
+      - name: Patch smoke HOME
         run: |
-          quality_bin="$(go env GOPATH)/bin"
-          QUALITY_TOOLS_BIN_DIR="$quality_bin" ./install-quality-tools.sh
-          printf '%s\n' "$quality_bin" >> "$GITHUB_PATH"
-      - name: Trace installer smoke
-        run: sh -x ./tests/install_smoke.sh
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('tests/install_smoke.sh')
+          s = p.read_text()
+          old = '"$home/.local/bin/glm-codex-context"'
+          new = 'HOME="$home" "$home/.local/bin/glm-codex-context"'
+          if s.count(old) != 3:
+              raise SystemExit(f'glm-codex-context invocation count={s.count(old)}')
+          p.write_text(s.replace(old, new))
+          Path('.github/workflows/web-gpt-407-smoke-debug.yml').unlink()
+          PY
+      - name: Commit patch
+        run: |
+          git config user.name shinderuman
+          git config user.email shinderuman@gmail.com
+          git add -A
+          git commit -m 'Use smoke HOME for Codex context lifecycle'
+          git push origin HEAD:web-gpt/issue-407-project-scoped-agents
