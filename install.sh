@@ -48,6 +48,10 @@ require_quality_tool() {
 	command_name=$1
 	required_version=$2
 	command_path=$(quality_tool_path "$command_name" "$required_version")
+	if [ -e "$command_path" ] && [ ! -x "$command_path" ]; then
+		printf 'quality tool collision: %s exists and is not executable; refusing to overwrite\n' "$command_path" >&2
+		exit 1
+	fi
 	if [ ! -x "$command_path" ]; then
 		if ! command -v "$command_name" >/dev/null 2>&1; then
 			printf 'required command not found: %s\n' "$command_name" >&2
