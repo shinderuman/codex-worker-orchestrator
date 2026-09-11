@@ -128,6 +128,27 @@ func TestRetireRemovesOnlyStillOwnedBinaries(t *testing.T) {
 	}
 }
 
+func TestRetireFailureKeepsOwnershipState(t *testing.T) {
+	buildDir := t.TempDir()
+	binDir := t.TempDir()
+	writeBuildSet(t, buildDir, "v1")
+	if _, err := Install(buildDir, binDir); err != nil {
+		t.Fatal(err)
+	}
+	statePath := statePathForTest(binDir)
+	if err := os.Chmod(binDir, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(binDir, 0o755) })
+
+	if _, err := Retire(binDir); err == nil {
+		t.Fatal("Retire() unexpectedly succeeded")
+	}
+	if _, err := os.Stat(statePath); err != nil {
+		t.Fatalf("ownership state lost after failed retire: %v", err)
+	}
+}
+
 func TestOwnedBinaryExternalChangeFailsClosed(t *testing.T) {
 	buildDir := t.TempDir()
 	binDir := t.TempDir()
