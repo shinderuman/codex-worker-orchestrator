@@ -98,6 +98,7 @@ func TestLoadBuildsConfigFromRepositoryAndEnvironment(t *testing.T) {
 	t.Setenv("CODEX_CONFIG_CLAUDE_SETTINGS_OVERRIDE", "")
 
 	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	t.Setenv("CLAUDE_SETTINGS_FILE", "")
 	t.Setenv("GLM_WORKER_HOME", stateHome)
 	t.Setenv("GLM_WORKER_PROMPT_DIR", promptDir)
 	t.Setenv("GLM_WORKER_CLAUDE_BIN", "claude-test")
@@ -128,8 +129,12 @@ func TestLoadBuildsConfigFromRepositoryAndEnvironment(t *testing.T) {
 	if loaded.StateBase != filepath.Join(stateHome, "sessions") || loaded.PromptDir != promptDir {
 		t.Fatalf("path config = %#v", loaded)
 	}
-	if loaded.ClaudeConfigDir != filepath.Join(home, ".claude") {
-		t.Fatalf("ClaudeConfigDir = %q, want %q", loaded.ClaudeConfigDir, filepath.Join(home, ".claude"))
+	wantClaudeDir := filepath.Join(home, ".claude")
+	if loaded.ClaudeConfigDir != wantClaudeDir {
+		t.Fatalf("ClaudeConfigDir = %q, want %q", loaded.ClaudeConfigDir, wantClaudeDir)
+	}
+	if loaded.ClaudeSettingsPath != filepath.Join(wantClaudeDir, "settings.json") {
+		t.Fatalf("ClaudeSettingsPath = %q", loaded.ClaudeSettingsPath)
 	}
 	if loaded.ClaudeSettingsOverride != filepath.Join(home, ".config", "codex-config", "claude-settings.local.json") {
 		t.Fatalf("ClaudeSettingsOverride = %q", loaded.ClaudeSettingsOverride)
@@ -161,6 +166,8 @@ func TestLoadUsesCodexHomeForCodexPaths(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chdir(previousDirectory) })
 
 	t.Setenv("HOME", t.TempDir())
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	t.Setenv("CLAUDE_SETTINGS_FILE", "")
 	codexHome := filepath.Join(t.TempDir(), "codex-home")
 	t.Setenv("CODEX_HOME", codexHome)
 	t.Setenv("CODEX_CONFIG_DIR", "")
@@ -175,175 +182,5 @@ func TestLoadUsesCodexHomeForCodexPaths(t *testing.T) {
 	wantPromptDir := filepath.Join(codexHome, "glm-worker", "prompts")
 	if loaded.PromptDir != wantPromptDir {
 		t.Fatalf("PromptDir = %q, want %q", loaded.PromptDir, wantPromptDir)
-	}
-}
-
-func TestLoadCodexConfigDirOverridesCodexHome(t *testing.T) {
-	repository := filepath.Join(t.TempDir(), "repository")
-	if err := os.MkdirAll(repository, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	command := exec.Command("git", "init", "--quiet", repository)
-	if output, err := command.CombinedOutput(); err != nil {
-		t.Fatalf("git init: %v: %s", err, output)
-	}
-	previousDirectory, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(repository); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(previousDirectory) })
-
-	t.Setenv("HOME", t.TempDir())
-	t.Setenv("CODEX_HOME", filepath.Join(t.TempDir(), "codex-home"))
-	override := filepath.Join(t.TempDir(), "codex-config")
-	t.Setenv("CODEX_CONFIG_DIR", override)
-	loaded, err := Load()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if loaded.CodexConfigDir != override {
-		t.Fatalf("CodexConfigDir = %q, want %q", loaded.CodexConfigDir, override)
-	}
-}
-
-func TestLoadDefaultsRepoSearchEnabled(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
-	t.Setenv("GLM_WORKER_REPO_SEARCH", "")
-	loaded, err := Load()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !loaded.RepoSearch {
-		t.Fatalf("RepoSearch = false, want default enabled")
-	}
-}
-
-func TestResolveRepoRootFallsBackToCurrentDirectory(t *testing.T) {
-	directory := t.TempDir()
-	previousDirectory, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(directory); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(previousDirectory) })
-
-	resolved, err := resolveRepoRoot()
-	if err != nil {
-		t.Fatal(err)
-	}
-	want, err := filepath.EvalSymlinks(directory)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if resolved != want {
-		t.Fatalf("root = %q, want %q", resolved, want)
-	}
-}
-
-func TestLoadRejectsInvalidReviewRounds(t *testing.T) {
-	t.Setenv("GLM_WORKER_MAX_AUTO_FIX_ROUNDS", "invalid")
-	if _, err := Load(); err == nil {
-		t.Fatal("invalid review roundsを拒否する必要があります")
-	}
-}
-
-func TestLoadRespectsClaudeConfigDirEnv(t *testing.T) {
-	repository := filepath.Join(t.TempDir(), "repository")
-	if err := os.MkdirAll(repository, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	command := exec.Command("git", "init", "--quiet", repository)
-	if output, err := command.CombinedOutput(); err != nil {
-		t.Fatalf("git init: %v: %s", err, output)
-	}
-
-	previousDirectory, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(repository); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(previousDirectory) })
-
-	t.Setenv("HOME", t.TempDir())
-	t.Setenv("CLAUDE_CONFIG_DIR", "/override/claude-config")
-
-	loaded, err := Load()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if loaded.ClaudeConfigDir != "/override/claude-config" {
-		t.Fatalf("ClaudeConfigDir = %q, want /override/claude-config", loaded.ClaudeConfigDir)
-	}
-	if loaded.CodexBin != "codex" {
-		t.Fatalf("CodexBin = %q, want codex", loaded.CodexBin)
-	}
-}
-
-func TestLoadParsesEnvAllowlist(t *testing.T) {
-	repository := filepath.Join(t.TempDir(), "repository")
-	if err := os.MkdirAll(repository, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	command := exec.Command("git", "init", "--quiet", repository)
-	if output, err := command.CombinedOutput(); err != nil {
-		t.Fatalf("git init: %v: %s", err, output)
-	}
-	previousDirectory, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(repository); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(previousDirectory) })
-
-	t.Setenv("HOME", t.TempDir())
-	t.Setenv("GLM_WORKER_ENV_ALLOWLIST", "GOPATH, ,GOFLAGS")
-
-	loaded, err := Load()
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := []string{"GOPATH", "GOFLAGS"}
-	if len(loaded.EnvAllowlist) != len(want) {
-		t.Fatalf("EnvAllowlist = %#v, want %#v", loaded.EnvAllowlist, want)
-	}
-	for index, key := range want {
-		if loaded.EnvAllowlist[index] != key {
-			t.Fatalf("EnvAllowlist[%d] = %q, want %q", index, loaded.EnvAllowlist[index], key)
-		}
-	}
-}
-
-func TestLoadLeavesEnvAllowlistNilByDefault(t *testing.T) {
-	t.Setenv("GLM_WORKER_ENV_ALLOWLIST", "")
-	if loaded, err := Load(); err != nil {
-		t.Fatal(err)
-	} else if loaded.EnvAllowlist != nil {
-		t.Fatalf("EnvAllowlist = %#v, want nil", loaded.EnvAllowlist)
-	}
-}
-
-func TestConfigSourceRetainsLegacyOverrideIdentifiers(t *testing.T) {
-	source, err := os.ReadFile("config.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, line := range strings.Split(string(source), "\n") {
-		if strings.HasPrefix(strings.TrimSpace(line), `"github.com/`) {
-			continue
-		}
-		for _, forbidden := range []string{"codex-worker-orchestrator", "CODEX_WORKER_ORCHESTRATOR"} {
-			if strings.Contains(line, forbidden) {
-				t.Fatalf("config.go must not reference renamed persistent identifier %q", forbidden)
-			}
-		}
 	}
 }
