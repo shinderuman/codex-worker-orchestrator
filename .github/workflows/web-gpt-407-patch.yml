@@ -1,0 +1,27 @@
+name: Web GPT Issue 407 Patch
+
+on:
+  push:
+    branches:
+      - web-gpt/issue-407-project-scoped-agents
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Apply exact integration patch
+        run: python .github/web-gpt-407-patch.py
+      - name: Format Go changes
+        run: gofmt -w glm-worker/internal/codexcontext/context.go glm-worker/internal/codexcontext/project_agents.go glm-worker/internal/parentactioncmd/runtime_install.go
+      - name: Commit patch
+        run: |
+          git diff --check
+          git config user.name web-gpt-issue-407
+          git config user.email web-gpt-issue-407@example.invalid
+          git add -A
+          git commit -m 'Integrate project-scoped Codex instruction loading'
+          git push origin HEAD:web-gpt/issue-407-project-scoped-agents
