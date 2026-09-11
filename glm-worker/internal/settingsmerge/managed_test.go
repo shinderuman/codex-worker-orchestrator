@@ -2,6 +2,7 @@ package settingsmerge
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -44,13 +45,17 @@ func TestManagedSettingsRestorePreexistingValueOnRetire(t *testing.T) {
 			if _, err := MergeFiles(target, fragment, ""); err != nil {
 				t.Fatal(err)
 			}
-			assertContains(t, target, `"KEY": "managed"`, `"LOCAL": "keep"`, `"other": true`)
+			assertJSONValue(t, target, []string{"env", "KEY"}, "managed")
+			assertJSONValue(t, target, []string{"env", "LOCAL"}, "keep")
+			assertJSONValue(t, target, []string{"other"}, true)
 
 			writeTestFile(t, fragment, `{}`)
 			if _, err := MergeFiles(target, fragment, ""); err != nil {
 				t.Fatal(err)
 			}
-			assertContains(t, target, `"KEY": "`+original+`"`, `"LOCAL": "keep"`, `"other": true`)
+			assertJSONValue(t, target, []string{"env", "KEY"}, original)
+			assertJSONValue(t, target, []string{"env", "LOCAL"}, "keep")
+			assertJSONValue(t, target, []string{"other"}, true)
 		})
 	}
 }
@@ -69,13 +74,13 @@ func TestManagedSettingsUpgradeKeepsOriginalBaseline(t *testing.T) {
 	if _, err := MergeFiles(target, fragment, ""); err != nil {
 		t.Fatal(err)
 	}
-	assertContains(t, target, `"KEY": "two"`)
+	assertJSONValue(t, target, []string{"env", "KEY"}, "two")
 
 	writeTestFile(t, fragment, `{}`)
 	if _, err := MergeFiles(target, fragment, ""); err != nil {
 		t.Fatal(err)
 	}
-	assertContains(t, target, `"KEY": "user"`)
+	assertJSONValue(t, target, []string{"env", "KEY"}, "user")
 }
 
 func TestManagedSettingsRefuseOverwriteAfterUserModification(t *testing.T) {
@@ -118,13 +123,41 @@ func TestManagedSettingsRetirePreservesUserModifiedValue(t *testing.T) {
 	if _, err := MergeFiles(target, fragment, ""); err != nil {
 		t.Fatal(err)
 	}
-	assertContains(t, target, `"KEY": "manual"`, `"LOCAL": "keep"`)
+	assertJSONValue(t, target, []string{"env", "KEY"}, "manual")
+	assertJSONValue(t, target, []string{"env", "LOCAL"}, "keep")
 	state, err := loadManagedState(ManagedStatePath(target))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(state.Values) != 0 {
 		t.Fatalf("retired user-modified value remained tool-owned: %+v", state.Values)
+	}
+}
+
+func TestManagedSettingsEmptyFragmentRestoresAllManagedBaselines(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "settings.json")
+	fragment := filepath.Join(dir, "managed.json")
+	writeTestFile(t, target, `{"env":{"KEEP":"user"},"other":"keep"}`)
+	writeTestFile(t, fragment, `{"env":{"KEEP":"managed","NEW":"managed"},"top":"managed"}`)
+	if _, err := MergeFiles(target, fragment, ""); err != nil {
+		t.Fatal(err)
+	}
+
+	writeTestFile(t, fragment, `{}`)
+	if _, err := MergeFiles(target, fragment, ""); err != nil {
+		t.Fatal(err)
+	}
+	assertJSONValue(t, target, []string{"env", "KEEP"}, "user")
+	assertJSONValue(t, target, []string{"other"}, "keep")
+	assertJSONMissing(t, target, []string{"env", "NEW"})
+	assertJSONMissing(t, target, []string{"top"})
+	state, err := loadManagedState(ManagedStatePath(target))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(state.Values) != 0 {
+		t.Fatalf("empty managed fragment retained ownership: %+v", state.Values)
 	}
 }
 
@@ -169,4 +202,39 @@ func TestVerifyManagedInstallationRequiresOwnershipState(t *testing.T) {
 	if err := VerifyManagedInstallation(target, fragment, ""); err != nil {
 		t.Fatalf("valid managed ownership rejected: %v", err)
 	}
+}
+
+func assertJSONValue(t *testing.T, path string, keys []string, want any) {
+	t.Helper()
+	value, exists := jsonValueAt(t, path, keys)
+	if !exists || value != want {
+		t.Fatalf("%s value at %v = %#v, exists=%v, want %#v", path, keys, value, exists, want)
+	}
+}
+
+func assertJSONMissing(t *testing.T, path string, keys []string) {
+	t.Helper()
+	if value, exists := jsonValueAt(t, path, keys); exists {
+		t.Fatalf("%s unexpectedly contains %v = %#v", path, keys, value)
+	}
+}
+
+func jsonValueAt(t *testing.T, path string, keys []string) (any, bool) {
+	t.Helper()
+	var current any
+	if err := json.Unmarshal(readTestFile(t, path), &current); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range keys {
+		object, ok := current.(map[string]any)
+		if !ok {
+			return nil, false
+		}
+		value, exists := object[key]
+		if !exists {
+			return nil, false
+		}
+		current = value
+	}
+	return current, true
 }
