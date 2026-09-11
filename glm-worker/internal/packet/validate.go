@@ -10,16 +10,18 @@ import (
 )
 
 type constraintError struct {
-	reason  string
-	reasons []string
-	keys    []string
+	reason   string
+	reasons  []string
+	keys     []string
+	category string
 }
 
 type constraintCollector struct {
-	reasons []string
-	keys    []string
-	seen    map[string]struct{}
-	omitted int
+	reasons  []string
+	keys     []string
+	seen     map[string]struct{}
+	omitted  int
+	category string
 }
 
 const maxConstraintReasons = 16
@@ -29,7 +31,7 @@ func (e *constraintError) Error() string {
 }
 
 func newConstraintError(key, reason string) *constraintError {
-	return &constraintError{reason: reason, reasons: []string{reason}, keys: []string{key}}
+	return &constraintError{reason: reason, reasons: []string{reason}, keys: []string{key}, category: rejectCategoryForKey(key)}
 }
 
 func IsConstraintError(err error) bool {
@@ -92,6 +94,9 @@ func (c *constraintCollector) addReason(key, reason string) {
 		return
 	}
 	c.seen[reason] = struct{}{}
+	if c.category == "" {
+		c.category = rejectCategoryForKey(key)
+	}
 	if len(c.reasons) >= maxConstraintReasons {
 		c.omitted++
 		return
@@ -109,9 +114,31 @@ func (c *constraintCollector) err() error {
 		display = append(display, fmt.Sprintf("ほか%d件の独立した違反があります", c.omitted))
 	}
 	return &constraintError{
-		reason:  strings.Join(display, "; "),
-		reasons: append([]string(nil), c.reasons...),
-		keys:    append([]string(nil), c.keys...),
+		reason:   strings.Join(display, "; "),
+		reasons:  append([]string(nil), c.reasons...),
+		keys:     append([]string(nil), c.keys...),
+		category: c.category,
+	}
+}
+
+func rejectCategoryForKey(key string) string {
+	switch {
+	case strings.HasPrefix(key, "artifact"):
+		return "artifacts"
+	case strings.HasPrefix(key, "multiline-field"), key == "list-element-multiline":
+		return "multiline-field"
+	case strings.HasPrefix(key, "field-size"), key == "list-element-size", key == "packet-size":
+		return "size"
+	case strings.HasPrefix(key, "missing-field"):
+		return "missing-field"
+	case strings.HasPrefix(key, "targets"):
+		return "targets-none"
+	case strings.Contains(key, "risk"):
+		return "risk"
+	case strings.Contains(key, "status"):
+		return "status"
+	default:
+		return "other"
 	}
 }
 
@@ -121,6 +148,10 @@ func RejectCategory(err error) string {
 	}
 	if IsMismatchError(err) {
 		return "schema-mismatch"
+	}
+	var constraint *constraintError
+	if errors.As(err, &constraint) && constraint.category != "" {
+		return constraint.category
 	}
 	msg := strings.ToLower(err.Error())
 	switch {
