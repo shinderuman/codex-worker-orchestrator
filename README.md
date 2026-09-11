@@ -9,7 +9,8 @@ READMEはcurrent runtime stateや実装inventoryの第二正本ではありま�
 - repository作業規則: `AGENTS.md`、`IMPLEMENTATION_RULES.md`
 - repository内の現在のtask schedule: `IMPLEMENTATION_PLAN.local.md`
 - 個別task requirement: `IMPLEMENTATION_TASKS/*.md`
-- 配置されるCodex契約: `codex/AGENTS.md`、`codex/instructions/`
+- project/tool-scoped Codex親規則の正本: `codex/AGENTS.md`（repository root `AGENTS.md`または`glm-codex-context`のproject bootstrapから参照）
+- on-demand Codex契約: `codex/instructions/`
 - worker/reviewer契約: `codex/glm-worker/prompts/`
 - deterministic behavior: `glm-worker/internal/`のproduction codeと対応test
 - tool version: `quality-tools.yml`
@@ -54,7 +55,7 @@ codex-worker-orchestrator/
 ├── AGENTS.md / IMPLEMENTATION_RULES.md
 ├── IMPLEMENTATION_PLAN.local.md / IMPLEMENTATION_TASKS/
 ├── quality-tools.yml / install-quality-tools.sh / install.sh
-├── codex/                 # installed Codex contracts/config
+├── codex/                 # project/tool-scoped Codex contracts and managed artifacts
 ├── claude/                # managed Claude settings
 ├── glm-worker/
 │   ├── cmd/               # thin binary entrypoints
