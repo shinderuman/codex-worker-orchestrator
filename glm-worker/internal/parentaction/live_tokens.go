@@ -3,6 +3,7 @@ package parentaction
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,22 +25,39 @@ func LiveTokens(repoRoot string) ([]string, error) {
 	}
 	tokens := make([]string, 0, len(entries))
 	for _, entry := range entries {
-		token, ok := liveTokenFromEntry(stageDir, entry)
-		if !ok {
-			continue
+		token, matched, err := liveTokenFromEntry(stageDir, entry)
+		if err != nil {
+			return nil, err
 		}
-		tokens = append(tokens, token)
+		if matched {
+			tokens = append(tokens, token)
+		}
 	}
 	return tokens, nil
 }
 
-func liveTokenFromEntry(stageDir string, entry os.DirEntry) (string, bool) {
-	if entry.Type()&os.ModeSymlink != 0 || entry.IsDir() {
-		return "", false
-	}
+func liveTokenFromEntry(stageDir string, entry os.DirEntry) (string, bool, error) {
 	name := entry.Name()
+	action, token, matched := stagedTokenIdentity(name)
+	if !matched {
+		return "", false, nil
+	}
+	if entry.Type()&os.ModeSymlink != 0 || entry.IsDir() {
+		return "", false, fmt.Errorf("parent action staging record is not a regular file: %s", action)
+	}
+	raw, err := readRegularPayload(filepath.Join(stageDir, name), len(tokenHeader(token)))
+	if err != nil {
+		return "", false, fmt.Errorf("parent action staging record is unreadable: %s", action)
+	}
+	if !bytes.HasPrefix(raw, []byte(tokenHeader(token))) {
+		return "", false, fmt.Errorf("parent action staging token binding is invalid: %s", action)
+	}
+	return token, true, nil
+}
+
+func stagedTokenIdentity(name string) (string, string, bool) {
 	if !strings.HasSuffix(name, ".txt") {
-		return "", false
+		return "", "", false
 	}
 	base := strings.TrimSuffix(name, ".txt")
 	for action := range payloadActions {
@@ -49,13 +67,9 @@ func liveTokenFromEntry(stageDir string, entry os.DirEntry) (string, bool) {
 		}
 		token := strings.TrimPrefix(base, prefix)
 		if !validToken(token) {
-			return "", false
+			return "", "", false
 		}
-		raw, err := readRegularPayload(filepath.Join(stageDir, name), len(tokenHeader(token)))
-		if err != nil || !bytes.HasPrefix(raw, []byte(tokenHeader(token))) {
-			return "", false
-		}
-		return token, true
+		return string(action), token, true
 	}
-	return "", false
+	return "", "", false
 }
