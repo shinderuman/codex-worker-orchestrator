@@ -21,6 +21,14 @@ const (
 	projectContinuationActionStart                = "start"
 )
 
+func BuildCurrentParentRequestCompletionProjection(cfg config.AppConfig, st *state.StateStore) (ParentRequestCompletionProjection, error) {
+	output, err := buildProjectState(cfg, st)
+	if err != nil {
+		return ParentRequestCompletionProjection{}, err
+	}
+	return parentRequestProjection(output.Continuation), nil
+}
+
 func BuildParentRequestCompletionProjection(cfg config.AppConfig, st *state.StateStore) (ParentRequestCompletionProjection, error) {
 	planContent, err := readProjectStatePlan(cfg.RepoRoot)
 	if err != nil {
