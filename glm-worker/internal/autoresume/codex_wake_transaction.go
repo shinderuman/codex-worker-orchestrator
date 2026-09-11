@@ -57,7 +57,7 @@ type codexWakeTransaction struct {
 
 const (
 	codexWakeTransactionVersion = 1
-	codexWakeSafetyMargin        = 2 * time.Minute
+	codexWakeSafetyMargin       = 2 * time.Minute
 
 	CodexWakeStatusWriteRequired = "write_required"
 	CodexWakeStatusVerified      = "verified"
