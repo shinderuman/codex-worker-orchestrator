@@ -6,19 +6,21 @@ import (
 )
 
 type projectContinuationObligation struct {
-	State          string               `json:"state"`
-	Task           string               `json:"task,omitempty"`
-	RequiredAction string               `json:"required_action,omitempty"`
-	Reason         string               `json:"reason"`
-	Blocker        *projectStateBlocker `json:"blocker,omitempty"`
+	State          string                         `json:"state"`
+	Task           string                         `json:"task,omitempty"`
+	RequiredAction string                         `json:"required_action,omitempty"`
+	Reason         string                         `json:"reason"`
+	Blocker        *projectStateBlocker           `json:"blocker,omitempty"`
+	Automation     *projectContinuationAutomation `json:"automation,omitempty"`
 }
 
 const (
-	projectContinuationContinueNow  = "continue-now"
-	projectContinuationBlocked      = "blocked"
-	projectContinuationTerminal     = "terminal"
-	projectContinuationExplicitStop = "explicit-stop"
-	projectContinuationUnknown      = "unknown"
+	projectContinuationContinueNow                  = "continue-now"
+	projectContinuationBlocked                      = "blocked"
+	projectContinuationTerminal                     = "terminal"
+	projectContinuationExplicitStop                 = "explicit-stop"
+	projectContinuationDeferredByVerifiedAutomation = "deferred-by-verified-automation"
+	projectContinuationUnknown                      = "unknown"
 )
 
 const (

@@ -585,9 +585,9 @@ func executeStateless(cmd Command, cfg config.AppConfig, stdout io.Writer) (bool
 		return true, printStatusLeased(state.AttachStateStore(cfg), stdout)
 	case ModeHandoff:
 		if cmd.Payload == "recovery" {
-			return true, printParentHandoffRecoveryLeased(state.AttachStateStore(cfg), stdout)
+			return true, printParentHandoffRecoveryLeasedWithConfig(cfg, state.AttachStateStore(cfg), stdout)
 		}
-		return true, printParentHandoffLeased(state.AttachStateStore(cfg), stdout)
+		return true, printParentHandoffLeasedWithConfig(cfg, state.AttachStateStore(cfg), stdout)
 	case ModeStats:
 		return true, printStats(cfg, state.AttachStateStore(cfg), cmd.Query, stdout)
 	case ModeWatch:

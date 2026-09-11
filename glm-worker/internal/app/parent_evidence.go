@@ -580,7 +580,7 @@ func (p *parentEvidenceProjector) projectAuthority(request parentEvidenceAuthori
 }
 
 func (p *parentEvidenceProjector) projectHandoff(request parentEvidenceHandoffRequest) parentEvidencePart {
-	value := buildParentHandoff(p.st)
+	value := buildParentHandoffWithConfig(p.cfg, p.st)
 	digest, _ := parentEvidenceDigest(value)
 	part := parentEvidencePart{Kind: "handoff", Digest: digest, Locator: "handoff:current-state"}
 	if !request.Force && request.KnownDigest != "" && request.KnownDigest == digest {
