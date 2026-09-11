@@ -6,6 +6,9 @@ import (
 )
 
 func (s *StateStore) AcceptParentReview() (bool, error) {
+	if err := s.RequireParentReviewAcceptanceEvidence(); err != nil {
+		return false, err
+	}
 	review, err := s.snapshotLifecycleFile(parentReviewStateFile)
 	if err != nil {
 		return false, err

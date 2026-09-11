@@ -583,7 +583,21 @@ func (s *StateStore) RecordRepoSearchOutcome(category string, outcome string, re
 }
 
 func (s *StateStore) RecordSolResult(value packet.Result, producer ParentReviewProducer) error {
-	if err := s.openParentReviewState(string(value.Status), string(value.Risk), producer); err != nil {
+	return s.recordSolResult(value, producer, nil)
+}
+
+func (s *StateStore) RecordSolResultWithReviewSnapshot(value packet.Result, producer ParentReviewProducer, snapshot SnapshotDigest) error {
+	return s.recordSolResult(value, producer, &snapshot)
+}
+
+func (s *StateStore) recordSolResult(value packet.Result, producer ParentReviewProducer, reviewSnapshot *SnapshotDigest) error {
+	var err error
+	if value.Status == packet.StatusNeedsSolReview && reviewSnapshot != nil {
+		err = s.openBoundParentReviewState(value, producer, *reviewSnapshot)
+	} else {
+		err = s.openParentReviewState(string(value.Status), string(value.Risk), producer)
+	}
+	if err != nil {
 		return err
 	}
 	s.UpdateTaskStats(func(stats *TaskStats) {

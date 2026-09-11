@@ -241,6 +241,9 @@ func commitParentEvidenceProjectionLocked(p *parentEvidenceProjector, stdout io.
 	if err != nil {
 		return err
 	}
+	if err := markParentReviewEvidenceProof(p, output.Parts); err != nil {
+		return err
+	}
 	saveSurvivingParentEvidenceClaims(p, output.Parts)
 	recordParentEvidence(p.st, state.ParentEvidenceRecord{
 		Surface: state.ParentEvidenceSurfaceEvidenceTelemetry, Origin: state.ParentEvidenceOriginEvidence,
@@ -925,6 +928,126 @@ func parentEvidenceJoinRoot(repoRoot string, rel string) (string, error) {
 		return "", fmt.Errorf("対象file %sは通常fileではありません", rel)
 	}
 	return canonical, nil
+}
+
+func markParentReviewEvidenceProof(p *parentEvidenceProjector, parts []parentEvidencePart) error {
+	binding, err := p.st.CurrentParentReviewBinding()
+	if err != nil {
+		return err
+	}
+	if binding == nil {
+		return nil
+	}
+	claims, complete := parentReviewEvidenceClaims(binding.Targets, parts)
+	if !complete {
+		return nil
+	}
+	return p.st.MarkParentReviewEvidence(binding.ID, p.ownerCallID, claims)
+}
+
+func parentReviewEvidenceClaims(targets []string, parts []parentEvidencePart) ([]state.ParentReviewEvidenceClaim, bool) {
+	claims := make([]state.ParentReviewEvidenceClaim, 0, len(targets))
+	seen := make(map[string]struct{})
+	for _, target := range targets {
+		claim, ok := parentReviewEvidenceClaimForTarget(target, parts)
+		if !ok {
+			return nil, false
+		}
+		key := claim.Kind + "\x00" + claim.Digest + "\x00" + claim.Locator
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		claims = append(claims, claim)
+	}
+	return claims, len(claims) > 0
+}
+
+func parentReviewEvidenceClaimForTarget(target string, parts []parentEvidencePart) (state.ParentReviewEvidenceClaim, bool) {
+	for _, part := range parts {
+		if part.Digest == "" {
+			continue
+		}
+		if part.Source != nil && part.Source.Content != "" && parentReviewSourceCoversTarget(target, *part.Source) {
+			return state.ParentReviewEvidenceClaim{Kind: "source", Digest: part.Digest, Locator: part.Locator}, true
+		}
+		if part.Diff != nil && part.Diff.Body != "" && parentReviewDiffCoversTarget(target, *part.Diff) {
+			return state.ParentReviewEvidenceClaim{Kind: "diff", Digest: part.Digest, Locator: part.Locator}, true
+		}
+	}
+	return state.ParentReviewEvidenceClaim{}, false
+}
+
+func parentReviewSourceCoversTarget(target string, source parentEvidenceSourceBody) bool {
+	if !parentReviewTargetMatchesPath(target, source.Path) {
+		return false
+	}
+	suffix := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(target), source.Path))
+	if !strings.HasPrefix(suffix, ":") {
+		return false
+	}
+	locator := strings.TrimSpace(strings.TrimPrefix(suffix, ":"))
+	start, end, ok := parentReviewNumericRange(locator)
+	return ok && source.LineStart <= start && source.LineEnd >= end
+}
+
+func parentReviewDiffCoversTarget(target string, diff parentEvidenceDiffBody) bool {
+	for _, file := range diff.Files {
+		if !parentReviewTargetMatchesPath(target, file.Path) || file.Status == "unknown" {
+			continue
+		}
+		if file.HeadBlob != "" || file.IndexBlob != "" || file.WorktreeSHA != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func parentReviewTargetMatchesPath(target, path string) bool {
+	target = strings.TrimSpace(target)
+	if target == path {
+		return true
+	}
+	for _, separator := range []string{":", " ", ","} {
+		if strings.HasPrefix(target, path+separator) {
+			return true
+		}
+	}
+	return false
+}
+
+func parentReviewNumericRange(locator string) (int, int, bool) {
+	endIndex := 0
+	for endIndex < len(locator) {
+		c := locator[endIndex]
+		if (c < '0' || c > '9') && c != '-' {
+			break
+		}
+		endIndex++
+	}
+	if endIndex == 0 {
+		return 0, 0, false
+	}
+	token := locator[:endIndex]
+	values := strings.Split(token, "-")
+	if len(values) > 2 || values[0] == "" {
+		return 0, 0, false
+	}
+	start, err := strconv.Atoi(values[0])
+	if err != nil || start < 1 {
+		return 0, 0, false
+	}
+	end := start
+	if len(values) == 2 {
+		if values[1] == "" {
+			return 0, 0, false
+		}
+		end, err = strconv.Atoi(values[1])
+		if err != nil || end < start {
+			return 0, 0, false
+		}
+	}
+	return start, end, true
 }
 
 func applyParentEvidenceTotalBudget(output *parentEvidenceOutput) {
