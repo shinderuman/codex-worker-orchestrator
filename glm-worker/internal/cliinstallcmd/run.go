@@ -4,20 +4,19 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"os"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/cliinstall"
 )
 
-func Main() int {
-	if err := Run(os.Args[1:], os.Stdout); err != nil {
-		_, _ = fmt.Fprintln(os.Stderr, err)
+func Run(args []string, stdout, stderr io.Writer) int {
+	if err := run(args, stdout); err != nil {
+		_, _ = fmt.Fprintln(stderr, err)
 		return 1
 	}
 	return 0
 }
 
-func Run(args []string, stdout io.Writer) error {
+func run(args []string, stdout io.Writer) error {
 	flags := flag.NewFlagSet("repo-cli-install", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	mode := flags.String("mode", "install", "")
