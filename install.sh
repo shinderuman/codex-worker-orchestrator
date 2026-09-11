@@ -145,7 +145,8 @@ require awk
 require grep
 require install
 QUALITY_TOOL_NAMESPACE=$(quality_contract_value namespace)
-QUALITY_TOOLS_DEFAULT_BIN_DIR=$(quality_tool_bin_dir "$(quality_contract_value default-bin-dir)")
+QUALITY_TOOLS_DEFAULT_BIN_DIR=$(quality_contract_value default-bin-dir)
+QUALITY_TOOLS_RESOLVED_BIN_DIR=$(quality_tool_bin_dir "$QUALITY_TOOLS_DEFAULT_BIN_DIR")
 GO_VERSION=$(quality_contract_value go)
 LINT_GO_VERSION=$(quality_contract_value lint-go)
 GOLANGCI_LINT_VERSION=$(quality_contract_value golangci-lint)
