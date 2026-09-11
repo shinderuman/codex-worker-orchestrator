@@ -115,9 +115,11 @@ func TestCodexWakeInvocationRejectsCrossThreadContext(t *testing.T) {
 	if err := printCodexWakeResponse(cmd, cfg, io.Discard); err == nil {
 		t.Fatal("cross-thread wake response was accepted")
 	}
-	if _, err := beginCodexWakeToken(cfg.CodexConfigDir, plan.Token); err != nil {
+	lease, err := beginCodexWakeToken(cfg.CodexConfigDir, plan.Token)
+	if err != nil {
 		t.Fatalf("rejected cross-thread response consumed token: %v", err)
 	}
+	lease.rollback()
 }
 
 func TestCodexWakeRegistrationResponseDoesNotBindParentThread(t *testing.T) {
@@ -216,6 +218,27 @@ func TestCodexWakeResponseOutputFailureKeepsInputTokenRetryable(t *testing.T) {
 	lease.rollback()
 	if err := printCodexWakeResponse(cmd, cfg, io.Discard); err == nil {
 		t.Fatal("input token remained replayable after successful response delivery")
+	}
+}
+
+func TestCodexWakeResponseRecoversInterruptedTokenClaim(t *testing.T) {
+	plan := testAppCodexWakePlan(t)
+	cfg := config.AppConfig{CodexConfigDir: t.TempDir()}
+	if err := persistCodexWakeToken(cfg.CodexConfigDir, plan.Token); err != nil {
+		t.Fatal(err)
+	}
+	lease, err := beginCodexWakeToken(cfg.CodexConfigDir, plan.Token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease.releaseLock()
+
+	cmd := Command{Mode: ModeCodexWakeResponse, Payload: `{}`, CodexWake: CodexWakeArgs{Token: plan.Token}}
+	if err := printCodexWakeResponse(cmd, cfg, io.Discard); err != nil {
+		t.Fatalf("orphaned inflight token was not recovered: %v", err)
+	}
+	if err := printCodexWakeResponse(cmd, cfg, io.Discard); err == nil {
+		t.Fatal("recovered token was replayable after successful response delivery")
 	}
 }
 
