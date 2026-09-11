@@ -15,9 +15,6 @@ import (
 )
 
 func verifyRuntimeMergedConfigFiles(cfg config.AppConfig, _ []string) error {
-	if cfg.CodexConfigDir == "" && cfg.ClaudeSettingsPath == "" {
-		return nil
-	}
 	if cfg.CodexConfigDir == "" {
 		return fmt.Errorf("codex config directory is empty")
 	}
