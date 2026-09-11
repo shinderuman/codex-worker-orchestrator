@@ -1,0 +1,48 @@
+name: Issue 371 validation
+
+on:
+  push:
+    branches:
+      - web-gpt/issue-371-parent-plan-continuation
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-371-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Read quality tool contract
+        id: quality-tools
+        run: |
+          GO_VERSION=$(awk -F': ' '$1 == "go" { print $2 }' quality-tools.yml)
+          printf 'go_version=%s\n' "$GO_VERSION" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ steps.quality-tools.outputs.go_version }}
+          cache: false
+      - name: Check gofmt
+        run: |
+          files=$(git diff --name-only 4efa4812619ba9f484902776769a29ed36f2bc58...HEAD -- '*.go')
+          test -n "$files"
+          diff=$(gofmt -d $files)
+          test -z "$diff" || { printf '%s\n' "$diff"; exit 1; }
+      - name: Targeted tests
+        working-directory: glm-worker
+        run: go test ./internal/app ./internal/workflow ./internal/parentactioncmd
+      - name: Install quality tools
+        run: |
+          quality_bin="$(go env GOPATH)/bin"
+          QUALITY_TOOLS_BIN_DIR="$quality_bin" ./install-quality-tools.sh
+          printf '%s\n' "$quality_bin" >> "$GITHUB_PATH"
+      - name: Repository lint gate
+        run: ./harnesslint
+      - name: Full Go test suite
+        working-directory: glm-worker
+        run: go test ./...
