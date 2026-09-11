@@ -268,4 +268,5 @@ if grep -Fq 'brew install' "$standard_stderr"; then
 	printf '%s\n' 'install missing standard command: unexpected Homebrew hint' >&2
 	exit 1
 fi
+sh "$source_root/tests/install_claude_settings_location_smoke.sh"
 printf '%s\n' 'install smoke: pass'

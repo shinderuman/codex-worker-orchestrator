@@ -98,6 +98,7 @@ func TestLoadBuildsConfigFromRepositoryAndEnvironment(t *testing.T) {
 	t.Setenv("CODEX_CONFIG_CLAUDE_SETTINGS_OVERRIDE", "")
 
 	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	t.Setenv("CLAUDE_SETTINGS_FILE", "")
 	t.Setenv("GLM_WORKER_HOME", stateHome)
 	t.Setenv("GLM_WORKER_PROMPT_DIR", promptDir)
 	t.Setenv("GLM_WORKER_CLAUDE_BIN", "claude-test")
@@ -128,8 +129,12 @@ func TestLoadBuildsConfigFromRepositoryAndEnvironment(t *testing.T) {
 	if loaded.StateBase != filepath.Join(stateHome, "sessions") || loaded.PromptDir != promptDir {
 		t.Fatalf("path config = %#v", loaded)
 	}
-	if loaded.ClaudeConfigDir != filepath.Join(home, ".claude") {
-		t.Fatalf("ClaudeConfigDir = %q, want %q", loaded.ClaudeConfigDir, filepath.Join(home, ".claude"))
+	wantClaudeDir := filepath.Join(home, ".claude")
+	if loaded.ClaudeConfigDir != wantClaudeDir {
+		t.Fatalf("ClaudeConfigDir = %q, want %q", loaded.ClaudeConfigDir, wantClaudeDir)
+	}
+	if loaded.ClaudeSettingsPath != filepath.Join(wantClaudeDir, "settings.json") {
+		t.Fatalf("ClaudeSettingsPath = %q", loaded.ClaudeSettingsPath)
 	}
 	if loaded.ClaudeSettingsOverride != filepath.Join(home, ".config", "codex-config", "claude-settings.local.json") {
 		t.Fatalf("ClaudeSettingsOverride = %q", loaded.ClaudeSettingsOverride)
@@ -161,6 +166,8 @@ func TestLoadUsesCodexHomeForCodexPaths(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chdir(previousDirectory) })
 
 	t.Setenv("HOME", t.TempDir())
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	t.Setenv("CLAUDE_SETTINGS_FILE", "")
 	codexHome := filepath.Join(t.TempDir(), "codex-home")
 	t.Setenv("CODEX_HOME", codexHome)
 	t.Setenv("CODEX_CONFIG_DIR", "")
@@ -273,6 +280,7 @@ func TestLoadRespectsClaudeConfigDirEnv(t *testing.T) {
 
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("CLAUDE_CONFIG_DIR", "/override/claude-config")
+	t.Setenv("CLAUDE_SETTINGS_FILE", "")
 
 	loaded, err := Load()
 	if err != nil {
@@ -280,6 +288,9 @@ func TestLoadRespectsClaudeConfigDirEnv(t *testing.T) {
 	}
 	if loaded.ClaudeConfigDir != "/override/claude-config" {
 		t.Fatalf("ClaudeConfigDir = %q, want /override/claude-config", loaded.ClaudeConfigDir)
+	}
+	if loaded.ClaudeSettingsPath != "/override/claude-config/settings.json" {
+		t.Fatalf("ClaudeSettingsPath = %q, want /override/claude-config/settings.json", loaded.ClaudeSettingsPath)
 	}
 	if loaded.CodexBin != "codex" {
 		t.Fatalf("CodexBin = %q, want codex", loaded.CodexBin)

@@ -70,7 +70,7 @@ func TestVerifyInstalledClaudeManagedSettingsAppliesLocalOverride(t *testing.T) 
 	if _, err := settingsmerge.MergeFiles(installedPath, managedPath, overridePath); err != nil {
 		t.Fatal(err)
 	}
-	cfg := config.AppConfig{RepoRoot: repo, ClaudeConfigDir: claudeDir, ClaudeSettingsOverride: overridePath}
+	cfg := config.AppConfig{RepoRoot: repo, ClaudeConfigDir: claudeDir, ClaudeSettingsPath: installedPath, ClaudeSettingsOverride: overridePath}
 	if err := verifyInstalledClaudeManagedSettings(cfg); err != nil {
 		t.Fatalf("matching managed Claude settings rejected: %v", err)
 	}
@@ -106,7 +106,7 @@ func TestVerifyInstalledClaudeManagedSettingsChecksOverrideOnlyEnvKeys(t *testin
 	if _, err := settingsmerge.MergeFiles(installedPath, managedPath, overridePath); err != nil {
 		t.Fatal(err)
 	}
-	cfg := config.AppConfig{RepoRoot: repo, ClaudeConfigDir: claudeDir, ClaudeSettingsOverride: overridePath}
+	cfg := config.AppConfig{RepoRoot: repo, ClaudeConfigDir: claudeDir, ClaudeSettingsPath: installedPath, ClaudeSettingsOverride: overridePath}
 
 	if err := verifyInstalledClaudeManagedSettings(cfg); err != nil {
 		t.Fatalf("valid override-only env state rejected: %v", err)

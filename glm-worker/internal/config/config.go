@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/claudeoverride"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/claudesettings"
 )
 
 type AppConfig struct {
@@ -24,7 +25,8 @@ type AppConfig struct {
 	ClaudeBin    string
 	CodexBin     string
 
-	ClaudeConfigDir string
+	ClaudeConfigDir    string
+	ClaudeSettingsPath string
 
 	ClaudeSettingsOverride string
 
@@ -57,12 +59,15 @@ func Load() (AppConfig, error) {
 		return AppConfig{}, fmt.Errorf("ホームディレクトリを取得できません: %w", err)
 	}
 
+	claudeLocation, err := claudesettings.Resolve(home, os.Getenv("CLAUDE_CONFIG_DIR"), os.Getenv("CLAUDE_SETTINGS_FILE"))
+	if err != nil {
+		return AppConfig{}, fmt.Errorf("claude settings location: %w", err)
+	}
 	repoHashString := RepoHashFor(repoRoot)
 
 	stateHome := envOrDefault("GLM_WORKER_HOME", filepath.Join(home, ".glm-worker"))
 	codexConfigDir := envOrDefault("CODEX_CONFIG_DIR", envOrDefault("CODEX_HOME", filepath.Join(home, ".codex")))
 	promptDir := envOrDefault("GLM_WORKER_PROMPT_DIR", filepath.Join(codexConfigDir, "glm-worker", "prompts"))
-	claudeConfigDir := envOrDefault("CLAUDE_CONFIG_DIR", filepath.Join(home, ".claude"))
 	claudeSettingsOverride := claudeoverride.ResolvePath(home)
 	envAllowlist := splitEnvList(os.Getenv("GLM_WORKER_ENV_ALLOWLIST"))
 	rounds, err := intEnv("GLM_WORKER_MAX_AUTO_FIX_ROUNDS", 2)
@@ -88,7 +93,8 @@ func Load() (AppConfig, error) {
 		CodexConfigDir:         codexConfigDir,
 		ClaudeBin:              envOrDefault("GLM_WORKER_CLAUDE_BIN", "claude"),
 		CodexBin:               envOrDefault("GLM_WORKER_CODEX_BIN", "codex"),
-		ClaudeConfigDir:        claudeConfigDir,
+		ClaudeConfigDir:        claudeLocation.ConfigDir,
+		ClaudeSettingsPath:     claudeLocation.SettingsPath,
 		ClaudeSettingsOverride: claudeSettingsOverride,
 		EnvAllowlist:           envAllowlist,
 		WorkerModel:            envOrDefault("GLM_WORKER_WORKER_MODEL", "opus"),

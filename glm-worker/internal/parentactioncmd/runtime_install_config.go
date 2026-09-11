@@ -170,9 +170,9 @@ func verifyInstalledClaudeManagedSettings(cfg config.AppConfig) error {
 	if err != nil {
 		return fmt.Errorf("read managed Claude settings: %w", err)
 	}
-	settingsPath := os.Getenv("CLAUDE_SETTINGS_FILE")
+	settingsPath := cfg.ClaudeSettingsPath
 	if settingsPath == "" {
-		settingsPath = filepath.Join(cfg.ClaudeConfigDir, "settings.json")
+		return fmt.Errorf("claude settings path is empty")
 	}
 	if err := settingsmerge.VerifyManagedInstallation(settingsPath, managedPath, cfg.ClaudeSettingsOverride); err != nil {
 		return fmt.Errorf("verify managed Claude settings ownership: %w", err)

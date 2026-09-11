@@ -5,7 +5,6 @@ repo_root=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 quality_tools_file="$repo_root/quality-tools.yml"
 codex_dir="${CODEX_CONFIG_DIR:-${CODEX_HOME:-$HOME/.codex}}"
 bin_dir="${GLM_WORKER_BIN_DIR:-$HOME/.local/bin}"
-claude_settings="${CLAUDE_SETTINGS_FILE:-$HOME/.claude/settings.json}"
 glm_worker_home="${GLM_WORKER_HOME:-$HOME/.glm-worker}"
 
 require() {
@@ -103,8 +102,7 @@ verify_claude_cli() {
 
 merge_claude_settings() {
 	build_dir=$1
-	mkdir -p "$(dirname "$claude_settings")"
-	result=$("$build_dir/merge-json" -target "$claude_settings" -fragment "$repo_root/claude/settings-managed.json")
+	result=$("$build_dir/merge-json" -fragment "$repo_root/claude/settings-managed.json")
 	printf 'claude settings: %s\n' "$result"
 }
 
