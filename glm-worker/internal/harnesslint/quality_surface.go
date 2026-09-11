@@ -61,6 +61,8 @@ func qualityWiringChecks() []qualityWiringCheck {
 			path: "install.sh",
 			tokens: []string{
 				"quality-tools.yml",
+				"QUALITY_TOOLS_BIN_DIR",
+				"quality_tool_path",
 				"require_quality_tool",
 				"./cmd/harnesslint",
 				"./cmd/plancheck",
@@ -93,6 +95,8 @@ func qualityToolWiringChecks() []qualityWiringCheck {
 		{
 			path: "quality-tools.yml",
 			tokens: []string{
+				"namespace:",
+				"default-bin-dir:",
 				"go:",
 				"lint-go:",
 				"golangci-lint:",
@@ -105,7 +109,10 @@ func qualityToolWiringChecks() []qualityWiringCheck {
 			tokens: []string{
 				"quality-tools.yml",
 				"quality-tools.outputs.go_version",
+				"QUALITY_TOOLS_BIN_DIR",
+				"$GITHUB_ENV",
 				"./install-quality-tools.sh",
+				"./tests/install_quality_tools_smoke.sh",
 			},
 		},
 		{
@@ -113,9 +120,22 @@ func qualityToolWiringChecks() []qualityWiringCheck {
 			tokens: []string{
 				"quality-tools.yml",
 				"QUALITY_TOOLS_BIN_DIR",
+				"tool_namespace=$(contract_value namespace)",
+				"default_bin_dir=$(contract_value default-bin-dir)",
+				"quality_tool_path",
+				"target_needs_install",
 				"golangci-lint/releases/download",
 				"shellcheck/releases/download",
 				"go install",
+			},
+		},
+		{
+			path: "tests/install_quality_tools_smoke.sh",
+			tokens: []string{
+				"user-owned-shfmt",
+				"codex-worker-orchestrator-shfmt-3.13.1",
+				"codex-worker-orchestrator-shfmt-3.13.2",
+				"quality tool collision:",
 			},
 		},
 	}
