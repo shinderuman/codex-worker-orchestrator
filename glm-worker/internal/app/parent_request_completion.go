@@ -16,6 +16,14 @@ type ParentRequestCompletionProjection struct {
 	Continuation       ProjectContinuation `json:"continuation"`
 }
 
+type parentRequestSchedule struct {
+	goal     taskcontract.PlanGoal
+	schedule taskcontract.PlanSchedule
+	active   []string
+	next     []string
+	blocked  []string
+}
+
 const (
 	projectContinuationReasonPostCompletionActive = "post-local-completion-active"
 	projectContinuationActionStart                = "start"
@@ -29,7 +37,7 @@ func BuildCurrentParentRequestCompletionProjection(cfg config.AppConfig, st *sta
 	return parentRequestProjection(output.Continuation), nil
 }
 
-func BuildParentRequestCompletionProjection(cfg config.AppConfig, st *state.StateStore) (ParentRequestCompletionProjection, error) {
+func BuildParentRequestCompletionProjection(cfg config.AppConfig) (ParentRequestCompletionProjection, error) {
 	planContent, err := readProjectStatePlan(cfg.RepoRoot)
 	if err != nil {
 		return ParentRequestCompletionProjection{}, err
@@ -37,69 +45,93 @@ func BuildParentRequestCompletionProjection(cfg config.AppConfig, st *state.Stat
 	if planContent == nil {
 		return parentRequestProjection(unknownProjectContinuation(projectContinuationReasonPlanAbsent)), nil
 	}
-	goal, err := taskcontract.ParsePlanGoal(*planContent)
+	parsed, err := parseParentRequestSchedule(*planContent)
 	if err != nil {
 		return ParentRequestCompletionProjection{}, err
 	}
-	schedule := taskcontract.ParsePlanSchedule(*planContent)
+	if parsed.goal.Present && parsed.goal.Status == taskcontract.GoalStatusCompleted {
+		return completedParentRequestProjection(cfg.RepoRoot, parsed)
+	}
+	if !parsed.goal.Present {
+		return parentRequestProjection(unknownProjectContinuation(projectContinuationReasonContinuationScopeUnbound)), nil
+	}
+	return activeParentRequestProjection(cfg.RepoRoot, parsed)
+}
+
+func parseParentRequestSchedule(plan string) (parentRequestSchedule, error) {
+	goal, err := taskcontract.ParsePlanGoal(plan)
+	if err != nil {
+		return parentRequestSchedule{}, err
+	}
+	schedule := taskcontract.ParsePlanSchedule(plan)
 	active, err := schedule.ActiveEntries()
 	if err != nil {
-		return ParentRequestCompletionProjection{}, err
+		return parentRequestSchedule{}, err
 	}
 	next, blocked, err := schedule.NonActiveEntries()
 	if err != nil {
+		return parentRequestSchedule{}, err
+	}
+	return parentRequestSchedule{goal: goal, schedule: schedule, active: active, next: next, blocked: blocked}, nil
+}
+
+func completedParentRequestProjection(repoRoot string, parsed parentRequestSchedule) (ParentRequestCompletionProjection, error) {
+	if len(parsed.active) != 0 || len(parsed.next) != 0 || len(parsed.blocked) != 0 {
+		return ParentRequestCompletionProjection{}, fmt.Errorf(
+			"completed GOALではACTIVE/NEXT/BLOCKEDを空にする必要があります(active=%d next=%d blocked=%d)",
+			len(parsed.active), len(parsed.next), len(parsed.blocked),
+		)
+	}
+	if err := projectStateScheduleClosure(repoRoot, parsed.schedule); err != nil {
 		return ParentRequestCompletionProjection{}, err
 	}
-	if goal.Present && goal.Status == taskcontract.GoalStatusCompleted {
-		if len(active) != 0 || len(next) != 0 || len(blocked) != 0 {
-			return ParentRequestCompletionProjection{}, fmt.Errorf("completed GOALではACTIVE/NEXT/BLOCKEDを空にする必要があります(active=%d next=%d blocked=%d)", len(active), len(next), len(blocked))
-		}
-		if err := projectStateScheduleClosure(cfg.RepoRoot, schedule); err != nil {
-			return ParentRequestCompletionProjection{}, err
-		}
-		return parentRequestProjection(projectContinuationObligation{
-			State:  projectContinuationTerminal,
-			Reason: projectContinuationReasonGoalCompleted,
-		}), nil
+	return parentRequestProjection(projectContinuationObligation{
+		State:  projectContinuationTerminal,
+		Reason: projectContinuationReasonGoalCompleted,
+	}), nil
+}
+
+func activeParentRequestProjection(repoRoot string, parsed parentRequestSchedule) (ParentRequestCompletionProjection, error) {
+	if len(parsed.active) > 1 {
+		return ParentRequestCompletionProjection{}, fmt.Errorf("IMPLEMENTATION_PLAN.local.mdのACTIVE欄が一意ではありません(%d件)", len(parsed.active))
 	}
-	if !goal.Present {
-		return parentRequestProjection(unknownProjectContinuation(projectContinuationReasonContinuationScopeUnbound)), nil
-	}
-	if len(active) > 1 {
-		return ParentRequestCompletionProjection{}, fmt.Errorf("IMPLEMENTATION_PLAN.local.mdのACTIVE欄が一意ではありません(%d件)", len(active))
-	}
-	if err := projectStateScheduleClosure(cfg.RepoRoot, schedule); err != nil {
+	if err := projectStateScheduleClosure(repoRoot, parsed.schedule); err != nil {
 		return ParentRequestCompletionProjection{}, err
 	}
-	graph, err := buildProjectStateGraph(cfg.RepoRoot, append(append(append([]string{}, active...), next...), blocked...))
+	entries := append(append(append([]string{}, parsed.active...), parsed.next...), parsed.blocked...)
+	graph, err := buildProjectStateGraph(repoRoot, entries)
 	if err != nil {
 		return ParentRequestCompletionProjection{}, err
 	}
-	if len(active) == 1 {
+	return derivePostCompletionProjection(graph, parsed), nil
+}
+
+func derivePostCompletionProjection(graph *projectStateGraph, parsed parentRequestSchedule) ParentRequestCompletionProjection {
+	if len(parsed.active) == 1 {
 		return parentRequestProjection(projectContinuationObligation{
 			State:          projectContinuationContinueNow,
-			Task:           active[0],
+			Task:           parsed.active[0],
 			RequiredAction: projectContinuationActionStart,
 			Reason:         projectContinuationReasonPostCompletionActive,
-		}), nil
+		})
 	}
-	if runnable := projectStateNextRunnable(graph, next); runnable != nil {
+	if runnable := projectStateNextRunnable(graph, parsed.next); runnable != nil {
 		return parentRequestProjection(projectContinuationObligation{
 			State:          projectContinuationContinueNow,
 			Task:           *runnable,
 			RequiredAction: projectContinuationActionStart,
 			Reason:         projectContinuationReasonNextRunnable,
-		}), nil
+		})
 	}
-	if blocker := firstProjectContinuationBlocker(projectStateBlockers(graph, next, blocked)); blocker != nil {
+	if blocker := firstProjectContinuationBlocker(projectStateBlockers(graph, parsed.next, parsed.blocked)); blocker != nil {
 		return parentRequestProjection(projectContinuationObligation{
 			State:   projectContinuationBlocked,
 			Task:    blocker.Task,
 			Reason:  blocker.Reason,
 			Blocker: blocker,
-		}), nil
+		})
 	}
-	return parentRequestProjection(unknownProjectContinuation(projectContinuationReasonActiveTaskUnresolved)), nil
+	return parentRequestProjection(unknownProjectContinuation(projectContinuationReasonActiveTaskUnresolved))
 }
 
 func parentRequestProjection(continuation ProjectContinuation) ParentRequestCompletionProjection {
