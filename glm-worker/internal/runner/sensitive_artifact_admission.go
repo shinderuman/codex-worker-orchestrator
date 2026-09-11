@@ -17,12 +17,12 @@ func (e *SensitiveArtifactError) Error() string {
 	return "artifact contains machine-known sensitive value: " + e.Category
 }
 
-func validateSensitiveResultArtifacts(base *ClaudeRunner, result RunResult) error {
+func validateSensitiveResultArtifacts(base *ClaudeRunner, result RunResult, providerValues []SensitiveArtifactValue) error {
 	artifacts, ok := sensitiveArtifactPaths(base, result)
 	if !ok {
 		return nil
 	}
-	values, err := sensitiveArtifactCandidates(base)
+	values, err := sensitiveArtifactCandidates(base, providerValues)
 	if err != nil {
 		return err
 	}
@@ -44,11 +44,8 @@ func sensitiveArtifactPaths(base *ClaudeRunner, result RunResult) ([]string, boo
 	return parsed.Artifacts, true
 }
 
-func sensitiveArtifactCandidates(base *ClaudeRunner) ([]SensitiveArtifactValue, error) {
-	values, err := SensitiveArtifactValues(base.config)
-	if err != nil {
-		return nil, fmt.Errorf("artifact sensitive admission unavailable: provider-runtime")
-	}
+func sensitiveArtifactCandidates(base *ClaudeRunner, providerValues []SensitiveArtifactValue) ([]SensitiveArtifactValue, error) {
+	values := append([]SensitiveArtifactValue(nil), providerValues...)
 	parentTokens, err := parentaction.LiveTokens(base.config.RepoRoot)
 	if err != nil {
 		return nil, fmt.Errorf("artifact sensitive admission unavailable: parent-action-token")
