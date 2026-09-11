@@ -13,6 +13,7 @@ type ParentReviewState struct {
 	Version int                    `json:"version"`
 	TaskID  string                 `json:"task_id"`
 	Open    *ParentReviewOpenState `json:"open,omitempty"`
+	Review  *ParentReviewBinding   `json:"review,omitempty"`
 }
 
 const (
@@ -45,6 +46,9 @@ func (s *StateStore) loadParentReviewState() (ParentReviewState, error) {
 	}
 	if state.Open != nil && !validParentReviewPacketStatus(state.Open.PacketStatus) {
 		return ParentReviewState{}, fmt.Errorf("parent review stateのpacket statusが不正です: %s", state.Open.PacketStatus)
+	}
+	if err := validateParentReviewBindingState(state); err != nil {
+		return ParentReviewState{}, err
 	}
 	return state, nil
 }
@@ -121,6 +125,7 @@ func (s *StateStore) openParentReviewState(status string, risk string, producer 
 		ModelAlias:   producer.Model,
 		Risk:         risk,
 	}
+	state.Review = nil
 	return s.writeParentReviewState(state)
 }
 
@@ -152,6 +157,7 @@ func (s *StateStore) resolveParentReviewState(kind, origin, cause string) (Paren
 	}
 	resolved := *state.Open
 	state.Open = nil
+	state.Review = nil
 	if err := s.writeParentReviewState(state); err != nil {
 		return ParentReviewOpenState{}, false, err
 	}

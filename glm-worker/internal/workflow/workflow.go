@@ -461,6 +461,23 @@ func (w *Workflow) emitResult(value packet.Result) error {
 	return err
 }
 
+func (w *Workflow) emitReviewResult(value packet.Result) error {
+	reviewStart, err := w.state.LoadReviewStartSnapshot()
+	if err != nil {
+		return fmt.Errorf("parent review bindingのreview-start snapshotを読めません: %w", err)
+	}
+	report, err := machineReport(value)
+	if err != nil {
+		return err
+	}
+	digest := state.SnapshotDigest{Head: reviewStart.Head, IndexDigest: reviewStart.IndexDigest, WorktreeDigest: reviewStart.WorktreeDigest}
+	if err := w.state.RecordSolResultWithReviewSnapshot(value, w.lastProducer, digest); err != nil {
+		return err
+	}
+	_, err = fmt.Fprintln(w.output, report)
+	return err
+}
+
 func (w *Workflow) enforceRiskFloor(
 	request string,
 	workerResult packet.Result,

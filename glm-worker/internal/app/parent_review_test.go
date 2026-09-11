@@ -129,6 +129,21 @@ func applyParentReviewFix(t *testing.T, cfg config.AppConfig) {
 
 func executeAccept(t *testing.T, cfg config.AppConfig) acceptOutput {
 	t.Helper()
+	st, err := state.NewStateStore(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	binding, err := st.CurrentParentReviewBinding()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if binding != nil && binding.Proof == nil {
+		if err := st.MarkParentReviewEvidence(binding.ID, "parent-review-test-evidence", []state.ParentReviewEvidenceClaim{{
+			Kind: "source", Digest: "parent-review-test-evidence", Locator: "legacy parent review test",
+		}}); err != nil {
+			t.Fatal(err)
+		}
+	}
 	var accept acceptOutput
 	executeCommandOutput(t, cfg, ModeAccept, &accept, "accept")
 	return accept
