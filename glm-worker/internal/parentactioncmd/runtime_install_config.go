@@ -244,7 +244,7 @@ func deletedClaudeEnvKeys(keys []string) map[string]bool {
 	return deleted
 }
 
-func verifyManagedClaudeEnvKeys(installed, managed map[string]any, sets map[string]any, deleted map[string]bool) error {
+func verifyManagedClaudeEnvKeys(installed, managed map[string]any, sets map[string]string, deleted map[string]bool) error {
 	for key, managedValue := range managed {
 		if deleted[key] {
 			if _, exists := installed[key]; exists {
@@ -264,7 +264,7 @@ func verifyManagedClaudeEnvKeys(installed, managed map[string]any, sets map[stri
 	return nil
 }
 
-func verifyOverrideClaudeEnvSets(installed, managed map[string]any, sets map[string]any) error {
+func verifyOverrideClaudeEnvSets(installed, managed map[string]any, sets map[string]string) error {
 	for key, expected := range sets {
 		if _, covered := managed[key]; covered {
 			continue
