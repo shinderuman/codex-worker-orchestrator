@@ -49,9 +49,21 @@ require_quality_tool() {
 	required_version=$2
 	command_path=$(quality_tool_path "$command_name" "$required_version")
 	if [ ! -x "$command_path" ]; then
-		printf 'required quality tool is missing: %s (%s)\n' "$command_name" "$command_path" >&2
-		printf '%s\n' 'install required versions with: ./install-quality-tools.sh' >&2
-		exit 1
+		if ! command -v "$command_name" >/dev/null 2>&1; then
+			printf 'required command not found: %s\n' "$command_name" >&2
+			printf '%s\n' 'install required versions with: ./install-quality-tools.sh' >&2
+			exit 1
+		fi
+		legacy_path=$(command -v "$command_name")
+		legacy_version=$(quality_tool_version "$command_name" "$legacy_path")
+		if [ "$legacy_version" != "$required_version" ]; then
+			printf 'quality tool version mismatch: %s=%s, required=%s\n' "$command_name" "${legacy_version:-unknown}" "$required_version" >&2
+			printf '%s\n' 'install required versions with: ./install-quality-tools.sh' >&2
+			exit 1
+		fi
+		mkdir -p "$QUALITY_TOOLS_RESOLVED_BIN_DIR"
+		install -m 0755 "$legacy_path" "$command_path"
+		printf 'migrated quality tool: %s\n' "$command_path"
 	fi
 	installed_version=$(quality_tool_version "$command_name" "$command_path")
 	if [ "$installed_version" != "$required_version" ]; then
