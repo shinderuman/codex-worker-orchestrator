@@ -29,7 +29,6 @@ jobs:
         run: |
           python3 - <<'PY_RUNNER'
           from pathlib import Path
-
           workflow = Path('.github/workflows/web-gpt-issue-390-apply.yml').read_text()
           marker = "          python3 - <<'PY'\n"
           start = workflow.index(marker) + len(marker)
@@ -37,74 +36,40 @@ jobs:
           lines = workflow[start:end].splitlines()
           script = "\n".join(line[10:] if line.startswith("          ") else line for line in lines)
           exec(compile(script, 'issue-390-apply.py', 'exec'))
-
           test_path = Path('glm-worker/internal/state/session_rotation_failure_test.go')
           test_text = test_path.read_text()
           old = 'st, _, marker, _ := seedClaimedSessionRotation(t)'
           if test_text.count(old) != 1:
               raise SystemExit(f'expected one migration-test fixture replacement, found {test_text.count(old)}')
           test_path.write_text(test_text.replace(old, '_, _, marker, _ := seedClaimedSessionRotation(t)', 1))
-
+          PY_RUNNER
+      - name: Fix lint findings
+        run: |
+          python3 - <<'PY_LINT'
+          from pathlib import Path
           state_path = Path('glm-worker/internal/state/session_rotation.go')
           state_text = state_path.read_text()
-          old_validation = '''\tif marker.LastCreationOutcome != nil {
-\t\tif marker.Directive == nil {
-\t\t\treturn fmt.Errorf("session rotation creation outcomeにdirectiveがありません")
-\t\t}
-\t\tif err := marker.LastCreationOutcome.validate(); err != nil {
-\t\t\treturn err
-\t\t}
-\t}
-'''
-          new_validation = '''\tif err := marker.validateCreationOutcome(); err != nil {
-\t\treturn err
-\t}
-'''
+          old_validation = "\tif marker.LastCreationOutcome != nil {\n\t\tif marker.Directive == nil {\n\t\t\treturn fmt.Errorf(\"session rotation creation outcomeにdirectiveがありません\")\n\t\t}\n\t\tif err := marker.LastCreationOutcome.validate(); err != nil {\n\t\t\treturn err\n\t\t}\n\t}\n"
+          new_validation = "\tif err := marker.validateCreationOutcome(); err != nil {\n\t\treturn err\n\t}\n"
           if state_text.count(old_validation) != 1:
               raise SystemExit(f'expected one creation outcome validation block, found {state_text.count(old_validation)}')
           state_path.write_text(state_text.replace(old_validation, new_validation, 1))
-
           failure_path = Path('glm-worker/internal/state/session_rotation_failure.go')
           failure_text = failure_path.read_text()
-          const_block = '''const (
-\tSessionRotationCreationResultVersion = 1
-\tSessionRotationCreationOutcomeFailed = "failed"
-)
-
-'''
+          const_block = "const (\n\tSessionRotationCreationResultVersion = 1\n\tSessionRotationCreationOutcomeFailed = \"failed\"\n)\n\n"
           if failure_text.count(const_block) != 1:
               raise SystemExit(f'expected one creation result const block, found {failure_text.count(const_block)}')
           failure_text = failure_text.replace(const_block, '', 1)
-          insert_after = '''type SessionRotationCreationOutcome struct {
-\tVersion        int    `json:"version"`
-\tOutcome        string `json:"outcome"`
-\tParentThreadID string `json:"parent_thread_id"`
-\tDirectiveID    string `json:"directive_id"`
-\tClaimID        string `json:"claim_id"`
-\tTargetTaskID   string `json:"target_task_id"`
-\tRecordedAt     string `json:"recorded_at"`
-}
-
-'''
-          if failure_text.count(insert_after) != 1:
-              raise SystemExit(f'expected one creation outcome type, found {failure_text.count(insert_after)}')
-          failure_text = failure_text.replace(insert_after, insert_after + const_block, 1)
-          helper = '''func (marker *SessionRotationMarker) validateCreationOutcome() error {
-\tif marker.LastCreationOutcome == nil {
-\t\treturn nil
-\t}
-\tif marker.Directive == nil {
-\t\treturn fmt.Errorf("session rotation creation outcomeにdirectiveがありません")
-\t}
-\treturn marker.LastCreationOutcome.validate()
-}
-
-'''
+          type_anchor = "type SessionRotationCreationOutcome struct {\n\tVersion        int    `json:\"version\"`\n\tOutcome        string `json:\"outcome\"`\n\tParentThreadID string `json:\"parent_thread_id\"`\n\tDirectiveID    string `json:\"directive_id\"`\n\tClaimID        string `json:\"claim_id\"`\n\tTargetTaskID   string `json:\"target_task_id\"`\n\tRecordedAt     string `json:\"recorded_at\"`\n}\n\n"
+          if failure_text.count(type_anchor) != 1:
+              raise SystemExit(f'expected one creation outcome type, found {failure_text.count(type_anchor)}')
+          failure_text = failure_text.replace(type_anchor, type_anchor + const_block, 1)
+          helper = "func (marker *SessionRotationMarker) validateCreationOutcome() error {\n\tif marker.LastCreationOutcome == nil {\n\t\treturn nil\n\t}\n\tif marker.Directive == nil {\n\t\treturn fmt.Errorf(\"session rotation creation outcomeにdirectiveがありません\")\n\t}\n\treturn marker.LastCreationOutcome.validate()\n}\n\n"
           anchor = 'func (result SessionRotationCreationResult) validateForRelease('
           if failure_text.count(anchor) != 1:
               raise SystemExit(f'expected one validateForRelease anchor, found {failure_text.count(anchor)}')
           failure_path.write_text(failure_text.replace(anchor, helper + anchor, 1))
-          PY_RUNNER
+          PY_LINT
       - name: Restore final workflow tree
         run: |
           git show 1be9db709e97c3055689bb0f3c1eca42040473c2:.github/workflows/quality.yml > .github/workflows/quality.yml
