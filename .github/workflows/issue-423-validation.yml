@@ -1,0 +1,85 @@
+name: Issue 423 Validation
+
+on:
+  push:
+    branches:
+      - web-gpt/issue-423-continuation-obligation
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: web-gpt/issue-423-continuation-obligation
+          fetch-depth: 0
+      - name: Read quality tool contract
+        id: quality-tools
+        run: |
+          GO_VERSION=$(awk -F': ' '$1 == "go" { print $2 }' quality-tools.yml)
+          printf 'go_version=%s\n' "$GO_VERSION" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ steps.quality-tools.outputs.go_version }}
+          cache: false
+      - name: Wire continuation projection
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('glm-worker/internal/app/project_state.go')
+          text = path.read_text()
+
+          old = '\tCompletion   *projectStateCompletion  `json:"completion,omitempty"`\n'
+          new = old + '\tContinuation projectContinuationObligation `json:"continuation"`\n'
+          if text.count(old) != 1:
+              raise SystemExit(f'project state output anchor count: {text.count(old)}')
+          text = text.replace(old, new, 1)
+
+          old = 'const projectStateVersion = 1'
+          if text.count(old) != 1:
+              raise SystemExit(f'project state version anchor count: {text.count(old)}')
+          text = text.replace(old, 'const projectStateVersion = 2', 1)
+
+          old = '\tif planContent == nil {\n\t\treturn output, nil\n\t}\n'
+          new = '\tif planContent == nil {\n\t\toutput.Continuation = deriveProjectContinuation(output, st)\n\t\treturn output, nil\n\t}\n'
+          if text.count(old) != 1:
+              raise SystemExit(f'plan absent return anchor count: {text.count(old)}')
+          text = text.replace(old, new, 1)
+
+          old = '\t\toutput.Completion = completion\n\t}\n\treturn output, nil\n}\n'
+          new = '\t\toutput.Completion = completion\n\t}\n\toutput.Continuation = deriveProjectContinuation(output, st)\n\treturn output, nil\n}\n'
+          if text.count(old) != 1:
+              raise SystemExit(f'final return anchor count: {text.count(old)}')
+          text = text.replace(old, new, 1)
+
+          path.write_text(text)
+          PY
+          gofmt -w glm-worker/internal/app/project_state.go glm-worker/internal/app/project_continuation.go glm-worker/internal/app/project_continuation_test.go
+      - name: Targeted tests
+        working-directory: glm-worker
+        run: go test ./internal/app
+      - name: Install quality tools
+        run: |
+          quality_bin="$(go env GOPATH)/bin"
+          QUALITY_TOOLS_BIN_DIR="$quality_bin" ./install-quality-tools.sh
+          printf '%s\n' "$quality_bin" >> "$GITHUB_PATH"
+      - name: Repository validation
+        run: |
+          ./commentlint
+          ./harnesslint
+          ./goquality vet
+          ./goquality build
+          cd glm-worker
+          go test ./...
+      - name: Commit validated implementation
+        run: |
+          git rm .github/workflows/issue-423-validation.yml
+          git config user.name web-gpt
+          git config user.email web-gpt@users.noreply.github.com
+          git add glm-worker/internal/app/project_state.go glm-worker/internal/app/project_continuation.go glm-worker/internal/app/project_continuation_test.go
+          git commit -m "Derive canonical project continuation obligation"
+          git push origin HEAD:web-gpt/issue-423-continuation-obligation
