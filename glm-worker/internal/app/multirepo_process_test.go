@@ -454,8 +454,8 @@ func writeMultiRepoQualityToolStubs(t *testing.T, dir string) {
 	t.Helper()
 	tools := map[string]string{
 		"codex-worker-orchestrator-golangci-lint-2.7.0": "#!/bin/sh\nif [ \"$1\" = version ]; then echo 'golangci-lint has version 2.7.0'; fi\nexit 0\n",
-		"codex-worker-orchestrator-shellcheck-0.11.0":    "#!/bin/sh\nif [ \"$1\" = --version ]; then echo 'ShellCheck version 0.11.0'; fi\nexit 0\n",
-		"codex-worker-orchestrator-shfmt-3.13.0":         "#!/bin/sh\nif [ \"$1\" = --version ]; then echo 'v3.13.0'; fi\nexit 0\n",
+		"codex-worker-orchestrator-shellcheck-0.11.0":   "#!/bin/sh\nif [ \"$1\" = --version ]; then echo 'ShellCheck version 0.11.0'; fi\nexit 0\n",
+		"codex-worker-orchestrator-shfmt-3.13.0":        "#!/bin/sh\nif [ \"$1\" = --version ]; then echo 'v3.13.0'; fi\nexit 0\n",
 	}
 	for name, body := range tools {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o755); err != nil {
