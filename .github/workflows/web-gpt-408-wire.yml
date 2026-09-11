@@ -1,0 +1,29 @@
+name: Web GPT Issue 408 Wire Installer
+
+on:
+  push:
+    branches:
+      - web-gpt/issue-408-codex-install-ownership
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.head_commit.message == 'Stage Issue 408 installer wiring patch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Apply patch
+        run: python3 tmp_issue408_wire.py
+      - name: Commit patch
+        run: |
+          rm -f tmp_issue408_wire.py .github/workflows/web-gpt-408-wire.yml
+          git diff --check
+          git config user.name shinderuman
+          git config user.email shinderuman@gmail.com
+          git add -A
+          git commit -m 'Wire ownership-safe Codex installer for Issue 408'
+          git push origin HEAD:web-gpt/issue-408-codex-install-ownership
