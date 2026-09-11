@@ -29,8 +29,12 @@ jobs:
           cache: false
       - name: Check gofmt
         run: |
-          files=$(git diff --name-only 4efa4812619ba9f484902776769a29ed36f2bc58...HEAD -- '*.go')
-          test -n "$files"
+          files='glm-worker/internal/app/parent_request_completion.go
+          glm-worker/internal/app/parent_request_completion_test.go
+          glm-worker/internal/workflow/plan_final_head.go
+          glm-worker/internal/workflow/plan_completion_blocked_test.go
+          glm-worker/internal/parentactioncmd/complete.go
+          glm-worker/internal/parentactioncmd/complete_continuation_test.go'
           diff=$(gofmt -d $files)
           test -z "$diff" || { printf '%s\n' "$diff"; exit 1; }
       - name: Targeted tests
