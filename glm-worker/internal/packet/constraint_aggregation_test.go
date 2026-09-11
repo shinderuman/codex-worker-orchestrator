@@ -32,6 +32,9 @@ func TestValidateWorkerResultAggregatesIndependentConstraintViolations(t *testin
 			t.Fatalf("同時違反 %q が集約されていません: %s", want, joined)
 		}
 	}
+	if got := RejectCategory(err); got != "risk" {
+		t.Fatalf("primary rejection category = %q, want risk", got)
+	}
 }
 
 func TestValidateArtifactsAggregatesIndependentPathViolations(t *testing.T) {
@@ -47,5 +50,8 @@ func TestValidateArtifactsAggregatesIndependentPathViolations(t *testing.T) {
 	reasons := ConstraintReasons(err)
 	if len(reasons) != 2 || !strings.Contains(reasons[0], first) || !strings.Contains(reasons[1], second) {
 		t.Fatalf("artifact違反が個別に集約されていません: %#v", reasons)
+	}
+	if got := RejectCategory(err); got != "artifacts" {
+		t.Fatalf("artifact rejection category = %q", got)
 	}
 }
