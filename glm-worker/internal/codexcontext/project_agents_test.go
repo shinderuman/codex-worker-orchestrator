@@ -81,3 +81,46 @@ func TestStatusFailsClosedWhenManagedProjectSurfacesDiverge(t *testing.T) {
 		t.Fatalf("status = %+v", status)
 	}
 }
+
+func TestProjectAgentsExcludeRoundTripPreservesBytes(t *testing.T) {
+	for _, original := range [][]byte{
+		[]byte("# user rule"),
+		[]byte("# user rule\n"),
+	} {
+		name := "without-trailing-newline"
+		if bytes.HasSuffix(original, []byte("\n")) {
+			name = "with-trailing-newline"
+		}
+		t.Run(name, func(t *testing.T) {
+			repo := initTestRepo(t)
+			excludePath := gitOutput(t, repo, "rev-parse", "--git-path", "info/exclude")
+			if !filepath.IsAbs(excludePath) {
+				excludePath = filepath.Join(repo, excludePath)
+			}
+			if err := os.WriteFile(excludePath, original, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			runAction(t, "enable", repo)
+			runAction(t, "disable", repo)
+			current, err := os.ReadFile(excludePath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(current, original) {
+				t.Fatalf("Git exclude changed: want %q got %q", original, current)
+			}
+		})
+	}
+}
+
+func TestStatusFailsClosedWhenManagedProjectAgentsIsNotIgnored(t *testing.T) {
+	repo := initTestRepo(t)
+	runAction(t, "enable", repo)
+	if err := removeProjectAgentsExclude(repo); err != nil {
+		t.Fatal(err)
+	}
+	status := runAction(t, "status", repo)
+	if status.Status != "conflict" {
+		t.Fatalf("status = %+v", status)
+	}
+}

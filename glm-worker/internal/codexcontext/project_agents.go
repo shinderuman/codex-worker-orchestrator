@@ -14,6 +14,7 @@ const (
 	ProjectAgentsOverrideRelativePath = "AGENTS.override.md"
 	projectAgentsManagedMarker        = "<!-- managed-by: codex-worker-orchestrator glm-codex-context v1 -->"
 	projectAgentsExcludeMarker        = "# codex-worker-orchestrator glm-codex-context agents v1"
+	projectAgentsSeparatorMarker      = "# codex-worker-orchestrator glm-codex-context agents v1 separator-added"
 	projectAgentsExcludePattern       = "/AGENTS.override.md"
 )
 
@@ -141,14 +142,16 @@ func ensureProjectAgentsExclude(root string) error {
 		return fmt.Errorf("read local Git exclude: %w", err)
 	}
 	separator := ""
+	marker := projectAgentsExcludeMarker
 	if len(existing) > 0 && !bytes.HasSuffix(existing, []byte("\n")) {
 		separator = "\n"
+		marker = projectAgentsSeparatorMarker
 	}
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
 		return fmt.Errorf("open local Git exclude: %w", err)
 	}
-	if _, err := fmt.Fprintf(file, "%s%s\n%s\n", separator, projectAgentsExcludeMarker, projectAgentsExcludePattern); err != nil {
+	if _, err := fmt.Fprintf(file, "%s%s\n%s\n", separator, marker, projectAgentsExcludePattern); err != nil {
 		_ = file.Close()
 		return fmt.Errorf("write local Git exclude: %w", err)
 	}
@@ -170,20 +173,18 @@ func removeProjectAgentsExclude(root string) error {
 	if err != nil {
 		return fmt.Errorf("read local Git exclude: %w", err)
 	}
-	lines := strings.Split(string(content), "\n")
-	out := make([]string, 0, len(lines))
-	for index := 0; index < len(lines); index++ {
-		if strings.TrimSpace(lines[index]) == projectAgentsExcludeMarker && index+1 < len(lines) && strings.TrimSpace(lines[index+1]) == projectAgentsExcludePattern {
-			index++
-			continue
-		}
-		out = append(out, lines[index])
-	}
-	next := strings.Join(out, "\n")
-	if next == string(content) {
+	separatorBlock := []byte("\n" + projectAgentsSeparatorMarker + "\n" + projectAgentsExcludePattern + "\n")
+	regularBlock := []byte(projectAgentsExcludeMarker + "\n" + projectAgentsExcludePattern + "\n")
+	next := content
+	switch {
+	case bytes.HasSuffix(content, separatorBlock):
+		next = content[:len(content)-len(separatorBlock)]
+	case bytes.HasSuffix(content, regularBlock):
+		next = content[:len(content)-len(regularBlock)]
+	default:
 		return nil
 	}
-	if err := os.WriteFile(path, []byte(next), 0o644); err != nil {
+	if err := os.WriteFile(path, next, 0o644); err != nil {
 		return fmt.Errorf("write local Git exclude: %w", err)
 	}
 	return nil
