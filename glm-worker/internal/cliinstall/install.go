@@ -106,16 +106,15 @@ func Retire(binDir string) ([]Result, error) {
 	if len(state.Binaries) == 0 {
 		return results, nil
 	}
+	for _, target := range removals {
+		if err := os.Remove(target); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("remove owned binary %s: %w", target, err)
+		}
+	}
 	if err := removeState(statePath); err != nil {
 		return nil, err
 	}
-	var removeErr error
-	for _, target := range removals {
-		if err := os.Remove(target); err != nil && !errors.Is(err, os.ErrNotExist) {
-			removeErr = errors.Join(removeErr, fmt.Errorf("remove owned binary %s: %w", target, err))
-		}
-	}
-	return results, removeErr
+	return results, nil
 }
 
 func planInstall(buildDir, binDir string, state installState) ([]action, installState, error) {
