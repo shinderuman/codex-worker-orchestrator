@@ -196,12 +196,20 @@ grep -Fq '"relationship":"same"' "$tmp/runtime-status.json"
 find "$home/.codex" "$home/.claude" "$home/.local/bin" -type f -exec shasum -a 256 {} \; | LC_ALL=C sort >"$tmp/first.sha"
 run_install
 find "$home/.codex" "$home/.claude" "$home/.local/bin" -type f -exec shasum -a 256 {} \; | LC_ALL=C sort >"$tmp/second.sha"
-cmp "$tmp/first.sha" "$tmp/second.sha"
+if ! cmp "$tmp/first.sha" "$tmp/second.sha"; then
+	printf '%s\n' 'installer idempotence hash drift:' >&2
+	printf '%s\n' '--- before' >&2
+	cat "$tmp/first.sha" >&2
+	printf '%s\n' '--- after' >&2
+	cat "$tmp/second.sha" >&2
+	exit 1
+fi
 
 missing_bin="$tmp/missing-bin"
-mkdir -p "$missing_bin"
+mkdir -p "$missing_bin" "$tmp/missing-quality"
 ln -s "$(command -v dirname)" "$missing_bin/dirname"
-for tool in git rsync cmp awk grep install; do
+ln -s "$(command -v awk)" "$missing_bin/awk"
+for tool in git rsync cmp grep install; do
 	cat >"$missing_bin/$tool" <<'EOF_TOOL'
 #!/bin/sh
 exit 0
@@ -220,8 +228,9 @@ cat >"$missing_bin/golangci-lint" <<'EOF_TOOL'
 printf '%s\n' 'golangci-lint has version 2.7.0 built with go1.25.4'
 EOF_TOOL
 chmod +x "$missing_bin/go" "$missing_bin/golangci-lint"
+cp "$missing_bin/golangci-lint" "$tmp/missing-quality/codex-worker-orchestrator-golangci-lint-2.7.0"
 missing_stderr="$tmp/missing.stderr"
-if PATH="$missing_bin" "$repo/install.sh" >"$tmp/missing.stdout" 2>"$missing_stderr"; then
+if QUALITY_TOOLS_BIN_DIR="$tmp/missing-quality" PATH="$missing_bin" "$repo/install.sh" >"$tmp/missing.stdout" 2>"$missing_stderr"; then
 	printf '%s\n' 'install missing dependency: expected failure' >&2
 	exit 1
 fi
@@ -244,8 +253,10 @@ cat >"$mismatch_bin/shfmt" <<'EOF_TOOL'
 printf '%s\n' 'v3.13.1'
 EOF_TOOL
 chmod +x "$mismatch_bin/shellcheck" "$mismatch_bin/shfmt"
+mkdir -p "$tmp/mismatch-quality"
+cp "$mismatch_bin/golangci-lint" "$tmp/mismatch-quality/codex-worker-orchestrator-golangci-lint-2.7.0"
 mismatch_stderr="$tmp/mismatch.stderr"
-if PATH="$mismatch_bin" "$repo/install.sh" >"$tmp/mismatch.stdout" 2>"$mismatch_stderr"; then
+if QUALITY_TOOLS_BIN_DIR="$tmp/mismatch-quality" PATH="$mismatch_bin" "$repo/install.sh" >"$tmp/mismatch.stdout" 2>"$mismatch_stderr"; then
 	printf '%s\n' 'install version mismatch: expected failure' >&2
 	exit 1
 fi

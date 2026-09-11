@@ -390,6 +390,7 @@ func activateMultiRepoRepositoryHarness(t *testing.T, repoRoot, qualityBin strin
 		"harnesslint",
 		"install.sh",
 		"install-quality-tools.sh",
+		"tests/install_quality_tools_smoke.sh",
 		"glm-worker/go.mod",
 		"glm-worker/internal/workflow/workflow.go",
 		"glm-worker/internal/workflow/review_flow.go",
@@ -398,7 +399,7 @@ func activateMultiRepoRepositoryHarness(t *testing.T, repoRoot, qualityBin strin
 		copyMultiRepoFixtureFile(t, sourceRoot, repoRoot, path)
 	}
 	goVersion := strings.TrimPrefix(runtime.Version(), "go")
-	qualityTools := fmt.Sprintf("go: %s\nlint-go: %s\ngolangci-lint: 2.7.0\nshellcheck: 0.11.0\nshfmt: 3.13.0\n", goVersion, goVersion)
+	qualityTools := fmt.Sprintf("namespace: codex-worker-orchestrator\ndefault-bin-dir: .local/share/codex-worker-orchestrator/quality-tools/bin\ngo: %s\nlint-go: %s\ngolangci-lint: 2.7.0\nshellcheck: 0.11.0\nshfmt: 3.13.0\n", goVersion, goVersion)
 	if err := os.WriteFile(filepath.Join(repoRoot, "quality-tools.yml"), []byte(qualityTools), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -452,9 +453,9 @@ func copyMultiRepoFixtureFile(t *testing.T, sourceRoot, targetRoot, path string)
 func writeMultiRepoQualityToolStubs(t *testing.T, dir string) {
 	t.Helper()
 	tools := map[string]string{
-		"golangci-lint": "#!/bin/sh\nif [ \"$1\" = version ]; then echo 'golangci-lint has version 2.7.0'; fi\nexit 0\n",
-		"shellcheck":    "#!/bin/sh\nif [ \"$1\" = --version ]; then echo 'ShellCheck version 0.11.0'; fi\nexit 0\n",
-		"shfmt":         "#!/bin/sh\nif [ \"$1\" = --version ]; then echo 'v3.13.0'; fi\nexit 0\n",
+		"codex-worker-orchestrator-golangci-lint-2.7.0": "#!/bin/sh\nif [ \"$1\" = version ]; then echo 'golangci-lint has version 2.7.0'; fi\nexit 0\n",
+		"codex-worker-orchestrator-shellcheck-0.11.0":   "#!/bin/sh\nif [ \"$1\" = --version ]; then echo 'ShellCheck version 0.11.0'; fi\nexit 0\n",
+		"codex-worker-orchestrator-shfmt-3.13.0":        "#!/bin/sh\nif [ \"$1\" = --version ]; then echo 'v3.13.0'; fi\nexit 0\n",
 	}
 	for name, body := range tools {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o755); err != nil {
@@ -498,6 +499,7 @@ func (e *multiRepoEnv) childEnv(repo string) []string {
 		"PATH=" + e.qualityBin + string(os.PathListSeparator) + os.Getenv("PATH"),
 		"HOME=" + e.home,
 		"TMPDIR=" + e.home,
+		"QUALITY_TOOLS_BIN_DIR=" + e.qualityBin,
 		"GLM_WORKER_HOME=" + e.home,
 		"GLM_WORKER_PROMPT_DIR=" + e.promptDir,
 		"GLM_WORKER_CLAUDE_BIN=" + stub,

@@ -21,13 +21,48 @@ func (r versionRunner) runVersion(_ string, name string, _ ...string) (commandRe
 
 func TestLoadQualityToolVersions(t *testing.T) {
 	root := t.TempDir()
-	writeFixture(t, root, "quality-tools.yml", "go: 1.25.4\nlint-go: 1.22.12\ngolangci-lint: 2.7.0\nshellcheck: 0.11.0\nshfmt: 3.13.1\n")
+	writeFixture(t, root, "quality-tools.yml", "namespace: codex-worker-orchestrator\ndefault-bin-dir: .local/share/codex-worker-orchestrator/quality-tools/bin\ngo: 1.25.4\nlint-go: 1.22.12\ngolangci-lint: 2.7.0\nshellcheck: 0.11.0\nshfmt: 3.13.1\n")
 	versions, err := loadQualityToolVersions(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if versions.Go != "1.25.4" || versions.LintGo != "1.22.12" || versions.GolangCILint != "2.7.0" || versions.Shellcheck != "0.11.0" || versions.Shfmt != "3.13.1" {
+	if versions.Namespace != "codex-worker-orchestrator" || versions.DefaultBinDir != ".local/share/codex-worker-orchestrator/quality-tools/bin" || versions.Go != "1.25.4" || versions.LintGo != "1.22.12" || versions.GolangCILint != "2.7.0" || versions.Shellcheck != "0.11.0" || versions.Shfmt != "3.13.1" {
 		t.Fatalf("versions = %+v", versions)
+	}
+}
+
+func TestQualityToolsBinDirAndExecutableOwnership(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("QUALITY_TOOLS_BIN_DIR", "")
+	root := t.TempDir()
+	dir, err := qualityToolsBinDir(root, ".local/share/codex-worker-orchestrator/quality-tools/bin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantDir := filepath.Join(home, ".local", "share", "codex-worker-orchestrator", "quality-tools", "bin")
+	if dir != wantDir {
+		t.Fatalf("bin dir = %q, want %q", dir, wantDir)
+	}
+	wantTool := filepath.Join(wantDir, "codex-worker-orchestrator-shfmt-3.13.1")
+	if got := qualityToolExecutable(dir, "codex-worker-orchestrator", "shfmt", "3.13.1"); got != wantTool {
+		t.Fatalf("tool path = %q, want %q", got, wantTool)
+	}
+}
+
+func TestQualityToolsBinDirPreservesExplicitLocation(t *testing.T) {
+	root := t.TempDir()
+	absolute := filepath.Join(t.TempDir(), "quality")
+	t.Setenv("QUALITY_TOOLS_BIN_DIR", absolute)
+	got, err := qualityToolsBinDir(root, "unused")
+	if err != nil || got != absolute {
+		t.Fatalf("absolute bin dir = %q, err=%v", got, err)
+	}
+	t.Setenv("QUALITY_TOOLS_BIN_DIR", "local-quality")
+	got, err = qualityToolsBinDir(root, "unused")
+	want := filepath.Join(root, "local-quality")
+	if err != nil || got != want {
+		t.Fatalf("relative bin dir = %q, want %q, err=%v", got, want, err)
 	}
 }
 
@@ -102,7 +137,7 @@ func alignedRequiredVersion(tool string) string {
 
 func TestPreflightQualityToolsSharesContractAuthorityWithLint(t *testing.T) {
 	root := t.TempDir()
-	writeFixture(t, root, "quality-tools.yml", "go: 1.25.4\nlint-go: \n")
+	writeFixture(t, root, "quality-tools.yml", "namespace: codex-worker-orchestrator\ndefault-bin-dir: .local/share/codex-worker-orchestrator/quality-tools/bin\ngo: 1.25.4\nlint-go: \n")
 	preflightErr := PreflightQualityTools(root)
 	_, lintErr := Run(root, false)
 	if preflightErr == nil || lintErr == nil || preflightErr.Error() != lintErr.Error() {
@@ -126,7 +161,7 @@ func TestValidateQualityToolVersionsAcceptsContract(t *testing.T) {
 
 func TestPreflightQualityToolsFailsClosedWithoutToolchainDownload(t *testing.T) {
 	root := t.TempDir()
-	writeFixture(t, root, "quality-tools.yml", "go: 1.99.99\nlint-go: 1.99.98\ngolangci-lint: 99.99.99\nshellcheck: 99.99.99\nshfmt: 99.99.99\n")
+	writeFixture(t, root, "quality-tools.yml", "namespace: codex-worker-orchestrator\ndefault-bin-dir: .local/share/codex-worker-orchestrator/quality-tools/bin\ngo: 1.99.99\nlint-go: 1.99.98\ngolangci-lint: 99.99.99\nshellcheck: 99.99.99\nshfmt: 99.99.99\n")
 	started := time.Now()
 	err := PreflightQualityTools(root)
 	if err == nil {
@@ -155,7 +190,7 @@ func TestPreflightQualityToolsStopsHungVersionCommandWithinBound(t *testing.T) {
 	}
 	t.Setenv("PATH", binDir)
 	root := t.TempDir()
-	writeFixture(t, root, "quality-tools.yml", "go: 1.25.4\nlint-go: 1.22.12\ngolangci-lint: 2.7.0\nshellcheck: 0.11.0\nshfmt: 3.13.1\n")
+	writeFixture(t, root, "quality-tools.yml", "namespace: codex-worker-orchestrator\ndefault-bin-dir: .local/share/codex-worker-orchestrator/quality-tools/bin\ngo: 1.25.4\nlint-go: 1.22.12\ngolangci-lint: 2.7.0\nshellcheck: 0.11.0\nshfmt: 3.13.1\n")
 	started := time.Now()
 	err := PreflightQualityTools(root)
 	if err == nil || !strings.Contains(err.Error(), "timed out") {
@@ -211,7 +246,7 @@ func TestValidateQualityToolVersionsReturnsTypedClassifiedFailures(t *testing.T)
 
 func TestPreflightQualityToolsClassifiesContractFaultAsInternal(t *testing.T) {
 	root := t.TempDir()
-	writeFixture(t, root, "quality-tools.yml", "go: 1.25.4\nlint-go: \n")
+	writeFixture(t, root, "quality-tools.yml", "namespace: codex-worker-orchestrator\ndefault-bin-dir: .local/share/codex-worker-orchestrator/quality-tools/bin\ngo: 1.25.4\nlint-go: \n")
 	err := PreflightQualityTools(root)
 	var contract *QualityToolContractError
 	if err == nil || !errors.As(err, &contract) {
@@ -224,8 +259,9 @@ func TestPreflightQualityToolsClassifiesContractFaultAsInternal(t *testing.T) {
 
 func TestPreflightQualityToolsClassifiesMissingToolAsEnvironment(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
+	t.Setenv("QUALITY_TOOLS_BIN_DIR", filepath.Join(t.TempDir(), "quality"))
 	root := t.TempDir()
-	writeFixture(t, root, "quality-tools.yml", "go: 1.25.4\nlint-go: 1.22.12\ngolangci-lint: 2.7.0\nshellcheck: 0.11.0\nshfmt: 3.13.1\n")
+	writeFixture(t, root, "quality-tools.yml", "namespace: codex-worker-orchestrator\ndefault-bin-dir: .local/share/codex-worker-orchestrator/quality-tools/bin\ngo: 1.25.4\nlint-go: 1.22.12\ngolangci-lint: 2.7.0\nshellcheck: 0.11.0\nshfmt: 3.13.1\n")
 	err := PreflightQualityTools(root)
 	var missing *MissingToolError
 	if err == nil || !errors.As(err, &missing) {

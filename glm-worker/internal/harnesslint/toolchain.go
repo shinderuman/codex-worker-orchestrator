@@ -9,11 +9,13 @@ import (
 )
 
 type qualityToolVersions struct {
-	Go           string
-	LintGo       string
-	GolangCILint string
-	Shellcheck   string
-	Shfmt        string
+	Namespace     string
+	DefaultBinDir string
+	Go            string
+	LintGo        string
+	GolangCILint  string
+	Shellcheck    string
+	Shfmt         string
 }
 
 type QualityToolVersionMismatch struct {
@@ -105,17 +107,42 @@ func newRealCommandRunner(root string) (realCommandRunner, error) {
 	if err != nil {
 		return realCommandRunner{}, err
 	}
+	binDir, err := qualityToolsBinDir(root, versions.DefaultBinDir)
+	if err != nil {
+		return realCommandRunner{}, err
+	}
 	cacheRoot := os.TempDir()
 	runner := realCommandRunner{
 		goToolchain:       "go" + versions.Go,
 		lintGoToolchain:   "go" + versions.LintGo,
 		goCache:           filepath.Join(cacheRoot, "codex-worker-orchestrator", "go-"+versions.LintGo),
 		golangciLintCache: filepath.Join(cacheRoot, "codex-worker-orchestrator", "golangci-lint-"+versions.GolangCILint+"-go-"+versions.LintGo),
+		golangciLintPath:  qualityToolExecutable(binDir, versions.Namespace, "golangci-lint", versions.GolangCILint),
+		shellcheckPath:    qualityToolExecutable(binDir, versions.Namespace, "shellcheck", versions.Shellcheck),
+		shfmtPath:         qualityToolExecutable(binDir, versions.Namespace, "shfmt", versions.Shfmt),
 	}
 	if err := validateQualityToolVersions(root, versions, runner); err != nil {
 		return realCommandRunner{}, err
 	}
 	return runner, nil
+}
+
+func qualityToolsBinDir(root, defaultBinDir string) (string, error) {
+	if configured := os.Getenv("QUALITY_TOOLS_BIN_DIR"); configured != "" {
+		if filepath.IsAbs(configured) {
+			return filepath.Clean(configured), nil
+		}
+		return filepath.Clean(filepath.Join(root, configured)), nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", &QualityToolContractError{Cause: fmt.Errorf("resolve quality tool home: %w", err)}
+	}
+	return filepath.Join(home, filepath.FromSlash(defaultBinDir)), nil
+}
+
+func qualityToolExecutable(binDir, namespace, name, version string) string {
+	return filepath.Join(binDir, namespace+"-"+name+"-"+version)
 }
 
 func loadQualityToolVersions(root string) (qualityToolVersions, error) {
@@ -132,16 +159,36 @@ func loadQualityToolVersions(root string) (qualityToolVersions, error) {
 		values[key] = value
 	}
 	versions := qualityToolVersions{
-		Go:           values["go"],
-		LintGo:       values["lint-go"],
-		GolangCILint: values["golangci-lint"],
-		Shellcheck:   values["shellcheck"],
-		Shfmt:        values["shfmt"],
+		Namespace:     values["namespace"],
+		DefaultBinDir: values["default-bin-dir"],
+		Go:            values["go"],
+		LintGo:        values["lint-go"],
+		GolangCILint:  values["golangci-lint"],
+		Shellcheck:    values["shellcheck"],
+		Shfmt:         values["shfmt"],
 	}
-	if versions.Go == "" || versions.LintGo == "" || versions.GolangCILint == "" || versions.Shellcheck == "" || versions.Shfmt == "" {
+	if !versions.complete() {
 		return qualityToolVersions{}, &QualityToolContractError{Cause: fmt.Errorf("quality tool contract is incomplete")}
 	}
 	return versions, nil
+}
+
+func (versions qualityToolVersions) complete() bool {
+	values := []string{
+		versions.Namespace,
+		versions.DefaultBinDir,
+		versions.Go,
+		versions.LintGo,
+		versions.GolangCILint,
+		versions.Shellcheck,
+		versions.Shfmt,
+	}
+	for _, value := range values {
+		if value == "" {
+			return false
+		}
+	}
+	return true
 }
 
 func validateQualityToolVersions(root string, versions qualityToolVersions, runner versionCommandRunner) error {

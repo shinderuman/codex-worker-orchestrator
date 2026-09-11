@@ -30,9 +30,11 @@ jobs:
           cache: false
       - name: Install quality tools
         run: |
-          quality_bin="$(go env GOPATH)/bin"
+          quality_bin="$RUNNER_TEMP/codex-worker-orchestrator-quality-tools"
+          printf 'QUALITY_TOOLS_BIN_DIR=%s\n' "$quality_bin" >> "$GITHUB_ENV"
           QUALITY_TOOLS_BIN_DIR="$quality_bin" ./install-quality-tools.sh
-          printf '%s\n' "$quality_bin" >> "$GITHUB_PATH"
+      - name: Quality tool ownership smoke
+        run: sh ./tests/install_quality_tools_smoke.sh
       - name: Repository lint gate
         run: ./harnesslint
       - name: Full Go test suite

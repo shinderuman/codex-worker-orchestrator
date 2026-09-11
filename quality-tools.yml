@@ -1,3 +1,5 @@
+namespace: codex-worker-orchestrator
+default-bin-dir: .local/share/codex-worker-orchestrator/quality-tools/bin
 go: 1.25.4
 lint-go: 1.22.12
 golangci-lint: 2.7.0

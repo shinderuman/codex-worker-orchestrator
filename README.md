@@ -13,7 +13,7 @@ READMEはcurrent runtime stateや実装inventoryの第二正本ではありま�
 - on-demand Codex契約: `codex/instructions/`
 - worker/reviewer契約: `codex/glm-worker/prompts/`
 - deterministic behavior: `glm-worker/internal/`のproduction codeと対応test
-- tool version: `quality-tools.yml`
+- tool versionとrepository-owned quality tool配置契約: `quality-tools.yml`
 - managed Codex/Claude設定値: `codex/config-managed.toml`、`claude/settings-managed.json`
 - ordinary completion evidence: Git、CI、bundle / telemetry
 
@@ -21,15 +21,16 @@ READMEはcurrent runtime stateや実装inventoryの第二正本ではありま�
 
 ## Setup
 
-必要なtool versionは`quality-tools.yml`を参照してください。provider credentialはrepositoryで管理しません。
+必要なtool versionとrepository-owned quality toolの配置契約は`quality-tools.yml`を参照してください。provider credentialはrepositoryで管理しません。
 
 ```sh
 git clone https://github.com/shinderuman/codex-worker-orchestrator.git
 cd codex-worker-orchestrator
 ./install-quality-tools.sh
-export PATH="$HOME/.local/bin:$PATH"
 ./install.sh
 ```
+
+quality toolはgenericなuser-global executable名を所有せず、repository専用のnamespaced pathへ配置されます。`QUALITY_TOOLS_BIN_DIR`を明示した場合も、そのdirectory内のnamespaced executableだけをrepository-ownedとして扱います。
 
 installerの実装・配置対象・managed config merge・override境界は`install.sh`、`glm-worker/internal/install*`、対応testを正とします。runtimeへ影響する変更のinstalled/source一致やsmoke条件は`IMPLEMENTATION_RULES.md`と該当instructionを参照してください。
 
