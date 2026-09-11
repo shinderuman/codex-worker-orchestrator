@@ -62,7 +62,7 @@ func planPreviouslyOwnedConfig(plan configInstallPlan, data []byte, current conf
 			return plan, nil
 		}
 		plan.Next = replaceAssignmentLine(data, current.Index, "")
-		plan.Changed = !strings.EqualFold(string(plan.Next), string(data)) || string(plan.Next) != string(data)
+		plan.Changed = string(plan.Next) != string(data)
 		return plan, nil
 	}
 	if !currentFound {
