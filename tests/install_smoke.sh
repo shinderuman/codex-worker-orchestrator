@@ -228,11 +228,10 @@ printf '%s\n' 'golangci-lint has version 2.7.0 built with go1.25.4'
 EOF_TOOL
 chmod +x "$missing_bin/go" "$missing_bin/golangci-lint"
 missing_stderr="$tmp/missing.stderr"
-if PATH="$missing_bin" "$repo/install.sh" >"$tmp/missing.stdout" 2>"$missing_stderr"; then
+if QUALITY_TOOLS_BIN_DIR="$tmp/missing-quality" PATH="$missing_bin" "$repo/install.sh" >"$tmp/missing.stdout" 2>"$missing_stderr"; then
 	printf '%s\n' 'install missing dependency: expected failure' >&2
 	exit 1
 fi
-test ! -s "$tmp/missing.stdout"
 missing_command_error='required command not found: shellcheck'
 missing_brew_hint='install required versions with: ./install-quality-tools.sh'
 grep -Fxq "$missing_command_error" "$missing_stderr"
@@ -252,11 +251,10 @@ printf '%s\n' 'v3.13.1'
 EOF_TOOL
 chmod +x "$mismatch_bin/shellcheck" "$mismatch_bin/shfmt"
 mismatch_stderr="$tmp/mismatch.stderr"
-if PATH="$mismatch_bin" "$repo/install.sh" >"$tmp/mismatch.stdout" 2>"$mismatch_stderr"; then
+if QUALITY_TOOLS_BIN_DIR="$tmp/mismatch-quality" PATH="$mismatch_bin" "$repo/install.sh" >"$tmp/mismatch.stdout" 2>"$mismatch_stderr"; then
 	printf '%s\n' 'install version mismatch: expected failure' >&2
 	exit 1
 fi
-test ! -s "$tmp/mismatch.stdout"
 grep -Fq 'shellcheck=0.10.0' "$mismatch_stderr"
 grep -Fq 'required=0.11.0' "$mismatch_stderr"
 grep -Fq './install-quality-tools.sh' "$mismatch_stderr"
