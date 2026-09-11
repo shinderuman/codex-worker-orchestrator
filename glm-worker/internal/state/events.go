@@ -22,21 +22,21 @@ type TaskValidationObservation struct {
 }
 
 type TaskValidationEvent struct {
-	Attribution    string `json:"attribution"`
-	Source         string `json:"source"`
-	Form           string `json:"form"`
+	Attribution     string `json:"attribution"`
+	Source          string `json:"source"`
+	Form            string `json:"form"`
 	ValidationRunID string `json:"validation_run_id,omitempty"`
-	GateClass      string `json:"gate_class,omitempty"`
-	Suite          string `json:"suite,omitempty"`
-	SnapshotID     string `json:"snapshot_id,omitempty"`
-	Phase          string `json:"phase,omitempty"`
-	Attempt        string `json:"attempt,omitempty"`
-	Scope          string `json:"scope,omitempty"`
-	Result         string `json:"result"`
-	ExitCode       int    `json:"exit_code,omitempty"`
-	ExitSource     string `json:"exit_source,omitempty"`
-	DurationMS     int64  `json:"duration_ms,omitempty"`
-	Evidence       string `json:"evidence,omitempty"`
+	GateClass       string `json:"gate_class,omitempty"`
+	Suite           string `json:"suite,omitempty"`
+	SnapshotID      string `json:"snapshot_id,omitempty"`
+	Phase           string `json:"phase,omitempty"`
+	Attempt         string `json:"attempt,omitempty"`
+	Scope           string `json:"scope,omitempty"`
+	Result          string `json:"result"`
+	ExitCode        int    `json:"exit_code,omitempty"`
+	ExitSource      string `json:"exit_source,omitempty"`
+	DurationMS      int64  `json:"duration_ms,omitempty"`
+	Evidence        string `json:"evidence,omitempty"`
 }
 
 type TaskBlockSummary struct {

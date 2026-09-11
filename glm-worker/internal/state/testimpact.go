@@ -45,12 +45,12 @@ type TestImpactSources struct {
 }
 
 type TestImpactReport struct {
-	Sources          TestImpactSources              `json:"sources"`
-	Retention        int                            `json:"retention"`
-	Tasks            []TestImpactTaskSummary        `json:"tasks"`
-	CategoryTotals   []TestImpactCategoryMeasure    `json:"category_totals"`
-	ValidationTotals []TestImpactValidationMeasure  `json:"validation_totals,omitempty"`
-	Evaluation       TestImpactEvaluation           `json:"evaluation"`
+	Sources          TestImpactSources             `json:"sources"`
+	Retention        int                           `json:"retention"`
+	Tasks            []TestImpactTaskSummary       `json:"tasks"`
+	CategoryTotals   []TestImpactCategoryMeasure   `json:"category_totals"`
+	ValidationTotals []TestImpactValidationMeasure `json:"validation_totals,omitempty"`
+	Evaluation       TestImpactEvaluation          `json:"evaluation"`
 }
 
 const (
@@ -86,7 +86,7 @@ func BuildTestImpactReport(tasks []TaskEvents, reviews map[string]TestImpactRevi
 			ReviewOutcome:   testImpactReviewOutcomeSource,
 			WriteOperations: testImpactWriteOperationsSource,
 		},
-		Retention:      retainedTaskEventLogs,
+		Retention:        retainedTaskEventLogs,
 		Tasks:            []TestImpactTaskSummary{},
 		CategoryTotals:   []TestImpactCategoryMeasure{},
 		ValidationTotals: []TestImpactValidationMeasure{},

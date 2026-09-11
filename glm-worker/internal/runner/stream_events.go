@@ -119,7 +119,7 @@ func newStreamEventIngester(
 		tools:              make(map[string]toolUseObservation),
 		validationAttempts: make(map[string]int),
 		instructionReads:   make(map[string]struct{}),
-		now:              time.Now,
+		now:                time.Now,
 	}
 }
 

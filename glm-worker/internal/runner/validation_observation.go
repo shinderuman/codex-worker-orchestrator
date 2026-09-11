@@ -8,6 +8,8 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
+const validationTypeScriptSuite = "tsc"
+
 type validationSegmentScanner struct {
 	command      string
 	start        int
@@ -131,11 +133,11 @@ func validationFormForSegment(segment string) string {
 		return "harnesslint"
 	case "commentlint":
 		return "commentlint"
-	case "tsc":
-		return "tsc"
+	case validationTypeScriptSuite:
+		return validationTypeScriptSuite
 	case "npx":
-		if index+1 < len(words) && filepath.Base(words[index+1]) == "tsc" {
-			return "tsc"
+		if index+1 < len(words) && filepath.Base(words[index+1]) == validationTypeScriptSuite {
+			return validationTypeScriptSuite
 		}
 		return ""
 	default:
