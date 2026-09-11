@@ -1,0 +1,29 @@
+name: Web GPT Issue 407 ShellCheck Fix
+
+on:
+  push:
+    branches:
+      - web-gpt/issue-407-project-scoped-agents
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.head_commit.message == 'Run Issue 407 ShellCheck fix'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Patch shell
+        run: python3 .web-gpt-407-shellcheck-fix.py
+      - name: Commit patch
+        run: |
+          rm -f .web-gpt-407-shellcheck-fix.py .github/workflows/web-gpt-407-shellcheck-fix.yml
+          git diff --check
+          git config user.name shinderuman
+          git config user.email shinderuman@gmail.com
+          git add -A
+          git commit -m 'Avoid ShellCheck read-write ambiguity in legacy migration'
+          git push origin HEAD:web-gpt/issue-407-project-scoped-agents
