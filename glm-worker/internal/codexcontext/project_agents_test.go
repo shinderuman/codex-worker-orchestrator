@@ -100,8 +100,12 @@ func TestProjectAgentsExcludeRoundTripPreservesBytes(t *testing.T) {
 			if err := os.WriteFile(excludePath, original, 0o644); err != nil {
 				t.Fatal(err)
 			}
-			runAction(t, "enable", repo)
-			runAction(t, "disable", repo)
+			if err := ensureProjectAgentsExclude(repo); err != nil {
+				t.Fatal(err)
+			}
+			if err := removeProjectAgentsExclude(repo); err != nil {
+				t.Fatal(err)
+			}
 			current, err := os.ReadFile(excludePath)
 			if err != nil {
 				t.Fatal(err)
