@@ -993,7 +993,7 @@ func parentReviewSourceCoversTarget(target string, source parentEvidenceSourceBo
 
 func parentReviewDiffCoversTarget(target string, diff parentEvidenceDiffBody) bool {
 	for _, file := range diff.Files {
-		if !parentReviewTargetMatchesPath(target, file.Path) || file.Status == "unknown" {
+		if !parentReviewTargetMatchesPath(target, file.Path) || file.Status == analysisStatusUnknown {
 			continue
 		}
 		if file.HeadBlob != "" || file.IndexBlob != "" || file.WorktreeSHA != "" {
@@ -1017,37 +1017,43 @@ func parentReviewTargetMatchesPath(target, path string) bool {
 }
 
 func parentReviewNumericRange(locator string) (int, int, bool) {
-	endIndex := 0
-	for endIndex < len(locator) {
-		c := locator[endIndex]
-		if (c < '0' || c > '9') && c != '-' {
-			break
-		}
-		endIndex++
-	}
-	if endIndex == 0 {
+	token := parentReviewNumericRangeToken(locator)
+	if token == "" {
 		return 0, 0, false
 	}
-	token := locator[:endIndex]
 	values := strings.Split(token, "-")
 	if len(values) > 2 || values[0] == "" {
 		return 0, 0, false
 	}
-	start, err := strconv.Atoi(values[0])
-	if err != nil || start < 1 {
+	start, ok := parentReviewPositiveLine(values[0])
+	if !ok {
 		return 0, 0, false
 	}
-	end := start
-	if len(values) == 2 {
-		if values[1] == "" {
-			return 0, 0, false
-		}
-		end, err = strconv.Atoi(values[1])
-		if err != nil || end < start {
-			return 0, 0, false
-		}
+	if len(values) == 1 {
+		return start, start, true
+	}
+	end, ok := parentReviewPositiveLine(values[1])
+	if !ok || end < start {
+		return 0, 0, false
 	}
 	return start, end, true
+}
+
+func parentReviewNumericRangeToken(locator string) string {
+	end := 0
+	for end < len(locator) {
+		c := locator[end]
+		if (c < '0' || c > '9') && c != '-' {
+			break
+		}
+		end++
+	}
+	return locator[:end]
+}
+
+func parentReviewPositiveLine(value string) (int, bool) {
+	line, err := strconv.Atoi(value)
+	return line, err == nil && line > 0
 }
 
 func applyParentEvidenceTotalBudget(output *parentEvidenceOutput) {

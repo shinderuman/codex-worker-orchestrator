@@ -63,16 +63,30 @@ func validateParentReviewBindingState(state ParentReviewState) error {
 	if state.Review == nil {
 		return nil
 	}
+	if err := validateParentReviewBindingIdentity(state); err != nil {
+		return err
+	}
+	return validateParentReviewEvidenceProof(state.Review)
+}
+
+func validateParentReviewBindingIdentity(state ParentReviewState) error {
 	if state.Open == nil || state.Open.PacketStatus != string(packet.StatusNeedsSolReview) {
 		return fmt.Errorf("parent review evidence binding exists without an open %s review", packet.StatusNeedsSolReview)
 	}
 	binding := state.Review
-	if binding.ID == "" || !ValidUUIDFormat(binding.ID) || len(binding.PacketSHA256) != sha256.Size*2 || len(binding.Targets) == 0 || strings.TrimSpace(binding.SolQuestion) == "" || !completeParentReviewSnapshot(binding.Snapshot) {
+	if binding.ID == "" || !ValidUUIDFormat(binding.ID) || len(binding.PacketSHA256) != sha256.Size*2 {
+		return fmt.Errorf("parent review evidence binding schema is invalid")
+	}
+	if len(binding.Targets) == 0 || strings.TrimSpace(binding.SolQuestion) == "" || !completeParentReviewSnapshot(binding.Snapshot) {
 		return fmt.Errorf("parent review evidence binding schema is invalid")
 	}
 	if _, err := hex.DecodeString(binding.PacketSHA256); err != nil {
 		return fmt.Errorf("parent review packet digest is invalid")
 	}
+	return nil
+}
+
+func validateParentReviewEvidenceProof(binding *ParentReviewBinding) error {
 	if binding.Proof == nil {
 		return nil
 	}
