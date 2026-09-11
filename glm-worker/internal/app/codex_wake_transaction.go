@@ -11,16 +11,16 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-const (
-	codexWakePlanUsage     = "usage: glm-worker --codex-wake-plan <wake-task-thread-id> [--fired-automation-id <automation-id>]"
-	codexWakeResponseUsage = "usage: glm-worker --codex-wake-response-stdin <payload-bytes> <transaction-token> [--sha256 <hex>]"
-)
-
 type CodexWakeArgs struct {
 	ThreadID     string
 	AutomationID string
 	Token        string
 }
+
+const (
+	codexWakePlanUsage     = "usage: glm-worker --codex-wake-plan <wake-task-thread-id> [--fired-automation-id <automation-id>]"
+	codexWakeResponseUsage = "usage: glm-worker --codex-wake-response-stdin <payload-bytes> <transaction-token> [--sha256 <hex>]"
+)
 
 func codexWakePlanCommand(args []string) (Command, error) {
 	if len(args) != 2 && len(args) != 4 {
@@ -59,6 +59,17 @@ func codexWakeResponseCommand(args []string) (Command, error) {
 		}
 	}
 	return command, nil
+}
+
+func executeCodexWakeStateless(cmd Command, cfg config.AppConfig, stdout io.Writer) (bool, error) {
+	switch cmd.Mode {
+	case ModeCodexWakePlan:
+		return true, printCodexWakePlan(cmd, cfg, stdout)
+	case ModeCodexWakeResponse:
+		return true, printCodexWakeResponse(cmd, cfg, stdout)
+	default:
+		return executeStatelessReport(cmd, cfg, stdout)
+	}
 }
 
 func printCodexWakePlan(cmd Command, cfg config.AppConfig, stdout io.Writer) error {
