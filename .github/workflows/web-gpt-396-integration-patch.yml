@@ -1,0 +1,163 @@
+name: Web GPT Issue 396 Integration Patch
+
+on:
+  push:
+    branches:
+      - web-gpt/issue-396-sol-review-evidence
+    paths:
+      - .github/workflows/web-gpt-396-integration-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.head_commit.message == 'Patch Issue 396 integration boundaries'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: web-gpt/issue-396-sol-review-evidence
+      - name: Apply bounded integration fixes
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('glm-worker/internal/state/parent_review_evidence.go')
+          text = p.read_text()
+          old = '''func (s *StateStore) CurrentParentReviewBinding() (*ParentReviewBinding, error) {
+\tstate, err := s.loadParentReviewState()
+\tif err != nil {
+\t\treturn nil, err
+\t}
+\tif state.Review == nil {
+\t\treturn nil, nil
+\t}
+'''
+          new = '''func (s *StateStore) CurrentParentReviewBinding() (*ParentReviewBinding, error) {
+\topen, err := s.CurrentParentReview()
+\tif err != nil {
+\t\treturn nil, err
+\t}
+\tif open == nil || open.PacketStatus != string(packet.StatusNeedsSolReview) {
+\t\treturn nil, nil
+\t}
+\tstate, err := s.loadParentReviewState()
+\tif err != nil {
+\t\treturn nil, err
+\t}
+\tif state.Review == nil {
+\t\treturn nil, nil
+\t}
+'''
+          assert text.count(old) == 1
+          text = text.replace(old, new)
+
+          old = '''func (s *StateStore) ParentReviewAcceptReady() (bool, error) {
+\tstate, err := s.loadParentReviewState()
+\tif err != nil {
+\t\treturn false, err
+\t}
+\tif state.Open == nil || state.Open.PacketStatus != string(packet.StatusNeedsSolReview) {
+\t\treturn true, nil
+\t}
+'''
+          new = '''func (s *StateStore) ParentReviewAcceptReady() (bool, error) {
+\topen, err := s.CurrentParentReview()
+\tif err != nil {
+\t\treturn false, err
+\t}
+\tif open == nil || open.PacketStatus != string(packet.StatusNeedsSolReview) {
+\t\treturn true, nil
+\t}
+\tstate, err := s.loadParentReviewState()
+\tif err != nil {
+\t\treturn false, err
+\t}
+'''
+          assert text.count(old) == 1
+          p.write_text(text.replace(old, new))
+
+          p = Path('glm-worker/internal/workflow/workflow.go')
+          text = p.read_text()
+          old = '''func (w *Workflow) emitResult(value packet.Result) error {
+\treport, err := machineReport(value)
+\tif err != nil {
+\t\treturn err
+\t}
+\tif value.Status == packet.StatusNeedsSolReview {
+\t\tsnapshot, captureErr := w.captureSnapshot(w.config.RepoRoot)
+\t\tif captureErr != nil {
+\t\t\treturn fmt.Errorf("parent review snapshotを取得できません: %w", captureErr)
+\t\t}
+\t\tdigest := state.SnapshotDigest{Head: snapshot.Head, IndexDigest: snapshot.IndexDigest, WorktreeDigest: snapshot.WorktreeDigest}
+\t\tif err := w.state.RecordSolResultWithReviewSnapshot(value, w.lastProducer, digest); err != nil {
+\t\t\treturn err
+\t\t}
+\t} else if err := w.state.RecordSolResult(value, w.lastProducer); err != nil {
+\t\treturn err
+\t}
+\t_, err = fmt.Fprintln(w.output, report)
+\treturn err
+}
+'''
+          new = '''func (w *Workflow) emitResult(value packet.Result) error {
+\treport, err := machineReport(value)
+\tif err != nil {
+\t\treturn err
+\t}
+\tif err := w.state.RecordSolResult(value, w.lastProducer); err != nil {
+\t\treturn err
+\t}
+\t_, err = fmt.Fprintln(w.output, report)
+\treturn err
+}
+
+func (w *Workflow) emitReviewResult(value packet.Result) error {
+\treviewStart, err := w.state.LoadReviewStartSnapshot()
+\tif err != nil {
+\t\treturn fmt.Errorf("parent review bindingのreview-start snapshotを読めません: %w", err)
+\t}
+\treport, err := machineReport(value)
+\tif err != nil {
+\t\treturn err
+\t}
+\tdigest := state.SnapshotDigest{Head: reviewStart.Head, IndexDigest: reviewStart.IndexDigest, WorktreeDigest: reviewStart.WorktreeDigest}
+\tif err := w.state.RecordSolResultWithReviewSnapshot(value, w.lastProducer, digest); err != nil {
+\t\treturn err
+\t}
+\t_, err = fmt.Fprintln(w.output, report)
+\treturn err
+}
+'''
+          assert text.count(old) == 1
+          p.write_text(text.replace(old, new))
+
+          p = Path('glm-worker/internal/workflow/review_flow.go')
+          text = p.read_text()
+          old = '''func (w *Workflow) finishReview(status state.TaskStatus, result packet.Result) error {
+\tif err := w.state.FinishReview(status); err != nil {
+\t\treturn err
+\t}
+\treturn w.emitResult(result)
+}
+'''
+          new = '''func (w *Workflow) finishReview(status state.TaskStatus, result packet.Result) error {
+\tif err := w.state.FinishReview(status); err != nil {
+\t\treturn err
+\t}
+\tif result.Status == packet.StatusNeedsSolReview {
+\t\treturn w.emitReviewResult(result)
+\t}
+\treturn w.emitResult(result)
+}
+'''
+          assert text.count(old) == 1
+          p.write_text(text.replace(old, new))
+          PY
+          rm .github/workflows/web-gpt-396-integration-patch.yml
+          git config user.name shinderuman
+          git config user.email shinderuman@gmail.com
+          git add glm-worker/internal/state/parent_review_evidence.go glm-worker/internal/workflow/workflow.go glm-worker/internal/workflow/review_flow.go .github/workflows/web-gpt-396-integration-patch.yml
+          git commit -m 'Fix Issue 396 review evidence integration'
+          git push origin HEAD:web-gpt/issue-396-sol-review-evidence
