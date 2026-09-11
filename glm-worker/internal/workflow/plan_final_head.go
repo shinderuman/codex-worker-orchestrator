@@ -8,6 +8,8 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskcontract"
 )
 
+const parentCompletionHeadVerified = "plan completion head: verified"
+
 func CheckFinalHeadPlan(root string) (string, error) {
 	plan, status, ok, err := finalHeadPlan(root)
 	if err != nil {
@@ -38,7 +40,7 @@ func CheckParentCompletionHead(root string) (string, error) {
 		if err := validateGoalTerminalFinalHeadPlan(root, plan); err != nil {
 			return "", err
 		}
-		return "plan completion head: verified", nil
+		return parentCompletionHeadVerified, nil
 	}
 	if goal.Present && goal.Status == taskcontract.GoalStatusActive {
 		blockedOnly, err := validateBlockedOnlyFinalHeadPlan(root, plan)
@@ -46,13 +48,13 @@ func CheckParentCompletionHead(root string) (string, error) {
 			return "", err
 		}
 		if blockedOnly {
-			return "plan completion head: verified", nil
+			return parentCompletionHeadVerified, nil
 		}
 	}
 	if err := validateFinalHeadPlan(root, plan); err != nil {
 		return "", err
 	}
-	return "plan completion head: verified", nil
+	return parentCompletionHeadVerified, nil
 }
 
 func validateGoalTerminalFinalHeadPlan(root string, plan string) error {
