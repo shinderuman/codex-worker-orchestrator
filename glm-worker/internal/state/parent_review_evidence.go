@@ -122,6 +122,13 @@ func (s *StateStore) openBoundParentReviewState(value packet.Result, producer Pa
 }
 
 func (s *StateStore) CurrentParentReviewBinding() (*ParentReviewBinding, error) {
+	open, err := s.CurrentParentReview()
+	if err != nil {
+		return nil, err
+	}
+	if open == nil || open.PacketStatus != string(packet.StatusNeedsSolReview) {
+		return nil, nil
+	}
 	state, err := s.loadParentReviewState()
 	if err != nil {
 		return nil, err
@@ -167,12 +174,16 @@ func (s *StateStore) MarkParentReviewEvidence(reviewID, ownerCallID string, clai
 }
 
 func (s *StateStore) ParentReviewAcceptReady() (bool, error) {
-	state, err := s.loadParentReviewState()
+	open, err := s.CurrentParentReview()
 	if err != nil {
 		return false, err
 	}
-	if state.Open == nil || state.Open.PacketStatus != string(packet.StatusNeedsSolReview) {
+	if open == nil || open.PacketStatus != string(packet.StatusNeedsSolReview) {
 		return true, nil
+	}
+	state, err := s.loadParentReviewState()
+	if err != nil {
+		return false, err
 	}
 	if state.Review == nil || state.Review.Proof == nil || state.Review.Proof.ReviewID != state.Review.ID {
 		return false, nil
