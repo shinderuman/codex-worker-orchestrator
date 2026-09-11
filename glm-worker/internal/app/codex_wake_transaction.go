@@ -22,6 +22,11 @@ const (
 	codexWakeResponseUsage = "usage: glm-worker --codex-wake-response-stdin <payload-bytes> <transaction-token> [--sha256 <hex>]"
 )
 
+var codexWakeCommandParsers = map[string]commandParser{
+	"--codex-wake-plan":           codexWakePlanCommand,
+	"--codex-wake-response-stdin": codexWakeResponseCommand,
+}
+
 func codexWakePlanCommand(args []string) (Command, error) {
 	if len(args) != 2 && len(args) != 4 {
 		return Command{}, usageError("%s", codexWakePlanUsage)
