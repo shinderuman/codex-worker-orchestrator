@@ -50,10 +50,9 @@ jobs:
           state_path = Path('glm-worker/internal/state/session_rotation.go')
           state_text = state_path.read_text()
           old_validation = "\tif marker.LastCreationOutcome != nil {\n\t\tif marker.Directive == nil {\n\t\t\treturn fmt.Errorf(\"session rotation creation outcomeにdirectiveがありません\")\n\t\t}\n\t\tif err := marker.LastCreationOutcome.validate(); err != nil {\n\t\t\treturn err\n\t\t}\n\t}\n"
-          new_validation = "\tif err := marker.validateCreationOutcome(); err != nil {\n\t\treturn err\n\t}\n"
           if state_text.count(old_validation) != 1:
               raise SystemExit(f'expected one creation outcome validation block, found {state_text.count(old_validation)}')
-          state_path.write_text(state_text.replace(old_validation, new_validation, 1))
+          state_path.write_text(state_text.replace(old_validation, '', 1))
           failure_path = Path('glm-worker/internal/state/session_rotation_failure.go')
           failure_text = failure_path.read_text()
           const_block = "const (\n\tSessionRotationCreationResultVersion = 1\n\tSessionRotationCreationOutcomeFailed = \"failed\"\n)\n\n"
@@ -69,6 +68,12 @@ jobs:
           if failure_text.count(anchor) != 1:
               raise SystemExit(f'expected one validateForRelease anchor, found {failure_text.count(anchor)}')
           failure_path.write_text(failure_text.replace(anchor, helper + anchor, 1))
+          state_text = state_path.read_text()
+          old_lifecycle = "func (marker *SessionRotationMarker) validateLifecycle() error {\n\tif err := marker.validateStateRecords(); err != nil {\n\t\treturn err\n\t}\n\tif marker.Claim != nil && (!ValidGeneratedUUID(marker.Claim.ClaimID) || !ValidUUIDFormat(marker.Claim.ClaimantThreadID) || !ValidGeneratedUUID(marker.Claim.TargetTaskID) || marker.Claim.ClaimedAt == \"\") {\n\t\treturn fmt.Errorf(\"session rotation claimが不正です\")\n\t}\n\treturn nil\n}"
+          new_lifecycle = old_lifecycle[:-len("\treturn nil\n}")] + "\treturn marker.validateCreationOutcome()\n}"
+          if state_text.count(old_lifecycle) != 1:
+              raise SystemExit(f'expected one validateLifecycle block, found {state_text.count(old_lifecycle)}')
+          state_path.write_text(state_text.replace(old_lifecycle, new_lifecycle, 1))
           PY_LINT
       - name: Restore final workflow tree
         run: |
