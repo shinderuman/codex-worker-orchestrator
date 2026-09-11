@@ -36,6 +36,9 @@ func (marker *SessionRotationMarker) validateCreationOutcome() error {
 	if marker.Directive == nil {
 		return fmt.Errorf("session rotation creation outcomeにdirectiveがありません")
 	}
+	if marker.LastCreationOutcome.DirectiveID != marker.Directive.DirectiveID {
+		return fmt.Errorf("session rotation creation outcomeがcurrent directiveと一致しません")
+	}
 	return marker.LastCreationOutcome.validate()
 }
 
