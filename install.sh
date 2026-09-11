@@ -3,7 +3,7 @@ set -eu
 
 repo_root=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 quality_tools_file="$repo_root/quality-tools.yml"
-codex_dir="${CODEX_CONFIG_DIR:-$HOME/.codex}"
+codex_dir="${CODEX_CONFIG_DIR:-${CODEX_HOME:-$HOME/.codex}}"
 bin_dir="${GLM_WORKER_BIN_DIR:-$HOME/.local/bin}"
 claude_settings="${CLAUDE_SETTINGS_FILE:-$HOME/.claude/settings.json}"
 glm_worker_home="${GLM_WORKER_HOME:-$HOME/.glm-worker}"

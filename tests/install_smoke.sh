@@ -52,7 +52,7 @@ run_install() {
 	HOME="$home" \
 		GOMODCACHE="$go_mod_cache" \
 		PATH="$tmp/bin:$PATH" \
-		CODEX_CONFIG_DIR="$home/.codex" \
+		CODEX_HOME="$home/.codex" \
 		GLM_WORKER_BIN_DIR="$home/.local/bin" \
 		GLM_WORKER_HOME="$home/.glm-worker" \
 		CLAUDE_SETTINGS_FILE="$home/.claude/settings.json" \
