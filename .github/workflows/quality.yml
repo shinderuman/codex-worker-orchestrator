@@ -32,6 +32,13 @@ jobs:
           lines = workflow[start:end].splitlines()
           script = "\n".join(line[10:] if line.startswith("          ") else line for line in lines)
           exec(compile(script, 'issue-390-apply.py', 'exec'))
+
+          test_path = Path('glm-worker/internal/state/session_rotation_failure_test.go')
+          test_text = test_path.read_text()
+          old = 'st, _, marker, _ := seedClaimedSessionRotation(t)'
+          if test_text.count(old) != 1:
+              raise SystemExit(f'expected one migration-test fixture replacement, found {test_text.count(old)}')
+          test_path.write_text(test_text.replace(old, '_, _, marker, _ := seedClaimedSessionRotation(t)', 1))
           PY_RUNNER
       - name: Restore final workflow tree
         run: |
