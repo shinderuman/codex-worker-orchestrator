@@ -1,0 +1,45 @@
+name: External Review Fix Validation
+
+on:
+  push:
+    branches:
+      - review-fix/0dc7a50-549f3ff-external
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Read Go version
+        id: quality-tools
+        run: |
+          GO_VERSION=$(awk -F': ' '$1 == "go" { print $2 }' quality-tools.yml)
+          printf 'go_version=%s\n' "$GO_VERSION" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ steps.quality-tools.outputs.go_version }}
+          cache: false
+      - name: app tests
+        working-directory: glm-worker
+        run: go test ./internal/app
+      - name: autoresume tests
+        working-directory: glm-worker
+        run: go test ./internal/autoresume
+      - name: packet tests
+        working-directory: glm-worker
+        run: go test ./internal/packet
+      - name: parentactioncmd tests
+        working-directory: glm-worker
+        run: go test ./internal/parentactioncmd
+      - name: runner tests
+        working-directory: glm-worker
+        run: go test ./internal/runner
+      - name: state tests
+        working-directory: glm-worker
+        run: go test ./internal/state
+      - name: workflow tests
+        working-directory: glm-worker
+        run: go test ./internal/workflow
