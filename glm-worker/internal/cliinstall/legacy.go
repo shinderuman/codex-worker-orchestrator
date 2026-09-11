@@ -22,46 +22,59 @@ func MigrateLegacy(binDir string) (bool, error) {
 	if stateExists {
 		return false, nil
 	}
+	state, owned, err := legacyOwnershipState(binDir)
+	if err != nil || !owned {
+		return false, err
+	}
+	if err := commitLegacyState(statePath, state); err != nil {
+		return false, err
+	}
+	return true, nil
+}
 
+func legacyOwnershipState(binDir string) (installState, bool, error) {
 	state := emptyState()
 	for _, name := range managedNames {
 		target := filepath.Join(binDir, name)
 		info, exists, err := lstat(target)
 		if err != nil {
-			return false, err
+			return installState{}, false, err
 		}
 		if !exists || !isRegularExecutable(info) || info.Mode().Perm() != 0o755 {
-			return false, nil
+			return installState{}, false, nil
 		}
 		owned, err := legacyRepositoryBinary(target, name)
 		if err != nil {
-			return false, err
+			return installState{}, false, err
 		}
 		if !owned {
-			return false, nil
+			return installState{}, false, nil
 		}
 		digest, err := hashFile(target)
 		if err != nil {
-			return false, err
+			return installState{}, false, err
 		}
 		state.Binaries[name] = digest
 	}
+	return state, true, nil
+}
 
+func commitLegacyState(statePath string, state installState) error {
 	stateDir := filepath.Dir(statePath)
 	if err := ensureStateDir(stateDir); err != nil {
-		return false, err
+		return err
 	}
 	stateTemp, err := stageState(stateDir, state)
 	if err != nil {
-		return false, err
+		return err
 	}
 	if err := os.Rename(stateTemp, statePath); err != nil {
-		return false, errors.Join(
+		return errors.Join(
 			fmt.Errorf("commit legacy CLI ownership state: %w", err),
 			removeIfExists(stateTemp),
 		)
 	}
-	return true, nil
+	return nil
 }
 
 func legacyRepositoryBinary(path, name string) (bool, error) {
