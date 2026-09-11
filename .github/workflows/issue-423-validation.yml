@@ -25,50 +25,10 @@ jobs:
         with:
           go-version: ${{ steps.quality-tools.outputs.go_version }}
           cache: false
-      - name: Wire continuation projection
+      - name: Fix terminal fixture
         run: |
           python3 - <<'PY'
           from pathlib import Path
-
-          path = Path('glm-worker/internal/app/project_state.go')
-          text = path.read_text()
-
-          old = '\tCompletion   *projectStateCompletion  `json:"completion,omitempty"`\n'
-          new = old + '\tContinuation projectContinuationObligation `json:"continuation"`\n'
-          if text.count(old) != 1:
-              raise SystemExit(f'project state output anchor count: {text.count(old)}')
-          text = text.replace(old, new, 1)
-
-          old = 'const projectStateVersion = 1'
-          if text.count(old) != 1:
-              raise SystemExit(f'project state version anchor count: {text.count(old)}')
-          text = text.replace(old, 'const projectStateVersion = 2', 1)
-
-          old = '\tif planContent == nil {\n\t\treturn output, nil\n\t}\n'
-          new = '\tif planContent == nil {\n\t\toutput.Continuation = deriveProjectContinuation(output, st)\n\t\treturn output, nil\n\t}\n'
-          if text.count(old) != 1:
-              raise SystemExit(f'plan absent return anchor count: {text.count(old)}')
-          text = text.replace(old, new, 1)
-
-          old = '\t\toutput.Completion = completion\n\t}\n\treturn output, nil\n}\n'
-          new = '\t\toutput.Completion = completion\n\t}\n\toutput.Continuation = deriveProjectContinuation(output, st)\n\treturn output, nil\n}\n'
-          if text.count(old) != 1:
-              raise SystemExit(f'final return anchor count: {text.count(old)}')
-          text = text.replace(old, new, 1)
-          path.write_text(text)
-
-          continuation_path = Path('glm-worker/internal/app/project_continuation.go')
-          continuation = continuation_path.read_text()
-          old = 'import "github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"\n'
-          new = 'import (\n\t"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"\n\t"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskcontract"\n)\n'
-          if continuation.count(old) != 1:
-              raise SystemExit(f'continuation import anchor count: {continuation.count(old)}')
-          continuation = continuation.replace(old, new, 1)
-          old = 'output.Goal.Status == "completed"'
-          new = 'output.Goal.Status == taskcontract.GoalStatusCompleted'
-          if continuation.count(old) != 1:
-              raise SystemExit(f'goal status anchor count: {continuation.count(old)}')
-          continuation_path.write_text(continuation.replace(old, new, 1))
 
           test_path = Path('glm-worker/internal/app/project_continuation_test.go')
           test = test_path.read_text()
@@ -77,6 +37,13 @@ jobs:
           if test.count(old) != 1:
               raise SystemExit(f'terminal fixture anchor count: {test.count(old)}')
           test_path.write_text(test.replace(old, new, 1))
+
+          state_text = Path('glm-worker/internal/app/project_state.go').read_text()
+          if 'Continuation projectContinuationObligation `json:"continuation"`' not in state_text or 'const projectStateVersion = 2' not in state_text:
+              raise SystemExit('project-state continuation wiring is missing')
+          continuation = Path('glm-worker/internal/app/project_continuation.go').read_text()
+          if 'taskcontract.GoalStatusCompleted' not in continuation:
+              raise SystemExit('continuation does not use canonical goal status')
           PY
           gofmt -w glm-worker/internal/app/project_state.go glm-worker/internal/app/project_continuation.go glm-worker/internal/app/project_continuation_test.go
       - name: Targeted tests
