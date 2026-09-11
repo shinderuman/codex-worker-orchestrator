@@ -1,0 +1,29 @@
+name: Web GPT Issue 407 Smoke Patch
+
+on:
+  push:
+    branches:
+      - web-gpt/issue-407-project-scoped-agents
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.head_commit.message == 'Run Issue 407 smoke patch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Patch smoke
+        run: python3 .web-gpt-407-smoke-patch.py
+      - name: Commit patch
+        run: |
+          rm -f .web-gpt-407-smoke-patch.py .github/workflows/web-gpt-407-smoke-patch.yml
+          git diff --check
+          git config user.name shinderuman
+          git config user.email shinderuman@gmail.com
+          git add -A
+          git commit -m 'Align Issue 407 installer smoke with project developer instructions'
+          git push origin HEAD:web-gpt/issue-407-project-scoped-agents
