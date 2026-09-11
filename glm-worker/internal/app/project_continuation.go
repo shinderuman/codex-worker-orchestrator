@@ -122,6 +122,10 @@ func activeProjectContinuation(output projectStateOutput, st *state.StateStore, 
 	if status != state.TaskStatusComplete || plan.RequiredAction != state.ParentActionNone {
 		return currentTaskProjectContinuation(activeTask, plan.RequiredAction)
 	}
+	return completedActiveProjectContinuation(output, activeTask)
+}
+
+func completedActiveProjectContinuation(output projectStateOutput, activeTask string) projectContinuationObligation {
 	if !output.Goal.Present {
 		return unknownProjectContinuation(projectContinuationReasonContinuationScopeUnbound)
 	}
