@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -117,7 +118,7 @@ func planLegacyConfig(repoRoot string, plan configInstallPlan, data []byte, curr
 	return plan, nil
 }
 
-func legacyManagedConfigValueMatchesRepositoryHistory(repoRoot, value string) (bool, error) {
+func legacyManagedConfigValueMatchesRepositoryHistory(repoRoot string, value string) (bool, error) {
 	const sourcePath = "codex/config-managed.toml"
 	current, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(sourcePath)))
 	if err == nil {
@@ -196,7 +197,7 @@ func findTopLevelAssignment(data []byte, key string) (configAssignment, bool, er
 			break
 		}
 		left, right, ok := strings.Cut(trimmed, "=")
-		if !ok || strings.TrimSpace(left) != key {
+		if !ok || !topLevelKeyMatches(left, key) {
 			continue
 		}
 		if found {
@@ -210,6 +211,24 @@ func findTopLevelAssignment(data []byte, key string) (configAssignment, bool, er
 		found = true
 	}
 	return assignment, found, nil
+}
+
+func topLevelKeyMatches(raw, key string) bool {
+	raw = strings.TrimSpace(raw)
+	if raw == key {
+		return true
+	}
+	if len(raw) < 2 {
+		return false
+	}
+	if raw[0] == '\'' && raw[len(raw)-1] == '\'' {
+		return raw[1:len(raw)-1] == key
+	}
+	if raw[0] != '"' || raw[len(raw)-1] != '"' {
+		return false
+	}
+	unquoted, err := strconv.Unquote(raw)
+	return err == nil && unquoted == key
 }
 
 func replaceAssignmentLine(data []byte, index int, replacement string) []byte {
