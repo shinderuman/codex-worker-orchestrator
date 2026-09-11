@@ -155,21 +155,9 @@ func (w *Workflow) nextResultCorrectionCheckpoint(checkpoint state.ResumeCheckpo
 }
 
 func (w *Workflow) validateResultCorrectionBoundary(checkpoint state.ResumeCheckpoint) error {
-	if !w.state.Exists(state.ResultCorrectionStateFile) {
-		if checkpoint.ResultCorrection {
-			return w.resultCorrectionBoundaryFailure(checkpoint, nil, "boundary_unavailable", "result correction state is missing")
-		}
-		return nil
-	}
-	record, err := w.loadResultCorrectionRecord()
-	if err != nil {
-		if checkpoint.ResultCorrection {
-			return w.resultCorrectionBoundaryFailure(checkpoint, nil, "boundary_unavailable", err.Error())
-		}
-		return NewResultCorrectionWorkerError(checkpoint.Phase, &ResultCorrectionFailure{Reason: "boundary_unavailable", BoundaryMismatch: err.Error()})
-	}
-	if record.Terminal != nil {
-		return NewResultCorrectionWorkerError(checkpoint.Phase, record.Terminal)
+	record, err := w.resultCorrectionBoundaryRecord(checkpoint)
+	if err != nil || record == nil {
+		return err
 	}
 	if !checkpoint.ResultCorrection {
 		return NewResultCorrectionWorkerError(checkpoint.Phase, resultCorrectionFailureFromRecord(record, "boundary_changed", "active correction state requires a correction checkpoint", nil))
@@ -203,6 +191,26 @@ func (w *Workflow) validateResultCorrectionBoundary(checkpoint state.ResumeCheck
 		return w.resultCorrectionBoundaryFailure(checkpoint, record, "boundary_changed", "repository snapshot changed")
 	}
 	return nil
+}
+
+func (w *Workflow) resultCorrectionBoundaryRecord(checkpoint state.ResumeCheckpoint) (*resultCorrectionRecord, error) {
+	if !w.state.Exists(state.ResultCorrectionStateFile) {
+		if checkpoint.ResultCorrection {
+			return nil, w.resultCorrectionBoundaryFailure(checkpoint, nil, "boundary_unavailable", "result correction state is missing")
+		}
+		return nil, nil
+	}
+	record, err := w.loadResultCorrectionRecord()
+	if err != nil {
+		if checkpoint.ResultCorrection {
+			return nil, w.resultCorrectionBoundaryFailure(checkpoint, nil, "boundary_unavailable", err.Error())
+		}
+		return nil, NewResultCorrectionWorkerError(checkpoint.Phase, &ResultCorrectionFailure{Reason: "boundary_unavailable", BoundaryMismatch: err.Error()})
+	}
+	if record.Terminal != nil {
+		return nil, NewResultCorrectionWorkerError(checkpoint.Phase, record.Terminal)
+	}
+	return record, nil
 }
 
 func (w *Workflow) resultCorrectionBoundaryFailure(
@@ -253,10 +261,10 @@ func (w *Workflow) persistResultCorrectionTerminal(checkpoint state.ResumeCheckp
 	terminal := &resultCorrectionRecord{Version: resultCorrectionVersion, Terminal: failure}
 	workerErr := NewResultCorrectionWorkerError(checkpoint.Phase, failure)
 	if err := w.saveResultCorrectionRecord(terminal); err != nil {
-		return fmt.Errorf("%w; persist terminal correction state: %v", workerErr, err)
+		return fmt.Errorf("%w; persist terminal correction state: %w", workerErr, err)
 	}
 	if err := w.state.ClearResumeCheckpoint(); err != nil {
-		return fmt.Errorf("%w; clear resume checkpoint: %v", workerErr, err)
+		return fmt.Errorf("%w; clear resume checkpoint: %w", workerErr, err)
 	}
 	return workerErr
 }
