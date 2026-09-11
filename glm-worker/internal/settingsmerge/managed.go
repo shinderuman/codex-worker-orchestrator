@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -59,12 +60,11 @@ func loadManagedState(path string) (managedState, error) {
 		return managedState{}, fmt.Errorf("state JSON: %w", err)
 	}
 	var extra any
-	if err := decoder.Decode(&extra); err != nil && !errors.Is(err, os.ErrClosed) {
-		if err.Error() != "EOF" {
-			return managedState{}, fmt.Errorf("state JSON: %w", err)
+	if err := decoder.Decode(&extra); err != io.EOF {
+		if err == nil {
+			return managedState{}, fmt.Errorf("state: multiple JSON values")
 		}
-	} else if err == nil {
-		return managedState{}, fmt.Errorf("state: multiple JSON values")
+		return managedState{}, fmt.Errorf("state JSON: %w", err)
 	}
 	if state.Version != managedStateVersion {
 		return managedState{}, fmt.Errorf("managed state version %d is unsupported (expected %d)", state.Version, managedStateVersion)
@@ -83,6 +83,12 @@ func validateManagedState(state managedState) error {
 	for _, record := range state.Values {
 		if len(record.Path) == 0 {
 			return fmt.Errorf("managed state contains an empty path")
+		}
+		if !record.Baseline.Exists && (record.Baseline.FirstMissingPrefix < 1 || record.Baseline.FirstMissingPrefix > len(record.Path)) {
+			return fmt.Errorf("managed state contains invalid baseline at %s", managedPathDisplay(record.Path))
+		}
+		if record.Baseline.Exists && record.Baseline.FirstMissingPrefix != 0 {
+			return fmt.Errorf("managed state contains inconsistent baseline at %s", managedPathDisplay(record.Path))
 		}
 		key := managedPathKey(record.Path)
 		if seen[key] {
@@ -150,8 +156,7 @@ func reconcileManagedValues(target map[string]any, previous managedState, fragme
 
 func flattenManagedObject(fragment map[string]any) []managedLeaf {
 	var leaves []managedLeaf
-	keys := sortedMapKeys(fragment)
-	for _, key := range keys {
+	for _, key := range sortedMapKeys(fragment) {
 		flattenManagedValue([]string{key}, fragment[key], &leaves)
 	}
 	return leaves
@@ -239,10 +244,10 @@ func restoreManagedBaseline(target map[string]any, path []string, baseline value
 	for depth := len(path) - 1; depth >= baseline.FirstMissingPrefix && baseline.FirstMissingPrefix > 0; depth-- {
 		prefix := path[:depth]
 		value, exists, err := managedValueAt(target, prefix)
-		if err != nil || !exists {
-			if err != nil {
-				return err
-			}
+		if err != nil {
+			return err
+		}
+		if !exists {
 			continue
 		}
 		object, ok := value.(map[string]any)
