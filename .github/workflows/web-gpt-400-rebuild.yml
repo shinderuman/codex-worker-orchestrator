@@ -157,6 +157,16 @@ jobs:
                   path.write_text(''.join(out))
           if changed != 35:
               raise SystemExit(f'expected to update 35 unchecked RecordSolResult calls, got {changed}')
+
+          path = Path('glm-worker/internal/state/parent_review_test.go')
+          text = path.read_text()
+          old_sig = 'func recordPacket(st *StateStore, status packet.Status, risk packet.Risk, producer ParentReviewProducer) {'
+          new_sig = 'func recordPacket(t *testing.T, st *StateStore, status packet.Status, risk packet.Risk, producer ParentReviewProducer) {'
+          if text.count(old_sig) != 1:
+              raise SystemExit('expected recordPacket helper signature exactly once')
+          text = text.replace(old_sig, new_sig, 1)
+          text = text.replace('recordPacket(st, ', 'recordPacket(t, st, ')
+          path.write_text(text)
           PY
           mapfile -t go_files < <(git diff --name-only -- '*.go')
           gofmt -w "${go_files[@]}"
