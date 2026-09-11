@@ -90,6 +90,28 @@ func TestInstallRecognizesQuotedUserOwnedConfigKey(t *testing.T) {
 	}
 }
 
+func TestInstallDoesNotClaimModifiedLegacyConfigLine(t *testing.T) {
+	repo := initInstallFixtureRepo(t)
+	codexDir := t.TempDir()
+	manifestPath := filepath.Join(codexDir, legacyManifestName)
+	manifest := []byte("AGENTS.md\n")
+	writeTestFile(t, manifestPath, manifest)
+	configPath := filepath.Join(codexDir, "config.toml")
+	original := []byte("\"" + managedConfigKey + "\" = 21600000\nlocal_key = \"keep\"\n")
+	writeTestFile(t, configPath, original)
+
+	var stdout bytes.Buffer
+	err := Install(repo, codexDir, &stdout)
+	if err == nil || !strings.Contains(err.Error(), "legacy managed Codex config key no longer matches repository history") {
+		t.Fatalf("expected modified legacy config ownership conflict, got %v", err)
+	}
+	assertFileBytes(t, configPath, original)
+	assertFileBytes(t, manifestPath, manifest)
+	if _, err := os.Stat(statePath(codexDir)); !os.IsNotExist(err) {
+		t.Fatalf("state exists after rejected legacy config migration: %v", err)
+	}
+}
+
 func TestInstallRollbackRestoresLegacyManifestAndSuppressesSuccessOutput(t *testing.T) {
 	repo := initInstallFixtureRepo(t)
 	codexDir := t.TempDir()
