@@ -79,7 +79,7 @@ install_codex_files() {
 	previous_manifest=$(mktemp "${TMPDIR:-/tmp}/codex-managed-previous.XXXXXX")
 	trap 'rm -f "$current_manifest" "$previous_manifest"' EXIT HUP INT TERM
 	{
-		printf '%s\n' 'AGENTS.md'
+		printf '%s\n' 'instructions/codex-worker-orchestrator.md'
 		(
 			cd "$repo_root/codex"
 			find instructions -type f -print
@@ -94,6 +94,9 @@ install_codex_files() {
 	fi
 	while IFS= read -r relative_path; do
 		[ -n "$relative_path" ] || continue
+		if [ "$relative_path" = 'AGENTS.md' ]; then
+			continue
+		fi
 		if ! grep -Fqx "$relative_path" "$current_manifest"; then
 			target="$codex_dir/$relative_path"
 			if [ -f "$target" ] || [ -L "$target" ]; then
@@ -102,8 +105,8 @@ install_codex_files() {
 			fi
 		fi
 	done <"$previous_manifest"
-	copy_file "$repo_root/codex/AGENTS.md" "$codex_dir/AGENTS.md"
 	copy_tree "$repo_root/codex/instructions" "$codex_dir/instructions"
+	copy_file "$repo_root/codex/AGENTS.md" "$codex_dir/instructions/codex-worker-orchestrator.md"
 	copy_file "$repo_root/codex/rules/glm-worker.rules" "$codex_dir/rules/glm-worker.rules"
 	copy_tree "$repo_root/codex/glm-worker/prompts" "$codex_dir/glm-worker/prompts"
 	mkdir -p "$codex_dir"
