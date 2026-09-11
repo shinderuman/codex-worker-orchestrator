@@ -38,3 +38,5 @@ jobs:
       - name: Full Go test suite
         working-directory: glm-worker
         run: go test ./...
+
+# Temporary branch-only validation for Issue 396; remove before PR.
