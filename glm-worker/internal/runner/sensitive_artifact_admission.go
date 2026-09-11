@@ -18,40 +18,64 @@ func (e *SensitiveArtifactError) Error() string {
 }
 
 func validateSensitiveResultArtifacts(base *ClaudeRunner, result RunResult) error {
+	artifacts, ok := sensitiveArtifactPaths(base, result)
+	if !ok {
+		return nil
+	}
+	values, err := sensitiveArtifactCandidates(base)
+	if err != nil {
+		return err
+	}
+	return validateSensitiveArtifactContents(artifacts, values)
+}
+
+func sensitiveArtifactPaths(base *ClaudeRunner, result RunResult) ([]string, bool) {
 	parsed, err := packet.ParseStructured(result.StructuredOutput)
 	if err != nil || len(parsed.Artifacts) == 0 {
-		return nil
+		return nil, false
 	}
 	taskID, err := base.state.TaskID()
 	if err != nil {
-		return fmt.Errorf("artifact sensitive admission unavailable: task identity")
+		return nil, false
 	}
-	artifactRoot := base.state.ArtifactDir(taskID)
-	if err := packet.ValidateArtifacts(parsed.Artifacts, artifactRoot); err != nil {
-		return nil
+	if err := packet.ValidateArtifacts(parsed.Artifacts, base.state.ArtifactDir(taskID)); err != nil {
+		return nil, false
 	}
+	return parsed.Artifacts, true
+}
+
+func sensitiveArtifactCandidates(base *ClaudeRunner) ([]SensitiveArtifactValue, error) {
 	values, err := SensitiveArtifactValues(base.config)
 	if err != nil {
-		return fmt.Errorf("artifact sensitive admission unavailable: provider-runtime")
+		return nil, fmt.Errorf("artifact sensitive admission unavailable: provider-runtime")
 	}
 	parentTokens, err := parentaction.LiveTokens(base.config.RepoRoot)
 	if err != nil {
-		return fmt.Errorf("artifact sensitive admission unavailable: parent-action-token")
+		return nil, fmt.Errorf("artifact sensitive admission unavailable: parent-action-token")
 	}
 	for _, token := range parentTokens {
-		if token != "" {
-			values = append(values, SensitiveArtifactValue{Category: "parent-action-token", Value: token})
-		}
+		values = append(values, SensitiveArtifactValue{Category: "parent-action-token", Value: token})
 	}
-	for _, path := range parsed.Artifacts {
+	return values, nil
+}
+
+func validateSensitiveArtifactContents(artifacts []string, values []SensitiveArtifactValue) error {
+	for _, path := range artifacts {
 		content, err := os.ReadFile(path)
 		if err != nil {
 			return fmt.Errorf("artifact sensitive admission unavailable: artifact-content")
 		}
-		for _, candidate := range values {
-			if candidate.Value != "" && bytes.Contains(content, []byte(candidate.Value)) {
-				return &SensitiveArtifactError{Category: candidate.Category}
-			}
+		if err := rejectSensitiveArtifactContent(content, values); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func rejectSensitiveArtifactContent(content []byte, values []SensitiveArtifactValue) error {
+	for _, candidate := range values {
+		if candidate.Value != "" && bytes.Contains(content, []byte(candidate.Value)) {
+			return &SensitiveArtifactError{Category: candidate.Category}
 		}
 	}
 	return nil
