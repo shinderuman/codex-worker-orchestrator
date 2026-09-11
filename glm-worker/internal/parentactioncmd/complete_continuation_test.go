@@ -60,11 +60,17 @@ func commitContinuationCompletionPlan(t *testing.T, fixture *completeFixture, pl
 		if err := os.Remove(filepath.Join(fixture.repo, "IMPLEMENTATION_TASKS", "next.md")); err != nil {
 			t.Fatal(err)
 		}
+	} else {
+		writePushBindingFile(t, fixture.repo, "IMPLEMENTATION_TASKS/next.md", continuationTaskContract())
 	}
 	writePushBindingFile(t, fixture.repo, "IMPLEMENTATION_PLAN.local.md", plan)
 	runFinalizationGit(t, fixture.repo, "add", "-A")
 	runFinalizationGit(t, fixture.repo, "commit", "-q", "-m", "completion continuation sync")
 	runFinalizationGit(t, fixture.repo, "push", "-q", "origin", "main")
+}
+
+func continuationTaskContract() string {
+	return "# next\n\n## External feasibility\n\nstatus: not-applicable\n\n## Dependencies\n\nnone\n"
 }
 
 func continuationPromotedPlan() string {
