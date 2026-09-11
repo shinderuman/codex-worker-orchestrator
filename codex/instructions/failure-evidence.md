@@ -11,7 +11,7 @@
 
 - 再現に必要な最小範囲だけを切り出させ、巨大payloadや診断に不要な部分を保存させない。
 - 保存前にcredential・token・cookie・session ID・個人情報等を除去または置換させる。秘密情報を生のまま保存させない。
-- task packetが参照するartifactはproduction受理時にmachine-known exact credentialへ照合される。現在machine enforcementが所有するのは、実際のClaude child environmentへ入る`ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_API_KEY`と、未consumeのparent-action capability tokenのexact valueだけである。一致時はpacket成功へ進めず、診断にはsource categoryだけを出す。
+- task packetが参照するartifactはproduction受理時にmachine-known exact credentialへ照合される。現在machine enforcementが所有するのは、model call開始直前にchild-env構築規則から確定した`ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_API_KEY`と、未consumeのparent-action capability tokenのexact valueだけである。一致時はraw artifactを削除してpacket成功へ進めず、診断にはsource categoryだけを出す。
 - cookie・session material・任意PII・provider内部credential等、runtimeがexact valueを所有しない範囲はmachine guaranteeではない。これらは本instructionのsanitization責務として残り、機械検査済みと読み替えない。
 - 容量上限・retention/削除時期・access範囲を対象リスクに応じて明示する。診断に不要な長期保存をさせない。
 - 保存先は既存のtask artifact(`REPORT_ARTIFACT_DIR`・packetの`artifacts` field)だけとし、新しいstorageやtelemetry schemaを作らない。telemetryへ本文を混入させない。
