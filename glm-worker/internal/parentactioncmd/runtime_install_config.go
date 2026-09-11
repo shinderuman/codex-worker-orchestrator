@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/claudeoverride"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/cliinstall"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/codexinstall"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/settingsmerge"
 )
@@ -20,18 +22,27 @@ type topLevelTOMLScanState struct {
 	curlyDepth  int
 }
 
-func verifyRuntimeMergedConfigFiles(cfg config.AppConfig, paths []string) error {
-	for _, path := range paths {
-		switch path {
-		case "codex/config-managed.toml":
-			if err := verifyInstalledCodexManagedConfig(cfg); err != nil {
-				return err
-			}
-		case "claude/settings-managed.json":
-			if err := verifyInstalledClaudeManagedSettings(cfg); err != nil {
-				return err
-			}
-		}
+func verifyRuntimeMergedConfigFiles(cfg config.AppConfig, _ []string) error {
+	// Some focused unit fixtures intentionally omit installer destinations. A
+	// real loaded AppConfig resolves both paths before runtime installation.
+	if cfg.CodexConfigDir == "" && cfg.ClaudeSettingsPath == "" {
+		return nil
+	}
+	if cfg.CodexConfigDir == "" {
+		return fmt.Errorf("codex config directory is empty")
+	}
+	if err := codexinstall.Verify(cfg.RepoRoot, cfg.CodexConfigDir); err != nil {
+		return fmt.Errorf("verify managed Codex installation: %w", err)
+	}
+	if err := verifyInstalledClaudeManagedSettings(cfg); err != nil {
+		return err
+	}
+	worker, err := resolveGLMWorker()
+	if err != nil {
+		return err
+	}
+	if err := cliinstall.Verify(filepath.Dir(worker)); err != nil {
+		return fmt.Errorf("verify repository CLI installation: %w", err)
 	}
 	return nil
 }
