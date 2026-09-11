@@ -106,8 +106,6 @@ const (
 	ModeEvalAB
 	ModeCallOutliers
 	ModeCodexLimit
-	ModeCodexWakePlan
-	ModeCodexWakeResponse
 	ModeInstallSmoke
 	ModeQualityGate
 	ModeModelRouting
@@ -124,6 +122,8 @@ const (
 	modeRotateInstructionBaseline
 	modeRecoverParentAction
 	modeRecoverQualitySurface
+	ModeCodexWakePlan
+	ModeCodexWakeResponse
 )
 
 const fixOriginUsage = "[--origin codex-review|glm-reviewer|user-amendment|external-review|metadata-repair] [--cause parent-orchestration|requirement-preservation|worker|reviewer|sol-gate|production-wiring|test-scenario|cross-cutting-invariant|unknown] [--accepted-scope current-diff]"
