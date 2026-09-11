@@ -3,8 +3,6 @@ package app
 import (
 	"strings"
 	"testing"
-
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
 func TestParentRequestCompletionProjectionRequiresImmediateNextTask(t *testing.T) {
@@ -13,7 +11,7 @@ func TestParentRequestCompletionProjectionRequiresImmediateNextTask(t *testing.T
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", projectContinuationPlan("active", []string{next}, nil, nil))
 	writeProjectContinuationTask(t, cfg, next)
 
-	projection, err := BuildParentRequestCompletionProjection(cfg, state.AttachStateStore(cfg))
+	projection, err := BuildParentRequestCompletionProjection(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,7 +30,7 @@ func TestParentRequestCompletionProjectionAllowsBlockedStopWithoutCompletion(t *
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", projectContinuationPlan("active", nil, nil, []string{blocked}))
 	writeProjectContinuationTask(t, cfg, blocked)
 
-	projection, err := BuildParentRequestCompletionProjection(cfg, state.AttachStateStore(cfg))
+	projection, err := BuildParentRequestCompletionProjection(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +46,7 @@ func TestParentRequestCompletionProjectionAdmitsCompletedGoalOnly(t *testing.T) 
 	cfg := newAppConfig(t)
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", projectContinuationPlan("completed", nil, nil, nil))
 
-	projection, err := BuildParentRequestCompletionProjection(cfg, state.AttachStateStore(cfg))
+	projection, err := BuildParentRequestCompletionProjection(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +64,7 @@ func TestParentRequestCompletionProjectionDoesNotInventLegacyScope(t *testing.T)
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", plan)
 	writeProjectContinuationTask(t, cfg, active)
 
-	projection, err := BuildParentRequestCompletionProjection(cfg, state.AttachStateStore(cfg))
+	projection, err := BuildParentRequestCompletionProjection(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +81,7 @@ func TestParentRequestCompletionProjectionRejectsCompletedGoalWithRemainingSched
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", projectContinuationPlan("completed", []string{active}, nil, nil))
 	writeProjectContinuationTask(t, cfg, active)
 
-	_, err := BuildParentRequestCompletionProjection(cfg, state.AttachStateStore(cfg))
+	_, err := BuildParentRequestCompletionProjection(cfg)
 	if err == nil || !strings.Contains(err.Error(), "空にする必要があります") {
 		t.Fatalf("err = %v", err)
 	}
