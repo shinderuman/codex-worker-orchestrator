@@ -5,6 +5,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -41,6 +42,22 @@ func TestBindValidationObservationsAddsSnapshotPhaseAndRetry(t *testing.T) {
 	}
 	if first[0].Attempt != state.ValidationAttemptInitial || second[0].Attempt != state.ValidationAttemptRetry {
 		t.Fatalf("attempts = %q / %q", first[0].Attempt, second[0].Attempt)
+	}
+}
+
+func TestValidationAttemptsPersistAcrossRunnerCallsAndResetPerTask(t *testing.T) {
+	st := newTestStateStore(t)
+	runner := NewClaudeRunner(config.AppConfig{}, st)
+	values := []state.TaskValidationObservation{{Form: "go-test", GateClass: state.ValidationGateClassTest, Suite: "go-test"}}
+
+	firstCall := runner.newTaskEventIngester("task-a", "call-1", state.WorkerRole, "worker-new", "worker", "", false)
+	secondCall := runner.newTaskEventIngester("task-a", "call-2", state.WorkerRole, "worker-explicit-fix", "worker", "", true)
+	otherTask := runner.newTaskEventIngester("task-b", "call-3", state.WorkerRole, "worker-new", "worker", "", false)
+	first := firstCall.bindValidationObservations(values)
+	second := secondCall.bindValidationObservations(values)
+	third := otherTask.bindValidationObservations(values)
+	if first[0].Attempt != state.ValidationAttemptInitial || second[0].Attempt != state.ValidationAttemptRetry || third[0].Attempt != state.ValidationAttemptInitial {
+		t.Fatalf("attempts across calls/tasks = %q / %q / %q", first[0].Attempt, second[0].Attempt, third[0].Attempt)
 	}
 }
 
