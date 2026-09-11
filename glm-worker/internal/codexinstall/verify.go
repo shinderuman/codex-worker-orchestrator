@@ -6,9 +6,6 @@ import (
 	"path/filepath"
 )
 
-// Verify checks that the current repository-managed Codex surface matches the
-// canonical installer ownership state without taking ownership of preserved
-// user content.
 func Verify(repoRoot, codexDir string) error {
 	repoRoot = filepath.Clean(repoRoot)
 	codexDir = filepath.Clean(codexDir)
