@@ -114,6 +114,7 @@ func TestWatchOrphanExitMatchesHandoffRecoveryVocabulary(t *testing.T) {
 	if err := st.Write("task.id", watchOrphanTaskID); err != nil {
 		t.Fatal(err)
 	}
+	seedParentReviewStateForTest(t, st, watchOrphanTaskID)
 	if err := st.SetTaskStatus(state.TaskStatusActive); err != nil {
 		t.Fatal(err)
 	}
@@ -167,6 +168,7 @@ func TestWatchOrphanPlanFailureIsExplicitlyInconsistent(t *testing.T) {
 	if err := st.Write("task.id", watchOrphanTaskID); err != nil {
 		t.Fatal(err)
 	}
+	seedParentReviewStateForTest(t, st, watchOrphanTaskID)
 	if err := st.SetTaskStatus(state.TaskStatusActive); err != nil {
 		t.Fatal(err)
 	}

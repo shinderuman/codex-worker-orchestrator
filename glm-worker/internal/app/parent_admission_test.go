@@ -17,7 +17,9 @@ func TestParentCommandAdmissionMatchesWaitingActions(t *testing.T) {
 		if err := st.Touch("pending-decision"); err != nil {
 			t.Fatal(err)
 		}
-		st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolDecision, Risk: packet.RiskHigh}, state.ParentReviewProducer{})
+		if err := st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolDecision, Risk: packet.RiskHigh}, state.ParentReviewProducer{}); err != nil {
+			t.Fatal(err)
+		}
 
 		if err := admitParentCommand(Command{Mode: ModeDecision}, st); err != nil {
 			t.Fatalf("decision rejected: %v", err)
@@ -34,7 +36,9 @@ func TestParentCommandAdmissionMatchesWaitingActions(t *testing.T) {
 		if err := st.SetTaskStatus(state.TaskStatusWaitingSolReview); err != nil {
 			t.Fatal(err)
 		}
-		st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolReview, Risk: packet.RiskHigh}, state.ParentReviewProducer{})
+		if err := st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolReview, Risk: packet.RiskHigh}, state.ParentReviewProducer{}); err != nil {
+			t.Fatal(err)
+		}
 
 		for _, mode := range []CommandMode{ModeAccept, ModeFix} {
 			if err := admitParentCommand(Command{Mode: mode}, st); err != nil {
@@ -54,7 +58,9 @@ func TestParentCommandAdmissionPreservesPassAcceptance(t *testing.T) {
 	if err := st.SetTaskStatus(state.TaskStatusComplete); err != nil {
 		t.Fatal(err)
 	}
-	st.RecordSolResult(packet.Result{Status: packet.StatusPass, Risk: packet.RiskLow}, state.ParentReviewProducer{})
+	if err := st.RecordSolResult(packet.Result{Status: packet.StatusPass, Risk: packet.RiskLow}, state.ParentReviewProducer{}); err != nil {
+		t.Fatal(err)
+	}
 
 	if err := admitParentCommand(Command{Mode: ModeAccept}, st); err != nil {
 		t.Fatalf("PASS accept rejected: %v", err)

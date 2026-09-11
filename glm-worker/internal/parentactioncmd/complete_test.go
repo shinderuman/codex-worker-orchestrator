@@ -410,7 +410,9 @@ func newNoGoCompleteFixture(t *testing.T) *completeFixture {
 	if err := st.Touch("pending-decision"); err != nil {
 		t.Fatal(err)
 	}
-	st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolDecision, Risk: packet.RiskHigh}, state.ParentReviewProducer{Role: string(state.WorkerRole), Model: "opus"})
+	if err := st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolDecision, Risk: packet.RiskHigh}, state.ParentReviewProducer{Role: string(state.WorkerRole), Model: "opus"}); err != nil {
+		t.Fatal(err)
+	}
 	if err := runNoGo(fixture.cfg, &bytes.Buffer{}); err != nil {
 		t.Fatal(err)
 	}
@@ -466,7 +468,9 @@ func newCompleteFixture(t *testing.T) *completeFixture {
 	if err := fixture.st.SetTaskStatus(state.TaskStatusComplete); err != nil {
 		t.Fatal(err)
 	}
-	fixture.st.RecordSolResult(packet.Result{Status: packet.StatusPass, Risk: packet.RiskLow}, state.ParentReviewProducer{})
+	if err := fixture.st.RecordSolResult(packet.Result{Status: packet.StatusPass, Risk: packet.RiskLow}, state.ParentReviewProducer{}); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := fixture.st.AcceptParentReview(); err != nil {
 		t.Fatal(err)
 	}
@@ -502,7 +506,9 @@ func newCompleteDetachedFixture(t *testing.T) (config.AppConfig, *state.StateSto
 	if err := st.SetTaskStatus(state.TaskStatusComplete); err != nil {
 		t.Fatal(err)
 	}
-	st.RecordSolResult(packet.Result{Status: packet.StatusPass, Risk: packet.RiskLow}, state.ParentReviewProducer{})
+	if err := st.RecordSolResult(packet.Result{Status: packet.StatusPass, Risk: packet.RiskLow}, state.ParentReviewProducer{}); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := st.AcceptParentReview(); err != nil {
 		t.Fatal(err)
 	}

@@ -22,6 +22,9 @@ func TestQualitySurfaceChangeAllowsParentAcceptedCurrentDiff(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := st.StartNewTask(); err != nil {
+		t.Fatal(err)
+	}
 	if err := state.CaptureGitBaseline(cfg, st); err != nil {
 		t.Fatal(err)
 	}

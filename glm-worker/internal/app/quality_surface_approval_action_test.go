@@ -34,7 +34,9 @@ func seedQualitySurfaceApprovalState(t *testing.T, cfg config.AppConfig) *state.
 	if err := st.SetTaskStatus(state.TaskStatusWaitingSolReview); err != nil {
 		t.Fatal(err)
 	}
-	st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolReview, Risk: packet.RiskHigh}, state.ParentReviewProducer{Role: string(state.WorkerRole)})
+	if err := st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolReview, Risk: packet.RiskHigh}, state.ParentReviewProducer{Role: string(state.WorkerRole)}); err != nil {
+		t.Fatal(err)
+	}
 	taskID, err := st.TaskID()
 	if err != nil {
 		t.Fatal(err)
@@ -103,7 +105,9 @@ func TestApproveSurfaceDeniedWhenNoApprovalIsPending(t *testing.T) {
 	if err := st.SetTaskStatus(state.TaskStatusWaitingSolReview); err != nil {
 		t.Fatal(err)
 	}
-	st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolReview, Risk: packet.RiskHigh}, state.ParentReviewProducer{Role: string(state.ReviewerRole)})
+	if err := st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolReview, Risk: packet.RiskHigh}, state.ParentReviewProducer{Role: string(state.ReviewerRole)}); err != nil {
+		t.Fatal(err)
+	}
 
 	err := Execute(Command{Mode: ModeApproveSurface, AcceptedScope: "current-diff"}, cfg, nil, io.Discard, io.Discard)
 	if err == nil {

@@ -157,14 +157,7 @@ func (s *StateStore) startNewTaskWithID(taskID string, resume bool) (string, err
 		return "", fmt.Errorf("new task IDが不正です: %s", taskID)
 	}
 	if resume {
-		stats, err := s.loadTaskStats()
-		if err != nil || stats.TaskID != taskID {
-			s.InitializeTaskStats(taskID)
-		}
-		if err := s.SetTaskStatus(TaskStatusActive); err != nil {
-			return "", err
-		}
-		return taskID, nil
+		return s.resumeTaskWithID(taskID)
 	}
 	s.ArchiveCurrentStats()
 	if err := s.Remove("task.id"); err != nil {
@@ -183,8 +176,25 @@ func (s *StateStore) startNewTaskWithID(taskID string, resume bool) (string, err
 	if err := s.Write("task.id", taskID); err != nil {
 		return "", err
 	}
+	if err := s.initializeParentReviewState(taskID); err != nil {
+		return "", err
+	}
 	s.PruneTaskEventLogs(retainedTaskEventLogs, taskID)
 	s.InitializeTaskStats(taskID)
+	if err := s.SetTaskStatus(TaskStatusActive); err != nil {
+		return "", err
+	}
+	return taskID, nil
+}
+
+func (s *StateStore) resumeTaskWithID(taskID string) (string, error) {
+	stats, err := s.loadTaskStats()
+	if err != nil || stats.TaskID != taskID {
+		s.InitializeTaskStats(taskID)
+	}
+	if _, err := s.loadParentReviewState(); err != nil {
+		return "", fmt.Errorf("session rotation retry cannot verify parent review state: %w", err)
+	}
 	if err := s.SetTaskStatus(TaskStatusActive); err != nil {
 		return "", err
 	}
@@ -200,6 +210,7 @@ func newTaskTransitionStateFileNames() []string {
 		"last-request",
 		"last-decision",
 		"pending-decision",
+		parentReviewStateFile,
 		"last-review",
 		"baseline-status",
 		"baseline-head",

@@ -54,6 +54,7 @@ func seedPreflightTaskID(t *testing.T, cfg config.AppConfig) (*state.StateStore,
 	if err := st.Write("task.id", taskID); err != nil {
 		t.Fatal(err)
 	}
+	seedParentReviewStateForTest(t, st, taskID)
 	return st, taskID
 }
 

@@ -103,7 +103,10 @@ func (kind ResumeStopKind) ParentAction() ParentAction {
 func (s *StateStore) ParentActionPlan() (ParentActionPlan, error) {
 	status := s.TaskStatus()
 	pending := s.Exists("pending-decision")
-	openReview := s.OpenParentReviewLabel()
+	openReview, reviewErr := s.CurrentParentReviewLabel()
+	if reviewErr != nil {
+		return ParentActionPlan{}, lifecycleInconsistency(status, "parent review state is unreadable: "+reviewErr.Error())
+	}
 	checkpoint, checkpointErr := s.LoadResumeCheckpoint()
 	if checkpointErr != nil && !errors.Is(checkpointErr, ErrNoResumeCheckpoint) {
 		return ParentActionPlan{}, lifecycleInconsistency(status, "resume checkpoint is unreadable")

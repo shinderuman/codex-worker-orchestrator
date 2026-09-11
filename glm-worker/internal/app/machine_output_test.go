@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -253,6 +254,15 @@ func TestDispatchReleasesTypedStatsWarningThroughMachineStderr(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := st.StartNewTask(); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RecordSolResult(packet.Result{Status: packet.StatusPass, Risk: packet.RiskLow}, state.ParentReviewProducer{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetTaskStatus(state.TaskStatusComplete); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(st.Path("task-stats.json"), []byte("not json\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -269,13 +279,13 @@ func TestDispatchReleasesTypedStatsWarningThroughMachineStderr(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := strings.TrimSpace(stdout.String()), "{\"accepted\":false}"; got != want {
+	if got, want := strings.TrimSpace(stdout.String()), "{\"accepted\":true}"; got != want {
 		t.Fatalf("stdout = %q want %q", got, want)
 	}
 
 	lines := strings.Split(strings.TrimRight(stderr.String(), "\n"), "\n")
-	if len(lines) != 1 {
-		t.Fatalf("machine stderrへ出力された行数 = %d want 1: %q", len(lines), stderr.String())
+	if len(lines) != 2 {
+		t.Fatalf("machine stderrへ出力された行数 = %d want 2: %q", len(lines), stderr.String())
 	}
 	var event struct {
 		Type    string `json:"type"`

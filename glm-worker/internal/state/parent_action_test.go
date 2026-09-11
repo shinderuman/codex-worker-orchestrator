@@ -16,7 +16,9 @@ func TestParentActionPlanWaitingStates(t *testing.T) {
 		if err := st.Touch("pending-decision"); err != nil {
 			t.Fatal(err)
 		}
-		st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolDecision, Risk: packet.RiskHigh}, ParentReviewProducer{})
+		if err := st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolDecision, Risk: packet.RiskHigh}, ParentReviewProducer{}); err != nil {
+			t.Fatal(err)
+		}
 
 		plan, err := st.ParentActionPlan()
 		if err != nil {
@@ -32,7 +34,9 @@ func TestParentActionPlanWaitingStates(t *testing.T) {
 		if err := st.SetTaskStatus(TaskStatusWaitingSolReview); err != nil {
 			t.Fatal(err)
 		}
-		st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolReview, Risk: packet.RiskHigh}, ParentReviewProducer{})
+		if err := st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolReview, Risk: packet.RiskHigh}, ParentReviewProducer{}); err != nil {
+			t.Fatal(err)
+		}
 
 		plan, err := st.ParentActionPlan()
 		if err != nil {
@@ -52,7 +56,9 @@ func TestParentActionPlanQualitySurfaceApprovalRequiresDedicatedAction(t *testin
 	if err := st.SetTaskStatus(TaskStatusWaitingSolReview); err != nil {
 		t.Fatal(err)
 	}
-	st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolReview, Risk: packet.RiskHigh}, ParentReviewProducer{Role: string(WorkerRole)})
+	if err := st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolReview, Risk: packet.RiskHigh}, ParentReviewProducer{Role: string(WorkerRole)}); err != nil {
+		t.Fatal(err)
+	}
 
 	plan, err := st.ParentActionPlan()
 	if err != nil {
@@ -92,7 +98,9 @@ func TestParentActionPlanWaitingReviewWithoutApprovalKeepsSolAccept(t *testing.T
 	if err := st.SetTaskStatus(TaskStatusWaitingSolReview); err != nil {
 		t.Fatal(err)
 	}
-	st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolReview, Risk: packet.RiskHigh}, ParentReviewProducer{Role: string(ReviewerRole)})
+	if err := st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolReview, Risk: packet.RiskHigh}, ParentReviewProducer{Role: string(ReviewerRole)}); err != nil {
+		t.Fatal(err)
+	}
 
 	plan, err := st.ParentActionPlan()
 	if err != nil {
@@ -173,7 +181,9 @@ func TestParentActionPlanPassRequiresAcceptUntilResolved(t *testing.T) {
 	if err := st.SetTaskStatus(TaskStatusComplete); err != nil {
 		t.Fatal(err)
 	}
-	st.RecordSolResult(packet.Result{Status: packet.StatusPass, Risk: packet.RiskLow}, ParentReviewProducer{})
+	if err := st.RecordSolResult(packet.Result{Status: packet.StatusPass, Risk: packet.RiskLow}, ParentReviewProducer{}); err != nil {
+		t.Fatal(err)
+	}
 
 	plan, err := st.ParentActionPlan()
 	if err != nil {

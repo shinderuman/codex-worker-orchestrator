@@ -47,7 +47,9 @@ func TestParentHandoffPassRequiresAcceptThenBecomesNoAction(t *testing.T) {
 	if err := st.SetTaskStatus(state.TaskStatusComplete); err != nil {
 		t.Fatal(err)
 	}
-	st.RecordSolResult(packet.Result{Status: packet.StatusPass, Risk: packet.RiskLow}, state.ParentReviewProducer{})
+	if err := st.RecordSolResult(packet.Result{Status: packet.StatusPass, Risk: packet.RiskLow}, state.ParentReviewProducer{}); err != nil {
+		t.Fatal(err)
+	}
 	taskID, err := st.TaskID()
 	if err != nil {
 		t.Fatal(err)
@@ -111,7 +113,9 @@ func TestParentHandoffRecoveryProjectionOmitsBroadEvidence(t *testing.T) {
 	if err := st.SetTaskStatus(state.TaskStatusComplete); err != nil {
 		t.Fatal(err)
 	}
-	st.RecordSolResult(packet.Result{Status: packet.StatusPass, Risk: packet.RiskLow}, state.ParentReviewProducer{})
+	if err := st.RecordSolResult(packet.Result{Status: packet.StatusPass, Risk: packet.RiskLow}, state.ParentReviewProducer{}); err != nil {
+		t.Fatal(err)
+	}
 	taskID, err := st.TaskID()
 	if err != nil {
 		t.Fatal(err)
@@ -496,6 +500,7 @@ func TestParentHandoffRoutingEvidenceMatchesImplementationSnapshot(t *testing.T)
 			if err := st.Write("task.id", routingEvidenceTaskID); err != nil {
 				t.Fatal(err)
 			}
+			seedParentReviewStateForTest(t, st, routingEvidenceTaskID)
 			snapshot, err := state.CaptureGitSnapshot(cfg.RepoRoot)
 			if err != nil {
 				t.Fatal(err)
@@ -626,9 +631,9 @@ func seedSessionRotationAccept(t *testing.T) (config.AppConfig, *state.StateStor
 	if err := st.SetTaskStatus(state.TaskStatusComplete); err != nil {
 		t.Fatal(err)
 	}
-	st.UpdateTaskStats(func(stats *state.TaskStats) {
-		stats.ParentReviewOpen = &state.ParentReviewOpenState{PacketStatus: "PASS", Risk: "LOW"}
-	})
+	if err := st.RecordSolResult(packet.Result{Status: packet.StatusPass, Risk: packet.RiskLow}, state.ParentReviewProducer{}); err != nil {
+		t.Fatal(err)
+	}
 	if err := st.SetParentCodexIdentity(codexTestParentThreadID, codexTestParentSessionID, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -733,9 +738,9 @@ func TestSessionRotationCompletionFailsClosedWithoutParentIdentity(t *testing.T)
 	if err := st.SetTaskStatus(state.TaskStatusComplete); err != nil {
 		t.Fatal(err)
 	}
-	st.UpdateTaskStats(func(stats *state.TaskStats) {
-		stats.ParentReviewOpen = &state.ParentReviewOpenState{PacketStatus: "PASS", Risk: "LOW"}
-	})
+	if err := st.RecordSolResult(packet.Result{Status: packet.StatusPass, Risk: packet.RiskLow}, state.ParentReviewProducer{}); err != nil {
+		t.Fatal(err)
+	}
 
 	if _, err := st.AcceptParentReview(); err != nil {
 		t.Fatal(err)

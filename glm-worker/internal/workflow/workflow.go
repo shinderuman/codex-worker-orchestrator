@@ -454,7 +454,9 @@ func (w *Workflow) emitResult(value packet.Result) error {
 	if err != nil {
 		return err
 	}
-	w.state.RecordSolResult(value, w.lastProducer)
+	if err := w.state.RecordSolResult(value, w.lastProducer); err != nil {
+		return err
+	}
 	_, err = fmt.Fprintln(w.output, report)
 	return err
 }
