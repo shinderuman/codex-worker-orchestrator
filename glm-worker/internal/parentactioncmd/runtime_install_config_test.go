@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/settingsmerge"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -52,8 +53,9 @@ func TestVerifyInstalledClaudeManagedSettingsAppliesLocalOverride(t *testing.T) 
 	if err := os.MkdirAll(filepath.Join(repo, "claude"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	managedPath := filepath.Join(repo, "claude", "settings-managed.json")
 	managed := `{"env":{"A":"managed","B":"managed"},"permissions":{"mode":"managed"}}`
-	if err := os.WriteFile(filepath.Join(repo, "claude", "settings-managed.json"), []byte(managed), 0o644); err != nil {
+	if err := os.WriteFile(managedPath, []byte(managed), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	overridePath := filepath.Join(overrideDir, "claude-settings.local.json")
@@ -61,8 +63,11 @@ func TestVerifyInstalledClaudeManagedSettingsAppliesLocalOverride(t *testing.T) 
 		t.Fatal(err)
 	}
 	installedPath := filepath.Join(claudeDir, "settings.json")
-	installed := `{"env":{"A":"override","LOCAL":"keep"},"permissions":{"mode":"managed","local":true},"other":"keep"}`
-	if err := os.WriteFile(installedPath, []byte(installed), 0o600); err != nil {
+	baseline := `{"env":{"LOCAL":"keep"},"permissions":{"local":true},"other":"keep"}`
+	if err := os.WriteFile(installedPath, []byte(baseline), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := settingsmerge.MergeFiles(installedPath, managedPath, overridePath); err != nil {
 		t.Fatal(err)
 	}
 	cfg := config.AppConfig{RepoRoot: repo, ClaudeConfigDir: claudeDir, ClaudeSettingsOverride: overridePath}
@@ -85,8 +90,9 @@ func TestVerifyInstalledClaudeManagedSettingsChecksOverrideOnlyEnvKeys(t *testin
 	if err := os.MkdirAll(filepath.Join(repo, "claude"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	managedPath := filepath.Join(repo, "claude", "settings-managed.json")
 	managed := `{"env":{"A":"managed"}}`
-	if err := os.WriteFile(filepath.Join(repo, "claude", "settings-managed.json"), []byte(managed), 0o644); err != nil {
+	if err := os.WriteFile(managedPath, []byte(managed), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	overridePath := filepath.Join(overrideDir, "claude-settings.local.json")
@@ -94,11 +100,14 @@ func TestVerifyInstalledClaudeManagedSettingsChecksOverrideOnlyEnvKeys(t *testin
 		t.Fatal(err)
 	}
 	installedPath := filepath.Join(claudeDir, "settings.json")
-	cfg := config.AppConfig{RepoRoot: repo, ClaudeConfigDir: claudeDir, ClaudeSettingsOverride: overridePath}
-
-	if err := os.WriteFile(installedPath, []byte(`{"env":{"A":"managed","ONLY":"override"}}`), 0o600); err != nil {
+	if err := os.WriteFile(installedPath, []byte(`{"env":{"REMOVE":"baseline"}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := settingsmerge.MergeFiles(installedPath, managedPath, overridePath); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.AppConfig{RepoRoot: repo, ClaudeConfigDir: claudeDir, ClaudeSettingsOverride: overridePath}
+
 	if err := verifyInstalledClaudeManagedSettings(cfg); err != nil {
 		t.Fatalf("valid override-only env state rejected: %v", err)
 	}
