@@ -68,3 +68,22 @@ func TestResolveRejectsUnsupportedSettingsFilename(t *testing.T) {
 		t.Fatalf("expected unsupported filename error, got %v", err)
 	}
 }
+
+func TestResolveRejectsRelativeLocations(t *testing.T) {
+	for _, test := range []struct {
+		name         string
+		configDir    string
+		settingsPath string
+		want         string
+	}{
+		{name: "config dir", configDir: "relative-claude", want: "CLAUDE_CONFIG_DIR must be absolute"},
+		{name: "settings file", settingsPath: filepath.Join("relative-claude", "settings.json"), want: "CLAUDE_SETTINGS_FILE must be absolute"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := Resolve(t.TempDir(), test.configDir, test.settingsPath)
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("expected %q, got %v", test.want, err)
+			}
+		})
+	}
+}
