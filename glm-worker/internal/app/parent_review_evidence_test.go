@@ -3,15 +3,52 @@ package app
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
+
+func TestExecuteAcceptRequiresProjectedReviewEvidence(t *testing.T) {
+	cfg, st, snapshot := newParentEvidenceReviewStore(t)
+	openParentEvidenceReview(t, st, snapshot, "review.go:2")
+
+	if err := Execute(Command{Mode: ModeAccept}, cfg, nil, io.Discard, io.Discard); err == nil || !strings.Contains(err.Error(), "requires matching current target evidence") {
+		t.Fatalf("accept without projected evidence = %v", err)
+	}
+
+	manifestPath := writeParentReviewEvidenceManifest(t, parentEvidenceManifest{
+		Version: parentEvidenceManifestVersion,
+		Reason:  "inspect exact review target",
+		Source: []parentEvidenceSourceRequest{{
+			Question:    "inspect target",
+			Path:        "review.go",
+			LineStart:   1,
+			LineEnd:     3,
+			BudgetBytes: 4096,
+		}},
+	})
+	if err := printParentEvidence(Command{EvidenceManifest: manifestPath}, cfg, st, &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	var stdout bytes.Buffer
+	if err := Execute(Command{Mode: ModeAccept}, cfg, nil, &stdout, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	var output acceptOutput
+	if err := json.Unmarshal(stdout.Bytes(), &output); err != nil {
+		t.Fatal(err)
+	}
+	if !output.Accepted {
+		t.Fatalf("accept after projected evidence = %#v", output)
+	}
+}
 
 func TestParentEvidenceMatchingSourceEnablesReviewAccept(t *testing.T) {
 	cfg, st, snapshot := newParentEvidenceReviewStore(t)
