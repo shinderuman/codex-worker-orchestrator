@@ -190,18 +190,6 @@ func readObject(path string) (map[string]any, os.FileMode, error) {
 	return object, stat.Mode().Perm(), nil
 }
 
-func deepMerge(target, fragment map[string]any) {
-	for key, fragmentValue := range fragment {
-		fragmentMap, fragmentIsMap := fragmentValue.(map[string]any)
-		targetMap, targetIsMap := target[key].(map[string]any)
-		if fragmentIsMap && targetIsMap {
-			deepMerge(targetMap, fragmentMap)
-			continue
-		}
-		target[key] = fragmentValue
-	}
-}
-
 func cloneMap(value map[string]any) map[string]any {
 	result := make(map[string]any, len(value))
 	for key, item := range value {
