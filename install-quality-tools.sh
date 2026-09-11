@@ -79,7 +79,7 @@ target_needs_install() {
 		printf 'quality tool collision: %s exists and is not executable; refusing to overwrite\n' "$target" >&2
 		exit 1
 	fi
-	observed=$(quality_tool_version "$tool_name" "$target" || true)
+	observed=$(quality_tool_version "$tool_name" "$target")
 	if [ "$observed" = "$required_version" ]; then
 		printf '%s: unchanged (%s)\n' "$tool_name" "$target"
 		return 1
