@@ -142,13 +142,12 @@ func printCodexWakeResponse(cmd Command, cfg config.AppConfig, stdout io.Writer)
 			return err
 		}
 	}
-	if err := lease.commit(); err != nil {
+	if err := writeJSON(stdout, output); err != nil {
 		removeCodexWakeToken(cfg.CodexConfigDir, output.Token)
 		return err
 	}
 	committed = true
-	if err := writeJSON(stdout, output); err != nil {
-		removeCodexWakeToken(cfg.CodexConfigDir, output.Token)
+	if err := lease.commit(); err != nil {
 		return err
 	}
 	return nil
