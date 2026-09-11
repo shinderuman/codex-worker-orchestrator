@@ -37,6 +37,7 @@ type Command struct {
 	ArtifactRoot        string
 	Verify              VerifyArgs
 	Coalesce            CoalesceArgs
+	CodexWake           CodexWakeArgs
 	Query               TelemetryQueryArgs
 	SearchScopes        []string
 	SearchBudgetBytes   int
@@ -105,6 +106,8 @@ const (
 	ModeEvalAB
 	ModeCallOutliers
 	ModeCodexLimit
+	ModeCodexWakePlan
+	ModeCodexWakeResponse
 	ModeInstallSmoke
 	ModeQualityGate
 	ModeModelRouting
@@ -224,6 +227,8 @@ var commandParsers = map[string]commandParser{
 	"--codex-limit": func(args []string) (Command, error) {
 		return singleArgCommand(args, ModeCodexLimit, "usage: glm-worker --codex-limit")
 	},
+	"--codex-wake-plan":           codexWakePlanCommand,
+	"--codex-wake-response-stdin": codexWakeResponseCommand,
 	"--repo-search": repoSearchCommand,
 	"--evidence":    evidenceCommand,
 	"--repo-search-eval": func(args []string) (Command, error) {
@@ -596,6 +601,10 @@ func executeStateless(cmd Command, cfg config.AppConfig, stdout io.Writer) (bool
 		return true, requestStop(cfg, stdout)
 	case ModeCodexLimit:
 		return true, printCodexLimit(cfg, stdout)
+	case ModeCodexWakePlan:
+		return true, printCodexWakePlan(cmd, cfg, stdout)
+	case ModeCodexWakeResponse:
+		return true, printCodexWakeResponse(cmd, cfg, stdout)
 	case ModePacketCheck, ModeProjectState:
 		return true, executeStatelessProjection(cmd, cfg, stdout)
 	case ModeRepoSearch, ModeEvidence:
