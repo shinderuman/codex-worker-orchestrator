@@ -39,7 +39,9 @@ func TestSensitiveArtifactAdmissionFindsSecretAcrossScanChunks(t *testing.T) {
 	for i := range prefix {
 		prefix[i] = 'x'
 	}
-	content := append(prefix, []byte(secret)...)
+	content := make([]byte, 0, len(prefix)+len(secret)+len("tail"))
+	content = append(content, prefix...)
+	content = append(content, []byte(secret)...)
 	content = append(content, []byte("tail")...)
 	if err := os.WriteFile(artifact, content, 0o600); err != nil {
 		t.Fatal(err)
