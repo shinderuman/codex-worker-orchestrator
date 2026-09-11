@@ -178,15 +178,13 @@ func TestInvalidOwnershipStateFailsClosed(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(statePath), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(statePath, []byte(`{"version":1}`), 0o600); err != nil {
+	data := `{"version":1,"binaries":{"unknown":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}`
+	data = strings.ReplaceAll(data, `\"`, `"`)
+	if err := os.WriteFile(statePath, []byte(data), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Install(buildDir, binDir); err == nil || !strings.Contains(err.Error(), "decode CLI ownership state") {
+	if _, err := Install(buildDir, binDir); err == nil || !strings.Contains(err.Error(), "invalid CLI ownership state entry") {
 		t.Fatalf("Install() error = %v", err)
-	}
-
-	if err := os.WriteFile(statePath, []byte(`{"version":1}`), 0o600); err != nil {
-		t.Fatal(err)
 	}
 }
 
