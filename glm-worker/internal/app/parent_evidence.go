@@ -994,32 +994,33 @@ func parentReviewSourceCoversTarget(target string, source parentEvidenceSourceBo
 func parentReviewDiffCoversTarget(target string, diff parentEvidenceDiffBody) bool {
 	target = strings.TrimSpace(target)
 	for _, file := range diff.Files {
-		if !parentReviewTargetMatchesPath(target, file.Path) || file.Status == analysisStatusUnknown {
-			continue
-		}
-		if file.HeadBlob == "" && file.IndexBlob == "" && file.WorktreeSHA == "" {
-			continue
-		}
-		suffix := strings.TrimSpace(strings.TrimPrefix(target, file.Path))
-		if suffix == "" || !strings.HasPrefix(suffix, ":") {
-			return true
-		}
-		locator := strings.TrimSpace(strings.TrimPrefix(suffix, ":"))
-		section := parentReviewDiffFileSection(diff.Body, file.Path)
-		if section == "" {
-			continue
-		}
-		if start, end, ok := parentReviewNumericRange(locator); ok {
-			if parentReviewDiffSectionCoversLines(section, start, end) {
-				return true
-			}
-			continue
-		}
-		if locator != "" && strings.Contains(section, locator) {
+		if parentReviewDiffFileCoversTarget(target, file, diff.Body) {
 			return true
 		}
 	}
 	return false
+}
+
+func parentReviewDiffFileCoversTarget(target string, file parentEvidenceDiffFile, body string) bool {
+	if !parentReviewTargetMatchesPath(target, file.Path) || file.Status == analysisStatusUnknown {
+		return false
+	}
+	if file.HeadBlob == "" && file.IndexBlob == "" && file.WorktreeSHA == "" {
+		return false
+	}
+	suffix := strings.TrimSpace(strings.TrimPrefix(target, file.Path))
+	if suffix == "" || !strings.HasPrefix(suffix, ":") {
+		return true
+	}
+	locator := strings.TrimSpace(strings.TrimPrefix(suffix, ":"))
+	section := parentReviewDiffFileSection(body, file.Path)
+	if section == "" {
+		return false
+	}
+	if start, end, ok := parentReviewNumericRange(locator); ok {
+		return parentReviewDiffSectionCoversLines(section, start, end)
+	}
+	return locator != "" && strings.Contains(section, locator)
 }
 
 func parentReviewDiffFileSection(body, path string) string {
