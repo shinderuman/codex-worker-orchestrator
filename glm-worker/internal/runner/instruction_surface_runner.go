@@ -40,7 +40,7 @@ func (r *InstructionSurfaceGuardRunner) Run(
 			return RunResult{}, wrapErr
 		}
 		copyBase := *r.base
-		copyBase.config.CludeBin = wrappedClaude
+		copyBase.config.ClaudeBin = wrappedClaude
 		copyBase.bashSandbox = gitGuard.bashSandboxPolicy()
 		callBase = &copyBase
 	}
