@@ -41,3 +41,5 @@ jobs:
       - name: Full Go test suite
         working-directory: glm-worker
         run: go test ./...
+
+# rerun after declaration-order fix
