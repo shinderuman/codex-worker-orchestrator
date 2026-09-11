@@ -87,6 +87,29 @@ func TestSensitiveArtifactAdmissionRejectsLiveParentActionToken(t *testing.T) {
 	}
 }
 
+func TestSensitiveArtifactAdmissionRemovesEveryRejectedArtifact(t *testing.T) {
+	const secret = "provider-auth-secret-all-395"
+	cfg, st, first := sensitiveArtifactTestState(t)
+	second := filepath.Join(filepath.Dir(first), "second-evidence.txt")
+	values := []SensitiveArtifactValue{{Category: SensitiveArtifactProviderAuthToken, Value: secret}}
+	for _, path := range []string{first, second} {
+		if err := os.WriteFile(path, []byte("secret="+secret), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	err := validateSensitiveResultArtifacts(&ClaudeRunner{config: cfg, state: st}, sensitiveArtifactResult(t, first, second), values)
+	var sensitive *SensitiveArtifactError
+	if !errors.As(err, &sensitive) {
+		t.Fatalf("error = %v", err)
+	}
+	for _, path := range []string{first, second} {
+		if _, statErr := os.Stat(path); !errors.Is(statErr, os.ErrNotExist) {
+			t.Fatalf("sensitive artifact remained at %s: %v", path, statErr)
+		}
+	}
+}
+
 func TestSensitiveArtifactAdmissionAcceptsSanitizedArtifact(t *testing.T) {
 	cfg, st, artifact := sensitiveArtifactTestState(t)
 	if err := os.MkdirAll(cfg.ClaudeConfigDir, 0o700); err != nil {
@@ -140,9 +163,9 @@ func sensitiveArtifactTestState(t *testing.T) (config.AppConfig, *state.StateSto
 	return cfg, st, filepath.Join(artifactDir, "failure-evidence.txt")
 }
 
-func sensitiveArtifactResult(t *testing.T, artifact string) RunResult {
+func sensitiveArtifactResult(t *testing.T, artifacts ...string) RunResult {
 	t.Helper()
-	structured, err := json.Marshal(map[string]any{"artifacts": []string{artifact}})
+	structured, err := json.Marshal(map[string]any{"artifacts": artifacts})
 	if err != nil {
 		t.Fatal(err)
 	}
