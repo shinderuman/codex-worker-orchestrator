@@ -2,7 +2,107 @@ from pathlib import Path
 
 source = Path("glm-worker/internal/codexcontext/project_agents.go")
 text = source.read_text()
-old = '''func removeProjectAgentsExclude(root string) error {
+
+old_constants = '''const (
+\tProjectAgentsOverrideRelativePath = "AGENTS.override.md"
+\tprojectAgentsManagedMarker        = "<!-- managed-by: codex-worker-orchestrator glm-codex-context v1 -->"
+\tprojectAgentsExcludeMarker        = "# codex-worker-orchestrator glm-codex-context agents v1"
+\tprojectAgentsExcludePattern       = "/AGENTS.override.md"
+)
+'''
+new_constants = '''const (
+\tProjectAgentsOverrideRelativePath = "AGENTS.override.md"
+\tprojectAgentsManagedMarker        = "<!-- managed-by: codex-worker-orchestrator glm-codex-context v1 -->"
+\tprojectAgentsExcludeMarker        = "# codex-worker-orchestrator glm-codex-context agents v1"
+\tprojectAgentsSeparatorMarker      = "# codex-worker-orchestrator glm-codex-context agents v1 separator-added"
+\tprojectAgentsExcludePattern       = "/AGENTS.override.md"
+)
+'''
+if text.count(old_constants) != 1:
+    raise SystemExit(f"constant anchor count={text.count(old_constants)}")
+text = text.replace(old_constants, new_constants, 1)
+
+old_ensure = '''func ensureProjectAgentsExclude(root string) error {
+\texcluded, err := projectAgentsIgnored(root)
+\tif err != nil {
+\t\treturn err
+\t}
+\tif excluded {
+\t\treturn nil
+\t}
+\tpath, err := gitExcludePath(root)
+\tif err != nil {
+\t\treturn err
+\t}
+\tif err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+\t\treturn fmt.Errorf("create Git info directory: %w", err)
+\t}
+\texisting, err := os.ReadFile(path)
+\tif err != nil && !errors.Is(err, os.ErrNotExist) {
+\t\treturn fmt.Errorf("read local Git exclude: %w", err)
+\t}
+\tseparator := ""
+\tif len(existing) > 0 && !bytes.HasSuffix(existing, []byte("\\n")) {
+\t\tseparator = "\\n"
+\t}
+\tfile, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+\tif err != nil {
+\t\treturn fmt.Errorf("open local Git exclude: %w", err)
+\t}
+\tif _, err := fmt.Fprintf(file, "%s%s\\n%s\\n", separator, projectAgentsExcludeMarker, projectAgentsExcludePattern); err != nil {
+\t\t_ = file.Close()
+\t\treturn fmt.Errorf("write local Git exclude: %w", err)
+\t}
+\tif err := file.Close(); err != nil {
+\t\treturn fmt.Errorf("close local Git exclude: %w", err)
+\t}
+\treturn nil
+}
+'''
+new_ensure = '''func ensureProjectAgentsExclude(root string) error {
+\texcluded, err := projectAgentsIgnored(root)
+\tif err != nil {
+\t\treturn err
+\t}
+\tif excluded {
+\t\treturn nil
+\t}
+\tpath, err := gitExcludePath(root)
+\tif err != nil {
+\t\treturn err
+\t}
+\tif err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+\t\treturn fmt.Errorf("create Git info directory: %w", err)
+\t}
+\texisting, err := os.ReadFile(path)
+\tif err != nil && !errors.Is(err, os.ErrNotExist) {
+\t\treturn fmt.Errorf("read local Git exclude: %w", err)
+\t}
+\tseparator := ""
+\tmarker := projectAgentsExcludeMarker
+\tif len(existing) > 0 && !bytes.HasSuffix(existing, []byte("\\n")) {
+\t\tseparator = "\\n"
+\t\tmarker = projectAgentsSeparatorMarker
+\t}
+\tfile, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+\tif err != nil {
+\t\treturn fmt.Errorf("open local Git exclude: %w", err)
+\t}
+\tif _, err := fmt.Fprintf(file, "%s%s\\n%s\\n", separator, marker, projectAgentsExcludePattern); err != nil {
+\t\t_ = file.Close()
+\t\treturn fmt.Errorf("write local Git exclude: %w", err)
+\t}
+\tif err := file.Close(); err != nil {
+\t\treturn fmt.Errorf("close local Git exclude: %w", err)
+\t}
+\treturn nil
+}
+'''
+if text.count(old_ensure) != 1:
+    raise SystemExit(f"ensureProjectAgentsExclude anchor count={text.count(old_ensure)}")
+text = text.replace(old_ensure, new_ensure, 1)
+
+old_remove = '''func removeProjectAgentsExclude(root string) error {
 \tpath, err := gitExcludePath(root)
 \tif err != nil {
 \t\treturn err
@@ -33,7 +133,7 @@ old = '''func removeProjectAgentsExclude(root string) error {
 \treturn nil
 }
 '''
-new = '''func removeProjectAgentsExclude(root string) error {
+new_remove = '''func removeProjectAgentsExclude(root string) error {
 \tpath, err := gitExcludePath(root)
 \tif err != nil {
 \t\treturn err
@@ -45,19 +145,16 @@ new = '''func removeProjectAgentsExclude(root string) error {
 \tif err != nil {
 \t\treturn fmt.Errorf("read local Git exclude: %w", err)
 \t}
-\tblock := []byte(projectAgentsExcludeMarker + "\\n" + projectAgentsExcludePattern + "\\n")
+\tseparatorBlock := []byte("\\n" + projectAgentsSeparatorMarker + "\\n" + projectAgentsExcludePattern + "\\n")
+\tregularBlock := []byte(projectAgentsExcludeMarker + "\\n" + projectAgentsExcludePattern + "\\n")
 \tnext := content
-\tif bytes.HasSuffix(content, block) {
-\t\tnext = content[:len(content)-len(block)]
-\t\tif len(next) > 0 && !bytes.HasSuffix(next, []byte("\\n")) {
-\t\t\treturn fmt.Errorf("managed project AGENTS exclude separator is inconsistent")
-\t\t}
-\t} else {
-\t\tseparatorBlock := append([]byte("\\n"), block...)
-\t\tif !bytes.HasSuffix(content, separatorBlock) {
-\t\t\treturn nil
-\t\t}
+\tswitch {
+\tcase bytes.HasSuffix(content, separatorBlock):
 \t\tnext = content[:len(content)-len(separatorBlock)]
+\tcase bytes.HasSuffix(content, regularBlock):
+\t\tnext = content[:len(content)-len(regularBlock)]
+\tdefault:
+\t\treturn nil
 \t}
 \tif err := os.WriteFile(path, next, 0o644); err != nil {
 \t\treturn fmt.Errorf("write local Git exclude: %w", err)
@@ -65,9 +162,9 @@ new = '''func removeProjectAgentsExclude(root string) error {
 \treturn nil
 }
 '''
-if text.count(old) != 1:
-    raise SystemExit(f"removeProjectAgentsExclude anchor count={text.count(old)}")
-source.write_text(text.replace(old, new, 1))
+if text.count(old_remove) != 1:
+    raise SystemExit(f"removeProjectAgentsExclude anchor count={text.count(old_remove)}")
+source.write_text(text.replace(old_remove, new_remove, 1))
 
 tests = Path("glm-worker/internal/codexcontext/project_agents_test.go")
 test_text = tests.read_text()
@@ -78,7 +175,11 @@ func TestProjectAgentsExcludeRoundTripPreservesBytes(t *testing.T) {
 		[]byte("# user rule"),
 		[]byte("# user rule\n"),
 	} {
-		t.Run(strings.ReplaceAll(string(original), "\n", "newline"), func(t *testing.T) {
+		name := "without-trailing-newline"
+		if bytes.HasSuffix(original, []byte("\n")) {
+			name = "with-trailing-newline"
+		}
+		t.Run(name, func(t *testing.T) {
 			repo := initTestRepo(t)
 			excludePath := gitOutput(t, repo, "rev-parse", "--git-path", "info/exclude")
 			if !filepath.IsAbs(excludePath) {
