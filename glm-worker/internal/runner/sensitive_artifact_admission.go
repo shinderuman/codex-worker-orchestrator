@@ -14,7 +14,7 @@ type SensitiveArtifactError struct {
 }
 
 func (e *SensitiveArtifactError) Error() string {
-	return "artifact contains machine-known sensitive value: " + e.Category
+	return "artifact containing machine-known sensitive value was rejected: " + e.Category
 }
 
 func validateSensitiveResultArtifacts(base *ClaudeRunner, result RunResult, providerValues []SensitiveArtifactValue) error {
@@ -62,18 +62,23 @@ func validateSensitiveArtifactContents(artifacts []string, values []SensitiveArt
 		if err != nil {
 			return fmt.Errorf("artifact sensitive admission unavailable: artifact-content")
 		}
-		if err := rejectSensitiveArtifactContent(content, values); err != nil {
-			return err
+		category := sensitiveArtifactCategory(content, values)
+		if category == "" {
+			continue
 		}
+		if err := os.Remove(path); err != nil {
+			return fmt.Errorf("artifact sensitive admission cleanup failed: %s", category)
+		}
+		return &SensitiveArtifactError{Category: category}
 	}
 	return nil
 }
 
-func rejectSensitiveArtifactContent(content []byte, values []SensitiveArtifactValue) error {
+func sensitiveArtifactCategory(content []byte, values []SensitiveArtifactValue) string {
 	for _, candidate := range values {
 		if candidate.Value != "" && bytes.Contains(content, []byte(candidate.Value)) {
-			return &SensitiveArtifactError{Category: candidate.Category}
+			return candidate.Category
 		}
 	}
-	return nil
+	return ""
 }
