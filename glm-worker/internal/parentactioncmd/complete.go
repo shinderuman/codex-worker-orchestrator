@@ -85,26 +85,7 @@ func runComplete(cfg config.AppConfig, stdout io.Writer) error {
 	if !plan.Allows(state.ParentActionComplete) {
 		return fmt.Errorf("parent completion is not admitted for the current task (required action %s)", plan.RequiredAction)
 	}
-	verification := verifyParentCompletion(cfg.RepoRoot, st)
-	if verification.failure == nil {
-		verification.failure = verifyRuntimeInstallCompletion(cfg, st)
-	}
-	var parentRequest *app.ParentRequestCompletionProjection
-	if verification.failure == nil {
-		projection, err := app.BuildParentRequestCompletionProjection(cfg, st)
-		if err != nil {
-			verification.failure = &finalizationFailure{
-				Stage:  "project",
-				Reason: completeFailureParentRequestProjectionError,
-				Detail: compactFinalizationDiagnostic(err.Error()),
-			}
-		} else {
-			parentRequest = &projection
-		}
-	}
-	if verification.failure == nil {
-		verification.failure = verifyCompletionUnchanged(cfg.RepoRoot, verification.gitRepo, verification.verifiedHead)
-	}
+	verification, parentRequest := prepareCompletionVerification(cfg, st)
 	if verification.failure != nil {
 		return json.NewEncoder(stdout).Encode(completeOutput{
 			Status:        completeStatusAwaiting,
