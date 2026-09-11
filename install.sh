@@ -7,6 +7,26 @@ codex_dir="${CODEX_CONFIG_DIR:-${CODEX_HOME:-$HOME/.codex}}"
 bin_dir="${GLM_WORKER_BIN_DIR:-$HOME/.local/bin}"
 glm_worker_home="${GLM_WORKER_HOME:-$HOME/.glm-worker}"
 
+quality_contract_value() {
+	awk -F': ' -v key="$1" '$1 == key { print $2; exit }' "$quality_tools_file"
+}
+
+quality_tool_bin_dir() {
+	default_dir=$1
+	if [ -n "${QUALITY_TOOLS_BIN_DIR:-}" ]; then
+		case "$QUALITY_TOOLS_BIN_DIR" in
+		/*) printf '%s\n' "$QUALITY_TOOLS_BIN_DIR" ;;
+		*) printf '%s/%s\n' "$repo_root" "$QUALITY_TOOLS_BIN_DIR" ;;
+		esac
+		return
+	fi
+	printf '%s/%s\n' "$HOME" "$default_dir"
+}
+
+quality_tool_path() {
+	printf '%s/%s-%s-%s\n' "$QUALITY_TOOLS_RESOLVED_BIN_DIR" "$QUALITY_TOOL_NAMESPACE" "$1" "$2"
+}
+
 require() {
 	if ! command -v "$1" >/dev/null 2>&1; then
 		printf 'required command not found: %s\n' "$1" >&2
@@ -14,28 +34,26 @@ require() {
 	fi
 }
 
-require_quality_command() {
-	command_name=$1
-	if ! command -v "$command_name" >/dev/null 2>&1; then
-		printf 'required command not found: %s\n' "$command_name" >&2
-		printf '%s\n' 'install required versions with: ./install-quality-tools.sh' >&2
-		exit 1
-	fi
-}
-
 quality_tool_version() {
-	case "$1" in
-	golangci-lint) golangci-lint version ;;
-	shellcheck) shellcheck --version ;;
-	shfmt) shfmt --version ;;
+	command_name=$1
+	command_path=$2
+	case "$command_name" in
+	golangci-lint) "$command_path" version ;;
+	shellcheck) "$command_path" --version ;;
+	shfmt) "$command_path" --version ;;
 	esac | awk 'match($0, /[0-9]+\.[0-9]+\.[0-9]+/) { print substr($0, RSTART, RLENGTH); exit }'
 }
 
 require_quality_tool() {
 	command_name=$1
 	required_version=$2
-	require_quality_command "$command_name"
-	installed_version=$(quality_tool_version "$command_name")
+	command_path=$(quality_tool_path "$command_name" "$required_version")
+	if [ ! -x "$command_path" ]; then
+		printf 'required quality tool is missing: %s (%s)\n' "$command_name" "$command_path" >&2
+		printf '%s\n' 'install required versions with: ./install-quality-tools.sh' >&2
+		exit 1
+	fi
+	installed_version=$(quality_tool_version "$command_name" "$command_path")
 	if [ "$installed_version" != "$required_version" ]; then
 		printf 'quality tool version mismatch: %s=%s, required=%s\n' "$command_name" "${installed_version:-unknown}" "$required_version" >&2
 		printf '%s\n' 'install required versions with: ./install-quality-tools.sh' >&2
@@ -128,11 +146,14 @@ require cmp
 require awk
 require grep
 require install
-GO_VERSION=$(awk -F': ' '$1 == "go" { print $2 }' "$quality_tools_file")
-LINT_GO_VERSION=$(awk -F': ' '$1 == "lint-go" { print $2 }' "$quality_tools_file")
-GOLANGCI_LINT_VERSION=$(awk -F': ' '$1 == "golangci-lint" { print $2 }' "$quality_tools_file")
-SHELLCHECK_VERSION=$(awk -F': ' '$1 == "shellcheck" { print $2 }' "$quality_tools_file")
-SHFMT_VERSION=$(awk -F': ' '$1 == "shfmt" { print $2 }' "$quality_tools_file")
+QUALITY_TOOL_NAMESPACE=$(quality_contract_value namespace)
+QUALITY_TOOLS_DEFAULT_BIN_DIR=$(quality_contract_value default-bin-dir)
+QUALITY_TOOLS_RESOLVED_BIN_DIR=$(quality_tool_bin_dir "$QUALITY_TOOLS_DEFAULT_BIN_DIR")
+GO_VERSION=$(quality_contract_value go)
+LINT_GO_VERSION=$(quality_contract_value lint-go)
+GOLANGCI_LINT_VERSION=$(quality_contract_value golangci-lint)
+SHELLCHECK_VERSION=$(quality_contract_value shellcheck)
+SHFMT_VERSION=$(quality_contract_value shfmt)
 export GOTOOLCHAIN="go$GO_VERSION"
 verify_go_toolchain go "$GO_VERSION"
 verify_go_toolchain lint-go "$LINT_GO_VERSION"
