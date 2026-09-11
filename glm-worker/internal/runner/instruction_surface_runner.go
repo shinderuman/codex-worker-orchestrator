@@ -57,7 +57,10 @@ func (r *InstructionSurfaceGuardRunner) Run(
 	if artifactErr != nil || gitErr != nil || instructionErr != nil {
 		r.invalidateSessions()
 	}
-	return result, errors.Join(runErr, artifactErr, gitErr, instructionErr)
+	if gitErr != nil || instructionErr != nil {
+		return result, errors.Join(artifactErr, gitErr, instructionErr)
+	}
+	return result, errors.Join(runErr, artifactErr)
 }
 
 func (r *InstructionSurfaceGuardRunner) Probe(model string) (ProbeResult, error) {
