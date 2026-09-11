@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"errors"
 	"os/exec"
 	"path/filepath"
 
@@ -38,16 +39,17 @@ func (r *GuardRepairRunner) Run(
 	copyBase.config.ClaudeBin = wrappedClaude
 	copyBase.bashSandbox = guardRepairSandboxPolicy(gitGuard, r.base.config.RepoRoot)
 	result, runErr := copyBase.Run(role, phase, model, readOnly, effort, prompt, outputPath)
+	artifactErr := validateSensitiveResultArtifacts(r.base, result)
 	attempts, attemptErr := readGitAuthorityAttempts(gitGuard.attemptLog)
 	if attemptErr != nil || len(attempts) != 0 {
 		_ = r.base.state.InvalidateAllSessions()
-		return result, &GitAuthorityGuardError{
+		return result, errors.Join(runErr, artifactErr, &GitAuthorityGuardError{
 			Stage:     "repair-boundary",
 			Mutations: attempts,
 			Cause:     attemptErr,
-		}
+		})
 	}
-	return result, runErr
+	return result, errors.Join(runErr, artifactErr)
 }
 
 func prepareGuardRepairGitEnforcement(repoRoot string) (*gitAuthorityGuard, error) {
