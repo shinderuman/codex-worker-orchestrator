@@ -77,6 +77,14 @@ if grep -Fxq 'AGENTS.md' "$home/.codex/.codex-config-managed-files"; then
 	printf '%s\n' 'user-global AGENTS.md remains installer-managed' >&2
 	exit 1
 fi
+cp "$repo/codex/AGENTS.md" "$home/.codex/AGENTS.md"
+printf '%s\n' 'AGENTS.md' >>"$home/.codex/.codex-config-managed-files"
+run_install
+test ! -e "$home/.codex/AGENTS.md"
+if grep -Fxq 'AGENTS.md' "$home/.codex/.codex-config-managed-files"; then
+	printf '%s\n' 'legacy global AGENTS.md remains installer-managed' >&2
+	exit 1
+fi
 test -f "$home/.codex/instructions/codex-worker-orchestrator.md"
 cmp "$repo/codex/AGENTS.md" "$home/.codex/instructions/codex-worker-orchestrator.md"
 test -f "$home/.codex/rules/glm-worker.rules"

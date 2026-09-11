@@ -73,6 +73,28 @@ copy_tree() {
 	rsync -a "$src/" "$dst/"
 }
 
+legacy_global_agents_matches_repository() {
+	target=$1
+	[ -f "$target" ] || return 1
+	if cmp -s "$repo_root/codex/AGENTS.md" "$target"; then
+		return 0
+	fi
+	history=$(mktemp "${TMPDIR:-/tmp}/codex-agents-history.XXXXXX")
+	if ! git -C "$repo_root" log --format=%H -- codex/AGENTS.md >"$history"; then
+		rm -f "$history"
+		return 1
+	fi
+	while IFS= read -r revision; do
+		[ -n "$revision" ] || continue
+		if git -C "$repo_root" show "$revision:codex/AGENTS.md" 2>/dev/null | cmp -s - "$target"; then
+			rm -f "$history"
+			return 0
+		fi
+	done <"$history"
+	rm -f "$history"
+	return 1
+}
+
 install_codex_files() {
 	manifest_file="$codex_dir/.codex-config-managed-files"
 	current_manifest=$(mktemp "${TMPDIR:-/tmp}/codex-managed-current.XXXXXX")
@@ -95,6 +117,11 @@ install_codex_files() {
 	while IFS= read -r relative_path; do
 		[ -n "$relative_path" ] || continue
 		if [ "$relative_path" = 'AGENTS.md' ]; then
+			target="$codex_dir/AGENTS.md"
+			if legacy_global_agents_matches_repository "$target"; then
+				rm -f "$target"
+				printf 'removed legacy managed: %s\n' "$target"
+			fi
 			continue
 		fi
 		if ! grep -Fqx "$relative_path" "$current_manifest"; then
