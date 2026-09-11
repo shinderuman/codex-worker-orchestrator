@@ -144,7 +144,9 @@ func parentRequestProjection(continuation ProjectContinuation) ParentRequestComp
 	case projectContinuationTerminal:
 		projection.CompletionAdmitted = true
 		projection.StopAdmitted = true
-	case projectContinuationBlocked, projectContinuationExplicitStop:
+	case projectContinuationBlocked:
+		projection.StopAdmitted = continuation.Reason != string(state.TaskStatusRateLimited)
+	case projectContinuationDeferredByVerifiedAutomation, projectContinuationExplicitStop:
 		projection.StopAdmitted = true
 	}
 	return projection
