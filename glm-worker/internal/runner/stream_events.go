@@ -21,6 +21,7 @@ type streamEventIngester struct {
 	resultLine           []byte
 	plain                []byte
 	tools                map[string]toolUseObservation
+	validationAttempts   map[string]int
 	instructionReads     map[string]struct{}
 	workerInstructionDir string
 	now                  func() time.Time
@@ -115,9 +116,10 @@ func newStreamEventIngester(
 			ModelAlias: model,
 			Resumed:    resumed,
 		},
-		tools:            make(map[string]toolUseObservation),
-		instructionReads: make(map[string]struct{}),
-		now:              time.Now,
+		tools:              make(map[string]toolUseObservation),
+		validationAttempts: make(map[string]int),
+		instructionReads:   make(map[string]struct{}),
+		now:                time.Now,
 	}
 }
 
@@ -227,10 +229,42 @@ func (g *streamEventIngester) observeToolUse(block *state.TaskBlockSummary, at t
 		}
 	}
 	observation.category = operationCategoryForTool(block.Name, observation.command)
-	observation.validation = append([]state.TaskValidationObservation(nil), block.Validation...)
+	observation.validation = g.bindValidationObservations(block.Validation)
 	block.OperationCategory = observation.category
+	block.Validation = append([]state.TaskValidationObservation(nil), observation.validation...)
 	g.tools[block.ToolID] = observation
 	return true
+}
+
+func (g *streamEventIngester) bindValidationObservations(values []state.TaskValidationObservation) []state.TaskValidationObservation {
+	if len(values) == 0 {
+		return nil
+	}
+	bound := append([]state.TaskValidationObservation(nil), values...)
+	snapshotID := ""
+	if repoRoot := g.state.ReadOr("repo-root", ""); repoRoot != "" {
+		if snapshot, err := state.CaptureGitSnapshot(repoRoot); err == nil {
+			snapshotID = state.ValidationSnapshotID(snapshot.Head, snapshot.IndexDigest, snapshot.WorktreeDigest)
+		}
+	}
+	for index := range bound {
+		if bound[index].Suite == "" {
+			bound[index].Suite = bound[index].Form
+		}
+		if bound[index].GateClass == "" {
+			bound[index].GateClass = state.ValidationGateClass(bound[index].Suite)
+		}
+		bound[index].SnapshotID = snapshotID
+		bound[index].Phase = g.base.Phase
+		key := g.base.TaskID + "\x00" + bound[index].GateClass + "\x00" + bound[index].Suite + "\x00" + snapshotID
+		if g.validationAttempts[key] == 0 {
+			bound[index].Attempt = state.ValidationAttemptInitial
+		} else {
+			bound[index].Attempt = state.ValidationAttemptRetry
+		}
+		g.validationAttempts[key]++
+	}
+	return bound
 }
 
 func workerInstructionReadName(toolName string, input json.RawMessage, instructionDir string) (string, bool) {

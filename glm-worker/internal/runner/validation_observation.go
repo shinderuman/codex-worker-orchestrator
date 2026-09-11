@@ -16,6 +16,8 @@ type validationSegmentScanner struct {
 	escaped      bool
 }
 
+const validationTypeScriptSuite = "tsc"
+
 func validationObservationsForToolInput(toolName string, input json.RawMessage) []state.TaskValidationObservation {
 	if toolName != bashToolName || len(input) == 0 {
 		return nil
@@ -31,18 +33,17 @@ func validationObservationsForToolInput(toolName string, input json.RawMessage) 
 
 func validationObservationsForCommand(command string) []state.TaskValidationObservation {
 	segments := splitValidationCommandSegments(command)
-	seen := make(map[string]struct{})
 	result := make([]state.TaskValidationObservation, 0, 4)
 	for _, segment := range segments {
 		form := validationFormForSegment(segment)
 		if form == "" {
 			continue
 		}
-		if _, ok := seen[form]; ok {
-			continue
-		}
-		seen[form] = struct{}{}
-		result = append(result, state.TaskValidationObservation{Form: form})
+		result = append(result, state.TaskValidationObservation{
+			Form:      form,
+			GateClass: state.ValidationGateClass(form),
+			Suite:     form,
+		})
 	}
 	if len(result) == 0 {
 		return nil
@@ -132,6 +133,13 @@ func validationFormForSegment(segment string) string {
 		return "harnesslint"
 	case "commentlint":
 		return "commentlint"
+	case validationTypeScriptSuite:
+		return validationTypeScriptSuite
+	case "npx":
+		if index+1 < len(words) && filepath.Base(words[index+1]) == validationTypeScriptSuite {
+			return validationTypeScriptSuite
+		}
+		return ""
 	default:
 		return ""
 	}

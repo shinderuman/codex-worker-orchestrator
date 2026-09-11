@@ -604,7 +604,21 @@ func recordQualityGateValidation(st *state.StateStore, record qualityGateRunReco
 	if record.Log != "" {
 		evidence = filepath.ToSlash(filepath.Join(qualityGateRunDirectory, record.ValidationRunID, qualityGateRunLog))
 	}
-	st.RecordValidation("quality-gate", record.Form, "", record.Status, record.ExitCode, record.ExitSource, record.DurationMS, evidence)
+	st.RecordValidationEvent(state.TaskValidationEvent{
+		Source:          "quality-gate",
+		Form:            record.Form,
+		ValidationRunID: record.ValidationRunID,
+		GateClass:       state.ValidationGateClass(record.Form),
+		Suite:           record.Form,
+		SnapshotID:      state.ValidationSnapshotID(record.Head, record.IndexDigest, record.WorktreeDigest),
+		Phase:           "quality-gate",
+		Attempt:         state.ValidationAttemptInitial,
+		Result:          record.Status,
+		ExitCode:        record.ExitCode,
+		ExitSource:      record.ExitSource,
+		DurationMS:      record.DurationMS,
+		Evidence:        evidence,
+	})
 }
 
 func emitQualityGateStarted(diagnostics io.Writer, runID string, attached bool) error {

@@ -24,15 +24,18 @@ type TestImpactReviewSummary struct {
 }
 
 type TestImpactTaskSummary struct {
-	TaskID     string                      `json:"task_id"`
-	Operations []TestImpactCategoryMeasure `json:"operations"`
-	Review     TestImpactReviewSummary     `json:"review"`
+	TaskID      string                        `json:"task_id"`
+	Operations  []TestImpactCategoryMeasure   `json:"operations"`
+	Validations []TestImpactValidationMeasure `json:"validations,omitempty"`
+	Review      TestImpactReviewSummary       `json:"review"`
 }
 
 type TestImpactEvaluation struct {
-	SuiteCoverage      string   `json:"suite_coverage"`
-	OmissionCandidates []string `json:"omission_candidates"`
-	Reasons            []string `json:"reasons"`
+	SuiteCoverage            string   `json:"suite_coverage"`
+	StructuredValidationRuns int      `json:"structured_validation_runs,omitempty"`
+	UnknownValidationRuns    int      `json:"unknown_validation_runs,omitempty"`
+	OmissionCandidates       []string `json:"omission_candidates"`
+	Reasons                  []string `json:"reasons"`
 }
 
 type TestImpactSources struct {
@@ -42,31 +45,35 @@ type TestImpactSources struct {
 }
 
 type TestImpactReport struct {
-	Sources        TestImpactSources           `json:"sources"`
-	Retention      int                         `json:"retention"`
-	Tasks          []TestImpactTaskSummary     `json:"tasks"`
-	CategoryTotals []TestImpactCategoryMeasure `json:"category_totals"`
-	Evaluation     TestImpactEvaluation        `json:"evaluation"`
+	Sources          TestImpactSources             `json:"sources"`
+	Retention        int                           `json:"retention"`
+	Tasks            []TestImpactTaskSummary       `json:"tasks"`
+	CategoryTotals   []TestImpactCategoryMeasure   `json:"category_totals"`
+	ValidationTotals []TestImpactValidationMeasure `json:"validation_totals,omitempty"`
+	Evaluation       TestImpactEvaluation          `json:"evaluation"`
 }
 
 const (
 	TestImpactSuiteCoverageUnknown = "unknown"
+	TestImpactSuiteCoveragePartial = "partial"
 	TestImpactReviewOutcomeUnknown = "unknown"
 )
 
-const testImpactEventLogSource = "task event logs (events/<task-id>.jsonl) attach the existing ten-value closed operation_category to tool_use/tool_result blocks with per-block duration_ms and is_error; raw commands, arguments, and suite identity are not saved, so test subtypes below the closed set and suite-level coverage stay unknown"
+const testImpactEventLogSource = "task event logs (events/<task-id>.jsonl) retain bounded structured validation observations from execution points alongside the closed operation_category; known suite/class/result/duration/phase/snapshot/attempt fields are primary validation evidence while raw commands, arguments, stdout and stderr are not stored"
 
 const testImpactReviewOutcomeSource = "per-task escaped signal reuses the existing deterministic review outcome attribution: worker calls with an implemented packet reviewed PASS or FIX_REQUIRED from saved ModelCallLog v3 and RoundRecord; tasks without attributable review outcome stay unknown"
 
 const testImpactWriteOperationsSource = "write operations are the existing deterministic file-write and git-write categories; no new change classification or AI classification is introduced"
 
-const testImpactSuiteCoverageReason = "task event blocks save only the ten-value closed operation_category; raw commands, arguments, and suite identity are not recorded, so suite-level coverage is unknown and unit/race/vet/integration subtypes are not distinguishable"
+const testImpactSuiteCoverageReason = "no structured validation records are retained, so suite-level coverage is unknown; legacy operation categories alone are not promoted to suite evidence"
+
+const testImpactSuiteCoveragePartialReason = "structured validation records identify known suites at execution time, but retained history can still contain legacy or unknown observations; coverage is partial rather than inferred complete"
 
 const testImpactOmissionReason = "no omission candidate is presented: omission requires per-suite failure and escaped-defect contrast that these deterministic sources cannot attribute, and test selection introduction stays a separate blocked decision"
 
 const testImpactNoFailureReason = "no test-category tool errors are recorded in the retained window; failure-free execution alone is not quality evidence for omitting any test"
 
-const testImpactFoldingReason = "commands with pipelines, environment assignments, or compound chains classify into other under the closed-set rule, so test-category counts are a lower bound and some executed test commands are not distinguishable from other in the retained window"
+const testImpactFoldingReason = "legacy operation_category can still classify compound shell execution as other; structured validation observations are therefore the primary suite evidence and operation-category test counts remain auxiliary"
 
 const testImpactEmptyEventsReason = "no task event logs are retained; test call counts, durations, and failure outcomes are unavailable"
 
@@ -79,9 +86,10 @@ func BuildTestImpactReport(tasks []TaskEvents, reviews map[string]TestImpactRevi
 			ReviewOutcome:   testImpactReviewOutcomeSource,
 			WriteOperations: testImpactWriteOperationsSource,
 		},
-		Retention:      retainedTaskEventLogs,
-		Tasks:          []TestImpactTaskSummary{},
-		CategoryTotals: []TestImpactCategoryMeasure{},
+		Retention:        retainedTaskEventLogs,
+		Tasks:            []TestImpactTaskSummary{},
+		CategoryTotals:   []TestImpactCategoryMeasure{},
+		ValidationTotals: []TestImpactValidationMeasure{},
 		Evaluation: TestImpactEvaluation{
 			SuiteCoverage:      TestImpactSuiteCoverageUnknown,
 			OmissionCandidates: []string{},
@@ -89,6 +97,7 @@ func BuildTestImpactReport(tasks []TaskEvents, reviews map[string]TestImpactRevi
 		},
 	}
 	totals := make(map[string]*TestImpactCategoryMeasure)
+	validationTotals := make(map[string]*TestImpactValidationMeasure)
 	for _, task := range sortedTestImpactTasks(tasks) {
 		if len(task.Records) == 0 {
 			continue
@@ -97,17 +106,31 @@ func BuildTestImpactReport(tasks []TaskEvents, reviews map[string]TestImpactRevi
 		for index := range operations {
 			absorbTestImpactMeasure(totals, operations[index])
 		}
+		validations := testImpactValidationMeasures(task)
+		for index := range validations {
+			absorbTestImpactValidationMeasure(validationTotals, validations[index])
+			report.Evaluation.StructuredValidationRuns += validations[index].Runs
+			report.Evaluation.UnknownValidationRuns += validations[index].Unknown
+			if validations[index].GateClass == ValidationGateClassUnknown {
+				report.Evaluation.UnknownValidationRuns += validations[index].Runs - validations[index].Unknown
+			}
+		}
 		review := reviews[task.TaskID]
 		if review.Outcome == "" {
 			review.Outcome = TestImpactReviewOutcomeUnknown
 		}
 		report.Tasks = append(report.Tasks, TestImpactTaskSummary{
-			TaskID:     task.TaskID,
-			Operations: operations,
-			Review:     review,
+			TaskID:      task.TaskID,
+			Operations:  operations,
+			Validations: validations,
+			Review:      review,
 		})
 	}
 	report.CategoryTotals = sortedTestImpactMeasures(totals)
+	report.ValidationTotals = sortedTestImpactValidationMeasures(validationTotals)
+	if report.Evaluation.StructuredValidationRuns > 0 {
+		report.Evaluation.SuiteCoverage = TestImpactSuiteCoveragePartial
+	}
 	report.Evaluation.Reasons = testImpactReasons(report)
 	return report
 }
@@ -188,7 +211,15 @@ func sortedTestImpactMeasures(totals map[string]*TestImpactCategoryMeasure) []Te
 }
 
 func testImpactReasons(report TestImpactReport) []string {
-	reasons := []string{testImpactSuiteCoverageReason}
+	reasons := []string{}
+	if report.Evaluation.StructuredValidationRuns == 0 {
+		reasons = append(reasons, testImpactSuiteCoverageReason)
+	} else {
+		reasons = append(reasons, testImpactSuiteCoveragePartialReason)
+		reasons = append(reasons, fmt.Sprintf(
+			"retained structured validation evidence contains %d runs with %d unknown result or gate-class runs",
+			report.Evaluation.StructuredValidationRuns, report.Evaluation.UnknownValidationRuns))
+	}
 	if len(report.Tasks) == 0 {
 		return append(reasons, testImpactEmptyEventsReason)
 	}
