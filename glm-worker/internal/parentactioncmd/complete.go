@@ -14,10 +14,11 @@ import (
 )
 
 type completeOutput struct {
-	Status     string                     `json:"status"`
-	Completed  bool                       `json:"completed"`
-	RemoteSync *completeRemoteSyncSummary `json:"remote_sync,omitempty"`
-	Failure    *finalizationFailure       `json:"failure,omitempty"`
+	Status        string                                `json:"status"`
+	Completed     bool                                  `json:"completed"`
+	RemoteSync    *completeRemoteSyncSummary            `json:"remote_sync,omitempty"`
+	ParentRequest *app.ParentRequestCompletionProjection `json:"parent_request,omitempty"`
+	Failure       *finalizationFailure                  `json:"failure,omitempty"`
 }
 
 type completeRemoteSyncSummary struct {
@@ -40,19 +41,20 @@ type completionVerification struct {
 }
 
 const (
-	completeRemoteStateVerified          = "verified"
-	completeRemoteStateNotApplicable     = "not_applicable"
-	completeStatusComplete               = "complete"
-	completeStatusAwaiting               = "awaiting"
-	completePushStatusBlocked            = "blocked"
-	completeTargetNoUpstream             = "no_upstream"
-	completeTargetDetached               = "detached_head"
-	completeTargetRemoteUnresolvable     = "remote_unresolvable"
-	completeTargetHeadUnresolvable       = "head_unresolvable"
-	completeFailureTreeChanged           = "tree_changed_before_transition"
-	completeFailureHeadChanged           = "head_changed_before_transition"
-	completeFailureStatsUnreadable       = "completion_stats_unreadable"
-	completeFailureTerminalUnrecoverable = "completion_terminal_unrecoverable"
+	completeRemoteStateVerified                 = "verified"
+	completeRemoteStateNotApplicable            = "not_applicable"
+	completeStatusComplete                      = "complete"
+	completeStatusAwaiting                      = "awaiting"
+	completePushStatusBlocked                   = "blocked"
+	completeTargetNoUpstream                    = "no_upstream"
+	completeTargetDetached                      = "detached_head"
+	completeTargetRemoteUnresolvable            = "remote_unresolvable"
+	completeTargetHeadUnresolvable              = "head_unresolvable"
+	completeFailureTreeChanged                  = "tree_changed_before_transition"
+	completeFailureHeadChanged                  = "head_changed_before_transition"
+	completeFailureStatsUnreadable              = "completion_stats_unreadable"
+	completeFailureTerminalUnrecoverable        = "completion_terminal_unrecoverable"
+	completeFailureParentRequestProjectionError = "parent_request_projection_unavailable"
 )
 
 func executeComplete(cfg config.AppConfig, args []string, stdout io.Writer) error {
@@ -87,18 +89,38 @@ func runComplete(cfg config.AppConfig, stdout io.Writer) error {
 	if verification.failure == nil {
 		verification.failure = verifyRuntimeInstallCompletion(cfg, st)
 	}
+	var parentRequest *app.ParentRequestCompletionProjection
+	if verification.failure == nil {
+		projection, err := app.BuildParentRequestCompletionProjection(cfg, st)
+		if err != nil {
+			verification.failure = &finalizationFailure{
+				Stage:  "project",
+				Reason: completeFailureParentRequestProjectionError,
+				Detail: compactFinalizationDiagnostic(err.Error()),
+			}
+		} else {
+			parentRequest = &projection
+		}
+	}
 	if verification.failure == nil {
 		verification.failure = verifyCompletionUnchanged(cfg.RepoRoot, verification.gitRepo, verification.verifiedHead)
 	}
 	if verification.failure != nil {
 		return json.NewEncoder(stdout).Encode(completeOutput{
-			Status: completeStatusAwaiting, Completed: false, RemoteSync: verification.remoteSync, Failure: verification.failure,
+			Status:        completeStatusAwaiting,
+			Completed:     false,
+			RemoteSync:    verification.remoteSync,
+			ParentRequest: parentRequest,
+			Failure:       verification.failure,
 		})
 	}
 	terminal, failure := completionTerminalForEvaluation(st)
 	if failure != nil {
 		return json.NewEncoder(stdout).Encode(completeOutput{
-			Status: completeStatusAwaiting, Completed: false, Failure: failure,
+			Status:        completeStatusAwaiting,
+			Completed:     false,
+			ParentRequest: parentRequest,
+			Failure:       failure,
 		})
 	}
 	completed, err := st.CompleteParentAwaiting(func(acceptedRisk string) (*state.SessionRotationEvaluation, error) {
@@ -108,7 +130,10 @@ func runComplete(cfg config.AppConfig, stdout io.Writer) error {
 		return err
 	}
 	return json.NewEncoder(stdout).Encode(completeOutput{
-		Status: completeStatusComplete, Completed: completed, RemoteSync: verification.remoteSync,
+		Status:        completeStatusComplete,
+		Completed:     completed,
+		RemoteSync:    verification.remoteSync,
+		ParentRequest: parentRequest,
 	})
 }
 
