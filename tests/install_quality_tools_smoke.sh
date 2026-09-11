@@ -156,6 +156,18 @@ grep -Fq 'quality tool collision:' "$tmp/collision.stderr"
 test "$(shasum -a 256 "$new_shfmt")" = "$collision_hash"
 assert_user_tools_unchanged
 
+rm "$new_shfmt"
+missing_shfmt="$tmp/missing-shfmt"
+ln -s "$missing_shfmt" "$new_shfmt"
+if run_install >"$tmp/dangling.stdout" 2>"$tmp/dangling.stderr"; then
+	printf '%s\n' 'dangling quality tool symlink was silently overwritten' >&2
+	exit 1
+fi
+grep -Fq 'quality tool collision:' "$tmp/dangling.stderr"
+test -L "$new_shfmt"
+test ! -e "$missing_shfmt"
+assert_user_tools_unchanged
+
 preflight_bin="$tmp/preflight-bin"
 preflight_owned="$tmp/preflight-owned"
 mkdir -p "$preflight_bin" "$preflight_owned"
@@ -174,3 +186,15 @@ fi
 test ! -s "$tmp/preflight-collision.stdout"
 grep -Fq 'quality tool collision:' "$tmp/preflight-collision.stderr"
 test "$(shasum -a 256 "$preflight_collision")" = "$preflight_collision_hash"
+
+rm "$preflight_collision"
+missing_golangci="$tmp/missing-golangci"
+ln -s "$missing_golangci" "$preflight_collision"
+if HOME="$home" QUALITY_TOOLS_BIN_DIR="$preflight_owned" PATH="$preflight_bin:$fake:$PATH" "$repo/install.sh" >"$tmp/preflight-dangling.stdout" 2>"$tmp/preflight-dangling.stderr"; then
+	printf '%s\n' 'installer dangling canonical symlink was silently overwritten' >&2
+	exit 1
+fi
+test ! -s "$tmp/preflight-dangling.stdout"
+grep -Fq 'quality tool collision:' "$tmp/preflight-dangling.stderr"
+test -L "$preflight_collision"
+test ! -e "$missing_golangci"
