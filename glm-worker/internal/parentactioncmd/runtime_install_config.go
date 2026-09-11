@@ -15,8 +15,6 @@ import (
 )
 
 func verifyRuntimeMergedConfigFiles(cfg config.AppConfig, _ []string) error {
-	// Some focused unit fixtures intentionally omit installer destinations. A
-	// real loaded AppConfig resolves both paths before runtime installation.
 	if cfg.CodexConfigDir == "" && cfg.ClaudeSettingsPath == "" {
 		return nil
 	}
