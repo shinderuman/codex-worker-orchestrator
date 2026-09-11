@@ -9,12 +9,12 @@ import (
 	"path/filepath"
 )
 
-const codexWakeTokenStateDir = "glm-worker-wake-transactions"
-
 type codexWakeTokenLease struct {
 	activePath string
 	leasePath  string
 }
+
+const codexWakeTokenStateDir = "glm-worker-wake-transactions"
 
 func persistCodexWakeToken(codexConfigDir, token string) error {
 	if token == "" {
