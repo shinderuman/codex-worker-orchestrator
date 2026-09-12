@@ -170,6 +170,9 @@ func (w *Workflow) prepareApprovedQualitySurfaceBaseline(phase string) (string, 
 	if strings.TrimSpace(baseline) == current {
 		return baseline, current, false, nil
 	}
+	if !w.acceptedFixScopeContainsCurrent() {
+		return "", "", false, w.approvedQualitySurfaceValidationFailure(phase, "workerがquality policy surfaceを変更しました", nil)
+	}
 	return baseline, current, true, nil
 }
 
