@@ -20,6 +20,7 @@ func TestParentWaitHoldsRepositoryLockThroughRecoveryHandoff(t *testing.T) {
 	if err := st.SetTaskStatus(state.TaskStatusWaitingSolReview); err != nil {
 		t.Fatal(err)
 	}
+	seedParentWaitOwnerEpoch(t, st)
 	entered := filepath.Join(t.TempDir(), "handoff-entered")
 	release := filepath.Join(t.TempDir(), "handoff-release")
 	writeBlockingParentWaitHandoffStub(t, entered, release)

@@ -16,7 +16,7 @@ type parentWaitOutput struct {
 	Status     string           `json:"status"`
 	TaskStatus state.TaskStatus `json:"task_status"`
 	OwnerLost  bool             `json:"owner_lost"`
-	Handoff    json.RawMessage  `json:"handoff"`
+	Handoff    json.RawMessage  `json:"handoff,omitempty"`
 }
 
 type parentWaitRecoveryHandoff struct {
@@ -30,8 +30,10 @@ type parentWaitRecoveryHandoff struct {
 
 const parentWaitLockFile = "parent-wait.lock"
 const parentWaitRecoveryLockFile = "parent-wait-recovery.lock"
+const parentWaitOwnerEpochFile = "parent-wait-owner.epoch"
 
 const parentWaitStatusReleased = "released"
+const parentWaitStatusSuperseded = "superseded"
 
 func withParentWaitLease(cfg config.AppConfig, body func() error) error {
 	st, err := state.NewStateStore(cfg)
@@ -43,7 +45,32 @@ func withParentWaitLease(cfg config.AppConfig, body func() error) error {
 		return fmt.Errorf("parent wait owner is already active: %w", err)
 	}
 	defer func() { _ = lock.Close() }()
+	if _, err := rotateParentWaitOwnerEpoch(st); err != nil {
+		return err
+	}
 	return body()
+}
+
+func rotateParentWaitOwnerEpoch(st *state.StateStore) (string, error) {
+	epoch, err := state.NewUUID()
+	if err != nil {
+		return "", fmt.Errorf("create parent wait owner epoch: %w", err)
+	}
+	if err := st.Write(parentWaitOwnerEpochFile, epoch); err != nil {
+		return "", fmt.Errorf("persist parent wait owner epoch: %w", err)
+	}
+	return epoch, nil
+}
+
+func readParentWaitOwnerEpoch(st *state.StateStore) (string, error) {
+	epoch, err := st.Read(parentWaitOwnerEpochFile)
+	if err != nil {
+		return "", fmt.Errorf("read parent wait owner epoch: %w", err)
+	}
+	if !state.ValidGeneratedUUID(epoch) {
+		return "", fmt.Errorf("parent wait owner epoch is invalid")
+	}
+	return epoch, nil
 }
 
 func executeParentWait(cfg config.AppConfig, args []string, stdout, stderr io.Writer) error {
@@ -60,17 +87,38 @@ func executeParentWait(cfg config.AppConfig, args []string, stdout, stderr io.Wr
 	}
 	defer func() { _ = recovery.Close() }()
 
+	expectedEpoch, err := readParentWaitOwnerEpoch(st)
+	if err != nil {
+		return fmt.Errorf("bind parent recovery waiter: %w", err)
+	}
+
 	owner, err := repolock.AcquireWait(st.Path(parentWaitLockFile))
 	if err != nil {
 		return fmt.Errorf("wait for parent owner: %w", err)
 	}
 	defer func() { _ = owner.Close() }()
 
+	currentEpoch, err := readParentWaitOwnerEpoch(st)
+	if err != nil {
+		return fmt.Errorf("verify parent recovery owner epoch: %w", err)
+	}
+	if currentEpoch != expectedEpoch {
+		return encodeParentWaitSuperseded(stdout)
+	}
+
 	worker, err := repolock.AcquireWait(st.LockPath())
 	if err != nil {
 		return fmt.Errorf("wait for worker owner: %w", err)
 	}
 	defer func() { _ = worker.Close() }()
+
+	currentEpoch, err = readParentWaitOwnerEpoch(st)
+	if err != nil {
+		return fmt.Errorf("verify parent recovery owner epoch after worker: %w", err)
+	}
+	if currentEpoch != expectedEpoch {
+		return encodeParentWaitSuperseded(stdout)
+	}
 
 	handoff, err := parentWaitHandoff(cfg, stderr)
 	if err != nil {
@@ -83,6 +131,12 @@ func executeParentWait(cfg config.AppConfig, args []string, stdout, stderr io.Wr
 		OwnerLost:  status == state.TaskStatusActive,
 		Handoff:    handoff,
 	})
+}
+
+func encodeParentWaitSuperseded(stdout io.Writer) error {
+	return json.NewEncoder(stdout).Encode(struct {
+		Status string `json:"status"`
+	}{Status: parentWaitStatusSuperseded})
 }
 
 func parentWaitHandoff(cfg config.AppConfig, stderr io.Writer) (json.RawMessage, error) {

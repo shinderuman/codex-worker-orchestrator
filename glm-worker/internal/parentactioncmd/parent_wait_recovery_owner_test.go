@@ -18,6 +18,7 @@ func TestParentWaitRejectsDuplicateRecoveryWaiterBehindPrimaryOwner(t *testing.T
 	if err := st.SetTaskStatus(state.TaskStatusWaitingSolReview); err != nil {
 		t.Fatal(err)
 	}
+	seedParentWaitOwnerEpoch(t, st)
 	writeParentWaitWorkerStub(t)
 
 	owner, err := repolock.Acquire(st.Path(parentWaitLockFile))
@@ -64,6 +65,7 @@ func TestParentWaitRejectsDuplicateRecoveryWaiterBehindSurvivingWorker(t *testin
 	if err := st.SetTaskStatus(state.TaskStatusWaitingSolReview); err != nil {
 		t.Fatal(err)
 	}
+	seedParentWaitOwnerEpoch(t, st)
 	writeParentWaitWorkerStub(t)
 
 	worker, err := repolock.Acquire(st.LockPath())

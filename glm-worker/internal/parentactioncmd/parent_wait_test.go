@@ -21,6 +21,7 @@ func TestParentWaitBlocksOnPrimaryOwnerWithoutOutput(t *testing.T) {
 	if err := st.SetTaskStatus(state.TaskStatusWaitingSolReview); err != nil {
 		t.Fatal(err)
 	}
+	seedParentWaitOwnerEpoch(t, st)
 	writeParentWaitWorkerStub(t)
 
 	owner, err := repolock.Acquire(st.Path(parentWaitLockFile))
@@ -64,6 +65,7 @@ func TestParentWaitBlocksOnSurvivingWorkerAfterParentOwnerLoss(t *testing.T) {
 	if err := st.SetTaskStatus(state.TaskStatusWaitingDecision); err != nil {
 		t.Fatal(err)
 	}
+	seedParentWaitOwnerEpoch(t, st)
 	writeParentWaitWorkerStub(t)
 
 	worker, err := repolock.Acquire(st.LockPath())
@@ -103,6 +105,7 @@ func TestParentWaitMarksLostOwnerInsteadOfRestartingActiveTask(t *testing.T) {
 	if err := st.SetTaskStatus(state.TaskStatusActive); err != nil {
 		t.Fatal(err)
 	}
+	seedParentWaitOwnerEpoch(t, st)
 	writeParentWaitWorkerStub(t)
 
 	var stdout, stderr bytes.Buffer
