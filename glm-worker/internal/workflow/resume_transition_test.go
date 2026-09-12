@@ -39,6 +39,20 @@ func TestActivateResumeRejectsGuardRepairAttemptOutsideRebuiltResume(t *testing.
 	}
 }
 
+func TestActivateResumeRejectsRebuiltResumeWithoutAttempt(t *testing.T) {
+	st, _, checkpoint := prepareGuardRepairResumeTransition(t)
+	t.Setenv(state.GuardRepairParentActionEnv, state.GuardRepairRebuiltResume)
+	t.Setenv(state.GuardRepairResumeAttemptEnv, "")
+
+	workflow := &Workflow{state: st}
+	if err := workflow.activateResume(checkpoint); err == nil {
+		t.Fatal("rebuilt resume without attempt ID was accepted")
+	}
+	if st.TaskStatus() != state.TaskStatusGuardRecoverable {
+		t.Fatalf("missing attempt changed task status: %s", st.TaskStatus())
+	}
+}
+
 func prepareGuardRepairResumeTransition(t *testing.T) (*state.StateStore, string, state.ResumeCheckpoint) {
 	t.Helper()
 	cfg := config.AppConfig{RepoRoot: t.TempDir(), StateBase: t.TempDir(), RepoHash: "guard-repair-resume-transition"}
