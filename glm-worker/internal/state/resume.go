@@ -231,11 +231,23 @@ func (checkpoint ResumeCheckpoint) validateRateLimitStopPayload() error {
 }
 
 func (checkpoint ResumeCheckpoint) validateProviderStopPayload() error {
-	if checkpoint.StopKind == ResumeStopProviderUnavailable || (checkpoint.ProviderUnavailableClassification == "" &&
-		checkpoint.ProviderUnavailableProbes == 0 && checkpoint.ProviderUnavailableStartedAt.IsZero()) {
-		return nil
+	if checkpoint.StopKind != ResumeStopProviderUnavailable {
+		if checkpoint.ProviderUnavailableClassification == "" &&
+			checkpoint.ProviderUnavailableProbes == 0 && checkpoint.ProviderUnavailableStartedAt.IsZero() {
+			return nil
+		}
+		return fmt.Errorf("resume stop payload does not match stop kind %q: provider metadata is present", checkpoint.StopKind)
 	}
-	return fmt.Errorf("resume stop payload does not match stop kind %q: provider metadata is present", checkpoint.StopKind)
+	if checkpoint.ProviderUnavailableClassification == "" {
+		return fmt.Errorf("provider-unavailable resume stop requires provider classification")
+	}
+	if checkpoint.ProviderUnavailableProbes <= 0 {
+		return fmt.Errorf("provider-unavailable resume stop requires a positive probe count")
+	}
+	if checkpoint.ProviderUnavailableStartedAt.IsZero() {
+		return fmt.Errorf("provider-unavailable resume stop requires recovery start time")
+	}
+	return nil
 }
 
 func (checkpoint ResumeCheckpoint) validateGuardStopPayload() error {
