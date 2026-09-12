@@ -11,7 +11,7 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-func TestAcceptedFixScopePendingDoesNotAuthorizeWaitingParentAction(t *testing.T) {
+func TestAcceptedFixScopeWaitingFixDoesNotAuthorizeParentAction(t *testing.T) {
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)
 	seedWaitingSolReviewState(t, st)
@@ -21,17 +21,32 @@ func TestAcceptedFixScopePendingDoesNotAuthorizeWaitingParentAction(t *testing.T
 	if err := w.prepareAcceptedFixScopeChecked(acceptedFixScopeCurrentDiff); err != nil {
 		t.Fatal(err)
 	}
-	if !st.Exists(acceptedFixScopePendingStateFile) {
-		t.Fatal("accepted scope was not staged")
+	if !st.Exists(acceptedFixScopeStateFile) {
+		t.Fatal("accepted fix scope was not captured")
 	}
-	if st.Exists(acceptedFixScopeStateFile) {
-		t.Fatal("staged accepted scope became live before the parent action")
-	}
-	if !w.acceptedFixScopeContainsCurrent() {
-		t.Fatal("staged scope must remain available for lifecycle validation")
+	if w.acceptedFixScopeContainsCurrent() {
+		t.Fatal("waiting fix scope must not authorize quality-surface validation")
 	}
 	if w.acceptedFixScopeCoversCurrent() {
-		t.Fatal("waiting parent action must not consume staged authorization")
+		t.Fatal("waiting fix scope must not suppress the risk floor")
+	}
+}
+
+func TestAcceptedFixScopeWaitingApprovalAllowsOnlyPreActivationValidation(t *testing.T) {
+	repo := newRetentionGitRepo(t)
+	st := newGitStateStoreT(t, repo)
+	seedWaitingSolReviewState(t, st)
+	writeAcceptedScopeChange(t, repo)
+
+	w := newGitWorkflowT(t, st, &scriptedRunner{}, repo)
+	if err := w.prepareAcceptedFixScopeForAction(acceptedFixScopeCurrentDiff, state.ParentActionApproveSurface); err != nil {
+		t.Fatal(err)
+	}
+	if !w.acceptedFixScopeContainsCurrent() {
+		t.Fatal("same-owner quality approval must validate its accepted current diff")
+	}
+	if w.acceptedFixScopeCoversCurrent() {
+		t.Fatal("quality approval must not suppress the risk floor before activation")
 	}
 }
 
@@ -45,17 +60,17 @@ func TestAcceptedFixScopeRejectsDifferentParentOwner(t *testing.T) {
 	if err := w.prepareAcceptedFixScopeChecked(acceptedFixScopeCurrentDiff); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := st.BeginParentFix(state.ParentOriginCodexReview, state.ParentCauseWorker); err != nil {
+		t.Fatal(err)
+	}
 	if !w.acceptedFixScopeContainsCurrent() {
-		t.Fatal("staged scope must match its original task and parent lease")
+		t.Fatal("active fix must match its original task and parent lease")
 	}
 	if err := st.AdvanceParentEvidenceLease(); err != nil {
 		t.Fatal(err)
 	}
 	if w.acceptedFixScopeContainsCurrent() {
 		t.Fatal("scope from a previous parent lease must not remain authorized")
-	}
-	if err := st.SetTaskStatus(state.TaskStatusActive); err != nil {
-		t.Fatal(err)
 	}
 	if w.acceptedFixScopeCoversCurrent() {
 		t.Fatal("active task must not consume scope from a previous parent lease")
@@ -72,6 +87,9 @@ func TestAcceptedFixScopeRejectsDifferentTaskOwner(t *testing.T) {
 	if err := w.prepareAcceptedFixScopeChecked(acceptedFixScopeCurrentDiff); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := st.BeginParentFix(state.ParentOriginCodexReview, state.ParentCauseWorker); err != nil {
+		t.Fatal(err)
+	}
 	if err := st.Write("task.id", "different-task"); err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +98,7 @@ func TestAcceptedFixScopeRejectsDifferentTaskOwner(t *testing.T) {
 	}
 }
 
-func TestAcceptedFixScopeBeginParentFixFailureDiscardsStagedAuthorization(t *testing.T) {
+func TestAcceptedFixScopeBeginParentFixFailureDiscardsAuthorization(t *testing.T) {
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)
 	seedWaitingSolReviewState(t, st)
@@ -102,7 +120,7 @@ func TestAcceptedFixScopeBeginParentFixFailureDiscardsStagedAuthorization(t *tes
 	}
 }
 
-func TestAcceptedFixScopePreCallRollbackDiscardsStagedAuthorization(t *testing.T) {
+func TestAcceptedFixScopePreCallRollbackDiscardsAuthorization(t *testing.T) {
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)
 	seedWaitingSolReviewState(t, st)
@@ -127,7 +145,7 @@ func TestAcceptedFixScopePreCallRollbackDiscardsStagedAuthorization(t *testing.T
 	}
 }
 
-func TestAcceptedFixScopeQualityApprovalValidationFailureDiscardsStagedAuthorization(t *testing.T) {
+func TestAcceptedFixScopeQualityApprovalValidationFailureDiscardsAuthorization(t *testing.T) {
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)
 	writeAcceptedScopeChange(t, repo)
@@ -170,7 +188,7 @@ func TestAcceptedFixScopeQualityApprovalValidationFailureDiscardsStagedAuthoriza
 	}
 }
 
-func TestAcceptedFixScopeConsumesStagedAuthorizationOnceAfterParentActionStarts(t *testing.T) {
+func TestAcceptedFixScopeConsumesAuthorizationOnceAfterParentActionStarts(t *testing.T) {
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)
 	seedWaitingSolReviewState(t, st)
@@ -184,12 +202,12 @@ func TestAcceptedFixScopeConsumesStagedAuthorizationOnceAfterParentActionStarts(
 		t.Fatal(err)
 	}
 	if !w.acceptedFixScopeCoversCurrent() {
-		t.Fatal("active parent fix must consume the staged current-diff authorization")
+		t.Fatal("active parent fix must consume the accepted current-diff authorization")
 	}
 	if w.acceptedFixScopeCoversCurrent() {
 		t.Fatal("accepted scope authorization must be one-shot")
 	}
-	if st.Exists(acceptedFixScopePendingStateFile) || st.Exists(acceptedFixScopeStateFile) {
+	if st.Exists(acceptedFixScopeStateFile) {
 		t.Fatal("consumed accepted scope state was retained")
 	}
 }
@@ -203,8 +221,8 @@ func writeAcceptedScopeChange(t *testing.T, repo string) {
 
 func assertAcceptedScopeDiscarded(t *testing.T, st *state.StateStore, w *Workflow) {
 	t.Helper()
-	if st.Exists(acceptedFixScopePendingStateFile) || st.Exists(acceptedFixScopeStateFile) {
-		t.Fatalf("accepted scope survived rollback: pending=%t live=%t", st.Exists(acceptedFixScopePendingStateFile), st.Exists(acceptedFixScopeStateFile))
+	if st.Exists(acceptedFixScopeStateFile) {
+		t.Fatal("accepted scope survived rollback")
 	}
 	if w.acceptedFixScopeCoversCurrent() {
 		t.Fatal("rolled-back accepted scope remained consumable")
