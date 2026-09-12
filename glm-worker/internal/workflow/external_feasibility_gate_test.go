@@ -455,6 +455,7 @@ func TestExternalFeasibilityResumeGateFailsClosedBeforeProbe(t *testing.T) {
 		Request:                           "request",
 		StopKind:                          state.ResumeStopProviderUnavailable,
 		ProviderUnavailableClassification: "http_503",
+		ProviderUnavailableProbes:         4,
 		ProviderUnavailableStartedAt:      time.Now().UTC(),
 	}); err != nil {
 		t.Fatal(err)
