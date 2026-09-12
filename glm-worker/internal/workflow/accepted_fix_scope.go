@@ -17,9 +17,11 @@ import (
 )
 
 type acceptedFixScope struct {
-	Version      int            `json:"version"`
-	BaselineHead string         `json:"baseline_head"`
-	Changes      map[string]int `json:"changes"`
+	Version             int            `json:"version"`
+	TaskID              string         `json:"task_id"`
+	ParentEvidenceLease int64          `json:"parent_evidence_lease"`
+	BaselineHead        string         `json:"baseline_head"`
+	Changes             map[string]int `json:"changes"`
 }
 
 type acceptedPatchState struct {
@@ -32,7 +34,7 @@ const (
 	acceptedFixScopeStateFile        = "accepted-fix-scope.json"
 	acceptedFixScopePendingStateFile = "accepted-fix-scope.pending.json"
 	acceptedFixScopeCurrentDiff      = "current-diff"
-	acceptedFixScopeVersion          = 1
+	acceptedFixScopeVersion          = 2
 )
 
 var zeroContextHunk = regexp.MustCompile(`^@@ -([0-9]+)(?:,[0-9]+)? \+[0-9]+(?:,[0-9]+)? @@`)
@@ -55,6 +57,14 @@ func (w *Workflow) prepareAcceptedFixScopeChecked(mode string) error {
 	if baselineHead == "" {
 		return nil
 	}
+	taskID, err := w.state.TaskID()
+	if err != nil {
+		return err
+	}
+	lease, err := w.state.ParentEvidenceLeaseEpoch()
+	if err != nil {
+		return err
+	}
 	changes, err := w.captureAcceptedChangeSet()
 	if err != nil {
 		return err
@@ -63,9 +73,11 @@ func (w *Workflow) prepareAcceptedFixScopeChecked(mode string) error {
 		return nil
 	}
 	data, err := json.Marshal(acceptedFixScope{
-		Version:      acceptedFixScopeVersion,
-		BaselineHead: baselineHead,
-		Changes:      changes,
+		Version:             acceptedFixScopeVersion,
+		TaskID:              taskID,
+		ParentEvidenceLease: lease,
+		BaselineHead:        baselineHead,
+		Changes:             changes,
 	})
 	if err != nil {
 		return err
@@ -111,6 +123,14 @@ func (w *Workflow) acceptedFixScopeFileAllowsCurrent(path string, consume bool) 
 	}
 	var scope acceptedFixScope
 	if err := json.Unmarshal(bytes.TrimSpace(data), &scope); err != nil || scope.Version != acceptedFixScopeVersion {
+		return false
+	}
+	taskID, err := w.state.TaskID()
+	if err != nil || scope.TaskID == "" || scope.TaskID != taskID {
+		return false
+	}
+	lease, err := w.state.ParentEvidenceLeaseEpoch()
+	if err != nil || scope.ParentEvidenceLease != lease {
 		return false
 	}
 	if scope.BaselineHead == "" || scope.BaselineHead != w.state.ReadOr("baseline-head", "") {
