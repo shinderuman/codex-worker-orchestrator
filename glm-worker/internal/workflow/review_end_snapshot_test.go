@@ -124,6 +124,7 @@ func newMutationWorkflow(t *testing.T, repoRoot string, steps []runnerStep, muta
 
 func newMutationWorkflowShell(t *testing.T, st *state.StateStore) *Workflow {
 	t.Helper()
+	pinRepositoryHarnessActiveT(t, st)
 	return newWorkflowT(t, st, &scriptedRunner{})
 }
 

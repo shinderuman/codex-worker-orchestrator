@@ -17,6 +17,7 @@ func TestExecutionMilestoneExplicitFixCompletesCurrentUnitBeforeFinalReview(t *t
 	if _, err := st.StartNewTask(); err != nil {
 		t.Fatal(err)
 	}
+	pinRepositoryHarnessActiveT(t, st)
 	if err := state.CaptureGitBaseline(w.config, st); err != nil {
 		t.Fatal(err)
 	}

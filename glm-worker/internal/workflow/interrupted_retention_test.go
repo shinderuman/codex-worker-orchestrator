@@ -77,6 +77,7 @@ func newGitStateStoreT(t *testing.T, repo string) *state.StateStore {
 	if _, err := st.StartNewTask(); err != nil {
 		t.Fatal(err)
 	}
+	pinRepositoryHarnessActiveT(t, st)
 	if err := state.CaptureGitBaseline(config.AppConfig{RepoRoot: repo}, st); err != nil {
 		t.Fatal(err)
 	}

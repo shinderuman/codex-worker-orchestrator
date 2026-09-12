@@ -50,6 +50,7 @@ func TestQualitySurfaceApprovalStopsBeforeConvergenceAndReusesWorkerResult(t *te
 	if _, err := st.StartNewTask(); err != nil {
 		t.Fatal(err)
 	}
+	pinRepositoryHarnessInactiveT(t, st)
 	if err := state.CaptureGitBaseline(cfg, st); err != nil {
 		t.Fatal(err)
 	}
@@ -155,6 +156,7 @@ func TestQualitySurfaceApprovalStopsAgainAfterLaterOutOfScopeMutation(t *testing
 	if _, err := st.StartNewTask(); err != nil {
 		t.Fatal(err)
 	}
+	pinRepositoryHarnessActiveT(t, st)
 	if err := state.CaptureGitBaseline(cfg, st); err != nil {
 		t.Fatal(err)
 	}
@@ -266,6 +268,7 @@ func TestQualitySurfaceApprovalGeneratesTaskScopeOnProductionDirtyBaseline(t *te
 	if _, err := st.StartNewTask(); err != nil {
 		t.Fatal(err)
 	}
+	pinRepositoryHarnessActiveT(t, st)
 	if err := state.CaptureGitBaseline(cfg, st); err != nil {
 		t.Fatal(err)
 	}
@@ -379,6 +382,7 @@ func TestQualitySurfaceApprovalScopesPostBaselinePreexistingEdits(t *testing.T) 
 	if _, err := st.StartNewTask(); err != nil {
 		t.Fatal(err)
 	}
+	pinRepositoryHarnessActiveT(t, st)
 	if err := state.CaptureGitBaseline(cfg, st); err != nil {
 		t.Fatal(err)
 	}

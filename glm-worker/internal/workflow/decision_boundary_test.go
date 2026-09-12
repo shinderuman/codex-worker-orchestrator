@@ -101,6 +101,7 @@ func TestDecisionBoundaryContextDoesNotTrustPromptMarker(t *testing.T) {
 
 func TestRunWorkerModelInjectsPinnedTaskDecisionBoundary(t *testing.T) {
 	st := newStateStoreT(t)
+	pinRepositoryHarnessActiveT(t, st)
 	r := &scriptedRunner{steps: []runnerStep{{structured: needsSolDecisionPacket()}}}
 	w := newWorkflowT(t, st, r)
 	activeTaskPath := "IMPLEMENTATION_TASKS/task.md"
@@ -151,6 +152,7 @@ func TestRunWorkerModelInjectsPinnedTaskDecisionBoundary(t *testing.T) {
 
 func TestRunWorkerModelTreatsLegacyTaskAxesAsUnresolvedWithoutExtraModelCall(t *testing.T) {
 	st := newStateStoreT(t)
+	pinRepositoryHarnessActiveT(t, st)
 	r := &scriptedRunner{steps: []runnerStep{{structured: needsSolDecisionPacket()}}}
 	w := newWorkflowT(t, st, r)
 	activeTaskPath := "IMPLEMENTATION_TASKS/legacy.md"
@@ -181,6 +183,7 @@ func TestRunWorkerModelTreatsLegacyTaskAxesAsUnresolvedWithoutExtraModelCall(t *
 
 func TestRunWorkerModelRejectsMalformedDecisionAuthorityBeforeModelCall(t *testing.T) {
 	st := newStateStoreT(t)
+	pinRepositoryHarnessActiveT(t, st)
 	r := &scriptedRunner{}
 	w := newWorkflowT(t, st, r)
 	activeTaskPath := "IMPLEMENTATION_TASKS/bad.md"

@@ -52,6 +52,7 @@ func newQualitySurfaceDecisionWorkflow(t *testing.T, steps []runnerStep) (string
 	if _, err := st.StartNewTask(); err != nil {
 		t.Fatal(err)
 	}
+	pinRepositoryHarnessInactiveT(t, st)
 	if err := state.CaptureGitBaseline(cfg, st); err != nil {
 		t.Fatal(err)
 	}

@@ -284,6 +284,9 @@ func newWorkflowTWithOutput(t *testing.T, st *state.StateStore, r *scriptedRunne
 	repoRoot := t.TempDir()
 	gitIn(t, repoRoot, "init", "-q")
 	trackRepositoryHarnessMarker(t, repoRoot)
+	if st.TaskStatus() != state.TaskStatusActive {
+		pinRepositoryHarnessActiveT(t, st)
+	}
 	w := NewWorkflow(config.AppConfig{
 		WorkerModel:           "opus",
 		ReviewerModel:         "haiku",
