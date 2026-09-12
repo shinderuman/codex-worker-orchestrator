@@ -76,6 +76,7 @@ func TestConvergenceRecordsAutoFixRounds(t *testing.T) {
 
 func TestConvergenceRecordsDecisionRound(t *testing.T) {
 	st := newStateStoreT(t)
+	pinRepositoryHarnessActiveT(t, st)
 	if err := st.Write("last-request", "request"); err != nil {
 		t.Fatal(err)
 	}
