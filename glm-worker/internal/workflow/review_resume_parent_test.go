@@ -11,7 +11,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
