@@ -33,9 +33,17 @@ func TestAcceptedFixScopeAllowsOnlyPreviouslyReviewedChangesToRemain(t *testing.
 	writeScopeFile(t, repo, "code.go", "package sample\n\nvar baseline = 1\nvar retained = 2\nvar presentation = 3\nvar deadMakeEntry = 4\n")
 
 	w := NewWorkflow(cfg, st, nil, io.Discard)
-	w.prepareAcceptedFixScope(acceptedFixScopeCurrentDiff)
-	if !st.Exists(acceptedFixScopeStateFile) {
-		t.Fatal("accepted fix scope was not captured")
+	if err := w.prepareAcceptedFixScopeChecked(acceptedFixScopeCurrentDiff); err != nil {
+		t.Fatal(err)
+	}
+	if !st.Exists(acceptedFixScopePendingStateFile) {
+		t.Fatal("accepted fix scope was not staged")
+	}
+	if st.Exists(acceptedFixScopeStateFile) {
+		t.Fatal("accepted fix scope became live before its parent action")
+	}
+	if err := st.SetTaskStatus(state.TaskStatusActive); err != nil {
+		t.Fatal(err)
 	}
 
 	writeScopeFile(t, repo, "code.go", "package sample\n\nvar baseline = 1\nvar retained = 2\n")
@@ -44,7 +52,9 @@ func TestAcceptedFixScopeAllowsOnlyPreviouslyReviewedChangesToRemain(t *testing.
 	}
 
 	writeScopeFile(t, repo, "code.go", "package sample\n\nvar baseline = 1\nvar retained = 2\nvar presentation = 3\nvar deadMakeEntry = 4\n")
-	w.prepareAcceptedFixScope(acceptedFixScopeCurrentDiff)
+	if err := w.prepareAcceptedFixScopeChecked(acceptedFixScopeCurrentDiff); err != nil {
+		t.Fatal(err)
+	}
 	writeScopeFile(t, repo, "code.go", "package sample\n\nvar baseline = 1\nvar retained = 2\nvar newSemanticChoice = 9\n")
 	if w.acceptedFixScopeCoversCurrent() {
 		t.Fatal("new semantic change must not fit the accepted scope")
@@ -70,9 +80,14 @@ func TestAcceptedFixScopeDisablesOptimizationForNonParentDirtyBaseline(t *testin
 		t.Fatal(err)
 	}
 	w := NewWorkflow(cfg, st, nil, io.Discard)
-	w.prepareAcceptedFixScope(acceptedFixScopeCurrentDiff)
+	if err := w.prepareAcceptedFixScopeChecked(acceptedFixScopeCurrentDiff); err != nil {
+		t.Fatal(err)
+	}
 	if st.Exists(acceptedFixScopeStateFile) {
 		t.Fatal("non-parent dirty baseline must keep the existing Sol risk-floor path")
+	}
+	if w.acceptedFixScopeContainsCurrent() {
+		t.Fatal("non-parent dirty baseline must not stage a consumable accepted scope")
 	}
 }
 
