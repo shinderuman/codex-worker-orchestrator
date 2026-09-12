@@ -17,12 +17,12 @@ import (
 )
 
 type acceptedFixScope struct {
-	Version             int            `json:"version"`
-	OwnerTaskID         string         `json:"owner_task_id"`
-	OwnerParentLease    int64          `json:"owner_parent_lease"`
-	OwnerAction         string         `json:"owner_action"`
-	BaselineHead        string         `json:"baseline_head"`
-	Changes             map[string]int `json:"changes"`
+	Version          int            `json:"version"`
+	OwnerTaskID      string         `json:"owner_task_id"`
+	OwnerParentLease int64          `json:"owner_parent_lease"`
+	OwnerAction      string         `json:"owner_action"`
+	BaselineHead     string         `json:"baseline_head"`
+	Changes          map[string]int `json:"changes"`
 }
 
 type acceptedPatchState struct {
