@@ -50,6 +50,9 @@ func MergeFiles(targetPath, fragmentPath, overridePath string) (bool, error) {
 }
 
 func mergeFilesWithWriter(targetPath, fragmentPath, overridePath string, writeFn writeFileFunc) (bool, error) {
+	if err := recoverSettingsTransaction(targetPath, writeFn); err != nil {
+		return false, err
+	}
 	target, targetMode, err := readObjectOrEmpty(targetPath)
 	if err != nil {
 		return false, fmt.Errorf("target JSON: %w", err)
@@ -81,7 +84,7 @@ func mergeFilesWithWriter(targetPath, fragmentPath, overridePath string, writeFn
 	}
 	nextOverride := snapshotEnvBaselines(target, override)
 	applyEnvPatch(target, override)
-	plans, changed, err := planWrites(
+	plans, targetChanged, err := planWrites(
 		targetPath,
 		overrideStatePath,
 		managedStatePath,
@@ -96,13 +99,13 @@ func mergeFilesWithWriter(targetPath, fragmentPath, overridePath string, writeFn
 	if err != nil {
 		return false, err
 	}
-	if !changed {
+	if len(plans) == 0 {
 		return false, nil
 	}
-	if err := commitTransaction(plans, writeFn); err != nil {
+	if err := commitRecoverableTransaction(targetPath, plans, writeFn); err != nil {
 		return false, err
 	}
-	return true, nil
+	return targetChanged, nil
 }
 
 func planWrites(
@@ -142,7 +145,7 @@ func planWrites(
 		}
 		plans = append(plans, plannedWrite{path: managedStatePath, data: data, mode: 0o600})
 	}
-	return plans, targetChanged || overrideStateChanged || managedStateChanged, nil
+	return plans, targetChanged, nil
 }
 
 func marshalObject(value any) ([]byte, error) {
