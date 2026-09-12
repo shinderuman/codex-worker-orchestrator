@@ -299,8 +299,8 @@ func TestIsolateReplayFailsClosedOnStaleRecord(t *testing.T) {
 		}
 		var result isolateOutput
 		if err := json.Unmarshal([]byte(out.String()), &result); err != nil {
-				t.Fatalf("隔離結果JSONを解析できません: %v: %s", err, out.String())
-			}
+			t.Fatalf("隔離結果JSONを解析できません: %v: %s", err, out.String())
+		}
 		return cfg, st, result
 	}
 	tests := []struct {
@@ -318,7 +318,6 @@ func TestIsolateReplayFailsClosedOnStaleRecord(t *testing.T) {
 			wantIn: "隔離先worktreeが存在しないため",
 		},
 		{
-
 			name: "branch削除",
 			damage: func(t *testing.T, _ *state.StateStore, result isolateOutput) {
 				if output, err := exec.Command("git", "-C", repo, "worktree", "remove", "--force", result.Worktree).CombinedOutput(); err != nil {
