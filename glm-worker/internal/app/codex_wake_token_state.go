@@ -11,10 +11,10 @@ import (
 )
 
 type codexWakeTokenLease struct {
-	activePath    string
-	leasePath     string
-	deliveredPath string
-	lock          *repoLockLease
+	activePath   string
+	leasePath    string
+	deliveryPath string
+	lock         *repoLockLease
 }
 
 const codexWakeTokenStateDir = "glm-worker-wake-transactions"
@@ -55,10 +55,10 @@ func beginCodexWakeToken(codexConfigDir, token string) (codexWakeTokenLease, err
 		return codexWakeTokenLease{}, fmt.Errorf("claim wake transaction token lock: %w", err)
 	}
 	lease := codexWakeTokenLease{
-		activePath:    active,
-		leasePath:     leasePath,
-		deliveredPath: active + ".delivered",
-		lock:          lock,
+		activePath:   active,
+		leasePath:    leasePath,
+		deliveryPath: active + ".delivering",
+		lock:         lock,
 	}
 	data, err := os.ReadFile(active)
 	if errors.Is(err, os.ErrNotExist) {
@@ -69,6 +69,16 @@ func beginCodexWakeToken(codexConfigDir, token string) (codexWakeTokenLease, err
 				return codexWakeTokenLease{}, err
 			}
 			return lease, nil
+		}
+		if errors.Is(err, os.ErrNotExist) {
+			if delivery, deliveryErr := os.ReadFile(lease.deliveryPath); deliveryErr == nil {
+				if err := validateCodexWakeTokenState(delivery, token); err != nil {
+					lease.releaseLock()
+					return codexWakeTokenLease{}, err
+				}
+				lease.releaseLock()
+				return codexWakeTokenLease{}, fmt.Errorf("wake transaction token response delivery is unresolved")
+			}
 		}
 	}
 	if err != nil {
@@ -94,16 +104,16 @@ func validateCodexWakeTokenState(data []byte, token string) error {
 	return nil
 }
 
-func (lease codexWakeTokenLease) markDelivered() error {
-	if err := os.Rename(lease.leasePath, lease.deliveredPath); err != nil {
-		return fmt.Errorf("mark wake transaction token delivered: %w", err)
+func (lease codexWakeTokenLease) markDelivering() error {
+	if err := os.Rename(lease.leasePath, lease.deliveryPath); err != nil {
+		return fmt.Errorf("mark wake transaction token delivering: %w", err)
 	}
 	return nil
 }
 
 func (lease codexWakeTokenLease) commit() error {
 	defer lease.releaseLock()
-	if err := removeCodexWakeLeaseFile(lease.deliveredPath); err != nil && !os.IsNotExist(err) {
+	if err := removeCodexWakeLeaseFile(lease.deliveryPath); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("finalize wake transaction token: %w", err)
 	}
 	return nil
@@ -114,8 +124,8 @@ func (lease codexWakeTokenLease) rollback() {
 	lease.releaseLock()
 }
 
-func (lease codexWakeTokenLease) rollbackDelivered() {
-	_ = os.Rename(lease.deliveredPath, lease.activePath)
+func (lease codexWakeTokenLease) rollbackDelivering() {
+	_ = os.Rename(lease.deliveryPath, lease.activePath)
 	lease.releaseLock()
 }
 
