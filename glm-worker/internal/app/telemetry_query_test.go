@@ -340,7 +340,7 @@ func TestStatsCurrentScopeUndatedArchiveAndNanoBounds(t *testing.T) {
 	}
 }
 
-func TestStatsHistoryScopeCohortQuery(t *testing.T) {
+func TestStatsHistoryScopeUsesCurrentSchemaOnly(t *testing.T) {
 	cfg := newAppConfig(t)
 	st := state.AttachStateStore(cfg)
 	if err := os.MkdirAll(st.Path("telemetry"), 0o700); err != nil {
@@ -367,7 +367,7 @@ func TestStatsHistoryScopeCohortQuery(t *testing.T) {
 	}
 	rendered := out.String()
 	if strings.Contains(rendered, "raw-old-prompt-must-not-leak") {
-		t.Fatalf("history出力へraw promptが漏れています: %s", rendered)
+		t.Fatalf("history出力へunsupported old promptが漏れています: %s", rendered)
 	}
 	decoded := decodeSingleLineJSON(t, rendered)
 	query, _ := decoded["query"].(map[string]any)
@@ -376,35 +376,27 @@ func TestStatsHistoryScopeCohortQuery(t *testing.T) {
 	}
 	telemetry, _ := decoded["telemetry"].(map[string]any)
 	cohorts, _ := telemetry["cohorts"].([]any)
-	if len(cohorts) != 2 {
+	if len(cohorts) != 1 {
 		t.Fatalf("cohorts = %#v", cohorts)
 	}
-	oldCohort, _ := cohorts[0].(map[string]any)
-	if oldCohort["schema_revision"].(float64) != 0 || oldCohort["excluded_reason"] != nil {
-		t.Fatalf("旧cohort = %#v", oldCohort)
-	}
-	if oldCohort["files"].(float64) != 1 || oldCohort["tasks"].(float64) != 1 {
-		t.Fatalf("旧cohortのfile/task数 = %#v", oldCohort)
-	}
-	aggregates, _ := oldCohort["aggregates"].(map[string]any)
-	if aggregates["model_calls"].(float64) != 2 {
-		t.Fatalf("旧cohort集計 = %#v", aggregates)
-	}
-	coverage, _ := oldCohort["coverage"].(map[string]any)
-	if coverage["usage_totals_known"] != false || coverage["task_calls_missing_usage"].(float64) != 1 {
-		t.Fatalf("旧cohort coverage = %#v", coverage)
-	}
-	currentCohort, _ := cohorts[1].(map[string]any)
-	if currentCohort["current_schema"] != true || currentCohort["excluded_reason"] != state.TelemetryExclusionCurrentSchema {
+	currentCohort, _ := cohorts[0].(map[string]any)
+	if currentCohort["current_schema"] != true || currentCohort["schema_revision"].(float64) != float64(state.ModelCallLogSchemaRevision) {
 		t.Fatalf("current cohort = %#v", currentCohort)
 	}
+	if currentCohort["records"].(map[string]any)["task_calls"].(float64) != 1 {
+		t.Fatalf("current cohort records = %#v", currentCohort)
+	}
+	aggregates, _ := currentCohort["aggregates"].(map[string]any)
+	if aggregates["model_calls"].(float64) != 1 {
+		t.Fatalf("current cohort aggregates = %#v", aggregates)
+	}
 	malformed, _ := telemetry["malformed_records"].(map[string]any)
-	if malformed["count"].(float64) != 1 {
-		t.Fatalf("malformed = %#v", malformed)
+	if malformed["count"].(float64) != 3 {
+		t.Fatalf("unsupported/malformed records = %#v", malformed)
 	}
 }
 
-func TestCallOutliersHistoryPopulationFromOldCohort(t *testing.T) {
+func TestCallOutliersHistoryUsesCurrentSchemaPopulation(t *testing.T) {
 	cfg := newAppConfig(t)
 	st := state.AttachStateStore(cfg)
 	if err := os.MkdirAll(st.Path("telemetry"), 0o700); err != nil {
@@ -412,26 +404,20 @@ func TestCallOutliersHistoryPopulationFromOldCohort(t *testing.T) {
 	}
 	taskID := "44444444-4444-4444-8444-444444444444"
 	base := time.Date(2026, 9, 1, 9, 0, 0, 0, time.UTC)
-	lines := make([]string, 0, 42)
+	lines := make([]string, 0, 41)
 	for index := 0; index < 20; index++ {
-		turns := 10
-		callID := "old-normal"
-		if index == 19 {
-			turns = 100
-			callID = "old-spike"
-		}
 		lines = append(lines, fmt.Sprintf(
-			`{"version":3,"call_id":%q,"call_type":"task","task_id":%q,"started_at":%q,"phase":"worker-new","role":"worker","model_alias":"opus","top_level_turns":%d,"wall_duration_ms":1000,"prompt":"raw-old-prompt-must-not-leak"}`,
-			callID, taskID, base.Add(time.Duration(index)*time.Minute).Format(time.RFC3339), turns,
+			`{"version":3,"call_id":%q,"call_type":"task","task_id":%q,"started_at":%q,"phase":"worker-new","role":"worker","model_alias":"opus","top_level_turns":100,"wall_duration_ms":1000,"prompt":"raw-old-prompt-must-not-leak"}`,
+			"old-v3", taskID, base.Add(time.Duration(index)*time.Minute).Format(time.RFC3339),
 		))
 	}
 	for index := 0; index < 20; index++ {
 		lines = append(lines, fmt.Sprintf(
 			`{"version":2,"call_id":%q,"call_type":"task","task_id":%q,"started_at":%q,"phase":"worker-new","role":"worker","model_alias":"opus","top_level_turns":200,"wall_duration_ms":1000}`,
-			"v2-normal", taskID, base.Add(time.Duration(index)*time.Second).Format(time.RFC3339),
+			"old-v2", taskID, base.Add(time.Duration(index)*time.Second).Format(time.RFC3339),
 		))
 	}
-	lines = append(lines, "{\"version\":3,\"schema_revision\":1,\"call_id\":\"cur-spike\",\"call_type\":\"task\",\"task_id\":\""+taskID+"\",\"started_at\":\""+base.Add(time.Hour).Format(time.RFC3339)+"\",\"phase\":\"worker-new\",\"role\":\"worker\",\"model_alias\":\"haiku\",\"top_level_turns\":900,\"wall_duration_ms\":1000}")
+	lines = append(lines, "{\"version\":3,\"schema_revision\":1,\"call_id\":\"cur-only\",\"call_type\":\"task\",\"task_id\":\""+taskID+"\",\"started_at\":\""+base.Add(time.Hour).Format(time.RFC3339)+"\",\"phase\":\"worker-new\",\"role\":\"worker\",\"model_alias\":\"haiku\",\"top_level_turns\":9,\"wall_duration_ms\":1000}")
 	if err := os.WriteFile(st.Path("telemetry/"+taskID+".jsonl"), []byte(strings.Join(lines, "\n")+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -446,7 +432,7 @@ func TestCallOutliersHistoryPopulationFromOldCohort(t *testing.T) {
 	}
 	rendered := out.String()
 	if strings.Contains(rendered, "raw-old-prompt-must-not-leak") {
-		t.Fatalf("history出力へraw promptが漏れています: %s", rendered)
+		t.Fatalf("history出力へunsupported old promptが漏れています: %s", rendered)
 	}
 	decoded := decodeSingleLineJSON(t, rendered)
 	query, _ := decoded["query"].(map[string]any)
@@ -454,46 +440,24 @@ func TestCallOutliersHistoryPopulationFromOldCohort(t *testing.T) {
 		t.Fatalf("query = %#v", query)
 	}
 	reports, _ := decoded["reports"].([]any)
-	if len(reports) != 2 {
-		t.Fatalf("cohort別report数 = %d: %#v", len(reports), reports)
+	if len(reports) != 1 {
+		t.Fatalf("current-schema report数 = %d: %#v", len(reports), reports)
 	}
-	v2Report, _ := reports[0].(map[string]any)
-	if v2Report["version"].(float64) != 2 || v2Report["schema_revision"].(float64) != 0 {
-		t.Fatalf("report[0]のcohort key = %#v", v2Report)
+	report, _ := reports[0].(map[string]any)
+	if report["version"].(float64) != float64(state.ModelCallLogVersion) || report["schema_revision"].(float64) != float64(state.ModelCallLogSchemaRevision) {
+		t.Fatalf("report cohort key = %#v", report)
 	}
-	v2Records, _ := v2Report["report"].(map[string]any)["records"].(map[string]any)
-	if v2Records["task_calls"].(float64) != 20 {
-		t.Fatalf("v2母集団 = %#v", v2Records)
-	}
-	v2Outliers, _ := v2Report["report"].(map[string]any)["outlier_calls"].([]any)
-	if len(v2Outliers) != 0 {
-		t.Fatalf("v2 cohort内でoutlierが出ています: %#v", v2Outliers)
-	}
-	v3Report, _ := reports[1].(map[string]any)
-	if v3Report["version"].(float64) != 3 || v3Report["schema_revision"].(float64) != 0 {
-		t.Fatalf("report[1]のcohort key = %#v", v3Report)
-	}
-	v3Body, _ := v3Report["report"].(map[string]any)
-	v3Records, _ := v3Body["records"].(map[string]any)
-	if v3Records["task_calls"].(float64) != 20 {
-		t.Fatalf("v3母集団 = %#v", v3Records)
-	}
-	v3Outliers, _ := v3Body["outlier_calls"].([]any)
-	if len(v3Outliers) != 1 {
-		t.Fatalf("v3 cohort内のoutlier = %#v", v3Outliers)
-	}
-	outlier, _ := v3Outliers[0].(map[string]any)
-	if outlier["call_id"] != "old-spike" || outlier["turns"].(float64) != 100 {
-		t.Fatalf("outlier = %#v", outlier)
+	records, _ := report["report"].(map[string]any)["records"].(map[string]any)
+	if records["task_calls"].(float64) != 1 {
+		t.Fatalf("current schema population = %#v", records)
 	}
 	telemetry, _ := decoded["telemetry"].(map[string]any)
-	cohorts, _ := telemetry["cohorts"].([]any)
-	if len(cohorts) != 3 {
-		t.Fatalf("cohorts = %#v", cohorts)
+	if telemetry["malformed_records"].(map[string]any)["count"].(float64) != 40 {
+		t.Fatalf("unsupported old records = %#v", telemetry)
 	}
-	currentCohort, _ := cohorts[len(cohorts)-1].(map[string]any)
-	if currentCohort["records"].(map[string]any)["task_calls"].(float64) != 1 {
-		t.Fatalf("current cohortの除外count = %#v", currentCohort)
+	cohorts, _ := telemetry["cohorts"].([]any)
+	if len(cohorts) != 1 || cohorts[0].(map[string]any)["records"].(map[string]any)["task_calls"].(float64) != 1 {
+		t.Fatalf("current cohort = %#v", cohorts)
 	}
 }
 
@@ -517,7 +481,7 @@ func TestCallOutliersCurrentScopePeriodFilter(t *testing.T) {
 	st.RecordModelCallLog(state.ModelCallLog{
 		Version: 3, CallType: state.CallTypeTask, TaskID: taskID, SessionID: "sess-a",
 		Role: state.WorkerRole, ModelAlias: "opus", Phase: "worker-new",
-		StartedAt: base.Add(48 * time.Hour), CompletedAt: base.Add(48 * time.Hour).Add(time.Minute),
+		StartedAt: base.Add(48 * time.Hour), CompletedAt: base.Add(48*time.Hour).Add(time.Minute),
 		Outcome: "success", WallDurationMS: 60000, TopLevelTurns: 20,
 	})
 
