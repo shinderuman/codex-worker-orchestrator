@@ -315,15 +315,8 @@ func (s *StateStore) LoadResumeCheckpoint() (ResumeCheckpoint, error) {
 	if explicitKeys.StopKind == nil {
 		return ResumeCheckpoint{}, fmt.Errorf("resume state v6にstop_kind keyがありません")
 	}
-	var persistedKeys map[string]json.RawMessage
-	if err := json.Unmarshal(data, &persistedKeys); err != nil {
-		return ResumeCheckpoint{}, fmt.Errorf("resume stateを読めません: %w", err)
-	}
-	if _, legacy := persistedKeys["stop_parent_files"]; legacy {
-		return ResumeCheckpoint{}, fmt.Errorf("resume stateを読めません: legacy stop_parent_files key")
-	}
-	if _, legacy := persistedKeys["reset_at_cst"]; legacy {
-		return ResumeCheckpoint{}, fmt.Errorf("resume stateを読めません: legacy reset_at_cst key")
+	if err := validateResumePersistedKeys(data); err != nil {
+		return ResumeCheckpoint{}, err
 	}
 	if checkpoint.Model == "" {
 		return ResumeCheckpoint{}, fmt.Errorf("resume state model is required")
@@ -333,6 +326,19 @@ func (s *StateStore) LoadResumeCheckpoint() (ResumeCheckpoint, error) {
 	}
 	checkpoint.ResetAtCST = rateLimitResetAtCST(checkpoint.ResetAtRFC3339)
 	return checkpoint, nil
+}
+
+func validateResumePersistedKeys(data []byte) error {
+	var persistedKeys map[string]json.RawMessage
+	if err := json.Unmarshal(data, &persistedKeys); err != nil {
+		return fmt.Errorf("resume stateを読めません: %w", err)
+	}
+	for _, key := range []string{"stop_parent_files", "reset_at_cst"} {
+		if _, legacy := persistedKeys[key]; legacy {
+			return fmt.Errorf("resume stateを読めません: legacy %s key", key)
+		}
+	}
+	return nil
 }
 
 func rateLimitResetAtCST(resetAtRFC3339 string) string {
