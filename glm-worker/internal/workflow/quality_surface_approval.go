@@ -3,6 +3,7 @@ package workflow
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
@@ -103,13 +104,6 @@ func (w *Workflow) loadApprovedQualitySurfaceCheckpoint() (state.ResumeCheckpoin
 	if !w.acceptedFixScopeContainsCurrent() {
 		return checkpoint, true, w.discardAcceptedFixScopeAfterFailure(&WorkerError{Phase: checkpoint.Phase, Message: "current diff is not covered by the parent-approved quality-surface scope"})
 	}
-	stopped, err := w.verifyQualitySurfaceBaseline(checkpoint.Phase)
-	if err != nil || stopped {
-		if err == nil {
-			err = &WorkerError{Phase: checkpoint.Phase, Message: "quality-surface approval validation stopped before activation"}
-		}
-		return checkpoint, true, w.discardAcceptedFixScopeAfterFailure(err)
-	}
 	return checkpoint, true, nil
 }
 
@@ -127,10 +121,63 @@ func (w *Workflow) validateApprovedQualitySurfaceRetention(checkpoint state.Resu
 }
 
 func (w *Workflow) activateApprovedQualitySurface() error {
+	checkpoint, err := w.state.LoadResumeCheckpoint()
+	if err != nil {
+		return w.discardAcceptedFixScopeAfterFailure(err)
+	}
+	if !w.acceptedFixScopeContainsCurrent() {
+		return w.discardAcceptedFixScopeAfterFailure(&WorkerError{Phase: checkpoint.Phase, Message: "current diff is not covered by the parent-approved quality-surface scope"})
+	}
+	previousBaseline, approvedBaseline, advance, err := w.prepareApprovedQualitySurfaceBaseline(checkpoint.Phase)
+	if err != nil {
+		return w.discardAcceptedFixScopeAfterFailure(err)
+	}
+	if advance {
+		if err := w.state.Write(qualitySurfaceBaselineStateKey, approvedBaseline); err != nil {
+			return w.discardAcceptedFixScopeAfterFailure(fmt.Errorf("persist approved quality-surface baseline: %w", err))
+		}
+	}
 	if err := w.state.ActivateQualitySurfaceApproval(); err != nil {
+		if advance {
+			if rollbackErr := w.state.Write(qualitySurfaceBaselineStateKey, previousBaseline); rollbackErr != nil {
+				err = fmt.Errorf("quality-surface approval activation failed and baseline rollback failed: activation=%w rollback=%w", err, rollbackErr)
+			}
+		}
 		return w.discardAcceptedFixScopeAfterFailure(err)
 	}
 	return nil
+}
+
+func (w *Workflow) prepareApprovedQualitySurfaceBaseline(phase string) (string, string, bool, error) {
+	current, err := w.captureQualitySurface(w.config.RepoRoot)
+	if err != nil {
+		return "", "", false, w.approvedQualitySurfaceValidationFailure(phase, "quality policy surfaceを再計測できません", err)
+	}
+	if current == "" {
+		return "", "", false, nil
+	}
+	if !w.state.Exists(qualitySurfaceBaselineStateKey) {
+		return "", "", false, w.approvedQualitySurfaceValidationFailure(
+			phase,
+			"worker開始時のquality policy baselineがありません",
+			fmt.Errorf("required state %s is missing", qualitySurfaceBaselineStateKey),
+		)
+	}
+	baseline, err := w.state.Read(qualitySurfaceBaselineStateKey)
+	if err != nil {
+		return "", "", false, w.approvedQualitySurfaceValidationFailure(phase, "worker開始時のquality policy baselineを読めません", err)
+	}
+	if strings.TrimSpace(baseline) == current {
+		return baseline, current, false, nil
+	}
+	return baseline, current, true, nil
+}
+
+func (w *Workflow) approvedQualitySurfaceValidationFailure(phase, reason string, cause error) error {
+	if err := w.failClosedQualitySurface(phase, reason, cause); err != nil {
+		return err
+	}
+	return &WorkerError{Phase: phase, Message: "quality-surface approval validation stopped before activation"}
 }
 
 func (w *Workflow) routeApprovedQualitySurface(checkpoint state.ResumeCheckpoint, result packet.Result) error {
