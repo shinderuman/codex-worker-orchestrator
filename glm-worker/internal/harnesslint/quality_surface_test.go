@@ -3,6 +3,7 @@ package harnesslint
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -49,4 +50,21 @@ func TestQualityWiringPackageAllowsResponsibilitySplit(t *testing.T) {
 	if len(violations) != 0 {
 		t.Fatalf("violations = %+v", violations)
 	}
+}
+
+func TestQualityWiringRejectsCheckBeforeFix(t *testing.T) {
+	root := t.TempDir()
+	check := qualityWiringChecks()[0]
+	writeQualityFile(t, root, check.path, "package workflow\nfunc gate() { harnesslint.Check(root); harnesslint.Run(root, true); captureQualitySurfaceDigest(root) }\n")
+
+	violations, err := qualityWiringCheckViolations(root, map[string]bool{check.path: true}, check)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, violation := range violations {
+		if strings.Contains(violation.Message, "wiring order is invalid") {
+			return
+		}
+	}
+	t.Fatalf("check-before-fix ordering was not rejected: %+v", violations)
 }
