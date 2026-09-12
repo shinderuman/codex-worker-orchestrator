@@ -32,6 +32,7 @@ var taskBoundStatePolicies = []taskBoundStatePolicy{
 	{name: "baseline-head", lifetime: taskBoundStateFreshTaskClear},
 	{name: "baseline-worktree.patch", lifetime: taskBoundStateFreshTaskClear},
 	{name: "baseline-index.patch", lifetime: taskBoundStateFreshTaskClear},
+	{name: baselineUntrackedFile, lifetime: taskBoundStateFreshTaskClear},
 	{name: "accepted-fix-scope.json", lifetime: taskBoundStateFreshTaskClear},
 	{name: ExecutionMilestonesStateFile, lifetime: taskBoundStateFreshTaskClear},
 	{name: ResultCorrectionStateFile, lifetime: taskBoundStateFreshTaskClear},
