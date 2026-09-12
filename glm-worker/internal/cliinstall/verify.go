@@ -18,6 +18,9 @@ func Verify(binDir string) error {
 		if !ok {
 			return fmt.Errorf("repository CLI expected identity is missing: %s", name)
 		}
+		if owned, ok := state.Binaries[name]; ok && owned != expected {
+			return fmt.Errorf("repository CLI ownership state is stale for expected identity: %s", name)
+		}
 		target := filepath.Join(binDir, name)
 		info, exists, err := lstat(target)
 		if err != nil {
