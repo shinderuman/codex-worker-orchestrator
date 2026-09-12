@@ -40,6 +40,11 @@ type unparkOutput struct {
 const parkBranchPrefix = "glm-worker/park/"
 
 func (w *Workflow) ExecutePark(stdout io.Writer) error {
+	if _, cleanupPending, err := w.state.PendingUnparkCleanup(); err != nil {
+		return &WorkerError{Phase: "park", Message: "unpark cleanup待ち状態を確認できません: " + err.Error()}
+	} else if cleanupPending {
+		return &WorkerError{Phase: "park", Message: "unpark cleanupが未完了のため新しいparkを開始できません。先にunparkを再実行してください"}
+	}
 	if w.state.TaskStatus() == state.TaskStatusParked {
 		record, err := w.state.LoadParkRecord()
 		if err != nil {
