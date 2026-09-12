@@ -316,50 +316,7 @@ func (w *Workflow) ExecuteExplicitFix(instruction, origin, cause string) error {
 
 func (w *Workflow) ExecuteExplicitFixWithScope(instruction, origin, cause, acceptedScope string) error {
 	return quietWhenParentFileGuardStopped(w.withTemp(func() error {
-		if err := w.admitParentAction(state.ParentActionFix); err != nil {
-			return err
-		}
-
-		request, err := w.state.Read("last-request")
-		if err != nil {
-			return &WorkerError{Message: "no previous task for this repository"}
-		}
-		w.prepareAcceptedFixScope(acceptedScope)
-
-		decision := w.state.ReadOr("last-decision", "none")
-		review := w.state.ReadOr("last-review", "none")
-		rollback, err := w.state.BeginParentFix(origin, cause)
-		if err != nil {
-			return err
-		}
-
-		activeTaskPath, err := w.ensureActiveTaskPath("worker-explicit-fix")
-		if err != nil {
-			return err
-		}
-
-		decl, err := w.gateExternalFeasibility("worker-explicit-fix", false)
-		if err != nil {
-			return err
-		}
-		pocStage := decl.pocStage()
-		prompt := explicitFixPrompt(request, decision, review, instruction, activeTaskPath)
-		checkpoint := state.ResumeCheckpoint{
-			Stage:          state.ResumeStageWorker,
-			Phase:          "worker-explicit-fix",
-			Role:           state.WorkerRole,
-			Model:          w.config.WorkerModel,
-			ReadOnly:       pocStage,
-			Effort:         w.config.EscalatedEffort,
-			Prompt:         prompt,
-			OriginalPrompt: prompt,
-			Request:        request,
-			Decision:       decision,
-		}
-		return w.rollbackWhenPreCallGuardFailure(
-			rollback,
-			w.executeWorkerCheckpointWithExhaustiveContext(request, activeTaskPath, checkpoint, pocStage),
-		)
+		return w.executeExplicitFixWithAcceptedScopeLifecycle(instruction, origin, cause, acceptedScope)
 	}))
 }
 
@@ -868,7 +825,7 @@ func reportOnlySnapshotFailClosedResult(stage state.SnapshotStage, reason string
 		Risk:                packet.RiskHigh,
 		Summary:             fmt.Sprintf("report-only PACKET再出力workerの開始前後でHEAD/index/worktree同一性を確認できず(%s)、通常reviewへ進めずSol確認へ昇格", stage),
 		RequirementCoverage: "report-only workerのrepo不変postconditionを機械強制できなかったためSolが直接確認する必要あり",
-		Invariants:          "wrapperはreport-only worker開始前snapshotと終了後状態の3軸一致を確認するまで通常reviewへ進まない",
+		Invariants:          "wrapperはreport-only worker開始前snapshotと終了後状態の3軸一致を確認するまで通常reviewへ進めない",
 		TestEvidence:        "開始前保存snapshotと終了後snapshotの比較で不一致または取得失敗を検出",
 		Issues:              reason,
 		ResidualRisk:        "report-only workerがrepositoryを変更した可能性とその意図を排除できなかった",
