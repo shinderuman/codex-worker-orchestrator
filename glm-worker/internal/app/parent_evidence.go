@@ -1027,6 +1027,9 @@ func parentReviewDiffFileCoversTarget(target string, file parentEvidenceDiffFile
 }
 
 func parentReviewDiffFileSection(body, path string) string {
+	if body == "" || path == "" {
+		return ""
+	}
 	return parentReviewQuotedDiffFileSection(body, path)
 }
 
