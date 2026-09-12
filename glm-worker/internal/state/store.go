@@ -185,37 +185,6 @@ func (s *StateStore) resumeTaskWithID(taskID string) (string, error) {
 	return taskID, nil
 }
 
-func newTaskTransitionStateFileNames() []string {
-	return []string{
-		"task.status",
-		parentCodexIdentityFile,
-		"isolation.policy",
-		"active-task",
-		"last-request",
-		"last-decision",
-		"pending-decision",
-		parentReviewStateFile,
-		"last-review",
-		"baseline-status",
-		"baseline-head",
-		"baseline-worktree.patch",
-		"baseline-index.patch",
-		"accepted-fix-scope.json",
-		ExecutionMilestonesStateFile,
-		ResultCorrectionStateFile,
-		stopWorktreePatchFile,
-		stopIndexPatchFile,
-		isolationStateFile,
-		resumeStateFile,
-		workerEndSnapshotFile,
-		reviewStartSnapshotFile,
-		reportOnlyStartSnapshotFile,
-		snapshotComparisonFile,
-		guardRepairStateFile,
-		runtimeInstallEvidenceFile,
-	}
-}
-
 func taskStateFileNames() []string {
 	names := []string{
 		"task.id",
