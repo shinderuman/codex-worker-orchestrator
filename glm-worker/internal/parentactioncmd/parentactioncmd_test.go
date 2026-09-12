@@ -275,7 +275,7 @@ func TestExecuteResumeIsNotBlockedByCorruptedTaskStats(t *testing.T) {
 	}
 	t.Setenv("CODEX_THREAD_ID", codexIdentityTestThreadID)
 	t.Setenv("CODEX_SESSION_ID", codexIdentityTestThreadID)
-	marker := writeParentActionWorkerStub(t, cfg, false)
+	marker := writeParentActionWorkerStub(t, cfg, true)
 	if err := execute(cfg, []string{"resume"}, nil, nil); err != nil {
 		t.Fatalf("破損statsでresumeがblockされました: %v", err)
 	}
@@ -331,9 +331,9 @@ func newParentActionTestState(t *testing.T) (config.AppConfig, *state.StateStore
 
 func writeParentActionWorkerStub(t *testing.T, cfg config.AppConfig, identityRequiredAtRun bool) string {
 	t.Helper()
-	check := "grep -q parent_codex_thread_id \"$GLM_TEST_STATS\""
+	check := "test -f \"$GLM_TEST_IDENTITY\" && grep -q '\"thread_id\"' \"$GLM_TEST_IDENTITY\""
 	if !identityRequiredAtRun {
-		check = "! " + check
+		check = "test ! -e \"$GLM_TEST_IDENTITY\""
 	}
 	return writeParentActionWorkerStubWithCheck(t, cfg, check)
 }
@@ -354,7 +354,7 @@ func writeParentActionWorkerStubWithCheck(t *testing.T, cfg config.AppConfig, ch
 	}
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("GLM_STUB_MARKER", marker)
-	t.Setenv("GLM_TEST_STATS", st.Path("task-stats.json"))
+	t.Setenv("GLM_TEST_IDENTITY", st.Path("parent-codex-identity.json"))
 	return marker
 }
 
