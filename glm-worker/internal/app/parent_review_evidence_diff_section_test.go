@@ -22,6 +22,16 @@ func TestParentReviewDiffCoversGitOctalQuotedPath(t *testing.T) {
 	}
 }
 
+func TestParentReviewDiffCoversUnquotedPathWithSpaces(t *testing.T) {
+	diff := parentEvidenceDiffBody{
+		Body: "diff --git a/hello world.go b/hello world.go\n--- a/hello world.go\n+++ b/hello world.go\n@@ -1 +1 @@\n-old\n+new\n",
+		Files: []parentEvidenceDiffFile{{Path: "hello world.go", Status: "M", HeadBlob: "blob", WorktreeSHA: "sha"}},
+	}
+	if !parentReviewDiffCoversTarget("hello world.go:1", diff) {
+		t.Fatal("unquoted diff path with spaces did not cover matching line target")
+	}
+}
+
 func TestParentReviewDiffBarePathRequiresVisibleSection(t *testing.T) {
 	diff := parentEvidenceDiffBody{
 		Body: "diff --git a/other.go b/other.go\n--- a/other.go\n+++ b/other.go\n@@ -1 +1 @@\n-old\n+new\n",
