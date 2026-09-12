@@ -29,6 +29,7 @@ type parentWaitRecoveryHandoff struct {
 }
 
 const parentWaitLockFile = "parent-wait.lock"
+const parentWaitRecoveryLockFile = "parent-wait-recovery.lock"
 
 const parentWaitStatusReleased = "released"
 
@@ -53,6 +54,12 @@ func executeParentWait(cfg config.AppConfig, args []string, stdout, stderr io.Wr
 	if err != nil {
 		return err
 	}
+	recovery, err := repolock.Acquire(st.Path(parentWaitRecoveryLockFile))
+	if err != nil {
+		return fmt.Errorf("acquire parent recovery waiter: %w", err)
+	}
+	defer func() { _ = recovery.Close() }()
+
 	owner, err := repolock.AcquireWait(st.Path(parentWaitLockFile))
 	if err != nil {
 		return fmt.Errorf("wait for parent owner: %w", err)
