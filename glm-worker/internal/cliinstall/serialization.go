@@ -1,6 +1,7 @@
 package cliinstall
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -48,7 +49,7 @@ func Retire(binDir string) ([]Result, error) {
 func joinCloseError(operationErr, closeErr error) error {
 	if operationErr != nil {
 		if closeErr != nil {
-			return fmt.Errorf("%w (release CLI install lock: %v)", operationErr, closeErr)
+			return errors.Join(operationErr, fmt.Errorf("release CLI install lock: %w", closeErr))
 		}
 		return operationErr
 	}
