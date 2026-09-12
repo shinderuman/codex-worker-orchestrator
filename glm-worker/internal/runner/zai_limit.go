@@ -55,19 +55,30 @@ func DetectZaiFiveHourLimitText(output string) (ZaiFiveHourLimit, bool) {
 		return limit, true
 	}
 
-	limit.ResetAtCST = match[1]
-
 	chinaStandardTime := time.FixedZone("CST", 8*60*60)
 	resetAt, err := time.ParseInLocation(
 		"2006-01-02 15:04:05",
-		limit.ResetAtCST,
+		match[1],
 		chinaStandardTime,
 	)
 	if err == nil {
 		limit.ResetAtRFC3339 = resetAt.Format(time.RFC3339)
+		limit.ResetAtCST = FormatZaiResetAtCST(limit.ResetAtRFC3339)
 	}
 
 	return limit, true
+}
+
+func FormatZaiResetAtCST(resetAtRFC3339 string) string {
+	if resetAtRFC3339 == "" {
+		return ""
+	}
+	resetAt, err := time.Parse(time.RFC3339, resetAtRFC3339)
+	if err != nil {
+		return ""
+	}
+	chinaStandardTime := time.FixedZone("CST", 8*60*60)
+	return resetAt.In(chinaStandardTime).Format("2006-01-02 15:04:05")
 }
 
 func (e ZaiRateLimitError) Error() string {
