@@ -797,9 +797,7 @@ func TestResumeProbeGateFailClosedOnNonTransientProbe(t *testing.T) {
 	if len(r.prompts) != 0 {
 		t.Fatalf("本task Runが0回であるべき: %d", len(r.prompts))
 	}
-	if _, cerr := st.LoadResumeCheckpoint(); cerr == nil {
-		t.Fatal("fail closed時はresume checkpointがclearされるべき")
-	}
+	requireProviderUnavailableStop(t, st)
 }
 
 func TestRecoveryHitsFiveHourLimitSavesRateLimited(t *testing.T) {
@@ -1157,12 +1155,7 @@ func TestResumeProbeGateAuthSignalFailsClosed(t *testing.T) {
 	if len(r.prompts) != 0 || len(r.probes) != 1 {
 		t.Fatalf("本task resumeも追加probeもしない: prompts=%d probes=%d", len(r.prompts), len(r.probes))
 	}
-	if _, cerr := st.LoadResumeCheckpoint(); cerr == nil {
-		t.Fatal("fail closed時はresume checkpointがclearされるべき")
-	}
-	if st.TaskStatus() != state.TaskStatusActive {
-		t.Fatalf("fail closed時のstatus = %q", st.TaskStatus())
-	}
+	requireProviderUnavailableStop(t, st)
 }
 
 func TestRecoveryProbeBareHTTPNumberStaysProbeContract(t *testing.T) {
