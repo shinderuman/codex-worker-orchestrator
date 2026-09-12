@@ -27,6 +27,9 @@ func TestAcceptedFixScopeAllowsOnlyPreviouslyReviewedChangesToRemain(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := st.StartNewTask(); err != nil {
+		t.Fatal(err)
+	}
 	if err := state.CaptureGitBaseline(cfg, st); err != nil {
 		t.Fatal(err)
 	}
@@ -74,6 +77,9 @@ func TestAcceptedFixScopeDisablesOptimizationForNonParentDirtyBaseline(t *testin
 	cfg := config.AppConfig{RepoRoot: repo, StateBase: t.TempDir(), RepoHash: "scope-dirty"}
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.StartNewTask(); err != nil {
 		t.Fatal(err)
 	}
 	if err := state.CaptureGitBaseline(cfg, st); err != nil {
