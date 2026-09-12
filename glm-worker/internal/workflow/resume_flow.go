@@ -3,6 +3,7 @@ package workflow
 import (
 	"errors"
 	"fmt"
+	"os"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
@@ -137,8 +138,22 @@ func (w *Workflow) gateResumeProvider(checkpoint state.ResumeCheckpoint) error {
 }
 
 func (w *Workflow) activateResume(checkpoint state.ResumeCheckpoint) error {
-	if err := w.state.BeginResume(checkpoint); err != nil {
-		return err
+	parentAction := os.Getenv(state.GuardRepairParentActionEnv)
+	attemptID := os.Getenv(state.GuardRepairResumeAttemptEnv)
+	switch {
+	case parentAction == state.GuardRepairRebuiltResume:
+		if attemptID == "" {
+			return fmt.Errorf("guard repair rebuilt resume requires attempt ID")
+		}
+		if err := w.state.BeginResumeWithEvidence(checkpoint, attemptID); err != nil {
+			return err
+		}
+	case attemptID != "":
+		return fmt.Errorf("guard repair resume attempt is only valid for rebuilt resume")
+	default:
+		if err := w.state.BeginResume(checkpoint); err != nil {
+			return err
+		}
 	}
 	w.currentResumeSource = checkpoint.StopKind.ResumeSource()
 	return nil

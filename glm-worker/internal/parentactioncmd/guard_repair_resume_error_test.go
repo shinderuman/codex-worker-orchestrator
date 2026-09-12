@@ -11,7 +11,7 @@ import (
 
 func TestResumeWithRepairedWorkerDoesNotCompleteFailedResume(t *testing.T) {
 	cfg, st, record := newGuardRepairLifecycleState(t)
-	source := guardRepairLifecycleWorkerSource(t, st, state.TaskStatusRateLimited, true)
+	source := guardRepairLifecycleEvidenceWorkerSource(t, st, state.TaskStatusRateLimited, false)
 	source = strings.TrimSuffix(source, " }\n") + "; os.Exit(23) }\n"
 	writeGuardRepairWorkerModule(t, cfg.RepoRoot, source)
 	persistReadyGuardRepair(t, cfg, st, &record)

@@ -140,18 +140,3 @@ func (s *StateStore) LoadGuardRepairRecord() (GuardRepairRecord, error) {
 	}
 	return record, nil
 }
-
-func (s *StateStore) TaskResumeCommands() (int, error) {
-	stats, err := s.loadTaskStats()
-	if err != nil {
-		return 0, err
-	}
-	taskID, err := s.TaskID()
-	if err != nil {
-		return 0, err
-	}
-	if stats.TaskID != taskID {
-		return 0, fmt.Errorf("task resume counter belongs to %s instead of %s", stats.TaskID, taskID)
-	}
-	return stats.ResumeCommands, nil
-}

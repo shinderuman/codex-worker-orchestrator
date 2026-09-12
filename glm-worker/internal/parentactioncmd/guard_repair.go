@@ -328,7 +328,11 @@ func resumeWithRepairedWorker(
 	if err != nil {
 		return errors.Join(initialErr, err, lock.Close())
 	}
-	resumeCommandsBefore, err := st.TaskResumeCommands()
+	checkpoint, err := currentGuardRepairCheckpoint(st, record, record.Phase)
+	if err != nil {
+		return errors.Join(initialErr, err, lock.Close())
+	}
+	attemptID, err := state.NewUUID()
 	if err != nil {
 		return errors.Join(initialErr, err, lock.Close())
 	}
@@ -343,6 +347,7 @@ func resumeWithRepairedWorker(
 	defer cleanup()
 
 	env := appendEnv(extraEnv, state.GuardRepairParentActionEnv, state.GuardRepairRebuiltResume)
+	env = appendEnv(env, state.GuardRepairResumeAttemptEnv, attemptID)
 	resumeErr := runResolvedWorker(worker, cfg.RepoRoot, []string{"--resume"}, nil, stdout, stderr, env)
 	lock, err = repolock.AcquireWait(st.LockPath())
 	if err != nil {
@@ -351,9 +356,8 @@ func resumeWithRepairedWorker(
 	if st.ReadOr("task.id", "") != record.TaskID {
 		return errors.Join(resumeErr, fmt.Errorf("original task changed before guard repair resume completed"), lock.Close())
 	}
-	resumeCommandsAfter, counterErr := st.TaskResumeCommands()
-	if counterErr != nil || resumeCommandsAfter <= resumeCommandsBefore {
-		failure := markGuardRepairFailed(st, record, errors.Join(resumeErr, counterErr, fmt.Errorf("repaired worker did not enter original resume lifecycle")))
+	if transitionErr := st.VerifyResumeTransitionEvidence(record.TaskID, attemptID, checkpoint); transitionErr != nil {
+		failure := markGuardRepairFailed(st, record, errors.Join(resumeErr, transitionErr, fmt.Errorf("repaired worker did not enter original resume lifecycle")))
 		return errors.Join(failure, lock.Close())
 	}
 	if st.TaskStatus() == state.TaskStatusGuardRecoverable {
