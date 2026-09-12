@@ -39,11 +39,8 @@ func TestAcceptedFixScopeAllowsOnlyPreviouslyReviewedChangesToRemain(t *testing.
 	if err := w.prepareAcceptedFixScopeChecked(acceptedFixScopeCurrentDiff); err != nil {
 		t.Fatal(err)
 	}
-	if !st.Exists(acceptedFixScopePendingStateFile) {
-		t.Fatal("accepted fix scope was not staged")
-	}
-	if st.Exists(acceptedFixScopeStateFile) {
-		t.Fatal("accepted fix scope became live before its parent action")
+	if !st.Exists(acceptedFixScopeStateFile) {
+		t.Fatal("accepted fix scope was not captured")
 	}
 	if err := st.SetTaskStatus(state.TaskStatusActive); err != nil {
 		t.Fatal(err)
@@ -93,7 +90,7 @@ func TestAcceptedFixScopeDisablesOptimizationForNonParentDirtyBaseline(t *testin
 		t.Fatal("non-parent dirty baseline must keep the existing Sol risk-floor path")
 	}
 	if w.acceptedFixScopeContainsCurrent() {
-		t.Fatal("non-parent dirty baseline must not stage a consumable accepted scope")
+		t.Fatal("non-parent dirty baseline must not leave a consumable accepted scope")
 	}
 }
 
