@@ -18,6 +18,8 @@ func TestRepositoryHarnessActivationPinRejectsInconsistentState(t *testing.T) {
 		{name: "missing", wantSubstring: "欠落"},
 		{name: "inactive", activation: stringPtr(repositoryharness.ActivationInactiveValue), wantSubstring: "inactive"},
 		{name: "unknown", activation: stringPtr("unexpected"), wantSubstring: "不正"},
+		{name: "padded-active", activation: stringPtr(" 1 "), wantSubstring: "不正"},
+		{name: "whitespace", activation: stringPtr(" "), wantSubstring: "不正"},
 	}
 
 	for _, tc := range cases {

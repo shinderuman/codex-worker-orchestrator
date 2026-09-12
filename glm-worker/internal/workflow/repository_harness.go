@@ -1,7 +1,9 @@
 package workflow
 
 import (
+	"errors"
 	"fmt"
+	"os"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
@@ -17,11 +19,11 @@ var repositoryHarnessGuardSurface = guardSurface{
 }
 
 func (w *Workflow) repositoryHarnessActive() (bool, error) {
-	if w.state.Exists(repositoryharness.ActivationStateKey) {
-		activation, err := w.state.Read(repositoryharness.ActivationStateKey)
-		if err != nil {
-			return false, fmt.Errorf("repository harness activation pinを読み込めません: %w", err)
-		}
+	activation, pinned, err := w.readRepositoryHarnessActivationPin()
+	if err != nil {
+		return false, err
+	}
+	if pinned {
 		switch activation {
 		case repositoryharness.ActivationActiveValue:
 			return true, nil
@@ -49,6 +51,24 @@ func (w *Workflow) repositoryHarnessActive() (bool, error) {
 		return false, err
 	}
 	return decision.Active, nil
+}
+
+func (w *Workflow) readRepositoryHarnessActivationPin() (string, bool, error) {
+	data, err := os.ReadFile(w.state.Path(repositoryharness.ActivationStateKey))
+	if errors.Is(err, os.ErrNotExist) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, fmt.Errorf("repository harness activation pinを読み込めません: %w", err)
+	}
+	switch string(data) {
+	case repositoryharness.ActivationActiveValue + "\n":
+		return repositoryharness.ActivationActiveValue, true, nil
+	case repositoryharness.ActivationInactiveValue + "\n":
+		return repositoryharness.ActivationInactiveValue, true, nil
+	default:
+		return "", false, fmt.Errorf("repository harness activation pinが不正です: %q", string(data))
+	}
 }
 
 func (w *Workflow) captureRepositoryHarnessBoundary() (repositoryharness.MarkerGuard, bool, bool, error) {
