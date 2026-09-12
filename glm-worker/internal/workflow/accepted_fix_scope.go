@@ -169,6 +169,10 @@ func (w *Workflow) acceptedFixScopeInvocationID() string {
 	if w.temp == "" {
 		return ""
 	}
+	info, err := os.Stat(w.temp)
+	if err != nil || !info.IsDir() {
+		return ""
+	}
 	sum := sha256.Sum256([]byte(w.temp))
 	return hex.EncodeToString(sum[:])
 }
