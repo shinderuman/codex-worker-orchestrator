@@ -75,7 +75,9 @@ type ResumeCheckpoint struct {
 
 	QualitySurfaceApprovalPending bool `json:"quality_surface_approval_pending,omitempty"`
 
-	StopParentFiles *ParentFileStates `json:"stop_parent_files,omitempty"`
+	// StopParentFiles is an in-memory derived view of StopGitSnapshot.ParentFiles.
+	// It is never persisted and must not be treated as a second authority.
+	StopParentFiles *ParentFileStates `json:"-"`
 
 	StopGitSnapshot *GitSnapshot `json:"stop_git_snapshot,omitempty"`
 
@@ -165,6 +167,11 @@ func (checkpoint *ResumeCheckpoint) SetStopKind(kind ResumeStopKind) {
 	checkpoint.StopKind = kind
 }
 
+func (checkpoint *ResumeCheckpoint) SetStopRepositoryBoundary(snapshot GitSnapshot) {
+	checkpoint.StopGitSnapshot = &snapshot
+	checkpoint.StopParentFiles = snapshot.ParentFiles
+}
+
 func (checkpoint *ResumeCheckpoint) ClearStop() {
 	checkpoint.clearStopPayload()
 	checkpoint.StopKind = ResumeStopNone
@@ -189,8 +196,37 @@ func (checkpoint *ResumeCheckpoint) clearStopPayload() {
 	if clearCompletedResult {
 		checkpoint.CompletedResult = nil
 	}
+	checkpoint.StopParentFiles = nil
 	checkpoint.StopGitSnapshot = nil
 	checkpoint.StopDirtyFiles = nil
+}
+
+func (checkpoint *ResumeCheckpoint) normalizeStopParentFilesForSave() error {
+	if checkpoint.StopGitSnapshot == nil {
+		if checkpoint.StopParentFiles == nil {
+			return nil
+		}
+		checkpoint.StopGitSnapshot = &GitSnapshot{ParentFiles: checkpoint.StopParentFiles}
+		return nil
+	}
+	canonical := checkpoint.StopGitSnapshot.ParentFiles
+	if checkpoint.StopParentFiles == nil {
+		if checkpoint.Stage == ResumeStageReview {
+			checkpoint.StopGitSnapshot.ParentFiles = nil
+		}
+		return nil
+	}
+	if canonical == nil || !SameParentFileStates(*canonical, *checkpoint.StopParentFiles) {
+		return fmt.Errorf("stop parent files diverge from canonical stop_git_snapshot.parent_files")
+	}
+	return nil
+}
+
+func (checkpoint *ResumeCheckpoint) hydrateStopParentFiles() {
+	checkpoint.StopParentFiles = nil
+	if checkpoint.StopGitSnapshot != nil {
+		checkpoint.StopParentFiles = checkpoint.StopGitSnapshot.ParentFiles
+	}
 }
 
 func (checkpoint ResumeCheckpoint) validateStopState() error {
@@ -258,6 +294,9 @@ func (s *StateStore) SaveResumeCheckpoint(checkpoint ResumeCheckpoint) error {
 	if checkpoint.Model == "" {
 		return fmt.Errorf("resume state model is required")
 	}
+	if err := checkpoint.normalizeStopParentFilesForSave(); err != nil {
+		return err
+	}
 	if err := checkpoint.validateStopState(); err != nil {
 		return err
 	}
@@ -304,12 +343,20 @@ func (s *StateStore) LoadResumeCheckpoint() (ResumeCheckpoint, error) {
 	if explicitKeys.StopKind == nil {
 		return ResumeCheckpoint{}, fmt.Errorf("resume state v6にstop_kind keyがありません")
 	}
+	var persistedKeys map[string]json.RawMessage
+	if err := json.Unmarshal(data, &persistedKeys); err != nil {
+		return ResumeCheckpoint{}, fmt.Errorf("resume stateを読めません: %w", err)
+	}
+	if _, legacy := persistedKeys["stop_parent_files"]; legacy {
+		return ResumeCheckpoint{}, fmt.Errorf("resume stateを読めません: stop_parent_files is no longer supported; use stop_git_snapshot.parent_files")
+	}
 	if checkpoint.Model == "" {
 		return ResumeCheckpoint{}, fmt.Errorf("resume state model is required")
 	}
 	if err := checkpoint.validateStopState(); err != nil {
 		return ResumeCheckpoint{}, err
 	}
+	checkpoint.hydrateStopParentFiles()
 	return checkpoint, nil
 }
 
