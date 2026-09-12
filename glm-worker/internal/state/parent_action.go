@@ -64,7 +64,7 @@ func (p ParentActionPlan) AdmitsCommand(action ParentAction) bool {
 		return false
 	}
 	switch p.RequiredAction {
-	case ParentActionDecision, ParentActionReview, ParentActionApproveSurface, ParentActionAccept, ParentActionComplete:
+	case ParentActionDecision, ParentActionReview, ParentActionApproveSurface, ParentActionAccept, ParentActionComplete, ParentActionUnpark:
 		return false
 	default:
 		return true
