@@ -113,16 +113,16 @@ func printCodexWakeResponse(cmd Command, cfg config.AppConfig, stdout io.Writer)
 	if err != nil {
 		return err
 	}
-	delivered := false
-	committed := false
+	retryable := true
+	delivering := false
 	successorToken := ""
 	defer func() {
-		if committed {
+		if !retryable {
 			return
 		}
 		removeCodexWakeToken(cfg.CodexConfigDir, successorToken)
-		if delivered {
-			lease.rollbackDelivered()
+		if delivering {
+			lease.rollbackDelivering()
 			return
 		}
 		lease.rollback()
@@ -151,18 +151,16 @@ func printCodexWakeResponse(cmd Command, cfg config.AppConfig, stdout io.Writer)
 			return err
 		}
 	}
-	if err := lease.markDelivered(); err != nil {
+	if err := lease.markDelivering(); err != nil {
 		return err
 	}
-	delivered = true
-	if err := writeJSON(stdout, output); err != nil {
+	delivering = true
+	complete, err := writeCodexWakeJSON(stdout, output)
+	if !complete {
 		return err
 	}
-	committed = true
-	if err := lease.commit(); err != nil {
-		return err
-	}
-	return nil
+	retryable = false
+	return lease.commit()
 }
 
 func requireCodexWakeInvocationThread(wakeThreadID string) error {
