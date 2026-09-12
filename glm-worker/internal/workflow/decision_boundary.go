@@ -159,7 +159,7 @@ func decisionBoundaryContextBlock(activeTaskPath string, authority semanticDecis
 		block.WriteString(strings.Join(names, ","))
 	}
 	block.WriteString("\nAUTHORITY_RULES:\n")
-	block.WriteString("- requested outcome、ACTIVE状態、`互換性を狭めない強化`、`明白な仕様準拠`だけではUNRESOLVED axisを確定済みにしない。\n")
+	block.WriteString("- requested outcome、ACTIVE状態、`current contract内の厳格化`、`明白な仕様準拠`だけではUNRESOLVED axisを確定済みにしない。\n")
 	block.WriteString("- 実装にUNRESOLVED axisの意味選択が必要なら、その意味変更を編集する前にNEEDS_SOL_DECISIONで停止する。\n")
 	block.WriteString("- type/package/interface追加は、それ自体では意味責務新設とは扱わない。既存またはFIXED responsibility内の明白な実装詳細は自律実装できる。\n")
 	block.WriteString("- validation/error behaviorの追加・拒否条件強化・error意味変更はvalidation-error-semanticsがFIXEDでない限り自律強化しない。\n")
