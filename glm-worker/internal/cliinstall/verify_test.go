@@ -136,15 +136,41 @@ func TestVerifyRejectsStateWithoutExpectedIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	delete(state.ExpectedBinaries, "commentlint")
-	stateTemp, err := stageState(filepath.Dir(ownershipStatePath(binDir)), state)
+	writeVerifyState(t, binDir, state)
+	if err := Verify(binDir); err == nil {
+		t.Fatal("missing expected CLI identity was accepted")
+	}
+}
+
+func TestVerifyRejectsOwnedIdentityStateThatDiffersFromExpectedInstall(t *testing.T) {
+	buildDir := t.TempDir()
+	binDir := t.TempDir()
+	for _, name := range managedNames {
+		writeVerifyCLI(t, filepath.Join(buildDir, name), "#!/bin/sh\nprintf '%s\\n' "+name+"\n")
+	}
+	if _, err := Install(buildDir, binDir); err != nil {
+		t.Fatal(err)
+	}
+	state, err := loadState(ownershipStatePath(binDir))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Rename(stateTemp, ownershipStatePath(binDir)); err != nil {
+	state.Binaries["commentlint"] = state.ExpectedBinaries["harnesslint"]
+	writeVerifyState(t, binDir, state)
+	if err := Verify(binDir); err == nil {
+		t.Fatal("stale owned CLI identity state was accepted")
+	}
+}
+
+func writeVerifyState(t *testing.T, binDir string, state installState) {
+	t.Helper()
+	statePath := ownershipStatePath(binDir)
+	stateTemp, err := stageState(filepath.Dir(statePath), state)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := Verify(binDir); err == nil {
-		t.Fatal("missing expected CLI identity was accepted")
+	if err := os.Rename(stateTemp, statePath); err != nil {
+		t.Fatal(err)
 	}
 }
 
