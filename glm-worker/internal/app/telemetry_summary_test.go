@@ -70,7 +70,7 @@ func TestTelemetryCompactSummaryHistorySections(t *testing.T) {
 		t.Fatal(err)
 	}
 	if strings.Contains(out.String(), "raw-prompt-must-not-leak") {
-		t.Fatalf("compact summaryへraw promptが漏れています: %s", out.String())
+		t.Fatalf("compact summaryへunsupported old promptが漏れています: %s", out.String())
 	}
 	decoded := decodeSingleLineJSON(t, out.String())
 
@@ -82,47 +82,22 @@ func TestTelemetryCompactSummaryHistorySections(t *testing.T) {
 	}
 
 	scan, _ := decoded["scan"].(map[string]any)
-	if scan["status"] != "ok" || scan["files_considered"].(float64) != 3 || scan["malformed_records"].(float64) != 1 {
+	if scan["status"] != "ok" || scan["files_considered"].(float64) != 3 || scan["malformed_records"].(float64) != 22 {
 		t.Fatalf("scan = %#v", scan)
 	}
 
 	cohorts, _ := decoded["cohorts"].([]any)
-	if len(cohorts) != 2 {
+	if len(cohorts) != 1 {
 		t.Fatalf("cohorts = %#v", cohorts)
 	}
-	oldCohort, _ := cohorts[0].(map[string]any)
-	if oldCohort["version"].(float64) != 3 || oldCohort["schema_revision"].(float64) != 0 ||
-		oldCohort["current_schema"] != false || oldCohort["excluded_reason"] != nil {
-		t.Fatalf("旧cohort = %#v", oldCohort)
-	}
-	oldOutliers, _ := oldCohort["outliers"].(map[string]any)
-	if oldOutliers["status"] != telemetryCompactOutliersEvaluated ||
-		oldOutliers["eligible_groups"].(float64) != 1 ||
-		oldOutliers["outlier_calls"].(float64) != 1 || oldOutliers["outlier_tasks"].(float64) != 0 ||
-		oldOutliers["truncated_calls"].(float64) != 0 {
-		t.Fatalf("旧cohort outliers = %#v", oldOutliers)
-	}
-	topCalls, _ := oldOutliers["top_calls"].([]any)
-	if len(topCalls) != 1 {
-		t.Fatalf("top_calls = %#v", topCalls)
-	}
-	topCall, _ := topCalls[0].(map[string]any)
-	if topCall["call_id"] != "old-spike" || topCall["task_id"] != fixture.oldTelemetryTaskID ||
-		topCall["turns"].(float64) != 100 {
-		t.Fatalf("top_call = %#v", topCall)
-	}
-	coverage, _ := oldCohort["coverage"].(map[string]any)
-	if coverage["usage_totals_known"] != false || coverage["task_calls_missing_usage"].(float64) != 20 {
-		t.Fatalf("旧cohort coverage = %#v", coverage)
-	}
-
-	currentCohort, _ := cohorts[1].(map[string]any)
-	if currentCohort["current_schema"] != true ||
-		currentCohort["excluded_reason"] != state.TelemetryExclusionCurrentSchema {
+	currentCohort, _ := cohorts[0].(map[string]any)
+	if currentCohort["current_schema"] != true || currentCohort["excluded_reason"] != nil ||
+		currentCohort["version"].(float64) != float64(state.ModelCallLogVersion) ||
+		currentCohort["schema_revision"].(float64) != float64(state.ModelCallLogSchemaRevision) {
 		t.Fatalf("current cohort = %#v", currentCohort)
 	}
 	currentOutliers, _ := currentCohort["outliers"].(map[string]any)
-	if currentOutliers["status"] != telemetryCompactOutliersNotEvaluated ||
+	if currentOutliers["status"] != telemetryCompactOutliersEvaluated ||
 		currentOutliers["outlier_calls"].(float64) != 0 || currentOutliers["truncated_calls"].(float64) != 0 {
 		t.Fatalf("current cohort outliers = %#v", currentOutliers)
 	}
@@ -425,13 +400,13 @@ func TestTelemetryCompactSummaryBoundedOnLargeFixture(t *testing.T) {
 	lines := make([]string, 0, 300)
 	for index := 0; index < 285; index++ {
 		lines = append(lines, fmt.Sprintf(
-			`{"version":3,"call_id":"bulk-normal-%d","call_type":"task","task_id":%q,"started_at":%q,"phase":"worker-new","role":"worker","model_alias":"opus","top_level_turns":10,"wall_duration_ms":1000,"prompt":"raw-prompt-must-not-leak"}`,
+			`{"version":3,"schema_revision":1,"call_id":"bulk-normal-%d","call_type":"task","task_id":%q,"started_at":%q,"phase":"worker-new","role":"worker","model_alias":"opus","top_level_turns":10,"wall_duration_ms":1000,"prompt":"raw-prompt-must-not-leak"}`,
 			index, taskID, base.Add(time.Duration(index)*time.Second).Format(time.RFC3339),
 		))
 	}
 	for index := 0; index < 15; index++ {
 		lines = append(lines, fmt.Sprintf(
-			`{"version":3,"call_id":"bulk-spike-%d","call_type":"task","task_id":%q,"started_at":%q,"phase":"worker-new","role":"worker","model_alias":"opus","top_level_turns":100,"wall_duration_ms":1000}`,
+			`{"version":3,"schema_revision":1,"call_id":"bulk-spike-%d","call_type":"task","task_id":%q,"started_at":%q,"phase":"worker-new","role":"worker","model_alias":"opus","top_level_turns":100,"wall_duration_ms":1000}`,
 			index, taskID, base.Add(time.Duration(1000+index)*time.Second).Format(time.RFC3339),
 		))
 	}
