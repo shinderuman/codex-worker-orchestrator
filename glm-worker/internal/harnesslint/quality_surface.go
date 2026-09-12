@@ -220,53 +220,82 @@ func qualityWiringOrderViolations(check qualityWiringCheck, data []byte) ([]Viol
 	if len(check.orderedTokens) == 0 {
 		return nil, nil
 	}
-	positions := make(map[string]int, len(check.orderedTokens))
+	positions, err := qualityWiringOrderPositions(check, data)
+	if err != nil {
+		return nil, err
+	}
+	if qualityWiringOrderValid(check.orderedTokens, positions) {
+		return nil, nil
+	}
+	return []Violation{{
+		Rule: "quality-wiring", Path: check.path, Line: 1, Column: 1,
+		Message: "required quality-gate wiring order is invalid: " + strings.Join(check.orderedTokens, " -> "),
+	}}, nil
+}
+
+func qualityWiringOrderPositions(check qualityWiringCheck, data []byte) (map[string]int, error) {
 	if strings.HasSuffix(check.path, ".go") {
-		set := token.NewFileSet()
-		file, err := parser.ParseFile(set, check.path, data, 0)
-		if err != nil {
-			return nil, err
-		}
-		wanted := make(map[string]bool, len(check.orderedTokens))
-		for _, required := range check.orderedTokens {
-			wanted[required] = true
-		}
-		ast.Inspect(file, func(node ast.Node) bool {
-			call, ok := node.(*ast.CallExpr)
-			if !ok {
-				return true
-			}
-			start := set.Position(call.Pos()).Offset
-			end := set.Position(call.End()).Offset
-			if start < 0 || end > len(data) || start >= end {
-				return true
-			}
-			text := string(data[start:end])
-			if wanted[text] {
-				if _, exists := positions[text]; !exists {
-					positions[text] = start
-				}
-			}
-			return true
-		})
-	} else {
-		text := string(data)
-		for _, required := range check.orderedTokens {
-			if index := strings.Index(text, required); index >= 0 {
-				positions[required] = index
-			}
+		return qualityWiringGoCallPositions(check, data)
+	}
+	return qualityWiringTextPositions(check.orderedTokens, data), nil
+}
+
+func qualityWiringGoCallPositions(check qualityWiringCheck, data []byte) (map[string]int, error) {
+	set := token.NewFileSet()
+	file, err := parser.ParseFile(set, check.path, data, 0)
+	if err != nil {
+		return nil, err
+	}
+	wanted := make(map[string]bool, len(check.orderedTokens))
+	for _, required := range check.orderedTokens {
+		wanted[required] = true
+	}
+	positions := make(map[string]int, len(check.orderedTokens))
+	ast.Inspect(file, func(node ast.Node) bool {
+		recordQualityWiringCallPosition(set, data, wanted, positions, node)
+		return true
+	})
+	return positions, nil
+}
+
+func recordQualityWiringCallPosition(set *token.FileSet, data []byte, wanted map[string]bool, positions map[string]int, node ast.Node) {
+	call, ok := node.(*ast.CallExpr)
+	if !ok {
+		return
+	}
+	start := set.Position(call.Pos()).Offset
+	end := set.Position(call.End()).Offset
+	if start < 0 || end > len(data) || start >= end {
+		return
+	}
+	text := string(data[start:end])
+	if !wanted[text] {
+		return
+	}
+	if _, exists := positions[text]; !exists {
+		positions[text] = start
+	}
+}
+
+func qualityWiringTextPositions(ordered []string, data []byte) map[string]int {
+	positions := make(map[string]int, len(ordered))
+	text := string(data)
+	for _, required := range ordered {
+		if index := strings.Index(text, required); index >= 0 {
+			positions[required] = index
 		}
 	}
+	return positions
+}
+
+func qualityWiringOrderValid(ordered []string, positions map[string]int) bool {
 	lastIndex := -1
-	for _, required := range check.orderedTokens {
+	for _, required := range ordered {
 		index, ok := positions[required]
 		if !ok || index <= lastIndex {
-			return []Violation{{
-				Rule: "quality-wiring", Path: check.path, Line: 1, Column: 1,
-				Message: "required quality-gate wiring order is invalid: " + strings.Join(check.orderedTokens, " -> "),
-			}}, nil
+			return false
 		}
 		lastIndex = index
 	}
-	return nil, nil
+	return true
 }
