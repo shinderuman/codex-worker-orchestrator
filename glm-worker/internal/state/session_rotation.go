@@ -295,10 +295,10 @@ func validateBoundSessionRotationRecords(marker *SessionRotationMarker) error {
 }
 
 func validateIssuedSessionRotationRecords(marker *SessionRotationMarker) error {
-	if marker.Directive == nil || marker.Claim == nil || marker.Issued == nil || !ValidUUIDFormat(marker.Issued.BoundThreadID) {
-		return fmt.Errorf("issued session rotation markerのstate recordが不正です")
+	if marker.Directive == nil || marker.Issued == nil || !ValidUUIDFormat(marker.Issued.BoundThreadID) {
+		return fmt.Errorf("issued session rotation markerにbound thread IDがありません")
 	}
-	if marker.Claim.BoundThreadID != marker.Issued.BoundThreadID {
+	if marker.Claim != nil && marker.Claim.BoundThreadID != marker.Issued.BoundThreadID {
 		return fmt.Errorf("issued session rotation markerのbound thread IDがclaimと一致しません")
 	}
 	return nil
