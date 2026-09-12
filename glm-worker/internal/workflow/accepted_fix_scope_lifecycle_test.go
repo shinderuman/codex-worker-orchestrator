@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -78,6 +79,49 @@ func TestAcceptedFixScopePreCallRollbackDiscardsStagedAuthorization(t *testing.T
 	assertAcceptedScopeDiscarded(t, st, w)
 	if st.TaskStatus() != state.TaskStatusWaitingSolReview {
 		t.Fatalf("status after pre-call rollback = %s", st.TaskStatus())
+	}
+}
+
+func TestAcceptedFixScopeQualityApprovalValidationFailureDiscardsStagedAuthorization(t *testing.T) {
+	repo := newRetentionGitRepo(t)
+	st := newGitStateStoreT(t, repo)
+	writeAcceptedScopeChange(t, repo)
+	result := packet.Result{
+		Status:              packet.StatusImplemented,
+		Risk:                packet.RiskLow,
+		Summary:             "implemented",
+		RequirementCoverage: "covered",
+		Tests:               "pass",
+		Unverified:          "none",
+	}
+	if err := st.SaveResumeCheckpoint(state.ResumeCheckpoint{
+		Stage:                         state.ResumeStageWorker,
+		Phase:                         "worker-new",
+		Role:                          state.WorkerRole,
+		Model:                         "opus",
+		Request:                       "request",
+		QualitySurfaceApprovalPending: true,
+		CompletedResult:               &result,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetTaskStatus(state.TaskStatusWaitingSolReview); err != nil {
+		t.Fatal(err)
+	}
+
+	w := newGitWorkflowT(t, st, &scriptedRunner{}, repo)
+	if err := w.ExecuteQualitySurfaceApproval(acceptedFixScopeCurrentDiff); err == nil {
+		t.Fatal("quality-surface approval without retained boundary must fail")
+	}
+	assertAcceptedScopeDiscarded(t, st, w)
+	if st.TaskStatus() != state.TaskStatusWaitingSolReview {
+		t.Fatalf("status after failed quality-surface approval = %s", st.TaskStatus())
+	}
+	if err := st.SetTaskStatus(state.TaskStatusActive); err != nil {
+		t.Fatal(err)
+	}
+	if w.acceptedFixScopeCoversCurrent() {
+		t.Fatal("later unrelated active review consumed failed quality-surface authorization")
 	}
 }
 
