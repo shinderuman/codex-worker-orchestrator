@@ -104,7 +104,7 @@ func runComplete(cfg config.AppConfig, stdout io.Writer) error {
 		})
 	}
 	completed, err := st.CompleteParentAwaiting(func(acceptedRisk string) (*state.SessionRotationEvaluation, error) {
-		return app.EvaluateSessionRotationTerminal(cfg, st, terminal, acceptedRisk)
+		return app.EvaluateCanonicalSessionRotationTerminal(cfg, st, terminal, acceptedRisk)
 	})
 	if err != nil {
 		return err
