@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"io"
+	"os"
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
@@ -68,5 +69,89 @@ func TestQualitySurfaceChangeAllowsParentAcceptedCurrentDiff(t *testing.T) {
 	}
 	if st.TaskStatus() != state.TaskStatusWaitingSolReview {
 		t.Fatalf("status = %s", st.TaskStatus())
+	}
+}
+
+func TestApprovedQualitySurfaceActivationFailureRollsBackBaseline(t *testing.T) {
+	_, st, _, w := newQualitySurfaceDecisionWorkflow(t, nil)
+	checkpoint := stopDecisionContinuationForQualitySurface(t, st, w)
+	w.temp = t.TempDir()
+
+	if err := w.prepareAcceptedFixScopeForAction(acceptedFixScopeCurrentDiff, state.ParentActionApproveSurface); err != nil {
+		t.Fatal(err)
+	}
+	statsPath := st.Path("task-stats.json")
+	if err := os.RemoveAll(statsPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(statsPath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := w.activateApprovedQualitySurface(); err == nil {
+		t.Fatal("quality-surface activation failureを期待")
+	}
+	if got := st.ReadOr(qualitySurfaceBaselineStateKey, ""); got != "baseline" {
+		t.Fatalf("failed approval advanced quality surface baseline: %q", got)
+	}
+	if st.TaskStatus() != state.TaskStatusWaitingSolReview {
+		t.Fatalf("status = %s want waiting-sol-review", st.TaskStatus())
+	}
+	if st.Exists(acceptedFixScopeStateFile) {
+		t.Fatal("failed approval retained accepted current-diff scope")
+	}
+
+	stopped, err := w.verifyQualitySurfaceBaseline(checkpoint.Phase)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !stopped {
+		t.Fatal("failed approval must keep the changed quality surface pending approval")
+	}
+	if got := st.ReadOr(qualitySurfaceBaselineStateKey, ""); got != "baseline" {
+		t.Fatalf("retry detection changed quality surface baseline: %q", got)
+	}
+
+	if err := os.RemoveAll(statsPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.prepareAcceptedFixScopeForAction(acceptedFixScopeCurrentDiff, state.ParentActionApproveSurface); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.activateApprovedQualitySurface(); err != nil {
+		t.Fatal(err)
+	}
+	if got := st.ReadOr(qualitySurfaceBaselineStateKey, ""); got != "changed" {
+		t.Fatalf("successful approval baseline = %q want changed", got)
+	}
+	if st.TaskStatus() != state.TaskStatusActive {
+		t.Fatalf("status = %s want active", st.TaskStatus())
+	}
+}
+
+func TestApprovedQualitySurfaceRevalidatesAcceptedScopeAfterCapture(t *testing.T) {
+	repo, st, _, w := newQualitySurfaceDecisionWorkflow(t, nil)
+	stopDecisionContinuationForQualitySurface(t, st, w)
+	w.temp = t.TempDir()
+
+	if err := w.prepareAcceptedFixScopeForAction(acceptedFixScopeCurrentDiff, state.ParentActionApproveSurface); err != nil {
+		t.Fatal(err)
+	}
+	w.captureQualitySurface = func(string) (string, error) {
+		writeScopeFile(t, repo, "late_change.go", "package sample\n")
+		return "changed-after-scope", nil
+	}
+
+	if err := w.activateApprovedQualitySurface(); err == nil {
+		t.Fatal("accepted scope changed during quality-surface capture; activation must fail closed")
+	}
+	if got := st.ReadOr(qualitySurfaceBaselineStateKey, ""); got != "baseline" {
+		t.Fatalf("scope revalidation failure advanced quality surface baseline: %q", got)
+	}
+	if st.TaskStatus() != state.TaskStatusWaitingSolReview {
+		t.Fatalf("status = %s want waiting-sol-review", st.TaskStatus())
+	}
+	if st.Exists(acceptedFixScopeStateFile) {
+		t.Fatal("scope revalidation failure retained accepted current-diff scope")
 	}
 }
