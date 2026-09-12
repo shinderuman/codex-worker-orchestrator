@@ -5,8 +5,9 @@ import (
 )
 
 type qualityWiringCheck struct {
-	path   string
-	tokens []string
+	path          string
+	tokens        []string
+	orderedTokens []string
 }
 
 func scanQualitySurface(root string, paths []string) ([]Violation, error) {
@@ -38,7 +39,7 @@ func qualityWiringViolations(root string, paths []string) ([]Violation, error) {
 	}
 	violations = append(violations, workflowViolations...)
 	for _, check := range qualityWiringChecks() {
-		current, err := qualityWiringCheckViolations(root, present, check.path, check.tokens)
+		current, err := qualityWiringCheckViolations(root, present, check)
 		if err != nil {
 			return nil, err
 		}
@@ -55,6 +56,10 @@ func qualityWiringChecks() []qualityWiringCheck {
 				"harnesslint.Run(root, true)",
 				"harnesslint.Check(root)",
 				"captureQualitySurfaceDigest",
+			},
+			orderedTokens: []string{
+				"harnesslint.Run(root, true)",
+				"harnesslint.Check(root)",
 			},
 		},
 		{
@@ -178,27 +183,42 @@ func qualityWiringPackageViolations(root string, present map[string]bool, prefix
 	return violations, nil
 }
 
-func qualityWiringCheckViolations(root string, present map[string]bool, path string, tokens []string) ([]Violation, error) {
-	if !present[path] {
+func qualityWiringCheckViolations(root string, present map[string]bool, check qualityWiringCheck) ([]Violation, error) {
+	if !present[check.path] {
 		return []Violation{{
-			Rule: "quality-wiring", Path: path, Line: 1, Column: 1,
+			Rule: "quality-wiring", Path: check.path, Line: 1, Column: 1,
 			Message: "required quality-gate file is missing",
 		}}, nil
 	}
-	data, err := readRegularFile(root, path)
+	data, err := readRegularFile(root, check.path)
 	if err != nil {
 		return nil, err
 	}
 	text := string(data)
 	var violations []Violation
-	for _, token := range tokens {
+	for _, token := range check.tokens {
 		if strings.Contains(text, token) {
 			continue
 		}
 		violations = append(violations, Violation{
-			Rule: "quality-wiring", Path: path, Line: 1, Column: 1,
+			Rule: "quality-wiring", Path: check.path, Line: 1, Column: 1,
 			Message: "required quality-gate wiring is missing: " + token,
 		})
+	}
+	lastIndex := -1
+	for _, token := range check.orderedTokens {
+		index := strings.Index(text, token)
+		if index < 0 {
+			continue
+		}
+		if index <= lastIndex {
+			violations = append(violations, Violation{
+				Rule: "quality-wiring", Path: check.path, Line: 1, Column: 1,
+				Message: "required quality-gate wiring order is invalid: " + strings.Join(check.orderedTokens, " -> "),
+			})
+			break
+		}
+		lastIndex = index
 	}
 	return violations, nil
 }

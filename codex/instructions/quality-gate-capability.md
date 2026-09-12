@@ -28,7 +28,7 @@ glm-worker --quality-gate go-test-race
 
 gofmt、`harnesslint`、`commentlint`、Shell lint、`git diff`等、その他の追加capabilityを必要としないcommandもsandbox内で実行する。capability根拠のないcommandへ昇格権限を広げない。
 
-`harnesslint`は`codex-worker-orchestrator`固有のrepository quality gateで、Go/Shell/Markdown/structured configとgate wiringを検査する。通常のGLM workflowではreviewerを呼ぶ前にwrapperがcheck-onlyで実行し、不合格ならreviewerへ進めない。formatter等の自動修正が必要ならworker側で`harnesslint --fix`を実行し、その後checkを通す。
+`harnesslint`は`codex-worker-orchestrator`固有のrepository quality gateで、Go/Shell/Markdown/structured configとgate wiringを検査する。通常のGLM workflowではreviewerを呼ぶ前にwrapperがmachine-fixを実行し、その直後にcheck-only検証する。machine-fix後に残ったnon-fixable violationだけをworker fix roundへ返す。GLM workerからの`harnesslint`・`commentlint`・`gofmt`・`golangci-lint`・`shellcheck`・`shfmt`直接実行はrunnerのcommand boundaryで拒否し、親Codex・CI・Web GPT等の独立validationで使うcheck-only `./harnesslint`入口は維持する。
 
 installer/managed-file behaviorを変更した場合のoffline install smokeは`glm-worker --install-smoke --role <role>`で実行する。証拠cacheや再利用layerは持たず、必要なときに実行結果そのものを証拠とする。
 

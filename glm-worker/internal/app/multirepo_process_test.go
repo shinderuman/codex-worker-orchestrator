@@ -92,7 +92,7 @@ dirty-hold)
 reviewer-hold)
 	role=worker
 	for arg in "$@"; do
-		if [ "$arg" = "--disallowedTools" ]; then role=reviewer; fi
+		if [ "$arg" = "Agent" ]; then role=reviewer; fi
 	done
 	if [ "$role" = reviewer ]; then
 		waits=0
@@ -108,7 +108,7 @@ reviewer-hold)
 success)
 	role=worker
 	for arg in "$@"; do
-		if [ "$arg" = "--disallowedTools" ]; then role=reviewer; fi
+		if [ "$arg" = "Agent" ]; then role=reviewer; fi
 	done
 	if [ "$role" = reviewer ]; then
 		printf '%s\n' '{"type":"result","subtype":"success","is_error":false,"result":"reviewer pass","structured_output":{"status":"PASS","risk":"LOW","summary":"stub review summary","requirement_coverage":"stub coverage","invariants":"stub invariants","test_evidence":"stub evidence","issues":"none","residual_risk":"none","targets":["none"]},"usage":{"input_tokens":3,"output_tokens":3},"duration_ms":3}'

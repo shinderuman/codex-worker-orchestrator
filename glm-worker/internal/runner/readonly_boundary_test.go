@@ -99,9 +99,17 @@ func TestClaudeRunnerWriteRunUsesExplicitWorkerToolSurface(t *testing.T) {
 	if got := argumentAfter(arguments, "--tools"); got != workerTools {
 		t.Fatalf("write capability --tools = %q want %q: %#v", got, workerTools, arguments)
 	}
-	for _, argument := range arguments {
-		if argument == "--disallowedTools" {
-			t.Fatalf("write capability run should be bounded by its allowlist without reviewer deny rules: %#v", arguments)
+	if !containsArgument(arguments, "--disallowedTools") {
+		t.Fatalf("write capability run is missing scoped lint deny rules: %#v", arguments)
+	}
+	for _, rule := range workerLintDisallowedTools {
+		if !containsArgument(arguments, rule) {
+			t.Fatalf("write capability run is missing lint deny rule %q: %#v", rule, arguments)
+		}
+	}
+	for _, blocked := range readOnlyDisallowedTools {
+		if containsArgument(arguments, blocked) {
+			t.Fatalf("write capability run inherited read-only deny %q: %#v", blocked, arguments)
 		}
 	}
 }

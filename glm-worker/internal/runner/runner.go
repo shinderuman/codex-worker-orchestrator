@@ -115,6 +115,15 @@ const readOnlyTools = "Read,Grep,Glob,WebFetch,WebSearch"
 
 var readOnlyDisallowedTools = []string{"Edit", "Write", "NotebookEdit", "Agent", "Bash"}
 
+var workerLintDisallowedTools = []string{
+	"Bash(*harnesslint*)",
+	"Bash(*commentlint*)",
+	"Bash(*gofmt*)",
+	"Bash(*golangci-lint*)",
+	"Bash(*shellcheck*)",
+	"Bash(*shfmt*)",
+}
+
 var (
 	workerSchemaOnce            sync.Once
 	reviewerSchemaOnce          sync.Once
@@ -316,9 +325,16 @@ func (r *ClaudeRunner) buildRunArgs(
 		"--json-schema", inputs.schema,
 		"--tools", tools,
 	)
-	if readOnly {
+	disallowedTools := []string(nil)
+	switch {
+	case readOnly:
+		disallowedTools = readOnlyDisallowedTools
+	case role == state.WorkerRole:
+		disallowedTools = workerLintDisallowedTools
+	}
+	if len(disallowedTools) > 0 {
 		args = append(args, "--disallowedTools")
-		args = append(args, readOnlyDisallowedTools...)
+		args = append(args, disallowedTools...)
 	}
 	return append(args, "--append-system-prompt-file", inputs.systemFile, prompt)
 }
