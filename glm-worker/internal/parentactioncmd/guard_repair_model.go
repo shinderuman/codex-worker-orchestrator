@@ -1,6 +1,8 @@
 package parentactioncmd
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -101,9 +103,15 @@ func validateGuardRepairTests(worktree string, changed []string) error {
 	if err := validateGuardRepairFormatting(worktree, changed); err != nil {
 		return err
 	}
-	command := exec.Command("go", "test", "./internal/runner", "./internal/workflow", "./internal/guardrepair")
-	command.Dir = filepath.Join(worktree, "glm-worker")
-	if output, err := command.CombinedOutput(); err != nil {
+	output, err := runGuardRepairCommand(
+		filepath.Join(worktree, "glm-worker"),
+		"guard repair Go tests",
+		"go", "test", "./internal/runner", "./internal/workflow", "./internal/guardrepair",
+	)
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return err
+		}
 		return fmt.Errorf("guard repair Go tests failed: %w: %s", err, strings.TrimSpace(string(output)))
 	}
 	return nil
@@ -120,10 +128,11 @@ func validateGuardRepairFormatting(worktree string, changed []string) error {
 		return nil
 	}
 	args := append([]string{"-l"}, goFiles...)
-	command := exec.Command("gofmt", args...)
-	command.Dir = worktree
-	output, err := command.CombinedOutput()
+	output, err := runGuardRepairCommand(worktree, "gofmt validation", "gofmt", args...)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return err
+		}
 		return fmt.Errorf("gofmt validation failed: %w: %s", err, strings.TrimSpace(string(output)))
 	}
 	if names := strings.TrimSpace(string(output)); names != "" {
@@ -177,10 +186,16 @@ func buildGuardRepairWorker(cfg config.AppConfig) (string, func(), error) {
 		return "", func() {}, err
 	}
 	worker := filepath.Join(temp, "glm-worker")
-	command := exec.Command("go", "build", "-trimpath", "-o", worker, "./cmd/glm-worker")
-	command.Dir = filepath.Join(cfg.RepoRoot, "glm-worker")
-	if output, err := command.CombinedOutput(); err != nil {
+	output, err := runGuardRepairCommand(
+		filepath.Join(cfg.RepoRoot, "glm-worker"),
+		"build repaired glm-worker",
+		"go", "build", "-trimpath", "-o", worker, "./cmd/glm-worker",
+	)
+	if err != nil {
 		_ = os.RemoveAll(temp)
+		if errors.Is(err, context.DeadlineExceeded) {
+			return "", func() {}, err
+		}
 		return "", func() {}, fmt.Errorf("build repaired glm-worker: %w: %s", err, strings.TrimSpace(string(output)))
 	}
 	return worker, func() { _ = os.RemoveAll(temp) }, nil
