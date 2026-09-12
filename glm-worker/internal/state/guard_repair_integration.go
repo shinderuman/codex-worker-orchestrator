@@ -1,7 +1,6 @@
 package state
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -36,6 +35,13 @@ const (
 var ErrNoGuardRepairIntegrationJournal = errors.New("guard repair integration journal is not available")
 
 func (journal GuardRepairIntegrationJournal) validate() error {
+	if err := journal.validateProvenance(); err != nil {
+		return err
+	}
+	return journal.validateFiles()
+}
+
+func (journal GuardRepairIntegrationJournal) validateProvenance() error {
 	if journal.TaskID == "" || journal.Phase == "" || journal.Fingerprint == "" || journal.Strategy == "" || journal.RelevantDigest == "" {
 		return fmt.Errorf("guard repair integration journal provenance is incomplete")
 	}
@@ -45,24 +51,35 @@ func (journal GuardRepairIntegrationJournal) validate() error {
 	if journal.RepositoryBoundary.Head == "" || journal.RepositoryBoundary.IndexDigest == "" || journal.RepositoryBoundary.WorktreeDigest == "" || journal.RepositoryBoundary.ParentFiles == nil {
 		return fmt.Errorf("guard repair integration journal repository boundary is incomplete")
 	}
+	return nil
+}
+
+func (journal GuardRepairIntegrationJournal) validateFiles() error {
 	if len(journal.Files) == 0 {
 		return fmt.Errorf("guard repair integration journal has no file preimages")
 	}
 	seen := make(map[string]struct{}, len(journal.Files))
 	for _, file := range journal.Files {
-		if file.Path == "" {
-			return fmt.Errorf("guard repair integration journal has an empty file path")
-		}
 		if _, ok := seen[file.Path]; ok {
 			return fmt.Errorf("guard repair integration journal has duplicate file path %s", file.Path)
 		}
+		if err := file.validate(); err != nil {
+			return err
+		}
 		seen[file.Path] = struct{}{}
-		if file.Mode&^uint32(0o777) != 0 {
-			return fmt.Errorf("guard repair integration journal has invalid mode for %s", file.Path)
-		}
-		if !file.Exists && (len(file.Content) != 0 || file.Mode != 0) {
-			return fmt.Errorf("guard repair integration journal has content for absent file %s", file.Path)
-		}
+	}
+	return nil
+}
+
+func (file GuardRepairIntegrationFile) validate() error {
+	if file.Path == "" {
+		return fmt.Errorf("guard repair integration journal has an empty file path")
+	}
+	if file.Mode&^uint32(0o777) != 0 {
+		return fmt.Errorf("guard repair integration journal has invalid mode for %s", file.Path)
+	}
+	if !file.Exists && (len(file.Content) != 0 || file.Mode != 0) {
+		return fmt.Errorf("guard repair integration journal has content for absent file %s", file.Path)
 	}
 	return nil
 }
@@ -73,26 +90,18 @@ func (s *StateStore) SaveGuardRepairIntegrationJournal(journal GuardRepairIntegr
 	}
 	journal.Version = guardRepairIntegrationStateVersion
 	journal.UpdatedAt = time.Now().UTC()
-	data, err := json.MarshalIndent(journal, "", "  ")
-	if err != nil {
-		return fmt.Errorf("guard repair integration journalをJSON化できません: %w", err)
-	}
-	if err := writeFileAtomic(s.Path(guardRepairIntegrationStateFile), append(data, '\n'), 0o600); err != nil {
+	if err := writeJSONStateFile(s.Path(guardRepairIntegrationStateFile), journal); err != nil {
 		return fmt.Errorf("guard repair integration journalを書き込めません: %w", err)
 	}
 	return nil
 }
 
 func (s *StateStore) LoadGuardRepairIntegrationJournal() (GuardRepairIntegrationJournal, error) {
-	data, err := os.ReadFile(s.Path(guardRepairIntegrationStateFile))
-	if err != nil {
+	var journal GuardRepairIntegrationJournal
+	if err := readJSONStateFile(s.Path(guardRepairIntegrationStateFile), &journal); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return GuardRepairIntegrationJournal{}, ErrNoGuardRepairIntegrationJournal
 		}
-		return GuardRepairIntegrationJournal{}, err
-	}
-	var journal GuardRepairIntegrationJournal
-	if err := json.Unmarshal(data, &journal); err != nil {
 		return GuardRepairIntegrationJournal{}, fmt.Errorf("guard repair integration journalを読めません: %w", err)
 	}
 	if journal.Version != guardRepairIntegrationStateVersion {
