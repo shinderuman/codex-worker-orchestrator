@@ -120,6 +120,9 @@ func TestIntegrateGuardRepairCandidateRollsBackAfterCheckpointLoss(t *testing.T)
 		Failure:        checkpoint.GuardFailure,
 		RelevantDigest: digest,
 	}
+	if err := st.SaveGuardRepairRecord(record); err != nil {
+		t.Fatal(err)
+	}
 	worktree := t.TempDir()
 	writeGuardRepairTestFile(t, worktree, first, "repaired source\n")
 	writeGuardRepairTestFile(t, worktree, second, "repaired test\n")
