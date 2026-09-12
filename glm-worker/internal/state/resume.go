@@ -75,8 +75,6 @@ type ResumeCheckpoint struct {
 
 	QualitySurfaceApprovalPending bool `json:"quality_surface_approval_pending,omitempty"`
 
-	// StopParentFiles is an in-memory derived view of StopGitSnapshot.ParentFiles.
-	// It is never persisted and must not be treated as a second authority.
 	StopParentFiles *ParentFileStates `json:"-"`
 
 	StopGitSnapshot *GitSnapshot `json:"stop_git_snapshot,omitempty"`
@@ -203,10 +201,9 @@ func (checkpoint *ResumeCheckpoint) clearStopPayload() {
 
 func (checkpoint *ResumeCheckpoint) normalizeStopParentFilesForSave() error {
 	if checkpoint.StopGitSnapshot == nil {
-		if checkpoint.StopParentFiles == nil {
-			return nil
+		if checkpoint.StopParentFiles != nil {
+			return fmt.Errorf("stop parent files require canonical stop snapshot")
 		}
-		checkpoint.StopGitSnapshot = &GitSnapshot{ParentFiles: checkpoint.StopParentFiles}
 		return nil
 	}
 	canonical := checkpoint.StopGitSnapshot.ParentFiles
@@ -217,7 +214,7 @@ func (checkpoint *ResumeCheckpoint) normalizeStopParentFilesForSave() error {
 		return nil
 	}
 	if canonical == nil || !SameParentFileStates(*canonical, *checkpoint.StopParentFiles) {
-		return fmt.Errorf("stop parent files diverge from canonical stop_git_snapshot.parent_files")
+		return fmt.Errorf("stop parent files diverge from canonical stop snapshot")
 	}
 	return nil
 }
@@ -348,7 +345,7 @@ func (s *StateStore) LoadResumeCheckpoint() (ResumeCheckpoint, error) {
 		return ResumeCheckpoint{}, fmt.Errorf("resume stateを読めません: %w", err)
 	}
 	if _, legacy := persistedKeys["stop_parent_files"]; legacy {
-		return ResumeCheckpoint{}, fmt.Errorf("resume stateを読めません: stop_parent_files is no longer supported; use stop_git_snapshot.parent_files")
+		return ResumeCheckpoint{}, fmt.Errorf("resume stateを読めません: legacy stop_parent_files key")
 	}
 	if checkpoint.Model == "" {
 		return ResumeCheckpoint{}, fmt.Errorf("resume state model is required")
