@@ -205,8 +205,11 @@ func flattenManagedObject(fragment map[string]any) []managedLeaf {
 
 func flattenManagedValue(path []string, value any, leaves *[]managedLeaf) {
 	object, ok := value.(map[string]any)
-	if !ok || len(object) == 0 {
+	if !ok {
 		*leaves = append(*leaves, managedLeaf{Path: append([]string(nil), path...), Value: value})
+		return
+	}
+	if len(object) == 0 {
 		return
 	}
 	for _, key := range sortedMapKeys(object) {
