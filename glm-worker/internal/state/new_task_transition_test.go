@@ -21,6 +21,7 @@ func TestNewTaskCanonicalTransitionRollsBackMajorMutationFailures(t *testing.T) 
 		{name: "remove old task identity", failRemove: "task.id"},
 		{name: "invalidate sessions", failRemove: "worker.id"},
 		{name: "remove task context", failRemove: "pending-decision"},
+		{name: "clear parent evidence ledger", failRemove: parentEvidenceLedgerPath},
 		{name: "rotate parent evidence lease", failWrite: parentEvidenceLeasePath},
 		{name: "initialize parent review", failWrite: parentReviewStateFile},
 		{name: "write new task status", failWrite: "task.status"},
