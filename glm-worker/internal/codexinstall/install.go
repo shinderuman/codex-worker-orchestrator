@@ -8,11 +8,9 @@ import (
 )
 
 type installPreparation struct {
-	codexDir    string
-	stateExists bool
-	legacy      legacyManifest
-	filePlan    fileInstallPlan
-	configPlan  configInstallPlan
+	codexDir   string
+	filePlan   fileInstallPlan
+	configPlan configInstallPlan
 }
 
 func Install(repoRoot, codexDir string, stdout io.Writer) error {
@@ -33,26 +31,15 @@ func prepareInstall(repoRoot, codexDir string) (installPreparation, error) {
 	if err != nil {
 		return installPreparation{}, err
 	}
-	legacy, err := legacyForInstall(codexDir, stateExists)
+	filePlan, err := buildFileInstallPlan(repoRoot, codexDir, state, stateExists)
 	if err != nil {
 		return installPreparation{}, err
 	}
-	filePlan, err := buildFileInstallPlan(repoRoot, codexDir, state, stateExists, legacy)
+	configPlan, err := buildConfigInstallPlan(repoRoot, codexDir, state)
 	if err != nil {
 		return installPreparation{}, err
 	}
-	configPlan, err := buildConfigInstallPlan(repoRoot, codexDir, state, stateExists, legacy)
-	if err != nil {
-		return installPreparation{}, err
-	}
-	return installPreparation{codexDir: codexDir, stateExists: stateExists, legacy: legacy, filePlan: filePlan, configPlan: configPlan}, nil
-}
-
-func legacyForInstall(codexDir string, stateExists bool) (legacyManifest, error) {
-	if stateExists {
-		return legacyManifest{Paths: map[string]bool{}}, nil
-	}
-	return loadLegacyManifest(codexDir)
+	return installPreparation{codexDir: codexDir, filePlan: filePlan, configPlan: configPlan}, nil
 }
 
 func applyInstall(preparation installPreparation, stdout io.Writer) error {
