@@ -13,6 +13,9 @@ const (
 	forwardOnlyVersionKind       = "version"
 	forwardOnlyRevisionKind      = "schema_revision"
 	forwardOnlyRevisionField     = "schemarevision"
+	forwardOnlyRulePath          = "glm-worker/internal/harnesslint/forward_only.go"
+	forwardOnlyRuleTestPath      = "glm-worker/internal/harnesslint/forward_only_test.go"
+	forwardOnlyFixtureDir        = "glm-worker/internal/harnesslint/fixtures/"
 )
 
 var shellPathLookupAssignment = regexp.MustCompile(`(?m)^[\t ]*([A-Za-z_][A-Za-z0-9_]*)=\$\((?:command[\t ]+-v|which)[^)]*\)[\t ]*$`)
@@ -42,7 +45,7 @@ func scanForwardOnlyCompatibility(root string, paths []string) ([]Violation, err
 }
 
 func forwardOnlyFixturePath(path string) bool {
-	return strings.HasPrefix(path, "glm-worker/internal/harnesslint/")
+	return path == forwardOnlyRulePath || path == forwardOnlyRuleTestPath || strings.HasPrefix(path, forwardOnlyFixtureDir)
 }
 
 func forwardOnlyGoFileViolations(root, path string) ([]Violation, error) {
