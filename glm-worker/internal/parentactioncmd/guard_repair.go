@@ -26,6 +26,9 @@ type guardRepairCandidate struct {
 
 func executeResumeWithGuardRepair(cfg config.AppConfig, stdout, stderr io.Writer, extraEnv []string) error {
 	st := state.AttachStateStore(cfg)
+	if err := recoverGuardRepairIntegrationIfNeeded(cfg, st); err != nil {
+		return err
+	}
 	if record, ok := reusableGuardRepairRecord(cfg, st); ok {
 		return resumeWithRepairedWorker(cfg, st, record, stdout, stderr, extraEnv, errors.New(record.Failure))
 	}
@@ -161,6 +164,9 @@ func performBoundedGuardRepair(cfg config.AppConfig, st *state.StateStore, recor
 		record.RepairedDigest = ""
 		return record, markGuardRepairFailed(st, record, errors.Join(err, rollback()))
 	}
+	if err := st.RemoveGuardRepairIntegrationJournal(); err != nil {
+		return record, errors.Join(err, rollback())
+	}
 	return record, nil
 }
 
@@ -218,12 +224,13 @@ func integrateGuardRepairCandidate(
 	if err := validateOriginalRepairBoundary(cfg, record, origin.boundary); err != nil {
 		return nil, err
 	}
-	rollbackFiles, err := copyGuardRepairChangesWithRollback(candidate.worktree, cfg.RepoRoot, candidate.changed)
+	journal, err := beginGuardRepairIntegration(st, record, origin, cfg.RepoRoot, candidate.changed)
 	if err != nil {
 		return nil, err
 	}
-	rollback := func() error {
-		return errors.Join(rollbackFiles(), st.SaveResumeCheckpoint(origin.checkpoint))
+	rollback := func() error { return rollbackGuardRepairIntegration(cfg, st, journal) }
+	if err := copyGuardRepairChanges(candidate.worktree, cfg.RepoRoot, candidate.changed); err != nil {
+		return nil, errors.Join(err, rollback())
 	}
 	checkpoint, err := currentGuardRepairCheckpoint(st, record, origin.checkpoint.Phase)
 	if err != nil {
