@@ -117,7 +117,18 @@ func TestParkCycleKeepsParentEvidenceLeaseDigests(t *testing.T) {
 	if _, delivered, err := st.ParentEvidenceDelivered(ParentEvidenceSurfaceSearch, "digest-a"); err != nil || !delivered {
 		t.Fatalf("parked lease digest delivered=%v err=%v", delivered, err)
 	}
-	if _, err := st.LeaveParked(); err != nil {
+	record, err := st.LoadParkRecord()
+	if err != nil {
+		t.Fatal(err)
+	}
+	record.Cleanup = &ParkCleanup{Integration: "head-unchanged", BranchTip: "head"}
+	if err := st.SaveParkRecord(record); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.CommitUnpark(); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.CompleteUnpark(); err != nil {
 		t.Fatal(err)
 	}
 	if _, delivered, err := st.ParentEvidenceDelivered(ParentEvidenceSurfaceSearch, "digest-a"); err != nil || !delivered {

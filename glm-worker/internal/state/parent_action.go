@@ -64,7 +64,7 @@ func (p ParentActionPlan) AdmitsCommand(action ParentAction) bool {
 		return false
 	}
 	switch p.RequiredAction {
-	case ParentActionDecision, ParentActionReview, ParentActionApproveSurface, ParentActionAccept, ParentActionComplete:
+	case ParentActionDecision, ParentActionReview, ParentActionApproveSurface, ParentActionAccept, ParentActionComplete, ParentActionUnpark:
 		return false
 	default:
 		return true
@@ -123,13 +123,27 @@ func (s *StateStore) ParentActionPlan() (ParentActionPlan, error) {
 	if err != nil {
 		return ParentActionPlan{}, err
 	}
-	if status == TaskStatusWaitingDecision && s.ObservationNoGoEligible() {
+	if status == TaskStatusWaitingDecision && plan.RequiredAction != ParentActionUnpark && s.ObservationNoGoEligible() {
 		plan.AllowedActions = append(plan.AllowedActions, ParentActionNoGo)
 	}
 	return plan, nil
 }
 
 func (s *StateStore) parentActionPlanForStatus(status TaskStatus, pending bool, pendingDecisionResume bool, openReview string, stopKind ResumeStopKind, qualitySurfaceApproval bool) (ParentActionPlan, error) {
+	record, cleanupPending, cleanupErr := s.PendingUnparkCleanup()
+	if cleanupErr != nil {
+		return ParentActionPlan{}, lifecycleInconsistency(status, "unpark cleanup state is unreadable: "+cleanupErr.Error())
+	}
+	if cleanupPending {
+		if stopKind != ResumeStopNone {
+			return ParentActionPlan{}, lifecycleInconsistency(status, "unpark cleanup pending task must not carry a resumable stop checkpoint")
+		}
+		if err := validateParkedOriginState(status, record.FromStatus, pending, openReview); err != nil {
+			return ParentActionPlan{}, err
+		}
+		return actionPlan(ParentActionUnpark, "", ParentActionUnpark), nil
+	}
+
 	switch status {
 	case TaskStatusWaitingDecision:
 		return waitingDecisionActionPlan(status, pending, openReview, stopKind)
