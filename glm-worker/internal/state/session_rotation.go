@@ -20,6 +20,7 @@ type SessionRotationMarker struct {
 	Issued              *SessionRotationIssued           `json:"issued,omitempty"`
 	LastCreationOutcome *SessionRotationCreationOutcome  `json:"last_creation_outcome,omitempty"`
 	LimitBaseline       *SessionLimitBaseline            `json:"limit_baseline,omitempty"`
+	AcceptedTasks       *int                             `json:"accepted_tasks,omitempty"`
 	LastEvaluation      *SessionRotationEvaluationRecord `json:"last_evaluation,omitempty"`
 	UpdatedAt           string                           `json:"updated_at"`
 }
@@ -103,18 +104,20 @@ type SessionRotationLimitSignals struct {
 }
 
 type SessionRotationSignals struct {
-	Terminal                string
-	AcceptedTasks           int
-	CurrentAcceptedRisk     string
-	Rollout                 *SessionRotationRolloutSignals
-	RolloutUnavailableField string
-	RolloutUnavailableSrc   string
-	MaterialEvents          int
-	MaterialEventsAvailable bool
-	MaterialEventSourceIDs  []string
-	Limit                   *SessionRotationLimitSignals
-	LimitUnavailableFields  []string
-	LimitSource             string
+	Terminal                 string
+	AcceptedTasks            int
+	AcceptedTasksUnavailable bool
+	AcceptedTasksSource      string
+	CurrentAcceptedRisk      string
+	Rollout                  *SessionRotationRolloutSignals
+	RolloutUnavailableField  string
+	RolloutUnavailableSrc    string
+	MaterialEvents           int
+	MaterialEventsAvailable  bool
+	MaterialEventSourceIDs   []string
+	Limit                    *SessionRotationLimitSignals
+	LimitUnavailableFields   []string
+	LimitSource              string
 }
 
 type SessionRotationDecision struct {
@@ -124,12 +127,13 @@ type SessionRotationDecision struct {
 }
 
 type SessionRotationEvaluation struct {
-	ParentThreadID      string
-	TaskID              string
-	Terminal            string
-	Decision            SessionRotationDecision
-	AcceptedTasks       int
-	LimitBaselineUpdate *SessionLimitBaseline
+	ParentThreadID           string
+	TaskID                   string
+	Terminal                 string
+	Decision                 SessionRotationDecision
+	AcceptedTasks            int
+	AcceptedTasksUnavailable bool
+	LimitBaselineUpdate      *SessionLimitBaseline
 }
 
 const sessionRotationMarkerVersion = 3
@@ -158,6 +162,7 @@ const (
 )
 
 const (
+	SessionRotationEvidenceFieldAcceptedTasks      = "accepted_tasks"
 	SessionRotationEvidenceFieldRolloutAssociation = "rollout_association"
 	SessionRotationEvidenceFieldRolloutScan        = "rollout_scan"
 	SessionRotationEvidenceFieldMaterialEvents     = "material_events"
@@ -250,7 +255,7 @@ func (marker *SessionRotationMarker) validateLifecycle() error {
 	if marker.Claim != nil && (!ValidGeneratedUUID(marker.Claim.ClaimID) || !ValidUUIDFormat(marker.Claim.ClaimantThreadID) || !ValidGeneratedUUID(marker.Claim.TargetTaskID) || marker.Claim.ClaimedAt == "") {
 		return fmt.Errorf("session rotation claimが不正です")
 	}
-	return marker.validateCreationOutcome()
+	return marker.validateCreationOutcomeAndAcceptedTasks()
 }
 
 func (marker *SessionRotationMarker) validateStateRecords() error {
@@ -752,6 +757,7 @@ func (s *StateStore) commitSessionRotation(evaluation *SessionRotationEvaluation
 			ParentThreadID: evaluation.ParentThreadID,
 		}
 	}
+	marker.AcceptedTasks = sessionRotationAcceptedTasksForCommit(evaluation)
 	if evaluation.LimitBaselineUpdate != nil {
 		marker.LimitBaseline = evaluation.LimitBaselineUpdate
 	}
@@ -878,18 +884,26 @@ func sessionRotationLimitTrigger(signals SessionRotationSignals, decision *Sessi
 }
 
 func sessionRotationDefaultTrigger(signals SessionRotationSignals, decision *SessionRotationDecision) {
-	if signals.Terminal != SessionRotationTerminalAccept || signals.AcceptedTasks < sessionRotationDefaultAcceptedTasks {
+	if signals.Terminal != SessionRotationTerminalAccept || signals.AcceptedTasksUnavailable || signals.AcceptedTasks < sessionRotationDefaultAcceptedTasks {
 		return
 	}
 	sessionRotationRequire(decision, SessionRotationEvidence{
 		Trigger: SessionRotationReasonDefaultTwoTasks,
-		Field:   "accepted_tasks",
+		Field:   SessionRotationEvidenceFieldAcceptedTasks,
 		Value:   fmt.Sprintf("%d", signals.AcceptedTasks),
+		Source:  signals.AcceptedTasksSource,
 	})
 }
 
 func sessionRotationUnavailableEvidence(signals SessionRotationSignals) []SessionRotationEvidence {
 	unavailable := []SessionRotationEvidence{}
+	if signals.Terminal == SessionRotationTerminalAccept && signals.AcceptedTasksUnavailable {
+		unavailable = append(unavailable, SessionRotationEvidence{
+			Trigger: SessionRotationReasonEvidenceUnavailable,
+			Field:   SessionRotationEvidenceFieldAcceptedTasks,
+			Source:  signals.AcceptedTasksSource,
+		})
+	}
 	if signals.Rollout == nil && signals.RolloutUnavailableField != "" {
 		unavailable = append(unavailable, SessionRotationEvidence{
 			Trigger: SessionRotationReasonEvidenceUnavailable,
