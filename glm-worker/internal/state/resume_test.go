@@ -119,6 +119,9 @@ func TestResumeStopKindRejectsMalformedState(t *testing.T) {
 	if err := st.SaveResumeCheckpoint(ResumeCheckpoint{Stage: ResumeStageWorker, Model: "opus", StopKind: ResumeStopInterrupted, ResetAtCST: "unexpected"}); err == nil || !strings.Contains(err.Error(), "rate-limit reset metadata") {
 		t.Fatalf("mismatched payload save error = %v", err)
 	}
+	if err := st.SaveResumeCheckpoint(ResumeCheckpoint{Stage: ResumeStageWorker, Model: "opus", StopKind: ResumeStopProviderUnavailable}); err == nil || !strings.Contains(err.Error(), "provider classification") {
+		t.Fatalf("incomplete provider stop save error = %v", err)
+	}
 
 	docs := []struct {
 		name string
@@ -127,6 +130,9 @@ func TestResumeStopKindRejectsMalformedState(t *testing.T) {
 	}{
 		{name: "unknown kind", doc: `{"version":6,"stage":"worker","model":"opus","report_only":false,"stop_kind":"future-stop"}`, want: "unknown resume stop kind"},
 		{name: "provider payload mismatch", doc: `{"version":6,"stage":"worker","model":"opus","report_only":false,"stop_kind":"interrupted","provider_unavailable_probes":1}`, want: "provider metadata is present"},
+		{name: "provider stop missing classification", doc: `{"version":6,"stage":"worker","model":"opus","report_only":false,"stop_kind":"provider-unavailable","provider_unavailable_probes":1,"provider_unavailable_started_at":"2026-07-22T06:00:00Z"}`, want: "provider classification"},
+		{name: "provider stop zero probes", doc: `{"version":6,"stage":"worker","model":"opus","report_only":false,"stop_kind":"provider-unavailable","provider_unavailable_classification":"http-503","provider_unavailable_started_at":"2026-07-22T06:00:00Z"}`, want: "positive probe count"},
+		{name: "provider stop missing recovery start", doc: `{"version":6,"stage":"worker","model":"opus","report_only":false,"stop_kind":"provider-unavailable","provider_unavailable_classification":"http-503","provider_unavailable_probes":1}`, want: "recovery start time"},
 		{name: "quality-gate stop without payload", doc: `{"version":6,"stage":"worker","model":"opus","report_only":false,"stop_kind":"quality-gate-recoverable"}`, want: "quality-gate recovery checkpoint requires the gate failure and the completed worker result"},
 		{name: "quality-gate payload on other kind", doc: `{"version":6,"stage":"worker","model":"opus","report_only":false,"stop_kind":"interrupted","quality_gate_failure":"mismatch"}`, want: "quality-gate metadata is present"},
 	}
