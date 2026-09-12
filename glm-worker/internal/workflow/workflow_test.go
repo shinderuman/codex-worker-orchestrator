@@ -257,7 +257,6 @@ func newStateStoreT(t *testing.T) *state.StateStore {
 	if _, err := st.StartNewTask(); err != nil {
 		t.Fatal(err)
 	}
-	pinRepositoryHarnessActiveT(t, st)
 	if err := st.Write(qualitySurfaceBaselineStateKey, "quality-baseline"); err != nil {
 		t.Fatal(err)
 	}
