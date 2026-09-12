@@ -30,9 +30,6 @@ func Resolve(home, configDir, settingsPath string) (Location, error) {
 	}
 
 	settingsPath = filepath.Clean(settingsPath)
-	if filepath.Base(settingsPath) != "settings.json" {
-		return Location{}, fmt.Errorf("CLAUDE_SETTINGS_FILE must name settings.json: %s", settingsPath)
-	}
 	settingsDir := filepath.Dir(settingsPath)
 	if !configuredDir {
 		return Location{ConfigDir: settingsDir, SettingsPath: settingsPath}, nil
