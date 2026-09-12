@@ -35,11 +35,6 @@ func applyInstallWithStateWriter(preparation installPreparation, stdout io.Write
 	if err := applyConfigInstallPlan(preparation.configPlan, output); err != nil {
 		return rollbackInstall(backups, err)
 	}
-	if !preparation.stateExists {
-		if err := removeLegacyManifest(preparation.codexDir, preparation.legacy.Present); err != nil {
-			return rollbackInstall(backups, err)
-		}
-	}
 	next := installState{Version: stateVersion, Files: files, Config: map[string]managedConfigRecord{}}
 	if preparation.configPlan.Record != nil {
 		next.Config[managedConfigKey] = *preparation.configPlan.Record
@@ -74,9 +69,6 @@ func installMutationPaths(preparation installPreparation) []string {
 	}
 	if preparation.configPlan.Changed {
 		unique[preparation.configPlan.Path] = true
-	}
-	if !preparation.stateExists && preparation.legacy.Present {
-		unique[filepath.Join(preparation.codexDir, legacyManifestName)] = true
 	}
 	paths := make([]string, 0, len(unique))
 	for path := range unique {
