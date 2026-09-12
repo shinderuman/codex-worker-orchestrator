@@ -29,10 +29,12 @@ func TestRepositoryHarnessActivationPinRejectsInconsistentState(t *testing.T) {
 			if err := st.Write(activeTaskStateKey, activeTaskGuardPath); err != nil {
 				t.Fatal(err)
 			}
-			if tc.activation != nil {
-				if err := st.Write(repositoryharness.ActivationStateKey, *tc.activation); err != nil {
+			if tc.activation == nil {
+				if err := st.Remove(repositoryharness.ActivationStateKey); err != nil {
 					t.Fatal(err)
 				}
+			} else if err := st.Write(repositoryharness.ActivationStateKey, *tc.activation); err != nil {
+				t.Fatal(err)
 			}
 
 			active, err := w.repositoryHarnessActive()
@@ -111,6 +113,9 @@ func TestRepositoryHarnessMissingActivationDoesNotReevaluatePinnedGenericTask(t 
 	repoRoot := initForeignRepository(t)
 	w, _, _, st := newPlanFileWorkflow(t, repoRoot, nil, "", 0, nil)
 	if err := st.Write(activeTaskStateKey, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Remove(repositoryharness.ActivationStateKey); err != nil {
 		t.Fatal(err)
 	}
 	trackRepositoryHarnessMarker(t, repoRoot)
