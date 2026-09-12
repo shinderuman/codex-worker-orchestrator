@@ -122,19 +122,41 @@ func decodeMarker(m marker) error {
 	if m.Version != currentVersion { return errUnsupported }
 	return nil
 }
+func handleUnsupportedVersion(version int) string {
+	if version == currentVersion { return "current" }
+	return "reset"
+}
 var errUnsupported error
 const legacyEvidenceLabel = "legacy-evidence:lifecycle"
 func stopEndpointPath(primary, fallback string) string {
 	if primary != "" { return primary }
 	return fallback
 }
+func guardRecoveryFallback(primary, safeFallback string) string {
+	if primary != "" { return primary }
+	return safeFallback
+}
 `)
 	writeFixture(t, root, "glm-worker/internal/example/decoder_test.go", `package example
 import "testing"
 func TestDecoderRejectsOldVersion(t *testing.T) {}
 func TestInstallDoesNotMigrateLegacyOwnership(t *testing.T) {}
+func TestDecoderSkipsOldVersion(t *testing.T) {}
+func TestStateResetsOldSchema(t *testing.T) {}
+func TestStateRebuildsOldVersion(t *testing.T) {}
+func TestStateDeletesOldVersion(t *testing.T) {}
+func TestResumeNonResumableForOldVersion(t *testing.T) {}
 `)
 	assertNoForwardOnlyViolations(t, ruleViolations(t, root))
+}
+
+func TestForwardOnlyCompatibilityScansOtherHarnesslintProduction(t *testing.T) {
+	root := fixtureRoot(t)
+	path := "glm-worker/internal/harnesslint/other.go"
+	writeFixture(t, root, path, `package harnesslint
+func MigrateLegacyInstall() error { return nil }
+`)
+	requireRulePath(t, ruleViolations(t, root), forwardOnlyCompatibilityRule, path)
 }
 
 func TestForwardOnlyCompatibilityIgnoresOwnNegativeFixtures(t *testing.T) {
