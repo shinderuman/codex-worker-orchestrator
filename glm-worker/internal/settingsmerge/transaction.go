@@ -10,8 +10,8 @@ import (
 )
 
 type mergeTransactionJournal struct {
-	Version int                       `json:"version"`
-	Files   []mergeTransactionFile    `json:"files"`
+	Version int                    `json:"version"`
+	Files   []mergeTransactionFile `json:"files"`
 }
 
 type mergeTransactionFile struct {
@@ -48,10 +48,7 @@ func recoverSettingsTransaction(targetPath string, writeFn writeFileFunc) error 
 	if err := restoreMergeTransaction(journal, writeFn); err != nil {
 		return fmt.Errorf("recover settings transaction: %w", err)
 	}
-	if err := os.Remove(journalPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("remove recovered settings transaction journal: %w", err)
-	}
-	return nil
+	return removeMergeTransactionJournal(journalPath, "remove recovered settings transaction journal")
 }
 
 func commitRecoverableTransaction(targetPath string, plans []plannedWrite, writeFn writeFileFunc) error {
@@ -63,22 +60,34 @@ func commitRecoverableTransaction(targetPath string, plans []plannedWrite, write
 	if err := saveMergeTransactionJournal(journalPath, journal); err != nil {
 		return fmt.Errorf("persist settings transaction journal: %w", err)
 	}
+	if err := applyMergeTransactionPlans(plans, writeFn); err != nil {
+		return rollbackFailedMergeTransaction(journalPath, journal, writeFn, err)
+	}
+	return removeMergeTransactionJournal(journalPath, "finalize settings transaction journal")
+}
+
+func applyMergeTransactionPlans(plans []plannedWrite, writeFn writeFileFunc) error {
 	for _, plan := range plans {
 		if err := writeFn(plan.path, plan.data, plan.mode); err != nil {
-			rollbackErr := restoreMergeTransaction(journal, writeFn)
-			if rollbackErr == nil {
-				if removeErr := os.Remove(journalPath); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
-					rollbackErr = fmt.Errorf("remove settings transaction journal after rollback: %w", removeErr)
-				}
-			}
-			if rollbackErr != nil {
-				return fmt.Errorf("%w (rollback failed: %w)", err, rollbackErr)
-			}
 			return err
 		}
 	}
-	if err := os.Remove(journalPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("finalize settings transaction journal: %w", err)
+	return nil
+}
+
+func rollbackFailedMergeTransaction(journalPath string, journal mergeTransactionJournal, writeFn writeFileFunc, cause error) error {
+	if err := restoreMergeTransaction(journal, writeFn); err != nil {
+		return fmt.Errorf("%w (rollback failed: %w)", cause, err)
+	}
+	if err := removeMergeTransactionJournal(journalPath, "remove settings transaction journal after rollback"); err != nil {
+		return fmt.Errorf("%w (rollback cleanup failed: %w)", cause, err)
+	}
+	return cause
+}
+
+func removeMergeTransactionJournal(path, operation string) error {
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("%s: %w", operation, err)
 	}
 	return nil
 }
@@ -150,9 +159,9 @@ func loadMergeTransactionJournal(path string) (mergeTransactionJournal, error) {
 
 func validateMergeTransactionJournal(targetPath string, journal mergeTransactionJournal) error {
 	allowed := map[string]bool{
-		targetPath:                    true,
-		statePathFor(targetPath):      true,
-		ManagedStatePath(targetPath):  true,
+		targetPath:                   true,
+		statePathFor(targetPath):     true,
+		ManagedStatePath(targetPath): true,
 	}
 	if len(journal.Files) == 0 || len(journal.Files) > len(allowed) {
 		return fmt.Errorf("settings transaction journal file set is invalid")
