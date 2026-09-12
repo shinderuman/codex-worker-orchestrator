@@ -36,6 +36,8 @@ const ActivationStateKey = "repository-harness"
 
 const ActivationActiveValue = "1"
 
+const ActivationInactiveValue = ""
+
 const (
 	ReasonAbsent          = "absent"
 	ReasonNotRegularFile  = "not-regular-file"

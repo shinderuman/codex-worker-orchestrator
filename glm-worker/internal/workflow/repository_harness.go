@@ -1,16 +1,11 @@
 package workflow
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 )
-
-type pinnedActiveTaskMarkerError struct {
-	reason string
-}
 
 var repositoryHarnessGuardSurface = guardSurface{
 	label:         "repository harness opt-in marker",
@@ -21,20 +16,37 @@ var repositoryHarnessGuardSurface = guardSurface{
 	targets:       repositoryharness.MarkerPath + "のworking tree存在・種別・内容・git追跡状態",
 }
 
-func (e *pinnedActiveTaskMarkerError) Error() string {
-	return "task開始時に固定したACTIVE taskに対しrepository harness opt-in marker境界が失われました(" + e.reason + ")"
-}
-
 func (w *Workflow) repositoryHarnessActive() (bool, error) {
 	if w.state.Exists(repositoryharness.ActivationStateKey) {
-		return w.state.ReadOr(repositoryharness.ActivationStateKey, "") == repositoryharness.ActivationActiveValue, nil
+		activation, err := w.state.Read(repositoryharness.ActivationStateKey)
+		if err != nil {
+			return false, fmt.Errorf("repository harness activation pinを読み込めません: %w", err)
+		}
+		switch activation {
+		case repositoryharness.ActivationActiveValue:
+			return true, nil
+		case repositoryharness.ActivationInactiveValue:
+			if !w.activeTaskStateSet() {
+				return false, nil
+			}
+			activeTask, err := w.state.Read(activeTaskStateKey)
+			if err != nil {
+				return false, fmt.Errorf("ACTIVE task pinを読み込めません: %w", err)
+			}
+			if activeTask != "" {
+				return false, fmt.Errorf("repository harness activation pinがinactiveですがACTIVE task %sが固定されています", activeTask)
+			}
+			return false, nil
+		default:
+			return false, fmt.Errorf("repository harness activation pinが不正です: %q", activation)
+		}
+	}
+	if w.activeTaskStateSet() {
+		return false, fmt.Errorf("repository harness activation pinが欠落しています")
 	}
 	decision, err := repositoryharness.Evaluate(w.config.RepoRoot)
 	if err != nil {
 		return false, err
-	}
-	if !decision.Active && w.activeTaskStateSet() && w.readActiveTaskState() != "" {
-		return false, &pinnedActiveTaskMarkerError{reason: decision.Reason}
 	}
 	return decision.Active, nil
 }
@@ -42,10 +54,6 @@ func (w *Workflow) repositoryHarnessActive() (bool, error) {
 func (w *Workflow) captureRepositoryHarnessBoundary() (repositoryharness.MarkerGuard, bool, bool, error) {
 	harnessActive, err := w.repositoryHarnessActive()
 	if err != nil {
-		var pinnedMarker *pinnedActiveTaskMarkerError
-		if errors.As(err, &pinnedMarker) {
-			return repositoryharness.MarkerGuard{}, false, true, w.failClosedRepositoryHarness("repository-harness-capture", repositoryHarnessOutcome(pinnedMarker.reason), repositoryHarnessInactiveReason(pinnedMarker.reason), nil)
-		}
 		return repositoryharness.MarkerGuard{}, false, true, w.failClosedRepositoryHarness("repository-harness-capture", repositoryHarnessGuardSurface.unavailableOutcome(), "repository harness適用境界を評価できません", err)
 	}
 	if !harnessActive {
@@ -60,7 +68,7 @@ func (w *Workflow) pinRepositoryHarnessActivation() (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	value := ""
+	value := repositoryharness.ActivationInactiveValue
 	if decision.Active {
 		value = repositoryharness.ActivationActiveValue
 	}
