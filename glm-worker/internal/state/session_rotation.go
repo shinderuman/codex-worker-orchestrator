@@ -252,8 +252,13 @@ func (marker *SessionRotationMarker) validateLifecycle() error {
 	if err := marker.validateStateRecords(); err != nil {
 		return err
 	}
-	if marker.Claim != nil && (!ValidGeneratedUUID(marker.Claim.ClaimID) || !ValidUUIDFormat(marker.Claim.ClaimantThreadID) || !ValidGeneratedUUID(marker.Claim.TargetTaskID) || marker.Claim.ClaimedAt == "") {
-		return fmt.Errorf("session rotation claimが不正です")
+	if marker.Claim != nil {
+		if !ValidGeneratedUUID(marker.Claim.ClaimID) || !ValidUUIDFormat(marker.Claim.ClaimantThreadID) || !ValidGeneratedUUID(marker.Claim.TargetTaskID) || marker.Claim.ClaimedAt == "" {
+			return fmt.Errorf("session rotation claimが不正です")
+		}
+		if marker.Claim.ClaimantThreadID != marker.ParentThreadID {
+			return fmt.Errorf("session rotation claimのclaimant thread IDが親thread IDと一致しません")
+		}
 	}
 	return marker.validateCreationOutcomeAndAcceptedTasks()
 }
@@ -290,8 +295,11 @@ func validateBoundSessionRotationRecords(marker *SessionRotationMarker) error {
 }
 
 func validateIssuedSessionRotationRecords(marker *SessionRotationMarker) error {
-	if marker.Directive == nil || marker.Issued == nil || !ValidUUIDFormat(marker.Issued.BoundThreadID) {
-		return fmt.Errorf("issued session rotation markerにbound thread IDがありません")
+	if marker.Directive == nil || marker.Claim == nil || marker.Issued == nil || !ValidUUIDFormat(marker.Issued.BoundThreadID) {
+		return fmt.Errorf("issued session rotation markerのstate recordが不正です")
+	}
+	if marker.Claim.BoundThreadID != marker.Issued.BoundThreadID {
+		return fmt.Errorf("issued session rotation markerのbound thread IDがclaimと一致しません")
 	}
 	return nil
 }
