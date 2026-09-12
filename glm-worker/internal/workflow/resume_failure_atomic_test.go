@@ -41,3 +41,19 @@ func TestResumeProbeGateRestoreFailureIsReported(t *testing.T) {
 		t.Fatalf("失敗したrollbackを成功扱いしてstatusを変えている: %q", st.TaskStatus())
 	}
 }
+
+func requireProviderUnavailableStop(t *testing.T, st *state.StateStore) {
+	t.Helper()
+	checkpoint, err := st.LoadResumeCheckpoint()
+	if err != nil {
+		t.Fatalf("provider-unavailable checkpointが失われた: %v", err)
+	}
+	if checkpoint.StopKind != state.ResumeStopProviderUnavailable ||
+		checkpoint.ProviderUnavailableClassification != "http-503" ||
+		checkpoint.ProviderUnavailableProbes != 4 {
+		t.Fatalf("provider-unavailable checkpointが変化した: %#v", checkpoint)
+	}
+	if st.TaskStatus() != state.TaskStatusProviderUnavailable {
+		t.Fatalf("status = %q want provider-unavailable", st.TaskStatus())
+	}
+}
