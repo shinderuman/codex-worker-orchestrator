@@ -9,8 +9,10 @@ import (
 
 func pinRepositoryHarnessActiveT(t *testing.T, st *state.StateStore) {
 	t.Helper()
-	if st.Exists(repositoryharness.ActivationStateKey) ||
-		(st.TaskStatus() != state.TaskStatusActive && !st.Exists(activeTaskStateKey)) {
+	if st.Exists(repositoryharness.ActivationStateKey) {
+		return
+	}
+	if st.TaskStatus() == state.TaskStatusProviderUnavailable && !st.Exists(activeTaskStateKey) {
 		return
 	}
 	if err := st.Write(repositoryharness.ActivationStateKey, repositoryharness.ActivationActiveValue); err != nil {
