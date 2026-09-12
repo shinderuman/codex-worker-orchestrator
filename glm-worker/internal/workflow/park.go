@@ -211,25 +211,10 @@ func (w *Workflow) removeParkWorktree(record state.ParkRecord) {
 }
 
 func (w *Workflow) ExecuteUnpark(stdout io.Writer) error {
-	status := w.state.TaskStatus()
-	var record state.ParkRecord
-	cleanupPending := false
-	var err error
-	if status == state.TaskStatusParked {
-		record, err = w.state.LoadParkRecord()
-		if err != nil {
-			return &WorkerError{Phase: "unpark", Message: "park記録を読み込めません: " + err.Error()}
-		}
-	} else {
-		record, cleanupPending, err = w.state.PendingUnparkCleanup()
-		if err != nil {
-			return &WorkerError{Phase: "unpark", Message: "unpark cleanup待ち状態を読み込めません: " + err.Error()}
-		}
-		if !cleanupPending {
-			return &WorkerError{Phase: "unpark", Message: fmt.Sprintf("unparkはparked taskまたはcleanup待ちtaskだけを受け付けます。現在: %s", status)}
-		}
+	record, cleanupPending, err := w.loadUnparkRecord()
+	if err != nil {
+		return err
 	}
-
 	integration, err := w.verifyParkIntegration(&record)
 	if err != nil {
 		return err
@@ -275,6 +260,25 @@ func (w *Workflow) ExecuteUnpark(stdout io.Writer) error {
 		Cleanup:        "complete",
 	}
 	return writeJSONTo(stdout, output)
+}
+
+func (w *Workflow) loadUnparkRecord() (state.ParkRecord, bool, error) {
+	status := w.state.TaskStatus()
+	if status == state.TaskStatusParked {
+		record, err := w.state.LoadParkRecord()
+		if err != nil {
+			return state.ParkRecord{}, false, &WorkerError{Phase: "unpark", Message: "park記録を読み込めません: " + err.Error()}
+		}
+		return record, false, nil
+	}
+	record, cleanupPending, err := w.state.PendingUnparkCleanup()
+	if err != nil {
+		return state.ParkRecord{}, false, &WorkerError{Phase: "unpark", Message: "unpark cleanup待ち状態を読み込めません: " + err.Error()}
+	}
+	if !cleanupPending {
+		return state.ParkRecord{}, false, &WorkerError{Phase: "unpark", Message: fmt.Sprintf("unparkはparked taskまたはcleanup待ちtaskだけを受け付けます。現在: %s", status)}
+	}
+	return record, true, nil
 }
 
 func (w *Workflow) cleanupParkResources(record state.ParkRecord) (string, error) {
