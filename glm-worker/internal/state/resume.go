@@ -170,6 +170,13 @@ func (checkpoint *ResumeCheckpoint) SetStopRepositoryBoundary(snapshot GitSnapsh
 	checkpoint.StopParentFiles = snapshot.ParentFiles
 }
 
+func (checkpoint *ResumeCheckpoint) ConsumeStopParentFiles() {
+	checkpoint.StopParentFiles = nil
+	if checkpoint.StopGitSnapshot != nil {
+		checkpoint.StopGitSnapshot.ParentFiles = nil
+	}
+}
+
 func (checkpoint *ResumeCheckpoint) ClearStop() {
 	checkpoint.clearStopPayload()
 	checkpoint.StopKind = ResumeStopNone
@@ -199,7 +206,7 @@ func (checkpoint *ResumeCheckpoint) clearStopPayload() {
 	checkpoint.StopDirtyFiles = nil
 }
 
-func (checkpoint *ResumeCheckpoint) normalizeStopParentFilesForSave() error {
+func (checkpoint ResumeCheckpoint) validateStopParentFilesAuthority() error {
 	if checkpoint.StopGitSnapshot == nil {
 		if checkpoint.StopParentFiles != nil {
 			return fmt.Errorf("stop parent files require canonical stop snapshot")
@@ -207,13 +214,10 @@ func (checkpoint *ResumeCheckpoint) normalizeStopParentFilesForSave() error {
 		return nil
 	}
 	canonical := checkpoint.StopGitSnapshot.ParentFiles
-	if checkpoint.StopParentFiles == nil {
-		if checkpoint.Stage == ResumeStageReview {
-			checkpoint.StopGitSnapshot.ParentFiles = nil
-		}
+	if canonical == nil && checkpoint.StopParentFiles == nil {
 		return nil
 	}
-	if canonical == nil || !SameParentFileStates(*canonical, *checkpoint.StopParentFiles) {
+	if canonical == nil || checkpoint.StopParentFiles == nil || !SameParentFileStates(*canonical, *checkpoint.StopParentFiles) {
 		return fmt.Errorf("stop parent files diverge from canonical stop snapshot")
 	}
 	return nil
@@ -291,7 +295,7 @@ func (s *StateStore) SaveResumeCheckpoint(checkpoint ResumeCheckpoint) error {
 	if checkpoint.Model == "" {
 		return fmt.Errorf("resume state model is required")
 	}
-	if err := checkpoint.normalizeStopParentFilesForSave(); err != nil {
+	if err := checkpoint.validateStopParentFilesAuthority(); err != nil {
 		return err
 	}
 	if err := checkpoint.validateStopState(); err != nil {
