@@ -40,6 +40,7 @@ var taskBoundStatePolicies = []taskBoundStatePolicy{
 	{name: stopIndexPatchFile, lifetime: taskBoundStateFreshTaskClear},
 	{name: isolationStateFile, lifetime: taskBoundStateFreshTaskClear},
 	{name: resumeStateFile, lifetime: taskBoundStateFreshTaskClear},
+	{name: resumeTransitionFile, lifetime: taskBoundStateFreshTaskClear},
 	{name: workerEndSnapshotFile, lifetime: taskBoundStateFreshTaskClear},
 	{name: reviewStartSnapshotFile, lifetime: taskBoundStateFreshTaskClear},
 	{name: reportOnlyStartSnapshotFile, lifetime: taskBoundStateFreshTaskClear},
