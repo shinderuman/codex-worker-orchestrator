@@ -206,16 +206,35 @@ func (w *Workflow) removeParkWorktree(record state.ParkRecord) {
 }
 
 func (w *Workflow) ExecuteUnpark(stdout io.Writer) error {
-	if w.state.TaskStatus() != state.TaskStatusParked {
-		return &WorkerError{Phase: "unpark", Message: fmt.Sprintf("unparkはparked taskだけを受け付けます。現在: %s", w.state.TaskStatus())}
+	status := w.state.TaskStatus()
+	var record state.ParkRecord
+	cleanupPending := false
+	var err error
+	if status == state.TaskStatusParked {
+		record, err = w.state.LoadParkRecord()
+		if err != nil {
+			return &WorkerError{Phase: "unpark", Message: "park記録を読み込めません: " + err.Error()}
+		}
+	} else {
+		record, cleanupPending, err = w.state.PendingUnparkCleanup()
+		if err != nil {
+			return &WorkerError{Phase: "unpark", Message: "unpark cleanup待ち状態を読み込めません: " + err.Error()}
+		}
+		if !cleanupPending {
+			return &WorkerError{Phase: "unpark", Message: fmt.Sprintf("unparkはparked taskまたはcleanup待ちtaskだけを受け付けます。現在: %s", status)}
+		}
 	}
-	record, err := w.state.LoadParkRecord()
-	if err != nil {
-		return &WorkerError{Phase: "unpark", Message: "park記録を読み込めません: " + err.Error()}
-	}
+
 	integration, err := w.verifyParkIntegration(&record)
 	if err != nil {
 		return err
+	}
+	restored := record.FromStatus
+	if !cleanupPending {
+		restored, err = w.state.CommitUnpark()
+		if err != nil {
+			return &WorkerError{Phase: "unpark", Message: "park状態からの論理復帰に失敗しました: " + err.Error()}
+		}
 	}
 	cleanupNote, cleanupErr := w.cleanupParkResources(record)
 	if cleanupErr != nil {
@@ -225,9 +244,12 @@ func (w *Workflow) ExecuteUnpark(stdout io.Writer) error {
 		})
 		return &WorkerError{Phase: "unpark-cleanup", Message: "park resource cleanupが未完了です。unparkを再実行してください: " + cleanupErr.Error()}
 	}
-	restored, err := w.state.LeaveParked()
-	if err != nil {
-		return &WorkerError{Phase: "unpark", Message: "park状態からの復帰に失敗しました: " + err.Error()}
+	if err := w.state.CompleteUnpark(); err != nil {
+		w.state.RecordModelCallLog(state.ModelCallLog{
+			TaskID: record.TaskID, CallType: state.CallTypeEvent, StartedAt: w.now().UTC(), CompletedAt: w.now().UTC(),
+			Phase: "unpark-cleanup", Outcome: "cleanup-required", Error: boundedText(cleanupNote+"; park record cleanup: "+err.Error(), 4096),
+		})
+		return &WorkerError{Phase: "unpark-cleanup", Message: "park cleanupのfinalizationが未完了です。unparkを再実行してください: " + err.Error()}
 	}
 	w.state.RecordModelCallLog(state.ModelCallLog{
 		TaskID:      record.TaskID,
