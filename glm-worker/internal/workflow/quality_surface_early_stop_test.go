@@ -312,7 +312,9 @@ func TestQualitySurfaceApprovalGeneratesTaskScopeOnProductionDirtyBaseline(t *te
 	}
 
 	w.temp = t.TempDir()
-	w.prepareAcceptedFixScope(acceptedFixScopeCurrentDiff)
+	if err := w.prepareAcceptedFixScopeChecked(acceptedFixScopeCurrentDiff); err != nil {
+		t.Fatal(err)
+	}
 	scope, err := os.ReadFile(st.Path(acceptedFixScopeStateFile))
 	if err != nil {
 		t.Fatalf("production dirty baselineで承認scopeが生成されませんでした: %v", err)
@@ -427,7 +429,9 @@ func TestQualitySurfaceApprovalScopesPostBaselinePreexistingEdits(t *testing.T) 
 	}
 
 	w.temp = t.TempDir()
-	w.prepareAcceptedFixScope(acceptedFixScopeCurrentDiff)
+	if err := w.prepareAcceptedFixScopeChecked(acceptedFixScopeCurrentDiff); err != nil {
+		t.Fatal(err)
+	}
 	scope, err := os.ReadFile(st.Path(acceptedFixScopeStateFile))
 	if err != nil {
 		t.Fatalf("pre-existing fileへのtask追記があってもscopeが生成されません: %v", err)
