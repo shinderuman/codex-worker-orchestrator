@@ -8,7 +8,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-// EvaluateCanonicalSessionRotationTerminal はTaskStatsを入力にせずcanonical stateからsession rotationを評価する。
 func EvaluateCanonicalSessionRotationTerminal(
 	cfg config.AppConfig,
 	st *state.StateStore,

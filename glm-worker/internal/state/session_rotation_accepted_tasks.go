@@ -6,8 +6,6 @@ import (
 	"os"
 )
 
-// SessionRotationAcceptedTaskCount は親threadのdurableなaccepted-task policy stateを返す。
-// 新しいrotation targetだけはissued source markerから0件開始を証明し、それ以外の履歴欠損はunknownのまま扱う。
 func (s *StateStore) SessionRotationAcceptedTaskCount(threadID string) (int, bool, string, error) {
 	markerPath := s.SessionRotationMarkerPath(threadID)
 	marker, err := s.LoadSessionRotationMarker(threadID)
@@ -65,4 +63,22 @@ func (s *StateStore) sessionRotationIssuedSourceForThread(threadID string) (stri
 		found = s.SessionRotationMarkerPath(sourceThreadID)
 	}
 	return found, found != "", nil
+}
+
+func (marker *SessionRotationMarker) validateCreationOutcomeAndAcceptedTasks() error {
+	if err := marker.validateCreationOutcome(); err != nil {
+		return err
+	}
+	if marker.AcceptedTasks != nil && *marker.AcceptedTasks < 0 {
+		return fmt.Errorf("session rotation markerのaccepted_tasksが不正です: %d", *marker.AcceptedTasks)
+	}
+	return nil
+}
+
+func sessionRotationAcceptedTasksForCommit(evaluation *SessionRotationEvaluation) *int {
+	if evaluation.AcceptedTasksUnavailable {
+		return nil
+	}
+	acceptedTasks := evaluation.AcceptedTasks
+	return &acceptedTasks
 }

@@ -104,20 +104,20 @@ type SessionRotationLimitSignals struct {
 }
 
 type SessionRotationSignals struct {
-	Terminal                   string
-	AcceptedTasks              int
-	AcceptedTasksUnavailable   bool
-	AcceptedTasksSource        string
-	CurrentAcceptedRisk        string
-	Rollout                    *SessionRotationRolloutSignals
-	RolloutUnavailableField    string
-	RolloutUnavailableSrc      string
-	MaterialEvents             int
-	MaterialEventsAvailable    bool
-	MaterialEventSourceIDs     []string
-	Limit                      *SessionRotationLimitSignals
-	LimitUnavailableFields     []string
-	LimitSource                string
+	Terminal                 string
+	AcceptedTasks            int
+	AcceptedTasksUnavailable bool
+	AcceptedTasksSource      string
+	CurrentAcceptedRisk      string
+	Rollout                  *SessionRotationRolloutSignals
+	RolloutUnavailableField  string
+	RolloutUnavailableSrc    string
+	MaterialEvents           int
+	MaterialEventsAvailable  bool
+	MaterialEventSourceIDs   []string
+	Limit                    *SessionRotationLimitSignals
+	LimitUnavailableFields   []string
+	LimitSource              string
 }
 
 type SessionRotationDecision struct {
@@ -127,13 +127,13 @@ type SessionRotationDecision struct {
 }
 
 type SessionRotationEvaluation struct {
-	ParentThreadID            string
-	TaskID                    string
-	Terminal                  string
-	Decision                  SessionRotationDecision
-	AcceptedTasks             int
-	AcceptedTasksUnavailable  bool
-	LimitBaselineUpdate       *SessionLimitBaseline
+	ParentThreadID           string
+	TaskID                   string
+	Terminal                 string
+	Decision                 SessionRotationDecision
+	AcceptedTasks            int
+	AcceptedTasksUnavailable bool
+	LimitBaselineUpdate      *SessionLimitBaseline
 }
 
 const sessionRotationMarkerVersion = 3
@@ -237,9 +237,6 @@ func (marker *SessionRotationMarker) validate() error {
 			return err
 		}
 	}
-	if marker.AcceptedTasks != nil && *marker.AcceptedTasks < 0 {
-		return fmt.Errorf("session rotation markerのaccepted_tasksが不正です: %d", *marker.AcceptedTasks)
-	}
 	if marker.LastEvaluation != nil {
 		if marker.LastEvaluation.TaskID == "" || marker.LastEvaluation.At == "" {
 			return fmt.Errorf("session rotation markerのlast_evaluationが不完全です")
@@ -258,7 +255,7 @@ func (marker *SessionRotationMarker) validateLifecycle() error {
 	if marker.Claim != nil && (!ValidGeneratedUUID(marker.Claim.ClaimID) || !ValidUUIDFormat(marker.Claim.ClaimantThreadID) || !ValidGeneratedUUID(marker.Claim.TargetTaskID) || marker.Claim.ClaimedAt == "") {
 		return fmt.Errorf("session rotation claimが不正です")
 	}
-	return marker.validateCreationOutcome()
+	return marker.validateCreationOutcomeAndAcceptedTasks()
 }
 
 func (marker *SessionRotationMarker) validateStateRecords() error {
@@ -760,12 +757,7 @@ func (s *StateStore) commitSessionRotation(evaluation *SessionRotationEvaluation
 			ParentThreadID: evaluation.ParentThreadID,
 		}
 	}
-	if evaluation.AcceptedTasksUnavailable {
-		marker.AcceptedTasks = nil
-	} else {
-		acceptedTasks := evaluation.AcceptedTasks
-		marker.AcceptedTasks = &acceptedTasks
-	}
+	marker.AcceptedTasks = sessionRotationAcceptedTasksForCommit(evaluation)
 	if evaluation.LimitBaselineUpdate != nil {
 		marker.LimitBaseline = evaluation.LimitBaselineUpdate
 	}
