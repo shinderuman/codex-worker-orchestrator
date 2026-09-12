@@ -173,7 +173,7 @@ func TestStatsCurrentScopeTaskAndPeriodFilter(t *testing.T) {
 	taskLate := "22222222-2222-4222-8222-222222222222"
 	orphanTask := "33333333-3333-4333-8333-333333333333"
 	writeStatsHistoryArchive(t, st, taskEarly, base, 2)
-	writeStatsHistoryArchive(t, st, taskLate, base.Add(48 * time.Hour), 3)
+	writeStatsHistoryArchive(t, st, taskLate, base.Add(48*time.Hour), 3)
 	if err := os.MkdirAll(st.Path("telemetry"), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -204,7 +204,7 @@ func TestStatsCurrentScopeTaskAndPeriodFilter(t *testing.T) {
 	}
 
 	var periodOut bytes.Buffer
-	cmd, err = ParseCommand([]string{"--stats", "--since", base.Add(24 * time.Hour).Format(time.RFC3339)})
+	cmd, err = ParseCommand([]string{"--stats", "--since", base.Add(24*time.Hour).Format(time.RFC3339)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -350,7 +350,7 @@ func TestStatsHistoryScopeUsesCurrentSchemaOnly(t *testing.T) {
 	lines := []string{
 		"{\"version\":3,\"call_id\":\"old-1\",\"call_type\":\"task\",\"task_id\":\"22222222-2222-4222-8222-222222222222\",\"started_at\":\"" + base.Format(time.RFC3339) + "\",\"model_alias\":\"opus\",\"top_level_turns\":120,\"wall_duration_ms\":60000,\"tree_usage\":{\"input_tokens\":100,\"output_tokens\":50},\"prompt\":\"raw-old-prompt-must-not-leak\"}",
 		"{\"version\":3,\"call_id\":\"old-2\",\"call_type\":\"task\",\"task_id\":\"22222222-2222-4222-8222-222222222222\",\"started_at\":\"" + base.Add(time.Hour).Format(time.RFC3339) + "\",\"model_alias\":\"opus\",\"top_level_turns\":0}",
-		"{\"version\":3,\"schema_revision\":1,\"call_id\":\"cur-1\",\"call_type\":\"task\",\"task_id\":\"22222222-2222-4222-8222-222222222222\",\"started_at\":\"" + base.Add(2 * time.Hour).Format(time.RFC3339) + "\",\"model_alias\":\"haiku\",\"top_level_turns\":30,\"tree_usage\":{\"input_tokens\":10}}",
+		"{\"version\":3,\"schema_revision\":1,\"call_id\":\"cur-1\",\"call_type\":\"task\",\"task_id\":\"22222222-2222-4222-8222-222222222222\",\"started_at\":\"" + base.Add(2*time.Hour).Format(time.RFC3339) + "\",\"model_alias\":\"haiku\",\"top_level_turns\":30,\"tree_usage\":{\"input_tokens\":10}}",
 		"{\"version\":3,\"broken\"",
 	}
 	if err := os.WriteFile(st.Path("telemetry/22222222-2222-4222-8222-222222222222.jsonl"), []byte(strings.Join(lines, "\n")+"\n"), 0o600); err != nil {
@@ -408,13 +408,13 @@ func TestCallOutliersHistoryUsesCurrentSchemaPopulation(t *testing.T) {
 	for index := 0; index < 20; index++ {
 		lines = append(lines, fmt.Sprintf(
 			`{"version":3,"call_id":%q,"call_type":"task","task_id":%q,"started_at":%q,"phase":"worker-new","role":"worker","model_alias":"opus","top_level_turns":100,"wall_duration_ms":1000,"prompt":"raw-old-prompt-must-not-leak"}`,
-			"old-v3", taskID, base.Add(time.Duration(index) * time.Minute).Format(time.RFC3339),
+			"old-v3", taskID, base.Add(time.Duration(index)*time.Minute).Format(time.RFC3339),
 		))
 	}
 	for index := 0; index < 20; index++ {
 		lines = append(lines, fmt.Sprintf(
 			`{"version":2,"call_id":%q,"call_type":"task","task_id":%q,"started_at":%q,"phase":"worker-new","role":"worker","model_alias":"opus","top_level_turns":200,"wall_duration_ms":1000}`,
-			"old-v2", taskID, base.Add(time.Duration(index) * time.Second).Format(time.RFC3339),
+			"old-v2", taskID, base.Add(time.Duration(index)*time.Second).Format(time.RFC3339),
 		))
 	}
 	lines = append(lines, "{\"version\":3,\"schema_revision\":1,\"call_id\":\"cur-only\",\"call_type\":\"task\",\"task_id\":\""+taskID+"\",\"started_at\":\""+base.Add(time.Hour).Format(time.RFC3339)+"\",\"phase\":\"worker-new\",\"role\":\"worker\",\"model_alias\":\"haiku\",\"top_level_turns\":9,\"wall_duration_ms\":1000}")
@@ -481,7 +481,7 @@ func TestCallOutliersCurrentScopePeriodFilter(t *testing.T) {
 	st.RecordModelCallLog(state.ModelCallLog{
 		Version: 3, CallType: state.CallTypeTask, TaskID: taskID, SessionID: "sess-a",
 		Role: state.WorkerRole, ModelAlias: "opus", Phase: "worker-new",
-		StartedAt: base.Add(48 * time.Hour), CompletedAt: base.Add(48 * time.Hour).Add(time.Minute),
+		StartedAt: base.Add(48 * time.Hour), CompletedAt: base.Add(48*time.Hour).Add(time.Minute),
 		Outcome: "success", WallDurationMS: 60000, TopLevelTurns: 20,
 	})
 
@@ -521,7 +521,7 @@ func TestCallOutliersUndatedRecordPeriodFilter(t *testing.T) {
 	lines := []string{
 		`{"version":3,"schema_revision":1,"call_id":"dated-in","call_type":"task","task_id":"` + taskID + `","started_at":"` + base.Format(time.RFC3339) + `","model_alias":"opus","top_level_turns":5}`,
 		`{"version":3,"schema_revision":1,"call_id":"undated","call_type":"task","task_id":"` + taskID + `","model_alias":"opus","top_level_turns":5}`,
-		`{"version":3,"schema_revision":1,"call_id":"dated-out","call_type":"task","task_id":"` + taskID + `","started_at":"` + base.Add(48 * time.Hour).Format(time.RFC3339) + `","model_alias":"opus","top_level_turns":5}`,
+		`{"version":3,"schema_revision":1,"call_id":"dated-out","call_type":"task","task_id":"` + taskID + `","started_at":"` + base.Add(48*time.Hour).Format(time.RFC3339) + `","model_alias":"opus","top_level_turns":5}`,
 	}
 	if err := os.WriteFile(st.Path("telemetry/"+taskID+".jsonl"), []byte(strings.Join(lines, "\n")+"\n"), 0o600); err != nil {
 		t.Fatal(err)
