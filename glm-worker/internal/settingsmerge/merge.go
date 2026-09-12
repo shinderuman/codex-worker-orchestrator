@@ -37,11 +37,6 @@ type fileRestore struct {
 	mode    os.FileMode
 }
 
-type plannedRestore struct {
-	path    string
-	restore fileRestore
-}
-
 const overrideStateFile = ".codex-config-claude-env-state.json"
 const overrideStateVersion = 1
 
@@ -50,6 +45,9 @@ func MergeFiles(targetPath, fragmentPath, overridePath string) (bool, error) {
 }
 
 func mergeFilesWithWriter(targetPath, fragmentPath, overridePath string, writeFn writeFileFunc) (bool, error) {
+	if err := recoverSettingsTransaction(targetPath, writeFn); err != nil {
+		return false, err
+	}
 	target, targetMode, err := readObjectOrEmpty(targetPath)
 	if err != nil {
 		return false, fmt.Errorf("target JSON: %w", err)
@@ -81,7 +79,7 @@ func mergeFilesWithWriter(targetPath, fragmentPath, overridePath string, writeFn
 	}
 	nextOverride := snapshotEnvBaselines(target, override)
 	applyEnvPatch(target, override)
-	plans, changed, err := planWrites(
+	plans, targetChanged, err := planWrites(
 		targetPath,
 		overrideStatePath,
 		managedStatePath,
@@ -96,13 +94,13 @@ func mergeFilesWithWriter(targetPath, fragmentPath, overridePath string, writeFn
 	if err != nil {
 		return false, err
 	}
-	if !changed {
+	if len(plans) == 0 {
 		return false, nil
 	}
-	if err := commitTransaction(plans, writeFn); err != nil {
+	if err := commitRecoverableTransaction(targetPath, plans, writeFn); err != nil {
 		return false, err
 	}
-	return true, nil
+	return targetChanged, nil
 }
 
 func planWrites(
@@ -142,7 +140,7 @@ func planWrites(
 		}
 		plans = append(plans, plannedWrite{path: managedStatePath, data: data, mode: 0o600})
 	}
-	return plans, targetChanged || overrideStateChanged || managedStateChanged, nil
+	return plans, targetChanged, nil
 }
 
 func marshalObject(value any) ([]byte, error) {
@@ -326,58 +324,4 @@ func writeAtomic(path string, data []byte, mode os.FileMode) error {
 		return err
 	}
 	return os.Rename(tempPath, path)
-}
-
-func commitTransaction(plans []plannedWrite, writeFn writeFileFunc) error {
-	restores := captureRestores(plans)
-	for _, plan := range plans {
-		if err := writeFn(plan.path, plan.data, plan.mode); err != nil {
-			if rollbackErr := rollbackFiles(restores, writeFn); rollbackErr != nil {
-				return fmt.Errorf("%w (rollback失敗: %w)", err, rollbackErr)
-			}
-			return err
-		}
-	}
-	return nil
-}
-
-func captureRestores(plans []plannedWrite) []plannedRestore {
-	restores := make([]plannedRestore, 0, len(plans))
-	seen := make(map[string]bool, len(plans))
-	for _, plan := range plans {
-		if seen[plan.path] {
-			continue
-		}
-		seen[plan.path] = true
-		restores = append(restores, plannedRestore{path: plan.path, restore: captureFileRestore(plan.path)})
-	}
-	return restores
-}
-
-func captureFileRestore(path string) fileRestore {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return fileRestore{}
-	}
-	info, err := os.Stat(path)
-	if err != nil {
-		return fileRestore{existed: true, data: data, mode: 0o600}
-	}
-	return fileRestore{existed: true, data: data, mode: info.Mode().Perm()}
-}
-
-func rollbackFiles(restores []plannedRestore, writeFn writeFileFunc) error {
-	var errs []error
-	for _, entry := range restores {
-		if !entry.restore.existed {
-			if err := os.Remove(entry.path); err != nil && !errors.Is(err, os.ErrNotExist) {
-				errs = append(errs, fmt.Errorf("remove %s: %w", entry.path, err))
-			}
-			continue
-		}
-		if err := writeFn(entry.path, entry.restore.data, entry.restore.mode); err != nil {
-			errs = append(errs, fmt.Errorf("restore %s: %w", entry.path, err))
-		}
-	}
-	return errors.Join(errs...)
 }

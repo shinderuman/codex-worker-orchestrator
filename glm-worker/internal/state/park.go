@@ -173,11 +173,18 @@ func (s *StateStore) PendingUnparkCleanup() (ParkRecord, bool, error) {
 	if err != nil {
 		return ParkRecord{}, false, err
 	}
-	if record.Cleanup == nil || record.FromStatus != status {
-		return ParkRecord{}, false, nil
+	taskID, err := s.TaskID()
+	if err != nil {
+		return ParkRecord{}, false, err
 	}
-	if record.TaskID != s.ReadOr("task.id", "") {
+	if record.TaskID != taskID {
 		return ParkRecord{}, false, fmt.Errorf("unpark cleanup record task %s does not match current task", record.TaskID)
+	}
+	if record.Cleanup == nil {
+		return ParkRecord{}, false, fmt.Errorf("waiting task has a park record without an unpark cleanup checkpoint")
+	}
+	if record.FromStatus != status {
+		return ParkRecord{}, false, fmt.Errorf("unpark cleanup origin %s does not match current status %s", record.FromStatus, status)
 	}
 	return record, true, nil
 }

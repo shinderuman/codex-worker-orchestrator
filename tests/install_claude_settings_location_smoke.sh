@@ -48,6 +48,7 @@ HOME="$home" \
 	CODEX_HOME="$home/.codex" \
 	GLM_WORKER_BIN_DIR="$home/.local/bin" \
 	GLM_WORKER_HOME="$home/.glm-worker" \
+	CLAUDE_CONFIG_DIR='' \
 	CLAUDE_SETTINGS_FILE="$custom_settings" \
 	XDG_CONFIG_HOME="$home/.config" \
 	"$repo/install.sh"

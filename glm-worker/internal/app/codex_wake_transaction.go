@@ -113,11 +113,19 @@ func printCodexWakeResponse(cmd Command, cfg config.AppConfig, stdout io.Writer)
 	if err != nil {
 		return err
 	}
-	committed := false
+	retryable := true
+	delivering := false
+	successorToken := ""
 	defer func() {
-		if !committed {
-			lease.rollback()
+		if !retryable {
+			return
 		}
+		removeCodexWakeToken(cfg.CodexConfigDir, successorToken)
+		if delivering {
+			lease.rollbackDelivering()
+			return
+		}
+		lease.rollback()
 	}()
 
 	wakeThreadID, wakeInvocation, err := autoresume.CodexWakeTransactionContext(cmd.CodexWake.Token)
@@ -137,20 +145,22 @@ func printCodexWakeResponse(cmd Command, cfg config.AppConfig, stdout io.Writer)
 		dbPath,
 		autoresume.ReadDBRowSqlite3,
 	)
-	if output.Token != "" {
-		if err := persistCodexWakeToken(cfg.CodexConfigDir, output.Token); err != nil {
+	successorToken = output.Token
+	if successorToken != "" {
+		if err := persistCodexWakeToken(cfg.CodexConfigDir, successorToken); err != nil {
 			return err
 		}
 	}
-	if err := writeJSON(stdout, output); err != nil {
-		removeCodexWakeToken(cfg.CodexConfigDir, output.Token)
+	if err := lease.markDelivering(); err != nil {
 		return err
 	}
-	committed = true
-	if err := lease.commit(); err != nil {
+	delivering = true
+	complete, err := writeCodexWakeJSON(stdout, output)
+	if !complete {
 		return err
 	}
-	return nil
+	retryable = false
+	return lease.commit()
 }
 
 func requireCodexWakeInvocationThread(wakeThreadID string) error {

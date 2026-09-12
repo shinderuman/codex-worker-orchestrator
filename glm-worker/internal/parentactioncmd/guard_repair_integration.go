@@ -1,6 +1,7 @@
 package parentactioncmd
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -16,6 +17,7 @@ func beginGuardRepairIntegration(
 	record state.GuardRepairRecord,
 	origin guardRepairOrigin,
 	repoRoot string,
+	repairRoot string,
 	changed []string,
 ) (state.GuardRepairIntegrationJournal, error) {
 	if _, err := st.LoadGuardRepairIntegrationJournal(); err == nil {
@@ -23,18 +25,17 @@ func beginGuardRepairIntegration(
 	} else if !errors.Is(err, state.ErrNoGuardRepairIntegrationJournal) {
 		return state.GuardRepairIntegrationJournal{}, err
 	}
-	backups, err := captureGuardRepairFiles(repoRoot, changed)
+	preimages, err := captureGuardRepairFiles(repoRoot, changed)
 	if err != nil {
 		return state.GuardRepairIntegrationJournal{}, err
 	}
-	files := make([]state.GuardRepairIntegrationFile, 0, len(backups))
-	for _, backup := range backups {
-		files = append(files, state.GuardRepairIntegrationFile{
-			Path:    backup.path,
-			Content: append([]byte(nil), backup.content...),
-			Mode:    uint32(backup.mode.Perm()),
-			Exists:  backup.exists,
-		})
+	postimages, err := captureGuardRepairFiles(repairRoot, changed)
+	if err != nil {
+		return state.GuardRepairIntegrationJournal{}, err
+	}
+	files, err := guardRepairIntegrationJournalFiles(preimages, postimages)
+	if err != nil {
+		return state.GuardRepairIntegrationJournal{}, err
 	}
 	journal := state.GuardRepairIntegrationJournal{
 		TaskID:             record.TaskID,
@@ -50,6 +51,29 @@ func beginGuardRepairIntegration(
 		return state.GuardRepairIntegrationJournal{}, err
 	}
 	return journal, nil
+}
+
+func guardRepairIntegrationJournalFiles(preimages, postimages []guardRepairFileBackup) ([]state.GuardRepairIntegrationFile, error) {
+	if len(preimages) != len(postimages) {
+		return nil, fmt.Errorf("guard repair integration image sets differ")
+	}
+	files := make([]state.GuardRepairIntegrationFile, 0, len(preimages))
+	for i, preimage := range preimages {
+		postimage := postimages[i]
+		if preimage.path != postimage.path {
+			return nil, fmt.Errorf("guard repair integration image path mismatch: %s != %s", preimage.path, postimage.path)
+		}
+		files = append(files, state.GuardRepairIntegrationFile{
+			Path:        preimage.path,
+			Content:     append([]byte(nil), preimage.content...),
+			Mode:        uint32(preimage.mode.Perm()),
+			Exists:      preimage.exists,
+			PostContent: append([]byte(nil), postimage.content...),
+			PostMode:    uint32(postimage.mode.Perm()),
+			PostExists:  postimage.exists,
+		})
+	}
+	return files, nil
 }
 
 func persistReadyGuardRepairIntegration(st *state.StateStore, record state.GuardRepairRecord) error {
@@ -139,6 +163,9 @@ func validateGuardRepairIntegrationRecovery(
 	if err := validateGuardRepairIntegrationAuthority(cfg, journal); err != nil {
 		return state.GuardRepairRecord{}, err
 	}
+	if err := validateGuardRepairIntegrationFiles(cfg.RepoRoot, journal); err != nil {
+		return state.GuardRepairRecord{}, err
+	}
 	if err := validateGuardRepairIntegrationDirty(cfg, journal); err != nil {
 		return state.GuardRepairRecord{}, err
 	}
@@ -201,6 +228,34 @@ func validateGuardRepairIntegrationAuthority(cfg config.AppConfig, journal state
 		return fmt.Errorf("repository authority changed after guard repair integration journal was created")
 	}
 	return nil
+}
+
+func validateGuardRepairIntegrationFiles(repoRoot string, journal state.GuardRepairIntegrationJournal) error {
+	paths := make([]string, 0, len(journal.Files))
+	for _, file := range journal.Files {
+		paths = append(paths, file.Path)
+	}
+	current, err := captureGuardRepairFiles(repoRoot, paths)
+	if err != nil {
+		return fmt.Errorf("verify interrupted guard repair files: %w", err)
+	}
+	for i, file := range journal.Files {
+		if !guardRepairBackupMatchesImage(current[i], file.Content, file.Mode, file.Exists) &&
+			!guardRepairBackupMatchesImage(current[i], file.PostContent, file.PostMode, file.PostExists) {
+			return fmt.Errorf("interrupted guard repair path changed after integration stopped: %s", file.Path)
+		}
+	}
+	return nil
+}
+
+func guardRepairBackupMatchesImage(current guardRepairFileBackup, content []byte, mode uint32, exists bool) bool {
+	if current.exists != exists {
+		return false
+	}
+	if !exists {
+		return true
+	}
+	return current.mode.Perm() == os.FileMode(mode).Perm() && bytes.Equal(current.content, content)
 }
 
 func validateGuardRepairIntegrationDirty(cfg config.AppConfig, journal state.GuardRepairIntegrationJournal) error {

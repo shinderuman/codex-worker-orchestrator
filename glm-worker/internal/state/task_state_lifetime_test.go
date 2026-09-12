@@ -29,6 +29,7 @@ func TestTaskBoundStatePoliciesDriveFreshTaskCleanup(t *testing.T) {
 		QualitySurfaceBaselineStateFile:      taskBoundStateFreshTaskClear,
 		RepositoryHarnessActivationStateFile: taskBoundStateFreshTaskClear,
 		InstructionSurfaceBaselineStateFile:  taskBoundStateTaskIDBound,
+		guardRepairIntegrationStateFile:      taskBoundStateTaskIDBound,
 	} {
 		if got, ok := seen[name]; !ok || got != lifetime {
 			t.Fatalf("task-bound state policy %s = %d, present=%t want=%d", name, got, ok, lifetime)
@@ -58,6 +59,9 @@ func TestFreshTaskClearsUnboundStateAndRetainsSelfBoundAndHistoricalState(t *tes
 	if err := st.Write(InstructionSurfaceBaselineStateFile, instructionBaseline); err != nil {
 		t.Fatal(err)
 	}
+	if err := st.Write(guardRepairIntegrationStateFile, "old-task-bound-journal"); err != nil {
+		t.Fatal(err)
+	}
 	st.RecordParentEvidence(ParentEvidenceRecord{Surface: ParentEvidenceSurfaceStatus, Outcome: ParentEvidenceOutcomeProjected, TaskID: oldTaskID})
 
 	newTaskID, err := st.StartNewTask()
@@ -77,6 +81,9 @@ func TestFreshTaskClearsUnboundStateAndRetainsSelfBoundAndHistoricalState(t *tes
 	}
 	if got := st.ReadOr(InstructionSurfaceBaselineStateFile, ""); got != instructionBaseline {
 		t.Fatalf("task-ID-bound instruction baseline = %q want %q", got, instructionBaseline)
+	}
+	if got := st.ReadOr(guardRepairIntegrationStateFile, ""); got != "old-task-bound-journal" {
+		t.Fatalf("task-ID-bound guard repair journal = %q", got)
 	}
 	records, err := st.ReadParentEvidence()
 	if err != nil {

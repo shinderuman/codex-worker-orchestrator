@@ -1008,15 +1008,18 @@ func parentReviewDiffFileCoversTarget(target string, file parentEvidenceDiffFile
 	if file.HeadBlob == "" && file.IndexBlob == "" && file.WorktreeSHA == "" {
 		return false
 	}
-	suffix := strings.TrimSpace(strings.TrimPrefix(target, file.Path))
-	if suffix == "" || !strings.HasPrefix(suffix, ":") {
-		return true
-	}
-	locator := strings.TrimSpace(strings.TrimPrefix(suffix, ":"))
 	section := parentReviewDiffFileSection(body, file.Path)
 	if section == "" {
 		return false
 	}
+	suffix := strings.TrimSpace(strings.TrimPrefix(target, file.Path))
+	if suffix == "" {
+		return true
+	}
+	if !strings.HasPrefix(suffix, ":") {
+		return false
+	}
+	locator := strings.TrimSpace(strings.TrimPrefix(suffix, ":"))
 	if start, end, ok := parentReviewNumericRange(locator); ok {
 		return parentReviewDiffSectionCoversLines(section, start, end)
 	}
@@ -1024,16 +1027,10 @@ func parentReviewDiffFileCoversTarget(target string, file parentEvidenceDiffFile
 }
 
 func parentReviewDiffFileSection(body, path string) string {
-	marker := "diff --git a/" + path + " b/" + path
-	start := strings.Index(body, marker)
-	if start < 0 {
+	if body == "" || path == "" {
 		return ""
 	}
-	section := body[start:]
-	if next := strings.Index(section[len(marker):], "\ndiff --git "); next >= 0 {
-		return section[:len(marker)+next]
-	}
-	return section
+	return parentReviewQuotedDiffFileSection(body, path)
 }
 
 func parentReviewDiffSectionCoversLines(section string, start, end int) bool {

@@ -37,7 +37,7 @@ func (r *ClaudeRunner) Probe(model string) (ProbeResult, error) {
 	if err != nil {
 		return ProbeResult{}, err
 	}
-	settingEnv, envDeletes, err := loadSettingEnv(r.config.ClaudeConfigDir, r.config.ClaudeSettingsOverride)
+	settingEnv, envDeletes, err := loadConfiguredSettingEnv(r.config)
 	if err != nil {
 		return ProbeResult{}, err
 	}

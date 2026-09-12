@@ -8,10 +8,13 @@ import (
 )
 
 type GuardRepairIntegrationFile struct {
-	Path    string `json:"path"`
-	Content []byte `json:"content,omitempty"`
-	Mode    uint32 `json:"mode,omitempty"`
-	Exists  bool   `json:"exists"`
+	Path        string `json:"path"`
+	Content     []byte `json:"content,omitempty"`
+	Mode        uint32 `json:"mode,omitempty"`
+	Exists      bool   `json:"exists"`
+	PostContent []byte `json:"post_content,omitempty"`
+	PostMode    uint32 `json:"post_mode,omitempty"`
+	PostExists  bool   `json:"post_exists"`
 }
 
 type GuardRepairIntegrationJournal struct {
@@ -29,7 +32,7 @@ type GuardRepairIntegrationJournal struct {
 
 const (
 	guardRepairIntegrationStateFile    = "guard-repair-integration.json"
-	guardRepairIntegrationStateVersion = 1
+	guardRepairIntegrationStateVersion = 2
 )
 
 var ErrNoGuardRepairIntegrationJournal = errors.New("guard repair integration journal is not available")
@@ -93,11 +96,18 @@ func (file GuardRepairIntegrationFile) validate() error {
 	if file.Path == "" {
 		return fmt.Errorf("guard repair integration journal has an empty file path")
 	}
-	if file.Mode&^uint32(0o777) != 0 {
-		return fmt.Errorf("guard repair integration journal has invalid mode for %s", file.Path)
+	if err := validateGuardRepairIntegrationImage(file.Path, file.Content, file.Mode, file.Exists, "preimage"); err != nil {
+		return err
 	}
-	if !file.Exists && (len(file.Content) != 0 || file.Mode != 0) {
-		return fmt.Errorf("guard repair integration journal has content for absent file %s", file.Path)
+	return validateGuardRepairIntegrationImage(file.Path, file.PostContent, file.PostMode, file.PostExists, "postimage")
+}
+
+func validateGuardRepairIntegrationImage(path string, content []byte, mode uint32, exists bool, kind string) error {
+	if mode&^uint32(0o777) != 0 {
+		return fmt.Errorf("guard repair integration journal has invalid %s mode for %s", kind, path)
+	}
+	if !exists && (len(content) != 0 || mode != 0) {
+		return fmt.Errorf("guard repair integration journal has %s content for absent file %s", kind, path)
 	}
 	return nil
 }

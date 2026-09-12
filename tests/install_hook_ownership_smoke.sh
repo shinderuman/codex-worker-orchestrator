@@ -42,6 +42,28 @@ if git -C "$repo" config --local --get-all core.hooksPath >/dev/null 2>&1; then
 fi
 test ! -e "$owned_state"
 
+repo="$tmp/interrupted"
+new_repo "$repo"
+pending_state=$(state_path "$repo")
+mkdir -p "${pending_state%/*}"
+printf '%s\n' 'version=1 baseline=absent pending=.githooks' >"$pending_state"
+sh "$helper" install "$repo" >"$tmp/interrupted.stdout" 2>"$tmp/interrupted.stderr"
+test "$(git -C "$repo" config --local --get-all core.hooksPath)" = '.githooks'
+test "$(cat "$pending_state")" = 'version=1 baseline=absent value=.githooks'
+grep -Fq 'recovered interrupted installer-owned .githooks activation' "$tmp/interrupted.stdout"
+
+repo="$tmp/inherited-git-dir"
+other_repo="$tmp/inherited-other"
+new_repo "$repo"
+new_repo "$other_repo"
+other_git_dir=$(git -C "$other_repo" rev-parse --absolute-git-dir)
+GIT_DIR="$other_git_dir" GIT_WORK_TREE="$other_repo" sh "$helper" install "$repo"
+test "$(git -C "$repo" config --local --get-all core.hooksPath)" = '.githooks'
+if git -C "$other_repo" config --local --get-all core.hooksPath >/dev/null 2>&1; then
+	printf '%s\n' 'inherited Git repository variables redirected hook installation' >&2
+	exit 1
+fi
+
 repo="$tmp/preexisting-other"
 new_repo "$repo"
 git -C "$repo" config --local core.hooksPath .external-hooks

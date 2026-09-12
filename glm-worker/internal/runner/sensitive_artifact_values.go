@@ -17,7 +17,7 @@ const (
 )
 
 func SensitiveArtifactValues(cfg config.AppConfig) ([]SensitiveArtifactValue, error) {
-	settingEnv, deletes, err := loadSettingEnv(cfg.ClaudeConfigDir, cfg.ClaudeSettingsOverride)
+	settingEnv, deletes, err := loadConfiguredSettingEnv(cfg)
 	if err != nil {
 		return nil, err
 	}

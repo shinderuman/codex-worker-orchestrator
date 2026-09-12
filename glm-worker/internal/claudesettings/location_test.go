@@ -30,7 +30,7 @@ func TestResolveConfigDirLocation(t *testing.T) {
 }
 
 func TestResolveSettingsFileDerivesConfigDir(t *testing.T) {
-	settingsPath := filepath.Join(t.TempDir(), "custom", "settings.json")
+	settingsPath := filepath.Join(t.TempDir(), "custom", "claude-settings.json")
 	location, err := Resolve(t.TempDir(), "", settingsPath)
 	if err != nil {
 		t.Fatal(err)
@@ -58,14 +58,6 @@ func TestResolveRejectsConflictingInputs(t *testing.T) {
 	_, err := Resolve(t.TempDir(), configDir, settingsPath)
 	if err == nil || !strings.Contains(err.Error(), "different settings files") {
 		t.Fatalf("expected conflict, got %v", err)
-	}
-}
-
-func TestResolveRejectsUnsupportedSettingsFilename(t *testing.T) {
-	settingsPath := filepath.Join(t.TempDir(), "custom.json")
-	_, err := Resolve(t.TempDir(), "", settingsPath)
-	if err == nil || !strings.Contains(err.Error(), "must name settings.json") {
-		t.Fatalf("expected unsupported filename error, got %v", err)
 	}
 }
 

@@ -262,7 +262,7 @@ func (r *ClaudeRunner) prepareRunInputs(role state.SessionRole, phase, model str
 	if err != nil {
 		return runInputs{}, err
 	}
-	settingEnv, envDeletes, err := loadSettingEnv(r.config.ClaudeConfigDir, r.config.ClaudeSettingsOverride)
+	settingEnv, envDeletes, err := loadConfiguredSettingEnv(r.config)
 	if err != nil {
 		return runInputs{}, err
 	}
@@ -580,35 +580,7 @@ func loadSettingEnv(claudeConfigDir string, overridePath string) (map[string]str
 	if err != nil {
 		return nil, nil, err
 	}
-	result := make(map[string]string)
-	data, err := os.ReadFile(filepath.Join(configDir, "settings.json"))
-	if err == nil {
-		var parsed struct {
-			Env map[string]string `json:"env"`
-		}
-		if err := json.Unmarshal(data, &parsed); err != nil {
-			return nil, nil, fmt.Errorf("claude settings.jsonを解析できません: %w", err)
-		}
-		for _, key := range essentialSettingEnvKeys {
-			if value, ok := parsed.Env[key]; ok && value != "" {
-				result[key] = value
-			}
-		}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return nil, nil, fmt.Errorf("claude settings.jsonを読み込めません: %w", err)
-	}
-
-	override, err := parseClaudeEnvOverride(overridePath)
-	if err != nil {
-		return nil, nil, fmt.Errorf("env override: %w", err)
-	}
-	for _, key := range override.deletes {
-		delete(result, key)
-	}
-	for key, value := range override.sets {
-		result[key] = value
-	}
-	return result, override.deletes, nil
+	return loadSettingEnvPath(filepath.Join(configDir, "settings.json"), overridePath)
 }
 
 func buildChildEnv(extraAllow []string, settingEnv, additions map[string]string, deletes []string) []string {

@@ -198,9 +198,9 @@ grep -q 'install is not admitted' "$tmp/parent-action-install.stderr"
 grep -Fq "\"vcs_revision\":\"$repo_revision\"" "$tmp/runtime-status.json"
 grep -Fq '"vcs_modified":false' "$tmp/runtime-status.json"
 grep -Fq '"relationship":"same"' "$tmp/runtime-status.json"
-find "$home/.codex" "$home/.claude" "$home/.local/bin" -type f -exec shasum -a 256 {} \; | LC_ALL=C sort >"$tmp/first.sha"
+find "$home/.codex" "$home/.claude" "$home/.local/bin" -type f ! -name '.codex-worker-orchestrator-cli-install.lock' -exec shasum -a 256 {} \; | LC_ALL=C sort >"$tmp/first.sha"
 run_install
-find "$home/.codex" "$home/.claude" "$home/.local/bin" -type f -exec shasum -a 256 {} \; | LC_ALL=C sort >"$tmp/second.sha"
+find "$home/.codex" "$home/.claude" "$home/.local/bin" -type f ! -name '.codex-worker-orchestrator-cli-install.lock' -exec shasum -a 256 {} \; | LC_ALL=C sort >"$tmp/second.sha"
 if ! cmp "$tmp/first.sha" "$tmp/second.sha"; then
 	printf '%s\n' 'installer idempotence hash drift:' >&2
 	printf '%s\n' '--- before' >&2

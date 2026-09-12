@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
@@ -23,7 +24,7 @@ type guardRepairIntegrationFixture struct {
 
 func TestGuardRepairIntegrationRecoversAfterPartialCopyInterruption(t *testing.T) {
 	fixture := newGuardRepairIntegrationFixture(t)
-	if _, err := beginGuardRepairIntegration(fixture.st, fixture.record, fixture.origin, fixture.cfg.RepoRoot, []string{fixture.first, fixture.second}); err != nil {
+	if _, err := beginGuardRepairIntegration(fixture.st, fixture.record, fixture.origin, fixture.cfg.RepoRoot, fixture.worktree, []string{fixture.first, fixture.second}); err != nil {
 		t.Fatal(err)
 	}
 	if err := copyGuardRepairPath(fixture.worktree, fixture.cfg.RepoRoot, fixture.first); err != nil {
@@ -59,9 +60,29 @@ func TestGuardRepairIntegrationRecoversAfterPartialCopyInterruption(t *testing.T
 	}
 }
 
+func TestGuardRepairIntegrationRejectsLaterEditOnJournaledPath(t *testing.T) {
+	fixture := newGuardRepairIntegrationFixture(t)
+	if _, err := beginGuardRepairIntegration(fixture.st, fixture.record, fixture.origin, fixture.cfg.RepoRoot, fixture.worktree, []string{fixture.first, fixture.second}); err != nil {
+		t.Fatal(err)
+	}
+	if err := copyGuardRepairPath(fixture.worktree, fixture.cfg.RepoRoot, fixture.first); err != nil {
+		t.Fatal(err)
+	}
+	writeGuardRepairTestFile(t, fixture.cfg.RepoRoot, fixture.first, "later user edit\n")
+
+	err := recoverGuardRepairIntegrationIfNeeded(fixture.cfg, fixture.st)
+	if err == nil || !strings.Contains(err.Error(), "changed after integration stopped") {
+		t.Fatalf("later edit recovery = %v", err)
+	}
+	assertGuardRepairTestFile(t, fixture.cfg.RepoRoot, fixture.first, "later user edit\n")
+	if _, err := fixture.st.LoadGuardRepairIntegrationJournal(); err != nil {
+		t.Fatalf("rejected recovery discarded journal: %v", err)
+	}
+}
+
 func TestGuardRepairIntegrationRejectsStaleTaskJournalWithoutApplyingIt(t *testing.T) {
 	fixture := newGuardRepairIntegrationFixture(t)
-	if _, err := beginGuardRepairIntegration(fixture.st, fixture.record, fixture.origin, fixture.cfg.RepoRoot, []string{fixture.first, fixture.second}); err != nil {
+	if _, err := beginGuardRepairIntegration(fixture.st, fixture.record, fixture.origin, fixture.cfg.RepoRoot, fixture.worktree, []string{fixture.first, fixture.second}); err != nil {
 		t.Fatal(err)
 	}
 	if err := copyGuardRepairPath(fixture.worktree, fixture.cfg.RepoRoot, fixture.first); err != nil {
@@ -82,7 +103,7 @@ func TestGuardRepairIntegrationRejectsStaleTaskJournalWithoutApplyingIt(t *testi
 
 func TestGuardRepairIntegrationRejectsProvenanceMismatchWithoutApplyingIt(t *testing.T) {
 	fixture := newGuardRepairIntegrationFixture(t)
-	if _, err := beginGuardRepairIntegration(fixture.st, fixture.record, fixture.origin, fixture.cfg.RepoRoot, []string{fixture.first, fixture.second}); err != nil {
+	if _, err := beginGuardRepairIntegration(fixture.st, fixture.record, fixture.origin, fixture.cfg.RepoRoot, fixture.worktree, []string{fixture.first, fixture.second}); err != nil {
 		t.Fatal(err)
 	}
 	if err := copyGuardRepairPath(fixture.worktree, fixture.cfg.RepoRoot, fixture.first); err != nil {
@@ -105,7 +126,7 @@ func TestGuardRepairIntegrationRejectsProvenanceMismatchWithoutApplyingIt(t *tes
 
 func TestGuardRepairIntegrationRollbackFailureRetainsJournal(t *testing.T) {
 	fixture := newGuardRepairIntegrationFixture(t)
-	if _, err := beginGuardRepairIntegration(fixture.st, fixture.record, fixture.origin, fixture.cfg.RepoRoot, []string{fixture.first, fixture.second}); err != nil {
+	if _, err := beginGuardRepairIntegration(fixture.st, fixture.record, fixture.origin, fixture.cfg.RepoRoot, fixture.worktree, []string{fixture.first, fixture.second}); err != nil {
 		t.Fatal(err)
 	}
 	if err := copyGuardRepairPath(fixture.worktree, fixture.cfg.RepoRoot, fixture.first); err != nil {
