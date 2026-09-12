@@ -388,46 +388,36 @@ func TestValidUUIDFormatAcceptsCodexThreadIDs(t *testing.T) {
 	}
 }
 
-func TestSetParentCodexIdentityToleratesStatsMirrorFailures(t *testing.T) {
+func TestSetParentCodexIdentityDoesNotDependOnTaskStatsMirror(t *testing.T) {
 	threadID := "01a0463c-d477-7410-9efd-cb34ff2e0b0e"
 	sessionID := "01a0463c-d477-7410-9efd-cb34ff2e0b0e"
 
-	t.Run("corrupted stats warn and continue", func(t *testing.T) {
-		st := &StateStore{dir: t.TempDir()}
-		if _, err := st.StartNewTask(); err != nil {
-			t.Fatal(err)
-		}
-		writeCorruptedTaskStats(t, st)
-		warnings, restore := captureStatsWarnings(t)
-		defer restore()
-		if err := st.SetParentCodexIdentity(threadID, sessionID, nil); err != nil {
-			t.Fatalf("破損statsで操作がblockされました: %v", err)
-		}
-		requireStatsWarning(t, warnings, "task_stats")
-	})
-
-	t.Run("missing stats skip without blocking", func(t *testing.T) {
-		st := &StateStore{dir: t.TempDir()}
-		if err := st.SetParentCodexIdentity(threadID, sessionID, nil); err != nil {
-			t.Fatalf("欠損statsで操作がblockされました: %v", err)
-		}
-	})
-
-	t.Run("write failure warns and continues", func(t *testing.T) {
-		st := &StateStore{dir: t.TempDir()}
-		if _, err := st.StartNewTask(); err != nil {
-			t.Fatal(err)
-		}
-		failWritesFor(t, st, currentStatsFile)
-		warnings, restore := captureStatsWarnings(t)
-		defer restore()
-		if err := st.SetParentCodexIdentity(threadID, sessionID, nil); err != nil {
-			t.Fatalf("書込失敗で操作がblockされました: %v", err)
-		}
-		requireStatsWarningOperation(t, warnings, "更新")
-		identity, err := st.CurrentParentCodexIdentity()
-		if err != nil || identity.ThreadID != threadID {
-			t.Fatalf("authoritative identity = %#v err=%v", identity, err)
-		}
-	})
+	for _, tc := range []struct {
+		name    string
+		prepare func(*StateStore) error
+	}{
+		{name: "corrupted stats", prepare: func(st *StateStore) error {
+			return os.WriteFile(st.Path(currentStatsFile), []byte("{not json"), 0o600)
+		}},
+		{name: "missing stats", prepare: func(st *StateStore) error {
+			return st.Remove(currentStatsFile)
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			st := &StateStore{dir: t.TempDir()}
+			if _, err := st.StartNewTask(); err != nil {
+				t.Fatal(err)
+			}
+			if err := tc.prepare(st); err != nil {
+				t.Fatal(err)
+			}
+			if err := st.SetParentCodexIdentity(threadID, sessionID, nil); err != nil {
+				t.Fatalf("TaskStats mirror状態でcanonical bindがblockされました: %v", err)
+			}
+			identity, err := st.CurrentParentCodexIdentity()
+			if err != nil || identity.ThreadID != threadID || identity.SessionID != sessionID {
+				t.Fatalf("canonical identity = %#v err=%v", identity, err)
+			}
+		})
+	}
 }
