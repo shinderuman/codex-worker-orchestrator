@@ -204,7 +204,7 @@ func TestStatsCurrentScopeTaskAndPeriodFilter(t *testing.T) {
 	}
 
 	var periodOut bytes.Buffer
-	cmd, err = ParseCommand([]string{"--stats", "--since", base.Add(24*time.Hour).Format(time.RFC3339)})
+	cmd, err = ParseCommand([]string{"--stats", "--since", base.Add(24 * time.Hour).Format(time.RFC3339)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -481,7 +481,7 @@ func TestCallOutliersCurrentScopePeriodFilter(t *testing.T) {
 	st.RecordModelCallLog(state.ModelCallLog{
 		Version: 3, CallType: state.CallTypeTask, TaskID: taskID, SessionID: "sess-a",
 		Role: state.WorkerRole, ModelAlias: "opus", Phase: "worker-new",
-		StartedAt: base.Add(48 * time.Hour), CompletedAt: base.Add(48*time.Hour).Add(time.Minute),
+		StartedAt: base.Add(48 * time.Hour), CompletedAt: base.Add(48 * time.Hour).Add(time.Minute),
 		Outcome: "success", WallDurationMS: 60000, TopLevelTurns: 20,
 	})
 
