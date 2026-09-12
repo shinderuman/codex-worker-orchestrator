@@ -334,12 +334,11 @@ func TestDiagnosticRecordsResumeSourceProviderUnavailable(t *testing.T) {
 	if err := st.Write("last-request", "req"); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.SaveResumeCheckpoint(state.ResumeCheckpoint{
+	if err := st.SaveResumeCheckpoint(canonicalProviderUnavailableCheckpoint(state.ResumeCheckpoint{
 		Stage: state.ResumeStageWorker, Phase: "worker-new", Role: state.WorkerRole,
 		Model: "opus", Effort: "high", Prompt: "p", OriginalPrompt: "p",
 		Request: "req", StopKind: state.ResumeStopProviderUnavailable,
-		ProviderUnavailableClassification: "http-503", ProviderUnavailableProbes: 4,
-	}); err != nil {
+	})); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.SetTaskStatus(state.TaskStatusProviderUnavailable); err != nil {
