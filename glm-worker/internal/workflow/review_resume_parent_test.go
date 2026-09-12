@@ -100,21 +100,22 @@ func reviewResumeSnapshot(worktree string, excluding string, parents *state.Pare
 }
 
 func reviewResumeCheckpoint(stop *state.ParentFileStates) state.ResumeCheckpoint {
-	return state.ResumeCheckpoint{
-		Stage:           state.ResumeStageReview,
-		Phase:           "reviewer-1",
-		Role:            state.ReviewerRole,
-		Model:           "sonnet",
-		ReadOnly:        true,
-		Effort:          "high",
-		Prompt:          "review",
-		OriginalPrompt:  "review",
-		Request:         "request",
-		WorkerResult:    workerResultFromBody(workerPacket()),
-		ReviewNumber:    1,
-		StopKind:        state.ResumeStopRateLimited,
-		StopParentFiles: stop,
+	checkpoint := state.ResumeCheckpoint{
+		Stage:          state.ResumeStageReview,
+		Phase:          "reviewer-1",
+		Role:           state.ReviewerRole,
+		Model:          "sonnet",
+		ReadOnly:       true,
+		Effort:         "high",
+		Prompt:         "review",
+		OriginalPrompt: "review",
+		Request:        "request",
+		WorkerResult:   workerResultFromBody(workerPacket()),
+		ReviewNumber:   1,
+		StopKind:       state.ResumeStopRateLimited,
 	}
+	checkpoint.SetStopRepositoryBoundary(reviewResumeSnapshot("", "excluding-1", stop))
+	return checkpoint
 }
 
 func seedReviewResumeStop(t *testing.T, st *state.StateStore, saved state.GitSnapshot, checkpoint state.ResumeCheckpoint) {
