@@ -160,12 +160,9 @@ func performBoundedGuardRepair(cfg config.AppConfig, st *state.StateStore, recor
 	}
 	record.Status = state.GuardRepairReady
 	record.RepairedDigest = repairedDigest
-	if err := st.SaveGuardRepairRecord(record); err != nil {
+	if err := persistReadyGuardRepairIntegration(st, record); err != nil {
 		record.RepairedDigest = ""
 		return record, markGuardRepairFailed(st, record, errors.Join(err, rollback()))
-	}
-	if err := st.RemoveGuardRepairIntegrationJournal(); err != nil {
-		return record, errors.Join(err, rollback())
 	}
 	return record, nil
 }
