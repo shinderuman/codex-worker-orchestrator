@@ -69,6 +69,19 @@ func decode(value marker) error {
 `,
 		},
 		{
+			name: "writer-side current version initialization",
+			source: `package fixture
+const currentVersion = 3
+type marker struct { Version int }
+func appendRecord(value marker) marker {
+	if value.Version == 0 {
+		value.Version = currentVersion
+	}
+	return value
+}
+`,
+		},
+		{
 			name: "old state reset rather than promotion",
 			source: `package fixture
 const currentVersion = 3
