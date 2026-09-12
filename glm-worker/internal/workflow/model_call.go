@@ -84,8 +84,10 @@ func (w *Workflow) prepareModelCall(checkpoint state.ResumeCheckpoint) (state.Re
 	if stopped {
 		return checkpoint, outputPath, guardBefore, err
 	}
-	if checkpoint.Stage == state.ResumeStageReview {
-		checkpoint.StopParentFiles = nil
+	if checkpoint.Stage == state.ResumeStageReview && checkpoint.StopGitSnapshot != nil {
+		stopSnapshot := *checkpoint.StopGitSnapshot
+		stopSnapshot.ParentFiles = nil
+		checkpoint.StopGitSnapshot = &stopSnapshot
 	}
 	if err := w.state.SaveResumeCheckpoint(checkpoint); err != nil {
 		return checkpoint, outputPath, guardBefore, err
