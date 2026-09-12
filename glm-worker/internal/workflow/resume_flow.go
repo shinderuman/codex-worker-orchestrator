@@ -138,16 +138,22 @@ func (w *Workflow) gateResumeProvider(checkpoint state.ResumeCheckpoint) error {
 }
 
 func (w *Workflow) activateResume(checkpoint state.ResumeCheckpoint) error {
+	parentAction := os.Getenv(state.GuardRepairParentActionEnv)
 	attemptID := os.Getenv(state.GuardRepairResumeAttemptEnv)
-	if attemptID != "" {
-		if os.Getenv(state.GuardRepairParentActionEnv) != state.GuardRepairRebuiltResume {
-			return fmt.Errorf("guard repair resume attempt is only valid for rebuilt resume")
+	switch {
+	case parentAction == state.GuardRepairRebuiltResume:
+		if attemptID == "" {
+			return fmt.Errorf("guard repair rebuilt resume requires attempt ID")
 		}
 		if err := w.state.BeginResumeWithEvidence(checkpoint, attemptID); err != nil {
 			return err
 		}
-	} else if err := w.state.BeginResume(checkpoint); err != nil {
-		return err
+	case attemptID != "":
+		return fmt.Errorf("guard repair resume attempt is only valid for rebuilt resume")
+	default:
+		if err := w.state.BeginResume(checkpoint); err != nil {
+			return err
+		}
 	}
 	w.currentResumeSource = checkpoint.StopKind.ResumeSource()
 	return nil
