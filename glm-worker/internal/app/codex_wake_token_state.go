@@ -11,12 +11,15 @@ import (
 )
 
 type codexWakeTokenLease struct {
-	activePath string
-	leasePath  string
-	lock       *repoLockLease
+	activePath    string
+	leasePath     string
+	deliveredPath string
+	lock          *repoLockLease
 }
 
 const codexWakeTokenStateDir = "glm-worker-wake-transactions"
+
+var removeCodexWakeLeaseFile = os.Remove
 
 func persistCodexWakeToken(codexConfigDir, token string) error {
 	if token == "" {
@@ -51,7 +54,12 @@ func beginCodexWakeToken(codexConfigDir, token string) (codexWakeTokenLease, err
 	if err != nil {
 		return codexWakeTokenLease{}, fmt.Errorf("claim wake transaction token lock: %w", err)
 	}
-	lease := codexWakeTokenLease{activePath: active, leasePath: leasePath, lock: lock}
+	lease := codexWakeTokenLease{
+		activePath:    active,
+		leasePath:     leasePath,
+		deliveredPath: active + ".delivered",
+		lock:          lock,
+	}
 	data, err := os.ReadFile(active)
 	if errors.Is(err, os.ErrNotExist) {
 		data, err = os.ReadFile(leasePath)
@@ -86,9 +94,16 @@ func validateCodexWakeTokenState(data []byte, token string) error {
 	return nil
 }
 
+func (lease codexWakeTokenLease) markDelivered() error {
+	if err := os.Rename(lease.leasePath, lease.deliveredPath); err != nil {
+		return fmt.Errorf("mark wake transaction token delivered: %w", err)
+	}
+	return nil
+}
+
 func (lease codexWakeTokenLease) commit() error {
 	defer lease.releaseLock()
-	if err := os.Remove(lease.leasePath); err != nil && !os.IsNotExist(err) {
+	if err := removeCodexWakeLeaseFile(lease.deliveredPath); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("finalize wake transaction token: %w", err)
 	}
 	return nil
@@ -96,6 +111,11 @@ func (lease codexWakeTokenLease) commit() error {
 
 func (lease codexWakeTokenLease) rollback() {
 	_ = os.Rename(lease.leasePath, lease.activePath)
+	lease.releaseLock()
+}
+
+func (lease codexWakeTokenLease) rollbackDelivered() {
+	_ = os.Rename(lease.deliveredPath, lease.activePath)
 	lease.releaseLock()
 }
 
