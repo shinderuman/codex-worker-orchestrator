@@ -213,11 +213,10 @@ func (checkpoint *ResumeCheckpoint) normalizeStopParentFilesForSave() error {
 	if canonical == nil && checkpoint.StopParentFiles == nil {
 		return nil
 	}
-	if canonical != nil && checkpoint.StopParentFiles == nil {
-		if !checkpoint.stopParentFilesDerived {
-			return fmt.Errorf("stop parent files diverge from canonical stop snapshot")
+	if checkpoint.StopParentFiles == nil {
+		if checkpoint.Stage == ResumeStageReview && checkpoint.stopParentFilesDerived {
+			checkpoint.StopGitSnapshot.ParentFiles = nil
 		}
-		checkpoint.StopGitSnapshot.ParentFiles = nil
 		return nil
 	}
 	if canonical == nil || !SameParentFileStates(*canonical, *checkpoint.StopParentFiles) {
