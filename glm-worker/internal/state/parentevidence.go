@@ -174,7 +174,6 @@ func splitJSONLines(data []byte) [][]byte {
 				lines = append(lines, segment)
 			}
 		}
-	}
 	if start < len(data) {
 		lines = append(lines, data[start:])
 	}
@@ -259,7 +258,7 @@ func (s *StateStore) ParentEvidenceDelivered(surface string, digest string) (Par
 }
 
 func (s *StateStore) ClearParentEvidenceLedger() error {
-	if err := os.Remove(s.Path(parentEvidenceLedgerPath)); err != nil && !os.IsNotExist(err) {
+	if err := removeStatePath(s.Path(parentEvidenceLedgerPath)); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("parent evidence ledgerを削除できません: %w", err)
 	}
 	return nil
