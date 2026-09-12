@@ -8,10 +8,8 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
-	"strings"
 )
 
 type desiredFile struct {
@@ -91,43 +89,36 @@ func addDesiredFile(repoRoot, sourcePath, destinationPath string, files *[]desir
 	return nil
 }
 
-func buildFileInstallPlan(repoRoot, codexDir string, state installState, stateExists bool, legacy legacyManifest) (fileInstallPlan, error) {
+func buildFileInstallPlan(repoRoot, codexDir string, state installState, stateExists bool) (fileInstallPlan, error) {
 	desired, err := collectDesiredFiles(repoRoot)
 	if err != nil {
 		return fileInstallPlan{}, err
 	}
 	records := stateFileMap(state)
-	if err := validateFilePlanAncestors(codexDir, desired, state, legacy); err != nil {
+	if err := validateFilePlanAncestors(codexDir, desired, state); err != nil {
 		return fileInstallPlan{}, err
 	}
 	desiredByPath := make(map[string]desiredFile, len(desired))
 	for _, file := range desired {
 		desiredByPath[file.Path] = file
-		if err := requireCurrentPathOwnership(repoRoot, codexDir, file, records, stateExists, legacy); err != nil {
+		if err := requireCurrentPathOwnership(codexDir, file, records, stateExists); err != nil {
 			return fileInstallPlan{}, err
 		}
 	}
 	plan := fileInstallPlan{Desired: desired}
 	if stateExists {
 		planObsoleteStateFiles(codexDir, records, desiredByPath, &plan)
-		return plan, nil
-	}
-	if err := planLegacyFiles(repoRoot, codexDir, legacy, desiredByPath, &plan); err != nil {
-		return fileInstallPlan{}, err
 	}
 	return plan, nil
 }
 
-func validateFilePlanAncestors(codexDir string, desired []desiredFile, state installState, legacy legacyManifest) error {
+func validateFilePlanAncestors(codexDir string, desired []desiredFile, state installState) error {
 	paths := map[string]bool{}
 	for _, file := range desired {
 		paths[file.Path] = true
 	}
 	for _, record := range state.Files {
 		paths[record.Path] = true
-	}
-	for path := range legacy.Paths {
-		paths[path] = true
 	}
 	for path := range paths {
 		if err := validateManagedPathAncestors(codexDir, path); err != nil {
@@ -137,11 +128,11 @@ func validateFilePlanAncestors(codexDir string, desired []desiredFile, state ins
 	return nil
 }
 
-func requireCurrentPathOwnership(repoRoot, codexDir string, file desiredFile, records map[string]managedFileRecord, stateExists bool, legacy legacyManifest) error {
+func requireCurrentPathOwnership(codexDir string, file desiredFile, records map[string]managedFileRecord, stateExists bool) error {
 	target := filepath.Join(codexDir, filepath.FromSlash(file.Path))
 	info, err := os.Lstat(target)
 	if errors.Is(err, os.ErrNotExist) {
-		return requireMissingPathOwnership(file.Path, records, stateExists, legacy)
+		return requireMissingPathOwnership(file.Path, records, stateExists)
 	}
 	if err != nil {
 		return fmt.Errorf("stat installed Codex file %s: %w", file.Path, err)
@@ -149,23 +140,19 @@ func requireCurrentPathOwnership(repoRoot, codexDir string, file desiredFile, re
 	if !info.Mode().IsRegular() {
 		return fmt.Errorf("refusing to overwrite non-regular Codex path %s", file.Path)
 	}
-	return requireExistingPathOwnership(repoRoot, target, file.Path, records, stateExists, legacy)
+	return requireExistingPathOwnership(target, file.Path, records)
 }
 
-func requireMissingPathOwnership(path string, records map[string]managedFileRecord, stateExists bool, legacy legacyManifest) error {
+func requireMissingPathOwnership(path string, records map[string]managedFileRecord, stateExists bool) error {
 	if stateExists {
 		if _, owned := records[path]; owned {
 			return fmt.Errorf("managed Codex file is missing; refusing silent recreation: %s", path)
 		}
-		return nil
-	}
-	if legacy.Paths[path] {
-		return fmt.Errorf("legacy managed Codex file is missing; refusing silent recreation: %s", path)
 	}
 	return nil
 }
 
-func requireExistingPathOwnership(repoRoot, target, path string, records map[string]managedFileRecord, stateExists bool, legacy legacyManifest) error {
+func requireExistingPathOwnership(target, path string, records map[string]managedFileRecord) error {
 	if record, owned := records[path]; owned {
 		actual, err := digestFile(target)
 		if err != nil {
@@ -175,16 +162,6 @@ func requireExistingPathOwnership(repoRoot, target, path string, records map[str
 			return fmt.Errorf("managed Codex file was modified after install; refusing to overwrite: %s", path)
 		}
 		return nil
-	}
-	if !stateExists && legacy.Paths[path] {
-		matches, err := managedPathMatchesRepositoryHistory(repoRoot, path, target)
-		if err != nil {
-			return err
-		}
-		if matches {
-			return nil
-		}
-		return fmt.Errorf("legacy managed Codex file no longer matches repository history; refusing to overwrite: %s", path)
 	}
 	return fmt.Errorf("refusing to overwrite preexisting Codex file without tool ownership: %s", path)
 }
@@ -209,38 +186,6 @@ func planObsoleteStateFiles(codexDir string, records map[string]managedFileRecor
 	}
 	sort.Strings(plan.Remove)
 	sort.Strings(plan.Preserved)
-}
-
-func planLegacyFiles(repoRoot, codexDir string, legacy legacyManifest, desired map[string]desiredFile, plan *fileInstallPlan) error {
-	if !legacy.Present {
-		return nil
-	}
-	paths := make([]string, 0, len(legacy.Paths))
-	for path := range legacy.Paths {
-		paths = append(paths, path)
-	}
-	sort.Strings(paths)
-	for _, path := range paths {
-		if _, current := desired[path]; current {
-			continue
-		}
-		target := filepath.Join(codexDir, filepath.FromSlash(path))
-		matches, err := managedPathMatchesRepositoryHistory(repoRoot, path, target)
-		if errors.Is(err, os.ErrNotExist) {
-			continue
-		}
-		if err != nil {
-			return err
-		}
-		if matches {
-			plan.Remove = append(plan.Remove, path)
-		} else {
-			plan.Preserved = append(plan.Preserved, path)
-		}
-	}
-	sort.Strings(plan.Remove)
-	sort.Strings(plan.Preserved)
-	return nil
 }
 
 func applyFileInstallPlan(codexDir string, plan fileInstallPlan, output func(string, ...any)) ([]managedFileRecord, error) {
@@ -270,69 +215,6 @@ func applyFileInstallPlan(codexDir string, plan fileInstallPlan, output func(str
 		records = append(records, managedFileRecord{Path: file.Path, SHA256: file.SHA256})
 	}
 	return records, nil
-}
-
-func supportedLegacyManagedPath(path string) bool {
-	if path == "AGENTS.md" || path == "instructions/codex-worker-orchestrator.md" || path == "rules/glm-worker.rules" {
-		return true
-	}
-	return strings.HasPrefix(path, "instructions/") || strings.HasPrefix(path, "glm-worker/prompts/")
-}
-
-func managedPathMatchesRepositoryHistory(repoRoot, installedPath, target string) (bool, error) {
-	info, err := os.Lstat(target)
-	if err != nil {
-		return false, err
-	}
-	if !info.Mode().IsRegular() {
-		return false, nil
-	}
-	sourcePath, ok := legacySourcePath(installedPath)
-	if !ok {
-		return false, nil
-	}
-	current := filepath.Join(repoRoot, filepath.FromSlash(sourcePath))
-	if source, readErr := os.ReadFile(current); readErr == nil {
-		targetData, targetErr := os.ReadFile(target)
-		if targetErr != nil {
-			return false, targetErr
-		}
-		if bytes.Equal(source, targetData) {
-			return true, nil
-		}
-	}
-	command := exec.Command("git", "-C", repoRoot, "log", "--format=%H", "--", sourcePath)
-	output, err := command.Output()
-	if err != nil {
-		return false, fmt.Errorf("enumerate managed Codex source history %s: %w", sourcePath, err)
-	}
-	targetData, err := os.ReadFile(target)
-	if err != nil {
-		return false, err
-	}
-	for _, revision := range strings.Fields(string(output)) {
-		show := exec.Command("git", "-C", repoRoot, "show", revision+":"+sourcePath)
-		data, showErr := show.Output()
-		if showErr == nil && bytes.Equal(data, targetData) {
-			return true, nil
-		}
-	}
-	return false, nil
-}
-
-func legacySourcePath(installedPath string) (string, bool) {
-	switch {
-	case installedPath == "AGENTS.md", installedPath == "instructions/codex-worker-orchestrator.md":
-		return "codex/AGENTS.md", true
-	case installedPath == "rules/glm-worker.rules":
-		return "codex/rules/glm-worker.rules", true
-	case strings.HasPrefix(installedPath, "instructions/"):
-		return "codex/" + installedPath, true
-	case strings.HasPrefix(installedPath, "glm-worker/prompts/"):
-		return "codex/" + installedPath, true
-	default:
-		return "", false
-	}
 }
 
 func digestBytes(data []byte) string {
