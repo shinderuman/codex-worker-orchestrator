@@ -97,3 +97,39 @@ func TestSaveResumeCheckpointRejectsDivergentDerivedStopParentFiles(t *testing.T
 		t.Fatalf("divergent derived state save error = %v", err)
 	}
 }
+
+func TestSaveResumeCheckpointRejectsUnprovenStopParentConsumption(t *testing.T) {
+	st := &StateStore{dir: t.TempDir()}
+	parents := ParentFileStates{{Path: ParentRulesFile, Exists: true, SHA256: "canonical"}}
+	checkpoint := ResumeCheckpoint{
+		Stage:           ResumeStageReview,
+		Model:           "sonnet",
+		StopKind:        ResumeStopRateLimited,
+		StopGitSnapshot: &GitSnapshot{ParentFiles: &parents},
+	}
+	if err := st.SaveResumeCheckpoint(checkpoint); err == nil || !strings.Contains(err.Error(), "diverge from canonical") {
+		t.Fatalf("unproven stop parent consumption save error = %v", err)
+	}
+}
+
+func TestSaveResumeCheckpointConsumesDerivedStopParentFiles(t *testing.T) {
+	st := &StateStore{dir: t.TempDir()}
+	parents := ParentFileStates{{Path: ParentRulesFile, Exists: true, SHA256: "canonical"}}
+	checkpoint := ResumeCheckpoint{
+		Stage:    ResumeStageReview,
+		Model:    "sonnet",
+		StopKind: ResumeStopRateLimited,
+	}
+	checkpoint.SetStopRepositoryBoundary(GitSnapshot{ParentFiles: &parents})
+	checkpoint.StopParentFiles = nil
+	if err := st.SaveResumeCheckpoint(checkpoint); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := st.LoadResumeCheckpoint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.StopGitSnapshot == nil || loaded.StopGitSnapshot.ParentFiles != nil || loaded.StopParentFiles != nil {
+		t.Fatalf("consumed stop parent state = %#v %#v", loaded.StopGitSnapshot, loaded.StopParentFiles)
+	}
+}
