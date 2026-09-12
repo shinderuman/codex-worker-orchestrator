@@ -40,10 +40,6 @@ const (
 
 var zeroContextHunk = regexp.MustCompile(`^@@ -([0-9]+)(?:,[0-9]+)? \+[0-9]+(?:,[0-9]+)? @@`)
 
-func (w *Workflow) prepareAcceptedFixScope(mode string) {
-	_ = w.prepareAcceptedFixScopeChecked(mode)
-}
-
 func (w *Workflow) prepareAcceptedFixScopeChecked(mode string) error {
 	return w.prepareAcceptedFixScopeForAction(mode, state.ParentActionFix)
 }
