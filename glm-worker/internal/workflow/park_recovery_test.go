@@ -83,6 +83,9 @@ func TestParkRejectsPendingUnparkCleanup(t *testing.T) {
 	if fixture.st.TaskStatus() != state.TaskStatusWaitingSolReview {
 		t.Fatalf("cleanup-pending status = %s", fixture.st.TaskStatus())
 	}
+	if _, admitted, err := fixture.st.AdmitParentAction(state.ParentActionAccept); err != nil || admitted {
+		t.Fatalf("accept admitted during cleanup pending: admitted=%v err=%v", admitted, err)
+	}
 
 	var parkAgain bytes.Buffer
 	if err := fixture.w.ExecutePark(&parkAgain); err == nil || !strings.Contains(err.Error(), "unpark cleanup") {
