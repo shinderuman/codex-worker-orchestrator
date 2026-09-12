@@ -22,6 +22,9 @@ func TestCompleteParentAwaitingDoesNotRequireWritableTaskStatsMirror(t *testing.
 		Outcome:            ParentOutcomeAccepted,
 		WorkerReportedRisk: "LOW",
 	})
+	if err := os.Remove(st.Path(currentStatsFile)); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.Mkdir(st.Path(currentStatsFile), 0o700); err != nil {
 		t.Fatal(err)
 	}
