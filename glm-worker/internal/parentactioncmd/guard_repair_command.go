@@ -12,15 +12,15 @@ import (
 	"time"
 )
 
-const (
-	guardRepairSubprocessTimeout = 10 * time.Minute
-	guardRepairProcessSettleTime = 2 * time.Second
-)
-
 type guardRepairCommandInterruptedError struct {
 	signal os.Signal
 	err    error
 }
+
+const (
+	guardRepairSubprocessTimeout = 10 * time.Minute
+	guardRepairProcessSettleTime = 2 * time.Second
+)
 
 func (e *guardRepairCommandInterruptedError) Error() string {
 	return fmt.Sprintf("guard repair subprocess interrupted by %s", e.signal)
@@ -66,7 +66,10 @@ func runGuardRepairCommandWithin(dir, label string, timeout time.Duration, name 
 		}
 		return output.Bytes(), err
 	}
+	return waitGuardRepairCommand(ctx, command, signals, label, timeout, &output)
+}
 
+func waitGuardRepairCommand(ctx context.Context, command *exec.Cmd, signals <-chan os.Signal, label string, timeout time.Duration, output *bytes.Buffer) ([]byte, error) {
 	pid := command.Process.Pid
 	waitDone := make(chan error, 1)
 	go func() { waitDone <- command.Wait() }()
@@ -80,16 +83,20 @@ func runGuardRepairCommandWithin(dir, label string, timeout time.Duration, name 
 			}
 			_ = signalGuardRepairCommandProcess(pid, received)
 		case err := <-waitDone:
-			if ctxErr := ctx.Err(); ctxErr != nil {
-				cleanupErr := verifyGuardRepairCommandProcessGone(pid, guardRepairProcessSettleTime)
-				return output.Bytes(), guardRepairTimeoutError(label, timeout, ctxErr, output.String(), cleanupErr)
-			}
-			if interrupted != nil {
-				return output.Bytes(), &guardRepairCommandInterruptedError{signal: interrupted, err: err}
-			}
-			return output.Bytes(), err
+			return guardRepairCommandWaitResult(ctx, pid, interrupted, err, label, timeout, output)
 		}
 	}
+}
+
+func guardRepairCommandWaitResult(ctx context.Context, pid int, interrupted os.Signal, waitErr error, label string, timeout time.Duration, output *bytes.Buffer) ([]byte, error) {
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		cleanupErr := verifyGuardRepairCommandProcessGone(pid, guardRepairProcessSettleTime)
+		return output.Bytes(), guardRepairTimeoutError(label, timeout, ctxErr, output.String(), cleanupErr)
+	}
+	if interrupted != nil {
+		return output.Bytes(), &guardRepairCommandInterruptedError{signal: interrupted, err: waitErr}
+	}
+	return output.Bytes(), waitErr
 }
 
 func guardRepairTimeoutError(label string, timeout time.Duration, cause error, output string, cleanupErr error) error {
