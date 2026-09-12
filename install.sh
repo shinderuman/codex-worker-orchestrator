@@ -53,21 +53,9 @@ require_quality_tool() {
 		exit 1
 	fi
 	if [ ! -x "$command_path" ]; then
-		if ! command -v "$command_name" >/dev/null 2>&1; then
-			printf 'required command not found: %s\n' "$command_name" >&2
-			printf '%s\n' 'install required versions with: ./install-quality-tools.sh' >&2
-			exit 1
-		fi
-		legacy_path=$(command -v "$command_name")
-		legacy_version=$(quality_tool_version "$command_name" "$legacy_path")
-		if [ "$legacy_version" != "$required_version" ]; then
-			printf 'quality tool version mismatch: %s=%s, required=%s\n' "$command_name" "${legacy_version:-unknown}" "$required_version" >&2
-			printf '%s\n' 'install required versions with: ./install-quality-tools.sh' >&2
-			exit 1
-		fi
-		mkdir -p "$QUALITY_TOOLS_RESOLVED_BIN_DIR"
-		install -m 0755 "$legacy_path" "$command_path"
-		printf 'migrated quality tool: %s\n' "$command_path"
+		printf 'required quality tool not found at canonical path: %s\n' "$command_path" >&2
+		printf '%s\n' 'install required versions with: ./install-quality-tools.sh' >&2
+		exit 1
 	fi
 	installed_version=$(quality_tool_version "$command_name" "$command_path")
 	if [ "$installed_version" != "$required_version" ]; then
@@ -143,7 +131,6 @@ require rsync
 require cmp
 require awk
 require grep
-require install
 QUALITY_TOOL_NAMESPACE=$(quality_contract_value namespace)
 QUALITY_TOOLS_DEFAULT_BIN_DIR=$(quality_contract_value default-bin-dir)
 QUALITY_TOOLS_RESOLVED_BIN_DIR=$(quality_tool_bin_dir "$QUALITY_TOOLS_DEFAULT_BIN_DIR")

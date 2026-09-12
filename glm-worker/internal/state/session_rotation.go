@@ -206,9 +206,6 @@ func decodeSessionRotationMarker(data []byte) (*SessionRotationMarker, error) {
 	if err := decoder.Decode(&marker); err != nil {
 		return nil, fmt.Errorf("session rotation markerのschemaが不正です: %w", err)
 	}
-	if marker.Version == 1 || marker.Version == 2 {
-		marker.Version = sessionRotationMarkerVersion
-	}
 	if err := marker.validate(); err != nil {
 		return nil, err
 	}

@@ -7,9 +7,9 @@ ACTIVE task fileが提示されている場合、要求の正はその本文(Ori
 ## 必須確認
 - workerの自己評価を信用せずworking treeを確認する。
 - 該当scopeの`AGENTS.local.md`、`AGENTS.md`、`~/.codex/instructions/worker/`の必要規則を確認する。`CLAUDE.md`と`~/.codex/AGENTS.md`は読まない。
-- 要求、範囲外変更、根本原因、test観点、既存互換性を独立確認する。
+- 要求、範囲外変更、根本原因、test観点、current contractを独立確認する。
 - ACTIVE taskがある場合は`Derived Contract vs Original instruction`と`Implementation vs Contract`を別々に確認する。
-- 永続状態・設定・migration・upgrade・cache・manifest・sidecar/local file変更では、開始状態、2回目以降、解除後、旧version upgradeの状態遷移を`state-transitions.md`に従って確認する。
+- 永続状態・設定・cache・manifest・sidecar/local file変更では、fresh/current状態、2回目以降、解除後、unsupported old stateの拒否・skip・reset・rebuild・delete・non-resumable境界、rollback/recoveryを`state-transitions.md`に従って確認する。old stateのmigrationやpromotionを既定要件にしない。
 - health/probe/readiness/validation/retry gateから本処理へ進む変更は、exit codeや非空応答だけで成功とせずfalse-positive境界を直接検証する。
 - `harnesslint`を含むmachine quality gateはreviewer開始前に通過済みである。reviewerはLinter本体、`.golangci.yml`、exclude、threshold、`nolint`、gate wiringを弱体化してPASSさせない。
 - installer behavior変更では必要に応じて`tests/install_smoke.sh`を確認する。通常reviewで実GLM/Z.ai接続を要求しない。provider/isolation変更だけlive integration smokeを対象にする。
@@ -31,11 +31,11 @@ ACTIVE task fileが提示されている場合、要求の正はその本文(Ori
 ## 判定
 `FIX_REQUIRED`: Solの新設計判断なしに直せるbug、要求漏れ、test不足/過剰test、lint/build/test failure、規約違反、範囲外変更、既存Sol判断との不一致。コードは正しくpacketの意味情報だけ不足する場合は`TARGETS:["PACKET"]`としてreport-only fixへ戻す。
 
-`NEEDS_SOL_REVIEW`: アーキテクチャ、責務、公開API、データモデル、依存方向、互換性、原因不明bug、security/data破損/不可逆性、実装前Sol判断、高リスク残余など、コードを見ないとSolが採否できない意味判断が残る場合。永続fileへ触れただけでは上げない。
+`NEEDS_SOL_REVIEW`: アーキテクチャ、責務、公開API、データモデル、依存方向、current schema/contractの意味変更、原因不明bug、security/data破損/不可逆性、実装前Sol判断、高リスク残余など、コードを見ないとSolが採否できない意味判断が残る場合。永続fileへ触れただけでは上げない。
 
 `PASS`: 要求を満たし明確な不具合・漏れがなく、必要十分なtestがあり、新しい高レバレッジ判断がない`RISK: LOW`変更だけ。高リスクなら`NEEDS_SOL_REVIEW`。
 
-HIGH変更では、変更前後contract、失敗境界、主要状態遷移、検証結果、互換性/rollback/recovery懸念のうち該当する情報が最終packetに圧縮されているか確認する。該当しない形式項目を増やさない。
+HIGH変更では、変更前後contract、失敗境界、主要状態遷移、検証結果、data保護/rollback/recovery懸念のうち該当する情報が最終packetに圧縮されているか確認する。該当しない形式項目を増やさない。
 
 ## コメント品質
 source commentは`commentlint`のmachine policyを正とし、自然言語commentをreviewer判断で例外化しない。

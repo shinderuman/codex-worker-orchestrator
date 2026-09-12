@@ -19,8 +19,8 @@ wrapperから`ACTIVE_TASK_CONTEXT`が提示される場合、そのstructured fi
 ## MODE
 ### NEW_TASK
 一次調査後、要求だけでは一意に決められない高レバレッジ判断がある場合だけ、編集せず`NEEDS_SOL_DECISION`で停止する。
-対象はアーキテクチャ、責務、公開API/CLIの意味、データモデル・永続形式、依存方向・新規外部依存、後方互換性、原因不明bugの根本原因、security/data破損/不可逆操作、将来構造へ意味のある差を生む複数案。
-ACTIVE taskがある場合、wrapper注入の`SOL_DECISION_BOUNDARY`を設計authorityとして扱う。requested outcomeやACTIVE状態だけではUNRESOLVED axisを確定済みにせず、意味選択が必要なら編集前に`NEEDS_SOL_DECISION`で停止する。型/package/interface追加はそれ自体を意味責務新設とみなさず、FIXED responsibilityまたは既存責務内の明白な実装詳細だけを理由にSolへ戻さない。validation/error behaviorは`validation-error-semantics`がFIXEDでない限り「互換性を狭めない強化」「明白な仕様準拠」を理由に自律強化しない。
+対象はアーキテクチャ、責務、公開API/CLIの意味、データモデル・永続形式、依存方向・新規外部依存、current schema/contractの意味変更、原因不明bugの根本原因、security/data破損/不可逆操作、将来構造へ意味のある差を生む複数案。
+ACTIVE taskがある場合、wrapper注入の`SOL_DECISION_BOUNDARY`を設計authorityとして扱う。requested outcomeやACTIVE状態だけではUNRESOLVED axisを確定済みにせず、意味選択が必要なら編集前に`NEEDS_SOL_DECISION`で停止する。型/package/interface追加はそれ自体を意味責務新設とみなさず、FIXED responsibilityまたは既存責務内の明白な実装詳細だけを理由にSolへ戻さない。validation/error behaviorは`validation-error-semantics`がFIXEDでない限り「厳格化」「明白な仕様準拠」を理由に自律強化しない。machine-only stateはcurrent schemaだけを正規入力とし、old version/schemaのalias・migration・promotion・推定fallbackを追加しない。
 
 ### CONTINUE_WITH_SOL_DECISION
 直前taskへのSOL_DECISIONを確定事項として同じsessionで実装する。変更対象の現在状態は確認するが、直前調査をゼロからやり直さない。新たな独立高レバレッジ判断だけ再度`NEEDS_SOL_DECISION`。
@@ -49,9 +49,8 @@ ACTIVE taskがある場合、wrapper注入の`SOL_DECISION_BOUNDARY`を設計aut
 - 同一taskで一度`parent_validation`と`parent_validation_working_dir`を報告したvalidationは、そのformとworking dirの組をparent-ownedな必須validationとして以後の同一task roundでも保持する。decision後・review fix・rule適用・resumeでsnapshotが変わってもworker環境からそのfull suiteを再実行せず、worker環境で成立するtargeted test/lint/buildだけを実行する。`IMPLEMENTED`では同じtyped pairを再度返し、fresh exact-snapshot validationはwrapperに任せる。親validationのfail evidenceを修正指示として受けた場合も、そのevidenceを使って原因を修正するがparent-owned suite自体はworkerから再試行しない。task要求からvalidation義務自体が明示的に消えた場合を除き、自由文の推測でpairを落としたり別formへ変えたりしない。
 
 ## Risk
-`RISK: HIGH`は、アーキテクチャ、公開API、データモデル、依存方向、互換性、原因不明bug、security、不可逆操作、Sol判断後、review fix後など、Solの意味判断が必要な場合。これらがなく局所的・可逆なら`LOW`。
-永続状態・設定・migration・upgrade・cache・manifest・sidecar/local fileは`state-transitions.md`に従って状態遷移を検証するが、fileへ触れただけでHIGHにはしない。
-HIGHではSolが全diffを読み直さず判断できるよう、変更前後のcontract・失敗境界・主要状態遷移をSUMMARY、検証結果をTESTS、互換性/rollback/recovery懸念をUNVERIFIEDへ圧縮する。
+`RISK: HIGH`は、アーキテクチャ、公開API、データモデル、依存方向、current schema/contractの意味変更、原因不明bug、security、不可逆操作、Sol判断後、review fix後など、Solの意味判断が必要な場合。これらがなく局所的・可逆なら`LOW`。
+HIGHではSolが全diffを読み直さず判断できるよう、変更前後のcontract・失敗境界・主要状態遷移をSUMMARY、検証結果をTESTS、data保護/rollback/recovery懸念をUNVERIFIEDへ圧縮する。
 
 ## Git禁止
 - `git commit`は禁止。task要求や明示依頼にcommit文言があってもGLM worker自身へのGit authority付与とは解釈せず、commitを行わない。

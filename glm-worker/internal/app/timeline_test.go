@@ -480,6 +480,7 @@ func TestTimelineRetainedTaskWithMalformedTelemetryReportsUnreadable(t *testing.
 func retainedStatsArchiveJSON(version int, taskID string, status state.TaskStatus) string {
 	return fmt.Sprintf(`{
   "version": %d,
+  "schema_revision": 1,
   "task_id": %q,
   "started_at": "2026-09-01T16:24:06.607326Z",
   "archived_at": "2026-09-01T21:01:31.686938Z",
@@ -571,7 +572,7 @@ func TestTimelineRetainedTaskWithUnusableStatsArchiveReportsSourceState(t *testi
 		{"status-missing", fmt.Sprintf("{\n  \"version\": 3,\n  \"task_id\": %q,\n  \"started_at\": \"2026-09-01T16:24:06.607326Z\"\n}\n", oldTaskID), statusUnreadable, []string{"event_log"}},
 		{"status-unknown", retainedStatsArchiveJSON(3, oldTaskID, "mysterious-status"), statusUnreadable, []string{"event_log"}},
 		{"future-schema-revision", fmt.Sprintf("{\n  \"version\": 3,\n  \"schema_revision\": 2,\n  \"task_id\": %q,\n  \"status\": %q\n}\n", oldTaskID, state.TaskStatusComplete), statusUnreadable, []string{"event_log"}},
-		{"unsupported-version", retainedStatsArchiveJSON(2, oldTaskID, state.TaskStatusComplete), statusNone, []string{"event_log", "task_stats"}},
+		{"unsupported-version", retainedStatsArchiveJSON(2, oldTaskID, state.TaskStatusComplete), statusUnreadable, []string{"event_log"}},
 		{"foreign-task", retainedStatsArchiveJSON(3, "11111111-2222-4333-8444-555555555555", state.TaskStatusComplete), statusNone, []string{"event_log", "task_stats"}},
 	}
 	for _, fixture := range fixtures {

@@ -7,7 +7,8 @@ tmp=$(mktemp -d "${TMPDIR:-/tmp}/codex-install-smoke.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT HUP INT TERM
 repo="$tmp/repo"
 home="$tmp/home"
-mkdir -p "$repo" "$home/.codex" "$home/.claude" "$home/.local/bin" "$tmp/bin"
+quality_tools="$tmp/quality-tools"
+mkdir -p "$repo" "$home/.codex" "$home/.claude" "$home/.local/bin" "$tmp/bin" "$quality_tools"
 rsync -a --exclude .git --exclude .codex "$source_root/" "$repo/"
 git -C "$repo" init -q -b main
 git -C "$repo" add -A
@@ -17,6 +18,7 @@ printf '%s\n' 'background_terminal_max_timeout = 21600000' 'local_key = "keep"' 
 printf '%s\n' '# user-owned global Codex instruction' >"$home/.codex/AGENTS.md"
 printf '%s\n' 'AGENTS.md' >"$home/.codex/.codex-config-managed-files"
 global_agents_hash=$(shasum -a 256 "$home/.codex/AGENTS.md")
+legacy_manifest_hash=$(shasum -a 256 "$home/.codex/.codex-config-managed-files")
 printf '%s\n' '{"permissions":{"allow":["local"]},"env":{"LOCAL":"keep","REMOVE_ME":"local"}}' >"$home/.claude/settings.json"
 cat >"$home/.local/bin/merge-json" <<'EOF_STALE_MERGE_JSON'
 #!/bin/sh
@@ -47,11 +49,15 @@ cat >"$tmp/bin/shfmt" <<'EOF_TOOL'
 printf '%s\n' 'v3.13.1'
 EOF_TOOL
 chmod +x "$tmp/bin/golangci-lint" "$tmp/bin/shellcheck" "$tmp/bin/shfmt"
+cp "$tmp/bin/golangci-lint" "$quality_tools/codex-worker-orchestrator-golangci-lint-2.7.0"
+cp "$tmp/bin/shellcheck" "$quality_tools/codex-worker-orchestrator-shellcheck-0.11.0"
+cp "$tmp/bin/shfmt" "$quality_tools/codex-worker-orchestrator-shfmt-3.13.1"
 
 run_install() {
 	HOME="$home" \
 		GOMODCACHE="$go_mod_cache" \
 		PATH="$tmp/bin:$PATH" \
+		QUALITY_TOOLS_BIN_DIR="$quality_tools" \
 		CODEX_HOME="$home/.codex" \
 		GLM_WORKER_BIN_DIR="$home/.local/bin" \
 		GLM_WORKER_HOME="$home/.glm-worker" \
@@ -73,11 +79,10 @@ if [ "$(shasum -a 256 "$home/.codex/AGENTS.md")" != "$global_agents_hash" ]; the
 	printf '%s\n' 'user-global AGENTS.md changed during install/upgrade' >&2
 	exit 1
 fi
-if grep -Fxq 'AGENTS.md' "$home/.codex/.codex-config-managed-files"; then
-	printf '%s\n' 'user-global AGENTS.md remains installer-managed' >&2
+if [ "$(shasum -a 256 "$home/.codex/.codex-config-managed-files")" != "$legacy_manifest_hash" ]; then
+	printf '%s\n' 'legacy Codex manifest was treated as current installer state' >&2
 	exit 1
 fi
-test ! -e "$home/.codex/.codex-config-managed-files"
 test -f "$home/.codex/codex-worker-orchestrator/install-state.json"
 test -f "$home/.codex/instructions/codex-worker-orchestrator.md"
 cmp "$repo/codex/AGENTS.md" "$home/.codex/instructions/codex-worker-orchestrator.md"
@@ -209,7 +214,7 @@ missing_bin="$tmp/missing-bin"
 mkdir -p "$missing_bin" "$tmp/missing-quality"
 ln -s "$(command -v dirname)" "$missing_bin/dirname"
 ln -s "$(command -v awk)" "$missing_bin/awk"
-for tool in git rsync cmp grep install; do
+for tool in git rsync cmp grep; do
 	cat >"$missing_bin/$tool" <<'EOF_TOOL'
 #!/bin/sh
 exit 0
@@ -227,18 +232,23 @@ cat >"$missing_bin/golangci-lint" <<'EOF_TOOL'
 #!/bin/sh
 printf '%s\n' 'golangci-lint has version 2.7.0 built with go1.25.4'
 EOF_TOOL
-chmod +x "$missing_bin/go" "$missing_bin/golangci-lint"
+cat >"$missing_bin/shellcheck" <<'EOF_TOOL'
+#!/bin/sh
+printf '%s\n' 'version: 0.11.0'
+EOF_TOOL
+chmod +x "$missing_bin/go" "$missing_bin/golangci-lint" "$missing_bin/shellcheck"
 cp "$missing_bin/golangci-lint" "$tmp/missing-quality/codex-worker-orchestrator-golangci-lint-2.7.0"
 missing_stderr="$tmp/missing.stderr"
 if QUALITY_TOOLS_BIN_DIR="$tmp/missing-quality" PATH="$missing_bin" "$repo/install.sh" >"$tmp/missing.stdout" 2>"$missing_stderr"; then
-	printf '%s\n' 'install missing dependency: expected failure' >&2
+	printf '%s\n' 'install missing canonical quality tool: expected failure' >&2
 	exit 1
 fi
 test ! -s "$tmp/missing.stdout"
-missing_command_error='required command not found: shellcheck'
-missing_brew_hint='install required versions with: ./install-quality-tools.sh'
-grep -Fxq "$missing_command_error" "$missing_stderr"
-grep -Fxq "$missing_brew_hint" "$missing_stderr"
+missing_tool_error="required quality tool not found at canonical path: $tmp/missing-quality/codex-worker-orchestrator-shellcheck-0.11.0"
+missing_tool_hint='install required versions with: ./install-quality-tools.sh'
+grep -Fxq "$missing_tool_error" "$missing_stderr"
+grep -Fxq "$missing_tool_hint" "$missing_stderr"
+test ! -e "$tmp/missing-quality/codex-worker-orchestrator-shellcheck-0.11.0"
 
 mismatch_bin="$tmp/mismatch-bin"
 cp -R "$missing_bin" "$mismatch_bin"
@@ -255,6 +265,7 @@ EOF_TOOL
 chmod +x "$mismatch_bin/shellcheck" "$mismatch_bin/shfmt"
 mkdir -p "$tmp/mismatch-quality"
 cp "$mismatch_bin/golangci-lint" "$tmp/mismatch-quality/codex-worker-orchestrator-golangci-lint-2.7.0"
+cp "$mismatch_bin/shellcheck" "$tmp/mismatch-quality/codex-worker-orchestrator-shellcheck-0.11.0"
 mismatch_stderr="$tmp/mismatch.stderr"
 if QUALITY_TOOLS_BIN_DIR="$tmp/mismatch-quality" PATH="$mismatch_bin" "$repo/install.sh" >"$tmp/mismatch.stdout" 2>"$mismatch_stderr"; then
 	printf '%s\n' 'install version mismatch: expected failure' >&2

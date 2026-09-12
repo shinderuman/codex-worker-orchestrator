@@ -35,9 +35,6 @@ func run(args []string, stdout io.Writer) error {
 	)
 	switch *mode {
 	case "install":
-		if _, err := cliinstall.MigrateLegacy(*binDir); err != nil {
-			return err
-		}
 		results, err = cliinstall.Install(*buildDir, *binDir)
 	case "retire":
 		results, err = cliinstall.Retire(*binDir)

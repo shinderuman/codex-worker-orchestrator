@@ -177,7 +177,7 @@ func TestReleaseSessionRotationClaimRejectsBoundAndIssuedState(t *testing.T) {
 	})
 }
 
-func TestSessionRotationMarkerMigratesOldVersionsWithoutCreationOutcome(t *testing.T) {
+func TestSessionRotationMarkerRejectsOldVersions(t *testing.T) {
 	_, _, marker, _ := seedClaimedSessionRotation(t)
 	marker.LastCreationOutcome = nil
 	for _, version := range []int{1, 2} {
@@ -186,12 +186,8 @@ func TestSessionRotationMarkerMigratesOldVersionsWithoutCreationOutcome(t *testi
 		if err != nil {
 			t.Fatal(err)
 		}
-		decoded, err := decodeSessionRotationMarker(data)
-		if err != nil {
-			t.Fatalf("version %d marker migration: %v", version, err)
-		}
-		if decoded.Version != sessionRotationMarkerVersion || decoded.LastCreationOutcome != nil {
-			t.Fatalf("version %d migration result = %#v", version, decoded)
+		if _, err := decodeSessionRotationMarker(data); err == nil {
+			t.Fatalf("version %d marker was accepted", version)
 		}
 	}
 }

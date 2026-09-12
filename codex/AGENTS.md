@@ -20,7 +20,7 @@
 
 目的はSol Highの品質判断を維持しながらSol High側のトークン消費を減らすこと。
 
-- Sol Highは、要求・完了条件、重要なarchitecture/責務/API/data model/依存方向/互換性、原因不明バグ、重要テスト観点、GLM packet、高リスク変更、最終採否を判断する。
+- Sol Highは、要求・完了条件、重要なarchitecture/責務/API/data model/依存方向/current schema・contractの意味、原因不明バグ、重要テスト観点、GLM packet、高リスク変更、最終採否を判断する。
 - Sol Highは原則、repository一次探索、grep/呼び出し元追跡、通常の実装・test・lint・build、GLM調査の再実行、途中経過取得、全diffの無条件精読、reviewer検証済みの低レベル再検査を行わない。
 - 構造化machine evidence（JSON/JSONL、analysis-index、stats/report、manifest、timeline、validation record等）はraw全文をSol-visible stdoutへ出してから後turnで再projectionせず、最初のtool call内で判断に必要なfield/count/IDとexact source locatorへ機械projectionする。期待field欠損はunknown/errorのまま返し、`// .`等のwhole-document fallbackを使わない。追加raw確認は具体的なsemantic questionが生じた時だけexact record/line/regionを読む。parent-only decision/evaluationでは既存artifact参照・compact reportをrepository-wide rediscoveryより優先する。
 - repository固有の調査・設計案・実装・test・lint・build・自己reviewはGLMへ委譲し、新規task・decision・fix・accept・resumeは原則`glm-parent-action`を使う。同一taskのSol判断・修正・再開ではworker/reviewer sessionを継続し、新規taskだけ新sessionにする。過去のGLM文脈をSol Highが再説明しない。
@@ -31,12 +31,12 @@
 
 USER_REQUEST・`SPECIFICATION.md`・既存`AGENTS.md`・直前のSol判断で未確定の次はGLMだけで最終確定しない。
 
-- architecture/責務/公開API・CLI/data model・永続化形式/依存方向・新規外部依存/後方互換性
+- architecture/責務/公開API・CLI/data model・永続化形式/current schema・contract/依存方向・新規外部依存
 - 原因不明バグの根本原因、security・data破損・不可逆操作
 - 未検証の外部成立性を本番設計の前提へ進めるGo/No-Go・撤退判断
 - 複数案の選択が将来構造へ意味のある差を生む場合
 
-これらは実装前`NEEDS_SOL_DECISION`または最終`NEEDS_SOL_REVIEW`でSol Highを通す。承認済み構成内の型/package/interface追加、作業分割、命名、明白な仕様違反修正、test追加、互換性を狭めない強化だけではSolへ戻さない。永続fileも、永続状態の意味変更・migration・既存形式/ユーザー状態との互換・rollback/recovery・upgrade破壊可能性で意味判断が必要な場合だけSol確認する。
+これらは実装前`NEEDS_SOL_DECISION`または最終`NEEDS_SOL_REVIEW`でSol Highを通す。承認済み構成内の型/package/interface追加、作業分割、命名、明白な仕様違反修正、test追加、既定contract内の厳格化だけではSolへ戻さない。machine-only state/schemaはcurrent version/schemaだけを正規入力とし、old version/schemaのmigration・promotion・alias・推定fallbackを既定要件にしない。永続fileも、永続状態の意味変更・current schema拒否条件・rollback/recovery・既存ユーザー状態の破壊可能性で意味判断が必要な場合だけSol確認する。
 低リスク変更は独立reviewer PASS後、Sol Highは圧縮packetで採否を判断し全diff精読を省略してよい。親Codexのquality gate command実行は`~/.codex/instructions/quality-gate-capability.md`に従う。
 
 ## 6. Codex自身による編集

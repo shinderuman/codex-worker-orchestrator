@@ -108,75 +108,47 @@ func TestInstallRejectsEditedOwnedConfigKey(t *testing.T) {
 	}
 }
 
-func TestInstallMigratesLegacyManifestOnlyWhenBytesMatchRepositoryHistory(t *testing.T) {
+func TestInstallLegacyManifestDoesNotConferFileOwnership(t *testing.T) {
 	repo := initInstallFixtureRepo(t)
-	legacyContent := []byte("# historical tool instruction\n")
-	source := filepath.Join(repo, "codex", "instructions", "test.md")
-	writeTestFile(t, source, legacyContent)
-	commitFixtureRepo(t, repo, "historical instruction")
-	writeTestFile(t, source, []byte("# current tool instruction\n"))
-	commitFixtureRepo(t, repo, "current instruction")
-
 	codexDir := t.TempDir()
 	target := filepath.Join(codexDir, "instructions", "test.md")
-	writeTestFile(t, target, legacyContent)
-	writeTestFile(t, filepath.Join(codexDir, legacyManifestName), []byte("instructions/test.md\n"))
-	writeTestFile(t, filepath.Join(codexDir, "config.toml"), []byte(managedConfigKey+" = 21600000\n"))
-	runInstall(t, repo, codexDir)
-	assertFileBytes(t, target, []byte("# current tool instruction\n"))
-	if _, err := os.Stat(filepath.Join(codexDir, legacyManifestName)); !os.IsNotExist(err) {
-		t.Fatalf("legacy manifest remains after migration: %v", err)
-	}
+	original := []byte("# tool instruction\n")
+	manifestPath := filepath.Join(codexDir, ".codex-config-managed-files")
+	manifest := []byte("instructions/test.md\n")
+	writeTestFile(t, target, original)
+	writeTestFile(t, manifestPath, manifest)
 
-	userDir := t.TempDir()
-	userTarget := filepath.Join(userDir, "instructions", "test.md")
-	userContent := []byte("# user replacement\n")
-	writeTestFile(t, userTarget, userContent)
-	writeTestFile(t, filepath.Join(userDir, legacyManifestName), []byte("instructions/test.md\n"))
-	writeTestFile(t, filepath.Join(userDir, "config.toml"), []byte(managedConfigKey+" = 21600000\n"))
 	var stdout bytes.Buffer
-	err := Install(repo, userDir, &stdout)
-	if err == nil {
-		t.Fatal("expected legacy ownership conflict")
+	err := Install(repo, codexDir, &stdout)
+	if err == nil || !strings.Contains(err.Error(), "without tool ownership") {
+		t.Fatalf("legacy manifest unexpectedly conferred ownership: %v", err)
 	}
-	assertFileBytes(t, userTarget, userContent)
+	assertFileBytes(t, target, original)
+	assertFileBytes(t, manifestPath, manifest)
+	if _, err := os.Stat(statePath(codexDir)); !os.IsNotExist(err) {
+		t.Fatalf("install state exists after rejected legacy ownership input: %v", err)
+	}
 }
 
-func TestInstallMigratesLegacyManagedConfigOwnership(t *testing.T) {
+func TestInstallLegacyManifestDoesNotConferConfigOwnership(t *testing.T) {
 	repo := initInstallFixtureRepo(t)
-	managedPath := filepath.Join(repo, "codex", "config-managed.toml")
-	writeTestFile(t, managedPath, []byte(managedConfigKey+" = 100\n"))
-	commitFixtureRepo(t, repo, "legacy managed config")
-	writeTestFile(t, managedPath, []byte(managedConfigKey+" = 200\n"))
-	commitFixtureRepo(t, repo, "current managed config")
-
 	codexDir := t.TempDir()
-	writeTestFile(t, filepath.Join(codexDir, legacyManifestName), []byte("AGENTS.md\n"))
+	manifestPath := filepath.Join(codexDir, ".codex-config-managed-files")
+	manifest := []byte("AGENTS.md\n")
 	configPath := filepath.Join(codexDir, "config.toml")
-	writeTestFile(t, configPath, []byte(managedConfigKey+" = 100\nlocal_key = \"keep\"\n"))
-	runInstall(t, repo, codexDir)
-	if !bytes.Contains(readTestFile(t, configPath), []byte(managedConfigKey+" = 200")) {
-		t.Fatal("legacy managed config was not upgraded")
-	}
-	state := loadTestState(t, codexDir)
-	if state.Config[managedConfigKey].Value != "200" {
-		t.Fatalf("legacy managed config ownership was not migrated: %+v", state.Config)
-	}
+	config := []byte(managedConfigKey + " = 100\nlocal_key = \"keep\"\n")
+	writeTestFile(t, manifestPath, manifest)
+	writeTestFile(t, configPath, config)
 
-	writeTestFile(t, managedPath, []byte(managedConfigKey+" = 300\n"))
-	runInstall(t, repo, codexDir)
-	if !bytes.Contains(readTestFile(t, configPath), []byte(managedConfigKey+" = 300")) {
-		t.Fatal("migrated managed config was not updated")
-	}
-}
-
-func TestInstallRejectsUnsafeLegacyManifestPath(t *testing.T) {
-	repo := initInstallFixtureRepo(t)
-	codexDir := t.TempDir()
-	writeTestFile(t, filepath.Join(codexDir, legacyManifestName), []byte("instructions/../../outside\n"))
 	var stdout bytes.Buffer
-	if err := Install(repo, codexDir, &stdout); err == nil {
-		t.Fatal("expected unsafe legacy manifest path rejection")
+	err := Install(repo, codexDir, &stdout)
+	if err == nil || !strings.Contains(err.Error(), "user-owned Codex config key") {
+		t.Fatalf("legacy manifest unexpectedly conferred config ownership: %v", err)
+	}
+	assertFileBytes(t, manifestPath, manifest)
+	assertFileBytes(t, configPath, config)
+	if _, err := os.Stat(statePath(codexDir)); !os.IsNotExist(err) {
+		t.Fatalf("install state exists after rejected legacy config input: %v", err)
 	}
 }
 
@@ -195,20 +167,6 @@ func TestInstallRejectsSymlinkedUserConfig(t *testing.T) {
 		t.Fatal("expected symlinked user config rejection")
 	}
 	assertFileBytes(t, target, original)
-}
-
-func TestInstallRejectsSymlinkedLegacyManifest(t *testing.T) {
-	repo := initInstallFixtureRepo(t)
-	codexDir := t.TempDir()
-	target := filepath.Join(t.TempDir(), "manifest")
-	writeTestFile(t, target, []byte("instructions/test.md\n"))
-	if err := os.Symlink(target, filepath.Join(codexDir, legacyManifestName)); err != nil {
-		t.Fatal(err)
-	}
-	var stdout bytes.Buffer
-	if err := Install(repo, codexDir, &stdout); err == nil {
-		t.Fatal("expected symlinked legacy manifest rejection")
-	}
 }
 
 func TestInstallRejectsSymlinkedManagedAncestor(t *testing.T) {
