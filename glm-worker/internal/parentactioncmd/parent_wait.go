@@ -16,7 +16,7 @@ type parentWaitOutput struct {
 	Status     string           `json:"status"`
 	TaskStatus state.TaskStatus `json:"task_status"`
 	OwnerLost  bool             `json:"owner_lost"`
-	Handoff    json.RawMessage  `json:"handoff,omitempty"`
+	Handoff    json.RawMessage  `json:"handoff"`
 }
 
 type parentWaitRecoveryHandoff struct {
