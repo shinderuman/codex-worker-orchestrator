@@ -95,6 +95,14 @@ func resumeTransitionCheckpointDigest(checkpoint ResumeCheckpoint) (string, erro
 	if err != nil {
 		return "", fmt.Errorf("resume transition checkpointをJSON化できません: %w", err)
 	}
+	var canonical any
+	if err := json.Unmarshal(data, &canonical); err != nil {
+		return "", fmt.Errorf("resume transition checkpointをcanonical化できません: %w", err)
+	}
+	data, err = json.Marshal(canonical)
+	if err != nil {
+		return "", fmt.Errorf("resume transition checkpointをcanonical化できません: %w", err)
+	}
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:]), nil
 }
