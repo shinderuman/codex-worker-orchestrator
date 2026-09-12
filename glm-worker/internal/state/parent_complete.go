@@ -9,6 +9,14 @@ func (s *StateStore) CompleteParentAwaiting(evaluate SessionRotationEvaluator) (
 	if s.TaskStatus() != TaskStatusAwaitingParentCompletion {
 		return false, fmt.Errorf("parent completion transition requires awaiting-parent-completion, got %s", s.TaskStatus())
 	}
+	acceptedRisk := ""
+	if evaluate != nil {
+		_, risk, found := s.CompletionOutcomeEvidence()
+		if !found {
+			return false, fmt.Errorf("parent completion outcome evidence is unavailable")
+		}
+		acceptedRisk = risk
+	}
 	stats, err := s.loadTaskStats()
 	if err != nil {
 		stats, err = s.recoverTaskStats(err)
@@ -17,7 +25,7 @@ func (s *StateStore) CompleteParentAwaiting(evaluate SessionRotationEvaluator) (
 		}
 	}
 	stats.Status = TaskStatusComplete
-	result := s.commitParentCompletion(stats, TaskStatusComplete, false, sessionRotationBuildFor(evaluate, stats.AcceptedRisk))
+	result := s.commitParentCompletion(stats, TaskStatusComplete, false, sessionRotationBuildFor(evaluate, acceptedRisk))
 	if result.transitionErr != nil {
 		if result.rollbackStatusErr != nil || result.rollbackPendingErr != nil {
 			return false, fmt.Errorf("parent completion outcomeを保存できずstate rollbackにも失敗しました: outcome=%w rollback=%w", result.transitionErr, errors.Join(result.rollbackStatusErr, result.rollbackPendingErr))

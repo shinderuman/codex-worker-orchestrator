@@ -52,7 +52,6 @@ const (
 	completeTargetHeadUnresolvable              = "head_unresolvable"
 	completeFailureTreeChanged                  = "tree_changed_before_transition"
 	completeFailureHeadChanged                  = "head_changed_before_transition"
-	completeFailureStatsUnreadable              = "completion_stats_unreadable"
 	completeFailureTerminalUnrecoverable        = "completion_terminal_unrecoverable"
 	completeFailureParentRequestProjectionError = "parent_request_projection_unavailable"
 )
@@ -119,26 +118,13 @@ func runComplete(cfg config.AppConfig, stdout io.Writer) error {
 }
 
 func completionTerminalForEvaluation(st *state.StateStore) (string, *finalizationFailure) {
-	stats, err := st.CurrentTaskStats()
-	if err != nil {
-		return "", &finalizationFailure{
-			Stage: "state", Reason: completeFailureStatsUnreadable, Detail: compactFinalizationDiagnostic(err.Error()),
-		}
-	}
-	if stats.CompletionTerminal == state.SessionRotationTerminalAccept || stats.CompletionTerminal == state.SessionRotationTerminalNoGo {
-		return stats.CompletionTerminal, nil
-	}
 	terminal, risk, found := st.CompletionOutcomeEvidence()
 	if !found {
 		return "", &finalizationFailure{Stage: "state", Reason: completeFailureTerminalUnrecoverable}
 	}
-	restoredTerminal := terminal
-	restoredRisk := risk
 	st.UpdateTaskStats(func(stats *state.TaskStats) {
-		stats.CompletionTerminal = restoredTerminal
-		if stats.AcceptedRisk == "" {
-			stats.AcceptedRisk = restoredRisk
-		}
+		stats.CompletionTerminal = terminal
+		stats.AcceptedRisk = risk
 	})
 	return terminal, nil
 }
