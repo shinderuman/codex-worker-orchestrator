@@ -14,28 +14,35 @@ func Verify(binDir string) error {
 		return err
 	}
 	for _, name := range managedNames {
-		expected, ok := state.ExpectedBinaries[name]
-		if !ok {
-			return fmt.Errorf("repository CLI expected identity is missing: %s", name)
-		}
-		if owned, ok := state.Binaries[name]; ok && owned != expected {
-			return fmt.Errorf("repository CLI ownership state is stale for expected identity: %s", name)
-		}
-		target := filepath.Join(binDir, name)
-		info, exists, err := lstat(target)
-		if err != nil {
+		if err := verifyExpectedBinary(binDir, state, name); err != nil {
 			return err
 		}
-		if !exists || !isRegularExecutable(info) {
-			return fmt.Errorf("repository CLI is missing or not executable: %s", target)
-		}
-		observed, err := hashFile(target)
-		if err != nil {
-			return err
-		}
-		if observed != expected {
-			return fmt.Errorf("repository CLI does not match the last successful install: %s", target)
-		}
+	}
+	return nil
+}
+
+func verifyExpectedBinary(binDir string, state installState, name string) error {
+	expected, ok := state.ExpectedBinaries[name]
+	if !ok {
+		return fmt.Errorf("repository CLI expected identity is missing: %s", name)
+	}
+	if owned, ok := state.Binaries[name]; ok && owned != expected {
+		return fmt.Errorf("repository CLI ownership state is stale for expected identity: %s", name)
+	}
+	target := filepath.Join(binDir, name)
+	info, exists, err := lstat(target)
+	if err != nil {
+		return err
+	}
+	if !exists || !isRegularExecutable(info) {
+		return fmt.Errorf("repository CLI is missing or not executable: %s", target)
+	}
+	observed, err := hashFile(target)
+	if err != nil {
+		return err
+	}
+	if observed != expected {
+		return fmt.Errorf("repository CLI does not match the last successful install: %s", target)
 	}
 	return nil
 }
