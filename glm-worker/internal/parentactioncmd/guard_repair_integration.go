@@ -133,11 +133,12 @@ func validateGuardRepairIntegrationRecovery(
 		return state.GuardRepairRecord{}, fmt.Errorf("guard repair integration journal cannot recover from record status %q", record.Status)
 	}
 	checkpoint, err := st.LoadResumeCheckpoint()
-	if err != nil {
+	if err == nil {
+		if checkpoint.StopKind != state.ResumeStopGuardRecoverable || checkpoint.Phase != journal.Phase {
+			return state.GuardRepairRecord{}, fmt.Errorf("guard repair integration journal checkpoint provenance does not match current checkpoint")
+		}
+	} else if !errors.Is(err, state.ErrNoResumeCheckpoint) {
 		return state.GuardRepairRecord{}, fmt.Errorf("verify guard repair integration checkpoint: %w", err)
-	}
-	if checkpoint.StopKind != state.ResumeStopGuardRecoverable || checkpoint.Phase != journal.Phase {
-		return state.GuardRepairRecord{}, fmt.Errorf("guard repair integration journal checkpoint provenance does not match current checkpoint")
 	}
 	for _, file := range journal.Files {
 		if !guardrepair.IsAllowed(file.Path) {
