@@ -34,9 +34,14 @@ func TestQualitySurfaceChangeAllowsParentAcceptedCurrentDiff(t *testing.T) {
 
 	writeScopeFile(t, repo, "commentlint", "#!/bin/sh\nexport GOCACHE=/tmp/go-cache\nexit 0\n")
 	w := NewWorkflow(cfg, st, nil, io.Discard)
-	w.prepareAcceptedFixScope(acceptedFixScopeCurrentDiff)
-	if !st.Exists(acceptedFixScopeStateFile) {
-		t.Fatal("parent accepted current diff was not captured")
+	if err := w.prepareAcceptedFixScopeChecked(acceptedFixScopeCurrentDiff); err != nil {
+		t.Fatal(err)
+	}
+	if !st.Exists(acceptedFixScopePendingStateFile) {
+		t.Fatal("parent accepted current diff was not staged")
+	}
+	if st.Exists(acceptedFixScopeStateFile) {
+		t.Fatal("quality-surface accepted scope became live before lifecycle commit")
 	}
 	w.captureQualitySurface = func(string) (string, error) { return "approved", nil }
 
@@ -50,7 +55,7 @@ func TestQualitySurfaceChangeAllowsParentAcceptedCurrentDiff(t *testing.T) {
 	if got := st.ReadOr(qualitySurfaceBaselineStateKey, ""); got != "approved" {
 		t.Fatalf("quality surface baseline = %q", got)
 	}
-	if !st.Exists(acceptedFixScopeStateFile) {
+	if !st.Exists(acceptedFixScopePendingStateFile) {
 		t.Fatal("quality surface approval must not consume accepted scope before risk evaluation")
 	}
 
