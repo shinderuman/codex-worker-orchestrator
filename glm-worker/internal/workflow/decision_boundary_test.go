@@ -31,7 +31,7 @@ x
 		t.Fatalf("public surface = %q", got)
 	}
 	unresolved := authority.unresolved()
-	want := []semanticDecisionAxis{decisionAxisDependencyDirection, decisionAxisPublicSurface, decisionAxisCompatibility, decisionAxisValidationError}
+	want := []semanticDecisionAxis{decisionAxisDependencyDirection, decisionAxisCompatibility, decisionAxisValidationError}
 	if len(unresolved) != len(want) {
 		t.Fatalf("unresolved = %v want %v", unresolved, want)
 	}
