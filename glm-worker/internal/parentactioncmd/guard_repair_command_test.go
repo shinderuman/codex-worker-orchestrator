@@ -49,7 +49,9 @@ func TestGuardRepairCommandCell(t *testing.T) {
 	case "sleep":
 		time.Sleep(30 * time.Second)
 	case "success":
-		fmt.Fprintln(os.Stdout, "guard-repair-command-ok")
+		if _, err := fmt.Fprintln(os.Stdout, "guard-repair-command-ok"); err != nil {
+			t.Fatal(err)
+		}
 	case "grandchild":
 		command := exec.Command(os.Args[0], "-test.run=^TestGuardRepairGrandchildCell$")
 		command.Env = append(os.Environ(), guardRepairGrandchildModeEnv+"=1")
@@ -64,7 +66,7 @@ func TestGuardRepairCommandCell(t *testing.T) {
 	}
 }
 
-func TestGuardRepairGrandchildCell(t *testing.T) {
+func TestGuardRepairGrandchildCell(_ *testing.T) {
 	if os.Getenv(guardRepairGrandchildModeEnv) != "1" {
 		return
 	}

@@ -12,7 +12,6 @@ import (
 )
 
 const (
-	// guardRepairSubprocessTimeoutはfocused testが既に前提にするGo標準の既定timeoutと同じ上限を全repair subprocessへ適用する。
 	guardRepairSubprocessTimeout = 10 * time.Minute
 	guardRepairProcessSettleTime = 2 * time.Second
 )
@@ -71,9 +70,9 @@ func guardRepairTimeoutError(label string, timeout time.Duration, cause error, o
 	detail := compactGuardRepairCommandOutput(output)
 	if cleanupErr != nil {
 		if detail == "" {
-			return fmt.Errorf("%s timed out after %s: %w; process cleanup failed: %v", label, timeout, cause, cleanupErr)
+			return fmt.Errorf("%s timed out after %s: %w; process cleanup failed: %w", label, timeout, cause, cleanupErr)
 		}
-		return fmt.Errorf("%s timed out after %s: %w; process cleanup failed: %v: %s", label, timeout, cause, cleanupErr, detail)
+		return fmt.Errorf("%s timed out after %s: %w; process cleanup failed: %w: %s", label, timeout, cause, cleanupErr, detail)
 	}
 	if detail == "" {
 		return fmt.Errorf("%s timed out after %s: %w", label, timeout, cause)
