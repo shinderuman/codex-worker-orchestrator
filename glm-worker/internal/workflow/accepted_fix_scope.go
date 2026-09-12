@@ -37,7 +37,11 @@ const (
 
 var zeroContextHunk = regexp.MustCompile(`^@@ -([0-9]+)(?:,[0-9]+)? \+[0-9]+(?:,[0-9]+)? @@`)
 
-func (w *Workflow) prepareAcceptedFixScope(mode string) error {
+func (w *Workflow) prepareAcceptedFixScope(mode string) {
+	_ = w.prepareAcceptedFixScopeChecked(mode)
+}
+
+func (w *Workflow) prepareAcceptedFixScopeChecked(mode string) error {
 	if err := w.state.Write(acceptedFixScopePendingStateFile, "{}"); err != nil {
 		return err
 	}
@@ -77,6 +81,9 @@ func (w *Workflow) invalidateAcceptedFixScope() error {
 }
 
 func (w *Workflow) discardPreparedAcceptedFixScope() error {
+	if err := w.state.Write(acceptedFixScopePendingStateFile, "{}"); err != nil {
+		return err
+	}
 	if err := w.invalidateAcceptedFixScope(); err != nil {
 		return err
 	}
