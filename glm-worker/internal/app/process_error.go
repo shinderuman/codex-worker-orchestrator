@@ -324,7 +324,7 @@ func rateLimitDetail(err runner.ZaiRateLimitError) map[string]any {
 		"phase":            err.Phase,
 		"task_id":          stringPtr(err.TaskID),
 		"repo_root":        stringPtr(err.RepoRoot),
-		"reset_at_cst":     stringPtr(err.Limit.ResetAtCST),
+		"reset_at_cst":     stringPtr(runner.FormatZaiResetAtCST(err.Limit.ResetAtRFC3339)),
 		"reset_at_rfc3339": stringPtr(err.Limit.ResetAtRFC3339),
 		"resume_available": true,
 	}

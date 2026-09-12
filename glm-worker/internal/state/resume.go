@@ -48,7 +48,7 @@ type ResumeCheckpoint struct {
 	ReviewNumber    int            `json:"review_number,omitempty"`
 	AutoFixes       int            `json:"auto_fixes,omitempty"`
 	StopKind        ResumeStopKind `json:"stop_kind"`
-	ResetAtCST      string         `json:"reset_at_cst,omitempty"`
+	ResetAtCST      string         `json:"-"`
 	ResetAtRFC3339  string         `json:"reset_at_rfc3339,omitempty"`
 
 	ResultCorrection bool `json:"result_correction,omitempty"`
@@ -215,10 +215,19 @@ func (checkpoint ResumeCheckpoint) validateStopState() error {
 }
 
 func (checkpoint ResumeCheckpoint) validateRateLimitStopPayload() error {
-	if checkpoint.StopKind == ResumeStopRateLimited || (checkpoint.ResetAtCST == "" && checkpoint.ResetAtRFC3339 == "") {
+	if checkpoint.StopKind != ResumeStopRateLimited {
+		if checkpoint.ResetAtCST == "" && checkpoint.ResetAtRFC3339 == "" {
+			return nil
+		}
+		return fmt.Errorf("resume stop payload does not match stop kind %q: rate-limit reset metadata is present", checkpoint.StopKind)
+	}
+	if checkpoint.ResetAtRFC3339 == "" {
 		return nil
 	}
-	return fmt.Errorf("resume stop payload does not match stop kind %q: rate-limit reset metadata is present", checkpoint.StopKind)
+	if _, err := time.Parse(time.RFC3339, checkpoint.ResetAtRFC3339); err != nil {
+		return fmt.Errorf("rate-limit reset_at_rfc3339 is invalid: %w", err)
+	}
+	return nil
 }
 
 func (checkpoint ResumeCheckpoint) validateProviderStopPayload() error {
@@ -306,12 +315,8 @@ func (s *StateStore) LoadResumeCheckpoint() (ResumeCheckpoint, error) {
 	if explicitKeys.StopKind == nil {
 		return ResumeCheckpoint{}, fmt.Errorf("resume state v6にstop_kind keyがありません")
 	}
-	var persistedKeys map[string]json.RawMessage
-	if err := json.Unmarshal(data, &persistedKeys); err != nil {
-		return ResumeCheckpoint{}, fmt.Errorf("resume stateを読めません: %w", err)
-	}
-	if _, legacy := persistedKeys["stop_parent_files"]; legacy {
-		return ResumeCheckpoint{}, fmt.Errorf("resume stateを読めません: legacy stop_parent_files key")
+	if err := validateResumePersistedKeys(data); err != nil {
+		return ResumeCheckpoint{}, err
 	}
 	if checkpoint.Model == "" {
 		return ResumeCheckpoint{}, fmt.Errorf("resume state model is required")
@@ -319,7 +324,33 @@ func (s *StateStore) LoadResumeCheckpoint() (ResumeCheckpoint, error) {
 	if err := checkpoint.validateStopState(); err != nil {
 		return ResumeCheckpoint{}, err
 	}
+	checkpoint.ResetAtCST = rateLimitResetAtCST(checkpoint.ResetAtRFC3339)
 	return checkpoint, nil
+}
+
+func validateResumePersistedKeys(data []byte) error {
+	var persistedKeys map[string]json.RawMessage
+	if err := json.Unmarshal(data, &persistedKeys); err != nil {
+		return fmt.Errorf("resume stateを読めません: %w", err)
+	}
+	for _, key := range []string{"stop_parent_files", "reset_at_cst"} {
+		if _, legacy := persistedKeys[key]; legacy {
+			return fmt.Errorf("resume stateを読めません: legacy %s key", key)
+		}
+	}
+	return nil
+}
+
+func rateLimitResetAtCST(resetAtRFC3339 string) string {
+	if resetAtRFC3339 == "" {
+		return ""
+	}
+	resetAt, err := time.Parse(time.RFC3339, resetAtRFC3339)
+	if err != nil {
+		return ""
+	}
+	chinaStandardTime := time.FixedZone("CST", 8*60*60)
+	return resetAt.In(chinaStandardTime).Format("2006-01-02 15:04:05")
 }
 
 func (s *StateStore) ClearResumeCheckpoint() error {
