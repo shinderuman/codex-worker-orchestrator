@@ -8,17 +8,11 @@ import (
 func parentReviewQuotedDiffFileSection(body, path string) string {
 	lines := strings.Split(body, "\n")
 	start := -1
-	unquotedMarker := "diff --git a/" + path + " b/" + path
 	for index, line := range lines {
 		if start >= 0 && strings.HasPrefix(line, "diff --git ") {
 			return strings.Join(lines[start:index], "\n")
 		}
-		if line == unquotedMarker {
-			start = index
-			continue
-		}
-		oldPath, newPath, ok := parentReviewDiffHeaderPaths(line)
-		if ok && (oldPath == path || newPath == path) {
+		if parentReviewDiffHeaderIncludesPath(line, path) {
 			start = index
 		}
 	}
@@ -26,6 +20,19 @@ func parentReviewQuotedDiffFileSection(body, path string) string {
 		return ""
 	}
 	return strings.Join(lines[start:], "\n")
+}
+
+func parentReviewDiffHeaderIncludesPath(line, path string) bool {
+	const prefix = "diff --git "
+	if !strings.HasPrefix(line, prefix) {
+		return false
+	}
+	rest := strings.TrimPrefix(line, prefix)
+	if strings.HasPrefix(rest, "a/"+path+" b/") || strings.HasSuffix(rest, " b/"+path) {
+		return true
+	}
+	oldPath, newPath, ok := parentReviewDiffHeaderPaths(line)
+	return ok && (oldPath == path || newPath == path)
 }
 
 func parentReviewDiffHeaderPaths(line string) (string, string, bool) {

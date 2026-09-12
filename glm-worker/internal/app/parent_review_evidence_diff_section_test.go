@@ -32,6 +32,20 @@ func TestParentReviewDiffCoversUnquotedPathWithSpaces(t *testing.T) {
 	}
 }
 
+func TestParentReviewDiffCoversUnquotedRenameWithSpaces(t *testing.T) {
+	body := "diff --git a/old name.go b/new name.go\nsimilarity index 80%\n--- a/old name.go\n+++ b/new name.go\n@@ -1 +1 @@\n-old\n+new\n"
+	diff := parentEvidenceDiffBody{
+		Body:  body,
+		Files: []parentEvidenceDiffFile{{Path: "new name.go", Status: "R", HeadBlob: "blob", WorktreeSHA: "sha"}},
+	}
+	if !parentReviewDiffCoversTarget("new name.go:1", diff) {
+		t.Fatal("unquoted renamed path with spaces did not cover matching line target")
+	}
+	if section := parentReviewDiffFileSection(body, "old name.go"); section == "" {
+		t.Fatal("unquoted rename old path with spaces did not resolve its diff section")
+	}
+}
+
 func TestParentReviewDiffBarePathRequiresVisibleSection(t *testing.T) {
 	diff := parentEvidenceDiffBody{
 		Body:  "diff --git a/other.go b/other.go\n--- a/other.go\n+++ b/other.go\n@@ -1 +1 @@\n-old\n+new\n",
