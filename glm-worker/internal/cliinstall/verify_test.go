@@ -27,7 +27,7 @@ func TestVerifyChecksCompleteOwnedCLISurface(t *testing.T) {
 	}
 }
 
-func TestVerifyRequiresAllCanonicalCommandsWithoutClaimingUnownedOwnership(t *testing.T) {
+func TestVerifyChecksUnownedCLIIdentityWithoutClaimingOwnership(t *testing.T) {
 	buildDir := t.TempDir()
 	binDir := t.TempDir()
 	for _, name := range managedNames {
@@ -47,14 +47,59 @@ func TestVerifyRequiresAllCanonicalCommandsWithoutClaimingUnownedOwnership(t *te
 	if _, owned := state.Binaries["harnesslint"]; owned {
 		t.Fatal("byte-identical preexisting harnesslint was claimed as installer-owned")
 	}
+	if _, recorded := state.ExpectedBinaries["harnesslint"]; !recorded {
+		t.Fatal("unowned harnesslint expected identity was not recorded")
+	}
 	if err := Verify(binDir); err != nil {
 		t.Fatalf("valid unowned identical CLI rejected: %v", err)
+	}
+
+	writeVerifyCLI(t, filepath.Join(binDir, "harnesslint"), "#!/bin/sh\nexit 9\n")
+	if err := Verify(binDir); err == nil {
+		t.Fatal("drifted canonical unowned CLI was accepted")
+	}
+}
+
+func TestVerifyRequiresAllCanonicalCommands(t *testing.T) {
+	buildDir := t.TempDir()
+	binDir := t.TempDir()
+	for _, name := range managedNames {
+		writeVerifyCLI(t, filepath.Join(buildDir, name), "#!/bin/sh\nprintf '%s\\n' "+name+"\n")
+	}
+	if _, err := Install(buildDir, binDir); err != nil {
+		t.Fatal(err)
 	}
 	if err := os.Remove(filepath.Join(binDir, "harnesslint")); err != nil {
 		t.Fatal(err)
 	}
 	if err := Verify(binDir); err == nil {
-		t.Fatal("missing canonical unowned CLI was accepted")
+		t.Fatal("missing canonical CLI was accepted")
+	}
+}
+
+func TestVerifyRejectsStateWithoutExpectedIdentity(t *testing.T) {
+	buildDir := t.TempDir()
+	binDir := t.TempDir()
+	for _, name := range managedNames {
+		writeVerifyCLI(t, filepath.Join(buildDir, name), "#!/bin/sh\nprintf '%s\\n' "+name+"\n")
+	}
+	if _, err := Install(buildDir, binDir); err != nil {
+		t.Fatal(err)
+	}
+	state, err := loadState(ownershipStatePath(binDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	delete(state.ExpectedBinaries, "commentlint")
+	stateTemp, err := stageState(filepath.Dir(ownershipStatePath(binDir)), state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(stateTemp, ownershipStatePath(binDir)); err != nil {
+		t.Fatal(err)
+	}
+	if err := Verify(binDir); err == nil {
+		t.Fatal("missing expected CLI identity was accepted")
 	}
 }
 
