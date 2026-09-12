@@ -121,9 +121,13 @@ var workerLintDisallowedTools = []string{
 	"Bash(./commentlint *)",
 	"Bash(commentlint *)",
 	"Bash(golangci-lint *)",
+	"Bash(shellcheck *)",
 	"Bash(shfmt *)",
 	"Bash(go * ./cmd/harnesslint *)",
 	"Bash(go * ./cmd/commentlint *)",
+	"Bash(*codex-worker-orchestrator-golangci-lint-*)",
+	"Bash(*codex-worker-orchestrator-shellcheck-*)",
+	"Bash(*codex-worker-orchestrator-shfmt-*)",
 }
 
 var (
