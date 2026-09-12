@@ -13,3 +13,10 @@ func pinRepositoryHarnessActiveT(t *testing.T, st *state.StateStore) {
 		t.Fatal(err)
 	}
 }
+
+func pinRepositoryHarnessInactiveT(t *testing.T, st *state.StateStore) {
+	t.Helper()
+	if err := st.Write(repositoryharness.ActivationStateKey, repositoryharness.ActivationInactiveValue); err != nil {
+		t.Fatal(err)
+	}
+}
