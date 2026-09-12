@@ -8,7 +8,12 @@ import (
 	"strings"
 )
 
-const forwardOnlyCompatibilityRule = "forward-only-compatibility"
+const (
+	forwardOnlyCompatibilityRule = "forward-only-compatibility"
+	forwardOnlyVersionKind       = "version"
+	forwardOnlyRevisionKind      = "schema_revision"
+	forwardOnlyRevisionField     = "schemarevision"
+)
 
 var shellPathLookupAssignment = regexp.MustCompile(`(?m)^[\t ]*([A-Za-z_][A-Za-z0-9_]*)=\$\((?:command[\t ]+-v|which)[^)]*\)[\t ]*$`)
 
@@ -222,10 +227,10 @@ func currentSchemaValue(expression ast.Expr, kind string) bool {
 
 func schemaConstantName(name, kind string) bool {
 	lower := strings.ToLower(name)
-	if kind == "version" {
-		return lower != "version" && strings.Contains(lower, "version")
+	if kind == forwardOnlyVersionKind {
+		return lower != forwardOnlyVersionKind && strings.Contains(lower, forwardOnlyVersionKind)
 	}
-	return lower != "schemarevision" && strings.Contains(lower, "revision")
+	return lower != forwardOnlyRevisionField && strings.Contains(lower, "revision")
 }
 
 func schemaKinds(node ast.Node) map[string]bool {
@@ -261,10 +266,10 @@ func schemaReferenceKind(expression ast.Expr) string {
 		return ""
 	}
 	switch strings.ToLower(name) {
-	case "version":
-		return "version"
-	case "schemarevision":
-		return "schema_revision"
+	case forwardOnlyVersionKind:
+		return forwardOnlyVersionKind
+	case forwardOnlyRevisionField:
+		return forwardOnlyRevisionKind
 	default:
 		return ""
 	}
