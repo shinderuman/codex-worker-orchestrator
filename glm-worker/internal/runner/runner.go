@@ -118,6 +118,7 @@ var readOnlyDisallowedTools = []string{"Edit", "Write", "NotebookEdit", "Agent",
 var workerLintDisallowedTools = []string{
 	"Bash(*harnesslint*)",
 	"Bash(*commentlint*)",
+	"Bash(*gofmt*)",
 	"Bash(*golangci-lint*)",
 	"Bash(*shellcheck*)",
 	"Bash(*shfmt*)",
