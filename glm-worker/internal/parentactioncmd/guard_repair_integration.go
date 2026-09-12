@@ -7,6 +7,7 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/guardrepair"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repolock"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -17,6 +18,11 @@ func beginGuardRepairIntegration(
 	repoRoot string,
 	changed []string,
 ) (state.GuardRepairIntegrationJournal, error) {
+	if _, err := st.LoadGuardRepairIntegrationJournal(); err == nil {
+		return state.GuardRepairIntegrationJournal{}, fmt.Errorf("unfinished guard repair integration journal already exists")
+	} else if !errors.Is(err, state.ErrNoGuardRepairIntegrationJournal) {
+		return state.GuardRepairIntegrationJournal{}, err
+	}
 	backups, err := captureGuardRepairFiles(repoRoot, changed)
 	if err != nil {
 		return state.GuardRepairIntegrationJournal{}, err
@@ -47,14 +53,23 @@ func beginGuardRepairIntegration(
 }
 
 func recoverGuardRepairIntegrationIfNeeded(cfg config.AppConfig, st *state.StateStore) error {
-	journal, err := st.LoadGuardRepairIntegrationJournal()
-	if errors.Is(err, state.ErrNoGuardRepairIntegrationJournal) {
+	if _, err := st.LoadGuardRepairIntegrationJournal(); errors.Is(err, state.ErrNoGuardRepairIntegrationJournal) {
 		return nil
+	} else if err != nil {
+		return err
 	}
+	lock, err := repolock.AcquireWait(st.LockPath())
 	if err != nil {
 		return err
 	}
-	return rollbackGuardRepairIntegration(cfg, st, journal)
+	journal, err := st.LoadGuardRepairIntegrationJournal()
+	if errors.Is(err, state.ErrNoGuardRepairIntegrationJournal) {
+		return lock.Close()
+	}
+	if err != nil {
+		return errors.Join(err, lock.Close())
+	}
+	return errors.Join(rollbackGuardRepairIntegration(cfg, st, journal), lock.Close())
 }
 
 func rollbackGuardRepairIntegration(cfg config.AppConfig, st *state.StateStore, journal state.GuardRepairIntegrationJournal) error {
