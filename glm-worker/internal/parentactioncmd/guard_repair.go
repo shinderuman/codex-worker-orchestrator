@@ -144,7 +144,7 @@ func performBoundedGuardRepair(cfg config.AppConfig, st *state.StateStore, recor
 	}
 	candidate, err := prepareGuardRepairCandidate(cfg, record)
 	if err != nil {
-		return record, markGuardRepairFailed(st, record, err)
+		return record, finishGuardRepairCandidateFailure(st, record, err)
 	}
 	defer candidate.cleanup()
 	rollback, err := integrateGuardRepairCandidate(cfg, st, record, origin, candidate)
@@ -170,6 +170,13 @@ func performBoundedGuardRepair(cfg config.AppConfig, st *state.StateStore, recor
 func markGuardRepairRunning(st *state.StateStore, record *state.GuardRepairRecord) error {
 	record.Status = state.GuardRepairRunning
 	return st.SaveGuardRepairRecord(*record)
+}
+
+func finishGuardRepairCandidateFailure(st *state.StateStore, record state.GuardRepairRecord, cause error) error {
+	if isGuardRepairCommandInterrupted(cause) {
+		return cause
+	}
+	return markGuardRepairFailed(st, record, cause)
 }
 
 func prepareGuardRepairCandidate(cfg config.AppConfig, record state.GuardRepairRecord) (guardRepairCandidate, error) {
