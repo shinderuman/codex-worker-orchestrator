@@ -24,11 +24,11 @@ func TestTaskBoundStatePoliciesDriveFreshTaskCleanup(t *testing.T) {
 		}
 	}
 	for name, lifetime := range map[string]taskBoundStateLifetime{
-		baselineUntrackedFile:                 taskBoundStateFreshTaskClear,
-		poCStartSnapshotFile:                  taskBoundStateFreshTaskClear,
-		QualitySurfaceBaselineStateFile:       taskBoundStateFreshTaskClear,
-		RepositoryHarnessActivationStateFile:  taskBoundStateFreshTaskClear,
-		InstructionSurfaceBaselineStateFile:   taskBoundStateTaskIDBound,
+		baselineUntrackedFile:                taskBoundStateFreshTaskClear,
+		poCStartSnapshotFile:                 taskBoundStateFreshTaskClear,
+		QualitySurfaceBaselineStateFile:      taskBoundStateFreshTaskClear,
+		RepositoryHarnessActivationStateFile: taskBoundStateFreshTaskClear,
+		InstructionSurfaceBaselineStateFile:  taskBoundStateTaskIDBound,
 	} {
 		if got, ok := seen[name]; !ok || got != lifetime {
 			t.Fatalf("task-bound state policy %s = %d, present=%t want=%d", name, got, ok, lifetime)
