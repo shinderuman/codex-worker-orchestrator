@@ -27,6 +27,14 @@ type GitHeadAuthority struct {
 const baselineUntrackedFile = "baseline-untracked"
 
 func CaptureGitBaseline(cfg config.AppConfig, state *StateStore) error {
+	head, unborn, err := resolveRepoHead(cfg.RepoRoot)
+	if err != nil {
+		if cleanupErr := removeGitBaseline(state); cleanupErr != nil {
+			return fmt.Errorf("git baseline HEAD resolution failed: %v; cleanup failed: %w", err, cleanupErr)
+		}
+		return fmt.Errorf("git baseline HEAD resolution failed: %w", err)
+	}
+
 	commands := []struct {
 		name string
 		args []string
@@ -63,13 +71,6 @@ func CaptureGitBaseline(cfg config.AppConfig, state *StateStore) error {
 		return err
 	}
 
-	head, unborn, err := resolveRepoHead(cfg.RepoRoot)
-	if err != nil {
-		if cleanupErr := removeGitBaseline(state); cleanupErr != nil {
-			return fmt.Errorf("git baseline HEAD resolution failed: %v; cleanup failed: %w", err, cleanupErr)
-		}
-		return fmt.Errorf("git baseline HEAD resolution failed: %w", err)
-	}
 	if unborn {
 		return state.Remove("baseline-head")
 	}
