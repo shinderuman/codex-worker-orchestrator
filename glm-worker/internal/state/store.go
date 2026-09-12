@@ -160,11 +160,11 @@ func (s *StateStore) startNewTaskWithID(taskID string, resume bool) (string, err
 		return s.resumeTaskWithID(taskID)
 	}
 
-	s.ArchiveCurrentStats()
 	if err := s.commitNewTaskCanonicalState(taskID); err != nil {
 		return "", err
 	}
 
+	s.ArchiveCurrentStats()
 	s.PruneTaskEventLogs(retainedTaskEventLogs, taskID)
 	s.InitializeTaskStats(taskID)
 	s.appendTaskStatusLifecycle(TaskStatusNone, TaskStatusActive)
