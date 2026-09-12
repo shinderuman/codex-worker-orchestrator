@@ -23,12 +23,16 @@ func TestSessionRotationAcceptedTaskCountBootstrapsIssuedTargetAtZero(t *testing
 	st := &StateStore{dir: t.TempDir()}
 	sourceThread := "01a0463c-d477-7410-9efd-cb34ff2e0b0e"
 	targetThread := "01a0463c-d477-7410-9efd-cb34ff2e0b0f"
+	directiveID, err := NewUUID()
+	if err != nil {
+		t.Fatal(err)
+	}
 	source := &SessionRotationMarker{
 		Version:        sessionRotationMarkerVersion,
 		ParentThreadID: sourceThread,
 		State:          SessionRotationStateIssued,
 		Directive: &SessionRotationDirective{
-			DirectiveID: "12345678-aaaa-bbbb-cccc-dddddddddddd",
+			DirectiveID: directiveID,
 			TaskID:      "12345678-aaaa-bbbb-cccc-ddddddddddde",
 			Terminal:    SessionRotationTerminalAccept,
 			Epoch:       "12345678-aaaa-bbbb-cccc-ddddddddddde:accept",
@@ -66,12 +70,16 @@ func TestSessionRotationAcceptedTaskCountDoesNotBootstrapMarkerWithExistingTaskH
 	st := &StateStore{dir: t.TempDir()}
 	sourceThread := "01a0463c-d477-7410-9efd-cb34ff2e0b0e"
 	targetThread := "01a0463c-d477-7410-9efd-cb34ff2e0b0f"
+	directiveID, err := NewUUID()
+	if err != nil {
+		t.Fatal(err)
+	}
 	source := &SessionRotationMarker{
 		Version:        sessionRotationMarkerVersion,
 		ParentThreadID: sourceThread,
 		State:          SessionRotationStateIssued,
 		Directive: &SessionRotationDirective{
-			DirectiveID: "12345678-aaaa-bbbb-cccc-dddddddddddd",
+			DirectiveID: directiveID,
 			TaskID:      "12345678-aaaa-bbbb-cccc-ddddddddddde",
 			Terminal:    SessionRotationTerminalAccept,
 			Epoch:       "12345678-aaaa-bbbb-cccc-ddddddddddde:accept",
