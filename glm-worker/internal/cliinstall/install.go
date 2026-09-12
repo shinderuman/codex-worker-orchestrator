@@ -15,8 +15,9 @@ import (
 )
 
 type installState struct {
-	Version  int               `json:"version"`
-	Binaries map[string]string `json:"binaries"`
+	Version          int               `json:"version"`
+	Binaries         map[string]string `json:"binaries"`
+	ExpectedBinaries map[string]string `json:"expected_binaries"`
 }
 
 type action struct {
@@ -104,6 +105,12 @@ func Retire(binDir string) ([]Result, error) {
 		return nil, err
 	}
 	if len(state.Binaries) == 0 {
+		if len(state.ExpectedBinaries) == 0 {
+			return results, nil
+		}
+		if err := removeState(statePath); err != nil {
+			return nil, err
+		}
 		return results, nil
 	}
 	for _, target := range removals {
@@ -118,7 +125,11 @@ func Retire(binDir string) ([]Result, error) {
 }
 
 func planInstall(buildDir, binDir string, state installState) ([]action, installState, error) {
-	nextState := installState{Version: stateVersion, Binaries: cloneMap(state.Binaries)}
+	nextState := installState{
+		Version:          stateVersion,
+		Binaries:         cloneMap(state.Binaries),
+		ExpectedBinaries: make(map[string]string, len(managedNames)),
+	}
 	actions := make([]action, 0, len(managedNames))
 	for _, name := range managedNames {
 		item, err := planBinary(buildDir, binDir, name, state.Binaries[name])
@@ -130,6 +141,7 @@ func planInstall(buildDir, binDir string, state installState) ([]action, install
 		} else {
 			delete(nextState.Binaries, name)
 		}
+		nextState.ExpectedBinaries[name] = item.sourceHash
 		actions = append(actions, item)
 	}
 	return actions, nextState, nil
@@ -234,9 +246,6 @@ func planRetireBinary(binDir, name, digest string) (Result, string, bool, error)
 
 func applyInstall(actions []action, statePath string, nextState installState) error {
 	changed := changedActions(actions)
-	if len(changed) == 0 {
-		return nil
-	}
 	stateDir := filepath.Dir(statePath)
 	if err := ensureStateDir(stateDir); err != nil {
 		return err
@@ -396,6 +405,11 @@ func validateState(state installState) error {
 	for name, digest := range state.Binaries {
 		if _, ok := managedNameSet[name]; !ok || !validDigest(digest) {
 			return fmt.Errorf("invalid CLI ownership state entry: %s", name)
+		}
+	}
+	for name, digest := range state.ExpectedBinaries {
+		if _, ok := managedNameSet[name]; !ok || !validDigest(digest) {
+			return fmt.Errorf("invalid CLI expected identity state entry: %s", name)
 		}
 	}
 	return nil
@@ -575,7 +589,11 @@ func ownershipStatePath(binDir string) string {
 }
 
 func emptyState() installState {
-	return installState{Version: stateVersion, Binaries: map[string]string{}}
+	return installState{
+		Version:          stateVersion,
+		Binaries:         map[string]string{},
+		ExpectedBinaries: map[string]string{},
+	}
 }
 
 func cloneMap(input map[string]string) map[string]string {

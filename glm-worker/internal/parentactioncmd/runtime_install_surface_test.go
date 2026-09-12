@@ -46,9 +46,24 @@ func TestVerifyRuntimeManagedSurfaceChecksClaudeAndAllRepositoryCLIs(t *testing.
 			t.Fatal("stale secondary repository CLI was accepted")
 		}
 	})
+
+	t.Run("unowned secondary CLI drift", func(t *testing.T) {
+		cfg, _, _, binDir := newRuntimeManagedSurfaceFixtureWithUnownedCLI(t, "harnesslint")
+		if err := os.WriteFile(filepath.Join(binDir, "harnesslint"), []byte("#!/bin/sh\nexit 9\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := verifyRuntimeMergedConfigFiles(cfg, []string{"glm-worker/internal/app/app.go"}); err == nil {
+			t.Fatal("stale unowned secondary repository CLI was accepted")
+		}
+	})
 }
 
 func newRuntimeManagedSurfaceFixture(t *testing.T) (config.AppConfig, string, string, string) {
+	t.Helper()
+	return newRuntimeManagedSurfaceFixtureWithUnownedCLI(t, "")
+}
+
+func newRuntimeManagedSurfaceFixtureWithUnownedCLI(t *testing.T, unownedCLI string) (config.AppConfig, string, string, string) {
 	t.Helper()
 	repo := t.TempDir()
 	codexDir := t.TempDir()
@@ -73,7 +88,11 @@ func newRuntimeManagedSurfaceFixture(t *testing.T) (config.AppConfig, string, st
 	}
 
 	for _, name := range []string{"glm-worker", "glm-parent-action", "glm-codex-context", "commentlint", "harnesslint"} {
-		writeRuntimeSurfaceFile(t, buildDir, name, "#!/bin/sh\nexit 0\n", 0o755)
+		content := "#!/bin/sh\nexit 0\n"
+		writeRuntimeSurfaceFile(t, buildDir, name, content, 0o755)
+		if name == unownedCLI {
+			writeRuntimeSurfaceFile(t, binDir, name, content, 0o755)
+		}
 	}
 	if _, err := cliinstall.Install(buildDir, binDir); err != nil {
 		t.Fatal(err)
