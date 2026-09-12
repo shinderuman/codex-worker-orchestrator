@@ -212,6 +212,30 @@ func TestAcceptedFixScopeConsumesAuthorizationOnceAfterParentActionStarts(t *tes
 	}
 }
 
+func TestAcceptedApprovalScopeConsumesAuthorizationOnceAfterActivation(t *testing.T) {
+	repo := newRetentionGitRepo(t)
+	st := newGitStateStoreT(t, repo)
+	seedWaitingSolReviewState(t, st)
+	writeAcceptedScopeChange(t, repo)
+
+	w := newGitWorkflowT(t, st, &scriptedRunner{}, repo)
+	if err := w.prepareAcceptedFixScopeForAction(acceptedFixScopeCurrentDiff, state.ParentActionApproveSurface); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetTaskStatus(state.TaskStatusActive); err != nil {
+		t.Fatal(err)
+	}
+	if !w.acceptedFixScopeCoversCurrent() {
+		t.Fatal("active quality approval must consume its accepted current-diff authorization")
+	}
+	if w.acceptedFixScopeCoversCurrent() {
+		t.Fatal("quality approval authorization must be one-shot")
+	}
+	if st.Exists(acceptedFixScopeStateFile) {
+		t.Fatal("consumed quality approval scope state was retained")
+	}
+}
+
 func writeAcceptedScopeChange(t *testing.T, repo string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(repo, "tracked.md"), []byte("base\naccepted\n"), 0o644); err != nil {
