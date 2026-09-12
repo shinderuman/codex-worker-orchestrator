@@ -1,12 +1,17 @@
 package parentactioncmd
 
 import (
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/cliinstall"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/codexinstall"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/settingsmerge"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -65,6 +70,7 @@ func TestCompleteRequiresRuntimeInstallEvidenceAndAllowsMetadataHeadAdvance(t *t
 	}
 	writeRuntimeInstallHarnessMarker(t, fixture.repo)
 	writeRuntimeInstallSource(t, fixture.repo, "version=1\n")
+	installRuntimeManagedConfigs(t, fixture.repo, &fixture.cfg)
 	runFinalizationGit(t, fixture.repo, "add", "-A")
 	runFinalizationGit(t, fixture.repo, "commit", "-q", "-m", "runtime")
 	installedHead := completeFixtureHead(t, fixture.repo)
@@ -145,50 +151,6 @@ func TestCompleteRejectsInstallEvidenceAfterLaterRuntimeChange(t *testing.T) {
 	}
 }
 
-func TestVerifyRuntimeInstalledFilesRejectsManagedInstructionDrift(t *testing.T) {
-	cfg, _ := newInstallActionRepo(t)
-	cfg.CodexConfigDir = t.TempDir()
-	sourcePath := filepath.Join(cfg.RepoRoot, "codex", "instructions", "example.md")
-	if err := os.MkdirAll(filepath.Dir(sourcePath), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(sourcePath, []byte("current\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	installedPath := filepath.Join(cfg.CodexConfigDir, "instructions", "example.md")
-	if err := os.MkdirAll(filepath.Dir(installedPath), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(installedPath, []byte("stale\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := verifyRuntimeInstalledFiles(cfg, []string{"codex/instructions/example.md"}); err == nil {
-		t.Fatal("stale managed instruction was accepted")
-	}
-}
-
-func TestVerifyRuntimeInstalledFilesHandlesManagedInstructionDeletion(t *testing.T) {
-	cfg, _ := newInstallActionRepo(t)
-	cfg.CodexConfigDir = t.TempDir()
-	installedPath := filepath.Join(cfg.CodexConfigDir, "instructions", "removed.md")
-	if err := os.MkdirAll(filepath.Dir(installedPath), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(installedPath, []byte("stale\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	paths := []string{"codex/instructions/removed.md"}
-	if err := verifyRuntimeInstalledFiles(cfg, paths); err == nil {
-		t.Fatal("installed managed instruction surviving source deletion was accepted")
-	}
-	if err := os.Remove(installedPath); err != nil {
-		t.Fatal(err)
-	}
-	if err := verifyRuntimeInstalledFiles(cfg, paths); err != nil {
-		t.Fatalf("matching managed deletion was rejected: %v", err)
-	}
-}
-
 func TestRunRuntimeInstallSmokeRejectsFailedInstalledSmoke(t *testing.T) {
 	cfg, _ := newInstallActionRepo(t)
 	writeInstalledRuntimeProbeStub(t, "unused")
@@ -216,9 +178,38 @@ func writeRuntimeInstallSource(t *testing.T, repo, content string) {
 	}
 }
 
+func installRuntimeManagedConfigs(t *testing.T, repo string, cfg *config.AppConfig) {
+	t.Helper()
+	codexDir := t.TempDir()
+	claudeDir := t.TempDir()
+	writeRuntimeSurfaceFile(t, repo, "codex/AGENTS.md", "# agents\n", 0o644)
+	writeRuntimeSurfaceFile(t, repo, "codex/instructions/example.md", "current\n", 0o644)
+	writeRuntimeSurfaceFile(t, repo, "codex/rules/glm-worker.rules", "prefix_rule(pattern=[\"glm-worker\"], decision=\"allow\")\n", 0o644)
+	writeRuntimeSurfaceFile(t, repo, "codex/glm-worker/prompts/WORKER.md", "worker\n", 0o644)
+	writeRuntimeSurfaceFile(t, repo, "codex/config-managed.toml", "background_terminal_max_timeout = 21600000\n", 0o644)
+	if err := codexinstall.Install(repo, codexDir, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	managedClaude := filepath.Join(repo, "claude", "settings-managed.json")
+	writeRuntimeSurfaceFile(t, repo, "claude/settings-managed.json", `{"env":{"REPOSITORY":"managed"}}`, 0o644)
+	claudeSettings := filepath.Join(claudeDir, "settings.json")
+	if _, err := settingsmerge.MergeFiles(claudeSettings, managedClaude, ""); err != nil {
+		t.Fatal(err)
+	}
+	cfg.CodexConfigDir = codexDir
+	cfg.ClaudeConfigDir = claudeDir
+	cfg.ClaudeSettingsPath = claudeSettings
+}
+
 func writeInstalledRuntimeProbeStub(t *testing.T, revision string) {
 	t.Helper()
+	buildDir := t.TempDir()
 	binDir := t.TempDir()
+	for _, name := range []string{"glm-parent-action", "glm-codex-context", "commentlint", "harnesslint"} {
+		if err := os.WriteFile(filepath.Join(buildDir, name), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
 	script := `#!/bin/sh
 if [ "${1:-}" != "--status" ]; then
   exit 2
@@ -231,7 +222,10 @@ else
 fi
 printf '{"runtime_build":{"vcs_revision":"%s","vcs_modified":false,"repository_head":"%s","relationship":"%s"}}\n' "` + revision + `" "$head" "$relationship"
 `
-	if err := os.WriteFile(filepath.Join(binDir, "glm-worker"), []byte(script), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(buildDir, "glm-worker"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cliinstall.Install(buildDir, binDir); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))

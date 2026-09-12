@@ -133,71 +133,6 @@ func runtimeChangedBetween(repoRoot, fromHead, toHead string) (bool, error) {
 	return false, nil
 }
 
-func verifyRuntimeInstalledFiles(cfg config.AppConfig, paths []string) error {
-	for _, sourcePath := range paths {
-		if err := verifyRuntimeInstalledFile(cfg, sourcePath); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func verifyRuntimeInstalledFile(cfg config.AppConfig, sourcePath string) error {
-	installedPath, ok := installedManagedPath(cfg, sourcePath)
-	if !ok {
-		return nil
-	}
-	sourceFile := filepath.Join(cfg.RepoRoot, filepath.FromSlash(sourcePath))
-	source, err := os.ReadFile(sourceFile)
-	if err == nil {
-		return compareRuntimeInstalledFile(sourcePath, installedPath, source)
-	}
-	if !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("read managed source %s: %w", sourcePath, err)
-	}
-	return verifyRuntimeInstalledDeletion(sourcePath, installedPath)
-}
-
-func compareRuntimeInstalledFile(sourcePath, installedPath string, source []byte) error {
-	installed, err := os.ReadFile(installedPath)
-	if err != nil {
-		return fmt.Errorf("read installed managed file %s: %w", installedPath, err)
-	}
-	if !bytes.Equal(source, installed) {
-		return fmt.Errorf("installed managed file does not match source: %s", sourcePath)
-	}
-	return nil
-}
-
-func verifyRuntimeInstalledDeletion(sourcePath, installedPath string) error {
-	_, err := os.Lstat(installedPath)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("stat installed managed file %s: %w", installedPath, err)
-	}
-	return fmt.Errorf("installed managed file remains after source deletion: %s", sourcePath)
-}
-
-func installedManagedPath(cfg config.AppConfig, sourcePath string) (string, bool) {
-	if cfg.CodexConfigDir == "" {
-		return "", false
-	}
-	switch {
-	case sourcePath == "codex/AGENTS.md":
-		return filepath.Join(cfg.CodexConfigDir, "instructions", "codex-worker-orchestrator.md"), true
-	case strings.HasPrefix(sourcePath, "codex/instructions/"):
-		return filepath.Join(cfg.CodexConfigDir, filepath.FromSlash(strings.TrimPrefix(sourcePath, "codex/"))), true
-	case sourcePath == "codex/rules/glm-worker.rules":
-		return filepath.Join(cfg.CodexConfigDir, "rules", "glm-worker.rules"), true
-	case strings.HasPrefix(sourcePath, "codex/glm-worker/prompts/"):
-		return filepath.Join(cfg.CodexConfigDir, filepath.FromSlash(strings.TrimPrefix(sourcePath, "codex/"))), true
-	default:
-		return "", false
-	}
-}
-
 func verifyInstalledRuntime(cfg config.AppConfig, installedHead, currentHead string) (string, *finalizationFailure) {
 	revision, relationship, failure := installedRuntimeStatus(cfg, installedHead)
 	if failure != nil {
@@ -291,9 +226,6 @@ func persistRuntimeInstallCompletionAfterSmoke(cfg config.AppConfig, st *state.S
 	if !current.Required || current.Head != requirement.Head || current.SourceDigest != requirement.SourceDigest {
 		return runtimeInstallFailure(runtimeInstallFailureStale, "runtime source changed during install")
 	}
-	if err := verifyRuntimeInstalledFiles(cfg, current.Paths); err != nil {
-		return runtimeInstallFailure(runtimeInstallFailureInstalled, err.Error())
-	}
 	if err := verifyRuntimeMergedConfigFiles(cfg, current.Paths); err != nil {
 		return runtimeInstallFailure(runtimeInstallFailureInstalled, err.Error())
 	}
@@ -342,9 +274,6 @@ func verifyRuntimeInstallCompletion(cfg config.AppConfig, st *state.StateStore) 
 	}
 	if failure := verifyRuntimeInstallEvidenceFresh(cfg.RepoRoot, evidence, requirement.Head); failure != nil {
 		return failure
-	}
-	if err := verifyRuntimeInstalledFiles(cfg, requirement.Paths); err != nil {
-		return runtimeInstallFailure(runtimeInstallFailureInstalled, err.Error())
 	}
 	if err := verifyRuntimeMergedConfigFiles(cfg, requirement.Paths); err != nil {
 		return runtimeInstallFailure(runtimeInstallFailureInstalled, err.Error())

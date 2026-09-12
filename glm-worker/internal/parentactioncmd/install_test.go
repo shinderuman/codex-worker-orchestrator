@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/cliinstall"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
@@ -22,6 +23,7 @@ func newInstallActionRepo(t *testing.T) (config.AppConfig, *state.StateStore) {
 	if err := os.WriteFile(filepath.Join(cfg.RepoRoot, installScriptName), []byte("#!/bin/sh\n# baseline install fixture\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	installRuntimeManagedConfigs(t, cfg.RepoRoot, &cfg)
 	if output, err := exec.Command("git", "-C", cfg.RepoRoot, "add", "-A").CombinedOutput(); err != nil {
 		t.Fatalf("git add baseline: %v: %s", err, output)
 	}
@@ -80,7 +82,13 @@ func writeInstallActionScript(t *testing.T, repoRoot, body string, mode os.FileM
 
 func writeInstallRuntimeProbeStub(t *testing.T) {
 	t.Helper()
+	buildDir := t.TempDir()
 	binDir := t.TempDir()
+	for _, name := range []string{"glm-parent-action", "glm-codex-context", "commentlint", "harnesslint"} {
+		if err := os.WriteFile(filepath.Join(buildDir, name), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
 	stub := `#!/bin/sh
 case "${1:-}" in
 --status)
@@ -95,7 +103,10 @@ case "${1:-}" in
   ;;
 esac
 `
-	if err := os.WriteFile(filepath.Join(binDir, "glm-worker"), []byte(stub), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(buildDir, "glm-worker"), []byte(stub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cliinstall.Install(buildDir, binDir); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
