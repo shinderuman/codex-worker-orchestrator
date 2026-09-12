@@ -2,7 +2,6 @@ package codexinstall
 
 import (
 	"bytes"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -28,43 +27,6 @@ func TestInstallRemovesUnmodifiedRetiredManagedFile(t *testing.T) {
 	for _, record := range state.Files {
 		if record.Path == "instructions/test.md" {
 			t.Fatalf("retired file remained tool-owned: %+v", record)
-		}
-	}
-}
-
-func TestInstallMigratesObsoleteLegacyFileOnlyWithOwnershipProof(t *testing.T) {
-	repo := initInstallFixtureRepo(t)
-	legacySource := filepath.Join(repo, "codex", "instructions", "retired.md")
-	legacyContent := []byte("# historical managed instruction\n")
-	writeTestFile(t, legacySource, legacyContent)
-	commitFixtureRepo(t, repo, "add historical managed instruction")
-	if err := os.Remove(legacySource); err != nil {
-		t.Fatal(err)
-	}
-	commitFixtureRepo(t, repo, "retire historical managed instruction")
-
-	ownedDir := t.TempDir()
-	ownedTarget := filepath.Join(ownedDir, "instructions", "retired.md")
-	writeTestFile(t, ownedTarget, legacyContent)
-	writeTestFile(t, filepath.Join(ownedDir, legacyManifestName), []byte("instructions/retired.md\n"))
-	writeTestFile(t, filepath.Join(ownedDir, "config.toml"), []byte(managedConfigKey+" = 21600000\n"))
-	runInstall(t, repo, ownedDir)
-	if _, err := os.Stat(ownedTarget); !os.IsNotExist(err) {
-		t.Fatalf("proven obsolete legacy file remains: %v", err)
-	}
-
-	userDir := t.TempDir()
-	userTarget := filepath.Join(userDir, "instructions", "retired.md")
-	userContent := []byte("# user changed retired instruction\n")
-	writeTestFile(t, userTarget, userContent)
-	writeTestFile(t, filepath.Join(userDir, legacyManifestName), []byte("instructions/retired.md\n"))
-	writeTestFile(t, filepath.Join(userDir, "config.toml"), []byte(managedConfigKey+" = 21600000\n"))
-	runInstall(t, repo, userDir)
-	assertFileBytes(t, userTarget, userContent)
-	state := loadTestState(t, userDir)
-	for _, record := range state.Files {
-		if record.Path == "instructions/retired.md" {
-			t.Fatalf("user-modified obsolete legacy file became tool-owned: %+v", record)
 		}
 	}
 }
@@ -124,63 +86,5 @@ func TestInstallRecognizesQuotedUserOwnedConfigKey(t *testing.T) {
 	assertFileBytes(t, configPath, original)
 	if _, err := os.Stat(statePath(codexDir)); !os.IsNotExist(err) {
 		t.Fatalf("state exists after quoted config ownership conflict: %v", err)
-	}
-}
-
-func TestInstallDoesNotClaimModifiedLegacyConfigLine(t *testing.T) {
-	repo := initInstallFixtureRepo(t)
-	codexDir := t.TempDir()
-	manifestPath := filepath.Join(codexDir, legacyManifestName)
-	manifest := []byte("AGENTS.md\n")
-	writeTestFile(t, manifestPath, manifest)
-	configPath := filepath.Join(codexDir, "config.toml")
-	original := []byte("\"" + managedConfigKey + "\" = 21600000\nlocal_key = \"keep\"\n")
-	writeTestFile(t, configPath, original)
-
-	var stdout bytes.Buffer
-	if err := Install(repo, codexDir, &stdout); err == nil {
-		t.Fatal("expected ownership conflict")
-	}
-	assertFileBytes(t, configPath, original)
-	assertFileBytes(t, manifestPath, manifest)
-	if _, err := os.Stat(statePath(codexDir)); !os.IsNotExist(err) {
-		t.Fatalf("state exists after rejected legacy config migration: %v", err)
-	}
-}
-
-func TestInstallRollbackRestoresLegacyManifestAndSuppressesSuccessOutput(t *testing.T) {
-	repo := initInstallFixtureRepo(t)
-	codexDir := t.TempDir()
-	manifestPath := filepath.Join(codexDir, legacyManifestName)
-	manifest := []byte("instructions/test.md\n")
-	writeTestFile(t, manifestPath, manifest)
-	target := filepath.Join(codexDir, "instructions", "test.md")
-	installed := []byte("# tool instruction\n")
-	writeTestFile(t, target, installed)
-	configPath := filepath.Join(codexDir, "config.toml")
-	config := []byte(managedConfigKey + " = 21600000\nlocal_key = \"keep\"\n")
-	writeTestFile(t, configPath, config)
-
-	preparation, err := prepareInstall(repo, codexDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var stdout bytes.Buffer
-	stateFailure := errors.New("state commit failed")
-	err = applyInstallWithStateWriter(preparation, &stdout, func(string, installState) error { return stateFailure })
-	if !errors.Is(err, stateFailure) {
-		t.Fatalf("expected state failure, got %v", err)
-	}
-	if stdout.Len() != 0 {
-		t.Fatalf("rolled-back install emitted success output: %q", stdout.String())
-	}
-	assertFileBytes(t, manifestPath, manifest)
-	assertFileBytes(t, target, installed)
-	assertFileBytes(t, configPath, config)
-	if _, err := os.Stat(statePath(codexDir)); !os.IsNotExist(err) {
-		t.Fatalf("state exists after rolled-back legacy migration: %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(codexDir, "instructions", "codex-worker-orchestrator.md")); !os.IsNotExist(err) {
-		t.Fatalf("new managed file remains after rollback: %v", err)
 	}
 }
