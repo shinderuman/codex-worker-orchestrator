@@ -20,10 +20,20 @@ func TestBuildRunArgsDisallowsMutableWorkerDirectLintCommands(t *testing.T) {
 		runInputs{systemFile: "WORKER.md", schema: "{}"},
 	)
 
+	wantRules := []string{
+		"Bash(*harnesslint*)",
+		"Bash(*commentlint*)",
+		"Bash(*golangci-lint*)",
+		"Bash(*shellcheck*)",
+		"Bash(*shfmt*)",
+	}
+	if len(workerLintDisallowedTools) != len(wantRules) {
+		t.Fatalf("worker lint deny rules = %#v", workerLintDisallowedTools)
+	}
 	if !containsArgument(args, "--disallowedTools") {
 		t.Fatalf("worker args do not contain --disallowedTools: %#v", args)
 	}
-	for _, rule := range workerLintDisallowedTools {
+	for _, rule := range wantRules {
 		if !containsArgument(args, rule) {
 			t.Fatalf("worker lint deny rule %q is missing: %#v", rule, args)
 		}
