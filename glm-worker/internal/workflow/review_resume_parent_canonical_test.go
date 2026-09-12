@@ -27,8 +27,8 @@ func TestReviewResumeCrashWindowTamperFailsClosed(t *testing.T) {
 			t.Errorf("呼出開始時点のcheckpoint読込: %v", err)
 			return
 		}
-		if observed.StopGitSnapshot == nil || observed.StopGitSnapshot.ParentFiles != nil {
-			t.Errorf("pre-call保存が停止時親state基準を持ち越しています: %#v", observed.StopGitSnapshot)
+		if observed.StopGitSnapshot != nil {
+			t.Errorf("pre-call保存が停止時repository boundaryを持ち越しています: %#v", observed.StopGitSnapshot)
 		}
 		writeRepoParentPlan(t, repoRoot, "reviewer-tamper-during-call\n")
 		panic("simulated crash mid-call")
@@ -44,8 +44,8 @@ func TestReviewResumeCrashWindowTamperFailsClosed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if crashed.StopGitSnapshot == nil || crashed.StopGitSnapshot.ParentFiles != nil {
-		t.Fatalf("crash残存checkpointが停止時親state基準を保持している: %#v", crashed.StopGitSnapshot)
+	if crashed.StopGitSnapshot != nil {
+		t.Fatalf("crash残存checkpointが停止時repository boundaryを保持している: %#v", crashed.StopGitSnapshot)
 	}
 	if st.TaskStatus() == state.TaskStatusComplete {
 		t.Fatal("crash前のreviewer完了は無い前提")
