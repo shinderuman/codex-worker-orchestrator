@@ -38,7 +38,7 @@ func decodeMarker(m marker) marker {
 			source: `package example
 const currentRevision = 3
 type record struct { SchemaRevision int }
-func readEvidence(r record) error {
+func decodeEvidence(r record) error {
 	if r.SchemaRevision > currentRevision { return errUnsupported }
 	return nil
 }
