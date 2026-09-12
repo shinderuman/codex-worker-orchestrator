@@ -30,39 +30,55 @@ func scanForwardOnlyRules(root string, paths []string) ([]Violation, error) {
 
 func forwardOnlyGoViolations(set *token.FileSet, file *ast.File, path string) []Violation {
 	var violations []Violation
-	ast.Inspect(file, func(node ast.Node) bool {
-		statement, ok := node.(*ast.IfStmt)
-		if !ok {
-			return true
+	for _, declaration := range file.Decls {
+		function, ok := declaration.(*ast.FuncDecl)
+		if !ok || function.Body == nil || !forwardOnlyReaderFunction(function.Name.Name) {
+			continue
 		}
-		target, oldValue, ok := versionEqualityTarget(statement.Cond)
-		if !ok {
-			return true
-		}
-		ast.Inspect(statement.Body, func(bodyNode ast.Node) bool {
-			assignment, ok := bodyNode.(*ast.AssignStmt)
-			if !ok || assignment.Tok != token.ASSIGN || len(assignment.Lhs) != 1 || len(assignment.Rhs) != 1 {
+		ast.Inspect(function.Body, func(node ast.Node) bool {
+			statement, ok := node.(*ast.IfStmt)
+			if !ok {
 				return true
 			}
-			if !sameGoExpr(set, assignment.Lhs[0], target) || sameGoExpr(set, assignment.Rhs[0], target) || sameGoExpr(set, assignment.Rhs[0], oldValue) {
+			target, oldValue, ok := versionEqualityTarget(statement.Cond)
+			if !ok {
 				return true
 			}
-			if !versionConstantExpr(assignment.Rhs[0]) {
+			ast.Inspect(statement.Body, func(bodyNode ast.Node) bool {
+				assignment, ok := bodyNode.(*ast.AssignStmt)
+				if !ok || assignment.Tok != token.ASSIGN || len(assignment.Lhs) != 1 || len(assignment.Rhs) != 1 {
+					return true
+				}
+				if !sameGoExpr(set, assignment.Lhs[0], target) || sameGoExpr(set, assignment.Rhs[0], target) || sameGoExpr(set, assignment.Rhs[0], oldValue) {
+					return true
+				}
+				if !versionConstantExpr(assignment.Rhs[0]) {
+					return true
+				}
+				position := set.Position(assignment.Pos())
+				violations = append(violations, Violation{
+					Rule:    forwardOnlyCompatibilityRule,
+					Path:    path,
+					Line:    position.Line,
+					Column:  position.Column,
+					Message: "old version/revision must not be promoted into the current machine contract",
+				})
 				return true
-			}
-			position := set.Position(assignment.Pos())
-			violations = append(violations, Violation{
-				Rule: forwardOnlyCompatibilityRule,
-				Path: path,
-				Line: position.Line,
-				Column: position.Column,
-				Message: "old version/revision must not be promoted into the current machine contract",
 			})
 			return true
 		})
-		return true
-	})
+	}
 	return violations
+}
+
+func forwardOnlyReaderFunction(name string) bool {
+	lower := strings.ToLower(name)
+	for _, fragment := range []string{"decode", "load", "read", "parse", "unmarshal"} {
+		if strings.Contains(lower, fragment) {
+			return true
+		}
+	}
+	return false
 }
 
 func versionEqualityTarget(expr ast.Expr) (ast.Expr, ast.Expr, bool) {
