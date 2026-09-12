@@ -69,7 +69,7 @@ var managedNameSet = func() map[string]struct{} {
 	return result
 }()
 
-func Install(buildDir, binDir string) ([]Result, error) {
+func installUnlocked(buildDir, binDir string) ([]Result, error) {
 	if buildDir == "" || binDir == "" {
 		return nil, fmt.Errorf("build directory and binary directory are required")
 	}
@@ -91,7 +91,7 @@ func Install(buildDir, binDir string) ([]Result, error) {
 	return actionResults(actions), nil
 }
 
-func Retire(binDir string) ([]Result, error) {
+func retireUnlocked(binDir string) ([]Result, error) {
 	if binDir == "" {
 		return nil, fmt.Errorf("binary directory is required")
 	}
@@ -483,7 +483,11 @@ func removeState(statePath string) error {
 	if err := removeIfExists(statePath); err != nil {
 		return fmt.Errorf("remove CLI ownership state: %w", err)
 	}
-	if err := removeIfExists(filepath.Dir(statePath)); err != nil {
+	stateDir := filepath.Dir(statePath)
+	if err := cleanupStaleStateTemps(stateDir); err != nil {
+		return err
+	}
+	if err := removeIfExists(stateDir); err != nil {
 		return fmt.Errorf("remove CLI ownership state directory: %w", err)
 	}
 	return nil
