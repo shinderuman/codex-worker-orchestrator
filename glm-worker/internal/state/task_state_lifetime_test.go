@@ -24,10 +24,11 @@ func TestTaskBoundStatePoliciesDriveFreshTaskCleanup(t *testing.T) {
 		}
 	}
 	for name, lifetime := range map[string]taskBoundStateLifetime{
-		poCStartSnapshotFile:                 taskBoundStateFreshTaskClear,
-		QualitySurfaceBaselineStateFile:      taskBoundStateFreshTaskClear,
-		RepositoryHarnessActivationStateFile: taskBoundStateFreshTaskClear,
-		InstructionSurfaceBaselineStateFile:  taskBoundStateTaskIDBound,
+		baselineUntrackedFile:                 taskBoundStateFreshTaskClear,
+		poCStartSnapshotFile:                  taskBoundStateFreshTaskClear,
+		QualitySurfaceBaselineStateFile:       taskBoundStateFreshTaskClear,
+		RepositoryHarnessActivationStateFile:  taskBoundStateFreshTaskClear,
+		InstructionSurfaceBaselineStateFile:   taskBoundStateTaskIDBound,
 	} {
 		if got, ok := seen[name]; !ok || got != lifetime {
 			t.Fatalf("task-bound state policy %s = %d, present=%t want=%d", name, got, ok, lifetime)
@@ -42,6 +43,9 @@ func TestFreshTaskClearsUnboundStateAndRetainsSelfBoundAndHistoricalState(t *tes
 		t.Fatal(err)
 	}
 	if err := st.SavePoCStartSnapshot(GitSnapshot{Head: "old-head", IndexDigest: "old-index", WorktreeDigest: "old-worktree"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(st.Path(baselineUntrackedFile), []byte("old-untracked\x00"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.Write(QualitySurfaceBaselineStateFile, "old-quality"); err != nil {
@@ -66,7 +70,7 @@ func TestFreshTaskClearsUnboundStateAndRetainsSelfBoundAndHistoricalState(t *tes
 	if _, err := st.LoadPoCStartSnapshot(); !os.IsNotExist(err) {
 		t.Fatalf("prior task PoC snapshot remains visible: %v", err)
 	}
-	for _, name := range []string{QualitySurfaceBaselineStateFile, RepositoryHarnessActivationStateFile} {
+	for _, name := range []string{baselineUntrackedFile, QualitySurfaceBaselineStateFile, RepositoryHarnessActivationStateFile} {
 		if st.Exists(name) {
 			t.Fatalf("prior task state survived fresh-task cleanup: %s", name)
 		}
