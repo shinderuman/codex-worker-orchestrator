@@ -23,14 +23,23 @@ func TestAcceptedFixScopeSkipsRedundantRiskFloorCall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := st.StartNewTask(); err != nil {
+		t.Fatal(err)
+	}
 	if err := state.CaptureGitBaseline(cfg, st); err != nil {
 		t.Fatal(err)
 	}
 	writeScopeFile(t, repo, "code.go", "package sample\n\nvar retained = 1\nvar removeMe = 2\n")
+	if err := st.SetTaskStatus(state.TaskStatusWaitingSolReview); err != nil {
+		t.Fatal(err)
+	}
 
 	runner := &scriptedRunner{}
 	w := NewWorkflow(cfg, st, runner, io.Discard)
 	w.prepareAcceptedFixScope(acceptedFixScopeCurrentDiff)
+	if _, err := st.BeginParentFix(state.ParentOriginCodexReview, state.ParentCauseWorker); err != nil {
+		t.Fatal(err)
+	}
 	writeScopeFile(t, repo, "code.go", "package sample\n\nvar retained = 1\n")
 
 	result, stopped, err := w.enforceRiskFloor("request", packet.Result{}, 1, 0, "none", true, packet.Result{Status: packet.StatusPass})
