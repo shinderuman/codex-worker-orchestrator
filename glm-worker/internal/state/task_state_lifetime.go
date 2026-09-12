@@ -2,21 +2,21 @@ package state
 
 type taskBoundStateLifetime uint8
 
+type taskBoundStatePolicy struct {
+	name     string
+	lifetime taskBoundStateLifetime
+}
+
 const (
 	taskBoundStateFreshTaskClear taskBoundStateLifetime = iota
 	taskBoundStateTaskIDBound
 )
 
 const (
-	QualitySurfaceBaselineStateFile     = "quality-surface-baseline"
+	QualitySurfaceBaselineStateFile      = "quality-surface-baseline"
 	RepositoryHarnessActivationStateFile = "repository-harness"
 	InstructionSurfaceBaselineStateFile  = "instruction-surface-baseline-v1"
 )
-
-type taskBoundStatePolicy struct {
-	name     string
-	lifetime taskBoundStateLifetime
-}
 
 var taskBoundStatePolicies = []taskBoundStatePolicy{
 	{name: "task.status", lifetime: taskBoundStateFreshTaskClear},
