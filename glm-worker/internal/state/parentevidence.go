@@ -174,6 +174,7 @@ func splitJSONLines(data []byte) [][]byte {
 				lines = append(lines, segment)
 			}
 		}
+	}
 	if start < len(data) {
 		lines = append(lines, data[start:])
 	}
