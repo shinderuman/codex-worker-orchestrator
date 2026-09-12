@@ -119,16 +119,7 @@ func TestResumeWithRepairedWorkerRejectsResumeCounterWithoutLifecycleEvidence(t 
 	persistReadyGuardRepair(t, cfg, st, &record)
 
 	err := resumeWithRepairedWorker(cfg, st, record, io.Discard, io.Discard, nil, errors.New("initial self-block"))
-	if err == nil || !strings.Contains(err.Error(), "did not enter original resume lifecycle") {
-		t.Fatalf("TaskStats resume counter was accepted as original resume evidence: %v", err)
-	}
-	got, loadErr := st.LoadGuardRepairRecord()
-	if loadErr != nil {
-		t.Fatal(loadErr)
-	}
-	if got.Status != state.GuardRepairFailed || got.OriginalResumeObserved {
-		t.Fatalf("counter-only resume recorded repair completion: %#v", got)
-	}
+	requireGuardRepairLifecycleFailure(t, st, err, "TaskStats resume counter was accepted as original resume evidence")
 }
 
 func TestResumeWithRepairedWorkerRejectsStaleTransitionAttempt(t *testing.T) {
@@ -137,15 +128,20 @@ func TestResumeWithRepairedWorkerRejectsStaleTransitionAttempt(t *testing.T) {
 	persistReadyGuardRepair(t, cfg, st, &record)
 
 	err := resumeWithRepairedWorker(cfg, st, record, io.Discard, io.Discard, nil, errors.New("initial self-block"))
+	requireGuardRepairLifecycleFailure(t, st, err, "stale transition attempt was accepted")
+}
+
+func requireGuardRepairLifecycleFailure(t *testing.T, st *state.StateStore, err error, message string) {
+	t.Helper()
 	if err == nil || !strings.Contains(err.Error(), "did not enter original resume lifecycle") {
-		t.Fatalf("stale transition attempt was accepted: %v", err)
+		t.Fatalf("%s: %v", message, err)
 	}
 	got, loadErr := st.LoadGuardRepairRecord()
 	if loadErr != nil {
 		t.Fatal(loadErr)
 	}
 	if got.Status != state.GuardRepairFailed || got.OriginalResumeObserved {
-		t.Fatalf("stale transition attempt recorded repair completion: %#v", got)
+		t.Fatalf("failed resume recorded repair completion: %#v", got)
 	}
 }
 
