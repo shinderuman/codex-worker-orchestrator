@@ -168,3 +168,40 @@ func TestStartNewTaskDoesNotArchiveLegacyTaskStatsIdentity(t *testing.T) {
 		t.Fatalf("legacy TaskStats identity was promoted into archive: %#v", archived)
 	}
 }
+
+func TestArchiveCurrentStatsDoesNotPromoteLegacyIdentityWhenCanonicalIdentityIsCorrupt(t *testing.T) {
+	st := &StateStore{dir: t.TempDir()}
+	taskID, err := st.StartNewTask()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stats, err := st.loadTaskStats()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stats.ParentCodexThreadID = legacyParentThreadID
+	stats.ParentCodexSessionID = legacyParentSessionID
+	if err := st.writeTaskStats(stats); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(st.Path(parentCodexIdentityFile), []byte("{broken\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	warnings, restore := captureStatsWarnings(t)
+	defer restore()
+	st.ArchiveCurrentStats()
+	requireStatsWarningOperation(t, warnings, "archive投影")
+
+	data, err := os.ReadFile(st.TaskStatsArchivePath(taskID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	archived, err := decodeTaskStats(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if archived.ParentCodexThreadID != "" || archived.ParentCodexSessionID != "" {
+		t.Fatalf("corrupt canonical identity promoted legacy TaskStats identity into archive: %#v", archived)
+	}
+}
