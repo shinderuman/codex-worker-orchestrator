@@ -369,8 +369,8 @@ func TestBuildChildEnvHonorsExtraAllowlist(t *testing.T) {
 	t.Setenv("UNRELATED", "no")
 
 	result := buildChildEnv(
-		nil,
 		[]string{"GOPATH"},
+		nil,
 		nil,
 		nil,
 	)
