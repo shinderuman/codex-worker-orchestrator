@@ -15,7 +15,6 @@ concurrency:
 
 jobs:
   validate:
-    # A newly created web-gpt branch initially points at its base SHA; do not attach a cancellable long-running check to that shared commit.
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.created == false }}
     runs-on: ubuntu-latest
     steps:
