@@ -705,14 +705,15 @@ func (w *Workflow) verifyReviewResumeSnapshot(checkpoint state.ResumeCheckpoint)
 }
 
 func acceptReviewResumeParentDelta(saved, current state.GitSnapshot, checkpoint state.ResumeCheckpoint) bool {
-	if !reviewResumeParentBaselineMatches(saved, current) || saved.ParentFiles == nil || checkpoint.StopParentFiles == nil || current.ParentFiles == nil {
+	if !reviewResumeParentBaselineMatches(saved, current) || saved.ParentFiles == nil || checkpoint.StopGitSnapshot == nil || checkpoint.StopGitSnapshot.ParentFiles == nil || current.ParentFiles == nil {
 		return false
 	}
+	stopParents := *checkpoint.StopGitSnapshot.ParentFiles
 	now := *current.ParentFiles
 	changedDuringStop := false
-	for _, path := range parentStatePaths(*saved.ParentFiles, *checkpoint.StopParentFiles, now) {
+	for _, path := range parentStatePaths(*saved.ParentFiles, stopParents, now) {
 		reviewStart := state.FindParentFileState(*saved.ParentFiles, path)
-		stop := state.FindParentFileState(*checkpoint.StopParentFiles, path)
+		stop := state.FindParentFileState(stopParents, path)
 		currentState := state.FindParentFileState(now, path)
 
 		if stop != reviewStart {
