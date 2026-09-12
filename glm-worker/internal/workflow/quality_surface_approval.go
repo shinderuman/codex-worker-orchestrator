@@ -47,13 +47,15 @@ func (w *Workflow) ExecuteQualitySurfaceApproval(acceptedScope string) error {
 		if w.state.TaskStatus() != state.TaskStatusWaitingSolReview {
 			return &WorkerError{Message: "quality-surface approval is only available while waiting for Sol review"}
 		}
-		w.prepareAcceptedFixScope(acceptedScope)
+		if err := w.prepareAcceptedFixScopeForAction(acceptedScope, state.ParentActionApproveSurface); err != nil {
+			return err
+		}
 		handled, err := w.resumeApprovedQualitySurface()
 		if err != nil {
 			return err
 		}
 		if !handled {
-			return &WorkerError{Message: "no retained quality-surface approval checkpoint is available"}
+			return w.discardAcceptedFixScopeAfterFailure(&WorkerError{Message: "no retained quality-surface approval checkpoint is available"})
 		}
 		return nil
 	})
@@ -78,26 +80,35 @@ func (w *Workflow) resumeApprovedQualitySurface() (bool, error) {
 func (w *Workflow) loadApprovedQualitySurfaceCheckpoint() (state.ResumeCheckpoint, bool, error) {
 	checkpoint, err := w.state.LoadResumeCheckpoint()
 	if errors.Is(err, state.ErrNoResumeCheckpoint) {
+		if scopeErr := w.discardPreparedAcceptedFixScope(); scopeErr != nil {
+			return state.ResumeCheckpoint{}, false, scopeErr
+		}
 		return state.ResumeCheckpoint{}, false, nil
 	}
 	if err != nil {
-		return state.ResumeCheckpoint{}, false, err
+		return state.ResumeCheckpoint{}, false, w.discardAcceptedFixScopeAfterFailure(err)
 	}
 	if !checkpoint.QualitySurfaceApprovalPending {
+		if scopeErr := w.discardPreparedAcceptedFixScope(); scopeErr != nil {
+			return state.ResumeCheckpoint{}, false, scopeErr
+		}
 		return state.ResumeCheckpoint{}, false, nil
 	}
 	if checkpoint.CompletedResult == nil {
-		return checkpoint, true, &WorkerError{Phase: checkpoint.Phase, Message: "quality-surface approval checkpoint has no completed worker result"}
+		return checkpoint, true, w.discardAcceptedFixScopeAfterFailure(&WorkerError{Phase: checkpoint.Phase, Message: "quality-surface approval checkpoint has no completed worker result"})
 	}
 	if err := w.validateApprovedQualitySurfaceRetention(checkpoint); err != nil {
-		return checkpoint, true, err
+		return checkpoint, true, w.discardAcceptedFixScopeAfterFailure(err)
 	}
 	if !w.acceptedFixScopeContainsCurrent() {
-		return checkpoint, true, &WorkerError{Phase: checkpoint.Phase, Message: "current diff is not covered by the parent-approved quality-surface scope"}
+		return checkpoint, true, w.discardAcceptedFixScopeAfterFailure(&WorkerError{Phase: checkpoint.Phase, Message: "current diff is not covered by the parent-approved quality-surface scope"})
 	}
 	stopped, err := w.verifyQualitySurfaceBaseline(checkpoint.Phase)
 	if err != nil || stopped {
-		return checkpoint, true, err
+		if err == nil {
+			err = &WorkerError{Phase: checkpoint.Phase, Message: "quality-surface approval validation stopped before activation"}
+		}
+		return checkpoint, true, w.discardAcceptedFixScopeAfterFailure(err)
 	}
 	return checkpoint, true, nil
 }
@@ -116,7 +127,10 @@ func (w *Workflow) validateApprovedQualitySurfaceRetention(checkpoint state.Resu
 }
 
 func (w *Workflow) activateApprovedQualitySurface() error {
-	return w.state.ActivateQualitySurfaceApproval()
+	if err := w.state.ActivateQualitySurfaceApproval(); err != nil {
+		return w.discardAcceptedFixScopeAfterFailure(err)
+	}
+	return nil
 }
 
 func (w *Workflow) routeApprovedQualitySurface(checkpoint state.ResumeCheckpoint, result packet.Result) error {

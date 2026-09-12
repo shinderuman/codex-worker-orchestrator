@@ -17,9 +17,13 @@ import (
 )
 
 type acceptedFixScope struct {
-	Version      int            `json:"version"`
-	BaselineHead string         `json:"baseline_head"`
-	Changes      map[string]int `json:"changes"`
+	Version           int            `json:"version"`
+	OwnerTaskID       string         `json:"owner_task_id"`
+	OwnerParentLease  int64          `json:"owner_parent_lease"`
+	OwnerAction       string         `json:"owner_action"`
+	OwnerInvocationID string         `json:"owner_invocation_id"`
+	BaselineHead      string         `json:"baseline_head"`
+	Changes           map[string]int `json:"changes"`
 }
 
 type acceptedPatchState struct {
@@ -31,36 +35,78 @@ type acceptedPatchState struct {
 const (
 	acceptedFixScopeStateFile   = "accepted-fix-scope.json"
 	acceptedFixScopeCurrentDiff = "current-diff"
-	acceptedFixScopeVersion     = 1
+	acceptedFixScopeVersion     = 3
 )
 
 var zeroContextHunk = regexp.MustCompile(`^@@ -([0-9]+)(?:,[0-9]+)? \+[0-9]+(?:,[0-9]+)? @@`)
 
-func (w *Workflow) prepareAcceptedFixScope(mode string) {
-	_ = w.state.Remove(acceptedFixScopeStateFile)
+func (w *Workflow) prepareAcceptedFixScopeChecked(mode string) error {
+	return w.prepareAcceptedFixScopeForAction(mode, state.ParentActionFix)
+}
+
+func (w *Workflow) prepareAcceptedFixScopeForAction(mode string, action state.ParentAction) error {
+	if action != state.ParentActionFix && action != state.ParentActionApproveSurface {
+		return fmt.Errorf("accepted fix scope cannot bind parent action %q", action)
+	}
+	if err := w.invalidateAcceptedFixScope(); err != nil {
+		return err
+	}
 	if mode != acceptedFixScopeCurrentDiff {
-		return
+		return nil
 	}
 	baselineHead := w.state.ReadOr("baseline-head", "")
 	if baselineHead == "" {
-		return
+		return nil
+	}
+	invocationID := w.acceptedFixScopeInvocationID()
+	if invocationID == "" {
+		return fmt.Errorf("accepted fix scope requires an active parent action invocation")
+	}
+	taskID, err := w.state.TaskID()
+	if err != nil {
+		return err
+	}
+	lease, err := w.state.ParentEvidenceLeaseEpoch()
+	if err != nil {
+		return err
 	}
 	changes, err := w.captureAcceptedChangeSet()
-	if err != nil || len(changes) == 0 {
-		return
+	if err != nil {
+		return err
+	}
+	if len(changes) == 0 {
+		return nil
 	}
 	data, err := json.Marshal(acceptedFixScope{
-		Version:      acceptedFixScopeVersion,
-		BaselineHead: baselineHead,
-		Changes:      changes,
+		Version:           acceptedFixScopeVersion,
+		OwnerTaskID:       taskID,
+		OwnerParentLease:  lease,
+		OwnerAction:       string(action),
+		OwnerInvocationID: invocationID,
+		BaselineHead:      baselineHead,
+		Changes:           changes,
 	})
 	if err != nil {
-		return
+		return err
 	}
-	_ = w.state.Write(acceptedFixScopeStateFile, string(data))
+	return w.state.Write(acceptedFixScopeStateFile, string(data))
+}
+
+func (w *Workflow) invalidateAcceptedFixScope() error {
+	if err := w.state.Write(acceptedFixScopeStateFile, "{}"); err != nil {
+		return err
+	}
+	return w.state.Remove(acceptedFixScopeStateFile)
+}
+
+func (w *Workflow) discardPreparedAcceptedFixScope() error {
+	return w.invalidateAcceptedFixScope()
 }
 
 func (w *Workflow) acceptedFixScopeCoversCurrent() bool {
+	if w.state.TaskStatus() != state.TaskStatusActive {
+		return false
+	}
 	return w.acceptedFixScopeAllowsCurrent(true)
 }
 
@@ -77,6 +123,9 @@ func (w *Workflow) acceptedFixScopeAllowsCurrent(consume bool) bool {
 	if err := json.Unmarshal(bytes.TrimSpace(data), &scope); err != nil || scope.Version != acceptedFixScopeVersion {
 		return false
 	}
+	if !w.acceptedFixScopeOwnerAllows(scope) {
+		return false
+	}
 	if scope.BaselineHead == "" || scope.BaselineHead != w.state.ReadOr("baseline-head", "") {
 		return false
 	}
@@ -85,9 +134,47 @@ func (w *Workflow) acceptedFixScopeAllowsCurrent(consume bool) bool {
 		return false
 	}
 	if consume {
-		_ = w.state.Remove(acceptedFixScopeStateFile)
+		if err := w.invalidateAcceptedFixScope(); err != nil {
+			return false
+		}
 	}
 	return true
+}
+
+func (w *Workflow) acceptedFixScopeOwnerAllows(scope acceptedFixScope) bool {
+	taskID, err := w.state.TaskID()
+	if err != nil || scope.OwnerTaskID == "" || scope.OwnerTaskID != taskID {
+		return false
+	}
+	lease, err := w.state.ParentEvidenceLeaseEpoch()
+	if err != nil || scope.OwnerParentLease != lease {
+		return false
+	}
+	invocationID := w.acceptedFixScopeInvocationID()
+	if invocationID == "" || scope.OwnerInvocationID != invocationID {
+		return false
+	}
+	action := state.ParentAction(scope.OwnerAction)
+	switch w.state.TaskStatus() {
+	case state.TaskStatusActive:
+		return action == state.ParentActionFix || action == state.ParentActionApproveSurface
+	case state.TaskStatusWaitingSolReview:
+		return action == state.ParentActionApproveSurface
+	default:
+		return false
+	}
+}
+
+func (w *Workflow) acceptedFixScopeInvocationID() string {
+	if w.temp == "" {
+		return ""
+	}
+	info, err := os.Stat(w.temp)
+	if err != nil || !info.IsDir() {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(w.temp))
+	return hex.EncodeToString(sum[:])
 }
 
 func isParentManagedImplementationPath(path string) bool {
