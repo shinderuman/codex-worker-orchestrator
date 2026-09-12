@@ -75,8 +75,6 @@ type ResumeCheckpoint struct {
 
 	QualitySurfaceApprovalPending bool `json:"quality_surface_approval_pending,omitempty"`
 
-	StopParentFiles *ParentFileStates `json:"stop_parent_files,omitempty"`
-
 	StopGitSnapshot *GitSnapshot `json:"stop_git_snapshot,omitempty"`
 
 	StopDirtyFiles []StopDirtyFile `json:"stop_dirty_files"`
@@ -163,6 +161,10 @@ func (checkpoint ResumeCheckpoint) IsStopped() bool {
 func (checkpoint *ResumeCheckpoint) SetStopKind(kind ResumeStopKind) {
 	checkpoint.clearStopPayload()
 	checkpoint.StopKind = kind
+}
+
+func (checkpoint *ResumeCheckpoint) SetStopRepositoryBoundary(snapshot GitSnapshot) {
+	checkpoint.StopGitSnapshot = &snapshot
 }
 
 func (checkpoint *ResumeCheckpoint) ClearStop() {
@@ -303,6 +305,13 @@ func (s *StateStore) LoadResumeCheckpoint() (ResumeCheckpoint, error) {
 	}
 	if explicitKeys.StopKind == nil {
 		return ResumeCheckpoint{}, fmt.Errorf("resume state v6にstop_kind keyがありません")
+	}
+	var persistedKeys map[string]json.RawMessage
+	if err := json.Unmarshal(data, &persistedKeys); err != nil {
+		return ResumeCheckpoint{}, fmt.Errorf("resume stateを読めません: %w", err)
+	}
+	if _, legacy := persistedKeys["stop_parent_files"]; legacy {
+		return ResumeCheckpoint{}, fmt.Errorf("resume stateを読めません: legacy stop_parent_files key")
 	}
 	if checkpoint.Model == "" {
 		return ResumeCheckpoint{}, fmt.Errorf("resume state model is required")
