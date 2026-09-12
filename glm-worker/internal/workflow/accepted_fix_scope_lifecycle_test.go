@@ -18,6 +18,7 @@ func TestAcceptedFixScopeWaitingFixDoesNotAuthorizeParentAction(t *testing.T) {
 	writeAcceptedScopeChange(t, repo)
 
 	w := newGitWorkflowT(t, st, &scriptedRunner{}, repo)
+	w.temp = t.TempDir()
 	if err := w.prepareAcceptedFixScopeChecked(acceptedFixScopeCurrentDiff); err != nil {
 		t.Fatal(err)
 	}
@@ -39,6 +40,7 @@ func TestAcceptedFixScopeWaitingApprovalAllowsOnlyPreActivationValidation(t *tes
 	writeAcceptedScopeChange(t, repo)
 
 	w := newGitWorkflowT(t, st, &scriptedRunner{}, repo)
+	w.temp = t.TempDir()
 	if err := w.prepareAcceptedFixScopeForAction(acceptedFixScopeCurrentDiff, state.ParentActionApproveSurface); err != nil {
 		t.Fatal(err)
 	}
@@ -57,6 +59,7 @@ func TestAcceptedFixScopeRejectsDifferentParentOwner(t *testing.T) {
 	writeAcceptedScopeChange(t, repo)
 
 	w := newGitWorkflowT(t, st, &scriptedRunner{}, repo)
+	w.temp = t.TempDir()
 	if err := w.prepareAcceptedFixScopeChecked(acceptedFixScopeCurrentDiff); err != nil {
 		t.Fatal(err)
 	}
@@ -84,6 +87,7 @@ func TestAcceptedFixScopeRejectsDifferentTaskOwner(t *testing.T) {
 	writeAcceptedScopeChange(t, repo)
 
 	w := newGitWorkflowT(t, st, &scriptedRunner{}, repo)
+	w.temp = t.TempDir()
 	if err := w.prepareAcceptedFixScopeChecked(acceptedFixScopeCurrentDiff); err != nil {
 		t.Fatal(err)
 	}
@@ -95,6 +99,32 @@ func TestAcceptedFixScopeRejectsDifferentTaskOwner(t *testing.T) {
 	}
 	if w.acceptedFixScopeContainsCurrent() {
 		t.Fatal("scope from a different task identity must not remain authorized")
+	}
+}
+
+func TestAcceptedFixScopeRejectsDifferentActionInvocation(t *testing.T) {
+	repo := newRetentionGitRepo(t)
+	st := newGitStateStoreT(t, repo)
+	seedWaitingSolReviewState(t, st)
+	writeAcceptedScopeChange(t, repo)
+
+	w := newGitWorkflowT(t, st, &scriptedRunner{}, repo)
+	w.temp = t.TempDir()
+	if err := w.prepareAcceptedFixScopeChecked(acceptedFixScopeCurrentDiff); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.BeginParentFix(state.ParentOriginCodexReview, state.ParentCauseWorker); err != nil {
+		t.Fatal(err)
+	}
+	if !w.acceptedFixScopeContainsCurrent() {
+		t.Fatal("active fix must match its original action invocation")
+	}
+	w.temp = t.TempDir()
+	if w.acceptedFixScopeContainsCurrent() {
+		t.Fatal("scope from a previous action invocation must not remain authorized")
+	}
+	if w.acceptedFixScopeCoversCurrent() {
+		t.Fatal("later action invocation must not consume stale accepted scope")
 	}
 }
 
@@ -195,6 +225,7 @@ func TestAcceptedFixScopeConsumesAuthorizationOnceAfterParentActionStarts(t *tes
 	writeAcceptedScopeChange(t, repo)
 
 	w := newGitWorkflowT(t, st, &scriptedRunner{}, repo)
+	w.temp = t.TempDir()
 	if err := w.prepareAcceptedFixScopeChecked(acceptedFixScopeCurrentDiff); err != nil {
 		t.Fatal(err)
 	}
@@ -219,6 +250,7 @@ func TestAcceptedApprovalScopeConsumesAuthorizationOnceAfterActivation(t *testin
 	writeAcceptedScopeChange(t, repo)
 
 	w := newGitWorkflowT(t, st, &scriptedRunner{}, repo)
+	w.temp = t.TempDir()
 	if err := w.prepareAcceptedFixScopeForAction(acceptedFixScopeCurrentDiff, state.ParentActionApproveSurface); err != nil {
 		t.Fatal(err)
 	}
