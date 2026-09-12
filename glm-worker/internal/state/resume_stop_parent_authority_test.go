@@ -66,6 +66,7 @@ func TestLoadResumeCheckpointRejectsLegacyDivergentStopParentFiles(t *testing.T)
   "stop_kind": "rate-limited",
   "report_only": false,
   "stop_git_snapshot": {
+    "version": 1,
     "head": "head",
     "index_digest": "index",
     "worktree_digest": "worktree",
