@@ -61,6 +61,23 @@ func TestQualityWiringRejectsCheckBeforeFix(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	assertQualityWiringOrderViolation(t, violations)
+}
+
+func TestQualityWiringRejectsCommentedFixBeforeExecutableCheck(t *testing.T) {
+	root := t.TempDir()
+	check := qualityWiringChecks()[0]
+	writeQualityFile(t, root, check.path, "package workflow\nfunc gate() { /* harnesslint.Run(root, true) */ harnesslint.Check(root); harnesslint.Run(root, true); captureQualitySurfaceDigest(root) }\n")
+
+	violations, err := qualityWiringCheckViolations(root, map[string]bool{check.path: true}, check)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertQualityWiringOrderViolation(t, violations)
+}
+
+func assertQualityWiringOrderViolation(t *testing.T, violations []Violation) {
+	t.Helper()
 	for _, violation := range violations {
 		if strings.Contains(violation.Message, "wiring order is invalid") {
 			return

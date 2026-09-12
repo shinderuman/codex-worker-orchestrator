@@ -3,6 +3,8 @@ package state
 import (
 	"os"
 	"testing"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 )
 
 func TestCompleteParentAwaitingDoesNotRequireWritableTaskStatsMirror(t *testing.T) {
@@ -20,7 +22,7 @@ func TestCompleteParentAwaitingDoesNotRequireWritableTaskStatsMirror(t *testing.
 		CallType:           CallTypeEvent,
 		Phase:              ParentPhaseAccept,
 		Outcome:            ParentOutcomeAccepted,
-		WorkerReportedRisk: "LOW",
+		WorkerReportedRisk: string(packet.RiskLow),
 	})
 	if err := os.Remove(st.Path(currentStatsFile)); err != nil {
 		t.Fatal(err)
@@ -32,7 +34,7 @@ func TestCompleteParentAwaitingDoesNotRequireWritableTaskStatsMirror(t *testing.
 	evaluated := false
 	completed, err := st.CompleteParentAwaiting(func(acceptedRisk string) (*SessionRotationEvaluation, error) {
 		evaluated = true
-		if acceptedRisk != "LOW" {
+		if acceptedRisk != string(packet.RiskLow) {
 			t.Fatalf("accepted risk = %q", acceptedRisk)
 		}
 		return &SessionRotationEvaluation{
@@ -59,5 +61,42 @@ func TestCompleteParentAwaitingDoesNotRequireWritableTaskStatsMirror(t *testing.
 	info, err := os.Stat(st.Path(currentStatsFile))
 	if err != nil || !info.IsDir() {
 		t.Fatalf("observational mirror fixture changed: info=%v err=%v", info, err)
+	}
+}
+
+func TestCompleteParentAwaitingRejectsInvalidCompletionRisk(t *testing.T) {
+	for _, risk := range []string{"", "MEDIUM"} {
+		t.Run(risk, func(t *testing.T) {
+			st := &StateStore{dir: t.TempDir()}
+			taskID := "12345678-aaaa-bbbb-cccc-dddddddddddd"
+			if err := st.Write("task.id", taskID); err != nil {
+				t.Fatal(err)
+			}
+			if err := st.SetTaskStatus(TaskStatusAwaitingParentCompletion); err != nil {
+				t.Fatal(err)
+			}
+			st.RecordModelCallLog(ModelCallLog{
+				TaskID:             taskID,
+				CallType:           CallTypeEvent,
+				Phase:              ParentPhaseAccept,
+				Outcome:            ParentOutcomeAccepted,
+				WorkerReportedRisk: risk,
+			})
+
+			evaluated := false
+			completed, err := st.CompleteParentAwaiting(func(string) (*SessionRotationEvaluation, error) {
+				evaluated = true
+				return nil, nil
+			})
+			if err == nil {
+				t.Fatal("invalid completion risk was accepted")
+			}
+			if completed || evaluated {
+				t.Fatalf("completion = completed:%v evaluated:%v", completed, evaluated)
+			}
+			if st.TaskStatus() != TaskStatusAwaitingParentCompletion {
+				t.Fatalf("task status = %q", st.TaskStatus())
+			}
+		})
 	}
 }

@@ -19,9 +19,9 @@ func Install(buildDir, binDir string) ([]Result, error) {
 	if err := os.MkdirAll(binDir, 0o755); err != nil {
 		return nil, fmt.Errorf("create binary directory: %w", err)
 	}
-	lock, err := repolock.AcquireWait(filepath.Join(binDir, installLockFileName))
+	lock, err := acquireInstallLock(binDir)
 	if err != nil {
-		return nil, fmt.Errorf("acquire CLI install lock: %w", err)
+		return nil, err
 	}
 	results, installErr := installUnlocked(buildDir, binDir)
 	return results, joinCloseError(installErr, lock.Close())
@@ -31,19 +31,29 @@ func Retire(binDir string) ([]Result, error) {
 	if binDir == "" {
 		return retireUnlocked(binDir)
 	}
-	_, exists, err := lstat(binDir)
+	lock, err := acquireInstallLock(binDir)
 	if err != nil {
 		return nil, err
 	}
-	if !exists {
-		return retireUnlocked(binDir)
+	results, retireErr := retireUnlocked(binDir)
+	return results, joinCloseError(retireErr, lock.Close())
+}
+
+func acquireInstallLock(binDir string) (*repolock.Lock, error) {
+	path := installLockPath(binDir)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, fmt.Errorf("create CLI install lock directory: %w", err)
 	}
-	lock, err := repolock.AcquireWait(filepath.Join(binDir, installLockFileName))
+	lock, err := repolock.AcquireWait(path)
 	if err != nil {
 		return nil, fmt.Errorf("acquire CLI install lock: %w", err)
 	}
-	results, retireErr := retireUnlocked(binDir)
-	return results, joinCloseError(retireErr, lock.Close())
+	return lock, nil
+}
+
+func installLockPath(binDir string) string {
+	clean := filepath.Clean(binDir)
+	return filepath.Join(filepath.Dir(clean), "."+filepath.Base(clean)+installLockFileName)
 }
 
 func joinCloseError(operationErr, closeErr error) error {

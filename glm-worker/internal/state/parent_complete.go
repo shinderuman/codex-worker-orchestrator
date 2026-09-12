@@ -3,6 +3,8 @@ package state
 import (
 	"errors"
 	"fmt"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 )
 
 func (s *StateStore) CompleteParentAwaiting(evaluate SessionRotationEvaluator) (bool, error) {
@@ -14,6 +16,9 @@ func (s *StateStore) CompleteParentAwaiting(evaluate SessionRotationEvaluator) (
 		_, risk, found := s.CompletionOutcomeEvidence()
 		if !found {
 			return false, fmt.Errorf("parent completion outcome evidence is unavailable")
+		}
+		if risk != string(packet.RiskLow) && risk != string(packet.RiskHigh) {
+			return false, fmt.Errorf("parent completion outcome evidence has invalid risk %q", risk)
 		}
 		acceptedRisk = risk
 	}

@@ -1,6 +1,9 @@
 package harnesslint
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"strings"
 )
 
@@ -205,20 +208,94 @@ func qualityWiringCheckViolations(root string, present map[string]bool, check qu
 			Message: "required quality-gate wiring is missing: " + token,
 		})
 	}
-	lastIndex := -1
-	for _, token := range check.orderedTokens {
-		index := strings.Index(text, token)
-		if index < 0 {
-			continue
+	orderViolations, err := qualityWiringOrderViolations(check, data)
+	if err != nil {
+		return nil, err
+	}
+	violations = append(violations, orderViolations...)
+	return violations, nil
+}
+
+func qualityWiringOrderViolations(check qualityWiringCheck, data []byte) ([]Violation, error) {
+	if len(check.orderedTokens) == 0 {
+		return nil, nil
+	}
+	positions, err := qualityWiringOrderPositions(check, data)
+	if err != nil {
+		return nil, err
+	}
+	if qualityWiringOrderValid(check.orderedTokens, positions) {
+		return nil, nil
+	}
+	return []Violation{{
+		Rule: "quality-wiring", Path: check.path, Line: 1, Column: 1,
+		Message: "required quality-gate wiring order is invalid: " + strings.Join(check.orderedTokens, " -> "),
+	}}, nil
+}
+
+func qualityWiringOrderPositions(check qualityWiringCheck, data []byte) (map[string]int, error) {
+	if strings.HasSuffix(check.path, ".go") {
+		return qualityWiringGoCallPositions(check, data)
+	}
+	return qualityWiringTextPositions(check.orderedTokens, data), nil
+}
+
+func qualityWiringGoCallPositions(check qualityWiringCheck, data []byte) (map[string]int, error) {
+	set := token.NewFileSet()
+	file, err := parser.ParseFile(set, check.path, data, 0)
+	if err != nil {
+		return nil, err
+	}
+	wanted := make(map[string]bool, len(check.orderedTokens))
+	for _, required := range check.orderedTokens {
+		wanted[required] = true
+	}
+	positions := make(map[string]int, len(check.orderedTokens))
+	ast.Inspect(file, func(node ast.Node) bool {
+		recordQualityWiringCallPosition(set, data, wanted, positions, node)
+		return true
+	})
+	return positions, nil
+}
+
+func recordQualityWiringCallPosition(set *token.FileSet, data []byte, wanted map[string]bool, positions map[string]int, node ast.Node) {
+	call, ok := node.(*ast.CallExpr)
+	if !ok {
+		return
+	}
+	start := set.Position(call.Pos()).Offset
+	end := set.Position(call.End()).Offset
+	if start < 0 || end > len(data) || start >= end {
+		return
+	}
+	text := string(data[start:end])
+	if !wanted[text] {
+		return
+	}
+	if _, exists := positions[text]; !exists {
+		positions[text] = start
+	}
+}
+
+func qualityWiringTextPositions(ordered []string, data []byte) map[string]int {
+	positions := make(map[string]int, len(ordered))
+	text := string(data)
+	for _, required := range ordered {
+		if index := strings.Index(text, required); index >= 0 {
+			positions[required] = index
 		}
-		if index <= lastIndex {
-			violations = append(violations, Violation{
-				Rule: "quality-wiring", Path: check.path, Line: 1, Column: 1,
-				Message: "required quality-gate wiring order is invalid: " + strings.Join(check.orderedTokens, " -> "),
-			})
-			break
+	}
+	return positions
+}
+
+func qualityWiringOrderValid(ordered []string, positions map[string]int) bool {
+	lastIndex := -1
+	for _, required := range ordered {
+		index, ok := positions[required]
+		if !ok || index <= lastIndex {
+			return false
 		}
 		lastIndex = index
 	}
-	return violations, nil
+	return true
 }
