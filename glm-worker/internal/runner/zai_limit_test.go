@@ -27,6 +27,21 @@ func TestDetectZaiFiveHourLimit(t *testing.T) {
 	}
 }
 
+func TestDetectZaiFiveHourLimitKeepsInvalidResetUnschedulable(t *testing.T) {
+	content := "API Error: Request rejected (429) · [1308][Usage limit reached for 5 hour. Your limit will reset at 2026-99-99 14:06:34]\n"
+	limit, ok := DetectZaiFiveHourLimitText(content)
+	if !ok {
+		t.Fatal("expected Z.ai 5h limit even when reset timestamp is invalid")
+	}
+	if limit.ResetAtRFC3339 != "" || limit.ResetAtCST != "" {
+		t.Fatalf("invalid reset must not become schedulable/display authority: %#v", limit)
+	}
+	available, at := (ZaiRateLimitError{Limit: limit}).AutoResumeSchedule()
+	if available || at != "unknown" {
+		t.Fatalf("auto resume from invalid reset = available:%v at:%q", available, at)
+	}
+}
+
 func TestAutoResumeScheduleSecondPrecision(t *testing.T) {
 	cases := []struct {
 		name        string
