@@ -12,6 +12,7 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -92,6 +93,9 @@ func prepareWaitingDecisionState(t *testing.T, cfg config.AppConfig) *state.Stat
 	if _, err := st.StartNewTask(); err != nil {
 		t.Fatal(err)
 	}
+	if err := st.Write(repositoryharness.ActivationStateKey, repositoryharness.ActivationInactiveValue); err != nil {
+		t.Fatal(err)
+	}
 	if err := state.CaptureGitBaseline(cfg, st); err != nil {
 		t.Fatal(err)
 	}
@@ -114,6 +118,9 @@ func prepareWaitingSolReviewState(t *testing.T, cfg config.AppConfig) *state.Sta
 		t.Fatal(err)
 	}
 	if _, err := st.StartNewTask(); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Write(repositoryharness.ActivationStateKey, repositoryharness.ActivationInactiveValue); err != nil {
 		t.Fatal(err)
 	}
 	if err := state.CaptureGitBaseline(cfg, st); err != nil {
