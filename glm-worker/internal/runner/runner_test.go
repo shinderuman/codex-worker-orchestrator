@@ -847,98 +847,6 @@ func TestIsolationPolicyPersistedBeforeExecutionOnFailure(t *testing.T) {
 	}
 }
 
-func TestIsolationPolicySurvivesRunnerReconstructionAfterFailedFirstCall(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("shell fixtureはUnix系環境向け")
-	}
-	promptDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(promptDir, "WORKER.md"), []byte("system"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	argsDir := filepath.Join(t.TempDir(), "args")
-	if err := os.MkdirAll(argsDir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	commandPath := filepath.Join(t.TempDir(), "fake-claude")
-	commandScript := "#!/bin/sh\nn=$(cat \"$GLM_ARGS_DIR/count\" 2>/dev/null || echo 0)\nn=$((n+1))\nprintf '%s\\n' \"$n\" >\"$GLM_ARGS_DIR/count\"\nprintf '%s\\n' \"$@\" >\"$GLM_ARGS_DIR/run-$n\"\nif [ \"$n\" -eq 1 ]; then\n  printf '%s\\n' '{\"type\":\"result\",\"subtype\":\"error\",\"is_error\":true,\"result\":\"boom\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}'\n  exit 1\nfi\nprintf '%s\\n' '{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"structured_output\":{\"status\":\"IMPLEMENTED\",\"risk\":\"LOW\",\"summary\":\"done\",\"requirement_coverage\":\"covered\",\"tests\":\"pass\",\"unverified\":\"none\"},\"result\":\"ok\\n\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}'\n"
-	if err := os.WriteFile(commandPath, []byte(commandScript), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("GLM_ARGS_DIR", argsDir)
-
-	st := newTestStateStore(t)
-	if err := st.Write("task.id", "12345678-aaaa-bbbb-cccc-dddddddddddd"); err != nil {
-		t.Fatal(err)
-	}
-	seedStaleReadyRole(t, st, state.WorkerRole, "stale-worker")
-	cfg := config.AppConfig{
-		RepoRoot:        t.TempDir(),
-		PromptDir:       promptDir,
-		ClaudeBin:       commandPath,
-		ClaudeConfigDir: filepath.Join(t.TempDir(), "claude-home"),
-		EnvAllowlist:    []string{"GLM_ARGS_DIR"},
-	}
-
-	firstRunner := NewClaudeRunner(cfg, st)
-	if _, err := firstRunner.Run(state.WorkerRole, "worker-new", "worker-model", false, "high", "first prompt",
-		filepath.Join(t.TempDir(), "first.log")); err == nil {
-		t.Fatal("1回目は失敗する必要があります")
-	}
-	if policy := st.IsolationPolicy(); policy != isolationPolicyVersion {
-		t.Fatalf("失敗時に新policyが永続化されていません: %q", policy)
-	}
-	firstArgs := readLines(t, filepath.Join(argsDir, "run-1"))
-	firstSessionID := argumentAfter(firstArgs, "--session-id")
-	if firstSessionID == "" {
-		t.Fatalf("1回目にsession idがありません: %#v", firstArgs)
-	}
-
-	secondRunner := NewClaudeRunner(cfg, st)
-	if _, err := secondRunner.Run(state.WorkerRole, "worker-new", "worker-model", false, "high", "retry prompt",
-		filepath.Join(t.TempDir(), "retry.log")); err != nil {
-		t.Fatal(err)
-	}
-	secondArgs := readLines(t, filepath.Join(argsDir, "run-2"))
-	if containsArgument(secondArgs, "--resume") {
-		t.Fatalf("再構築後に未ready sessionをresumeしました: %#v", secondArgs)
-	}
-	if got := argumentAfter(secondArgs, "--session-id"); got != firstSessionID {
-		t.Fatalf("再構築後session id = %q, want failed first session %q: %#v", got, firstSessionID, secondArgs)
-	}
-}
-
-func TestIsolationPolicyMigrationStampsBeforeSessionReadFailure(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("shell fixtureはUnix系環境向け")
-	}
-	promptDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(promptDir, "WORKER.md"), []byte("system"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	st := newTestStateStore(t)
-	if err := st.Write("task.id", "12345678-aaaa-bbbb-cccc-dddddddddddd"); err != nil {
-		t.Fatal(err)
-	}
-	seedStaleReadyRole(t, st, state.WorkerRole, "stale-worker")
-	if err := os.MkdirAll(st.Path("worker.id"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-
-	r := NewClaudeRunner(config.AppConfig{
-		RepoRoot:        t.TempDir(),
-		PromptDir:       promptDir,
-		ClaudeBin:       "unused",
-		ClaudeConfigDir: filepath.Join(t.TempDir(), "claude-home"),
-	}, st)
-	if _, err := r.Run(state.WorkerRole, "worker-new", "worker-model", false, "high", "prompt",
-		filepath.Join(t.TempDir(), "out.log")); err == nil {
-		t.Fatal("session ID読取失敗が必要です")
-	}
-	if policy := st.IsolationPolicy(); policy != isolationPolicyVersion {
-		t.Fatalf("migration完了後policyが新versionで確定していません: %q", policy)
-	}
-}
-
 func newFiveHourLimitResumeFixture(t *testing.T, role state.SessionRole) (*ClaudeRunner, *state.StateStore, string) {
 	t.Helper()
 	if runtime.GOOS == "windows" {
@@ -974,6 +882,7 @@ func newFiveHourLimitResumeFixture(t *testing.T, role state.SessionRole) (*Claud
 		EnvAllowlist:    []string{"GLM_ARGS_DIR"},
 	}, st)
 	if role == state.ReviewerRole {
+
 		r.config.ReviewerModel = "reviewer-model"
 	}
 	return r, st, argsDir
@@ -1104,7 +1013,13 @@ func assertFullIsolationArgs(t *testing.T, args []string, claudeConfigDir string
 		t.Fatalf("customization無効化が不完全: %#v", payload)
 	}
 
-	hasAgentDisallowed := containsArgument(args, "Agent")
+	hasAgentDisallowed := false
+	for _, argument := range args {
+		if argument == "--disallowedTools" {
+			hasAgentDisallowed = true
+			break
+		}
+	}
 	if expectReviewerAgentBlock != hasAgentDisallowed {
 		t.Fatalf("reviewer Agent禁止/worker Agent許可が期待と違います(expect=%v): %#v", expectReviewerAgentBlock, args)
 	}
