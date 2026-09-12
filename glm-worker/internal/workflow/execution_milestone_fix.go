@@ -113,7 +113,7 @@ func (w *Workflow) executeExecutionMilestoneExplicitFix(instruction, origin, cau
 
 func (w *Workflow) discardAcceptedFixScopeAfterFailure(cause error) error {
 	if scopeErr := w.discardPreparedAcceptedFixScope(); scopeErr != nil {
-		return fmt.Errorf("%w; accepted fix scope rollback failed: %v", cause, scopeErr)
+		return fmt.Errorf("%w; accepted fix scope rollback failed: %w", cause, scopeErr)
 	}
 	return cause
 }
@@ -122,7 +122,7 @@ func (w *Workflow) rollbackParentFixAndAcceptedScope(rollback state.ParentAction
 	scopeErr := w.discardPreparedAcceptedFixScope()
 	rollbackErr := w.state.RollbackParentAction(rollback, cause)
 	if scopeErr != nil {
-		return fmt.Errorf("%w; accepted fix scope rollback failed: %v", rollbackErr, scopeErr)
+		return fmt.Errorf("%w; accepted fix scope rollback failed: %w", rollbackErr, scopeErr)
 	}
 	return rollbackErr
 }
