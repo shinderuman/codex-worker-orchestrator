@@ -212,7 +212,7 @@ func (w *Workflow) executeExecutionMilestoneQualitySurfaceApproval(acceptedScope
 	if w.state.TaskStatus() != state.TaskStatusWaitingSolReview {
 		return &WorkerError{Message: "quality-surface approval is only available while waiting for Sol review"}
 	}
-	if err := w.prepareAcceptedFixScopeChecked(acceptedScope); err != nil {
+	if err := w.prepareAcceptedFixScopeForAction(acceptedScope, state.ParentActionApproveSurface); err != nil {
 		return err
 	}
 	checkpoint, handled, err := w.loadApprovedQualitySurfaceCheckpoint()
