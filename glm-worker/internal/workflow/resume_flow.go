@@ -186,9 +186,8 @@ func (w *Workflow) handleResumeProbeError(checkpoint state.ResumeCheckpoint, err
 	if errors.As(err, &limitErr) {
 		return err
 	}
-	_ = w.state.ClearResumeCheckpoint()
-	_ = w.state.RemoveUnreadySession(checkpoint.Role)
-	return &WorkerError{Phase: checkpoint.Phase, Message: err.Error()}
+	failure := &WorkerError{Phase: checkpoint.Phase, Message: err.Error()}
+	return w.restoreResumeStop(checkpoint, failure)
 }
 
 func (w *Workflow) handleResumeRunError(_ state.ResumeCheckpoint, previous state.ResumeCheckpoint, runErr error) error {
@@ -198,9 +197,19 @@ func (w *Workflow) handleResumeRunError(_ state.ResumeCheckpoint, previous state
 	if _, terminal := ResultCorrectionFailureFromError(runErr); terminal {
 		return runErr
 	}
-	_ = w.attachStopRepositoryBoundary(&previous)
-	_ = w.state.RestoreResumeStop(previous)
-	return runErr
+	rollback := previous
+	if err := w.attachStopRepositoryBoundary(&rollback); err != nil {
+		failure := errors.Join(runErr, fmt.Errorf("capture resume rollback boundary: %w", err))
+		return w.restoreResumeStop(previous, failure)
+	}
+	return w.restoreResumeStop(rollback, runErr)
+}
+
+func (w *Workflow) restoreResumeStop(previous state.ResumeCheckpoint, cause error) error {
+	if err := w.state.RestoreResumeStop(previous); err != nil {
+		return errors.Join(cause, fmt.Errorf("restore previous resume stop: %w", err))
+	}
+	return cause
 }
 
 func isResumeStopError(err error) bool {
