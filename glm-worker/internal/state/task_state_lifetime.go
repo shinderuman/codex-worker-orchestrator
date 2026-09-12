@@ -50,6 +50,7 @@ var taskBoundStatePolicies = []taskBoundStatePolicy{
 	{name: QualitySurfaceBaselineStateFile, lifetime: taskBoundStateFreshTaskClear},
 	{name: RepositoryHarnessActivationStateFile, lifetime: taskBoundStateFreshTaskClear},
 	{name: InstructionSurfaceBaselineStateFile, lifetime: taskBoundStateTaskIDBound},
+	{name: guardRepairIntegrationStateFile, lifetime: taskBoundStateTaskIDBound},
 }
 
 func newTaskTransitionStateFileNames() []string {
