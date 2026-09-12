@@ -26,15 +26,9 @@ type installState struct {
 	Config  map[string]managedConfigRecord `json:"config,omitempty"`
 }
 
-type legacyManifest struct {
-	Present bool
-	Paths   map[string]bool
-}
-
 const (
-	stateVersion       = 1
-	stateRelativePath  = "codex-worker-orchestrator/install-state.json"
-	legacyManifestName = ".codex-config-managed-files"
+	stateVersion      = 1
+	stateRelativePath = "codex-worker-orchestrator/install-state.json"
 )
 
 func statePath(codexDir string) string {
@@ -122,36 +116,6 @@ func validateInstallStateConfig(records map[string]managedConfigRecord) error {
 	return nil
 }
 
-func loadLegacyManifest(codexDir string) (legacyManifest, error) {
-	path := filepath.Join(codexDir, legacyManifestName)
-	info, err := os.Lstat(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return legacyManifest{Paths: map[string]bool{}}, nil
-	}
-	if err != nil {
-		return legacyManifest{}, fmt.Errorf("stat legacy Codex managed-file manifest: %w", err)
-	}
-	if !info.Mode().IsRegular() {
-		return legacyManifest{}, fmt.Errorf("legacy Codex managed-file manifest is not a regular file")
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return legacyManifest{}, fmt.Errorf("read legacy Codex managed-file manifest: %w", err)
-	}
-	paths := map[string]bool{}
-	for _, raw := range strings.Split(string(data), "\n") {
-		path := strings.TrimSpace(raw)
-		if path == "" {
-			continue
-		}
-		if err := validateManagedRelativePath(path); err != nil || !supportedLegacyManagedPath(path) {
-			return legacyManifest{}, fmt.Errorf("legacy Codex managed-file manifest contains unsupported path %q", path)
-		}
-		paths[path] = true
-	}
-	return legacyManifest{Present: true, Paths: paths}, nil
-}
-
 func writeState(codexDir string, state installState) error {
 	state.Version = stateVersion
 	sort.Slice(state.Files, func(i, j int) bool { return state.Files[i].Path < state.Files[j].Path })
@@ -166,17 +130,6 @@ func writeState(codexDir string, state installState) error {
 	path := statePath(codexDir)
 	if err := writeAtomic(path, data, 0o644); err != nil {
 		return fmt.Errorf("write Codex install state: %w", err)
-	}
-	return nil
-}
-
-func removeLegacyManifest(codexDir string, present bool) error {
-	if !present {
-		return nil
-	}
-	path := filepath.Join(codexDir, legacyManifestName)
-	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("remove legacy Codex managed-file manifest: %w", err)
 	}
 	return nil
 }
