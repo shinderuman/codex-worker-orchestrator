@@ -123,9 +123,36 @@ func validateGuardRepairIntegrationRecovery(
 	st *state.StateStore,
 	journal state.GuardRepairIntegrationJournal,
 ) (state.GuardRepairRecord, error) {
-	if st.ReadOr("task.id", "") != journal.TaskID || st.TaskStatus() != state.TaskStatusGuardRecoverable {
-		return state.GuardRepairRecord{}, fmt.Errorf("guard repair integration journal belongs to a stale or foreign task")
+	if err := validateGuardRepairIntegrationTask(st, journal); err != nil {
+		return state.GuardRepairRecord{}, err
 	}
+	record, err := validateGuardRepairIntegrationRecord(st, journal)
+	if err != nil {
+		return state.GuardRepairRecord{}, err
+	}
+	if err := validateGuardRepairIntegrationCheckpoint(st, journal); err != nil {
+		return state.GuardRepairRecord{}, err
+	}
+	if err := validateGuardRepairIntegrationPaths(journal); err != nil {
+		return state.GuardRepairRecord{}, err
+	}
+	if err := validateGuardRepairIntegrationAuthority(cfg, journal); err != nil {
+		return state.GuardRepairRecord{}, err
+	}
+	if err := validateGuardRepairIntegrationDirty(cfg, journal); err != nil {
+		return state.GuardRepairRecord{}, err
+	}
+	return record, nil
+}
+
+func validateGuardRepairIntegrationTask(st *state.StateStore, journal state.GuardRepairIntegrationJournal) error {
+	if st.ReadOr("task.id", "") != journal.TaskID || st.TaskStatus() != state.TaskStatusGuardRecoverable {
+		return fmt.Errorf("guard repair integration journal belongs to a stale or foreign task")
+	}
+	return nil
+}
+
+func validateGuardRepairIntegrationRecord(st *state.StateStore, journal state.GuardRepairIntegrationJournal) (state.GuardRepairRecord, error) {
 	record, err := st.LoadGuardRepairRecord()
 	if err != nil {
 		return state.GuardRepairRecord{}, fmt.Errorf("verify guard repair integration record: %w", err)
@@ -136,32 +163,50 @@ func validateGuardRepairIntegrationRecovery(
 	}
 	switch record.Status {
 	case state.GuardRepairRequested, state.GuardRepairRunning, state.GuardRepairReady, state.GuardRepairFailed:
+		return record, nil
 	default:
 		return state.GuardRepairRecord{}, fmt.Errorf("guard repair integration journal cannot recover from record status %q", record.Status)
 	}
+}
+
+func validateGuardRepairIntegrationCheckpoint(st *state.StateStore, journal state.GuardRepairIntegrationJournal) error {
 	checkpoint, err := st.LoadResumeCheckpoint()
-	if err == nil {
-		if checkpoint.StopKind != state.ResumeStopGuardRecoverable || checkpoint.Phase != journal.Phase {
-			return state.GuardRepairRecord{}, fmt.Errorf("guard repair integration journal checkpoint provenance does not match current checkpoint")
-		}
-	} else if !errors.Is(err, state.ErrNoResumeCheckpoint) {
-		return state.GuardRepairRecord{}, fmt.Errorf("verify guard repair integration checkpoint: %w", err)
+	if errors.Is(err, state.ErrNoResumeCheckpoint) {
+		return nil
 	}
+	if err != nil {
+		return fmt.Errorf("verify guard repair integration checkpoint: %w", err)
+	}
+	if checkpoint.StopKind != state.ResumeStopGuardRecoverable || checkpoint.Phase != journal.Phase {
+		return fmt.Errorf("guard repair integration journal checkpoint provenance does not match current checkpoint")
+	}
+	return nil
+}
+
+func validateGuardRepairIntegrationPaths(journal state.GuardRepairIntegrationJournal) error {
 	for _, file := range journal.Files {
 		if !guardrepair.IsAllowed(file.Path) {
-			return state.GuardRepairRecord{}, fmt.Errorf("guard repair integration journal contains out-of-scope path %s", file.Path)
+			return fmt.Errorf("guard repair integration journal contains out-of-scope path %s", file.Path)
 		}
 	}
+	return nil
+}
+
+func validateGuardRepairIntegrationAuthority(cfg config.AppConfig, journal state.GuardRepairIntegrationJournal) error {
 	current, err := state.CaptureRepositoryBoundarySnapshot(cfg.RepoRoot)
 	if err != nil {
-		return state.GuardRepairRecord{}, err
+		return err
 	}
 	if !sameGuardRepairRecoveryAuthority(journal.RepositoryBoundary, current) {
-		return state.GuardRepairRecord{}, fmt.Errorf("repository authority changed after guard repair integration journal was created")
+		return fmt.Errorf("repository authority changed after guard repair integration journal was created")
 	}
+	return nil
+}
+
+func validateGuardRepairIntegrationDirty(cfg config.AppConfig, journal state.GuardRepairIntegrationJournal) error {
 	currentDirty, err := state.CaptureStopDirtyFiles(cfg.RepoRoot)
 	if err != nil {
-		return state.GuardRepairRecord{}, err
+		return err
 	}
 	paths := make(map[string]struct{}, len(journal.Files))
 	for _, file := range journal.Files {
@@ -171,9 +216,9 @@ func validateGuardRepairIntegrationRecovery(
 		filterGuardRepairIntegrationDirty(journal.ResumeCheckpoint.StopDirtyFiles, paths),
 		filterGuardRepairIntegrationDirty(currentDirty, paths),
 	); diff != "" {
-		return state.GuardRepairRecord{}, fmt.Errorf("repository source outside interrupted guard repair changed: %s", diff)
+		return fmt.Errorf("repository source outside interrupted guard repair changed: %s", diff)
 	}
-	return record, nil
+	return nil
 }
 
 func sameGuardRepairRecoveryAuthority(original, current state.GitSnapshot) bool {
