@@ -215,7 +215,9 @@ func (checkpoint *ResumeCheckpoint) normalizeStopParentFilesForSave() error {
 	}
 	if checkpoint.StopParentFiles == nil {
 		if checkpoint.Stage == ResumeStageReview && checkpoint.stopParentFilesDerived {
-			checkpoint.StopGitSnapshot.ParentFiles = nil
+			snapshot := *checkpoint.StopGitSnapshot
+			snapshot.ParentFiles = nil
+			checkpoint.StopGitSnapshot = &snapshot
 		}
 		return nil
 	}
