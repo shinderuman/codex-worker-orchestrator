@@ -37,6 +37,10 @@ jobs:
         run: sh ./tests/install_quality_tools_smoke.sh
       - name: Repository lint gate
         run: ./harnesslint
+      - name: Go vet gate
+        run: ./goquality vet
+      - name: Go build gate
+        run: ./goquality build
       - name: Full Go test suite
         working-directory: glm-worker
         run: go test ./...
