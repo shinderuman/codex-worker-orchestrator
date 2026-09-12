@@ -108,11 +108,9 @@ const (
 	TelemetryScopeCurrent = "current"
 	TelemetryScopeHistory = "history"
 
-	TelemetryExclusionCurrentSchema = "current-schema"
-	TelemetryExclusionNewerSchema   = "newer-schema"
-
-	telemetryMalformedReasonDecode = "line-json-decode"
-	telemetryMalformedReasonHeader = "missing-version"
+	telemetryMalformedReasonDecode            = "line-json-decode"
+	telemetryMalformedReasonHeader            = "missing-version"
+	telemetryMalformedReasonUnsupportedSchema = "unsupported-schema"
 
 	telemetryHistoryStatusOK      = "ok"
 	telemetryHistoryStatusPartial = "partial"
@@ -230,8 +228,12 @@ func (s *TelemetryHistoryScan) absorbTelemetryHistoryLine(
 		s.countTelemetryMalformed(telemetryMalformedReasonHeader)
 		return
 	}
+	if *header.Version != ModelCallLogVersion || header.SchemaRevision != ModelCallLogSchemaRevision {
+		s.countTelemetryMalformed(telemetryMalformedReasonUnsupportedSchema)
+		return
+	}
 	var record ModelCallLog
-	if err := json.Unmarshal(line, (*modelCallLogAlias)(&record)); err != nil {
+	if err := json.Unmarshal(line, &record); err != nil {
 		s.countTelemetryMalformed(telemetryMalformedReasonDecode)
 		return
 	}
@@ -244,7 +246,7 @@ func (s *TelemetryHistoryScan) absorbTelemetryHistoryLine(
 		return
 	}
 
-	key := telemetryCohortKey{version: *header.Version, schemaRevision: header.SchemaRevision}
+	key := telemetryCohortKey{version: ModelCallLogVersion, schemaRevision: ModelCallLogSchemaRevision}
 	cohort := cohorts[key]
 	if cohort == nil {
 		cohort = newTelemetryCohortAccumulator(key)
@@ -252,12 +254,10 @@ func (s *TelemetryHistoryScan) absorbTelemetryHistoryLine(
 	}
 	usagePresent := len(header.TreeUsage) > 0 && string(header.TreeUsage) != "null"
 	cohort.absorb(fileName, taskID, record, usagePresent)
-	if cohort.scan.ExcludedReason == "" {
-		if cohortTaskLogs[key] == nil {
-			cohortTaskLogs[key] = make(map[string][]ModelCallLog)
-		}
-		cohortTaskLogs[key][taskID] = append(cohortTaskLogs[key][taskID], record)
+	if cohortTaskLogs[key] == nil {
+		cohortTaskLogs[key] = make(map[string][]ModelCallLog)
 	}
+	cohortTaskLogs[key][taskID] = append(cohortTaskLogs[key][taskID], record)
 }
 
 func (s *TelemetryHistoryScan) countTelemetryMalformed(reason string) {
@@ -269,25 +269,17 @@ func (s *TelemetryHistoryScan) countTelemetryMalformed(reason string) {
 }
 
 func newTelemetryCohortAccumulator(key telemetryCohortKey) *telemetryCohortAccumulator {
-	cohort := &telemetryCohortAccumulator{
+	return &telemetryCohortAccumulator{
 		scan: TelemetryCohortScan{
 			Version:        key.version,
 			SchemaRevision: key.schemaRevision,
-			CurrentSchema:  key.version == ModelCallLogVersion && key.schemaRevision == ModelCallLogSchemaRevision,
+			CurrentSchema:  true,
 			FileNames:      []string{},
 		},
-		fileNames: make(map[string]bool),
-		taskIDs:   make(map[string]bool),
+		fileNames:  make(map[string]bool),
+		taskIDs:    make(map[string]bool),
+		aggregates: newTelemetryCohortAggregates(),
 	}
-	cohort.aggregates = newTelemetryCohortAggregates()
-	switch {
-	case cohort.scan.CurrentSchema:
-		cohort.scan.ExcludedReason = TelemetryExclusionCurrentSchema
-	case key.version > ModelCallLogVersion ||
-		(key.version == ModelCallLogVersion && key.schemaRevision > ModelCallLogSchemaRevision):
-		cohort.scan.ExcludedReason = TelemetryExclusionNewerSchema
-	}
-	return cohort
 }
 
 func newTelemetryCohortAggregates() TelemetryCohortAggregates {
@@ -330,9 +322,6 @@ func (a *telemetryCohortAccumulator) absorb(fileName string, taskID string, reco
 		return
 	}
 	a.absorbCoverage(record, usagePresent)
-	if a.scan.ExcludedReason != "" {
-		return
-	}
 	a.absorbAggregates(record, usagePresent)
 }
 
@@ -410,9 +399,7 @@ func collectTelemetryCohortScans(cohorts map[telemetryCohortKey]*telemetryCohort
 		cohort.scan.FileNames = sortedKeys(cohort.fileNames)
 		cohort.scan.Tasks = len(cohort.taskIDs)
 		cohort.scan.Coverage.UsageTotalsKnown = cohort.scan.Coverage.TaskCallsMissingUsage == 0
-		if cohort.scan.ExcludedReason == "" {
-			cohort.scan.Aggregates = &cohort.aggregates
-		}
+		cohort.scan.Aggregates = &cohort.aggregates
 		result = append(result, cohort.scan)
 	}
 	return result
