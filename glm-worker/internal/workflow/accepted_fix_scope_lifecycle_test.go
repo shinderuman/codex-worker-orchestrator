@@ -35,6 +35,51 @@ func TestAcceptedFixScopePendingDoesNotAuthorizeWaitingParentAction(t *testing.T
 	}
 }
 
+func TestAcceptedFixScopeRejectsDifferentParentOwner(t *testing.T) {
+	repo := newRetentionGitRepo(t)
+	st := newGitStateStoreT(t, repo)
+	seedWaitingSolReviewState(t, st)
+	writeAcceptedScopeChange(t, repo)
+
+	w := newGitWorkflowT(t, st, &scriptedRunner{}, repo)
+	if err := w.prepareAcceptedFixScopeChecked(acceptedFixScopeCurrentDiff); err != nil {
+		t.Fatal(err)
+	}
+	if !w.acceptedFixScopeContainsCurrent() {
+		t.Fatal("staged scope must match its original task and parent lease")
+	}
+	if err := st.AdvanceParentEvidenceLease(); err != nil {
+		t.Fatal(err)
+	}
+	if w.acceptedFixScopeContainsCurrent() {
+		t.Fatal("scope from a previous parent lease must not remain authorized")
+	}
+	if err := st.SetTaskStatus(state.TaskStatusActive); err != nil {
+		t.Fatal(err)
+	}
+	if w.acceptedFixScopeCoversCurrent() {
+		t.Fatal("active task must not consume scope from a previous parent lease")
+	}
+}
+
+func TestAcceptedFixScopeRejectsDifferentTaskOwner(t *testing.T) {
+	repo := newRetentionGitRepo(t)
+	st := newGitStateStoreT(t, repo)
+	seedWaitingSolReviewState(t, st)
+	writeAcceptedScopeChange(t, repo)
+
+	w := newGitWorkflowT(t, st, &scriptedRunner{}, repo)
+	if err := w.prepareAcceptedFixScopeChecked(acceptedFixScopeCurrentDiff); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Write("task.id", "different-task"); err != nil {
+		t.Fatal(err)
+	}
+	if w.acceptedFixScopeContainsCurrent() {
+		t.Fatal("scope from a different task identity must not remain authorized")
+	}
+}
+
 func TestAcceptedFixScopeBeginParentFixFailureDiscardsStagedAuthorization(t *testing.T) {
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)
