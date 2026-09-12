@@ -598,22 +598,21 @@ func TestReportOnlyProviderUnavailableResumeVerifiesAgainstStartSnapshot(t *test
 	if err := st.Write("last-request", "req"); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.SaveResumeCheckpoint(state.ResumeCheckpoint{
-		Stage:                             state.ResumeStageAutoFix,
-		Phase:                             "worker-report-only-1",
-		Role:                              state.WorkerRole,
-		Model:                             "opus",
-		ReadOnly:                          true,
-		ReportOnly:                        true,
-		Effort:                            "high",
-		Prompt:                            "report only",
-		OriginalPrompt:                    "report only",
-		Request:                           "req",
-		ReviewNumber:                      1,
-		AutoFixes:                         1,
-		StopKind:                          state.ResumeStopProviderUnavailable,
-		ProviderUnavailableClassification: "http-503",
-	}); err != nil {
+	if err := st.SaveResumeCheckpoint(canonicalProviderUnavailableCheckpoint(state.ResumeCheckpoint{
+		Stage:          state.ResumeStageAutoFix,
+		Phase:          "worker-report-only-1",
+		Role:           state.WorkerRole,
+		Model:          "opus",
+		ReadOnly:       true,
+		ReportOnly:     true,
+		Effort:         "high",
+		Prompt:         "report only",
+		OriginalPrompt: "report only",
+		Request:        "req",
+		ReviewNumber:   1,
+		AutoFixes:      1,
+		StopKind:       state.ResumeStopProviderUnavailable,
+	})); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.SetTaskStatus(state.TaskStatusProviderUnavailable); err != nil {
