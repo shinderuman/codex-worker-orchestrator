@@ -29,25 +29,34 @@ type acceptedPatchState struct {
 }
 
 const (
-	acceptedFixScopeStateFile   = "accepted-fix-scope.json"
-	acceptedFixScopeCurrentDiff = "current-diff"
-	acceptedFixScopeVersion     = 1
+	acceptedFixScopeStateFile        = "accepted-fix-scope.json"
+	acceptedFixScopePendingStateFile = "accepted-fix-scope.pending.json"
+	acceptedFixScopeCurrentDiff      = "current-diff"
+	acceptedFixScopeVersion          = 1
 )
 
 var zeroContextHunk = regexp.MustCompile(`^@@ -([0-9]+)(?:,[0-9]+)? \+[0-9]+(?:,[0-9]+)? @@`)
 
-func (w *Workflow) prepareAcceptedFixScope(mode string) {
-	_ = w.state.Remove(acceptedFixScopeStateFile)
+func (w *Workflow) prepareAcceptedFixScope(mode string) error {
+	if err := w.state.Write(acceptedFixScopePendingStateFile, "{}"); err != nil {
+		return err
+	}
+	if err := w.invalidateAcceptedFixScope(); err != nil {
+		return err
+	}
 	if mode != acceptedFixScopeCurrentDiff {
-		return
+		return nil
 	}
 	baselineHead := w.state.ReadOr("baseline-head", "")
 	if baselineHead == "" {
-		return
+		return nil
 	}
 	changes, err := w.captureAcceptedChangeSet()
-	if err != nil || len(changes) == 0 {
-		return
+	if err != nil {
+		return err
+	}
+	if len(changes) == 0 {
+		return nil
 	}
 	data, err := json.Marshal(acceptedFixScope{
 		Version:      acceptedFixScopeVersion,
@@ -55,21 +64,41 @@ func (w *Workflow) prepareAcceptedFixScope(mode string) {
 		Changes:      changes,
 	})
 	if err != nil {
-		return
+		return err
 	}
-	_ = w.state.Write(acceptedFixScopeStateFile, string(data))
+	return w.state.Write(acceptedFixScopePendingStateFile, string(data))
+}
+
+func (w *Workflow) invalidateAcceptedFixScope() error {
+	if err := w.state.Write(acceptedFixScopeStateFile, "{}"); err != nil {
+		return err
+	}
+	return w.state.Remove(acceptedFixScopeStateFile)
+}
+
+func (w *Workflow) discardPreparedAcceptedFixScope() error {
+	if err := w.invalidateAcceptedFixScope(); err != nil {
+		return err
+	}
+	return w.state.Remove(acceptedFixScopePendingStateFile)
 }
 
 func (w *Workflow) acceptedFixScopeCoversCurrent() bool {
-	return w.acceptedFixScopeAllowsCurrent(true)
+	if w.state.TaskStatus() == state.TaskStatusActive && w.state.Exists(acceptedFixScopePendingStateFile) {
+		return w.acceptedFixScopeFileAllowsCurrent(acceptedFixScopePendingStateFile, true)
+	}
+	return w.acceptedFixScopeFileAllowsCurrent(acceptedFixScopeStateFile, true)
 }
 
 func (w *Workflow) acceptedFixScopeContainsCurrent() bool {
-	return w.acceptedFixScopeAllowsCurrent(false)
+	if w.state.Exists(acceptedFixScopePendingStateFile) {
+		return w.acceptedFixScopeFileAllowsCurrent(acceptedFixScopePendingStateFile, false)
+	}
+	return w.acceptedFixScopeFileAllowsCurrent(acceptedFixScopeStateFile, false)
 }
 
-func (w *Workflow) acceptedFixScopeAllowsCurrent(consume bool) bool {
-	data, err := os.ReadFile(w.state.Path(acceptedFixScopeStateFile))
+func (w *Workflow) acceptedFixScopeFileAllowsCurrent(path string, consume bool) bool {
+	data, err := os.ReadFile(w.state.Path(path))
 	if err != nil {
 		return false
 	}
@@ -85,7 +114,9 @@ func (w *Workflow) acceptedFixScopeAllowsCurrent(consume bool) bool {
 		return false
 	}
 	if consume {
+		_ = w.state.Remove(path)
 		_ = w.state.Remove(acceptedFixScopeStateFile)
+		_ = w.state.Remove(acceptedFixScopePendingStateFile)
 	}
 	return true
 }
