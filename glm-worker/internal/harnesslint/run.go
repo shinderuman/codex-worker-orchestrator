@@ -71,6 +71,10 @@ func checkRules(root string, paths []string) ([]Violation, error) {
 	if err != nil {
 		return nil, err
 	}
+	forwardOnlyViolations, err := scanForwardOnlyCompatibility(root, paths)
+	if err != nil {
+		return nil, err
+	}
 	proseDataViolations, err := scanProductionProseData(root, paths)
 	if err != nil {
 		return nil, err
@@ -100,6 +104,7 @@ func checkRules(root string, paths []string) ([]Violation, error) {
 		return nil, err
 	}
 	violations := append([]Violation{}, goViolations...)
+	violations = append(violations, forwardOnlyViolations...)
 	violations = append(violations, proseDataViolations...)
 	violations = append(violations, textViolations...)
 	violations = append(violations, markdownAuthorityViolations...)
