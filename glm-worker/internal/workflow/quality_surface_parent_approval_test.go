@@ -127,3 +127,29 @@ func TestApprovedQualitySurfaceActivationFailureRollsBackBaseline(t *testing.T) 
 		t.Fatalf("status = %s want active", st.TaskStatus())
 	}
 }
+
+func TestApprovedQualitySurfaceRevalidatesAcceptedScopeAfterCapture(t *testing.T) {
+	repo, st, _, w := newQualitySurfaceDecisionWorkflow(t, nil)
+	stopDecisionContinuationForQualitySurface(t, st, w)
+
+	if err := w.prepareAcceptedFixScopeChecked(acceptedFixScopeCurrentDiff); err != nil {
+		t.Fatal(err)
+	}
+	w.captureQualitySurface = func(string) (string, error) {
+		writeScopeFile(t, repo, "late_change.go", "package sample\n")
+		return "changed-after-scope", nil
+	}
+
+	if err := w.activateApprovedQualitySurface(); err == nil {
+		t.Fatal("accepted scope changed during quality-surface capture; activation must fail closed")
+	}
+	if got := st.ReadOr(qualitySurfaceBaselineStateKey, ""); got != "baseline" {
+		t.Fatalf("scope revalidation failure advanced quality surface baseline: %q", got)
+	}
+	if st.TaskStatus() != state.TaskStatusWaitingSolReview {
+		t.Fatalf("status = %s want waiting-sol-review", st.TaskStatus())
+	}
+	if st.Exists(acceptedFixScopeStateFile) {
+		t.Fatal("scope revalidation failure retained accepted current-diff scope")
+	}
+}
