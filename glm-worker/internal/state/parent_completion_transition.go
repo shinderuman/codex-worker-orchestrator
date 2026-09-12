@@ -25,19 +25,8 @@ func (s *StateStore) commitParentCompletion(stats TaskStats, status TaskStatus, 
 		}
 		return result
 	}
-	if err := s.writeTaskStats(stats); err != nil {
-		if status == TaskStatusComplete {
-			warnStatsFailure("completion更新", err)
-		} else {
-			result := parentCompletionTransitionResult{
-				transitionErr:     err,
-				rollbackStatusErr: s.SetTaskStatus(previousStatus),
-			}
-			if clearPending {
-				result.rollbackPendingErr = s.Touch("pending-decision")
-			}
-			return result
-		}
+	if result := s.writeParentCompletionStats(stats, status, previousStatus, clearPending); result != nil {
+		return *result
 	}
 	if build != nil {
 		evaluation, err := build()
@@ -49,6 +38,24 @@ func (s *StateStore) commitParentCompletion(stats TaskStats, status TaskStatus, 
 		}
 	}
 	return parentCompletionTransitionResult{}
+}
+
+func (s *StateStore) writeParentCompletionStats(stats TaskStats, status, previousStatus TaskStatus, clearPending bool) *parentCompletionTransitionResult {
+	if err := s.writeTaskStats(stats); err != nil {
+		if status == TaskStatusComplete {
+			warnStatsFailure("completion更新", err)
+			return nil
+		}
+		result := parentCompletionTransitionResult{
+			transitionErr:     err,
+			rollbackStatusErr: s.SetTaskStatus(previousStatus),
+		}
+		if clearPending {
+			result.rollbackPendingErr = s.Touch("pending-decision")
+		}
+		return &result
+	}
+	return nil
 }
 
 func (s *StateStore) rollbackParentCompletionWithRotation(
