@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -70,6 +71,32 @@ func TestExecuteStatusShowsProviderUnavailable(t *testing.T) {
 	}
 	if output.RateLimited.Limited {
 		t.Fatalf("provider-unavailable時にrate_limited.limited = true: %#v", output.RateLimited)
+	}
+}
+
+func TestExecuteStatusDoesNotExposeMalformedProviderUnavailableAsResumable(t *testing.T) {
+	cfg := newAppConfig(t)
+	st, err := state.NewStateStore(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.StartNewTask(); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetTaskStatus(state.TaskStatusProviderUnavailable); err != nil {
+		t.Fatal(err)
+	}
+	malformed := `{"version":6,"stage":"worker","phase":"worker-new","role":"worker","model":"opus","prompt":"p","request":"req","report_only":false,"stop_kind":"provider-unavailable"}`
+	if err := os.WriteFile(st.Path("resume-state.json"), []byte(malformed), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	output := executeStatusOutput(t, cfg)
+	if output.ProviderUnavailable.Unavailable {
+		t.Fatalf("malformed provider stop was exposed as canonical provider state: %#v", output.ProviderUnavailable)
+	}
+	if output.ResumeAvailable {
+		t.Fatal("malformed provider stop was exposed as resumable")
 	}
 }
 

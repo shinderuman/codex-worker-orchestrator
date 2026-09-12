@@ -541,6 +541,7 @@ func TestProviderUnavailableTaskBlocksNewTask(t *testing.T) {
 		Stage: state.ResumeStageWorker, Phase: "worker-new", Role: state.WorkerRole,
 		Model: "opus", Effort: "high", Prompt: "p", StopKind: state.ResumeStopProviderUnavailable,
 		ProviderUnavailableClassification: "http-503", ProviderUnavailableProbes: 4,
+		ProviderUnavailableStartedAt: time.Date(2026, 7, 22, 6, 0, 0, 0, time.UTC),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -572,6 +573,7 @@ func TestResumeFromProviderUnavailableRetriesSameSession(t *testing.T) {
 		StopKind:                          state.ResumeStopProviderUnavailable,
 		ProviderUnavailableClassification: "http-503",
 		ProviderUnavailableProbes:         4,
+		ProviderUnavailableStartedAt:      time.Date(2026, 7, 22, 6, 0, 0, 0, time.UTC),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -615,6 +617,7 @@ func TestResumeFromProviderUnavailableRestoresStatusAfterRunnerError(t *testing.
 		StopKind:                          state.ResumeStopProviderUnavailable,
 		ProviderUnavailableClassification: "http-503",
 		ProviderUnavailableProbes:         4,
+		ProviderUnavailableStartedAt:      time.Date(2026, 7, 22, 6, 0, 0, 0, time.UTC),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -658,6 +661,7 @@ func seedProviderUnavailableCheckpoint(t *testing.T, st *state.StateStore) {
 		StopKind:                          state.ResumeStopProviderUnavailable,
 		ProviderUnavailableClassification: "http-503",
 		ProviderUnavailableProbes:         4,
+		ProviderUnavailableStartedAt:      time.Date(2026, 7, 22, 6, 0, 0, 0, time.UTC),
 	}); err != nil {
 		t.Fatal(err)
 	}

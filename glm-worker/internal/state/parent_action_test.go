@@ -2,7 +2,10 @@ package state
 
 import (
 	"errors"
+	"os"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 )
@@ -153,7 +156,12 @@ func TestParentActionPlanStoppedStates(t *testing.T) {
 				Request:  "r",
 				StopKind: tc.stopKind,
 			}
-			if tc.stopKind == ResumeStopQualityGate {
+			switch tc.stopKind {
+			case ResumeStopProviderUnavailable:
+				checkpoint.ProviderUnavailableClassification = "http-503"
+				checkpoint.ProviderUnavailableProbes = 4
+				checkpoint.ProviderUnavailableStartedAt = time.Date(2026, 9, 5, 0, 0, 0, 0, time.UTC)
+			case ResumeStopQualityGate:
 				checkpoint.QualityGateFailure = "quality tool version mismatch"
 				completed := packet.Result{Status: packet.StatusImplemented}
 				checkpoint.CompletedResult = &completed
@@ -173,6 +181,25 @@ func TestParentActionPlanStoppedStates(t *testing.T) {
 				t.Fatalf("stop plan = %#v", plan)
 			}
 		})
+	}
+}
+
+func TestParentActionPlanRejectsMalformedProviderUnavailableCheckpoint(t *testing.T) {
+	st := newParentActionTestStore(t)
+	if err := st.SetTaskStatus(TaskStatusProviderUnavailable); err != nil {
+		t.Fatal(err)
+	}
+	malformed := `{"version":6,"stage":"worker","phase":"worker-new","role":"worker","model":"opus","prompt":"p","request":"r","report_only":false,"stop_kind":"provider-unavailable"}`
+	if err := os.WriteFile(st.Path(resumeStateFile), []byte(malformed), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	plan, err := st.ParentActionPlan()
+	if err == nil {
+		t.Fatalf("malformed provider stop was exposed as parent action plan: %#v", plan)
+	}
+	if !strings.Contains(err.Error(), "resume checkpoint is unreadable") {
+		t.Fatalf("malformed provider stop admission error = %v", err)
 	}
 }
 
@@ -463,6 +490,7 @@ func seedStoppedDecisionCheckpoint(t *testing.T, st *StateStore, role SessionRol
 	case ResumeStopProviderUnavailable:
 		checkpoint.ProviderUnavailableClassification = "http-503"
 		checkpoint.ProviderUnavailableProbes = 4
+		checkpoint.ProviderUnavailableStartedAt = time.Date(2026, 9, 5, 0, 0, 0, 0, time.UTC)
 	case ResumeStopQualityGate:
 		checkpoint.QualityGateFailure = "quality tool version mismatch"
 		completed := packet.Result{Status: packet.StatusImplemented}
