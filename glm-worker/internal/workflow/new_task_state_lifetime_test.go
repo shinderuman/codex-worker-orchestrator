@@ -1,8 +1,8 @@
 package workflow
 
 import (
+	"errors"
 	"io"
-	"path/filepath"
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
@@ -18,10 +18,11 @@ func TestFreshTaskCleanupOwnsWorkflowTaskStateBeforeInitializationCompletes(t *t
 		t.Fatalf("repository harness state key is not registered in task lifetime policy: %q", repositoryharness.ActivationStateKey)
 	}
 
+	repo := newRetentionGitRepo(t)
 	cfg := config.AppConfig{
 		StateBase: t.TempDir(),
 		RepoHash:  "new-task-state-lifetime",
-		RepoRoot:  filepath.Join(t.TempDir(), "missing-repository"),
+		RepoRoot:  repo,
 	}
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -42,8 +43,11 @@ func TestFreshTaskCleanupOwnsWorkflowTaskStateBeforeInitializationCompletes(t *t
 	t.Setenv(state.SessionRotationClaimIDEnv, "")
 
 	w := NewWorkflow(cfg, st, &scriptedRunner{}, io.Discard)
+	w.captureQualitySurface = func(string) (string, error) {
+		return "", errors.New("injected quality baseline failure")
+	}
 	if _, err := w.initializeNewTask("new request"); err == nil {
-		t.Fatal("initializeNewTask unexpectedly succeeded with missing repository")
+		t.Fatal("initializeNewTask unexpectedly succeeded after injected quality baseline failure")
 	}
 	newTaskID, err := st.TaskID()
 	if err != nil {
