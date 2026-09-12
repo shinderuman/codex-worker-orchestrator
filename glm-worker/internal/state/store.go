@@ -159,31 +159,15 @@ func (s *StateStore) startNewTaskWithID(taskID string, resume bool) (string, err
 	if resume {
 		return s.resumeTaskWithID(taskID)
 	}
+
 	s.ArchiveCurrentStats()
-	if err := s.Remove("task.id"); err != nil {
-		return "", err
-	}
-	if err := s.InvalidateAllSessions(); err != nil {
-		return "", err
-	}
-	if err := s.Remove(newTaskTransitionStateFileNames()...); err != nil {
-		return "", err
-	}
-	if err := s.RotateParentEvidenceLease(); err != nil {
+	if err := s.commitNewTaskCanonicalState(taskID); err != nil {
 		return "", err
 	}
 
-	if err := s.Write("task.id", taskID); err != nil {
-		return "", err
-	}
-	if err := s.initializeParentReviewState(taskID); err != nil {
-		return "", err
-	}
 	s.PruneTaskEventLogs(retainedTaskEventLogs, taskID)
 	s.InitializeTaskStats(taskID)
-	if err := s.SetTaskStatus(TaskStatusActive); err != nil {
-		return "", err
-	}
+	s.appendTaskStatusLifecycle(TaskStatusNone, TaskStatusActive)
 	return taskID, nil
 }
 
