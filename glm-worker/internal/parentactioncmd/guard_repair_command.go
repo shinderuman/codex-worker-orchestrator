@@ -3,6 +3,7 @@ package parentactioncmd
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -15,6 +16,24 @@ const (
 	guardRepairSubprocessTimeout = 10 * time.Minute
 	guardRepairProcessSettleTime = 2 * time.Second
 )
+
+type guardRepairCommandInterruptedError struct {
+	signal os.Signal
+	err    error
+}
+
+func (e *guardRepairCommandInterruptedError) Error() string {
+	return fmt.Sprintf("guard repair subprocess interrupted by %s", e.signal)
+}
+
+func (e *guardRepairCommandInterruptedError) Unwrap() error {
+	return e.err
+}
+
+func isGuardRepairCommandInterrupted(err error) bool {
+	var interrupted *guardRepairCommandInterruptedError
+	return errors.As(err, &interrupted)
+}
 
 func runGuardRepairCommand(dir, label, name string, args ...string) ([]byte, error) {
 	return runGuardRepairCommandWithin(dir, label, guardRepairSubprocessTimeout, name, args...)
@@ -51,15 +70,22 @@ func runGuardRepairCommandWithin(dir, label string, timeout time.Duration, name 
 	pid := command.Process.Pid
 	waitDone := make(chan error, 1)
 	go func() { waitDone <- command.Wait() }()
+	var interrupted os.Signal
 
 	for {
 		select {
 		case received := <-signals:
+			if interrupted == nil {
+				interrupted = received
+			}
 			_ = signalGuardRepairCommandProcess(pid, received)
 		case err := <-waitDone:
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				cleanupErr := verifyGuardRepairCommandProcessGone(pid, guardRepairProcessSettleTime)
 				return output.Bytes(), guardRepairTimeoutError(label, timeout, ctxErr, output.String(), cleanupErr)
+			}
+			if interrupted != nil {
+				return output.Bytes(), &guardRepairCommandInterruptedError{signal: interrupted, err: err}
 			}
 			return output.Bytes(), err
 		}

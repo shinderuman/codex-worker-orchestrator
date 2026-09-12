@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
 const (
@@ -41,6 +43,44 @@ func TestRunGuardRepairCommandPreservesSuccess(t *testing.T) {
 	}
 	if !strings.Contains(string(output), "guard-repair-command-ok") {
 		t.Fatalf("command output = %q", output)
+	}
+}
+
+func TestGuardRepairCommandInterruptionKeepsRepairRetryable(t *testing.T) {
+	_, st, record := newGuardRepairLifecycleState(t)
+	record.Status = state.GuardRepairRunning
+	if err := st.SaveGuardRepairRecord(record); err != nil {
+		t.Fatal(err)
+	}
+	childErr := errors.New("child interrupted")
+	cause := &guardRepairCommandInterruptedError{signal: os.Interrupt, err: childErr}
+	if err := finishGuardRepairCandidateFailure(st, record, cause); !errors.Is(err, childErr) {
+		t.Fatalf("interruption error = %v", err)
+	}
+	got, err := st.LoadGuardRepairRecord()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != state.GuardRepairRunning {
+		t.Fatalf("interrupted repair status = %s want %s", got.Status, state.GuardRepairRunning)
+	}
+}
+
+func TestGuardRepairCommandTimeoutMarksRepairFailed(t *testing.T) {
+	_, st, record := newGuardRepairLifecycleState(t)
+	record.Status = state.GuardRepairRunning
+	if err := st.SaveGuardRepairRecord(record); err != nil {
+		t.Fatal(err)
+	}
+	if err := finishGuardRepairCandidateFailure(st, record, context.DeadlineExceeded); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("timeout error = %v", err)
+	}
+	got, err := st.LoadGuardRepairRecord()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != state.GuardRepairFailed {
+		t.Fatalf("timed-out repair status = %s want %s", got.Status, state.GuardRepairFailed)
 	}
 }
 
