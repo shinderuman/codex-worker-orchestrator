@@ -825,7 +825,7 @@ func reportOnlySnapshotFailClosedResult(stage state.SnapshotStage, reason string
 		Risk:                packet.RiskHigh,
 		Summary:             fmt.Sprintf("report-only PACKET再出力workerの開始前後でHEAD/index/worktree同一性を確認できず(%s)、通常reviewへ進めずSol確認へ昇格", stage),
 		RequirementCoverage: "report-only workerのrepo不変postconditionを機械強制できなかったためSolが直接確認する必要あり",
-		Invariants:          "wrapperはreport-only worker開始前snapshotと終了後状態の3軸一致を確認するまで通常reviewへ進めない",
+		Invariants:          "wrapperはreport-only worker開始前snapshotと終了後状態の3軸一致を確認するまで通常reviewへ進まない",
 		TestEvidence:        "開始前保存snapshotと終了後snapshotの比較で不一致または取得失敗を検出",
 		Issues:              reason,
 		ResidualRisk:        "report-only workerがrepositoryを変更した可能性とその意図を排除できなかった",
