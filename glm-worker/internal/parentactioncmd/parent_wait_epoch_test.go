@@ -52,8 +52,6 @@ func TestParentWaitReturnsSupersededWhenOwnerEpochChanges(t *testing.T) {
 	go func() { done <- executeParentWait(cfg, []string{"wait"}, &stdout, &stderr) }()
 	waitForParentRecoveryWaiter(t, st)
 
-	// recovery lease取得後、既存のprimary-owner待機テストと同じblocking境界を置き、
-	// waiterが現在epochを固定してから次owner世代へ進んだ状態を再現する。
 	time.Sleep(50 * time.Millisecond)
 	second := seedParentWaitOwnerEpoch(t, st)
 	if first == second {
