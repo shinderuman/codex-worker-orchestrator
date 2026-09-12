@@ -14,6 +14,10 @@ func Verify(binDir string) error {
 		return err
 	}
 	for _, name := range managedNames {
+		expected, ok := state.ExpectedBinaries[name]
+		if !ok {
+			return fmt.Errorf("repository CLI expected identity is missing: %s", name)
+		}
 		target := filepath.Join(binDir, name)
 		info, exists, err := lstat(target)
 		if err != nil {
@@ -22,10 +26,12 @@ func Verify(binDir string) error {
 		if !exists || !isRegularExecutable(info) {
 			return fmt.Errorf("repository CLI is missing or not executable: %s", target)
 		}
-		if digest, owned := state.Binaries[name]; owned {
-			if err := requireOwnedTarget(target, info, digest); err != nil {
-				return err
-			}
+		observed, err := hashFile(target)
+		if err != nil {
+			return err
+		}
+		if observed != expected {
+			return fmt.Errorf("repository CLI does not match the last successful install: %s", target)
 		}
 	}
 	return nil
