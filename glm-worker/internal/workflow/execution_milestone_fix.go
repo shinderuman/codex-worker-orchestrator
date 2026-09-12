@@ -30,7 +30,7 @@ func (w *Workflow) executeExplicitFixWithAcceptedScopeLifecycle(instruction, ori
 	if err != nil {
 		return &WorkerError{Message: "no previous task for this repository"}
 	}
-	if err := w.prepareAcceptedFixScope(acceptedScope); err != nil {
+	if err := w.prepareAcceptedFixScopeChecked(acceptedScope); err != nil {
 		return err
 	}
 
@@ -85,7 +85,7 @@ func (w *Workflow) executeExecutionMilestoneExplicitFix(instruction, origin, cau
 	if err != nil {
 		return err
 	}
-	if err := w.prepareAcceptedFixScope(acceptedScope); err != nil {
+	if err := w.prepareAcceptedFixScopeChecked(acceptedScope); err != nil {
 		return err
 	}
 	decision := w.state.ReadOr("last-decision", "none")
