@@ -1,6 +1,7 @@
 package harnesslint
 
 import (
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -18,7 +19,7 @@ const (
 	forwardOnlyFixtureDir        = "glm-worker/internal/harnesslint/fixtures/"
 )
 
-var shellPathLookupAssignment = regexp.MustCompile(`(?m)^[\t ]*([A-Za-z_][A-Za-z0-9_]*)=\$\((?:command[\t ]+-v|which)[^)]*\)[\t ]*$`)
+var shellPathLookupAssignment = regexp.MustCompile(`(?m)^[\t ]*([A-Za-z_][A-Za-z0-9_]*)=(?:"\$\((?:command[\t ]+-v|which)[^)]*\)"|\$\((?:command[\t ]+-v|which)[^)]*\))[\t ]*$`)
 
 func scanForwardOnlyCompatibility(root string, paths []string) ([]Violation, error) {
 	var violations []Violation
@@ -56,7 +57,7 @@ func forwardOnlyGoFileViolations(root, path string) ([]Violation, error) {
 	set := token.NewFileSet()
 	file, err := parser.ParseFile(set, path, data, 0)
 	if err != nil {
-		return nil, nil
+		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
 	if strings.HasSuffix(path, "_test.go") {
 		return forwardOnlyCompatibilityTestViolations(set, file, path), nil
@@ -165,18 +166,34 @@ func schemaIfPromotionViolations(set *token.FileSet, path string, branch *ast.If
 	if len(kinds) == 0 {
 		return nil
 	}
-	return schemaAssignmentViolations(set, path, branch.Body, kinds)
+	violations := schemaAssignmentViolations(set, path, branch.Body, kinds)
+	if branch.Else != nil {
+		violations = append(violations, schemaAssignmentViolations(set, path, branch.Else, kinds)...)
+	}
+	return violations
 }
 
 func schemaSwitchPromotionViolations(set *token.FileSet, path string, branch *ast.SwitchStmt) []Violation {
-	kinds := schemaKinds(branch.Tag)
-	if len(kinds) == 0 || branch.Body == nil {
+	if branch.Body == nil {
 		return nil
 	}
+	switchKinds := schemaKinds(branch.Tag)
 	var violations []Violation
 	for _, statement := range branch.Body.List {
 		clause, ok := statement.(*ast.CaseClause)
 		if !ok {
+			continue
+		}
+		kinds := switchKinds
+		if len(kinds) == 0 {
+			kinds = make(map[string]bool)
+			for _, expression := range clause.List {
+				for kind := range schemaKinds(expression) {
+					kinds[kind] = true
+				}
+			}
+		}
+		if len(kinds) == 0 {
 			continue
 		}
 		block := &ast.BlockStmt{List: clause.Body}
@@ -185,9 +202,9 @@ func schemaSwitchPromotionViolations(set *token.FileSet, path string, branch *as
 	return violations
 }
 
-func schemaAssignmentViolations(set *token.FileSet, path string, block *ast.BlockStmt, kinds map[string]bool) []Violation {
+func schemaAssignmentViolations(set *token.FileSet, path string, node ast.Node, kinds map[string]bool) []Violation {
 	var violations []Violation
-	ast.Inspect(block, func(node ast.Node) bool {
+	ast.Inspect(node, func(node ast.Node) bool {
 		assignment, ok := node.(*ast.AssignStmt)
 		if !ok {
 			return true
@@ -442,7 +459,8 @@ func forwardOnlyShellViolations(path string, data []byte) []Violation {
 }
 
 func shellCopiesVariable(text, variable string) bool {
-	pattern := regexp.MustCompile(`(?m)^[\t ]*(?:cp|mv|install|rsync)\b[^\n]*\$\{?` + regexp.QuoteMeta(variable) + `\}?\b`)
+	reference := `(?:\$` + regexp.QuoteMeta(variable) + `\b|\$\{` + regexp.QuoteMeta(variable) + `\})`
+	pattern := regexp.MustCompile(`(?m)^[\t ]*(?:cp|mv|install|rsync)\b[^\n]*` + reference)
 	return pattern.MatchString(text)
 }
 

@@ -14,7 +14,7 @@ func TestInstallWaitsForSharedInstallerLock(t *testing.T) {
 	binDir := t.TempDir()
 	writeBuildSet(t, buildDir, "v1")
 
-	lock, err := repolock.AcquireWait(filepath.Join(binDir, installLockFileName))
+	lock, err := repolock.AcquireWait(installLockPath(binDir))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,6 +39,39 @@ func TestInstallWaitsForSharedInstallerLock(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("Install did not resume after shared installer lock was released")
+	}
+}
+
+func TestRetireWaitsForSharedInstallerLockWhenBinDirIsAbsent(t *testing.T) {
+	binDir := filepath.Join(t.TempDir(), "bin")
+	lock, err := repolock.AcquireWait(installLockPath(binDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := make(chan error, 1)
+	go func() {
+		_, err := Retire(binDir)
+		result <- err
+	}()
+
+	select {
+	case err := <-result:
+		t.Fatalf("Retire returned while shared installer lock was held: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+	if err := lock.Close(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-result:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Retire did not resume after shared installer lock was released")
+	}
+	if _, err := os.Stat(binDir); !os.IsNotExist(err) {
+		t.Fatalf("Retire created an absent binary directory: %v", err)
 	}
 }
 

@@ -1,6 +1,9 @@
 package harnesslint
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestForwardOnlyCompatibilityRejectsGoReintroductionPatterns(t *testing.T) {
 	cases := []struct {
@@ -43,6 +46,30 @@ func decodeEvidence(r record) error {
 	return nil
 }
 var errUnsupported error
+`,
+		},
+		{
+			name: "schema promotion in else",
+			path: "glm-worker/internal/example/decoder.go",
+			source: `package example
+const currentVersion = 3
+type marker struct { Version int }
+func decodeMarker(m marker) marker {
+	if m.Version == currentVersion { return m } else { m.Version = currentVersion }
+	return m
+}
+`,
+		},
+		{
+			name: "schema promotion in expressionless switch",
+			path: "glm-worker/internal/example/decoder.go",
+			source: `package example
+const currentVersion = 3
+type marker struct { Version int }
+func decodeMarker(m marker) marker {
+	switch { case m.Version == 1: m.Version = currentVersion }
+	return m
+}
 `,
 		},
 		{
@@ -92,14 +119,44 @@ func install() error { return MigrateLegacyInstall() }
 }
 
 func TestForwardOnlyCompatibilityRejectsPATHBinaryPromotion(t *testing.T) {
-	root := fixtureRoot(t)
-	path := "install.sh"
-	writeFixture(t, root, path, `#!/bin/sh
+	cases := []struct {
+		name   string
+		source string
+	}{
+		{
+			name: "plain assignment and variable",
+			source: `#!/bin/sh
 set -eu
 source_path=$(command -v "$tool")
 cp "$source_path" "$canonical_path"
-`)
-	requireRulePath(t, ruleViolations(t, root), forwardOnlyCompatibilityRule, path)
+`,
+		},
+		{
+			name: "quoted assignment and braced variable",
+			source: `#!/bin/sh
+set -eu
+source_path="$(command -v "$tool")"
+cp "${source_path}" "$canonical_path"
+`,
+		},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			root := fixtureRoot(t)
+			path := "install.sh"
+			writeFixture(t, root, path, testCase.source)
+			requireRulePath(t, ruleViolations(t, root), forwardOnlyCompatibilityRule, path)
+		})
+	}
+}
+
+func TestForwardOnlyCompatibilityRejectsUnparseableGo(t *testing.T) {
+	root := fixtureRoot(t)
+	path := "glm-worker/internal/example/decoder.go"
+	writeFixture(t, root, path, "package example\nfunc broken( {\n")
+	if _, err := forwardOnlyGoFileViolations(root, path); err == nil || !strings.Contains(err.Error(), path) {
+		t.Fatalf("parse error = %v", err)
+	}
 }
 
 func TestForwardOnlyCompatibilityRejectsOldAcceptanceTests(t *testing.T) {

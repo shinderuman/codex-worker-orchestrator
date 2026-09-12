@@ -9,7 +9,7 @@
 - 関数は呼び出し順に配置しcalleeをcallerの直後へ置く。
 - 1回しか参照しない変数は可読性・行長・複数戻り値等の理由がなければ作らない。
 - source commentは自然言語・doc comment・理由説明・test説明・lint suppressionを含め全面禁止する。許可されるのは`commentlint`が固定集合として受理するbuild constraintとshebang等のmachine-semantic syntaxだけで、モデルが有用性を判断して例外を作らない。
-- 実装完了前にrepository rootで`commentlint`を実行する。不合格なら安全な場合は`commentlint --fix`で削除し、未分類sourceや意味移行が必要な場合はtracked contract・test・識別子・構造へ移して再実行する。
+- 実装完了前のrepository quality gateはwrapperが`harnesslint.Run(root, true)`でmachine-fixを行い、その直後に`harnesslint.Check(root)`で検証する。machine-fix後に残るnon-fixable violationだけをworker fix roundへ返し、GLM worker自身は`commentlint`等のlint/format commandを直接実行しない。
 - エラーを握り潰さず原因調査に必要な情報を保持する。診断情報は内部state・artifact等の既存診断sinkへ記録し、外部machine stdout/stderrへ人間向けtextを追加しない。
 - 原因不明の不具合では推測修正より先に実値・例外・ログを確認する。
 - 一時コード、デバッグコード、プレースホルダを残さない。

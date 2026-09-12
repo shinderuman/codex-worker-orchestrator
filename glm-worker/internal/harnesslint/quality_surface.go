@@ -1,6 +1,9 @@
 package harnesslint
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"strings"
 )
 
@@ -205,20 +208,65 @@ func qualityWiringCheckViolations(root string, present map[string]bool, check qu
 			Message: "required quality-gate wiring is missing: " + token,
 		})
 	}
-	lastIndex := -1
-	for _, token := range check.orderedTokens {
-		index := strings.Index(text, token)
-		if index < 0 {
-			continue
+	orderViolations, err := qualityWiringOrderViolations(check, data)
+	if err != nil {
+		return nil, err
+	}
+	violations = append(violations, orderViolations...)
+	return violations, nil
+}
+
+func qualityWiringOrderViolations(check qualityWiringCheck, data []byte) ([]Violation, error) {
+	if len(check.orderedTokens) == 0 {
+		return nil, nil
+	}
+	positions := make(map[string]int, len(check.orderedTokens))
+	if strings.HasSuffix(check.path, ".go") {
+		set := token.NewFileSet()
+		file, err := parser.ParseFile(set, check.path, data, 0)
+		if err != nil {
+			return nil, err
 		}
-		if index <= lastIndex {
-			violations = append(violations, Violation{
+		wanted := make(map[string]bool, len(check.orderedTokens))
+		for _, required := range check.orderedTokens {
+			wanted[required] = true
+		}
+		ast.Inspect(file, func(node ast.Node) bool {
+			call, ok := node.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			start := set.Position(call.Pos()).Offset
+			end := set.Position(call.End()).Offset
+			if start < 0 || end > len(data) || start >= end {
+				return true
+			}
+			text := string(data[start:end])
+			if wanted[text] {
+				if _, exists := positions[text]; !exists {
+					positions[text] = start
+				}
+			}
+			return true
+		})
+	} else {
+		text := string(data)
+		for _, required := range check.orderedTokens {
+			if index := strings.Index(text, required); index >= 0 {
+				positions[required] = index
+			}
+		}
+	}
+	lastIndex := -1
+	for _, required := range check.orderedTokens {
+		index, ok := positions[required]
+		if !ok || index <= lastIndex {
+			return []Violation{{
 				Rule: "quality-wiring", Path: check.path, Line: 1, Column: 1,
 				Message: "required quality-gate wiring order is invalid: " + strings.Join(check.orderedTokens, " -> "),
-			})
-			break
+			}}, nil
 		}
 		lastIndex = index
 	}
-	return violations, nil
+	return nil, nil
 }
