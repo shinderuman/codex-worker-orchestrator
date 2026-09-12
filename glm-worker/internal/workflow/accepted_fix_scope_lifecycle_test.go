@@ -128,6 +128,34 @@ func TestAcceptedFixScopeRejectsDifferentActionInvocation(t *testing.T) {
 	}
 }
 
+func TestAcceptedFixScopeExpiresWhenActionInvocationEnds(t *testing.T) {
+	repo := newRetentionGitRepo(t)
+	st := newGitStateStoreT(t, repo)
+	seedWaitingSolReviewState(t, st)
+	writeAcceptedScopeChange(t, repo)
+
+	w := newGitWorkflowT(t, st, &scriptedRunner{}, repo)
+	w.temp = t.TempDir()
+	if err := w.prepareAcceptedFixScopeChecked(acceptedFixScopeCurrentDiff); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.BeginParentFix(state.ParentOriginCodexReview, state.ParentCauseWorker); err != nil {
+		t.Fatal(err)
+	}
+	if !w.acceptedFixScopeContainsCurrent() {
+		t.Fatal("active invocation must own its accepted scope")
+	}
+	if err := os.RemoveAll(w.temp); err != nil {
+		t.Fatal(err)
+	}
+	if w.acceptedFixScopeContainsCurrent() {
+		t.Fatal("ended action invocation must not retain accepted scope authority")
+	}
+	if w.acceptedFixScopeCoversCurrent() {
+		t.Fatal("ended action invocation must not consume accepted scope")
+	}
+}
+
 func TestAcceptedFixScopeBeginParentFixFailureDiscardsAuthorization(t *testing.T) {
 	repo := newRetentionGitRepo(t)
 	st := newGitStateStoreT(t, repo)
