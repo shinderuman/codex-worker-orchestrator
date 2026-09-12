@@ -369,8 +369,8 @@ func TestBuildChildEnvHonorsExtraAllowlist(t *testing.T) {
 	t.Setenv("UNRELATED", "no")
 
 	result := buildChildEnv(
-		[]string{"GOPATH"},
 		nil,
+		[]string{"GOPATH"},
 		nil,
 		nil,
 	)
@@ -1013,13 +1013,7 @@ func assertFullIsolationArgs(t *testing.T, args []string, claudeConfigDir string
 		t.Fatalf("customization無効化が不完全: %#v", payload)
 	}
 
-	hasAgentDisallowed := false
-	for _, argument := range args {
-		if argument == "--disallowedTools" {
-			hasAgentDisallowed = true
-			break
-		}
-	}
+	hasAgentDisallowed := containsArgument(args, "Agent")
 	if expectReviewerAgentBlock != hasAgentDisallowed {
 		t.Fatalf("reviewer Agent禁止/worker Agent許可が期待と違います(expect=%v): %#v", expectReviewerAgentBlock, args)
 	}
