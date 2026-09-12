@@ -9,11 +9,11 @@ import (
 func TestResumeCheckpointPersistsOnlyCanonicalRateLimitResetTime(t *testing.T) {
 	st := &StateStore{dir: t.TempDir()}
 	checkpoint := ResumeCheckpoint{
-		Stage:           ResumeStageWorker,
-		Model:           "opus",
-		StopKind:        ResumeStopRateLimited,
-		ResetAtCST:      "2099-01-01 00:00:00",
-		ResetAtRFC3339:  "2026-09-12T14:06:34+08:00",
+		Stage:          ResumeStageWorker,
+		Model:          "opus",
+		StopKind:       ResumeStopRateLimited,
+		ResetAtCST:     "2099-01-01 00:00:00",
+		ResetAtRFC3339: "2026-09-12T14:06:34+08:00",
 	}
 
 	if err := st.SaveResumeCheckpoint(checkpoint); err != nil {
