@@ -75,8 +75,9 @@ func TestQualitySurfaceChangeAllowsParentAcceptedCurrentDiff(t *testing.T) {
 func TestApprovedQualitySurfaceActivationFailureRollsBackBaseline(t *testing.T) {
 	_, st, _, w := newQualitySurfaceDecisionWorkflow(t, nil)
 	checkpoint := stopDecisionContinuationForQualitySurface(t, st, w)
+	w.temp = t.TempDir()
 
-	if err := w.prepareAcceptedFixScopeChecked(acceptedFixScopeCurrentDiff); err != nil {
+	if err := w.prepareAcceptedFixScopeForAction(acceptedFixScopeCurrentDiff, state.ParentActionApproveSurface); err != nil {
 		t.Fatal(err)
 	}
 	statsPath := st.Path("task-stats.json")
@@ -114,7 +115,7 @@ func TestApprovedQualitySurfaceActivationFailureRollsBackBaseline(t *testing.T) 
 	if err := os.RemoveAll(statsPath); err != nil {
 		t.Fatal(err)
 	}
-	if err := w.prepareAcceptedFixScopeChecked(acceptedFixScopeCurrentDiff); err != nil {
+	if err := w.prepareAcceptedFixScopeForAction(acceptedFixScopeCurrentDiff, state.ParentActionApproveSurface); err != nil {
 		t.Fatal(err)
 	}
 	if err := w.activateApprovedQualitySurface(); err != nil {
@@ -131,8 +132,9 @@ func TestApprovedQualitySurfaceActivationFailureRollsBackBaseline(t *testing.T) 
 func TestApprovedQualitySurfaceRevalidatesAcceptedScopeAfterCapture(t *testing.T) {
 	repo, st, _, w := newQualitySurfaceDecisionWorkflow(t, nil)
 	stopDecisionContinuationForQualitySurface(t, st, w)
+	w.temp = t.TempDir()
 
-	if err := w.prepareAcceptedFixScopeChecked(acceptedFixScopeCurrentDiff); err != nil {
+	if err := w.prepareAcceptedFixScopeForAction(acceptedFixScopeCurrentDiff, state.ParentActionApproveSurface); err != nil {
 		t.Fatal(err)
 	}
 	w.captureQualitySurface = func(string) (string, error) {
