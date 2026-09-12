@@ -311,6 +311,7 @@ func TestQualitySurfaceApprovalGeneratesTaskScopeOnProductionDirtyBaseline(t *te
 		t.Fatalf("status = %s", st.TaskStatus())
 	}
 
+	w.temp = t.TempDir()
 	w.prepareAcceptedFixScope(acceptedFixScopeCurrentDiff)
 	scope, err := os.ReadFile(st.Path(acceptedFixScopeStateFile))
 	if err != nil {
@@ -425,6 +426,7 @@ func TestQualitySurfaceApprovalScopesPostBaselinePreexistingEdits(t *testing.T) 
 		t.Fatalf("status = %s", st.TaskStatus())
 	}
 
+	w.temp = t.TempDir()
 	w.prepareAcceptedFixScope(acceptedFixScopeCurrentDiff)
 	scope, err := os.ReadFile(st.Path(acceptedFixScopeStateFile))
 	if err != nil {
