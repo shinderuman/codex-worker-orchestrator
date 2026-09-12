@@ -204,7 +204,7 @@ func assertRepoLockSemantics(t *testing.T, env *multiRepoEnv, stateA string, sta
 		t.Fatalf("repo Aのlockが保持されていません: %s pid=%s", probe.State, probe.PID)
 	}
 	if probe := ProbeRepoLock(filepath.Join(stateB, "lock")); probe.State != LockFree {
-		t.Fatalf("repo B完了後にlockが解放されていません: %s pid=%s", probe.State, probe.PID)
+		t.Fatalf("repo B完了後のlockが解放されていません: %s pid=%s", probe.State, probe.PID)
 	}
 
 	statusA := env.status(t, env.repoA)
