@@ -35,40 +35,56 @@ func forwardOnlyGoViolations(set *token.FileSet, file *ast.File, path string) []
 		if !ok || function.Body == nil || !forwardOnlyReaderFunction(function.Name.Name) {
 			continue
 		}
-		ast.Inspect(function.Body, func(node ast.Node) bool {
-			statement, ok := node.(*ast.IfStmt)
-			if !ok {
-				return true
-			}
-			target, oldValue, ok := versionEqualityTarget(statement.Cond)
-			if !ok {
-				return true
-			}
-			ast.Inspect(statement.Body, func(bodyNode ast.Node) bool {
-				assignment, ok := bodyNode.(*ast.AssignStmt)
-				if !ok || assignment.Tok != token.ASSIGN || len(assignment.Lhs) != 1 || len(assignment.Rhs) != 1 {
-					return true
-				}
-				if !sameGoExpr(set, assignment.Lhs[0], target) || sameGoExpr(set, assignment.Rhs[0], target) || sameGoExpr(set, assignment.Rhs[0], oldValue) {
-					return true
-				}
-				if !versionConstantExpr(assignment.Rhs[0]) {
-					return true
-				}
-				position := set.Position(assignment.Pos())
-				violations = append(violations, Violation{
-					Rule:    forwardOnlyCompatibilityRule,
-					Path:    path,
-					Line:    position.Line,
-					Column:  position.Column,
-					Message: "old version/revision must not be promoted into the current machine contract",
-				})
-				return true
-			})
-			return true
-		})
+		violations = append(violations, forwardOnlyFunctionViolations(set, function, path)...)
 	}
 	return violations
+}
+
+func forwardOnlyFunctionViolations(set *token.FileSet, function *ast.FuncDecl, path string) []Violation {
+	var violations []Violation
+	ast.Inspect(function.Body, func(node ast.Node) bool {
+		statement, ok := node.(*ast.IfStmt)
+		if !ok {
+			return true
+		}
+		target, oldValue, ok := versionEqualityTarget(statement.Cond)
+		if !ok {
+			return true
+		}
+		violations = append(violations, versionPromotionViolations(set, statement.Body, path, target, oldValue)...)
+		return true
+	})
+	return violations
+}
+
+func versionPromotionViolations(set *token.FileSet, body *ast.BlockStmt, path string, target, oldValue ast.Expr) []Violation {
+	var violations []Violation
+	ast.Inspect(body, func(node ast.Node) bool {
+		assignment, ok := node.(*ast.AssignStmt)
+		if !ok || !versionPromotionAssignment(set, assignment, target, oldValue) {
+			return true
+		}
+		position := set.Position(assignment.Pos())
+		violations = append(violations, Violation{
+			Rule:    forwardOnlyCompatibilityRule,
+			Path:    path,
+			Line:    position.Line,
+			Column:  position.Column,
+			Message: "old version/revision must not be promoted into the current machine contract",
+		})
+		return true
+	})
+	return violations
+}
+
+func versionPromotionAssignment(set *token.FileSet, assignment *ast.AssignStmt, target, oldValue ast.Expr) bool {
+	if assignment.Tok != token.ASSIGN || len(assignment.Lhs) != 1 || len(assignment.Rhs) != 1 {
+		return false
+	}
+	if !sameGoExpr(set, assignment.Lhs[0], target) || sameGoExpr(set, assignment.Rhs[0], target) || sameGoExpr(set, assignment.Rhs[0], oldValue) {
+		return false
+	}
+	return versionConstantExpr(assignment.Rhs[0])
 }
 
 func forwardOnlyReaderFunction(name string) bool {
