@@ -36,6 +36,7 @@ func TestAcceptedFixScopeSkipsRedundantRiskFloorCall(t *testing.T) {
 
 	runner := &scriptedRunner{}
 	w := NewWorkflow(cfg, st, runner, io.Discard)
+	w.temp = t.TempDir()
 	w.prepareAcceptedFixScope(acceptedFixScopeCurrentDiff)
 	if _, err := st.BeginParentFix(state.ParentOriginCodexReview, state.ParentCauseWorker); err != nil {
 		t.Fatal(err)
