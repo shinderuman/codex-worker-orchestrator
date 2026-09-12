@@ -52,6 +52,13 @@ func beginGuardRepairIntegration(
 	return journal, nil
 }
 
+func persistReadyGuardRepairIntegration(st *state.StateStore, record state.GuardRepairRecord) error {
+	if err := st.SaveGuardRepairRecord(record); err != nil {
+		return err
+	}
+	return st.RemoveGuardRepairIntegrationJournal()
+}
+
 func recoverGuardRepairIntegrationIfNeeded(cfg config.AppConfig, st *state.StateStore) error {
 	if _, err := st.LoadGuardRepairIntegrationJournal(); errors.Is(err, state.ErrNoGuardRepairIntegrationJournal) {
 		return nil
