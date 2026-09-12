@@ -127,7 +127,7 @@ func (s *StateStore) EnterParked(record ParkRecord) error {
 	return s.SetTaskStatus(TaskStatusParked)
 }
 
-func (s *StateStore) LeaveParked() (TaskStatus, error) {
+func (s *StateStore) CommitUnpark() (TaskStatus, error) {
 	if s.TaskStatus() != TaskStatusParked {
 		return "", fmt.Errorf("unpark transition requires parked task, got %s", s.TaskStatus())
 	}
@@ -138,12 +138,46 @@ func (s *StateStore) LeaveParked() (TaskStatus, error) {
 	if record.FromStatus != TaskStatusWaitingSolReview && record.FromStatus != TaskStatusWaitingDecision {
 		return "", fmt.Errorf("park record from-status %s is not unparkable", record.FromStatus)
 	}
+	if record.Cleanup == nil {
+		return "", fmt.Errorf("unpark cleanup checkpoint is missing")
+	}
 	if err := s.SetTaskStatus(record.FromStatus); err != nil {
 		return "", err
 	}
-	if err := s.ClearParkRecord(); err != nil {
-		rollbackErr := s.SetTaskStatus(TaskStatusParked)
-		return "", errors.Join(err, rollbackErr)
-	}
 	return record.FromStatus, nil
+}
+
+func (s *StateStore) CompleteUnpark() error {
+	record, err := s.LoadParkRecord()
+	if err != nil {
+		return err
+	}
+	if record.Cleanup == nil {
+		return fmt.Errorf("unpark cleanup checkpoint is missing")
+	}
+	if s.TaskStatus() != record.FromStatus {
+		return fmt.Errorf("unpark cleanup completion requires restored status %s, got %s", record.FromStatus, s.TaskStatus())
+	}
+	return s.ClearParkRecord()
+}
+
+func (s *StateStore) PendingUnparkCleanup() (ParkRecord, bool, error) {
+	status := s.TaskStatus()
+	if status != TaskStatusWaitingSolReview && status != TaskStatusWaitingDecision {
+		return ParkRecord{}, false, nil
+	}
+	record, err := s.LoadParkRecord()
+	if errors.Is(err, ErrNoParkRecord) {
+		return ParkRecord{}, false, nil
+	}
+	if err != nil {
+		return ParkRecord{}, false, err
+	}
+	if record.Cleanup == nil || record.FromStatus != status {
+		return ParkRecord{}, false, nil
+	}
+	if record.TaskID != s.ReadOr("task.id", "") {
+		return ParkRecord{}, false, fmt.Errorf("unpark cleanup record task %s does not match current task", record.TaskID)
+	}
+	return record, true, nil
 }

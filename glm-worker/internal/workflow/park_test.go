@@ -340,8 +340,15 @@ func TestUnparkRetriesAfterPartialCleanup(t *testing.T) {
 			if err := fixture.w.ExecuteUnpark(&stdout); err == nil || !strings.Contains(err.Error(), "cleanup") {
 				t.Fatalf("partial cleanup error = %v", err)
 			}
-			if stdout.Len() != 0 || fixture.st.TaskStatus() != state.TaskStatusParked {
-				t.Fatalf("partial cleanup reports success: status=%s output=%s", fixture.st.TaskStatus(), stdout.String())
+			if stdout.Len() != 0 || fixture.st.TaskStatus() != state.TaskStatusWaitingSolReview {
+				t.Fatalf("partial cleanup state = %s output=%s", fixture.st.TaskStatus(), stdout.String())
+			}
+			plan, err := fixture.st.ParentActionPlan()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if plan.RequiredAction != state.ParentActionUnpark || len(plan.AllowedActions) != 1 || !plan.Allows(state.ParentActionUnpark) {
+				t.Fatalf("cleanup-pending plan = %#v", plan)
 			}
 			record, err := fixture.st.LoadParkRecord()
 			if err != nil || record.Cleanup == nil || record.Cleanup.BranchTip == "" {
@@ -367,7 +374,7 @@ func TestUnparkRetriesAfterPartialCleanup(t *testing.T) {
 			}
 			err = fixture.w.ExecuteUnpark(&stdout)
 			if scenario != "unchanged" {
-				if err == nil || fixture.st.TaskStatus() != state.TaskStatusParked || stdout.Len() != 0 {
+				if err == nil || fixture.st.TaskStatus() != state.TaskStatusWaitingSolReview || stdout.Len() != 0 {
 					t.Fatalf("changed cleanup inputs accepted: err=%v status=%s output=%s", err, fixture.st.TaskStatus(), stdout.String())
 				}
 				return
