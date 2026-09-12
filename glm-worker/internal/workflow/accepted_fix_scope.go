@@ -18,8 +18,9 @@ import (
 
 type acceptedFixScope struct {
 	Version             int            `json:"version"`
-	TaskID              string         `json:"task_id"`
-	ParentEvidenceLease int64          `json:"parent_evidence_lease"`
+	OwnerTaskID         string         `json:"owner_task_id"`
+	OwnerParentLease    int64          `json:"owner_parent_lease"`
+	OwnerAction         string         `json:"owner_action"`
 	BaselineHead        string         `json:"baseline_head"`
 	Changes             map[string]int `json:"changes"`
 }
@@ -31,10 +32,9 @@ type acceptedPatchState struct {
 }
 
 const (
-	acceptedFixScopeStateFile        = "accepted-fix-scope.json"
-	acceptedFixScopePendingStateFile = "accepted-fix-scope.pending.json"
-	acceptedFixScopeCurrentDiff      = "current-diff"
-	acceptedFixScopeVersion          = 2
+	acceptedFixScopeStateFile   = "accepted-fix-scope.json"
+	acceptedFixScopeCurrentDiff = "current-diff"
+	acceptedFixScopeVersion     = 2
 )
 
 var zeroContextHunk = regexp.MustCompile(`^@@ -([0-9]+)(?:,[0-9]+)? \+[0-9]+(?:,[0-9]+)? @@`)
@@ -44,8 +44,12 @@ func (w *Workflow) prepareAcceptedFixScope(mode string) {
 }
 
 func (w *Workflow) prepareAcceptedFixScopeChecked(mode string) error {
-	if err := w.state.Write(acceptedFixScopePendingStateFile, "{}"); err != nil {
-		return err
+	return w.prepareAcceptedFixScopeForAction(mode, state.ParentActionFix)
+}
+
+func (w *Workflow) prepareAcceptedFixScopeForAction(mode string, action state.ParentAction) error {
+	if action != state.ParentActionFix && action != state.ParentActionApproveSurface {
+		return fmt.Errorf("accepted fix scope cannot bind parent action %q", action)
 	}
 	if err := w.invalidateAcceptedFixScope(); err != nil {
 		return err
@@ -73,16 +77,17 @@ func (w *Workflow) prepareAcceptedFixScopeChecked(mode string) error {
 		return nil
 	}
 	data, err := json.Marshal(acceptedFixScope{
-		Version:             acceptedFixScopeVersion,
-		TaskID:              taskID,
-		ParentEvidenceLease: lease,
-		BaselineHead:        baselineHead,
-		Changes:             changes,
+		Version:          acceptedFixScopeVersion,
+		OwnerTaskID:      taskID,
+		OwnerParentLease: lease,
+		OwnerAction:      string(action),
+		BaselineHead:     baselineHead,
+		Changes:          changes,
 	})
 	if err != nil {
 		return err
 	}
-	return w.state.Write(acceptedFixScopePendingStateFile, string(data))
+	return w.state.Write(acceptedFixScopeStateFile, string(data))
 }
 
 func (w *Workflow) invalidateAcceptedFixScope() error {
@@ -93,31 +98,22 @@ func (w *Workflow) invalidateAcceptedFixScope() error {
 }
 
 func (w *Workflow) discardPreparedAcceptedFixScope() error {
-	if err := w.state.Write(acceptedFixScopePendingStateFile, "{}"); err != nil {
-		return err
-	}
-	if err := w.invalidateAcceptedFixScope(); err != nil {
-		return err
-	}
-	return w.state.Remove(acceptedFixScopePendingStateFile)
+	return w.invalidateAcceptedFixScope()
 }
 
 func (w *Workflow) acceptedFixScopeCoversCurrent() bool {
-	if w.state.TaskStatus() == state.TaskStatusActive && w.state.Exists(acceptedFixScopePendingStateFile) {
-		return w.acceptedFixScopeFileAllowsCurrent(acceptedFixScopePendingStateFile, true)
+	if w.state.TaskStatus() != state.TaskStatusActive {
+		return false
 	}
-	return w.acceptedFixScopeFileAllowsCurrent(acceptedFixScopeStateFile, true)
+	return w.acceptedFixScopeAllowsCurrent(true)
 }
 
 func (w *Workflow) acceptedFixScopeContainsCurrent() bool {
-	if w.state.Exists(acceptedFixScopePendingStateFile) {
-		return w.acceptedFixScopeFileAllowsCurrent(acceptedFixScopePendingStateFile, false)
-	}
-	return w.acceptedFixScopeFileAllowsCurrent(acceptedFixScopeStateFile, false)
+	return w.acceptedFixScopeAllowsCurrent(false)
 }
 
-func (w *Workflow) acceptedFixScopeFileAllowsCurrent(path string, consume bool) bool {
-	data, err := os.ReadFile(w.state.Path(path))
+func (w *Workflow) acceptedFixScopeAllowsCurrent(consume bool) bool {
+	data, err := os.ReadFile(w.state.Path(acceptedFixScopeStateFile))
 	if err != nil {
 		return false
 	}
@@ -125,12 +121,7 @@ func (w *Workflow) acceptedFixScopeFileAllowsCurrent(path string, consume bool) 
 	if err := json.Unmarshal(bytes.TrimSpace(data), &scope); err != nil || scope.Version != acceptedFixScopeVersion {
 		return false
 	}
-	taskID, err := w.state.TaskID()
-	if err != nil || scope.TaskID == "" || scope.TaskID != taskID {
-		return false
-	}
-	lease, err := w.state.ParentEvidenceLeaseEpoch()
-	if err != nil || scope.ParentEvidenceLease != lease {
+	if !w.acceptedFixScopeOwnerAllows(scope) {
 		return false
 	}
 	if scope.BaselineHead == "" || scope.BaselineHead != w.state.ReadOr("baseline-head", "") {
@@ -141,11 +132,31 @@ func (w *Workflow) acceptedFixScopeFileAllowsCurrent(path string, consume bool) 
 		return false
 	}
 	if consume {
-		_ = w.state.Remove(path)
-		_ = w.state.Remove(acceptedFixScopeStateFile)
-		_ = w.state.Remove(acceptedFixScopePendingStateFile)
+		if err := w.invalidateAcceptedFixScope(); err != nil {
+			return false
+		}
 	}
 	return true
+}
+
+func (w *Workflow) acceptedFixScopeOwnerAllows(scope acceptedFixScope) bool {
+	taskID, err := w.state.TaskID()
+	if err != nil || scope.OwnerTaskID == "" || scope.OwnerTaskID != taskID {
+		return false
+	}
+	lease, err := w.state.ParentEvidenceLeaseEpoch()
+	if err != nil || scope.OwnerParentLease != lease {
+		return false
+	}
+	action := state.ParentAction(scope.OwnerAction)
+	switch w.state.TaskStatus() {
+	case state.TaskStatusActive:
+		return action == state.ParentActionFix || action == state.ParentActionApproveSurface
+	case state.TaskStatusWaitingSolReview:
+		return action == state.ParentActionApproveSurface
+	default:
+		return false
+	}
 }
 
 func isParentManagedImplementationPath(path string) bool {
