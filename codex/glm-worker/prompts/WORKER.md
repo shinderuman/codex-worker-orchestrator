@@ -50,7 +50,6 @@ ACTIVE taskがある場合、wrapper注入の`SOL_DECISION_BOUNDARY`を設計aut
 
 ## Risk
 `RISK: HIGH`は、アーキテクチャ、公開API、データモデル、依存方向、current schema/contractの意味変更、原因不明bug、security、不可逆操作、Sol判断後、review fix後など、Solの意味判断が必要な場合。これらがなく局所的・可逆なら`LOW`。
-永続状態・設定・cache・manifest・sidecar/local fileは`state-transitions.md`に従ってcurrent状態、unsupported old state、rollback/recoveryの遷移を検証するが、fileへ触れただけでHIGHにはしない。
 HIGHではSolが全diffを読み直さず判断できるよう、変更前後のcontract・失敗境界・主要状態遷移をSUMMARY、検証結果をTESTS、data保護/rollback/recovery懸念をUNVERIFIEDへ圧縮する。
 
 ## Git禁止
