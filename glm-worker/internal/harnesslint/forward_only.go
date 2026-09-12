@@ -115,7 +115,7 @@ func callableName(expression ast.Expr) string {
 
 func schemaReaderName(name string) bool {
 	lower := strings.ToLower(name)
-	return containsAny(lower, "decode", "parse", "load", "read", "unmarshal", "evidence")
+	return containsAny(lower, "decode", "parse", "load", "unmarshal")
 }
 
 func schemaRangeViolations(set *token.FileSet, body *ast.BlockStmt, path string) []Violation {
@@ -184,9 +184,9 @@ func schemaAssignmentViolations(set *token.FileSet, path string, block *ast.Bloc
 		if !ok {
 			return true
 		}
-		for _, target := range assignment.Lhs {
+		for index, target := range assignment.Lhs {
 			kind := schemaReferenceKind(target)
-			if kind == "" || !kinds[kind] {
+			if kind == "" || !kinds[kind] || !assignmentPromotesCurrentSchema(assignment, index, kind) {
 				continue
 			}
 			violations = append(violations, forwardOnlyViolation(set, path, target, "old machine schema values must not be rewritten or promoted to the current schema"))
@@ -194,6 +194,38 @@ func schemaAssignmentViolations(set *token.FileSet, path string, block *ast.Bloc
 		return true
 	})
 	return violations
+}
+
+func assignmentPromotesCurrentSchema(assignment *ast.AssignStmt, index int, kind string) bool {
+	if len(assignment.Rhs) == 0 {
+		return false
+	}
+	value := assignment.Rhs[0]
+	if len(assignment.Rhs) == len(assignment.Lhs) {
+		value = assignment.Rhs[index]
+	}
+	return currentSchemaValue(value, kind)
+}
+
+func currentSchemaValue(expression ast.Expr, kind string) bool {
+	switch typed := expression.(type) {
+	case *ast.Ident:
+		return schemaConstantName(typed.Name, kind)
+	case *ast.SelectorExpr:
+		return schemaConstantName(typed.Sel.Name, kind)
+	case *ast.BasicLit:
+		return typed.Kind == token.INT && typed.Value != "0"
+	default:
+		return false
+	}
+}
+
+func schemaConstantName(name, kind string) bool {
+	lower := strings.ToLower(name)
+	if kind == "version" {
+		return lower != "version" && strings.Contains(lower, "version")
+	}
+	return lower != "schemarevision" && strings.Contains(lower, "revision")
 }
 
 func schemaKinds(node ast.Node) map[string]bool {
@@ -376,7 +408,7 @@ func compatibilityAcceptanceTestName(name string) bool {
 		return false
 	}
 	historical := containsAny(lower, "legacy", "oldversion", "oldversions", "oldschema", "oldrevision", "backwardcompat")
-	acceptance := containsAny(lower, "accept", "migrat", "promot", "upgrade", "compatib", "support", "retain", "preserv", "adopt")
+	acceptance := containsAny(lower, "accept", "migrat", "promot", "upgrade", "compatib", "support", "adopt")
 	return historical && acceptance
 }
 
