@@ -249,13 +249,14 @@ func TestResumeCheckpointStopParentFilesRoundTrip(t *testing.T) {
 		{Path: ParentTasksDir + "/001-active.md", Exists: true, SHA256: "task-sha"},
 		{Path: ParentHistoryFile},
 	}
-	if err := st.SaveResumeCheckpoint(ResumeCheckpoint{
-		Stage:           ResumeStageReview,
-		Phase:           "reviewer-1",
-		Model:           "sonnet",
-		StopKind:        ResumeStopRateLimited,
-		StopParentFiles: stop,
-	}); err != nil {
+	checkpoint := ResumeCheckpoint{
+		Stage:    ResumeStageReview,
+		Phase:    "reviewer-1",
+		Model:    "sonnet",
+		StopKind: ResumeStopRateLimited,
+	}
+	checkpoint.SetStopRepositoryBoundary(GitSnapshot{ParentFiles: stop})
+	if err := st.SaveResumeCheckpoint(checkpoint); err != nil {
 		t.Fatal(err)
 	}
 	got, err := st.LoadResumeCheckpoint()
