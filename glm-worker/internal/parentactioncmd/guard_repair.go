@@ -221,7 +221,7 @@ func integrateGuardRepairCandidate(
 	if err := validateOriginalRepairBoundary(cfg, record, origin.boundary); err != nil {
 		return nil, err
 	}
-	journal, err := beginGuardRepairIntegration(st, record, origin, cfg.RepoRoot, candidate.changed)
+	journal, err := beginGuardRepairIntegration(st, record, origin, cfg.RepoRoot, candidate.worktree, candidate.changed)
 	if err != nil {
 		return nil, err
 	}
