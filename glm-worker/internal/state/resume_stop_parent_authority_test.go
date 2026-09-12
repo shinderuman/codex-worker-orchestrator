@@ -132,6 +132,9 @@ func TestSaveResumeCheckpointConsumesDerivedStopParentFiles(t *testing.T) {
 	if err := st.SaveResumeCheckpoint(checkpoint); err != nil {
 		t.Fatal(err)
 	}
+	if checkpoint.StopGitSnapshot == nil || checkpoint.StopGitSnapshot.ParentFiles == nil {
+		t.Fatalf("save mutated caller stop snapshot: %#v", checkpoint.StopGitSnapshot)
+	}
 	loaded, err := st.LoadResumeCheckpoint()
 	if err != nil {
 		t.Fatal(err)
