@@ -23,6 +23,7 @@ func TestBuildRunArgsDisallowsMutableWorkerDirectLintCommands(t *testing.T) {
 	wantRules := []string{
 		"Bash(*harnesslint*)",
 		"Bash(*commentlint*)",
+		"Bash(*gofmt*)",
 		"Bash(*golangci-lint*)",
 		"Bash(*shellcheck*)",
 		"Bash(*shfmt*)",
