@@ -196,6 +196,10 @@ func (s *StateStore) bootstrapTaskStats() (TaskStats, error) {
 }
 
 func (s *StateStore) ArchiveCurrentStats() {
+	s.archiveCurrentStats(s.currentParentCodexIdentityForArchive())
+}
+
+func (s *StateStore) archiveCurrentStats(parentIdentity *ParentCodexIdentity) {
 	stats, err := s.loadTaskStats()
 	if errors.Is(err, os.ErrNotExist) {
 		return
@@ -203,6 +207,13 @@ func (s *StateStore) ArchiveCurrentStats() {
 	if err != nil {
 		warnStatsFailure("archive読み込み", err)
 		return
+	}
+
+	stats.ParentCodexThreadID = ""
+	stats.ParentCodexSessionID = ""
+	if parentIdentity != nil && parentIdentity.TaskID == stats.TaskID {
+		stats.ParentCodexThreadID = parentIdentity.ThreadID
+		stats.ParentCodexSessionID = parentIdentity.SessionID
 	}
 
 	now := time.Now().UTC()
@@ -227,6 +238,18 @@ func (s *StateStore) ArchiveCurrentStats() {
 	}
 }
 
+func (s *StateStore) currentParentCodexIdentityForArchive() *ParentCodexIdentity {
+	identity, err := s.CurrentParentCodexIdentity()
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		writeStatsWarningEvent("task_stats", "parent Codex identityのarchive投影に失敗しました", err)
+		return nil
+	}
+	return &identity
+}
+
 func (s *StateStore) loadTaskStats() (TaskStats, error) {
 	data, err := os.ReadFile(s.Path(currentStatsFile))
 	if err != nil {
@@ -236,7 +259,17 @@ func (s *StateStore) loadTaskStats() (TaskStats, error) {
 }
 
 func (s *StateStore) CurrentTaskStats() (TaskStats, error) {
-	return s.loadTaskStats()
+	stats, err := s.loadTaskStats()
+	if err != nil {
+		return TaskStats{}, err
+	}
+	stats.ParentCodexThreadID = ""
+	stats.ParentCodexSessionID = ""
+	if identity, identityErr := s.CurrentParentCodexIdentity(); identityErr == nil && identity.TaskID == stats.TaskID {
+		stats.ParentCodexThreadID = identity.ThreadID
+		stats.ParentCodexSessionID = identity.SessionID
+	}
+	return stats, nil
 }
 
 func decodeTaskStats(data []byte) (TaskStats, error) {
@@ -287,7 +320,7 @@ func (s *StateStore) AllTaskStats() ([]TaskStats, error) {
 		}
 		result = append(result, stats)
 	}
-	current, err := s.loadTaskStats()
+	current, err := s.CurrentTaskStats()
 	switch {
 	case err == nil:
 		result = append(result, current)
@@ -332,29 +365,11 @@ func (s *StateStore) SetParentCodexIdentity(threadID, sessionID string, readSess
 	if err != nil || bound {
 		return err
 	}
-	stats, mirrorAvailable, legacyBound, err := s.parentCodexLegacyIdentity(taskID, threadID, sessionID)
-	if err != nil {
-		return err
-	}
 	identity := ParentCodexIdentity{Version: parentCodexIdentityVersion, TaskID: taskID, ThreadID: threadID, SessionID: sessionID}
-	if legacyBound {
-		return s.writeParentCodexIdentity(identity)
-	}
 	if err := s.captureParentCodexLimitBaseline(threadID, readSessionLimit); err != nil {
 		return err
 	}
-	if err := s.writeParentCodexIdentity(identity); err != nil {
-		return err
-	}
-	if !mirrorAvailable {
-		return nil
-	}
-	stats.ParentCodexThreadID = threadID
-	stats.ParentCodexSessionID = sessionID
-	if err := s.writeTaskStats(stats); err != nil {
-		warnStatsFailure("更新", err)
-	}
-	return nil
+	return s.writeParentCodexIdentity(identity)
 }
 
 func (s *StateStore) parentCodexIdentityAlreadyBound(taskID, threadID, sessionID string) (bool, error) {
@@ -374,26 +389,6 @@ func (s *StateStore) parentCodexIdentityAlreadyBound(taskID, threadID, sessionID
 	return true, nil
 }
 
-func (s *StateStore) parentCodexLegacyIdentity(taskID, threadID, sessionID string) (TaskStats, bool, bool, error) {
-	stats, err := s.loadTaskStats()
-	if err != nil {
-		if !errors.Is(err, os.ErrNotExist) {
-			warnStatsFailure("読み込み", err)
-		}
-		return TaskStats{}, false, false, nil
-	}
-	if stats.ParentCodexThreadID == "" && stats.ParentCodexSessionID == "" {
-		return stats, true, false, nil
-	}
-	if stats.TaskID != taskID || stats.ParentCodexThreadID != threadID || stats.ParentCodexSessionID != sessionID {
-		return TaskStats{}, false, false, fmt.Errorf(
-			"保存済みparent Codex identityと矛盾します: stored thread=%s session=%s, observed thread=%s session=%s",
-			stats.ParentCodexThreadID, stats.ParentCodexSessionID, threadID, sessionID,
-		)
-	}
-	return stats, true, true, nil
-}
-
 func (s *StateStore) captureParentCodexLimitBaseline(threadID string, readSessionLimit func() *SessionLimitReading) error {
 	if readSessionLimit != nil {
 		if reading := readSessionLimit(); reading != nil {
@@ -404,21 +399,7 @@ func (s *StateStore) captureParentCodexLimitBaseline(threadID string, readSessio
 }
 
 func (s *StateStore) CurrentParentCodexIdentity() (ParentCodexIdentity, error) {
-	identity, err := s.readParentCodexIdentity()
-	if !errors.Is(err, os.ErrNotExist) {
-		return identity, err
-	}
-	stats, statsErr := s.loadTaskStats()
-	if statsErr != nil {
-		return ParentCodexIdentity{}, statsErr
-	}
-	if stats.ParentCodexThreadID == "" && stats.ParentCodexSessionID == "" {
-		return ParentCodexIdentity{}, os.ErrNotExist
-	}
-	if stats.TaskID != s.ReadOr("task.id", "") || !ValidUUIDFormat(stats.ParentCodexThreadID) || !ValidUUIDFormat(stats.ParentCodexSessionID) {
-		return ParentCodexIdentity{}, fmt.Errorf("既存taskのparent Codex identityが不正です")
-	}
-	return ParentCodexIdentity{Version: parentCodexIdentityVersion, TaskID: stats.TaskID, ThreadID: stats.ParentCodexThreadID, SessionID: stats.ParentCodexSessionID}, nil
+	return s.readParentCodexIdentity()
 }
 
 func (s *StateStore) readParentCodexIdentity() (ParentCodexIdentity, error) {
