@@ -377,7 +377,7 @@ func TestCompleteFailsClosedWhenTerminalEvidenceIsMissing(t *testing.T) {
 	}
 }
 
-func TestCompleteFailsClosedWhenAwaitingStatsAreUnreadable(t *testing.T) {
+func TestCompleteUsesCanonicalOutcomeWhenAwaitingStatsAreUnreadable(t *testing.T) {
 	fixture := newCompleteFixture(t)
 	fixture.commitParentMetadataSync(t)
 	runFinalizationGit(t, fixture.repo, "push", "-q", "origin", "main")
@@ -386,14 +386,19 @@ func TestCompleteFailsClosedWhenAwaitingStatsAreUnreadable(t *testing.T) {
 	}
 
 	output := runCompleteCommand(t, fixture)
-	if output.Status != completeStatusAwaiting || output.Completed {
-		t.Fatalf("output = %#v", output)
+	if output.Status != completeStatusComplete || !output.Completed {
+		t.Fatalf("unreadable stats後のoutput = %#v", output)
 	}
-	if output.Failure == nil || output.Failure.Reason != completeFailureStatsUnreadable {
-		t.Fatalf("failure = %#v", output.Failure)
+	stats, err := fixture.st.CurrentTaskStats()
+	if err != nil {
+		t.Fatal(err)
 	}
-	if got := fixture.st.TaskStatus(); got != state.TaskStatusAwaitingParentCompletion {
-		t.Fatalf("status = %q", got)
+	if stats.CompletionTerminal != state.SessionRotationTerminalAccept || stats.AcceptedRisk != string(packet.RiskLow) {
+		t.Fatalf("canonical outcome mirror = terminal:%q risk:%q", stats.CompletionTerminal, stats.AcceptedRisk)
+	}
+	marker, err := fixture.st.LoadSessionRotationMarker(codexIdentityTestThreadID)
+	if err != nil || marker == nil || marker.LastEvaluation == nil || marker.LastEvaluation.Terminal != state.SessionRotationTerminalAccept {
+		t.Fatalf("canonical outcome rotation marker = %#v err=%v", marker, err)
 	}
 }
 
