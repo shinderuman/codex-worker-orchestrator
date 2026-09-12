@@ -36,6 +36,7 @@ func TestAcceptedFixScopeAllowsOnlyPreviouslyReviewedChangesToRemain(t *testing.
 	writeScopeFile(t, repo, "code.go", "package sample\n\nvar baseline = 1\nvar retained = 2\nvar presentation = 3\nvar deadMakeEntry = 4\n")
 
 	w := NewWorkflow(cfg, st, nil, io.Discard)
+	w.temp = t.TempDir()
 	if err := w.prepareAcceptedFixScopeChecked(acceptedFixScopeCurrentDiff); err != nil {
 		t.Fatal(err)
 	}
@@ -52,6 +53,7 @@ func TestAcceptedFixScopeAllowsOnlyPreviouslyReviewedChangesToRemain(t *testing.
 	}
 
 	writeScopeFile(t, repo, "code.go", "package sample\n\nvar baseline = 1\nvar retained = 2\nvar presentation = 3\nvar deadMakeEntry = 4\n")
+	w.temp = t.TempDir()
 	if err := w.prepareAcceptedFixScopeChecked(acceptedFixScopeCurrentDiff); err != nil {
 		t.Fatal(err)
 	}
@@ -83,6 +85,7 @@ func TestAcceptedFixScopeDisablesOptimizationForNonParentDirtyBaseline(t *testin
 		t.Fatal(err)
 	}
 	w := NewWorkflow(cfg, st, nil, io.Discard)
+	w.temp = t.TempDir()
 	if err := w.prepareAcceptedFixScopeChecked(acceptedFixScopeCurrentDiff); err != nil {
 		t.Fatal(err)
 	}
