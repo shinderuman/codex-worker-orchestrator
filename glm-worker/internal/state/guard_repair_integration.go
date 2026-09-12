@@ -42,12 +42,30 @@ func (journal GuardRepairIntegrationJournal) validate() error {
 }
 
 func (journal GuardRepairIntegrationJournal) validateProvenance() error {
+	if err := journal.validateIdentity(); err != nil {
+		return err
+	}
+	if err := journal.validateCheckpoint(); err != nil {
+		return err
+	}
+	return journal.validateBoundary()
+}
+
+func (journal GuardRepairIntegrationJournal) validateIdentity() error {
 	if journal.TaskID == "" || journal.Phase == "" || journal.Fingerprint == "" || journal.Strategy == "" || journal.RelevantDigest == "" {
 		return fmt.Errorf("guard repair integration journal provenance is incomplete")
 	}
+	return nil
+}
+
+func (journal GuardRepairIntegrationJournal) validateCheckpoint() error {
 	if journal.ResumeCheckpoint.StopKind != ResumeStopGuardRecoverable || journal.ResumeCheckpoint.Phase != journal.Phase || journal.ResumeCheckpoint.StopGitSnapshot == nil {
 		return fmt.Errorf("guard repair integration journal checkpoint provenance is invalid")
 	}
+	return nil
+}
+
+func (journal GuardRepairIntegrationJournal) validateBoundary() error {
 	if journal.RepositoryBoundary.Head == "" || journal.RepositoryBoundary.IndexDigest == "" || journal.RepositoryBoundary.WorktreeDigest == "" || journal.RepositoryBoundary.ParentFiles == nil {
 		return fmt.Errorf("guard repair integration journal repository boundary is incomplete")
 	}
