@@ -59,18 +59,10 @@ func Build(args []string) (Output, error) {
 	if err != nil {
 		return Output{}, fmt.Errorf("authority bootstrap: %w", err)
 	}
-	return buildFromRoot(root, kind, knownContentSHA)
+	return BuildFromRoot(root, kind, knownContentSHA)
 }
 
 func BuildFromRoot(root string, kind string, knownContentSHA string) (Output, error) {
-	resolvedRoot, err := validateRepoRoot(root)
-	if err != nil {
-		return Output{}, fmt.Errorf("authority bootstrap: %w", err)
-	}
-	return buildFromRoot(resolvedRoot, kind, knownContentSHA)
-}
-
-func buildFromRoot(root string, kind string, knownContentSHA string) (Output, error) {
 	if !validKind(kind) {
 		return Output{}, fmt.Errorf("%s", usage)
 	}
@@ -138,24 +130,6 @@ func findRepoRoot(start string) (string, error) {
 		return "", err
 	}
 	return root, nil
-}
-
-func validateRepoRoot(root string) (string, error) {
-	resolved, err := filepath.EvalSymlinks(root)
-	if err != nil {
-		return "", fmt.Errorf("resolve repository root %s: %w", root, err)
-	}
-	gitRoot, err := resolveGitRepoRoot(resolved)
-	if err != nil {
-		return "", err
-	}
-	if gitRoot != resolved {
-		return "", fmt.Errorf("authority root %s is not the git repository root %s", resolved, gitRoot)
-	}
-	if err := requireRepositoryHarness(resolved); err != nil {
-		return "", err
-	}
-	return resolved, nil
 }
 
 func resolveGitRepoRoot(start string) (string, error) {
