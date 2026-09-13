@@ -87,8 +87,18 @@ func Execute(cmd Command, cfg config.AppConfig, rf RunnerFactory, stdout, _ io.W
 		return executeReadOnly(cmd, cfg, stdout)
 	case dispatchRuntimeControl:
 		return executeRuntimeControl(cmd, cfg, stdout)
+	default:
+		return executeStateBacked(cmd, owner, cfg, rf, stdout)
 	}
+}
 
+func executeStateBacked(
+	cmd Command,
+	owner commandDispatchOwner,
+	cfg config.AppConfig,
+	rf RunnerFactory,
+	stdout io.Writer,
+) error {
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
 		return err
@@ -112,7 +122,7 @@ func Execute(cmd Command, cfg config.AppConfig, rf RunnerFactory, stdout, _ io.W
 	case dispatchWorkflow:
 		return executeWorkflow(cmd, cfg, st, rf, stdout)
 	default:
-		return fmt.Errorf("unsupported dispatch owner: %d", owner)
+		return fmt.Errorf("unsupported state-backed dispatch owner: %d", owner)
 	}
 }
 
