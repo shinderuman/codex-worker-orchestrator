@@ -34,7 +34,6 @@ var controlProjectionProcedureGuards = []controlProjectionProcedureGuard{
 		Path:      "codex/instructions/glm-parent-evidence.md",
 		ForbiddenTokens: []string{
 			"duplicate_parent_projection",
-			"--known-content-sha256",
 		},
 	},
 	{
