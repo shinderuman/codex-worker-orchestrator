@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
 type pushBindingOptions struct {
@@ -170,24 +172,26 @@ func buildPushBinding(repoRoot string, options pushBindingOptions) pushBindingOu
 }
 
 func pushBindingTargetFromRepo(repoRoot string) (*pushBindingTarget, *finalizationFailure) {
-	localOID, err := gitFinalizationOutput(repoRoot, "rev-parse", "HEAD")
-	if err != nil {
-		return nil, &finalizationFailure{Stage: "target", Reason: "head_unresolvable"}
+	head, err := state.ResolveGitHeadAuthority("git", repoRoot)
+	if err != nil || head.Unborn || head.Head == "" {
+		return nil, &finalizationFailure{Stage: "target", Reason: completeTargetHeadUnresolvable}
 	}
-	branchOutput, err := gitFinalizationOutput(repoRoot, "rev-parse", "--abbrev-ref", "HEAD")
-	if err != nil {
-		return nil, &finalizationFailure{Stage: "target", Reason: "head_unresolvable"}
+	if head.Detached {
+		return nil, &finalizationFailure{Stage: "target", Reason: completeTargetDetached}
 	}
-	branch := strings.TrimSpace(branchOutput)
-	if branch == "HEAD" {
-		return nil, &finalizationFailure{Stage: "target", Reason: "detached_head"}
+	if !strings.HasPrefix(head.SymbolicHead, "refs/heads/") {
+		return nil, &finalizationFailure{Stage: "target", Reason: completeTargetHeadUnresolvable}
+	}
+	branch := strings.TrimPrefix(head.SymbolicHead, "refs/heads/")
+	if branch == "" {
+		return nil, &finalizationFailure{Stage: "target", Reason: completeTargetHeadUnresolvable}
 	}
 	upstream, err := resolveGitUpstream(repoRoot, branch)
 	if err != nil {
 		return nil, &finalizationFailure{Stage: "target", Reason: pushBindingUpstreamFailureReason(err)}
 	}
 	target := &pushBindingTarget{
-		LocalOID:    strings.TrimSpace(localOID),
+		LocalOID:    head.Head,
 		Branch:      branch,
 		RemoteName:  upstream.RemoteName,
 		RemoteRef:   upstream.RemoteRef,
