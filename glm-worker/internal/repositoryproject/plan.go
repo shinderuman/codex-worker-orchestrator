@@ -17,12 +17,6 @@ type ProjectStatePlan struct {
 
 type PostCompletionKind string
 
-const (
-	PostCompletionTerminal PostCompletionKind = "terminal"
-	PostCompletionUnbound  PostCompletionKind = "unbound"
-	PostCompletionGraph    PostCompletionKind = "graph"
-)
-
 type PostCompletionPlan struct {
 	Kind     PostCompletionKind
 	Goal     taskcontract.PlanGoal
@@ -37,6 +31,12 @@ type FinalHeadPlan struct {
 	ActiveTask string
 	Tasks      []string
 }
+
+const (
+	PostCompletionTerminal PostCompletionKind = "terminal"
+	PostCompletionUnbound  PostCompletionKind = "unbound"
+	PostCompletionGraph    PostCompletionKind = "graph"
+)
 
 func PrepareProjectState(plan string) (ProjectStatePlan, error) {
 	goal, err := taskcontract.ParsePlanGoal(plan)
