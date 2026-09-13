@@ -154,7 +154,7 @@ func (w *Workflow) prepareApprovedQualitySurfaceBaseline(phase string) (string, 
 		return "", "", false, w.approvedQualitySurfaceValidationFailure(phase, "quality policy surfaceを再計測できません", err)
 	}
 	if current == "" {
-		return "", "", false, nil
+		return "", "", false, w.approvedQualitySurfaceValidationFailure(phase, "quality policy surfaceが空です", nil)
 	}
 	if !w.state.Exists(qualitySurfaceBaselineStateKey) {
 		return "", "", false, w.approvedQualitySurfaceValidationFailure(
