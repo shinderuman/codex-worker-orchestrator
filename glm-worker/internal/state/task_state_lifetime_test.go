@@ -26,10 +26,10 @@ func TestTaskBoundStatePoliciesDriveFreshTaskCleanup(t *testing.T) {
 	for name, lifetime := range map[string]taskBoundStateLifetime{
 		baselineUntrackedFile:                taskBoundStateFreshTaskClear,
 		poCStartSnapshotFile:                 taskBoundStateFreshTaskClear,
+		guardRepairStateFile:                 taskBoundStateFreshTaskClear,
 		QualitySurfaceBaselineStateFile:      taskBoundStateFreshTaskClear,
 		RepositoryHarnessActivationStateFile: taskBoundStateFreshTaskClear,
 		InstructionSurfaceBaselineStateFile:  taskBoundStateTaskIDBound,
-		guardRepairIntegrationStateFile:      taskBoundStateTaskIDBound,
 	} {
 		if got, ok := seen[name]; !ok || got != lifetime {
 			t.Fatalf("task-bound state policy %s = %d, present=%t want=%d", name, got, ok, lifetime)
@@ -55,11 +55,11 @@ func TestFreshTaskClearsUnboundStateAndRetainsSelfBoundAndHistoricalState(t *tes
 	if err := st.Write(RepositoryHarnessActivationStateFile, "1"); err != nil {
 		t.Fatal(err)
 	}
-	instructionBaseline := oldTaskID + " old-instruction-digest"
-	if err := st.Write(InstructionSurfaceBaselineStateFile, instructionBaseline); err != nil {
+	if err := st.Write(guardRepairStateFile, "old-guard-repair"); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.Write(guardRepairIntegrationStateFile, "old-task-bound-journal"); err != nil {
+	instructionBaseline := oldTaskID + " old-instruction-digest"
+	if err := st.Write(InstructionSurfaceBaselineStateFile, instructionBaseline); err != nil {
 		t.Fatal(err)
 	}
 	st.RecordParentEvidence(ParentEvidenceRecord{Surface: ParentEvidenceSurfaceStatus, Outcome: ParentEvidenceOutcomeProjected, TaskID: oldTaskID})
@@ -74,16 +74,13 @@ func TestFreshTaskClearsUnboundStateAndRetainsSelfBoundAndHistoricalState(t *tes
 	if _, err := st.LoadPoCStartSnapshot(); !os.IsNotExist(err) {
 		t.Fatalf("prior task PoC snapshot remains visible: %v", err)
 	}
-	for _, name := range []string{baselineUntrackedFile, QualitySurfaceBaselineStateFile, RepositoryHarnessActivationStateFile} {
+	for _, name := range []string{baselineUntrackedFile, QualitySurfaceBaselineStateFile, RepositoryHarnessActivationStateFile, guardRepairStateFile} {
 		if st.Exists(name) {
 			t.Fatalf("prior task state survived fresh-task cleanup: %s", name)
 		}
 	}
 	if got := st.ReadOr(InstructionSurfaceBaselineStateFile, ""); got != instructionBaseline {
 		t.Fatalf("task-ID-bound instruction baseline = %q want %q", got, instructionBaseline)
-	}
-	if got := st.ReadOr(guardRepairIntegrationStateFile, ""); got != "old-task-bound-journal" {
-		t.Fatalf("task-ID-bound guard repair journal = %q", got)
 	}
 	records, err := st.ReadParentEvidence()
 	if err != nil {
