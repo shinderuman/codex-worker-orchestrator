@@ -10,6 +10,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
 type finalizationCheckOutput struct {
@@ -331,29 +333,33 @@ func handoffContainsValidation(handoff finalizationHandoffProbe, validationRunID
 }
 
 func readFinalizationGitSummary(repoRoot string) (finalizationGitSummary, error) {
-	head, err := gitFinalizationOutput(repoRoot, "rev-parse", "HEAD")
+	head, err := state.ResolveGitHeadAuthority("git", repoRoot)
 	if err != nil {
 		return finalizationGitSummary{}, err
 	}
-	branchOutput, branchErr := gitFinalizationOutput(repoRoot, "rev-parse", "--abbrev-ref", "HEAD")
-	if branchErr != nil {
-		return finalizationGitSummary{}, branchErr
+	if head.Unborn || head.Head == "" {
+		return finalizationGitSummary{}, fmt.Errorf("git HEAD does not resolve to a commit")
 	}
-	branch := strings.TrimSpace(branchOutput)
-	detached := branch == "HEAD"
-	if detached {
-		branch = ""
+	branch := ""
+	if !head.Detached {
+		if !strings.HasPrefix(head.SymbolicHead, "refs/heads/") {
+			return finalizationGitSummary{}, fmt.Errorf("git HEAD symbolic target %q is not a local branch", head.SymbolicHead)
+		}
+		branch = strings.TrimPrefix(head.SymbolicHead, "refs/heads/")
+		if branch == "" {
+			return finalizationGitSummary{}, fmt.Errorf("git HEAD local branch is empty")
+		}
 	}
 	status, err := gitFinalizationOutput(repoRoot, "status", "--porcelain=v1", "--untracked-files=all")
 	if err != nil {
 		return finalizationGitSummary{}, err
 	}
 	staged, unstaged, untracked := countFinalizationStatus(status)
-	remote, remoteState := finalizationRemoteState(repoRoot, strings.TrimSpace(branch), detached)
+	remote, remoteState := finalizationRemoteState(repoRoot, branch, head.Detached)
 	return finalizationGitSummary{
-		Head:             strings.TrimSpace(head),
-		Branch:           strings.TrimSpace(branch),
-		Detached:         detached,
+		Head:             head.Head,
+		Branch:           branch,
+		Detached:         head.Detached,
 		Clean:            staged == 0 && unstaged == 0 && untracked == 0,
 		StagedChanges:    staged,
 		UnstagedChanges:  unstaged,
