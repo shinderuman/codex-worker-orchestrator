@@ -113,19 +113,7 @@ func executeReadOnlyInspection(cmd Command, cfg config.AppConfig, stdout io.Writ
 	case ModePacketCheck:
 		return executeStatelessProjection(cmd, cfg, stdout)
 	case ModeProjectState:
-		active, err := workflow.RepositoryHarnessActive(cfg.RepoRoot, st)
-		if err != nil {
-			return err
-		}
-		if !active {
-			return writeJSON(stdout, projectStateOutput{
-				Version:      projectStateVersion,
-				Dependencies: []projectStateDependency{},
-				Blockers:     []projectStateBlocker{},
-				Continuation: unknownProjectContinuation(projectContinuationReasonPlanAbsent),
-			})
-		}
-		return executeStatelessProjection(cmd, cfg, stdout)
+		return executeProjectStateInspection(cmd, cfg, st, stdout)
 	case ModeRepoSearch:
 		return printRepoSearch(repoSearchRequest{
 			Question:    cmd.Payload,
