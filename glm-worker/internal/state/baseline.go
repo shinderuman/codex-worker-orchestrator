@@ -3,6 +3,7 @@ package state
 import (
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 
@@ -27,6 +28,10 @@ type GitHeadAuthority struct {
 const baselineUntrackedFile = "baseline-untracked"
 
 func CaptureGitBaseline(cfg config.AppConfig, state *StateStore) error {
+	if _, err := os.Stat(cfg.RepoRoot); errors.Is(err, os.ErrNotExist) {
+		return removeGitBaseline(state)
+	}
+
 	head, unborn, err := resolveRepoHead(cfg.RepoRoot)
 	if err != nil {
 		return failGitBaselineHeadResolution(state, err)
