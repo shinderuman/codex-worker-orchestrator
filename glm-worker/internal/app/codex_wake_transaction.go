@@ -22,11 +22,6 @@ const (
 	codexWakeResponseUsage = "usage: glm-worker --codex-wake-response-stdin <payload-bytes> <transaction-token> [--sha256 <hex>]"
 )
 
-var codexWakeCommandParsers = map[string]commandParser{
-	"--codex-wake-plan":           codexWakePlanCommand,
-	"--codex-wake-response-stdin": codexWakeResponseCommand,
-}
-
 func codexWakePlanCommand(args []string) (Command, error) {
 	if len(args) != 2 && len(args) != 4 {
 		return Command{}, usageError("%s", codexWakePlanUsage)
@@ -64,17 +59,6 @@ func codexWakeResponseCommand(args []string) (Command, error) {
 		}
 	}
 	return command, nil
-}
-
-func executeCodexWakeStateless(cmd Command, cfg config.AppConfig, stdout io.Writer) (bool, error) {
-	switch cmd.Mode {
-	case ModeCodexWakePlan:
-		return true, printCodexWakePlan(cmd, cfg, stdout)
-	case ModeCodexWakeResponse:
-		return true, printCodexWakeResponse(cmd, cfg, stdout)
-	default:
-		return executeStatelessReport(cmd, cfg, stdout)
-	}
 }
 
 func printCodexWakePlan(cmd Command, cfg config.AppConfig, stdout io.Writer) error {
