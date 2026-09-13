@@ -78,6 +78,7 @@ func TestReviewResumeCrashWindowTamperFailsClosed(t *testing.T) {
 
 func TestWorkerResumeParentUpdateDuringStopProceeds(t *testing.T) {
 	st := newStateStoreT(t)
+	pinRepositoryHarnessActiveT(t, st)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: implementedPacket("resumed")},
 		{structured: passPacket()},
@@ -121,6 +122,7 @@ func TestWorkerResumeParentUpdateDuringStopProceeds(t *testing.T) {
 
 func TestRateLimitStopRecordsStopParentFiles(t *testing.T) {
 	st := newStateStoreT(t)
+	pinRepositoryHarnessActiveT(t, st)
 	r := &scriptedRunner{steps: []runnerStep{{
 		output: zaiFiveHourLog,
 		runErr: errors.New("exit status 1"),

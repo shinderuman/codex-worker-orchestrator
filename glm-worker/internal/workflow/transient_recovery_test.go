@@ -580,6 +580,7 @@ func TestResumeFromProviderUnavailableRetriesSameSession(t *testing.T) {
 	if err := st.SetTaskStatus(state.TaskStatusProviderUnavailable); err != nil {
 		t.Fatal(err)
 	}
+	pinRepositoryHarnessActiveResumeT(t, st)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: implementedPacket("done")},
 		{structured: passPacket()},

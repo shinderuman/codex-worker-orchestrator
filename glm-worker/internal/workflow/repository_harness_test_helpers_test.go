@@ -15,6 +15,11 @@ func pinRepositoryHarnessActiveT(t *testing.T, st *state.StateStore) {
 	if st.TaskStatus() == state.TaskStatusProviderUnavailable && !st.Exists(activeTaskStateKey) {
 		return
 	}
+	pinRepositoryHarnessActiveResumeT(t, st)
+}
+
+func pinRepositoryHarnessActiveResumeT(t *testing.T, st *state.StateStore) {
+	t.Helper()
 	if err := st.Write(repositoryharness.ActivationStateKey, repositoryharness.ActivationActiveValue); err != nil {
 		t.Fatal(err)
 	}

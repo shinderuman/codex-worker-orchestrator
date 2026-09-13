@@ -119,6 +119,7 @@ func reviewResumeCheckpoint(stop *state.ParentFileStates) state.ResumeCheckpoint
 
 func seedReviewResumeStop(t *testing.T, st *state.StateStore, saved state.GitSnapshot, checkpoint state.ResumeCheckpoint) {
 	t.Helper()
+	pinRepositoryHarnessActiveT(t, st)
 	if err := st.SaveReviewStartSnapshot(saved); err != nil {
 		t.Fatal(err)
 	}

@@ -152,6 +152,7 @@ func TestRecoveryTelemetryTimestampsFollowInjectedClock(t *testing.T) {
 func TestResumeTelemetryTimestampsFollowInjectedClock(t *testing.T) {
 	st := newStateStoreT(t)
 	seedProviderUnavailableCheckpoint(t, st)
+	pinRepositoryHarnessActiveResumeT(t, st)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: implementedPacket("resumed")},
 		{structured: passPacket()},
