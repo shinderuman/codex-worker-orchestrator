@@ -1,12 +1,14 @@
 package workflow
 
 import (
+	"errors"
 	"os"
 	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
 func TestRepositoryHarnessActivationPinRejectsInconsistentState(t *testing.T) {
@@ -126,6 +128,44 @@ func TestRepositoryHarnessMissingActivationDoesNotReevaluatePinnedGenericTask(t 
 	}
 	if !strings.Contains(err.Error(), "欠落") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestGuardRepairRequestRespectsRepositoryHarnessActivation(t *testing.T) {
+	tests := []struct {
+		name       string
+		activation string
+		wantRecord bool
+		wantErr    bool
+	}{
+		{name: "active", activation: repositoryharness.ActivationActiveValue, wantRecord: true},
+		{name: "inactive", activation: repositoryharness.ActivationInactiveValue},
+		{name: "invalid", activation: "unexpected", wantErr: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			st := newStateStoreT(t)
+			w := newWorkflowT(t, st, &scriptedRunner{})
+			if err := st.Write(repositoryharness.ActivationStateKey, tc.activation); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv(state.GuardRepairParentActionEnv, state.GuardRepairParentActionResume)
+
+			checkpoint := state.ResumeCheckpoint{Phase: "worker-new", StopKind: state.ResumeStopGuardRecoverable}
+			err := w.requestGuardRepair(checkpoint, errors.New("guard recovery cannot capture current refs"))
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("requestGuardRepair error = %v wantErr=%v", err, tc.wantErr)
+			}
+			_, loadErr := st.LoadGuardRepairRecord()
+			if tc.wantRecord {
+				if loadErr != nil {
+					t.Fatalf("guard repair record was not persisted: %v", loadErr)
+				}
+			} else if !errors.Is(loadErr, state.ErrNoGuardRepairRecord) {
+				t.Fatalf("repository harness activation %q persisted guard repair record: %v", tc.activation, loadErr)
+			}
+		})
 	}
 }
 
