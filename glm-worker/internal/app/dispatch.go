@@ -77,9 +77,6 @@ func executeRuntimeControl(cmd Command, cfg config.AppConfig, stdout io.Writer) 
 }
 
 func executeReadOnly(cmd Command, cfg config.AppConfig, stdout io.Writer) error {
-	if cmd.Mode == ModeProjectState {
-		return executeProjectStateInspection(cmd, cfg, state.AttachStateStore(cfg), stdout)
-	}
 	switch cmd.Mode {
 	case ModeTimeline,
 		ModeConvergence,
@@ -103,10 +100,7 @@ func executeReadOnlyInspection(cmd Command, cfg config.AppConfig, stdout io.Writ
 	case ModeStatus:
 		return printStatusLeased(st, stdout)
 	case ModeHandoff:
-		if cmd.Payload == "recovery" {
-			return printParentHandoffRecoveryLeasedWithConfig(cfg, st, stdout)
-		}
-		return printParentHandoffLeasedWithConfig(cfg, st, stdout)
+		return executeHandoffInspection(cmd, cfg, st, stdout)
 	case ModeStats:
 		return printStats(cfg, st, cmd.Query, stdout)
 	case ModeWatch:
@@ -115,6 +109,8 @@ func executeReadOnlyInspection(cmd Command, cfg config.AppConfig, stdout io.Writ
 		return printCodexLimit(cfg, stdout)
 	case ModePacketCheck:
 		return executeStatelessProjection(cmd, cfg, stdout)
+	case ModeProjectState:
+		return executeProjectStateInspection(cmd, cfg, st, stdout)
 	case ModeRepoSearch:
 		return printRepoSearch(repoSearchRequest{
 			Question:    cmd.Payload,
@@ -128,6 +124,13 @@ func executeReadOnlyInspection(cmd Command, cfg config.AppConfig, stdout io.Writ
 	default:
 		return fmt.Errorf("command mode %d is not read-only inspection", cmd.Mode)
 	}
+}
+
+func executeHandoffInspection(cmd Command, cfg config.AppConfig, st *state.StateStore, stdout io.Writer) error {
+	if cmd.Payload == "recovery" {
+		return printParentHandoffRecoveryLeasedWithConfig(cfg, st, stdout)
+	}
+	return printParentHandoffLeasedWithConfig(cfg, st, stdout)
 }
 
 func executeReadOnlyAnalysis(cmd Command, cfg config.AppConfig, stdout io.Writer) error {
