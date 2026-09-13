@@ -196,7 +196,7 @@ func executeDirectWorkerAction(cfg config.AppConfig, action string, args []strin
 			return err
 		}
 		return withParentWaitLease(cfg, func() error {
-			return executeResumeWithGuardRepair(cfg, stdout, stderr, extraEnv)
+			return executeRepositoryAwareResume(cfg, stdout, stderr, extraEnv)
 		})
 	}
 	if action == actionStart {
