@@ -34,6 +34,7 @@
 - patch成功後、同じtool orchestration内でsandbox外の`glm-parent-action decision <token>`または`glm-parent-action fix <token> [--origin <値>] [--cause <値>] [--accepted-scope current-diff]`へ進む。長時間実actionの待機は下記「待機」の同一cell境界をそのまま使う。
 - quality policy surface変更で`NEEDS_SOL_REVIEW`停止したとき、machine handoffは`required_action:"approve-surface"`と`required_action_parameters`(`accepted-scope: current-diff`)を一意に返す。親Codexがsemantic fixを要求せず停止時点のexact current diffだけを承認する場合はpayloadやtokenなしで`glm-parent-action approve-surface --accepted-scope current-diff`を1回実行し、同一task・同一worker結果からworker再実行なしでreviewerへ進む。この状態のterminal `accept`はadmission段階でfail closedし、packet自由文の解釈で完了扱いにできない。semantic修正を要求する場合は従来の通常fixを使う。
 - staged payload/tokenのbinding・single-use・task identity・current action admissionは`control:parent-action-staging-admission`がfail closedで強制する。親はmachine-admitted actionから実行するsemantic actionを選び、payloadの意味を判断する。
+- staging payloadをconsumeした後にactionが失敗した場合、再試行するなら新しいprepareから同じsemantic payloadを再送する。
 - `glm-worker --decision-stdin`/`--fix-stdin`はrecovery/debug用に残すが、通常親workflowではbyte長・hash・TTY・`stdin_ready`・`write_stdin`・shell quotingを扱わず、旧transportへfallbackしない。
 
 ## 親操作のoutcome申告
