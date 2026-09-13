@@ -159,6 +159,29 @@ func TestControlProjectionProcedureGuardRequiresCompactProjection(t *testing.T) 
 	}
 }
 
+func TestControlProjectionProcedureGuardLeavesPartialBoundaryAlone(t *testing.T) {
+	root := newControlProvenanceIdentityRepo(t, controlProjectionTestOrigin, controlProvenanceModulePath)
+	writeControlProvenanceRegistry(t, root, controlProvenanceRegistry{
+		Version: 1,
+		Controls: []controlProvenanceControl{{
+			ID:                     "parent-wait-ownership",
+			Classification:         controlClassificationProse,
+			Purpose:                "keep parent wait ownership explicit",
+			ResidualParentJudgment: "the parent follows the wait convention",
+			Boundary:               "no production owner rejects violations",
+		}},
+	})
+	writeControlProjectionMarkdown(t, root, "codex/instructions/glm-execution.md", "The parent remains responsible for the wait ownership convention.\n")
+
+	violations, err := scopedControlProvenanceViolations(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(violations) != 0 {
+		t.Fatalf("violations = %#v", violations)
+	}
+}
+
 func TestControlProjectionIgnoresTaskRequirementText(t *testing.T) {
 	root := newControlProvenanceIdentityRepo(t, controlProjectionTestOrigin, controlProvenanceModulePath)
 	writeControlProvenanceGo(t, root, "owner.go", "package fixture\nfunc owner() {}\nfunc postcondition() {}\n")
@@ -200,7 +223,6 @@ func hasControlProjectionViolation(violations []Violation, path string, fragment
 				matched = false
 				break
 			}
-		}
 		if matched {
 			return true
 		}
