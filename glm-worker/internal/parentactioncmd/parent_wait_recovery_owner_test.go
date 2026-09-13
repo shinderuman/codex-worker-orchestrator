@@ -3,6 +3,7 @@ package parentactioncmd
 import (
 	"bytes"
 	"errors"
+	"os"
 	"testing"
 	"time"
 
@@ -30,7 +31,7 @@ func TestParentWaitRejectsDuplicateRecoveryWaiterBehindPrimaryOwner(t *testing.T
 	go func() {
 		firstDone <- executeParentWait(cfg, []string{"wait"}, &firstStdout, &firstStderr)
 	}()
-	waitForParentRecoveryWaiter(t, st)
+	waitForParentRecoveryWaiter(t, st, firstDone)
 
 	var duplicateStdout, duplicateStderr bytes.Buffer
 	if err := executeParentWait(cfg, []string{"wait"}, &duplicateStdout, &duplicateStderr); !errors.Is(err, repolock.ErrRepoLockHeld) {
@@ -77,7 +78,7 @@ func TestParentWaitRejectsDuplicateRecoveryWaiterBehindSurvivingWorker(t *testin
 	go func() {
 		firstDone <- executeParentWait(cfg, []string{"wait"}, &firstStdout, &firstStderr)
 	}()
-	waitForParentRecoveryWaiter(t, st)
+	waitForParentRecoveryWaiter(t, st, firstDone)
 
 	var duplicateStdout, duplicateStderr bytes.Buffer
 	if err := executeParentWait(cfg, []string{"wait"}, &duplicateStdout, &duplicateStderr); !errors.Is(err, repolock.ErrRepoLockHeld) {
@@ -104,19 +105,24 @@ func TestParentWaitRejectsDuplicateRecoveryWaiterBehindSurvivingWorker(t *testin
 	}
 }
 
-func waitForParentRecoveryWaiter(t *testing.T, st *state.StateStore) {
+func waitForParentRecoveryWaiter(t *testing.T, st *state.StateStore, done <-chan error) {
 	t.Helper()
+	path := st.Path(parentWaitRecoveryLockFile)
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		lock, err := repolock.Acquire(st.Path(parentWaitRecoveryLockFile))
-		if errors.Is(err, repolock.ErrRepoLockHeld) {
+		select {
+		case err := <-done:
+			t.Fatalf("parent recovery waiter returned before lease became observable: %v", err)
+		default:
+		}
+		data, err := os.ReadFile(path)
+		switch {
+		case err == nil && len(bytes.TrimSpace(data)) > 0:
 			return
-		}
-		if err != nil {
-			t.Fatalf("probe parent recovery waiter lease: %v", err)
-		}
-		if err := lock.Close(); err != nil {
-			t.Fatalf("release parent recovery waiter probe lease: %v", err)
+		case err == nil:
+		case errors.Is(err, os.ErrNotExist):
+		default:
+			t.Fatalf("read parent recovery waiter lease marker: %v", err)
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
