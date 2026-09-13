@@ -64,4 +64,4 @@ HIGHではSolが全diffを読み直さず判断できるよう、変更前後の
 途中経過、file一覧、grep結果、大量codeを最終出力へ含めず、実行環境指定schemaの結果を1つだけ返す。
 - packetのstructural contractは`control:packet-schema-result`のcurrent worker schema/validatorを正とする。親validationが必要な場合は上記Test contractに従う。Bashを利用できる場合はdispatch指示の`glm-worker --packet-check`で提出前検証する。
 - protected instruction handoffの`TARGETS`は`none`やsymbol表現を使わず、対象`AGENTS.md`/`AGENTS.local.md`のrepository相対pathだけを指定する。
-- `ARTIFACTS`は要求・判断に必要な成果物だけを返す。
+- `ARTIFACTS`はREPORT_ARTIFACT_DIR配下の実在通常fileの絶対pathのみ。不要なら空。
