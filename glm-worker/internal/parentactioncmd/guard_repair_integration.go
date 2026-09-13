@@ -76,7 +76,7 @@ func persistReadyGuardRepairIntegration(st *state.StateStore, record state.Guard
 	}
 	record.Status = state.GuardRepairReady
 	record.Integration = nil
-	return st.SaveGuardRepairRecord(record)
+	return st.CommitGuardRepairIntegration(record)
 }
 
 func recoverGuardRepairIntegrationIfNeeded(cfg config.AppConfig, st *state.StateStore) error {
@@ -137,7 +137,7 @@ func rollbackGuardRepairIntegration(cfg config.AppConfig, st *state.StateStore, 
 	record.RepairedDigest = ""
 	record.Integration = nil
 	record.ClearResumeProof()
-	if err := st.SaveGuardRepairRecord(record); err != nil {
+	if err := st.RollbackGuardRepairIntegration(record); err != nil {
 		return fmt.Errorf("reset guard repair record after interrupted integration: %w", err)
 	}
 	return nil
