@@ -65,6 +65,16 @@
           "symbol": "Workflow.failClosedExternalFeasibility"
         }
       ],
+      "projection_guards": [
+        {
+          "path": "codex/instructions/feasibility-gate.md",
+          "forbidden_tokens": [
+            "external_feasibility_missing",
+            "external_feasibility_malformed",
+            "external_feasibility_unverified"
+          ]
+        }
+      ],
       "residual_parent_judgment": "The parent judges whether the declared external premise and producer evidence are semantically sufficient."
     },
     {
@@ -110,6 +120,15 @@
           "symbol": "buildWatchOrphanExitEvent"
         }
       ],
+      "projection_guards": [
+        {
+          "path": "codex/instructions/glm-watch-orphan-terminal.md",
+          "forbidden_tokens": [
+            "status: \"orphan-terminal\"",
+            "required_action: \"none\""
+          ]
+        }
+      ],
       "residual_parent_judgment": "The parent decides the semantic recovery or disposition after consuming orphan-terminal evidence."
     },
     {
@@ -150,6 +169,22 @@
           "symbol": "ValidateReviewerResult"
         }
       ],
+      "projection_guards": [
+        {
+          "path": "codex/glm-worker/prompts/WORKER.md",
+          "forbidden_tokens": [
+            "6 KiB",
+            "1536 bytes"
+          ]
+        },
+        {
+          "path": "codex/glm-worker/prompts/REVIEWER.md",
+          "forbidden_tokens": [
+            "6 KiB",
+            "1536 bytes"
+          ]
+        }
+      ],
       "residual_parent_judgment": "The parent still evaluates the substantive meaning of a structurally valid packet."
     },
     {
@@ -182,6 +217,16 @@
           "symbol": "StateStore.ParentActionPlan"
         }
       ],
+      "projection_guards": [
+        {
+          "path": "codex/instructions/task-request-boundary.md",
+          "forbidden_tokens": [
+            "start-milestones <token>",
+            "revise-milestones <token>",
+            "fresh_worker\":true"
+          ]
+        }
+      ],
       "residual_parent_judgment": "The parent chooses among machine-admitted semantic actions; the staging layer only proves admissibility and payload binding."
     },
     {
@@ -212,6 +257,14 @@
         {
           "path": "glm-worker/internal/app/parent_evidence.go",
           "symbol": "saveSurvivingParentEvidenceClaims"
+        }
+      ],
+      "projection_guards": [
+        {
+          "path": "codex/instructions/glm-parent-evidence.md",
+          "forbidden_tokens": [
+            "duplicate_parent_projection"
+          ]
         }
       ],
       "residual_parent_judgment": "The parent chooses which evidence questions matter and interprets the projected evidence semantically."
@@ -334,6 +387,14 @@
         {
           "path": "glm-worker/internal/workflow/exhaustive_search.go",
           "symbol": "Workflow.writeExhaustiveSearchManifest"
+        }
+      ],
+      "projection_guards": [
+        {
+          "path": "codex/instructions/glm-repo-search.md",
+          "forbidden_tokens": [
+            "EXHAUSTIVE_SEARCH_REQUIRED: true"
+          ]
         }
       ],
       "residual_parent_judgment": "The parent or model must still judge whether the chosen predicate is semantically sufficient for the requested exhaustive claim."
@@ -471,6 +532,18 @@
         {
           "path": "glm-worker/internal/state/park.go",
           "symbol": "StateStore.CommitUnpark"
+        }
+      ],
+      "projection_guards": [
+        {
+          "path": "codex/instructions/glm-stop-isolate.md",
+          "forbidden_tokens": [
+            "stop_endpoint_absent",
+            "stop_endpoint_stale",
+            "interrupted_cleanup_residual",
+            "stop-worktree.patch",
+            "stop-index.patch"
+          ]
         }
       ],
       "residual_parent_judgment": "The parent decides why an interruption is needed and when the preserved task should be resumed or dispositioned."

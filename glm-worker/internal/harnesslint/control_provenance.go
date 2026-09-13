@@ -19,19 +19,25 @@ type controlProvenanceRegistry struct {
 }
 
 type controlProvenanceControl struct {
-	ID                     string                     `json:"id"`
-	Classification         string                     `json:"classification"`
-	Purpose                string                     `json:"purpose"`
-	MachineOwners          []controlProvenanceLocator `json:"machine_owners,omitempty"`
-	Tests                  []controlProvenanceLocator `json:"tests,omitempty"`
-	Postconditions         []controlProvenanceLocator `json:"postconditions,omitempty"`
-	ResidualParentJudgment string                     `json:"residual_parent_judgment"`
-	Boundary               string                     `json:"boundary,omitempty"`
+	ID                     string                             `json:"id"`
+	Classification         string                             `json:"classification"`
+	Purpose                string                             `json:"purpose"`
+	MachineOwners          []controlProvenanceLocator         `json:"machine_owners,omitempty"`
+	Tests                  []controlProvenanceLocator         `json:"tests,omitempty"`
+	Postconditions         []controlProvenanceLocator         `json:"postconditions,omitempty"`
+	ProjectionGuards       []controlProvenanceProjectionGuard `json:"projection_guards,omitempty"`
+	ResidualParentJudgment string                             `json:"residual_parent_judgment"`
+	Boundary               string                             `json:"boundary,omitempty"`
 }
 
 type controlProvenanceLocator struct {
 	Path   string `json:"path"`
 	Symbol string `json:"symbol"`
+}
+
+type controlProvenanceProjectionGuard struct {
+	Path            string   `json:"path"`
+	ForbiddenTokens []string `json:"forbidden_tokens"`
 }
 
 const controlProvenanceRegistryPath = "codex/control-provenance.json"
@@ -128,8 +134,8 @@ func validateControlProvenanceControl(root string, control controlProvenanceCont
 		if strings.TrimSpace(control.Boundary) == "" {
 			violations = append(violations, controlProvenanceViolation(controlProvenanceRegistryPath, fmt.Sprintf("non-machine control %q must declare its enforcement boundary", control.ID)))
 		}
-		if len(control.MachineOwners) != 0 || len(control.Tests) != 0 || len(control.Postconditions) != 0 {
-			violations = append(violations, controlProvenanceViolation(controlProvenanceRegistryPath, fmt.Sprintf("non-machine control %q must not carry machine owner, test, or postcondition locators", control.ID)))
+		if len(control.MachineOwners) != 0 || len(control.Tests) != 0 || len(control.Postconditions) != 0 || len(control.ProjectionGuards) != 0 {
+			violations = append(violations, controlProvenanceViolation(controlProvenanceRegistryPath, fmt.Sprintf("non-machine control %q must not carry machine owner, test, postcondition, or projection guard metadata", control.ID)))
 		}
 	default:
 		violations = append(violations, controlProvenanceViolation(controlProvenanceRegistryPath, fmt.Sprintf("control %q has unsupported classification %q", control.ID, control.Classification)))

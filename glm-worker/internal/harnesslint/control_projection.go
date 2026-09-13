@@ -33,7 +33,12 @@ func controlProjectionViolations(root string) ([]Violation, error) {
 	if err != nil {
 		return nil, err
 	}
+	pathSet := make(map[string]struct{}, len(paths))
+	for _, path := range paths {
+		pathSet[path] = struct{}{}
+	}
 	var violations []Violation
+	violations = append(violations, controlProjectionProcedureGuardRegistryViolations(registry.Controls, pathSet)...)
 	for _, path := range paths {
 		if !isControlProjectionSurface(path) {
 			continue
@@ -43,6 +48,7 @@ func controlProjectionViolations(root string) ([]Violation, error) {
 			return nil, err
 		}
 		violations = append(violations, controlProjectionPathViolations(path, data, classifications)...)
+		violations = append(violations, controlProjectionProcedureGuardViolations(path, data, registry.Controls)...)
 	}
 	return violations, nil
 }
@@ -75,6 +81,85 @@ func controlProjectionPathViolations(path string, data []byte, classifications m
 				violations = append(violations, controlProjectionViolation(path, index+1, fmt.Sprintf("control projection %q targets %q instead of machine-enforced", id, classification)))
 			}
 		}
+	}
+	return violations
+}
+
+func controlProjectionProcedureGuardRegistryViolations(controls []controlProvenanceControl, paths map[string]struct{}) []Violation {
+	var violations []Violation
+	for _, control := range controls {
+		for _, guard := range control.ProjectionGuards {
+			violations = append(violations, controlProjectionProcedureGuardMetadataViolations(control, guard, paths)...)
+		}
+	}
+	return violations
+}
+
+func controlProjectionProcedureGuardMetadataViolations(control controlProvenanceControl, guard controlProvenanceProjectionGuard, paths map[string]struct{}) []Violation {
+	if control.Classification != controlClassificationMachine {
+		return []Violation{controlProjectionViolation(controlProvenanceRegistryPath, 1, fmt.Sprintf("procedure guard %q targets %q instead of machine-enforced", control.ID, control.Classification))}
+	}
+	if !isControlProjectionSurface(guard.Path) {
+		return []Violation{controlProjectionViolation(controlProvenanceRegistryPath, 1, fmt.Sprintf("procedure guard %q targets non-model-facing surface %q", control.ID, guard.Path))}
+	}
+	if _, ok := paths[guard.Path]; !ok {
+		return []Violation{controlProjectionViolation(controlProvenanceRegistryPath, 1, fmt.Sprintf("procedure guard %q projection surface %q is missing", control.ID, guard.Path))}
+	}
+	if len(guard.ForbiddenTokens) == 0 {
+		return []Violation{controlProjectionViolation(controlProvenanceRegistryPath, 1, fmt.Sprintf("procedure guard %q for %q has no forbidden tokens", control.ID, guard.Path))}
+	}
+	return controlProjectionProcedureGuardTokenMetadataViolations(control.ID, guard)
+}
+
+func controlProjectionProcedureGuardTokenMetadataViolations(controlID string, guard controlProvenanceProjectionGuard) []Violation {
+	var violations []Violation
+	seenTokens := make(map[string]struct{}, len(guard.ForbiddenTokens))
+	for _, token := range guard.ForbiddenTokens {
+		if strings.TrimSpace(token) == "" {
+			violations = append(violations, controlProjectionViolation(controlProvenanceRegistryPath, 1, fmt.Sprintf("procedure guard %q for %q has an empty forbidden token", controlID, guard.Path)))
+			continue
+		}
+		if _, duplicate := seenTokens[token]; duplicate {
+			violations = append(violations, controlProjectionViolation(controlProvenanceRegistryPath, 1, fmt.Sprintf("procedure guard %q for %q repeats forbidden token %q", controlID, guard.Path, token)))
+			continue
+		}
+		seenTokens[token] = struct{}{}
+	}
+	return violations
+}
+
+func controlProjectionProcedureGuardViolations(path string, data []byte, controls []controlProvenanceControl) []Violation {
+	var violations []Violation
+	for _, control := range controls {
+		if control.Classification != controlClassificationMachine {
+			continue
+		}
+		for _, guard := range control.ProjectionGuards {
+			if guard.Path == path {
+				violations = append(violations, controlProjectionProcedureGuardSurfaceViolations(path, data, control.ID, guard)...)
+			}
+		}
+	}
+	return violations
+}
+
+func controlProjectionProcedureGuardSurfaceViolations(path string, data []byte, controlID string, guard controlProvenanceProjectionGuard) []Violation {
+	marker := []byte("`control:" + controlID + "`")
+	if !bytes.Contains(data, marker) {
+		return []Violation{controlProjectionViolation(path, 1, fmt.Sprintf("procedure guard %q is missing its compact control projection", controlID))}
+	}
+	return controlProjectionForbiddenTokenViolations(path, data, controlID, guard.ForbiddenTokens)
+}
+
+func controlProjectionForbiddenTokenViolations(path string, data []byte, controlID string, tokens []string) []Violation {
+	var violations []Violation
+	for _, token := range tokens {
+		index := bytes.Index(data, []byte(token))
+		if index < 0 {
+			continue
+		}
+		line := bytes.Count(data[:index], []byte("\n")) + 1
+		violations = append(violations, controlProjectionViolation(path, line, fmt.Sprintf("control projection %q reintroduces machine-owned procedure token %q", controlID, token)))
 	}
 	return violations
 }
