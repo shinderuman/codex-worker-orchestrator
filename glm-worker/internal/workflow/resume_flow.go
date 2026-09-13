@@ -145,7 +145,7 @@ func (w *Workflow) activateResume(checkpoint state.ResumeCheckpoint) error {
 		if attemptID == "" {
 			return fmt.Errorf("guard repair rebuilt resume requires attempt ID")
 		}
-		if err := w.state.BeginResumeWithEvidence(checkpoint, attemptID); err != nil {
+		if err := w.state.ObserveGuardRepairResume(checkpoint, attemptID); err != nil {
 			return err
 		}
 	case attemptID != "":
