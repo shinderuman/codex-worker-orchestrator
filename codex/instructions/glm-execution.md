@@ -7,14 +7,14 @@
 - model実行またはstate変更を行うcommandはsandbox外、実装上read-onlyの`--status`・`--handoff`・`--stats`・`--watch`等のinspection/report commandはsandbox内で実行する。command名で推測せずside effectを正とする。
 - 同じ依頼を重複起動せず、GLM処理中にCodex自身が同じ調査・実装を代行しない。release・deploy等の直接許可が既にある場合でも、その途中で新たに必要になった開発変更は`~/.codex/instructions/direct-edit.md`の境界に従い新規taskへ切り出す。
 - 1回の新規taskには、同じ責務・変更理由・検証単位に属する要求だけを渡す。相互に独立したsubsystem・workstream・不具合群は別taskへ分けるが、同時変更しないと整合しない要求は分断しない。
-- 外部service・取得方式・実行環境等の未検証成立性が本番設計の前提になる依頼は、`~/.codex/instructions/feasibility-gate.md`を読んでから委譲内容を構成する。委譲前にACTIVE task file本文へ`## External feasibility`宣言節があることを確認する。宣言のないtaskはglm-workerがmodel呼出0回でfail closedする。
+- 外部service・取得方式・実行環境等の未検証成立性が本番設計の前提になる依頼は、`~/.codex/instructions/feasibility-gate.md`を読んで委譲内容を構成する。機械的admissionは`control:external-feasibility-admission`がfail closedで強制し、親は宣言した外部前提とproducer evidenceの意味的十分性を判断する。
 - 外部取得・parser・integration failureの原因診断にstatus・size・error分類だけでは足りない依頼は、`~/.codex/instructions/failure-evidence.md`を読んでから委譲内容を構成する。
 - 外部review・実運用で見つかったescaped bug・escaped reviewの原因分析を委譲する場合は、`~/.codex/instructions/escaped-cause-layer.md`を読んでから委譲内容を構成する。
 - worker依頼には調査・実装・必要テスト・lint/build・自己レビューまでを含め、独立reviewerの起動や「独立reviewまで」は要求しない。wrapperがworker完了後に別sessionのreviewerを自動実行する。
 - repository rootのtracked marker `.glm-worker-repository-harness`でopt-inしたrepoでは、新規taskの要求はOriginal instruction・Amendments・Contract・Must not・Acceptance criteriaを備えたtask fileとして`IMPLEMENTATION_TASKS/`配下へ置き、Planの`## ACTIVE`節から1件だけ指す。USER_REQUESTへtask詳細を複製せず、task要旨と参照だけを渡す。wrapperは全worker/reviewer呼出で同じtask file本文を読ませる配線を持つ。
 - user指示をACTIVE taskのdurable requirementへ反映する境界は`~/.codex/instructions/task-request-boundary.md`に従う。task完了前のtask file削除・history移行・plan昇格は行わない。
 - `"status":"NEEDS_SOL_REVIEW"`の理由がACTIVE task解決失敗(`parent_metadata_active_unresolvable`)または親管理metadata検出(`parent_metadata_*`)のときは、GLM側の再実行で解決しない。PlanのACTIVE欄・参照task file・親管理metadata現物を親Codexが直接確認・修復してから同じtaskを再開する。
-- 理由が外部成立性宣言検証(`external_feasibility_missing`・`external_feasibility_malformed`・`external_feasibility_unverified`)のときもGLM側の再実行で解決しない。親Codexがtask fileへ`## External feasibility`宣言を追加・修正してから同じtaskを再開する。拒否時点のtask status・resume checkpoint・pending decisionは保持されるため、decision待ちは同じdecision本文を、rate limit・provider停止・--stop停止中は同じresume actionを再送してよい。`status: poc`/`observation`taskの完了は親Go/No-Go待ち(`NEEDS_SOL_DECISION`)として返るため、Go判断は宣言を`status: implementation`へ書き換えてから`glm-parent-action decision`で渡す。
+- 外部成立性admissionでfail closedしたtaskはGLM側の再実行で解決せず、親Codexがtask fileの宣言・evidenceを修復して同じtaskを再開する。拒否時点のtask status・resume checkpoint・pending decisionは保持される。`status: poc`/`observation`taskの完了は親Go/No-Go待ち(`NEEDS_SOL_DECISION`)として返るため、Go判断は宣言を`status: implementation`へ書き換えてから`glm-parent-action decision`で渡す。
 - `AGENTS.md`や既存規約にある一般品質ゲートを依頼文へ列挙し直さず、タスク固有の完了条件・対象・除外事項・必要テストだけを明記する。
 - 正確な長い一覧や監査報告がpacket上限へ収まらない場合は、実行時に渡される`REPORT_ARTIFACT_DIR`へ保存させ、packetでは`artifacts`の絶対パスだけを受け取る。
 - 同一taskがSol判断待ち・review fix・rate limit中なら分割や新規起動へ切り替えず、保存済みtaskとsessionを継続する。
@@ -29,14 +29,12 @@
 ## 親action surface
 
 - Plan管理repositoryでcurrent ACTIVE taskを開始するときは、sandbox外で`glm-parent-action start`を1回だけ実行する。wrapperは固定semantic requestを既存glm-worker new-task admissionへ渡す。ACTIVE task本文をUSER_REQUESTへ複製しない。
-- decision・fixのsemantic payloadを親Codexが確定した後は、`prepare -> placeholder apply_patch -> 実action`を1つのcode-mode/tool orchestration内で連続実行し、その間にSolへ戻らない。まずsandbox内で`glm-parent-action prepare decision|fix`を実行し、machine JSONが`status:"prepared"`、期待した`action`、現在のprepareが返した`token`・`path`を持ち、`path`がrepository直下の`.glm-worker-parent-actions/`内を指すことを機械確認する。parse失敗・欠落・不一致ならpatch/actionを行わず停止する。
+- decision・fixのsemantic payloadを親Codexが確定した後は、sandbox内の`glm-parent-action prepare decision|fix`、返されたexact `path`のplaceholderへの`apply_patch`、sandbox外の実actionを1つのcode-mode/tool orchestration内で連続実行し、その間にSolへ戻らない。
 - prepare直後のstaging fileは再読しない。production prepare contractが作る既知のtoken binding headerと`__GLM_PARENT_ACTION_PAYLOAD__`だけを前提に、返されたexact `path`のplaceholderだけをCodex標準の`apply_patch`でsemantic payloadへ置換し、headerを保持する。patch失敗時は実actionを呼ばない。`cat`・`sed`・heredoc・shell redirect・Python等のread/write代替へ切り替えず、staging filenameを推測しない。
-- patch成功後、同じtool orchestration内でsandbox外の`glm-parent-action decision <token>`または`glm-parent-action fix <token> [--origin <値>] [--cause <値>] [--accepted-scope current-diff]`へ進む。実actionは返されたexact tokenだけを使い、file pathは渡さない。長時間実actionの待機は下記「待機」の同一cell境界をそのまま使う。
+- patch成功後、同じtool orchestration内でsandbox外の`glm-parent-action decision <token>`または`glm-parent-action fix <token> [--origin <値>] [--cause <値>] [--accepted-scope current-diff]`へ進む。長時間実actionの待機は下記「待機」の同一cell境界をそのまま使う。
 - quality policy surface変更で`NEEDS_SOL_REVIEW`停止したとき、machine handoffは`required_action:"approve-surface"`と`required_action_parameters`(`accepted-scope: current-diff`)を一意に返す。親Codexがsemantic fixを要求せず停止時点のexact current diffだけを承認する場合はpayloadやtokenなしで`glm-parent-action approve-surface --accepted-scope current-diff`を1回実行し、同一task・同一worker結果からworker再実行なしでreviewerへ進む。この状態のterminal `accept`はadmission段階でfail closedし、packet自由文の解釈で完了扱いにできない。semantic修正を要求する場合は従来の通常fixを使う。
-- staging rootはrepository直下の`.glm-worker-parent-actions/`に固定する。token形式不正、token binding不一致、placeholder未置換、symlink化されたdirectory/file、1 MiB超payloadはstate変更・model呼出前にfail closedする。
-- wrapperはpayloadをmemoryへ読み、staging fileを削除してからUTF-8 byte長・SHA-256を機械計算し、既存`glm-worker --decision-stdin`/`--fix-stdin`へ直接渡す。semantic本文中のbacktick、dollar、single quote、double quote、NUL、改行を無変換で保持する。
+- staged payload/tokenのbinding・single-use・task identity・current action admissionは`control:parent-action-staging-admission`がfail closedで強制する。親はmachine-admitted actionから実行するsemantic actionを選び、payloadの意味を判断する。
 - `glm-worker --decision-stdin`/`--fix-stdin`はrecovery/debug用に残すが、通常親workflowではbyte長・hash・TTY・`stdin_ready`・`write_stdin`・shell quotingを扱わず、旧transportへfallbackしない。
-- staging fileをconsumeした後にactionが失敗した場合は同じfile/tokenを再利用せず、新しいprepareから同じsemantic payloadを再送する。
 
 ## 親操作のoutcome申告
 
