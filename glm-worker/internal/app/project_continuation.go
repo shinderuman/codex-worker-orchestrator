@@ -1,6 +1,7 @@
 package app
 
 import (
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryproject"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskcontract"
 )
@@ -15,181 +16,119 @@ type projectContinuationObligation struct {
 }
 
 const (
-	projectContinuationContinueNow                  = "continue-now"
-	projectContinuationBlocked                      = "blocked"
-	projectContinuationTerminal                     = "terminal"
-	projectContinuationExplicitStop                 = "explicit-stop"
-	projectContinuationDeferredByVerifiedAutomation = "deferred-by-verified-automation"
-	projectContinuationUnknown                      = "unknown"
+	projectContinuationContinueNow                  = repositoryproject.ContinuationContinueNow
+	projectContinuationBlocked                      = repositoryproject.ContinuationBlocked
+	projectContinuationTerminal                     = repositoryproject.ContinuationTerminal
+	projectContinuationExplicitStop                 = repositoryproject.ContinuationExplicitStop
+	projectContinuationDeferredByVerifiedAutomation = repositoryproject.ContinuationDeferredByVerifiedAutomation
+	projectContinuationUnknown                      = repositoryproject.ContinuationUnknown
 )
 
 const (
-	projectContinuationReasonPlanAbsent                  = "plan-absent"
-	projectContinuationReasonProjectStateIncomplete      = "project-state-incomplete"
-	projectContinuationReasonLifecycleInconsistent       = "lifecycle-inconsistent"
-	projectContinuationReasonUserInterruption            = "user-interruption"
-	projectContinuationReasonGoalCompleted               = "goal-completed"
-	projectContinuationReasonGoalLifecycleInconsistent   = "goal-lifecycle-inconsistent"
-	projectContinuationReasonActiveTaskUnresolved        = "active-task-unresolved"
-	projectContinuationReasonActiveTaskNotStarted        = "active-task-not-started"
-	projectContinuationReasonActiveTaskMismatch          = "active-task-mismatch"
-	projectContinuationReasonCurrentTask                 = "current-task"
-	projectContinuationReasonContinuationScopeUnbound    = "continuation-scope-unbound"
-	projectContinuationReasonNextRunnable                = "next-runnable"
-	projectContinuationReasonGoalAcceptancePending       = "goal-acceptance-pending"
-	projectContinuationReasonCompletionStateInconsistent = "completion-state-inconsistent"
+	projectContinuationReasonPlanAbsent                  = repositoryproject.ReasonPlanAbsent
+	projectContinuationReasonProjectStateIncomplete      = repositoryproject.ReasonProjectStateIncomplete
+	projectContinuationReasonLifecycleInconsistent       = repositoryproject.ReasonLifecycleInconsistent
+	projectContinuationReasonUserInterruption            = repositoryproject.ReasonUserInterruption
+	projectContinuationReasonGoalCompleted               = repositoryproject.ReasonGoalCompleted
+	projectContinuationReasonGoalLifecycleInconsistent   = repositoryproject.ReasonGoalLifecycleInconsistent
+	projectContinuationReasonActiveTaskUnresolved        = repositoryproject.ReasonActiveTaskUnresolved
+	projectContinuationReasonActiveTaskNotStarted        = repositoryproject.ReasonActiveTaskNotStarted
+	projectContinuationReasonActiveTaskMismatch          = repositoryproject.ReasonActiveTaskMismatch
+	projectContinuationReasonCurrentTask                 = repositoryproject.ReasonCurrentTask
+	projectContinuationReasonContinuationScopeUnbound    = repositoryproject.ReasonContinuationScopeUnbound
+	projectContinuationReasonNextRunnable                = repositoryproject.ReasonNextRunnable
+	projectContinuationReasonGoalAcceptancePending       = repositoryproject.ReasonGoalAcceptancePending
+	projectContinuationReasonCompletionStateInconsistent = repositoryproject.ReasonCompletionStateInconsistent
 )
 
 func deriveProjectContinuation(output projectStateOutput, st *state.StateStore) projectContinuationObligation {
-	status := st.TaskStatus()
-	if status == state.TaskStatusInterrupted {
-		return interruptedProjectContinuation(output, st)
+	project := repositoryproject.ContinuationProjectView{PlanPresent: output.PlanPresent}
+	if output.Goal != nil && output.Schedule != nil {
+		project.ProjectReady = true
+		project.GoalPresent = output.Goal.Present
+		project.GoalCompleted = output.Goal.Present && output.Goal.Status == taskcontract.GoalStatusCompleted
+		project.Active = append([]string(nil), output.Schedule.Active...)
+		project.NextRunnable = cloneStringPointer(output.NextRunnable)
+		project.Blockers = cloneProjectBlockers(output.Blockers)
+		if output.Completion != nil {
+			project.Completion = &repositoryproject.CompletionView{
+				Ready: output.Completion.Ready,
+				Unmet: append([]string(nil), output.Completion.Unmet...),
+			}
+		}
 	}
-	if !output.PlanPresent {
-		return unknownProjectContinuation(projectContinuationReasonPlanAbsent)
-	}
-	if output.Goal == nil || output.Schedule == nil {
-		return unknownProjectContinuation(projectContinuationReasonProjectStateIncomplete)
-	}
-	if output.Goal.Present && output.Goal.Status == taskcontract.GoalStatusCompleted {
-		return terminalProjectContinuation(st)
-	}
-	if len(output.Schedule.Active) != 1 {
-		return unknownProjectContinuation(projectContinuationReasonActiveTaskUnresolved)
-	}
-	return activeProjectContinuation(output, st, output.Schedule.Active[0])
+	return projectContinuationFromPolicy(repositoryproject.DeriveContinuation(project, continuationLifecycle(st)))
 }
 
-func interruptedProjectContinuation(output projectStateOutput, st *state.StateStore) projectContinuationObligation {
-	plan, err := st.ParentActionPlan()
-	if err != nil || plan.RequiredAction != state.ParentActionResume {
-		return unknownProjectContinuation(projectContinuationReasonLifecycleInconsistent)
-	}
-	checkpoint, err := st.LoadResumeCheckpoint()
-	if err != nil || checkpoint.StopKind != state.ResumeStopInterrupted {
-		return unknownProjectContinuation(projectContinuationReasonLifecycleInconsistent)
-	}
-	task := st.ReadOr("active-task", "")
-	if task == "" && output.Schedule != nil && len(output.Schedule.Active) == 1 {
-		task = output.Schedule.Active[0]
-	}
-	return projectContinuationObligation{
-		State:          projectContinuationExplicitStop,
-		Task:           task,
-		RequiredAction: string(plan.RequiredAction),
-		Reason:         projectContinuationReasonUserInterruption,
-	}
-}
-
-func terminalProjectContinuation(st *state.StateStore) projectContinuationObligation {
-	status := st.TaskStatus()
-	if status != state.TaskStatusNone && status != state.TaskStatusComplete {
-		return unknownProjectContinuation(projectContinuationReasonGoalLifecycleInconsistent)
-	}
-	if status == state.TaskStatusNone && st.ReadOr("active-task", "") != "" {
-		return unknownProjectContinuation(projectContinuationReasonGoalLifecycleInconsistent)
-	}
-	plan, err := st.ParentActionPlan()
-	if err != nil || plan.RequiredAction != state.ParentActionNone {
-		return unknownProjectContinuation(projectContinuationReasonGoalLifecycleInconsistent)
-	}
-	return projectContinuationObligation{State: projectContinuationTerminal, Reason: projectContinuationReasonGoalCompleted}
-}
-
-func activeProjectContinuation(output projectStateOutput, st *state.StateStore, activeTask string) projectContinuationObligation {
+func continuationLifecycle(st *state.StateStore) repositoryproject.ContinuationLifecycle {
 	status := st.TaskStatus()
 	pinned := st.ReadOr("active-task", "")
-	if status == state.TaskStatusNone {
-		if pinned != "" {
-			return unknownProjectContinuation(projectContinuationReasonActiveTaskMismatch)
-		}
-		return projectContinuationObligation{
-			State:  projectContinuationContinueNow,
-			Task:   activeTask,
-			Reason: projectContinuationReasonActiveTaskNotStarted,
-		}
+	lifecycle := repositoryproject.ContinuationLifecycle{
+		Interrupted:  status == state.TaskStatusInterrupted,
+		PinnedTask:   pinned,
+		TaskAbsent:   status == state.TaskStatusNone,
+		TaskComplete: status == state.TaskStatusComplete,
 	}
-	if pinned != activeTask {
-		return unknownProjectContinuation(projectContinuationReasonActiveTaskMismatch)
+	plan, planErr := st.ParentActionPlan()
+	if planErr == nil {
+		lifecycle.ParentActionKnown = true
+		lifecycle.RequiredAction = string(plan.RequiredAction)
+		lifecycle.NoRequiredAction = plan.RequiredAction == state.ParentActionNone
 	}
-	plan, err := st.ParentActionPlan()
-	if err != nil {
-		return unknownProjectContinuation(projectContinuationReasonLifecycleInconsistent)
+	if status == state.TaskStatusInterrupted && planErr == nil && plan.RequiredAction == state.ParentActionResume {
+		checkpoint, err := st.LoadResumeCheckpoint()
+		lifecycle.InterruptedResumeValid = err == nil && checkpoint.StopKind == state.ResumeStopInterrupted
 	}
 	if status == state.TaskStatusRateLimited || status == state.TaskStatusProviderUnavailable {
-		return projectContinuationObligation{
-			State:          projectContinuationBlocked,
-			Task:           activeTask,
-			RequiredAction: string(plan.RequiredAction),
-			Reason:         string(status),
-		}
+		lifecycle.TemporaryBlockReason = string(status)
 	}
-	if status != state.TaskStatusComplete || plan.RequiredAction != state.ParentActionNone {
-		return currentTaskProjectContinuation(activeTask, plan.RequiredAction)
-	}
-	return completedActiveProjectContinuation(output, activeTask)
+	lifecycle.GoalTerminalCompatible =
+		(status == state.TaskStatusNone || status == state.TaskStatusComplete) &&
+		!(status == state.TaskStatusNone && pinned != "") &&
+		planErr == nil && plan.RequiredAction == state.ParentActionNone
+	return lifecycle
 }
 
-func completedActiveProjectContinuation(output projectStateOutput, activeTask string) projectContinuationObligation {
-	if !output.Goal.Present {
-		return unknownProjectContinuation(projectContinuationReasonContinuationScopeUnbound)
+func projectContinuationFromPolicy(continuation repositoryproject.Continuation) projectContinuationObligation {
+	return projectContinuationObligation{
+		State:          continuation.State,
+		Task:           continuation.Task,
+		RequiredAction: continuation.RequiredAction,
+		Reason:         continuation.Reason,
+		Blocker:        cloneProjectBlocker(continuation.Blocker),
 	}
-	if output.NextRunnable != nil {
-		return projectContinuationObligation{
-			State:  projectContinuationContinueNow,
-			Task:   *output.NextRunnable,
-			Reason: projectContinuationReasonNextRunnable,
-		}
-	}
-	if blocker := firstProjectContinuationBlocker(output.Blockers); blocker != nil {
-		return projectContinuationObligation{
-			State:   projectContinuationBlocked,
-			Task:    blocker.Task,
-			Reason:  blocker.Reason,
-			Blocker: blocker,
-		}
-	}
-	if output.Completion == nil {
-		return unknownProjectContinuation(projectContinuationReasonProjectStateIncomplete)
-	}
-	if output.Completion.Ready {
-		return projectContinuationObligation{
-			State:  projectContinuationContinueNow,
-			Task:   activeTask,
-			Reason: projectContinuationReasonGoalAcceptancePending,
-		}
-	}
-	if len(output.Completion.Unmet) != 0 {
-		return projectContinuationObligation{
-			State:  projectContinuationContinueNow,
-			Task:   activeTask,
-			Reason: output.Completion.Unmet[0],
-		}
-	}
-	return unknownProjectContinuation(projectContinuationReasonCompletionStateInconsistent)
 }
 
-func currentTaskProjectContinuation(task string, action state.ParentAction) projectContinuationObligation {
-	obligation := projectContinuationObligation{
-		State:  projectContinuationContinueNow,
-		Task:   task,
-		Reason: projectContinuationReasonCurrentTask,
+func cloneProjectBlockers(blockers []projectStateBlocker) []repositoryproject.Blocker {
+	cloned := make([]repositoryproject.Blocker, len(blockers))
+	for i := range blockers {
+		cloned[i] = blockers[i]
+		cloned[i].Outstanding = append([]string(nil), blockers[i].Outstanding...)
 	}
-	if action != state.ParentActionNone {
-		obligation.RequiredAction = string(action)
+	return cloned
+}
+
+func cloneProjectBlocker(blocker *repositoryproject.Blocker) *projectStateBlocker {
+	if blocker == nil {
+		return nil
 	}
-	return obligation
+	cloned := *blocker
+	cloned.Outstanding = append([]string(nil), blocker.Outstanding...)
+	return &cloned
+}
+
+func cloneStringPointer(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
 }
 
 func firstProjectContinuationBlocker(blockers []projectStateBlocker) *projectStateBlocker {
-	if len(blockers) == 0 {
-		return nil
-	}
-	blocker := blockers[0]
-	blocker.Outstanding = append([]string(nil), blocker.Outstanding...)
-	return &blocker
+	return repositoryproject.FirstBlocker(blockers)
 }
 
 func unknownProjectContinuation(reason string) projectContinuationObligation {
-	return projectContinuationObligation{State: projectContinuationUnknown, Reason: reason}
+	return projectContinuationFromPolicy(repositoryproject.UnknownContinuation(reason))
 }
