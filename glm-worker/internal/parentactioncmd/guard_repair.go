@@ -412,24 +412,29 @@ func resumeWithRepairedWorker(
 	if err != nil {
 		return errors.Join(resumeErr, err)
 	}
+	finalizeErr := finalizeGuardRepairResume(st, record, checkpoint, attemptID, resumeErr)
+	return errors.Join(finalizeErr, lock.Close())
+}
+
+func finalizeGuardRepairResume(
+	st *state.StateStore,
+	record state.GuardRepairRecord,
+	checkpoint state.ResumeCheckpoint,
+	attemptID string,
+	resumeErr error,
+) error {
 	if st.ReadOr("task.id", "") != record.TaskID {
-		return errors.Join(resumeErr, fmt.Errorf("original task changed before guard repair resume completed"), lock.Close())
+		return errors.Join(resumeErr, fmt.Errorf("original task changed before guard repair resume completed"))
 	}
-	record, transitionErr := st.VerifyGuardRepairResume(record.TaskID, attemptID, checkpoint)
+	observed, transitionErr := st.VerifyGuardRepairResume(record.TaskID, attemptID, checkpoint)
 	if transitionErr != nil {
-		failure := markGuardRepairFailed(st, record, errors.Join(resumeErr, transitionErr, fmt.Errorf("repaired worker did not enter original resume lifecycle")))
-		return errors.Join(failure, lock.Close())
+		return markGuardRepairFailed(st, record, errors.Join(resumeErr, transitionErr, fmt.Errorf("repaired worker did not enter original resume lifecycle")))
 	}
 	if st.TaskStatus() == state.TaskStatusGuardRecoverable {
-		failure := markGuardRepairFailed(st, record, errors.Join(resumeErr, fmt.Errorf("repaired worker did not leave guard-recoverable state")))
-		return errors.Join(failure, lock.Close())
+		return markGuardRepairFailed(st, observed, errors.Join(resumeErr, fmt.Errorf("repaired worker did not leave guard-recoverable state")))
 	}
-	record.Status = state.GuardRepairComplete
-	saveErr := st.SaveGuardRepairRecord(record)
-	if resumeErr != nil {
-		return errors.Join(resumeErr, saveErr, lock.Close())
-	}
-	return errors.Join(saveErr, lock.Close())
+	observed.Status = state.GuardRepairComplete
+	return errors.Join(resumeErr, st.SaveGuardRepairRecord(observed))
 }
 
 func appendEnv(env []string, key, value string) []string {
