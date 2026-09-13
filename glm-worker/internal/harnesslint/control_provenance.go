@@ -193,6 +193,12 @@ func validControlProvenancePath(value string) bool {
 	if value == "" || strings.Contains(value, "\\") || path.IsAbs(value) || path.Clean(value) != value {
 		return false
 	}
+	parts := strings.Split(value, "/")
+	for _, part := range parts[:len(parts)-1] {
+		if part == "testdata" || strings.HasPrefix(part, ".") || strings.HasPrefix(part, "_") {
+			return false
+		}
+	}
 	return strings.HasSuffix(value, ".go") && value != ".." && !strings.HasPrefix(value, "../")
 }
 

@@ -98,6 +98,28 @@ func TestControlProvenanceLocatorDriftFailsClosed(t *testing.T) {
 	}
 }
 
+func TestControlProvenanceRejectsIgnoredLocatorDirectories(t *testing.T) {
+	for _, locatorPath := range []string{"testdata/owner.go", "_ignored/owner.go", ".ignored/owner.go"} {
+		t.Run(locatorPath, func(t *testing.T) {
+			root := t.TempDir()
+			writeControlProvenanceGo(t, root, locatorPath, "package fixture\nfunc owner() {}\n")
+			writeControlProvenanceGo(t, root, "owner.go", "package fixture\nfunc postcondition() {}\n")
+			writeControlProvenanceGo(t, root, "owner_test.go", "package fixture\nfunc TestOwner() {}\n")
+			control := controlProvenanceMachineFixture()
+			control.MachineOwners[0].Path = locatorPath
+			writeControlProvenanceRegistry(t, root, controlProvenanceRegistry{Version: 1, Controls: []controlProvenanceControl{control}})
+
+			violations, err := controlProvenanceViolations(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !hasControlProvenanceViolation(violations, controlProvenanceRegistryPath, "invalid machine owner path", locatorPath) {
+				t.Fatalf("violations = %#v", violations)
+			}
+		})
+	}
+}
+
 func TestControlProvenanceRejectsMachineLocatorsOnNonMachineControl(t *testing.T) {
 	root := t.TempDir()
 	writeControlProvenanceGo(t, root, "owner.go", "package fixture\nfunc owner() {}\n")

@@ -54,6 +54,26 @@ func TestFinalHeadPlanReadsActiveContractFromHead(t *testing.T) {
 	}
 }
 
+func TestFinalHeadPlanValidationUsesCapturedHead(t *testing.T) {
+	root := newFinalHeadRepo(t)
+	writeFinalHeadFixture(t, root, finalHeadFixturePlan(""), true)
+	commitFinalHeadFixture(t, root)
+
+	snapshot, err := finalHeadPlan(root)
+	if err != nil || !snapshot.Present {
+		t.Fatalf("snapshot=%+v err=%v", snapshot, err)
+	}
+
+	writeFinalHeadFile(t, root, "IMPLEMENTATION_TASKS/active.md", "# active\n")
+	commitFinalHeadFixture(t, root)
+	if _, err := CheckFinalHeadPlan(root); err == nil || !strings.Contains(err.Error(), "External feasibility") {
+		t.Fatalf("current HEAD unexpectedly validated: %v", err)
+	}
+	if err := validateFinalHeadPlan(root, snapshot.Head, snapshot.Plan); err != nil {
+		t.Fatalf("captured HEAD validation followed mutable HEAD: %v", err)
+	}
+}
+
 func TestFinalHeadPlanAcceptsParkBranchWithoutPlanBranchString(t *testing.T) {
 	root := newFinalHeadRepo(t)
 	writeFinalHeadFixture(t, root, finalHeadFixturePlan(""), true)

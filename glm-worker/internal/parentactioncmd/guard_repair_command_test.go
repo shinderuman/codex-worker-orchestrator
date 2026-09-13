@@ -21,6 +21,9 @@ const (
 )
 
 func TestRunGuardRepairCommandTimesOut(t *testing.T) {
+	if !guardRepairProcessTreeSupportedForTest() {
+		t.Skip("guard repair process-tree ownership is unavailable on this platform")
+	}
 	t.Setenv(guardRepairCommandCellModeEnv, "sleep")
 	started := time.Now()
 	_, err := runGuardRepairCommandWithin(t.TempDir(), "guard repair Go tests", 500*time.Millisecond, os.Args[0], "-test.run=^TestGuardRepairCommandCell$")
@@ -36,6 +39,9 @@ func TestRunGuardRepairCommandTimesOut(t *testing.T) {
 }
 
 func TestRunGuardRepairCommandPreservesSuccess(t *testing.T) {
+	if !guardRepairProcessTreeSupportedForTest() {
+		t.Skip("guard repair process-tree ownership is unavailable on this platform")
+	}
 	t.Setenv(guardRepairCommandCellModeEnv, "success")
 	output, err := runGuardRepairCommandWithin(t.TempDir(), "guard repair Go tests", 5*time.Second, os.Args[0], "-test.run=^TestGuardRepairCommandCell$")
 	if err != nil {

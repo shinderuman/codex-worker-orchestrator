@@ -129,6 +129,30 @@ func TestApprovedQualitySurfaceActivationFailureRollsBackBaseline(t *testing.T) 
 	}
 }
 
+func TestApprovedQualitySurfaceRejectsEmptyCurrentSurface(t *testing.T) {
+	_, st, _, w := newQualitySurfaceDecisionWorkflow(t, nil)
+	stopDecisionContinuationForQualitySurface(t, st, w)
+	w.temp = t.TempDir()
+
+	if err := w.prepareAcceptedFixScopeForAction(acceptedFixScopeCurrentDiff, state.ParentActionApproveSurface); err != nil {
+		t.Fatal(err)
+	}
+	w.captureQualitySurface = func(string) (string, error) { return "", nil }
+
+	if err := w.activateApprovedQualitySurface(); err == nil {
+		t.Fatal("empty quality surface must fail closed")
+	}
+	if got := st.ReadOr(qualitySurfaceBaselineStateKey, ""); got != "baseline" {
+		t.Fatalf("empty surface changed quality baseline: %q", got)
+	}
+	if st.TaskStatus() != state.TaskStatusWaitingSolReview {
+		t.Fatalf("status = %s want waiting-sol-review", st.TaskStatus())
+	}
+	if st.Exists(acceptedFixScopeStateFile) {
+		t.Fatal("empty surface failure retained accepted current-diff scope")
+	}
+}
+
 func TestApprovedQualitySurfaceRevalidatesAcceptedScopeAfterCapture(t *testing.T) {
 	repo, st, _, w := newQualitySurfaceDecisionWorkflow(t, nil)
 	stopDecisionContinuationForQualitySurface(t, st, w)

@@ -40,37 +40,37 @@ func runGuardRepairCommand(dir, label, name string, args ...string) ([]byte, err
 }
 
 func runGuardRepairCommandWithin(dir, label string, timeout time.Duration, name string, args ...string) ([]byte, error) {
+	group, err := newGuardRepairCommandProcessGroup()
+	if err != nil {
+		return nil, fmt.Errorf("%s process-tree ownership unavailable: %w", label, err)
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	command := exec.CommandContext(ctx, name, args...)
-	configureGuardRepairCommandProcess(command)
+	group.configure(command)
 	command.Dir = dir
 	command.WaitDelay = guardRepairProcessSettleTime
 	var output bytes.Buffer
 	command.Stdout = &output
 	command.Stderr = &output
-	command.Cancel = func() error {
-		if command.Process == nil {
-			return os.ErrProcessDone
-		}
-		return cancelGuardRepairCommandProcess(command.Process.Pid)
-	}
+	command.Cancel = group.cancel
 
 	signals := make(chan os.Signal, 4)
 	signal.Notify(signals, guardRepairCommandSignals()...)
 	defer signal.Stop(signals)
 	if err := command.Start(); err != nil {
+		cleanupErr := group.release(guardRepairProcessSettleTime)
 		if ctxErr := ctx.Err(); ctxErr != nil {
-			return output.Bytes(), guardRepairTimeoutError(label, timeout, ctxErr, output.String(), nil)
+			return output.Bytes(), guardRepairTimeoutError(label, timeout, ctxErr, output.String(), cleanupErr)
 		}
-		return output.Bytes(), err
+		return output.Bytes(), errors.Join(err, cleanupErr)
 	}
-	return waitGuardRepairCommand(ctx, command, signals, label, timeout, &output)
+	return waitGuardRepairCommand(ctx, command, group, signals, label, timeout, &output)
 }
 
-func waitGuardRepairCommand(ctx context.Context, command *exec.Cmd, signals <-chan os.Signal, label string, timeout time.Duration, output *bytes.Buffer) ([]byte, error) {
-	pid := command.Process.Pid
+func waitGuardRepairCommand(ctx context.Context, command *exec.Cmd, group *guardRepairCommandProcessGroup, signals <-chan os.Signal, label string, timeout time.Duration, output *bytes.Buffer) ([]byte, error) {
 	waitDone := make(chan error, 1)
 	go func() { waitDone <- command.Wait() }()
 	var interrupted os.Signal
@@ -81,22 +81,23 @@ func waitGuardRepairCommand(ctx context.Context, command *exec.Cmd, signals <-ch
 			if interrupted == nil {
 				interrupted = received
 			}
-			_ = signalGuardRepairCommandProcess(pid, received)
+			_ = group.signal(received)
 		case err := <-waitDone:
-			return guardRepairCommandWaitResult(ctx, pid, interrupted, err, label, timeout, output)
+			return guardRepairCommandWaitResult(ctx, group, interrupted, err, label, timeout, output)
 		}
 	}
 }
 
-func guardRepairCommandWaitResult(ctx context.Context, pid int, interrupted os.Signal, waitErr error, label string, timeout time.Duration, output *bytes.Buffer) ([]byte, error) {
+func guardRepairCommandWaitResult(ctx context.Context, group *guardRepairCommandProcessGroup, interrupted os.Signal, waitErr error, label string, timeout time.Duration, output *bytes.Buffer) ([]byte, error) {
 	if ctxErr := ctx.Err(); ctxErr != nil {
-		cleanupErr := verifyGuardRepairCommandProcessGone(pid, guardRepairProcessSettleTime)
+		cleanupErr := group.verifyGone(guardRepairProcessSettleTime)
 		return output.Bytes(), guardRepairTimeoutError(label, timeout, ctxErr, output.String(), cleanupErr)
 	}
+	cleanupErr := group.release(guardRepairProcessSettleTime)
 	if interrupted != nil {
-		return output.Bytes(), &guardRepairCommandInterruptedError{signal: interrupted, err: waitErr}
+		return output.Bytes(), &guardRepairCommandInterruptedError{signal: interrupted, err: errors.Join(waitErr, cleanupErr)}
 	}
-	return output.Bytes(), waitErr
+	return output.Bytes(), errors.Join(waitErr, cleanupErr)
 }
 
 func guardRepairTimeoutError(label string, timeout time.Duration, cause error, output string, cleanupErr error) error {

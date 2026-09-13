@@ -81,16 +81,16 @@ func executeParentWait(cfg config.AppConfig, args []string, stdout, stderr io.Wr
 	if err != nil {
 		return err
 	}
+	expectedEpoch, err := readParentWaitOwnerEpoch(st)
+	if err != nil {
+		return fmt.Errorf("bind parent recovery waiter: %w", err)
+	}
+
 	recovery, err := repolock.Acquire(st.Path(parentWaitRecoveryLockFile))
 	if err != nil {
 		return fmt.Errorf("acquire parent recovery waiter: %w", err)
 	}
 	defer func() { _ = recovery.Close() }()
-
-	expectedEpoch, err := readParentWaitOwnerEpoch(st)
-	if err != nil {
-		return fmt.Errorf("bind parent recovery waiter: %w", err)
-	}
 
 	owner, err := repolock.AcquireWait(st.Path(parentWaitLockFile))
 	if err != nil {
