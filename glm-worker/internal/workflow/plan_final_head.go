@@ -12,14 +12,14 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskcontract"
 )
 
-const parentCompletionHeadVerified = "plan completion head: verified"
-
 type finalHeadPlanSnapshot struct {
 	Plan    string
 	Head    string
 	Status  string
 	Present bool
 }
+
+const parentCompletionHeadVerified = "plan completion head: verified"
 
 func CheckFinalHeadPlan(root string) (string, error) {
 	snapshot, err := finalHeadPlan(root)
