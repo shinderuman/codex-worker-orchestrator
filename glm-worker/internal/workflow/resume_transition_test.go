@@ -7,9 +7,12 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-func TestActivateResumeRecordsGuardRepairTransitionEvidence(t *testing.T) {
-	st, taskID, checkpoint := prepareGuardRepairResumeTransition(t)
+func TestActivateResumeRecordsGuardRepairTransactionObservation(t *testing.T) {
+	st, taskID, checkpoint, record := prepareGuardRepairResumeTransition(t)
 	attemptID := "66666666-6666-4666-8666-666666666666"
+	if _, err := st.PrepareGuardRepairResume(record, checkpoint, attemptID); err != nil {
+		t.Fatal(err)
+	}
 	t.Setenv(state.GuardRepairParentActionEnv, state.GuardRepairRebuiltResume)
 	t.Setenv(state.GuardRepairResumeAttemptEnv, attemptID)
 
@@ -20,13 +23,17 @@ func TestActivateResumeRecordsGuardRepairTransitionEvidence(t *testing.T) {
 	if st.TaskStatus() != state.TaskStatusActive {
 		t.Fatalf("status = %s want active", st.TaskStatus())
 	}
-	if err := st.VerifyResumeTransitionEvidence(taskID, attemptID, checkpoint); err != nil {
-		t.Fatalf("rebuilt resume did not record canonical lifecycle evidence: %v", err)
+	observed, err := st.VerifyGuardRepairResume(taskID, attemptID, checkpoint)
+	if err != nil {
+		t.Fatalf("rebuilt resume did not record transaction-owned lifecycle evidence: %v", err)
+	}
+	if !observed.OriginalResumeObserved {
+		t.Fatal("rebuilt resume observation was not persisted")
 	}
 }
 
 func TestActivateResumeRejectsGuardRepairAttemptOutsideRebuiltResume(t *testing.T) {
-	st, _, checkpoint := prepareGuardRepairResumeTransition(t)
+	st, _, checkpoint, _ := prepareGuardRepairResumeTransition(t)
 	t.Setenv(state.GuardRepairParentActionEnv, state.GuardRepairParentActionResume)
 	t.Setenv(state.GuardRepairResumeAttemptEnv, "77777777-7777-4777-8777-777777777777")
 
@@ -40,7 +47,7 @@ func TestActivateResumeRejectsGuardRepairAttemptOutsideRebuiltResume(t *testing.
 }
 
 func TestActivateResumeRejectsRebuiltResumeWithoutAttempt(t *testing.T) {
-	st, _, checkpoint := prepareGuardRepairResumeTransition(t)
+	st, _, checkpoint, _ := prepareGuardRepairResumeTransition(t)
 	t.Setenv(state.GuardRepairParentActionEnv, state.GuardRepairRebuiltResume)
 	t.Setenv(state.GuardRepairResumeAttemptEnv, "")
 
@@ -53,7 +60,7 @@ func TestActivateResumeRejectsRebuiltResumeWithoutAttempt(t *testing.T) {
 	}
 }
 
-func prepareGuardRepairResumeTransition(t *testing.T) (*state.StateStore, string, state.ResumeCheckpoint) {
+func prepareGuardRepairResumeTransition(t *testing.T) (*state.StateStore, string, state.ResumeCheckpoint, state.GuardRepairRecord) {
 	t.Helper()
 	cfg := config.AppConfig{RepoRoot: t.TempDir(), StateBase: t.TempDir(), RepoHash: "guard-repair-resume-transition"}
 	st, err := state.NewStateStore(cfg)
@@ -84,5 +91,18 @@ func prepareGuardRepairResumeTransition(t *testing.T) (*state.StateStore, string
 	if err := st.SetTaskStatus(state.TaskStatusGuardRecoverable); err != nil {
 		t.Fatal(err)
 	}
-	return st, taskID, checkpoint
+	record := state.GuardRepairRecord{
+		TaskID:         taskID,
+		Phase:          checkpoint.Phase,
+		Fingerprint:    "fingerprint",
+		Strategy:       "bounded-guard-source-repair-v1",
+		Status:         state.GuardRepairReady,
+		Failure:        checkpoint.GuardFailure,
+		RelevantDigest: "digest-before",
+		RepairedDigest: "digest-repaired",
+	}
+	if err := st.SaveGuardRepairRecord(record); err != nil {
+		t.Fatal(err)
+	}
+	return st, taskID, checkpoint, record
 }
