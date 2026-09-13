@@ -10,18 +10,27 @@ import (
 
 type GuardRepairStatus string
 
+type GuardRepairIntegration struct {
+	RepositoryBoundary GitSnapshot                  `json:"repository_boundary"`
+	StopDirtyFiles      []StopDirtyFile              `json:"stop_dirty_files"`
+	Files               []GuardRepairIntegrationFile `json:"files"`
+}
+
 type GuardRepairRecord struct {
-	Version                int               `json:"version"`
-	TaskID                 string            `json:"task_id"`
-	Phase                  string            `json:"phase"`
-	Fingerprint            string            `json:"fingerprint"`
-	Strategy               string            `json:"strategy"`
-	Status                 GuardRepairStatus `json:"status"`
-	Failure                string            `json:"failure"`
-	RelevantDigest         string            `json:"relevant_digest"`
-	RepairedDigest         string            `json:"repaired_digest,omitempty"`
-	OriginalResumeObserved bool              `json:"original_resume_observed,omitempty"`
-	UpdatedAt              time.Time         `json:"updated_at"`
+	Version                int                     `json:"version"`
+	TaskID                 string                  `json:"task_id"`
+	Phase                  string                  `json:"phase"`
+	Fingerprint            string                  `json:"fingerprint"`
+	Strategy               string                  `json:"strategy"`
+	Status                 GuardRepairStatus       `json:"status"`
+	Failure                string                  `json:"failure"`
+	RelevantDigest         string                  `json:"relevant_digest"`
+	RepairedDigest         string                  `json:"repaired_digest,omitempty"`
+	Integration            *GuardRepairIntegration `json:"integration,omitempty"`
+	ResumeAttemptID        string                  `json:"resume_attempt_id,omitempty"`
+	ResumeCheckpointDigest string                  `json:"resume_checkpoint_digest,omitempty"`
+	OriginalResumeObserved bool                    `json:"original_resume_observed,omitempty"`
+	UpdatedAt              time.Time               `json:"updated_at"`
 }
 
 const (
@@ -29,21 +38,24 @@ const (
 	GuardRepairParentActionResume = "resume"
 	GuardRepairRebuiltResume      = "guard-repair-resume"
 
-	GuardRepairRequested GuardRepairStatus = "requested"
-	GuardRepairRunning   GuardRepairStatus = "running"
-	GuardRepairReady     GuardRepairStatus = "ready"
-	GuardRepairFailed    GuardRepairStatus = "failed"
-	GuardRepairComplete  GuardRepairStatus = "complete"
+	GuardRepairRequested   GuardRepairStatus = "requested"
+	GuardRepairRunning     GuardRepairStatus = "running"
+	GuardRepairIntegrating GuardRepairStatus = "integrating"
+	GuardRepairReady       GuardRepairStatus = "ready"
+	GuardRepairResuming    GuardRepairStatus = "resuming"
+	GuardRepairFailed      GuardRepairStatus = "failed"
+	GuardRepairComplete    GuardRepairStatus = "complete"
 
 	guardRepairStateFile    = "guard-repair.json"
-	guardRepairStateVersion = 1
+	guardRepairStateVersion = 2
 )
 
 var ErrNoGuardRepairRecord = errors.New("guard repair record is not available")
 
 func (status GuardRepairStatus) Valid() bool {
 	switch status {
-	case GuardRepairRequested, GuardRepairRunning, GuardRepairReady, GuardRepairFailed, GuardRepairComplete:
+	case GuardRepairRequested, GuardRepairRunning, GuardRepairIntegrating, GuardRepairReady,
+		GuardRepairResuming, GuardRepairFailed, GuardRepairComplete:
 		return true
 	default:
 		return false
@@ -60,24 +72,43 @@ func (record GuardRepairRecord) validate() error {
 	if !record.Status.Valid() {
 		return fmt.Errorf("guard repair record has invalid status %q", record.Status)
 	}
-	if err := record.validateCompletion(); err != nil {
-		return err
+	return record.validateProgress()
+}
+
+func (record GuardRepairRecord) validateProgress() error {
+	repaired := record.Status == GuardRepairReady || record.Status == GuardRepairResuming || record.Status == GuardRepairComplete
+	if repaired && record.RepairedDigest == "" {
+		return fmt.Errorf("repaired guard repair record requires repaired digest")
+	}
+	if record.Status == GuardRepairIntegrating {
+		if record.Integration == nil {
+			return fmt.Errorf("integrating guard repair record requires integration rollback state")
+		}
+		if err := record.Integration.validate(); err != nil {
+			return err
+		}
+	} else if record.Integration != nil {
+		return fmt.Errorf("guard repair integration rollback state requires integrating status")
+	}
+
+	resumeProof := record.ResumeAttemptID != "" || record.ResumeCheckpointDigest != "" || record.OriginalResumeObserved
+	if record.Status == GuardRepairResuming || record.Status == GuardRepairComplete {
+		if !ValidGeneratedUUID(record.ResumeAttemptID) || record.ResumeCheckpointDigest == "" {
+			return fmt.Errorf("guard repair resume proof is incomplete")
+		}
+		if record.Status == GuardRepairComplete && !record.OriginalResumeObserved {
+			return fmt.Errorf("complete guard repair record requires original resume evidence")
+		}
+	} else if resumeProof {
+		return fmt.Errorf("guard repair resume proof requires resuming or complete status")
 	}
 	return nil
 }
 
-func (record GuardRepairRecord) validateCompletion() error {
-	ready := record.Status == GuardRepairReady || record.Status == GuardRepairComplete
-	if ready && record.RepairedDigest == "" {
-		return fmt.Errorf("ready guard repair record requires repaired digest")
-	}
-	if record.Status == GuardRepairComplete && !record.OriginalResumeObserved {
-		return fmt.Errorf("complete guard repair record requires original resume evidence")
-	}
-	if record.OriginalResumeObserved && record.Status != GuardRepairComplete {
-		return fmt.Errorf("original resume evidence requires complete guard repair status")
-	}
-	return nil
+func (record *GuardRepairRecord) ClearResumeProof() {
+	record.ResumeAttemptID = ""
+	record.ResumeCheckpointDigest = ""
+	record.OriginalResumeObserved = false
 }
 
 func (s *StateStore) RequestGuardRepair(record GuardRepairRecord) error {
@@ -99,8 +130,8 @@ func (record GuardRepairRecord) sameRecovery(next GuardRepairRecord) bool {
 	if record.Fingerprint == next.Fingerprint && record.RelevantDigest == next.RelevantDigest {
 		return true
 	}
-	ready := record.Status == GuardRepairReady || record.Status == GuardRepairComplete
-	return ready && record.Phase == next.Phase && record.Failure == next.Failure &&
+	repaired := record.Status == GuardRepairReady || record.Status == GuardRepairResuming || record.Status == GuardRepairComplete
+	return repaired && record.Phase == next.Phase && record.Failure == next.Failure &&
 		record.RepairedDigest != "" && record.RepairedDigest == next.RelevantDigest
 }
 
