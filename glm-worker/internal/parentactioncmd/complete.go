@@ -34,10 +34,11 @@ type completeRemoteSyncSummary struct {
 }
 
 type completionVerification struct {
-	remoteSync   *completeRemoteSyncSummary
-	verifiedHead string
-	gitRepo      bool
-	failure      *finalizationFailure
+	remoteSync              *completeRemoteSyncSummary
+	verifiedHead            string
+	gitRepo                 bool
+	repositoryHarnessActive bool
+	failure                 *finalizationFailure
 }
 
 const (
@@ -138,10 +139,18 @@ func verifyParentCompletion(repoRoot string, st *state.StateStore) completionVer
 	if !pushBindingTreeClean(repoRoot) {
 		return completionVerification{failure: &finalizationFailure{Stage: "git", Reason: "tree_not_clean"}}
 	}
-	if _, err := workflow.CheckParentCompletionHead(repoRoot); err != nil {
+	repositoryHarnessActive, err := workflow.RepositoryHarnessActive(repoRoot, st)
+	if err != nil {
 		return completionVerification{failure: &finalizationFailure{
 			Stage: "metadata", Reason: "completion_transition_invalid", Detail: compactFinalizationDiagnostic(err.Error()),
 		}}
+	}
+	if repositoryHarnessActive {
+		if _, err := workflow.CheckParentCompletionHead(repoRoot); err != nil {
+			return completionVerification{failure: &finalizationFailure{
+				Stage: "metadata", Reason: "completion_transition_invalid", Detail: compactFinalizationDiagnostic(err.Error()),
+			}}
+		}
 	}
 	headOID, unborn, failure := completeHeadState(repoRoot)
 	if failure != nil {
@@ -152,13 +161,20 @@ func verifyParentCompletion(repoRoot string, st *state.StateStore) completionVer
 	}
 	if unborn {
 		return completionVerification{
-			remoteSync:   &completeRemoteSyncSummary{Applicable: false, State: completeRemoteStateNotApplicable},
-			verifiedHead: headOID,
-			gitRepo:      true,
+			remoteSync:              &completeRemoteSyncSummary{Applicable: false, State: completeRemoteStateNotApplicable},
+			verifiedHead:            headOID,
+			gitRepo:                 true,
+			repositoryHarnessActive: repositoryHarnessActive,
 		}
 	}
 	remoteSync, failure := verifyCompletionRemoteSync(repoRoot)
-	return completionVerification{remoteSync: remoteSync, verifiedHead: headOID, gitRepo: true, failure: failure}
+	return completionVerification{
+		remoteSync:              remoteSync,
+		verifiedHead:            headOID,
+		gitRepo:                 true,
+		repositoryHarnessActive: repositoryHarnessActive,
+		failure:                 failure,
+	}
 }
 
 func verifyCompletionUnchanged(repoRoot string, gitRepo bool, verifiedHead string) *finalizationFailure {
