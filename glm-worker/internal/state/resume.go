@@ -67,7 +67,6 @@ type ResumeCheckpoint struct {
 	GuardFailure             string           `json:"guard_failure,omitempty"`
 	GuardRefBeforeDigest     string           `json:"guard_ref_before_digest,omitempty"`
 	GuardRefAfterDigest      string           `json:"guard_ref_after_digest,omitempty"`
-	GuardRefStopDigest       string           `json:"guard_ref_stop_digest,omitempty"`
 	GuardRefChanges          []GuardRefChange `json:"guard_ref_changes,omitempty"`
 	GuardRefChangesTruncated bool             `json:"guard_ref_changes_truncated,omitempty"`
 
@@ -184,7 +183,6 @@ func (checkpoint *ResumeCheckpoint) clearStopPayload() {
 	checkpoint.GuardFailure = ""
 	checkpoint.GuardRefBeforeDigest = ""
 	checkpoint.GuardRefAfterDigest = ""
-	checkpoint.GuardRefStopDigest = ""
 	checkpoint.GuardRefChanges = nil
 	checkpoint.GuardRefChangesTruncated = false
 	checkpoint.QualityGateFailure = ""
@@ -255,8 +253,7 @@ func (checkpoint ResumeCheckpoint) validateGuardStopPayload() error {
 		return nil
 	}
 	guardEvidence := checkpoint.GuardFailure != "" || checkpoint.GuardRefBeforeDigest != "" ||
-		checkpoint.GuardRefAfterDigest != "" || checkpoint.GuardRefStopDigest != "" ||
-		len(checkpoint.GuardRefChanges) != 0 || checkpoint.GuardRefChangesTruncated
+		checkpoint.GuardRefAfterDigest != "" || len(checkpoint.GuardRefChanges) != 0 || checkpoint.GuardRefChangesTruncated
 	guardResult := checkpoint.CompletedResult != nil && !checkpoint.QualitySurfaceApprovalPending && checkpoint.StopKind != ResumeStopQualityGate
 	if !guardEvidence && !guardResult {
 		return nil
