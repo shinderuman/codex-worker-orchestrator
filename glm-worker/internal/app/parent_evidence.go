@@ -244,7 +244,9 @@ func commitParentEvidenceProjectionLocked(p *parentEvidenceProjector, stdout io.
 	if err := markParentReviewEvidenceProof(p, output.Parts); err != nil {
 		return err
 	}
-	saveSurvivingParentEvidenceClaims(p, output.Parts)
+	if err := saveSurvivingParentEvidenceClaims(p, output.Parts); err != nil {
+		return err
+	}
 	recordParentEvidence(p.st, state.ParentEvidenceRecord{
 		Surface: state.ParentEvidenceSurfaceEvidenceTelemetry, Origin: state.ParentEvidenceOriginEvidence,
 		OwnerCallID: p.ownerCallID, Bytes: written, Outcome: state.ParentEvidenceOutcomeProjected,
@@ -267,12 +269,16 @@ func validateParentEvidenceProjectionScope(p *parentEvidenceProjector) error {
 	return nil
 }
 
-func saveSurvivingParentEvidenceClaims(p *parentEvidenceProjector, parts []parentEvidencePart) {
+func saveSurvivingParentEvidenceClaims(p *parentEvidenceProjector, parts []parentEvidencePart) error {
 	for _, claim := range p.pendingClaims {
-		if parentEvidenceClaimSurvivesBudget(parts, claim) {
-			saveParentEvidenceLedger(p.st, claim.Surface, claim.Digest, claim.Origin, claim.OwnerCallID)
+		if !parentEvidenceClaimSurvivesBudget(parts, claim) {
+			continue
+		}
+		if err := saveParentEvidenceLedger(p.st, claim.Surface, claim.Digest, claim.Origin, claim.OwnerCallID); err != nil {
+			return err
 		}
 	}
+	return nil
 }
 
 func parentEvidenceClaimSurvivesBudget(parts []parentEvidencePart, claim state.ParentEvidenceLedgerEntry) bool {
