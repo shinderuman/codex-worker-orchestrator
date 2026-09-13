@@ -198,10 +198,10 @@ var commandParsers = map[string]commandParser{
 	"--recover-quality-surface": func(args []string) (Command, error) {
 		return requiredPayloadCommand(args, modeRecoverQualitySurface, "usage: glm-worker --recover-quality-surface <task-id>")
 	},
-	"--verify-auto-resume":  verifyAutoResumeCommand,
-	"--verify-codex-wake":   verifyCodexWakeCommand,
-	"--check-wake-coalesce": checkWakeCoalesceCommand,
-	"--codex-wake-plan":     codexWakePlanCommand,
+	"--verify-auto-resume":        verifyAutoResumeCommand,
+	"--verify-codex-wake":         verifyCodexWakeCommand,
+	"--check-wake-coalesce":       checkWakeCoalesceCommand,
+	"--codex-wake-plan":           codexWakePlanCommand,
 	"--codex-wake-response-stdin": codexWakeResponseCommand,
 	"--eval-ab": func(args []string) (Command, error) {
 		return requiredPayloadCommand(args, ModeEvalAB, "usage: glm-worker --eval-ab <run-dir>")
