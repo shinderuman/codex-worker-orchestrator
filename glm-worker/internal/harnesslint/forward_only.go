@@ -178,6 +178,21 @@ func schemaSwitchPromotionViolations(set *token.FileSet, path string, branch *as
 		return nil
 	}
 	switchKinds := schemaKinds(branch.Tag)
+	defaultKinds := switchKinds
+	if len(defaultKinds) == 0 {
+		defaultKinds = make(map[string]bool)
+		for _, statement := range branch.Body.List {
+			clause, ok := statement.(*ast.CaseClause)
+			if !ok {
+				continue
+			}
+			for _, expression := range clause.List {
+				for kind := range schemaKinds(expression) {
+					defaultKinds[kind] = true
+				}
+			}
+		}
+	}
 	var violations []Violation
 	for _, statement := range branch.Body.List {
 		clause, ok := statement.(*ast.CaseClause)
@@ -186,10 +201,14 @@ func schemaSwitchPromotionViolations(set *token.FileSet, path string, branch *as
 		}
 		kinds := switchKinds
 		if len(kinds) == 0 {
-			kinds = make(map[string]bool)
-			for _, expression := range clause.List {
-				for kind := range schemaKinds(expression) {
-					kinds[kind] = true
+			if len(clause.List) == 0 {
+				kinds = defaultKinds
+			} else {
+				kinds = make(map[string]bool)
+				for _, expression := range clause.List {
+					for kind := range schemaKinds(expression) {
+						kinds[kind] = true
+					}
 				}
 			}
 		}
@@ -398,7 +417,6 @@ func nodeMutatesCurrentState(node ast.Node) bool {
 					mutates = true
 					break
 				}
-			}
 		}
 		return !mutates
 	})
