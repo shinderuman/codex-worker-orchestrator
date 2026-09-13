@@ -17,6 +17,12 @@ type watchTerminalDrainWriter struct {
 	blocked     bool
 }
 
+type watchTerminalDrainResult struct {
+	pending  []byte
+	terminal bool
+	err      error
+}
+
 func newWatchTerminalDrainWriter() *watchTerminalDrainWriter {
 	return &watchTerminalDrainWriter{
 		liveStarted: make(chan struct{}),
@@ -31,12 +37,6 @@ func (w *watchTerminalDrainWriter) Write(p []byte) (int, error) {
 		<-w.release
 	}
 	return w.Buffer.Write(p)
-}
-
-type watchTerminalDrainResult struct {
-	pending  []byte
-	terminal bool
-	err      error
 }
 
 func TestWatchTaskTickDrainsCompletionBeforeTerminalExit(t *testing.T) {
@@ -79,7 +79,7 @@ func TestWatchTaskTickDrainsCompletionBeforeTerminalExit(t *testing.T) {
 		state.TaskEventRecord{
 			TaskID: taskID, CallID: "call-1", Role: "worker", Phase: "worker-new", Kind: "user",
 			Timestamp: base.Add(10*time.Minute + time.Second),
-			Blocks: []state.TaskBlockSummary{{Type: "tool_result", Name: "Bash", ToolID: "toolu_1", DurationMS: 295100}},
+			Blocks:    []state.TaskBlockSummary{{Type: "tool_result", Name: "Bash", ToolID: "toolu_1", DurationMS: 295100}},
 		},
 	)
 	if err := st.SetTaskStatus(state.TaskStatusWaitingSolReview); err != nil {
