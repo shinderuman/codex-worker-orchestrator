@@ -128,7 +128,7 @@ func TestIntegrateGuardRepairCandidateRollsBackAfterCheckpointLoss(t *testing.T)
 	writeGuardRepairTestFile(t, worktree, second, "repaired test\n")
 	candidate := guardRepairCandidate{worktree: worktree, changed: []string{first, second}}
 
-	if _, err := integrateGuardRepairCandidate(cfg, st, record, guardRepairOrigin{checkpoint: checkpoint, boundary: boundary}, candidate); err == nil {
+	if _, _, err := integrateGuardRepairCandidate(cfg, st, record, guardRepairOrigin{checkpoint: checkpoint, boundary: boundary}, candidate); err == nil {
 		t.Fatal("missing persisted checkpoint unexpectedly accepted")
 	}
 	assertGuardRepairTestFile(t, repo, first, "original source\n")
