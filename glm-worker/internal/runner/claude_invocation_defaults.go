@@ -2,6 +2,9 @@ package runner
 
 import "strconv"
 
+// These are the canonical defaults for orchestrator-started Claude calls.
+// claude/settings-managed.json mirrors them for direct non-orchestrator Claude use;
+// claude_invocation_defaults_test.go keeps that projection in sync.
 const configuredAutoCompactWindowTokens = 500_000
 const configuredAlwaysEnableEffort = "1"
 
