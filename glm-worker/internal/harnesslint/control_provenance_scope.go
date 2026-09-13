@@ -19,7 +19,15 @@ func scopedControlProvenanceViolations(root string) ([]Violation, error) {
 	if !applies {
 		return nil, nil
 	}
-	return controlProvenanceViolations(root)
+	violations, err := controlProvenanceViolations(root)
+	if err != nil {
+		return nil, err
+	}
+	projectionViolations, err := controlProjectionViolations(root)
+	if err != nil {
+		return nil, err
+	}
+	return append(violations, projectionViolations...), nil
 }
 
 func isCodexWorkerOrchestrator(root string) (bool, error) {
