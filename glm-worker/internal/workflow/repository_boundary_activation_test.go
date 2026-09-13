@@ -9,10 +9,10 @@ import (
 
 func TestCaptureRepositoryBoundarySelectsActivationScopedSnapshot(t *testing.T) {
 	tests := []struct {
-		name       string
-		inactive   bool
-		wantHead   string
-		wantGeneric int
+		name         string
+		inactive     bool
+		wantHead     string
+		wantGeneric  int
 		wantBoundary int
 	}{
 		{
