@@ -7,6 +7,7 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
 var repositoryHarnessGuardSurface = guardSurface{
@@ -19,7 +20,11 @@ var repositoryHarnessGuardSurface = guardSurface{
 }
 
 func (w *Workflow) repositoryHarnessActive() (bool, error) {
-	activation, pinned, err := w.readRepositoryHarnessActivationPin()
+	return RepositoryHarnessActive(w.config.RepoRoot, w.state)
+}
+
+func RepositoryHarnessActive(repoRoot string, st *state.StateStore) (bool, error) {
+	activation, pinned, err := readRepositoryHarnessActivationPin(st)
 	if err != nil {
 		return false, err
 	}
@@ -28,10 +33,10 @@ func (w *Workflow) repositoryHarnessActive() (bool, error) {
 		case repositoryharness.ActivationActiveValue:
 			return true, nil
 		case repositoryharness.ActivationInactiveValue:
-			if !w.activeTaskStateSet() {
+			if !st.Exists(activeTaskStateKey) {
 				return false, nil
 			}
-			activeTask, err := w.state.Read(activeTaskStateKey)
+			activeTask, err := st.Read(activeTaskStateKey)
 			if err != nil {
 				return false, fmt.Errorf("ACTIVE task pinを読み込めません: %w", err)
 			}
@@ -43,10 +48,10 @@ func (w *Workflow) repositoryHarnessActive() (bool, error) {
 			return false, fmt.Errorf("repository harness activation pinが不正です: %q", activation)
 		}
 	}
-	if w.activeTaskStateSet() {
+	if st.Exists(activeTaskStateKey) {
 		return false, fmt.Errorf("repository harness activation pinが欠落しています")
 	}
-	decision, err := repositoryharness.Evaluate(w.config.RepoRoot)
+	decision, err := repositoryharness.Evaluate(repoRoot)
 	if err != nil {
 		return false, err
 	}
@@ -54,7 +59,11 @@ func (w *Workflow) repositoryHarnessActive() (bool, error) {
 }
 
 func (w *Workflow) readRepositoryHarnessActivationPin() (string, bool, error) {
-	data, err := os.ReadFile(w.state.Path(repositoryharness.ActivationStateKey))
+	return readRepositoryHarnessActivationPin(w.state)
+}
+
+func readRepositoryHarnessActivationPin(st *state.StateStore) (string, bool, error) {
+	data, err := os.ReadFile(st.Path(repositoryharness.ActivationStateKey))
 	if errors.Is(err, os.ErrNotExist) {
 		return "", false, nil
 	}
