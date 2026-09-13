@@ -10,7 +10,7 @@ import (
 const controlProvenanceModulePath = "github.com/shinderuman/codex-worker-orchestrator/glm-worker"
 
 func scopedControlProvenanceViolations(root string) ([]Violation, error) {
-	applies, err := isCodexWorkerOrchestrator(root)
+	applies, err := controlProvenanceModuleMatches(root)
 	if err != nil {
 		return nil, err
 	}
@@ -18,10 +18,6 @@ func scopedControlProvenanceViolations(root string) ([]Violation, error) {
 		return nil, nil
 	}
 	return controlProvenanceViolations(root)
-}
-
-func isCodexWorkerOrchestrator(root string) (bool, error) {
-	return controlProvenanceModuleMatches(root)
 }
 
 func controlProvenanceModuleMatches(root string) (bool, error) {
