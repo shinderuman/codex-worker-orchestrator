@@ -103,6 +103,10 @@ func checkRules(root string, paths []string) ([]Violation, error) {
 	if err != nil {
 		return nil, err
 	}
+	provenanceViolations, err := scopedControlProvenanceViolations(root)
+	if err != nil {
+		return nil, err
+	}
 	violations := append([]Violation{}, goViolations...)
 	violations = append(violations, forwardOnlyViolations...)
 	violations = append(violations, proseDataViolations...)
@@ -112,7 +116,7 @@ func checkRules(root string, paths []string) ([]Violation, error) {
 	violations = append(violations, taskViolations...)
 	violations = append(violations, activeTaskViolations...)
 	violations = append(violations, closureViolations...)
-	return violations, nil
+	return append(violations, provenanceViolations...), nil
 }
 
 func fixGoFormatting(root string, paths []string) error {

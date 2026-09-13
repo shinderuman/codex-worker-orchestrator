@@ -1,0 +1,517 @@
+{
+  "version": 1,
+  "controls": [
+    {
+      "id": "backup-destructive-host-operation",
+      "classification": "external-unenforceable",
+      "purpose": "Keep destructive host backup and storage operations outside claims of repository-local machine enforcement.",
+      "residual_parent_judgment": "The parent must verify external backup state and host-operation safety before destructive work.",
+      "boundary": "The decisive state and operation live outside the repository and wrapper process."
+    },
+    {
+      "id": "codex-auto-resume-automation-transaction",
+      "classification": "partial",
+      "purpose": "Track the boundary between repository-side Codex auto-resume transaction checks and the external automation write.",
+      "residual_parent_judgment": "The parent remains responsible for the external automation mutation and for interpreting provider-side outcomes.",
+      "boundary": "Repository code validates transaction evidence, but the automation service write is not fully machine-owned here."
+    },
+    {
+      "id": "continuous-improvement-capture",
+      "classification": "semantic-parent-only",
+      "purpose": "Keep continuous-improvement capture identified as a semantic parent responsibility rather than a wrapper invariant.",
+      "residual_parent_judgment": "The parent decides whether an observed problem merits a durable improvement item and how to phrase it.",
+      "boundary": "Whether an observation is materially reusable is a semantic judgment."
+    },
+    {
+      "id": "direct-edit-user-authority",
+      "classification": "external-unenforceable",
+      "purpose": "Keep direct-edit authority grounded in the user's instruction rather than falsely attributing it to repository machinery.",
+      "residual_parent_judgment": "The parent determines whether the current user request grants the exact direct-edit authority being exercised.",
+      "boundary": "The authoritative user request is external conversation input."
+    },
+    {
+      "id": "escaped-cause-semantic-classification",
+      "classification": "semantic-parent-only",
+      "purpose": "Keep escaped-cause classification explicit as a semantic analysis responsibility.",
+      "residual_parent_judgment": "The parent determines the causal classification and whether a distinct follow-up is warranted.",
+      "boundary": "Causal meaning cannot be proven from structural repository state alone."
+    },
+    {
+      "id": "execution-permission-convergence",
+      "classification": "partial",
+      "purpose": "Track repository-side execution-permission state without claiming ownership of external approval decisions.",
+      "residual_parent_judgment": "The parent interprets external execution denials and chooses an allowed next action.",
+      "boundary": "Machine state is available locally, but the external approval reviewer or sandbox decision is not repository-owned."
+    },
+    {
+      "id": "external-feasibility-admission",
+      "classification": "machine-enforced",
+      "purpose": "Reject implementation admission when the active task lacks the required external-feasibility declaration or evidence shape.",
+      "machine_owners": [
+        {
+          "path": "glm-worker/internal/workflow/externalfeasibility.go",
+          "symbol": "Workflow.gateExternalFeasibility"
+        }
+      ],
+      "tests": [
+        {
+          "path": "glm-worker/internal/workflow/external_feasibility_gate_test.go",
+          "symbol": "TestExternalFeasibilityMissingDeclarationFailsClosedBeforeWorker"
+        }
+      ],
+      "postconditions": [
+        {
+          "path": "glm-worker/internal/workflow/externalfeasibility.go",
+          "symbol": "Workflow.failClosedExternalFeasibility"
+        }
+      ],
+      "residual_parent_judgment": "The parent judges whether the declared external premise and producer evidence are semantically sufficient."
+    },
+    {
+      "id": "failure-artifact-confidentiality",
+      "classification": "partial",
+      "purpose": "Track mechanical handling of failure artifacts without claiming that arbitrary sensitive content can be recognized exhaustively.",
+      "residual_parent_judgment": "The parent must judge whether produced artifacts contain sensitive material that structural filters cannot identify.",
+      "boundary": "Known artifact boundaries are machine-controlled, but arbitrary semantic confidentiality is not."
+    },
+    {
+      "id": "glm-auto-resume-automation-transaction",
+      "classification": "partial",
+      "purpose": "Track the boundary between repository-side GLM auto-resume transaction checks and the external automation write.",
+      "residual_parent_judgment": "The parent remains responsible for external automation mutation and for interpreting provider-side outcomes.",
+      "boundary": "Repository code validates transaction evidence, but the automation service write is not fully machine-owned here."
+    },
+    {
+      "id": "goal-task-review-semantic-disposition",
+      "classification": "semantic-parent-only",
+      "purpose": "Keep goal/task review disposition as an explicit semantic parent responsibility.",
+      "residual_parent_judgment": "The parent decides whether implementation satisfies the goal and how unresolved semantic findings affect disposition.",
+      "boundary": "Goal satisfaction is not reducible to structural state or command success."
+    },
+    {
+      "id": "orphan-watch-terminalization",
+      "classification": "machine-enforced",
+      "purpose": "Terminalize watch only when error material and lock ownership prove the watched task is orphaned.",
+      "machine_owners": [
+        {
+          "path": "glm-worker/internal/app/watch.go",
+          "symbol": "watchOrphanTerminal"
+        }
+      ],
+      "tests": [
+        {
+          "path": "glm-worker/internal/app/watch_orphan_test.go",
+          "symbol": "TestWatchOrphanTerminalConservativeGates"
+        }
+      ],
+      "postconditions": [
+        {
+          "path": "glm-worker/internal/app/watch.go",
+          "symbol": "buildWatchOrphanExitEvent"
+        }
+      ],
+      "residual_parent_judgment": "The parent decides the semantic recovery or disposition after consuming orphan-terminal evidence."
+    },
+    {
+      "id": "packet-schema-result",
+      "classification": "machine-enforced",
+      "purpose": "Constrain worker and reviewer structured results to the machine packet schema and validation contract.",
+      "machine_owners": [
+        {
+          "path": "glm-worker/internal/packet/schema.go",
+          "symbol": "WorkerSchemaJSON"
+        },
+        {
+          "path": "glm-worker/internal/packet/schema.go",
+          "symbol": "ReviewerSchemaJSON"
+        },
+        {
+          "path": "glm-worker/internal/packet/result.go",
+          "symbol": "ParseStructured"
+        }
+      ],
+      "tests": [
+        {
+          "path": "glm-worker/internal/packet/result_test.go",
+          "symbol": "TestValidateResultRejectsOversizeDisplay"
+        },
+        {
+          "path": "glm-worker/internal/packet/schema_test.go",
+          "symbol": "TestReviewerSchemaContents"
+        }
+      ],
+      "postconditions": [
+        {
+          "path": "glm-worker/internal/packet/validate.go",
+          "symbol": "ValidateWorkerResult"
+        },
+        {
+          "path": "glm-worker/internal/packet/validate.go",
+          "symbol": "ValidateReviewerResult"
+        }
+      ],
+      "residual_parent_judgment": "The parent still evaluates the substantive meaning of a structurally valid packet."
+    },
+    {
+      "id": "parent-action-staging-admission",
+      "classification": "machine-enforced",
+      "purpose": "Admit parent actions only through staged payload and lifecycle checks that match the current task state.",
+      "machine_owners": [
+        {
+          "path": "glm-worker/internal/parentaction/parentaction.go",
+          "symbol": "Consume"
+        },
+        {
+          "path": "glm-worker/internal/state/parent_action.go",
+          "symbol": "StateStore.AdmitParentAction"
+        }
+      ],
+      "tests": [
+        {
+          "path": "glm-worker/internal/parentaction/parentaction_test.go",
+          "symbol": "TestConsumeRejectsUnwrittenOrForgedSlots"
+        },
+        {
+          "path": "glm-worker/internal/state/parent_action_test.go",
+          "symbol": "TestParentActionPlanWaitingStates"
+        }
+      ],
+      "postconditions": [
+        {
+          "path": "glm-worker/internal/state/parent_action.go",
+          "symbol": "StateStore.ParentActionPlan"
+        }
+      ],
+      "residual_parent_judgment": "The parent chooses among machine-admitted semantic actions; the staging layer only proves admissibility and payload binding."
+    },
+    {
+      "id": "parent-evidence-projection-dedup",
+      "classification": "machine-enforced",
+      "purpose": "Project parent-visible evidence under a scoped lease and suppress duplicate bodies without losing the canonical claim boundary.",
+      "machine_owners": [
+        {
+          "path": "glm-worker/internal/app/parent_evidence.go",
+          "symbol": "commitParentEvidenceProjectionLocked"
+        }
+      ],
+      "tests": [
+        {
+          "path": "glm-worker/internal/app/parent_evidence_replay_test.go",
+          "symbol": "TestParentEvidenceReplayReducesModelVisibleBytesAndReturns"
+        },
+        {
+          "path": "glm-worker/internal/app/parent_evidence_ledger_lock_test.go",
+          "symbol": "TestParentEvidenceLedgerLockSerializesConcurrentReads"
+        }
+      ],
+      "postconditions": [
+        {
+          "path": "glm-worker/internal/app/parent_evidence.go",
+          "symbol": "degradeDuplicateParentEvidenceParts"
+        },
+        {
+          "path": "glm-worker/internal/app/parent_evidence.go",
+          "symbol": "saveSurvivingParentEvidenceClaims"
+        }
+      ],
+      "residual_parent_judgment": "The parent chooses which evidence questions matter and interprets the projected evidence semantically."
+    },
+    {
+      "id": "parent-metadata-integrity",
+      "classification": "machine-enforced",
+      "purpose": "Prevent worker model calls from silently changing parent-managed plan and task metadata.",
+      "machine_owners": [
+        {
+          "path": "glm-worker/internal/workflow/planfile.go",
+          "symbol": "Workflow.captureParentFileGuard"
+        }
+      ],
+      "tests": [
+        {
+          "path": "glm-worker/internal/workflow/plan_file_guard_test.go",
+          "symbol": "TestPlanFileWorkerMutationFailsClosedBeforeReview"
+        }
+      ],
+      "postconditions": [
+        {
+          "path": "glm-worker/internal/workflow/planfile.go",
+          "symbol": "Workflow.verifyParentFileAfterCall"
+        }
+      ],
+      "residual_parent_judgment": "The parent decides the intended metadata repair or authorized update after a fail-closed stop."
+    },
+    {
+      "id": "parent-plan-continuation",
+      "classification": "partial",
+      "purpose": "Track the machine-visible parent continuation state without claiming the whole continuation decision is mechanical.",
+      "residual_parent_judgment": "The parent decides the semantic continuation after reading the machine state and task outcome.",
+      "boundary": "Continuation state is machine-projected, while the next semantic action remains a parent decision."
+    },
+    {
+      "id": "parent-wait-ownership",
+      "classification": "prose-only",
+      "purpose": "Keep parent wait ownership visible without falsely registering prose routing as a machine-enforced invariant.",
+      "residual_parent_judgment": "The parent follows the documented wait ownership convention.",
+      "boundary": "No production owner rejects violations of this ownership rule."
+    },
+    {
+      "id": "quality-snapshot-binding",
+      "classification": "machine-enforced",
+      "purpose": "Bind quality validation evidence to the current handoff and repository snapshot before final parent acceptance.",
+      "machine_owners": [
+        {
+          "path": "glm-worker/internal/parentactioncmd/finalization.go",
+          "symbol": "runFinalizationCheckWithWorker"
+        }
+      ],
+      "tests": [
+        {
+          "path": "glm-worker/internal/parentactioncmd/finalization_test.go",
+          "symbol": "TestFinalizationCheckBlocksWhenValidationIsNotCurrentForHandoffSnapshot"
+        }
+      ],
+      "postconditions": [
+        {
+          "path": "glm-worker/internal/parentactioncmd/finalization.go",
+          "symbol": "handoffContainsValidation"
+        }
+      ],
+      "residual_parent_judgment": "The parent performs the final semantic acceptance after the machine proves validation freshness and snapshot binding."
+    },
+    {
+      "id": "remote-completion-sync",
+      "classification": "machine-enforced",
+      "purpose": "Block task completion until local final state is proven synchronized with the bound remote branch.",
+      "machine_owners": [
+        {
+          "path": "glm-worker/internal/parentactioncmd/complete.go",
+          "symbol": "verifyParentCompletion"
+        }
+      ],
+      "tests": [
+        {
+          "path": "glm-worker/internal/parentactioncmd/complete_test.go",
+          "symbol": "TestCompleteFinalizesAfterParentPush"
+        },
+        {
+          "path": "glm-worker/internal/parentactioncmd/complete_test.go",
+          "symbol": "TestCompleteKeepsAwaitingWhileFinalHeadIsAhead"
+        }
+      ],
+      "postconditions": [
+        {
+          "path": "glm-worker/internal/parentactioncmd/complete.go",
+          "symbol": "verifyCompletionRemoteSync"
+        },
+        {
+          "path": "glm-worker/internal/parentactioncmd/complete.go",
+          "symbol": "verifyCompletionUnchanged"
+        }
+      ],
+      "residual_parent_judgment": "The parent performs or authorizes the remote write; the machine only proves the required synchronization postcondition."
+    },
+    {
+      "id": "repo-search-exhaustive-activation",
+      "classification": "machine-enforced",
+      "purpose": "Activate deterministic full-corpus search when the task contract explicitly requires exhaustive search evidence.",
+      "machine_owners": [
+        {
+          "path": "glm-worker/internal/workflow/exhaustive_search.go",
+          "symbol": "Workflow.exhaustiveSearchContext"
+        }
+      ],
+      "tests": [
+        {
+          "path": "glm-worker/internal/workflow/exhaustive_search_test.go",
+          "symbol": "TestExhaustiveSearchFailureStopsBeforeModelUse"
+        },
+        {
+          "path": "glm-worker/internal/reposearch/exhaustive_test.go",
+          "symbol": "TestExhaustiveSearchScansEntireSearchableCorpusWithoutTopN"
+        }
+      ],
+      "postconditions": [
+        {
+          "path": "glm-worker/internal/workflow/exhaustive_search.go",
+          "symbol": "Workflow.writeExhaustiveSearchManifest"
+        }
+      ],
+      "residual_parent_judgment": "The parent or model must still judge whether the chosen predicate is semantically sufficient for the requested exhaustive claim."
+    },
+    {
+      "id": "reviewer-session-capability-separation",
+      "classification": "machine-enforced",
+      "purpose": "Keep reviewer execution on a reviewer role/session with read-only capability distinct from implementation worker execution.",
+      "machine_owners": [
+        {
+          "path": "glm-worker/internal/workflow/review_flow.go",
+          "symbol": "Workflow.buildReviewCheckpoint"
+        },
+        {
+          "path": "glm-worker/internal/runner/runner.go",
+          "symbol": "ClaudeRunner.prepareRunSession"
+        }
+      ],
+      "tests": [
+        {
+          "path": "glm-worker/internal/runner/runner_test.go",
+          "symbol": "TestClaudeRunnerRunResumesSessionReadOnly"
+        },
+        {
+          "path": "glm-worker/internal/state/state_test.go",
+          "symbol": "TestSessionIDPersists"
+        }
+      ],
+      "postconditions": [
+        {
+          "path": "glm-worker/internal/state/store.go",
+          "symbol": "StateStore.SessionID"
+        }
+      ],
+      "residual_parent_judgment": "The parent evaluates reviewer findings and final acceptance; machine separation does not make review semantics mechanical."
+    },
+    {
+      "id": "runtime-install-completion",
+      "classification": "partial",
+      "purpose": "Track runtime-install evidence required for completion without claiming all installation effects are repository-local.",
+      "residual_parent_judgment": "The parent evaluates whether external runtime installation evidence is sufficient for the intended environment.",
+      "boundary": "Completion checks are mechanical, but the installed runtime environment has effects beyond repository state."
+    },
+    {
+      "id": "session-rotation-claim-bind-start",
+      "classification": "machine-enforced",
+      "purpose": "Bind session rotation claim, new thread identity, and task start through one coherent machine lifecycle.",
+      "machine_owners": [
+        {
+          "path": "glm-worker/internal/state/session_rotation.go",
+          "symbol": "StateStore.ClaimSessionRotation"
+        },
+        {
+          "path": "glm-worker/internal/state/session_rotation.go",
+          "symbol": "StateStore.BindSessionRotationClaim"
+        }
+      ],
+      "tests": [
+        {
+          "path": "glm-worker/internal/state/session_rotation_identity_test.go",
+          "symbol": "TestSessionRotationRejectsClaimantParentIdentityMismatch"
+        },
+        {
+          "path": "glm-worker/internal/state/session_rotation_identity_test.go",
+          "symbol": "TestSessionRotationIdentityCoherencePreservesRetries"
+        }
+      ],
+      "postconditions": [
+        {
+          "path": "glm-worker/internal/state/session_rotation.go",
+          "symbol": "StateStore.StartSessionRotationTask"
+        },
+        {
+          "path": "glm-worker/internal/state/session_rotation.go",
+          "symbol": "StateStore.AcknowledgeSessionRotationClaim"
+        }
+      ],
+      "residual_parent_judgment": "The parent decides when rotation is semantically appropriate and owns external creation of the new Codex thread."
+    },
+    {
+      "id": "session-rotation-fail-proof",
+      "classification": "partial",
+      "purpose": "Track machine failure evidence for session rotation without promoting external thread-creation failure proof to full enforcement.",
+      "residual_parent_judgment": "The parent interprets external thread-creation failure and decides whether and how to retry or recover.",
+      "boundary": "Repository state records failure evidence, but thread creation occurs outside the repository process."
+    },
+    {
+      "id": "sol-review-evidence-before-accept",
+      "classification": "partial",
+      "purpose": "Track machine evidence bindings used before Sol acceptance without treating semantic review quality as mechanical.",
+      "residual_parent_judgment": "The parent must actually evaluate the relevant evidence and findings before acceptance.",
+      "boundary": "Evidence availability and binding are machine-checkable; substantive review remains semantic."
+    },
+    {
+      "id": "stop-isolate-park-lifecycle",
+      "classification": "machine-enforced",
+      "purpose": "Keep stop, interrupted isolation, and parent-wait park/unpark transitions within their distinct machine lifecycle states.",
+      "machine_owners": [
+        {
+          "path": "glm-worker/internal/app/stop_endpoint.go",
+          "symbol": "stopEndpointServer.handleConn"
+        },
+        {
+          "path": "glm-worker/internal/app/isolation.go",
+          "symbol": "isolateInterruptedTask"
+        },
+        {
+          "path": "glm-worker/internal/state/park.go",
+          "symbol": "StateStore.EnterParked"
+        }
+      ],
+      "tests": [
+        {
+          "path": "glm-worker/internal/workflow/stop_interruption_test.go",
+          "symbol": "TestStopDuringRunningCallSavesInterruptedState"
+        },
+        {
+          "path": "glm-worker/internal/app/isolation_test.go",
+          "symbol": "TestIsolateRejectsNonUserInterruptedState"
+        },
+        {
+          "path": "glm-worker/internal/workflow/park_test.go",
+          "symbol": "TestParkPreservesTaskStateAndCreatesInterruptWorktree"
+        }
+      ],
+      "postconditions": [
+        {
+          "path": "glm-worker/internal/app/stop_endpoint.go",
+          "symbol": "stopEndpointServer.buildResponse"
+        },
+        {
+          "path": "glm-worker/internal/app/isolation.go",
+          "symbol": "persistIsolationRecords"
+        },
+        {
+          "path": "glm-worker/internal/state/park.go",
+          "symbol": "StateStore.CommitUnpark"
+        }
+      ],
+      "residual_parent_judgment": "The parent decides why an interruption is needed and when the preserved task should be resumed or dispositioned."
+    },
+    {
+      "id": "user-global-instruction-config-ownership",
+      "classification": "partial",
+      "purpose": "Track machine isolation from user-global instruction/config surfaces without claiming ownership of the external user configuration.",
+      "residual_parent_judgment": "The parent remains responsible for intended user-global configuration changes outside the isolated invocation.",
+      "boundary": "Invocation isolation is machine-controlled, but the user's global configuration is external state."
+    },
+    {
+      "id": "user-requirement-ingress",
+      "classification": "external-unenforceable",
+      "purpose": "Keep original user requirement ingress outside repository-local machine-enforcement claims.",
+      "residual_parent_judgment": "The parent must preserve and interpret the user's current requirement when constructing repository task authority.",
+      "boundary": "The authoritative requirement originates in external conversation input."
+    },
+    {
+      "id": "worker-git-authority-snapshot",
+      "classification": "machine-enforced",
+      "purpose": "Bind worker execution to the captured Git authority snapshot and fail when protected Git authority changes unexpectedly.",
+      "machine_owners": [
+        {
+          "path": "glm-worker/internal/runner/git_authority_guard.go",
+          "symbol": "prepareGitAuthorityGuard"
+        }
+      ],
+      "tests": [
+        {
+          "path": "glm-worker/internal/runner/git_authority_ref_evidence_test.go",
+          "symbol": "TestGitAuthorityGuardRetainsConcreteRefMutationEvidence"
+        }
+      ],
+      "postconditions": [
+        {
+          "path": "glm-worker/internal/runner/git_authority_guard.go",
+          "symbol": "gitAuthorityGuard.verify"
+        }
+      ],
+      "residual_parent_judgment": "The parent decides the intended recovery when a Git authority mutation is detected."
+    }
+  ]
+}
