@@ -52,7 +52,6 @@ func TestParentWaitReturnsSupersededWhenOwnerEpochChanges(t *testing.T) {
 	go func() { done <- executeParentWait(cfg, []string{"wait"}, &stdout, &stderr) }()
 	waitForParentRecoveryWaiter(t, st)
 
-	time.Sleep(50 * time.Millisecond)
 	second := seedParentWaitOwnerEpoch(t, st)
 	if first == second {
 		t.Fatalf("owner epoch did not change: %s", first)
