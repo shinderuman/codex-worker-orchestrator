@@ -183,15 +183,11 @@ func verifyCompletionUnchanged(repoRoot string, gitRepo bool, verifiedHead strin
 }
 
 func completeHeadState(repoRoot string) (string, bool, *finalizationFailure) {
-	head, headErr := gitFinalizationOutput(repoRoot, "rev-parse", "--verify", "-q", "HEAD^{commit}")
-	if headErr == nil {
-		return strings.TrimSpace(head), false, nil
+	head, err := state.ResolveGitHeadAuthority("git", repoRoot)
+	if err != nil {
+		return "", false, &finalizationFailure{Stage: "target", Reason: completeTargetHeadUnresolvable}
 	}
-	symref, symrefErr := gitFinalizationOutput(repoRoot, "symbolic-ref", "-q", "HEAD")
-	if symrefErr == nil && strings.HasPrefix(strings.TrimSpace(symref), "refs/heads/") {
-		return "", true, nil
-	}
-	return "", false, &finalizationFailure{Stage: "target", Reason: completeTargetHeadUnresolvable}
+	return head.Head, head.Unborn, nil
 }
 
 func verifyCompletedTaskFileRemoved(repoRoot string, st *state.StateStore, headOID string) *finalizationFailure {
