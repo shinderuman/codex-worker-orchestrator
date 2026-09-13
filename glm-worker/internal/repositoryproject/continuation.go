@@ -20,26 +20,26 @@ type CompletionView struct {
 }
 
 type ContinuationProjectView struct {
-	PlanPresent  bool
-	ProjectReady bool
-	GoalPresent  bool
+	PlanPresent   bool
+	ProjectReady  bool
+	GoalPresent   bool
 	GoalCompleted bool
-	Active       []string
-	NextRunnable *string
-	Blockers     []Blocker
-	Completion   *CompletionView
+	Active        []string
+	NextRunnable  *string
+	Blockers      []Blocker
+	Completion    *CompletionView
 }
 
 type ContinuationLifecycle struct {
-	Interrupted           bool
+	Interrupted            bool
 	InterruptedResumeValid bool
-	PinnedTask            string
-	TaskAbsent            bool
-	TaskComplete          bool
-	ParentActionKnown     bool
-	RequiredAction        string
-	NoRequiredAction      bool
-	TemporaryBlockReason  string
+	PinnedTask             string
+	TaskAbsent             bool
+	TaskComplete           bool
+	ParentActionKnown      bool
+	RequiredAction         string
+	NoRequiredAction       bool
+	TemporaryBlockReason   string
 	GoalTerminalCompatible bool
 }
 
@@ -179,49 +179,52 @@ func FirstBlocker(blockers []Blocker) *Blocker {
 	return &blocker
 }
 
+func ParentRequestProjection(continuation Continuation, blockedStopAdmitted bool) ParentRequestCompletionProjection {
+	projection := ParentRequestCompletionProjection{Continuation: continuation}
+	switch continuation.State {
+	case ContinuationTerminal:
+		projection.CompletionAdmitted = true
+		projection.StopAdmitted = true
+	case ContinuationBlocked:
+		projection.StopAdmitted = blockedStopAdmitted
+	case ContinuationDeferredByVerifiedAutomation, ContinuationExplicitStop:
+		projection.StopAdmitted = true
+	}
+	return projection
+}
+
 func PostCompletionProjection(prepared PostCompletionPlan, graph *TaskGraph) ParentRequestCompletionProjection {
 	switch prepared.Kind {
 	case PostCompletionTerminal:
-		return ParentRequestCompletionProjection{
-			CompletionAdmitted: true,
-			StopAdmitted:       true,
-			Continuation:       Continuation{State: ContinuationTerminal, Reason: ReasonGoalCompleted},
-		}
+		return ParentRequestProjection(Continuation{State: ContinuationTerminal, Reason: ReasonGoalCompleted}, true)
 	case PostCompletionUnbound:
-		return ParentRequestCompletionProjection{Continuation: UnknownContinuation(ReasonContinuationScopeUnbound)}
+		return ParentRequestProjection(UnknownContinuation(ReasonContinuationScopeUnbound), true)
 	}
 	if len(prepared.Active) == 1 {
-		return ParentRequestCompletionProjection{
-			Continuation: Continuation{
-				State:          ContinuationContinueNow,
-				Task:           prepared.Active[0],
-				RequiredAction: ActionStart,
-				Reason:         ReasonPostCompletionActive,
-			},
-		}
+		return ParentRequestProjection(Continuation{
+			State:          ContinuationContinueNow,
+			Task:           prepared.Active[0],
+			RequiredAction: ActionStart,
+			Reason:         ReasonPostCompletionActive,
+		}, true)
 	}
 	if graph != nil {
 		if runnable := graph.NextRunnable(prepared.Next); runnable != nil {
-			return ParentRequestCompletionProjection{
-				Continuation: Continuation{
-					State:          ContinuationContinueNow,
-					Task:           *runnable,
-					RequiredAction: ActionStart,
-					Reason:         ReasonNextRunnable,
-				},
-			}
+			return ParentRequestProjection(Continuation{
+				State:          ContinuationContinueNow,
+				Task:           *runnable,
+				RequiredAction: ActionStart,
+				Reason:         ReasonNextRunnable,
+			}, true)
 		}
 		if blocker := FirstBlocker(graph.Blockers(prepared.Next, prepared.Blocked)); blocker != nil {
-			return ParentRequestCompletionProjection{
-				StopAdmitted: true,
-				Continuation: Continuation{
-					State:   ContinuationBlocked,
-					Task:    blocker.Task,
-					Reason:  blocker.Reason,
-					Blocker: blocker,
-				},
-			}
+			return ParentRequestProjection(Continuation{
+				State:   ContinuationBlocked,
+				Task:    blocker.Task,
+				Reason:  blocker.Reason,
+				Blocker: blocker,
+			}, true)
 		}
 	}
-	return ParentRequestCompletionProjection{Continuation: UnknownContinuation(ReasonActiveTaskUnresolved)}
+	return ParentRequestProjection(UnknownContinuation(ReasonActiveTaskUnresolved), true)
 }
