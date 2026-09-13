@@ -49,15 +49,11 @@ func parentRequestProjectionFromPolicy(projection repositoryproject.ParentReques
 }
 
 func parentRequestProjection(continuation ProjectContinuation) ParentRequestCompletionProjection {
-	projection := ParentRequestCompletionProjection{Continuation: continuation}
-	switch continuation.State {
-	case projectContinuationTerminal:
-		projection.CompletionAdmitted = true
-		projection.StopAdmitted = true
-	case projectContinuationBlocked:
-		projection.StopAdmitted = continuation.Reason != string(state.TaskStatusRateLimited)
-	case projectContinuationDeferredByVerifiedAutomation, projectContinuationExplicitStop:
-		projection.StopAdmitted = true
-	}
+	policy := repositoryproject.ParentRequestProjection(
+		projectContinuationToPolicy(continuation),
+		continuation.Reason != string(state.TaskStatusRateLimited),
+	)
+	projection := parentRequestProjectionFromPolicy(policy)
+	projection.Continuation.Automation = continuation.Automation
 	return projection
 }
