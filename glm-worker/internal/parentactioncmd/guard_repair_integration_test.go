@@ -1,7 +1,6 @@
 package parentactioncmd
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,8 +23,12 @@ type guardRepairIntegrationFixture struct {
 
 func TestGuardRepairIntegrationRecoversAfterPartialCopyInterruption(t *testing.T) {
 	fixture := newGuardRepairIntegrationFixture(t)
-	if _, err := beginGuardRepairIntegration(fixture.st, fixture.record, fixture.origin, fixture.cfg.RepoRoot, fixture.worktree, []string{fixture.first, fixture.second}); err != nil {
+	integrating, err := beginGuardRepairIntegration(fixture.st, fixture.record, fixture.origin, fixture.cfg.RepoRoot, fixture.worktree, []string{fixture.first, fixture.second})
+	if err != nil {
 		t.Fatal(err)
+	}
+	if integrating.Status != state.GuardRepairIntegrating || integrating.Integration == nil {
+		t.Fatalf("integration transaction = %#v", integrating)
 	}
 	if err := copyGuardRepairPath(fixture.worktree, fixture.cfg.RepoRoot, fixture.first); err != nil {
 		t.Fatal(err)
@@ -38,15 +41,12 @@ func TestGuardRepairIntegrationRecoversAfterPartialCopyInterruption(t *testing.T
 	}
 	assertGuardRepairTestFile(t, fixture.cfg.RepoRoot, fixture.first, "original source\n")
 	assertGuardRepairTestFile(t, fixture.cfg.RepoRoot, fixture.second, "original test\n")
-	if _, err := fixture.st.LoadGuardRepairIntegrationJournal(); !errors.Is(err, state.ErrNoGuardRepairIntegrationJournal) {
-		t.Fatalf("integration journal remains after rollback: %v", err)
-	}
 	record, err := fixture.st.LoadGuardRepairRecord()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if record.Status != state.GuardRepairRequested || record.RepairedDigest != "" {
-		t.Fatalf("recovered guard repair record = %#v", record)
+	if record.Status != state.GuardRepairRequested || record.RepairedDigest != "" || record.Integration != nil {
+		t.Fatalf("recovered guard repair transaction = %#v", record)
 	}
 	checkpoint, err := fixture.st.LoadResumeCheckpoint()
 	if err != nil {
@@ -60,7 +60,7 @@ func TestGuardRepairIntegrationRecoversAfterPartialCopyInterruption(t *testing.T
 	}
 }
 
-func TestGuardRepairIntegrationRejectsLaterEditOnJournaledPath(t *testing.T) {
+func TestGuardRepairIntegrationRejectsLaterEditOnRecordedPath(t *testing.T) {
 	fixture := newGuardRepairIntegrationFixture(t)
 	if _, err := beginGuardRepairIntegration(fixture.st, fixture.record, fixture.origin, fixture.cfg.RepoRoot, fixture.worktree, []string{fixture.first, fixture.second}); err != nil {
 		t.Fatal(err)
@@ -75,12 +75,10 @@ func TestGuardRepairIntegrationRejectsLaterEditOnJournaledPath(t *testing.T) {
 		t.Fatalf("later edit recovery = %v", err)
 	}
 	assertGuardRepairTestFile(t, fixture.cfg.RepoRoot, fixture.first, "later user edit\n")
-	if _, err := fixture.st.LoadGuardRepairIntegrationJournal(); err != nil {
-		t.Fatalf("rejected recovery discarded journal: %v", err)
-	}
+	assertIntegratingGuardRepairRetained(t, fixture.st)
 }
 
-func TestGuardRepairIntegrationRejectsStaleTaskJournalWithoutApplyingIt(t *testing.T) {
+func TestGuardRepairIntegrationRejectsStaleTaskWithoutApplyingIt(t *testing.T) {
 	fixture := newGuardRepairIntegrationFixture(t)
 	if _, err := beginGuardRepairIntegration(fixture.st, fixture.record, fixture.origin, fixture.cfg.RepoRoot, fixture.worktree, []string{fixture.first, fixture.second}); err != nil {
 		t.Fatal(err)
@@ -93,15 +91,13 @@ func TestGuardRepairIntegrationRejectsStaleTaskJournalWithoutApplyingIt(t *testi
 	}
 
 	if err := recoverGuardRepairIntegrationIfNeeded(fixture.cfg, fixture.st); err == nil {
-		t.Fatal("foreign-task integration journal unexpectedly applied")
+		t.Fatal("foreign-task integration transaction unexpectedly applied")
 	}
 	assertGuardRepairTestFile(t, fixture.cfg.RepoRoot, fixture.first, "repaired source\n")
-	if _, err := fixture.st.LoadGuardRepairIntegrationJournal(); err != nil {
-		t.Fatalf("stale journal was discarded: %v", err)
-	}
+	assertIntegratingGuardRepairRetained(t, fixture.st)
 }
 
-func TestGuardRepairIntegrationRejectsProvenanceMismatchWithoutApplyingIt(t *testing.T) {
+func TestGuardRepairIntegrationRejectsCheckpointMismatchWithoutApplyingIt(t *testing.T) {
 	fixture := newGuardRepairIntegrationFixture(t)
 	if _, err := beginGuardRepairIntegration(fixture.st, fixture.record, fixture.origin, fixture.cfg.RepoRoot, fixture.worktree, []string{fixture.first, fixture.second}); err != nil {
 		t.Fatal(err)
@@ -109,22 +105,23 @@ func TestGuardRepairIntegrationRejectsProvenanceMismatchWithoutApplyingIt(t *tes
 	if err := copyGuardRepairPath(fixture.worktree, fixture.cfg.RepoRoot, fixture.first); err != nil {
 		t.Fatal(err)
 	}
-	mismatch := fixture.record
-	mismatch.Fingerprint = "different-fingerprint"
-	if err := fixture.st.SaveGuardRepairRecord(mismatch); err != nil {
+	checkpoint, err := fixture.st.LoadResumeCheckpoint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkpoint.Phase = "reviewer-1"
+	if err := fixture.st.SaveResumeCheckpoint(checkpoint); err != nil {
 		t.Fatal(err)
 	}
 
 	if err := recoverGuardRepairIntegrationIfNeeded(fixture.cfg, fixture.st); err == nil {
-		t.Fatal("provenance-mismatched integration journal unexpectedly applied")
+		t.Fatal("checkpoint-mismatched integration transaction unexpectedly applied")
 	}
 	assertGuardRepairTestFile(t, fixture.cfg.RepoRoot, fixture.first, "repaired source\n")
-	if _, err := fixture.st.LoadGuardRepairIntegrationJournal(); err != nil {
-		t.Fatalf("mismatched journal was discarded: %v", err)
-	}
+	assertIntegratingGuardRepairRetained(t, fixture.st)
 }
 
-func TestGuardRepairIntegrationRollbackFailureRetainsJournal(t *testing.T) {
+func TestGuardRepairIntegrationRollbackFailureRetainsTransaction(t *testing.T) {
 	fixture := newGuardRepairIntegrationFixture(t)
 	if _, err := beginGuardRepairIntegration(fixture.st, fixture.record, fixture.origin, fixture.cfg.RepoRoot, fixture.worktree, []string{fixture.first, fixture.second}); err != nil {
 		t.Fatal(err)
@@ -143,9 +140,7 @@ func TestGuardRepairIntegrationRollbackFailureRetainsJournal(t *testing.T) {
 	if err := recoverGuardRepairIntegrationIfNeeded(fixture.cfg, fixture.st); err == nil {
 		t.Fatal("rollback failure unexpectedly succeeded")
 	}
-	if _, err := fixture.st.LoadGuardRepairIntegrationJournal(); err != nil {
-		t.Fatalf("rollback failure discarded journal: %v", err)
-	}
+	assertIntegratingGuardRepairRetained(t, fixture.st)
 	info, err := os.Stat(firstPath)
 	if err != nil {
 		t.Fatal(err)
@@ -155,37 +150,50 @@ func TestGuardRepairIntegrationRollbackFailureRetainsJournal(t *testing.T) {
 	}
 }
 
-func TestGuardRepairIntegrationSuccessfulReadyPersistRemovesJournal(t *testing.T) {
+func TestGuardRepairIntegrationSuccessfulReadyPersistClearsRollbackState(t *testing.T) {
 	fixture := newGuardRepairIntegrationFixture(t)
 	candidate := guardRepairCandidate{
 		worktree: fixture.worktree,
 		changed:  []string{fixture.first, fixture.second},
 	}
-	rollback, err := integrateGuardRepairCandidate(fixture.cfg, fixture.st, fixture.record, fixture.origin, candidate)
+	integrating, rollback, err := integrateGuardRepairCandidate(fixture.cfg, fixture.st, fixture.record, fixture.origin, candidate)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if rollback == nil {
 		t.Fatal("successful integration did not return rollback handle")
 	}
-	if _, err := fixture.st.LoadGuardRepairIntegrationJournal(); err != nil {
-		t.Fatalf("integration journal missing before ready persist: %v", err)
+	if integrating.Status != state.GuardRepairIntegrating || integrating.Integration == nil {
+		t.Fatalf("integration state was not persisted in canonical transaction: %#v", integrating)
 	}
 	repairedDigest, err := guardrepair.RelevantDigest(fixture.cfg.RepoRoot)
 	if err != nil {
 		t.Fatal(err)
 	}
-	ready := fixture.record
-	ready.Status = state.GuardRepairReady
-	ready.RepairedDigest = repairedDigest
-	if err := persistReadyGuardRepairIntegration(fixture.st, ready); err != nil {
+	integrating.RepairedDigest = repairedDigest
+	if err := persistReadyGuardRepairIntegration(fixture.st, integrating); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := fixture.st.LoadGuardRepairIntegrationJournal(); !errors.Is(err, state.ErrNoGuardRepairIntegrationJournal) {
-		t.Fatalf("successful integration retained journal: %v", err)
+	ready, err := fixture.st.LoadGuardRepairRecord()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ready.Status != state.GuardRepairReady || ready.Integration != nil || ready.RepairedDigest != repairedDigest {
+		t.Fatalf("ready guard repair transaction = %#v", ready)
 	}
 	assertGuardRepairTestFile(t, fixture.cfg.RepoRoot, fixture.first, "repaired source\n")
 	assertGuardRepairTestFile(t, fixture.cfg.RepoRoot, fixture.second, "repaired test\n")
+}
+
+func assertIntegratingGuardRepairRetained(t *testing.T, st *state.StateStore) {
+	t.Helper()
+	record, err := st.LoadGuardRepairRecord()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.Status != state.GuardRepairIntegrating || record.Integration == nil {
+		t.Fatalf("integration recovery transaction was not retained: %#v", record)
+	}
 }
 
 func newGuardRepairIntegrationFixture(t *testing.T) guardRepairIntegrationFixture {

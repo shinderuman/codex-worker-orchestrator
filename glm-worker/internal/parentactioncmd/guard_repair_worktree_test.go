@@ -1,6 +1,7 @@
 package parentactioncmd
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -63,7 +64,7 @@ func TestCopyGuardRepairChangesRejectsOriginalSymlink(t *testing.T) {
 	assertGuardRepairTestFile(t, filepath.Dir(outside), filepath.Base(outside), "outside\n")
 }
 
-func TestIntegrateGuardRepairCandidateRollsBackAfterCheckpointLoss(t *testing.T) {
+func TestIntegrateGuardRepairCandidateRejectsCheckpointLossBeforeCopy(t *testing.T) {
 	repo := t.TempDir()
 	first := "glm-worker/internal/workflow/guard_recovery.go"
 	second := "glm-worker/internal/workflow/guard_recovery_test.go"
@@ -128,17 +129,20 @@ func TestIntegrateGuardRepairCandidateRollsBackAfterCheckpointLoss(t *testing.T)
 	writeGuardRepairTestFile(t, worktree, second, "repaired test\n")
 	candidate := guardRepairCandidate{worktree: worktree, changed: []string{first, second}}
 
-	if _, err := integrateGuardRepairCandidate(cfg, st, record, guardRepairOrigin{checkpoint: checkpoint, boundary: boundary}, candidate); err == nil {
+	if _, _, err := integrateGuardRepairCandidate(cfg, st, record, guardRepairOrigin{checkpoint: checkpoint, boundary: boundary}, candidate); err == nil {
 		t.Fatal("missing persisted checkpoint unexpectedly accepted")
 	}
 	assertGuardRepairTestFile(t, repo, first, "original source\n")
 	assertGuardRepairTestFile(t, repo, second, "original test\n")
-	restored, err := st.LoadResumeCheckpoint()
+	if _, err := st.LoadResumeCheckpoint(); !errors.Is(err, state.ErrNoResumeCheckpoint) {
+		t.Fatalf("missing checkpoint was synthesized during rejected integration: %v", err)
+	}
+	got, err := st.LoadGuardRepairRecord()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if restored.StopKind != state.ResumeStopGuardRecoverable || restored.Phase != checkpoint.Phase {
-		t.Fatalf("restored checkpoint = %#v", restored)
+	if got.Status != state.GuardRepairRunning || got.Integration != nil {
+		t.Fatalf("rejected integration changed guard repair transaction: %#v", got)
 	}
 }
 

@@ -20,6 +20,8 @@ func TestCurrentGuardRepairRecordIgnoredAfterTaskLeavesGuardRecovery(t *testing.
 	cfg, st, record := newGuardRepairLifecycleState(t)
 	record.Status = state.GuardRepairComplete
 	record.RepairedDigest = "digest-after"
+	record.ResumeAttemptID = "11111111-1111-4111-8111-111111111111"
+	record.ResumeCheckpointDigest = "checkpoint-digest"
 	record.OriginalResumeObserved = true
 	if err := st.SaveGuardRepairRecord(record); err != nil {
 		t.Fatal(err)
@@ -122,13 +124,13 @@ func TestResumeWithRepairedWorkerRejectsResumeCounterWithoutLifecycleEvidence(t 
 	requireGuardRepairLifecycleFailure(t, st, err, "TaskStats resume counter was accepted as original resume evidence")
 }
 
-func TestResumeWithRepairedWorkerRejectsStaleTransitionAttempt(t *testing.T) {
+func TestResumeWithRepairedWorkerRejectsStaleTransactionAttempt(t *testing.T) {
 	cfg, st, record := newGuardRepairLifecycleState(t)
 	writeGuardRepairWorkerModule(t, cfg.RepoRoot, guardRepairLifecycleEvidenceWorkerSource(t, st, state.TaskStatusActive, true))
 	persistReadyGuardRepair(t, cfg, st, &record)
 
 	err := resumeWithRepairedWorker(cfg, st, record, io.Discard, io.Discard, nil, errors.New("initial self-block"))
-	requireGuardRepairLifecycleFailure(t, st, err, "stale transition attempt was accepted")
+	requireGuardRepairLifecycleFailure(t, st, err, "stale transaction attempt was accepted")
 }
 
 func requireGuardRepairLifecycleFailure(t *testing.T, st *state.StateStore, err error, message string) {
@@ -160,8 +162,8 @@ func TestResumeWithRepairedWorkerRecordsOriginalResumeAfterLifecycleEntry(t *tes
 	if st.TaskStatus() != state.TaskStatusActive {
 		t.Fatalf("original task status = %s want active", st.TaskStatus())
 	}
-	if got.Status != state.GuardRepairComplete || !got.OriginalResumeObserved {
-		t.Fatalf("original resume evidence was not recorded: %#v", got)
+	if got.Status != state.GuardRepairComplete || !got.OriginalResumeObserved || got.ResumeAttemptID == "" {
+		t.Fatalf("original resume evidence was not recorded in transaction: %#v", got)
 	}
 	stats, err := st.CurrentTaskStats()
 	if err != nil {
@@ -169,6 +171,55 @@ func TestResumeWithRepairedWorkerRecordsOriginalResumeAfterLifecycleEntry(t *tes
 	}
 	if stats.ResumeCommands != 0 {
 		t.Fatalf("fixture unexpectedly relied on TaskStats resume counter: %d", stats.ResumeCommands)
+	}
+}
+
+func TestRecoverGuardRepairResumeResetsUnobservedAttemptToReady(t *testing.T) {
+	cfg, st, record := newGuardRepairLifecycleState(t)
+	persistReadyGuardRepair(t, cfg, st, &record)
+	checkpoint, err := st.LoadResumeCheckpoint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err = st.PrepareGuardRepairResume(record, checkpoint, "22222222-2222-4222-8222-222222222222")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := recoverGuardRepairResumeIfNeeded(st); err != nil {
+		t.Fatal(err)
+	}
+	got, err := st.LoadGuardRepairRecord()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != state.GuardRepairReady || got.ResumeAttemptID != "" || got.OriginalResumeObserved {
+		t.Fatalf("unobserved interrupted resume was not reset to ready: %#v", got)
+	}
+}
+
+func TestRecoverGuardRepairResumeCompletesObservedAttemptAfterStateExit(t *testing.T) {
+	cfg, st, record := newGuardRepairLifecycleState(t)
+	persistReadyGuardRepair(t, cfg, st, &record)
+	checkpoint, err := st.LoadResumeCheckpoint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	attemptID := "33333333-3333-4333-8333-333333333333"
+	if _, err := st.PrepareGuardRepairResume(record, checkpoint, attemptID); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.ObserveGuardRepairResume(checkpoint, attemptID); err != nil {
+		t.Fatal(err)
+	}
+	if err := recoverGuardRepairResumeIfNeeded(st); err != nil {
+		t.Fatal(err)
+	}
+	got, err := st.LoadGuardRepairRecord()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != state.GuardRepairComplete || !got.OriginalResumeObserved {
+		t.Fatalf("observed interrupted resume was not completed: %#v", got)
 	}
 }
 
@@ -268,35 +319,23 @@ func guardRepairLifecycleEvidenceWorkerSource(t *testing.T, st *state.StateStore
 	if status != "" {
 		body = fmt.Sprintf("if err := os.WriteFile(%s, []byte(%q), 0600); err != nil { os.Exit(2) }; ", strconv.Quote(st.Path("task.status")), string(status)+"\n")
 	}
-	attempt := fmt.Sprintf("os.Getenv(%q)", state.GuardRepairResumeAttemptEnv)
+	attemptUpdate := ""
 	if staleAttempt {
-		attempt = strconv.Quote("55555555-5555-4555-8555-555555555555")
+		attemptUpdate = `record["resume_attempt_id"] = "55555555-5555-4555-8555-555555555555"`
 	}
 	body += fmt.Sprintf(`
-	resumeData, err := os.ReadFile(%s)
+	data, err := os.ReadFile(%s)
 	if err != nil { os.Exit(3) }
-	var checkpoint map[string]any
-	if err := json.Unmarshal(resumeData, &checkpoint); err != nil { os.Exit(4) }
-	canonical, err := json.Marshal(checkpoint)
+	var record map[string]any
+	if err := json.Unmarshal(data, &record); err != nil { os.Exit(4) }
+	%s
+	record["original_resume_observed"] = true
+	data, err = json.MarshalIndent(record, "", "  ")
 	if err != nil { os.Exit(5) }
-	sum := sha256.Sum256(canonical)
-	taskData, err := os.ReadFile(%s)
-	if err != nil { os.Exit(6) }
-	evidence := map[string]any{
-		"version": 1,
-		"task_id": strings.TrimSpace(string(taskData)),
-		"attempt_id": %s,
-		"checkpoint_digest": hex.EncodeToString(sum[:]),
-		"stop_kind": checkpoint["stop_kind"],
-		"phase": checkpoint["phase"],
-		"observed_at": time.Now().UTC(),
-	}
-	data, err := json.MarshalIndent(evidence, "", "  ")
-	if err != nil { os.Exit(7) }
 	data = append(data, '\n')
-	if err := os.WriteFile(%s, data, 0600); err != nil { os.Exit(8) }
-`, strconv.Quote(st.Path("resume-state.json")), strconv.Quote(st.Path("task.id")), attempt, strconv.Quote(st.Path("resume-transition.json")))
-	return "package main\nimport (\"crypto/sha256\"; \"encoding/hex\"; \"encoding/json\"; \"os\"; \"strings\"; \"time\")\nfunc main() { " + body + " }\n"
+	if err := os.WriteFile(%s, data, 0600); err != nil { os.Exit(6) }
+`, strconv.Quote(st.Path("guard-repair.json")), attemptUpdate, strconv.Quote(st.Path("guard-repair.json")))
+	return "package main\nimport (\"encoding/json\"; \"os\")\nfunc main() { " + body + " }\n"
 }
 
 func writeGuardRepairWorkerModule(t *testing.T, repoRoot, source string) {
