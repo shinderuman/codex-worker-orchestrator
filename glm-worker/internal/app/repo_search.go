@@ -116,24 +116,28 @@ func serveRepoSearchResult(st *state.StateStore, request repoSearchRequest, repo
 		if writeErr := writeJSON(stdout, output); writeErr != nil {
 			return writeErr
 		}
+		if err := saveParentEvidenceLedger(st, state.ParentEvidenceSurfaceSearch, digest, state.ParentEvidenceOriginStandalone, ""); err != nil {
+			return err
+		}
 		rendered, _ := json.Marshal(output)
 		recordParentEvidence(st, state.ParentEvidenceRecord{
 			Surface: state.ParentEvidenceSurfaceSearch, Origin: state.ParentEvidenceOriginStandalone,
 			Digest: digest, Bytes: len(rendered), Outcome: state.ParentEvidenceOutcomeRefinement,
 			Reason: output.Reason,
 		})
-		saveParentEvidenceLedger(st, state.ParentEvidenceSurfaceSearch, digest, state.ParentEvidenceOriginStandalone, "")
 		return nil
 	}
 	written, writeErr := writeMeasuredJSON(stdout, output)
 	if writeErr != nil {
 		return writeErr
 	}
+	if err := saveParentEvidenceLedger(st, state.ParentEvidenceSurfaceSearch, digest, state.ParentEvidenceOriginStandalone, ""); err != nil {
+		return err
+	}
 	recordParentEvidence(st, state.ParentEvidenceRecord{
 		Surface: state.ParentEvidenceSurfaceSearch, Origin: state.ParentEvidenceOriginStandalone,
 		Digest: digest, Bytes: written, Outcome: state.ParentEvidenceOutcomeProjected,
 	})
-	saveParentEvidenceLedger(st, state.ParentEvidenceSurfaceSearch, digest, state.ParentEvidenceOriginStandalone, "")
 	return nil
 }
 
