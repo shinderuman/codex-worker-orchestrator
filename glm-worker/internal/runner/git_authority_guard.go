@@ -3,13 +3,14 @@ package runner
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
 type GitRefState struct {
@@ -244,11 +245,7 @@ func captureGitAuthoritySnapshot(realGit, repoRoot string) (gitAuthoritySnapshot
 		}
 		return gitAuthoritySnapshot{}, fmt.Errorf("git rev-parse --show-toplevel: %w", err)
 	}
-	head, err := gitAuthorityOptionalOutput(realGit, repoRoot, "rev-parse", "--verify", "HEAD")
-	if err != nil {
-		return gitAuthoritySnapshot{}, err
-	}
-	symbolicHead, err := gitAuthorityOptionalOutput(realGit, repoRoot, "symbolic-ref", "-q", "HEAD")
+	headAuthority, err := state.ResolveGitHeadAuthority(realGit, repoRoot)
 	if err != nil {
 		return gitAuthoritySnapshot{}, err
 	}
@@ -271,8 +268,8 @@ func captureGitAuthoritySnapshot(realGit, repoRoot string) (gitAuthoritySnapshot
 	}
 	return gitAuthoritySnapshot{
 		active:       true,
-		head:         strings.TrimSpace(string(head)),
-		symbolicHead: strings.TrimSpace(string(symbolicHead)),
+		head:         headAuthority.Head,
+		symbolicHead: headAuthority.SymbolicHead,
 		refsDigest:   gitAuthorityRefsDigest(parsedRefs),
 		refs:         parsedRefs,
 		indexDigest:  gitAuthorityDigest(index),
@@ -349,19 +346,6 @@ func gitAuthorityOutput(realGit, repoRoot string, args ...string) ([]byte, error
 		return nil, fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
 	}
 	return output, nil
-}
-
-func gitAuthorityOptionalOutput(realGit, repoRoot string, args ...string) ([]byte, error) {
-	command := exec.Command(realGit, append([]string{"-C", repoRoot}, args...)...)
-	output, err := command.Output()
-	if err == nil {
-		return output, nil
-	}
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) {
-		return nil, nil
-	}
-	return nil, fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
 }
 
 func gitAuthorityDigest(data []byte) string {

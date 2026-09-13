@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"hash"
 	"os"
@@ -134,15 +133,14 @@ func CaptureGitSnapshot(repoRoot string) (GitSnapshot, error) {
 }
 
 func captureSnapshotHead(repoRoot string) (string, error) {
-	output, err := exec.Command("git", "-C", repoRoot, "rev-parse", "HEAD").Output()
+	head, unborn, err := resolveRepoHead(repoRoot)
 	if err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
-			return "", nil
-		}
-		return "", fmt.Errorf("git rev-parse HEAD: %w", err)
+		return "", fmt.Errorf("resolve git snapshot HEAD: %w", err)
 	}
-	return strings.TrimSpace(string(output)), nil
+	if unborn {
+		return "", nil
+	}
+	return head, nil
 }
 
 func captureSnapshotIndexDigest(repoRoot string) (string, error) {

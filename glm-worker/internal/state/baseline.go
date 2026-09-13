@@ -1,8 +1,11 @@
 package state
 
 import (
+	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
@@ -16,9 +19,24 @@ type GitBaselineEvidence struct {
 	Untracked     string `json:"untracked,omitempty"`
 }
 
+type GitHeadAuthority struct {
+	Head         string
+	SymbolicHead string
+	Unborn       bool
+	Detached     bool
+}
+
 const baselineUntrackedFile = "baseline-untracked"
 
 func CaptureGitBaseline(cfg config.AppConfig, state *StateStore) error {
+	head, unborn, repository, err := captureGitBaselineHead(cfg.RepoRoot)
+	if err != nil {
+		return failGitBaselineHeadResolution(state, err)
+	}
+	if !repository {
+		return removeGitBaseline(state)
+	}
+
 	commands := []struct {
 		name string
 		args []string
@@ -55,46 +73,97 @@ func CaptureGitBaseline(cfg config.AppConfig, state *StateStore) error {
 		return err
 	}
 
-	head, unborn, err := resolveRepoHead(cfg.RepoRoot)
-	if err != nil {
-		return state.Remove("baseline-head")
-	}
 	if unborn {
 		return state.Remove("baseline-head")
 	}
 	return state.Write("baseline-head", head)
 }
 
-func removeGitBaseline(state *StateStore) error {
-	return state.Remove("baseline-status", "baseline-worktree.patch", "baseline-index.patch", baselineUntrackedFile)
+func captureGitBaselineHead(repoRoot string) (head string, unborn bool, repository bool, err error) {
+	probe := exec.Command("git", "-C", repoRoot, "rev-parse", "--git-dir")
+	if _, probeErr := probe.Output(); probeErr == nil {
+		head, unborn, err := resolveRepoHead(repoRoot)
+		return head, unborn, true, err
+	}
+
+	if _, statErr := os.Lstat(filepath.Join(repoRoot, ".git")); errors.Is(statErr, os.ErrNotExist) {
+		return "", false, false, nil
+	} else if statErr != nil {
+		return "", false, false, fmt.Errorf("git metadataを確認できません: %w", statErr)
+	}
+
+	head, unborn, err = resolveRepoHead(repoRoot)
+	return head, unborn, true, err
 }
 
-func resolveRepoHead(repoRoot string) (head string, unborn bool, err error) {
-	if _, e := exec.Command("git", "-C", repoRoot, "rev-parse", "--git-dir").Output(); e != nil {
-		return "", false, e
+func failGitBaselineHeadResolution(state *StateStore, cause error) error {
+	if cleanupErr := removeGitBaseline(state); cleanupErr != nil {
+		return fmt.Errorf("git baseline HEAD resolution failed: %w; cleanup failed: %w", cause, cleanupErr)
+	}
+	return fmt.Errorf("git baseline HEAD resolution failed: %w", cause)
+}
+
+func removeGitBaseline(state *StateStore) error {
+	return state.Remove("baseline-head", "baseline-status", "baseline-worktree.patch", "baseline-index.patch", baselineUntrackedFile)
+}
+
+func ResolveGitHeadAuthority(gitPath, repoRoot string) (GitHeadAuthority, error) {
+	if _, err := exec.Command(gitPath, "-C", repoRoot, "rev-parse", "--git-dir").Output(); err != nil {
+		return GitHeadAuthority{}, fmt.Errorf("git rev-parse --git-dir: %w", err)
 	}
 
-	output, e := exec.Command("git", "-C", repoRoot, "rev-parse", "--verify", "-q", "HEAD^{commit}").Output()
-	if e == nil {
-		return strings.TrimSpace(string(output)), false, nil
+	headOutput, headErr := exec.Command(gitPath, "-C", repoRoot, "rev-parse", "--verify", "-q", "HEAD^{commit}").Output()
+	if headErr == nil {
+		head := strings.TrimSpace(string(headOutput))
+		if head == "" {
+			return GitHeadAuthority{}, fmt.Errorf("git rev-parse HEAD returned empty commit")
+		}
+		symbolicOutput, symbolicErr := exec.Command(gitPath, "-C", repoRoot, "symbolic-ref", "-q", "HEAD").Output()
+		if symbolicErr == nil {
+			return GitHeadAuthority{Head: head, SymbolicHead: strings.TrimSpace(string(symbolicOutput))}, nil
+		}
+		if gitExitCode(symbolicErr) == 1 {
+			return GitHeadAuthority{Head: head, Detached: true}, nil
+		}
+		return GitHeadAuthority{}, fmt.Errorf("git symbolic-ref -q HEAD: %w", symbolicErr)
 	}
-	target, e2 := exec.Command("git", "-C", repoRoot, "symbolic-ref", "-q", "HEAD").Output()
-	if e2 != nil {
-		return "", false, fmt.Errorf("HEAD does not peel to a commit and is not a valid symbolic ref: %w", e2)
+	if gitExitCode(headErr) != 1 {
+		return GitHeadAuthority{}, fmt.Errorf("git rev-parse --verify HEAD^{commit}: %w", headErr)
+	}
+
+	target, err := exec.Command(gitPath, "-C", repoRoot, "symbolic-ref", "-q", "HEAD").Output()
+	if err != nil {
+		return GitHeadAuthority{}, fmt.Errorf("HEAD does not peel to a commit and is not a valid symbolic ref: %w", err)
 	}
 	ref := strings.TrimSpace(string(target))
 	if !strings.HasPrefix(ref, "refs/heads/") {
-		return "", false, fmt.Errorf("HEAD symbolic target %q is not under refs/heads", ref)
+		return GitHeadAuthority{}, fmt.Errorf("HEAD symbolic target %q is not under refs/heads", ref)
 	}
 
-	refs, fe := exec.Command("git", "-C", repoRoot, "for-each-ref", "--format=%(refname)", ref).Output()
-	if fe != nil {
-		return "", false, fmt.Errorf("ref lookup %s failed: %w", ref, fe)
+	refs, err := exec.Command(gitPath, "-C", repoRoot, "for-each-ref", "--format=%(refname)", ref).Output()
+	if err != nil {
+		return GitHeadAuthority{}, fmt.Errorf("ref lookup %s failed: %w", ref, err)
 	}
 	if len(strings.TrimSpace(string(refs))) > 0 {
-		return "", false, fmt.Errorf("HEAD symbolic target %s exists but does not peel to a commit", ref)
+		return GitHeadAuthority{}, fmt.Errorf("HEAD symbolic target %s exists but does not peel to a commit", ref)
 	}
-	return "", true, nil
+	return GitHeadAuthority{SymbolicHead: ref, Unborn: true}, nil
+}
+
+func gitExitCode(err error) int {
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		return -1
+	}
+	return exitErr.ExitCode()
+}
+
+func resolveRepoHead(repoRoot string) (head string, unborn bool, err error) {
+	authority, err := ResolveGitHeadAuthority("git", repoRoot)
+	if err != nil {
+		return "", false, err
+	}
+	return authority.Head, authority.Unborn, nil
 }
 
 func (s *StateStore) BaselineEvidence() *GitBaselineEvidence {
