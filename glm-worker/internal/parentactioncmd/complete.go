@@ -9,16 +9,18 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/app"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repolock"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryproject"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryprojecthead"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
 )
 
 type completeOutput struct {
-	Status        string                                 `json:"status"`
-	Completed     bool                                   `json:"completed"`
-	RemoteSync    *completeRemoteSyncSummary             `json:"remote_sync,omitempty"`
-	ParentRequest *app.ParentRequestCompletionProjection `json:"parent_request,omitempty"`
-	Failure       *finalizationFailure                   `json:"failure,omitempty"`
+	Status        string                                               `json:"status"`
+	Completed     bool                                                 `json:"completed"`
+	RemoteSync    *completeRemoteSyncSummary                           `json:"remote_sync,omitempty"`
+	ParentRequest *repositoryproject.ParentRequestCompletionProjection `json:"parent_request,omitempty"`
+	Failure       *finalizationFailure                                 `json:"failure,omitempty"`
 }
 
 type completeRemoteSyncSummary struct {
@@ -146,7 +148,7 @@ func verifyParentCompletion(repoRoot string, st *state.StateStore) completionVer
 		}}
 	}
 	if repositoryHarnessActive {
-		if _, err := workflow.CheckParentCompletionHead(repoRoot); err != nil {
+		if _, err := repositoryprojecthead.CheckParentCompletionHead(repoRoot); err != nil {
 			return completionVerification{failure: &finalizationFailure{
 				Stage: "metadata", Reason: "completion_transition_invalid", Detail: compactFinalizationDiagnostic(err.Error()),
 			}}
