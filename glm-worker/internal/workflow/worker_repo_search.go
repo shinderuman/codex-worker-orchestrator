@@ -17,9 +17,10 @@ import (
 type repoSearchFunc func(context.Context, string, string, reposearch.Options) (reposearch.Report, error)
 
 type repoSearchTimer struct {
-	search  repoSearchFunc
-	now     func() time.Time
-	elapsed time.Duration
+	search    repoSearchFunc
+	now       func() time.Time
+	cacheRoot string
+	elapsed   time.Duration
 }
 
 const (
@@ -37,10 +38,13 @@ func (w *Workflow) newRepoSearchTimer() *repoSearchTimer {
 	if search == nil {
 		search = reposearch.Search
 	}
-	return &repoSearchTimer{search: search, now: w.now}
+	return &repoSearchTimer{search: search, now: w.now, cacheRoot: w.config.RepoSearchCacheRoot}
 }
 
 func (t *repoSearchTimer) run(ctx context.Context, repoRoot string, query string, opts reposearch.Options) (reposearch.Report, error) {
+	if !opts.DisableCache {
+		opts.CacheRoot = t.cacheRoot
+	}
 	started := t.now()
 	report, err := t.search(ctx, repoRoot, query, opts)
 	t.elapsed = t.now().Sub(started)

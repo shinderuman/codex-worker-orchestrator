@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/reposearch"
 )
 
@@ -146,7 +147,11 @@ func multiRepoSearchHelperRun() int {
 	if outPath == "" || repo == "" || query == "" {
 		return 2
 	}
-	report, err := reposearch.Search(context.Background(), repo, query, reposearch.Options{})
+	cfg, err := config.Load()
+	if err != nil {
+		return 2
+	}
+	report, err := reposearch.Search(context.Background(), repo, query, reposearch.Options{CacheRoot: cfg.RepoSearchCacheRoot})
 	result := multiRepoSearchReport{CacheStatus: string(report.CacheStatus)}
 	if err != nil {
 		result.Error = err.Error()

@@ -286,51 +286,13 @@ func TestCacheKeepsNoRawSource(t *testing.T) {
 	}
 }
 
-func TestCacheRebuildsOnFirstSearchWithDefaultRoot(t *testing.T) {
-
-	t.Setenv("GLM_WORKER_HOME", t.TempDir())
+func TestSearchRequiresExplicitCacheRootWhenCacheEnabled(t *testing.T) {
 	dir := initRepo(t)
 	writeTestFile(t, filepath.Join(dir, "a.txt"), "needle one\n")
 	commitAll(t, dir, "init")
 
-	report := searchNeedle(t, dir, Options{})
-	if report.CacheStatus != CacheStatusRebuilt {
-		t.Fatalf("status = %q want rebuilt", report.CacheStatus)
-	}
-	if len(report.Warnings) != 0 {
-		t.Fatalf("warnings = %v want なし", report.Warnings)
-	}
-}
-
-func TestSearchUsesDefaultCacheRootWhenCacheRootEmpty(t *testing.T) {
-	workerHome := t.TempDir()
-	t.Setenv("GLM_WORKER_HOME", workerHome)
-	dir := initRepo(t)
-	writeTestFile(t, filepath.Join(dir, "a.txt"), "needle one\n")
-	commitAll(t, dir, "init")
-
-	first := searchNeedle(t, dir, Options{})
-	if first.CacheStatus != CacheStatusRebuilt {
-		t.Fatalf("初回status = %q want rebuilt", first.CacheStatus)
-	}
-	cacheRoot := filepath.Join(workerHome, "search")
-	cachePath := canonicalCachePath(t, cacheRoot, dir)
-	info, err := os.Stat(cachePath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if info.Mode().Perm() != 0o600 {
-		t.Fatalf("既定cache file permission = %v want 0600", info.Mode().Perm())
-	}
-	dirInfo, err := os.Stat(filepath.Dir(cachePath))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if dirInfo.Mode().Perm() != 0o700 {
-		t.Fatalf("既定cache dir permission = %v want 0700", dirInfo.Mode().Perm())
-	}
-	if second := searchNeedle(t, dir, Options{}); second.CacheStatus != CacheStatusHit {
-		t.Fatalf("2回目status = %q want hit", second.CacheStatus)
+	if _, err := Search(context.Background(), dir, "needle", Options{}); !errors.Is(err, ErrInvalidOptions) {
+		t.Fatalf("error = %v want ErrInvalidOptions", err)
 	}
 }
 

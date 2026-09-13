@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"os"
 	"path/filepath"
 	"strings"
 )
@@ -193,10 +192,13 @@ func resolveCacheRoot(opts Options) (string, error) {
 	if opts.DisableCache && opts.CacheRoot != "" {
 		return "", fmt.Errorf("%w: DisableCacheとCacheRootは同時指定できません", ErrInvalidOptions)
 	}
-	if opts.CacheRoot != "" || opts.DisableCache {
-		return opts.CacheRoot, nil
+	if opts.DisableCache {
+		return "", nil
 	}
-	return defaultCacheRoot()
+	if opts.CacheRoot == "" {
+		return "", fmt.Errorf("%w: cache有効時はCacheRootを指定してください", ErrInvalidOptions)
+	}
+	return opts.CacheRoot, nil
 }
 
 func resolveBound(requested, defaultValue, hardCap int, name string) (int, error) {
@@ -208,17 +210,6 @@ func resolveBound(requested, defaultValue, hardCap int, name string) (int, error
 	default:
 		return requested, nil
 	}
-}
-
-func defaultCacheRoot() (string, error) {
-	if home := os.Getenv("GLM_WORKER_HOME"); home != "" {
-		return filepath.Join(home, "search"), nil
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("既定cache rootを解決できません: %w", err)
-	}
-	return filepath.Join(home, ".glm-worker", "search"), nil
 }
 
 func attemptSearch(ctx context.Context, root string, queryTokens []string, settings searchSettings) (Report, bool, error) {

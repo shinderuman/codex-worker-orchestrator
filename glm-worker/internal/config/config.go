@@ -20,10 +20,11 @@ type AppConfig struct {
 	RepoShort string
 	StateBase string
 
-	WorktreeBase string
-	PromptDir    string
-	ClaudeBin    string
-	CodexBin     string
+	WorktreeBase        string
+	RepoSearchCacheRoot string
+	PromptDir           string
+	ClaudeBin           string
+	CodexBin            string
 
 	ClaudeConfigDir    string
 	ClaudeSettingsPath string
@@ -89,6 +90,7 @@ func Load() (AppConfig, error) {
 		RepoShort:              repoHashString[:12],
 		StateBase:              filepath.Join(stateHome, "sessions"),
 		WorktreeBase:           filepath.Join(stateHome, "worktrees"),
+		RepoSearchCacheRoot:    filepath.Join(stateHome, "search"),
 		PromptDir:              promptDir,
 		CodexConfigDir:         codexConfigDir,
 		ClaudeBin:              envOrDefault("GLM_WORKER_CLAUDE_BIN", "claude"),
