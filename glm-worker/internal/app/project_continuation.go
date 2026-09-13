@@ -99,6 +99,16 @@ func projectContinuationFromPolicy(continuation repositoryproject.Continuation) 
 	}
 }
 
+func projectContinuationToPolicy(continuation projectContinuationObligation) repositoryproject.Continuation {
+	return repositoryproject.Continuation{
+		State:          continuation.State,
+		Task:           continuation.Task,
+		RequiredAction: continuation.RequiredAction,
+		Reason:         continuation.Reason,
+		Blocker:        cloneProjectBlocker(continuation.Blocker),
+	}
+}
+
 func cloneProjectBlockers(blockers []projectStateBlocker) []repositoryproject.Blocker {
 	cloned := make([]repositoryproject.Blocker, len(blockers))
 	for i := range blockers {
