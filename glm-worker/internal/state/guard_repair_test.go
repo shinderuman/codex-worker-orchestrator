@@ -122,12 +122,10 @@ func TestRequestGuardRepairDoesNotReuseReadyRepairForDifferentFailure(t *testing
 func TestGuardRepairCompleteRequiresObservedOriginalResume(t *testing.T) {
 	st := newGuardRepairStateStore(t)
 	record := guardRepairRecordForTest()
-	record.Status = GuardRepairReady
-	record.RepairedDigest = "digest-repaired"
-	if err := st.SaveGuardRepairRecord(record); err != nil {
-		t.Fatal(err)
-	}
 	record.Status = GuardRepairComplete
+	record.RepairedDigest = "digest-repaired"
+	record.ResumeAttemptID = "11111111-1111-4111-8111-111111111111"
+	record.ResumeCheckpointDigest = "checkpoint-digest"
 	record.OriginalResumeObserved = true
 	if err := st.SaveGuardRepairRecord(record); err != nil {
 		t.Fatal(err)
@@ -136,7 +134,7 @@ func TestGuardRepairCompleteRequiresObservedOriginalResume(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Status != GuardRepairComplete || !got.OriginalResumeObserved {
-		t.Fatalf("original resume evidence was not persisted: %#v", got)
+	if got.Status != GuardRepairComplete || !got.OriginalResumeObserved || got.ResumeAttemptID != record.ResumeAttemptID {
+		t.Fatalf("original resume evidence was not persisted in transaction: %#v", got)
 	}
 }
