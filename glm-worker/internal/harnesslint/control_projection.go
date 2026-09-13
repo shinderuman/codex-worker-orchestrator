@@ -8,7 +8,10 @@ import (
 	"strings"
 )
 
-var controlProjectionPattern = regexp.MustCompile("`control:([a-z][a-z0-9-]*)`")
+var (
+	controlProjectionMarkerPattern = regexp.MustCompile("`control:([^`]*)`")
+	controlProjectionIDPattern     = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
+)
 
 func controlProjectionViolations(root string) ([]Violation, error) {
 	registryData, err := readRegularFile(root, controlProvenanceRegistryPath)
@@ -57,8 +60,12 @@ func isControlProjectionSurface(path string) bool {
 func controlProjectionPathViolations(path string, data []byte, classifications map[string]string) []Violation {
 	var violations []Violation
 	for index, line := range bytes.Split(data, []byte("\n")) {
-		for _, match := range controlProjectionPattern.FindAllSubmatch(line, -1) {
+		for _, match := range controlProjectionMarkerPattern.FindAllSubmatch(line, -1) {
 			id := string(match[1])
+			if !controlProjectionIDPattern.MatchString(id) {
+				violations = append(violations, controlProjectionViolation(path, index+1, fmt.Sprintf("control projection %q has invalid id syntax", id)))
+				continue
+			}
 			classification, ok := classifications[id]
 			if !ok {
 				violations = append(violations, controlProjectionViolation(path, index+1, fmt.Sprintf("control projection %q has no provenance registry entry", id)))
