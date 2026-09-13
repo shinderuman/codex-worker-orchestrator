@@ -22,8 +22,8 @@
 
 - Sol Highは、要求・完了条件、重要なarchitecture/責務/API/data model/依存方向/current schema・contractの意味、原因不明バグ、重要テスト観点、GLM packet、高リスク変更、最終採否を判断する。
 - Sol Highは原則、repository一次探索、grep/呼び出し元追跡、通常の実装・test・lint・build、GLM調査の再実行、途中経過取得、全diffの無条件精読、reviewer検証済みの低レベル再検査を行わない。
-- 構造化machine evidenceはraw全文/whole-document fallbackを避け、具体的questionの必要field/count/ID/locatorだけ読む。欠損はunknown/error、追加rawはexact regionだけ。親evidenceのprojection/dedupは`control:parent-evidence-projection-dedup`を`glm-parent-action evidence`が強制し、親はquestion/意味解釈を判断する。parent-only判断は既存artifact/compact reportを再探索より優先する。
-- repository固有の調査・設計・実装・validation・自己reviewはGLMへ委譲する。親action admissionは`glm-parent-action`を入口に`control:parent-action-staging-admission`が強制し、親はaction意味を判断する。同一taskのSol判断・修正・再開ではworker/reviewer sessionを継続し、新規taskだけ新sessionにする。過去文脈をSol Highが再説明しない。
+- 構造化machine evidenceはraw全文をSol-visibleへ出さず、最初のtool callで必要field/count/ID/exact locatorへprojectionし、後turnで再projectionしない。欠損はunknown/error、whole-document fallback禁止、追加rawはsemantic questionのexact regionだけ。親evidenceのprojection/dedupは`control:parent-evidence-projection-dedup`を`glm-parent-action evidence`が強制し、親はquestion/意味解釈を判断する。parent-only判断は既存artifact/compact reportを再探索より優先する。
+- repository固有の調査・設計・実装・validation・自己reviewはGLMへ委譲する。親actionは`control:parent-action-staging-admission`が`glm-parent-action`でadmitし、意味は親が判断する。同一taskはworker/reviewer session継続、新規taskだけ新session。過去文脈をSol Highが再説明しない。
 - 通常workerはGLM-5.3/high。初回低リスクreviewはGLM-4.7/high、高リスク・Sol判断後・自動修正後・明示fix後のreviewはGLM-5.3/highを一方だけ使う。Sol判断後のworker継続と明示fixはGLM-5.3/max。
 - `glm-worker --authority`はbootstrap専用のlocal readであり`glm-execution.md`を先読みしない。それ以外の`glm-worker`/`glm-parent-action`を実行・待機する前に`~/.codex/instructions/glm-execution.md`、packetまたはstderr error JSONを受け取ったら`~/.codex/instructions/glm-packets.md`を読む。
 
@@ -37,7 +37,7 @@ USER_REQUEST・`SPECIFICATION.md`・既存`AGENTS.md`・直前のSol判断で未
 - 複数案の選択が将来構造へ意味のある差を生む場合
 
 これらは実装前`NEEDS_SOL_DECISION`または最終`NEEDS_SOL_REVIEW`でSol Highを通す。承認済み構成内の型/package/interface追加、作業分割、命名、明白な仕様違反修正、test追加、既定contract内の厳格化だけではSolへ戻さない。machine-only state/schemaはcurrent version/schemaだけを正規入力とし、old version/schemaのmigration・promotion・alias・推定fallbackを既定要件にしない。永続fileも、永続状態の意味変更・current schema拒否条件・rollback/recovery・既存ユーザー状態の破壊可能性で意味判断が必要な場合だけSol確認する。
-低リスク変更は独立reviewer PASS後、Sol Highは圧縮packetで採否し全diff精読を省略してよい。`control:quality-snapshot-binding`がquality/current snapshotを拘束し、意味採否はSol High。親Codexのquality gate入口は`quality-gate-capability.md`。
+低リスク変更は独立reviewer PASS後、Sol Highは圧縮packetで採否を判断し全diff精読を省略してよい。親Codexのquality gate command実行は`~/.codex/instructions/quality-gate-capability.md`に従う。
 
 ## 6. Codex自身による編集
 
