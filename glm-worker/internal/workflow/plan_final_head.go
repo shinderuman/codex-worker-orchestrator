@@ -1,10 +1,14 @@
 package workflow
 
 import (
+	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskcontract"
 )
 
@@ -101,20 +105,89 @@ func validateBlockedOnlyFinalHeadPlan(root string, plan string) (bool, error) {
 }
 
 func finalHeadPlan(root string) (string, string, bool, error) {
-	if _, err := finalHeadGitOutput(root, "rev-parse", "--git-dir"); err != nil {
+	repository, err := finalHeadRepository(root)
+	if err != nil {
+		return "", "", false, err
+	}
+	if !repository {
 		return "", "skipped (not a git repository)", false, nil
 	}
-	if _, err := finalHeadGitOutput(root, "rev-parse", "--verify", "HEAD"); err != nil {
+
+	head, err := state.ResolveGitHeadAuthority("git", root)
+	if err != nil {
+		return "", "", false, fmt.Errorf("final HEAD authorityを確認できません: %w", err)
+	}
+	if head.Unborn {
 		return "", "skipped (no commits)", false, nil
 	}
+
 	if _, err := finalHeadGitOutput(root, "ls-files", "--error-unmatch", "--", implementationPlanFile); err != nil {
-		return "", "skipped (IMPLEMENTATION_PLAN.local.md is untracked)", false, nil
+		if finalHeadGitExitCode(err) == 1 {
+			return "", "skipped (IMPLEMENTATION_PLAN.local.md is untracked)", false, nil
+		}
+		return "", "", false, fmt.Errorf("IMPLEMENTATION_PLAN.local.mdのindex追跡状態を確認できません: %w", err)
 	}
-	plan, err := finalHeadGitOutput(root, "show", "HEAD:"+implementationPlanFile)
+
+	entry, err := finalHeadGitOutput(root, "ls-tree", "HEAD", "--", implementationPlanFile)
 	if err != nil {
+		return "", "", false, fmt.Errorf("HEADのIMPLEMENTATION_PLAN.local.md存在状態を確認できません: %w", err)
+	}
+	if strings.TrimSpace(entry) == "" {
 		return "", "skipped (IMPLEMENTATION_PLAN.local.md is not in HEAD yet)", false, nil
 	}
+
+	plan, err := finalHeadGitOutput(root, "show", "HEAD:"+implementationPlanFile)
+	if err != nil {
+		return "", "", false, fmt.Errorf("HEADのIMPLEMENTATION_PLAN.local.mdを読めません: %w", err)
+	}
 	return plan, "", true, nil
+}
+
+func finalHeadRepository(root string) (bool, error) {
+	if _, err := finalHeadGitOutput(root, "rev-parse", "--git-dir"); err == nil {
+		return true, nil
+	} else {
+		var exitErr *exec.ExitError
+		if !errors.As(err, &exitErr) {
+			return false, err
+		}
+		metadata, metadataErr := finalHeadGitMetadataPresent(root)
+		if metadataErr != nil {
+			return false, metadataErr
+		}
+		if metadata {
+			return false, err
+		}
+	}
+	return false, nil
+}
+
+func finalHeadGitMetadataPresent(root string) (bool, error) {
+	dir, err := filepath.Abs(root)
+	if err != nil {
+		return false, fmt.Errorf("repository rootを解決できません: %w", err)
+	}
+	for {
+		gitPath := filepath.Join(dir, ".git")
+		if _, err := os.Lstat(gitPath); err == nil {
+			return true, nil
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return false, fmt.Errorf("git metadataを確認できません (%s): %w", gitPath, err)
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return false, nil
+		}
+		dir = parent
+	}
+}
+
+func finalHeadGitExitCode(err error) int {
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		return -1
+	}
+	return exitErr.ExitCode()
 }
 
 func validateFinalHeadPlan(root string, plan string) error {
