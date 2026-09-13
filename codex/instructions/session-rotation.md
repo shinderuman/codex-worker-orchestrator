@@ -18,11 +18,11 @@
 
 ## pending directiveを見たときの操作
 
-1. thread作成前に旧threadで`glm-parent-action rotation-claim <directive-id>`を実行し、`claim_id`を保存する。同じcommandの再実行は同じclaimを返す。
+1. thread作成前に旧threadで`glm-parent-action rotation-claim <directive-id>`を実行し、`claim_id`を保存する。claim/bind/startのidentity・retry・ack lifecycleは`control:session-rotation-claim-bind-start`がfail closedで強制し、親は外部thread作成とhandoffのsemantic判断を担う。
 2. 新規taskは同じsaved projectに所属させ、同じlocal checkoutで作業させる。別worktree・別cloneを作らない。現在checkoutに紐付くGLM runtime stateを失わせない。
 3. thread作成成功後、旧threadで`glm-parent-action rotation-bind <directive-id> <claim-id> <new-thread-id>`を実行する。作成失敗が確定した場合だけ、current parent/directive/claim/target taskへ束縛したcreation result (`version=1`, `outcome=failed`)を`glm-parent-action rotation-fail <directive-id> <claim-id> --creation-result-json <json>`へ渡す。作成結果が不明なら`rotation-fail`は使わず、claimを保持したまま作成済みthreadを確認する。
 4. 新規taskの最初の依頼はbootstrap要旨だけにする。`IMPLEMENTATION_PLAN.local.md`のACTIVE task再読、Git現物確認、保存済みGLM task/session stateの再取得を指示する。旧会話の自由文・要約・ACTIVE task本文を要求正本として複製しない。
-5. 新threadは`glm-parent-action start --rotation-claim <claim-id>`を実行する。milestone開始では`glm-parent-action start-milestones <token> --rotation-claim <claim-id>`を使う。開始処理はbind対象thread・claim・予定task IDを照合し、途中失敗後も同じclaimで同じtaskへ再開する。milestone tokenを消費済みなら`prepare start-milestones`で新しいtokenを作る。worker再開checkpoint保存後にclaimをacknowledgeしてdirectiveをretireする。
+5. 新threadは`glm-parent-action start --rotation-claim <claim-id>`を実行する。milestone開始では`glm-parent-action start-milestones <token> --rotation-claim <claim-id>`を使う。milestone tokenを消費済みなら`prepare start-milestones`で新しいtokenを作る。
 6. 旧sessionの親taskは、新規taskの最初のparent action確認後に終了させる。GLM in-flight呼び出しが残っている場合はその完了を待つ。
 
 ## trigger（参照）
