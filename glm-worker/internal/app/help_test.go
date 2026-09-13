@@ -6,11 +6,13 @@ import (
 	"errors"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/authoritybootstrapcmd"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 )
 
 func TestRunEntryHelpBypassesConfig(t *testing.T) {
@@ -58,6 +60,13 @@ func TestRunEntryHelpBypassesConfig(t *testing.T) {
 
 func TestRunEntryAuthorityBypassesConfigAndReturnsJSON(t *testing.T) {
 	root := t.TempDir()
+	if output, err := exec.Command("git", "init", "-q", root).CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, output)
+	}
+	writeAppTestFile(t, root, repositoryharness.MarkerPath, repositoryharness.MarkerContent)
+	if output, err := exec.Command("git", "-C", root, "add", "--", repositoryharness.MarkerPath).CombinedOutput(); err != nil {
+		t.Fatalf("git add marker: %v: %s", err, output)
+	}
 	writeAppTestFile(t, root, "IMPLEMENTATION_RULES.md", "rules-body\n")
 	writeAppTestFile(t, root, "IMPLEMENTATION_PLAN.local.md", "# Plan\n\n## ACTIVE\n\n- `IMPLEMENTATION_TASKS/current.md`\n")
 	writeAppTestFile(t, root, "IMPLEMENTATION_TASKS/current.md", "task-body\n")
