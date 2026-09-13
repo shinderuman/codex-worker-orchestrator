@@ -28,15 +28,10 @@ production実装へ進む前に、次を対象の不確実性・変動性・継�
 
 ## dispatch gate宣言(task file機械検証)
 
-外部成立性をproduction correctnessの前提に含むtaskを`glm-worker`へ委譲するときは、ACTIVE task file本文へ`## External feasibility`節として宣言する。glm-workerは新規・decision・fix・reviewer・auto-fix・resumeの全dispatch入口で同一parserにより宣言を検証し、受理できないtaskはworker/reviewer model呼出0回(`external_feasibility_missing`・`external_feasibility_malformed`・`external_feasibility_unverified`)でfail closedする。検証は追加AI call・追加classifierなしの機械処理で、宣言はtask file本体の固定context増分(not-applicable宣言で約50 bytes、implementation宣言でも約300 bytes)のみを消費する。
+ACTIVE task fileの`## External feasibility`宣言について、status/field shape、全dispatch入口のfail-closed admission、PoC/observationのread-only・snapshot同一性、`NEEDS_SOL_DECISION` routingは`control:external-feasibility-admission`が機械強制する。親Codexはそのargv・field・順序を別の手続きとして再実装せず、machine resultに従う。
 
-- `status: not-applicable`: 外部成立性が前提にならない通常task。status行だけを置き、他fieldを書かない。
-- `status: poc` / `status: observation`: 未検証段階。`assumption`(検証対象の外部前提)を必須とし、evidence系fieldは書かない。glm-workerはworkerをread-only capabilityで実行し、開始前repo snapshotとの同一性を強制する。workerがdiffを出した時点でfail closedする。結果はreviewerを経ず親CodexのGo/No-Go(`NEEDS_SOL_DECISION`)へ返り、GLMだけでimplementationへ昇格させる経路は存在しない。
-- `status: implementation`: 実装許可。`assumption`・`evidence-source: producer`・`evidence`(実producer観測の事実)・`go`(親CodexのGo判断と日付)の4fieldが全て必須。`evidence-source`は実producer観測のみを意味し、人工fixture・scripted packet・worker/reviewerのPASS自己申告はevidenceとして受理しない。
+親Codexは宣言内容の意味を判断する。外部成立性が本当に不要なら`not-applicable`、未検証ならPoC/observation、実producer evidenceと親Go判断が揃った後だけimplementationとして扱う。人工fixture・scripted packet・worker/reviewer/Solの合意を実producer成立性の証拠へ昇格させない。
 
-親Codexの責務:
+PoC/observation結果のGo/No-Go・観測継続は親Codexが判断する。Goは実producer evidenceと親Go判断をtask authorityへ記録して同じtaskをimplementationとして再開し、No-Goはmachine handoffが許すcanonical terminal pathを使う。GLMだけでimplementationへ昇格させない。
 
-- 既存taskをACTIVATEする前に宣言を確認し、欠けていれば該当taskへ宣言を追加してから委譲する。宣言のないtask fileはdispatch時にfail closedする。
-- 新規task生成ではこの節を最初から含める。
-- PoC/observation結果のGo/No-Goは親Codexが行う。Goならtask fileの宣言を`status: implementation`へ書き換えて実producer evidenceと親Go判断を記録してから通常のdecision経路で同じtaskを再開する。No-Goなら`glm-worker --handoff`の`allowed_actions`に`no-go`があることを確認し、`glm-parent-action no-go`でmodel call 0のterminal撤退にする。同じNo-Goをdecisionとしてworkerへ再送しない。観測継続なら通常のdecision経路でread-only observationを継続する。
-- `not-applicable`宣言が誤っている場合(実際には未検証外部前提を含むtask)を機械検証で絶対防止はできない。この残余riskは宣言した親Codexの判断責任であり、Sol review・escaped review検知が第二防御である。
+`not-applicable`の真偽やcritical assumptionの見落としは機械検証できない。これは親Codexの残余責任であり、Sol review・escaped review検知を第二防御とする。
