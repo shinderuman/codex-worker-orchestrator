@@ -77,6 +77,24 @@ func executeRuntimeControl(cmd Command, cfg config.AppConfig, stdout io.Writer) 
 }
 
 func executeReadOnly(cmd Command, cfg config.AppConfig, stdout io.Writer) error {
+	switch cmd.Mode {
+	case ModeTimeline,
+		ModeConvergence,
+		ModeEvalAB,
+		ModeCallOutliers,
+		ModeModelRouting,
+		ModeTestImpact,
+		ModeRepoSearchEval,
+		ModeBundle,
+		ModeParentUsage,
+		ModeReviewGap:
+		return executeReadOnlyAnalysis(cmd, cfg, stdout)
+	default:
+		return executeReadOnlyInspection(cmd, cfg, stdout)
+	}
+}
+
+func executeReadOnlyInspection(cmd Command, cfg config.AppConfig, stdout io.Writer) error {
 	st := state.AttachStateStore(cfg)
 	switch cmd.Mode {
 	case ModeStatus:
@@ -104,6 +122,14 @@ func executeReadOnly(cmd Command, cfg config.AppConfig, stdout io.Writer) error 
 		return printParentEvidence(cmd, cfg, st, stdout)
 	case ModeCheckWakeCoalesce:
 		return printCheckWakeCoalesce(cmd, cfg, stdout)
+	default:
+		return fmt.Errorf("command mode %d is not read-only inspection", cmd.Mode)
+	}
+}
+
+func executeReadOnlyAnalysis(cmd Command, cfg config.AppConfig, stdout io.Writer) error {
+	st := state.AttachStateStore(cfg)
+	switch cmd.Mode {
 	case ModeTimeline:
 		return printTimeline(st, cmd.Payload, stdout)
 	case ModeConvergence:
@@ -125,7 +151,7 @@ func executeReadOnly(cmd Command, cfg config.AppConfig, stdout io.Writer) error 
 	case ModeReviewGap:
 		return printReviewGap(cfg, st, cmd.Payload, stdout)
 	default:
-		return fmt.Errorf("command mode %d is not read-only", cmd.Mode)
+		return fmt.Errorf("command mode %d is not read-only analysis", cmd.Mode)
 	}
 }
 
