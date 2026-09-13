@@ -93,6 +93,72 @@ func TestControlProjectionRejectsNonMachineControl(t *testing.T) {
 	}
 }
 
+func TestControlProjectionRejectsReintroducedMachineProcedureToken(t *testing.T) {
+	root := newControlProvenanceIdentityRepo(t, controlProjectionTestOrigin, controlProvenanceModulePath)
+	writeControlProvenanceGo(t, root, "owner.go", "package fixture\nfunc owner() {}\nfunc postcondition() {}\n")
+	writeControlProvenanceGo(t, root, "owner_test.go", "package fixture\nfunc TestOwner() {}\n")
+	control := controlProvenanceMachineFixture()
+	control.ID = "parent-action-staging-admission"
+	writeControlProvenanceRegistry(t, root, controlProvenanceRegistry{
+		Version:  1,
+		Controls: []controlProvenanceControl{control},
+	})
+	path := "codex/instructions/task-request-boundary.md"
+	writeControlProjectionMarkdown(t, root, path, "`control:parent-action-staging-admission`\nRun `glm-parent-action start-milestones <token>` after preparing the payload.\n")
+
+	violations, err := scopedControlProvenanceViolations(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasControlProjectionViolation(violations, path, "parent-action-staging-admission", "start-milestones <token>", "reintroduces machine-owned procedure token") {
+		t.Fatalf("violations = %#v", violations)
+	}
+}
+
+func TestControlProjectionAllowsResidualSemanticTextOnGuardedSurface(t *testing.T) {
+	root := newControlProvenanceIdentityRepo(t, controlProjectionTestOrigin, controlProvenanceModulePath)
+	writeControlProvenanceGo(t, root, "owner.go", "package fixture\nfunc owner() {}\nfunc postcondition() {}\n")
+	writeControlProvenanceGo(t, root, "owner_test.go", "package fixture\nfunc TestOwner() {}\n")
+	control := controlProvenanceMachineFixture()
+	control.ID = "parent-action-staging-admission"
+	writeControlProvenanceRegistry(t, root, controlProvenanceRegistry{
+		Version:  1,
+		Controls: []controlProvenanceControl{control},
+	})
+	path := "codex/instructions/task-request-boundary.md"
+	writeControlProjectionMarkdown(t, root, path, "`control:parent-action-staging-admission`\nThe parent decides milestone meaning, scope, and acceptance.\n")
+
+	violations, err := scopedControlProvenanceViolations(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(violations) != 0 {
+		t.Fatalf("violations = %#v", violations)
+	}
+}
+
+func TestControlProjectionProcedureGuardRequiresCompactProjection(t *testing.T) {
+	root := newControlProvenanceIdentityRepo(t, controlProjectionTestOrigin, controlProvenanceModulePath)
+	writeControlProvenanceGo(t, root, "owner.go", "package fixture\nfunc owner() {}\nfunc postcondition() {}\n")
+	writeControlProvenanceGo(t, root, "owner_test.go", "package fixture\nfunc TestOwner() {}\n")
+	control := controlProvenanceMachineFixture()
+	control.ID = "parent-action-staging-admission"
+	writeControlProvenanceRegistry(t, root, controlProvenanceRegistry{
+		Version:  1,
+		Controls: []controlProvenanceControl{control},
+	})
+	path := "codex/instructions/task-request-boundary.md"
+	writeControlProjectionMarkdown(t, root, path, "The parent decides milestone meaning, scope, and acceptance.\n")
+
+	violations, err := scopedControlProvenanceViolations(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasControlProjectionViolation(violations, path, "parent-action-staging-admission", "missing its compact control projection") {
+		t.Fatalf("violations = %#v", violations)
+	}
+}
+
 func TestControlProjectionIgnoresTaskRequirementText(t *testing.T) {
 	root := newControlProvenanceIdentityRepo(t, controlProjectionTestOrigin, controlProvenanceModulePath)
 	writeControlProvenanceGo(t, root, "owner.go", "package fixture\nfunc owner() {}\nfunc postcondition() {}\n")
