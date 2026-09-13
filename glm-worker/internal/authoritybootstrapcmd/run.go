@@ -6,10 +6,12 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"unicode/utf8"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskcontract"
 )
 
@@ -57,10 +59,18 @@ func Build(args []string) (Output, error) {
 	if err != nil {
 		return Output{}, fmt.Errorf("authority bootstrap: %w", err)
 	}
-	return BuildFromRoot(root, kind, knownContentSHA)
+	return buildFromRoot(root, kind, knownContentSHA)
 }
 
 func BuildFromRoot(root string, kind string, knownContentSHA string) (Output, error) {
+	resolvedRoot, err := validateRepoRoot(root)
+	if err != nil {
+		return Output{}, fmt.Errorf("authority bootstrap: %w", err)
+	}
+	return buildFromRoot(resolvedRoot, kind, knownContentSHA)
+}
+
+func buildFromRoot(root string, kind string, knownContentSHA string) (Output, error) {
 	if !validKind(kind) {
 		return Output{}, fmt.Errorf("%s", usage)
 	}
@@ -120,25 +130,63 @@ func validKind(kind string) bool {
 }
 
 func findRepoRoot(start string) (string, error) {
+	root, err := resolveGitRepoRoot(start)
+	if err != nil {
+		return "", err
+	}
+	if err := requireRepositoryHarness(root); err != nil {
+		return "", err
+	}
+	return root, nil
+}
+
+func validateRepoRoot(root string) (string, error) {
+	resolved, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return "", fmt.Errorf("resolve repository root %s: %w", root, err)
+	}
+	gitRoot, err := resolveGitRepoRoot(resolved)
+	if err != nil {
+		return "", err
+	}
+	if gitRoot != resolved {
+		return "", fmt.Errorf("authority root %s is not the git repository root %s", resolved, gitRoot)
+	}
+	if err := requireRepositoryHarness(resolved); err != nil {
+		return "", err
+	}
+	return resolved, nil
+}
+
+func resolveGitRepoRoot(start string) (string, error) {
 	current, err := filepath.Abs(start)
 	if err != nil {
 		return "", fmt.Errorf("resolve cwd: %w", err)
 	}
-	for {
-		if regularFile(filepath.Join(current, rulesFile)) && regularFile(filepath.Join(current, planFile)) {
-			return current, nil
-		}
-		parent := filepath.Dir(current)
-		if parent == current {
-			return "", fmt.Errorf("canonical authority files not found from %s", start)
-		}
-		current = parent
+	output, err := exec.Command("git", "-C", current, "rev-parse", "--show-toplevel").Output()
+	if err != nil {
+		return "", fmt.Errorf("git repository root not found from %s: %w", start, err)
 	}
+	root := strings.TrimSpace(string(output))
+	if root == "" {
+		return "", fmt.Errorf("git repository root is empty from %s", start)
+	}
+	resolved, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return "", fmt.Errorf("resolve git repository root %s: %w", root, err)
+	}
+	return resolved, nil
 }
 
-func regularFile(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && info.Mode().IsRegular()
+func requireRepositoryHarness(root string) error {
+	decision, err := repositoryharness.Evaluate(root)
+	if err != nil {
+		return fmt.Errorf("evaluate repository harness at %s: %w", root, err)
+	}
+	if !decision.Active {
+		return fmt.Errorf("repository harness inactive at %s (%s)", root, decision.Reason)
+	}
+	return nil
 }
 
 func loadSnapshot(root string) (snapshot, error) {
