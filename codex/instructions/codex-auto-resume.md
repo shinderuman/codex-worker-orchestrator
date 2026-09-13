@@ -30,16 +30,7 @@
 
 ## wake scheduler登録
 
-以下はmachine transactionが強制する安全条件の説明であり、親がこの節からtool callを手作業で再構成してはならない。実行入口は`--codex-wake-plan`と`--codex-wake-response-stdin`だけとする。
-
-- 期待keyは`codex-5h-wake-<wake専用task自身のthread ID>`とする。新規作成のautomation名もこの期待keyを使う。作成・再利用のどちらでも、扱う実automation IDがこの期待keyと一致することを確認してからupdate・verify・deleteする。
-- 絶対時刻anchorはUTCの`DTSTART:YYYYMMDDTHHMMSS`形式だけを正とし、末尾へ`Z`を付けない。`DTSTART;TZID=...`も使わない。
-- 再利用できる既存automationは、`target_thread_id`がwake専用task自身のthread IDと完全一致するものだけとする。この列挙は発火前の既存scheduler再利用判定だけに使い、発火後のupdate・verify・PAUSED化へ流用しない。Codex appのautomation一覧、または`CODEX_CONFIG_DIR`の`automations/*/automation.toml`の`target_thread_id`を読んで列挙する。automation名だけの一致を再利用の根拠にしない。
-- 列挙結果が1件で、かつその実automation IDが期待keyと一致する場合だけ、新規作成せずその実automation IDへ絶対時刻update(UTCの`DTSTART:YYYYMMDDTHHMMSS` + `RRULE:FREQ=DAILY;COUNT=1` + status ACTIVE)を行う。`DTSTART;TZID=...`は使わない。実IDが期待keyと不一致の場合と列挙結果が複数件の場合はどれもupdateせずfail closedとし、Codex Desktop UIで人間が確認・整理するまで手動復旧を案内する。
-- 列挙結果が0件の場合だけ新規作成する。DTSTART付き即時createはCodex appへ拒否されるため、DTSTARTなし・status PAUSED・`RRULE:FREQ=HOURLY`のplaceholder作成と、成功応答に含まれる実automation IDの確認、その実IDへの絶対時刻update(UTCの`DTSTART:YYYYMMDDTHHMMSS` + `RRULE:FREQ=DAILY;COUNT=1` + status ACTIVE)の二段階で行う。`suggested_create`は候補カード表示のみなので呼ばない。作成応答の実automation IDが期待keyと不一致の場合は、返却されたその実IDだけをbounded cleanup対象にしてfail closedとする。
-- `automation_update`の応答はfield semanticsで構造的に検査し、応答全体を文字列化したfailure語のraw substring検査は行わない。top-level `isError:true`、content text内のmachine payload・message値としての明示的な`invalid`・`error`・`failed`、空文字列、`Rendered suggestion`、期待ID・mode/statusの欠損または不一致、malformed/ambiguous responseの場合は作成・更新失敗とする。field名や否定・zero値(`isError:false`・`errorCount:0`等)をraw substringでfailure語扱いしない。content欄だけ読んで空出力を成功扱いにしない。
-- 最終成功は`--verify-codex-wake`と同じ保存実体postconditionで確定する。wake thread IDから期待keyを閉じたgrammarで導出し、保存済みautomationのid・name・target_thread_id・status・時刻を照合する。保存実体を取得できない状態はverified matchではない。
-- 検証失敗時のretry・cleanupはmachine transactionだけが決める。親は引数・schedule・automation IDを修正して別のwriteを作らない。
+expected key/thread identity、UTC one-shot schedule、PAUSED placeholderからACTIVE update、tool responseのfield validation、exact-ID retry/cleanup、保存実体verifyは`--codex-wake-plan` / `--codex-wake-response-stdin`のmachine transactionを正とする。親はこの内部procedureを再構成せず、前節のexternal-unenforceableなCodex app writeだけをlosslessにrelayする。
 
 ## wake専用taskの処理
 
