@@ -17,62 +17,80 @@ type controlProjectionProcedureGuard struct {
 var (
 	controlProjectionMarkerPattern = regexp.MustCompile("`control:([^`]*)`")
 	controlProjectionIDPattern     = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
-	controlProjectionProcedureGuards = []controlProjectionProcedureGuard{
-		{
-			ControlID: "external-feasibility-admission",
-			Path:      "codex/instructions/feasibility-gate.md",
-			ForbiddenTokens: []string{
-				"external_feasibility_missing",
-				"external_feasibility_malformed",
-				"external_feasibility_unverified",
-			},
-		},
-		{
-			ControlID: "parent-evidence-projection-dedup",
-			Path:      "codex/instructions/glm-parent-evidence.md",
-			ForbiddenTokens: []string{
-				"duplicate_parent_projection",
-				"--known-content-sha256",
-			},
-		},
-		{
-			ControlID: "repo-search-exhaustive-activation",
-			Path:      "codex/instructions/glm-repo-search.md",
-			ForbiddenTokens: []string{
-				"EXHAUSTIVE_SEARCH_REQUIRED: true",
-				"duplicate_parent_projection",
-			},
-		},
-		{
-			ControlID: "stop-isolate-park-lifecycle",
-			Path:      "codex/instructions/glm-stop-isolate.md",
-			ForbiddenTokens: []string{
-				"stop_endpoint_absent",
-				"stop_endpoint_stale",
-				"interrupted_cleanup_residual",
-				"stop-worktree.patch",
-				"stop-index.patch",
-			},
-		},
-		{
-			ControlID: "orphan-watch-terminalization",
-			Path:      "codex/instructions/glm-watch-orphan-terminal.md",
-			ForbiddenTokens: []string{
-				`status: "orphan-terminal"`,
-				`required_action: "none"`,
-			},
-		},
-		{
-			ControlID: "parent-action-staging-admission",
-			Path:      "codex/instructions/task-request-boundary.md",
-			ForbiddenTokens: []string{
-				"start-milestones <token>",
-				"revise-milestones <token>",
-				`fresh_worker":true`,
-			},
-		},
-	}
 )
+
+var controlProjectionProcedureGuards = []controlProjectionProcedureGuard{
+	{
+		ControlID: "external-feasibility-admission",
+		Path:      "codex/instructions/feasibility-gate.md",
+		ForbiddenTokens: []string{
+			"external_feasibility_missing",
+			"external_feasibility_malformed",
+			"external_feasibility_unverified",
+		},
+	},
+	{
+		ControlID: "parent-evidence-projection-dedup",
+		Path:      "codex/instructions/glm-parent-evidence.md",
+		ForbiddenTokens: []string{
+			"duplicate_parent_projection",
+			"--known-content-sha256",
+		},
+	},
+	{
+		ControlID: "repo-search-exhaustive-activation",
+		Path:      "codex/instructions/glm-repo-search.md",
+		ForbiddenTokens: []string{
+			"EXHAUSTIVE_SEARCH_REQUIRED: true",
+			"duplicate_parent_projection",
+		},
+	},
+	{
+		ControlID: "stop-isolate-park-lifecycle",
+		Path:      "codex/instructions/glm-stop-isolate.md",
+		ForbiddenTokens: []string{
+			"stop_endpoint_absent",
+			"stop_endpoint_stale",
+			"interrupted_cleanup_residual",
+			"stop-worktree.patch",
+			"stop-index.patch",
+		},
+	},
+	{
+		ControlID: "orphan-watch-terminalization",
+		Path:      "codex/instructions/glm-watch-orphan-terminal.md",
+		ForbiddenTokens: []string{
+			`status: "orphan-terminal"`,
+			`required_action: "none"`,
+		},
+	},
+	{
+		ControlID: "packet-schema-result",
+		Path:      "codex/glm-worker/prompts/WORKER.md",
+		ForbiddenTokens: []string{
+			"6 KiB",
+			"1536 bytes",
+			"parent_validation_working_dir",
+		},
+	},
+	{
+		ControlID: "packet-schema-result",
+		Path:      "codex/glm-worker/prompts/REVIEWER.md",
+		ForbiddenTokens: []string{
+			"6 KiB",
+			"1536 bytes",
+		},
+	},
+	{
+		ControlID: "parent-action-staging-admission",
+		Path:      "codex/instructions/task-request-boundary.md",
+		ForbiddenTokens: []string{
+			"start-milestones <token>",
+			"revise-milestones <token>",
+			`fresh_worker":true`,
+		},
+	},
+}
 
 func controlProjectionViolations(root string) ([]Violation, error) {
 	registryData, err := readRegularFile(root, controlProvenanceRegistryPath)
