@@ -3,12 +3,12 @@ package app
 import (
 	"fmt"
 	"io"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryproject"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryprojecttree"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskcontract"
 )
@@ -36,18 +36,8 @@ type projectStateSchedule struct {
 	Blocked []string `json:"blocked"`
 }
 
-type projectStateDependency struct {
-	Task        string   `json:"task"`
-	Outstanding []string `json:"outstanding,omitempty"`
-	Fulfilled   []string `json:"fulfilled,omitempty"`
-}
-
-type projectStateBlocker struct {
-	Task        string   `json:"task"`
-	Section     string   `json:"section"`
-	Reason      string   `json:"reason"`
-	Outstanding []string `json:"outstanding,omitempty"`
-}
+type projectStateDependency = repositoryproject.Dependency
+type projectStateBlocker = repositoryproject.Blocker
 
 type projectStateCompletion struct {
 	Ready          bool                      `json:"ready"`
@@ -57,20 +47,6 @@ type projectStateCompletion struct {
 	RequiredAction string                    `json:"required_action,omitempty"`
 	Validations    []parentHandoffValidation `json:"validations"`
 	TreeClean      *bool                     `json:"tree_clean,omitempty"`
-}
-
-type projectTaskNode struct {
-	path        string
-	content     []byte
-	outstanding []string
-	fulfilled   []string
-	visiting    bool
-}
-
-type projectStateGraph struct {
-	repoRoot string
-	nodes    []*projectTaskNode
-	byPath   map[string]*projectTaskNode
 }
 
 const projectStateVersion = 2
@@ -97,37 +73,22 @@ func buildProjectState(cfg config.AppConfig, st *state.StateStore) (projectState
 		Blockers:     []projectStateBlocker{},
 		Continuation: unknownProjectContinuation(projectContinuationReasonPlanAbsent),
 	}
-	planContent, err := readProjectStatePlan(cfg.RepoRoot)
+	loaded, err := repositoryprojecttree.LoadProjectState(cfg.RepoRoot)
 	if err != nil {
 		return output, err
 	}
-	if planContent == nil {
+	if !loaded.PlanPresent {
 		return output, nil
 	}
+	prepared := loaded.Plan
 	output.PlanPresent = true
-	goal, err := taskcontract.ParsePlanGoal(*planContent)
-	if err != nil {
-		return output, err
-	}
-	schedule := taskcontract.ParsePlanSchedule(*planContent)
-	active, next, blocked, err := projectStateEntries(goal, schedule)
-	if err != nil {
-		return output, err
-	}
-	if err := projectStateScheduleClosure(cfg.RepoRoot, schedule); err != nil {
-		return output, err
-	}
-	graph, err := buildProjectStateGraph(cfg.RepoRoot, append(append(append([]string{}, active...), next...), blocked...))
-	if err != nil {
-		return output, err
-	}
-	output.Goal = &projectStateGoal{Present: goal.Present, Status: goal.Status}
-	output.Schedule = &projectStateSchedule{Active: active, Next: next, Blocked: blocked}
-	output.Dependencies = graph.dependencies()
-	output.NextRunnable = projectStateNextRunnable(graph, next)
-	output.Blockers = projectStateBlockers(graph, next, blocked)
-	if goal.Present && goal.Status == taskcontract.GoalStatusActive {
-		completion, err := buildProjectStateCompletion(cfg, st, active, next, blocked, graph)
+	output.Goal = &projectStateGoal{Present: prepared.Goal.Present, Status: prepared.Goal.Status}
+	output.Schedule = &projectStateSchedule{Active: prepared.Active, Next: prepared.Next, Blocked: prepared.Blocked}
+	output.Dependencies = loaded.Graph.Dependencies()
+	output.NextRunnable = loaded.Graph.NextRunnable(prepared.Next)
+	output.Blockers = loaded.Graph.Blockers(prepared.Next, prepared.Blocked)
+	if prepared.Goal.Present && prepared.Goal.Status == taskcontract.GoalStatusActive {
+		completion, err := buildProjectStateCompletion(cfg, st, prepared.Active, prepared.Next, prepared.Blocked, loaded.Graph)
 		if err != nil {
 			return output, err
 		}
@@ -137,208 +98,25 @@ func buildProjectState(cfg config.AppConfig, st *state.StateStore) (projectState
 	return output, nil
 }
 
-func projectStateScheduleClosure(repoRoot string, schedule taskcontract.PlanSchedule) error {
-	entries, err := taskcontract.EnumerateTaskCorpus(repoRoot)
-	if err != nil {
-		return err
-	}
-	failures := schedule.ClosureFailures(entries)
-	if len(failures) == 0 {
-		return nil
-	}
-	reasons := make([]string, 0, len(failures))
-	for _, failure := range failures {
-		reasons = append(reasons, failure.Reason)
-	}
-	return fmt.Errorf("scheduleとIMPLEMENTATION_TASKS corpusのclosureが成立しません: %s", strings.Join(reasons, "; "))
-}
-
-func readProjectStatePlan(repoRoot string) (*string, error) {
-	data, err := os.ReadFile(filepath.Join(repoRoot, state.ParentPlanFile))
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("read %s: %w", state.ParentPlanFile, err)
-	}
-	plan := string(data)
-	return &plan, nil
-}
-
-func projectStateEntries(goal taskcontract.PlanGoal, schedule taskcontract.PlanSchedule) ([]string, []string, []string, error) {
-	next, blocked, err := schedule.NonActiveEntries()
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	if goal.Present && goal.Status == taskcontract.GoalStatusCompleted {
-		active, err := schedule.ActiveEntries()
-		if err != nil {
-			return nil, nil, nil, err
-		}
-		if len(active) > 0 || len(next) > 0 || len(blocked) > 0 {
-			return nil, nil, nil, fmt.Errorf("completed GOALではACTIVE/NEXT/BLOCKEDを空にする必要があります(active=%d next=%d blocked=%d)", len(active), len(next), len(blocked))
-		}
-		return []string{}, []string{}, []string{}, nil
-	}
-	activeTask, err := schedule.ValidateComplete()
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	return []string{activeTask}, next, blocked, nil
-}
-
-func buildProjectStateGraph(repoRoot string, entries []string) (*projectStateGraph, error) {
-	graph := &projectStateGraph{repoRoot: repoRoot, byPath: map[string]*projectTaskNode{}}
-	for _, entry := range entries {
-		if _, err := graph.loadTask(entry); err != nil {
-			return nil, err
-		}
-	}
-	return graph, nil
-}
-
-func (g *projectStateGraph) loadTask(path string) (*projectTaskNode, error) {
-	if node, ok := g.byPath[path]; ok {
-		if node.visiting {
-			return nil, fmt.Errorf("task dependency cycleを検出しました: %s", path)
-		}
-		return node, nil
-	}
-	content, err := readProjectStateTask(g.repoRoot, path)
-	if err != nil {
-		return nil, err
-	}
-	node := &projectTaskNode{path: path, content: content, visiting: true}
-	g.byPath[path] = node
-	g.nodes = append(g.nodes, node)
-	dependencies, err := taskcontract.ParseTaskDependencyState(content)
-	if err != nil {
-		return nil, fmt.Errorf("task %s: %w", path, err)
-	}
-	for _, dependency := range dependencies.Fulfilled {
-		if dependency == path {
-			return nil, fmt.Errorf("task %sは自身へのfulfilled dependencyを持っています", path)
-		}
-		node.fulfilled = append(node.fulfilled, dependency)
-	}
-	for _, dependency := range dependencies.Outstanding {
-		if dependency == path {
-			return nil, fmt.Errorf("task %sは自身へのdependencyを持っています", path)
-		}
-		if !projectStateTaskExists(g.repoRoot, dependency) {
-			return nil, fmt.Errorf("task %sのdependency %sはcurrent treeに存在せず、%sにも明示されていません", path, dependency, taskcontract.TaskFulfilledDependenciesHeading)
-		}
-		if _, err := g.loadTask(dependency); err != nil {
-			return nil, err
-		}
-		node.outstanding = append(node.outstanding, dependency)
-	}
-	node.visiting = false
-	return node, nil
-}
-
-func readProjectStateTask(repoRoot, path string) ([]byte, error) {
-	if err := taskcontract.ValidateActiveTaskPath(path); err != nil {
-		return nil, err
-	}
-	target := filepath.Join(repoRoot, filepath.FromSlash(path))
-	info, err := os.Lstat(target)
-	if err != nil {
-		return nil, fmt.Errorf("task file %sを確認できません: %w", path, err)
-	}
-	if !info.Mode().IsRegular() {
-		return nil, fmt.Errorf("task file %sはregular fileではありません(%s)", path, info.Mode().Type())
-	}
-	content, err := os.ReadFile(target)
-	if err != nil {
-		return nil, fmt.Errorf("read task file %s: %w", path, err)
-	}
-	return content, nil
-}
-
-func projectStateTaskExists(repoRoot, path string) bool {
-	info, err := os.Lstat(filepath.Join(repoRoot, filepath.FromSlash(path)))
-	return err == nil && info.Mode().IsRegular()
-}
-
-func (g *projectStateGraph) dependencies() []projectStateDependency {
-	dependencies := make([]projectStateDependency, 0, len(g.nodes))
-	for _, node := range g.nodes {
-		dependencies = append(dependencies, projectStateDependency{
-			Task:        node.path,
-			Outstanding: node.outstanding,
-			Fulfilled:   node.fulfilled,
-		})
-	}
-	return dependencies
-}
-
-func projectStateNextRunnable(graph *projectStateGraph, next []string) *string {
-	for _, entry := range next {
-		node := graph.byPath[entry]
-		if node != nil && len(node.outstanding) == 0 {
-			runnable := entry
-			return &runnable
-		}
-	}
-	return nil
-}
-
-func projectStateBlockers(graph *projectStateGraph, next, blocked []string) []projectStateBlocker {
-	blockers := []projectStateBlocker{}
-	for _, entry := range next {
-		node := graph.byPath[entry]
-		if node == nil || len(node.outstanding) == 0 {
-			continue
-		}
-		blockers = append(blockers, projectStateBlocker{
-			Task: entry, Section: "next", Reason: "outstanding-dependencies", Outstanding: node.outstanding,
-		})
-	}
-	for _, entry := range blocked {
-		node := graph.byPath[entry]
-		outstanding := []string(nil)
-		if node != nil {
-			outstanding = node.outstanding
-		}
-		blockers = append(blockers, projectStateBlocker{
-			Task: entry, Section: "blocked", Reason: "blocked-section", Outstanding: outstanding,
-		})
-	}
-	return blockers
-}
-
-func buildProjectStateCompletion(cfg config.AppConfig, st *state.StateStore, active, next, blocked []string, graph *projectStateGraph) (*projectStateCompletion, error) {
+func buildProjectStateCompletion(cfg config.AppConfig, st *state.StateStore, active, next, blocked []string, graph *repositoryproject.TaskGraph) (*projectStateCompletion, error) {
 	if len(active) != 1 {
 		return nil, fmt.Errorf("Goal進行中のcompletion評価には単一ACTIVE taskが必要です(active=%d)", len(active))
 	}
 	activeTask := active[0]
-	node := graph.byPath[activeTask]
-	if node == nil {
+	content, ok := graph.TaskContent(activeTask)
+	if !ok {
 		return nil, fmt.Errorf("ACTIVE task %sのdependency状態を解決できません", activeTask)
 	}
-	findings, err := taskcontract.ParseReviewFindings(node.content)
-	if err != nil {
-		return nil, fmt.Errorf("task %s: %w", activeTask, err)
-	}
 	completion := &projectStateCompletion{Ready: false, ActiveTask: activeTask, Validations: []parentHandoffValidation{}}
-	unmet := append([]string{}, projectStateScheduleUnmet(next, blocked, findings)...)
+	unmet, err := repositoryproject.CompletionScheduleUnmet(next, blocked, activeTask, content)
+	if err != nil {
+		return nil, err
+	}
 	unmet = append(unmet, projectStateLifecycleUnmet(st, activeTask, completion)...)
 	unmet = append(unmet, projectStateEvidenceUnmet(cfg, st, completion)...)
 	completion.Unmet = unmet
 	completion.Ready = len(unmet) == 0
 	return completion, nil
-}
-
-func projectStateScheduleUnmet(next, blocked []string, findings taskcontract.ReviewFindings) []string {
-	unmet := []string{}
-	if len(next) > 0 || len(blocked) > 0 {
-		unmet = append(unmet, "schedule_not_empty")
-	}
-	if !findings.None {
-		unmet = append(unmet, "open_findings")
-	}
-	return unmet
 }
 
 func projectStateLifecycleUnmet(st *state.StateStore, activeTask string, completion *projectStateCompletion) []string {
