@@ -338,7 +338,7 @@ func executePayloadAction(
 
 func payloadWorkerArgsForDescriptor(descriptor parentaction.PayloadAction, payload []byte, options []string) []string {
 	digest := sha256.Sum256(payload)
-	args := []string{descriptor.WorkerMode, strconv.Itoa(len(payload)), "--sha256", hex.EncodeToString(digest[:])
+	args := []string{descriptor.WorkerMode, strconv.Itoa(len(payload)), "--sha256", hex.EncodeToString(digest[:])}
 	return append(args, options...)
 }
 
