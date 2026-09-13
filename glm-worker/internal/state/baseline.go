@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
@@ -28,13 +29,12 @@ type GitHeadAuthority struct {
 const baselineUntrackedFile = "baseline-untracked"
 
 func CaptureGitBaseline(cfg config.AppConfig, state *StateStore) error {
-	if _, err := os.Stat(cfg.RepoRoot); errors.Is(err, os.ErrNotExist) {
-		return removeGitBaseline(state)
-	}
-
-	head, unborn, err := resolveRepoHead(cfg.RepoRoot)
+	head, unborn, repository, err := captureGitBaselineHead(cfg.RepoRoot)
 	if err != nil {
 		return failGitBaselineHeadResolution(state, err)
+	}
+	if !repository {
+		return removeGitBaseline(state)
 	}
 
 	commands := []struct {
@@ -77,6 +77,23 @@ func CaptureGitBaseline(cfg config.AppConfig, state *StateStore) error {
 		return state.Remove("baseline-head")
 	}
 	return state.Write("baseline-head", head)
+}
+
+func captureGitBaselineHead(repoRoot string) (head string, unborn bool, repository bool, err error) {
+	probe := exec.Command("git", "-C", repoRoot, "rev-parse", "--git-dir")
+	if _, probeErr := probe.Output(); probeErr == nil {
+		head, unborn, err := resolveRepoHead(repoRoot)
+		return head, unborn, true, err
+	}
+
+	if _, statErr := os.Lstat(filepath.Join(repoRoot, ".git")); errors.Is(statErr, os.ErrNotExist) {
+		return "", false, false, nil
+	} else if statErr != nil {
+		return "", false, false, fmt.Errorf("git metadataを確認できません: %w", statErr)
+	}
+
+	head, unborn, err = resolveRepoHead(repoRoot)
+	return head, unborn, true, err
 }
 
 func failGitBaselineHeadResolution(state *StateStore, cause error) error {
