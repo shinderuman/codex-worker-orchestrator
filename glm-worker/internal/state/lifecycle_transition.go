@@ -129,14 +129,18 @@ func (s *StateStore) WaitForDecision() error {
 	if err != nil {
 		return err
 	}
+	lease, err := s.snapshotLifecycleFile(parentEvidenceLeasePath)
+	if err != nil {
+		return err
+	}
 	if err := s.AdvanceParentEvidenceLease(); err != nil {
 		return err
 	}
 	if err := s.Touch("pending-decision"); err != nil {
-		return err
+		return s.rollbackLifecycleFiles(err, pending, lease)
 	}
 	if err := s.SetTaskStatus(TaskStatusWaitingDecision); err != nil {
-		return s.rollbackLifecycleFiles(err, pending)
+		return s.rollbackLifecycleFiles(err, pending, lease)
 	}
 	return nil
 }
@@ -165,12 +169,20 @@ func (s *StateStore) FinishReview(status TaskStatus) error {
 	if s.TaskStatus() != TaskStatusActive {
 		return fmt.Errorf("review transition requires active task, got %s", s.TaskStatus())
 	}
-	if status == TaskStatusWaitingSolReview {
-		if err := s.AdvanceParentEvidenceLease(); err != nil {
-			return err
-		}
+	if status != TaskStatusWaitingSolReview {
+		return s.SetTaskStatus(status)
 	}
-	return s.SetTaskStatus(status)
+	lease, err := s.snapshotLifecycleFile(parentEvidenceLeasePath)
+	if err != nil {
+		return err
+	}
+	if err := s.AdvanceParentEvidenceLease(); err != nil {
+		return err
+	}
+	if err := s.SetTaskStatus(status); err != nil {
+		return s.rollbackLifecycleFiles(err, lease)
+	}
+	return nil
 }
 
 func (s *StateStore) WaitForSolReview() error {
@@ -180,12 +192,20 @@ func (s *StateStore) WaitForSolReview() error {
 	default:
 		return fmt.Errorf("wait-for-sol-review transition is invalid from %s", s.TaskStatus())
 	}
-	if previous != TaskStatusWaitingSolReview {
-		if err := s.AdvanceParentEvidenceLease(); err != nil {
-			return err
-		}
+	if previous == TaskStatusWaitingSolReview {
+		return s.SetTaskStatus(TaskStatusWaitingSolReview)
 	}
-	return s.SetTaskStatus(TaskStatusWaitingSolReview)
+	lease, err := s.snapshotLifecycleFile(parentEvidenceLeasePath)
+	if err != nil {
+		return err
+	}
+	if err := s.AdvanceParentEvidenceLease(); err != nil {
+		return err
+	}
+	if err := s.SetTaskStatus(TaskStatusWaitingSolReview); err != nil {
+		return s.rollbackLifecycleFiles(err, lease)
+	}
+	return nil
 }
 
 func (s *StateStore) WaitForQualitySurfaceReview(phase string) error {
