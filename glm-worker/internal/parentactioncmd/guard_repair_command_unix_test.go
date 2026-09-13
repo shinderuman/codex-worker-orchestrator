@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"syscall"
@@ -46,4 +47,33 @@ func TestRunGuardRepairCommandTimeoutKillsDescendants(t *testing.T) {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
+}
+
+func TestGuardRepairProcessGroupOwnerSurvivesCommandExitUntilRelease(t *testing.T) {
+	group, err := newGuardRepairCommandProcessGroup()
+	if err != nil {
+		t.Fatal(err)
+	}
+	command := exec.Command("sh", "-c", "exit 0")
+	group.configure(command)
+	if err := command.Run(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-group.done:
+		t.Fatal("process-group owner exited before explicit release")
+	default:
+	}
+	if err := group.release(time.Second); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-group.done:
+	default:
+		t.Fatal("process-group owner remained after release")
+	}
+}
+
+func guardRepairProcessTreeSupportedForTest() bool {
+	return true
 }
