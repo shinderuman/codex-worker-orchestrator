@@ -15,6 +15,10 @@ func prepareCompletionVerification(cfg config.AppConfig, st *state.StateStore) (
 	if verification.failure != nil {
 		return verification, nil
 	}
+	if !verification.repositoryHarnessActive {
+		verification.failure = verifyCompletionUnchanged(cfg.RepoRoot, verification.gitRepo, verification.verifiedHead)
+		return verification, nil
+	}
 	projection, err := app.BuildParentRequestCompletionProjection(cfg)
 	if err != nil {
 		verification.failure = &finalizationFailure{
