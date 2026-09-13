@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -137,16 +138,31 @@ func TestRepoSearchLedgerSaveFailureFailsClosed(t *testing.T) {
 
 func blockParentEvidenceLedgerSave(t *testing.T, st *state.StateStore) func() {
 	t.Helper()
-	path := st.Path(parentEvidenceLedgerFailureTestPath)
-	if err := os.RemoveAll(path); err != nil {
+	if runtime.GOOS == "windows" {
+		t.Skip("read-only directory fixture requires Unix permission semantics")
+	}
+
+	stateDir := filepath.Dir(st.Path(parentEvidenceLedgerFailureTestPath))
+	for _, path := range []string{
+		st.Path(state.ParentEvidenceLedgerLockFile),
+		st.Path(parentEvidenceTelemetryFile),
+	} {
+		file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := file.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Chmod(stateDir, 0o500); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Mkdir(path, 0o700); err != nil {
-		t.Fatal(err)
-	}
+	t.Cleanup(func() { _ = os.Chmod(stateDir, 0o700) })
+
 	return func() {
 		t.Helper()
-		if err := os.RemoveAll(path); err != nil {
+		if err := os.Chmod(stateDir, 0o700); err != nil {
 			t.Fatal(err)
 		}
 	}
