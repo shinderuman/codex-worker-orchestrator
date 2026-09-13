@@ -53,20 +53,31 @@ func TestManagedClaudeSettingsMirrorOrchestratorInvocationDefaults(t *testing.T)
 	}
 }
 
-func TestIsolationSmokeDoesNotOwnClaudeInvocationDefaults(t *testing.T) {
+func TestIsolationSmokeDerivesClaudeInvocationDefaults(t *testing.T) {
 	path := filepath.Join("..", "..", "scripts", "isolation-smoke.sh")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	source := string(data)
+	for _, required := range []string{
+		`AUTO_COMPACT="$(extract_env CLAUDE_CODE_AUTO_COMPACT_WINDOW)"`,
+		`ALWAYS_EFFORT="$(extract_env CLAUDE_CODE_ALWAYS_ENABLE_EFFORT)"`,
+		`CLAUDE_CODE_AUTO_COMPACT_WINDOW="$AUTO_COMPACT"`,
+		`CLAUDE_CODE_ALWAYS_ENABLE_EFFORT="$ALWAYS_EFFORT"`,
+		`--autocompact "$AUTO_COMPACT_ARG"`,
+	} {
+		if !strings.Contains(source, required) {
+			t.Fatalf("isolation smoke must derive invocation default through %q", required)
+		}
+	}
 	for _, forbidden := range []string{
-		"CLAUDE_CODE_AUTO_COMPACT_WINDOW",
-		"CLAUDE_CODE_ALWAYS_ENABLE_EFFORT",
-		"--autocompact",
+		`CLAUDE_CODE_AUTO_COMPACT_WINDOW="500000"`,
+		`CLAUDE_CODE_ALWAYS_ENABLE_EFFORT="1"`,
+		`--autocompact 500k`,
 	} {
 		if strings.Contains(source, forbidden) {
-			t.Fatalf("isolation smoke must not own invocation default %q", forbidden)
+			t.Fatalf("isolation smoke must not hard-code invocation default %q", forbidden)
 		}
 	}
 }
