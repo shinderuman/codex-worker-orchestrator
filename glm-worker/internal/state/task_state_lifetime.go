@@ -40,7 +40,6 @@ var taskBoundStatePolicies = []taskBoundStatePolicy{
 	{name: stopIndexPatchFile, lifetime: taskBoundStateFreshTaskClear},
 	{name: isolationStateFile, lifetime: taskBoundStateFreshTaskClear},
 	{name: resumeStateFile, lifetime: taskBoundStateFreshTaskClear},
-	{name: resumeTransitionFile, lifetime: taskBoundStateFreshTaskClear},
 	{name: workerEndSnapshotFile, lifetime: taskBoundStateFreshTaskClear},
 	{name: reviewStartSnapshotFile, lifetime: taskBoundStateFreshTaskClear},
 	{name: reportOnlyStartSnapshotFile, lifetime: taskBoundStateFreshTaskClear},
@@ -51,7 +50,6 @@ var taskBoundStatePolicies = []taskBoundStatePolicy{
 	{name: QualitySurfaceBaselineStateFile, lifetime: taskBoundStateFreshTaskClear},
 	{name: RepositoryHarnessActivationStateFile, lifetime: taskBoundStateFreshTaskClear},
 	{name: InstructionSurfaceBaselineStateFile, lifetime: taskBoundStateTaskIDBound},
-	{name: guardRepairIntegrationStateFile, lifetime: taskBoundStateTaskIDBound},
 }
 
 func newTaskTransitionStateFileNames() []string {
