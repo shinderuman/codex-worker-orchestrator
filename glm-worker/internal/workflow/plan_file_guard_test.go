@@ -601,7 +601,7 @@ func TestHistoryFileAfterReadFailureOnResumedTaskRecordsCallOnce(t *testing.T) {
 	if len(r.probes) != 1 {
 		t.Fatalf("probe 1回の成功後にresumed taskで停止すべき: %d", len(r.probes))
 	}
-	requireGuardTelemetryExactOnce(t, st, r, out, "parent_metadata_unavailable", "parent_metadata_unavailable")
+	requireGuardTelemetryExactOnce(t, st, 2, "parent_metadata_unavailable", "parent_metadata_unavailable")
 }
 
 func TestPlanFileReviewerMutationUsesExistingSnapshotInvariant(t *testing.T) {
