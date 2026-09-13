@@ -2,18 +2,48 @@ package app
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
+
+func TestParentHandoffIgnoresMarkerlessForeignProjectProtocol(t *testing.T) {
+	cfg := newAppConfig(t)
+	if err := os.WriteFile(filepath.Join(cfg.RepoRoot, state.ParentPlanFile), []byte("foreign plan\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	st := startParentHandoffTask(t, cfg)
+
+	output := buildParentHandoff(st)
+	if !output.Consistent || output.ParentRequest != nil || output.TaskID == nil || output.TaskStatus == nil {
+		t.Fatalf("markerless handoff = %#v", output)
+	}
+}
+
+func TestParentHandoffFailsClosedWhenTaskPinLacksActivationPin(t *testing.T) {
+	cfg := newAppConfig(t)
+	st := startParentHandoffTask(t, cfg)
+	if err := st.Write("active-task", "IMPLEMENTATION_TASKS/current.md"); err != nil {
+		t.Fatal(err)
+	}
+
+	output := buildParentHandoff(st)
+	if output.Consistent || output.Inconsistency == nil || output.ParentRequest != nil {
+		t.Fatalf("inconsistent activation handoff = %#v", output)
+	}
+}
 
 func TestParentHandoffCarriesPostLocalContinuation(t *testing.T) {
 	cfg := newAppConfig(t)
 	next := "IMPLEMENTATION_TASKS/next.md"
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", projectContinuationPlan("active", []string{next}, nil, nil))
 	writeProjectContinuationTask(t, cfg, next)
-	st := startParentHandoffTask(t, cfg)
+	st := startActivatedParentHandoffTask(t, cfg)
 	if err := st.SetTaskStatus(state.TaskStatusAwaitingParentCompletion); err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +78,7 @@ func TestParentHandoffCarriesBlockedOnlyStop(t *testing.T) {
 	blocked := "IMPLEMENTATION_TASKS/blocked.md"
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", projectContinuationPlan("active", nil, nil, []string{blocked}))
 	writeProjectContinuationTask(t, cfg, blocked)
-	st := startParentHandoffTask(t, cfg)
+	st := startActivatedParentHandoffTask(t, cfg)
 	if err := st.SetTaskStatus(state.TaskStatusAwaitingParentCompletion); err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +95,7 @@ func TestParentHandoffCarriesRateLimitStopFromCanonicalLifecycle(t *testing.T) {
 	active := "IMPLEMENTATION_TASKS/active.md"
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", projectContinuationPlan("active", []string{active}, nil, nil))
 	writeProjectContinuationTask(t, cfg, active)
-	st := startParentHandoffTask(t, cfg)
+	st := startActivatedParentHandoffTask(t, cfg)
 	if err := st.Write("active-task", active); err != nil {
 		t.Fatal(err)
 	}
@@ -91,10 +121,19 @@ func TestParentHandoffFailsClosedOnInvalidProjectTerminal(t *testing.T) {
 	active := "IMPLEMENTATION_TASKS/active.md"
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", projectContinuationPlan("completed", []string{active}, nil, nil))
 	writeProjectContinuationTask(t, cfg, active)
-	st := startParentHandoffTask(t, cfg)
+	st := startActivatedParentHandoffTask(t, cfg)
 
 	output := buildParentHandoff(st)
 	if output.Consistent || output.Inconsistency == nil || !strings.Contains(*output.Inconsistency, "project continuation projection") {
 		t.Fatalf("handoff = %#v", output)
 	}
+}
+
+func startActivatedParentHandoffTask(t *testing.T, cfg config.AppConfig) *state.StateStore {
+	t.Helper()
+	st := startParentHandoffTask(t, cfg)
+	if err := st.Write(repositoryharness.ActivationStateKey, repositoryharness.ActivationActiveValue); err != nil {
+		t.Fatal(err)
+	}
+	return st
 }
