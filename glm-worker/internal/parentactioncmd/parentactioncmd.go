@@ -14,11 +14,12 @@ import (
 	"path/filepath"
 	"strconv"
 	"syscall"
+	"time"
 
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/app"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentaction"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentfix"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentidentity"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repolock"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
@@ -290,7 +291,7 @@ func persistParentCodexIdentity(cfg config.AppConfig) error {
 		return nil
 	}
 	return state.AttachStateStore(cfg).SetParentCodexIdentity(threadID, sessionID, func() *state.SessionLimitReading {
-		return app.ReadSessionLimitForIdentityBind(cfg)
+		return parentidentity.ReadSessionLimitForIdentityBind(cfg.CodexBin, time.Now)
 	})
 }
 
@@ -337,7 +338,7 @@ func executePayloadAction(
 
 func payloadWorkerArgsForDescriptor(descriptor parentaction.PayloadAction, payload []byte, options []string) []string {
 	digest := sha256.Sum256(payload)
-	args := []string{descriptor.WorkerMode, strconv.Itoa(len(payload)), "--sha256", hex.EncodeToString(digest[:])}
+	args := []string{descriptor.WorkerMode, strconv.Itoa(len(payload)), "--sha256", hex.EncodeToString(digest[:])
 	return append(args, options...)
 }
 
