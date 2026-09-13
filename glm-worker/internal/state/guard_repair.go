@@ -12,8 +12,8 @@ type GuardRepairStatus string
 
 type GuardRepairIntegration struct {
 	RepositoryBoundary GitSnapshot                  `json:"repository_boundary"`
-	StopDirtyFiles      []StopDirtyFile              `json:"stop_dirty_files"`
-	Files               []GuardRepairIntegrationFile `json:"files"`
+	StopDirtyFiles     []StopDirtyFile              `json:"stop_dirty_files"`
+	Files              []GuardRepairIntegrationFile `json:"files"`
 }
 
 type GuardRepairRecord struct {
