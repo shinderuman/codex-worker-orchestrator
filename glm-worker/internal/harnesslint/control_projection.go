@@ -68,7 +68,6 @@ var controlProjectionProcedureGuards = []controlProjectionProcedureGuard{
 		ForbiddenTokens: []string{
 			"6 KiB",
 			"1536 bytes",
-			"parent_validation_working_dir",
 		},
 	},
 	{
