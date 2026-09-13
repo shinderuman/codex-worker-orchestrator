@@ -116,8 +116,7 @@ func checkRules(root string, paths []string) ([]Violation, error) {
 	violations = append(violations, taskViolations...)
 	violations = append(violations, activeTaskViolations...)
 	violations = append(violations, closureViolations...)
-	violations = append(violations, provenanceViolations...)
-	return violations, nil
+	return append(violations, provenanceViolations...), nil
 }
 
 func fixGoFormatting(root string, paths []string) error {

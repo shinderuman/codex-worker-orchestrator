@@ -13,16 +13,6 @@ import (
 	"strings"
 )
 
-const controlProvenanceRegistryPath = "codex/control-provenance.json"
-
-const (
-	controlClassificationMachine            = "machine-enforced"
-	controlClassificationPartial            = "partial"
-	controlClassificationProse              = "prose-only"
-	controlClassificationSemanticParent     = "semantic-parent-only"
-	controlClassificationExternalUnenforced = "external-unenforceable"
-)
-
 type controlProvenanceRegistry struct {
 	Version  int                        `json:"version"`
 	Controls []controlProvenanceControl `json:"controls"`
@@ -43,6 +33,16 @@ type controlProvenanceLocator struct {
 	Path   string `json:"path"`
 	Symbol string `json:"symbol"`
 }
+
+const controlProvenanceRegistryPath = "codex/control-provenance.json"
+
+const (
+	controlClassificationMachine            = "machine-enforced"
+	controlClassificationPartial            = "partial"
+	controlClassificationProse              = "prose-only"
+	controlClassificationSemanticParent     = "semantic-parent-only"
+	controlClassificationExternalUnenforced = "external-unenforceable"
+)
 
 func controlProvenanceViolations(root string) ([]Violation, error) {
 	registryPath := filepath.Join(root, filepath.FromSlash(controlProvenanceRegistryPath))
