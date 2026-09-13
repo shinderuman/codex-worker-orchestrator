@@ -1,6 +1,8 @@
 package parentactioncmd
 
 import (
+	"errors"
+	"io"
 	"os"
 	"strings"
 	"testing"
@@ -57,6 +59,48 @@ func TestCompleteFailsClosedWhenTaskPinLacksActivationPin(t *testing.T) {
 	if output.Failure == nil || output.Failure.Stage != "metadata" || output.Failure.Reason != "completion_transition_invalid" ||
 		!strings.Contains(output.Failure.Detail, "activation pin") {
 		t.Fatalf("activation mismatch failure = %#v", output.Failure)
+	}
+}
+
+func TestRepositoryAwareResumeKeepsMarkerlessForeignGuardRecoveryGeneric(t *testing.T) {
+	cfg, st, record := newGuardRepairLifecycleState(t)
+	persistReadyGuardRepair(t, cfg, st, &record)
+	marker := installFailingNormalWorker(t)
+
+	if err := executeRepositoryAwareResume(cfg, io.Discard, io.Discard, nil); err == nil {
+		t.Fatal("generic resume worker failureを期待")
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("markerless foreign resume did not execute the generic worker: %v", err)
+	}
+	got, err := st.LoadGuardRepairRecord()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != state.GuardRepairReady || got.OriginalResumeObserved {
+		t.Fatalf("foreign resume executed repository guard repair: %#v", got)
+	}
+}
+
+func TestRepositoryAwareResumeUsesBoundedRepairWhenActivated(t *testing.T) {
+	cfg, st, record := newGuardRepairLifecycleState(t)
+	pinCompleteRepositoryHarnessActive(t, st)
+	writeGuardRepairWorkerModule(t, cfg.RepoRoot, guardRepairLifecycleEvidenceWorkerSource(t, st, state.TaskStatusActive, false))
+	persistReadyGuardRepair(t, cfg, st, &record)
+	marker := installFailingNormalWorker(t)
+
+	if err := executeRepositoryAwareResume(cfg, io.Discard, io.Discard, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("activated repository repair redispatched the broken generic worker")
+	}
+	got, err := st.LoadGuardRepairRecord()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != state.GuardRepairComplete || !got.OriginalResumeObserved {
+		t.Fatalf("activated repository repair did not resume the original task: %#v", got)
 	}
 }
 
