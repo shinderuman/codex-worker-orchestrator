@@ -4,13 +4,27 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/guardrepair"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
 )
+
+func executeRepositoryAwareResume(cfg config.AppConfig, stdout, stderr io.Writer, extraEnv []string) error {
+	st := state.AttachStateStore(cfg)
+	active, err := workflow.RepositoryHarnessActive(cfg.RepoRoot, st)
+	if err != nil {
+		return err
+	}
+	if !active {
+		return runWorker(cfg.RepoRoot, directWorkerArgs("resume"), nil, stdout, stderr, extraEnv)
+	}
+	return executeResumeWithGuardRepair(cfg, stdout, stderr, extraEnv)
+}
 
 func requestSelfBlockedGuardRepair(cfg config.AppConfig, st *state.StateStore, stderr []byte) error {
 	failure, ok := preCallGuardFailureMessage(stderr)

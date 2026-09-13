@@ -13,6 +13,13 @@ func (w *Workflow) requestGuardRepair(checkpoint state.ResumeCheckpoint, failure
 		os.Getenv(state.GuardRepairParentActionEnv) != state.GuardRepairParentActionResume {
 		return nil
 	}
+	harnessActive, err := w.repositoryHarnessActive()
+	if err != nil {
+		return err
+	}
+	if !harnessActive {
+		return nil
+	}
 	taskID, err := w.state.TaskID()
 	if err != nil {
 		return err
