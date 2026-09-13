@@ -8,9 +8,70 @@ import (
 	"strings"
 )
 
+type controlProjectionProcedureGuard struct {
+	ControlID       string
+	Path            string
+	ForbiddenTokens []string
+}
+
 var (
 	controlProjectionMarkerPattern = regexp.MustCompile("`control:([^`]*)`")
 	controlProjectionIDPattern     = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
+	controlProjectionProcedureGuards = []controlProjectionProcedureGuard{
+		{
+			ControlID: "external-feasibility-admission",
+			Path:      "codex/instructions/feasibility-gate.md",
+			ForbiddenTokens: []string{
+				"external_feasibility_missing",
+				"external_feasibility_malformed",
+				"external_feasibility_unverified",
+			},
+		},
+		{
+			ControlID: "parent-evidence-projection-dedup",
+			Path:      "codex/instructions/glm-parent-evidence.md",
+			ForbiddenTokens: []string{
+				"duplicate_parent_projection",
+				"--known-content-sha256",
+			},
+		},
+		{
+			ControlID: "repo-search-exhaustive-activation",
+			Path:      "codex/instructions/glm-repo-search.md",
+			ForbiddenTokens: []string{
+				"EXHAUSTIVE_SEARCH_REQUIRED: true",
+				"duplicate_parent_projection",
+			},
+		},
+		{
+			ControlID: "stop-isolate-park-lifecycle",
+			Path:      "codex/instructions/glm-stop-isolate.md",
+			ForbiddenTokens: []string{
+				"stop_endpoint_absent",
+				"stop_endpoint_stale",
+				"interrupted_cleanup_residual",
+				"stop-worktree.patch",
+				"stop-index.patch",
+			},
+		},
+		{
+			ControlID: "orphan-watch-terminalization",
+			Path:      "codex/instructions/glm-watch-orphan-terminal.md",
+			ForbiddenTokens: []string{
+				`status: "orphan-terminal"`,
+				`required_action: "none"`,
+			},
+		},
+		{
+			ControlID: "parent-action-staging-admission",
+			Path:      "codex/instructions/task-request-boundary.md",
+			ForbiddenTokens: []string{
+				"start-milestones <token>",
+				"revise-milestones <token>",
+				`fresh_worker":true`,
+			},
+		},
+	}
 )
 
 func controlProjectionViolations(root string) ([]Violation, error) {
@@ -43,6 +104,7 @@ func controlProjectionViolations(root string) ([]Violation, error) {
 			return nil, err
 		}
 		violations = append(violations, controlProjectionPathViolations(path, data, classifications)...)
+		violations = append(violations, controlProjectionProcedureGuardViolations(path, data, classifications)...)
 	}
 	return violations, nil
 }
@@ -74,6 +136,38 @@ func controlProjectionPathViolations(path string, data []byte, classifications m
 			if classification != controlClassificationMachine {
 				violations = append(violations, controlProjectionViolation(path, index+1, fmt.Sprintf("control projection %q targets %q instead of machine-enforced", id, classification)))
 			}
+		}
+	}
+	return violations
+}
+
+func controlProjectionProcedureGuardViolations(path string, data []byte, classifications map[string]string) []Violation {
+	var violations []Violation
+	for _, guard := range controlProjectionProcedureGuards {
+		if guard.Path != path {
+			continue
+		}
+		classification, ok := classifications[guard.ControlID]
+		if !ok {
+			violations = append(violations, controlProjectionViolation(path, 1, fmt.Sprintf("procedure guard %q has no provenance registry entry", guard.ControlID)))
+			continue
+		}
+		if classification != controlClassificationMachine {
+			violations = append(violations, controlProjectionViolation(path, 1, fmt.Sprintf("procedure guard %q targets %q instead of machine-enforced", guard.ControlID, classification)))
+			continue
+		}
+		marker := []byte("`control:" + guard.ControlID + "`")
+		if !bytes.Contains(data, marker) {
+			violations = append(violations, controlProjectionViolation(path, 1, fmt.Sprintf("procedure guard %q is missing its compact control projection", guard.ControlID)))
+			continue
+		}
+		for _, token := range guard.ForbiddenTokens {
+			index := bytes.Index(data, []byte(token))
+			if index < 0 {
+				continue
+			}
+			line := bytes.Count(data[:index], []byte("\n")) + 1
+			violations = append(violations, controlProjectionViolation(path, line, fmt.Sprintf("control projection %q reintroduces machine-owned procedure token %q", guard.ControlID, token)))
 		}
 	}
 	return violations
