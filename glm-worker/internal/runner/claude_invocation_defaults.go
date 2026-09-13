@@ -5,11 +5,13 @@ import "strconv"
 const configuredAutoCompactWindowTokens = 500_000
 const configuredAlwaysEnableEffort = "1"
 
-func configuredAutoCompactWindowArgument() string {
-	if configuredAutoCompactWindowTokens%1_000 == 0 {
-		return strconv.Itoa(configuredAutoCompactWindowTokens/1_000) + "k"
+var configuredAutoCompactWindowArgument = formatAutoCompactWindowArgument(configuredAutoCompactWindowTokens)
+
+func formatAutoCompactWindowArgument(tokens int) string {
+	if tokens%1_000 == 0 {
+		return strconv.Itoa(tokens/1_000) + "k"
 	}
-	return strconv.Itoa(configuredAutoCompactWindowTokens)
+	return strconv.Itoa(tokens)
 }
 
 func claudeInvocationEnvDefaults() map[string]string {
