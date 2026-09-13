@@ -223,6 +223,7 @@ func hasControlProjectionViolation(violations []Violation, path string, fragment
 				matched = false
 				break
 			}
+		}
 		if matched {
 			return true
 		}
