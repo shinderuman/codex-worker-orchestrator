@@ -2,8 +2,12 @@ package authoritybootstrapcmd
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 )
 
 func TestLoadSnapshotAndBuildParts(t *testing.T) {
@@ -49,6 +53,7 @@ func TestLoadSnapshotAndBuildParts(t *testing.T) {
 
 func TestBuildWithKnownContentSHA256SuppressesUnchangedBody(t *testing.T) {
 	root := t.TempDir()
+	activateTestRepository(t, root)
 	writeTestFile(t, root, rulesFile, "rules-body\n")
 	writeTestFile(t, root, planFile, "# Plan\n\n## ACTIVE\n\n- `IMPLEMENTATION_TASKS/current.md`\n")
 	writeTestFile(t, root, "IMPLEMENTATION_TASKS/current.md", "task-body\n")
@@ -172,6 +177,7 @@ func TestLoadSnapshotRejectsSymlinkActiveTask(t *testing.T) {
 
 func TestFindRepoRootFromNestedDirectory(t *testing.T) {
 	root := t.TempDir()
+	activateTestRepository(t, root)
 	writeTestFile(t, root, rulesFile, "rules\n")
 	writeTestFile(t, root, planFile, "plan\n")
 	nested := filepath.Join(root, "glm-worker", "internal")
@@ -184,6 +190,42 @@ func TestFindRepoRootFromNestedDirectory(t *testing.T) {
 	}
 	if got != root {
 		t.Fatalf("findRepoRoot = %q, want %q", got, root)
+	}
+}
+
+func TestBuildRejectsMarkerlessForeignAuthorityFiles(t *testing.T) {
+	root := t.TempDir()
+	initTestRepository(t, root)
+	writeTestFile(t, root, rulesFile, "rules\n")
+	writeTestFile(t, root, planFile, "# Plan\n## ACTIVE\n- `IMPLEMENTATION_TASKS/current.md`\n")
+	writeTestFile(t, root, "IMPLEMENTATION_TASKS/current.md", "body\n")
+
+	if _, err := BuildFromRoot(root, "active", ""); err == nil || !strings.Contains(err.Error(), repositoryharness.ReasonAbsent) {
+		t.Fatalf("markerless authority bootstrap error = %v", err)
+	}
+}
+
+func TestBuildRejectsInvalidRepositoryHarnessMarker(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		content string
+		track   bool
+		reason  string
+	}{
+		{name: "content mismatch", content: "foreign\n", track: true, reason: repositoryharness.ReasonContentMismatch},
+		{name: "untracked", content: repositoryharness.MarkerContent, track: false, reason: repositoryharness.ReasonUntracked},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			initTestRepository(t, root)
+			writeTestFile(t, root, repositoryharness.MarkerPath, tc.content)
+			if tc.track {
+				runAuthorityGit(t, root, "add", "--", repositoryharness.MarkerPath)
+			}
+			if _, err := BuildFromRoot(root, "active", ""); err == nil || !strings.Contains(err.Error(), tc.reason) {
+				t.Fatalf("repository harness error = %v, want reason %s", err, tc.reason)
+			}
+		})
 	}
 }
 
@@ -200,6 +242,7 @@ func writeTestFile(t *testing.T, root string, relativePath string, content strin
 
 func TestBuildFromRootNormalizesUppercaseKnownContentSHA(t *testing.T) {
 	root := t.TempDir()
+	activateTestRepository(t, root)
 	writeTestFile(t, root, rulesFile, "rules-body\n")
 	writeTestFile(t, root, planFile, "# Plan\n\n## ACTIVE\n\n- `IMPLEMENTATION_TASKS/current.md`\n")
 	writeTestFile(t, root, "IMPLEMENTATION_TASKS/current.md", "task-body\n")
@@ -232,4 +275,24 @@ func makeUpperHex(value string) string {
 		}
 	}
 	return string(upper)
+}
+
+func activateTestRepository(t *testing.T, root string) {
+	t.Helper()
+	initTestRepository(t, root)
+	writeTestFile(t, root, repositoryharness.MarkerPath, repositoryharness.MarkerContent)
+	runAuthorityGit(t, root, "add", "--", repositoryharness.MarkerPath)
+}
+
+func initTestRepository(t *testing.T, root string) {
+	t.Helper()
+	runAuthorityGit(t, root, "init", "-q")
+}
+
+func runAuthorityGit(t *testing.T, root string, args ...string) {
+	t.Helper()
+	command := exec.Command("git", append([]string{"-C", root}, args...)...)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("git %s: %v: %s", strings.Join(args, " "), err, string(output))
+	}
 }
