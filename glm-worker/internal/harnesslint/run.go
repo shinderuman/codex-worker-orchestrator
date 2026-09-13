@@ -103,7 +103,7 @@ func checkRules(root string, paths []string) ([]Violation, error) {
 	if err != nil {
 		return nil, err
 	}
-	provenanceViolations, err := controlProvenanceViolations(root)
+	provenanceViolations, err := scopedControlProvenanceViolations(root)
 	if err != nil {
 		return nil, err
 	}
