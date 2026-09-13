@@ -90,13 +90,6 @@ func (w *Workflow) captureStopRetention(checkpoint *state.ResumeCheckpoint) erro
 		return err
 	}
 	checkpoint.StopDirtyFiles = files
-	if checkpoint.StopKind == state.ResumeStopGuardRecoverable && checkpoint.GuardRefBeforeDigest != "" {
-		digest, err := runner.CaptureGitAuthorityRefDigest(w.config.RepoRoot)
-		if err != nil {
-			return fmt.Errorf("capture guard stop refs: %w", err)
-		}
-		checkpoint.GuardRefStopDigest = digest
-	}
 	return nil
 }
 
@@ -194,28 +187,10 @@ func (w *Workflow) verifyGuardRecoveryRefs(checkpoint state.ResumeCheckpoint) er
 		}
 		return failure
 	}
-	if !checkpoint.GuardRefChangesTruncated && guardRefChangesOnlyVolatile(checkpoint.GuardRefChanges) {
-		if checkpoint.GuardRefStopDigest == "" {
-			return &WorkerError{Phase: checkpoint.Phase, Message: "guard recovery legacy volatile ref evidence has no stop-time authority baseline"}
-		}
-		if current == checkpoint.GuardRefStopDigest {
-			return nil
-		}
-		return &WorkerError{Phase: checkpoint.Phase, Message: "guard recovery refs changed after stop"}
-	}
 	if current == checkpoint.GuardRefBeforeDigest {
 		return nil
 	}
 	return &WorkerError{Phase: checkpoint.Phase, Message: "guard recovery refs are not restored to the pre-call state: " + describeGuardRefChanges(checkpoint.GuardRefChanges, checkpoint.GuardRefChangesTruncated)}
-}
-
-func guardRefChangesOnlyVolatile(changes []state.GuardRefChange) bool {
-	for _, change := range changes {
-		if !runner.IsVolatileCodexDesktopRef(change.Name) {
-			return false
-		}
-	}
-	return len(changes) > 0
 }
 
 func describeGuardRefChanges(changes []state.GuardRefChange, truncated bool) string {
