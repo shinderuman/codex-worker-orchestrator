@@ -70,23 +70,43 @@ func continuationLifecycle(st *state.StateStore) repositoryproject.ContinuationL
 		TaskComplete: status == state.TaskStatusComplete,
 	}
 	plan, planErr := st.ParentActionPlan()
-	if planErr == nil {
+	planKnown := planErr == nil
+	if planKnown {
 		lifecycle.ParentActionKnown = true
 		lifecycle.RequiredAction = string(plan.RequiredAction)
 		lifecycle.NoRequiredAction = plan.RequiredAction == state.ParentActionNone
 	}
-	if status == state.TaskStatusInterrupted && planErr == nil && plan.RequiredAction == state.ParentActionResume {
-		checkpoint, err := st.LoadResumeCheckpoint()
-		lifecycle.InterruptedResumeValid = err == nil && checkpoint.StopKind == state.ResumeStopInterrupted
-	}
-	if status == state.TaskStatusRateLimited || status == state.TaskStatusProviderUnavailable {
-		lifecycle.TemporaryBlockReason = string(status)
-	}
-	lifecycle.GoalTerminalCompatible =
-		(status == state.TaskStatusNone || status == state.TaskStatusComplete) &&
-		!(status == state.TaskStatusNone && pinned != "") &&
-		planErr == nil && plan.RequiredAction == state.ParentActionNone
+	lifecycle.InterruptedResumeValid = interruptedResumeValid(st, status, planKnown, plan.RequiredAction)
+	lifecycle.TemporaryBlockReason = continuationTemporaryBlockReason(status)
+	lifecycle.GoalTerminalCompatible = goalTerminalCompatible(status, pinned, planKnown, plan.RequiredAction)
 	return lifecycle
+}
+
+func interruptedResumeValid(st *state.StateStore, status state.TaskStatus, planKnown bool, action state.ParentAction) bool {
+	if status != state.TaskStatusInterrupted || !planKnown || action != state.ParentActionResume {
+		return false
+	}
+	checkpoint, err := st.LoadResumeCheckpoint()
+	return err == nil && checkpoint.StopKind == state.ResumeStopInterrupted
+}
+
+func continuationTemporaryBlockReason(status state.TaskStatus) string {
+	switch status {
+	case state.TaskStatusRateLimited, state.TaskStatusProviderUnavailable:
+		return string(status)
+	default:
+		return ""
+	}
+}
+
+func goalTerminalCompatible(status state.TaskStatus, pinned string, planKnown bool, action state.ParentAction) bool {
+	if status != state.TaskStatusNone && status != state.TaskStatusComplete {
+		return false
+	}
+	if status == state.TaskStatusNone && pinned != "" {
+		return false
+	}
+	return planKnown && action == state.ParentActionNone
 }
 
 func projectContinuationFromPolicy(continuation repositoryproject.Continuation) projectContinuationObligation {
@@ -133,10 +153,6 @@ func cloneStringPointer(value *string) *string {
 	}
 	cloned := *value
 	return &cloned
-}
-
-func firstProjectContinuationBlocker(blockers []projectStateBlocker) *projectStateBlocker {
-	return repositoryproject.FirstBlocker(blockers)
 }
 
 func unknownProjectContinuation(reason string) projectContinuationObligation {
