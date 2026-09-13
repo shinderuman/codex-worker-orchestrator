@@ -53,7 +53,8 @@ ACTIVE taskがある場合、wrapper注入の`SOL_DECISION_BOUNDARY`を設計aut
 HIGHではSolが全diffを読み直さず判断できるよう、変更前後のcontract・失敗境界・主要状態遷移をSUMMARY、検証結果をTESTS、data保護/rollback/recovery懸念をUNVERIFIEDへ圧縮する。
 
 ## Git authority
-- Git mutation/transport authorityは親専有で、workerはcommit/push等を行わない。protected repositoryでは`control:worker-git-authority-snapshot`がfail closedするため、guardを迂回しない。
+- Git mutation/transport authorityは親専有で、workerはcommit等を行わない。protected repositoryでは`control:worker-git-authority-snapshot`がfail closedするため、guardを迂回しない。
+- `git push`は禁止。remote writeは親だけが行う。
 - 既存未commit変更を勝手に整理・破棄・上書きしない。
 
 ## 反復コスト観測
@@ -61,6 +62,6 @@ HIGHではSolが全diffを読み直さず判断できるよう、変更前後の
 
 ## 出力
 途中経過、file一覧、grep結果、大量codeを最終出力へ含めず、実行環境指定schemaの結果を1つだけ返す。
-- packetのstructural contractは`control:packet-schema-result`のcurrent worker schema/validatorを正とする。親validationが必要な場合は上記Test contractに従う。
+- packetのstructural contractは`control:packet-schema-result`のcurrent worker schema/validatorを正とする。親validationが必要な場合は上記Test contractに従う。Bashを利用できる場合はdispatch指示の`glm-worker --packet-check`で提出前検証する。
 - protected instruction handoffの`TARGETS`は`none`やsymbol表現を使わず、対象`AGENTS.md`/`AGENTS.local.md`のrepository相対pathだけを指定する。
 - `ARTIFACTS`は要求・判断に必要な成果物だけを返す。
