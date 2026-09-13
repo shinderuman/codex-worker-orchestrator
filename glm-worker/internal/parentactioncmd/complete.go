@@ -16,11 +16,11 @@ import (
 )
 
 type completeOutput struct {
-	Status        string                                                `json:"status"`
-	Completed     bool                                                  `json:"completed"`
-	RemoteSync    *completeRemoteSyncSummary                            `json:"remote_sync,omitempty"`
+	Status        string                                               `json:"status"`
+	Completed     bool                                                 `json:"completed"`
+	RemoteSync    *completeRemoteSyncSummary                           `json:"remote_sync,omitempty"`
 	ParentRequest *repositoryproject.ParentRequestCompletionProjection `json:"parent_request,omitempty"`
-	Failure       *finalizationFailure                                  `json:"failure,omitempty"`
+	Failure       *finalizationFailure                                 `json:"failure,omitempty"`
 }
 
 type completeRemoteSyncSummary struct {
