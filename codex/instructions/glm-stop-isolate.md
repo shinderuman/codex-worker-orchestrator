@@ -12,6 +12,7 @@
 
 - user interruptionはprovider/rate-limit recoveryと別の意味を持つ。停止済みtaskを新規taskとしてやり直さず、working tree・task state・session・resume checkpointを保持して同じcheckoutから再開する。
 - `--resume`の保持基準・HEAD / dirty / untracked / parent-metadata照合はmachine ownerへ委ねる。fail closedしたときもinterrupted stateを壊さず、machine evidenceが示す不一致だけを修復して再試行する。
+- stop retentionはtracked diffのrecovery patchを保持するが、untracked fileは内容hash/identityだけで本文原本を保存しない。untrackedを停止時内容へ戻す必要がある場合、その原本保持・復元は親の責任であり、hashから復元できると扱わない。
 
 ## 割り込みtask (`--isolate`)
 
