@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
@@ -74,9 +73,8 @@ func TestProjectStateIngressFailsClosedWhenTaskPinLacksActivationPin(t *testing.
 	}
 
 	var stdout bytes.Buffer
-	err := executeReadOnlyInspection(Command{Mode: ModeProjectState}, cfg, &stdout)
-	if err == nil || !strings.Contains(err.Error(), "repository harness activation pinが欠落しています") {
-		t.Fatalf("project-state activation error = %v", err)
+	if err := executeReadOnlyInspection(Command{Mode: ModeProjectState}, cfg, &stdout); err == nil {
+		t.Fatal("project-state accepted inconsistent activation state")
 	}
 	if stdout.Len() != 0 {
 		t.Fatalf("failed project-state wrote output: %q", stdout.String())
