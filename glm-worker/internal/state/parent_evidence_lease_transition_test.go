@@ -1,9 +1,6 @@
 package state
 
-import (
-	"os"
-	"testing"
-)
+import "testing"
 
 func TestParentEvidenceLeaseTransitionsRollbackAfterAdvanceFailure(t *testing.T) {
 	tests := []struct {
@@ -52,7 +49,7 @@ func TestParentEvidenceLeaseTransitionsRollbackAfterAdvanceFailure(t *testing.T)
 			if err != nil {
 				t.Fatal(err)
 			}
-			failLifecycleStateWrite(t, st, test.failState)
+			failWritesFor(t, st, test.failState)
 
 			if err := test.transition(st); err == nil {
 				t.Fatal("injected lifecycle write failure must fail the transition")
@@ -104,17 +101,4 @@ func TestFinishReviewWaitingSolReviewAdvancesParentEvidenceLease(t *testing.T) {
 	if _, delivered, err := st.ParentEvidenceDelivered(ParentEvidenceSurfaceSearch, "digest-a"); err != nil || delivered {
 		t.Fatalf("successful transition retained old delivery authority: delivered=%v err=%v", delivered, err)
 	}
-}
-
-func failLifecycleStateWrite(t *testing.T, st *StateStore, name string) {
-	t.Helper()
-	original := writeFileAtomic
-	path := st.Path(name)
-	writeFileAtomic = func(target string, data []byte, mode os.FileMode) error {
-		if target == path {
-			return os.ErrPermission
-		}
-		return original(target, data, mode)
-	}
-	t.Cleanup(func() { writeFileAtomic = original })
 }
