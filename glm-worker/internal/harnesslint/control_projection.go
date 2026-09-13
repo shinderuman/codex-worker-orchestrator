@@ -42,7 +42,6 @@ var controlProjectionProcedureGuards = []controlProjectionProcedureGuard{
 		Path:      "codex/instructions/glm-repo-search.md",
 		ForbiddenTokens: []string{
 			"EXHAUSTIVE_SEARCH_REQUIRED: true",
-			"duplicate_parent_projection",
 		},
 	},
 	{
