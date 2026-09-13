@@ -193,19 +193,19 @@ func TestFindRepoRootFromNestedDirectory(t *testing.T) {
 	}
 }
 
-func TestBuildRejectsMarkerlessForeignAuthorityFiles(t *testing.T) {
+func TestFindRepoRootRejectsMarkerlessForeignAuthorityFiles(t *testing.T) {
 	root := t.TempDir()
 	initTestRepository(t, root)
 	writeTestFile(t, root, rulesFile, "rules\n")
 	writeTestFile(t, root, planFile, "# Plan\n## ACTIVE\n- `IMPLEMENTATION_TASKS/current.md`\n")
 	writeTestFile(t, root, "IMPLEMENTATION_TASKS/current.md", "body\n")
 
-	if _, err := BuildFromRoot(root, "active", ""); err == nil || !strings.Contains(err.Error(), repositoryharness.ReasonAbsent) {
-		t.Fatalf("markerless authority bootstrap error = %v", err)
+	if _, err := findRepoRoot(root); err == nil || !strings.Contains(err.Error(), repositoryharness.ReasonAbsent) {
+		t.Fatalf("markerless authority root error = %v", err)
 	}
 }
 
-func TestBuildRejectsInvalidRepositoryHarnessMarker(t *testing.T) {
+func TestFindRepoRootRejectsInvalidRepositoryHarnessMarker(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		content string
@@ -222,7 +222,7 @@ func TestBuildRejectsInvalidRepositoryHarnessMarker(t *testing.T) {
 			if tc.track {
 				runAuthorityGit(t, root, "add", "--", repositoryharness.MarkerPath)
 			}
-			if _, err := BuildFromRoot(root, "active", ""); err == nil || !strings.Contains(err.Error(), tc.reason) {
+			if _, err := findRepoRoot(root); err == nil || !strings.Contains(err.Error(), tc.reason) {
 				t.Fatalf("repository harness error = %v, want reason %s", err, tc.reason)
 			}
 		})
@@ -242,7 +242,6 @@ func writeTestFile(t *testing.T, root string, relativePath string, content strin
 
 func TestBuildFromRootNormalizesUppercaseKnownContentSHA(t *testing.T) {
 	root := t.TempDir()
-	activateTestRepository(t, root)
 	writeTestFile(t, root, rulesFile, "rules-body\n")
 	writeTestFile(t, root, planFile, "# Plan\n\n## ACTIVE\n\n- `IMPLEMENTATION_TASKS/current.md`\n")
 	writeTestFile(t, root, "IMPLEMENTATION_TASKS/current.md", "task-body\n")
