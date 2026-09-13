@@ -150,9 +150,54 @@ func (s *StateStore) SaveGuardRepairRecord(record GuardRepairRecord) error {
 	if err := record.validate(); err != nil {
 		return err
 	}
-	if err := s.validateGuardRepairTransition(record); err != nil {
+	current, err := s.LoadGuardRepairRecord()
+	if err != nil && !errors.Is(err, ErrNoGuardRepairRecord) {
 		return err
 	}
+	if err == nil && current.Status == GuardRepairIntegrating && current.Integration != nil {
+		return fmt.Errorf("guard repair integrating transaction requires explicit commit or rollback")
+	}
+	return s.writeGuardRepairRecord(record)
+}
+
+func (s *StateStore) CommitGuardRepairIntegration(record GuardRepairRecord) error {
+	if record.Status != GuardRepairReady || record.Integration != nil {
+		return fmt.Errorf("guard repair integration commit requires ready transaction without rollback state")
+	}
+	return s.saveGuardRepairIntegrationExit(record)
+}
+
+func (s *StateStore) RollbackGuardRepairIntegration(record GuardRepairRecord) error {
+	if record.Status != GuardRepairRequested || record.Integration != nil {
+		return fmt.Errorf("guard repair integration rollback requires requested transaction without rollback state")
+	}
+	return s.saveGuardRepairIntegrationExit(record)
+}
+
+func (s *StateStore) saveGuardRepairIntegrationExit(record GuardRepairRecord) error {
+	if err := record.validate(); err != nil {
+		return err
+	}
+	current, err := s.LoadGuardRepairRecord()
+	if err != nil {
+		return err
+	}
+	if current.Status != GuardRepairIntegrating || current.Integration == nil {
+		return fmt.Errorf("guard repair integration exit requires integrating transaction")
+	}
+	if !current.sameTransactionIdentity(record) {
+		return fmt.Errorf("guard repair integration exit does not match current transaction")
+	}
+	return s.writeGuardRepairRecord(record)
+}
+
+func (record GuardRepairRecord) sameTransactionIdentity(next GuardRepairRecord) bool {
+	return record.TaskID == next.TaskID && record.Phase == next.Phase &&
+		record.Fingerprint == next.Fingerprint && record.Strategy == next.Strategy &&
+		record.Failure == next.Failure && record.RelevantDigest == next.RelevantDigest
+}
+
+func (s *StateStore) writeGuardRepairRecord(record GuardRepairRecord) error {
 	record.Version = guardRepairStateVersion
 	record.UpdatedAt = time.Now().UTC()
 	data, err := json.MarshalIndent(record, "", "  ")
@@ -163,25 +208,6 @@ func (s *StateStore) SaveGuardRepairRecord(record GuardRepairRecord) error {
 		return fmt.Errorf("guard repair recordを書き込めません: %w", err)
 	}
 	return nil
-}
-
-func (s *StateStore) validateGuardRepairTransition(next GuardRepairRecord) error {
-	current, err := s.LoadGuardRepairRecord()
-	if errors.Is(err, ErrNoGuardRepairRecord) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	if current.Status != GuardRepairIntegrating || current.Integration == nil || next.Integration != nil {
-		return nil
-	}
-	switch next.Status {
-	case GuardRepairRequested, GuardRepairReady:
-		return nil
-	default:
-		return fmt.Errorf("guard repair integration rollback state cannot be discarded by transition to %q", next.Status)
-	}
 }
 
 func (s *StateStore) LoadGuardRepairRecord() (GuardRepairRecord, error) {
