@@ -50,7 +50,7 @@ func TestParentWaitReturnsSupersededWhenOwnerEpochChanges(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	done := make(chan error, 1)
 	go func() { done <- executeParentWait(cfg, []string{"wait"}, &stdout, &stderr) }()
-	waitForParentRecoveryWaiter(t, st)
+	waitForParentRecoveryWaiter(t, st, done)
 
 	second := seedParentWaitOwnerEpoch(t, st)
 	if first == second {
