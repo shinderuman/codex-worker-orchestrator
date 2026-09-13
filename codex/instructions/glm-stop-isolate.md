@@ -1,34 +1,32 @@
 # GLM workerの安全停止・中断task保持・割り込みtask実行
 
-`glm-worker --stop`で実行中taskを停止する、user interruption後の中断taskを`--resume`で再開する、停止中の元taskを保持したまま同じrepoで割り込みtaskを実行する(`--isolate`)、または親判断待ちtaskを`park/unpark`で一時退避して優先割り込みtaskへ差し替える場合だけ適用する。通常のrate limit・provider障害によるresumeは`glm-auto-resume.md`・`glm-execution.md`側の契約を使う。
+このinstructionは、user interruptionによる安全停止、同じ中断taskの再開、元taskを保持した割り込みtask、親判断待ちtaskの一時退避だけを扱う。通常のrate limit・provider障害によるresumeは`glm-auto-resume.md`・`glm-execution.md`を正とする。
 
-## GLM workerの安全停止 (`--stop`)
+## 操作選択とmachine owner
 
-- 実行中のglm-worker taskを止めるときは`glm-worker --stop`だけを使う。手動でのPID特定・`kill`・`pkill`・process groupへのsignal送出を正式手順として使わない。停止authorityは単一目的local control endpointへの接続とowner側ackであり、lock fileのPIDは診断値である。
-- 停止要求はrepo lockを待たず対象repositoryのcwdから実行する。ownerはClaude CLIのprocess groupへTERMを送り、bounded猶予後に残存childだけへKILLへ昇格し、group非残存とinterrupted状態保存を確認してからackする。
-- ackのmachine JSONは`{"result":"interrupted","task_id":...,"task_status":"interrupted","resume_available":true}`。停止より先に自然終端していたときは`result: terminal|exited`へ現在のauthoritative statusで応答し、確定済みの成功結果を停止扱いへ書き換えない。`result: interrupted_cleanup_residual`はinterrupted保存済みだが停止後のprocess group残存が観測された状態で、group非残存を確認した安全停止authorityではない。このackのときは残存processを確認・回収してからpreempt・resumeし、`cleanup_warning`を診断に残す。
-- `kind: stop_endpoint_absent`は現在running ownerが不在、`kind: stop_endpoint_stale`はsocketが残ってもackが得られない状態である。どちらもstale PID推定・手動killへ切り替えず、`--status`で現在状態を確認してから扱う。
-- 停止された主呼出はstderrへ`kind: interrupted`のerror JSONを出してnon-zero exitする。これは失敗ではなく再開可能停止であり、`worker_error`扱いしない。
-- 中断taskのworking tree・task state・session・resume checkpointを破棄・resetせず、新規taskとしてやり直さない。再開は同じcheckoutで`glm-worker --status`の`task_status: interrupted`を確認してから`glm-worker --resume`で行う。
+- 実行中taskをuser interruptionで安全停止するときは`glm-worker --stop`、同じ中断taskの再開は`glm-worker --resume`、中断taskを保持したまま別taskを実行するときは`glm-worker --isolate`、`waiting-sol-review` / `waiting-decision`の判断を保留して優先taskへ差し替えるときは`glm-parent-action park` / `unpark`を使う。これらの意味を混ぜない。
+- stop / resume / isolate / park / unparkのstatus admission、ack/error schema、process cleanup、snapshot/dirty/ref照合、isolation/park provenance、idempotency・stale record、fail-closed transitionは`control:stop-isolate-park-lifecycle`とcurrent production StateStore / app / workflow / parent-actionを正とする。親はexact field・signal順・retry matrixを自由言語から再構築しない。
+- 手動PID推定、`kill` / `pkill`、stateやcheckpointの破棄、branch/worktree記録の書換えを正規lifecycleの代替にしない。machine resultが拒否・cleanup残存・staleを返した場合はその状態を保持し、canonical commandのevidenceから復旧する。
 
-## 停止保存の保持基準と中断taskの再開
+## user interruption後の継続
 
-- 停止保存時に停止時点の元checkout保持基準(git 3軸snapshotと親管理metadata除外dirty/untracked列挙)がcheckpointへ、停止時tracked diffのbinary patch(`stop-worktree.patch`・`stop-index.patch`)がstateへ固定される。patchにuntracked file本文は含まれず、untrackedは保持基準のhash検証だけであるため、自分が別途保持する原本なしには停止時内容へ復元できない。
-- user interruption後の`--resume`はこの基準へ現在状態を機械照合し、保持対象の変化・停止後の新規dirty・停止時HEADを含まないHEAD移動を`kind: worker_error`でfail closedする。fail closedでもstate・checkpoint・sessionはinterruptedのまま残るため、保持対象を停止時内容へ復元して(tracked diffはpatchを、untrackedは自分が保持する原本で)同じ`--resume`を再試行する。
+- user interruptionはprovider/rate-limit recoveryと別の意味を持つ。停止済みtaskを新規taskとしてやり直さず、working tree・task state・session・resume checkpointを保持して同じcheckoutから再開する。
+- `--resume`の保持基準・HEAD / dirty / untracked / parent-metadata照合はmachine ownerへ委ねる。fail closedしたときもinterrupted stateを壊さず、machine evidenceが示す不一致だけを修復して再試行する。
 
-## 停止taskを保持したまま割り込みtaskを実行する (`--isolate`)
+## 割り込みtask (`--isolate`)
 
-- 停止中の元taskと同じrepoで別taskを実行するときは、同一checkoutで新規taskを投入せず`glm-worker --isolate`で割り込みtask実行checkout(git worktree + branch `glm-worker/isolation/...`)を作る。ackの`worktree`をcwdとして割り込みtaskを通常どおりglm-workerへ投入する。隔離先のstate・lock・sessionはpath由来のrepo hashで分離され、`--status`の`isolation_origin`(元repo・元task ID)で元taskと取り違えを機械確認する。
-- `--isolate`はuser interruptionによる`interrupted`停止中だけ受け付ける。task不在・別status・rate limit/provider障害による停止はfail closedする。
-- 元repo側`--status`の`isolation`に現在の隔離先(worktree・branch・作成HEAD)が出る。記録は現在の隔離先を指す単一pointerで、隔離済みstateへの再`--isolate`はworktree・branch・隔離側出自記録の生存を確認して同じmachine結果を冪等に返す。worktree・branchが既に無いstale記録や破損記録は上書きせずfail closedする。記録は新規task開始で消える。
-- Plan(`IMPLEMENTATION_PLAN.local.md`)を持つrepoでは、隔離worktreeのPlan ACTIVEも元task fileを指したままcheck outされるため、USER_REQUESTだけでは割り込みtaskの要求正本を特定できない。割り込みtaskのtask diffが`IMPLEMENTATION_TASKS/`配下の変更を含む場合、実効riskはimplementation-tasks critical pathでHIGHに固定されreviewer PASSがrisk floorで拒否される。Plan編集を含む割り込みtaskは実risk HIGHでwaiting-sol-reviewへ昇格するのが正常終端である。
-- 割り込みtask成果の統合方法とそのconflict解決は本契約で指定しない。元taskは、外部で統合済みの状態が`--resume`保持照合の実質検証(記録の元task・元repo・作成HEADが現在task・repo・停止時HEADと一致、記録branchが解決可能でそのtipが現在HEADへ統合済み、統合後のbranch tipから現在HEADまでが親管理metadata更新だけ、隔離worktree側stateの出自記録と対称)を通過した場合だけ再開できる。reviewer段階中断taskのreview resumeはHEAD移動を許さないため、統合によるHEAD移動後は再開できない。統合済み割り込みtask fileがdiffへ載るため、統合後の元task resumeは実risk HIGHとなりwaiting-sol-reviewへ昇格し得る。
-- 隔離worktree側state dir(出自記録)と隔離branchは、元taskのresume保持照合が完了し元taskが完了するまで削除しない。glm-workerは隔離worktree・branchの寿命を管理しない。
+- `--isolate`はuser interruptionで保持中の元taskと、別の割り込みtaskを同じcheckoutへ混在させないための境界である。隔離先の作成、元taskとのprovenance、再実行時の整合性、元task resume admissionはmachine ownerを正とする。
+- Planを持つrepositoryでは隔離worktreeにも元Plan / ACTIVEが残る。USER_REQUESTだけで元ACTIVEを別taskの要求正本へ読み替えず、割り込み要求のtracked authority・parent-managed metadata・risk floorは各canonical ownerへ従う。
+- 割り込み成果をいつ・どう統合するか、conflictをどう解決するかは親判断である。統合後に元taskを再開できるかはmachine provenance / retention checkへ委ね、親が検証条件を推測して迂回しない。
+- `隔離branch`と隔離worktree側stateは、`元taskのresume保持照合が完了し元taskが完了するまで削除しない`。成果統合とこれらresourceの寿命管理は親所有であり、glm-workerが自動cleanupする前提にしない。
 
-## 親判断待ちtaskの割込み退避 (`park` / `unpark`)
+## 親判断待ちtask (`park` / `unpark`)
 
-- `waiting-sol-review`(quality policy surface approval待ちを含む)または`waiting-decision`で親判断待ちのtaskを、判断を保留したまま優先割り込みtaskへ差し替えるときは`glm-parent-action park`を使う。running taskの`--stop`/`--isolate`へ意味を混ぜない。実行中(active)taskや停止系statusは拒否される。
-- parkはworker/reviewer session、task state、HEAD、task baseline(3軸index定義)、worktree dirty/untracked本文、親metadata除外基準をcanonical restore artifact(state内park記録 + 本文copy)へ固定し、割り込みtask実行checkout(git worktree + branch `glm-worker/park/...`)を作ってtask statusを`parked`へ遷移させる。元checkoutのdirty fileはその場に保持され、割り込みworktreeはそれを含まない。
-- 割り込みtaskは`--isolate`と同じ運用でworktree側から投入する(Plan ACTIVE・`IMPLEMENTATION_TASKS/`変更の扱いも`--isolate`節に従う)。元repo側ではparked taskの新規task開始が`unpark`要求として拒否され、worktree側stateは独立する。
-- 割り込みtask完了・統合後、元repoで`glm-parent-action unpark`を実行する。unparkは保持基準(dirty/untracked不変)と統合provenance(HEAD不変、割り込みbranch tipの統合、または親管理metadataだけの移動のいずれか)を機械検証し、合格した場合だけ同一session・同一taskを`parked`前status(waiting-sol-review/waiting-decision)へ復帰させる。保持対象変化やprovenance不成立はfail closedし、taskはparkedのまま残るため、統合結果を修正してから同じ`unpark`を再試行する。No-Go・旧task完了・手動index操作を要求しない。
-- 復帰後の判断は通常どおり`glm-parent-action decision|fix|approve-surface|accept`で渡す。park記録・割り込みworktreeの寿命はglm-workerが管理しない。元task完了後に親が削除する。
+- `park`は親判断待ちtaskを保留したまま優先taskへ切り替えるための操作であり、running taskのstopやuser-interrupted taskのisolateへ意味を混ぜない。どのtaskを保留・優先するかは親が判断する。
+- parked stateのsnapshot / restore、worktree・branch provenance、unpark admission、失敗時のrecoverable orderingとcleanup pendingはmachine ownerを正とする。`unpark`が拒否された場合はparked stateを保持し、統合・保持条件を修正してcanonical pathを再実行する。
+- park側の成果統合・conflict解決と、task完了後のpark / isolation resource cleanupは親所有である。machine lifecycleが完了する前に手動削除して安全条件を迂回しない。
+
+## 境界
+
+- machine controlはlifecycle state・retention・process cleanup・provenanceを強制するが、「今止めるべきか」「割り込みtaskを走らせるべきか」「親判断をparkすべきか」「成果をどう統合するか」という意味判断は親が行う。
+- repository固有のPlan / task authority / parent metadata / riskと、genericなprocess・session・worktree lifecycleを同一authorityとして扱わない。
