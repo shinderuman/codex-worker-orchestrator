@@ -458,6 +458,7 @@ func newCompleteRepositoryFixture(t *testing.T) *completeFixture {
 	if _, err := st.StartNewTask(); err != nil {
 		t.Fatal(err)
 	}
+	pinCompleteRepositoryHarnessActive(t, st)
 	if err := st.SetParentCodexIdentity(codexIdentityTestThreadID, codexIdentityTestThreadID, nil); err != nil {
 		t.Fatal(err)
 	}
