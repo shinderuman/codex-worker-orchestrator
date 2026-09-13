@@ -150,6 +150,9 @@ func (s *StateStore) SaveGuardRepairRecord(record GuardRepairRecord) error {
 	if err := record.validate(); err != nil {
 		return err
 	}
+	if err := s.validateGuardRepairTransition(record); err != nil {
+		return err
+	}
 	record.Version = guardRepairStateVersion
 	record.UpdatedAt = time.Now().UTC()
 	data, err := json.MarshalIndent(record, "", "  ")
@@ -160,6 +163,25 @@ func (s *StateStore) SaveGuardRepairRecord(record GuardRepairRecord) error {
 		return fmt.Errorf("guard repair recordを書き込めません: %w", err)
 	}
 	return nil
+}
+
+func (s *StateStore) validateGuardRepairTransition(next GuardRepairRecord) error {
+	current, err := s.LoadGuardRepairRecord()
+	if errors.Is(err, ErrNoGuardRepairRecord) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if current.Status != GuardRepairIntegrating || current.Integration == nil || next.Integration != nil {
+		return nil
+	}
+	switch next.Status {
+	case GuardRepairRequested, GuardRepairReady:
+		return nil
+	default:
+		return fmt.Errorf("guard repair integration rollback state cannot be discarded by transition to %q", next.Status)
+	}
 }
 
 func (s *StateStore) LoadGuardRepairRecord() (GuardRepairRecord, error) {
