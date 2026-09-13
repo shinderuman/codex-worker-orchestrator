@@ -76,31 +76,42 @@ func (record GuardRepairRecord) validate() error {
 }
 
 func (record GuardRepairRecord) validateProgress() error {
+	if err := record.validateRepairProgress(); err != nil {
+		return err
+	}
+	return record.validateResumeProgress()
+}
+
+func (record GuardRepairRecord) validateRepairProgress() error {
 	repaired := record.Status == GuardRepairReady || record.Status == GuardRepairResuming || record.Status == GuardRepairComplete
 	if repaired && record.RepairedDigest == "" {
 		return fmt.Errorf("repaired guard repair record requires repaired digest")
 	}
-	if record.Status == GuardRepairIntegrating {
-		if record.Integration == nil {
-			return fmt.Errorf("integrating guard repair record requires integration rollback state")
+	if record.Status != GuardRepairIntegrating {
+		if record.Integration != nil {
+			return fmt.Errorf("guard repair integration rollback state requires integrating status")
 		}
-		if err := record.Integration.validate(); err != nil {
-			return err
-		}
-	} else if record.Integration != nil {
-		return fmt.Errorf("guard repair integration rollback state requires integrating status")
+		return nil
 	}
+	if record.Integration == nil {
+		return fmt.Errorf("integrating guard repair record requires integration rollback state")
+	}
+	return record.Integration.validate()
+}
 
+func (record GuardRepairRecord) validateResumeProgress() error {
 	resumeProof := record.ResumeAttemptID != "" || record.ResumeCheckpointDigest != "" || record.OriginalResumeObserved
-	if record.Status == GuardRepairResuming || record.Status == GuardRepairComplete {
-		if !ValidGeneratedUUID(record.ResumeAttemptID) || record.ResumeCheckpointDigest == "" {
-			return fmt.Errorf("guard repair resume proof is incomplete")
+	if record.Status != GuardRepairResuming && record.Status != GuardRepairComplete {
+		if resumeProof {
+			return fmt.Errorf("guard repair resume proof requires resuming or complete status")
 		}
-		if record.Status == GuardRepairComplete && !record.OriginalResumeObserved {
-			return fmt.Errorf("complete guard repair record requires original resume evidence")
-		}
-	} else if resumeProof {
-		return fmt.Errorf("guard repair resume proof requires resuming or complete status")
+		return nil
+	}
+	if !ValidGeneratedUUID(record.ResumeAttemptID) || record.ResumeCheckpointDigest == "" {
+		return fmt.Errorf("guard repair resume proof is incomplete")
+	}
+	if record.Status == GuardRepairComplete && !record.OriginalResumeObserved {
+		return fmt.Errorf("complete guard repair record requires original resume evidence")
 	}
 	return nil
 }
