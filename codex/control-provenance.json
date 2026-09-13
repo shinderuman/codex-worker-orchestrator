@@ -73,6 +73,14 @@
             "external_feasibility_malformed",
             "external_feasibility_unverified"
           ]
+        },
+        {
+          "path": "codex/instructions/glm-execution.md",
+          "forbidden_tokens": [
+            "external_feasibility_missing",
+            "external_feasibility_malformed",
+            "external_feasibility_unverified"
+          ]
         }
       ],
       "residual_parent_judgment": "The parent judges whether the declared external premise and producer evidence are semantically sufficient."
@@ -183,6 +191,13 @@
             "6 KiB",
             "1536 bytes"
           ]
+        },
+        {
+          "path": "codex/instructions/glm-packets.md",
+          "forbidden_tokens": [
+            "compact 1行JSON",
+            "[\"none\"]"
+          ]
         }
       ],
       "residual_parent_judgment": "The parent still evaluates the substantive meaning of a structurally valid packet."
@@ -225,6 +240,20 @@
             "revise-milestones <token>",
             "fresh_worker\":true"
           ]
+        },
+        {
+          "path": "codex/AGENTS.md",
+          "forbidden_tokens": [
+            "新規task・decision・fix・accept・resume"
+          ]
+        },
+        {
+          "path": "codex/instructions/glm-execution.md",
+          "forbidden_tokens": [
+            "status:\"prepared\"",
+            ".glm-worker-parent-actions/",
+            "1 MiB"
+          ]
         }
       ],
       "residual_parent_judgment": "The parent chooses among machine-admitted semantic actions; the staging layer only proves admissibility and payload binding."
@@ -264,6 +293,12 @@
           "path": "codex/instructions/glm-parent-evidence.md",
           "forbidden_tokens": [
             "duplicate_parent_projection"
+          ]
+        },
+        {
+          "path": "codex/AGENTS.md",
+          "forbidden_tokens": [
+            "JSON/JSONL、analysis-index"
           ]
         }
       ],
@@ -344,6 +379,14 @@
         {
           "path": "glm-worker/internal/parentactioncmd/finalization.go",
           "symbol": "handoffContainsValidation"
+        }
+      ],
+      "projection_guards": [
+        {
+          "path": "codex/instructions/quality-gate-capability.md",
+          "forbidden_tokens": [
+            "機械確認した上でfresh gate"
+          ]
         }
       ],
       "residual_parent_judgment": "The parent performs the final semantic acceptance after the machine proves validation freshness and snapshot binding."
@@ -496,6 +539,15 @@
         {
           "path": "glm-worker/internal/state/session_rotation.go",
           "symbol": "StateStore.AcknowledgeSessionRotationClaim"
+        }
+      ],
+      "projection_guards": [
+        {
+          "path": "codex/instructions/session-rotation.md",
+          "forbidden_tokens": [
+            "予定task IDを照合",
+            "同じclaimで同じtaskへ再開"
+          ]
         }
       ],
       "residual_parent_judgment": "The parent decides when rotation is semantically appropriate and owns external creation of the new Codex thread."
