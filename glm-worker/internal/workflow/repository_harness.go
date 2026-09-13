@@ -58,10 +58,6 @@ func RepositoryHarnessActive(repoRoot string, st *state.StateStore) (bool, error
 	return decision.Active, nil
 }
 
-func (w *Workflow) readRepositoryHarnessActivationPin() (string, bool, error) {
-	return readRepositoryHarnessActivationPin(w.state)
-}
-
 func readRepositoryHarnessActivationPin(st *state.StateStore) (string, bool, error) {
 	data, err := os.ReadFile(st.Path(repositoryharness.ActivationStateKey))
 	if errors.Is(err, os.ErrNotExist) {
