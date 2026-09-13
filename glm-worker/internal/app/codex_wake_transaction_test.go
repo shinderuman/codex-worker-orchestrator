@@ -82,9 +82,9 @@ func TestCodexWakeResponseRequiresTrustedTokenState(t *testing.T) {
 		CodexWake: CodexWakeArgs{Token: "invalid-token"},
 	}
 	var stdout bytes.Buffer
-	handled, err := executeStateless(cmd, config.AppConfig{CodexConfigDir: t.TempDir()}, &stdout)
-	if !handled || err == nil {
-		t.Fatalf("untrusted token admission = handled:%v err:%v", handled, err)
+	err := executeRuntimeControl(cmd, config.AppConfig{CodexConfigDir: t.TempDir()}, &stdout)
+	if err == nil {
+		t.Fatal("untrusted wake response was accepted")
 	}
 	if stdout.Len() != 0 {
 		t.Fatalf("untrusted token produced output: %q", stdout.String())

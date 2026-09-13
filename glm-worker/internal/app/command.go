@@ -4,17 +4,13 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"io"
 	"strconv"
 	"strings"
 
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentfix"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
 )
 
 type CommandMode int
@@ -72,13 +68,6 @@ type NotFoundError struct {
 type StdinPayloadError struct {
 	Message string
 }
-
-type stdinReadyControlEvent struct {
-	Type  string `json:"type"`
-	Event string `json:"event"`
-}
-
-type RunnerFactory func(cfg config.AppConfig, st *state.StateStore, stop *runner.StopController) workflow.ModelRunner
 
 type commandParser func([]string) (Command, error)
 
@@ -209,9 +198,11 @@ var commandParsers = map[string]commandParser{
 	"--recover-quality-surface": func(args []string) (Command, error) {
 		return requiredPayloadCommand(args, modeRecoverQualitySurface, "usage: glm-worker --recover-quality-surface <task-id>")
 	},
-	"--verify-auto-resume":  verifyAutoResumeCommand,
-	"--verify-codex-wake":   verifyCodexWakeCommand,
-	"--check-wake-coalesce": checkWakeCoalesceCommand,
+	"--verify-auto-resume":        verifyAutoResumeCommand,
+	"--verify-codex-wake":         verifyCodexWakeCommand,
+	"--check-wake-coalesce":       checkWakeCoalesceCommand,
+	"--codex-wake-plan":           codexWakePlanCommand,
+	"--codex-wake-response-stdin": codexWakeResponseCommand,
 	"--eval-ab": func(args []string) (Command, error) {
 		return requiredPayloadCommand(args, ModeEvalAB, "usage: glm-worker --eval-ab <run-dir>")
 	},
@@ -264,9 +255,6 @@ func usageError(format string, args ...any) *UsageError {
 func ParseCommand(args []string) (Command, error) {
 	if len(args) == 0 {
 		return Command{}, usageError("usage: glm-worker <instruction> | <command>; run glm-worker --help for command list")
-	}
-	if parser, ok := codexWakeCommandParsers[args[0]]; ok {
-		return parser(args)
 	}
 	if parser, ok := commandParsers[args[0]]; ok {
 		return parser(args)
@@ -497,228 +485,4 @@ func readStdinPayload(in io.Reader, want int64, expectedSHA string) (string, err
 		}
 	}
 	return string(payload), nil
-}
-
-func emitStdinReadyControlEvent(w io.Writer) error {
-	line, err := marshalEventLine(stdinReadyControlEvent{Type: "control", Event: "stdin_ready"})
-	if err != nil {
-		return fmt.Errorf("stdin ready control event encode failed: %w", err)
-	}
-	if _, err := w.Write(line); err != nil {
-		return fmt.Errorf("stdin ready control event write failed: %w", err)
-	}
-	return nil
-}
-
-func defaultRunnerFactory(cfg config.AppConfig, st *state.StateStore, stop *runner.StopController) workflow.ModelRunner {
-	r := runner.NewClaudeRunner(cfg, st)
-	r.AttachStopController(stop)
-	return r
-}
-
-func run(
-	args []string,
-	loadConfig func() (config.AppConfig, error),
-	runnerFactory RunnerFactory,
-	stdin io.Reader,
-	stdout io.Writer,
-	stderr io.Writer,
-) error {
-	cmd, err := ParseCommand(args)
-	if err != nil {
-		return err
-	}
-	if err := bindCurrentCodexThreadIdentity(&cmd); err != nil {
-		return err
-	}
-	if cmd.StdinBytes > 0 {
-		restore, rawApplied, err := enterStdinRawMode(stdin)
-		if err != nil {
-			return err
-		}
-		if rawApplied {
-			if markerErr := emitStdinReadyControlEvent(stderr); markerErr != nil {
-				return errors.Join(markerErr, restore())
-			}
-		}
-		payload, readErr := readStdinPayload(stdin, cmd.StdinBytes, cmd.SHA256)
-		if err := errors.Join(readErr, restore()); err != nil {
-			return err
-		}
-		cmd.Payload = payload
-	}
-	cfg, err := loadConfig()
-	if err != nil {
-		return err
-	}
-	return dispatchMachineOutput(cmd, cfg, runnerFactory, stdout, stderr)
-}
-
-func Execute(cmd Command, cfg config.AppConfig, rf RunnerFactory, stdout, _ io.Writer) error {
-	if cmd.StdinBytes > 0 && cmd.Payload == "" {
-		return fmt.Errorf("stdin payload mode requires the payload to be read before execute")
-	}
-	if handled, err := executeStateless(cmd, cfg, stdout); handled {
-		return err
-	}
-
-	st, err := state.NewStateStore(cfg)
-	if err != nil {
-		return err
-	}
-	if handled, err := executeStateOnly(cmd, cfg, st, stdout); handled {
-		return err
-	}
-
-	lock, err := AcquireRepoLock(st.LockPath())
-	if err != nil {
-		return err
-	}
-	defer func() { _ = lock.Close() }()
-	if err := admitParentCommand(cmd, st); err != nil {
-		return err
-	}
-
-	if handled, err := executeLocked(cmd, cfg, st, stdout); handled {
-		return err
-	}
-	return executeWorkflow(cmd, cfg, st, rf, stdout)
-}
-
-func executeStateless(cmd Command, cfg config.AppConfig, stdout io.Writer) (bool, error) {
-	switch cmd.Mode {
-	case ModeStatus:
-		return true, printStatusLeased(state.AttachStateStore(cfg), stdout)
-	case ModeHandoff:
-		if cmd.Payload == "recovery" {
-			return true, printParentHandoffRecoveryLeasedWithConfig(cfg, state.AttachStateStore(cfg), stdout)
-		}
-		return true, printParentHandoffLeasedWithConfig(cfg, state.AttachStateStore(cfg), stdout)
-	case ModeStats:
-		return true, printStats(cfg, state.AttachStateStore(cfg), cmd.Query, stdout)
-	case ModeWatch:
-		return true, printWatch(state.AttachStateStore(cfg), stdout, defaultWatchOptions(cmd.WatchVerbose))
-	case ModeStop:
-		return true, requestStop(cfg, stdout)
-	case ModeCodexLimit:
-		return true, printCodexLimit(cfg, stdout)
-	case ModePacketCheck, ModeProjectState:
-		return true, executeStatelessProjection(cmd, cfg, stdout)
-	case ModeRepoSearch, ModeEvidence:
-		return true, executeParentReadCommand(cmd, cfg, stdout)
-	case ModeCheckWakeCoalesce:
-		return true, printCheckWakeCoalesce(cmd, cfg, stdout)
-	default:
-		return executeCodexWakeStateless(cmd, cfg, stdout)
-	}
-}
-
-func executeParentReadCommand(cmd Command, cfg config.AppConfig, stdout io.Writer) error {
-	if cmd.Mode == ModeEvidence {
-		return printParentEvidence(cmd, cfg, state.AttachStateStore(cfg), stdout)
-	}
-	return printRepoSearch(repoSearchRequest{
-		Question:    cmd.Payload,
-		Scopes:      cmd.SearchScopes,
-		BudgetBytes: cmd.SearchBudgetBytes,
-	}, cfg, state.AttachStateStore(cfg), stdout)
-}
-
-func executeStatelessReport(cmd Command, cfg config.AppConfig, stdout io.Writer) (bool, error) {
-	st := state.AttachStateStore(cfg)
-	switch cmd.Mode {
-	case ModeTimeline:
-		return true, printTimeline(st, cmd.Payload, stdout)
-	case ModeConvergence:
-		return true, printConvergence(st, cmd.Payload, stdout)
-	case ModeEvalAB:
-		return true, printEvalAB(st, cmd.Payload, stdout)
-	case ModeCallOutliers:
-		return true, printCallOutliers(cfg, st, cmd.Query, stdout)
-	case ModeModelRouting:
-		return true, printModelRouting(st, stdout)
-	case ModeTestImpact:
-		return true, printTestImpact(st, stdout)
-	case ModeRepoSearchEval:
-		return true, printRepoSearchEval(st, stdout)
-	case ModeBundle:
-		return true, printBundle(cfg, st, cmd.Payload, stdout)
-	case ModeParentUsage:
-		return true, printParentUsage(cfg, st, cmd.Payload, stdout)
-	case ModeReviewGap:
-		return true, printReviewGap(cfg, st, cmd.Payload, stdout)
-	default:
-		return false, nil
-	}
-}
-
-func executeStateOnly(cmd Command, cfg config.AppConfig, st *state.StateStore, stdout io.Writer) (bool, error) {
-	switch cmd.Mode {
-	case ModeVerifyAutoResume:
-		return true, printVerifyAutoResume(cmd, cfg, stdout)
-	case ModeVerifyCodexWake:
-		return true, printVerifyCodexWake(cmd, cfg, stdout)
-	case ModeInstallSmoke:
-		return true, runInstallSmoke(cmd.Role, cfg, st, stdout)
-	case ModeQualityGate:
-		return true, runQualityGate(cmd.Payload, st, stdout)
-	default:
-		return false, nil
-	}
-}
-
-func executeLocked(cmd Command, cfg config.AppConfig, st *state.StateStore, stdout io.Writer) (bool, error) {
-	switch cmd.Mode {
-	case ModeReset:
-		return true, resetState(st, stdout)
-	case ModeAccept:
-		return true, parentAccept(st, stdout)
-	case ModeIsolate:
-		return true, isolateInterruptedTask(st, cfg, stdout)
-	case ModePark:
-		return true, workflow.NewWorkflow(cfg, st, nil, stdout).ExecutePark(stdout)
-	case ModeUnpark:
-		return true, workflow.NewWorkflow(cfg, st, nil, stdout).ExecuteUnpark(stdout)
-	case ModeExecutionMilestonesRevise:
-		return true, executeExecutionMilestoneRevision(cmd, cfg, st, stdout)
-	case modeRotateInstructionBaseline:
-		return true, rotateInstructionBaseline(cfg, st, stdout)
-	case modeRecoverParentAction:
-		return true, recoverInterruptedParentAction(st, stdout)
-	case modeRecoverQualitySurface:
-		return true, recoverQualitySurfaceLifecycle(st, cmd.Payload, stdout)
-	default:
-		return false, nil
-	}
-}
-
-func executeWorkflow(cmd Command, cfg config.AppConfig, st *state.StateStore, rf RunnerFactory, stdout io.Writer) error {
-	if err := preflightQualityToolchain(cfg, st); err != nil {
-		return err
-	}
-	controller := runner.NewStopController()
-	stopServer, err := startStopEndpoint(st, controller)
-	if err != nil {
-		return err
-	}
-	defer stopServer.Close()
-
-	r := rf(cfg, st, controller)
-	wf := workflow.NewWorkflow(cfg, st, r, stdout)
-	wf.AttachStopController(controller)
-
-	switch cmd.Mode {
-	case ModeNewTask:
-		return executeNewTaskCommand(wf, cmd)
-	case ModeDecision:
-		return wf.ExecuteDecisionWithExecutionMilestones(cmd.Payload)
-	case ModeFix:
-		return wf.ExecuteExplicitFixWithExecutionMilestones(cmd.Payload, cmd.Origin, cmd.Cause, cmd.AcceptedScope)
-	case ModeApproveSurface:
-		return wf.ExecuteQualitySurfaceApprovalWithExecutionMilestones(cmd.AcceptedScope)
-	case ModeResume:
-		return wf.ExecuteResumeWithExecutionMilestones()
-	default:
-		return fmt.Errorf("unsupported command mode")
-	}
 }
