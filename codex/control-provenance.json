@@ -291,6 +291,23 @@
           "symbol": "Workflow.verifyParentFileAfterCall"
         }
       ],
+      "projection_guards": [
+        {
+          "path": "AGENTS.md",
+          "forbidden_tokens": [
+            "追跡中欠損",
+            "呼出前後変化",
+            "停止期間外変化"
+          ]
+        },
+        {
+          "path": "IMPLEMENTATION_RULES.md",
+          "forbidden_tokens": [
+            "model実行中は不変",
+            "外部変更はfail closed"
+          ]
+        }
+      ],
       "residual_parent_judgment": "The parent decides the intended metadata repair or authorized update after a fail-closed stop."
     },
     {
@@ -359,6 +376,15 @@
         {
           "path": "glm-worker/internal/parentactioncmd/complete.go",
           "symbol": "verifyCompletionUnchanged"
+        }
+      ],
+      "projection_guards": [
+        {
+          "path": "IMPLEMENTATION_RULES.md",
+          "forbidden_tokens": [
+            "Plan・ACTIVE file・task corpus",
+            "機械postcondition"
+          ]
         }
       ],
       "residual_parent_judgment": "The parent performs or authorizes the remote write; the machine only proves the required synchronization postcondition."
