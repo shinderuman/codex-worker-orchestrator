@@ -112,7 +112,7 @@ parent-managed metadataを扱うguard、self-protection、production wiring自�
 - prerequisite taskが通常のsemantic acceptance・必要validation・親action完了を経て成功完了した場合だけ、task file削除とschedule同期の前に、残存する各dependent taskでそのpathを`Dependencies`から`Fulfilled dependencies`へ親Codexが同一metadata同期として移す。No-Go、cancel、withdrawal、replanによる単純削除はfulfilledへ移さず、dependent側の要求自体を変更する必要がある場合は通常のtracked amendment/replanningとして扱う
 - self dependency、outstanding edgeのcycle、malformed GOAL / schedule / task contract、明示状態の矛盾はfail closedとし、`runnableなし`や`complete`へ縮退しない
 - Goal進行中は既存どおりACTIVE taskを一意に要求する。mechanical completion readinessは、current ACTIVEのlifecycleがcompleteかつpending parent actionなし、NEXT / BLOCKEDが空、unresolved findingなし、current snapshot対応validation成功、clean working treeを最低条件とし、semantic Goal acceptanceと必要なinstall判断を代替しない
-- 親Codexがmechanical readinessとGoal acceptanceを確認してbounded completion decisionをGOAL節へ記録したterminal Goalだけは、ACTIVE / NEXT / BLOCKEDが空のPlanを許可する。未完了GoalでACTIVE空を許さず、単一worker PASSをproject completionへ昇格しない
+- 親Codexがmechanical readinessとGoal acceptanceを確認してbounded completion decisionをGOAL節へ記録したterminal Goalだけは、ACTIVE / NEXT / BLOCKEDが空のPlanを許可する。未完了GoalでACTIVE空を許可せず、単一worker PASSをproject completionへ昇格しない
 - 既存task state、checkpoint、parent action、worker/reviewer、Codex gate、rate-limit / Codex-limit recovery、telemetry、Plan/task guardを再利用し、Goal mode専用daemon、scheduler、state DB、第二正本を追加しない
 
 ## priorityとhard dependency
