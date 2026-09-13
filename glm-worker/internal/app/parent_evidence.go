@@ -1421,19 +1421,3 @@ func sessionLimitBaselineFromSnapshot(snapshot codexlimit.Snapshot) *state.Sessi
 		CapturedAt:     time.Now().UTC().Format(time.RFC3339Nano),
 	}
 }
-
-func ReadSessionLimitForIdentityBind(cfg config.AppConfig) *state.SessionLimitReading {
-	snapshot, err := codexlimit.Read(cfg.CodexBin)
-	if err != nil {
-		return nil
-	}
-	if snapshot.LimitID == "" || snapshot.FiveHour.UsedPercent == nil || snapshot.FiveHour.ResetsAt == nil {
-		return nil
-	}
-	return &state.SessionLimitReading{
-		LimitID:     snapshot.LimitID,
-		UsedPercent: *snapshot.FiveHour.UsedPercent,
-		ResetsAt:    *snapshot.FiveHour.ResetsAt,
-		CapturedAt:  time.Now().UTC(),
-	}
-}
