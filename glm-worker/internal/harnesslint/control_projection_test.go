@@ -23,7 +23,7 @@ func TestControlProjectionAcceptsMachineEnforcedControl(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if hasControlProjectionViolation(violations, "codex/AGENTS.md", "machine") {
+	if len(violations) != 0 {
 		t.Fatalf("violations = %#v", violations)
 	}
 }
@@ -84,7 +84,7 @@ func TestControlProjectionIgnoresTaskRequirementText(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if hasControlProjectionViolation(violations, "IMPLEMENTATION_TASKS/example.md") {
+	if len(violations) != 0 {
 		t.Fatalf("violations = %#v", violations)
 	}
 }
