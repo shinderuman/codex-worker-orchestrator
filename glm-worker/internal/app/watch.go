@@ -133,17 +133,23 @@ func watchTerminal(st *state.StateStore, taskID string, stdout io.Writer, opts w
 	return watchOrphanTerminal(st, taskID, stdout, opts)
 }
 
-func watchTaskTerminalState(st *state.StateStore, taskID string, stdout io.Writer) (bool, error) {
+func watchTaskTerminalEvent(st *state.StateStore, taskID string) *watchExitEvent {
 	current := st.ReadOr("task.id", "")
 	if current != "" && current != taskID {
-		return true, writeWatchEvent(stdout, watchExitEvent{
-			Type: "watch_exit", TaskID: taskID, Status: "task-switched", NewTaskID: &current,
-		})
+		return &watchExitEvent{Type: "watch_exit", TaskID: taskID, Status: "task-switched", NewTaskID: &current}
 	}
 	if status := st.TaskStatus(); status != state.TaskStatusActive {
-		return true, writeWatchEvent(stdout, watchExitEvent{Type: "watch_exit", TaskID: taskID, Status: string(status)})
+		return &watchExitEvent{Type: "watch_exit", TaskID: taskID, Status: string(status)}
 	}
-	return false, nil
+	return nil
+}
+
+func watchTaskTerminalState(st *state.StateStore, taskID string, stdout io.Writer) (bool, error) {
+	event := watchTaskTerminalEvent(st, taskID)
+	if event == nil {
+		return false, nil
+	}
+	return true, writeWatchEvent(stdout, *event)
 }
 
 func watchOrphanTerminal(st *state.StateStore, taskID string, stdout io.Writer, opts watchOptions) (bool, error) {
@@ -241,7 +247,20 @@ func watchTaskTick(st *state.StateStore, taskID string, file *os.File, path stri
 	if err := status.refresh(false); err != nil {
 		return pending, false, err
 	}
-	terminal, err := watchTerminal(st, taskID, stdout, opts)
+	if terminalEvent := watchTaskTerminalEvent(st, taskID); terminalEvent != nil {
+		before := status.tracker.signature()
+		pending, err = drainTaskEvents(file, stdout, pending, status.tracker.observe)
+		if err != nil {
+			return pending, false, err
+		}
+		if status.tracker.signature() != before {
+			if err := status.refresh(true); err != nil {
+				return pending, false, err
+			}
+		}
+		return pending, true, writeWatchEvent(stdout, *terminalEvent)
+	}
+	terminal, err := watchOrphanTerminal(st, taskID, stdout, opts)
 	if err != nil {
 		return pending, false, err
 	}
