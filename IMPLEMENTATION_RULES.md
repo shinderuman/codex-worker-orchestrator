@@ -155,11 +155,11 @@ NEXT taskは開始時まで全文を読む必要はない。
 - `IMPLEMENTATION_TASKS/*.md`
 - `IMPLEMENTATION_HISTORY.md`
 
-GLM worker/reviewerは編集・生成・復元・削除せず、更新候補をstructured resultで返す。model実行中は不変、model停止中の親更新だけをparent-managed deltaとして扱い、worker/reviewer implementation surfaceの外部変更はfail closedにする。pathごとの分岐を増殖させずparent-managed implementation metadataの単一集合へ収束する。Historyがこの集合に残る理由は、current BLOCKED taskから明示参照される少数の非diff decisionを保護するためであり、通常completion ledgerへ戻す理由にはしない。
+GLM worker/reviewerは編集・生成・復元・削除せず、更新候補をstructured resultで返す。親がmodel停止中に行う更新だけをparent-managed deltaとして扱い、model-call中の機械的不変性/fail-closedは`control:parent-metadata-integrity`を正とする。pathごとの分岐を増殖させずparent-managed implementation metadataの単一集合へ収束する。Historyがこの集合に残る理由は、current BLOCKED taskから明示参照される少数の非diff decisionを保護するためであり、通常completion ledgerへ戻す理由にはしない。
 
 ## task完了
 
-ordinary task完了時はHistoryへ完了証跡やescaped原因を追記しない。Goal modeでそのtaskをhard prerequisiteとして参照する残存taskがある場合は、成功完了が確定した同じparent metadata同期で該当edgeをdependent側の`Dependencies`から`Fulfilled dependencies`へ移してから完了task fileを削除する。その後Planからentryを削除してNEXTをACTIVEへ昇格し、final HEAD上でPlan・ACTIVE file・task corpusのclosureが一致することを機械確認する。完了task fileを`IMPLEMENTATION_TASKS/`へ残さない。Git履歴が原要求と実装diffを保持し、CIとbundle / telemetryがvalidation・runtime/model evidenceを保持する。
+ordinary task完了時はHistoryへ完了証跡やescaped原因を追記しない。Goal modeでそのtaskをhard prerequisiteとして参照する残存taskがある場合は、成功完了が確定した同じparent metadata同期で該当edgeをdependent側の`Dependencies`から`Fulfilled dependencies`へ移してから完了task fileを削除する。その後Planからentryを削除してNEXTをACTIVEへ昇格する。final HEAD closureとremote同期の機械検証はcurrent completion runtime（`control:remote-completion-sync`）を正とする。完了task fileを`IMPLEMENTATION_TASKS/`へ残さない。Git履歴が原要求と実装diffを保持し、CIとbundle / telemetryがvalidation・runtime/model evidenceを保持する。
 
 Goal modeの最終taskだけは、上記Goal起点project orchestrationのterminal条件を満たす場合に限り、NEXT昇格ではなくcompleted GOALと空scheduleへ同期する。Goal未完了、mechanical readiness未充足、semantic acceptance未確定ではこの例外を使わない。
 
@@ -168,7 +168,6 @@ Historyを更新できるのは、完了結果そのものではなく、そのt
 ## install / validation
 
 - GLMにcommit/pushさせない
-- task metadata同期はfinal HEADの機械postconditionを正とし、文書手順だけで保証したことにしない
 - runtimeへ影響するtaskはimplementation、test/review後、適切な区切りで`install.sh`本配置、installed/source一致、そのinstalled状態で必要なproduction smokeまでをtask completion flowとして行う。複数task分を未配置のまま後続実運用へ進めず、最終taskまでinstall義務を延期しない
 - source-only metadata変更はruntime install対象から除外する
 
