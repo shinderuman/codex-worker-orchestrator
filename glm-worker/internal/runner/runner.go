@@ -365,11 +365,8 @@ func (r *ClaudeRunner) executeRunCommand(
 	command.Stdin = devNull
 	command.Stdout = ingester
 	command.Stderr = stderr
-	additions := map[string]string{
-		"CLAUDE_CONFIG_DIR":                r.config.ClaudeConfigDir,
-		"CLAUDE_CODE_AUTO_COMPACT_WINDOW":  strconv.Itoa(configuredAutoCompactWindowTokens),
-		"CLAUDE_CODE_ALWAYS_ENABLE_EFFORT": "1",
-	}
+	additions := claudeInvocationEnvDefaults()
+	additions["CLAUDE_CONFIG_DIR"] = r.config.ClaudeConfigDir
 	if inputs.contextWindow.declaredMaxContextTokens > 0 {
 		additions["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] = strconv.Itoa(inputs.contextWindow.declaredMaxContextTokens)
 	}

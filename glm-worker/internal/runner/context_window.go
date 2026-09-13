@@ -9,8 +9,6 @@ type contextWindowConfig struct {
 	source                        string
 }
 
-const configuredAutoCompactWindowTokens = 500_000
-const configuredAutoCompactWindowArgument = "500k"
 const defaultUnknownModelContextWindowTokens = 200_000
 const zaiModelContextWindowSource = "zai-model-spec"
 

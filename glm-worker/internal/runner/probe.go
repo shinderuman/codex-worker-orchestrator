@@ -61,11 +61,9 @@ func (r *ClaudeRunner) Probe(model string) (ProbeResult, error) {
 	command.Stdin = devNull
 	command.Stdout = output
 	command.Stderr = stderr
-	command.Env = buildChildEnv(r.config.EnvAllowlist, settingEnv, map[string]string{
-		"CLAUDE_CONFIG_DIR":                r.config.ClaudeConfigDir,
-		"CLAUDE_CODE_AUTO_COMPACT_WINDOW":  "500000",
-		"CLAUDE_CODE_ALWAYS_ENABLE_EFFORT": "1",
-	}, envDeletes)
+	additions := claudeInvocationEnvDefaults()
+	additions["CLAUDE_CONFIG_DIR"] = r.config.ClaudeConfigDir
+	command.Env = buildChildEnv(r.config.EnvAllowlist, settingEnv, additions, envDeletes)
 
 	runErr := closeProbeOutputs(command.Run(), output, stderr)
 	result, parseErr := readProbeResult(rawOutputPath)
