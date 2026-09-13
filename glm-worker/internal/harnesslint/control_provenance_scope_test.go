@@ -9,6 +9,7 @@ import (
 
 func TestScopedControlProvenanceRequiresRegistryForOrchestratorRepository(t *testing.T) {
 	root := newControlProvenanceIdentityRepo(t, "https://github.com/shinderuman/codex-worker-orchestrator.git", controlProvenanceModulePath)
+	writeControlProvenanceSurface(t, root)
 
 	violations, err := scopedControlProvenanceViolations(root)
 	if err != nil {
@@ -23,6 +24,7 @@ func TestScopedControlProvenanceRequiresRegistryAcrossRemoteChanges(t *testing.T
 	for _, origin := range []string{"", "https://github.com/example/codex-worker-orchestrator.git", "ssh://git@example.invalid/example/codex-worker-orchestrator.git"} {
 		t.Run(origin, func(t *testing.T) {
 			root := newControlProvenanceIdentityRepo(t, origin, controlProvenanceModulePath)
+			writeControlProvenanceSurface(t, root)
 			violations, err := scopedControlProvenanceViolations(root)
 			if err != nil {
 				t.Fatal(err)
@@ -31,6 +33,17 @@ func TestScopedControlProvenanceRequiresRegistryAcrossRemoteChanges(t *testing.T
 				t.Fatalf("violations = %#v", violations)
 			}
 		})
+	}
+}
+
+func TestScopedControlProvenanceSkipsPartialHarnessWithoutControlSurface(t *testing.T) {
+	root := newControlProvenanceIdentityRepo(t, "", controlProvenanceModulePath)
+	violations, err := scopedControlProvenanceViolations(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(violations) != 0 {
+		t.Fatalf("violations = %#v", violations)
 	}
 }
 
@@ -56,6 +69,7 @@ func TestScopedControlProvenanceSkipsOtherModuleWithoutRegistry(t *testing.T) {
 	for _, origin := range []string{"", "https://github.com/shinderuman/codex-worker-orchestrator.git", "https://github.com/example/other-repository.git"} {
 		t.Run(origin, func(t *testing.T) {
 			root := newControlProvenanceIdentityRepo(t, origin, "example.com/other/glm-worker")
+			writeControlProvenanceSurface(t, root)
 			violations, err := scopedControlProvenanceViolations(root)
 			if err != nil {
 				t.Fatal(err)
@@ -101,6 +115,13 @@ func newControlProvenanceIdentityRepo(t *testing.T, origin, modulePath string) s
 		t.Fatal(err)
 	}
 	return root
+}
+
+func writeControlProvenanceSurface(t *testing.T, root string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(root, filepath.Dir(filepath.FromSlash(controlProvenanceRegistryPath))), 0o755); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func runControlProvenanceGit(t *testing.T, root string, args ...string) {
