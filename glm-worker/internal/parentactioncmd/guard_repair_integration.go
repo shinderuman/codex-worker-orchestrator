@@ -38,8 +38,8 @@ func beginGuardRepairIntegration(
 	record.Status = state.GuardRepairIntegrating
 	record.Integration = &state.GuardRepairIntegration{
 		RepositoryBoundary: origin.boundary,
-		StopDirtyFiles:      append([]state.StopDirtyFile(nil), origin.checkpoint.StopDirtyFiles...),
-		Files:               files,
+		StopDirtyFiles:     append([]state.StopDirtyFile(nil), origin.checkpoint.StopDirtyFiles...),
+		Files:              files,
 	}
 	if err := st.SaveGuardRepairRecord(record); err != nil {
 		return record, err
