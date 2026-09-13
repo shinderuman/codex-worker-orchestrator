@@ -53,13 +53,21 @@ func TestParentStatusLedgerSaveFailureFailsClosed(t *testing.T) {
 func TestEvidenceBatchLedgerSaveFailureFailsClosed(t *testing.T) {
 	fixture := newParentEvidenceFixture(t)
 	manifestPath := filepath.Join(t.TempDir(), "evidence-manifest.json")
-	if err := os.WriteFile(manifestPath, []byte(`{"version":1,"reason":"ledger failure","status":{}}`), 0o600); err != nil {
+	manifest, err := json.Marshal(parentEvidenceManifest{
+		Version: parentEvidenceManifestVersion,
+		Reason:  "ledger failure",
+		Status:  &parentEvidenceStatusRequest{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manifestPath, manifest, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	restore := blockParentEvidenceLedgerSave(t, fixture.st)
 
 	var failedOutput bytes.Buffer
-	err := printParentEvidence(Command{Mode: ModeEvidence, EvidenceManifest: manifestPath}, fixture.cfg, fixture.st, &failedOutput)
+	err = printParentEvidence(Command{Mode: ModeEvidence, EvidenceManifest: manifestPath}, fixture.cfg, fixture.st, &failedOutput)
 	if err == nil || !strings.Contains(err.Error(), "delivery claim") {
 		t.Fatalf("ledger save failure err=%v output=%s", err, failedOutput.String())
 	}
