@@ -41,4 +41,14 @@ func TestLoadDerivesRepoSearchCacheRootFromWorkerHome(t *testing.T) {
 	if loaded.RepoSearchCacheRoot != want {
 		t.Fatalf("RepoSearchCacheRoot = %q, want %q", loaded.RepoSearchCacheRoot, want)
 	}
+
+	t.Setenv("GLM_WORKER_HOME", "")
+	loaded, err = Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want = filepath.Join(home, ".glm-worker", "search")
+	if loaded.RepoSearchCacheRoot != want {
+		t.Fatalf("default RepoSearchCacheRoot = %q, want %q", loaded.RepoSearchCacheRoot, want)
+	}
 }
