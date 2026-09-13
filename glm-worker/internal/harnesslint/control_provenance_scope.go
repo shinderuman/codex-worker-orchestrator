@@ -17,6 +17,17 @@ func scopedControlProvenanceViolations(root string) ([]Violation, error) {
 	if !applies {
 		return nil, nil
 	}
+	surface := filepath.Join(root, filepath.Dir(filepath.FromSlash(controlProvenanceRegistryPath)))
+	info, err := os.Stat(surface)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("stat control provenance surface: %w", err)
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("control provenance surface is not a directory: %s", surface)
+	}
 	return controlProvenanceViolations(root)
 }
 
