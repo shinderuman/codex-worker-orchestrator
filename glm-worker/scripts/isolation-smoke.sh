@@ -87,8 +87,6 @@ env -i \
 	${API_TIMEOUT:+API_TIMEOUT_MS="$API_TIMEOUT"} \
 	${NONESSENTIAL:+CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC="$NONESSENTIAL"} \
 	CLAUDE_CONFIG_DIR="$TMPCFG" \
-	CLAUDE_CODE_AUTO_COMPACT_WINDOW="500000" \
-	CLAUDE_CODE_ALWAYS_ENABLE_EFFORT="1" \
 	CLAUDE_CODE_SAFE_MODE="1" \
 	"$CLAUDE_BIN" -p \
 	--safe-mode \
@@ -97,7 +95,6 @@ env -i \
 	--name glm-isolation-smoke \
 	--model opus \
 	--effort high \
-	--autocompact 500k \
 	--output-format json \
 	--dangerously-skip-permissions \
 	--strict-mcp-config \
