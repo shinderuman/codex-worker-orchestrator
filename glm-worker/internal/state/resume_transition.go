@@ -46,7 +46,7 @@ func (s *StateStore) ObserveGuardRepairResume(checkpoint ResumeCheckpoint, attem
 	if err != nil {
 		return err
 	}
-	if err := s.validateGuardRepairResumeProof(record, checkpoint, attemptID); err != nil {
+	if err := validateGuardRepairResumeProof(record, checkpoint, attemptID); err != nil {
 		return err
 	}
 	if record.OriginalResumeObserved {
@@ -73,7 +73,7 @@ func (s *StateStore) VerifyGuardRepairResume(taskID, attemptID string, checkpoin
 	if record.TaskID != taskID {
 		return GuardRepairRecord{}, fmt.Errorf("guard repair resume expected task mismatch: current=%s expected=%s", record.TaskID, taskID)
 	}
-	if err := s.validateGuardRepairResumeProof(record, checkpoint, attemptID); err != nil {
+	if err := validateGuardRepairResumeProof(record, checkpoint, attemptID); err != nil {
 		return GuardRepairRecord{}, err
 	}
 	if !record.OriginalResumeObserved {
@@ -82,7 +82,7 @@ func (s *StateStore) VerifyGuardRepairResume(taskID, attemptID string, checkpoin
 	return record, nil
 }
 
-func (s *StateStore) validateGuardRepairResumeProof(record GuardRepairRecord, checkpoint ResumeCheckpoint, attemptID string) error {
+func validateGuardRepairResumeProof(record GuardRepairRecord, checkpoint ResumeCheckpoint, attemptID string) error {
 	if record.Status != GuardRepairResuming {
 		return fmt.Errorf("guard repair transaction is not resuming")
 	}
