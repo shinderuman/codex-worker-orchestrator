@@ -247,13 +247,13 @@ func TestPlanFileTrackedMissingFailsClosedBeforeCall(t *testing.T) {
 	}
 }
 
-func TestPlanFileTrackingIndeterminateFailsClosedBeforeCall(t *testing.T) {
+func TestPlanFileInvalidGitAuthorityFailsClosedBeforeCall(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 
 	if err := os.Remove(filepath.Join(repoRoot, ".git", "HEAD")); err != nil {
 		t.Fatal(err)
 	}
-	w, r, out, st := newPlanFileWorkflow(t, repoRoot, []runnerStep{
+	w, r, _, _ := newPlanFileWorkflow(t, repoRoot, []runnerStep{
 		{structured: implementedPacket("done")},
 		{structured: passPacket()},
 	}, "", 0, nil)
@@ -261,33 +261,12 @@ func TestPlanFileTrackingIndeterminateFailsClosedBeforeCall(t *testing.T) {
 		return fixedSnapshot, nil
 	}
 
-	if err := w.ExecuteNewTask("request"); err != nil {
-		t.Fatal(err)
+	err := w.ExecuteNewTask("request")
+	if err == nil || !strings.Contains(err.Error(), "git baseline HEAD resolution failed") {
+		t.Fatalf("invalid Git authority error = %v", err)
 	}
 	if len(r.prompts) != 0 {
-		t.Fatalf("追跡判定失敗時はmodel呼出前に停止すべき: %d", len(r.prompts))
-	}
-	if st.TaskStatus() != state.TaskStatusWaitingSolReview {
-		t.Fatalf("task status = %q want waiting-sol-review", st.TaskStatus())
-	}
-	if _, err := st.LoadResumeCheckpoint(); err == nil {
-		t.Fatal("追跡判定失敗のfail closed後にresume checkpointが残っています")
-	}
-	pkt := lastPacketFromOutput(t, out.String())
-	if pkt.Status != "NEEDS_SOL_REVIEW" || pkt.Risk != "HIGH" {
-		t.Fatalf("packet = %s/%s want NEEDS_SOL_REVIEW/HIGH:\n%s", pkt.Status, pkt.Risk, out.String())
-	}
-	if !strings.Contains(out.String(), "repository harness適用境界を評価できません") {
-		t.Fatalf("git追跡不能時の境界評価fail closed理由が出力されていません:\n%s", out.String())
-	}
-	events := 0
-	for _, l := range taskLogs(t, st) {
-		if l.Outcome == repositoryHarnessGuardSurface.unavailableOutcome() && strings.HasSuffix(l.Phase, repositoryHarnessGuardSurface.eventSuffix) {
-			events++
-		}
-	}
-	if events != 1 {
-		t.Fatalf("repository_harness_unavailable event = %d want 1", events)
+		t.Fatalf("invalid Git authority時はmodel呼出前に停止すべき: %d", len(r.prompts))
 	}
 }
 
@@ -622,7 +601,7 @@ func TestHistoryFileAfterReadFailureOnResumedTaskRecordsCallOnce(t *testing.T) {
 	if len(r.probes) != 1 {
 		t.Fatalf("probe 1回の成功後にresumed taskで停止すべき: %d", len(r.probes))
 	}
-	requireGuardTelemetryExactOnce(t, st, 2, "parent_metadata_unavailable", "parent_metadata_unavailable")
+	requireGuardTelemetryExactOnce(t, st, r, out, "parent_metadata_unavailable", "parent_metadata_unavailable")
 }
 
 func TestPlanFileReviewerMutationUsesExistingSnapshotInvariant(t *testing.T) {
