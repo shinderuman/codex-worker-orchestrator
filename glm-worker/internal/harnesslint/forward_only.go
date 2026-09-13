@@ -178,6 +178,10 @@ func schemaSwitchPromotionViolations(set *token.FileSet, path string, branch *as
 		return nil
 	}
 	switchKinds := schemaKinds(branch.Tag)
+	defaultKinds := switchKinds
+	if len(defaultKinds) == 0 {
+		defaultKinds = schemaSwitchClauseKinds(branch.Body.List)
+	}
 	var violations []Violation
 	for _, statement := range branch.Body.List {
 		clause, ok := statement.(*ast.CaseClause)
@@ -186,12 +190,7 @@ func schemaSwitchPromotionViolations(set *token.FileSet, path string, branch *as
 		}
 		kinds := switchKinds
 		if len(kinds) == 0 {
-			kinds = make(map[string]bool)
-			for _, expression := range clause.List {
-				for kind := range schemaKinds(expression) {
-					kinds[kind] = true
-				}
-			}
+			kinds = schemaCaseClauseKinds(clause, defaultKinds)
 		}
 		if len(kinds) == 0 {
 			continue
@@ -200,6 +199,35 @@ func schemaSwitchPromotionViolations(set *token.FileSet, path string, branch *as
 		violations = append(violations, schemaAssignmentViolations(set, path, block, kinds)...)
 	}
 	return violations
+}
+
+func schemaSwitchClauseKinds(statements []ast.Stmt) map[string]bool {
+	kinds := make(map[string]bool)
+	for _, statement := range statements {
+		clause, ok := statement.(*ast.CaseClause)
+		if !ok {
+			continue
+		}
+		mergeSchemaKinds(kinds, clause.List)
+	}
+	return kinds
+}
+
+func schemaCaseClauseKinds(clause *ast.CaseClause, defaultKinds map[string]bool) map[string]bool {
+	if len(clause.List) == 0 {
+		return defaultKinds
+	}
+	kinds := make(map[string]bool)
+	mergeSchemaKinds(kinds, clause.List)
+	return kinds
+}
+
+func mergeSchemaKinds(target map[string]bool, expressions []ast.Expr) {
+	for _, expression := range expressions {
+		for kind := range schemaKinds(expression) {
+			target[kind] = true
+		}
+	}
 }
 
 func schemaAssignmentViolations(set *token.FileSet, path string, node ast.Node, kinds map[string]bool) []Violation {

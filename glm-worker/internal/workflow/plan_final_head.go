@@ -12,42 +12,49 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskcontract"
 )
 
+type finalHeadPlanSnapshot struct {
+	Plan    string
+	Head    string
+	Status  string
+	Present bool
+}
+
 const parentCompletionHeadVerified = "plan completion head: verified"
 
 func CheckFinalHeadPlan(root string) (string, error) {
-	plan, status, ok, err := finalHeadPlan(root)
+	snapshot, err := finalHeadPlan(root)
 	if err != nil {
 		return "", err
 	}
-	if !ok {
-		return "plan final head: " + status, nil
+	if !snapshot.Present {
+		return "plan final head: " + snapshot.Status, nil
 	}
-	if err := validateFinalHeadPlan(root, plan); err != nil {
+	if err := validateFinalHeadPlan(root, snapshot.Head, snapshot.Plan); err != nil {
 		return "", err
 	}
 	return "plan final head: verified", nil
 }
 
 func CheckParentCompletionHead(root string) (string, error) {
-	plan, status, ok, err := finalHeadPlan(root)
+	snapshot, err := finalHeadPlan(root)
 	if err != nil {
 		return "", err
 	}
-	if !ok {
-		return "plan completion head: " + status, nil
+	if !snapshot.Present {
+		return "plan completion head: " + snapshot.Status, nil
 	}
-	goal, err := taskcontract.ParsePlanGoal(plan)
+	goal, err := taskcontract.ParsePlanGoal(snapshot.Plan)
 	if err != nil {
 		return "", err
 	}
 	if goal.Present && goal.Status == taskcontract.GoalStatusCompleted {
-		if err := validateGoalTerminalFinalHeadPlan(root, plan); err != nil {
+		if err := validateGoalTerminalFinalHeadPlan(root, snapshot.Head, snapshot.Plan); err != nil {
 			return "", err
 		}
 		return parentCompletionHeadVerified, nil
 	}
 	if goal.Present && goal.Status == taskcontract.GoalStatusActive {
-		blockedOnly, err := validateBlockedOnlyFinalHeadPlan(root, plan)
+		blockedOnly, err := validateBlockedOnlyFinalHeadPlan(root, snapshot.Head, snapshot.Plan)
 		if err != nil {
 			return "", err
 		}
@@ -55,13 +62,13 @@ func CheckParentCompletionHead(root string) (string, error) {
 			return parentCompletionHeadVerified, nil
 		}
 	}
-	if err := validateFinalHeadPlan(root, plan); err != nil {
+	if err := validateFinalHeadPlan(root, snapshot.Head, snapshot.Plan); err != nil {
 		return "", err
 	}
 	return parentCompletionHeadVerified, nil
 }
 
-func validateGoalTerminalFinalHeadPlan(root string, plan string) error {
+func validateGoalTerminalFinalHeadPlan(root, head, plan string) error {
 	schedule := taskcontract.ParsePlanSchedule(plan)
 	active, activeErr := schedule.ActiveEntries()
 	next, blocked, nonActiveErr := schedule.NonActiveEntries()
@@ -74,10 +81,10 @@ func validateGoalTerminalFinalHeadPlan(root string, plan string) error {
 	if len(active) > 0 || len(next) > 0 || len(blocked) > 0 {
 		return fmt.Errorf("completed GOALのHEAD planはACTIVE/NEXT/BLOCKEDを空にする必要があります(active=%d next=%d blocked=%d)", len(active), len(next), len(blocked))
 	}
-	return validateFinalHeadScheduleClosure(root, schedule)
+	return validateFinalHeadScheduleClosure(root, head, schedule)
 }
 
-func validateBlockedOnlyFinalHeadPlan(root string, plan string) (bool, error) {
+func validateBlockedOnlyFinalHeadPlan(root, head, plan string) (bool, error) {
 	schedule := taskcontract.ParsePlanSchedule(plan)
 	active, err := schedule.ActiveEntries()
 	if err != nil {
@@ -94,53 +101,53 @@ func validateBlockedOnlyFinalHeadPlan(root string, plan string) (bool, error) {
 		if err := taskcontract.ValidateActiveTaskPath(path); err != nil {
 			return true, err
 		}
-		if err := validateFinalHeadTask(root, path); err != nil {
+		if err := validateFinalHeadTask(root, head, path); err != nil {
 			return true, err
 		}
 	}
-	if err := validateFinalHeadScheduleClosure(root, schedule); err != nil {
+	if err := validateFinalHeadScheduleClosure(root, head, schedule); err != nil {
 		return true, err
 	}
 	return true, nil
 }
 
-func finalHeadPlan(root string) (string, string, bool, error) {
+func finalHeadPlan(root string) (finalHeadPlanSnapshot, error) {
 	repository, err := finalHeadRepository(root)
 	if err != nil {
-		return "", "", false, err
+		return finalHeadPlanSnapshot{}, err
 	}
 	if !repository {
-		return "", "skipped (not a git repository)", false, nil
+		return finalHeadPlanSnapshot{Status: "skipped (not a git repository)"}, nil
 	}
 
 	head, err := state.ResolveGitHeadAuthority("git", root)
 	if err != nil {
-		return "", "", false, fmt.Errorf("final HEAD authorityを確認できません: %w", err)
+		return finalHeadPlanSnapshot{}, fmt.Errorf("final HEAD authorityを確認できません: %w", err)
 	}
 	if head.Unborn {
-		return "", "skipped (no commits)", false, nil
+		return finalHeadPlanSnapshot{Status: "skipped (no commits)"}, nil
 	}
 
 	if _, err := finalHeadGitOutput(root, "ls-files", "--error-unmatch", "--", implementationPlanFile); err != nil {
 		if finalHeadGitExitCode(err) == 1 {
-			return "", "skipped (IMPLEMENTATION_PLAN.local.md is untracked)", false, nil
+			return finalHeadPlanSnapshot{Status: "skipped (IMPLEMENTATION_PLAN.local.md is untracked)"}, nil
 		}
-		return "", "", false, fmt.Errorf("IMPLEMENTATION_PLAN.local.mdのindex追跡状態を確認できません: %w", err)
+		return finalHeadPlanSnapshot{}, fmt.Errorf("IMPLEMENTATION_PLAN.local.mdのindex追跡状態を確認できません: %w", err)
 	}
 
-	entry, err := finalHeadGitOutput(root, "ls-tree", "HEAD", "--", implementationPlanFile)
+	entry, err := finalHeadGitOutput(root, "ls-tree", head.Head, "--", implementationPlanFile)
 	if err != nil {
-		return "", "", false, fmt.Errorf("HEADのIMPLEMENTATION_PLAN.local.md存在状態を確認できません: %w", err)
+		return finalHeadPlanSnapshot{}, fmt.Errorf("HEADのIMPLEMENTATION_PLAN.local.md存在状態を確認できません: %w", err)
 	}
 	if strings.TrimSpace(entry) == "" {
-		return "", "skipped (IMPLEMENTATION_PLAN.local.md is not in HEAD yet)", false, nil
+		return finalHeadPlanSnapshot{Head: head.Head, Status: "skipped (IMPLEMENTATION_PLAN.local.md is not in HEAD yet)"}, nil
 	}
 
-	plan, err := finalHeadGitOutput(root, "show", "HEAD:"+implementationPlanFile)
+	plan, err := finalHeadGitOutput(root, "show", head.Head+":"+implementationPlanFile)
 	if err != nil {
-		return "", "", false, fmt.Errorf("HEADのIMPLEMENTATION_PLAN.local.mdを読めません: %w", err)
+		return finalHeadPlanSnapshot{}, fmt.Errorf("HEADのIMPLEMENTATION_PLAN.local.mdを読めません: %w", err)
 	}
-	return plan, "", true, nil
+	return finalHeadPlanSnapshot{Plan: plan, Head: head.Head, Present: true}, nil
 }
 
 func finalHeadRepository(root string) (bool, error) {
@@ -190,27 +197,27 @@ func finalHeadGitExitCode(err error) int {
 	return exitErr.ExitCode()
 }
 
-func validateFinalHeadPlan(root string, plan string) error {
+func validateFinalHeadPlan(root, head, plan string) error {
 	schedule := taskcontract.ParsePlanSchedule(plan)
 	activePath, err := schedule.ValidateComplete()
 	if err != nil {
 		return err
 	}
-	if err := validateFinalHeadActiveTask(root, activePath); err != nil {
+	if err := validateFinalHeadActiveTask(root, head, activePath); err != nil {
 		return err
 	}
 	for _, entries := range [][]string{schedule.Next, schedule.Blocked} {
 		for _, path := range entries {
-			if err := validateFinalHeadTask(root, path); err != nil {
+			if err := validateFinalHeadTask(root, head, path); err != nil {
 				return err
 			}
 		}
 	}
-	return validateFinalHeadScheduleClosure(root, schedule)
+	return validateFinalHeadScheduleClosure(root, head, schedule)
 }
 
-func validateFinalHeadScheduleClosure(root string, schedule taskcontract.PlanSchedule) error {
-	entries, err := finalHeadTaskCorpusEntries(root)
+func validateFinalHeadScheduleClosure(root, head string, schedule taskcontract.PlanSchedule) error {
+	entries, err := finalHeadTaskCorpusEntries(root, head)
 	if err != nil {
 		return err
 	}
@@ -225,8 +232,8 @@ func validateFinalHeadScheduleClosure(root string, schedule taskcontract.PlanSch
 	return fmt.Errorf("HEADのPlanとIMPLEMENTATION_TASKS corpusのclosureが成立しません: %s", strings.Join(reasons, "; "))
 }
 
-func finalHeadTaskCorpusEntries(root string) ([]taskcontract.TaskCorpusEntry, error) {
-	output, err := finalHeadGitOutput(root, "ls-tree", "-r", "-t", "-z", "HEAD", "--", taskcontract.TasksDir)
+func finalHeadTaskCorpusEntries(root, head string) ([]taskcontract.TaskCorpusEntry, error) {
+	output, err := finalHeadGitOutput(root, "ls-tree", "-r", "-t", "-z", head, "--", taskcontract.TasksDir)
 	if err != nil {
 		return nil, fmt.Errorf("HEADのtask corpusを列挙できません: %w", err)
 	}
@@ -262,11 +269,11 @@ func parseFinalHeadTaskCorpusRecord(record string) (taskcontract.TaskCorpusEntry
 	return taskcontract.TaskCorpusEntry{Path: path, Regular: regularBlob}, true, nil
 }
 
-func validateFinalHeadActiveTask(root string, path string) error {
-	if err := validateFinalHeadTask(root, path); err != nil {
+func validateFinalHeadActiveTask(root, head, path string) error {
+	if err := validateFinalHeadTask(root, head, path); err != nil {
 		return err
 	}
-	content, err := finalHeadGitOutput(root, "show", "HEAD:"+path)
+	content, err := finalHeadGitOutput(root, "show", head+":"+path)
 	if err != nil {
 		return fmt.Errorf("HEADのACTIVE task contract %sを読めません: %w", path, err)
 	}
@@ -276,8 +283,8 @@ func validateFinalHeadActiveTask(root string, path string) error {
 	return nil
 }
 
-func validateFinalHeadTask(root string, path string) error {
-	entry, err := finalHeadGitOutput(root, "ls-tree", "HEAD", "--", path)
+func validateFinalHeadTask(root, head, path string) error {
+	entry, err := finalHeadGitOutput(root, "ls-tree", head, "--", path)
 	if err != nil {
 		return fmt.Errorf("HEADのtask file %sを確認できません: %w", path, err)
 	}

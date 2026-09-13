@@ -10,7 +10,7 @@ import (
 const controlProjectionTestOrigin = "https://github.com/shinderuman/codex-worker-orchestrator.git"
 
 func TestControlProjectionAcceptsMachineEnforcedControl(t *testing.T) {
-	root := newControlProvenanceIdentityRepo(t, controlProjectionTestOrigin)
+	root := newControlProvenanceIdentityRepo(t, controlProjectionTestOrigin, controlProvenanceModulePath)
 	writeControlProvenanceGo(t, root, "owner.go", "package fixture\nfunc owner() {}\nfunc postcondition() {}\n")
 	writeControlProvenanceGo(t, root, "owner_test.go", "package fixture\nfunc TestOwner() {}\n")
 	writeControlProvenanceRegistry(t, root, controlProvenanceRegistry{
@@ -29,7 +29,7 @@ func TestControlProjectionAcceptsMachineEnforcedControl(t *testing.T) {
 }
 
 func TestControlProjectionRejectsUnknownControl(t *testing.T) {
-	root := newControlProvenanceIdentityRepo(t, controlProjectionTestOrigin)
+	root := newControlProvenanceIdentityRepo(t, controlProjectionTestOrigin, controlProvenanceModulePath)
 	writeControlProvenanceGo(t, root, "owner.go", "package fixture\nfunc owner() {}\nfunc postcondition() {}\n")
 	writeControlProvenanceGo(t, root, "owner_test.go", "package fixture\nfunc TestOwner() {}\n")
 	writeControlProvenanceRegistry(t, root, controlProvenanceRegistry{
@@ -48,7 +48,7 @@ func TestControlProjectionRejectsUnknownControl(t *testing.T) {
 }
 
 func TestControlProjectionRejectsMalformedControlID(t *testing.T) {
-	root := newControlProvenanceIdentityRepo(t, controlProjectionTestOrigin)
+	root := newControlProvenanceIdentityRepo(t, controlProjectionTestOrigin, controlProvenanceModulePath)
 	writeControlProvenanceRegistry(t, root, controlProvenanceRegistry{
 		Version: 1,
 		Controls: []controlProvenanceControl{{
@@ -71,7 +71,7 @@ func TestControlProjectionRejectsMalformedControlID(t *testing.T) {
 }
 
 func TestControlProjectionRejectsNonMachineControl(t *testing.T) {
-	root := newControlProvenanceIdentityRepo(t, controlProjectionTestOrigin)
+	root := newControlProvenanceIdentityRepo(t, controlProjectionTestOrigin, controlProvenanceModulePath)
 	writeControlProvenanceRegistry(t, root, controlProvenanceRegistry{
 		Version: 1,
 		Controls: []controlProvenanceControl{{
@@ -94,7 +94,7 @@ func TestControlProjectionRejectsNonMachineControl(t *testing.T) {
 }
 
 func TestControlProjectionIgnoresTaskRequirementText(t *testing.T) {
-	root := newControlProvenanceIdentityRepo(t, controlProjectionTestOrigin)
+	root := newControlProvenanceIdentityRepo(t, controlProjectionTestOrigin, controlProvenanceModulePath)
 	writeControlProvenanceGo(t, root, "owner.go", "package fixture\nfunc owner() {}\nfunc postcondition() {}\n")
 	writeControlProvenanceGo(t, root, "owner_test.go", "package fixture\nfunc TestOwner() {}\n")
 	writeControlProvenanceRegistry(t, root, controlProvenanceRegistry{

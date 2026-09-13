@@ -73,6 +73,23 @@ func decodeMarker(m marker) marker {
 `,
 		},
 		{
+			name: "schema promotion in expressionless switch default",
+			path: "glm-worker/internal/example/decoder.go",
+			source: `package example
+const currentVersion = 3
+type marker struct { Version int }
+func decodeMarker(m marker) marker {
+	switch {
+	case m.Version == currentVersion:
+		return m
+	default:
+		m.Version = currentVersion
+	}
+	return m
+}
+`,
+		},
+		{
 			name: "legacy ownership promotion",
 			path: "glm-worker/internal/example/install.go",
 			source: `package example
