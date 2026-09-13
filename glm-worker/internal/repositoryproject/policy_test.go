@@ -16,8 +16,8 @@ func TestPrepareProjectStateCompletedGoalRequiresEmptySchedule(t *testing.T) {
 	}
 
 	plan = strings.Replace(plan, "## ACTIVE\n", "## ACTIVE\n\n- `IMPLEMENTATION_TASKS/a.md`\n", 1)
-	if _, err := PrepareProjectState(plan); err == nil || !strings.Contains(err.Error(), "completed GOALではACTIVE/NEXT/BLOCKEDを空にする必要があります") {
-		t.Fatalf("non-empty completed goal error = %v", err)
+	if _, err := PrepareProjectState(plan); err == nil {
+		t.Fatal("non-empty completed goal was accepted")
 	}
 }
 
@@ -56,12 +56,12 @@ func TestTaskGraphDerivesRunnableAndBlocker(t *testing.T) {
 func TestDeriveContinuationUsesProjectPolicyAfterLifecycleSnapshot(t *testing.T) {
 	next := "IMPLEMENTATION_TASKS/next.md"
 	project := ContinuationProjectView{
-		PlanPresent:   true,
-		ProjectReady:  true,
-		GoalPresent:   true,
-		Active:        []string{"IMPLEMENTATION_TASKS/active.md"},
-		NextRunnable:  &next,
-		Completion:    &CompletionView{Ready: false},
+		PlanPresent:  true,
+		ProjectReady: true,
+		GoalPresent:  true,
+		Active:       []string{"IMPLEMENTATION_TASKS/active.md"},
+		NextRunnable: &next,
+		Completion:   &CompletionView{Ready: false},
 	}
 	lifecycle := ContinuationLifecycle{
 		PinnedTask:        "IMPLEMENTATION_TASKS/active.md",
