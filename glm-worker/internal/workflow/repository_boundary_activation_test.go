@@ -10,19 +10,25 @@ import (
 func TestCaptureRepositoryBoundarySelectsActivationScopedSnapshot(t *testing.T) {
 	tests := []struct {
 		name         string
-		inactive     bool
+		activation   string
 		wantHead     string
 		wantGeneric  int
 		wantBoundary int
 	}{
 		{
-			name:         "active repository harness uses parent authority boundary",
+			name:         "active pin uses parent authority boundary",
+			activation:   "active",
 			wantHead:     "boundary",
 			wantBoundary: 1,
 		},
 		{
-			name:        "inactive repository harness uses generic git boundary",
-			inactive:    true,
+			name:        "inactive pin uses generic git boundary",
+			activation:  "inactive",
+			wantHead:    "generic",
+			wantGeneric: 1,
+		},
+		{
+			name:        "missing pin does not activate parent authority from marker",
 			wantHead:    "generic",
 			wantGeneric: 1,
 		},
@@ -32,7 +38,10 @@ func TestCaptureRepositoryBoundarySelectsActivationScopedSnapshot(t *testing.T) 
 		t.Run(tt.name, func(t *testing.T) {
 			st := newStateStoreT(t)
 			w := newWorkflowT(t, st, &scriptedRunner{})
-			if tt.inactive {
+			switch tt.activation {
+			case "active":
+				pinRepositoryHarnessActiveT(t, st)
+			case "inactive":
 				pinRepositoryHarnessInactiveT(t, st)
 			}
 
@@ -58,10 +67,30 @@ func TestCaptureRepositoryBoundarySelectsActivationScopedSnapshot(t *testing.T) 
 			if genericCalls != tt.wantGeneric || boundaryCalls != tt.wantBoundary {
 				t.Fatalf("capture calls: generic=%d boundary=%d want generic=%d boundary=%d", genericCalls, boundaryCalls, tt.wantGeneric, tt.wantBoundary)
 			}
-			if tt.inactive && got.ParentFiles != nil {
-				t.Fatalf("inactive repository boundary unexpectedly carried parent authority: %#v", got.ParentFiles)
+			if tt.wantGeneric == 1 && got.ParentFiles != nil {
+				t.Fatalf("generic repository boundary unexpectedly carried parent authority: %#v", got.ParentFiles)
 			}
 		})
+	}
+}
+
+func TestCaptureRepositoryBoundaryFailsClosedWhenActiveTaskLosesActivationPin(t *testing.T) {
+	st := newStateStoreT(t)
+	w := newWorkflowT(t, st, &scriptedRunner{})
+	if err := st.Write(activeTaskStateKey, activeTaskRepoPath); err != nil {
+		t.Fatal(err)
+	}
+	w.captureSnapshot = func(string) (state.GitSnapshot, error) {
+		t.Fatal("missing activation pin on active task must fail before generic capture")
+		return state.GitSnapshot{}, nil
+	}
+	w.captureBoundarySnapshot = func(string) (state.GitSnapshot, error) {
+		t.Fatal("missing activation pin on active task must fail before parent-authority capture")
+		return state.GitSnapshot{}, nil
+	}
+
+	if _, err := w.captureRepositoryBoundary(); err == nil {
+		t.Fatal("missing activation pin on active task must fail closed")
 	}
 }
 

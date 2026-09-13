@@ -78,7 +78,6 @@ func TestReviewResumeCrashWindowTamperFailsClosed(t *testing.T) {
 
 func TestWorkerResumeParentUpdateDuringStopProceeds(t *testing.T) {
 	st := newStateStoreT(t)
-	pinRepositoryHarnessActiveT(t, st)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: implementedPacket("resumed")},
 		{structured: passPacket()},
