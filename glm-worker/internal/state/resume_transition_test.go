@@ -48,9 +48,7 @@ func TestVerifyGuardRepairResumeRejectsUnrelatedAttemptAndCheckpoint(t *testing.
 	st := newLifecycleTestStore(t)
 	taskID, checkpoint, record := prepareGuardResumeTransitionTest(t, st)
 	attemptID := "22222222-2222-4222-8222-222222222222"
-	var err error
-	record, err = st.PrepareGuardRepairResume(record, checkpoint, attemptID)
-	if err != nil {
+	if _, err := st.PrepareGuardRepairResume(record, checkpoint, attemptID); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.ObserveGuardRepairResume(checkpoint, attemptID); err != nil {
