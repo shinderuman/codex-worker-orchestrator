@@ -77,6 +77,9 @@ func executeRuntimeControl(cmd Command, cfg config.AppConfig, stdout io.Writer) 
 }
 
 func executeReadOnly(cmd Command, cfg config.AppConfig, stdout io.Writer) error {
+	if cmd.Mode == ModeProjectState {
+		return executeProjectStateInspection(cmd, cfg, state.AttachStateStore(cfg), stdout)
+	}
 	switch cmd.Mode {
 	case ModeTimeline,
 		ModeConvergence,
@@ -112,8 +115,6 @@ func executeReadOnlyInspection(cmd Command, cfg config.AppConfig, stdout io.Writ
 		return printCodexLimit(cfg, stdout)
 	case ModePacketCheck:
 		return executeStatelessProjection(cmd, cfg, stdout)
-	case ModeProjectState:
-		return executeProjectStateInspection(cmd, cfg, st, stdout)
 	case ModeRepoSearch:
 		return printRepoSearch(repoSearchRequest{
 			Question:    cmd.Payload,
