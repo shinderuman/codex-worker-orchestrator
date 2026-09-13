@@ -28,7 +28,15 @@ func scopedControlProvenanceViolations(root string) ([]Violation, error) {
 	if !info.IsDir() {
 		return nil, fmt.Errorf("control provenance surface is not a directory: %s", surface)
 	}
-	return controlProvenanceViolations(root)
+	violations, err := controlProvenanceViolations(root)
+	if err != nil {
+		return nil, err
+	}
+	projectionViolations, err := controlProjectionViolations(root)
+	if err != nil {
+		return nil, err
+	}
+	return append(violations, projectionViolations...), nil
 }
 
 func controlProvenanceModuleMatches(root string) (bool, error) {
