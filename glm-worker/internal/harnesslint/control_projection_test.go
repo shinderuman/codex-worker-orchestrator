@@ -47,6 +47,29 @@ func TestControlProjectionRejectsUnknownControl(t *testing.T) {
 	}
 }
 
+func TestControlProjectionRejectsMalformedControlID(t *testing.T) {
+	root := newControlProvenanceIdentityRepo(t, controlProjectionTestOrigin)
+	writeControlProvenanceRegistry(t, root, controlProvenanceRegistry{
+		Version: 1,
+		Controls: []controlProvenanceControl{{
+			ID:                     "partial-control",
+			Classification:         controlClassificationPartial,
+			Purpose:                "partial purpose",
+			ResidualParentJudgment: "parent decides",
+			Boundary:               "not fully machine enforced",
+		}},
+	})
+	writeControlProjectionMarkdown(t, root, "codex/AGENTS.md", "`control:Bad_ID`\n")
+
+	violations, err := scopedControlProvenanceViolations(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasControlProjectionViolation(violations, "codex/AGENTS.md", "Bad_ID", "invalid id syntax") {
+		t.Fatalf("violations = %#v", violations)
+	}
+}
+
 func TestControlProjectionRejectsNonMachineControl(t *testing.T) {
 	root := newControlProvenanceIdentityRepo(t, controlProjectionTestOrigin)
 	writeControlProvenanceRegistry(t, root, controlProvenanceRegistry{
