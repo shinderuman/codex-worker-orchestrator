@@ -417,6 +417,7 @@ func nodeMutatesCurrentState(node ast.Node) bool {
 					mutates = true
 					break
 				}
+			}
 		}
 		return !mutates
 	})
