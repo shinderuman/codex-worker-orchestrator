@@ -113,7 +113,9 @@ func TestEvidenceBatchDegradesPartsAlreadyDeliveredByStandaloneRead(t *testing.T
 
 func TestEvidenceBatchMergesLedgerWithoutLosingStandaloneClaims(t *testing.T) {
 	fixture := newParentEvidenceFixture(t)
-	saveParentEvidenceLedger(fixture.st, state.ParentEvidenceSurfaceSearch, "standalone-digest", state.ParentEvidenceOriginStandalone, "")
+	if err := saveParentEvidenceLedger(fixture.st, state.ParentEvidenceSurfaceSearch, "standalone-digest", state.ParentEvidenceOriginStandalone, ""); err != nil {
+		t.Fatal(err)
+	}
 
 	result := runParentEvidence(t, fixture, parentEvidenceManifest{
 		Version: 1,
