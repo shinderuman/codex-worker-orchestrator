@@ -1,12 +1,13 @@
 package parentactioncmd
 
 import (
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/app"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryproject"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryprojecttree"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-func prepareCompletionVerification(cfg config.AppConfig, st *state.StateStore) (completionVerification, *app.ParentRequestCompletionProjection) {
+func prepareCompletionVerification(cfg config.AppConfig, st *state.StateStore) (completionVerification, *repositoryproject.ParentRequestCompletionProjection) {
 	verification := verifyParentCompletion(cfg.RepoRoot, st)
 	if verification.failure != nil {
 		return verification, nil
@@ -19,7 +20,7 @@ func prepareCompletionVerification(cfg config.AppConfig, st *state.StateStore) (
 		verification.failure = verifyCompletionUnchanged(cfg.RepoRoot, verification.gitRepo, verification.verifiedHead)
 		return verification, nil
 	}
-	projection, err := app.BuildParentRequestCompletionProjection(cfg)
+	projection, err := repositoryprojecttree.BuildParentRequestCompletionProjection(cfg.RepoRoot)
 	if err != nil {
 		verification.failure = &finalizationFailure{
 			Stage:  "project",
