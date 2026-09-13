@@ -175,8 +175,8 @@ func TestResumeWithRepairedWorkerRecordsOriginalResumeAfterLifecycleEntry(t *tes
 }
 
 func TestRecoverGuardRepairResumeResetsUnobservedAttemptToReady(t *testing.T) {
-	_, st, record := newGuardRepairLifecycleState(t)
-	persistReadyGuardRepair(t, config.AppConfig{RepoRoot: st.RepoRoot()}, st, &record)
+	cfg, st, record := newGuardRepairLifecycleState(t)
+	persistReadyGuardRepair(t, cfg, st, &record)
 	checkpoint, err := st.LoadResumeCheckpoint()
 	if err != nil {
 		t.Fatal(err)
