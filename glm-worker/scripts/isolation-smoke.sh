@@ -71,6 +71,16 @@ ZAI_SONNET="$(extract_env ANTHROPIC_DEFAULT_SONNET_MODEL)"
 ZAI_HAIKU="$(extract_env ANTHROPIC_DEFAULT_HAIKU_MODEL)"
 API_TIMEOUT="$(extract_env API_TIMEOUT_MS)"
 NONESSENTIAL="$(extract_env CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC)"
+AUTO_COMPACT="$(extract_env CLAUDE_CODE_AUTO_COMPACT_WINDOW)"
+ALWAYS_EFFORT="$(extract_env CLAUDE_CODE_ALWAYS_ENABLE_EFFORT)"
+if [[ -z "$AUTO_COMPACT" || -z "$ALWAYS_EFFORT" ]]; then
+	echo "ERROR: Claude invocation defaults が $REAL_SETTINGS にありません" >&2
+	exit 2
+fi
+AUTO_COMPACT_ARG="$AUTO_COMPACT"
+if [[ "$AUTO_COMPACT" =~ ^[0-9]+000$ ]]; then
+	AUTO_COMPACT_ARG="${AUTO_COMPACT%000}k"
+fi
 
 set +e
 OUTPUT_FILE="$WORK/claude.out"
@@ -87,6 +97,8 @@ env -i \
 	${API_TIMEOUT:+API_TIMEOUT_MS="$API_TIMEOUT"} \
 	${NONESSENTIAL:+CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC="$NONESSENTIAL"} \
 	CLAUDE_CONFIG_DIR="$TMPCFG" \
+	CLAUDE_CODE_AUTO_COMPACT_WINDOW="$AUTO_COMPACT" \
+	CLAUDE_CODE_ALWAYS_ENABLE_EFFORT="$ALWAYS_EFFORT" \
 	CLAUDE_CODE_SAFE_MODE="1" \
 	"$CLAUDE_BIN" -p \
 	--safe-mode \
@@ -95,6 +107,7 @@ env -i \
 	--name glm-isolation-smoke \
 	--model opus \
 	--effort high \
+	--autocompact "$AUTO_COMPACT_ARG" \
 	--output-format json \
 	--dangerously-skip-permissions \
 	--strict-mcp-config \
