@@ -45,4 +45,5 @@ source commentは`commentlint`のmachine policyを正とし、自然言語commen
 
 ## 出力
 途中経過、大量diff、test全文を出さず、実行環境指定schemaの結果を1つだけ返す。
-STATUSは`PASS`、`FIX_REQUIRED`、`NEEDS_SOL_REVIEW`。PASSのRISKはLOW、NEEDS_SOL_REVIEWはHIGH。field構成、TARGETS/ARTIFACTS、改行・size等の構造制約は`control:packet-schema-result`とcurrent machine schema/validatorを正とする。
+STATUSは`PASS`、`FIX_REQUIRED`、`NEEDS_SOL_REVIEW`。PASSのRISKはLOW、NEEDS_SOL_REVIEWはHIGH。field構成、TARGETS、改行・size等の構造制約は`control:packet-schema-result`とcurrent machine schema/validatorを正とする。
+- `ARTIFACTS`は必要な実在通常fileの絶対pathだけ。不要なら空。
