@@ -63,6 +63,7 @@ func TestCaptureReturnsBaselineToCurrentDiffWithoutMutatingState(t *testing.T) {
 	if err := os.Remove(filepath.Join(repoRoot, "committed-then-removed.txt")); err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("GIT_TRACE", "1")
 
 	diff, available, err := Capture(repoRoot, st)
 	if err != nil {
@@ -70,6 +71,9 @@ func TestCaptureReturnsBaselineToCurrentDiffWithoutMutatingState(t *testing.T) {
 	}
 	if !available {
 		t.Fatal("baseline unexpectedly unavailable")
+	}
+	if bytes.Contains(diff, []byte("trace:")) {
+		t.Fatalf("git stderr contaminated task diff:\n%s", diff)
 	}
 	for _, want := range [][]byte{
 		[]byte("+after"),
@@ -145,6 +149,7 @@ func TestCaptureKeepsTaskCreatedFileAcrossCommit(t *testing.T) {
 	if err := os.Symlink("target-dir", filepath.Join(repoRoot, "directory-link")); err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("GIT_TRACE", "1")
 	beforeCommit, available, err := Capture(repoRoot, st)
 	if err != nil {
 		t.Fatal(err)
@@ -162,6 +167,9 @@ func TestCaptureKeepsTaskCreatedFileAcrossCommit(t *testing.T) {
 		t.Fatal("baseline unexpectedly unavailable")
 	}
 	for _, diff := range [][]byte{beforeCommit, afterCommit} {
+		if bytes.Contains(diff, []byte("trace:")) {
+			t.Fatalf("git stderr contaminated task-created diff:\n%s", diff)
+		}
 		for _, want := range [][]byte{
 			[]byte("new file mode"),
 			[]byte("created-during-task.txt"),
@@ -178,6 +186,20 @@ func TestCaptureKeepsTaskCreatedFileAcrossCommit(t *testing.T) {
 				t.Fatalf("diff missing %q:\n%s", want, diff)
 			}
 		}
+	}
+}
+
+func TestGitWithIndexFailureIncludesGitStderr(t *testing.T) {
+	repoRoot := t.TempDir()
+	runGit(t, repoRoot, "init", "-q")
+	t.Setenv("GIT_TRACE", "1")
+
+	_, err := gitWithIndex(repoRoot, filepath.Join(t.TempDir(), "index"), nil, "not-a-command")
+	if err == nil {
+		t.Fatal("invalid git command unexpectedly succeeded")
+	}
+	if !strings.Contains(err.Error(), "trace:") {
+		t.Fatalf("git stderr missing from failure: %v", err)
 	}
 }
 
