@@ -1,6 +1,9 @@
 package parentactioncmd
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestGitAheadBehindUsesCapturedHeadOID(t *testing.T) {
 	fixture := newPushBindingFixture(t)
@@ -8,7 +11,7 @@ func TestGitAheadBehindUsesCapturedHeadOID(t *testing.T) {
 
 	writePushBindingFile(t, fixture.repo, "binding.txt", "base\nsecond\n")
 	runFinalizationGit(t, fixture.repo, "commit", "-q", "-am", "second")
-	currentHead := pushBindingGitOutput(t, fixture.repo, "rev-parse", "HEAD")
+	currentHead := strings.TrimSpace(pushBindingGitOutput(t, fixture.repo, "rev-parse", "HEAD"))
 
 	ahead, behind, err := gitAheadBehind(fixture.repo, "refs/remotes/origin/"+fixture.branch, capturedHead)
 	if err != nil {
