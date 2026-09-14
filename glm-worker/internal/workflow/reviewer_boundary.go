@@ -110,7 +110,6 @@ func renderReviewedBoundary(current []taskdiff.FileIdentity, reviewed []reviewBl
 	statuses := classifyReviewedBoundary(current, reviewed)
 	var builder strings.Builder
 	builder.WriteString("REVIEWED_BOUNDARY:\n")
-	builder.WriteString("RULE: exact head/index/worktree identity match with a recorded review round is already reviewed; mismatched or unrecorded files are the review target (fail closed)\n")
 	newCount := 0
 	for _, entry := range statuses {
 		if entry.reviewed {
