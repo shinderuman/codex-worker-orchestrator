@@ -14,12 +14,12 @@ func TestRepoSearchArchiveWriteFailurePreservesLiveEvidence(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := st.AppendTaskEvent(TaskEventRecord{
-		TaskID: firstTask,
-		Kind: RepoSearchEventKind,
-		Phase: RepoSearchCategoryWorkerNavigation,
-		Subtype: RepoSearchOutcomeSearchHit,
+		TaskID:      firstTask,
+		Kind:        RepoSearchEventKind,
+		Phase:       RepoSearchCategoryWorkerNavigation,
+		Subtype:     RepoSearchOutcomeSearchHit,
 		SearchPaths: []string{"kept.go"},
-		DurationMS: 250,
+		DurationMS:  250,
 	}); err != nil {
 		t.Fatal(err)
 	}
