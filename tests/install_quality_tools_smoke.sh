@@ -138,7 +138,7 @@ assert_user_tools_unchanged() {
 run_install
 assert_user_tools_unchanged
 old_shfmt="$shared/codex-worker-orchestrator-shfmt-3.13.1"
-deadcode="$shared/codex-worker-orchestrator-deadcode-0.50.0"
+deadcode="$shared/codex-worker-orchestrator-deadcode-0.49.0"
 golangci="$shared/codex-worker-orchestrator-golangci-lint-2.7.0"
 shellcheck="$shared/codex-worker-orchestrator-shellcheck-0.11.0"
 test -x "$old_shfmt"
