@@ -329,7 +329,7 @@ func TestExecuteAcquiresAndReleasesLock(t *testing.T) {
 		t.Fatal("lock解放後の次task開始前にparent reviewを解決できませんでした")
 	}
 	if _, err := st.CompleteParentAwaiting(func(acceptedRisk string) (*state.SessionRotationEvaluation, error) {
-		return EvaluateSessionRotationTerminal(cfg, st, state.SessionRotationTerminalAccept, acceptedRisk)
+		return EvaluateCanonicalSessionRotationTerminal(cfg, st, state.SessionRotationTerminalAccept, acceptedRisk)
 	}); err != nil {
 		t.Fatal(err)
 	}

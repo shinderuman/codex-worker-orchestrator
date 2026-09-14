@@ -1,3 +1,0 @@
-package app
-
-var EvaluateSessionRotationTerminal = EvaluateCanonicalSessionRotationTerminal
