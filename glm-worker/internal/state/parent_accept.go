@@ -9,10 +9,6 @@ func (s *StateStore) AcceptParentReview() (bool, error) {
 	if err := s.RequireParentReviewAcceptanceEvidence(); err != nil {
 		return false, err
 	}
-	taskID, err := s.TaskID()
-	if err != nil {
-		return false, err
-	}
 	review, err := s.snapshotLifecycleFile(parentReviewStateFile)
 	if err != nil {
 		return false, err
@@ -20,6 +16,13 @@ func (s *StateStore) AcceptParentReview() (bool, error) {
 	resolved, ok, resolveErr := s.resolveParentCompletionState(ParentOutcomeAccepted, SessionRotationTerminalAccept)
 	if !ok || resolveErr != nil {
 		return ok, resolveErr
+	}
+	taskID, err := s.TaskID()
+	if err != nil {
+		if restoreErr := s.restoreLifecycleFile(review); restoreErr != nil {
+			return false, errors.Join(err, restoreErr)
+		}
+		return false, err
 	}
 
 	result := s.commitParentCompletion(TaskStatusAwaitingParentCompletion, false, nil)
