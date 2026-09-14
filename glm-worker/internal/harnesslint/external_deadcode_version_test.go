@@ -3,6 +3,7 @@
 package harnesslint
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -38,6 +39,23 @@ printf '\tmod\tgolang.org/x/tools\tv0.49.0\n'
 	}
 	if got := observedQualityToolVersion(deadcodeToolName, result.output); got != "0.49.0" {
 		t.Fatalf("deadcode version came from filename instead of module metadata: got %q output=%q", got, result.output)
+	}
+}
+
+func TestDeadcodeVersionRejectsNonExecutableBinary(t *testing.T) {
+	deadcodePath := filepath.Join(t.TempDir(), "codex-worker-orchestrator-deadcode-0.49.0")
+	if err := os.WriteFile(deadcodePath, []byte("not executable\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runner := realCommandRunner{
+		goToolchain:  "local",
+		goCache:      t.TempDir(),
+		deadcodePath: deadcodePath,
+	}
+	_, err := runner.runVersion(t.TempDir(), deadcodeToolName)
+	var commandErr *QualityToolCommandError
+	if !errors.As(err, &commandErr) || commandErr.Tool != deadcodeToolName {
+		t.Fatalf("non-executable deadcode must fail preflight as a quality-tool command error: %v", err)
 	}
 }
 
