@@ -323,6 +323,10 @@ func (s *StateStore) AllTaskStats() ([]TaskStats, error) {
 	current, err := s.CurrentTaskStats()
 	switch {
 	case err == nil:
+		current, err = s.projectRepoSearchStatsForRead(current)
+		if err != nil {
+			return nil, fmt.Errorf("current repo-search evidenceを読めません: %w", err)
+		}
 		result = append(result, current)
 	case errors.Is(err, errUnsupportedTaskStatsVersion):
 		return result, nil
