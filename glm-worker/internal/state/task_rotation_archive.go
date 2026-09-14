@@ -6,43 +6,48 @@ import (
 	"os"
 )
 
-type taskStatsArchiveSnapshot struct {
+type taskRotationFileSnapshot struct {
 	data   []byte
 	exists bool
 }
 
 func (s *StateStore) archiveCurrentStatsForTaskRotation(parentIdentity *ParentCodexIdentity, stats TaskStats) error {
 	archivePath := s.TaskStatsArchivePath(stats.TaskID)
-	snapshot, err := captureTaskStatsArchiveSnapshot(archivePath)
+	archiveSnapshot, err := captureTaskRotationFileSnapshot(archivePath)
+	if err != nil {
+		return err
+	}
+	telemetryPath := s.ModelCallLogPath(stats.TaskID)
+	telemetrySnapshot, err := captureTaskRotationFileSnapshot(telemetryPath)
 	if err != nil {
 		return err
 	}
 
-	resolved, hadOpen, _ := stats.resolveParentOutcome(ParentOutcomeUnknown, "", "")
 	if err := s.archiveCurrentStats(parentIdentity, stats); err != nil {
-		if rollbackErr := restoreTaskStatsArchiveSnapshot(archivePath, snapshot); rollbackErr != nil {
-			return errors.Join(err, fmt.Errorf("task stats archiveをrollbackできません: %w", rollbackErr))
+		rollbackErr := errors.Join(
+			restoreTaskRotationFileSnapshot(archivePath, archiveSnapshot),
+			restoreTaskRotationFileSnapshot(telemetryPath, telemetrySnapshot),
+		)
+		if rollbackErr != nil {
+			return errors.Join(err, fmt.Errorf("task rotation archiveをrollbackできません: %w", rollbackErr))
 		}
 		return err
-	}
-	if hadOpen {
-		s.appendParentOutcomeEvent(stats.TaskID, ParentPhaseClose, ParentOutcomeUnknown, "", "", resolved)
 	}
 	return nil
 }
 
-func captureTaskStatsArchiveSnapshot(path string) (taskStatsArchiveSnapshot, error) {
+func captureTaskRotationFileSnapshot(path string) (taskRotationFileSnapshot, error) {
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return taskStatsArchiveSnapshot{}, nil
+		return taskRotationFileSnapshot{}, nil
 	}
 	if err != nil {
-		return taskStatsArchiveSnapshot{}, fmt.Errorf("既存task stats archiveを読めません: %w", err)
+		return taskRotationFileSnapshot{}, fmt.Errorf("task rotation rollback対象を読めません: %w", err)
 	}
-	return taskStatsArchiveSnapshot{data: data, exists: true}, nil
+	return taskRotationFileSnapshot{data: data, exists: true}, nil
 }
 
-func restoreTaskStatsArchiveSnapshot(path string, snapshot taskStatsArchiveSnapshot) error {
+func restoreTaskRotationFileSnapshot(path string, snapshot taskRotationFileSnapshot) error {
 	if !snapshot.exists {
 		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
