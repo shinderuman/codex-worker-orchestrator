@@ -9,7 +9,6 @@ import (
 	"unicode"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/reposearch"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -36,7 +35,7 @@ func (w *Workflow) reviewerDiffFirstNavigation(request string, reviewNumber int)
 		return renderReviewerDiffFirstNavigation(nil, reviewerSearchDiffErrorFallback, "", nil), nil
 	}
 	paths = uniqueSortedPaths(paths)
-	parentMetadataFilterActive, err := reviewerParentMetadataFilterActive(w.state)
+	parentMetadataFilterActive, err := reviewerParentMetadataFilterActive(w.config.RepoRoot, w.state)
 	if err != nil {
 		return "", err
 	}
@@ -66,12 +65,8 @@ func (w *Workflow) reviewerDiffFirstNavigation(request string, reviewNumber int)
 	return renderReviewerDiffFirstNavigation(paths, outcome, query, candidates), nil
 }
 
-func reviewerParentMetadataFilterActive(st *state.StateStore) (bool, error) {
-	activation, pinned, err := readRepositoryHarnessActivationPin(st)
-	if err != nil {
-		return false, err
-	}
-	return pinned && activation == repositoryharness.ActivationActiveValue, nil
+func reviewerParentMetadataFilterActive(repoRoot string, st *state.StateStore) (bool, error) {
+	return RepositoryHarnessActive(repoRoot, st)
 }
 
 func reviewerImpactPaths(paths []string, parentMetadataFilterActive bool) []string {
