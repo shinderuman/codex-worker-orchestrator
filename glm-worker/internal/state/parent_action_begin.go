@@ -107,11 +107,6 @@ func (s *StateStore) RecoverParentActionBeginFromState() (TaskStatus, error) {
 	if status != TaskStatusActive && status != record.SourceStatus {
 		return TaskStatusNone, fmt.Errorf("parent action recovery requires active task or retry of %s, got %s", record.SourceStatus, status)
 	}
-	if _, err := s.LoadResumeCheckpoint(); err == nil {
-		return TaskStatusNone, fmt.Errorf("parent action recovery requires no resume checkpoint")
-	} else if !errors.Is(err, ErrNoResumeCheckpoint) {
-		return TaskStatusNone, err
-	}
 	label, err := s.CurrentParentReviewLabel()
 	if err != nil {
 		return TaskStatusNone, fmt.Errorf("parent action recovery cannot read parent review state: %w", err)
@@ -130,6 +125,9 @@ func (s *StateStore) RecoverParentActionBeginFromState() (TaskStatus, error) {
 			return TaskStatusNone, fmt.Errorf("parent action recovery for a fix requires no pending decision")
 		}
 	}
+	if err := s.clearParentActionBeginResume(record); err != nil {
+		return TaskStatusNone, err
+	}
 	if status == TaskStatusActive {
 		if err := s.SetTaskStatus(record.SourceStatus); err != nil {
 			return TaskStatusNone, err
@@ -139,4 +137,28 @@ func (s *StateStore) RecoverParentActionBeginFromState() (TaskStatus, error) {
 		return record.SourceStatus, err
 	}
 	return record.SourceStatus, nil
+}
+
+func (s *StateStore) clearParentActionBeginResume(record parentActionBeginRecord) error {
+	checkpoint, err := s.LoadResumeCheckpoint()
+	if errors.Is(err, ErrNoResumeCheckpoint) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if checkpoint.IsStopped() || checkpoint.CompletedResult != nil || checkpoint.QualitySurfaceApprovalPending {
+		return fmt.Errorf("parent action recovery cannot discard a checkpoint after model-call admission")
+	}
+	if checkpoint.Stage != ResumeStageWorker || checkpoint.Role != WorkerRole {
+		return fmt.Errorf("parent action recovery checkpoint is not a worker pre-call checkpoint")
+	}
+	expectedPhase := WorkerPhaseCategoryExplicitFix
+	if record.SourceStatus == TaskStatusWaitingDecision {
+		expectedPhase = WorkerPhaseCategoryDecision
+	}
+	if WorkerPhaseCategory(checkpoint.Phase) != expectedPhase {
+		return fmt.Errorf("parent action recovery checkpoint phase %s does not match source %s", checkpoint.Phase, record.SourceStatus)
+	}
+	return s.ClearResumeCheckpoint()
 }
