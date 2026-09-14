@@ -99,6 +99,60 @@ func TestDecisionBoundaryContextDoesNotTrustPromptMarker(t *testing.T) {
 	}
 }
 
+func TestDecisionBoundaryContextProjectsAuthorityStateOnly(t *testing.T) {
+	tests := []struct {
+		name       string
+		fixed      map[semanticDecisionAxis]string
+		unresolved string
+	}{
+		{
+			name:       "no fixed axes",
+			fixed:      map[semanticDecisionAxis]string{},
+			unresolved: "responsibility,dependency-direction,public-surface,compatibility,validation-error-semantics",
+		},
+		{
+			name: "partial",
+			fixed: map[semanticDecisionAxis]string{
+				decisionAxisResponsibility:  "keep workflow ownership",
+				decisionAxisValidationError: "preserve current rejection behavior",
+			},
+			unresolved: "dependency-direction,public-surface,compatibility",
+		},
+		{
+			name: "all fixed",
+			fixed: map[semanticDecisionAxis]string{
+				decisionAxisResponsibility:      "workflow",
+				decisionAxisDependencyDirection: "inward",
+				decisionAxisPublicSurface:       "unchanged",
+				decisionAxisCompatibility:       "current only",
+				decisionAxisValidationError:     "preserve",
+			},
+			unresolved: "none",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			block := decisionBoundaryContextBlock("IMPLEMENTATION_TASKS/task.md", semanticDecisionAuthority{fixed: tt.fixed})
+			for _, want := range []string{
+				solDecisionBoundaryMarker,
+				"AUTHORITY_SOURCE: IMPLEMENTATION_TASKS/task.md / ## Sol decision authority",
+				"FIXED_AXES:",
+				"UNRESOLVED_AXES: " + tt.unresolved,
+			} {
+				if !strings.Contains(block, want) {
+					t.Fatalf("decision boundary projection missing %q: %s", want, block)
+				}
+			}
+			for _, forbidden := range []string{"AUTHORITY_RULES:", "NEEDS_SOL_DECISION"} {
+				if strings.Contains(block, forbidden) {
+					t.Fatalf("decision boundary projection contains interpretation prose %q: %s", forbidden, block)
+				}
+			}
+		})
+	}
+}
+
 func TestRunWorkerModelInjectsPinnedTaskDecisionBoundary(t *testing.T) {
 	st := newStateStoreT(t)
 	pinRepositoryHarnessActiveT(t, st)
@@ -147,6 +201,9 @@ func TestRunWorkerModelInjectsPinnedTaskDecisionBoundary(t *testing.T) {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("production prompt missing %q: %s", want, prompt)
 		}
+	}
+	if strings.Contains(prompt, "AUTHORITY_RULES:") {
+		t.Fatalf("production prompt should project authority state without duplicate interpretation rules: %s", prompt)
 	}
 }
 
