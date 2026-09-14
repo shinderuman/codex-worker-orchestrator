@@ -373,7 +373,7 @@ func TestExecuteNewTaskRejectsOpenParentReviewUntilAccepted(t *testing.T) {
 	}
 
 	if _, err := st.CompleteParentAwaiting(func(acceptedRisk string) (*state.SessionRotationEvaluation, error) {
-		return EvaluateSessionRotationTerminal(cfg, st, state.SessionRotationTerminalAccept, acceptedRisk)
+		return EvaluateCanonicalSessionRotationTerminal(cfg, st, state.SessionRotationTerminalAccept, acceptedRisk)
 	}); err != nil {
 		t.Fatal(err)
 	}
