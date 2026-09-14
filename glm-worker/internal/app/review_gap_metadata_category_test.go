@@ -22,12 +22,12 @@ func TestReviewGapMetadataCategoryRequiresTaskActivationEvidence(t *testing.T) {
 	inactive := false
 
 	tests := []struct {
-		name       string
-		active     *bool
+		name          string
+		active        *bool
 		activationErr error
-		wantStatus string
-		wantReason string
-		want       string
+		wantStatus    string
+		wantReason    string
+		want          string
 	}{
 		{name: "foreign repository", active: &inactive, wantStatus: reviewGapKnown, want: state.FixCategoryDocumentation},
 		{name: "activated repository harness", active: &active, wantStatus: reviewGapKnown, want: state.FixCategoryMetadata},
