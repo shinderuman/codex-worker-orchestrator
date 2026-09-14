@@ -6,6 +6,38 @@ import (
 	"testing"
 )
 
+func TestArchiveCurrentStatsPreservesStoredRepoSearchAggregateWithoutEvents(t *testing.T) {
+	st := newRepoSearchEvalTestStore(t)
+	taskID, err := st.StartNewTask()
+	if err != nil {
+		t.Fatal(err)
+	}
+	seedStoredRepoSearchAggregate(t, st)
+	removeTaskEventLog(t, st, taskID)
+
+	st.ArchiveCurrentStats()
+
+	archived := readArchivedTaskStats(t, st, taskID)
+	requireStoredRepoSearchAggregate(t, archived)
+}
+
+func TestBestEffortTaskRotationPreservesStoredRepoSearchAggregateWithoutEvents(t *testing.T) {
+	st := newRepoSearchEvalTestStore(t)
+	firstTask, err := st.StartNewTask()
+	if err != nil {
+		t.Fatal(err)
+	}
+	seedStoredRepoSearchAggregate(t, st)
+	removeTaskEventLog(t, st, firstTask)
+
+	if _, err := st.StartNewTask(); err != nil {
+		t.Fatal(err)
+	}
+
+	archived := readArchivedTaskStats(t, st, firstTask)
+	requireStoredRepoSearchAggregate(t, archived)
+}
+
 func TestRepoSearchArchiveWriteFailurePreservesLiveEvidence(t *testing.T) {
 	st := newRepoSearchEvalTestStore(t)
 	firstTask, err := st.StartNewTask()
@@ -78,6 +110,61 @@ func TestRepoSearchArchiveWriteFailurePreservesLiveEvidence(t *testing.T) {
 	}
 	if got := countUnknownParentCloseEvents(t, st, firstTask); got != 1 {
 		t.Fatalf("retry recorded unexpected parent-close telemetry count: got %d want 1", got)
+	}
+}
+
+func seedStoredRepoSearchAggregate(t *testing.T, st *StateStore) {
+	t.Helper()
+	stats, err := st.loadTaskStats()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stats.RepoSearchCalls = 7
+	stats.RepoSearchQueriesByCategory = map[string]int{
+		RepoSearchCategoryWorkerNavigation:    4,
+		RepoSearchCategoryReviewerIndependent: 3,
+	}
+	stats.RepoSearchOutcomes = map[string]int{
+		RepoSearchOutcomeSearchHit:        5,
+		RepoSearchOutcomeIndependentEmpty: 2,
+	}
+	stats.RepoSearchResults = 11
+	stats.RepoSearchDurationMS = 1200
+	if err := st.writeTaskStats(stats); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func removeTaskEventLog(t *testing.T, st *StateStore, taskID string) {
+	t.Helper()
+	if err := os.Remove(st.TaskEventLogPath(taskID)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		t.Fatal(err)
+	}
+}
+
+func readArchivedTaskStats(t *testing.T, st *StateStore, taskID string) TaskStats {
+	t.Helper()
+	data, err := os.ReadFile(st.TaskStatsArchivePath(taskID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	stats, err := decodeTaskStats(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return stats
+}
+
+func requireStoredRepoSearchAggregate(t *testing.T, stats TaskStats) {
+	t.Helper()
+	if stats.RepoSearchCalls != 7 || stats.RepoSearchResults != 11 || stats.RepoSearchDurationMS != 1200 {
+		t.Fatalf("stored repo-search aggregate was not preserved: %+v", stats)
+	}
+	if stats.RepoSearchQueriesByCategory[RepoSearchCategoryWorkerNavigation] != 4 || stats.RepoSearchQueriesByCategory[RepoSearchCategoryReviewerIndependent] != 3 {
+		t.Fatalf("stored repo-search query aggregate was not preserved: %+v", stats.RepoSearchQueriesByCategory)
+	}
+	if stats.RepoSearchOutcomes[RepoSearchOutcomeSearchHit] != 5 || stats.RepoSearchOutcomes[RepoSearchOutcomeIndependentEmpty] != 2 {
+		t.Fatalf("stored repo-search outcome aggregate was not preserved: %+v", stats.RepoSearchOutcomes)
 	}
 }
 

@@ -16,19 +16,17 @@ func (s *StateStore) projectCurrentRepoSearchStats() (TaskStats, error) {
 	if err != nil {
 		return TaskStats{}, err
 	}
-
-	measure, _, err := s.RepoSearchMeasureFromTaskEvents(stats.TaskID)
-	if err != nil {
-		return TaskStats{}, err
-	}
-	applyRepoSearchMeasure(&stats, measure)
-	return stats, nil
+	return s.projectRepoSearchStatsFromRetainedEvents(stats)
 }
 
 func (s *StateStore) projectRepoSearchStatsForRead(stats TaskStats) (TaskStats, error) {
 	if !s.repoSearchReadProjection {
 		return stats, nil
 	}
+	return s.projectRepoSearchStatsFromRetainedEvents(stats)
+}
+
+func (s *StateStore) projectRepoSearchStatsFromRetainedEvents(stats TaskStats) (TaskStats, error) {
 	measure, retained, err := s.RepoSearchMeasureFromTaskEvents(stats.TaskID)
 	if err != nil {
 		return TaskStats{}, err
