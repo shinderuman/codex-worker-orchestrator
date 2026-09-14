@@ -121,7 +121,7 @@ func TestQualityGateExtraArgvFailsClosedBeforeProcess(t *testing.T) {
 			loadConfigCalled = true
 			return config.AppConfig{}, nil
 		},
-		defaultRunnerFactory,
+		instructionSurfaceRunnerFactory,
 		nil,
 		&bytes.Buffer{},
 		&stderr,
