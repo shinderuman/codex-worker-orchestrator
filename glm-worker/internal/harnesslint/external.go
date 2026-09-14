@@ -95,11 +95,11 @@ func (r realCommandRunner) runEnv(dir, name string, env []string, args ...string
 func (r realCommandRunner) runVersion(dir, name string, args ...string) (commandResult, error) {
 	commandName, toolchain := r.commandSpec(name)
 	if name == deadcodeToolName {
-		if _, err := os.Stat(r.deadcodePath); err != nil {
-			if os.IsNotExist(err) {
+		if _, err := exec.LookPath(r.deadcodePath); err != nil {
+			if errors.Is(err, os.ErrNotExist) {
 				return commandResult{}, &MissingToolError{Name: name}
 			}
-			return commandResult{}, err
+			return commandResult{}, &QualityToolCommandError{Tool: name}
 		}
 		commandName = "go"
 		args = []string{"version", "-m", r.deadcodePath}
