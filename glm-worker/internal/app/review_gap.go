@@ -10,7 +10,6 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
 )
 
 type reviewGapReport struct {
@@ -103,17 +102,18 @@ type reviewGapReworkCost struct {
 }
 
 type reviewGapTaskEvidence struct {
-	stats                   *state.TaskStats
-	logs                    []state.ModelCallLog
-	events                  []state.ModelCallLog
-	eventIndex              int
-	rounds                  []state.RoundRecord
-	roundErr                error
-	taskEvents              []state.TaskEventRecord
-	association             codexAssociation
-	scan                    bundleRolloutScan
-	scanErr                 error
-	repositoryHarnessActive bool
+	stats                         *state.TaskStats
+	logs                          []state.ModelCallLog
+	events                        []state.ModelCallLog
+	eventIndex                    int
+	rounds                        []state.RoundRecord
+	roundErr                      error
+	taskEvents                    []state.TaskEventRecord
+	association                   codexAssociation
+	scan                          bundleRolloutScan
+	scanErr                       error
+	repositoryHarnessActive       *bool
+	repositoryHarnessActivationErr error
 }
 
 const reviewGapReportVersion = 1
@@ -139,6 +139,10 @@ const reviewGapReasonPreviousRoundMissing = "previous-round-missing"
 const reviewGapReasonRoundLogMissing = "round-log-missing"
 
 const reviewGapReasonRoundLogUnreadable = "round-log-unreadable"
+
+const reviewGapReasonRepositoryHarnessActivationMissing = "repository-harness-activation-missing"
+
+const reviewGapReasonRepositoryHarnessActivationUnreadable = "repository-harness-activation-unreadable"
 
 const reviewGapReasonWorkerFixCallMissing = "worker-fix-call-missing"
 
@@ -250,7 +254,11 @@ func (report *reviewGapReport) appendReviewGapTask(cfg config.AppConfig, st *sta
 	association := resolveCodexAssociation(cfg.CodexConfigDir, bundleTask{ID: stats.TaskID, Status: string(stats.Status), Stats: *stats})
 	windowStart, windowEnd, _ := analysisCollectionWindow(bundleTask{Stats: *stats})
 	scan, scanErr := parentUsageRolloutScan(association, windowStart, windowEnd)
-	repositoryHarnessActive, _ := workflow.RepositoryHarnessActive(cfg.RepoRoot, st)
+	active, activationKnown, activationErr := st.ReadRepositoryHarnessActivation(stats.TaskID)
+	var repositoryHarnessActive *bool
+	if activationErr == nil && activationKnown {
+		repositoryHarnessActive = &active
+	}
 	for index := range events {
 		if events[index].Outcome == state.ParentOutcomeFix {
 			report.Fixes = append(report.Fixes, buildReviewGapFix(
@@ -259,6 +267,7 @@ func (report *reviewGapReport) appendReviewGapTask(cfg config.AppConfig, st *sta
 					rounds: rounds, roundErr: roundErr, taskEvents: taskEvents,
 					association: association, scan: scan, scanErr: scanErr,
 					repositoryHarnessActive: repositoryHarnessActive,
+					repositoryHarnessActivationErr: activationErr,
 				},
 			))
 		}
@@ -339,7 +348,7 @@ func reviewGapFillRound(fix *reviewGapFix, evidence reviewGapTaskEvidence) {
 		return
 	}
 	fix.Round = &reviewGapRoundRef{Seq: round.Seq, ReviewNumber: round.ReviewNumber, WorkerPhase: round.WorkerPhase}
-	reviewGapFillCategories(fix, previous, round, evidence.repositoryHarnessActive)
+	reviewGapFillCategories(fix, previous, round, evidence.repositoryHarnessActive, evidence.repositoryHarnessActivationErr)
 	reviewGapFillSemanticity(fix, evidence, previous, round)
 }
 
@@ -376,7 +385,7 @@ func reviewGapNextOutcomeAt(evidence reviewGapTaskEvidence) time.Time {
 	return time.Time{}
 }
 
-func reviewGapFillCategories(fix *reviewGapFix, previous *state.RoundRecord, round state.RoundRecord, repositoryHarnessActive bool) {
+func reviewGapFillCategories(fix *reviewGapFix, previous *state.RoundRecord, round state.RoundRecord, repositoryHarnessActive *bool, activationErr error) {
 	if round.CaptureError != "" || (previous != nil && previous.CaptureError != "") {
 		fix.CategoryReason = reviewGapReasonRoundCaptureError
 		return
@@ -392,8 +401,16 @@ func reviewGapFillCategories(fix *reviewGapFix, previous *state.RoundRecord, rou
 	}
 	categories := map[string]bool{}
 	for _, path := range changed {
+		parentManaged := state.IsParentManagedPath(path)
+		if parentManaged && repositoryHarnessActive == nil {
+			fix.CategoryReason = reviewGapReasonRepositoryHarnessActivationMissing
+			if activationErr != nil {
+				fix.CategoryReason = reviewGapReasonRepositoryHarnessActivationUnreadable
+			}
+			return
+		}
 		category := state.FixPathCategory(path)
-		if repositoryHarnessActive && state.IsParentManagedPath(path) {
+		if parentManaged && *repositoryHarnessActive {
 			category = state.FixCategoryMetadata
 		}
 		categories[category] = true
