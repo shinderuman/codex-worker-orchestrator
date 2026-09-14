@@ -14,14 +14,6 @@ type deadcodeBuildConfig struct {
 	goarch string
 }
 
-var deadcodeProductionConfigs = []deadcodeBuildConfig{
-	{name: "linux/amd64", goos: "linux", goarch: "amd64"},
-	{name: "darwin/arm64", goos: "darwin", goarch: "arm64"},
-	{name: "windows/amd64", goos: "windows", goarch: "amd64"},
-}
-
-var deadcodeLine = regexp.MustCompile(`^(.+\.go):(\d+):(\d+): unreachable func: (.+)$`)
-
 type environmentCommandRunner interface {
 	runEnv(dir, name string, env []string, args ...string) (commandResult, error)
 }
@@ -30,6 +22,16 @@ type deadcodeFindingState struct {
 	violation Violation
 	deadIn    map[string]bool
 }
+
+const deadcodeToolName = "deadcode"
+
+var deadcodeProductionConfigs = []deadcodeBuildConfig{
+	{name: "linux/amd64", goos: "linux", goarch: "amd64"},
+	{name: "darwin/arm64", goos: "darwin", goarch: "arm64"},
+	{name: "windows/amd64", goos: "windows", goarch: "amd64"},
+}
+
+var deadcodeLine = regexp.MustCompile(`^(.+\.go):(\d+):(\d+): unreachable func: (.+)$`)
 
 func runDeadcodeChecks(root string, paths []string, runner commandRunner) ([]Violation, error) {
 	var violations []Violation
@@ -47,37 +49,52 @@ func runDeadcodeModuleChecks(root, module string, runner commandRunner) ([]Viola
 	dir := moduleDir(root, module)
 	findings := make(map[Violation]*deadcodeFindingState)
 	for _, config := range deadcodeProductionConfigs {
-		result, err := runCommandWithEnvironment(runner, dir, "deadcode", []string{
-			"GOOS=" + config.goos,
-			"GOARCH=" + config.goarch,
-			"CGO_ENABLED=0",
-		}, "./...")
+		current, err := runDeadcodeConfig(dir, module, config, runner)
 		if err != nil {
 			return nil, err
 		}
-		if result.exitCode != 0 {
-			return []Violation{{
-				Rule: "deadcode", Path: modulePath(module), Line: 1, Column: 1,
-				Message: fmt.Sprintf("deadcode %s failed: %s", config.name, compactOutput(result.output, "deadcode failed")),
-			}}, nil
-		}
-		current, err := parseDeadcodeOutput(result.output, module, dir)
-		if err != nil {
-			return nil, fmt.Errorf("parse deadcode %s output: %w", config.name, err)
-		}
 		for _, violation := range current {
-			state := findings[violation]
-			if state == nil {
-				state = &deadcodeFindingState{violation: violation, deadIn: make(map[string]bool)}
-				findings[violation] = state
-			}
-			state.deadIn[config.name] = true
+			recordDeadcodeFinding(findings, config.name, violation)
 		}
 	}
+	return collectDeadcodeViolations(dir, module, findings)
+}
 
+func runDeadcodeConfig(dir, module string, config deadcodeBuildConfig, runner commandRunner) ([]Violation, error) {
+	result, err := runCommandWithEnvironment(runner, dir, deadcodeToolName, []string{
+		"GOOS=" + config.goos,
+		"GOARCH=" + config.goarch,
+		"CGO_ENABLED=0",
+	}, "./...")
+	if err != nil {
+		return nil, err
+	}
+	if result.exitCode != 0 {
+		return []Violation{{
+			Rule: deadcodeToolName, Path: modulePath(module), Line: 1, Column: 1,
+			Message: fmt.Sprintf("deadcode %s failed: %s", config.name, compactOutput(result.output, "deadcode failed")),
+		}}, nil
+	}
+	current, err := parseDeadcodeOutput(result.output, module, dir)
+	if err != nil {
+		return nil, fmt.Errorf("parse deadcode %s output: %w", config.name, err)
+	}
+	return current, nil
+}
+
+func recordDeadcodeFinding(findings map[Violation]*deadcodeFindingState, config string, violation Violation) {
+	state := findings[violation]
+	if state == nil {
+		state = &deadcodeFindingState{violation: violation, deadIn: make(map[string]bool)}
+		findings[violation] = state
+	}
+	state.deadIn[config] = true
+}
+
+func collectDeadcodeViolations(moduleRoot, module string, findings map[Violation]*deadcodeFindingState) ([]Violation, error) {
 	violations := make([]Violation, 0, len(findings))
 	for _, state := range findings {
-		deadEverywhere, err := deadcodeFindingDeadInEveryApplicableConfig(dir, module, state)
+		deadEverywhere, err := deadcodeFindingDeadInEveryApplicableConfig(moduleRoot, module, state)
 		if err != nil {
 			return nil, err
 		}
@@ -111,7 +128,7 @@ func parseDeadcodeOutput(output, module, moduleRoot string) ([]Violation, error)
 			return nil, err
 		}
 		violations = append(violations, Violation{
-			Rule: "deadcode", Path: path, Line: atoi(match[2]), Column: atoi(match[3]),
+			Rule: deadcodeToolName, Path: path, Line: atoi(match[2]), Column: atoi(match[3]),
 			Message: "unreachable production function: " + match[4],
 		})
 	}
