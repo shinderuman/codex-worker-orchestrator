@@ -103,7 +103,7 @@ func TestReviewerDiffFirstInactiveHarnessSearchesCoincidentalParentOnlyDiff(t *t
 		return reposearch.Report{}, nil
 	}
 	block := w.reviewerDiffFirstContext("review foreign repository", 1)
-	if calls != 1 || !strings.Contains(block, "INDEPENDENT_SEARCH: performed") || !strings.Contains(block, "SEARCH_OUTCOME: independent-empty") {
+	if calls != 1 || !strings.Contains(block, "INDEPENDENT_SEARCH: performed") || !strings.Contains(block, "SEARCH_OUTCOME: "+reviewerSearchEmpty) {
 		t.Fatalf("calls=%d block=%s", calls, block)
 	}
 }
