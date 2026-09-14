@@ -10,6 +10,7 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
 )
 
 type reviewGapReport struct {
@@ -102,16 +103,17 @@ type reviewGapReworkCost struct {
 }
 
 type reviewGapTaskEvidence struct {
-	stats       *state.TaskStats
-	logs        []state.ModelCallLog
-	events      []state.ModelCallLog
-	eventIndex  int
-	rounds      []state.RoundRecord
-	roundErr    error
-	taskEvents  []state.TaskEventRecord
-	association codexAssociation
-	scan        bundleRolloutScan
-	scanErr     error
+	stats                   *state.TaskStats
+	logs                    []state.ModelCallLog
+	events                  []state.ModelCallLog
+	eventIndex              int
+	rounds                  []state.RoundRecord
+	roundErr                error
+	taskEvents              []state.TaskEventRecord
+	association             codexAssociation
+	scan                    bundleRolloutScan
+	scanErr                 error
+	repositoryHarnessActive bool
 }
 
 const reviewGapReportVersion = 1
@@ -248,6 +250,7 @@ func (report *reviewGapReport) appendReviewGapTask(cfg config.AppConfig, st *sta
 	association := resolveCodexAssociation(cfg.CodexConfigDir, bundleTask{ID: stats.TaskID, Status: string(stats.Status), Stats: *stats})
 	windowStart, windowEnd, _ := analysisCollectionWindow(bundleTask{Stats: *stats})
 	scan, scanErr := parentUsageRolloutScan(association, windowStart, windowEnd)
+	repositoryHarnessActive, _ := workflow.RepositoryHarnessActive(cfg.RepoRoot, st)
 	for index := range events {
 		if events[index].Outcome == state.ParentOutcomeFix {
 			report.Fixes = append(report.Fixes, buildReviewGapFix(
@@ -255,6 +258,7 @@ func (report *reviewGapReport) appendReviewGapTask(cfg config.AppConfig, st *sta
 					stats: stats, logs: logs, events: events, eventIndex: index,
 					rounds: rounds, roundErr: roundErr, taskEvents: taskEvents,
 					association: association, scan: scan, scanErr: scanErr,
+					repositoryHarnessActive: repositoryHarnessActive,
 				},
 			))
 		}
@@ -335,7 +339,7 @@ func reviewGapFillRound(fix *reviewGapFix, evidence reviewGapTaskEvidence) {
 		return
 	}
 	fix.Round = &reviewGapRoundRef{Seq: round.Seq, ReviewNumber: round.ReviewNumber, WorkerPhase: round.WorkerPhase}
-	reviewGapFillCategories(fix, previous, round)
+	reviewGapFillCategories(fix, previous, round, evidence.repositoryHarnessActive)
 	reviewGapFillSemanticity(fix, evidence, previous, round)
 }
 
@@ -372,7 +376,7 @@ func reviewGapNextOutcomeAt(evidence reviewGapTaskEvidence) time.Time {
 	return time.Time{}
 }
 
-func reviewGapFillCategories(fix *reviewGapFix, previous *state.RoundRecord, round state.RoundRecord) {
+func reviewGapFillCategories(fix *reviewGapFix, previous *state.RoundRecord, round state.RoundRecord, repositoryHarnessActive bool) {
 	if round.CaptureError != "" || (previous != nil && previous.CaptureError != "") {
 		fix.CategoryReason = reviewGapReasonRoundCaptureError
 		return
@@ -388,7 +392,11 @@ func reviewGapFillCategories(fix *reviewGapFix, previous *state.RoundRecord, rou
 	}
 	categories := map[string]bool{}
 	for _, path := range changed {
-		categories[state.FixPathCategory(path)] = true
+		category := state.FixPathCategory(path)
+		if repositoryHarnessActive && state.IsParentManagedPath(path) {
+			category = state.FixCategoryMetadata
+		}
+		categories[category] = true
 	}
 	fix.Categories = make([]string, 0, len(categories))
 	for category := range categories {
