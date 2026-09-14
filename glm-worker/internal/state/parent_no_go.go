@@ -38,32 +38,20 @@ func (s *StateStore) AwaitObservationNoGo() (bool, error) {
 	if !s.ObservationNoGoEligible() {
 		return false, fmt.Errorf("terminal no-go is only available for a pending PoC/observation Sol decision")
 	}
+	taskID, err := s.TaskID()
+	if err != nil {
+		return false, err
+	}
 	review, err := s.snapshotLifecycleFile(parentReviewStateFile)
 	if err != nil {
 		return false, err
 	}
-	resolved, ok, err := s.resolveParentReviewState(ParentOutcomeNoGo, "", "")
+	resolved, ok, err := s.resolveParentCompletionState(ParentOutcomeNoGo, SessionRotationTerminalNoGo)
 	if err != nil || !ok {
 		return ok, err
 	}
 
-	stats, err := s.loadTaskStats()
-	if err != nil {
-		stats, err = s.recoverTaskStats(err)
-		if err != nil {
-			if restoreErr := s.restoreLifecycleFile(review); restoreErr != nil {
-				return false, errors.Join(err, restoreErr)
-			}
-			return false, fmt.Errorf("terminal no-go task statsを復旧できません: %w", err)
-		}
-	}
-	stats.ParentReviewOpen = nil
-	stats.recordParentOutcome(ParentOutcomeNoGo, "", resolved)
-	stats.Status = TaskStatusAwaitingParentCompletion
-	stats.AcceptedRisk = resolved.Risk
-	stats.CompletionTerminal = SessionRotationTerminalNoGo
-
-	result := s.commitParentCompletion(stats, TaskStatusAwaitingParentCompletion, true, nil)
+	result := s.commitParentCompletion(TaskStatusAwaitingParentCompletion, true, nil)
 	if result.transitionErr != nil {
 		restoreErr := s.restoreLifecycleFile(review)
 		if result.rollbackStatusErr != nil || result.rollbackPendingErr != nil || restoreErr != nil {
@@ -72,6 +60,7 @@ func (s *StateStore) AwaitObservationNoGo() (bool, error) {
 		return false, fmt.Errorf("terminal no-go outcomeを保存できません: %w", result.transitionErr)
 	}
 
-	s.appendParentOutcomeEvent(stats.TaskID, ParentPhaseClose, ParentOutcomeNoGo, "", "", resolved)
+	s.projectParentCompletionOutcome(ParentOutcomeNoGo, resolved, SessionRotationTerminalNoGo)
+	s.appendParentOutcomeEvent(taskID, ParentPhaseClose, ParentOutcomeNoGo, "", "", resolved)
 	return true, nil
 }

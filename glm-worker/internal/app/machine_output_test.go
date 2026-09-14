@@ -284,8 +284,8 @@ func TestDispatchReleasesTypedStatsWarningThroughMachineStderr(t *testing.T) {
 	}
 
 	lines := strings.Split(strings.TrimRight(stderr.String(), "\n"), "\n")
-	if len(lines) != 2 {
-		t.Fatalf("machine stderrへ出力された行数 = %d want 2: %q", len(lines), stderr.String())
+	if len(lines) != 1 {
+		t.Fatalf("machine stderrへ出力された行数 = %d want 1: %q", len(lines), stderr.String())
 	}
 	var event struct {
 		Type    string `json:"type"`

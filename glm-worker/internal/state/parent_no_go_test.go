@@ -41,6 +41,10 @@ func TestAwaitObservationNoGoDefersCompletionWithoutAnotherDispatch(t *testing.T
 	if st.OpenParentReviewLabel() != "none" {
 		t.Fatalf("parent review remains open: %s", st.OpenParentReviewLabel())
 	}
+	outcome, err := st.CurrentParentCompletionOutcome()
+	if err != nil || outcome == nil || outcome.Terminal != SessionRotationTerminalNoGo || outcome.Risk != string(packet.RiskHigh) {
+		t.Fatalf("canonical no-go outcome = %#v err=%v", outcome, err)
+	}
 	plan, err = st.ParentActionPlan()
 	if err != nil {
 		t.Fatal(err)
