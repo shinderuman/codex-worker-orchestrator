@@ -37,7 +37,8 @@ func TestNewWorkerTaskPromptSearchesLauncherFromActiveTaskSeed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.StartNewTask(); err != nil {
+	taskID, err := st.StartNewTask()
+	if err != nil {
 		t.Fatal(err)
 	}
 	w := NewWorkflow(cfg, st, nil, nil)
@@ -62,8 +63,12 @@ func TestNewWorkerTaskPromptSearchesLauncherFromActiveTaskSeed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stats.RepoSearchOutcomes[repoSearchHit] != 1 || stats.RepoSearchOutcomes[repoSearchKnownSkip] != 0 {
-		t.Fatalf("repo search outcomes = %+v", stats.RepoSearchOutcomes)
+	if stats.RepoSearchCalls != 0 || len(stats.RepoSearchOutcomes) != 0 {
+		t.Fatalf("live task statsにrepo-search mirrorが書き込まれています: %+v", stats)
+	}
+	events := readAllTaskEvents(t, st, taskID)
+	if len(events) != 1 || events[0].Phase != repoSearchPhase || events[0].Subtype != repoSearchHit || len(events[0].SearchPaths) != 1 || events[0].SearchPaths[0] != "commentlint" {
+		t.Fatalf("repo search event = %+v", events)
 	}
 }
 
