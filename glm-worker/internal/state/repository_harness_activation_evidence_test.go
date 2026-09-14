@@ -2,6 +2,7 @@ package state
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -41,7 +42,7 @@ func TestRepositoryHarnessActivationEvidenceRejectsMalformedRecord(t *testing.T)
 		t.Fatal(err)
 	}
 	path := st.repositoryHarnessActivationEvidencePath(taskID)
-	if err := os.MkdirAll(filepathDir(path), 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(path, []byte("{broken\n"), 0o600); err != nil {
@@ -51,13 +52,4 @@ func TestRepositoryHarnessActivationEvidenceRejectsMalformedRecord(t *testing.T)
 	if _, known, err := st.ReadRepositoryHarnessActivation(taskID); err == nil || known {
 		t.Fatalf("malformed activation evidence accepted: known=%v err=%v", known, err)
 	}
-}
-
-func filepathDir(path string) string {
-	for i := len(path) - 1; i >= 0; i-- {
-		if os.IsPathSeparator(path[i]) {
-			return path[:i]
-		}
-	}
-	return "."
 }
