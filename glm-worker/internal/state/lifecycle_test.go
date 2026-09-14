@@ -109,15 +109,27 @@ func TestEnterStopQualityGateClearsResidualPendingDecision(t *testing.T) {
 }
 
 func TestBeginParentDecisionRollbackRestoresWaitingDecision(t *testing.T) {
-	st := newDecisionBeginRecoveryStore(t)
-	if _, err := st.loadParentActionBegin(); err != nil {
-		t.Fatalf("begin record = %v", err)
+	st := newLifecycleTestStore(t)
+	if _, err := st.StartNewTask(); err != nil {
+		t.Fatal(err)
 	}
-	rollback, err := st.snapshotParentActionRollback()
+	if err := st.SetTaskStatus(TaskStatusWaitingDecision); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Touch("pending-decision"); err != nil {
+		t.Fatal(err)
+	}
+
+	rollback, err := st.BeginParentDecision()
 	if err != nil {
 		t.Fatal(err)
 	}
-	rollback.status = TaskStatusWaitingDecision
+	if st.TaskStatus() != TaskStatusActive || !st.Exists("pending-decision") {
+		t.Fatalf("begin state: status=%s pending=%t", st.TaskStatus(), st.Exists("pending-decision"))
+	}
+	if _, err := st.loadParentActionBegin(); err != nil {
+		t.Fatalf("begin record = %v", err)
+	}
 
 	cause := errors.New("repository instruction surface guard failed: before-call-mismatch")
 	if err := st.RollbackParentAction(rollback, cause); !errors.Is(err, cause) {
@@ -234,6 +246,43 @@ func TestRecoverParentActionBeginFromStateRestoresParentWaitingStates(t *testing
 	}
 }
 
+func TestRecoverParentActionBeginFromStateClearsMatchingPreCallCheckpoint(t *testing.T) {
+	tests := []struct {
+		name   string
+		seed   func(t *testing.T) *StateStore
+		phase  string
+		target TaskStatus
+	}{
+		{name: "decision", seed: newDecisionBeginRecoveryStore, phase: "worker-decision", target: TaskStatusWaitingDecision},
+		{name: "fix", seed: newFixBeginRecoveryStore, phase: "worker-explicit-fix", target: TaskStatusWaitingSolReview},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			st := test.seed(t)
+			checkpoint := ResumeCheckpoint{
+				Stage:   ResumeStageWorker,
+				Phase:   test.phase,
+				Role:    WorkerRole,
+				Model:   "opus",
+				Request: "request",
+			}
+			if err := st.SaveResumeCheckpoint(checkpoint); err != nil {
+				t.Fatal(err)
+			}
+			target, err := st.RecoverParentActionBeginFromState()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if target != test.target || st.TaskStatus() != test.target {
+				t.Fatalf("recovered state: target=%s status=%s want=%s", target, st.TaskStatus(), test.target)
+			}
+			if _, err := st.LoadResumeCheckpoint(); !errors.Is(err, ErrNoResumeCheckpoint) {
+				t.Fatalf("pre-call checkpoint remains after recovery: %v", err)
+			}
+		})
+	}
+}
+
 func TestCommitParentActionBeginEndsRecoveryWindow(t *testing.T) {
 	st := newDecisionBeginRecoveryStore(t)
 	if err := st.CommitParentActionBegin(); err != nil {
@@ -283,7 +332,7 @@ func TestRecoverParentActionBeginFromStateRejectsLifecycleContradictions(t *test
 			},
 		},
 		{
-			name: "resume checkpoint is present",
+			name: "stopped resume checkpoint is present",
 			seed: func(t *testing.T) *StateStore {
 				st := newDecisionBeginRecoveryStore(t)
 				checkpoint := ResumeCheckpoint{
@@ -293,6 +342,23 @@ func TestRecoverParentActionBeginFromStateRejectsLifecycleContradictions(t *test
 					Model:    "opus",
 					Request:  "request",
 					StopKind: ResumeStopInterrupted,
+				}
+				if err := st.SaveResumeCheckpoint(checkpoint); err != nil {
+					t.Fatal(err)
+				}
+				return st
+			},
+		},
+		{
+			name: "pre-call checkpoint phase does not match source",
+			seed: func(t *testing.T) *StateStore {
+				st := newDecisionBeginRecoveryStore(t)
+				checkpoint := ResumeCheckpoint{
+					Stage:   ResumeStageWorker,
+					Phase:   "worker-explicit-fix",
+					Role:    WorkerRole,
+					Model:   "opus",
+					Request: "request",
 				}
 				if err := st.SaveResumeCheckpoint(checkpoint); err != nil {
 					t.Fatal(err)
