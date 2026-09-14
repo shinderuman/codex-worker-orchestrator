@@ -588,14 +588,6 @@ func isolationSettings(claudeConfigDir string, sandbox *gitBashSandboxPolicy) (s
 	return string(encoded), nil
 }
 
-func loadSettingEnv(claudeConfigDir string, overridePath string) (map[string]string, []string, error) {
-	configDir, err := resolveClaudeConfigDir(claudeConfigDir)
-	if err != nil {
-		return nil, nil, err
-	}
-	return loadSettingEnvPath(filepath.Join(configDir, "settings.json"), overridePath)
-}
-
 func buildChildEnv(extraAllow []string, settingEnv, additions map[string]string, deletes []string) []string {
 	allowed := make(map[string]struct{}, len(osEssentialEnvKeys)+len(extraAllow))
 	for _, key := range osEssentialEnvKeys {
