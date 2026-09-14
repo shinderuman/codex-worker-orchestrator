@@ -24,7 +24,7 @@ const (
 	reviewerDiffImpactTermLimit     = 32
 )
 
-func (w *Workflow) reviewerDiffFirstContext(request string, reviewNumber int) string {
+func (w *Workflow) reviewerDiffFirstNavigation(request string, reviewNumber int) (string, error) {
 	collector := w.collectChangedPaths
 	if collector == nil {
 		collector = collectChangedPaths
@@ -33,17 +33,20 @@ func (w *Workflow) reviewerDiffFirstContext(request string, reviewNumber int) st
 	paths, err := collector(w.config.RepoRoot, baseline)
 	if err != nil {
 		w.recordRepoSearchOutcome(reviewerRepoSearchPhase, state.ReviewerRole, reviewNumber+1, reviewerSearchDiffErrorFallback, nil, 0)
-		return renderReviewerDiffFirstNavigation(nil, reviewerSearchDiffErrorFallback, "", nil)
+		return renderReviewerDiffFirstNavigation(nil, reviewerSearchDiffErrorFallback, "", nil), nil
 	}
 	paths = uniqueSortedPaths(paths)
-	parentMetadataFilterActive := reviewerParentMetadataFilterActive(w.state)
+	parentMetadataFilterActive, err := reviewerParentMetadataFilterActive(w.state)
+	if err != nil {
+		return "", err
+	}
 	impactPaths := reviewerImpactPaths(paths, parentMetadataFilterActive)
 	if len(impactPaths) == 0 {
 		w.recordRepoSearchOutcome(reviewerRepoSearchPhase, state.ReviewerRole, reviewNumber+1, reviewerSearchDiffSufficient, nil, 0)
-		return renderReviewerDiffFirstNavigation(paths, reviewerSearchDiffSufficient, "", nil)
+		return renderReviewerDiffFirstNavigation(paths, reviewerSearchDiffSufficient, "", nil), nil
 	}
 	if !w.config.RepoSearch {
-		return renderReviewerDiffFirstNavigation(paths, reviewerSearchDisabled, "", nil)
+		return renderReviewerDiffFirstNavigation(paths, reviewerSearchDisabled, "", nil), nil
 	}
 
 	impactTerms := collectReviewerDiffImpactTerms(w.config.RepoRoot, baseline, reviewerDiffImpactPaths(paths, parentMetadataFilterActive))
@@ -52,7 +55,7 @@ func (w *Workflow) reviewerDiffFirstContext(request string, reviewNumber int) st
 	report, searchErr := timer.run(context.Background(), w.config.RepoRoot, query, reposearch.Options{MaxResults: RepoSearchMaxResults})
 	if searchErr != nil {
 		w.recordRepoSearchOutcome(reviewerRepoSearchPhase, state.ReviewerRole, reviewNumber+1, reviewerSearchErrorFallback, nil, timer.elapsed)
-		return renderReviewerDiffFirstNavigation(paths, reviewerSearchErrorFallback, query, nil)
+		return renderReviewerDiffFirstNavigation(paths, reviewerSearchErrorFallback, query, nil), nil
 	}
 	candidates := excludeChangedPaths(report.Results, paths)
 	outcome := reviewerSearchHit
@@ -60,12 +63,15 @@ func (w *Workflow) reviewerDiffFirstContext(request string, reviewNumber int) st
 		outcome = reviewerSearchEmpty
 	}
 	w.recordRepoSearchOutcome(reviewerRepoSearchPhase, state.ReviewerRole, reviewNumber+1, outcome, candidates, timer.elapsed)
-	return renderReviewerDiffFirstNavigation(paths, outcome, query, candidates)
+	return renderReviewerDiffFirstNavigation(paths, outcome, query, candidates), nil
 }
 
-func reviewerParentMetadataFilterActive(st *state.StateStore) bool {
+func reviewerParentMetadataFilterActive(st *state.StateStore) (bool, error) {
 	activation, pinned, err := readRepositoryHarnessActivationPin(st)
-	return err == nil && pinned && activation == repositoryharness.ActivationActiveValue
+	if err != nil {
+		return false, err
+	}
+	return pinned && activation == repositoryharness.ActivationActiveValue, nil
 }
 
 func reviewerImpactPaths(paths []string, parentMetadataFilterActive bool) []string {
