@@ -2,31 +2,34 @@ package taskcontract
 
 import "testing"
 
-func TestParseTaskDependenciesNoneAndProse(t *testing.T) {
+func TestParseTaskDependencyStateOutstandingNoneAndProse(t *testing.T) {
 	body := "# Task\n\n## Dependencies\n\nnone\n"
-	paths, err := ParseTaskDependencies([]byte(body))
+	state, err := ParseTaskDependencyState([]byte(body))
 	if err != nil {
-		t.Fatalf("ParseTaskDependencies: %v", err)
+		t.Fatalf("ParseTaskDependencyState: %v", err)
 	}
+	paths := state.Outstanding
 	if len(paths) != 0 {
 		t.Fatalf("paths = %#v", paths)
 	}
 	prose := "# Task\n\n## Dependencies\n\n- Final verification開始時点で他の実行可能taskが残っていないこと\n"
-	paths, err = ParseTaskDependencies([]byte(prose))
+	state, err = ParseTaskDependencyState([]byte(prose))
 	if err != nil {
-		t.Fatalf("ParseTaskDependencies prose: %v", err)
+		t.Fatalf("ParseTaskDependencyState prose: %v", err)
 	}
+	paths = state.Outstanding
 	if len(paths) != 0 {
 		t.Fatalf("prose paths = %#v", paths)
 	}
 }
 
-func TestParseTaskDependenciesPathBullets(t *testing.T) {
+func TestParseTaskDependencyStateOutstandingPathBullets(t *testing.T) {
 	body := "# Task\n\n## Dependencies\n\n- `IMPLEMENTATION_TASKS/first.md`\n- IMPLEMENTATION_TASKS/second.md\n- `IMPLEMENTATION_TASKS/first.md`\n"
-	paths, err := ParseTaskDependencies([]byte(body))
+	state, err := ParseTaskDependencyState([]byte(body))
 	if err != nil {
-		t.Fatalf("ParseTaskDependencies: %v", err)
+		t.Fatalf("ParseTaskDependencyState: %v", err)
 	}
+	paths := state.Outstanding
 	want := []string{"IMPLEMENTATION_TASKS/first.md", "IMPLEMENTATION_TASKS/second.md"}
 	if len(paths) != len(want) {
 		t.Fatalf("paths = %#v", paths)
@@ -38,31 +41,32 @@ func TestParseTaskDependenciesPathBullets(t *testing.T) {
 	}
 }
 
-func TestParseTaskDependenciesIgnoresFencedPath(t *testing.T) {
+func TestParseTaskDependencyStateOutstandingIgnoresFencedPath(t *testing.T) {
 	body := "# Task\n\n## Dependencies\n\nnone\n\n```text\n- `IMPLEMENTATION_TASKS/fenced.md`\n```\n"
-	paths, err := ParseTaskDependencies([]byte(body))
+	state, err := ParseTaskDependencyState([]byte(body))
 	if err != nil {
-		t.Fatalf("ParseTaskDependencies: %v", err)
+		t.Fatalf("ParseTaskDependencyState: %v", err)
 	}
+	paths := state.Outstanding
 	if len(paths) != 0 {
 		t.Fatalf("paths = %#v", paths)
 	}
 }
 
-func TestParseTaskDependenciesRejectsMissingSection(t *testing.T) {
-	if _, err := ParseTaskDependencies([]byte("# Task\n")); err == nil {
+func TestParseTaskDependencyStateRejectsMissingSection(t *testing.T) {
+	if _, err := ParseTaskDependencyState([]byte("# Task\n")); err == nil {
 		t.Fatal("task without Dependencies section was accepted")
 	}
 }
 
-func TestParseTaskDependenciesRejectsDuplicateSection(t *testing.T) {
+func TestParseTaskDependencyStateRejectsDuplicateSection(t *testing.T) {
 	body := "# Task\n\n## Dependencies\n\nnone\n\n## Dependencies\n\nnone\n"
-	if _, err := ParseTaskDependencies([]byte(body)); err == nil {
+	if _, err := ParseTaskDependencyState([]byte(body)); err == nil {
 		t.Fatal("duplicate Dependencies section was accepted")
 	}
 }
 
-func TestParseTaskDependenciesRejectsMalformedReference(t *testing.T) {
+func TestParseTaskDependencyStateRejectsMalformedReference(t *testing.T) {
 	for _, item := range []string{
 		"- `IMPLEMENTATION_TASKS/../escape.md`",
 		"- `IMPLEMENTATION_TASKS/missing-suffix.txt`",
@@ -72,7 +76,7 @@ func TestParseTaskDependenciesRejectsMalformedReference(t *testing.T) {
 		"- IMPLEMENTATION_TASKS/first.md(`注記`付き)",
 	} {
 		body := "# Task\n\n## Dependencies\n\n" + item + "\n"
-		if _, err := ParseTaskDependencies([]byte(body)); err == nil {
+		if _, err := ParseTaskDependencyState([]byte(body)); err == nil {
 			t.Fatalf("malformed dependency %q was accepted", item)
 		}
 	}

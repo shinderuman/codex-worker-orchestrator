@@ -24,14 +24,6 @@ const (
 	reviewFindingsNone = "none"
 )
 
-func ParseTaskDependencies(content []byte) ([]string, error) {
-	state, err := ParseTaskDependencyState(content)
-	if err != nil {
-		return nil, err
-	}
-	return state.Outstanding, nil
-}
-
 func ParseTaskDependencyState(content []byte) (TaskDependencyState, error) {
 	lines := strings.Split(string(content), "\n")
 	outstanding, err := parseTaskDependencySection(lines, TaskDependenciesHeading, true)
