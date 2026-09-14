@@ -48,7 +48,7 @@ func TestClaudeRunnerRecordsCompactBoundaryAndPostBoundaryInstructionRead(t *tes
 	records := readTaskEventLines(t, st, taskID)
 	boundaries := 0
 	for _, record := range records {
-		if state.IsCompactionBoundaryEvent(record) {
+		if record.Kind == "system" && record.Subtype == "compact_boundary" {
 			boundaries++
 			if record.Seq == 0 || record.Timestamp.IsZero() {
 				t.Fatalf("boundary recordのseq/timestamp = %d/%v", record.Seq, record.Timestamp)
@@ -84,7 +84,7 @@ func TestClaudeRunnerCompactBoundaryDoesNotBypassStructuredOutputEnforcement(t *
 		t.Fatalf("StructuredOutputErrorを期待: %v", err)
 	}
 	records := readTaskEventLines(t, st, taskID)
-	if len(records) != 2 || !state.IsCompactionBoundaryEvent(records[0]) {
+	if len(records) != 2 || records[0].Kind != "system" || records[0].Subtype != "compact_boundary" {
 		t.Fatalf("fail closed経路でもboundaryを含むeventが保存される想定: %+v", records)
 	}
 }
@@ -156,7 +156,7 @@ func TestClaudeRunnerRequirementMarkersSurviveCompactBoundaryAndResume(t *testin
 	records := readTaskEventLines(t, st, taskID)
 	boundaries := 0
 	for _, record := range records {
-		if state.IsCompactionBoundaryEvent(record) {
+		if record.Kind == "system" && record.Subtype == "compact_boundary" {
 			boundaries++
 		}
 	}
