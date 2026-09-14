@@ -40,3 +40,10 @@ printf '\tmod\tgolang.org/x/tools\tv0.49.0\n'
 		t.Fatalf("deadcode version came from filename instead of module metadata: got %q output=%q", got, result.output)
 	}
 }
+
+func TestObservedDeadcodeVersionRejectsOtherModule(t *testing.T) {
+	output := "tool: go1.25.4\n\tmod\texample.com/not-deadcode\tv0.49.0\n"
+	if got := observedQualityToolVersion(deadcodeToolName, output); got != "" {
+		t.Fatalf("deadcode version accepted unrelated module metadata: got %q", got)
+	}
+}
