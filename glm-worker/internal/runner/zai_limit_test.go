@@ -1,21 +1,14 @@
 package runner
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
 
-func TestDetectZaiFiveHourLimit(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "claude.log")
+func TestDetectZaiFiveHourLimitText(t *testing.T) {
 	content := "API Error: Request rejected (429) · [1308][Usage limit reached for 5 hour. Your limit will reset at 2026-07-22 14:06:34][202607221342470f952f313a624fd3]\n"
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	limit, ok := DetectZaiFiveHourLimit(path)
+	limit, ok := DetectZaiFiveHourLimitText(content)
 	if !ok {
 		t.Fatal("expected Z.ai 5h limit")
 	}
@@ -76,25 +69,15 @@ func TestAutoResumeScheduleSecondPrecision(t *testing.T) {
 	}
 }
 
-func TestDetectZaiFiveHourLimitRejectsGeneric429(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "claude.log")
-	if err := os.WriteFile(path, []byte("API Error: Request rejected (429)\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	if _, ok := DetectZaiFiveHourLimit(path); ok {
+func TestDetectZaiFiveHourLimitTextRejectsGeneric429(t *testing.T) {
+	if _, ok := DetectZaiFiveHourLimitText("API Error: Request rejected (429)\n"); ok {
 		t.Fatal("generic 429 must not be treated as Z.ai 5h limit")
 	}
 }
 
-func TestDetectZaiFiveHourLimitRejectsDifferentCode(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "claude.log")
+func TestDetectZaiFiveHourLimitTextRejectsDifferentCode(t *testing.T) {
 	content := "API Error: Request rejected (429) · [9999][Usage limit reached for 5 hour. Your limit will reset at 2026-07-22 14:06:34]\n"
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	if _, ok := DetectZaiFiveHourLimit(path); ok {
+	if _, ok := DetectZaiFiveHourLimitText(content); ok {
 		t.Fatal("different Z.ai error code must not be treated as 5h limit")
 	}
 }
