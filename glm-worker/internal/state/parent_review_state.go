@@ -9,11 +9,17 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 )
 
+type ParentCompletionOutcome struct {
+	Terminal string `json:"terminal"`
+	Risk     string `json:"risk"`
+}
+
 type ParentReviewState struct {
-	Version int                    `json:"version"`
-	TaskID  string                 `json:"task_id"`
-	Open    *ParentReviewOpenState `json:"open,omitempty"`
-	Review  *ParentReviewBinding   `json:"review,omitempty"`
+	Version    int                      `json:"version"`
+	TaskID     string                   `json:"task_id"`
+	Open       *ParentReviewOpenState   `json:"open,omitempty"`
+	Review     *ParentReviewBinding     `json:"review,omitempty"`
+	Completion *ParentCompletionOutcome `json:"completion,omitempty"`
 }
 
 const (
@@ -50,6 +56,9 @@ func (s *StateStore) loadParentReviewState() (ParentReviewState, error) {
 	if err := validateParentReviewBindingState(state); err != nil {
 		return ParentReviewState{}, err
 	}
+	if err := validateParentCompletionState(state); err != nil {
+		return ParentReviewState{}, err
+	}
 	return state, nil
 }
 
@@ -71,6 +80,34 @@ func validParentReviewPacketStatus(status string) bool {
 	default:
 		return false
 	}
+}
+
+func validateParentCompletionState(state ParentReviewState) error {
+	if state.Completion == nil {
+		return nil
+	}
+	if state.Open != nil || state.Review != nil {
+		return fmt.Errorf("parent completion outcome exists with an open parent review")
+	}
+	if state.Completion.Terminal != SessionRotationTerminalAccept && state.Completion.Terminal != SessionRotationTerminalNoGo {
+		return fmt.Errorf("parent completion outcome has invalid terminal %q", state.Completion.Terminal)
+	}
+	if state.Completion.Risk != string(packet.RiskLow) && state.Completion.Risk != string(packet.RiskHigh) {
+		return fmt.Errorf("parent completion outcome has invalid risk %q", state.Completion.Risk)
+	}
+	return nil
+}
+
+func (s *StateStore) CurrentParentCompletionOutcome() (*ParentCompletionOutcome, error) {
+	state, err := s.loadParentReviewState()
+	if err != nil {
+		return nil, err
+	}
+	if state.Completion == nil {
+		return nil, nil
+	}
+	outcome := *state.Completion
+	return &outcome, nil
 }
 
 func (s *StateStore) CurrentParentReview() (*ParentReviewOpenState, error) {
@@ -126,17 +163,21 @@ func (s *StateStore) openParentReviewState(status string, risk string, producer 
 		Risk:         risk,
 	}
 	state.Review = nil
+	state.Completion = nil
 	return s.writeParentReviewState(state)
 }
 
 func (s *StateStore) resolveParentReviewState(kind, origin, cause string) (ParentReviewOpenState, bool, error) {
-	if !parentOutcomeKinds[kind] {
-		return ParentReviewOpenState{}, false, fmt.Errorf("unknown parent outcome kind: %s", kind)
-	}
-	if kind == ParentOutcomeFix {
-		if err := validateParentFixDeclaration(origin, cause); err != nil {
-			return ParentReviewOpenState{}, false, err
-		}
+	return s.resolveParentReviewStateWithCompletion(kind, origin, cause, "")
+}
+
+func (s *StateStore) resolveParentCompletionState(kind, terminal string) (ParentReviewOpenState, bool, error) {
+	return s.resolveParentReviewStateWithCompletion(kind, "", "", terminal)
+}
+
+func (s *StateStore) resolveParentReviewStateWithCompletion(kind, origin, cause, terminal string) (ParentReviewOpenState, bool, error) {
+	if err := validateParentOutcomeResolution(kind, origin, cause, terminal); err != nil {
+		return ParentReviewOpenState{}, false, err
 	}
 	taskID, taskErr := s.Read("task.id")
 	if errors.Is(taskErr, os.ErrNotExist) || taskID == "" {
@@ -156,10 +197,48 @@ func (s *StateStore) resolveParentReviewState(kind, origin, cause string) (Paren
 		return ParentReviewOpenState{}, false, fmt.Errorf("pending Sol decision must be resolved with --decision before --accept")
 	}
 	resolved := *state.Open
+	completion, err := parentCompletionOutcome(terminal, resolved.Risk)
+	if err != nil {
+		return ParentReviewOpenState{}, false, err
+	}
 	state.Open = nil
 	state.Review = nil
+	state.Completion = completion
 	if err := s.writeParentReviewState(state); err != nil {
 		return ParentReviewOpenState{}, false, err
 	}
 	return resolved, true, nil
+}
+
+func validateParentOutcomeResolution(kind, origin, cause, terminal string) error {
+	if !parentOutcomeKinds[kind] {
+		return fmt.Errorf("unknown parent outcome kind: %s", kind)
+	}
+	if kind == ParentOutcomeFix {
+		if err := validateParentFixDeclaration(origin, cause); err != nil {
+			return err
+		}
+	}
+	if terminal == "" {
+		return nil
+	}
+	if kind == ParentOutcomeAccepted && terminal == SessionRotationTerminalAccept {
+		return nil
+	}
+	if kind == ParentOutcomeNoGo && terminal == SessionRotationTerminalNoGo {
+		return nil
+	}
+	return fmt.Errorf("parent outcome %s cannot resolve completion terminal %s", kind, terminal)
+}
+
+func parentCompletionOutcome(terminal, risk string) (*ParentCompletionOutcome, error) {
+	if terminal == "" {
+		return nil, nil
+	}
+	outcome := &ParentCompletionOutcome{Terminal: terminal, Risk: risk}
+	state := ParentReviewState{Completion: outcome}
+	if err := validateParentCompletionState(state); err != nil {
+		return nil, err
+	}
+	return outcome, nil
 }
