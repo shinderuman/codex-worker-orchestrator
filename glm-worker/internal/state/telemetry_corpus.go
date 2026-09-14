@@ -36,12 +36,12 @@ type telemetryCorpusScan struct {
 }
 
 type telemetryCorpusFile struct {
-	name                    string
-	taskID                  string
-	currentReadError        string
-	recordsOutsidePeriod    int
+	name                   string
+	taskID                 string
+	currentReadError       string
+	recordsOutsidePeriod   int
 	recordsUndatedExcluded int
-	records                 []telemetryCorpusRecord
+	records                []telemetryCorpusRecord
 }
 
 type telemetryCorpusRecord struct {
