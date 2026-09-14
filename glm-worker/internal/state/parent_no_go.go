@@ -42,7 +42,7 @@ func (s *StateStore) AwaitObservationNoGo() (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	resolved, ok, err := s.resolveParentReviewState(ParentOutcomeNoGo, "", "")
+	resolved, ok, err := s.resolveParentCompletionState(ParentOutcomeNoGo, SessionRotationTerminalNoGo)
 	if err != nil || !ok {
 		return ok, err
 	}
