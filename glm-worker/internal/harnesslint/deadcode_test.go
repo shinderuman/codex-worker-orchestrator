@@ -64,8 +64,8 @@ func TestDeadcodeAggregatesOnlyApplicableBuildConfigurations(t *testing.T) {
 	writeFixture(t, root, "linux.go", "//go:build linux\n\npackage fixture\n\nfunc linuxOnly() {}\n")
 
 	runner := &deadcodeFixtureRunner{outputs: map[string]commandResult{
-		"linux":  {output: "common.go:3:6: unreachable func: commonOnly\nunix.go:5:6: unreachable func: unixOnly\nlinux.go:5:6: unreachable func: linuxOnly\n"},
-		"darwin": {output: "unix.go:5:6: unreachable func: unixOnly\n"},
+		"linux":   {output: "common.go:3:6: unreachable func: commonOnly\nunix.go:5:6: unreachable func: unixOnly\nlinux.go:5:6: unreachable func: linuxOnly\n"},
+		"darwin":  {output: "unix.go:5:6: unreachable func: unixOnly\n"},
 		"windows": {},
 	}}
 	violations, err := runDeadcodeModuleChecks(root, "", runner)
