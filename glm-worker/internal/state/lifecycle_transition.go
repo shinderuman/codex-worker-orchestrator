@@ -28,7 +28,7 @@ func (s *StateStore) BeginParentDecision() (ParentActionRollback, error) {
 	if err != nil {
 		return ParentActionRollback{}, err
 	}
-	if err := s.saveParentActionBegin(rollback.status); err != nil {
+	if err := s.saveParentActionBegin(rollback); err != nil {
 		return ParentActionRollback{}, err
 	}
 	if err := s.SetTaskStatus(TaskStatusActive); err != nil {
@@ -49,7 +49,7 @@ func (s *StateStore) BeginParentFix(origin, cause string) (ParentActionRollback,
 	if err != nil {
 		return ParentActionRollback{}, err
 	}
-	if err := s.saveParentActionBegin(rollback.status); err != nil {
+	if err := s.saveParentActionBegin(rollback); err != nil {
 		return ParentActionRollback{}, err
 	}
 	if err := s.SetTaskStatus(TaskStatusActive); err != nil {
