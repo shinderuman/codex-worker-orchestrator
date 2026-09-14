@@ -100,6 +100,9 @@ func (w *Workflow) pinRepositoryHarnessActivation() (bool, error) {
 	if err := w.state.Write(repositoryharness.ActivationStateKey, value); err != nil {
 		return false, err
 	}
+	if err := w.state.RecordRepositoryHarnessActivation(decision.Active); err != nil {
+		state.WarnRepositoryHarnessActivationEvidenceSkip(err)
+	}
 	return decision.Active, nil
 }
 
