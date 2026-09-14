@@ -13,7 +13,7 @@ func (s *StateStore) AcceptParentReview() (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	resolved, ok, resolveErr := s.resolveParentReviewState(ParentOutcomeAccepted, "", "")
+	resolved, ok, resolveErr := s.resolveParentCompletionState(ParentOutcomeAccepted, SessionRotationTerminalAccept)
 	if !ok || resolveErr != nil {
 		return ok, resolveErr
 	}
