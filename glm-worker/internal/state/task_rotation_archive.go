@@ -17,11 +17,16 @@ func (s *StateStore) archiveCurrentStatsForTaskRotation(parentIdentity *ParentCo
 	if err != nil {
 		return err
 	}
+
+	resolved, hadOpen, _ := stats.resolveParentOutcome(ParentOutcomeUnknown, "", "")
 	if err := s.archiveCurrentStats(parentIdentity, stats); err != nil {
 		if rollbackErr := restoreTaskStatsArchiveSnapshot(archivePath, snapshot); rollbackErr != nil {
 			return errors.Join(err, fmt.Errorf("task stats archiveをrollbackできません: %w", rollbackErr))
 		}
 		return err
+	}
+	if hadOpen {
+		s.appendParentOutcomeEvent(stats.TaskID, ParentPhaseClose, ParentOutcomeUnknown, "", "", resolved)
 	}
 	return nil
 }
