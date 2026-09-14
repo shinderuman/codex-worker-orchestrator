@@ -121,15 +121,15 @@ func runComplete(cfg config.AppConfig, stdout io.Writer) error {
 }
 
 func completionTerminalForEvaluation(st *state.StateStore) (string, *finalizationFailure) {
-	terminal, risk, found := st.CompletionOutcomeEvidence()
-	if !found {
+	outcome, err := st.CurrentParentCompletionOutcome()
+	if err != nil || outcome == nil {
 		return "", &finalizationFailure{Stage: "state", Reason: completeFailureTerminalUnrecoverable}
 	}
 	st.UpdateTaskStats(func(stats *state.TaskStats) {
-		stats.CompletionTerminal = terminal
-		stats.AcceptedRisk = risk
+		stats.CompletionTerminal = outcome.Terminal
+		stats.AcceptedRisk = outcome.Risk
 	})
-	return terminal, nil
+	return outcome.Terminal, nil
 }
 
 func verifyParentCompletion(repoRoot string, st *state.StateStore) completionVerification {
