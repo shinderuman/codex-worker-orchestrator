@@ -7,10 +7,17 @@ import (
 	"os"
 )
 
+type parentActionBeginSnapshot struct {
+	Exists bool   `json:"exists"`
+	Data   []byte `json:"data,omitempty"`
+}
+
 type parentActionBeginRecord struct {
-	Version      int        `json:"version"`
-	TaskID       string     `json:"task_id"`
-	SourceStatus TaskStatus `json:"source_status"`
+	Version      int                       `json:"version"`
+	TaskID       string                    `json:"task_id"`
+	SourceStatus TaskStatus                `json:"source_status"`
+	Pending      parentActionBeginSnapshot `json:"pending_decision"`
+	Review       parentActionBeginSnapshot `json:"parent_review"`
 }
 
 const (
@@ -20,9 +27,15 @@ const (
 
 var errNoParentActionBegin = errors.New("parent action begin transition is not pending")
 
-func (s *StateStore) saveParentActionBegin(source TaskStatus) error {
-	if source != TaskStatusWaitingDecision && source != TaskStatusWaitingSolReview {
-		return fmt.Errorf("parent action begin source %s is not a parent waiting state", source)
+func (s *StateStore) saveParentActionBegin(rollback ParentActionRollback) error {
+	if rollback.status != TaskStatusWaitingDecision && rollback.status != TaskStatusWaitingSolReview {
+		return fmt.Errorf("parent action begin source %s is not a parent waiting state", rollback.status)
+	}
+	if rollback.status == TaskStatusWaitingDecision && !rollback.pending.exists {
+		return fmt.Errorf("parent action begin decision source has no pending decision snapshot")
+	}
+	if rollback.status == TaskStatusWaitingSolReview && rollback.pending.exists {
+		return fmt.Errorf("parent action begin fix source has an unexpected pending decision snapshot")
 	}
 	if s.Exists(parentActionBeginStateFile) {
 		return fmt.Errorf("parent action begin transition is already pending")
@@ -34,7 +47,9 @@ func (s *StateStore) saveParentActionBegin(source TaskStatus) error {
 	record := parentActionBeginRecord{
 		Version:      parentActionBeginStateVersion,
 		TaskID:       taskID,
-		SourceStatus: source,
+		SourceStatus: rollback.status,
+		Pending:      parentActionSnapshotFromLifecycle(rollback.pending),
+		Review:       parentActionSnapshotFromLifecycle(rollback.review),
 	}
 	data, err := json.MarshalIndent(record, "", "  ")
 	if err != nil {
@@ -44,6 +59,13 @@ func (s *StateStore) saveParentActionBegin(source TaskStatus) error {
 		return fmt.Errorf("parent action begin recordを書き込めません: %w", err)
 	}
 	return nil
+}
+
+func parentActionSnapshotFromLifecycle(snapshot lifecycleFileSnapshot) parentActionBeginSnapshot {
+	return parentActionBeginSnapshot{
+		Exists: snapshot.exists,
+		Data:   append([]byte(nil), snapshot.data...),
+	}
 }
 
 func (s *StateStore) loadParentActionBegin() (parentActionBeginRecord, error) {
@@ -58,16 +80,32 @@ func (s *StateStore) loadParentActionBegin() (parentActionBeginRecord, error) {
 	if err := json.Unmarshal(data, &record); err != nil {
 		return parentActionBeginRecord{}, fmt.Errorf("parent action begin recordを読めません: %w", err)
 	}
-	if record.Version != parentActionBeginStateVersion {
-		return parentActionBeginRecord{}, fmt.Errorf("unsupported parent action begin record version: %d", record.Version)
-	}
-	if record.TaskID == "" {
-		return parentActionBeginRecord{}, fmt.Errorf("parent action begin record has no task identity")
-	}
-	if record.SourceStatus != TaskStatusWaitingDecision && record.SourceStatus != TaskStatusWaitingSolReview {
-		return parentActionBeginRecord{}, fmt.Errorf("parent action begin record has invalid source status %s", record.SourceStatus)
+	if err := validateParentActionBeginRecord(record); err != nil {
+		return parentActionBeginRecord{}, err
 	}
 	return record, nil
+}
+
+func validateParentActionBeginRecord(record parentActionBeginRecord) error {
+	if record.Version != parentActionBeginStateVersion {
+		return fmt.Errorf("unsupported parent action begin record version: %d", record.Version)
+	}
+	if record.TaskID == "" {
+		return fmt.Errorf("parent action begin record has no task identity")
+	}
+	if record.SourceStatus != TaskStatusWaitingDecision && record.SourceStatus != TaskStatusWaitingSolReview {
+		return fmt.Errorf("parent action begin record has invalid source status %s", record.SourceStatus)
+	}
+	if record.SourceStatus == TaskStatusWaitingDecision && !record.Pending.Exists {
+		return fmt.Errorf("parent action begin decision record has no pending decision snapshot")
+	}
+	if record.SourceStatus == TaskStatusWaitingSolReview && record.Pending.Exists {
+		return fmt.Errorf("parent action begin fix record has an unexpected pending decision snapshot")
+	}
+	if (!record.Pending.Exists && len(record.Pending.Data) != 0) || (!record.Review.Exists && len(record.Review.Data) != 0) {
+		return fmt.Errorf("parent action begin record has data for a missing snapshot")
+	}
+	return nil
 }
 
 func (s *StateStore) CommitParentActionBegin() error {
@@ -103,6 +141,9 @@ func (s *StateStore) RecoverParentActionBeginFromState() (TaskStatus, error) {
 	if err := s.clearParentActionBeginResume(record); err != nil {
 		return TaskStatusNone, err
 	}
+	if err := s.restoreParentActionBeginSnapshots(record); err != nil {
+		return TaskStatusNone, err
+	}
 	if status == TaskStatusActive {
 		if err := s.SetTaskStatus(record.SourceStatus); err != nil {
 			return TaskStatusNone, err
@@ -126,26 +167,23 @@ func (s *StateStore) validateParentActionBeginRecovery(record parentActionBeginR
 	if status != TaskStatusActive && status != record.SourceStatus {
 		return TaskStatusNone, fmt.Errorf("parent action recovery requires active task or retry of %s, got %s", record.SourceStatus, status)
 	}
-	label, err := s.CurrentParentReviewLabel()
-	if err != nil {
-		return TaskStatusNone, fmt.Errorf("parent action recovery cannot read parent review state: %w", err)
-	}
-	if label != roundCommentNone {
-		return TaskStatusNone, fmt.Errorf("parent action recovery requires no open parent review, got %s", label)
-	}
-	if err := s.validateParentActionBeginPayload(record.SourceStatus); err != nil {
-		return TaskStatusNone, err
-	}
 	return status, nil
 }
 
-func (s *StateStore) validateParentActionBeginPayload(source TaskStatus) error {
-	pending := s.Exists("pending-decision")
-	if source == TaskStatusWaitingDecision && !pending {
-		return fmt.Errorf("parent action recovery for a decision requires the pending decision payload")
+func (s *StateStore) restoreParentActionBeginSnapshots(record parentActionBeginRecord) error {
+	if err := s.restoreLifecycleFile(lifecycleFileSnapshot{
+		name:   parentReviewStateFile,
+		data:   append([]byte(nil), record.Review.Data...),
+		exists: record.Review.Exists,
+	}); err != nil {
+		return err
 	}
-	if source == TaskStatusWaitingSolReview && pending {
-		return fmt.Errorf("parent action recovery for a fix requires no pending decision")
+	if err := s.restoreLifecycleFile(lifecycleFileSnapshot{
+		name:   "pending-decision",
+		data:   append([]byte(nil), record.Pending.Data...),
+		exists: record.Pending.Exists,
+	}); err != nil {
+		return err
 	}
 	return nil
 }
