@@ -217,9 +217,9 @@ func taskCreatedPaths(repoRoot, indexPath string, st *state.StateStore) ([]strin
 }
 
 func taskCreatedTrackedPaths(repoRoot, indexPath string, baselineRaw []byte) ([]string, error) {
-	currentRaw, err := exec.Command("git", "-C", repoRoot, "ls-files", "-z").Output()
+	currentRaw, stderr, err := runGitCommand(repoRoot, nil, nil, "ls-files", "-z")
 	if err != nil {
-		return nil, fmt.Errorf("list current tracked files: %w", err)
+		return nil, fmt.Errorf("list current tracked files: %w: %s", err, strings.TrimSpace(string(stderr)))
 	}
 	baselineIndexRaw, err := gitWithIndex(repoRoot, indexPath, nil, "ls-files", "-z")
 	if err != nil {
@@ -244,9 +244,9 @@ func taskCreatedTrackedPaths(repoRoot, indexPath string, baselineRaw []byte) ([]
 }
 
 func taskCreatedUntrackedPaths(repoRoot string, baselineRaw []byte) ([]string, error) {
-	currentRaw, err := exec.Command("git", "-C", repoRoot, "ls-files", "-z", "--others", "--exclude-standard").Output()
+	currentRaw, stderr, err := runGitCommand(repoRoot, nil, nil, "ls-files", "-z", "--others", "--exclude-standard")
 	if err != nil {
-		return nil, fmt.Errorf("list current untracked files: %w", err)
+		return nil, fmt.Errorf("list current untracked files: %w: %s", err, strings.TrimSpace(string(stderr)))
 	}
 	existed := nulPathSet(baselineRaw)
 	var result []string
@@ -275,16 +275,27 @@ func appendUniquePaths(paths []string, additions ...string) []string {
 }
 
 func gitWithIndex(repoRoot, indexPath string, stdin []byte, args ...string) ([]byte, error) {
+	stdout, stderr, err := runGitCommand(repoRoot, []string{"GIT_INDEX_FILE=" + indexPath}, stdin, args...)
+	if err != nil {
+		return nil, fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(stderr)))
+	}
+	return stdout, nil
+}
+
+func runGitCommand(repoRoot string, extraEnv []string, stdin []byte, args ...string) ([]byte, []byte, error) {
 	cmd := exec.Command("git", append([]string{"-C", repoRoot}, args...)...)
-	cmd.Env = append(os.Environ(), "GIT_INDEX_FILE="+indexPath)
+	if len(extraEnv) != 0 {
+		cmd.Env = append(os.Environ(), extraEnv...)
+	}
 	if stdin != nil {
 		cmd.Stdin = bytes.NewReader(stdin)
 	}
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return nil, fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(output)))
-	}
-	return output, nil
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	return stdout.Bytes(), stderr.Bytes(), err
 }
 
 func writeNewFilePatches(repoRoot string, result *bytes.Buffer, paths []string) error {
@@ -306,16 +317,16 @@ func newFilePatch(repoRoot, filePath string) ([]byte, error) {
 		}
 	}
 
-	cmd := exec.Command("git", "-C", repoRoot, "diff", "--no-index", "--binary", "--", "/dev/null", filePath)
-	output, err := cmd.CombinedOutput()
+	args := []string{"diff", "--no-index", "--binary", "--", "/dev/null", filePath}
+	stdout, stderr, err := runGitCommand(repoRoot, nil, nil, args...)
 	if err == nil {
-		return output, nil
+		return stdout, nil
 	}
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
-		return output, nil
+		return stdout, nil
 	}
-	return nil, fmt.Errorf("capture new file task diff for %s: %w: %s", filePath, err, strings.TrimSpace(string(output)))
+	return nil, fmt.Errorf("capture new file task diff for %s: %w: %s", filePath, err, strings.TrimSpace(string(stderr)))
 }
 
 func newDirectorySymlinkFilePatch(repoRoot, filePath string) ([]byte, error) {
@@ -337,15 +348,17 @@ func newDirectorySymlinkFilePatch(repoRoot, filePath string) ([]byte, error) {
 		return nil, fmt.Errorf("mirror directory-target symlink %s: %w", filePath, err)
 	}
 	for _, args := range [][]string{{"init", "-q"}, {"add", "--", filePath}} {
-		if output, err := exec.Command("git", append([]string{"-C", tempDir}, args...)...).CombinedOutput(); err != nil {
-			return nil, fmt.Errorf("prepare directory-target symlink patch for %s: git %s: %w: %s", filePath, strings.Join(args, " "), err, strings.TrimSpace(string(output)))
+		_, stderr, err := runGitCommand(tempDir, nil, nil, args...)
+		if err != nil {
+			return nil, fmt.Errorf("prepare directory-target symlink patch for %s: git %s: %w: %s", filePath, strings.Join(args, " "), err, strings.TrimSpace(string(stderr)))
 		}
 	}
-	output, err := exec.Command("git", "-C", tempDir, "diff", "--cached", "--binary", "--no-ext-diff", "--no-renames", "--", filePath).CombinedOutput()
+	args := []string{"diff", "--cached", "--binary", "--no-ext-diff", "--no-renames", "--", filePath}
+	stdout, stderr, err := runGitCommand(tempDir, nil, nil, args...)
 	if err != nil {
-		return nil, fmt.Errorf("capture directory-target symlink patch for %s: %w: %s", filePath, err, strings.TrimSpace(string(output)))
+		return nil, fmt.Errorf("capture directory-target symlink patch for %s: %w: %s", filePath, err, strings.TrimSpace(string(stderr)))
 	}
-	return output, nil
+	return stdout, nil
 }
 
 func worktreePathPresent(repoRoot, filePath string) bool {
