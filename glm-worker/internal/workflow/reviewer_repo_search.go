@@ -23,14 +23,6 @@ const (
 	reviewerDiffImpactTermLimit     = 32
 )
 
-func (w *Workflow) reviewerDiffFirstNavigation(request string, reviewNumber int) (string, error) {
-	parentMetadataFilterActive, err := RepositoryHarnessActive(w.config.RepoRoot, w.state)
-	if err != nil {
-		return "", err
-	}
-	return w.reviewerDiffFirstNavigationWithHarness(request, reviewNumber, parentMetadataFilterActive)
-}
-
 func (w *Workflow) reviewerDiffFirstNavigationWithHarness(request string, reviewNumber int, parentMetadataFilterActive bool) (string, error) {
 	collector := w.collectChangedPaths
 	if collector == nil {
