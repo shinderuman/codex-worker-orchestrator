@@ -164,9 +164,7 @@ INDEPENDENT_REVIEW:
 
 func resultCorrectionPrompt(reason string) string {
 	return fmt.Sprintf(`直前の作業結果の内容は有効ですが、結果の意味検証に不合格でした。
-作業・調査・テストをやり直さず、違反を修正した同じ内容の結果を再出力してください。
-各fieldのvalueは空にできず、改行を含められません。複数事項は同じvalue内でセミコロン区切りにしてください。
-結果全体は6 KiB・1 field 1536 bytes以内です。STATUSに応じた必須fieldを省略しないでください。Bash toolを利用できる場合は、再出力の前に候補packet JSONをglm-worker --packet-checkで検証してから提出してください。
+作業・調査・テストをやり直さず、実行環境から指定されたstructured schemaとvalidatorを正として、下記の違反だけを修正した同じ意味の結果を再出力してください。
 %s
 大容量成果物の内容は再掲しないでください。違反内容に表示されたARTIFACTS pathは拒否された値であり、修正候補ではありません。REPORT_ARTIFACT_DIRまたはCURRENT_TASK_ARTIFACT_DIRが提示されている場合、その配下以外のpathをARTIFACTSへ残さないでください。現在taskで報告すべきartifactがなければARTIFACTSは空にしてください。
 
@@ -218,9 +216,6 @@ guardが汚染されたsessionを無効化したため、今回の呼び出し�
 func riskFloorReemitPrompt() string {
 	return `直前の独立reviewはHIGH RISK最終確認が必要な経路です。reviewerがPASSを返しましたが、wrapper risk floorがこれを却下しました。
 reviewerの自然言語判断だけではこの経路のriskを降格できません。
-実装・調査・テストをやり直さず、直前のreview結果の内容を保ったまま、結果だけを再出力してください。
-許容されるSTATUSは NEEDS_SOL_REVIEW (RISK: HIGH) だけです。PASS・FIX_REQUIRED・その他は許可されません。
-TARGETSにはnoneを指定できません。Solが読むべき最小対象をfile:symbol/行範囲で指定してください。
-NEEDS_SOL_REVIEWの必須field(SUMMARY, REQUIREMENT_COVERAGE, INVARIANTS, TEST_EVIDENCE, ISSUES, RESIDUAL_RISK, TARGETS, ARTIFACTS, SOL_QUESTION)を省略しないでください。
+実装・調査・テストをやり直さず、直前のreview結果の内容を保ったまま、実行環境から指定されたstructured schemaに従って結果だけを再出力してください。
 `
 }
