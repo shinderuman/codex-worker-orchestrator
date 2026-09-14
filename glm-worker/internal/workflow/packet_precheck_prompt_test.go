@@ -17,9 +17,19 @@ func TestWorkerDispatchRoutesPacketPrecheck(t *testing.T) {
 	if reviewer := withReviewerArtifactContext("review instruction", "/tmp/artifacts"); strings.Contains(reviewer, "--packet-check") {
 		t.Fatal("reviewerはread-onlyでBashを持たないため、pre-check指示を配線してはいけません")
 	}
-	correction := resultCorrectionPrompt("field summaryは1536 bytes以内にしてください")
-	if !strings.Contains(correction, "glm-worker --packet-check") {
-		t.Fatalf("結果修正promptがpre-checkへ誘導していません: %s", correction)
+}
+
+func TestResultCorrectionPromptDelegatesPacketGrammar(t *testing.T) {
+	correction := resultCorrectionPrompt("validator rejected packet")
+	for _, want := range []string{"structured schemaとvalidatorを正として", "validator rejected packet", rejectedArtifactMarker} {
+		if !strings.Contains(correction, want) {
+			t.Fatalf("結果修正promptにruntime context %qがありません: %s", want, correction)
+		}
+	}
+	for _, forbidden := range []string{"glm-worker --packet-check", "6 KiB", "1536 bytes", "STATUSに応じた必須field"} {
+		if strings.Contains(correction, forbidden) {
+			t.Fatalf("結果修正promptがpacket grammar %qを再定義しています: %s", forbidden, correction)
+		}
 	}
 }
 
