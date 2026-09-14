@@ -12,10 +12,10 @@ func TestFixPathCategory(t *testing.T) {
 		{"CLAUDE.md", FixCategoryInstruction},
 		{"codex/instructions/glm-execution.md", FixCategoryInstruction},
 		{".codex/instructions/agents.md", FixCategoryInstruction},
-		{"IMPLEMENTATION_PLAN.local.md", FixCategoryMetadata},
-		{"IMPLEMENTATION_RULES.md", FixCategoryMetadata},
-		{"IMPLEMENTATION_HISTORY.md", FixCategoryMetadata},
-		{"IMPLEMENTATION_TASKS/codex-review-gap-telemetry.md", FixCategoryMetadata},
+		{"IMPLEMENTATION_PLAN.local.md", FixCategoryDocumentation},
+		{"IMPLEMENTATION_RULES.md", FixCategoryDocumentation},
+		{"IMPLEMENTATION_HISTORY.md", FixCategoryDocumentation},
+		{"IMPLEMENTATION_TASKS/codex-review-gap-telemetry.md", FixCategoryDocumentation},
 		{"internal/app/review_gap_test.go", FixCategoryTest},
 		{"pkg/lib/widget.spec.ts", FixCategoryTest},
 		{"pkg/lib/widget_spec.ts", FixCategoryProduction},
@@ -35,7 +35,7 @@ func TestFixPathCategory(t *testing.T) {
 		{"agents.md", FixCategoryInstruction},
 		{"./codex/instructions/glm-packets.md", FixCategoryInstruction},
 		{"Codex/Instructions/Other.md", FixCategoryInstruction},
-		{"implementation_tasks/some-task.md", FixCategoryMetadata},
+		{"implementation_tasks/some-task.md", FixCategoryDocumentation},
 		{"Internal/App/Review_Gap_Test.go", FixCategoryTest},
 	}
 	for _, test := range tests {
