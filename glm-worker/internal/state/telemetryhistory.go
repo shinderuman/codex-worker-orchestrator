@@ -157,35 +157,48 @@ func (s *StateStore) ScanTelemetryHistory(filter TelemetryQueryFilter) (*Telemet
 		scan.Status = telemetryHistoryStatusNone
 	}
 
+	cohorts, cohortTaskLogs := scan.absorbTelemetryCorpus(corpus)
+	scan.Cohorts = collectTelemetryCohortScans(cohorts)
+	scan.historyCohortLogs = collectTelemetryCohortLogs(cohortTaskLogs)
+	return scan, nil
+}
+
+func (s *TelemetryHistoryScan) absorbTelemetryCorpus(corpus *telemetryCorpusScan) (map[telemetryCohortKey]*telemetryCohortAccumulator, map[telemetryCohortKey]map[string][]ModelCallLog) {
 	cohorts := make(map[telemetryCohortKey]*telemetryCohortAccumulator)
 	cohortTaskLogs := make(map[telemetryCohortKey]map[string][]ModelCallLog)
 	for _, file := range corpus.files {
 		for _, record := range file.records {
-			if record.malformedReason != "" {
-				scan.countTelemetryMalformed(record.malformedReason)
-				continue
-			}
-			if !record.current {
-				continue
-			}
-
-			key := telemetryCohortKey{version: ModelCallLogVersion, schemaRevision: ModelCallLogSchemaRevision}
-			cohort := cohorts[key]
-			if cohort == nil {
-				cohort = newTelemetryCohortAccumulator(key)
-				cohorts[key] = cohort
-			}
-			cohort.absorb(file.name, file.taskID, record.log, record.usagePresent)
-			if cohortTaskLogs[key] == nil {
-				cohortTaskLogs[key] = make(map[string][]ModelCallLog)
-			}
-			cohortTaskLogs[key][file.taskID] = append(cohortTaskLogs[key][file.taskID], record.log)
+			s.absorbTelemetryCorpusRecord(cohorts, cohortTaskLogs, file, record)
 		}
 	}
+	return cohorts, cohortTaskLogs
+}
 
-	scan.Cohorts = collectTelemetryCohortScans(cohorts)
-	scan.historyCohortLogs = collectTelemetryCohortLogs(cohortTaskLogs)
-	return scan, nil
+func (s *TelemetryHistoryScan) absorbTelemetryCorpusRecord(
+	cohorts map[telemetryCohortKey]*telemetryCohortAccumulator,
+	cohortTaskLogs map[telemetryCohortKey]map[string][]ModelCallLog,
+	file telemetryCorpusFile,
+	record telemetryCorpusRecord,
+) {
+	if record.malformedReason != "" {
+		s.countTelemetryMalformed(record.malformedReason)
+		return
+	}
+	if !record.current {
+		return
+	}
+
+	key := telemetryCohortKey{version: ModelCallLogVersion, schemaRevision: ModelCallLogSchemaRevision}
+	cohort := cohorts[key]
+	if cohort == nil {
+		cohort = newTelemetryCohortAccumulator(key)
+		cohorts[key] = cohort
+	}
+	cohort.absorb(file.name, file.taskID, record.log, record.usagePresent)
+	if cohortTaskLogs[key] == nil {
+		cohortTaskLogs[key] = make(map[string][]ModelCallLog)
+	}
+	cohortTaskLogs[key][file.taskID] = append(cohortTaskLogs[key][file.taskID], record.log)
 }
 
 func (s *TelemetryHistoryScan) countTelemetryMalformed(reason string) {
