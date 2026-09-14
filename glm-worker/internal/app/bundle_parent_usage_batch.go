@@ -46,11 +46,8 @@ func newParentUsageBatch(codexHome string, tasks []state.TaskStats, enumerate fu
 }
 
 func (batch *parentUsageBatch) evidence(task bundleTask) parentUsageBatchEvidence {
-	threadID, basis, failure := selectCodexParentIdentity(task)
-	if failure != nil {
-		return parentUsageBatchEvidence{association: *failure}
-	}
-	key := basis + "/" + threadID
+	threadID := task.Stats.ParentCodexThreadID
+	key := codexAssociationBasis + "/" + threadID
 	if cached, ok := batch.byIdentity[key]; ok {
 		return cached
 	}
