@@ -23,8 +23,11 @@ func scanForwardOnlyCompatibilityRule(root string, paths []string) ([]Violation,
 	return append(violations, testSurfaceViolations...), nil
 }
 
-func forwardOnlyAliasDirectlyCalled(files []forwardOnlyParsedTestFile, name string) bool {
+func forwardOnlyAliasCalledOutsideDeclarationFile(files []forwardOnlyParsedTestFile, declarationPath, name string) bool {
 	for _, testFile := range files {
+		if testFile.path == declarationPath {
+			continue
+		}
 		called := false
 		ast.Inspect(testFile.file, func(node ast.Node) bool {
 			call, ok := node.(*ast.CallExpr)
