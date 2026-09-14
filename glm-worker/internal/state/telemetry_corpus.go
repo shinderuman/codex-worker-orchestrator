@@ -122,7 +122,10 @@ func decodeTelemetryCorpusLine(
 	scan *telemetryCorpusScan,
 ) (telemetryCorpusRecord, bool) {
 	if len(line) == 0 {
-		return telemetryCorpusRecord{currentReadError: "telemetryを読めません: unexpected end of JSON input"}, true
+		return telemetryCorpusRecord{
+			malformedReason:  telemetryMalformedReasonDecode,
+			currentReadError: "telemetryを読めません: unexpected end of JSON input",
+		}, true
 	}
 
 	var header telemetryCorpusHeader
@@ -133,10 +136,20 @@ func decodeTelemetryCorpusLine(
 		}, true
 	}
 	if header.Version == nil {
-		return telemetryCorpusRecord{malformedReason: telemetryMalformedReasonHeader}, true
+		return telemetryCorpusRecord{
+			malformedReason:  telemetryMalformedReasonHeader,
+			currentReadError: "telemetryを読めません: versionがありません",
+		}, true
 	}
 	if *header.Version != ModelCallLogVersion || header.SchemaRevision != ModelCallLogSchemaRevision {
-		return telemetryCorpusRecord{malformedReason: telemetryMalformedReasonUnsupportedSchema}, true
+		return telemetryCorpusRecord{
+			malformedReason: telemetryMalformedReasonUnsupportedSchema,
+			currentReadError: fmt.Sprintf(
+				"telemetryを読めません: unsupported schema version=%d schema_revision=%d",
+				*header.Version,
+				header.SchemaRevision,
+			),
+		}, true
 	}
 
 	var record ModelCallLog

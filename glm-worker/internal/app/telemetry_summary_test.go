@@ -229,7 +229,7 @@ func TestTelemetryCompactSummaryCurrentScope(t *testing.T) {
 	}
 	scan, _ := decoded["scan"].(map[string]any)
 	if scan["status"] != statusPartial || scan["files_considered"].(float64) != 3 ||
-		scan["unreadable_files"].(float64) != 1 || scan["malformed_records"].(float64) != 0 {
+		scan["unreadable_files"].(float64) != 2 || scan["malformed_records"].(float64) != 0 {
 		t.Fatalf("scan = %#v", scan)
 	}
 	cohorts, _ := decoded["cohorts"].([]any)
@@ -325,7 +325,7 @@ func TestTelemetryCompactSummaryCurrentScopeWithoutCurrentSchemaRecords(t *testi
 		if err := os.WriteFile(st.Path("telemetry/"+taskID+".jsonl"), []byte(line+"\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		assertEvaluatedEmptyCohort(t, cfg, "ok", 1)
+		assertEvaluatedEmptyCohort(t, cfg, statusPartial, 1)
 	})
 }
 
