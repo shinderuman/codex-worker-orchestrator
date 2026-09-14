@@ -36,7 +36,7 @@ func TestReviewGapMetadataCategoryRequiresTaskActivationEvidence(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fix := reviewGapFix{}
+			fix := reviewGapFix{CategoryStatus: reviewGapUnknown}
 			reviewGapFillCategories(&fix, previous, round, tt.active, tt.activationErr)
 			if fix.CategoryStatus != tt.wantStatus {
 				t.Fatalf("category status = %q want %q", fix.CategoryStatus, tt.wantStatus)
