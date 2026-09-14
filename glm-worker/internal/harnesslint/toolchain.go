@@ -231,7 +231,6 @@ func observedQualityToolVersion(name, output string) string {
 		if len(match) == 2 {
 			return match[1]
 		}
-		return ""
 	}
 	return semanticVersion.FindString(output)
 }
