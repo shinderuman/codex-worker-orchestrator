@@ -44,6 +44,9 @@ func TestReviewedBoundaryContextMarksOnlyIdenticalBlobsReviewed(t *testing.T) {
 	if !strings.Contains(first, "reviewed-keep.md: new-boundary") || !strings.Contains(first, "conflict-merge.md: new-boundary") {
 		t.Fatalf("first round boundary = %q", first)
 	}
+	if strings.Contains(first, "RULE:") {
+		t.Fatalf("reviewed boundary should project changing state only: %q", first)
+	}
 
 	if err := os.WriteFile(filepath.Join(repo, "conflict-merge.md"), []byte("changed by fix round\n"), 0o644); err != nil {
 		t.Fatal(err)
