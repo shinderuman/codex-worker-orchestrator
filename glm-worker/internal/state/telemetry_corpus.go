@@ -36,17 +36,19 @@ type telemetryCorpusScan struct {
 }
 
 type telemetryCorpusFile struct {
-	name             string
-	taskID           string
-	currentReadError string
-	records          []telemetryCorpusRecord
+	name                    string
+	taskID                  string
+	currentReadError        string
+	recordsOutsidePeriod    int
+	recordsUndatedExcluded int
+	records                 []telemetryCorpusRecord
 }
 
 type telemetryCorpusRecord struct {
-	current         bool
-	log             ModelCallLog
-	usagePresent    bool
-	malformedReason string
+	current          bool
+	log              ModelCallLog
+	usagePresent     bool
+	malformedReason  string
 	currentReadError string
 }
 
@@ -99,7 +101,7 @@ func (s *StateStore) scanTelemetryCorpusFile(fileScan *telemetryCorpusFile, filt
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
 	for scanner.Scan() {
-		record, include := decodeTelemetryCorpusLine(scanner.Bytes(), filter, scan)
+		record, include := decodeTelemetryCorpusLine(scanner.Bytes(), filter, fileScan, scan)
 		if !include {
 			continue
 		}
@@ -111,7 +113,12 @@ func (s *StateStore) scanTelemetryCorpusFile(fileScan *telemetryCorpusFile, filt
 	return scanner.Err()
 }
 
-func decodeTelemetryCorpusLine(line []byte, filter TelemetryQueryFilter, scan *telemetryCorpusScan) (telemetryCorpusRecord, bool) {
+func decodeTelemetryCorpusLine(
+	line []byte,
+	filter TelemetryQueryFilter,
+	fileScan *telemetryCorpusFile,
+	scan *telemetryCorpusScan,
+) (telemetryCorpusRecord, bool) {
 	if len(line) == 0 {
 		return telemetryCorpusRecord{currentReadError: "telemetryを読めません: unexpected end of JSON input"}, true
 	}
@@ -119,7 +126,7 @@ func decodeTelemetryCorpusLine(line []byte, filter TelemetryQueryFilter, scan *t
 	var header telemetryCorpusHeader
 	if err := json.Unmarshal(line, &header); err != nil {
 		return telemetryCorpusRecord{
-			malformedReason: telemetryMalformedReasonDecode,
+			malformedReason:  telemetryMalformedReasonDecode,
 			currentReadError: fmt.Sprintf("telemetryを読めません: %v", err),
 		}, true
 	}
@@ -133,15 +140,17 @@ func decodeTelemetryCorpusLine(line []byte, filter TelemetryQueryFilter, scan *t
 	var record ModelCallLog
 	if err := json.Unmarshal(line, &record); err != nil {
 		return telemetryCorpusRecord{
-			malformedReason: telemetryMalformedReasonDecode,
+			malformedReason:  telemetryMalformedReasonDecode,
 			currentReadError: fmt.Sprintf("telemetryを読めません: %v", err),
 		}, true
 	}
 	if filter.ExcludesUndated(record.StartedAt) {
+		fileScan.recordsUndatedExcluded++
 		scan.recordsUndatedExcluded++
 		return telemetryCorpusRecord{}, false
 	}
 	if !filter.CoversTime(record.StartedAt) {
+		fileScan.recordsOutsidePeriod++
 		scan.recordsOutsidePeriod++
 		return telemetryCorpusRecord{}, false
 	}
@@ -160,18 +169,18 @@ func (s *StateStore) ScanTelemetryCurrent(filter TelemetryQueryFilter) (*Telemet
 	}
 
 	scan := &TelemetryCurrentScan{
-		Dir:                    corpus.dir,
-		FilesConsidered:        corpus.filesConsidered,
-		RecordsOutsidePeriod:   corpus.recordsOutsidePeriod,
-		RecordsUndatedExcluded: corpus.recordsUndatedExcluded,
-		IgnoredFiles:           corpus.ignoredFiles,
-		Logs:                   make([]TaskCallLogs, 0, len(corpus.files)),
+		Dir:             corpus.dir,
+		FilesConsidered: corpus.filesConsidered,
+		IgnoredFiles:    corpus.ignoredFiles,
+		Logs:            make([]TaskCallLogs, 0, len(corpus.files)),
 	}
 	for _, file := range corpus.files {
 		if file.currentReadError != "" {
 			scan.UnreadableTasks = append(scan.UnreadableTasks, TelemetryTaskError{TaskID: file.taskID, Error: file.currentReadError})
 			continue
 		}
+		scan.RecordsOutsidePeriod += file.recordsOutsidePeriod
+		scan.RecordsUndatedExcluded += file.recordsUndatedExcluded
 		logs := make([]ModelCallLog, 0, len(file.records))
 		for _, record := range file.records {
 			if record.current {
