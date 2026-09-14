@@ -310,16 +310,6 @@ func (w *Workflow) replaceAcceptedScopeWithDecision(decision string) error {
 	return w.state.Write("last-decision", decision)
 }
 
-func (w *Workflow) ExecuteExplicitFix(instruction, origin, cause string) error {
-	return w.ExecuteExplicitFixWithScope(instruction, origin, cause, "")
-}
-
-func (w *Workflow) ExecuteExplicitFixWithScope(instruction, origin, cause, acceptedScope string) error {
-	return quietWhenParentFileGuardStopped(w.withTemp(func() error {
-		return w.executeExplicitFixWithAcceptedScopeLifecycle(instruction, origin, cause, acceptedScope)
-	}))
-}
-
 func (w *Workflow) executeWorkerCheckpoint(request string, checkpoint state.ResumeCheckpoint, pocStage bool) error {
 	if pocStage {
 		stopped, err := w.savePoCStartSnapshot()
