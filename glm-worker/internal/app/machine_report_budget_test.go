@@ -2,11 +2,33 @@ package app
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
-
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint"
 )
+
+const (
+	machineReportBundleAnalysis = "bundle-analysis-index"
+	machineReportBundleManifest = "bundle-manifest"
+	machineReportBundleReceipt  = "bundle-receipt"
+)
+
+var bundleMachineReportBudgets = map[string]int{
+	machineReportBundleAnalysis: 12 * 1024,
+	machineReportBundleManifest: 4 * 1024,
+	machineReportBundleReceipt:  2 * 1024,
+}
+
+func checkBundleMachineReportBudget(surface string, data []byte) error {
+	limit, ok := bundleMachineReportBudgets[surface]
+	if !ok {
+		return fmt.Errorf("unknown machine report surface %q", surface)
+	}
+	if len(data) <= limit {
+		return nil
+	}
+	return fmt.Errorf("machine report %s is %d bytes, budget is %d", surface, len(data), limit)
+}
 
 func TestBundleMachineReportsStayWithinProtectedBudgets(t *testing.T) {
 	fixture := newAnalysisBundleFixture(t)
@@ -28,9 +50,9 @@ func TestBundleMachineReportsStayWithinProtectedBudgets(t *testing.T) {
 		surface string
 		value   any
 	}{
-		{name: "analysis-index", surface: harnesslint.MachineReportBundleAnalysis, value: fixture.index},
-		{name: "manifest", surface: harnesslint.MachineReportBundleManifest, value: fixture.manifest},
-		{name: "receipt", surface: harnesslint.MachineReportBundleReceipt, value: receipt},
+		{name: "analysis-index", surface: machineReportBundleAnalysis, value: fixture.index},
+		{name: "manifest", surface: machineReportBundleManifest, value: fixture.manifest},
+		{name: "receipt", surface: machineReportBundleReceipt, value: receipt},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -38,7 +60,7 @@ func TestBundleMachineReportsStayWithinProtectedBudgets(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := harnesslint.CheckMachineReportBudget(tc.surface, data); err != nil {
+			if err := checkBundleMachineReportBudget(tc.surface, data); err != nil {
 				t.Fatal(err)
 			}
 		})
@@ -50,7 +72,7 @@ func TestBundleAnalysisBudgetRejectsExplanatoryProseGrowth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	limit, ok := harnesslint.MachineReportBudget(harnesslint.MachineReportBundleAnalysis)
+	limit, ok := bundleMachineReportBudgets[machineReportBundleAnalysis]
 	if !ok {
 		t.Fatal("analysis-index budget is missing")
 	}
@@ -68,7 +90,7 @@ func TestBundleAnalysisBudgetRejectsExplanatoryProseGrowth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := harnesslint.CheckMachineReportBudget(harnesslint.MachineReportBundleAnalysis, inflatedData); err == nil {
+	if err := checkBundleMachineReportBudget(machineReportBundleAnalysis, inflatedData); err == nil {
 		t.Fatalf("prose growth stayed under protected budget: base=%d inflated=%d limit=%d", len(data), len(inflatedData), limit)
 	}
 }
