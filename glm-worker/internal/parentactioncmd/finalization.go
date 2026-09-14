@@ -355,7 +355,7 @@ func readFinalizationGitSummary(repoRoot string) (finalizationGitSummary, error)
 		return finalizationGitSummary{}, err
 	}
 	staged, unstaged, untracked := countFinalizationStatus(status)
-	remote, remoteState := finalizationRemoteState(repoRoot, branch, head.Detached)
+	remote, remoteState := finalizationRemoteState(repoRoot, branch, head.Detached, head.Head)
 	return finalizationGitSummary{
 		Head:             head.Head,
 		Branch:           branch,
@@ -369,7 +369,7 @@ func readFinalizationGitSummary(repoRoot string) (finalizationGitSummary, error)
 	}, nil
 }
 
-func finalizationRemoteState(repoRoot, branch string, detached bool) (*finalizationGitRemote, string) {
+func finalizationRemoteState(repoRoot, branch string, detached bool, headOID string) (*finalizationGitRemote, string) {
 	remote := &finalizationGitRemote{Basis: finalizationRemoteBasisTrackingRef}
 	if detached || branch == "" {
 		return remote, finalizationRemoteStateNoUpstream
@@ -389,7 +389,7 @@ func finalizationRemoteState(repoRoot, branch string, detached bool) (*finalizat
 	if upstream.TrackingOID == "" {
 		return remote, finalizationRemoteStateTrackingMiss
 	}
-	ahead, behind, err := gitAheadBehind(repoRoot, upstream.TrackingRef)
+	ahead, behind, err := gitAheadBehind(repoRoot, upstream.TrackingRef, headOID)
 	if err != nil {
 		return remote, finalizationRemoteStateUnverified
 	}
