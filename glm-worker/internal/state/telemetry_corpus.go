@@ -83,7 +83,9 @@ func (s *StateStore) scanTelemetryCorpus(filter TelemetryQueryFilter) (*telemetr
 
 		fileScan := telemetryCorpusFile{name: name, taskID: taskID}
 		if err := s.scanTelemetryCorpusFile(&fileScan, filter, scan); err != nil {
-			fileScan.currentReadError = err.Error()
+			if fileScan.currentReadError == "" {
+				fileScan.currentReadError = err.Error()
+			}
 			scan.unreadableFiles = append(scan.unreadableFiles, TelemetryFileError{File: name, Error: err.Error()})
 		}
 		scan.files = append(scan.files, fileScan)
