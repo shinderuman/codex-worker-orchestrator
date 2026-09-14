@@ -30,7 +30,6 @@ func (s *StateStore) projectRepoSearchStatsForRead(stats TaskStats) (TaskStats, 
 		return stats, nil
 	}
 	applyRepoSearchMeasure(&stats, measure)
-	stats.RepoSearchLiveProjection = true
 	return stats, nil
 }
 
