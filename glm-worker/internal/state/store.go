@@ -16,7 +16,8 @@ type SessionRole string
 type TaskStatus string
 
 type StateStore struct {
-	dir string
+	dir                      string
+	repoSearchReadProjection bool
 }
 
 const (
