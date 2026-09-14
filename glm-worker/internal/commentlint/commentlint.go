@@ -13,7 +13,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 )
 
@@ -70,39 +69,6 @@ const (
 	statusFail  = "fail"
 	sourceShell = "shell"
 )
-
-func Check(root string) (Report, error) {
-	qualityToolsApply, err := repositoryharness.QualityToolsApply(root)
-	if err != nil {
-		return Report{}, err
-	}
-	if !qualityToolsApply {
-		return Run(root, false)
-	}
-	quality, err := harnesslint.Check(root)
-	if err != nil {
-		return Report{}, err
-	}
-	return qualityReport(quality), nil
-}
-
-func qualityReport(source harnesslint.Report) Report {
-	report := Report{
-		Status:     source.Status,
-		Fixed:      source.Fixed,
-		Violations: make([]Violation, 0, len(source.Violations)),
-	}
-	for _, item := range source.Violations {
-		report.Violations = append(report.Violations, Violation{
-			Path:    item.Path,
-			Line:    item.Line,
-			Column:  item.Column,
-			Kind:    item.Rule,
-			Message: item.Message,
-		})
-	}
-	return report
-}
 
 func Run(root string, fix bool) (Report, error) {
 	paths, err := trackedAndUntracked(root)
