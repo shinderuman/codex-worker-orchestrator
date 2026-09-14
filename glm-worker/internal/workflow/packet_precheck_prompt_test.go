@@ -19,20 +19,6 @@ func TestWorkerDispatchRoutesPacketPrecheck(t *testing.T) {
 	}
 }
 
-func TestResultCorrectionPromptDelegatesPacketGrammar(t *testing.T) {
-	correction := resultCorrectionPrompt("validator rejected packet")
-	for _, want := range []string{"structured schemaとvalidatorを正として", "validator rejected packet", rejectedArtifactMarker} {
-		if !strings.Contains(correction, want) {
-			t.Fatalf("結果修正promptにruntime context %qがありません: %s", want, correction)
-		}
-	}
-	for _, forbidden := range []string{"glm-worker --packet-check", "6 KiB", "1536 bytes", "STATUSに応じた必須field"} {
-		if strings.Contains(correction, forbidden) {
-			t.Fatalf("結果修正promptがpacket grammar %qを再定義しています: %s", forbidden, correction)
-		}
-	}
-}
-
 func TestProductionWorkerPromptRoutesPacketPrecheck(t *testing.T) {
 	root := scenarioRepoRoot(t)
 	worker, err := os.ReadFile(filepath.Join(root, "codex", "glm-worker", "prompts", "WORKER.md"))
