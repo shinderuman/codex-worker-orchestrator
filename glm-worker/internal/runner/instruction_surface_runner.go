@@ -49,11 +49,11 @@ func (r *InstructionSurfaceGuardRunner) Run(
 		callBase = &copyBase
 	}
 	callBase.instructionSurfaceDigest = instructionBefore.digest
-	if err := r.base.state.CommitParentActionBegin(); err != nil {
-		return RunResult{}, err
-	}
 
-	result, runErr := callBase.Run(role, phase, model, readOnly, effort, prompt, outputPath)
+	result, runErr := callBase.runWithAdmission(
+		role, phase, model, readOnly, effort, prompt, outputPath,
+		r.base.state.CommitParentActionBegin,
+	)
 	artifactErr := validateSensitiveResultArtifacts(r.base, result, providerValues)
 	gitErr := gitGuard.verify()
 	instructionErr := r.base.verifyInstructionSurfaceGuard(instructionBefore)

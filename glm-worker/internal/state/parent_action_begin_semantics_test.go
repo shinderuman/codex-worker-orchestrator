@@ -1,6 +1,7 @@
 package state
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -172,5 +173,33 @@ func TestRecoverParentActionBeginAllowsAlreadyRestoredReviewOnRetry(t *testing.T
 	current, err := st.CurrentParentReview()
 	if err != nil || current == nil || current.PacketStatus != string(packet.StatusNeedsSolDecision) {
 		t.Fatalf("retry recovery review = %#v err=%v", current, err)
+	}
+}
+
+func TestValidateParentActionBeginReviewSnapshotRejectsCompletionWithOpenReview(t *testing.T) {
+	review := ParentReviewState{
+		Version: parentReviewStateVersion,
+		TaskID:  "task-1",
+		Open: &ParentReviewOpenState{
+			PacketStatus: string(packet.StatusNeedsSolReview),
+			Role:         string(ReviewerRole),
+			ModelAlias:   "reviewer-model",
+			Risk:         string(packet.RiskLow),
+		},
+		Completion: &ParentCompletionOutcome{
+			Terminal: SessionRotationTerminalAccept,
+			Risk:     string(packet.RiskLow),
+		},
+	}
+	data, err := json.Marshal(review)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := parentActionBeginRecord{
+		TaskID: review.TaskID,
+		Review: parentActionBeginSnapshot{Exists: true, Data: data},
+	}
+	if err := validateParentActionBeginReviewSnapshot(record); err == nil || !strings.Contains(err.Error(), "completion outcome exists with an open parent review") {
+		t.Fatalf("invalid completion/open snapshot was accepted: %v", err)
 	}
 }
