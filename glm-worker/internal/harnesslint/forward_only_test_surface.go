@@ -110,7 +110,7 @@ func forwardOnlyTestAliasViolations(pkg *forwardOnlyPackageSurface, testFile for
 }
 
 func forwardOnlyDirectTestAlias(pkg *forwardOnlyPackageSurface, declarationPath string, value *ast.ValueSpec) (*ast.Ident, *ast.Ident, bool) {
-	if value.Type != nil || len(value.Names) != 1 || len(value.Values) != 1 {
+	if len(value.Names) != 1 || len(value.Values) != 1 {
 		return nil, nil, false
 	}
 	alias := value.Names[0]
@@ -120,7 +120,7 @@ func forwardOnlyDirectTestAlias(pkg *forwardOnlyPackageSurface, declarationPath 
 	if _, exists := pkg.productionDeclarations[alias.Name]; exists {
 		return nil, nil, false
 	}
-	target, ok := value.Values[0].(*ast.Ident)
+	target, ok := forwardOnlyUnparen(value.Values[0]).(*ast.Ident)
 	if !ok || target.Name == alias.Name {
 		return nil, nil, false
 	}
@@ -131,4 +131,14 @@ func forwardOnlyDirectTestAlias(pkg *forwardOnlyPackageSurface, declarationPath 
 		return nil, nil, false
 	}
 	return alias, target, true
+}
+
+func forwardOnlyUnparen(expression ast.Expr) ast.Expr {
+	for {
+		parenthesized, ok := expression.(*ast.ParenExpr)
+		if !ok {
+			return expression
+		}
+		expression = parenthesized.X
+	}
 }
