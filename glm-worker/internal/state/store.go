@@ -165,6 +165,7 @@ func (s *StateStore) startNewTaskWithID(taskID string, resume bool) (string, err
 		return "", err
 	}
 
+	s.projectCurrentRepoSearchStats()
 	s.archiveCurrentStats(parentIdentity)
 	s.PruneTaskEventLogs(retainedTaskEventLogs, taskID)
 	s.InitializeTaskStats(taskID)
