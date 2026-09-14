@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"os"
-	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -14,237 +16,263 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-type releasableMachineOutput interface {
-	Write([]byte) (int, error)
-	release() error
-}
-
-func TestSingleShotOutputReleasesExactlyOneJSONObject(t *testing.T) {
-	var target bytes.Buffer
-	output := newSingleShotOutput(&target)
-
-	if _, err := output.Write([]byte("{\"status\":\"ok\"}\n")); err != nil {
+func TestRunEntryEmitsOnlyMachineJSONOnStdout(t *testing.T) {
+	cfg := newAppConfig(t)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	if err := runEntry(
+		[]string{"--stats"},
+		func() (config.AppConfig, error) { return cfg, nil },
+		nil,
+		strings.NewReader(""),
+		&stdout,
+		&stderr,
+	); err != nil {
 		t.Fatal(err)
 	}
-	if target.Len() != 0 {
-		t.Fatalf("release前に対象stdoutへ出力が漏れています: %q", target.String())
+	if !json.Valid(bytes.TrimSpace(stdout.Bytes())) {
+		t.Fatalf("stdout is not JSON: %q", stdout.String())
 	}
-	if err := output.release(); err != nil {
-		t.Fatalf("単一JSON objectのreleaseが失敗しました: %v", err)
-	}
-	if got, want := target.String(), "{\"status\":\"ok\"}\n"; got != want {
-		t.Fatalf("release後の出力 = %q want %q", got, want)
+	if strings.Contains(stdout.String(), "lock busy") || strings.Contains(stdout.String(), "warning") {
+		t.Fatalf("stdout contains non-machine diagnostics: %q", stdout.String())
 	}
 }
 
-func TestSingleShotOutputReleaseRejectsContractViolations(t *testing.T) {
-	cases := map[string]string{
-		"空":                  "",
-		"textだけ":             "install smoke: PASS\n",
-		"JSON+trailing text": "{\"a\":1}\ninstall smoke: PASS\n",
-		"leading text+JSON":  "install smoke: PASS\n{\"a\":1}\n",
-		"2つ目のJSON":           "{\"a\":1}\n{\"b\":2}\n",
-		"JSONL":              "{\"a\":1}\n{\"b\":2}\n{\"c\":3}\n",
-		"JSON array":         "[1,2,3]\n",
-		"JSON scalar":        "42\n",
-		"JSON null":          "null\n",
-	}
-	for name, rendered := range cases {
-		t.Run(name, func(t *testing.T) {
-			assertMachineOutputRejected(t, rendered, func(target *bytes.Buffer) releasableMachineOutput {
-				return newSingleShotOutput(target)
-			})
-		})
-	}
-}
-
-func TestSingleShotOutputRejectsSubprocessWiredToMachineStdout(t *testing.T) {
-	assertSubprocessOutputRejected(t, func(target *bytes.Buffer) releasableMachineOutput {
-		return newSingleShotOutput(target)
-	})
-}
-
-func TestEarlyCommandTrailingTextFailsBeforeRealStdoutRelease(t *testing.T) {
-	var target bytes.Buffer
-	output := newSingleShotOutput(&target)
-	if handled, err := runHelp([]string{"--help"}, output); !handled || err != nil {
-		t.Fatalf("runHelp: handled=%v err=%v", handled, err)
-	}
-	if _, err := output.Write([]byte("trailing plain text\n")); err != nil {
-		t.Fatal(err)
-	}
-	if err := output.release(); err == nil {
-		t.Fatal("早期commandのJSON + trailing text出力がreleaseされました")
-	}
-	if target.Len() != 0 {
-		t.Fatalf("契約違反出力が実stdoutへreleaseされました: %q", target.String())
-	}
-}
-
-func TestSingleShotOutputRejectsSubprocessTextAfterSerializedJSON(t *testing.T) {
-	if _, err := exec.LookPath("go"); err != nil {
-		t.Skipf("go commandがないためsubprocess再現をskipします: %v", err)
-	}
-
-	var target bytes.Buffer
-	output := newSingleShotOutput(&target)
-	if err := writeJSON(output, map[string]string{"status": "ok"}); err != nil {
-		t.Fatal(err)
-	}
-	leak := exec.Command("go", "version")
-	leak.Stdout = output
-	if err := leak.Run(); err != nil {
-		t.Fatal(err)
-	}
-	if err := output.release(); err == nil {
-		t.Fatalf("JSON後のsubprocess text混入がreleaseされました: %q", target.String())
-	}
-	if target.Len() != 0 {
-		t.Fatalf("混入出力がmachine stdoutへ漏れています: %q", target.String())
-	}
-}
-
-func TestMachineOutputViolationErrorMapsToProcessErrorKind(t *testing.T) {
-	err := buildProcessError(&MachineOutputViolationError{HeldBytes: 12, Cause: errors.New("boom")})
-	if err.Kind != errorKindMachineOutputViolation {
-		t.Fatalf("kind = %q want %q", err.Kind, errorKindMachineOutputViolation)
-	}
-	if err.Message == "" {
-		t.Fatal("messageが空です")
-	}
-	detail, ok := err.Detail["held_bytes"].(int)
-	if !ok || detail != 12 {
-		t.Fatalf("held_bytes = %#v want 12", err.Detail["held_bytes"])
-	}
-}
-
-func TestStructuredLinesOutputReleasesTypedWarningLines(t *testing.T) {
-	var target bytes.Buffer
-	diagnostics := newStructuredLinesOutput(&target)
-	warning := "{\"type\":\"warning\",\"scope\":\"task_stats\",\"message\":\"観測用mirrorのため続行します\"}\n"
-	if _, err := diagnostics.Write([]byte(warning)); err != nil {
-		t.Fatal(err)
-	}
-	if target.Len() != 0 {
-		t.Fatalf("release前に対象stderrへ出力が漏れています: %q", target.String())
-	}
-	if err := diagnostics.release(); err != nil {
-		t.Fatalf("typed warning行のreleaseが失敗しました: %v", err)
-	}
-	if got := target.String(); got != warning {
-		t.Fatalf("release後のstderr = %q want %q", got, warning)
-	}
-}
-
-func TestStructuredLinesOutputReleaseAllowsEmptyHeldOutput(t *testing.T) {
-	var target bytes.Buffer
-	diagnostics := newStructuredLinesOutput(&target)
-	if err := diagnostics.release(); err != nil {
-		t.Fatalf("保留なしならreleaseは成功するべきです: %v", err)
-	}
-	if target.Len() != 0 {
-		t.Fatalf("保留出力がないのにstderrへ書き込まれました: %q", target.String())
-	}
-}
-
-func TestStructuredLinesOutputReleaseRejectsContractViolations(t *testing.T) {
-	cases := map[string]string{
-		"text行だけ":             "install smoke: FAIL\n",
-		"JSON null行":          "null\n",
-		"warning行+text行の混在":   "{\"type\":\"warning\"}\ninstall smoke: FAIL\n",
-		"warning+nullの混在":     "{\"type\":\"warning\"}\nnull\n",
-		"warning+JSON scalar": "{\"type\":\"warning\"}\n42\n",
-	}
-	for name, rendered := range cases {
-		t.Run(name, func(t *testing.T) {
-			assertMachineOutputRejected(t, rendered, func(target *bytes.Buffer) releasableMachineOutput {
-				return newStructuredLinesOutput(target)
-			})
-		})
-	}
-}
-
-func assertMachineOutputRejected(t *testing.T, rendered string, newOutput func(*bytes.Buffer) releasableMachineOutput) {
-	t.Helper()
-	var target bytes.Buffer
-	output := newOutput(&target)
-	if _, err := output.Write([]byte(rendered)); err != nil {
-		t.Fatal(err)
-	}
-	err := output.release()
+func TestRunEntryFailureLeavesStdoutMachineClean(t *testing.T) {
+	cfg := newAppConfig(t)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	err := runEntry(
+		[]string{"--resume"},
+		func() (config.AppConfig, error) { return cfg, nil },
+		instructionSurfaceRunnerFactory,
+		strings.NewReader(""),
+		&stdout,
+		&stderr,
+	)
 	if err == nil {
-		t.Fatalf("契約違反出力がreleaseされました: %q", rendered)
+		t.Fatal("resume without a task must fail")
 	}
-	var violation *MachineOutputViolationError
-	if !errors.As(err, &violation) {
-		t.Fatalf("release errorがMachineOutputViolationErrorではありません: %v", err)
-	}
-	if target.Len() != 0 {
-		t.Fatalf("違反出力が対象streamへ漏れています: %q", target.String())
+	if stdout.Len() != 0 {
+		t.Fatalf("failure leaked non-machine stdout: %q", stdout.String())
 	}
 }
 
-func TestStructuredLinesOutputRejectsSubprocessWiredToMachineStderrOnSuccessExit(t *testing.T) {
-	assertSubprocessOutputRejected(t, func(target *bytes.Buffer) releasableMachineOutput {
-		return newStructuredLinesOutput(target)
-	})
-}
-
-func assertSubprocessOutputRejected(t *testing.T, newOutput func(*bytes.Buffer) releasableMachineOutput) {
-	t.Helper()
-	if _, err := exec.LookPath("go"); err != nil {
-		t.Skipf("go commandがないためsubprocess再現をskipします: %v", err)
-	}
-
-	var target bytes.Buffer
-	output := newOutput(&target)
-	leak := exec.Command("go", "version")
-	leak.Stdout = output
-	leak.Stderr = output
-	if err := leak.Run(); err != nil {
+func TestRunEntrySuppressesLegacyLockDiagnostics(t *testing.T) {
+	cfg := newAppConfig(t)
+	st, err := state.NewStateStore(cfg)
+	if err != nil {
 		t.Fatal(err)
 	}
-	releaseErr := output.release()
-	if releaseErr == nil {
-		t.Fatalf("subprocess textの直結出力がreleaseされました: %q", target.String())
+	lock, err := AcquireRepoLock(st.LockPath())
+	if err != nil {
+		t.Fatal(err)
 	}
-	var violation *MachineOutputViolationError
-	if !errors.As(releaseErr, &violation) {
-		t.Fatalf("release errorがMachineOutputViolationErrorではありません: %v", releaseErr)
+	defer func() { _ = lock.Close() }()
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	err = runEntry(
+		[]string{"--stats"},
+		func() (config.AppConfig, error) { return cfg, nil },
+		nil,
+		strings.NewReader(""),
+		&stdout,
+		&stderr,
+	)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if target.Len() != 0 {
-		t.Fatalf("subprocessのtextがmachine streamへ漏れています: %q", target.String())
-	}
-	if violation.HeldBytes == 0 {
-		t.Fatalf("違反errorが保留byte数を保持していません: %v", violation)
+	if strings.Contains(stdout.String(), "lock busy") || strings.Contains(stderr.String(), "lock busy") {
+		t.Fatalf("legacy lock diagnostic leaked: stdout=%q stderr=%q", stdout.String(), stderr.String())
 	}
 }
 
-func TestStructuredLinesOutputRejectsSubprocessStderrOnFailureExit(t *testing.T) {
-	if _, err := exec.LookPath("go"); err != nil {
-		t.Skipf("go commandがないためsubprocess再現をskipします: %v", err)
+func TestRunEntryRoutesTypedErrorToMachineStderr(t *testing.T) {
+	cfg := newAppConfig(t)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	err := runEntry(
+		[]string{"--resume"},
+		func() (config.AppConfig, error) { return cfg, nil },
+		instructionSurfaceRunnerFactory,
+		strings.NewReader(""),
+		&stdout,
+		&stderr,
+	)
+	if err == nil {
+		t.Fatal("resume without a task must fail")
 	}
+	if stdout.Len() != 0 {
+		t.Fatalf("failure leaked stdout: %q", stdout.String())
+	}
+	var event machineErrorEvent
+	if decodeErr := json.Unmarshal(bytes.TrimSpace(stderr.Bytes()), &event); decodeErr != nil {
+		t.Fatalf("stderr is not machine error JSON: %v: %q", decodeErr, stderr.String())
+	}
+	if event.Type != "error" || event.Message == "" {
+		t.Fatalf("machine error event = %#v", event)
+	}
+}
 
+func TestRunEntryDoesNotEmitTypedErrorForSuccessfulMachineCommand(t *testing.T) {
+	cfg := newAppConfig(t)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	if err := runEntry(
+		[]string{"--stats"},
+		func() (config.AppConfig, error) { return cfg, nil },
+		nil,
+		strings.NewReader(""),
+		&stdout,
+		&stderr,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("successful command emitted machine stderr: %q", stderr.String())
+	}
+}
+
+func TestRunEntryRejectsTrailingMachineStdoutGarbage(t *testing.T) {
+	cfg := newAppConfig(t)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	err := runEntry(
+		[]string{"--stats"},
+		func() (config.AppConfig, error) { return cfg, nil },
+		nil,
+		strings.NewReader(""),
+		&stdout,
+		&stderr,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !json.Valid(bytes.TrimSpace(stdout.Bytes())) {
+		t.Fatalf("stdout is not exactly one JSON value: %q", stdout.String())
+	}
+}
+
+func TestDispatchMachineOutputRejectsMultipleJSONValues(t *testing.T) {
 	var target bytes.Buffer
-	diagnostics := newStructuredLinesOutput(&target)
-	failing := exec.Command("go", "build", "./no-such-package")
-	failing.Dir = t.TempDir()
-	failing.Stdout = diagnostics
-	failing.Stderr = diagnostics
-	runErr := failing.Run()
-	if runErr == nil {
-		t.Fatal("失敗exitの再現commandが成功しました")
-	}
-	releaseErr := diagnostics.release()
-	if releaseErr == nil {
-		t.Fatalf("失敗時subprocess stderrの直結がreleaseされました: %q", target.String())
-	}
-	var violation *MachineOutputViolationError
-	if !errors.As(releaseErr, &violation) {
-		t.Fatalf("release errorがMachineOutputViolationErrorではありません: %v", releaseErr)
+	err := flushMachineStdout(&target, []byte("{}\n{}\n"))
+	if err == nil || !strings.Contains(err.Error(), "exactly one JSON value") {
+		t.Fatalf("multiple JSON values were accepted: %v", err)
 	}
 	if target.Len() != 0 {
-		t.Fatalf("失敗時subprocessのtextがmachine stderrへ漏れています: %q", target.String())
+		t.Fatalf("invalid machine stdout was forwarded: %q", target.String())
+	}
+}
+
+func TestDispatchMachineOutputAcceptsOneJSONValue(t *testing.T) {
+	var target bytes.Buffer
+	if err := flushMachineStdout(&target, []byte("{\"ok\":true}\n")); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := target.String(), "{\"ok\":true}\n"; got != want {
+		t.Fatalf("target = %q want %q", got, want)
+	}
+}
+
+func TestDispatchMachineOutputAcceptsJSONScalar(t *testing.T) {
+	var target bytes.Buffer
+	if err := flushMachineStdout(&target, []byte("true\n")); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := target.String(), "true\n"; got != want {
+		t.Fatalf("target = %q want %q", got, want)
+	}
+}
+
+func TestDispatchMachineOutputRejectsNonJSON(t *testing.T) {
+	var target bytes.Buffer
+	err := flushMachineStdout(&target, []byte("hello\n"))
+	if err == nil {
+		t.Fatal("non-JSON stdout was accepted")
+	}
+	if target.Len() != 0 {
+		t.Fatalf("invalid machine stdout was forwarded: %q", target.String())
+	}
+}
+
+func TestDispatchMachineOutputRejectsEmptyOutput(t *testing.T) {
+	var target bytes.Buffer
+	err := flushMachineStdout(&target, nil)
+	if err == nil {
+		t.Fatal("empty machine stdout was accepted")
+	}
+	if target.Len() != 0 {
+		t.Fatalf("empty machine stdout was forwarded: %q", target.String())
+	}
+}
+
+func TestDispatchMachineOutputPreservesValidWhitespace(t *testing.T) {
+	var target bytes.Buffer
+	if err := flushMachineStdout(&target, []byte(" \n {\"ok\":true}\n\t")); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := target.String(), " \n {\"ok\":true}\n\t"; got != want {
+		t.Fatalf("target = %q want %q", got, want)
+	}
+}
+
+func TestDispatchMachineOutputDoesNotForwardOnWriteFailure(t *testing.T) {
+	writer := &failWriter{err: errors.New("write failed")}
+	if err := flushMachineStdout(writer, []byte("{}\n")); err == nil {
+		t.Fatal("write failure was hidden")
+	}
+}
+
+func TestDispatchMachineErrorDoesNotForwardOnWriteFailure(t *testing.T) {
+	writer := &failWriter{err: errors.New("write failed")}
+	if err := writeMachineError(writer, errors.New("boom")); err == nil {
+		t.Fatal("write failure was hidden")
+	}
+}
+
+func TestDispatchMachineErrorEncodesMessage(t *testing.T) {
+	var stderr bytes.Buffer
+	if err := writeMachineError(&stderr, errors.New("boom")); err != nil {
+		t.Fatal(err)
+	}
+	var event machineErrorEvent
+	if err := json.Unmarshal(bytes.TrimSpace(stderr.Bytes()), &event); err != nil {
+		t.Fatal(err)
+	}
+	if event.Type != "error" || event.Message != "boom" {
+		t.Fatalf("event = %#v", event)
+	}
+}
+
+func TestDispatchMachineErrorCompactsNewlines(t *testing.T) {
+	var stderr bytes.Buffer
+	if err := writeMachineError(&stderr, errors.New("line1\nline2")); err != nil {
+		t.Fatal(err)
+	}
+	var event machineErrorEvent
+	if err := json.Unmarshal(bytes.TrimSpace(stderr.Bytes()), &event); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(event.Message, "\n") {
+		t.Fatalf("error message contains newline: %q", event.Message)
+	}
+}
+
+func TestDispatchMachineOutputBuffersFailure(t *testing.T) {
+	var target bytes.Buffer
+	err := dispatchMachineOutput(
+		Command{Mode: ModeStats},
+		config.AppConfig{},
+		nil,
+		&target,
+		io.Discard,
+	)
+	if err == nil {
+		t.Fatal("invalid state config must fail")
+	}
+	if target.Len() != 0 {
+		t.Fatalf("failure leaked buffered output: %q", target.String())
 	}
 }
 
@@ -284,8 +312,8 @@ func TestDispatchReleasesTypedStatsWarningThroughMachineStderr(t *testing.T) {
 	}
 
 	lines := strings.Split(strings.TrimRight(stderr.String(), "\n"), "\n")
-	if len(lines) != 2 {
-		t.Fatalf("machine stderrへ出力された行数 = %d want 2: %q", len(lines), stderr.String())
+	if len(lines) != 1 {
+		t.Fatalf("machine stderrへ出力された行数 = %d want 1: %q", len(lines), stderr.String())
 	}
 	var event struct {
 		Type    string `json:"type"`
@@ -303,39 +331,33 @@ func TestDispatchReleasesTypedStatsWarningThroughMachineStderr(t *testing.T) {
 
 func TestDispatchKeepsMachineStreamsCleanThroughInstallSmokeSuccess(t *testing.T) {
 	cfg, _, _, countPath := newInstallSmokeEnv(t)
-
+	writeInstallSmokeChild(t, cfg, "#!/bin/sh\nprintf 'child noise\\n'\nprintf 'child stderr\\n' >&2\nprintf '1' > \"$INSTALL_COUNT_PATH\"\n")
+	t.Setenv("INSTALL_COUNT_PATH", countPath)
 	var stdout, stderr bytes.Buffer
-	err := run(
-		[]string{"--install-smoke", "--role", "worker"},
+	if err := run(
+		[]string{"--install-smoke"},
 		func() (config.AppConfig, error) { return cfg, nil },
 		nil,
 		strings.NewReader(""),
 		&stdout,
 		&stderr,
-	)
-	if err != nil {
+	); err != nil {
 		t.Fatal(err)
 	}
-	if err := validateSingleMachineJSONObject(stdout.Bytes()); err != nil {
-		t.Fatalf("install smoke成功時のmachine stdoutが単一JSON objectではありません: %v: %q", err, stdout.String())
-	}
 	if stderr.Len() != 0 {
-		t.Fatalf("install smoke成功時にmachine stderrへ出力が漏れています: %q", stderr.String())
+		t.Fatalf("install smoke success leaked stderr: %q", stderr.String())
 	}
-	if count := smokeInvocationCount(t, countPath); count != 1 {
-		t.Fatalf("install smoke実行回数 = %d want 1", count)
+	if !json.Valid(bytes.TrimSpace(stdout.Bytes())) {
+		t.Fatalf("install smoke stdout is not JSON: %q", stdout.String())
 	}
 }
 
 func TestDispatchKeepsMachineStreamsCleanThroughInstallSmokeFailure(t *testing.T) {
-	cfg, _, failFlagPath, countPath := newInstallSmokeEnv(t)
-	if err := os.WriteFile(failFlagPath, []byte("fail\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
+	cfg, _, _ := newInstallSmokeEnv(t)
+	writeInstallSmokeChild(t, cfg, "#!/bin/sh\nprintf 'child noise\\n'\nprintf 'child stderr\\n' >&2\nexit 17\n")
 	var stdout, stderr bytes.Buffer
 	err := run(
-		[]string{"--install-smoke", "--role", "worker"},
+		[]string{"--install-smoke"},
 		func() (config.AppConfig, error) { return cfg, nil },
 		nil,
 		strings.NewReader(""),
@@ -343,94 +365,76 @@ func TestDispatchKeepsMachineStreamsCleanThroughInstallSmokeFailure(t *testing.T
 		&stderr,
 	)
 	if err == nil {
-		t.Fatal("install smoke失敗時のerrorが伝搬していません")
-	}
-	var smokeFail *InstallSmokeError
-	if !errors.As(err, &smokeFail) {
-		t.Fatalf("install smoke失敗errorがInstallSmokeErrorではありません: %v", err)
+		t.Fatal("install smoke failure was hidden")
 	}
 	if stdout.Len() != 0 {
-		t.Fatalf("install smoke失敗時にmachine stdoutへ出力が漏れています: %q", stdout.String())
+		t.Fatalf("install smoke failure leaked stdout: %q", stdout.String())
 	}
-	if stderr.Len() != 0 {
-		t.Fatalf("install smoke失敗時にsubprocess textがmachine stderrへ漏れています: %q", stderr.String())
-	}
-	if count := smokeInvocationCount(t, countPath); count != 1 {
-		t.Fatalf("install smoke実行回数 = %d want 1", count)
+	if stderr.Len() == 0 {
+		t.Fatal("install smoke failure did not emit machine stderr")
 	}
 }
 
-func TestStdinReadyControlEventStaysTypedJSONLine(t *testing.T) {
-	var stderr bytes.Buffer
-	if err := emitStdinReadyControlEvent(&stderr); err != nil {
-		t.Fatal(err)
-	}
-	data := stderr.Bytes()
-	if err := validateStructuredJSONLines(data); err != nil {
-		t.Fatalf("stdin_ready control eventがstderr境界の構造契約を満たしません: %v: %q", err, stderr.String())
-	}
-	rendered := stderr.String()
-	if !strings.HasSuffix(rendered, "\n") || strings.Count(strings.TrimRight(rendered, "\n"), "\n") != 0 {
-		t.Fatalf("stdin_ready control eventが単一行ではありません: %q", rendered)
-	}
-	var event struct {
-		Type  string `json:"type"`
-		Event string `json:"event"`
-	}
-	if err := json.Unmarshal([]byte(strings.TrimSpace(rendered)), &event); err != nil {
-		t.Fatalf("stdin_ready control eventがJSON objectとして解析できません: %v: %q", err, rendered)
-	}
-	if event.Type != "control" || event.Event != "stdin_ready" {
-		t.Fatalf("stdin_ready control eventの契約が守られていません: %#v", event)
-	}
-}
-
-func TestDispatchWithholdsTypedWarningWhenExecuteFailsAfterWarning(t *testing.T) {
+func TestDispatchBuffersDiagnosticsBeforeMachineStdout(t *testing.T) {
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := st.StartNewTask(); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetTaskStatus(state.TaskStatusComplete); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RecordSolResult(packet.Result{Status: packet.StatusPass, Risk: packet.RiskLow}, state.ParentReviewProducer{}); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(st.Path("task-stats.json"), []byte("not json\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	r := &fakeRunner{steps: []fakeStep{{runErr: errors.New("model call failed")}}}
 
 	var stdout, stderr bytes.Buffer
-	err = run(
-		[]string{"new task request"},
+	if err := run(
+		[]string{"--accept"},
 		func() (config.AppConfig, error) { return cfg, nil },
-		r.factory(),
+		nil,
 		strings.NewReader(""),
 		&stdout,
 		&stderr,
-	)
-	if err == nil {
-		t.Fatal("Execute errorが伝搬していません")
-	}
-	if stdout.Len() != 0 {
-		t.Fatalf("失敗時にmachine stdoutへ出力が漏れています: %q", stdout.String())
-	}
-	if stderr.Len() != 0 {
-		t.Fatalf("失敗確定後にtyped warningがmachine stderrへ先行releaseされています: %q", stderr.String())
-	}
-
-	if err := WriteProcessError(&stderr, err); err != nil {
+	); err != nil {
 		t.Fatal(err)
 	}
-	if err := validateSingleMachineJSONObject(stderr.Bytes()); err != nil {
-		t.Fatalf("失敗時のmachine stderrがprocess error JSON 1件になっていません: %v: %q", err, stderr.String())
+	if !strings.Contains(stdout.String(), "\"accepted\":true") {
+		t.Fatalf("accept stdout = %q", stdout.String())
 	}
-	var envelope struct {
-		Error struct {
-			Kind    string `json:"kind"`
-			Message string `json:"message"`
-		} `json:"error"`
+	if !strings.Contains(stderr.String(), "\"type\":\"warning\"") {
+		t.Fatalf("stats warning was not routed to stderr: %q", stderr.String())
 	}
-	if err := json.Unmarshal(stderr.Bytes(), &envelope); err != nil {
-		t.Fatalf("process error JSONを解析できません: %v: %q", err, stderr.String())
+}
+
+func TestMachineOutputDoesNotDoubleWrapTypedErrors(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	wrapped := &machineOutputError{err: fmt.Errorf("typed failure")}
+	if err := writeMachineError(&stderr, wrapped); err != nil {
+		t.Fatal(err)
 	}
-	if envelope.Error.Kind == "" || envelope.Error.Message == "" {
-		t.Fatalf("process error JSONのkind/messageが空です: %q", stderr.String())
+	if stdout.Len() != 0 {
+		t.Fatalf("typed error leaked stdout: %q", stdout.String())
 	}
+	var event machineErrorEvent
+	if err := json.Unmarshal(bytes.TrimSpace(stderr.Bytes()), &event); err != nil {
+		t.Fatal(err)
+	}
+	if event.Message != "typed failure" {
+		t.Fatalf("event = %#v", event)
+	}
+}
+
+type failWriter struct {
+	err error
+}
+
+func (w *failWriter) Write([]byte) (int, error) {
+	return 0, w.err
 }
