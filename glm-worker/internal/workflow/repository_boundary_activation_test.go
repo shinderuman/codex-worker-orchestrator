@@ -105,6 +105,7 @@ func TestReviewResumeInactiveHarnessRejectsCoincidentalParentPathChange(t *testi
 	saved := reviewResumeSnapshot("worktree-0", "excluding-1", nil)
 	checkpoint := reviewResumeCheckpoint(nil)
 	seedReviewResumeStop(t, st, saved, checkpoint)
+	pinRepositoryHarnessInactiveT(t, st)
 
 	writeRepoParentPlan(t, w.config.RepoRoot, "foreign-plan-changed-during-stop\n")
 	current := reviewResumeSnapshot("worktree-1", "excluding-1", nil)
