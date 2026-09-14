@@ -94,19 +94,39 @@ func validateParentActionBeginRecord(record parentActionBeginRecord) error {
 	if record.TaskID == "" {
 		return fmt.Errorf("parent action begin record has no task identity")
 	}
-	if record.SourceStatus != TaskStatusWaitingDecision && record.SourceStatus != TaskStatusWaitingSolReview {
-		return fmt.Errorf("parent action begin record has invalid source status %s", record.SourceStatus)
+	if err := validateParentActionBeginSource(record); err != nil {
+		return err
 	}
-	if record.SourceStatus == TaskStatusWaitingDecision && !record.Pending.Exists {
-		return fmt.Errorf("parent action begin decision record has no pending decision snapshot")
-	}
-	if record.SourceStatus == TaskStatusWaitingSolReview && record.Pending.Exists {
-		return fmt.Errorf("parent action begin fix record has an unexpected pending decision snapshot")
-	}
-	if (!record.Pending.Exists && len(record.Pending.Data) != 0) || (!record.Review.Exists && len(record.Review.Data) != 0) {
-		return fmt.Errorf("parent action begin record has data for a missing snapshot")
+	if err := validateParentActionBeginSnapshotShape(record); err != nil {
+		return err
 	}
 	return validateParentActionBeginReviewSnapshot(record)
+}
+
+func validateParentActionBeginSource(record parentActionBeginRecord) error {
+	switch record.SourceStatus {
+	case TaskStatusWaitingDecision:
+		if !record.Pending.Exists {
+			return fmt.Errorf("parent action begin decision record has no pending decision snapshot")
+		}
+	case TaskStatusWaitingSolReview:
+		if record.Pending.Exists {
+			return fmt.Errorf("parent action begin fix record has an unexpected pending decision snapshot")
+		}
+	default:
+		return fmt.Errorf("parent action begin record has invalid source status %s", record.SourceStatus)
+	}
+	return nil
+}
+
+func validateParentActionBeginSnapshotShape(record parentActionBeginRecord) error {
+	if !record.Pending.Exists && len(record.Pending.Data) != 0 {
+		return fmt.Errorf("parent action begin record has data for a missing pending decision snapshot")
+	}
+	if !record.Review.Exists && len(record.Review.Data) != 0 {
+		return fmt.Errorf("parent action begin record has data for a missing review snapshot")
+	}
+	return nil
 }
 
 func validateParentActionBeginReviewSnapshot(record parentActionBeginRecord) error {
