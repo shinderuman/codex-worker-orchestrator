@@ -147,7 +147,7 @@ func qualityToolWiringChecks() []qualityWiringCheck {
 			path: "tests/install_quality_tools_smoke.sh",
 			tokens: []string{
 				"user-owned-$tool",
-				"codex-worker-orchestrator-deadcode-0.50.0",
+				"codex-worker-orchestrator-deadcode-0.49.0",
 				"codex-worker-orchestrator-shfmt-3.13.1",
 				"codex-worker-orchestrator-shfmt-3.13.2",
 				"quality tool collision:",
