@@ -34,6 +34,7 @@ type realCommandRunner struct {
 	goCache           string
 	golangciLintCache string
 	golangciLintPath  string
+	deadcodePath      string
 	shellcheckPath    string
 	shfmtPath         string
 }
@@ -50,6 +51,8 @@ func (r realCommandRunner) commandSpec(name string) (string, string) {
 		return "go", r.lintGoToolchain
 	case "golangci-lint":
 		return r.golangciLintPath, r.lintGoToolchain
+	case "deadcode":
+		return r.deadcodePath, r.goToolchain
 	case "shellcheck":
 		return r.shellcheckPath, r.goToolchain
 	case "shfmt":
@@ -85,6 +88,17 @@ func (r realCommandRunner) run(dir, name string, args ...string) (commandResult,
 
 func (r realCommandRunner) runVersion(dir, name string, args ...string) (commandResult, error) {
 	commandName, toolchain := r.commandSpec(name)
+	if name == "deadcode" {
+		if _, err := os.Stat(r.deadcodePath); err != nil {
+			if os.IsNotExist(err) {
+				return commandResult{}, &MissingToolError{Name: name}
+			}
+			return commandResult{}, err
+		}
+		commandName = "go"
+		toolchain = r.goToolchain
+		args = []string{"version", "-m", r.deadcodePath}
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), versionCommandTimeout)
 	defer cancel()
 	command := exec.CommandContext(ctx, commandName, args...)

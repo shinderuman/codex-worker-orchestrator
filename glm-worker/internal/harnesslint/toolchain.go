@@ -14,6 +14,7 @@ type qualityToolVersions struct {
 	Go            string
 	LintGo        string
 	GolangCILint  string
+	Deadcode      string
 	Shellcheck    string
 	Shfmt         string
 }
@@ -52,6 +53,7 @@ const (
 )
 
 var semanticVersion = regexp.MustCompile(`[0-9]+\.[0-9]+\.[0-9]+`)
+var deadcodeModuleVersion = regexp.MustCompile(`(?m)^\s*mod\s+golang\.org/x/tools\s+v([0-9]+\.[0-9]+\.[0-9]+)(?:\s|$)`)
 
 func (e *QualityToolVersionMismatch) Error() string {
 	return fmt.Sprintf("quality tool version mismatch: %s=%s, required=%s", e.Tool, e.Observed, e.Required)
@@ -118,6 +120,7 @@ func newRealCommandRunner(root string) (realCommandRunner, error) {
 		goCache:           filepath.Join(cacheRoot, "codex-worker-orchestrator", "go-"+versions.LintGo),
 		golangciLintCache: filepath.Join(cacheRoot, "codex-worker-orchestrator", "golangci-lint-"+versions.GolangCILint+"-go-"+versions.LintGo),
 		golangciLintPath:  qualityToolExecutable(binDir, versions.Namespace, "golangci-lint", versions.GolangCILint),
+		deadcodePath:      qualityToolExecutable(binDir, versions.Namespace, "deadcode", versions.Deadcode),
 		shellcheckPath:    qualityToolExecutable(binDir, versions.Namespace, "shellcheck", versions.Shellcheck),
 		shfmtPath:         qualityToolExecutable(binDir, versions.Namespace, "shfmt", versions.Shfmt),
 	}
@@ -164,6 +167,7 @@ func loadQualityToolVersions(root string) (qualityToolVersions, error) {
 		Go:            values["go"],
 		LintGo:        values["lint-go"],
 		GolangCILint:  values["golangci-lint"],
+		Deadcode:      values["deadcode"],
 		Shellcheck:    values["shellcheck"],
 		Shfmt:         values["shfmt"],
 	}
@@ -180,6 +184,7 @@ func (versions qualityToolVersions) complete() bool {
 		versions.Go,
 		versions.LintGo,
 		versions.GolangCILint,
+		versions.Deadcode,
 		versions.Shellcheck,
 		versions.Shfmt,
 	}
@@ -200,6 +205,7 @@ func validateQualityToolVersions(root string, versions qualityToolVersions, runn
 		{name: "go", args: []string{"version"}, want: versions.Go},
 		{name: "lint-go", args: []string{"version"}, want: versions.LintGo},
 		{name: "golangci-lint", args: []string{"version"}, want: versions.GolangCILint},
+		{name: "deadcode", want: versions.Deadcode},
 		{name: "shellcheck", args: []string{"--version"}, want: versions.Shellcheck},
 		{name: "shfmt", args: []string{"--version"}, want: versions.Shfmt},
 	}
@@ -211,10 +217,21 @@ func validateQualityToolVersions(root string, versions qualityToolVersions, runn
 		if result.exitCode != 0 {
 			return &QualityToolCommandError{Tool: check.name}
 		}
-		got := semanticVersion.FindString(result.output)
+		got := observedQualityToolVersion(check.name, result.output)
 		if got != check.want {
 			return &QualityToolVersionMismatch{Tool: check.name, Observed: got, Required: check.want}
 		}
 	}
 	return nil
+}
+
+func observedQualityToolVersion(name, output string) string {
+	if name == "deadcode" {
+		match := deadcodeModuleVersion.FindStringSubmatch(output)
+		if len(match) == 2 {
+			return match[1]
+		}
+		return ""
+	}
+	return semanticVersion.FindString(output)
 }
