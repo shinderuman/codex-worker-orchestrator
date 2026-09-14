@@ -30,12 +30,6 @@ var fixCategoryInstructionBases = map[string]bool{
 	"claude.md":       true,
 }
 
-var fixCategoryMetadataBases = map[string]bool{
-	"implementation_plan.local.md": true,
-	"implementation_rules.md":      true,
-	"implementation_history.md":    true,
-}
-
 var fixCategoryTestSuffixes = []string{
 	"_test.go", "_test.py", "_test.ts", "_test.tsx", "_test.js", "_test.jsx",
 	".spec.ts", ".spec.tsx", ".spec.js", ".spec.jsx",
@@ -45,9 +39,6 @@ var fixCategoryTestSuffixes = []string{
 func FixPathCategory(relPath string) string {
 	normalized := strings.ToLower(strings.TrimPrefix(filepath.ToSlash(relPath), "./"))
 	base := filepath.Base(normalized)
-	if fixCategoryMetadataBases[base] || strings.HasPrefix(normalized, "implementation_tasks/") {
-		return FixCategoryMetadata
-	}
 	if fixCategoryInstructionBases[base] ||
 		strings.HasPrefix(normalized, "codex/instructions/") ||
 		strings.HasPrefix(normalized, ".codex/instructions/") {
