@@ -102,17 +102,17 @@ type reviewGapReworkCost struct {
 }
 
 type reviewGapTaskEvidence struct {
-	stats                         *state.TaskStats
-	logs                          []state.ModelCallLog
-	events                        []state.ModelCallLog
-	eventIndex                    int
-	rounds                        []state.RoundRecord
-	roundErr                      error
-	taskEvents                    []state.TaskEventRecord
-	association                   codexAssociation
-	scan                          bundleRolloutScan
-	scanErr                       error
-	repositoryHarnessActive       *bool
+	stats                          *state.TaskStats
+	logs                           []state.ModelCallLog
+	events                         []state.ModelCallLog
+	eventIndex                     int
+	rounds                         []state.RoundRecord
+	roundErr                       error
+	taskEvents                     []state.TaskEventRecord
+	association                    codexAssociation
+	scan                           bundleRolloutScan
+	scanErr                        error
+	repositoryHarnessActive        *bool
 	repositoryHarnessActivationErr error
 }
 
@@ -266,7 +266,7 @@ func (report *reviewGapReport) appendReviewGapTask(cfg config.AppConfig, st *sta
 					stats: stats, logs: logs, events: events, eventIndex: index,
 					rounds: rounds, roundErr: roundErr, taskEvents: taskEvents,
 					association: association, scan: scan, scanErr: scanErr,
-					repositoryHarnessActive: repositoryHarnessActive,
+					repositoryHarnessActive:        repositoryHarnessActive,
 					repositoryHarnessActivationErr: activationErr,
 				},
 			))
@@ -401,17 +401,10 @@ func reviewGapFillCategories(fix *reviewGapFix, previous *state.RoundRecord, rou
 	}
 	categories := map[string]bool{}
 	for _, path := range changed {
-		parentManaged := state.IsParentManagedPath(path)
-		if parentManaged && repositoryHarnessActive == nil {
-			fix.CategoryReason = reviewGapReasonRepositoryHarnessActivationMissing
-			if activationErr != nil {
-				fix.CategoryReason = reviewGapReasonRepositoryHarnessActivationUnreadable
-			}
+		category, reason, known := reviewGapCategoryForPath(path, repositoryHarnessActive, activationErr)
+		if !known {
+			fix.CategoryReason = reason
 			return
-		}
-		category := state.FixPathCategory(path)
-		if parentManaged && *repositoryHarnessActive {
-			category = state.FixCategoryMetadata
 		}
 		categories[category] = true
 	}
