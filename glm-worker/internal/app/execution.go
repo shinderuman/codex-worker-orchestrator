@@ -29,12 +29,6 @@ func emitStdinReadyControlEvent(w io.Writer) error {
 	return nil
 }
 
-func defaultRunnerFactory(cfg config.AppConfig, st *state.StateStore, stop *runner.StopController) workflow.ModelRunner {
-	r := runner.NewClaudeRunner(cfg, st)
-	r.AttachStopController(stop)
-	return r
-}
-
 func run(
 	args []string,
 	loadConfig func() (config.AppConfig, error),
