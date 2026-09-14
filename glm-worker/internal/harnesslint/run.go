@@ -75,6 +75,11 @@ func checkRules(root string, paths []string) ([]Violation, error) {
 	if err != nil {
 		return nil, err
 	}
+	testSurfaceViolations, err := scanForwardOnlyTestCompatibilitySurfaces(root, paths)
+	if err != nil {
+		return nil, err
+	}
+	forwardOnlyViolations = append(forwardOnlyViolations, testSurfaceViolations...)
 	proseDataViolations, err := scanProductionProseData(root, paths)
 	if err != nil {
 		return nil, err
