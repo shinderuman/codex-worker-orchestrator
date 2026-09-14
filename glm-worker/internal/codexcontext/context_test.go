@@ -22,7 +22,7 @@ func TestEnableDisableManagedProjectConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Equal(content, ManagedConfigContent()) {
+	if !bytes.Equal(content, managedConfig) {
 		t.Fatalf("unexpected managed config:\n%s", content)
 	}
 	for _, setting := range []string{

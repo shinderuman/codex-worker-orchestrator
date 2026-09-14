@@ -94,10 +94,6 @@ func ParentEvidenceTokenProxy(bytes int) int {
 	return (bytes + 3) / 4
 }
 
-func WarnParentEvidenceLedgerSkip(err error) {
-	writeStatsWarningEvent("parent_evidence_ledger", "parent evidence ledgerの更新に失敗したため重複検出だけが無効になります", err)
-}
-
 func (s *StateStore) Present() bool {
 	if s == nil {
 		return false

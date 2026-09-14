@@ -2,7 +2,6 @@ package runner
 
 import (
 	"fmt"
-	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -29,14 +28,6 @@ const (
 )
 
 var zaiResetPattern = regexp.MustCompile(`Your limit will reset at ([0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2})`)
-
-func DetectZaiFiveHourLimit(path string) (ZaiFiveHourLimit, bool) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return ZaiFiveHourLimit{}, false
-	}
-	return DetectZaiFiveHourLimitText(string(data))
-}
 
 func DetectZaiFiveHourLimitText(output string) (ZaiFiveHourLimit, bool) {
 	if !strings.Contains(output, "Request rejected (429)") {

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -105,13 +104,6 @@ const parentUsageReasonMissingInEnd = "missing-in-end-anchor"
 const parentUsageIntervalStartInclusive = false
 
 const parentUsageIntervalStartExclusive = true
-
-func buildParentUsageReport(cfg config.AppConfig, st *state.StateStore, task bundleTask) parentUsageReport {
-	start, collectionEnd, _ := analysisCollectionWindow(task)
-	association := resolveCodexAssociation(cfg.CodexConfigDir, task)
-	scan, scanErr := parentUsageRolloutScan(association, start, collectionEnd)
-	return buildParentUsageReportFromScan(st, task, association, scan, scanErr)
-}
 
 func buildParentUsageReportFromScan(st *state.StateStore, task bundleTask, association codexAssociation, scan bundleRolloutScan, scanErr error) parentUsageReport {
 	start, collectionEnd, _ := analysisCollectionWindow(task)

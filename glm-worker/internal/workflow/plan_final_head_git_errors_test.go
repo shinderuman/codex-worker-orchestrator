@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryprojecthead"
 )
 
 func TestFinalHeadPlanSkipsGenuineUnbornRepository(t *testing.T) {
@@ -89,8 +91,8 @@ func requireFinalHeadSkip(t *testing.T, root string, suffix string) {
 		prefix string
 		check  func(string) (string, error)
 	}{
-		{name: "final", prefix: "plan final head: ", check: CheckFinalHeadPlan},
-		{name: "completion", prefix: "plan completion head: ", check: CheckParentCompletionHead},
+		{name: "final", prefix: "plan final head: ", check: repositoryprojecthead.CheckFinalHeadPlan},
+		{name: "completion", prefix: "plan completion head: ", check: repositoryprojecthead.CheckParentCompletionHead},
 	}
 	for _, tc := range checks {
 		t.Run(tc.name, func(t *testing.T) {
@@ -108,8 +110,8 @@ func requireFinalHeadError(t *testing.T, root string, want string) {
 		name  string
 		check func(string) (string, error)
 	}{
-		{name: "final", check: CheckFinalHeadPlan},
-		{name: "completion", check: CheckParentCompletionHead},
+		{name: "final", check: repositoryprojecthead.CheckFinalHeadPlan},
+		{name: "completion", check: repositoryprojecthead.CheckParentCompletionHead},
 	}
 	for _, tc := range checks {
 		t.Run(tc.name, func(t *testing.T) {

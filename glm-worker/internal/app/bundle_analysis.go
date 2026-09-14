@@ -529,10 +529,6 @@ func scanAnalysisRolloutWindow(collector *bundleCollector, association codexAsso
 	return scan, nil
 }
 
-func scanCodexRolloutWindow(rolloutPath string, start, end time.Time) (bundleRolloutScan, error) {
-	return scanCodexRolloutChainWindow([]codexRollout{{AbsolutePath: rolloutPath}}, start, end)
-}
-
 func scanCodexRolloutChainWindow(chain []codexRollout, start, end time.Time) (bundleRolloutScan, error) {
 	scan := bundleRolloutScan{turnIndex: map[string]int{}}
 	for _, member := range chain {

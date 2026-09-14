@@ -70,7 +70,7 @@ func TestFixPreCallGuardRollsBackToWaitingSolReview(t *testing.T) {
 	r := &scriptedRunner{steps: []runnerStep{{runErr: beforeCallMismatchErr()}}}
 	w := newGitWorkflowT(t, st, r, repo)
 
-	err := w.ExecuteExplicitFix("fix instruction", "", "")
+	err := w.ExecuteExplicitFixWithExecutionMilestones("fix instruction", "", "", "")
 	var workerErr *WorkerError
 	if !errors.As(err, &workerErr) || !strings.Contains(err.Error(), "before-call-mismatch") {
 		t.Fatalf("ExecuteExplicitFix error = %v", err)
@@ -99,7 +99,7 @@ func TestFixPreCallGuardRollsBackToWaitingSolReview(t *testing.T) {
 		{structured: needsSolReviewPacket()},
 	}}
 	resendWorkflow := newGitWorkflowT(t, st, resendRunner, repo)
-	if err := resendWorkflow.ExecuteExplicitFix("fix instruction", "", ""); err != nil {
+	if err := resendWorkflow.ExecuteExplicitFixWithExecutionMilestones("fix instruction", "", "", ""); err != nil {
 		t.Fatalf("resend fix failed: %v", err)
 	}
 	if st.TaskStatus() != state.TaskStatusWaitingSolReview {

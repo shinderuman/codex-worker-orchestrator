@@ -57,10 +57,6 @@ root_agent_usage_hint_text = ""
 multi_agent_mode_hint_text = ""
 `)
 
-func ManagedConfigContent() []byte {
-	return append([]byte(nil), managedConfig...)
-}
-
 func IsManagedConfig(content []byte) bool {
 	return bytes.Equal(content, managedConfig)
 }
