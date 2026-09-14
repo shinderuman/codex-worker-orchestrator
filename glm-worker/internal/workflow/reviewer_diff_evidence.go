@@ -12,6 +12,10 @@ func (w *Workflow) reviewerNavigationContext(request, activeTaskPath string, rev
 	if err != nil {
 		return "", err
 	}
+	parentMetadataFilterActive, err := RepositoryHarnessActive(w.config.RepoRoot, w.state)
+	if err != nil {
+		return "", err
+	}
 	exhaustive, err := w.exhaustiveSearchContext(request, activeTaskPath, state.ReviewerRole, reviewNumber+1)
 	if err != nil {
 		return "", err
@@ -20,7 +24,7 @@ func (w *Workflow) reviewerNavigationContext(request, activeTaskPath string, rev
 	if boundary != "" {
 		boundary += "\n"
 	}
-	navigation, err := w.reviewerDiffFirstNavigation(request, reviewNumber)
+	navigation, err := w.reviewerDiffFirstNavigationWithHarness(request, reviewNumber, parentMetadataFilterActive)
 	if err != nil {
 		return "", err
 	}
