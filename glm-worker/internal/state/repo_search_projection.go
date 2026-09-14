@@ -7,6 +7,10 @@ import (
 	"os"
 )
 
+func (s *StateStore) EnableRepoSearchReadProjection() {
+	s.repoSearchReadProjection = true
+}
+
 func (s *StateStore) projectCurrentRepoSearchStats() (TaskStats, error) {
 	stats, err := s.loadTaskStats()
 	if err != nil {
@@ -22,6 +26,9 @@ func (s *StateStore) projectCurrentRepoSearchStats() (TaskStats, error) {
 }
 
 func (s *StateStore) projectRepoSearchStatsForRead(stats TaskStats) (TaskStats, error) {
+	if !s.repoSearchReadProjection {
+		return stats, nil
+	}
 	measure, retained, err := s.RepoSearchMeasureFromTaskEvents(stats.TaskID)
 	if err != nil {
 		return TaskStats{}, err
