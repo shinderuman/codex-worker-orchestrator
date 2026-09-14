@@ -76,6 +76,63 @@ func TestObserveGuardRepairResumeRejectsUnpreparedAttemptWithoutActivating(t *te
 	}
 }
 
+func TestRecoverUnobservedGuardRepairResumeRestoresActiveBoundary(t *testing.T) {
+	st := newLifecycleTestStore(t)
+	_, checkpoint, record := prepareGuardResumeTransitionTest(t, st)
+	attemptID := "55555555-5555-4555-8555-555555555555"
+	prepared, err := st.PrepareGuardRepairResume(record, checkpoint, attemptID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.BeginResume(checkpoint); err != nil {
+		t.Fatal(err)
+	}
+	if st.TaskStatus() != TaskStatusActive {
+		t.Fatalf("crash fixture status = %s want active", st.TaskStatus())
+	}
+
+	if err := st.RecoverUnobservedGuardRepairResume(prepared); err != nil {
+		t.Fatal(err)
+	}
+	if st.TaskStatus() != TaskStatusGuardRecoverable {
+		t.Fatalf("recovered status = %s want guard-recoverable", st.TaskStatus())
+	}
+	got, err := st.LoadGuardRepairRecord()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != GuardRepairReady || got.ResumeAttemptID != "" || got.ResumeCheckpointDigest != "" || got.OriginalResumeObserved {
+		t.Fatalf("active-boundary recovery did not reset transaction: %#v", got)
+	}
+}
+
+func TestRecoverUnobservedGuardRepairResumeRejectsContradictoryLifecycle(t *testing.T) {
+	st := newLifecycleTestStore(t)
+	_, checkpoint, record := prepareGuardResumeTransitionTest(t, st)
+	attemptID := "66666666-6666-4666-8666-666666666666"
+	prepared, err := st.PrepareGuardRepairResume(record, checkpoint, attemptID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetTaskStatus(TaskStatusRateLimited); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := st.RecoverUnobservedGuardRepairResume(prepared); err == nil {
+		t.Fatal("contradictory lifecycle state was reconciled")
+	}
+	if st.TaskStatus() != TaskStatusRateLimited {
+		t.Fatalf("rejected recovery changed task status: %s", st.TaskStatus())
+	}
+	got, err := st.LoadGuardRepairRecord()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != GuardRepairResuming || got.ResumeAttemptID != attemptID || got.OriginalResumeObserved {
+		t.Fatalf("rejected recovery changed transaction: %#v", got)
+	}
+}
+
 func prepareGuardResumeTransitionTest(t *testing.T, st *StateStore) (string, ResumeCheckpoint, GuardRepairRecord) {
 	t.Helper()
 	taskID, err := st.StartNewTask()

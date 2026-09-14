@@ -41,6 +41,38 @@ func (s *StateStore) PrepareGuardRepairResume(record GuardRepairRecord, checkpoi
 	return record, nil
 }
 
+func (s *StateStore) RecoverUnobservedGuardRepairResume(record GuardRepairRecord) error {
+	if record.Status != GuardRepairResuming || record.OriginalResumeObserved {
+		return fmt.Errorf("guard repair resume recovery requires an unobserved resuming transaction")
+	}
+	taskID, err := s.TaskID()
+	if err != nil {
+		return err
+	}
+	if taskID != record.TaskID {
+		return fmt.Errorf("guard repair resume transaction belongs to a different task")
+	}
+	checkpoint, err := s.LoadResumeCheckpoint()
+	if err != nil {
+		return err
+	}
+	if err := validateGuardRepairResumeProof(record, checkpoint, record.ResumeAttemptID); err != nil {
+		return err
+	}
+	switch status := s.TaskStatus(); status {
+	case TaskStatusGuardRecoverable:
+	case TaskStatusActive:
+		if err := s.RestoreResumeStop(checkpoint); err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("unobserved guard repair resume has contradictory task status: %s", status)
+	}
+	record.Status = GuardRepairReady
+	record.ClearResumeProof()
+	return s.SaveGuardRepairRecord(record)
+}
+
 func (s *StateStore) ObserveGuardRepairResume(checkpoint ResumeCheckpoint, attemptID string) error {
 	record, err := s.LoadGuardRepairRecord()
 	if err != nil {

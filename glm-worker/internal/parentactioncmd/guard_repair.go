@@ -90,12 +90,7 @@ func recoverGuardRepairResumeIfNeeded(st *state.StateStore) error {
 		return errors.Join(fmt.Errorf("guard repair resume transaction belongs to a stale or foreign task"), lock.Close())
 	}
 	if !record.OriginalResumeObserved {
-		if st.TaskStatus() != state.TaskStatusGuardRecoverable {
-			return errors.Join(fmt.Errorf("unobserved guard repair resume left the guard-recoverable state"), lock.Close())
-		}
-		record.Status = state.GuardRepairReady
-		record.ClearResumeProof()
-		return errors.Join(st.SaveGuardRepairRecord(record), lock.Close())
+		return errors.Join(st.RecoverUnobservedGuardRepairResume(record), lock.Close())
 	}
 	if st.TaskStatus() == state.TaskStatusGuardRecoverable {
 		failure := markGuardRepairFailed(st, record, fmt.Errorf("observed guard repair resume returned to guard-recoverable state"))
