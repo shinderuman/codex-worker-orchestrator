@@ -7,38 +7,31 @@ import (
 	"os"
 )
 
-func (s *StateStore) projectCurrentRepoSearchStats() {
+func (s *StateStore) projectCurrentRepoSearchStats() (TaskStats, error) {
 	stats, err := s.loadTaskStats()
-	if errors.Is(err, os.ErrNotExist) {
-		return
-	}
 	if err != nil {
-		warnStatsFailure("repo-search archive投影の読み込み", err)
-		return
+		return TaskStats{}, err
 	}
 
-	measure, err := s.repoSearchMeasureFromTaskEvents(stats.TaskID)
+	measure, _, err := s.RepoSearchMeasureFromTaskEvents(stats.TaskID)
 	if err != nil {
-		WarnTaskEventSkip("repo-search archive投影", err)
-		measure = RepoSearchMeasure{}
+		return TaskStats{}, err
 	}
 	stats.RepoSearchCalls = measure.Calls
 	stats.RepoSearchQueriesByCategory = measure.QueriesByCategory
 	stats.RepoSearchOutcomes = measure.Outcomes
 	stats.RepoSearchResults = measure.Results
 	stats.RepoSearchDurationMS = measure.DurationMS
-	if err := s.writeTaskStats(stats); err != nil {
-		warnStatsFailure("repo-search archive投影", err)
-	}
+	return stats, nil
 }
 
-func (s *StateStore) repoSearchMeasureFromTaskEvents(taskID string) (RepoSearchMeasure, error) {
+func (s *StateStore) RepoSearchMeasureFromTaskEvents(taskID string) (RepoSearchMeasure, bool, error) {
 	file, err := os.Open(s.TaskEventLogPath(taskID))
 	if errors.Is(err, os.ErrNotExist) {
-		return RepoSearchMeasure{}, nil
+		return RepoSearchMeasure{}, false, nil
 	}
 	if err != nil {
-		return RepoSearchMeasure{}, err
+		return RepoSearchMeasure{}, false, err
 	}
 	defer func() { _ = file.Close() }()
 
@@ -48,7 +41,7 @@ func (s *StateStore) repoSearchMeasureFromTaskEvents(taskID string) (RepoSearchM
 	for scanner.Scan() {
 		record, err := ParseTaskEventLine(scanner.Bytes())
 		if err != nil {
-			return RepoSearchMeasure{}, fmt.Errorf("repo-search archive投影でtask eventを読めません: %w", err)
+			return RepoSearchMeasure{}, true, fmt.Errorf("repo-search task eventを読めません: %w", err)
 		}
 		if !IsRepoSearchRouteEvent(record) {
 			continue
@@ -56,7 +49,7 @@ func (s *StateStore) repoSearchMeasureFromTaskEvents(taskID string) (RepoSearchM
 		measure.absorbRoute(record.Phase, record.Subtype, len(record.SearchPaths), record.DurationMS)
 	}
 	if err := scanner.Err(); err != nil {
-		return RepoSearchMeasure{}, fmt.Errorf("repo-search archive投影でtask eventを走査できません: %w", err)
+		return RepoSearchMeasure{}, true, fmt.Errorf("repo-search task eventを走査できません: %w", err)
 	}
-	return measure, nil
+	return measure, true, nil
 }
