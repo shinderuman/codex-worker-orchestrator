@@ -121,7 +121,7 @@ func seedStoredRepoSearchAggregate(t *testing.T, st *StateStore) {
 	}
 	stats.RepoSearchCalls = 7
 	stats.RepoSearchQueriesByCategory = map[string]int{
-		RepoSearchCategoryWorkerNavigation:      4,
+		RepoSearchCategoryWorkerNavigation:    4,
 		RepoSearchCategoryReviewerIndependent: 3,
 	}
 	stats.RepoSearchOutcomes = map[string]int{
