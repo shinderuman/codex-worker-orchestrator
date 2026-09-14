@@ -11,19 +11,7 @@ func TestCompleteParentAwaitingDoesNotRequireWritableTaskStatsMirror(t *testing.
 	st := &StateStore{dir: t.TempDir()}
 	taskID := "12345678-aaaa-bbbb-cccc-dddddddddddd"
 	threadID := "01a0463c-d477-7410-9efd-cb34ff2e0b0e"
-	if err := st.Write("task.id", taskID); err != nil {
-		t.Fatal(err)
-	}
-	if err := st.SetTaskStatus(TaskStatusAwaitingParentCompletion); err != nil {
-		t.Fatal(err)
-	}
-	st.RecordModelCallLog(ModelCallLog{
-		TaskID:             taskID,
-		CallType:           CallTypeEvent,
-		Phase:              ParentPhaseAccept,
-		Outcome:            ParentOutcomeAccepted,
-		WorkerReportedRisk: string(packet.RiskLow),
-	})
+	seedParentCompletionOutcome(t, st, taskID, SessionRotationTerminalAccept, string(packet.RiskLow))
 	if err := os.Remove(st.Path(currentStatsFile)); err != nil {
 		t.Fatal(err)
 	}
@@ -64,24 +52,12 @@ func TestCompleteParentAwaitingDoesNotRequireWritableTaskStatsMirror(t *testing.
 	}
 }
 
-func TestCompleteParentAwaitingRejectsInvalidCompletionRisk(t *testing.T) {
+func TestCompleteParentAwaitingRejectsInvalidCanonicalCompletionRisk(t *testing.T) {
 	for _, risk := range []string{"", "MEDIUM"} {
 		t.Run(risk, func(t *testing.T) {
 			st := &StateStore{dir: t.TempDir()}
 			taskID := "12345678-aaaa-bbbb-cccc-dddddddddddd"
-			if err := st.Write("task.id", taskID); err != nil {
-				t.Fatal(err)
-			}
-			if err := st.SetTaskStatus(TaskStatusAwaitingParentCompletion); err != nil {
-				t.Fatal(err)
-			}
-			st.RecordModelCallLog(ModelCallLog{
-				TaskID:             taskID,
-				CallType:           CallTypeEvent,
-				Phase:              ParentPhaseAccept,
-				Outcome:            ParentOutcomeAccepted,
-				WorkerReportedRisk: risk,
-			})
+			seedParentCompletionOutcome(t, st, taskID, SessionRotationTerminalAccept, risk)
 
 			evaluated := false
 			completed, err := st.CompleteParentAwaiting(func(string) (*SessionRotationEvaluation, error) {
@@ -98,5 +74,26 @@ func TestCompleteParentAwaitingRejectsInvalidCompletionRisk(t *testing.T) {
 				t.Fatalf("task status = %q", st.TaskStatus())
 			}
 		})
+	}
+}
+
+func seedParentCompletionOutcome(t *testing.T, st *StateStore, taskID, terminal, risk string) {
+	t.Helper()
+	if err := st.Write("task.id", taskID); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.initializeParentReviewState(taskID); err != nil {
+		t.Fatal(err)
+	}
+	state, err := st.loadParentReviewState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.Completion = &ParentCompletionOutcome{Terminal: terminal, Risk: risk}
+	if err := st.writeParentReviewState(state); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetTaskStatus(TaskStatusAwaitingParentCompletion); err != nil {
+		t.Fatal(err)
 	}
 }
