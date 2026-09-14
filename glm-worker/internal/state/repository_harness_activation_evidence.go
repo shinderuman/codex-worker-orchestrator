@@ -8,15 +8,15 @@ import (
 	"path/filepath"
 )
 
-const repositoryHarnessActivationEvidenceVersion = 1
-
-const repositoryHarnessActivationEvidenceDir = "repository-harness-activation"
-
 type RepositoryHarnessActivationEvidence struct {
 	Version int    `json:"version"`
 	TaskID  string `json:"task_id"`
 	Active  bool   `json:"active"`
 }
+
+const repositoryHarnessActivationEvidenceVersion = 1
+
+const repositoryHarnessActivationEvidenceDir = "repository-harness-activation"
 
 func (s *StateStore) RecordRepositoryHarnessActivation(active bool) error {
 	taskID, err := s.TaskID()
