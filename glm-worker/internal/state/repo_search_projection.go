@@ -17,9 +17,12 @@ func (s *StateStore) projectCurrentRepoSearchStats() (TaskStats, error) {
 		return TaskStats{}, err
 	}
 
-	measure, _, err := s.RepoSearchMeasureFromTaskEvents(stats.TaskID)
+	measure, retained, err := s.RepoSearchMeasureFromTaskEvents(stats.TaskID)
 	if err != nil {
 		return TaskStats{}, err
+	}
+	if !retained {
+		return stats, nil
 	}
 	applyRepoSearchMeasure(&stats, measure)
 	return stats, nil
