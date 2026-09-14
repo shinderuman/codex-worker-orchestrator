@@ -36,8 +36,6 @@ func TestParseCommandModes(t *testing.T) {
 		{name: "codex-limit", args: []string{"--codex-limit"}, mode: ModeCodexLimit},
 		{name: "repo-search", args: []string{"--repo-search", "worker dispatch", "--scope", "internal/workflow", "--budget", "2048"}, mode: ModeRepoSearch, payload: "worker dispatch"},
 		{name: "repo-search-eval", args: []string{"--repo-search-eval"}, mode: ModeRepoSearchEval},
-		{name: "parent-usage", args: []string{"--parent-usage"}, mode: ModeParentUsage},
-		{name: "parent-usage task", args: []string{"--parent-usage", "task-123"}, mode: ModeParentUsage, payload: "task-123"},
 		{name: "review-gap", args: []string{"--review-gap"}, mode: ModeReviewGap},
 		{name: "review-gap task", args: []string{"--review-gap", "task-123"}, mode: ModeReviewGap, payload: "task-123"},
 	}
@@ -52,6 +50,12 @@ func TestParseCommandModes(t *testing.T) {
 				t.Fatalf("command = %#v", command)
 			}
 		})
+	}
+}
+
+func TestParentUsageCommandIsRetired(t *testing.T) {
+	if _, ok := commandParsers["--parent-usage"]; ok {
+		t.Fatal("retired --parent-usage command remains registered")
 	}
 }
 
@@ -173,7 +177,6 @@ func TestParseCommandRejectsInvalidArguments(t *testing.T) {
 		{"--repo-search"},
 		{"--repo-search", "query", "extra"},
 		{"--repo-search-eval", "extra"},
-		{"--parent-usage", "task-1", "extra"},
 		{"--review-gap", "task-1", "extra"},
 	}
 

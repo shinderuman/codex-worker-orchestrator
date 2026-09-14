@@ -2,8 +2,6 @@ package app
 
 import (
 	"bytes"
-	"encoding/json"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,14 +18,7 @@ func TestParentUsageReportIntervals(t *testing.T) {
 		task.start.Add(-3*time.Hour), parentUsagePhaseLines(t, task.start, task.completeAt))
 	guardedBefore := parentUsageStateSnapshot(t, task.st)
 
-	var stdout bytes.Buffer
-	if err := Execute(Command{Mode: ModeParentUsage}, task.cfg, nil, &stdout, nil); err != nil {
-		t.Fatal(err)
-	}
-	var report parentUsageReport
-	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
-		t.Fatal(err)
-	}
+	report := runParentUsageReport(t, task.cfg)
 
 	if report.Version != parentUsageReportVersion || report.TaskID != task.taskID {
 		t.Fatalf("report header = %#v", report)
@@ -106,14 +97,7 @@ func TestParentUsageReportMatchesBundleAnalysis(t *testing.T) {
 	writeAnalysisRollout(t, task.codexHome, analysisRolloutRel(), codexTestParentThreadID,
 		task.start.Add(-3*time.Hour), parentUsagePhaseLines(t, task.start, task.completeAt))
 
-	var stdout bytes.Buffer
-	if err := Execute(Command{Mode: ModeParentUsage}, task.cfg, nil, &stdout, nil); err != nil {
-		t.Fatal(err)
-	}
-	var report parentUsageReport
-	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
-		t.Fatal(err)
-	}
+	report := runParentUsageReport(t, task.cfg)
 	index := runAnalysisBundle(t, task.cfg, "")
 
 	if report.Intervals.TaskExecution.Tokens.InputTokens != index.TokenDelta.InputTokens ||
@@ -387,14 +371,7 @@ func TestParentUsageIdentityDegradations(t *testing.T) {
 		writeAnalysisRollout(t, codexHome, analysisRolloutRel(), codexTestParentThreadID,
 			stats.StartedAt.UTC().Add(-3*time.Hour), nil)
 
-		var stdout bytes.Buffer
-		if err := Execute(Command{Mode: ModeParentUsage}, cfg, nil, &stdout, nil); err != nil {
-			t.Fatal(err)
-		}
-		var report parentUsageReport
-		if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
-			t.Fatal(err)
-		}
+		report := runParentUsageReport(t, cfg)
 		if report.TaskID != taskID || report.ParentSession.Status != codexStatusMissing {
 			t.Fatalf("report = %#v", report)
 		}
@@ -440,22 +417,6 @@ func TestParentUsageIdentityDegradations(t *testing.T) {
 			t.Fatalf("execution interval = %#v", report.Intervals.TaskExecution)
 		}
 	})
-
-	t.Run("unknown-task", func(t *testing.T) {
-		cfg, _, _ := newCodexBundleTestState(t)
-		var stdout bytes.Buffer
-		err := Execute(Command{Mode: ModeParentUsage, Payload: "task-missing"}, cfg, nil, &stdout, nil)
-		if err == nil {
-			t.Fatal("unknown taskで成功しました")
-		}
-		var notFoundError *NotFoundError
-		if !errors.As(err, &notFoundError) {
-			t.Fatalf("error = %#v", err)
-		}
-		if stdout.Len() != 0 {
-			t.Fatalf("error時のstdout = %s", stdout.String())
-		}
-	})
 }
 
 func TestParentUsageOpenTaskReportsProgress(t *testing.T) {
@@ -485,14 +446,7 @@ func TestParentUsageOpenTaskReportsProgress(t *testing.T) {
 	writeAnalysisRollout(t, codexHome, analysisRolloutRel(), codexTestParentThreadID,
 		start.Add(-3*time.Hour), lines)
 
-	var stdout bytes.Buffer
-	if err := Execute(Command{Mode: ModeParentUsage}, cfg, nil, &stdout, nil); err != nil {
-		t.Fatal(err)
-	}
-	var report parentUsageReport
-	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
-		t.Fatal(err)
-	}
+	report := runParentUsageReport(t, cfg)
 	if report.TaskID != taskID || report.TaskStatus != string(st.TaskStatus()) {
 		t.Fatalf("report = %#v", report)
 	}
@@ -517,15 +471,12 @@ func TestParentUsageOpenTaskReportsProgress(t *testing.T) {
 
 func runParentUsageReport(t *testing.T, cfg config.AppConfig) parentUsageReport {
 	t.Helper()
-	var stdout bytes.Buffer
-	if err := Execute(Command{Mode: ModeParentUsage}, cfg, nil, &stdout, nil); err != nil {
+	st := state.AttachStateStore(cfg)
+	task, err := selectBundleTask(st, "")
+	if err != nil {
 		t.Fatal(err)
 	}
-	var report parentUsageReport
-	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
-		t.Fatal(err)
-	}
-	return report
+	return buildParentUsageReport(cfg, st, task)
 }
 
 func parentUsagePhaseLines(t *testing.T, start, completeAt time.Time) []string {

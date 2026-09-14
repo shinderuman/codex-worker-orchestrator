@@ -34,7 +34,6 @@ func commandDispatchOwnerFor(mode CommandMode) (commandDispatchOwner, error) {
 		ModeModelRouting,
 		ModeTestImpact,
 		ModeBundle,
-		ModeParentUsage,
 		ModeReviewGap,
 		ModeRepoSearch,
 		ModeRepoSearchEval,
@@ -86,7 +85,6 @@ func executeReadOnly(cmd Command, cfg config.AppConfig, stdout io.Writer) error 
 		ModeTestImpact,
 		ModeRepoSearchEval,
 		ModeBundle,
-		ModeParentUsage,
 		ModeReviewGap:
 		return executeReadOnlyAnalysis(cmd, cfg, stdout)
 	default:
@@ -152,8 +150,6 @@ func executeReadOnlyAnalysis(cmd Command, cfg config.AppConfig, stdout io.Writer
 		return printRepoSearchEval(st, stdout)
 	case ModeBundle:
 		return printBundle(cfg, st, cmd.Payload, stdout)
-	case ModeParentUsage:
-		return printParentUsage(cfg, st, cmd.Payload, stdout)
 	case ModeReviewGap:
 		return printReviewGap(cfg, st, cmd.Payload, stdout)
 	default:
