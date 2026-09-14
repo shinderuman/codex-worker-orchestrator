@@ -73,3 +73,33 @@ func TestTelemetryCorpusAppliesPeriodFilterOnceForCurrentAndHistory(t *testing.T
 		t.Fatalf("history filtered cohort = %#v", history.Cohorts)
 	}
 }
+
+func TestTelemetryCorpusCurrentCountersExcludeUnreadableFile(t *testing.T) {
+	st := &StateStore{dir: t.TempDir()}
+	base := telemetryHistoryBase()
+	writeTelemetryHistoryFile(t, st, telemetryHistoryTaskA,
+		currentTelemetryHistoryRecord(telemetryHistoryTaskA, "before", base, 1, false),
+		currentTelemetryHistoryRecord(telemetryHistoryTaskA, "inside", base.Add(2*time.Hour), 1, false),
+		`{"version":3,"broken"`,
+	)
+	filter := TelemetryQueryFilter{Since: base.Add(time.Hour), Until: base.Add(3 * time.Hour)}
+
+	current, err := st.ScanTelemetryCurrent(filter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.Files != 0 || current.RecordsOutsidePeriod != 0 || current.RecordsUndatedExcluded != 0 || len(current.UnreadableTasks) != 1 {
+		t.Fatalf("current unreadable task leaked period accounting: %#v", current)
+	}
+
+	history, err := st.ScanTelemetryHistory(filter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if history.RecordsOutsidePeriod != 1 || history.RecordsUndatedExcluded != 0 || len(history.Cohorts) != 1 || history.Cohorts[0].Records.Read != 1 {
+		t.Fatalf("history line-level period evidence changed: %#v", history)
+	}
+	if history.Malformed.Count != 1 || history.Malformed.ByReason[telemetryMalformedReasonDecode] != 1 {
+		t.Fatalf("history malformed evidence = %#v", history.Malformed)
+	}
+}
