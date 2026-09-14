@@ -57,23 +57,30 @@ func scanForwardOnlyTestCompatibilitySurfaces(root string, paths []string) ([]Vi
 
 func collectForwardOnlyProductionSymbols(pkg *forwardOnlyPackageSurface, file *ast.File) {
 	for _, declaration := range file.Decls {
-		switch typed := declaration.(type) {
-		case *ast.FuncDecl:
-			if typed.Recv != nil {
-				continue
-			}
+		collectForwardOnlyProductionDeclaration(pkg, declaration)
+	}
+}
+
+func collectForwardOnlyProductionDeclaration(pkg *forwardOnlyPackageSurface, declaration ast.Decl) {
+	switch typed := declaration.(type) {
+	case *ast.FuncDecl:
+		if typed.Recv == nil {
 			pkg.productionDeclarations[typed.Name.Name] = struct{}{}
 			pkg.productionCallables[typed.Name.Name] = struct{}{}
-		case *ast.GenDecl:
-			for _, spec := range typed.Specs {
-				switch typedSpec := spec.(type) {
-				case *ast.TypeSpec:
-					pkg.productionDeclarations[typedSpec.Name.Name] = struct{}{}
-				case *ast.ValueSpec:
-					for _, name := range typedSpec.Names {
-						pkg.productionDeclarations[name.Name] = struct{}{}
-					}
-				}
+		}
+	case *ast.GenDecl:
+		collectForwardOnlyGeneralDeclarations(pkg, typed)
+	}
+}
+
+func collectForwardOnlyGeneralDeclarations(pkg *forwardOnlyPackageSurface, declaration *ast.GenDecl) {
+	for _, spec := range declaration.Specs {
+		switch typed := spec.(type) {
+		case *ast.TypeSpec:
+			pkg.productionDeclarations[typed.Name.Name] = struct{}{}
+		case *ast.ValueSpec:
+			for _, name := range typed.Names {
+				pkg.productionDeclarations[name.Name] = struct{}{}
 			}
 		}
 	}
@@ -88,24 +95,11 @@ func forwardOnlyTestAliasViolations(pkg *forwardOnlyPackageSurface, testFile for
 		}
 		for _, spec := range general.Specs {
 			value, ok := spec.(*ast.ValueSpec)
-			if !ok || value.Type != nil || len(value.Names) != 1 || len(value.Values) != 1 {
+			if !ok {
 				continue
 			}
-			alias := value.Names[0]
-			if !ast.IsExported(alias.Name) {
-				continue
-			}
-			if _, exists := pkg.productionDeclarations[alias.Name]; exists {
-				continue
-			}
-			target, ok := value.Values[0].(*ast.Ident)
-			if !ok || target.Name == alias.Name {
-				continue
-			}
-			if _, exists := pkg.productionCallables[target.Name]; !exists {
-				continue
-			}
-			if !forwardOnlyAliasDirectlyCalled(pkg.testFiles, alias.Name) || forwardOnlyAliasReassigned(pkg.testFiles, alias.Name) {
+			alias, target, ok := forwardOnlyDirectTestAlias(pkg, value)
+			if !ok {
 				continue
 			}
 			violations = append(violations, forwardOnlyViolation(testFile.set, testFile.path, alias,
@@ -113,4 +107,28 @@ func forwardOnlyTestAliasViolations(pkg *forwardOnlyPackageSurface, testFile for
 		}
 	}
 	return violations
+}
+
+func forwardOnlyDirectTestAlias(pkg *forwardOnlyPackageSurface, value *ast.ValueSpec) (*ast.Ident, *ast.Ident, bool) {
+	if value.Type != nil || len(value.Names) != 1 || len(value.Values) != 1 {
+		return nil, nil, false
+	}
+	alias := value.Names[0]
+	if !ast.IsExported(alias.Name) {
+		return nil, nil, false
+	}
+	if _, exists := pkg.productionDeclarations[alias.Name]; exists {
+		return nil, nil, false
+	}
+	target, ok := value.Values[0].(*ast.Ident)
+	if !ok || target.Name == alias.Name {
+		return nil, nil, false
+	}
+	if _, exists := pkg.productionCallables[target.Name]; !exists {
+		return nil, nil, false
+	}
+	if !forwardOnlyAliasDirectlyCalled(pkg.testFiles, alias.Name) || forwardOnlyAliasReassigned(pkg.testFiles, alias.Name) {
+		return nil, nil, false
+	}
+	return alias, target, true
 }
