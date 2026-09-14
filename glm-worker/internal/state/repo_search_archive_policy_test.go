@@ -55,4 +55,16 @@ func TestRepoSearchArchiveWriteFailurePreservesLiveEvidence(t *testing.T) {
 	if _, err := os.Stat(st.TaskStatsArchivePath(firstTask)); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("failed archive became visible: %v", err)
 	}
+
+	removeStatePath = originalRemoveStatePath
+	nextTask, err := st.StartNewTask()
+	if err != nil {
+		t.Fatalf("retry after archive rollback failed: %v", err)
+	}
+	if nextTask == firstTask {
+		t.Fatalf("retry did not rotate task: %s", nextTask)
+	}
+	if _, err := os.Stat(st.TaskStatsArchivePath(firstTask)); err != nil {
+		t.Fatalf("retry did not archive prior task stats: %v", err)
+	}
 }
