@@ -9,6 +9,10 @@ func (s *StateStore) AcceptParentReview() (bool, error) {
 	if err := s.RequireParentReviewAcceptanceEvidence(); err != nil {
 		return false, err
 	}
+	taskID, err := s.TaskID()
+	if err != nil {
+		return false, err
+	}
 	review, err := s.snapshotLifecycleFile(parentReviewStateFile)
 	if err != nil {
 		return false, err
@@ -18,22 +22,7 @@ func (s *StateStore) AcceptParentReview() (bool, error) {
 		return ok, resolveErr
 	}
 
-	stats, err := s.loadTaskStats()
-	if err != nil {
-		stats, err = s.recoverTaskStats(err)
-		if err != nil {
-			if restoreErr := s.restoreLifecycleFile(review); restoreErr != nil {
-				return false, errors.Join(err, restoreErr)
-			}
-			return false, nil
-		}
-	}
-	stats.ParentReviewOpen = nil
-	stats.recordParentOutcome(ParentOutcomeAccepted, "", resolved)
-	stats.Status = TaskStatusAwaitingParentCompletion
-	stats.AcceptedRisk = resolved.Risk
-	stats.CompletionTerminal = SessionRotationTerminalAccept
-	result := s.commitParentCompletion(stats, TaskStatusAwaitingParentCompletion, false, nil)
+	result := s.commitParentCompletion(TaskStatusAwaitingParentCompletion, false, nil)
 	if result.transitionErr != nil {
 		restoreErr := s.restoreLifecycleFile(review)
 		if result.rollbackStatusErr != nil || restoreErr != nil {
@@ -42,7 +31,8 @@ func (s *StateStore) AcceptParentReview() (bool, error) {
 		return false, fmt.Errorf("parent accept outcomeを保存できません: %w", result.transitionErr)
 	}
 
-	s.appendParentOutcomeEvent(stats.TaskID, ParentPhaseAccept, ParentOutcomeAccepted, "", "", resolved)
+	s.projectParentCompletionOutcome(ParentOutcomeAccepted, resolved, SessionRotationTerminalAccept)
+	s.appendParentOutcomeEvent(taskID, ParentPhaseAccept, ParentOutcomeAccepted, "", "", resolved)
 	return true, nil
 }
 
