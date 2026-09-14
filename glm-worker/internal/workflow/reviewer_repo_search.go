@@ -35,7 +35,7 @@ func (w *Workflow) reviewerDiffFirstNavigation(request string, reviewNumber int)
 		return renderReviewerDiffFirstNavigation(nil, reviewerSearchDiffErrorFallback, "", nil), nil
 	}
 	paths = uniqueSortedPaths(paths)
-	parentMetadataFilterActive, err := reviewerParentMetadataFilterActive(w.config.RepoRoot, w.state)
+	parentMetadataFilterActive, err := RepositoryHarnessActive(w.config.RepoRoot, w.state)
 	if err != nil {
 		return "", err
 	}
@@ -63,10 +63,6 @@ func (w *Workflow) reviewerDiffFirstNavigation(request string, reviewNumber int)
 	}
 	w.recordRepoSearchOutcome(reviewerRepoSearchPhase, state.ReviewerRole, reviewNumber+1, outcome, candidates, timer.elapsed)
 	return renderReviewerDiffFirstNavigation(paths, outcome, query, candidates), nil
-}
-
-func reviewerParentMetadataFilterActive(repoRoot string, st *state.StateStore) (bool, error) {
-	return RepositoryHarnessActive(repoRoot, st)
 }
 
 func reviewerImpactPaths(paths []string, parentMetadataFilterActive bool) []string {
