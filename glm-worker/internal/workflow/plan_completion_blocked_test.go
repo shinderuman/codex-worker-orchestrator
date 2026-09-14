@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryprojecthead"
 )
 
 func TestParentCompletionHeadAcceptsBlockedOnlyActiveGoal(t *testing.T) {
@@ -19,11 +21,11 @@ func TestParentCompletionHeadAcceptsBlockedOnlyActiveGoal(t *testing.T) {
 	writeFinalHeadFile(t, root, implementationPlanFile, blockedCompletionFinalPlan())
 	commitFinalHeadFixture(t, root)
 
-	status, err := CheckParentCompletionHead(root)
+	status, err := repositoryprojecthead.CheckParentCompletionHead(root)
 	if err != nil || status != "plan completion head: verified" {
 		t.Fatalf("status=%q err=%v", status, err)
 	}
-	if _, err := CheckFinalHeadPlan(root); err == nil {
+	if _, err := repositoryprojecthead.CheckFinalHeadPlan(root); err == nil {
 		t.Fatal("ordinary final-head validation unexpectedly accepted blocked-only plan")
 	}
 }

@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryprojecthead"
 )
 
 func TestFinalHeadPlanVerified(t *testing.T) {
@@ -13,7 +15,7 @@ func TestFinalHeadPlanVerified(t *testing.T) {
 	writeFinalHeadFixture(t, root, finalHeadFixturePlan(""), true)
 	commitFinalHeadFixture(t, root)
 
-	status, err := CheckFinalHeadPlan(root)
+	status, err := repositoryprojecthead.CheckFinalHeadPlan(root)
 	if err != nil || status != "plan final head: verified" {
 		t.Fatalf("status=%q err=%v", status, err)
 	}
@@ -24,7 +26,7 @@ func TestFinalHeadPlanRejectsMissingTask(t *testing.T) {
 	writeFinalHeadFixture(t, root, finalHeadFixturePlan(""), false)
 	commitFinalHeadFixture(t, root)
 
-	_, err := CheckFinalHeadPlan(root)
+	_, err := repositoryprojecthead.CheckFinalHeadPlan(root)
 	if err == nil || !strings.Contains(err.Error(), "regular file") {
 		t.Fatalf("err=%v", err)
 	}
@@ -36,7 +38,7 @@ func TestFinalHeadPlanRejectsActiveTaskMissingExternalFeasibility(t *testing.T) 
 	writeFinalHeadFile(t, root, "IMPLEMENTATION_TASKS/active.md", "# active\n")
 	commitFinalHeadFixture(t, root)
 
-	_, err := CheckFinalHeadPlan(root)
+	_, err := repositoryprojecthead.CheckFinalHeadPlan(root)
 	if err == nil || !strings.Contains(err.Error(), "External feasibility") {
 		t.Fatalf("err=%v", err)
 	}
@@ -48,7 +50,7 @@ func TestFinalHeadPlanReadsActiveContractFromHead(t *testing.T) {
 	commitFinalHeadFixture(t, root)
 	writeFinalHeadFile(t, root, "IMPLEMENTATION_TASKS/active.md", "# active\n")
 
-	status, err := CheckFinalHeadPlan(root)
+	status, err := repositoryprojecthead.CheckFinalHeadPlan(root)
 	if err != nil || status != "plan final head: verified" {
 		t.Fatalf("status=%q err=%v", status, err)
 	}
@@ -60,11 +62,11 @@ func TestFinalHeadPlanAcceptsParkBranchWithoutPlanBranchString(t *testing.T) {
 	commitFinalHeadFixture(t, root)
 	runFinalHeadGit(t, root, "checkout", "-q", "-b", "glm-worker/park/770b3b17")
 
-	status, err := CheckFinalHeadPlan(root)
+	status, err := repositoryprojecthead.CheckFinalHeadPlan(root)
 	if err != nil || status != "plan final head: verified" {
 		t.Fatalf("status=%q err=%v", status, err)
 	}
-	if _, err := CheckParentCompletionHead(root); err != nil {
+	if _, err := repositoryprojecthead.CheckParentCompletionHead(root); err != nil {
 		t.Fatalf("completion head err=%v", err)
 	}
 }
@@ -75,7 +77,7 @@ func TestFinalHeadPlanRejectsDuplicateActiveSchedule(t *testing.T) {
 	writeFinalHeadFixture(t, root, plan, true)
 	commitFinalHeadFixture(t, root)
 
-	_, err := CheckFinalHeadPlan(root)
+	_, err := repositoryprojecthead.CheckFinalHeadPlan(root)
 	if err == nil || !strings.Contains(err.Error(), "重複") {
 		t.Fatalf("err=%v", err)
 	}
@@ -87,7 +89,7 @@ func TestFinalHeadPlanRejectsMalformedNonActiveSchedule(t *testing.T) {
 	writeFinalHeadFixture(t, root, plan, true)
 	commitFinalHeadFixture(t, root)
 
-	_, err := CheckFinalHeadPlan(root)
+	_, err := repositoryprojecthead.CheckFinalHeadPlan(root)
 	if err == nil || !strings.Contains(err.Error(), "NEXT欄") {
 		t.Fatalf("err=%v", err)
 	}
@@ -99,7 +101,7 @@ func TestFinalHeadPlanRejectsUnscheduledTask(t *testing.T) {
 	writeFinalHeadFile(t, root, "IMPLEMENTATION_TASKS/unscheduled.md", "# stray\n")
 	commitFinalHeadFixture(t, root)
 
-	_, err := CheckFinalHeadPlan(root)
+	_, err := repositoryprojecthead.CheckFinalHeadPlan(root)
 	if err == nil || !strings.Contains(err.Error(), "closure") || !strings.Contains(err.Error(), "unscheduled.md") {
 		t.Fatalf("err=%v", err)
 	}
@@ -116,7 +118,7 @@ func TestFinalHeadPlanAcceptsCompletionSync(t *testing.T) {
 	writeFinalHeadFile(t, root, implementationPlanFile, completed)
 	commitFinalHeadFixture(t, root)
 
-	status, err := CheckFinalHeadPlan(root)
+	status, err := repositoryprojecthead.CheckFinalHeadPlan(root)
 	if err != nil || status != "plan final head: verified" {
 		t.Fatalf("status=%q err=%v", status, err)
 	}
@@ -131,7 +133,7 @@ func TestFinalHeadPlanRejectsNonRegularTaskAtHead(t *testing.T) {
 	}
 	commitFinalHeadFixture(t, root)
 
-	_, err := CheckFinalHeadPlan(root)
+	_, err := repositoryprojecthead.CheckFinalHeadPlan(root)
 	if err == nil || !strings.Contains(err.Error(), "regular fileではありません") {
 		t.Fatalf("err=%v", err)
 	}
@@ -143,14 +145,14 @@ func TestFinalHeadPlanRejectsDuplicateNonActiveSchedule(t *testing.T) {
 	writeFinalHeadFixture(t, root, plan, true)
 	commitFinalHeadFixture(t, root)
 
-	_, err := CheckFinalHeadPlan(root)
+	_, err := repositoryprojecthead.CheckFinalHeadPlan(root)
 	if err == nil || !strings.Contains(err.Error(), "重複して列挙") {
 		t.Fatalf("err=%v", err)
 	}
 }
 
 func TestFinalHeadPlanSkipsNonGitRepository(t *testing.T) {
-	status, err := CheckFinalHeadPlan(t.TempDir())
+	status, err := repositoryprojecthead.CheckFinalHeadPlan(t.TempDir())
 	if err != nil || status != "plan final head: skipped (not a git repository)" {
 		t.Fatalf("status=%q err=%v", status, err)
 	}
@@ -167,14 +169,14 @@ func TestParentCompletionHeadAcceptsNextTaskPromotion(t *testing.T) {
 	writeFinalHeadFile(t, root, implementationPlanFile, completionPromotedFixturePlan())
 	commitFinalHeadFixture(t, root)
 
-	status, err := CheckParentCompletionHead(root)
+	status, err := repositoryprojecthead.CheckParentCompletionHead(root)
 	if err != nil || status != "plan completion head: verified" {
 		t.Fatalf("status=%q err=%v", status, err)
 	}
 }
 
 func TestParentCompletionHeadAcceptsNonGitRepositorySkip(t *testing.T) {
-	status, err := CheckParentCompletionHead(t.TempDir())
+	status, err := repositoryprojecthead.CheckParentCompletionHead(t.TempDir())
 	if err != nil || status != "plan completion head: skipped (not a git repository)" {
 		t.Fatalf("status=%q err=%v", status, err)
 	}
@@ -193,7 +195,7 @@ func TestParentCompletionHeadAcceptsCompletedGoalTerminalPlan(t *testing.T) {
 	writeFinalHeadFile(t, root, implementationPlanFile, completionGoalTerminalFixturePlan(""))
 	commitFinalHeadFixture(t, root)
 
-	status, err := CheckParentCompletionHead(root)
+	status, err := repositoryprojecthead.CheckParentCompletionHead(root)
 	if err != nil || status != "plan completion head: verified" {
 		t.Fatalf("status=%q err=%v", status, err)
 	}
@@ -209,7 +211,7 @@ func TestParentCompletionHeadRejectsGoalTerminalWithLeftoverScheduleOrTask(t *te
 	writeFinalHeadFile(t, root, implementationPlanFile, completionGoalTerminalFixturePlan("- `IMPLEMENTATION_TASKS/next.md`\n"))
 	commitFinalHeadFixture(t, root)
 
-	_, err := CheckParentCompletionHead(root)
+	_, err := repositoryprojecthead.CheckParentCompletionHead(root)
 	if err == nil || !strings.Contains(err.Error(), "空にする必要があります") {
 		t.Fatalf("leftover NEXT err=%v", err)
 	}
@@ -217,7 +219,7 @@ func TestParentCompletionHeadRejectsGoalTerminalWithLeftoverScheduleOrTask(t *te
 	writeFinalHeadFile(t, root, implementationPlanFile, completionGoalTerminalFixturePlan(""))
 	commitFinalHeadFixture(t, root)
 
-	_, err = CheckParentCompletionHead(root)
+	_, err = repositoryprojecthead.CheckParentCompletionHead(root)
 	if err == nil || !strings.Contains(err.Error(), "closure") {
 		t.Fatalf("leftover task file err=%v", err)
 	}
