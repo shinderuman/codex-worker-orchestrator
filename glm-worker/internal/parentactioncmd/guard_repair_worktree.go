@@ -177,18 +177,6 @@ func validateGuardRepairPath(worktree, path string) (bool, error) {
 	return strings.HasSuffix(path, "_test.go"), nil
 }
 
-func copyGuardRepairChangesWithRollback(worktree, repoRoot string, changed []string) (func() error, error) {
-	backups, err := captureGuardRepairFiles(repoRoot, changed)
-	if err != nil {
-		return nil, err
-	}
-	rollback := func() error { return restoreGuardRepairFiles(repoRoot, backups) }
-	if err := copyGuardRepairChanges(worktree, repoRoot, changed); err != nil {
-		return nil, errors.Join(err, rollback())
-	}
-	return rollback, nil
-}
-
 func captureGuardRepairFiles(repoRoot string, paths []string) ([]guardRepairFileBackup, error) {
 	backups := make([]guardRepairFileBackup, 0, len(paths))
 	for _, path := range paths {
