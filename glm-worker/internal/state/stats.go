@@ -196,20 +196,20 @@ func (s *StateStore) bootstrapTaskStats() (TaskStats, error) {
 }
 
 func (s *StateStore) ArchiveCurrentStats() {
-	s.archiveCurrentStats(s.currentParentCodexIdentityForArchive())
-}
-
-func (s *StateStore) archiveCurrentStats(parentIdentity *ParentCodexIdentity) {
-	s.projectCurrentRepoSearchStats()
-	stats, err := s.loadTaskStats()
+	stats, err := s.projectCurrentRepoSearchStats()
 	if errors.Is(err, os.ErrNotExist) {
 		return
 	}
 	if err != nil {
-		warnStatsFailure("archive読み込み", err)
+		warnStatsFailure("repo-search archive投影", err)
 		return
 	}
+	if err := s.archiveCurrentStats(s.currentParentCodexIdentityForArchive(), stats); err != nil {
+		warnStatsFailure("archive", err)
+	}
+}
 
+func (s *StateStore) archiveCurrentStats(parentIdentity *ParentCodexIdentity, stats TaskStats) error {
 	stats.ParentCodexThreadID = ""
 	stats.ParentCodexSessionID = ""
 	if parentIdentity != nil && parentIdentity.TaskID == stats.TaskID {
@@ -223,20 +223,19 @@ func (s *StateStore) archiveCurrentStats(parentIdentity *ParentCodexIdentity) {
 	resolved, hadOpen, _ := stats.resolveParentOutcome(ParentOutcomeUnknown, "", "")
 	data, err := json.MarshalIndent(stats, "", "  ")
 	if err != nil {
-		warnStatsFailure("archive JSON化", err)
-		return
+		return fmt.Errorf("archive JSON化: %w", err)
 	}
 	historyPath := filepath.Join(s.dir, "stats", stats.TaskID+".json")
 	if err := writeFileAtomic(historyPath, append(data, '\n'), 0o600); err != nil {
-		warnStatsFailure("archive書き込み", err)
-		return
+		return fmt.Errorf("archive書き込み: %w", err)
 	}
 	if hadOpen {
 		s.appendParentOutcomeEvent(stats.TaskID, ParentPhaseClose, ParentOutcomeUnknown, "", "", resolved)
 	}
 	if err := s.Remove(currentStatsFile); err != nil {
-		warnStatsFailure("archive後削除", err)
+		return fmt.Errorf("archive後削除: %w", err)
 	}
+	return nil
 }
 
 func (s *StateStore) currentParentCodexIdentityForArchive() *ParentCodexIdentity {
