@@ -100,7 +100,6 @@ const (
 	ModeModelRouting
 	ModeTestImpact
 	ModeBundle
-	ModeParentUsage
 	ModeReviewGap
 	ModeRepoSearch
 	ModeRepoSearchEval
@@ -231,9 +230,6 @@ var commandParsers = map[string]commandParser{
 	},
 	"bundle": func(args []string) (Command, error) {
 		return optionalPayloadCommand(args, ModeBundle, "usage: glm-worker bundle [task-id]")
-	},
-	"--parent-usage": func(args []string) (Command, error) {
-		return optionalPayloadCommand(args, ModeParentUsage, "usage: glm-worker --parent-usage [task-id]")
 	},
 	"--review-gap": func(args []string) (Command, error) {
 		return optionalPayloadCommand(args, ModeReviewGap, "usage: glm-worker --review-gap [task-id]")

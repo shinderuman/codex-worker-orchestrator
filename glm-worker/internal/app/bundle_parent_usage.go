@@ -2,7 +2,6 @@ package app
 
 import (
 	"fmt"
-	"io"
 	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
@@ -106,14 +105,6 @@ const parentUsageReasonMissingInEnd = "missing-in-end-anchor"
 const parentUsageIntervalStartInclusive = false
 
 const parentUsageIntervalStartExclusive = true
-
-func printParentUsage(cfg config.AppConfig, st *state.StateStore, requestedTaskID string, stdout io.Writer) error {
-	task, err := selectBundleTask(st, requestedTaskID)
-	if err != nil {
-		return err
-	}
-	return writeJSON(stdout, buildParentUsageReport(cfg, st, task))
-}
 
 func buildParentUsageReport(cfg config.AppConfig, st *state.StateStore, task bundleTask) parentUsageReport {
 	start, collectionEnd, _ := analysisCollectionWindow(task)
