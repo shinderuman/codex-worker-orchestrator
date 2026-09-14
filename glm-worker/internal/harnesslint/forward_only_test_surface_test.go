@@ -28,6 +28,7 @@ func CanonicalEvaluator(value int) int { return value }
 	writeFixture(t, root, "glm-worker/internal/example/evaluator_test.go", `package example
 import "testing"
 
+var SameFileHelper = CanonicalEvaluator
 var EvaluatorHook = CanonicalEvaluator
 var evaluatorHook = CanonicalEvaluator
 var TestCallback = CanonicalEvaluator
@@ -40,6 +41,7 @@ func useCallback(callback func(int) int) int { return callback(1) }
 func TestFunctionValues(t *testing.T) {
 	local := CanonicalEvaluator
 	if local(1) != 1 { t.Fatal("local function value") }
+	if SameFileHelper(1) != 1 { t.Fatal("same-file test helper") }
 
 	saved := EvaluatorHook
 	EvaluatorHook = fakeEvaluator
