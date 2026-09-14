@@ -161,21 +161,19 @@ func (s *StateStore) startNewTaskWithID(taskID string, resume bool) (string, err
 	}
 
 	parentIdentity := s.currentParentCodexIdentityForArchive()
-	projectedStats, projectionErr := s.projectCurrentRepoSearchStats()
-	hasCurrentStats := true
-	switch {
-	case errors.Is(projectionErr, os.ErrNotExist):
-		hasCurrentStats = false
-	case projectionErr != nil:
+	projectedStats, strictArchive, projectionErr := s.prepareRepoSearchArchiveStats()
+	if projectionErr != nil {
 		return "", fmt.Errorf("repo-search archive投影に失敗しました: %w", projectionErr)
 	}
 	if err := s.commitNewTaskCanonicalState(taskID); err != nil {
 		return "", err
 	}
-	if hasCurrentStats {
+	if strictArchive {
 		if err := s.archiveCurrentStats(parentIdentity, projectedStats); err != nil {
 			return "", err
 		}
+	} else {
+		s.archiveCurrentStatsBestEffort(parentIdentity)
 	}
 
 	s.PruneTaskEventLogs(retainedTaskEventLogs, taskID)
