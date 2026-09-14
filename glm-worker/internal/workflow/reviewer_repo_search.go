@@ -8,6 +8,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/reposearch"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
@@ -35,7 +36,8 @@ func (w *Workflow) reviewerDiffFirstContext(request string, reviewNumber int) st
 		return renderReviewerDiffFirstNavigation(nil, reviewerSearchDiffErrorFallback, "", nil)
 	}
 	paths = uniqueSortedPaths(paths)
-	impactPaths := reviewerImpactPaths(paths)
+	parentMetadataFilterActive := reviewerParentMetadataFilterActive(w.state)
+	impactPaths := reviewerImpactPaths(paths, parentMetadataFilterActive)
 	if len(impactPaths) == 0 {
 		w.recordRepoSearchOutcome(reviewerRepoSearchPhase, state.ReviewerRole, reviewNumber+1, reviewerSearchDiffSufficient, nil, 0)
 		return renderReviewerDiffFirstNavigation(paths, reviewerSearchDiffSufficient, "", nil)
@@ -44,7 +46,7 @@ func (w *Workflow) reviewerDiffFirstContext(request string, reviewNumber int) st
 		return renderReviewerDiffFirstNavigation(paths, reviewerSearchDisabled, "", nil)
 	}
 
-	impactTerms := collectReviewerDiffImpactTerms(w.config.RepoRoot, baseline, reviewerDiffImpactPaths(paths))
+	impactTerms := collectReviewerDiffImpactTerms(w.config.RepoRoot, baseline, reviewerDiffImpactPaths(paths, parentMetadataFilterActive))
 	query := reviewerIndependentSearchQuery(request, impactPaths, impactTerms)
 	timer := w.newRepoSearchTimer()
 	report, searchErr := timer.run(context.Background(), w.config.RepoRoot, query, reposearch.Options{MaxResults: RepoSearchMaxResults})
@@ -61,10 +63,15 @@ func (w *Workflow) reviewerDiffFirstContext(request string, reviewNumber int) st
 	return renderReviewerDiffFirstNavigation(paths, outcome, query, candidates)
 }
 
-func reviewerImpactPaths(paths []string) []string {
+func reviewerParentMetadataFilterActive(st *state.StateStore) bool {
+	activation, pinned, err := readRepositoryHarnessActivationPin(st)
+	return err == nil && pinned && activation == repositoryharness.ActivationActiveValue
+}
+
+func reviewerImpactPaths(paths []string, parentMetadataFilterActive bool) []string {
 	impact := make([]string, 0, len(paths))
 	for _, path := range paths {
-		if state.IsParentManagedPath(path) {
+		if parentMetadataFilterActive && state.IsParentManagedPath(path) {
 			continue
 		}
 		critical, category := IsCriticalPath(path)
@@ -82,10 +89,10 @@ func reviewerImpactPaths(paths []string) []string {
 	return impact
 }
 
-func reviewerDiffImpactPaths(paths []string) []string {
+func reviewerDiffImpactPaths(paths []string, parentMetadataFilterActive bool) []string {
 	filtered := make([]string, 0, len(paths))
 	for _, path := range paths {
-		if state.IsParentManagedPath(path) {
+		if parentMetadataFilterActive && state.IsParentManagedPath(path) {
 			continue
 		}
 		filtered = append(filtered, path)
