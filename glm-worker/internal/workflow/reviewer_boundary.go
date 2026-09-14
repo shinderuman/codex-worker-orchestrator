@@ -6,7 +6,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskdiff"
 )
 
@@ -149,22 +148,4 @@ func identityReviewedRound(identity taskdiff.FileIdentity, reviewed []reviewBlob
 		}
 	}
 	return -1
-}
-
-func reviewedBoundaryForState(st *state.StateStore) []reviewBlobRound {
-	data, err := os.ReadFile(st.Path(reviewedBlobsFile))
-	if err != nil {
-		return nil
-	}
-	var rounds []reviewBlobRound
-	for _, line := range strings.Split(strings.TrimRight(string(data), "\n"), "\n") {
-		if strings.TrimSpace(line) == "" {
-			continue
-		}
-		var round reviewBlobRound
-		if err := json.Unmarshal([]byte(line), &round); err == nil {
-			rounds = append(rounds, round)
-		}
-	}
-	return rounds
 }
