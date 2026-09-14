@@ -3,6 +3,14 @@ set -eu
 
 source_root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 go_mod_cache=$(go env GOMODCACHE)
+quality_tool_namespace=$(awk -F': ' '$1 == "namespace" { print $2; exit }' "$source_root/quality-tools.yml")
+quality_tools_default=$(awk -F': ' '$1 == "default-bin-dir" { print $2; exit }' "$source_root/quality-tools.yml")
+deadcode_version=$(awk -F': ' '$1 == "deadcode" { print $2; exit }' "$source_root/quality-tools.yml")
+case "${QUALITY_TOOLS_BIN_DIR:-}" in
+"") source_quality_tools="$HOME/$quality_tools_default" ;;
+/*) source_quality_tools="$QUALITY_TOOLS_BIN_DIR" ;;
+*) source_quality_tools="$source_root/$QUALITY_TOOLS_BIN_DIR" ;;
+esac
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/codex-install-smoke.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT HUP INT TERM
 repo="$tmp/repo"
@@ -50,6 +58,7 @@ printf '%s\n' 'v3.13.1'
 EOF_TOOL
 chmod +x "$tmp/bin/golangci-lint" "$tmp/bin/shellcheck" "$tmp/bin/shfmt"
 cp "$tmp/bin/golangci-lint" "$quality_tools/codex-worker-orchestrator-golangci-lint-2.7.0"
+cp "$source_quality_tools/$quality_tool_namespace-deadcode-$deadcode_version" "$quality_tools/$quality_tool_namespace-deadcode-$deadcode_version"
 cp "$tmp/bin/shellcheck" "$quality_tools/codex-worker-orchestrator-shellcheck-0.11.0"
 cp "$tmp/bin/shfmt" "$quality_tools/codex-worker-orchestrator-shfmt-3.13.1"
 
@@ -221,9 +230,13 @@ exit 0
 EOF_TOOL
 	chmod +x "$missing_bin/$tool"
 done
-cat >"$missing_bin/go" <<'EOF_TOOL'
+cat >"$missing_bin/go" <<EOF_TOOL
 #!/bin/sh
-case "${GOTOOLCHAIN:-}" in
+if [ "\${1:-}" = version ] && [ "\${2:-}" = -m ]; then
+	printf '%s\n' 'mod golang.org/x/tools v$deadcode_version'
+	exit 0
+fi
+case "\${GOTOOLCHAIN:-}" in
 go1.22.12) printf '%s\n' 'go version go1.22.12 darwin/arm64' ;;
 *) printf '%s\n' 'go version go1.25.4 darwin/arm64' ;;
 esac
@@ -238,6 +251,7 @@ printf '%s\n' 'version: 0.11.0'
 EOF_TOOL
 chmod +x "$missing_bin/go" "$missing_bin/golangci-lint" "$missing_bin/shellcheck"
 cp "$missing_bin/golangci-lint" "$tmp/missing-quality/codex-worker-orchestrator-golangci-lint-2.7.0"
+cp "$missing_bin/golangci-lint" "$tmp/missing-quality/$quality_tool_namespace-deadcode-$deadcode_version"
 missing_stderr="$tmp/missing.stderr"
 if QUALITY_TOOLS_BIN_DIR="$tmp/missing-quality" PATH="$missing_bin" "$repo/install.sh" >"$tmp/missing.stdout" 2>"$missing_stderr"; then
 	printf '%s\n' 'install missing canonical quality tool: expected failure' >&2
@@ -265,6 +279,7 @@ EOF_TOOL
 chmod +x "$mismatch_bin/shellcheck" "$mismatch_bin/shfmt"
 mkdir -p "$tmp/mismatch-quality"
 cp "$mismatch_bin/golangci-lint" "$tmp/mismatch-quality/codex-worker-orchestrator-golangci-lint-2.7.0"
+cp "$mismatch_bin/golangci-lint" "$tmp/mismatch-quality/$quality_tool_namespace-deadcode-$deadcode_version"
 cp "$mismatch_bin/shellcheck" "$tmp/mismatch-quality/codex-worker-orchestrator-shellcheck-0.11.0"
 mismatch_stderr="$tmp/mismatch.stderr"
 if QUALITY_TOOLS_BIN_DIR="$tmp/mismatch-quality" PATH="$mismatch_bin" "$repo/install.sh" >"$tmp/mismatch.stdout" 2>"$mismatch_stderr"; then
