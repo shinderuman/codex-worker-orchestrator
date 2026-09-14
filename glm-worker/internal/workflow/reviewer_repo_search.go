@@ -124,58 +124,68 @@ func extractReviewerDiffImpactTerms(diff string, limit int) []string {
 		if !isReviewerImpactDiffLine(line) {
 			continue
 		}
-		for _, term := range strings.FieldsFunc(line[1:], func(r rune) bool {
-			return !(unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' || r == '-' || r == '.' || r == '/')
-		}) {
-			term = strings.Trim(term, ".-/")
-			if len(term) < 3 {
-				continue
-			}
-			if _, ok := seen[term]; ok {
-				continue
-			}
-			seen[term] = struct{}{}
-			terms = append(terms, term)
-			if len(terms) == limit {
-				return terms
-			}
+		terms = appendReviewerImpactTerms(terms, seen, line[1:], limit)
+		if len(terms) == limit {
+			break
 		}
 	}
 	return terms
 }
 
 func isReviewerImpactDiffLine(line string) bool {
-	return len(line) > 1 && (line[0] == '+' || line[0] == '-') && !strings.HasPrefix(line, "+++") && !strings.HasPrefix(line, "---")
+	if len(line) < 2 || strings.HasPrefix(line, "+++") || strings.HasPrefix(line, "---") {
+		return false
+	}
+	return line[0] == '+' || line[0] == '-'
 }
 
-func reviewerIndependentSearchQuery(request string, impactPaths, impactTerms []string) string {
-	parts := make([]string, 0, len(impactPaths)+len(impactTerms)+1)
-	request = strings.TrimSpace(request)
-	if request != "" {
-		parts = append(parts, request)
-	}
-	if len(impactPaths) > 0 {
-		parts = append(parts, "review impact paths: "+strings.Join(impactPaths, " "))
-	}
-	if len(impactTerms) > 0 {
-		parts = append(parts, "review impact terms: "+strings.Join(impactTerms, " "))
-	}
-	return strings.Join(parts, "\n")
-}
-
-func excludeChangedPaths(results []reposearch.Result, changedPaths []string) []reposearch.Result {
-	changed := make(map[string]struct{}, len(changedPaths))
-	for _, path := range changedPaths {
-		changed[path] = struct{}{}
-	}
-	candidates := make([]reposearch.Result, 0, len(results))
-	for _, result := range results {
-		if _, ok := changed[result.Path]; ok {
+func appendReviewerImpactTerms(terms []string, seen map[string]struct{}, line string, limit int) []string {
+	for _, term := range strings.FieldsFunc(line, reviewerImpactTermSeparator) {
+		term = strings.Trim(term, "./-")
+		if len(term) < 3 {
 			continue
 		}
-		candidates = append(candidates, result)
+		if _, found := seen[term]; found {
+			continue
+		}
+		seen[term] = struct{}{}
+		terms = append(terms, term)
+		if len(terms) == limit {
+			break
+		}
 	}
-	return candidates
+	return terms
+}
+
+func reviewerImpactTermSeparator(r rune) bool {
+	return !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' && r != '.' && r != '/' && r != '-'
+}
+
+func reviewerIndependentSearchQuery(request string, paths []string, impactTerms []string) string {
+	var query strings.Builder
+	query.WriteString(strings.TrimSpace(request))
+	query.WriteString("\nreview impact paths: ")
+	query.WriteString(strings.Join(paths, " "))
+	if len(impactTerms) > 0 {
+		query.WriteString("\nreview diff impact terms: ")
+		query.WriteString(strings.Join(impactTerms, " "))
+	}
+	return query.String()
+}
+
+func excludeChangedPaths(results []reposearch.Result, changed []string) []reposearch.Result {
+	changedSet := make(map[string]struct{}, len(changed))
+	for _, path := range changed {
+		changedSet[path] = struct{}{}
+	}
+	filtered := make([]reposearch.Result, 0, len(results))
+	for _, result := range results {
+		if _, found := changedSet[result.Path]; found {
+			continue
+		}
+		filtered = append(filtered, result)
+	}
+	return filtered
 }
 
 func uniqueSortedPaths(paths []string) []string {
@@ -186,7 +196,7 @@ func uniqueSortedPaths(paths []string) []string {
 		if path == "" {
 			continue
 		}
-		if _, ok := seen[path]; ok {
+		if _, found := seen[path]; found {
 			continue
 		}
 		seen[path] = struct{}{}
@@ -196,31 +206,40 @@ func uniqueSortedPaths(paths []string) []string {
 	return unique
 }
 
-func renderReviewerDiffFirstNavigation(paths []string, outcome, query string, candidates []reposearch.Result) string {
-	var b strings.Builder
-	b.WriteString("REVIEW_DIFF_FIRST_NAVIGATION:\n")
-	b.WriteString("AUTHORITY: wrapper-captured-current-task-diff\n")
+func renderReviewerDiffFirstNavigation(paths []string, outcome string, query string, candidates []reposearch.Result) string {
+	var block strings.Builder
+	block.WriteString("REVIEW_DIFF_FIRST_NAVIGATION:\n")
+	block.WriteString(fmt.Sprintf("CHANGED_PATH_COUNT: %d\n", len(paths)))
 	for _, path := range paths {
-		b.WriteString("CHANGED_PATH: ")
-		b.WriteString(path)
-		b.WriteByte('\n')
+		block.WriteString("CHANGED_PATH: ")
+		block.WriteString(path)
+		block.WriteByte('\n')
 	}
-	performed := outcome == reviewerSearchHit || outcome == reviewerSearchEmpty || outcome == reviewerSearchErrorFallback
-	if performed {
-		b.WriteString("INDEPENDENT_SEARCH: performed\n")
-		b.WriteString("INDEPENDENT_QUERY: ")
-		b.WriteString(query)
-		b.WriteByte('\n')
-	} else {
-		b.WriteString("INDEPENDENT_SEARCH: skipped\n")
+	searchMode := "skipped"
+	if outcome != reviewerSearchDiffSufficient && outcome != reviewerSearchDiffErrorFallback && outcome != reviewerSearchDisabled {
+		searchMode = "performed"
 	}
-	b.WriteString("SEARCH_OUTCOME: ")
-	b.WriteString(outcome)
-	b.WriteByte('\n')
-	for _, candidate := range candidates {
-		b.WriteString(fmt.Sprintf("IMPACT_CANDIDATE: %s:%d\n", candidate.Path, candidate.Line))
+	block.WriteString("INDEPENDENT_SEARCH: ")
+	block.WriteString(searchMode)
+	block.WriteByte('\n')
+	block.WriteString("SEARCH_OUTCOME: ")
+	block.WriteString(outcome)
+	block.WriteByte('\n')
+	if query != "" {
+		block.WriteString("INDEPENDENT_QUERY: ")
+		block.WriteString(strings.ReplaceAll(query, "\n", " "))
+		block.WriteByte('\n')
 	}
-	b.WriteString("WORKER_SEARCH_AUTHORITY: none\n")
-	b.WriteString("END_REVIEW_DIFF_FIRST_NAVIGATION")
-	return b.String()
+	for _, result := range candidates {
+		block.WriteString("IMPACT_CANDIDATE: ")
+		block.WriteString(result.Path)
+		if result.Line > 0 {
+			block.WriteString(fmt.Sprintf(":%d", result.Line))
+		}
+		block.WriteByte('\n')
+	}
+	block.WriteString("WORKER_SEARCH_AUTHORITY: none\n")
+	block.WriteString("AUTHORITY: navigation-only\n")
+	block.WriteString("END_REVIEW_DIFF_FIRST_NAVIGATION")
+	return block.String()
 }
