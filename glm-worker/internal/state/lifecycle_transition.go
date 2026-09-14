@@ -28,6 +28,9 @@ func (s *StateStore) BeginParentDecision() (ParentActionRollback, error) {
 	if err != nil {
 		return ParentActionRollback{}, err
 	}
+	if err := s.saveParentActionBegin(rollback.status); err != nil {
+		return ParentActionRollback{}, err
+	}
 	if err := s.SetTaskStatus(TaskStatusActive); err != nil {
 		return ParentActionRollback{}, s.rollbackParentAction(rollback, err)
 	}
@@ -46,6 +49,9 @@ func (s *StateStore) BeginParentFix(origin, cause string) (ParentActionRollback,
 	if err != nil {
 		return ParentActionRollback{}, err
 	}
+	if err := s.saveParentActionBegin(rollback.status); err != nil {
+		return ParentActionRollback{}, err
+	}
 	if err := s.SetTaskStatus(TaskStatusActive); err != nil {
 		return ParentActionRollback{}, s.rollbackParentAction(rollback, err)
 	}
@@ -58,38 +64,6 @@ func (s *StateStore) BeginParentFix(origin, cause string) (ParentActionRollback,
 
 func (s *StateStore) RollbackParentAction(rollback ParentActionRollback, cause error) error {
 	return s.rollbackParentAction(rollback, cause)
-}
-
-func (s *StateStore) RecoverParentActionBegin(target TaskStatus) error {
-	if s.TaskStatus() != TaskStatusActive {
-		return fmt.Errorf("parent action recovery requires the leftover active task, got %s", s.TaskStatus())
-	}
-	if _, err := s.LoadResumeCheckpoint(); err == nil {
-		return fmt.Errorf("parent action recovery requires no resume checkpoint")
-	} else if !errors.Is(err, ErrNoResumeCheckpoint) {
-		return err
-	}
-	label, err := s.CurrentParentReviewLabel()
-	if err != nil {
-		return fmt.Errorf("parent action recovery cannot read parent review state: %w", err)
-	}
-	if label != roundCommentNone {
-		return fmt.Errorf("parent action recovery requires no open parent review, got %s", label)
-	}
-	pending := s.Exists("pending-decision")
-	switch target {
-	case TaskStatusWaitingDecision:
-		if !pending {
-			return fmt.Errorf("parent action recovery for a decision requires the pending decision payload")
-		}
-	case TaskStatusWaitingSolReview:
-		if pending {
-			return fmt.Errorf("parent action recovery for a fix requires no pending decision")
-		}
-	default:
-		return fmt.Errorf("parent action recovery target %s is not a parent waiting state", target)
-	}
-	return s.SetTaskStatus(target)
 }
 
 func (s *StateStore) snapshotParentActionRollback() (ParentActionRollback, error) {
@@ -112,6 +86,9 @@ func (s *StateStore) rollbackParentAction(rollback ParentActionRollback, cause e
 		return joinParentActionRollbackFailure(cause, err)
 	}
 	if err := s.SetTaskStatus(rollback.status); err != nil {
+		return joinParentActionRollbackFailure(cause, err)
+	}
+	if err := s.Remove(parentActionBeginStateFile); err != nil {
 		return joinParentActionRollbackFailure(cause, err)
 	}
 	return cause
