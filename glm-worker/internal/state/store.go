@@ -16,7 +16,8 @@ type SessionRole string
 type TaskStatus string
 
 type StateStore struct {
-	dir string
+	dir                      string
+	repoSearchReadProjection bool
 }
 
 const (
@@ -161,11 +162,21 @@ func (s *StateStore) startNewTaskWithID(taskID string, resume bool) (string, err
 	}
 
 	parentIdentity := s.currentParentCodexIdentityForArchive()
+	projectedStats, strictArchive, projectionErr := s.prepareRepoSearchArchiveStats()
+	if projectionErr != nil {
+		return "", fmt.Errorf("repo-search archive投影に失敗しました: %w", projectionErr)
+	}
 	if err := s.commitNewTaskCanonicalState(taskID); err != nil {
 		return "", err
 	}
+	if strictArchive {
+		if err := s.archiveCurrentStats(parentIdentity, projectedStats); err != nil {
+			return "", err
+		}
+	} else {
+		s.archiveCurrentStatsBestEffort(parentIdentity)
+	}
 
-	s.archiveCurrentStats(parentIdentity)
 	s.PruneTaskEventLogs(retainedTaskEventLogs, taskID)
 	s.InitializeTaskStats(taskID)
 	s.appendTaskStatusLifecycle(TaskStatusNone, TaskStatusActive)

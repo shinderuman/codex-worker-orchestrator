@@ -139,6 +139,7 @@ func executeReadOnlyAnalysis(cmd Command, cfg config.AppConfig, stdout io.Writer
 	case ModeConvergence:
 		return printConvergence(st, cmd.Payload, stdout)
 	case ModeEvalAB:
+		st.EnableRepoSearchReadProjection()
 		return printEvalAB(st, cmd.Payload, stdout)
 	case ModeCallOutliers:
 		return printCallOutliers(cfg, st, cmd.Query, stdout)

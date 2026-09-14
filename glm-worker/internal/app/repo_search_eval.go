@@ -33,7 +33,12 @@ func printRepoSearchEval(st *state.StateStore, stdout io.Writer) error {
 		Telemetry: *scan,
 		Rounds:    rounds,
 		RepoRoot:  st.ReadOr("repo-root", ""),
-		Report:    state.BuildRepoSearchReport(events.logs, repoSearchStatsByTask(stats), testImpactReviews(tasks)),
+		Report: state.BuildRepoSearchReportWithCompleteness(
+			events.logs,
+			repoSearchStatsByTask(stats),
+			testImpactReviews(tasks),
+			events.incompleteTasks,
+		),
 	})
 }
 

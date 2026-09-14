@@ -1,6 +1,7 @@
 package state
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -96,12 +97,25 @@ func TestTaskRotationProjectsRepoSearchEventsIntoArchivedStats(t *testing.T) {
 	}
 }
 
-func TestUnreadableRepoSearchEventsDoNotBecomeArchivedSuccessEvidence(t *testing.T) {
+func TestUnreadableRepoSearchEventsStopRotationWithoutOverwritingEvidence(t *testing.T) {
 	st := newRepoSearchEvalTestStore(t)
 	firstTask, err := st.StartNewTask()
 	if err != nil {
 		t.Fatal(err)
 	}
+	stats, err := st.loadTaskStats()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stats.RepoSearchCalls = 7
+	stats.RepoSearchQueriesByCategory = map[string]int{RepoSearchCategoryWorkerNavigation: 7}
+	stats.RepoSearchOutcomes = map[string]int{RepoSearchOutcomeSearchHit: 7}
+	stats.RepoSearchResults = 11
+	stats.RepoSearchDurationMS = 1200
+	if err := st.writeTaskStats(stats); err != nil {
+		t.Fatal(err)
+	}
+
 	eventPath := st.TaskEventLogPath(firstTask)
 	if err := os.MkdirAll(filepath.Dir(eventPath), 0o700); err != nil {
 		t.Fatal(err)
@@ -109,19 +123,68 @@ func TestUnreadableRepoSearchEventsDoNotBecomeArchivedSuccessEvidence(t *testing
 	if err := os.WriteFile(eventPath, []byte("{broken\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.StartNewTask(); err != nil {
-		t.Fatal(err)
+	if _, err := st.StartNewTask(); err == nil || !strings.Contains(err.Error(), "repo-search archive投影") {
+		t.Fatalf("malformed repo-search evidence did not stop rotation: %v", err)
 	}
-	data, err := os.ReadFile(st.TaskStatsArchivePath(firstTask))
+	currentTask, err := st.TaskID()
 	if err != nil {
 		t.Fatal(err)
 	}
-	archived, err := decodeTaskStats(data)
+	if currentTask != firstTask {
+		t.Fatalf("projection failure advanced task id: got %s want %s", currentTask, firstTask)
+	}
+	if _, err := os.Stat(st.TaskStatsArchivePath(firstTask)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("projection failure created stale archive: %v", err)
+	}
+	preserved, err := st.loadTaskStats()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if repoSearchStatsHaveRecordedRoutes(archived) {
-		t.Fatalf("unreadable eventからrepo-search success evidenceを生成しました: %+v", archived)
+	if preserved.RepoSearchCalls != 7 || preserved.RepoSearchResults != 11 || preserved.RepoSearchDurationMS != 1200 {
+		t.Fatalf("projection failure overwrote prior repo-search evidence: %+v", preserved)
+	}
+	if _, err := os.Stat(eventPath); err != nil {
+		t.Fatalf("projection failure removed source event log: %v", err)
+	}
+}
+
+func TestAllTaskStatsProjectsCurrentRepoSearchEventsWithoutPersistingLiveStats(t *testing.T) {
+	st := newRepoSearchEvalTestStore(t)
+	taskID, err := st.StartNewTask()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AppendTaskEvent(TaskEventRecord{
+		TaskID: taskID, Kind: RepoSearchEventKind, Phase: RepoSearchCategoryWorkerNavigation,
+		Subtype: RepoSearchOutcomeSearchHit, SearchPaths: []string{"a.go", "b.go"}, DurationMS: 450,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	raw, err := st.CurrentTaskStats()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if repoSearchStatsHaveRecordedRoutes(raw) {
+		t.Fatalf("current task stats were mutated before read projection: %+v", raw)
+	}
+	st.EnableRepoSearchReadProjection()
+	all, err := st.AllTaskStats()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 1 || all[0].TaskID != taskID {
+		t.Fatalf("aggregate task stats = %+v", all)
+	}
+	if all[0].RepoSearchCalls != 1 || all[0].RepoSearchResults != 2 || all[0].RepoSearchDurationMS != 450 {
+		t.Fatalf("current repo-search read projection = %+v", all[0])
+	}
+	persisted, err := st.CurrentTaskStats()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if repoSearchStatsHaveRecordedRoutes(persisted) {
+		t.Fatalf("read projection wrote live repo-search counters: %+v", persisted)
 	}
 }
 
@@ -221,6 +284,28 @@ func TestBuildRepoSearchReportPrefersRetainedEventsAndFallsBackToArchivedStats(t
 	joined := strings.Join(report.Evaluation.Reasons, "\n")
 	if !strings.Contains(joined, "permission-gated live A/B") || strings.Contains(joined, "mismatch") || strings.Contains(joined, "stats-missing") {
 		t.Fatalf("reasons = %#v", report.Evaluation.Reasons)
+	}
+}
+
+func TestBuildRepoSearchReportIncompleteEventsFallBackToArchivedStats(t *testing.T) {
+	taskID := "partial-task"
+	stats := repoSearchStatsFixture(taskID)
+	partial := TaskEvents{TaskID: taskID, Records: []TaskEventRecord{{
+		Kind: RepoSearchEventKind, Phase: RepoSearchCategoryWorkerNavigation,
+		Subtype: RepoSearchOutcomeSearchHit, SearchPaths: []string{"only-visible.go"}, DurationMS: 100,
+	}}}
+	report := BuildRepoSearchReportWithCompleteness(
+		[]TaskEvents{partial},
+		map[string]TaskStats{taskID: stats},
+		nil,
+		map[string]bool{taskID: true},
+	)
+	if len(report.Tasks) != 1 {
+		t.Fatalf("tasks = %+v", report.Tasks)
+	}
+	measure := report.Tasks[0].Measure
+	if measure.Calls != stats.RepoSearchCalls || measure.Results != stats.RepoSearchResults || measure.DurationMS != stats.RepoSearchDurationMS {
+		t.Fatalf("partial retained events overrode archived aggregate: %+v", measure)
 	}
 }
 
