@@ -13,9 +13,11 @@ func TestPinRepositoryHarnessActivationRecordsTaskEvidence(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			repoRoot := initMutationRepo(t)
+			var repoRoot string
 			if tt.activate {
-				trackRepositoryHarnessMarker(t, repoRoot)
+				repoRoot = initMutationRepo(t)
+			} else {
+				repoRoot = initForeignRepository(t)
 			}
 			w, _, _, st := newPlanFileWorkflow(t, repoRoot, nil, "", 0, nil)
 
