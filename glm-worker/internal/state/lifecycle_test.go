@@ -127,6 +127,9 @@ func TestBeginParentDecisionRollbackRestoresWaitingDecision(t *testing.T) {
 	if st.TaskStatus() != TaskStatusActive || !st.Exists("pending-decision") {
 		t.Fatalf("begin state: status=%s pending=%t", st.TaskStatus(), st.Exists("pending-decision"))
 	}
+	if _, err := st.loadParentActionBegin(); err != nil {
+		t.Fatalf("begin record = %v", err)
+	}
 
 	cause := errors.New("repository instruction surface guard failed: before-call-mismatch")
 	if err := st.RollbackParentAction(rollback, cause); !errors.Is(err, cause) {
@@ -134,6 +137,9 @@ func TestBeginParentDecisionRollbackRestoresWaitingDecision(t *testing.T) {
 	}
 	if st.TaskStatus() != TaskStatusWaitingDecision || !st.Exists("pending-decision") {
 		t.Fatalf("rollback state: status=%s pending=%t", st.TaskStatus(), st.Exists("pending-decision"))
+	}
+	if _, err := st.loadParentActionBegin(); !errors.Is(err, errNoParentActionBegin) {
+		t.Fatalf("rollback left begin record: %v", err)
 	}
 	plan, planErr := st.ParentActionPlan()
 	if planErr != nil || plan.RequiredAction != ParentActionDecision {
@@ -157,6 +163,9 @@ func TestBeginParentFixRollbackRestoresWaitingSolReview(t *testing.T) {
 	if st.TaskStatus() != TaskStatusActive || st.Exists("pending-decision") {
 		t.Fatalf("begin state: status=%s pending=%t", st.TaskStatus(), st.Exists("pending-decision"))
 	}
+	if _, err := st.loadParentActionBegin(); err != nil {
+		t.Fatalf("begin record = %v", err)
+	}
 
 	cause := errors.New("repository instruction surface guard failed: before-call-mismatch")
 	if err := st.RollbackParentAction(rollback, cause); !errors.Is(err, cause) {
@@ -165,13 +174,16 @@ func TestBeginParentFixRollbackRestoresWaitingSolReview(t *testing.T) {
 	if st.TaskStatus() != TaskStatusWaitingSolReview || st.Exists("pending-decision") {
 		t.Fatalf("rollback state: status=%s pending=%t", st.TaskStatus(), st.Exists("pending-decision"))
 	}
+	if _, err := st.loadParentActionBegin(); !errors.Is(err, errNoParentActionBegin) {
+		t.Fatalf("rollback left begin record: %v", err)
+	}
 	plan, planErr := st.ParentActionPlan()
 	if planErr != nil || !plan.Allows(ParentActionFix) {
 		t.Fatalf("rollback plan = %#v err=%v", plan, planErr)
 	}
 }
 
-func TestBeginParentDecisionInternalFailureRollsBack(t *testing.T) {
+func TestBeginParentDecisionInternalFailureLeavesWaitingState(t *testing.T) {
 	st := newLifecycleTestStore(t)
 	if _, err := st.StartNewTask(); err != nil {
 		t.Fatal(err)
@@ -188,32 +200,23 @@ func TestBeginParentDecisionInternalFailureRollsBack(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(stateDir, 0o700) })
 
-	_, err := st.BeginParentDecision()
-	if err == nil || !strings.Contains(err.Error(), "parent action begin failed and rollback failed") {
-		t.Fatalf("begin failure error = %v", err)
+	if _, err := st.BeginParentDecision(); err == nil {
+		t.Fatal("begin must fail when canonical begin state cannot be persisted")
 	}
 	if st.TaskStatus() != TaskStatusWaitingDecision || !st.Exists("pending-decision") {
 		t.Fatalf("failed begin state: status=%s pending=%t", st.TaskStatus(), st.Exists("pending-decision"))
 	}
 }
 
-func TestRecoverParentActionBeginRestoresParentWaitingStates(t *testing.T) {
-	decisionStore := newLifecycleTestStore(t)
-	if _, err := decisionStore.StartNewTask(); err != nil {
-		t.Fatal(err)
-	}
-	if err := decisionStore.SetTaskStatus(TaskStatusWaitingDecision); err != nil {
-		t.Fatal(err)
-	}
-	if err := decisionStore.Touch("pending-decision"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := decisionStore.BeginParentDecision(); err != nil {
-		t.Fatal(err)
-	}
+func TestRecoverParentActionBeginFromStateRestoresParentWaitingStates(t *testing.T) {
+	decisionStore := newDecisionBeginRecoveryStore(t)
 
-	if err := decisionStore.RecoverParentActionBegin(TaskStatusWaitingDecision); err != nil {
+	target, err := decisionStore.RecoverParentActionBeginFromState()
+	if err != nil {
 		t.Fatal(err)
+	}
+	if target != TaskStatusWaitingDecision {
+		t.Fatalf("recovered target = %s", target)
 	}
 	if decisionStore.TaskStatus() != TaskStatusWaitingDecision || !decisionStore.Exists("pending-decision") {
 		t.Fatalf("recovered decision state: status=%s pending=%t", decisionStore.TaskStatus(), decisionStore.Exists("pending-decision"))
@@ -222,23 +225,17 @@ func TestRecoverParentActionBeginRestoresParentWaitingStates(t *testing.T) {
 	if planErr != nil || plan.RequiredAction != ParentActionDecision {
 		t.Fatalf("recovered decision plan = %#v err=%v", plan, planErr)
 	}
-	if err := decisionStore.RecoverParentActionBegin(TaskStatusWaitingDecision); err == nil {
-		t.Fatal("recovery must not run twice on the restored state")
+	if _, err := decisionStore.RecoverParentActionBeginFromState(); !errors.Is(err, errNoParentActionBegin) {
+		t.Fatalf("second recovery error = %v", err)
 	}
 
-	fixStore := newLifecycleTestStore(t)
-	if _, err := fixStore.StartNewTask(); err != nil {
+	fixStore := newFixBeginRecoveryStore(t)
+	target, err = fixStore.RecoverParentActionBeginFromState()
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := fixStore.SetTaskStatus(TaskStatusWaitingSolReview); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := fixStore.BeginParentFix(ParentOriginCodexReview, ParentCauseParentOrchestration); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := fixStore.RecoverParentActionBegin(TaskStatusWaitingSolReview); err != nil {
-		t.Fatal(err)
+	if target != TaskStatusWaitingSolReview {
+		t.Fatalf("recovered fix target = %s", target)
 	}
 	if fixStore.TaskStatus() != TaskStatusWaitingSolReview || fixStore.Exists("pending-decision") {
 		t.Fatalf("recovered fix state: status=%s pending=%t", fixStore.TaskStatus(), fixStore.Exists("pending-decision"))
@@ -249,27 +246,95 @@ func TestRecoverParentActionBeginRestoresParentWaitingStates(t *testing.T) {
 	}
 }
 
-func TestRecoverParentActionBeginRejectsLifecycleContradictions(t *testing.T) {
+func TestRecoverParentActionBeginFromStateClearsMatchingPreCallCheckpoint(t *testing.T) {
 	tests := []struct {
 		name   string
+		seed   func(t *testing.T) *StateStore
+		phase  string
 		target TaskStatus
-		seed   func(t *testing.T, st *StateStore)
+	}{
+		{name: "decision", seed: newDecisionBeginRecoveryStore, phase: "worker-decision", target: TaskStatusWaitingDecision},
+		{name: "fix", seed: newFixBeginRecoveryStore, phase: "worker-explicit-fix", target: TaskStatusWaitingSolReview},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			st := test.seed(t)
+			checkpoint := ResumeCheckpoint{
+				Stage:   ResumeStageWorker,
+				Phase:   test.phase,
+				Role:    WorkerRole,
+				Model:   "opus",
+				Request: "request",
+			}
+			if err := st.SaveResumeCheckpoint(checkpoint); err != nil {
+				t.Fatal(err)
+			}
+			target, err := st.RecoverParentActionBeginFromState()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if target != test.target || st.TaskStatus() != test.target {
+				t.Fatalf("recovered state: target=%s status=%s want=%s", target, st.TaskStatus(), test.target)
+			}
+			if _, err := st.LoadResumeCheckpoint(); !errors.Is(err, ErrNoResumeCheckpoint) {
+				t.Fatalf("pre-call checkpoint remains after recovery: %v", err)
+			}
+		})
+	}
+}
+
+func TestCommitParentActionBeginEndsRecoveryWindow(t *testing.T) {
+	st := newDecisionBeginRecoveryStore(t)
+	if err := st.CommitParentActionBegin(); err != nil {
+		t.Fatal(err)
+	}
+	if st.TaskStatus() != TaskStatusActive {
+		t.Fatalf("status = %s want active", st.TaskStatus())
+	}
+	if _, err := st.RecoverParentActionBeginFromState(); !errors.Is(err, errNoParentActionBegin) {
+		t.Fatalf("recovery remains available after admission commit: %v", err)
+	}
+}
+
+func TestRecoverParentActionBeginFromStateRejectsLifecycleContradictions(t *testing.T) {
+	tests := []struct {
+		name string
+		seed func(t *testing.T) *StateStore
 	}{
 		{
-			name:   "task is not the active leftover",
-			target: TaskStatusWaitingDecision,
-			seed: func(t *testing.T, st *StateStore) {
-				t.Helper()
-				if err := st.SetTaskStatus(TaskStatusWaitingDecision); err != nil {
+			name: "canonical begin record is missing",
+			seed: func(t *testing.T) *StateStore {
+				st := newDecisionBeginRecoveryStore(t)
+				if err := st.Remove(parentActionBeginStateFile); err != nil {
 					t.Fatal(err)
 				}
+				return st
 			},
 		},
 		{
-			name:   "resume checkpoint is present",
-			target: TaskStatusWaitingDecision,
-			seed: func(t *testing.T, st *StateStore) {
-				t.Helper()
+			name: "task identity changed",
+			seed: func(t *testing.T) *StateStore {
+				st := newDecisionBeginRecoveryStore(t)
+				if err := st.Write("task.id", "different-task"); err != nil {
+					t.Fatal(err)
+				}
+				return st
+			},
+		},
+		{
+			name: "task is no longer active or the recorded source",
+			seed: func(t *testing.T) *StateStore {
+				st := newDecisionBeginRecoveryStore(t)
+				if err := st.SetTaskStatus(TaskStatusComplete); err != nil {
+					t.Fatal(err)
+				}
+				return st
+			},
+		},
+		{
+			name: "stopped resume checkpoint is present",
+			seed: func(t *testing.T) *StateStore {
+				st := newDecisionBeginRecoveryStore(t)
 				checkpoint := ResumeCheckpoint{
 					Stage:    ResumeStageWorker,
 					Phase:    "worker-decision",
@@ -281,77 +346,63 @@ func TestRecoverParentActionBeginRejectsLifecycleContradictions(t *testing.T) {
 				if err := st.SaveResumeCheckpoint(checkpoint); err != nil {
 					t.Fatal(err)
 				}
+				return st
 			},
 		},
 		{
-			name:   "parent review is open",
-			target: TaskStatusWaitingDecision,
-			seed: func(t *testing.T, st *StateStore) {
-				t.Helper()
+			name: "pre-call checkpoint phase does not match source",
+			seed: func(t *testing.T) *StateStore {
+				st := newDecisionBeginRecoveryStore(t)
+				checkpoint := ResumeCheckpoint{
+					Stage:   ResumeStageWorker,
+					Phase:   "worker-explicit-fix",
+					Role:    WorkerRole,
+					Model:   "opus",
+					Request: "request",
+				}
+				if err := st.SaveResumeCheckpoint(checkpoint); err != nil {
+					t.Fatal(err)
+				}
+				return st
+			},
+		},
+		{
+			name: "parent review is open",
+			seed: func(t *testing.T) *StateStore {
+				st := newDecisionBeginRecoveryStore(t)
 				if err := st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolReview, Risk: packet.RiskLow}, ParentReviewProducer{}); err != nil {
 					t.Fatal(err)
 				}
+				return st
 			},
 		},
 		{
-			name:   "decision target without the pending decision payload",
-			target: TaskStatusWaitingDecision,
-			seed: func(t *testing.T, st *StateStore) {
-				t.Helper()
+			name: "decision source lost its pending payload",
+			seed: func(t *testing.T) *StateStore {
+				st := newDecisionBeginRecoveryStore(t)
 				if err := st.Remove("pending-decision"); err != nil {
 					t.Fatal(err)
 				}
+				return st
 			},
 		},
 		{
-			name:   "fix target with a pending decision",
-			target: TaskStatusWaitingSolReview,
-			seed: func(t *testing.T, st *StateStore) {
-				t.Helper()
-				if err := st.Remove("pending-decision"); err != nil {
-					t.Fatal(err)
-				}
-				if err := st.SetTaskStatus(TaskStatusWaitingSolReview); err != nil {
-					t.Fatal(err)
-				}
-				if _, err := st.BeginParentFix(ParentOriginCodexReview, ParentCauseParentOrchestration); err != nil {
-					t.Fatal(err)
-				}
+			name: "fix source acquired a pending decision",
+			seed: func(t *testing.T) *StateStore {
+				st := newFixBeginRecoveryStore(t)
 				if err := st.Touch("pending-decision"); err != nil {
 					t.Fatal(err)
 				}
+				return st
 			},
-		},
-		{
-			name:   "target is not a parent waiting state",
-			target: TaskStatusComplete,
-			seed:   func(*testing.T, *StateStore) {},
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			st := newLifecycleTestStore(t)
-			if _, err := st.StartNewTask(); err != nil {
-				t.Fatal(err)
-			}
-			if err := st.Write("last-request", "request"); err != nil {
-				t.Fatal(err)
-			}
-			if err := st.Touch("pending-decision"); err != nil {
-				t.Fatal(err)
-			}
-			if err := st.SetTaskStatus(TaskStatusWaitingDecision); err != nil {
-				t.Fatal(err)
-			}
-			if _, err := st.BeginParentDecision(); err != nil {
-				t.Fatal(err)
-			}
-
-			test.seed(t, st)
-
+			st := test.seed(t)
 			before := st.TaskStatus()
-			if err := st.RecoverParentActionBegin(test.target); err == nil {
+			if _, err := st.RecoverParentActionBeginFromState(); err == nil {
 				t.Fatal("contradictory lifecycle must be rejected")
 			}
 			if st.TaskStatus() != before {
@@ -359,6 +410,45 @@ func TestRecoverParentActionBeginRejectsLifecycleContradictions(t *testing.T) {
 			}
 		})
 	}
+}
+
+func newDecisionBeginRecoveryStore(t *testing.T) *StateStore {
+	t.Helper()
+	st := newLifecycleTestStore(t)
+	if _, err := st.StartNewTask(); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Write("last-request", "request"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Touch("pending-decision"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetTaskStatus(TaskStatusWaitingDecision); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.BeginParentDecision(); err != nil {
+		t.Fatal(err)
+	}
+	return st
+}
+
+func newFixBeginRecoveryStore(t *testing.T) *StateStore {
+	t.Helper()
+	st := newLifecycleTestStore(t)
+	if _, err := st.StartNewTask(); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Write("last-request", "request"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetTaskStatus(TaskStatusWaitingSolReview); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.BeginParentFix(ParentOriginCodexReview, ParentCauseParentOrchestration); err != nil {
+		t.Fatal(err)
+	}
+	return st
 }
 
 func newLifecycleTestStore(t *testing.T) *StateStore {

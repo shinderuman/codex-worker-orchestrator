@@ -49,6 +49,9 @@ func (r *InstructionSurfaceGuardRunner) Run(
 		callBase = &copyBase
 	}
 	callBase.instructionSurfaceDigest = instructionBefore.digest
+	if err := r.base.state.CommitParentActionBegin(); err != nil {
+		return RunResult{}, err
+	}
 
 	result, runErr := callBase.Run(role, phase, model, readOnly, effort, prompt, outputPath)
 	artifactErr := validateSensitiveResultArtifacts(r.base, result, providerValues)

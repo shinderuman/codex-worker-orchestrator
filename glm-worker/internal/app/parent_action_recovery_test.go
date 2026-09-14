@@ -4,15 +4,12 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
-	"os"
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-const preCallInstructionGuardFailureText = "repository instruction surface guard failed: before-call-mismatch: AGENTS.md/AGENTS.local.md"
-
-func TestRecoverParentActionCommandRestoresDecisionLeftover(t *testing.T) {
+func TestRecoverParentActionCommandRestoresDecisionFromCanonicalState(t *testing.T) {
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -33,7 +30,7 @@ func TestRecoverParentActionCommandRestoresDecisionLeftover(t *testing.T) {
 	}
 
 	seedDecisionLeftover(t, st)
-	recordParentActionMaterial(t, st, "worker-decision", "error", preCallInstructionGuardFailureText)
+	recordParentActionMaterial(t, st, "worker-new", "success", "unrelated telemetry")
 	recordsBefore := telemetryRecordCount(t, st)
 
 	var out bytes.Buffer
@@ -57,14 +54,14 @@ func TestRecoverParentActionCommandRestoresDecisionLeftover(t *testing.T) {
 	assertParentActionLeftoverRetained(t, st, "last-decision", "decision-body", recordsBefore)
 
 	if err := Execute(command, cfg, nil, io.Discard, io.Discard); err == nil {
-		t.Fatal("recovery must be rejected once the waiting state is restored")
+		t.Fatal("recovery must be rejected after the canonical begin record is consumed")
 	}
 	if st.TaskStatus() != state.TaskStatusWaitingDecision || !st.Exists("pending-decision") {
 		t.Fatalf("second recovery changed the state: status=%s pending=%t", st.TaskStatus(), st.Exists("pending-decision"))
 	}
 }
 
-func TestRecoverParentActionCommandRestoresFixLeftover(t *testing.T) {
+func TestRecoverParentActionCommandRestoresFixFromCanonicalState(t *testing.T) {
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -86,7 +83,7 @@ func TestRecoverParentActionCommandRestoresFixLeftover(t *testing.T) {
 	if _, err := st.BeginParentFix(state.ParentOriginCodexReview, state.ParentCauseParentOrchestration); err != nil {
 		t.Fatal(err)
 	}
-	recordParentActionMaterial(t, st, "worker-explicit-fix", "error", preCallInstructionGuardFailureText)
+	recordParentActionMaterial(t, st, "worker-decision", "error", "misleading telemetry")
 	recordsBefore := telemetryRecordCount(t, st)
 
 	var out bytes.Buffer
@@ -127,30 +124,12 @@ func TestRecoverParentActionCommandRejectsForeignConditions(t *testing.T) {
 			},
 		},
 		{
-			name: "failed call material is missing",
+			name: "canonical begin record was already committed",
 			seed: func(t *testing.T, st *state.StateStore) {
 				t.Helper()
-				taskID, err := st.TaskID()
-				if err != nil {
+				if err := st.CommitParentActionBegin(); err != nil {
 					t.Fatal(err)
 				}
-				if err := os.Remove(st.ModelCallLogPath(taskID)); err != nil {
-					t.Fatal(err)
-				}
-			},
-		},
-		{
-			name: "last material is not a pre-call guard error",
-			seed: func(t *testing.T, st *state.StateStore) {
-				t.Helper()
-				recordParentActionMaterial(t, st, "worker-decision", "error", "transient provider failure: timeout")
-			},
-		},
-		{
-			name: "last material phase is not a parent action begin",
-			seed: func(t *testing.T, st *state.StateStore) {
-				t.Helper()
-				recordParentActionMaterial(t, st, "worker-new", "error", preCallInstructionGuardFailureText)
 			},
 		},
 	}
@@ -164,7 +143,6 @@ func TestRecoverParentActionCommandRejectsForeignConditions(t *testing.T) {
 			}
 			seedParentActionSessions(t, st)
 			seedDecisionLeftover(t, st)
-			recordParentActionMaterial(t, st, "worker-decision", "error", preCallInstructionGuardFailureText)
 
 			command, err := ParseCommand([]string{"--recover-parent-action"})
 			if err != nil {
