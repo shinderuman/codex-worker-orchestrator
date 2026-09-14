@@ -1800,16 +1800,52 @@ func TestResolveRiskFloorReemitAcceptsCompliantAndFailsClosed(t *testing.T) {
 	}
 }
 
-func TestRiskFloorReemitPromptConstraints(t *testing.T) {
-	prompt := riskFloorReemitPrompt()
+func TestRetryPromptsDelegatePacketGrammar(t *testing.T) {
+	correction := resultCorrectionPrompt("validator detail")
 	for _, want := range []string{
-		"NEEDS_SOL_REVIEW (RISK: HIGH) だけ",
-		"実装・調査・テストをやり直さず",
-		"結果だけを再出力",
-		"TARGETSにはnoneを指定できません",
+		"意味検証に不合格",
+		"作業・調査・テストをやり直さず",
+		"structured schemaとvalidatorを正として",
+		"validator detail",
+		rejectedArtifactMarker,
 	} {
-		if !strings.Contains(prompt, want) {
-			t.Fatalf("reemit promptに%qがありません: %s", want, prompt)
+		if !strings.Contains(correction, want) {
+			t.Fatalf("correction promptに%qがありません: %s", want, correction)
+		}
+	}
+	for _, forbidden := range []string{
+		"6 KiB",
+		"1536 bytes",
+		"各fieldのvalueは空にできず",
+		"STATUSに応じた必須field",
+		"--packet-check",
+	} {
+		if strings.Contains(correction, forbidden) {
+			t.Fatalf("correction promptがpacket grammar %qを再定義しています: %s", forbidden, correction)
+		}
+	}
+
+	reemit := riskFloorReemitPrompt()
+	for _, want := range []string{
+		"HIGH RISK最終確認が必要",
+		"wrapper risk floor",
+		"実装・調査・テストをやり直さず",
+		"structured schemaに従って結果だけを再出力",
+	} {
+		if !strings.Contains(reemit, want) {
+			t.Fatalf("reemit promptに%qがありません: %s", want, reemit)
+		}
+	}
+	for _, forbidden := range []string{
+		"NEEDS_SOL_REVIEW",
+		"RISK: HIGH",
+		"TARGETS",
+		"SUMMARY",
+		"REQUIREMENT_COVERAGE",
+		"SOL_QUESTION",
+	} {
+		if strings.Contains(reemit, forbidden) {
+			t.Fatalf("reemit promptがpacket grammar %qを再定義しています: %s", forbidden, reemit)
 		}
 	}
 }
@@ -2132,7 +2168,7 @@ func TestRiskFloorRejectsPassOnHighRiskWorker(t *testing.T) {
 	if !strings.Contains(review, `"summary":"review"`) {
 		t.Fatalf("reviewer自身の再出力NEEDS_SOL_REVIEWを採用すべき(捏造でない): %s", review)
 	}
-	if len(r.prompts) != 3 || !strings.Contains(r.prompts[2], "NEEDS_SOL_REVIEW (RISK: HIGH) だけ") {
+	if len(r.prompts) != 3 || !strings.Contains(r.prompts[2], "wrapper risk floor") {
 		t.Fatalf("同一sessionへ再出力promptを送るべき: %#v", r.prompts)
 	}
 	if strings.Join(r.models, ",") != "opus,sonnet,sonnet" {
@@ -2257,7 +2293,7 @@ func TestRiskFloorRejectsPassAfterResume(t *testing.T) {
 		Prompt:         "review",
 		OriginalPrompt: "review",
 		Request:        "request",
-		WorkerResult:   workerResultFromBody(`{"status":"IMPLEMENTED","risk":"HIGH","summary":"done","requirement_coverage":"covered","tests":"pass","unverified":"none"}`),
+		WorkerResult:   workerResultFromBody(workerPacketWithRisk("HIGH")),
 		ReviewNumber:   1,
 		StopKind:       state.ResumeStopRateLimited,
 	}); err != nil {
