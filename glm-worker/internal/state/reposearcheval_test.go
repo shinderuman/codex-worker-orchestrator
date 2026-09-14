@@ -168,6 +168,7 @@ func TestAllTaskStatsProjectsCurrentRepoSearchEventsWithoutPersistingLiveStats(t
 	if repoSearchStatsHaveRecordedRoutes(raw) {
 		t.Fatalf("current task stats were mutated before read projection: %+v", raw)
 	}
+	st.EnableRepoSearchReadProjection()
 	all, err := st.AllTaskStats()
 	if err != nil {
 		t.Fatal(err)
