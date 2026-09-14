@@ -44,6 +44,45 @@ func TestTelemetryCorpusPreservesCurrentAndHistoryValidityBoundaries(t *testing.
 	}
 }
 
+func TestTelemetryCorpusClassifiesMalformedRecordsForCurrentAndHistory(t *testing.T) {
+	tests := []struct {
+		name   string
+		line   string
+		reason string
+	}{
+		{name: "blank", line: "", reason: telemetryMalformedReasonDecode},
+		{name: "decode malformed", line: `{"version":3,"broken"`, reason: telemetryMalformedReasonDecode},
+		{name: "missing version", line: `{"call_type":"task"}`, reason: telemetryMalformedReasonHeader},
+		{name: "unsupported schema", line: `{"version":999,"schema_revision":0}`, reason: telemetryMalformedReasonUnsupportedSchema},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			st := &StateStore{dir: t.TempDir()}
+			writeTelemetryHistoryFile(t, st, telemetryHistoryTaskA, tt.line)
+
+			current, err := st.ScanTelemetryCurrent(TelemetryQueryFilter{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if current.FilesConsidered != 1 || current.Files != 0 || len(current.Logs) != 0 {
+				t.Fatalf("current scan accepted malformed task: %#v", current)
+			}
+			if len(current.UnreadableTasks) != 1 || current.UnreadableTasks[0].TaskID != telemetryHistoryTaskA || current.UnreadableTasks[0].Error == "" {
+				t.Fatalf("current unreadable evidence = %#v", current.UnreadableTasks)
+			}
+
+			history, err := st.ScanTelemetryHistory(TelemetryQueryFilter{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if history.FilesConsidered != 1 || history.Malformed.Count != 1 || history.Malformed.ByReason[tt.reason] != 1 {
+				t.Fatalf("history malformed evidence = %#v", history)
+			}
+		})
+	}
+}
+
 func TestTelemetryCorpusAppliesPeriodFilterOnceForCurrentAndHistory(t *testing.T) {
 	st := &StateStore{dir: t.TempDir()}
 	base := telemetryHistoryBase()
