@@ -20,7 +20,11 @@ func (w *Workflow) reviewerNavigationContext(request, activeTaskPath string, rev
 	if boundary != "" {
 		boundary += "\n"
 	}
-	return renderReviewerTaskDiffEvidence(diffPath, diffAvailable) + "\n" + boundary + w.reviewerDiffFirstContext(request, reviewNumber) + exhaustive, nil
+	navigation, err := w.reviewerDiffFirstNavigation(request, reviewNumber)
+	if err != nil {
+		return "", err
+	}
+	return renderReviewerTaskDiffEvidence(diffPath, diffAvailable) + "\n" + boundary + navigation + exhaustive, nil
 }
 
 func renderReviewerTaskDiffEvidence(path string, available bool) string {
