@@ -1,13 +1,7 @@
 package state
 
 import (
-	"bufio"
-	"encoding/json"
-	"errors"
-	"fmt"
-	"os"
 	"slices"
-	"strings"
 	"time"
 )
 
@@ -92,12 +86,6 @@ type telemetryCohortAccumulator struct {
 	aggregates TelemetryCohortAggregates
 }
 
-type telemetryHistoryHeader struct {
-	Version        *int            `json:"version"`
-	SchemaRevision int             `json:"schema_revision"`
-	TreeUsage      json.RawMessage `json:"tree_usage"`
-}
-
 type TelemetryCohortCallLogs struct {
 	Version        int
 	SchemaRevision int
@@ -147,102 +135,56 @@ func (f TelemetryQueryFilter) CoversTime(at time.Time) bool {
 }
 
 func (s *StateStore) ScanTelemetryHistory(filter TelemetryQueryFilter) (*TelemetryHistoryScan, error) {
-	dir := s.Path("telemetry")
-	entries, err := os.ReadDir(dir)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return nil, fmt.Errorf("telemetry dirを読めません: %w", err)
+	corpus, err := s.scanTelemetryCorpus(filter)
+	if err != nil {
+		return nil, err
 	}
 
-	scan := &TelemetryHistoryScan{Dir: dir, Status: telemetryHistoryStatusOK, Cohorts: []TelemetryCohortScan{}}
-	cohorts := make(map[telemetryCohortKey]*telemetryCohortAccumulator)
-	cohortTaskLogs := make(map[telemetryCohortKey]map[string][]ModelCallLog)
-	for _, entry := range entries {
-		name := entry.Name()
-		if !strings.HasSuffix(name, ".jsonl") {
-			continue
-		}
-		taskID := strings.TrimSuffix(name, ".jsonl")
-		if !filter.MatchesTask(taskID) {
-			continue
-		}
-		scan.FilesConsidered++
-		if !ValidGeneratedUUID(taskID) {
-			scan.IgnoredFiles = append(scan.IgnoredFiles, name)
-			continue
-		}
-		if err := s.absorbTelemetryHistoryFile(scan, cohorts, cohortTaskLogs, name, taskID, filter); err != nil {
-			scan.Status = telemetryHistoryStatusPartial
-			scan.UnreadableFiles = append(scan.UnreadableFiles, TelemetryFileError{
-				File:  name,
-				Error: err.Error(),
-			})
-		}
+	scan := &TelemetryHistoryScan{
+		Dir:                    corpus.dir,
+		Status:                 telemetryHistoryStatusOK,
+		FilesConsidered:        corpus.filesConsidered,
+		IgnoredFiles:           corpus.ignoredFiles,
+		UnreadableFiles:        corpus.unreadableFiles,
+		RecordsOutsidePeriod:   corpus.recordsOutsidePeriod,
+		RecordsUndatedExcluded: corpus.recordsUndatedExcluded,
+		Cohorts:                []TelemetryCohortScan{},
+	}
+	if len(scan.UnreadableFiles) > 0 {
+		scan.Status = telemetryHistoryStatusPartial
 	}
 	if scan.FilesConsidered == 0 {
 		scan.Status = telemetryHistoryStatusNone
 	}
+
+	cohorts, cohortTaskLogs := scan.absorbTelemetryCorpus(corpus)
 	scan.Cohorts = collectTelemetryCohortScans(cohorts)
 	scan.historyCohortLogs = collectTelemetryCohortLogs(cohortTaskLogs)
 	return scan, nil
 }
 
-func (s *StateStore) absorbTelemetryHistoryFile(
-	scan *TelemetryHistoryScan,
-	cohorts map[telemetryCohortKey]*telemetryCohortAccumulator,
-	cohortTaskLogs map[telemetryCohortKey]map[string][]ModelCallLog,
-	fileName string,
-	taskID string,
-	filter TelemetryQueryFilter,
-) error {
-	file, err := os.Open(s.ModelCallLogPath(taskID))
-	if err != nil {
-		return err
+func (s *TelemetryHistoryScan) absorbTelemetryCorpus(corpus *telemetryCorpusScan) (map[telemetryCohortKey]*telemetryCohortAccumulator, map[telemetryCohortKey]map[string][]ModelCallLog) {
+	cohorts := make(map[telemetryCohortKey]*telemetryCohortAccumulator)
+	cohortTaskLogs := make(map[telemetryCohortKey]map[string][]ModelCallLog)
+	for _, file := range corpus.files {
+		for _, record := range file.records {
+			s.absorbTelemetryCorpusRecord(cohorts, cohortTaskLogs, file, record)
+		}
 	}
-	defer func() { _ = file.Close() }()
-
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
-	for scanner.Scan() {
-		scan.absorbTelemetryHistoryLine(cohorts, cohortTaskLogs, fileName, taskID, filter, scanner.Bytes())
-	}
-	return scanner.Err()
+	return cohorts, cohortTaskLogs
 }
 
-func (s *TelemetryHistoryScan) absorbTelemetryHistoryLine(
+func (s *TelemetryHistoryScan) absorbTelemetryCorpusRecord(
 	cohorts map[telemetryCohortKey]*telemetryCohortAccumulator,
 	cohortTaskLogs map[telemetryCohortKey]map[string][]ModelCallLog,
-	fileName string,
-	taskID string,
-	filter TelemetryQueryFilter,
-	line []byte,
+	file telemetryCorpusFile,
+	record telemetryCorpusRecord,
 ) {
-	if len(line) == 0 {
+	if record.malformedReason != "" {
+		s.countTelemetryMalformed(record.malformedReason)
 		return
 	}
-	var header telemetryHistoryHeader
-	if err := json.Unmarshal(line, &header); err != nil {
-		s.countTelemetryMalformed(telemetryMalformedReasonDecode)
-		return
-	}
-	if header.Version == nil {
-		s.countTelemetryMalformed(telemetryMalformedReasonHeader)
-		return
-	}
-	if *header.Version != ModelCallLogVersion || header.SchemaRevision != ModelCallLogSchemaRevision {
-		s.countTelemetryMalformed(telemetryMalformedReasonUnsupportedSchema)
-		return
-	}
-	var record ModelCallLog
-	if err := json.Unmarshal(line, &record); err != nil {
-		s.countTelemetryMalformed(telemetryMalformedReasonDecode)
-		return
-	}
-	if filter.ExcludesUndated(record.StartedAt) {
-		s.RecordsUndatedExcluded++
-		return
-	}
-	if !filter.CoversTime(record.StartedAt) {
-		s.RecordsOutsidePeriod++
+	if !record.current {
 		return
 	}
 
@@ -252,12 +194,11 @@ func (s *TelemetryHistoryScan) absorbTelemetryHistoryLine(
 		cohort = newTelemetryCohortAccumulator(key)
 		cohorts[key] = cohort
 	}
-	usagePresent := len(header.TreeUsage) > 0 && string(header.TreeUsage) != "null"
-	cohort.absorb(fileName, taskID, record, usagePresent)
+	cohort.absorb(file.name, file.taskID, record.log, record.usagePresent)
 	if cohortTaskLogs[key] == nil {
 		cohortTaskLogs[key] = make(map[string][]ModelCallLog)
 	}
-	cohortTaskLogs[key][taskID] = append(cohortTaskLogs[key][taskID], record)
+	cohortTaskLogs[key][file.taskID] = append(cohortTaskLogs[key][file.taskID], record.log)
 }
 
 func (s *TelemetryHistoryScan) countTelemetryMalformed(reason string) {
