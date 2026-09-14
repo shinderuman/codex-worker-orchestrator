@@ -55,6 +55,7 @@ func TestChangedPathsUsesCapturedDirtyBaseline(t *testing.T) {
 	writeFile(t, filepath.Join(repoRoot, "staged-task.txt"), "task after staged baseline\n")
 	writeFile(t, filepath.Join(repoRoot, "unstaged-task.txt"), "task after unstaged baseline\n")
 	writeFile(t, filepath.Join(repoRoot, "task-untracked.txt"), "task untracked\n")
+	t.Setenv("GIT_TRACE", "1")
 
 	paths, available, err := ChangedPaths(repoRoot, st)
 	if err != nil {
@@ -62,6 +63,11 @@ func TestChangedPathsUsesCapturedDirtyBaseline(t *testing.T) {
 	}
 	if !available {
 		t.Fatal("baseline unexpectedly unavailable")
+	}
+	for _, path := range paths {
+		if strings.Contains(path, "trace:") {
+			t.Fatalf("git stderr contaminated changed paths: %v", paths)
+		}
 	}
 	seen := pathSet(paths)
 	for _, want := range []string{"clean-task.txt", "staged-task.txt", "unstaged-task.txt", "task-untracked.txt"} {
