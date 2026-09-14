@@ -71,7 +71,7 @@ func checkRules(root string, paths []string) ([]Violation, error) {
 	if err != nil {
 		return nil, err
 	}
-	forwardOnlyViolations, err := scanForwardOnlyCompatibility(root, paths)
+	forwardOnlyViolations, err := scanForwardOnlyCompatibilityRule(root, paths)
 	if err != nil {
 		return nil, err
 	}
