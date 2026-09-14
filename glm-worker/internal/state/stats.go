@@ -355,7 +355,7 @@ func (s *StateStore) ArchivedTaskStatsEvidence(taskID string) (TaskStatsEvidence
 }
 
 func (s *StateStore) SetParentCodexIdentity(threadID, sessionID string, readSessionLimit func() *SessionLimitReading) error {
-	if !ValidUUIDFormat(threadID) || !ValidGeneratedUUID(sessionID) && !ValidUUIDFormat(sessionID) {
+	if !ValidUUIDFormat(threadID) || !ValidUUIDFormat(sessionID) {
 		return fmt.Errorf("parent Codex identityが不正です: thread=%s session=%s", threadID, sessionID)
 	}
 	taskID := s.ReadOr("task.id", "")
