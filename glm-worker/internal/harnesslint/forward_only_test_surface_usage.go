@@ -11,6 +11,18 @@ type forwardOnlyParsedTestFile struct {
 	file *ast.File
 }
 
+func scanForwardOnlyCompatibilityRule(root string, paths []string) ([]Violation, error) {
+	violations, err := scanForwardOnlyCompatibility(root, paths)
+	if err != nil {
+		return nil, err
+	}
+	testSurfaceViolations, err := scanForwardOnlyTestCompatibilitySurfaces(root, paths)
+	if err != nil {
+		return nil, err
+	}
+	return append(violations, testSurfaceViolations...), nil
+}
+
 func forwardOnlyAliasDirectlyCalled(files []forwardOnlyParsedTestFile, name string) bool {
 	for _, testFile := range files {
 		called := false
