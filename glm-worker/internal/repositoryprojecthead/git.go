@@ -1,6 +1,7 @@
 package repositoryprojecthead
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -102,9 +103,12 @@ func gitExitCode(err error) int {
 
 func gitOutput(root string, args ...string) (string, error) {
 	commandArgs := append([]string{"-C", root}, args...)
-	output, err := exec.Command("git", commandArgs...).CombinedOutput()
+	command := exec.Command("git", commandArgs...)
+	var stderr bytes.Buffer
+	command.Stderr = &stderr
+	output, err := command.Output()
 	if err != nil {
-		return "", fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(output)))
+		return "", fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
 	}
 	return strings.TrimRight(string(output), "\n"), nil
 }
