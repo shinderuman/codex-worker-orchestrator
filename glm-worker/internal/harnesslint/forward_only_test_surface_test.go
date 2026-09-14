@@ -7,15 +7,17 @@ func TestForwardOnlyCompatibilityRejectsTestOnlyCallableAliasSurface(t *testing.
 	writeFixture(t, root, "glm-worker/internal/example/evaluator.go", `package example
 func CanonicalEvaluator(value int) int { return value }
 `)
-	path := "glm-worker/internal/example/evaluator_test.go"
-	writeFixture(t, root, path, `package example
-import "testing"
+	aliasPath := "glm-worker/internal/example/evaluator_legacy_test.go"
+	writeFixture(t, root, aliasPath, `package example
 var RetiredEvaluator = CanonicalEvaluator
+`)
+	writeFixture(t, root, "glm-worker/internal/example/evaluator_test.go", `package example
+import "testing"
 func TestCallSurface(t *testing.T) {
 	if RetiredEvaluator(1) != 1 { t.Fatal("unexpected result") }
 }
 `)
-	requireRulePath(t, ruleViolations(t, root), forwardOnlyCompatibilityRule, path)
+	requireRulePath(t, ruleViolations(t, root), forwardOnlyCompatibilityRule, aliasPath)
 }
 
 func TestForwardOnlyCompatibilityAllowsLegitimateTestFunctionValues(t *testing.T) {
