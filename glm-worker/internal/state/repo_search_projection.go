@@ -44,6 +44,7 @@ func (s *StateStore) repoSearchMeasureFromTaskEvents(taskID string) (RepoSearchM
 
 	var measure RepoSearchMeasure
 	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
 	for scanner.Scan() {
 		record, err := ParseTaskEventLine(scanner.Bytes())
 		if err != nil {
