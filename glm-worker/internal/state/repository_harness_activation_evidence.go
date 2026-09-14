@@ -1,6 +1,7 @@
 package state
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -27,7 +28,7 @@ func (s *StateStore) RecordRepositoryHarnessActivation(active bool) error {
 		TaskID:  taskID,
 		Active:  active,
 	}
-	data, err := marshalCurrentStateJSON(evidence)
+	data, err := json.Marshal(evidence)
 	if err != nil {
 		return fmt.Errorf("repository harness activation evidenceをJSON化できません: %w", err)
 	}
