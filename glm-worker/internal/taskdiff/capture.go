@@ -290,12 +290,10 @@ func runGitCommand(repoRoot string, extraEnv []string, stdin []byte, args ...str
 	if stdin != nil {
 		cmd.Stdin = bytes.NewReader(stdin)
 	}
-	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	err := cmd.Run()
-	return stdout.Bytes(), stderr.Bytes(), err
+	stdout, err := cmd.Output()
+	return stdout, stderr.Bytes(), err
 }
 
 func writeNewFilePatches(repoRoot string, result *bytes.Buffer, paths []string) error {
