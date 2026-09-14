@@ -18,7 +18,8 @@ type testImpactEventsScan struct {
 	IgnoredFiles    []string             `json:"ignored_files,omitempty"`
 	UnreadableTasks []telemetryTaskError `json:"unreadable_tasks,omitempty"`
 
-	logs []state.TaskEvents
+	logs            []state.TaskEvents
+	incompleteTasks map[string]bool
 }
 
 type testImpactOutput struct {
@@ -55,7 +56,7 @@ func scanTaskEventLogs(st *state.StateStore) (*testImpactEventsScan, error) {
 		return nil, fmt.Errorf("events dirを読めません: %w", err)
 	}
 
-	scan := &testImpactEventsScan{Status: "ok", Dir: dir}
+	scan := &testImpactEventsScan{Status: "ok", Dir: dir, incompleteTasks: make(map[string]bool)}
 	considered := 0
 	for _, entry := range entries {
 		name := entry.Name()
@@ -72,6 +73,9 @@ func scanTaskEventLogs(st *state.StateStore) (*testImpactEventsScan, error) {
 		if readErr == nil {
 			scan.Files++
 			scan.SkippedLines += skipped
+			if skipped > 0 {
+				scan.incompleteTasks[taskID] = true
+			}
 			scan.logs = append(scan.logs, state.TaskEvents{TaskID: taskID, Records: records})
 			continue
 		}
