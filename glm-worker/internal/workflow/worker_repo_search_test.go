@@ -176,7 +176,7 @@ func TestNewWorkerTaskPromptDisabledSkipsRepoSearchEntirely(t *testing.T) {
 	}
 }
 
-func TestNewWorkerTaskPromptAccumulatesRepoSearchStatsWithDuration(t *testing.T) {
+func TestNewWorkerTaskPromptKeepsRepoSearchRoutesOutOfLiveStats(t *testing.T) {
 	root := t.TempDir()
 	cfg := config.AppConfig{RepoRoot: root, RepoHash: "repo-search-stats", StateBase: t.TempDir(), RepoSearch: true}
 	st, err := state.NewStateStore(cfg)
@@ -208,18 +208,15 @@ func TestNewWorkerTaskPromptAccumulatesRepoSearchStatsWithDuration(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stats.RepoSearchCalls != 2 || stats.RepoSearchQueriesByCategory[repoSearchPhase] != 2 {
-		t.Fatalf("repo-search stats = %+v", stats)
-	}
-	if stats.RepoSearchOutcomes[repoSearchHit] != 1 || stats.RepoSearchOutcomes[repoSearchErrorFallback] != 1 {
-		t.Fatalf("repo-search outcomes = %+v", stats.RepoSearchOutcomes)
-	}
-	if stats.RepoSearchResults != 1 || stats.RepoSearchDurationMS != 500 {
-		t.Fatalf("results=%d duration=%d want 1/500", stats.RepoSearchResults, stats.RepoSearchDurationMS)
+	if stats.RepoSearchCalls != 0 || len(stats.RepoSearchQueriesByCategory) != 0 || len(stats.RepoSearchOutcomes) != 0 || stats.RepoSearchResults != 0 || stats.RepoSearchDurationMS != 0 {
+		t.Fatalf("live task statsにrepo-search mirrorが残っています: %+v", stats)
 	}
 	events := readAllTaskEvents(t, st, taskID)
-	if len(events) != 2 || events[0].DurationMS != 250 || events[1].DurationMS != 250 {
-		t.Fatalf("event durations = %+v", events)
+	if len(events) != 2 || events[0].Subtype != repoSearchHit || events[1].Subtype != repoSearchErrorFallback || events[0].DurationMS != 250 || events[1].DurationMS != 250 {
+		t.Fatalf("repo-search events = %+v", events)
+	}
+	if len(events[0].SearchPaths) != 1 || events[0].SearchPaths[0] != "internal/worker.go" || len(events[1].SearchPaths) != 0 {
+		t.Fatalf("repo-search event paths = %+v", events)
 	}
 }
 
@@ -237,7 +234,8 @@ func TestNewWorkerTaskPromptKnownSkipRecordsZeroResultRoute(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.StartNewTask(); err != nil {
+	taskID, err := st.StartNewTask()
+	if err != nil {
 		t.Fatal(err)
 	}
 	w := NewWorkflow(cfg, st, nil, nil)
@@ -251,9 +249,12 @@ func TestNewWorkerTaskPromptKnownSkipRecordsZeroResultRoute(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stats.RepoSearchCalls != 1 || stats.RepoSearchOutcomes[repoSearchKnownSkip] != 1 ||
-		stats.RepoSearchResults != 0 || stats.RepoSearchDurationMS != 0 {
-		t.Fatalf("known-skip stats = %+v", stats)
+	if stats.RepoSearchCalls != 0 || len(stats.RepoSearchOutcomes) != 0 {
+		t.Fatalf("known-skipがlive statsへdual-writeされました: %+v", stats)
+	}
+	events := readAllTaskEvents(t, st, taskID)
+	if len(events) != 1 || events[0].Subtype != repoSearchKnownSkip || len(events[0].SearchPaths) != 0 || events[0].DurationMS != 0 {
+		t.Fatalf("known-skip event = %+v", events)
 	}
 }
 

@@ -2,9 +2,7 @@ package state
 
 import (
 	"fmt"
-	"maps"
 	"slices"
-	"strings"
 )
 
 type RepoSearchMeasure struct {
@@ -21,10 +19,9 @@ type RepoSearchMeasure struct {
 }
 
 type RepoSearchTaskSummary struct {
-	TaskID                string                  `json:"task_id"`
-	Measure               RepoSearchMeasure       `json:"measure"`
-	EventStatsConsistency string                  `json:"event_stats_consistency"`
-	Review                TestImpactReviewSummary `json:"review"`
+	TaskID  string                  `json:"task_id"`
+	Measure RepoSearchMeasure       `json:"measure"`
+	Review  TestImpactReviewSummary `json:"review"`
 }
 
 type RepoSearchSources struct {
@@ -77,18 +74,11 @@ const (
 
 const RepoSearchEventKind = "navigation"
 
-const (
-	RepoSearchConsistencyOk           = "ok"
-	RepoSearchConsistencyMismatch     = "mismatch"
-	RepoSearchConsistencyStatsMissing = "stats-missing"
-	RepoSearchConsistencyUnverified   = "unverified"
-)
-
 const RepoSearchDeltaUnknown = "unknown"
 
-const repoSearchEventLogSource = "task event logs (events/<task-id>.jsonl) carry one navigation-kind record per worker or reviewer BM25 route with the route phase as query category, the subtype as outcome, the search_paths length as result count, and duration_ms as the search wall duration; new route writes record no raw query text, candidate paths are the only hit evidence, and this report reads only counts and never echoes recorded strings"
+const repoSearchEventLogSource = "task event logs (events/<task-id>.jsonl) are the live owner of one navigation-kind record per worker or reviewer BM25 route with the route phase as query category, the subtype as outcome, the search_paths length as result count, and duration_ms as the search wall duration; route writes record no raw query text, candidate paths are the only hit evidence, and this report reads only counts and never echoes recorded strings"
 
-const repoSearchTaskStatsSource = "task stats (current task-stats.json plus archived stats/<task-id>.json) keep additive per-task totals where repo_search_calls equals both the sum of repo_search_queries_by_category and the sum of repo_search_outcomes, and repo_search_results and repo_search_duration_ms accumulate one increment per recorded route outcome; archived stats written before this telemetry carry no repo-search counters, count as stats-missing, and are measured from retained events instead of being flagged as additive mismatches"
+const repoSearchTaskStatsSource = "archived task stats preserve a derived per-task repo-search aggregate after task rotation so totals survive bounded event-log retention; live routes do not mutate task stats independently, retained events remain the preferred source while present, and historical stats are used only when route events for that task are no longer retained"
 
 const repoSearchCategorySource = "query categories are the two deterministic call sites behind the GLM_WORKER_REPO_SEARCH toggle, worker-repo-search and reviewer-repo-search; no query-content classification is inferred"
 
@@ -169,11 +159,6 @@ func (m *RepoSearchMeasure) absorbOutcomeClass(class string, count int) {
 	}
 }
 
-func repoSearchMeasuresEqual(a RepoSearchMeasure, b RepoSearchMeasure) bool {
-	return a.Calls == b.Calls && a.Results == b.Results && a.DurationMS == b.DurationMS &&
-		maps.Equal(a.QueriesByCategory, b.QueriesByCategory) && maps.Equal(a.Outcomes, b.Outcomes)
-}
-
 func BuildRepoSearchReport(events []TaskEvents, statsByTask map[string]TaskStats, reviews map[string]TestImpactReviewSummary) RepoSearchReport {
 	report := RepoSearchReport{
 		Sources: RepoSearchSources{
@@ -201,22 +186,13 @@ func BuildRepoSearchReport(events []TaskEvents, statsByTask map[string]TaskStats
 	for _, taskID := range repoSearchReportTaskIDs(eventsByTask, statsByTask) {
 		summary := RepoSearchTaskSummary{TaskID: taskID, Review: reviews[taskID]}
 		summary.Review = normalizeRepoSearchReview(summary.Review)
-		stats, hasStats := statsByTask[taskID]
-		records, hasEvents := eventsByTask[taskID]
-		switch {
-		case !hasStats || !repoSearchStatsHaveRecordedRoutes(stats):
-			summary.EventStatsConsistency = RepoSearchConsistencyStatsMissing
+		records := eventsByTask[taskID]
+		if repoSearchEventsHaveRecordedRoutes(records) {
 			summary.Measure = RepoSearchMeasureFromEvents(records)
-		case !hasEvents:
-			summary.EventStatsConsistency = RepoSearchConsistencyUnverified
+		} else if stats, ok := statsByTask[taskID]; ok && repoSearchStatsHaveRecordedRoutes(stats) {
 			summary.Measure = RepoSearchMeasureFromStats(stats)
-		default:
-			summary.Measure = RepoSearchMeasureFromStats(stats)
-			if repoSearchMeasuresEqual(summary.Measure, RepoSearchMeasureFromEvents(records)) {
-				summary.EventStatsConsistency = RepoSearchConsistencyOk
-			} else {
-				summary.EventStatsConsistency = RepoSearchConsistencyMismatch
-			}
+		} else {
+			continue
 		}
 		report.Tasks = append(report.Tasks, summary)
 		absorbRepoSearchMeasure(&report.Totals, summary.Measure)
@@ -230,6 +206,15 @@ func repoSearchStatsHaveRecordedRoutes(stats TaskStats) bool {
 		len(stats.RepoSearchQueriesByCategory) > 0 || len(stats.RepoSearchOutcomes) > 0
 }
 
+func repoSearchEventsHaveRecordedRoutes(records []TaskEventRecord) bool {
+	for _, record := range records {
+		if IsRepoSearchRouteEvent(record) {
+			return true
+		}
+	}
+	return false
+}
+
 func normalizeRepoSearchReview(review TestImpactReviewSummary) TestImpactReviewSummary {
 	if review.Outcome == "" {
 		review.Outcome = TestImpactReviewOutcomeUnknown
@@ -240,15 +225,12 @@ func normalizeRepoSearchReview(review TestImpactReviewSummary) TestImpactReviewS
 func repoSearchReportTaskIDs(eventsByTask map[string][]TaskEventRecord, statsByTask map[string]TaskStats) []string {
 	ids := make(map[string]bool)
 	for taskID, records := range eventsByTask {
-		for _, record := range records {
-			if IsRepoSearchRouteEvent(record) {
-				ids[taskID] = true
-				break
-			}
+		if repoSearchEventsHaveRecordedRoutes(records) {
+			ids[taskID] = true
 		}
 	}
 	for taskID, stats := range statsByTask {
-		if stats.RepoSearchCalls > 0 {
+		if repoSearchStatsHaveRecordedRoutes(stats) {
 			ids[taskID] = true
 		}
 	}
@@ -280,35 +262,12 @@ func absorbRepoSearchMeasure(totals *RepoSearchMeasure, measure RepoSearchMeasur
 func repoSearchReasons(report RepoSearchReport) []string {
 	reasons := []string{"direct-mode Codex runs delegate no glm-worker repo-search routes, so this telemetry is orchestrated-side only and Codex Reduction stays unknown until the permission-gated live A/B compares glm_usage"}
 	if report.Totals.Calls == 0 {
-		reasons = append(reasons, "no repo-search route outcomes are recorded in durable task stats")
+		reasons = append(reasons, "no repo-search route outcomes are recorded in retained task events or archived task-stat projections")
 	}
 	reasons = append(reasons, fmt.Sprintf(
-		"event retention keeps the most recent %d past task event logs plus the current task, so per-route cross-checks cover only retained tasks; totals sum each task's chosen measure, which uses recorded task stats when repo-search counters exist and retained events for tasks whose stats carry none",
+		"event retention keeps the most recent %d past task event logs plus the current task; retained route events are the live canonical observation, and task rotation derives one archival task-stat aggregate so older pruned tasks remain measurable without a second live mutation owner",
 		report.Retention))
-	if summary := repoSearchConsistencySummary(report.Tasks); summary != "" {
-		reasons = append(reasons, summary)
-	}
 	reasons = append(reasons, "the repo-search feature is default-on, so retained telemetry holds no disabled arm to contrast task quality against, and a controlled quality contrast requires the permission-gated A/B schema")
-	reasons = append(reasons, "hit, miss, fallback and skip counts are derived at read time from the recorded outcome map, so the additive outcome counters remain the single recorded source")
+	reasons = append(reasons, "hit, miss, fallback and skip counts are derived at read time from the selected task measure; retained events take precedence, while archived task stats are used only after route events are no longer retained")
 	return reasons
-}
-
-func repoSearchConsistencySummary(tasks []RepoSearchTaskSummary) string {
-	counts := map[string]int{}
-	for _, task := range tasks {
-		counts[task.EventStatsConsistency]++
-	}
-	if counts[RepoSearchConsistencyMismatch] == 0 && counts[RepoSearchConsistencyStatsMissing] == 0 {
-		return ""
-	}
-	parts := make([]string, 0, len(counts))
-	statuses := make([]string, 0, len(counts))
-	for status := range counts {
-		statuses = append(statuses, status)
-	}
-	slices.Sort(statuses)
-	for _, status := range statuses {
-		parts = append(parts, fmt.Sprintf("%s %d", status, counts[status]))
-	}
-	return fmt.Sprintf("event-vs-stats additive consistency flags %s across reported tasks", strings.Join(parts, ", "))
 }

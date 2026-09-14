@@ -200,6 +200,7 @@ func (s *StateStore) ArchiveCurrentStats() {
 }
 
 func (s *StateStore) archiveCurrentStats(parentIdentity *ParentCodexIdentity) {
+	s.projectCurrentRepoSearchStats()
 	stats, err := s.loadTaskStats()
 	if errors.Is(err, os.ErrNotExist) {
 		return
@@ -547,19 +548,6 @@ func (s *StateStore) RecordProbeOutcome(outcome string) {
 	}
 	s.UpdateTaskStats(func(stats *TaskStats) {
 		addInt(&stats.ProbeOutcome, outcome, 1)
-	})
-}
-
-func (s *StateStore) RecordRepoSearchOutcome(category string, outcome string, resultCount int, duration time.Duration) {
-	if category == "" || outcome == "" {
-		return
-	}
-	s.UpdateTaskStats(func(stats *TaskStats) {
-		stats.RepoSearchCalls++
-		addInt(&stats.RepoSearchQueriesByCategory, category, 1)
-		addInt(&stats.RepoSearchOutcomes, outcome, 1)
-		stats.RepoSearchResults += resultCount
-		stats.RepoSearchDurationMS += duration.Milliseconds()
 	})
 }
 

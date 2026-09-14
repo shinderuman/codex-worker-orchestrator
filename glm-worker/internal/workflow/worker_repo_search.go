@@ -212,5 +212,4 @@ func (w *Workflow) recordRepoSearchOutcome(phase string, role state.SessionRole,
 	}); err != nil {
 		state.WarnTaskEventSkip("repo-search route追記", err)
 	}
-	w.state.RecordRepoSearchOutcome(phase, outcome, len(results), duration)
 }

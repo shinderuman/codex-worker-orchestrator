@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 )
@@ -52,40 +51,77 @@ func TestRepoSearchOutcomeClassCoversClosedOutcomeSet(t *testing.T) {
 	}
 }
 
-func TestRecordRepoSearchOutcomeKeepsAdditiveConsistency(t *testing.T) {
+func TestTaskRotationProjectsRepoSearchEventsIntoArchivedStats(t *testing.T) {
 	st := newRepoSearchEvalTestStore(t)
-	if _, err := st.StartNewTask(); err != nil {
-		t.Fatal(err)
-	}
-	st.RecordRepoSearchOutcome(RepoSearchCategoryWorkerNavigation, RepoSearchOutcomeSearchHit, 3, 1500*time.Millisecond)
-	st.RecordRepoSearchOutcome(RepoSearchCategoryWorkerNavigation, RepoSearchOutcomeSearchEmptyFallback, 0, 500*time.Millisecond)
-	st.RecordRepoSearchOutcome(RepoSearchCategoryReviewerIndependent, RepoSearchOutcomeIndependentErrorFallback, 0, 900*time.Millisecond)
-	st.RecordRepoSearchOutcome("", RepoSearchOutcomeSearchHit, 5, time.Second)
-	st.RecordRepoSearchOutcome(RepoSearchCategoryWorkerNavigation, "", 5, time.Second)
-
-	stats, err := st.CurrentTaskStats()
+	firstTask, err := st.StartNewTask()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stats.RepoSearchCalls != 3 {
-		t.Fatalf("repo_search_calls = %d want 3", stats.RepoSearchCalls)
+	for _, record := range []TaskEventRecord{
+		{TaskID: firstTask, Kind: RepoSearchEventKind, Phase: RepoSearchCategoryWorkerNavigation, Subtype: RepoSearchOutcomeSearchHit, SearchPaths: []string{"a.go", "b.go", "c.go"}, DurationMS: 1500},
+		{TaskID: firstTask, Kind: RepoSearchEventKind, Phase: RepoSearchCategoryWorkerNavigation, Subtype: RepoSearchOutcomeSearchEmptyFallback, DurationMS: 500},
+		{TaskID: firstTask, Kind: RepoSearchEventKind, Phase: RepoSearchCategoryReviewerIndependent, Subtype: RepoSearchOutcomeIndependentErrorFallback, DurationMS: 900},
+	} {
+		if err := st.AppendTaskEvent(record); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if sumIntMapForTest(stats.RepoSearchQueriesByCategory) != 3 || sumIntMapForTest(stats.RepoSearchOutcomes) != 3 {
-		t.Fatalf("category/outcome総和がcallsと一致しません: %+v", stats)
+
+	live, err := st.CurrentTaskStats()
+	if err != nil {
+		t.Fatal(err)
 	}
-	if stats.RepoSearchQueriesByCategory[RepoSearchCategoryWorkerNavigation] != 2 ||
-		stats.RepoSearchQueriesByCategory[RepoSearchCategoryReviewerIndependent] != 1 {
-		t.Fatalf("queries_by_category = %+v", stats.RepoSearchQueriesByCategory)
+	if repoSearchStatsHaveRecordedRoutes(live) {
+		t.Fatalf("live task statsにrepo-search mirrorが書き込まれています: %+v", live)
 	}
-	if stats.RepoSearchResults != 3 || stats.RepoSearchDurationMS != 2900 {
-		t.Fatalf("results=%d duration=%d want 3/2900", stats.RepoSearchResults, stats.RepoSearchDurationMS)
+	if _, err := st.StartNewTask(); err != nil {
+		t.Fatal(err)
 	}
-	measure := RepoSearchMeasureFromStats(stats)
-	if measure.Hits != 1 || measure.Misses != 1 || measure.Fallbacks != 1 || measure.Skips != 0 || measure.Other != 0 {
-		t.Fatalf("class counts = %+v", measure)
+	data, err := os.ReadFile(st.TaskStatsArchivePath(firstTask))
+	if err != nil {
+		t.Fatal(err)
 	}
-	if measure.Calls != sumIntMapForTest(measure.QueriesByCategory) || measure.Calls != sumIntMapForTest(measure.Outcomes) {
-		t.Fatalf("measure加法整合が崩れています: %+v", measure)
+	archived, err := decodeTaskStats(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if archived.RepoSearchCalls != 3 || archived.RepoSearchResults != 3 || archived.RepoSearchDurationMS != 2900 {
+		t.Fatalf("archived repo-search projection = %+v", archived)
+	}
+	if archived.RepoSearchQueriesByCategory[RepoSearchCategoryWorkerNavigation] != 2 || archived.RepoSearchQueriesByCategory[RepoSearchCategoryReviewerIndependent] != 1 {
+		t.Fatalf("queries_by_category = %+v", archived.RepoSearchQueriesByCategory)
+	}
+	if archived.RepoSearchOutcomes[RepoSearchOutcomeSearchHit] != 1 || archived.RepoSearchOutcomes[RepoSearchOutcomeSearchEmptyFallback] != 1 || archived.RepoSearchOutcomes[RepoSearchOutcomeIndependentErrorFallback] != 1 {
+		t.Fatalf("outcomes = %+v", archived.RepoSearchOutcomes)
+	}
+}
+
+func TestUnreadableRepoSearchEventsDoNotBecomeArchivedSuccessEvidence(t *testing.T) {
+	st := newRepoSearchEvalTestStore(t)
+	firstTask, err := st.StartNewTask()
+	if err != nil {
+		t.Fatal(err)
+	}
+	eventPath := st.TaskEventLogPath(firstTask)
+	if err := os.MkdirAll(filepath.Dir(eventPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(eventPath, []byte("{broken\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.StartNewTask(); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(st.TaskStatsArchivePath(firstTask))
+	if err != nil {
+		t.Fatal(err)
+	}
+	archived, err := decodeTaskStats(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if repoSearchStatsHaveRecordedRoutes(archived) {
+		t.Fatalf("unreadable eventからrepo-search success evidenceを生成しました: %+v", archived)
 	}
 }
 
@@ -107,8 +143,7 @@ func TestRepoSearchMeasureFromEventsReadsOnlyRouteEvents(t *testing.T) {
 	if measure.Hits != 1 || measure.Misses != 1 || measure.Skips != 1 || measure.Fallbacks != 0 {
 		t.Fatalf("class counts = %+v", measure)
 	}
-	if measure.QueriesByCategory[RepoSearchCategoryWorkerNavigation] != 2 ||
-		measure.QueriesByCategory[RepoSearchCategoryReviewerIndependent] != 1 {
+	if measure.QueriesByCategory[RepoSearchCategoryWorkerNavigation] != 2 || measure.QueriesByCategory[RepoSearchCategoryReviewerIndependent] != 1 {
 		t.Fatalf("queries_by_category = %+v", measure.QueriesByCategory)
 	}
 }
@@ -132,11 +167,10 @@ func repoSearchEventsFixture(taskID string) TaskEvents {
 	}}
 }
 
-func TestBuildRepoSearchReportCrossChecksEventsAndStats(t *testing.T) {
+func TestBuildRepoSearchReportPrefersRetainedEventsAndFallsBackToArchivedStats(t *testing.T) {
 	mismatchStats := repoSearchStatsFixture("mismatch-task")
 	mismatchStats.RepoSearchResults = 9
 	statsOnly := repoSearchStatsFixture("stats-only-task")
-	legacyStats := TaskStats{Version: 3, TaskID: "legacy-task", Status: TaskStatusComplete}
 	events := []TaskEvents{
 		repoSearchEventsFixture("consistent-task"),
 		repoSearchEventsFixture("mismatch-task"),
@@ -147,48 +181,35 @@ func TestBuildRepoSearchReportCrossChecksEventsAndStats(t *testing.T) {
 		"consistent-task": repoSearchStatsFixture("consistent-task"),
 		"mismatch-task":   mismatchStats,
 		"stats-only-task": statsOnly,
-		"legacy-task":     legacyStats,
 	}
 	reviews := map[string]TestImpactReviewSummary{
 		"consistent-task": {Outcome: ModelRoutingQualityReviewPass, PassCalls: 1},
 	}
 
 	report := BuildRepoSearchReport(events, statsByTask, reviews)
-
 	if report.Retention != retainedTaskEventLogs {
 		t.Fatalf("retention = %d", report.Retention)
 	}
-	consistency := map[string]string{}
-	for _, task := range report.Tasks {
-		consistency[task.TaskID] = task.EventStatsConsistency
-	}
-	if consistency["consistent-task"] != RepoSearchConsistencyOk {
-		t.Fatalf("consistent-task = %v", consistency)
-	}
-	if consistency["mismatch-task"] != RepoSearchConsistencyMismatch {
-		t.Fatalf("mismatch-task = %v", consistency)
-	}
-	if consistency["events-only-task"] != RepoSearchConsistencyStatsMissing {
-		t.Fatalf("events-only-task = %v", consistency)
-	}
-	if consistency["legacy-task"] != RepoSearchConsistencyStatsMissing {
-		t.Fatalf("legacy-task = %v", consistency)
-	}
-	if consistency["stats-only-task"] != RepoSearchConsistencyUnverified {
-		t.Fatalf("stats-only-task = %v", consistency)
-	}
-	if report.Totals.Calls != 10 || report.Totals.Results != 25 || report.Totals.DurationMS != 4000 {
+	if report.Totals.Calls != 10 || report.Totals.Results != 20 || report.Totals.DurationMS != 4000 {
 		t.Fatalf("totals = %+v", report.Totals)
 	}
 	if report.Totals.Hits != 5 || report.Totals.Fallbacks != 5 {
 		t.Fatalf("totals class counts = %+v", report.Totals)
 	}
 	for _, task := range report.Tasks {
-		if task.TaskID == "consistent-task" && (task.Review.Outcome != ModelRoutingQualityReviewPass || task.Measure.Calls != 2) {
-			t.Fatalf("consistent-task summary = %+v", task)
-		}
-		if task.TaskID == "legacy-task" && (task.Measure.Calls != 2 || task.Measure.DurationMS != 800) {
-			t.Fatalf("legacy-task summary = %+v", task)
+		switch task.TaskID {
+		case "consistent-task":
+			if task.Review.Outcome != ModelRoutingQualityReviewPass || task.Measure.Calls != 2 {
+				t.Fatalf("consistent-task summary = %+v", task)
+			}
+		case "mismatch-task":
+			if task.Measure.Results != 4 {
+				t.Fatalf("retained eventよりstats mirrorを優先しました: %+v", task)
+			}
+		case "stats-only-task":
+			if task.Measure.Results != 4 || task.Measure.DurationMS != 800 {
+				t.Fatalf("archived stats fallback = %+v", task)
+			}
 		}
 		if task.TaskID != "consistent-task" && task.Review.Outcome != TestImpactReviewOutcomeUnknown {
 			t.Fatalf("review既定 = %+v", task.Review)
@@ -198,8 +219,7 @@ func TestBuildRepoSearchReportCrossChecksEventsAndStats(t *testing.T) {
 		t.Fatalf("evaluation = %+v", report.Evaluation)
 	}
 	joined := strings.Join(report.Evaluation.Reasons, "\n")
-	if !strings.Contains(joined, "permission-gated live A/B") || !strings.Contains(joined, "mismatch 1") ||
-		!strings.Contains(joined, "stats-missing 2") {
+	if !strings.Contains(joined, "permission-gated live A/B") || strings.Contains(joined, "mismatch") || strings.Contains(joined, "stats-missing") {
 		t.Fatalf("reasons = %#v", report.Evaluation.Reasons)
 	}
 }
@@ -236,12 +256,4 @@ func TestTaskStatsRejectsSameVersionWithoutCurrentSchemaRevision(t *testing.T) {
 	if len(all) != 0 {
 		t.Fatalf("unsupported current statsをaggregationからskipしていません: %+v", all)
 	}
-}
-
-func sumIntMapForTest(values map[string]int) int {
-	total := 0
-	for _, value := range values {
-		total += value
-	}
-	return total
 }

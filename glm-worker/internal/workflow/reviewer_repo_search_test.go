@@ -191,7 +191,7 @@ func TestReviewerDiffFirstSearchFailureFallsBackToDiffInspection(t *testing.T) {
 	}
 }
 
-func TestReviewerDiffFirstRecordsRepoSearchStatsWithDuration(t *testing.T) {
+func TestReviewerDiffFirstKeepsRepoSearchRouteOutOfLiveStats(t *testing.T) {
 	w, st, taskID := newReviewerSearchWorkflow(t, []string{"glm-worker/internal/workflow/workflow.go"})
 	current := time.Date(2026, 8, 30, 3, 0, 0, 0, time.UTC)
 	w.now = func() time.Time {
@@ -210,15 +210,12 @@ func TestReviewerDiffFirstRecordsRepoSearchStatsWithDuration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stats.RepoSearchCalls != 1 || stats.RepoSearchQueriesByCategory[reviewerRepoSearchPhase] != 1 {
-		t.Fatalf("repo-search stats = %+v", stats)
-	}
-	if stats.RepoSearchOutcomes[reviewerSearchHit] != 1 || stats.RepoSearchResults != 1 || stats.RepoSearchDurationMS != 100 {
-		t.Fatalf("repo-search outcomes = %+v", stats)
+	if stats.RepoSearchCalls != 0 || len(stats.RepoSearchQueriesByCategory) != 0 || len(stats.RepoSearchOutcomes) != 0 || stats.RepoSearchResults != 0 || stats.RepoSearchDurationMS != 0 {
+		t.Fatalf("reviewer routeがlive statsへdual-writeされました: %+v", stats)
 	}
 	events := readAllTaskEvents(t, st, taskID)
-	if len(events) != 1 || events[0].DurationMS != 100 {
-		t.Fatalf("events = %+v", events)
+	if len(events) != 1 || events[0].Phase != reviewerRepoSearchPhase || events[0].Subtype != reviewerSearchHit || events[0].DurationMS != 100 || len(events[0].SearchPaths) != 1 || events[0].SearchPaths[0] != "glm-worker/internal/workflow/prompts.go" {
+		t.Fatalf("reviewer repo-search event = %+v", events)
 	}
 }
 

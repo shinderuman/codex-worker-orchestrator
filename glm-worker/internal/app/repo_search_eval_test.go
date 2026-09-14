@@ -41,7 +41,6 @@ func TestExecuteRepoSearchEvalAggregatesRoutesWithoutRawQueries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	st.RecordRepoSearchOutcome(state.RepoSearchCategoryWorkerNavigation, state.RepoSearchOutcomeSearchHit, 2, 1200*time.Millisecond)
 	appendRepoSearchRouteEvent(t, st, taskID, state.TaskEventRecord{
 		Role: "worker", Phase: state.RepoSearchCategoryWorkerNavigation, Seq: 1,
 		Timestamp: base, Kind: state.RepoSearchEventKind, Subtype: state.RepoSearchOutcomeSearchHit,
@@ -75,8 +74,11 @@ func TestExecuteRepoSearchEvalAggregatesRoutesWithoutRawQueries(t *testing.T) {
 		t.Fatalf("tasks = %#v", tasks)
 	}
 	task := tasks[0].(map[string]any)
-	if task["task_id"] != taskID || task["event_stats_consistency"] != state.RepoSearchConsistencyOk {
+	if task["task_id"] != taskID {
 		t.Fatalf("task = %#v", task)
+	}
+	if _, found := task["event_stats_consistency"]; found {
+		t.Fatalf("obsolete reconciliation field remains: %#v", task)
 	}
 	measure, _ := task["measure"].(map[string]any)
 	if measure["calls"].(float64) != 1 || measure["hits"].(float64) != 1 || measure["results"].(float64) != 2 ||
@@ -109,35 +111,41 @@ func TestExecuteRepoSearchEvalAggregatesRoutesWithoutRawQueries(t *testing.T) {
 	}
 }
 
-func TestExecuteRepoSearchEvalFlagsStatsEventsMismatch(t *testing.T) {
+func TestExecuteRepoSearchEvalFallsBackToArchivedProjectionAfterEventRemoval(t *testing.T) {
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	base := time.Date(2026, 8, 30, 4, 0, 0, 0, time.UTC)
-	taskID, err := st.StartNewTask()
+	firstTask, err := st.StartNewTask()
 	if err != nil {
 		t.Fatal(err)
 	}
-	st.RecordRepoSearchOutcome(state.RepoSearchCategoryReviewerIndependent, state.RepoSearchOutcomeIndependentHit, 1, 400*time.Millisecond)
-	appendRepoSearchRouteEvent(t, st, taskID, state.TaskEventRecord{
+	appendRepoSearchRouteEvent(t, st, firstTask, state.TaskEventRecord{
 		Role: "reviewer", Phase: state.RepoSearchCategoryReviewerIndependent, Seq: 1,
-		Timestamp: base, Kind: state.RepoSearchEventKind, Subtype: state.RepoSearchOutcomeIndependentEmpty,
-		SearchPaths: nil, DurationMS: 400,
+		Kind: state.RepoSearchEventKind, Subtype: state.RepoSearchOutcomeIndependentHit,
+		SearchPaths: []string{"review.go"}, DurationMS: 400,
 	})
+	if _, err := st.StartNewTask(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(st.TaskEventLogPath(firstTask)); err != nil {
+		t.Fatal(err)
+	}
 
 	decoded := executeRepoSearchEval(t, st)
-
-	report, _ := decoded["report"].(map[string]any)
-	tasks, _ := report["tasks"].([]any)
-	task := tasks[0].(map[string]any)
-	if task["event_stats_consistency"] != state.RepoSearchConsistencyMismatch {
-		t.Fatalf("task = %#v", task)
+	report := decoded["report"].(map[string]any)
+	tasks := report["tasks"].([]any)
+	if len(tasks) != 1 {
+		t.Fatalf("tasks = %#v", tasks)
 	}
-	measure, _ := task["measure"].(map[string]any)
-	if measure["calls"].(float64) != 1 || measure["hits"].(float64) != 1 {
-		t.Fatalf("measure = %#v", measure)
+	task := tasks[0].(map[string]any)
+	if task["task_id"] != firstTask {
+		t.Fatalf("archived task = %#v", task)
+	}
+	measure := task["measure"].(map[string]any)
+	if measure["calls"].(float64) != 1 || measure["hits"].(float64) != 1 || measure["results"].(float64) != 1 || measure["duration_ms"].(float64) != 400 {
+		t.Fatalf("archived projection measure = %#v", measure)
 	}
 }
 
