@@ -101,11 +101,8 @@ func (r realCommandRunner) runVersion(dir, name string, args ...string) (command
 			}
 			return commandResult{}, err
 		}
-		version := semanticVersion.FindString(filepath.Base(r.deadcodePath))
-		if version == "" {
-			return commandResult{exitCode: 1}, nil
-		}
-		return commandResult{output: version}, nil
+		commandName = "go"
+		args = []string{"version", "-m", r.deadcodePath}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), versionCommandTimeout)
 	defer cancel()
