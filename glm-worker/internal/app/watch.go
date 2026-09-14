@@ -247,7 +247,7 @@ func watchTaskTick(st *state.StateStore, taskID string, file *os.File, path stri
 	if err := status.refresh(false); err != nil {
 		return pending, false, err
 	}
-	if terminalEvent := watchTaskTerminalEvent(st, taskID); terminalEvent != nil {
+	if watchTaskTerminalEvent(st, taskID) != nil {
 		before := status.tracker.signature()
 		pending, err = drainTaskEvents(file, stdout, pending, status.tracker.observe)
 		if err != nil {
@@ -258,7 +258,9 @@ func watchTaskTick(st *state.StateStore, taskID string, file *os.File, path stri
 				return pending, false, err
 			}
 		}
-		return pending, true, writeWatchEvent(stdout, *terminalEvent)
+		if terminalEvent := watchTaskTerminalEvent(st, taskID); terminalEvent != nil {
+			return pending, true, writeWatchEvent(stdout, *terminalEvent)
+		}
 	}
 	terminal, err := watchOrphanTerminal(st, taskID, stdout, opts)
 	if err != nil {
