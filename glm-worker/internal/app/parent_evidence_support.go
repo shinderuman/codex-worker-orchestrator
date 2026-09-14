@@ -178,14 +178,6 @@ func saveParentEvidenceLedger(st *state.StateStore, surface, digest, origin, own
 	return nil
 }
 
-func finishParentRead(st *state.StateStore, surface, digest string, render func() (int, error)) error {
-	scope, err := captureParentEvidenceReadScope(st)
-	if err != nil {
-		return err
-	}
-	return finishParentReadInScope(st, scope, surface, digest, render)
-}
-
 func finishParentReadInScope(st *state.StateStore, scope parentEvidenceReadScope, surface, digest string, render func() (int, error)) error {
 	return withParentEvidenceReadScopeLock(st, scope, func() error {
 		if err := validateParentEvidenceReadScope(st, scope); err != nil {
