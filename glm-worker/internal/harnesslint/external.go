@@ -51,7 +51,7 @@ func (r realCommandRunner) commandSpec(name string) (string, string) {
 		return "go", r.lintGoToolchain
 	case "golangci-lint":
 		return r.golangciLintPath, r.lintGoToolchain
-	case "deadcode":
+	case deadcodeToolName:
 		return r.deadcodePath, r.goToolchain
 	case "shellcheck":
 		return r.shellcheckPath, r.goToolchain
@@ -94,7 +94,7 @@ func (r realCommandRunner) runEnv(dir, name string, env []string, args ...string
 
 func (r realCommandRunner) runVersion(dir, name string, args ...string) (commandResult, error) {
 	commandName, toolchain := r.commandSpec(name)
-	if name == "deadcode" {
+	if name == deadcodeToolName {
 		if _, err := os.Stat(r.deadcodePath); err != nil {
 			if os.IsNotExist(err) {
 				return commandResult{}, &MissingToolError{Name: name}
