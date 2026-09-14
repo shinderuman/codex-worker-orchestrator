@@ -199,7 +199,7 @@ func pushBindingTargetFromRepo(repoRoot string) (*pushBindingTarget, *finalizati
 		TrackingOID: upstream.TrackingOID,
 	}
 	if upstream.TrackingOID != "" {
-		target.Ahead, target.Behind, _ = gitAheadBehind(repoRoot, upstream.TrackingRef)
+		target.Ahead, target.Behind, _ = gitAheadBehind(repoRoot, upstream.TrackingRef, head.Head)
 	}
 	return target, nil
 }
@@ -319,8 +319,8 @@ func pushBindingAttemptOutcomeValid(value string) bool {
 	return false
 }
 
-func gitAheadBehind(repoRoot, trackingRef string) (int, int, error) {
-	output, err := gitFinalizationOutput(repoRoot, "rev-list", "--left-right", "--count", trackingRef+"...HEAD")
+func gitAheadBehind(repoRoot, trackingRef, headOID string) (int, int, error) {
+	output, err := gitFinalizationOutput(repoRoot, "rev-list", "--left-right", "--count", trackingRef+"..."+headOID)
 	if err != nil {
 		return 0, 0, err
 	}
