@@ -118,6 +118,7 @@ func (s *StateStore) openBoundParentReviewState(value packet.Result, producer Pa
 		Risk:         string(value.Risk),
 	}
 	state.Review = binding
+	state.Completion = nil
 	return s.writeParentReviewState(state)
 }
 
