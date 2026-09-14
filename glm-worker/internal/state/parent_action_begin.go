@@ -143,7 +143,10 @@ func validateParentActionBeginReviewSnapshot(record parentActionBeginRecord) err
 	if review.Open != nil && !validParentReviewPacketStatus(review.Open.PacketStatus) {
 		return fmt.Errorf("parent action begin review snapshotのpacket statusが不正です: %s", review.Open.PacketStatus)
 	}
-	return validateParentReviewBindingState(review)
+	if err := validateParentReviewBindingState(review); err != nil {
+		return err
+	}
+	return validateParentCompletionState(review)
 }
 
 func (s *StateStore) CommitParentActionBegin() error {

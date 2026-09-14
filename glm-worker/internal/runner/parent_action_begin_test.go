@@ -71,6 +71,53 @@ func TestParentActionBeginRecoverySurvivesPreCallGuardRejection(t *testing.T) {
 	}
 }
 
+func TestParentActionBeginRecoverySurvivesRunnerSetupFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fixture is Unix-oriented")
+	}
+	root := t.TempDir()
+	writeInstructionGuardFile(t, root, "AGENTS.local.md", "accepted")
+	promptDir := t.TempDir()
+	commandPath := filepath.Join(t.TempDir(), "fake-claude")
+	if err := os.WriteFile(commandPath, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	st := newTestStateStore(t)
+	if _, err := st.StartNewTask(); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Touch("pending-decision"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetTaskStatus(state.TaskStatusWaitingDecision); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.BeginParentDecision(); err != nil {
+		t.Fatal(err)
+	}
+
+	base := NewClaudeRunner(config.AppConfig{
+		RepoRoot:        root,
+		RepoShort:       "guarded",
+		PromptDir:       promptDir,
+		ClaudeBin:       commandPath,
+		ClaudeConfigDir: t.TempDir(),
+	}, st)
+	guarded := NewInstructionSurfaceGuardRunner(base)
+	if _, err := guarded.Run(state.WorkerRole, "worker-decision", "worker-model", false, "high", "prompt", filepath.Join(t.TempDir(), "output")); err == nil {
+		t.Fatal("runner setup unexpectedly succeeded without WORKER.md")
+	}
+
+	target, err := st.RecoverParentActionBeginFromState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if target != state.TaskStatusWaitingDecision || st.TaskStatus() != state.TaskStatusWaitingDecision {
+		t.Fatalf("recovered state after setup failure: target=%s status=%s", target, st.TaskStatus())
+	}
+}
+
 func TestParentActionBeginRecordIsCommittedBeforeModelInvocation(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixture is Unix-oriented")
