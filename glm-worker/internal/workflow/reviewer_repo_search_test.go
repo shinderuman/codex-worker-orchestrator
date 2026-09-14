@@ -27,6 +27,7 @@ func newReviewerSearchWorkflow(t *testing.T, paths []string) (*Workflow, *state.
 	if err != nil {
 		t.Fatal(err)
 	}
+	pinRepositoryHarnessActiveT(t, st)
 	w := NewWorkflow(cfg, st, nil, nil)
 	w.now = func() time.Time { return time.Date(2026, 8, 28, 0, 0, 0, 0, time.UTC) }
 	w.collectChangedPaths = func(string, string) ([]string, error) { return paths, nil }
@@ -77,6 +78,36 @@ func TestReviewerDiffFirstSearchesImpactIndependentlyAndExcludesChangedPaths(t *
 	}
 }
 
+func TestReviewerDiffFirstActiveHarnessSkipsParentOnlyDiff(t *testing.T) {
+	w, _, _ := newReviewerSearchWorkflow(t, []string{state.ParentPlanFile})
+	calls := 0
+	w.repoSearch = func(context.Context, string, string, reposearch.Options) (reposearch.Report, error) {
+		calls++
+		return reposearch.Report{}, nil
+	}
+	block := w.reviewerDiffFirstContext("review parent metadata", 1)
+	if calls != 0 || !strings.Contains(block, "INDEPENDENT_SEARCH: skipped") || !strings.Contains(block, "SEARCH_OUTCOME: diff-sufficient") {
+		t.Fatalf("calls=%d block=%s", calls, block)
+	}
+}
+
+func TestReviewerDiffFirstInactiveHarnessSearchesCoincidentalParentOnlyDiff(t *testing.T) {
+	w, st, _ := newReviewerSearchWorkflow(t, []string{state.ParentPlanFile})
+	pinRepositoryHarnessInactiveT(t, st)
+	calls := 0
+	w.repoSearch = func(_ context.Context, _ string, query string, _ reposearch.Options) (reposearch.Report, error) {
+		calls++
+		if !strings.Contains(query, "review impact paths: "+state.ParentPlanFile) {
+			t.Fatalf("coincidental parent path missing from inactive-harness query: %q", query)
+		}
+		return reposearch.Report{}, nil
+	}
+	block := w.reviewerDiffFirstContext("review foreign repository", 1)
+	if calls != 1 || !strings.Contains(block, "INDEPENDENT_SEARCH: performed") || !strings.Contains(block, "SEARCH_OUTCOME: "+reviewerSearchEmpty) {
+		t.Fatalf("calls=%d block=%s", calls, block)
+	}
+}
+
 func TestReviewerDiffFirstExcludesParentManagedMetadataFromImpactTerms(t *testing.T) {
 	paths := []string{"glm-worker/internal/workflow/workflow.go", state.ParentPlanFile}
 	w, st, _ := newReviewerSearchWorkflow(t, paths)
@@ -110,6 +141,42 @@ func TestReviewerDiffFirstExcludesParentManagedMetadataFromImpactTerms(t *testin
 	block := w.reviewerDiffFirstContext("review implementation", 1)
 	if !strings.Contains(block, "CHANGED_PATH: "+state.ParentPlanFile) {
 		t.Fatalf("changed-path evidence lost parent metadata: %s", block)
+	}
+}
+
+func TestReviewerDiffFirstInactiveHarnessKeepsCoincidentalParentMetadataImpactTerms(t *testing.T) {
+	paths := []string{"glm-worker/internal/workflow/workflow.go", state.ParentPlanFile}
+	w, st, _ := newReviewerSearchWorkflow(t, paths)
+	pinRepositoryHarnessInactiveT(t, st)
+	root := w.config.RepoRoot
+	gitScope(t, root, "init")
+	gitScope(t, root, "config", "user.email", "review-search@example.invalid")
+	gitScope(t, root, "config", "user.name", "review-search-test")
+	writeScopeFile(t, root, "glm-worker/internal/workflow/workflow.go", "package workflow\nvar implementationNeedle = 1\n")
+	writeScopeFile(t, root, state.ParentPlanFile, "PARENT_METADATA_BASELINE\n")
+	gitScope(t, root, "add", ".")
+	gitScope(t, root, "commit", "-m", "baseline")
+	baseline, err := exec.Command("git", "-C", root, "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Write("baseline-head", strings.TrimSpace(string(baseline))); err != nil {
+		t.Fatal(err)
+	}
+	writeScopeFile(t, root, "glm-worker/internal/workflow/workflow.go", "package workflow\nvar implementationNeedle = 2\n")
+	writeScopeFile(t, root, state.ParentPlanFile, "PARENT_METADATA_NEEDLE\n")
+
+	w.repoSearch = func(_ context.Context, _ string, query string, _ reposearch.Options) (reposearch.Report, error) {
+		for _, want := range []string{"implementationNeedle", "PARENT_METADATA_NEEDLE", state.ParentPlanFile} {
+			if !strings.Contains(query, want) {
+				t.Fatalf("inactive-harness query missing %q: %q", want, query)
+			}
+		}
+		return reposearch.Report{}, nil
+	}
+	block := w.reviewerDiffFirstContext("review foreign implementation", 1)
+	if !strings.Contains(block, "INDEPENDENT_SEARCH: performed") {
+		t.Fatalf("inactive-harness mixed diff skipped independent search: %s", block)
 	}
 }
 
