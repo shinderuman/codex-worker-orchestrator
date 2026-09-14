@@ -38,6 +38,10 @@ quality_tool_version() {
 	command_name=$1
 	command_path=$2
 	case "$command_name" in
+	deadcode)
+		GOTOOLCHAIN="go$GO_VERSION" go version -m "$command_path" | awk '$1 == "mod" && $2 == "golang.org/x/tools" { sub(/^v/, "", $3); print $3; exit }'
+		return
+		;;
 	golangci-lint) "$command_path" version ;;
 	shellcheck) "$command_path" --version ;;
 	shfmt) "$command_path" --version ;;
@@ -137,12 +141,14 @@ QUALITY_TOOLS_RESOLVED_BIN_DIR=$(quality_tool_bin_dir "$QUALITY_TOOLS_DEFAULT_BI
 GO_VERSION=$(quality_contract_value go)
 LINT_GO_VERSION=$(quality_contract_value lint-go)
 GOLANGCI_LINT_VERSION=$(quality_contract_value golangci-lint)
+DEADCODE_VERSION=$(quality_contract_value deadcode)
 SHELLCHECK_VERSION=$(quality_contract_value shellcheck)
 SHFMT_VERSION=$(quality_contract_value shfmt)
 export GOTOOLCHAIN="go$GO_VERSION"
 verify_go_toolchain go "$GO_VERSION"
 verify_go_toolchain lint-go "$LINT_GO_VERSION"
 require_quality_tool golangci-lint "$GOLANGCI_LINT_VERSION"
+require_quality_tool deadcode "$DEADCODE_VERSION"
 require_quality_tool shellcheck "$SHELLCHECK_VERSION"
 require_quality_tool shfmt "$SHFMT_VERSION"
 

@@ -1,0 +1,67 @@
+//go:build unix
+
+package harnesslint
+
+import (
+	"errors"
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func TestDeadcodeVersionUsesBinaryModuleMetadata(t *testing.T) {
+	binDir := t.TempDir()
+	deadcodePath := filepath.Join(binDir, "codex-worker-orchestrator-deadcode-9.9.9")
+	if err := os.WriteFile(deadcodePath, []byte("not executed\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	goPath := filepath.Join(binDir, "go")
+	goStub := `#!/bin/sh
+printf '%s: go1.25.4\n' "$3"
+printf '\tmod\tgolang.org/x/tools\tv0.49.0\n'
+`
+	if err := os.WriteFile(goPath, []byte(goStub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	runner := realCommandRunner{
+		goToolchain:  "local",
+		goCache:      t.TempDir(),
+		deadcodePath: deadcodePath,
+	}
+	result, err := runner.runVersion(t.TempDir(), deadcodeToolName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.exitCode != 0 {
+		t.Fatalf("deadcode version command exited %d: %s", result.exitCode, result.output)
+	}
+	if got := observedQualityToolVersion(deadcodeToolName, result.output); got != "0.49.0" {
+		t.Fatalf("deadcode version came from filename instead of module metadata: got %q output=%q", got, result.output)
+	}
+}
+
+func TestDeadcodeVersionRejectsNonExecutableBinary(t *testing.T) {
+	deadcodePath := filepath.Join(t.TempDir(), "codex-worker-orchestrator-deadcode-0.49.0")
+	if err := os.WriteFile(deadcodePath, []byte("not executable\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runner := realCommandRunner{
+		goToolchain:  "local",
+		goCache:      t.TempDir(),
+		deadcodePath: deadcodePath,
+	}
+	_, err := runner.runVersion(t.TempDir(), deadcodeToolName)
+	var commandErr *QualityToolCommandError
+	if !errors.As(err, &commandErr) || commandErr.Tool != deadcodeToolName {
+		t.Fatalf("non-executable deadcode must fail preflight as a quality-tool command error: %v", err)
+	}
+}
+
+func TestObservedDeadcodeVersionRejectsOtherModule(t *testing.T) {
+	output := "tool: go1.25.4\n\tmod\texample.com/not-deadcode\tv0.49.0\n"
+	if got := observedQualityToolVersion(deadcodeToolName, output); got != "" {
+		t.Fatalf("deadcode version accepted unrelated module metadata: got %q", got)
+	}
+}

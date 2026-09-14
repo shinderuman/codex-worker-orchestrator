@@ -399,7 +399,7 @@ func activateMultiRepoRepositoryHarness(t *testing.T, repoRoot, qualityBin strin
 		copyMultiRepoFixtureFile(t, sourceRoot, repoRoot, path)
 	}
 	goVersion := strings.TrimPrefix(runtime.Version(), "go")
-	qualityTools := fmt.Sprintf("namespace: codex-worker-orchestrator\ndefault-bin-dir: .local/share/codex-worker-orchestrator/quality-tools/bin\ngo: %s\nlint-go: %s\ngolangci-lint: 2.7.0\nshellcheck: 0.11.0\nshfmt: 3.13.0\n", goVersion, goVersion)
+	qualityTools := fmt.Sprintf("namespace: codex-worker-orchestrator\ndefault-bin-dir: .local/share/codex-worker-orchestrator/quality-tools/bin\ngo: %s\nlint-go: %s\ngolangci-lint: 2.7.0\ndeadcode: 0.50.0\nshellcheck: 0.11.0\nshfmt: 3.13.0\n", goVersion, goVersion)
 	if err := os.WriteFile(filepath.Join(repoRoot, "quality-tools.yml"), []byte(qualityTools), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -454,6 +454,7 @@ func writeMultiRepoQualityToolStubs(t *testing.T, dir string) {
 	t.Helper()
 	tools := map[string]string{
 		"codex-worker-orchestrator-golangci-lint-2.7.0": "#!/bin/sh\nif [ \"$1\" = version ]; then echo 'golangci-lint has version 2.7.0'; fi\nexit 0\n",
+		"codex-worker-orchestrator-deadcode-0.50.0":     "#!/bin/sh\nexit 0\n",
 		"codex-worker-orchestrator-shellcheck-0.11.0":   "#!/bin/sh\nif [ \"$1\" = --version ]; then echo 'ShellCheck version 0.11.0'; fi\nexit 0\n",
 		"codex-worker-orchestrator-shfmt-3.13.0":        "#!/bin/sh\nif [ \"$1\" = --version ]; then echo 'v3.13.0'; fi\nexit 0\n",
 	}

@@ -12,6 +12,7 @@ default_bin_dir=$(contract_value default-bin-dir)
 go_version=$(contract_value go)
 lint_go_version=$(contract_value lint-go)
 golangci_version=$(contract_value golangci-lint)
+deadcode_version=$(contract_value deadcode)
 shellcheck_version=$(contract_value shellcheck)
 shfmt_version=$(contract_value shfmt)
 
@@ -62,6 +63,10 @@ quality_tool_version() {
 	tool_name=$1
 	tool_path=$2
 	case "$tool_name" in
+	deadcode)
+		GOTOOLCHAIN="go$go_version" go version -m "$tool_path" | awk '$1 == "mod" && $2 == "golang.org/x/tools" { sub(/^v/, "", $3); print $3; exit }'
+		return
+		;;
 	golangci-lint) "$tool_path" version ;;
 	shellcheck) "$tool_path" --version ;;
 	shfmt) "$tool_path" --version ;;
@@ -101,6 +106,14 @@ if target_needs_install shfmt "$shfmt_version" "$shfmt_target"; then
 	GOTOOLCHAIN="go$go_version" GOBIN="$tmp/go-bin" go install "mvdan.cc/sh/v3/cmd/shfmt@v$shfmt_version"
 	install -m 0755 "$tmp/go-bin/shfmt" "$shfmt_target"
 	printf 'installed: %s\n' "$shfmt_target"
+fi
+
+deadcode_target=$(quality_tool_path deadcode "$deadcode_version")
+if target_needs_install deadcode "$deadcode_version" "$deadcode_target"; then
+	mkdir -p "$tmp/go-bin"
+	GOTOOLCHAIN="go$go_version" GOBIN="$tmp/go-bin" go install "golang.org/x/tools/cmd/deadcode@v$deadcode_version"
+	install -m 0755 "$tmp/go-bin/deadcode" "$deadcode_target"
+	printf 'installed: %s\n' "$deadcode_target"
 fi
 
 golangci_target=$(quality_tool_path golangci-lint "$golangci_version")

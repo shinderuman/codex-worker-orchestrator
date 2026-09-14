@@ -21,12 +21,12 @@ func (r versionRunner) runVersion(_ string, name string, _ ...string) (commandRe
 
 func TestLoadQualityToolVersions(t *testing.T) {
 	root := t.TempDir()
-	writeFixture(t, root, "quality-tools.yml", "namespace: codex-worker-orchestrator\ndefault-bin-dir: .local/share/codex-worker-orchestrator/quality-tools/bin\ngo: 1.25.4\nlint-go: 1.22.12\ngolangci-lint: 2.7.0\nshellcheck: 0.11.0\nshfmt: 3.13.1\n")
+	writeFixture(t, root, "quality-tools.yml", "namespace: codex-worker-orchestrator\ndefault-bin-dir: .local/share/codex-worker-orchestrator/quality-tools/bin\ngo: 1.25.4\nlint-go: 1.22.12\ngolangci-lint: 2.7.0\ndeadcode: 0.50.0\nshellcheck: 0.11.0\nshfmt: 3.13.1\n")
 	versions, err := loadQualityToolVersions(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if versions.Namespace != "codex-worker-orchestrator" || versions.DefaultBinDir != ".local/share/codex-worker-orchestrator/quality-tools/bin" || versions.Go != "1.25.4" || versions.LintGo != "1.22.12" || versions.GolangCILint != "2.7.0" || versions.Shellcheck != "0.11.0" || versions.Shfmt != "3.13.1" {
+	if versions.Namespace != "codex-worker-orchestrator" || versions.DefaultBinDir != ".local/share/codex-worker-orchestrator/quality-tools/bin" || versions.Go != "1.25.4" || versions.LintGo != "1.22.12" || versions.GolangCILint != "2.7.0" || versions.Deadcode != "0.50.0" || versions.Shellcheck != "0.11.0" || versions.Shfmt != "3.13.1" {
 		t.Fatalf("versions = %+v", versions)
 	}
 }
@@ -67,11 +67,12 @@ func TestQualityToolsBinDirPreservesExplicitLocation(t *testing.T) {
 }
 
 func TestValidateQualityToolVersionsRejectsDrift(t *testing.T) {
-	versions := qualityToolVersions{Go: "1.25.4", LintGo: "1.22.12", GolangCILint: "2.7.0", Shellcheck: "0.11.0", Shfmt: "3.13.1"}
+	versions := qualityToolVersions{Go: "1.25.4", LintGo: "1.22.12", GolangCILint: "2.7.0", Deadcode: "0.50.0", Shellcheck: "0.11.0", Shfmt: "3.13.1"}
 	runner := versionRunner{outputs: map[string]string{
 		"go":            "go version go1.25.4 darwin/arm64",
 		"lint-go":       "go version go1.22.12 darwin/arm64",
 		"golangci-lint": "golangci-lint has version 2.13.1 built with go1.27.0",
+		"deadcode":      "deadcode: go1.25.4\n\tmod\tgolang.org/x/tools\tv0.50.0\n",
 		"shellcheck":    "version: 0.11.0",
 		"shfmt":         "v3.13.1",
 	}}
@@ -86,10 +87,11 @@ func TestValidateQualityToolVersionsFailsClosedPerTool(t *testing.T) {
 		"go":            "go version go1.25.4 darwin/arm64",
 		"lint-go":       "go version go1.22.12 darwin/arm64",
 		"golangci-lint": "golangci-lint has version 2.7.0 built with go1.25.4",
+		"deadcode":      "deadcode: go1.25.4\n\tmod\tgolang.org/x/tools\tv0.50.0\n",
 		"shellcheck":    "version: 0.11.0",
 		"shfmt":         "v3.13.1",
 	}
-	versions := qualityToolVersions{Go: "1.25.4", LintGo: "1.22.12", GolangCILint: "2.7.0", Shellcheck: "0.11.0", Shfmt: "3.13.1"}
+	versions := qualityToolVersions{Go: "1.25.4", LintGo: "1.22.12", GolangCILint: "2.7.0", Deadcode: "0.50.0", Shellcheck: "0.11.0", Shfmt: "3.13.1"}
 	cases := []struct {
 		tool     string
 		output   string
@@ -98,6 +100,7 @@ func TestValidateQualityToolVersionsFailsClosedPerTool(t *testing.T) {
 		{tool: "go", output: "go version go1.26.1 darwin/arm64", observed: "1.26.1"},
 		{tool: "lint-go", output: "go version go1.23.4 darwin/arm64", observed: "1.23.4"},
 		{tool: "golangci-lint", output: "golangci-lint has version 2.13.1 built with go1.27.0", observed: "2.13.1"},
+		{tool: "deadcode", output: "deadcode: go1.25.4\n\tmod\tgolang.org/x/tools\tv0.49.0\n", observed: "0.49.0"},
 		{tool: "shellcheck", output: "version: 0.10.0", observed: "0.10.0"},
 		{tool: "shfmt", output: "v3.8.0", observed: "3.8.0"},
 	}
@@ -128,6 +131,8 @@ func alignedRequiredVersion(tool string) string {
 		return "1.22.12"
 	case "golangci-lint":
 		return "2.7.0"
+	case "deadcode":
+		return "0.50.0"
 	case "shellcheck":
 		return "0.11.0"
 	default:
@@ -146,11 +151,12 @@ func TestPreflightQualityToolsSharesContractAuthorityWithLint(t *testing.T) {
 }
 
 func TestValidateQualityToolVersionsAcceptsContract(t *testing.T) {
-	versions := qualityToolVersions{Go: "1.25.4", LintGo: "1.22.12", GolangCILint: "2.7.0", Shellcheck: "0.11.0", Shfmt: "3.13.1"}
+	versions := qualityToolVersions{Go: "1.25.4", LintGo: "1.22.12", GolangCILint: "2.7.0", Deadcode: "0.50.0", Shellcheck: "0.11.0", Shfmt: "3.13.1"}
 	runner := versionRunner{outputs: map[string]string{
 		"go":            "go version go1.25.4 darwin/arm64",
 		"lint-go":       "go version go1.22.12 darwin/arm64",
 		"golangci-lint": "golangci-lint has version 2.7.0 built with go1.25.4",
+		"deadcode":      "deadcode: go1.25.4\n\tmod\tgolang.org/x/tools\tv0.50.0\n",
 		"shellcheck":    "version: 0.11.0",
 		"shfmt":         "v3.13.1",
 	}}
@@ -161,7 +167,7 @@ func TestValidateQualityToolVersionsAcceptsContract(t *testing.T) {
 
 func TestPreflightQualityToolsFailsClosedWithoutToolchainDownload(t *testing.T) {
 	root := t.TempDir()
-	writeFixture(t, root, "quality-tools.yml", "namespace: codex-worker-orchestrator\ndefault-bin-dir: .local/share/codex-worker-orchestrator/quality-tools/bin\ngo: 1.99.99\nlint-go: 1.99.98\ngolangci-lint: 99.99.99\nshellcheck: 99.99.99\nshfmt: 99.99.99\n")
+	writeFixture(t, root, "quality-tools.yml", "namespace: codex-worker-orchestrator\ndefault-bin-dir: .local/share/codex-worker-orchestrator/quality-tools/bin\ngo: 1.99.99\nlint-go: 1.99.98\ngolangci-lint: 99.99.99\ndeadcode: 99.99.99\nshellcheck: 99.99.99\nshfmt: 99.99.99\n")
 	started := time.Now()
 	err := PreflightQualityTools(root)
 	if err == nil {
@@ -190,7 +196,7 @@ func TestPreflightQualityToolsStopsHungVersionCommandWithinBound(t *testing.T) {
 	}
 	t.Setenv("PATH", binDir)
 	root := t.TempDir()
-	writeFixture(t, root, "quality-tools.yml", "namespace: codex-worker-orchestrator\ndefault-bin-dir: .local/share/codex-worker-orchestrator/quality-tools/bin\ngo: 1.25.4\nlint-go: 1.22.12\ngolangci-lint: 2.7.0\nshellcheck: 0.11.0\nshfmt: 3.13.1\n")
+	writeFixture(t, root, "quality-tools.yml", "namespace: codex-worker-orchestrator\ndefault-bin-dir: .local/share/codex-worker-orchestrator/quality-tools/bin\ngo: 1.25.4\nlint-go: 1.22.12\ngolangci-lint: 2.7.0\ndeadcode: 0.50.0\nshellcheck: 0.11.0\nshfmt: 3.13.1\n")
 	started := time.Now()
 	err := PreflightQualityTools(root)
 	if err == nil || !strings.Contains(err.Error(), "timed out") {
@@ -221,7 +227,7 @@ func TestCommandEnvOverridesWithoutDuplicates(t *testing.T) {
 }
 
 func TestValidateQualityToolVersionsReturnsTypedClassifiedFailures(t *testing.T) {
-	versions := qualityToolVersions{Go: "1.25.4", LintGo: "1.22.12", GolangCILint: "2.7.0", Shellcheck: "0.11.0", Shfmt: "3.13.1"}
+	versions := qualityToolVersions{Go: "1.25.4", LintGo: "1.22.12", GolangCILint: "2.7.0", Deadcode: "0.50.0", Shellcheck: "0.11.0", Shfmt: "3.13.1"}
 
 	mismatch := versionRunner{outputs: map[string]string{"go": "go version go1.26.1 darwin/arm64"}}
 	err := validateQualityToolVersions(t.TempDir(), versions, mismatch)
@@ -261,7 +267,7 @@ func TestPreflightQualityToolsClassifiesMissingToolAsEnvironment(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 	t.Setenv("QUALITY_TOOLS_BIN_DIR", filepath.Join(t.TempDir(), "quality"))
 	root := t.TempDir()
-	writeFixture(t, root, "quality-tools.yml", "namespace: codex-worker-orchestrator\ndefault-bin-dir: .local/share/codex-worker-orchestrator/quality-tools/bin\ngo: 1.25.4\nlint-go: 1.22.12\ngolangci-lint: 2.7.0\nshellcheck: 0.11.0\nshfmt: 3.13.1\n")
+	writeFixture(t, root, "quality-tools.yml", "namespace: codex-worker-orchestrator\ndefault-bin-dir: .local/share/codex-worker-orchestrator/quality-tools/bin\ngo: 1.25.4\nlint-go: 1.22.12\ngolangci-lint: 2.7.0\ndeadcode: 0.50.0\nshellcheck: 0.11.0\nshfmt: 3.13.1\n")
 	err := PreflightQualityTools(root)
 	var missing *MissingToolError
 	if err == nil || !errors.As(err, &missing) {

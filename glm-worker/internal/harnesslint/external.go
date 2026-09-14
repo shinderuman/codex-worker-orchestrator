@@ -34,6 +34,7 @@ type realCommandRunner struct {
 	goCache           string
 	golangciLintCache string
 	golangciLintPath  string
+	deadcodePath      string
 	shellcheckPath    string
 	shfmtPath         string
 }
@@ -50,6 +51,8 @@ func (r realCommandRunner) commandSpec(name string) (string, string) {
 		return "go", r.lintGoToolchain
 	case "golangci-lint":
 		return r.golangciLintPath, r.lintGoToolchain
+	case deadcodeToolName:
+		return r.deadcodePath, r.goToolchain
 	case "shellcheck":
 		return r.shellcheckPath, r.goToolchain
 	case "shfmt":
@@ -60,14 +63,20 @@ func (r realCommandRunner) commandSpec(name string) (string, string) {
 }
 
 func (r realCommandRunner) run(dir, name string, args ...string) (commandResult, error) {
+	return r.runEnv(dir, name, nil, args...)
+}
+
+func (r realCommandRunner) runEnv(dir, name string, env []string, args ...string) (commandResult, error) {
 	commandName, toolchain := r.commandSpec(name)
 	command := exec.Command(commandName, args...)
 	command.Dir = dir
-	command.Env = append(os.Environ(),
-		"GOTOOLCHAIN="+toolchain,
-		"GOCACHE="+r.goCache,
-		"GOLANGCI_LINT_CACHE="+r.golangciLintCache,
-	)
+	overrides := []string{
+		"GOTOOLCHAIN=" + toolchain,
+		"GOCACHE=" + r.goCache,
+		"GOLANGCI_LINT_CACHE=" + r.golangciLintCache,
+	}
+	overrides = append(overrides, env...)
+	command.Env = commandEnv(os.Environ(), overrides...)
 	output, err := command.CombinedOutput()
 	if err == nil {
 		return commandResult{output: string(output)}, nil
@@ -85,6 +94,16 @@ func (r realCommandRunner) run(dir, name string, args ...string) (commandResult,
 
 func (r realCommandRunner) runVersion(dir, name string, args ...string) (commandResult, error) {
 	commandName, toolchain := r.commandSpec(name)
+	if name == deadcodeToolName {
+		if _, err := exec.LookPath(r.deadcodePath); err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return commandResult{}, &MissingToolError{Name: name}
+			}
+			return commandResult{}, &QualityToolCommandError{Tool: name}
+		}
+		commandName = "go"
+		args = []string{"version", "-m", r.deadcodePath}
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), versionCommandTimeout)
 	defer cancel()
 	command := exec.CommandContext(ctx, commandName, args...)
@@ -161,6 +180,11 @@ func runExternalChecks(root string, paths []string, runner commandRunner) ([]Vio
 		}
 		violations = append(violations, parseGolangCI(result, module)...)
 	}
+	deadcodeViolations, err := runDeadcodeChecks(root, paths, runner)
+	if err != nil {
+		return nil, err
+	}
+	violations = append(violations, deadcodeViolations...)
 	for _, path := range shellFiles(paths) {
 		result, err := runner.run(root, "shellcheck", "-f", "gcc", path)
 		if err != nil {

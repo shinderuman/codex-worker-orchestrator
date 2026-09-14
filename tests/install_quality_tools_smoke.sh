@@ -11,7 +11,7 @@ fake="$tmp/fake-bin"
 mkdir -p "$repo" "$shared" "$fake"
 cp "$source_root/install-quality-tools.sh" "$source_root/install.sh" "$source_root/quality-tools.yml" "$repo/"
 
-for tool in shfmt golangci-lint shellcheck; do
+for tool in shfmt deadcode golangci-lint shellcheck; do
 	cat >"$shared/$tool" <<EOF_USER_TOOL
 #!/bin/sh
 printf '%s\n' 'user-owned-$tool 9.9.9'
@@ -19,24 +19,38 @@ EOF_USER_TOOL
 	chmod +x "$shared/$tool"
 done
 shfmt_hash=$(shasum -a 256 "$shared/shfmt")
+deadcode_hash=$(shasum -a 256 "$shared/deadcode")
 golangci_hash=$(shasum -a 256 "$shared/golangci-lint")
 shellcheck_hash=$(shasum -a 256 "$shared/shellcheck")
 
 cat >"$fake/go" <<'EOF_GO'
 #!/bin/sh
 set -eu
+if [ "${1:-}" = version ] && [ "${2:-}" = -m ]; then
+	path=${3:-}
+	version=${path##*-}
+	printf '%s: go1.25.4\n' "$path"
+	printf '\tmod\tgolang.org/x/tools\tv%s\n' "$version"
+	exit 0
+fi
 if [ "${1:-}" = version ]; then
 	printf 'go version %s linux/amd64\n' "${GOTOOLCHAIN:-go0.0.0}"
 	exit 0
 fi
 if [ "${1:-}" = install ]; then
-	version=${2##*@v}
+	package=${2:-}
+	version=${package##*@v}
+	case "$package" in
+	mvdan.cc/sh/v3/cmd/shfmt@v*) tool=shfmt ;;
+	golang.org/x/tools/cmd/deadcode@v*) tool=deadcode ;;
+	*) exit 1 ;;
+	esac
 	mkdir -p "$GOBIN"
-	cat >"$GOBIN/shfmt" <<EOF_SHFMT
+	cat >"$GOBIN/$tool" <<EOF_TOOL
 #!/bin/sh
-printf '%s\\n' 'v$version'
-EOF_SHFMT
-	chmod +x "$GOBIN/shfmt"
+printf '%s\\n' '$tool $version'
+EOF_TOOL
+	chmod +x "$GOBIN/$tool"
 	exit 0
 fi
 exit 1
@@ -116,6 +130,7 @@ run_install() {
 
 assert_user_tools_unchanged() {
 	test "$(shasum -a 256 "$shared/shfmt")" = "$shfmt_hash"
+	test "$(shasum -a 256 "$shared/deadcode")" = "$deadcode_hash"
 	test "$(shasum -a 256 "$shared/golangci-lint")" = "$golangci_hash"
 	test "$(shasum -a 256 "$shared/shellcheck")" = "$shellcheck_hash"
 }
@@ -123,9 +138,11 @@ assert_user_tools_unchanged() {
 run_install
 assert_user_tools_unchanged
 old_shfmt="$shared/codex-worker-orchestrator-shfmt-3.13.1"
+deadcode="$shared/codex-worker-orchestrator-deadcode-0.49.0"
 golangci="$shared/codex-worker-orchestrator-golangci-lint-2.7.0"
 shellcheck="$shared/codex-worker-orchestrator-shellcheck-0.11.0"
 test -x "$old_shfmt"
+test -x "$deadcode"
 test -x "$golangci"
 test -x "$shellcheck"
 old_shfmt_hash=$(shasum -a 256 "$old_shfmt")
