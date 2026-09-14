@@ -172,7 +172,7 @@ func TestExecuteStatsReportsEmptyState(t *testing.T) {
 		t.Fatalf("空状態のstats出力 = %#v: %q", output, out.String())
 	}
 	if len(output.ModelCallsByAlias) != 0 || len(output.RateLimitsByAlias) != 0 {
-		t.Fatalf("空状態のmodel別stats出力 = %#v: %q", output, out.String())
+		t.Fatalf("空状態のmodel別stats出力 = %#v: %q", output.ModelCallsByAlias, out.String())
 	}
 	if output.TelemetryDir == "" {
 		t.Fatalf("telemetry保存先がありません: %q", out.String())
@@ -329,7 +329,7 @@ func TestExecuteAcquiresAndReleasesLock(t *testing.T) {
 		t.Fatal("lock解放後の次task開始前にparent reviewを解決できませんでした")
 	}
 	if _, err := st.CompleteParentAwaiting(func(acceptedRisk string) (*state.SessionRotationEvaluation, error) {
-		return EvaluateSessionRotationTerminal(cfg, st, state.SessionRotationTerminalAccept, acceptedRisk)
+		return EvaluateCanonicalSessionRotationTerminal(cfg, st, state.SessionRotationTerminalAccept, acceptedRisk)
 	}); err != nil {
 		t.Fatal(err)
 	}
