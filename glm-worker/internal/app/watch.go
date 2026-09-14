@@ -248,19 +248,28 @@ func watchTaskTick(st *state.StateStore, taskID string, file *os.File, path stri
 		return pending, false, err
 	}
 	if watchTaskTerminalEvent(st, taskID) != nil {
-		before := status.tracker.signature()
-		pending, err = drainTaskEvents(file, stdout, pending, status.tracker.observe)
-		if err != nil {
+		return drainWatchTerminalEvents(st, taskID, file, stdout, pending, status, opts)
+	}
+	terminal, err := watchOrphanTerminal(st, taskID, stdout, opts)
+	if err != nil {
+		return pending, false, err
+	}
+	return pending, terminal, nil
+}
+
+func drainWatchTerminalEvents(st *state.StateStore, taskID string, file *os.File, stdout io.Writer, pending []byte, status *watchLiveStatus, opts watchOptions) ([]byte, bool, error) {
+	before := status.tracker.signature()
+	pending, err := drainTaskEvents(file, stdout, pending, status.tracker.observe)
+	if err != nil {
+		return pending, false, err
+	}
+	if status.tracker.signature() != before {
+		if err := status.refresh(true); err != nil {
 			return pending, false, err
 		}
-		if status.tracker.signature() != before {
-			if err := status.refresh(true); err != nil {
-				return pending, false, err
-			}
-		}
-		if terminalEvent := watchTaskTerminalEvent(st, taskID); terminalEvent != nil {
-			return pending, true, writeWatchEvent(stdout, *terminalEvent)
-		}
+	}
+	if terminalEvent := watchTaskTerminalEvent(st, taskID); terminalEvent != nil {
+		return pending, true, writeWatchEvent(stdout, *terminalEvent)
 	}
 	terminal, err := watchOrphanTerminal(st, taskID, stdout, opts)
 	if err != nil {
