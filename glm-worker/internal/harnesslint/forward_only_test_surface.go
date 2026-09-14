@@ -98,7 +98,7 @@ func forwardOnlyTestAliasViolations(pkg *forwardOnlyPackageSurface, testFile for
 			if !ok {
 				continue
 			}
-			alias, target, ok := forwardOnlyDirectTestAlias(pkg, value)
+			alias, target, ok := forwardOnlyDirectTestAlias(pkg, testFile.path, value)
 			if !ok {
 				continue
 			}
@@ -109,7 +109,7 @@ func forwardOnlyTestAliasViolations(pkg *forwardOnlyPackageSurface, testFile for
 	return violations
 }
 
-func forwardOnlyDirectTestAlias(pkg *forwardOnlyPackageSurface, value *ast.ValueSpec) (*ast.Ident, *ast.Ident, bool) {
+func forwardOnlyDirectTestAlias(pkg *forwardOnlyPackageSurface, declarationPath string, value *ast.ValueSpec) (*ast.Ident, *ast.Ident, bool) {
 	if value.Type != nil || len(value.Names) != 1 || len(value.Values) != 1 {
 		return nil, nil, false
 	}
@@ -127,7 +127,7 @@ func forwardOnlyDirectTestAlias(pkg *forwardOnlyPackageSurface, value *ast.Value
 	if _, exists := pkg.productionCallables[target.Name]; !exists {
 		return nil, nil, false
 	}
-	if !forwardOnlyAliasDirectlyCalled(pkg.testFiles, alias.Name) || forwardOnlyAliasReassigned(pkg.testFiles, alias.Name) {
+	if !forwardOnlyAliasCalledOutsideDeclarationFile(pkg.testFiles, declarationPath, alias.Name) || forwardOnlyAliasReassigned(pkg.testFiles, alias.Name) {
 		return nil, nil, false
 	}
 	return alias, target, true
