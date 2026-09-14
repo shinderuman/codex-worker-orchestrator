@@ -643,7 +643,7 @@ func seedSessionRotationAccept(t *testing.T) (config.AppConfig, *state.StateStor
 		t.Fatal("open reviewをacceptできませんでした")
 	}
 	if _, err := st.CompleteParentAwaiting(func(acceptedRisk string) (*state.SessionRotationEvaluation, error) {
-		return EvaluateSessionRotationTerminal(cfg, st, state.SessionRotationTerminalAccept, acceptedRisk)
+		return EvaluateCanonicalSessionRotationTerminal(cfg, st, state.SessionRotationTerminalAccept, acceptedRisk)
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -746,7 +746,7 @@ func TestSessionRotationCompletionFailsClosedWithoutParentIdentity(t *testing.T)
 		t.Fatal(err)
 	}
 	_, err = st.CompleteParentAwaiting(func(acceptedRisk string) (*state.SessionRotationEvaluation, error) {
-		return EvaluateSessionRotationTerminal(cfg, st, state.SessionRotationTerminalAccept, acceptedRisk)
+		return EvaluateCanonicalSessionRotationTerminal(cfg, st, state.SessionRotationTerminalAccept, acceptedRisk)
 	})
 	if err == nil || !strings.Contains(err.Error(), "session rotation") {
 		t.Fatalf("identity欠損のcompletionがfail closedしませんでした: %v", err)
