@@ -34,8 +34,8 @@ func forwardOnlyAliasCalledOutsideDeclarationFile(files []forwardOnlyParsedTestF
 			if !ok {
 				return true
 			}
-			identifier, ok := call.Fun.(*ast.Ident)
-			if ok && identifier.Name == name {
+			identifier, ok := forwardOnlyUnparen(call.Fun).(*ast.Ident)
+			if ok && forwardOnlyPackageAliasReference(testFile.file, identifier, name) {
 				called = true
 				return false
 			}
@@ -57,8 +57,8 @@ func forwardOnlyAliasReassigned(files []forwardOnlyParsedTestFile, name string) 
 				return true
 			}
 			for _, target := range assignment.Lhs {
-				identifier, ok := target.(*ast.Ident)
-				if ok && identifier.Name == name {
+				identifier, ok := forwardOnlyUnparen(target).(*ast.Ident)
+				if ok && forwardOnlyPackageAliasReference(testFile.file, identifier, name) {
 					reassigned = true
 					return false
 				}
@@ -70,4 +70,17 @@ func forwardOnlyAliasReassigned(files []forwardOnlyParsedTestFile, name string) 
 		}
 	}
 	return false
+}
+
+func forwardOnlyPackageAliasReference(file *ast.File, identifier *ast.Ident, name string) bool {
+	if identifier.Name != name {
+		return false
+	}
+	if identifier.Obj == nil {
+		return true
+	}
+	if file.Scope == nil {
+		return false
+	}
+	return file.Scope.Objects[name] == identifier.Obj
 }
