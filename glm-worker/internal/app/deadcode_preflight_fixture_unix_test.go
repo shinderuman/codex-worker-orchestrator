@@ -26,9 +26,8 @@ func TestMain(m *testing.M) {
 set -eu
 if [ "${1:-}" = version ] && [ "${2:-}" = -m ]; then
 	case "${3:-}" in
-	*codex-worker-orchestrator-deadcode-*)
-		version=${3##*-}
-		printf '\tmod\tgolang.org/x/tools\tv%s\n' "$version"
+	*/codex-worker-orchestrator-deadcode-0.50.0)
+		printf '\tmod\tgolang.org/x/tools\tv0.50.0\n'
 		exit 0
 		;;
 	esac
