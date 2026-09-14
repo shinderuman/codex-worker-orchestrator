@@ -1219,47 +1219,6 @@ func gitTrimmedOutput(dir string, args ...string) (string, error) {
 	return strings.TrimSpace(string(output)), nil
 }
 
-func EvaluateSessionRotationTerminal(
-	cfg config.AppConfig,
-	st *state.StateStore,
-	terminal string,
-	acceptedRisk string,
-) (*state.SessionRotationEvaluation, error) {
-	stats, err := st.CurrentTaskStats()
-	if err != nil {
-		return nil, err
-	}
-	identity, err := st.CurrentParentCodexIdentity()
-	if err != nil {
-		return nil, fmt.Errorf("session rotation requires a bound parent Codex thread identity: %w", err)
-	}
-	acceptedTasks, err := sessionRotationAcceptedTaskCount(st, identity.ThreadID)
-	if err != nil {
-		return nil, err
-	}
-	signals := state.SessionRotationSignals{
-		Terminal:            terminal,
-		AcceptedTasks:       acceptedTasks,
-		CurrentAcceptedRisk: acceptedRisk,
-	}
-	sessionRotationRolloutSignals(cfg, stats, &signals)
-	sessionRotationMaterialEventSignals(st, stats.TaskID, &signals)
-	baselineUpdate, err := sessionRotationLimitSignals(cfg, st, identity.ThreadID, &signals)
-	if err != nil {
-		return nil, err
-	}
-	decision := state.DecideSessionRotation(signals)
-	sessionRotationAttachMaterialEventSources(st, stats.TaskID, signals, &decision)
-	return &state.SessionRotationEvaluation{
-		ParentThreadID:      identity.ThreadID,
-		TaskID:              stats.TaskID,
-		Terminal:            terminal,
-		Decision:            decision,
-		AcceptedTasks:       acceptedTasks,
-		LimitBaselineUpdate: baselineUpdate,
-	}, nil
-}
-
 func sessionRotationAttachMaterialEventSources(st *state.StateStore, taskID string, signals state.SessionRotationSignals, decision *state.SessionRotationDecision) {
 	for index := range decision.Evidence {
 		if decision.Evidence[index].Trigger != state.SessionRotationReasonRepeatedEvents &&
@@ -1271,49 +1230,6 @@ func sessionRotationAttachMaterialEventSources(st *state.StateStore, taskID stri
 			locator += ":" + strings.Join(signals.MaterialEventSourceIDs, ",")
 		}
 		decision.Evidence[index].Source = locator
-	}
-}
-
-func sessionRotationAcceptedTaskCount(st *state.StateStore, threadID string) (int, error) {
-	all, err := st.AllTaskStats()
-	if err != nil {
-		return 0, err
-	}
-	count := 0
-	for _, stats := range all {
-		if stats.ParentCodexThreadID != threadID {
-			continue
-		}
-		if stats.Status == state.TaskStatusComplete && stats.ParentOutcomes[state.ParentOutcomeAccepted] > 0 {
-			count++
-		}
-	}
-	return count, nil
-}
-
-func sessionRotationRolloutSignals(cfg config.AppConfig, stats state.TaskStats, signals *state.SessionRotationSignals) {
-	task := bundleTask{ID: stats.TaskID, Status: string(stats.Status), Stats: stats}
-	association := resolveCodexAssociation(cfg.CodexConfigDir, task)
-	if association.ParentStatus != codexStatusIncluded {
-		signals.RolloutUnavailableField = state.SessionRotationEvidenceFieldRolloutAssociation
-		signals.RolloutUnavailableSrc = association.Detail
-		return
-	}
-	chain := association.rolloutChain()
-	start := sessionRotationChainStart(chain)
-	end := time.Now().UTC()
-	scan, err := scanCodexRolloutChainWindow(chain, start, end)
-	if err != nil {
-		signals.RolloutUnavailableField = state.SessionRotationEvidenceFieldRolloutScan
-		signals.RolloutUnavailableSrc = association.parentSourceLabel()
-		return
-	}
-	turns, _, _, compactions, outputBytes := parentUsageRolloutActivity(scan, start, end, false)
-	signals.Rollout = &state.SessionRotationRolloutSignals{
-		ModelTurns:      turns,
-		ToolOutputBytes: outputBytes,
-		Compactions:     compactions,
-		Source:          association.parentSourceLabel(),
 	}
 }
 
