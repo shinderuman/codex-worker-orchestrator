@@ -3,7 +3,6 @@ package state
 import (
 	"errors"
 	"os"
-	"path/filepath"
 	"testing"
 )
 
@@ -24,17 +23,24 @@ func TestRepoSearchArchiveWriteFailurePreservesLiveEvidence(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	statsDir := filepath.Join(st.dir, "stats")
-	if err := os.MkdirAll(statsDir, 0o700); err != nil {
-		t.Fatal(err)
+	originalRemoveStatePath := removeStatePath
+	removeStatePath = func(path string) error {
+		if path == st.Path(currentStatsFile) {
+			return errors.New("forced current task stats removal failure")
+		}
+		return originalRemoveStatePath(path)
 	}
-	if err := os.Chmod(statsDir, 0o500); err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = os.Chmod(statsDir, 0o700) }()
+	defer func() { removeStatePath = originalRemoveStatePath }()
 
 	if _, err := st.StartNewTask(); err == nil {
-		t.Fatal("repo-search archive write failure did not stop rotation")
+		t.Fatal("repo-search archive failure did not stop rotation")
+	}
+	currentTask, err := st.TaskID()
+	if err != nil {
+		t.Fatalf("archive failure lost current task ID: %v", err)
+	}
+	if currentTask != firstTask {
+		t.Fatalf("archive failure committed new task ID: got %s want %s", currentTask, firstTask)
 	}
 	if _, err := os.Stat(st.TaskEventLogPath(firstTask)); err != nil {
 		t.Fatalf("archive failure removed retained repo-search events: %v", err)

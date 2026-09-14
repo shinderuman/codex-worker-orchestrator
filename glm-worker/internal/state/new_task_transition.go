@@ -15,7 +15,7 @@ type newTaskTransitionFileSnapshot struct {
 
 type newTaskTransitionSnapshot map[string]newTaskTransitionFileSnapshot
 
-func (s *StateStore) commitNewTaskCanonicalState(taskID string) error {
+func (s *StateStore) commitNewTaskCanonicalState(taskID string, afterCanonicalCommit func() error) error {
 	lock, err := repolock.AcquireWait(s.Path(ParentEvidenceLedgerLockFile))
 	if err != nil {
 		return fmt.Errorf("parent evidence ledger lockを取得できません: %w", err)
@@ -31,6 +31,14 @@ func (s *StateStore) commitNewTaskCanonicalState(taskID string) error {
 			return errors.Join(err, fmt.Errorf("new task transitionをrollbackできません: %w", rollbackErr))
 		}
 		return err
+	}
+	if afterCanonicalCommit != nil {
+		if err := afterCanonicalCommit(); err != nil {
+			if rollbackErr := s.restoreNewTaskTransitionSnapshot(snapshot); rollbackErr != nil {
+				return errors.Join(err, fmt.Errorf("new task transitionをrollbackできません: %w", rollbackErr))
+			}
+			return err
+		}
 	}
 	return nil
 }
