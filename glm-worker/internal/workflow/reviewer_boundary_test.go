@@ -62,7 +62,10 @@ func TestReviewedBoundaryContextMarksOnlyIdenticalBlobsReviewed(t *testing.T) {
 		t.Fatalf("boundary count missing: %q", second)
 	}
 
-	rounds := reviewedBoundaryForState(st)
+	rounds, err := w.loadReviewedBlobRounds()
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(rounds) != 1 || rounds[0].ReviewNumber != 0 {
 		t.Fatalf("reviewed ledger rounds = %#v", rounds)
 	}
