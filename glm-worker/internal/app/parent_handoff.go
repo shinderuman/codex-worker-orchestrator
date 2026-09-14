@@ -2,7 +2,6 @@ package app
 
 import (
 	"errors"
-	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -98,32 +97,6 @@ const (
 	routingSnapshotMatchExact              = "exact"
 	routingSnapshotMatchParentMetadataOnly = "parent_metadata_only"
 )
-
-func printParentHandoffLeased(st *state.StateStore, stdout io.Writer) error {
-	scope, err := captureParentEvidenceReadScope(st)
-	if err != nil {
-		return err
-	}
-	value := buildParentHandoff(st)
-	digest, _ := parentEvidenceDigest(value)
-	return finishParentReadInScope(st, scope, state.ParentEvidenceSurfaceHandoff, digest, func() (int, error) {
-		return writeMeasuredJSON(stdout, value)
-	})
-}
-
-func printParentHandoffRecoveryLeased(st *state.StateStore, stdout io.Writer) error {
-	scope, err := captureParentEvidenceReadScope(st)
-	if err != nil {
-		return err
-	}
-	value := projectParentHandoffRecovery(buildParentHandoff(st))
-	applyParentGuardRecovery(st, &value)
-	applyParentQualityGateRecovery(st, &value)
-	digest, _ := parentEvidenceDigest(value)
-	return finishParentReadInScope(st, scope, state.ParentEvidenceSurfaceHandoffRecovery, digest, func() (int, error) {
-		return writeMeasuredJSON(stdout, value)
-	})
-}
 
 func projectParentHandoffRecovery(output parentHandoffOutput) parentHandoffRecoveryOutput {
 	recovery := parentHandoffRecoveryOutput{
