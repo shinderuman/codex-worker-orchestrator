@@ -14,11 +14,12 @@ import (
 	"path/filepath"
 	"strconv"
 	"syscall"
+	"time"
 
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/app"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentaction"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentfix"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentidentity"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repolock"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
@@ -290,7 +291,7 @@ func persistParentCodexIdentity(cfg config.AppConfig) error {
 		return nil
 	}
 	return state.AttachStateStore(cfg).SetParentCodexIdentity(threadID, sessionID, func() *state.SessionLimitReading {
-		return app.ReadSessionLimitForIdentityBind(cfg)
+		return parentidentity.ReadSessionLimitForIdentityBind(cfg.CodexBin, time.Now)
 	})
 }
 
