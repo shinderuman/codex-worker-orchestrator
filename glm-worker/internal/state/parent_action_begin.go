@@ -1,6 +1,7 @@
 package state
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -105,7 +106,24 @@ func validateParentActionBeginRecord(record parentActionBeginRecord) error {
 	if (!record.Pending.Exists && len(record.Pending.Data) != 0) || (!record.Review.Exists && len(record.Review.Data) != 0) {
 		return fmt.Errorf("parent action begin record has data for a missing snapshot")
 	}
-	return nil
+	return validateParentActionBeginReviewSnapshot(record)
+}
+
+func validateParentActionBeginReviewSnapshot(record parentActionBeginRecord) error {
+	if !record.Review.Exists {
+		return nil
+	}
+	var review ParentReviewState
+	if err := json.Unmarshal(record.Review.Data, &review); err != nil {
+		return fmt.Errorf("parent action begin review snapshotを読めません: %w", err)
+	}
+	if review.Version != parentReviewStateVersion || review.TaskID != record.TaskID {
+		return fmt.Errorf("parent action begin review snapshotのschemaが不正です")
+	}
+	if review.Open != nil && !validParentReviewPacketStatus(review.Open.PacketStatus) {
+		return fmt.Errorf("parent action begin review snapshotのpacket statusが不正です: %s", review.Open.PacketStatus)
+	}
+	return validateParentReviewBindingState(review)
 }
 
 func (s *StateStore) CommitParentActionBegin() error {
@@ -167,7 +185,42 @@ func (s *StateStore) validateParentActionBeginRecovery(record parentActionBeginR
 	if status != TaskStatusActive && status != record.SourceStatus {
 		return TaskStatusNone, fmt.Errorf("parent action recovery requires active task or retry of %s, got %s", record.SourceStatus, status)
 	}
+	if err := s.validateParentActionBeginCurrentSnapshots(record); err != nil {
+		return TaskStatusNone, err
+	}
 	return status, nil
+}
+
+func (s *StateStore) validateParentActionBeginCurrentSnapshots(record parentActionBeginRecord) error {
+	pending, err := s.snapshotLifecycleFile("pending-decision")
+	if err != nil {
+		return err
+	}
+	if !sameParentActionSnapshot(pending, record.Pending) {
+		return fmt.Errorf("parent action recovery pending decision no longer matches the begin transaction")
+	}
+	review, err := s.snapshotLifecycleFile(parentReviewStateFile)
+	if err != nil {
+		return err
+	}
+	if sameParentActionSnapshot(review, record.Review) {
+		return nil
+	}
+	if !review.exists || !record.Review.Exists {
+		return fmt.Errorf("parent action recovery review state no longer matches the begin transaction")
+	}
+	current, err := s.loadParentReviewState()
+	if err != nil {
+		return err
+	}
+	if current.Open != nil || current.Review != nil {
+		return fmt.Errorf("parent action recovery review state no longer matches the begin transaction")
+	}
+	return nil
+}
+
+func sameParentActionSnapshot(current lifecycleFileSnapshot, saved parentActionBeginSnapshot) bool {
+	return current.exists == saved.Exists && bytes.Equal(current.data, saved.Data)
 }
 
 func (s *StateStore) restoreParentActionBeginSnapshots(record parentActionBeginRecord) error {
