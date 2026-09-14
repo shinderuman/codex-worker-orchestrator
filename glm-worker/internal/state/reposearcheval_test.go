@@ -102,7 +102,11 @@ func TestUnreadableRepoSearchEventsDoNotBecomeArchivedSuccessEvidence(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(st.TaskEventLogPath(firstTask), []byte("{broken\n"), 0o600); err != nil {
+	eventPath := st.TaskEventLogPath(firstTask)
+	if err := os.MkdirAll(filepath.Dir(eventPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(eventPath, []byte("{broken\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := st.StartNewTask(); err != nil {
