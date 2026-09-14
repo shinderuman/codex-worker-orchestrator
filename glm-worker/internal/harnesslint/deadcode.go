@@ -48,38 +48,48 @@ func runDeadcodeChecks(root string, paths []string, runner commandRunner) ([]Vio
 func runDeadcodeModuleChecks(root, module string, runner commandRunner) ([]Violation, error) {
 	dir := moduleDir(root, module)
 	findings := make(map[Violation]*deadcodeFindingState)
+	var failures []Violation
 	for _, config := range deadcodeProductionConfigs {
-		current, err := runDeadcodeConfig(dir, module, config, runner)
+		current, failure, err := runDeadcodeConfig(dir, module, config, runner)
 		if err != nil {
 			return nil, err
+		}
+		if failure != nil {
+			failures = append(failures, *failure)
+			continue
 		}
 		for _, violation := range current {
 			recordDeadcodeFinding(findings, config.name, violation)
 		}
 	}
-	return collectDeadcodeViolations(dir, module, findings)
+	reachabilityViolations, err := collectDeadcodeViolations(dir, module, findings)
+	if err != nil {
+		return nil, err
+	}
+	return append(failures, reachabilityViolations...), nil
 }
 
-func runDeadcodeConfig(dir, module string, config deadcodeBuildConfig, runner commandRunner) ([]Violation, error) {
+func runDeadcodeConfig(dir, module string, config deadcodeBuildConfig, runner commandRunner) ([]Violation, *Violation, error) {
 	result, err := runCommandWithEnvironment(runner, dir, deadcodeToolName, []string{
 		"GOOS=" + config.goos,
 		"GOARCH=" + config.goarch,
 		"CGO_ENABLED=0",
 	}, "./...")
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if result.exitCode != 0 {
-		return []Violation{{
+		failure := Violation{
 			Rule: deadcodeToolName, Path: modulePath(module), Line: 1, Column: 1,
 			Message: fmt.Sprintf("deadcode %s failed: %s", config.name, compactOutput(result.output, "deadcode failed")),
-		}}, nil
+		}
+		return nil, &failure, nil
 	}
 	current, err := parseDeadcodeOutput(result.output, module, dir)
 	if err != nil {
-		return nil, fmt.Errorf("parse deadcode %s output: %w", config.name, err)
+		return nil, nil, fmt.Errorf("parse deadcode %s output: %w", config.name, err)
 	}
-	return current, nil
+	return current, nil, nil
 }
 
 func recordDeadcodeFinding(findings map[Violation]*deadcodeFindingState, config string, violation Violation) {
