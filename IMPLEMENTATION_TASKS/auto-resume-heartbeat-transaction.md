@@ -52,6 +52,45 @@ HeartBeatのタスクDupeしてねえか
 判断はお前に任せるが
 ````
 
+### 2026-09-15
+
+````text
+呼びかけたがtimerで止まっているっぽく応答がないので強制停止した
+
+何を言ってるかわからない
+なんでそこでスケジュールを作らず自己判断で強行するんだ
+スケジュールを作るルールだろ
+
+お前がそういう事するのが全部バグだって言ってるだろ
+ルールに従え
+ルールに従えないならそれはバグだから機械でやるようにしろ
+そういう自己判断をするな
+````
+
+````text
+Updateじゃなくていつも新規作成してから更新していただろ
+そんなことすら忘れたのか
+````
+
+````text
+なんで使えないの？今まで使えてたじゃん
+使えなくなっているならActiveタスクを進めても何も意味なくない？
+````
+
+````text
+使えないわけがないだろ
+````
+
+````text
+作れるじゃねえかよ嘘付いてるんじゃねえよ
+````
+
+````text
+お前ひょっとして死ぬほどバカか？
+まず今の状態でGLMのLimitの回復からどうやって再開するつもりだよ
+そして画像に見せたセッションのログを見るなりしてどうやって実現したか確認するべきだろ
+````
+
 ## Resolved references
 
 - 旧taskは`a595057`で完了扱いされたが、そのAcceptanceには「既存の恒久許可だけをauthorityとし、現在turnで追加許可を受けずにHeartbeatを作成・更新・検証・cleanupできる実機scenario」が含まれていた
@@ -63,6 +102,9 @@ HeartBeatのタスクDupeしてねえか
 - 当該automationはUTC/JST解釈が未確定なうえ、packetの`auto_resume_key=glm-worker-resume-4b1083bd6f6e-be2df76b`ともIDが一致せず、`--check-wake-coalesce`、PAUSED placeholderからのUTC update、`--verify-auto-resume`を全て省略したまま予約成功と誤報した
 - `e1b5c74`はschedulerがTZIDを無視することとUTC DTSTARTへの変換を既に固定し、`a595057`はTOML/SQLite/next_run_at検証を実装済みだったため、既存機構の欠落ではなく親Codexが条件付きinstructionを適用しなかったことが直接原因である
 - 正しい二段階作成後の`glm-worker --verify-auto-resume`はread-only検証のはずが`~/.glm-worker`へrepo-rootを書こうとしてsandboxで失敗し、transaction cleanupにより予約を削除した。検証commandの不要なstate初期化も正常系を権限判断へ依存させる再発境界である
+- 2026-09-15にユーザーが提示したCodex Desktop画像では、別taskで「1時間ごと」のスケジュールが作成済みで、右ペインのソースに`ChatGPT App Tools`が表示されている。親Codexがcode-mode内のnested tool一覧だけからDesktop全体のautomation作成手段が存在しないと断定したのは誤りであり、正式なschedule tool経路を使わず代替へ分岐したparent orchestrationが再発境界である
+- 画像のsession ID `01a0a2e0-fe77-7c81-976b-3a0f1433345f` のlocal rollout logでは、実tool callが`tools.mcp__codex_app__automation_update`である。最初のcreateは`targetThreadId`または`destination=thread`欠落で`isError:true`となり、同じtoolへ`destination:"thread"`を付けたcreateが成功した。親Codexは利用中のtool一覧だけで能力不存在を断定せず、既知の成功sessionのtool call一次証拠から正式経路と必須fieldを回収すべきだった
+- `~/.codex/config.toml`では`codex-app-tools@openai-bundled`が`enabled=true`で、file更新時刻は2026-09-15 11:24:00 JST。現在の親thread `01a0a268-73a7-7d70-a60c-8a7d630eb4f8`は09:12:29開始でtool lookupが`undefined`、成功thread `01a0a2e0-fe77-7c81-976b-3a0f1433345f`は11:24:09開始で同toolを実呼出している。automation backendや恒久許可ではなく、plugin有効化前に開始した親threadのtool manifestが再bindingされていないことが直接原因である
 
 ## Purpose
 
@@ -70,8 +112,11 @@ HeartBeatのタスクDupeしてねえか
 
 ## External feasibility
 
-status: observation
+status: implementation
 assumption: Codex app automation APIへ渡すpromptとtool call contextに、repository authority、対象task/session、許可範囲、GLM Git remote write禁止を明示すれば、追加のユーザー再承認なしに既存の恒久許可を正しく評価できる
+evidence-source: producer
+evidence: 既存transactionによるcreate/update/verify成功と、authority scope欠落時の外部安全判定拒否はResolved references記載の実機結果を正とする
+go: 2026-09-15、外部安全判定の受理可否を成功前提にせず、生成済みauthority scopeを渡した実機結果を成功または一次証拠付き外部境界としてfail closedに確定できる設計でproduction実装へ進む
 
 ## Contract
 
@@ -84,6 +129,7 @@ assumption: Codex app automation APIへ渡すpromptとtool call contextに、rep
 - stopped task stateを正として、Codex appへ渡すexpected automation ID/name、compact prompt、PAUSED placeholder create spec、絶対時刻UTC update spec、verify command引数を単一のstructured machine specとして生成する。親CodexはRFC3339 offset変換、schedule文字列、automation名、thread ID、promptを手入力・再構成しない
 - Codex app tool境界は親Codexが担うが、親の役割は生成済みspecのfieldをlosslessにcreate/updateへ転送し、tool responseを次のmachine verifyへ渡すことだけに限定する。時刻・identity・成功判定を自然言語で補わない
 - `--check-wake-coalesce`と`--verify-auto-resume`はread-only projectionとしてsession stateを書き換えず、sandbox内で実行可能にする。外部Codex app writeだけを必要なmutation境界として分離する
+- `auto_resume_available:true`では、automation scheduleのcreate/update/verifyを必須のmachine transactionとし、親Codexがtool可視性や待機方法を理由にtimer・手動待機・別の再開手段へ自己判断で分岐できないようlifecycle admissionで強制する。automation tool境界が利用不能ならtask stateを保持してstructuredにfail closedし、代替実行しない
 - 現在作成済みのresume automationやin-flight GLM sessionを再起動・置換しない
 
 ## Must not
@@ -93,6 +139,7 @@ assumption: Codex app automation APIへ渡すpromptとtool call contextに、rep
 - 「GLMに関しては禁止」をGLM実行全般の禁止へ拡張せず、Git remote write禁止とのscopeを混同しない
 - repository Rulesの追記だけ、会話memory、親Codexの自由文promptを再発防止の完了根拠にしない
 - shell sleep、daemon、cron、定期polling、新規GLM sessionを代替にしない
+- automation scheduleを作成せず、親Codexのone-shot timer・長時間tool cell・手動時刻待ちを代替にしない
 - 別repositoryや未許可操作へautomation authorityを拡張しない
 
 ## Acceptance criteria
@@ -104,6 +151,7 @@ assumption: Codex app automation APIへ渡すpromptとtool call contextに、rep
 - wrong thread、wrong UTC DTSTART、PAUSED、SQLite/TOML不一致、update/verify失敗を成功扱いしない既存coverageを維持する
 - packetの`auto_resume_key`と異なるautomation ID、timezoneなしBYHOUR、coalesce未実行、verify未実行の各状態を予約成功として返せないfixtureがある
 - read-only verifyがrepo-root/state書込みを行わず、sandbox write権限なしでもTOML/SQLite postconditionを検証できる
+- `auto_resume_available:true`のrate-limit terminalからは、verified automation scheduleまたは外部tool境界のstructured failureだけへ遷移でき、schedule未作成のtimer・手動待機・直接resume pathをmachine fixtureで拒否できる
 - `auto_resume_at_rfc3339`のoffset境界・日付跨ぎを含むfixtureで、生成specのUTC anchor、期待ID、prompt、placeholder/update、verify引数が一意になり、親入力なしで実Codex app transactionへ渡せる
 - current in-flight task完了後に同じtask fileをACTIVEへ昇格し、独立reviewer、Sol semantic review、current snapshot validation、必要なinstall/smokeを完了する
 
