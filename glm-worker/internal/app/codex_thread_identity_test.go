@@ -28,6 +28,14 @@ func TestBindCurrentCodexThreadIdentity(t *testing.T) {
 	if coalesce.Coalesce.ParentThreadID != threadID {
 		t.Fatalf("coalesce thread ID = %q", coalesce.Coalesce.ParentThreadID)
 	}
+
+	plan := Command{Mode: ModeAutoResumePlan}
+	if err := bindCurrentCodexThreadIdentity(&plan); err != nil {
+		t.Fatal(err)
+	}
+	if plan.AutoResume.ParentThreadID != threadID {
+		t.Fatalf("auto-resume plan thread ID = %q", plan.AutoResume.ParentThreadID)
+	}
 }
 
 func TestBindCurrentCodexThreadIdentityRejectsMissingOrInvalidEnvironment(t *testing.T) {
@@ -58,6 +66,23 @@ func TestBindCurrentCodexThreadIdentityLeavesCodexWakeVerificationUnbound(t *tes
 			}
 			if cmd.Verify.ThreadID != wakeThreadID {
 				t.Fatalf("wake thread ID = %q", cmd.Verify.ThreadID)
+			}
+		})
+	}
+}
+
+func TestBindCurrentCodexThreadIdentityRejectsMissingOrInvalidPlanEnvironment(t *testing.T) {
+	for _, value := range []string{"", "not-a-thread-id"} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv(codexThreadIDEnv, value)
+			cmd := Command{Mode: ModeAutoResumePlan}
+			err := bindCurrentCodexThreadIdentity(&cmd)
+			var notFound *NotFoundError
+			if !errors.As(err, &notFound) {
+				t.Fatalf("error = %v", err)
+			}
+			if cmd.AutoResume.ParentThreadID != "" {
+				t.Fatalf("invalid environment was bound: %q", cmd.AutoResume.ParentThreadID)
 			}
 		})
 	}

@@ -77,11 +77,19 @@ func (e ZaiRateLimitError) Error() string {
 }
 
 func (e ZaiRateLimitError) AutoResumeSchedule() (bool, string) {
-	return autoResumeSchedule(e.Limit.ResetAtRFC3339)
+	return AutoResumeAtFromReset(e.Limit.ResetAtRFC3339)
 }
 
 func (e ZaiRateLimitError) AutoResumeKey() string {
-	return autoResumeKey(e.RepoShort, e.TaskID)
+	return AutoResumeKeyFor(e.RepoShort, e.TaskID)
+}
+
+func AutoResumeAtFromReset(resetAtRFC3339 string) (bool, string) {
+	return autoResumeSchedule(resetAtRFC3339)
+}
+
+func AutoResumeKeyFor(repoShort string, taskID string) string {
+	return autoResumeKey(repoShort, taskID)
 }
 
 func autoResumeSchedule(resetAtRFC3339 string) (bool, string) {

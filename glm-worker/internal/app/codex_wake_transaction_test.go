@@ -192,7 +192,7 @@ func TestCodexWakeResponseOutputFailureKeepsInputTokenRetryable(t *testing.T) {
 	}
 	cmd := Command{
 		Mode:      ModeCodexWakeResponse,
-		Payload:   testAppCodexWakeCreateResponse(t, plan.ExpectedAutomationID),
+		Payload:   testAppCreateResponse(t, plan.ExpectedAutomationID),
 		CodexWake: CodexWakeArgs{Token: plan.Token},
 	}
 	writeErr := errors.New("injected response output failure")
@@ -256,20 +256,22 @@ func testAppCodexWakePlan(t *testing.T) autoresume.CodexWakeOutput {
 	return plan
 }
 
-func testAppCodexWakeCreateResponse(t *testing.T, automationID string) string {
+func testAppCreateResponse(t *testing.T, automationID string) string {
 	t.Helper()
 	facts, err := json.Marshal(map[string]string{
-		"automation_id": automationID,
-		"mode":          "create",
-		"status":        "PAUSED",
-		"message":       "created successfully",
+		"automationId": automationID,
+		"mode":         "create",
+		"status":       "PAUSED",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	envelope, err := json.Marshal(map[string]any{
 		"isError": false,
-		"content": []map[string]string{{"type": "text", "text": string(facts)}},
+		"content": []map[string]string{
+			{"type": "text", "text": "Created automation in the app."},
+			{"type": "text", "text": string(facts)},
+		},
 	})
 	if err != nil {
 		t.Fatal(err)

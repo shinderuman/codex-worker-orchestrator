@@ -9,16 +9,19 @@ import (
 const codexThreadIDEnv = "CODEX_THREAD_ID"
 
 func bindCurrentCodexThreadIdentity(cmd *Command) error {
-	if cmd.Mode != ModeVerifyAutoResume && cmd.Mode != ModeCheckWakeCoalesce {
+	if cmd.Mode != ModeVerifyAutoResume && cmd.Mode != ModeCheckWakeCoalesce && cmd.Mode != ModeAutoResumePlan {
 		return nil
 	}
 	threadID := os.Getenv(codexThreadIDEnv)
 	if !state.ValidUUIDFormat(threadID) {
 		return &NotFoundError{Message: codexThreadIDEnv + " is unavailable or invalid"}
 	}
-	if cmd.Mode == ModeVerifyAutoResume {
+	switch cmd.Mode {
+	case ModeVerifyAutoResume:
 		cmd.Verify.ThreadID = threadID
-	} else {
+	case ModeAutoResumePlan:
+		cmd.AutoResume.ParentThreadID = threadID
+	default:
 		cmd.Coalesce.ParentThreadID = threadID
 	}
 	return nil

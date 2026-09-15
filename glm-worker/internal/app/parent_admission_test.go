@@ -1,12 +1,60 @@
 package app
 
 import (
+	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
 )
+
+func TestResumeCommandAdmissionBindsRateLimitResetWindow(t *testing.T) {
+	cases := []struct {
+		name       string
+		resetAt    time.Time
+		wantDenied bool
+	}{
+		{name: "direct resume before the reset is rejected", resetAt: time.Now().Add(time.Hour), wantDenied: true},
+		{name: "manual fallback after the reset is admitted", resetAt: time.Now().Add(-time.Minute)},
+	}
+	for _, c := range cases {
+		c := c
+		t.Run(c.name, func(t *testing.T) {
+			cfg := newAppConfig(t)
+			st, err := state.NewStateStore(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := st.StartNewTask(); err != nil {
+				t.Fatal(err)
+			}
+			checkpoint := state.ResumeCheckpoint{Stage: state.ResumeStageWorker, Phase: "worker", Role: state.WorkerRole, Model: "opus"}
+			checkpoint.SetStopKind(state.ResumeStopRateLimited)
+			checkpoint.ResetAtRFC3339 = c.resetAt.Format(time.RFC3339)
+			if err := st.EnterStop(checkpoint); err != nil {
+				t.Fatal(err)
+			}
+
+			err = admitParentCommand(Command{Mode: ModeResume}, st)
+			if c.wantDenied {
+				var workerErr *workflow.WorkerError
+				if !errors.As(err, &workerErr) || !strings.Contains(workerErr.Message, "cannot resume before the Z.ai 5h reset at") {
+					t.Fatalf("resume admission error = %v", err)
+				}
+				if status := st.TaskStatus(); status != state.TaskStatusRateLimited {
+					t.Fatalf("rejected resume must keep the stopped task state, got %s", status)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("resume after the reset was rejected: %v", err)
+			}
+		})
+	}
+}
 
 func TestParentCommandAdmissionMatchesWaitingActions(t *testing.T) {
 	t.Run("decision", func(t *testing.T) {

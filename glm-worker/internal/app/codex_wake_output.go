@@ -6,7 +6,7 @@ import (
 	"io"
 )
 
-func writeCodexWakeJSON(w io.Writer, value any) (bool, error) {
+func writeTransactionJSON(w io.Writer, value any) (bool, error) {
 	var buf bytes.Buffer
 	encoder := json.NewEncoder(&buf)
 	encoder.SetEscapeHTML(false)

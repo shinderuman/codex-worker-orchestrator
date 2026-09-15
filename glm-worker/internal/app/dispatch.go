@@ -28,6 +28,7 @@ func commandDispatchOwnerFor(mode CommandMode) (commandDispatchOwner, error) {
 		ModeConvergence,
 		ModeStats,
 		ModeCheckWakeCoalesce,
+		ModeVerifyAutoResume,
 		ModeEvalAB,
 		ModeCallOutliers,
 		ModeCodexLimit,
@@ -41,9 +42,9 @@ func commandDispatchOwnerFor(mode CommandMode) (commandDispatchOwner, error) {
 		ModeProjectState,
 		ModeEvidence:
 		return dispatchReadOnly, nil
-	case ModeStop, ModeCodexWakePlan, ModeCodexWakeResponse:
+	case ModeStop, ModeCodexWakePlan, ModeCodexWakeResponse, ModeAutoResumePlan, ModeAutoResumeResponse:
 		return dispatchRuntimeControl, nil
-	case ModeVerifyAutoResume, ModeVerifyCodexWake, ModeInstallSmoke, ModeQualityGate:
+	case ModeVerifyCodexWake, ModeInstallSmoke, ModeQualityGate:
 		return dispatchStateCommand, nil
 	case ModeReset,
 		ModeAccept,
@@ -70,6 +71,10 @@ func executeRuntimeControl(cmd Command, cfg config.AppConfig, stdout io.Writer) 
 		return printCodexWakePlan(cmd, cfg, stdout)
 	case ModeCodexWakeResponse:
 		return printCodexWakeResponse(cmd, cfg, stdout)
+	case ModeAutoResumePlan:
+		return printAutoResumePlan(cmd, cfg, stdout)
+	case ModeAutoResumeResponse:
+		return printAutoResumeResponse(cmd, cfg, stdout)
 	default:
 		return fmt.Errorf("command mode %d is not runtime control", cmd.Mode)
 	}
@@ -109,6 +114,15 @@ func executeReadOnlyInspection(cmd Command, cfg config.AppConfig, stdout io.Writ
 		return executeStatelessProjection(cmd, cfg, stdout)
 	case ModeProjectState:
 		return executeProjectStateInspection(cmd, cfg, st, stdout)
+	case ModeRepoSearch, ModeEvidence, ModeCheckWakeCoalesce, ModeVerifyAutoResume:
+		return executeReadOnlyProjection(cmd, cfg, st, stdout)
+	default:
+		return fmt.Errorf("command mode %d is not read-only inspection", cmd.Mode)
+	}
+}
+
+func executeReadOnlyProjection(cmd Command, cfg config.AppConfig, st *state.StateStore, stdout io.Writer) error {
+	switch cmd.Mode {
 	case ModeRepoSearch:
 		return printRepoSearch(repoSearchRequest{
 			Question:    cmd.Payload,
@@ -119,8 +133,10 @@ func executeReadOnlyInspection(cmd Command, cfg config.AppConfig, stdout io.Writ
 		return printParentEvidence(cmd, cfg, st, stdout)
 	case ModeCheckWakeCoalesce:
 		return printCheckWakeCoalesce(cmd, cfg, stdout)
+	case ModeVerifyAutoResume:
+		return printVerifyAutoResume(cmd, cfg, stdout)
 	default:
-		return fmt.Errorf("command mode %d is not read-only inspection", cmd.Mode)
+		return fmt.Errorf("command mode %d is not a read-only projection", cmd.Mode)
 	}
 }
 
@@ -160,8 +176,6 @@ func executeReadOnlyAnalysis(cmd Command, cfg config.AppConfig, stdout io.Writer
 
 func executeStateCommand(cmd Command, cfg config.AppConfig, st *state.StateStore, stdout io.Writer) error {
 	switch cmd.Mode {
-	case ModeVerifyAutoResume:
-		return printVerifyAutoResume(cmd, cfg, stdout)
 	case ModeVerifyCodexWake:
 		return printVerifyCodexWake(cmd, cfg, stdout)
 	case ModeInstallSmoke:

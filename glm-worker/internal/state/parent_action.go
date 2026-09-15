@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 )
@@ -76,7 +77,28 @@ func (s *StateStore) AdmitParentAction(action ParentAction) (ParentActionPlan, b
 	if err != nil {
 		return ParentActionPlan{}, false, err
 	}
-	return plan, plan.AdmitsCommand(action), nil
+	admitted := plan.AdmitsCommand(action)
+	if action == ParentActionResume && admitted {
+		if err := s.rejectResumeBeforeRateLimitReset(); err != nil {
+			return ParentActionPlan{}, false, err
+		}
+	}
+	return plan, admitted, nil
+}
+
+func (s *StateStore) rejectResumeBeforeRateLimitReset() error {
+	checkpoint, err := s.LoadResumeCheckpoint()
+	if err != nil || checkpoint.StopKind != ResumeStopRateLimited || checkpoint.ResetAtRFC3339 == "" {
+		return nil
+	}
+	resetAt, err := time.Parse(time.RFC3339, checkpoint.ResetAtRFC3339)
+	if err != nil {
+		return fmt.Errorf("rate-limit reset evidence is unreadable: %w", err)
+	}
+	if time.Now().UTC().Before(resetAt.UTC()) {
+		return fmt.Errorf("rate-limited task cannot resume before the Z.ai 5h reset at %s; reserve the wake with glm-worker --auto-resume-plan instead of resuming early", checkpoint.ResetAtRFC3339)
+	}
+	return nil
 }
 
 func (s *StateStore) AdmitNewTask() (ParentActionPlan, bool, error) {

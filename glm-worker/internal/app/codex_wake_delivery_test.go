@@ -25,7 +25,7 @@ func TestCodexWakeResponseCompleteWriteDoesNotRestoreInputToken(t *testing.T) {
 	}
 	cmd := Command{
 		Mode:      ModeCodexWakeResponse,
-		Payload:   testAppCodexWakeCreateResponse(t, plan.ExpectedAutomationID),
+		Payload:   testAppCreateResponse(t, plan.ExpectedAutomationID),
 		CodexWake: CodexWakeArgs{Token: plan.Token},
 	}
 	writeErr := errors.New("writer reported an error after accepting the full response")

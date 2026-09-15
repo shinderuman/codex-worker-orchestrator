@@ -24,13 +24,13 @@ func TestBuildCodexWakeTransactionCreatesPlaceholderFromCanonicalReset(t *testin
 		t.Fatal(err)
 	}
 	wantID := CodexWakeAutomationKey(testCodexWakeThread)
-	if output.Status != CodexWakeStatusWriteRequired || output.Stage != codexWakeStageCreate || output.ExpectedAutomationID != wantID {
+	if output.Status != CodexWakeStatusWriteRequired || output.Stage != stageCreatePlaceholder || output.ExpectedAutomationID != wantID {
 		t.Fatalf("output = %#v", output)
 	}
 	if output.WakeAtRFC3339 != reset.Add(2*time.Minute).Format(time.RFC3339) || output.Token == "" || output.TransactionID == "" {
 		t.Fatalf("timing/token = %#v", output)
 	}
-	if output.Write == nil || output.Write.Mode != "create" || output.Write.Name != wantID || output.Write.TargetThreadID != testCodexWakeThread || output.Write.Status != codexWakePaused || output.Write.RRule != codexWakePlaceholderRRule {
+	if output.Write == nil || output.Write.Mode != "create" || output.Write.Name != wantID || output.Write.TargetThreadID != testCodexWakeThread || output.Write.Status != pausedStatus || output.Write.RRule != placeholderHourlyRRule {
 		t.Fatalf("write = %#v", output.Write)
 	}
 }
@@ -45,7 +45,7 @@ func TestBuildCodexWakeTransactionReusesOnlyExactTargetAutomation(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if output.Stage != codexWakeStageUpdate || output.Write == nil || output.Write.AutomationID != key || output.Write.Status != codexWakeActive {
+	if output.Stage != stageUpdateOneShot || output.Write == nil || output.Write.AutomationID != key || output.Write.Status != activeStatus {
 		t.Fatalf("output = %#v", output)
 	}
 	wantRRule := "DTSTART:" + reset.Add(2*time.Minute).Format(dtStartLayout) + "\nRRULE:FREQ=DAILY;COUNT=1"
@@ -132,10 +132,10 @@ func TestCodexWakeCreateResponseAdvancesOnlyExactSuccessfulEntity(t *testing.T) 
 	output := AdvanceCodexWakeTransaction(plan.Token, response, t.TempDir(), "unused", func(string, string) (DBRow, error) {
 		return DBRow{}, ErrRowNotFound
 	})
-	if output.Status != CodexWakeStatusWriteRequired || output.Stage != codexWakeStageUpdate || output.Attempt != 1 || output.Cleanup != nil {
+	if output.Status != CodexWakeStatusWriteRequired || output.Stage != stageUpdateOneShot || output.Attempt != 1 || output.Cleanup != nil {
 		t.Fatalf("output = %#v", output)
 	}
-	if output.Write == nil || output.Write.AutomationID != plan.ExpectedAutomationID || output.Write.Status != codexWakeActive {
+	if output.Write == nil || output.Write.AutomationID != plan.ExpectedAutomationID || output.Write.Status != activeStatus {
 		t.Fatalf("write = %#v", output.Write)
 	}
 }
@@ -280,7 +280,7 @@ func newUpdateCodexWakePlan(t *testing.T, created bool) CodexWakeOutput {
 	if err != nil {
 		t.Fatal(err)
 	}
-	transaction.Stage = codexWakeStageUpdate
+	transaction.Stage = stageUpdateOneShot
 	transaction.CreatedByTransaction = created
 	return codexWakeWriteOutput(transaction, codexWakeUpdateSpec(transaction))
 }

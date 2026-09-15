@@ -34,6 +34,7 @@ type Command struct {
 	Verify              VerifyArgs
 	Coalesce            CoalesceArgs
 	CodexWake           CodexWakeArgs
+	AutoResume          AutoResumeArgs
 	Query               TelemetryQueryArgs
 	SearchScopes        []string
 	SearchBudgetBytes   int
@@ -112,6 +113,8 @@ const (
 	modeRecoverQualitySurface
 	ModeCodexWakePlan
 	ModeCodexWakeResponse
+	ModeAutoResumePlan
+	ModeAutoResumeResponse
 )
 
 const fixOriginUsage = "[--origin codex-review|glm-reviewer|user-amendment|external-review|metadata-repair] [--cause parent-orchestration|requirement-preservation|worker|reviewer|sol-gate|production-wiring|test-scenario|cross-cutting-invariant|unknown] [--accepted-scope current-diff]"
@@ -197,11 +200,13 @@ var commandParsers = map[string]commandParser{
 	"--recover-quality-surface": func(args []string) (Command, error) {
 		return requiredPayloadCommand(args, modeRecoverQualitySurface, "usage: glm-worker --recover-quality-surface <task-id>")
 	},
-	"--verify-auto-resume":        verifyAutoResumeCommand,
-	"--verify-codex-wake":         verifyCodexWakeCommand,
-	"--check-wake-coalesce":       checkWakeCoalesceCommand,
-	"--codex-wake-plan":           codexWakePlanCommand,
-	"--codex-wake-response-stdin": codexWakeResponseCommand,
+	"--verify-auto-resume":         verifyAutoResumeCommand,
+	"--verify-codex-wake":          verifyCodexWakeCommand,
+	"--check-wake-coalesce":        checkWakeCoalesceCommand,
+	"--codex-wake-plan":            codexWakePlanCommand,
+	"--codex-wake-response-stdin":  codexWakeResponseCommand,
+	"--auto-resume-plan":           autoResumePlanCommand,
+	"--auto-resume-response-stdin": autoResumeResponseCommand,
 	"--eval-ab": func(args []string) (Command, error) {
 		return requiredPayloadCommand(args, ModeEvalAB, "usage: glm-worker --eval-ab <run-dir>")
 	},
@@ -447,6 +452,25 @@ func applyStdinPayloadOption(command *Command, name, value, usage string, seenSH
 	command.SHA256 = digest
 	*seenSHA256 = true
 	return nil
+}
+
+func transactionResponseCommand(args []string, mode CommandMode, usage string, bindToken func(*Command, string)) (Command, error) {
+	if len(args) != 3 && len(args) != 5 {
+		return Command{}, usageError("%s", usage)
+	}
+	payloadBytes, err := strconv.ParseInt(args[1], 10, 64)
+	if err != nil || payloadBytes <= 0 || args[2] == "" {
+		return Command{}, usageError("%s", usage)
+	}
+	command := Command{Mode: mode, StdinBytes: payloadBytes}
+	bindToken(&command, args[2])
+	if len(args) == 5 {
+		seenSHA256 := false
+		if err := applyStdinPayloadOption(&command, args[3], args[4], usage, &seenSHA256); err != nil {
+			return Command{}, err
+		}
+	}
+	return command, nil
 }
 
 func parsePayloadSHA256(value string) (string, error) {

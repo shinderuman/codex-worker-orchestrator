@@ -60,43 +60,42 @@ type codexWakeTransaction struct {
 const (
 	codexWakeTransactionVersion = 1
 	codexWakeSafetyMargin       = 2 * time.Minute
-	codexWakeNonceBytes         = 16
+	transactionNonceBytes       = 16
 
 	CodexWakeStatusWriteRequired = "write_required"
 	CodexWakeStatusVerified      = "verified"
 	CodexWakeStatusFailed        = "failed"
 
-	codexWakeStageCreate = "create_placeholder"
-	codexWakeStageUpdate = "update_one_shot"
+	stageCreatePlaceholder = "create_placeholder"
+	stageUpdateOneShot     = "update_one_shot"
 
-	codexWakeExternalBoundary = "external-unenforceable"
-	codexWakeTool             = "automation_update"
-	codexWakePaused           = "PAUSED"
-	codexWakeActive           = "ACTIVE"
-	codexWakePlaceholderRRule = "RRULE:FREQ=HOURLY"
+	externalAutomationBoundary = "external-unenforceable"
+	automationUpdateTool       = "automation_update"
+	pausedStatus               = "PAUSED"
+	placeholderHourlyRRule     = "RRULE:FREQ=HOURLY"
 )
 
 var (
-	codexWakeThreadPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
-	codexWakeNoncePattern  = regexp.MustCompile(`^[0-9a-f]{32}$`)
+	uuidPattern             = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+	transactionNoncePattern = regexp.MustCompile(`^[0-9a-f]{32}$`)
 )
 
 func BuildCodexWakeTransaction(snapshot codexlimit.Snapshot, wakeThreadID, firedAutomationID, automationsDir string, now time.Time) (CodexWakeOutput, error) {
-	if !codexWakeThreadPattern.MatchString(wakeThreadID) {
+	if !uuidPattern.MatchString(wakeThreadID) {
 		return CodexWakeOutput{}, fmt.Errorf("invalid wake thread ID: %q", wakeThreadID)
 	}
 	resetAt, wakeAt, err := codexWakeTimes(snapshot, now)
 	if err != nil {
 		return CodexWakeOutput{}, err
 	}
-	nonce, err := newCodexWakeNonce()
+	nonce, err := newTransactionNonce()
 	if err != nil {
 		return CodexWakeOutput{}, err
 	}
 	expectedID := CodexWakeAutomationKey(wakeThreadID)
 	transaction := codexWakeTransaction{
 		Version:              codexWakeTransactionVersion,
-		Stage:                codexWakeStageUpdate,
+		Stage:                stageUpdateOneShot,
 		WakeThreadID:         wakeThreadID,
 		ExpectedAutomationID: expectedID,
 		ResetAtRFC3339:       resetAt.Format(time.RFC3339),
@@ -122,14 +121,14 @@ func BuildCodexWakeTransaction(snapshot codexlimit.Snapshot, wakeThreadID, fired
 		}
 		return codexWakeWriteOutput(transaction, codexWakeUpdateSpec(transaction)), nil
 	}
-	transaction.Stage = codexWakeStageCreate
+	transaction.Stage = stageCreatePlaceholder
 	return codexWakeWriteOutput(transaction, codexWakeCreateSpec(transaction)), nil
 }
 
-func newCodexWakeNonce() (string, error) {
-	value := make([]byte, codexWakeNonceBytes)
+func newTransactionNonce() (string, error) {
+	value := make([]byte, transactionNonceBytes)
 	if _, err := rand.Read(value); err != nil {
-		return "", fmt.Errorf("generate wake transaction nonce: %w", err)
+		return "", fmt.Errorf("generate transaction nonce: %w", err)
 	}
 	return hex.EncodeToString(value), nil
 }
@@ -184,25 +183,25 @@ func resolveCodexWakeAutomation(dir, wakeThreadID string) (string, bool, error) 
 
 func codexWakeCreateSpec(transaction codexWakeTransaction) CodexWakeWriteSpec {
 	return CodexWakeWriteSpec{
-		Boundary:       codexWakeExternalBoundary,
-		Tool:           codexWakeTool,
+		Boundary:       externalAutomationBoundary,
+		Tool:           automationUpdateTool,
 		Mode:           "create",
 		Name:           transaction.ExpectedAutomationID,
 		TargetThreadID: transaction.WakeThreadID,
-		Status:         codexWakePaused,
-		RRule:          codexWakePlaceholderRRule,
+		Status:         pausedStatus,
+		RRule:          placeholderHourlyRRule,
 	}
 }
 
 func codexWakeUpdateSpec(transaction codexWakeTransaction) CodexWakeWriteSpec {
 	wakeAt, _ := time.Parse(time.RFC3339, transaction.WakeAtRFC3339)
 	return CodexWakeWriteSpec{
-		Boundary:       codexWakeExternalBoundary,
-		Tool:           codexWakeTool,
+		Boundary:       externalAutomationBoundary,
+		Tool:           automationUpdateTool,
 		Mode:           "update",
 		AutomationID:   transaction.ExpectedAutomationID,
 		TargetThreadID: transaction.WakeThreadID,
-		Status:         codexWakeActive,
+		Status:         activeStatus,
 		RRule:          "DTSTART:" + wakeAt.UTC().Format(dtStartLayout) + "\nRRULE:FREQ=DAILY;COUNT=1",
 	}
 }
@@ -211,15 +210,15 @@ func codexWakeDeleteSpec(automationID string) *CodexWakeWriteSpec {
 	if !keyPattern.MatchString(automationID) {
 		return nil
 	}
-	return &CodexWakeWriteSpec{Boundary: codexWakeExternalBoundary, Tool: codexWakeTool, Mode: "delete", AutomationID: automationID}
+	return &CodexWakeWriteSpec{Boundary: externalAutomationBoundary, Tool: automationUpdateTool, Mode: "delete", AutomationID: automationID}
 }
 
 func codexWakePauseSpec(transaction codexWakeTransaction) *CodexWakeWriteSpec {
-	return &CodexWakeWriteSpec{Boundary: codexWakeExternalBoundary, Tool: codexWakeTool, Mode: "update", AutomationID: transaction.ExpectedAutomationID, Status: codexWakePaused}
+	return &CodexWakeWriteSpec{Boundary: externalAutomationBoundary, Tool: automationUpdateTool, Mode: "update", AutomationID: transaction.ExpectedAutomationID, Status: pausedStatus}
 }
 
 func codexWakeWriteOutput(transaction codexWakeTransaction, write CodexWakeWriteSpec) CodexWakeOutput {
-	token, transactionID := encodeCodexWakeTransaction(transaction)
+	token, transactionID := encodeSignedTransaction(transaction)
 	return CodexWakeOutput{
 		Version:              codexWakeTransactionVersion,
 		Status:               CodexWakeStatusWriteRequired,
@@ -235,26 +234,10 @@ func codexWakeWriteOutput(transaction codexWakeTransaction, write CodexWakeWrite
 	}
 }
 
-func encodeCodexWakeTransaction(transaction codexWakeTransaction) (string, string) {
-	payload, _ := json.Marshal(transaction)
-	sum := sha256.Sum256(payload)
-	digest := hex.EncodeToString(sum[:])
-	return base64.RawURLEncoding.EncodeToString(payload) + "." + digest, digest
-}
-
 func decodeCodexWakeTransaction(token string) (codexWakeTransaction, string, error) {
-	encoded, digest, found := strings.Cut(token, ".")
-	if !found || encoded == "" || len(digest) != sha256.Size*2 {
-		return codexWakeTransaction{}, "", fmt.Errorf("invalid transaction token")
-	}
-	payload, err := base64.RawURLEncoding.DecodeString(encoded)
+	payload, digest, err := decodeSignedTransaction(token)
 	if err != nil {
-		return codexWakeTransaction{}, "", fmt.Errorf("decode transaction token: %w", err)
-	}
-	sum := sha256.Sum256(payload)
-	actual := hex.EncodeToString(sum[:])
-	if actual != digest {
-		return codexWakeTransaction{}, "", fmt.Errorf("transaction token checksum mismatch")
+		return codexWakeTransaction{}, "", err
 	}
 	var transaction codexWakeTransaction
 	if err := json.Unmarshal(payload, &transaction); err != nil {
@@ -266,6 +249,30 @@ func decodeCodexWakeTransaction(token string) (codexWakeTransaction, string, err
 	return transaction, digest, nil
 }
 
+func encodeSignedTransaction(payload any) (string, string) {
+	data, _ := json.Marshal(payload)
+	sum := sha256.Sum256(data)
+	digest := hex.EncodeToString(sum[:])
+	return base64.RawURLEncoding.EncodeToString(data) + "." + digest, digest
+}
+
+func decodeSignedTransaction(token string) ([]byte, string, error) {
+	encoded, digest, found := strings.Cut(token, ".")
+	if !found || encoded == "" || len(digest) != sha256.Size*2 {
+		return nil, "", fmt.Errorf("invalid transaction token")
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(encoded)
+	if err != nil {
+		return nil, "", fmt.Errorf("decode transaction token: %w", err)
+	}
+	sum := sha256.Sum256(payload)
+	actual := hex.EncodeToString(sum[:])
+	if actual != digest {
+		return nil, "", fmt.Errorf("transaction token checksum mismatch")
+	}
+	return payload, digest, nil
+}
+
 func CodexWakeTransactionContext(token string) (string, bool, error) {
 	transaction, _, err := decodeCodexWakeTransaction(token)
 	if err != nil {
@@ -275,16 +282,16 @@ func CodexWakeTransactionContext(token string) (string, bool, error) {
 }
 
 func validateCodexWakeTransaction(transaction codexWakeTransaction) error {
-	if transaction.Version != codexWakeTransactionVersion || !codexWakeThreadPattern.MatchString(transaction.WakeThreadID) {
+	if transaction.Version != codexWakeTransactionVersion || !uuidPattern.MatchString(transaction.WakeThreadID) {
 		return fmt.Errorf("invalid transaction identity")
 	}
 	if transaction.ExpectedAutomationID != CodexWakeAutomationKey(transaction.WakeThreadID) {
 		return fmt.Errorf("transaction automation identity mismatch")
 	}
-	if !codexWakeNoncePattern.MatchString(transaction.Nonce) {
+	if !transactionNoncePattern.MatchString(transaction.Nonce) {
 		return fmt.Errorf("invalid transaction nonce")
 	}
-	if transaction.Stage != codexWakeStageCreate && transaction.Stage != codexWakeStageUpdate {
+	if transaction.Stage != stageCreatePlaceholder && transaction.Stage != stageUpdateOneShot {
 		return fmt.Errorf("invalid transaction stage %q", transaction.Stage)
 	}
 	if transaction.Attempt < 1 || transaction.Attempt > 2 {

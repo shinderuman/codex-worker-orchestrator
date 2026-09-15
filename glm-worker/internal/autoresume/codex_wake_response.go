@@ -8,26 +8,28 @@ import (
 	"strings"
 )
 
-type codexWakeToolEnvelope struct {
-	IsError *bool                  `json:"isError"`
-	Content []codexWakeToolContent `json:"content"`
+type automationToolEnvelope struct {
+	IsError *bool                   `json:"isError"`
+	Content []automationToolContent `json:"content"`
 }
 
-type codexWakeToolContent struct {
+type automationToolContent struct {
 	Type string `json:"type"`
 	Text string `json:"text"`
 }
 
-type codexWakeResponseFacts struct {
+type automationResponseFacts struct {
 	AutomationID string
 	Mode         string
 	Status       string
 	Message      string
 }
 
+const automationIsErrorFallbackReason = "automation tool returned isError=true"
+
 var (
-	codexWakeFailureMessage = regexp.MustCompile(`(?i)(^|[^a-z])(invalid|error|failed)([^a-z]|$)`)
-	codexWakeSuccessMessage = regexp.MustCompile(`(?i)(^|[^a-z])(created|updated|saved|scheduled|success|successful|completed)([^a-z]|$)`)
+	automationFailureMessage = regexp.MustCompile(`(?i)(^|[^a-z])(invalid|error|failed)([^a-z]|$)`)
+	automationSuccessMessage = regexp.MustCompile(`(?i)(^|[^a-z])(created|updated|saved|scheduled|success|successful|completed)([^a-z]|$)`)
 )
 
 func AdvanceCodexWakeTransaction(token string, rawResponse []byte, automationsDir, dbPath string, readDB DBReader) CodexWakeOutput {
@@ -35,16 +37,16 @@ func AdvanceCodexWakeTransaction(token string, rawResponse []byte, automationsDi
 	if err != nil {
 		return CodexWakeOutput{Version: codexWakeTransactionVersion, Status: CodexWakeStatusFailed, Reason: err.Error()}
 	}
-	facts, responseReason := parseCodexWakeToolResponse(rawResponse)
-	if transaction.Stage == codexWakeStageCreate {
+	facts, responseReason := parseAutomationToolResponse(rawResponse)
+	if transaction.Stage == stageCreatePlaceholder {
 		return advanceCodexWakeCreate(transaction, transactionID, facts, responseReason)
 	}
 	return advanceCodexWakeUpdate(transaction, transactionID, facts, responseReason, automationsDir, dbPath, readDB)
 }
 
-func advanceCodexWakeCreate(transaction codexWakeTransaction, transactionID string, facts codexWakeResponseFacts, responseReason string) CodexWakeOutput {
+func advanceCodexWakeCreate(transaction codexWakeTransaction, transactionID string, facts automationResponseFacts, responseReason string) CodexWakeOutput {
 	if responseReason == "" {
-		responseReason = validateCodexWakeResponseFacts(facts, "create", codexWakePaused, transaction.ExpectedAutomationID)
+		responseReason = validateAutomationResponseFacts(facts, "create", pausedStatus, transaction.ExpectedAutomationID)
 	}
 	if responseReason != "" {
 		output := codexWakeFailureOutput(transaction, transactionID, responseReason)
@@ -53,33 +55,56 @@ func advanceCodexWakeCreate(transaction codexWakeTransaction, transactionID stri
 		}
 		return output
 	}
-	transaction.Stage = codexWakeStageUpdate
+	transaction.Stage = stageUpdateOneShot
 	transaction.CreatedByTransaction = true
 	transaction.Attempt = 1
 	return codexWakeWriteOutput(transaction, codexWakeUpdateSpec(transaction))
 }
 
-func advanceCodexWakeUpdate(transaction codexWakeTransaction, transactionID string, facts codexWakeResponseFacts, responseReason, automationsDir, dbPath string, readDB DBReader) CodexWakeOutput {
-	if responseReason == "" {
-		responseReason = validateCodexWakeResponseFacts(facts, "update", codexWakeActive, transaction.ExpectedAutomationID)
-	}
-	if responseReason != "" {
-		return codexWakeUpdateFailure(transaction, transactionID, responseReason, true)
-	}
-	verification := Verify(Params{
+func advanceCodexWakeUpdate(transaction codexWakeTransaction, transactionID string, facts automationResponseFacts, responseReason, automationsDir, dbPath string, readDB DBReader) CodexWakeOutput {
+	return advanceUpdateTransaction(
+		transaction, transactionID, facts, responseReason,
+		codexWakeVerificationParams(transaction, automationsDir, dbPath),
+		readDB,
+		codexWakeUpdateFailure,
+		codexWakeVerifiedOutput,
+	)
+}
+
+func codexWakeVerificationParams(transaction codexWakeTransaction, automationsDir, dbPath string) Params {
+	return Params{
 		AutomationKey:    transaction.ExpectedAutomationID,
 		ExpectedRFC3339:  transaction.WakeAtRFC3339,
 		ExpectedThreadID: transaction.WakeThreadID,
 		AutomationsDir:   automationsDir,
 		DBPath:           dbPath,
-	}, readDB)
+	}
+}
+
+func advanceUpdateTransaction[TTransaction any, TOutput any](
+	transaction TTransaction,
+	transactionID string,
+	facts automationResponseFacts,
+	responseReason string,
+	verifyParams Params,
+	readDB DBReader,
+	writeFailure func(TTransaction, string, string, bool) TOutput,
+	verifiedOutput func(TTransaction, string, Result) TOutput,
+) TOutput {
+	if responseReason == "" {
+		responseReason = validateAutomationResponseFacts(facts, "update", activeStatus, verifyParams.AutomationKey)
+	}
+	if responseReason != "" {
+		return writeFailure(transaction, transactionID, responseReason, true)
+	}
+	verification := Verify(verifyParams, readDB)
 	if verification.Outcome == Pass {
-		return codexWakeVerifiedOutput(transaction, transactionID, verification)
+		return verifiedOutput(transaction, transactionID, verification)
 	}
 	if verification.Outcome == Unavailable {
-		return codexWakeUpdateFailure(transaction, transactionID, "saved-state verification unavailable: "+verification.Reason, false)
+		return writeFailure(transaction, transactionID, "saved-state verification unavailable: "+verification.Reason, false)
 	}
-	return codexWakeUpdateFailure(transaction, transactionID, "saved-state verification failed: "+verification.Reason, true)
+	return writeFailure(transaction, transactionID, "saved-state verification failed: "+verification.Reason, true)
 }
 
 func codexWakeUpdateFailure(transaction codexWakeTransaction, transactionID, reason string, retryable bool) CodexWakeOutput {
@@ -128,18 +153,18 @@ func codexWakeVerifiedOutput(transaction codexWakeTransaction, transactionID str
 	}
 }
 
-func parseCodexWakeToolResponse(raw []byte) (codexWakeResponseFacts, string) {
-	var envelope codexWakeToolEnvelope
+func parseAutomationToolResponse(raw []byte) (automationResponseFacts, string) {
+	var envelope automationToolEnvelope
 	if err := json.Unmarshal(raw, &envelope); err != nil {
-		return codexWakeResponseFacts{}, "malformed automation tool response: " + err.Error()
+		return automationResponseFacts{}, "malformed automation tool response: " + err.Error()
 	}
 	if envelope.IsError == nil {
-		return codexWakeResponseFacts{}, "automation tool response has no isError field"
+		return automationResponseFacts{}, "automation tool response has no isError field"
 	}
-	facts, reason := codexWakeContentFacts(envelope.Content)
+	facts, reason := automationContentFacts(envelope.Content)
 	if *envelope.IsError {
 		if reason == "" {
-			reason = "automation tool returned isError=true"
+			reason = automationIsErrorFallbackReason
 		}
 		return facts, reason
 	}
@@ -149,72 +174,124 @@ func parseCodexWakeToolResponse(raw []byte) (codexWakeResponseFacts, string) {
 	return facts, ""
 }
 
-func codexWakeContentFacts(content []codexWakeToolContent) (codexWakeResponseFacts, string) {
-	if len(content) != 1 || content[0].Type != "text" || strings.TrimSpace(content[0].Text) == "" {
-		return codexWakeResponseFacts{}, "automation tool response must contain exactly one non-empty text payload"
+func automationContentFacts(content []automationToolContent) (automationResponseFacts, string) {
+	texts, reason := automationTextPayloads(content)
+	if reason != "" {
+		return automationResponseFacts{}, reason
 	}
-	text := strings.TrimSpace(content[0].Text)
-	if strings.Contains(text, "Rendered suggestion") || strings.Contains(text, "suggested_create") {
-		return codexWakeResponseFacts{}, "automation tool returned a suggestion instead of a persisted write"
+	jsonBlocks := make([]string, 0, len(texts))
+	proseBlocks := make([]string, 0, len(texts))
+	for _, text := range texts {
+		if json.Valid([]byte(text)) {
+			jsonBlocks = append(jsonBlocks, text)
+			continue
+		}
+		proseBlocks = append(proseBlocks, text)
 	}
-	var payload any
-	if err := json.Unmarshal([]byte(text), &payload); err != nil {
-		return codexWakeResponseFacts{}, "automation tool text payload is not machine JSON"
+	if len(jsonBlocks) == 0 {
+		return automationResponseFacts{}, "automation tool text payload is not machine JSON"
 	}
-	facts, err := collectCodexWakeResponseFacts(payload)
+	if len(jsonBlocks) > 1 {
+		return automationResponseFacts{}, "automation tool response has ambiguous machine JSON payloads"
+	}
+	facts, err := collectAutomationResponseFacts(jsonBlocks[0])
 	if err != nil {
-		return codexWakeResponseFacts{}, err.Error()
+		return automationResponseFacts{}, err.Error()
+	}
+	if len(proseBlocks) > 1 {
+		return automationResponseFacts{}, "automation tool response has ambiguous non-JSON payloads"
+	}
+	if facts.Message == "" {
+		if len(proseBlocks) != 1 {
+			return automationResponseFacts{}, "automation tool response is missing an unambiguous success or failure message"
+		}
+		facts.Message = proseBlocks[0]
+	}
+	if len(proseBlocks) == 1 && facts.Message != proseBlocks[0] {
+		return automationResponseFacts{}, "automation tool response has extra non-JSON payloads beside the machine message"
 	}
 	return facts, ""
 }
 
-func collectCodexWakeResponseFacts(payload any) (codexWakeResponseFacts, error) {
+func automationTextPayloads(content []automationToolContent) ([]string, string) {
+	if len(content) == 0 {
+		return nil, "automation tool response must contain non-empty text payloads"
+	}
+	texts := make([]string, 0, len(content))
+	for _, block := range content {
+		if block.Type != "text" || strings.TrimSpace(block.Text) == "" {
+			return nil, "automation tool response must contain non-empty text payloads"
+		}
+		text := strings.TrimSpace(block.Text)
+		if strings.Contains(text, "Rendered suggestion") || strings.Contains(text, "suggested_create") {
+			return nil, "automation tool returned a suggestion instead of a persisted write"
+		}
+		texts = append(texts, text)
+	}
+	return texts, ""
+}
+
+func collectAutomationResponseFacts(payloadText string) (automationResponseFacts, error) {
+	var payload any
+	if err := json.Unmarshal([]byte(payloadText), &payload); err != nil {
+		return automationResponseFacts{}, fmt.Errorf("automation tool text payload is not machine JSON")
+	}
 	fields := map[string]map[string]struct{}{
 		"automation_id": {},
 		"mode":          {},
 		"status":        {},
 		"message":       {},
 	}
-	collectCodexWakeFields(payload, fields)
-	id, err := oneCodexWakeField(fields["automation_id"], "automation ID")
+	collectAutomationFields(payload, fields)
+	id, err := oneAutomationField(fields["automation_id"], "automation ID")
 	if err != nil {
-		return codexWakeResponseFacts{}, err
+		return automationResponseFacts{}, err
 	}
-	mode, err := oneCodexWakeField(fields["mode"], "mode")
+	mode, err := oneAutomationField(fields["mode"], "mode")
 	if err != nil {
-		return codexWakeResponseFacts{}, err
+		return automationResponseFacts{}, err
 	}
-	status, err := oneCodexWakeField(fields["status"], "status")
+	status, err := oneAutomationField(fields["status"], "status")
 	if err != nil {
-		return codexWakeResponseFacts{}, err
+		return automationResponseFacts{}, err
 	}
-	message, err := oneCodexWakeField(fields["message"], "message")
+	message, err := optionalAutomationField(fields["message"], "message")
 	if err != nil {
-		return codexWakeResponseFacts{}, err
+		return automationResponseFacts{}, err
 	}
-	return codexWakeResponseFacts{AutomationID: id, Mode: mode, Status: status, Message: message}, nil
+	return automationResponseFacts{AutomationID: id, Mode: mode, Status: status, Message: message}, nil
 }
 
-func collectCodexWakeFields(value any, fields map[string]map[string]struct{}) {
+func optionalAutomationField(values map[string]struct{}, name string) (string, error) {
+	if len(values) > 1 {
+		return "", fmt.Errorf("automation tool response has ambiguous %s", name)
+	}
+	for value := range values {
+		return value, nil
+	}
+	return "", nil
+}
+
+func collectAutomationFields(value any, fields map[string]map[string]struct{}) {
 	switch typed := value.(type) {
 	case map[string]any:
 		for key, child := range typed {
-			canonical := codexWakeResponseFieldName(key)
+			canonical := automationResponseFieldName(key)
 			if canonical != "" {
 				if text, ok := child.(string); ok && strings.TrimSpace(text) != "" {
 					fields[canonical][strings.TrimSpace(text)] = struct{}{}
 				}
 			}
-			collectCodexWakeFields(child, fields)
+			collectAutomationFields(child, fields)
 		}
 	case []any:
 		for _, child := range typed {
-			collectCodexWakeFields(child, fields)
+			collectAutomationFields(child, fields)
 		}
 	}
 }
 
-func codexWakeResponseFieldName(key string) string {
+func automationResponseFieldName(key string) string {
 	switch key {
 	case "automation_id", "automationId", "id":
 		return "automation_id"
@@ -229,7 +306,7 @@ func codexWakeResponseFieldName(key string) string {
 	}
 }
 
-func oneCodexWakeField(values map[string]struct{}, name string) (string, error) {
+func oneAutomationField(values map[string]struct{}, name string) (string, error) {
 	if len(values) == 0 {
 		return "", fmt.Errorf("automation tool response is missing %s", name)
 	}
@@ -242,7 +319,7 @@ func oneCodexWakeField(values map[string]struct{}, name string) (string, error) 
 	return "", nil
 }
 
-func validateCodexWakeResponseFacts(facts codexWakeResponseFacts, mode, status, automationID string) string {
+func validateAutomationResponseFacts(facts automationResponseFacts, mode, status, automationID string) string {
 	if facts.AutomationID != automationID {
 		return fmt.Sprintf("automation ID mismatch: got %q want %q", facts.AutomationID, automationID)
 	}
@@ -253,10 +330,10 @@ func validateCodexWakeResponseFacts(facts codexWakeResponseFacts, mode, status, 
 		return fmt.Sprintf("automation status mismatch: got %q want %q", facts.Status, status)
 	}
 	message := strings.TrimSpace(facts.Message)
-	if message == "" || codexWakeFailureMessage.MatchString(message) {
+	if message == "" || automationFailureMessage.MatchString(message) {
 		return "automation tool response has an explicit failure or empty message"
 	}
-	if !codexWakeSuccessMessage.MatchString(message) {
+	if !automationSuccessMessage.MatchString(message) {
 		return "automation tool response has no explicit success message"
 	}
 	return ""

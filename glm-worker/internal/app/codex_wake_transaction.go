@@ -3,7 +3,6 @@ package app
 import (
 	"io"
 	"os"
-	"strconv"
 	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/autoresume"
@@ -40,25 +39,9 @@ func codexWakePlanCommand(args []string) (Command, error) {
 }
 
 func codexWakeResponseCommand(args []string) (Command, error) {
-	if len(args) != 3 && len(args) != 5 {
-		return Command{}, usageError("%s", codexWakeResponseUsage)
-	}
-	payloadBytes, err := strconv.ParseInt(args[1], 10, 64)
-	if err != nil || payloadBytes <= 0 || args[2] == "" {
-		return Command{}, usageError("%s", codexWakeResponseUsage)
-	}
-	command := Command{
-		Mode:       ModeCodexWakeResponse,
-		StdinBytes: payloadBytes,
-		CodexWake:  CodexWakeArgs{Token: args[2]},
-	}
-	if len(args) == 5 {
-		seenSHA256 := false
-		if err := applyStdinPayloadOption(&command, args[3], args[4], codexWakeResponseUsage, &seenSHA256); err != nil {
-			return Command{}, err
-		}
-	}
-	return command, nil
+	return transactionResponseCommand(args, ModeCodexWakeResponse, codexWakeResponseUsage, func(command *Command, token string) {
+		command.CodexWake.Token = token
+	})
 }
 
 func printCodexWakePlan(cmd Command, cfg config.AppConfig, stdout io.Writer) error {
@@ -139,7 +122,7 @@ func printCodexWakeResponse(cmd Command, cfg config.AppConfig, stdout io.Writer)
 		return err
 	}
 	delivering = true
-	complete, err := writeCodexWakeJSON(stdout, output)
+	complete, err := writeTransactionJSON(stdout, output)
 	if !complete {
 		return err
 	}
