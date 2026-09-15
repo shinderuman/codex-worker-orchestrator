@@ -39,11 +39,25 @@ type realCommandRunner struct {
 	shfmtPath         string
 }
 
+type qualityToolCommandTimeoutError struct {
+	tool string
+}
+
 var golangCILine = regexp.MustCompile(`^(.+?):(\d+):(\d+):\s*(.+?)(?:\s+\(([^()]+)\))?$`)
 var golangCILineOnly = regexp.MustCompile(`^(.+?):(\d+):\s*(.+?)(?:\s+\(([^()]+)\))?$`)
 var shellcheckLine = regexp.MustCompile(`^(.+?):(\d+):(\d+):\s*[^:]+:\s*(.+?)(?:\s+\[([A-Z0-9]+)\])?$`)
 
 var versionCommandTimeout = 10 * time.Second
+var deadcodeCommandTimeout = 5 * time.Minute
+var deadcodeCommandWaitDelay = time.Second
+
+func (e *qualityToolCommandTimeoutError) Error() string {
+	return "quality tool command timed out: " + e.tool
+}
+
+func (*qualityToolCommandTimeoutError) QualityToolClassification() string {
+	return QualityToolEnvironmentFailure
+}
 
 func (r realCommandRunner) commandSpec(name string) (string, string) {
 	switch name {
@@ -69,6 +83,14 @@ func (r realCommandRunner) run(dir, name string, args ...string) (commandResult,
 func (r realCommandRunner) runEnv(dir, name string, env []string, args ...string) (commandResult, error) {
 	commandName, toolchain := r.commandSpec(name)
 	command := exec.Command(commandName, args...)
+	var commandContext context.Context
+	if name == deadcodeToolName {
+		ctx, cancel := context.WithTimeout(context.Background(), deadcodeCommandTimeout)
+		defer cancel()
+		commandContext = ctx
+		command = exec.CommandContext(ctx, commandName, args...)
+		command.WaitDelay = deadcodeCommandWaitDelay
+	}
 	command.Dir = dir
 	overrides := []string{
 		"GOTOOLCHAIN=" + toolchain,
@@ -78,6 +100,9 @@ func (r realCommandRunner) runEnv(dir, name string, env []string, args ...string
 	overrides = append(overrides, env...)
 	command.Env = commandEnv(os.Environ(), overrides...)
 	output, err := command.CombinedOutput()
+	if commandContext != nil && commandContext.Err() != nil {
+		return commandResult{}, &qualityToolCommandTimeoutError{tool: name}
+	}
 	if err == nil {
 		return commandResult{output: string(output)}, nil
 	}
