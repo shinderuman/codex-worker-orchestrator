@@ -8,12 +8,12 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 )
 
-const autoResumeAbortUsage = "usage: glm-worker --auto-resume-abort <transaction-token> automation_update_unavailable"
-
 type autoResumeParentOutput struct {
 	autoresume.AutoResumeOutput
 	AbortCommand []string `json:"abort_command,omitempty"`
 }
+
+const autoResumeAbortUsage = "usage: glm-worker --auto-resume-abort <transaction-token> automation_update_unavailable"
 
 func init() {
 	commandParsers["--auto-resume-abort"] = autoResumeAbortCommand
