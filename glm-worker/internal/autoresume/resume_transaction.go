@@ -407,7 +407,7 @@ func advanceAutoResumeCreate(transaction autoResumeTransaction, transactionID st
 	}
 	if responseReason != "" {
 		output := autoResumeFailureOutput(transaction, transactionID, responseReason)
-		if facts.AutomationID != "" {
+		if facts.AutomationID == transaction.ExpectedAutomationID {
 			output.Cleanup = autoResumeDeleteSpec(facts.AutomationID)
 		}
 		return output
