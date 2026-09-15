@@ -13,15 +13,12 @@
 
 ## resume transaction relay
 
-- `--auto-resume-plan`の`status=write_required`では、`write` objectを変更せずそのままCodex appの`automation_update`へ渡す。親はautomation ID、name、target thread、status、RRULE、DTSTART、promptを補完・修正・再計算しない。利用可能なtool schemaに従い、生のautomation directiveやRRULEを本文へ出力しない。
-- `write`内のpromptはmachine生成のauthority定型文を含む。この定型文は`IMPLEMENTATION_RULES.md`のrepository automation恒久許可、現在taskに既にある実装継続authority、GLMの禁止範囲がGit remote writeであってGLM実行全般ではないことのboundedな機械生成文であり、外部安全判定へはこの生成済みspecごと渡される。親がauthority文面を書き足し・省略しない。
-- app toolのraw responseは内容を要約・整形・再解釈せず、同じplan outputの`token`とともに`glm-worker --auto-resume-response-stdin <payload-bytes> <token> [--sha256 <hex>]`へ渡す。stdin payloadは既存のbyte-counted stdin contractに従う。応答のfield semantics検査(top-levelの`isError`、exact automation ID、期待mode/status、explicit success message、`Rendered suggestion`や`suggested_create`の拒否、raw substring検査の禁止)はmachine validationが行い、親は応答を解釈しない。
-- machineが次の`status=write_required`を返した場合だけ、そのoutputの`write`を同じ手順で1回実行する。retry回数、transaction identity、create後のexact returned ID、同一automationへのupdateはmachine stateを正とし、親で別transactionを組み立てない。lookup・create・update・verifyの間へcommentary・reasoning・通常assistant turnを挟まない。
-- machineが`cleanup`を返した場合、best-effort cleanupはそのspecが指すexact automationだけへ実行する。automation名・時刻近接・一覧探索でcleanup対象を広げない。
-- `status=verified`だけが予約成功である。検証の機械根拠は保存済みautomation TOML実体(`~/.codex/automations/<key>/automation.toml`)のid・name・status ACTIVE・target_thread_id・rrule完全契約(UTC DTSTART + 改行 + `RRULE:FREQ=DAILY;COUNT=1`)と、`~/.codex/sqlite/codex-dev.db`の`automations.next_run_at`・id・status・rruleが期待ID・対象thread・絶対時刻と一致することであり、transaction内部で現在processの`CODEX_THREAD_ID`による保存実体verifyとして実行される。この時点で初めてrate limit停止を報告してよい。
-- `status=failed`、command error、malformed response、`isError:true`、保存実体`UNAVAILABLE`はfail closedとする。予約済みと報告せず、machineが返したcleanupだけを実行し、作成不能として手動`glm-worker --resume`fallbackを明示する。rate-limit window中の直接`--resume`はlifecycle admissionがreset時刻前に構造化fail closedする。timer・手動待機・直接resumeでwindowを短縮できず、手動fallbackはreset後のみ有効である。machine failed出力はcanonical `authority` objectと、`isError:true`拒否でmachine JSON payloadに拒否messageがある場合は制御文字を除去し長さ上限で切り詰めたboundedな拒否理由を`reason`へ含む。親はこのfailed出力自体を拒否理由とauthority scopeのbounded evidenceとして扱い、raw responseの別保持・再解釈で補わない。検証失敗後のupdate再試行はmachine transaction内部で最大1回だけ行われ、親が再試行を組み立てない。UI表示や時刻の目視一致で`verified`へ昇格させない。
-- `write.boundary=external-unenforceable`は、repositoryからCodex app write自体を直接強制できない境界を表す。machine spec生成・response admission・保存実体postconditionまでをrepository側が所有し、親の役割は生成済みspecのfieldをlosslessにcreate/updateへ転送し、tool responseを次のmachine validationへ渡すことだけである。時刻・identity・成功判定を自然言語で補わない。
-- 恒久許可を含む生成済みauthority scopeを渡してもなお外部安全判定に拒否された場合だけ、拒否理由と渡したauthority scopeはmachine failed出力のbounded evidence(boundedな`reason`拒否文とcanonical `authority` object)として残る。親はそれをそのまま使ってrepository内で修正可能な境界とCodex app側の外部修正境界を分離して報告する。automation安全審査を迂回しない。
+- `status=write_required`で現在threadに`automation_update`がある場合だけ、`write` objectを変更せずそのままtoolへ渡す。automation ID、name、target thread、status、RRULE、DTSTART、prompt、authorityを親で補完・再計算しない。
+- `automation_update`が現在threadに存在しない場合は、machine outputの`abort_command`を同じthreadで**1回だけ**実行し、その`status=failed`を終端結果として停止する。他threadへのqueue/質問、rollout/session探索、plugin/MCP transport直叩き、remote-control探索、timer・poll・待機、手作業schedule再構成へfallbackしない。
+- toolのraw responseは要約・再解釈せず、outputの`token`とともに`--auto-resume-response-stdin`へ渡す。次の`status=write_required`だけ同じrelayを繰り返す。lookup/create/update/verifyの間へcommentary・reasoning・通常assistant turnを挟まない。
+- machineが`cleanup`を返した場合だけ、そのexact specをbest-effort実行する。automation名・時刻近接・一覧探索からcleanup対象を作らない。
+- `status=verified`だけを予約成功とする。`status=failed`、command error、malformed response、`isError:true`、保存実体`UNAVAILABLE`はfail closedで、machineのbounded `reason` / `authority`だけを根拠に報告する。invalid response自体はretryせず、保存実体verify失敗後のupdateだけmachine内部で最大1回retryできる。手動`glm-worker --resume`はreset後だけ有効である。
+- `write.boundary=external-unenforceable`はCodex app writeがrepository外であることだけを表す。repository側がspec生成・response admission・postconditionを所有し、親はlossless relayだけを行う。外部安全判定を迂回しない。
 
 ## 生成されるmachine specの契約
 

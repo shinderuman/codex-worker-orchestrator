@@ -83,7 +83,7 @@ func printAutoResumePlan(cmd Command, cfg config.AppConfig, stdout io.Writer) er
 	if err := persistAutoResumeToken(cfg.CodexConfigDir, output.Token); err != nil {
 		return err
 	}
-	if err := machinecli.WriteJSON(stdout, output); err != nil {
+	if err := machinecli.WriteJSON(stdout, autoResumeOutputForParent(output)); err != nil {
 		removeAutoResumeToken(cfg.CodexConfigDir, output.Token)
 		return err
 	}
@@ -91,6 +91,9 @@ func printAutoResumePlan(cmd Command, cfg config.AppConfig, stdout io.Writer) er
 }
 
 func printAutoResumeResponse(cmd Command, cfg config.AppConfig, stdout io.Writer) error {
+	if cmd.StdinBytes == 0 && cmd.Payload == autoresume.AutoResumeAbortAutomationUpdateUnavailable {
+		return printAutoResumeAbort(cmd, cfg, stdout)
+	}
 	lease, err := beginAutoResumeToken(cfg.CodexConfigDir, cmd.AutoResume.Token)
 	if err != nil {
 		return err
@@ -135,7 +138,7 @@ func printAutoResumeResponse(cmd Command, cfg config.AppConfig, stdout io.Writer
 		return err
 	}
 	delivering = true
-	complete, err := writeTransactionJSON(stdout, output)
+	complete, err := writeTransactionJSON(stdout, autoResumeOutputForParent(output))
 	if !complete {
 		return err
 	}
