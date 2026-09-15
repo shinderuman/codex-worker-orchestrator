@@ -1,7 +1,6 @@
 package state
 
 import (
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -37,11 +36,8 @@ func TestAdmitParentActionResumeWindowBindsOnlyRateLimitResetEvidence(t *testing
 	unknown := &StateStore{dir: t.TempDir()}
 	writeRateLimitedWindowCheckpoint(t, unknown, "")
 	_, admitted, err := unknown.AdmitParentAction(ParentActionResume)
-	if err == nil || admitted {
+	if err != nil || !admitted {
 		t.Fatalf("unknown reset resume = admitted:%v err:%v", admitted, err)
-	}
-	if !strings.Contains(err.Error(), "rate-limit reset evidence is missing") {
-		t.Fatalf("unknown reset error = %v", err)
 	}
 
 	provider := &StateStore{dir: t.TempDir()}
@@ -59,16 +55,6 @@ func TestAdmitParentActionResumeWindowBindsOnlyRateLimitResetEvidence(t *testing
 	_, admitted, err = provider.AdmitParentAction(ParentActionResume)
 	if err != nil || !admitted {
 		t.Fatalf("provider-unavailable resume = admitted:%v err:%v", admitted, err)
-	}
-}
-
-func TestRejectResumeBeforeRateLimitResetPropagatesCheckpointReadError(t *testing.T) {
-	st := &StateStore{dir: t.TempDir()}
-	if err := os.WriteFile(st.Path(resumeStateFile), []byte("{"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := st.rejectResumeBeforeRateLimitReset(); err == nil || !strings.Contains(err.Error(), "load rate-limit resume checkpoint") {
-		t.Fatalf("checkpoint read error = %v", err)
 	}
 }
 

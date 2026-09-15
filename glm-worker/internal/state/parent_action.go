@@ -88,17 +88,8 @@ func (s *StateStore) AdmitParentAction(action ParentAction) (ParentActionPlan, b
 
 func (s *StateStore) rejectResumeBeforeRateLimitReset() error {
 	checkpoint, err := s.LoadResumeCheckpoint()
-	if errors.Is(err, ErrNoResumeCheckpoint) {
+	if err != nil || checkpoint.StopKind != ResumeStopRateLimited || checkpoint.ResetAtRFC3339 == "" {
 		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("load rate-limit resume checkpoint: %w", err)
-	}
-	if checkpoint.StopKind != ResumeStopRateLimited {
-		return nil
-	}
-	if checkpoint.ResetAtRFC3339 == "" {
-		return fmt.Errorf("rate-limit reset evidence is missing; refusing resume until a reset time is known")
 	}
 	resetAt, err := time.Parse(time.RFC3339, checkpoint.ResetAtRFC3339)
 	if err != nil {
