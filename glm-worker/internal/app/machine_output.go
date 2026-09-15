@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 	"io"
 	"os"
 	"strings"
@@ -63,7 +64,7 @@ func runAuthorityBootstrap(args []string, stdout io.Writer) (bool, error) {
 
 func writeValidatedMachineJSON(target io.Writer, value any) error {
 	output := newSingleShotOutput(target)
-	if err := writeJSON(output, value); err != nil {
+	if err := machinecli.WriteJSON(output, value); err != nil {
 		return err
 	}
 	return output.release()

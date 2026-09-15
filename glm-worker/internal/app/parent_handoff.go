@@ -2,6 +2,8 @@ package app
 
 import (
 	"errors"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskview"
 	"os"
 	"path/filepath"
 	"sort"
@@ -167,8 +169,8 @@ func buildParentHandoff(st *state.StateStore) parentHandoffOutput {
 	output := parentHandoffOutput{
 		Version:          parentHandoffVersion,
 		Consistent:       true,
-		TaskID:           stringPtr(taskID),
-		TaskStatus:       taskStatusPtr(taskStatus),
+		TaskID:           machinecli.StringPtr(taskID),
+		TaskStatus:       machinecli.TaskStatusPtr(taskStatus),
 		AllowedActions:   []string{},
 		PendingDecision:  st.Exists("pending-decision"),
 		ParentReviewOpen: parentReviewPtr(st.OpenParentReviewLabel()),
@@ -178,7 +180,7 @@ func buildParentHandoff(st *state.StateStore) parentHandoffOutput {
 		SessionRotation:  &state.SessionRotationProjection{State: state.SessionRotationProjectionUnavailable},
 	}
 	if taskID != "" {
-		output.ArtifactDir = stringPtr(st.ArtifactDir(taskID))
+		output.ArtifactDir = machinecli.StringPtr(st.ArtifactDir(taskID))
 	}
 	applyParentActionPlan(st, &output)
 	applyParentRequestCompletion(repoRoot, st, &output)
@@ -220,7 +222,7 @@ func applyParentActionPlan(st *state.StateStore, output *parentHandoffOutput) {
 	if len(plan.RequiredActionParameters) != 0 {
 		output.RequiredActionParameters = plan.RequiredActionParameters
 	}
-	output.ResumeKind = stringPtr(plan.ResumeKind)
+	output.ResumeKind = machinecli.StringPtr(plan.ResumeKind)
 }
 
 func applyParentSnapshot(repoRoot string, output *parentHandoffOutput) {
@@ -242,7 +244,7 @@ func applyParentSnapshot(repoRoot string, output *parentHandoffOutput) {
 }
 
 func applyParentLastMaterial(st *state.StateStore, taskID string, output *parentHandoffOutput) {
-	logs, err := readStatusTelemetry(st, taskID)
+	logs, err := taskview.ReadStatusTelemetry(st, taskID)
 	if err != nil || len(logs) == 0 {
 		return
 	}
@@ -257,7 +259,7 @@ func applyParentLastMaterial(st *state.StateStore, taskID string, output *parent
 
 func parentHandoffMaterialFromLog(log state.ModelCallLog) *parentHandoffMaterial {
 	material := &parentHandoffMaterial{
-		CallID:       stringPtr(log.CallID),
+		CallID:       machinecli.StringPtr(log.CallID),
 		CallType:     string(log.CallType),
 		Phase:        log.Phase,
 		Outcome:      log.Outcome,
@@ -396,7 +398,7 @@ func routingSnapshotMatch(record qualityGateRunRecord, repoRoot string, snapshot
 }
 
 func parentReviewPtr(label string) *string {
-	if label == "" || label == statusNone {
+	if label == "" || label == taskview.StatusNone {
 		return nil
 	}
 	return &label
@@ -405,7 +407,7 @@ func parentReviewPtr(label string) *string {
 func markHandoffInconsistent(output *parentHandoffOutput, detail string) {
 	output.Consistent = false
 	if output.Inconsistency == nil {
-		output.Inconsistency = stringPtr(detail)
+		output.Inconsistency = machinecli.StringPtr(detail)
 	}
 	output.RequiredAction = nil
 	output.AllowedActions = []string{}

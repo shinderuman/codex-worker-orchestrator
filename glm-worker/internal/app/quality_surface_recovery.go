@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 	"io"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
@@ -40,7 +41,7 @@ func recoverQualitySurfaceLifecycle(st *state.StateStore, expectedTaskID string,
 	default:
 		return fmt.Errorf("quality-surface recovery does not cover task status %s", status)
 	}
-	return writeJSON(stdout, qualitySurfaceRecoveryOutput{
+	return machinecli.WriteJSON(stdout, qualitySurfaceRecoveryOutput{
 		Status:     "recovered",
 		TaskID:     taskID,
 		TaskStatus: string(status),

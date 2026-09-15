@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 
 	"io"
 	"os"
@@ -191,21 +192,21 @@ func TestPrintParentEvidenceRejectsMalformedManifests(t *testing.T) {
 	if err := os.WriteFile(manifestPath, []byte(`{"version":2,"reason":"x","handoff":{}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	var usage *UsageError
+	var usage *machinecli.UsageError
 	if _, err := loadParentEvidenceManifest(manifestPath); !errors.As(err, &usage) {
-		t.Fatalf("version 2 manifest error = %T, want UsageError", err)
+		t.Fatalf("version 2 manifest error = %T, want machinecli.UsageError", err)
 	}
 
 	if err := os.WriteFile(manifestPath, []byte(`{"version":1,"reason":"x","unknown":1}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := loadParentEvidenceManifest(manifestPath); !errors.As(err, &usage) {
-		t.Fatalf("unknown field manifest error = %T, want UsageError", err)
+		t.Fatalf("unknown field manifest error = %T, want machinecli.UsageError", err)
 	}
 
-	var notFound *NotFoundError
+	var notFound *machinecli.NotFoundError
 	if _, err := loadParentEvidenceManifest(filepath.Join(fixture.repoRoot, "missing.json")); !errors.As(err, &notFound) {
-		t.Fatalf("missing manifest error = %T, want NotFoundError", err)
+		t.Fatalf("missing manifest error = %T, want machinecli.NotFoundError", err)
 	}
 }
 

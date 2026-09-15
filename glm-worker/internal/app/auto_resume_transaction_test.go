@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 	"os"
 	"path/filepath"
 	"strings"
@@ -112,7 +113,7 @@ func TestAutoResumePlanFailsClosedWhenTaskIsNotRateLimited(t *testing.T) {
 
 	cmd := Command{Mode: ModeAutoResumePlan, AutoResume: AutoResumeArgs{ParentThreadID: testAppCodexWakeThread}}
 	err = printAutoResumePlan(cmd, cfg, &bytes.Buffer{})
-	var notFound *NotFoundError
+	var notFound *machinecli.NotFoundError
 	if !errors.As(err, &notFound) {
 		t.Fatalf("error = %v", err)
 	}
@@ -141,7 +142,7 @@ func TestAutoResumePlanFailsClosedWhenResetEvidenceIsMissing(t *testing.T) {
 
 	cmd := Command{Mode: ModeAutoResumePlan, AutoResume: AutoResumeArgs{ParentThreadID: testAppCodexWakeThread}}
 	err = printAutoResumePlan(cmd, cfg, &bytes.Buffer{})
-	var notFound *NotFoundError
+	var notFound *machinecli.NotFoundError
 	if !errors.As(err, &notFound) {
 		t.Fatalf("error = %v", err)
 	}

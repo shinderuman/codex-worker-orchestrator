@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 	"io"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
@@ -23,7 +24,7 @@ func rotateInstructionBaseline(cfg config.AppConfig, st *state.StateStore, stdou
 	if err != nil {
 		return err
 	}
-	return writeJSON(stdout, instructionBaselineRotationOutput{
+	return machinecli.WriteJSON(stdout, instructionBaselineRotationOutput{
 		Rotated:        true,
 		PreviousDigest: rotation.PreviousDigest,
 		CurrentDigest:  rotation.CurrentDigest,

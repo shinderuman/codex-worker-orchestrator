@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/report"
 	"io"
 	"os"
 	"path/filepath"
@@ -16,7 +17,7 @@ import (
 func executeCallOutliers(t *testing.T, cfg config.AppConfig, st *state.StateStore) map[string]any {
 	t.Helper()
 	var out bytes.Buffer
-	if err := printCallOutliers(cfg, st, TelemetryQueryArgs{}, &out); err != nil {
+	if err := report.PrintCallOutliers(cfg, st, report.Query{}, nil, &out); err != nil {
 		t.Fatal(err)
 	}
 	return decodeSingleLineJSON(t, out.String())
@@ -70,15 +71,15 @@ func TestExecuteCallOutliersAggregatesSavedTelemetry(t *testing.T) {
 		t.Fatalf("telemetry dir = %#v", telemetry)
 	}
 
-	report, _ := decoded["report"].(map[string]any)
-	if report["percentile_method"] != "linear" {
-		t.Fatalf("percentile_method = %#v", report["percentile_method"])
+	summary, _ := decoded["report"].(map[string]any)
+	if summary["percentile_method"] != "linear" {
+		t.Fatalf("percentile_method = %#v", summary["percentile_method"])
 	}
-	records, _ := report["records"].(map[string]any)
+	records, _ := summary["records"].(map[string]any)
 	if records["read"].(float64) != 4 || records["task_calls"].(float64) != 4 {
 		t.Fatalf("records = %#v", records)
 	}
-	distributions, _ := report["distributions"].([]any)
+	distributions, _ := summary["distributions"].([]any)
 	if len(distributions) != 2 {
 		t.Fatalf("distributions = %#v", distributions)
 	}
@@ -90,7 +91,7 @@ func TestExecuteCallOutliersAggregatesSavedTelemetry(t *testing.T) {
 	if turns["median"].(float64) != 120 || turns["p95"].(float64) != 120 || turns["total"].(float64) != 240 {
 		t.Fatalf("current turns = %#v", turns)
 	}
-	tasks, _ := report["tasks"].([]any)
+	tasks, _ := summary["tasks"].([]any)
 	if len(tasks) != 2 {
 		t.Fatalf("tasks = %#v", tasks)
 	}
@@ -105,7 +106,7 @@ func TestExecuteCallOutliersAggregatesSavedTelemetry(t *testing.T) {
 	if multiplier, _ := top["turns_x_initial"].(float64); multiplier != 3.67 {
 		t.Fatalf("turns_x_initial = %#v", top["turns_x_initial"])
 	}
-	sessions, _ := report["sessions"].([]any)
+	sessions, _ := summary["sessions"].([]any)
 	if len(sessions) != 1 {
 		t.Fatalf("sessions = %#v", sessions)
 	}
@@ -113,14 +114,14 @@ func TestExecuteCallOutliersAggregatesSavedTelemetry(t *testing.T) {
 	if session["tasks"].(float64) != 2 || session["calls"].(float64) != 4 || session["turns_total"].(float64) != 880 {
 		t.Fatalf("session = %#v", session)
 	}
-	outlierCalls, _ := report["outlier_calls"].([]any)
-	outlierTasks, _ := report["outlier_tasks"].([]any)
+	outlierCalls, _ := summary["outlier_calls"].([]any)
+	outlierTasks, _ := summary["outlier_tasks"].([]any)
 	if len(outlierCalls) != 0 || len(outlierTasks) != 0 {
 		t.Fatalf("母数不足なのにoutlier = %#v / %#v", outlierCalls, outlierTasks)
 	}
 
 	var rendered bytes.Buffer
-	if err := printCallOutliers(cfg, st, TelemetryQueryArgs{}, &rendered); err != nil {
+	if err := report.PrintCallOutliers(cfg, st, report.Query{}, nil, &rendered); err != nil {
 		t.Fatal(err)
 	}
 	for _, secret := range []string{"raw-prompt-must-not-leak", "raw-response-must-not-leak", "\"prompt\"", "\"response\""} {
@@ -165,7 +166,7 @@ func TestExecuteCallOutliersEmptyState(t *testing.T) {
 		if telemetry["status"] != "none" {
 			t.Fatalf("%v telemetry = %#v", args, telemetry)
 		}
-		if cmd.Query.isHistory() {
+		if cmd.Query.IsHistory() {
 			if telemetry["files_considered"].(float64) != 0 {
 				t.Fatalf("history files_considered = %#v", telemetry)
 			}
@@ -182,11 +183,11 @@ func TestExecuteCallOutliersEmptyState(t *testing.T) {
 		if telemetry["files"].(float64) != 0 {
 			t.Fatalf("telemetry = %#v", telemetry)
 		}
-		report, _ := decoded["report"].(map[string]any)
+		summary, _ := decoded["report"].(map[string]any)
 		for _, key := range []string{"distributions", "models", "sessions", "tasks", "outlier_calls", "outlier_tasks"} {
-			value, ok := report[key].([]any)
+			value, ok := summary[key].([]any)
 			if !ok || value == nil {
-				t.Fatalf("reportの%qが空配列ではありません: %#v", key, report[key])
+				t.Fatalf("reportの%qが空配列ではありません: %#v", key, summary[key])
 			}
 			if len(value) != 0 {
 				t.Fatalf("reportの%qが空ではありません: %#v", key, value)
@@ -239,8 +240,8 @@ func TestCallOutliersPartialOnUnreadableTelemetry(t *testing.T) {
 	if telemetry["files"].(float64) != 1 {
 		t.Fatalf("files = %#v", telemetry)
 	}
-	report, _ := decoded["report"].(map[string]any)
-	records, _ := report["records"].(map[string]any)
+	summary, _ := decoded["report"].(map[string]any)
+	records, _ := summary["records"].(map[string]any)
 	if records["read"].(float64) != 2 {
 		t.Fatalf("records = %#v", records)
 	}

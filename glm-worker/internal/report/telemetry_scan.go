@@ -1,13 +1,16 @@
-package app
+package report
 
-import "github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
+import (
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskview"
+)
 
 type telemetryTaskError struct {
 	TaskID string `json:"task_id"`
 	Error  string `json:"error"`
 }
 
-type telemetryScan struct {
+type TelemetryScan struct {
 	Status                 string               `json:"status"`
 	Dir                    string               `json:"dir"`
 	Files                  int                  `json:"files"`
@@ -17,16 +20,16 @@ type telemetryScan struct {
 	UnreadableTasks        []telemetryTaskError `json:"unreadable_tasks,omitempty"`
 
 	considered int
-	logs       []state.TaskCallLogs
+	Logs       []state.TaskCallLogs `json:"-"`
 }
 
-func scanTelemetryTaskLogs(st *state.StateStore, filter state.TelemetryQueryFilter) (*telemetryScan, error) {
+func ScanTelemetryTaskLogs(st *state.StateStore, filter state.TelemetryQueryFilter) (*TelemetryScan, error) {
 	current, err := st.ScanTelemetryCurrent(filter)
 	if err != nil {
 		return nil, err
 	}
 
-	scan := &telemetryScan{
+	scan := &TelemetryScan{
 		Status:                 "ok",
 		Dir:                    current.Dir,
 		Files:                  current.Files,
@@ -34,7 +37,7 @@ func scanTelemetryTaskLogs(st *state.StateStore, filter state.TelemetryQueryFilt
 		RecordsUndatedExcluded: current.RecordsUndatedExcluded,
 		IgnoredFiles:           current.IgnoredFiles,
 		considered:             current.FilesConsidered,
-		logs:                   current.Logs,
+		Logs:                   current.Logs,
 	}
 	for _, unreadable := range current.UnreadableTasks {
 		scan.UnreadableTasks = append(scan.UnreadableTasks, telemetryTaskError{
@@ -43,10 +46,10 @@ func scanTelemetryTaskLogs(st *state.StateStore, filter state.TelemetryQueryFilt
 		})
 	}
 	if len(scan.UnreadableTasks) > 0 {
-		scan.Status = statusPartial
+		scan.Status = taskview.StatusPartial
 	}
 	if scan.considered == 0 {
-		scan.Status = statusNone
+		scan.Status = taskview.StatusNone
 	}
 	return scan, nil
 }

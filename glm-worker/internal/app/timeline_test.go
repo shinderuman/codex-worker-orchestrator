@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/report"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskview"
 	"io"
 	"os"
 	"path/filepath"
@@ -20,20 +22,25 @@ func timelineBaseTime() time.Time {
 	return time.Date(2026, 8, 16, 12, 0, 0, 0, time.UTC)
 }
 
-func executeTimelineOutput(t *testing.T, st *state.StateStore, taskID string) timelineOutput {
+func executeReportOutput[T any](t *testing.T, render func(*state.StateStore, string, io.Writer) error, st *state.StateStore, taskID string, label string) T {
 	t.Helper()
 	var out bytes.Buffer
-	if err := printTimeline(st, taskID, &out); err != nil {
+	if err := render(st, taskID, &out); err != nil {
 		t.Fatal(err)
 	}
-	var output timelineOutput
+	var output T
 	if err := json.Unmarshal([]byte(strings.TrimSpace(out.String())), &output); err != nil {
-		t.Fatalf("timeline出力がmachine JSONではありません: %v: %q", err, out.String())
+		t.Fatalf("%s出力がmachine JSONではありません: %v: %q", label, err, out.String())
 	}
 	return output
 }
 
-func timelineToolOf(t *testing.T, tools []timelineTool, name string) timelineTool {
+func executeTimelineOutput(t *testing.T, st *state.StateStore, taskID string) report.TimelineOutput {
+	t.Helper()
+	return executeReportOutput[report.TimelineOutput](t, report.PrintTimeline, st, taskID, "timeline")
+}
+
+func timelineToolOf(t *testing.T, tools []report.TimelineTool, name string) report.TimelineTool {
 	t.Helper()
 	for _, tool := range tools {
 		if tool.Name == name {
@@ -41,7 +48,7 @@ func timelineToolOf(t *testing.T, tools []timelineTool, name string) timelineToo
 		}
 	}
 	t.Fatalf("tool集計に%qがありません: %#v", name, tools)
-	return timelineTool{}
+	return report.TimelineTool{}
 }
 
 func timelineAgingOf(t *testing.T, agings []state.SessionAging, sessionID string) state.SessionAging {
@@ -217,7 +224,7 @@ func TestTimelineSkipsCorruptLines(t *testing.T) {
 	if output.SkippedEvents != 1 {
 		t.Fatalf("skipped_events = %d", output.SkippedEvents)
 	}
-	if output.Coverage.Status != timelineStatusPartial {
+	if output.Coverage.Status != report.TimelineStatusPartial {
 		t.Fatalf("skipped eventを含むcoverage = %#v", output.Coverage)
 	}
 	if len(output.Calls) != 1 {
@@ -259,7 +266,7 @@ func TestTimelineCurrentTaskWithoutEvents(t *testing.T) {
 	if output.Calls != nil || output.ToolTotals != nil {
 		t.Fatalf("event logがないのにcall表示 = %#v", output)
 	}
-	if output.Coverage.Status != timelineStatusPartial || len(output.Coverage.MissingSources) != 1 || output.Coverage.MissingSources[0] != "event_log" {
+	if output.Coverage.Status != report.TimelineStatusPartial || len(output.Coverage.MissingSources) != 1 || output.Coverage.MissingSources[0] != "event_log" {
 		t.Fatalf("event logなしtelemetryありのcoverage = %#v", output.Coverage)
 	}
 }
@@ -311,19 +318,19 @@ func TestTimelineExplicitTask(t *testing.T) {
 	if aging.Role != state.WorkerRole || aging.Calls != 1 {
 		t.Fatalf("sess-old aging = %#v", aging)
 	}
-	if output.Coverage.Status != timelineStatusComplete || output.Coverage.MissingSources != nil {
+	if output.Coverage.Status != report.TimelineStatusComplete || output.Coverage.MissingSources != nil {
 		t.Fatalf("event logありのcoverage = %#v", output.Coverage)
 	}
-	if output.Coverage.Sources.EventLog.Status != timelineSourceOK || output.Coverage.Sources.EventLog.Records != 1 ||
+	if output.Coverage.Sources.EventLog.Status != report.TimelineSourceOK || output.Coverage.Sources.EventLog.Records != 1 ||
 		output.Coverage.Sources.EventLog.Path != st.TaskEventLogPath(oldTaskID) {
 		t.Fatalf("event logありのcoverage.sources.event_log = %#v", output.Coverage.Sources.EventLog)
 	}
-	if output.Coverage.Sources.TaskStats.Status != timelineSourceOK || output.Coverage.Sources.TaskStats.Path != st.TaskStatsArchivePath(oldTaskID) {
+	if output.Coverage.Sources.TaskStats.Status != report.TimelineSourceOK || output.Coverage.Sources.TaskStats.Path != st.TaskStatsArchivePath(oldTaskID) {
 		t.Fatalf("event logありのcoverage.sources.task_stats = %#v", output.Coverage.Sources.TaskStats)
 	}
 
 	out := &bytes.Buffer{}
-	if err := printTimeline(st, "12345678-1234-4234-8123-123456789abc", out); err == nil {
+	if err := report.PrintTimeline(st, "12345678-1234-4234-8123-123456789abc", out); err == nil {
 		t.Fatalf("存在しないtask IDがerrorになりません: %s", out.String())
 	}
 }
@@ -364,39 +371,39 @@ func TestTimelineRetainedTaskReturnsPartialTelemetryTimeline(t *testing.T) {
 	})
 
 	var out bytes.Buffer
-	if err := printTimeline(st, oldTaskID, &out); err != nil {
+	if err := report.PrintTimeline(st, oldTaskID, &out); err != nil {
 		t.Fatalf("retention済みtaskが全体失敗しました: %v", err)
 	}
 	decoded := decodeSingleLineJSON(t, out.String())
 	for _, key := range []string{"task_id", "coverage", "session_aging", "event_log"} {
 		requireJSONKey(t, decoded, key)
 	}
-	var output timelineOutput
+	var output report.TimelineOutput
 	if err := json.Unmarshal([]byte(strings.TrimSpace(out.String())), &output); err != nil {
 		t.Fatalf("timeline出力がmachine JSONではありません: %v: %q", err, out.String())
 	}
 
-	if output.Coverage.Status != timelineStatusPartial {
+	if output.Coverage.Status != report.TimelineStatusPartial {
 		t.Fatalf("coverage.status = %#v", output.Coverage)
 	}
 	if len(output.Coverage.MissingSources) != 1 || output.Coverage.MissingSources[0] != "event_log" {
 		t.Fatalf("coverage.missing_sources = %#v", output.Coverage.MissingSources)
 	}
-	if output.Coverage.Sources.EventLog.Status != statusNone || output.Coverage.Sources.EventLog.Records != 0 ||
+	if output.Coverage.Sources.EventLog.Status != taskview.StatusNone || output.Coverage.Sources.EventLog.Records != 0 ||
 		output.Coverage.Sources.EventLog.Path != st.TaskEventLogPath(oldTaskID) {
 		t.Fatalf("coverage.sources.event_log = %#v", output.Coverage.Sources.EventLog)
 	}
-	if output.Coverage.Sources.Telemetry.Status != timelineSourceOK || output.Coverage.Sources.Telemetry.Records != 1 ||
+	if output.Coverage.Sources.Telemetry.Status != report.TimelineSourceOK || output.Coverage.Sources.Telemetry.Records != 1 ||
 		output.Coverage.Sources.Telemetry.Path != st.ModelCallLogPath(oldTaskID) {
 		t.Fatalf("coverage.sources.telemetry = %#v", output.Coverage.Sources.Telemetry)
 	}
-	if output.Coverage.Sources.TaskStats.Status != timelineSourceOK || output.Coverage.Sources.TaskStats.Path != st.TaskStatsArchivePath(oldTaskID) {
+	if output.Coverage.Sources.TaskStats.Status != report.TimelineSourceOK || output.Coverage.Sources.TaskStats.Path != st.TaskStatsArchivePath(oldTaskID) {
 		t.Fatalf("coverage.sources.task_stats = %#v", output.Coverage.Sources.TaskStats)
 	}
 	if output.TaskStatus == nil || *output.TaskStatus != string(state.TaskStatusComplete) {
 		t.Fatalf("task_status = %#v", output.TaskStatus)
 	}
-	if output.EventLog.Status != statusNone {
+	if output.EventLog.Status != taskview.StatusNone {
 		t.Fatalf("event_log = %#v", output.EventLog)
 	}
 	aging := timelineAgingOf(t, output.SessionAging, "sess-old")
@@ -417,23 +424,23 @@ func TestTimelineRetainedTaskWithoutRecordsReturnsUnknownTimeline(t *testing.T) 
 	oldTaskID := retainTimelineTask(t, st, nil)
 
 	output := executeTimelineOutput(t, st, oldTaskID)
-	if output.Coverage.Status != timelineStatusUnknown {
+	if output.Coverage.Status != report.TimelineStatusUnknown {
 		t.Fatalf("coverage.status = %#v", output.Coverage)
 	}
 	if len(output.Coverage.MissingSources) != 2 ||
 		output.Coverage.MissingSources[0] != "event_log" || output.Coverage.MissingSources[1] != "telemetry" {
 		t.Fatalf("coverage.missing_sources = %#v", output.Coverage.MissingSources)
 	}
-	if output.Coverage.Sources.Telemetry.Status != statusNone || output.Coverage.Sources.Telemetry.Path != st.ModelCallLogPath(oldTaskID) {
+	if output.Coverage.Sources.Telemetry.Status != taskview.StatusNone || output.Coverage.Sources.Telemetry.Path != st.ModelCallLogPath(oldTaskID) {
 		t.Fatalf("coverage.sources.telemetry = %#v", output.Coverage.Sources.Telemetry)
 	}
-	if output.Coverage.Sources.TaskStats.Status != timelineSourceOK {
+	if output.Coverage.Sources.TaskStats.Status != report.TimelineSourceOK {
 		t.Fatalf("coverage.sources.task_stats = %#v", output.Coverage.Sources.TaskStats)
 	}
 	if output.TaskStatus == nil || *output.TaskStatus != string(state.TaskStatusComplete) {
 		t.Fatalf("task_status = %#v", output.TaskStatus)
 	}
-	if output.Telemetry == nil || *output.Telemetry != timelineSourceOK {
+	if output.Telemetry == nil || *output.Telemetry != report.TimelineSourceOK {
 		t.Fatalf("telemetry = %#v", output.Telemetry)
 	}
 	if len(output.SessionAging) != 0 || output.Calls != nil {
@@ -457,16 +464,16 @@ func TestTimelineRetainedTaskWithMalformedTelemetryReportsUnreadable(t *testing.
 	}
 
 	output := executeTimelineOutput(t, st, oldTaskID)
-	if output.Coverage.Status != timelineStatusUnknown {
+	if output.Coverage.Status != report.TimelineStatusUnknown {
 		t.Fatalf("coverage.status = %#v", output.Coverage)
 	}
-	if output.Coverage.Sources.Telemetry.Status != statusUnreadable {
+	if output.Coverage.Sources.Telemetry.Status != taskview.StatusUnreadable {
 		t.Fatalf("coverage.sources.telemetry = %#v", output.Coverage.Sources.Telemetry)
 	}
 	if len(output.Coverage.MissingSources) != 1 || output.Coverage.MissingSources[0] != "event_log" {
 		t.Fatalf("coverage.missing_sources = %#v", output.Coverage.MissingSources)
 	}
-	if output.Telemetry == nil || *output.Telemetry != statusUnreadable {
+	if output.Telemetry == nil || *output.Telemetry != taskview.StatusUnreadable {
 		t.Fatalf("telemetry = %#v", output.Telemetry)
 	}
 	if len(output.SessionAging) != 0 {
@@ -510,23 +517,23 @@ func TestTimelineStatsOnlyRetainedTaskProvesTaskFromVersionThreeArchive(t *testi
 	for _, status := range []state.TaskStatus{state.TaskStatusComplete, state.TaskStatusWaitingSolReview} {
 		writeRetainedStatsArchive(t, st, oldTaskID, retainedStatsArchiveJSON(3, oldTaskID, status))
 		var out bytes.Buffer
-		if err := printTimeline(st, oldTaskID, &out); err != nil {
+		if err := report.PrintTimeline(st, oldTaskID, &out); err != nil {
 			t.Fatalf("stats-only retained taskが全体失敗しました(%s): %v", status, err)
 		}
 		decoded := decodeSingleLineJSON(t, out.String())
 		requireJSONKey(t, decoded, "task_status")
 		requireJSONKey(t, decoded, "coverage")
-		var output timelineOutput
+		var output report.TimelineOutput
 		if err := json.Unmarshal([]byte(strings.TrimSpace(out.String())), &output); err != nil {
 			t.Fatalf("timeline出力がmachine JSONではありません: %v: %q", err, out.String())
 		}
 		if output.TaskStatus == nil || *output.TaskStatus != string(status) {
 			t.Fatalf("task_status = %#v want %q", output.TaskStatus, status)
 		}
-		if output.Coverage.Sources.TaskStats.Status != timelineSourceOK || output.Coverage.Sources.TaskStats.Path != st.TaskStatsArchivePath(oldTaskID) {
+		if output.Coverage.Sources.TaskStats.Status != report.TimelineSourceOK || output.Coverage.Sources.TaskStats.Path != st.TaskStatsArchivePath(oldTaskID) {
 			t.Fatalf("coverage.sources.task_stats = %#v", output.Coverage.Sources.TaskStats)
 		}
-		if output.Coverage.Status != timelineStatusUnknown {
+		if output.Coverage.Status != report.TimelineStatusUnknown {
 			t.Fatalf("coverage.status = %#v", output.Coverage)
 		}
 		if len(output.Coverage.MissingSources) != 2 ||
@@ -540,7 +547,7 @@ func TestTimelineStatsOnlyRetainedTaskProvesTaskFromVersionThreeArchive(t *testi
 
 	writeRetainedStatsArchive(t, st, oldTaskID, retainedStatsArchiveJSON(3, oldTaskID, "mysterious-status"))
 	unknownOut := &bytes.Buffer{}
-	if err := printTimeline(st, oldTaskID, unknownOut); err == nil {
+	if err := report.PrintTimeline(st, oldTaskID, unknownOut); err == nil {
 		t.Fatalf("未知statusのstats-only archiveが存在証拠や成功JSONへ昇格しました: %s", unknownOut.String())
 	}
 	if body := unknownOut.String(); body != "" {
@@ -567,13 +574,13 @@ func TestTimelineRetainedTaskWithUnusableStatsArchiveReportsSourceState(t *testi
 		wantStatsStatus string
 		wantMissing     []string
 	}{
-		{"malformed", "{\"version\":3,\"broken\n", statusUnreadable, []string{"event_log"}},
-		{"status-type-wrong", fmt.Sprintf("{\n  \"version\": 3,\n  \"task_id\": %q,\n  \"status\": 12\n}\n", oldTaskID), statusUnreadable, []string{"event_log"}},
-		{"status-missing", fmt.Sprintf("{\n  \"version\": 3,\n  \"task_id\": %q,\n  \"started_at\": \"2026-09-01T16:24:06.607326Z\"\n}\n", oldTaskID), statusUnreadable, []string{"event_log"}},
-		{"status-unknown", retainedStatsArchiveJSON(3, oldTaskID, "mysterious-status"), statusUnreadable, []string{"event_log"}},
-		{"future-schema-revision", fmt.Sprintf("{\n  \"version\": 3,\n  \"schema_revision\": 2,\n  \"task_id\": %q,\n  \"status\": %q\n}\n", oldTaskID, state.TaskStatusComplete), statusUnreadable, []string{"event_log"}},
-		{"unsupported-version", retainedStatsArchiveJSON(2, oldTaskID, state.TaskStatusComplete), statusUnreadable, []string{"event_log"}},
-		{"foreign-task", retainedStatsArchiveJSON(3, "11111111-2222-4333-8444-555555555555", state.TaskStatusComplete), statusNone, []string{"event_log", "task_stats"}},
+		{"malformed", "{\"version\":3,\"broken\n", taskview.StatusUnreadable, []string{"event_log"}},
+		{"status-type-wrong", fmt.Sprintf("{\n  \"version\": 3,\n  \"task_id\": %q,\n  \"status\": 12\n}\n", oldTaskID), taskview.StatusUnreadable, []string{"event_log"}},
+		{"status-missing", fmt.Sprintf("{\n  \"version\": 3,\n  \"task_id\": %q,\n  \"started_at\": \"2026-09-01T16:24:06.607326Z\"\n}\n", oldTaskID), taskview.StatusUnreadable, []string{"event_log"}},
+		{"status-unknown", retainedStatsArchiveJSON(3, oldTaskID, "mysterious-status"), taskview.StatusUnreadable, []string{"event_log"}},
+		{"future-schema-revision", fmt.Sprintf("{\n  \"version\": 3,\n  \"schema_revision\": 2,\n  \"task_id\": %q,\n  \"status\": %q\n}\n", oldTaskID, state.TaskStatusComplete), taskview.StatusUnreadable, []string{"event_log"}},
+		{"unsupported-version", retainedStatsArchiveJSON(2, oldTaskID, state.TaskStatusComplete), taskview.StatusUnreadable, []string{"event_log"}},
+		{"foreign-task", retainedStatsArchiveJSON(3, "11111111-2222-4333-8444-555555555555", state.TaskStatusComplete), taskview.StatusNone, []string{"event_log", "task_stats"}},
 	}
 	for _, fixture := range fixtures {
 		writeRetainedStatsArchive(t, st, oldTaskID, fixture.archive)
@@ -635,7 +642,7 @@ func TestTimelineRejectsTaskIDOutsideGeneratedForm(t *testing.T) {
 		"none",
 	} {
 		out := &bytes.Buffer{}
-		if err := printTimeline(st, taskID, out); err == nil {
+		if err := report.PrintTimeline(st, taskID, out); err == nil {
 			t.Fatalf("不正task ID %qがerrorになりません: %s", taskID, out.String())
 		}
 		if body := out.String(); body != "" {
@@ -659,7 +666,7 @@ func TestTimelineRejectsTamperedCurrentTaskID(t *testing.T) {
 	}
 
 	out := &bytes.Buffer{}
-	if err := printTimeline(st, "", out); err == nil {
+	if err := report.PrintTimeline(st, "", out); err == nil {
 		t.Fatalf("改変task.idがerrorになりません: %s", out.String())
 	}
 	if body := out.String(); body != "" || strings.Contains(body, "sentinel-role") {
@@ -697,14 +704,14 @@ func TestExecuteTimelineDoesNotCreateState(t *testing.T) {
 	if err := Execute(cmd, cfg, nil, out, io.Discard); err != nil {
 		t.Fatal(err)
 	}
-	var output timelineOutput
+	var output report.TimelineOutput
 	if err := json.Unmarshal([]byte(strings.TrimSpace(out.String())), &output); err != nil {
 		t.Fatalf("timeline出力がmachine JSONではありません: %v: %q", err, out.String())
 	}
 	if output.TaskID != "" || output.EventLog.Status != "none" {
 		t.Fatalf("timeline出力 = %#v", output)
 	}
-	if output.Coverage.Status != timelineStatusUnknown {
+	if output.Coverage.Status != report.TimelineStatusUnknown {
 		t.Fatalf("task不在のcoverage = %#v", output.Coverage)
 	}
 	if len(output.Coverage.MissingSources) != 3 ||

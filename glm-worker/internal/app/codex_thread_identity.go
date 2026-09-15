@@ -1,6 +1,7 @@
 package app
 
 import (
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 	"os"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
@@ -14,7 +15,7 @@ func bindCurrentCodexThreadIdentity(cmd *Command) error {
 	}
 	threadID := os.Getenv(codexThreadIDEnv)
 	if !state.ValidUUIDFormat(threadID) {
-		return &NotFoundError{Message: codexThreadIDEnv + " is unavailable or invalid"}
+		return &machinecli.NotFoundError{Message: codexThreadIDEnv + " is unavailable or invalid"}
 	}
 	switch cmd.Mode {
 	case ModeVerifyAutoResume:

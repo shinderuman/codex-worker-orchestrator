@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/report"
 	"io"
 	"os"
 	"strings"
@@ -29,20 +30,12 @@ func appendConvergenceRound(t *testing.T, st *state.StateStore, record state.Rou
 	}
 }
 
-func executeConvergenceOutput(t *testing.T, st *state.StateStore, taskID string) convergenceOutput {
+func executeConvergenceOutput(t *testing.T, st *state.StateStore, taskID string) report.ConvergenceOutput {
 	t.Helper()
-	var out bytes.Buffer
-	if err := printConvergence(st, taskID, &out); err != nil {
-		t.Fatal(err)
-	}
-	var output convergenceOutput
-	if err := json.Unmarshal([]byte(strings.TrimSpace(out.String())), &output); err != nil {
-		t.Fatalf("convergence出力がmachine JSONではありません: %v: %q", err, out.String())
-	}
-	return output
+	return executeReportOutput[report.ConvergenceOutput](t, report.PrintConvergence, st, taskID, "convergence")
 }
 
-func convergenceSummaryOf(t *testing.T, output convergenceOutput, class string) convergenceClassSummary {
+func convergenceSummaryOf(t *testing.T, output report.ConvergenceOutput, class string) report.ConvergenceClassSummary {
 	t.Helper()
 	for _, summary := range output.Summary.ByClass {
 		if summary.Class == class {
@@ -50,7 +43,7 @@ func convergenceSummaryOf(t *testing.T, output convergenceOutput, class string) 
 		}
 	}
 	t.Fatalf("summary.by_classに%qがありません: %#v", class, output.Summary.ByClass)
-	return convergenceClassSummary{}
+	return report.ConvergenceClassSummary{}
 }
 
 func TestConvergenceRendersRoundsCostsAndSummary(t *testing.T) {
@@ -251,56 +244,18 @@ func TestReviewerCallsInBucketRecognizesCurrentReviewerPhaseGrammar(t *testing.T
 		{Role: state.ReviewerRole, Phase: "reviewer-2-high-floor-result-correct"},
 	}
 	mismatch := false
-	got := reviewerCallsInBucket(entries, 2, &mismatch)
+	got := report.ReviewerCallsInBucket(entries, 2, &mismatch)
 	if mismatch || len(got) != len(entries) {
 		t.Fatalf("valid reviewer phases were not attributed: mismatch=%v calls=%#v", mismatch, got)
 	}
 
 	mismatch = false
-	got = reviewerCallsInBucket([]state.ModelCallLog{{Role: state.ReviewerRole, Phase: "reviewer-2-future-floor"}}, 2, &mismatch)
+	got = report.ReviewerCallsInBucket([]state.ModelCallLog{{Role: state.ReviewerRole, Phase: "reviewer-2-future-floor"}}, 2, &mismatch)
 	if !mismatch || len(got) != 0 {
 		t.Fatalf("unknown reviewer phase must remain mismatch: mismatch=%v calls=%#v", mismatch, got)
 	}
 }
 
-func TestConvergenceHighFloorReviewerDoesNotCreateSubsequentGap(t *testing.T) {
-	base := convergenceBaseTime()
-	snapshot := state.SnapshotDigest{Head: "h", IndexDigest: "i", WorktreeDigest: "w"}
-	records := []state.RoundRecord{
-		{Seq: 1, WorkerPhase: state.RoundWorkerPhaseBaseline, CapturedAt: base, Snapshot: snapshot},
-		{Seq: 2, ReviewNumber: 1, WorkerPhase: "worker-new", CapturedAt: base.Add(10 * time.Second), Snapshot: snapshot},
-		{Seq: 3, ReviewNumber: 2, WorkerPhase: "worker-auto-fix-1", CapturedAt: base.Add(30 * time.Second), Snapshot: snapshot},
-	}
-	logs := []state.ModelCallLog{{
-		CallType: state.CallTypeTask, Role: state.ReviewerRole, Phase: "reviewer-1-high-floor",
-		StartedAt: base.Add(20 * time.Second), PacketStatus: "NEEDS_SOL_REVIEW",
-	}}
-	rounds, _ := buildConvergenceRounds(records, logs)
-	if len(rounds) != 2 {
-		t.Fatalf("rounds = %#v", rounds)
-	}
-	if rounds[0].mismatch {
-		t.Fatalf("high-floor reviewer was treated as mismatch: %#v", rounds[0])
-	}
-	if rounds[1].gap || rounds[1].delta.Class == state.RoundDeltaUnknown {
-		t.Fatalf("high-floor reviewer created a subsequent gap: %#v", rounds[1])
-	}
-}
-
-func TestConvergenceRiskFloorResultCorrectionRemainsRiskFloor(t *testing.T) {
-	riskRound := convergenceRound{reviewer: []state.ModelCallLog{{
-		Role: state.ReviewerRole, Phase: "reviewer-1-risk-floor-result-correct",
-	}}}
-	if got := convergenceReviewOutDetail(riskRound); !got.RiskFloorReemit {
-		t.Fatalf("risk-floor result correction lost risk-floor identity: %#v", got)
-	}
-	highRound := convergenceRound{reviewer: []state.ModelCallLog{{
-		Role: state.ReviewerRole, Phase: "reviewer-1-high-floor-result-correct",
-	}}}
-	if got := convergenceReviewOutDetail(highRound); got.RiskFloorReemit {
-		t.Fatalf("high-floor result correction was conflated with risk-floor: %#v", got)
-	}
-}
 func TestConvergenceGapAndMismatchFallToUnknown(t *testing.T) {
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
@@ -493,7 +448,7 @@ func TestConvergenceExplicitTaskMissingRoundLog(t *testing.T) {
 	}
 
 	out := &bytes.Buffer{}
-	if err := printConvergence(st, "12345678-1234-4234-8123-123456789abc", out); err == nil {
+	if err := report.PrintConvergence(st, "12345678-1234-4234-8123-123456789abc", out); err == nil {
 		t.Fatalf("不在task IDがerrorになりません: %s", out.String())
 	}
 }
@@ -508,7 +463,7 @@ func TestConvergenceRejectsTaskIDOutsideGeneratedForm(t *testing.T) {
 
 	for _, taskID := range []string{"../../evil", "/etc/hostname", "12345678-1234-1234-8123-123456789abc", "none"} {
 		out := &bytes.Buffer{}
-		if err := printConvergence(st, taskID, out); err == nil {
+		if err := report.PrintConvergence(st, taskID, out); err == nil {
 			t.Fatalf("不正task ID %qがerrorになりません: %s", taskID, out.String())
 		}
 		if body := out.String(); body != "" {
@@ -548,7 +503,7 @@ func TestExecuteConvergenceDoesNotCreateState(t *testing.T) {
 	if err := Execute(cmd, cfg, nil, out, io.Discard); err != nil {
 		t.Fatal(err)
 	}
-	var output convergenceOutput
+	var output report.ConvergenceOutput
 	if err := json.Unmarshal([]byte(strings.TrimSpace(out.String())), &output); err != nil {
 		t.Fatalf("convergence出力がmachine JSONではありません: %v: %q", err, out.String())
 	}

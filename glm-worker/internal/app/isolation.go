@@ -3,6 +3,7 @@ package app
 import (
 	"errors"
 	"fmt"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 	"io"
 	"os"
 	"os/exec"
@@ -96,7 +97,7 @@ func createIsolation(st *state.StateStore, cfg config.AppConfig, taskID string, 
 		removeIsolationWorktree(cfg.RepoRoot, worktreePath, branch)
 		return err
 	}
-	return writeJSON(stdout, isolateOutput{
+	return machinecli.WriteJSON(stdout, isolateOutput{
 		Result:      "isolated",
 		IsolationID: isolationID,
 		Worktree:    canonical,
@@ -154,7 +155,7 @@ func replayIsolation(st *state.StateStore, cfg config.AppConfig, record state.Is
 		origin.OriginRepoRoot != record.OriginRepoRoot || origin.Branch != record.Branch {
 		return &workflow.WorkerError{Phase: "isolate", Message: "既存の隔離記録と隔離worktree側の出自記録が一致しないため再実行できません"}
 	}
-	return writeJSON(stdout, isolateOutput{
+	return machinecli.WriteJSON(stdout, isolateOutput{
 		Result:      "isolated",
 		IsolationID: record.IsolationID,
 		Worktree:    record.Worktree,

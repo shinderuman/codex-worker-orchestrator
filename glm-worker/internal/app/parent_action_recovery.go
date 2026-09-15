@@ -1,6 +1,7 @@
 package app
 
 import (
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 	"io"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
@@ -21,7 +22,7 @@ func recoverInterruptedParentAction(st *state.StateStore, stdout io.Writer) erro
 	if err != nil {
 		return err
 	}
-	return writeJSON(stdout, parentActionRecoveryOutput{
+	return machinecli.WriteJSON(stdout, parentActionRecoveryOutput{
 		Status:     "recovered",
 		TaskID:     taskID,
 		TaskStatus: string(target),

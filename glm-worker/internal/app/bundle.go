@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 	"io"
 	"io/fs"
 	"os"
@@ -162,7 +163,7 @@ func printBundle(cfg config.AppConfig, st *state.StateStore, requestedTaskID str
 		return err
 	}
 
-	return writeJSON(stdout, bundleOutput{
+	return machinecli.WriteJSON(stdout, bundleOutput{
 		bundleEvidenceProjection: summary.projection(task, sessionIDs),
 		ArchivePath:              archivePath,
 	})
@@ -317,10 +318,10 @@ func selectBundleTask(st *state.StateStore, requestedTaskID string) (bundleTask,
 				return bundleTask{ID: stats.TaskID, Status: string(stats.Status), Stats: stats}, nil
 			}
 		}
-		return bundleTask{}, &NotFoundError{Message: fmt.Sprintf("task %sのretained evidenceがありません", requestedTaskID)}
+		return bundleTask{}, &machinecli.NotFoundError{Message: fmt.Sprintf("task %sのretained evidenceがありません", requestedTaskID)}
 	}
 	if len(allStats) == 0 {
-		return bundleTask{}, &NotFoundError{Message: "bundle対象のtaskがありません"}
+		return bundleTask{}, &machinecli.NotFoundError{Message: "bundle対象のtaskがありません"}
 	}
 
 	sort.Slice(allStats, func(i, j int) bool {

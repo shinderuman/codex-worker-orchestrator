@@ -2,58 +2,48 @@ package app
 
 import (
 	"fmt"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 	"time"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/report"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
-
-type telemetryQueryView struct {
-	Scope       string  `json:"scope"`
-	TaskID      string  `json:"task_id,omitempty"`
-	Since       *string `json:"since,omitempty"`
-	Until       *string `json:"until,omitempty"`
-	PeriodBasis string  `json:"period_basis,omitempty"`
-}
-
-const telemetryQueryPeriodBasisRecord = "record-started-at"
-
-const telemetryQueryPeriodBasisTask = "task-started-at"
 
 const telemetryQueryCompactFlag = "--compact"
 
 func telemetryQueryCommand(args []string, mode CommandMode, flag string) (Command, error) {
 	query, err := parseTelemetryQueryArgs(args[1:])
 	if err != nil {
-		return Command{}, usageError("usage: glm-worker %s %s", flag, telemetryQueryUsage)
+		return Command{}, machinecli.UsageErrorf("usage: glm-worker %s %s", flag, telemetryQueryUsage)
 	}
 	return Command{Mode: mode, Query: query}, nil
 }
 
-func parseTelemetryQueryArgs(args []string) (TelemetryQueryArgs, error) {
-	query := TelemetryQueryArgs{Scope: state.TelemetryScopeCurrent}
+func parseTelemetryQueryArgs(args []string) (report.Query, error) {
+	query := report.Query{Scope: state.TelemetryScopeCurrent}
 	rest, err := applyTelemetryQueryScope(&query, args)
 	if err != nil {
-		return TelemetryQueryArgs{}, err
+		return report.Query{}, err
 	}
 	options, err := takeTelemetryQueryCompactFlag(&query, rest)
 	if err != nil {
-		return TelemetryQueryArgs{}, err
+		return report.Query{}, err
 	}
 	for index := 0; index < len(options); index += 2 {
 		if index+1 >= len(options) {
-			return TelemetryQueryArgs{}, fmt.Errorf("option %s requires a value", options[index])
+			return report.Query{}, fmt.Errorf("option %s requires a value", options[index])
 		}
 		if err := applyTelemetryQueryOption(&query, options[index], options[index+1]); err != nil {
-			return TelemetryQueryArgs{}, err
+			return report.Query{}, err
 		}
 	}
 	if !query.Filter.Since.IsZero() && !query.Filter.Until.IsZero() && !query.Filter.Since.Before(query.Filter.Until) {
-		return TelemetryQueryArgs{}, fmt.Errorf("--since must be before --until")
+		return report.Query{}, fmt.Errorf("--since must be before --until")
 	}
 	return query, nil
 }
 
-func takeTelemetryQueryCompactFlag(query *TelemetryQueryArgs, args []string) ([]string, error) {
+func takeTelemetryQueryCompactFlag(query *report.Query, args []string) ([]string, error) {
 	options := make([]string, 0, len(args))
 	for _, arg := range args {
 		if arg != telemetryQueryCompactFlag {
@@ -68,7 +58,7 @@ func takeTelemetryQueryCompactFlag(query *TelemetryQueryArgs, args []string) ([]
 	return options, nil
 }
 
-func applyTelemetryQueryScope(query *TelemetryQueryArgs, args []string) ([]string, error) {
+func applyTelemetryQueryScope(query *report.Query, args []string) ([]string, error) {
 	if len(args) == 0 || len(args[0]) == 0 || args[0][0] == '-' {
 		return args, nil
 	}
@@ -81,7 +71,7 @@ func applyTelemetryQueryScope(query *TelemetryQueryArgs, args []string) ([]strin
 	}
 }
 
-func applyTelemetryQueryOption(query *TelemetryQueryArgs, name string, value string) error {
+func applyTelemetryQueryOption(query *report.Query, name string, value string) error {
 	switch name {
 	case "--task":
 		return applyTelemetryQueryTask(query, value)
@@ -94,7 +84,7 @@ func applyTelemetryQueryOption(query *TelemetryQueryArgs, name string, value str
 	}
 }
 
-func applyTelemetryQueryTask(query *TelemetryQueryArgs, value string) error {
+func applyTelemetryQueryTask(query *report.Query, value string) error {
 	if query.Filter.TaskID != "" {
 		return fmt.Errorf("--task is given twice")
 	}
@@ -115,46 +105,4 @@ func applyTelemetryQueryTime(target *time.Time, value string) error {
 	}
 	*target = parsed
 	return nil
-}
-
-func (query TelemetryQueryArgs) resolvedScope() string {
-	if query.Scope == "" {
-		return state.TelemetryScopeCurrent
-	}
-	return query.Scope
-}
-
-func (query TelemetryQueryArgs) isHistory() bool {
-	return query.resolvedScope() == state.TelemetryScopeHistory
-}
-
-func (query TelemetryQueryArgs) view(periodBasis string) telemetryQueryView {
-	scope := query.resolvedScope()
-	view := telemetryQueryView{Scope: scope, TaskID: query.Filter.TaskID}
-	if !query.Filter.Since.IsZero() {
-		since := query.Filter.Since.UTC().Format(time.RFC3339Nano)
-		view.Since = &since
-	}
-	if !query.Filter.Until.IsZero() {
-		until := query.Filter.Until.UTC().Format(time.RFC3339Nano)
-		view.Until = &until
-	}
-	if query.Filter.HasPeriod() {
-		view.PeriodBasis = periodBasis
-	}
-	return view
-}
-
-func filterTaskStatsForQuery(all []state.TaskStats, filter state.TelemetryQueryFilter) []state.TaskStats {
-	filtered := make([]state.TaskStats, 0, len(all))
-	for _, stats := range all {
-		if !filter.MatchesTask(stats.TaskID) {
-			continue
-		}
-		if !filter.CoversTime(stats.StartedAt) {
-			continue
-		}
-		filtered = append(filtered, stats)
-	}
-	return filtered
 }

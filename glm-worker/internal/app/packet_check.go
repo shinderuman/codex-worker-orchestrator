@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 	"io"
 	"os"
 	"strings"
@@ -33,13 +34,13 @@ func packetCheckCommand(args []string) (Command, error) {
 			continue
 		}
 		if fileSeen || !packetCheckFileArgument(args[index]) {
-			return Command{}, usageError("%s", packetCheckUsage)
+			return Command{}, machinecli.UsageErrorf("%s", packetCheckUsage)
 		}
 		command.Payload = args[index]
 		fileSeen = true
 	}
 	if !fileSeen {
-		return Command{}, usageError("%s", packetCheckUsage)
+		return Command{}, machinecli.UsageErrorf("%s", packetCheckUsage)
 	}
 	return command, nil
 }
@@ -52,13 +53,13 @@ func applyPacketCheckOption(command *Command, args []string, index int) (bool, e
 	switch args[index] {
 	case "--role":
 		if value != packetCheckRoleWorker && value != packetCheckRoleReviewer {
-			return true, usageError("%s", packetCheckUsage)
+			return true, machinecli.UsageErrorf("%s", packetCheckUsage)
 		}
 		command.Role = value
 		return true, nil
 	case "--artifact-root":
 		if value == "" {
-			return true, usageError("%s", packetCheckUsage)
+			return true, machinecli.UsageErrorf("%s", packetCheckUsage)
 		}
 		command.ArtifactRoot = value
 		return true, nil
@@ -77,12 +78,12 @@ func printPacketCheck(cmd Command, stdout io.Writer) error {
 	}
 	result, parseErr := packet.ParseStructured(data)
 	if parseErr != nil {
-		return writeJSON(stdout, packetCheckVerdict{Ok: false, Violation: parseErr.Error()})
+		return machinecli.WriteJSON(stdout, packetCheckVerdict{Ok: false, Violation: parseErr.Error()})
 	}
 	if err := packetCheckViolation(cmd, result); err != nil {
-		return writeJSON(stdout, packetCheckVerdict{Ok: false, Violation: err.Error()})
+		return machinecli.WriteJSON(stdout, packetCheckVerdict{Ok: false, Violation: err.Error()})
 	}
-	return writeJSON(stdout, packetCheckVerdict{Ok: true})
+	return machinecli.WriteJSON(stdout, packetCheckVerdict{Ok: true})
 }
 
 func packetCheckViolation(cmd Command, result packet.Result) error {

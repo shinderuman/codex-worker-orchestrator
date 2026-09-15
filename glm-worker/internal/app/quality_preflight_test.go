@@ -2,6 +2,7 @@ package app
 
 import (
 	"errors"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskview"
 	"io"
 	"os"
 	"os/exec"
@@ -303,7 +304,7 @@ func TestStatsOutputPreflightStatusNoneWithoutAttempts(t *testing.T) {
 	}
 
 	output := executeStatsOutput(t, cfg, st)
-	if output.Preflight.Status != statusNone {
+	if output.Preflight.Status != taskview.StatusNone {
 		t.Fatalf("preflight = %+v", output.Preflight)
 	}
 }

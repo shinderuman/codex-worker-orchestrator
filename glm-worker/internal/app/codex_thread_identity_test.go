@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"errors"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 	"io"
 	"testing"
 
@@ -39,19 +40,29 @@ func TestBindCurrentCodexThreadIdentity(t *testing.T) {
 }
 
 func TestBindCurrentCodexThreadIdentityRejectsMissingOrInvalidEnvironment(t *testing.T) {
-	for _, value := range []string{"", "not-a-thread-id"} {
-		t.Run(value, func(t *testing.T) {
-			t.Setenv(codexThreadIDEnv, value)
-			cmd := Command{Mode: ModeVerifyAutoResume}
-			err := bindCurrentCodexThreadIdentity(&cmd)
-			var notFound *NotFoundError
-			if !errors.As(err, &notFound) {
-				t.Fatalf("error = %v", err)
-			}
-			if cmd.Verify.ThreadID != "" {
-				t.Fatalf("invalid environment was bound: %q", cmd.Verify.ThreadID)
-			}
-		})
+	cases := []struct {
+		name  string
+		mode  CommandMode
+		bound func(*Command) string
+	}{
+		{"verify-auto-resume", ModeVerifyAutoResume, func(cmd *Command) string { return cmd.Verify.ThreadID }},
+		{"auto-resume-plan", ModeAutoResumePlan, func(cmd *Command) string { return cmd.AutoResume.ParentThreadID }},
+	}
+	for _, testCase := range cases {
+		for _, value := range []string{"", "not-a-thread-id"} {
+			t.Run(testCase.name+"/"+value, func(t *testing.T) {
+				t.Setenv(codexThreadIDEnv, value)
+				cmd := Command{Mode: testCase.mode}
+				err := bindCurrentCodexThreadIdentity(&cmd)
+				var notFound *machinecli.NotFoundError
+				if !errors.As(err, &notFound) {
+					t.Fatalf("error = %v", err)
+				}
+				if bound := testCase.bound(&cmd); bound != "" {
+					t.Fatalf("invalid environment was bound: %q", bound)
+				}
+			})
+		}
 	}
 }
 
@@ -66,23 +77,6 @@ func TestBindCurrentCodexThreadIdentityLeavesCodexWakeVerificationUnbound(t *tes
 			}
 			if cmd.Verify.ThreadID != wakeThreadID {
 				t.Fatalf("wake thread ID = %q", cmd.Verify.ThreadID)
-			}
-		})
-	}
-}
-
-func TestBindCurrentCodexThreadIdentityRejectsMissingOrInvalidPlanEnvironment(t *testing.T) {
-	for _, value := range []string{"", "not-a-thread-id"} {
-		t.Run(value, func(t *testing.T) {
-			t.Setenv(codexThreadIDEnv, value)
-			cmd := Command{Mode: ModeAutoResumePlan}
-			err := bindCurrentCodexThreadIdentity(&cmd)
-			var notFound *NotFoundError
-			if !errors.As(err, &notFound) {
-				t.Fatalf("error = %v", err)
-			}
-			if cmd.AutoResume.ParentThreadID != "" {
-				t.Fatalf("invalid environment was bound: %q", cmd.AutoResume.ParentThreadID)
 			}
 		})
 	}
@@ -103,7 +97,7 @@ func TestRunAutoResumeIdentityFailureStopsBeforeConfig(t *testing.T) {
 		&stdout,
 		io.Discard,
 	)
-	var notFound *NotFoundError
+	var notFound *machinecli.NotFoundError
 	if !errors.As(err, &notFound) {
 		t.Fatalf("error = %v", err)
 	}

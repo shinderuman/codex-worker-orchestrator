@@ -2,6 +2,7 @@ package app
 
 import (
 	"errors"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 	"io"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/autoresume"
@@ -46,7 +47,7 @@ const (
 )
 
 func WriteProcessError(w io.Writer, err error) error {
-	return writeJSON(w, processErrorEnvelope{Error: buildProcessError(err)})
+	return machinecli.WriteJSON(w, processErrorEnvelope{Error: buildProcessError(err)})
 }
 
 func buildProcessError(err error) processErrorBody {
@@ -63,9 +64,9 @@ func buildProcessError(err error) processErrorBody {
 }
 
 func buildInputProcessError(err error) (processErrorBody, bool) {
-	var usage *UsageError
-	var notFound *NotFoundError
-	var stdinPayload *StdinPayloadError
+	var usage *machinecli.UsageError
+	var notFound *machinecli.NotFoundError
+	var stdinPayload *machinecli.StdinPayloadError
 	var outputViolation *MachineOutputViolationError
 	var duplicateProjection *DuplicateParentProjectionError
 
@@ -137,9 +138,9 @@ func buildRuntimeProcessError(err error) (processErrorBody, bool) {
 			Kind:    errorKindGuardRecoverable,
 			Message: "guard rejected the model call; inspect or repair the guard condition before resuming the same task",
 			Detail: map[string]any{
-				"phase":                  stringPtr(guardRecoverable.Phase),
-				"task_id":                stringPtr(guardRecoverable.TaskID),
-				"repo_root":              stringPtr(guardRecoverable.RepoRoot),
+				"phase":                  machinecli.StringPtr(guardRecoverable.Phase),
+				"task_id":                machinecli.StringPtr(guardRecoverable.TaskID),
+				"repo_root":              machinecli.StringPtr(guardRecoverable.RepoRoot),
 				"resume_available":       true,
 				"completed_result_saved": guardRecoverable.ResultSaved,
 			},
@@ -214,8 +215,8 @@ func qualityGateRecoverableProcessError(err *workflow.QualityGateRecoverableErro
 		Detail: map[string]any{
 			"phase":                  err.Phase,
 			"failure":                err.Failure,
-			"task_id":                stringPtr(err.TaskID),
-			"repo_root":              stringPtr(err.RepoRoot),
+			"task_id":                machinecli.StringPtr(err.TaskID),
+			"repo_root":              machinecli.StringPtr(err.RepoRoot),
 			"resume_available":       true,
 			"completed_result_saved": err.ResultSaved,
 		},
@@ -257,7 +258,7 @@ func installSmokeFailDetail(err *InstallSmokeError) map[string]any {
 		"exit_code":   err.ExitCode,
 		"exit_source": err.ExitSource,
 		"result":      "fail",
-		"role":        stringPtr(err.Role),
+		"role":        machinecli.StringPtr(err.Role),
 		"duration_ms": err.DurationMS,
 	}
 	if err.Evidence != "" {
@@ -280,7 +281,7 @@ func qualityGateFailDetail(err *QualityGateError) map[string]any {
 		"command":           err.Command,
 		"working_dir":       err.WorkingDir,
 		"duration_ms":       err.DurationMS,
-		"log":               stringPtr(err.LogPath),
+		"log":               machinecli.StringPtr(err.LogPath),
 	}
 }
 
@@ -322,10 +323,10 @@ func rateLimitDetail(err runner.ZaiRateLimitError) map[string]any {
 	detail := map[string]any{
 		"limit":            "ZAI_GLM_CODING_PLAN_5H",
 		"phase":            err.Phase,
-		"task_id":          stringPtr(err.TaskID),
-		"repo_root":        stringPtr(err.RepoRoot),
-		"reset_at_cst":     stringPtr(runner.FormatZaiResetAtCST(err.Limit.ResetAtRFC3339)),
-		"reset_at_rfc3339": stringPtr(err.Limit.ResetAtRFC3339),
+		"task_id":          machinecli.StringPtr(err.TaskID),
+		"repo_root":        machinecli.StringPtr(err.RepoRoot),
+		"reset_at_cst":     machinecli.StringPtr(runner.FormatZaiResetAtCST(err.Limit.ResetAtRFC3339)),
+		"reset_at_rfc3339": machinecli.StringPtr(err.Limit.ResetAtRFC3339),
 		"resume_available": true,
 	}
 	if available, at := err.AutoResumeSchedule(); available {
@@ -343,21 +344,21 @@ func rateLimitDetail(err runner.ZaiRateLimitError) map[string]any {
 
 func providerUnavailableDetail(err *runner.ProviderUnavailableError) map[string]any {
 	return map[string]any{
-		"phase":            stringPtr(err.Phase),
-		"classification":   stringPtr(err.Classification),
+		"phase":            machinecli.StringPtr(err.Phase),
+		"classification":   machinecli.StringPtr(err.Classification),
 		"probes":           err.Probes,
 		"elapsed_ms":       err.Elapsed.Milliseconds(),
-		"task_id":          stringPtr(err.TaskID),
-		"repo_root":        stringPtr(err.RepoRoot),
+		"task_id":          machinecli.StringPtr(err.TaskID),
+		"repo_root":        machinecli.StringPtr(err.RepoRoot),
 		"resume_available": true,
 	}
 }
 
 func interruptedDetail(err *runner.InterruptedCallError) map[string]any {
 	detail := map[string]any{
-		"phase":            stringPtr(err.Phase),
-		"task_id":          stringPtr(err.TaskID),
-		"repo_root":        stringPtr(err.RepoRoot),
+		"phase":            machinecli.StringPtr(err.Phase),
+		"task_id":          machinecli.StringPtr(err.TaskID),
+		"repo_root":        machinecli.StringPtr(err.RepoRoot),
 		"resume_available": true,
 	}
 	if err.CleanupWarning != "" {

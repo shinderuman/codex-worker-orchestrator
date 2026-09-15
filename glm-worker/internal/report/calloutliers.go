@@ -1,6 +1,7 @@
-package app
+package report
 
 import (
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 	"io"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
@@ -8,8 +9,8 @@ import (
 )
 
 type callOutliersOutput struct {
-	Query     telemetryQueryView      `json:"query"`
-	Telemetry telemetryScan           `json:"telemetry"`
+	Query     queryView               `json:"query"`
+	Telemetry TelemetryScan           `json:"telemetry"`
 	Report    state.CallOutlierReport `json:"report"`
 }
 
@@ -20,30 +21,30 @@ type callOutliersHistoryReport struct {
 }
 
 type callOutliersHistoryOutput struct {
-	Query     telemetryQueryView          `json:"query"`
+	Query     queryView                   `json:"query"`
 	Telemetry state.TelemetryHistoryScan  `json:"telemetry"`
 	Reports   []callOutliersHistoryReport `json:"reports"`
 }
 
-func printCallOutliers(cfg config.AppConfig, st *state.StateStore, query TelemetryQueryArgs, stdout io.Writer) error {
+func PrintCallOutliers(cfg config.AppConfig, st *state.StateStore, query Query, compact CompactSummaryFunc, stdout io.Writer) error {
 	if query.Compact {
-		return printTelemetryCompactSummary(cfg, st, query, stdout)
+		return compact(cfg, st, query, stdout)
 	}
-	if query.isHistory() {
+	if query.IsHistory() {
 		return printCallOutliersHistory(st, query, stdout)
 	}
-	scan, err := scanTelemetryTaskLogs(st, query.Filter)
+	scan, err := ScanTelemetryTaskLogs(st, query.Filter)
 	if err != nil {
 		return err
 	}
-	return writeJSON(stdout, callOutliersOutput{
-		Query:     query.view(telemetryQueryPeriodBasisRecord),
+	return machinecli.WriteJSON(stdout, callOutliersOutput{
+		Query:     query.view(QueryPeriodBasisRecord),
 		Telemetry: *scan,
-		Report:    state.BuildCallOutlierReport(scan.logs),
+		Report:    state.BuildCallOutlierReport(scan.Logs),
 	})
 }
 
-func printCallOutliersHistory(st *state.StateStore, query TelemetryQueryArgs, stdout io.Writer) error {
+func printCallOutliersHistory(st *state.StateStore, query Query, stdout io.Writer) error {
 	scan, err := st.ScanTelemetryHistory(query.Filter)
 	if err != nil {
 		return err
@@ -56,8 +57,8 @@ func printCallOutliersHistory(st *state.StateStore, query TelemetryQueryArgs, st
 			Report:         state.BuildCallOutlierReport(cohort.Logs),
 		})
 	}
-	return writeJSON(stdout, callOutliersHistoryOutput{
-		Query:     query.view(telemetryQueryPeriodBasisRecord),
+	return machinecli.WriteJSON(stdout, callOutliersHistoryOutput{
+		Query:     query.view(QueryPeriodBasisRecord),
 		Telemetry: *scan,
 		Reports:   reports,
 	})

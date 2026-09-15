@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskview"
 	"io"
 	"net"
 	"os"
@@ -112,7 +114,7 @@ func requestStop(cfg config.AppConfig, stdout io.Writer) error {
 	if err != nil {
 		return &StopEndpointError{}
 	}
-	return writeJSON(stdout, stopOutput(response))
+	return machinecli.WriteJSON(stdout, stopOutput(response))
 }
 
 func readStopEndpointResponse(conn net.Conn) (stopEndpointResponse, error) {
@@ -196,7 +198,7 @@ func (s *stopEndpointServer) buildResponse(outcome runner.StopOutcome) stopEndpo
 		}
 		return stopEndpointResponse{
 			Result:          result,
-			TaskID:          stringPtr(outcome.TaskID),
+			TaskID:          machinecli.StringPtr(outcome.TaskID),
 			TaskStatus:      &status,
 			ResumeAvailable: true,
 			CleanupWarning:  outcome.CleanupWarning,
@@ -204,9 +206,9 @@ func (s *stopEndpointServer) buildResponse(outcome runner.StopOutcome) stopEndpo
 	}
 	response := stopEndpointResponse{Result: stopFinishedResult(s.st.TaskStatus())}
 	if id := s.st.ReadOr("task.id", ""); id != "" {
-		response.TaskID = stringPtr(id)
+		response.TaskID = machinecli.StringPtr(id)
 	}
-	response.TaskStatus = taskStatusPtr(s.st.TaskStatus())
+	response.TaskStatus = machinecli.TaskStatusPtr(s.st.TaskStatus())
 	response.ResumeAvailable = checkpointResumeAvailable(s.st)
 	return response
 }
@@ -237,7 +239,7 @@ func checkpointResumeAvailable(st *state.StateStore) bool {
 }
 
 func (*stopEndpointServer) writeResponse(conn net.Conn, response stopEndpointResponse) {
-	data, err := marshalEventLine(response)
+	data, err := taskview.MarshalEventLine(response)
 	if err != nil {
 		return
 	}

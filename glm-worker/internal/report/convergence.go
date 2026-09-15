@@ -1,8 +1,10 @@
-package app
+package report
 
 import (
 	"errors"
 	"fmt"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskview"
 	"io"
 	"os"
 	"sort"
@@ -11,7 +13,7 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-type convergenceRound struct {
+type ConvergenceRound struct {
 	record   state.RoundRecord
 	delta    state.RoundDelta
 	gap      bool
@@ -20,7 +22,7 @@ type convergenceRound struct {
 	worker   []state.ModelCallLog
 }
 
-type convergenceOutput struct {
+type ConvergenceOutput struct {
 	TaskID        string                `json:"task_id"`
 	TaskStatus    *string               `json:"task_status"`
 	RoundsLog     convergenceLog        `json:"rounds_log"`
@@ -28,7 +30,7 @@ type convergenceOutput struct {
 	Telemetry     string                `json:"telemetry"`
 	EventLog      string                `json:"event_log"`
 	Baseline      *convergenceBaseline  `json:"baseline"`
-	Rounds        []convergenceRoundOut `json:"rounds"`
+	Rounds        []ConvergenceRoundOut `json:"rounds"`
 	Summary       convergenceSummaryOut `json:"summary"`
 }
 
@@ -45,7 +47,7 @@ type convergenceBaseline struct {
 	CaptureError  string               `json:"capture_error,omitempty"`
 }
 
-type convergenceRoundOut struct {
+type ConvergenceRoundOut struct {
 	Number       int                  `json:"number"`
 	Seq          int                  `json:"seq"`
 	ReviewNumber int                  `json:"review_number"`
@@ -88,12 +90,12 @@ type convergenceCost struct {
 }
 
 type convergenceSummaryOut struct {
-	ByClass               []convergenceClassSummary `json:"by_class"`
+	ByClass               []ConvergenceClassSummary `json:"by_class"`
 	UnresolvedIssueRounds int                       `json:"unresolved_issue_rounds"`
 	HighRounds            int                       `json:"high_rounds"`
 }
 
-type convergenceClassSummary struct {
+type ConvergenceClassSummary struct {
 	Class                string `json:"class"`
 	Rounds               int    `json:"rounds"`
 	ReviewerCalls        int    `json:"reviewer_calls"`
@@ -102,7 +104,7 @@ type convergenceClassSummary struct {
 	ReviewerDurationMS   int64  `json:"reviewer_duration_ms"`
 }
 
-const convergenceDeltaVerificationOnly = "verification-only"
+const ConvergenceDeltaVerificationOnly = "verification-only"
 
 var convergenceMutatingTools = map[string]bool{
 	"Edit":         true,
@@ -110,14 +112,14 @@ var convergenceMutatingTools = map[string]bool{
 	"NotebookEdit": true,
 }
 
-func printConvergence(st *state.StateStore, taskIDArg string, stdout io.Writer) error {
+func PrintConvergence(st *state.StateStore, taskIDArg string, stdout io.Writer) error {
 	explicit := taskIDArg != ""
 	taskID := taskIDArg
 	if taskID == "" {
 		taskID = st.ReadOr("task.id", "")
 	}
 	if !validTimelineTaskID(taskID, explicit) {
-		return &UsageError{Message: fmt.Sprintf("task IDが生成されるUUID v4形式と一致しません: %q", taskID)}
+		return &machinecli.UsageError{Message: fmt.Sprintf("task IDが生成されるUUID v4形式と一致しません: %q", taskID)}
 	}
 
 	records, skipped, recordsErr := readRoundRecords(st, taskID)
@@ -125,67 +127,67 @@ func printConvergence(st *state.StateStore, taskIDArg string, stdout io.Writer) 
 	switch {
 	case errors.Is(recordsErr, os.ErrNotExist):
 		if explicit {
-			return &NotFoundError{Message: fmt.Sprintf("task %sのround logがありません: %v", taskID, recordsErr)}
+			return &machinecli.NotFoundError{Message: fmt.Sprintf("task %sのround logがありません: %v", taskID, recordsErr)}
 		}
-		logStatus = convergenceLog{Status: statusNone}
+		logStatus = convergenceLog{Status: taskview.StatusNone}
 	case recordsErr != nil:
 		if explicit {
 			return fmt.Errorf("task %sのround logを読めません: %w", taskID, recordsErr)
 		}
-		logStatus = convergenceLog{Status: statusUnreadable}
+		logStatus = convergenceLog{Status: taskview.StatusUnreadable}
 	default:
-		logStatus = convergenceLog{Status: "ok", Path: stringPtr(st.RoundLogPath(taskID))}
+		logStatus = convergenceLog{Status: "ok", Path: machinecli.StringPtr(st.RoundLogPath(taskID))}
 	}
 
-	output := convergenceOutput{
+	output := ConvergenceOutput{
 		TaskID:        taskID,
 		TaskStatus:    timelineTaskStatus(st, taskID, explicit),
 		RoundsLog:     logStatus,
 		SkippedRounds: skipped,
 	}
 	if logStatus.Status != "ok" {
-		return writeJSON(stdout, output)
+		return machinecli.WriteJSON(stdout, output)
 	}
 
-	logs, logErr := readStatusTelemetry(st, taskID)
+	logs, logErr := taskview.ReadStatusTelemetry(st, taskID)
 	if logErr != nil {
-		output.Telemetry = statusUnreadable
+		output.Telemetry = taskview.StatusUnreadable
 	} else {
 		output.Telemetry = "ok"
 	}
-	events, _, eventsErr := readTaskEventRecords(st, taskID)
+	events, _, eventsErr := ReadTaskEventRecords(st, taskID)
 	output.EventLog = taskRecordsStatus(taskID, eventsErr)
 
-	rounds, baseline := buildConvergenceRounds(records, logs)
+	rounds, baseline := BuildConvergenceRounds(records, logs)
 	refineConvergenceDeltas(rounds, events)
 	output.Baseline = convergenceBaselineOut(baseline)
 	output.Rounds = convergenceRoundOuts(rounds)
 	output.Summary = buildConvergenceSummary(rounds)
-	return writeJSON(stdout, output)
+	return machinecli.WriteJSON(stdout, output)
 }
 
 func taskRecordsStatus(taskID string, err error) string {
 	if taskID == "" {
-		return statusNone
+		return taskview.StatusNone
 	}
 	switch {
 	case errors.Is(err, os.ErrNotExist):
-		return statusNone
+		return taskview.StatusNone
 	case err != nil:
-		return statusUnreadable
+		return taskview.StatusUnreadable
 	default:
 		return "ok"
 	}
 }
 
-func refineConvergenceDeltas(rounds []convergenceRound, events []state.TaskEventRecord) {
+func refineConvergenceDeltas(rounds []ConvergenceRound, events []state.TaskEventRecord) {
 	for i := range rounds {
 		if rounds[i].delta.Class != state.RoundDeltaSameSnapshot {
 			continue
 		}
-		uses, mutating := convergenceWorkerToolUse(events, rounds[i].record.WorkerPhase)
+		uses, mutating := ConvergenceWorkerToolUse(events, rounds[i].record.WorkerPhase)
 		if uses > 0 && !mutating {
-			rounds[i].delta.Class = convergenceDeltaVerificationOnly
+			rounds[i].delta.Class = ConvergenceDeltaVerificationOnly
 		}
 	}
 }
@@ -194,7 +196,7 @@ func readRoundRecords(st *state.StateStore, taskID string) ([]state.RoundRecord,
 	return scanLogRecords(st.RoundLogPath(taskID), state.ParseRoundLine)
 }
 
-func buildConvergenceRounds(records []state.RoundRecord, logs []state.ModelCallLog) ([]convergenceRound, *state.RoundRecord) {
+func BuildConvergenceRounds(records []state.RoundRecord, logs []state.ModelCallLog) ([]ConvergenceRound, *state.RoundRecord) {
 	if len(records) == 0 {
 		return nil, nil
 	}
@@ -207,11 +209,11 @@ func buildConvergenceRounds(records []state.RoundRecord, logs []state.ModelCallL
 		baseline = &b
 		rest = records[1:]
 	}
-	rounds := make([]convergenceRound, 0, len(rest))
+	rounds := make([]ConvergenceRound, 0, len(rest))
 	for index, record := range rest {
-		round := convergenceRound{record: record}
+		round := ConvergenceRound{record: record}
 		recordIndex := index + len(records) - len(rest)
-		round.reviewer = reviewerCallsInBucket(buckets[recordIndex], record.ReviewNumber, &round.mismatch)
+		round.reviewer = ReviewerCallsInBucket(buckets[recordIndex], record.ReviewNumber, &round.mismatch)
 		round.worker = producingWorkerCalls(buckets[recordIndex-1], record.WorkerPhase)
 		round.gap = roundHasRecordGap(records, recordIndex)
 		round.delta = state.CompareRoundRecords(prevRoundRecord(records, recordIndex), &rest[index])
@@ -252,7 +254,7 @@ func bucketTaskCallsByRound(records []state.RoundRecord, logs []state.ModelCallL
 	return buckets
 }
 
-func reviewerCallsInBucket(entries []state.ModelCallLog, reviewNumber int, mismatch *bool) []state.ModelCallLog {
+func ReviewerCallsInBucket(entries []state.ModelCallLog, reviewNumber int, mismatch *bool) []state.ModelCallLog {
 	result := make([]state.ModelCallLog, 0, len(entries))
 	for _, entry := range entries {
 		if entry.Role != state.ReviewerRole {
@@ -317,17 +319,17 @@ func convergenceBaselineOut(baseline *state.RoundRecord) *convergenceBaseline {
 	return &out
 }
 
-func convergenceRoundOuts(rounds []convergenceRound) []convergenceRoundOut {
-	result := make([]convergenceRoundOut, 0, len(rounds))
+func convergenceRoundOuts(rounds []ConvergenceRound) []ConvergenceRoundOut {
+	result := make([]ConvergenceRoundOut, 0, len(rounds))
 	for index, round := range rounds {
 		result = append(result, convergenceRoundOutDetail(index+1, round))
 	}
 	return result
 }
 
-func convergenceRoundOutDetail(number int, round convergenceRound) convergenceRoundOut {
+func convergenceRoundOutDetail(number int, round ConvergenceRound) ConvergenceRoundOut {
 	record := round.record
-	out := convergenceRoundOut{
+	out := ConvergenceRoundOut{
 		Number:       number,
 		Seq:          record.Seq,
 		ReviewNumber: record.ReviewNumber,
@@ -343,14 +345,14 @@ func convergenceRoundOutDetail(number int, round convergenceRound) convergenceRo
 			CaptureError:       record.CaptureError,
 		},
 		Snapshot:     record.Snapshot,
-		Review:       convergenceReviewOutDetail(round),
+		Review:       ConvergenceReviewOutDetail(round),
 		ReviewerCost: convergenceCostOut(round.reviewer),
 		WorkerCost:   convergenceCostOut(round.worker),
 	}
 	return out
 }
 
-func convergenceWorkerToolUse(events []state.TaskEventRecord, workerPhase string) (int, bool) {
+func ConvergenceWorkerToolUse(events []state.TaskEventRecord, workerPhase string) (int, bool) {
 	uses := 0
 	mutating := false
 	for _, event := range events {
@@ -370,7 +372,7 @@ func convergenceWorkerToolUse(events []state.TaskEventRecord, workerPhase string
 	return uses, mutating
 }
 
-func convergenceReviewOutDetail(round convergenceRound) convergenceReviewOut {
+func ConvergenceReviewOutDetail(round ConvergenceRound) convergenceReviewOut {
 	out := convergenceReviewOut{
 		Calls:    len(round.reviewer),
 		Snapshot: "unknown",
@@ -380,13 +382,13 @@ func convergenceReviewOutDetail(round convergenceRound) convergenceReviewOut {
 			out.RiskFloorReemit = true
 		}
 		if entry.PacketStatus != "" {
-			out.Outcome = stringPtr(entry.PacketStatus)
+			out.Outcome = machinecli.StringPtr(entry.PacketStatus)
 		}
 		if entry.EffectiveRisk != "" {
-			out.Risk = stringPtr(entry.EffectiveRisk)
+			out.Risk = machinecli.StringPtr(entry.EffectiveRisk)
 		}
 		if entry.ReviewerReportedRisk != "" {
-			out.ReportedRisk = stringPtr(entry.ReviewerReportedRisk)
+			out.ReportedRisk = machinecli.StringPtr(entry.ReviewerReportedRisk)
 		}
 		if entry.Snapshot != nil && entry.Snapshot.Matched != nil && *entry.Snapshot.Matched {
 			out.Snapshot = "matched"
@@ -415,14 +417,14 @@ func convergenceCostOut(entries []state.ModelCallLog) *convergenceCost {
 	return &cost
 }
 
-func buildConvergenceSummary(rounds []convergenceRound) convergenceSummaryOut {
-	byClass := make(map[string]*convergenceClassSummary)
+func buildConvergenceSummary(rounds []ConvergenceRound) convergenceSummaryOut {
+	byClass := make(map[string]*ConvergenceClassSummary)
 	unresolved := 0
 	high := 0
 	for _, round := range rounds {
 		class := round.delta.Class
 		if _, ok := byClass[class]; !ok {
-			byClass[class] = &convergenceClassSummary{Class: class}
+			byClass[class] = &ConvergenceClassSummary{Class: class}
 		}
 		summary := byClass[class]
 		summary.Rounds++
@@ -442,7 +444,7 @@ func buildConvergenceSummary(rounds []convergenceRound) convergenceSummaryOut {
 		}
 	}
 	summary := convergenceSummaryOut{
-		ByClass:               make([]convergenceClassSummary, 0, len(byClass)),
+		ByClass:               make([]ConvergenceClassSummary, 0, len(byClass)),
 		UnresolvedIssueRounds: unresolved,
 		HighRounds:            high,
 	}
@@ -452,10 +454,10 @@ func buildConvergenceSummary(rounds []convergenceRound) convergenceSummaryOut {
 	return summary
 }
 
-func orderedSummaryClasses(byClass map[string]*convergenceClassSummary) []string {
+func orderedSummaryClasses(byClass map[string]*ConvergenceClassSummary) []string {
 	order := []string{
 		state.RoundDeltaSameSnapshot,
-		convergenceDeltaVerificationOnly,
+		ConvergenceDeltaVerificationOnly,
 		state.RoundDeltaCommentFormat,
 		state.RoundDeltaDocChange,
 		state.RoundDeltaSemantic,
@@ -487,7 +489,7 @@ func containsString(values []string, value string) bool {
 	return false
 }
 
-func roundOutcomeUnresolved(round convergenceRound) bool {
+func roundOutcomeUnresolved(round ConvergenceRound) bool {
 	for _, entry := range round.reviewer {
 		if entry.PacketStatus == "FIX_REQUIRED" {
 			return true
@@ -496,7 +498,7 @@ func roundOutcomeUnresolved(round convergenceRound) bool {
 	return false
 }
 
-func roundRiskHigh(round convergenceRound) bool {
+func roundRiskHigh(round ConvergenceRound) bool {
 	for _, entry := range round.reviewer {
 		if entry.EffectiveRisk == "HIGH" || entry.ReviewerReportedRisk == "HIGH" {
 			return true

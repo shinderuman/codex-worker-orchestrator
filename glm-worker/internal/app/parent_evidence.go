@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskview"
 	"io"
 	"os"
 	"os/exec"
@@ -324,20 +326,20 @@ func degradeDuplicateParentEvidenceParts(p *parentEvidenceProjector) error {
 
 func loadParentEvidenceManifest(path string) (parentEvidenceManifest, error) {
 	if path == "" {
-		return parentEvidenceManifest{}, usageError("usage: glm-worker --evidence <manifest.json>")
+		return parentEvidenceManifest{}, machinecli.UsageErrorf("usage: glm-worker --evidence <manifest.json>")
 	}
 	info, err := os.Lstat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return parentEvidenceManifest{}, &NotFoundError{Message: "evidence manifest file is not found: " + path}
+			return parentEvidenceManifest{}, &machinecli.NotFoundError{Message: "evidence manifest file is not found: " + path}
 		}
 		return parentEvidenceManifest{}, fmt.Errorf("evidence manifestを確認できません: %w", err)
 	}
 	if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
-		return parentEvidenceManifest{}, usageError("evidence manifestは通常fileだけを指定できます: " + path)
+		return parentEvidenceManifest{}, machinecli.UsageErrorf("evidence manifestは通常fileだけを指定できます: " + path)
 	}
 	if info.Size() > parentEvidenceManifestMaxBytes {
-		return parentEvidenceManifest{}, usageError("evidence manifestが上限を超えています")
+		return parentEvidenceManifest{}, machinecli.UsageErrorf("evidence manifestが上限を超えています")
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -347,13 +349,13 @@ func loadParentEvidenceManifest(path string) (parentEvidenceManifest, error) {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&manifest); err != nil {
-		return parentEvidenceManifest{}, usageError("evidence manifestのschemaが不正です: " + err.Error())
+		return parentEvidenceManifest{}, machinecli.UsageErrorf("evidence manifestのschemaが不正です: " + err.Error())
 	}
 	if manifest.Version != parentEvidenceManifestVersion {
-		return parentEvidenceManifest{}, usageError("evidence manifestのversionは1だけを受理します")
+		return parentEvidenceManifest{}, machinecli.UsageErrorf("evidence manifestのversionは1だけを受理します")
 	}
 	if strings.TrimSpace(manifest.Reason) == "" {
-		return parentEvidenceManifest{}, usageError("evidence manifestにはreasonが必要です")
+		return parentEvidenceManifest{}, machinecli.UsageErrorf("evidence manifestにはreasonが必要です")
 	}
 	if err := validateParentEvidenceManifest(manifest); err != nil {
 		return parentEvidenceManifest{}, err
@@ -363,7 +365,7 @@ func loadParentEvidenceManifest(path string) (parentEvidenceManifest, error) {
 
 func validateParentEvidenceManifest(manifest parentEvidenceManifest) error {
 	if parentEvidencePartCount(manifest) == 0 {
-		return usageError("evidence manifestは少なくとも1つのprojection partを指定してください")
+		return machinecli.UsageErrorf("evidence manifestは少なくとも1つのprojection partを指定してください")
 	}
 	for _, request := range manifest.Authority {
 		if err := validateParentEvidenceAuthorityPart(request); err != nil {
@@ -405,31 +407,31 @@ func parentEvidencePartCount(manifest parentEvidenceManifest) int {
 
 func validateParentEvidenceAuthorityPart(request parentEvidenceAuthorityRequest) error {
 	if request.Kind != "rules" && request.Kind != "plan" && request.Kind != "active" {
-		return usageError("evidence manifestのauthority kindはrules|plan|activeだけを受理します")
+		return machinecli.UsageErrorf("evidence manifestのauthority kindはrules|plan|activeだけを受理します")
 	}
 	if request.BudgetBytes <= 0 || request.BudgetBytes > parentEvidenceMaxBudgetBytes {
-		return usageError("evidence manifestのauthority budget_bytesは1..262144で指定してください")
+		return machinecli.UsageErrorf("evidence manifestのauthority budget_bytesは1..262144で指定してください")
 	}
 	return nil
 }
 
 func validateParentEvidenceSearchPart(request parentEvidenceSearchRequest) error {
 	if strings.TrimSpace(request.Question) == "" || len(request.Scopes) == 0 || request.BudgetBytes <= 0 || request.BudgetBytes > repoSearchMaxBudgetBytes {
-		return usageError("evidence manifestのsearch partはquestion・scopes・budget_bytes(1..65536)を必須とします")
+		return machinecli.UsageErrorf("evidence manifestのsearch partはquestion・scopes・budget_bytes(1..65536)を必須とします")
 	}
 	return nil
 }
 
 func validateParentEvidenceDiffPart(request parentEvidenceDiffRequest) error {
 	if strings.TrimSpace(request.Question) == "" || len(request.Paths) == 0 || len(request.Paths) > parentEvidenceMaxDiffPaths {
-		return usageError("evidence manifestのdiff partはquestionと1..32個のpathsを必須とします")
+		return machinecli.UsageErrorf("evidence manifestのdiff partはquestionと1..32個のpathsを必須とします")
 	}
 	if request.BudgetBytes <= 0 || request.BudgetBytes > parentEvidenceMaxBudgetBytes {
-		return usageError("evidence manifestのdiff budget_bytesは1..262144で指定してください")
+		return machinecli.UsageErrorf("evidence manifestのdiff budget_bytesは1..262144で指定してください")
 	}
 	for _, path := range request.Paths {
 		if !parentEvidenceRelativePath(path) {
-			return usageError("evidence manifestのdiff pathsはrepository相対pathだけを受理します: " + path)
+			return machinecli.UsageErrorf("evidence manifestのdiff pathsはrepository相対pathだけを受理します: " + path)
 		}
 	}
 	return nil
@@ -437,13 +439,13 @@ func validateParentEvidenceDiffPart(request parentEvidenceDiffRequest) error {
 
 func validateParentEvidenceSourcePart(request parentEvidenceSourceRequest) error {
 	if strings.TrimSpace(request.Question) == "" || !parentEvidenceRelativePath(request.Path) {
-		return usageError("evidence manifestのsource partはquestionとrepository相対pathを必須とします")
+		return machinecli.UsageErrorf("evidence manifestのsource partはquestionとrepository相対pathを必須とします")
 	}
 	if request.LineStart < 1 || request.LineEnd < request.LineStart || request.LineEnd-request.LineStart+1 > parentEvidenceMaxSourceLines {
-		return usageError("evidence manifestのsource行範囲は1..2000行で指定してください")
+		return machinecli.UsageErrorf("evidence manifestのsource行範囲は1..2000行で指定してください")
 	}
 	if request.BudgetBytes <= 0 || request.BudgetBytes > parentEvidenceMaxBudgetBytes {
-		return usageError("evidence manifestのsource budget_bytesは1..262144で指定してください")
+		return machinecli.UsageErrorf("evidence manifestのsource budget_bytesは1..262144で指定してください")
 	}
 	return nil
 }
@@ -611,7 +613,7 @@ func (p *parentEvidenceProjector) projectHandoff(request parentEvidenceHandoffRe
 
 func (p *parentEvidenceProjector) projectStatus() parentEvidencePart {
 	taskID := p.st.ReadOr("task.id", "")
-	logs, logErr := readStatusTelemetry(p.st, taskID)
+	logs, logErr := taskview.ReadStatusTelemetry(p.st, taskID)
 	value := buildStatusOutput(p.st, taskID, logs, logErr)
 	data, err := json.Marshal(value)
 	part := parentEvidencePart{Kind: "status", Detail: "status_read"}
@@ -679,7 +681,7 @@ func (p *parentEvidenceProjector) projectTelemetry() parentEvidencePart {
 		part.Reason = err.Error()
 		return p.recordPart(part, state.ParentEvidenceSurfaceEvidenceTelemetry)
 	}
-	logs, logErr := readStatusTelemetry(p.st, p.st.ReadOr("task.id", ""))
+	logs, logErr := taskview.ReadStatusTelemetry(p.st, p.st.ReadOr("task.id", ""))
 	if logErr != nil && len(logs) == 0 {
 		part.Status = parentEvidencePartUnknown
 		part.Reason = "model call telemetry is unavailable"

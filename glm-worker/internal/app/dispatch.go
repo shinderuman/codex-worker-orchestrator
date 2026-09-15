@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/report"
 	"io"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
@@ -105,7 +106,7 @@ func executeReadOnlyInspection(cmd Command, cfg config.AppConfig, stdout io.Writ
 	case ModeHandoff:
 		return executeHandoffInspection(cmd, cfg, st, stdout)
 	case ModeStats:
-		return printStats(cfg, st, cmd.Query, stdout)
+		return report.PrintStats(cfg, st, cmd.Query, printTelemetryCompactSummary, stdout)
 	case ModeWatch:
 		return printWatch(st, stdout, defaultWatchOptions(cmd.WatchVerbose))
 	case ModeCodexLimit:
@@ -151,20 +152,20 @@ func executeReadOnlyAnalysis(cmd Command, cfg config.AppConfig, stdout io.Writer
 	st := state.AttachStateStore(cfg)
 	switch cmd.Mode {
 	case ModeTimeline:
-		return printTimeline(st, cmd.Payload, stdout)
+		return report.PrintTimeline(st, cmd.Payload, stdout)
 	case ModeConvergence:
-		return printConvergence(st, cmd.Payload, stdout)
+		return report.PrintConvergence(st, cmd.Payload, stdout)
 	case ModeEvalAB:
 		st.EnableRepoSearchReadProjection()
-		return printEvalAB(st, cmd.Payload, stdout)
+		return report.PrintEvalAB(st, cmd.Payload, stdout)
 	case ModeCallOutliers:
-		return printCallOutliers(cfg, st, cmd.Query, stdout)
+		return report.PrintCallOutliers(cfg, st, cmd.Query, printTelemetryCompactSummary, stdout)
 	case ModeModelRouting:
-		return printModelRouting(st, stdout)
+		return report.PrintModelRouting(st, stdout)
 	case ModeTestImpact:
-		return printTestImpact(st, stdout)
+		return report.PrintTestImpact(st, stdout)
 	case ModeRepoSearchEval:
-		return printRepoSearchEval(st, stdout)
+		return report.PrintRepoSearchEval(st, stdout)
 	case ModeBundle:
 		return printBundle(cfg, st, cmd.Payload, stdout)
 	case ModeReviewGap:

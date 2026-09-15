@@ -3,6 +3,8 @@ package app
 import (
 	"errors"
 	"fmt"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
+	reportapi "github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/report"
 	"io"
 	"os"
 	"sort"
@@ -164,7 +166,7 @@ func printReviewGap(cfg config.AppConfig, st *state.StateStore, requestedTaskID 
 		return err
 	}
 	report := buildReviewGapReport(cfg, st, tasks, scope, requestedTaskID)
-	return writeJSON(stdout, report)
+	return machinecli.WriteJSON(stdout, report)
 }
 
 func reviewGapTasks(st *state.StateStore, requestedTaskID string) ([]state.TaskStats, string, error) {
@@ -192,7 +194,7 @@ func reviewGapTasks(st *state.StateStore, requestedTaskID string) ([]state.TaskS
 			return []state.TaskStats{stats}, reviewGapScopeTask, nil
 		}
 	}
-	return nil, "", &NotFoundError{Message: fmt.Sprintf("task %sのretained evidenceがありません", requestedTaskID)}
+	return nil, "", &machinecli.NotFoundError{Message: fmt.Sprintf("task %sのretained evidenceがありません", requestedTaskID)}
 }
 
 func buildReviewGapReport(cfg config.AppConfig, st *state.StateStore, tasks []state.TaskStats, scope string, taskID string) reviewGapReport {
@@ -250,7 +252,7 @@ func (report *reviewGapReport) appendReviewGapTask(cfg config.AppConfig, st *sta
 		return
 	}
 	rounds, roundErr := st.ReadRoundRecords(stats.TaskID)
-	taskEvents, _, _ := readTaskEventRecords(st, stats.TaskID)
+	taskEvents, _, _ := reportapi.ReadTaskEventRecords(st, stats.TaskID)
 	association := resolveCodexAssociation(cfg.CodexConfigDir, bundleTask{ID: stats.TaskID, Status: string(stats.Status), Stats: *stats})
 	windowStart, windowEnd, _ := analysisCollectionWindow(bundleTask{Stats: *stats})
 	scan, scanErr := parentUsageRolloutScan(association, windowStart, windowEnd)
@@ -463,9 +465,9 @@ func reviewGapFillSemanticity(fix *reviewGapFix, evidence reviewGapTaskEvidence,
 	}
 	class := delta.Class
 	if class == state.RoundDeltaSameSnapshot {
-		uses, mutating := convergenceWorkerToolUse(evidence.taskEvents, round.WorkerPhase)
+		uses, mutating := reportapi.ConvergenceWorkerToolUse(evidence.taskEvents, round.WorkerPhase)
 		if uses > 0 && !mutating {
-			class = convergenceDeltaVerificationOnly
+			class = reportapi.ConvergenceDeltaVerificationOnly
 		}
 	}
 	fix.Semanticity = class

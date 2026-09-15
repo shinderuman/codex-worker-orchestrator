@@ -1,8 +1,10 @@
-package app
+package report
 
 import (
 	"errors"
 	"fmt"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskview"
 	"io"
 	"os"
 	"strings"
@@ -24,23 +26,23 @@ type testImpactEventsScan struct {
 
 type testImpactOutput struct {
 	Events    testImpactEventsScan   `json:"events"`
-	Telemetry telemetryScan          `json:"telemetry"`
+	Telemetry TelemetryScan          `json:"telemetry"`
 	Rounds    modelRoutingRoundsScan `json:"rounds"`
 	RepoRoot  string                 `json:"repo_root"`
 	Report    state.TestImpactReport `json:"report"`
 }
 
-func printTestImpact(st *state.StateStore, stdout io.Writer) error {
+func PrintTestImpact(st *state.StateStore, stdout io.Writer) error {
 	events, err := scanTaskEventLogs(st)
 	if err != nil {
 		return err
 	}
-	scan, err := scanTelemetryTaskLogs(st, state.TelemetryQueryFilter{})
+	scan, err := ScanTelemetryTaskLogs(st, state.TelemetryQueryFilter{})
 	if err != nil {
 		return err
 	}
-	rounds, tasks := attachModelRoutingConvergenceDeltas(st, scan.logs)
-	return writeJSON(stdout, testImpactOutput{
+	rounds, tasks := attachModelRoutingConvergenceDeltas(st, scan.Logs)
+	return machinecli.WriteJSON(stdout, testImpactOutput{
 		Events:    *events,
 		Telemetry: *scan,
 		Rounds:    rounds,
@@ -79,14 +81,14 @@ func scanTaskEventLogs(st *state.StateStore) (*testImpactEventsScan, error) {
 			scan.logs = append(scan.logs, state.TaskEvents{TaskID: taskID, Records: records})
 			continue
 		}
-		scan.Status = statusPartial
+		scan.Status = taskview.StatusPartial
 		scan.UnreadableTasks = append(scan.UnreadableTasks, telemetryTaskError{
 			TaskID: taskID,
 			Error:  readErr.Error(),
 		})
 	}
 	if considered == 0 {
-		scan.Status = statusNone
+		scan.Status = taskview.StatusNone
 	}
 	return scan, nil
 }

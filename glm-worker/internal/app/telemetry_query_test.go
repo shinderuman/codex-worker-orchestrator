@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/report"
 	"os"
 	"path/filepath"
 	"strings"
@@ -126,10 +127,10 @@ func TestStatsExplicitCurrentScopeMatchesDefaultOutput(t *testing.T) {
 	st.RecordModelCall(state.WorkerRole, "opus")
 
 	var defaultOut, explicitOut bytes.Buffer
-	if err := printStats(cfg, st, TelemetryQueryArgs{}, &defaultOut); err != nil {
+	if err := report.PrintStats(cfg, st, report.Query{}, nil, &defaultOut); err != nil {
 		t.Fatal(err)
 	}
-	if err := printStats(cfg, st, TelemetryQueryArgs{Scope: state.TelemetryScopeCurrent}, &explicitOut); err != nil {
+	if err := report.PrintStats(cfg, st, report.Query{Scope: state.TelemetryScopeCurrent}, nil, &explicitOut); err != nil {
 		t.Fatal(err)
 	}
 	if defaultOut.String() != explicitOut.String() {
@@ -216,7 +217,7 @@ func TestStatsCurrentScopeTaskAndPeriodFilter(t *testing.T) {
 		t.Fatalf("期間filter後のstats = %#v", periodDecoded)
 	}
 	query, _ := periodDecoded["query"].(map[string]any)
-	if query["period_basis"] != telemetryQueryPeriodBasisTask {
+	if query["period_basis"] != report.QueryPeriodBasisTask {
 		t.Fatalf("period_basis = %#v", query)
 	}
 	periodCoverage, _ := periodDecoded["telemetry_coverage"].(map[string]any)

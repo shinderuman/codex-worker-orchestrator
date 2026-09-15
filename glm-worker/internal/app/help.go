@@ -1,6 +1,7 @@
 package app
 
 import (
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 	"io"
 	"sort"
 )
@@ -16,7 +17,7 @@ func runHelp(args []string, stdout io.Writer) (bool, error) {
 		return false, nil
 	}
 	if len(args) != 1 {
-		return true, usageError("usage: glm-worker --help")
+		return true, machinecli.UsageErrorf("usage: glm-worker --help")
 	}
 	commands := make([]string, 0, len(commandParsers)+2)
 	for name := range commandParsers {

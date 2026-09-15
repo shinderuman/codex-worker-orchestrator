@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskview"
 	"io"
 	"os"
 	"os/exec"
@@ -124,7 +126,7 @@ func runQualityGateAction(action, runID string, st *state.StateStore, stdout io.
 		}
 		return printQualityGateRun(st, runID, false, stdout)
 	default:
-		return usageError("%s", qualityGateCommandUsage)
+		return machinecli.UsageErrorf("%s", qualityGateCommandUsage)
 	}
 }
 
@@ -173,7 +175,7 @@ func startQualityGate(form string, st *state.StateStore, stdout, diagnostics io.
 func prepareQualityGateStart(form string, st *state.StateStore) (qualityGateStartIdentity, error) {
 	goArgs, ok := qualityGateForms[form]
 	if !ok {
-		return qualityGateStartIdentity{}, usageError("%s", qualityGateCommandUsage)
+		return qualityGateStartIdentity{}, machinecli.UsageErrorf("%s", qualityGateCommandUsage)
 	}
 	workingDir, err := os.Getwd()
 	if err != nil {
@@ -346,7 +348,7 @@ func finishQualityGateCommand(record qualityGateRunRecord, goArgs []string, stdo
 	if record.Status != qualityGateStatusPass {
 		return qualityGateErrorFromRecord(record)
 	}
-	return writeJSON(stdout, qualityGateOutput{
+	return machinecli.WriteJSON(stdout, qualityGateOutput{
 		Status:          record.Status,
 		ValidationRunID: record.ValidationRunID,
 		Form:            record.Form,
@@ -377,7 +379,7 @@ func printQualityGateRun(st *state.StateStore, runID string, watch bool, stdout 
 	if err != nil {
 		return err
 	}
-	return writeJSON(stdout, record)
+	return machinecli.WriteJSON(stdout, record)
 }
 
 func waitQualityGateRun(st *state.StateStore, runID string) (qualityGateRunRecord, error) {
@@ -549,11 +551,11 @@ func writeQualityGateRun(st *state.StateStore, record qualityGateRunRecord) erro
 
 func readQualityGateRun(st *state.StateStore, runID string) (qualityGateRunRecord, error) {
 	if !validValidationRunID(runID) {
-		return qualityGateRunRecord{}, &NotFoundError{Message: "quality gate runが見つかりません"}
+		return qualityGateRunRecord{}, &machinecli.NotFoundError{Message: "quality gate runが見つかりません"}
 	}
 	data, err := os.ReadFile(st.Path(qualityGateRunRelativePath(runID)))
 	if errors.Is(err, os.ErrNotExist) {
-		return qualityGateRunRecord{}, &NotFoundError{Message: "quality gate runが見つかりません"}
+		return qualityGateRunRecord{}, &machinecli.NotFoundError{Message: "quality gate runが見つかりません"}
 	}
 	if err != nil {
 		return qualityGateRunRecord{}, err
@@ -622,7 +624,7 @@ func recordQualityGateValidation(st *state.StateStore, record qualityGateRunReco
 }
 
 func emitQualityGateStarted(diagnostics io.Writer, runID string, attached bool) error {
-	line, err := marshalEventLine(qualityGateStartedEvent{
+	line, err := taskview.MarshalEventLine(qualityGateStartedEvent{
 		Type:            "control",
 		Event:           "quality_gate_started",
 		ValidationRunID: runID,

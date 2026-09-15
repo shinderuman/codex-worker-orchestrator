@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/report"
 	"io"
 	"path/filepath"
 	"strings"
@@ -88,7 +89,7 @@ func statusRawJSON(t *testing.T, cfg config.AppConfig) map[string]any {
 func statsRawJSON(t *testing.T, cfg config.AppConfig, st *state.StateStore) map[string]any {
 	t.Helper()
 	var out bytes.Buffer
-	if err := printStats(cfg, st, TelemetryQueryArgs{}, &out); err != nil {
+	if err := report.PrintStats(cfg, st, report.Query{}, nil, &out); err != nil {
 		t.Fatal(err)
 	}
 	return decodeSingleLineJSON(t, out.String())
@@ -189,7 +190,7 @@ func TestStatusRawJSONContract(t *testing.T) {
 func timelineRawJSON(t *testing.T, st *state.StateStore) map[string]any {
 	t.Helper()
 	var out bytes.Buffer
-	if err := printTimeline(st, "", &out); err != nil {
+	if err := report.PrintTimeline(st, "", &out); err != nil {
 		t.Fatal(err)
 	}
 	return decodeSingleLineJSON(t, out.String())
@@ -198,7 +199,7 @@ func timelineRawJSON(t *testing.T, st *state.StateStore) map[string]any {
 func convergenceRawJSON(t *testing.T, st *state.StateStore) map[string]any {
 	t.Helper()
 	var out bytes.Buffer
-	if err := printConvergence(st, "", &out); err != nil {
+	if err := report.PrintConvergence(st, "", &out); err != nil {
 		t.Fatal(err)
 	}
 	return decodeSingleLineJSON(t, out.String())
@@ -279,7 +280,7 @@ func TestTaskStatusFiniteEnumBoundary(t *testing.T) {
 		}
 
 		var out bytes.Buffer
-		if err := printTimeline(st, archivedID, &out); err != nil {
+		if err := report.PrintTimeline(st, archivedID, &out); err != nil {
 			t.Fatal(err)
 		}
 		assertNullJSONValue(t, "task_status", requireJSONKey(t, decodeSingleLineJSON(t, out.String()), "task_status"))

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 	"io"
 	"strconv"
 	"strings"
@@ -75,7 +76,7 @@ func (r repoSearchRequest) symbols() []string {
 
 func printRepoSearch(request repoSearchRequest, cfg config.AppConfig, st *state.StateStore, stdout io.Writer) error {
 	if !cfg.RepoSearch {
-		return writeJSON(stdout, repoSearchOutput{Status: repoSearchResultDisabled, Result: repoSearchResultDisabled, Results: []repoSearchResult{}})
+		return machinecli.WriteJSON(stdout, repoSearchOutput{Status: repoSearchResultDisabled, Result: repoSearchResultDisabled, Results: []repoSearchResult{}})
 	}
 	report, err := reposearch.Search(context.Background(), cfg.RepoRoot, request.Question, reposearch.Options{
 		DisableCache: true,
@@ -113,7 +114,7 @@ func serveRepoSearchResult(st *state.StateStore, request repoSearchRequest, repo
 	}
 	output := buildRepoSearchOutput(request, report, results)
 	if output.Status == repoSearchResultRequired {
-		if writeErr := writeJSON(stdout, output); writeErr != nil {
+		if writeErr := machinecli.WriteJSON(stdout, output); writeErr != nil {
 			return writeErr
 		}
 		if err := saveParentEvidenceLedger(st, state.ParentEvidenceSurfaceSearch, digest, state.ParentEvidenceOriginStandalone, ""); err != nil {

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/report"
 	"io"
 	"os"
 	"os/exec"
@@ -164,7 +166,7 @@ func TestExecuteStatsReportsEmptyState(t *testing.T) {
 	if err := Execute(Command{Mode: ModeStats}, cfg, nil, &out, io.Discard); err != nil {
 		t.Fatal(err)
 	}
-	var output statsOutput
+	var output report.StatsOutput
 	if err := json.Unmarshal([]byte(strings.TrimSpace(out.String())), &output); err != nil {
 		t.Fatalf("stats出力がmachine JSONではありません: %v: %q", err, out.String())
 	}
@@ -738,7 +740,7 @@ func TestExecuteCheckWakeCoalesceRejectsInvalidResumeTime(t *testing.T) {
 			ResumeAtRFC3339: "2026-08-26 15:17:55",
 		},
 	}, cfg, nil, &out, io.Discard)
-	var usage *UsageError
+	var usage *machinecli.UsageError
 	if !errors.As(err, &usage) {
 		t.Fatalf("usage errorを期待: %v", err)
 	}

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 	"io"
 	"os"
 	"os/exec"
@@ -128,7 +129,7 @@ func runInstallSmoke(role string, cfg config.AppConfig, st *state.StateStore, st
 	durationMS := time.Since(started).Milliseconds()
 	if runErr == nil {
 		st.RecordValidation("install-smoke", "install-smoke", role, "pass", 0, state.ValidationExitSourceTarget, durationMS, "")
-		return writeJSON(stdout, installSmokeOutput{
+		return machinecli.WriteJSON(stdout, installSmokeOutput{
 			Status:     "executed",
 			Result:     "pass",
 			Role:       role,

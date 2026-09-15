@@ -1,6 +1,7 @@
 package app
 
 import (
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 	"io"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
@@ -16,7 +17,7 @@ func executeProjectStateInspection(cmd Command, cfg config.AppConfig, st *state.
 	if active {
 		return executeStatelessProjection(cmd, cfg, stdout)
 	}
-	return writeJSON(stdout, projectStateOutput{
+	return machinecli.WriteJSON(stdout, projectStateOutput{
 		Version:      projectStateVersion,
 		Dependencies: []projectStateDependency{},
 		Blockers:     []projectStateBlocker{},

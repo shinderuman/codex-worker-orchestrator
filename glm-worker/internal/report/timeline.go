@@ -1,10 +1,10 @@
-package app
+package report
 
 import (
-	"bufio"
-	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskview"
 	"io"
 	"os"
 	"time"
@@ -12,7 +12,7 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-type timelineOutput struct {
+type TimelineOutput struct {
 	TaskID        string               `json:"task_id"`
 	TaskStatus    *string              `json:"task_status"`
 	Coverage      timelineCoverage     `json:"coverage"`
@@ -20,7 +20,7 @@ type timelineOutput struct {
 	SkippedEvents int                  `json:"skipped_events,omitempty"`
 	Telemetry     *string              `json:"telemetry"`
 	Calls         []timelineCall       `json:"calls"`
-	ToolTotals    []timelineTool       `json:"tool_totals"`
+	ToolTotals    []TimelineTool       `json:"tool_totals"`
 	SessionAging  []state.SessionAging `json:"session_aging"`
 }
 
@@ -62,7 +62,7 @@ type timelineCall struct {
 	SpanMS           *int64             `json:"span_ms"`
 	Events           int                `json:"events"`
 	Result           timelineCallResult `json:"result"`
-	Tools            []timelineTool     `json:"tools"`
+	Tools            []TimelineTool     `json:"tools"`
 }
 
 type timelineCallResult struct {
@@ -76,7 +76,7 @@ type timelineCallResult struct {
 	TotalCostUSD  float64               `json:"total_cost_usd,omitempty"`
 }
 
-type timelineTool struct {
+type TimelineTool struct {
 	Name          string `json:"name"`
 	Uses          int    `json:"uses"`
 	Results       int    `json:"results,omitempty"`
@@ -87,41 +87,36 @@ type timelineTool struct {
 	Errors        int    `json:"errors,omitempty"`
 }
 
-type eventLogSkippedLine struct {
-	Type  string `json:"type"`
-	Error string `json:"error"`
-}
-
 const (
-	timelineStatusComplete = "complete"
-	timelineStatusPartial  = "partial"
-	timelineStatusUnknown  = "unknown"
+	TimelineStatusComplete = "complete"
+	TimelineStatusPartial  = "partial"
+	TimelineStatusUnknown  = "unknown"
 
-	timelineSourceOK = "ok"
+	TimelineSourceOK = "ok"
 )
 
-func printTimeline(st *state.StateStore, taskIDArg string, stdout io.Writer) error {
+func PrintTimeline(st *state.StateStore, taskIDArg string, stdout io.Writer) error {
 	explicit := taskIDArg != ""
 	taskID := taskIDArg
 	if taskID == "" {
 		taskID = st.ReadOr("task.id", "")
 	}
 	if !validTimelineTaskID(taskID, explicit) {
-		return &UsageError{Message: fmt.Sprintf("task IDが生成されるUUID v4形式と一致しません: %q", taskID)}
+		return &machinecli.UsageError{Message: fmt.Sprintf("task IDが生成されるUUID v4形式と一致しません: %q", taskID)}
 	}
 
-	records, skipped, eventErr := readTaskEventRecords(st, taskID)
+	records, skipped, eventErr := ReadTaskEventRecords(st, taskID)
 	if eventErr != nil && explicit && !errors.Is(eventErr, os.ErrNotExist) {
 		return fmt.Errorf("task %sのevent logを読めません: %w", taskID, eventErr)
 	}
 	logs, telemetryErr := readTimelineTelemetry(st, taskID)
 
-	output := timelineOutput{
+	output := TimelineOutput{
 		TaskID:     taskID,
 		TaskStatus: timelineTaskStatus(st, taskID, explicit),
 	}
 	output.EventLog = timelineEventLogState(st, taskID, eventErr)
-	if output.EventLog.Status == timelineSourceOK {
+	if output.EventLog.Status == TimelineSourceOK {
 		output.Calls = timelineCalls(records)
 		output.ToolTotals = timelineTools(state.SumCallTimelineTools(state.CallsFromTaskEvents(records)))
 		output.SkippedEvents = skipped
@@ -129,20 +124,20 @@ func printTimeline(st *state.StateStore, taskIDArg string, stdout io.Writer) err
 	fillTimelineTelemetry(taskID, telemetryErr, logs, &output)
 	statsSource := timelineTaskStatsSource(st, taskID)
 	if explicit && errors.Is(eventErr, os.ErrNotExist) && !timelineTaskProven(output.SessionAging, statsSource) {
-		return &NotFoundError{Message: fmt.Sprintf("task %sのevent logがありません: %v", taskID, eventErr)}
+		return &machinecli.NotFoundError{Message: fmt.Sprintf("task %sのevent logがありません: %v", taskID, eventErr)}
 	}
 	output.Coverage = buildTimelineCoverage(st, taskID, output.EventLog.Status, len(records), skipped, telemetryErr, len(logs), output.SessionAging, statsSource)
-	return writeJSON(stdout, output)
+	return machinecli.WriteJSON(stdout, output)
 }
 
 func timelineEventLogState(st *state.StateStore, taskID string, err error) timelineEventLog {
 	switch {
 	case err == nil:
-		return timelineEventLog{Status: timelineSourceOK, Path: stringPtr(st.TaskEventLogPath(taskID))}
+		return timelineEventLog{Status: TimelineSourceOK, Path: machinecli.StringPtr(st.TaskEventLogPath(taskID))}
 	case errors.Is(err, os.ErrNotExist):
-		return timelineEventLog{Status: statusNone}
+		return timelineEventLog{Status: taskview.StatusNone}
 	default:
-		return timelineEventLog{Status: statusUnreadable}
+		return timelineEventLog{Status: taskview.StatusUnreadable}
 	}
 }
 
@@ -153,16 +148,16 @@ func readTimelineTelemetry(st *state.StateStore, taskID string) ([]state.ModelCa
 	return st.ReadModelCallLogs(taskID)
 }
 
-func fillTimelineTelemetry(taskID string, logErr error, logs []state.ModelCallLog, output *timelineOutput) {
+func fillTimelineTelemetry(taskID string, logErr error, logs []state.ModelCallLog, output *TimelineOutput) {
 	if taskID == "" {
 		return
 	}
 	if logErr != nil && !errors.Is(logErr, os.ErrNotExist) {
-		unreadable := statusUnreadable
+		unreadable := taskview.StatusUnreadable
 		output.Telemetry = &unreadable
 		return
 	}
-	ok := timelineSourceOK
+	ok := TimelineSourceOK
 	output.Telemetry = &ok
 	output.SessionAging = state.AgingFromModelCallLogs(logs)
 }
@@ -182,24 +177,24 @@ func buildTimelineCoverage(st *state.StateStore, taskID string, eventLogStatus s
 
 func timelineOverallStatus(eventLogStatus string, skippedEvents int, aging []state.SessionAging) string {
 	switch {
-	case eventLogStatus == timelineSourceOK && skippedEvents == 0:
-		return timelineStatusComplete
-	case eventLogStatus == timelineSourceOK || len(aging) > 0:
-		return timelineStatusPartial
+	case eventLogStatus == TimelineSourceOK && skippedEvents == 0:
+		return TimelineStatusComplete
+	case eventLogStatus == TimelineSourceOK || len(aging) > 0:
+		return TimelineStatusPartial
 	default:
-		return timelineStatusUnknown
+		return TimelineStatusUnknown
 	}
 }
 
 func timelineMissingSources(sources timelineSourceStates) []string {
 	missing := make([]string, 0, 3)
-	if sources.EventLog.Status == statusNone {
+	if sources.EventLog.Status == taskview.StatusNone {
 		missing = append(missing, "event_log")
 	}
-	if sources.Telemetry.Status == statusNone {
+	if sources.Telemetry.Status == taskview.StatusNone {
 		missing = append(missing, "telemetry")
 	}
-	if sources.TaskStats.Status == statusNone {
+	if sources.TaskStats.Status == taskview.StatusNone {
 		missing = append(missing, "task_stats")
 	}
 	return missing
@@ -215,13 +210,13 @@ func timelineEventLogSource(st *state.StateStore, taskID string, status string, 
 
 func timelineTelemetrySource(st *state.StateStore, taskID string, telemetryErr error, records int) timelineSourceState {
 	if taskID == "" {
-		return timelineSourceState{Status: statusNone}
+		return timelineSourceState{Status: taskview.StatusNone}
 	}
-	status := timelineSourceOK
+	status := TimelineSourceOK
 	if telemetryErr != nil {
-		status = statusUnreadable
+		status = taskview.StatusUnreadable
 		if errors.Is(telemetryErr, os.ErrNotExist) {
-			status = statusNone
+			status = taskview.StatusNone
 		}
 	}
 	return timelineSourceState{
@@ -233,7 +228,7 @@ func timelineTelemetrySource(st *state.StateStore, taskID string, telemetryErr e
 
 func timelineTaskStatsSource(st *state.StateStore, taskID string) timelineSourceState {
 	if taskID == "" {
-		return timelineSourceState{Status: statusNone}
+		return timelineSourceState{Status: taskview.StatusNone}
 	}
 	if taskID == st.ReadOr("task.id", "") {
 		return timelineCurrentTaskStatsSource(st)
@@ -243,11 +238,11 @@ func timelineTaskStatsSource(st *state.StateStore, taskID string) timelineSource
 
 func timelineCurrentTaskStatsSource(st *state.StateStore) timelineSourceState {
 	_, err := st.CurrentTaskStats()
-	status := timelineSourceOK
+	status := TimelineSourceOK
 	if err != nil {
-		status = statusUnreadable
+		status = taskview.StatusUnreadable
 		if errors.Is(err, os.ErrNotExist) {
-			status = statusNone
+			status = taskview.StatusNone
 		}
 	}
 	return timelineSourceState{Status: status, Path: st.CurrentTaskStatsPath()}
@@ -255,11 +250,11 @@ func timelineCurrentTaskStatsSource(st *state.StateStore) timelineSourceState {
 
 func timelineArchivedTaskStatsSource(st *state.StateStore, taskID string) timelineSourceState {
 	evidence, err := st.ArchivedTaskStatsEvidence(taskID)
-	sourceStatus := timelineSourceOK
+	sourceStatus := TimelineSourceOK
 	if errors.Is(err, os.ErrNotExist) || (err == nil && !evidence.Proven) {
-		sourceStatus = statusNone
+		sourceStatus = taskview.StatusNone
 	} else if err != nil {
-		sourceStatus = statusUnreadable
+		sourceStatus = taskview.StatusUnreadable
 	}
 	return timelineSourceState{Status: sourceStatus, Path: st.TaskStatsArchivePath(taskID)}
 }
@@ -272,7 +267,7 @@ func timelineLocator(taskID string, path string) string {
 }
 
 func timelineTaskProven(aging []state.SessionAging, statsSource timelineSourceState) bool {
-	return len(aging) > 0 || statsSource.Status == timelineSourceOK
+	return len(aging) > 0 || statsSource.Status == TimelineSourceOK
 }
 
 func validTimelineTaskID(taskID string, explicit bool) bool {
@@ -284,41 +279,20 @@ func validTimelineTaskID(taskID string, explicit bool) bool {
 
 func timelineTaskStatus(st *state.StateStore, taskID string, explicit bool) *string {
 	if !explicit {
-		return taskStatusPtr(st.TaskStatus())
+		return machinecli.TaskStatusPtr(st.TaskStatus())
 	}
 	if taskID == st.ReadOr("task.id", "") {
-		return taskStatusPtr(st.TaskStatus())
+		return machinecli.TaskStatusPtr(st.TaskStatus())
 	}
 	evidence, err := st.ArchivedTaskStatsEvidence(taskID)
 	if err != nil || !evidence.Proven {
 		return nil
 	}
-	return taskStatusPtr(evidence.Status)
+	return machinecli.TaskStatusPtr(evidence.Status)
 }
 
-func readTaskEventRecords(st *state.StateStore, taskID string) ([]state.TaskEventRecord, int, error) {
+func ReadTaskEventRecords(st *state.StateStore, taskID string) ([]state.TaskEventRecord, int, error) {
 	return scanLogRecords(st.TaskEventLogPath(taskID), state.ParseTaskEventLine)
-}
-
-func readLastTaskEvent(path string) (state.TaskEventRecord, bool) {
-	file, err := os.Open(path)
-	if err != nil {
-		return state.TaskEventRecord{}, false
-	}
-	defer func() { _ = file.Close() }()
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
-	var last state.TaskEventRecord
-	found := false
-	for scanner.Scan() {
-		record, err := state.ParseTaskEventLine(scanner.Bytes())
-		if err != nil {
-			continue
-		}
-		last = record
-		found = true
-	}
-	return last, found
 }
 
 func timelineCalls(records []state.TaskEventRecord) []timelineCall {
@@ -333,14 +307,14 @@ func timelineCalls(records []state.TaskEventRecord) []timelineCall {
 func timelineCallDetail(index int, entry state.CallTimelineEntry) timelineCall {
 	call := timelineCall{
 		Index:            index,
-		Role:             stringPtr(entry.Role),
-		Phase:            stringPtr(entry.Phase),
+		Role:             machinecli.StringPtr(entry.Role),
+		Phase:            machinecli.StringPtr(entry.Phase),
 		CallID:           entry.CallID,
-		SessionID:        stringPtr(entry.SessionID),
+		SessionID:        machinecli.StringPtr(entry.SessionID),
 		SessionCallIndex: entry.SessionCallIndex,
 		Resumed:          entry.Resumed,
-		ModelAlias:       stringPtr(entry.ModelAlias),
-		MessageModel:     stringPtr(entry.MessageModel),
+		ModelAlias:       machinecli.StringPtr(entry.ModelAlias),
+		MessageModel:     machinecli.StringPtr(entry.MessageModel),
 		Events:           entry.Events,
 	}
 	if !entry.FirstAt.IsZero() {
@@ -365,7 +339,7 @@ func timelineCallResultDetail(entry state.CallTimelineEntry) timelineCallResult 
 	if !entry.ResultObserved {
 		return result
 	}
-	result.Subtype = stringPtr(entry.ResultSubtype)
+	result.Subtype = machinecli.StringPtr(entry.ResultSubtype)
 	result.IsError = entry.IsError
 	if entry.DurationMS > 0 {
 		duration := entry.DurationMS
@@ -381,10 +355,10 @@ func timelineCallResultDetail(entry state.CallTimelineEntry) timelineCallResult 
 	return result
 }
 
-func timelineTools(tools []state.CallTimelineTool) []timelineTool {
-	rendered := make([]timelineTool, 0, len(tools))
+func timelineTools(tools []state.CallTimelineTool) []TimelineTool {
+	rendered := make([]TimelineTool, 0, len(tools))
 	for _, tool := range tools {
-		rendered = append(rendered, timelineTool{
+		rendered = append(rendered, TimelineTool{
 			Name:          tool.Name,
 			Uses:          tool.Uses,
 			Results:       tool.Results,
@@ -396,12 +370,4 @@ func timelineTools(tools []state.CallTimelineTool) []timelineTool {
 		})
 	}
 	return rendered
-}
-
-func marshalEventLine(value any) ([]byte, error) {
-	data, err := json.Marshal(value)
-	if err != nil {
-		return nil, err
-	}
-	return append(data, '\n'), nil
 }

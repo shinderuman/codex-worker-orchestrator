@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/report"
 	"os"
 	"path/filepath"
 	"strings"
@@ -76,8 +77,8 @@ func TestTelemetryCompactSummaryHistorySections(t *testing.T) {
 
 	query, _ := decoded["query"].(map[string]any)
 	if query["scope"] != state.TelemetryScopeHistory ||
-		query["telemetry_period_basis"] != telemetryQueryPeriodBasisRecord ||
-		query["stats_period_basis"] != telemetryQueryPeriodBasisTask {
+		query["telemetry_period_basis"] != report.QueryPeriodBasisRecord ||
+		query["stats_period_basis"] != report.QueryPeriodBasisTask {
 		t.Fatalf("query = %#v", query)
 	}
 
@@ -103,7 +104,7 @@ func TestTelemetryCompactSummaryHistorySections(t *testing.T) {
 	}
 
 	stats, _ := decoded["stats"].(map[string]any)
-	if stats["period_basis"] != telemetryQueryPeriodBasisTask ||
+	if stats["period_basis"] != report.QueryPeriodBasisTask ||
 		stats["cohort_version"].(float64) != float64(state.ModelCallLogVersion) ||
 		stats["cohort_schema_revision"].(float64) != float64(state.ModelCallLogSchemaRevision) {
 		t.Fatalf("stats header = %#v", stats)

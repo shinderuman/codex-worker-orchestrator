@@ -2,6 +2,7 @@ package app
 
 import (
 	"errors"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 	"os/exec"
 	"runtime/debug"
 	"strings"
@@ -53,12 +54,12 @@ func runtimeBuildSettingsFromGo(settings []debug.BuildSetting) runtimeBuildSetti
 
 func runtimeBuildStatus(repoRoot string, settings runtimeBuildSettings) statusRuntimeBuild {
 	output := statusRuntimeBuild{
-		VCSRevision:  stringPtr(settings.revision),
+		VCSRevision:  machinecli.StringPtr(settings.revision),
 		VCSModified:  settings.modified,
 		Relationship: runtimeBuildUnknown,
 	}
 	head := repositoryHead(repoRoot)
-	output.RepositoryHead = stringPtr(head)
+	output.RepositoryHead = machinecli.StringPtr(head)
 	if settings.revision == "" || head == "" || settings.modified == nil || *settings.modified {
 		return output
 	}

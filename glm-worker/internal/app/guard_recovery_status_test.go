@@ -1,6 +1,7 @@
 package app
 
 import (
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
@@ -46,7 +47,7 @@ func TestGuardRecoveryStatusIsVisibleAndResumable(t *testing.T) {
 	if got := stopFinishedResult(st.TaskStatus()); got != "terminal" {
 		t.Fatalf("stop endpoint result = %q want terminal", got)
 	}
-	status := taskStatusPtr(st.TaskStatus())
+	status := machinecli.TaskStatusPtr(st.TaskStatus())
 	if status == nil || *status != string(state.TaskStatusGuardRecoverable) {
 		t.Fatalf("task status = %v", status)
 	}
@@ -95,7 +96,7 @@ func TestQualityGateRecoveryStatusIsVisibleAndResumable(t *testing.T) {
 	if st.TaskStatus() == state.TaskStatusActive {
 		t.Fatal("quality gate recovery must not leave the task active/stale")
 	}
-	status := taskStatusPtr(st.TaskStatus())
+	status := machinecli.TaskStatusPtr(st.TaskStatus())
 	if status == nil || *status != string(state.TaskStatusQualityGateRecoverable) {
 		t.Fatalf("task status = %v", status)
 	}

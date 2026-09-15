@@ -3,6 +3,7 @@ package app
 import (
 	"errors"
 	"fmt"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskview"
 	"io"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
@@ -19,7 +20,7 @@ type stdinReadyControlEvent struct {
 type RunnerFactory func(cfg config.AppConfig, st *state.StateStore, stop *runner.StopController) workflow.ModelRunner
 
 func emitStdinReadyControlEvent(w io.Writer) error {
-	line, err := marshalEventLine(stdinReadyControlEvent{Type: "control", Event: "stdin_ready"})
+	line, err := taskview.MarshalEventLine(stdinReadyControlEvent{Type: "control", Event: "stdin_ready"})
 	if err != nil {
 		return fmt.Errorf("stdin ready control event encode failed: %w", err)
 	}

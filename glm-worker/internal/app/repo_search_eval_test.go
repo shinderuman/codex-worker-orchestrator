@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"fmt"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/report"
 	"io"
 	"os"
 	"strings"
@@ -16,7 +17,7 @@ import (
 func executeRepoSearchEval(t *testing.T, st *state.StateStore) map[string]any {
 	t.Helper()
 	var out bytes.Buffer
-	if err := printRepoSearchEval(st, &out); err != nil {
+	if err := report.PrintRepoSearchEval(st, &out); err != nil {
 		t.Fatal(err)
 	}
 	return decodeSingleLineJSON(t, out.String())
@@ -68,8 +69,8 @@ func TestExecuteRepoSearchEvalAggregatesRoutesWithoutRawQueries(t *testing.T) {
 	if decoded["repo_root"] != cfg.RepoRoot {
 		t.Fatalf("repo_root = %#v", decoded["repo_root"])
 	}
-	report, _ := decoded["report"].(map[string]any)
-	tasks, _ := report["tasks"].([]any)
+	summary, _ := decoded["report"].(map[string]any)
+	tasks, _ := summary["tasks"].([]any)
 	if len(tasks) != 1 {
 		t.Fatalf("tasks = %#v", tasks)
 	}
@@ -89,11 +90,11 @@ func TestExecuteRepoSearchEvalAggregatesRoutesWithoutRawQueries(t *testing.T) {
 	if review["outcome"] != state.TestImpactReviewOutcomeUnknown {
 		t.Fatalf("review = %#v", review)
 	}
-	totals, _ := report["totals"].(map[string]any)
+	totals, _ := summary["totals"].(map[string]any)
 	if totals["calls"].(float64) != 1 || totals["hits"].(float64) != 1 {
 		t.Fatalf("totals = %#v", totals)
 	}
-	evaluation, _ := report["evaluation"].(map[string]any)
+	evaluation, _ := summary["evaluation"].(map[string]any)
 	if evaluation["codex_reduction_delta"] != state.RepoSearchDeltaUnknown || evaluation["quality_delta"] != state.RepoSearchDeltaUnknown {
 		t.Fatalf("evaluation = %#v", evaluation)
 	}
@@ -103,7 +104,7 @@ func TestExecuteRepoSearchEvalAggregatesRoutesWithoutRawQueries(t *testing.T) {
 	}
 
 	var rendered bytes.Buffer
-	if err := printRepoSearchEval(st, &rendered); err != nil {
+	if err := report.PrintRepoSearchEval(st, &rendered); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(rendered.String(), "search_query") {
@@ -134,8 +135,8 @@ func TestExecuteRepoSearchEvalFallsBackToArchivedProjectionAfterEventRemoval(t *
 	}
 
 	decoded := executeRepoSearchEval(t, st)
-	report := decoded["report"].(map[string]any)
-	tasks := report["tasks"].([]any)
+	summary := decoded["report"].(map[string]any)
+	tasks := summary["tasks"].([]any)
 	if len(tasks) != 1 {
 		t.Fatalf("tasks = %#v", tasks)
 	}
@@ -168,12 +169,12 @@ func TestExecuteRepoSearchEvalEmptyStateStaysReadOnly(t *testing.T) {
 	if events["status"] != "none" || events["files"].(float64) != 0 {
 		t.Fatalf("events = %#v", events)
 	}
-	report, _ := decoded["report"].(map[string]any)
-	tasks, _ := report["tasks"].([]any)
+	summary, _ := decoded["report"].(map[string]any)
+	tasks, _ := summary["tasks"].([]any)
 	if len(tasks) != 0 {
 		t.Fatalf("tasks = %#v", tasks)
 	}
-	evaluation, _ := report["evaluation"].(map[string]any)
+	evaluation, _ := summary["evaluation"].(map[string]any)
 	reasons, _ := evaluation["reasons"].([]any)
 	if len(reasons) == 0 {
 		t.Fatalf("reasons = %#v", reasons)

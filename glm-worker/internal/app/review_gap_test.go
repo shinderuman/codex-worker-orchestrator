@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 	"os"
 	"path/filepath"
 	"testing"
@@ -331,7 +332,7 @@ func TestReviewGapCounterResetNotSummed(t *testing.T) {
 func TestReviewGapMissingTaskFailsClosed(t *testing.T) {
 	cfg, st, _ := newCodexBundleTestState(t)
 	err := printReviewGap(cfg, st, "missing-task", &bytes.Buffer{})
-	var notFound *NotFoundError
+	var notFound *machinecli.NotFoundError
 	if !errors.As(err, &notFound) {
 		t.Fatalf("missing task error = %#v", err)
 	}

@@ -1,6 +1,8 @@
 package app
 
 import (
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/report"
 	"io"
 	"strings"
 	"time"
@@ -131,15 +133,15 @@ const telemetryCompactOutliersNotEvaluated = "not-evaluated"
 
 const telemetryCompactTaskFileSuffix = ".jsonl"
 
-func printTelemetryCompactSummary(cfg config.AppConfig, st *state.StateStore, query TelemetryQueryArgs, stdout io.Writer) error {
+func printTelemetryCompactSummary(cfg config.AppConfig, st *state.StateStore, query report.Query, stdout io.Writer) error {
 	summary, err := buildTelemetryCompactSummary(cfg, st, query)
 	if err != nil {
 		return err
 	}
-	return writeJSON(stdout, summary)
+	return machinecli.WriteJSON(stdout, summary)
 }
 
-func buildTelemetryCompactSummary(cfg config.AppConfig, st *state.StateStore, query TelemetryQueryArgs) (telemetryCompactSummary, error) {
+func buildTelemetryCompactSummary(cfg config.AppConfig, st *state.StateStore, query report.Query) (telemetryCompactSummary, error) {
 	historyScan, err := st.ScanTelemetryHistory(query.Filter)
 	if err != nil {
 		return telemetryCompactSummary{}, err
@@ -148,7 +150,7 @@ func buildTelemetryCompactSummary(cfg config.AppConfig, st *state.StateStore, qu
 	if err != nil {
 		return telemetryCompactSummary{}, err
 	}
-	filteredStats := filterTaskStatsForQuery(statsTasks, query.Filter)
+	filteredStats := report.FilterTaskStatsForQuery(statsTasks, query.Filter)
 	cohorts, scan, err := telemetryCompactCohortsAndScan(st, query, historyScan)
 	if err != nil {
 		return telemetryCompactSummary{}, err
@@ -167,11 +169,11 @@ func buildTelemetryCompactSummary(cfg config.AppConfig, st *state.StateStore, qu
 	}, nil
 }
 
-func telemetryCompactCohortsAndScan(st *state.StateStore, query TelemetryQueryArgs, historyScan *state.TelemetryHistoryScan) ([]telemetryCompactCohort, telemetryCompactScan, error) {
-	if query.isHistory() {
+func telemetryCompactCohortsAndScan(st *state.StateStore, query report.Query, historyScan *state.TelemetryHistoryScan) ([]telemetryCompactCohort, telemetryCompactScan, error) {
+	if query.IsHistory() {
 		return telemetryCompactHistoryCohorts(historyScan), telemetryCompactHistoryScanView(historyScan), nil
 	}
-	currentScan, err := scanTelemetryTaskLogs(st, query.Filter)
+	currentScan, err := report.ScanTelemetryTaskLogs(st, query.Filter)
 	if err != nil {
 		return nil, telemetryCompactScan{}, err
 	}
@@ -205,8 +207,8 @@ func telemetryCompactHistoryCohorts(historyScan *state.TelemetryHistoryScan) []t
 	return cohorts
 }
 
-func telemetryCompactCurrentCohorts(historyScan *state.TelemetryHistoryScan, currentScan *telemetryScan) []telemetryCompactCohort {
-	report := state.BuildCallOutlierReport(currentScan.logs)
+func telemetryCompactCurrentCohorts(historyScan *state.TelemetryHistoryScan, currentScan *report.TelemetryScan) []telemetryCompactCohort {
+	report := state.BuildCallOutlierReport(currentScan.Logs)
 	cohorts := make([]telemetryCompactCohort, 0, 1)
 	for _, cohort := range historyScan.Cohorts {
 		if !cohort.CurrentSchema {
@@ -296,7 +298,7 @@ func telemetryCompactHistoryScanView(scan *state.TelemetryHistoryScan) telemetry
 	}
 }
 
-func telemetryCompactCurrentScanView(scan *telemetryScan) telemetryCompactScan {
+func telemetryCompactCurrentScanView(scan *report.TelemetryScan) telemetryCompactScan {
 	return telemetryCompactScan{
 		Status:                 scan.Status,
 		Dir:                    scan.Dir,
@@ -308,12 +310,12 @@ func telemetryCompactCurrentScanView(scan *telemetryScan) telemetryCompactScan {
 	}
 }
 
-func telemetryCompactQueryView(query TelemetryQueryArgs) telemetryCompactQuery {
+func telemetryCompactQueryView(query report.Query) telemetryCompactQuery {
 	view := telemetryCompactQuery{
-		Scope:                query.resolvedScope(),
+		Scope:                query.ResolvedScope(),
 		TaskID:               query.Filter.TaskID,
-		TelemetryPeriodBasis: telemetryQueryPeriodBasisRecord,
-		StatsPeriodBasis:     telemetryQueryPeriodBasisTask,
+		TelemetryPeriodBasis: report.QueryPeriodBasisRecord,
+		StatsPeriodBasis:     report.QueryPeriodBasisTask,
 	}
 	if !query.Filter.Since.IsZero() {
 		since := query.Filter.Since.UTC().Format(time.RFC3339Nano)
@@ -340,17 +342,17 @@ func telemetryCompactCurrentSchemaTasks(scan *state.TelemetryHistoryScan) map[st
 }
 
 func buildTelemetryCompactStats(filtered []state.TaskStats, membership map[string]bool) telemetryCompactStats {
-	aggregate := newAggregateTaskStats()
+	aggregate := report.NewAggregateTaskStats()
 	currentSchemaTasks := 0
 	for _, stats := range filtered {
 		if !membership[stats.TaskID] {
 			continue
 		}
 		currentSchemaTasks++
-		mergeTaskStats(&aggregate, stats)
+		report.MergeTaskStats(&aggregate, stats)
 	}
 	return telemetryCompactStats{
-		PeriodBasis:                      telemetryQueryPeriodBasisTask,
+		PeriodBasis:                      report.QueryPeriodBasisTask,
 		CohortVersion:                    state.ModelCallLogVersion,
 		CohortSchemaRevision:             state.ModelCallLogSchemaRevision,
 		TasksConsidered:                  len(filtered),
@@ -362,7 +364,7 @@ func buildTelemetryCompactStats(filtered []state.TaskStats, membership map[strin
 		ResumeCommands:                   aggregate.ResumeCommands,
 		RateLimits:                       aggregate.RateLimits,
 		ModelCallsByAlias:                aggregate.ModelCallsByAlias,
-		TotalPromptTokensByAlias:         sumInt64Maps(aggregate.InputTokensByAlias, aggregate.CacheCreationInputTokensByAlias, aggregate.CacheReadInputTokensByAlias),
+		TotalPromptTokensByAlias:         report.SumInt64Maps(aggregate.InputTokensByAlias, aggregate.CacheCreationInputTokensByAlias, aggregate.CacheReadInputTokensByAlias),
 		OutputTokensByAlias:              aggregate.OutputTokensByAlias,
 		TurnsByAlias:                     aggregate.TopLevelTurnsByAlias,
 		ParentOutcomes:                   aggregate.ParentOutcomes,

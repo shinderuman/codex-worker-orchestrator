@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 	"os"
 	"os/exec"
 	"strings"
@@ -88,7 +89,7 @@ func TestSingleShotOutputRejectsSubprocessTextAfterSerializedJSON(t *testing.T) 
 
 	var target bytes.Buffer
 	output := newSingleShotOutput(&target)
-	if err := writeJSON(output, map[string]string{"status": "ok"}); err != nil {
+	if err := machinecli.WriteJSON(output, map[string]string{"status": "ok"}); err != nil {
 		t.Fatal(err)
 	}
 	leak := exec.Command("go", "version")

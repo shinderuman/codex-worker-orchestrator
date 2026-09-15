@@ -1,6 +1,7 @@
 package app
 
 import (
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 	"io"
 	"os"
 	"time"
@@ -23,15 +24,15 @@ const (
 
 func codexWakePlanCommand(args []string) (Command, error) {
 	if len(args) != 2 && len(args) != 4 {
-		return Command{}, usageError("%s", codexWakePlanUsage)
+		return Command{}, machinecli.UsageErrorf("%s", codexWakePlanUsage)
 	}
 	if !state.ValidUUIDFormat(args[1]) {
-		return Command{}, usageError("%s", codexWakePlanUsage)
+		return Command{}, machinecli.UsageErrorf("%s", codexWakePlanUsage)
 	}
 	command := Command{Mode: ModeCodexWakePlan, CodexWake: CodexWakeArgs{ThreadID: args[1]}}
 	if len(args) == 4 {
 		if args[2] != "--fired-automation-id" || args[3] == "" {
-			return Command{}, usageError("%s", codexWakePlanUsage)
+			return Command{}, machinecli.UsageErrorf("%s", codexWakePlanUsage)
 		}
 		command.CodexWake.AutomationID = args[3]
 	}
@@ -68,7 +69,7 @@ func printCodexWakePlan(cmd Command, cfg config.AppConfig, stdout io.Writer) err
 	if err := persistCodexWakeToken(cfg.CodexConfigDir, output.Token); err != nil {
 		return err
 	}
-	if err := writeJSON(stdout, output); err != nil {
+	if err := machinecli.WriteJSON(stdout, output); err != nil {
 		removeCodexWakeToken(cfg.CodexConfigDir, output.Token)
 		return err
 	}
@@ -132,7 +133,7 @@ func printCodexWakeResponse(cmd Command, cfg config.AppConfig, stdout io.Writer)
 
 func requireCodexWakeInvocationThread(wakeThreadID string) error {
 	if os.Getenv(codexThreadIDEnv) != wakeThreadID {
-		return &NotFoundError{Message: codexThreadIDEnv + " does not match the wake task thread"}
+		return &machinecli.NotFoundError{Message: codexThreadIDEnv + " does not match the wake task thread"}
 	}
 	return nil
 }

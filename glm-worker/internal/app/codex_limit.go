@@ -3,6 +3,7 @@ package app
 import (
 	"errors"
 	"fmt"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 	"io"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/codexlimit"
@@ -23,7 +24,7 @@ func printCodexLimit(cfg config.AppConfig, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	return writeJSON(stdout, snapshot)
+	return machinecli.WriteJSON(stdout, snapshot)
 }
 
 func readCodexLimitSnapshot(cfg config.AppConfig) (codexlimit.Snapshot, error) {

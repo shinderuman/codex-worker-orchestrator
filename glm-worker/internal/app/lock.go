@@ -2,6 +2,7 @@ package app
 
 import (
 	"errors"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskview"
 	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repolock"
@@ -17,7 +18,6 @@ type LockProbe struct {
 type RepoLock = repolock.Lock
 
 const (
-	statusNone    = "none"
 	statusPartial = "partial"
 
 	LockHeld    LockState = "held"
@@ -35,7 +35,7 @@ func parseLockPID(data []byte) string {
 		text = text[:i]
 	}
 	if strings.TrimSpace(text) == "" {
-		return statusNone
+		return taskview.StatusNone
 	}
 	return text
 }

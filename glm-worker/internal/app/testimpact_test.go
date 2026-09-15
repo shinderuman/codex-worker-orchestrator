@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/report"
 	"io"
 	"os"
 	"path/filepath"
@@ -20,7 +21,7 @@ const testImpactOtherTask = "22222222-2222-4222-8222-222222222222"
 func executeTestImpact(t *testing.T, st *state.StateStore) map[string]any {
 	t.Helper()
 	var out bytes.Buffer
-	if err := printTestImpact(st, &out); err != nil {
+	if err := report.PrintTestImpact(st, &out); err != nil {
 		t.Fatal(err)
 	}
 	return decodeSingleLineJSON(t, out.String())
@@ -85,15 +86,15 @@ func testImpactRoundRecords(t *testing.T, st *state.StateStore, taskID string, b
 
 func findTestImpactTask(t *testing.T, decoded map[string]any, taskID string) map[string]any {
 	t.Helper()
-	report, _ := decoded["report"].(map[string]any)
-	tasks, _ := report["tasks"].([]any)
+	summary, _ := decoded["report"].(map[string]any)
+	tasks, _ := summary["tasks"].([]any)
 	for _, entry := range tasks {
 		task, _ := entry.(map[string]any)
 		if task["task_id"] == taskID {
 			return task
 		}
 	}
-	t.Fatalf("reportにtask %sがありません: %#v", taskID, report["tasks"])
+	t.Fatalf("reportにtask %sがありません: %#v", taskID, summary["tasks"])
 	return nil
 }
 
@@ -142,11 +143,11 @@ func TestExecuteTestImpactAggregatesSavedEvents(t *testing.T) {
 		t.Fatalf("repo_root = %#v", decoded["repo_root"])
 	}
 
-	report, _ := decoded["report"].(map[string]any)
-	if report["retention"].(float64) != 10 {
-		t.Fatalf("retention = %#v", report["retention"])
+	summary, _ := decoded["report"].(map[string]any)
+	if summary["retention"].(float64) != 10 {
+		t.Fatalf("retention = %#v", summary["retention"])
 	}
-	tasks, _ := report["tasks"].([]any)
+	tasks, _ := summary["tasks"].([]any)
 	if len(tasks) != 2 {
 		t.Fatalf("tasks = %#v", tasks)
 	}
@@ -172,7 +173,7 @@ func TestExecuteTestImpactAggregatesSavedEvents(t *testing.T) {
 	if reviewB["outcome"] != state.TestImpactReviewOutcomeUnknown {
 		t.Fatalf("taskB review = %#v", reviewB)
 	}
-	evaluation, _ := report["evaluation"].(map[string]any)
+	evaluation, _ := summary["evaluation"].(map[string]any)
 	if evaluation["suite_coverage"] != state.TestImpactSuiteCoverageUnknown {
 		t.Fatalf("suite coverage = %#v", evaluation["suite_coverage"])
 	}
@@ -186,7 +187,7 @@ func TestExecuteTestImpactAggregatesSavedEvents(t *testing.T) {
 	}
 
 	var rendered bytes.Buffer
-	if err := printTestImpact(st, &rendered); err != nil {
+	if err := report.PrintTestImpact(st, &rendered); err != nil {
 		t.Fatal(err)
 	}
 	for _, secret := range []string{"raw-prompt-must-not-leak", "raw-response-must-not-leak", "\"prompt\"", "\"response\""} {
@@ -219,12 +220,12 @@ func TestExecuteTestImpactEmptyState(t *testing.T) {
 	if telemetry["status"] != "none" || telemetry["files"].(float64) != 0 {
 		t.Fatalf("telemetry = %#v", telemetry)
 	}
-	report, _ := decoded["report"].(map[string]any)
-	tasks, _ := report["tasks"].([]any)
+	summary, _ := decoded["report"].(map[string]any)
+	tasks, _ := summary["tasks"].([]any)
 	if len(tasks) != 0 {
 		t.Fatalf("tasks = %#v", tasks)
 	}
-	evaluation, _ := report["evaluation"].(map[string]any)
+	evaluation, _ := summary["evaluation"].(map[string]any)
 	reasons, _ := evaluation["reasons"].([]any)
 	if len(reasons) != 2 || !strings.Contains(fmt.Sprint(reasons[1]), "no task event logs are retained") {
 		t.Fatalf("reasons = %#v", reasons)
@@ -274,8 +275,8 @@ func TestTestImpactPartialOnUnreadableEventLog(t *testing.T) {
 	if len(ignored) != 1 || ignored[0] != "not-a-uuid.jsonl" {
 		t.Fatalf("ignored = %#v", ignored)
 	}
-	report, _ := decoded["report"].(map[string]any)
-	tasks, _ := report["tasks"].([]any)
+	summary, _ := decoded["report"].(map[string]any)
+	tasks, _ := summary["tasks"].([]any)
 	if len(tasks) != 1 || tasks[0].(map[string]any)["task_id"] != taskA {
 		t.Fatalf("tasks = %#v", tasks)
 	}

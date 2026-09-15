@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskview"
 	"io"
 	"os"
 	"time"
@@ -103,7 +105,7 @@ func printWatch(st *state.StateStore, stdout io.Writer, opts watchOptions) error
 	taskID := st.ReadOr("task.id", "")
 	if taskID == "" {
 		return writeWatchEvent(stdout, watchStartEvent{
-			Type: "watch_start", TaskID: nil, EventLog: nil, EventLogStatus: statusNone,
+			Type: "watch_start", TaskID: nil, EventLog: nil, EventLogStatus: taskview.StatusNone,
 		})
 	}
 	path := st.TaskEventLogPath(taskID)
@@ -177,7 +179,7 @@ func watchOrphanTerminal(st *state.StateStore, taskID string, stdout io.Writer, 
 }
 
 func watchOrphanMaterial(st *state.StateStore, taskID string) *state.ModelCallLog {
-	logs, err := readStatusTelemetry(st, taskID)
+	logs, err := taskview.ReadStatusTelemetry(st, taskID)
 	if err != nil {
 		return nil
 	}
@@ -192,12 +194,12 @@ func buildWatchOrphanExitEvent(st *state.StateStore, taskID string, log state.Mo
 		Consistent:     true,
 		AllowedActions: []string{},
 		LastMaterial:   recoveryMaterialFromHandoff(parentHandoffMaterialFromLog(log)),
-		ArtifactDir:    stringPtr(st.ArtifactDir(taskID)),
+		ArtifactDir:    machinecli.StringPtr(st.ArtifactDir(taskID)),
 	}
 	plan, err := st.ParentActionPlan()
 	if err != nil {
 		event.Consistent = false
-		event.Inconsistency = stringPtr(err.Error())
+		event.Inconsistency = machinecli.StringPtr(err.Error())
 		return event
 	}
 	required := string(plan.RequiredAction)
@@ -205,7 +207,7 @@ func buildWatchOrphanExitEvent(st *state.StateStore, taskID string, log state.Mo
 	for _, action := range plan.AllowedActions {
 		event.AllowedActions = append(event.AllowedActions, string(action))
 	}
-	event.ResumeKind = stringPtr(plan.ResumeKind)
+	event.ResumeKind = machinecli.StringPtr(plan.ResumeKind)
 	return event
 }
 
@@ -312,7 +314,7 @@ func watchEventLogRemoved(path string, opts watchOptions) (bool, error) {
 }
 
 func writeWatchEvent(w io.Writer, event any) error {
-	line, err := marshalEventLine(event)
+	line, err := taskview.MarshalEventLine(event)
 	if err != nil {
 		return err
 	}
@@ -360,7 +362,7 @@ func emitTaskEventLine(line []byte, stdout io.Writer, onRecord func(state.TaskEv
 	}
 	record, err := state.ParseTaskEventLine(trimmed)
 	if err != nil {
-		return writeWatchEvent(stdout, eventLogSkippedLine{Type: "event_skipped", Error: err.Error()})
+		return writeWatchEvent(stdout, taskview.EventLogSkippedLine{Type: "event_skipped", Error: err.Error()})
 	}
 	if onRecord != nil {
 		onRecord(record)

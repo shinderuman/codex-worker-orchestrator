@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/report"
 	"os"
 	"strings"
 	"testing"
@@ -12,13 +13,13 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-func executeStatsOutput(t *testing.T, cfg config.AppConfig, st *state.StateStore) statsOutput {
+func executeStatsOutput(t *testing.T, cfg config.AppConfig, st *state.StateStore) report.StatsOutput {
 	t.Helper()
 	var out bytes.Buffer
-	if err := printStats(cfg, st, TelemetryQueryArgs{}, &out); err != nil {
+	if err := report.PrintStats(cfg, st, report.Query{}, nil, &out); err != nil {
 		t.Fatal(err)
 	}
-	var output statsOutput
+	var output report.StatsOutput
 	if err := json.Unmarshal([]byte(strings.TrimSpace(out.String())), &output); err != nil {
 		t.Fatalf("--stats出力がmachine JSONではありません: %v: %q", err, out.String())
 	}

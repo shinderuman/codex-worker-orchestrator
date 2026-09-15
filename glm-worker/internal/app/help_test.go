@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 	"io"
 	"os"
 	"os/exec"
@@ -124,7 +125,7 @@ func TestRunEntryHelpRejectsExtraArgumentsBeforeConfig(t *testing.T) {
 		&stdout,
 		io.Discard,
 	)
-	var usage *UsageError
+	var usage *machinecli.UsageError
 	if !errors.As(err, &usage) {
 		t.Fatalf("error = %v", err)
 	}

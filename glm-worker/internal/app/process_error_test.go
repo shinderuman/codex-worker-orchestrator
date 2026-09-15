@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 	"strings"
 	"testing"
 	"time"
@@ -70,15 +71,15 @@ func TestWriteProcessErrorKindContract(t *testing.T) {
 		checkDetail func(t *testing.T, detail map[string]any)
 	}{
 		{
-			name: "usage", err: &UsageError{Message: "usage: glm-worker --status"},
+			name: "usage", err: &machinecli.UsageError{Message: "usage: glm-worker --status"},
 			wantKind: "usage", wantMessage: "usage: glm-worker --status",
 		},
 		{
-			name: "stdin payload", err: &StdinPayloadError{Message: "stdin payload sha256 mismatch"},
+			name: "stdin payload", err: &machinecli.StdinPayloadError{Message: "stdin payload sha256 mismatch"},
 			wantKind: "stdin_payload", wantMessage: "stdin payload sha256 mismatch",
 		},
 		{
-			name: "not found", err: &NotFoundError{Message: "task log not found"},
+			name: "not found", err: &machinecli.NotFoundError{Message: "task log not found"},
 			wantKind: "not_found", wantMessage: "task log not found",
 		},
 		{

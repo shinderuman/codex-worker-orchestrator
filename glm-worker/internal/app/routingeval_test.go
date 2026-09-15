@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/report"
 	"io"
 	"os"
 	"path/filepath"
@@ -16,7 +17,7 @@ import (
 func executeModelRouting(t *testing.T, st *state.StateStore) map[string]any {
 	t.Helper()
 	var out bytes.Buffer
-	if err := printModelRouting(st, &out); err != nil {
+	if err := report.PrintModelRouting(st, &out); err != nil {
 		t.Fatal(err)
 	}
 	return decodeSingleLineJSON(t, out.String())
@@ -72,16 +73,16 @@ func TestExecuteModelRoutingAggregatesSavedTelemetry(t *testing.T) {
 		t.Fatalf("repo_root = %#v", decoded["repo_root"])
 	}
 
-	report, _ := decoded["report"].(map[string]any)
-	if report["metrics"] == nil || report["sufficiency"] == nil {
-		t.Fatalf("report定義sectionがありません: %#v", report)
+	summary, _ := decoded["report"].(map[string]any)
+	if summary["metrics"] == nil || summary["sufficiency"] == nil {
+		t.Fatalf("report定義sectionがありません: %#v", summary)
 	}
-	sufficiency, _ := report["sufficiency"].(map[string]any)
+	sufficiency, _ := summary["sufficiency"].(map[string]any)
 	if sufficiency["min_quality_calls_per_group"].(float64) != state.ModelRoutingMinQualityCallsPerGroup ||
 		sufficiency["min_quality_tasks_per_group"].(float64) != state.ModelRoutingMinQualityTasksPerGroup {
 		t.Fatalf("sufficiency = %#v", sufficiency)
 	}
-	cells, _ := report["cells"].([]any)
+	cells, _ := summary["cells"].([]any)
 	if len(cells) != 2 {
 		t.Fatalf("cells = %#v", cells)
 	}
@@ -104,11 +105,11 @@ func TestExecuteModelRoutingAggregatesSavedTelemetry(t *testing.T) {
 	if usage["input_tokens"].(float64) != 1000 || usage["output_tokens"].(float64) != 100 {
 		t.Fatalf("worker cell usage = %#v", usage)
 	}
-	aliasLinks, _ := report["alias_links"].([]any)
+	aliasLinks, _ := summary["alias_links"].([]any)
 	if len(aliasLinks) != 2 {
 		t.Fatalf("alias_links = %#v", aliasLinks)
 	}
-	evaluation, _ := report["evaluation"].(map[string]any)
+	evaluation, _ := summary["evaluation"].(map[string]any)
 	if evaluation["quality_delta"] != state.ModelRoutingQualityDeltaUnknown {
 		t.Fatalf("evaluation = %#v", evaluation)
 	}
@@ -118,7 +119,7 @@ func TestExecuteModelRoutingAggregatesSavedTelemetry(t *testing.T) {
 	}
 
 	var rendered bytes.Buffer
-	if err := printModelRouting(st, &rendered); err != nil {
+	if err := report.PrintModelRouting(st, &rendered); err != nil {
 		t.Fatal(err)
 	}
 	for _, secret := range []string{"raw-prompt-must-not-leak", "raw-response-must-not-leak", "\"prompt\"", "\"response\""} {
@@ -150,14 +151,14 @@ func TestExecuteModelRoutingEmptyState(t *testing.T) {
 	if decoded["repo_root"] != "" {
 		t.Fatalf("repo_root = %#v", decoded["repo_root"])
 	}
-	report, _ := decoded["report"].(map[string]any)
+	summary, _ := decoded["report"].(map[string]any)
 	for _, key := range []string{"cells", "quality_groups", "alias_links"} {
-		value, ok := report[key].([]any)
+		value, ok := summary[key].([]any)
 		if !ok || len(value) != 0 {
-			t.Fatalf("reportの%qが空配列ではありません: %#v", key, report[key])
+			t.Fatalf("reportの%qが空配列ではありません: %#v", key, summary[key])
 		}
 	}
-	evaluation, _ := report["evaluation"].(map[string]any)
+	evaluation, _ := summary["evaluation"].(map[string]any)
 	if evaluation["quality_delta"] != state.ModelRoutingQualityDeltaUnknown {
 		t.Fatalf("evaluation = %#v", evaluation)
 	}
@@ -174,7 +175,7 @@ func TestTelemetryScanDirReadErrorIsProcessError(t *testing.T) {
 	tests := []struct {
 		name  string
 		mode  CommandMode
-		query TelemetryQueryArgs
+		query report.Query
 		dir   func(*state.StateStore) string
 	}{
 		{name: "call-outliers-telemetry", mode: ModeCallOutliers, dir: func(st *state.StateStore) string { return st.Path("telemetry") }},
@@ -183,13 +184,13 @@ func TestTelemetryScanDirReadErrorIsProcessError(t *testing.T) {
 		{
 			name:  "stats-history-telemetry",
 			mode:  ModeStats,
-			query: TelemetryQueryArgs{Scope: state.TelemetryScopeHistory},
+			query: report.Query{Scope: state.TelemetryScopeHistory},
 			dir:   func(st *state.StateStore) string { return st.Path("telemetry") },
 		},
 		{
 			name:  "call-outliers-history-telemetry",
 			mode:  ModeCallOutliers,
-			query: TelemetryQueryArgs{Scope: state.TelemetryScopeHistory},
+			query: report.Query{Scope: state.TelemetryScopeHistory},
 			dir:   func(st *state.StateStore) string { return st.Path("telemetry") },
 		},
 	}
@@ -263,8 +264,8 @@ func TestModelRoutingJoinsConvergenceDeltaFromRoundRecords(t *testing.T) {
 	if rounds["status"] != "ok" {
 		t.Fatalf("rounds = %#v", rounds)
 	}
-	report, _ := decoded["report"].(map[string]any)
-	cells, _ := report["cells"].([]any)
+	summary, _ := decoded["report"].(map[string]any)
+	cells, _ := summary["cells"].([]any)
 	if len(cells) != 2 {
 		t.Fatalf("cells = %#v", cells)
 	}
@@ -305,8 +306,8 @@ func TestModelRoutingPartialOnUnreadableRoundLog(t *testing.T) {
 	if entry["task_id"] != taskA || entry["error"] == "" {
 		t.Fatalf("unreadable entry = %#v", entry)
 	}
-	report, _ := decoded["report"].(map[string]any)
-	cells, _ := report["cells"].([]any)
+	summary, _ := decoded["report"].(map[string]any)
+	cells, _ := summary["cells"].([]any)
 	for _, cellEntry := range cells {
 		cell, _ := cellEntry.(map[string]any)
 		if cell["convergence_delta"] != state.RoundDeltaUnknown {
@@ -373,21 +374,21 @@ func TestConvergenceQualityOutcomesRequiresUniqueWorkerAndTerminalIndependentRev
 	worker := state.ModelCallLog{CallType: state.CallTypeTask, CallID: "worker-1", Role: state.WorkerRole, Phase: "worker-new", PacketStatus: "IMPLEMENTED", StartedAt: base.Add(time.Minute)}
 	reviewer := state.ModelCallLog{CallType: state.CallTypeTask, CallID: "reviewer-1", Role: state.ReviewerRole, Phase: "reviewer-1", PacketStatus: "FIX_REQUIRED", StartedAt: base.Add(40 * time.Minute)}
 
-	got := convergenceQualityOutcomes(records, []state.ModelCallLog{worker, reviewer})
+	got := report.ConvergenceQualityOutcomes(records, []state.ModelCallLog{worker, reviewer})
 	if got["worker-1"] != state.ModelRoutingQualityReviewFixRequired {
 		t.Fatalf("quality outcomes = %#v", got)
 	}
 
 	reviewer.Phase = "reviewer-1-high-floor"
 	reviewer.PacketStatus = "NEEDS_SOL_REVIEW"
-	if got := convergenceQualityOutcomes(records, []state.ModelCallLog{worker, reviewer}); len(got) != 0 {
+	if got := report.ConvergenceQualityOutcomes(records, []state.ModelCallLog{worker, reviewer}); len(got) != 0 {
 		t.Fatalf("forced high-floor Sol routing became quality evidence: %#v", got)
 	}
 
 	reviewer.Phase = "reviewer-1"
 	reviewer.PacketStatus = "PASS"
 	worker.PacketStatus = "NEEDS_SOL_DECISION"
-	if got := convergenceQualityOutcomes(records, []state.ModelCallLog{worker, reviewer}); len(got) != 0 {
+	if got := report.ConvergenceQualityOutcomes(records, []state.ModelCallLog{worker, reviewer}); len(got) != 0 {
 		t.Fatalf("non-implemented worker became quality evidence: %#v", got)
 	}
 	worker.PacketStatus = "IMPLEMENTED"
@@ -397,7 +398,7 @@ func TestConvergenceQualityOutcomesRequiresUniqueWorkerAndTerminalIndependentRev
 	second.StartedAt = base.Add(2 * time.Minute)
 	reviewer.Phase = "reviewer-1"
 	reviewer.PacketStatus = "PASS"
-	if got := convergenceQualityOutcomes(records, []state.ModelCallLog{worker, second, reviewer}); len(got) != 0 {
+	if got := report.ConvergenceQualityOutcomes(records, []state.ModelCallLog{worker, second, reviewer}); len(got) != 0 {
 		t.Fatalf("ambiguous producing workers became quality evidence: %#v", got)
 	}
 }

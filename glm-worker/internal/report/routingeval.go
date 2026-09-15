@@ -1,7 +1,9 @@
-package app
+package report
 
 import (
 	"errors"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskview"
 	"io"
 	"os"
 
@@ -10,7 +12,7 @@ import (
 )
 
 type modelRoutingOutput struct {
-	Telemetry telemetryScan            `json:"telemetry"`
+	Telemetry TelemetryScan            `json:"telemetry"`
 	Rounds    modelRoutingRoundsScan   `json:"rounds"`
 	RepoRoot  string                   `json:"repo_root"`
 	Report    state.ModelRoutingReport `json:"report"`
@@ -22,13 +24,13 @@ type modelRoutingRoundsScan struct {
 	UnreadableTasks []telemetryTaskError `json:"unreadable_tasks,omitempty"`
 }
 
-func printModelRouting(st *state.StateStore, stdout io.Writer) error {
-	scan, err := scanTelemetryTaskLogs(st, state.TelemetryQueryFilter{})
+func PrintModelRouting(st *state.StateStore, stdout io.Writer) error {
+	scan, err := ScanTelemetryTaskLogs(st, state.TelemetryQueryFilter{})
 	if err != nil {
 		return err
 	}
-	rounds, tasks := attachModelRoutingConvergenceDeltas(st, scan.logs)
-	return writeJSON(stdout, modelRoutingOutput{
+	rounds, tasks := attachModelRoutingConvergenceDeltas(st, scan.Logs)
+	return machinecli.WriteJSON(stdout, modelRoutingOutput{
 		Telemetry: *scan,
 		Rounds:    rounds,
 		RepoRoot:  st.ReadOr("repo-root", ""),
@@ -37,13 +39,13 @@ func printModelRouting(st *state.StateStore, stdout io.Writer) error {
 }
 
 func attachModelRoutingConvergenceDeltas(st *state.StateStore, tasks []state.TaskCallLogs) (modelRoutingRoundsScan, []state.TaskCallLogs) {
-	scan := modelRoutingRoundsScan{Status: statusNone, Dir: st.Path("rounds")}
+	scan := modelRoutingRoundsScan{Status: taskview.StatusNone, Dir: st.Path("rounds")}
 	readable := 0
 	for index := range tasks {
 		records, _, err := readRoundRecords(st, tasks[index].TaskID)
 		if err != nil {
 			if !errors.Is(err, os.ErrNotExist) {
-				scan.Status = statusPartial
+				scan.Status = taskview.StatusPartial
 				scan.UnreadableTasks = append(scan.UnreadableTasks, telemetryTaskError{
 					TaskID: tasks[index].TaskID,
 					Error:  err.Error(),
@@ -53,16 +55,16 @@ func attachModelRoutingConvergenceDeltas(st *state.StateStore, tasks []state.Tas
 		}
 		readable++
 		tasks[index].ConvergenceDeltas = convergenceCallDeltas(records, tasks[index].Logs)
-		tasks[index].QualityOutcomes = convergenceQualityOutcomes(records, tasks[index].Logs)
+		tasks[index].QualityOutcomes = ConvergenceQualityOutcomes(records, tasks[index].Logs)
 	}
-	if readable > 0 && scan.Status != statusPartial {
+	if readable > 0 && scan.Status != taskview.StatusPartial {
 		scan.Status = "ok"
 	}
 	return scan, tasks
 }
 
 func convergenceCallDeltas(records []state.RoundRecord, logs []state.ModelCallLog) map[string]string {
-	rounds, _ := buildConvergenceRounds(records, logs)
+	rounds, _ := BuildConvergenceRounds(records, logs)
 	deltas := make(map[string]string)
 	for _, round := range rounds {
 		for _, entry := range round.reviewer {
@@ -75,15 +77,15 @@ func convergenceCallDeltas(records []state.RoundRecord, logs []state.ModelCallLo
 	return deltas
 }
 
-func convergenceQualityOutcomes(records []state.RoundRecord, logs []state.ModelCallLog) map[string]string {
-	rounds, _ := buildConvergenceRounds(records, logs)
+func ConvergenceQualityOutcomes(records []state.RoundRecord, logs []state.ModelCallLog) map[string]string {
+	rounds, _ := BuildConvergenceRounds(records, logs)
 	outcomes := make(map[string]string)
 	for _, round := range rounds {
 		if round.gap || round.mismatch || len(round.worker) != 1 ||
 			round.worker[0].PacketStatus != string(packet.StatusImplemented) {
 			continue
 		}
-		review := convergenceReviewOutDetail(round)
+		review := ConvergenceReviewOutDetail(round)
 		if review.Outcome == nil {
 			continue
 		}

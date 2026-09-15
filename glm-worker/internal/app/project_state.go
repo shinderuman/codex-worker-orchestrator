@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 	"io"
 	"os/exec"
 	"strings"
@@ -56,7 +57,7 @@ func printProjectState(cfg config.AppConfig, st *state.StateStore, stdout io.Wri
 	if err != nil {
 		return err
 	}
-	return writeJSON(stdout, output)
+	return machinecli.WriteJSON(stdout, output)
 }
 
 func executeStatelessProjection(cmd Command, cfg config.AppConfig, stdout io.Writer) error {

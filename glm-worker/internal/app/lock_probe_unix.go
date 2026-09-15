@@ -3,6 +3,7 @@
 package app
 
 import (
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskview"
 	"os"
 	"syscall"
 )
@@ -11,7 +12,7 @@ func ProbeRepoLock(path string) LockProbe {
 	file, err := os.OpenFile(path, os.O_RDONLY, 0)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return LockProbe{State: LockFree, PID: statusNone}
+			return LockProbe{State: LockFree, PID: taskview.StatusNone}
 		}
 		return LockProbe{State: LockUnknown, PID: "unknown"}
 	}

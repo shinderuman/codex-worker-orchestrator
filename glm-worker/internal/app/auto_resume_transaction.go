@@ -1,6 +1,7 @@
 package app
 
 import (
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 	"io"
 	"os"
 	"time"
@@ -24,12 +25,12 @@ const (
 
 func autoResumePlanCommand(args []string) (Command, error) {
 	if len(args) != 1 && len(args) != 3 {
-		return Command{}, usageError("%s", autoResumePlanUsage)
+		return Command{}, machinecli.UsageErrorf("%s", autoResumePlanUsage)
 	}
 	command := Command{Mode: ModeAutoResumePlan}
 	if len(args) == 3 {
 		if args[1] != "--run-control" || args[2] == "" {
-			return Command{}, usageError("%s", autoResumePlanUsage)
+			return Command{}, machinecli.UsageErrorf("%s", autoResumePlanUsage)
 		}
 		command.AutoResume.RunControl = args[2]
 	}
@@ -46,19 +47,19 @@ func printAutoResumePlan(cmd Command, cfg config.AppConfig, stdout io.Writer) er
 	st := state.AttachStateStore(cfg)
 	checkpoint, err := st.LoadResumeCheckpoint()
 	if err != nil {
-		return &NotFoundError{Message: "rate-limited task state is not readable: " + err.Error()}
+		return &machinecli.NotFoundError{Message: "rate-limited task state is not readable: " + err.Error()}
 	}
 	if st.TaskStatus() != state.TaskStatusRateLimited || checkpoint.StopKind != state.ResumeStopRateLimited {
-		return &NotFoundError{Message: "current task state is not a rate-limited stop"}
+		return &machinecli.NotFoundError{Message: "current task state is not a rate-limited stop"}
 	}
 	taskID := st.ReadOr("task.id", "")
 	repoRoot := st.ReadOr("repo-root", "")
 	if taskID == "" || repoRoot == "" || checkpoint.ResetAtRFC3339 == "" {
-		return &NotFoundError{Message: "rate-limit stop evidence is incomplete"}
+		return &machinecli.NotFoundError{Message: "rate-limit stop evidence is incomplete"}
 	}
 	available, resumeAt := runner.AutoResumeAtFromReset(checkpoint.ResetAtRFC3339)
 	if !available {
-		return &NotFoundError{Message: "rate-limit reset time is unavailable"}
+		return &machinecli.NotFoundError{Message: "rate-limit reset time is unavailable"}
 	}
 	automationsDir, dbPath := autoresume.CodexWakePersistencePaths(cfg.CodexConfigDir)
 	output, err := autoresume.BuildAutoResumeTransaction(autoresume.AutoResumePlanParams{
@@ -77,12 +78,12 @@ func printAutoResumePlan(cmd Command, cfg config.AppConfig, stdout io.Writer) er
 		return err
 	}
 	if output.Token == "" {
-		return writeJSON(stdout, output)
+		return machinecli.WriteJSON(stdout, output)
 	}
 	if err := persistAutoResumeToken(cfg.CodexConfigDir, output.Token); err != nil {
 		return err
 	}
-	if err := writeJSON(stdout, output); err != nil {
+	if err := machinecli.WriteJSON(stdout, output); err != nil {
 		removeAutoResumeToken(cfg.CodexConfigDir, output.Token)
 		return err
 	}
@@ -144,7 +145,7 @@ func printAutoResumeResponse(cmd Command, cfg config.AppConfig, stdout io.Writer
 
 func requireAutoResumeParentThread(parentThreadID string) error {
 	if os.Getenv(codexThreadIDEnv) != parentThreadID {
-		return &NotFoundError{Message: codexThreadIDEnv + " does not match the transaction parent thread"}
+		return &machinecli.NotFoundError{Message: codexThreadIDEnv + " does not match the transaction parent thread"}
 	}
 	return nil
 }

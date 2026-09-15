@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskview"
 	"io"
 	"os"
 	"os/exec"
@@ -21,7 +22,7 @@ import (
 const ptyStartupFeedRuns = 5
 
 func stdinReadyMarker() string {
-	line, err := marshalEventLine(stdinReadyControlEvent{Type: "control", Event: "stdin_ready"})
+	line, err := taskview.MarshalEventLine(stdinReadyControlEvent{Type: "control", Event: "stdin_ready"})
 	if err != nil {
 		panic(err)
 	}

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 	"os"
 	"path/filepath"
 	"strings"
@@ -89,7 +90,7 @@ func TestQualityGateParseAcceptsOnlyExactForms(t *testing.T) {
 	for _, tc := range cases {
 		cmd, err := ParseCommand(tc.args)
 		if tc.wantErr {
-			var usage *UsageError
+			var usage *machinecli.UsageError
 			if err == nil {
 				t.Fatalf("ParseCommand(%v)がerrorを返しませんでした", tc.args)
 			}
@@ -126,7 +127,7 @@ func TestQualityGateExtraArgvFailsClosedBeforeProcess(t *testing.T) {
 		&bytes.Buffer{},
 		&stderr,
 	)
-	var usage *UsageError
+	var usage *machinecli.UsageError
 	if err == nil || !errors.As(err, &usage) {
 		t.Fatalf("余分なargvがusage errorになりませんでした: %v", err)
 	}

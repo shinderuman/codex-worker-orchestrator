@@ -5,6 +5,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/report"
 	"io"
 	"strconv"
 	"strings"
@@ -35,7 +37,7 @@ type Command struct {
 	Coalesce            CoalesceArgs
 	CodexWake           CodexWakeArgs
 	AutoResume          AutoResumeArgs
-	Query               TelemetryQueryArgs
+	Query               report.Query
 	SearchScopes        []string
 	SearchBudgetBytes   int
 	EvidenceManifest    string
@@ -50,24 +52,6 @@ type VerifyArgs struct {
 type CoalesceArgs struct {
 	ParentThreadID  string
 	ResumeAtRFC3339 string
-}
-
-type TelemetryQueryArgs struct {
-	Scope   string
-	Filter  state.TelemetryQueryFilter
-	Compact bool
-}
-
-type UsageError struct {
-	Message string
-}
-
-type NotFoundError struct {
-	Message string
-}
-
-type StdinPayloadError struct {
-	Message string
 }
 
 type commandParser func([]string) (Command, error)
@@ -137,10 +121,10 @@ const verifyCodexWakeUsage = "usage: glm-worker --verify-codex-wake <wake-task-t
 
 var commandParsers = map[string]commandParser{
 	"--decision": func([]string) (Command, error) {
-		return Command{}, usageError("usage: glm-worker --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix-stdin <payload-bytes> [--sha256 <hex>] %s", fixOriginUsage)
+		return Command{}, machinecli.UsageErrorf("usage: glm-worker --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix-stdin <payload-bytes> [--sha256 <hex>] %s", fixOriginUsage)
 	},
 	"--fix": func([]string) (Command, error) {
-		return Command{}, usageError("usage: glm-worker --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix-stdin <payload-bytes> [--sha256 <hex>] %s", fixOriginUsage)
+		return Command{}, machinecli.UsageErrorf("usage: glm-worker --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix-stdin <payload-bytes> [--sha256 <hex>] %s", fixOriginUsage)
 	},
 	"--decision-stdin": func(args []string) (Command, error) {
 		return stdinPayloadCommand(ModeDecision, args, "usage: glm-worker --decision-stdin <payload-bytes> [--sha256 <hex>]", false)
@@ -152,7 +136,7 @@ var commandParsers = map[string]commandParser{
 	"--execution-milestones-revise-stdin": executionMilestoneRevisionCommand,
 	"--approve-surface": func(args []string) (Command, error) {
 		if len(args) != 2 || args[1] != acceptedFixScopeCurrentDiffCLI {
-			return Command{}, usageError("%s", approveSurfaceUsage)
+			return Command{}, machinecli.UsageErrorf("%s", approveSurfaceUsage)
 		}
 		return Command{Mode: ModeApproveSurface, AcceptedScope: acceptedFixScopeCurrentDiffCLI}, nil
 	},
@@ -241,21 +225,9 @@ var commandParsers = map[string]commandParser{
 	},
 }
 
-func (e *UsageError) Error() string {
-	return e.Message
-}
-
-func (e *NotFoundError) Error() string {
-	return e.Message
-}
-
-func usageError(format string, args ...any) *UsageError {
-	return &UsageError{Message: fmt.Sprintf(format, args...)}
-}
-
 func ParseCommand(args []string) (Command, error) {
 	if len(args) == 0 {
-		return Command{}, usageError("usage: glm-worker <instruction> | <command>; run glm-worker --help for command list")
+		return Command{}, machinecli.UsageErrorf("usage: glm-worker <instruction> | <command>; run glm-worker --help for command list")
 	}
 	if parser, ok := commandParsers[args[0]]; ok {
 		return parser(args)
@@ -265,14 +237,14 @@ func ParseCommand(args []string) (Command, error) {
 
 func singleArgCommand(args []string, mode CommandMode, usage string) (Command, error) {
 	if len(args) != 1 {
-		return Command{}, usageError("%s", usage)
+		return Command{}, machinecli.UsageErrorf("%s", usage)
 	}
 	return Command{Mode: mode}, nil
 }
 
 func optionalPayloadCommand(args []string, mode CommandMode, usage string) (Command, error) {
 	if len(args) > 2 {
-		return Command{}, usageError("%s", usage)
+		return Command{}, machinecli.UsageErrorf("%s", usage)
 	}
 	command := Command{Mode: mode}
 	if len(args) == 2 {
@@ -283,14 +255,14 @@ func optionalPayloadCommand(args []string, mode CommandMode, usage string) (Comm
 
 func requiredPayloadCommand(args []string, mode CommandMode, usage string) (Command, error) {
 	if len(args) != 2 {
-		return Command{}, usageError("%s", usage)
+		return Command{}, machinecli.UsageErrorf("%s", usage)
 	}
 	return Command{Mode: mode, Payload: args[1]}, nil
 }
 
 func evidenceCommand(args []string) (Command, error) {
 	if len(args) != 2 {
-		return Command{}, usageError("%s", evidenceUsage)
+		return Command{}, machinecli.UsageErrorf("%s", evidenceUsage)
 	}
 	return Command{Mode: ModeEvidence, EvidenceManifest: args[1]}, nil
 }
@@ -302,7 +274,7 @@ func parentHandoffCommand(args []string) (Command, error) {
 	if len(args) == 2 && args[1] == "recovery" {
 		return Command{Mode: ModeHandoff, Payload: "recovery"}, nil
 	}
-	return Command{}, usageError("usage: glm-worker --handoff [recovery]")
+	return Command{}, machinecli.UsageErrorf("usage: glm-worker --handoff [recovery]")
 }
 
 func watchCommand(args []string) (Command, error) {
@@ -312,12 +284,12 @@ func watchCommand(args []string) (Command, error) {
 	if len(args) == 2 && args[1] == "--verbose" {
 		return Command{Mode: ModeWatch, WatchVerbose: true}, nil
 	}
-	return Command{}, usageError("usage: glm-worker --watch [--verbose]")
+	return Command{}, machinecli.UsageErrorf("usage: glm-worker --watch [--verbose]")
 }
 
 func verifyAutoResumeCommand(args []string) (Command, error) {
 	if len(args) != 3 {
-		return Command{}, usageError("usage: glm-worker --verify-auto-resume <automation-key> <auto-resume-at-rfc3339>")
+		return Command{}, machinecli.UsageErrorf("usage: glm-worker --verify-auto-resume <automation-key> <auto-resume-at-rfc3339>")
 	}
 	return Command{
 		Mode: ModeVerifyAutoResume,
@@ -330,7 +302,7 @@ func verifyAutoResumeCommand(args []string) (Command, error) {
 
 func verifyCodexWakeCommand(args []string) (Command, error) {
 	if len(args) != 3 || !state.ValidUUIDFormat(args[1]) {
-		return Command{}, usageError("%s", verifyCodexWakeUsage)
+		return Command{}, machinecli.UsageErrorf("%s", verifyCodexWakeUsage)
 	}
 	return Command{
 		Mode: ModeVerifyCodexWake,
@@ -343,7 +315,7 @@ func verifyCodexWakeCommand(args []string) (Command, error) {
 
 func checkWakeCoalesceCommand(args []string) (Command, error) {
 	if len(args) != 2 {
-		return Command{}, usageError("usage: glm-worker --check-wake-coalesce <auto-resume-at-rfc3339>")
+		return Command{}, machinecli.UsageErrorf("usage: glm-worker --check-wake-coalesce <auto-resume-at-rfc3339>")
 	}
 	return Command{
 		Mode: ModeCheckWakeCoalesce,
@@ -360,12 +332,12 @@ func installSmokeCommand(args []string) (Command, error) {
 	if len(args) == 3 && args[1] == "--role" && validInstallSmokeRoles[args[2]] {
 		return Command{Mode: ModeInstallSmoke, Role: args[2]}, nil
 	}
-	return Command{}, usageError("usage: glm-worker --install-smoke %s", installSmokeUsage)
+	return Command{}, machinecli.UsageErrorf("usage: glm-worker --install-smoke %s", installSmokeUsage)
 }
 
 func repoSearchCommand(args []string) (Command, error) {
 	if len(args) < 2 || args[1] == "" || len(args[2:])%2 != 0 {
-		return Command{}, usageError("%s", repoSearchUsage)
+		return Command{}, machinecli.UsageErrorf("%s", repoSearchUsage)
 	}
 	command := Command{Mode: ModeRepoSearch, Payload: args[1]}
 	seenBudget := false
@@ -377,7 +349,7 @@ func repoSearchCommand(args []string) (Command, error) {
 		seenBudget = seenBudget || budgetSeen
 	}
 	if len(command.SearchScopes) == 0 || !seenBudget {
-		return Command{}, usageError("%s", repoSearchUsage)
+		return Command{}, machinecli.UsageErrorf("%s", repoSearchUsage)
 	}
 	return command, nil
 }
@@ -386,32 +358,32 @@ func applyRepoSearchOption(command *Command, name string, value string) (bool, e
 	switch name {
 	case "--scope":
 		if value == "" {
-			return false, usageError("%s", repoSearchUsage)
+			return false, machinecli.UsageErrorf("%s", repoSearchUsage)
 		}
 		command.SearchScopes = append(command.SearchScopes, value)
 		return false, nil
 	case "--budget":
 		budget, err := strconv.Atoi(value)
 		if err != nil || budget <= 0 || budget > repoSearchMaxBudgetBytes {
-			return false, usageError("%s", repoSearchUsage)
+			return false, machinecli.UsageErrorf("%s", repoSearchUsage)
 		}
 		if command.SearchBudgetBytes != 0 {
-			return false, usageError("%s", repoSearchUsage)
+			return false, machinecli.UsageErrorf("%s", repoSearchUsage)
 		}
 		command.SearchBudgetBytes = budget
 		return true, nil
 	default:
-		return false, usageError("%s", repoSearchUsage)
+		return false, machinecli.UsageErrorf("%s", repoSearchUsage)
 	}
 }
 
 func stdinPayloadCommand(mode CommandMode, args []string, usage string, allowFixOptions bool) (Command, error) {
 	if len(args) < 2 {
-		return Command{}, usageError("%s", usage)
+		return Command{}, machinecli.UsageErrorf("%s", usage)
 	}
 	payloadBytes, err := strconv.ParseInt(args[1], 10, 64)
 	if err != nil || payloadBytes <= 0 {
-		return Command{}, usageError("%s", usage)
+		return Command{}, machinecli.UsageErrorf("%s", usage)
 	}
 
 	semantic := parentfix.Options{}
@@ -419,11 +391,11 @@ func stdinPayloadCommand(mode CommandMode, args []string, usage string, allowFix
 	if allowFixOptions {
 		semantic, options, err = parentfix.Extract(options)
 		if err != nil {
-			return Command{}, usageError("%s", usage)
+			return Command{}, machinecli.UsageErrorf("%s", usage)
 		}
 	}
 	if len(options)%2 != 0 {
-		return Command{}, usageError("%s", usage)
+		return Command{}, machinecli.UsageErrorf("%s", usage)
 	}
 	command := Command{
 		Mode:          mode,
@@ -443,11 +415,11 @@ func stdinPayloadCommand(mode CommandMode, args []string, usage string, allowFix
 
 func applyStdinPayloadOption(command *Command, name, value, usage string, seenSHA256 *bool) error {
 	if name != "--sha256" || *seenSHA256 {
-		return usageError("%s", usage)
+		return machinecli.UsageErrorf("%s", usage)
 	}
 	digest, err := parsePayloadSHA256(value)
 	if err != nil {
-		return usageError("%s", usage)
+		return machinecli.UsageErrorf("%s", usage)
 	}
 	command.SHA256 = digest
 	*seenSHA256 = true
@@ -456,11 +428,11 @@ func applyStdinPayloadOption(command *Command, name, value, usage string, seenSH
 
 func transactionResponseCommand(args []string, mode CommandMode, usage string, bindToken func(*Command, string)) (Command, error) {
 	if len(args) != 3 && len(args) != 5 {
-		return Command{}, usageError("%s", usage)
+		return Command{}, machinecli.UsageErrorf("%s", usage)
 	}
 	payloadBytes, err := strconv.ParseInt(args[1], 10, 64)
 	if err != nil || payloadBytes <= 0 || args[2] == "" {
-		return Command{}, usageError("%s", usage)
+		return Command{}, machinecli.UsageErrorf("%s", usage)
 	}
 	command := Command{Mode: mode, StdinBytes: payloadBytes}
 	bindToken(&command, args[2])
@@ -485,15 +457,11 @@ func parsePayloadSHA256(value string) (string, error) {
 	return strings.ToLower(value), nil
 }
 
-func (e *StdinPayloadError) Error() string {
-	return e.Message
-}
-
 func readStdinPayload(in io.Reader, want int64, expectedSHA string) (string, error) {
 	var buf bytes.Buffer
 	written, err := io.CopyN(&buf, in, want)
 	if err != nil {
-		return "", &StdinPayloadError{Message: fmt.Sprintf("stdin payload read failed after %d of %d bytes: %v", written, want, err)}
+		return "", &machinecli.StdinPayloadError{Message: fmt.Sprintf("stdin payload read failed after %d of %d bytes: %v", written, want, err)}
 	}
 
 	payload := buf.Bytes()
@@ -501,7 +469,7 @@ func readStdinPayload(in io.Reader, want int64, expectedSHA string) (string, err
 		sum := sha256.Sum256(payload)
 		actual := hex.EncodeToString(sum[:])
 		if !strings.EqualFold(actual, expectedSHA) {
-			return "", &StdinPayloadError{Message: fmt.Sprintf("stdin payload sha256 mismatch: expected %s, got %s", expectedSHA, actual)}
+			return "", &machinecli.StdinPayloadError{Message: fmt.Sprintf("stdin payload sha256 mismatch: expected %s, got %s", expectedSHA, actual)}
 		}
 	}
 	return string(payload), nil

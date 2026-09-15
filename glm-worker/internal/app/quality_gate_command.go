@@ -1,5 +1,9 @@
 package app
 
+import (
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
+)
+
 import "strings"
 
 const (
@@ -18,7 +22,7 @@ func qualityGateRecoveryCommand(args []string) (Command, error) {
 	if len(args) == 3 && validQualityGateAction(args[1]) && validValidationRunID(args[2]) {
 		return Command{Mode: ModeQualityGate, Payload: args[1] + qualityGateActionSeparator + args[2]}, nil
 	}
-	return Command{}, usageError("%s", qualityGateCommandUsage)
+	return Command{}, machinecli.UsageErrorf("%s", qualityGateCommandUsage)
 }
 
 func validQualityGateAction(action string) bool {

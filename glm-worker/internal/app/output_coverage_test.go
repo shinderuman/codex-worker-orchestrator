@@ -2,6 +2,7 @@ package app
 
 import (
 	"encoding/json"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/report"
 	"os"
 	"path/filepath"
 	"testing"
@@ -171,7 +172,7 @@ func TestPrintStatsTelemetryCoverageCurrentTaskShortageAndUnreadable(t *testing.
 	if coverage.UsageKnown {
 		t.Fatalf("unreadableがあるのにusage_totals_known = true: %#v", coverage)
 	}
-	details := map[string]statsCoverageTask{}
+	details := map[string]report.StatsCoverageTask{}
 	for _, task := range coverage.Tasks {
 		details[task.TaskID] = task
 	}
