@@ -22,7 +22,7 @@ func (output parentHandoffOutput) MarshalJSON() ([]byte, error) {
 		ActionSpecs map[string]parentHandoffActionSpec `json:"action_specs"`
 	}{
 		parentHandoffOutputAlias: parentHandoffOutputAlias(output),
-		ActionSpecs:               parentActionSpecs(output.AllowedActions, output.RequiredActionParameters),
+		ActionSpecs:              parentActionSpecs(output.AllowedActions, output.RequiredActionParameters),
 	})
 }
 
@@ -32,7 +32,7 @@ func (output parentHandoffRecoveryOutput) MarshalJSON() ([]byte, error) {
 		ActionSpecs map[string]parentHandoffActionSpec `json:"action_specs"`
 	}{
 		parentHandoffRecoveryOutputAlias: parentHandoffRecoveryOutputAlias(output),
-		ActionSpecs:                       parentActionSpecs(output.AllowedActions, output.RequiredActionParameters),
+		ActionSpecs:                      parentActionSpecs(output.AllowedActions, output.RequiredActionParameters),
 	})
 }
 
