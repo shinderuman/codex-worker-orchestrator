@@ -85,17 +85,14 @@ func buildParentReviewEvidenceManifest(st *state.StateStore) (parentEvidenceMani
 
 func parentReviewEvidenceTarget(target string) (string, string, error) {
 	target = strings.TrimSpace(target)
-	if target == "" {
-		return "", "", fmt.Errorf("review evidence target is empty")
+	separator := strings.Index(target, ":")
+	if separator <= 0 || separator == len(target)-1 {
+		return "", "", fmt.Errorf("review evidence target must use repository-relative path:locator form: %s", target)
 	}
-	path := target
-	locator := ""
-	if separator := strings.Index(target, ":"); separator >= 0 {
-		path = strings.TrimSpace(target[:separator])
-		locator = strings.TrimSpace(target[separator+1:])
-	}
-	if !parentEvidenceRelativePath(path) {
-		return "", "", fmt.Errorf("review evidence target must start with a repository-relative path: %s", target)
+	path := strings.TrimSpace(target[:separator])
+	locator := strings.TrimSpace(target[separator+1:])
+	if path == "" || locator == "" || !parentEvidenceRelativePath(path) {
+		return "", "", fmt.Errorf("review evidence target must use repository-relative path:locator form: %s", target)
 	}
 	if strings.ContainsAny(path, " ,()") {
 		return "", "", fmt.Errorf("review evidence target path is not machine-addressable: %s", target)
