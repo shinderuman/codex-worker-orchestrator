@@ -59,6 +59,18 @@ func TestPrepareDecisionRequiresExplicitExecutionUnitTemplate(t *testing.T) {
 	}
 }
 
+func TestConsumeDecisionRejectsLegacyFreeText(t *testing.T) {
+	repo := t.TempDir()
+	prepared, err := Prepare(repo, "decision")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writePreparedPayload(t, prepared, []byte("continue with the accepted decision\n"))
+	if _, err := Consume(repo, "decision", prepared.Token); err == nil {
+		t.Fatal("legacy free-text staged decision was accepted")
+	}
+}
+
 func TestPrepareAcceptsMilestonePayloadActions(t *testing.T) {
 	for _, action := range []string{"start-milestones", "revise-milestones"} {
 		repo := t.TempDir()
