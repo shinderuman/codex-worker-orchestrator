@@ -154,6 +154,21 @@ func (s *StateStore) ParentActionPlan() (ParentActionPlan, error) {
 	if err != nil {
 		return ParentActionPlan{}, err
 	}
+	if status == TaskStatusWaitingSolReview && plan.RequiredAction == ParentActionReview {
+		binding, err := s.CurrentParentReviewBinding()
+		if err != nil {
+			return ParentActionPlan{}, lifecycleInconsistency(status, "parent review evidence state is unreadable: "+err.Error())
+		}
+		if binding != nil {
+			ready, err := s.ParentReviewAcceptReady()
+			if err != nil {
+				return ParentActionPlan{}, lifecycleInconsistency(status, "parent review accept readiness is unreadable: "+err.Error())
+			}
+			if !ready {
+				plan.AllowedActions = withoutParentAction(plan.AllowedActions, ParentActionAccept)
+			}
+		}
+	}
 	if status == TaskStatusWaitingDecision && plan.RequiredAction != ParentActionUnpark && s.ObservationNoGoEligible() {
 		plan.AllowedActions = append(plan.AllowedActions, ParentActionNoGo)
 	}
@@ -303,6 +318,16 @@ func completeActionPlan(status TaskStatus, pending bool, openReview string, stop
 
 func actionPlan(required ParentAction, resumeKind string, allowed ...ParentAction) ParentActionPlan {
 	return ParentActionPlan{RequiredAction: required, AllowedActions: allowed, ResumeKind: resumeKind}
+}
+
+func withoutParentAction(actions []ParentAction, unwanted ParentAction) []ParentAction {
+	filtered := make([]ParentAction, 0, len(actions))
+	for _, action := range actions {
+		if action != unwanted {
+			filtered = append(filtered, action)
+		}
+	}
+	return filtered
 }
 
 func stoppedActionPlan(
