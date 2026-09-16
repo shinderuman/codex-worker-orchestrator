@@ -10,16 +10,18 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentaction"
 )
 
-const (
-	actionAccept = "accept"
-	actionPark   = "park"
-)
-
 type parentActionTerminalEnvelope struct {
 	Status   string          `json:"status"`
 	Terminal json.RawMessage `json:"terminal"`
 	Handoff  json.RawMessage `json:"handoff"`
 }
+
+const (
+	actionAccept = "accept"
+	actionPark   = "park"
+	actionResume = "resume"
+	actionUnpark = "unpark"
+)
 
 func executeWithTerminalEnvelope(cfg config.AppConfig, args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 || !terminalEnvelopeAction(args[0]) {
@@ -59,7 +61,7 @@ func terminalEnvelopeAction(action string) bool {
 		return descriptor.Action != parentaction.ActionReviseMilestones
 	}
 	switch action {
-	case actionStart, actionApprove, actionAccept, "resume", "no-go", actionPark, "unpark":
+	case actionStart, actionApprove, actionAccept, actionResume, "no-go", actionPark, actionUnpark:
 		return true
 	default:
 		return false
