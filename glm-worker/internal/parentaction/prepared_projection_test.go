@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestPreparedProjectionDecisionExposesSemanticSlotsAndNextCommand(t *testing.T) {
+func TestPreparedProjection(t *testing.T) {
 	prepared := Prepared{Action: string(ActionDecision), Token: "0123456789abcdef0123456789abcdef", Path: "/tmp/decision.txt"}
 	raw, err := json.Marshal(prepared)
 	if err != nil {
