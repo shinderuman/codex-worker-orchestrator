@@ -83,6 +83,11 @@ func parentActionDenied(cmd Command, plan state.ParentActionPlan, st *state.Stat
 		if plan.RequiredAction == state.ParentActionComplete {
 			return &workflow.WorkerError{Message: "task is awaiting parent completion; run the parent push and glm-parent-action complete before starting further actions"}
 		}
+		if plan.RequiredAction == state.ParentActionReview {
+			if err := st.RequireParentReviewAcceptanceEvidence(); err != nil {
+				return &workflow.WorkerError{Message: err.Error()}
+			}
+		}
 		return &workflow.WorkerError{Message: "pending Sol decision must be resolved with --decision before --accept"}
 	case ModeResume:
 		return resumeActionDenied(st)
