@@ -8,11 +8,10 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/codex-efficiency-feedback-loop-checkpoint.md`
+- `IMPLEMENTATION_TASKS/session-rotation-continuation-preflight.md`
 
 ## NEXT（優先順）
 
-- `IMPLEMENTATION_TASKS/session-rotation-continuation-preflight.md`
 - `IMPLEMENTATION_TASKS/parent-usage-compact-token-totals.md`
 - `IMPLEMENTATION_TASKS/task-stats-archive-skip-observability.md`
 - `IMPLEMENTATION_TASKS/codex-efficiency-intermediate-checkpoint.md`
