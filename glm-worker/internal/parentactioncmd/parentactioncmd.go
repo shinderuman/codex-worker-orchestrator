@@ -55,7 +55,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 	if args[0] == "prepare" {
 		return prepare(cfg.RepoRoot, args, stdout)
 	}
-	return execute(cfg, args, stdout, stderr)
+	return executeWithTerminalEnvelope(cfg, args, stdout, stderr)
 }
 
 func prepare(repoRoot string, args []string, stdout io.Writer) error {
