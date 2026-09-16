@@ -13,11 +13,15 @@ func TestPreparedProjection(t *testing.T) {
 		t.Fatal(err)
 	}
 	var decoded struct {
+		Status      string         `json:"status"`
 		Slots       []PreparedSlot `json:"slots"`
 		NextCommand []string       `json:"next_command"`
 	}
 	if err := json.Unmarshal(raw, &decoded); err != nil {
 		t.Fatal(err)
+	}
+	if decoded.Status != "prepared" {
+		t.Fatalf("status = %q want prepared", decoded.Status)
 	}
 	if !reflect.DeepEqual(decoded.NextCommand, []string{"glm-parent-action", "decision", prepared.Token}) {
 		t.Fatalf("next command = %#v", decoded.NextCommand)
@@ -39,11 +43,15 @@ func TestPreparedProjectionFixExposesPayloadSlotAndNextCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 	var decoded struct {
+		Status      string         `json:"status"`
 		Slots       []PreparedSlot `json:"slots"`
 		NextCommand []string       `json:"next_command"`
 	}
 	if err := json.Unmarshal(raw, &decoded); err != nil {
 		t.Fatal(err)
+	}
+	if decoded.Status != "prepared" {
+		t.Fatalf("status = %q want prepared", decoded.Status)
 	}
 	if !reflect.DeepEqual(decoded.NextCommand, []string{"glm-parent-action", "fix", prepared.Token}) {
 		t.Fatalf("next command = %#v", decoded.NextCommand)
