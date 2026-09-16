@@ -14,7 +14,7 @@ func TestExecutionUnitDecisionActivatesMilestonesAtNaturalBoundary(t *testing.T)
 		{structured: needsSolDecisionPacket()},
 		{structured: implementedPacketWithRisk("first bounded unit complete", "HIGH")},
 		{structured: implementedPacketWithRisk("second bounded unit complete", "HIGH")},
-		{structured: passPacket()},
+		{structured: needsSolReviewPacket()},
 	})
 	if err := w.ExecuteNewTask("implement the ACTIVE task"); err != nil {
 		t.Fatal(err)
@@ -40,7 +40,7 @@ func TestExecutionUnitDecisionActivatesMilestonesAtNaturalBoundary(t *testing.T)
 		t.Fatal(err)
 	}
 
-	wantPhases := []string{"worker-new", "worker-decision", "worker-milestone-2", "reviewer-1"}
+	wantPhases := []string{"worker-new", "worker-decision", "worker-milestone-2", "reviewer-1-high-floor"}
 	if !reflect.DeepEqual(runner.phases, wantPhases) {
 		t.Fatalf("phases = %v want %v", runner.phases, wantPhases)
 	}
@@ -57,13 +57,16 @@ func TestExecutionUnitDecisionActivatesMilestonesAtNaturalBoundary(t *testing.T)
 	if _, err := os.Stat(st.Path(state.ExecutionMilestonesStateFile)); err != nil {
 		t.Fatalf("durable milestone state missing: %v", err)
 	}
+	if st.TaskStatus() != state.TaskStatusWaitingSolReview {
+		t.Fatalf("final status = %s", st.TaskStatus())
+	}
 }
 
 func TestExecutionUnitDecisionSingleKeepsLowOverheadPath(t *testing.T) {
 	w, st, runner, _ := newExecutionMilestoneWorkflow(t, []runnerStep{
 		{structured: needsSolDecisionPacket()},
 		{structured: implementedPacketWithRisk("resolved", "HIGH")},
-		{structured: passPacket()},
+		{structured: needsSolReviewPacket()},
 	})
 	if err := w.ExecuteNewTask("implement the ACTIVE task"); err != nil {
 		t.Fatal(err)
@@ -72,7 +75,7 @@ func TestExecutionUnitDecisionSingleKeepsLowOverheadPath(t *testing.T) {
 	if err := w.ExecuteDecisionWithExecutionUnitPayload(payload); err != nil {
 		t.Fatal(err)
 	}
-	wantPhases := []string{"worker-new", "worker-decision", "reviewer-1"}
+	wantPhases := []string{"worker-new", "worker-decision", "reviewer-1-high-floor"}
 	if !reflect.DeepEqual(runner.phases, wantPhases) {
 		t.Fatalf("phases = %v want %v", runner.phases, wantPhases)
 	}
