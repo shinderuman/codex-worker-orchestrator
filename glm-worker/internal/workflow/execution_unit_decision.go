@@ -31,7 +31,6 @@ func (w *Workflow) ExecuteDecisionWithExecutionUnitPayload(payload string) error
 	if err != nil {
 		return err
 	}
-
 	active, err := w.hasPendingExecutionMilestone()
 	if err != nil {
 		return err
@@ -44,26 +43,30 @@ func (w *Workflow) ExecuteDecisionWithExecutionUnitPayload(payload string) error
 		}
 		return w.ExecuteDecision(input.Decision)
 	case executionUnitMilestones:
-		if len(input.Milestones) > 0 {
-			activating := !active
-			revision, err := ReviseExecutionMilestones(w.config, w.state, input.Milestones, w.now().UTC())
-			if err != nil {
-				return err
-			}
-			if activating && input.Milestones[revision.CurrentIndex].FreshWorker {
-				if err := w.state.InvalidateSession(state.WorkerRole); err != nil {
-					return err
-				}
-			}
-			active = true
-		}
-		if !active {
-			return fmt.Errorf("execution-unit milestones requires 2-8 milestone definitions or an existing pending milestone plan")
-		}
-		return w.ExecuteDecisionWithExecutionMilestones(input.Decision)
+		return w.executeMilestoneExecutionUnitDecision(input, active)
 	default:
 		return fmt.Errorf("unsupported execution-unit disposition %q", input.ExecutionUnit)
 	}
+}
+
+func (w *Workflow) executeMilestoneExecutionUnitDecision(input executionUnitDecision, active bool) error {
+	if len(input.Milestones) > 0 {
+		activating := !active
+		revision, err := ReviseExecutionMilestones(w.config, w.state, input.Milestones, w.now().UTC())
+		if err != nil {
+			return err
+		}
+		if activating && input.Milestones[revision.CurrentIndex].FreshWorker {
+			if err := w.state.InvalidateSession(state.WorkerRole); err != nil {
+				return err
+			}
+		}
+		active = true
+	}
+	if !active {
+		return fmt.Errorf("execution-unit milestones requires 2-8 milestone definitions or an existing pending milestone plan")
+	}
+	return w.ExecuteDecisionWithExecutionMilestones(input.Decision)
 }
 
 func parseExecutionUnitDecision(payload string) (executionUnitDecision, error) {
