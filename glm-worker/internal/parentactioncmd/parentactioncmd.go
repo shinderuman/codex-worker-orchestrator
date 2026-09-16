@@ -357,77 +357,11 @@ func directWorkerArgs(action string) []string {
 
 func validateFixOptions(options []string) error {
 	fixUsage := "usage: glm-parent-action fix <token> [--origin <origin>] [--cause <cause>] [--accepted-scope current-diff]"
-	allowedOrigins := map[string]struct{}{
-		string(parentfix.OriginCodexReview):    {},
-		string(parentfix.OriginGLMReviewer):    {},
-		string(parentfix.OriginUserAmendment):  {},
-		string(parentfix.OriginExternalReview): {},
-		string(parentfix.OriginMetadataRepair): {},
-	}
-	allowedCauses := map[string]struct{}{
-		string(parentfix.CauseParentOrchestration): {}, string(parentfix.CauseRequirementPreservation): {},
-		string(parentfix.CauseWorker): {}, string(parentfix.CauseReviewer): {}, string(parentfix.CauseSolGate): {},
-		string(parentfix.CauseProductionWiring): {}, string(parentfix.CauseTestScenario): {},
-		string(parentfix.CauseCrossCuttingInvariant): {}, string(parentfix.CauseUnknown): {},
-	}
-	origin, cause := "", ""
-	acceptedScope := ""
-	seenOrigin, seenCause, seenScope := false, false, false
-	for index := 0; index < len(options); index++ {
-		if index+1 >= len(options) {
-			return fmt.Errorf("%s", fixUsage)
-		}
-		value := options[index+1]
-		switch options[index] {
-		case "--origin":
-			if seenOrigin {
-				return fmt.Errorf("%s", fixUsage)
-			}
-			if _, ok := allowedOrigins[value]; !ok {
-				return fmt.Errorf("%s", fixUsage)
-			}
-			origin, seenOrigin = value, true
-		case "--cause":
-			if seenCause {
-				return fmt.Errorf("%s", fixUsage)
-			}
-			if _, ok := allowedCauses[value]; !ok {
-				return fmt.Errorf("%s", fixUsage)
-			}
-			cause, seenCause = value, true
-		case "--accepted-scope":
-			if seenScope || value != "current-diff" {
-				return fmt.Errorf("%s", fixUsage)
-			}
-			acceptedScope, seenScope = value, true
-		default:
-			return fmt.Errorf("%s", fixUsage)
-		}
-		index++
-	}
-	if seenCause && !seenOrigin {
+	_, remaining, err := parentfix.Extract(options)
+	if err != nil || len(remaining) != 0 {
 		return fmt.Errorf("%s", fixUsage)
 	}
-	if origin == string(parentfix.OriginCodexReview) && cause == "" {
-		return fmt.Errorf("codex-review fix requires --cause")
-	}
-	_ = acceptedScope
 	return nil
-}
-
-func resolveGLMWorker() (string, error) {
-	self, selfErr := os.Executable()
-	if selfErr == nil {
-		candidate := filepath.Join(filepath.Dir(self), "glm-worker")
-		if info, err := os.Stat(candidate); err == nil && !info.IsDir() && info.Mode()&0o111 != 0 {
-			return candidate, nil
-		}
-	}
-	path, err := exec.LookPath("glm-worker")
-	if err != nil {
-		return "", fmt.Errorf("glm-worker not found next to glm-parent-action or on PATH")
-	}
-	return path, nil
 }
 
 func runWorker(repoRoot string, args []string, stdin io.Reader, stdout, stderr io.Writer, extraEnv []string) error {
@@ -438,31 +372,58 @@ func runWorker(repoRoot string, args []string, stdin io.Reader, stdout, stderr i
 	return runResolvedWorker(worker, repoRoot, args, stdin, stdout, stderr, extraEnv)
 }
 
-func runResolvedWorker(worker, repoRoot string, args []string, stdin io.Reader, stdout, stderr io.Writer, extraEnv []string) error {
-	cmd := exec.Command(worker, args...)
-	cmd.Dir = repoRoot
-	cmd.Stdin = stdin
-	cmd.Stdout = stdout
-	cmd.Stderr = stderr
-	cmd.Env = append(os.Environ(), extraEnv...)
-	forwardInterrupts(cmd)
-	return cmd.Run()
+func runResolvedWorker(worker, workingDir string, args []string, stdin io.Reader, stdout, stderr io.Writer, extraEnv []string) error {
+	command := exec.Command(worker, args...)
+	command.Dir = workingDir
+	command.Env = append(os.Environ(), extraEnv...)
+	command.Stdin = stdin
+	command.Stdout = stdout
+	command.Stderr = stderr
+
+	signals := make(chan os.Signal, 4)
+	signal.Notify(signals, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+	defer signal.Stop(signals)
+	if err := command.Start(); err != nil {
+		return err
+	}
+	done := make(chan struct{})
+	go forwardSignals(command.Process, signals, done)
+	err := command.Wait()
+	close(done)
+	return err
 }
 
-func forwardInterrupts(cmd *exec.Cmd) {
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
-	go func() {
-		for sig := range signals {
-			if cmd.Process == nil {
-				continue
-			}
-			_ = cmd.Process.Signal(sig)
+func forwardSignals(process *os.Process, signals <-chan os.Signal, done <-chan struct{}) {
+	for {
+		select {
+		case received := <-signals:
+			_ = process.Signal(received)
+		case <-done:
+			return
 		}
-	}()
-	go func() {
-		_ = cmd.Wait
-		signal.Stop(signals)
-		close(signals)
-	}()
+	}
+}
+
+func childExitCode(exitErr *exec.ExitError) int {
+	if status, ok := exitErr.Sys().(syscall.WaitStatus); ok && status.Signaled() {
+		return 128 + int(status.Signal())
+	}
+	if code := exitErr.ExitCode(); code >= 0 {
+		return code
+	}
+	return 1
+}
+
+func resolveGLMWorker() (string, error) {
+	if executable, err := os.Executable(); err == nil {
+		candidate := filepath.Join(filepath.Dir(executable), "glm-worker")
+		if info, statErr := os.Stat(candidate); statErr == nil && info.Mode().IsRegular() && info.Mode().Perm()&0o111 != 0 {
+			return candidate, nil
+		}
+	}
+	worker, err := exec.LookPath("glm-worker")
+	if err != nil {
+		return "", fmt.Errorf("glm-worker executable not found: %w", err)
+	}
+	return worker, nil
 }
