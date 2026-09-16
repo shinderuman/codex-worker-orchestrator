@@ -23,6 +23,7 @@ const (
 	placeholder              = "__GLM_PARENT_ACTION_PAYLOAD__\n"
 	decisionPlaceholder      = "__GLM_PARENT_ACTION_DECISION__"
 	executionUnitPlaceholder = "__GLM_EXECUTION_UNIT__"
+	tokenHeaderKey           = "GLM_PARENT_ACTION_TOKEN:"
 	maxPayloadBytes          = 1 << 20
 )
 
