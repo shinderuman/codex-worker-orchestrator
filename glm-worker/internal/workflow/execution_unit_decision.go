@@ -45,11 +45,12 @@ func (w *Workflow) ExecuteDecisionWithExecutionUnitPayload(payload string) error
 		return w.ExecuteDecision(input.Decision)
 	case executionUnitMilestones:
 		if len(input.Milestones) > 0 {
+			activating := !active
 			revision, err := ReviseExecutionMilestones(w.config, w.state, input.Milestones, w.now().UTC())
 			if err != nil {
 				return err
 			}
-			if input.Milestones[revision.CurrentIndex].FreshWorker {
+			if activating && input.Milestones[revision.CurrentIndex].FreshWorker {
 				if err := w.state.InvalidateSession(state.WorkerRole); err != nil {
 					return err
 				}
