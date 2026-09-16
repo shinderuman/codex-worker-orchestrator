@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func TestQualitySurfaceApprovalUsesDedicatedParentAction(t *testing.T) {
+func TestQualitySurfaceApprovalUsesMachineProjectedParentAction(t *testing.T) {
 	_, source, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("test source path is unavailable")
@@ -21,16 +21,21 @@ func TestQualitySurfaceApprovalUsesDedicatedParentAction(t *testing.T) {
 	}
 	text := string(data)
 	for _, token := range []string{
-		"quality policy surface変更",
-		"required_action:\"approve-surface\"",
-		"glm-parent-action approve-surface --accepted-scope current-diff",
-		"terminal `accept`はadmission段階でfail closed",
+		"quality policy surface承認",
+		"action_specs",
+		"required parameter",
+		"semantic採否",
 	} {
 		if !strings.Contains(text, token) {
-			t.Errorf("glm-execution.md does not route quality-surface approval token %q", token)
+			t.Errorf("glm-execution.md does not retain quality-surface semantic boundary token %q", token)
 		}
 	}
-	if strings.Contains(text, "--approval-only") {
-		t.Errorf("glm-execution.md retains the removed --approval-only surface")
+	for _, token := range []string{
+		"--approval-only",
+		"glm-parent-action approve-surface --accepted-scope current-diff",
+	} {
+		if strings.Contains(text, token) {
+			t.Errorf("glm-execution.md reconstructs machine-owned approval command token %q", token)
+		}
 	}
 }

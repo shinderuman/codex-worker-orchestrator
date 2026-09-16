@@ -1,49 +1,46 @@
 # GLM結果処理
 
-`glm-worker`からpacket(stdoutのmachine JSON 1行)またはprocess失敗(stderrのerror JSON 1行とnon-zero exit)を受け取った場合、`glm-parent-action`の親tool orchestrationからbounded terminal resultを受け取った場合、および親tool orchestrationがterminal resultのtransport/parseでfail closedした場合に適用する。
+worker/reviewer packet、`glm-parent-action`のterminal envelope、またはbounded recovery projectionを受け取った場合に適用する。構造とlifecycle transportはmachineを正とし、親Codexは意味・risk・correctnessを判断する。
 
 ## 共通
 
-- worker/reviewer packetのstructural validityは`control:packet-schema-result`がfail closedで強制する。親はpacketの意味・risk・判断だけを評価する。
-- 親tool orchestrationが`status:"parent_action_terminal"`を返した場合、`terminal`を元のauthoritative worker/action machine resultとして通常どおりsemantic処理し、同梱`handoff`だけをcanonical next-action authorityとして使う。envelopeの`status`をPASS/NEEDS_SOL_*等のsemantic statusの代用にしない。`finalize-check`は既存result内の`handoff`を同じauthorityとして扱う。
-- packet受理後などmaterial state transitionから次のlifecycle操作を選ぶ場合は、同じ親action resultにcanonical handoffが同梱されていればそれを使い、正常なhandoffを得る目的だけの追加`glm-worker --handoff`を行わない。direct `glm-worker` packet・tool session recovery等でhandoffが同梱されていない場合だけ`glm-worker --handoff`を実行する。いずれも`consistent`・`required_action`・`allowed_actions`を合法な親操作の正規入口とし、`consistent:false`では次操作を推測しない。packet本文や`--status`の個別fieldからaction admissionを再構成せず、`--status`は追加の詳細診断が必要な場合だけ使う。
-- 親actionが子process完了後のterminal transport/parseでfail closedし、子側stateが遷移済みか不明な場合もraw artifact/event/telemetry探索から始めない。復旧初手はread-only `glm-worker --handoff recovery`だけを実行し、そのbounded machine projectionの`task_id`・`task_status`・`consistent`・`required_action`・`allowed_actions`・`pending_decision`・`parent_review_open`・`last_material.call_id/call_type/phase/outcome/packet_status`を判断に使う。`last_material`が`invalid_packet`なら同projectionの`packet_reject_reason`・`packet_error`も使い、同じreject理由を探すためのtelemetry/session/artifact探索を行わない。`task_status`が`guard-recoverable`なら同projectionの`guard_failure`・`guard_ref_changes`・`guard_ref_changes_truncated`をguard修復判断の正規evidenceとして使い、同じguard原因・変更refを探すための`--status`追加取得、session/telemetry/artifact全体への`rg`/grep、directory inventoryを行わない。guard fieldが欠落・不完全ならunknown/errorのまま親判断へ戻し、広い探索で補完しない。terminal semanticsがなお別の具体的事実について不足する場合だけ`task_id`と`last_material.call_id`をexact locatorとしてtask-scoped telemetry/eventの該当recordから不足fieldだけをprojectし、whole file、artifact directory inventory、複数record dump、広い`jq`結果を先にSol-visible stdoutへ出さない。exact recordが得られなければunknown/errorのまま親判断へ戻し、時刻・filename・directory列挙から推測しない。
-- 同一decision lease内で同じdigestの`--handoff`・`--status`・`--repo-search`を単独再実行した場合は`kind: duplicate_parent_projection`のstructured errorで拒否される。これは失敗ではなく重複投影の機械拒否であり、`detail.batch_command`の`glm-parent-action evidence`へ読みを集約する。複数surfaceの読みが必要な場面では最初からevidence batchを使う。
-- `artifacts`のkeyがあるなら、要求・判断・報告に必要な成果物だけを記載パスから確認し、packetへ全内容を転載しない。
-- 原因不明runtime failureの診断に必要なevidenceを求めた依頼では、`artifacts`参照先を`~/.codex/instructions/failure-evidence.md`の受理条件で必要範囲だけ確認する。
+- packet structural validityは`control:packet-schema-result`がfail closedで強制する。親はstructural schemaを再検証・再構成しない。
+- `status:"parent_action_terminal"`では`terminal`をauthoritative semantic result、`handoff`をcanonical next-action authorityとして扱う。envelope statusをPASS/NEEDS_SOL_*等のsemantic statusに読み替えない。
+- 次操作はhandoffの`consistent`・`required_action`・`allowed_actions`・`action_specs`から選ぶ。packet本文や`--status` fieldからadmissionやcommand lineを再構成しない。`consistent:false`では次actionを推測しない。
+- `action_specs`のdirect actionはexact `command`、staged actionはexact `prepare_command`をtransport authorityとする。prepare後はmachine-declared `slots`だけをsemantic値へ置換し、`next_command`を実行する。path/token/placeholder/argument orderを親で組み立てない。
+- terminal transport/parse failureで子stateが不明なら、最初にread-only `glm-worker --handoff recovery`だけをbounded recovery入口として使う。`last_material`、guard/quality failure projection等で足りる事実をtelemetry/session/artifact全体から再探索しない。不足が残る場合だけexact locatorに限定して追加evidenceを読む。
+- 同一decision leaseのduplicate projection拒否はmachine dedupであり、同じbodyを再取得する理由にしない。複数surfaceが必要ならmachineのevidence batchを使う。
+- `artifacts`は必要な成果物だけ記載pathから読む。packetへ全内容を転載しない。原因不明runtime failureは`~/.codex/instructions/failure-evidence.md`のbounded evidence条件に従う。
 
 ## `"status":"NEEDS_SOL_DECISION"`
 
-- `decision`・`evidence`・`options`・`recommendation`・`test_obligations`を評価する。
-- `targets`がすべてrepository内の`AGENTS.md`/`AGENTS.local.md`相対pathで、packetがそのprotected instruction変更を親適用として要求している場合は、workerへ直接編集させない。rejectならinstruction surfaceを変更せず通常どおりdecisionを返す。applyならmodel processが停止している間に親Codexが`targets`だけへ承認した最小変更を適用し、`glm-worker --rotate-instruction-baseline`を実行してactive taskのinstruction baselineを明示rotationした後にdecisionを返す。rotationはtask/worktreeを保持しworker/reviewer sessionを無効化する。guard緩和やresetで代用しない。
-- packetで足りるならリポジトリを再探索しない。判断不能な場合だけ`targets`に限定して現物を確認する。
-- canonical handoffの`allowed_actions`に`no-go`が含まれ、Sol判断がPoC/observationのterminal No-Goなら`glm-parent-action no-go`を使う。これは追加model call 0でpending decisionを閉じ、implementationへ昇格せずtaskをawaiting-parent-completionへ遷移させる。完了確定とrotation評価はacceptと同じくmetadata同期とpush後の`complete`成功後のみ行われ、rotation terminalはno-goとして記録される。同じNo-Goを`decision`としてworkerへ再送しない。
-- No-Go以外の判断後は元依頼を再記述せず、判断本文を`~/.codex/instructions/glm-execution.md`のstdin mode（`--decision-stdin <payload-bytes>`）で同じtaskへ継続する。PoC/observationのGoは`~/.codex/instructions/feasibility-gate.md`に従い、先にtask declarationを`status: implementation`へmigrationする。
+- `decision`・`evidence`・`options`・`recommendation`・`test_obligations`を評価し、Sol Highがsemantic dispositionを決める。
+- protected instruction変更を親適用する要求では、承認したtargetだけへ最小変更を行い、instruction baseline rotationが必要なら既存machine controlを使う。reject時はinstruction surfaceを変更しない。
+- packetで判断できるならrepoを再探索しない。不足する場合だけ`targets`へ限定する。
+- No-Goがmachine-admittedされ、semantic判断もNo-Goならhandoffのdirect action specを使う。同じNo-Goをworkerへdecisionとして再送しない。
+- それ以外のdecisionはhandoffのstaged action specを使う。元依頼を再記述せず、decision内容とexecution-unit/milestone内容だけをmachine-declared slotsへ渡す。PoC/observationのGoは`~/.codex/instructions/feasibility-gate.md`に従ってtask declarationをimplementationへmigrationしてから継続する。
 
 ## `"status":"PASS"`
 
-- 圧縮packetについて、要求との意味的一致・要求漏れ・矛盾・残余リスクを評価する。
-- `"risk":"LOW"`かつ不整合・不確実性がなければ、GLMの調査をやり直さず全diffも読まない。
-- PASSを機械的に信用せず、圧縮された意味情報への最終判断はSol Highが行う。
+- 圧縮packetについて要求との意味的一致、要求漏れ、矛盾、残余riskを評価する。
+- LOW riskかつ不整合・不確実性がなければ、GLMの調査をやり直さず全diffも読まない。
+- PASSを機械的に信用せず、最終semantic判断はSol Highが行う。
 
 ## `"status":"NEEDS_SOL_REVIEW"`
 
-- `targets`と`sol_question`に限定して実コードまたはdiffを確認する。reviewer summaryだけを現物確認の代わりにしない。
-- `targets`がfile:line・symbol・行範囲等で絞られている場合、初手は`sol_question`に必要な各targetのchanged hunkまたは狭いsource近傍だけを読む。同一target fileの広い/全sourceと同じfileのfull diffを初手で重複取得せず、複数targetもbounded regionのまままとめる。
-- bounded target evidenceで具体的なsemantic判断に不足が生じた場合だけ、その不足を解く対象targetを段階的に拡張する。関連のないchanged fileやtarget外sourceを予防的に先読みしない。
-- 修正が必要ならCodex自身で編集せず、修正方針本文を`~/.codex/instructions/glm-execution.md`の通常staged fix flow（sandbox内で`glm-parent-action prepare fix` → 返されたexact pathへ`apply_patch` → 同じtool orchestration内でsandbox外の`glm-parent-action fix <token>`）で同じworker sessionへ差し戻す。修正後は独立reviewerまで自動再実行される。reviewerのrole/session/read-only capability分離は`control:reviewer-session-capability-separation`が強制する。Sol自身が現diffの残存部分を受理し、fixが撤回・縮小だけなら`--accepted-scope current-diff`を付ける。不確実または新規変更を許すfixでは付けない。
-- packetがquality policy surface変更でreviewer前に停止していた場合は、packet自由文ではなく`glm-worker --handoff`の`required_action:"approve-surface"`と`required_action_parameters`に従う。`approve-surface --accepted-scope current-diff`は承認だけを行い、同一task・同一worker結果からreviewer実行へ自動で進む。この停止形のterminal acceptはadmission段階で拒否される。
+- `targets`と`sol_question`に限定して実コードまたはdiffを確認する。reviewer summaryだけで現物確認を代用しない。
+- file:line・symbol・行範囲等で絞られている場合はchanged hunkまたは狭いsource近傍から読む。不足した対象だけ段階的に拡張し、target外を予防的に先読みしない。
+- 修正が必要ならCodex自身で編集せず、handoffのstaged fix action specへsemantic fix内容を渡す。origin/cause/accepted-scopeの意味判断は`~/.codex/instructions/glm-execution.md`に従う。独立reviewer再実行はwrapperに任せる。
+- quality policy surface承認がmachine-admittedされている場合、承認するかsemantic fixへ戻すかだけを判断する。承認時のexact command/required parameterはdirect action specを正とし、packet自由文から組み立てない。
 
 ## finalization evidence
 
-- terminal packetのsemantic reviewが終わり、現snapshotへquality validationが必要な段階では、sandbox外で`glm-parent-action finalize-check <go-test|go-test-race>`を1回使う。既存quality gate、canonical handoff、current validation/snapshot照合、read-only local Git summaryを1 machine resultへまとめるため、同じ目的の`--quality-gate`→result/status→`--handoff`→`--status`往復を別々に行わない。
-- `status:"ready_for_parent_decision"`はvalidationとsnapshot整合を示すだけで、accept/fix・task完了判断は親Codexが行う。`git.remote_state`はlocal tracking ref basisのremote同期分類(`synced`・`remote_sync_pending_ahead`等)であり、live remote照会を意味しない。
-- `status:"blocked"`では`failure.stage`・`reason`と同梱済みevidenceだけを確認し、validation failure・lifecycle inconsistency・snapshot change・Git ambiguityを自動修復しない。
-- review結果のsemantic採用後、`glm-parent-action accept`は採用の事実だけを記録しtaskを`awaiting-parent-completion`へ遷移させる。acceptはpushより前に行い、この時点でtaskをcompleteにせずsession rotationも評価しない。
-- awaiting中は親Codexがimplementation commit・install/smoke・完了task file削除とPlan次task昇格を含むparent metadata同期commit・configured upstreamのexact remote/refへの通常pushを行う。remote writeは監督者のみの恒久authorityで、task/remote/refごとの追加承認を要求しない。GLM worker/reviewerとrepository production commandはgit pushを実行しない。push試行の前後で`glm-parent-action push-binding`を使い、`--expected-oid`と親が観測した`--attempt-outcome <none|completed|rejected|network-error|non-fast-forward>`で`remote_sync_pending_*`分類と`postcondition`を確認する。
-- metadata同期commitとpushの後、`glm-parent-action complete`がfinal HEAD・clean tree・完了metadata transition・configured upstream target・live `git ls-remote` postcondition(remote OID==final HEAD)を検証する。全条件成立時だけtaskがcompleteになりsession rotationを評価/発行する。ahead/diverged・network failure・remote ref mismatch・remote_unresolvableではstateがawaitingのまま保持され、`remote_sync`のremote_name・remote_ref・expected_oid・classification・postconditionがmachine evidenceとして返るので、同じ`complete`を再試行する。awaiting中・final HEAD未同期の新task開始・rotation完了・親USER_REQUEST完了はfail closedする。no upstream・detached HEADはremote差異の対象がないnot-applicableとして完了を妨げない。
+- semantic review後にcurrent snapshotのquality validationが必要なら既存`finalize-check` machine surfaceを使い、quality gate/result/status/handoffを別々に再取得しない。
+- `ready_for_parent_decision`はvalidation/snapshot整合のmachine evidenceであり、accept/fix・task完了のsemantic判断そのものではない。
+- blocked結果は同梱failure/evidenceだけを確認し、validation failure・lifecycle inconsistency・snapshot change・Git ambiguityを勝手に修復しない。
+- semantic acceptance後のparent completion、remote sync、session rotationはmachine lifecycleを正とする。親は必要なGit/metadata変更の意味を判断するが、completion postconditionやremote OID一致を推測しない。
 
 ## `{"error":{"kind":"worker_error",...}}`
 
-- stderrのerror JSON(`kind`・`message`・`detail{phase,exit_code,output_tail}`)とnon-zero exitで示される。エラー要約を確認し、無関係なリポジトリ調査をSol Highが代行しない。
-- session破損が明示されている場合だけ`glm-worker --reset`後に再実行する。
+- error JSONとnon-zero exitを正とし、エラー要約に無い原因を広いrepo探索で補完しない。
+- session破損が明示されている場合だけ既存reset/recovery boundaryへ進む。known failure modeはmachine projectionを使い、unknown failureだけをCodexのdebug判断へ戻す。

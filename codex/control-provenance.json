@@ -203,6 +203,50 @@
       "residual_parent_judgment": "The parent still evaluates the substantive meaning of a structurally valid packet."
     },
     {
+      "id": "parent-action-machine-projection",
+      "classification": "machine-enforced",
+      "purpose": "Project exact admissible parent commands, staged semantic slots, token-bound continuation commands, and canonical terminal handoff without parent-side command reconstruction.",
+      "machine_owners": [
+        {
+          "path": "glm-worker/internal/app/parent_handoff_actions.go",
+          "symbol": "parentActionSpecs"
+        },
+        {
+          "path": "glm-worker/internal/parentaction/prepared_projection.go",
+          "symbol": "Prepared.MarshalJSON"
+        },
+        {
+          "path": "glm-worker/internal/parentactioncmd/terminal_envelope.go",
+          "symbol": "executeWithTerminalEnvelope"
+        }
+      ],
+      "tests": [
+        {
+          "path": "glm-worker/internal/app/parent_handoff_actions_test.go",
+          "symbol": "TestParentHandoffActionSpecs"
+        },
+        {
+          "path": "glm-worker/internal/parentaction/prepared_projection_test.go",
+          "symbol": "TestPreparedProjection"
+        },
+        {
+          "path": "glm-worker/internal/parentactioncmd/terminal_envelope_test.go",
+          "symbol": "TestExecuteWithTerminalEnvelope"
+        }
+      ],
+      "postconditions": [
+        {
+          "path": "glm-worker/internal/app/parent_handoff_actions.go",
+          "symbol": "parentActionSpec"
+        },
+        {
+          "path": "glm-worker/internal/parentactioncmd/terminal_envelope.go",
+          "symbol": "parentActionTerminalEnvelope"
+        }
+      ],
+      "residual_parent_judgment": "The parent still chooses among machine-admitted semantic actions and supplies the substantive decision or fix payload."
+    },
+    {
       "id": "parent-action-staging-admission",
       "classification": "machine-enforced",
       "purpose": "Admit parent actions only through staged payload and lifecycle checks that match the current task state.",
@@ -354,10 +398,43 @@
     },
     {
       "id": "parent-wait-ownership",
-      "classification": "prose-only",
-      "purpose": "Keep parent wait ownership visible without falsely registering prose routing as a machine-enforced invariant.",
-      "residual_parent_judgment": "The parent follows the documented wait ownership convention.",
-      "boundary": "No production owner rejects violations of this ownership rule."
+      "classification": "machine-enforced",
+      "purpose": "Serialize the model-running parent owner and recover a detached owner through one bounded wait/handoff lifecycle.",
+      "machine_owners": [
+        {
+          "path": "glm-worker/internal/parentactioncmd/parent_wait.go",
+          "symbol": "withParentWaitLease"
+        },
+        {
+          "path": "glm-worker/internal/parentactioncmd/parent_wait.go",
+          "symbol": "executeParentWait"
+        }
+      ],
+      "tests": [
+        {
+          "path": "glm-worker/internal/parentactioncmd/parent_wait_test.go",
+          "symbol": "TestParentWaitLeaseRejectsDuplicateModelRunningOwner"
+        },
+        {
+          "path": "glm-worker/internal/parentactioncmd/parent_wait_test.go",
+          "symbol": "TestParentWaitBlocksOnPrimaryOwnerWithoutOutput"
+        },
+        {
+          "path": "glm-worker/internal/parentactioncmd/parent_wait_epoch_test.go",
+          "symbol": "TestParentWaitLeaseRotatesOwnerEpoch"
+        }
+      ],
+      "postconditions": [
+        {
+          "path": "glm-worker/internal/parentactioncmd/parent_wait.go",
+          "symbol": "parentWaitHandoff"
+        },
+        {
+          "path": "glm-worker/internal/parentactioncmd/parent_wait.go",
+          "symbol": "encodeParentWaitSuperseded"
+        }
+      ],
+      "residual_parent_judgment": "The parent interprets the recovered handoff semantically and decides the next admitted action."
     },
     {
       "id": "quality-snapshot-binding",

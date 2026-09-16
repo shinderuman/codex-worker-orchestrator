@@ -55,7 +55,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 	if args[0] == "prepare" {
 		return prepare(cfg.RepoRoot, args, stdout)
 	}
-	return execute(cfg, args, stdout, stderr)
+	return executeWithTerminalEnvelope(cfg, args, stdout, stderr)
 }
 
 func prepare(repoRoot string, args []string, stdout io.Writer) error {
@@ -91,9 +91,9 @@ func execute(cfg config.AppConfig, args []string, stdout, stderr io.Writer) erro
 		return executeParentWait(cfg, args, stdout, stderr)
 	case actionApprove:
 		return executeApproveSurfaceAction(cfg, args[1:], stdout, stderr)
-	case actionStart, "accept", "resume":
+	case actionStart, actionAccept, actionResume:
 		return executeDirectWorkerAction(cfg, action, args, stdout, stderr)
-	case "park", "unpark", "evidence":
+	case actionPark, actionUnpark, "evidence":
 		return executeParentReadOrParkAction(cfg, args, stdout, stderr)
 	case "finalize-check", "push-binding":
 		return executeGitEvidenceAction(cfg, args, stdout)
@@ -148,12 +148,12 @@ func executeGitEvidenceAction(cfg config.AppConfig, args []string, stdout io.Wri
 
 func executeParentReadOrParkAction(cfg config.AppConfig, args []string, stdout, stderr io.Writer) error {
 	switch args[0] {
-	case "park":
+	case actionPark:
 		if len(args) != 1 {
 			return fmt.Errorf("usage: glm-parent-action park")
 		}
 		return runWorker(cfg.RepoRoot, []string{"--park"}, nil, stdout, stderr, nil)
-	case "unpark":
+	case actionUnpark:
 		if len(args) != 1 {
 			return fmt.Errorf("usage: glm-parent-action unpark")
 		}
@@ -192,7 +192,7 @@ func executeDirectWorkerAction(cfg config.AppConfig, action string, args []strin
 	} else if len(args) != 1 {
 		return fmt.Errorf("usage: glm-parent-action %s", action)
 	}
-	if action == "resume" {
+	if action == actionResume {
 		if err := persistParentCodexIdentity(cfg); err != nil {
 			return err
 		}
@@ -348,7 +348,7 @@ func directWorkerArgs(action string) []string {
 		return []string{activeTaskRequest}
 	case actionApprove:
 		return []string{"--approve-surface", "current-diff"}
-	case "accept":
+	case actionAccept:
 		return []string{"--accept"}
 	default:
 		return []string{"--resume"}
