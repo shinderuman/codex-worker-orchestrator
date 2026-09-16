@@ -10,7 +10,7 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentaction"
 )
 
-type parentActionTerminalEnvelope struct {
+type parentActionTerminalEnvelopePayload struct {
 	Status   string          `json:"status"`
 	Terminal json.RawMessage `json:"terminal"`
 	Handoff  json.RawMessage `json:"handoff"`
@@ -49,11 +49,15 @@ func executeWithTerminalEnvelope(cfg config.AppConfig, args []string, stdout, st
 		return err
 	}
 
-	return json.NewEncoder(stdout).Encode(parentActionTerminalEnvelope{
+	return json.NewEncoder(stdout).Encode(parentActionTerminalEnvelope(terminalJSON, handoffJSON))
+}
+
+func parentActionTerminalEnvelope(terminalJSON, handoffJSON json.RawMessage) parentActionTerminalEnvelopePayload {
+	return parentActionTerminalEnvelopePayload{
 		Status:   "parent_action_terminal",
 		Terminal: terminalJSON,
 		Handoff:  handoffJSON,
-	})
+	}
 }
 
 func terminalEnvelopeAction(action string) bool {
