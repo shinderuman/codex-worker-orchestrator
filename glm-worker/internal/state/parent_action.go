@@ -179,7 +179,7 @@ func (s *StateStore) parentActionPlanForStatus(status TaskStatus, pending bool, 
 	case TaskStatusWaitingDecision:
 		return waitingDecisionActionPlan(status, pending, openReview, stopKind)
 	case TaskStatusWaitingSolReview:
-		return waitingReviewActionPlan(status, pending, openReview, stopKind, qualitySurfaceApproval)
+		return s.waitingReviewActionPlanWithEvidenceReadiness(status, pending, openReview, stopKind, qualitySurfaceApproval)
 	case TaskStatusAwaitingParentCompletion:
 		return awaitingParentCompletionActionPlan(status, pending, openReview, stopKind)
 	case TaskStatusParked:
@@ -198,6 +198,28 @@ func waitingDecisionActionPlan(status TaskStatus, pending bool, openReview strin
 		return ParentActionPlan{}, lifecycleInconsistency(status, "waiting decision state does not match pending decision, parent review, and resume state")
 	}
 	return actionPlan(ParentActionDecision, "", ParentActionDecision, ParentActionPark), nil
+}
+
+func (s *StateStore) waitingReviewActionPlanWithEvidenceReadiness(status TaskStatus, pending bool, openReview string, stopKind ResumeStopKind, qualitySurfaceApproval bool) (ParentActionPlan, error) {
+	plan, err := waitingReviewActionPlan(status, pending, openReview, stopKind, qualitySurfaceApproval)
+	if err != nil || plan.RequiredAction != ParentActionReview {
+		return plan, err
+	}
+	binding, err := s.CurrentParentReviewBinding()
+	if err != nil {
+		return ParentActionPlan{}, lifecycleInconsistency(status, "parent review evidence state is unreadable: "+err.Error())
+	}
+	if binding == nil {
+		return plan, nil
+	}
+	ready, err := s.ParentReviewAcceptReady()
+	if err != nil {
+		return ParentActionPlan{}, lifecycleInconsistency(status, "parent review accept readiness is unreadable: "+err.Error())
+	}
+	if !ready {
+		plan.AllowedActions = withoutParentAction(plan.AllowedActions, ParentActionAccept)
+	}
+	return plan, nil
 }
 
 func waitingReviewActionPlan(status TaskStatus, pending bool, openReview string, stopKind ResumeStopKind, qualitySurfaceApproval bool) (ParentActionPlan, error) {
@@ -303,6 +325,16 @@ func completeActionPlan(status TaskStatus, pending bool, openReview string, stop
 
 func actionPlan(required ParentAction, resumeKind string, allowed ...ParentAction) ParentActionPlan {
 	return ParentActionPlan{RequiredAction: required, AllowedActions: allowed, ResumeKind: resumeKind}
+}
+
+func withoutParentAction(actions []ParentAction, unwanted ParentAction) []ParentAction {
+	filtered := make([]ParentAction, 0, len(actions))
+	for _, action := range actions {
+		if action != unwanted {
+			filtered = append(filtered, action)
+		}
+	}
+	return filtered
 }
 
 func stoppedActionPlan(
