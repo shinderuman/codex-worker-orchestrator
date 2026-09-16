@@ -8,7 +8,7 @@ worker/reviewer packet、`glm-parent-action`のterminal envelope、またはboun
 - `status:"parent_action_terminal"`では`terminal`をauthoritative semantic result、`handoff`をcanonical next-action authorityとして扱う。envelope statusをPASS/NEEDS_SOL_*等のsemantic statusに読み替えない。
 - 次操作はhandoffの`consistent`・`required_action`・`allowed_actions`・`action_specs`から選ぶ。packet本文や`--status` fieldからadmissionやcommand lineを再構成しない。`consistent:false`では次actionを推測しない。
 - `action_specs`のdirect actionはexact `command`、staged actionはexact `prepare_command`をtransport authorityとする。prepare後はmachine-declared `slots`だけをsemantic値へ置換し、`next_command`を実行する。path/token/placeholder/argument orderを親で組み立てない。
-- terminal transport/parse failureで子stateが不明なら、最初にbounded recovery handoffを使う。`last_material`、guard/quality failure projection等で足りる事実をtelemetry/session/artifact全体から再探索しない。不足が残る場合だけexact locatorに限定して追加evidenceを読む。
+- terminal transport/parse failureで子stateが不明なら、最初にread-only `glm-worker --handoff recovery`だけをbounded recovery入口として使う。`last_material`、guard/quality failure projection等で足りる事実をtelemetry/session/artifact全体から再探索しない。不足が残る場合だけexact locatorに限定して追加evidenceを読む。
 - 同一decision leaseのduplicate projection拒否はmachine dedupであり、同じbodyを再取得する理由にしない。複数surfaceが必要ならmachineのevidence batchを使う。
 - `artifacts`は必要な成果物だけ記載pathから読む。packetへ全内容を転載しない。原因不明runtime failureは`~/.codex/instructions/failure-evidence.md`のbounded evidence条件に従う。
 
