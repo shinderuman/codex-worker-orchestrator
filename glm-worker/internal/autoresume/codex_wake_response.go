@@ -50,7 +50,7 @@ func advanceCodexWakeCreate(transaction codexWakeTransaction, transactionID stri
 	}
 	if responseReason != "" {
 		output := codexWakeFailureOutput(transaction, transactionID, responseReason)
-		if facts.AutomationID != "" {
+		if facts.AutomationID == transaction.ExpectedAutomationID {
 			output.Cleanup = codexWakeDeleteSpec(facts.AutomationID)
 		}
 		return output
@@ -95,7 +95,7 @@ func advanceUpdateTransaction[TTransaction any, TOutput any](
 		responseReason = validateAutomationResponseFacts(facts, "update", activeStatus, verifyParams.AutomationKey)
 	}
 	if responseReason != "" {
-		return writeFailure(transaction, transactionID, responseReason, true)
+		return writeFailure(transaction, transactionID, responseReason, false)
 	}
 	verification := Verify(verifyParams, readDB)
 	if verification.Outcome == Pass {

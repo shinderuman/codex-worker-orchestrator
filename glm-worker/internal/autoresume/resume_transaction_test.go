@@ -333,7 +333,7 @@ func TestAdvanceAutoResumeTransactionRejectsWrongAutomationID(t *testing.T) {
 	if output.Status != AutoResumeStatusFailed || !strings.Contains(output.Reason, "automation ID mismatch") {
 		t.Fatalf("output = %#v", output)
 	}
-	if output.Cleanup == nil || output.Cleanup.AutomationID != "glm-worker-resume-other0000-99999999" {
+	if output.Cleanup != nil {
 		t.Fatalf("cleanup = %#v", output.Cleanup)
 	}
 }

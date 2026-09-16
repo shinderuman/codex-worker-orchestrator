@@ -140,7 +140,7 @@ func TestCodexWakeCreateResponseAdvancesOnlyExactSuccessfulEntity(t *testing.T) 
 	}
 }
 
-func TestCodexWakeCreateResponseWrongIDLimitsCleanupToReturnedEntity(t *testing.T) {
+func TestCodexWakeCreateResponseWrongIDDoesNotCleanupUnownedEntity(t *testing.T) {
 	plan := newCreateCodexWakePlan(t)
 	returned := "unexpected-created-id"
 	response := codexWakeResponseJSON(t, false, map[string]any{
@@ -152,7 +152,7 @@ func TestCodexWakeCreateResponseWrongIDLimitsCleanupToReturnedEntity(t *testing.
 	output := AdvanceCodexWakeTransaction(plan.Token, response, t.TempDir(), "unused", func(string, string) (DBRow, error) {
 		return DBRow{}, ErrRowNotFound
 	})
-	if output.Status != CodexWakeStatusFailed || output.Cleanup == nil || output.Cleanup.Mode != "delete" || output.Cleanup.AutomationID != returned {
+	if output.Status != CodexWakeStatusFailed || output.Cleanup != nil {
 		t.Fatalf("output = %#v", output)
 	}
 }
@@ -205,7 +205,7 @@ func TestCodexWakeUpdateRequiresSavedStateMatch(t *testing.T) {
 	}
 }
 
-func TestCodexWakeUpdateRetriesOnceThenCleansOnlyOwnedPlaceholder(t *testing.T) {
+func TestCodexWakeInvalidUpdateResponseFailsWithoutRetryAndCleansOwnedPlaceholder(t *testing.T) {
 	update := newUpdateCodexWakePlan(t, true)
 	bad := codexWakeResponseJSON(t, false, map[string]any{
 		"automation_id": update.ExpectedAutomationID,
@@ -213,17 +213,14 @@ func TestCodexWakeUpdateRetriesOnceThenCleansOnlyOwnedPlaceholder(t *testing.T) 
 		"status":        "PAUSED",
 		"message":       "Automation updated successfully",
 	})
-	first := AdvanceCodexWakeTransaction(update.Token, bad, t.TempDir(), "unused", func(string, string) (DBRow, error) {
+	output := AdvanceCodexWakeTransaction(update.Token, bad, t.TempDir(), "unused", func(string, string) (DBRow, error) {
 		return DBRow{}, ErrRowNotFound
 	})
-	if first.Status != CodexWakeStatusWriteRequired || first.Attempt != 2 || first.Write == nil || first.Write.AutomationID != update.ExpectedAutomationID {
-		t.Fatalf("first = %#v", first)
+	if output.Status != CodexWakeStatusFailed || output.Attempt != 1 || output.Write != nil {
+		t.Fatalf("output = %#v", output)
 	}
-	second := AdvanceCodexWakeTransaction(first.Token, bad, t.TempDir(), "unused", func(string, string) (DBRow, error) {
-		return DBRow{}, ErrRowNotFound
-	})
-	if second.Status != CodexWakeStatusFailed || second.Cleanup == nil || second.Cleanup.Mode != "delete" || second.Cleanup.AutomationID != update.ExpectedAutomationID {
-		t.Fatalf("second = %#v", second)
+	if output.Cleanup == nil || output.Cleanup.Mode != "delete" || output.Cleanup.AutomationID != update.ExpectedAutomationID {
+		t.Fatalf("cleanup = %#v", output.Cleanup)
 	}
 }
 
