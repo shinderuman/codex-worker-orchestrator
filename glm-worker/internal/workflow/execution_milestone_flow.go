@@ -11,7 +11,7 @@ func (w *Workflow) ExecuteNewTaskWithMilestones(request string, definitions []Ex
 	if err := validateExecutionMilestoneDefinitions(definitions); err != nil {
 		return err
 	}
-	return quietWhenParentFileGuardStopped(w.withTemp(func() error {
+	return quietWhenTerminalResultEmitted(w.withTemp(func() error {
 		return w.executeNewTaskWithMilestones(request, definitions)
 	}))
 }
@@ -53,7 +53,7 @@ func (w *Workflow) ExecuteDecisionWithExecutionMilestones(decision string) error
 	if !active {
 		return w.ExecuteDecision(decision)
 	}
-	return quietWhenParentFileGuardStopped(w.withTemp(func() error {
+	return quietWhenTerminalResultEmitted(w.withTemp(func() error {
 		return w.executeExecutionMilestoneDecision(decision)
 	}))
 }
@@ -123,7 +123,7 @@ func (w *Workflow) ExecuteResumeWithExecutionMilestones() error {
 	if err != nil || checkpoint.ExecutionMilestoneID == "" {
 		return w.ExecuteResume()
 	}
-	return quietWhenParentFileGuardStopped(w.withTemp(w.executeExecutionMilestoneResume))
+	return quietWhenTerminalResultEmitted(w.withTemp(w.executeExecutionMilestoneResume))
 }
 
 func (w *Workflow) executeExecutionMilestoneResume() error {
@@ -197,9 +197,9 @@ func (w *Workflow) ExecuteQualitySurfaceApprovalWithExecutionMilestones(accepted
 	if err := w.validateExecutionMilestoneCheckpointAuthority(checkpoint); err != nil {
 		return err
 	}
-	return w.withTemp(func() error {
+	return quietWhenTerminalResultEmitted(w.withTemp(func() error {
 		return w.executeExecutionMilestoneQualitySurfaceApproval(acceptedScope)
-	})
+	}))
 }
 
 func (w *Workflow) executeExecutionMilestoneQualitySurfaceApproval(acceptedScope string) error {

@@ -148,7 +148,7 @@ func (s *StateStore) OpenParentReviewLabel() string {
 	return label
 }
 
-func (s *StateStore) openParentReviewState(status string, risk string, producer ParentReviewProducer) error {
+func (s *StateStore) openParentReviewState(status string, risk string, producer ParentReviewProducer, markNonConvergence bool) error {
 	if !validParentReviewPacketStatus(status) {
 		return fmt.Errorf("parent review packet statusが不正です: %s", status)
 	}
@@ -157,14 +157,40 @@ func (s *StateStore) openParentReviewState(status string, risk string, producer 
 		return err
 	}
 	state.Open = &ParentReviewOpenState{
-		PacketStatus: status,
-		Role:         producer.Role,
-		ModelAlias:   producer.Model,
-		Risk:         risk,
+		PacketStatus:                   status,
+		Role:                           producer.Role,
+		ModelAlias:                     producer.Model,
+		Risk:                           risk,
+		ParentValidationNonConvergence: markNonConvergence,
 	}
 	state.Review = nil
 	state.Completion = nil
 	return s.writeParentReviewState(state)
+}
+
+func (s *StateStore) FinishParentValidationNonConvergence(value packet.Result, producer ParentReviewProducer) error {
+	if s.TaskStatus() != TaskStatusActive {
+		return fmt.Errorf("parent validation non-convergence transition requires active task, got %s", s.TaskStatus())
+	}
+	if value.Status != packet.StatusNeedsSolReview {
+		return fmt.Errorf("parent validation non-convergence transition requires %s, got %s", packet.StatusNeedsSolReview, value.Status)
+	}
+	review, err := s.snapshotLifecycleFile(parentReviewStateFile)
+	if err != nil {
+		return err
+	}
+	status, err := s.snapshotLifecycleFile("task.status")
+	if err != nil {
+		return err
+	}
+	if err := s.openParentReviewState(string(value.Status), string(value.Risk), producer, true); err != nil {
+		return err
+	}
+	if err := s.FinishReview(TaskStatusWaitingSolReview); err != nil {
+		return s.rollbackLifecycleFiles(err, review, status)
+	}
+	s.recordSolOutcomeStats(value, producer)
+	return nil
 }
 
 func (s *StateStore) resolveParentReviewState(kind, origin, cause string) (ParentReviewOpenState, bool, error) {

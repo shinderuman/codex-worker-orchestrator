@@ -38,7 +38,7 @@ func (w *Workflow) stopForQualitySurfaceApproval(checkpoint state.ResumeCheckpoi
 }
 
 func (w *Workflow) ExecuteQualitySurfaceApproval(acceptedScope string) error {
-	return w.withTemp(func() error {
+	return quietWhenTerminalResultEmitted(w.withTemp(func() error {
 		if err := w.admitParentAction(state.ParentActionApproveSurface); err != nil {
 			return err
 		}
@@ -59,7 +59,7 @@ func (w *Workflow) ExecuteQualitySurfaceApproval(acceptedScope string) error {
 			return w.discardAcceptedFixScopeAfterFailure(&WorkerError{Message: "no retained quality-surface approval checkpoint is available"})
 		}
 		return nil
-	})
+	}))
 }
 
 func (w *Workflow) resumeApprovedQualitySurface() (bool, error) {

@@ -567,11 +567,16 @@ func (s *StateStore) recordSolResult(value packet.Result, producer ParentReviewP
 	if value.Status == packet.StatusNeedsSolReview && reviewSnapshot != nil {
 		err = s.openBoundParentReviewState(value, producer, *reviewSnapshot)
 	} else {
-		err = s.openParentReviewState(string(value.Status), string(value.Risk), producer)
+		err = s.openParentReviewState(string(value.Status), string(value.Risk), producer, false)
 	}
 	if err != nil {
 		return err
 	}
+	s.recordSolOutcomeStats(value, producer)
+	return nil
+}
+
+func (s *StateStore) recordSolOutcomeStats(value packet.Result, producer ParentReviewProducer) {
 	s.UpdateTaskStats(func(stats *TaskStats) {
 		stats.SolPacketBytes += value.ByteSize()
 		switch value.Status {
@@ -584,7 +589,6 @@ func (s *StateStore) recordSolResult(value packet.Result, producer ParentReviewP
 		}
 		stats.openParentReview(string(value.Status), string(value.Risk), producer)
 	})
-	return nil
 }
 
 func (s *StateStore) Reset() error {

@@ -11,7 +11,7 @@ import (
 )
 
 func (w *Workflow) ExecuteResume() error {
-	return quietWhenParentFileGuardStopped(w.withTemp(w.executeResume))
+	return quietWhenTerminalResultEmitted(w.withTemp(w.executeResume))
 }
 
 func (w *Workflow) executeResume() error {

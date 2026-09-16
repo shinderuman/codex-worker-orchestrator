@@ -19,7 +19,7 @@ func TestRecoverParentActionBeginRestoresDecisionReviewState(t *testing.T) {
 	if err := st.openParentReviewState(
 		string(packet.StatusNeedsSolDecision),
 		string(packet.RiskHigh),
-		ParentReviewProducer{Role: string(ReviewerRole), Model: "reviewer-model"},
+		ParentReviewProducer{Role: string(ReviewerRole), Model: "reviewer-model"}, false,
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +146,7 @@ func TestRecoverParentActionBeginAllowsAlreadyRestoredReviewOnRetry(t *testing.T
 	if err := st.openParentReviewState(
 		string(packet.StatusNeedsSolDecision),
 		string(packet.RiskLow),
-		ParentReviewProducer{Role: string(ReviewerRole), Model: "reviewer-model"},
+		ParentReviewProducer{Role: string(ReviewerRole), Model: "reviewer-model"}, false,
 	); err != nil {
 		t.Fatal(err)
 	}

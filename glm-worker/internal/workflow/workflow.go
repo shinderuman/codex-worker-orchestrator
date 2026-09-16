@@ -165,7 +165,7 @@ func (e *WorkerError) Unwrap() error {
 }
 
 func (w *Workflow) ExecuteNewTask(request string) error {
-	return quietWhenParentFileGuardStopped(w.withTemp(func() error {
+	return quietWhenTerminalResultEmitted(w.withTemp(func() error {
 		if err := w.validateNewTaskStart(); err != nil {
 			return err
 		}
@@ -248,7 +248,7 @@ func (w *Workflow) initializeNewTaskState(threadID, claimID string) error {
 }
 
 func (w *Workflow) ExecuteDecision(decision string) error {
-	return quietWhenParentFileGuardStopped(w.withTemp(func() error {
+	return quietWhenTerminalResultEmitted(w.withTemp(func() error {
 		if err := w.admitParentAction(state.ParentActionDecision); err != nil {
 			return err
 		}

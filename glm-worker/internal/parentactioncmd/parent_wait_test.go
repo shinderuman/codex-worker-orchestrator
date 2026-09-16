@@ -6,12 +6,36 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repolock"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
+
+type parentWaitOutputBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *parentWaitOutputBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *parentWaitOutputBuffer) Len() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Len()
+}
+
+func (b *parentWaitOutputBuffer) Bytes() []byte {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Bytes()
+}
 
 func TestParentWaitBlocksOnPrimaryOwnerWithoutOutput(t *testing.T) {
 	cfg, st := newParentActionTestState(t)
@@ -28,7 +52,8 @@ func TestParentWaitBlocksOnPrimaryOwnerWithoutOutput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var stdout, stderr bytes.Buffer
+	var stdout parentWaitOutputBuffer
+	var stderr bytes.Buffer
 	done := make(chan error, 1)
 	go func() { done <- executeParentWait(cfg, []string{"wait"}, &stdout, &stderr) }()
 
@@ -38,7 +63,7 @@ func TestParentWaitBlocksOnPrimaryOwnerWithoutOutput(t *testing.T) {
 	case <-time.After(50 * time.Millisecond):
 	}
 	if stdout.Len() != 0 {
-		t.Fatalf("wait emitted liveness output while unchanged: %q", stdout.String())
+		t.Fatalf("wait emitted liveness output while unchanged: %q", stdout.Bytes())
 	}
 	if err := owner.Close(); err != nil {
 		t.Fatal(err)
@@ -72,7 +97,8 @@ func TestParentWaitBlocksOnSurvivingWorkerAfterParentOwnerLoss(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var stdout, stderr bytes.Buffer
+	var stdout parentWaitOutputBuffer
+	var stderr bytes.Buffer
 	done := make(chan error, 1)
 	go func() { done <- executeParentWait(cfg, []string{"wait"}, &stdout, &stderr) }()
 
@@ -82,7 +108,7 @@ func TestParentWaitBlocksOnSurvivingWorkerAfterParentOwnerLoss(t *testing.T) {
 	case <-time.After(50 * time.Millisecond):
 	}
 	if stdout.Len() != 0 {
-		t.Fatalf("wait emitted output before worker terminal: %q", stdout.String())
+		t.Fatalf("wait emitted output before worker terminal: %q", stdout.Bytes())
 	}
 	if err := worker.Close(); err != nil {
 		t.Fatal(err)

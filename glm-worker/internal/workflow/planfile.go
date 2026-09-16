@@ -103,8 +103,8 @@ func describeParentFileChanges(before, after state.ParentFileStates) string {
 	return strings.Join(reasons, ", ")
 }
 
-func quietWhenParentFileGuardStopped(err error) error {
-	if errors.Is(err, errParentFileGuardStopped) {
+func quietWhenTerminalResultEmitted(err error) error {
+	if errors.Is(err, errParentFileGuardStopped) || errors.Is(err, errParentValidationNonConverged) {
 		return nil
 	}
 	return err

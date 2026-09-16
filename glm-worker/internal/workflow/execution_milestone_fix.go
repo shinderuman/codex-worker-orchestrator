@@ -13,11 +13,11 @@ func (w *Workflow) ExecuteExplicitFixWithExecutionMilestones(instruction, origin
 		return err
 	}
 	if !active {
-		return quietWhenParentFileGuardStopped(w.withTemp(func() error {
+		return quietWhenTerminalResultEmitted(w.withTemp(func() error {
 			return w.executeExplicitFixWithAcceptedScopeLifecycle(instruction, origin, cause, acceptedScope)
 		}))
 	}
-	return quietWhenParentFileGuardStopped(w.withTemp(func() error {
+	return quietWhenTerminalResultEmitted(w.withTemp(func() error {
 		return w.executeExecutionMilestoneExplicitFix(instruction, origin, cause, acceptedScope)
 	}))
 }

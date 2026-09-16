@@ -10,10 +10,11 @@ import (
 )
 
 type ParentReviewOpenState struct {
-	PacketStatus string `json:"packet_status"`
-	Role         string `json:"role,omitempty"`
-	ModelAlias   string `json:"model_alias,omitempty"`
-	Risk         string `json:"risk,omitempty"`
+	PacketStatus                   string `json:"packet_status"`
+	Role                           string `json:"role,omitempty"`
+	ModelAlias                     string `json:"model_alias,omitempty"`
+	Risk                           string `json:"risk,omitempty"`
+	ParentValidationNonConvergence bool   `json:"parent_validation_non_convergence,omitempty"`
 }
 
 type ParentReviewProducer struct {

@@ -205,6 +205,13 @@ func (s *StateStore) waitingReviewActionPlanWithEvidenceReadiness(status TaskSta
 	if err != nil || plan.RequiredAction != ParentActionReview {
 		return plan, err
 	}
+	open, err := s.CurrentParentReview()
+	if err != nil {
+		return ParentActionPlan{}, lifecycleInconsistency(status, "parent review state is unreadable: "+err.Error())
+	}
+	if open != nil && open.ParentValidationNonConvergence {
+		plan.AllowedActions = withoutParentAction(plan.AllowedActions, ParentActionAccept)
+	}
 	binding, err := s.CurrentParentReviewBinding()
 	if err != nil {
 		return ParentActionPlan{}, lifecycleInconsistency(status, "parent review evidence state is unreadable: "+err.Error())

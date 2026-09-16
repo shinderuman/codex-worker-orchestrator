@@ -1,6 +1,7 @@
 package state
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -167,6 +168,68 @@ func TestParentReviewEvidenceDoesNotChangeOtherAcceptSemantics(t *testing.T) {
 			t.Fatalf("decision accept = %v err=%v", accepted, err)
 		}
 	})
+}
+
+func TestNonConvergenceMarkerClearsOnReviewerCompletionAndAcceptRestoresViaEvidence(t *testing.T) {
+	st, _, snapshot := newBoundParentReviewTestStore(t)
+	taskID, err := st.TaskID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetTaskStatus(TaskStatusActive); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.FinishParentValidationNonConvergence(
+		packet.Result{Status: packet.StatusNeedsSolReview, Risk: packet.RiskHigh},
+		ParentReviewProducer{Role: string(WorkerRole), Model: "opus"},
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	duringFailure, err := st.ParentActionPlan()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if duringFailure.Allows(ParentActionAccept) || duringFailure.AdmitsCommand(ParentActionAccept) || !duringFailure.Allows(ParentActionFix) || !duringFailure.Allows(ParentActionPark) {
+		t.Fatalf("non-convergence admission = %#v", duringFailure)
+	}
+
+	openBoundReviewForTest(t, st, snapshot, "review.go:1")
+	open, err := st.CurrentParentReview()
+	if err != nil || open == nil || open.ParentValidationNonConvergence {
+		t.Fatalf("reviewer completion must drop the non-convergence marker: %#v err=%v", open, err)
+	}
+	binding, err := st.CurrentParentReviewBinding()
+	if err != nil || binding == nil {
+		t.Fatalf("reviewer completion must open a normal bound review: %#v err=%v", binding, err)
+	}
+	beforeEvidence, err := st.ParentActionPlan()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if beforeEvidence.Allows(ParentActionAccept) || !beforeEvidence.Allows(ParentActionFix) || !beforeEvidence.Allows(ParentActionPark) {
+		t.Fatalf("post-completion admission must be the normal evidence-gated review = %#v", beforeEvidence)
+	}
+
+	if err := st.MarkParentReviewEvidence(binding.ID, "parent-evidence-call", []ParentReviewEvidenceClaim{{
+		Kind: "source", Digest: "digest", Locator: "review.go:1-1",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	restored, err := st.ParentActionPlan()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !restored.Allows(ParentActionAccept) || !restored.AdmitsCommand(ParentActionAccept) || !restored.Allows(ParentActionFix) {
+		t.Fatalf("evidence admission must restore the normal accept/fix admission = %#v", restored)
+	}
+	current, err := st.TaskID()
+	if err != nil || current != taskID {
+		t.Fatalf("task identity changed across the recovery loop: %s want %s err=%v", current, taskID, err)
+	}
+	if _, err := st.LoadResumeCheckpoint(); !errors.Is(err, ErrNoResumeCheckpoint) {
+		t.Fatalf("recovery loop must not leave a resume checkpoint: %v", err)
+	}
 }
 
 func newBoundParentReviewTestStore(t *testing.T) (*StateStore, string, SnapshotDigest) {

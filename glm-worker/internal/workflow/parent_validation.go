@@ -3,6 +3,7 @@ package workflow
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -43,6 +44,8 @@ type parentValidationProcessError struct {
 }
 
 const parentValidationGateFailureKind = "quality_gate_failed"
+
+var errParentValidationNonConverged = errors.New("parent validation non-convergence emitted a terminal result")
 
 var parentValidationGateRunner = func(w *Workflow, request packet.ParentValidationRequest) (parentValidationGateRecord, error) {
 	return w.runParentValidationGate(request)
@@ -119,10 +122,7 @@ func (w *Workflow) fixBeforeParentValidation(
 	request packet.ParentValidationRequest,
 ) (packet.Result, error) {
 	if checkpoint.AutoFixes >= w.config.MaxAutoFixRounds {
-		return packet.Result{}, &WorkerError{
-			Phase:   "parent-validation",
-			Message: fmt.Sprintf("parent validation %s remains failing after the worker fix budget", request.Form),
-		}
+		return packet.Result{}, w.finishParentValidationNonConvergence(failure)
 	}
 	reviewNumber := checkpoint.ReviewNumber
 	if reviewNumber < 1 {
@@ -139,6 +139,43 @@ func (w *Workflow) fixBeforeParentValidation(
 		return packet.Result{}, err
 	}
 	return fixed, nil
+}
+
+func (w *Workflow) finishParentValidationNonConvergence(failure packet.Result) error {
+	if err := w.writeLastReview(failure); err != nil {
+		return err
+	}
+	result := parentValidationNonConvergedResult(failure)
+	if err := w.state.FinishParentValidationNonConvergence(result, w.lastProducer); err != nil {
+		return err
+	}
+	report, err := machineReport(result)
+	if err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(w.output, report); err != nil {
+		return err
+	}
+	return errParentValidationNonConverged
+}
+
+func parentValidationNonConvergedResult(failure packet.Result) packet.Result {
+	targets := failure.Targets
+	if len(targets) == 0 || (len(targets) == 1 && targets[0] == "none") {
+		targets = []string{"the failed gate evidence and the current diff"}
+	}
+	return packet.Result{
+		Status:              packet.StatusNeedsSolReview,
+		Risk:                packet.RiskHigh,
+		Summary:             "worker fix budget exhausted: " + failure.Summary,
+		RequirementCoverage: failure.RequirementCoverage,
+		Invariants:          failure.Invariants,
+		TestEvidence:        failure.TestEvidence,
+		Issues:              failure.Issues,
+		ResidualRisk:        failure.ResidualRisk,
+		Targets:             targets,
+		SolQuestion:         "decide how to continue the same ACTIVE task against the deterministic gate failure that survived the worker fix budget",
+	}
 }
 
 func applyCheckpointParentValidation(checkpoint state.ResumeCheckpoint, result packet.Result) (packet.Result, error) {
