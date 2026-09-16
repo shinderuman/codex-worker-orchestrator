@@ -1,4 +1,4 @@
-# Task: Codex efficiency feedback-loop checkpoint
+# Task: Codex efficiency intermediate checkpoint
 
 ## Original instruction
 
@@ -51,15 +51,15 @@ post-105-codex-efficiency-reevaluation.mdを定期的にやってほしいんだ
 
 ## Resolved references
 
-- 前回checkpointのbounded reportとpriority decisionは、`codex-efficiency-control-loop-checkpoint.md`を削除する直前のGit locatorから回収する
-- 次回は`task-stats-revision-consumer-audit.md`完了後に実行する。false-complete、正規復旧不能、大きな重複model消費があれば前倒しする
+- 前回checkpointのbounded reportとpriority decisionは、`codex-efficiency-feedback-loop-checkpoint.md`を削除する直前のGit locatorから回収する
+- 次回は`session-rotation-continuation-preflight.md`、`parent-usage-compact-token-totals.md`、`task-stats-archive-skip-observability.md`の完了後に実行する。false-complete、正規復旧不能、大きな重複model消費があれば前倒しする
 - Markdown差分は前回checkpointのGit locator以後に限定し、未解決authority候補だけを確認する
 - `post-105-codex-efficiency-reevaluation.md`は105完了後・022直前の最終safety netとして別に維持する
 - session rotationの評価はrotation回数、trigger理由、taskあたりparent turn / tool output / token、rotation直後のauthority/bootstrap再投影量、cache/read attribution、同一task継続時との比較可能性を対象にする
 
 ## Purpose
 
-task stats revision consumer audit後のCodex ReductionとQuality Deltaを短いfeedback loopで再評価し、022前のtask coverageとpriorityを補正する。
+優先配置した3 task後のCodex ReductionとQuality Deltaを短いfeedback loopで再評価し、022前のtask coverageとpriorityを補正する。
 
 ## External feasibility
 
@@ -68,10 +68,10 @@ status: not-applicable
 ## Contract
 
 - 親Codexだけが追加AI callなしで実行し、GLM modelへ分析・採否・priority判断を委譲しない
-- parent-only例外は既存evidenceの評価・採否・Plan priority更新までに限定する。新規taskの開始、decision、fix、accept、resumeは通常の`glm-parent-action`を使い、評価を契機にしたsource/test/config修正へ直接実行権限を拡張しない
+- parent-only例外は既存evidenceの評価・採否・Plan priority更新までに限定する
 - 前回checkpointのGit locator以後のCodex/GLM telemetry、parent usage、review/fix/validation、停止/recovery、未Task化Findingを既存bounded machine projectionで比較する
-- 前回checkpoint locator以後のtracked Markdown差分と未解決authority候補だけを確認する
-- session rotationが過剰な頻度で発生し、再bootstrap・authority再投影・cache loss・parent finalization分断によってCodex tokenを増やしていないかをbounded evidenceで評価する
+- 前回locator以後のtracked Markdown差分と未解決authority候補だけを確認する
+- session rotationとparent finalizationがCodex token / tool outputを増やしていないかをbounded evidenceで評価する
 - Direct Codex対Codex + glm-workerのCodex ReductionとQuality Deltaを最上位Evalとし、GLM token削減のためにCodex/Sol消費を増やす案を採用しない
 - 新規FindingをGo/No-Goし、Goは022より前の独立taskへ固定し、NEXT/BLOCKED全体を再優先付けする
 - 完了時にさらに次のcheckpointを最大5 task完了以内へ配置し、post-105最終再評価を変更しない
@@ -79,8 +79,8 @@ status: not-applicable
 ## Must not
 
 - raw log、巨大JSON/JSONL、prompt/response全文をSol contextへ再投影しない
-- tracked Markdown全体を毎checkpoint再読したり、generic semantic checkerやLLM監視を追加したりしない
-- unknown/ambiguousなCodex usageやQuality Deltaを改善扱いしない
+- tracked Markdown全体を再読したり、generic semantic checkerやLLM監視を追加したりしない
+- unknown / ambiguousなCodex usageやQuality Deltaを改善扱いしない
 - test/review/Sol gate省略をtoken削減として採用しない
 - post-105最終再評価を完了・削除・前倒ししない
 

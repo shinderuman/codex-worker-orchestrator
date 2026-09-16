@@ -831,6 +831,60 @@ func TestSessionRotationPendingRejectsNewTaskBeforeMutation(t *testing.T) {
 	}
 }
 
+func TestSessionRotationPendingOnOtherThreadBlocksStartAndProjectsRecovery(t *testing.T) {
+	cfg, st, oldThread := seedSessionRotationAccept(t)
+	marker, err := st.LoadSessionRotationMarker(oldThread)
+	if err != nil || marker == nil || marker.Directive == nil {
+		t.Fatalf("pending marker = %#v err=%v", marker, err)
+	}
+	newThread := "01a0244a-4ee4-7e71-b2e1-dec3bdda2120"
+	beforeTaskID := st.ReadOr("task.id", "")
+	t.Setenv(state.ParentActionCodexThreadIDEnv, newThread)
+	t.Setenv(state.ParentActionCodexSessionIDEnv, newThread)
+	runner := &fakeRunner{}
+	err = Execute(Command{Mode: ModeNewTask, Payload: "must not run"}, cfg, runner.factory(), io.Discard, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), oldThread) || !strings.Contains(err.Error(), marker.Directive.DirectiveID) {
+		t.Fatalf("別thread通常startが未完了directiveをbypassしました: %v", err)
+	}
+	if len(runner.prompts) != 0 || st.ReadOr("task.id", "") != beforeTaskID {
+		t.Fatal("rejected start changed task or invoked model")
+	}
+
+	var output parentHandoffOutput
+	executeCommandOutput(t, cfg, ModeHandoff, &output, "--handoff")
+	if !output.Consistent || output.SessionRotation == nil {
+		t.Fatalf("handoff session_rotation = %#v consistent=%v", output.SessionRotation, output.Consistent)
+	}
+	if len(output.SessionRotation.Incomplete) != 1 {
+		t.Fatalf("incomplete_rotations = %#v", output.SessionRotation.Incomplete)
+	}
+	incomplete := output.SessionRotation.Incomplete[0]
+	if incomplete.ParentThreadID != oldThread || incomplete.State != state.SessionRotationStatePending || incomplete.DirectiveID != marker.Directive.DirectiveID {
+		t.Fatalf("recovery対象のprojection = %#v", incomplete)
+	}
+
+	claim, err := st.ClaimSessionRotation(oldThread, marker.Directive.DirectiveID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.BindSessionRotationClaim(oldThread, marker.Directive.DirectiveID, claim.ClaimID, newThread); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.StartSessionRotationTask(newThread, claim.ClaimID); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetParentCodexIdentity(newThread, newThread, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AcknowledgeSessionRotationClaim(claim.ClaimID, newThread); err != nil {
+		t.Fatal(err)
+	}
+	retired, err := st.LoadSessionRotationMarker(oldThread)
+	if err != nil || retired.State != state.SessionRotationStateIssued || retired.Issued == nil || retired.Issued.BoundThreadID != newThread {
+		t.Fatalf("同一checkout recovery後の旧directive = %#v err=%v", retired, err)
+	}
+}
+
 func TestSessionRotationHandoffSurvivesUnreadableStatsMirror(t *testing.T) {
 	_, st, threadID := seedSessionRotationAccept(t)
 	if err := os.WriteFile(st.CurrentTaskStatsPath(), []byte("{"), 0o600); err != nil {

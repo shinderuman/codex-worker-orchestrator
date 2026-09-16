@@ -23,6 +23,9 @@ func writeQualityGateGoShim(t *testing.T, failFlagPath string) (string, string) 
 		"log_file='" + invocationLog + "'\n" +
 		"printf 'argv:%s\\n' \"$*\" >>\"$log_file\"\n" +
 		"printf 'goflags:%s\\n' \"$GOFLAGS\" >>\"$log_file\"\n" +
+		"printf 'claim:%s\\n' \"$GLM_SESSION_ROTATION_CLAIM_ID\" >>\"$log_file\"\n" +
+		"printf 'thread:%s\\n' \"$GLM_PARENT_ACTION_CODEX_THREAD_ID\" >>\"$log_file\"\n" +
+		"printf 'session:%s\\n' \"$GLM_PARENT_ACTION_CODEX_SESSION_ID\" >>\"$log_file\"\n" +
 		"if [ -f '" + failFlagPath + "' ]; then\n" +
 		"  printf '%s\\n' 'go shim: forced failure'\n" +
 		"  exit 3\n" +
@@ -69,6 +72,31 @@ func qualityGateInvocationLines(t *testing.T, path string) []string {
 		t.Fatal(err)
 	}
 	return strings.Split(strings.TrimSuffix(string(data), "\n"), "\n")
+}
+
+func TestQualityGateEnvScrubsSessionTransport(t *testing.T) {
+	t.Setenv("GOFLAGS", "-exec=/bin/sh")
+	t.Setenv(state.SessionRotationClaimIDEnv, "21d4da2f-2834-4e1f-9939-184290652f51")
+	t.Setenv(state.ParentActionCodexThreadIDEnv, "01a0a889-bf94-7892-bdd8-97df5e7a2e52")
+	t.Setenv(state.ParentActionCodexSessionIDEnv, "01a0a889-bf94-7892-bdd8-97df5e7a2e52")
+	t.Setenv("GLM_WORKER_HOME", "/keep-this")
+
+	env := qualityGateEnv()
+	keptOther := false
+	for _, entry := range env {
+		if qualityGateSessionTransportEnv(entry) {
+			t.Fatalf("session transport envがsubprocess envへ残っています: %s", entry)
+		}
+		if strings.HasPrefix(entry, "GOFLAGS=") && entry != "GOFLAGS=" {
+			t.Fatalf("GOFLAGSが空で再設定されていません: %s", entry)
+		}
+		if entry == "GLM_WORKER_HOME=/keep-this" {
+			keptOther = true
+		}
+	}
+	if !keptOther {
+		t.Fatal("session transport以外のenvが失われています")
+	}
 }
 
 func TestQualityGateParseAcceptsOnlyExactForms(t *testing.T) {
@@ -141,12 +169,12 @@ func TestQualityGateExtraArgvFailsClosedBeforeProcess(t *testing.T) {
 
 func TestQualityGateRunsFixedArgv(t *testing.T) {
 	cases := []struct {
-		form       string
-		wantArgv   string
-		wantRecord int
+		form      string
+		wantArgv  string
+		wantLines int
 	}{
-		{form: "go-test", wantArgv: "test ./...", wantRecord: 2},
-		{form: "go-test-race", wantArgv: "test -race ./...", wantRecord: 2},
+		{form: "go-test", wantArgv: "test ./...", wantLines: 5},
+		{form: "go-test-race", wantArgv: "test -race ./...", wantLines: 5},
 	}
 	for _, tc := range cases {
 		t.Run(tc.form, func(t *testing.T) {
@@ -154,6 +182,9 @@ func TestQualityGateRunsFixedArgv(t *testing.T) {
 			shimDir, invocationLog := writeQualityGateGoShim(t, filepath.Join(t.TempDir(), "absent-flag"))
 			t.Setenv("PATH", shimDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 			t.Setenv("GOFLAGS", "-exec=/bin/sh")
+			t.Setenv(state.SessionRotationClaimIDEnv, "21d4da2f-2834-4e1f-9939-184290652f51")
+			t.Setenv(state.ParentActionCodexThreadIDEnv, "01a0a889-bf94-7892-bdd8-97df5e7a2e52")
+			t.Setenv(state.ParentActionCodexSessionIDEnv, "01a0a889-bf94-7892-bdd8-97df5e7a2e52")
 			_, st := newQualityGateEnv(t)
 
 			workingDir, err := os.Getwd()
@@ -187,7 +218,7 @@ func TestQualityGateRunsFixedArgv(t *testing.T) {
 			}
 
 			lines := qualityGateInvocationLines(t, invocationLog)
-			if len(lines) != tc.wantRecord {
+			if len(lines) != tc.wantLines {
 				t.Fatalf("go呼出記録が想定と異なります: %v", lines)
 			}
 			if lines[0] != "argv:"+tc.wantArgv {
@@ -195,6 +226,9 @@ func TestQualityGateRunsFixedArgv(t *testing.T) {
 			}
 			if lines[1] != "goflags:" {
 				t.Fatalf("GOFLAGSが排除されていません: %s", lines[1])
+			}
+			if lines[2] != "claim:" || lines[3] != "thread:" || lines[4] != "session:" {
+				t.Fatalf("session transport envがsubprocessへ漏れています: %v", lines)
 			}
 		})
 	}

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -542,6 +543,98 @@ func TestProjectSessionRotationStates(t *testing.T) {
 	}
 }
 
+func TestProjectSessionRotationListsIncompleteRotationsAcrossThreads(t *testing.T) {
+	st := &StateStore{dir: t.TempDir()}
+	oldThread := "01a0463c-d477-7410-9efd-cb34ff2e0b0e"
+	retiredThread := "01a0244a-4ee4-7e71-b2e1-dec3bdda2120"
+	currentThread := "01a08268-2c7d-72a0-9aa1-605eed066ce9"
+	directiveTask := "12345678-aaaa-bbbb-cccc-dddddddddddd"
+	if err := st.commitSessionRotation(&SessionRotationEvaluation{
+		ParentThreadID: oldThread,
+		TaskID:         directiveTask,
+		Terminal:       SessionRotationTerminalAccept,
+		Decision:       SessionRotationDecision{Required: true, Reason: SessionRotationReasonCompaction},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	retired := &SessionRotationMarker{
+		Version:        sessionRotationMarkerVersion,
+		ParentThreadID: retiredThread,
+		State:          SessionRotationStateIssued,
+		Directive: &SessionRotationDirective{
+			DirectiveID: "84e3f02e-cf23-4cc8-aaee-f3fb42aad71e",
+			TaskID:      directiveTask,
+			Terminal:    SessionRotationTerminalAccept,
+			Epoch:       directiveTask + ":" + SessionRotationTerminalAccept,
+			Reason:      SessionRotationReasonDefaultTwoTasks,
+			CreatedAt:   "2026-09-08T00:00:00Z",
+		},
+		Issued: &SessionRotationIssued{BoundThreadID: currentThread, IssuedAt: "2026-09-08T00:00:00Z"},
+	}
+	if err := st.writeSessionRotationMarker(retired); err != nil {
+		t.Fatal(err)
+	}
+	marker, err := st.LoadSessionRotationMarker(oldThread)
+	if err != nil || marker == nil || marker.Directive == nil {
+		t.Fatalf("pending marker = %#v err=%v", marker, err)
+	}
+	unbound, err := st.ProjectSessionRotation("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(unbound.Incomplete) != 1 || unbound.Incomplete[0].ParentThreadID != oldThread {
+		t.Fatalf("identity未結合のincomplete projection = %#v", unbound.Incomplete)
+	}
+	current, err := st.ProjectSessionRotation(currentThread)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(current.Incomplete) != 1 {
+		t.Fatalf("incomplete projection = %#v", current.Incomplete)
+	}
+	pendingEntry := current.Incomplete[0]
+	if pendingEntry.ParentThreadID != oldThread || pendingEntry.State != SessionRotationStatePending || pendingEntry.DirectiveID != marker.Directive.DirectiveID {
+		t.Fatalf("pending entry = %#v", pendingEntry)
+	}
+	claim, err := st.ClaimSessionRotation(oldThread, marker.Directive.DirectiveID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := st.ProjectSessionRotation(currentThread)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(claimed.Incomplete) != 1 || claimed.Incomplete[0].State != SessionRotationStateClaimed || claimed.Incomplete[0].ClaimID != claim.ClaimID || claimed.Incomplete[0].BoundThreadID != "" {
+		t.Fatalf("claimed entry = %#v", claimed.Incomplete)
+	}
+	if err := st.BindSessionRotationClaim(oldThread, marker.Directive.DirectiveID, claim.ClaimID, currentThread); err != nil {
+		t.Fatal(err)
+	}
+	bound, err := st.ProjectSessionRotation(currentThread)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(bound.Incomplete) != 1 || bound.Incomplete[0].State != SessionRotationStateBound || bound.Incomplete[0].BoundThreadID != currentThread {
+		t.Fatalf("bound entry = %#v", bound.Incomplete)
+	}
+	if _, err := st.StartSessionRotationTask(currentThread, claim.ClaimID); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetParentCodexIdentity(currentThread, currentThread, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AcknowledgeSessionRotationClaim(claim.ClaimID, currentThread); err != nil {
+		t.Fatal(err)
+	}
+	completed, err := st.ProjectSessionRotation(currentThread)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(completed.Incomplete) != 0 {
+		t.Fatalf("完了後のincomplete projection = %#v", completed.Incomplete)
+	}
+}
+
 func TestSessionRotationCreationFailureReleaseAndRetry(t *testing.T) {
 	st := &StateStore{dir: t.TempDir()}
 	oldThread := "01a0463c-d477-7410-9efd-cb34ff2e0b0e"
@@ -795,6 +888,65 @@ func TestValidateNewTaskRotationPreservesNormalPathAndRejectsOldThread(t *testin
 	}
 }
 
+func TestAdmitNewTaskRotationRejectsUnrelatedCallerWhileRotationIncomplete(t *testing.T) {
+	st := &StateStore{dir: t.TempDir()}
+	if _, err := st.StartNewTask(); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetTaskStatus(TaskStatusComplete); err != nil {
+		t.Fatal(err)
+	}
+	oldThread := "01a0463c-d477-7410-9efd-cb34ff2e0b0e"
+	newThread := "01a0244a-4ee4-7e71-b2e1-dec3bdda2120"
+	if err := st.commitSessionRotation(&SessionRotationEvaluation{
+		ParentThreadID: oldThread,
+		TaskID:         st.ReadOr("task.id", ""),
+		Terminal:       SessionRotationTerminalAccept,
+		Decision:       SessionRotationDecision{Required: true, Reason: SessionRotationReasonCompaction},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	marker, err := st.LoadSessionRotationMarker(oldThread)
+	if err != nil || marker == nil || marker.Directive == nil {
+		t.Fatalf("pending marker = %#v err=%v", marker, err)
+	}
+	if _, err := st.AdmitNewTaskRotation(newThread, ""); err == nil || !strings.Contains(err.Error(), oldThread) || !strings.Contains(err.Error(), marker.Directive.DirectiveID) {
+		t.Fatalf("pending directive中の別thread通常startがbypassされました: %v", err)
+	}
+	claim, err := st.ClaimSessionRotation(oldThread, marker.Directive.DirectiveID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.AdmitNewTaskRotation(newThread, ""); err == nil || !strings.Contains(err.Error(), oldThread) {
+		t.Fatalf("claimed directive中の別thread通常startがbypassされました: %v", err)
+	}
+	if err := st.BindSessionRotationClaim(oldThread, marker.Directive.DirectiveID, claim.ClaimID, newThread); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.AdmitNewTaskRotation(newThread, ""); err == nil || !strings.Contains(err.Error(), claim.ClaimID) {
+		t.Fatalf("bind済みthreadのclaim無しstartがbypassされました: %v", err)
+	}
+	if err := st.ValidateNewTaskRotation(newThread, claim.ClaimID); err != nil {
+		t.Fatalf("作成済みthreadへの正規claim付きstart admissionが拒否されました: %v", err)
+	}
+	if _, err := st.StartSessionRotationTask(newThread, claim.ClaimID); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetParentCodexIdentity(newThread, newThread, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AcknowledgeSessionRotationClaim(claim.ClaimID, newThread); err != nil {
+		t.Fatal(err)
+	}
+	issued, err := st.LoadSessionRotationMarker(oldThread)
+	if err != nil || issued.State != SessionRotationStateIssued || issued.Issued == nil || issued.Issued.BoundThreadID != newThread {
+		t.Fatalf("recovery後の旧directive = %#v err=%v", issued, err)
+	}
+	if admitted, err := st.AdmitNewTaskRotation("01a08268-2c7d-72a0-9aa1-605eed066ce9", ""); err != nil || admitted {
+		t.Fatalf("directive完了後の第三thread通常start = %v err=%v", admitted, err)
+	}
+}
+
 func TestSessionRotationIssuedStartRetriesOnlyFromActiveCheckpoint(t *testing.T) {
 	st := &StateStore{dir: t.TempDir()}
 	if _, err := st.StartNewTask(); err != nil {
@@ -851,14 +1003,28 @@ func TestAdmitNewTaskRotationSkipsVanishedRotationMarker(t *testing.T) {
 		t.Fatal(err)
 	}
 	vanished := "01a0463c-d477-7410-9efd-cb34ff2e0b0e"
+	corrupt := "01a08268-2c7d-72a0-9aa1-605eed066ce9"
+	caller := "01a0244a-4ee4-7e71-b2e1-dec3bdda2120"
 	if err := os.MkdirAll(st.Path(sessionRotationDirectory), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Symlink(filepath.Join(st.Path(sessionRotationDirectory), "missing.json"), st.SessionRotationMarkerPath(vanished)); err != nil {
 		t.Fatal(err)
 	}
-	admitted, err := st.AdmitNewTaskRotation("01a0244a-4ee4-7e71-b2e1-dec3bdda2120", "")
+	admitted, err := st.AdmitNewTaskRotation(caller, "")
 	if err != nil || admitted {
 		t.Fatalf("消失marker列入時のadmission = %v, %v", admitted, err)
+	}
+	if _, err := st.ProjectSessionRotation(caller); err != nil {
+		t.Fatalf("消失marker列入時のprojection = %v", err)
+	}
+	if err := os.WriteFile(st.SessionRotationMarkerPath(corrupt), []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.AdmitNewTaskRotation(caller, ""); err == nil {
+		t.Fatal("schema不正な他thread markerが通常startをfail closedしませんでした")
+	}
+	if _, err := st.ProjectSessionRotation(caller); err == nil {
+		t.Fatal("schema不正な他thread markerがprojectionをfail closedしませんでした")
 	}
 }
