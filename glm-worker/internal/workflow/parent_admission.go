@@ -8,10 +8,6 @@ import (
 )
 
 func (w *Workflow) admitParentAction(action state.ParentAction) error {
-	// External command admission runs before workflow dispatch and owns
-	// action-specific runtime gates such as the rate-limit reset window.
-	// The workflow repeats only lifecycle consistency/admission so internal
-	// continuations do not reapply the same command-edge gate.
 	plan, err := w.state.ParentActionPlan()
 	if err != nil {
 		return &WorkerError{Message: err.Error()}
