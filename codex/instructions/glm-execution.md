@@ -48,8 +48,8 @@
 ## 待機
 
 - model実行を伴う主`glm-parent-action`はproductionのparent-wait leaseを保持し、同repoの重複ownerをmachine側で拒否する。親は別のpoll ownerを作らない。
-- Desktop/tool transport境界の長時間接続条件だけはrepository外のため、既定の長時間yield/timeoutを使う。これはlifecycle判断ではない。
-- 主tool sessionを失った場合はcanonical recovery waiterを1回使う。machineがowner release・worker release・owner epochを処理し、最後にrecovery handoffを返す。親はstatus/watch loopや新規task起動へ切り替えない。
+- Desktop/tool transport境界の長時間接続だけはrepository外である。主model呼出または`glm-parent-action wait`のcode-mode cellでは外側`// @exec: {"yield_time_ms":21600000,"max_output_tokens":1000}`と`background_terminal_max_timeout=21600000`を使い、内側`tools.exec_command`がrunning sessionを返す場合の`tools.write_stdin`も同じ長時間yieldを使う。この指定はlifecycle判断ではない。
+- 主tool sessionを失った場合は`glm-parent-action wait`をcanonical recovery waiterとして1回使う。machineがowner release・worker release・owner epochを処理し、最後にrecovery handoffを返す。taskがactiveのまま親ownerだけ失われた場合は`owner_lost:true`として返し、親はstatus/watch loopや新規task起動へ切り替えない。
 - 主呼出またはwait継続中は、経過時間だけを理由にpoll・進捗用model return・別terminal操作を追加しない。terminal、Sol/user attention、rate/provider stop、user interruptionだけを制御復帰境界とする。
 - packet受理・install完了は局所終端であり、親USER_REQUESTの完了は`~/.codex/instructions/task-lifecycle.md`のsemantic lifecycleで判断する。
 
@@ -57,6 +57,7 @@
 
 - normal `glm-parent-action`はterminal machine resultとcanonical handoffを同一`parent_action_terminal` envelopeで返す。親tool側で追加`--handoff`を組み立てたり、raw terminal bytesを再取得したりしない。
 - `terminal`はworker/actionのauthoritative semantic result、`handoff`はnext-action authorityである。envelopeのstatusをPASS/NEEDS_SOL_*の代用にしない。
+- terminal transport/parse failure等でenvelopeを取得できない場合だけ、read-only `glm-worker --handoff recovery`をbounded recovery入口として使う。通常pathの追加handoff取得へ使わない。
 - terminal/handoffがmalformed・矛盾・欠落ならfail closedとし、telemetryやartifactを広く探索してtransportを補完しない。必要なrecovery projectionがある場合だけそのbounded surfaceを使う。
 - Desktop/UI上の重複描画だけを理由にrepo側のblind dedupeや追加model turnを作らない。
 
