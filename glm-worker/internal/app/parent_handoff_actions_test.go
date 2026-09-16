@@ -8,7 +8,7 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-func TestParentActionSpecsProjectDirectAndStagedCommands(t *testing.T) {
+func TestParentHandoffActionSpecs(t *testing.T) {
 	specs := parentActionSpecs([]string{
 		string(state.ParentActionDecision),
 		string(state.ParentActionFix),
