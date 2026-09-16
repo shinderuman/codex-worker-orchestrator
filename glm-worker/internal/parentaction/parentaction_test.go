@@ -3,6 +3,7 @@ package parentaction
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -18,7 +19,7 @@ func TestPrepareConsumePreservesDecisionPayloadAndRemovesSlot(t *testing.T) {
 	if filepath.Dir(prepared.Path) != filepath.Join(repo, StageDirName) {
 		t.Fatalf("staging path escaped repository slot: %q", prepared.Path)
 	}
-	payload := []byte("line1\n`$'\"\x00tail\n")
+	payload := []byte("EXECUTION_UNIT: single\nMILESTONES_JSON: {\"milestones\":[]}\nDECISION:\nline1\n`$'\"\x00tail\n")
 	writePreparedPayload(t, prepared, payload)
 	got, err := Consume(repo, "decision", prepared.Token)
 	if err != nil {
@@ -29,6 +30,44 @@ func TestPrepareConsumePreservesDecisionPayloadAndRemovesSlot(t *testing.T) {
 	}
 	if _, err := os.Lstat(prepared.Path); !os.IsNotExist(err) {
 		t.Fatalf("consumed staging file still exists: %v", err)
+	}
+}
+
+func TestPrepareDecisionRequiresExplicitExecutionUnitTemplate(t *testing.T) {
+	repo := t.TempDir()
+	prepared, err := Prepare(repo, "decision")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(prepared.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(raw)
+	for _, want := range []string{
+		decisionPlaceholder,
+		executionUnitPlaceholder,
+		`MILESTONES_JSON: {"milestones":[]}`,
+		"DECISION:\n",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("decision template missing %q: %s", want, body)
+		}
+	}
+	if _, err := Consume(repo, "decision", prepared.Token); err == nil {
+		t.Fatal("unresolved decision execution-unit template was accepted")
+	}
+}
+
+func TestConsumeDecisionRejectsLegacyFreeText(t *testing.T) {
+	repo := t.TempDir()
+	prepared, err := Prepare(repo, "decision")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writePreparedPayload(t, prepared, []byte("continue with the accepted decision\n"))
+	if _, err := Consume(repo, "decision", prepared.Token); err == nil {
+		t.Fatal("legacy free-text staged decision was accepted")
 	}
 }
 

@@ -140,7 +140,7 @@ func executeWorkflow(cmd Command, cfg config.AppConfig, st *state.StateStore, rf
 	case ModeNewTask:
 		return executeNewTaskCommand(wf, cmd)
 	case ModeDecision:
-		return wf.ExecuteDecisionWithExecutionMilestones(cmd.Payload)
+		return wf.ExecuteDecisionWithExecutionUnitPayload(cmd.Payload)
 	case ModeFix:
 		return wf.ExecuteExplicitFixWithExecutionMilestones(cmd.Payload, cmd.Origin, cmd.Cause, cmd.AcceptedScope)
 	case ModeApproveSurface:

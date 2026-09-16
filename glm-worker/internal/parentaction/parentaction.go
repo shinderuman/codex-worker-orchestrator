@@ -19,11 +19,21 @@ type Prepared struct {
 }
 
 const (
-	StageDirName    = ".glm-worker-parent-actions"
-	placeholder     = "__GLM_PARENT_ACTION_PAYLOAD__\n"
-	tokenHeaderKey  = "GLM_PARENT_ACTION_TOKEN:"
-	maxPayloadBytes = 1 << 20
+	StageDirName             = ".glm-worker-parent-actions"
+	placeholder              = "__GLM_PARENT_ACTION_PAYLOAD__\n"
+	decisionPlaceholder      = "__GLM_PARENT_ACTION_DECISION__"
+	executionUnitPlaceholder = "__GLM_EXECUTION_UNIT__"
+	tokenHeaderKey           = "GLM_PARENT_ACTION_TOKEN:"
+	maxPayloadBytes          = 1 << 20
+
+	decisionExecutionUnitPrefix = "EXECUTION_UNIT: "
+	decisionMilestonesPrefix    = "MILESTONES_JSON: "
+	decisionMarker              = "DECISION:"
 )
+
+const decisionTemplate = decisionExecutionUnitPrefix + executionUnitPlaceholder + "\n" +
+	decisionMilestonesPrefix + "{\"milestones\":[]}\n" +
+	decisionMarker + "\n" + decisionPlaceholder + "\n"
 
 func Prepare(repoRoot, action string) (Prepared, error) {
 	if !validPayloadAction(action) {
@@ -42,7 +52,11 @@ func Prepare(repoRoot, action string) (Prepared, error) {
 	if err != nil {
 		return Prepared{}, fmt.Errorf("create parent action staging file: %w", err)
 	}
-	initial := tokenHeader(token) + placeholder
+	payloadTemplate := placeholder
+	if action == string(ActionDecision) {
+		payloadTemplate = decisionTemplate
+	}
+	initial := tokenHeader(token) + payloadTemplate
 	if _, err := io.WriteString(file, initial); err != nil {
 		_ = file.Close()
 		_ = os.Remove(path)
@@ -75,10 +89,26 @@ func Consume(repoRoot, action, token string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	if action == string(ActionDecision) {
+		if err := validateDecisionPayloadShape(payload); err != nil {
+			return nil, err
+		}
+	}
 	if err := os.Remove(path); err != nil {
 		return nil, fmt.Errorf("consume parent action staging file: %w", err)
 	}
 	return payload, nil
+}
+
+func validateDecisionPayloadShape(payload []byte) error {
+	parts := bytes.SplitN(payload, []byte("\n"), 4)
+	if len(parts) != 4 ||
+		!bytes.HasPrefix(parts[0], []byte(decisionExecutionUnitPrefix)) ||
+		!bytes.HasPrefix(parts[1], []byte(decisionMilestonesPrefix)) ||
+		string(parts[2]) != decisionMarker {
+		return fmt.Errorf("decision parent action must preserve the machine-owned execution-unit template")
+	}
+	return nil
 }
 
 func decodePayload(raw []byte, token string) ([]byte, error) {
@@ -90,7 +120,10 @@ func decodePayload(raw []byte, token string) ([]byte, error) {
 	if len(payload) > maxPayloadBytes {
 		return nil, fmt.Errorf("parent action payload exceeds %d bytes", maxPayloadBytes)
 	}
-	if len(payload) == 0 || bytes.Contains(payload, []byte(placeholder)) {
+	if len(payload) == 0 ||
+		bytes.Contains(payload, []byte(placeholder)) ||
+		bytes.Contains(payload, []byte(decisionPlaceholder)) ||
+		bytes.Contains(payload, []byte(executionUnitPlaceholder)) {
 		return nil, fmt.Errorf("parent action payload was not supplied completely")
 	}
 	return payload, nil
