@@ -22,9 +22,19 @@ func TestExecutionUnitDecisionActivatesMilestonesAtNaturalBoundary(t *testing.T)
 	if st.TaskStatus() != state.TaskStatusWaitingDecision {
 		t.Fatalf("status = %s", st.TaskStatus())
 	}
+	if got := st.ReadOr("worker.id", ""); got == "" {
+		t.Fatal("expected existing worker session before milestone activation")
+	}
+	runner.onRun = func() {
+		if len(runner.prompts) == 2 {
+			if got := st.ReadOr("worker.id", ""); got != "" {
+				t.Fatalf("fresh milestone activation reused worker session %q", got)
+			}
+		}
+	}
 
 	payload := "EXECUTION_UNIT: milestones\n" +
-		`MILESTONES_JSON: {"milestones":[{"id":"first","scope":"finish first responsibility","acceptance":"first complete"},{"id":"second","scope":"finish second responsibility","acceptance":"second complete","fresh_worker":true}]}` + "\n" +
+		`MILESTONES_JSON: {"milestones":[{"id":"first","scope":"finish first responsibility","acceptance":"first complete","fresh_worker":true},{"id":"second","scope":"finish second responsibility","acceptance":"second complete"}]}` + "\n" +
 		"DECISION:\nSplit the remaining implementation into two coherent units.\n"
 	if err := w.ExecuteDecisionWithExecutionUnitPayload(payload); err != nil {
 		t.Fatal(err)
