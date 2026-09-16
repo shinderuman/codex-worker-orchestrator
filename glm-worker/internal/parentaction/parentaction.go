@@ -19,11 +19,16 @@ type Prepared struct {
 }
 
 const (
-	StageDirName    = ".glm-worker-parent-actions"
-	placeholder     = "__GLM_PARENT_ACTION_PAYLOAD__\n"
-	tokenHeaderKey  = "GLM_PARENT_ACTION_TOKEN:"
-	maxPayloadBytes = 1 << 20
+	StageDirName             = ".glm-worker-parent-actions"
+	placeholder              = "__GLM_PARENT_ACTION_PAYLOAD__\n"
+	decisionPlaceholder      = "__GLM_PARENT_ACTION_DECISION__"
+	executionUnitPlaceholder = "__GLM_EXECUTION_UNIT__"
+	maxPayloadBytes          = 1 << 20
 )
+
+const decisionTemplate = "EXECUTION_UNIT: " + executionUnitPlaceholder + "\n" +
+	"MILESTONES_JSON: {\"milestones\":[]}\n" +
+	"DECISION:\n" + decisionPlaceholder + "\n"
 
 func Prepare(repoRoot, action string) (Prepared, error) {
 	if !validPayloadAction(action) {
@@ -42,7 +47,11 @@ func Prepare(repoRoot, action string) (Prepared, error) {
 	if err != nil {
 		return Prepared{}, fmt.Errorf("create parent action staging file: %w", err)
 	}
-	initial := tokenHeader(token) + placeholder
+	payloadTemplate := placeholder
+	if action == string(ActionDecision) {
+		payloadTemplate = decisionTemplate
+	}
+	initial := tokenHeader(token) + payloadTemplate
 	if _, err := io.WriteString(file, initial); err != nil {
 		_ = file.Close()
 		_ = os.Remove(path)
@@ -90,7 +99,10 @@ func decodePayload(raw []byte, token string) ([]byte, error) {
 	if len(payload) > maxPayloadBytes {
 		return nil, fmt.Errorf("parent action payload exceeds %d bytes", maxPayloadBytes)
 	}
-	if len(payload) == 0 || bytes.Contains(payload, []byte(placeholder)) {
+	if len(payload) == 0 ||
+		bytes.Contains(payload, []byte(placeholder)) ||
+		bytes.Contains(payload, []byte(decisionPlaceholder)) ||
+		bytes.Contains(payload, []byte(executionUnitPlaceholder)) {
 		return nil, fmt.Errorf("parent action payload was not supplied completely")
 	}
 	return payload, nil
