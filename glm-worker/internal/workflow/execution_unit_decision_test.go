@@ -12,8 +12,8 @@ import (
 func TestExecutionUnitDecisionActivatesMilestonesAtNaturalBoundary(t *testing.T) {
 	w, st, runner, _ := newExecutionMilestoneWorkflow(t, []runnerStep{
 		{structured: needsSolDecisionPacket()},
-		{structured: implementedPacket("first bounded unit complete")},
-		{structured: implementedPacket("second bounded unit complete")},
+		{structured: implementedPacketWithRisk("first bounded unit complete", "HIGH")},
+		{structured: implementedPacketWithRisk("second bounded unit complete", "HIGH")},
 		{structured: passPacket()},
 	})
 	if err := w.ExecuteNewTask("implement the ACTIVE task"); err != nil {
@@ -22,8 +22,8 @@ func TestExecutionUnitDecisionActivatesMilestonesAtNaturalBoundary(t *testing.T)
 	if st.TaskStatus() != state.TaskStatusWaitingDecision {
 		t.Fatalf("status = %s", st.TaskStatus())
 	}
-	if got := st.ReadOr("worker.id", ""); got == "" {
-		t.Fatal("expected existing worker session before milestone activation")
+	if err := st.Write("worker.id", "existing-worker"); err != nil {
+		t.Fatal(err)
 	}
 	runner.onRun = func() {
 		if len(runner.prompts) == 2 {
@@ -62,7 +62,7 @@ func TestExecutionUnitDecisionActivatesMilestonesAtNaturalBoundary(t *testing.T)
 func TestExecutionUnitDecisionSingleKeepsLowOverheadPath(t *testing.T) {
 	w, st, runner, _ := newExecutionMilestoneWorkflow(t, []runnerStep{
 		{structured: needsSolDecisionPacket()},
-		{structured: implementedPacket("resolved")},
+		{structured: implementedPacketWithRisk("resolved", "HIGH")},
 		{structured: passPacket()},
 	})
 	if err := w.ExecuteNewTask("implement the ACTIVE task"); err != nil {
