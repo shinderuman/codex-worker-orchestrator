@@ -2,6 +2,7 @@ package app
 
 import (
 	"errors"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -53,6 +54,44 @@ func TestResumeCommandAdmissionBindsRateLimitResetWindow(t *testing.T) {
 				t.Fatalf("resume after the reset was rejected: %v", err)
 			}
 		})
+	}
+}
+
+func TestResumeCommandAdmissionFailsClosedWithoutResetEvidence(t *testing.T) {
+	st := newParentAdmissionStore(t)
+	checkpoint := state.ResumeCheckpoint{Stage: state.ResumeStageWorker, Phase: "worker", Role: state.WorkerRole, Model: "opus"}
+	checkpoint.SetStopKind(state.ResumeStopRateLimited)
+	if err := st.EnterStop(checkpoint); err != nil {
+		t.Fatal(err)
+	}
+
+	err := admitParentCommand(Command{Mode: ModeResume}, st)
+	var workerErr *workflow.WorkerError
+	if !errors.As(err, &workerErr) || !strings.Contains(workerErr.Message, "rate-limit reset evidence is missing") {
+		t.Fatalf("missing reset admission error = %v", err)
+	}
+	if status := st.TaskStatus(); status != state.TaskStatusRateLimited {
+		t.Fatalf("missing reset rejection must retain rate-limited state, got %s", status)
+	}
+}
+
+func TestResumeCommandAdmissionFailsClosedForUnreadableResetEvidence(t *testing.T) {
+	st := newParentAdmissionStore(t)
+	if err := st.SetTaskStatus(state.TaskStatusRateLimited); err != nil {
+		t.Fatal(err)
+	}
+	malformed := `{"version":6,"stage":"worker","phase":"worker","role":"worker","model":"opus","report_only":false,"stop_kind":"rate-limited","reset_at_rfc3339":"not-a-timestamp"}`
+	if err := os.WriteFile(st.Path("resume-state.json"), []byte(malformed), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	err := admitParentCommand(Command{Mode: ModeResume}, st)
+	var workerErr *workflow.WorkerError
+	if !errors.As(err, &workerErr) || !strings.Contains(workerErr.Message, "resume checkpoint is unreadable: rate-limit reset_at_rfc3339 is invalid") {
+		t.Fatalf("unreadable reset admission error = %v", err)
+	}
+	if status := st.TaskStatus(); status != state.TaskStatusRateLimited {
+		t.Fatalf("unreadable reset rejection must retain rate-limited state, got %s", status)
 	}
 }
 
@@ -153,13 +192,14 @@ func TestParentCommandAdmissionPreservesAcceptNoOpAndResetEscape(t *testing.T) {
 func TestParentCommandAdmissionStoppedTaskRequiresResume(t *testing.T) {
 	st := newParentAdmissionStore(t)
 	checkpoint := state.ResumeCheckpoint{
-		Stage:    state.ResumeStageWorker,
-		Phase:    "worker-new",
-		Role:     state.WorkerRole,
-		Model:    "opus",
-		Prompt:   "p",
-		Request:  "r",
-		StopKind: state.ResumeStopRateLimited,
+		Stage:          state.ResumeStageWorker,
+		Phase:          "worker-new",
+		Role:           state.WorkerRole,
+		Model:          "opus",
+		Prompt:         "p",
+		Request:        "r",
+		StopKind:       state.ResumeStopRateLimited,
+		ResetAtRFC3339: time.Now().Add(-time.Minute).Format(time.RFC3339),
 	}
 	if err := st.SaveResumeCheckpoint(checkpoint); err != nil {
 		t.Fatal(err)

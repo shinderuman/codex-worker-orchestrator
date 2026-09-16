@@ -8,11 +8,11 @@ import (
 )
 
 func (w *Workflow) admitParentAction(action state.ParentAction) error {
-	_, admitted, err := w.state.AdmitParentAction(action)
+	plan, err := w.state.ParentActionPlan()
 	if err != nil {
 		return &WorkerError{Message: err.Error()}
 	}
-	if admitted {
+	if plan.AdmitsCommand(action) {
 		return nil
 	}
 	return w.parentActionDenied(action)
