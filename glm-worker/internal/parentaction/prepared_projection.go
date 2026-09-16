@@ -12,10 +12,12 @@ type preparedAlias Prepared
 
 func (prepared Prepared) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
+		Status string `json:"status"`
 		preparedAlias
 		Slots       []PreparedSlot `json:"slots"`
 		NextCommand []string       `json:"next_command"`
 	}{
+		Status:        "prepared",
 		preparedAlias: preparedAlias(prepared),
 		Slots:         preparedSlots(prepared.Action),
 		NextCommand:   []string{"glm-parent-action", prepared.Action, prepared.Token},
