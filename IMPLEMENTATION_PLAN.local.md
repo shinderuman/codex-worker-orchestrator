@@ -13,6 +13,7 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 ## NEXT（優先順）
 
 - `IMPLEMENTATION_TASKS/task-stats-revision-consumer-audit.md`
+- `IMPLEMENTATION_TASKS/codex-efficiency-feedback-loop-checkpoint.md`
 - `IMPLEMENTATION_TASKS/post-105-codex-efficiency-reevaluation.md`
 - `IMPLEMENTATION_TASKS/022-final-verification.md`
 
