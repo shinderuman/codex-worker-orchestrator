@@ -21,6 +21,10 @@ type executionUnitDecision struct {
 }
 
 func (w *Workflow) ExecuteDecisionWithExecutionUnitPayload(payload string) error {
+	if !strings.HasPrefix(payload, executionUnitPrefix) {
+		return w.ExecuteDecisionWithExecutionMilestones(payload)
+	}
+
 	input, err := parseExecutionUnitDecision(payload)
 	if err != nil {
 		return err
