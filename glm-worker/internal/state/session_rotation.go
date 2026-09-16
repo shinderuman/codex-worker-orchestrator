@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
@@ -85,6 +86,15 @@ type SessionRotationProjection struct {
 	Claim          *SessionRotationClaim            `json:"claim,omitempty"`
 	LastEvaluation *SessionRotationEvaluationRecord `json:"last_evaluation,omitempty"`
 	Reason         string                           `json:"reason,omitempty"`
+	Incomplete     []IncompleteSessionRotation      `json:"incomplete_rotations,omitempty"`
+}
+
+type IncompleteSessionRotation struct {
+	ParentThreadID string `json:"parent_thread_id"`
+	State          string `json:"state"`
+	DirectiveID    string `json:"directive_id"`
+	ClaimID        string `json:"claim_id,omitempty"`
+	BoundThreadID  string `json:"bound_thread_id,omitempty"`
 }
 
 type SessionRotationRolloutSignals struct {
@@ -510,25 +520,39 @@ func (s *StateStore) AcknowledgeSessionRotationClaim(claimID, boundThreadID stri
 	return s.writeSessionRotationMarker(marker)
 }
 
-func (s *StateStore) findSessionRotationClaim(claimID string) (*SessionRotationMarker, error) {
+func (s *StateStore) loadSessionRotationMarkers() ([]*SessionRotationMarker, error) {
 	entries, err := os.ReadDir(s.Path(sessionRotationDirectory))
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return nil, fmt.Errorf("session rotation claimが見つかりません")
+			return nil, nil
 		}
 		return nil, fmt.Errorf("session rotation markersを読めません: %w", err)
 	}
-	var found *SessionRotationMarker
+	markers := []*SessionRotationMarker{}
 	for _, entry := range entries {
 		threadID := sessionRotationMarkerThreadID(entry.Name())
 		if threadID == "" {
 			continue
 		}
-		marker, loadErr := s.LoadSessionRotationMarker(threadID)
-		if loadErr != nil {
-			return nil, loadErr
+		marker, err := s.LoadSessionRotationMarker(threadID)
+		if err != nil {
+			return nil, err
 		}
-		if marker != nil && marker.Claim != nil && marker.Claim.ClaimID == claimID {
+		if marker != nil {
+			markers = append(markers, marker)
+		}
+	}
+	return markers, nil
+}
+
+func (s *StateStore) findSessionRotationClaim(claimID string) (*SessionRotationMarker, error) {
+	markers, err := s.loadSessionRotationMarkers()
+	if err != nil {
+		return nil, err
+	}
+	var found *SessionRotationMarker
+	for _, marker := range markers {
+		if marker.Claim != nil && marker.Claim.ClaimID == claimID {
 			if found != nil {
 				return nil, fmt.Errorf("session rotation claimが重複しています")
 			}
@@ -613,21 +637,25 @@ func (s *StateStore) admitUnclaimedNewTask(callerThreadID string) (bool, error) 
 	if err := s.rejectRetiredSessionRotationCaller(callerThreadID); err != nil {
 		return false, err
 	}
-	identity, err := s.CurrentParentCodexIdentity()
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return false, nil
-		}
+	if err := s.rejectIncompleteSessionRotation(callerThreadID); err != nil {
 		return false, err
 	}
-	marker, err := s.LoadSessionRotationMarker(identity.ThreadID)
+	return false, nil
+}
+
+func (s *StateStore) rejectIncompleteSessionRotation(callerThreadID string) error {
+	rotations, err := s.IncompleteSessionRotations()
 	if err != nil {
-		return false, err
+		return err
 	}
-	if marker == nil || marker.State == "" || marker.State == SessionRotationStateIssued {
-		return false, nil
+	if len(rotations) == 0 {
+		return nil
 	}
-	return false, fmt.Errorf("pending session rotationをclaim・bindしてから新threadで開始してください: %s", marker.State)
+	rotation := rotations[0]
+	if rotation.State == SessionRotationStateBound && rotation.BoundThreadID == callerThreadID {
+		return fmt.Errorf("このthreadにbind済みのsession rotationはclaim付きstartで開始してください: claim_id=%s", rotation.ClaimID)
+	}
+	return fmt.Errorf("未完了session rotationを持ち主threadのclaim・bindとclaim付きstartで完了してください: parent_thread_id=%s state=%s directive_id=%s", rotation.ParentThreadID, rotation.State, rotation.DirectiveID)
 }
 
 func (s *StateStore) rejectRetiredSessionRotationCaller(callerThreadID string) error {
@@ -648,24 +676,13 @@ func (s *StateStore) incompleteSessionRotationTarget(callerThreadID string) (boo
 	if !ValidUUIDFormat(callerThreadID) || s.TaskStatus() != TaskStatusActive {
 		return false, nil
 	}
-	entries, err := os.ReadDir(s.Path(sessionRotationDirectory))
-	if errors.Is(err, os.ErrNotExist) {
-		return false, nil
-	}
+	markers, err := s.loadSessionRotationMarkers()
 	if err != nil {
-		return false, fmt.Errorf("session rotation markersを読めません: %w", err)
+		return false, err
 	}
 	currentTaskID := s.ReadOr("task.id", "")
-	for _, entry := range entries {
-		threadID := sessionRotationMarkerThreadID(entry.Name())
-		if threadID == "" {
-			continue
-		}
-		marker, err := s.LoadSessionRotationMarker(threadID)
-		if err != nil {
-			return false, err
-		}
-		if marker != nil && sessionRotationMarkerTargets(marker, callerThreadID, currentTaskID) {
+	for _, marker := range markers {
+		if sessionRotationMarkerTargets(marker, callerThreadID, currentTaskID) {
 			return true, nil
 		}
 	}
@@ -712,10 +729,15 @@ func sessionRotationMarkerThreadID(name string) string {
 }
 
 func (s *StateStore) ProjectSessionRotation(threadID string) (SessionRotationProjection, error) {
+	incomplete, err := s.IncompleteSessionRotations()
+	if err != nil {
+		return SessionRotationProjection{}, err
+	}
 	if threadID == "" {
 		return SessionRotationProjection{
-			State:  SessionRotationProjectionUnavailable,
-			Reason: "parent-thread-identity-unbound",
+			State:      SessionRotationProjectionUnavailable,
+			Reason:     "parent-thread-identity-unbound",
+			Incomplete: incomplete,
 		}, nil
 	}
 	if !ValidUUIDFormat(threadID) {
@@ -730,12 +752,14 @@ func (s *StateStore) ProjectSessionRotation(threadID string) (SessionRotationPro
 			ParentThreadID: threadID,
 			State:          SessionRotationProjectionUnavailable,
 			Reason:         "no-session-rotation-evaluation",
+			Incomplete:     incomplete,
 		}, nil
 	}
 	projection := SessionRotationProjection{
 		ParentThreadID: threadID,
 		State:          SessionRotationProjectionNotRequired,
 		LastEvaluation: marker.LastEvaluation,
+		Incomplete:     incomplete,
 	}
 	if marker.State == SessionRotationStatePending || marker.State == SessionRotationStateClaimed || marker.State == SessionRotationStateBound {
 		projection.State = marker.State
@@ -743,6 +767,44 @@ func (s *StateStore) ProjectSessionRotation(threadID string) (SessionRotationPro
 		projection.Claim = marker.Claim
 	}
 	return projection, nil
+}
+
+func (s *StateStore) IncompleteSessionRotations() ([]IncompleteSessionRotation, error) {
+	markers, err := s.loadSessionRotationMarkers()
+	if err != nil {
+		return nil, err
+	}
+	incomplete := []IncompleteSessionRotation{}
+	for _, marker := range markers {
+		if rotation, ok := incompleteSessionRotationFromMarker(marker); ok {
+			incomplete = append(incomplete, rotation)
+		}
+	}
+	sort.Slice(incomplete, func(i, j int) bool {
+		return incomplete[i].ParentThreadID < incomplete[j].ParentThreadID
+	})
+	return incomplete, nil
+}
+
+func incompleteSessionRotationFromMarker(marker *SessionRotationMarker) (IncompleteSessionRotation, bool) {
+	if marker == nil || marker.Directive == nil {
+		return IncompleteSessionRotation{}, false
+	}
+	switch marker.State {
+	case SessionRotationStatePending, SessionRotationStateClaimed, SessionRotationStateBound:
+	default:
+		return IncompleteSessionRotation{}, false
+	}
+	rotation := IncompleteSessionRotation{
+		ParentThreadID: marker.ParentThreadID,
+		State:          marker.State,
+		DirectiveID:    marker.Directive.DirectiveID,
+	}
+	if marker.Claim != nil {
+		rotation.ClaimID = marker.Claim.ClaimID
+		rotation.BoundThreadID = marker.Claim.BoundThreadID
+	}
+	return rotation, true
 }
 
 func (s *StateStore) commitSessionRotation(evaluation *SessionRotationEvaluation) error {

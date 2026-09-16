@@ -648,10 +648,23 @@ func qualityGateProcessAlive(pid int) bool {
 func qualityGateEnv() []string {
 	env := make([]string, 0, len(os.Environ()))
 	for _, entry := range os.Environ() {
-		if strings.HasPrefix(entry, "GOFLAGS=") {
+		if strings.HasPrefix(entry, "GOFLAGS=") || qualityGateSessionTransportEnv(entry) {
 			continue
 		}
 		env = append(env, entry)
 	}
 	return append(env, "GOFLAGS=")
+}
+
+func qualityGateSessionTransportEnv(entry string) bool {
+	for _, name := range []string{
+		state.ParentActionCodexThreadIDEnv,
+		state.ParentActionCodexSessionIDEnv,
+		state.SessionRotationClaimIDEnv,
+	} {
+		if strings.HasPrefix(entry, name+"=") {
+			return true
+		}
+	}
+	return false
 }
