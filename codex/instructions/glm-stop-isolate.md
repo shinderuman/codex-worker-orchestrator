@@ -25,5 +25,5 @@ status admission、process cleanup、snapshot/dirty/ref検証、checkpoint/sessi
 
 - user interruptionで保持されたtaskは新規taskとして作り直さず、machine-owned retentionから再開する。
 - untracked fileはmachineがidentity/hashを検証できても本文原本の復元元ではない。停止時内容そのものを外部に保持・復元する必要がある場合は親が所有する。
-- isolate/parkした成果の統合、conflict解決、外部branch/worktree resourceの最終削除時機は親が判断する。ただしmachine lifecycleが保持を要求している間は削除しない。
+- isolate/parkした成果の統合、conflict解決、外部branch/worktree resourceの最終削除時機は親が判断する。特に隔離branchと隔離worktreeは、元taskのresume保持照合が完了し元taskが完了するまで削除しない。
 - Plan/task authority、parent metadata、risk判断はrepository固有authorityを正とし、generic lifecycle stateから意味を推測しない。
