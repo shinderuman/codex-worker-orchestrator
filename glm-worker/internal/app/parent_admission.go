@@ -77,18 +77,7 @@ func parentActionDenied(cmd Command, plan state.ParentActionPlan, st *state.Stat
 	case ModeApproveSurface:
 		return &workflow.WorkerError{Message: "quality-surface approval is not pending; --approve-surface requires a stopped quality policy surface change"}
 	case ModeAccept:
-		if plan.RequiredAction == state.ParentActionApproveSurface {
-			return &workflow.WorkerError{Message: "task is waiting for quality policy surface approval; resolve it with --approve-surface current-diff (or --fix) before --accept"}
-		}
-		if plan.RequiredAction == state.ParentActionComplete {
-			return &workflow.WorkerError{Message: "task is awaiting parent completion; run the parent push and glm-parent-action complete before starting further actions"}
-		}
-		if plan.RequiredAction == state.ParentActionReview {
-			if err := st.RequireParentReviewAcceptanceEvidence(); err != nil {
-				return &workflow.WorkerError{Message: err.Error()}
-			}
-		}
-		return &workflow.WorkerError{Message: "pending Sol decision must be resolved with --decision before --accept"}
+		return parentAcceptDenied(plan, st)
 	case ModeResume:
 		return resumeActionDenied(st)
 	case ModePark, ModeUnpark:
@@ -98,6 +87,21 @@ func parentActionDenied(cmd Command, plan state.ParentActionPlan, st *state.Stat
 	default:
 		return &workflow.WorkerError{Message: fmt.Sprintf("parent action %d is not admitted", cmd.Mode)}
 	}
+}
+
+func parentAcceptDenied(plan state.ParentActionPlan, st *state.StateStore) error {
+	if plan.RequiredAction == state.ParentActionApproveSurface {
+		return &workflow.WorkerError{Message: "task is waiting for quality policy surface approval; resolve it with --approve-surface current-diff (or --fix) before --accept"}
+	}
+	if plan.RequiredAction == state.ParentActionComplete {
+		return &workflow.WorkerError{Message: "task is awaiting parent completion; run the parent push and glm-parent-action complete before starting further actions"}
+	}
+	if plan.RequiredAction == state.ParentActionReview {
+		if err := st.RequireParentReviewAcceptanceEvidence(); err != nil {
+			return &workflow.WorkerError{Message: err.Error()}
+		}
+	}
+	return &workflow.WorkerError{Message: "pending Sol decision must be resolved with --decision before --accept"}
 }
 
 func parkActionDenied(cmd Command, plan state.ParentActionPlan) error {
