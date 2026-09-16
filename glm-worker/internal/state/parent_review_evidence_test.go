@@ -14,6 +14,17 @@ func TestParentReviewAcceptRequiresCurrentEvidenceProof(t *testing.T) {
 	st, _, snapshot := newBoundParentReviewTestStore(t)
 	openBoundReviewForTest(t, st, snapshot, "review.go:1")
 
+	plan, err := st.ParentActionPlan()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.RequiredAction != ParentActionReview || plan.Allows(ParentActionAccept) || plan.AdmitsCommand(ParentActionAccept) {
+		t.Fatalf("review plan before evidence = %#v", plan)
+	}
+	if !plan.Allows(ParentActionFix) || !plan.Allows(ParentActionPark) {
+		t.Fatalf("review plan lost fix/park before evidence = %#v", plan)
+	}
+
 	accepted, err := st.AcceptParentReview()
 	if err == nil || accepted {
 		t.Fatalf("accept without evidence = %v err=%v", accepted, err)
@@ -30,6 +41,14 @@ func TestParentReviewAcceptRequiresCurrentEvidenceProof(t *testing.T) {
 		Kind: "source", Digest: "digest", Locator: "review.go:1-1",
 	}}); err != nil {
 		t.Fatal(err)
+	}
+
+	plan, err = st.ParentActionPlan()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.RequiredAction != ParentActionReview || !plan.Allows(ParentActionAccept) || !plan.AdmitsCommand(ParentActionAccept) {
+		t.Fatalf("review plan after evidence = %#v", plan)
 	}
 
 	accepted, err = st.AcceptParentReview()
@@ -63,6 +82,13 @@ func TestParentReviewEvidenceProofInvalidatedBySnapshotChange(t *testing.T) {
 	}
 	if ready {
 		t.Fatal("snapshot change reused stale review evidence")
+	}
+	plan, err := st.ParentActionPlan()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Allows(ParentActionAccept) || plan.AdmitsCommand(ParentActionAccept) {
+		t.Fatalf("stale evidence advertised accept = %#v", plan)
 	}
 	if accepted, err := st.AcceptParentReview(); err == nil || accepted {
 		t.Fatalf("accept after snapshot change = %v err=%v", accepted, err)
