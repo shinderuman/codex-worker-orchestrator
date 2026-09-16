@@ -88,8 +88,17 @@ func (s *StateStore) AdmitParentAction(action ParentAction) (ParentActionPlan, b
 
 func (s *StateStore) rejectResumeBeforeRateLimitReset() error {
 	checkpoint, err := s.LoadResumeCheckpoint()
-	if err != nil || checkpoint.StopKind != ResumeStopRateLimited || checkpoint.ResetAtRFC3339 == "" {
+	if errors.Is(err, ErrNoResumeCheckpoint) {
 		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("resume checkpoint evidence is unreadable: %w", err)
+	}
+	if checkpoint.StopKind != ResumeStopRateLimited {
+		return nil
+	}
+	if checkpoint.ResetAtRFC3339 == "" {
+		return fmt.Errorf("rate-limit reset evidence is missing; rate-limited task remains stopped until reset evidence is available")
 	}
 	resetAt, err := time.Parse(time.RFC3339, checkpoint.ResetAtRFC3339)
 	if err != nil {
@@ -131,7 +140,7 @@ func (s *StateStore) ParentActionPlan() (ParentActionPlan, error) {
 	}
 	checkpoint, checkpointErr := s.LoadResumeCheckpoint()
 	if checkpointErr != nil && !errors.Is(checkpointErr, ErrNoResumeCheckpoint) {
-		return ParentActionPlan{}, lifecycleInconsistency(status, "resume checkpoint is unreadable")
+		return ParentActionPlan{}, lifecycleInconsistency(status, "resume checkpoint is unreadable: "+checkpointErr.Error())
 	}
 	stopKind := ResumeStopNone
 	pendingDecisionResume := false
