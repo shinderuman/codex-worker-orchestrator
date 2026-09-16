@@ -53,3 +53,11 @@ func TestBuildParentReviewEvidenceManifestRequiresOpenReview(t *testing.T) {
 		t.Fatal("review evidence builder accepted a missing open review")
 	}
 }
+
+func TestBuildParentReviewEvidenceManifestRejectsAmbiguousTarget(t *testing.T) {
+	_, st, snapshot := newParentEvidenceReviewStore(t)
+	openParentEvidenceReview(t, st, snapshot, "inspect-current-review")
+	if _, err := buildParentReviewEvidenceManifest(st); err == nil {
+		t.Fatal("review evidence builder accepted a target without path:locator")
+	}
+}
