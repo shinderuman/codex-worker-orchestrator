@@ -24,6 +24,9 @@ const (
 )
 
 func executeWithTerminalEnvelope(cfg config.AppConfig, args []string, stdout, stderr io.Writer) error {
+	if len(args) != 0 && args[0] == actionReviewEvidence {
+		return executeParentReviewEvidence(cfg, args, stdout)
+	}
 	if len(args) == 0 || !terminalEnvelopeAction(args[0]) {
 		return execute(cfg, args, stdout, stderr)
 	}
