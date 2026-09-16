@@ -32,29 +32,52 @@ func TestAdmitParentActionAllowsResumeAfterRateLimitReset(t *testing.T) {
 	}
 }
 
-func TestAdmitParentActionResumeWindowBindsOnlyRateLimitResetEvidence(t *testing.T) {
-	unknown := &StateStore{dir: t.TempDir()}
-	writeRateLimitedWindowCheckpoint(t, unknown, "")
-	_, admitted, err := unknown.AdmitParentAction(ParentActionResume)
-	if err != nil || !admitted {
-		t.Fatalf("unknown reset resume = admitted:%v err:%v", admitted, err)
-	}
+func TestAdmitParentActionFailsClosedWithoutRateLimitResetEvidence(t *testing.T) {
+	st := &StateStore{dir: t.TempDir()}
+	writeRateLimitedWindowCheckpoint(t, st, "")
 
+	_, admitted, err := st.AdmitParentAction(ParentActionResume)
+	if err == nil || admitted {
+		t.Fatalf("missing reset resume = admitted:%v err:%v", admitted, err)
+	}
+	if !strings.Contains(err.Error(), "rate-limit reset evidence is missing") {
+		t.Fatalf("error = %v", err)
+	}
+	if status := st.TaskStatus(); status != TaskStatusRateLimited {
+		t.Fatalf("missing reset rejection must keep the stopped task state, got %s", status)
+	}
+}
+
+func TestAdmitParentActionRateLimitResetGateDoesNotApplyToOtherStops(t *testing.T) {
 	provider := &StateStore{dir: t.TempDir()}
-	checkpoint := ResumeCheckpoint{Stage: ResumeStageWorker, Phase: "worker", Role: WorkerRole, Model: "opus"}
-	checkpoint.SetStopKind(ResumeStopProviderUnavailable)
-	checkpoint.ProviderUnavailableClassification = "http_5xx"
-	checkpoint.ProviderUnavailableProbes = 1
-	checkpoint.ProviderUnavailableStartedAt = time.Now()
-	if err := provider.SaveResumeCheckpoint(checkpoint); err != nil {
+	providerCheckpoint := ResumeCheckpoint{Stage: ResumeStageWorker, Phase: "worker", Role: WorkerRole, Model: "opus"}
+	providerCheckpoint.SetStopKind(ResumeStopProviderUnavailable)
+	providerCheckpoint.ProviderUnavailableClassification = "http_5xx"
+	providerCheckpoint.ProviderUnavailableProbes = 1
+	providerCheckpoint.ProviderUnavailableStartedAt = time.Now()
+	if err := provider.SaveResumeCheckpoint(providerCheckpoint); err != nil {
 		t.Fatal(err)
 	}
 	if err := provider.SetTaskStatus(TaskStatusProviderUnavailable); err != nil {
 		t.Fatal(err)
 	}
-	_, admitted, err = provider.AdmitParentAction(ParentActionResume)
+	_, admitted, err := provider.AdmitParentAction(ParentActionResume)
 	if err != nil || !admitted {
 		t.Fatalf("provider-unavailable resume = admitted:%v err:%v", admitted, err)
+	}
+
+	interrupted := &StateStore{dir: t.TempDir()}
+	interruptedCheckpoint := ResumeCheckpoint{Stage: ResumeStageWorker, Phase: "worker", Role: WorkerRole, Model: "opus"}
+	interruptedCheckpoint.SetStopKind(ResumeStopInterrupted)
+	if err := interrupted.SaveResumeCheckpoint(interruptedCheckpoint); err != nil {
+		t.Fatal(err)
+	}
+	if err := interrupted.SetTaskStatus(TaskStatusInterrupted); err != nil {
+		t.Fatal(err)
+	}
+	_, admitted, err = interrupted.AdmitParentAction(ParentActionResume)
+	if err != nil || !admitted {
+		t.Fatalf("interrupted resume = admitted:%v err:%v", admitted, err)
 	}
 }
 
