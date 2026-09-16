@@ -30,7 +30,7 @@ func TestDecodeSingleMachineJSONRejectsAmbiguousOutput(t *testing.T) {
 	}
 }
 
-func TestParentActionTerminalEnvelopeShape(t *testing.T) {
+func TestExecuteWithTerminalEnvelope(t *testing.T) {
 	envelope := parentActionTerminalEnvelope{
 		Status:   "parent_action_terminal",
 		Terminal: json.RawMessage(`{"status":"PASS"}`),
