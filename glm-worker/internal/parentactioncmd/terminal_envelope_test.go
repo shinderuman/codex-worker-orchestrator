@@ -31,11 +31,10 @@ func TestDecodeSingleMachineJSONRejectsAmbiguousOutput(t *testing.T) {
 }
 
 func TestExecuteWithTerminalEnvelope(t *testing.T) {
-	envelope := parentActionTerminalEnvelope{
-		Status:   "parent_action_terminal",
-		Terminal: json.RawMessage(`{"status":"PASS"}`),
-		Handoff:  json.RawMessage(`{"consistent":true,"required_action":"accept"}`),
-	}
+	envelope := parentActionTerminalEnvelope(
+		json.RawMessage(`{"status":"PASS"}`),
+		json.RawMessage(`{"consistent":true,"required_action":"accept"}`),
+	)
 	raw, err := json.Marshal(envelope)
 	if err != nil {
 		t.Fatal(err)
