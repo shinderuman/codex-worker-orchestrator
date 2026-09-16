@@ -7,20 +7,20 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-const (
-	executionUnitSingle     = "single"
-	executionUnitMilestones = "milestones"
-
-	executionUnitPrefix = "EXECUTION_UNIT: "
-	milestonesJSONPrefix = "MILESTONES_JSON: "
-	decisionMarker       = "DECISION:"
-)
-
 type executionUnitDecision struct {
 	Decision      string
 	ExecutionUnit string
 	Milestones    []ExecutionMilestoneDefinition
 }
+
+const (
+	executionUnitSingle     = "single"
+	executionUnitMilestones = "milestones"
+
+	executionUnitPrefix  = "EXECUTION_UNIT: "
+	milestonesJSONPrefix = "MILESTONES_JSON: "
+	decisionMarker       = "DECISION:"
+)
 
 func (w *Workflow) ExecuteDecisionWithExecutionUnitPayload(payload string) error {
 	if !strings.HasPrefix(payload, executionUnitPrefix) {
@@ -80,26 +80,38 @@ func parseExecutionUnitDecision(payload string) (executionUnitDecision, error) {
 		return executionUnitDecision{}, fmt.Errorf("decision payload is empty")
 	}
 
-	var milestoneInput executionMilestoneInput
-	milestonesJSON := strings.TrimSpace(strings.TrimPrefix(parts[1], milestonesJSONPrefix))
-	if err := decodeExecutionMilestoneJSON(milestonesJSON, &milestoneInput); err != nil {
+	milestones, err := parseExecutionUnitMilestones(parts[1])
+	if err != nil {
 		return executionUnitDecision{}, err
 	}
-	input.Milestones = milestoneInput.Milestones
+	input.Milestones = milestones
+	if err := validateExecutionUnitDecision(input); err != nil {
+		return executionUnitDecision{}, err
+	}
+	return input, nil
+}
 
+func parseExecutionUnitMilestones(line string) ([]ExecutionMilestoneDefinition, error) {
+	var input executionMilestoneInput
+	payload := strings.TrimSpace(strings.TrimPrefix(line, milestonesJSONPrefix))
+	if err := decodeExecutionMilestoneJSON(payload, &input); err != nil {
+		return nil, err
+	}
+	return input.Milestones, nil
+}
+
+func validateExecutionUnitDecision(input executionUnitDecision) error {
 	switch input.ExecutionUnit {
 	case executionUnitSingle:
 		if len(input.Milestones) != 0 {
-			return executionUnitDecision{}, fmt.Errorf("execution-unit single cannot include milestone definitions")
+			return fmt.Errorf("execution-unit single cannot include milestone definitions")
 		}
 	case executionUnitMilestones:
 		if len(input.Milestones) > 0 {
-			if err := validateExecutionMilestoneDefinitions(input.Milestones); err != nil {
-				return executionUnitDecision{}, err
-			}
+			return validateExecutionMilestoneDefinitions(input.Milestones)
 		}
 	default:
-		return executionUnitDecision{}, fmt.Errorf("execution unit must be %q or %q", executionUnitSingle, executionUnitMilestones)
+		return fmt.Errorf("execution unit must be %q or %q", executionUnitSingle, executionUnitMilestones)
 	}
-	return input, nil
+	return nil
 }
