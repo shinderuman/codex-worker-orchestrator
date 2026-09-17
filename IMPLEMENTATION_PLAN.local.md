@@ -8,11 +8,10 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/continuation-metadata-guard-non-goal-completion.md`
+- `IMPLEMENTATION_TASKS/install-smoke-quality-tools-path-resolution.md`
 
 ## NEXT（優先順）
 
-- `IMPLEMENTATION_TASKS/install-smoke-quality-tools-path-resolution.md`
 - `IMPLEMENTATION_TASKS/stale-handoff-active-task-attribution.md`
 - `IMPLEMENTATION_TASKS/mandatory-gates-before-publication.md`
 - `IMPLEMENTATION_TASKS/terminal-result-budgeted-projection.md`
