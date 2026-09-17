@@ -10,11 +10,12 @@ import (
 )
 
 type TaskLifecycleRecord struct {
-	Version   int       `json:"version"`
-	TaskID    string    `json:"task_id"`
-	Timestamp time.Time `json:"timestamp"`
-	From      string    `json:"from"`
-	To        string    `json:"to"`
+	Version     int             `json:"version"`
+	TaskID      string          `json:"task_id"`
+	Timestamp   time.Time       `json:"timestamp"`
+	From        string          `json:"from"`
+	To          string          `json:"to"`
+	Disposition TaskDisposition `json:"disposition,omitempty"`
 }
 
 const taskLifecycleLogVersion = 1
