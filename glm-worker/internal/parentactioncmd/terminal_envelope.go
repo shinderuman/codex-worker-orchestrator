@@ -12,9 +12,10 @@ import (
 )
 
 type parentActionTerminalEnvelopePayload struct {
-	Status   string          `json:"status"`
-	Terminal json.RawMessage `json:"terminal"`
-	Handoff  json.RawMessage `json:"handoff"`
+	Status       string          `json:"status"`
+	Terminal     json.RawMessage `json:"terminal"`
+	Handoff      json.RawMessage `json:"handoff,omitempty"`
+	HandoffError string          `json:"handoff_error,omitempty"`
 }
 
 const (
@@ -54,11 +55,11 @@ func executeWithTerminalEnvelope(cfg config.AppConfig, args []string, stdout, st
 		err = runWorker(cfg.RepoRoot, []string{"--handoff"}, nil, &handoff, stderr, nil)
 	}
 	if err != nil {
-		return fmt.Errorf("canonical handoff failed after parent action: %w", err)
+		return writeTerminalHandoffFailure(stdout, terminalJSON, fmt.Errorf("canonical handoff failed after parent action: %w", err))
 	}
 	handoffJSON, err := decodeSingleMachineJSON(handoff.Bytes(), "canonical handoff")
 	if err != nil {
-		return err
+		return writeTerminalHandoffFailure(stdout, terminalJSON, err)
 	}
 
 	return json.NewEncoder(stdout).Encode(parentActionTerminalEnvelope(terminalJSON, handoffJSON))
@@ -70,6 +71,18 @@ func parentActionTerminalEnvelope(terminalJSON, handoffJSON json.RawMessage) par
 		Terminal: terminalJSON,
 		Handoff:  handoffJSON,
 	}
+}
+
+func writeTerminalHandoffFailure(stdout io.Writer, terminalJSON json.RawMessage, handoffErr error) error {
+	envelope := parentActionTerminalEnvelopePayload{
+		Status:       "parent_action_terminal_handoff_failed",
+		Terminal:     terminalJSON,
+		HandoffError: handoffErr.Error(),
+	}
+	if err := json.NewEncoder(stdout).Encode(envelope); err != nil {
+		return fmt.Errorf("%v; encode terminal handoff failure envelope: %w", handoffErr, err)
+	}
+	return handoffErr
 }
 
 func terminalEnvelopeAction(action string) bool {
