@@ -55,10 +55,14 @@ func verifyPublicationRefUpdate(cfg config.AppConfig, oldOID, newOID, ref string
 	if !publicationRefGuardRequired(st.TaskStatus()) {
 		return nil
 	}
-	candidate, err := st.LoadPublicationCandidate()
+	candidate, err := loadPublicationGuardCandidate(st, "ref update")
 	if err != nil {
-		return fmt.Errorf("publication ref update rejected: candidate missing: %w", err)
+		return err
 	}
+	return verifyPublicationRefCandidate(cfg, st, candidate, oldOID, newOID, ref)
+}
+
+func verifyPublicationRefCandidate(cfg config.AppConfig, st *state.StateStore, candidate state.PublicationCandidate, oldOID, newOID, ref string) error {
 	if oldOID != candidate.BaseHead || newOID != candidate.CommitOID {
 		return fmt.Errorf("publication ref update rejected: only exact candidate promotion is admitted")
 	}
@@ -87,15 +91,23 @@ func runPublicationPushGuard(cfg config.AppConfig, args []string, stdout io.Writ
 }
 
 func parsePublicationPushGuardArgs(args []string) (string, string, string, string, string, error) {
-	if len(args) != 11 || args[0] != publicationPushGuardSubcommand || args[1] != "--remote-name" || args[3] != "--local-ref" ||
-		args[5] != "--local-oid" || args[7] != "--remote-ref" || args[9] != "--remote-oid" {
+	if !publicationPushGuardSyntaxValid(args) {
 		return "", "", "", "", "", fmt.Errorf("usage: glm-parent-action push-binding push-guard --remote-name <name> --local-ref <ref> --local-oid <oid> --remote-ref <ref> --remote-oid <oid>")
 	}
-	if strings.TrimSpace(args[2]) == "" || strings.TrimSpace(args[4]) == "" || !pushBindingValidOID(args[6]) ||
-		strings.TrimSpace(args[8]) == "" || !pushBindingValidOID(args[10]) {
+	if !publicationPushGuardValuesValid(args) {
 		return "", "", "", "", "", fmt.Errorf("invalid publication push update")
 	}
 	return args[2], args[4], args[6], args[8], args[10], nil
+}
+
+func publicationPushGuardSyntaxValid(args []string) bool {
+	return len(args) == 11 && args[0] == publicationPushGuardSubcommand && args[1] == "--remote-name" &&
+		args[3] == "--local-ref" && args[5] == "--local-oid" && args[7] == "--remote-ref" && args[9] == "--remote-oid"
+}
+
+func publicationPushGuardValuesValid(args []string) bool {
+	return strings.TrimSpace(args[2]) != "" && strings.TrimSpace(args[4]) != "" && pushBindingValidOID(args[6]) &&
+		strings.TrimSpace(args[8]) != "" && pushBindingValidOID(args[10])
 }
 
 func verifyPublicationPush(cfg config.AppConfig, remoteName, localRef, localOID, remoteRef, remoteOID string) error {
@@ -110,10 +122,25 @@ func verifyPublicationPush(cfg config.AppConfig, remoteName, localRef, localOID,
 	if !publicationRefGuardRequired(st.TaskStatus()) {
 		return nil
 	}
+	candidate, err := loadPublicationGuardCandidate(st, "push")
+	if err != nil {
+		return err
+	}
+	if err := verifyPublicationPushTarget(cfg, candidate, remoteName, localRef, localOID, remoteRef); err != nil {
+		return err
+	}
+	return verifyPublicationPushBinding(cfg, candidate, remoteOID)
+}
+
+func loadPublicationGuardCandidate(st *state.StateStore, operation string) (state.PublicationCandidate, error) {
 	candidate, err := st.LoadPublicationCandidate()
 	if err != nil {
-		return fmt.Errorf("publication push rejected: candidate missing: %w", err)
+		return state.PublicationCandidate{}, fmt.Errorf("publication %s rejected: candidate missing: %w", operation, err)
 	}
+	return candidate, nil
+}
+
+func verifyPublicationPushTarget(cfg config.AppConfig, candidate state.PublicationCandidate, remoteName, localRef, localOID, remoteRef string) error {
 	if localOID != candidate.CommitOID || !strings.HasPrefix(localRef, "refs/heads/") {
 		return fmt.Errorf("publication push rejected: local object is not the exact candidate")
 	}
@@ -124,8 +151,12 @@ func verifyPublicationPush(cfg config.AppConfig, remoteName, localRef, localOID,
 	if target.LocalOID != candidate.CommitOID || target.RemoteName != remoteName || target.RemoteRef != remoteRef {
 		return fmt.Errorf("publication push rejected: remote target does not match candidate binding")
 	}
+	return nil
+}
+
+func verifyPublicationPushBinding(cfg config.AppConfig, candidate state.PublicationCandidate, remoteOID string) error {
 	binding := buildPushBinding(cfg.RepoRoot, pushBindingOptions{ExpectedOID: candidate.CommitOID})
-	if binding.Status == "blocked" || binding.Failure != nil {
+	if binding.Status == publicationPrepareStatusBlocked || binding.Failure != nil {
 		return fmt.Errorf("publication push rejected: %s", publicationFailureDetail(binding.Failure))
 	}
 	if binding.Classification == pushBindingClassificationSynced {
@@ -134,6 +165,10 @@ func verifyPublicationPush(cfg config.AppConfig, remoteName, localRef, localOID,
 	if binding.RemoteWrite == nil || binding.RemoteWrite.Authorization != pushBindingAuthorizationPublication {
 		return fmt.Errorf("publication push rejected: remote write is not authorized")
 	}
+	return verifyPublicationPushRemoteOID(binding, remoteOID)
+}
+
+func verifyPublicationPushRemoteOID(binding pushBindingOutput, remoteOID string) error {
 	observedRemoteOID := remoteOID
 	if observedRemoteOID == publicationZeroOID {
 		observedRemoteOID = ""
