@@ -53,3 +53,25 @@ func TestResetWithDispositionRecoversLegacyPartialResetProvenance(t *testing.T) 
 		t.Fatalf("recovered stale reset provenance is not admissible: %v", err)
 	}
 }
+
+func TestResetRequestRejectsConflictingOrphanedTaskIdentity(t *testing.T) {
+	st := &StateStore{dir: t.TempDir()}
+	if _, err := st.StartNewTask(); err != nil {
+		t.Fatal(err)
+	}
+	otherTaskID, err := NewUUID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.writeParentReviewState(ParentReviewState{Version: parentReviewStateVersion, TaskID: otherTaskID}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Remove("task.id"); err != nil {
+		t.Fatal(err)
+	}
+
+	err = st.ValidateResetRequest(string(TaskDispositionAbandon))
+	if err == nil || !strings.Contains(err.Error(), "does not match parent review task") {
+		t.Fatalf("conflicting orphaned task identity was accepted: %v", err)
+	}
+}
