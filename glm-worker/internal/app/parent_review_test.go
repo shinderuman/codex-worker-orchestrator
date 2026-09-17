@@ -230,11 +230,11 @@ func TestExecuteParentReviewAcceptIsSingleUse(t *testing.T) {
 
 func TestExecuteParentReviewAcceptCompletesOnlyResolvedReview(t *testing.T) {
 	cfg, st := newParentReviewOpportunity(t)
-	if accept := executeAccept(t, cfg); !accept.Accepted {
-		t.Fatal("open reviewをacceptできませんでした")
+	if err := Execute(Command{Mode: ModeAccept}, cfg, nil, io.Discard, io.Discard); err == nil {
+		t.Fatal("evidenceのないopen reviewをacceptできてしまいました")
 	}
-	if got := st.TaskStatus(); got != state.TaskStatusAwaitingParentCompletion {
-		t.Fatalf("accepted status = %q", got)
+	if got := st.TaskStatus(); got != state.TaskStatusWaitingSolReview {
+		t.Fatalf("rejected accept changed status = %q", got)
 	}
 
 	cfg = newAppConfig(t)
