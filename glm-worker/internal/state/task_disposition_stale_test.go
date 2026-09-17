@@ -102,3 +102,21 @@ func TestResetRequestRequiresDispositionForOrphanedCompleteWithPendingPass(t *te
 		t.Fatalf("orphaned complete task did not admit explicit abandon: %v", err)
 	}
 }
+
+func TestResetRequestRejectsUnsupportedCurrentStatsBeforeFallback(t *testing.T) {
+	st := &StateStore{dir: t.TempDir()}
+	if _, err := st.StartNewTask(); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Remove("task.id"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(st.Path(currentStatsFile), []byte(`{"version":999,"schema_revision":1}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	err := st.ValidateResetRequest(string(TaskDispositionAbandon))
+	if !errors.Is(err, errUnsupportedTaskStatsVersion) {
+		t.Fatalf("unsupported current task stats did not fail closed: %v", err)
+	}
+}
