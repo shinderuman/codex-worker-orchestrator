@@ -45,7 +45,58 @@ func TestPublicationCandidateInstallRejectsMutationBeforeInstall(t *testing.T) {
 	}
 }
 
+func TestPublicationFailedInstallBlocksPromotionPushAndComplete(t *testing.T) {
+	cfg, st, candidate := preparePublicationRuntimeCandidate(t)
+	baseHead := publicationGitOutput(t, cfg.RepoRoot, "rev-parse", "HEAD")
+	writePublicationInstalledWorkerStubResult(t, candidate.CommitOID, state.ValidationResultFail)
+
+	installed := installPublicationCandidate(cfg, st)
+	if installed.Status != publicationInstallStatusFailed || installed.Failure == nil {
+		t.Fatalf("failed install = %#v", installed)
+	}
+	promoted := promotePublicationCandidate(cfg, st)
+	if promoted.Status != publicationPromotionStatusBlocked || promoted.Failure == nil {
+		t.Fatalf("failed install promotion = %#v", promoted)
+	}
+	if got := publicationGitOutput(t, cfg.RepoRoot, "rev-parse", "HEAD"); got != baseHead {
+		t.Fatalf("failed install advanced HEAD: %s != %s", got, baseHead)
+	}
+	remote := applyPublicationRemoteWriteGuardForTask(cfg, st, publicationRemoteWriteFixture(baseHead, false))
+	if remote.Status != "blocked" || remote.RemoteWrite != nil || remote.Failure == nil {
+		t.Fatalf("failed install remote write = %#v", remote)
+	}
+	if failure := verifyPublicationCompletionGate(cfg, st); failure == nil || failure.Reason != publicationFailureGateMissing {
+		t.Fatalf("failed install completion gate = %#v", failure)
+	}
+}
+
+func TestPublicationSuccessfulRuntimeCandidatePromotesAndAuthorizesSameOID(t *testing.T) {
+	cfg, st, candidate := preparePublicationRuntimeCandidate(t)
+	writePublicationInstalledWorkerStub(t, candidate.CommitOID)
+
+	installed := installPublicationCandidate(cfg, st)
+	if installed.Status != publicationInstallStatusInstalled || installed.Failure != nil {
+		t.Fatalf("install = %#v", installed)
+	}
+	promoted := promotePublicationCandidate(cfg, st)
+	if promoted.Status != publicationPromotionStatusPromoted || promoted.CandidateOID != candidate.CommitOID || promoted.Failure != nil {
+		t.Fatalf("promotion = %#v", promoted)
+	}
+	remote := applyPublicationRemoteWriteGuardForTask(cfg, st, publicationRemoteWriteFixture(candidate.CommitOID, true))
+	if remote.Status == "blocked" || remote.Failure != nil || remote.RemoteWrite == nil || remote.RemoteWrite.Authorization != pushBindingAuthorizationPublication {
+		t.Fatalf("remote authorization = %#v", remote)
+	}
+	if failure := verifyPublicationCompletionGate(cfg, st); failure != nil {
+		t.Fatalf("completion = %#v", failure)
+	}
+}
+
 func writePublicationInstalledWorkerStub(t *testing.T, candidateOID string) {
+	t.Helper()
+	writePublicationInstalledWorkerStubResult(t, candidateOID, state.ValidationResultPass)
+}
+
+func writePublicationInstalledWorkerStubResult(t *testing.T, candidateOID, smokeResult string) {
 	t.Helper()
 	worker, err := exec.LookPath("glm-worker")
 	if err != nil {
@@ -57,13 +108,13 @@ case "${1:-}" in
   printf '%%s\n' '{"runtime_build":{"vcs_revision":"%s","vcs_modified":false,"repository_head":"%s","relationship":"same"}}'
   ;;
 --install-smoke)
-  printf '%%s\n' '{"status":"executed","result":"pass","role":"parent","duration_ms":1}'
+  printf '%%s\n' '{"status":"executed","result":"%s","role":"parent","duration_ms":1}'
   ;;
 *)
   exit 2
   ;;
 esac
-`, candidateOID, candidateOID)
+`, candidateOID, candidateOID, smokeResult)
 	if err := os.WriteFile(worker, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
