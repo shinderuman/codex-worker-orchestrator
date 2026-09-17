@@ -37,7 +37,7 @@ const decisionTemplate = decisionExecutionUnitPrefix + executionUnitPlaceholder 
 
 func Prepare(repoRoot, action string) (Prepared, error) {
 	if !validPayloadAction(action) {
-		return Prepared{}, fmt.Errorf("unsupported parent payload action %q", action)
+		return Prepared{}, fmt.Errorf("unsupported parent action %q", action)
 	}
 	stageDir := filepath.Join(repoRoot, StageDirName)
 	if err := ensureStageDir(stageDir); err != nil {
@@ -71,7 +71,7 @@ func Prepare(repoRoot, action string) (Prepared, error) {
 
 func Consume(repoRoot, action, token string) ([]byte, error) {
 	if !validPayloadAction(action) {
-		return nil, fmt.Errorf("unsupported parent payload action %q", action)
+		return nil, fmt.Errorf("unsupported parent action %q", action)
 	}
 	if !validToken(token) {
 		return nil, fmt.Errorf("invalid parent action token")
@@ -108,7 +108,7 @@ func validateDecisionPayloadShape(payload []byte) error {
 		string(parts[2]) != decisionMarker {
 		return fmt.Errorf("decision parent action must preserve the machine-owned execution-unit template")
 	}
-	return nil
+	return validateDecisionPayloadSemantics(parts)
 }
 
 func decodePayload(raw []byte, token string) ([]byte, error) {
