@@ -16,7 +16,7 @@ func (s *StateStore) recoverOrphanedResetTaskContext(observedStatus TaskStatus) 
 
 func (s *StateStore) currentStatsResetTaskContext(observedStatus TaskStatus) (string, TaskStatus, bool, error) {
 	stats, err := s.CurrentTaskStats()
-	if errors.Is(err, os.ErrNotExist) || errors.Is(err, errUnsupportedTaskStatsVersion) {
+	if errors.Is(err, os.ErrNotExist) {
 		return "", observedStatus, false, nil
 	}
 	if err != nil {
