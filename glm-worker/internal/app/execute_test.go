@@ -174,7 +174,7 @@ func TestExecuteStatsReportsEmptyState(t *testing.T) {
 		t.Fatalf("空状態のstats出力 = %#v: %q", output, out.String())
 	}
 	if len(output.ModelCallsByAlias) != 0 || len(output.RateLimitsByAlias) != 0 {
-		t.Fatalf("空状態のmodel別stats出力 = %#v: %q", output, out.String())
+		t.Fatalf("空状態のmodel別stats出力 = %#v: %q", output.ModelCallsByAlias)
 	}
 	if output.TelemetryDir == "" {
 		t.Fatalf("telemetry保存先がありません: %q", out.String())
@@ -258,15 +258,15 @@ func TestExecuteResetClearsTask(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	if err := Execute(Command{Mode: ModeReset}, cfg, nil, &out, io.Discard); err != nil {
+	if err := Execute(Command{Mode: ModeReset, Payload: string(state.TaskDispositionAbandon)}, cfg, nil, &out, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	var reset map[string]any
 	if err := json.Unmarshal([]byte(strings.TrimSpace(out.String())), &reset); err != nil {
 		t.Fatalf("reset出力がmachine JSONではありません: %v: %q", err, out.String())
 	}
-	if reset["status"] != "reset" {
-		t.Fatalf("RESET出力がありません: %q", out.String())
+	if reset["status"] != "reset" || reset["disposition"] != string(state.TaskDispositionAbandon) {
+		t.Fatalf("explicit abandon RESET出力がありません: %q", out.String())
 	}
 	if st.Exists("task.id") {
 		t.Fatal("reset後もtask.idが残っています")
@@ -447,7 +447,7 @@ func TestExecuteVerifyAutoResumePassesWithValidTOMLAndDB(t *testing.T) {
 
 	cfg := newAppConfig(t)
 	key := "glm-worker-resume-appshort1234-abcd1234"
-	thread := "019f88f8-0e70-7d53-a2a3-f0c61666827c"
+	thread := "019f88f8-0e70-7d53-a2a-f0c61666827c"
 	rfc3339 := "2026-08-12T20:01:20+09:00"
 
 	automationsDir := cfg.CodexConfigDir + "/automations/" + key
