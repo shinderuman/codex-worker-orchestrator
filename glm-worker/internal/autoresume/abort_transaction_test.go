@@ -100,9 +100,9 @@ func TestEvaluateAutoResumeFallbackAllowsPausedPlaceholderAfterCreate(t *testing
 
 func TestEvaluateAutoResumeFallbackTrustsExactActiveWake(t *testing.T) {
 	cases := []struct {
-		name        string
-		attempt     int
-		created     bool
+		name    string
+		attempt int
+		created bool
 	}{
 		{name: "retry after external update", attempt: 2, created: true},
 		{name: "existing automation update", attempt: 1, created: false},
@@ -167,6 +167,21 @@ func TestEvaluateAutoResumeFallbackFailsClosedOnActiveMismatch(t *testing.T) {
 		fixedDBReader(rows, nil),
 	)
 	if err == nil || !strings.Contains(err.Error(), "neither the exact ACTIVE one-shot nor the exact PAUSED placeholder") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestEvaluateAutoResumeFallbackFailsClosedOnPartialPersistence(t *testing.T) {
+	transaction := testFallbackTransaction(stageUpdateOneShot, 1, true)
+	dir := t.TempDir()
+	writeFallbackTOML(t, dir, transaction, pausedStatus, placeholderHourlyRRule)
+	_, _, err := EvaluateAutoResumeFallback(
+		testFallbackToken(t, transaction),
+		dir,
+		"unused",
+		fixedDBReader(nil, nil),
+	)
+	if err == nil || !strings.Contains(err.Error(), "external persistence is partial") {
 		t.Fatalf("error = %v", err)
 	}
 }
