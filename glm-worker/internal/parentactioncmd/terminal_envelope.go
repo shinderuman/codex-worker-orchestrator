@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/app"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentaction"
 )
@@ -47,7 +48,12 @@ func executeWithTerminalEnvelope(cfg config.AppConfig, args []string, stdout, st
 	}
 
 	var handoff bytes.Buffer
-	if err := runWorker(cfg.RepoRoot, []string{"--handoff"}, nil, &handoff, stderr, nil); err != nil {
+	if args[0] == actionReviewEvidence {
+		err = app.Execute(app.Command{Mode: app.ModeHandoff}, cfg, nil, &handoff, stderr)
+	} else {
+		err = runWorker(cfg.RepoRoot, []string{"--handoff"}, nil, &handoff, stderr, nil)
+	}
+	if err != nil {
 		return fmt.Errorf("canonical handoff failed after parent action: %w", err)
 	}
 	handoffJSON, err := decodeSingleMachineJSON(handoff.Bytes(), "canonical handoff")
