@@ -170,7 +170,7 @@ func TestParentCommandAdmissionPreservesPassAcceptance(t *testing.T) {
 	}
 }
 
-func TestParentCommandAdmissionPreservesAcceptNoOpAndResetEscape(t *testing.T) {
+func TestParentCommandAdmissionPreservesAcceptNoOpAndRejectsImplicitResetEscape(t *testing.T) {
 	st := newParentAdmissionStore(t)
 	if err := admitParentCommand(Command{Mode: ModeAccept}, st); err != nil {
 		t.Fatalf("idempotent accept no-op was rejected: %v", err)
@@ -179,8 +179,14 @@ func TestParentCommandAdmissionPreservesAcceptNoOpAndResetEscape(t *testing.T) {
 	if err := st.SetTaskStatus(state.TaskStatusWaitingDecision); err != nil {
 		t.Fatal(err)
 	}
-	if err := admitParentCommand(Command{Mode: ModeReset}, st); err != nil {
-		t.Fatalf("reset escape hatch was blocked by inconsistent lifecycle: %v", err)
+	if err := admitParentCommand(Command{Mode: ModeReset}, st); err == nil || !strings.Contains(err.Error(), "explicit disposition") {
+		t.Fatalf("implicit reset escape did not fail closed: %v", err)
+	}
+	if err := admitParentCommand(Command{Mode: ModeReset, Payload: string(state.TaskDispositionRecovery)}, st); err == nil || !strings.Contains(err.Error(), "not a recovery reset") {
+		t.Fatalf("semantic recovery was accepted for waiting decision: %v", err)
+	}
+	if err := admitParentCommand(Command{Mode: ModeReset, Payload: string(state.TaskDispositionAbandon)}, st); err != nil {
+		t.Fatalf("explicit abandon disposition was rejected: %v", err)
 	}
 	if err := admitParentCommand(Command{Mode: ModeDecision}, st); err == nil || !strings.Contains(err.Error(), "lifecycle inconsistency") {
 		t.Fatalf("contradictory decision state did not fail closed: %v", err)
