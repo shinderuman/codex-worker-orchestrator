@@ -23,6 +23,17 @@ func projectContinuationPlan(goalStatus string, active, next, blocked []string) 
 	return body.String()
 }
 
+func nonGoalProjectContinuationPlan(active, next, blocked []string) string {
+	var body strings.Builder
+	body.WriteString("# Plan\n\n## ACTIVE\n\n")
+	writeProjectContinuationEntries(&body, active)
+	body.WriteString("\n## NEXT（優先順）\n\n")
+	writeProjectContinuationEntries(&body, next)
+	body.WriteString("\n## BLOCKED / USER_PERMISSION_WAIT\n\n")
+	writeProjectContinuationEntries(&body, blocked)
+	return body.String()
+}
+
 func writeProjectContinuationEntries(body *strings.Builder, entries []string) {
 	for _, entry := range entries {
 		body.WriteString("- `")

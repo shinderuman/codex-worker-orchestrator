@@ -23,7 +23,7 @@ const (
 func BuildCurrentParentRequestCompletionProjection(cfg config.AppConfig, st *state.StateStore) (ParentRequestCompletionProjection, error) {
 	status := st.TaskStatus()
 	if status == state.TaskStatusAwaitingParentCompletion || status == state.TaskStatusComplete {
-		return BuildParentRequestCompletionProjection(cfg)
+		return BuildParentRequestCompletionProjection(cfg, st.ReadOr("active-task", ""))
 	}
 	output, err := buildProjectState(cfg, st)
 	if err != nil {
@@ -32,8 +32,8 @@ func BuildCurrentParentRequestCompletionProjection(cfg config.AppConfig, st *sta
 	return parentRequestProjection(output.Continuation), nil
 }
 
-func BuildParentRequestCompletionProjection(cfg config.AppConfig) (ParentRequestCompletionProjection, error) {
-	projection, err := repositoryprojecttree.BuildParentRequestCompletionProjection(cfg.RepoRoot)
+func BuildParentRequestCompletionProjection(cfg config.AppConfig, completedTask string) (ParentRequestCompletionProjection, error) {
+	projection, err := repositoryprojecttree.BuildParentRequestCompletionProjection(cfg.RepoRoot, completedTask)
 	if err != nil {
 		return ParentRequestCompletionProjection{}, err
 	}

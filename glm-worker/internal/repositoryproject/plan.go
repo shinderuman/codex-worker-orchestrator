@@ -33,9 +33,11 @@ type FinalHeadPlan struct {
 }
 
 const (
-	PostCompletionTerminal PostCompletionKind = "terminal"
-	PostCompletionUnbound  PostCompletionKind = "unbound"
-	PostCompletionGraph    PostCompletionKind = "graph"
+	PostCompletionTerminal  PostCompletionKind = "terminal"
+	PostCompletionContinue  PostCompletionKind = "continue"
+	PostCompletionBlocked   PostCompletionKind = "blocked"
+	PostCompletionExhausted PostCompletionKind = "exhausted"
+	PostCompletionGraph     PostCompletionKind = "graph"
 )
 
 func PrepareProjectState(plan string) (ProjectStatePlan, error) {
@@ -94,13 +96,31 @@ func PreparePostCompletion(plan string) (PostCompletionPlan, error) {
 		return prepared, nil
 	}
 	if !goal.Present {
-		prepared.Kind = PostCompletionUnbound
-		return prepared, nil
+		return classifyNonGoalPostCompletion(prepared)
 	}
 	if len(active) > 1 {
-		return PostCompletionPlan{}, fmt.Errorf("IMPLEMENTATION_PLAN.local.mdのACTIVE欄が一意ではありません(%d件)", len(active))
+		return PostCompletionPlan{}, activeNotUniqueError(len(active))
 	}
 	prepared.Kind = PostCompletionGraph
+	return prepared, nil
+}
+
+func classifyNonGoalPostCompletion(prepared PostCompletionPlan) (PostCompletionPlan, error) {
+	switch {
+	case len(prepared.Active) == 1:
+		prepared.Kind = PostCompletionContinue
+	case len(prepared.Active) > 1:
+		return PostCompletionPlan{}, activeNotUniqueError(len(prepared.Active))
+	case len(prepared.Next) != 0:
+		return PostCompletionPlan{}, fmt.Errorf(
+			"GOALのないPlanの完了同期にはACTIVE昇格済み・BLOCKEDのみ・空scheduleのいずれかが必要です(active=0 next=%d blocked=%d)",
+			len(prepared.Next), len(prepared.Blocked),
+		)
+	case len(prepared.Blocked) != 0:
+		prepared.Kind = PostCompletionBlocked
+	default:
+		prepared.Kind = PostCompletionExhausted
+	}
 	return prepared, nil
 }
 
@@ -108,6 +128,27 @@ func (p PostCompletionPlan) Entries() []string {
 	entries := append([]string{}, p.Active...)
 	entries = append(entries, p.Next...)
 	return append(entries, p.Blocked...)
+}
+
+func (p PostCompletionPlan) RequiresTaskGraph() bool {
+	return p.Kind == PostCompletionGraph || p.Kind == PostCompletionBlocked
+}
+
+func NonGoalCompletionSyncApplied(prepared PostCompletionPlan, completedTask string) bool {
+	if prepared.Goal.Present {
+		return true
+	}
+	if completedTask == "" {
+		return false
+	}
+	for _, entries := range [][]string{prepared.Active, prepared.Next, prepared.Blocked} {
+		for _, path := range entries {
+			if path == completedTask {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func PrepareFinalHead(plan string) (FinalHeadPlan, error) {
@@ -119,10 +160,13 @@ func PrepareParentCompletionHead(plan string) (FinalHeadPlan, error) {
 	if err != nil {
 		return FinalHeadPlan{}, err
 	}
-	if goal.Present && goal.Status == taskcontract.GoalStatusCompleted {
+	if !goal.Present {
+		return prepareNonGoalCompletionHead(plan)
+	}
+	if goal.Status == taskcontract.GoalStatusCompleted {
 		return prepareCompletedFinalHead(plan)
 	}
-	if goal.Present && goal.Status == taskcontract.GoalStatusActive {
+	if goal.Status == taskcontract.GoalStatusActive {
 		blockedOnly, prepared, err := prepareBlockedOnlyFinalHead(plan)
 		if err != nil {
 			return FinalHeadPlan{}, err
@@ -132,6 +176,27 @@ func PrepareParentCompletionHead(plan string) (FinalHeadPlan, error) {
 		}
 	}
 	return PrepareFinalHead(plan)
+}
+
+func prepareNonGoalCompletionHead(plan string) (FinalHeadPlan, error) {
+	prepared, err := PreparePostCompletion(plan)
+	if err != nil {
+		return FinalHeadPlan{}, err
+	}
+	switch prepared.Kind {
+	case PostCompletionContinue:
+		return prepareFinalHeadSchedule(prepared.Schedule)
+	case PostCompletionBlocked:
+		for _, path := range prepared.Blocked {
+			if err := taskcontract.ValidateActiveTaskPath(path); err != nil {
+				return FinalHeadPlan{}, err
+			}
+		}
+		return FinalHeadPlan{Schedule: prepared.Schedule, Tasks: append([]string(nil), prepared.Blocked...)}, nil
+	case PostCompletionExhausted:
+		return FinalHeadPlan{Schedule: prepared.Schedule, Tasks: []string{}}, nil
+	}
+	return FinalHeadPlan{}, fmt.Errorf("GOALのないPlanのcompletion head種別 %sを受理できません", prepared.Kind)
 }
 
 func prepareCompletedFinalHead(plan string) (FinalHeadPlan, error) {
@@ -207,4 +272,8 @@ func completedGoalScheduleError(active, next, blocked int) error {
 		"completed GOALではACTIVE/NEXT/BLOCKEDを空にする必要があります(active=%d next=%d blocked=%d)",
 		active, next, blocked,
 	)
+}
+
+func activeNotUniqueError(active int) error {
+	return fmt.Errorf("IMPLEMENTATION_PLAN.local.mdのACTIVE欄が一意ではありません(%d件)", active)
 }

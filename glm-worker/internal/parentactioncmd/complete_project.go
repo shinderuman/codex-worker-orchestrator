@@ -20,7 +20,7 @@ func prepareCompletionVerification(cfg config.AppConfig, st *state.StateStore) (
 		verification.failure = verifyCompletionUnchanged(cfg.RepoRoot, verification.gitRepo, verification.verifiedHead)
 		return verification, nil
 	}
-	projection, err := repositoryprojecttree.BuildParentRequestCompletionProjection(cfg.RepoRoot)
+	projection, err := repositoryprojecttree.BuildParentRequestCompletionProjection(cfg.RepoRoot, st.ReadOr("active-task", ""))
 	if err != nil {
 		verification.failure = &finalizationFailure{
 			Stage:  "project",

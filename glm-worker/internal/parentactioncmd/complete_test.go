@@ -426,6 +426,14 @@ func newNoGoCompleteFixture(t *testing.T) *completeFixture {
 
 func newCompleteRepositoryFixture(t *testing.T) *completeFixture {
 	t.Helper()
+	return newCompleteRepositoryFixtureWithPlan(t, completeInitialPlan(), []string{
+		"IMPLEMENTATION_TASKS/active.md",
+		"IMPLEMENTATION_TASKS/next.md",
+	})
+}
+
+func newCompleteRepositoryFixtureWithPlan(t *testing.T, initialPlan string, taskFiles []string) *completeFixture {
+	t.Helper()
 	t.Setenv("CODEX_THREAD_ID", codexIdentityTestThreadID)
 	t.Setenv("CODEX_SESSION_ID", codexIdentityTestThreadID)
 
@@ -441,9 +449,11 @@ func newCompleteRepositoryFixture(t *testing.T) *completeFixture {
 	if err := os.MkdirAll(filepath.Join(repo, "IMPLEMENTATION_TASKS"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	writePushBindingFile(t, repo, "IMPLEMENTATION_PLAN.local.md", completeInitialPlan())
-	writePushBindingFile(t, repo, "IMPLEMENTATION_TASKS/active.md", "# active\n\n## External feasibility\n\nstatus: not-applicable\n")
-	writePushBindingFile(t, repo, "IMPLEMENTATION_TASKS/next.md", "# next\n\n## External feasibility\n\nstatus: not-applicable\n")
+	writePushBindingFile(t, repo, "IMPLEMENTATION_PLAN.local.md", initialPlan)
+	for _, path := range taskFiles {
+		name := strings.TrimSuffix(filepath.Base(path), ".md")
+		writePushBindingFile(t, repo, path, "# "+name+"\n\n## Dependencies\n\n## External feasibility\n\nstatus: not-applicable\n")
+	}
 	runFinalizationGit(t, repo, "add", "-A")
 	runFinalizationGit(t, repo, "commit", "-q", "-m", "initial")
 	runFinalizationGit(t, repo, "remote", "add", "origin", remote)

@@ -37,6 +37,7 @@ const (
 	projectContinuationReasonCurrentTask                 = repositoryproject.ReasonCurrentTask
 	projectContinuationReasonContinuationScopeUnbound    = repositoryproject.ReasonContinuationScopeUnbound
 	projectContinuationReasonNextRunnable                = repositoryproject.ReasonNextRunnable
+	projectContinuationReasonScheduleExhausted           = repositoryproject.ReasonScheduleExhausted
 	projectContinuationReasonGoalAcceptancePending       = repositoryproject.ReasonGoalAcceptancePending
 	projectContinuationReasonCompletionStateInconsistent = repositoryproject.ReasonCompletionStateInconsistent
 )

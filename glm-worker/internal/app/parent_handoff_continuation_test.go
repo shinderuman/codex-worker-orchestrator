@@ -73,6 +73,59 @@ func TestParentHandoffCarriesPostLocalContinuation(t *testing.T) {
 	}
 }
 
+func TestParentHandoffAdmitsNonGoalPostCompletionStopWithoutStart(t *testing.T) {
+	cfg := newAppConfig(t)
+	promoted := "IMPLEMENTATION_TASKS/next.md"
+	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", nonGoalProjectContinuationPlan([]string{promoted}, nil, nil))
+	writeProjectContinuationTask(t, cfg, promoted)
+	st := startActivatedParentHandoffTask(t, cfg)
+	if err := st.Write("active-task", completedNonGoalTask); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetTaskStatus(state.TaskStatusAwaitingParentCompletion); err != nil {
+		t.Fatal(err)
+	}
+
+	output := buildParentHandoff(st)
+	if !output.Consistent || output.ParentRequest == nil {
+		t.Fatalf("handoff = %#v", output)
+	}
+	if !output.ParentRequest.CompletionAdmitted || !output.ParentRequest.StopAdmitted ||
+		output.ParentRequest.Continuation.State != projectContinuationContinueNow ||
+		output.ParentRequest.Continuation.Task != promoted ||
+		output.ParentRequest.Continuation.RequiredAction != projectContinuationActionStart ||
+		output.ParentRequest.Continuation.Reason != projectContinuationReasonPostCompletionActive {
+		t.Fatalf("parent request = %#v", output.ParentRequest)
+	}
+}
+
+func TestParentHandoffDeniesNonGoalPreSyncCompletionStop(t *testing.T) {
+	cfg := newAppConfig(t)
+	next := "IMPLEMENTATION_TASKS/next.md"
+	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", nonGoalProjectContinuationPlan([]string{completedNonGoalTask}, []string{next}, nil))
+	writeProjectContinuationTask(t, cfg, completedNonGoalTask)
+	writeProjectContinuationTask(t, cfg, next)
+	st := startActivatedParentHandoffTask(t, cfg)
+	if err := st.Write("active-task", completedNonGoalTask); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetTaskStatus(state.TaskStatusAwaitingParentCompletion); err != nil {
+		t.Fatal(err)
+	}
+
+	output := buildParentHandoff(st)
+	if !output.Consistent || output.ParentRequest == nil {
+		t.Fatalf("handoff = %#v", output)
+	}
+	if output.ParentRequest.CompletionAdmitted || output.ParentRequest.StopAdmitted ||
+		output.ParentRequest.Continuation.State != projectContinuationUnknown ||
+		output.ParentRequest.Continuation.Reason != projectContinuationReasonContinuationScopeUnbound ||
+		output.ParentRequest.Continuation.Task != "" ||
+		output.ParentRequest.Continuation.RequiredAction != "" {
+		t.Fatalf("parent request = %#v", output.ParentRequest)
+	}
+}
+
 func TestParentHandoffCarriesBlockedOnlyStop(t *testing.T) {
 	cfg := newAppConfig(t)
 	blocked := "IMPLEMENTATION_TASKS/blocked.md"

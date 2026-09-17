@@ -46,6 +46,12 @@ func TestContinuationStopBlockReason(t *testing.T) {
 			)},
 		},
 		{
+			name: "non-goal post-completion stop admitted",
+			handoff: continuationGateHandoff{Consistent: true, ParentRequest: projection(
+				repositoryproject.ContinuationContinueNow, repositoryproject.ReasonPostCompletionActive, true, true,
+			)},
+		},
+		{
 			name: "active task mismatch",
 			handoff: continuationGateHandoff{Consistent: true, ParentRequest: &app.ParentRequestCompletionProjection{
 				Continuation: app.ProjectContinuation{

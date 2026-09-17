@@ -65,6 +65,7 @@ const (
 	ReasonCurrentTask                 = "current-task"
 	ReasonContinuationScopeUnbound    = "continuation-scope-unbound"
 	ReasonNextRunnable                = "next-runnable"
+	ReasonScheduleExhausted           = "schedule-exhausted"
 	ReasonGoalAcceptancePending       = "goal-acceptance-pending"
 	ReasonCompletionStateInconsistent = "completion-state-inconsistent"
 	ReasonPostCompletionActive        = "post-local-completion-active"
@@ -197,8 +198,20 @@ func PostCompletionProjection(prepared PostCompletionPlan, graph *TaskGraph) Par
 	switch prepared.Kind {
 	case PostCompletionTerminal:
 		return ParentRequestProjection(Continuation{State: ContinuationTerminal, Reason: ReasonGoalCompleted}, true)
-	case PostCompletionUnbound:
-		return ParentRequestProjection(UnknownContinuation(ReasonContinuationScopeUnbound), true)
+	case PostCompletionContinue:
+		if len(prepared.Active) != 1 {
+			return ParentRequestProjection(UnknownContinuation(ReasonActiveTaskUnresolved), true)
+		}
+		return admittedCompletionProjection(Continuation{
+			State:          ContinuationContinueNow,
+			Task:           prepared.Active[0],
+			RequiredAction: ActionStart,
+			Reason:         ReasonPostCompletionActive,
+		})
+	case PostCompletionBlocked:
+		return nonGoalBlockedProjection(prepared, graph)
+	case PostCompletionExhausted:
+		return admittedCompletionProjection(Continuation{State: ContinuationTerminal, Reason: ReasonScheduleExhausted})
 	}
 	if len(prepared.Active) == 1 {
 		return ParentRequestProjection(Continuation{
@@ -227,4 +240,21 @@ func PostCompletionProjection(prepared PostCompletionPlan, graph *TaskGraph) Par
 		}
 	}
 	return ParentRequestProjection(UnknownContinuation(ReasonActiveTaskUnresolved), true)
+}
+
+func nonGoalBlockedProjection(prepared PostCompletionPlan, graph *TaskGraph) ParentRequestCompletionProjection {
+	if graph == nil {
+		return ParentRequestProjection(UnknownContinuation(ReasonProjectStateIncomplete), true)
+	}
+	blocker := FirstBlocker(graph.Blockers(prepared.Next, prepared.Blocked))
+	if blocker == nil {
+		return ParentRequestProjection(UnknownContinuation(ReasonActiveTaskUnresolved), true)
+	}
+	return admittedCompletionProjection(Continuation{
+		State: ContinuationBlocked, Task: blocker.Task, Reason: blocker.Reason, Blocker: blocker,
+	})
+}
+
+func admittedCompletionProjection(continuation Continuation) ParentRequestCompletionProjection {
+	return ParentRequestCompletionProjection{CompletionAdmitted: true, StopAdmitted: true, Continuation: continuation}
 }

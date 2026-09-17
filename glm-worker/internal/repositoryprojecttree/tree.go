@@ -38,7 +38,7 @@ func LoadProjectState(repoRoot string) (ProjectState, error) {
 	return ProjectState{PlanPresent: true, Plan: prepared, Graph: graph}, nil
 }
 
-func BuildParentRequestCompletionProjection(repoRoot string) (repositoryproject.ParentRequestCompletionProjection, error) {
+func BuildParentRequestCompletionProjection(repoRoot string, completedTask string) (repositoryproject.ParentRequestCompletionProjection, error) {
 	planContent, err := ReadPlan(repoRoot)
 	if err != nil {
 		return repositoryproject.ParentRequestCompletionProjection{}, err
@@ -52,13 +52,15 @@ func BuildParentRequestCompletionProjection(repoRoot string) (repositoryproject.
 	if err != nil {
 		return repositoryproject.ParentRequestCompletionProjection{}, err
 	}
-	if prepared.Kind == repositoryproject.PostCompletionUnbound {
-		return repositoryproject.PostCompletionProjection(prepared, nil), nil
-	}
 	if err := validateClosure(repoRoot, prepared.Schedule, "scheduleとIMPLEMENTATION_TASKS corpusのclosureが成立しません"); err != nil {
 		return repositoryproject.ParentRequestCompletionProjection{}, err
 	}
-	if prepared.Kind == repositoryproject.PostCompletionTerminal {
+	if !repositoryproject.NonGoalCompletionSyncApplied(prepared, completedTask) {
+		return repositoryproject.ParentRequestProjection(
+			repositoryproject.UnknownContinuation(repositoryproject.ReasonContinuationScopeUnbound), true,
+		), nil
+	}
+	if !prepared.RequiresTaskGraph() {
 		return repositoryproject.PostCompletionProjection(prepared, nil), nil
 	}
 	graph, err := loadGraph(repoRoot, prepared.Entries())
