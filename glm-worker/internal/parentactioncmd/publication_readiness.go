@@ -26,12 +26,13 @@ type publicationGateProjection struct {
 }
 
 type publicationReadinessOutput struct {
-	Status       string                       `json:"status"`
-	CandidateOID string                       `json:"candidate_oid,omitempty"`
-	TreeOID      string                       `json:"tree_oid,omitempty"`
-	SnapshotID   string                       `json:"snapshot_id,omitempty"`
-	Gates        []publicationGateProjection  `json:"gates"`
-	Failure      *finalizationFailure         `json:"failure,omitempty"`
+	Status       string                      `json:"status"`
+	CandidateOID string                      `json:"candidate_oid,omitempty"`
+	TreeOID      string                      `json:"tree_oid,omitempty"`
+	SnapshotID   string                      `json:"snapshot_id,omitempty"`
+	Gates        []publicationGateProjection `json:"gates"`
+	Installation *publicationInstallOutput   `json:"installation,omitempty"`
+	Failure      *finalizationFailure        `json:"failure,omitempty"`
 }
 
 type publicationQualityRunRecord struct {
@@ -58,6 +59,8 @@ const (
 	publicationGateStale        = "stale"
 	publicationGateFail         = "fail"
 
+	publicationReadinessInstallCandidate = "--install-candidate"
+
 	publicationFailureCandidateMissing = "publication_candidate_missing"
 	publicationFailureCandidateStale   = "publication_candidate_stale"
 	publicationFailureGateMissing      = "publication_required_gate_missing"
@@ -65,8 +68,9 @@ const (
 )
 
 func runPublicationReadiness(cfg config.AppConfig, args []string, stdout io.Writer) error {
-	if len(args) != 1 || args[0] != "readiness" {
-		return fmt.Errorf("usage: glm-parent-action push-binding readiness")
+	installCandidate, err := parsePublicationReadinessArgs(args)
+	if err != nil {
+		return err
 	}
 	st, err := state.NewStateStore(cfg)
 	if err != nil {
@@ -77,7 +81,25 @@ func runPublicationReadiness(cfg config.AppConfig, args []string, stdout io.Writ
 		return err
 	}
 	defer func() { _ = lock.Close() }()
-	return json.NewEncoder(stdout).Encode(projectPublicationReadiness(cfg, st))
+
+	var installation *publicationInstallOutput
+	if installCandidate {
+		result := installPublicationCandidate(cfg, st)
+		installation = &result
+	}
+	output := projectPublicationReadiness(cfg, st)
+	output.Installation = installation
+	return json.NewEncoder(stdout).Encode(output)
+}
+
+func parsePublicationReadinessArgs(args []string) (bool, error) {
+	if len(args) == 1 && args[0] == "readiness" {
+		return false, nil
+	}
+	if len(args) == 2 && args[0] == "readiness" && args[1] == publicationReadinessInstallCandidate {
+		return true, nil
+	}
+	return false, fmt.Errorf("usage: glm-parent-action push-binding readiness [--install-candidate]")
 }
 
 func projectPublicationReadiness(cfg config.AppConfig, st *state.StateStore) publicationReadinessOutput {
@@ -238,17 +260,32 @@ func publicationValidationEvent(st *state.StateStore, candidate state.Publicatio
 }
 
 func verifyPublicationQualityRun(st *state.StateStore, repoRoot string, candidate state.PublicationCandidate, form, runID string) error {
-	if !validPublicationValidationRunID(runID) {
-		return fmt.Errorf("quality gate run identity is invalid")
-	}
-	data, err := os.ReadFile(st.Path(filepath.Join("quality-gate-runs", runID, "run.json")))
+	record, err := loadPublicationQualityRun(st, runID)
 	if err != nil {
 		return err
 	}
-	var record publicationQualityRunRecord
-	if err := json.Unmarshal(data, &record); err != nil {
+	if err := verifyPublicationQualityRunIdentity(record, repoRoot, candidate, form, runID); err != nil {
 		return err
 	}
+	return verifyPublicationQualityRunResult(record)
+}
+
+func loadPublicationQualityRun(st *state.StateStore, runID string) (publicationQualityRunRecord, error) {
+	if !validPublicationValidationRunID(runID) {
+		return publicationQualityRunRecord{}, fmt.Errorf("quality gate run identity is invalid")
+	}
+	data, err := os.ReadFile(st.Path(filepath.Join("quality-gate-runs", runID, "run.json")))
+	if err != nil {
+		return publicationQualityRunRecord{}, err
+	}
+	var record publicationQualityRunRecord
+	if err := json.Unmarshal(data, &record); err != nil {
+		return publicationQualityRunRecord{}, err
+	}
+	return record, nil
+}
+
+func verifyPublicationQualityRunIdentity(record publicationQualityRunRecord, repoRoot string, candidate state.PublicationCandidate, form, runID string) error {
 	if record.ValidationRunID != runID || record.Form != form || record.Repository != repoRoot || record.TaskID != candidate.TaskID {
 		return fmt.Errorf("quality gate run authority does not match publication candidate")
 	}
@@ -256,6 +293,10 @@ func verifyPublicationQualityRun(st *state.StateStore, repoRoot string, candidat
 		record.WorktreeDigestExcludingParent != candidate.Snapshot.WorktreeDigestExcludingParent {
 		return fmt.Errorf("quality gate run snapshot does not match publication candidate")
 	}
+	return nil
+}
+
+func verifyPublicationQualityRunResult(record publicationQualityRunRecord) error {
 	if record.Status != publicationGatePass || record.CompletedAt == nil || record.ExitCode != 0 || record.ExitSource != state.ValidationExitSourceTarget {
 		return fmt.Errorf("quality gate run did not complete with target-process PASS")
 	}
