@@ -191,7 +191,7 @@ func executeStateCommand(cmd Command, cfg config.AppConfig, st *state.StateStore
 func executeLockedMutation(cmd Command, cfg config.AppConfig, st *state.StateStore, stdout io.Writer) error {
 	switch cmd.Mode {
 	case ModeReset:
-		return resetState(st, stdout)
+		return executeDispositionReset(cmd, st, stdout)
 	case ModeAccept:
 		return parentAccept(st, stdout)
 	case ModeIsolate:
