@@ -34,6 +34,12 @@ func resetDispositionCommand(args []string) (Command, error) {
 }
 
 func executeDispositionReset(cmd Command, st *state.StateStore, stdout io.Writer) error {
+	if cmd.Payload == "" && st.ReadOr("task.id", "") == "" && st.TaskStatus() == state.TaskStatusNone {
+		if err := st.ValidateResetRequest(""); err != nil {
+			return err
+		}
+		return resetState(st, stdout)
+	}
 	disposition, err := st.ResetWithDisposition(cmd.Payload)
 	if err != nil {
 		return err
