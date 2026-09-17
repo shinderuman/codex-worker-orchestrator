@@ -18,7 +18,7 @@ func TestContinuationStopBlockReason(t *testing.T) {
 		wantText  string
 	}{
 		{
-			name: "inactive repository harness",
+			name:    "inactive repository harness",
 			handoff: continuationGateHandoff{Consistent: true},
 		},
 		{
