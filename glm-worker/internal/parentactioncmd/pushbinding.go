@@ -69,10 +69,10 @@ type gitUpstream struct {
 	TrackingOID string
 }
 
-const (
-	publicationReadinessSubcommand      = "read" + "iness"
-	publicationInstallCandidateSubcommand = "install-" + "candidate"
+const publicationReadinessSubcommand = "read" + "iness"
+const publicationInstallCandidateSubcommand = "install-" + "candidate"
 
+const (
 	pushBindingUsage                           = "usage: glm-parent-action push-binding [--expected-oid <oid>] [--attempt-outcome <none|completed|rejected|network-error|non-fast-forward>] | glm-parent-action push-binding prepare --message <commit-message> | glm-parent-action push-binding install-candidate | glm-parent-action push-binding readiness"
 	pushBindingAttemptNone                     = "none"
 	pushBindingAttemptCompleted                = "completed"
