@@ -30,6 +30,18 @@ type autoResumeFallbackExternalOutput struct {
 	ResumeAtRFC3339      string `json:"resume_at_rfc3339"`
 }
 
+type autoResumeFallbackExecution struct {
+	cfg            config.AppConfig
+	stdout         io.Writer
+	token          string
+	lease          transactionTokenLease
+	retryable      bool
+	delivering     bool
+	plan           autoresume.AutoResumeFallbackPlan
+	automationsDir string
+	dbPath         string
+}
+
 const autoResumeFallbackUsage = "usage: glm-worker --auto-resume-fallback <transaction-token>"
 
 var autoResumeFallbackWaitUntil = func(target time.Time) {
@@ -77,93 +89,138 @@ func printAutoResumeFallback(cmd Command, cfg config.AppConfig, stdout io.Writer
 	if err != nil {
 		return err
 	}
-	retryable := true
-	delivering := false
-	defer func() {
-		if !retryable {
-			return
-		}
-		if delivering {
-			lease.rollbackDelivering()
-			return
-		}
-		lease.rollback()
-	}()
+	execution := autoResumeFallbackExecution{
+		cfg:       cfg,
+		stdout:    stdout,
+		token:     cmd.AutoResume.Token,
+		lease:     lease,
+		retryable: true,
+	}
+	defer execution.rollback()
+	return execution.run()
+}
 
-	plan, err := autoresume.AutoResumeFallbackPlanFromToken(cmd.AutoResume.Token)
+func (execution *autoResumeFallbackExecution) rollback() {
+	if !execution.retryable {
+		return
+	}
+	if execution.delivering {
+		execution.lease.rollbackDelivering()
+		return
+	}
+	execution.lease.rollback()
+}
+
+func (execution *autoResumeFallbackExecution) run() error {
+	plan, err := autoresume.AutoResumeFallbackPlanFromToken(execution.token)
 	if err != nil {
 		return err
 	}
+	execution.plan = plan
 	if err := requireAutoResumeParentThread(plan.ParentThreadID); err != nil {
 		return err
 	}
-	if err := validateAutoResumeFallbackState(cfg, plan); err != nil {
+	if err := validateAutoResumeFallbackState(execution.cfg, plan); err != nil {
 		return err
 	}
-	automationsDir, dbPath := autoresume.CodexWakePersistencePaths(cfg.CodexConfigDir)
-	plan, decision, err := autoResumeFallbackEvaluate(cmd.AutoResume.Token, automationsDir, dbPath, autoresume.ReadDBRowSqlite3)
+	execution.automationsDir, execution.dbPath = autoresume.CodexWakePersistencePaths(execution.cfg.CodexConfigDir)
+	decision, err := execution.evaluatePersistence()
 	if err != nil {
 		return err
 	}
-	finishExternalWake := func(plan autoresume.AutoResumeFallbackPlan) error {
-		if err := lease.markDelivering(); err != nil {
-			return err
-		}
-		delivering = true
-		complete, writeErr := writeTransactionJSON(stdout, autoResumeFallbackExternalOutput{
-			Status:               "external_wake_active",
-			TaskID:               plan.TaskID,
-			ExpectedAutomationID: plan.ExpectedAutomationID,
-			ResumeAtRFC3339:      plan.ResumeAtRFC3339,
-		})
-		if !complete {
-			return writeErr
-		}
-		retryable = false
-		return lease.commit()
-	}
 	if decision == autoresume.AutoResumeFallbackExternalWake {
-		return finishExternalWake(plan)
+		return execution.finishExternalWake()
 	}
-	if decision != autoresume.AutoResumeFallbackLocalWait {
-		return fmt.Errorf("auto-resume fallback decision is invalid: %q", decision)
+	if err := requireAutoResumeFallbackLocalWait(decision, false); err != nil {
+		return err
 	}
-
-	resumeAt, err := time.Parse(time.RFC3339, plan.ResumeAtRFC3339)
+	resumeAt, err := time.Parse(time.RFC3339, execution.plan.ResumeAtRFC3339)
 	if err != nil {
 		return fmt.Errorf("auto-resume fallback time is invalid: %w", err)
 	}
 	autoResumeFallbackWaitUntil(resumeAt)
+	return execution.resumeAfterWait()
+}
 
-	if stateErr := validateAutoResumeFallbackState(cfg, plan); stateErr != nil {
-		consumed, consumeErr := consumeAutoResumeFallbackFailure(lease, stateErr)
-		if consumed {
-			delivering = true
-			retryable = false
-		}
-		return consumeErr
+func (execution *autoResumeFallbackExecution) evaluatePersistence() (autoresume.AutoResumeFallbackDecision, error) {
+	plan, decision, err := autoResumeFallbackEvaluate(
+		execution.token,
+		execution.automationsDir,
+		execution.dbPath,
+		autoresume.ReadDBRowSqlite3,
+	)
+	if err != nil {
+		return "", err
 	}
-	plan, decision, err = autoResumeFallbackEvaluate(cmd.AutoResume.Token, automationsDir, dbPath, autoresume.ReadDBRowSqlite3)
+	execution.plan = plan
+	return decision, nil
+}
+
+func (execution *autoResumeFallbackExecution) resumeAfterWait() error {
+	if err := validateAutoResumeFallbackState(execution.cfg, execution.plan); err != nil {
+		return execution.consumeStateFailure(err)
+	}
+	decision, err := execution.evaluatePersistence()
 	if err != nil {
 		return err
 	}
 	if decision == autoresume.AutoResumeFallbackExternalWake {
-		return finishExternalWake(plan)
+		return execution.finishExternalWake()
 	}
-	if decision != autoresume.AutoResumeFallbackLocalWait {
-		return fmt.Errorf("auto-resume fallback decision after wait is invalid: %q", decision)
-	}
-
-	if err := lease.markDelivering(); err != nil {
+	if err := requireAutoResumeFallbackLocalWait(decision, true); err != nil {
 		return err
 	}
-	delivering = true
-	started, resumeErr := autoResumeFallbackRunResume(cfg, stdout)
+	return execution.finishLocalResume()
+}
+
+func requireAutoResumeFallbackLocalWait(decision autoresume.AutoResumeFallbackDecision, afterWait bool) error {
+	if decision == autoresume.AutoResumeFallbackLocalWait {
+		return nil
+	}
+	if afterWait {
+		return fmt.Errorf("auto-resume fallback decision after wait is invalid: %q", decision)
+	}
+	return fmt.Errorf("auto-resume fallback decision is invalid: %q", decision)
+}
+
+func (execution *autoResumeFallbackExecution) finishExternalWake() error {
+	if err := execution.lease.markDelivering(); err != nil {
+		return err
+	}
+	execution.delivering = true
+	complete, writeErr := writeTransactionJSON(execution.stdout, autoResumeFallbackExternalOutput{
+		Status:               "external_wake_active",
+		TaskID:               execution.plan.TaskID,
+		ExpectedAutomationID: execution.plan.ExpectedAutomationID,
+		ResumeAtRFC3339:      execution.plan.ResumeAtRFC3339,
+	})
+	if !complete {
+		return writeErr
+	}
+	execution.retryable = false
+	return execution.lease.commit()
+}
+
+func (execution *autoResumeFallbackExecution) finishLocalResume() error {
+	if err := execution.lease.markDelivering(); err != nil {
+		return err
+	}
+	execution.delivering = true
+	started, resumeErr := autoResumeFallbackRunResume(execution.cfg, execution.stdout)
 	if !started {
 		return resumeErr
 	}
-	retryable = false
-	return errors.Join(resumeErr, lease.commit())
+	execution.retryable = false
+	return errors.Join(resumeErr, execution.lease.commit())
+}
+
+func (execution *autoResumeFallbackExecution) consumeStateFailure(cause error) error {
+	consumed, err := consumeAutoResumeFallbackFailure(execution.lease, cause)
+	if consumed {
+		execution.delivering = true
+		execution.retryable = false
+	}
+	return err
 }
 
 func consumeAutoResumeFallbackFailure(lease transactionTokenLease, cause error) (bool, error) {
