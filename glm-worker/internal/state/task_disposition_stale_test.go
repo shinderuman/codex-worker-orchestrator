@@ -5,6 +5,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 )
 
 func TestResetWithDispositionRecoversLegacyPartialResetProvenance(t *testing.T) {
@@ -73,5 +75,30 @@ func TestResetRequestRejectsConflictingOrphanedTaskIdentity(t *testing.T) {
 	err = st.ValidateResetRequest(string(TaskDispositionAbandon))
 	if err == nil || !strings.Contains(err.Error(), "does not match parent review task") {
 		t.Fatalf("conflicting orphaned task identity was accepted: %v", err)
+	}
+}
+
+func TestResetRequestRequiresDispositionForOrphanedCompleteWithPendingPass(t *testing.T) {
+	st := &StateStore{dir: t.TempDir()}
+	if _, err := st.StartNewTask(); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetTaskStatus(TaskStatusComplete); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RecordSolResult(packet.Result{Status: packet.StatusPass, Risk: packet.RiskLow}, ParentReviewProducer{}); err != nil {
+		t.Fatal(err)
+	}
+
+	st.ArchiveCurrentStats()
+	if err := st.Remove("task.id", "task.status"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := st.ValidateResetRequest(""); err == nil || !strings.Contains(err.Error(), "explicit disposition") {
+		t.Fatalf("orphaned complete task with pending PASS accepted generic reset: %v", err)
+	}
+	if err := st.ValidateResetRequest(string(TaskDispositionAbandon)); err != nil {
+		t.Fatalf("orphaned complete task did not admit explicit abandon: %v", err)
 	}
 }
