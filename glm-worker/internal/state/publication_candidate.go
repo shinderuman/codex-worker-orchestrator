@@ -8,14 +8,15 @@ import (
 )
 
 type PublicationCandidate struct {
-	Version    int            `json:"version"`
-	TaskID     string         `json:"task_id"`
-	BaseHead   string         `json:"base_head"`
-	CommitOID  string         `json:"commit_oid"`
-	TreeOID    string         `json:"tree_oid"`
-	Snapshot   SnapshotDigest `json:"snapshot"`
-	SnapshotID string         `json:"snapshot_id"`
-	PreparedAt time.Time      `json:"prepared_at"`
+	Version       int            `json:"version"`
+	TaskID        string         `json:"task_id"`
+	BaseHead      string         `json:"base_head"`
+	CommitOID     string         `json:"commit_oid"`
+	TreeOID       string         `json:"tree_oid"`
+	MessageDigest string         `json:"message_sha256"`
+	Snapshot      SnapshotDigest `json:"snapshot"`
+	SnapshotID    string         `json:"snapshot_id"`
+	PreparedAt    time.Time      `json:"prepared_at"`
 }
 
 const (
@@ -73,6 +74,9 @@ func validatePublicationCandidate(candidate PublicationCandidate) error {
 	if !validPublicationOID(candidate.BaseHead) || !validPublicationOID(candidate.CommitOID) || !validPublicationOID(candidate.TreeOID) {
 		return fmt.Errorf("publication candidate git identityが不正です")
 	}
+	if !validPublicationDigest(candidate.MessageDigest) {
+		return fmt.Errorf("publication candidate commit message digestが不正です")
+	}
 	if candidate.Snapshot.Head != candidate.BaseHead || candidate.Snapshot.IndexDigest == "" || candidate.Snapshot.WorktreeDigest == "" {
 		return fmt.Errorf("publication candidate snapshot identityが不正です")
 	}
@@ -87,7 +91,15 @@ func validatePublicationCandidate(candidate PublicationCandidate) error {
 }
 
 func validPublicationOID(value string) bool {
-	if len(value) != 40 {
+	return validPublicationHex(value, 40)
+}
+
+func validPublicationDigest(value string) bool {
+	return validPublicationHex(value, 64)
+}
+
+func validPublicationHex(value string, length int) bool {
+	if len(value) != length {
 		return false
 	}
 	for _, char := range value {
