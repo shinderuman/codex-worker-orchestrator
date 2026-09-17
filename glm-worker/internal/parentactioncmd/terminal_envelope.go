@@ -32,9 +32,12 @@ func executeWithTerminalEnvelope(cfg config.AppConfig, args []string, stdout, st
 
 	var terminal bytes.Buffer
 	var err error
-	if args[0] == actionReviewEvidence {
+	switch args[0] {
+	case actionReviewEvidence:
 		err = executeParentReviewEvidence(cfg, args, &terminal)
-	} else {
+	case string(parentaction.ActionDecision):
+		err = executePreflightedDecision(cfg, args, &terminal, stderr)
+	default:
 		err = execute(cfg, args, &terminal, stderr)
 	}
 	if err != nil {
