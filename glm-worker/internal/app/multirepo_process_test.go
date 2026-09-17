@@ -150,9 +150,9 @@ func TestMultiRepositoryProcessIsolation(t *testing.T) {
 	if probe := ProbeRepoLock(filepath.Join(stateA, "lock")); probe.State != LockFree {
 		t.Fatalf("repo A process終了後にlockが解放されていません: %s", probe.State)
 	}
-	resetLost := env.run(t, env.repoA, "--reset")
-	if resetLost.code != 0 || !strings.Contains(resetLost.stdout, `"status":"reset"`) {
-		t.Fatalf("repo A owner-lost taskのresetが失敗しました: code=%d stdout=%s stderr=%s", resetLost.code, resetLost.stdout, resetLost.stderr)
+	resetLost := env.run(t, env.repoA, "--reset", "--disposition", "abandon")
+	if resetLost.code != 0 || !strings.Contains(resetLost.stdout, `"status":"reset"`) || !strings.Contains(resetLost.stdout, `"disposition":"abandon"`) {
+		t.Fatalf("repo A owner-lost taskの明示abandon resetが失敗しました: code=%d stdout=%s stderr=%s", resetLost.code, resetLost.stdout, resetLost.stderr)
 	}
 	assertStateDirUnchanged(t, stateB, snapshotB)
 
@@ -185,9 +185,9 @@ func TestMultiRepositoryProcessIsolation(t *testing.T) {
 	assertRepoLocalObservability(t, stateA, taskA2, "MRISOA2")
 	assertRepoLocalObservability(t, stateB, taskB, "MRISOB")
 
-	reset := env.run(t, env.repoA, "--reset")
-	if reset.code != 0 || !strings.Contains(reset.stdout, `"status":"reset"`) {
-		t.Fatalf("repo Aのresetが失敗しました: code=%d stdout=%s stderr=%s", reset.code, reset.stdout, reset.stderr)
+	reset := env.run(t, env.repoA, "--reset", "--disposition", "abandon")
+	if reset.code != 0 || !strings.Contains(reset.stdout, `"status":"reset"`) || !strings.Contains(reset.stdout, `"disposition":"abandon"`) {
+		t.Fatalf("repo Aの明示abandon resetが失敗しました: code=%d stdout=%s stderr=%s", reset.code, reset.stdout, reset.stderr)
 	}
 	assertStateDirUnchanged(t, stateB, snapshotB)
 	if _, err := os.Stat(filepath.Join(stateA, "task.id")); !os.IsNotExist(err) {

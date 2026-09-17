@@ -258,15 +258,15 @@ func TestExecuteResetClearsTask(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	if err := Execute(Command{Mode: ModeReset}, cfg, nil, &out, io.Discard); err != nil {
+	if err := Execute(Command{Mode: ModeReset, Payload: string(state.TaskDispositionAbandon)}, cfg, nil, &out, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	var reset map[string]any
 	if err := json.Unmarshal([]byte(strings.TrimSpace(out.String())), &reset); err != nil {
 		t.Fatalf("reset出力がmachine JSONではありません: %v: %q", err, out.String())
 	}
-	if reset["status"] != "reset" {
-		t.Fatalf("RESET出力がありません: %q", out.String())
+	if reset["status"] != "reset" || reset["disposition"] != string(state.TaskDispositionAbandon) {
+		t.Fatalf("explicit abandon RESET出力がありません: %q", out.String())
 	}
 	if st.Exists("task.id") {
 		t.Fatal("reset後もtask.idが残っています")

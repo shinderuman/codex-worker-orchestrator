@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-func TestOwnerLostActiveTaskRequiresExplicitResetBeforeNewTask(t *testing.T) {
+func TestOwnerLostActiveTaskRequiresExplicitDispositionBeforeNewTask(t *testing.T) {
 	env := newMultiRepoEnv(t)
 	env.setStubMode(t, env.stubA, "hold")
 
@@ -43,9 +43,9 @@ func TestOwnerLostActiveTaskRequiresExplicitResetBeforeNewTask(t *testing.T) {
 		t.Fatalf("拒否されたstartがtask requestを変更しました: want=%q got=%q", request, got)
 	}
 
-	reset := env.run(t, env.repoA, "--reset")
-	if reset.code != 0 || !strings.Contains(reset.stdout, `"status":"reset"`) {
-		t.Fatalf("owner-lost active taskのresetが失敗しました: code=%d stdout=%s stderr=%s", reset.code, reset.stdout, reset.stderr)
+	reset := env.run(t, env.repoA, "--reset", "--disposition", "abandon")
+	if reset.code != 0 || !strings.Contains(reset.stdout, `"status":"reset"`) || !strings.Contains(reset.stdout, `"disposition":"abandon"`) {
+		t.Fatalf("owner-lost active taskの明示abandon resetが失敗しました: code=%d stdout=%s stderr=%s", reset.code, reset.stdout, reset.stderr)
 	}
 	if _, err := os.Stat(filepath.Join(stateDir, "task.id")); !os.IsNotExist(err) {
 		t.Fatalf("reset後もtask.idが残っています: %v", err)
@@ -54,7 +54,7 @@ func TestOwnerLostActiveTaskRequiresExplicitResetBeforeNewTask(t *testing.T) {
 	env.setStubMode(t, env.stubA, "success")
 	started := env.run(t, env.repoA, "replacement task marker")
 	if started.code != 0 || !strings.Contains(started.stdout, `"status":"PASS"`) {
-		t.Fatalf("明示reset後のnew-task startが完結しません: code=%d stdout=%s stderr=%s", started.code, started.stdout, started.stderr)
+		t.Fatalf("明示abandon後のnew-task startが完結しません: code=%d stdout=%s stderr=%s", started.code, started.stdout, started.stderr)
 	}
 	if got := readStateFile(t, stateDir, "task.id"); got == taskID {
 		t.Fatalf("reset後のnew taskが旧task.idを再利用しました: %s", got)
