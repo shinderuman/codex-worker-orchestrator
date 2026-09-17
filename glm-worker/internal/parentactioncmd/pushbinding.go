@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -69,7 +70,7 @@ type gitUpstream struct {
 }
 
 const (
-	pushBindingUsage                           = "usage: glm-parent-action push-binding [--expected-oid <oid>] [--attempt-outcome <none|completed|rejected|network-error|non-fast-forward>]"
+	pushBindingUsage                           = "usage: glm-parent-action push-binding [--expected-oid <oid>] [--attempt-outcome <none|completed|rejected|network-error|non-fast-forward>] | glm-parent-action push-binding prepare --message <commit-message>"
 	pushBindingAttemptNone                     = "none"
 	pushBindingAttemptCompleted                = "completed"
 	pushBindingAttemptRejected                 = "rejected"
@@ -95,6 +96,16 @@ var (
 )
 
 func runPushBinding(repoRoot string, args []string, stdout io.Writer) error {
+	if len(args) > 0 && args[0] == "prepare" {
+		cfg, err := config.Load()
+		if err != nil {
+			return err
+		}
+		if cfg.RepoRoot != repoRoot {
+			return fmt.Errorf("publication prepare repository identity changed")
+		}
+		return runPublicationPrepare(cfg, args, stdout)
+	}
 	options, err := parsePushBindingOptions(args)
 	if err != nil {
 		return err
