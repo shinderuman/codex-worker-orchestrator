@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -56,7 +57,7 @@ func TestAutoResumeFallbackWaitsToMachineBoundaryAndResumes(t *testing.T) {
 		waitedUntil = target
 	}
 	resumeCalls := 0
-	autoResumeFallbackRunResume = func(got config.AppConfig, _ interfaceWriter) (bool, error) {
+	autoResumeFallbackRunResume = func(got config.AppConfig, _ io.Writer) (bool, error) {
 		resumeCalls++
 		if got.RepoRoot != cfg.RepoRoot {
 			t.Fatalf("resume repo = %q want %q", got.RepoRoot, cfg.RepoRoot)
@@ -111,7 +112,7 @@ func TestAutoResumeFallbackRejectsStateChangeDuringWait(t *testing.T) {
 		}
 	}
 	resumeCalls := 0
-	autoResumeFallbackRunResume = func(config.AppConfig, interfaceWriter) (bool, error) {
+	autoResumeFallbackRunResume = func(config.AppConfig, io.Writer) (bool, error) {
 		resumeCalls++
 		return true, nil
 	}
@@ -129,6 +130,47 @@ func TestAutoResumeFallbackRejectsStateChangeDuringWait(t *testing.T) {
 	}
 	if err := executeRuntimeControl(cmd, cfg, &bytes.Buffer{}); err == nil {
 		t.Fatal("stale fallback token was replayed")
+	}
+}
+
+func TestAutoResumeFallbackRejectsTaskStatusChangeDuringWait(t *testing.T) {
+	cfg := newAppConfig(t)
+	resetAt := time.Now().Add(time.Hour).Truncate(time.Second)
+	writeRateLimitedState(t, cfg, resetAt)
+	t.Setenv(codexThreadIDEnv, testAppCodexWakeThread)
+	plan := testAppAutoResumePlan(t, cfg)
+	st := state.AttachStateStore(cfg)
+
+	oldWait := autoResumeFallbackWaitUntil
+	oldRun := autoResumeFallbackRunResume
+	defer func() {
+		autoResumeFallbackWaitUntil = oldWait
+		autoResumeFallbackRunResume = oldRun
+	}()
+	autoResumeFallbackWaitUntil = func(time.Time) {
+		if err := st.SetTaskStatus(state.TaskStatusInterrupted); err != nil {
+			t.Fatal(err)
+		}
+	}
+	resumeCalls := 0
+	autoResumeFallbackRunResume = func(config.AppConfig, io.Writer) (bool, error) {
+		resumeCalls++
+		return true, nil
+	}
+
+	cmd, err := ParseCommand([]string{"--auto-resume-fallback", plan.Token})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = executeRuntimeControl(cmd, cfg, &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "no longer rate-limited") {
+		t.Fatalf("task-status-change error = %v", err)
+	}
+	if resumeCalls != 0 {
+		t.Fatalf("resume calls = %d want 0", resumeCalls)
+	}
+	if err := executeRuntimeControl(cmd, cfg, &bytes.Buffer{}); err == nil {
+		t.Fatal("changed-state fallback token was replayed")
 	}
 }
 
@@ -159,8 +201,4 @@ func TestParseAutoResumeFallbackRejectsMissingToken(t *testing.T) {
 	if _, err := ParseCommand([]string{"--auto-resume-fallback"}); err == nil {
 		t.Fatal("missing fallback token was accepted")
 	}
-}
-
-type interfaceWriter interface {
-	Write([]byte) (int, error)
 }
