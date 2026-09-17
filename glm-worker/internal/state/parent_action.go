@@ -217,6 +217,7 @@ func (s *StateStore) waitingReviewActionPlanWithEvidenceReadiness(status TaskSta
 		return ParentActionPlan{}, lifecycleInconsistency(status, "parent review evidence state is unreadable: "+err.Error())
 	}
 	if binding == nil {
+		plan.AllowedActions = withoutParentAction(plan.AllowedActions, ParentActionAccept)
 		return plan, nil
 	}
 	ready, err := s.ParentReviewAcceptReady()
