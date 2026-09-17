@@ -95,6 +95,31 @@ func TestResetWithDispositionPersistsProvenanceUntilNewTaskAdmission(t *testing.
 	}
 }
 
+func TestValidateResetDispositionForNewTaskRejectsMissingLifecycle(t *testing.T) {
+	st := &StateStore{dir: t.TempDir()}
+	taskID, err := st.StartNewTask()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetTaskStatus(TaskStatusAwaitingParentCompletion); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.ResetWithDisposition(string(TaskDispositionAbandon)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(st.TaskLifecycleLogPath(taskID)); err != nil {
+		t.Fatal(err)
+	}
+
+	err = st.ValidateResetDispositionForNewTask()
+	if err == nil || !strings.Contains(err.Error(), "disposition transition is missing") {
+		t.Fatalf("new task admission did not fail closed on missing lifecycle: %v", err)
+	}
+	if _, statErr := os.Stat(st.TaskLifecycleLogPath(taskID)); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("admission synthesized missing lifecycle: %v", statErr)
+	}
+}
+
 func TestResetWithDispositionAutoClassifiesRecoverableStop(t *testing.T) {
 	st := &StateStore{dir: t.TempDir()}
 	if _, err := st.StartNewTask(); err != nil {
