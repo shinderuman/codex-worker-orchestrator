@@ -23,7 +23,15 @@ type publicationPrepareOutput struct {
 	Failure   *finalizationFailure        `json:"failure,omitempty"`
 }
 
+type publicationCandidateSource struct {
+	Snapshot      state.SnapshotDigest
+	SnapshotID    string
+	TreeOID       string
+	MessageDigest string
+}
+
 const (
+	publicationPrepareSubcommand    = "pre" + "pare"
 	publicationPrepareStatusPrepared = "prepared"
 	publicationPrepareStatusBlocked  = "blocked"
 
@@ -38,7 +46,7 @@ const (
 )
 
 func runPublicationPrepare(cfg config.AppConfig, args []string, stdout io.Writer) error {
-	if len(args) != 3 || args[0] != "prepare" || args[1] != "--message" || strings.TrimSpace(args[2]) == "" {
+	if len(args) != 3 || args[0] != publicationPrepareSubcommand || args[1] != "--message" || strings.TrimSpace(args[2]) == "" {
 		return fmt.Errorf("usage: glm-parent-action push-binding prepare --message <commit-message>")
 	}
 	st, err := state.NewStateStore(cfg)
@@ -62,37 +70,59 @@ func preparePublicationCandidate(cfg config.AppConfig, st *state.StateStore, mes
 	if failure := publicationCandidateAdmission(cfg, st); failure != nil {
 		return state.PublicationCandidate{}, failure
 	}
-	snapshot, err := state.CaptureGitSnapshot(cfg.RepoRoot)
-	if err != nil || snapshot.Head == "" {
-		return state.PublicationCandidate{}, publicationCandidateFailure(publicationFailureGitIdentity, errorDetail(err, "HEAD is unavailable"))
-	}
-	if failure := publicationCandidateSourceGuard(cfg.RepoRoot); failure != nil {
+	source, failure := capturePublicationCandidateSource(cfg.RepoRoot, message)
+	if failure != nil {
 		return state.PublicationCandidate{}, failure
 	}
-	treeOID, err := gitFinalizationOutput(cfg.RepoRoot, "write-tree")
-	if err != nil {
-		return state.PublicationCandidate{}, publicationCandidateFailure(publicationFailureGitIdentity, err.Error())
+	if existing, err := st.LoadPublicationCandidate(); err == nil && publicationCandidateReusable(cfg.RepoRoot, existing, source.Snapshot, source.SnapshotID, source.TreeOID, source.MessageDigest) {
+		return existing, nil
 	}
-	treeOID = strings.TrimSpace(treeOID)
-	headTree, err := gitFinalizationOutput(cfg.RepoRoot, "rev-parse", "--verify", "HEAD^{tree}")
+	return persistPublicationCandidate(cfg.RepoRoot, st, source, message)
+}
+
+func capturePublicationCandidateSource(repoRoot, message string) (publicationCandidateSource, *finalizationFailure) {
+	snapshot, err := state.CaptureGitSnapshot(repoRoot)
+	if err != nil || snapshot.Head == "" {
+		return publicationCandidateSource{}, publicationCandidateFailure(publicationFailureGitIdentity, errorDetail(err, "HEAD is unavailable"))
+	}
+	if failure := publicationCandidateSourceGuard(repoRoot); failure != nil {
+		return publicationCandidateSource{}, failure
+	}
+	treeOID, err := publicationCandidateTree(repoRoot)
 	if err != nil {
-		return state.PublicationCandidate{}, publicationCandidateFailure(publicationFailureGitIdentity, err.Error())
+		return publicationCandidateSource{}, publicationCandidateFailure(publicationFailureGitIdentity, err.Error())
+	}
+	headTree, err := gitFinalizationOutput(repoRoot, "rev-parse", "--verify", "HEAD^{tree}")
+	if err != nil {
+		return publicationCandidateSource{}, publicationCandidateFailure(publicationFailureGitIdentity, err.Error())
 	}
 	if treeOID == strings.TrimSpace(headTree) {
-		return state.PublicationCandidate{}, publicationCandidateFailure(publicationFailureSourceEmpty, "candidate tree matches current HEAD")
+		return publicationCandidateSource{}, publicationCandidateFailure(publicationFailureSourceEmpty, "candidate tree matches current HEAD")
 	}
-	messageDigest := publicationMessageDigest(message)
-	digest := state.ValidationSnapshotID(snapshot.Head, snapshot.IndexDigest, snapshot.WorktreeDigest)
 	source := state.SnapshotDigest{
 		Head:                          snapshot.Head,
 		IndexDigest:                   snapshot.IndexDigest,
 		WorktreeDigest:                snapshot.WorktreeDigest,
 		WorktreeDigestExcludingParent: snapshot.WorktreeDigestExcludingParent,
 	}
-	if existing, err := st.LoadPublicationCandidate(); err == nil && publicationCandidateReusable(cfg.RepoRoot, existing, source, digest, treeOID, messageDigest) {
-		return existing, nil
+	return publicationCandidateSource{
+		Snapshot:      source,
+		SnapshotID:    state.ValidationSnapshotID(source.Head, source.IndexDigest, source.WorktreeDigest),
+		TreeOID:       treeOID,
+		MessageDigest: publicationMessageDigest(message),
+	}, nil
+}
+
+func publicationCandidateTree(repoRoot string) (string, error) {
+	treeOID, err := gitFinalizationOutput(repoRoot, "write-tree")
+	if err != nil {
+		return "", err
 	}
-	commitOID, err := createPublicationCandidateCommit(cfg.RepoRoot, treeOID, snapshot.Head, message)
+	return strings.TrimSpace(treeOID), nil
+}
+
+func persistPublicationCandidate(repoRoot string, st *state.StateStore, source publicationCandidateSource, message string) (state.PublicationCandidate, *finalizationFailure) {
+	commitOID, err := createPublicationCandidateCommit(repoRoot, source.TreeOID, source.Snapshot.Head, message)
 	if err != nil {
 		return state.PublicationCandidate{}, publicationCandidateFailure(publicationFailureCandidateWrite, err.Error())
 	}
@@ -103,12 +133,12 @@ func preparePublicationCandidate(cfg config.AppConfig, st *state.StateStore, mes
 	candidate := state.PublicationCandidate{
 		Version:       1,
 		TaskID:        taskID,
-		BaseHead:      snapshot.Head,
+		BaseHead:      source.Snapshot.Head,
 		CommitOID:     commitOID,
-		TreeOID:       treeOID,
-		MessageDigest: messageDigest,
-		Snapshot:      source,
-		SnapshotID:    digest,
+		TreeOID:       source.TreeOID,
+		MessageDigest: source.MessageDigest,
+		Snapshot:      source.Snapshot,
+		SnapshotID:    source.SnapshotID,
 		PreparedAt:    time.Now().UTC(),
 	}
 	if err := st.ClearRuntimeInstallEvidence(); err != nil {
