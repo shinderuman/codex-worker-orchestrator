@@ -30,8 +30,9 @@ type publicationCandidateSource struct {
 	MessageDigest string
 }
 
+const publicationPrepareSubcommand = "pre" + "pare"
+
 const (
-	publicationPrepareSubcommand    = "pre" + "pare"
 	publicationPrepareStatusPrepared = "prepared"
 	publicationPrepareStatusBlocked  = "blocked"
 
