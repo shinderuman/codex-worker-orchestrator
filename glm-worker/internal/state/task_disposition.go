@@ -147,6 +147,9 @@ func (s *StateStore) recordTaskDispositionAndReset(record TaskDispositionRecord)
 }
 
 func (s *StateStore) completedTaskResetCleanupAllowed() bool {
+	if s.ReadOr("task.id", "") == "" {
+		return false
+	}
 	plan, err := s.ParentActionPlan()
 	return err == nil && plan.RequiredAction == ParentActionNone
 }
