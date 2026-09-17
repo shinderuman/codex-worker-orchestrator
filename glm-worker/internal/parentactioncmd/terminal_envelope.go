@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/app"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentaction"
 )
@@ -24,15 +25,18 @@ const (
 )
 
 func executeWithTerminalEnvelope(cfg config.AppConfig, args []string, stdout, stderr io.Writer) error {
-	if len(args) != 0 && args[0] == actionReviewEvidence {
-		return executeParentReviewEvidence(cfg, args, stdout)
-	}
 	if len(args) == 0 || !terminalEnvelopeAction(args[0]) {
 		return execute(cfg, args, stdout, stderr)
 	}
 
 	var terminal bytes.Buffer
-	if err := execute(cfg, args, &terminal, stderr); err != nil {
+	var err error
+	if args[0] == actionReviewEvidence {
+		err = executeParentReviewEvidence(cfg, args, &terminal)
+	} else {
+		err = execute(cfg, args, &terminal, stderr)
+	}
+	if err != nil {
 		if terminal.Len() != 0 {
 			_, _ = stdout.Write(terminal.Bytes())
 		}
@@ -44,7 +48,12 @@ func executeWithTerminalEnvelope(cfg config.AppConfig, args []string, stdout, st
 	}
 
 	var handoff bytes.Buffer
-	if err := runWorker(cfg.RepoRoot, []string{"--handoff"}, nil, &handoff, stderr, nil); err != nil {
+	if args[0] == actionReviewEvidence {
+		err = app.Execute(app.Command{Mode: app.ModeHandoff}, cfg, nil, &handoff, stderr)
+	} else {
+		err = runWorker(cfg.RepoRoot, []string{"--handoff"}, nil, &handoff, stderr, nil)
+	}
+	if err != nil {
 		return fmt.Errorf("canonical handoff failed after parent action: %w", err)
 	}
 	handoffJSON, err := decodeSingleMachineJSON(handoff.Bytes(), "canonical handoff")
@@ -68,7 +77,7 @@ func terminalEnvelopeAction(action string) bool {
 		return descriptor.Action != parentaction.ActionReviseMilestones
 	}
 	switch action {
-	case actionStart, actionApprove, actionAccept, actionResume, "no-go", actionPark, actionUnpark:
+	case actionStart, actionApprove, actionAccept, actionResume, "no-go", actionPark, actionUnpark, actionReviewEvidence:
 		return true
 	default:
 		return false
