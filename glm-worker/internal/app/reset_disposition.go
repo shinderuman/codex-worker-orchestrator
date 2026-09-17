@@ -1,7 +1,9 @@
 package app
 
 import (
+	"errors"
 	"io"
+	"os"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
@@ -38,7 +40,11 @@ func executeDispositionReset(cmd Command, st *state.StateStore, stdout io.Writer
 		if err := st.ValidateResetRequest(""); err != nil {
 			return err
 		}
-		return resetState(st, stdout)
+		if _, err := st.CurrentTaskDisposition(); errors.Is(err, os.ErrNotExist) {
+			return resetState(st, stdout)
+		} else if err != nil {
+			return err
+		}
 	}
 	disposition, err := st.ResetWithDisposition(cmd.Payload)
 	if err != nil {
