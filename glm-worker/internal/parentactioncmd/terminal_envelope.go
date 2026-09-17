@@ -80,7 +80,7 @@ func writeTerminalHandoffFailure(stdout io.Writer, terminalJSON json.RawMessage,
 		HandoffError: handoffErr.Error(),
 	}
 	if err := json.NewEncoder(stdout).Encode(envelope); err != nil {
-		return fmt.Errorf("%v; encode terminal handoff failure envelope: %w", handoffErr, err)
+		return fmt.Errorf("%w; encode terminal handoff failure envelope: %w", handoffErr, err)
 	}
 	return handoffErr
 }
