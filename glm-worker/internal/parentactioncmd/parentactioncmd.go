@@ -25,7 +25,7 @@ import (
 )
 
 const (
-	usage = "usage: glm-parent-action start [--rotation-claim <claim-id>] | rotation-claim <directive-id> | rotation-bind <directive-id> <claim-id> <new-thread-id> | rotation-fail <directive-id> <claim-id> --creation-result-json <json> | prepare <decision|fix|start-milestones|revise-milestones> | decision <token> | fix <token> [--origin <origin>] [--cause <cause>] [--accepted-scope current-diff] | approve-surface --accepted-scope current-diff | start-milestones <token> [--rotation-claim <claim-id>] | revise-milestones <token> | no-go | accept | complete | install | resume | wait | park | unpark | evidence <manifest.json> | finalize-check <go-test|go-test-race> | push-binding [--expected-oid <oid>] [--attempt-outcome <none|completed|rejected|network-error|non-fast-forward>]"
+	usage = "usage: glm-parent-action start [--rotation-claim <claim-id>] | rotation-claim <directive-id> | rotation-bind <directive-id> <claim-id> <new-thread-id> | rotation-fail <directive-id> <claim-id> --creation-result-json <json> | prepare <decision|fix|start-milestones|revise-milestones> | decision <token> | fix <token> [--origin <origin>] [--cause <cause>] [--accepted-scope current-diff] | approve-surface --accepted-scope current-diff | start-milestones <token> [--rotation-claim <claim-id>] | revise-milestones <token> | no-go | accept | complete | install | resume | wait | park | unpark | evidence <manifest.json> | finalize-check <go-test|go-test-race> | push-binding [--expected-oid <oid>] [--attempt-outcome <none|completed|rejected|network-error|non-fast-forward>] | continuation-stop-hook | continuation-metadata-guard"
 
 	activeTaskRequest = "現在のACTIVE taskを実行してください。"
 	actionStart       = "start"
@@ -89,6 +89,8 @@ func execute(cfg config.AppConfig, args []string, stdout, stderr io.Writer) erro
 		return executeInstall(cfg, args, stdout, stderr)
 	case "wait":
 		return executeParentWait(cfg, args, stdout, stderr)
+	case actionContinuationStopHook, actionContinuationMetadataGuard:
+		return executeContinuationGate(cfg, args, stdout)
 	case actionApprove:
 		return executeApproveSurfaceAction(cfg, args[1:], stdout, stderr)
 	case actionStart, actionAccept, actionResume:
