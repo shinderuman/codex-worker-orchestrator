@@ -9,36 +9,48 @@ import (
 )
 
 func admitParentCommand(cmd Command, st *state.StateStore) error {
-	if cmd.Mode == ModeReset {
-		if err := st.ValidateResetRequest(cmd.Payload); err != nil {
-			return &workflow.WorkerError{Message: err.Error()}
-		}
+	switch cmd.Mode {
+	case ModeReset:
+		return admitResetCommand(cmd, st)
+	case ModeNewTask:
+		return admitNewTaskCommand(cmd, st)
+	default:
+		return admitExistingTaskParentCommand(cmd, st)
+	}
+}
+
+func admitResetCommand(cmd Command, st *state.StateStore) error {
+	if err := st.ValidateResetRequest(cmd.Payload); err != nil {
+		return &workflow.WorkerError{Message: err.Error()}
+	}
+	return nil
+}
+
+func admitNewTaskCommand(cmd Command, st *state.StateStore) error {
+	if err := st.ValidateResetDispositionForNewTask(); err != nil {
+		return &workflow.WorkerError{Message: err.Error()}
+	}
+	resume, err := st.AdmitNewTaskRotation(os.Getenv(state.ParentActionCodexThreadIDEnv), os.Getenv(state.SessionRotationClaimIDEnv))
+	if err != nil {
+		return &workflow.WorkerError{Message: err.Error()}
+	}
+	if resume {
 		return nil
 	}
-	if cmd.Mode == ModeNewTask {
-		if err := st.ValidateResetDispositionForNewTask(); err != nil {
-			return &workflow.WorkerError{Message: err.Error()}
-		}
-		resume, err := st.AdmitNewTaskRotation(os.Getenv(state.ParentActionCodexThreadIDEnv), os.Getenv(state.SessionRotationClaimIDEnv))
-		if err != nil {
-			return &workflow.WorkerError{Message: err.Error()}
-		}
-		if resume {
-			return nil
-		}
-		if st.TaskStatus() == state.TaskStatusActive {
-			return &workflow.WorkerError{Message: "previous task is still active; explicitly dispose it with glm-worker --reset --disposition cancel or --reset --disposition abandon before starting a new task"}
-		}
-		plan, admitted, err := st.AdmitNewTask()
-		if err != nil {
-			return &workflow.WorkerError{Message: err.Error()}
-		}
-		if admitted {
-			return nil
-		}
-		return parentActionDenied(cmd, plan, st)
+	if st.TaskStatus() == state.TaskStatusActive {
+		return &workflow.WorkerError{Message: "previous task is still active; explicitly dispose it with glm-worker --reset --disposition cancel or --reset --disposition abandon before starting a new task"}
 	}
+	plan, admitted, err := st.AdmitNewTask()
+	if err != nil {
+		return &workflow.WorkerError{Message: err.Error()}
+	}
+	if admitted {
+		return nil
+	}
+	return parentActionDenied(cmd, plan, st)
+}
 
+func admitExistingTaskParentCommand(cmd Command, st *state.StateStore) error {
 	action, parentCommand := commandParentAction(cmd.Mode)
 	if !parentCommand {
 		return nil
