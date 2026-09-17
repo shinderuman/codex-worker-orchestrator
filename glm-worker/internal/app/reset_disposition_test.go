@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -51,6 +52,48 @@ func TestExecuteResetRejectsAwaitingParentCompletionWithoutDisposition(t *testin
 	}
 	if got := st.TaskStatus(); got != state.TaskStatusAwaitingParentCompletion {
 		t.Fatalf("rejected reset changed status: %q", got)
+	}
+}
+
+func TestExecuteResetRequiresDispositionBeforePassAcceptance(t *testing.T) {
+	cfg := newAppConfig(t)
+	st, err := state.NewStateStore(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	taskID, err := st.StartNewTask()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetTaskStatus(state.TaskStatusComplete); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RecordSolResult(packet.Result{Status: packet.StatusPass, Risk: packet.RiskLow}, state.ParentReviewProducer{}); err != nil {
+		t.Fatal(err)
+	}
+
+	var out bytes.Buffer
+	err = Execute(Command{Mode: ModeReset}, cfg, nil, &out, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "explicit disposition") {
+		t.Fatalf("PASS-pending generic reset did not fail closed: %v", err)
+	}
+	if got := st.ReadOr("task.id", ""); got != taskID {
+		t.Fatalf("rejected PASS-pending reset changed task.id: %q", got)
+	}
+	if got := st.TaskStatus(); got != state.TaskStatusComplete {
+		t.Fatalf("rejected PASS-pending reset changed status: %q", got)
+	}
+
+	out.Reset()
+	if err := Execute(Command{Mode: ModeReset, Payload: string(state.TaskDispositionAbandon)}, cfg, nil, &out, io.Discard); err != nil {
+		t.Fatalf("explicit abandon was rejected for PASS-pending task: %v", err)
+	}
+	var got dispositionResetOutput
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Disposition != state.TaskDispositionAbandon {
+		t.Fatalf("PASS-pending reset disposition = %q", got.Disposition)
 	}
 }
 
