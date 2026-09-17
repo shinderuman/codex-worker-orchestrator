@@ -245,11 +245,11 @@ func TestExecuteParentReviewAcceptCompletesOnlyResolvedReview(t *testing.T) {
 	if err := st.SetTaskStatus(state.TaskStatusWaitingSolReview); err != nil {
 		t.Fatal(err)
 	}
-	if accept := executeAccept(t, cfg); accept.Accepted {
-		t.Fatal("open reviewなしのacceptが確定されました")
+	if err := Execute(Command{Mode: ModeAccept}, cfg, nil, io.Discard, io.Discard); err == nil {
+		t.Fatal("canonical reviewのないwaiting-sol-reviewでacceptをfail closedできていません")
 	}
 	if got := st.TaskStatus(); got != state.TaskStatusWaitingSolReview {
-		t.Fatalf("no-op accept changed status = %q", got)
+		t.Fatalf("rejected accept changed status = %q", got)
 	}
 }
 
