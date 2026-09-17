@@ -127,14 +127,12 @@ func TestParentCommandAdmissionMatchesWaitingActions(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		for _, mode := range []CommandMode{ModeAccept, ModeFix} {
-			if err := admitParentCommand(Command{Mode: mode}, st); err != nil {
-				t.Fatalf("mode %d rejected during parent review: %v", mode, err)
-			}
+		if err := admitParentCommand(Command{Mode: ModeFix}, st); err != nil {
+			t.Fatalf("fix rejected during parent review: %v", err)
 		}
-		for _, mode := range []CommandMode{ModeDecision, ModeResume, ModeNewTask} {
+		for _, mode := range []CommandMode{ModeAccept, ModeDecision, ModeResume, ModeNewTask} {
 			if err := admitParentCommand(Command{Mode: mode}, st); err == nil {
-				t.Fatalf("mode %d admitted during parent review", mode)
+				t.Fatalf("mode %d admitted during unbound parent review", mode)
 			}
 		}
 	})

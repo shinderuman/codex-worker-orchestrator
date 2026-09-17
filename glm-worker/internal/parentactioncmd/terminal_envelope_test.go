@@ -1,13 +1,15 @@
 package parentactioncmd
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 )
 
 func TestTerminalEnvelopeActionCoversParentLifecycleActions(t *testing.T) {
-	for _, action := range []string{"start", "decision", "fix", "start-milestones", "approve-surface", "accept", "resume", "no-go", "park", "unpark"} {
+	for _, action := range []string{"start", "decision", "fix", "start-milestones", "approve-surface", "accept", "resume", "no-go", "park", "unpark", "review-evidence"} {
 		if !terminalEnvelopeAction(action) {
 			t.Fatalf("action %q must return a machine terminal envelope", action)
 		}
@@ -44,5 +46,30 @@ func TestExecuteWithTerminalEnvelope(t *testing.T) {
 		if !strings.Contains(text, want) {
 			t.Fatalf("terminal envelope missing %s: %s", want, text)
 		}
+	}
+}
+
+func TestWriteTerminalHandoffFailurePreservesTerminalResult(t *testing.T) {
+	var stdout bytes.Buffer
+	handoffErr := errors.New("handoff unavailable")
+	err := writeTerminalHandoffFailure(&stdout, json.RawMessage(`{"status":"PASS"}`), handoffErr)
+	if !errors.Is(err, handoffErr) {
+		t.Fatalf("error = %v, want %v", err, handoffErr)
+	}
+	var envelope parentActionTerminalEnvelopePayload
+	if err := json.Unmarshal(stdout.Bytes(), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if envelope.Status != "parent_action_terminal_handoff_failed" {
+		t.Fatalf("status = %q", envelope.Status)
+	}
+	if string(envelope.Terminal) != `{"status":"PASS"}` {
+		t.Fatalf("terminal = %s", envelope.Terminal)
+	}
+	if envelope.HandoffError != handoffErr.Error() {
+		t.Fatalf("handoff error = %q", envelope.HandoffError)
+	}
+	if len(envelope.Handoff) != 0 {
+		t.Fatalf("handoff must be absent on failure: %s", envelope.Handoff)
 	}
 }

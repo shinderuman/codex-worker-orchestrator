@@ -263,7 +263,7 @@ func TestWaitForQualitySurfaceReviewClearsResidualPendingDecision(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if plan.RequiredAction != ParentActionReview || !plan.Allows(ParentActionAccept) || !plan.Allows(ParentActionFix) {
+	if plan.RequiredAction != ParentActionReview || plan.Allows(ParentActionAccept) || !plan.Allows(ParentActionFix) {
 		t.Fatalf("plan = %#v", plan)
 	}
 }

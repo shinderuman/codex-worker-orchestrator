@@ -28,7 +28,7 @@ func TestParentReviewAuthoritySurvivesTaskStatsCorruption(t *testing.T) {
 	if err != nil {
 		t.Fatalf("task-stats corruption changed live admission: %v", err)
 	}
-	if plan.RequiredAction != ParentActionReview || !plan.Allows(ParentActionAccept) || !plan.Allows(ParentActionFix) {
+	if plan.RequiredAction != ParentActionReview || plan.Allows(ParentActionAccept) || !plan.Allows(ParentActionFix) {
 		t.Fatalf("review plan = %#v", plan)
 	}
 }
@@ -54,7 +54,7 @@ func TestParentReviewAuthorityIgnoresConflictingTaskStatsMirror(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if plan.RequiredAction != ParentActionReview || !plan.Allows(ParentActionAccept) || !plan.Allows(ParentActionFix) {
+	if plan.RequiredAction != ParentActionReview || plan.Allows(ParentActionAccept) || !plan.Allows(ParentActionFix) {
 		t.Fatalf("conflicting stats mirror overrode canonical review: %#v", plan)
 	}
 	label, err := st.CurrentParentReviewLabel()

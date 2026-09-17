@@ -27,20 +27,13 @@ func (w *Workflow) ExecuteDecisionWithExecutionUnitPayload(payload string) error
 		return w.ExecuteDecisionWithExecutionMilestones(payload)
 	}
 
-	input, err := parseExecutionUnitDecision(payload)
-	if err != nil {
-		return err
-	}
-	active, err := w.hasPendingExecutionMilestone()
+	input, active, err := w.validateDecisionExecutionUnitPayload(payload)
 	if err != nil {
 		return err
 	}
 
 	switch input.ExecutionUnit {
 	case executionUnitSingle:
-		if active {
-			return fmt.Errorf("execution-unit single cannot bypass pending execution milestones")
-		}
 		return w.ExecuteDecision(input.Decision)
 	case executionUnitMilestones:
 		return w.executeMilestoneExecutionUnitDecision(input, active)

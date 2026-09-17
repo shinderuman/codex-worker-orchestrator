@@ -71,6 +71,35 @@ func TestConsumeDecisionRejectsLegacyFreeText(t *testing.T) {
 	}
 }
 
+func TestConsumeDecisionPreservesSlotOnSemanticValidationFailure(t *testing.T) {
+	invalid := []string{
+		"EXECUTION_UNIT: unknown\nMILESTONES_JSON: {\"milestones\":[]}\nDECISION:\ncontinue\n",
+		"EXECUTION_UNIT: single\nMILESTONES_JSON: {\"milestones\":[{\"id\":\"a\",\"scope\":\"a\",\"acceptance\":\"a\"},{\"id\":\"b\",\"scope\":\"b\",\"acceptance\":\"b\"}]}\nDECISION:\ncontinue\n",
+		"EXECUTION_UNIT: milestones\nMILESTONES_JSON: {\"milestones\":[{\"id\":\"a\",\"scope\":\"a\",\"acceptance\":\"a\"}]}\nDECISION:\ncontinue\n",
+		"EXECUTION_UNIT: single\nMILESTONES_JSON: not-json\nDECISION:\ncontinue\n",
+		"EXECUTION_UNIT: single\nMILESTONES_JSON: {\"milestones\":[]}\nDECISION:\n   \n",
+	}
+	valid := []byte("EXECUTION_UNIT: single\nMILESTONES_JSON: {\"milestones\":[]}\nDECISION:\ncontinue\n")
+	for _, payload := range invalid {
+		repo := t.TempDir()
+		prepared, err := Prepare(repo, "decision")
+		if err != nil {
+			t.Fatal(err)
+		}
+		writePreparedPayload(t, prepared, []byte(payload))
+		if _, err := Consume(repo, "decision", prepared.Token); err == nil {
+			t.Fatalf("semantically invalid staged decision was accepted: %q", payload)
+		}
+		if _, err := os.Lstat(prepared.Path); err != nil {
+			t.Fatalf("invalid staged decision was discarded instead of preserved: %v", err)
+		}
+		writePreparedPayload(t, prepared, valid)
+		if _, err := Consume(repo, "decision", prepared.Token); err != nil {
+			t.Fatalf("corrected staged decision was not retryable: %v", err)
+		}
+	}
+}
+
 func TestPrepareAcceptsMilestonePayloadActions(t *testing.T) {
 	for _, action := range []string{"start-milestones", "revise-milestones"} {
 		repo := t.TempDir()

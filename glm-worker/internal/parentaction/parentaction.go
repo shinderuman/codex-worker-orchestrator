@@ -69,7 +69,7 @@ func Prepare(repoRoot, action string) (Prepared, error) {
 	return Prepared{Action: action, Token: token, Path: path}, nil
 }
 
-func Consume(repoRoot, action, token string) ([]byte, error) {
+func Peek(repoRoot, action, token string) ([]byte, error) {
 	if !validPayloadAction(action) {
 		return nil, fmt.Errorf("unsupported parent payload action %q", action)
 	}
@@ -94,6 +94,26 @@ func Consume(repoRoot, action, token string) ([]byte, error) {
 			return nil, err
 		}
 	}
+	return payload, nil
+}
+
+func Consume(repoRoot, action, token string) ([]byte, error) {
+	return consume(repoRoot, action, token, nil, false)
+}
+
+func ConsumeExpected(repoRoot, action, token string, expected []byte) ([]byte, error) {
+	return consume(repoRoot, action, token, expected, true)
+}
+
+func consume(repoRoot, action, token string, expected []byte, requireExpected bool) ([]byte, error) {
+	payload, err := Peek(repoRoot, action, token)
+	if err != nil {
+		return nil, err
+	}
+	if requireExpected && !bytes.Equal(payload, expected) {
+		return nil, fmt.Errorf("parent action staging payload changed after validation")
+	}
+	path := payloadPath(filepath.Join(repoRoot, StageDirName), action, token)
 	if err := os.Remove(path); err != nil {
 		return nil, fmt.Errorf("consume parent action staging file: %w", err)
 	}
@@ -108,7 +128,7 @@ func validateDecisionPayloadShape(payload []byte) error {
 		string(parts[2]) != decisionMarker {
 		return fmt.Errorf("decision parent action must preserve the machine-owned execution-unit template")
 	}
-	return nil
+	return validateDecisionPayloadSemantics(parts)
 }
 
 func decodePayload(raw []byte, token string) ([]byte, error) {
