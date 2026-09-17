@@ -14,6 +14,8 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 - `IMPLEMENTATION_TASKS/install-smoke-quality-tools-path-resolution.md`
 - `IMPLEMENTATION_TASKS/detected-defect-task-registration-enforcement.md`
+- `IMPLEMENTATION_TASKS/parent-usage-interleaved-turn-ambiguity.md`
+- `IMPLEMENTATION_TASKS/parent-wait-custom-tool-observability.md`
 - `IMPLEMENTATION_TASKS/task-stats-archive-skip-observability.md`
 - `IMPLEMENTATION_TASKS/codex-efficiency-intermediate-checkpoint.md`
 - `IMPLEMENTATION_TASKS/post-105-codex-efficiency-reevaluation.md`
