@@ -29,23 +29,33 @@ func applyParentRequestCompletion(repoRoot string, st *state.StateStore, output 
 }
 
 func validateParentContinuationActionability(st *state.StateStore, output *parentHandoffOutput) {
-	if !output.Consistent || output.TaskStatus == nil || *output.TaskStatus != string(state.TaskStatusActive) ||
-		output.RequiredAction == nil || *output.RequiredAction != string(state.ParentActionNone) || len(output.AllowedActions) != 0 ||
-		output.ParentRequest == nil || output.ParentRequest.Continuation.State != projectContinuationContinueNow {
+	if !fatalActiveContinuationWithoutAction(output) {
 		return
 	}
+	if latestParentMaterialOutcome(st) != "error" {
+		return
+	}
+	markHandoffInconsistent(output, "active task has a terminal error while project continuation is required but no parent action is admitted")
+}
+
+func fatalActiveContinuationWithoutAction(output *parentHandoffOutput) bool {
+	return output.Consistent &&
+		output.TaskStatus != nil && *output.TaskStatus == string(state.TaskStatusActive) &&
+		output.RequiredAction != nil && *output.RequiredAction == string(state.ParentActionNone) &&
+		len(output.AllowedActions) == 0 &&
+		output.ParentRequest != nil && output.ParentRequest.Continuation.State == projectContinuationContinueNow
+}
+
+func latestParentMaterialOutcome(st *state.StateStore) string {
 	taskID := st.ReadOr("task.id", "")
 	logs, err := taskview.ReadStatusTelemetry(st, taskID)
 	if err != nil {
-		return
+		return ""
 	}
 	for index := len(logs) - 1; index >= 0; index-- {
-		if logs[index].CallType == state.CallTypeProbe {
-			continue
+		if logs[index].CallType != state.CallTypeProbe {
+			return logs[index].Outcome
 		}
-		if logs[index].Outcome == "error" {
-			markHandoffInconsistent(output, "active task has a terminal error while project continuation is required but no parent action is admitted")
-		}
-		return
 	}
+	return ""
 }
