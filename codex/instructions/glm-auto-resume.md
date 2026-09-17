@@ -17,7 +17,7 @@ Codex appの`automation_update` mutationだけはrepository外の`external-unenf
 
 - `write_required`ではmachine outputの`write`を変更せず`automation_update`へ渡す。ID、name、thread、status、schedule、promptその他のfieldを親で生成・修正しない。
 - toolのraw responseは解釈・要約せず、同じtransactionが指定するresponse commandへそのまま返す。次の`write_required`が返った場合だけ同様にrelayする。
-- 現在threadに`automation_update`が存在しない場合はmachine outputのexact `fallback_command`を1回実行する。fallback command自身が保存済みtask/repository/thread/reset bindingとexternal automation persistenceをmachine判定し、正しいACTIVE one-shotが既に存在する場合はそれを唯一のwake ownerとしてlocal resumeを起動しない。正しいPAUSED placeholderまたは未作成の場合だけmachine-owned resume時刻までblocking waitし、wake後にtask stateとexternal wake ownershipを再検証してcanonical `glm-parent-action resume`まで実行する。ambiguous/mismatched persistenceはfail closedする。親はsleep時間、task identity、resume argvを生成しない。
+- 現在threadに`automation_update`が存在しない場合はmachine outputのexact `fallback_command`を1回実行する。fallback command自身が保存済みtask/repository/thread/reset bindingとexternal automation persistenceを判定する。正しいACTIVE one-shotが既に存在する場合はそれを唯一のwake ownerとしてlocal resumeを起動しない。正しいPAUSED placeholderまたは未作成の場合だけmachine-owned resume時刻までblocking waitし、wake後にtask stateとexternal wake ownershipを再検証してcanonical `glm-parent-action resume`まで実行する。ambiguous/mismatched persistenceはfail closedする。親はsleep時間、task identity、resume argvを生成しない。
 - fallback中はpoll/model-call loop、他threadへの質問/queue、rollout/session探索、plugin/MCP/remote-control直叩き、手作業schedule作成を行わない。
 - `cleanup`が返った場合だけ、そのexact specをbest-effortでrelayする。名前・時刻・一覧探索からcleanup対象を作らない。
 - external toolの安全判定を迂回しない。
