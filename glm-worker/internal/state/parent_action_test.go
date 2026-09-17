@@ -45,7 +45,7 @@ func TestParentActionPlanWaitingStates(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if plan.RequiredAction != ParentActionReview || !plan.Allows(ParentActionAccept) || !plan.Allows(ParentActionFix) || plan.Allows(ParentActionDecision) {
+		if plan.RequiredAction != ParentActionReview || plan.Allows(ParentActionAccept) || !plan.Allows(ParentActionFix) || plan.Allows(ParentActionDecision) {
 			t.Fatalf("review plan = %#v", plan)
 		}
 	})
@@ -126,8 +126,8 @@ func TestParentValidationNonConvergenceStripsAcceptUntilNextReview(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reopened.RequiredAction != ParentActionReview || !reopened.Allows(ParentActionAccept) || !reopened.Allows(ParentActionFix) {
-		t.Fatalf("next review open must drop the non-convergence admission restriction = %#v", reopened)
+	if reopened.RequiredAction != ParentActionReview || reopened.Allows(ParentActionAccept) || !reopened.Allows(ParentActionFix) {
+		t.Fatalf("next unbound review must remain evidence-gated = %#v", reopened)
 	}
 }
 
@@ -176,7 +176,7 @@ func TestParentActionPlanQualitySurfaceApprovalRequiresDedicatedAction(t *testin
 	}
 }
 
-func TestParentActionPlanWaitingReviewWithoutApprovalKeepsSolAccept(t *testing.T) {
+func TestParentActionPlanWaitingReviewWithoutApprovalDoesNotAdvertiseUnboundAccept(t *testing.T) {
 	st := newParentActionTestStore(t)
 	if err := st.SetTaskStatus(TaskStatusWaitingSolReview); err != nil {
 		t.Fatal(err)
@@ -189,7 +189,7 @@ func TestParentActionPlanWaitingReviewWithoutApprovalKeepsSolAccept(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if plan.RequiredAction != ParentActionReview || !plan.Allows(ParentActionAccept) || plan.Allows(ParentActionApproveSurface) || len(plan.RequiredActionParameters) != 0 {
+	if plan.RequiredAction != ParentActionReview || plan.Allows(ParentActionAccept) || plan.Allows(ParentActionApproveSurface) || len(plan.RequiredActionParameters) != 0 {
 		t.Fatalf("reviewer waiting plan = %#v", plan)
 	}
 }
