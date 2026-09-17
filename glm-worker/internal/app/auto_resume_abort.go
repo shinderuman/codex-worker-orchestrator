@@ -41,6 +41,7 @@ var autoResumeFallbackWaitUntil = func(target time.Time) {
 }
 
 var autoResumeFallbackRunResume = runAutoResumeFallbackParentAction
+var autoResumeFallbackEvaluate = autoresume.EvaluateAutoResumeFallback
 
 func init() {
 	commandParsers["--auto-resume-fallback"] = autoResumeFallbackCommand
@@ -100,7 +101,7 @@ func printAutoResumeFallback(cmd Command, cfg config.AppConfig, stdout io.Writer
 		return err
 	}
 	automationsDir, dbPath := autoresume.CodexWakePersistencePaths(cfg.CodexConfigDir)
-	plan, decision, err := autoresume.EvaluateAutoResumeFallback(cmd.AutoResume.Token, automationsDir, dbPath, autoresume.ReadDBRowSqlite3)
+	plan, decision, err := autoResumeFallbackEvaluate(cmd.AutoResume.Token, automationsDir, dbPath, autoresume.ReadDBRowSqlite3)
 	if err != nil {
 		return err
 	}
@@ -142,7 +143,7 @@ func printAutoResumeFallback(cmd Command, cfg config.AppConfig, stdout io.Writer
 		}
 		return consumeErr
 	}
-	plan, decision, err = autoresume.EvaluateAutoResumeFallback(cmd.AutoResume.Token, automationsDir, dbPath, autoresume.ReadDBRowSqlite3)
+	plan, decision, err = autoResumeFallbackEvaluate(cmd.AutoResume.Token, automationsDir, dbPath, autoresume.ReadDBRowSqlite3)
 	if err != nil {
 		return err
 	}
