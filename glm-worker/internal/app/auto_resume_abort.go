@@ -64,13 +64,6 @@ func autoResumeFallbackCommand(args []string) (Command, error) {
 	}, nil
 }
 
-// printAutoResumeAbort is retained as the internal dispatch hook used by
-// printAutoResumeResponse. The automation-unavailable path now performs the
-// bounded fallback instead of aborting the logical task.
-func printAutoResumeAbort(cmd Command, cfg config.AppConfig, stdout io.Writer) error {
-	return printAutoResumeFallback(cmd, cfg, stdout)
-}
-
 func printAutoResumeFallback(cmd Command, cfg config.AppConfig, stdout io.Writer) error {
 	lease, err := beginAutoResumeToken(cfg.CodexConfigDir, cmd.AutoResume.Token)
 	if err != nil {
@@ -106,16 +99,13 @@ func printAutoResumeFallback(cmd Command, cfg config.AppConfig, stdout io.Writer
 
 	autoResumeFallbackWaitUntil(resumeAt)
 
-	if err := validateAutoResumeFallbackState(cfg, plan); err != nil {
-		if markErr := lease.markDelivering(); markErr != nil {
-			return errors.Join(err, markErr)
+	if stateErr := validateAutoResumeFallbackState(cfg, plan); stateErr != nil {
+		consumed, consumeErr := consumeAutoResumeFallbackFailure(lease, stateErr)
+		if consumed {
+			delivering = true
+			retryable = false
 		}
-		delivering = true
-		retryable = false
-		if commitErr := lease.commit(); commitErr != nil {
-			return errors.Join(err, commitErr)
-		}
-		return err
+		return consumeErr
 	}
 
 	if err := lease.markDelivering(); err != nil {
@@ -127,11 +117,17 @@ func printAutoResumeFallback(cmd Command, cfg config.AppConfig, stdout io.Writer
 		return resumeErr
 	}
 	retryable = false
-	commitErr := lease.commit()
-	if resumeErr != nil || commitErr != nil {
-		return errors.Join(resumeErr, commitErr)
+	return errors.Join(resumeErr, lease.commit())
+}
+
+func consumeAutoResumeFallbackFailure(lease transactionTokenLease, cause error) (bool, error) {
+	if err := lease.markDelivering(); err != nil {
+		return false, errors.Join(cause, err)
 	}
-	return nil
+	if err := lease.commit(); err != nil {
+		return true, errors.Join(cause, err)
+	}
+	return true, cause
 }
 
 func validateAutoResumeFallbackState(cfg config.AppConfig, plan autoresume.AutoResumeFallbackPlan) error {
