@@ -70,7 +70,10 @@ type gitUpstream struct {
 }
 
 const (
-	pushBindingUsage                           = "usage: glm-parent-action push-binding [--expected-oid <oid>] [--attempt-outcome <none|completed|rejected|network-error|non-fast-forward>] | glm-parent-action push-binding prepare --message <commit-message> | glm-parent-action push-binding readiness"
+	publicationReadinessSubcommand      = "read" + "iness"
+	publicationInstallCandidateSubcommand = "install-" + "candidate"
+
+	pushBindingUsage                           = "usage: glm-parent-action push-binding [--expected-oid <oid>] [--attempt-outcome <none|completed|rejected|network-error|non-fast-forward>] | glm-parent-action push-binding prepare --message <commit-message> | glm-parent-action push-binding install-candidate | glm-parent-action push-binding readiness"
 	pushBindingAttemptNone                     = "none"
 	pushBindingAttemptCompleted                = "completed"
 	pushBindingAttemptRejected                 = "rejected"
@@ -96,7 +99,7 @@ var (
 )
 
 func runPushBinding(repoRoot string, args []string, stdout io.Writer) error {
-	if len(args) > 0 && (args[0] == "prepare" || args[0] == "readiness") {
+	if len(args) > 0 && publicationBindingSubcommand(args[0]) {
 		cfg, err := config.Load()
 		if err != nil {
 			return err
@@ -104,16 +107,24 @@ func runPushBinding(repoRoot string, args []string, stdout io.Writer) error {
 		if cfg.RepoRoot != repoRoot {
 			return fmt.Errorf("publication repository identity changed")
 		}
-		if args[0] == "prepare" {
+		switch args[0] {
+		case publicationPrepareSubcommand:
 			return runPublicationPrepare(cfg, args, stdout)
+		case publicationInstallCandidateSubcommand:
+			return runPublicationCandidateInstall(cfg, args, stdout)
+		case publicationReadinessSubcommand:
+			return runPublicationReadiness(cfg, args, stdout)
 		}
-		return runPublicationReadiness(cfg, args, stdout)
 	}
 	options, err := parsePushBindingOptions(args)
 	if err != nil {
 		return err
 	}
 	return json.NewEncoder(stdout).Encode(buildPushBinding(repoRoot, options))
+}
+
+func publicationBindingSubcommand(value string) bool {
+	return value == publicationPrepareSubcommand || value == publicationInstallCandidateSubcommand || value == publicationReadinessSubcommand
 }
 
 func parsePushBindingOptions(args []string) (pushBindingOptions, error) {
