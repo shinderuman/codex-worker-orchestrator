@@ -85,12 +85,12 @@ func TestAutoResumeFallbackWaitsToMachineBoundaryAndResumes(t *testing.T) {
 	if err := executeRuntimeControl(cmd, cfg, &bytes.Buffer{}); err != nil {
 		t.Fatal(err)
 	}
-	wantWait, err := time.Parse(time.RFC3339, plan.ResumeAtRFC3339)
+	wantWait, err := time.Parse(time.RFC3339, plan.ResetAtRFC3339)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !waitedUntil.Equal(wantWait) {
-		t.Fatalf("wait target = %s want %s", waitedUntil, wantWait)
+		t.Fatalf("wait target = %s want exact provider reset %s", waitedUntil, wantWait)
 	}
 	if resumeCalls != 1 {
 		t.Fatalf("resume calls = %d want 1", resumeCalls)
