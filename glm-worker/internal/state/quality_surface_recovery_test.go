@@ -599,6 +599,7 @@ func TestRecoverQualitySurfaceDecisionWaitRejectsForeignConditions(t *testing.T)
 					t.Fatal(err)
 				}
 			},
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -794,6 +795,7 @@ func TestRecoverApprovedQualitySurfaceReviewRejectsForeignConditions(t *testing.
 					t.Fatal(err)
 				}
 			},
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
