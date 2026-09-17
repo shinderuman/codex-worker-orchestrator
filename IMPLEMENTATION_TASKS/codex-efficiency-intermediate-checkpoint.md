@@ -52,7 +52,7 @@ post-105-codex-efficiency-reevaluation.mdを定期的にやってほしいんだ
 ## Resolved references
 
 - 前回checkpointのbounded reportとpriority decisionは、`codex-efficiency-feedback-loop-checkpoint.md`を削除する直前のGit locatorから回収する
-- 次回は`session-rotation-continuation-preflight.md`、`parent-usage-compact-token-totals.md`、`task-stats-archive-skip-observability.md`の完了後に実行する。false-complete、正規復旧不能、大きな重複model消費があれば前倒しする
+- 次回は`session-rotation-continuation-preflight.md`と`parent-usage-compact-token-totals.md`の完了、およびtask-stats archive skip observabilityに対応するcurrent-tree changeの統合後に実行する。false-complete、正規復旧不能、大きな重複model消費があれば前倒しする
 - Markdown差分は前回checkpointのGit locator以後に限定し、未解決authority候補だけを確認する
 - `post-105-codex-efficiency-reevaluation.md`は105完了後・022直前の最終safety netとして別に維持する
 - session rotationの評価はrotation回数、trigger理由、taskあたりparent turn / tool output / token、rotation直後のauthority/bootstrap再投影量、cache/read attribution、同一task継続時との比較可能性を対象にする
