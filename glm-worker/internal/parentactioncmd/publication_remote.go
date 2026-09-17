@@ -93,7 +93,7 @@ func verifyPromotedRuntimeInstallReadiness(cfg config.AppConfig, st *state.State
 }
 
 func blockPublicationRemoteWrite(output pushBindingOutput, detail string) pushBindingOutput {
-	output.Status = "blocked"
+	output.Status = publicationPrepareStatusBlocked
 	output.RemoteWrite = nil
 	output.Failure = publicationReadinessFailure(publicationFailureRemoteNotReady, compactFinalizationDiagnostic(fmt.Sprint(detail)))
 	return output
