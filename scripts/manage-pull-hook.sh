@@ -88,7 +88,9 @@ if [ "$mode" = retire ]; then
 	exit 0
 fi
 
-chmod +x "$repo_root/.githooks/post-merge"
+for hook in post-merge pre-commit reference-transaction pre-push; do
+	chmod +x "$repo_root/.githooks/$hook"
+done
 if [ "$state_present" -eq 1 ]; then
 	if [ "$state_kind" = managed ]; then
 		if [ "$hooks_path_present" -eq 1 ] && [ "$hooks_path" = "$managed_hooks_path" ]; then
@@ -117,7 +119,7 @@ if [ "$hooks_path_present" -eq 1 ]; then
 	if [ "$hooks_path" = "$managed_hooks_path" ]; then
 		printf '%s\n' 'git hook: unchanged: preexisting .githooks retained without claiming ownership'
 	else
-		printf 'git hook: skipped: preexisting core.hooksPath retained: %s; compose .githooks/post-merge with that hook owner manually if desired\n' "${hooks_path:-<empty>}" >&2
+		printf 'git hook: skipped: preexisting core.hooksPath retained: %s; compose .githooks hooks with that hook owner manually if desired\n' "${hooks_path:-<empty>}" >&2
 	fi
 	exit 0
 fi
