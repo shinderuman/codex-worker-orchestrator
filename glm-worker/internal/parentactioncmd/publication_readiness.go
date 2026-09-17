@@ -318,8 +318,8 @@ func publicationRuntimeInstallGates(cfg config.AppConfig, st *state.StateStore, 
 	if !requirement.Required {
 		return []publicationGateProjection{{Gate: "runtime-install", Required: false, Status: publicationGatePass, SnapshotID: candidate.SnapshotID}}, nil
 	}
-	if requirement.Head != candidate.BaseHead {
-		gate := publicationGateProjection{Gate: "runtime-install", Required: true, Status: publicationGateStale, SnapshotID: candidate.SnapshotID, Reason: "runtime classification HEAD no longer matches candidate base"}
+	if requirement.Head != candidate.BaseHead && requirement.Head != candidate.CommitOID {
+		gate := publicationGateProjection{Gate: "runtime-install", Required: true, Status: publicationGateStale, SnapshotID: candidate.SnapshotID, Reason: "runtime classification HEAD does not match candidate base or promoted candidate"}
 		return []publicationGateProjection{gate}, publicationReadinessFailure(publicationFailureCandidateStale, gate.Reason)
 	}
 	requirement.Head = candidate.CommitOID
