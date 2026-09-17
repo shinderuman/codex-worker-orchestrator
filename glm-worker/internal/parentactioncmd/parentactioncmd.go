@@ -89,10 +89,8 @@ func execute(cfg config.AppConfig, args []string, stdout, stderr io.Writer) erro
 		return executeInstall(cfg, args, stdout, stderr)
 	case "wait":
 		return executeParentWait(cfg, args, stdout, stderr)
-	case actionContinuationStopHook, actionContinuationMetadataGuard:
-		return executeContinuationGate(cfg, args, stdout)
-	case actionApprove:
-		return executeApproveSurfaceAction(cfg, args[1:], stdout, stderr)
+	case actionContinuationStopHook, actionContinuationMetadataGuard, actionApprove:
+		return executeContinuationOrApproveAction(cfg, action, args, stdout, stderr)
 	case actionStart, actionAccept, actionResume:
 		return executeDirectWorkerAction(cfg, action, args, stdout, stderr)
 	case actionPark, actionUnpark, "evidence":
@@ -102,6 +100,13 @@ func execute(cfg config.AppConfig, args []string, stdout, stderr io.Writer) erro
 	default:
 		return fmt.Errorf("%s", usage)
 	}
+}
+
+func executeContinuationOrApproveAction(cfg config.AppConfig, action string, args []string, stdout, stderr io.Writer) error {
+	if action == actionApprove {
+		return executeApproveSurfaceAction(cfg, args[1:], stdout, stderr)
+	}
+	return executeContinuationGate(cfg, args, stdout)
 }
 
 func rotationMilestoneStartArgs(args, env []string) ([]string, []string, error) {
