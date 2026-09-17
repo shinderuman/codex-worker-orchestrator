@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
@@ -93,17 +94,5 @@ func publicationGitOutput(t *testing.T, repoRoot string, args ...string) string 
 	if err != nil {
 		t.Fatalf("git %v: %v", args, err)
 	}
-	return stringTrimSpace(output)
-}
-
-func stringTrimSpace(value []byte) string {
-	start := 0
-	for start < len(value) && (value[start] == ' ' || value[start] == '\n' || value[start] == '\r' || value[start] == '\t') {
-		start++
-	}
-	end := len(value)
-	for end > start && (value[end-1] == ' ' || value[end-1] == '\n' || value[end-1] == '\r' || value[end-1] == '\t') {
-		end--
-	}
-	return string(value[start:end])
+	return strings.TrimSpace(string(output))
 }
