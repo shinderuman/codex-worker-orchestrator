@@ -104,7 +104,7 @@ func passPacketApp() string {
 		TestEvidence:        "ev",
 		Issues:              "none",
 		ResidualRisk:        "none",
-		Targets:             []string{"none"},
+		Targets:             []string{"final diff"},
 	})
 }
 
