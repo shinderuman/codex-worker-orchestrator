@@ -1,0 +1,16 @@
+{
+  "description": "Machine-enforced parent continuation terminal gate.",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"$(git rev-parse --show-toplevel)/.codex/hooks/continuation-stop-hook.sh\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
