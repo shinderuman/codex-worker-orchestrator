@@ -8,9 +8,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-// ValidateDecisionExecutionUnitPayload validates a staged decision against the
-// same execution-unit and current milestone-state contract used by execution,
-// without mutating the workflow state.
 func ValidateDecisionExecutionUnitPayload(cfg config.AppConfig, st *state.StateStore, payload string) error {
 	w := &Workflow{config: cfg, state: st, now: time.Now}
 	_, _, err := w.validateDecisionExecutionUnitPayload(payload)
