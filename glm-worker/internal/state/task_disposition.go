@@ -64,8 +64,10 @@ func (s *StateStore) resetWithExistingDisposition(existing TaskDispositionRecord
 }
 
 func (s *StateStore) resetWithoutExistingDisposition(requested string) (TaskDisposition, error) {
-	taskID := s.ReadOr("task.id", "")
-	status := s.TaskStatus()
+	taskID, status, err := s.resetTaskContext()
+	if err != nil {
+		return "", err
+	}
 	if taskID == "" && status == TaskStatusNone {
 		if requested != "" {
 			return "", fmt.Errorf("cannot record reset disposition %s without a current task", requested)
@@ -93,6 +95,76 @@ func (s *StateStore) resetWithoutExistingDisposition(requested string) (TaskDisp
 		Disposition: disposition,
 		RecordedAt:  time.Now().UTC(),
 	})
+}
+
+func (s *StateStore) resetTaskContext() (string, TaskStatus, error) {
+	status := s.TaskStatus()
+	if taskID := s.ReadOr("task.id", ""); taskID != "" {
+		return taskID, status, nil
+	}
+	return s.orphanedResetTaskContext(status)
+}
+
+func (s *StateStore) orphanedResetTaskContext(observedStatus TaskStatus) (string, TaskStatus, error) {
+	stats, err := s.CurrentTaskStats()
+	if err == nil {
+		if !ValidGeneratedUUID(stats.TaskID) || !stats.Status.Known() || stats.Status == TaskStatusNone {
+			return "", observedStatus, fmt.Errorf("current task stats cannot prove orphaned reset task provenance")
+		}
+		if observedStatus != TaskStatusNone && observedStatus != stats.Status {
+			return "", observedStatus, fmt.Errorf("task status %s does not match current task stats status %s", observedStatus, stats.Status)
+		}
+		return stats.TaskID, stats.Status, nil
+	}
+	if !errors.Is(err, os.ErrNotExist) && !errors.Is(err, errUnsupportedTaskStatsVersion) {
+		return "", observedStatus, fmt.Errorf("cannot verify orphaned reset task stats: %w", err)
+	}
+
+	parentState, err := s.rawParentReviewStateForReset()
+	if errors.Is(err, os.ErrNotExist) {
+		return "", observedStatus, nil
+	}
+	if err != nil {
+		return "", observedStatus, err
+	}
+	evidence, err := s.ArchivedTaskStatsEvidence(parentState.TaskID)
+	if err == nil && evidence.Proven {
+		if observedStatus != TaskStatusNone && observedStatus != evidence.Status {
+			return "", observedStatus, fmt.Errorf("task status %s does not match archived task stats status %s", observedStatus, evidence.Status)
+		}
+		return parentState.TaskID, evidence.Status, nil
+	}
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return "", observedStatus, fmt.Errorf("cannot verify orphaned reset task archive: %w", err)
+	}
+	if observedStatus.Known() && observedStatus != TaskStatusNone {
+		return parentState.TaskID, observedStatus, nil
+	}
+	return "", observedStatus, fmt.Errorf("orphaned task %s has no status provenance", parentState.TaskID)
+}
+
+func (s *StateStore) rawParentReviewStateForReset() (ParentReviewState, error) {
+	data, err := os.ReadFile(s.Path(parentReviewStateFile))
+	if err != nil {
+		return ParentReviewState{}, err
+	}
+	var state ParentReviewState
+	if err := json.Unmarshal(data, &state); err != nil {
+		return ParentReviewState{}, fmt.Errorf("orphaned parent review state is unreadable: %w", err)
+	}
+	if state.Version != parentReviewStateVersion || !ValidGeneratedUUID(state.TaskID) {
+		return ParentReviewState{}, fmt.Errorf("orphaned parent review state cannot prove task provenance")
+	}
+	if state.Open != nil && !validParentReviewPacketStatus(state.Open.PacketStatus) {
+		return ParentReviewState{}, fmt.Errorf("orphaned parent review state has invalid packet status %s", state.Open.PacketStatus)
+	}
+	if err := validateParentReviewBindingState(state); err != nil {
+		return ParentReviewState{}, err
+	}
+	if err := validateParentCompletionState(state); err != nil {
+		return ParentReviewState{}, err
+	}
+	return state, nil
 }
 
 func (s *StateStore) recordTaskDispositionAndReset(record TaskDispositionRecord) (TaskDisposition, error) {
