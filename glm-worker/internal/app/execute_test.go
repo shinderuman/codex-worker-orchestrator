@@ -104,7 +104,7 @@ func passPacketApp() string {
 		TestEvidence:        "ev",
 		Issues:              "none",
 		ResidualRisk:        "none",
-		Targets:             []string{"final diff"},
+		Targets:             []string{"none"},
 	})
 }
 
@@ -174,7 +174,7 @@ func TestExecuteStatsReportsEmptyState(t *testing.T) {
 		t.Fatalf("空状態のstats出力 = %#v: %q", output, out.String())
 	}
 	if len(output.ModelCallsByAlias) != 0 || len(output.RateLimitsByAlias) != 0 {
-		t.Fatalf("空状態のmodel別stats出力 = %#v: %q", output.ModelCallsByAlias)
+		t.Fatalf("空状態のmodel別stats出力 = %#v: %q", output, out.String())
 	}
 	if output.TelemetryDir == "" {
 		t.Fatalf("telemetry保存先がありません: %q", out.String())
@@ -447,7 +447,7 @@ func TestExecuteVerifyAutoResumePassesWithValidTOMLAndDB(t *testing.T) {
 
 	cfg := newAppConfig(t)
 	key := "glm-worker-resume-appshort1234-abcd1234"
-	thread := "019f88f8-0e70-7d53-a2a-f0c61666827c"
+	thread := "019f88f8-0e70-7d53-a2a3-f0c61666827c"
 	rfc3339 := "2026-08-12T20:01:20+09:00"
 
 	automationsDir := cfg.CodexConfigDir + "/automations/" + key
