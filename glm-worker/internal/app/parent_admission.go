@@ -10,6 +10,9 @@ import (
 
 func admitParentCommand(cmd Command, st *state.StateStore) error {
 	if cmd.Mode == ModeNewTask {
+		if err := st.ValidateResetDispositionForNewTask(); err != nil {
+			return &workflow.WorkerError{Message: err.Error()}
+		}
 		resume, err := st.AdmitNewTaskRotation(os.Getenv(state.ParentActionCodexThreadIDEnv), os.Getenv(state.SessionRotationClaimIDEnv))
 		if err != nil {
 			return &workflow.WorkerError{Message: err.Error()}
@@ -18,7 +21,7 @@ func admitParentCommand(cmd Command, st *state.StateStore) error {
 			return nil
 		}
 		if st.TaskStatus() == state.TaskStatusActive {
-			return &workflow.WorkerError{Message: "previous task is still active; run glm-worker --reset before starting a new task"}
+			return &workflow.WorkerError{Message: "previous task is still active; explicitly dispose it with glm-worker --reset --disposition cancel or --reset --disposition abandon before starting a new task"}
 		}
 		plan, admitted, err := st.AdmitNewTask()
 		if err != nil {
@@ -124,7 +127,7 @@ func resumeActionDenied(st *state.StateStore) error {
 func newTaskActionDenied(plan state.ParentActionPlan, st *state.StateStore) error {
 	switch plan.RequiredAction {
 	case state.ParentActionDecision:
-		return &workflow.WorkerError{Message: "previous task is waiting for Sol decision; use --decision or --reset"}
+		return &workflow.WorkerError{Message: "previous task is waiting for Sol decision; use --decision, or explicitly dispose it with --reset --disposition cancel|abandon"}
 	case state.ParentActionReview, state.ParentActionAccept:
 		label := st.OpenParentReviewLabel()
 		if label == "none" {
