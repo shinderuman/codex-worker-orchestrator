@@ -197,7 +197,7 @@ func buildPushBinding(repoRoot string, options pushBindingOptions) pushBindingOu
 			ExpectedOID:   output.ExpectedOID,
 		}
 	}
-	return output
+	return applyPublicationRemoteWriteGuard(repoRoot, output)
 }
 
 func pushBindingTargetFromRepo(repoRoot string) (*pushBindingTarget, *finalizationFailure) {
