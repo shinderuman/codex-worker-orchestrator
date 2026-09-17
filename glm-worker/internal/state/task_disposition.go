@@ -37,26 +37,33 @@ func (d TaskDisposition) Valid() bool {
 }
 
 func (s *StateStore) ResetWithDisposition(requested string) (TaskDisposition, error) {
-	existing, existingErr := s.CurrentTaskDisposition()
-	if existingErr != nil && !errors.Is(existingErr, os.ErrNotExist) {
-		return "", existingErr
+	existing, err := s.CurrentTaskDisposition()
+	if err == nil {
+		return s.resetWithExistingDisposition(existing, requested)
 	}
-	if existingErr == nil {
-		if requested != "" && TaskDisposition(requested) != existing.Disposition {
-			return "", fmt.Errorf("task reset disposition is already %s; cannot replace it with %s", existing.Disposition, requested)
-		}
-		if taskID := s.ReadOr("task.id", ""); taskID != "" && taskID != existing.TaskID {
-			return "", fmt.Errorf("task reset disposition belongs to %s but current task is %s", existing.TaskID, taskID)
-		}
-		if err := s.ensureTaskDispositionLifecycle(existing); err != nil {
-			return "", err
-		}
-		if err := s.Reset(); err != nil {
-			return "", err
-		}
-		return existing.Disposition, nil
+	if !errors.Is(err, os.ErrNotExist) {
+		return "", err
 	}
+	return s.resetWithoutExistingDisposition(requested)
+}
 
+func (s *StateStore) resetWithExistingDisposition(existing TaskDispositionRecord, requested string) (TaskDisposition, error) {
+	if requested != "" && TaskDisposition(requested) != existing.Disposition {
+		return "", fmt.Errorf("task reset disposition is already %s; cannot replace it with %s", existing.Disposition, requested)
+	}
+	if taskID := s.ReadOr("task.id", ""); taskID != "" && taskID != existing.TaskID {
+		return "", fmt.Errorf("task reset disposition belongs to %s but current task is %s", existing.TaskID, taskID)
+	}
+	if err := s.ensureTaskDispositionLifecycle(existing); err != nil {
+		return "", err
+	}
+	if err := s.Reset(); err != nil {
+		return "", err
+	}
+	return existing.Disposition, nil
+}
+
+func (s *StateStore) resetWithoutExistingDisposition(requested string) (TaskDisposition, error) {
 	taskID := s.ReadOr("task.id", "")
 	status := s.TaskStatus()
 	if taskID == "" && status == TaskStatusNone {
@@ -79,13 +86,16 @@ func (s *StateStore) ResetWithDisposition(requested string) (TaskDisposition, er
 	if err != nil {
 		return "", err
 	}
-	record := TaskDispositionRecord{
+	return s.recordTaskDispositionAndReset(TaskDispositionRecord{
 		Version:     taskDispositionVersion,
 		TaskID:      taskID,
 		FromStatus:  string(status),
 		Disposition: disposition,
 		RecordedAt:  time.Now().UTC(),
-	}
+	})
+}
+
+func (s *StateStore) recordTaskDispositionAndReset(record TaskDispositionRecord) (TaskDisposition, error) {
 	if err := s.writeTaskDisposition(record); err != nil {
 		return "", err
 	}
@@ -95,7 +105,7 @@ func (s *StateStore) ResetWithDisposition(requested string) (TaskDisposition, er
 	if err := s.Reset(); err != nil {
 		return "", err
 	}
-	return disposition, nil
+	return record.Disposition, nil
 }
 
 func (s *StateStore) completedTaskResetCleanupAllowed() bool {
