@@ -134,11 +134,11 @@ func (execution *autoResumeFallbackExecution) run() error {
 	if err := requireAutoResumeFallbackLocalWait(decision, false); err != nil {
 		return err
 	}
-	resumeAt, err := time.Parse(time.RFC3339, execution.plan.ResumeAtRFC3339)
+	resetAt, err := time.Parse(time.RFC3339, execution.plan.ResetAtRFC3339)
 	if err != nil {
-		return fmt.Errorf("auto-resume fallback time is invalid: %w", err)
+		return fmt.Errorf("auto-resume fallback reset time is invalid: %w", err)
 	}
-	autoResumeFallbackWaitUntil(resumeAt)
+	autoResumeFallbackWaitUntil(resetAt)
 	return execution.resumeAfterWait()
 }
 
