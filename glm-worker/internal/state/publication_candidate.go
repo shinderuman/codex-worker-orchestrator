@@ -3,7 +3,6 @@ package state
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"time"
 )
 
@@ -39,19 +38,16 @@ func (s *StateStore) SavePublicationCandidate(candidate PublicationCandidate) er
 	if err != nil {
 		return fmt.Errorf("publication candidateをJSON化できません: %w", err)
 	}
-	if err := writeFileAtomic(s.Path(publicationCandidateStateFile), append(data, '\n'), 0o600); err != nil {
-		return fmt.Errorf("publication candidateを書き込めません: %w", err)
-	}
-	return nil
+	return s.Write(publicationCandidateStateFile, string(data))
 }
 
 func (s *StateStore) LoadPublicationCandidate() (PublicationCandidate, error) {
-	data, err := os.ReadFile(s.Path(publicationCandidateStateFile))
+	data, err := s.Read(publicationCandidateStateFile)
 	if err != nil {
 		return PublicationCandidate{}, err
 	}
 	var candidate PublicationCandidate
-	if err := json.Unmarshal(data, &candidate); err != nil {
+	if err := json.Unmarshal([]byte(data), &candidate); err != nil {
 		return PublicationCandidate{}, fmt.Errorf("publication candidateを読めません: %w", err)
 	}
 	if err := validatePublicationCandidate(candidate); err != nil {
@@ -65,6 +61,19 @@ func (s *StateStore) ClearPublicationCandidate() error {
 }
 
 func validatePublicationCandidate(candidate PublicationCandidate) error {
+	if err := validatePublicationCandidateIdentity(candidate); err != nil {
+		return err
+	}
+	if err := validatePublicationCandidateSnapshot(candidate); err != nil {
+		return err
+	}
+	if candidate.PreparedAt.IsZero() {
+		return fmt.Errorf("publication candidate prepared_atがありません")
+	}
+	return nil
+}
+
+func validatePublicationCandidateIdentity(candidate PublicationCandidate) error {
 	if candidate.Version != publicationCandidateVersion {
 		return fmt.Errorf("unsupported publication candidate version: %d", candidate.Version)
 	}
@@ -77,15 +86,16 @@ func validatePublicationCandidate(candidate PublicationCandidate) error {
 	if !validPublicationDigest(candidate.MessageDigest) {
 		return fmt.Errorf("publication candidate commit message digestが不正です")
 	}
+	return nil
+}
+
+func validatePublicationCandidateSnapshot(candidate PublicationCandidate) error {
 	if candidate.Snapshot.Head != candidate.BaseHead || candidate.Snapshot.IndexDigest == "" || candidate.Snapshot.WorktreeDigest == "" {
 		return fmt.Errorf("publication candidate snapshot identityが不正です")
 	}
 	expectedSnapshotID := ValidationSnapshotID(candidate.Snapshot.Head, candidate.Snapshot.IndexDigest, candidate.Snapshot.WorktreeDigest)
 	if expectedSnapshotID == "" || candidate.SnapshotID != expectedSnapshotID {
 		return fmt.Errorf("publication candidate snapshot IDが一致しません")
-	}
-	if candidate.PreparedAt.IsZero() {
-		return fmt.Errorf("publication candidate prepared_atがありません")
 	}
 	return nil
 }
