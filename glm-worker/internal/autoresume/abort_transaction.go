@@ -99,7 +99,7 @@ func evaluateAutoResumeFallbackPersistence(transaction autoResumeTransaction, au
 		return "", fmt.Errorf("auto-resume fallback automation prompt does not match the transaction")
 	}
 	if toml.Status != pausedStatus || toml.Rrule != placeholderHourlyRRule {
-		return "", fmt.Errorf("auto-resume fallback external wake is neither the exact ACTIVE one-shot nor the exact PAUSED placeholder: verification=%s", verification.Reason)
+		return "", fmt.Errorf("auto-resume fallback external wake is neither the exact ACTIVE one-shot nor the exact PAUSED placeholder: %s", verification.Reason)
 	}
 	if db.ID != transaction.ExpectedAutomationID || db.Status != pausedStatus || db.Rrule != placeholderHourlyRRule {
 		return "", fmt.Errorf("auto-resume fallback scheduler state does not match the PAUSED placeholder")
