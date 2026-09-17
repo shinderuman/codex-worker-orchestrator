@@ -1,7 +1,5 @@
 package autoresume
 
-const AutoResumeAbortAutomationUpdateUnavailable = "automation_update_unavailable"
-
 type AutoResumeFallbackPlan struct {
 	TaskID          string
 	RepoRoot        string
@@ -9,6 +7,8 @@ type AutoResumeFallbackPlan struct {
 	ResetAtRFC3339  string
 	ResumeAtRFC3339 string
 }
+
+const AutoResumeAbortAutomationUpdateUnavailable = "automation_update_unavailable"
 
 func AutoResumeFallbackPlanFromToken(token string) (AutoResumeFallbackPlan, error) {
 	transaction, _, err := decodeAutoResumeTransaction(token)
