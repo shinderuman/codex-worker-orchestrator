@@ -19,6 +19,11 @@ type publicationInstallOutput struct {
 	Failure      *finalizationFailure `json:"failure,omitempty"`
 }
 
+type publicationInstallContext struct {
+	candidate   state.PublicationCandidate
+	requirement runtimeInstallRequirement
+}
+
 const (
 	publicationInstallStatusInstalled   = "installed"
 	publicationInstallStatusNotRequired = "not_required"
@@ -27,7 +32,7 @@ const (
 )
 
 func runPublicationCandidateInstall(cfg config.AppConfig, args []string, stdout io.Writer) error {
-	if len(args) != 1 || args[0] != "install-candidate" {
+	if len(args) != 1 || args[0] != publicationInstallCandidateSubcommand {
 		return fmt.Errorf("usage: glm-parent-action push-binding install-candidate")
 	}
 	st, err := state.NewStateStore(cfg)
@@ -43,95 +48,128 @@ func runPublicationCandidateInstall(cfg config.AppConfig, args []string, stdout 
 }
 
 func installPublicationCandidate(cfg config.AppConfig, st *state.StateStore) publicationInstallOutput {
-	candidate, err := st.LoadPublicationCandidate()
-	if err != nil {
-		return publicationInstallOutput{Status: publicationInstallStatusBlocked, Failure: publicationReadinessFailure(publicationFailureCandidateMissing, err.Error())}
+	context, terminal := publicationInstallContextFor(cfg, st)
+	if terminal != nil {
+		return *terminal
 	}
-	output := publicationInstallOutput{Status: publicationInstallStatusBlocked, CandidateOID: candidate.CommitOID}
-	if source := publicationSourceGate(cfg.RepoRoot, candidate); source.Status != publicationGatePass {
-		output.Failure = publicationReadinessFailure(publicationFailureCandidateStale, source.Reason)
+	output := publicationInstallOutput{
+		Status:       publicationInstallStatusBlocked,
+		Required:     true,
+		CandidateOID: context.candidate.CommitOID,
+	}
+	if publicationCandidateAlreadyInstalled(cfg, st, context) {
+		output.Status = publicationInstallStatusInstalled
 		return output
-	}
-	if review := publicationReviewGate(st, candidate); review.Status != publicationGatePass {
-		output.Failure = publicationReadinessFailure(publicationFailureGateMissing, review.Reason)
-		return output
-	}
-	requirement, err := runtimeInstallRequirementForTask(cfg.RepoRoot, st)
-	if err != nil {
-		output.Failure = runtimeInstallFailure(runtimeInstallFailureClassification, err.Error())
-		return output
-	}
-	if !requirement.Required {
-		output.Status = publicationInstallStatusNotRequired
-		return output
-	}
-	output.Required = true
-	if requirement.Head != candidate.BaseHead {
-		output.Failure = runtimeInstallFailure(runtimeInstallFailureStale, "runtime classification HEAD no longer matches publication candidate base")
-		return output
-	}
-	requirement.Head = candidate.CommitOID
-	if existing, failure := matchingPublicationRuntimeInstallEvidence(st, candidate, requirement); failure == nil {
-		if _, _, probeFailure := installedRuntimeStatus(cfg, candidate.CommitOID); probeFailure == nil {
-			output.Status = publicationInstallStatusInstalled
-			return output
-		}
-		_ = existing
 	}
 	if err := st.ClearRuntimeInstallEvidence(); err != nil {
 		output.Failure = runtimeInstallFailure(runtimeInstallFailureEvidence, err.Error())
 		return output
 	}
-	worktree, failure := createPublicationInstallWorktree(cfg, candidate)
-	if failure != nil {
+	if failure := executePublicationCandidateInstall(cfg, context.candidate); failure != nil {
+		output.Status = publicationInstallStatusFailed
 		output.Failure = failure
 		return output
 	}
-	script, failure := installScriptGuard(worktree)
-	if failure == nil {
-		attempt := runInstallScript(script, worktree, io.Discard)
-		if attempt.Status != installStatusInstalled {
-			failure = attempt.Failure
+	if failure := persistPublicationCandidateInstall(cfg, st, context); failure != nil {
+		output.Failure = failure
+		return output
+	}
+	output.Status = publicationInstallStatusInstalled
+	return output
+}
+
+func publicationInstallContextFor(cfg config.AppConfig, st *state.StateStore) (publicationInstallContext, *publicationInstallOutput) {
+	candidate, err := st.LoadPublicationCandidate()
+	if err != nil {
+		return publicationInstallContext{}, &publicationInstallOutput{
+			Status:  publicationInstallStatusBlocked,
+			Failure: publicationReadinessFailure(publicationFailureCandidateMissing, err.Error()),
 		}
 	}
-	if cleanupFailure := removePublicationInstallWorktree(cfg.RepoRoot, worktree); failure == nil && cleanupFailure != nil {
+	output := publicationInstallOutput{Status: publicationInstallStatusBlocked, CandidateOID: candidate.CommitOID}
+	if source := publicationSourceGate(cfg.RepoRoot, candidate); source.Status != publicationGatePass {
+		output.Failure = publicationReadinessFailure(publicationFailureCandidateStale, source.Reason)
+		return publicationInstallContext{}, &output
+	}
+	if review := publicationReviewGate(st, candidate); review.Status != publicationGatePass {
+		output.Failure = publicationReadinessFailure(publicationFailureGateMissing, review.Reason)
+		return publicationInstallContext{}, &output
+	}
+	requirement, err := runtimeInstallRequirementForTask(cfg.RepoRoot, st)
+	if err != nil {
+		output.Failure = runtimeInstallFailure(runtimeInstallFailureClassification, err.Error())
+		return publicationInstallContext{}, &output
+	}
+	if !requirement.Required {
+		output.Status = publicationInstallStatusNotRequired
+		return publicationInstallContext{}, &output
+	}
+	output.Required = true
+	if requirement.Head != candidate.BaseHead {
+		output.Failure = runtimeInstallFailure(runtimeInstallFailureStale, "runtime classification HEAD no longer matches publication candidate base")
+		return publicationInstallContext{}, &output
+	}
+	requirement.Head = candidate.CommitOID
+	return publicationInstallContext{candidate: candidate, requirement: requirement}, nil
+}
+
+func publicationCandidateAlreadyInstalled(cfg config.AppConfig, st *state.StateStore, context publicationInstallContext) bool {
+	if _, failure := matchingPublicationRuntimeInstallEvidence(st, context.candidate, context.requirement); failure != nil {
+		return false
+	}
+	_, _, failure := installedRuntimeStatus(cfg, context.candidate.CommitOID)
+	return failure == nil
+}
+
+func executePublicationCandidateInstall(cfg config.AppConfig, candidate state.PublicationCandidate) *finalizationFailure {
+	worktree, failure := createPublicationInstallWorktree(cfg, candidate)
+	if failure != nil {
+		return failure
+	}
+	failure = runPublicationInstallScript(worktree)
+	if cleanupFailure := removePublicationInstallWorktree(cfg.RepoRoot, worktree); failure == nil {
 		failure = cleanupFailure
 	}
 	if failure != nil {
-		output.Status = publicationInstallStatusFailed
-		output.Failure = failure
-		return output
+		return failure
 	}
-	if smokeFailure := runRuntimeInstallSmoke(cfg); smokeFailure != nil {
-		output.Status = publicationInstallStatusFailed
-		output.Failure = smokeFailure
-		return output
+	return runRuntimeInstallSmoke(cfg)
+}
+
+func runPublicationInstallScript(worktree string) *finalizationFailure {
+	script, failure := installScriptGuard(worktree)
+	if failure != nil {
+		return failure
 	}
+	attempt := runInstallScript(script, worktree, io.Discard)
+	if attempt.Status != installStatusInstalled {
+		return attempt.Failure
+	}
+	return nil
+}
+
+func persistPublicationCandidateInstall(cfg config.AppConfig, st *state.StateStore, context publicationInstallContext) *finalizationFailure {
+	candidate := context.candidate
+	requirement := context.requirement
 	if source := publicationSourceGate(cfg.RepoRoot, candidate); source.Status != publicationGatePass {
-		output.Failure = runtimeInstallFailure(runtimeInstallFailureStale, source.Reason)
-		return output
+		return runtimeInstallFailure(runtimeInstallFailureStale, source.Reason)
 	}
 	if review := publicationReviewGate(st, candidate); review.Status != publicationGatePass {
-		output.Failure = runtimeInstallFailure(runtimeInstallFailureStale, review.Reason)
-		return output
+		return runtimeInstallFailure(runtimeInstallFailureStale, review.Reason)
 	}
 	if err := verifyRuntimeMergedConfigFiles(cfg, requirement.Paths); err != nil {
-		output.Failure = runtimeInstallFailure(runtimeInstallFailureInstalled, err.Error())
-		return output
+		return runtimeInstallFailure(runtimeInstallFailureInstalled, err.Error())
 	}
 	installedRevision, _, probeFailure := installedRuntimeStatus(cfg, candidate.CommitOID)
 	if probeFailure != nil {
-		output.Failure = probeFailure
-		return output
+		return probeFailure
 	}
 	taskID, err := st.TaskID()
 	if err != nil || taskID != candidate.TaskID {
-		output.Failure = runtimeInstallFailure(runtimeInstallFailureStale, "task identity changed during publication candidate install")
-		return output
+		return runtimeInstallFailure(runtimeInstallFailureStale, "task identity changed during publication candidate install")
 	}
 	if failure := recordRuntimeInstallValidation(st, taskID, requirement); failure != nil {
-		output.Failure = failure
-		return output
+		return failure
 	}
 	if err := st.SaveRuntimeInstallEvidence(state.RuntimeInstallEvidence{
 		Version:           1,
@@ -141,11 +179,9 @@ func installPublicationCandidate(cfg config.AppConfig, st *state.StateStore) pub
 		InstalledRevision: installedRevision,
 		SmokeResult:       state.ValidationResultPass,
 	}); err != nil {
-		output.Failure = runtimeInstallFailure(runtimeInstallFailureEvidence, err.Error())
-		return output
+		return runtimeInstallFailure(runtimeInstallFailureEvidence, err.Error())
 	}
-	output.Status = publicationInstallStatusInstalled
-	return output
+	return nil
 }
 
 func matchingPublicationRuntimeInstallEvidence(st *state.StateStore, candidate state.PublicationCandidate, requirement runtimeInstallRequirement) (state.RuntimeInstallEvidence, *finalizationFailure) {
