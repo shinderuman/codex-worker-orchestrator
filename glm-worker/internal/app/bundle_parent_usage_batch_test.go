@@ -40,7 +40,12 @@ func TestTelemetryCompactParentUsageScansEachParentOnce(t *testing.T) {
 	if enumerations != 1 || scans != 2 {
 		t.Fatalf("rollout enumeration = %d, parent content scans = %d", enumerations, scans)
 	}
-	want := telemetryCompactParentUsage{Tasks: len(stats), ByStatus: make(map[string]int)}
+	want := telemetryCompactParentUsage{
+		Tasks:              len(stats),
+		ByStatus:           make(map[string]int),
+		TaskExecution:      newTelemetryCompactParentUsageInterval(),
+		ParentFinalization: newTelemetryCompactParentUsageInterval(),
+	}
 	for _, entry := range stats {
 		one := buildTelemetryCompactParentUsage(fixture.cfg, fixture.st, []state.TaskStats{entry})
 		want.Available += one.Available
@@ -49,10 +54,47 @@ func TestTelemetryCompactParentUsageScansEachParentOnce(t *testing.T) {
 		for status, count := range one.ByStatus {
 			want.ByStatus[status] += count
 		}
+		accumulateTelemetryCompactIntervalForTest(&want.TaskExecution, one.TaskExecution)
+		accumulateTelemetryCompactIntervalForTest(&want.ParentFinalization, one.ParentFinalization)
 	}
 	if !reflect.DeepEqual(got, want) || got.Available != 1 || got.Unknown != 3 {
 		t.Fatalf("batched usage = %#v, per-task usage = %#v", got, want)
 	}
+	if got.TaskExecution.Tokens.TasksSummed+sumStatusCounts(got.TaskExecution.TokensExcludedByStatus) != len(stats) ||
+		got.TaskExecution.Activity.TasksCounted+sumStatusCounts(got.TaskExecution.ActivityExcludedByStatus) != len(stats) ||
+		got.ParentFinalization.Tokens.TasksSummed+sumStatusCounts(got.ParentFinalization.TokensExcludedByStatus) != len(stats) ||
+		got.ParentFinalization.Activity.TasksCounted+sumStatusCounts(got.ParentFinalization.ActivityExcludedByStatus) != len(stats) {
+		t.Fatalf("aggregates do not partition %d tasks: %#v", len(stats), got)
+	}
+}
+
+func accumulateTelemetryCompactIntervalForTest(total *telemetryCompactParentUsageInterval, one telemetryCompactParentUsageInterval) {
+	total.Tokens.TasksSummed += one.Tokens.TasksSummed
+	total.Tokens.InputTokens += one.Tokens.InputTokens
+	total.Tokens.CachedInputTokens += one.Tokens.CachedInputTokens
+	total.Tokens.OutputTokens += one.Tokens.OutputTokens
+	total.Tokens.ReasoningTokens += one.Tokens.ReasoningTokens
+	total.Tokens.TotalTokens += one.Tokens.TotalTokens
+	total.Activity.TasksCounted += one.Activity.TasksCounted
+	total.Activity.ModelTurns += one.Activity.ModelTurns
+	total.Activity.ToolCalls += one.Activity.ToolCalls
+	total.Activity.ToolResults += one.Activity.ToolResults
+	total.Activity.Compactions += one.Activity.Compactions
+	total.Activity.ToolOutputBytes += one.Activity.ToolOutputBytes
+	for status, count := range one.TokensExcludedByStatus {
+		total.TokensExcludedByStatus[status] += count
+	}
+	for status, count := range one.ActivityExcludedByStatus {
+		total.ActivityExcludedByStatus[status] += count
+	}
+}
+
+func sumStatusCounts(counts map[string]int) int {
+	total := 0
+	for _, count := range counts {
+		total += count
+	}
+	return total
 }
 
 func TestParentUsageBatchPreservesTaskIntervals(t *testing.T) {

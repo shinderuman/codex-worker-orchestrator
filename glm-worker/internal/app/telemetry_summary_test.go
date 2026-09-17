@@ -148,6 +148,15 @@ func TestTelemetryCompactSummaryHistorySections(t *testing.T) {
 	if byStatus["missing/missing"].(float64) != 3 || len(byStatus) != 1 {
 		t.Fatalf("parent usage by_status = %#v", byStatus)
 	}
+	for _, intervalKey := range []string{"task_execution", "parent_finalization"} {
+		interval := telemetryParentUsageInterval(t, decoded, intervalKey)
+		assertTelemetryParentUsageIntervalTotals(t, interval,
+			0, 0, 0, 0, 0, 0,
+			0, 0, 0, 0, 0, 0,
+			map[string]float64{codexStatusMissing: 3},
+			map[string]float64{codexStatusMissing: 3})
+		assertTelemetryParentUsagePartition(t, interval, 3)
+	}
 
 	bounds, _ := decoded["bounds"].(map[string]any)
 	if bounds["top_outlier_calls"].(float64) != telemetryCompactTopOutlierCalls ||
@@ -308,6 +317,13 @@ func TestTelemetryCompactSummaryCurrentScopeWithoutCurrentSchemaRecords(t *testi
 		if parentUsage["tasks"].(float64) != 0 {
 			t.Fatalf("parent usage = %#v", parentUsage)
 		}
+		for _, intervalKey := range []string{"task_execution", "parent_finalization"} {
+			interval := telemetryParentUsageInterval(t, decoded, intervalKey)
+			assertTelemetryParentUsageIntervalTotals(t, interval,
+				0, 0, 0, 0, 0, 0,
+				0, 0, 0, 0, 0, 0,
+				map[string]float64{}, map[string]float64{})
+		}
 	}
 
 	t.Run("empty store", func(t *testing.T) {
@@ -387,6 +403,188 @@ func TestTelemetryCompactSummaryParentUsageBuckets(t *testing.T) {
 		byStatus[codexStatusAmbiguous+"/"+codexStatusAmbiguous].(float64) != 1 ||
 		byStatus[codexStatusMissing+"/"+codexStatusMissing].(float64) != 1 || len(byStatus) != 3 {
 		t.Fatalf("parent usage by_status = %#v", byStatus)
+	}
+
+	execution := telemetryParentUsageInterval(t, decoded, "task_execution")
+	assertTelemetryParentUsageIntervalTotals(t, execution,
+		1, 1000, 500, 160, 80, 1500,
+		1, 1, 1, 1, 1, 10,
+		map[string]float64{codexStatusAmbiguous: 1, codexStatusMissing: 1},
+		map[string]float64{codexStatusAmbiguous: 1, codexStatusMissing: 1})
+	finalization := telemetryParentUsageInterval(t, decoded, "parent_finalization")
+	assertTelemetryParentUsageIntervalTotals(t, finalization,
+		1, 600, 300, 80, 20, 800,
+		1, 0, 1, 1, 0, 10,
+		map[string]float64{codexStatusAmbiguous: 1, codexStatusMissing: 1},
+		map[string]float64{codexStatusAmbiguous: 1, codexStatusMissing: 1})
+	assertTelemetryParentUsagePartition(t, execution, 3)
+	assertTelemetryParentUsagePartition(t, finalization, 3)
+	assertTelemetryParentUsageBounded(t, parentUsage)
+}
+
+func TestTelemetryCompactSummaryParentUsageAggregates(t *testing.T) {
+	cfg, st, codexHome := newCodexBundleTestState(t)
+	now := time.Now().UTC()
+	availableThread := "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+	secondAvailableThread := "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+	counterResetThread := "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+	missingFieldThread := "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+	fixtures := []struct {
+		threadID string
+		rel      string
+		start    time.Time
+		lines    []string
+	}{
+		{threadID: availableThread, rel: "sessions/2026/09/16/rollout-aggregate-available.jsonl",
+			start: now.Add(-4 * time.Hour), lines: parentUsagePhaseLines(t, now.Add(-4*time.Hour), now.Add(-4*time.Hour).Add(30*time.Minute))},
+		{threadID: counterResetThread, rel: "sessions/2026/09/16/rollout-aggregate-counter-reset.jsonl",
+			start: now.Add(-3 * time.Hour), lines: parentUsageCounterResetLines(t, now.Add(-3*time.Hour), now.Add(-3*time.Hour).Add(30*time.Minute))},
+		{threadID: missingFieldThread, rel: "sessions/2026/09/16/rollout-aggregate-missing-field.jsonl",
+			start: now.Add(-2 * time.Hour), lines: parentUsageMissingFieldLines(t, now.Add(-2*time.Hour), now.Add(-2*time.Hour).Add(30*time.Minute))},
+		{threadID: secondAvailableThread, rel: "sessions/2026/09/16/rollout-aggregate-second-available.jsonl",
+			start: now.Add(-1 * time.Hour), lines: parentUsagePhaseLines(t, now.Add(-1*time.Hour), now.Add(-1*time.Hour).Add(30*time.Minute))},
+	}
+	for _, fixture := range fixtures {
+		taskID, err := st.StartNewTask()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := st.SetParentCodexIdentity(fixture.threadID, codexTestParentSessionID, nil); err != nil {
+			t.Fatal(err)
+		}
+		analysisRetireCurrentTask(t, st, taskID, fixture.start, fixture.start.Add(30*time.Minute))
+		writeAnalysisRollout(t, codexHome, fixture.rel, fixture.threadID, fixture.start.Add(-3*time.Hour), fixture.lines)
+	}
+
+	var out bytes.Buffer
+	cmd, err := ParseCommand([]string{"--stats", "history", "--compact"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Execute(cmd, cfg, nil, &out, nil); err != nil {
+		t.Fatal(err)
+	}
+	decoded := decodeSingleLineJSON(t, out.String())
+	parentUsage, _ := decoded["parent_usage"].(map[string]any)
+	if parentUsage["tasks"].(float64) != 4 || parentUsage["available"].(float64) != 3 ||
+		parentUsage["ambiguous"].(float64) != 0 || parentUsage["unknown"].(float64) != 1 {
+		t.Fatalf("parent usage coverage = %#v", parentUsage)
+	}
+
+	execution := telemetryParentUsageInterval(t, decoded, "task_execution")
+	assertTelemetryParentUsageIntervalTotals(t, execution,
+		2, 2000, 1000, 320, 160, 3000,
+		4, 4, 2, 2, 2, 20,
+		map[string]float64{analysisStatusCounterReset: 1, telemetryCompactParentUsageMissingTokenField: 1},
+		map[string]float64{})
+	finalization := telemetryParentUsageInterval(t, decoded, "parent_finalization")
+	assertTelemetryParentUsageIntervalTotals(t, finalization,
+		2, 1200, 600, 160, 40, 1600,
+		4, 0, 2, 2, 0, 20,
+		map[string]float64{analysisStatusNoObservation: 2},
+		map[string]float64{})
+	assertTelemetryParentUsagePartition(t, execution, 4)
+	assertTelemetryParentUsagePartition(t, finalization, 4)
+	assertTelemetryParentUsageBounded(t, parentUsage)
+}
+
+func parentUsageCounterResetLines(t *testing.T, start, completeAt time.Time) []string {
+	t.Helper()
+	return []string{
+		parentUsageTokenCountLine(t, start.Add(-time.Minute), 1000, 500, 240, 160, 1500),
+		analysisTurnLine(t, start.Add(-30*time.Second), codexRolloutTaskStartedType, analysisOwningTurnID),
+		parentUsageTokenCountLine(t, completeAt.Add(-time.Second), 1200, 600, 300, 200, 900),
+		analysisTurnLine(t, completeAt.Add(2*time.Minute), codexRolloutTaskCompleteType, analysisOwningTurnID),
+	}
+}
+
+func parentUsageMissingFieldLines(t *testing.T, start, completeAt time.Time) []string {
+	t.Helper()
+	return []string{
+		parentUsageTokenCountLine(t, start.Add(-time.Minute), 1000, 500, 240, 160, 1500),
+		analysisTurnLine(t, start.Add(-30*time.Second), codexRolloutTaskStartedType, analysisOwningTurnID),
+		analysisTokenCountLine(t, completeAt.Add(-time.Second), 2000, 1000),
+		analysisTurnLine(t, completeAt.Add(2*time.Minute), codexRolloutTaskCompleteType, analysisOwningTurnID),
+	}
+}
+
+func telemetryParentUsageInterval(t *testing.T, decoded map[string]any, key string) map[string]any {
+	t.Helper()
+	parentUsage, _ := decoded["parent_usage"].(map[string]any)
+	interval, _ := parentUsage[key].(map[string]any)
+	if len(interval) == 0 {
+		t.Fatalf("parent usage %s = %#v", key, parentUsage[key])
+	}
+	return interval
+}
+
+func assertTelemetryParentUsageIntervalTotals(t *testing.T, interval map[string]any,
+	tasksSummed float64, inputTokens, cachedInputTokens, outputTokens, reasoningTokens, totalTokens float64,
+	tasksCounted float64, modelTurns, toolCalls, toolResults, compactions float64, toolOutputBytes float64,
+	tokensExcluded, activityExcluded map[string]float64) {
+	t.Helper()
+	tokens, _ := interval["tokens"].(map[string]any)
+	if tokens == nil || tokens["tasks_summed"].(float64) != tasksSummed ||
+		tokens["input_tokens"].(float64) != inputTokens ||
+		tokens["cached_input_tokens"].(float64) != cachedInputTokens ||
+		tokens["output_tokens"].(float64) != outputTokens ||
+		tokens["reasoning_output_tokens"].(float64) != reasoningTokens ||
+		tokens["total_tokens"].(float64) != totalTokens {
+		t.Fatalf("interval tokens = %#v", tokens)
+	}
+	activity, _ := interval["activity"].(map[string]any)
+	if activity == nil || activity["tasks_counted"].(float64) != tasksCounted ||
+		activity["model_turns"].(float64) != modelTurns ||
+		activity["tool_calls"].(float64) != toolCalls ||
+		activity["tool_results"].(float64) != toolResults ||
+		activity["compactions"].(float64) != compactions ||
+		activity["tool_output_bytes"].(float64) != toolOutputBytes {
+		t.Fatalf("interval activity = %#v", activity)
+	}
+	assertTelemetryExcludedStatuses(t, interval, "tokens_excluded_by_status", tokensExcluded)
+	assertTelemetryExcludedStatuses(t, interval, "activity_excluded_by_status", activityExcluded)
+}
+
+func assertTelemetryExcludedStatuses(t *testing.T, interval map[string]any, key string, want map[string]float64) {
+	t.Helper()
+	excluded, _ := interval[key].(map[string]any)
+	if len(excluded) != len(want) {
+		t.Fatalf("interval %s = %#v want %#v", key, excluded, want)
+	}
+	for status, count := range want {
+		if excluded[status].(float64) != count {
+			t.Fatalf("interval %s = %#v want %#v", key, excluded, want)
+		}
+	}
+}
+
+func assertTelemetryParentUsagePartition(t *testing.T, interval map[string]any, tasks float64) {
+	t.Helper()
+	tokens, _ := interval["tokens"].(map[string]any)
+	activity, _ := interval["activity"].(map[string]any)
+	tokenTotal := tokens["tasks_summed"].(float64)
+	for _, count := range interval["tokens_excluded_by_status"].(map[string]any) {
+		tokenTotal += count.(float64)
+	}
+	activityTotal := activity["tasks_counted"].(float64)
+	for _, count := range interval["activity_excluded_by_status"].(map[string]any) {
+		activityTotal += count.(float64)
+	}
+	if tokenTotal != tasks || activityTotal != tasks {
+		t.Fatalf("interval partition = tokens %f / activity %f for %f tasks: %#v", tokenTotal, activityTotal, tasks, interval)
+	}
+}
+
+func assertTelemetryParentUsageBounded(t *testing.T, parentUsage map[string]any) {
+	t.Helper()
+	encoded, err := json.Marshal(parentUsage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, leaked := range []string{".jsonl", "source", "baseline", "anchor", "generated_at"} {
+		if strings.Contains(string(encoded), leaked) {
+			t.Fatalf("parent usageへlocator/anchor由来の%qが漏れています: %s", leaked, encoded)
+		}
 	}
 }
 
