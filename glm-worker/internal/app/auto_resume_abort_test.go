@@ -13,6 +13,18 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
+func setAutoResumeFallbackDecision(t *testing.T, decision autoresume.AutoResumeFallbackDecision) {
+	t.Helper()
+	oldEvaluate := autoResumeFallbackEvaluate
+	autoResumeFallbackEvaluate = func(token, _, _ string, _ autoresume.DBReader) (autoresume.AutoResumeFallbackPlan, autoresume.AutoResumeFallbackDecision, error) {
+		plan, err := autoresume.AutoResumeFallbackPlanFromToken(token)
+		return plan, decision, err
+	}
+	t.Cleanup(func() {
+		autoResumeFallbackEvaluate = oldEvaluate
+	})
+}
+
 func TestAutoResumePlanExposesBoundedFallbackCommand(t *testing.T) {
 	cfg := newAppConfig(t)
 	writeRateLimitedState(t, cfg, time.Now().Add(time.Hour))
@@ -40,6 +52,7 @@ func TestAutoResumePlanExposesBoundedFallbackCommand(t *testing.T) {
 }
 
 func TestAutoResumeFallbackWaitsToMachineBoundaryAndResumes(t *testing.T) {
+	setAutoResumeFallbackDecision(t, autoresume.AutoResumeFallbackLocalWait)
 	cfg := newAppConfig(t)
 	resetAt := time.Now().Add(time.Hour).Truncate(time.Second)
 	writeRateLimitedState(t, cfg, resetAt)
@@ -87,7 +100,54 @@ func TestAutoResumeFallbackWaitsToMachineBoundaryAndResumes(t *testing.T) {
 	}
 }
 
+func TestAutoResumeFallbackTrustsExistingExternalWakeWithoutLocalResume(t *testing.T) {
+	setAutoResumeFallbackDecision(t, autoresume.AutoResumeFallbackExternalWake)
+	cfg := newAppConfig(t)
+	writeRateLimitedState(t, cfg, time.Now().Add(time.Hour).Truncate(time.Second))
+	t.Setenv(codexThreadIDEnv, testAppCodexWakeThread)
+	plan := testAppAutoResumePlan(t, cfg)
+
+	oldWait := autoResumeFallbackWaitUntil
+	oldRun := autoResumeFallbackRunResume
+	defer func() {
+		autoResumeFallbackWaitUntil = oldWait
+		autoResumeFallbackRunResume = oldRun
+	}()
+	waitCalls := 0
+	autoResumeFallbackWaitUntil = func(time.Time) {
+		waitCalls++
+	}
+	resumeCalls := 0
+	autoResumeFallbackRunResume = func(config.AppConfig, io.Writer) (bool, error) {
+		resumeCalls++
+		return true, nil
+	}
+
+	cmd, err := ParseCommand([]string{"--auto-resume-fallback", plan.Token})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stdout bytes.Buffer
+	if err := executeRuntimeControl(cmd, cfg, &stdout); err != nil {
+		t.Fatal(err)
+	}
+	if waitCalls != 0 || resumeCalls != 0 {
+		t.Fatalf("local fallback ran with active external wake: wait=%d resume=%d", waitCalls, resumeCalls)
+	}
+	var output autoResumeFallbackExternalOutput
+	if err := json.Unmarshal(stdout.Bytes(), &output); err != nil {
+		t.Fatal(err)
+	}
+	if output.Status != "external_wake_active" || output.TaskID != plan.TaskID || output.ExpectedAutomationID == "" {
+		t.Fatalf("external output = %#v", output)
+	}
+	if err := executeRuntimeControl(cmd, cfg, &bytes.Buffer{}); err == nil {
+		t.Fatal("consumed external-wake fallback token was replayed")
+	}
+}
+
 func TestAutoResumeFallbackRejectsStateChangeDuringWait(t *testing.T) {
+	setAutoResumeFallbackDecision(t, autoresume.AutoResumeFallbackLocalWait)
 	cfg := newAppConfig(t)
 	resetAt := time.Now().Add(time.Hour).Truncate(time.Second)
 	writeRateLimitedState(t, cfg, resetAt)
@@ -134,6 +194,7 @@ func TestAutoResumeFallbackRejectsStateChangeDuringWait(t *testing.T) {
 }
 
 func TestAutoResumeFallbackRejectsTaskStatusChangeDuringWait(t *testing.T) {
+	setAutoResumeFallbackDecision(t, autoresume.AutoResumeFallbackLocalWait)
 	cfg := newAppConfig(t)
 	resetAt := time.Now().Add(time.Hour).Truncate(time.Second)
 	writeRateLimitedState(t, cfg, resetAt)
