@@ -17,9 +17,6 @@ func TestResetWithDispositionRecoversLegacyPartialResetProvenance(t *testing.T) 
 		t.Fatal(err)
 	}
 
-	// Legacy Reset archived stats before deleting task-bound state. Simulate a
-	// partial deletion that lost task.id and task.status but left parent review
-	// state and the archived stats as machine-readable provenance.
 	st.ArchiveCurrentStats()
 	if err := st.Remove("task.id", "task.status"); err != nil {
 		t.Fatal(err)
