@@ -14,7 +14,7 @@ func TestContinuationStopHookSmoke(t *testing.T) {
 	t.Run("delegates to canonical action", func(t *testing.T) {
 		bin, calls := continuationHookBin(t, true)
 		cmd := exec.Command("sh", hook)
-		cmd.Env = append(os.Environ(), "PATH="+bin, "HOOK_CALLS="+calls)
+		cmd.Env = continuationHookEnv(bin, calls)
 		if output, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("stop hook failed: %v: %s", err, output)
 		}
@@ -24,9 +24,9 @@ func TestContinuationStopHookSmoke(t *testing.T) {
 	})
 
 	t.Run("fails closed when canonical action unavailable", func(t *testing.T) {
-		bin, _ := continuationHookBin(t, false)
+		bin, calls := continuationHookBin(t, false)
 		cmd := exec.Command("sh", hook)
-		cmd.Env = append(os.Environ(), "PATH="+bin)
+		cmd.Env = continuationHookEnv(bin, calls)
 		output, err := cmd.CombinedOutput()
 		if err != nil {
 			t.Fatalf("stop hook should block with successful hook exit: %v: %s", err, output)
@@ -49,7 +49,7 @@ func TestContinuationMetadataPreCommitHookSmoke(t *testing.T) {
 		runContinuationHookGit(t, repo, "add", "code.txt")
 		cmd := exec.Command("sh", hook)
 		cmd.Dir = repo
-		cmd.Env = append(os.Environ(), "PATH="+bin, "HOOK_CALLS="+calls)
+		cmd.Env = continuationHookEnv(bin, calls)
 		if output, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("pre-commit rejected non-metadata commit: %v: %s", err, output)
 		}
@@ -65,7 +65,7 @@ func TestContinuationMetadataPreCommitHookSmoke(t *testing.T) {
 		runContinuationHookGit(t, repo, "add", "IMPLEMENTATION_PLAN.local.md")
 		cmd := exec.Command("sh", hook)
 		cmd.Dir = repo
-		cmd.Env = append(os.Environ(), "PATH="+bin, "HOOK_CALLS="+calls)
+		cmd.Env = continuationHookEnv(bin, calls)
 		if output, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("pre-commit failed: %v: %s", err, output)
 		}
@@ -87,7 +87,7 @@ func TestContinuationMetadataPreCommitHookSmoke(t *testing.T) {
 		}
 		cmd := exec.Command("sh", hook)
 		cmd.Dir = repo
-		cmd.Env = append(os.Environ(), "PATH="+bin, "HOOK_CALLS="+calls)
+		cmd.Env = continuationHookEnv(bin, calls)
 		output, err := cmd.CombinedOutput()
 		if err == nil {
 			t.Fatalf("pre-commit accepted staged/worktree divergence: %s", output)
@@ -150,6 +150,17 @@ func continuationHookBin(t *testing.T, withAction bool) (string, string) {
 		}
 	}
 	return bin, calls
+}
+
+func continuationHookEnv(bin, calls string) []string {
+	env := make([]string, 0, len(os.Environ())+2)
+	for _, item := range os.Environ() {
+		if strings.HasPrefix(item, "PATH=") || strings.HasPrefix(item, "HOOK_CALLS=") {
+			continue
+		}
+		env = append(env, item)
+	}
+	return append(env, "PATH="+bin, "HOOK_CALLS="+calls)
 }
 
 func runContinuationHookGit(t *testing.T, repo string, args ...string) {
