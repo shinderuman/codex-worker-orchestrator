@@ -39,7 +39,6 @@ func (w *Workflow) validateDecisionExecutionUnitPayload(payload string) (executi
 		if err := validateExecutionMilestoneRevisionPreflight(w.config, w.state, input.Milestones, w.now().UTC()); err != nil {
 			return executionUnitDecision{}, false, err
 		}
-		active = true
 	default:
 		return executionUnitDecision{}, false, fmt.Errorf("unsupported execution-unit disposition %q", input.ExecutionUnit)
 	}
