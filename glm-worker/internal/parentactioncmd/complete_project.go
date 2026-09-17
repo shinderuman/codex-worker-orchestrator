@@ -8,6 +8,9 @@ import (
 )
 
 func prepareCompletionVerification(cfg config.AppConfig, st *state.StateStore) (completionVerification, *repositoryproject.ParentRequestCompletionProjection) {
+	if failure := verifyPublicationCompletionGate(cfg, st); failure != nil {
+		return completionVerification{failure: failure}, nil
+	}
 	verification := verifyParentCompletion(cfg.RepoRoot, st)
 	if verification.failure != nil {
 		return verification, nil
