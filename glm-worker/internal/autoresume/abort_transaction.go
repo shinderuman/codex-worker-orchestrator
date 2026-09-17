@@ -69,10 +69,6 @@ func autoResumeFallbackPlan(transaction autoResumeTransaction) AutoResumeFallbac
 }
 
 func evaluateAutoResumeFallbackPersistence(transaction autoResumeTransaction, automationsDir, dbPath string, readDB DBReader) (AutoResumeFallbackDecision, error) {
-	verification := Verify(autoResumeVerificationParams(transaction, automationsDir, dbPath), readDB)
-	if verification.Outcome == Pass {
-		return AutoResumeFallbackExternalWake, nil
-	}
 	persistence, missing, err := readAutoResumeFallbackPersistence(transaction, automationsDir, dbPath, readDB)
 	if err != nil {
 		return "", err
@@ -80,7 +76,13 @@ func evaluateAutoResumeFallbackPersistence(transaction autoResumeTransaction, au
 	if missing {
 		return AutoResumeFallbackLocalWait, nil
 	}
-	if err := validateAutoResumeFallbackPausedPersistence(transaction, persistence, verification.Reason); err != nil {
+	if persistence.toml.Status == activeStatus || persistence.db.Status == activeStatus {
+		if err := validateAutoResumeFallbackActivePersistence(transaction, persistence); err != nil {
+			return "", err
+		}
+		return AutoResumeFallbackExternalWake, nil
+	}
+	if err := validateAutoResumeFallbackPausedPersistence(transaction, persistence, "persisted wake is not the exact ACTIVE one-shot"); err != nil {
 		return "", err
 	}
 	return AutoResumeFallbackLocalWait, nil
@@ -109,6 +111,28 @@ func readAutoResumeFallbackPersistence(transaction autoResumeTransaction, automa
 		return autoResumeFallbackPersistence{}, false, fmt.Errorf("auto-resume fallback automation state is malformed: %w", err)
 	}
 	return autoResumeFallbackPersistence{toml: toml, db: db}, false, nil
+}
+
+func validateAutoResumeFallbackActivePersistence(transaction autoResumeTransaction, persistence autoResumeFallbackPersistence) error {
+	_, expectedDTStart, expectedEpochMS, err := expectedFromRFC3339(transaction.ResumeAtRFC3339)
+	if err != nil {
+		return fmt.Errorf("auto-resume fallback ACTIVE wake schedule is invalid: %w", err)
+	}
+	params := Params{
+		AutomationKey:    transaction.ExpectedAutomationID,
+		ExpectedRFC3339:  transaction.ResumeAtRFC3339,
+		ExpectedThreadID: transaction.ParentThreadID,
+	}
+	if reason := checkTOML(persistence.toml, params, expectedDTStart); reason != "" {
+		return fmt.Errorf("auto-resume fallback ACTIVE wake is not exact: %s", reason)
+	}
+	if persistence.toml.Prompt != buildAutoResumePrompt(transaction) {
+		return fmt.Errorf("auto-resume fallback ACTIVE wake prompt does not match the transaction")
+	}
+	if reason := checkDB(persistence.db, params, expectedEpochMS, persistence.toml.Rrule); reason != "" {
+		return fmt.Errorf("auto-resume fallback ACTIVE scheduler state is not exact: %s", reason)
+	}
+	return nil
 }
 
 func validateAutoResumeFallbackPausedPersistence(transaction autoResumeTransaction, persistence autoResumeFallbackPersistence, verificationReason string) error {
