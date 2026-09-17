@@ -249,30 +249,32 @@ func classify(path string) (string, bool) {
 	if nonSourcePath(path, base) {
 		return "", false
 	}
-	if extension == "" {
-		if base == "commentlint" || base == "harnesslint" || base == "goquality" || path == ".githooks/post-merge" || path == ".githooks/pre-commit" {
-			return sourceShell, true
-		}
+	if extension == "" && extensionlessShellPath(path, base) {
+		return sourceShell, true
 	}
 	return "unclassified", true
+}
+
+func extensionlessShellPath(path, base string) bool {
+	return base == "commentlint" || base == "harnesslint" || base == "goquality" || path == ".githooks/post-merge" || path == ".githooks/pre-commit"
 }
 
 func nonSourcePath(path, base string) bool {
 	return base == "LICENSE" || path == repositoryharness.MarkerPath
 }
 
-func readRegular(root, path string) ([]byte, os.FileMode, error) {
-	absolute := filepath.Join(root, filepath.FromSlash(path))
+func readRegular(root string) ([]byte, os.FileMode, error) {
+	absolute := filepath.Join(root, filepath.FromSlash(root))
 	info, err := os.Lstat(absolute)
 	if err != nil {
-		return nil, 0, fmt.Errorf("lstat %s: %w", path, err)
+		return nil, 0, fmt.Errorf("lstat %s: %w", root, err)
 	}
 	if !info.Mode().IsRegular() {
-		return nil, 0, fmt.Errorf("refusing non-regular source %s", path)
+		return nil, 0, fmt.Errorf("refusing non-regular source %s", root)
 	}
 	data, err := os.ReadFile(absolute)
 	if err != nil {
-		return nil, 0, fmt.Errorf("read %s: %w", path, err)
+		return nil, 0, fmt.Errorf("read %s: %w", root, err)
 	}
 	return data, info.Mode().Perm(), nil
 }
