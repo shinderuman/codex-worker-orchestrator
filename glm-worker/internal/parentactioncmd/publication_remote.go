@@ -32,6 +32,10 @@ func applyPublicationRemoteWriteGuard(repoRoot string, output pushBindingOutput)
 	if err != nil {
 		return blockPublicationRemoteWrite(output, err.Error())
 	}
+	return applyPublicationRemoteWriteGuardForTask(cfg, st, output)
+}
+
+func applyPublicationRemoteWriteGuardForTask(cfg config.AppConfig, st *state.StateStore, output pushBindingOutput) pushBindingOutput {
 	if st.TaskStatus() == state.TaskStatusNone {
 		return output
 	}
