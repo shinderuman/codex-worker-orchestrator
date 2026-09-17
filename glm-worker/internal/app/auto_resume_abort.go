@@ -23,6 +23,13 @@ type autoResumeParentOutput struct {
 	FallbackCommand []string `json:"fallback_command,omitempty"`
 }
 
+type autoResumeFallbackExternalOutput struct {
+	Status               string `json:"status"`
+	TaskID               string `json:"task_id"`
+	ExpectedAutomationID string `json:"expected_automation_id"`
+	ResumeAtRFC3339      string `json:"resume_at_rfc3339"`
+}
+
 const autoResumeFallbackUsage = "usage: glm-worker --auto-resume-fallback <transaction-token>"
 
 var autoResumeFallbackWaitUntil = func(target time.Time) {
@@ -92,11 +99,39 @@ func printAutoResumeFallback(cmd Command, cfg config.AppConfig, stdout io.Writer
 	if err := validateAutoResumeFallbackState(cfg, plan); err != nil {
 		return err
 	}
+	automationsDir, dbPath := autoresume.CodexWakePersistencePaths(cfg.CodexConfigDir)
+	plan, decision, err := autoresume.EvaluateAutoResumeFallback(cmd.AutoResume.Token, automationsDir, dbPath, autoresume.ReadDBRowSqlite3)
+	if err != nil {
+		return err
+	}
+	finishExternalWake := func(plan autoresume.AutoResumeFallbackPlan) error {
+		if err := lease.markDelivering(); err != nil {
+			return err
+		}
+		delivering = true
+		complete, writeErr := writeTransactionJSON(stdout, autoResumeFallbackExternalOutput{
+			Status:               "external_wake_active",
+			TaskID:               plan.TaskID,
+			ExpectedAutomationID: plan.ExpectedAutomationID,
+			ResumeAtRFC3339:      plan.ResumeAtRFC3339,
+		})
+		if !complete {
+			return writeErr
+		}
+		retryable = false
+		return lease.commit()
+	}
+	if decision == autoresume.AutoResumeFallbackExternalWake {
+		return finishExternalWake(plan)
+	}
+	if decision != autoresume.AutoResumeFallbackLocalWait {
+		return fmt.Errorf("auto-resume fallback decision is invalid: %q", decision)
+	}
+
 	resumeAt, err := time.Parse(time.RFC3339, plan.ResumeAtRFC3339)
 	if err != nil {
 		return fmt.Errorf("auto-resume fallback time is invalid: %w", err)
 	}
-
 	autoResumeFallbackWaitUntil(resumeAt)
 
 	if stateErr := validateAutoResumeFallbackState(cfg, plan); stateErr != nil {
@@ -106,6 +141,16 @@ func printAutoResumeFallback(cmd Command, cfg config.AppConfig, stdout io.Writer
 			retryable = false
 		}
 		return consumeErr
+	}
+	plan, decision, err = autoresume.EvaluateAutoResumeFallback(cmd.AutoResume.Token, automationsDir, dbPath, autoresume.ReadDBRowSqlite3)
+	if err != nil {
+		return err
+	}
+	if decision == autoresume.AutoResumeFallbackExternalWake {
+		return finishExternalWake(plan)
+	}
+	if decision != autoresume.AutoResumeFallbackLocalWait {
+		return fmt.Errorf("auto-resume fallback decision after wait is invalid: %q", decision)
 	}
 
 	if err := lease.markDelivering(); err != nil {
