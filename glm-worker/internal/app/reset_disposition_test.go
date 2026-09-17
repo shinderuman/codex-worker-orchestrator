@@ -126,6 +126,42 @@ func TestExecuteResetAbandonAllowsVerifiedNewTaskAdmission(t *testing.T) {
 	}
 }
 
+func TestExecuteResetRetryRepairsDispositionLifecycle(t *testing.T) {
+	cfg := newAppConfig(t)
+	st, err := state.NewStateStore(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	taskID, err := st.StartNewTask()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetTaskStatus(state.TaskStatusAwaitingParentCompletion); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.ResetWithDisposition(string(state.TaskDispositionAbandon)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(st.TaskLifecycleLogPath(taskID)); err != nil {
+		t.Fatal(err)
+	}
+
+	var out bytes.Buffer
+	if err := Execute(Command{Mode: ModeReset}, cfg, nil, &out, io.Discard); err != nil {
+		t.Fatalf("reset retry did not repair disposition lifecycle: %v", err)
+	}
+	var got dispositionResetOutput
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Disposition != state.TaskDispositionAbandon {
+		t.Fatalf("reset retry lost disposition provenance: %#v", got)
+	}
+	if err := st.ValidateResetDispositionForNewTask(); err != nil {
+		t.Fatalf("reset retry left new-task admission blocked: %v", err)
+	}
+}
+
 func TestExecuteResetPreservesRecoverableResetPath(t *testing.T) {
 	cfg := newAppConfig(t)
 	st, err := state.NewStateStore(cfg)
