@@ -39,6 +39,9 @@ func applyPublicationRemoteWriteGuardForTask(cfg config.AppConfig, st *state.Sta
 	if st.TaskStatus() == state.TaskStatusNone {
 		return output
 	}
+	if output.Classification != pushBindingClassificationLocalAhead {
+		return blockPublicationRemoteWrite(output, "remote publication is not a verified fast-forward from the observed remote OID")
+	}
 	candidate, err := st.LoadPublicationCandidate()
 	if err != nil {
 		return blockPublicationRemoteWrite(output, "publication candidate is missing: "+err.Error())
