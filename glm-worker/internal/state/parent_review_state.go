@@ -190,6 +190,11 @@ func (s *StateStore) FinishParentValidationNonConvergence(value packet.Result, p
 		return s.rollbackLifecycleFiles(err, review, status)
 	}
 	s.recordSolOutcomeStats(value, producer)
+	s.UpdateTaskStats(func(stats *TaskStats) {
+		if stats.ParentReviewOpen != nil {
+			stats.ParentReviewOpen.ParentValidationNonConvergence = true
+		}
+	})
 	return nil
 }
 
