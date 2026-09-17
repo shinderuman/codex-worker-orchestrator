@@ -65,7 +65,7 @@ func (s *StateStore) ResetWithDisposition(requested string) (TaskDisposition, er
 		}
 		return "", s.Reset()
 	}
-	if status == TaskStatusComplete {
+	if status == TaskStatusComplete && s.completedTaskResetCleanupAllowed() {
 		if requested != "" {
 			return "", fmt.Errorf("completed task cleanup does not accept a reset disposition")
 		}
@@ -96,6 +96,11 @@ func (s *StateStore) ResetWithDisposition(requested string) (TaskDisposition, er
 		return "", err
 	}
 	return disposition, nil
+}
+
+func (s *StateStore) completedTaskResetCleanupAllowed() bool {
+	plan, err := s.ParentActionPlan()
+	return err == nil && plan.RequiredAction == ParentActionNone
 }
 
 func resolveResetDisposition(status TaskStatus, requested string) (TaskDisposition, error) {
@@ -169,8 +174,12 @@ func (s *StateStore) ValidateResetDispositionForNewTask() error {
 	if taskID := s.ReadOr("task.id", ""); taskID != "" && taskID != record.TaskID {
 		return fmt.Errorf("new task admission found reset disposition for %s while current task is %s", record.TaskID, taskID)
 	}
-	if err := s.ensureTaskDispositionLifecycle(record); err != nil {
+	recorded, err := s.taskDispositionLifecycleRecorded(record)
+	if err != nil {
 		return fmt.Errorf("new task admission cannot verify reset lifecycle: %w", err)
+	}
+	if !recorded {
+		return fmt.Errorf("new task admission cannot verify reset lifecycle: disposition transition is missing")
 	}
 	evidence, err := s.ArchivedTaskStatsEvidence(record.TaskID)
 	if err == nil && evidence.Proven && string(evidence.Status) != record.FromStatus {
@@ -183,18 +192,12 @@ func (s *StateStore) ValidateResetDispositionForNewTask() error {
 }
 
 func (s *StateStore) ensureTaskDispositionLifecycle(record TaskDispositionRecord) error {
-	records, err := ReadTaskLifecycle(s.TaskLifecycleLogPath(record.TaskID))
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("task disposition lifecycle is unreadable: %w", err)
+	recorded, err := s.taskDispositionLifecycleRecorded(record)
+	if err != nil {
+		return err
 	}
-	for _, lifecycle := range records {
-		if lifecycle.Disposition == "" {
-			continue
-		}
-		if lifecycle.Disposition == record.Disposition && lifecycle.From == record.FromStatus && lifecycle.To == string(TaskStatusNone) && lifecycle.Timestamp.Equal(record.RecordedAt) {
-			return nil
-		}
-		return fmt.Errorf("task %s already has a conflicting lifecycle disposition", record.TaskID)
+	if recorded {
+		return nil
 	}
 	if err := s.AppendTaskLifecycle(TaskLifecycleRecord{
 		TaskID:      record.TaskID,
@@ -206,4 +209,24 @@ func (s *StateStore) ensureTaskDispositionLifecycle(record TaskDispositionRecord
 		return fmt.Errorf("task disposition lifecycle cannot be recorded: %w", err)
 	}
 	return nil
+}
+
+func (s *StateStore) taskDispositionLifecycleRecorded(record TaskDispositionRecord) (bool, error) {
+	records, err := ReadTaskLifecycle(s.TaskLifecycleLogPath(record.TaskID))
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("task disposition lifecycle is unreadable: %w", err)
+	}
+	for _, lifecycle := range records {
+		if lifecycle.Disposition == "" {
+			continue
+		}
+		if lifecycle.Disposition == record.Disposition && lifecycle.From == record.FromStatus && lifecycle.To == string(TaskStatusNone) && lifecycle.Timestamp.Equal(record.RecordedAt) {
+			return true, nil
+		}
+		return false, fmt.Errorf("task %s already has a conflicting lifecycle disposition", record.TaskID)
+	}
+	return false, nil
 }
