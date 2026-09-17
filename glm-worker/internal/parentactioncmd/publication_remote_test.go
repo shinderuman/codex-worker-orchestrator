@@ -55,10 +55,11 @@ func TestPublicationRemoteWriteRejectsActiveTaskWithoutCandidate(t *testing.T) {
 
 func publicationRemoteWriteFixture(oid string, clean bool) pushBindingOutput {
 	return pushBindingOutput{
-		Status:      "classified",
-		ExpectedOID: oid,
-		TreeClean:   clean,
-		Target:      &pushBindingTarget{LocalOID: oid, RemoteName: "origin", RemoteRef: "refs/heads/main"},
+		Status:         "classified",
+		ExpectedOID:    oid,
+		TreeClean:      clean,
+		Classification: pushBindingClassificationLocalAhead,
+		Target:         &pushBindingTarget{LocalOID: oid, RemoteName: "origin", RemoteRef: "refs/heads/main"},
 		RemoteWrite: &pushBindingRemoteWrite{
 			Authorization: pushBindingAuthorizationStanding,
 			Executor:      pushBindingExecutorParentOnly,
