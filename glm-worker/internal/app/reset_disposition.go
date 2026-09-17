@@ -1,9 +1,7 @@
 package app
 
 import (
-	"errors"
 	"io"
-	"os"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
@@ -36,9 +34,6 @@ func resetDispositionCommand(args []string) (Command, error) {
 }
 
 func executeDispositionReset(cmd Command, st *state.StateStore, stdout io.Writer) error {
-	if cmd.Payload == "" && safeLegacyNoTaskReset(st) {
-		return resetState(st, stdout)
-	}
 	disposition, err := st.ResetWithDisposition(cmd.Payload)
 	if err != nil {
 		return err
@@ -48,12 +43,4 @@ func executeDispositionReset(cmd Command, st *state.StateStore, stdout io.Writer
 		RepoRoot:    machinecli.StringPtr(st.ReadOr("repo-root", "")),
 		Disposition: disposition,
 	})
-}
-
-func safeLegacyNoTaskReset(st *state.StateStore) bool {
-	if st.ReadOr("task.id", "") != "" || st.TaskStatus() != state.TaskStatusNone {
-		return false
-	}
-	_, err := st.CurrentTaskDisposition()
-	return errors.Is(err, os.ErrNotExist)
 }
