@@ -92,7 +92,7 @@ func printAutoResumePlan(cmd Command, cfg config.AppConfig, stdout io.Writer) er
 
 func printAutoResumeResponse(cmd Command, cfg config.AppConfig, stdout io.Writer) error {
 	if cmd.StdinBytes == 0 && cmd.Payload == autoresume.AutoResumeAbortAutomationUpdateUnavailable {
-		return printAutoResumeAbort(cmd, cfg, stdout)
+		return printAutoResumeFallback(cmd, cfg, stdout)
 	}
 	lease, err := beginAutoResumeToken(cfg.CodexConfigDir, cmd.AutoResume.Token)
 	if err != nil {
