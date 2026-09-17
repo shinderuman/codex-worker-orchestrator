@@ -9,6 +9,12 @@ import (
 )
 
 func admitParentCommand(cmd Command, st *state.StateStore) error {
+	if cmd.Mode == ModeReset {
+		if err := st.ValidateResetRequest(cmd.Payload); err != nil {
+			return &workflow.WorkerError{Message: err.Error()}
+		}
+		return nil
+	}
 	if cmd.Mode == ModeNewTask {
 		if err := st.ValidateResetDispositionForNewTask(); err != nil {
 			return &workflow.WorkerError{Message: err.Error()}
