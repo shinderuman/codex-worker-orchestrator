@@ -28,8 +28,10 @@ func (s *StateStore) validateExistingResetDisposition(existing TaskDispositionRe
 }
 
 func (s *StateStore) validateResetRequestWithoutDisposition(requested string) error {
-	taskID := s.ReadOr("task.id", "")
-	status := s.TaskStatus()
+	taskID, status, err := s.resetTaskContext()
+	if err != nil {
+		return err
+	}
 	if taskID == "" && status == TaskStatusNone {
 		if requested != "" {
 			return fmt.Errorf("cannot record reset disposition %s without a current task", requested)
@@ -45,6 +47,6 @@ func (s *StateStore) validateResetRequestWithoutDisposition(requested string) er
 	if taskID == "" {
 		return fmt.Errorf("cannot dispose task state %s without task.id provenance", status)
 	}
-	_, err := resolveResetDisposition(status, requested)
+	_, err = resolveResetDisposition(status, requested)
 	return err
 }
