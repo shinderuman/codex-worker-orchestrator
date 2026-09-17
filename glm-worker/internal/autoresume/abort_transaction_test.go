@@ -166,7 +166,7 @@ func TestEvaluateAutoResumeFallbackFailsClosedOnActiveMismatch(t *testing.T) {
 		"unused",
 		fixedDBReader(rows, nil),
 	)
-	if err == nil || !strings.Contains(err.Error(), "neither the exact ACTIVE one-shot nor the exact PAUSED placeholder") {
+	if err == nil || !strings.Contains(err.Error(), "ACTIVE scheduler state is not exact") {
 		t.Fatalf("error = %v", err)
 	}
 }
