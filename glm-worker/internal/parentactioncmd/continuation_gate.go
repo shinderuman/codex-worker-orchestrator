@@ -12,14 +12,9 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryproject"
 )
 
-const (
-	actionContinuationStopHook      = "continuation-stop-hook"
-	actionContinuationMetadataGuard = "continuation-metadata-guard"
-)
-
 type continuationGateHandoff struct {
-	Consistent    bool                                  `json:"consistent"`
-	Inconsistency *string                               `json:"inconsistency"`
+	Consistent    bool                                   `json:"consistent"`
+	Inconsistency *string                                `json:"inconsistency"`
 	ParentRequest *app.ParentRequestCompletionProjection `json:"parent_request"`
 }
 
@@ -27,6 +22,11 @@ type continuationStopHookOutput struct {
 	Decision string `json:"decision"`
 	Reason   string `json:"reason"`
 }
+
+const (
+	actionContinuationStopHook      = "continuation-stop-hook"
+	actionContinuationMetadataGuard = "continuation-metadata-guard"
+)
 
 func executeContinuationGate(cfg config.AppConfig, args []string, stdout io.Writer) error {
 	if len(args) != 1 {
