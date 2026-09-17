@@ -53,6 +53,9 @@ func (s *StateStore) applyNewTaskCanonicalState(taskID string) error {
 	if err := s.Remove(newTaskTransitionStateFileNames()...); err != nil {
 		return err
 	}
+	if err := s.Remove(taskDispositionStateFile); err != nil {
+		return err
+	}
 	if err := s.ClearParentEvidenceLedger(); err != nil {
 		return err
 	}
@@ -121,6 +124,7 @@ func newTaskCanonicalStateFileNames() []string {
 		"reviewer.ready",
 		parentEvidenceLedgerPath,
 		parentEvidenceLeasePath,
+		taskDispositionStateFile,
 	}
 	return append(names, newTaskTransitionStateFileNames()...)
 }
