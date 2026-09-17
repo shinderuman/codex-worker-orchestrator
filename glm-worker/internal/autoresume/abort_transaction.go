@@ -21,6 +21,11 @@ type AutoResumeFallbackPlan struct {
 
 type AutoResumeFallbackDecision string
 
+type autoResumeFallbackPersistence struct {
+	toml AutomationTOML
+	db   DBRow
+}
+
 const (
 	AutoResumeFallbackLocalWait    AutoResumeFallbackDecision = "local_wait"
 	AutoResumeFallbackExternalWake AutoResumeFallbackDecision = "external_wake"
@@ -64,45 +69,62 @@ func autoResumeFallbackPlan(transaction autoResumeTransaction) AutoResumeFallbac
 }
 
 func evaluateAutoResumeFallbackPersistence(transaction autoResumeTransaction, automationsDir, dbPath string, readDB DBReader) (AutoResumeFallbackDecision, error) {
-	params := autoResumeVerificationParams(transaction, automationsDir, dbPath)
-	verification := Verify(params, readDB)
+	verification := Verify(autoResumeVerificationParams(transaction, automationsDir, dbPath), readDB)
 	if verification.Outcome == Pass {
 		return AutoResumeFallbackExternalWake, nil
 	}
+	persistence, missing, err := readAutoResumeFallbackPersistence(transaction, automationsDir, dbPath, readDB)
+	if err != nil {
+		return "", err
+	}
+	if missing {
+		return AutoResumeFallbackLocalWait, nil
+	}
+	if err := validateAutoResumeFallbackPausedPersistence(transaction, persistence, verification.Reason); err != nil {
+		return "", err
+	}
+	return AutoResumeFallbackLocalWait, nil
+}
 
+func readAutoResumeFallbackPersistence(transaction autoResumeTransaction, automationsDir, dbPath string, readDB DBReader) (autoResumeFallbackPersistence, bool, error) {
 	tomlPath := filepath.Join(automationsDir, transaction.ExpectedAutomationID, "automation.toml")
 	data, tomlReadErr := os.ReadFile(tomlPath)
 	db, dbReadErr := readDB(dbPath, transaction.ExpectedAutomationID)
 	tomlMissing := os.IsNotExist(tomlReadErr)
 	dbMissing := errors.Is(dbReadErr, ErrRowNotFound)
 	if tomlMissing && dbMissing {
-		return AutoResumeFallbackLocalWait, nil
+		return autoResumeFallbackPersistence{}, true, nil
 	}
 	if tomlMissing != dbMissing {
-		return "", fmt.Errorf("auto-resume fallback external persistence is partial at stage %s attempt %d", transaction.Stage, transaction.Attempt)
+		return autoResumeFallbackPersistence{}, false, fmt.Errorf("auto-resume fallback external persistence is partial at stage %s attempt %d", transaction.Stage, transaction.Attempt)
 	}
 	if tomlReadErr != nil {
-		return "", fmt.Errorf("auto-resume fallback automation state is not safely readable: %w", tomlReadErr)
+		return autoResumeFallbackPersistence{}, false, fmt.Errorf("auto-resume fallback automation state is not safely readable: %w", tomlReadErr)
 	}
 	if dbReadErr != nil {
-		return "", fmt.Errorf("auto-resume fallback scheduler state is not safely readable: %w", dbReadErr)
+		return autoResumeFallbackPersistence{}, false, fmt.Errorf("auto-resume fallback scheduler state is not safely readable: %w", dbReadErr)
 	}
-
 	toml, err := parseAutomationTOML(data)
 	if err != nil {
-		return "", fmt.Errorf("auto-resume fallback automation state is malformed: %w", err)
+		return autoResumeFallbackPersistence{}, false, fmt.Errorf("auto-resume fallback automation state is malformed: %w", err)
 	}
+	return autoResumeFallbackPersistence{toml: toml, db: db}, false, nil
+}
+
+func validateAutoResumeFallbackPausedPersistence(transaction autoResumeTransaction, persistence autoResumeFallbackPersistence, verificationReason string) error {
+	toml := persistence.toml
 	if toml.ID != transaction.ExpectedAutomationID || toml.Name != transaction.ExpectedAutomationID || toml.TargetThreadID != transaction.ParentThreadID {
-		return "", fmt.Errorf("auto-resume fallback automation identity does not match the transaction")
+		return fmt.Errorf("auto-resume fallback automation identity does not match the transaction")
 	}
 	if toml.Prompt != buildAutoResumePrompt(transaction) {
-		return "", fmt.Errorf("auto-resume fallback automation prompt does not match the transaction")
+		return fmt.Errorf("auto-resume fallback automation prompt does not match the transaction")
 	}
 	if toml.Status != pausedStatus || toml.Rrule != placeholderHourlyRRule {
-		return "", fmt.Errorf("auto-resume fallback external wake is neither the exact ACTIVE one-shot nor the exact PAUSED placeholder: %s", verification.Reason)
+		return fmt.Errorf("auto-resume fallback external wake is neither the exact ACTIVE one-shot nor the exact PAUSED placeholder: %s", verificationReason)
 	}
+	db := persistence.db
 	if db.ID != transaction.ExpectedAutomationID || db.Status != pausedStatus || db.Rrule != placeholderHourlyRRule {
-		return "", fmt.Errorf("auto-resume fallback scheduler state does not match the PAUSED placeholder")
+		return fmt.Errorf("auto-resume fallback scheduler state does not match the PAUSED placeholder")
 	}
-	return AutoResumeFallbackLocalWait, nil
+	return nil
 }
