@@ -263,7 +263,7 @@ func TestWaitForQualitySurfaceReviewClearsResidualPendingDecision(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if plan.RequiredAction != ParentActionReview || !plan.Allows(ParentActionAccept) || !plan.Allows(ParentActionFix) {
+	if plan.RequiredAction != ParentActionReview || plan.Allows(ParentActionAccept) || !plan.Allows(ParentActionFix) {
 		t.Fatalf("plan = %#v", plan)
 	}
 }
@@ -599,7 +599,6 @@ func TestRecoverQualitySurfaceDecisionWaitRejectsForeignConditions(t *testing.T)
 					t.Fatal(err)
 				}
 			},
-		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -795,7 +794,6 @@ func TestRecoverApprovedQualitySurfaceReviewRejectsForeignConditions(t *testing.
 					t.Fatal(err)
 				}
 			},
-		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
