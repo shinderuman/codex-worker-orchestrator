@@ -70,7 +70,7 @@ type gitUpstream struct {
 }
 
 const (
-	pushBindingUsage                           = "usage: glm-parent-action push-binding [--expected-oid <oid>] [--attempt-outcome <none|completed|rejected|network-error|non-fast-forward>] | glm-parent-action push-binding prepare --message <commit-message>"
+	pushBindingUsage                           = "usage: glm-parent-action push-binding [--expected-oid <oid>] [--attempt-outcome <none|completed|rejected|network-error|non-fast-forward>] | glm-parent-action push-binding prepare --message <commit-message> | glm-parent-action push-binding readiness"
 	pushBindingAttemptNone                     = "none"
 	pushBindingAttemptCompleted                = "completed"
 	pushBindingAttemptRejected                 = "rejected"
@@ -96,15 +96,18 @@ var (
 )
 
 func runPushBinding(repoRoot string, args []string, stdout io.Writer) error {
-	if len(args) > 0 && args[0] == "prepare" {
+	if len(args) > 0 && (args[0] == "prepare" || args[0] == "readiness") {
 		cfg, err := config.Load()
 		if err != nil {
 			return err
 		}
 		if cfg.RepoRoot != repoRoot {
-			return fmt.Errorf("publication prepare repository identity changed")
+			return fmt.Errorf("publication repository identity changed")
 		}
-		return runPublicationPrepare(cfg, args, stdout)
+		if args[0] == "prepare" {
+			return runPublicationPrepare(cfg, args, stdout)
+		}
+		return runPublicationReadiness(cfg, args, stdout)
 	}
 	options, err := parsePushBindingOptions(args)
 	if err != nil {
