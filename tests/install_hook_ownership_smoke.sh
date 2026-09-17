@@ -10,10 +10,12 @@ new_repo() {
 	repo=$1
 	mkdir -p "$repo/.githooks"
 	git -C "$repo" init -q
-	cat >"$repo/.githooks/post-merge" <<'EOF_HOOK'
+	for hook in post-merge pre-commit reference-transaction pre-push; do
+		cat >"$repo/.githooks/$hook" <<'EOF_HOOK'
 #!/bin/sh
 exit 0
 EOF_HOOK
+	done
 }
 
 state_path() {
@@ -29,6 +31,9 @@ repo="$tmp/absent"
 new_repo "$repo"
 sh "$helper" install "$repo"
 test "$(git -C "$repo" config --local --get-all core.hooksPath)" = '.githooks'
+for hook in post-merge pre-commit reference-transaction pre-push; do
+	test -x "$repo/.githooks/$hook"
+done
 owned_state=$(state_path "$repo")
 test -f "$owned_state"
 state_before=$(cat "$owned_state")
