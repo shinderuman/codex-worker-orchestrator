@@ -1,0 +1,22 @@
+#!/bin/sh
+set -eu
+
+repo_root=$(git rev-parse --show-toplevel)
+cd "$repo_root"
+
+metadata=$(git diff --cached --name-only --diff-filter=ACMRD -- IMPLEMENTATION_PLAN.local.md IMPLEMENTATION_TASKS)
+if [ -z "$metadata" ]; then
+  exit 0
+fi
+
+if ! git diff --quiet -- IMPLEMENTATION_PLAN.local.md IMPLEMENTATION_TASKS; then
+  printf '%s\n' 'parent metadata commit rejected: staged Plan/Task metadata differs from worktree' >&2
+  exit 1
+fi
+
+if ! command -v glm-parent-action >/dev/null 2>&1; then
+  printf '%s\n' 'parent metadata commit rejected: glm-parent-action unavailable' >&2
+  exit 1
+fi
+
+exec glm-parent-action continuation-metadata-guard
