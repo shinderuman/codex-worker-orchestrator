@@ -19,12 +19,15 @@ func (w *Workflow) admitParentAction(action state.ParentAction) error {
 }
 
 func (w *Workflow) admitNewTask() error {
-	resume, err := w.state.AdmitNewTaskRotation(os.Getenv(state.ParentActionCodexThreadIDEnv), os.Getenv(state.SessionRotationClaimIDEnv))
-	if err != nil {
-		return &WorkerError{Message: err.Error()}
-	}
-	if resume {
-		return nil
+	claimID := os.Getenv(state.SessionRotationClaimIDEnv)
+	if claimID != "" {
+		resume, err := w.state.AdmitNewTaskRotation(os.Getenv(state.ParentActionCodexThreadIDEnv), claimID)
+		if err != nil {
+			return &WorkerError{Message: err.Error()}
+		}
+		if resume {
+			return nil
+		}
 	}
 	plan, admitted, err := w.state.AdmitNewTask()
 	if err != nil {
