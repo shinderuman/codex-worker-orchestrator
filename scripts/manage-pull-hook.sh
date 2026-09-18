@@ -116,7 +116,7 @@ if [ "$mode" = install ] && [ "$detached" -eq 1 ]; then
 			fi
 			exit 0
 			;;
-		legacy-managed|legacy-pending|pending)
+		legacy-managed | legacy-pending | pending)
 			printf '%s\n' 'git hook: detached install preserved existing hook ownership state'
 			exit 0
 			;;
@@ -135,7 +135,7 @@ if [ "$mode" = retire ]; then
 	fi
 	owned_path=$managed_hooks_path
 	case "$state_kind" in
-	legacy-managed|legacy-pending) owned_path=$legacy_hooks_path ;;
+	legacy-managed | legacy-pending) owned_path=$legacy_hooks_path ;;
 	esac
 	if [ "$hooks_path_present" -eq 1 ] && [ "$hooks_path" = "$owned_path" ]; then
 		git -C "$repo_root" config --local --unset-all core.hooksPath
@@ -177,7 +177,7 @@ if [ "$state_present" -eq 1 ]; then
 		printf '%s\n' 'git hook: recovered interrupted installer-owned snapshot hooks activation'
 		exit 0
 		;;
-	legacy-managed|legacy-pending)
+	legacy-managed | legacy-pending)
 		if [ "$hooks_path_present" -eq 1 ] && [ "$hooks_path" != "$legacy_hooks_path" ]; then
 			printf 'git hook: skipped: legacy ownership state exists but core.hooksPath changed externally; current=%s\n' "$hooks_path" >&2
 			exit 0
