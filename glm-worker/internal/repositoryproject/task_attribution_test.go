@@ -39,3 +39,26 @@ func TestDeriveTaskAttributionMarksUnstartedCurrentActive(t *testing.T) {
 		t.Fatalf("unstarted attribution = %#v", attribution)
 	}
 }
+
+func TestBindTaskAuthorityRejectsFalseHandover(t *testing.T) {
+	attribution := DeriveTaskAttribution("IMPLEMENTATION_TASKS/stale.md", "IMPLEMENTATION_TASKS/next.md", Continuation{
+		State:          ContinuationContinueNow,
+		Task:           "IMPLEMENTATION_TASKS/next.md",
+		RequiredAction: ActionStart,
+		Reason:         ReasonPostCompletionActive,
+	})
+	bound := BindTaskAuthority(attribution, "IMPLEMENTATION_TASKS/done.md")
+	if bound.AuthorityTask != "IMPLEMENTATION_TASKS/done.md" || bound.Handover || bound.Reason != ReasonActiveTaskMismatch || bound.LegalNextAction != "" {
+		t.Fatalf("bound attribution = %#v", bound)
+	}
+
+	legal := BindTaskAuthority(DeriveTaskAttribution("IMPLEMENTATION_TASKS/done.md", "IMPLEMENTATION_TASKS/next.md", Continuation{
+		State:          ContinuationContinueNow,
+		Task:           "IMPLEMENTATION_TASKS/next.md",
+		RequiredAction: ActionStart,
+		Reason:         ReasonPostCompletionActive,
+	}), "IMPLEMENTATION_TASKS/done.md")
+	if legal.AuthorityTask != legal.LifecycleTask || !legal.Handover || legal.Reason != ReasonPostCompletionActive || legal.LegalNextAction != ActionStart {
+		t.Fatalf("legal bound attribution = %#v", legal)
+	}
+}
