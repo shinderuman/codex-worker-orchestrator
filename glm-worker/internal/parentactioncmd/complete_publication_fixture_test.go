@@ -20,6 +20,15 @@ func ensureCompleteFixturePublicationAuthority(t *testing.T, fixture *completeFi
 	if _, err := fixture.st.LoadPublicationCandidate(); err == nil {
 		return
 	}
+	if !pushBindingTreeClean(fixture.repo) {
+		markCompleteFixtureNonHarness(t, fixture)
+		return
+	}
+	parents := strings.Fields(pushBindingGitOutput(t, fixture.repo, "rev-list", "--parents", "-n", "1", "HEAD"))
+	if len(parents) < 2 {
+		markCompleteFixtureNonHarness(t, fixture)
+		return
+	}
 	if _, err := runtimeInstallRequirementForTask(fixture.repo, fixture.st); err != nil {
 		if !strings.Contains(err.Error(), "baseline is unavailable") {
 			t.Fatalf("completion fixture runtime baseline: %v", err)
@@ -29,8 +38,8 @@ func ensureCompleteFixturePublicationAuthority(t *testing.T, fixture *completeFi
 		}
 	}
 
-	head := strings.TrimSpace(pushBindingGitOutput(t, fixture.repo, "rev-parse", "HEAD"))
-	parent := strings.TrimSpace(pushBindingGitOutput(t, fixture.repo, "rev-parse", "HEAD^"))
+	head := parents[0]
+	parent := parents[1]
 	tree := strings.TrimSpace(pushBindingGitOutput(t, fixture.repo, "rev-parse", "HEAD^{tree}"))
 	taskID, err := fixture.st.TaskID()
 	if err != nil {
