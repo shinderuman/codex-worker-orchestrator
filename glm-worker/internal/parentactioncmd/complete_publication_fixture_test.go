@@ -20,7 +20,7 @@ func ensureCompleteFixturePublicationAuthority(t *testing.T, fixture *completeFi
 	if _, err := fixture.st.LoadPublicationCandidate(); err == nil {
 		return
 	}
-	if _, _, err := runtimeInstallRequirementForTask(fixture.repo, fixture.st); err != nil {
+	if _, err := runtimeInstallRequirementForTask(fixture.repo, fixture.st); err != nil {
 		if !strings.Contains(err.Error(), "baseline is unavailable") {
 			t.Fatalf("completion fixture runtime baseline: %v", err)
 		}
