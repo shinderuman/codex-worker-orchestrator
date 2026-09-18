@@ -80,6 +80,9 @@ func verifyPublicationRefCandidate(cfg config.AppConfig, st *state.StateStore, c
 }
 
 func runPublicationPushGuard(cfg config.AppConfig, args []string, stdout io.Writer) error {
+	if len(args) == 2 && args[0] == publicationPushGuardSubcommand && args[1] == "--publish" {
+		return runPublicationPush(cfg, stdout)
+	}
 	remoteName, localRef, localOID, remoteRef, remoteOID, err := parsePublicationPushGuardArgs(args)
 	if err != nil {
 		return err
