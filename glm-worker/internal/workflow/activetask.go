@@ -44,12 +44,26 @@ func (w *Workflow) activeTaskStateSet() bool {
 }
 
 func (w *Workflow) resolveAndPinActiveTask() (string, error) {
-	if w.activeTaskStateSet() {
-		return w.readActiveTaskState(), nil
-	}
 	harnessActive, err := w.repositoryHarnessActive()
 	if err != nil {
 		return "", err
+	}
+	if w.activeTaskStateSet() {
+		pinned := w.readActiveTaskState()
+		if !harnessActive {
+			return pinned, nil
+		}
+		activeTaskPath, wired, err := resolveActiveTaskPath(w.config.RepoRoot)
+		if err != nil {
+			return "", err
+		}
+		if !wired {
+			activeTaskPath = ""
+		}
+		if pinned != activeTaskPath {
+			return "", fmt.Errorf("pinned ACTIVE task %q no longer matches Plan ACTIVE %q", pinned, activeTaskPath)
+		}
+		return pinned, nil
 	}
 	if !harnessActive {
 		if err := w.state.Write(activeTaskStateKey, ""); err != nil {
