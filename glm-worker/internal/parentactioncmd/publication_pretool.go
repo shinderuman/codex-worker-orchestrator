@@ -89,14 +89,38 @@ func publicationGitArgv(segment []string) ([]string, bool) {
 }
 
 func publicationGitCommandPrefix(prefix []string) bool {
+	if publicationSimpleGitPrefix(prefix) {
+		return true
+	}
+	for index, token := range prefix {
+		if !publicationShellInterpreter(token) || index+1 >= len(prefix) {
+			continue
+		}
+		option := publicationShellToken(prefix[index+1])
+		if strings.Contains(option, "c") && publicationSimpleGitPrefix(prefix[:index]) {
+			return true
+		}
+	}
+	return false
+}
+
+func publicationSimpleGitPrefix(prefix []string) bool {
 	for _, token := range prefix {
 		clean := publicationShellToken(token)
-		if clean == "command" || clean == "exec" || clean == "sudo" || clean == "env" || strings.Contains(clean, "=") {
+		if clean == "command" || clean == "exec" || clean == "sudo" || clean == "env" || clean == "eval" || strings.Contains(clean, "=") {
 			continue
 		}
 		return false
 	}
 	return true
+}
+
+func publicationShellInterpreter(token string) bool {
+	switch filepath.Base(publicationShellToken(token)) {
+	case "sh", "bash", "zsh":
+		return true
+	}
+	return false
 }
 
 func publicationGitNoVerify(argv []string) bool {
