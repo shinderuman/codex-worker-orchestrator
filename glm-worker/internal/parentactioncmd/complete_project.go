@@ -1,6 +1,9 @@
 package parentactioncmd
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryproject"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryprojecttree"
@@ -42,6 +45,16 @@ func prepareCompletionVerification(cfg config.AppConfig, st *state.StateStore) (
 		}
 		return verification, nil
 	}
+	if attribution.Handover {
+		if err := verifyCompletionHandoverOwner(cfg.RepoRoot, st, lifecycleTask); err != nil {
+			verification.failure = &finalizationFailure{
+				Stage:  "metadata",
+				Reason: "completion_transition_invalid",
+				Detail: compactFinalizationDiagnostic(err.Error()),
+			}
+			return verification, nil
+		}
+	}
 	if attribution.Reason == repositoryproject.ReasonActiveTaskMismatch && !attribution.Handover {
 		verification.failure = &finalizationFailure{
 			Stage:  "metadata",
@@ -52,4 +65,26 @@ func prepareCompletionVerification(cfg config.AppConfig, st *state.StateStore) (
 	}
 	verification.failure = verifyCompletionUnchanged(cfg.RepoRoot, verification.gitRepo, verification.verifiedHead)
 	return verification, &projection
+}
+
+func verifyCompletionHandoverOwner(repoRoot string, st *state.StateStore, lifecycleTask string) error {
+	candidate, err := st.LoadPublicationCandidate()
+	if err != nil {
+		return fmt.Errorf("publication candidate unavailable for lifecycle owner verification: %w", err)
+	}
+	baseEntry, err := gitFinalizationOutput(repoRoot, "ls-tree", candidate.BaseHead, "--", lifecycleTask)
+	if err != nil {
+		return fmt.Errorf("lifecycle task %s cannot be read from publication base: %w", lifecycleTask, err)
+	}
+	if strings.TrimSpace(baseEntry) == "" {
+		return fmt.Errorf("lifecycle task %s was not tracked at publication base", lifecycleTask)
+	}
+	candidateEntry, err := gitFinalizationOutput(repoRoot, "ls-tree", candidate.CommitOID, "--", lifecycleTask)
+	if err != nil {
+		return fmt.Errorf("lifecycle task %s cannot be read from publication candidate: %w", lifecycleTask, err)
+	}
+	if strings.TrimSpace(candidateEntry) != "" {
+		return fmt.Errorf("lifecycle task %s remains tracked in publication candidate", lifecycleTask)
+	}
+	return nil
 }
