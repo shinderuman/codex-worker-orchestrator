@@ -95,7 +95,7 @@ func runPublicationPushGuard(cfg config.AppConfig, args []string, stdout io.Writ
 
 func parsePublicationPushGuardArgs(args []string) (string, string, string, string, string, error) {
 	if !publicationPushGuardSyntaxValid(args) {
-		return "", "", "", "", "", fmt.Errorf("usage: glm-parent-action push-binding push-guard --remote-name <name> --local-ref <ref> --local-oid <oid> --remote-ref <ref> --remote-oid <oid>")
+		return "", "", "", "", "", fmt.Errorf("usage: glm-parent-action push-binding push-guard --publish | push-guard --remote-name <name> --local-ref <ref> --local-oid <oid> --remote-ref <ref> --remote-oid <oid>")
 	}
 	if !publicationPushGuardValuesValid(args) {
 		return "", "", "", "", "", fmt.Errorf("invalid publication push update")
