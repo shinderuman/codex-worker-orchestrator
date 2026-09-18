@@ -8,11 +8,10 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/install-smoke-quality-tools-path-resolution.md`
+- `IMPLEMENTATION_TASKS/publication-finalization-machine-enforcement.md`
 
 ## NEXT（優先順）
 
-- `IMPLEMENTATION_TASKS/publication-finalization-machine-enforcement.md`
 - `IMPLEMENTATION_TASKS/detected-defect-task-registration-enforcement.md`
 - `IMPLEMENTATION_TASKS/machine-enforced-control-authority-legitimacy.md`
 - `IMPLEMENTATION_TASKS/machine-negative-result-authority.md`
