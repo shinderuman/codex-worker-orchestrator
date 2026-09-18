@@ -10,9 +10,10 @@ import (
 type ProjectContinuation = projectContinuationObligation
 
 type ParentRequestCompletionProjection struct {
-	CompletionAdmitted bool                `json:"completion_admitted"`
-	StopAdmitted       bool                `json:"stop_admitted"`
-	Continuation       ProjectContinuation `json:"continuation"`
+	CompletionAdmitted bool                              `json:"completion_admitted"`
+	StopAdmitted       bool                              `json:"stop_admitted"`
+	Continuation       ProjectContinuation               `json:"continuation"`
+	TaskAttribution    repositoryproject.TaskAttribution `json:"task_attribution"`
 }
 
 const (
@@ -29,15 +30,31 @@ func BuildCurrentParentRequestCompletionProjection(cfg config.AppConfig, st *sta
 	if err != nil {
 		return ParentRequestCompletionProjection{}, err
 	}
-	return parentRequestProjection(output.Continuation), nil
-}
-
-func BuildParentRequestCompletionProjection(cfg config.AppConfig, completedTask string) (ParentRequestCompletionProjection, error) {
-	projection, err := repositoryprojecttree.BuildParentRequestCompletionProjection(cfg.RepoRoot, completedTask)
+	projection := parentRequestProjection(output.Continuation)
+	attribution, err := repositoryprojecttree.BuildTaskAttribution(
+		cfg.RepoRoot,
+		st.ReadOr("active-task", ""),
+		projectContinuationToPolicy(output.Continuation),
+	)
 	if err != nil {
 		return ParentRequestCompletionProjection{}, err
 	}
-	return parentRequestProjectionFromPolicy(projection), nil
+	projection.TaskAttribution = attribution
+	return projection, nil
+}
+
+func BuildParentRequestCompletionProjection(cfg config.AppConfig, completedTask string) (ParentRequestCompletionProjection, error) {
+	policyProjection, err := repositoryprojecttree.BuildParentRequestCompletionProjection(cfg.RepoRoot, completedTask)
+	if err != nil {
+		return ParentRequestCompletionProjection{}, err
+	}
+	projection := parentRequestProjectionFromPolicy(policyProjection)
+	attribution, err := repositoryprojecttree.BuildTaskAttribution(cfg.RepoRoot, completedTask, policyProjection.Continuation)
+	if err != nil {
+		return ParentRequestCompletionProjection{}, err
+	}
+	projection.TaskAttribution = attribution
+	return projection, nil
 }
 
 func parentRequestProjectionFromPolicy(projection repositoryproject.ParentRequestCompletionProjection) ParentRequestCompletionProjection {
