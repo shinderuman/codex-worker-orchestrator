@@ -49,21 +49,7 @@ func (w *Workflow) resolveAndPinActiveTask() (string, error) {
 		return "", err
 	}
 	if w.activeTaskStateSet() {
-		pinned := w.readActiveTaskState()
-		if !harnessActive {
-			return pinned, nil
-		}
-		activeTaskPath, wired, err := resolveActiveTaskPath(w.config.RepoRoot)
-		if err != nil {
-			return "", err
-		}
-		if !wired {
-			activeTaskPath = ""
-		}
-		if pinned != activeTaskPath {
-			return "", fmt.Errorf("pinned ACTIVE task %q no longer matches Plan ACTIVE %q", pinned, activeTaskPath)
-		}
-		return pinned, nil
+		return w.resolvePinnedActiveTask(harnessActive)
 	}
 	if !harnessActive {
 		if err := w.state.Write(activeTaskStateKey, ""); err != nil {
@@ -71,15 +57,38 @@ func (w *Workflow) resolveAndPinActiveTask() (string, error) {
 		}
 		return "", nil
 	}
+	activeTaskPath, err := w.currentPlanActiveTask()
+	if err != nil {
+		return "", err
+	}
+	if err := w.state.Write(activeTaskStateKey, activeTaskPath); err != nil {
+		return "", err
+	}
+	return activeTaskPath, nil
+}
+
+func (w *Workflow) resolvePinnedActiveTask(harnessActive bool) (string, error) {
+	pinned := w.readActiveTaskState()
+	if !harnessActive {
+		return pinned, nil
+	}
+	activeTaskPath, err := w.currentPlanActiveTask()
+	if err != nil {
+		return "", err
+	}
+	if pinned != activeTaskPath {
+		return "", fmt.Errorf("pinned ACTIVE task %q no longer matches Plan ACTIVE %q", pinned, activeTaskPath)
+	}
+	return pinned, nil
+}
+
+func (w *Workflow) currentPlanActiveTask() (string, error) {
 	activeTaskPath, wired, err := resolveActiveTaskPath(w.config.RepoRoot)
 	if err != nil {
 		return "", err
 	}
 	if !wired {
-		activeTaskPath = ""
-	}
-	if err := w.state.Write(activeTaskStateKey, activeTaskPath); err != nil {
-		return "", err
+		return "", nil
 	}
 	return activeTaskPath, nil
 }
