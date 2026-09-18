@@ -89,6 +89,32 @@ func TestParentHandoffRejectsFalseHandoverFromStaleStateTask(t *testing.T) {
 	}
 }
 
+func TestParentHandoffRejectsLifecycleReboundToCurrentActive(t *testing.T) {
+	cfg := newAppConfig(t)
+	promoted := "IMPLEMENTATION_TASKS/next.md"
+	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", nonGoalProjectContinuationPlan([]string{promoted}, nil, nil))
+	writeProjectContinuationTask(t, cfg, promoted)
+	st := startActivatedParentHandoffTask(t, cfg)
+	saveHandoffTaskAuthority(t, st, completedNonGoalTask)
+	if err := st.Write("active-task", promoted); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetTaskStatus(state.TaskStatusAwaitingParentCompletion); err != nil {
+		t.Fatal(err)
+	}
+
+	output := buildParentHandoff(st)
+	if output.Consistent || output.ParentRequest == nil || output.Inconsistency == nil {
+		t.Fatalf("handoff = %#v", output)
+	}
+	attribution := output.ParentRequest.TaskAttribution
+	if attribution.LifecycleTask != promoted || attribution.AuthorityTask != completedNonGoalTask || attribution.ActiveTask != promoted ||
+		attribution.Matches || attribution.Handover || attribution.Reason != repositoryproject.ReasonActiveTaskMismatch ||
+		attribution.LegalNextAction != "" {
+		t.Fatalf("task attribution = %#v", attribution)
+	}
+}
+
 func TestParentHandoffRotationPendingKeepsTaskOwnersAndRecoveryDirective(t *testing.T) {
 	cfg, st, _ := seedSessionRotationAccept(t)
 	promoted := "IMPLEMENTATION_TASKS/next.md"
