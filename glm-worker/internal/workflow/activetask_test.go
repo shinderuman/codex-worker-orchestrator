@@ -1,6 +1,7 @@
 package workflow
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -640,7 +641,7 @@ func TestEnsureActiveTaskPathRejectsFixedTaskMismatch(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := w.ensureActiveTaskPath("worker-explicit-fix"); err == nil || err != errParentFileGuardStopped {
+	if _, err := w.ensureActiveTaskPath("worker-explicit-fix"); err == nil || !errors.Is(err, errParentFileGuardStopped) {
 		t.Fatalf("fixed stale ACTIVE task was not rejected: %v", err)
 	}
 	if got := st.ReadOr(activeTaskStateKey, ""); got != fixedPath {
