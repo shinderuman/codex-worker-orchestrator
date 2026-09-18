@@ -31,6 +31,10 @@ esac
 managed_hooks_path="$common_dir/codex-worker-orchestrator/hooks"
 managed_state="version=2 baseline=absent value=$managed_hooks_path"
 pending_state="version=2 baseline=absent pending=$managed_hooks_path"
+detached=0
+if ! git -C "$repo_root" symbolic-ref -q HEAD >/dev/null 2>&1; then
+	detached=1
+fi
 
 state_path=$(git -C "$repo_root" rev-parse --git-path codex-worker-orchestrator/hooks-path.state)
 case "$state_path" in
@@ -100,6 +104,29 @@ install_managed_hooks() {
 remove_managed_hooks() {
 	rm -rf "$managed_hooks_path"
 }
+
+if [ "$mode" = install ] && [ "$detached" -eq 1 ]; then
+	if [ "$state_present" -eq 1 ]; then
+		case "$state_kind" in
+		managed)
+			if [ "$hooks_path_present" -eq 1 ] && [ "$hooks_path" = "$managed_hooks_path" ]; then
+				printf '%s\n' 'git hook: detached install kept existing installer-owned snapshot hooks'
+			else
+				printf 'git hook: skipped: installer ownership state exists but core.hooksPath changed externally; current=%s\n' "${hooks_path:-<unset>}" >&2
+			fi
+			exit 0
+			;;
+		legacy-managed|legacy-pending|pending)
+			printf '%s\n' 'git hook: detached install preserved existing hook ownership state'
+			exit 0
+			;;
+		esac
+	fi
+	if [ "$hooks_path_present" -eq 0 ]; then
+		printf '%s\n' 'git hook: detached install did not claim hook ownership'
+		exit 0
+	fi
+fi
 
 if [ "$mode" = retire ]; then
 	if [ "$state_present" -eq 0 ]; then
