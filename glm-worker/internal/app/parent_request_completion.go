@@ -23,23 +23,30 @@ const (
 
 func BuildCurrentParentRequestCompletionProjection(cfg config.AppConfig, st *state.StateStore) (ParentRequestCompletionProjection, error) {
 	status := st.TaskStatus()
+	var projection ParentRequestCompletionProjection
+	var err error
 	if status == state.TaskStatusAwaitingParentCompletion || status == state.TaskStatusComplete {
-		return BuildParentRequestCompletionProjection(cfg, st.ReadOr("active-task", ""))
+		projection, err = BuildParentRequestCompletionProjection(cfg, st.ReadOr("active-task", ""))
+	} else {
+		var output projectStateOutput
+		output, err = buildProjectState(cfg, st)
+		if err == nil {
+			projection = parentRequestProjection(output.Continuation)
+			projection.TaskAttribution, err = repositoryprojecttree.BuildTaskAttribution(
+				cfg.RepoRoot,
+				st.ReadOr("active-task", ""),
+				projectContinuationToPolicy(output.Continuation),
+			)
+		}
 	}
-	output, err := buildProjectState(cfg, st)
 	if err != nil {
 		return ParentRequestCompletionProjection{}, err
 	}
-	projection := parentRequestProjection(output.Continuation)
-	attribution, err := repositoryprojecttree.BuildTaskAttribution(
-		cfg.RepoRoot,
-		st.ReadOr("active-task", ""),
-		projectContinuationToPolicy(output.Continuation),
-	)
-	if err != nil {
-		return ParentRequestCompletionProjection{}, err
+	if authorityTask, authorityErr := st.CurrentTaskAuthorityPath(); authorityErr == nil {
+		projection.TaskAttribution = repositoryproject.BindTaskAuthority(projection.TaskAttribution, authorityTask)
+	} else if projection.TaskAttribution.Handover {
+		projection.TaskAttribution = repositoryproject.BindTaskAuthority(projection.TaskAttribution, "")
 	}
-	projection.TaskAttribution = attribution
 	return projection, nil
 }
 
