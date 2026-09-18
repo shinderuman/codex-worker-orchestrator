@@ -14,6 +14,9 @@ func BuildTaskAttribution(repoRoot, lifecycleTask string, continuation repositor
 		return repositoryproject.DeriveTaskAttribution(lifecycleTask, "", continuation), nil
 	}
 	schedule := taskcontract.ParsePlanSchedule(*planContent)
+	if len(schedule.Active) == 0 {
+		return repositoryproject.DeriveTaskAttribution(lifecycleTask, "", continuation), nil
+	}
 	activeTask, err := schedule.ActiveTask()
 	if err != nil {
 		return repositoryproject.TaskAttribution{}, err
