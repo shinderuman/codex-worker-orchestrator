@@ -26,7 +26,11 @@ func runPublicationPush(cfg config.AppConfig, stdout io.Writer) error {
 }
 
 func publishPublicationCandidate(cfg config.AppConfig, st *state.StateStore) pushBindingOutput {
-	preflight := buildPushBinding(cfg.RepoRoot, pushBindingOptions{})
+	candidate, err := st.LoadPublicationCandidate()
+	if err != nil {
+		return blockPublicationPush(pushBindingOutput{}, "publication candidate is missing")
+	}
+	preflight := buildPushBinding(cfg.RepoRoot, pushBindingOptions{ExpectedOID: candidate.CommitOID})
 	if publicationPushAlreadySynced(preflight) {
 		return preflight
 	}
@@ -34,8 +38,7 @@ func publishPublicationCandidate(cfg config.AppConfig, st *state.StateStore) pus
 		preflight.RemoteWrite.Authorization != pushBindingAuthorizationPublication {
 		return blockPublicationPush(preflight, "publication remote write is not authorized")
 	}
-	candidate, err := st.LoadPublicationCandidate()
-	if err != nil || preflight.Target == nil || preflight.Target.LocalOID != candidate.CommitOID || preflight.ExpectedOID != candidate.CommitOID {
+	if preflight.Target == nil || preflight.Target.LocalOID != candidate.CommitOID || preflight.ExpectedOID != candidate.CommitOID {
 		return blockPublicationPush(preflight, "publication candidate does not match remote write target")
 	}
 
