@@ -80,8 +80,8 @@ func verifyPublicationRefCandidate(cfg config.AppConfig, st *state.StateStore, c
 }
 
 func runPublicationPushGuard(cfg config.AppConfig, args []string, stdout io.Writer) error {
-	if len(args) == 2 && args[0] == publicationPushGuardSubcommand && args[1] == "--publish" {
-		return runPublicationPush(cfg, stdout)
+	if len(args) == 3 && args[0] == publicationPushGuardSubcommand && args[1] == publicationPreToolUseFlag {
+		return runPublicationPreToolUse(args[2], stdout)
 	}
 	remoteName, localRef, localOID, remoteRef, remoteOID, err := parsePublicationPushGuardArgs(args)
 	if err != nil {
@@ -95,7 +95,7 @@ func runPublicationPushGuard(cfg config.AppConfig, args []string, stdout io.Writ
 
 func parsePublicationPushGuardArgs(args []string) (string, string, string, string, string, error) {
 	if !publicationPushGuardSyntaxValid(args) {
-		return "", "", "", "", "", fmt.Errorf("usage: glm-parent-action push-binding push-guard --publish | push-guard --remote-name <name> --local-ref <ref> --local-oid <oid> --remote-ref <ref> --remote-oid <oid>")
+		return "", "", "", "", "", fmt.Errorf("usage: glm-parent-action push-binding push-guard --pre-tool-use <hook-json> | push-guard --remote-name <name> --local-ref <ref> --local-oid <oid> --remote-ref <ref> --remote-oid <oid>")
 	}
 	if !publicationPushGuardValuesValid(args) {
 		return "", "", "", "", "", fmt.Errorf("invalid publication push update")

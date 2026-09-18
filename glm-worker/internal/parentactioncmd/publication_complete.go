@@ -17,13 +17,13 @@ func verifyPublicationCompletionGate(cfg config.AppConfig, st *state.StateStore)
 	}
 	candidate, err := st.LoadPublicationCandidate()
 	if err != nil {
+		if !pushBindingTreeClean(cfg.RepoRoot) {
+			return &finalizationFailure{Stage: "git", Reason: "tree_not_clean"}
+		}
 		return publicationReadinessFailure(publicationFailureCandidateMissing, err.Error())
 	}
 
 	readiness := projectPublicationReadiness(cfg, st)
-	if readiness.Status != publicationReadinessReady && !pushBindingTreeClean(cfg.RepoRoot) {
-		return &finalizationFailure{Stage: "git", Reason: "tree_not_clean"}
-	}
 	branchRef, headOID, headFailure := publicationPromotionHead(cfg.RepoRoot)
 	if headFailure != nil {
 		return headFailure

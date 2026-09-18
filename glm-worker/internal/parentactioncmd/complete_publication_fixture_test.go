@@ -17,6 +17,9 @@ func ensureCompleteFixturePublicationAuthority(t *testing.T, fixture *completeFi
 	if err != nil || activation != repositoryharness.ActivationActiveValue {
 		return
 	}
+	if !pushBindingTreeClean(fixture.repo) {
+		return
+	}
 	parents := strings.Fields(pushBindingGitOutput(t, fixture.repo, "rev-list", "--parents", "-n", "1", "HEAD"))
 	if len(parents) < 2 {
 		runFinalizationGit(t, fixture.repo, "commit", "-q", "--allow-empty", "-m", "publication fixture bootstrap")
