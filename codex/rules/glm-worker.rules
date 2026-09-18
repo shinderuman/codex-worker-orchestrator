@@ -15,3 +15,39 @@ prefix_rule(
     decision = "allow",
     justification = "Managed GLM Codex context profile tool: closed action vocabulary enable|disable|status over the project .codex/config.toml profile and .git/info/exclude markers",
 )
+
+prefix_rule(
+    pattern = ["git", "push", ["--no-verify", "-n"]],
+    decision = "forbidden",
+    justification = "Publication push must execute the repository-managed pre-push guard; use normal git push after machine publication authorization.",
+)
+
+prefix_rule(
+    pattern = ["git", "-c"],
+    decision = "forbidden",
+    justification = "Per-command Git configuration can disable repository-managed publication hooks; use the repository configuration and normal Git command form.",
+)
+
+prefix_rule(
+    pattern = ["git", "config", "core.hooksPath"],
+    decision = "forbidden",
+    justification = "core.hooksPath is repository-managed publication authority; do not replace it from Codex.",
+)
+
+prefix_rule(
+    pattern = ["git", "config", "--local", "core.hooksPath"],
+    decision = "forbidden",
+    justification = "core.hooksPath is repository-managed publication authority; do not replace it from Codex.",
+)
+
+prefix_rule(
+    pattern = ["git", "config", ["--unset", "--unset-all"], "core.hooksPath"],
+    decision = "forbidden",
+    justification = "core.hooksPath is repository-managed publication authority; do not remove it from Codex.",
+)
+
+prefix_rule(
+    pattern = ["git", "config", "--local", ["--unset", "--unset-all"], "core.hooksPath"],
+    decision = "forbidden",
+    justification = "core.hooksPath is repository-managed publication authority; do not remove it from Codex.",
+)
