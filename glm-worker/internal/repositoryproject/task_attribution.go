@@ -1,8 +1,5 @@
 package repositoryproject
 
-// TaskAttribution binds lifecycle evidence to the Plan's current ACTIVE task.
-// It keeps a completed/stopped prior task from being interpreted as evidence for
-// a different task that has since become ACTIVE.
 type TaskAttribution struct {
 	LifecycleTask   string `json:"lifecycle_task,omitempty"`
 	ActiveTask      string `json:"active_task,omitempty"`
