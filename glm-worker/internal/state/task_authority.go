@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 const taskAuthorityDir = "task-authority"
@@ -27,6 +28,22 @@ func (s *StateStore) SaveCurrentTaskAuthority(taskPath string, content []byte) e
 		return fmt.Errorf("task authority pathを保存できません: %w", err)
 	}
 	return nil
+}
+
+func (s *StateStore) CurrentTaskAuthorityPath() (string, error) {
+	taskID, err := s.TaskID()
+	if err != nil {
+		return "", err
+	}
+	data, err := os.ReadFile(s.TaskAuthorityPathPath(taskID))
+	if err != nil {
+		return "", fmt.Errorf("task authority pathを読めません: %w", err)
+	}
+	path := strings.TrimSpace(string(data))
+	if path == "" {
+		return "", fmt.Errorf("task authority pathが空です")
+	}
+	return path, nil
 }
 
 func (s *StateStore) TaskAuthorityDir(taskID string) string {
