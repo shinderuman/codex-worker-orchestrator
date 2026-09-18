@@ -2,18 +2,17 @@ package parentactioncmd
 
 import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
 const publicationFailureNotPromoted = "publication_candidate_not_promoted"
 
 func verifyPublicationCompletionGate(cfg config.AppConfig, st *state.StateStore) *finalizationFailure {
-	decision, err := repositoryharness.Evaluate(cfg.RepoRoot)
+	active, err := publicationGitGuardActive(cfg)
 	if err != nil {
 		return publicationReadinessFailure(publicationFailureGateMissing, err.Error())
 	}
-	if !decision.Active || st.TaskStatus() == state.TaskStatusNone {
+	if !active || st.TaskStatus() == state.TaskStatusNone {
 		return nil
 	}
 	candidate, err := st.LoadPublicationCandidate()
