@@ -79,6 +79,7 @@ func TestParentHandoffAdmitsNonGoalPostCompletionStopWithoutStart(t *testing.T) 
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", nonGoalProjectContinuationPlan([]string{promoted}, nil, nil))
 	writeProjectContinuationTask(t, cfg, promoted)
 	st := startActivatedParentHandoffTask(t, cfg)
+	saveHandoffTaskAuthority(t, st, completedNonGoalTask)
 	if err := st.Write("active-task", completedNonGoalTask); err != nil {
 		t.Fatal(err)
 	}

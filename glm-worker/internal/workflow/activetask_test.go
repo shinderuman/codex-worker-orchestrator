@@ -1,6 +1,7 @@
 package workflow
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -630,20 +631,20 @@ func TestExplicitFixStillUnresolvableFailsClosedAgain(t *testing.T) {
 	}
 }
 
-func TestEnsureActiveTaskPathDoesNotSwapFixedTask(t *testing.T) {
+func TestEnsureActiveTaskPathRejectsFixedTaskMismatch(t *testing.T) {
 	repoRoot := initMutationRepo(t)
 	writePlanFileContent(t, repoRoot, planGuardSeed)
 	w, _, _, st := newPlanFileWorkflow(t, repoRoot, nil, "", 0, nil)
+	pinRepositoryHarnessActiveResumeT(t, st)
 	fixedPath := "IMPLEMENTATION_TASKS/001-fixed.md"
 	if err := st.Write(activeTaskStateKey, fixedPath); err != nil {
 		t.Fatal(err)
 	}
 
-	got, err := w.ensureActiveTaskPath("worker-explicit-fix")
-	if err != nil {
-		t.Fatal(err)
+	if _, err := w.ensureActiveTaskPath("worker-explicit-fix"); err == nil || !errors.Is(err, errParentFileGuardStopped) {
+		t.Fatalf("fixed stale ACTIVE task was not rejected: %v", err)
 	}
-	if got != fixedPath {
-		t.Fatalf("ensureActiveTaskPath = %q want 固定済みの %q", got, fixedPath)
+	if got := st.ReadOr(activeTaskStateKey, ""); got != fixedPath {
+		t.Fatalf("fail-closed path rewrote active-task state: %q want %q", got, fixedPath)
 	}
 }

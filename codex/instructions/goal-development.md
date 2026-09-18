@@ -13,6 +13,7 @@ Plan管理repositoryで`IMPLEMENTATION_PLAN.local.md`のoptional `## GOAL`節を
 
 - 各局所終端(packet受理・install後)に、sandbox内でread-onlyの`glm-worker --project-state`を1回実行し、schedule、dependency graph、next_runnable、blocker、completion readinessを機械参照する
 - 投影は編集を行わない。次taskのACTIVE昇格、priority変更、cancel、追加、replanningは親CodexがPlanとtask fileへ直接反映し、再度投影で整合を確認する
+- priority変更またはACTIVE / NEXT再配置では、変更前にPlan全体のACTIVE / NEXT / BLOCKED順、各taskの既存priority根拠、ユーザーが明示した停止・再開境界を同時に比較する。局所的な緊急度や直近findingだけでACTIVEまたはNEXT先頭へ割り込ませない
 - prerequisite taskがsemantic acceptance・必要validation・parent actionまで成功完了した場合、完了task fileを削除する前に、残存する各dependent taskでそのpathを`Dependencies`から`Fulfilled dependencies`へ親Codexが移す。No-Go、cancel、withdrawal、replanによる削除では移さない。task file欠落やGit履歴だけをfulfilledの代用にしない
 - 投影がmissing outstanding dependency、unknown参照、self dependency、cycle、outstanding/fulfilled重複、malformed GOAL / schedule / task contractでfail closedした場合、GLM側の再実行では解決しない。親CodexがPlan / task fileの該当記述を現在のsemantic stateに沿って修復してから同じ投影を再実行する
 - 実行開始は`glm-parent-action start`、decision・fix・accept・resumeも既存の親actionをそのまま使う

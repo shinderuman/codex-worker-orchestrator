@@ -11,7 +11,7 @@ import (
 
 const activeTaskStateKey = "active-task"
 
-func resolveActiveTaskPath(repoRoot string) (string, bool, error) {
+func resolvePlanActiveTaskPath(repoRoot string) (string, bool, error) {
 	planPath := filepath.Join(repoRoot, implementationPlanFile)
 	content, err := os.ReadFile(planPath)
 	if err != nil {
@@ -24,6 +24,14 @@ func resolveActiveTaskPath(repoRoot string) (string, bool, error) {
 	path, err := schedule.ActiveTask()
 	if err != nil {
 		return "", true, err
+	}
+	return path, true, nil
+}
+
+func resolveActiveTaskPath(repoRoot string) (string, bool, error) {
+	path, wired, err := resolvePlanActiveTaskPath(repoRoot)
+	if err != nil || !wired {
+		return path, wired, err
 	}
 	info, err := os.Lstat(filepath.Join(repoRoot, filepath.FromSlash(path)))
 	if err != nil {
@@ -44,12 +52,12 @@ func (w *Workflow) activeTaskStateSet() bool {
 }
 
 func (w *Workflow) resolveAndPinActiveTask() (string, error) {
-	if w.activeTaskStateSet() {
-		return w.readActiveTaskState(), nil
-	}
 	harnessActive, err := w.repositoryHarnessActive()
 	if err != nil {
 		return "", err
+	}
+	if w.activeTaskStateSet() {
+		return w.resolvePinnedActiveTask(harnessActive)
 	}
 	if !harnessActive {
 		if err := w.state.Write(activeTaskStateKey, ""); err != nil {
@@ -57,15 +65,38 @@ func (w *Workflow) resolveAndPinActiveTask() (string, error) {
 		}
 		return "", nil
 	}
+	activeTaskPath, err := w.currentPlanActiveTask()
+	if err != nil {
+		return "", err
+	}
+	if err := w.state.Write(activeTaskStateKey, activeTaskPath); err != nil {
+		return "", err
+	}
+	return activeTaskPath, nil
+}
+
+func (w *Workflow) resolvePinnedActiveTask(harnessActive bool) (string, error) {
+	pinned := w.readActiveTaskState()
+	if !harnessActive {
+		return pinned, nil
+	}
+	activeTaskPath, _, err := resolvePlanActiveTaskPath(w.config.RepoRoot)
+	if err != nil {
+		return "", err
+	}
+	if pinned != activeTaskPath {
+		return "", fmt.Errorf("pinned ACTIVE task %q no longer matches Plan ACTIVE %q", pinned, activeTaskPath)
+	}
+	return pinned, nil
+}
+
+func (w *Workflow) currentPlanActiveTask() (string, error) {
 	activeTaskPath, wired, err := resolveActiveTaskPath(w.config.RepoRoot)
 	if err != nil {
 		return "", err
 	}
 	if !wired {
-		activeTaskPath = ""
-	}
-	if err := w.state.Write(activeTaskStateKey, activeTaskPath); err != nil {
-		return "", err
+		return "", nil
 	}
 	return activeTaskPath, nil
 }

@@ -154,6 +154,9 @@ func newNonGoalCompletionFixture(t *testing.T, initialPlan string, taskFiles ...
 	t.Helper()
 	fixture := newCompleteRepositoryFixtureWithPlan(t, initialPlan, taskFiles)
 	st := fixture.st
+	if err := st.SaveCurrentTaskAuthority("IMPLEMENTATION_TASKS/active.md", []byte("# active\n")); err != nil {
+		t.Fatal(err)
+	}
 	if err := st.SetTaskStatus(state.TaskStatusComplete); err != nil {
 		t.Fatal(err)
 	}
