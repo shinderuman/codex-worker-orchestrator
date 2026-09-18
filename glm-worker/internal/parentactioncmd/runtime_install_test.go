@@ -64,6 +64,7 @@ func TestRuntimeInstallRequirementMixedDiffKeepsOnlyRuntimePaths(t *testing.T) {
 
 func TestCompleteRequiresRuntimeInstallEvidenceAndAllowsMetadataHeadAdvance(t *testing.T) {
 	fixture := newCompleteFixture(t)
+	markCompleteFixtureNonHarness(t, fixture)
 	if err := state.CaptureGitBaseline(fixture.cfg, fixture.st); err != nil {
 		t.Fatal(err)
 	}
@@ -109,6 +110,7 @@ func TestCompleteRequiresRuntimeInstallEvidenceAndAllowsMetadataHeadAdvance(t *t
 
 func TestCompleteRejectsInstallEvidenceAfterLaterRuntimeChange(t *testing.T) {
 	fixture := newCompleteFixture(t)
+	markCompleteFixtureNonHarness(t, fixture)
 	if err := state.CaptureGitBaseline(fixture.cfg, fixture.st); err != nil {
 		t.Fatal(err)
 	}
