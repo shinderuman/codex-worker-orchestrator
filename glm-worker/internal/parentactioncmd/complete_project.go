@@ -68,6 +68,13 @@ func prepareCompletionVerification(cfg config.AppConfig, st *state.StateStore) (
 }
 
 func verifyCompletionHandoverOwner(repoRoot string, st *state.StateStore, lifecycleTask string) error {
+	authorityTask, err := st.CurrentTaskAuthorityPath()
+	if err != nil {
+		return fmt.Errorf("canonical task authority unavailable for lifecycle owner verification: %w", err)
+	}
+	if authorityTask != lifecycleTask {
+		return fmt.Errorf("lifecycle task %s does not match canonical task authority %s", lifecycleTask, authorityTask)
+	}
 	candidate, err := st.LoadPublicationCandidate()
 	if err != nil {
 		return fmt.Errorf("publication candidate unavailable for lifecycle owner verification: %w", err)
