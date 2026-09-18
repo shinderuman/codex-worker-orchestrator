@@ -59,6 +59,7 @@ current publication implementationへのExternal Reviewをcurrent mainで再確�
 - publication PreTool Git bypass判定はshell lexical semanticsに従って隣接quoted/unquoted literalを正規化し、`--no-"verify"` のように実shellでは `--no-verify` となる形をbypassさせない。dynamic等でGit operationを安全に分類不能な場合はguardを通過させずfail closedする
 - publication promotionはbranch refをcandidateへ進めた後のsource/cleanliness checkが失敗して `blocked` を返す場合、advance済みrefを残さない。rollbackまたはtransition順序の再設計により、blocked resultとadvanced branch stateが共存しないことをconcurrency/mutation fixtureで固定する
 - managed hook snapshot refreshはactive directoryへhookを1件ずつ直接置換せず、全hookの取得・mode設定・validationをsibling staging snapshotで完了した後だけactive snapshotを切り替える。途中失敗では従来active snapshotを完全に維持する
+- detached HEADからの初回installer runでもpublication guardをsuccess扱いで未導入にしない。installer-owned snapshotが未確立のdetached installは、必要なmanaged hooksを有効化できないならfail closedまたは明示的blockedとして終了し、pending activation/recovery stateがある場合は正規recoveryを省略しない。tag/commit pin checkoutでもguard不在のままinstall successにならないfixtureを追加する
 
 ## Historical invariants
 
