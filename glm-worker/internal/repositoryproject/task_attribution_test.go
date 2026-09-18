@@ -62,3 +62,17 @@ func TestBindTaskAuthorityRejectsFalseHandover(t *testing.T) {
 		t.Fatalf("legal bound attribution = %#v", legal)
 	}
 }
+
+func TestBindTaskAuthorityRejectsReboundCurrentMatch(t *testing.T) {
+	attribution := DeriveTaskAttribution("IMPLEMENTATION_TASKS/current.md", "IMPLEMENTATION_TASKS/current.md", Continuation{
+		State:          ContinuationContinueNow,
+		Task:           "IMPLEMENTATION_TASKS/current.md",
+		RequiredAction: "resume",
+		Reason:         ReasonCurrentTask,
+	})
+	bound := BindTaskAuthority(attribution, "IMPLEMENTATION_TASKS/previous.md")
+	if bound.AuthorityTask != "IMPLEMENTATION_TASKS/previous.md" || bound.Matches || bound.Handover ||
+		bound.Reason != ReasonActiveTaskMismatch || bound.LegalNextAction != "" {
+		t.Fatalf("rebound attribution = %#v", bound)
+	}
+}
