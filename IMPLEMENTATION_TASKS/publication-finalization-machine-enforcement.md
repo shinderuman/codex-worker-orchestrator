@@ -51,6 +51,15 @@ status: not-applicable
 - local branch、remote OID、publication candidate、task stateの不一致をそれぞれfail closedで固定する
 - 既存の正規publication flow、parent-only remote write、install/validation gateを維持する
 
+## Review findings
+
+External Review PR #918のcurrent main再確認で、以下の未解決correctness findingを本taskの同一publication-finalization責務として扱う。
+
+- completion handover owner verificationは `CurrentTaskAuthorityPath()` のlookup errorを無視せずfail closedし、canonical task authority取得成功後だけlifecycle taskと比較する
+- publication PreTool Git bypass判定はshell lexical semanticsに従って隣接quoted/unquoted literalを正規化し、`--no-"verify"` のように実shellでは `--no-verify` となる形をbypassさせない。dynamic等でGit operationを安全に分類不能な場合はguardを通過させずfail closedする
+- publication promotionはbranch refをcandidateへ進めた後のsource/cleanliness checkが失敗して `blocked` を返す場合、advance済みrefを残さない。rollbackまたはtransition順序の再設計により、blocked resultとadvanced branch stateが共存しないことをconcurrency/mutation fixtureで固定する
+- managed hook snapshot refreshはactive directoryへhookを1件ずつ直接置換せず、全hookの取得・mode設定・validationをsibling staging snapshotで完了した後だけactive snapshotを切り替える。途中失敗では従来active snapshotを完全に維持する
+
 ## Historical invariants
 
 - final HEAD closureとremote同期はcurrent completion runtimeを正とし、親CodexがGit状態から推測しない
