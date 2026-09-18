@@ -11,6 +11,9 @@ func TestCompleteRejectsUnrelatedStaleTaskAttribution(t *testing.T) {
 	fixture.commitParentMetadataSync(t)
 	runFinalizationGit(t, fixture.repo, "push", "-q", "origin", "main")
 	ensureCompleteFixturePublicationAuthority(t, fixture)
+	if err := fixture.st.SaveCurrentTaskAuthority("IMPLEMENTATION_TASKS/active.md", []byte("# active\n")); err != nil {
+		t.Fatal(err)
+	}
 	if err := fixture.st.Write("active-task", "IMPLEMENTATION_TASKS/stale.md"); err != nil {
 		t.Fatal(err)
 	}
