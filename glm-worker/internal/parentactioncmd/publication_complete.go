@@ -21,6 +21,9 @@ func verifyPublicationCompletionGate(cfg config.AppConfig, st *state.StateStore)
 	}
 
 	readiness := projectPublicationReadiness(cfg, st)
+	if readiness.Status != publicationReadinessReady && !pushBindingTreeClean(cfg.RepoRoot) {
+		return &finalizationFailure{Stage: "git", Reason: "tree_not_clean"}
+	}
 	branchRef, headOID, headFailure := publicationPromotionHead(cfg.RepoRoot)
 	if headFailure != nil {
 		return headFailure
