@@ -12,6 +12,16 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## NEXT（優先順）
 
+- `IMPLEMENTATION_TASKS/machine-enforced-control-authority-legitimacy.md`
+- `IMPLEMENTATION_TASKS/machine-negative-result-authority.md`
+- `IMPLEMENTATION_TASKS/canonical-authority-bootstrap-enforcement.md`
+- `IMPLEMENTATION_TASKS/parent-fix-origin-cause-staged-transport.md`
+- `IMPLEMENTATION_TASKS/detected-defect-task-registration-enforcement.md`
+- `IMPLEMENTATION_TASKS/machine-visible-improvement-signal-disposition.md`
+- `IMPLEMENTATION_TASKS/terminal-result-budgeted-projection.md`
+- `IMPLEMENTATION_TASKS/parent-usage-interleaved-turn-ambiguity.md`
+- `IMPLEMENTATION_TASKS/parent-wait-custom-tool-observability.md`
+- `IMPLEMENTATION_TASKS/task-stats-archive-skip-observability.md`
 - `IMPLEMENTATION_TASKS/codex-efficiency-intermediate-checkpoint.md`
 - `IMPLEMENTATION_TASKS/post-105-codex-efficiency-reevaluation.md`
 - `IMPLEMENTATION_TASKS/022-final-verification.md`
@@ -22,3 +32,7 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 - `IMPLEMENTATION_TASKS/configurable-peak-pause-windows.md`
 - `IMPLEMENTATION_TASKS/claude-cli-runtime-preflight-reevaluation.md`
 - `IMPLEMENTATION_TASKS/101-live-sol-ab.md`
+- `IMPLEMENTATION_TASKS/102-model-routing-redesign.md`
+- `IMPLEMENTATION_TASKS/103-compaction-threshold-change.md`
+- `IMPLEMENTATION_TASKS/104-test-impact-selection.md`
+- `IMPLEMENTATION_TASKS/106-review-call-reduction.md`
