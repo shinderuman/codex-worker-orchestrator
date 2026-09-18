@@ -104,7 +104,10 @@ assert_managed_hooks "$repo"
 grep -Fq 'migrated installer-owned .githooks to snapshot hooks' "$tmp/legacy.stdout"
 case "$(cat "$legacy_state")" in
 'version=2 baseline=absent value='*) ;;
-*) printf '%s\n' 'legacy ownership state was not migrated' >&2; exit 1 ;;
+*)
+	printf '%s\n' 'legacy ownership state was not migrated' >&2
+	exit 1
+	;;
 esac
 
 repo="$tmp/inherited-git-dir"
