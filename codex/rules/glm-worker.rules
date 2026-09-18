@@ -17,9 +17,9 @@ prefix_rule(
 )
 
 prefix_rule(
-    pattern = ["git", "push"],
+    pattern = ["git", "push", "--no-verify"],
     decision = "forbidden",
-    justification = "Publication remote writes are machine-owned; use glm-parent-action push-binding push-guard --publish after candidate Gates pass.",
+    justification = "Publication push must not bypass the repository-managed pre-push guard.",
 )
 
 prefix_rule(
