@@ -12,9 +12,9 @@ none
 
 ## Resolved references
 
-- External Review PR #918は `glm-worker/internal/state/task_disposition.go` の `ValidateResetDispositionForNewTask` が `ArchivedTaskStatsEvidence(record.TaskID)` の `os.ErrNotExist` と `evidence.Proven == false` を拒否せず、新task admissionを成功させ得ると指摘した
+- current reset implementationへのExternal Reviewは `glm-worker/internal/state/task_disposition.go` の `ValidateResetDispositionForNewTask` が `ArchivedTaskStatsEvidence(record.TaskID)` の `os.ErrNotExist` と `evidence.Proven == false` を拒否せず、新task admissionを成功させ得ると指摘した
 - current main `4072e033940c2c2b02657cf3376bc082124987b0` でも、archive evidenceのstatus mismatchは `err == nil && evidence.Proven` の場合だけ拒否し、missing archiveはsuccess、unproven evidenceもsuccessとなる
-- closed #906でgeneric resetをexplicit disposition付きlifecycle transitionへ変更したが、本Findingはそのdisposition provenanceを次task admissionで検証する境界からescapeしたcorrectness defectである
+- 直前のgeneric reset lifecycle実装でresetをexplicit disposition付きtransitionへ変更したが、本Findingはそのdisposition provenanceを次task admissionで検証する境界からescapeしたcorrectness defectである
 - archive evidenceをlegacy recoveryで正規に再構成できる経路が既に存在する場合は、そのmachine recoveryをvalidation前に使用できる。再構成不能なmissing / malformed / unproven evidenceを成功へ縮退させてはならない
 
 ## Purpose
