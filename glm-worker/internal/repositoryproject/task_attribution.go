@@ -46,7 +46,14 @@ func DeriveTaskAttribution(lifecycleTask, activeTask string, continuation Contin
 
 func BindTaskAuthority(attribution TaskAttribution, authorityTask string) TaskAttribution {
 	attribution.AuthorityTask = authorityTask
-	if attribution.Handover && authorityTask != attribution.LifecycleTask {
+	if authorityTask != "" && authorityTask != attribution.LifecycleTask {
+		attribution.Matches = false
+		attribution.Handover = false
+		attribution.Reason = ReasonActiveTaskMismatch
+		attribution.LegalNextAction = ""
+		return attribution
+	}
+	if attribution.Handover && authorityTask == "" {
 		attribution.Handover = false
 		attribution.Reason = ReasonActiveTaskMismatch
 		attribution.LegalNextAction = ""
