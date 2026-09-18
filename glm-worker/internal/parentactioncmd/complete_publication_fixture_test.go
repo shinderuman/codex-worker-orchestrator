@@ -17,16 +17,17 @@ func ensureCompleteFixturePublicationAuthority(t *testing.T, fixture *completeFi
 	if err != nil || activation != repositoryharness.ActivationActiveValue {
 		return
 	}
-	if _, err := fixture.st.LoadPublicationCandidate(); err == nil {
-		return
-	}
-	if !pushBindingTreeClean(fixture.repo) {
-		markCompleteFixtureNonHarness(t, fixture)
-		return
-	}
 	parents := strings.Fields(pushBindingGitOutput(t, fixture.repo, "rev-list", "--parents", "-n", "1", "HEAD"))
 	if len(parents) < 2 {
-		markCompleteFixtureNonHarness(t, fixture)
+		runFinalizationGit(t, fixture.repo, "commit", "-q", "--allow-empty", "-m", "publication fixture bootstrap")
+		parents = strings.Fields(pushBindingGitOutput(t, fixture.repo, "rev-list", "--parents", "-n", "1", "HEAD"))
+	}
+	if len(parents) < 2 {
+		t.Fatal("completion fixture HEAD has no parent")
+	}
+	head := parents[0]
+	parent := parents[1]
+	if existing, err := fixture.st.LoadPublicationCandidate(); err == nil && existing.CommitOID == head && existing.BaseHead == parent {
 		return
 	}
 	if _, err := runtimeInstallRequirementForTask(fixture.repo, fixture.st); err != nil {
@@ -38,8 +39,6 @@ func ensureCompleteFixturePublicationAuthority(t *testing.T, fixture *completeFi
 		}
 	}
 
-	head := parents[0]
-	parent := parents[1]
 	tree := strings.TrimSpace(pushBindingGitOutput(t, fixture.repo, "rev-parse", "HEAD^{tree}"))
 	taskID, err := fixture.st.TaskID()
 	if err != nil {
@@ -64,13 +63,6 @@ func ensureCompleteFixturePublicationAuthority(t *testing.T, fixture *completeFi
 	}
 	if err := fixture.st.SavePublicationCandidate(candidate); err != nil {
 		t.Fatalf("completion fixture publication candidate: %v", err)
-	}
-}
-
-func markCompleteFixtureNonHarness(t *testing.T, fixture *completeFixture) {
-	t.Helper()
-	if err := fixture.st.Write(repositoryharness.ActivationStateKey, repositoryharness.ActivationInactiveValue); err != nil {
-		t.Fatal(err)
 	}
 }
 
