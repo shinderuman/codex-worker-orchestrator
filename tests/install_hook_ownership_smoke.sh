@@ -70,6 +70,18 @@ fi
 test ! -e "$(state_path "$repo")"
 test ! -e "$managed"
 
+repo="$tmp/detached"
+new_repo "$repo"
+sh "$helper" install "$repo"
+managed=$(managed_hooks_path "$repo")
+printf '#!/bin/sh\nexit 77\n' >"$repo/.githooks/pre-push"
+git -C "$repo" add .githooks/pre-push
+git -C "$repo" commit -qm 'candidate hook change'
+git -C "$repo" checkout -q --detach HEAD
+sh "$helper" install "$repo" >"$tmp/detached.stdout" 2>"$tmp/detached.stderr"
+sh "$managed/pre-push"
+grep -Fq 'detached install kept existing installer-owned snapshot hooks' "$tmp/detached.stdout"
+
 repo="$tmp/interrupted"
 new_repo "$repo"
 pending_state=$(state_path "$repo")
