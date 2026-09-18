@@ -1,7 +1,11 @@
 #!/bin/sh
 set -u
 
-payload=$(cat)
+payload=$(
+	while IFS= read -r line || [ -n "$line" ]; do
+		printf '%s\n' "$line"
+	done
+)
 
 if ! command -v glm-parent-action >/dev/null 2>&1; then
 	printf '%s\n' '{"decision":"block","reason":"glm-parent-action unavailable; do not bypass managed publication guards"}'
