@@ -25,6 +25,27 @@ func TestParentInstructionsFailClosedCanonicalHandoffMismatch(t *testing.T) {
 	}
 }
 
+func TestParentPacketInstructionsBindTaskOwnerBeforeTaskStatus(t *testing.T) {
+	root := instructionTestRoot(t)
+	data, err := os.ReadFile(filepath.Join(root, "codex", "instructions", "glm-packets.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	for _, token := range []string{
+		"parent_request.task_attribution",
+		"task_status",
+		"handover:true",
+		"lifecycle_task",
+		"active_task",
+		"legal_next_action",
+	} {
+		if !strings.Contains(text, token) {
+			t.Fatalf("glm-packets.md is missing ownership token %q", token)
+		}
+	}
+}
+
 func TestPriorityChangesRequireWholePlanAndStopBoundaryComparison(t *testing.T) {
 	root := instructionTestRoot(t)
 	data, err := os.ReadFile(filepath.Join(root, "codex", "instructions", "goal-development.md"))
