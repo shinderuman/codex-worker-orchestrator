@@ -53,7 +53,7 @@ status: not-applicable
 
 ## Review findings
 
-External Review PR #918のcurrent main再確認で、以下の未解決correctness findingを本taskの同一publication-finalization責務として扱う。
+current publication implementationへのExternal Reviewをcurrent mainで再確認し、以下を未解決correctness findingとして本taskの同一責務に含める。
 
 - completion handover owner verificationは `CurrentTaskAuthorityPath()` のlookup errorを無視せずfail closedし、canonical task authority取得成功後だけlifecycle taskと比較する
 - publication PreTool Git bypass判定はshell lexical semanticsに従って隣接quoted/unquoted literalを正規化し、`--no-"verify"` のように実shellでは `--no-verify` となる形をbypassさせない。dynamic等でGit operationを安全に分類不能な場合はguardを通過させずfail closedする
