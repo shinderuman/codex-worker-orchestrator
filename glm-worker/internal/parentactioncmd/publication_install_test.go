@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/cliinstall"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -102,6 +104,13 @@ func writePublicationInstalledWorkerStubResult(t *testing.T, candidateOID, smoke
 	if err != nil {
 		t.Fatal(err)
 	}
+	binDir := filepath.Dir(worker)
+	buildDir := t.TempDir()
+	for _, name := range []string{"glm-parent-action", "glm-codex-context", "commentlint", "harnesslint"} {
+		if err := os.WriteFile(filepath.Join(buildDir, name), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
 	script := fmt.Sprintf(`#!/bin/sh
 case "${1:-}" in
 --status)
@@ -115,7 +124,10 @@ case "${1:-}" in
   ;;
 esac
 `, candidateOID, candidateOID, smokeResult)
-	if err := os.WriteFile(worker, []byte(script), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(buildDir, "glm-worker"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cliinstall.Install(buildDir, binDir); err != nil {
 		t.Fatal(err)
 	}
 }
