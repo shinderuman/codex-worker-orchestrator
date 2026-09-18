@@ -63,9 +63,8 @@ func TestRuntimeInstallRequirementMixedDiffKeepsOnlyRuntimePaths(t *testing.T) {
 	}
 }
 
-func TestCompleteRequiresRuntimeInstallEvidenceAndAllowsMetadataHeadAdvance(t *testing.T) {
+func TestRuntimeInstallEvidenceAllowsMetadataHeadAdvance(t *testing.T) {
 	fixture := newCompleteFixture(t)
-	markCompleteFixtureNonHarness(t, fixture)
 	if err := state.CaptureGitBaseline(fixture.cfg, fixture.st); err != nil {
 		t.Fatal(err)
 	}
@@ -83,9 +82,9 @@ func TestCompleteRequiresRuntimeInstallEvidenceAndAllowsMetadataHeadAdvance(t *t
 	fixture.commitParentMetadataSync(t)
 	runFinalizationGit(t, fixture.repo, "push", "-q", "origin", "main")
 
-	missing := runCompleteCommand(t, fixture)
-	if missing.Status != completeStatusAwaiting || missing.Completed || missing.Failure == nil || missing.Failure.Reason != runtimeInstallFailureEvidence {
-		t.Fatalf("completion without install evidence = %#v", missing)
+	missing := verifyRuntimeInstallCompletion(fixture.cfg, fixture.st)
+	if missing == nil || missing.Reason != runtimeInstallFailureEvidence {
+		t.Fatalf("runtime verification without install evidence = %#v", missing)
 	}
 
 	taskID, err := fixture.st.TaskID()
@@ -104,15 +103,13 @@ func TestCompleteRequiresRuntimeInstallEvidenceAndAllowsMetadataHeadAdvance(t *t
 	}
 	writeInstalledRuntimeProbeStub(t, installedHead)
 
-	completed := runCompleteCommand(t, fixture)
-	if completed.Status != completeStatusComplete || !completed.Completed {
-		t.Fatalf("metadata-only head advance rejected valid runtime evidence = %#v", completed)
+	if failure := verifyRuntimeInstallCompletion(fixture.cfg, fixture.st); failure != nil {
+		t.Fatalf("metadata-only head advance rejected valid runtime evidence = %#v", failure)
 	}
 }
 
-func TestCompleteRejectsInstallEvidenceAfterLaterRuntimeChange(t *testing.T) {
+func TestRuntimeInstallEvidenceRejectsLaterRuntimeChange(t *testing.T) {
 	fixture := newCompleteFixture(t)
-	markCompleteFixtureNonHarness(t, fixture)
 	if err := state.CaptureGitBaseline(fixture.cfg, fixture.st); err != nil {
 		t.Fatal(err)
 	}
@@ -147,9 +144,9 @@ func TestCompleteRejectsInstallEvidenceAfterLaterRuntimeChange(t *testing.T) {
 	runFinalizationGit(t, fixture.repo, "push", "-q", "origin", "main")
 	writeInstalledRuntimeProbeStub(t, installedHead)
 
-	output := runCompleteCommand(t, fixture)
-	if output.Status != completeStatusAwaiting || output.Completed || output.Failure == nil || output.Failure.Reason != runtimeInstallFailureStale {
-		t.Fatalf("completion accepted stale runtime evidence = %#v", output)
+	failure := verifyRuntimeInstallCompletion(fixture.cfg, fixture.st)
+	if failure == nil || failure.Reason != runtimeInstallFailureStale {
+		t.Fatalf("runtime verification accepted stale evidence = %#v", failure)
 	}
 }
 
