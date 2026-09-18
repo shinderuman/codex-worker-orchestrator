@@ -7,12 +7,12 @@ import (
 	"testing"
 )
 
-func TestManagedRulesForbidPublicationHookBypassEvenWithUserGitAllow(t *testing.T) {
+func TestProjectRulesForbidPublicationBypassEvenWithUserGitAllow(t *testing.T) {
 	codexBin, err := exec.LookPath("codex")
 	if err != nil {
 		t.Skip("codex CLIがないためexecpolicy検証を省略します")
 	}
-	entries := managedRulesFiles(t)
+	entries := append(managedRulesFiles(t), filepath.Join(scenarioRepoRoot(t), ".codex", "rules", "publication.rules"))
 	userRules := filepath.Join(t.TempDir(), "user-git-allow.rules")
 	if err := os.WriteFile(userRules, []byte(`prefix_rule(pattern=["git"], decision="allow")`+"\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -32,7 +32,7 @@ func TestManagedRulesForbidPublicationHookBypassEvenWithUserGitAllow(t *testing.
 	}
 	for _, argv := range forbidden {
 		if execPolicyAllows(t, codexBin, combined, argv) {
-			t.Fatalf("publication hook bypassがuser allowで許可されました: %v", argv)
+			t.Fatalf("publication bypassがproject rulesを越えて許可されました: %v", argv)
 		}
 	}
 
@@ -44,7 +44,23 @@ func TestManagedRulesForbidPublicationHookBypassEvenWithUserGitAllow(t *testing.
 	}
 	for _, argv := range allowed {
 		if !execPolicyAllows(t, codexBin, combined, argv) {
-			t.Fatalf("通常Git操作までmanaged rulesが拒否しました: %v", argv)
+			t.Fatalf("通常Git操作までproject rulesが拒否しました: %v", argv)
 		}
+	}
+}
+
+func TestManagedGlobalRulesDoNotForbidForeignRepositoryPush(t *testing.T) {
+	codexBin, err := exec.LookPath("codex")
+	if err != nil {
+		t.Skip("codex CLIがないためexecpolicy検証を省略します")
+	}
+	entries := managedRulesFiles(t)
+	userRules := filepath.Join(t.TempDir(), "user-git-allow.rules")
+	if err := os.WriteFile(userRules, []byte(`prefix_rule(pattern=["git"], decision="allow")`+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	combined := append([]string{userRules}, entries...)
+	if !execPolicyAllows(t, codexBin, combined, []string{"git", "push", "origin", "main"}) {
+		t.Fatal("global managed rulesがforeign repositoryのgit pushまで拒否しています")
 	}
 }
