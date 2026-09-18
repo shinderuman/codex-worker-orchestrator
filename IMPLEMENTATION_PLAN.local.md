@@ -12,7 +12,9 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## NEXT（優先順）
 
+- `IMPLEMENTATION_TASKS/reset-disposition-archived-evidence-admission.md`
 - `IMPLEMENTATION_TASKS/detected-defect-task-registration-enforcement.md`
+- `IMPLEMENTATION_TASKS/install-smoke-claude-settings-env-isolation.md`
 - `IMPLEMENTATION_TASKS/machine-enforced-control-authority-legitimacy.md`
 - `IMPLEMENTATION_TASKS/machine-negative-result-authority.md`
 - `IMPLEMENTATION_TASKS/canonical-authority-bootstrap-enforcement.md`
