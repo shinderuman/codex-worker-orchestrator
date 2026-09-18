@@ -27,7 +27,7 @@ func applyParentRequestCompletion(repoRoot string, st *state.StateStore, output 
 	}
 	output.ParentRequest = &projection
 	if projection.TaskAttribution.Reason == repositoryproject.ReasonActiveTaskMismatch && !projection.TaskAttribution.Handover {
-		markHandoffInconsistent(output, "canonical handoff task attribution mismatch: lifecycle task "+projection.TaskAttribution.LifecycleTask+" != current ACTIVE "+projection.TaskAttribution.ActiveTask)
+		markHandoffInconsistent(output, "canonical handoff task attribution mismatch: lifecycle="+projection.TaskAttribution.LifecycleTask+", authority="+projection.TaskAttribution.AuthorityTask+", active="+projection.TaskAttribution.ActiveTask)
 		return
 	}
 	validateParentContinuationActionability(st, output)
