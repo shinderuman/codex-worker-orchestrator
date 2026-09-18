@@ -58,6 +58,13 @@ func ensureCompleteFixturePublicationAuthority(t *testing.T, fixture *completeFi
 	}
 }
 
+func markCompleteFixtureNonHarness(t *testing.T, fixture *completeFixture) {
+	t.Helper()
+	if err := fixture.st.Write(repositoryharness.ActivationStateKey, repositoryharness.ActivationInactiveValue); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func completionFixtureDigest(kind, head string) string {
 	digest := sha256.Sum256([]byte(kind + "\x00" + head))
 	return hex.EncodeToString(digest[:])
