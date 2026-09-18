@@ -20,8 +20,10 @@ func TestManagedRulesForbidPublicationHookBypassEvenWithUserGitAllow(t *testing.
 	combined := append([]string{userRules}, entries...)
 
 	forbidden := [][]string{
+		{"git", "push", "origin", "main"},
 		{"git", "push", "--no-verify", "origin", "main"},
-		{"git", "push", "-n", "origin", "main"},
+		{"git", "push", "origin", "main", "--no-verify"},
+		{"git", "push", "origin", "HEAD:main", "--no-verify"},
 		{"git", "-c", "core.hooksPath=/dev/null", "commit", "-m", "bypass"},
 		{"git", "config", "core.hooksPath", "/dev/null"},
 		{"git", "config", "--local", "core.hooksPath", "/dev/null"},
@@ -35,8 +37,8 @@ func TestManagedRulesForbidPublicationHookBypassEvenWithUserGitAllow(t *testing.
 	}
 
 	allowed := [][]string{
+		{"glm-parent-action", "push-binding", "push-guard", "--publish"},
 		{"git", "commit", "-m", "normal"},
-		{"git", "push", "origin", "main"},
 		{"git", "config", "user.name", "tester"},
 		{"git", "config", "--local", "user.email", "tester@example.invalid"},
 	}
