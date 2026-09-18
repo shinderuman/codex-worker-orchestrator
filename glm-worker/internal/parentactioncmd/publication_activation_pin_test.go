@@ -31,6 +31,10 @@ func TestPublicationGuardsStayActiveAfterPinnedHarnessMarkerRemoval(t *testing.T
 		t.Fatal(err)
 	}
 
+	active, err := publicationGitGuardActive(cfg)
+	if err != nil || !active {
+		t.Fatalf("pinned harness publication guard became inactive: active=%v err=%v", active, err)
+	}
 	if err := verifyPublicationRefUpdate(cfg, candidate.BaseHead, candidate.CommitOID, branchRef); err == nil {
 		t.Fatal("pinned active task admitted ref update after harness marker removal")
 	}
