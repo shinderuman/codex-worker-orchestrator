@@ -11,8 +11,10 @@ func TestPublicationPreToolUseBlocksGitGuardBypass(t *testing.T) {
 	commands := []string{
 		"git push --no-verify origin main",
 		"git push origin main --no-verify",
+		"git commit --no-verify -m bypass",
 		"cd repo && /usr/bin/git push origin main --no-verify",
 		"git -c core.hooksPath=/dev/null push origin main",
+		"GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/dev/null git push origin main",
 		"git config core.hooksPath /dev/null",
 		"git config --local --unset-all core.hooksPath",
 	}
@@ -38,6 +40,7 @@ func TestPublicationPreToolUseAllowsManagedPushAndUnrelatedCommands(t *testing.T
 		"git push origin main",
 		"git push -n origin main",
 		"echo --no-verify",
+		"echo git push --no-verify",
 		"go test ./...",
 	}
 	for _, command := range commands {

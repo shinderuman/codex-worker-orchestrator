@@ -43,10 +43,10 @@ func publicationPreToolUseBlockReason(command string) string {
 		if !ok {
 			continue
 		}
-		if publicationGitPushNoVerify(argv) {
-			return "publication push rejected: --no-verify may not bypass the managed pre-push guard"
+		if publicationGitNoVerify(argv) {
+			return "publication Git operation rejected: --no-verify may not bypass managed repository guards"
 		}
-		if publicationGitHooksPathBypass(argv) {
+		if publicationGitHooksPathBypass(segment) {
 			return "publication Git operation rejected: core.hooksPath may not bypass managed repository guards"
 		}
 	}
@@ -81,25 +81,31 @@ func publicationShellSeparator(value string) bool {
 func publicationGitArgv(segment []string) ([]string, bool) {
 	for index, token := range segment {
 		clean := publicationShellToken(token)
-		if filepath.Base(clean) == "git" {
+		if filepath.Base(clean) == "git" && publicationGitCommandPrefix(segment[:index]) {
 			return segment[index+1:], true
 		}
 	}
 	return nil, false
 }
 
-func publicationGitPushNoVerify(argv []string) bool {
-	push := false
-	noVerify := false
+func publicationGitCommandPrefix(prefix []string) bool {
+	for _, token := range prefix {
+		clean := publicationShellToken(token)
+		if clean == "command" || clean == "exec" || clean == "sudo" || clean == "env" || strings.Contains(clean, "=") {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func publicationGitNoVerify(argv []string) bool {
 	for _, token := range argv {
-		switch publicationShellToken(token) {
-		case "push":
-			push = true
-		case "--no-verify":
-			noVerify = true
+		if publicationShellToken(token) == "--no-verify" {
+			return true
 		}
 	}
-	return push && noVerify
+	return false
 }
 
 func publicationGitHooksPathBypass(argv []string) bool {
