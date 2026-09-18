@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -16,10 +17,25 @@ func applyPublicationRemoteWriteGuard(repoRoot string, output pushBindingOutput)
 	if output.RemoteWrite == nil {
 		return output
 	}
+	decision, err := repositoryharness.Evaluate(repoRoot)
+	if err != nil {
+		return blockPublicationRemoteWrite(output, err.Error())
+	}
+	if !decision.Active {
+		cfg, loadErr := config.Load()
+		if loadErr != nil || cfg.RepoRoot != repoRoot {
+			return output
+		}
+		return applyPublicationRemoteWriteGuardForConfig(cfg, output)
+	}
 	cfg, err := config.Load()
 	if err != nil || cfg.RepoRoot != repoRoot {
 		return blockPublicationRemoteWrite(output, "publication repository identity is unavailable")
 	}
+	return applyPublicationRemoteWriteGuardForConfig(cfg, output)
+}
+
+func applyPublicationRemoteWriteGuardForConfig(cfg config.AppConfig, output pushBindingOutput) pushBindingOutput {
 	active, err := publicationGitGuardActive(cfg)
 	if err != nil {
 		return blockPublicationRemoteWrite(output, err.Error())
