@@ -56,7 +56,7 @@ func TestCompleteFailsClosedWhenTaskPinLacksActivationPin(t *testing.T) {
 	if output.Status != completeStatusAwaiting || output.Completed || output.ParentRequest != nil {
 		t.Fatalf("activation mismatch completion = %#v", output)
 	}
-	if output.Failure == nil || output.Failure.Stage != "metadata" || output.Failure.Reason != "completion_transition_invalid" ||
+	if output.Failure == nil || output.Failure.Stage != "publication" || output.Failure.Reason != publicationFailureGateMissing ||
 		!strings.Contains(output.Failure.Detail, "activation pin") {
 		t.Fatalf("activation mismatch failure = %#v", output.Failure)
 	}
