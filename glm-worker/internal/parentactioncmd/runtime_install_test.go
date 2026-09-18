@@ -10,6 +10,7 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/cliinstall"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/codexinstall"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/settingsmerge"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
@@ -68,6 +69,7 @@ func TestCompleteRequiresRuntimeInstallEvidenceAndAllowsMetadataHeadAdvance(t *t
 	if err := state.CaptureGitBaseline(fixture.cfg, fixture.st); err != nil {
 		t.Fatal(err)
 	}
+	writeRuntimeInstallHarnessMarker(t, fixture.repo)
 	writeRuntimeInstallSource(t, fixture.repo, "version=1\n")
 	installRuntimeManagedConfigs(t, fixture.repo, &fixture.cfg)
 	runFinalizationGit(t, fixture.repo, "add", "-A")
@@ -114,6 +116,7 @@ func TestCompleteRejectsInstallEvidenceAfterLaterRuntimeChange(t *testing.T) {
 	if err := state.CaptureGitBaseline(fixture.cfg, fixture.st); err != nil {
 		t.Fatal(err)
 	}
+	writeRuntimeInstallHarnessMarker(t, fixture.repo)
 	writeRuntimeInstallSource(t, fixture.repo, "version=1\n")
 	runFinalizationGit(t, fixture.repo, "add", "-A")
 	runFinalizationGit(t, fixture.repo, "commit", "-q", "-m", "runtime one")
@@ -156,6 +159,13 @@ func TestRunRuntimeInstallSmokeRejectsFailedInstalledSmoke(t *testing.T) {
 	failure := runRuntimeInstallSmoke(cfg)
 	if failure == nil || failure.Reason != runtimeInstallFailureSmoke {
 		t.Fatalf("failed installed smoke = %#v", failure)
+	}
+}
+
+func writeRuntimeInstallHarnessMarker(t *testing.T, repo string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(repo, repositoryharness.MarkerPath), []byte(repositoryharness.MarkerContent), 0o644); err != nil {
+		t.Fatal(err)
 	}
 }
 
