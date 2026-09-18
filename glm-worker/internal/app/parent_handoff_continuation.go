@@ -2,6 +2,7 @@ package app
 
 import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryproject"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskview"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
@@ -25,6 +26,10 @@ func applyParentRequestCompletion(repoRoot string, st *state.StateStore, output 
 		return
 	}
 	output.ParentRequest = &projection
+	if projection.TaskAttribution.Reason == repositoryproject.ReasonActiveTaskMismatch && !projection.TaskAttribution.Handover {
+		markHandoffInconsistent(output, "canonical handoff task attribution mismatch: lifecycle task "+projection.TaskAttribution.LifecycleTask+" != current ACTIVE "+projection.TaskAttribution.ActiveTask)
+		return
+	}
 	validateParentContinuationActionability(st, output)
 }
 
