@@ -12,12 +12,19 @@
 
 ## Amendments
 
-none
+### 2026-09-18
+
+````text
+もう一つあるだろ
+起票するのがルールなのに起票しなかったってバグが
+````
 
 ## Resolved references
 
 - parent Codexはcontinuation metadata guardがGOALなしPlanの完了同期を拒否する不具合を確認し、原因と影響をユーザーへ報告したが、対応するtask fileとPlan entryを作成せず停止した
 - ユーザー指摘後に初めて不具合taskを起票したため、既存の「新規Findingを現在taskへ混ぜず独立taskとしてPlanへ追加する」規則がparent behaviorとして守られなかった
+- parent Codexはpublication finalizationの手順誤りとmachine enforcement欠落をverified defectとして説明した後も、修復のためのGit履歴操作についてユーザー許可を求めて停止し、対応taskを同じturnで登録しなかった
+- 上記publication incidentは既存task登録漏れと同じ原因層の再発であり、ユーザー指摘後に初めて `publication-finalization-machine-enforcement.md` を登録した
 - natural languageだけから任意の不具合を完全検出することはmachine gateで保証できないため、検出済み・分類済みのFindingをdurable taskへ結び付ける境界を対象とする
 
 ## Purpose
@@ -30,7 +37,7 @@ status: not-applicable
 
 ## Contract
 
-- parentが現在task外の不具合をverified findingとして採用した時点で、同じturnの終了または次の長時間処理より前にsemantic task fileとPlan entryへ結び付ける正規surfaceを定義する
+- parentが現在task外の不具合をverified findingとして採用した時点で、同じturnの終了、ユーザーへの許可要求、または次の長時間処理より前にsemantic task fileとPlan entryへ結び付ける正規surfaceを定義する
 - defectの一次指示、観測事実、影響、原因が未確定ならunknownであること、再現・acceptance boundaryをlossless sourceとderived contractへ分離して保存する
 - task登録前のparent stop / completion / handoffが、登録待ちFindingの存在をmachine-readableに検出できる範囲ではfail closedする
 - natural language classifierや追加model callへ一般的な不具合検出を委ねず、親が意味判断した後のregistration lifecycleをdeterministicに強制する
@@ -54,6 +61,7 @@ status: not-applicable
 - rejected / unverified / current-task内findingは独立task registrationを要求しない
 - parent-managed metadata integrity、task filename規則、schedule closure、workerによるmetadata編集禁止を維持する
 - 今回のcontinuation metadata guard不具合を検出した再現scenarioで、未起票のままfinal responseへ進む経路を防止する
+- publication finalization欠陥をverified findingとして説明した後、Git recoveryの許可要求へ進むscenarioでも、task fileとPlan entryがないままfinal responseへ進めない
 
 ## Historical invariants
 

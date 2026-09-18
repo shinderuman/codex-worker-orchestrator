@@ -12,11 +12,12 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## NEXT（優先順）
 
+- `IMPLEMENTATION_TASKS/publication-finalization-machine-enforcement.md`
+- `IMPLEMENTATION_TASKS/detected-defect-task-registration-enforcement.md`
 - `IMPLEMENTATION_TASKS/machine-enforced-control-authority-legitimacy.md`
 - `IMPLEMENTATION_TASKS/machine-negative-result-authority.md`
 - `IMPLEMENTATION_TASKS/canonical-authority-bootstrap-enforcement.md`
 - `IMPLEMENTATION_TASKS/parent-fix-origin-cause-staged-transport.md`
-- `IMPLEMENTATION_TASKS/detected-defect-task-registration-enforcement.md`
 - `IMPLEMENTATION_TASKS/machine-visible-improvement-signal-disposition.md`
 - `IMPLEMENTATION_TASKS/terminal-result-budgeted-projection.md`
 - `IMPLEMENTATION_TASKS/parent-usage-interleaved-turn-ambiguity.md`

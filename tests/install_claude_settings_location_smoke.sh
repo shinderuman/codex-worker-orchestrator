@@ -9,7 +9,8 @@ repo="$tmp/repo"
 home="$tmp/home"
 custom_dir="$tmp/custom-claude"
 custom_settings="$custom_dir/settings.json"
-mkdir -p "$repo" "$home/.codex" "$home/.local/bin" "$tmp/bin"
+quality_tools="$tmp/quality-tools"
+mkdir -p "$repo" "$home/.codex" "$home/.local/bin" "$tmp/bin" "$quality_tools"
 rsync -a --exclude .git --exclude .codex "$source_root/" "$repo/"
 git -C "$repo" init -q -b main
 git -C "$repo" add -A
@@ -28,6 +29,14 @@ chmod +x "$tmp/bin/claude"
 golangci_lint_version=$(awk -F': ' '$1 == "golangci-lint" { print $2 }' "$repo/quality-tools.yml")
 shellcheck_version=$(awk -F': ' '$1 == "shellcheck" { print $2 }' "$repo/quality-tools.yml")
 shfmt_version=$(awk -F': ' '$1 == "shfmt" { print $2 }' "$repo/quality-tools.yml")
+quality_tool_namespace=$(awk -F': ' '$1 == "namespace" { print $2 }' "$repo/quality-tools.yml")
+quality_tools_default=$(awk -F': ' '$1 == "default-bin-dir" { print $2 }' "$repo/quality-tools.yml")
+deadcode_version=$(awk -F': ' '$1 == "deadcode" { print $2 }' "$repo/quality-tools.yml")
+case "${QUALITY_TOOLS_BIN_DIR:-}" in
+"") source_quality_tools="$HOME/$quality_tools_default" ;;
+/*) source_quality_tools="$QUALITY_TOOLS_BIN_DIR" ;;
+*) source_quality_tools="$source_root/$QUALITY_TOOLS_BIN_DIR" ;;
+esac
 cat >"$tmp/bin/golangci-lint" <<EOF_TOOL
 #!/bin/sh
 printf '%s\\n' 'golangci-lint has version $golangci_lint_version'
@@ -41,10 +50,15 @@ cat >"$tmp/bin/shfmt" <<EOF_TOOL
 printf '%s\\n' 'v$shfmt_version'
 EOF_TOOL
 chmod +x "$tmp/bin/golangci-lint" "$tmp/bin/shellcheck" "$tmp/bin/shfmt"
+cp "$tmp/bin/golangci-lint" "$quality_tools/codex-worker-orchestrator-golangci-lint-$golangci_lint_version"
+cp "$source_quality_tools/$quality_tool_namespace-deadcode-$deadcode_version" "$quality_tools/$quality_tool_namespace-deadcode-$deadcode_version"
+cp "$tmp/bin/shellcheck" "$quality_tools/codex-worker-orchestrator-shellcheck-$shellcheck_version"
+cp "$tmp/bin/shfmt" "$quality_tools/codex-worker-orchestrator-shfmt-$shfmt_version"
 
 HOME="$home" \
 	GOMODCACHE="$go_mod_cache" \
 	PATH="$tmp/bin:$PATH" \
+	QUALITY_TOOLS_BIN_DIR="$quality_tools" \
 	CODEX_HOME="$home/.codex" \
 	GLM_WORKER_BIN_DIR="$home/.local/bin" \
 	GLM_WORKER_HOME="$home/.glm-worker" \
@@ -61,6 +75,7 @@ conflict_dir="$tmp/conflicting-claude"
 if HOME="$home" \
 	GOMODCACHE="$go_mod_cache" \
 	PATH="$tmp/bin:$PATH" \
+	QUALITY_TOOLS_BIN_DIR="$quality_tools" \
 	CODEX_HOME="$home/.codex" \
 	GLM_WORKER_BIN_DIR="$home/.local/bin" \
 	GLM_WORKER_HOME="$home/.glm-worker" \

@@ -15,8 +15,8 @@ tmp=$(mktemp -d "${TMPDIR:-/tmp}/codex-install-smoke.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT HUP INT TERM
 repo="$tmp/repo"
 home="$tmp/home"
-quality_tools="$tmp/quality-tools"
-mkdir -p "$repo" "$home/.codex" "$home/.claude" "$home/.local/bin" "$tmp/bin" "$quality_tools"
+home_quality_tools="$home/$quality_tools_default"
+mkdir -p "$repo" "$home/.codex" "$home/.claude" "$home/.local/bin" "$tmp/bin" "$home_quality_tools"
 rsync -a --exclude .git --exclude .codex "$source_root/" "$repo/"
 git -C "$repo" init -q -b main
 git -C "$repo" add -A
@@ -57,22 +57,21 @@ cat >"$tmp/bin/shfmt" <<'EOF_TOOL'
 printf '%s\n' 'v3.13.1'
 EOF_TOOL
 chmod +x "$tmp/bin/golangci-lint" "$tmp/bin/shellcheck" "$tmp/bin/shfmt"
-cp "$tmp/bin/golangci-lint" "$quality_tools/codex-worker-orchestrator-golangci-lint-2.7.0"
-cp "$source_quality_tools/$quality_tool_namespace-deadcode-$deadcode_version" "$quality_tools/$quality_tool_namespace-deadcode-$deadcode_version"
-cp "$tmp/bin/shellcheck" "$quality_tools/codex-worker-orchestrator-shellcheck-0.11.0"
-cp "$tmp/bin/shfmt" "$quality_tools/codex-worker-orchestrator-shfmt-3.13.1"
+cp "$tmp/bin/golangci-lint" "$home_quality_tools/codex-worker-orchestrator-golangci-lint-2.7.0"
+cp "$source_quality_tools/$quality_tool_namespace-deadcode-$deadcode_version" "$home_quality_tools/$quality_tool_namespace-deadcode-$deadcode_version"
+cp "$tmp/bin/shellcheck" "$home_quality_tools/codex-worker-orchestrator-shellcheck-0.11.0"
+cp "$tmp/bin/shfmt" "$home_quality_tools/codex-worker-orchestrator-shfmt-3.13.1"
 
 run_install() {
 	HOME="$home" \
 		GOMODCACHE="$go_mod_cache" \
 		PATH="$tmp/bin:$PATH" \
-		QUALITY_TOOLS_BIN_DIR="$quality_tools" \
 		CODEX_HOME="$home/.codex" \
 		GLM_WORKER_BIN_DIR="$home/.local/bin" \
 		GLM_WORKER_HOME="$home/.glm-worker" \
 		CLAUDE_SETTINGS_FILE="$home/.claude/settings.json" \
 		XDG_CONFIG_HOME="$home/.config" \
-		"$repo/install.sh"
+		env -u QUALITY_TOOLS_BIN_DIR "$repo/install.sh"
 }
 
 run_install
@@ -263,6 +262,21 @@ missing_tool_hint='install required versions with: ./install-quality-tools.sh'
 grep -Fxq "$missing_tool_error" "$missing_stderr"
 grep -Fxq "$missing_tool_hint" "$missing_stderr"
 test ! -e "$tmp/missing-quality/codex-worker-orchestrator-shellcheck-0.11.0"
+
+default_missing_home="$tmp/default-missing-home"
+default_missing_quality="$default_missing_home/$quality_tools_default"
+mkdir -p "$default_missing_quality"
+cp "$tmp/bin/golangci-lint" "$default_missing_quality/codex-worker-orchestrator-golangci-lint-2.7.0"
+cp "$source_quality_tools/$quality_tool_namespace-deadcode-$deadcode_version" "$default_missing_quality/$quality_tool_namespace-deadcode-$deadcode_version"
+default_stderr="$tmp/default-missing.stderr"
+if env -u QUALITY_TOOLS_BIN_DIR HOME="$default_missing_home" PATH="$missing_bin" "$repo/install.sh" >"$tmp/default-missing.stdout" 2>"$default_stderr"; then
+	printf '%s\n' 'install missing default-path quality tool: expected failure' >&2
+	exit 1
+fi
+test ! -s "$tmp/default-missing.stdout"
+default_tool_error="required quality tool not found at canonical path: $default_missing_quality/codex-worker-orchestrator-shellcheck-0.11.0"
+grep -Fxq "$default_tool_error" "$default_stderr"
+grep -Fxq "$missing_tool_hint" "$default_stderr"
 
 mismatch_bin="$tmp/mismatch-bin"
 cp -R "$missing_bin" "$mismatch_bin"
