@@ -1,6 +1,18 @@
 {
-  "description": "Machine-enforced parent continuation terminal gate.",
+  "description": "Machine-enforced parent continuation and publication guards.",
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"$(git rev-parse --show-toplevel)/.codex/hooks/publication-pre-tool-use.sh\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [

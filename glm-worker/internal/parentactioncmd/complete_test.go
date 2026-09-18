@@ -543,6 +543,7 @@ func (f *completeFixture) commitParentMetadataSync(t *testing.T) {
 
 func runCompleteCommand(t *testing.T, fixture *completeFixture) completeOutput {
 	t.Helper()
+	ensureCompleteFixturePublicationAuthority(t, fixture)
 	var stdout bytes.Buffer
 	if err := runComplete(fixture.cfg, &stdout); err != nil {
 		t.Fatalf("runComplete: %v: %s", err, stdout.String())

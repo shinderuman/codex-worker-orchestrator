@@ -1,0 +1,22 @@
+#!/bin/sh
+set -eu
+
+phase=${1:-}
+if [ "$phase" != prepared ]; then
+  exit 0
+fi
+
+while IFS=' ' read -r old_oid new_oid ref_name; do
+  case "$ref_name" in
+  refs/heads/*)
+    if ! command -v glm-parent-action >/dev/null 2>&1; then
+      printf '%s\n' 'publication ref update rejected: glm-parent-action unavailable' >&2
+      exit 1
+    fi
+    if ! glm-parent-action push-binding ref-guard --old "$old_oid" --new "$new_oid" --ref "$ref_name" >/dev/null; then
+      printf 'publication ref update rejected: %s\n' "$ref_name" >&2
+      exit 1
+    fi
+    ;;
+  esac
+done

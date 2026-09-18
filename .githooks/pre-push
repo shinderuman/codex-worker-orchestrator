@@ -1,0 +1,28 @@
+#!/bin/sh
+set -eu
+
+remote_name=${1:-}
+if [ -z "$remote_name" ]; then
+  printf '%s\n' 'publication push rejected: remote identity unavailable' >&2
+  exit 1
+fi
+
+while IFS=' ' read -r local_ref local_oid remote_ref remote_oid; do
+  case "$remote_ref" in
+  refs/heads/*)
+    if ! command -v glm-parent-action >/dev/null 2>&1; then
+      printf '%s\n' 'publication push rejected: glm-parent-action unavailable' >&2
+      exit 1
+    fi
+    if ! glm-parent-action push-binding push-guard \
+      --remote-name "$remote_name" \
+      --local-ref "$local_ref" \
+      --local-oid "$local_oid" \
+      --remote-ref "$remote_ref" \
+      --remote-oid "$remote_oid" >/dev/null; then
+      printf 'publication push rejected: %s\n' "$remote_ref" >&2
+      exit 1
+    fi
+    ;;
+  esac
+done

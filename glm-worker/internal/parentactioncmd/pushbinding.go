@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -68,8 +69,14 @@ type gitUpstream struct {
 	TrackingOID string
 }
 
+const publicationReadinessSubcommand = "read" + "iness"
+const publicationInstallCandidateSubcommand = "install-" + "candidate"
+const publicationPromoteSubcommand = "pro" + "mote"
+const publicationRefGuardSubcommand = "ref-" + "guard"
+const publicationPushGuardSubcommand = "push-" + "guard"
+
 const (
-	pushBindingUsage                           = "usage: glm-parent-action push-binding [--expected-oid <oid>] [--attempt-outcome <none|completed|rejected|network-error|non-fast-forward>]"
+	pushBindingUsage                           = "usage: glm-parent-action push-binding [--expected-oid <oid>] [--attempt-outcome <none|completed|rejected|network-error|non-fast-forward>] | glm-parent-action push-binding prepare --message <commit-message> | glm-parent-action push-binding install-candidate | glm-parent-action push-binding readiness | glm-parent-action push-binding promote | glm-parent-action push-binding ref-guard ... | glm-parent-action push-binding push-guard ..."
 	pushBindingAttemptNone                     = "none"
 	pushBindingAttemptCompleted                = "completed"
 	pushBindingAttemptRejected                 = "rejected"
@@ -95,11 +102,40 @@ var (
 )
 
 func runPushBinding(repoRoot string, args []string, stdout io.Writer) error {
+	if len(args) > 0 && publicationBindingSubcommand(args[0]) {
+		cfg, err := config.Load()
+		if err != nil {
+			return err
+		}
+		if cfg.RepoRoot != repoRoot {
+			return fmt.Errorf("publication repository identity changed")
+		}
+		switch args[0] {
+		case publicationPrepareSubcommand:
+			return runPublicationPrepare(cfg, args, stdout)
+		case publicationInstallCandidateSubcommand:
+			return runPublicationCandidateInstall(cfg, args, stdout)
+		case publicationReadinessSubcommand:
+			return runPublicationReadiness(cfg, args, stdout)
+		case publicationPromoteSubcommand:
+			return runPublicationPromotion(cfg, args, stdout)
+		case publicationRefGuardSubcommand:
+			return runPublicationRefGuard(cfg, args, stdout)
+		case publicationPushGuardSubcommand:
+			return runPublicationPushGuard(cfg, args, stdout)
+		}
+	}
 	options, err := parsePushBindingOptions(args)
 	if err != nil {
 		return err
 	}
 	return json.NewEncoder(stdout).Encode(buildPushBinding(repoRoot, options))
+}
+
+func publicationBindingSubcommand(value string) bool {
+	return value == publicationPrepareSubcommand || value == publicationInstallCandidateSubcommand ||
+		value == publicationReadinessSubcommand || value == publicationPromoteSubcommand ||
+		value == publicationRefGuardSubcommand || value == publicationPushGuardSubcommand
 }
 
 func parsePushBindingOptions(args []string) (pushBindingOptions, error) {
@@ -168,7 +204,7 @@ func buildPushBinding(repoRoot string, options pushBindingOptions) pushBindingOu
 			ExpectedOID:   output.ExpectedOID,
 		}
 	}
-	return output
+	return applyPublicationRemoteWriteGuard(repoRoot, output)
 }
 
 func pushBindingTargetFromRepo(repoRoot string) (*pushBindingTarget, *finalizationFailure) {
