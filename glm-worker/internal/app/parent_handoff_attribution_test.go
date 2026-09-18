@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryproject"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
@@ -55,5 +56,37 @@ func TestParentHandoffFailsClosedOnUnrelatedStaleTaskAttribution(t *testing.T) {
 	}
 	if !strings.Contains(*output.Inconsistency, "task attribution mismatch") {
 		t.Fatalf("inconsistency = %q", *output.Inconsistency)
+	}
+}
+
+func TestParentHandoffRotationPendingKeepsTaskOwnersAndRecoveryDirective(t *testing.T) {
+	cfg, st, _ := seedSessionRotationAccept(t)
+	promoted := "IMPLEMENTATION_TASKS/next.md"
+	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", nonGoalProjectContinuationPlan([]string{promoted}, nil, nil))
+	writeProjectContinuationTask(t, cfg, promoted)
+	if err := st.Write(repositoryharness.ActivationStateKey, repositoryharness.ActivationActiveValue); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Write("active-task", completedNonGoalTask); err != nil {
+		t.Fatal(err)
+	}
+
+	output := buildParentHandoff(st)
+	if !output.Consistent || output.ParentRequest == nil || output.SessionRotation == nil ||
+		output.SessionRotation.State != state.SessionRotationProjectionPending || output.SessionRotation.Directive == nil {
+		t.Fatalf("handoff = %#v", output)
+	}
+	attribution := output.ParentRequest.TaskAttribution
+	if attribution.LifecycleTask != completedNonGoalTask || attribution.ActiveTask != promoted ||
+		attribution.Matches || !attribution.Handover || attribution.LegalNextAction != repositoryproject.ActionStart {
+		t.Fatalf("task attribution = %#v", attribution)
+	}
+
+	recovery := projectParentHandoffRecovery(output)
+	if recovery.SessionRotation == nil || recovery.SessionRotation.State != state.SessionRotationProjectionPending ||
+		recovery.SessionRotation.Directive == nil || recovery.SessionRotation.Directive.DirectiveID != output.SessionRotation.Directive.DirectiveID ||
+		recovery.ParentRequest == nil || recovery.ParentRequest.TaskAttribution.LifecycleTask != completedNonGoalTask ||
+		recovery.ParentRequest.TaskAttribution.ActiveTask != promoted {
+		t.Fatalf("recovery = %#v", recovery)
 	}
 }
