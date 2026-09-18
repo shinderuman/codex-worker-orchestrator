@@ -30,12 +30,15 @@ func admitNewTaskCommand(cmd Command, st *state.StateStore) error {
 	if err := st.ValidateResetDispositionForNewTask(); err != nil {
 		return &workflow.WorkerError{Message: err.Error()}
 	}
-	resume, err := st.AdmitNewTaskRotation(os.Getenv(state.ParentActionCodexThreadIDEnv), os.Getenv(state.SessionRotationClaimIDEnv))
-	if err != nil {
-		return &workflow.WorkerError{Message: err.Error()}
-	}
-	if resume {
-		return nil
+	claimID := os.Getenv(state.SessionRotationClaimIDEnv)
+	if claimID != "" {
+		resume, err := st.AdmitNewTaskRotation(os.Getenv(state.ParentActionCodexThreadIDEnv), claimID)
+		if err != nil {
+			return &workflow.WorkerError{Message: err.Error()}
+		}
+		if resume {
+			return nil
+		}
 	}
 	if st.TaskStatus() == state.TaskStatusActive {
 		return &workflow.WorkerError{Message: "previous task is still active; explicitly dispose it with glm-worker --reset --disposition cancel or --reset --disposition abandon before starting a new task"}
