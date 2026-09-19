@@ -12,15 +12,15 @@ none
 
 ## Resolved references
 
-- closed #319はstaged decision/fix transportを`prepare -> validate returned JSON/path/token -> exact apply_patch -> staged action`の同一tool orchestrationへ縮約し、freshly prepared `.glm-worker-parent-actions/*` placeholderのstandalone rereadを0にするlive Acceptanceでcompletedした
+- prior staged parent-action reduction縮約はdecision/fix transportを`prepare -> validate returned JSON/path/token -> exact apply_patch -> staged action`の同一tool orchestrationへまとめ、freshly prepared `.glm-worker-parent-actions/*` placeholderのstandalone rereadを0にするlive Acceptanceを満たしていた
 - formal Dogfoodではfresh prepare後のstaging fileへ`sed -n`を行うstandalone rereadが5回再発した（decision 1回、fix 4回）
 - current instructionsもprepare直後のstaging file rereadを禁止しているため、既知templateを確認するためのrereadはsemantic evidenceではなくtransport-only parent re-entryである
-- #866後にdecision templateが拡張されたが、templateはmachine-owned prepare contractでありrereadを正当化しない
+- 後続のmilestone activation変更でdecision templateが拡張されたが、templateはmachine-owned prepare contractでありrereadを正当化しない
 - `parent-fix-origin-cause-staged-transport.md`はorigin/cause metadata欠損を所有し、本taskのno-reread regressionとは別rootである
 
 ## Purpose
 
-staged parent actionでprepare済みplaceholderをparentが再読せず、既知prepare contractと返却path/tokenから同一tool orchestration内でexact edit/actionへ進む#319 contractを後続action/template変更にも耐える形で再固定する。
+staged parent actionでprepare済みplaceholderをparentが再読せず、既知prepare contractと返却path/tokenから同一tool orchestration内でexact edit/actionへ進む既存contractを後続action/template変更にも耐える形で再固定する。
 
 ## External feasibility
 
