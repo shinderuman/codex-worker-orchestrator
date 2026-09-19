@@ -12,6 +12,7 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## NEXT（優先順）
 
+- `IMPLEMENTATION_TASKS/system-one-dogfood-evidence-shadow-eval.md`
 - `IMPLEMENTATION_TASKS/reset-disposition-archived-evidence-admission.md`
 - `IMPLEMENTATION_TASKS/detected-defect-task-registration-enforcement.md`
 - `IMPLEMENTATION_TASKS/install-smoke-claude-settings-env-isolation.md`
