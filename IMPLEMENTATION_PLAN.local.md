@@ -8,16 +8,28 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/publication-finalization-machine-enforcement.md`
+- `IMPLEMENTATION_TASKS/managed-publication-hook-install-integrity.md`
 
 ## NEXT（優先順）
 
+- `IMPLEMENTATION_TASKS/detached-candidate-runtime-vcs-identity.md`
+- `IMPLEMENTATION_TASKS/publication-git-guard-shell-semantics.md`
+- `IMPLEMENTATION_TASKS/publication-promotion-atomicity.md`
+- `IMPLEMENTATION_TASKS/publication-completion-owner-verification.md`
+- `IMPLEMENTATION_TASKS/publication-finalization-machine-enforcement.md`
+- `IMPLEMENTATION_TASKS/publication-escaped-defect-reopen-lifecycle.md`
 - `IMPLEMENTATION_TASKS/reset-disposition-archived-evidence-admission.md`
+- `IMPLEMENTATION_TASKS/session-loss-recovery-surface-convergence.md`
+- `IMPLEMENTATION_TASKS/zai-provider-limit-self-resume.md`
+- `IMPLEMENTATION_TASKS/execution-milestone-reconsideration-after-single.md`
 - `IMPLEMENTATION_TASKS/detected-defect-task-registration-enforcement.md`
 - `IMPLEMENTATION_TASKS/install-smoke-claude-settings-env-isolation.md`
 - `IMPLEMENTATION_TASKS/machine-enforced-control-authority-legitimacy.md`
 - `IMPLEMENTATION_TASKS/machine-negative-result-authority.md`
 - `IMPLEMENTATION_TASKS/canonical-authority-bootstrap-enforcement.md`
+- `IMPLEMENTATION_TASKS/staged-parent-action-no-reread-regression.md`
+- `IMPLEMENTATION_TASKS/system-one-dogfood-evidence-shadow-eval.md`
+- `IMPLEMENTATION_TASKS/task-progress-observability.md`
 - `IMPLEMENTATION_TASKS/parent-fix-origin-cause-staged-transport.md`
 - `IMPLEMENTATION_TASKS/machine-visible-improvement-signal-disposition.md`
 - `IMPLEMENTATION_TASKS/terminal-result-budgeted-projection.md`
