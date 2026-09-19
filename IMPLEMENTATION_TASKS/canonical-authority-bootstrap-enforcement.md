@@ -19,7 +19,7 @@ none
 - 本Findingは特定shell commandの禁止ではなく、active repository harnessでcanonical authority projectionをbootstrapのnormal pathとしてmachine-ownedにする責務を扱う
 - formal Dogfood `cc4e60d1-8e64-4f86-a66a-8a2acd070163` ではcompactionが複数回発生し、compaction前はouter/inner `21600000` long-blocking waitを使用していたのに、最初のcompaction直後から同一running sessionへparentが明示的に`30000`×10、`60000`×14、後続で`300000`等のshort yieldを生成した
 - current managed profile/runtimeには`21600000` long-wait settingが存在し、同Taskの正常区間でも実際に使用されているため、blocking mechanism未実装ではなくcompaction/resume後にcanonical authority/connection contractを再取得せずparent behaviorが退行した再発と判定する
-- closed #455どおりCodex/Desktop host schedulerがcellをsuspendし続けるかはrepositoryから強制不能であり、本taskはhost schedulerそのものを実装対象にしない。custom-tool waitのbundle計測は`parent-wait-custom-tool-observability.md`が別ownerである
+- historical runtime/host-boundary auditどおりCodex/Desktop host schedulerがcellをsuspendし続けるかはrepositoryから強制不能であり、本taskはhost schedulerそのものを実装対象にしない。custom-tool waitのbundle計測は`parent-wait-custom-tool-observability.md`が別ownerである
 
 ## Purpose
 
