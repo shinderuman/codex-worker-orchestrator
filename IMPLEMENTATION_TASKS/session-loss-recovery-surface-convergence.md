@@ -14,7 +14,7 @@ none
 
 - formal DogfoodでWeekly Limit / parent session復帰後、canonical lost-main-tool recoveryの`glm-parent-action wait`を使わず、`glm-worker --status` → `glm-worker --watch` → `glm-worker --handoff`へ逸脱した
 - `--status` / `--handoff`はduplicate parent projectionで失敗し、`--watch`はtask開始時からのhistorical event logを大量にparent contextへreplayした。最終的には`glm-parent-action review-evidence`から正しいmachine evidenceを取得した
-- closed #436 / #456 / #458 / #459 / #461でdetached recovery mechanicsは`glm-parent-action wait`へ既に収束済みであり、同mechanismを再実装する必要はない
+- existing detached recovery implementationはduplicate waiter admission、task/owner epoch binding、owner-lost active task admissionを含めて`glm-parent-action wait`へ既に収束済みであり、同mechanismを再実装する必要はない
 - current parent instructionはstatus/watch loopへの切替を禁止している一方、`glm-worker --watch` / ModeWatch / dedicated streaming exceptionはCLI surfaceとして残り、canonical Codex workflow上のcurrent consumerは確認できない
 - human/operator用`glm-watcher`はrepository Codex workflowとは別責務であり、本taskへ含めない
 
@@ -32,7 +32,7 @@ status: not-applicable
 - terminal transport/parse failureは既存bounded `glm-worker --handoff recovery`を維持し、detach recoveryと混同しない
 - current repository/Codex workflowにconsumerがないことをcurrent source・instructions・testsで再確認したうえで、`glm-worker --watch`、ModeWatch、watch専用streaming machine-output exception等のobsolete Codex-facing surfaceを削除する
 - `--status`等の合法なread-only inspectionを全面禁止せず、diagnostic surfaceとcanonical recovery actionを区別する
-- session-loss recoveryのmachine resultはtask/owner identityを保持し、既存#458/#459/#461のduplicate waiter / epoch / owner-lost invariantsを維持する
+- session-loss recoveryのmachine resultはtask/owner identityを保持し、existing duplicate waiter / stale ownership epoch / owner-lost active task invariantsを維持する
 - user/operator monitoring responsibilityをproduction Codex recovery contractへ混ぜない
 
 ## Must not
