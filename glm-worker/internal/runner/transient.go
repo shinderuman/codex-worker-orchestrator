@@ -26,12 +26,12 @@ type ProviderUnavailableError struct {
 }
 
 const (
-	ProviderFailureZaiFiveHour       = "zai-5h"
-	ProviderFailureZaiLongQuota      = "zai-long-quota"
-	ProviderFailureZaiActionRequired = "zai-action-required"
+	ProviderFailureZaiFiveHour        = "zai-5h"
+	ProviderFailureZaiLongQuota       = "zai-long-quota"
+	ProviderFailureZaiActionRequired  = "zai-action-required"
 	ProviderFailureZaiUnknownSafeStop = "zai-unknown-safe-stop"
-	ProviderFailureTransient         = "transient"
-	ProviderFailureFatal             = "fatal"
+	ProviderFailureTransient          = "transient"
+	ProviderFailureFatal              = "fatal"
 
 	ProbeContractFailure = "probe-contract"
 )
@@ -54,24 +54,24 @@ var transientNetworkSignals = []string{
 }
 
 var zaiTransientBusinessCodes = map[string]struct{}{
-	"1302": {}, // request rate limit
-	"1305": {}, // temporary overload
+	"1302": {},
+	"1305": {},
 }
 
 var zaiLongQuotaBusinessCodes = map[string]struct{}{
-	"1310": {}, // weekly/monthly quota exhausted
-	"1317": {}, // seven-day limit, no balance for extra usage
-	"1319": {}, // seven-day limit, no monthly spend available
-	"1321": {}, // seven-day limit, monthly spend cap reached
+	"1310": {},
+	"1317": {},
+	"1319": {},
+	"1321": {},
 }
 
 var zaiActionRequiredBusinessCodes = map[string]struct{}{
-	"1113": {}, // insufficient balance or no resource package
-	"1309": {}, // Coding Plan expired
-	"1311": {}, // plan does not include requested model
-	"1313": {}, // fair-use restriction
-	"1314": {}, // enterprise package expired
-	"1315": {}, // key restricted to enterprise scenarios
+	"1113": {},
+	"1309": {},
+	"1311": {},
+	"1313": {},
+	"1314": {},
+	"1315": {},
 }
 
 var probeFatalHTTPPattern = regexp.MustCompile(`(?i)\b(?:http|status|error|api)[^\n]{0,24}\b(?:400|401|403)\b|\b(?:400|401|403)\b[^\n]{0,24}\b(?:bad request|unauthorized|forbidden)\b`)
