@@ -30,6 +30,7 @@ const (
 	ParentActionReview                      ParentAction = "parent-review"
 	ParentActionApproveSurface              ParentAction = "approve-surface"
 	ParentActionAccept                      ParentAction = "accept"
+	ParentActionReopen                      ParentAction = "reopen"
 	ParentActionComplete                    ParentAction = "complete"
 	ParentActionInstall                     ParentAction = "install"
 	ParentActionFix                         ParentAction = "fix"
@@ -181,7 +182,7 @@ func (s *StateStore) parentActionPlanForStatus(status TaskStatus, pending bool, 
 	case TaskStatusWaitingSolReview:
 		return s.waitingReviewActionPlanWithEvidenceReadiness(status, pending, openReview, stopKind, qualitySurfaceApproval)
 	case TaskStatusAwaitingParentCompletion:
-		return awaitingParentCompletionActionPlan(status, pending, openReview, stopKind)
+		return s.awaitingParentCompletionActionPlan(status, pending, openReview, stopKind)
 	case TaskStatusParked:
 		return s.parkedActionPlan(status, pending, openReview, stopKind)
 	case TaskStatusComplete:
@@ -244,9 +245,16 @@ func waitingReviewActionPlan(status TaskStatus, pending bool, openReview string,
 	return actionPlan(ParentActionReview, "", ParentActionAccept, ParentActionFix, ParentActionPark), nil
 }
 
-func awaitingParentCompletionActionPlan(status TaskStatus, pending bool, openReview string, stopKind ResumeStopKind) (ParentActionPlan, error) {
+func (s *StateStore) awaitingParentCompletionActionPlan(status TaskStatus, pending bool, openReview string, stopKind ResumeStopKind) (ParentActionPlan, error) {
 	if pending || stopKind != ResumeStopNone || openReview != roundCommentNone {
 		return ParentActionPlan{}, lifecycleInconsistency(status, "awaiting parent completion task has unresolved parent or resume state")
+	}
+	finding, err := s.CurrentPublicationInvalidatingFinding()
+	if err != nil {
+		return ParentActionPlan{}, lifecycleInconsistency(status, "publication invalidating finding state is invalid: "+err.Error())
+	}
+	if finding != nil {
+		return actionPlan(ParentActionReopen, "", ParentActionReopen), nil
 	}
 	return actionPlan(ParentActionComplete, "", ParentActionComplete, ParentActionInstall), nil
 }

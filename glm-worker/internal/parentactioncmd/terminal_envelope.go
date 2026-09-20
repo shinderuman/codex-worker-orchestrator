@@ -21,6 +21,7 @@ type parentActionTerminalEnvelopePayload struct {
 const (
 	actionAccept = "accept"
 	actionPark   = "park"
+	actionReopen = "reopen"
 	actionResume = "resume"
 	actionUnpark = "unpark"
 )
@@ -93,7 +94,7 @@ func terminalEnvelopeAction(action string) bool {
 		return descriptor.Action != parentaction.ActionReviseMilestones
 	}
 	switch action {
-	case actionStart, actionApprove, actionAccept, actionResume, "no-go", actionPark, actionUnpark, actionReviewEvidence:
+	case actionStart, actionApprove, actionAccept, actionResume, "no-go", actionRecordPublicationFinding, actionReopen, actionPark, actionUnpark, actionReviewEvidence:
 		return true
 	default:
 		return false
