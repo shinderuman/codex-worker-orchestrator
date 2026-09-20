@@ -18,6 +18,11 @@ type PublicationInvalidatingFinding struct {
 	Cause               string `json:"cause,omitempty"`
 }
 
+type publicationInvalidatingFindingTarget struct {
+	taskID    string
+	candidate PublicationCandidate
+}
+
 const (
 	publicationInvalidatingFindingStateFile = "publication-invalidating-finding.json"
 	publicationInvalidatingFindingVersion   = 1
@@ -25,54 +30,79 @@ const (
 )
 
 func (s *StateStore) RecordPublicationInvalidatingFinding(candidateOID, snapshotID, origin, cause string) (PublicationInvalidatingFinding, error) {
-	if s.TaskStatus() != TaskStatusAwaitingParentCompletion {
-		return PublicationInvalidatingFinding{}, fmt.Errorf("publication invalidating finding requires %s, got %s", TaskStatusAwaitingParentCompletion, s.TaskStatus())
-	}
 	if err := validateParentFixDeclaration(origin, cause); err != nil {
 		return PublicationInvalidatingFinding{}, err
 	}
-	completion, err := s.CurrentParentCompletionOutcome()
+	target, err := s.publicationInvalidatingFindingTarget(candidateOID, snapshotID)
 	if err != nil {
 		return PublicationInvalidatingFinding{}, err
 	}
+	existing, reusable, err := s.reusablePublicationInvalidatingFinding(target, origin, cause)
+	if err != nil || reusable {
+		return existing, err
+	}
+	return s.writePublicationInvalidatingFinding(target, origin, cause)
+}
+
+func (s *StateStore) publicationInvalidatingFindingTarget(candidateOID, snapshotID string) (publicationInvalidatingFindingTarget, error) {
+	if s.TaskStatus() != TaskStatusAwaitingParentCompletion {
+		return publicationInvalidatingFindingTarget{}, fmt.Errorf("publication invalidating finding requires %s, got %s", TaskStatusAwaitingParentCompletion, s.TaskStatus())
+	}
+	completion, err := s.CurrentParentCompletionOutcome()
+	if err != nil {
+		return publicationInvalidatingFindingTarget{}, err
+	}
 	if completion == nil || completion.Terminal != SessionRotationTerminalAccept {
-		return PublicationInvalidatingFinding{}, fmt.Errorf("publication invalidating finding requires an accepted parent completion outcome")
+		return publicationInvalidatingFindingTarget{}, fmt.Errorf("publication invalidating finding requires an accepted parent completion outcome")
 	}
 	candidate, err := s.LoadPublicationCandidate()
 	if err != nil {
-		return PublicationInvalidatingFinding{}, fmt.Errorf("publication invalidating finding requires current publication candidate: %w", err)
+		return publicationInvalidatingFindingTarget{}, fmt.Errorf("publication invalidating finding requires current publication candidate: %w", err)
 	}
 	taskID, err := s.TaskID()
 	if err != nil {
-		return PublicationInvalidatingFinding{}, err
+		return publicationInvalidatingFindingTarget{}, err
 	}
 	if candidate.TaskID != taskID {
-		return PublicationInvalidatingFinding{}, fmt.Errorf("publication invalidating finding candidate task %s does not match current task %s", candidate.TaskID, taskID)
+		return publicationInvalidatingFindingTarget{}, fmt.Errorf("publication invalidating finding candidate task %s does not match current task %s", candidate.TaskID, taskID)
 	}
 	if candidate.CommitOID != candidateOID || candidate.SnapshotID != snapshotID {
-		return PublicationInvalidatingFinding{}, fmt.Errorf("publication invalidating finding target does not match current publication candidate")
+		return publicationInvalidatingFindingTarget{}, fmt.Errorf("publication invalidating finding target does not match current publication candidate")
 	}
+	return publicationInvalidatingFindingTarget{taskID: taskID, candidate: candidate}, nil
+}
+
+func (s *StateStore) reusablePublicationInvalidatingFinding(target publicationInvalidatingFindingTarget, origin, cause string) (PublicationInvalidatingFinding, bool, error) {
 	existing, err := s.LoadPublicationInvalidatingFinding()
-	if err == nil {
-		if existing.TaskID == taskID && existing.Disposition == PublicationFindingCorrectnessDefect && existing.CandidateCommitOID == candidate.CommitOID && existing.CandidateSnapshotID == candidate.SnapshotID && existing.Origin == origin && existing.Cause == cause {
-			return existing, nil
-		}
-		return PublicationInvalidatingFinding{}, fmt.Errorf("a different publication invalidating finding is already recorded")
+	if errors.Is(err, os.ErrNotExist) {
+		return PublicationInvalidatingFinding{}, false, nil
 	}
-	if !errors.Is(err, os.ErrNotExist) {
-		return PublicationInvalidatingFinding{}, err
+	if err != nil {
+		return PublicationInvalidatingFinding{}, false, err
 	}
+	candidate := target.candidate
+	if existing.TaskID == target.taskID &&
+		existing.Disposition == PublicationFindingCorrectnessDefect &&
+		existing.CandidateCommitOID == candidate.CommitOID &&
+		existing.CandidateSnapshotID == candidate.SnapshotID &&
+		existing.Origin == origin && existing.Cause == cause {
+		return existing, true, nil
+	}
+	return PublicationInvalidatingFinding{}, false, fmt.Errorf("a different publication invalidating finding is already recorded")
+}
+
+func (s *StateStore) writePublicationInvalidatingFinding(target publicationInvalidatingFindingTarget, origin, cause string) (PublicationInvalidatingFinding, error) {
 	findingID, err := NewUUID()
 	if err != nil {
 		return PublicationInvalidatingFinding{}, err
 	}
 	finding := PublicationInvalidatingFinding{
 		Version:             publicationInvalidatingFindingVersion,
-		TaskID:              taskID,
+		TaskID:              target.taskID,
 		FindingID:           findingID,
 		Disposition:         PublicationFindingCorrectnessDefect,
-		CandidateCommitOID:  candidate.CommitOID,
-		CandidateSnapshotID: candidate.SnapshotID,
+		CandidateCommitOID:  target.candidate.CommitOID,
+		CandidateSnapshotID: target.candidate.SnapshotID,
 		Origin:              origin,
 		Cause:               cause,
 	}
