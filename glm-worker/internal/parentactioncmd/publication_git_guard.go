@@ -59,7 +59,25 @@ func verifyPublicationRefUpdate(cfg config.AppConfig, oldOID, newOID, ref string
 	if err != nil {
 		return err
 	}
+	if publicationExactPromotionRollback(candidate, oldOID, newOID) {
+		return verifyPublicationRefRollback(cfg, candidate, oldOID, ref)
+	}
 	return verifyPublicationRefCandidate(cfg, st, candidate, oldOID, newOID, ref)
+}
+
+func publicationExactPromotionRollback(candidate state.PublicationCandidate, oldOID, newOID string) bool {
+	return oldOID == candidate.CommitOID && newOID == candidate.BaseHead
+}
+
+func verifyPublicationRefRollback(cfg config.AppConfig, candidate state.PublicationCandidate, oldOID, ref string) error {
+	head, err := state.ResolveGitHeadAuthority("git", cfg.RepoRoot)
+	if err != nil || head.SymbolicHead != ref || head.Head != oldOID {
+		return fmt.Errorf("publication ref rollback rejected: current branch identity changed")
+	}
+	if failure := publicationPromotionPostcondition(cfg.RepoRoot, candidate); failure == nil {
+		return fmt.Errorf("publication ref rollback rejected: promoted candidate remains valid")
+	}
+	return nil
 }
 
 func verifyPublicationRefCandidate(cfg config.AppConfig, st *state.StateStore, candidate state.PublicationCandidate, oldOID, newOID, ref string) error {
