@@ -112,7 +112,7 @@ func publicationShellCommandIndex(segment []publicationShellWord) (int, bool, bo
 		if word.Dynamic {
 			return index, true, false
 		}
-		if publicationShellAssignment(word.Value) || word.Value == "!" {
+		if publicationShellAssignment(word.Value) || publicationShellControlPrefix(word.Value) {
 			index++
 			continue
 		}
@@ -127,6 +127,14 @@ func publicationShellCommandIndex(segment []publicationShellWord) (int, bool, bo
 		return index, true, false
 	}
 	return 0, false, false
+}
+
+func publicationShellControlPrefix(value string) bool {
+	switch value {
+	case "!", "if", "then", "elif", "else", "while", "until", "do", "time", "coproc":
+		return true
+	}
+	return false
 }
 
 func publicationShellAssignment(value string) bool {
@@ -369,6 +377,12 @@ func (lexer *publicationShellLexer) scanUnquoted(ch byte) error {
 		lexer.flushWord()
 	case '\n', ';', '|', '&':
 		lexer.consumeSeparator(ch)
+	case '(':
+		lexer.consumeOpenParen()
+	case ')':
+		lexer.flushSegment()
+	case '{', '}':
+		lexer.consumeBrace(ch)
 	case '\'', '"':
 		lexer.quote = ch
 		lexer.wordStarted = true
@@ -389,6 +403,33 @@ func (lexer *publicationShellLexer) scanUnquoted(ch byte) error {
 		lexer.value.WriteByte(ch)
 	}
 	return nil
+}
+
+func (lexer *publicationShellLexer) consumeOpenParen() {
+	if lexer.wordStarted {
+		lexer.value.WriteByte('(')
+		return
+	}
+	lexer.flushSegment()
+}
+
+func (lexer *publicationShellLexer) consumeBrace(ch byte) {
+	if !lexer.wordStarted && lexer.shellOperatorBoundaryAhead() {
+		lexer.flushSegment()
+		return
+	}
+	lexer.writeDynamicByte(ch)
+}
+
+func (lexer *publicationShellLexer) shellOperatorBoundaryAhead() bool {
+	if lexer.index+1 >= len(lexer.command) {
+		return true
+	}
+	switch lexer.command[lexer.index+1] {
+	case ' ', '\t', '\r', '\n', ';', '|', '&', '(', ')':
+		return true
+	}
+	return false
 }
 
 func (lexer *publicationShellLexer) writeEscaped() error {
