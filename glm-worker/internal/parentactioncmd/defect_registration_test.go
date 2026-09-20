@@ -26,6 +26,7 @@ func TestDefectRegistrationRequiresTaskAndPlanBinding(t *testing.T) {
 	if err := st.Write("active-task", source); err != nil {
 		t.Fatal(err)
 	}
+	writeDefectRegistrationFile(t, repo, source, defectRegistrationTask("active"))
 	writeDefectRegistrationFile(t, repo, "IMPLEMENTATION_PLAN.local.md", defectRegistrationPlan(source, ""))
 
 	var recorded bytes.Buffer
@@ -48,6 +49,14 @@ func TestDefectRegistrationRequiresTaskAndPlanBinding(t *testing.T) {
 
 	writeDefectRegistrationFile(t, repo, target, "# follow-up\n")
 	writeDefectRegistrationFile(t, repo, "IMPLEMENTATION_PLAN.local.md", defectRegistrationPlan(source, target))
+	if err := executeDefectRegistrationAction(cfg, []string{actionBindDefectTask, "--task", target}, &bytes.Buffer{}); err == nil {
+		t.Fatal("bind succeeded with malformed task contract")
+	}
+	if plan, err := st.ParentActionPlan(); err != nil || plan.RequiredAction != state.ParentActionBindDefectTask {
+		t.Fatalf("malformed task released gate: plan=%#v err=%v", plan, err)
+	}
+
+	writeDefectRegistrationFile(t, repo, target, defectRegistrationTask("follow-up"))
 	var bound bytes.Buffer
 	if err := executeDefectRegistrationAction(cfg, []string{actionBindDefectTask, "--task", target}, &bound); err != nil {
 		t.Fatal(err)
@@ -104,6 +113,19 @@ func defectRegistrationPlan(active, next string) string {
 		plan += "- `" + next + "`\n"
 	}
 	return plan + "\n## BLOCKED / USER_PERMISSION_WAIT\n"
+}
+
+func defectRegistrationTask(name string) string {
+	return "# Task: " + name + "\n\n" +
+		"## Original instruction\n\nfixture\n\n" +
+		"## Amendments\n\nnone\n\n" +
+		"## Purpose\n\nfixture\n\n" +
+		"## External feasibility\n\nstatus: not-applicable\n\n" +
+		"## Contract\n\nfixture\n\n" +
+		"## Must not\n\nfixture\n\n" +
+		"## Acceptance criteria\n\nfixture\n\n" +
+		"## Historical invariants\n\nfixture\n\n" +
+		"## Dependencies\n\nnone\n"
 }
 
 func writeDefectRegistrationFile(t *testing.T, repo, path, content string) {
