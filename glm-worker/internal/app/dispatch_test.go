@@ -25,7 +25,6 @@ func TestCommandDispatchOwnersSeparateRuntimeAndReadOnly(t *testing.T) {
 		ModeStatus,
 		ModeHandoff,
 		ModeStats,
-		ModeWatch,
 		ModeTimeline,
 		ModeEvalAB,
 		ModeRepoSearch,

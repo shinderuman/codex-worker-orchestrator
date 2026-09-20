@@ -107,39 +107,6 @@
       "boundary": "Goal satisfaction is not reducible to structural state or command success."
     },
     {
-      "id": "orphan-watch-terminalization",
-      "classification": "machine-enforced",
-      "purpose": "Terminalize watch only when error material and lock ownership prove the watched task is orphaned.",
-      "machine_owners": [
-        {
-          "path": "glm-worker/internal/app/watch.go",
-          "symbol": "watchOrphanTerminal"
-        }
-      ],
-      "tests": [
-        {
-          "path": "glm-worker/internal/app/watch_orphan_test.go",
-          "symbol": "TestWatchOrphanTerminalConservativeGates"
-        }
-      ],
-      "postconditions": [
-        {
-          "path": "glm-worker/internal/app/watch.go",
-          "symbol": "buildWatchOrphanExitEvent"
-        }
-      ],
-      "projection_guards": [
-        {
-          "path": "codex/instructions/glm-watch-orphan-terminal.md",
-          "forbidden_tokens": [
-            "status: \"orphan-terminal\"",
-            "required_action: \"none\""
-          ]
-        }
-      ],
-      "residual_parent_judgment": "The parent decides the semantic recovery or disposition after consuming orphan-terminal evidence."
-    },
-    {
       "id": "packet-schema-result",
       "classification": "machine-enforced",
       "purpose": "Constrain worker and reviewer structured results to the machine packet schema and validation contract.",

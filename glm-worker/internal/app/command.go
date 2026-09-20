@@ -21,8 +21,6 @@ type Command struct {
 	Mode    CommandMode
 	Payload string
 
-	WatchVerbose bool
-
 	StdinBytes int64
 
 	SHA256 string
@@ -69,7 +67,6 @@ const (
 	ModeUnpark
 	ModeStatus
 	ModeHandoff
-	ModeWatch
 	ModeTimeline
 	ModeConvergence
 	ModeStats
@@ -162,7 +159,6 @@ var commandParsers = map[string]commandParser{
 		return singleArgCommand(args, ModeStatus, "usage: glm-worker --status")
 	},
 	"--handoff": parentHandoffCommand,
-	"--watch":   watchCommand,
 	"--timeline": func(args []string) (Command, error) {
 		return optionalPayloadCommand(args, ModeTimeline, "usage: glm-worker --timeline [task-id]")
 	},
@@ -275,16 +271,6 @@ func parentHandoffCommand(args []string) (Command, error) {
 		return Command{Mode: ModeHandoff, Payload: "recovery"}, nil
 	}
 	return Command{}, machinecli.UsageErrorf("usage: glm-worker --handoff [recovery]")
-}
-
-func watchCommand(args []string) (Command, error) {
-	if len(args) == 1 {
-		return Command{Mode: ModeWatch}, nil
-	}
-	if len(args) == 2 && args[1] == "--verbose" {
-		return Command{Mode: ModeWatch, WatchVerbose: true}, nil
-	}
-	return Command{}, machinecli.UsageErrorf("usage: glm-worker --watch [--verbose]")
 }
 
 func verifyAutoResumeCommand(args []string) (Command, error) {
