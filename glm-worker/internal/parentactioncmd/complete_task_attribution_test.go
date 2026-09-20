@@ -39,6 +39,21 @@ func TestCompleteRejectsAmbiguousCanonicalHandoverOwner(t *testing.T) {
 	assertCompletionOwnerFailure(t, output, "canonical task authority unavailable")
 }
 
+func TestCompleteRejectsPublicationCandidateTaskIdentityMismatch(t *testing.T) {
+	fixture := prepareCompletionHandoverFixture(t)
+	candidate, err := fixture.st.LoadPublicationCandidate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate.TaskID = "different-task"
+	if err := fixture.st.SavePublicationCandidate(candidate); err != nil {
+		t.Fatal(err)
+	}
+
+	output := runCompleteCommand(t, fixture)
+	assertCompletionOwnerFailure(t, output, "publication candidate task identity")
+}
+
 func TestCompleteAllowsExactCanonicalHandoverOwner(t *testing.T) {
 	fixture := prepareCompletionHandoverFixture(t)
 	if err := fixture.st.SaveCurrentTaskAuthority("IMPLEMENTATION_TASKS/active.md", []byte("# active\n")); err != nil {
