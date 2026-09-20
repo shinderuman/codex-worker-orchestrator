@@ -83,8 +83,15 @@ func prepareReopenedCompletionFixture(t *testing.T) (*completeFixture, state.Pub
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	if err := fixture.st.ReopenAcceptedParentCompletion(state.ParentOriginCodexReview, state.ParentCauseProductionWiring); err != nil {
+	if _, err := fixture.st.RecordPublicationInvalidatingFinding(
+		oldCandidate.CommitOID,
+		oldCandidate.SnapshotID,
+		state.ParentOriginCodexReview,
+		state.ParentCauseProductionWiring,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := fixture.st.ReopenAcceptedParentCompletion(); err != nil {
 		t.Fatal(err)
 	}
 	writePushBindingFile(t, fixture.repo, "escaped-fix.txt", "fixed\n")
