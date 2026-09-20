@@ -1,7 +1,9 @@
 package state
 
 import (
+	"errors"
 	"fmt"
+	"os"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 )
@@ -60,10 +62,22 @@ func (s *StateStore) snapshotReopenStateFiles() ([]lifecycleFileSnapshot, error)
 	if err != nil {
 		return nil, err
 	}
-	return []lifecycleFileSnapshot{review, status, candidate, evidence}, nil
+	lineage, err := s.snapshotLifecycleFile(publicationReopenLineageStateFile)
+	if err != nil {
+		return nil, err
+	}
+	return []lifecycleFileSnapshot{review, status, candidate, evidence, lineage}, nil
 }
 
 func (s *StateStore) applyReopenTransition(completion ParentCompletionOutcome, snapshots []lifecycleFileSnapshot) error {
+	candidate, err := s.LoadPublicationCandidate()
+	if err == nil {
+		if err := s.CapturePublicationReopenLineage(candidate); err != nil {
+			return s.rollbackLifecycleFiles(err, snapshots...)
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return s.rollbackLifecycleFiles(err, snapshots...)
+	}
 	if err := s.ClearPublicationCandidate(); err != nil {
 		return s.rollbackLifecycleFiles(err, snapshots...)
 	}
