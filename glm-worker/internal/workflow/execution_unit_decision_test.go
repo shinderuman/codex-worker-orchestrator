@@ -94,6 +94,14 @@ func TestExecutionUnitDecisionSingleCanReconsiderIntoMilestones(t *testing.T) {
 		{structured: passPacket()},
 		{structured: needsSolReviewPacket()},
 	})
+	runner.onRun = func() {
+		switch len(runner.prompts) {
+		case 2, 4:
+			if err := st.CommitParentActionBegin(); err != nil {
+				t.Fatalf("commit parent action begin at model admission: %v", err)
+			}
+		}
+	}
 	if err := w.ExecuteNewTask("implement the ACTIVE task"); err != nil {
 		t.Fatal(err)
 	}
