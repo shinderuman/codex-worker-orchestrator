@@ -10,22 +10,15 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-func recordFixturePublicationFinding(t *testing.T, fixture *completeFixture) state.PublicationCandidate {
+func recordFixturePublicationFinding(t *testing.T, fixture *completeFixture) {
 	t.Helper()
 	ensureCompleteFixturePublicationAuthority(t, fixture)
-	candidate, err := fixture.st.LoadPublicationCandidate()
-	if err != nil {
-		t.Fatal(err)
-	}
 	if _, err := fixture.st.RecordPublicationInvalidatingFinding(
-		candidate.CommitOID,
-		candidate.SnapshotID,
 		state.ParentOriginCodexReview,
 		state.ParentCauseProductionWiring,
 	); err != nil {
 		t.Fatal(err)
 	}
-	return candidate
 }
 
 func TestExecuteReopenUsesMachineRequiredAdmissionAndReturnsNextAction(t *testing.T) {
