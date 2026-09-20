@@ -70,8 +70,11 @@ status: not-applicable
 
 ## Dependencies
 
-- `IMPLEMENTATION_TASKS/managed-publication-hook-install-integrity.md`
 - `IMPLEMENTATION_TASKS/detached-candidate-runtime-vcs-identity.md`
 - `IMPLEMENTATION_TASKS/publication-git-guard-shell-semantics.md`
 - `IMPLEMENTATION_TASKS/publication-promotion-atomicity.md`
 - `IMPLEMENTATION_TASKS/publication-completion-owner-verification.md`
+
+## Fulfilled dependencies
+
+- `IMPLEMENTATION_TASKS/managed-publication-hook-install-integrity.md`
