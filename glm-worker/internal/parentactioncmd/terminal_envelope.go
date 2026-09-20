@@ -38,6 +38,8 @@ func executeWithTerminalEnvelope(cfg config.AppConfig, args []string, stdout, st
 		err = executeParentReviewEvidence(cfg, args, &terminal)
 	case string(parentaction.ActionDecision):
 		err = executePreflightedDecision(cfg, args, &terminal, stderr)
+	case actionRecordDefectFinding, actionBindDefectTask:
+		err = executeDefectRegistrationAction(cfg, args, &terminal)
 	default:
 		err = execute(cfg, args, &terminal, stderr)
 	}
@@ -94,7 +96,7 @@ func terminalEnvelopeAction(action string) bool {
 		return descriptor.Action != parentaction.ActionReviseMilestones
 	}
 	switch action {
-	case actionStart, actionApprove, actionAccept, actionResume, "no-go", actionRecordPublicationFinding, actionReopen, actionPark, actionUnpark, actionReviewEvidence:
+	case actionStart, actionApprove, actionAccept, actionResume, "no-go", actionRecordPublicationFinding, actionRecordDefectFinding, actionBindDefectTask, actionReopen, actionPark, actionUnpark, actionReviewEvidence:
 		return true
 	default:
 		return false
