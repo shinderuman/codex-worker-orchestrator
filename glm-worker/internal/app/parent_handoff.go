@@ -190,7 +190,7 @@ func buildParentHandoff(st *state.StateStore) parentHandoffOutput {
 	applyParentSessionRotation(st, &output)
 	output.Validations = currentParentValidations(st, repoRoot, output.Snapshot)
 	output.RoutingEvidence = currentParentRoutingEvidence(st, repoRoot, taskID, output.Snapshot)
-	if taskStatus == state.TaskStatusAwaitingParentCompletion || taskStatus == state.TaskStatusComplete {
+	if output.Consistent && (taskStatus == state.TaskStatusAwaitingParentCompletion || taskStatus == state.TaskStatusComplete) {
 		sequence := ProjectPublicationSequence(repoRoot, st)
 		output.Publication = &sequence
 	}
