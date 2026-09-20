@@ -68,4 +68,8 @@ status: not-applicable
 
 ## Dependencies
 
+none
+
+## Fulfilled dependencies
+
 - `IMPLEMENTATION_TASKS/machine-enforced-control-authority-legitimacy.md`

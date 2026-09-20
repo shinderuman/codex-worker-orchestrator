@@ -28,6 +28,10 @@
 
 publication promotionのmachine guardを維持したまま、通常のローカルGit操作によるbranch ref mutationをpublication transactionと誤認して拒否するescaped correctness defectを修正する。
 
+## External feasibility
+
+status: not-applicable
+
 ## Contract
 
 - publication guardは、単に `refs/heads/*` が更新されたという事実だけをpublication authorization/provenanceとして扱わない。
@@ -63,5 +67,9 @@ publication promotionのmachine guardを維持したまま、通常のローカ�
 - publication candidate promotionとremote publication writeのbinding correctnessは弱めない。
 
 ## Dependencies
+
+none
+
+## Fulfilled dependencies
 
 - `IMPLEMENTATION_TASKS/machine-enforced-control-authority-legitimacy.md`
