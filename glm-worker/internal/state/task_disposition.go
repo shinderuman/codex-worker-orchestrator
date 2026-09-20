@@ -233,11 +233,14 @@ func (s *StateStore) ValidateResetDispositionForNewTask() error {
 		return fmt.Errorf("new task admission cannot verify reset lifecycle: disposition transition is missing")
 	}
 	evidence, err := s.ArchivedTaskStatsEvidence(record.TaskID)
-	if err == nil && evidence.Proven && string(evidence.Status) != record.FromStatus {
-		return fmt.Errorf("reset disposition status %s does not match archived task status %s", record.FromStatus, evidence.Status)
-	}
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err != nil {
 		return fmt.Errorf("new task admission cannot verify archived reset task stats: %w", err)
+	}
+	if !evidence.Proven {
+		return fmt.Errorf("new task admission cannot verify archived reset task stats: archive evidence is unproven")
+	}
+	if string(evidence.Status) != record.FromStatus {
+		return fmt.Errorf("reset disposition status %s does not match archived task status %s", record.FromStatus, evidence.Status)
 	}
 	return nil
 }
