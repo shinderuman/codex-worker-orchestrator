@@ -65,11 +65,9 @@ func saveReopenPublicationState(t *testing.T, st *StateStore) PublicationCandida
 	return candidate
 }
 
-func recordReopenFinding(t *testing.T, st *StateStore, candidate PublicationCandidate) PublicationInvalidatingFinding {
+func recordReopenFinding(t *testing.T, st *StateStore) PublicationInvalidatingFinding {
 	t.Helper()
 	finding, err := st.RecordPublicationInvalidatingFinding(
-		candidate.CommitOID,
-		candidate.SnapshotID,
 		ParentOriginCodexReview,
 		ParentCauseProductionWiring,
 	)
@@ -90,7 +88,7 @@ func TestReopenAcceptedParentCompletionReturnsTaskToFixLifecycle(t *testing.T) {
 		t.Fatalf("awaiting plan before finding = %#v", plan)
 	}
 
-	finding := recordReopenFinding(t, st, candidate)
+	finding := recordReopenFinding(t, st)
 	plan, err = st.ParentActionPlan()
 	if err != nil {
 		t.Fatal(err)
@@ -146,8 +144,8 @@ func TestReopenAcceptedParentCompletionReturnsTaskToFixLifecycle(t *testing.T) {
 
 func TestReopenAcceptedParentCompletionRollsBackLineageOnIntermediateFailure(t *testing.T) {
 	st := newAcceptedParentCompletionStore(t)
-	candidate := saveReopenPublicationState(t, st)
-	findingBefore := recordReopenFinding(t, st, candidate)
+	saveReopenPublicationState(t, st)
+	findingBefore := recordReopenFinding(t, st)
 	candidateBefore, err := st.LoadPublicationCandidate()
 	if err != nil {
 		t.Fatal(err)
