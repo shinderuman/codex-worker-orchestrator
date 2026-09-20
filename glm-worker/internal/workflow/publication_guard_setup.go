@@ -57,7 +57,28 @@ func InspectPublicationGuardSetup(repoRoot string) (PublicationGuardSetupReport,
 			report.Defects = append(report.Defects, *defect)
 		}
 	}
+	report.Defects = publicationGuardPrimaryDefects(report.Defects)
 	return report, nil
+}
+
+func publicationGuardPrimaryDefects(defects []PublicationGuardHookDefect) []PublicationGuardHookDefect {
+	hasNonRepairable := false
+	for _, defect := range defects {
+		if defect.Defect != PublicationGuardHookNotExecutable {
+			hasNonRepairable = true
+			break
+		}
+	}
+	if !hasNonRepairable {
+		return defects
+	}
+	primary := make([]PublicationGuardHookDefect, 0, len(defects))
+	for _, defect := range defects {
+		if defect.Defect != PublicationGuardHookNotExecutable {
+			primary = append(primary, defect)
+		}
+	}
+	return primary
 }
 
 func VerifyPublicationGuardSetup(repoRoot string) error {
