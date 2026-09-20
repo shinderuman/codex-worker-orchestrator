@@ -29,11 +29,11 @@ const (
 	PublicationFindingCorrectnessDefect     = "correctness-defect"
 )
 
-func (s *StateStore) RecordPublicationInvalidatingFinding(candidateOID, snapshotID, origin, cause string) (PublicationInvalidatingFinding, error) {
+func (s *StateStore) RecordPublicationInvalidatingFinding(origin, cause string) (PublicationInvalidatingFinding, error) {
 	if err := validateParentFixDeclaration(origin, cause); err != nil {
 		return PublicationInvalidatingFinding{}, err
 	}
-	target, err := s.publicationInvalidatingFindingTarget(candidateOID, snapshotID)
+	target, err := s.publicationInvalidatingFindingTarget()
 	if err != nil {
 		return PublicationInvalidatingFinding{}, err
 	}
@@ -44,7 +44,7 @@ func (s *StateStore) RecordPublicationInvalidatingFinding(candidateOID, snapshot
 	return s.writePublicationInvalidatingFinding(target, origin, cause)
 }
 
-func (s *StateStore) publicationInvalidatingFindingTarget(candidateOID, snapshotID string) (publicationInvalidatingFindingTarget, error) {
+func (s *StateStore) publicationInvalidatingFindingTarget() (publicationInvalidatingFindingTarget, error) {
 	if s.TaskStatus() != TaskStatusAwaitingParentCompletion {
 		return publicationInvalidatingFindingTarget{}, fmt.Errorf("publication invalidating finding requires %s, got %s", TaskStatusAwaitingParentCompletion, s.TaskStatus())
 	}
@@ -65,9 +65,6 @@ func (s *StateStore) publicationInvalidatingFindingTarget(candidateOID, snapshot
 	}
 	if candidate.TaskID != taskID {
 		return publicationInvalidatingFindingTarget{}, fmt.Errorf("publication invalidating finding candidate task %s does not match current task %s", candidate.TaskID, taskID)
-	}
-	if candidate.CommitOID != candidateOID || candidate.SnapshotID != snapshotID {
-		return publicationInvalidatingFindingTarget{}, fmt.Errorf("publication invalidating finding target does not match current publication candidate")
 	}
 	return publicationInvalidatingFindingTarget{taskID: taskID, candidate: candidate}, nil
 }
