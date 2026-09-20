@@ -45,6 +45,9 @@ func admitNewTaskCommand(cmd Command, st *state.StateStore) error {
 		return &workflow.WorkerError{Message: err.Error()}
 	}
 	if admitted {
+		if err := st.RetirePendingSessionRotationRecommendations(); err != nil {
+			return &workflow.WorkerError{Message: err.Error()}
+		}
 		return nil
 	}
 	return parentActionDenied(cmd, plan, st)
