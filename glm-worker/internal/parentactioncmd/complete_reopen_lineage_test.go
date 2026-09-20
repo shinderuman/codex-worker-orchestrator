@@ -84,8 +84,6 @@ func prepareReopenedCompletionFixture(t *testing.T) (*completeFixture, state.Pub
 		t.Fatal(err)
 	}
 	if _, err := fixture.st.RecordPublicationInvalidatingFinding(
-		oldCandidate.CommitOID,
-		oldCandidate.SnapshotID,
 		state.ParentOriginCodexReview,
 		state.ParentCauseProductionWiring,
 	); err != nil {
