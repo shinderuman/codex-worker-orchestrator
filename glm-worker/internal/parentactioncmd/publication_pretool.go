@@ -118,31 +118,51 @@ func publicationShellCommandIndex(segment []publicationShellWord) (int, bool) {
 }
 
 func publicationClassifyInterpreter(args []publicationShellWord, depth int) (string, string) {
+	payload, dynamic, ok := publicationInterpreterCommandPayload(args)
+	if dynamic {
+		return publicationGitClassificationCode, publicationGitClassificationReason
+	}
+	if !ok {
+		return "", ""
+	}
+	return publicationClassifyShell(payload, depth)
+}
+
+func publicationInterpreterCommandPayload(args []publicationShellWord) (string, bool, bool) {
 	for index := 0; index < len(args); index++ {
 		word := args[index]
 		if word.Dynamic {
-			return publicationGitClassificationCode, publicationGitClassificationReason
+			return "", true, false
 		}
-		if word.Value == "--" {
-			return "", ""
-		}
-		if !strings.HasPrefix(word.Value, "-") {
-			return "", ""
+		if word.Value == "--" || !strings.HasPrefix(word.Value, "-") {
+			return "", false, false
 		}
 		if publicationInterpreterCommandOption(word.Value) {
-			if index+1 >= len(args) || args[index+1].Dynamic {
-				return publicationGitClassificationCode, publicationGitClassificationReason
-			}
-			return publicationClassifyShell(args[index+1].Value, depth)
+			return publicationInterpreterPayloadAfterOption(args, index)
 		}
 		if publicationInterpreterOptionConsumesValue(word.Value) {
-			if index+1 >= len(args) || args[index+1].Dynamic {
-				return publicationGitClassificationCode, publicationGitClassificationReason
+			next, dynamic := publicationInterpreterConsumeValue(args, index)
+			if dynamic {
+				return "", true, false
 			}
-			index++
+			index = next
 		}
 	}
-	return "", ""
+	return "", false, false
+}
+
+func publicationInterpreterPayloadAfterOption(args []publicationShellWord, index int) (string, bool, bool) {
+	if index+1 >= len(args) || args[index+1].Dynamic {
+		return "", true, false
+	}
+	return args[index+1].Value, false, true
+}
+
+func publicationInterpreterConsumeValue(args []publicationShellWord, index int) (int, bool) {
+	if index+1 >= len(args) || args[index+1].Dynamic {
+		return index, true
+	}
+	return index + 1, false
 }
 
 func publicationInterpreterCommandOption(value string) bool {
