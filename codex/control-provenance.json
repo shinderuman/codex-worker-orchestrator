@@ -93,13 +93,6 @@
       "boundary": "Known artifact boundaries are machine-controlled, but arbitrary semantic confidentiality is not."
     },
     {
-      "id": "glm-auto-resume-automation-transaction",
-      "classification": "partial",
-      "purpose": "Track the boundary between repository-side GLM auto-resume transaction checks and the external automation write.",
-      "residual_parent_judgment": "The parent remains responsible for external automation mutation and for interpreting provider-side outcomes.",
-      "boundary": "Repository code validates transaction evidence, but the automation service write is not fully machine-owned here."
-    },
-    {
       "id": "goal-task-review-semantic-disposition",
       "classification": "semantic-parent-only",
       "purpose": "Keep goal/task review disposition as an explicit semantic parent responsibility.",
