@@ -14,8 +14,15 @@ func TestAdmitParentActionRejectsResumeBeforeRateLimitReset(t *testing.T) {
 	if err == nil || admitted {
 		t.Fatalf("resume admission = admitted:%v err:%v", admitted, err)
 	}
-	if !strings.Contains(err.Error(), "cannot resume before the Z.ai 5h reset at") {
+	errorText := err.Error()
+	if !strings.Contains(errorText, "cannot resume before the Z.ai 5h reset at") {
 		t.Fatalf("error = %v", err)
+	}
+	if !strings.Contains(errorText, "automatic 5h recovery is machine-owned") || !strings.Contains(errorText, "explicit --resume is admitted after the reset boundary") {
+		t.Fatalf("error does not describe canonical recovery: %v", err)
+	}
+	if strings.Contains(errorText, "--auto-resume-plan") {
+		t.Fatalf("error references retired scheduler command: %v", err)
 	}
 	if status := st.TaskStatus(); status != TaskStatusRateLimited {
 		t.Fatalf("rejected resume must keep the stopped task state, got %s", status)
