@@ -23,7 +23,8 @@ func (w *Workflow) admitNewTask() error {
 		return &WorkerError{Message: err.Error()}
 	}
 	claimID := os.Getenv(state.SessionRotationClaimIDEnv)
-	resume, err := w.state.AdmitNewTaskRotationBoundary(os.Getenv(state.ParentActionCodexThreadIDEnv), claimID)
+	threadID := os.Getenv(state.ParentActionCodexThreadIDEnv)
+	resume, err := w.state.AdmitNewTaskRotationBoundary(threadID, claimID)
 	if err != nil {
 		return &WorkerError{Message: err.Error()}
 	}
@@ -36,7 +37,7 @@ func (w *Workflow) admitNewTask() error {
 	}
 	if admitted {
 		if claimID == "" {
-			if err := w.state.StagePendingSessionRotationRecommendationRetirement(); err != nil {
+			if err := w.state.StagePendingSessionRotationRecommendationRetirement(threadID); err != nil {
 				return &WorkerError{Message: err.Error()}
 			}
 		}
