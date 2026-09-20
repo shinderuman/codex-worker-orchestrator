@@ -3,12 +3,13 @@ package app
 import (
 	"errors"
 	"fmt"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskview"
 	"io"
+	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskview"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
 )
 
@@ -18,6 +19,24 @@ type stdinReadyControlEvent struct {
 }
 
 type RunnerFactory func(cfg config.AppConfig, st *state.StateStore, stop *runner.StopController) workflow.ModelRunner
+
+var waitForZaiSelfResume = func(target time.Time, controller *runner.StopController) bool {
+	if controller.StopRequested() {
+		return true
+	}
+	delay := time.Until(target)
+	if delay <= 0 {
+		return controller.StopRequested()
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return controller.StopRequested()
+	case <-controller.Requested():
+		return true
+	}
+}
 
 func emitStdinReadyControlEvent(w io.Writer) error {
 	line, err := taskview.MarshalEventLine(stdinReadyControlEvent{Type: "control", Event: "stdin_ready"})
@@ -136,6 +155,29 @@ func executeWorkflow(cmd Command, cfg config.AppConfig, st *state.StateStore, rf
 	wf := workflow.NewWorkflow(cfg, st, r, stdout)
 	wf.AttachStopController(controller)
 
+	return executeWorkflowWithZaiSelfResume(cmd, wf, st, controller)
+}
+
+func executeWorkflowWithZaiSelfResume(
+	cmd Command,
+	wf *workflow.Workflow,
+	st *state.StateStore,
+	controller *runner.StopController,
+) error {
+	err := executeWorkflowCommand(cmd, wf)
+	for {
+		var limitErr runner.ZaiRateLimitError
+		if !errors.As(err, &limitErr) {
+			return err
+		}
+		if waitErr := waitForZaiFiveHourSelfResume(st, controller, limitErr); waitErr != nil {
+			return waitErr
+		}
+		err = wf.ExecuteResumeWithExecutionMilestones()
+	}
+}
+
+func executeWorkflowCommand(cmd Command, wf *workflow.Workflow) error {
 	switch cmd.Mode {
 	case ModeNewTask:
 		return executeNewTaskCommand(wf, cmd)
@@ -150,4 +192,58 @@ func executeWorkflow(cmd Command, cfg config.AppConfig, st *state.StateStore, rf
 	default:
 		return fmt.Errorf("unsupported command mode")
 	}
+}
+
+func waitForZaiFiveHourSelfResume(
+	st *state.StateStore,
+	controller *runner.StopController,
+	limitErr runner.ZaiRateLimitError,
+) error {
+	if err := validateZaiFiveHourSelfResumeState(st, limitErr); err != nil {
+		return errors.Join(limitErr, fmt.Errorf("five-hour self-resume pre-wait validation failed: %w", err))
+	}
+	available, resumeAtRFC3339 := limitErr.AutoResumeSchedule()
+	if !available {
+		return errors.Join(limitErr, fmt.Errorf("five-hour self-resume reset boundary is unavailable"))
+	}
+	resumeAt, err := time.Parse(time.RFC3339, resumeAtRFC3339)
+	if err != nil {
+		return errors.Join(limitErr, fmt.Errorf("five-hour self-resume boundary is invalid: %w", err))
+	}
+	if waitForZaiSelfResume(resumeAt, controller) {
+		controller.NotifyInterrupted(limitErr.TaskID, "")
+		return &runner.InterruptedCallError{
+			Phase:    limitErr.Phase,
+			TaskID:   limitErr.TaskID,
+			RepoRoot: limitErr.RepoRoot,
+		}
+	}
+	if err := validateZaiFiveHourSelfResumeState(st, limitErr); err != nil {
+		return errors.Join(limitErr, fmt.Errorf("five-hour self-resume wake validation failed: %w", err))
+	}
+	return nil
+}
+
+func validateZaiFiveHourSelfResumeState(st *state.StateStore, limitErr runner.ZaiRateLimitError) error {
+	if st.TaskStatus() != state.TaskStatusRateLimited {
+		return fmt.Errorf("task is no longer rate-limited: %s", st.TaskStatus())
+	}
+	taskID, err := st.TaskID()
+	if err != nil {
+		return fmt.Errorf("task identity is unavailable: %w", err)
+	}
+	if limitErr.TaskID == "" || taskID != limitErr.TaskID {
+		return fmt.Errorf("task identity changed: got %q want %q", taskID, limitErr.TaskID)
+	}
+	checkpoint, err := st.LoadResumeCheckpoint()
+	if err != nil {
+		return fmt.Errorf("resume checkpoint is unavailable: %w", err)
+	}
+	if checkpoint.StopKind != state.ResumeStopRateLimited {
+		return fmt.Errorf("resume checkpoint stop kind changed: %q", checkpoint.StopKind)
+	}
+	if limitErr.Limit.ResetAtRFC3339 == "" || checkpoint.ResetAtRFC3339 != limitErr.Limit.ResetAtRFC3339 {
+		return fmt.Errorf("reset boundary changed: got %q want %q", checkpoint.ResetAtRFC3339, limitErr.Limit.ResetAtRFC3339)
+	}
+	return nil
 }
