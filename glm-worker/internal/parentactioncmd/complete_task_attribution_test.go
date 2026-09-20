@@ -45,8 +45,12 @@ func TestCompleteRejectsPublicationCandidateTaskIdentityMismatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	candidate.TaskID = "different-task"
-	if err := fixture.st.SavePublicationCandidate(candidate); err != nil {
+	candidate.TaskID = "00000000-0000-4000-8000-000000000001"
+	data, err := json.Marshal(candidate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := fixture.st.Write("publication-candidate.json", string(data)); err != nil {
 		t.Fatal(err)
 	}
 
