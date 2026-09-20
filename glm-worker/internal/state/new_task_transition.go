@@ -26,7 +26,12 @@ func (s *StateStore) commitNewTaskCanonicalState(taskID string, afterCanonicalCo
 	if err != nil {
 		return err
 	}
-	snapshot, err := s.captureNewTaskTransitionSnapshotWithAdditional(additionalFiles)
+	var snapshot newTaskTransitionSnapshot
+	if len(additionalFiles) == 0 {
+		snapshot, err = s.captureNewTaskTransitionSnapshot()
+	} else {
+		snapshot, err = s.captureNewTaskTransitionSnapshotWithAdditional(additionalFiles)
+	}
 	if err != nil {
 		return err
 	}
@@ -34,7 +39,13 @@ func (s *StateStore) commitNewTaskCanonicalState(taskID string, afterCanonicalCo
 		return err
 	}
 	rollback := func(cause error) error {
-		if rollbackErr := s.restoreNewTaskTransitionSnapshotWithAdditional(snapshot, additionalFiles); rollbackErr != nil {
+		var rollbackErr error
+		if len(additionalFiles) == 0 {
+			rollbackErr = s.restoreNewTaskTransitionSnapshot(snapshot)
+		} else {
+			rollbackErr = s.restoreNewTaskTransitionSnapshotWithAdditional(snapshot, additionalFiles)
+		}
+		if rollbackErr != nil {
 			return errors.Join(cause, fmt.Errorf("new task transitionをrollbackできません: %w", rollbackErr))
 		}
 		return cause
