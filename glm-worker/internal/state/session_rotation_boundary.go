@@ -2,9 +2,6 @@ package state
 
 import "fmt"
 
-// AdmitNewTaskRotationBoundary separates an unclaimed rotation recommendation
-// from the machine-owned claim/bind/start transaction. Pending recommendations
-// do not block ordinary new-task admission; claimed or bound transactions do.
 func (s *StateStore) AdmitNewTaskRotationBoundary(callerThreadID, claimID string) (bool, error) {
 	if claimID != "" {
 		return s.AdmitNewTaskRotation(callerThreadID, claimID)
@@ -40,8 +37,6 @@ func (s *StateStore) AdmitNewTaskRotationBoundary(callerThreadID, claimID string
 	return false, nil
 }
 
-// RetirePendingSessionRotationRecommendations records an admitted ordinary
-// start by removing unclaimed rotation directives while preserving evaluation history.
 func (s *StateStore) RetirePendingSessionRotationRecommendations() error {
 	rotations, err := s.IncompleteSessionRotations()
 	if err != nil {
