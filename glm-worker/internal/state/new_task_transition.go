@@ -26,12 +26,7 @@ func (s *StateStore) commitNewTaskCanonicalState(taskID string, afterCanonicalCo
 	if err != nil {
 		return err
 	}
-	var snapshot newTaskTransitionSnapshot
-	if len(additionalFiles) == 0 {
-		snapshot, err = s.captureNewTaskTransitionSnapshot()
-	} else {
-		snapshot, err = s.captureNewTaskTransitionSnapshotWithAdditional(additionalFiles)
-	}
+	snapshot, err := s.captureNewTaskTransitionSnapshotForFiles(additionalFiles)
 	if err != nil {
 		return err
 	}
@@ -39,12 +34,7 @@ func (s *StateStore) commitNewTaskCanonicalState(taskID string, afterCanonicalCo
 		return err
 	}
 	rollback := func(cause error) error {
-		var rollbackErr error
-		if len(additionalFiles) == 0 {
-			rollbackErr = s.restoreNewTaskTransitionSnapshot(snapshot)
-		} else {
-			rollbackErr = s.restoreNewTaskTransitionSnapshotWithAdditional(snapshot, additionalFiles)
-		}
+		rollbackErr := s.restoreNewTaskTransitionSnapshotForFiles(snapshot, additionalFiles)
 		if rollbackErr != nil {
 			return errors.Join(cause, fmt.Errorf("new task transitionをrollbackできません: %w", rollbackErr))
 		}
@@ -96,6 +86,13 @@ func (s *StateStore) captureNewTaskTransitionSnapshot() (newTaskTransitionSnapsh
 	return s.captureNewTaskTransitionSnapshotWithAdditional(nil)
 }
 
+func (s *StateStore) captureNewTaskTransitionSnapshotForFiles(additional []string) (newTaskTransitionSnapshot, error) {
+	if len(additional) == 0 {
+		return s.captureNewTaskTransitionSnapshot()
+	}
+	return s.captureNewTaskTransitionSnapshotWithAdditional(additional)
+}
+
 func (s *StateStore) captureNewTaskTransitionSnapshotWithAdditional(additional []string) (newTaskTransitionSnapshot, error) {
 	snapshot := make(newTaskTransitionSnapshot)
 	for _, name := range newTaskTransitionSnapshotFileNames(additional) {
@@ -114,6 +111,13 @@ func (s *StateStore) captureNewTaskTransitionSnapshotWithAdditional(additional [
 
 func (s *StateStore) restoreNewTaskTransitionSnapshot(snapshot newTaskTransitionSnapshot) error {
 	return s.restoreNewTaskTransitionSnapshotWithAdditional(snapshot, nil)
+}
+
+func (s *StateStore) restoreNewTaskTransitionSnapshotForFiles(snapshot newTaskTransitionSnapshot, additional []string) error {
+	if len(additional) == 0 {
+		return s.restoreNewTaskTransitionSnapshot(snapshot)
+	}
+	return s.restoreNewTaskTransitionSnapshotWithAdditional(snapshot, additional)
 }
 
 func (s *StateStore) restoreNewTaskTransitionSnapshotWithAdditional(snapshot newTaskTransitionSnapshot, additional []string) error {
