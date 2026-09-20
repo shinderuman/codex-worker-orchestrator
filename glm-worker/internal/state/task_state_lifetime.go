@@ -49,6 +49,7 @@ var taskBoundStatePolicies = []taskBoundStatePolicy{
 	{name: guardRepairStateFile, lifetime: taskBoundStateFreshTaskClear},
 	{name: runtimeInstallEvidenceFile, lifetime: taskBoundStateFreshTaskClear},
 	{name: publicationCandidateStateFile, lifetime: taskBoundStateFreshTaskClear},
+	{name: publicationReopenLineageStateFile, lifetime: taskBoundStateFreshTaskClear},
 	{name: QualitySurfaceBaselineStateFile, lifetime: taskBoundStateFreshTaskClear},
 	{name: RepositoryHarnessActivationStateFile, lifetime: taskBoundStateFreshTaskClear},
 	{name: InstructionSurfaceBaselineStateFile, lifetime: taskBoundStateTaskIDBound},
