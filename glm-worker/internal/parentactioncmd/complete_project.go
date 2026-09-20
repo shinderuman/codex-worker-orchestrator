@@ -110,12 +110,29 @@ func verifyCompletionReopenLineage(repoRoot string, st *state.StateStore, lifecy
 	if err != nil {
 		return fmt.Errorf("lifecycle task %s was not tracked at publication base and reopen lineage is unavailable: %w", lifecycleTask, err)
 	}
+	if err := verifyCompletionReopenLineageIdentity(lineage, lifecycleTask, taskID); err != nil {
+		return err
+	}
+	if err := verifyCompletionReopenLineageTransition(repoRoot, lineage, lifecycleTask); err != nil {
+		return err
+	}
+	if _, err := gitFinalizationOutput(repoRoot, "merge-base", "--is-ancestor", lineage.CommitOID, candidate.BaseHead); err != nil {
+		return fmt.Errorf("publication candidate base %s does not descend from reopen lineage commit %s", candidate.BaseHead, lineage.CommitOID)
+	}
+	return nil
+}
+
+func verifyCompletionReopenLineageIdentity(lineage state.PublicationReopenLineage, lifecycleTask, taskID string) error {
 	if lineage.TaskID != taskID {
 		return fmt.Errorf("publication reopen lineage task identity %s does not match current task identity %s", lineage.TaskID, taskID)
 	}
 	if lineage.TaskPath != lifecycleTask {
 		return fmt.Errorf("publication reopen lineage task path %s does not match lifecycle task %s", lineage.TaskPath, lifecycleTask)
 	}
+	return nil
+}
+
+func verifyCompletionReopenLineageTransition(repoRoot string, lineage state.PublicationReopenLineage, lifecycleTask string) error {
 	parents, err := gitFinalizationOutput(repoRoot, "rev-list", "--parents", "-n", "1", lineage.CommitOID)
 	if err != nil {
 		return fmt.Errorf("publication reopen lineage commit %s cannot be read: %w", lineage.CommitOID, err)
@@ -137,9 +154,6 @@ func verifyCompletionReopenLineage(repoRoot string, st *state.StateStore, lifecy
 	}
 	if strings.TrimSpace(lineageCommitEntry) != "" {
 		return fmt.Errorf("lifecycle task %s remains tracked in reopen lineage commit", lifecycleTask)
-	}
-	if _, err := gitFinalizationOutput(repoRoot, "merge-base", "--is-ancestor", lineage.CommitOID, candidate.BaseHead); err != nil {
-		return fmt.Errorf("publication candidate base %s does not descend from reopen lineage commit %s", candidate.BaseHead, lineage.CommitOID)
 	}
 	return nil
 }
