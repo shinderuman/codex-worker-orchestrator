@@ -14,19 +14,19 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskcontract"
 )
 
-const (
-	actionRecordDefectFinding = "record-defect-finding"
-	actionBindDefectTask      = "bind-defect-task"
-	defectTaskOption          = "--task"
-)
-
 type defectRegistrationOutput struct {
-	Status                   string                           `json:"status"`
+	Status                   string                            `json:"status"`
 	Registration             *state.PendingDefectRegistration `json:"registration,omitempty"`
 	RequiredAction           state.ParentAction               `json:"required_action"`
 	AllowedActions           []state.ParentAction             `json:"allowed_actions"`
 	RequiredActionParameters map[string]string                `json:"required_action_parameters,omitempty"`
 }
+
+const (
+	actionRecordDefectFinding = "record-defect-finding"
+	actionBindDefectTask      = "bind-defect-task"
+	defectTaskOption          = "--task"
+)
 
 func executeDefectRegistrationAction(cfg config.AppConfig, args []string, stdout io.Writer) error {
 	action, taskPath, err := parseDefectRegistrationArgs(args)
@@ -157,7 +157,7 @@ func defectTaskBindingReady(repoRoot, sourceActive, taskPath string) (bool, erro
 		return false, err
 	}
 	if active != sourceActive {
-		return false, fmt.Errorf("Plan ACTIVE changed from defect finding source %s to %s", sourceActive, active)
+		return false, fmt.Errorf("plan ACTIVE changed from defect finding source %s to %s", sourceActive, active)
 	}
 	next, blocked, err := schedule.NonActiveEntries()
 	if err != nil {
