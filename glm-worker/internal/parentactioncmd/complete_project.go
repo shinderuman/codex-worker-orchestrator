@@ -79,6 +79,13 @@ func verifyCompletionHandoverOwner(repoRoot string, st *state.StateStore, lifecy
 	if err != nil {
 		return fmt.Errorf("publication candidate unavailable for lifecycle owner verification: %w", err)
 	}
+	taskID, err := st.TaskID()
+	if err != nil {
+		return fmt.Errorf("current task identity unavailable for lifecycle owner verification: %w", err)
+	}
+	if candidate.TaskID != taskID {
+		return fmt.Errorf("publication candidate task identity %s does not match current task identity %s", candidate.TaskID, taskID)
+	}
 	baseEntry, err := gitFinalizationOutput(repoRoot, "ls-tree", candidate.BaseHead, "--", lifecycleTask)
 	if err != nil {
 		return fmt.Errorf("lifecycle task %s cannot be read from publication base: %w", lifecycleTask, err)
