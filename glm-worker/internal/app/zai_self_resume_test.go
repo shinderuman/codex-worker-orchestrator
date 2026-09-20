@@ -108,7 +108,7 @@ func TestWaitForZaiFiveHourSelfResumeInterruptKeepsDurableStop(t *testing.T) {
 
 func TestWaitForZaiFiveHourSelfResumeRejectsStaleResetBoundary(t *testing.T) {
 	st, limitErr := prepareZaiSelfResumeStop(t)
-	stale := time.Now().UTC().Add(-time.Minute).Truncate(time.Second).Format(time.RFC3339)
+	stale := time.Now().UTC().Add(-5 * time.Minute).Truncate(time.Second).Format(time.RFC3339)
 	checkpoint, err := st.LoadResumeCheckpoint()
 	if err != nil {
 		t.Fatal(err)
