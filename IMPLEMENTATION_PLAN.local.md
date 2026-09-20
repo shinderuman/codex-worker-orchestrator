@@ -8,11 +8,10 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/machine-enforced-control-authority-legitimacy.md`
+- `IMPLEMENTATION_TASKS/publication-ref-guard-local-git-scope.md`
 
 ## NEXT（優先順）
 
-- `IMPLEMENTATION_TASKS/publication-ref-guard-local-git-scope.md`
 - `IMPLEMENTATION_TASKS/forward-only-compatibility-regression.md`
 - `IMPLEMENTATION_TASKS/machine-negative-result-authority.md`
 - `IMPLEMENTATION_TASKS/canonical-authority-bootstrap-enforcement.md`
