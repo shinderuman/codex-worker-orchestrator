@@ -79,7 +79,6 @@ EOF_FAKE_GIT
 	fi
 }
 
-# Fresh ownership: install, refresh from committed source, and retire to absent baseline.
 repo="$tmp/absent"
 new_repo "$repo"
 sh "$helper" install "$repo"
@@ -99,7 +98,6 @@ fi
 assert_no_state "$repo"
 test ! -e "$managed"
 
-# All hooks are staged before activation. A late staging failure leaves the old active snapshot byte-for-byte intact.
 repo="$tmp/atomic-refresh"
 new_repo "$repo"
 sh "$helper" install "$repo"
@@ -118,7 +116,6 @@ for hook in post-merge pre-commit reference-transaction pre-push; do
 	test -x "$managed/$hook"
 done
 
-# A first install from detached HEAD must activate guards instead of reporting success without ownership.
 repo="$tmp/detached-first"
 new_repo "$repo"
 git -C "$repo" checkout -q --detach HEAD
@@ -126,7 +123,6 @@ sh "$helper" install "$repo" >"$tmp/detached-first.stdout" 2>"$tmp/detached-firs
 assert_managed_hooks "$repo"
 grep -Fq 'enabled installer-owned snapshot hooks' "$tmp/detached-first.stdout"
 
-# Existing installer ownership also refreshes from the detached candidate HEAD.
 repo="$tmp/detached-refresh"
 new_repo "$repo"
 sh "$helper" install "$repo"
@@ -138,7 +134,6 @@ git -C "$repo" checkout -q --detach HEAD
 sh "$helper" install "$repo"
 assert_managed_hooks "$repo"
 
-# Fresh activation records pending ownership before core.hooksPath mutation and can recover after real git config failure.
 repo="$tmp/interrupted"
 new_repo "$repo"
 managed=$(managed_hooks_path "$repo")
@@ -154,7 +149,6 @@ assert_managed_hooks "$repo"
 test "$(cat "$state")" = "version=2 baseline=absent value=$managed"
 grep -Fq 'recovered interrupted installer-owned snapshot hooks activation' "$tmp/interrupted.stdout"
 
-# Preexisting tracked .githooks are adopted only when content and executable mode exactly match HEAD; retire restores the baseline.
 repo="$tmp/adopted"
 new_repo "$repo"
 git -C "$repo" config --local core.hooksPath .githooks
@@ -170,7 +164,6 @@ assert_no_state "$repo"
 test ! -e "$managed"
 grep -Fq 'restored preexisting .githooks' "$tmp/adopted-retire.stdout"
 
-# An actual config failure during adoption leaves a retryable adopted-pending state with the original .githooks baseline intact.
 repo="$tmp/adoption-interrupted"
 new_repo "$repo"
 git -C "$repo" config --local core.hooksPath .githooks
@@ -186,7 +179,6 @@ grep -Fq 'completed preexisting .githooks adoption' "$tmp/adoption-interrupted.s
 sh "$helper" retire "$repo"
 test "$(git -C "$repo" config --local --get-all core.hooksPath)" = .githooks
 
-# Existing version=1 installer ownership migrates through an explicit retryable source state and keeps the historical absent baseline.
 repo="$tmp/legacy"
 new_repo "$repo"
 git -C "$repo" config --local core.hooksPath .githooks
@@ -204,7 +196,6 @@ if git -C "$repo" config --local --get-all core.hooksPath >/dev/null 2>&1; then
 	exit 1
 fi
 
-# A config failure after legacy migration intent remains recoverable instead of self-conflicting on retry.
 repo="$tmp/legacy-migration-pending"
 new_repo "$repo"
 git -C "$repo" config --local core.hooksPath .githooks
@@ -217,7 +208,6 @@ assert_managed_hooks "$repo"
 test "$(cat "$state")" = "version=2 baseline=absent value=$managed"
 grep -Fq 'recovered legacy installer-owned hook migration' "$tmp/legacy-migration-pending.stdout"
 
-# Content mismatch must not be claimed as the known tracked legacy hooks.
 repo="$tmp/preexisting-content-mismatch"
 new_repo "$repo"
 git -C "$repo" config --local core.hooksPath .githooks
@@ -232,7 +222,6 @@ assert_no_state "$repo"
 test ! -e "$(managed_hooks_path "$repo")"
 grep -Fq 'cannot be safely adopted' "$tmp/content-mismatch.stderr"
 
-# Tracked non-executable mode also blocks adoption even when content matches.
 repo="$tmp/preexisting-mode-mismatch"
 new_repo "$repo"
 chmod 644 "$repo/.githooks/pre-push"
@@ -246,7 +235,6 @@ fi
 test "$(git -C "$repo" config --local --get-all core.hooksPath)" = .githooks
 assert_no_state "$repo"
 
-# Unrelated external hook owners remain untouched and make install fail closed instead of silently succeeding without guards.
 repo="$tmp/preexisting-other"
 new_repo "$repo"
 git -C "$repo" config --local core.hooksPath .external-hooks
@@ -260,7 +248,6 @@ grep -Fq 'preexisting core.hooksPath cannot be replaced safely' "$tmp/preexistin
 sh "$helper" retire "$repo"
 test "$(git -C "$repo" config --local --get-all core.hooksPath)" = .external-hooks
 
-# If ownership was established and core.hooksPath later changes externally, install fails closed but retire preserves the external owner.
 repo="$tmp/external-change"
 new_repo "$repo"
 sh "$helper" install "$repo"
@@ -280,7 +267,6 @@ test "$(git -C "$repo" config --local --get-all core.hooksPath)" = .changed-exte
 assert_no_state "$repo"
 test ! -e "$managed"
 
-# A collision in the installer-owned snapshot namespace without ownership state is not claimed.
 repo="$tmp/unclaimed-managed-path"
 new_repo "$repo"
 managed=$(managed_hooks_path "$repo")
@@ -294,7 +280,6 @@ grep -Fq 'managed snapshot path exists without installer ownership state' "$tmp/
 test "$(cat "$managed/external")" = sentinel
 assert_no_state "$repo"
 
-# Inherited Git repository environment must not redirect ownership operations.
 repo="$tmp/inherited-git-dir"
 other_repo="$tmp/inherited-other"
 new_repo "$repo"
@@ -307,7 +292,6 @@ if git -C "$other_repo" config --local --get-all core.hooksPath >/dev/null 2>&1;
 	exit 1
 fi
 
-# Corrupt ownership evidence always fails closed.
 repo="$tmp/corrupt-state"
 new_repo "$repo"
 state=$(state_path "$repo")
