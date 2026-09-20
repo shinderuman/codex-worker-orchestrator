@@ -69,12 +69,32 @@ run_install() {
 		CODEX_HOME="$home/.codex" \
 		GLM_WORKER_BIN_DIR="$home/.local/bin" \
 		GLM_WORKER_HOME="$home/.glm-worker" \
+		CLAUDE_CONFIG_DIR='' \
 		CLAUDE_SETTINGS_FILE="$home/.claude/settings.json" \
 		XDG_CONFIG_HOME="$home/.config" \
 		env -u QUALITY_TOOLS_BIN_DIR "$repo/install.sh"
 }
 
-run_install
+ambient_claude_dir="$tmp/ambient-claude"
+ambient_settings_file="$tmp/ambient-settings.json"
+mkdir -p "$ambient_claude_dir"
+printf '%s\n' '{"ambient":"config-dir"}' >"$ambient_claude_dir/settings.json"
+printf '%s\n' '{"ambient":"settings-file"}' >"$ambient_settings_file"
+ambient_config_hash=$(shasum -a 256 "$ambient_claude_dir/settings.json")
+ambient_settings_hash=$(shasum -a 256 "$ambient_settings_file")
+(
+	export CLAUDE_CONFIG_DIR="$ambient_claude_dir"
+	export CLAUDE_SETTINGS_FILE="$ambient_settings_file"
+	run_install
+)
+if [ "$(shasum -a 256 "$ambient_claude_dir/settings.json")" != "$ambient_config_hash" ]; then
+	printf '%s\n' 'ambient CLAUDE_CONFIG_DIR settings changed during install smoke' >&2
+	exit 1
+fi
+if [ "$(shasum -a 256 "$ambient_settings_file")" != "$ambient_settings_hash" ]; then
+	printf '%s\n' 'ambient CLAUDE_SETTINGS_FILE changed during install smoke' >&2
+	exit 1
+fi
 for binary in glm-worker glm-parent-action glm-codex-context commentlint harnesslint; do
 	test -x "$home/.local/bin/$binary"
 done
