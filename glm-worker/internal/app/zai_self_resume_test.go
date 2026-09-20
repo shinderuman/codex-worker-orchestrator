@@ -106,6 +106,37 @@ func TestWaitForZaiFiveHourSelfResumeInterruptKeepsDurableStop(t *testing.T) {
 	}
 }
 
+func TestWaitForZaiFiveHourSelfResumeRejectsStaleResetBoundary(t *testing.T) {
+	st, limitErr := prepareZaiSelfResumeStop(t)
+	stale := time.Now().UTC().Add(-time.Minute).Truncate(time.Second).Format(time.RFC3339)
+	checkpoint, err := st.LoadResumeCheckpoint()
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkpoint.ResetAtRFC3339 = stale
+	if err := st.SaveResumeCheckpoint(checkpoint); err != nil {
+		t.Fatal(err)
+	}
+	limitErr.Limit.ResetAtRFC3339 = stale
+	controller := runner.NewStopController()
+	waitCalled := false
+	replaceZaiSelfResumeWait(t, func(_ time.Time, _ *runner.StopController) bool {
+		waitCalled = true
+		return false
+	})
+
+	err = waitForZaiFiveHourSelfResume(st, controller, limitErr)
+	if err == nil || !strings.Contains(err.Error(), "reset boundary is not in the future") {
+		t.Fatalf("stale reset boundary error = %v", err)
+	}
+	if waitCalled {
+		t.Fatal("stale reset boundary reached wait path")
+	}
+	if got := st.TaskStatus(); got != state.TaskStatusRateLimited {
+		t.Fatalf("stale reset rejection changed durable stop status to %s", got)
+	}
+}
+
 func TestWaitForZaiFiveHourSelfResumeFailsClosedWhenWakeBindingChanges(t *testing.T) {
 	st, limitErr := prepareZaiSelfResumeStop(t)
 	controller := runner.NewStopController()
