@@ -1,6 +1,8 @@
 package app
 
 import (
+	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -10,8 +12,18 @@ import (
 )
 
 func TestParentHandoffIncludesPublicationSequenceSection(t *testing.T) {
+	repoRoot := t.TempDir()
+	mustRunPublicationSequenceTestGit(t, repoRoot, "init", "-q", "-b", "main")
+	mustRunPublicationSequenceTestGit(t, repoRoot, "config", "user.name", "publication test")
+	mustRunPublicationSequenceTestGit(t, repoRoot, "config", "user.email", "publication@example.invalid")
+	if err := os.WriteFile(filepath.Join(repoRoot, "README.md"), []byte("fixture\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mustRunPublicationSequenceTestGit(t, repoRoot, "add", "README.md")
+	mustRunPublicationSequenceTestGit(t, repoRoot, "commit", "-q", "-m", "initial")
+
 	cfg := config.AppConfig{
-		RepoRoot:  t.TempDir(),
+		RepoRoot:  repoRoot,
 		RepoHash:  "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 		StateBase: filepath.Join(t.TempDir(), "sessions"),
 	}
@@ -33,6 +45,9 @@ func TestParentHandoffIncludesPublicationSequenceSection(t *testing.T) {
 	if output.Version != parentHandoffVersion {
 		t.Fatalf("handoff version = %d", output.Version)
 	}
+	if !output.Consistent {
+		t.Fatalf("handoff unexpectedly inconsistent: %#v", output)
+	}
 	if output.Publication == nil {
 		t.Fatalf("handoff lacks publication section: %#v", output)
 	}
@@ -41,9 +56,16 @@ func TestParentHandoffIncludesPublicationSequenceSection(t *testing.T) {
 		t.Fatalf("publication section = %#v", output.Publication)
 	}
 
-	output.Consistent = false
 	markHandoffInconsistent(&output, "probe")
 	if output.Publication != nil {
 		t.Fatalf("inconsistent handoff kept publication section: %#v", output.Publication)
+	}
+}
+
+func mustRunPublicationSequenceTestGit(t *testing.T, repoRoot string, args ...string) {
+	t.Helper()
+	command := exec.Command("git", append([]string{"-C", repoRoot}, args...)...)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("git %v failed: %v: %s", args, err, output)
 	}
 }
