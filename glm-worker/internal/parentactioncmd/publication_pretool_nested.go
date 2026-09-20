@@ -177,19 +177,10 @@ func (scanner *publicationExecutableSubstitutionScanner) scan() ([]string, error
 		}
 		if ch == '$' && scanner.index+1 < len(scanner.command) && scanner.command[scanner.index+1] == '(' {
 			if scanner.index+2 < len(scanner.command) && scanner.command[scanner.index+2] == '(' {
-				body, end, err := publicationBalancedBody(scanner.command, scanner.index+1, 2)
-				if err != nil {
-					return nil, err
-				}
-				nested, err := publicationExecutableSubstitutions(body)
-				if err != nil {
-					return nil, err
-				}
-				bodies = append(bodies, nested...)
-				scanner.index = end + 1
+				scanner.index += 3
 				continue
 			}
-			body, end, err := publicationBalancedBody(scanner.command, scanner.index+1, 1)
+			body, end, err := publicationBalancedBody(scanner.command, scanner.index+1)
 			if err != nil {
 				return nil, err
 			}
@@ -198,7 +189,7 @@ func (scanner *publicationExecutableSubstitutionScanner) scan() ([]string, error
 			continue
 		}
 		if scanner.quote == 0 && (ch == '<' || ch == '>') && scanner.index+1 < len(scanner.command) && scanner.command[scanner.index+1] == '(' {
-			body, end, err := publicationBalancedBody(scanner.command, scanner.index, 1)
+			body, end, err := publicationBalancedBody(scanner.command, scanner.index)
 			if err != nil {
 				return nil, err
 			}
@@ -211,13 +202,9 @@ func (scanner *publicationExecutableSubstitutionScanner) scan() ([]string, error
 	return bodies, nil
 }
 
-func publicationBalancedBody(command string, marker int, openingDepth int) (string, int, error) {
-	open := marker + 1
-	if openingDepth == 2 {
-		open++
-	}
-	start := open + 1
-	depth := openingDepth
+func publicationBalancedBody(command string, marker int) (string, int, error) {
+	start := marker + 2
+	depth := 1
 	var quote byte
 	for index := start; index < len(command); index++ {
 		ch := command[index]
@@ -252,14 +239,7 @@ func publicationBalancedBody(command string, marker int, openingDepth int) (stri
 		case ')':
 			depth--
 			if depth == 0 {
-				end := index
-				if openingDepth == 2 {
-					if index+1 >= len(command) || command[index+1] != ')' {
-						return "", 0, fmt.Errorf("unterminated arithmetic expansion")
-					}
-					end++
-				}
-				return command[start:index], end, nil
+				return command[start:index], index, nil
 			}
 		}
 	}
