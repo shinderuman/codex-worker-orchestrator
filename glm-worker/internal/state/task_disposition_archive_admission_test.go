@@ -38,10 +38,14 @@ func TestValidateResetDispositionForNewTaskRejectsMissingArchiveEvidence(t *test
 
 func TestValidateResetDispositionForNewTaskRejectsUnprovenArchiveEvidence(t *testing.T) {
 	st, taskID := newResetDispositionArchiveAdmissionFixture(t)
+	otherTaskID, err := NewUUID()
+	if err != nil {
+		t.Fatal(err)
+	}
 	data, err := json.Marshal(taskStatsArchiveIdentity{
-		Version:        taskStatsVersion - 1,
-		SchemaRevision: 0,
-		TaskID:         taskID,
+		Version:        taskStatsVersion,
+		SchemaRevision: taskStatsSchemaRevision,
+		TaskID:         otherTaskID,
 		Status:         TaskStatusAwaitingParentCompletion,
 	})
 	if err != nil {
