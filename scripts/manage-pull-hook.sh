@@ -101,7 +101,14 @@ install_managed_hooks() {
 	staging_hooks_path="$managed_hooks_path.stage.$$"
 	backup_hooks_path="$managed_hooks_path.backup.$$"
 	cleanup_snapshot_work() {
-		rm -rf "$staging_hooks_path" "$backup_hooks_path"
+		if [ -e "$backup_hooks_path" ] || [ -L "$backup_hooks_path" ]; then
+			if [ ! -e "$managed_hooks_path" ] && [ ! -L "$managed_hooks_path" ]; then
+				mv "$backup_hooks_path" "$managed_hooks_path" || return 1
+			else
+				rm -rf "$backup_hooks_path"
+			fi
+		fi
+		rm -rf "$staging_hooks_path"
 	}
 	trap 'cleanup_snapshot_work' EXIT HUP INT TERM
 	rm -rf "$staging_hooks_path" "$backup_hooks_path"
