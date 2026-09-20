@@ -20,10 +20,14 @@ type reopenOutput struct {
 const reopenUsage = "usage: glm-parent-action reopen"
 
 func executeParentLifecycleAction(cfg config.AppConfig, args []string, stdout io.Writer) error {
-	if args[0] == actionReopen {
+	switch args[0] {
+	case actionRecordPublicationFinding:
+		return executeRecordPublicationFinding(cfg, args, stdout)
+	case actionReopen:
 		return executeReopen(cfg, args, stdout)
+	default:
+		return executeNoGo(cfg, args, stdout)
 	}
-	return executeNoGo(cfg, args, stdout)
 }
 
 func executeReopen(cfg config.AppConfig, args []string, stdout io.Writer) error {
