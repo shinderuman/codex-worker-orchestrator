@@ -91,7 +91,7 @@ func TestParentHandoffPassRequiresAcceptThenBecomesNoAction(t *testing.T) {
 	if !output.Consistent || output.RequiredAction == nil || *output.RequiredAction != string(state.ParentActionComplete) || output.ParentReviewOpen != nil {
 		t.Fatalf("awaiting handoff = %#v", output)
 	}
-	if len(output.AllowedActions) != 3 || output.AllowedActions[0] != string(state.ParentActionComplete) || output.AllowedActions[1] != string(state.ParentActionInstall) || output.AllowedActions[2] != string(state.ParentActionReopen) {
+	if len(output.AllowedActions) != 2 || output.AllowedActions[0] != string(state.ParentActionComplete) || output.AllowedActions[1] != string(state.ParentActionInstall) {
 		t.Fatalf("awaiting allowed actions = %#v", output.AllowedActions)
 	}
 
@@ -245,7 +245,7 @@ func TestParentHandoffRecoveryIncludesQualityGateDiagnostics(t *testing.T) {
 		Stage:              state.ResumeStageWorker,
 		Phase:              "worker-new",
 		Role:               state.WorkerRole,
-		Model:              "glm-5.3",
+		Model:              "opus",
 		StopKind:           state.ResumeStopQualityGate,
 		QualityGateFailure: "quality tool version mismatch: golangci-lint=2.6.0, required=2.7.0",
 		CompletedResult:    &completed,
