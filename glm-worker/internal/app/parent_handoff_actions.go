@@ -97,8 +97,7 @@ func parentActionSpecs(actions []string, requiredParameters map[string]string) m
 }
 
 func parentActionSpec(action string, requiredParameters map[string]string) (parentHandoffActionSpec, bool) {
-	switch parentaction.Action(action) {
-	case parentaction.ActionStartMilestones, parentaction.ActionReviseMilestones:
+	if parentaction.Action(action) == parentaction.ActionReviseMilestones {
 		return parentHandoffActionSpec{
 			Kind:           "staged",
 			PrepareCommand: []string{"glm-parent-action", "prepare", action},
