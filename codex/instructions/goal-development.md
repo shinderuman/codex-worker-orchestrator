@@ -26,7 +26,7 @@ Plan管理repositoryで`IMPLEMENTATION_PLAN.local.md`のoptional `## GOAL`節を
 
 ## 停止・再開
 
-- rate limit、provider停止、Codex 5h limit、session終了、compaction後は既存の`glm-auto-resume.md`、`codex-auto-resume.md`、`IMPLEMENTATION_RULES.md`の再読contractで同じprojectを継続する
+- GLM provider rate limit・provider停止は`glm-execution.md`、Codex 5h limitは`codex-auto-resume.md`、session終了・compaction後は`IMPLEMENTATION_RULES.md`の再読contractを使って同じprojectを継続する
 - wake後・再開時はRules、Plan、GOAL節、ACTIVE task fileを現在checkoutから再読し、conversation memoryを正としない。projectの進行状態は`--project-state`投影で再構成できる
 
 ## completion
