@@ -132,7 +132,7 @@ func publicationShellCommandIndex(segment []publicationShellWord) (int, bool, bo
 
 func publicationShellControlPrefix(value string) bool {
 	switch value {
-	case "!", "if", "then", "elif", "else", "while", "until", "do", "time", "coproc":
+	case "!", "if", "then", "elif", "else", "while", "until", "do":
 		return true
 	}
 	return false
@@ -180,8 +180,31 @@ func publicationShellWrapperNext(segment []publicationShellWord, index int) (int
 	case "env":
 		next, unavailable := publicationEnvWrapperNext(segment, index+1)
 		return next, true, unavailable
+	case "time":
+		next, unavailable := publicationTimeWrapperNext(segment, index+1)
+		return next, true, unavailable
+	case "coproc":
+		return index, true, true
 	}
 	return index, false, false
+}
+
+func publicationTimeWrapperNext(segment []publicationShellWord, index int) (int, bool) {
+	for index < len(segment) {
+		word := segment[index]
+		if word.Dynamic {
+			return index, true
+		}
+		if word.Value == "-p" {
+			index++
+			continue
+		}
+		if strings.HasPrefix(word.Value, "-") {
+			return index, true
+		}
+		return index, false
+	}
+	return index, false
 }
 
 func publicationCommandWrapperNext(segment []publicationShellWord, index int) (int, bool) {
