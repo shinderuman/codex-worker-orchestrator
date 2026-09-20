@@ -64,4 +64,8 @@ publication promotionのmachine guardを維持したまま、通常のローカ�
 
 ## Dependencies
 
+none
+
+## Fulfilled dependencies
+
 - `IMPLEMENTATION_TASKS/machine-enforced-control-authority-legitimacy.md`
