@@ -26,6 +26,17 @@ type publicationShellWord struct {
 	Dynamic bool
 }
 
+type publicationShellLexer struct {
+	command     string
+	segments    [][]publicationShellWord
+	current     []publicationShellWord
+	value       strings.Builder
+	quote       byte
+	wordStarted bool
+	dynamic     bool
+	index       int
+}
+
 const (
 	publicationPreToolUseFlag              = "--pre-tool-use"
 	publicationGitGuardBypassCode          = "publication_git_guard_bypass"
@@ -49,11 +60,6 @@ func runPublicationPreToolUse(payload string, stdout io.Writer) error {
 		return nil
 	}
 	return json.NewEncoder(stdout).Encode(publicationPreToolUseOutput{Decision: "block", Code: code, Reason: reason})
-}
-
-func publicationPreToolUseBlockReason(command string) string {
-	_, reason := publicationPreToolUseBlockDecision(command)
-	return reason
 }
 
 func publicationPreToolUseBlockDecision(command string) (string, string) {
@@ -85,8 +91,7 @@ func publicationClassifySegment(segment []publicationShellWord, depth int) (stri
 	if command.Dynamic {
 		return publicationGitClassificationCode, publicationGitClassificationReason
 	}
-	executable := filepath.Base(command.Value)
-	switch executable {
+	switch filepath.Base(command.Value) {
 	case "sh", "bash", "zsh":
 		return publicationClassifyInterpreter(segment[commandIndex+1:], depth+1)
 	case "eval":
@@ -148,8 +153,7 @@ func publicationClassifyGit(segment []publicationShellWord, commandIndex int) (s
 			return publicationGitClassificationCode, publicationGitClassificationReason
 		}
 	}
-	argv := segment[commandIndex+1:]
-	if publicationGitNoVerify(argv) {
+	if publicationGitNoVerify(segment[commandIndex+1:]) {
 		return publicationGitGuardBypassCode, publicationGitNoVerifyReason
 	}
 	if publicationGitHooksPathBypass(segment) {
@@ -159,112 +163,145 @@ func publicationClassifyGit(segment []publicationShellWord, commandIndex int) (s
 }
 
 func publicationShellSegments(command string) ([][]publicationShellWord, error) {
-	segments := make([][]publicationShellWord, 0, 1)
-	current := make([]publicationShellWord, 0, 4)
-	var value strings.Builder
-	var quote byte
-	wordStarted := false
-	dynamic := false
+	lexer := publicationShellLexer{command: command, segments: make([][]publicationShellWord, 0, 1)}
+	if err := lexer.scan(); err != nil {
+		return nil, err
+	}
+	lexer.flushSegment()
+	return lexer.segments, nil
+}
 
-	flushWord := func() {
-		if !wordStarted {
-			return
+func (lexer *publicationShellLexer) scan() error {
+	for lexer.index < len(lexer.command) {
+		ch := lexer.command[lexer.index]
+		var err error
+		if lexer.quote == 0 {
+			err = lexer.scanUnquoted(ch)
+		} else {
+			err = lexer.scanQuoted(ch)
 		}
-		current = append(current, publicationShellWord{Value: value.String(), Dynamic: dynamic})
-		value.Reset()
-		wordStarted = false
-		dynamic = false
-	}
-	flushSegment := func() {
-		flushWord()
-		if len(current) != 0 {
-			segments = append(segments, current)
-			current = nil
+		if err != nil {
+			return err
 		}
+		lexer.index++
 	}
+	if lexer.quote != 0 {
+		return fmt.Errorf("unterminated quote")
+	}
+	return nil
+}
 
-	for index := 0; index < len(command); index++ {
-		ch := command[index]
-		switch quote {
-		case '\'':
-			if ch == '\'' {
-				quote = 0
-				continue
-			}
-			value.WriteByte(ch)
-			continue
-		case '"':
-			switch ch {
-			case '"':
-				quote = 0
-			case '`':
-				return nil, fmt.Errorf("dynamic command substitution")
-			case '$':
-				if index+1 < len(command) && command[index+1] == '(' {
-					return nil, fmt.Errorf("dynamic command substitution")
-				}
-				dynamic = true
-				wordStarted = true
-				value.WriteByte(ch)
-			case '\\':
-				if index+1 >= len(command) {
-					return nil, fmt.Errorf("unterminated escape")
-				}
-				index++
-				value.WriteByte(command[index])
-			default:
-				value.WriteByte(ch)
-			}
-			continue
-		}
+func (lexer *publicationShellLexer) scanQuoted(ch byte) error {
+	if lexer.quote == '\'' {
+		return lexer.scanSingleQuoted(ch)
+	}
+	return lexer.scanDoubleQuoted(ch)
+}
 
-		switch ch {
-		case ' ', '\t', '\r':
-			flushWord()
-		case '\n', ';', '|', '&':
-			flushSegment()
-			if (ch == '|' || ch == '&') && index+1 < len(command) && command[index+1] == ch {
-				index++
-			}
-		case '\'', '"':
-			quote = ch
-			wordStarted = true
-		case '\\':
-			if index+1 >= len(command) {
-				return nil, fmt.Errorf("unterminated escape")
-			}
-			index++
-			wordStarted = true
-			value.WriteByte(command[index])
-		case '`':
-			return nil, fmt.Errorf("dynamic command substitution")
-		case '$':
-			if index+1 < len(command) && command[index+1] == '(' {
-				return nil, fmt.Errorf("dynamic command substitution")
-			}
-			dynamic = true
-			wordStarted = true
-			value.WriteByte(ch)
-		case '#':
-			if !wordStarted {
-				for index+1 < len(command) && command[index+1] != '\n' {
-					index++
-				}
-				flushSegment()
-				continue
-			}
-			wordStarted = true
-			value.WriteByte(ch)
-		default:
-			wordStarted = true
-			value.WriteByte(ch)
-		}
+func (lexer *publicationShellLexer) scanSingleQuoted(ch byte) error {
+	if ch == '\'' {
+		lexer.quote = 0
+		return nil
 	}
-	if quote != 0 {
-		return nil, fmt.Errorf("unterminated quote")
+	lexer.value.WriteByte(ch)
+	return nil
+}
+
+func (lexer *publicationShellLexer) scanDoubleQuoted(ch byte) error {
+	switch ch {
+	case '"':
+		lexer.quote = 0
+	case '`':
+		return fmt.Errorf("dynamic command substitution")
+	case '$':
+		return lexer.writeDynamic(ch)
+	case '\\':
+		return lexer.writeEscaped()
+	default:
+		lexer.value.WriteByte(ch)
 	}
-	flushSegment()
-	return segments, nil
+	return nil
+}
+
+func (lexer *publicationShellLexer) scanUnquoted(ch byte) error {
+	switch ch {
+	case ' ', '\t', '\r':
+		lexer.flushWord()
+	case '\n', ';', '|', '&':
+		lexer.consumeSeparator(ch)
+	case '\'', '"':
+		lexer.quote = ch
+		lexer.wordStarted = true
+	case '\\':
+		return lexer.writeEscaped()
+	case '`':
+		return fmt.Errorf("dynamic command substitution")
+	case '$':
+		return lexer.writeDynamic(ch)
+	case '#':
+		lexer.consumeCommentOrLiteral(ch)
+	default:
+		lexer.wordStarted = true
+		lexer.value.WriteByte(ch)
+	}
+	return nil
+}
+
+func (lexer *publicationShellLexer) writeEscaped() error {
+	if lexer.index+1 >= len(lexer.command) {
+		return fmt.Errorf("unterminated escape")
+	}
+	lexer.index++
+	lexer.wordStarted = true
+	lexer.value.WriteByte(lexer.command[lexer.index])
+	return nil
+}
+
+func (lexer *publicationShellLexer) writeDynamic(ch byte) error {
+	if lexer.index+1 < len(lexer.command) && lexer.command[lexer.index+1] == '(' {
+		return fmt.Errorf("dynamic command substitution")
+	}
+	lexer.dynamic = true
+	lexer.wordStarted = true
+	lexer.value.WriteByte(ch)
+	return nil
+}
+
+func (lexer *publicationShellLexer) consumeSeparator(ch byte) {
+	lexer.flushSegment()
+	if (ch == '|' || ch == '&') && lexer.index+1 < len(lexer.command) && lexer.command[lexer.index+1] == ch {
+		lexer.index++
+	}
+}
+
+func (lexer *publicationShellLexer) consumeCommentOrLiteral(ch byte) {
+	if lexer.wordStarted {
+		lexer.value.WriteByte(ch)
+		return
+	}
+	lexer.flushSegment()
+	for lexer.index+1 < len(lexer.command) && lexer.command[lexer.index+1] != '\n' {
+		lexer.index++
+	}
+}
+
+func (lexer *publicationShellLexer) flushWord() {
+	if !lexer.wordStarted {
+		return
+	}
+	lexer.current = append(lexer.current, publicationShellWord{Value: lexer.value.String(), Dynamic: lexer.dynamic})
+	lexer.value.Reset()
+	lexer.wordStarted = false
+	lexer.dynamic = false
+}
+
+func (lexer *publicationShellLexer) flushSegment() {
+	lexer.flushWord()
+	if len(lexer.current) == 0 {
+		return
+	}
+	lexer.segments = append(lexer.segments, lexer.current)
+	lexer.current = nil
 }
 
 func publicationGitNoVerify(argv []publicationShellWord) bool {
