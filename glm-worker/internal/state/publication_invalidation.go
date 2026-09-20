@@ -24,36 +24,47 @@ const (
 	PublicationFindingCorrectnessDefect     = "correctness-defect"
 )
 
-func (s *StateStore) RecordPublicationInvalidatingFinding(findingID, candidateOID, snapshotID, origin, cause string) error {
+func (s *StateStore) RecordPublicationInvalidatingFinding(candidateOID, snapshotID, origin, cause string) (PublicationInvalidatingFinding, error) {
 	if s.TaskStatus() != TaskStatusAwaitingParentCompletion {
-		return fmt.Errorf("publication invalidating finding requires %s, got %s", TaskStatusAwaitingParentCompletion, s.TaskStatus())
-	}
-	if !ValidGeneratedUUID(findingID) {
-		return fmt.Errorf("publication invalidating finding ID is invalid")
+		return PublicationInvalidatingFinding{}, fmt.Errorf("publication invalidating finding requires %s, got %s", TaskStatusAwaitingParentCompletion, s.TaskStatus())
 	}
 	if err := validateParentFixDeclaration(origin, cause); err != nil {
-		return err
+		return PublicationInvalidatingFinding{}, err
 	}
 	completion, err := s.CurrentParentCompletionOutcome()
 	if err != nil {
-		return err
+		return PublicationInvalidatingFinding{}, err
 	}
 	if completion == nil || completion.Terminal != SessionRotationTerminalAccept {
-		return fmt.Errorf("publication invalidating finding requires an accepted parent completion outcome")
+		return PublicationInvalidatingFinding{}, fmt.Errorf("publication invalidating finding requires an accepted parent completion outcome")
 	}
 	candidate, err := s.LoadPublicationCandidate()
 	if err != nil {
-		return fmt.Errorf("publication invalidating finding requires current publication candidate: %w", err)
+		return PublicationInvalidatingFinding{}, fmt.Errorf("publication invalidating finding requires current publication candidate: %w", err)
 	}
 	taskID, err := s.TaskID()
 	if err != nil {
-		return err
+		return PublicationInvalidatingFinding{}, err
 	}
 	if candidate.TaskID != taskID {
-		return fmt.Errorf("publication invalidating finding candidate task %s does not match current task %s", candidate.TaskID, taskID)
+		return PublicationInvalidatingFinding{}, fmt.Errorf("publication invalidating finding candidate task %s does not match current task %s", candidate.TaskID, taskID)
 	}
 	if candidate.CommitOID != candidateOID || candidate.SnapshotID != snapshotID {
-		return fmt.Errorf("publication invalidating finding target does not match current publication candidate")
+		return PublicationInvalidatingFinding{}, fmt.Errorf("publication invalidating finding target does not match current publication candidate")
+	}
+	existing, err := s.LoadPublicationInvalidatingFinding()
+	if err == nil {
+		if existing.TaskID == taskID && existing.Disposition == PublicationFindingCorrectnessDefect && existing.CandidateCommitOID == candidate.CommitOID && existing.CandidateSnapshotID == candidate.SnapshotID && existing.Origin == origin && existing.Cause == cause {
+			return existing, nil
+		}
+		return PublicationInvalidatingFinding{}, fmt.Errorf("a different publication invalidating finding is already recorded")
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return PublicationInvalidatingFinding{}, err
+	}
+	findingID, err := NewUUID()
+	if err != nil {
+		return PublicationInvalidatingFinding{}, err
 	}
 	finding := PublicationInvalidatingFinding{
 		Version:             publicationInvalidatingFindingVersion,
@@ -66,23 +77,16 @@ func (s *StateStore) RecordPublicationInvalidatingFinding(findingID, candidateOI
 		Cause:               cause,
 	}
 	if err := validatePublicationInvalidatingFinding(finding); err != nil {
-		return err
-	}
-	existing, err := s.LoadPublicationInvalidatingFinding()
-	if err == nil {
-		if existing == finding {
-			return nil
-		}
-		return fmt.Errorf("a different publication invalidating finding is already recorded")
-	}
-	if !errors.Is(err, os.ErrNotExist) {
-		return err
+		return PublicationInvalidatingFinding{}, err
 	}
 	data, err := json.Marshal(finding)
 	if err != nil {
-		return fmt.Errorf("publication invalidating finding cannot be encoded: %w", err)
+		return PublicationInvalidatingFinding{}, fmt.Errorf("publication invalidating finding cannot be encoded: %w", err)
 	}
-	return s.Write(publicationInvalidatingFindingStateFile, string(data))
+	if err := s.Write(publicationInvalidatingFindingStateFile, string(data)); err != nil {
+		return PublicationInvalidatingFinding{}, err
+	}
+	return finding, nil
 }
 
 func (s *StateStore) LoadPublicationInvalidatingFinding() (PublicationInvalidatingFinding, error) {
