@@ -16,11 +16,15 @@ func TestPublicationPreToolUseBlocksGitGuardBypass(t *testing.T) {
 		"bash -lc 'git push origin main --no-verify'",
 		"bash --norc -c 'git push origin main --no-verify'",
 		"bash --rcfile /dev/null -c 'git push origin main --no-verify'",
+		"bash --rcfile=/dev/null -c 'git push origin main --no-verify'",
+		"bash -Ocheckwinsize -c 'git push origin main --no-verify'",
 		"env sh -c 'git commit --no-verify -m bypass'",
 		"command -- git push origin main --no-verify",
 		"env -- git push origin main --no-verify",
 		"sudo git push origin main --no-verify",
 		"eval git push origin main --no-verify",
+		"A[0]=value git push origin main --no-verify",
+		"A+=value git push origin main --no-verify",
 		"git push origin main --no-\"verify\"",
 		"git commit --no-'verify' -m bypass",
 		"/usr/bin/\"git\" push origin main --no-\"verify\"",
@@ -52,6 +56,8 @@ func TestPublicationPreToolUseFailsClosedForDynamicGitClassification(t *testing.
 		"git push origin <(printf main)",
 		"sudo -u root git push origin main --no-verify",
 		"env -i git push origin main --no-verify",
+		"env --chdir=/tmp git push origin main --no-verify",
+		"env --split-string='git push origin main --no-verify'",
 	}
 	for _, command := range commands {
 		t.Run(command, func(t *testing.T) {
@@ -75,6 +81,8 @@ func TestPublicationPreToolUseAllowsManagedPushAndUnrelatedCommands(t *testing.T
 		"bash -lc 'git push origin main'",
 		"bash --norc -c 'git push origin main'",
 		"bash --rcfile /dev/null -c 'git push origin main'",
+		"bash --rcfile=/dev/null -c 'git push origin main'",
+		"bash -Ocheckwinsize -c 'git push origin main'",
 		"echo --no-verify",
 		"echo git push --no-verify",
 		`echo "$HOME"`,
@@ -82,6 +90,7 @@ func TestPublicationPreToolUseAllowsManagedPushAndUnrelatedCommands(t *testing.T
 		"echo `date`",
 		"diff <(printf a) <(printf b)",
 		`printf '%s\n' '--no-"verify"'`,
+		"FOO.BAR=value git push origin main --no-verify",
 		"go test ./...",
 	}
 	for _, command := range commands {
