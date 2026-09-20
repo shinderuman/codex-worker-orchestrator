@@ -164,7 +164,21 @@ func executeWorkflowWithZaiSelfResume(
 	st *state.StateStore,
 	controller *runner.StopController,
 ) error {
-	err := executeWorkflowCommand(cmd, wf)
+	return executeZaiSelfResumeLoop(
+		st,
+		controller,
+		func() error { return executeWorkflowCommand(cmd, wf) },
+		func() error { return wf.ExecuteResumeWithExecutionMilestones() },
+	)
+}
+
+func executeZaiSelfResumeLoop(
+	st *state.StateStore,
+	controller *runner.StopController,
+	initial func() error,
+	resume func() error,
+) error {
+	err := initial()
 	for {
 		var limitErr runner.ZaiRateLimitError
 		if !errors.As(err, &limitErr) {
@@ -173,7 +187,7 @@ func executeWorkflowWithZaiSelfResume(
 		if waitErr := waitForZaiFiveHourSelfResume(st, controller, limitErr); waitErr != nil {
 			return waitErr
 		}
-		err = wf.ExecuteResumeWithExecutionMilestones()
+		err = resume()
 	}
 }
 
