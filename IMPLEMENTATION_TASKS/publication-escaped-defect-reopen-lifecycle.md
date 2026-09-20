@@ -62,4 +62,7 @@ status: not-applicable
 ## Dependencies
 
 - `IMPLEMENTATION_TASKS/publication-finalization-machine-enforcement.md`
+
+## Fulfilled dependencies
+
 - `IMPLEMENTATION_TASKS/publication-completion-owner-verification.md`
