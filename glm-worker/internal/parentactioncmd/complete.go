@@ -20,6 +20,7 @@ type completeOutput struct {
 	Completed     bool                                                 `json:"completed"`
 	RemoteSync    *completeRemoteSyncSummary                           `json:"remote_sync,omitempty"`
 	ParentRequest *repositoryproject.ParentRequestCompletionProjection `json:"parent_request,omitempty"`
+	NextAction    *app.PublicationActionSpec                           `json:"next_action,omitempty"`
 	Failure       *finalizationFailure                                 `json:"failure,omitempty"`
 }
 
@@ -94,6 +95,7 @@ func runComplete(cfg config.AppConfig, stdout io.Writer) error {
 			Completed:     false,
 			RemoteSync:    verification.remoteSync,
 			ParentRequest: parentRequest,
+			NextAction:    app.ProjectPublicationSequence(cfg.RepoRoot, st).NextAction,
 			Failure:       verification.failure,
 		})
 	}
@@ -103,6 +105,7 @@ func runComplete(cfg config.AppConfig, stdout io.Writer) error {
 			Status:        completeStatusAwaiting,
 			Completed:     false,
 			ParentRequest: parentRequest,
+			NextAction:    app.ProjectPublicationSequence(cfg.RepoRoot, st).NextAction,
 			Failure:       failure,
 		})
 	}
