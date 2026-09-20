@@ -538,7 +538,10 @@ func streamResultSummary(parsed claudeJSONResult, parseErr error) string {
 
 func classifyPlainStdoutFailure(plain string) ProviderFailureClass {
 	class := ClassifyProviderFailureText(plain)
-	if class.Kind == ProviderFailureZaiFiveHour || class.Kind == ProviderFailureTransient {
+	if class.Kind == ProviderFailureZaiFiveHour {
+		return ProviderFailureClass{Kind: class.Kind, FiveHourLimit: class.FiveHourLimit}
+	}
+	if class.Kind == ProviderFailureTransient {
 		return class
 	}
 	return ProviderFailureClass{}
