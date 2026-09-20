@@ -22,6 +22,38 @@ func TestParentHandoffProjectsDefectBindingAction(t *testing.T) {
 	}
 }
 
+func TestPendingDefectRegistrationBlocksParentRequestStopBeforeTaskPlanBinding(t *testing.T) {
+	cfg := newAppConfig(t)
+	active := "IMPLEMENTATION_TASKS/current.md"
+	target := "IMPLEMENTATION_TASKS/follow-up.md"
+	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", projectContinuationPlan("active", []string{active}, nil, nil))
+	writeProjectContinuationTask(t, cfg, active)
+	st, err := state.NewStateStore(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.StartNewTask(); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Write("active-task", active); err != nil {
+		t.Fatal(err)
+	}
+	if _, created, err := st.RecordPendingDefectRegistration(target, active); err != nil || !created {
+		t.Fatalf("record pending defect registration: created=%t err=%v", created, err)
+	}
+
+	projection, err := BuildCurrentParentRequestCompletionProjection(cfg, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if projection.CompletionAdmitted || projection.StopAdmitted {
+		t.Fatalf("pending defect registration admitted completion/stop: %#v", projection)
+	}
+	if projection.Continuation.State != projectContinuationContinueNow || projection.Continuation.Task != active || projection.Continuation.RequiredAction != string(state.ParentActionBindDefectTask) {
+		t.Fatalf("pending defect continuation = %#v", projection.Continuation)
+	}
+}
+
 func TestPendingDefectBindingSuppressesMilestoneSideAction(t *testing.T) {
 	status := string(state.TaskStatusWaitingSolReview)
 	required := string(state.ParentActionBindDefectTask)
