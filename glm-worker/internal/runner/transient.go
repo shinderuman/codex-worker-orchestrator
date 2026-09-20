@@ -26,11 +26,12 @@ type ProviderUnavailableError struct {
 }
 
 const (
-	ProviderFailureZaiFiveHour      = "zai-5h"
-	ProviderFailureZaiLongQuota     = "zai-long-quota"
+	ProviderFailureZaiFiveHour       = "zai-5h"
+	ProviderFailureZaiLongQuota      = "zai-long-quota"
 	ProviderFailureZaiActionRequired = "zai-action-required"
-	ProviderFailureTransient        = "transient"
-	ProviderFailureFatal            = "fatal"
+	ProviderFailureZaiUnknownSafeStop = "zai-unknown-safe-stop"
+	ProviderFailureTransient         = "transient"
+	ProviderFailureFatal             = "fatal"
 
 	ProbeContractFailure = "probe-contract"
 )
@@ -153,7 +154,7 @@ func ClassifyProviderFailureText(text string) ProviderFailureClass {
 			}
 		}
 		return ProviderFailureClass{
-			Kind:         ProviderFailureFatal,
+			Kind:         ProviderFailureZaiUnknownSafeStop,
 			Detail:       "zai-code:" + code,
 			BusinessCode: code,
 		}
