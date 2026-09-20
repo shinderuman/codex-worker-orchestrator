@@ -81,7 +81,7 @@ func verifyPublicationRefCandidate(cfg config.AppConfig, st *state.StateStore, c
 
 func runPublicationPushGuard(cfg config.AppConfig, args []string, stdout io.Writer) error {
 	if len(args) == 3 && args[0] == publicationPushGuardSubcommand && args[1] == publicationPreToolUseFlag {
-		return runPublicationPreToolUse(args[2], stdout)
+		return runPublicationPreToolUseChecked(args[2], stdout)
 	}
 	remoteName, localRef, localOID, remoteRef, remoteOID, err := parsePublicationPushGuardArgs(args)
 	if err != nil {
