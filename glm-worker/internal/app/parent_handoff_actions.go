@@ -63,6 +63,11 @@ func parentActionSpec(action string, requiredParameters map[string]string) (pare
 			Command:    []string{"glm-parent-action", action, "--accepted-scope", acceptedScope},
 			Parameters: map[string]string{"accepted-scope": acceptedScope},
 		}, true
+	case state.ParentActionReopen:
+		return parentHandoffActionSpec{
+			Kind:    "direct",
+			Command: []string{"glm-parent-action", "reopen"},
+		}, true
 	case state.ParentActionAccept,
 		state.ParentActionComplete,
 		state.ParentActionInstall,
