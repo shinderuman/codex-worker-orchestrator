@@ -81,9 +81,7 @@ func execute(cfg config.AppConfig, args []string, stdout, stderr io.Writer) erro
 	switch action {
 	case "rotation-claim", "rotation-bind", "rotation-fail":
 		return executeSessionRotationAction(cfg, args, stdout)
-	case actionRecordPublicationFinding:
-		return executeRecordPublicationFinding(cfg, args, stdout)
-	case "no-go", "reopen":
+	case "no-go", "reopen", actionRecordPublicationFinding:
 		return executeParentLifecycleAction(cfg, args, stdout)
 	case "complete":
 		return executeComplete(cfg, args, stdout)
