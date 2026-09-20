@@ -32,18 +32,7 @@ func executeWithTerminalEnvelope(cfg config.AppConfig, args []string, stdout, st
 	}
 
 	var terminal bytes.Buffer
-	var err error
-	switch args[0] {
-	case actionReviewEvidence:
-		err = executeParentReviewEvidence(cfg, args, &terminal)
-	case string(parentaction.ActionDecision):
-		err = executePreflightedDecision(cfg, args, &terminal, stderr)
-	case actionRecordDefectFinding, actionBindDefectTask:
-		err = executeDefectRegistrationAction(cfg, args, &terminal)
-	default:
-		err = execute(cfg, args, &terminal, stderr)
-	}
-	if err != nil {
+	if err := executeTerminalAction(cfg, args, &terminal, stderr); err != nil {
 		if terminal.Len() != 0 {
 			_, _ = stdout.Write(terminal.Bytes())
 		}
@@ -69,6 +58,19 @@ func executeWithTerminalEnvelope(cfg config.AppConfig, args []string, stdout, st
 	}
 
 	return json.NewEncoder(stdout).Encode(parentActionTerminalEnvelope(terminalJSON, handoffJSON))
+}
+
+func executeTerminalAction(cfg config.AppConfig, args []string, stdout, stderr io.Writer) error {
+	switch args[0] {
+	case actionReviewEvidence:
+		return executeParentReviewEvidence(cfg, args, stdout)
+	case string(parentaction.ActionDecision):
+		return executePreflightedDecision(cfg, args, stdout, stderr)
+	case actionRecordDefectFinding, actionBindDefectTask:
+		return executeDefectRegistrationAction(cfg, args, stdout)
+	default:
+		return execute(cfg, args, stdout, stderr)
+	}
 }
 
 func parentActionTerminalEnvelope(terminalJSON, handoffJSON json.RawMessage) parentActionTerminalEnvelopePayload {
