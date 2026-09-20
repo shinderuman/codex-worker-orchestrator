@@ -6,6 +6,7 @@ quality_tools_file="$repo_root/quality-tools.yml"
 codex_dir="${CODEX_CONFIG_DIR:-${CODEX_HOME:-$HOME/.codex}}"
 bin_dir="${GLM_WORKER_BIN_DIR:-$HOME/.local/bin}"
 glm_worker_home="${GLM_WORKER_HOME:-$HOME/.glm-worker}"
+runtime_build_package='github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/app'
 
 quality_contract_value() {
 	awk -F': ' -v key="$1" '$1 == key { print $2; exit }' "$quality_tools_file"
@@ -80,6 +81,15 @@ verify_go_toolchain() {
 	fi
 }
 
+runtime_build_ldflags() {
+	revision=$(git -C "$repo_root" rev-parse --verify 'HEAD^{commit}')
+	modified=false
+	if [ -n "$(git -C "$repo_root" status --porcelain=v1 --untracked-files=all)" ]; then
+		modified=true
+	fi
+	printf '%s\n' "-X $runtime_build_package.buildVCSRevision=$revision -X $runtime_build_package.buildVCSModified=$modified"
+}
+
 install_codex_configuration() {
 	build_dir=$1
 	"$build_dir/codex-install" --repo-root "$repo_root" --codex-dir "$codex_dir"
@@ -87,9 +97,10 @@ install_codex_configuration() {
 
 build_binaries() {
 	build_dir=$1
+	runtime_ldflags=$(runtime_build_ldflags)
 	(
 		cd "$repo_root/glm-worker"
-		go build -trimpath -o "$build_dir/glm-worker" ./cmd/glm-worker
+		go build -buildvcs=false -trimpath -ldflags "$runtime_ldflags" -o "$build_dir/glm-worker" ./cmd/glm-worker
 		go build -buildvcs=false -trimpath -o "$build_dir/glm-parent-action" ./cmd/glm-parent-action
 		go build -buildvcs=false -trimpath -o "$build_dir/glm-codex-context" ./cmd/glm-codex-context
 		go build -buildvcs=false -trimpath -o "$build_dir/codex-install" ./cmd/codex-install

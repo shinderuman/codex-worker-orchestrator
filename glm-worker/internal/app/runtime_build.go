@@ -8,6 +8,11 @@ import (
 	"strings"
 )
 
+var (
+	buildVCSRevision string
+	buildVCSModified string
+)
+
 type statusRuntimeBuild struct {
 	VCSRevision    *string `json:"vcs_revision"`
 	VCSModified    *bool   `json:"vcs_modified"`
@@ -28,11 +33,24 @@ const (
 )
 
 func currentRuntimeBuild(repoRoot string) statusRuntimeBuild {
-	settings := runtimeBuildSettings{}
-	if info, ok := debug.ReadBuildInfo(); ok {
-		settings = runtimeBuildSettingsFromGo(info.Settings)
+	settings, injected := runtimeBuildSettingsFromInjected(buildVCSRevision, buildVCSModified)
+	if !injected {
+		settings = runtimeBuildSettings{}
+		if info, ok := debug.ReadBuildInfo(); ok {
+			settings = runtimeBuildSettingsFromGo(info.Settings)
+		}
 	}
 	return runtimeBuildStatus(repoRoot, settings)
+}
+
+func runtimeBuildSettingsFromInjected(revision, modified string) (runtimeBuildSettings, bool) {
+	revision = strings.TrimSpace(revision)
+	modified = strings.TrimSpace(modified)
+	if revision == "" || (modified != "true" && modified != "false") {
+		return runtimeBuildSettings{}, false
+	}
+	isModified := modified == "true"
+	return runtimeBuildSettings{revision: revision, modified: &isModified}, true
 }
 
 func runtimeBuildSettingsFromGo(settings []debug.BuildSetting) runtimeBuildSettings {

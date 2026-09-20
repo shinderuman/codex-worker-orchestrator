@@ -12,6 +12,29 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
+func TestRuntimeBuildSettingsFromInjected(t *testing.T) {
+	got, ok := runtimeBuildSettingsFromInjected(" abc123 ", " false ")
+	if !ok || got.revision != "abc123" || got.modified == nil || *got.modified {
+		t.Fatalf("injected settings = %#v ok=%v", got, ok)
+	}
+	modified, ok := runtimeBuildSettingsFromInjected("abc123", "true")
+	if !ok || modified.modified == nil || !*modified.modified {
+		t.Fatalf("modified injected settings = %#v ok=%v", modified, ok)
+	}
+	for _, tc := range []struct {
+		revision string
+		modified string
+	}{
+		{revision: "", modified: "false"},
+		{revision: "abc123", modified: ""},
+		{revision: "abc123", modified: "unknown"},
+	} {
+		if _, ok := runtimeBuildSettingsFromInjected(tc.revision, tc.modified); ok {
+			t.Fatalf("invalid injected settings accepted: revision=%q modified=%q", tc.revision, tc.modified)
+		}
+	}
+}
+
 func TestRuntimeBuildSettingsFromGo(t *testing.T) {
 	got := runtimeBuildSettingsFromGo([]debug.BuildSetting{
 		{Key: "vcs.revision", Value: " abc123 "},
