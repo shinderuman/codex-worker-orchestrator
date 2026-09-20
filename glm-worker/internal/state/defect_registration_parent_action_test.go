@@ -68,3 +68,24 @@ func TestPendingDefectRegistrationRejectsStaleActiveBinding(t *testing.T) {
 		t.Fatal("stale defect registration was accepted")
 	}
 }
+
+func TestPendingDefectRegistrationClearsOnFreshTask(t *testing.T) {
+	st := newParentActionTestStore(t)
+	source := "IMPLEMENTATION_TASKS/active.md"
+	if err := st.Write("active-task", source); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := st.RecordPendingDefectRegistration("IMPLEMENTATION_TASKS/follow-up.md", source); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.StartNewTask(); err != nil {
+		t.Fatal(err)
+	}
+	registrations, err := st.PendingDefectRegistrations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(registrations) != 0 {
+		t.Fatalf("fresh task retained pending defect registrations: %#v", registrations)
+	}
+}
