@@ -9,7 +9,7 @@ import (
 )
 
 func TestTerminalEnvelopeActionCoversParentLifecycleActions(t *testing.T) {
-	for _, action := range []string{"start", "decision", "fix", "start-milestones", "approve-surface", "accept", "resume", "no-go", "reopen", "park", "unpark", "review-evidence"} {
+	for _, action := range []string{"start", "decision", "fix", "start-milestones", "approve-surface", "accept", "resume", "no-go", actionRecordPublicationFinding, "reopen", "park", "unpark", "review-evidence"} {
 		if !terminalEnvelopeAction(action) {
 			t.Fatalf("action %q must return a machine terminal envelope", action)
 		}
