@@ -16,6 +16,9 @@ func newAwaitingParentCompletionHandoff(t *testing.T) (config.AppConfig, *state.
 	t.Helper()
 	cfg := newAppConfig(t)
 	st := startParentHandoffTask(t, cfg)
+	if err := st.SaveCurrentTaskAuthority("IMPLEMENTATION_TASKS/active.md", []byte("# active\n")); err != nil {
+		t.Fatal(err)
+	}
 	if err := state.CaptureGitBaseline(cfg, st); err != nil {
 		t.Fatal(err)
 	}
