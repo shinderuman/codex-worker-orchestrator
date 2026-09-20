@@ -129,17 +129,6 @@ type verifyAutoResumeOutput struct {
 	DBNextRunAtUTC string `json:"db_next_run_at_utc"`
 }
 
-type checkWakeCoalesceOutput struct {
-	Decision         string `json:"decision"`
-	Reason           string `json:"reason"`
-	ParentThread     string `json:"parent_thread"`
-	ResumeAtUTC      string `json:"resume_at_utc"`
-	WakeAutomationID string `json:"wake_automation_id"`
-	WakeThread       string `json:"wake_thread"`
-	WakeNextRunUTC   string `json:"wake_next_run_at_utc"`
-	AddedWaitSeconds int64  `json:"added_wait_seconds"`
-}
-
 func msPtr(d time.Duration) *int64 {
 	if d < 0 {
 		d = 0
@@ -409,10 +398,6 @@ func (e *VerificationError) Error() string {
 	return fmt.Sprintf("verification %s: %s", outcomeLabel(e.Outcome), e.Reason)
 }
 
-func printVerifyAutoResume(cmd Command, cfg config.AppConfig, stdout io.Writer) error {
-	return printAutomationVerification(cmd.Verify.Key, cmd.Verify.RFC3339, cmd.Verify.ThreadID, cfg, stdout)
-}
-
 func printVerifyCodexWake(cmd Command, cfg config.AppConfig, stdout io.Writer) error {
 	key := autoresume.CodexWakeAutomationKey(cmd.Verify.ThreadID)
 	return printAutomationVerification(key, cmd.Verify.RFC3339, cmd.Verify.ThreadID, cfg, stdout)
@@ -436,28 +421,6 @@ func printAutomationVerification(automationKey, expectedRFC3339, expectedThreadI
 		ExpectedAtUTC:  result.ExpectedUTC,
 		TOMLDTStart:    result.TOMLDTStart,
 		DBNextRunAtUTC: result.DBNextRunUTC,
-	})
-}
-
-func printCheckWakeCoalesce(cmd Command, cfg config.AppConfig, stdout io.Writer) error {
-	result, err := autoresume.CheckCoalesce(autoresume.CoalesceParams{
-		ParentThreadID:  cmd.Coalesce.ParentThreadID,
-		ResumeAtRFC3339: cmd.Coalesce.ResumeAtRFC3339,
-		AutomationsDir:  filepath.Join(cfg.CodexConfigDir, "automations"),
-		DBPath:          filepath.Join(cfg.CodexConfigDir, "sqlite", "codex-dev.db"),
-	}, autoresume.ReadDBRowSqlite3)
-	if err != nil {
-		return machinecli.UsageErrorf("%s", err.Error())
-	}
-	return machinecli.WriteJSON(stdout, checkWakeCoalesceOutput{
-		Decision:         result.Decision,
-		Reason:           result.Reason,
-		ParentThread:     result.ParentThread,
-		ResumeAtUTC:      result.ResumeAtUTC,
-		WakeAutomationID: result.WakeAutomationID,
-		WakeThread:       result.WakeThread,
-		WakeNextRunUTC:   result.WakeNextRunUTC,
-		AddedWaitSeconds: result.AddedWaitSeconds,
 	})
 }
 
