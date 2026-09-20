@@ -112,7 +112,7 @@ func publicationShellCommandIndex(segment []publicationShellWord) (int, bool, bo
 		if word.Dynamic {
 			return index, true, false
 		}
-		if strings.Contains(word.Value, "=") || word.Value == "!" {
+		if publicationShellAssignment(word.Value) || word.Value == "!" {
 			index++
 			continue
 		}
@@ -127,6 +127,37 @@ func publicationShellCommandIndex(segment []publicationShellWord) (int, bool, bo
 		return index, true, false
 	}
 	return 0, false, false
+}
+
+func publicationShellAssignment(value string) bool {
+	equals := strings.IndexByte(value, '=')
+	if equals <= 0 {
+		return false
+	}
+	name := value[:equals]
+	if strings.HasSuffix(name, "+") {
+		name = strings.TrimSuffix(name, "+")
+	}
+	if bracket := strings.IndexByte(name, '['); bracket > 0 && strings.HasSuffix(name, "]") {
+		name = name[:bracket]
+	}
+	if name == "" || !publicationShellNameStart(name[0]) {
+		return false
+	}
+	for index := 1; index < len(name); index++ {
+		if !publicationShellNamePart(name[index]) {
+			return false
+		}
+	}
+	return true
+}
+
+func publicationShellNameStart(value byte) bool {
+	return value == '_' || value >= 'A' && value <= 'Z' || value >= 'a' && value <= 'z'
+}
+
+func publicationShellNamePart(value byte) bool {
+	return publicationShellNameStart(value) || value >= '0' && value <= '9'
 }
 
 func publicationShellWrapperNext(segment []publicationShellWord, index int) (int, bool, bool) {
@@ -163,7 +194,7 @@ func publicationEnvWrapperNext(segment []publicationShellWord, index int) (int, 
 		if word.Dynamic {
 			return index, true
 		}
-		if strings.Contains(word.Value, "=") {
+		if publicationShellAssignment(word.Value) {
 			index++
 			continue
 		}
@@ -198,6 +229,9 @@ func publicationInterpreterCommandPayload(args []publicationShellWord) (string, 
 		if word.Value == "--" || !strings.HasPrefix(word.Value, "-") {
 			return "", false, false
 		}
+		if publicationInterpreterInlineValueOption(word.Value) {
+			continue
+		}
 		if publicationInterpreterCommandOption(word.Value) {
 			return publicationInterpreterPayloadAfterOption(args, index)
 		}
@@ -224,6 +258,10 @@ func publicationInterpreterConsumeValue(args []publicationShellWord, index int) 
 		return index, true
 	}
 	return index + 1, false
+}
+
+func publicationInterpreterInlineValueOption(value string) bool {
+	return len(value) > 2 && (strings.HasPrefix(value, "-O") || strings.HasPrefix(value, "-o"))
 }
 
 func publicationInterpreterCommandOption(value string) bool {
