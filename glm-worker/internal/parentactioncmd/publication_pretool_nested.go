@@ -189,7 +189,7 @@ func (scanner *publicationExecutableSubstitutionScanner) scan() ([]string, error
 			continue
 		}
 		if scanner.quote == 0 && (ch == '<' || ch == '>') && scanner.index+1 < len(scanner.command) && scanner.command[scanner.index+1] == '(' {
-			body, end, err := publicationBalancedBody(scanner.command, scanner.index)
+			body, end, err := publicationBalancedBody(scanner.command, scanner.index+1)
 			if err != nil {
 				return nil, err
 			}
@@ -202,8 +202,8 @@ func (scanner *publicationExecutableSubstitutionScanner) scan() ([]string, error
 	return bodies, nil
 }
 
-func publicationBalancedBody(command string, marker int) (string, int, error) {
-	start := marker + 2
+func publicationBalancedBody(command string, openingParen int) (string, int, error) {
+	start := openingParen + 1
 	depth := 1
 	var quote byte
 	for index := start; index < len(command); index++ {
