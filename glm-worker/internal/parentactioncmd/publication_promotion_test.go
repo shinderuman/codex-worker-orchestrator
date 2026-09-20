@@ -6,12 +6,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
-
-type configFixture struct {
-	RepoRoot string
-}
 
 func TestPublicationPromotionAdvancesOnlyToExactReadyCandidate(t *testing.T) {
 	cfg, st := newInstallActionRepo(t)
@@ -134,7 +131,7 @@ func TestPublicationPromotionRollbackDoesNotOverwriteConcurrentRefMutation(t *te
 	}
 }
 
-func publicationPromotionAtomicityFixture(t *testing.T) (configFixture, *state.StateStore, state.PublicationCandidate, string) {
+func publicationPromotionAtomicityFixture(t *testing.T) (config.AppConfig, *state.StateStore, state.PublicationCandidate, string) {
 	t.Helper()
 	cfg, st := newInstallActionRepo(t)
 	if err := st.SetTaskStatus(state.TaskStatusAwaitingParentCompletion); err != nil {
@@ -152,5 +149,5 @@ func publicationPromotionAtomicityFixture(t *testing.T) (configFixture, *state.S
 	if headFailure != nil {
 		t.Fatalf("promotion head = %#v", headFailure)
 	}
-	return configFixture{RepoRoot: cfg.RepoRoot}, st, candidate, branchRef
+	return cfg, st, candidate, branchRef
 }
