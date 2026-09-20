@@ -20,7 +20,7 @@ none
 - formal Dogfood `cc4e60d1-8e64-4f86-a66a-8a2acd070163` は約36.7h、rate limit 7回、GLM call 54まで継続し、長時間taskで単なるliveness以上の粗い残作業感が必要という要求を再確認した
 - 同formal AuditではCodex session-loss recoveryで`glm-worker --watch`が誤選択されhistorical event logを大量replayしたため、`session-loss-recovery-surface-convergence.md`でCodex-facing `--watch` surface自体を削除する方向を採用した
 - Original instructionの`--watch`言及は当時のliveness例であり、progress contractをobsolete watch commandへ固定する要求ではない。progressはcurrent canonical observability surfaceへ投影する
-- execution milestoneが一度もactivateされないformal regressionも同時に成立したため、milestoneを主要progress evidenceとして使う本taskは`execution-milestone-reconsideration-after-single.md`後に配置する
+- execution milestoneが一度もactivateされないformal regressionも同時に成立したため、milestoneを主要progress evidenceとして使う本taskはexecution milestone reconsiderationの実装後に配置する
 
 ## Purpose
 
@@ -68,7 +68,8 @@ status: not-applicable
 - 目的は「動いていること」の確認ではなく、長時間taskが序盤・中盤・終盤のどこにいるかを低コストで判断できること
 - 5h self-resumeを反復するtaskではwall-clockが長くなり得るため、elapsed time単独では残作業量を推定しない
 - 最上位EvalはCodex ReductionとQuality Deltaであり、progress observabilityが追加model tokenを常態化させてはならない
+- execution milestone reconsiderationは既にcanonical milestone lifecycleへ実装済みであり、本taskはその既存surfaceを前提にしてよい
 
 ## Dependencies
 
-- `IMPLEMENTATION_TASKS/execution-milestone-reconsideration-after-single.md`
+none
