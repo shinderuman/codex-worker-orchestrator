@@ -122,7 +122,13 @@ func publicationClassifyInterpreter(args []publicationShellWord, depth int) (str
 		if word.Dynamic {
 			return publicationGitClassificationCode, publicationGitClassificationReason
 		}
-		if !strings.HasPrefix(word.Value, "-") || !strings.Contains(strings.TrimPrefix(word.Value, "-"), "c") {
+		if word.Value == "--" {
+			return "", ""
+		}
+		if !strings.HasPrefix(word.Value, "-") {
+			return "", ""
+		}
+		if !publicationInterpreterCommandOption(word.Value) {
 			continue
 		}
 		if index+1 >= len(args) || args[index+1].Dynamic {
@@ -131,6 +137,10 @@ func publicationClassifyInterpreter(args []publicationShellWord, depth int) (str
 		return publicationClassifyShell(args[index+1].Value, depth)
 	}
 	return "", ""
+}
+
+func publicationInterpreterCommandOption(value string) bool {
+	return len(value) > 1 && value[0] == '-' && value[1] != '-' && strings.Contains(value[1:], "c")
 }
 
 func publicationClassifyEval(args []publicationShellWord, depth int) (string, string) {
