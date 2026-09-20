@@ -40,6 +40,8 @@ func (s *StateStore) AdmitNewTaskRotationBoundary(callerThreadID, claimID string
 	return false, nil
 }
 
+// RetirePendingSessionRotationRecommendations records an admitted ordinary
+// start by removing unclaimed rotation directives while preserving evaluation history.
 func (s *StateStore) RetirePendingSessionRotationRecommendations() error {
 	rotations, err := s.IncompleteSessionRotations()
 	if err != nil {
