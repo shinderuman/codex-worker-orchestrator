@@ -228,7 +228,7 @@ func verifyCompletedTaskFileRemoved(repoRoot string, st *state.StateStore, headO
 
 func verifyCompletionRemoteSync(repoRoot string) (*completeRemoteSyncSummary, *finalizationFailure) {
 	binding := buildPushBinding(repoRoot, pushBindingOptions{})
-	if binding.Status == completePushStatusBlocked {
+	if binding.Status == completePushStatusBlocked && binding.Classification == "" {
 		if binding.Failure == nil {
 			return nil, &finalizationFailure{Stage: "target", Reason: completeTargetHeadUnresolvable}
 		}
