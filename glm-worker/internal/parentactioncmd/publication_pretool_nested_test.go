@@ -73,7 +73,7 @@ func TestPublicationPreToolUseCheckedAllowsUnrelatedSubstitutions(t *testing.T) 
 func TestPublicationPreToolUseCheckedIgnoresQuotedSubstitutionSyntax(t *testing.T) {
 	commands := []string{
 		`echo '$(git push origin main --no-verify)'`,
-		`echo '\`git push origin main --no-verify\`'`,
+		"echo '`git push origin main --no-verify`'",
 	}
 	for _, command := range commands {
 		t.Run(command, func(t *testing.T) {
