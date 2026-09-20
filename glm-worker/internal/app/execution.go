@@ -221,6 +221,9 @@ func waitForZaiFiveHourSelfResume(
 	if err != nil {
 		return errors.Join(limitErr, fmt.Errorf("five-hour self-resume boundary is invalid: %w", err))
 	}
+	if !resumeAt.After(time.Now().UTC()) {
+		return errors.Join(limitErr, fmt.Errorf("five-hour self-resume reset boundary is not in the future: %s", resumeAtRFC3339))
+	}
 	if waitForZaiSelfResume(resumeAt, controller) {
 		controller.NotifyInterrupted(limitErr.TaskID, "")
 		return &runner.InterruptedCallError{
