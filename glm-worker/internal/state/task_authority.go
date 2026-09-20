@@ -43,6 +43,9 @@ func (s *StateStore) CurrentTaskAuthorityPath() (string, error) {
 	if path == "" {
 		return "", fmt.Errorf("task authority pathが空です")
 	}
+	if strings.ContainsAny(path, "\r\n") {
+		return "", fmt.Errorf("task authority pathが一意ではありません")
+	}
 	return path, nil
 }
 
