@@ -73,17 +73,49 @@ func TestReadTransientSignalMissingFile(t *testing.T) {
 	}
 }
 
-func TestClassifyProviderFailureTextExclusive(t *testing.T) {
-	fiveHour := "API Error: Request rejected (429) · [1308][Usage limit reached for 5 hour. Your limit will reset at 2026-07-22 14:06:34]"
+func TestClassifyProviderFailureTextByZaiBusinessCode(t *testing.T) {
+	tests := []struct {
+		name       string
+		text       string
+		wantKind   string
+		wantCode   string
+		wantDetail string
+	}{
+		{"request rate limit", `[1302][wording can change]`, ProviderFailureTransient, "1302", "zai-code:1302"},
+		{"temporary overload", `{"error":{"code":1305,"message":"different wording"}}`, ProviderFailureTransient, "1305", "zai-code:1305"},
+		{"observed five hour", `[1308][different wording][2026-07-22 14:06:34]`, ProviderFailureZaiFiveHour, "1308", "zai-code:1308"},
+		{"five hour no balance", `[1316][different wording][2026-07-22 14:06:34]`, ProviderFailureZaiFiveHour, "1316", "zai-code:1316"},
+		{"five hour no spend", `[1318][different wording][2026-07-22 14:06:34]`, ProviderFailureZaiFiveHour, "1318", "zai-code:1318"},
+		{"five hour spend cap", `[1320][different wording][2026-07-22 14:06:34]`, ProviderFailureZaiFiveHour, "1320", "zai-code:1320"},
+		{"weekly monthly quota", `[1310][different wording]`, ProviderFailureZaiLongQuota, "1310", "zai-code:1310"},
+		{"seven day no balance", `[1317][different wording]`, ProviderFailureZaiLongQuota, "1317", "zai-code:1317"},
+		{"seven day no spend", `[1319][different wording]`, ProviderFailureZaiLongQuota, "1319", "zai-code:1319"},
+		{"seven day spend cap", `[1321][different wording]`, ProviderFailureZaiLongQuota, "1321", "zai-code:1321"},
+		{"insufficient balance", `[1113][different wording]`, ProviderFailureZaiActionRequired, "1113", "zai-code:1113"},
+		{"plan expired", `[1309][different wording]`, ProviderFailureZaiActionRequired, "1309", "zai-code:1309"},
+		{"model excluded", `[1311][different wording]`, ProviderFailureZaiActionRequired, "1311", "zai-code:1311"},
+		{"fair use", `[1313][different wording]`, ProviderFailureZaiActionRequired, "1313", "zai-code:1313"},
+		{"enterprise expired", `[1314][different wording]`, ProviderFailureZaiActionRequired, "1314", "zai-code:1314"},
+		{"enterprise key", `[1315][different wording]`, ProviderFailureZaiActionRequired, "1315", "zai-code:1315"},
+		{"unknown business code", `[1999][unknown]`, ProviderFailureFatal, "1999", "zai-code:1999"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ClassifyProviderFailureText(tt.text)
+			if got.Kind != tt.wantKind || got.BusinessCode != tt.wantCode || got.Detail != tt.wantDetail {
+				t.Fatalf("ClassifyProviderFailureText(%q) = %#v, want kind=%q code=%q detail=%q", tt.text, got, tt.wantKind, tt.wantCode, tt.wantDetail)
+			}
+		})
+	}
+}
+
+func TestClassifyProviderFailureTextFallbackSignals(t *testing.T) {
 	tests := []struct {
 		name       string
 		text       string
 		wantKind   string
 		wantDetail string
 	}{
-		{"zai 5h limit", fiveHour, ProviderFailureZaiFiveHour, ""},
-
-		{"zai 5h with mixed 503", fiveHour + " upstream 503", ProviderFailureZaiFiveHour, ""},
 		{"http 502", "API Error: 502 Bad Gateway", ProviderFailureTransient, "http-502"},
 		{"network dial", "dial tcp: lookup api.z.ai: no such host", ProviderFailureTransient, "network:dial tcp"},
 		{"auth 401", "401 Unauthorized", ProviderFailureFatal, ""},
@@ -96,8 +128,11 @@ func TestClassifyProviderFailureTextExclusive(t *testing.T) {
 			if got.Kind != tt.wantKind {
 				t.Fatalf("ClassifyProviderFailureText(%q) kind = %q want %q", tt.text, got.Kind, tt.wantKind)
 			}
-			if tt.wantDetail != "" && got.Detail != tt.wantDetail {
+			if got.Detail != tt.wantDetail {
 				t.Fatalf("ClassifyProviderFailureText(%q) detail = %q want %q", tt.text, got.Detail, tt.wantDetail)
+			}
+			if got.BusinessCode != "" {
+				t.Fatalf("non-Z.ai fallback must not invent business code: %#v", got)
 			}
 		})
 	}
