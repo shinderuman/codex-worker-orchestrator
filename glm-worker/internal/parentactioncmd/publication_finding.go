@@ -10,11 +10,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-const (
-	actionRecordPublicationFinding = "record-publication-finding"
-	publicationFindingUsage        = "usage: glm-parent-action record-publication-finding --candidate-oid <oid> --snapshot-id <snapshot-id> [--origin <origin>] [--cause <cause>]"
-)
-
 type publicationFindingOptions struct {
 	candidateOID string
 	snapshotID   string
@@ -23,11 +18,16 @@ type publicationFindingOptions struct {
 }
 
 type publicationFindingOutput struct {
-	Status         string                                   `json:"status"`
-	Finding        state.PublicationInvalidatingFinding     `json:"finding"`
-	RequiredAction state.ParentAction                       `json:"required_action"`
-	AllowedActions []state.ParentAction                     `json:"allowed_actions"`
+	Status         string                               `json:"status"`
+	Finding        state.PublicationInvalidatingFinding `json:"finding"`
+	RequiredAction state.ParentAction                   `json:"required_action"`
+	AllowedActions []state.ParentAction                 `json:"allowed_actions"`
 }
+
+const (
+	actionRecordPublicationFinding = "record-publication-finding"
+	publicationFindingUsage        = "usage: glm-parent-action record-publication-finding --candidate-oid <oid> --snapshot-id <snapshot-id> [--origin <origin>] [--cause <cause>]"
+)
 
 func executeRecordPublicationFinding(cfg config.AppConfig, args []string, stdout io.Writer) error {
 	options, err := parsePublicationFindingOptions(args)
@@ -71,39 +71,37 @@ func parsePublicationFindingOptions(args []string) (publicationFindingOptions, e
 		return publicationFindingOptions{}, fmt.Errorf("%s", publicationFindingUsage)
 	}
 	var options publicationFindingOptions
-	for i := 1; i < len(args); {
+	for i := 1; i < len(args); i += 2 {
 		if i+1 >= len(args) {
 			return publicationFindingOptions{}, fmt.Errorf("%s", publicationFindingUsage)
 		}
-		name, value := args[i], args[i+1]
-		switch name {
-		case "--candidate-oid":
-			if options.candidateOID != "" {
-				return publicationFindingOptions{}, fmt.Errorf("%s", publicationFindingUsage)
-			}
-			options.candidateOID = value
-		case "--snapshot-id":
-			if options.snapshotID != "" {
-				return publicationFindingOptions{}, fmt.Errorf("%s", publicationFindingUsage)
-			}
-			options.snapshotID = value
-		case "--origin":
-			if options.origin != "" {
-				return publicationFindingOptions{}, fmt.Errorf("%s", publicationFindingUsage)
-			}
-			options.origin = value
-		case "--cause":
-			if options.cause != "" {
-				return publicationFindingOptions{}, fmt.Errorf("%s", publicationFindingUsage)
-			}
-			options.cause = value
-		default:
-			return publicationFindingOptions{}, fmt.Errorf("%s", publicationFindingUsage)
+		if err := setPublicationFindingOption(&options, args[i], args[i+1]); err != nil {
+			return publicationFindingOptions{}, err
 		}
-		i += 2
 	}
 	if options.candidateOID == "" || options.snapshotID == "" {
 		return publicationFindingOptions{}, fmt.Errorf("%s", publicationFindingUsage)
 	}
 	return options, nil
+}
+
+func setPublicationFindingOption(options *publicationFindingOptions, name, value string) error {
+	var target *string
+	switch name {
+	case "--candidate-oid":
+		target = &options.candidateOID
+	case "--snapshot-id":
+		target = &options.snapshotID
+	case "--origin":
+		target = &options.origin
+	case "--cause":
+		target = &options.cause
+	default:
+		return fmt.Errorf("%s", publicationFindingUsage)
+	}
+	if *target != "" {
+		return fmt.Errorf("%s", publicationFindingUsage)
+	}
+	*target = value
+	return nil
 }
