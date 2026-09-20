@@ -103,35 +103,41 @@ var (
 
 func runPushBinding(repoRoot string, args []string, stdout io.Writer) error {
 	if len(args) > 0 && publicationBindingSubcommand(args[0]) {
-		cfg, err := config.Load()
-		if err != nil {
-			return err
-		}
-		if cfg.RepoRoot != repoRoot {
-			return fmt.Errorf("publication repository identity changed")
-		}
-		switch args[0] {
-		case publicationPrepareSubcommand:
-			return runPublicationPrepare(cfg, args, stdout)
-		case publicationInstallCandidateSubcommand:
-			return runPublicationCandidateInstall(cfg, args, stdout)
-		case publicationReadinessSubcommand:
-			return runPublicationReadiness(cfg, args, stdout)
-		case publicationPromoteSubcommand:
-			return runPublicationPromotion(cfg, args, stdout)
-		case publicationRefGuardSubcommand:
-			return runPublicationRefGuard(cfg, args, stdout)
-		case publicationPushGuardSubcommand:
-			return runPublicationPushGuard(cfg, args, stdout)
-		case publicationRecoverSubcommand:
-			return runPublicationRecover(cfg, args, stdout)
-		}
+		return runPublicationBindingSubcommand(repoRoot, args, stdout)
 	}
 	options, err := parsePushBindingOptions(args)
 	if err != nil {
 		return err
 	}
 	return json.NewEncoder(stdout).Encode(buildPushBinding(repoRoot, options))
+}
+
+func runPublicationBindingSubcommand(repoRoot string, args []string, stdout io.Writer) error {
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	if cfg.RepoRoot != repoRoot {
+		return fmt.Errorf("publication repository identity changed")
+	}
+	switch args[0] {
+	case publicationPrepareSubcommand:
+		return runPublicationPrepare(cfg, args, stdout)
+	case publicationInstallCandidateSubcommand:
+		return runPublicationCandidateInstall(cfg, args, stdout)
+	case publicationReadinessSubcommand:
+		return runPublicationReadiness(cfg, args, stdout)
+	case publicationPromoteSubcommand:
+		return runPublicationPromotion(cfg, args, stdout)
+	case publicationRefGuardSubcommand:
+		return runPublicationRefGuard(cfg, args, stdout)
+	case publicationPushGuardSubcommand:
+		return runPublicationPushGuard(cfg, args, stdout)
+	case publicationRecoverSubcommand:
+		return runPublicationRecover(cfg, args, stdout)
+	default:
+		return fmt.Errorf("%s", pushBindingUsage)
+	}
 }
 
 func publicationBindingSubcommand(value string) bool {
