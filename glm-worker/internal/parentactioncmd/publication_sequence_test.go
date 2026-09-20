@@ -134,6 +134,7 @@ func TestPublicationSequencePromotesAfterInstallEvidenceForMixedRuntimePaths(t *
 
 func TestCompleteWithDirtyTreeReturnsExactPrepareAction(t *testing.T) {
 	fixture := newCompleteFixture(t)
+	configureCompleteFixturePublicationGuards(t, fixture)
 	writePushBindingFile(t, fixture.repo, "impl.txt", "impl\n")
 
 	output := runCompleteCommand(t, fixture)
@@ -245,6 +246,7 @@ func TestPublicationRecoverFailsClosedOutsideBoundedState(t *testing.T) {
 
 func TestPublicationSequenceDirectsRecoveryForCommittedStateWithoutCandidate(t *testing.T) {
 	fixture := newCompleteFixture(t)
+	configureCompleteFixturePublicationGuards(t, fixture)
 	if err := state.CaptureGitBaseline(fixture.cfg, fixture.st); err != nil {
 		t.Fatal(err)
 	}
@@ -261,6 +263,7 @@ func TestPublicationSequenceDirectsRecoveryForCommittedStateWithoutCandidate(t *
 
 func TestPublicationSequenceFailsClosedWhenUpstreamIsUnconfigured(t *testing.T) {
 	fixture := newCompleteFixture(t)
+	configureCompleteFixturePublicationGuards(t, fixture)
 	fixture.commitParentMetadataSync(t)
 	runFinalizationGit(t, fixture.repo, "config", "--unset", "branch.main.remote")
 	ensureCompleteFixturePublicationAuthority(t, fixture)
@@ -338,8 +341,26 @@ func TestPublicationPushCommandTargetsConfiguredUpstreamRef(t *testing.T) {
 	}
 }
 
+func configureCompleteFixturePublicationGuards(t *testing.T, fixture *completeFixture) {
+	t.Helper()
+	hooksDir := filepath.Join(fixture.repo, ".githooks")
+	if err := os.MkdirAll(hooksDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"reference-transaction", "pre-push"} {
+		if err := os.WriteFile(filepath.Join(hooksDir, name), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runFinalizationGit(t, fixture.repo, "config", "core.hooksPath", ".githooks")
+	runFinalizationGit(t, fixture.repo, "add", ".githooks")
+	runFinalizationGit(t, fixture.repo, "commit", "-q", "-m", "publication guards")
+	runFinalizationGit(t, fixture.repo, "push", "-q", "origin", "main")
+}
+
 func commitCompleteFixtureHarnessMarker(t *testing.T, fixture *completeFixture) {
 	t.Helper()
+	configureCompleteFixturePublicationGuards(t, fixture)
 	writeRepositoryHarnessMarker(t, fixture.repo)
 	runFinalizationGit(t, fixture.repo, "add", "-A")
 	runFinalizationGit(t, fixture.repo, "commit", "-q", "-m", "harness marker")
