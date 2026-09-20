@@ -55,4 +55,8 @@ status: not-applicable
 
 ## Dependencies
 
+none
+
+## Fulfilled dependencies
+
 - `IMPLEMENTATION_TASKS/detected-defect-task-registration-enforcement.md`
