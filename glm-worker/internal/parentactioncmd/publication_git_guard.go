@@ -52,7 +52,7 @@ func verifyPublicationRefUpdate(cfg config.AppConfig, oldOID, newOID, ref string
 		return err
 	}
 	st := state.AttachStateStore(cfg)
-	if !publicationRefGuardRequired(st.TaskStatus()) {
+	if !publicationRefGuardRequired(st.TaskStatus()) || !st.HasPublicationCandidate() {
 		return nil
 	}
 	candidate, err := loadPublicationGuardCandidate(st, "ref update")
@@ -62,7 +62,14 @@ func verifyPublicationRefUpdate(cfg config.AppConfig, oldOID, newOID, ref string
 	if publicationExactPromotionRollback(candidate, oldOID, newOID) {
 		return verifyPublicationRefRollback(cfg, candidate, oldOID, ref)
 	}
-	return verifyPublicationRefCandidate(cfg, st, candidate, oldOID, newOID, ref)
+	if publicationExactCandidatePromotion(candidate, oldOID, newOID) {
+		return verifyPublicationRefCandidate(cfg, st, candidate, oldOID, newOID, ref)
+	}
+	return nil
+}
+
+func publicationExactCandidatePromotion(candidate state.PublicationCandidate, oldOID, newOID string) bool {
+	return oldOID == candidate.BaseHead && newOID == candidate.CommitOID
 }
 
 func publicationExactPromotionRollback(candidate state.PublicationCandidate, oldOID, newOID string) bool {
