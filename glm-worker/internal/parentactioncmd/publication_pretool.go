@@ -113,6 +113,13 @@ func publicationShellCommandIndex(segment []publicationShellWord) (int, bool, bo
 		if word.Dynamic {
 			return index, true, false
 		}
+		if redirection, next, unavailable := publicationLeadingRedirection(segment, index); redirection {
+			if unavailable {
+				return 0, false, true
+			}
+			index = next
+			continue
+		}
 		if publicationShellAssignment(word.Value) || publicationShellControlPrefix(word.Value) {
 			index++
 			continue
@@ -128,6 +135,38 @@ func publicationShellCommandIndex(segment []publicationShellWord) (int, bool, bo
 		return index, true, false
 	}
 	return 0, false, false
+}
+
+func publicationLeadingRedirection(segment []publicationShellWord, index int) (bool, int, bool) {
+	consumesTarget, ok := publicationRedirectionToken(segment[index].Value)
+	if !ok {
+		return false, index, false
+	}
+	if !consumesTarget {
+		return true, index + 1, false
+	}
+	if index+1 >= len(segment) || segment[index+1].Dynamic {
+		return true, index, true
+	}
+	return true, index + 2, false
+}
+
+func publicationRedirectionToken(value string) (bool, bool) {
+	start := 0
+	for start < len(value) && value[start] >= '0' && value[start] <= '9' {
+		start++
+	}
+	if start >= len(value) {
+		return false, false
+	}
+	rest := value[start:]
+	operators := []string{"<<<", "&>>", ">>", "<<", ">&", "<&", "<>", ">|", "&>", ">", "<"}
+	for _, operator := range operators {
+		if strings.HasPrefix(rest, operator) {
+			return len(rest) == len(operator), true
+		}
+	}
+	return false, false
 }
 
 func publicationShellControlPrefix(value string) bool {
@@ -629,6 +668,9 @@ func (lexer *publicationShellLexer) scanUnquoted(ch byte) error {
 }
 
 func (lexer *publicationShellLexer) scanUnquotedDynamic(ch byte) error {
+	if ch == '&' || ch == '|' {
+		return nil
+	}
 	switch ch {
 	case '`':
 		return lexer.consumeBacktickDynamic()
@@ -764,10 +806,30 @@ func (lexer *publicationShellLexer) consumeBacktickDynamic() error {
 }
 
 func (lexer *publicationShellLexer) consumeSeparator(ch byte) {
+	if lexer.consumeRedirectionPunctuation(ch) {
+		return
+	}
 	lexer.flushSegment()
 	if (ch == '|' || ch == '&') && lexer.index+1 < len(lexer.command) && lexer.command[lexer.index+1] == ch {
 		lexer.index++
 	}
+}
+
+func (lexer *publicationShellLexer) consumeRedirectionPunctuation(ch byte) bool {
+	if ch == '&' && !lexer.wordStarted && lexer.index+1 < len(lexer.command) && lexer.command[lexer.index+1] == '>' {
+		lexer.wordStarted = true
+		lexer.value.WriteByte(ch)
+		return true
+	}
+	if !lexer.wordStarted || ch != '&' && ch != '|' {
+		return false
+	}
+	value := lexer.value.String()
+	if strings.HasSuffix(value, ">") || strings.HasSuffix(value, "<") {
+		lexer.value.WriteByte(ch)
+		return true
+	}
+	return false
 }
 
 func (lexer *publicationShellLexer) consumeCommentOrLiteral(ch byte) {
