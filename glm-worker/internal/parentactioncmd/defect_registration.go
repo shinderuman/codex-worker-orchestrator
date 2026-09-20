@@ -15,7 +15,7 @@ import (
 )
 
 type defectRegistrationOutput struct {
-	Status                   string                            `json:"status"`
+	Status                   string                           `json:"status"`
 	Registration             *state.PendingDefectRegistration `json:"registration,omitempty"`
 	RequiredAction           state.ParentAction               `json:"required_action"`
 	AllowedActions           []state.ParentAction             `json:"allowed_actions"`
