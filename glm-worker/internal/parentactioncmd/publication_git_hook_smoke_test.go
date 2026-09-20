@@ -9,32 +9,85 @@ import (
 	"testing"
 )
 
-func TestPublicationReferenceTransactionRejectsCommitNoVerify(t *testing.T) {
+func TestPublicationReferenceTransactionAllowsOrdinaryCommit(t *testing.T) {
+	repo := continuationHookRepo(t)
+	hooks := t.TempDir()
+	copyPublicationHook(t, "reference-transaction", hooks)
+	runContinuationHookGit(t, repo, "config", "core.hooksPath", hooks)
+
+	bin, calls := publicationGuardStub(t, true)
+	if err := os.WriteFile(filepath.Join(repo, "code.txt"), []byte("ordinary\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runContinuationHookGit(t, repo, "add", "code.txt")
+	before := strings.TrimSpace(pushBindingGitOutput(t, repo, "rev-parse", "HEAD"))
+	cmd := exec.Command("git", "commit", "--no-verify", "-m", "ordinary local commit")
+	cmd.Dir = repo
+	cmd.Env = publicationHookEnv(bin, calls)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("ordinary commit rejected by reference transaction hook: %v: %s", err, output)
+	}
+	after := strings.TrimSpace(pushBindingGitOutput(t, repo, "rev-parse", "HEAD"))
+	if after == before {
+		t.Fatal("ordinary commit did not advance HEAD")
+	}
+	callData, readErr := os.ReadFile(calls)
+	if readErr != nil || !strings.Contains(string(callData), "push-binding ref-guard --old") {
+		t.Fatalf("reference guard call = %q err=%v", callData, readErr)
+	}
+}
+
+func TestPublicationReferenceTransactionAllowsOrdinaryFastForward(t *testing.T) {
+	repo := continuationHookRepo(t)
+	if err := os.WriteFile(filepath.Join(repo, "fast-forward.txt"), []byte("ahead\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runContinuationHookGit(t, repo, "add", "fast-forward.txt")
+	runContinuationHookGit(t, repo, "commit", "-m", "ahead")
+	ahead := strings.TrimSpace(pushBindingGitOutput(t, repo, "rev-parse", "HEAD"))
+	runContinuationHookGit(t, repo, "reset", "--hard", "HEAD^")
+
+	hooks := t.TempDir()
+	copyPublicationHook(t, "reference-transaction", hooks)
+	runContinuationHookGit(t, repo, "config", "core.hooksPath", hooks)
+	bin, calls := publicationGuardStub(t, true)
+	cmd := exec.Command("git", "merge", "--ff-only", ahead)
+	cmd.Dir = repo
+	cmd.Env = publicationHookEnv(bin, calls)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("ordinary fast-forward rejected by reference transaction hook: %v: %s", err, output)
+	}
+	if got := strings.TrimSpace(pushBindingGitOutput(t, repo, "rev-parse", "HEAD")); got != ahead {
+		t.Fatalf("fast-forward HEAD = %s, want %s", got, ahead)
+	}
+	callData, readErr := os.ReadFile(calls)
+	if readErr != nil || !strings.Contains(string(callData), "push-binding ref-guard --old") {
+		t.Fatalf("reference guard call = %q err=%v", callData, readErr)
+	}
+}
+
+func TestPublicationReferenceTransactionFailsClosedWhenGuardRejects(t *testing.T) {
 	repo := continuationHookRepo(t)
 	hooks := t.TempDir()
 	copyPublicationHook(t, "reference-transaction", hooks)
 	runContinuationHookGit(t, repo, "config", "core.hooksPath", hooks)
 
 	bin, calls := publicationGuardStub(t, false)
-	if err := os.WriteFile(filepath.Join(repo, "code.txt"), []byte("blocked\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(repo, "blocked.txt"), []byte("blocked\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	runContinuationHookGit(t, repo, "add", "code.txt")
+	runContinuationHookGit(t, repo, "add", "blocked.txt")
 	before := strings.TrimSpace(pushBindingGitOutput(t, repo, "rev-parse", "HEAD"))
-	cmd := exec.Command("git", "commit", "--no-verify", "-m", "must be blocked")
+	cmd := exec.Command("git", "commit", "--no-verify", "-m", "guard rejection")
 	cmd.Dir = repo
 	cmd.Env = publicationHookEnv(bin, calls)
 	output, err := cmd.CombinedOutput()
 	if err == nil {
-		t.Fatalf("git commit --no-verify bypassed reference transaction guard: %s", output)
+		t.Fatalf("reference transaction hook ignored guard rejection: %s", output)
 	}
 	after := strings.TrimSpace(pushBindingGitOutput(t, repo, "rev-parse", "HEAD"))
 	if after != before {
 		t.Fatalf("blocked commit advanced HEAD: %s != %s", after, before)
-	}
-	callData, readErr := os.ReadFile(calls)
-	if readErr != nil || !strings.Contains(string(callData), "push-binding ref-guard --old") {
-		t.Fatalf("reference guard call = %q err=%v", callData, readErr)
 	}
 }
 
