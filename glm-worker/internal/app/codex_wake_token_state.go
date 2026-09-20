@@ -17,19 +17,12 @@ type transactionTokenLease struct {
 	lock         *repoLockLease
 }
 
-const (
-	codexWakeTokenStateDir  = "glm-worker-wake-transactions"
-	autoResumeTokenStateDir = "glm-worker-resume-transactions"
-)
+const codexWakeTokenStateDir = "glm-worker-wake-transactions"
 
 var removeCodexWakeLeaseFile = os.Remove
 
 func persistCodexWakeToken(codexConfigDir, token string) error {
 	return persistTransactionToken(codexConfigDir, codexWakeTokenStateDir, "wake", token)
-}
-
-func persistAutoResumeToken(codexConfigDir, token string) error {
-	return persistTransactionToken(codexConfigDir, autoResumeTokenStateDir, "auto-resume", token)
 }
 
 func persistTransactionToken(codexConfigDir, stateDir, label, token string) error {
@@ -59,10 +52,6 @@ func persistTransactionToken(codexConfigDir, stateDir, label, token string) erro
 
 func beginCodexWakeToken(codexConfigDir, token string) (transactionTokenLease, error) {
 	return beginTransactionToken(codexConfigDir, codexWakeTokenStateDir, "wake", token)
-}
-
-func beginAutoResumeToken(codexConfigDir, token string) (transactionTokenLease, error) {
-	return beginTransactionToken(codexConfigDir, autoResumeTokenStateDir, "auto-resume", token)
 }
 
 func beginTransactionToken(codexConfigDir, stateDir, label, token string) (transactionTokenLease, error) {
@@ -158,10 +147,6 @@ func (lease transactionTokenLease) releaseLock() {
 
 func removeCodexWakeToken(codexConfigDir, token string) {
 	removeTransactionToken(codexConfigDir, codexWakeTokenStateDir, token)
-}
-
-func removeAutoResumeToken(codexConfigDir, token string) {
-	removeTransactionToken(codexConfigDir, autoResumeTokenStateDir, token)
 }
 
 func removeTransactionToken(codexConfigDir, stateDir, token string) {
