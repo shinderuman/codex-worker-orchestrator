@@ -30,7 +30,8 @@ func admitNewTaskCommand(cmd Command, st *state.StateStore) error {
 	if err := st.ValidateResetDispositionForNewTask(); err != nil {
 		return &workflow.WorkerError{Message: err.Error()}
 	}
-	resume, err := st.AdmitNewTaskRotationBoundary(os.Getenv(state.ParentActionCodexThreadIDEnv), os.Getenv(state.SessionRotationClaimIDEnv))
+	claimID := os.Getenv(state.SessionRotationClaimIDEnv)
+	resume, err := st.AdmitNewTaskRotationBoundary(os.Getenv(state.ParentActionCodexThreadIDEnv), claimID)
 	if err != nil {
 		return &workflow.WorkerError{Message: err.Error()}
 	}
@@ -45,8 +46,10 @@ func admitNewTaskCommand(cmd Command, st *state.StateStore) error {
 		return &workflow.WorkerError{Message: err.Error()}
 	}
 	if admitted {
-		if err := st.RetirePendingSessionRotationRecommendations(); err != nil {
-			return &workflow.WorkerError{Message: err.Error()}
+		if claimID == "" {
+			if err := st.RetirePendingSessionRotationRecommendations(); err != nil {
+				return &workflow.WorkerError{Message: err.Error()}
+			}
 		}
 		return nil
 	}
