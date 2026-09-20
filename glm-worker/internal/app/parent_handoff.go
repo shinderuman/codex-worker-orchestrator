@@ -31,6 +31,7 @@ type parentHandoffOutput struct {
 	RoutingEvidence          []parentHandoffRoutingEvidence     `json:"routing_evidence"`
 	SessionRotation          *state.SessionRotationProjection   `json:"session_rotation"`
 	ParentRequest            *ParentRequestCompletionProjection `json:"parent_request"`
+	Publication              *PublicationSequence               `json:"publication,omitempty"`
 }
 
 type parentHandoffRecoveryOutput struct {
@@ -93,7 +94,7 @@ type parentHandoffRoutingEvidence struct {
 	SnapshotMatch   string `json:"snapshot_match"`
 }
 
-const parentHandoffVersion = 2
+const parentHandoffVersion = 3
 
 const (
 	routingSnapshotMatchExact              = "exact"
@@ -189,6 +190,10 @@ func buildParentHandoff(st *state.StateStore) parentHandoffOutput {
 	applyParentSessionRotation(st, &output)
 	output.Validations = currentParentValidations(st, repoRoot, output.Snapshot)
 	output.RoutingEvidence = currentParentRoutingEvidence(st, repoRoot, taskID, output.Snapshot)
+	if taskStatus == state.TaskStatusAwaitingParentCompletion || taskStatus == state.TaskStatusComplete {
+		sequence := ProjectPublicationSequence(repoRoot, st)
+		output.Publication = &sequence
+	}
 	return output
 }
 
@@ -413,4 +418,5 @@ func markHandoffInconsistent(output *parentHandoffOutput, detail string) {
 	output.AllowedActions = []string{}
 	output.RequiredActionParameters = nil
 	output.ResumeKind = nil
+	output.Publication = nil
 }
