@@ -8,11 +8,10 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/publication-escaped-defect-reopen-lifecycle.md`
+- `IMPLEMENTATION_TASKS/reset-disposition-archived-evidence-admission.md`
 
 ## NEXT（優先順）
 
-- `IMPLEMENTATION_TASKS/reset-disposition-archived-evidence-admission.md`
 - `IMPLEMENTATION_TASKS/session-loss-recovery-surface-convergence.md`
 - `IMPLEMENTATION_TASKS/zai-provider-limit-self-resume.md`
 - `IMPLEMENTATION_TASKS/execution-milestone-reconsideration-after-single.md`
