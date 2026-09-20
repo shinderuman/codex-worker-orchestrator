@@ -29,10 +29,10 @@ var (
 )
 
 var zaiFiveHourBusinessCodes = map[string]struct{}{
-	"1308": {}, // Coding Plan producer evidence: five-hour rolling quota.
-	"1316": {}, // five-hour limit, no balance for extra usage.
-	"1318": {}, // five-hour limit, no monthly spend available.
-	"1320": {}, // five-hour limit, monthly spend cap reached.
+	"1308": {},
+	"1316": {},
+	"1318": {},
+	"1320": {},
 }
 
 func DetectZaiBusinessCodeText(output string) (string, bool) {
