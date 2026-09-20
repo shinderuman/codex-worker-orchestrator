@@ -8,11 +8,6 @@ import (
 	"strings"
 )
 
-var (
-	buildVCSRevision string
-	buildVCSModified string
-)
-
 type statusRuntimeBuild struct {
 	VCSRevision    *string `json:"vcs_revision"`
 	VCSModified    *bool   `json:"vcs_modified"`
@@ -26,10 +21,17 @@ type runtimeBuildSettings struct {
 }
 
 const (
-	runtimeBuildSame        = "same"
-	runtimeBuildAncestor    = "ancestor"
-	runtimeBuildNotAncestor = "not-ancestor"
-	runtimeBuildUnknown     = "unknown"
+	runtimeBuildSame          = "same"
+	runtimeBuildAncestor      = "ancestor"
+	runtimeBuildNotAncestor   = "not-ancestor"
+	runtimeBuildUnknown       = "unknown"
+	runtimeBuildModifiedTrue  = "true"
+	runtimeBuildModifiedFalse = "false"
+)
+
+var (
+	buildVCSRevision string
+	buildVCSModified string
 )
 
 func currentRuntimeBuild(repoRoot string) statusRuntimeBuild {
@@ -46,10 +48,10 @@ func currentRuntimeBuild(repoRoot string) statusRuntimeBuild {
 func runtimeBuildSettingsFromInjected(revision, modified string) (runtimeBuildSettings, bool) {
 	revision = strings.TrimSpace(revision)
 	modified = strings.TrimSpace(modified)
-	if revision == "" || (modified != "true" && modified != "false") {
+	if revision == "" || (modified != runtimeBuildModifiedTrue && modified != runtimeBuildModifiedFalse) {
 		return runtimeBuildSettings{}, false
 	}
-	isModified := modified == "true"
+	isModified := modified == runtimeBuildModifiedTrue
 	return runtimeBuildSettings{revision: revision, modified: &isModified}, true
 }
 
@@ -61,8 +63,8 @@ func runtimeBuildSettingsFromGo(settings []debug.BuildSetting) runtimeBuildSetti
 			result.revision = strings.TrimSpace(setting.Value)
 		case "vcs.modified":
 			value := strings.TrimSpace(setting.Value)
-			if value == "true" || value == "false" {
-				modified := value == "true"
+			if value == runtimeBuildModifiedTrue || value == runtimeBuildModifiedFalse {
+				modified := value == runtimeBuildModifiedTrue
 				result.modified = &modified
 			}
 		}
