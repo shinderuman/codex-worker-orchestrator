@@ -75,9 +75,16 @@ func TestAdmitNewTaskRotationBoundaryPreservesClaimedStartPath(t *testing.T) {
 	st := &StateStore{dir: t.TempDir()}
 	parentThread := "01a0463c-d477-7410-9efd-cb34ff2e0b0e"
 	boundThread := "01a0244a-4ee4-7e71-b2e1-dec3bdda2120"
+	sourceTask, err := st.StartNewTask()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetTaskStatus(TaskStatusComplete); err != nil {
+		t.Fatal(err)
+	}
 	if err := st.commitSessionRotation(&SessionRotationEvaluation{
 		ParentThreadID: parentThread,
-		TaskID:         "12345678-aaaa-bbbb-cccc-dddddddddddd",
+		TaskID:         sourceTask,
 		Terminal:       SessionRotationTerminalAccept,
 		Decision: SessionRotationDecision{
 			Required: true,
