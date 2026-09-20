@@ -22,6 +22,14 @@ const (
 )
 
 func (s *StateStore) CapturePublicationReopenLineage(candidate PublicationCandidate) error {
+	taskID, err := s.TaskID()
+	if err != nil {
+		return err
+	}
+	if candidate.TaskID != taskID {
+		return fmt.Errorf("publication reopen candidate task %s does not match current task %s", candidate.TaskID, taskID)
+	}
+
 	existing, err := s.LoadPublicationReopenLineage()
 	if err == nil {
 		return s.validateCurrentPublicationReopenLineage(existing)
@@ -30,13 +38,6 @@ func (s *StateStore) CapturePublicationReopenLineage(candidate PublicationCandid
 		return err
 	}
 
-	taskID, err := s.TaskID()
-	if err != nil {
-		return err
-	}
-	if candidate.TaskID != taskID {
-		return fmt.Errorf("publication reopen candidate task %s does not match current task %s", candidate.TaskID, taskID)
-	}
 	taskPath, err := s.CurrentTaskAuthorityPath()
 	if err != nil {
 		return fmt.Errorf("publication reopen task authority unavailable: %w", err)
