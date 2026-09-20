@@ -30,7 +30,7 @@ func TestAdmitNewTaskRotationBoundaryDeclinesPendingRecommendationAfterAdmission
 	if beforeRetire == nil || beforeRetire.State != SessionRotationStatePending || beforeRetire.Directive == nil {
 		t.Fatalf("admission mutated pending recommendation before ordinary start was accepted: %#v", beforeRetire)
 	}
-	if err := st.StagePendingSessionRotationRecommendationRetirement(); err != nil {
+	if err := st.StagePendingSessionRotationRecommendationRetirement(ordinaryThread); err != nil {
 		t.Fatal(err)
 	}
 	staged, err := st.LoadSessionRotationMarker(parentThread)
@@ -58,8 +58,54 @@ func TestAdmitNewTaskRotationBoundaryDeclinesPendingRecommendationAfterAdmission
 	}
 }
 
+func TestPendingRecommendationRetirementRevalidatesBoundaryBeforeTaskCommit(t *testing.T) {
+	st := newAtomicTransitionFixture(t)
+	parentThread := "01a0463c-d477-7410-9efd-cb34ff2e0b0e"
+	ordinaryThread := "01a0244a-4ee4-7e71-b2e1-dec3bdda2120"
+	if err := st.commitSessionRotation(&SessionRotationEvaluation{
+		ParentThreadID: parentThread,
+		TaskID:         oldAtomicTaskID,
+		Terminal:       SessionRotationTerminalAccept,
+		Decision: SessionRotationDecision{
+			Required: true,
+			Reason:   SessionRotationReasonDefaultTwoTasks,
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	marker, err := st.LoadSessionRotationMarker(parentThread)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.StagePendingSessionRotationRecommendationRetirement(ordinaryThread); err != nil {
+		t.Fatal(err)
+	}
+	claim, err := st.ClaimSessionRotation(parentThread, marker.Directive.DirectiveID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := st.startNewTaskWithID(newAtomicTaskID, false); err == nil {
+		t.Fatal("ordinary task transition bypassed a newly claimed rotation")
+	}
+	if current, err := st.TaskID(); err != nil || current != oldAtomicTaskID {
+		t.Fatalf("task transition changed after boundary revalidation failure: task=%q err=%v", current, err)
+	}
+	after, err := st.LoadSessionRotationMarker(parentThread)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after == nil || after.State != SessionRotationStateClaimed || after.Claim == nil || after.Claim.ClaimID != claim.ClaimID {
+		t.Fatalf("claimed transaction changed after boundary revalidation failure: %#v", after)
+	}
+	if !st.Exists(pendingSessionRotationRetirementStateFile) {
+		t.Fatal("retirement staging disappeared after pre-commit boundary failure")
+	}
+}
+
 func TestPendingRecommendationRetirementRollsBackWithNewTaskTransition(t *testing.T) {
 	st := newAtomicTransitionFixture(t)
+	ordinaryThread := "01a0244a-4ee4-7e71-b2e1-dec3bdda2120"
 	parentThreads := []string{
 		"01a0463c-d477-7410-9efd-cb34ff2e0b0e",
 		"01b0463c-d477-7410-9efd-cb34ff2e0b0e",
@@ -77,7 +123,7 @@ func TestPendingRecommendationRetirementRollsBackWithNewTaskTransition(t *testin
 			t.Fatal(err)
 		}
 	}
-	if err := st.StagePendingSessionRotationRecommendationRetirement(); err != nil {
+	if err := st.StagePendingSessionRotationRecommendationRetirement(ordinaryThread); err != nil {
 		t.Fatal(err)
 	}
 	stage, err := st.loadPendingSessionRotationRecommendationRetirement()
