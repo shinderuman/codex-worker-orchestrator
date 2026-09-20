@@ -7,9 +7,11 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repolock"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryproject"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskcontract"
 )
@@ -68,11 +70,11 @@ func executeDefectRegistrationAction(cfg config.AppConfig, args []string, stdout
 }
 
 func executeRecordDefectFinding(cfg config.AppConfig, st *state.StateStore, sourceActive, taskPath string, stdout io.Writer) error {
-	ready, err := defectTaskBindingReady(cfg.RepoRoot, sourceActive, taskPath)
+	declared, err := defectTaskBindingDeclared(cfg.RepoRoot, sourceActive, taskPath)
 	if err != nil {
 		return err
 	}
-	if ready {
+	if declared && validateDefectTaskBindingContract(cfg.RepoRoot, taskPath) == nil {
 		plan, err := st.ParentActionPlan()
 		if err != nil {
 			return err
@@ -105,12 +107,15 @@ func executeBindDefectTask(cfg config.AppConfig, st *state.StateStore, sourceAct
 	if !admitted || plan.RequiredAction != state.ParentActionBindDefectTask || plan.RequiredActionParameters["task"] != taskPath {
 		return fmt.Errorf("bind-defect-task is not machine-required for %s", taskPath)
 	}
-	ready, err := defectTaskBindingReady(cfg.RepoRoot, sourceActive, taskPath)
+	declared, err := defectTaskBindingDeclared(cfg.RepoRoot, sourceActive, taskPath)
 	if err != nil {
 		return err
 	}
-	if !ready {
+	if !declared {
 		return fmt.Errorf("defect task %s is not yet bound to a task file and Plan NEXT/BLOCKED entry", taskPath)
+	}
+	if err := validateDefectTaskBindingContract(cfg.RepoRoot, taskPath); err != nil {
+		return err
 	}
 	bound, err := st.BindPendingDefectRegistration(taskPath)
 	if err != nil {
@@ -133,7 +138,7 @@ func parseDefectRegistrationArgs(args []string) (string, string, error) {
 	return args[0], args[2], nil
 }
 
-func defectTaskBindingReady(repoRoot, sourceActive, taskPath string) (bool, error) {
+func defectTaskBindingDeclared(repoRoot, sourceActive, taskPath string) (bool, error) {
 	if err := taskcontract.ValidateActiveTaskPath(taskPath); err != nil {
 		return false, err
 	}
@@ -173,6 +178,37 @@ func defectTaskBindingReady(repoRoot, sourceActive, taskPath string) (bool, erro
 		return false, fmt.Errorf("defect task %s appears multiple times in Plan NEXT/BLOCKED", taskPath)
 	}
 	return matches == 1, nil
+}
+
+func validateDefectTaskBindingContract(repoRoot, taskPath string) error {
+	taskData, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(taskPath)))
+	if err != nil {
+		return fmt.Errorf("read defect task %s: %w", taskPath, err)
+	}
+	if err := repositoryproject.ValidateActiveTaskContent(taskData); err != nil {
+		return fmt.Errorf("defect task %s does not satisfy task content contract: %w", taskPath, err)
+	}
+	if _, err := taskcontract.ParseTaskDependencyState(taskData); err != nil {
+		return fmt.Errorf("defect task %s does not satisfy dependency contract: %w", taskPath, err)
+	}
+	planData, err := os.ReadFile(filepath.Join(repoRoot, "IMPLEMENTATION_PLAN.local.md"))
+	if err != nil {
+		return fmt.Errorf("read IMPLEMENTATION_PLAN.local.md: %w", err)
+	}
+	schedule := taskcontract.ParsePlanSchedule(string(planData))
+	entries, err := taskcontract.EnumerateTaskCorpus(repoRoot)
+	if err != nil {
+		return err
+	}
+	failures := schedule.ClosureFailures(entries)
+	if len(failures) == 0 {
+		return nil
+	}
+	reasons := make([]string, 0, len(failures))
+	for _, failure := range failures {
+		reasons = append(reasons, failure.Reason)
+	}
+	return fmt.Errorf("defect task binding does not preserve task schedule closure: %s", strings.Join(reasons, "; "))
 }
 
 func writeDefectRegistrationOutput(stdout io.Writer, status string, registration *state.PendingDefectRegistration, plan state.ParentActionPlan) error {
