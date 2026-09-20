@@ -118,7 +118,8 @@ func publicationShellCommandIndex(segment []publicationShellWord) (int, bool) {
 }
 
 func publicationClassifyInterpreter(args []publicationShellWord, depth int) (string, string) {
-	for index, word := range args {
+	for index := 0; index < len(args); index++ {
+		word := args[index]
 		if word.Dynamic {
 			return publicationGitClassificationCode, publicationGitClassificationReason
 		}
@@ -128,19 +129,32 @@ func publicationClassifyInterpreter(args []publicationShellWord, depth int) (str
 		if !strings.HasPrefix(word.Value, "-") {
 			return "", ""
 		}
-		if !publicationInterpreterCommandOption(word.Value) {
-			continue
+		if publicationInterpreterCommandOption(word.Value) {
+			if index+1 >= len(args) || args[index+1].Dynamic {
+				return publicationGitClassificationCode, publicationGitClassificationReason
+			}
+			return publicationClassifyShell(args[index+1].Value, depth)
 		}
-		if index+1 >= len(args) || args[index+1].Dynamic {
-			return publicationGitClassificationCode, publicationGitClassificationReason
+		if publicationInterpreterOptionConsumesValue(word.Value) {
+			if index+1 >= len(args) || args[index+1].Dynamic {
+				return publicationGitClassificationCode, publicationGitClassificationReason
+			}
+			index++
 		}
-		return publicationClassifyShell(args[index+1].Value, depth)
 	}
 	return "", ""
 }
 
 func publicationInterpreterCommandOption(value string) bool {
 	return len(value) > 1 && value[0] == '-' && value[1] != '-' && strings.Contains(value[1:], "c")
+}
+
+func publicationInterpreterOptionConsumesValue(value string) bool {
+	switch value {
+	case "--init-file", "--rcfile", "-O", "-o":
+		return true
+	}
+	return false
 }
 
 func publicationClassifyEval(args []publicationShellWord, depth int) (string, string) {
