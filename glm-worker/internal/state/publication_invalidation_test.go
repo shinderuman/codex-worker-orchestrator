@@ -11,8 +11,6 @@ func TestRecordPublicationInvalidatingFindingBindsCurrentCandidate(t *testing.T)
 	candidate := saveReopenPublicationState(t, st)
 
 	finding, err := st.RecordPublicationInvalidatingFinding(
-		candidate.CommitOID,
-		candidate.SnapshotID,
 		ParentOriginCodexReview,
 		ParentCauseProductionWiring,
 	)
@@ -27,8 +25,6 @@ func TestRecordPublicationInvalidatingFindingBindsCurrentCandidate(t *testing.T)
 	}
 
 	retry, err := st.RecordPublicationInvalidatingFinding(
-		candidate.CommitOID,
-		candidate.SnapshotID,
 		ParentOriginCodexReview,
 		ParentCauseProductionWiring,
 	)
@@ -40,28 +36,16 @@ func TestRecordPublicationInvalidatingFindingBindsCurrentCandidate(t *testing.T)
 	}
 }
 
-func TestRecordPublicationInvalidatingFindingRejectsTargetMismatch(t *testing.T) {
+func TestRecordPublicationInvalidatingFindingRequiresCurrentCandidate(t *testing.T) {
 	st := newAcceptedParentCompletionStore(t)
-	candidate := saveReopenPublicationState(t, st)
-
 	if _, err := st.RecordPublicationInvalidatingFinding(
-		strings.Repeat("f", 40),
-		candidate.SnapshotID,
 		ParentOriginCodexReview,
 		ParentCauseProductionWiring,
-	); err == nil || !strings.Contains(err.Error(), "does not match current publication candidate") {
-		t.Fatalf("wrong candidate OID = %v", err)
-	}
-	if _, err := st.RecordPublicationInvalidatingFinding(
-		candidate.CommitOID,
-		strings.Repeat("f", 64),
-		ParentOriginCodexReview,
-		ParentCauseProductionWiring,
-	); err == nil || !strings.Contains(err.Error(), "does not match current publication candidate") {
-		t.Fatalf("wrong snapshot ID = %v", err)
+	); err == nil || !strings.Contains(err.Error(), "requires current publication candidate") {
+		t.Fatalf("finding without candidate = %v", err)
 	}
 	if _, err := st.LoadPublicationInvalidatingFinding(); err == nil {
-		t.Fatal("target mismatch left a durable finding")
+		t.Fatal("missing candidate left a durable finding")
 	}
 }
 
@@ -69,8 +53,6 @@ func TestCurrentPublicationInvalidatingFindingRejectsStaleCandidate(t *testing.T
 	st := newAcceptedParentCompletionStore(t)
 	candidate := saveReopenPublicationState(t, st)
 	if _, err := st.RecordPublicationInvalidatingFinding(
-		candidate.CommitOID,
-		candidate.SnapshotID,
 		ParentOriginCodexReview,
 		ParentCauseProductionWiring,
 	); err != nil {
