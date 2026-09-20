@@ -208,55 +208,98 @@ func publicationParentValidationGate(st *state.StateStore, repoRoot string, cand
 		return gate, true
 	}
 	gate.Gate = checkpoint.ParentValidation.Form
-	event, eventErr := publicationValidationEvent(st, candidate, checkpoint.ParentValidation.Form)
+	snapshots, snapshotErr := publicationValidationSnapshots(repoRoot, candidate)
+	if snapshotErr != nil {
+		gate.Reason = snapshotErr.Error()
+		return gate, true
+	}
+	event, snapshot, eventErr := publicationValidationEvent(st, candidate, checkpoint.ParentValidation.Form, snapshots)
 	if eventErr != nil {
 		gate.Reason = eventErr.Error()
 		return gate, true
 	}
 	gate.ValidationRunID = event.ValidationRunID
+	gate.SnapshotID = event.SnapshotID
 	gate.Status = event.Result
 	if gate.Status != publicationGatePass {
 		gate.Reason = "candidate-bound quality gate result is " + event.Result
 		return gate, true
 	}
-	if err := verifyPublicationQualityRun(st, repoRoot, candidate, checkpoint.ParentValidation.Form, event.ValidationRunID); err != nil {
+	var validationErr error
+	if event.SnapshotID == candidate.SnapshotID {
+		validationErr = verifyPublicationQualityRun(st, repoRoot, candidate, checkpoint.ParentValidation.Form, event.ValidationRunID)
+	} else {
+		validationErr = verifyPublicationQualityRunForSnapshot(st, repoRoot, candidate, checkpoint.ParentValidation.Form, event.ValidationRunID, event.SnapshotID, snapshot)
+	}
+	if validationErr != nil {
 		gate.Status = publicationGateStale
-		gate.Reason = err.Error()
+		gate.Reason = validationErr.Error()
 		return gate, true
 	}
 	return gate, true
 }
 
-func publicationValidationEvent(st *state.StateStore, candidate state.PublicationCandidate, form string) (state.TaskValidationEvent, error) {
+func publicationValidationSnapshots(repoRoot string, candidate state.PublicationCandidate) (map[string]state.SnapshotDigest, error) {
+	snapshots := map[string]state.SnapshotDigest{candidate.SnapshotID: candidate.Snapshot}
+	currentRaw, err := state.CaptureGitSnapshot(repoRoot)
+	if err != nil {
+		return nil, err
+	}
+	current := state.SnapshotDigest{
+		Head:                          currentRaw.Head,
+		IndexDigest:                   currentRaw.IndexDigest,
+		WorktreeDigest:                currentRaw.WorktreeDigest,
+		WorktreeDigestExcludingParent: currentRaw.WorktreeDigestExcludingParent,
+	}
+	if current.Head != candidate.CommitOID || !pushBindingTreeClean(repoRoot) {
+		return snapshots, nil
+	}
+	tree, err := gitFinalizationOutput(repoRoot, "rev-parse", "--verify", "HEAD^{tree}")
+	if err != nil || strings.TrimSpace(tree) != candidate.TreeOID {
+		return snapshots, nil
+	}
+	if snapshotID := state.ValidationSnapshotID(current.Head, current.IndexDigest, current.WorktreeDigest); snapshotID != "" {
+		snapshots[snapshotID] = current
+	}
+	return snapshots, nil
+}
+
+func publicationValidationEvent(st *state.StateStore, candidate state.PublicationCandidate, form string, snapshots map[string]state.SnapshotDigest) (state.TaskValidationEvent, state.SnapshotDigest, error) {
 	file, err := os.Open(st.TaskEventLogPath(candidate.TaskID))
 	if err != nil {
-		return state.TaskValidationEvent{}, err
+		return state.TaskValidationEvent{}, state.SnapshotDigest{}, err
 	}
 	defer func() { _ = file.Close() }()
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
 	var found *state.TaskValidationEvent
+	var foundSnapshot state.SnapshotDigest
 	for scanner.Scan() {
 		record, err := state.ParseTaskEventLine(scanner.Bytes())
 		if err != nil {
-			return state.TaskValidationEvent{}, err
+			return state.TaskValidationEvent{}, state.SnapshotDigest{}, err
 		}
-		if record.Validation == nil || record.Validation.Form != form || record.Validation.SnapshotID != candidate.SnapshotID {
+		if record.Validation == nil || record.Validation.Form != form {
+			continue
+		}
+		snapshot, ok := snapshots[record.Validation.SnapshotID]
+		if !ok {
 			continue
 		}
 		copy := *record.Validation
 		found = &copy
+		foundSnapshot = snapshot
 	}
 	if err := scanner.Err(); err != nil {
-		return state.TaskValidationEvent{}, err
+		return state.TaskValidationEvent{}, state.SnapshotDigest{}, err
 	}
 	if found == nil {
-		return state.TaskValidationEvent{}, fmt.Errorf("no %s validation matches candidate snapshot %s", form, candidate.SnapshotID)
+		return state.TaskValidationEvent{}, state.SnapshotDigest{}, fmt.Errorf("no %s validation matches an admitted publication snapshot", form)
 	}
 	if found.ValidationRunID == "" {
-		return state.TaskValidationEvent{}, fmt.Errorf("matching %s validation has no run identity", form)
+		return state.TaskValidationEvent{}, state.SnapshotDigest{}, fmt.Errorf("matching %s validation has no run identity", form)
 	}
-	return *found, nil
+	return *found, foundSnapshot, nil
 }
 
 func verifyPublicationQualityRun(st *state.StateStore, repoRoot string, candidate state.PublicationCandidate, form, runID string) error {
@@ -265,6 +308,17 @@ func verifyPublicationQualityRun(st *state.StateStore, repoRoot string, candidat
 		return err
 	}
 	if err := verifyPublicationQualityRunIdentity(record, repoRoot, candidate, form, runID); err != nil {
+		return err
+	}
+	return verifyPublicationQualityRunResult(record)
+}
+
+func verifyPublicationQualityRunForSnapshot(st *state.StateStore, repoRoot string, candidate state.PublicationCandidate, form, runID, snapshotID string, snapshot state.SnapshotDigest) error {
+	record, err := loadPublicationQualityRun(st, runID)
+	if err != nil {
+		return err
+	}
+	if err := verifyPublicationQualityRunSnapshotIdentity(record, repoRoot, candidate.TaskID, form, runID, snapshotID, snapshot); err != nil {
 		return err
 	}
 	return verifyPublicationQualityRunResult(record)
@@ -286,12 +340,19 @@ func loadPublicationQualityRun(st *state.StateStore, runID string) (publicationQ
 }
 
 func verifyPublicationQualityRunIdentity(record publicationQualityRunRecord, repoRoot string, candidate state.PublicationCandidate, form, runID string) error {
-	if record.ValidationRunID != runID || record.Form != form || record.Repository != repoRoot || record.TaskID != candidate.TaskID {
+	return verifyPublicationQualityRunSnapshotIdentity(record, repoRoot, candidate.TaskID, form, runID, candidate.SnapshotID, candidate.Snapshot)
+}
+
+func verifyPublicationQualityRunSnapshotIdentity(record publicationQualityRunRecord, repoRoot, taskID, form, runID, snapshotID string, snapshot state.SnapshotDigest) error {
+	if record.ValidationRunID != runID || record.Form != form || record.Repository != repoRoot || record.TaskID != taskID {
 		return fmt.Errorf("quality gate run authority does not match publication candidate")
 	}
-	if record.Head != candidate.Snapshot.Head || record.IndexDigest != candidate.Snapshot.IndexDigest || record.WorktreeDigest != candidate.Snapshot.WorktreeDigest ||
-		record.WorktreeDigestExcludingParent != candidate.Snapshot.WorktreeDigestExcludingParent {
+	if record.Head != snapshot.Head || record.IndexDigest != snapshot.IndexDigest || record.WorktreeDigest != snapshot.WorktreeDigest ||
+		record.WorktreeDigestExcludingParent != snapshot.WorktreeDigestExcludingParent {
 		return fmt.Errorf("quality gate run snapshot does not match publication candidate")
+	}
+	if state.ValidationSnapshotID(record.Head, record.IndexDigest, record.WorktreeDigest) != snapshotID {
+		return fmt.Errorf("quality gate run snapshot identity does not match validation event")
 	}
 	return nil
 }

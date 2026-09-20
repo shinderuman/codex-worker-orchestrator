@@ -100,6 +100,17 @@ func validatePublicationCandidateSnapshot(candidate PublicationCandidate) error 
 	return nil
 }
 
+func PublicationValidationSnapshotIDs(candidate PublicationCandidate, current SnapshotDigest) []string {
+	ids := []string{candidate.SnapshotID}
+	if current.Head != candidate.CommitOID || current.IndexDigest == "" || current.WorktreeDigest == "" {
+		return ids
+	}
+	if promoted := ValidationSnapshotID(current.Head, current.IndexDigest, current.WorktreeDigest); promoted != "" {
+		ids = append(ids, promoted)
+	}
+	return ids
+}
+
 func validPublicationOID(value string) bool {
 	return validPublicationHex(value, 40)
 }

@@ -49,7 +49,7 @@ func TestParentHandoffCarriesPostLocalContinuation(t *testing.T) {
 	}
 
 	output := buildParentHandoff(st)
-	if output.Version != 2 || !output.Consistent || output.ParentRequest == nil {
+	if output.Version != parentHandoffVersion || !output.Consistent || output.ParentRequest == nil {
 		t.Fatalf("handoff = %#v", output)
 	}
 	continuation := output.ParentRequest.Continuation
