@@ -22,22 +22,29 @@ func (s *StateStore) commitNewTaskCanonicalState(taskID string, afterCanonicalCo
 	}
 	defer func() { _ = lock.Close() }()
 
-	snapshot, err := s.captureNewTaskTransitionSnapshot()
+	additionalFiles, err := s.pendingSessionRotationRetirementTransitionFiles()
 	if err != nil {
 		return err
 	}
-	if err := s.applyNewTaskCanonicalState(taskID); err != nil {
-		if rollbackErr := s.restoreNewTaskTransitionSnapshot(snapshot); rollbackErr != nil {
-			return errors.Join(err, fmt.Errorf("new task transitionをrollbackできません: %w", rollbackErr))
-		}
+	snapshot, err := s.captureNewTaskTransitionSnapshotWithAdditional(additionalFiles)
+	if err != nil {
 		return err
+	}
+	rollback := func(cause error) error {
+		if rollbackErr := s.restoreNewTaskTransitionSnapshotWithAdditional(snapshot, additionalFiles); rollbackErr != nil {
+			return errors.Join(cause, fmt.Errorf("new task transitionをrollbackできません: %w", rollbackErr))
+		}
+		return cause
+	}
+	if err := s.applyNewTaskCanonicalState(taskID); err != nil {
+		return rollback(err)
+	}
+	if err := s.commitPendingSessionRotationRecommendationRetirement(); err != nil {
+		return rollback(err)
 	}
 	if afterCanonicalCommit != nil {
 		if err := afterCanonicalCommit(); err != nil {
-			if rollbackErr := s.restoreNewTaskTransitionSnapshot(snapshot); rollbackErr != nil {
-				return errors.Join(err, fmt.Errorf("new task transitionをrollbackできません: %w", rollbackErr))
-			}
-			return err
+			return rollback(err)
 		}
 	}
 	return nil
@@ -72,8 +79,12 @@ func (s *StateStore) applyNewTaskCanonicalState(taskID string) error {
 }
 
 func (s *StateStore) captureNewTaskTransitionSnapshot() (newTaskTransitionSnapshot, error) {
+	return s.captureNewTaskTransitionSnapshotWithAdditional(nil)
+}
+
+func (s *StateStore) captureNewTaskTransitionSnapshotWithAdditional(additional []string) (newTaskTransitionSnapshot, error) {
 	snapshot := make(newTaskTransitionSnapshot)
-	for _, name := range newTaskCanonicalStateFileNames() {
+	for _, name := range newTaskTransitionSnapshotFileNames(additional) {
 		data, err := os.ReadFile(s.Path(name))
 		if errors.Is(err, os.ErrNotExist) {
 			snapshot[name] = newTaskTransitionFileSnapshot{}
@@ -88,8 +99,12 @@ func (s *StateStore) captureNewTaskTransitionSnapshot() (newTaskTransitionSnapsh
 }
 
 func (s *StateStore) restoreNewTaskTransitionSnapshot(snapshot newTaskTransitionSnapshot) error {
+	return s.restoreNewTaskTransitionSnapshotWithAdditional(snapshot, nil)
+}
+
+func (s *StateStore) restoreNewTaskTransitionSnapshotWithAdditional(snapshot newTaskTransitionSnapshot, additional []string) error {
 	var result error
-	for _, name := range newTaskCanonicalStateFileNames() {
+	for _, name := range newTaskTransitionSnapshotFileNames(additional) {
 		if name == "task.id" {
 			continue
 		}
@@ -113,6 +128,22 @@ func (s *StateStore) restoreNewTaskTransitionFile(name string, snapshot newTaskT
 		return fmt.Errorf("state %sをrollback復元できません: %w", name, err)
 	}
 	return nil
+}
+
+func newTaskTransitionSnapshotFileNames(additional []string) []string {
+	names := newTaskCanonicalStateFileNames()
+	seen := make(map[string]struct{}, len(names)+len(additional))
+	for _, name := range names {
+		seen[name] = struct{}{}
+	}
+	for _, name := range additional {
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		names = append(names, name)
+	}
+	return names
 }
 
 func newTaskCanonicalStateFileNames() []string {
