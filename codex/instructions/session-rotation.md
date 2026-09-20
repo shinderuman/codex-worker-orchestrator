@@ -8,7 +8,7 @@ rotation要否の評価・directive projectionはmachineが一貫したevidence/
 
 `rotation-claim`成功後のdirective identity、claim/bind/start admission、target-task identity、wrong-thread/duplicate start防止、retry整合、ack/retireは`handoff.session_rotation`と`control:session-rotation-claim-bind-start`をprocedure authorityとする。このtransactionは独立correctness invariantなのでparent判断でbypassしない。
 
-- `pending`は未claimのrecommendation。rotationを採用するならmachineが返したdirectiveをclaimする。通常startを選んだ場合はmachineがその未claimrecommendationをretireして通常taskへ進む。
+- `pending`は未claimのrecommendation。rotationを採用するならmachineが返したdirectiveをclaimする。通常startのadmissionが成功した場合だけmachineがその未claim recommendationをretireし、admissionが失敗した場合は`pending`を保持する。
 - `not-required`ならrotation recommendationは存在しない。
 - `unavailable`は証拠不足を意味し、親が独自閾値でrotationを発行しない。
 - `session_rotation.incomplete_rotations`の`pending`だけでは通常startをhard rejectしない。`claimed` / `bound`、またはclaim付きretry対象になったrotation transactionは完了までmachine admissionでfail closedする。
@@ -16,9 +16,9 @@ rotation要否の評価・directive projectionはmachineが一貫したevidence/
 
 ## external thread creation boundary
 
-新しいCodex threadの作成はrepository外のexternal boundaryであり、親が所有する。rotationを採用する場合だけ、この外部結果をrepository-side transactionへ結び直すために必要な最小relayを親が行う。
+新しいCodex threadの作成はrepository外のexternal boundaryであり、親が所有する。rotationを採用する場合だけ、この外部結果をrepository-side transactionへ結び直すために必要な最小relayだけを親が行う。
 
-1. `pending` projectionの`directive.directive_id`だけを使い、`glm-parent-action rotation-claim <directive-id>`を実行する。返された`claim_id`をそのまま保持する。claimしないまま通常startを選ぶこともでき、その場合pending recommendationはretireされる。
+1. `pending` projectionの`directive.directive_id`だけを使い、`glm-parent-action rotation-claim <directive-id>`を実行する。返された`claim_id`をそのまま保持する。claimしないまま通常startを選べるが、pending recommendationをretireするのは通常startのadmission成功後だけであり、admission失敗時は`pending`を保持する。
 2. claimした場合だけexternal threadを同じsaved project / local checkoutで1件作成する。別clone/worktreeへ切り替えない。
 3. 作成成功時だけ旧threadで`glm-parent-action rotation-bind <directive-id> <claim-id> <new-thread-id>`を実行する。作成失敗が確定した場合だけ`glm-parent-action rotation-fail <directive-id> <claim-id> --creation-result-json <json>`へ事実を渡す。結果不明をfailureへ読み替えず、重複thread作成で補わない。
 4. 新threadではrepository authorityとcurrent Gitを再読し、旧会話自由文を要求正本として複製しない。通常startは`glm-parent-action start --rotation-claim <claim-id>`を使う。milestone startがsemanticに必要なら既存staging surfaceを使い、rotation claim以外のtoken/JSON手順を本文から再構成しない。
