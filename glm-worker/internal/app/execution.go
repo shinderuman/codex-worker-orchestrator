@@ -61,9 +61,6 @@ func run(
 	if err != nil {
 		return err
 	}
-	if err := bindCurrentCodexThreadIdentity(&cmd); err != nil {
-		return err
-	}
 	if cmd.StdinBytes > 0 {
 		restore, rawApplied, err := enterStdinRawMode(stdin)
 		if err != nil {
