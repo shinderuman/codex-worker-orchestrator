@@ -59,6 +59,7 @@ run_detached_install() {
 runtime_status() {
 	(
 		cd "$detached"
+		HOME="$home" GLM_WORKER_HOME="$home/.glm-worker" "$home/.local/bin/glm-worker" --reset >/dev/null
 		HOME="$home" GLM_WORKER_HOME="$home/.glm-worker" "$home/.local/bin/glm-worker" --status
 	)
 }
