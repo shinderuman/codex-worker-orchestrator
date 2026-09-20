@@ -31,6 +31,9 @@ func (w *Workflow) admitNewTask() error {
 		return &WorkerError{Message: err.Error()}
 	}
 	if admitted {
+		if err := w.state.RetirePendingSessionRotationRecommendations(); err != nil {
+			return &WorkerError{Message: err.Error()}
+		}
 		return nil
 	}
 	return w.newTaskActionDenied(plan)
