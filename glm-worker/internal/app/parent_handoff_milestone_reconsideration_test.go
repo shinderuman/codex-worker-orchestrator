@@ -15,7 +15,6 @@ func TestParentHandoffProjectsMilestoneReconsiderationAtNaturalBoundaries(t *tes
 		state.TaskStatusRateLimited,
 		state.TaskStatusProviderUnavailable,
 		state.TaskStatusGuardRecoverable,
-		state.TaskStatusQualityGateRecoverable,
 		state.TaskStatusInterrupted,
 	}
 	for _, status := range statuses {
@@ -60,16 +59,30 @@ func TestParentHandoffDoesNotAddDedicatedMilestoneReconsiderationOutsideNaturalB
 		state.TaskStatusWaitingDecision,
 		state.TaskStatusAwaitingParentCompletion,
 		state.TaskStatusComplete,
+		state.TaskStatusQualityGateRecoverable,
 		state.TaskStatusParked,
 	}
 	for _, status := range statuses {
 		t.Run(string(status), func(t *testing.T) {
 			value := string(status)
-			actions := withExecutionMilestoneReconsideration(&value, []string{string(state.ParentActionDecision)})
+			actions := withExecutionMilestoneReconsideration(&value, nil, false, []string{string(state.ParentActionDecision)})
 			if containsString(actions, string(parentaction.ActionReviseMilestones)) {
 				t.Fatalf("unexpected milestone reconsideration for %s: %v", status, actions)
 			}
 		})
+	}
+}
+
+func TestParentHandoffDefersMilestoneReconsiderationBehindBlockingParentWork(t *testing.T) {
+	rateLimited := string(state.TaskStatusRateLimited)
+	if actions := withExecutionMilestoneReconsideration(&rateLimited, nil, true, []string{string(state.ParentActionResume)}); containsString(actions, string(parentaction.ActionReviseMilestones)) {
+		t.Fatalf("pending decision exposed milestone reconsideration: %v", actions)
+	}
+
+	waitingReview := string(state.TaskStatusWaitingSolReview)
+	approveSurface := string(state.ParentActionApproveSurface)
+	if actions := withExecutionMilestoneReconsideration(&waitingReview, &approveSurface, false, []string{approveSurface}); containsString(actions, string(parentaction.ActionReviseMilestones)) {
+		t.Fatalf("required approve-surface exposed milestone reconsideration: %v", actions)
 	}
 }
 
