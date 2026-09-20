@@ -24,7 +24,6 @@ func commandDispatchOwnerFor(mode CommandMode) (commandDispatchOwner, error) {
 	switch mode {
 	case ModeStatus,
 		ModeHandoff,
-		ModeWatch,
 		ModeTimeline,
 		ModeConvergence,
 		ModeStats,
@@ -107,8 +106,6 @@ func executeReadOnlyInspection(cmd Command, cfg config.AppConfig, stdout io.Writ
 		return executeHandoffInspection(cmd, cfg, st, stdout)
 	case ModeStats:
 		return report.PrintStats(cfg, st, cmd.Query, printTelemetryCompactSummary, stdout)
-	case ModeWatch:
-		return printWatch(st, stdout, defaultWatchOptions(cmd.WatchVerbose))
 	case ModeCodexLimit:
 		return printCodexLimit(cfg, stdout)
 	case ModePacketCheck:
