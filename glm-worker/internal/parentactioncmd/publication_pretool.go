@@ -134,10 +134,7 @@ func publicationShellAssignment(value string) bool {
 	if equals <= 0 {
 		return false
 	}
-	name := value[:equals]
-	if strings.HasSuffix(name, "+") {
-		name = strings.TrimSuffix(name, "+")
-	}
+	name := strings.TrimSuffix(value[:equals], "+")
 	if bracket := strings.IndexByte(name, '['); bracket > 0 && strings.HasSuffix(name, "]") {
 		name = name[:bracket]
 	}
@@ -435,12 +432,7 @@ func (lexer *publicationShellLexer) consumeParenthesizedDynamic() error {
 		ch := lexer.command[index]
 		lexer.value.WriteByte(ch)
 		if quote != 0 {
-			if ch == quote {
-				quote = 0
-			} else if ch == '\\' && quote == '"' && index+1 < len(lexer.command) {
-				index++
-				lexer.value.WriteByte(lexer.command[index])
-			}
+			index, quote = lexer.consumeParenthesizedQuoted(index, quote, ch)
 			continue
 		}
 		switch ch {
@@ -462,6 +454,17 @@ func (lexer *publicationShellLexer) consumeParenthesizedDynamic() error {
 		}
 	}
 	return fmt.Errorf("unterminated dynamic substitution")
+}
+
+func (lexer *publicationShellLexer) consumeParenthesizedQuoted(index int, quote, ch byte) (int, byte) {
+	if ch == quote {
+		return index, 0
+	}
+	if ch == '\\' && quote == '"' && index+1 < len(lexer.command) {
+		index++
+		lexer.value.WriteByte(lexer.command[index])
+	}
+	return index, quote
 }
 
 func (lexer *publicationShellLexer) consumeBacktickDynamic() error {
