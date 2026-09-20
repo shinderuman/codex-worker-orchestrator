@@ -91,7 +91,7 @@ func TestParentHandoffPassRequiresAcceptThenBecomesNoAction(t *testing.T) {
 	if !output.Consistent || output.RequiredAction == nil || *output.RequiredAction != string(state.ParentActionComplete) || output.ParentReviewOpen != nil {
 		t.Fatalf("awaiting handoff = %#v", output)
 	}
-	if len(output.AllowedActions) != 2 || output.AllowedActions[0] != string(state.ParentActionComplete) || output.AllowedActions[1] != string(state.ParentActionInstall) {
+	if len(output.AllowedActions) != 3 || output.AllowedActions[0] != string(state.ParentActionComplete) || output.AllowedActions[1] != string(state.ParentActionInstall) || output.AllowedActions[2] != string(state.ParentActionReopen) {
 		t.Fatalf("awaiting allowed actions = %#v", output.AllowedActions)
 	}
 
