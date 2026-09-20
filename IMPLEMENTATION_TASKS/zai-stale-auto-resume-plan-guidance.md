@@ -21,6 +21,10 @@ none
 
 Remove an escaped stale recovery instruction so parent/user-facing admission errors describe only the canonical machine-owned 5h recovery and valid explicit resume behavior.
 
+## External feasibility
+
+status: not-applicable
+
 ## Contract
 
 - keep early explicit resume fail-closed before the recorded Z.ai 5h reset boundary
