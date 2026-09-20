@@ -70,14 +70,7 @@ func writeValidatedMachineJSON(target io.Writer, value any) error {
 	return output.release()
 }
 
-func streamOutputMode(mode CommandMode) bool {
-	return mode == ModeWatch
-}
-
 func dispatchMachineOutput(cmd Command, cfg config.AppConfig, rf RunnerFactory, stdout io.Writer, stderr io.Writer) error {
-	if streamOutputMode(cmd.Mode) {
-		return Execute(cmd, cfg, rf, stdout, stderr)
-	}
 	if cmd.Mode == ModeQualityGate {
 		return dispatchQualityGateMachineOutput(cmd, cfg, stdout, stderr)
 	}
