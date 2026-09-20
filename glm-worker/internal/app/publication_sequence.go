@@ -32,11 +32,13 @@ type PublicationSequence struct {
 }
 
 type publicationUpstreamBinding struct {
-	remoteName  string
-	remoteRef   string
-	trackingRef string
-	trackingOID string
-	configured  bool
+	remoteName     string
+	remoteRef      string
+	trackingRef    string
+	trackingOID    string
+	remoteOID      string
+	remoteReadable bool
+	configured     bool
 }
 
 type publicationValidationRequirement struct {
@@ -287,11 +289,17 @@ func projectPublicationPushSequence(repoRoot string, candidate state.Publication
 	if !upstream.configured {
 		return publicationSequenceBlocked("publication_upstream_unconfigured", "publication branch has no configured upstream remote")
 	}
-	if upstream.trackingOID != candidate.CommitOID {
-		refspec := symbolicHead + ":" + upstream.remoteRef
-		return publicationActionSequence("push", [][]string{{"git", "-C", repoRoot, "push", upstream.remoteName, refspec}}, "promoted candidate is not observed on the configured upstream remote ref "+upstream.remoteRef)
+	if !upstream.remoteReadable {
+		return publicationSequenceBlocked("publication_remote_unverifiable", "publication remote state cannot be observed")
 	}
-	return publicationActionSequence("complete", [][]string{{"glm-parent-action", "complete"}}, "promoted candidate is observed on the publication remote")
+	if upstream.remoteOID == candidate.CommitOID {
+		return publicationActionSequence("complete", [][]string{{"glm-parent-action", "complete"}}, "promoted candidate is observed on the publication remote")
+	}
+	if upstream.remoteOID != "" && !publicationRemoteIsAncestor(repoRoot, upstream.remoteOID, candidate.CommitOID) {
+		return publicationSequenceBlocked("publication_remote_diverged", "publication remote does not resolve to the promoted candidate or its ancestor")
+	}
+	refspec := symbolicHead + ":" + upstream.remoteRef
+	return publicationActionSequence("push", [][]string{{"git", "-C", repoRoot, "push", upstream.remoteName, refspec}}, "promoted candidate is not observed on the configured upstream remote ref "+upstream.remoteRef)
 }
 
 func publicationPromotedSourceDiverged(repoRoot string) bool {
@@ -324,7 +332,29 @@ func publicationBranchUpstream(repoRoot, branch string) publicationUpstreamBindi
 			binding.trackingOID = strings.TrimSpace(oid)
 		}
 	}
+	binding.remoteOID, binding.remoteReadable = publicationRemoteOID(repoRoot, binding.remoteName, binding.remoteRef)
 	return binding
+}
+
+func publicationRemoteOID(repoRoot, remoteName, remoteRef string) (string, bool) {
+	output, err := publicationGitOutput(repoRoot, "ls-remote", remoteName, remoteRef)
+	if err != nil {
+		return "", false
+	}
+	for _, line := range strings.Split(output, "\n") {
+		fields := strings.SplitN(strings.TrimSpace(line), "\t", 2)
+		if len(fields) == 2 && fields[1] == remoteRef {
+			return strings.ToLower(fields[0]), true
+		}
+	}
+	return "", true
+}
+
+func publicationRemoteIsAncestor(repoRoot, remoteOID, candidateOID string) bool {
+	if _, err := publicationGitOutput(repoRoot, "cat-file", "-e", remoteOID+"^{commit}"); err != nil {
+		return false
+	}
+	return exec.Command("git", "-C", repoRoot, "merge-base", "--is-ancestor", remoteOID, candidateOID).Run() == nil
 }
 
 func publicationTrackingRef(remoteName, remoteRef string) string {
