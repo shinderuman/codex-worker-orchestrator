@@ -13,14 +13,14 @@ import (
 func TestReopenAcceptedParentCompletionAllowsFreshFindingOnNewAcceptedPublication(t *testing.T) {
 	st := newAcceptedParentCompletionStore(t)
 	firstCandidate := saveReopenPublicationState(t, st)
-	firstFinding := recordReopenFinding(t, st, firstCandidate)
+	firstFinding := recordReopenFinding(t, st)
 	if err := st.ReopenAcceptedParentCompletion(); err != nil {
 		t.Fatal(err)
 	}
 
 	reacceptReopenedParentCompletion(t, st)
-	secondCandidate := saveSecondReopenPublicationState(t, st, firstCandidate.TaskID)
-	secondFinding := recordReopenFinding(t, st, secondCandidate)
+	saveSecondReopenPublicationState(t, st, firstCandidate.TaskID)
+	secondFinding := recordReopenFinding(t, st)
 	if secondFinding.FindingID == firstFinding.FindingID {
 		t.Fatalf("second finding reused first identity: %s", secondFinding.FindingID)
 	}
