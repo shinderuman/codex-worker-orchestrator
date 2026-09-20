@@ -106,7 +106,7 @@ func (s *StateStore) rejectResumeBeforeRateLimitReset() error {
 		return fmt.Errorf("rate-limit reset evidence is unreadable: %w", err)
 	}
 	if time.Now().UTC().Before(resetAt.UTC()) {
-		return fmt.Errorf("rate-limited task cannot resume before the Z.ai 5h reset at %s; reserve the wake with glm-worker --auto-resume-plan instead of resuming early", checkpoint.ResetAtRFC3339)
+		return fmt.Errorf("rate-limited task cannot resume before the Z.ai 5h reset at %s; automatic 5h recovery is machine-owned; if that recovery process is no longer running, explicit --resume is admitted after the reset boundary", checkpoint.ResetAtRFC3339)
 	}
 	return nil
 }
