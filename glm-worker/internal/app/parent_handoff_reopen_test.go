@@ -71,7 +71,7 @@ func handoffAllowsAction(actions []string, action string) bool {
 
 func TestParentHandoffAwaitingParentCompletionProjectsMachineDecision(t *testing.T) {
 	_, st := newAwaitingParentCompletionHandoff(t)
-	candidate := saveHandoffPublicationCandidate(t, st)
+	saveHandoffPublicationCandidate(t, st)
 
 	before := buildParentHandoff(st)
 	if !before.Consistent {
@@ -89,8 +89,6 @@ func TestParentHandoffAwaitingParentCompletionProjectsMachineDecision(t *testing
 	assertHandoffJSONOmitsReopenSpec(t, before)
 
 	if _, err := st.RecordPublicationInvalidatingFinding(
-		candidate.CommitOID,
-		candidate.SnapshotID,
 		state.ParentOriginCodexReview,
 		state.ParentCauseProductionWiring,
 	); err != nil {
@@ -120,10 +118,8 @@ func TestParentHandoffAwaitingParentCompletionProjectsMachineDecision(t *testing
 
 func TestParentHandoffAfterReopenProjectsWaitingSolReviewWithFixAction(t *testing.T) {
 	_, st := newAwaitingParentCompletionHandoff(t)
-	candidate := saveHandoffPublicationCandidate(t, st)
+	saveHandoffPublicationCandidate(t, st)
 	if _, err := st.RecordPublicationInvalidatingFinding(
-		candidate.CommitOID,
-		candidate.SnapshotID,
 		state.ParentOriginCodexReview,
 		state.ParentCauseProductionWiring,
 	); err != nil {
