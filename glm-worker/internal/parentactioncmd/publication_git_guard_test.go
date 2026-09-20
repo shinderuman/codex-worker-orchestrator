@@ -44,3 +44,30 @@ func TestPublicationRefGuardRejectsExactCandidateWhenRequiredGateMissing(t *test
 		t.Fatalf("candidate with missing install gate was admitted: %v", err)
 	}
 }
+
+func TestPublicationRefGuardAllowsRollbackOnlyForInvalidPromotedCandidate(t *testing.T) {
+	cfg, st := newInstallActionRepo(t)
+	if err := st.SetTaskStatus(state.TaskStatusAwaitingParentCompletion); err != nil {
+		t.Fatal(err)
+	}
+	writePushBindingFile(t, cfg.RepoRoot, "README.md", "rollback guard candidate\n")
+	publicationGit(t, cfg.RepoRoot, "add", "README.md")
+	candidate, failure := preparePublicationCandidate(cfg, st, "rollback guard publication")
+	if failure != nil {
+		t.Fatalf("prepare failed: %#v", failure)
+	}
+	promoted := promotePublicationCandidate(cfg, st)
+	if promoted.Status != publicationPromotionStatusPromoted || promoted.Failure != nil || promoted.BranchRef == "" {
+		t.Fatalf("promotion = %#v", promoted)
+	}
+	if err := verifyPublicationRefUpdate(cfg, candidate.CommitOID, candidate.BaseHead, promoted.BranchRef); err == nil || !strings.Contains(err.Error(), "remains valid") {
+		t.Fatalf("valid promotion rollback was admitted: %v", err)
+	}
+	writePushBindingFile(t, cfg.RepoRoot, "README.md", "invalid after promotion\n")
+	if failure := publicationPromotionPostcondition(cfg.RepoRoot, candidate); failure == nil {
+		t.Fatal("dirty promoted candidate remained valid")
+	}
+	if err := verifyPublicationRefUpdate(cfg, candidate.CommitOID, candidate.BaseHead, promoted.BranchRef); err != nil {
+		t.Fatalf("invalid exact promotion rollback rejected: %v", err)
+	}
+}

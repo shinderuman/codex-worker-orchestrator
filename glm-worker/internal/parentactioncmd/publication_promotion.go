@@ -22,8 +22,9 @@ const (
 	publicationPromotionStatusPromoted = "promoted"
 	publicationPromotionStatusBlocked  = "blocked"
 
-	publicationFailurePromotionHead = "publication_promotion_head_mismatch"
-	publicationFailurePromotionRef  = "publication_promotion_ref_update_failed"
+	publicationFailurePromotionHead     = "publication_promotion_head_mismatch"
+	publicationFailurePromotionRef      = "publication_promotion_ref_update_failed"
+	publicationFailurePromotionRollback = "publication_promotion_rollback_failed"
 )
 
 func runPublicationPromotion(cfg config.AppConfig, args []string, stdout io.Writer) error {
@@ -55,13 +56,17 @@ func promotePublicationCandidate(cfg config.AppConfig, st *state.StateStore) pub
 	if err != nil {
 		return blockedPublicationPromotion(readiness.CandidateOID, publicationFailureCandidateMissing, err.Error())
 	}
+	return promoteReadyPublicationCandidate(cfg, candidate)
+}
+
+func promoteReadyPublicationCandidate(cfg config.AppConfig, candidate state.PublicationCandidate) publicationPromotionOutput {
 	branchRef, headOID, failure := publicationPromotionHead(cfg.RepoRoot)
 	if failure != nil {
 		return publicationPromotionOutput{Status: publicationPromotionStatusBlocked, CandidateOID: candidate.CommitOID, Failure: failure}
 	}
 	if headOID == candidate.CommitOID {
-		if !pushBindingTreeClean(cfg.RepoRoot) {
-			return blockedPublicationPromotion(candidate.CommitOID, publicationFailurePromotionHead, "promoted candidate worktree is not clean")
+		if failure := publicationPromotionPostcondition(cfg.RepoRoot, candidate); failure != nil {
+			return rollbackPublicationPromotion(cfg.RepoRoot, candidate, branchRef, failure)
 		}
 		return publicationPromotionOutput{Status: publicationPromotionStatusPromoted, CandidateOID: candidate.CommitOID, BranchRef: branchRef}
 	}
@@ -74,14 +79,40 @@ func promotePublicationCandidate(cfg config.AppConfig, st *state.StateStore) pub
 	if _, err := gitFinalizationOutput(cfg.RepoRoot, "update-ref", branchRef, candidate.CommitOID, candidate.BaseHead); err != nil {
 		return blockedPublicationPromotion(candidate.CommitOID, publicationFailurePromotionRef, err.Error())
 	}
-	if source := publicationSourceGate(cfg.RepoRoot, candidate); source.Status != publicationGatePass || !pushBindingTreeClean(cfg.RepoRoot) {
-		detail := source.Reason
-		if detail == "" {
-			detail = "promoted candidate source is not clean"
-		}
-		return blockedPublicationPromotion(candidate.CommitOID, publicationFailurePromotionHead, detail)
+	if failure := publicationPromotionPostcondition(cfg.RepoRoot, candidate); failure != nil {
+		return rollbackPublicationPromotion(cfg.RepoRoot, candidate, branchRef, failure)
 	}
 	return publicationPromotionOutput{Status: publicationPromotionStatusPromoted, CandidateOID: candidate.CommitOID, BranchRef: branchRef}
+}
+
+func publicationPromotionPostcondition(repoRoot string, candidate state.PublicationCandidate) *finalizationFailure {
+	source := publicationSourceGate(repoRoot, candidate)
+	if source.Status == publicationGatePass && pushBindingTreeClean(repoRoot) {
+		return nil
+	}
+	detail := source.Reason
+	if detail == "" {
+		detail = "promoted candidate source is not clean"
+	}
+	return publicationReadinessFailure(publicationFailurePromotionHead, detail)
+}
+
+func rollbackPublicationPromotion(repoRoot string, candidate state.PublicationCandidate, branchRef string, cause *finalizationFailure) publicationPromotionOutput {
+	if _, err := gitFinalizationOutput(repoRoot, "update-ref", branchRef, candidate.BaseHead, candidate.CommitOID); err != nil {
+		detail := publicationFailureDetail(cause) + "; rollback failed: " + err.Error()
+		return publicationPromotionOutput{
+			Status:       publicationPromotionStatusBlocked,
+			CandidateOID: candidate.CommitOID,
+			BranchRef:    branchRef,
+			Failure:      publicationReadinessFailure(publicationFailurePromotionRollback, detail),
+		}
+	}
+	return publicationPromotionOutput{
+		Status:       publicationPromotionStatusBlocked,
+		CandidateOID: candidate.CommitOID,
+		BranchRef:    branchRef,
+		Failure:      cause,
+	}
 }
 
 func publicationPromotionHead(repoRoot string) (string, string, *finalizationFailure) {
