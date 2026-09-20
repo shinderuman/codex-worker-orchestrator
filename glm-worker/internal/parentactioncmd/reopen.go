@@ -21,7 +21,7 @@ type reopenOutput struct {
 const reopenUsage = "usage: glm-parent-action reopen [--origin <origin>] [--cause <cause>]"
 
 func executeParentLifecycleAction(cfg config.AppConfig, args []string, stdout io.Writer) error {
-	if args[0] == "reopen" {
+	if args[0] == actionReopen {
 		return executeReopen(cfg, args, stdout)
 	}
 	return executeNoGo(cfg, args, stdout)
