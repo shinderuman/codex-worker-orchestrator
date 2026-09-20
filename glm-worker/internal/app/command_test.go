@@ -19,16 +19,6 @@ func TestParseCommandModes(t *testing.T) {
 		{name: "status", args: []string{"--status"}, mode: ModeStatus},
 		{name: "stats", args: []string{"--stats"}, mode: ModeStats},
 		{name: "reset", args: []string{"--reset"}, mode: ModeReset},
-		{
-			name: "verify-auto-resume",
-			args: []string{"--verify-auto-resume", "key-1234", "2026-08-12T20:01:20+09:00"},
-			mode: ModeVerifyAutoResume,
-		},
-		{
-			name: "check-wake-coalesce",
-			args: []string{"--check-wake-coalesce", "2026-08-12T20:01:20+09:00"},
-			mode: ModeCheckWakeCoalesce,
-		},
 		{name: "eval-ab", args: []string{"--eval-ab", "/tmp/ab-run"}, mode: ModeEvalAB, payload: "/tmp/ab-run"},
 		{name: "call-outliers", args: []string{"--call-outliers"}, mode: ModeCallOutliers},
 		{name: "model-routing", args: []string{"--model-routing"}, mode: ModeModelRouting},
@@ -56,6 +46,20 @@ func TestParseCommandModes(t *testing.T) {
 func TestParentUsageCommandIsRetired(t *testing.T) {
 	if _, ok := commandParsers["--parent-usage"]; ok {
 		t.Fatal("retired --parent-usage command remains registered")
+	}
+}
+
+func TestGLMProviderAutoResumeCommandsAreRetired(t *testing.T) {
+	for _, name := range []string{
+		"--verify-auto-resume",
+		"--check-wake-coalesce",
+		"--auto-resume-plan",
+		"--auto-resume-response-stdin",
+		"--auto-resume-fallback",
+	} {
+		if _, ok := commandParsers[name]; ok {
+			t.Fatalf("retired provider auto-resume command remains registered: %s", name)
+		}
 	}
 }
 
@@ -157,17 +161,12 @@ func TestParseCommandRejectsInvalidArguments(t *testing.T) {
 		{"--status", "extra"},
 		{"--stats", "extra"},
 		{"--reset", "extra"},
-		{"--verify-auto-resume"},
-		{"--verify-auto-resume", "key"},
-		{"--verify-auto-resume", "key", "date", "thread"},
 		{"--verify-codex-wake"},
 		{"--verify-codex-wake", "01a03a9e-10a0-7f11-801c-f04e5dbd5490"},
 		{"--verify-codex-wake", "01a03a9e-10a0-7f11-801c-f04e5dbd5490", "2026-08-26T15:17:55Z", "extra"},
 		{"--verify-codex-wake", "codex-5h-wake-01a03a9e-10a0-7f11-801c-f04e5dbd5490", "2026-08-26T15:17:55Z"},
 		{"--verify-codex-wake", "01A03A9E-10A0-7F11-801C-F04E5DBD5490", "2026-08-26T15:17:55Z"},
 		{"--verify-codex-wake", "not-a-thread-id", "2026-08-26T15:17:55Z"},
-		{"--check-wake-coalesce"},
-		{"--check-wake-coalesce", "date", "thread"},
 		{"--eval-ab"},
 		{"--eval-ab", "dir", "extra"},
 		{"--call-outliers", "extra"},
@@ -187,67 +186,22 @@ func TestParseCommandRejectsInvalidArguments(t *testing.T) {
 	}
 }
 
-func TestParseCommandVerifyAutomationArgs(t *testing.T) {
-	tests := []struct {
-		name     string
-		args     []string
-		mode     CommandMode
-		key      string
-		threadID string
-	}{
-		{
-			name:     "auto resume takes the automation key only",
-			args:     []string{"--verify-auto-resume", "glm-worker-resume-abcd1234-ef012345", "2026-08-12T20:01:20+09:00"},
-			mode:     ModeVerifyAutoResume,
-			key:      "glm-worker-resume-abcd1234-ef012345",
-			threadID: "",
-		},
-		{
-			name:     "codex wake takes the wake thread ID only",
-			args:     []string{"--verify-codex-wake", "01a03a9e-10a0-7f11-801c-f04e5dbd5490", "2026-08-12T20:01:20+09:00"},
-			mode:     ModeVerifyCodexWake,
-			key:      "",
-			threadID: "01a03a9e-10a0-7f11-801c-f04e5dbd5490",
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			command, err := ParseCommand(test.args)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if command.Mode != test.mode {
-				t.Fatalf("Mode = %d", command.Mode)
-			}
-			if command.Verify.Key != test.key {
-				t.Fatalf("Key = %q", command.Verify.Key)
-			}
-			if command.Verify.ThreadID != test.threadID {
-				t.Fatalf("ThreadID = %q", command.Verify.ThreadID)
-			}
-			if command.Verify.RFC3339 != "2026-08-12T20:01:20+09:00" {
-				t.Fatalf("RFC3339 = %q", command.Verify.RFC3339)
-			}
-		})
-	}
-}
-
-func TestParseCommandCheckWakeCoalesceArgs(t *testing.T) {
+func TestParseCommandVerifyCodexWakeArgs(t *testing.T) {
 	command, err := ParseCommand([]string{
-		"--check-wake-coalesce",
-		"2026-08-26T15:17:55Z",
+		"--verify-codex-wake",
+		"01a03a9e-10a0-7f11-801c-f04e5dbd5490",
+		"2026-08-12T20:01:20+09:00",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if command.Mode != ModeCheckWakeCoalesce {
+	if command.Mode != ModeVerifyCodexWake {
 		t.Fatalf("Mode = %d", command.Mode)
 	}
-	if command.Coalesce.ParentThreadID != "" {
-		t.Fatalf("parent thread IDをargvから受理しています: %q", command.Coalesce.ParentThreadID)
+	if command.Verify.ThreadID != "01a03a9e-10a0-7f11-801c-f04e5dbd5490" {
+		t.Fatalf("ThreadID = %q", command.Verify.ThreadID)
 	}
-	if command.Coalesce.ResumeAtRFC3339 != "2026-08-26T15:17:55Z" {
-		t.Fatalf("ResumeAtRFC3339 = %q", command.Coalesce.ResumeAtRFC3339)
+	if command.Verify.RFC3339 != "2026-08-12T20:01:20+09:00" {
+		t.Fatalf("RFC3339 = %q", command.Verify.RFC3339)
 	}
 }

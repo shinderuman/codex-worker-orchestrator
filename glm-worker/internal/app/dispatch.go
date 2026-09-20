@@ -27,8 +27,6 @@ func commandDispatchOwnerFor(mode CommandMode) (commandDispatchOwner, error) {
 		ModeTimeline,
 		ModeConvergence,
 		ModeStats,
-		ModeCheckWakeCoalesce,
-		ModeVerifyAutoResume,
 		ModeEvalAB,
 		ModeCallOutliers,
 		ModeCodexLimit,
@@ -42,7 +40,7 @@ func commandDispatchOwnerFor(mode CommandMode) (commandDispatchOwner, error) {
 		ModeProjectState,
 		ModeEvidence:
 		return dispatchReadOnly, nil
-	case ModeStop, ModeCodexWakePlan, ModeCodexWakeResponse, ModeAutoResumePlan, ModeAutoResumeResponse:
+	case ModeStop, ModeCodexWakePlan, ModeCodexWakeResponse:
 		return dispatchRuntimeControl, nil
 	case ModeVerifyCodexWake, ModeInstallSmoke, ModeQualityGate:
 		return dispatchStateCommand, nil
@@ -71,10 +69,6 @@ func executeRuntimeControl(cmd Command, cfg config.AppConfig, stdout io.Writer) 
 		return printCodexWakePlan(cmd, cfg, stdout)
 	case ModeCodexWakeResponse:
 		return printCodexWakeResponse(cmd, cfg, stdout)
-	case ModeAutoResumePlan:
-		return printAutoResumePlan(cmd, cfg, stdout)
-	case ModeAutoResumeResponse:
-		return printAutoResumeResponse(cmd, cfg, stdout)
 	default:
 		return fmt.Errorf("command mode %d is not runtime control", cmd.Mode)
 	}
@@ -112,7 +106,7 @@ func executeReadOnlyInspection(cmd Command, cfg config.AppConfig, stdout io.Writ
 		return executeStatelessProjection(cmd, cfg, stdout)
 	case ModeProjectState:
 		return executeProjectStateInspection(cmd, cfg, st, stdout)
-	case ModeRepoSearch, ModeEvidence, ModeCheckWakeCoalesce, ModeVerifyAutoResume:
+	case ModeRepoSearch, ModeEvidence:
 		return executeReadOnlyProjection(cmd, cfg, st, stdout)
 	default:
 		return fmt.Errorf("command mode %d is not read-only inspection", cmd.Mode)
@@ -129,10 +123,6 @@ func executeReadOnlyProjection(cmd Command, cfg config.AppConfig, st *state.Stat
 		}, cfg, st, stdout)
 	case ModeEvidence:
 		return printParentEvidence(cmd, cfg, st, stdout)
-	case ModeCheckWakeCoalesce:
-		return printCheckWakeCoalesce(cmd, cfg, stdout)
-	case ModeVerifyAutoResume:
-		return printVerifyAutoResume(cmd, cfg, stdout)
 	default:
 		return fmt.Errorf("command mode %d is not a read-only projection", cmd.Mode)
 	}

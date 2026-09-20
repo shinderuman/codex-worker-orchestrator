@@ -63,7 +63,7 @@
 
 ## rate limit停止(stderr error JSON `kind: rate_limited`)
 
-- `detail.limit: ZAI_GLM_CODING_PLAN_5H`は正常な一時停止であり、task/worktree/session/checkpointを破棄しない。
-- auto resume可能なら`~/.codex/instructions/glm-auto-resume.md`のmachine transactionを使う。登録不能時だけ手動再開へ落とす。
-- manual resumeでもcanonical resume actionで同一task・phase・sessionを継続し、元依頼を再構成しない。
-- reset未到達ならrate-limited stateを保持したままfail closedする。
+- machineが5h Z.ai quotaと判定した場合はdurable resume checkpointを保存し、同じ`glm-worker`実行がreset boundaryまで待機してcanonical resumeを反復する。親Codexはscheduler登録・fallback選択・wake判断を行わない。
+- 5h待機中のuser interruptionまたはprocess終了では保存済みtask/checkpointを破棄しない。後から再開する場合はcanonical resume actionで同一taskを継続し、元依頼を再構成しない。
+- long quota、action-required、unknown-safe-stop等のterminal provider stopは自動長期待機へ昇格させない。外部条件が解消した後の明示resumeに委ねる。
+- task identity、task status、resume checkpoint、reset boundaryの再検証に失敗した場合はfail closedし、別task・stale reset・推測した時刻から再開しない。

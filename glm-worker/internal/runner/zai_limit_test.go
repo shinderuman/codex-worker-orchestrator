@@ -6,6 +6,26 @@ import (
 	"time"
 )
 
+func TestDetectZaiBusinessCodeText(t *testing.T) {
+	tests := []struct {
+		name string
+		text string
+		want string
+	}{
+		{"bracketed", "API Error · [1308][quota exhausted]", "1308"},
+		{"json string", `429 {"error":{"code":"1316","message":"quota exhausted"}}`, "1316"},
+		{"json number", `429 {"error":{"code":1305,"message":"busy"}}`, "1305"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := DetectZaiBusinessCodeText(tt.text)
+			if !ok || got != tt.want {
+				t.Fatalf("DetectZaiBusinessCodeText(%q) = (%q, %v), want (%q, true)", tt.text, got, ok, tt.want)
+			}
+		})
+	}
+}
+
 func TestDetectZaiFiveHourLimitText(t *testing.T) {
 	content := "API Error: Request rejected (429) · [1308][Usage limit reached for 5 hour. Your limit will reset at 2026-07-22 14:06:34][202607221342470f952f313a624fd3]\n"
 	limit, ok := DetectZaiFiveHourLimitText(content)
@@ -20,8 +40,25 @@ func TestDetectZaiFiveHourLimitText(t *testing.T) {
 	}
 }
 
+func TestDetectZaiFiveHourLimitDoesNotDependOnEnglishMessage(t *testing.T) {
+	for _, content := range []string{
+		"[1308][任意の文言][2026-07-22 14:06:34]",
+		`429 {"error":{"code":"1316","message":"wording changed completely; 2026-07-22 14:06:34"}}`,
+		`429 {"error":{"code":"1318","message":"different producer text; 2026-07-22 14:06:34"}}`,
+		`429 {"error":{"code":"1320","message":"another wording; 2026-07-22 14:06:34"}}`,
+	} {
+		limit, ok := DetectZaiFiveHourLimitText(content)
+		if !ok {
+			t.Fatalf("business-code 5h limit not detected: %q", content)
+		}
+		if limit.ResetAtRFC3339 != "2026-07-22T14:06:34+08:00" {
+			t.Fatalf("reset = %q for %q", limit.ResetAtRFC3339, content)
+		}
+	}
+}
+
 func TestDetectZaiFiveHourLimitKeepsInvalidResetUnschedulable(t *testing.T) {
-	content := "API Error: Request rejected (429) · [1308][Usage limit reached for 5 hour. Your limit will reset at 2026-99-99 14:06:34]\n"
+	content := "API Error: Request rejected (429) · [1308][quota][2026-99-99 14:06:34]\n"
 	limit, ok := DetectZaiFiveHourLimitText(content)
 	if !ok {
 		t.Fatal("expected Z.ai 5h limit even when reset timestamp is invalid")
@@ -72,6 +109,15 @@ func TestAutoResumeScheduleSecondPrecision(t *testing.T) {
 func TestDetectZaiFiveHourLimitTextRejectsGeneric429(t *testing.T) {
 	if _, ok := DetectZaiFiveHourLimitText("API Error: Request rejected (429)\n"); ok {
 		t.Fatal("generic 429 must not be treated as Z.ai 5h limit")
+	}
+}
+
+func TestDetectZaiFiveHourLimitTextRejectsLongQuotaCodes(t *testing.T) {
+	for _, code := range []string{"1310", "1317", "1319", "1321"} {
+		content := "API Error · [" + code + "][Usage limit reached for 5 hour.][2026-07-22 14:06:34]"
+		if _, ok := DetectZaiFiveHourLimitText(content); ok {
+			t.Fatalf("long quota code %s must not be treated as 5h limit", code)
+		}
 	}
 }
 

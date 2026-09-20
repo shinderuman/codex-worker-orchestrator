@@ -2,45 +2,25 @@ package autoresume
 
 import "testing"
 
-func TestRejectedCreateResponseCleansUpOnlyTransactionOwnedAutomation(t *testing.T) {
-	autoResumeTx := autoResumeTransaction{ExpectedAutomationID: "glm-worker-resume-expected"}
-	mismatchedAutoResume := advanceAutoResumeCreate(
-		autoResumeTx,
-		"transaction",
-		automationResponseFacts{AutomationID: "glm-worker-resume-unrelated"},
-		"automation ID mismatch",
-	)
-	if mismatchedAutoResume.Status != AutoResumeStatusFailed || mismatchedAutoResume.Cleanup != nil {
-		t.Fatalf("mismatched auto-resume cleanup = %#v", mismatchedAutoResume)
-	}
-	ownedAutoResume := advanceAutoResumeCreate(
-		autoResumeTx,
-		"transaction",
-		automationResponseFacts{AutomationID: autoResumeTx.ExpectedAutomationID},
-		"automation tool returned isError=true",
-	)
-	if ownedAutoResume.Cleanup == nil || ownedAutoResume.Cleanup.AutomationID != autoResumeTx.ExpectedAutomationID {
-		t.Fatalf("owned auto-resume cleanup = %#v", ownedAutoResume.Cleanup)
-	}
-
-	codexWakeTx := codexWakeTransaction{ExpectedAutomationID: "codex-5h-wake-expected"}
-	mismatchedCodexWake := advanceCodexWakeCreate(
-		codexWakeTx,
+func TestRejectedCodexWakeCreateCleansUpOnlyTransactionOwnedAutomation(t *testing.T) {
+	transaction := codexWakeTransaction{ExpectedAutomationID: "codex-5h-wake-expected"}
+	mismatched := advanceCodexWakeCreate(
+		transaction,
 		"transaction",
 		automationResponseFacts{AutomationID: "codex-5h-wake-unrelated"},
 		"automation ID mismatch",
 	)
-	if mismatchedCodexWake.Status != CodexWakeStatusFailed || mismatchedCodexWake.Cleanup != nil {
-		t.Fatalf("mismatched codex-wake cleanup = %#v", mismatchedCodexWake)
+	if mismatched.Status != CodexWakeStatusFailed || mismatched.Cleanup != nil {
+		t.Fatalf("mismatched codex-wake cleanup = %#v", mismatched)
 	}
-	ownedCodexWake := advanceCodexWakeCreate(
-		codexWakeTx,
+	owned := advanceCodexWakeCreate(
+		transaction,
 		"transaction",
-		automationResponseFacts{AutomationID: codexWakeTx.ExpectedAutomationID},
+		automationResponseFacts{AutomationID: transaction.ExpectedAutomationID},
 		"automation tool returned isError=true",
 	)
-	if ownedCodexWake.Cleanup == nil || ownedCodexWake.Cleanup.AutomationID != codexWakeTx.ExpectedAutomationID {
-		t.Fatalf("owned codex-wake cleanup = %#v", ownedCodexWake.Cleanup)
+	if owned.Cleanup == nil || owned.Cleanup.AutomationID != transaction.ExpectedAutomationID {
+		t.Fatalf("owned codex-wake cleanup = %#v", owned.Cleanup)
 	}
 }
 

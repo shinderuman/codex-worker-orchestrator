@@ -11,6 +11,7 @@ import (
 type ProviderFailureClass struct {
 	Kind          string
 	Detail        string
+	BusinessCode  string
 	FiveHourLimit ZaiFiveHourLimit
 }
 
@@ -25,9 +26,12 @@ type ProviderUnavailableError struct {
 }
 
 const (
-	ProviderFailureZaiFiveHour = "zai-5h"
-	ProviderFailureTransient   = "transient"
-	ProviderFailureFatal       = "fatal"
+	ProviderFailureZaiFiveHour        = "zai-5h"
+	ProviderFailureZaiLongQuota       = "zai-long-quota"
+	ProviderFailureZaiActionRequired  = "zai-action-required"
+	ProviderFailureZaiUnknownSafeStop = "zai-unknown-safe-stop"
+	ProviderFailureTransient          = "transient"
+	ProviderFailureFatal              = "fatal"
 
 	ProbeContractFailure = "probe-contract"
 )
@@ -47,6 +51,27 @@ var transientNetworkSignals = []string{
 	"temporary failure",
 	"server closed idle connection",
 	"proxyconnect",
+}
+
+var zaiTransientBusinessCodes = map[string]struct{}{
+	"1302": {},
+	"1305": {},
+}
+
+var zaiLongQuotaBusinessCodes = map[string]struct{}{
+	"1310": {},
+	"1317": {},
+	"1319": {},
+	"1321": {},
+}
+
+var zaiActionRequiredBusinessCodes = map[string]struct{}{
+	"1113": {},
+	"1309": {},
+	"1311": {},
+	"1313": {},
+	"1314": {},
+	"1315": {},
 }
 
 var probeFatalHTTPPattern = regexp.MustCompile(`(?i)\b(?:http|status|error|api)[^\n]{0,24}\b(?:400|401|403)\b|\b(?:400|401|403)\b[^\n]{0,24}\b(?:bad request|unauthorized|forbidden)\b`)
@@ -97,8 +122,42 @@ func ReadTransientSignal(outputPath string) string {
 }
 
 func ClassifyProviderFailureText(text string) ProviderFailureClass {
-	if limit, ok := DetectZaiFiveHourLimitText(text); ok {
-		return ProviderFailureClass{Kind: ProviderFailureZaiFiveHour, FiveHourLimit: limit}
+	if code, ok := DetectZaiBusinessCodeText(text); ok {
+		if _, transient := zaiTransientBusinessCodes[code]; transient {
+			return ProviderFailureClass{
+				Kind:         ProviderFailureTransient,
+				Detail:       "zai-code:" + code,
+				BusinessCode: code,
+			}
+		}
+		if _, fiveHour := zaiFiveHourBusinessCodes[code]; fiveHour {
+			limit, _ := DetectZaiFiveHourLimitText(text)
+			return ProviderFailureClass{
+				Kind:          ProviderFailureZaiFiveHour,
+				Detail:        "zai-code:" + code,
+				BusinessCode:  code,
+				FiveHourLimit: limit,
+			}
+		}
+		if _, longQuota := zaiLongQuotaBusinessCodes[code]; longQuota {
+			return ProviderFailureClass{
+				Kind:         ProviderFailureZaiLongQuota,
+				Detail:       "zai-code:" + code,
+				BusinessCode: code,
+			}
+		}
+		if _, actionRequired := zaiActionRequiredBusinessCodes[code]; actionRequired {
+			return ProviderFailureClass{
+				Kind:         ProviderFailureZaiActionRequired,
+				Detail:       "zai-code:" + code,
+				BusinessCode: code,
+			}
+		}
+		return ProviderFailureClass{
+			Kind:         ProviderFailureZaiUnknownSafeStop,
+			Detail:       "zai-code:" + code,
+			BusinessCode: code,
+		}
 	}
 	if classification, transient := ClassifyTransientFailure(text); transient {
 		return ProviderFailureClass{Kind: ProviderFailureTransient, Detail: classification}

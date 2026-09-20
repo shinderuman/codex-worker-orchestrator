@@ -1,6 +1,6 @@
 # 親Codex 5h Limit自動再開
 
-親実装Codex taskがCodex 5h rate limitへ到達した場合の停止とwake専用taskによる再開。GLM provider側rate limitには`glm-auto-resume.md`を使い、同一taskへ両schedulerを重ねない。
+親実装Codex taskがCodex 5h rate limitへ到達した場合の停止とwake専用taskによる再開。GLM provider側rate limitは`glm-execution.md`のmachine-owned recoveryで扱い、このschedulerを重ねない。
 
 ## 不変条件
 
@@ -45,5 +45,5 @@ scheduler発火後のwake taskは次だけを行い、repository実装・review�
 
 - `glm-worker --codex-limit`はrate-limit情報のread-only projectionだけを行う。
 - Codex wake transactionはidentity・limit evidence・schedule・retry・postconditionをmachine-ownedとするが、Codex app writeとtask間送信そのものはexternal-unenforceableである。
-- GLM Resume automationとGreptile schedulerのownershipを変更しない。
+- GLM provider 5h recoveryをこのschedulerへ統合しない。Greptile schedulerのownershipを変更しない。
 - repository固有Plan/task lifecycleをwake schedulerへ結合しない。wake後は親実装taskの既存lifecycleへ戻る。
