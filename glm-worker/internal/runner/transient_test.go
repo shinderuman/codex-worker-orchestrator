@@ -97,7 +97,7 @@ func TestClassifyProviderFailureTextByZaiBusinessCode(t *testing.T) {
 		{"fair use", `[1313][different wording]`, ProviderFailureZaiActionRequired, "1313", "zai-code:1313"},
 		{"enterprise expired", `[1314][different wording]`, ProviderFailureZaiActionRequired, "1314", "zai-code:1314"},
 		{"enterprise key", `[1315][different wording]`, ProviderFailureZaiActionRequired, "1315", "zai-code:1315"},
-		{"unknown business code", `[1999][unknown]`, ProviderFailureFatal, "1999", "zai-code:1999"},
+		{"unknown business code", `[1999][unknown]`, ProviderFailureZaiUnknownSafeStop, "1999", "zai-code:1999"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
