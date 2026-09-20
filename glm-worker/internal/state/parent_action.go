@@ -27,6 +27,7 @@ const (
 	ParentActionNone                        ParentAction = "none"
 	ParentActionDecision                    ParentAction = "decision"
 	ParentActionNoGo                        ParentAction = "no-go"
+	ParentActionBindDefectTask              ParentAction = "bind-defect-task"
 	ParentActionReview                      ParentAction = "parent-review"
 	ParentActionApproveSurface              ParentAction = "approve-surface"
 	ParentActionAccept                      ParentAction = "accept"
@@ -41,7 +42,10 @@ const (
 	ParentActionRepairQualityGateThenResume ParentAction = "repair-quality-gate-then-resume"
 )
 
-const approveSurfaceScopeParameter = "accepted-scope"
+const (
+	approveSurfaceScopeParameter = "accepted-scope"
+	defectTaskParameter          = "task"
+)
 
 var approveSurfaceParameters = map[string]string{approveSurfaceScopeParameter: "current-diff"}
 
@@ -66,7 +70,7 @@ func (p ParentActionPlan) AdmitsCommand(action ParentAction) bool {
 		return false
 	}
 	switch p.RequiredAction {
-	case ParentActionDecision, ParentActionReview, ParentActionApproveSurface, ParentActionAccept, ParentActionComplete, ParentActionUnpark:
+	case ParentActionDecision, ParentActionBindDefectTask, ParentActionReview, ParentActionApproveSurface, ParentActionAccept, ParentActionComplete, ParentActionUnpark:
 		return false
 	default:
 		return true
@@ -134,6 +138,17 @@ func (kind ResumeStopKind) ParentAction() ParentAction {
 
 func (s *StateStore) ParentActionPlan() (ParentActionPlan, error) {
 	status := s.TaskStatus()
+	registrations, registrationErr := s.CurrentPendingDefectRegistrations()
+	if registrationErr != nil {
+		return ParentActionPlan{}, lifecycleInconsistency(status, "pending defect registration state is unreadable: "+registrationErr.Error())
+	}
+	if len(registrations) != 0 {
+		return ParentActionPlan{
+			RequiredAction:           ParentActionBindDefectTask,
+			AllowedActions:           []ParentAction{ParentActionBindDefectTask},
+			RequiredActionParameters: map[string]string{defectTaskParameter: registrations[0].TaskPath},
+		}, nil
+	}
 	pending := s.Exists("pending-decision")
 	openReview, reviewErr := s.CurrentParentReviewLabel()
 	if reviewErr != nil {
