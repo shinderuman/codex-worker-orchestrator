@@ -61,7 +61,7 @@ func withExecutionMilestoneReconsideration(
 	if pendingDecision || taskStatus == nil || !executionMilestoneReconsiderationStatus(state.TaskStatus(*taskStatus)) {
 		return projected
 	}
-	if requiredAction != nil && *requiredAction == string(state.ParentActionApproveSurface) {
+	if requiredAction != nil && (*requiredAction == string(state.ParentActionApproveSurface) || *requiredAction == string(state.ParentActionBindDefectTask)) {
 		return projected
 	}
 	milestoneAction := string(parentaction.ActionReviseMilestones)
@@ -119,6 +119,16 @@ func parentActionSpec(action string, requiredParameters map[string]string) (pare
 			Kind:       "direct",
 			Command:    []string{"glm-parent-action", action, "--accepted-scope", acceptedScope},
 			Parameters: map[string]string{"accepted-scope": acceptedScope},
+		}, true
+	case state.ParentActionBindDefectTask:
+		taskPath := requiredParameters["task"]
+		if taskPath == "" {
+			return parentHandoffActionSpec{}, false
+		}
+		return parentHandoffActionSpec{
+			Kind:       "direct",
+			Command:    []string{"glm-parent-action", action, "--task", taskPath},
+			Parameters: map[string]string{"task": taskPath},
 		}, true
 	case state.ParentActionReopen:
 		return parentHandoffActionSpec{

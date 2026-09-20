@@ -26,6 +26,9 @@
 - parent Codexはpublication finalizationの手順誤りとmachine enforcement欠落をverified defectとして説明した後も、修復のためのGit履歴操作についてユーザー許可を求めて停止し、対応taskを同じturnで登録しなかった
 - 上記publication incidentは既存task登録漏れと同じ原因層の再発であり、ユーザー指摘後に初めて `publication-finalization-machine-enforcement.md` を登録した
 - natural languageだけから任意の不具合を完全検出することはmachine gateで保証できないため、検出済み・分類済みのFindingをdurable taskへ結び付ける境界を対象とする
+- current treeにはpublication invalidation専用の`record-publication-finding` / `PublicationInvalidatingFinding`は存在するが、current-task外のgeneric verified defectをtask registration待ちとして表すcanonical state/actionは存在しない
+- continuation stop/completion gateはmachine-readable stateからしか未登録Findingを判定できないため、semantic adoptionとtask+Plan登録完了の間を表すbounded machine recordが本taskのfail-closed acceptanceに必要である
+- runtime recordへdefect本文を複製せず、semantic task pathをFinding identity兼locatorとして保持すれば、task fileを唯一のlossless本文正本に維持できる
 
 ## Purpose
 
@@ -43,6 +46,14 @@ status: not-applicable
 - natural language classifierや追加model callへ一般的な不具合検出を委ねず、親が意味判断した後のregistration lifecycleをdeterministicに強制する
 - current ACTIVEへ混在させず、priorityと割り込み要否はPlanで管理する
 - public CLI、state / checkpoint、parent action、停止admissionへ新しいcontractが必要な場合は実装前に`NEEDS_SOL_DECISION`で確定する
+
+## Sol decision authority
+
+- responsibility: verified defectかどうか、semantic task path、task本文、Plan priority/interrupt判断はparentが所有し、machineはparentが採用を記録した後のpending registration identity、task+Plan binding検証、未登録中のparent action/stop/completion fail-closedだけを所有する
+- dependency-direction: parent action layerがrecord/bindを実行し、stateはbounded pending registration recordだけを永続化する。task/Planの構文・schedule membership検証は既存taskcontract/repository project側を再利用し、stateへrepository Markdown parsing責務を逆流させない
+- public-surface: parent-only `glm-parent-action record-defect-finding --task <IMPLEMENTATION_TASKS/...md>` と `glm-parent-action bind-defect-task --task <same-path>` を正規surfaceとする。record後はcanonical handoffが`bind-defect-task`をrequired actionとしてtask path parameter付きで投影し、generic natural-language defect detectionは追加しない
+- compatibility: pending registration stateが存在しないrepositoryの既存behaviorは変更せず、machine-only stateはcurrent schemaだけを受理する。legacy alias、schema migration、旧state推定fallbackは追加しない
+- validation-error-semantics: malformed/unreadable state、Finding identity/task path不一致、source ACTIVE binding不整合、task fileまたはPlan membership欠落、異なるpending identityとの衝突はfail closedする。同じsemantic task pathの再recordはidempotentとし、既にtask+Planへ登録済みならduplicateとして新しいtaskを要求しない
 
 ## Must not
 

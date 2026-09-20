@@ -37,6 +37,8 @@
 - PASS/`NEEDS_SOL_REVIEW`/`NEEDS_SOL_DECISION`等の意味、fix内容、Go/No-Go、quality policy surface承認の是非はSol Highが判断する。machine action specは合法な操作とtransportを決めるだけで、semantic採否を決めない。
 - fix originは実際の起点に合わせる。reviewer既記載の指摘は`glm-reviewer`、親自身の新規検出は`codex-review`、user追加指示は`user-amendment`、外部reviewは`external-review`、parent metadata修復は`metadata-repair`とする。確定不能時だけunknown扱いにする。
 - `codex-review`のcauseはparent-orchestration / requirement-preservation / worker / reviewer / sol-gate / production-wiring / test-scenario / cross-cutting-invariantから一次証拠で選ぶ。確定不能時はunknownとする。
+- current ACTIVE外の不具合をverified findingとして採用した場合、final response・ユーザー許可要求・次の長時間処理より先に`glm-parent-action record-defect-finding --task <IMPLEMENTATION_TASKS/...md>`を実行する。そのsemantic task fileを作成してPlan NEXT/BLOCKEDへ登録し、ACTIVEを変えずcanonical handoffが返す`bind-defect-task` action specをlosslessに実行する。pending中は他のparent actionへ進まない。
+- unverified/rejected finding、現在ACTIVE内で閉じるfindingは`record-defect-finding`へ送らない。同じsemantic task pathが既にTask+Planへ登録済みならduplicateとして収束させ、新しいtask identityを作らない。
 - recoverable taskはcanonical handoffのresume actionを継続し、元依頼を再構成しない。
 
 ## 対象repoの生存判定
