@@ -213,7 +213,7 @@ func (scanner *publicationExecutableSubstitutionScanner) scanUnquoted() error {
 	case '$':
 		return scanner.captureDollar()
 	case '<', '>':
-		return scanner.captureProcessSubstitution(ch)
+		return scanner.captureProcessSubstitution()
 	default:
 		scanner.index++
 		return nil
@@ -239,7 +239,7 @@ func (scanner *publicationExecutableSubstitutionScanner) captureDollar() error {
 	return scanner.captureParenthesized(scanner.index + 1)
 }
 
-func (scanner *publicationExecutableSubstitutionScanner) captureProcessSubstitution(ch byte) error {
+func (scanner *publicationExecutableSubstitutionScanner) captureProcessSubstitution() error {
 	if scanner.index+1 >= len(scanner.command) || scanner.command[scanner.index+1] != '(' {
 		scanner.index++
 		return nil
@@ -284,25 +284,27 @@ func publicationBalancedBody(command string, openingParen int) (string, int, err
 }
 
 func publicationBalancedBodyStep(command string, index int, quote byte) (int, byte, int, bool) {
-	ch := command[index]
-	switch quote {
-	case '\'':
-		if ch == '\'' {
-			return index, 0, 0, false
-		}
-		return index, quote, 0, false
-	case '"':
-		if ch == '"' {
-			return index, 0, 0, false
-		}
-		if ch == '\\' && index+1 < len(command) {
-			return index + 1, quote, 0, false
-		}
-		return index, quote, 0, false
+	if quote != 0 {
+		return publicationBalancedQuotedBodyStep(command, index, quote)
 	}
-	switch ch {
+	return publicationBalancedUnquotedBodyStep(command, index)
+}
+
+func publicationBalancedQuotedBodyStep(command string, index int, quote byte) (int, byte, int, bool) {
+	ch := command[index]
+	if ch == quote {
+		return index, 0, 0, false
+	}
+	if quote == '"' && ch == '\\' && index+1 < len(command) {
+		return index + 1, quote, 0, false
+	}
+	return index, quote, 0, false
+}
+
+func publicationBalancedUnquotedBodyStep(command string, index int) (int, byte, int, bool) {
+	switch command[index] {
 	case '\'', '"':
-		return index, ch, 0, false
+		return index, command[index], 0, false
 	case '\\':
 		if index+1 < len(command) {
 			return index + 1, 0, 0, false
