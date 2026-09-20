@@ -9,6 +9,10 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
+type configFixture struct {
+	RepoRoot string
+}
+
 func TestPublicationPromotionAdvancesOnlyToExactReadyCandidate(t *testing.T) {
 	cfg, st := newInstallActionRepo(t)
 	if err := st.SetTaskStatus(state.TaskStatusAwaitingParentCompletion); err != nil {
@@ -86,6 +90,28 @@ func TestPublicationPromotionRollsBackAfterPostconditionFailure(t *testing.T) {
 	}
 }
 
+func TestPublicationPromotionReadyReentryRollsBackInvalidCandidate(t *testing.T) {
+	cfg, _, candidate, branchRef := publicationPromotionAtomicityFixture(t)
+	publicationGit(t, cfg.RepoRoot, "update-ref", branchRef, candidate.CommitOID, candidate.BaseHead)
+	if err := os.WriteFile(filepath.Join(cfg.RepoRoot, "README.md"), []byte("reentry mutation\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if failure := publicationPromotionPostcondition(cfg.RepoRoot, candidate); failure == nil {
+		t.Fatal("reentry mutation did not invalidate promoted candidate")
+	}
+
+	output := promoteReadyPublicationCandidate(cfg, candidate)
+	if output.Status != publicationPromotionStatusBlocked || output.Failure == nil || output.Failure.Reason != publicationFailurePromotionHead {
+		t.Fatalf("reentry promotion = %#v", output)
+	}
+	if output.BranchRef != branchRef {
+		t.Fatalf("reentry branch ref = %q, want %q", output.BranchRef, branchRef)
+	}
+	if got := publicationGitOutput(t, cfg.RepoRoot, "rev-parse", "HEAD"); got != candidate.BaseHead {
+		t.Fatalf("blocked reentry left advanced HEAD: %s != base %s", got, candidate.BaseHead)
+	}
+}
+
 func TestPublicationPromotionRollbackDoesNotOverwriteConcurrentRefMutation(t *testing.T) {
 	cfg, _, candidate, branchRef := publicationPromotionAtomicityFixture(t)
 	publicationGit(t, cfg.RepoRoot, "update-ref", branchRef, candidate.CommitOID, candidate.BaseHead)
@@ -127,8 +153,4 @@ func publicationPromotionAtomicityFixture(t *testing.T) (configFixture, *state.S
 		t.Fatalf("promotion head = %#v", headFailure)
 	}
 	return configFixture{RepoRoot: cfg.RepoRoot}, st, candidate, branchRef
-}
-
-type configFixture struct {
-	RepoRoot string
 }
