@@ -816,22 +816,34 @@ func prepareNextRotatedTask(t *testing.T, st *state.StateStore) string {
 	return newThread
 }
 
-func TestSessionRotationPendingRejectsNewTaskBeforeMutation(t *testing.T) {
+func TestSessionRotationPendingAllowsOrdinaryNewTaskAndRetiresRecommendation(t *testing.T) {
 	cfg, st, threadID := seedSessionRotationAccept(t)
 	beforeTaskID := st.ReadOr("task.id", "")
 	t.Setenv(state.ParentActionCodexThreadIDEnv, threadID)
 	t.Setenv(state.ParentActionCodexSessionIDEnv, threadID)
-	runner := &fakeRunner{}
-	err := Execute(Command{Mode: ModeNewTask, Payload: "must not run"}, cfg, runner.factory(), io.Discard, io.Discard)
-	if err == nil || !strings.Contains(err.Error(), "session rotation") {
-		t.Fatalf("pending rotation admitted: %v", err)
+	runner := &fakeRunner{steps: []fakeStep{
+		{structured: implementedPacketApp("next")},
+		{structured: passPacketApp()},
+	}}
+	if err := Execute(Command{Mode: ModeNewTask, Payload: "ordinary next task"}, cfg, runner.factory(), io.Discard, io.Discard); err != nil {
+		t.Fatal(err)
 	}
-	if len(runner.prompts) != 0 || st.ReadOr("task.id", "") != beforeTaskID {
-		t.Fatal("rejected start changed task or invoked model")
+	if len(runner.prompts) == 0 || st.ReadOr("task.id", "") == beforeTaskID {
+		t.Fatal("ordinary start did not begin a new task")
+	}
+	retired, err := st.LoadSessionRotationMarker(threadID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if retired == nil || retired.State != "" || retired.Directive != nil {
+		t.Fatalf("pending recommendation was not retired: %#v", retired)
+	}
+	if retired.LastEvaluation == nil || !retired.LastEvaluation.Required {
+		t.Fatalf("last evaluation evidence was not preserved: %#v", retired.LastEvaluation)
 	}
 }
 
-func TestSessionRotationPendingOnOtherThreadBlocksStartAndProjectsRecovery(t *testing.T) {
+func TestSessionRotationPendingOnOtherThreadAllowsOrdinaryStartAndRetiresRecommendation(t *testing.T) {
 	cfg, st, oldThread := seedSessionRotationAccept(t)
 	marker, err := st.LoadSessionRotationMarker(oldThread)
 	if err != nil || marker == nil || marker.Directive == nil {
@@ -841,47 +853,34 @@ func TestSessionRotationPendingOnOtherThreadBlocksStartAndProjectsRecovery(t *te
 	beforeTaskID := st.ReadOr("task.id", "")
 	t.Setenv(state.ParentActionCodexThreadIDEnv, newThread)
 	t.Setenv(state.ParentActionCodexSessionIDEnv, newThread)
-	runner := &fakeRunner{}
-	err = Execute(Command{Mode: ModeNewTask, Payload: "must not run"}, cfg, runner.factory(), io.Discard, io.Discard)
-	if err == nil || !strings.Contains(err.Error(), oldThread) || !strings.Contains(err.Error(), marker.Directive.DirectiveID) {
-		t.Fatalf("別thread通常startが未完了directiveをbypassしました: %v", err)
+	runner := &fakeRunner{steps: []fakeStep{
+		{structured: implementedPacketApp("next")},
+		{structured: passPacketApp()},
+	}}
+	if err := Execute(Command{Mode: ModeNewTask, Payload: "ordinary next task"}, cfg, runner.factory(), io.Discard, io.Discard); err != nil {
+		t.Fatal(err)
 	}
-	if len(runner.prompts) != 0 || st.ReadOr("task.id", "") != beforeTaskID {
-		t.Fatal("rejected start changed task or invoked model")
+	if len(runner.prompts) == 0 || st.ReadOr("task.id", "") == beforeTaskID {
+		t.Fatal("ordinary start on another thread did not begin a new task")
 	}
-
-	var output parentHandoffOutput
-	executeCommandOutput(t, cfg, ModeHandoff, &output, "--handoff")
-	if !output.Consistent || output.SessionRotation == nil {
-		t.Fatalf("handoff session_rotation = %#v consistent=%v", output.SessionRotation, output.Consistent)
-	}
-	if len(output.SessionRotation.Incomplete) != 1 {
-		t.Fatalf("incomplete_rotations = %#v", output.SessionRotation.Incomplete)
-	}
-	incomplete := output.SessionRotation.Incomplete[0]
-	if incomplete.ParentThreadID != oldThread || incomplete.State != state.SessionRotationStatePending || incomplete.DirectiveID != marker.Directive.DirectiveID {
-		t.Fatalf("recovery対象のprojection = %#v", incomplete)
-	}
-
-	claim, err := st.ClaimSessionRotation(oldThread, marker.Directive.DirectiveID)
+	retired, err := st.LoadSessionRotationMarker(oldThread)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := st.BindSessionRotationClaim(oldThread, marker.Directive.DirectiveID, claim.ClaimID, newThread); err != nil {
+	if retired == nil || retired.State != "" || retired.Directive != nil {
+		t.Fatalf("old pending recommendation was not retired: %#v", retired)
+	}
+	if retired.LastEvaluation == nil || !retired.LastEvaluation.Required || retired.LastEvaluation.TaskID != marker.LastEvaluation.TaskID {
+		t.Fatalf("last evaluation evidence was not preserved: %#v", retired.LastEvaluation)
+	}
+	incomplete, err := st.IncompleteSessionRotations()
+	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.StartSessionRotationTask(newThread, claim.ClaimID); err != nil {
-		t.Fatal(err)
-	}
-	if err := st.SetParentCodexIdentity(newThread, newThread, nil); err != nil {
-		t.Fatal(err)
-	}
-	if err := st.AcknowledgeSessionRotationClaim(claim.ClaimID, newThread); err != nil {
-		t.Fatal(err)
-	}
-	retired, err := st.LoadSessionRotationMarker(oldThread)
-	if err != nil || retired.State != state.SessionRotationStateIssued || retired.Issued == nil || retired.Issued.BoundThreadID != newThread {
-		t.Fatalf("同一checkout recovery後の旧directive = %#v err=%v", retired, err)
+	for _, rotation := range incomplete {
+		if rotation.ParentThreadID == oldThread {
+			t.Fatalf("retired recommendation remained incomplete: %#v", rotation)
+		}
 	}
 }
 
@@ -894,8 +893,16 @@ func TestSessionRotationHandoffSurvivesUnreadableStatsMirror(t *testing.T) {
 	if output.SessionRotation == nil || output.SessionRotation.ParentThreadID != threadID || output.SessionRotation.State != state.SessionRotationProjectionPending {
 		t.Fatalf("rotation disappeared with stats mirror: %#v", output.SessionRotation)
 	}
-	if err := st.ValidateNewTaskRotation(threadID, ""); err == nil {
-		t.Fatal("unreadable stats bypassed rotation")
+	resume, err := st.AdmitNewTaskRotationBoundary(threadID, "")
+	if err != nil || resume {
+		t.Fatalf("pending recommendation blocked ordinary admission with unreadable stats: resume=%v err=%v", resume, err)
+	}
+	marker, err := st.LoadSessionRotationMarker(threadID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if marker == nil || marker.State != state.SessionRotationStatePending || marker.Directive == nil {
+		t.Fatalf("admission check mutated pending recommendation: %#v", marker)
 	}
 }
 
