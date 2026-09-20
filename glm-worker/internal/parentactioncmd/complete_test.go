@@ -475,6 +475,9 @@ func newCompleteRepositoryFixtureWithPlan(t *testing.T, initialPlan string, task
 	if err := st.Write("active-task", "IMPLEMENTATION_TASKS/active.md"); err != nil {
 		t.Fatal(err)
 	}
+	if err := st.SaveCurrentTaskAuthority("IMPLEMENTATION_TASKS/active.md", []byte("# active\n\n## External feasibility\n\nstatus: not-applicable\n")); err != nil {
+		t.Fatal(err)
+	}
 	return &completeFixture{cfg: cfg, st: st, repo: repo, remote: remote}
 }
 
