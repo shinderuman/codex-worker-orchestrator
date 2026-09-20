@@ -14,6 +14,7 @@ const pendingSessionRotationRetirementVersion = 1
 
 type pendingSessionRotationRetirementStage struct {
 	Version         int                                              `json:"version"`
+	CallerThreadID  string                                           `json:"caller_thread_id"`
 	Recommendations []pendingSessionRotationRetirementRecommendation `json:"recommendations"`
 }
 
@@ -57,12 +58,22 @@ func (s *StateStore) AdmitNewTaskRotationBoundary(callerThreadID, claimID string
 	return false, nil
 }
 
-func (s *StateStore) StagePendingSessionRotationRecommendationRetirement() error {
+func (s *StateStore) StagePendingSessionRotationRecommendationRetirement(callerThreadID string) error {
+	resume, err := s.AdmitNewTaskRotationBoundary(callerThreadID, "")
+	if err != nil {
+		return err
+	}
+	if resume {
+		return fmt.Errorf("ordinary task start cannot resume a claimed session rotation")
+	}
 	rotations, err := s.IncompleteSessionRotations()
 	if err != nil {
 		return err
 	}
-	stage := pendingSessionRotationRetirementStage{Version: pendingSessionRotationRetirementVersion}
+	stage := pendingSessionRotationRetirementStage{
+		Version:        pendingSessionRotationRetirementVersion,
+		CallerThreadID: callerThreadID,
+	}
 	for _, rotation := range rotations {
 		if rotation.State != SessionRotationStatePending {
 			return fmt.Errorf("session rotation changed before ordinary task start: parent_thread_id=%s state=%s directive_id=%s", rotation.ParentThreadID, rotation.State, rotation.DirectiveID)
@@ -116,6 +127,21 @@ func (s *StateStore) loadPendingSessionRotationRecommendationRetirement() (*pend
 	return &stage, nil
 }
 
+func (s *StateStore) validatePendingSessionRotationRecommendationRetirementBoundary() error {
+	stage, err := s.loadPendingSessionRotationRecommendationRetirement()
+	if err != nil || stage == nil {
+		return err
+	}
+	resume, err := s.AdmitNewTaskRotationBoundary(stage.CallerThreadID, "")
+	if err != nil {
+		return err
+	}
+	if resume {
+		return fmt.Errorf("ordinary task start cannot resume a claimed session rotation")
+	}
+	return nil
+}
+
 func (s *StateStore) pendingSessionRotationRetirementTransitionFiles() ([]string, error) {
 	stage, err := s.loadPendingSessionRotationRecommendationRetirement()
 	if err != nil || stage == nil {
@@ -132,6 +158,23 @@ func (s *StateStore) commitPendingSessionRotationRecommendationRetirement() erro
 	stage, err := s.loadPendingSessionRotationRecommendationRetirement()
 	if err != nil || stage == nil {
 		return err
+	}
+	expected := make(map[string]string, len(stage.Recommendations))
+	for _, recommendation := range stage.Recommendations {
+		expected[recommendation.ParentThreadID] = recommendation.DirectiveID
+	}
+	rotations, err := s.IncompleteSessionRotations()
+	if err != nil {
+		return err
+	}
+	if len(rotations) != len(expected) {
+		return fmt.Errorf("pending session rotation recommendations changed before ordinary task start")
+	}
+	for _, rotation := range rotations {
+		directiveID, ok := expected[rotation.ParentThreadID]
+		if !ok || rotation.State != SessionRotationStatePending || directiveID != rotation.DirectiveID {
+			return fmt.Errorf("pending session rotation recommendations changed before ordinary task start")
+		}
 	}
 	markers := make([]*SessionRotationMarker, 0, len(stage.Recommendations))
 	for _, recommendation := range stage.Recommendations {
