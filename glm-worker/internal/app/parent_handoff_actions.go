@@ -19,7 +19,12 @@ type parentHandoffRecoveryOutputAlias parentHandoffRecoveryOutput
 
 func (output parentHandoffOutput) MarshalJSON() ([]byte, error) {
 	projected := output
-	projected.AllowedActions = withExecutionMilestoneReconsideration(output.TaskStatus, output.AllowedActions)
+	projected.AllowedActions = withExecutionMilestoneReconsideration(
+		output.TaskStatus,
+		output.RequiredAction,
+		output.PendingDecision,
+		output.AllowedActions,
+	)
 	return json.Marshal(struct {
 		parentHandoffOutputAlias
 		ActionSpecs map[string]parentHandoffActionSpec `json:"action_specs"`
@@ -31,7 +36,12 @@ func (output parentHandoffOutput) MarshalJSON() ([]byte, error) {
 
 func (output parentHandoffRecoveryOutput) MarshalJSON() ([]byte, error) {
 	projected := output
-	projected.AllowedActions = withExecutionMilestoneReconsideration(output.TaskStatus, output.AllowedActions)
+	projected.AllowedActions = withExecutionMilestoneReconsideration(
+		output.TaskStatus,
+		output.RequiredAction,
+		output.PendingDecision,
+		output.AllowedActions,
+	)
 	return json.Marshal(struct {
 		parentHandoffRecoveryOutputAlias
 		ActionSpecs map[string]parentHandoffActionSpec `json:"action_specs"`
@@ -41,9 +51,17 @@ func (output parentHandoffRecoveryOutput) MarshalJSON() ([]byte, error) {
 	})
 }
 
-func withExecutionMilestoneReconsideration(taskStatus *string, actions []string) []string {
+func withExecutionMilestoneReconsideration(
+	taskStatus *string,
+	requiredAction *string,
+	pendingDecision bool,
+	actions []string,
+) []string {
 	projected := append([]string(nil), actions...)
-	if taskStatus == nil || !executionMilestoneReconsiderationStatus(state.TaskStatus(*taskStatus)) {
+	if pendingDecision || taskStatus == nil || !executionMilestoneReconsiderationStatus(state.TaskStatus(*taskStatus)) {
+		return projected
+	}
+	if requiredAction != nil && *requiredAction == string(state.ParentActionApproveSurface) {
 		return projected
 	}
 	milestoneAction := string(parentaction.ActionReviseMilestones)
@@ -61,7 +79,6 @@ func executionMilestoneReconsiderationStatus(status state.TaskStatus) bool {
 		state.TaskStatusRateLimited,
 		state.TaskStatusProviderUnavailable,
 		state.TaskStatusGuardRecoverable,
-		state.TaskStatusQualityGateRecoverable,
 		state.TaskStatusInterrupted:
 		return true
 	default:
