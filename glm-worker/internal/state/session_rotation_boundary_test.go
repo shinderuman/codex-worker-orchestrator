@@ -2,7 +2,7 @@ package state
 
 import "testing"
 
-func TestAdmitNewTaskRotationBoundaryDeclinesPendingRecommendation(t *testing.T) {
+func TestAdmitNewTaskRotationBoundaryDeclinesPendingRecommendationAfterAdmission(t *testing.T) {
 	st := &StateStore{dir: t.TempDir()}
 	parentThread := "01a0463c-d477-7410-9efd-cb34ff2e0b0e"
 	ordinaryThread := "01a0244a-4ee4-7e71-b2e1-dec3bdda2120"
@@ -22,6 +22,16 @@ func TestAdmitNewTaskRotationBoundaryDeclinesPendingRecommendation(t *testing.T)
 	resume, err := st.AdmitNewTaskRotationBoundary(ordinaryThread, "")
 	if err != nil || resume {
 		t.Fatalf("ordinary start admission = resume:%v err:%v", resume, err)
+	}
+	beforeRetire, err := st.LoadSessionRotationMarker(parentThread)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if beforeRetire == nil || beforeRetire.State != SessionRotationStatePending || beforeRetire.Directive == nil {
+		t.Fatalf("admission mutated pending recommendation before ordinary start was accepted: %#v", beforeRetire)
+	}
+	if err := st.RetirePendingSessionRotationRecommendations(); err != nil {
+		t.Fatal(err)
 	}
 	marker, err := st.LoadSessionRotationMarker(parentThread)
 	if err != nil {
