@@ -83,7 +83,10 @@ func publicationClassifyShell(command string, depth int) (string, string) {
 }
 
 func publicationClassifySegment(segment []publicationShellWord, depth int) (string, string) {
-	commandIndex, ok := publicationShellCommandIndex(segment)
+	commandIndex, ok, unavailable := publicationShellCommandIndex(segment)
+	if unavailable {
+		return publicationGitClassificationCode, publicationGitClassificationReason
+	}
 	if !ok {
 		return "", ""
 	}
@@ -103,18 +106,76 @@ func publicationClassifySegment(segment []publicationShellWord, depth int) (stri
 	}
 }
 
-func publicationShellCommandIndex(segment []publicationShellWord) (int, bool) {
-	for index, word := range segment {
+func publicationShellCommandIndex(segment []publicationShellWord) (int, bool, bool) {
+	for index := 0; index < len(segment); {
+		word := segment[index]
+		if word.Dynamic {
+			return index, true, false
+		}
+		if strings.Contains(word.Value, "=") || word.Value == "!" {
+			index++
+			continue
+		}
+		next, wrapper, unavailable := publicationShellWrapperNext(segment, index)
+		if unavailable {
+			return 0, false, true
+		}
+		if wrapper {
+			index = next
+			continue
+		}
+		return index, true, false
+	}
+	return 0, false, false
+}
+
+func publicationShellWrapperNext(segment []publicationShellWord, index int) (int, bool, bool) {
+	switch segment[index].Value {
+	case "command", "exec", "sudo":
+		next, unavailable := publicationSimpleWrapperNext(segment, index+1)
+		return next, true, unavailable
+	case "env":
+		next, unavailable := publicationEnvWrapperNext(segment, index+1)
+		return next, true, unavailable
+	}
+	return index, false, false
+}
+
+func publicationSimpleWrapperNext(segment []publicationShellWord, index int) (int, bool) {
+	if index >= len(segment) {
+		return index, false
+	}
+	if segment[index].Dynamic {
+		return index, true
+	}
+	if segment[index].Value == "--" {
+		index++
+	}
+	if index < len(segment) && strings.HasPrefix(segment[index].Value, "-") {
+		return index, true
+	}
+	return index, false
+}
+
+func publicationEnvWrapperNext(segment []publicationShellWord, index int) (int, bool) {
+	for index < len(segment) {
+		word := segment[index]
 		if word.Dynamic {
 			return index, true
 		}
-		clean := word.Value
-		if strings.Contains(clean, "=") || clean == "command" || clean == "exec" || clean == "sudo" || clean == "env" {
+		if strings.Contains(word.Value, "=") {
+			index++
 			continue
 		}
-		return index, true
+		if word.Value == "--" {
+			return index + 1, false
+		}
+		if strings.HasPrefix(word.Value, "-") {
+			return index, true
+		}
+		return index, false
 	}
-	return 0, false
+	return index, false
 }
 
 func publicationClassifyInterpreter(args []publicationShellWord, depth int) (string, string) {
@@ -256,7 +317,7 @@ func (lexer *publicationShellLexer) scanDoubleQuoted(ch byte) error {
 	case '"':
 		lexer.quote = 0
 	case '`':
-		return fmt.Errorf("dynamic command substitution")
+		return lexer.consumeBacktickDynamic()
 	case '$':
 		return lexer.writeDynamic(ch)
 	case '\\':
@@ -279,9 +340,13 @@ func (lexer *publicationShellLexer) scanUnquoted(ch byte) error {
 	case '\\':
 		return lexer.writeEscaped()
 	case '`':
-		return fmt.Errorf("dynamic command substitution")
+		return lexer.consumeBacktickDynamic()
 	case '$':
 		return lexer.writeDynamic(ch)
+	case '*', '?':
+		lexer.writeDynamicByte(ch)
+	case '<', '>':
+		return lexer.writeRedirectionOrProcessSubstitution(ch)
 	case '#':
 		lexer.consumeCommentOrLiteral(ch)
 	default:
@@ -302,13 +367,81 @@ func (lexer *publicationShellLexer) writeEscaped() error {
 }
 
 func (lexer *publicationShellLexer) writeDynamic(ch byte) error {
+	lexer.writeDynamicByte(ch)
 	if lexer.index+1 < len(lexer.command) && lexer.command[lexer.index+1] == '(' {
-		return fmt.Errorf("dynamic command substitution")
+		return lexer.consumeParenthesizedDynamic()
 	}
+	return nil
+}
+
+func (lexer *publicationShellLexer) writeDynamicByte(ch byte) {
 	lexer.dynamic = true
 	lexer.wordStarted = true
 	lexer.value.WriteByte(ch)
+}
+
+func (lexer *publicationShellLexer) writeRedirectionOrProcessSubstitution(ch byte) error {
+	lexer.wordStarted = true
+	lexer.value.WriteByte(ch)
+	if lexer.index+1 < len(lexer.command) && lexer.command[lexer.index+1] == '(' {
+		lexer.dynamic = true
+		return lexer.consumeParenthesizedDynamic()
+	}
 	return nil
+}
+
+func (lexer *publicationShellLexer) consumeParenthesizedDynamic() error {
+	depth := 0
+	var quote byte
+	for index := lexer.index + 1; index < len(lexer.command); index++ {
+		ch := lexer.command[index]
+		lexer.value.WriteByte(ch)
+		if quote != 0 {
+			if ch == quote {
+				quote = 0
+			} else if ch == '\\' && quote == '"' && index+1 < len(lexer.command) {
+				index++
+				lexer.value.WriteByte(lexer.command[index])
+			}
+			continue
+		}
+		switch ch {
+		case '\'', '"':
+			quote = ch
+		case '\\':
+			if index+1 < len(lexer.command) {
+				index++
+				lexer.value.WriteByte(lexer.command[index])
+			}
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth == 0 {
+				lexer.index = index
+				return nil
+			}
+		}
+	}
+	return fmt.Errorf("unterminated dynamic substitution")
+}
+
+func (lexer *publicationShellLexer) consumeBacktickDynamic() error {
+	lexer.writeDynamicByte('`')
+	for index := lexer.index + 1; index < len(lexer.command); index++ {
+		ch := lexer.command[index]
+		lexer.value.WriteByte(ch)
+		if ch == '\\' && index+1 < len(lexer.command) {
+			index++
+			lexer.value.WriteByte(lexer.command[index])
+			continue
+		}
+		if ch == '`' {
+			lexer.index = index
+			return nil
+		}
+	}
+	return fmt.Errorf("unterminated backtick substitution")
 }
 
 func (lexer *publicationShellLexer) consumeSeparator(ch byte) {
