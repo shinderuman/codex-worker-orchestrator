@@ -1,6 +1,6 @@
 # codex-worker-orchestrator 実装index
 
-恒久workflowは `IMPLEMENTATION_RULES.md`、個別要求は `IMPLEMENTATION_TASKS/*.md`を正とする。通常taskの完了証跡はGit、CI、bundle / telemetryから回収し、`IMPLEMENTATION_HISTORY.md`は将来taskが明示参照する非diffのcross-task decisionだけを保持する。このfileへtask詳細・Web GPTの評価/Issue管理状態・完了chronologyを複製しない。現在のbranch・HEAD・dirty stateも複製せず、Git現物と`glm-worker --project-state`を正とする。
+恒久workflowは `IMPLEMENTATION_RULES.md`、個別要求は`IMPLEMENTATION_TASKS/*.md`を正とする。通常taskの完了証跡はGit、CI、bundle / telemetryから回収し、`IMPLEMENTATION_HISTORY.md`は将来taskが明示参照する非diffのcross-task decisionだけを保持する。このfileへtask詳細・Web GPTの評価/Issue管理状態・完了chronologyを複製しない。現在のbranch・HEAD・dirty stateも複製せず、Git現物と`glm-worker --project-state`を正とする。
 
 ## 最上位目的
 
@@ -8,11 +8,10 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/detected-defect-task-registration-enforcement.md`
+- `IMPLEMENTATION_TASKS/install-smoke-claude-settings-env-isolation.md`
 
 ## NEXT（優先順）
 
-- `IMPLEMENTATION_TASKS/install-smoke-claude-settings-env-isolation.md`
 - `IMPLEMENTATION_TASKS/machine-enforced-control-authority-legitimacy.md`
 - `IMPLEMENTATION_TASKS/machine-negative-result-authority.md`
 - `IMPLEMENTATION_TASKS/canonical-authority-bootstrap-enforcement.md`
