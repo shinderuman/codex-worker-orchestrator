@@ -60,6 +60,7 @@ func TaskStatusPtr(status state.TaskStatus) *string {
 	case state.TaskStatusActive,
 		state.TaskStatusWaitingDecision,
 		state.TaskStatusWaitingSolReview,
+		state.TaskStatusAwaitingParentCompletion,
 		state.TaskStatusComplete,
 		state.TaskStatusRateLimited,
 		state.TaskStatusProviderUnavailable,
