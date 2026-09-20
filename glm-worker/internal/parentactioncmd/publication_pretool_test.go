@@ -27,6 +27,8 @@ func TestPublicationPreToolUseBlocksGitGuardBypass(t *testing.T) {
 		"env --chdir=/tmp git push origin main --no-verify",
 		"sudo git push origin main --no-verify",
 		"sudo -u root git push origin main --no-verify",
+		"time git push origin main --no-verify",
+		"time -p git push origin main --no-verify",
 		"eval git push origin main --no-verify",
 		"A[0]=value git push origin main --no-verify",
 		"A+=value git push origin main --no-verify",
@@ -66,6 +68,9 @@ func TestPublicationPreToolUseFailsClosedForDynamicGitClassification(t *testing.
 		"git push origin <(printf main)",
 		"sudo --unknown-option git push origin main --no-verify",
 		"env --split-string='git push origin main --no-verify'",
+		"time --unknown git push origin main --no-verify",
+		"coproc git push origin main --no-verify",
+		"coproc worker git push origin main --no-verify",
 	}
 	for _, command := range commands {
 		t.Run(command, func(t *testing.T) {
@@ -96,6 +101,8 @@ func TestPublicationPreToolUseAllowsManagedPushAndUnrelatedCommands(t *testing.T
 		"sudo git push origin main",
 		"sudo -u root git push origin main",
 		"sudo -u root echo safe",
+		"time git push origin main",
+		"time -p git push origin main",
 		"bash -lc 'git push origin main'",
 		"bash --norc -c 'git push origin main'",
 		"bash --rcfile /dev/null -c 'git push origin main'",
