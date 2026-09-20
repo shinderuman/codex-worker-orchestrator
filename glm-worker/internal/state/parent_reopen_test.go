@@ -65,6 +65,20 @@ func saveReopenPublicationState(t *testing.T, st *StateStore) PublicationCandida
 	return candidate
 }
 
+func recordReopenFinding(t *testing.T, st *StateStore, candidate PublicationCandidate) PublicationInvalidatingFinding {
+	t.Helper()
+	finding, err := st.RecordPublicationInvalidatingFinding(
+		candidate.CommitOID,
+		candidate.SnapshotID,
+		ParentOriginCodexReview,
+		ParentCauseProductionWiring,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return finding
+}
+
 func TestReopenAcceptedParentCompletionReturnsTaskToFixLifecycle(t *testing.T) {
 	st := newAcceptedParentCompletionStore(t)
 	candidate := saveReopenPublicationState(t, st)
@@ -72,11 +86,23 @@ func TestReopenAcceptedParentCompletionReturnsTaskToFixLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !plan.Allows(ParentActionReopen) || !plan.Allows(ParentActionComplete) {
-		t.Fatalf("awaiting plan = %#v", plan)
+	if plan.RequiredAction != ParentActionComplete || !plan.Allows(ParentActionComplete) || plan.Allows(ParentActionReopen) {
+		t.Fatalf("awaiting plan before finding = %#v", plan)
 	}
 
-	if err := st.ReopenAcceptedParentCompletion(ParentOriginCodexReview, ParentCauseProductionWiring); err != nil {
+	finding := recordReopenFinding(t, st, candidate)
+	plan, err = st.ParentActionPlan()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.RequiredAction != ParentActionReopen || !plan.Allows(ParentActionReopen) || plan.Allows(ParentActionComplete) || plan.Allows(ParentActionInstall) {
+		t.Fatalf("awaiting plan after finding = %#v", plan)
+	}
+	if finding.TaskID != candidate.TaskID || finding.CandidateCommitOID != candidate.CommitOID || finding.CandidateSnapshotID != candidate.SnapshotID || finding.Disposition != PublicationFindingCorrectnessDefect {
+		t.Fatalf("finding = %#v candidate=%#v", finding, candidate)
+	}
+
+	if err := st.ReopenAcceptedParentCompletion(); err != nil {
 		t.Fatal(err)
 	}
 	if st.TaskStatus() != TaskStatusWaitingSolReview {
@@ -95,6 +121,9 @@ func TestReopenAcceptedParentCompletionReturnsTaskToFixLifecycle(t *testing.T) {
 	}
 	if _, err := st.LoadRuntimeInstallEvidence(); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("reopened runtime install evidence = %v", err)
+	}
+	if _, err := st.LoadPublicationInvalidatingFinding(); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("reopened invalidating finding = %v", err)
 	}
 	lineage, err := st.LoadPublicationReopenLineage()
 	if err != nil {
@@ -117,7 +146,8 @@ func TestReopenAcceptedParentCompletionReturnsTaskToFixLifecycle(t *testing.T) {
 
 func TestReopenAcceptedParentCompletionRollsBackLineageOnIntermediateFailure(t *testing.T) {
 	st := newAcceptedParentCompletionStore(t)
-	saveReopenPublicationState(t, st)
+	candidate := saveReopenPublicationState(t, st)
+	findingBefore := recordReopenFinding(t, st, candidate)
 	candidateBefore, err := st.LoadPublicationCandidate()
 	if err != nil {
 		t.Fatal(err)
@@ -136,7 +166,7 @@ func TestReopenAcceptedParentCompletionRollsBackLineageOnIntermediateFailure(t *
 	}
 	t.Cleanup(func() { removeStatePath = original })
 
-	err = st.ReopenAcceptedParentCompletion(ParentOriginCodexReview, ParentCauseProductionWiring)
+	err = st.ReopenAcceptedParentCompletion()
 	if err == nil || !strings.Contains(err.Error(), "injected runtime install evidence remove failure") {
 		t.Fatalf("intermediate reopen failure = %v", err)
 	}
@@ -150,6 +180,10 @@ func TestReopenAcceptedParentCompletionRollsBackLineageOnIntermediateFailure(t *
 	evidenceAfter, err := st.LoadRuntimeInstallEvidence()
 	if err != nil || evidenceAfter != evidenceBefore {
 		t.Fatalf("failed reopen did not restore runtime install evidence: %#v err=%v", evidenceAfter, err)
+	}
+	findingAfter, err := st.LoadPublicationInvalidatingFinding()
+	if err != nil || findingAfter != findingBefore {
+		t.Fatalf("failed reopen did not restore invalidating finding: %#v err=%v", findingAfter, err)
 	}
 	if _, err := st.LoadPublicationReopenLineage(); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("failed reopen left lineage anchor: %v", err)
@@ -194,7 +228,7 @@ func TestReopenAcceptedParentCompletionFailsClosed(t *testing.T) {
 	if err := st.RecordSolResult(packet.Result{Status: packet.StatusNeedsSolReview, Risk: packet.RiskHigh}, ParentReviewProducer{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.ReopenAcceptedParentCompletion("", ""); err == nil || !strings.Contains(err.Error(), "reopen requires") {
+	if err := st.ReopenAcceptedParentCompletion(); err == nil || !strings.Contains(err.Error(), "reopen requires") {
 		t.Fatalf("reopen outside awaiting parent completion = %v", err)
 	}
 
@@ -202,7 +236,7 @@ func TestReopenAcceptedParentCompletionFailsClosed(t *testing.T) {
 	if err := awaitingWithoutAccept.SetTaskStatus(TaskStatusAwaitingParentCompletion); err != nil {
 		t.Fatal(err)
 	}
-	if err := awaitingWithoutAccept.ReopenAcceptedParentCompletion("", ""); err == nil || !strings.Contains(err.Error(), "accepted parent completion outcome") {
+	if err := awaitingWithoutAccept.ReopenAcceptedParentCompletion(); err == nil || !strings.Contains(err.Error(), "accepted parent completion outcome") {
 		t.Fatalf("reopen without accepted outcome = %v", err)
 	}
 
@@ -226,15 +260,16 @@ func TestReopenAcceptedParentCompletionFailsClosed(t *testing.T) {
 	if err := os.WriteFile(noGoTerminal.Path(parentReviewStateFile), append(data, '\n'), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := noGoTerminal.ReopenAcceptedParentCompletion("", ""); err == nil || !strings.Contains(err.Error(), "accepted parent completion outcome") {
+	if err := noGoTerminal.ReopenAcceptedParentCompletion(); err == nil || !strings.Contains(err.Error(), "accepted parent completion outcome") {
 		t.Fatalf("reopen of no-go terminal = %v", err)
 	}
 
-	invalidOrigin := newAcceptedParentCompletionStore(t)
-	if err := invalidOrigin.ReopenAcceptedParentCompletion("bogus-origin", ""); err == nil || !strings.Contains(err.Error(), "unknown parent fix origin") {
-		t.Fatalf("reopen with invalid origin = %v", err)
+	withoutFinding := newAcceptedParentCompletionStore(t)
+	saveReopenPublicationState(t, withoutFinding)
+	if err := withoutFinding.ReopenAcceptedParentCompletion(); err == nil || !strings.Contains(err.Error(), "durable invalidating correctness finding") {
+		t.Fatalf("reopen without durable finding = %v", err)
 	}
-	if invalidOrigin.TaskStatus() != TaskStatusAwaitingParentCompletion {
-		t.Fatalf("failed reopen mutated status: %s", invalidOrigin.TaskStatus())
+	if withoutFinding.TaskStatus() != TaskStatusAwaitingParentCompletion {
+		t.Fatalf("failed reopen mutated status: %s", withoutFinding.TaskStatus())
 	}
 }
