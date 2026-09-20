@@ -8,11 +8,10 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/install-smoke-claude-settings-env-isolation.md`
+- `IMPLEMENTATION_TASKS/machine-enforced-control-authority-legitimacy.md`
 
 ## NEXT（優先順）
 
-- `IMPLEMENTATION_TASKS/machine-enforced-control-authority-legitimacy.md`
 - `IMPLEMENTATION_TASKS/machine-negative-result-authority.md`
 - `IMPLEMENTATION_TASKS/canonical-authority-bootstrap-enforcement.md`
 - `IMPLEMENTATION_TASKS/staged-parent-action-no-reread-regression.md`
