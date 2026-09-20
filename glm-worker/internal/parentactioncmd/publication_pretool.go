@@ -45,6 +45,7 @@ const (
 	publicationGitNoVerifyReason           = "publication Git operation rejected: --no-verify may not bypass managed repository guards"
 	publicationGitHooksPathReason          = "publication Git operation rejected: core.hooksPath may not bypass managed repository guards"
 	publicationShellClassificationMaxDepth = 4
+	publicationShellHelpOption             = "--help"
 )
 
 func runPublicationPreToolUse(payload string, stdout io.Writer) error {
@@ -186,38 +187,58 @@ func publicationShellWrapperNext(segment []publicationShellWord, index int) (int
 func publicationCommandWrapperNext(segment []publicationShellWord, index int) (int, bool) {
 	query := false
 	for index < len(segment) {
-		word := segment[index]
-		if word.Dynamic {
+		next, stepQuery, done, unavailable := publicationCommandWrapperStep(segment, index)
+		if unavailable {
 			return index, true
 		}
-		if word.Value == "--" {
-			index++
+		query = query || stepQuery
+		index = next
+		if done {
 			break
 		}
-		if !strings.HasPrefix(word.Value, "-") || word.Value == "-" {
-			break
-		}
-		if word.Value == "--help" {
-			return len(segment), false
-		}
-		if strings.HasPrefix(word.Value, "--") {
-			return index, true
-		}
-		for _, option := range word.Value[1:] {
-			switch option {
-			case 'p':
-			case 'v', 'V':
-				query = true
-			default:
-				return index, true
-			}
-		}
-		index++
 	}
 	if query {
 		return len(segment), false
 	}
 	return index, false
+}
+
+func publicationCommandWrapperStep(segment []publicationShellWord, index int) (int, bool, bool, bool) {
+	word := segment[index]
+	if word.Dynamic {
+		return index, false, false, true
+	}
+	if word.Value == "--" {
+		return index + 1, false, true, false
+	}
+	if !strings.HasPrefix(word.Value, "-") || word.Value == "-" {
+		return index, false, true, false
+	}
+	if word.Value == publicationShellHelpOption {
+		return len(segment), true, true, false
+	}
+	if strings.HasPrefix(word.Value, "--") {
+		return index, false, false, true
+	}
+	query, ok := publicationCommandShortOptions(word.Value)
+	if !ok {
+		return index, false, false, true
+	}
+	return index + 1, query, false, false
+}
+
+func publicationCommandShortOptions(value string) (bool, bool) {
+	query := false
+	for _, option := range value[1:] {
+		switch option {
+		case 'p':
+		case 'v', 'V':
+			query = true
+		default:
+			return false, false
+		}
+	}
+	return query, true
 }
 
 func publicationExecWrapperNext(segment []publicationShellWord, index int) (int, bool) {
@@ -245,39 +266,45 @@ func publicationExecWrapperNext(segment []publicationShellWord, index int) (int,
 
 func publicationSudoWrapperNext(segment []publicationShellWord, index int) (int, bool) {
 	for index < len(segment) {
-		word := segment[index]
-		if word.Dynamic {
+		next, done, unavailable := publicationSudoWrapperStep(segment, index)
+		if unavailable {
 			return index, true
 		}
-		if word.Value == "--" {
-			return index + 1, false
-		}
-		if !strings.HasPrefix(word.Value, "-") || word.Value == "-" {
+		index = next
+		if done {
 			return index, false
 		}
-		if publicationSudoNonExecutingOption(word.Value) {
-			return len(segment), false
-		}
-		if publicationSudoFlag(word.Value) || publicationSudoInlineValueOption(word.Value) {
-			index++
-			continue
-		}
-		if publicationSudoValueOption(word.Value) {
-			next, unavailable := publicationWrapperValueNext(segment, index)
-			if unavailable {
-				return next, true
-			}
-			index = next
-			continue
-		}
-		return index, true
 	}
 	return index, false
 }
 
+func publicationSudoWrapperStep(segment []publicationShellWord, index int) (int, bool, bool) {
+	word := segment[index]
+	if word.Dynamic {
+		return index, false, true
+	}
+	if word.Value == "--" {
+		return index + 1, true, false
+	}
+	if !strings.HasPrefix(word.Value, "-") || word.Value == "-" {
+		return index, true, false
+	}
+	if publicationSudoNonExecutingOption(word.Value) {
+		return len(segment), true, false
+	}
+	if publicationSudoFlag(word.Value) || publicationSudoInlineValueOption(word.Value) {
+		return index + 1, false, false
+	}
+	if publicationSudoValueOption(word.Value) {
+		next, unavailable := publicationWrapperValueNext(segment, index)
+		return next, false, unavailable
+	}
+	return index, false, true
+}
+
 func publicationSudoNonExecutingOption(value string) bool {
 	switch value {
-	case "-e", "--edit", "-l", "--list", "-v", "--validate", "-V", "--version", "-h", "--help":
+	case "-e", "--edit", "-l", "--list", "-v", "--validate", "-V", "--version", "-h", publicationShellHelpOption:
 		return true
 	}
 	return false
@@ -311,45 +338,47 @@ func publicationSudoValueOption(value string) bool {
 
 func publicationEnvWrapperNext(segment []publicationShellWord, index int) (int, bool) {
 	for index < len(segment) {
-		word := segment[index]
-		if word.Dynamic {
+		next, done, unavailable := publicationEnvWrapperStep(segment, index)
+		if unavailable {
 			return index, true
 		}
-		if publicationShellAssignment(word.Value) {
-			index++
-			continue
-		}
-		if word.Value == "--" {
-			return index + 1, false
-		}
-		if !strings.HasPrefix(word.Value, "-") || word.Value == "-" {
+		index = next
+		if done {
 			return index, false
 		}
-		if publicationEnvNonExecutingOption(word.Value) {
-			return len(segment), false
-		}
-		if publicationEnvFlag(word.Value) || publicationEnvInlineValueOption(word.Value) {
-			index++
-			continue
-		}
-		if publicationEnvValueOption(word.Value) {
-			next, unavailable := publicationWrapperValueNext(segment, index)
-			if unavailable {
-				return next, true
-			}
-			index = next
-			continue
-		}
-		if publicationEnvSplitStringOption(word.Value) {
-			return index, true
-		}
-		return index, true
 	}
 	return index, false
 }
 
+func publicationEnvWrapperStep(segment []publicationShellWord, index int) (int, bool, bool) {
+	word := segment[index]
+	if word.Dynamic {
+		return index, false, true
+	}
+	if publicationShellAssignment(word.Value) {
+		return index + 1, false, false
+	}
+	if word.Value == "--" {
+		return index + 1, true, false
+	}
+	if !strings.HasPrefix(word.Value, "-") || word.Value == "-" {
+		return index, true, false
+	}
+	if publicationEnvNonExecutingOption(word.Value) {
+		return len(segment), true, false
+	}
+	if publicationEnvFlag(word.Value) || publicationEnvInlineValueOption(word.Value) {
+		return index + 1, false, false
+	}
+	if publicationEnvValueOption(word.Value) {
+		next, unavailable := publicationWrapperValueNext(segment, index)
+		return next, false, unavailable
+	}
+	return index, false, true
+}
+
 func publicationEnvNonExecutingOption(value string) bool {
-	return value == "--help" || value == "--version"
+	return value == publicationShellHelpOption || value == "--version"
 }
 
 func publicationEnvFlag(value string) bool {
@@ -370,10 +399,6 @@ func publicationEnvValueOption(value string) bool {
 		return true
 	}
 	return false
-}
-
-func publicationEnvSplitStringOption(value string) bool {
-	return value == "-S" || value == "--split-string" || strings.HasPrefix(value, "--split-string=")
 }
 
 func publicationWrapperValueNext(segment []publicationShellWord, index int) (int, bool) {
@@ -569,6 +594,19 @@ func (lexer *publicationShellLexer) scanUnquoted(ch byte) error {
 		lexer.wordStarted = true
 	case '\\':
 		return lexer.writeEscaped()
+	case '`', '$', '*', '?', '<', '>':
+		return lexer.scanUnquotedDynamic(ch)
+	case '#':
+		lexer.consumeCommentOrLiteral(ch)
+	default:
+		lexer.wordStarted = true
+		lexer.value.WriteByte(ch)
+	}
+	return nil
+}
+
+func (lexer *publicationShellLexer) scanUnquotedDynamic(ch byte) error {
+	switch ch {
 	case '`':
 		return lexer.consumeBacktickDynamic()
 	case '$':
@@ -577,11 +615,6 @@ func (lexer *publicationShellLexer) scanUnquoted(ch byte) error {
 		lexer.writeDynamicByte(ch)
 	case '<', '>':
 		return lexer.writeRedirectionOrProcessSubstitution(ch)
-	case '#':
-		lexer.consumeCommentOrLiteral(ch)
-	default:
-		lexer.wordStarted = true
-		lexer.value.WriteByte(ch)
 	}
 	return nil
 }
