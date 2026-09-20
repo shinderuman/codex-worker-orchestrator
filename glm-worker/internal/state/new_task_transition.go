@@ -30,6 +30,9 @@ func (s *StateStore) commitNewTaskCanonicalState(taskID string, afterCanonicalCo
 	if err != nil {
 		return err
 	}
+	if err := s.validatePendingSessionRotationRecommendationRetirementBoundary(); err != nil {
+		return err
+	}
 	rollback := func(cause error) error {
 		if rollbackErr := s.restoreNewTaskTransitionSnapshotWithAdditional(snapshot, additionalFiles); rollbackErr != nil {
 			return errors.Join(cause, fmt.Errorf("new task transitionをrollbackできません: %w", rollbackErr))
