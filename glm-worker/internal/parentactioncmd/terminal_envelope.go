@@ -93,7 +93,7 @@ func terminalEnvelopeAction(action string) bool {
 		return descriptor.Action != parentaction.ActionReviseMilestones
 	}
 	switch action {
-	case actionStart, actionApprove, actionAccept, actionResume, "no-go", actionPark, actionUnpark, actionReviewEvidence:
+	case actionStart, actionApprove, actionAccept, actionResume, "no-go", "reopen", actionPark, actionUnpark, actionReviewEvidence:
 		return true
 	default:
 		return false
