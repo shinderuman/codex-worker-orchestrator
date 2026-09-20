@@ -190,6 +190,9 @@ func (w *Workflow) resolveModelCallFailure(
 	if failureClass.Kind == runner.ProviderFailureZaiFiveHour {
 		return execution, w.saveRateLimitedState(checkpoint, failureClass.FiveHourLimit, execution.runResult, execution.startedAt, execution.completedAt, execution.runErr, outputPath)
 	}
+	if isTerminalProviderFailureClass(failureClass) {
+		return execution, w.saveTerminalProviderStop(checkpoint, failureClass, execution.runResult, execution.startedAt, execution.completedAt, execution.runErr, outputPath)
+	}
 	if err := w.handleStructuredModelFailure(checkpoint, outputPath, execution); err != nil {
 		return execution, err
 	}
@@ -410,6 +413,62 @@ func (w *Workflow) saveProbeRateLimited(checkpoint state.ResumeCheckpoint, limit
 	}
 }
 
+func isTerminalProviderFailureClass(class runner.ProviderFailureClass) bool {
+	switch class.Kind {
+	case runner.ProviderFailureZaiLongQuota,
+		runner.ProviderFailureZaiActionRequired,
+		runner.ProviderFailureZaiUnknownSafeStop:
+		return true
+	default:
+		return false
+	}
+}
+
+func providerTerminalClassification(class runner.ProviderFailureClass) string {
+	if class.BusinessCode == "" {
+		return class.Kind
+	}
+	return class.Kind + ":" + class.BusinessCode
+}
+
+func (w *Workflow) saveTerminalProviderStop(
+	checkpoint state.ResumeCheckpoint,
+	class runner.ProviderFailureClass,
+	runResult runner.RunResult,
+	startedAt time.Time,
+	completedAt time.Time,
+	runErr error,
+	outputPath string,
+) error {
+	classification := providerTerminalClassification(class)
+	if err := w.state.MarkReady(checkpoint.Role); err != nil {
+		w.recordModelCall(checkpoint, runResult, startedAt, completedAt, "state_error", "", err, outputPath, callDiagnostics{})
+		return err
+	}
+	providerErr, saveErr := w.saveProviderUnavailable(checkpoint, classification, 1, startedAt)
+	if saveErr != nil {
+		w.recordModelCall(checkpoint, runResult, startedAt, completedAt, "state_error", "", saveErr, outputPath, callDiagnostics{})
+		return saveErr
+	}
+	w.state.RecordProviderUnavailable(checkpoint.Model)
+	w.recordModelCall(checkpoint, runResult, startedAt, completedAt, "provider_stopped", "", runErr, outputPath, callDiagnostics{providerClassification: classification})
+	return providerErr
+}
+
+func (w *Workflow) saveProbeTerminalProviderStop(
+	checkpoint state.ResumeCheckpoint,
+	class runner.ProviderFailureClass,
+	startedAt time.Time,
+) error {
+	classification := providerTerminalClassification(class)
+	providerErr, saveErr := w.saveProviderUnavailable(checkpoint, classification, 1, startedAt)
+	if saveErr != nil {
+		return saveErr
+	}
+	w.state.RecordProviderUnavailable(checkpoint.Model)
+	return providerErr
+}
+
 func (w *Workflow) recoverTransient(
 	checkpoint state.ResumeCheckpoint,
 	outputPath string,
@@ -440,7 +499,6 @@ func (w *Workflow) gateResumeOnProbe(checkpoint state.ResumeCheckpoint) error {
 }
 
 func (w *Workflow) runResumedTask(checkpoint state.ResumeCheckpoint, outputPath string) (bool, runner.RunResult, time.Time, time.Time, error) {
-
 	guardBefore, stopped, err := w.captureParentFileGuard(checkpoint.Role)
 	if stopped {
 		return false, runner.RunResult{}, time.Time{}, time.Time{}, err
@@ -489,8 +547,11 @@ func (w *Workflow) runResumedTask(checkpoint state.ResumeCheckpoint, outputPath 
 		err := w.saveRateLimitedState(checkpoint, class.FiveHourLimit, result, startedAt, completedAt, runErr, outputPath)
 		return false, result, startedAt, completedAt, err
 	}
+	if isTerminalProviderFailureClass(class) {
+		err := w.saveTerminalProviderStop(checkpoint, class, result, startedAt, completedAt, runErr, outputPath)
+		return false, result, startedAt, completedAt, err
+	}
 	if class.Kind != runner.ProviderFailureTransient {
-
 		w.recordModelCall(checkpoint, result, startedAt, completedAt, "error", "", runErr, outputPath, callDiagnostics{})
 		return false, result, startedAt, completedAt, runErr
 	}
@@ -503,6 +564,10 @@ func mergePlainFailureClass(base runner.ProviderFailureClass, plain runner.Provi
 	case plain.Kind == runner.ProviderFailureZaiFiveHour:
 		return plain
 	case base.Kind == runner.ProviderFailureZaiFiveHour:
+		return base
+	case isTerminalProviderFailureClass(plain):
+		return plain
+	case isTerminalProviderFailureClass(base):
 		return base
 	case base.Kind == runner.ProviderFailureTransient:
 		return base
@@ -606,6 +671,10 @@ func (w *Workflow) runRecoveryProbe(checkpoint state.ResumeCheckpoint, attempt i
 	class := runner.ClassifyProviderFailureText(probeErr.Error())
 	if class.Kind == runner.ProviderFailureZaiFiveHour {
 		return false, "", startedAt, completedAt, w.saveProbeRateLimited(checkpoint, class.FiveHourLimit)
+	}
+	if isTerminalProviderFailureClass(class) {
+		classification := providerTerminalClassification(class)
+		return false, classification, startedAt, completedAt, w.saveProbeTerminalProviderStop(checkpoint, class, startedAt)
 	}
 	if class.Kind == runner.ProviderFailureTransient {
 		return false, "", startedAt, completedAt, nil
