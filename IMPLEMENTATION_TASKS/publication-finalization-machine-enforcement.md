@@ -70,7 +70,7 @@ status: not-applicable
 
 ## Dependencies
 
-- `IMPLEMENTATION_TASKS/publication-completion-owner-verification.md`
+none
 
 ## Fulfilled dependencies
 
@@ -78,3 +78,4 @@ status: not-applicable
 - `IMPLEMENTATION_TASKS/detached-candidate-runtime-vcs-identity.md`
 - `IMPLEMENTATION_TASKS/publication-git-guard-shell-semantics.md`
 - `IMPLEMENTATION_TASKS/publication-promotion-atomicity.md`
+- `IMPLEMENTATION_TASKS/publication-completion-owner-verification.md`
