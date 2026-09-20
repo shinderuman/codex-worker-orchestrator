@@ -1,15 +1,13 @@
 package state
 
 import (
-	"errors"
 	"fmt"
-	"os"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 )
 
-func (s *StateStore) ReopenAcceptedParentCompletion(origin, cause string) error {
-	completion, err := s.reopenableParentCompletion(origin, cause)
+func (s *StateStore) ReopenAcceptedParentCompletion() error {
+	completion, finding, err := s.reopenableParentCompletion()
 	if err != nil {
 		return err
 	}
@@ -24,64 +22,66 @@ func (s *StateStore) ReopenAcceptedParentCompletion(origin, cause string) error 
 	if err := s.applyReopenTransition(*completion, snapshots); err != nil {
 		return err
 	}
-	s.recordReopenedParentOutcome(taskID, origin, cause, *completion)
+	s.recordReopenedParentOutcome(taskID, finding.Origin, finding.Cause, *completion)
 	return nil
 }
 
-func (s *StateStore) reopenableParentCompletion(origin, cause string) (*ParentCompletionOutcome, error) {
+func (s *StateStore) reopenableParentCompletion() (*ParentCompletionOutcome, *PublicationInvalidatingFinding, error) {
 	if s.TaskStatus() != TaskStatusAwaitingParentCompletion {
-		return nil, fmt.Errorf("reopen requires %s, got %s", TaskStatusAwaitingParentCompletion, s.TaskStatus())
-	}
-	if err := validateParentFixDeclaration(origin, cause); err != nil {
-		return nil, err
+		return nil, nil, fmt.Errorf("reopen requires %s, got %s", TaskStatusAwaitingParentCompletion, s.TaskStatus())
 	}
 	completion, err := s.CurrentParentCompletionOutcome()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if completion == nil || completion.Terminal != SessionRotationTerminalAccept {
-		return nil, fmt.Errorf("reopen requires an accepted parent completion outcome to invalidate")
+		return nil, nil, fmt.Errorf("reopen requires an accepted parent completion outcome to invalidate")
 	}
-	return completion, nil
+	finding, err := s.CurrentPublicationInvalidatingFinding()
+	if err != nil {
+		return nil, nil, err
+	}
+	if finding == nil {
+		return nil, nil, fmt.Errorf("reopen requires a durable invalidating correctness finding")
+	}
+	return completion, finding, nil
 }
 
 func (s *StateStore) snapshotReopenStateFiles() ([]lifecycleFileSnapshot, error) {
-	review, err := s.snapshotLifecycleFile(parentReviewStateFile)
-	if err != nil {
-		return nil, err
+	names := []string{
+		parentReviewStateFile,
+		"task.status",
+		publicationCandidateStateFile,
+		runtimeInstallEvidenceFile,
+		publicationReopenLineageStateFile,
+		publicationInvalidatingFindingStateFile,
 	}
-	status, err := s.snapshotLifecycleFile("task.status")
-	if err != nil {
-		return nil, err
+	snapshots := make([]lifecycleFileSnapshot, 0, len(names))
+	for _, name := range names {
+		snapshot, err := s.snapshotLifecycleFile(name)
+		if err != nil {
+			return nil, err
+		}
+		snapshots = append(snapshots, snapshot)
 	}
-	candidate, err := s.snapshotLifecycleFile(publicationCandidateStateFile)
-	if err != nil {
-		return nil, err
-	}
-	evidence, err := s.snapshotLifecycleFile(runtimeInstallEvidenceFile)
-	if err != nil {
-		return nil, err
-	}
-	lineage, err := s.snapshotLifecycleFile(publicationReopenLineageStateFile)
-	if err != nil {
-		return nil, err
-	}
-	return []lifecycleFileSnapshot{review, status, candidate, evidence, lineage}, nil
+	return snapshots, nil
 }
 
 func (s *StateStore) applyReopenTransition(completion ParentCompletionOutcome, snapshots []lifecycleFileSnapshot) error {
 	candidate, err := s.LoadPublicationCandidate()
-	if err == nil {
-		if err := s.CapturePublicationReopenLineage(candidate); err != nil {
-			return s.rollbackLifecycleFiles(err, snapshots...)
-		}
-	} else if !errors.Is(err, os.ErrNotExist) {
+	if err != nil {
+		return s.rollbackLifecycleFiles(err, snapshots...)
+	}
+	if err := s.CapturePublicationReopenLineage(candidate); err != nil {
 		return s.rollbackLifecycleFiles(err, snapshots...)
 	}
 	if err := s.ClearPublicationCandidate(); err != nil {
 		return s.rollbackLifecycleFiles(err, snapshots...)
 	}
 	if err := s.ClearRuntimeInstallEvidence(); err != nil {
+		return s.rollbackLifecycleFiles(err, snapshots...)
+	}
+	if err := s.ClearPublicationInvalidatingFinding(); err != nil {
 		return s.rollbackLifecycleFiles(err, snapshots...)
 	}
 	if err := s.openParentReviewState(string(packet.StatusNeedsSolReview), completion.Risk, ParentReviewProducer{}, false); err != nil {
