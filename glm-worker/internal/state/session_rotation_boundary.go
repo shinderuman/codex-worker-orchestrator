@@ -9,9 +9,6 @@ import (
 	"path/filepath"
 )
 
-const pendingSessionRotationRetirementStateFile = "pending-session-rotation-retirement.json"
-const pendingSessionRotationRetirementVersion = 1
-
 type pendingSessionRotationRetirementStage struct {
 	Version         int                                              `json:"version"`
 	CallerThreadID  string                                           `json:"caller_thread_id"`
@@ -22,6 +19,9 @@ type pendingSessionRotationRetirementRecommendation struct {
 	ParentThreadID string `json:"parent_thread_id"`
 	DirectiveID    string `json:"directive_id"`
 }
+
+const pendingSessionRotationRetirementStateFile = "pending-session-rotation-retirement.json"
+const pendingSessionRotationRetirementVersion = 1
 
 func (s *StateStore) AdmitNewTaskRotationBoundary(callerThreadID, claimID string) (bool, error) {
 	if claimID != "" {
@@ -159,6 +159,17 @@ func (s *StateStore) commitPendingSessionRotationRecommendationRetirement() erro
 	if err != nil || stage == nil {
 		return err
 	}
+	if err := s.validatePendingSessionRotationRecommendationSet(stage); err != nil {
+		return err
+	}
+	markers, err := s.loadPendingSessionRotationRecommendationMarkers(stage)
+	if err != nil {
+		return err
+	}
+	return s.retirePendingSessionRotationRecommendationMarkers(markers)
+}
+
+func (s *StateStore) validatePendingSessionRotationRecommendationSet(stage *pendingSessionRotationRetirementStage) error {
 	expected := make(map[string]string, len(stage.Recommendations))
 	for _, recommendation := range stage.Recommendations {
 		expected[recommendation.ParentThreadID] = recommendation.DirectiveID
@@ -176,17 +187,25 @@ func (s *StateStore) commitPendingSessionRotationRecommendationRetirement() erro
 			return fmt.Errorf("pending session rotation recommendations changed before ordinary task start")
 		}
 	}
+	return nil
+}
+
+func (s *StateStore) loadPendingSessionRotationRecommendationMarkers(stage *pendingSessionRotationRetirementStage) ([]*SessionRotationMarker, error) {
 	markers := make([]*SessionRotationMarker, 0, len(stage.Recommendations))
 	for _, recommendation := range stage.Recommendations {
 		marker, err := s.LoadSessionRotationMarker(recommendation.ParentThreadID)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if marker == nil || marker.State != SessionRotationStatePending || marker.Directive == nil || marker.Directive.DirectiveID != recommendation.DirectiveID {
-			return fmt.Errorf("pending session rotation recommendation changed before ordinary task start: parent_thread_id=%s directive_id=%s", recommendation.ParentThreadID, recommendation.DirectiveID)
+			return nil, fmt.Errorf("pending session rotation recommendation changed before ordinary task start: parent_thread_id=%s directive_id=%s", recommendation.ParentThreadID, recommendation.DirectiveID)
 		}
 		markers = append(markers, marker)
 	}
+	return markers, nil
+}
+
+func (s *StateStore) retirePendingSessionRotationRecommendationMarkers(markers []*SessionRotationMarker) error {
 	for _, marker := range markers {
 		marker.State = ""
 		marker.Directive = nil
