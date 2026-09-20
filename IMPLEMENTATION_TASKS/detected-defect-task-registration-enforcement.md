@@ -69,6 +69,13 @@ status: not-applicable
 - 独立不具合は現在ACTIVEへ混在させず、semantic taskとしてPlan lifecycleへ登録する
 - taskの意味判断とpriorityは親Codex、実装とreviewはGLMが担う
 
+## Review findings
+
+- current treeにはpublication invalidation専用の`record-publication-finding` / `PublicationInvalidatingFinding`は存在するが、current-task外のgeneric verified defectをtask registration待ちとして表すcanonical state/actionは存在しない
+- continuation stop/completion gateはmachine-readable stateからしか未登録Findingを判定できないため、parentがsemanticにverified/adoptした時点とtask+Plan登録完了の間を表すbounded machine recordがなければ本taskのfail-closed acceptanceを満たせない
+- defect本文をruntime stateへ複製する必要はなく、finding identity、current task identity、registration bindingだけを保持する最小recordで足りる
+- したがってgeneric registration lifecycleには新しいparent-only state/action contractが必要であり、production実装前に`NEEDS_SOL_DECISION`相当のcontract decisionを確定する
+
 ## Dependencies
 
 none
