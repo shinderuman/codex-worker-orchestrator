@@ -30,7 +30,7 @@ func admitNewTaskCommand(cmd Command, st *state.StateStore) error {
 	if err := st.ValidateResetDispositionForNewTask(); err != nil {
 		return &workflow.WorkerError{Message: err.Error()}
 	}
-	resume, err := st.AdmitNewTaskRotation(os.Getenv(state.ParentActionCodexThreadIDEnv), os.Getenv(state.SessionRotationClaimIDEnv))
+	resume, err := st.AdmitNewTaskRotationBoundary(os.Getenv(state.ParentActionCodexThreadIDEnv), os.Getenv(state.SessionRotationClaimIDEnv))
 	if err != nil {
 		return &workflow.WorkerError{Message: err.Error()}
 	}

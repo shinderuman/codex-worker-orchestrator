@@ -19,7 +19,12 @@ func (w *Workflow) admitParentAction(action state.ParentAction) error {
 }
 
 func (w *Workflow) admitNewTask() error {
-	resume, err := w.state.AdmitNewTaskRotation(os.Getenv(state.ParentActionCodexThreadIDEnv), os.Getenv(state.SessionRotationClaimIDEnv))
+	if err := w.state.ClearPendingSessionRotationRecommendationRetirement(); err != nil {
+		return &WorkerError{Message: err.Error()}
+	}
+	claimID := os.Getenv(state.SessionRotationClaimIDEnv)
+	threadID := os.Getenv(state.ParentActionCodexThreadIDEnv)
+	resume, err := w.state.AdmitNewTaskRotationBoundary(threadID, claimID)
 	if err != nil {
 		return &WorkerError{Message: err.Error()}
 	}
@@ -31,6 +36,11 @@ func (w *Workflow) admitNewTask() error {
 		return &WorkerError{Message: err.Error()}
 	}
 	if admitted {
+		if claimID == "" {
+			if err := w.state.StagePendingSessionRotationRecommendationRetirement(threadID); err != nil {
+				return &WorkerError{Message: err.Error()}
+			}
+		}
 		return nil
 	}
 	return w.newTaskActionDenied(plan)
