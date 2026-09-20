@@ -11,6 +11,7 @@ type publicationExecutableSubstitutionScanner struct {
 	command string
 	index   int
 	quote   byte
+	bodies  []string
 }
 
 func runPublicationPreToolUseChecked(payload string, stdout io.Writer) error {
@@ -22,10 +23,10 @@ func runPublicationPreToolUseChecked(payload string, stdout io.Writer) error {
 		return nil
 	}
 	code, reason := publicationPreToolUseCheckedDecision(input.ToolInput.Command, 0)
-	if reason == "" {
-		return nil
+	if reason != "" {
+		return json.NewEncoder(stdout).Encode(publicationPreToolUseOutput{Decision: "block", Code: code, Reason: reason})
 	}
-	return json.NewEncoder(stdout).Encode(publicationPreToolUseOutput{Decision: "block", Code: code, Reason: reason})
+	return runPublicationPreToolUse(payload, stdout)
 }
 
 func publicationPreToolUseCheckedDecision(command string, depth int) (string, string) {
@@ -33,7 +34,7 @@ func publicationPreToolUseCheckedDecision(command string, depth int) (string, st
 		return publicationGitClassificationCode, publicationGitClassificationReason
 	}
 	normalized := publicationNormalizeHereDocDash(command)
-	if code, reason := publicationClassifyShell(normalized, depth); reason != "" {
+	if code, reason := publicationPreToolUseBlockDecision(normalized); reason != "" {
 		return code, reason
 	}
 	if code, reason := publicationClassifyBuiltinShell(normalized, depth); reason != "" {
@@ -93,157 +94,230 @@ func publicationClassifyBuiltinSegment(segment []publicationShellWord, depth int
 func publicationNormalizeHereDocDash(command string) string {
 	var output strings.Builder
 	output.Grow(len(command))
-	var quote byte
+	quote := byte(0)
 	for index := 0; index < len(command); index++ {
-		ch := command[index]
-		if quote != 0 {
-			output.WriteByte(ch)
-			if ch == quote {
-				quote = 0
-				continue
-			}
-			if quote == '"' && ch == '\\' && index+1 < len(command) {
-				index++
-				output.WriteByte(command[index])
-			}
-			continue
-		}
-		switch ch {
-		case '\'', '"':
-			quote = ch
-			output.WriteByte(ch)
-		case '\\':
-			output.WriteByte(ch)
-			if index+1 < len(command) {
-				index++
-				output.WriteByte(command[index])
-			}
-		case '<':
-			if index+2 < len(command) && command[index+1] == '<' && command[index+2] == '-' {
-				output.WriteString(" << ")
-				index += 2
-				continue
-			}
-			output.WriteByte(ch)
-		default:
-			output.WriteByte(ch)
-		}
+		next, nextQuote := publicationNormalizeHereDocDashStep(command, index, quote, &output)
+		index = next
+		quote = nextQuote
 	}
 	return output.String()
 }
 
-func publicationExecutableSubstitutions(command string) ([]string, error) {
-	scanner := publicationExecutableSubstitutionScanner{command: command}
-	return scanner.scan()
+func publicationNormalizeHereDocDashStep(command string, index int, quote byte, output *strings.Builder) (int, byte) {
+	ch := command[index]
+	if quote != 0 {
+		return publicationNormalizeQuoted(command, index, quote, output)
+	}
+	switch ch {
+	case '\'', '"':
+		output.WriteByte(ch)
+		return index, ch
+	case '\\':
+		output.WriteByte(ch)
+		if index+1 < len(command) {
+			index++
+			output.WriteByte(command[index])
+		}
+		return index, 0
+	case '<':
+		if index+2 < len(command) && command[index+1] == '<' && command[index+2] == '-' {
+			output.WriteString(" << ")
+			return index + 2, 0
+		}
+	}
+	output.WriteByte(ch)
+	return index, 0
 }
 
-func (scanner *publicationExecutableSubstitutionScanner) scan() ([]string, error) {
-	bodies := make([]string, 0, 2)
+func publicationNormalizeQuoted(command string, index int, quote byte, output *strings.Builder) (int, byte) {
+	ch := command[index]
+	output.WriteByte(ch)
+	if ch == quote {
+		return index, 0
+	}
+	if quote == '"' && ch == '\\' && index+1 < len(command) {
+		index++
+		output.WriteByte(command[index])
+	}
+	return index, quote
+}
+
+func publicationExecutableSubstitutions(command string) ([]string, error) {
+	scanner := publicationExecutableSubstitutionScanner{command: command, bodies: make([]string, 0, 2)}
+	if err := scanner.scan(); err != nil {
+		return nil, err
+	}
+	return scanner.bodies, nil
+}
+
+func (scanner *publicationExecutableSubstitutionScanner) scan() error {
 	for scanner.index < len(scanner.command) {
-		ch := scanner.command[scanner.index]
-		if scanner.quote == '\'' {
-			if ch == '\'' {
-				scanner.quote = 0
-			}
-			scanner.index++
-			continue
+		if err := scanner.scanCurrent(); err != nil {
+			return err
 		}
-		if ch == '\\' {
-			scanner.index += 2
-			continue
-		}
-		if ch == '\'' && scanner.quote == 0 {
-			scanner.quote = ch
-			scanner.index++
-			continue
-		}
-		if ch == '"' {
-			if scanner.quote == '"' {
-				scanner.quote = 0
-			} else if scanner.quote == 0 {
-				scanner.quote = ch
-			}
-			scanner.index++
-			continue
-		}
-		if ch == '`' {
-			body, end, err := publicationBacktickBody(scanner.command, scanner.index)
-			if err != nil {
-				return nil, err
-			}
-			bodies = append(bodies, body)
-			scanner.index = end + 1
-			continue
-		}
-		if ch == '$' && scanner.index+1 < len(scanner.command) && scanner.command[scanner.index+1] == '(' {
-			if scanner.index+2 < len(scanner.command) && scanner.command[scanner.index+2] == '(' {
-				scanner.index += 3
-				continue
-			}
-			body, end, err := publicationBalancedBody(scanner.command, scanner.index+1)
-			if err != nil {
-				return nil, err
-			}
-			bodies = append(bodies, body)
-			scanner.index = end + 1
-			continue
-		}
-		if scanner.quote == 0 && (ch == '<' || ch == '>') && scanner.index+1 < len(scanner.command) && scanner.command[scanner.index+1] == '(' {
-			body, end, err := publicationBalancedBody(scanner.command, scanner.index+1)
-			if err != nil {
-				return nil, err
-			}
-			bodies = append(bodies, body)
-			scanner.index = end + 1
-			continue
-		}
+	}
+	return nil
+}
+
+func (scanner *publicationExecutableSubstitutionScanner) scanCurrent() error {
+	switch scanner.quote {
+	case '\'':
+		scanner.scanSingleQuoted()
+		return nil
+	case '"':
+		return scanner.scanDoubleQuoted()
+	default:
+		return scanner.scanUnquoted()
+	}
+}
+
+func (scanner *publicationExecutableSubstitutionScanner) scanSingleQuoted() {
+	if scanner.command[scanner.index] == '\'' {
+		scanner.quote = 0
+	}
+	scanner.index++
+}
+
+func (scanner *publicationExecutableSubstitutionScanner) scanDoubleQuoted() error {
+	ch := scanner.command[scanner.index]
+	switch ch {
+	case '"':
+		scanner.quote = 0
+		scanner.index++
+		return nil
+	case '\\':
+		scanner.skipEscaped()
+		return nil
+	case '`':
+		return scanner.captureBacktick()
+	case '$':
+		return scanner.captureDollar()
+	default:
+		scanner.index++
+		return nil
+	}
+}
+
+func (scanner *publicationExecutableSubstitutionScanner) scanUnquoted() error {
+	ch := scanner.command[scanner.index]
+	switch ch {
+	case '\'', '"':
+		scanner.quote = ch
+		scanner.index++
+		return nil
+	case '\\':
+		scanner.skipEscaped()
+		return nil
+	case '`':
+		return scanner.captureBacktick()
+	case '$':
+		return scanner.captureDollar()
+	case '<', '>':
+		return scanner.captureProcessSubstitution(ch)
+	default:
+		scanner.index++
+		return nil
+	}
+}
+
+func (scanner *publicationExecutableSubstitutionScanner) skipEscaped() {
+	scanner.index++
+	if scanner.index < len(scanner.command) {
 		scanner.index++
 	}
-	return bodies, nil
+}
+
+func (scanner *publicationExecutableSubstitutionScanner) captureDollar() error {
+	if scanner.index+1 >= len(scanner.command) || scanner.command[scanner.index+1] != '(' {
+		scanner.index++
+		return nil
+	}
+	if scanner.index+2 < len(scanner.command) && scanner.command[scanner.index+2] == '(' {
+		scanner.index += 3
+		return nil
+	}
+	return scanner.captureParenthesized(scanner.index + 1)
+}
+
+func (scanner *publicationExecutableSubstitutionScanner) captureProcessSubstitution(ch byte) error {
+	if scanner.index+1 >= len(scanner.command) || scanner.command[scanner.index+1] != '(' {
+		scanner.index++
+		return nil
+	}
+	return scanner.captureParenthesized(scanner.index + 1)
+}
+
+func (scanner *publicationExecutableSubstitutionScanner) captureParenthesized(openingParen int) error {
+	body, end, err := publicationBalancedBody(scanner.command, openingParen)
+	if err != nil {
+		return err
+	}
+	scanner.bodies = append(scanner.bodies, body)
+	scanner.index = end + 1
+	return nil
+}
+
+func (scanner *publicationExecutableSubstitutionScanner) captureBacktick() error {
+	body, end, err := publicationBacktickBody(scanner.command, scanner.index)
+	if err != nil {
+		return err
+	}
+	scanner.bodies = append(scanner.bodies, body)
+	scanner.index = end + 1
+	return nil
 }
 
 func publicationBalancedBody(command string, openingParen int) (string, int, error) {
 	start := openingParen + 1
 	depth := 1
-	var quote byte
+	quote := byte(0)
 	for index := start; index < len(command); index++ {
-		ch := command[index]
-		if quote == '\'' {
-			if ch == '\'' {
-				quote = 0
-			}
-			continue
-		}
-		if ch == '\\' {
-			index++
-			continue
-		}
-		if ch == '\'' {
-			quote = ch
-			continue
-		}
-		if ch == '"' {
-			if quote == '"' {
-				quote = 0
-			} else if quote == 0 {
-				quote = ch
-			}
-			continue
-		}
-		if quote != 0 {
-			continue
-		}
-		switch ch {
-		case '(':
-			depth++
-		case ')':
-			depth--
-			if depth == 0 {
-				return command[start:index], index, nil
-			}
+		next, nextQuote, depthDelta, closed := publicationBalancedBodyStep(command, index, quote)
+		index = next
+		quote = nextQuote
+		depth += depthDelta
+		if closed && depth == 0 {
+			return command[start:index], index, nil
 		}
 	}
 	return "", 0, fmt.Errorf("unterminated executable substitution")
+}
+
+func publicationBalancedBodyStep(command string, index int, quote byte) (int, byte, int, bool) {
+	ch := command[index]
+	switch quote {
+	case '\'':
+		if ch == '\'' {
+			return index, 0, 0, false
+		}
+		return index, quote, 0, false
+	case '"':
+		if ch == '"' {
+			return index, 0, 0, false
+		}
+		if ch == '\\' && index+1 < len(command) {
+			return index + 1, quote, 0, false
+		}
+		return index, quote, 0, false
+	}
+	switch ch {
+	case '\'', '"':
+		return index, ch, 0, false
+	case '\\':
+		if index+1 < len(command) {
+			return index + 1, 0, 0, false
+		}
+	case '(':
+		return index, 0, 1, false
+	case ')':
+		return index, 0, -1, true
+	case '`':
+		_, end, err := publicationBacktickBody(command, index)
+		if err == nil {
+			return end, 0, 0, false
+		}
+	}
+	return index, 0, 0, false
 }
 
 func publicationBacktickBody(command string, marker int) (string, int, error) {
