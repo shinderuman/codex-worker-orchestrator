@@ -245,7 +245,7 @@ func TestParentHandoffRecoveryIncludesQualityGateDiagnostics(t *testing.T) {
 		Stage:              state.ResumeStageWorker,
 		Phase:              "worker-new",
 		Role:               state.WorkerRole,
-		Model:              "opus",
+		Model:              "glm-5.3",
 		StopKind:           state.ResumeStopQualityGate,
 		QualityGateFailure: "quality tool version mismatch: golangci-lint=2.6.0, required=2.7.0",
 		CompletedResult:    &completed,
