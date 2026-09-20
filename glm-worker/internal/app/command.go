@@ -32,9 +32,7 @@ type Command struct {
 	Role                string
 	ArtifactRoot        string
 	Verify              VerifyArgs
-	Coalesce            CoalesceArgs
 	CodexWake           CodexWakeArgs
-	AutoResume          AutoResumeArgs
 	Query               report.Query
 	SearchScopes        []string
 	SearchBudgetBytes   int
@@ -42,14 +40,8 @@ type Command struct {
 }
 
 type VerifyArgs struct {
-	Key      string
 	RFC3339  string
 	ThreadID string
-}
-
-type CoalesceArgs struct {
-	ParentThreadID  string
-	ResumeAtRFC3339 string
 }
 
 type commandParser func([]string) (Command, error)
@@ -71,9 +63,7 @@ const (
 	ModeConvergence
 	ModeStats
 	ModeReset
-	ModeVerifyAutoResume
 	ModeVerifyCodexWake
-	ModeCheckWakeCoalesce
 	ModeEvalAB
 	ModeCallOutliers
 	ModeCodexLimit
@@ -94,8 +84,6 @@ const (
 	modeRecoverQualitySurface
 	ModeCodexWakePlan
 	ModeCodexWakeResponse
-	ModeAutoResumePlan
-	ModeAutoResumeResponse
 )
 
 const fixOriginUsage = "[--origin codex-review|glm-reviewer|user-amendment|external-review|metadata-repair] [--cause parent-orchestration|requirement-preservation|worker|reviewer|sol-gate|production-wiring|test-scenario|cross-cutting-invariant|unknown] [--accepted-scope current-diff]"
@@ -180,13 +168,9 @@ var commandParsers = map[string]commandParser{
 	"--recover-quality-surface": func(args []string) (Command, error) {
 		return requiredPayloadCommand(args, modeRecoverQualitySurface, "usage: glm-worker --recover-quality-surface <task-id>")
 	},
-	"--verify-auto-resume":         verifyAutoResumeCommand,
-	"--verify-codex-wake":          verifyCodexWakeCommand,
-	"--check-wake-coalesce":        checkWakeCoalesceCommand,
-	"--codex-wake-plan":            codexWakePlanCommand,
-	"--codex-wake-response-stdin":  codexWakeResponseCommand,
-	"--auto-resume-plan":           autoResumePlanCommand,
-	"--auto-resume-response-stdin": autoResumeResponseCommand,
+	"--verify-codex-wake":         verifyCodexWakeCommand,
+	"--codex-wake-plan":           codexWakePlanCommand,
+	"--codex-wake-response-stdin": codexWakeResponseCommand,
 	"--eval-ab": func(args []string) (Command, error) {
 		return requiredPayloadCommand(args, ModeEvalAB, "usage: glm-worker --eval-ab <run-dir>")
 	},
@@ -273,19 +257,6 @@ func parentHandoffCommand(args []string) (Command, error) {
 	return Command{}, machinecli.UsageErrorf("usage: glm-worker --handoff [recovery]")
 }
 
-func verifyAutoResumeCommand(args []string) (Command, error) {
-	if len(args) != 3 {
-		return Command{}, machinecli.UsageErrorf("usage: glm-worker --verify-auto-resume <automation-key> <auto-resume-at-rfc3339>")
-	}
-	return Command{
-		Mode: ModeVerifyAutoResume,
-		Verify: VerifyArgs{
-			Key:     args[1],
-			RFC3339: args[2],
-		},
-	}, nil
-}
-
 func verifyCodexWakeCommand(args []string) (Command, error) {
 	if len(args) != 3 || !state.ValidUUIDFormat(args[1]) {
 		return Command{}, machinecli.UsageErrorf("%s", verifyCodexWakeUsage)
@@ -295,18 +266,6 @@ func verifyCodexWakeCommand(args []string) (Command, error) {
 		Verify: VerifyArgs{
 			ThreadID: args[1],
 			RFC3339:  args[2],
-		},
-	}, nil
-}
-
-func checkWakeCoalesceCommand(args []string) (Command, error) {
-	if len(args) != 2 {
-		return Command{}, machinecli.UsageErrorf("usage: glm-worker --check-wake-coalesce <auto-resume-at-rfc3339>")
-	}
-	return Command{
-		Mode: ModeCheckWakeCoalesce,
-		Coalesce: CoalesceArgs{
-			ResumeAtRFC3339: args[1],
 		},
 	}, nil
 }
