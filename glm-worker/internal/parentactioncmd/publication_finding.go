@@ -11,10 +11,8 @@ import (
 )
 
 type publicationFindingOptions struct {
-	candidateOID string
-	snapshotID   string
-	origin       string
-	cause        string
+	origin string
+	cause  string
 }
 
 type publicationFindingOutput struct {
@@ -26,7 +24,7 @@ type publicationFindingOutput struct {
 
 const (
 	actionRecordPublicationFinding = "record-publication-finding"
-	publicationFindingUsage        = "usage: glm-parent-action record-publication-finding --candidate-oid <oid> --snapshot-id <snapshot-id> [--origin <origin>] [--cause <cause>]"
+	publicationFindingUsage        = "usage: glm-parent-action record-publication-finding [--origin <origin>] [--cause <cause>]"
 )
 
 func executeRecordPublicationFinding(cfg config.AppConfig, args []string, stdout io.Writer) error {
@@ -47,7 +45,7 @@ func executeRecordPublicationFinding(cfg config.AppConfig, args []string, stdout
 	}
 	defer func() { _ = lock.Close() }()
 
-	finding, err := st.RecordPublicationInvalidatingFinding(options.candidateOID, options.snapshotID, options.origin, options.cause)
+	finding, err := st.RecordPublicationInvalidatingFinding(options.origin, options.cause)
 	if err != nil {
 		return err
 	}
@@ -67,7 +65,7 @@ func executeRecordPublicationFinding(cfg config.AppConfig, args []string, stdout
 }
 
 func parsePublicationFindingOptions(args []string) (publicationFindingOptions, error) {
-	if len(args) < 5 || args[0] != actionRecordPublicationFinding {
+	if len(args) == 0 || args[0] != actionRecordPublicationFinding {
 		return publicationFindingOptions{}, fmt.Errorf("%s", publicationFindingUsage)
 	}
 	var options publicationFindingOptions
@@ -79,19 +77,12 @@ func parsePublicationFindingOptions(args []string) (publicationFindingOptions, e
 			return publicationFindingOptions{}, err
 		}
 	}
-	if options.candidateOID == "" || options.snapshotID == "" {
-		return publicationFindingOptions{}, fmt.Errorf("%s", publicationFindingUsage)
-	}
 	return options, nil
 }
 
 func setPublicationFindingOption(options *publicationFindingOptions, name, value string) error {
 	var target *string
 	switch name {
-	case "--candidate-oid":
-		target = &options.candidateOID
-	case "--snapshot-id":
-		target = &options.snapshotID
 	case "--origin":
 		target = &options.origin
 	case "--cause":
