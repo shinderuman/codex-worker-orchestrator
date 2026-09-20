@@ -12,6 +12,7 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## NEXT（優先順）
 
+- `IMPLEMENTATION_TASKS/publication-ref-guard-local-git-scope.md`
 - `IMPLEMENTATION_TASKS/machine-negative-result-authority.md`
 - `IMPLEMENTATION_TASKS/canonical-authority-bootstrap-enforcement.md`
 - `IMPLEMENTATION_TASKS/staged-parent-action-no-reread-regression.md`
