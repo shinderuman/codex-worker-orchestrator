@@ -21,8 +21,6 @@ func TestExecuteRecordPublicationFindingForcesReopen(t *testing.T) {
 	var stdout bytes.Buffer
 	if err := execute(fixture.cfg, []string{
 		actionRecordPublicationFinding,
-		"--candidate-oid", candidate.CommitOID,
-		"--snapshot-id", candidate.SnapshotID,
 		"--origin", state.ParentOriginCodexReview,
 		"--cause", state.ParentCauseProductionWiring,
 	}, &stdout, io.Discard); err != nil {
@@ -44,7 +42,7 @@ func TestExecuteRecordPublicationFindingForcesReopen(t *testing.T) {
 	}
 }
 
-func TestExecuteRecordPublicationFindingRejectsStaleTargetWithoutChangingPlan(t *testing.T) {
+func TestExecuteRecordPublicationFindingRejectsParentSelectedTarget(t *testing.T) {
 	fixture := newCompleteFixture(t)
 	ensureCompleteFixturePublicationAuthority(t, fixture)
 	candidate, err := fixture.st.LoadPublicationCandidate()
@@ -54,24 +52,24 @@ func TestExecuteRecordPublicationFindingRejectsStaleTargetWithoutChangingPlan(t 
 
 	err = execute(fixture.cfg, []string{
 		actionRecordPublicationFinding,
-		"--candidate-oid", strings.Repeat("f", 40),
+		"--candidate-oid", candidate.CommitOID,
 		"--snapshot-id", candidate.SnapshotID,
 	}, &bytes.Buffer{}, io.Discard)
-	if err == nil || !strings.Contains(err.Error(), "does not match current publication candidate") {
-		t.Fatalf("stale target = %v", err)
+	if err == nil || !strings.Contains(err.Error(), publicationFindingUsage) {
+		t.Fatalf("parent-selected target options = %v", err)
 	}
 	plan, err := fixture.st.ParentActionPlan()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if plan.RequiredAction != state.ParentActionComplete || plan.Allows(state.ParentActionReopen) {
-		t.Fatalf("stale target changed plan = %#v", plan)
+		t.Fatalf("rejected parent target changed plan = %#v", plan)
 	}
 }
 
 func TestExecuteRecordPublicationFindingRejectsMalformedOptions(t *testing.T) {
 	fixture := newCompleteFixture(t)
-	if err := execute(fixture.cfg, []string{actionRecordPublicationFinding, "--candidate-oid", strings.Repeat("1", 40)}, &bytes.Buffer{}, io.Discard); err == nil || !strings.Contains(err.Error(), publicationFindingUsage) {
+	if err := execute(fixture.cfg, []string{actionRecordPublicationFinding, "--origin"}, &bytes.Buffer{}, io.Discard); err == nil || !strings.Contains(err.Error(), publicationFindingUsage) {
 		t.Fatalf("malformed publication finding options = %v", err)
 	}
 }
