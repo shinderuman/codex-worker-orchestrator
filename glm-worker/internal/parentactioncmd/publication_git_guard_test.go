@@ -27,6 +27,20 @@ func TestPublicationRefGuardAllowsExactReadyCandidate(t *testing.T) {
 	}
 }
 
+func TestPublicationRefGuardAllowsOrdinaryLocalRefUpdateWithoutCandidate(t *testing.T) {
+	cfg, st := newInstallActionRepo(t)
+	if err := st.SetTaskStatus(state.TaskStatusAwaitingParentCompletion); err != nil {
+		t.Fatal(err)
+	}
+	branchRef, headOID, headFailure := publicationPromotionHead(cfg.RepoRoot)
+	if headFailure != nil {
+		t.Fatalf("head = %#v", headFailure)
+	}
+	if err := verifyPublicationRefUpdate(cfg, headOID, strings.Repeat("f", 40), branchRef); err != nil {
+		t.Fatalf("ordinary local ref update without publication candidate was rejected: %v", err)
+	}
+}
+
 func TestPublicationRefGuardAllowsOrdinaryLocalRefUpdateWhileCandidateExists(t *testing.T) {
 	cfg, st := newInstallActionRepo(t)
 	if err := st.SetTaskStatus(state.TaskStatusAwaitingParentCompletion); err != nil {
