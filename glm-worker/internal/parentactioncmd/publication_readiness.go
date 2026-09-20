@@ -225,9 +225,15 @@ func publicationParentValidationGate(st *state.StateStore, repoRoot string, cand
 		gate.Reason = "candidate-bound quality gate result is " + event.Result
 		return gate, true
 	}
-	if err := verifyPublicationQualityRunForSnapshot(st, repoRoot, candidate, checkpoint.ParentValidation.Form, event.ValidationRunID, event.SnapshotID, snapshot); err != nil {
+	var validationErr error
+	if event.SnapshotID == candidate.SnapshotID {
+		validationErr = verifyPublicationQualityRun(st, repoRoot, candidate, checkpoint.ParentValidation.Form, event.ValidationRunID)
+	} else {
+		validationErr = verifyPublicationQualityRunForSnapshot(st, repoRoot, candidate, checkpoint.ParentValidation.Form, event.ValidationRunID, event.SnapshotID, snapshot)
+	}
+	if validationErr != nil {
 		gate.Status = publicationGateStale
-		gate.Reason = err.Error()
+		gate.Reason = validationErr.Error()
 		return gate, true
 	}
 	return gate, true
@@ -297,7 +303,14 @@ func publicationValidationEvent(st *state.StateStore, candidate state.Publicatio
 }
 
 func verifyPublicationQualityRun(st *state.StateStore, repoRoot string, candidate state.PublicationCandidate, form, runID string) error {
-	return verifyPublicationQualityRunForSnapshot(st, repoRoot, candidate, form, runID, candidate.SnapshotID, candidate.Snapshot)
+	record, err := loadPublicationQualityRun(st, runID)
+	if err != nil {
+		return err
+	}
+	if err := verifyPublicationQualityRunIdentity(record, repoRoot, candidate, form, runID); err != nil {
+		return err
+	}
+	return verifyPublicationQualityRunResult(record)
 }
 
 func verifyPublicationQualityRunForSnapshot(st *state.StateStore, repoRoot string, candidate state.PublicationCandidate, form, runID, snapshotID string, snapshot state.SnapshotDigest) error {
