@@ -35,7 +35,7 @@ func TestDispatchCommandMachineOutputContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	flags := dispatchCommandFlags(t)
-	for _, required := range []string{"--accept", "--status", "--watch", "--install-smoke", "--decision-stdin"} {
+	for _, required := range []string{"--accept", "--status", "--install-smoke", "--decision-stdin"} {
 		if !flags[required] {
 			t.Fatalf("ParseCommand dispatchの展開に%sが含まれていません: %v", required, flags)
 		}
@@ -122,13 +122,8 @@ func requireMachineProcessContract(t *testing.T, args []string, outcome machineP
 	t.Helper()
 	rendered := strings.Join(args, " ")
 	if outcome.runErr == nil {
-		command, parseErr := ParseCommand(args)
-		if parseErr != nil {
+		if _, parseErr := ParseCommand(args); parseErr != nil {
 			t.Fatalf("成功した実行の引数をParseCommandできません: %v", parseErr)
-		}
-		if streamOutputMode(command.Mode) {
-			requireStreamJSONLStdout(t, rendered, outcome.stdout)
-			return
 		}
 		requireExactlyOneJSONStdout(t, rendered, outcome.stdout)
 		return
@@ -178,20 +173,6 @@ func requireExactlyOneJSONStdout(t *testing.T, name string, stdout string) {
 	var extra any
 	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
 		t.Fatalf("%s: 成功時のstdoutに2つ目のJSON valueまたはtrailing textがあります: %q", name, stdout)
-	}
-}
-
-func requireStreamJSONLStdout(t *testing.T, name string, stdout string) {
-	t.Helper()
-	trimmed := strings.TrimSpace(stdout)
-	if trimmed == "" {
-		t.Fatalf("%s: stream成功時のstdoutが空です", name)
-	}
-	for _, line := range strings.Split(trimmed, "\n") {
-		var object map[string]any
-		if err := json.Unmarshal([]byte(line), &object); err != nil {
-			t.Fatalf("%s: stream stdoutの行がJSON objectではありません: %v: %q", name, err, line)
-		}
 	}
 }
 
