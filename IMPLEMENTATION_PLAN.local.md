@@ -8,10 +8,11 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/execution-milestone-reconsideration-after-single.md`
+- `IMPLEMENTATION_TASKS/zai-stale-auto-resume-plan-guidance.md`
 
 ## NEXT（優先順）
 
+- `IMPLEMENTATION_TASKS/execution-milestone-reconsideration-after-single.md`
 - `IMPLEMENTATION_TASKS/detected-defect-task-registration-enforcement.md`
 - `IMPLEMENTATION_TASKS/install-smoke-claude-settings-env-isolation.md`
 - `IMPLEMENTATION_TASKS/machine-enforced-control-authority-legitimacy.md`
