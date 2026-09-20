@@ -6,6 +6,7 @@ helper=${HOOK_HELPER_OVERRIDE:-"$source_root/scripts/manage-pull-hook.sh"}
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/hook-ownership-smoke.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT HUP INT TERM
 real_git=$(command -v git)
+real_mv=$(command -v mv)
 
 new_repo() {
 	target=$1
@@ -79,6 +80,27 @@ EOF_FAKE_GIT
 	fi
 }
 
+install_with_activation_failure() {
+	repo=$1
+	fakebin=$2
+	managed=$(managed_hooks_path "$repo")
+	mkdir -p "$fakebin"
+	cat >"$fakebin/mv" <<'EOF_FAKE_MV'
+#!/bin/sh
+if [ "${FAIL_MANAGED_ACTIVATION:-0}" = 1 ] && [ "$#" -eq 2 ]; then
+	case "$1:$2" in
+	*.stage.*:"$MANAGED_HOOKS_PATH") exit 74 ;;
+	esac
+fi
+exec "$REAL_MV" "$@"
+EOF_FAKE_MV
+	chmod 755 "$fakebin/mv"
+	if PATH="$fakebin:$PATH" REAL_MV="$real_mv" MANAGED_HOOKS_PATH="$managed" FAIL_MANAGED_ACTIVATION=1 sh "$helper" install "$repo" >"$fakebin/install.stdout" 2>"$fakebin/install.stderr"; then
+		printf '%s\n' 'injected managed snapshot activation failure unexpectedly succeeded' >&2
+		exit 1
+	fi
+}
+
 repo="$tmp/absent"
 new_repo "$repo"
 sh "$helper" install "$repo"
@@ -115,6 +137,25 @@ for hook in post-merge pre-commit reference-transaction pre-push; do
 	cmp "$before/$hook" "$managed/$hook"
 	test -x "$managed/$hook"
 done
+
+repo="$tmp/activation-rollback"
+new_repo "$repo"
+sh "$helper" install "$repo"
+managed=$(managed_hooks_path "$repo")
+before="$tmp/activation-before"
+cp -R "$managed" "$before"
+printf '#!/bin/sh\nexit 88\n' >"$repo/.githooks/pre-push"
+chmod 755 "$repo/.githooks/pre-push"
+git -C "$repo" add .githooks/pre-push
+git -C "$repo" commit -qm 'change required hook'
+install_with_activation_failure "$repo" "$tmp/fakemv-activation"
+grep -Fq 'failed to activate validated managed snapshot' "$tmp/fakemv-activation/install.stderr"
+for hook in post-merge pre-commit reference-transaction pre-push; do
+	cmp "$before/$hook" "$managed/$hook"
+	test -x "$managed/$hook"
+done
+sh "$helper" install "$repo"
+assert_managed_hooks "$repo"
 
 repo="$tmp/detached-first"
 new_repo "$repo"
