@@ -56,13 +56,17 @@ func promotePublicationCandidate(cfg config.AppConfig, st *state.StateStore) pub
 	if err != nil {
 		return blockedPublicationPromotion(readiness.CandidateOID, publicationFailureCandidateMissing, err.Error())
 	}
+	return promoteReadyPublicationCandidate(cfg, candidate)
+}
+
+func promoteReadyPublicationCandidate(cfg config.AppConfig, candidate state.PublicationCandidate) publicationPromotionOutput {
 	branchRef, headOID, failure := publicationPromotionHead(cfg.RepoRoot)
 	if failure != nil {
 		return publicationPromotionOutput{Status: publicationPromotionStatusBlocked, CandidateOID: candidate.CommitOID, Failure: failure}
 	}
 	if headOID == candidate.CommitOID {
 		if failure := publicationPromotionPostcondition(cfg.RepoRoot, candidate); failure != nil {
-			return publicationPromotionOutput{Status: publicationPromotionStatusBlocked, CandidateOID: candidate.CommitOID, BranchRef: branchRef, Failure: failure}
+			return rollbackPublicationPromotion(cfg.RepoRoot, candidate, branchRef, failure)
 		}
 		return publicationPromotionOutput{Status: publicationPromotionStatusPromoted, CandidateOID: candidate.CommitOID, BranchRef: branchRef}
 	}
