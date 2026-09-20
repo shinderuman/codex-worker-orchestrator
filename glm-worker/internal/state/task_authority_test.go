@@ -45,3 +45,32 @@ func TestSaveCurrentTaskAuthorityKeepsLatestTaskContract(t *testing.T) {
 		t.Fatalf("authority snapshot = path:%q content:%q", path, content)
 	}
 }
+
+func TestCurrentTaskAuthorityPathRejectsAmbiguousSnapshot(t *testing.T) {
+	root := t.TempDir()
+	cfg := config.AppConfig{
+		RepoRoot:  filepath.Join(root, "repo"),
+		RepoHash:  strings.Repeat("a", 64),
+		StateBase: filepath.Join(root, "state"),
+	}
+	if err := os.MkdirAll(cfg.RepoRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	st, err := NewStateStore(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	taskID, err := st.StartNewTask()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SaveCurrentTaskAuthority("IMPLEMENTATION_TASKS/014.md", []byte("authority\n")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(st.TaskAuthorityPathPath(taskID), []byte("IMPLEMENTATION_TASKS/014.md\nIMPLEMENTATION_TASKS/015.md\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.CurrentTaskAuthorityPath(); err == nil || !strings.Contains(err.Error(), "一意") {
+		t.Fatalf("ambiguous authority path error = %v", err)
+	}
+}
