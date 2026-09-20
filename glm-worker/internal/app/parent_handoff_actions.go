@@ -3,6 +3,7 @@ package app
 import (
 	"encoding/json"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentaction"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -17,23 +18,72 @@ type parentHandoffOutputAlias parentHandoffOutput
 type parentHandoffRecoveryOutputAlias parentHandoffRecoveryOutput
 
 func (output parentHandoffOutput) MarshalJSON() ([]byte, error) {
+	projected := output
+	projected.AllowedActions = withExecutionMilestoneReconsideration(
+		output.TaskStatus,
+		output.RequiredAction,
+		output.PendingDecision,
+		output.AllowedActions,
+	)
 	return json.Marshal(struct {
 		parentHandoffOutputAlias
 		ActionSpecs map[string]parentHandoffActionSpec `json:"action_specs"`
 	}{
-		parentHandoffOutputAlias: parentHandoffOutputAlias(output),
-		ActionSpecs:              parentActionSpecs(output.AllowedActions, output.RequiredActionParameters),
+		parentHandoffOutputAlias: parentHandoffOutputAlias(projected),
+		ActionSpecs:              parentActionSpecs(projected.AllowedActions, projected.RequiredActionParameters),
 	})
 }
 
 func (output parentHandoffRecoveryOutput) MarshalJSON() ([]byte, error) {
+	projected := output
+	projected.AllowedActions = withExecutionMilestoneReconsideration(
+		output.TaskStatus,
+		output.RequiredAction,
+		output.PendingDecision,
+		output.AllowedActions,
+	)
 	return json.Marshal(struct {
 		parentHandoffRecoveryOutputAlias
 		ActionSpecs map[string]parentHandoffActionSpec `json:"action_specs"`
 	}{
-		parentHandoffRecoveryOutputAlias: parentHandoffRecoveryOutputAlias(output),
-		ActionSpecs:                      parentActionSpecs(output.AllowedActions, output.RequiredActionParameters),
+		parentHandoffRecoveryOutputAlias: parentHandoffRecoveryOutputAlias(projected),
+		ActionSpecs:                      parentActionSpecs(projected.AllowedActions, projected.RequiredActionParameters),
 	})
+}
+
+func withExecutionMilestoneReconsideration(
+	taskStatus *string,
+	requiredAction *string,
+	pendingDecision bool,
+	actions []string,
+) []string {
+	projected := append([]string(nil), actions...)
+	if pendingDecision || taskStatus == nil || !executionMilestoneReconsiderationStatus(state.TaskStatus(*taskStatus)) {
+		return projected
+	}
+	if requiredAction != nil && *requiredAction == string(state.ParentActionApproveSurface) {
+		return projected
+	}
+	milestoneAction := string(parentaction.ActionReviseMilestones)
+	for _, action := range projected {
+		if action == milestoneAction {
+			return projected
+		}
+	}
+	return append(projected, milestoneAction)
+}
+
+func executionMilestoneReconsiderationStatus(status state.TaskStatus) bool {
+	switch status {
+	case state.TaskStatusWaitingSolReview,
+		state.TaskStatusRateLimited,
+		state.TaskStatusProviderUnavailable,
+		state.TaskStatusGuardRecoverable,
+		state.TaskStatusInterrupted:
+		return true
+	default:
+		return false
+	}
 }
 
 func parentActionSpecs(actions []string, requiredParameters map[string]string) map[string]parentHandoffActionSpec {
@@ -47,6 +97,13 @@ func parentActionSpecs(actions []string, requiredParameters map[string]string) m
 }
 
 func parentActionSpec(action string, requiredParameters map[string]string) (parentHandoffActionSpec, bool) {
+	if parentaction.Action(action) == parentaction.ActionReviseMilestones {
+		return parentHandoffActionSpec{
+			Kind:           "staged",
+			PrepareCommand: []string{"glm-parent-action", "prepare", action},
+		}, true
+	}
+
 	switch state.ParentAction(action) {
 	case state.ParentActionDecision, state.ParentActionFix:
 		return parentHandoffActionSpec{

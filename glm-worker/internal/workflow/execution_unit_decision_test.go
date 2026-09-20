@@ -84,6 +84,94 @@ func TestExecutionUnitDecisionSingleKeepsLowOverheadPath(t *testing.T) {
 	}
 }
 
+func TestExecutionUnitDecisionSingleCanReconsiderIntoMilestones(t *testing.T) {
+	w, st, runner, _ := newExecutionMilestoneWorkflow(t, []runnerStep{
+		{structured: needsSolDecisionPacket()},
+		{structured: implementedPacketWithRisk("single unit expanded materially", "HIGH")},
+		{structured: needsSolReviewPacket()},
+		{structured: implementedPacket("first remaining milestone complete")},
+		{structured: implementedPacket("second remaining milestone complete")},
+		{structured: passPacket()},
+		{structured: needsSolReviewPacket()},
+	})
+	runner.onRun = func() {
+		switch len(runner.prompts) {
+		case 2, 4:
+			if err := st.CommitParentActionBegin(); err != nil {
+				t.Fatalf("commit parent action begin at model admission: %v", err)
+			}
+		}
+	}
+	if err := w.ExecuteNewTask("implement the ACTIVE task"); err != nil {
+		t.Fatal(err)
+	}
+	taskID, err := st.TaskID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := "EXECUTION_UNIT: single\nMILESTONES_JSON: {\"milestones\":[]}\nDECISION:\nContinue as one bounded execution unit.\n"
+	if err := w.ExecuteDecisionWithExecutionUnitPayload(payload); err != nil {
+		t.Fatal(err)
+	}
+	if st.TaskStatus() != state.TaskStatusWaitingSolReview {
+		t.Fatalf("single disposition did not reach natural review boundary: %s", st.TaskStatus())
+	}
+	if len(runner.prompts) != 3 {
+		t.Fatalf("single path model calls = %d", len(runner.prompts))
+	}
+
+	definitions := []ExecutionMilestoneDefinition{
+		{ID: "remaining-a", Scope: "finish first remaining responsibility", Acceptance: "first remaining responsibility complete"},
+		{ID: "remaining-b", Scope: "finish second remaining responsibility", Acceptance: "second remaining responsibility complete"},
+	}
+	revision, err := ReviseExecutionMilestones(w.config, st, definitions, w.now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if revision.CurrentIndex != 0 || revision.CurrentID != "remaining-a" || revision.MilestoneCount != 2 {
+		t.Fatalf("revision = %+v", revision)
+	}
+	if len(runner.prompts) != 3 {
+		t.Fatalf("milestone reconsideration added a model call: %d", len(runner.prompts))
+	}
+	if got, err := st.TaskID(); err != nil || got != taskID {
+		t.Fatalf("semantic task identity changed: got=%q err=%v want=%q", got, err, taskID)
+	}
+
+	if err := w.ExecuteExplicitFixWithExecutionMilestones("continue the remaining work through the revised milestones", "codex-review", "worker", ""); err != nil {
+		t.Fatal(err)
+	}
+	wantPhases := []string{
+		"worker-new",
+		"worker-decision",
+		"reviewer-1-high-floor",
+		"worker-explicit-fix",
+		"worker-milestone-2",
+		"reviewer-1-high-floor",
+		"reviewer-1-risk-floor",
+	}
+	if !reflect.DeepEqual(runner.phases, wantPhases) {
+		t.Fatalf("phases = %v want %v", runner.phases, wantPhases)
+	}
+	plan, err := loadExecutionMilestonePlan(st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan == nil || plan.CurrentIndex != 2 || len(plan.Milestones) != 2 {
+		t.Fatalf("reconsidered plan = %#v", plan)
+	}
+	if plan.Milestones[0].Completion == nil || plan.Milestones[0].Completion.Summary != "first remaining milestone complete" ||
+		plan.Milestones[1].Completion == nil || plan.Milestones[1].Completion.Summary != "second remaining milestone complete" {
+		t.Fatalf("reconsidered milestone completions = %#v", plan.Milestones)
+	}
+	if got, err := st.TaskID(); err != nil || got != taskID {
+		t.Fatalf("task identity changed after milestone continuation: got=%q err=%v want=%q", got, err, taskID)
+	}
+	if st.TaskStatus() != state.TaskStatusWaitingSolReview {
+		t.Fatalf("task-wide final review boundary was not preserved: %s", st.TaskStatus())
+	}
+}
+
 func TestParseExecutionUnitDecisionFailsClosed(t *testing.T) {
 	cases := []struct {
 		name    string
