@@ -8,11 +8,10 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/publication-promotion-atomicity.md`
+- `IMPLEMENTATION_TASKS/publication-completion-owner-verification.md`
 
 ## NEXT（優先順）
 
-- `IMPLEMENTATION_TASKS/publication-completion-owner-verification.md`
 - `IMPLEMENTATION_TASKS/publication-finalization-machine-enforcement.md`
 - `IMPLEMENTATION_TASKS/publication-escaped-defect-reopen-lifecycle.md`
 - `IMPLEMENTATION_TASKS/reset-disposition-archived-evidence-admission.md`
