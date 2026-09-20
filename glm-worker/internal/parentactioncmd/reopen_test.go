@@ -10,14 +10,30 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-func TestExecuteReopenUsesCanonicalAdmissionAndReturnsNextAction(t *testing.T) {
+func recordFixturePublicationFinding(t *testing.T, fixture *completeFixture) state.PublicationCandidate {
+	t.Helper()
+	ensureCompleteFixturePublicationAuthority(t, fixture)
+	candidate, err := fixture.st.LoadPublicationCandidate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.st.RecordPublicationInvalidatingFinding(
+		candidate.CommitOID,
+		candidate.SnapshotID,
+		state.ParentOriginCodexReview,
+		state.ParentCauseProductionWiring,
+	); err != nil {
+		t.Fatal(err)
+	}
+	return candidate
+}
+
+func TestExecuteReopenUsesMachineRequiredAdmissionAndReturnsNextAction(t *testing.T) {
 	fixture := newCompleteFixture(t)
+	recordFixturePublicationFinding(t, fixture)
+
 	var stdout bytes.Buffer
-	if err := execute(fixture.cfg, []string{
-		"reopen",
-		"--origin", state.ParentOriginCodexReview,
-		"--cause", state.ParentCauseProductionWiring,
-	}, &stdout, io.Discard); err != nil {
+	if err := execute(fixture.cfg, []string{"reopen"}, &stdout, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	var output reopenOutput
@@ -27,22 +43,21 @@ func TestExecuteReopenUsesCanonicalAdmissionAndReturnsNextAction(t *testing.T) {
 	if output.Status != "reopened" || output.TaskStatus != string(state.TaskStatusWaitingSolReview) || output.RequiredAction != string(state.ParentActionReview) {
 		t.Fatalf("reopen output = %#v", output)
 	}
-	if !stringSliceContains(output.AllowedActions, string(state.ParentActionFix)) || stringSliceContains(output.AllowedActions, string(state.ParentActionComplete)) {
+	if !stringSliceContains(output.AllowedActions, string(state.ParentActionFix)) || stringSliceContains(output.AllowedActions, string(state.ParentActionComplete)) || stringSliceContains(output.AllowedActions, string(state.ParentActionReopen)) {
 		t.Fatalf("reopen allowed actions = %#v", output.AllowedActions)
 	}
 }
 
-func TestExecuteReopenRejectsNonAwaitingStateAndNonCanonicalOptions(t *testing.T) {
+func TestExecuteReopenRejectsWithoutFindingAndRejectsOptions(t *testing.T) {
 	fixture := newCompleteFixture(t)
-	if err := fixture.st.SetTaskStatus(state.TaskStatusWaitingSolReview); err != nil {
-		t.Fatal(err)
-	}
-	if err := execute(fixture.cfg, []string{"reopen"}, &bytes.Buffer{}, io.Discard); err == nil || !strings.Contains(err.Error(), "not admitted") {
-		t.Fatalf("reopen outside awaiting completion = %v", err)
+	ensureCompleteFixturePublicationAuthority(t, fixture)
+	if err := execute(fixture.cfg, []string{"reopen"}, &bytes.Buffer{}, io.Discard); err == nil || !strings.Contains(err.Error(), "not machine-required") {
+		t.Fatalf("reopen without finding = %v", err)
 	}
 
 	fixture = newCompleteFixture(t)
-	if err := execute(fixture.cfg, []string{"reopen", "--accepted-scope", "current-diff"}, &bytes.Buffer{}, io.Discard); err == nil || !strings.Contains(err.Error(), reopenUsage) {
+	recordFixturePublicationFinding(t, fixture)
+	if err := execute(fixture.cfg, []string{"reopen", "--origin", state.ParentOriginCodexReview}, &bytes.Buffer{}, io.Discard); err == nil || !strings.Contains(err.Error(), reopenUsage) {
 		t.Fatalf("reopen accepted non-canonical option = %v", err)
 	}
 }
