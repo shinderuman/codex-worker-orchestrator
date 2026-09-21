@@ -83,14 +83,7 @@ func TestProjectExecutionProgressUsesMilestonePositionAndPhaseBand(t *testing.T)
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			plan, err := loadExecutionMilestonePlan(st)
-			if err != nil {
-				t.Fatal(err)
-			}
-			plan.CurrentIndex = tc.currentIndex
-			if err := saveExecutionMilestonePlan(st, plan); err != nil {
-				t.Fatal(err)
-			}
+			setExecutionProgressIndex(t, st, tc.currentIndex)
 
 			got := ProjectExecutionProgress(st, tc.phase, tc.role)
 			if got.Status != "estimated" || got.Precision != "coarse" || got.Basis != "execution-milestones+phase" {
@@ -112,6 +105,36 @@ func TestProjectExecutionProgressUsesMilestonePositionAndPhaseBand(t *testing.T)
 	}
 }
 
+func TestProjectExecutionProgressFailsClosedOnStaleMilestoneTask(t *testing.T) {
+	w, st, _, _ := newExecutionMilestoneWorkflow(t, nil)
+	if _, err := st.StartNewTask(); err != nil {
+		t.Fatal(err)
+	}
+	const taskPath = "IMPLEMENTATION_TASKS/large.md"
+	if err := st.Write(activeTaskStateKey, taskPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.initializeExecutionMilestones([]ExecutionMilestoneDefinition{
+		{ID: "one", Scope: "one", Acceptance: "one"},
+		{ID: "two", Scope: "two", Acceptance: "two"},
+	}, taskPath); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := loadExecutionMilestonePlan(st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan.TaskID = "stale-task"
+	if err := saveExecutionMilestonePlan(st, plan); err != nil {
+		t.Fatal(err)
+	}
+
+	got := ProjectExecutionProgress(st, "worker-new", string(state.WorkerRole))
+	if got.Status != "indeterminate" || got.Reason != "milestone-task-mismatch" || got.Basis != "machine-state" {
+		t.Fatalf("stale progress = %#v", got)
+	}
+}
+
 func TestProjectExecutionProgressMarksCompletedMilestonePlanExactlyComplete(t *testing.T) {
 	w, st, _, _ := newExecutionMilestoneWorkflow(t, nil)
 	if _, err := st.StartNewTask(); err != nil {
@@ -128,14 +151,7 @@ func TestProjectExecutionProgressMarksCompletedMilestonePlanExactlyComplete(t *t
 	if err := w.initializeExecutionMilestones(definitions, taskPath); err != nil {
 		t.Fatal(err)
 	}
-	plan, err := loadExecutionMilestonePlan(st)
-	if err != nil {
-		t.Fatal(err)
-	}
-	plan.CurrentIndex = len(plan.Milestones)
-	if err := saveExecutionMilestonePlan(st, plan); err != nil {
-		t.Fatal(err)
-	}
+	setExecutionProgressIndex(t, st, len(definitions))
 	if err := st.SetTaskStatus(state.TaskStatusComplete); err != nil {
 		t.Fatal(err)
 	}
@@ -149,5 +165,32 @@ func TestProjectExecutionProgressMarksCompletedMilestonePlanExactlyComplete(t *t
 	}
 	if !reflect.DeepEqual(got.CompletedMilestones, []string{"one", "two"}) {
 		t.Fatalf("completed milestones = %#v", got.CompletedMilestones)
+	}
+}
+
+func setExecutionProgressIndex(t *testing.T, st *state.StateStore, currentIndex int) {
+	t.Helper()
+	plan, err := loadExecutionMilestonePlan(st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan.CurrentIndex = currentIndex
+	for index := range plan.Milestones {
+		milestone := &plan.Milestones[index]
+		if index < currentIndex {
+			milestone.Status = executionMilestoneComplete
+			milestone.Completion = &executionMilestoneCompletion{
+				CompletedAt:        testFixedTime,
+				Summary:            "complete",
+				TaskContractSHA256: plan.TaskContractSHA256,
+				Snapshot:           fixedSnapshot,
+			}
+		} else {
+			milestone.Status = executionMilestonePending
+			milestone.Completion = nil
+		}
+	}
+	if err := saveExecutionMilestonePlan(st, plan); err != nil {
+		t.Fatal(err)
 	}
 }
