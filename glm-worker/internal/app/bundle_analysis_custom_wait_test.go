@@ -59,7 +59,7 @@ func TestCustomExecWriteStdinWaitMixedTransportDeduplicatesByCallIdentity(t *tes
 	start := time.Date(2026, 9, 17, 7, 0, 0, 0, time.UTC)
 	at := start.Add(time.Minute)
 	lines := []string{
-		analysisWaitRequestLine(t, at, "shared", "{\"yield-time_ms\":300000}"),
+		analysisWaitRequestLine(t, at, "shared", "{\"yield_time_ms\":300000}"),
 		analysisCustomWaitRequestLine(t, at.Add(time.Second), "shared", `await tools.write_stdin({session_id: 101, chars: "", yield_time_ms: 300000});`),
 		analysisCustomWaitReturnLine(t, at.Add(2*time.Second), "shared"),
 	}
