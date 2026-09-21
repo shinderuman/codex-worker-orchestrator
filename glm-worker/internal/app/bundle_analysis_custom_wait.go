@@ -19,29 +19,19 @@ type analysisExecPragma struct {
 	hasYield bool
 }
 
-type analysisWriteStdinFields struct {
-	seen         map[string]bool
-	yieldMS      *uint64
-	yieldUnknown bool
-}
-
-type analysisJSQuoteState struct {
-	quote   byte
-	escaped bool
-}
-
-type analysisWaitJSParser struct {
-	source string
-	pos    int
-}
-
 const (
 	analysisWaitSessionIDKey       = "session_id"
 	analysisWaitCharsKey           = "chars"
 	analysisWaitYieldMSKey         = "yield_time_ms"
-	analysisExecYieldMSKey         = "yield-time_ms"
+	analysisExecYieldMSKey         = "yield_time_ms"
 	analysisWaitMaxOutputTokensKey = "max_output_tokens"
+	analysisWaitWrapperPrefix      = "constr=awaittools.write_stdin("
 )
+
+var analysisWaitWrapperSuffixes = []string{
+	");text(r);",
+	");text(JSON.stringify(r));",
+}
 
 func (item *codexRolloutItemPayload) UnmarshalJSON(data []byte) error {
 	var raw analysisRolloutItemPayloadRaw
@@ -76,7 +66,7 @@ func analysisNormalizeCustomWait(item *codexRolloutItemPayload, raw analysisRoll
 	item.Name = codexRolloutWaitCallName
 	item.Arguments = "{}"
 	if yieldMS != nil {
-		item.Arguments = `{"` + analysisWaitYieldMSKey + `":` + strconv.FormatUint(*yieldMS, 10) + `}`
+		item.Arguments = `{"yield-time_ms":` + strconv.FormatUint(*yieldMS, 10) + `}`
 	}
 }
 
@@ -85,15 +75,13 @@ func analysisCanonicalCustomWriteStdinWait(input string) (*uint64, bool) {
 	if !ok {
 		return nil, false
 	}
-	parser := analysisWaitJSParser{source: strings.TrimSpace(code)}
-	parser.skipSpace()
-
-	assigned, ok := analysisWaitAssignment(&parser)
-	if !ok {
+	compact := analysisCompactWaitWrapper(code)
+	if !strings.HasPrefix(compact, analysisWaitWrapperPrefix) {
 		return nil, false
 	}
-	object, ok := analysisWaitInvocationObject(&parser)
-	if !ok || !analysisWaitTailMatches(parser.remaining(), assigned) {
+	objectWithTail := strings.TrimPrefix(compact, analysisWaitWrapperPrefix)
+	object, ok := analysisWaitWrapperObject(objectWithTail)
+	if !ok {
 		return nil, false
 	}
 	yieldMS, recognized := analysisCanonicalWriteStdinObject(object)
@@ -106,69 +94,13 @@ func analysisCanonicalCustomWriteStdinWait(input string) (*uint64, bool) {
 	return yieldMS, true
 }
 
-func analysisWaitAssignment(parser *analysisWaitJSParser) (string, bool) {
-	if !parser.consumeWord("const") {
-		return "", true
+func analysisWaitWrapperObject(value string) (string, bool) {
+	for _, suffix := range analysisWaitWrapperSuffixes {
+		if strings.HasSuffix(value, suffix) {
+			return strings.TrimSuffix(value, suffix), true
+		}
 	}
-	parser.skipSpace()
-	assigned := parser.identifier()
-	if assigned == "" {
-		return "", false
-	}
-	parser.skipSpace()
-	if !parser.consumeByte('=') {
-		return "", false
-	}
-	parser.skipSpace()
-	return assigned, true
-}
-
-func analysisWaitInvocationObject(parser *analysisWaitJSParser) (string, bool) {
-	if !analysisConsumeWaitInvocationPrefix(parser) {
-		return "", false
-	}
-	object, ok := parser.objectLiteral()
-	if !ok {
-		return "", false
-	}
-	parser.skipSpace()
-	if !parser.consumeByte(')') {
-		return "", false
-	}
-	return object, true
-}
-
-func analysisConsumeWaitInvocationPrefix(parser *analysisWaitJSParser) bool {
-	if !parser.consumeWord("await") {
-		return false
-	}
-	parser.skipSpace()
-	if !parser.consumeWord("tools") {
-		return false
-	}
-	parser.skipSpace()
-	if !parser.consumeByte('.') {
-		return false
-	}
-	parser.skipSpace()
-	if !parser.consumeWord("write_stdin") {
-		return false
-	}
-	parser.skipSpace()
-	if !parser.consumeByte('(') {
-		return false
-	}
-	parser.skipSpace()
-	return true
-}
-
-func analysisWaitTailMatches(raw, assigned string) bool {
-	tail := analysisCompactJSWhitespace(raw)
-	if assigned == "" {
-		return tail == "" || tail == ";"
-	}
-	want := ";text(" + assigned + ".output);"
-	return tail == want || tail == strings.TrimSuffix(want, ";")
+	return "", false
 }
 
 func analysisStripExecPragma(input string) (string, analysisExecPragma, bool) {
@@ -203,58 +135,52 @@ func analysisStripExecPragma(input string) (string, analysisExecPragma, bool) {
 }
 
 func analysisCanonicalWriteStdinObject(object string) (*uint64, bool) {
-	fields, ok := analysisSplitJSObjectFields(object)
-	if !ok {
+	if len(object) < 2 || object[0] != '{' || object[len(object)-1] != '}' {
 		return nil, false
 	}
-	state := analysisWriteStdinFields{seen: map[string]bool{}}
-	for _, field := range fields {
-		if strings.TrimSpace(field) != "" && !state.apply(field) {
+	seen := map[string]bool{}
+	var yieldMS *uint64
+	yieldUnknown := false
+	for _, field := range strings.Split(object[1:len(object)-1], ",") {
+		key, value, ok := strings.Cut(field, ":")
+		if !ok || !analysisApplyWriteStdinField(seen, strings.TrimSpace(key), strings.TrimSpace(value), &yieldMS, &yieldUnknown) {
 			return nil, false
 		}
 	}
-	if !state.seen[analysisWaitSessionIDKey] || !state.seen[analysisWaitCharsKey] {
+	if !seen[analysisWaitSessionIDKey] || !seen[analysisWaitCharsKey] {
 		return nil, false
 	}
-	if state.yieldUnknown {
+	if yieldUnknown {
 		return nil, true
 	}
-	return state.yieldMS, true
+	return yieldMS, true
 }
 
-func (state *analysisWriteStdinFields) apply(field string) bool {
-	keyRaw, value, ok := analysisSplitJSProperty(field)
-	if !ok {
-		return false
+func analysisApplyWriteStdinField(seen map[string]bool, key, value string, yieldMS **uint64, yieldUnknown *bool) bool {
+	if seen[key] {
+		if key != analysisWaitYieldMSKey {
+			return false
+		}
+		*yieldMS = nil
+		*yieldUnknown = true
+		return true
 	}
-	key, ok := analysisWaitPropertyKey(keyRaw)
-	if !ok {
-		return false
-	}
-	if state.seen[key] {
-		return state.applyDuplicate(key)
-	}
-	state.seen[key] = true
-	return state.applyUnique(key, value)
-}
+	seen[key] = true
 
-func (state *analysisWriteStdinFields) applyDuplicate(key string) bool {
-	if key != analysisWaitYieldMSKey {
-		return false
-	}
-	state.yieldMS = nil
-	state.yieldUnknown = true
-	return true
-}
-
-func (state *analysisWriteStdinFields) applyUnique(key, value string) bool {
 	switch key {
 	case analysisWaitSessionIDKey:
-		return analysisCanonicalSessionID(value)
+		_, ok := analysisUnsignedJSLiteral(value)
+		return ok
 	case analysisWaitCharsKey:
-		return analysisEmptyJSString(value)
+		return value == `""` || value == `''`
 	case analysisWaitYieldMSKey:
-		return state.applyYield(value)
+		parsed, ok := analysisUnsignedJSLiteral(value)
+		if !ok {
+			*yieldUnknown = true
+			return true
+		}
+		*yieldMS = &parsed
+		return true
 	case analysisWaitMaxOutputTokensKey:
 		_, ok := analysisUnsignedJSLiteral(value)
 		return ok
@@ -263,53 +189,7 @@ func (state *analysisWriteStdinFields) applyUnique(key, value string) bool {
 	}
 }
 
-func (state *analysisWriteStdinFields) applyYield(value string) bool {
-	parsed, ok := analysisUnsignedJSLiteral(value)
-	if !ok {
-		state.yieldUnknown = true
-		return true
-	}
-	state.yieldMS = &parsed
-	return true
-}
-
-func analysisWaitPropertyKey(raw string) (string, bool) {
-	raw = strings.TrimSpace(raw)
-	for _, key := range []string{
-		analysisWaitSessionIDKey,
-		analysisWaitCharsKey,
-		analysisWaitYieldMSKey,
-		analysisWaitMaxOutputTokensKey,
-	} {
-		if raw == key || raw == `"`+key+`"` || raw == `'`+key+`'` {
-			return key, true
-		}
-	}
-	return "", false
-}
-
-func analysisCanonicalSessionID(raw string) bool {
-	raw = strings.TrimSpace(raw)
-	if _, ok := analysisUnsignedJSLiteral(raw); ok {
-		return true
-	}
-	identifier, property, ok := strings.Cut(raw, ".")
-	if !ok || property != analysisWaitSessionIDKey || identifier == "" {
-		return false
-	}
-	if !analysisJSIdentifierStartByte(identifier[0]) {
-		return false
-	}
-	for index := 1; index < len(identifier); index++ {
-		if !analysisJSIdentifierByte(identifier[index]) {
-			return false
-		}
-	}
-	return true
-}
-
 func analysisUnsignedJSLiteral(raw string) (uint64, bool) {
-	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return 0, false
 	}
@@ -322,183 +202,7 @@ func analysisUnsignedJSLiteral(raw string) (uint64, bool) {
 	return value, err == nil
 }
 
-func analysisEmptyJSString(raw string) bool {
-	raw = strings.TrimSpace(raw)
-	return raw == `""` || raw == `''`
-}
-
-func (state *analysisJSQuoteState) consume(ch byte) bool {
-	if state.quote == 0 {
-		if ch == '\'' || ch == '"' {
-			state.quote = ch
-			return true
-		}
-		return false
-	}
-	if state.escaped {
-		state.escaped = false
-		return true
-	}
-	if ch == '\\' {
-		state.escaped = true
-		return true
-	}
-	if ch == state.quote {
-		state.quote = 0
-	}
-	return true
-}
-
-func (state analysisJSQuoteState) complete() bool {
-	return state.quote == 0 && !state.escaped
-}
-
-func analysisSplitJSObjectFields(object string) ([]string, bool) {
-	var fields []string
-	start := 0
-	var quote analysisJSQuoteState
-	for index := 0; index < len(object); index++ {
-		ch := object[index]
-		if quote.consume(ch) {
-			continue
-		}
-		switch ch {
-		case ',':
-			fields = append(fields, object[start:index])
-			start = index + 1
-		case '{', '}', '[', ']', '(', ')':
-			return nil, false
-		}
-	}
-	if !quote.complete() {
-		return nil, false
-	}
-	fields = append(fields, object[start:])
-	return fields, true
-}
-
-func analysisSplitJSProperty(field string) (string, string, bool) {
-	var quote analysisJSQuoteState
-	for index := 0; index < len(field); index++ {
-		ch := field[index]
-		if quote.consume(ch) {
-			continue
-		}
-		if ch == ':' {
-			return field[:index], field[index+1:], true
-		}
-	}
-	return "", "", false
-}
-
-func (p *analysisWaitJSParser) skipSpace() {
-	for p.pos < len(p.source) {
-		switch p.source[p.pos] {
-		case ' ', '\t', '\n', '\r':
-			p.pos++
-		default:
-			return
-		}
-	}
-}
-
-func (p *analysisWaitJSParser) consumeWord(word string) bool {
-	if !strings.HasPrefix(p.source[p.pos:], word) {
-		return false
-	}
-	end := p.pos + len(word)
-	if end < len(p.source) && analysisJSIdentifierByte(p.source[end]) {
-		return false
-	}
-	p.pos = end
-	return true
-}
-
-func (p *analysisWaitJSParser) consumeByte(expected byte) bool {
-	if p.pos >= len(p.source) || p.source[p.pos] != expected {
-		return false
-	}
-	p.pos++
-	return true
-}
-
-func (p *analysisWaitJSParser) identifier() string {
-	start := p.pos
-	if start >= len(p.source) || !analysisJSIdentifierStartByte(p.source[start]) {
-		return ""
-	}
-	p.pos++
-	for p.pos < len(p.source) && analysisJSIdentifierByte(p.source[p.pos]) {
-		p.pos++
-	}
-	return p.source[start:p.pos]
-}
-
-func (p *analysisWaitJSParser) objectLiteral() (string, bool) {
-	if !p.consumeByte('{') {
-		return "", false
-	}
-	start := p.pos
-	quote := byte(0)
-	escaped := false
-	for p.pos < len(p.source) {
-		ch := p.source[p.pos]
-		if quote != 0 {
-			p.pos++
-			if escaped {
-				escaped = false
-				continue
-			}
-			if ch == '\\' {
-				escaped = true
-				continue
-			}
-			if ch == quote {
-				quote = 0
-			}
-			continue
-		}
-		switch ch {
-		case '\'', '"':
-			quote = ch
-			p.pos++
-		case '}':
-			object := p.source[start:p.pos]
-			p.pos++
-			return object, true
-		case '{':
-			return "", false
-		default:
-			p.pos++
-		}
-	}
-	return "", false
-}
-
-func (p *analysisWaitJSParser) remaining() string {
-	if p.pos >= len(p.source) {
-		return ""
-	}
-	return p.source[p.pos:]
-}
-
-func analysisJSIdentifierStartByte(ch byte) bool {
-	return ch == '_' || ch == '$' || ch >= 'a' && ch <= 'z' || ch >= 'A' && ch <= 'Z'
-}
-
-func analysisJSIdentifierByte(ch byte) bool {
-	return analysisJSIdentifierStartByte(ch) || ch >= '0' && ch <= '9'
-}
-
-func analysisCompactJSWhitespace(value string) string {
-	var builder strings.Builder
-	for _, r := range value {
-		switch r {
-		case ' ', '\t', '\n', '\r':
-			continue
-		default:
-			builder.WriteRune(r)
-		}
-	}
-	return builder.String()
+func analysisCompactWaitWrapper(value string) string {
+	replacer := strings.NewReplacer(" ", "", "\t", "", "\n", "", "\r", "")
+	return replacer.Replace(strings.TrimSpace(value))
 }
