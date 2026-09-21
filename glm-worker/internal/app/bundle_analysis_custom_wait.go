@@ -6,14 +6,6 @@ import (
 	"strings"
 )
 
-type analysisRolloutItemPayloadRaw struct {
-	Type      string `json:"type"`
-	Name      string `json:"name"`
-	CallID    string `json:"call_id"`
-	Arguments string `json:"arguments"`
-	Input     string `json:"input"`
-}
-
 type analysisExecPragma struct {
 	yieldMS  uint64
 	hasYield bool
@@ -34,43 +26,6 @@ const (
 	analysisWaitWrapperTextSuffix  = ");text(r);"
 	analysisWaitWrapperJSONSuffix  = ");text(JSON.stringify(r));"
 )
-
-func (item *codexRolloutItemPayload) UnmarshalJSON(data []byte) error {
-	var raw analysisRolloutItemPayloadRaw
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return err
-	}
-	*item = codexRolloutItemPayload{
-		Type:      raw.Type,
-		Name:      raw.Name,
-		CallID:    raw.CallID,
-		Arguments: raw.Arguments,
-	}
-
-	switch raw.Type {
-	case codexRolloutCustomToolCallType:
-		analysisNormalizeCustomWait(item, raw)
-	case codexRolloutCustomToolCallOutputType:
-		item.Type = codexRolloutFunctionCallOutputType
-	}
-	return nil
-}
-
-func analysisNormalizeCustomWait(item *codexRolloutItemPayload, raw analysisRolloutItemPayloadRaw) {
-	if raw.Name != "exec" {
-		return
-	}
-	yieldMS, recognized := analysisCanonicalCustomWriteStdinWait(raw.Input)
-	if !recognized {
-		return
-	}
-	item.Type = codexRolloutFunctionCallType
-	item.Name = codexRolloutWaitCallName
-	item.Arguments = "{}"
-	if yieldMS != nil {
-		item.Arguments = "{\"" + analysisWaitYieldMSKey + "\":" + strconv.FormatUint(*yieldMS, 10) + "}"
-	}
-}
 
 func analysisCanonicalCustomWriteStdinWait(input string) (*uint64, bool) {
 	code, pragma, ok := analysisStripExecPragma(input)
@@ -94,6 +49,15 @@ func analysisCanonicalCustomWriteStdinWait(input string) (*uint64, bool) {
 		return nil, true
 	}
 	return yieldMS, true
+}
+
+func analysisCustomWaitRequestedYield(input string) (*float64, bool) {
+	yieldMS, recognized := analysisCanonicalCustomWriteStdinWait(input)
+	if !recognized || yieldMS == nil {
+		return nil, recognized
+	}
+	value := float64(*yieldMS)
+	return &value, true
 }
 
 func analysisWaitWrapperObject(value string) (string, bool) {
