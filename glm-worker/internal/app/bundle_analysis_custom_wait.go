@@ -14,6 +14,11 @@ type analysisRolloutItemPayloadRaw struct {
 	Input     string `json:"input"`
 }
 
+type analysisExecPragma struct {
+	yieldMS  uint64
+	hasYield bool
+}
+
 type analysisWriteStdinFields struct {
 	seen         map[string]bool
 	yieldMS      *uint64
@@ -75,7 +80,7 @@ func analysisNormalizeCustomWait(item *codexRolloutItemPayload, raw analysisRoll
 }
 
 func analysisCanonicalCustomWriteStdinWait(input string) (*uint64, bool) {
-	code, ok := analysisStripExecPragma(input)
+	code, pragma, ok := analysisStripExecPragma(input)
 	if !ok {
 		return nil, false
 	}
@@ -90,7 +95,14 @@ func analysisCanonicalCustomWriteStdinWait(input string) (*uint64, bool) {
 	if !ok || !analysisWaitTailMatches(parser.remaining(), assigned) {
 		return nil, false
 	}
-	return analysisCanonicalWriteStdinObject(object)
+	yieldMS, recognized := analysisCanonicalWriteStdinObject(object)
+	if !recognized {
+		return nil, false
+	}
+	if pragma.hasYield && yieldMS != nil && pragma.yieldMS != *yieldMS {
+		return nil, true
+	}
+	return yieldMS, true
 }
 
 func analysisWaitAssignment(parser *analysisWaitJSParser) (string, bool) {
@@ -158,30 +170,35 @@ func analysisWaitTailMatches(raw, assigned string) bool {
 	return tail == want || tail == strings.TrimSuffix(want, ";")
 }
 
-func analysisStripExecPragma(input string) (string, bool) {
+func analysisStripExecPragma(input string) (string, analysisExecPragma, bool) {
 	trimmed := strings.TrimSpace(input)
+	pragma := analysisExecPragma{}
 	if !strings.HasPrefix(trimmed, "// @exec:") {
-		return trimmed, true
+		return trimmed, pragma, true
 	}
 	lineEnd := strings.IndexByte(trimmed, '\n')
 	if lineEnd < 0 {
-		return "", false
+		return "", pragma, false
 	}
 	directive := strings.TrimSpace(strings.TrimPrefix(trimmed[:lineEnd], "// @exec:"))
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(directive), &fields); err != nil {
-		return "", false
+		return "", pragma, false
 	}
 	for key, value := range fields {
 		if key != analysisWaitYieldMSKey && key != analysisWaitMaxOutputTokensKey {
-			return "", false
+			return "", pragma, false
 		}
 		var number uint64
 		if err := json.Unmarshal(value, &number); err != nil {
-			return "", false
+			return "", pragma, false
+		}
+		if key == analysisWaitYieldMSKey {
+			pragma.yieldMS = number
+			pragma.hasYield = true
 		}
 	}
-	return strings.TrimSpace(trimmed[lineEnd+1:]), true
+	return strings.TrimSpace(trimmed[lineEnd+1:]), pragma, true
 }
 
 func analysisCanonicalWriteStdinObject(object string) (*uint64, bool) {
@@ -195,7 +212,7 @@ func analysisCanonicalWriteStdinObject(object string) (*uint64, bool) {
 			return nil, false
 		}
 	}
-	if !state.seen[analysisWaitSessionIDKey] {
+	if !state.seen[analysisWaitSessionIDKey] || !state.seen[analysisWaitCharsKey] {
 		return nil, false
 	}
 	if state.yieldUnknown {
