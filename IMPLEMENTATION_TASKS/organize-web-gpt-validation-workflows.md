@@ -49,12 +49,30 @@ Workflow表示名やjob/check名まで機械的に変更しない。特に `Repo
 現在案で `web-gpt/**` push triggerを削除すると、Draft PR作成前のbranch pushでは自動validationが走らなくなるため、そのまま確定しない。
 branch作成後Draft PR前にpushするケース、その期間のremote validation要否、早期Draft PRを恒久前提にしてよいか、PR CIとbranch push CIを両方有効にした場合の同一head二重実行を確認する。
 Web GPT branch push / PR open・synchronize / main push / manual dispatchの各eventで何を走らせるかを明示して決める。
-目標は、PR作成前のremote validation手段を失わず、PR作成後は同一headで同じvalidationを二重実行せず、main通常CIを維持し、manual dispatchを必要なら残すこと。
-単純に `web-gpt/** push` triggerを戻してPR CIと二重実行させない。
-必要なら branch pushでは軽い/basic validationのみ、PRではrequired CI+後段smoke、または早期Draft PRを恒久前提としてbranch push自動起動を不要とする案を比較する。
+目標は、PR作成前でも必要なremote validation手段を失わない
+- PR作成後は同一headで同じvalidationを二重実行しない
+- mainでは通常CIを維持する
+- manual dispatchは必要なら残す
+
+単純に旧 `web-gpt/** push` triggerを戻して、PR CIと二重実行させるのは不可。
+
+必要なら、
+- branch pushでは軽い/basic validationのみ
+- PRではrequired CI + 後段smoke
+- または早期Draft PRを前提にbranch push自動起動を不要とする
+
+などを比較し、実際のWeb GPT運用と無駄なrunner消費の両方を見て決めること。
 
 3. 最終確認。
-Workflowファイル名と責務が一致すること、required check契約を壊さないこと、PR作成前validation不能の穴がないか意図的廃止の根拠があること、PR作成後の同一head二重実行がないこと、main CIが成立すること、manual dispatchが必要なら使えること、実CIでtriggerとstage順序を確認すること。
+変更後は少なくとも以下を確認する。
+- Workflowファイル名と責務が一致している
+- required check契約を壊していない
+- Web GPTがPR作成前にvalidation不能になる穴がない、またはその運用を意図的に廃止した根拠がある
+- PR作成後に同一headのvalidation二重実行が復活していない
+- main CIが従来どおり成立する
+- manual dispatchが必要なら使用可能
+- 実CIでtriggerとstage順序を確認する
+
 #25は変更しない。
 ```
 
@@ -65,8 +83,12 @@ Workflowファイル名と責務が一致すること、required check契約を�
 - 実測では旧Repository Lint代表run約163秒、旧Web GPT Validation単一job約262秒。
 - quality/lint系とfull Go testを並列化し、basic PASS後だけsmokeを起動する構成は実CIで成立した。
 - quality-tools cacheは実測効果があり、Go cacheは安全側比較で有意差がなかったため不採用とした。
-- current PRでは既存 `Repository Lint / lint` check名をaggregatorで維持している。
-- current PRでは `web-gpt-validation.yml` のbranch push triggerを外し、PR event由来の `quality.yml` からreusable workflowとして後段smokeを呼ぶ構成になっているため、PR前remote validationとtrigger重複を再評価する必要がある。
+- `Repository Lint` workflow表示名と `lint` job名は維持し、workflow fileだけ `.github/workflows/ci.yml` へ改名する。GitHub rulesetは存在せず、branch-protection APIは接続権限上read不可だが、check名契約自体は変更しない。
+- `.github/workflows/install-smoke.yml` はinstaller smoke / detached runtime identity smokeを担うreusable workflowとする。旧 `.github/workflows/web-gpt-validation.yml` は削除する。
+- Web GPT branchでは `push` を自動remote validationの唯一の実行入口とし、basic quality + full Go test → `lint` aggregator → smoke 2本の順で実行する。これによりDraft PR作成前も最初のbranch pushからremote validationできる。
+- `pull_request` trigger自体は通常PR CIのため維持するが、headが `web-gpt/` の場合はjobを実行しない。実CI head `1414df1948b902127c9e8a350144f13ad3fcedd7` でpush runがvalidationを実行し、同headのpull_request runはjobs 0 / skippedとなり、二重実行しないことを確認した。
+- main pushは通常basic + `lint` gateを実行しsmokeは起動しない。non-Web-GPT PRも通常basic + `lint` gateを実行する。
+- `workflow_dispatch` は `.github/workflows/ci.yml` に残し、手動時はbasic + `lint` + smokeまで実行する。smoke-onlyの独立manual入口は必須ではないためreusable workflow側には持たせない。
 
 ## Purpose
 
