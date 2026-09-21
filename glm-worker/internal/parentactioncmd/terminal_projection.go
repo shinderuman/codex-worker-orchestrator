@@ -1,0 +1,274 @@
+package parentactioncmd
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"sort"
+)
+
+const parentActionTerminalBudgetBytes = 2400
+
+type parentActionTerminalProjectionStats struct {
+	BudgetBytes      int      `json:"budget_bytes"`
+	RawBytes         int      `json:"raw_bytes"`
+	ProjectedBytes   int      `json:"projected_bytes"`
+	SavedBytes       int      `json:"saved_bytes"`
+	TerminalMode     string   `json:"terminal_mode"`
+	HandoffMode      string   `json:"handoff_mode"`
+	OmittedFields    []string `json:"omitted_fields,omitempty"`
+	Overflow         bool     `json:"overflow"`
+	ParentToolCalls  int      `json:"parent_tool_calls"`
+	RecoveryCalls    int      `json:"recovery_calls"`
+}
+
+type parentActionTerminalProjectionError struct {
+	stats parentActionTerminalProjectionStats
+}
+
+func (e *parentActionTerminalProjectionError) Error() string {
+	return fmt.Sprintf("parent action terminal projection exceeds budget: projected=%d budget=%d", e.stats.ProjectedBytes, e.stats.BudgetBytes)
+}
+
+func projectParentActionTerminalEnvelope(terminalJSON, handoffJSON json.RawMessage) (parentActionTerminalEnvelopePayload, error) {
+	rawEnvelope := parentActionTerminalEnvelope(terminalJSON, handoffJSON)
+	rawBytes, err := json.Marshal(rawEnvelope)
+	if err != nil {
+		return parentActionTerminalEnvelopePayload{}, fmt.Errorf("marshal raw parent action terminal envelope: %w", err)
+	}
+
+	projectedHandoff, handoffOmitted, err := projectTerminalHandoff(handoffJSON, false)
+	if err != nil {
+		return parentActionTerminalEnvelopePayload{}, err
+	}
+	stats := parentActionTerminalProjectionStats{
+		BudgetBytes:     parentActionTerminalBudgetBytes,
+		RawBytes:        len(rawBytes),
+		TerminalMode:    "full",
+		HandoffMode:     "bounded",
+		OmittedFields:   prefixedFields("handoff", handoffOmitted),
+		ParentToolCalls: 1,
+		RecoveryCalls:   0,
+	}
+	candidate := parentActionTerminalEnvelopePayload{
+		Status:     "parent_action_terminal",
+		Terminal:   terminalJSON,
+		Handoff:    projectedHandoff,
+		Projection: &stats,
+	}
+	if err := finalizeProjectionStats(&candidate, &stats); err != nil {
+		return parentActionTerminalEnvelopePayload{}, err
+	}
+	if stats.ProjectedBytes <= stats.BudgetBytes {
+		return candidate, nil
+	}
+
+	projectedTerminal, terminalMode, terminalOmitted, err := projectTerminalSemanticResult(terminalJSON)
+	if err != nil {
+		return parentActionTerminalEnvelopePayload{}, err
+	}
+	stats.TerminalMode = terminalMode
+	stats.OmittedFields = append(stats.OmittedFields, prefixedFields("terminal", terminalOmitted)...)
+	sort.Strings(stats.OmittedFields)
+	candidate.Terminal = projectedTerminal
+	if err := finalizeProjectionStats(&candidate, &stats); err != nil {
+		return parentActionTerminalEnvelopePayload{}, err
+	}
+	if stats.ProjectedBytes <= stats.BudgetBytes {
+		return candidate, nil
+	}
+
+	stats.Overflow = true
+	return parentActionTerminalEnvelopePayload{}, &parentActionTerminalProjectionError{stats: stats}
+}
+
+func writeTerminalProjectionFailurePayload(terminalJSON, handoffJSON json.RawMessage, projectionErr *parentActionTerminalProjectionError) (parentActionTerminalEnvelopePayload, error) {
+	terminalIdentity, err := projectTerminalIdentity(terminalJSON)
+	if err != nil {
+		return parentActionTerminalEnvelopePayload{}, err
+	}
+	boundedHandoff, omitted, err := projectTerminalHandoff(handoffJSON, true)
+	if err != nil {
+		return parentActionTerminalEnvelopePayload{}, err
+	}
+	stats := projectionErr.stats
+	stats.Overflow = true
+	stats.TerminalMode = "identity-only"
+	stats.HandoffMode = "overflow-minimal"
+	stats.OmittedFields = append(stats.OmittedFields, prefixedFields("handoff", omitted)...)
+	sort.Strings(stats.OmittedFields)
+	payload := parentActionTerminalEnvelopePayload{
+		Status:          "parent_action_terminal_projection_overflow",
+		Terminal:        terminalIdentity,
+		Handoff:         boundedHandoff,
+		ProjectionError: projectionErr.Error(),
+		Projection:      &stats,
+	}
+	if err := finalizeProjectionStats(&payload, &stats); err != nil {
+		return parentActionTerminalEnvelopePayload{}, err
+	}
+	if stats.ProjectedBytes > stats.BudgetBytes {
+		return parentActionTerminalEnvelopePayload{}, fmt.Errorf("projection overflow payload exceeds budget: projected=%d budget=%d", stats.ProjectedBytes, stats.BudgetBytes)
+	}
+	return payload, nil
+}
+
+func finalizeProjectionStats(payload *parentActionTerminalEnvelopePayload, stats *parentActionTerminalProjectionStats) error {
+	for iteration := 0; iteration < 3; iteration++ {
+		raw, err := json.Marshal(payload)
+		if err != nil {
+			return fmt.Errorf("marshal projected parent action terminal envelope: %w", err)
+		}
+		if stats.ProjectedBytes == len(raw) {
+			break
+		}
+		stats.ProjectedBytes = len(raw)
+		stats.SavedBytes = stats.RawBytes - stats.ProjectedBytes
+		if stats.SavedBytes < 0 {
+			stats.SavedBytes = 0
+		}
+	}
+	return nil
+}
+
+func projectTerminalSemanticResult(raw json.RawMessage) (json.RawMessage, string, []string, error) {
+	object, err := decodeJSONObject(raw, "parent action terminal")
+	if err != nil {
+		return nil, "", nil, err
+	}
+	status, _ := rawJSONString(object["status"])
+	keep := terminalProjectionFields(status)
+	if len(keep) == 0 {
+		return raw, "full", nil, nil
+	}
+	projected, omitted, err := projectObjectFields(object, keep)
+	if err != nil {
+		return nil, "", nil, err
+	}
+	return projected, "semantic", omitted, nil
+}
+
+func terminalProjectionFields(status string) []string {
+	switch status {
+	case "NEEDS_SOL_DECISION":
+		return []string{"status", "risk", "decision", "evidence", "options", "recommendation", "test_obligations", "targets", "artifacts"}
+	case "NEEDS_SOL_REVIEW":
+		return []string{"status", "risk", "summary", "requirement_coverage", "invariants", "test_evidence", "issues", "residual_risk", "sol_question", "targets", "artifacts"}
+	case "PASS", "FIX_REQUIRED":
+		return []string{"status", "risk", "summary", "requirement_coverage", "invariants", "test_evidence", "issues", "residual_risk", "targets", "artifacts"}
+	case "IMPLEMENTED":
+		return []string{"status", "risk", "summary", "requirement_coverage", "tests", "unverified", "parent_validation", "parent_validation_working_dir", "parent_validation_evidence", "targets", "artifacts"}
+	default:
+		return nil
+	}
+}
+
+func projectTerminalIdentity(raw json.RawMessage) (json.RawMessage, error) {
+	object, err := decodeJSONObject(raw, "parent action terminal")
+	if err != nil {
+		return nil, err
+	}
+	return projectObjectFieldsNoOmitted(object, []string{"status", "risk", "targets", "artifacts"})
+}
+
+func projectTerminalHandoff(raw json.RawMessage, overflow bool) (json.RawMessage, []string, error) {
+	object, err := decodeJSONObject(raw, "canonical handoff")
+	if err != nil {
+		return nil, nil, err
+	}
+	keep := []string{
+		"version",
+		"consistent",
+		"inconsistency",
+		"task_id",
+		"task_status",
+		"required_action",
+		"allowed_actions",
+		"required_action_parameters",
+		"resume_kind",
+		"pending_decision",
+		"parent_review_open",
+		"artifact_dir",
+		"last_material",
+		"session_rotation",
+		"parent_request",
+		"action_specs",
+	}
+	if overflow {
+		keep = []string{"version", "consistent", "inconsistency", "task_id", "task_status", "required_action", "action_specs"}
+		if requiredAction, ok := rawJSONString(object["required_action"]); ok {
+			if specs, ok := object["action_specs"]; ok {
+				var allSpecs map[string]json.RawMessage
+				if err := json.Unmarshal(specs, &allSpecs); err == nil {
+					if requiredSpec, ok := allSpecs[requiredAction]; ok {
+						reducedSpecs, marshalErr := json.Marshal(map[string]json.RawMessage{requiredAction: requiredSpec})
+						if marshalErr != nil {
+							return nil, nil, marshalErr
+						}
+						object["action_specs"] = reducedSpecs
+					}
+				}
+			}
+		}
+	}
+	return projectObjectFields(object, keep)
+}
+
+func decodeJSONObject(raw json.RawMessage, label string) (map[string]json.RawMessage, error) {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	var object map[string]json.RawMessage
+	if err := decoder.Decode(&object); err != nil {
+		return nil, fmt.Errorf("%s is not a JSON object: %w", label, err)
+	}
+	if object == nil {
+		return nil, fmt.Errorf("%s is not a JSON object", label)
+	}
+	return object, nil
+}
+
+func projectObjectFields(object map[string]json.RawMessage, keep []string) (json.RawMessage, []string, error) {
+	keepSet := make(map[string]struct{}, len(keep))
+	projected := make(map[string]json.RawMessage, len(keep))
+	for _, key := range keep {
+		keepSet[key] = struct{}{}
+		if value, ok := object[key]; ok {
+			projected[key] = value
+		}
+	}
+	omitted := make([]string, 0, len(object))
+	for key := range object {
+		if _, ok := keepSet[key]; !ok {
+			omitted = append(omitted, key)
+		}
+	}
+	sort.Strings(omitted)
+	raw, err := json.Marshal(projected)
+	if err != nil {
+		return nil, nil, err
+	}
+	return raw, omitted, nil
+}
+
+func projectObjectFieldsNoOmitted(object map[string]json.RawMessage, keep []string) (json.RawMessage, error) {
+	raw, _, err := projectObjectFields(object, keep)
+	return raw, err
+}
+
+func rawJSONString(raw json.RawMessage) (string, bool) {
+	if len(raw) == 0 {
+		return "", false
+	}
+	var value string
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return "", false
+	}
+	return value, true
+}
+
+func prefixedFields(prefix string, fields []string) []string {
+	result := make([]string, 0, len(fields))
+	for _, field := range fields {
+		result = append(result, prefix+"."+field)
+	}
+	return result
+}
