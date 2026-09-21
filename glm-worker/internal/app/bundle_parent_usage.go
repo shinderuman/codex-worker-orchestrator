@@ -117,7 +117,7 @@ func buildParentUsageReportFromScan(st *state.StateStore, task bundleTask, assoc
 		GeneratedAt:   time.Now().UTC().Format(time.RFC3339Nano),
 		ParentSession: parentUsageParentSession(association),
 		Intervals: parentUsageIntervals{
-			TaskExecution:      parentUsageExecutionInterval(association, scan, scanErr, start, execution, collectionEnd),
+			TaskExecution:      parentUsageExecutionIntervalForOwnership(association, scan, scanErr, start, execution, collectionEnd, ownership),
 			ParentFinalization: parentUsageFinalizationInterval(association, scan, scanErr, execution, ownership, finalization),
 		},
 	}
