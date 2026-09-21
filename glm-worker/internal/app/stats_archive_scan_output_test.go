@@ -14,10 +14,7 @@ func TestStatsArchiveScanCoverageDoesNotChangeAggregates(t *testing.T) {
 
 	baselineNormal := executeStatsArchiveScanCommand(t, fixture, []string{"--stats", "current"})
 	baselineCompact := executeStatsArchiveScanCommand(t, fixture, []string{"--stats", "current", "--compact"})
-	baselineScan, err := fixture.st.ScanTaskStatsArchives()
-	if err != nil {
-		t.Fatal(err)
-	}
+	baselineConsidered, baselineAccepted, baselineSkipped := statsArchiveScanCounts(t, baselineNormal)
 
 	writeUnsupportedStatsArchive(t, fixture, "unsupported-revision-a", 2)
 	writeUnsupportedStatsArchive(t, fixture, "unsupported-revision-b", 3)
@@ -25,8 +22,8 @@ func TestStatsArchiveScanCoverageDoesNotChangeAggregates(t *testing.T) {
 	afterNormal := executeStatsArchiveScanCommand(t, fixture, []string{"--stats", "current"})
 	afterCompact := executeStatsArchiveScanCommand(t, fixture, []string{"--stats", "current", "--compact"})
 
-	assertStatsArchiveScanDelta(t, afterNormal, baselineScan.FilesConsidered+2, baselineScan.FilesAccepted, baselineScan.UnsupportedSchemaOrRevisionSkipped+2)
-	assertStatsArchiveScanDelta(t, afterCompact, baselineScan.FilesConsidered+2, baselineScan.FilesAccepted, baselineScan.UnsupportedSchemaOrRevisionSkipped+2)
+	assertStatsArchiveScanDelta(t, afterNormal, baselineConsidered+2, baselineAccepted, baselineSkipped+2)
+	assertStatsArchiveScanDelta(t, afterCompact, baselineConsidered+2, baselineAccepted, baselineSkipped+2)
 
 	if !reflect.DeepEqual(withoutStatsArchiveScan(baselineNormal), withoutStatsArchiveScan(afterNormal)) {
 		t.Fatalf("normal stats aggregate changed after unsupported archives: before=%#v after=%#v", baselineNormal, afterNormal)
@@ -61,25 +58,32 @@ func writeUnsupportedStatsArchive(t *testing.T, fixture telemetryCompactFixture,
 		t.Fatal(err)
 	}
 	data := []byte(fmt.Sprintf(`{"version":3,"schema_revision":%d,"task_id":%q,"model_calls":999999}`, schemaRevision, taskID))
+	data = []byte(fmt.Sprintf(`{"version":3,"schema_revision":%d,"task_id":%q,"model_calls":999999}`, schemaRevision, taskID))
 	if err := os.WriteFile(path, append(data, '\n'), 0o600); err != nil {
 		t.Fatal(err)
 	}
 }
 
-func assertStatsArchiveScanDelta(t *testing.T, decoded map[string]any, considered, accepted, skipped int) {
+func statsArchiveScanCounts(t *testing.T, decoded map[string]any) (int, int, int) {
 	t.Helper()
 	scan, ok := decoded["task_stats_archive_scan"].(map[string]any)
 	if !ok {
 		t.Fatalf("task_stats_archive_scan missing: %#v", decoded)
 	}
-	if got := int(scan["files_considered"].(float64)); got != considered {
-		t.Fatalf("files considered = %d, want %d", got, considered)
+	return int(scan["files_considered"].(float64)), int(scan["files_accepted"].(float64)), int(scan["unsupported_schema_or_revision_skipped"].(float64))
+}
+
+func assertStatsArchiveScanDelta(t *testing.T, decoded map[string]any, considered, accepted, skipped int) {
+	t.Helper()
+	gotConsidered, gotAccepted, gotSkipped := statsArchiveScanCounts(t, decoded)
+	if gotConsidered != considered {
+		t.Fatalf("files considered = %d, want %d", gotConsidered, considered)
 	}
-	if got := int(scan["files_accepted"].(float64)); got != accepted {
-		t.Fatalf("files accepted = %d, want %d", got, accepted)
+	if gotAccepted != accepted {
+		t.Fatalf("files accepted = %d, want %d", gotAccepted, accepted)
 	}
-	if got := int(scan["unsupported_schema_or_revision_skipped"].(float64)); got != skipped {
-		t.Fatalf("unsupported skipped = %d, want %d", got, skipped)
+	if gotSkipped != skipped {
+		t.Fatalf("unsupported skipped = %d, want %d", gotSkipped, skipped)
 	}
 }
 
