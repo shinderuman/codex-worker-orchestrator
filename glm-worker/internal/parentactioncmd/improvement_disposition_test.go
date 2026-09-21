@@ -63,6 +63,33 @@ func TestRecoveredInvalidPacketDoesNotBecomeStaleActionGate(t *testing.T) {
 	}
 }
 
+func TestImprovementSignalIdempotentReplayRepairsDispositionEvent(t *testing.T) {
+	cfg, st := newImprovementDispositionTestState(t)
+	if _, created, err := st.RecordImprovementSignalDisposition(
+		state.ImprovementSignalInvalidPacket,
+		string(state.ImprovementSignalDispositionReject),
+		"",
+	); err != nil || !created {
+		t.Fatalf("seed durable disposition: created=%t err=%v", created, err)
+	}
+
+	if err := executeImprovementDisposition(cfg, []string{
+		actionImprovementDisposition,
+		improvementSignalKindOption, state.ImprovementSignalInvalidPacket,
+		improvementDispositionOption, string(state.ImprovementSignalDispositionReject),
+	}, &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	logs, err := st.ReadModelCallLogs(st.ReadOr("task.id", ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	last := logs[len(logs)-1]
+	if last.CallType != state.CallTypeEvent || last.Phase != actionImprovementDisposition || last.Outcome != string(state.ImprovementSignalDispositionReject) {
+		t.Fatalf("replay did not repair disposition event: %#v", last)
+	}
+}
+
 func TestImprovementSignalAdoptConnectsExistingDefectRegistrationLifecycle(t *testing.T) {
 	cfg, st := newImprovementDispositionTestState(t)
 	target := "IMPLEMENTATION_TASKS/adopted-improvement.md"
