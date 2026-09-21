@@ -106,6 +106,51 @@ func TestWriteFailedTerminalActionFailsClosedForOversizedWorkerError(t *testing.
 	assertHandoffRequiredActionSpecPreserved(t, envelope.Handoff)
 }
 
+func TestWriteFailedTerminalActionDoesNotFallbackToMalformedRawOutput(t *testing.T) {
+	raw := []byte(strings.Repeat("not-json-output-", 800))
+	handoff := representativeHandoff(t, "small", "small")
+	terminalErr := errors.New("malformed child exit")
+	var stdout bytes.Buffer
+
+	err := writeFailedTerminalAction(&stdout, raw, terminalErr, func() (json.RawMessage, error) {
+		return handoff, nil
+	})
+	if !errors.Is(err, terminalErr) {
+		t.Fatalf("error = %v, want original terminal error", err)
+	}
+	if stdout.Len() > parentActionTerminalBudgetBytes {
+		t.Fatalf("malformed terminal stdout exceeds budget: bytes=%d budget=%d", stdout.Len(), parentActionTerminalBudgetBytes)
+	}
+	if strings.Contains(stdout.String(), "not-json-output-") {
+		t.Fatalf("malformed raw terminal leaked into model-visible stdout")
+	}
+	machineJSON, err := decodeSingleMachineJSON(stdout.Bytes(), "malformed terminal projection")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var envelope parentActionTerminalEnvelopePayload
+	if err := json.Unmarshal(machineJSON, &envelope); err != nil {
+		t.Fatal(err)
+	}
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(envelope.Terminal, &object); err != nil {
+		t.Fatal(err)
+	}
+	var processError struct {
+		Kind   string `json:"kind"`
+		Detail struct {
+			RawBytes int `json:"raw_bytes"`
+		} `json:"detail"`
+	}
+	if err := json.Unmarshal(object["error"], &processError); err != nil {
+		t.Fatal(err)
+	}
+	if processError.Kind != "machine_output_violation" || processError.Detail.RawBytes != len(raw) {
+		t.Fatalf("malformed terminal identity = %+v", processError)
+	}
+	assertHandoffAuthorityPreserved(t, envelope.Handoff)
+}
+
 func TestWriteTerminalHandoffFailureBoundsOversizedTerminal(t *testing.T) {
 	terminal := mustJSONRaw(t, map[string]any{
 		"status":         "NEEDS_SOL_DECISION",
