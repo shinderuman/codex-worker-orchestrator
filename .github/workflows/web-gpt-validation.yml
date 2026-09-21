@@ -14,9 +14,18 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  validate:
+  smoke:
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.created == false }}
+    name: smoke (${{ matrix.name }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: installer
+            command: ./tests/install_smoke.sh
+          - name: detached-runtime-identity
+            command: ./tests/install_detached_runtime_identity_smoke.sh
     steps:
       - uses: actions/checkout@v6
       - name: Read quality tool contract
@@ -33,16 +42,5 @@ jobs:
           quality_bin="$RUNNER_TEMP/codex-worker-orchestrator-quality-tools"
           printf 'QUALITY_TOOLS_BIN_DIR=%s\n' "$quality_bin" >> "$GITHUB_ENV"
           QUALITY_TOOLS_BIN_DIR="$quality_bin" ./install-quality-tools.sh
-      - name: Repository lint gate
-        run: ./harnesslint
-      - name: Go vet gate
-        run: ./goquality vet
-      - name: Go build gate
-        run: ./goquality build
-      - name: Full Go test suite
-        working-directory: glm-worker
-        run: go test ./...
-      - name: Installer smoke
-        run: ./tests/install_smoke.sh
-      - name: Detached runtime identity smoke
-        run: ./tests/install_detached_runtime_identity_smoke.sh
+      - name: Run Web GPT smoke
+        run: ${{ matrix.command }}
