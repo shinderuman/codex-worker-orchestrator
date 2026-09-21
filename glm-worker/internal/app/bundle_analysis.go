@@ -486,7 +486,7 @@ func buildBundleAnalysisIndex(st *state.StateStore, task bundleTask, collector *
 		ParentSession:  analysisParentSession(association),
 		RolloutWindow:  analysisRolloutWindow(association, rolloutScan, rolloutScanErr, start),
 		WaitCalls:      analysisWaitCalls(association, rolloutScan, rolloutScanErr, start, execution, collectionEnd),
-		TokenDelta:     analysisExecutionTokenDelta(association, rolloutScan, rolloutScanErr, start, execution, collectionEnd),
+		TokenDelta:     analysisExecutionTokenDeltaForOwnership(association, rolloutScan, rolloutScanErr, start, execution, collectionEnd, ownership),
 		Finalization:   analysisTaskFinalizationTokenDelta(association, rolloutScan, rolloutScanErr, execution, ownership, finalizationInterval),
 		ValidationRuns: validations,
 		Retries:        analysisRetries(task, eventRuns, validations.Runs, telemetry),
@@ -597,7 +597,7 @@ func observeAnalysisRolloutLine(scan *bundleRolloutScan, line []byte, lineNumber
 	}
 	timestamp, timestampErr := time.Parse(time.RFC3339Nano, record.Timestamp)
 	if timestampErr != nil {
-		return fmt.Errorf("parent rollout %d行目のtimestampを解析できません: %w", lineNumber, timestampErr)
+		return fmt.Errorf("parent rollout %d行目のtimestampを解析できません: %w", lineNumber, err)
 	}
 	observeAnalysisRolloutInWindowRecord(scan, line, timestamp, start, end)
 	if record.Type == "response_item" {
