@@ -58,12 +58,10 @@ func parentUsageExecutionIntervalForOwnership(association codexAssociation, scan
 		return interval
 	}
 	if interval.Tokens.Status == analysisStatusAvailable || interval.Tokens.Status == analysisStatusOpen {
-		interval.Tokens.Status = comparability.status
-		interval.Tokens.Reason = comparability.reason
+		interval.Tokens = parentUsageTokens{Status: comparability.status, Reason: comparability.reason}
 	}
 	if interval.Activity.Status == analysisStatusCounted || interval.Activity.Status == analysisStatusOpen {
-		interval.Activity.Status = comparability.status
-		interval.Activity.Reason = comparability.reason
+		interval.Activity = parentUsageActivity{Status: comparability.status, Reason: comparability.reason}
 	}
 	return interval
 }
