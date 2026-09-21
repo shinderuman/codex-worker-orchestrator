@@ -38,8 +38,8 @@ type analysisWaitJSParser struct {
 const (
 	analysisWaitSessionIDKey       = "session_id"
 	analysisWaitCharsKey           = "chars"
-	analysisWaitCustomYieldMSKey   = "yield_time_ms"
-	analysisWaitLegacyYieldMSKey   = "yield-time_ms"
+	analysisWaitYieldMSKey         = "yield_time_ms"
+	analysisExecYieldMSKey         = "yield-time_ms"
 	analysisWaitMaxOutputTokensKey = "max_output_tokens"
 )
 
@@ -76,7 +76,7 @@ func analysisNormalizeCustomWait(item *codexRolloutItemPayload, raw analysisRoll
 	item.Name = codexRolloutWaitCallName
 	item.Arguments = "{}"
 	if yieldMS != nil {
-		item.Arguments = `{"` + analysisWaitLegacyYieldMSKey + `":` + strconv.FormatUint(*yieldMS, 10) + `}`
+		item.Arguments = `{"` + analysisWaitYieldMSKey + `":` + strconv.FormatUint(*yieldMS, 10) + `}`
 	}
 }
 
@@ -187,14 +187,14 @@ func analysisStripExecPragma(input string) (string, analysisExecPragma, bool) {
 		return "", pragma, false
 	}
 	for key, value := range fields {
-		if key != analysisWaitLegacyYieldMSKey && key != analysisWaitMaxOutputTokensKey {
+		if key != analysisExecYieldMSKey && key != analysisWaitMaxOutputTokensKey {
 			return "", pragma, false
 		}
 		var number uint64
 		if err := json.Unmarshal(value, &number); err != nil {
 			return "", pragma, false
 		}
-		if key == analysisWaitLegacyYieldMSKey {
+		if key == analysisExecYieldMSKey {
 			pragma.yieldMS = number
 			pragma.hasYield = true
 		}
@@ -239,7 +239,7 @@ func (state *analysisWriteStdinFields) apply(field string) bool {
 }
 
 func (state *analysisWriteStdinFields) applyDuplicate(key string) bool {
-	if key != analysisWaitCustomYieldMSKey {
+	if key != analysisWaitYieldMSKey {
 		return false
 	}
 	state.yieldMS = nil
@@ -253,7 +253,7 @@ func (state *analysisWriteStdinFields) applyUnique(key, value string) bool {
 		return analysisCanonicalSessionID(value)
 	case analysisWaitCharsKey:
 		return analysisEmptyJSString(value)
-	case analysisWaitCustomYieldMSKey:
+	case analysisWaitYieldMSKey:
 		return state.applyYield(value)
 	case analysisWaitMaxOutputTokensKey:
 		_, ok := analysisUnsignedJSLiteral(value)
@@ -278,7 +278,7 @@ func analysisWaitPropertyKey(raw string) (string, bool) {
 	for _, key := range []string{
 		analysisWaitSessionIDKey,
 		analysisWaitCharsKey,
-		analysisWaitCustomYieldMSKey,
+		analysisWaitYieldMSKey,
 		analysisWaitMaxOutputTokensKey,
 	} {
 		if raw == key || raw == `"`+key+`"` || raw == `'`+key+`'` {
