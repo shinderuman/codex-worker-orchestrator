@@ -27,7 +27,13 @@ const (
 )
 
 func executeWithTerminalEnvelope(cfg config.AppConfig, args []string, stdout, stderr io.Writer) error {
-	if len(args) == 0 || !terminalEnvelopeAction(args[0]) {
+	if len(args) == 0 {
+		return execute(cfg, args, stdout, stderr)
+	}
+	if err := requireImprovementSignalDisposition(cfg, args[0]); err != nil {
+		return err
+	}
+	if !terminalEnvelopeAction(args[0]) {
 		return execute(cfg, args, stdout, stderr)
 	}
 
@@ -68,6 +74,8 @@ func executeTerminalAction(cfg config.AppConfig, args []string, stdout, stderr i
 		return executePreflightedDecision(cfg, args, stdout, stderr)
 	case actionRecordDefectFinding, actionBindDefectTask:
 		return executeDefectRegistrationAction(cfg, args, stdout)
+	case actionImprovementDisposition:
+		return executeImprovementDisposition(cfg, args, stdout)
 	default:
 		return execute(cfg, args, stdout, stderr)
 	}
@@ -98,7 +106,7 @@ func terminalEnvelopeAction(action string) bool {
 		return descriptor.Action != parentaction.ActionReviseMilestones
 	}
 	switch action {
-	case actionStart, actionApprove, actionAccept, actionResume, "no-go", actionRecordPublicationFinding, actionRecordDefectFinding, actionBindDefectTask, actionReopen, actionPark, actionUnpark, actionReviewEvidence:
+	case actionStart, actionApprove, actionAccept, actionResume, "no-go", actionRecordPublicationFinding, actionRecordDefectFinding, actionBindDefectTask, actionImprovementDisposition, actionReopen, actionPark, actionUnpark, actionReviewEvidence:
 		return true
 	default:
 		return false
