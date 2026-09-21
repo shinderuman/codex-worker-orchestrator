@@ -15,6 +15,8 @@ type noRereadRegression struct {
 	NormalActionFamily       []string `json:"normal_action_family"`
 	NormalSequence           []string `json:"normal_sequence"`
 	ForbiddenFreshStageReads []string `json:"forbidden_fresh_stage_reads"`
+	FailClosedBeforeAction   []string `json:"fail_closed_before_action"`
+	PreservedStagingSafety   []string `json:"preserved_staging_safety"`
 	ReadExceptions           []string `json:"read_exceptions"`
 	SemanticOwner            string   `json:"semantic_owner"`
 	TransportOwner           string   `json:"transport_owner"`
@@ -62,6 +64,12 @@ func TestStagedParentActionNoRereadRegressionTracksPayloadActionFamily(t *testin
 		if !containsRegressionValue(regression.ForbiddenFreshStageReads, forbidden) {
 			t.Errorf("formal no-reread regression missing %q", forbidden)
 		}
+	}
+	if want := []string{"malformed-prepare", "path-mismatch", "token-mismatch", "placeholder-replacement-failure"}; !reflect.DeepEqual(regression.FailClosedBeforeAction, want) {
+		t.Fatalf("fail-closed boundary = %#v want %#v", regression.FailClosedBeforeAction, want)
+	}
+	if want := []string{"one-shot-consume", "regular-path-no-symlink", "payload-size-limit", "token-binding", "standard-apply-patch"}; !reflect.DeepEqual(regression.PreservedStagingSafety, want) {
+		t.Fatalf("preserved staging safety = %#v want %#v", regression.PreservedStagingSafety, want)
 	}
 	if want := []string{"debug", "recovery"}; !reflect.DeepEqual(regression.ReadExceptions, want) {
 		t.Fatalf("read exceptions = %#v want %#v", regression.ReadExceptions, want)
