@@ -43,8 +43,6 @@ func TestCustomExecWriteStdinWaitRejectsFalsePositives(t *testing.T) {
 		analysisCustomExecLine(t, at.Add(5*time.Minute), "dynamic-session", `await tools.write_stdin({session_id: session.id, chars: "", yield_time_ms: 300000});`),
 		analysisCustomExecLine(t, at.Add(6*time.Minute), "wrong-tool", `await tools.write_stdin({session_id: 101, chars: "", yield_time_ms: 300000});`),
 	}
-	// The final source is otherwise canonical but is intentionally wrapped in a
-	// different outer tool name.
 	lines[len(lines)-1] = analysisCustomToolLine(t, at.Add(6*time.Minute), "wrong-tool", "other", `await tools.write_stdin({session_id: 101, chars: "", yield_time_ms: 300000});`)
 
 	waits := analysisWaitCallsFromLines(t, start, start.Add(time.Hour), lines)
@@ -57,7 +55,7 @@ func TestCustomExecWriteStdinWaitMixedTransportDeduplicatesByCallIdentity(t *tes
 	start := time.Date(2026, 9, 17, 7, 0, 0, 0, time.UTC)
 	at := start.Add(time.Minute)
 	lines := []string{
-		analysisWaitRequestLine(t, at, "shared", `{"yield_time_ms":300000}`),
+		analysisWaitRequestLine(t, at, "shared", `{"yield-time_ms":300000}`),
 		analysisCustomWaitRequestLine(t, at.Add(time.Second), "shared", `await tools.write_stdin({session_id: 101, chars: "", yield_time_ms: 300000});`),
 		analysisCustomWaitReturnLine(t, at.Add(2*time.Second), "shared"),
 	}
@@ -90,7 +88,7 @@ func TestCustomExecWriteStdinWaitMalformedAndConflictFailClosed(t *testing.T) {
 
 	t.Run("conflicting-yields-stay-conflicted", func(t *testing.T) {
 		waits := analysisWaitCallsFromLines(t, start, start.Add(time.Hour), []string{
-			analysisWaitRequestLine(t, at, "conflict", `{"yield_time_ms":30000}`),
+			analysisWaitRequestLine(t, at, "conflict", `{"yield-time_ms":30000}`),
 			analysisCustomWaitRequestLine(t, at.Add(time.Second), "conflict", `await tools.write_stdin({session_id: 101, chars: "", yield_time_ms: 300000});`),
 		})
 		if waits.Count != 0 || len(waits.Calls) != 0 || len(waits.DuplicateCallIDs) != 1 {
@@ -106,7 +104,7 @@ func TestCustomExecWriteStdinWaitMalformedAndConflictFailClosed(t *testing.T) {
 func TestCustomExecWriteStdinWaitBundleLikeUndercountRegression(t *testing.T) {
 	start := time.Date(2026, 9, 17, 7, 0, 0, 0, time.UTC)
 	at := start.Add(time.Minute)
-	lines := []string{analysisWaitRequestLine(t, at, "legacy", `{"yield_time_ms":300000}`)}
+	lines := []string{analysisWaitRequestLine(t, at, "legacy", `{"yield-time_ms":300000}`)}
 	for index := 0; index < 2; index++ {
 		lines = append(lines, analysisCustomWaitRequestLine(t, at.Add(time.Duration(index+1)*time.Minute), fmt.Sprintf("startup-%d", index),
 			`await tools.write_stdin({session_id: 101, chars: "", yield_time_ms: 30000});`))
@@ -143,14 +141,6 @@ func analysisWaitCallsFromLines(t *testing.T, start, end time.Time, lines []stri
 	}
 	return analysisWaitCalls(codexAssociation{ParentStatus: codexStatusIncluded}, scan, nil, start,
 		analysisExecutionBoundary{status: analysisStatusAvailable, end: end}, end)
-}
-
-func joinAnalysisLines(lines []string) string {
-	joined := ""
-	for _, line := range lines {
-		joined += line
-	}
-	return joined
 }
 
 func analysisWaitCallsByID(calls []bundleAnalysisWaitCall) map[string]bundleAnalysisWaitCall {
