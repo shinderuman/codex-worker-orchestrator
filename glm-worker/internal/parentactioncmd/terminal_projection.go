@@ -10,16 +10,17 @@ import (
 const parentActionTerminalBudgetBytes = 2400
 
 type parentActionTerminalProjectionStats struct {
-	BudgetBytes      int      `json:"budget_bytes"`
-	RawBytes         int      `json:"raw_bytes"`
-	ProjectedBytes   int      `json:"projected_bytes"`
-	SavedBytes       int      `json:"saved_bytes"`
-	TerminalMode     string   `json:"terminal_mode"`
-	HandoffMode      string   `json:"handoff_mode"`
-	OmittedFields    []string `json:"omitted_fields,omitempty"`
-	Overflow         bool     `json:"overflow"`
-	ParentToolCalls  int      `json:"parent_tool_calls"`
-	RecoveryCalls    int      `json:"recovery_calls"`
+	BudgetBytes     int      `json:"budget_bytes"`
+	RawBytes        int      `json:"raw_bytes"`
+	ProjectedBytes  int      `json:"projected_bytes"`
+	SavedBytes      int      `json:"saved_bytes"`
+	TerminalMode    string   `json:"terminal_mode"`
+	HandoffMode     string   `json:"handoff_mode"`
+	OmittedFields   []string `json:"omitted_fields,omitempty"`
+	ProjectedFields []string `json:"projected_fields,omitempty"`
+	Overflow        bool     `json:"overflow"`
+	ParentToolCalls int      `json:"parent_tool_calls"`
+	RecoveryCalls   int      `json:"recovery_calls"`
 }
 
 type parentActionTerminalProjectionError struct {
@@ -68,14 +69,29 @@ func projectParentActionTerminalEnvelope(terminalJSON, handoffJSON json.RawMessa
 		return parentActionTerminalEnvelopePayload{}, err
 	}
 	stats.TerminalMode = terminalMode
-	stats.OmittedFields = append(stats.OmittedFields, prefixedFields("terminal", terminalOmitted)...)
-	sort.Strings(stats.OmittedFields)
+	stats.OmittedFields = sortedUniqueStrings(append(stats.OmittedFields, prefixedFields("terminal", terminalOmitted)...))
 	candidate.Terminal = projectedTerminal
 	if err := finalizeProjectionStats(&candidate, &stats); err != nil {
 		return parentActionTerminalEnvelopePayload{}, err
 	}
 	if stats.ProjectedBytes <= stats.BudgetBytes {
 		return candidate, nil
+	}
+
+	locatorProjected, projectedFields, changed, err := projectRecoverableTerminalEvidence(projectedTerminal)
+	if err != nil {
+		return parentActionTerminalEnvelopePayload{}, err
+	}
+	if changed {
+		stats.TerminalMode = "semantic-locators"
+		stats.ProjectedFields = sortedUniqueStrings(append(stats.ProjectedFields, prefixedFields("terminal", projectedFields)...))
+		candidate.Terminal = locatorProjected
+		if err := finalizeProjectionStats(&candidate, &stats); err != nil {
+			return parentActionTerminalEnvelopePayload{}, err
+		}
+		if stats.ProjectedBytes <= stats.BudgetBytes {
+			return candidate, nil
+		}
 	}
 
 	stats.Overflow = true
@@ -95,8 +111,7 @@ func writeTerminalProjectionFailurePayload(terminalJSON, handoffJSON json.RawMes
 	stats.Overflow = true
 	stats.TerminalMode = "identity-only"
 	stats.HandoffMode = "overflow-minimal"
-	stats.OmittedFields = append(stats.OmittedFields, prefixedFields("handoff", omitted)...)
-	sort.Strings(stats.OmittedFields)
+	stats.OmittedFields = sortedUniqueStrings(append(stats.OmittedFields, prefixedFields("handoff", omitted)...))
 	payload := parentActionTerminalEnvelopePayload{
 		Status:          "parent_action_terminal_projection_overflow",
 		Terminal:        terminalIdentity,
@@ -161,6 +176,44 @@ func terminalProjectionFields(status string) []string {
 	default:
 		return nil
 	}
+}
+
+func projectRecoverableTerminalEvidence(raw json.RawMessage) (json.RawMessage, []string, bool, error) {
+	object, err := decodeJSONObject(raw, "projected parent action terminal")
+	if err != nil {
+		return nil, nil, false, err
+	}
+	var artifacts []string
+	if artifactJSON, ok := object["artifacts"]; ok {
+		if err := json.Unmarshal(artifactJSON, &artifacts); err != nil {
+			return nil, nil, false, fmt.Errorf("decode terminal artifact locators: %w", err)
+		}
+	}
+	if len(artifacts) == 0 {
+		return raw, nil, false, nil
+	}
+
+	projectedFields := make([]string, 0, 2)
+	for _, field := range []string{"evidence", "test_evidence"} {
+		value, ok := rawJSONString(object[field])
+		if !ok || len(value) <= 160 {
+			continue
+		}
+		replacement, err := json.Marshal(fmt.Sprintf("projected: raw %s omitted; artifact_count=%d; exact locators are in artifacts", field, len(artifacts)))
+		if err != nil {
+			return nil, nil, false, err
+		}
+		object[field] = replacement
+		projectedFields = append(projectedFields, field)
+	}
+	if len(projectedFields) == 0 {
+		return raw, nil, false, nil
+	}
+	projected, err := json.Marshal(object)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	return projected, projectedFields, true, nil
 }
 
 func projectTerminalIdentity(raw json.RawMessage) (json.RawMessage, error) {
@@ -270,5 +323,21 @@ func prefixedFields(prefix string, fields []string) []string {
 	for _, field := range fields {
 		result = append(result, prefix+"."+field)
 	}
+	return result
+}
+
+func sortedUniqueStrings(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	set := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		set[value] = struct{}{}
+	}
+	result := make([]string, 0, len(set))
+	for value := range set {
+		result = append(result, value)
+	}
+	sort.Strings(result)
 	return result
 }
