@@ -8,24 +8,28 @@ import (
 )
 
 type parentActionTerminalProjectionStats struct {
-	BudgetBytes     int      `json:"budget_bytes"`
-	RawBytes        int      `json:"raw_bytes"`
-	ProjectedBytes  int      `json:"projected_bytes"`
-	SavedBytes      int      `json:"saved_bytes"`
-	TerminalMode    string   `json:"terminal_mode"`
-	HandoffMode     string   `json:"handoff_mode"`
-	OmittedFields   []string `json:"omitted_fields,omitempty"`
-	ProjectedFields []string `json:"projected_fields,omitempty"`
-	Overflow        bool     `json:"overflow"`
-	ParentToolCalls int      `json:"parent_tool_calls"`
-	RecoveryCalls   int      `json:"recovery_calls"`
+	BudgetBytes        int      `json:"budget_bytes"`
+	RawBytes           int      `json:"raw_bytes"`
+	ProjectedBytes     int      `json:"projected_bytes"`
+	SavedBytes         int      `json:"saved_bytes"`
+	DeduplicatedFields int      `json:"deduplicated_fields"`
+	TerminalMode       string   `json:"terminal_mode"`
+	HandoffMode        string   `json:"handoff_mode"`
+	OmittedFields      []string `json:"omitted_fields,omitempty"`
+	ProjectedFields    []string `json:"projected_fields,omitempty"`
+	Overflow           bool     `json:"overflow"`
+	ParentToolCalls    int      `json:"parent_tool_calls"`
+	RecoveryCalls      int      `json:"recovery_calls"`
 }
 
 type parentActionTerminalProjectionError struct {
 	stats parentActionTerminalProjectionStats
 }
 
-const parentActionTerminalBudgetBytes = 2400
+const (
+	parentActionTerminalBudgetBytes   = 2400
+	parentActionTerminalJSONLineBytes = 1
+)
 
 func (e *parentActionTerminalProjectionError) Error() string {
 	return fmt.Sprintf("parent action terminal projection exceeds budget: projected=%d budget=%d", e.stats.ProjectedBytes, e.stats.BudgetBytes)
@@ -43,7 +47,7 @@ func projectParentActionTerminalEnvelope(terminalJSON, handoffJSON json.RawMessa
 	}
 	stats := parentActionTerminalProjectionStats{
 		BudgetBytes:     parentActionTerminalBudgetBytes,
-		RawBytes:        len(rawBytes),
+		RawBytes:        encodedJSONLineBytes(rawBytes),
 		TerminalMode:    "full",
 		HandoffMode:     "bounded",
 		OmittedFields:   prefixedFields("handoff", handoffOmitted),
@@ -135,21 +139,27 @@ func writeTerminalProjectionFailurePayload(terminalJSON, handoffJSON json.RawMes
 }
 
 func finalizeProjectionStats(payload *parentActionTerminalEnvelopePayload, stats *parentActionTerminalProjectionStats) error {
+	stats.DeduplicatedFields = len(stats.OmittedFields)
 	for iteration := 0; iteration < 3; iteration++ {
 		raw, err := json.Marshal(payload)
 		if err != nil {
 			return fmt.Errorf("marshal projected parent action terminal envelope: %w", err)
 		}
-		if stats.ProjectedBytes == len(raw) {
+		projectedBytes := encodedJSONLineBytes(raw)
+		if stats.ProjectedBytes == projectedBytes {
 			break
 		}
-		stats.ProjectedBytes = len(raw)
+		stats.ProjectedBytes = projectedBytes
 		stats.SavedBytes = stats.RawBytes - stats.ProjectedBytes
 		if stats.SavedBytes < 0 {
 			stats.SavedBytes = 0
 		}
 	}
 	return nil
+}
+
+func encodedJSONLineBytes(raw []byte) int {
+	return len(raw) + parentActionTerminalJSONLineBytes
 }
 
 func projectTerminalSemanticResult(raw json.RawMessage) (json.RawMessage, string, []string, error) {
@@ -205,7 +215,7 @@ func projectRecoverableTerminalEvidence(raw json.RawMessage) (json.RawMessage, [
 		if !ok || len(value) <= 160 {
 			continue
 		}
-		replacement, err := json.Marshal(fmt.Sprintf("projected: raw %s omitted; artifact_count=%d; exact locators are in artifacts", field, len(artifacts)))
+		replacement, err := json.Marshal(fmt.Sprintf("projected: raw %s omitted; artifact_count=%d; exact locators remain in targets/artifacts", field, len(artifacts)))
 		if err != nil {
 			return nil, nil, false, err
 		}
