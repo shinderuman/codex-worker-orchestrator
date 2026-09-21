@@ -51,6 +51,27 @@ func TestCanonicalAuthorityBootstrapPrecedesRepositoryReadsAndRestoresWaitContra
 		}
 	}
 
+	goalData, err := os.ReadFile(filepath.Join(root, "codex", "instructions", "goal-development.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	goalResume, ok := markdownSection(string(goalData), "## 停止・再開")
+	if !ok {
+		t.Fatal("goal-development.md missing resume section")
+	}
+	for _, token := range []string{
+		"glm-worker --authority bootstrap",
+		"authority file/pathの探索・disk直読でbootstrapを代替しない",
+		"--project-state",
+	} {
+		if !strings.Contains(goalResume, token) {
+			t.Errorf("goal-mode resume contract missing %q", token)
+		}
+	}
+	if strings.Contains(goalResume, "現在checkoutから再読") {
+		t.Error("goal-mode resume still permits direct authority reread before canonical bootstrap")
+	}
+
 	executionData, err := os.ReadFile(filepath.Join(root, "codex", "instructions", "glm-execution.md"))
 	if err != nil {
 		t.Fatal(err)
