@@ -3,39 +3,37 @@ package controlprovenance
 import "testing"
 
 func TestNegativeResultAuthorityFollowsClassification(t *testing.T) {
-	for _, tc := range []struct {
-		name                    string
-		classification          Classification
-		withoutMachineRecovery  bool
-		withMachineRecovery     bool
+	tests := []struct {
+		name             string
+		classification   Classification
+		explicitRecovery bool
+		want             bool
 	}{
-		{name: "machine-enforced", classification: ClassificationMachine, withoutMachineRecovery: false, withMachineRecovery: true},
-		{name: "partial", classification: ClassificationPartial, withoutMachineRecovery: true, withMachineRecovery: true},
-		{name: "semantic-parent-only", classification: ClassificationSemanticParent, withoutMachineRecovery: true, withMachineRecovery: true},
-	} {
+		{name: "machine-negative", classification: ClassificationMachine, explicitRecovery: false, want: false},
+		{name: "machine-explicit-recovery", classification: ClassificationMachine, explicitRecovery: true, want: true},
+		{name: "partial", classification: ClassificationPartial, explicitRecovery: false, want: true},
+		{name: "semantic-parent-only", classification: ClassificationSemanticParent, explicitRecovery: false, want: true},
+	}
+
+	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			authority := ResultAuthority{Classification: tc.classification}
-			policy, err := NegativeResultPolicyFor(tc.classification)
+			got, err := ParentMayPromoteNegativeResult(tc.classification, tc.explicitRecovery)
 			if err != nil {
 				t.Fatal(err)
 			}
-			authority.NegativeResult = policy
-			if got := authority.ParentMayPromoteNegativeResult(false); got != tc.withoutMachineRecovery {
-				t.Fatalf("without machine recovery = %v want %v", got, tc.withoutMachineRecovery)
-			}
-			if got := authority.ParentMayPromoteNegativeResult(true); got != tc.withMachineRecovery {
-				t.Fatalf("with machine recovery = %v want %v", got, tc.withMachineRecovery)
+			if got != tc.want {
+				t.Fatalf("parent promotion = %v want %v", got, tc.want)
 			}
 		})
 	}
 }
 
-func TestMachineRecoveryDoesNotChooseAmongPositiveActions(t *testing.T) {
-	authority := ResultAuthority{
-		Classification: ClassificationMachine,
-		NegativeResult: NegativeResultMachineRecoveryRequired,
+func TestNegativeResultAuthorityRejectsUnknownClassification(t *testing.T) {
+	got, err := ParentMayPromoteNegativeResult("unknown", false)
+	if err == nil {
+		t.Fatal("unknown classification was accepted")
 	}
-	if !authority.ParentMayPromoteNegativeResult(true) {
-		t.Fatal("explicit machine-owned recovery must remain available")
+	if got {
+		t.Fatal("unknown classification allowed parent promotion")
 	}
 }
