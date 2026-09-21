@@ -68,7 +68,13 @@ func TestStagedParentActionNoRereadBehaviorContract(t *testing.T) {
 			t.Errorf("positive live eval contract missing %q", token)
 		}
 	}
-	for _, token := range []string{"does not reread the freshly prepared staging file", "apply_patch"} {
+	for _, token := range []string{
+		"Malformed prepare output",
+		"unexpected action/path/token",
+		"failed placeholder patch stops before action execution",
+		"does not reread the freshly prepared staging file",
+		"apply_patch",
+	} {
 		if !strings.Contains(negative, token) {
 			t.Errorf("negative live eval contract missing %q", token)
 		}
