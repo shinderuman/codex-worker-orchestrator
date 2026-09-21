@@ -310,6 +310,7 @@ type codexRolloutItemPayload struct {
 	Name      string `json:"name"`
 	CallID    string `json:"call_id"`
 	Arguments string `json:"arguments"`
+	Input     string `json:"input"`
 }
 
 type codexRolloutToolPayload struct {
@@ -631,17 +632,21 @@ func observeAnalysisRolloutWait(scan *bundleRolloutScan, payload json.RawMessage
 		return
 	}
 	switch item.Type {
-	case codexRolloutFunctionCallType:
-		if item.Name != codexRolloutWaitCallName {
+	case codexRolloutCustomToolCallType:
+		if item.Name != "exec" {
+			return
+		}
+		yieldMS, recognized := analysisCustomWaitRequestedYield(item.Input)
+		if !recognized {
 			return
 		}
 		scan.waits = append(scan.waits, analysisRolloutWaitRequest{
 			CallID:  item.CallID,
 			Line:    lineNumber,
 			At:      timestamp,
-			YieldMS: analysisWaitRequestedYield(item.Arguments),
+			YieldMS: yieldMS,
 		})
-	case codexRolloutFunctionCallOutputType:
+	case codexRolloutCustomToolCallOutputType:
 		if item.CallID == "" {
 			return
 		}
@@ -684,22 +689,6 @@ func analysisToolOutputBytes(raw json.RawMessage) int64 {
 		total += int64(len(item.Text))
 	}
 	return total
-}
-
-func analysisWaitRequestedYield(arguments string) *float64 {
-	if arguments == "" {
-		return nil
-	}
-	var parsed struct {
-		YieldTimeMS *float64 `json:"yield_time_ms"`
-	}
-	if err := json.Unmarshal([]byte(arguments), &parsed); err != nil {
-		return nil
-	}
-	if parsed.YieldTimeMS == nil || *parsed.YieldTimeMS < 0 {
-		return nil
-	}
-	return parsed.YieldTimeMS
 }
 
 func observeAnalysisRolloutEvent(scan *bundleRolloutScan, record codexRolloutScanLine, timestamp time.Time, lineNumber, fileIndex int, source string) {

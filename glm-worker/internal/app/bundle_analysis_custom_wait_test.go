@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-func TestCustomExecWriteStdinWaitsNormalize(t *testing.T) {
+func TestCustomExecWriteStdinWaitsObserved(t *testing.T) {
 	start := time.Date(2026, 9, 19, 2, 0, 0, 0, time.UTC)
 	at := start.Add(time.Minute)
 	lines := []string{
@@ -53,42 +53,17 @@ func TestCustomExecWriteStdinWaitRejectsNonCanonicalShapes(t *testing.T) {
 	}
 }
 
-func TestCustomExecWriteStdinWaitPreservesLegacySemantics(t *testing.T) {
+func TestLegacyFunctionWaitIsIgnored(t *testing.T) {
 	start := time.Date(2026, 9, 19, 2, 0, 0, 0, time.UTC)
 	at := start.Add(time.Minute)
 	lines := []string{
-		analysisWaitRequestLine(t, at, "legacy", analysisLegacyWaitArguments(300000)),
-		analysisWaitReturnLine(t, at.Add(time.Second), "legacy"),
+		analysisRolloutLine(t, at, "response_item", map[string]any{"type": codexRolloutFunctionCallType, "name": codexRolloutWaitCallName, "call_id": "legacy", "arguments": fmt.Sprintf("{%q:%d}", "yield"+"_"+"time_ms", 300000)}),
+		analysisRolloutLine(t, at.Add(time.Second), "response_item", map[string]any{"type": codexRolloutFunctionCallOutputType, "call_id": "legacy"}),
 	}
 	waits := analysisWaitCallsFromLines(t, start, start.Add(time.Hour), lines)
-	if waits.Count != 1 || len(waits.Calls) != 1 || len(waits.DuplicateCallIDs) != 0 {
+	if waits.Count != 0 || len(waits.Calls) != 0 || len(waits.DuplicateCallIDs) != 0 {
 		t.Fatalf("legacy waits = %#v", waits)
 	}
-	call := waits.Calls[0]
-	assertAnalysisWaitCall(t, call, 300000, analysisWaitYieldClassBounded)
-	if len(call.ReturnLines) != 1 || call.ReturnLines[0] != 2 {
-		t.Fatalf("legacy return = %#v", call)
-	}
-}
-
-func TestCustomExecWriteStdinWaitMixedTransportDeduplicatesByCallIdentity(t *testing.T) {
-	start := time.Date(2026, 9, 19, 2, 0, 0, 0, time.UTC)
-	at := start.Add(time.Minute)
-	lines := []string{
-		analysisWaitRequestLine(t, at, "shared", analysisLegacyWaitArguments(300000)),
-		analysisCustomWaitRequestLine(t, at.Add(time.Second), "shared", analysisObservedDirectWaitSource(46866, 300000, 20000)),
-		analysisCustomWaitReturnLine(t, at.Add(2*time.Second), "shared"),
-	}
-	waits := analysisWaitCallsFromLines(t, start, start.Add(time.Hour), lines)
-	if waits.Count != 1 || len(waits.Calls) != 1 || len(waits.DuplicateCallIDs) != 0 {
-		t.Fatalf("mixed wait calls = %#v", waits)
-	}
-	call := waits.Calls[0]
-	if call.CallID != "shared" || len(call.RequestLines) != 2 || call.RequestLines[0] != 1 || call.RequestLines[1] != 2 ||
-		len(call.ReturnLines) != 1 || call.ReturnLines[0] != 3 {
-		t.Fatalf("mixed wait = %#v", call)
-	}
-	assertAnalysisWaitCall(t, call, 300000, analysisWaitYieldClassBounded)
 }
 
 func TestCustomExecWriteStdinWaitMalformedAndConflictFailClosed(t *testing.T) {
@@ -123,9 +98,9 @@ func TestCustomExecWriteStdinWaitMalformedAndConflictFailClosed(t *testing.T) {
 		}
 	})
 
-	t.Run("conflicting-transports-stay-conflicted", func(t *testing.T) {
+	t.Run("conflicting-current-waits-stay-conflicted", func(t *testing.T) {
 		waits := analysisWaitCallsFromLines(t, start, start.Add(time.Hour), []string{
-			analysisWaitRequestLine(t, at, "conflict", analysisLegacyWaitArguments(30000)),
+			analysisCustomWaitRequestLine(t, at, "conflict", analysisObservedDirectWaitSource(46866, 30000, 16000)),
 			analysisCustomWaitRequestLine(t, at.Add(time.Second), "conflict", analysisObservedDirectWaitSource(46866, 300000, 20000)),
 		})
 		if waits.Count != 0 || len(waits.Calls) != 0 || len(waits.DuplicateCallIDs) != 1 {
@@ -141,7 +116,7 @@ func TestCustomExecWriteStdinWaitMalformedAndConflictFailClosed(t *testing.T) {
 func TestCustomExecWriteStdinWaitBundleLikeUndercountRegression(t *testing.T) {
 	start := time.Date(2026, 9, 19, 2, 0, 0, 0, time.UTC)
 	at := start.Add(time.Minute)
-	lines := []string{analysisWaitRequestLine(t, at, "legacy", analysisLegacyWaitArguments(300000))}
+	lines := []string{analysisCustomWaitRequestLine(t, at, "initial", analysisObservedDirectWaitSource(46866, 300000, 20000))}
 	for index := 0; index < 2; index++ {
 		lines = append(lines, analysisCustomWaitRequestLine(t, at.Add(time.Duration(index+1)*time.Minute), fmt.Sprintf("startup-%d", index),
 			analysisObservedDirectWaitSource(46866, 30000, 16000)))
@@ -196,10 +171,6 @@ func analysisWaitCallsByID(calls []bundleAnalysisWaitCall) map[string]bundleAnal
 		result[call.CallID] = call
 	}
 	return result
-}
-
-func analysisLegacyWaitArguments(yieldMS int) string {
-	return fmt.Sprintf("{%q:%d}", "yield"+"_"+"time_ms", yieldMS)
 }
 
 func analysisCustomWaitRequestLine(t *testing.T, timestamp time.Time, callID, input string) string {
