@@ -3,6 +3,7 @@ package parentactioncmd
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 )
@@ -67,6 +68,35 @@ func projectParentActionTerminalEnvelope(terminalJSON, handoffJSON json.RawMessa
 		return candidate, nil
 	}
 	return fitSemanticTerminalProjection(candidate, stats, terminalJSON)
+}
+
+func projectParentActionTerminalEnvelopeMode(terminalJSON, handoffJSON json.RawMessage, recovery bool) (parentActionTerminalEnvelopePayload, error) {
+	envelope, err := projectParentActionTerminalEnvelope(terminalJSON, handoffJSON)
+	if !recovery {
+		return envelope, err
+	}
+	if err != nil {
+		var projectionErr *parentActionTerminalProjectionError
+		if errors.As(err, &projectionErr) {
+			projectionErr.stats.RecoveryCalls = 1
+			projectionErr.stats.HandoffMode = "recovery-bounded"
+		}
+		return envelope, err
+	}
+	if envelope.Projection == nil {
+		return envelope, nil
+	}
+	stats := *envelope.Projection
+	stats.RecoveryCalls = 1
+	stats.HandoffMode = "recovery-bounded"
+	envelope.Projection = &stats
+	if err := finalizeProjectionStats(&envelope, &stats); err != nil {
+		return parentActionTerminalEnvelopePayload{}, err
+	}
+	if stats.ProjectedBytes <= stats.BudgetBytes {
+		return envelope, nil
+	}
+	return fitSemanticTerminalProjection(envelope, stats, terminalJSON)
 }
 
 func fitSemanticTerminalProjection(candidate parentActionTerminalEnvelopePayload, stats parentActionTerminalProjectionStats, terminalJSON json.RawMessage) (parentActionTerminalEnvelopePayload, error) {
@@ -167,6 +197,9 @@ func projectTerminalSemanticResult(raw json.RawMessage) (json.RawMessage, string
 	if err != nil {
 		return nil, "", nil, err
 	}
+	if _, ok := object["error"]; ok {
+		return raw, "error", nil, nil
+	}
 	status, _ := rawJSONString(object["status"])
 	keep := terminalProjectionFields(status)
 	if len(keep) == 0 {
@@ -236,6 +269,17 @@ func projectTerminalIdentity(raw json.RawMessage) (json.RawMessage, error) {
 	object, err := decodeJSONObject(raw, "parent action terminal")
 	if err != nil {
 		return nil, err
+	}
+	if errorJSON, ok := object["error"]; ok {
+		errorObject, err := decodeJSONObject(errorJSON, "parent action terminal error")
+		if err != nil {
+			return nil, err
+		}
+		errorIdentity, err := projectObjectFieldsNoOmitted(errorObject, []string{"kind", "message"})
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(map[string]json.RawMessage{"error": errorIdentity})
 	}
 	return projectObjectFieldsNoOmitted(object, []string{"status", "risk", "targets", "artifacts"})
 }
