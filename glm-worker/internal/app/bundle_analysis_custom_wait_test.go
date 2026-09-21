@@ -34,7 +34,7 @@ func TestCustomExecWriteStdinWaitRejectsNonCanonicalShapes(t *testing.T) {
 	start := time.Date(2026, 9, 19, 2, 0, 0, 0, time.UTC)
 	at := start.Add(time.Minute)
 	loopWrapper := fmt.Sprintf("// @exec: {%q: 21600000, %q: 20000}\nlet combined = %q;\nwhile (true) {\n  const r = await tools.write_stdin({session_id: 46866, chars: %q, yield_time_ms: 300000, max_output_tokens: 20000});\n  if (r.output) combined += r.output;\n  if (r.exit_code !== undefined) break;\n}",
-		"yield-time_ms", "max_output_tokens", "", "")
+		"yield_time_ms", "max_output_tokens", "", "")
 	lines := []string{
 		analysisCustomExecLine(t, at, "exec-command", fmt.Sprintf("const r = await tools.exec_command({cmd:%q,yield_time_ms:300000}); text(r);", "echo tools.write_stdin")),
 		analysisCustomExecLine(t, at.Add(time.Minute), "string-only", fmt.Sprintf("text(%q);", "tools.write_stdin({session_id:46866,yield_time_ms:300000})")),
