@@ -99,7 +99,7 @@ func executeReadOnlyInspection(cmd Command, cfg config.AppConfig, stdout io.Writ
 	case ModeHandoff:
 		return executeHandoffInspection(cmd, cfg, st, stdout)
 	case ModeStats:
-		return report.PrintStatsWithArchiveScan(cfg, st, cmd.Query, printTelemetryCompactSummaryWithArchiveScan, stdout)
+		return report.PrintStatsWithArchiveScan(cfg, st, cmd.Query, printTelemetryCompactSummary, stdout)
 	case ModeCodexLimit:
 		return printCodexLimit(cfg, stdout)
 	case ModePacketCheck:
@@ -146,7 +146,7 @@ func executeReadOnlyAnalysis(cmd Command, cfg config.AppConfig, stdout io.Writer
 		st.EnableRepoSearchReadProjection()
 		return report.PrintEvalAB(st, cmd.Payload, stdout)
 	case ModeCallOutliers:
-		return report.PrintCallOutliers(cfg, st, cmd.Query, printTelemetryCompactSummaryWithArchiveScan, stdout)
+		return report.PrintCallOutliers(cfg, st, cmd.Query, printTelemetryCompactSummary, stdout)
 	case ModeModelRouting:
 		return report.PrintModelRouting(st, stdout)
 	case ModeTestImpact:
