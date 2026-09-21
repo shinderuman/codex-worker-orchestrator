@@ -11,7 +11,7 @@ import (
 
 const RegistryPath = "codex/control-provenance.json"
 
-type Classification string
+type Classification = string
 
 const (
 	ClassificationMachine            Classification = "machine-enforced"
