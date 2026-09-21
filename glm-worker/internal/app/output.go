@@ -2,8 +2,6 @@ package app
 
 import (
 	"fmt"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskview"
 	"io"
 	"path/filepath"
 	"strconv"
@@ -11,35 +9,39 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/autoresume"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskview"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
 )
 
 type statusOutput struct {
-	RepoRoot            *string                   `json:"repo_root"`
-	RuntimeBuild        statusRuntimeBuild        `json:"runtime_build"`
-	RepositoryLock      *string                   `json:"repository_lock"`
-	LockPID             *string                   `json:"lock_pid"`
-	TaskID              *string                   `json:"task_id"`
-	ArtifactDir         *string                   `json:"artifact_dir"`
-	TaskStatus          *string                   `json:"task_status"`
-	TaskLiveness        *string                   `json:"task_liveness"`
-	WorkerSession       *string                   `json:"worker_session"`
-	ReviewerSession     *string                   `json:"reviewer_session"`
-	PendingDecision     bool                      `json:"pending_decision"`
-	ParentReviewOpen    *string                   `json:"parent_review_open"`
-	TaskStartedAt       *time.Time                `json:"task_started_at"`
-	TaskElapsedMS       *int64                    `json:"task_elapsed_ms"`
-	LastEvent           *state.TaskEventRecord    `json:"last_event"`
-	LastEventAgeMS      *int64                    `json:"last_event_age_ms"`
-	CurrentPhase        *string                   `json:"current_phase"`
-	CurrentRole         *string                   `json:"current_role"`
-	CurrentModel        *string                   `json:"current_model"`
-	Probes              *statusProbes             `json:"probes"`
-	RateLimited         statusRateLimit           `json:"rate_limited"`
-	ProviderUnavailable statusProviderUnavailable `json:"provider_unavailable"`
-	ResumeAvailable     bool                      `json:"resume_available"`
-	Telemetry           *string                   `json:"telemetry"`
-	SessionAging        []state.SessionAging      `json:"session_aging"`
+	RepoRoot            *string                               `json:"repo_root"`
+	RuntimeBuild        statusRuntimeBuild                    `json:"runtime_build"`
+	RepositoryLock      *string                               `json:"repository_lock"`
+	LockPID             *string                               `json:"lock_pid"`
+	TaskID              *string                               `json:"task_id"`
+	ArtifactDir         *string                               `json:"artifact_dir"`
+	TaskStatus          *string                               `json:"task_status"`
+	TaskLiveness        *string                               `json:"task_liveness"`
+	WorkerSession       *string                               `json:"worker_session"`
+	ReviewerSession     *string                               `json:"reviewer_session"`
+	PendingDecision     bool                                  `json:"pending_decision"`
+	ParentReviewOpen    *string                               `json:"parent_review_open"`
+	TaskStartedAt       *time.Time                            `json:"task_started_at"`
+	TaskElapsedMS       *int64                                `json:"task_elapsed_ms"`
+	LastEvent           *state.TaskEventRecord                `json:"last_event"`
+	LastEventAgeMS      *int64                                `json:"last_event_age_ms"`
+	CurrentPhase        *string                               `json:"current_phase"`
+	CurrentRole         *string                               `json:"current_role"`
+	CurrentModel        *string                               `json:"current_model"`
+	Progress            *workflow.ExecutionProgressProjection `json:"progress,omitempty"`
+	Probes              *statusProbes                         `json:"probes"`
+	RateLimited         statusRateLimit                       `json:"rate_limited"`
+	ProviderUnavailable statusProviderUnavailable             `json:"provider_unavailable"`
+	ResumeAvailable     bool                                  `json:"resume_available"`
+	Telemetry           *string                               `json:"telemetry"`
+	SessionAging        []state.SessionAging                  `json:"session_aging"`
 
 	Isolation *statusIsolation `json:"isolation,omitempty"`
 
@@ -294,6 +296,10 @@ func fillStatusTaskDetail(st *state.StateStore, taskID string, output *statusOut
 	output.CurrentPhase = machinecli.StringPtr(current.phase)
 	output.CurrentRole = machinecli.StringPtr(current.role)
 	output.CurrentModel = machinecli.StringPtr(current.model)
+	if taskID != "" {
+		progress := workflow.ProjectExecutionProgress(st, current.phase, current.role)
+		output.Progress = &progress
+	}
 }
 
 func fillStatusCheckpoint(st *state.StateStore, output *statusOutput) bool {
