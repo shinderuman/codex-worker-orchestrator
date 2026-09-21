@@ -8,12 +8,11 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/task-progress-observability.md`
+- `IMPLEMENTATION_TASKS/parent-fix-origin-cause-staged-transport.md`
 
 ## NEXT（優先順）
 
 - `IMPLEMENTATION_TASKS/system-one-dogfood-evidence-shadow-eval.md`
-- `IMPLEMENTATION_TASKS/parent-fix-origin-cause-staged-transport.md`
 - `IMPLEMENTATION_TASKS/machine-visible-improvement-signal-disposition.md`
 - `IMPLEMENTATION_TASKS/terminal-result-budgeted-projection.md`
 - `IMPLEMENTATION_TASKS/parent-usage-interleaved-turn-ambiguity.md`
