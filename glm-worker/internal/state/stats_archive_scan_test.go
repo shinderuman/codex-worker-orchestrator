@@ -21,8 +21,17 @@ func TestAllTaskStatsWithArchiveScanReportsUnsupportedSkips(t *testing.T) {
 		ModelCalls: 7,
 	})
 
-	unsupportedRevision := []byte(`{"version":3,"schema_revision":2,"task_id":"unsupported-revision","model_calls":99}`)
-	unsupportedMissingRevision := []byte(`{"version":3,"task_id":"unsupported-missing-revision","model_calls":101}`)
+	unsupportedRevision := marshalTaskStatsArchiveScanMap(t, map[string]any{
+		"version":         taskStatsVersion,
+		"schema_revision": taskStatsSchemaRevision + 1,
+		"task_id":         "unsupported-revision",
+		"model_calls":     99,
+	})
+	unsupportedMissingRevision := marshalTaskStatsArchiveScanMap(t, map[string]any{
+		"version":     taskStatsVersion,
+		"task_id":     "unsupported-missing-revision",
+		"model_calls": 101,
+	})
 	writeRawTaskStatsArchiveScanFixture(t, st, "unsupported-revision", unsupportedRevision)
 	writeRawTaskStatsArchiveScanFixture(t, st, "unsupported-missing-revision", unsupportedMissingRevision)
 
@@ -106,6 +115,15 @@ func writeTaskStatsArchiveScanFixture(t *testing.T, st *StateStore, taskID strin
 	if decoded.TaskID != stats.TaskID {
 		t.Fatalf("decoded task id = %q, want %q", decoded.TaskID, stats.TaskID)
 	}
+}
+
+func marshalTaskStatsArchiveScanMap(t *testing.T, value map[string]any) []byte {
+	t.Helper()
+	data, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
 }
 
 func writeRawTaskStatsArchiveScanFixture(t *testing.T, st *StateStore, taskID string, data []byte) {
