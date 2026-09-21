@@ -27,8 +27,19 @@ func TestExecuteStatusProjectsMilestoneProgressWithoutModelCall(t *testing.T) {
 		TaskID: taskID, CallID: "review-1", Role: string(state.ReviewerRole), Phase: "reviewer-1",
 		ModelAlias: "haiku", Kind: "system", Timestamp: time.Now().UTC(),
 	})
+	before, err := st.CurrentTaskStats()
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	output := executeStatusOutput(t, cfg)
+	after, err := st.CurrentTaskStats()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.ModelCalls != before.ModelCalls {
+		t.Fatalf("status progress added model calls: before=%d after=%d", before.ModelCalls, after.ModelCalls)
+	}
 	if output.Progress == nil {
 		t.Fatal("status progress is nil")
 	}
