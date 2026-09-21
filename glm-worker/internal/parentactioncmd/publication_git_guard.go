@@ -58,13 +58,25 @@ func verifyPublicationRefUpdate(cfg config.AppConfig, oldOID, newOID, ref string
 		return nil
 	}
 	authority := strings.TrimSpace(os.Getenv(publicationRefTransactionEnv))
-	candidate, err := st.LoadPublicationCandidate()
-	if err != nil {
-		if authority != "" {
-			return fmt.Errorf("publication ref update rejected: transaction authority has no valid candidate: %w", err)
-		}
-		return nil
+	candidate, present, err := publicationRefUpdateCandidate(st, authority)
+	if err != nil || !present {
+		return err
 	}
+	return verifyPublicationRefTransaction(cfg, st, candidate, authority, oldOID, newOID, ref)
+}
+
+func publicationRefUpdateCandidate(st *state.StateStore, authority string) (state.PublicationCandidate, bool, error) {
+	candidate, err := st.LoadPublicationCandidate()
+	if err == nil {
+		return candidate, true, nil
+	}
+	if authority != "" {
+		return state.PublicationCandidate{}, false, fmt.Errorf("publication ref update rejected: transaction authority has no valid candidate: %w", err)
+	}
+	return state.PublicationCandidate{}, false, nil
+}
+
+func verifyPublicationRefTransaction(cfg config.AppConfig, st *state.StateStore, candidate state.PublicationCandidate, authority, oldOID, newOID, ref string) error {
 	exactPromotion := publicationExactCandidatePromotion(candidate, oldOID, newOID)
 	exactRollback := publicationExactPromotionRollback(candidate, oldOID, newOID)
 	if authority == "" {
