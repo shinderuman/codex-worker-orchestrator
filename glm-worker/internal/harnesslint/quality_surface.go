@@ -117,7 +117,7 @@ func qualityToolWiringChecks() []qualityWiringCheck {
 			},
 		},
 		{
-			path: ".github/workflows/quality.yml",
+			path: ".github/workflows/ci.yml",
 			tokens: []string{
 				"quality-tools.yml",
 				"quality-tools.outputs.go_version",
@@ -125,6 +125,20 @@ func qualityToolWiringChecks() []qualityWiringCheck {
 				"$GITHUB_ENV",
 				"./install-quality-tools.sh",
 				"./tests/install_quality_tools_smoke.sh",
+				"./.github/workflows/install-smoke.yml",
+			},
+		},
+		{
+			path: ".github/workflows/install-smoke.yml",
+			tokens: []string{
+				"workflow_call:",
+				"quality-tools.yml",
+				"quality-tools.outputs.go_version",
+				"QUALITY_TOOLS_BIN_DIR",
+				"$GITHUB_ENV",
+				"./install-quality-tools.sh",
+				"./tests/install_smoke.sh",
+				"./tests/install_detached_runtime_identity_smoke.sh",
 			},
 		},
 		{
