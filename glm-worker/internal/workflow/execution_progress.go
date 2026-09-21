@@ -6,8 +6,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-const invalidMilestoneProgressStateReason = "invalid-milestone-state"
-
 type ExecutionProgressProjection struct {
 	Status              string                      `json:"status"`
 	Band                string                      `json:"band,omitempty"`
@@ -25,6 +23,8 @@ type ExecutionProgressMilestone struct {
 	Position int    `json:"position"`
 	Count    int    `json:"count"`
 }
+
+const invalidMilestoneProgressStateReason = "invalid-milestone-state"
 
 func ProjectExecutionProgress(st *state.StateStore, currentPhase, currentRole string) ExecutionProgressProjection {
 	phaseStage := executionProgressPhaseStage(currentPhase, currentRole)
