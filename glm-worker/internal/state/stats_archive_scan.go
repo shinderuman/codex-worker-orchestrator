@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 )
 
 // TaskStatsArchiveScan reports bounded coverage for the archive files considered
@@ -16,51 +17,69 @@ type TaskStatsArchiveScan struct {
 	UnsupportedSchemaOrRevisionSkipped int `json:"unsupported_schema_or_revision_skipped"`
 }
 
-// AllTaskStatsScanResult keeps the existing aggregate task set together with the
-// coverage of the archive scan that feeds it.
+// AllTaskStatsScanResult keeps the aggregate task set together with the archive
+// coverage produced by the same scan.
 type AllTaskStatsScanResult struct {
 	Stats       []TaskStats
 	ArchiveScan TaskStatsArchiveScan
 }
 
-// ScanTaskStatsArchives reports archive coverage using exactly the same decoder
-// acceptance boundary as AllTaskStats. Unsupported machine schemas are counted
-// and skipped; malformed current-schema archives remain errors.
-func (s *StateStore) ScanTaskStatsArchives() (TaskStatsArchiveScan, error) {
+func (s *StateStore) scanTaskStatsArchives() ([]TaskStats, TaskStatsArchiveScan, error) {
 	paths, err := filepath.Glob(filepath.Join(s.dir, "stats", "*.json"))
 	if err != nil {
-		return TaskStatsArchiveScan{}, err
+		return nil, TaskStatsArchiveScan{}, err
 	}
+	sort.Strings(paths)
 
+	stats := make([]TaskStats, 0, len(paths))
 	scan := TaskStatsArchiveScan{FilesConsidered: len(paths)}
 	for _, path := range paths {
 		data, err := os.ReadFile(path)
 		if err != nil {
-			return TaskStatsArchiveScan{}, err
+			return nil, TaskStatsArchiveScan{}, err
 		}
-		_, err = decodeTaskStats(data)
+		archive, err := decodeTaskStats(data)
 		switch {
 		case err == nil:
 			scan.FilesAccepted++
+			stats = append(stats, archive)
 		case errors.Is(err, errUnsupportedTaskStatsVersion):
 			scan.UnsupportedSchemaOrRevisionSkipped++
 		default:
-			return TaskStatsArchiveScan{}, fmt.Errorf("task stats historyを読めません: %w", err)
+			return nil, TaskStatsArchiveScan{}, fmt.Errorf("task stats historyを読めません: %w", err)
 		}
 	}
-	return scan, nil
+	return stats, scan, nil
+}
+
+// ScanTaskStatsArchives reports archive coverage using the same decoder boundary
+// as aggregate task-stats reads.
+func (s *StateStore) ScanTaskStatsArchives() (TaskStatsArchiveScan, error) {
+	_, scan, err := s.scanTaskStatsArchives()
+	return scan, err
 }
 
 // AllTaskStatsWithArchiveScan preserves AllTaskStats aggregate semantics while
-// making unsupported archive skips observable to callers that surface coverage.
+// binding coverage to the exact archive traversal that produced the aggregate.
 func (s *StateStore) AllTaskStatsWithArchiveScan() (AllTaskStatsScanResult, error) {
-	stats, err := s.AllTaskStats()
+	stats, scan, err := s.scanTaskStatsArchives()
 	if err != nil {
 		return AllTaskStatsScanResult{}, err
 	}
-	scan, err := s.ScanTaskStatsArchives()
-	if err != nil {
+
+	current, err := s.CurrentTaskStats()
+	switch {
+	case err == nil:
+		current, err = s.projectRepoSearchStatsForRead(current)
+		if err != nil {
+			return AllTaskStatsScanResult{}, fmt.Errorf("current repo-search evidenceを読めません: %w", err)
+		}
+		stats = append(stats, current)
+	case errors.Is(err, errUnsupportedTaskStatsVersion):
+		return AllTaskStatsScanResult{Stats: stats, ArchiveScan: scan}, nil
+	case !errors.Is(err, os.ErrNotExist):
 		return AllTaskStatsScanResult{}, err
 	}
+
 	return AllTaskStatsScanResult{Stats: stats, ArchiveScan: scan}, nil
 }
