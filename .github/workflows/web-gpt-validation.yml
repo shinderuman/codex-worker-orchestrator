@@ -35,6 +35,7 @@ jobs:
           go-version: ${{ steps.quality-tools.outputs.go_version }}
           cache: false
       - name: Cache quality tools
+        continue-on-error: true
         uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}/codex-worker-orchestrator-quality-tools
