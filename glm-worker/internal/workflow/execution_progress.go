@@ -145,5 +145,14 @@ func executionProgressBand(currentIndex, milestoneCount int, phaseStage string, 
 		}
 		return "late"
 	}
-	return "middle"
+
+	completedThirds := currentIndex * 3
+	switch {
+	case completedThirds < milestoneCount:
+		return "early-to-middle"
+	case completedThirds > 2*milestoneCount:
+		return "middle-to-late"
+	default:
+		return "middle"
+	}
 }
