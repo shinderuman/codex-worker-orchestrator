@@ -1,24 +1,25 @@
 package app
 
 import (
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/report"
 	"io"
 	"strings"
 	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/report"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
 type telemetryCompactSummary struct {
-	Version     int                         `json:"version"`
-	Query       telemetryCompactQuery       `json:"query"`
-	Scan        telemetryCompactScan        `json:"scan"`
-	Cohorts     []telemetryCompactCohort    `json:"cohorts"`
-	Stats       telemetryCompactStats       `json:"stats"`
-	ParentUsage telemetryCompactParentUsage `json:"parent_usage"`
-	Bounds      telemetryCompactBounds      `json:"bounds"`
+	Version              int                        `json:"version"`
+	Query                telemetryCompactQuery      `json:"query"`
+	Scan                 telemetryCompactScan       `json:"scan"`
+	TaskStatsArchiveScan state.TaskStatsArchiveScan `json:"task_stats_archive_scan"`
+	Cohorts              []telemetryCompactCohort   `json:"cohorts"`
+	Stats                telemetryCompactStats      `json:"stats"`
+	ParentUsage          telemetryCompactParentUsage `json:"parent_usage"`
+	Bounds               telemetryCompactBounds     `json:"bounds"`
 }
 
 type telemetryCompactQuery struct {
@@ -177,22 +178,23 @@ func buildTelemetryCompactSummary(cfg config.AppConfig, st *state.StateStore, qu
 	if err != nil {
 		return telemetryCompactSummary{}, err
 	}
-	statsTasks, err := st.AllTaskStats()
+	statsResult, err := st.AllTaskStatsWithArchiveScan()
 	if err != nil {
 		return telemetryCompactSummary{}, err
 	}
-	filteredStats := report.FilterTaskStatsForQuery(statsTasks, query.Filter)
+	filteredStats := report.FilterTaskStatsForQuery(statsResult.Stats, query.Filter)
 	cohorts, scan, err := telemetryCompactCohortsAndScan(st, query, historyScan)
 	if err != nil {
 		return telemetryCompactSummary{}, err
 	}
 	return telemetryCompactSummary{
-		Version:     telemetryCompactSummaryVersion,
-		Query:       telemetryCompactQueryView(query),
-		Scan:        scan,
-		Cohorts:     cohorts,
-		Stats:       buildTelemetryCompactStats(filteredStats, telemetryCompactCurrentSchemaTasks(historyScan)),
-		ParentUsage: buildTelemetryCompactParentUsage(cfg, st, filteredStats),
+		Version:              telemetryCompactSummaryVersion,
+		Query:                telemetryCompactQueryView(query),
+		Scan:                 scan,
+		TaskStatsArchiveScan: statsResult.ArchiveScan,
+		Cohorts:              cohorts,
+		Stats:                buildTelemetryCompactStats(filteredStats, telemetryCompactCurrentSchemaTasks(historyScan)),
+		ParentUsage:          buildTelemetryCompactParentUsage(cfg, st, filteredStats),
 		Bounds: telemetryCompactBounds{
 			TopOutlierCalls: telemetryCompactTopOutlierCalls,
 			TopOutlierTasks: telemetryCompactTopOutlierTasks,
