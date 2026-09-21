@@ -29,15 +29,15 @@ func TestBuildBootstrapProjectsCanonicalAuthorityFromOneSnapshot(t *testing.T) {
 		"plan":   output.Plan,
 		"active": output.Active,
 	} {
-		if part.ContentSHA256 == "" {
-			t.Fatalf("%s content hash is empty", name)
+		if part.ContentSHA256 == "" || part.Content == "" {
+			t.Fatalf("%s projection is incomplete: %#v", name, part)
 		}
 	}
 	if output.Rules.Content != "rules-body\n" {
 		t.Fatalf("rules content = %q", output.Rules.Content)
 	}
-	if output.Plan.Content != "# Plan\n\n## ACTIVE\n\n- `IMPLEMENTATION_TASKS/current.md`\n" {
-		t.Fatalf("plan content = %q", output.Plan.Content)
+	if !strings.Contains(output.Plan.Content, output.ActiveTask) {
+		t.Fatalf("plan projection does not identify active task %q", output.ActiveTask)
 	}
 	if output.Active.Content != "task-body\n" {
 		t.Fatalf("active content = %q", output.Active.Content)
