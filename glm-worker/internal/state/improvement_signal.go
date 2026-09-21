@@ -43,6 +43,8 @@ const (
 	ImprovementSignalDispositionReject           ImprovementSignalDisposition = "reject"
 	ImprovementSignalDispositionAwaitingEvidence ImprovementSignalDisposition = "awaiting-evidence"
 
+	ParentActionImprovementDisposition ParentAction = "improvement-disposition"
+
 	improvementSignalDispositionStateFile = "improvement-signal-dispositions.json"
 	improvementSignalDispositionVersion   = 1
 )
@@ -79,6 +81,46 @@ func ImprovementDispositionNeedsTask(disposition ImprovementSignalDisposition) b
 	}
 }
 
+func (s *StateStore) PendingImprovementSignal() (*ImprovementSignal, error) {
+	disposed, err := s.ImprovementSignalDisposed(ImprovementSignalInvalidPacket)
+	if err != nil || disposed {
+		return nil, err
+	}
+	taskID := s.ReadOr("task.id", "")
+	if taskID == "" {
+		return nil, nil
+	}
+	logs, err := s.ReadModelCallLogs(taskID)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	count := 0
+	var latest ModelCallLog
+	for _, log := range logs {
+		if log.CallType != CallTypeTask || log.Outcome != "invalid_packet" {
+			continue
+		}
+		count++
+		latest = log
+	}
+	if count == 0 {
+		return nil, nil
+	}
+	reason := latest.PacketRejectReason
+	if reason == "" {
+		reason = ImprovementSignalInvalidPacket
+	}
+	return &ImprovementSignal{
+		Kind:         ImprovementSignalInvalidPacket,
+		Count:        count,
+		SourceCallID: latest.CallID,
+		Reason:       reason,
+	}, nil
+}
+
 func (s *StateStore) ImprovementSignalDisposed(kind string) (bool, error) {
 	records, err := s.CurrentImprovementSignalDispositions()
 	if err != nil {
@@ -92,10 +134,7 @@ func (s *StateStore) ImprovementSignalDisposed(kind string) (bool, error) {
 	return false, nil
 }
 
-func (s *StateStore) RecordImprovementSignalDisposition(signal ImprovementSignal, disposition, targetTask string) (ImprovementSignalDispositionRecord, bool, error) {
-	if signal.Kind == "" || signal.Count <= 0 {
-		return ImprovementSignalDispositionRecord{}, false, fmt.Errorf("improvement signal is invalid")
-	}
+func (s *StateStore) RecordImprovementSignalDisposition(kind, disposition, targetTask string) (ImprovementSignalDispositionRecord, bool, error) {
 	resolved := ImprovementSignalDisposition(disposition)
 	if !resolved.Valid() {
 		return ImprovementSignalDispositionRecord{}, false, fmt.Errorf("unknown improvement signal disposition %q", disposition)
@@ -111,13 +150,20 @@ func (s *StateStore) RecordImprovementSignalDisposition(signal ImprovementSignal
 		return ImprovementSignalDispositionRecord{}, false, err
 	}
 	for _, record := range records {
-		if record.SignalKind != signal.Kind {
+		if record.SignalKind != kind {
 			continue
 		}
 		if record.Disposition == resolved && record.TargetTask == targetTask {
 			return record, false, nil
 		}
-		return ImprovementSignalDispositionRecord{}, false, fmt.Errorf("improvement signal %s already has disposition %s", signal.Kind, record.Disposition)
+		return ImprovementSignalDispositionRecord{}, false, fmt.Errorf("improvement signal %s already has disposition %s", kind, record.Disposition)
+	}
+	signal, err := s.PendingImprovementSignal()
+	if err != nil {
+		return ImprovementSignalDispositionRecord{}, false, err
+	}
+	if signal == nil || signal.Kind != kind {
+		return ImprovementSignalDispositionRecord{}, false, fmt.Errorf("improvement signal %s is not the current machine-visible pending signal", kind)
 	}
 	taskID, err := s.TaskID()
 	if err != nil {
