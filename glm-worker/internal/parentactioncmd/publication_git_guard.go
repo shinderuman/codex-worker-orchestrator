@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
@@ -18,8 +19,9 @@ type publicationGuardOutput struct {
 }
 
 const (
-	publicationGuardAllowed = "allowed"
-	publicationZeroOID      = "0000000000000000000000000000000000000000"
+	publicationGuardAllowed      = "allowed"
+	publicationZeroOID           = "0000000000000000000000000000000000000000"
+	publicationRefTransactionEnv = "GLM_PUBLICATION_REF_TRANSACTION"
 )
 
 func runPublicationRefGuard(cfg config.AppConfig, args []string, stdout io.Writer) error {
@@ -52,20 +54,35 @@ func verifyPublicationRefUpdate(cfg config.AppConfig, oldOID, newOID, ref string
 		return err
 	}
 	st := state.AttachStateStore(cfg)
-	if !publicationRefGuardRequired(st.TaskStatus()) || !st.HasPublicationCandidate() {
+	if !publicationRefGuardRequired(st.TaskStatus()) {
 		return nil
 	}
-	candidate, err := loadPublicationGuardCandidate(st, "ref update")
+	authority := strings.TrimSpace(os.Getenv(publicationRefTransactionEnv))
+	candidate, err := st.LoadPublicationCandidate()
 	if err != nil {
-		return err
+		if authority != "" {
+			return fmt.Errorf("publication ref update rejected: transaction authority has no valid candidate: %w", err)
+		}
+		return nil
 	}
-	if publicationExactPromotionRollback(candidate, oldOID, newOID) {
+	exactPromotion := publicationExactCandidatePromotion(candidate, oldOID, newOID)
+	exactRollback := publicationExactPromotionRollback(candidate, oldOID, newOID)
+	if authority == "" {
+		if exactPromotion || exactRollback {
+			return fmt.Errorf("publication ref update rejected: transaction authority missing")
+		}
+		return nil
+	}
+	if authority != candidate.SnapshotID {
+		return fmt.Errorf("publication ref update rejected: transaction authority does not match candidate")
+	}
+	if exactRollback {
 		return verifyPublicationRefRollback(cfg, candidate, oldOID, ref)
 	}
-	if publicationExactCandidatePromotion(candidate, oldOID, newOID) {
+	if exactPromotion {
 		return verifyPublicationRefCandidate(cfg, st, candidate, oldOID, newOID, ref)
 	}
-	return nil
+	return fmt.Errorf("publication ref update rejected: transaction does not match exact candidate promotion or rollback")
 }
 
 func publicationExactCandidatePromotion(candidate state.PublicationCandidate, oldOID, newOID string) bool {
