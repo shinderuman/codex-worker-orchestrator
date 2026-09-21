@@ -151,10 +151,46 @@ func writeTerminalHandoffFailure(stdout io.Writer, terminalJSON json.RawMessage,
 		Terminal:     terminalJSON,
 		HandoffError: handoffErr.Error(),
 	}
+	raw, err := json.Marshal(envelope)
+	if err != nil {
+		return errors.Join(handoffErr, err)
+	}
+	if encodedJSONLineBytes(raw) > parentActionTerminalBudgetBytes {
+		identity, identityErr := projectTerminalIdentity(terminalJSON)
+		if identityErr != nil {
+			return errors.Join(handoffErr, identityErr)
+		}
+		stats := parentActionTerminalProjectionStats{
+			BudgetBytes:     parentActionTerminalBudgetBytes,
+			RawBytes:        encodedJSONLineBytes(raw),
+			TerminalMode:    "identity-only",
+			HandoffMode:     "unavailable",
+			Overflow:        true,
+			ParentToolCalls: 1,
+			RecoveryCalls:   0,
+		}
+		envelope.Terminal = identity
+		envelope.HandoffError = boundTerminalDiagnostic(handoffErr.Error(), 160)
+		envelope.Projection = &stats
+		if err := finalizeProjectionStats(&envelope, &stats); err != nil {
+			return errors.Join(handoffErr, err)
+		}
+		if stats.ProjectedBytes > stats.BudgetBytes {
+			return fmt.Errorf("%w; bounded terminal handoff failure exceeds budget: projected=%d budget=%d", handoffErr, stats.ProjectedBytes, stats.BudgetBytes)
+		}
+	}
 	if err := json.NewEncoder(stdout).Encode(envelope); err != nil {
 		return fmt.Errorf("%w; encode terminal handoff failure envelope: %w", handoffErr, err)
 	}
 	return handoffErr
+}
+
+func boundTerminalDiagnostic(value string, maxRunes int) string {
+	runes := []rune(value)
+	if len(runes) <= maxRunes {
+		return value
+	}
+	return string(runes[:maxRunes]) + "…"
 }
 
 func terminalEnvelopeAction(action string) bool {
