@@ -66,7 +66,7 @@ func analysisNormalizeCustomWait(item *codexRolloutItemPayload, raw analysisRoll
 	item.Name = codexRolloutWaitCallName
 	item.Arguments = "{}"
 	if yieldMS != nil {
-		item.Arguments = `{"yield-time_ms":` + strconv.FormatUint(*yieldMS, 10) + `}`
+		item.Arguments = "{\"yield-time_ms\":" + strconv.FormatUint(*yieldMS, 10) + "}"
 	}
 }
 
@@ -172,7 +172,7 @@ func analysisApplyWriteStdinField(seen map[string]bool, key, value string, yield
 		_, ok := analysisUnsignedJSLiteral(value)
 		return ok
 	case analysisWaitCharsKey:
-		return value == `""` || value == `''`
+		return value == "\"\"" || value == "''"
 	case analysisWaitYieldMSKey:
 		parsed, ok := analysisUnsignedJSLiteral(value)
 		if !ok {
