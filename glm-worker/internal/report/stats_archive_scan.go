@@ -13,9 +13,6 @@ type statsOutputWithArchiveScan struct {
 	TaskStatsArchiveScan state.TaskStatsArchiveScan `json:"task_stats_archive_scan"`
 }
 
-// PrintStatsWithArchiveScan preserves the existing stats aggregate while
-// surfacing bounded coverage for task-stats archives that were considered but
-// rejected as unsupported machine schema/revision.
 func PrintStatsWithArchiveScan(cfg config.AppConfig, st *state.StateStore, query Query, compact CompactSummaryFunc, stdout io.Writer) error {
 	if query.Compact {
 		return compact(cfg, st, query, stdout)
