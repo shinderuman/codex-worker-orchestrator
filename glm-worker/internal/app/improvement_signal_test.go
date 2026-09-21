@@ -80,3 +80,33 @@ func TestParentHandoffDoesNotInventImprovementSignalFromNormalMaterial(t *testin
 		t.Fatalf("normal handoff action changed to %q", decoded.RequiredAction)
 	}
 }
+
+func TestParentHandoffDoesNotProjectSignalWithoutStableCallID(t *testing.T) {
+	required := string(state.ParentActionAccept)
+	output := parentHandoffOutput{
+		RequiredAction: &required,
+		AllowedActions: []string{string(state.ParentActionAccept)},
+		LastMaterial: &parentHandoffMaterial{
+			CallType:           state.CallTypeTask,
+			Outcome:            "invalid_packet",
+			PacketRejectReason: "schema-invalid",
+		},
+	}
+	raw, err := json.Marshal(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded struct {
+		RequiredAction string                             `json:"required_action"`
+		ActionSpecs    map[string]parentHandoffActionSpec `json:"action_specs"`
+	}
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.RequiredAction != string(state.ParentActionAccept) {
+		t.Fatalf("unbound signal changed required action to %q", decoded.RequiredAction)
+	}
+	if _, ok := decoded.ActionSpecs[string(state.ParentActionImprovementDisposition)]; ok {
+		t.Fatalf("unbound signal projected disposition action: %#v", decoded.ActionSpecs)
+	}
+}
