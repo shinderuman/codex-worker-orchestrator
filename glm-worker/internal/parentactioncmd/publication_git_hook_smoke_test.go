@@ -126,6 +126,10 @@ func TestPublicationReferenceTransactionFailsClosedWhenGuardRejects(t *testing.T
 	if after != before {
 		t.Fatalf("blocked commit advanced HEAD: %s != %s", after, before)
 	}
+	callData, readErr := os.ReadFile(calls)
+	if readErr != nil || !strings.Contains(string(callData), "authority= push-binding ref-guard --old") {
+		t.Fatalf("reference guard call = %q err=%v", callData, readErr)
+	}
 }
 
 func TestPublicationPrePushDelegatesAndFailsClosed(t *testing.T) {
