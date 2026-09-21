@@ -174,20 +174,31 @@ func shellStateKindWritesCurrentState(
 		if !shellCaseArmContainsKind(line, kind) {
 			continue
 		}
-		for armIndex := index; armIndex < len(lines); armIndex++ {
-			armLine := lines[armIndex]
-			if match := shellWriteStatePattern.FindStringSubmatch(armLine); len(match) == 2 {
-				target := match[1]
-				if targetState, ok := versions[target]; ok && targetState.version > oldVersion {
-					return true
-				}
-				if _, ok := legacyProvenanceStates[target]; ok {
-					return true
-				}
+		if shellCaseArmWritesCurrentState(lines[index:], oldVersion, versions, legacyProvenanceStates) {
+			return true
+		}
+	}
+	return false
+}
+
+func shellCaseArmWritesCurrentState(
+	lines []string,
+	oldVersion int,
+	versions map[string]shellVersionedState,
+	legacyProvenanceStates map[string]int,
+) bool {
+	for _, line := range lines {
+		if match := shellWriteStatePattern.FindStringSubmatch(line); len(match) == 2 {
+			target := match[1]
+			if targetState, ok := versions[target]; ok && targetState.version > oldVersion {
+				return true
 			}
-			if strings.Contains(armLine, ";;") {
-				break
+			if _, ok := legacyProvenanceStates[target]; ok {
+				return true
 			}
+		}
+		if strings.Contains(line, ";;") {
+			return false
 		}
 	}
 	return false
