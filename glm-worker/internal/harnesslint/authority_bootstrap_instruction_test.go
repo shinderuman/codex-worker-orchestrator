@@ -68,8 +68,10 @@ func TestCanonicalAuthorityBootstrapPrecedesRepositoryReadsAndRestoresWaitContra
 			t.Errorf("goal-mode resume contract missing %q", token)
 		}
 	}
-	if strings.Contains(goalResume, "現在checkoutから再読") {
-		t.Error("goal-mode resume still permits direct authority reread before canonical bootstrap")
+	for _, forbidden := range []string{"現在checkoutから再読", "codex/AGENTS.md"} {
+		if strings.Contains(goalResume, forbidden) {
+			t.Errorf("goal-mode resume still permits repository-source reread via %q", forbidden)
+		}
 	}
 
 	codexResumeData, err := os.ReadFile(filepath.Join(root, "codex", "instructions", "codex-auto-resume.md"))
@@ -84,11 +86,15 @@ func TestCanonicalAuthorityBootstrapPrecedesRepositoryReadsAndRestoresWaitContra
 		"次のrepository actionを選ぶ前",
 		"canonical authority bootstrap contract",
 		"glm-worker --authority bootstrap",
+		"repository上のAGENTS sourceをdisk再読せず",
 		"成功後だけ既存lifecycleを継続",
 	} {
 		if !strings.Contains(codexResumeOwnership, token) {
 			t.Errorf("Codex-limit resume contract missing %q", token)
 		}
+	}
+	if strings.Contains(codexResumeOwnership, "codex/AGENTS.md") {
+		t.Error("Codex-limit resume points back to the repository AGENTS source")
 	}
 
 	executionData, err := os.ReadFile(filepath.Join(root, "codex", "instructions", "glm-execution.md"))
