@@ -18,7 +18,7 @@ func PrintStatsWithArchiveScan(cfg config.AppConfig, st *state.StateStore, query
 		return compact(cfg, st, query, stdout)
 	}
 	if query.IsHistory() {
-		return printStatsHistory(st, query, stdout)
+		return PrintStats(cfg, st, query, compact, stdout)
 	}
 
 	result, err := st.AllTaskStatsWithArchiveScan()
