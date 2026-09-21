@@ -164,11 +164,15 @@ func requireRepositoryHarness(root string) error {
 }
 
 func loadSnapshot(root string) (snapshot, error) {
-	first, err := readSnapshot(root)
+	return loadStableSnapshot(root, readSnapshot)
+}
+
+func loadStableSnapshot(root string, read func(string) (snapshot, error)) (snapshot, error) {
+	first, err := read(root)
 	if err != nil {
 		return snapshot{}, err
 	}
-	second, err := readSnapshot(root)
+	second, err := read(root)
 	if err != nil {
 		return snapshot{}, err
 	}
