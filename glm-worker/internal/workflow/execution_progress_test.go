@@ -66,7 +66,7 @@ func TestProjectExecutionProgressUsesMilestonePositionAndPhaseBand(t *testing.T)
 		},
 		{
 			name: "middle", currentIndex: 1,
-			phase: "worker-milestone-2", role: string(state.WorkerRole), wantBand: "middle", wantStage: "other",
+			phase: "worker-milestone-2", role: string(state.WorkerRole), wantBand: "middle", wantStage: "implementation",
 			completed: []string{"one"}, current: "two", pending: []string{"three"},
 		},
 		{
