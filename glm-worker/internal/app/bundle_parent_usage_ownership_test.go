@@ -147,6 +147,25 @@ func TestExecutionUsageOwnershipWrappers(t *testing.T) {
 		}
 	})
 
+	t.Run("same-turn-unseparable-ownership-stays-unknown", func(t *testing.T) {
+		singleTurnScan := scan
+		singleTurnScan.turns = []analysisRolloutTurn{ownedInitial}
+		unknownOwnership := analysisTaskOwnership{status: analysisStatusUnknown}
+		delta := analysisExecutionTokenDeltaForOwnership(association, singleTurnScan, nil, start, execution, end, unknownOwnership)
+		if delta.Status != analysisStatusUnknown || delta.InputTokens != 0 || delta.CachedInputTokens != 0 {
+			t.Fatalf("delta = %#v", delta)
+		}
+		interval := parentUsageExecutionIntervalForOwnership(association, singleTurnScan, nil, start, execution, end, unknownOwnership)
+		if interval.Tokens.Status != analysisStatusUnknown || interval.Tokens.Reason != parentUsageReasonOwnershipUnknown ||
+			interval.Tokens.InputTokens != 0 || interval.Tokens.CachedInputTokens != 0 {
+			t.Fatalf("tokens = %#v", interval.Tokens)
+		}
+		if interval.Activity.Status != analysisStatusUnknown || interval.Activity.Reason != parentUsageReasonOwnershipUnknown ||
+			interval.Activity.ModelTurns != 0 || interval.Activity.ToolCalls != 0 {
+			t.Fatalf("activity = %#v", interval.Activity)
+		}
+	})
+
 	t.Run("existing-missing-anchor-semantics-win", func(t *testing.T) {
 		missingBaseline := scan
 		missingBaseline.tokens = missingBaseline.tokens[1:]
