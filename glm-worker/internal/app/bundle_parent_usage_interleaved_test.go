@@ -56,11 +56,13 @@ func TestInterleavedUnattributedTurnFailsClosedAcrossParentUsage(t *testing.T) {
 		t.Fatalf("compact parent usage coverage = %#v", usage)
 	}
 	if usage.TaskExecution.Tokens.TasksSummed != 0 || usage.TaskExecution.Tokens.InputTokens != 0 ||
-		usage.TaskExecution.Tokens.CachedInputTokens != 0 || usage.TaskExecution.TokensExcludedByStatus[codexStatusAmbiguous] != 1 {
+		usage.TaskExecution.Tokens.CachedInputTokens != 0 || usage.TaskExecution.TokensExcludedByStatus[codexStatusAmbiguous] != 1 ||
+		usage.TaskExecution.TokensExcludedByReason[parentUsageReasonInterleavedUnattributed] != 1 {
 		t.Fatalf("compact token aggregate = %#v", usage.TaskExecution)
 	}
 	if usage.TaskExecution.Activity.TasksCounted != 0 || usage.TaskExecution.Activity.ModelTurns != 0 ||
-		usage.TaskExecution.Activity.ToolCalls != 0 || usage.TaskExecution.ActivityExcludedByStatus[codexStatusAmbiguous] != 1 {
+		usage.TaskExecution.Activity.ToolCalls != 0 || usage.TaskExecution.ActivityExcludedByStatus[codexStatusAmbiguous] != 1 ||
+		usage.TaskExecution.ActivityExcludedByReason[parentUsageReasonInterleavedUnattributed] != 1 {
 		t.Fatalf("compact activity aggregate = %#v", usage.TaskExecution)
 	}
 }
