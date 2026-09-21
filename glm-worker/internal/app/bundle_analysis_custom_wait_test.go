@@ -95,7 +95,7 @@ func TestCustomExecWriteStdinWaitMalformedAndConflictFailClosed(t *testing.T) {
 	start := time.Date(2026, 9, 19, 2, 0, 0, 0, time.UTC)
 	at := start.Add(time.Minute)
 	t.Run("malformed-yield-is-unknown", func(t *testing.T) {
-		input := fmt.Sprintf("const r = await tools.write_stdin({session_id:46866,chars:%q,yield-time_ms:%q,max_output_tokens:20000}); text(r);", "", "300000")
+		input := fmt.Sprintf("const r = await tools.write_stdin({session_id:46866,chars:%q,yield_time_ms:%q,max_output_tokens:20000}); text(r);", "", "300000")
 		waits := analysisWaitCallsFromLines(t, start, start.Add(time.Hour), []string{
 			analysisCustomWaitRequestLine(t, at, "malformed", input),
 		})
@@ -109,7 +109,7 @@ func TestCustomExecWriteStdinWaitMalformedAndConflictFailClosed(t *testing.T) {
 	})
 
 	t.Run("pragma-yield-conflict-is-unknown", func(t *testing.T) {
-		input := fmt.Sprintf("// @exec: {%q:30000,%q:20000}\nconst r = await tools.write_stdin({session_id:46866,chars:%q,yield-time_ms:300000,max_output_tokens:20000});\ntext(r);",
+		input := fmt.Sprintf("// @exec: {%q:30000,%q:20000}\nconst r = await tools.write_stdin({session_id:46866,chars:%q,yield_time_ms:300000,max_output_tokens:20000});\ntext(r);",
 			"yield-time_ms", "max_output_tokens", "")
 		waits := analysisWaitCallsFromLines(t, start, start.Add(time.Hour), []string{
 			analysisCustomWaitRequestLine(t, at, "pragma-conflict", input),
@@ -169,12 +169,12 @@ func TestCustomExecWriteStdinWaitBundleLikeUndercountRegression(t *testing.T) {
 }
 
 func analysisObservedDirectWaitSource(sessionID, yieldMS, maxOutputTokens int) string {
-	return fmt.Sprintf("const r = await tools.write_stdin({session_id:%d, chars:%q, yield-time_ms:%d, max_output_tokens:%d});\ntext(r);",
+	return fmt.Sprintf("const r = await tools.write_stdin({session_id:%d, chars:%q, yield_time_ms:%d, max_output_tokens:%d});\ntext(r);",
 		sessionID, "", yieldMS, maxOutputTokens)
 }
 
 func analysisObservedPragmaWaitSource() string {
-	return fmt.Sprintf("// @exec: {%q: 21600000, %q: 1600}\nconst r = await tools.write_stdin({\n  session_id: 24719,\n  chars: %q,\n  yield-time_ms: 21600000,\n  max_output_tokens: 1600\n});\ntext(JSON.stringify(r));",
+	return fmt.Sprintf("// @exec: {%q: 21600000, %q: 1600}\nconst r = await tools.write_stdin({\n  session_id: 24719,\n  chars: %q,\n  yield_time_ms: 21600000,\n  max_output_tokens: 1600\n});\ntext(JSON.stringify(r));",
 		"yield-time_ms", "max_output_tokens", "")
 }
 
