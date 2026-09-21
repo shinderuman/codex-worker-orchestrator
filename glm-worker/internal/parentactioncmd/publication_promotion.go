@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
+	"os/exec"
 	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
@@ -76,7 +78,7 @@ func promoteReadyPublicationCandidate(cfg config.AppConfig, candidate state.Publ
 	if failure := verifyPublicationCandidateCommit(cfg.RepoRoot, candidate); failure != nil {
 		return publicationPromotionOutput{Status: publicationPromotionStatusBlocked, CandidateOID: candidate.CommitOID, BranchRef: branchRef, Failure: failure}
 	}
-	if _, err := gitFinalizationOutput(cfg.RepoRoot, "update-ref", branchRef, candidate.CommitOID, candidate.BaseHead); err != nil {
+	if err := updatePublicationRef(cfg.RepoRoot, candidate, branchRef, candidate.CommitOID, candidate.BaseHead); err != nil {
 		return blockedPublicationPromotion(candidate.CommitOID, publicationFailurePromotionRef, err.Error())
 	}
 	if failure := publicationPromotionPostcondition(cfg.RepoRoot, candidate); failure != nil {
@@ -98,7 +100,7 @@ func publicationPromotionPostcondition(repoRoot string, candidate state.Publicat
 }
 
 func rollbackPublicationPromotion(repoRoot string, candidate state.PublicationCandidate, branchRef string, cause *finalizationFailure) publicationPromotionOutput {
-	if _, err := gitFinalizationOutput(repoRoot, "update-ref", branchRef, candidate.BaseHead, candidate.CommitOID); err != nil {
+	if err := updatePublicationRef(repoRoot, candidate, branchRef, candidate.BaseHead, candidate.CommitOID); err != nil {
 		detail := publicationFailureDetail(cause) + "; rollback failed: " + err.Error()
 		return publicationPromotionOutput{
 			Status:       publicationPromotionStatusBlocked,
@@ -113,6 +115,20 @@ func rollbackPublicationPromotion(repoRoot string, candidate state.PublicationCa
 		BranchRef:    branchRef,
 		Failure:      cause,
 	}
+}
+
+func updatePublicationRef(repoRoot string, candidate state.PublicationCandidate, branchRef, newOID, oldOID string) error {
+	command := exec.Command("git", "-C", repoRoot, "update-ref", branchRef, newOID, oldOID)
+	command.Env = append(os.Environ(), publicationRefTransactionEnv+"="+candidate.SnapshotID)
+	output, err := command.CombinedOutput()
+	if err == nil {
+		return nil
+	}
+	detail := strings.TrimSpace(string(output))
+	if detail == "" {
+		return err
+	}
+	return fmt.Errorf("%w: %s", err, detail)
 }
 
 func publicationPromotionHead(repoRoot string) (string, string, *finalizationFailure) {
