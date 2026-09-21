@@ -43,7 +43,7 @@ const knownContentSHA256Flag = "--known-content-sha256"
 const (
 	rulesFile = "IMPLEMENTATION_RULES.md"
 	planFile  = "IMPLEMENTATION_PLAN.local.md"
-	usage     = "usage: glm-worker --authority <rules|plan|active> [--known-content-sha256 <hex>]"
+	usage     = "usage: glm-worker --authority bootstrap | <rules|plan|active> [--known-content-sha256 <hex>]"
 )
 
 func Build(args []string) (Output, error) {
@@ -164,6 +164,25 @@ func requireRepositoryHarness(root string) error {
 }
 
 func loadSnapshot(root string) (snapshot, error) {
+	return loadStableSnapshot(root, readSnapshot)
+}
+
+func loadStableSnapshot(root string, read func(string) (snapshot, error)) (snapshot, error) {
+	first, err := read(root)
+	if err != nil {
+		return snapshot{}, err
+	}
+	second, err := read(root)
+	if err != nil {
+		return snapshot{}, err
+	}
+	if !sameSnapshot(first, second) {
+		return snapshot{}, fmt.Errorf("canonical authority changed while reading snapshot")
+	}
+	return first, nil
+}
+
+func readSnapshot(root string) (snapshot, error) {
 	rules, err := os.ReadFile(filepath.Join(root, rulesFile))
 	if err != nil {
 		return snapshot{}, fmt.Errorf("read %s: %w", rulesFile, err)
@@ -195,6 +214,13 @@ func loadSnapshot(root string) (snapshot, error) {
 		activePath: activePath,
 		hash:       snapshotHash(rules, plan, activePath, active),
 	}, nil
+}
+
+func sameSnapshot(left snapshot, right snapshot) bool {
+	return left.activePath == right.activePath &&
+		bytes.Equal(left.rules, right.rules) &&
+		bytes.Equal(left.plan, right.plan) &&
+		bytes.Equal(left.active, right.active)
 }
 
 func snapshotHash(rules []byte, plan []byte, activePath string, active []byte) string {

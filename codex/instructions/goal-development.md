@@ -26,8 +26,8 @@ Plan管理repositoryで`IMPLEMENTATION_PLAN.local.md`のoptional `## GOAL`節を
 
 ## 停止・再開
 
-- GLM provider rate limit・provider停止は`glm-execution.md`、Codex 5h limitは`codex-auto-resume.md`、session終了・compaction後は`IMPLEMENTATION_RULES.md`の再読contractを使って同じprojectを継続する
-- wake後・再開時はRules、Plan、GOAL節、ACTIVE task fileを現在checkoutから再読し、conversation memoryを正としない。projectの進行状態は`--project-state`投影で再構成できる
+- GLM provider rate limit・provider停止は`glm-execution.md`、Codex 5h limitは`codex-auto-resume.md`を使う。session終了・compaction後は注入済みのcanonical authority bootstrap contractへ戻り、同じprojectを継続する。この再接続のためにrepository上のAGENTS sourceをdisk再読しない
+- wake後・再開時は最初に`glm-worker --authority bootstrap`を実行し、返されたrules / plan / activeとPlan本文内のGOAL節を現在authorityとして再取得する。conversation memoryやcompaction summaryを正とせず、authority file/pathの探索・disk直読でbootstrapを代替しない。projectの進行状態はbootstrap後の`--project-state`投影で再構成できる
 
 ## completion
 

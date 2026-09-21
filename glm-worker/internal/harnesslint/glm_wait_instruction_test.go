@@ -43,7 +43,10 @@ func TestGLMWaitContractPinsLongBlockingBoundary(t *testing.T) {
 	}
 	for _, token := range []string{
 		"tool/runtime境界へ委ねる",
+		"yield-time_ms=30000",
 		"yield-time_ms=60000",
+		`"yield-time_ms":30000`,
+		`"yield-time_ms":60000`,
 		"glm-worker --watch",
 	} {
 		if strings.Contains(waitSection, token) {
