@@ -184,8 +184,8 @@ func TestCustomExecWriteStdinWaitBundleLikeUndercountRegression(t *testing.T) {
 }
 
 func analysisObservedDirectWaitSource(sessionID, yieldMS, maxOutputTokens int) string {
-	return fmt.Sprintf("const r = await tools.write_stdin({session_id:%d, chars:\"\", yield_time_ms:%d, max_output_tokens:%d});\ntext(r);",
-		sessionID, yieldMS, maxOutputTokens)
+	return fmt.Sprintf(`const r = await tools.write_stdin({session_id:%d, chars:"", yield_time_ms:%d, max_output_tokens:%d});
+text(r);`, sessionID, yieldMS, maxOutputTokens)
 }
 
 func analysisWaitCallsFromLines(t *testing.T, start, end time.Time, lines []string) bundleAnalysisWaitCalls {
