@@ -95,7 +95,7 @@ func (s *StateStore) PendingImprovementSignal() (*ImprovementSignal, error) {
 		return nil, nil
 	}
 	if err != nil {
-		return nil, err
+		return nil, nil
 	}
 	count := 0
 	var latest ModelCallLog
