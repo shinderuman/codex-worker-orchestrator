@@ -34,6 +34,24 @@ func TestParentActionMachineNegativeResultCannotBePromoted(t *testing.T) {
 	}
 }
 
+func TestParentActionMachineAdmittedChoicesRemainSelectable(t *testing.T) {
+	st := newParentActionTestStore(t)
+	writeParentActionAuthorityFixture(t, st, controlprovenance.ClassificationMachine)
+	plan := ParentActionPlan{
+		RequiredAction: ParentActionReview,
+		AllowedActions: []ParentAction{ParentActionAccept, ParentActionFix, ParentActionPark},
+	}
+	for _, action := range plan.AllowedActions {
+		admitted, err := st.parentActionAuthorityAdmits(plan, action)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !admitted {
+			t.Fatalf("machine-admitted semantic choice %s was rejected", action)
+		}
+	}
+}
+
 func TestParentActionResidualClassificationPreservesSemanticPromotion(t *testing.T) {
 	for _, classification := range []controlprovenance.Classification{
 		controlprovenance.ClassificationPartial,
