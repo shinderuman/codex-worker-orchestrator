@@ -16,6 +16,11 @@ func scanForwardOnlyCompatibilityRule(root string, paths []string) ([]Violation,
 	if err != nil {
 		return nil, err
 	}
+	shellStateViolations, err := scanForwardOnlyShellStateCompatibility(root, paths)
+	if err != nil {
+		return nil, err
+	}
+	violations = append(violations, shellStateViolations...)
 	testSurfaceViolations, err := scanForwardOnlyTestCompatibilitySurfaces(root, paths)
 	if err != nil {
 		return nil, err

@@ -90,12 +90,8 @@ func TestParseReviewFindings(t *testing.T) {
 	if absent.Present || !absent.None {
 		t.Fatalf("absent findings = %#v", absent)
 	}
-	none, err := ParseReviewFindings([]byte("# Task\n\n## Review findings\n\nnone\n"))
-	if err != nil {
-		t.Fatalf("ParseReviewFindings legacy none: %v", err)
-	}
-	if !none.Present || !none.None {
-		t.Fatalf("legacy findings = %#v", none)
+	if _, err := ParseReviewFindings([]byte("# Task\n\n## Review findings\n\nnone\n")); err == nil {
+		t.Fatal("legacy Review findings none section was accepted")
 	}
 	open, err := ParseReviewFindings([]byte("# Task\n\n## Review findings\n\n- workerが契約外fileへ触れた\n"))
 	if err != nil {

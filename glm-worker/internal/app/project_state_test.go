@@ -41,7 +41,7 @@ func projectStateTaskBody(dependencies string) string {
 }
 
 func projectStateTaskBodyWithFulfilled(dependencies, fulfilled string) string {
-	return "# Task\n\n## Review findings\n\nnone\n\n## Dependencies\n\n" + dependencies + "\n\n## Fulfilled dependencies\n\n" + fulfilled + "\n"
+	return "# Task\n\n## Dependencies\n\n" + dependencies + "\n\n## Fulfilled dependencies\n\n" + fulfilled + "\n"
 }
 
 func TestProjectStatePlanAbsent(t *testing.T) {

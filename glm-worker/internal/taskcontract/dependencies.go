@@ -127,7 +127,10 @@ func ParseReviewFindings(content []byte) (ReviewFindings, error) {
 	if headingAt < 0 {
 		return ReviewFindings{None: true}, nil
 	}
-	return ReviewFindings{Present: true, None: reviewFindingsBody(lines, headingAt) == reviewFindingsNone}, nil
+	if reviewFindingsBody(lines, headingAt) == reviewFindingsNone {
+		return ReviewFindings{}, fmt.Errorf("%s節は未解決findingがある場合だけ置き、findingなしは節自体を省略してください", ReviewFindingsHeading)
+	}
+	return ReviewFindings{Present: true}, nil
 }
 
 func reviewFindingsBody(lines []string, headingAt int) string {

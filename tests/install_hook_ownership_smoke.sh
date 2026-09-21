@@ -190,52 +190,32 @@ assert_managed_hooks "$repo"
 test "$(cat "$state")" = "version=2 baseline=absent value=$managed"
 grep -Fq 'recovered interrupted installer-owned snapshot hooks activation' "$tmp/interrupted.stdout"
 
-repo="$tmp/adopted"
+repo="$tmp/preexisting-tracked"
 new_repo "$repo"
 git -C "$repo" config --local core.hooksPath .githooks
-managed=$(managed_hooks_path "$repo")
-state=$(state_path "$repo")
-sh "$helper" install "$repo" >"$tmp/adopted.stdout" 2>"$tmp/adopted.stderr"
-assert_managed_hooks "$repo"
-test "$(cat "$state")" = "version=2 baseline=.githooks value=$managed"
-grep -Fq 'adopted preexisting tracked .githooks into installer-owned snapshot hooks' "$tmp/adopted.stdout"
-sh "$helper" retire "$repo" >"$tmp/adopted-retire.stdout" 2>"$tmp/adopted-retire.stderr"
-test "$(git -C "$repo" config --local --get-all core.hooksPath)" = .githooks
-assert_no_state "$repo"
-test ! -e "$managed"
-grep -Fq 'restored preexisting .githooks' "$tmp/adopted-retire.stdout"
-
-repo="$tmp/adoption-interrupted"
-new_repo "$repo"
-git -C "$repo" config --local core.hooksPath .githooks
-managed=$(managed_hooks_path "$repo")
-state=$(state_path "$repo")
-install_with_config_failure "$repo" "$tmp/fakegit-adoption"
-test "$(cat "$state")" = "version=2 baseline=.githooks pending=$managed"
-test "$(git -C "$repo" config --local --get-all core.hooksPath)" = .githooks
-sh "$helper" install "$repo" >"$tmp/adoption-interrupted.stdout" 2>"$tmp/adoption-interrupted.stderr"
-assert_managed_hooks "$repo"
-test "$(cat "$state")" = "version=2 baseline=.githooks value=$managed"
-grep -Fq 'completed preexisting .githooks adoption' "$tmp/adoption-interrupted.stdout"
-sh "$helper" retire "$repo"
-test "$(git -C "$repo" config --local --get-all core.hooksPath)" = .githooks
-
-repo="$tmp/legacy"
-new_repo "$repo"
-git -C "$repo" config --local core.hooksPath .githooks
-state=$(state_path "$repo")
-managed=$(managed_hooks_path "$repo")
-mkdir -p "${state%/*}"
-printf '%s\n' 'version=1 baseline=absent value=.githooks' >"$state"
-sh "$helper" install "$repo" >"$tmp/legacy.stdout" 2>"$tmp/legacy.stderr"
-assert_managed_hooks "$repo"
-test "$(cat "$state")" = "version=2 baseline=absent value=$managed"
-grep -Fq 'migrated legacy installer-owned .githooks to snapshot hooks' "$tmp/legacy.stdout"
-sh "$helper" retire "$repo"
-if git -C "$repo" config --local --get-all core.hooksPath >/dev/null 2>&1; then
-	printf '%s\n' 'legacy installer baseline was not restored to absent' >&2
+if sh "$helper" install "$repo" >"$tmp/preexisting-tracked.stdout" 2>"$tmp/preexisting-tracked.stderr"; then
+	printf '%s\n' 'preexisting tracked .githooks was claimed without current ownership state' >&2
 	exit 1
 fi
+test "$(git -C "$repo" config --local --get-all core.hooksPath)" = .githooks
+assert_no_state "$repo"
+test ! -e "$(managed_hooks_path "$repo")"
+grep -Fq 'preexisting core.hooksPath cannot be replaced safely: .githooks' "$tmp/preexisting-tracked.stderr"
+
+repo="$tmp/legacy-version-one"
+new_repo "$repo"
+git -C "$repo" config --local core.hooksPath .githooks
+state=$(state_path "$repo")
+mkdir -p "${state%/*}"
+printf '%s\n' 'version=1 baseline=absent value=.githooks' >"$state"
+if sh "$helper" install "$repo" >"$tmp/legacy-version-one.stdout" 2>"$tmp/legacy-version-one.stderr"; then
+	printf '%s\n' 'legacy version=1 ownership state was migrated' >&2
+	exit 1
+fi
+grep -Fq 'git hook ownership state is invalid' "$tmp/legacy-version-one.stderr"
+test "$(cat "$state")" = 'version=1 baseline=absent value=.githooks'
+test "$(git -C "$repo" config --local --get-all core.hooksPath)" = .githooks
+test ! -e "$(managed_hooks_path "$repo")"
 
 repo="$tmp/legacy-migration-pending"
 new_repo "$repo"
@@ -244,43 +224,34 @@ state=$(state_path "$repo")
 managed=$(managed_hooks_path "$repo")
 mkdir -p "${state%/*}"
 printf 'version=2 baseline=absent pending=%s source=.githooks\n' "$managed" >"$state"
-sh "$helper" install "$repo" >"$tmp/legacy-migration-pending.stdout" 2>"$tmp/legacy-migration-pending.stderr"
-assert_managed_hooks "$repo"
-test "$(cat "$state")" = "version=2 baseline=absent value=$managed"
-grep -Fq 'recovered legacy installer-owned hook migration' "$tmp/legacy-migration-pending.stdout"
-
-repo="$tmp/preexisting-content-mismatch"
-new_repo "$repo"
-git -C "$repo" config --local core.hooksPath .githooks
-printf '#!/bin/sh\nexit 42\n' >"$repo/.githooks/pre-push"
-chmod 755 "$repo/.githooks/pre-push"
-if sh "$helper" install "$repo" >"$tmp/content-mismatch.stdout" 2>"$tmp/content-mismatch.stderr"; then
-	printf '%s\n' 'content-mismatched .githooks was claimed' >&2
+if sh "$helper" install "$repo" >"$tmp/legacy-migration-pending.stdout" 2>"$tmp/legacy-migration-pending.stderr"; then
+	printf '%s\n' 'legacy migration pending state was recovered' >&2
 	exit 1
 fi
+grep -Fq 'git hook ownership state is invalid' "$tmp/legacy-migration-pending.stderr"
 test "$(git -C "$repo" config --local --get-all core.hooksPath)" = .githooks
-assert_no_state "$repo"
-test ! -e "$(managed_hooks_path "$repo")"
-grep -Fq 'cannot be safely adopted' "$tmp/content-mismatch.stderr"
+test ! -e "$managed"
 
-repo="$tmp/preexisting-mode-mismatch"
+repo="$tmp/adopted-state"
 new_repo "$repo"
-chmod 644 "$repo/.githooks/pre-push"
-git -C "$repo" add .githooks/pre-push
-git -C "$repo" commit -qm 'make hook non-executable'
 git -C "$repo" config --local core.hooksPath .githooks
-if sh "$helper" install "$repo" >"$tmp/mode-mismatch.stdout" 2>"$tmp/mode-mismatch.stderr"; then
-	printf '%s\n' 'non-executable tracked .githooks was claimed' >&2
+state=$(state_path "$repo")
+managed=$(managed_hooks_path "$repo")
+mkdir -p "${state%/*}"
+printf 'version=2 baseline=.githooks value=%s\n' "$managed" >"$state"
+if sh "$helper" install "$repo" >"$tmp/adopted-state.stdout" 2>"$tmp/adopted-state.stderr"; then
+	printf '%s\n' 'preexisting-layout adoption state was accepted' >&2
 	exit 1
 fi
+grep -Fq 'git hook ownership state is invalid' "$tmp/adopted-state.stderr"
 test "$(git -C "$repo" config --local --get-all core.hooksPath)" = .githooks
-assert_no_state "$repo"
+test ! -e "$managed"
 
 repo="$tmp/preexisting-other"
 new_repo "$repo"
 git -C "$repo" config --local core.hooksPath .external-hooks
 if sh "$helper" install "$repo" >"$tmp/preexisting-other.stdout" 2>"$tmp/preexisting-other.stderr"; then
-	printf '%s\n' 'external hook owner was accepted without managed publication guards' >&2
+	printf '%s\n' 'external hook owner was accepted without current ownership state' >&2
 	exit 1
 fi
 test "$(git -C "$repo" config --local --get-all core.hooksPath)" = .external-hooks
