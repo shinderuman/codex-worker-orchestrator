@@ -28,22 +28,13 @@ func ProjectExecutionProgress(st *state.StateStore, currentPhase, currentRole st
 	phaseStage := executionProgressPhaseStage(currentPhase, currentRole)
 	plan, err := loadExecutionMilestonePlan(st)
 	if err != nil {
-		return ExecutionProgressProjection{
-			Status:     "indeterminate",
-			Basis:      "machine-state",
-			Precision:  "unavailable",
-			Reason:     "milestone-state-unavailable",
-			PhaseStage: phaseStage,
-		}
+		return indeterminateExecutionProgress(phaseStage, "machine-state", "milestone-state-unavailable")
 	}
 	if plan == nil || len(plan.Milestones) == 0 {
-		return ExecutionProgressProjection{
-			Status:     "indeterminate",
-			Basis:      "single-or-untracked-execution-unit",
-			Precision:  "unavailable",
-			Reason:     "no-execution-milestones",
-			PhaseStage: phaseStage,
-		}
+		return indeterminateExecutionProgress(phaseStage, "single-or-untracked-execution-unit", "no-execution-milestones")
+	}
+	if reason := executionProgressPlanInconsistency(st, plan); reason != "" {
+		return indeterminateExecutionProgress(phaseStage, "machine-state", reason)
 	}
 
 	projection := ExecutionProgressProjection{
@@ -73,6 +64,43 @@ func ProjectExecutionProgress(st *state.StateStore, currentPhase, currentRole st
 		projection.Precision = "exact"
 	}
 	return projection
+}
+
+func indeterminateExecutionProgress(phaseStage, basis, reason string) ExecutionProgressProjection {
+	return ExecutionProgressProjection{
+		Status:     "indeterminate",
+		Basis:      basis,
+		Precision:  "unavailable",
+		Reason:     reason,
+		PhaseStage: phaseStage,
+	}
+}
+
+func executionProgressPlanInconsistency(st *state.StateStore, plan *executionMilestonePlan) string {
+	if taskID := st.ReadOr("task.id", ""); taskID != "" && plan.TaskID != taskID {
+		return "milestone-task-mismatch"
+	}
+	if len(plan.Milestones) < 2 {
+		return "invalid-milestone-state"
+	}
+	for index, milestone := range plan.Milestones {
+		if strings.TrimSpace(milestone.ID) == "" {
+			return "invalid-milestone-state"
+		}
+		if index < plan.CurrentIndex {
+			if milestone.Status != executionMilestoneComplete || milestone.Completion == nil {
+				return "invalid-milestone-state"
+			}
+			continue
+		}
+		if milestone.Status != executionMilestonePending || milestone.Completion != nil {
+			return "invalid-milestone-state"
+		}
+	}
+	if st.TaskStatus() == state.TaskStatusComplete && plan.CurrentIndex != len(plan.Milestones) {
+		return "lifecycle-milestone-inconsistent"
+	}
+	return ""
 }
 
 func executionProgressPhaseStage(currentPhase, currentRole string) string {
