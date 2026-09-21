@@ -20,6 +20,10 @@ none
 
 既存のforward-only repository contractに反して再導入されたcompatibility bridgeを削除し、同じ直接的な再侵入をshared repository gateで機械的に捕捉できる状態へ戻す。
 
+## External feasibility
+
+status: not-applicable
+
 ## Contract
 
 - hook ownership stateはcurrent schemaだけを正規入力とする。旧 `version=1` ownership/pending state、旧layout由来のmigration-pending state等をcurrent ownership stateへ自動変換・昇格・推定しない。
