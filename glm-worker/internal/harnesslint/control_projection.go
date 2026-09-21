@@ -6,6 +6,8 @@ import (
 	"os"
 	"regexp"
 	"strings"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controlprovenance"
 )
 
 var (
@@ -77,7 +79,8 @@ func controlProjectionPathViolations(path string, data []byte, classifications m
 				violations = append(violations, controlProjectionViolation(path, index+1, fmt.Sprintf("control projection %q has no provenance registry entry", id)))
 				continue
 			}
-			if classification != controlClassificationMachine {
+			parentMayPromote, err := controlprovenance.ParentMayPromoteNegativeResult(classification, false)
+			if err != nil || parentMayPromote {
 				violations = append(violations, controlProjectionViolation(path, index+1, fmt.Sprintf("control projection %q targets %q instead of machine-enforced", id, classification)))
 			}
 		}
@@ -96,7 +99,8 @@ func controlProjectionProcedureGuardRegistryViolations(controls []controlProvena
 }
 
 func controlProjectionProcedureGuardMetadataViolations(control controlProvenanceControl, guard controlProvenanceProjectionGuard, paths map[string]struct{}) []Violation {
-	if control.Classification != controlClassificationMachine {
+	parentMayPromote, err := controlprovenance.ParentMayPromoteNegativeResult(control.Classification, false)
+	if err != nil || parentMayPromote {
 		return []Violation{controlProjectionViolation(controlProvenanceRegistryPath, 1, fmt.Sprintf("procedure guard %q targets %q instead of machine-enforced", control.ID, control.Classification))}
 	}
 	if !isControlProjectionSurface(guard.Path) {
@@ -131,7 +135,8 @@ func controlProjectionProcedureGuardTokenMetadataViolations(controlID string, gu
 func controlProjectionProcedureGuardViolations(path string, data []byte, controls []controlProvenanceControl) []Violation {
 	var violations []Violation
 	for _, control := range controls {
-		if control.Classification != controlClassificationMachine {
+		parentMayPromote, err := controlprovenance.ParentMayPromoteNegativeResult(control.Classification, false)
+		if err != nil || parentMayPromote {
 			continue
 		}
 		for _, guard := range control.ProjectionGuards {
