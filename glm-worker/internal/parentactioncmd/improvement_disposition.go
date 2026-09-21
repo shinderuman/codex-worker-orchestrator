@@ -82,20 +82,26 @@ func executeImprovementDisposition(cfg config.AppConfig, args []string, stdout i
 }
 
 func writeExistingImprovementDisposition(st *state.StateStore, kind, disposition, targetTask string, stdout io.Writer) error {
-	record, created, err := st.RecordImprovementSignalDisposition(kind, disposition, targetTask)
-	if err != nil {
-		return fmt.Errorf("no matching pending improvement signal: %w", err)
-	}
-	plan, err := st.ParentActionPlan()
+	records, err := st.CurrentImprovementSignalDispositions()
 	if err != nil {
 		return err
 	}
-	status := "already-recorded"
-	if created {
-		status = parentActionStatusRecorded
+	resolved := state.ImprovementSignalDisposition(disposition)
+	for _, record := range records {
+		if record.SignalKind != kind {
+			continue
+		}
+		if record.Disposition != resolved || record.TargetTask != targetTask {
+			return fmt.Errorf("improvement signal %s already has disposition %s", kind, record.Disposition)
+		}
+		plan, err := st.ParentActionPlan()
+		if err != nil {
+			return err
+		}
+		signal := state.ImprovementSignal{Kind: kind, Count: record.SignalCount, SourceCallID: record.SourceCallID}
+		return writeImprovementDispositionOutput(stdout, "already-recorded", signal, record, plan)
 	}
-	signal := state.ImprovementSignal{Kind: kind, Count: record.SignalCount, SourceCallID: record.SourceCallID}
-	return writeImprovementDispositionOutput(stdout, status, signal, record, plan)
+	return fmt.Errorf("no matching current improvement signal for %s", kind)
 }
 
 func applyImprovementDisposition(st *state.StateStore, disposition state.ImprovementSignalDisposition, targetTask string) error {
