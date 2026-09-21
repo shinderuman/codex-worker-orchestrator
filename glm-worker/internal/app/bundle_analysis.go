@@ -597,7 +597,7 @@ func observeAnalysisRolloutLine(scan *bundleRolloutScan, line []byte, lineNumber
 	}
 	timestamp, timestampErr := time.Parse(time.RFC3339Nano, record.Timestamp)
 	if timestampErr != nil {
-		return fmt.Errorf("parent rollout %d行目のtimestampを解析できません: %w", lineNumber, err)
+		return fmt.Errorf("parent rollout %d行目のtimestampを解析できません: %w", lineNumber, timestampErr)
 	}
 	observeAnalysisRolloutInWindowRecord(scan, line, timestamp, start, end)
 	if record.Type == "response_item" {
