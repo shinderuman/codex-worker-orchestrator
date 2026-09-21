@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
 func TestPublicationReferenceTransactionAllowsOrdinaryCommit(t *testing.T) {
@@ -32,7 +34,7 @@ func TestPublicationReferenceTransactionAllowsOrdinaryCommit(t *testing.T) {
 		t.Fatal("ordinary commit did not advance HEAD")
 	}
 	callData, readErr := os.ReadFile(calls)
-	if readErr != nil || !strings.Contains(string(callData), "push-binding ref-guard --old") {
+	if readErr != nil || !strings.Contains(string(callData), "authority= push-binding ref-guard --old") {
 		t.Fatalf("reference guard call = %q err=%v", callData, readErr)
 	}
 }
@@ -61,8 +63,43 @@ func TestPublicationReferenceTransactionAllowsOrdinaryFastForward(t *testing.T) 
 		t.Fatalf("fast-forward HEAD = %s, want %s", got, ahead)
 	}
 	callData, readErr := os.ReadFile(calls)
-	if readErr != nil || !strings.Contains(string(callData), "push-binding ref-guard --old") {
+	if readErr != nil || !strings.Contains(string(callData), "authority= push-binding ref-guard --old") {
 		t.Fatalf("reference guard call = %q err=%v", callData, readErr)
+	}
+}
+
+func TestPublicationReferenceTransactionCarriesOwnerAuthority(t *testing.T) {
+	cfg, st := newInstallActionRepo(t)
+	if err := st.SetTaskStatus(state.TaskStatusAwaitingParentCompletion); err != nil {
+		t.Fatal(err)
+	}
+	writePushBindingFile(t, cfg.RepoRoot, "README.md", "guard candidate\n")
+	publicationGit(t, cfg.RepoRoot, "add", "README.md")
+	candidate, failure := preparePublicationCandidate(cfg, st, "guard publication")
+	if failure != nil {
+		t.Fatalf("prepare failed: %#v", failure)
+	}
+	branchRef, _, headFailure := publicationPromotionHead(cfg.RepoRoot)
+	if headFailure != nil {
+		t.Fatalf("head = %#v", headFailure)
+	}
+
+	hooks := t.TempDir()
+	copyPublicationHook(t, "reference-transaction", hooks)
+	runContinuationHookGit(t, cfg.RepoRoot, "config", "core.hooksPath", hooks)
+	bin, calls := publicationGuardStub(t, true)
+	t.Setenv("PATH", bin)
+	t.Setenv("HOOK_CALLS", calls)
+	if err := updatePublicationRef(cfg.RepoRoot, candidate, branchRef, candidate.CommitOID, candidate.BaseHead); err != nil {
+		t.Fatalf("publication ref update failed: %v", err)
+	}
+	callData, err := os.ReadFile(calls)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "authority=" + candidate.SnapshotID + " push-binding ref-guard --old"
+	if !strings.Contains(string(callData), want) {
+		t.Fatalf("reference guard call = %q, want %q", callData, want)
 	}
 }
 
@@ -154,7 +191,7 @@ func publicationGuardStub(t *testing.T, allow bool) (string, string) {
 	if allow {
 		exitCode = "0"
 	}
-	stub := "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$HOOK_CALLS\"\nexit " + exitCode + "\n"
+	stub := "#!/bin/sh\nprintf 'authority=%s %s\\n' \"${" + publicationRefTransactionEnv + ":-}\" \"$*\" >> \"$HOOK_CALLS\"\nexit " + exitCode + "\n"
 	if err := os.WriteFile(filepath.Join(bin, "glm-parent-action"), []byte(stub), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -164,7 +201,7 @@ func publicationGuardStub(t *testing.T, allow bool) (string, string) {
 func publicationHookEnv(bin, calls string) []string {
 	env := make([]string, 0, len(os.Environ())+2)
 	for _, item := range os.Environ() {
-		if strings.HasPrefix(item, "PATH=") || strings.HasPrefix(item, "HOOK_CALLS=") {
+		if strings.HasPrefix(item, "PATH=") || strings.HasPrefix(item, "HOOK_CALLS=") || strings.HasPrefix(item, publicationRefTransactionEnv+"=") {
 			continue
 		}
 		env = append(env, item)
