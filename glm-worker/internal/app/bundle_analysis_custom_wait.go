@@ -6,13 +6,6 @@ import (
 	"strings"
 )
 
-const (
-	analysisWaitSessionIDKey       = "session_id"
-	analysisWaitCharsKey           = "chars"
-	analysisWaitYieldMSKey         = "yield_time_ms"
-	analysisWaitMaxOutputTokensKey = "max_output_tokens"
-)
-
 type analysisRolloutItemPayloadRaw struct {
 	Type      string `json:"type"`
 	Name      string `json:"name"`
@@ -20,6 +13,29 @@ type analysisRolloutItemPayloadRaw struct {
 	Arguments string `json:"arguments"`
 	Input     string `json:"input"`
 }
+
+type analysisWriteStdinFields struct {
+	seen         map[string]bool
+	yieldMS      *uint64
+	yieldUnknown bool
+}
+
+type analysisJSQuoteState struct {
+	quote   byte
+	escaped bool
+}
+
+type analysisWaitJSParser struct {
+	source string
+	pos    int
+}
+
+const (
+	analysisWaitSessionIDKey       = "session_id"
+	analysisWaitCharsKey           = "chars"
+	analysisWaitYieldMSKey         = "yield-time_ms"
+	analysisWaitMaxOutputTokensKey = "max_output_tokens"
+)
 
 func (item *codexRolloutItemPayload) UnmarshalJSON(data []byte) error {
 	var raw analysisRolloutItemPayloadRaw
@@ -168,12 +184,6 @@ func analysisStripExecPragma(input string) (string, bool) {
 	return strings.TrimSpace(trimmed[lineEnd+1:]), true
 }
 
-type analysisWriteStdinFields struct {
-	seen         map[string]bool
-	yieldMS      *uint64
-	yieldUnknown bool
-}
-
 func analysisCanonicalWriteStdinObject(object string) (*uint64, bool) {
 	fields, ok := analysisSplitJSObjectFields(object)
 	if !ok {
@@ -280,11 +290,6 @@ func analysisEmptyJSString(raw string) bool {
 	return raw == `""` || raw == `''`
 }
 
-type analysisJSQuoteState struct {
-	quote   byte
-	escaped bool
-}
-
 func (state *analysisJSQuoteState) consume(ch byte) bool {
 	if state.quote == 0 {
 		if ch == '\'' || ch == '"' {
@@ -347,11 +352,6 @@ func analysisSplitJSProperty(field string) (string, string, bool) {
 		}
 	}
 	return "", "", false
-}
-
-type analysisWaitJSParser struct {
-	source string
-	pos    int
 }
 
 func (p *analysisWaitJSParser) skipSpace() {
