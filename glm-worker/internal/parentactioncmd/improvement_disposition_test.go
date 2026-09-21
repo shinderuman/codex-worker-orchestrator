@@ -38,6 +38,31 @@ func TestImprovementSignalBlocksOtherParentActionsUntilDisposition(t *testing.T)
 	}
 }
 
+func TestRecoveredInvalidPacketDoesNotBecomeStaleActionGate(t *testing.T) {
+	cfg, st := newImprovementDispositionTestState(t)
+	taskID := st.ReadOr("task.id", "")
+	now := time.Now().UTC()
+	st.RecordModelCallLog(state.ModelCallLog{
+		TaskID:      taskID,
+		CallType:    state.CallTypeTask,
+		CallID:      "55555555-5555-4555-8555-555555555555",
+		StartedAt:   now,
+		CompletedAt: now,
+		Outcome:     "success",
+	})
+
+	if err := requireImprovementSignalDisposition(cfg, actionAccept); err != nil {
+		t.Fatalf("recovered invalid packet still blocked parent action: %v", err)
+	}
+	if err := executeImprovementDisposition(cfg, []string{
+		actionImprovementDisposition,
+		improvementSignalKindOption, state.ImprovementSignalInvalidPacket,
+		improvementDispositionOption, string(state.ImprovementSignalDispositionReject),
+	}, &bytes.Buffer{}); err == nil {
+		t.Fatal("stale historical invalid packet accepted a new disposition")
+	}
+}
+
 func TestImprovementSignalAdoptConnectsExistingDefectRegistrationLifecycle(t *testing.T) {
 	cfg, st := newImprovementDispositionTestState(t)
 	target := "IMPLEMENTATION_TASKS/adopted-improvement.md"
