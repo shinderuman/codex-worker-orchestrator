@@ -88,5 +88,12 @@ func invalidPacketImprovementSignal(callID *string, rejectReason string) *state.
 }
 
 func CurrentImprovementSignal(st *state.StateStore) (*state.ImprovementSignal, error) {
-	return st.PendingImprovementSignal()
+	signal, err := st.PendingImprovementSignal()
+	if err != nil || signal == nil {
+		return signal, err
+	}
+	if signal.SourceCallID == "" {
+		return nil, nil
+	}
+	return signal, nil
 }
