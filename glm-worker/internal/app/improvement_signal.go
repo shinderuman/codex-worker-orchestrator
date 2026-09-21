@@ -4,6 +4,7 @@ import (
 	"strconv"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskview"
 )
 
 const (
@@ -86,4 +87,33 @@ func invalidPacketImprovementSignal(callID *string, rejectReason string) *state.
 		SourceCallID: sourceCallID,
 		Reason:       reason,
 	}
+}
+
+func CurrentImprovementSignal(st *state.StateStore) (*state.ImprovementSignal, error) {
+	taskID := st.ReadOr("task.id", "")
+	if taskID == "" {
+		return nil, nil
+	}
+	logs, err := taskview.ReadStatusTelemetry(st, taskID)
+	if err != nil {
+		return nil, nil
+	}
+	for index := len(logs) - 1; index >= 0; index-- {
+		if logs[index].CallType == state.CallTypeProbe {
+			continue
+		}
+		signal := improvementSignalFromMaterial(parentHandoffMaterialFromLog(logs[index]))
+		if signal == nil {
+			return nil, nil
+		}
+		disposed, err := st.ImprovementSignalDisposed(signal.Kind)
+		if err != nil {
+			return nil, err
+		}
+		if disposed {
+			return nil, nil
+		}
+		return signal, nil
+	}
+	return nil, nil
 }
