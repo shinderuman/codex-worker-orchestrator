@@ -7,12 +7,15 @@ import (
 	"time"
 )
 
+const analysisBoundedCustomWaitSource = `// @exec: {"yield-time_ms":300000,"max_output_tokens":4096}
+const result = await tools.write_stdin({session_id: 101, chars: '', yield_time_ms: 300000, max_output_tokens: 4096}); text(result.output);`
+
 func TestCustomExecWriteStdinWaitsNormalize(t *testing.T) {
 	start := time.Date(2026, 9, 17, 7, 0, 0, 0, time.UTC)
 	at := start.Add(time.Minute)
 	lines := []string{
 		analysisCustomWaitRequestLine(t, at, "custom-short", `await tools.write_stdin({session_id: 101, chars: "", yield_time_ms: 30000});`),
-		analysisCustomWaitRequestLine(t, at.Add(time.Minute), "custom-bounded", `const result = await tools.write_stdin({session_id: 101, chars: '', yield_time_ms: 300000, max_output_tokens: 4096}); text(result.output);`),
+		analysisCustomWaitRequestLine(t, at.Add(time.Minute), "custom-bounded", analysisBoundedCustomWaitSource),
 		analysisCustomWaitReturnLine(t, at.Add(2*time.Minute), "custom-bounded"),
 	}
 	waits := analysisWaitCallsFromLines(t, start, start.Add(time.Hour), lines)
@@ -41,9 +44,10 @@ func TestCustomExecWriteStdinWaitRejectsFalsePositives(t *testing.T) {
 		analysisCustomExecLine(t, at.Add(3*time.Minute), "writes-input", `await tools.write_stdin({session_id: 101, chars: "x", yield_time_ms: 300000});`),
 		analysisCustomExecLine(t, at.Add(4*time.Minute), "extra-code", `await tools.write_stdin({session_id: 101, chars: "", yield_time_ms: 300000}); text("extra");`),
 		analysisCustomExecLine(t, at.Add(5*time.Minute), "dynamic-session", `await tools.write_stdin({session_id: session.id, chars: "", yield_time_ms: 300000});`),
-		analysisCustomExecLine(t, at.Add(6*time.Minute), "wrong-tool", `await tools.write_stdin({session_id: 101, chars: "", yield_time_ms: 300000});`),
+		analysisCustomExecLine(t, at.Add(6*time.Minute), "missing-chars", `await tools.write_stdin({session_id: 101, yield_time_ms: 300000});`),
+		analysisCustomExecLine(t, at.Add(7*time.Minute), "wrong-tool", `await tools.write_stdin({session_id: 101, chars: "", yield_time_ms: 300000});`),
 	}
-	lines[len(lines)-1] = analysisCustomToolLine(t, at.Add(6*time.Minute), "wrong-tool", "other", `await tools.write_stdin({session_id: 101, chars: "", yield_time_ms: 300000});`)
+	lines[len(lines)-1] = analysisCustomToolLine(t, at.Add(7*time.Minute), "wrong-tool", "other", `await tools.write_stdin({session_id: 101, chars: "", yield_time_ms: 300000});`)
 
 	waits := analysisWaitCallsFromLines(t, start, start.Add(time.Hour), lines)
 	if waits.Status != analysisStatusCounted || waits.Count != 0 || len(waits.Calls) != 0 || len(waits.DuplicateCallIDs) != 0 {
@@ -86,6 +90,21 @@ func TestCustomExecWriteStdinWaitMalformedAndConflictFailClosed(t *testing.T) {
 		}
 	})
 
+	t.Run("pragma-yield-conflict-is-unknown", func(t *testing.T) {
+		input := `// @exec: {"yield-time_ms":30000,"max_output_tokens":4096}
+await tools.write_stdin({session_id: 101, chars: "", yield_time_ms: 300000});`
+		waits := analysisWaitCallsFromLines(t, start, start.Add(time.Hour), []string{
+			analysisCustomWaitRequestLine(t, at, "pragma-conflict", input),
+		})
+		if waits.Count != 1 || len(waits.Calls) != 1 {
+			t.Fatalf("waits = %#v", waits)
+		}
+		call := waits.Calls[0]
+		if call.RequestedYieldMS != nil || call.YieldClass != analysisStatusUnknown {
+			t.Fatalf("pragma conflict = %#v", call)
+		}
+	})
+
 	t.Run("conflicting-yields-stay-conflicted", func(t *testing.T) {
 		waits := analysisWaitCallsFromLines(t, start, start.Add(time.Hour), []string{
 			analysisWaitRequestLine(t, at, "conflict", `{"yield-time_ms":30000}`),
@@ -110,8 +129,7 @@ func TestCustomExecWriteStdinWaitBundleLikeUndercountRegression(t *testing.T) {
 			`await tools.write_stdin({session_id: 101, chars: "", yield_time_ms: 30000});`))
 	}
 	for index := 0; index < 14; index++ {
-		lines = append(lines, analysisCustomWaitRequestLine(t, at.Add(time.Duration(index+3)*time.Minute), fmt.Sprintf("long-%d", index),
-			`const result = await tools.write_stdin({session_id: 101, chars: "", yield_time_ms: 300000}); text(result.output);`))
+		lines = append(lines, analysisCustomWaitRequestLine(t, at.Add(time.Duration(index+3)*time.Minute), fmt.Sprintf("long-%d", index), analysisBoundedCustomWaitSource))
 	}
 	waits := analysisWaitCallsFromLines(t, start, start.Add(time.Hour), lines)
 	if waits.Count != 17 || len(waits.Calls) != 17 || len(waits.DuplicateCallIDs) != 0 {
