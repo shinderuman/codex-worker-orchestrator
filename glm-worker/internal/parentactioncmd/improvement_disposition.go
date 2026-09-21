@@ -25,6 +25,7 @@ type improvementDispositionOutput struct {
 const (
 	actionImprovementDisposition = "improvement-disposition"
 	improvementSignalKindOption  = "--signal-kind"
+	improvementSignalCallIDOption = "--source-call-id"
 	improvementDispositionOption = "--disposition"
 	improvementTaskOption        = "--task"
 )
@@ -44,11 +45,11 @@ func requireImprovementSignalDisposition(cfg config.AppConfig, action string) er
 	if signal == nil {
 		return nil
 	}
-	return fmt.Errorf("machine-visible improvement signal %s requires parent disposition before %s", signal.Kind, action)
+	return fmt.Errorf("machine-visible improvement signal %s/%s requires parent disposition before %s", signal.Kind, signal.SourceCallID, action)
 }
 
 func executeImprovementDisposition(cfg config.AppConfig, args []string, stdout io.Writer) error {
-	kind, disposition, targetTask, err := parseImprovementDispositionArgs(args)
+	kind, sourceCallID, disposition, targetTask, err := parseImprovementDispositionArgs(args)
 	if err != nil {
 		return err
 	}
@@ -70,10 +71,10 @@ func executeImprovementDisposition(cfg config.AppConfig, args []string, stdout i
 		return err
 	}
 	if signal == nil {
-		return writeExistingImprovementDisposition(st, kind, disposition, targetTask, stdout)
+		return writeExistingImprovementDisposition(st, kind, sourceCallID, disposition, targetTask, stdout)
 	}
-	if signal.Kind != kind {
-		return fmt.Errorf("pending improvement signal is %s, not %s", signal.Kind, kind)
+	if signal.Kind != kind || signal.SourceCallID != sourceCallID {
+		return fmt.Errorf("pending improvement signal is %s/%s, not %s/%s", signal.Kind, signal.SourceCallID, kind, sourceCallID)
 	}
 	if err := applyImprovementDisposition(st, state.ImprovementSignalDisposition(disposition), targetTask); err != nil {
 		return err
@@ -81,28 +82,28 @@ func executeImprovementDisposition(cfg config.AppConfig, args []string, stdout i
 	return recordImprovementDisposition(st, *signal, disposition, targetTask, stdout)
 }
 
-func writeExistingImprovementDisposition(st *state.StateStore, kind, disposition, targetTask string, stdout io.Writer) error {
+func writeExistingImprovementDisposition(st *state.StateStore, kind, sourceCallID, disposition, targetTask string, stdout io.Writer) error {
 	records, err := st.CurrentImprovementSignalDispositions()
 	if err != nil {
 		return err
 	}
 	resolved := state.ImprovementSignalDisposition(disposition)
 	for _, record := range records {
-		if record.SignalKind != kind {
+		if record.SignalKind != kind || record.SourceCallID != sourceCallID {
 			continue
 		}
 		if record.Disposition != resolved || record.TargetTask != targetTask {
-			return fmt.Errorf("improvement signal %s already has disposition %s", kind, record.Disposition)
+			return fmt.Errorf("improvement signal %s/%s already has disposition %s", kind, sourceCallID, record.Disposition)
 		}
 		recordImprovementDispositionEvent(st, record)
 		plan, err := st.ParentActionPlan()
 		if err != nil {
 			return err
 		}
-		signal := state.ImprovementSignal{Kind: kind, Count: record.SignalCount, SourceCallID: record.SourceCallID}
+		signal := state.ImprovementSignal{Kind: kind, Count: record.SignalCount, SourceCallID: sourceCallID}
 		return writeImprovementDispositionOutput(stdout, "already-recorded", signal, record, plan)
 	}
-	return fmt.Errorf("no matching current improvement signal for %s", kind)
+	return fmt.Errorf("no matching current improvement signal for %s/%s", kind, sourceCallID)
 }
 
 func applyImprovementDisposition(st *state.StateStore, disposition state.ImprovementSignalDisposition, targetTask string) error {
@@ -129,7 +130,7 @@ func applyImprovementDisposition(st *state.StateStore, disposition state.Improve
 }
 
 func recordImprovementDisposition(st *state.StateStore, signal state.ImprovementSignal, disposition, targetTask string, stdout io.Writer) error {
-	record, created, err := st.RecordImprovementSignalDisposition(signal.Kind, disposition, targetTask)
+	record, created, err := st.RecordImprovementSignalDisposition(signal, disposition, targetTask)
 	if err != nil {
 		return err
 	}
@@ -145,33 +146,41 @@ func recordImprovementDisposition(st *state.StateStore, signal state.Improvement
 	return writeImprovementDispositionOutput(stdout, status, signal, record, plan)
 }
 
-func parseImprovementDispositionArgs(args []string) (string, string, string, error) {
-	if len(args) != 5 && len(args) != 7 {
-		return "", "", "", fmt.Errorf("usage: glm-parent-action improvement-disposition --signal-kind <kind> --disposition <adopt|existing-owner|duplicate|reject|awaiting-evidence> [--task <IMPLEMENTATION_TASKS/...md>]")
+func parseImprovementDispositionArgs(args []string) (string, string, string, string, error) {
+	if len(args) != 7 && len(args) != 9 {
+		return "", "", "", "", improvementDispositionUsageError()
 	}
-	if args[0] != actionImprovementDisposition || args[1] != improvementSignalKindOption || args[3] != improvementDispositionOption {
-		return "", "", "", fmt.Errorf("usage: glm-parent-action improvement-disposition --signal-kind <kind> --disposition <adopt|existing-owner|duplicate|reject|awaiting-evidence> [--task <IMPLEMENTATION_TASKS/...md>]")
+	if args[0] != actionImprovementDisposition || args[1] != improvementSignalKindOption || args[3] != improvementSignalCallIDOption || args[5] != improvementDispositionOption {
+		return "", "", "", "", improvementDispositionUsageError()
 	}
 	kind := args[2]
-	disposition := args[4]
+	sourceCallID := args[4]
+	disposition := args[6]
 	targetTask := ""
-	if len(args) == 7 {
-		if args[5] != improvementTaskOption {
-			return "", "", "", fmt.Errorf("usage: glm-parent-action improvement-disposition --signal-kind <kind> --disposition <adopt|existing-owner|duplicate|reject|awaiting-evidence> [--task <IMPLEMENTATION_TASKS/...md>]")
+	if kind == "" || sourceCallID == "" {
+		return "", "", "", "", improvementDispositionUsageError()
+	}
+	if len(args) == 9 {
+		if args[7] != improvementTaskOption {
+			return "", "", "", "", improvementDispositionUsageError()
 		}
-		targetTask = args[6]
+		targetTask = args[8]
 	}
 	resolved := state.ImprovementSignalDisposition(disposition)
 	if !resolved.Valid() {
-		return "", "", "", fmt.Errorf("unknown improvement signal disposition %q", disposition)
+		return "", "", "", "", fmt.Errorf("unknown improvement signal disposition %q", disposition)
 	}
 	if state.ImprovementDispositionNeedsTask(resolved) != (targetTask != "") {
 		if state.ImprovementDispositionNeedsTask(resolved) {
-			return "", "", "", fmt.Errorf("improvement signal disposition %s requires --task", disposition)
+			return "", "", "", "", fmt.Errorf("improvement signal disposition %s requires --task", disposition)
 		}
-		return "", "", "", fmt.Errorf("improvement signal disposition %s does not accept --task", disposition)
+		return "", "", "", "", fmt.Errorf("improvement signal disposition %s does not accept --task", disposition)
 	}
-	return kind, disposition, targetTask, nil
+	return kind, sourceCallID, disposition, targetTask, nil
+}
+
+func improvementDispositionUsageError() error {
+	return fmt.Errorf("usage: glm-parent-action improvement-disposition --signal-kind <kind> --source-call-id <call-id> --disposition <adopt|existing-owner|duplicate|reject|awaiting-evidence> [--task <IMPLEMENTATION_TASKS/...md>]")
 }
 
 func recordImprovementDispositionEvent(st *state.StateStore, record state.ImprovementSignalDispositionRecord) {
