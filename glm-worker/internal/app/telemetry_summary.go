@@ -12,14 +12,14 @@ import (
 )
 
 type telemetryCompactSummary struct {
-	Version              int                        `json:"version"`
-	Query                telemetryCompactQuery      `json:"query"`
-	Scan                 telemetryCompactScan       `json:"scan"`
-	TaskStatsArchiveScan state.TaskStatsArchiveScan `json:"task_stats_archive_scan"`
-	Cohorts              []telemetryCompactCohort   `json:"cohorts"`
-	Stats                telemetryCompactStats      `json:"stats"`
+	Version              int                         `json:"version"`
+	Query                telemetryCompactQuery       `json:"query"`
+	Scan                 telemetryCompactScan        `json:"scan"`
+	TaskStatsArchiveScan state.TaskStatsArchiveScan  `json:"task_stats_archive_scan"`
+	Cohorts              []telemetryCompactCohort    `json:"cohorts"`
+	Stats                telemetryCompactStats       `json:"stats"`
 	ParentUsage          telemetryCompactParentUsage `json:"parent_usage"`
-	Bounds               telemetryCompactBounds     `json:"bounds"`
+	Bounds               telemetryCompactBounds      `json:"bounds"`
 }
 
 type telemetryCompactQuery struct {
