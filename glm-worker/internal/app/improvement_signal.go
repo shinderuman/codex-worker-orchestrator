@@ -11,6 +11,7 @@ const (
 	improvementSignalCountParameter  = "signal-count"
 	improvementSignalCallIDParameter = "source-call-id"
 	improvementSignalReasonParameter = "reason"
+	invalidPacketOutcome             = "invalid_packet"
 )
 
 func projectImprovementSignal(output *parentHandoffOutput) {
@@ -57,14 +58,14 @@ func improvementSignalParameters(signal state.ImprovementSignal) map[string]stri
 }
 
 func improvementSignalFromMaterial(material *parentHandoffMaterial) *state.ImprovementSignal {
-	if material == nil || material.Outcome != "invalid_packet" {
+	if material == nil || material.Outcome != invalidPacketOutcome {
 		return nil
 	}
 	return invalidPacketImprovementSignal(material.CallID, material.PacketRejectReason)
 }
 
 func improvementSignalFromRecoveryMaterial(material *parentHandoffRecoveryMaterial) *state.ImprovementSignal {
-	if material == nil || material.Outcome != "invalid_packet" {
+	if material == nil || material.Outcome != invalidPacketOutcome {
 		return nil
 	}
 	return invalidPacketImprovementSignal(material.CallID, material.PacketRejectReason)
@@ -85,8 +86,4 @@ func invalidPacketImprovementSignal(callID *string, rejectReason string) *state.
 		SourceCallID: sourceCallID,
 		Reason:       reason,
 	}
-}
-
-func CurrentImprovementSignal(st *state.StateStore) (*state.ImprovementSignal, error) {
-	return st.PendingImprovementSignal()
 }
