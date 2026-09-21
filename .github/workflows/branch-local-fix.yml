@@ -1,0 +1,43 @@
+name: Branch Local Fix
+
+on:
+  push:
+    branches:
+      - 'web-gpt/organize-web-gpt-validation-workflows'
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: ${{ github.event.head_commit.message == 'Apply guarded branch-local fix' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: web-gpt/organize-web-gpt-validation-workflows
+          fetch-depth: 0
+      - name: Revert unintended test-only diagnostic change
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('glm-worker/internal/app/multirepo_process_test.go')
+          text = path.read_text()
+          old = 't.Fatalf("state file %s/%sをJSONとして読めません: %v: %q", stateDir, name, err, readStateFile(t, stateDir, name))'
+          new = 't.Fatalf("state file %s/%sをJSONとして読めません: %v", stateDir, name, err)'
+          if text.count(old) != 1:
+              raise SystemExit(f'unexpected diagnostic occurrence count: {text.count(old)}')
+          if '".github/workflows/ci.yml"' not in text or '".github/workflows/install-smoke.yml"' not in text:
+              raise SystemExit('expected workflow fixture paths are missing')
+          path.write_text(text.replace(old, new, 1))
+          PY
+      - name: Remove one-shot workflow and push exact cleanup
+        run: |
+          rm .github/workflows/branch-local-fix.yml
+          git config user.name shinderuman
+          git config user.email shinderuman@gmail.com
+          git add glm-worker/internal/app/multirepo_process_test.go .github/workflows/branch-local-fix.yml
+          git diff --cached --check
+          git commit -m 'Remove unintended diagnostic change'
+          git push origin HEAD:web-gpt/organize-web-gpt-validation-workflows
