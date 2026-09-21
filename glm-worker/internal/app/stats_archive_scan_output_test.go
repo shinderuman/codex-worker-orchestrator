@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -59,7 +60,7 @@ func writeUnsupportedStatsArchive(t *testing.T, fixture telemetryCompactFixture,
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	data := []byte(`{"version":3,"schema_revision":` + string(rune('0'+schemaRevision)) + `,"task_id":"` + taskID + `","model_calls":999999}`)
+	data := []byte(fmt.Sprintf(`{"version":3,"schema_revision":%d,"task_id":%q,"model_calls":999999}`, schemaRevision, taskID))
 	if err := os.WriteFile(path, append(data, '\n'), 0o600); err != nil {
 		t.Fatal(err)
 	}
