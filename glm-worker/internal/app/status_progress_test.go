@@ -19,7 +19,8 @@ func TestExecuteStatusProjectsMilestoneProgressWithoutModelCall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	plan := fmt.Sprintf(`{"version":1,"task_id":%q,"active_task_path":"IMPLEMENTATION_TASKS/large.md","task_contract_sha256":"digest","current_index":1,"milestones":[{"id":"one","scope":"one","acceptance":"one","status":"complete","completion":{"completed_at":"2026-09-21T00:00:00Z","summary":"complete","task_contract_sha256":"digest","snapshot":{}}},{"id":"two","scope":"two","acceptance":"two","status":"pending"},{"id":"three","scope":"three","acceptance":"three","status":"pending"}],"updated_at":"2026-09-21T00:00:00Z"}`, taskID)
+	plan := fmt.Sprintf(`{"version":1}`, taskID)
+	plan = fmt.Sprintf(`{"version":1,"task_id":%q,"active_task_path":"IMPLEMENTATION_TASKS/large.md","task_contract_sha256":"digest","current_index":1,"milestones":[{"id":"one","scope":"one","acceptance":"one","status":"complete","completion":{"completed_at":"2026-09-21T00:00:00Z","summary":"complete","task_contract_sha256":"digest","snapshot":{}}},{"id":"two","scope":"two","acceptance":"two","status":"pending"},{"id":"three","scope":"three","acceptance":"three","status":"pending"}],"updated_at":"2026-09-21T00:00:00Z"}`, taskID)
 	if err := st.Write(state.ExecutionMilestonesStateFile, plan); err != nil {
 		t.Fatal(err)
 	}
