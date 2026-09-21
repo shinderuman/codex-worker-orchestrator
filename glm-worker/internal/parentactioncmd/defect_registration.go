@@ -25,9 +25,10 @@ type defectRegistrationOutput struct {
 }
 
 const (
-	actionRecordDefectFinding = "record-defect-finding"
-	actionBindDefectTask      = "bind-defect-task"
-	defectTaskOption          = "--task"
+	actionRecordDefectFinding  = "record-defect-finding"
+	actionBindDefectTask       = "bind-defect-task"
+	defectTaskOption           = "--task"
+	parentActionStatusRecorded = "recorded"
 )
 
 func executeDefectRegistrationAction(cfg config.AppConfig, args []string, stdout io.Writer) error {
@@ -94,7 +95,7 @@ func executeRecordDefectFinding(cfg config.AppConfig, st *state.StateStore, sour
 	}
 	status := "pending"
 	if created {
-		status = "recorded"
+		status = parentActionStatusRecorded
 	}
 	return writeDefectRegistrationOutput(stdout, status, &registration, plan)
 }
