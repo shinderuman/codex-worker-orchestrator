@@ -28,6 +28,11 @@ jobs:
         with:
           go-version: ${{ steps.quality-tools.outputs.go_version }}
           cache: false
+      - name: Cache quality tools
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/codex-worker-orchestrator-quality-tools
+          key: quality-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('quality-tools.yml', 'install-quality-tools.sh') }}
       - name: Install quality tools
         run: |
           quality_bin="$RUNNER_TEMP/codex-worker-orchestrator-quality-tools"
@@ -58,4 +63,27 @@ jobs:
           cache-dependency-path: glm-worker/go.sum
       - name: Full Go test suite
         working-directory: glm-worker
-        run: go test ./...
+        run: |
+          go clean -testcache
+          go test ./...
+
+  lint:
+    if: ${{ always() }}
+    needs:
+      - quality
+      - test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require basic validation
+        env:
+          QUALITY_RESULT: ${{ needs.quality.result }}
+          TEST_RESULT: ${{ needs.test.result }}
+        run: |
+          test "$QUALITY_RESULT" = success
+          test "$TEST_RESULT" = success
+
+  web-gpt-validation:
+    if: ${{ github.event_name == 'pull_request' && startsWith(github.head_ref, 'web-gpt/') }}
+    needs:
+      - lint
+    uses: ./.github/workflows/web-gpt-validation.yml
