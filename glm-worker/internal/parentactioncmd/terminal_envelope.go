@@ -66,16 +66,29 @@ func writeFailedTerminalAction(stdout io.Writer, terminalBytes []byte, terminalE
 	}
 	terminalJSON, err := decodeSingleMachineJSON(terminalBytes, "failed parent action terminal")
 	if err != nil {
-		_, _ = stdout.Write(terminalBytes)
-		return errors.Join(terminalErr, err)
+		var buildErr error
+		terminalJSON, buildErr = malformedFailedTerminal(terminalBytes, err)
+		if buildErr != nil {
+			return errors.Join(terminalErr, err, buildErr)
+		}
 	}
-	handoffJSON, err := loadRecoveryHandoff()
-	if err != nil {
-		handoffErr := fmt.Errorf("canonical recovery handoff failed after parent action error: %w", err)
-		return errors.Join(terminalErr, writeTerminalHandoffFailure(stdout, terminalJSON, handoffErr))
+	handoffJSON, handoffErr := loadRecoveryHandoff()
+	if handoffErr != nil {
+		recoveryErr := fmt.Errorf("canonical recovery handoff failed after parent action error: %w", handoffErr)
+		return errors.Join(terminalErr, err, writeTerminalHandoffFailure(stdout, terminalJSON, recoveryErr))
 	}
 	projectionErr := writeProjectedRecoveryTerminalEnvelope(stdout, terminalJSON, handoffJSON)
-	return errors.Join(terminalErr, projectionErr)
+	return errors.Join(terminalErr, err, projectionErr)
+}
+
+func malformedFailedTerminal(raw []byte, decodeErr error) (json.RawMessage, error) {
+	return json.Marshal(map[string]any{
+		"error": map[string]any{
+			"kind":    "machine_output_violation",
+			"message": boundTerminalDiagnostic("failed parent action terminal could not be decoded: "+decodeErr.Error(), 160),
+			"detail":  map[string]any{"raw_bytes": len(raw)},
+		},
+	})
 }
 
 func readTerminalHandoff(cfg config.AppConfig, action string, stderr io.Writer, recovery bool) (json.RawMessage, error) {
