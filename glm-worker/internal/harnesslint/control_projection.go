@@ -25,7 +25,7 @@ func controlProjectionViolations(root string) ([]Violation, error) {
 	if err != nil {
 		return nil, nil
 	}
-	classifications := make(map[string]string, len(registry.Controls))
+	classifications := make(map[string]controlProvenanceClassification, len(registry.Controls))
 	for _, control := range registry.Controls {
 		classifications[control.ID] = control.Classification
 	}
@@ -63,7 +63,7 @@ func isControlProjectionSurface(path string) bool {
 	return strings.HasPrefix(path, "codex/instructions/") || strings.HasPrefix(path, "codex/glm-worker/prompts/")
 }
 
-func controlProjectionPathViolations(path string, data []byte, classifications map[string]string) []Violation {
+func controlProjectionPathViolations(path string, data []byte, classifications map[string]controlProvenanceClassification) []Violation {
 	var violations []Violation
 	for index, line := range bytes.Split(data, []byte("\n")) {
 		for _, match := range controlProjectionMarkerPattern.FindAllSubmatch(line, -1) {
