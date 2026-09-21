@@ -836,7 +836,7 @@ func newAnalysisBundleFixture(t *testing.T) analysisBundleFixture {
 	}
 	preWindow := []string{
 		analysisTokenCountLine(t, start.Add(-2*time.Hour), 25011, 5912),
-		analysisRolloutLine(t, start.Add(-90*time.Minute), "response_item", map[string]any{"type": "function_call", "name": "wait"}),
+		analysisWaitRequestLine(t, start.Add(-90*time.Minute), "", ""),
 		analysisTokenCountLine(t, start.Add(-time.Minute), 26011, 6912),
 		analysisTurnLine(t, start.Add(-30*time.Second), codexRolloutTaskStartedType, analysisOwningTurnID),
 	}
@@ -923,14 +923,14 @@ func analysisPhaseRolloutLines(t *testing.T, start, completeAt time.Time) []stri
 		analysisTokenCountLine(t, start.Add(-time.Minute), 1000, 500),
 		analysisTurnLine(t, start.Add(-30*time.Second), codexRolloutTaskStartedType, analysisOwningTurnID),
 		analysisTokenCountLine(t, start.Add(time.Minute), 1400, 700),
-		analysisRolloutLine(t, start.Add(2*time.Minute), "response_item", map[string]any{"type": "function_call", "name": "wait"}),
+		analysisWaitRequestLine(t, start.Add(2*time.Minute), "", ""),
 		analysisTokenCountLine(t, completeAt.Add(-time.Second), 2000, 1000),
 		analysisTokenCountLine(t, completeAt.Add(30*time.Second), 2600, 1300),
-		analysisRolloutLine(t, completeAt.Add(time.Minute), "response_item", map[string]any{"type": "function_call", "name": "wait"}),
+		analysisWaitRequestLine(t, completeAt.Add(time.Minute), "", ""),
 		analysisTurnLine(t, completeAt.Add(2*time.Minute), codexRolloutTaskCompleteType, analysisOwningTurnID),
 		analysisTurnLine(t, completeAt.Add(5*time.Minute), codexRolloutTaskStartedType, analysisLaterTurnID),
 		analysisTokenCountLine(t, completeAt.Add(6*time.Minute+10*time.Second), 3200, 1600),
-		analysisRolloutLine(t, completeAt.Add(6*time.Minute+20*time.Second), "response_item", map[string]any{"type": "function_call", "name": "wait"}),
+		analysisWaitRequestLine(t, completeAt.Add(6*time.Minute+20*time.Second), "", ""),
 		analysisTurnLine(t, completeAt.Add(7*time.Minute), codexRolloutTaskCompleteType, analysisLaterTurnID),
 		analysisTurnLine(t, completeAt.Add(10*time.Minute), codexRolloutTaskStartedType, analysisOpenTurnID),
 		analysisTokenCountLine(t, completeAt.Add(11*time.Minute), 3800, 1900),
@@ -1090,16 +1090,25 @@ func writeAnalysisRetryModelCalls(t *testing.T, st *state.StateStore, taskID, se
 
 func analysisWaitRequestLine(t *testing.T, timestamp time.Time, callID, arguments string) string {
 	t.Helper()
-	payload := map[string]any{"type": "function_call", "name": "wait", "call_id": callID}
-	if arguments != "" {
-		payload["arguments"] = arguments
+	if arguments == "" {
+		input := `const r = await tools.write_stdin({session_id:46866,chars:"",max_output_tokens:20000}); text(r);`
+		return analysisCustomWaitRequestLine(t, timestamp, callID, input)
 	}
-	return analysisRolloutLine(t, timestamp, "response_item", payload)
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(arguments), &fields); err != nil {
+		t.Fatal(err)
+	}
+	yieldValue, ok := fields[analysisWaitYieldMSKey]
+	if !ok {
+		t.Fatalf("wait arguments = %s", arguments)
+	}
+	input := `const r = await tools.write_stdin({session_id:46866,chars:"",yield_time_ms:` + string(yieldValue) + `,max_output_tokens:20000}); text(r);`
+	return analysisCustomWaitRequestLine(t, timestamp, callID, input)
 }
 
 func analysisWaitReturnLine(t *testing.T, timestamp time.Time, callID string) string {
 	t.Helper()
-	return analysisRolloutLine(t, timestamp, "response_item", map[string]any{"type": "function_call_output", "call_id": callID})
+	return analysisCustomWaitReturnLine(t, timestamp, callID)
 }
 
 func writeAnalysisRun(t *testing.T, st *state.StateStore, runID, form, status string, startedAt, completedAt time.Time, snapshot state.GitSnapshot) {
