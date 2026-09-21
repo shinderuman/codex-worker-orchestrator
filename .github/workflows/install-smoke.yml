@@ -1,14 +1,13 @@
-name: Web GPT Validation
+name: Install Smoke
 
 on:
   workflow_call:
-  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: web-gpt-validation-${{ github.ref }}
+  group: install-smoke-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
