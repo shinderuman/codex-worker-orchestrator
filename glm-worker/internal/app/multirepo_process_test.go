@@ -385,7 +385,8 @@ func activateMultiRepoRepositoryHarness(t *testing.T, repoRoot, qualityBin strin
 	sourceRoot := multiRepoSourceRepositoryRoot(t)
 	for _, path := range []string{
 		".golangci.yml",
-		".github/workflows/quality.yml",
+		".github/workflows/ci.yml",
+		".github/workflows/install-smoke.yml",
 		".githooks/post-merge",
 		"harnesslint",
 		"install.sh",
@@ -650,7 +651,7 @@ func parseStateJSON(t *testing.T, stateDir string, name string) map[string]any {
 	t.Helper()
 	var value map[string]any
 	if err := json.Unmarshal([]byte(readStateFile(t, stateDir, name)), &value); err != nil {
-		t.Fatalf("state file %s/%sをJSONとして読めません: %v", stateDir, name, err)
+		t.Fatalf("state file %s/%sをJSONとして読めません: %v: %q", stateDir, name, err, readStateFile(t, stateDir, name))
 	}
 	return value
 }
