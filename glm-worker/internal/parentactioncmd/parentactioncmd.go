@@ -25,7 +25,7 @@ import (
 )
 
 const (
-	usage = "usage: glm-parent-action start [--rotation-claim <claim-id>] | rotation-claim <directive-id> | rotation-bind <directive-id> <claim-id> <new-thread-id> | rotation-fail <directive-id> <claim-id> --creation-result-json <json> | prepare <decision|fix|start-milestones|revise-milestones> | decision <token> | fix <token> [--origin <origin>] [--cause <cause>] [--accepted-scope current-diff] | approve-surface --accepted-scope current-diff | start-milestones <token> [--rotation-claim <claim-id>] | revise-milestones <token> | no-go | record-publication-finding [--origin <origin>] [--cause <cause>] | reopen | accept | complete | install | resume | wait | park | unpark | review-evidence | evidence <manifest.json> | finalize-check <go-test|go-test-race> | push-binding [--expected-oid <oid>] [--attempt-outcome <none|completed|rejected|network-error|non-fast-forward>] | continuation-stop-hook | continuation-metadata-guard"
+	usage = "usage: glm-parent-action start [--rotation-claim <claim-id>] | rotation-claim <directive-id> | rotation-bind <directive-id> <claim-id> <new-thread-id> | rotation-fail <directive-id> <claim-id> --creation-result-json <json> | prepare <decision|start-milestones|revise-milestones> | prepare fix [--origin <origin>] [--cause <cause>] [--accepted-scope current-diff] | decision <token> | fix <token> [--origin <origin>] [--cause <cause>] [--accepted-scope current-diff] | approve-surface --accepted-scope current-diff | start-milestones <token> [--rotation-claim <claim-id>] | revise-milestones <token> | no-go | record-publication-finding [--origin <origin>] [--cause <cause>] | reopen | accept | complete | install | resume | wait | park | unpark | review-evidence | evidence <manifest.json> | finalize-check <go-test|go-test-race> | push-binding [--expected-oid <oid>] [--attempt-outcome <none|completed|rejected|network-error|non-fast-forward>] | continuation-stop-hook | continuation-metadata-guard"
 
 	activeTaskRequest = "現在のACTIVE taskを実行してください。"
 	actionStart       = "start"
@@ -59,17 +59,38 @@ func run(args []string, stdout, stderr io.Writer) error {
 }
 
 func prepare(repoRoot string, args []string, stdout io.Writer) error {
-	if len(args) != 2 {
-		return fmt.Errorf("usage: glm-parent-action prepare <decision|fix|start-milestones|revise-milestones>")
+	if len(args) < 2 {
+		return fmt.Errorf("%s", usage)
 	}
-	prepared, err := parentaction.Prepare(repoRoot, args[1])
+	action := args[1]
+	options := args[2:]
+	if action != string(parentaction.ActionFix) && len(options) != 0 {
+		return fmt.Errorf("%s", usage)
+	}
+	if action == string(parentaction.ActionFix) {
+		if err := validateFixOptions(options); err != nil {
+			return err
+		}
+	}
+	prepared, err := parentaction.Prepare(repoRoot, action)
 	if err != nil {
 		return err
 	}
-	return json.NewEncoder(stdout).Encode(struct {
-		Status string `json:"status"`
-		parentaction.Prepared
-	}{Status: "prepared", Prepared: prepared})
+	return encodePreparedProjection(stdout, prepared, options)
+}
+
+func encodePreparedProjection(stdout io.Writer, prepared parentaction.Prepared, options []string) error {
+	raw, err := json.Marshal(prepared)
+	if err != nil {
+		return err
+	}
+	var projection map[string]any
+	if err := json.Unmarshal(raw, &projection); err != nil {
+		return err
+	}
+	nextCommand := []string{"glm-parent-action", prepared.Action, prepared.Token}
+	projection["next_command"] = append(nextCommand, options...)
+	return json.NewEncoder(stdout).Encode(projection)
 }
 
 func execute(cfg config.AppConfig, args []string, stdout, stderr io.Writer) error {
