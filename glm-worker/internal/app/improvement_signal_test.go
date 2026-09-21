@@ -44,7 +44,13 @@ func TestParentHandoffRequiresBoundedImprovementDispositionForInvalidPacket(t *t
 	if !ok || spec.Kind != "bounded-choice" {
 		t.Fatalf("action spec = %#v", spec)
 	}
-	if len(spec.Command) != 4 || spec.Command[0] != "glm-parent-action" || spec.Command[1] != action || spec.Command[2] != "--signal-kind" || spec.Command[3] != state.ImprovementSignalInvalidPacket {
+	if len(spec.Command) != 6 ||
+		spec.Command[0] != "glm-parent-action" ||
+		spec.Command[1] != action ||
+		spec.Command[2] != "--signal-kind" ||
+		spec.Command[3] != state.ImprovementSignalInvalidPacket ||
+		spec.Command[4] != "--source-call-id" ||
+		spec.Command[5] != callID {
 		t.Fatalf("command = %#v", spec.Command)
 	}
 	choices := spec.Choices["--disposition"]
