@@ -1,0 +1,53 @@
+name: Branch Local Refactor
+
+on:
+  push:
+    branches:
+      - 'web-gpt/organize-web-gpt-validation-workflows'
+
+permissions:
+  contents: write
+
+jobs:
+  refactor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: web-gpt/organize-web-gpt-validation-workflows
+          fetch-depth: 0
+      - name: Split workflow wiring checks
+        env:
+          OLD_BLOCK_B64: CQl7CgkJCXBhdGg6ICIuZ2l0aHViL3dvcmtmbG93cy9jaS55bWwiLAoJCQl0b2tlbnM6IFtdc3RyaW5newoJCQkJInF1YWxpdHktdG9vbHMueW1sIiwKCQkJCSJxdWFsaXR5LXRvb2xzLm91dHB1dHMuZ29fdmVyc2lvbiIsCgkJCQkiUVVBTElUWV9UT09MU19CSU5fRElSIiwKCQkJCSIkR0lUSFVCX0VOViIsCgkJCQkiLi9pbnN0YWxsLXF1YWxpdHktdG9vbHMuc2giLAoJCQkJIi4vdGVzdHMvaW5zdGFsbF9xdWFsaXR5X3Rvb2xzX3Ntb2tlLnNoIiwKCQkJCSIuLy5naXRodWIvd29ya2Zsb3dzL2luc3RhbGwtc21va2UueW1sIiwKCQkJfSwKCQl9LAoJCXsKCQkJcGF0aDogIi5naXRodWIvd29ya2Zsb3dzL2luc3RhbGwtc21va2UueW1sIiwKCQkJdG9rZW5zOiBbXXN0cmluZ3sKCQkJCSJ3b3JrZmxvd19jYWxsOiIsCgkJCQkicXVhbGl0eS10b29scy55bWwiLAoJCQkJInF1YWxpdHktdG9vbHMub3V0cHV0cy5nb192ZXJzaW9uIiwKCQkJCSJRVUFMSVRZX1RPT0xTX0JJTl9ESVIiLAoJCQkJIiRHSVRIVUJfRU5WIiwKCQkJCSIuL2luc3RhbGwtcXVhbGl0eS10b29scy5zaCIsCgkJCQkiLi90ZXN0cy9pbnN0YWxsX3Ntb2tlLnNoIiwKCQkJCSIuL3Rlc3RzL2luc3RhbGxfZGV0YWNoZWRfcnVudGltZV9pZGVudGl0eV9zbW9rZS5zaCIsCgkJCX0sCgkJfSwK
+          NEW_CALLS_B64: CQljaVdvcmtmbG93V2lyaW5nQ2hlY2soKSwKCQlpbnN0YWxsU21va2VXb3JrZmxvd1dpcmluZ0NoZWNrKCksCg==
+          HELPERS_B64: ZnVuYyBjaVdvcmtmbG93V2lyaW5nQ2hlY2soKSBxdWFsaXR5V2lyaW5nQ2hlY2sgewoJcmV0dXJuIHF1YWxpdHlXaXJpbmdDaGVja3sKCQlwYXRoOiAiLmdpdGh1Yi93b3JrZmxvd3MvY2kueW1sIiwKCQl0b2tlbnM6IFtdc3RyaW5newoJCQkicXVhbGl0eS10b29scy55bWwiLAoJCQkicXVhbGl0eS10b29scy5vdXRwdXRzLmdvX3ZlcnNpb24iLAoJCQkiUVVBTElUWV9UT09MU19CSU5fRElSIiwKCQkJIiRHSVRIVUJfRU5WIiwKCQkJIi4vaW5zdGFsbC1xdWFsaXR5LXRvb2xzLnNoIiwKCQkJIi4vdGVzdHMvaW5zdGFsbF9xdWFsaXR5X3Rvb2xzX3Ntb2tlLnNoIiwKCQkJIi4vLmdpdGh1Yi93b3JrZmxvd3MvaW5zdGFsbC1zbW9rZS55bWwiLAoJCX0sCgl9Cn0KCmZ1bmMgaW5zdGFsbFNtb2tlV29ya2Zsb3dXaXJpbmdDaGVjaygpIHF1YWxpdHlXaXJpbmdDaGVjayB7CglyZXR1cm4gcXVhbGl0eVdpcmluZ0NoZWNrewoJCXBhdGg6ICIuZ2l0aHViL3dvcmtmbG93cy9pbnN0YWxsLXNtb2tlLnltbCIsCgkJdG9rZW5zOiBbXXN0cmluZ3sKCQkJIndvcmtmbG93X2NhbGw6IiwKCQkJInF1YWxpdHktdG9vbHMueW1sIiwKCQkJInF1YWxpdHktdG9vbHMub3V0cHV0cy5nb192ZXJzaW9uIiwKCQkJIlFVQUxJVFlfVE9PTFNfQklOX0RJUiIsCgkJCSIkR0lUSFVCX0VOViIsCgkJCSIuL2luc3RhbGwtcXVhbGl0eS10b29scy5zaCIsCgkJCSIuL3Rlc3RzL2luc3RhbGxfc21va2Uuc2giLAoJCQkiLi90ZXN0cy9pbnN0YWxsX2RldGFjaGVkX3J1bnRpbWVfaWRlbnRpdHlfc21va2Uuc2giLAoJCX0sCgl9Cn0KCg==
+        run: |
+          python3 - <<'PY'
+          import base64, os
+          from pathlib import Path
+          path = Path('glm-worker/internal/harnesslint/quality_surface.go')
+          text = path.read_text()
+          old = base64.b64decode(os.environ['OLD_BLOCK_B64']).decode()
+          new = base64.b64decode(os.environ['NEW_CALLS_B64']).decode()
+          helpers = base64.b64decode(os.environ['HELPERS_B64']).decode()
+          marker = 'func qualityWiringPackageViolations('
+          if text.count(old) != 1:
+              raise SystemExit(f'unexpected workflow block count: {text.count(old)}')
+          if text.count(marker) != 1:
+              raise SystemExit(f'unexpected insertion marker count: {text.count(marker)}')
+          if 'func ciWorkflowWiringCheck()' in text:
+              raise SystemExit('workflow wiring helper already exists')
+          text = text.replace(old, new, 1)
+          text = text.replace(marker, helpers + marker, 1)
+          path.write_text(text)
+          PY
+          gofmt -w glm-worker/internal/harnesslint/quality_surface.go
+      - name: Remove helper and push
+        run: |
+          rm .github/workflows/branch-local-refactor.yml
+          git config user.name shinderuman
+          git config user.email shinderuman@gmail.com
+          git add glm-worker/internal/harnesslint/quality_surface.go .github/workflows/branch-local-refactor.yml
+          git diff --cached --check
+          git commit -m 'Split quality workflow wiring checks'
+          git push origin HEAD:web-gpt/organize-web-gpt-validation-workflows
