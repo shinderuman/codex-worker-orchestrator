@@ -5,15 +5,11 @@ import (
 	"os"
 )
 
-// BootstrapPartはBootstrapOutputの単一snapshotへbindされたcanonical authority本文を表す。
-// kindはcontainer fieldで表現するため、partごとのsnapshot metadataは重複させない。
 type BootstrapPart struct {
 	ContentSHA256 string `json:"content_sha256"`
 	Content       string `json:"content"`
 }
 
-// BootstrapOutputはrules / plan / ACTIVE taskを1つのrepository snapshotから投影する。
-// parent bootstrap/resumeは3個の独立callから整合性を再構成せず、このobjectをatomicに消費する。
 type BootstrapOutput struct {
 	AuthoritySnapshotSHA256 string        `json:"authority_snapshot_sha256"`
 	ActiveTask              string        `json:"active_task"`
@@ -22,8 +18,6 @@ type BootstrapOutput struct {
 	Active                  BootstrapPart `json:"active"`
 }
 
-// BuildCommandはCLI authority projectionの入口である。既存per-kind projectionはbounded evidence read用に維持し、
-// bootstrapをparentのcanonical fresh/resume surfaceとして扱う。
 func BuildCommand(args []string) (any, error) {
 	if len(args) == 1 && args[0] == "bootstrap" {
 		return BuildBootstrap()
