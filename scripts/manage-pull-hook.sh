@@ -3,10 +3,7 @@ set -eu
 
 mode=${1:-}
 repo_root=${2:-}
-legacy_hooks_path=.githooks
 required_hooks='post-merge pre-commit reference-transaction pre-push'
-legacy_managed_state='version=1 baseline=absent value=.githooks'
-legacy_pending_state='version=1 baseline=absent pending=.githooks'
 
 if [ "$mode" != install ] && [ "$mode" != retire ]; then
 	printf '%s\n' 'usage: manage-pull-hook.sh <install|retire> <repository>' >&2
@@ -32,9 +29,6 @@ esac
 managed_hooks_path="$common_dir/codex-worker-orchestrator/hooks"
 managed_state="version=2 baseline=absent value=$managed_hooks_path"
 pending_state="version=2 baseline=absent pending=$managed_hooks_path"
-adopted_state="version=2 baseline=$legacy_hooks_path value=$managed_hooks_path"
-adopted_pending_state="version=2 baseline=$legacy_hooks_path pending=$managed_hooks_path"
-legacy_migration_pending_state="version=2 baseline=absent pending=$managed_hooks_path source=$legacy_hooks_path"
 
 state_path=$(git -C "$repo_root" rev-parse --git-path codex-worker-orchestrator/hooks-path.state)
 case "$state_path" in
@@ -52,11 +46,6 @@ if [ -e "$state_path" ] || [ -L "$state_path" ]; then
 	case "$(cat "$state_path")" in
 	"$managed_state") state_kind=managed ;;
 	"$pending_state") state_kind=pending ;;
-	"$adopted_state") state_kind=adopted ;;
-	"$adopted_pending_state") state_kind=adopted-pending ;;
-	"$legacy_migration_pending_state") state_kind=legacy-migration-pending ;;
-	"$legacy_managed_state") state_kind=legacy-managed ;;
-	"$legacy_pending_state") state_kind=legacy-pending ;;
 	*)
 		printf 'git hook ownership state is invalid: %s\n' "$state_path" >&2
 		exit 1
@@ -192,83 +181,20 @@ verify_managed_install() {
 	done
 }
 
-legacy_tracked_hooks_adoptable() {
-	if [ -e "$managed_hooks_path" ] || [ -L "$managed_hooks_path" ]; then
-		return 1
-	fi
-	for hook in $required_hooks; do
-		tracked_hook="$repo_root/$legacy_hooks_path/$hook"
-		if [ ! -f "$tracked_hook" ] || [ -L "$tracked_hook" ] || [ ! -s "$tracked_hook" ] || [ ! -x "$tracked_hook" ]; then
-			return 1
-		fi
-		tracked_mode=$(git -C "$repo_root" ls-tree HEAD -- "$legacy_hooks_path/$hook" | awk 'NR == 1 { print $1 }')
-		if [ "$tracked_mode" != 100755 ]; then
-			return 1
-		fi
-		if ! git -C "$repo_root" show "HEAD:$legacy_hooks_path/$hook" | cmp -s - "$tracked_hook"; then
-			return 1
-		fi
-	done
-	return 0
-}
-
-restore_legacy_hooks_path() {
-	if ! git -C "$repo_root" config --local core.hooksPath "$legacy_hooks_path"; then
-		printf 'git hook: failed to restore legacy core.hooksPath: %s\n' "$legacy_hooks_path" >&2
-		exit 1
-	fi
-}
-
 if [ "$mode" = retire ]; then
 	if [ "$state_present" -eq 0 ]; then
 		printf '%s\n' 'git hook: retire unchanged: core.hooksPath is not installer-owned'
 		exit 0
 	fi
 
-	case "$state_kind" in
-	adopted | adopted-pending)
-		if [ "$hooks_path_present" -eq 1 ] && [ "$hooks_path" = "$managed_hooks_path" ]; then
-			restore_legacy_hooks_path
-			printf '%s\n' 'git hook: retired installer ownership and restored preexisting .githooks'
-		elif [ "$hooks_path_present" -eq 1 ] && [ "$hooks_path" = "$legacy_hooks_path" ]; then
-			printf '%s\n' 'git hook: retire kept already-restored preexisting .githooks'
-		elif [ "$hooks_path_present" -eq 1 ]; then
-			printf '%s\n' 'git hook: retire preserved externally changed core.hooksPath'
-		else
-			printf '%s\n' 'git hook: retire preserved externally unset core.hooksPath'
-		fi
-		;;
-	legacy-managed | legacy-pending)
-		if [ "$hooks_path_present" -eq 1 ] && [ "$hooks_path" = "$legacy_hooks_path" ]; then
-			git -C "$repo_root" config --local --unset-all core.hooksPath
-			printf '%s\n' 'git hook: retired legacy installer-owned core.hooksPath'
-		elif [ "$hooks_path_present" -eq 1 ]; then
-			printf '%s\n' 'git hook: retire preserved externally changed core.hooksPath'
-		else
-			printf '%s\n' 'git hook: retire cleared pending legacy ownership state'
-		fi
-		;;
-	legacy-migration-pending)
-		if [ "$hooks_path_present" -eq 1 ] && { [ "$hooks_path" = "$legacy_hooks_path" ] || [ "$hooks_path" = "$managed_hooks_path" ]; }; then
-			git -C "$repo_root" config --local --unset-all core.hooksPath
-			printf '%s\n' 'git hook: retired interrupted legacy migration to absent baseline'
-		elif [ "$hooks_path_present" -eq 1 ]; then
-			printf '%s\n' 'git hook: retire preserved externally changed core.hooksPath'
-		else
-			printf '%s\n' 'git hook: retire cleared interrupted legacy migration state'
-		fi
-		;;
-	managed | pending)
-		if [ "$hooks_path_present" -eq 1 ] && [ "$hooks_path" = "$managed_hooks_path" ]; then
-			git -C "$repo_root" config --local --unset-all core.hooksPath
-			printf '%s\n' 'git hook: retired installer-owned core.hooksPath'
-		elif [ "$hooks_path_present" -eq 1 ]; then
-			printf '%s\n' 'git hook: retire preserved externally changed core.hooksPath'
-		else
-			printf '%s\n' 'git hook: retire cleared pending ownership state'
-		fi
-		;;
-	esac
+	if [ "$hooks_path_present" -eq 1 ] && [ "$hooks_path" = "$managed_hooks_path" ]; then
+		git -C "$repo_root" config --local --unset-all core.hooksPath
+		printf '%s\n' 'git hook: retired installer-owned core.hooksPath'
+	elif [ "$hooks_path_present" -eq 1 ]; then
+		printf '%s\n' 'git hook: retire preserved externally changed core.hooksPath'
+	else
+		printf '%s\n' 'git hook: retire cleared pending ownership state'
+	fi
 	remove_managed_hooks
 	rm -f "$state_path"
 	exit 0
@@ -276,16 +202,13 @@ fi
 
 if [ "$state_present" -eq 1 ]; then
 	case "$state_kind" in
-	managed | adopted)
+	managed)
 		if [ "$hooks_path_present" -ne 1 ] || [ "$hooks_path" != "$managed_hooks_path" ]; then
 			printf 'git hook: installer ownership state conflicts with current core.hooksPath: %s\n' "${hooks_path:-<unset>}" >&2
 			exit 1
 		fi
 		install_managed_hooks
-		case "$state_kind" in
-		managed) verify_managed_install "$managed_state" ;;
-		adopted) verify_managed_install "$adopted_state" ;;
-		esac
+		verify_managed_install "$managed_state"
 		printf '%s\n' 'git hook: refreshed installer-owned snapshot hooks'
 		exit 0
 		;;
@@ -306,81 +229,11 @@ if [ "$state_present" -eq 1 ]; then
 		printf '%s\n' 'git hook: recovered interrupted installer-owned snapshot hooks activation'
 		exit 0
 		;;
-	adopted-pending)
-		if [ "$hooks_path_present" -eq 0 ]; then
-			printf '%s\n' 'git hook: pending legacy adoption preserves externally unset core.hooksPath' >&2
-			exit 1
-		fi
-		if [ "$hooks_path" != "$legacy_hooks_path" ] && [ "$hooks_path" != "$managed_hooks_path" ]; then
-			printf 'git hook: pending legacy adoption preserves externally changed core.hooksPath: %s\n' "$hooks_path" >&2
-			exit 1
-		fi
-		install_managed_hooks
-		if [ "$hooks_path" != "$managed_hooks_path" ]; then
-			if ! git -C "$repo_root" config --local core.hooksPath "$managed_hooks_path"; then
-				printf '%s\n' 'git hook: failed to complete preexisting .githooks adoption; retry install to continue' >&2
-				exit 1
-			fi
-		fi
-		write_state "$adopted_state"
-		verify_managed_install "$adopted_state"
-		printf '%s\n' 'git hook: completed preexisting .githooks adoption'
-		exit 0
-		;;
-	legacy-migration-pending)
-		if [ "$hooks_path_present" -eq 1 ] && [ "$hooks_path" != "$legacy_hooks_path" ] && [ "$hooks_path" != "$managed_hooks_path" ]; then
-			printf 'git hook: pending legacy migration preserves externally changed core.hooksPath: %s\n' "$hooks_path" >&2
-			exit 1
-		fi
-		install_managed_hooks
-		if [ "$hooks_path_present" -eq 0 ] || [ "$hooks_path" != "$managed_hooks_path" ]; then
-			if ! git -C "$repo_root" config --local core.hooksPath "$managed_hooks_path"; then
-				printf '%s\n' 'git hook: failed to recover legacy installer-owned hook migration' >&2
-				exit 1
-			fi
-		fi
-		write_state "$managed_state"
-		verify_managed_install "$managed_state"
-		printf '%s\n' 'git hook: recovered legacy installer-owned hook migration'
-		exit 0
-		;;
-	legacy-managed | legacy-pending)
-		if [ "$hooks_path_present" -eq 1 ] && [ "$hooks_path" != "$legacy_hooks_path" ]; then
-			printf 'git hook: legacy ownership state conflicts with current core.hooksPath: %s\n' "$hooks_path" >&2
-			exit 1
-		fi
-		write_state "$legacy_migration_pending_state"
-		install_managed_hooks
-		if ! git -C "$repo_root" config --local core.hooksPath "$managed_hooks_path"; then
-			printf '%s\n' 'git hook: failed to migrate legacy installer-owned snapshot hooks; retry install to continue' >&2
-			exit 1
-		fi
-		write_state "$managed_state"
-		verify_managed_install "$managed_state"
-		printf '%s\n' 'git hook: migrated legacy installer-owned .githooks to snapshot hooks'
-		exit 0
-		;;
 	esac
 fi
 
 if [ "$hooks_path_present" -eq 1 ]; then
-	if [ "$hooks_path" = "$legacy_hooks_path" ] && legacy_tracked_hooks_adoptable; then
-		write_state "$adopted_pending_state"
-		install_managed_hooks
-		if ! git -C "$repo_root" config --local core.hooksPath "$managed_hooks_path"; then
-			printf '%s\n' 'git hook: failed to adopt preexisting tracked .githooks; retry install to continue' >&2
-			exit 1
-		fi
-		write_state "$adopted_state"
-		verify_managed_install "$adopted_state"
-		printf '%s\n' 'git hook: adopted preexisting tracked .githooks into installer-owned snapshot hooks'
-		exit 0
-	fi
-	if [ "$hooks_path" = "$legacy_hooks_path" ]; then
-		printf '%s\n' 'git hook: preexisting .githooks cannot be safely adopted; preserving external ownership' >&2
-	else
-		printf 'git hook: preexisting core.hooksPath cannot be replaced safely: %s\n' "${hooks_path:-<empty>}" >&2
-	fi
+	printf 'git hook: preexisting core.hooksPath cannot be replaced safely: %s\n' "${hooks_path:-<empty>}" >&2
 	exit 1
 fi
 
