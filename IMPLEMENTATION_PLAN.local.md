@@ -15,8 +15,8 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 - `IMPLEMENTATION_TASKS/task-stats-archive-skip-observability.md`
 - `IMPLEMENTATION_TASKS/codex-efficiency-intermediate-checkpoint.md`
 - `IMPLEMENTATION_TASKS/post-105-codex-efficiency-reevaluation.md`
-- `IMPLEMENTATION_TASKS/022-final-verification.md`
 - `IMPLEMENTATION_TASKS/remove-parent-wait-legacy-transport-compatibility.md`
+- `IMPLEMENTATION_TASKS/022-final-verification.md`
 
 ## BLOCKED / USER_PERMISSION_WAIT
 
