@@ -7,8 +7,6 @@ import (
 	"sort"
 )
 
-const parentActionTerminalBudgetBytes = 2400
-
 type parentActionTerminalProjectionStats struct {
 	BudgetBytes     int      `json:"budget_bytes"`
 	RawBytes        int      `json:"raw_bytes"`
@@ -27,6 +25,8 @@ type parentActionTerminalProjectionError struct {
 	stats parentActionTerminalProjectionStats
 }
 
+const parentActionTerminalBudgetBytes = 2400
+
 func (e *parentActionTerminalProjectionError) Error() string {
 	return fmt.Sprintf("parent action terminal projection exceeds budget: projected=%d budget=%d", e.stats.ProjectedBytes, e.stats.BudgetBytes)
 }
@@ -37,7 +37,6 @@ func projectParentActionTerminalEnvelope(terminalJSON, handoffJSON json.RawMessa
 	if err != nil {
 		return parentActionTerminalEnvelopePayload{}, fmt.Errorf("marshal raw parent action terminal envelope: %w", err)
 	}
-
 	projectedHandoff, handoffOmitted, err := projectTerminalHandoff(handoffJSON, false)
 	if err != nil {
 		return parentActionTerminalEnvelopePayload{}, err
@@ -63,7 +62,10 @@ func projectParentActionTerminalEnvelope(terminalJSON, handoffJSON json.RawMessa
 	if stats.ProjectedBytes <= stats.BudgetBytes {
 		return candidate, nil
 	}
+	return fitSemanticTerminalProjection(candidate, stats, terminalJSON)
+}
 
+func fitSemanticTerminalProjection(candidate parentActionTerminalEnvelopePayload, stats parentActionTerminalProjectionStats, terminalJSON json.RawMessage) (parentActionTerminalEnvelopePayload, error) {
 	projectedTerminal, terminalMode, terminalOmitted, err := projectTerminalSemanticResult(terminalJSON)
 	if err != nil {
 		return parentActionTerminalEnvelopePayload{}, err
@@ -71,14 +73,18 @@ func projectParentActionTerminalEnvelope(terminalJSON, handoffJSON json.RawMessa
 	stats.TerminalMode = terminalMode
 	stats.OmittedFields = sortedUniqueStrings(append(stats.OmittedFields, prefixedFields("terminal", terminalOmitted)...))
 	candidate.Terminal = projectedTerminal
+	candidate.Projection = &stats
 	if err := finalizeProjectionStats(&candidate, &stats); err != nil {
 		return parentActionTerminalEnvelopePayload{}, err
 	}
 	if stats.ProjectedBytes <= stats.BudgetBytes {
 		return candidate, nil
 	}
+	return fitRecoverableEvidenceProjection(candidate, stats)
+}
 
-	locatorProjected, projectedFields, changed, err := projectRecoverableTerminalEvidence(projectedTerminal)
+func fitRecoverableEvidenceProjection(candidate parentActionTerminalEnvelopePayload, stats parentActionTerminalProjectionStats) (parentActionTerminalEnvelopePayload, error) {
+	locatorProjected, projectedFields, changed, err := projectRecoverableTerminalEvidence(candidate.Terminal)
 	if err != nil {
 		return parentActionTerminalEnvelopePayload{}, err
 	}
@@ -86,6 +92,7 @@ func projectParentActionTerminalEnvelope(terminalJSON, handoffJSON json.RawMessa
 		stats.TerminalMode = "semantic-locators"
 		stats.ProjectedFields = sortedUniqueStrings(append(stats.ProjectedFields, prefixedFields("terminal", projectedFields)...))
 		candidate.Terminal = locatorProjected
+		candidate.Projection = &stats
 		if err := finalizeProjectionStats(&candidate, &stats); err != nil {
 			return parentActionTerminalEnvelopePayload{}, err
 		}
@@ -93,7 +100,6 @@ func projectParentActionTerminalEnvelope(terminalJSON, handoffJSON json.RawMessa
 			return candidate, nil
 		}
 	}
-
 	stats.Overflow = true
 	return parentActionTerminalEnvelopePayload{}, &parentActionTerminalProjectionError{stats: stats}
 }
@@ -229,7 +235,18 @@ func projectTerminalHandoff(raw json.RawMessage, overflow bool) (json.RawMessage
 	if err != nil {
 		return nil, nil, err
 	}
-	keep := []string{
+	keep := terminalHandoffProjectionFields()
+	if overflow {
+		keep = []string{"version", "consistent", "inconsistency", "task_id", "task_status", "required_action", "action_specs"}
+		if err := reduceHandoffToRequiredActionSpec(object); err != nil {
+			return nil, nil, err
+		}
+	}
+	return projectObjectFields(object, keep)
+}
+
+func terminalHandoffProjectionFields() []string {
+	return []string{
 		"version",
 		"consistent",
 		"inconsistency",
@@ -247,24 +264,31 @@ func projectTerminalHandoff(raw json.RawMessage, overflow bool) (json.RawMessage
 		"parent_request",
 		"action_specs",
 	}
-	if overflow {
-		keep = []string{"version", "consistent", "inconsistency", "task_id", "task_status", "required_action", "action_specs"}
-		if requiredAction, ok := rawJSONString(object["required_action"]); ok {
-			if specs, ok := object["action_specs"]; ok {
-				var allSpecs map[string]json.RawMessage
-				if err := json.Unmarshal(specs, &allSpecs); err == nil {
-					if requiredSpec, ok := allSpecs[requiredAction]; ok {
-						reducedSpecs, marshalErr := json.Marshal(map[string]json.RawMessage{requiredAction: requiredSpec})
-						if marshalErr != nil {
-							return nil, nil, marshalErr
-						}
-						object["action_specs"] = reducedSpecs
-					}
-				}
-			}
-		}
+}
+
+func reduceHandoffToRequiredActionSpec(object map[string]json.RawMessage) error {
+	requiredAction, ok := rawJSONString(object["required_action"])
+	if !ok {
+		return nil
 	}
-	return projectObjectFields(object, keep)
+	specsJSON, ok := object["action_specs"]
+	if !ok {
+		return nil
+	}
+	var allSpecs map[string]json.RawMessage
+	if err := json.Unmarshal(specsJSON, &allSpecs); err != nil {
+		return fmt.Errorf("decode canonical handoff action_specs: %w", err)
+	}
+	requiredSpec, ok := allSpecs[requiredAction]
+	if !ok {
+		return nil
+	}
+	reducedSpecs, err := json.Marshal(map[string]json.RawMessage{requiredAction: requiredSpec})
+	if err != nil {
+		return fmt.Errorf("encode required canonical handoff action spec: %w", err)
+	}
+	object["action_specs"] = reducedSpecs
+	return nil
 }
 
 func decodeJSONObject(raw json.RawMessage, label string) (map[string]json.RawMessage, error) {
