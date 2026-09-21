@@ -9,6 +9,8 @@ type analysisUsageComparability struct {
 
 const parentUsageReasonInterleavedUnattributed = "interleaved-unattributed-turn"
 
+const parentUsageReasonSameTurnInterleaved = "same-turn-interleaved-user-message"
+
 const parentUsageReasonOwnershipUnknown = "task-ownership-unknown"
 
 func analysisExecutionUsageComparability(scan bundleRolloutScan, ownership analysisTaskOwnership, start, end time.Time) analysisUsageComparability {
@@ -21,11 +23,24 @@ func analysisExecutionUsageComparability(scan bundleRolloutScan, ownership analy
 			continue
 		}
 		if analysisTaskOwnsTurn(ownership, turn) {
+			if analysisOwnedTurnHasInterleavedUserMessage(turn, start, end) {
+				return analysisUsageComparability{status: codexStatusAmbiguous, reason: parentUsageReasonSameTurnInterleaved}
+			}
 			continue
 		}
 		return analysisUsageComparability{status: codexStatusAmbiguous, reason: parentUsageReasonInterleavedUnattributed}
 	}
 	return analysisUsageComparability{status: analysisStatusAvailable}
+}
+
+func analysisOwnedTurnHasInterleavedUserMessage(turn *analysisRolloutTurn, start, end time.Time) bool {
+	for _, at := range turn.UserMessages[1:] {
+		if at.Before(start) || at.After(end) {
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 func analysisExecutionTokenDeltaForOwnership(association codexAssociation, scan bundleRolloutScan, scanErr error, start time.Time, execution analysisExecutionBoundary, collectionEnd time.Time, ownership analysisTaskOwnership) bundleAnalysisTokenDelta {
