@@ -1,6 +1,7 @@
 package parentactioncmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -25,8 +26,8 @@ func TestTerminalProjectionBoundsDecisionAndPreservesSemanticFields(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(rawEnvelope) <= parentActionTerminalBudgetBytes {
-		t.Fatalf("fixture must exceed budget before projection: raw=%d budget=%d", len(rawEnvelope), parentActionTerminalBudgetBytes)
+	if encodedJSONLineBytes(rawEnvelope) < 16000 {
+		t.Fatalf("fixture must stay at least as large as the observed truncating result: raw=%d", encodedJSONLineBytes(rawEnvelope))
 	}
 
 	envelope, err := projectParentActionTerminalEnvelope(terminal, handoff)
@@ -43,6 +44,9 @@ func TestTerminalProjectionBoundsDecisionAndPreservesSemanticFields(t *testing.T
 	if envelope.Projection.ParentToolCalls != 1 || envelope.Projection.RecoveryCalls != 0 {
 		t.Fatalf("unexpected call telemetry: %+v", envelope.Projection)
 	}
+	if envelope.Projection.DeduplicatedFields == 0 {
+		t.Fatalf("dedup telemetry missing: %+v", envelope.Projection)
+	}
 	for _, field := range []string{"status", "risk", "decision", "evidence", "options", "recommendation", "test_obligations", "targets", "artifacts"} {
 		assertJSONFieldEqual(t, terminal, envelope.Terminal, field)
 	}
@@ -51,6 +55,45 @@ func TestTerminalProjectionBoundsDecisionAndPreservesSemanticFields(t *testing.T
 	assertJSONFieldAbsent(t, envelope.Handoff, "snapshot")
 	assertJSONFieldAbsent(t, envelope.Handoff, "validations")
 	assertJSONFieldAbsent(t, envelope.Handoff, "routing_evidence")
+}
+
+func TestWriteProjectedTerminalEnvelopeReturnsSingleBoundedResultWithoutRecovery(t *testing.T) {
+	terminal := mustJSONRaw(t, map[string]any{
+		"status":           "NEEDS_SOL_DECISION",
+		"risk":             "HIGH",
+		"decision":         "choose the safe protocol boundary",
+		"evidence":         "bounded evidence",
+		"options":          "safe or unsafe",
+		"recommendation":   "safe",
+		"test_obligations": "preserve the canonical next action",
+		"targets":          []string{"target.go:10-20"},
+		"artifacts":        []string{"/tmp/task/decision.json"},
+	})
+	handoff := representativeHandoff(t, strings.Repeat("baseline-", 300), strings.Repeat("validation-", 300))
+
+	var stdout bytes.Buffer
+	if err := writeProjectedTerminalEnvelope(&stdout, terminal, handoff); err != nil {
+		t.Fatalf("write projected terminal envelope: %v", err)
+	}
+	if stdout.Len() > parentActionTerminalBudgetBytes {
+		t.Fatalf("model-visible stdout exceeds budget: bytes=%d budget=%d", stdout.Len(), parentActionTerminalBudgetBytes)
+	}
+	machineJSON, err := decodeSingleMachineJSON(stdout.Bytes(), "projected terminal envelope")
+	if err != nil {
+		t.Fatalf("projected stdout is not one machine JSON value: %v", err)
+	}
+	var envelope parentActionTerminalEnvelopePayload
+	if err := json.Unmarshal(machineJSON, &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if envelope.Projection == nil || envelope.Projection.ParentToolCalls != 1 || envelope.Projection.RecoveryCalls != 0 {
+		t.Fatalf("normal terminal unexpectedly requires recovery: %+v", envelope.Projection)
+	}
+	if envelope.Projection.ProjectedBytes != stdout.Len() {
+		t.Fatalf("projected_bytes=%d stdout=%d", envelope.Projection.ProjectedBytes, stdout.Len())
+	}
+	assertJSONFieldEqual(t, terminal, envelope.Terminal, "decision")
+	assertHandoffAuthorityPreserved(t, envelope.Handoff)
 }
 
 func TestTerminalProjectionPreservesNeedsSolReviewAndPassFields(t *testing.T) {
@@ -274,11 +317,12 @@ func assertEnvelopeWithinBudget(t *testing.T, envelope parentActionTerminalEnvel
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(raw) > parentActionTerminalBudgetBytes {
-		t.Fatalf("envelope exceeds budget: size=%d budget=%d\n%s", len(raw), parentActionTerminalBudgetBytes, raw)
+	actualBytes := encodedJSONLineBytes(raw)
+	if actualBytes > parentActionTerminalBudgetBytes {
+		t.Fatalf("envelope exceeds budget: size=%d budget=%d\n%s", actualBytes, parentActionTerminalBudgetBytes, raw)
 	}
-	if envelope.Projection != nil && envelope.Projection.ProjectedBytes != len(raw) {
-		t.Fatalf("projected_bytes=%d actual=%d", envelope.Projection.ProjectedBytes, len(raw))
+	if envelope.Projection != nil && envelope.Projection.ProjectedBytes != actualBytes {
+		t.Fatalf("projected_bytes=%d actual=%d", envelope.Projection.ProjectedBytes, actualBytes)
 	}
 }
 
