@@ -55,7 +55,7 @@ func admitExistingTaskParentCommand(cmd Command, st *state.StateStore) error {
 	if !parentCommand {
 		return nil
 	}
-	plan, admitted, err := st.AdmitParentActionByAuthority(action)
+	plan, admitted, err := st.AdmitParentAction(action)
 	if err != nil {
 		return &workflow.WorkerError{Message: err.Error()}
 	}
