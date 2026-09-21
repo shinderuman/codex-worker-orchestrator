@@ -6,6 +6,8 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
+const invalidMilestoneProgressStateReason = "invalid-milestone-state"
+
 type ExecutionProgressProjection struct {
 	Status              string                      `json:"status"`
 	Band                string                      `json:"band,omitempty"`
@@ -80,27 +82,31 @@ func executionProgressPlanInconsistency(st *state.StateStore, plan *executionMil
 	if taskID := st.ReadOr("task.id", ""); taskID != "" && plan.TaskID != taskID {
 		return "milestone-task-mismatch"
 	}
-	if len(plan.Milestones) < 2 {
-		return "invalid-milestone-state"
-	}
-	for index, milestone := range plan.Milestones {
-		if strings.TrimSpace(milestone.ID) == "" {
-			return "invalid-milestone-state"
-		}
-		if index < plan.CurrentIndex {
-			if milestone.Status != executionMilestoneComplete || milestone.Completion == nil {
-				return "invalid-milestone-state"
-			}
-			continue
-		}
-		if milestone.Status != executionMilestonePending || milestone.Completion != nil {
-			return "invalid-milestone-state"
-		}
+	if len(plan.Milestones) < 2 || !executionProgressMilestonesConsistent(plan) {
+		return invalidMilestoneProgressStateReason
 	}
 	if st.TaskStatus() == state.TaskStatusComplete && plan.CurrentIndex != len(plan.Milestones) {
 		return "lifecycle-milestone-inconsistent"
 	}
 	return ""
+}
+
+func executionProgressMilestonesConsistent(plan *executionMilestonePlan) bool {
+	for index, milestone := range plan.Milestones {
+		if strings.TrimSpace(milestone.ID) == "" {
+			return false
+		}
+		if index < plan.CurrentIndex {
+			if milestone.Status != executionMilestoneComplete || milestone.Completion == nil {
+				return false
+			}
+			continue
+		}
+		if milestone.Status != executionMilestonePending || milestone.Completion != nil {
+			return false
+		}
+	}
+	return true
 }
 
 func executionProgressPhaseStage(currentPhase, currentRole string) string {
