@@ -21,6 +21,8 @@ type parentActionTerminalEnvelopePayload struct {
 	Projection      *parentActionTerminalProjectionStats `json:"projection,omitempty"`
 }
 
+type terminalHandoffLoader func() (json.RawMessage, error)
+
 const (
 	actionAccept = "accept"
 	actionPark   = "park"
@@ -41,35 +43,68 @@ func executeWithTerminalEnvelope(cfg config.AppConfig, args []string, stdout, st
 	}
 
 	var terminal bytes.Buffer
-	if err := executeTerminalAction(cfg, args, &terminal, stderr); err != nil {
-		if terminal.Len() != 0 {
-			_, _ = stdout.Write(terminal.Bytes())
-		}
-		return err
+	terminalErr := executeTerminalAction(cfg, args, &terminal, stderr)
+	if terminalErr != nil {
+		return writeFailedTerminalAction(stdout, terminal.Bytes(), terminalErr, func() (json.RawMessage, error) {
+			return readTerminalHandoff(cfg, args[0], stderr, true)
+		})
 	}
 	terminalJSON, err := decodeSingleMachineJSON(terminal.Bytes(), "parent action terminal")
 	if err != nil {
 		return err
 	}
-
-	var handoff bytes.Buffer
-	if args[0] == actionReviewEvidence {
-		err = app.Execute(app.Command{Mode: app.ModeHandoff}, cfg, nil, &handoff, stderr)
-	} else {
-		err = runWorker(cfg.RepoRoot, []string{"--handoff"}, nil, &handoff, stderr, nil)
-	}
+	handoffJSON, err := readTerminalHandoff(cfg, args[0], stderr, false)
 	if err != nil {
 		return writeTerminalHandoffFailure(stdout, terminalJSON, fmt.Errorf("canonical handoff failed after parent action: %w", err))
-	}
-	handoffJSON, err := decodeSingleMachineJSON(handoff.Bytes(), "canonical handoff")
-	if err != nil {
-		return writeTerminalHandoffFailure(stdout, terminalJSON, err)
 	}
 	return writeProjectedTerminalEnvelope(stdout, terminalJSON, handoffJSON)
 }
 
+func writeFailedTerminalAction(stdout io.Writer, terminalBytes []byte, terminalErr error, loadRecoveryHandoff terminalHandoffLoader) error {
+	if len(terminalBytes) == 0 {
+		return terminalErr
+	}
+	terminalJSON, err := decodeSingleMachineJSON(terminalBytes, "failed parent action terminal")
+	if err != nil {
+		_, _ = stdout.Write(terminalBytes)
+		return errors.Join(terminalErr, err)
+	}
+	handoffJSON, err := loadRecoveryHandoff()
+	if err != nil {
+		handoffErr := fmt.Errorf("canonical recovery handoff failed after parent action error: %w", err)
+		return errors.Join(terminalErr, writeTerminalHandoffFailure(stdout, terminalJSON, handoffErr))
+	}
+	projectionErr := writeProjectedRecoveryTerminalEnvelope(stdout, terminalJSON, handoffJSON)
+	return errors.Join(terminalErr, projectionErr)
+}
+
+func readTerminalHandoff(cfg config.AppConfig, action string, stderr io.Writer, recovery bool) (json.RawMessage, error) {
+	var handoff bytes.Buffer
+	var err error
+	switch {
+	case recovery:
+		err = runWorker(cfg.RepoRoot, []string{"--handoff", "recovery"}, nil, &handoff, stderr, nil)
+	case action == actionReviewEvidence:
+		err = app.Execute(app.Command{Mode: app.ModeHandoff}, cfg, nil, &handoff, stderr)
+	default:
+		err = runWorker(cfg.RepoRoot, []string{"--handoff"}, nil, &handoff, stderr, nil)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return decodeSingleMachineJSON(handoff.Bytes(), "canonical handoff")
+}
+
 func writeProjectedTerminalEnvelope(stdout io.Writer, terminalJSON, handoffJSON json.RawMessage) error {
-	envelope, err := projectParentActionTerminalEnvelope(terminalJSON, handoffJSON)
+	return writeProjectedTerminalEnvelopeMode(stdout, terminalJSON, handoffJSON, false)
+}
+
+func writeProjectedRecoveryTerminalEnvelope(stdout io.Writer, terminalJSON, handoffJSON json.RawMessage) error {
+	return writeProjectedTerminalEnvelopeMode(stdout, terminalJSON, handoffJSON, true)
+}
+
+func writeProjectedTerminalEnvelopeMode(stdout io.Writer, terminalJSON, handoffJSON json.RawMessage, recovery bool) error {
+	envelope, err := projectParentActionTerminalEnvelopeMode(terminalJSON, handoffJSON, recovery)
 	if err == nil {
 		return json.NewEncoder(stdout).Encode(envelope)
 	}
