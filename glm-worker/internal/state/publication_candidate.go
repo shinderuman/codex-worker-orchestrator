@@ -41,10 +41,6 @@ func (s *StateStore) SavePublicationCandidate(candidate PublicationCandidate) er
 	return s.Write(publicationCandidateStateFile, string(data))
 }
 
-func (s *StateStore) HasPublicationCandidate() bool {
-	return s.Exists(publicationCandidateStateFile)
-}
-
 func (s *StateStore) LoadPublicationCandidate() (PublicationCandidate, error) {
 	data, err := s.Read(publicationCandidateStateFile)
 	if err != nil {
