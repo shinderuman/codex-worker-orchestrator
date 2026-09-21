@@ -8,11 +8,13 @@ import (
 )
 
 type parentHandoffActionSpec struct {
-	Kind               string            `json:"kind"`
-	Command            []string          `json:"command,omitempty"`
-	PrepareCommand     []string          `json:"prepare_command,omitempty"`
-	Parameters         map[string]string `json:"parameters,omitempty"`
-	OptionalParameters []string          `json:"optional_parameters,omitempty"`
+	Kind               string              `json:"kind"`
+	Command            []string            `json:"command,omitempty"`
+	PrepareCommand     []string            `json:"prepare_command,omitempty"`
+	Parameters         map[string]string   `json:"parameters,omitempty"`
+	RequiredParameters []string            `json:"required_parameters,omitempty"`
+	OptionalParameters []string            `json:"optional_parameters,omitempty"`
+	Choices            map[string][]string `json:"choices,omitempty"`
 }
 
 type parentHandoffOutputAlias parentHandoffOutput
@@ -26,6 +28,7 @@ func (output parentHandoffOutput) MarshalJSON() ([]byte, error) {
 		output.PendingDecision,
 		output.AllowedActions,
 	)
+	projectImprovementSignal(&projected)
 	return json.Marshal(struct {
 		parentHandoffOutputAlias
 		ActionSpecs map[string]parentHandoffActionSpec `json:"action_specs"`
@@ -43,6 +46,7 @@ func (output parentHandoffRecoveryOutput) MarshalJSON() ([]byte, error) {
 		output.PendingDecision,
 		output.AllowedActions,
 	)
+	projectRecoveryImprovementSignal(&projected)
 	return json.Marshal(struct {
 		parentHandoffRecoveryOutputAlias
 		ActionSpecs map[string]parentHandoffActionSpec `json:"action_specs"`
@@ -113,6 +117,8 @@ func parentActionSpec(action string, requiredParameters map[string]string) (pare
 		}, true
 	case state.ParentActionFix:
 		return parentFixActionSpec(requiredParameters), true
+	case state.ParentActionImprovementDisposition:
+		return improvementDispositionActionSpec(requiredParameters)
 	case state.ParentActionApproveSurface:
 		acceptedScope := requiredParameters["accepted-scope"]
 		if acceptedScope == "" {
@@ -146,6 +152,27 @@ func parentActionSpec(action string, requiredParameters map[string]string) (pare
 	default:
 		return parentHandoffActionSpec{}, false
 	}
+}
+
+func improvementDispositionActionSpec(requiredParameters map[string]string) (parentHandoffActionSpec, bool) {
+	signalKind := requiredParameters[improvementSignalKindParameter]
+	if signalKind == "" {
+		return parentHandoffActionSpec{}, false
+	}
+	parameters := make(map[string]string, len(requiredParameters))
+	for key, value := range requiredParameters {
+		parameters[key] = value
+	}
+	return parentHandoffActionSpec{
+		Kind:               "bounded-choice",
+		Command:            []string{"glm-parent-action", string(state.ParentActionImprovementDisposition), "--signal-kind", signalKind},
+		Parameters:         parameters,
+		RequiredParameters: []string{"--disposition"},
+		OptionalParameters: []string{"--task"},
+		Choices: map[string][]string{
+			"--disposition": state.ImprovementSignalDispositionChoices(),
+		},
+	}, true
 }
 
 func parentFixActionSpec(requiredParameters map[string]string) parentHandoffActionSpec {
