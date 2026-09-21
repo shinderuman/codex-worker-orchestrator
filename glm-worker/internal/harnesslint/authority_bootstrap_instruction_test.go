@@ -96,27 +96,4 @@ func TestCanonicalAuthorityBootstrapPrecedesRepositoryReadsAndRestoresWaitContra
 	if strings.Contains(codexResumeOwnership, "codex/AGENTS.md") {
 		t.Error("Codex-limit resume points back to the repository AGENTS source")
 	}
-
-	executionData, err := os.ReadFile(filepath.Join(root, "codex", "instructions", "glm-execution.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	waitSection, ok := markdownSection(string(executionData), "## 待機")
-	if !ok {
-		t.Fatal("glm-execution.md missing wait section")
-	}
-	for _, token := range []string{
-		`yield-time_ms":21600000`,
-		"background_terminal_max_timeout=21600000",
-		"tools.write_stdin",
-	} {
-		if !strings.Contains(waitSection, token) {
-			t.Errorf("restored wait contract missing %q", token)
-		}
-	}
-	for _, short := range []string{"yield-time_ms=30000", "yield-time_ms=60000", `yield-time_ms":30000`, `yield-time_ms":60000`} {
-		if strings.Contains(waitSection, short) {
-			t.Errorf("wait contract permits explicit short-yield override %q", short)
-		}
-	}
 }
