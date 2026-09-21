@@ -7,15 +7,6 @@ import (
 	"time"
 )
 
-const analysisObservedPragmaWaitSource = `// @exec: {"yield-time_ms": 21600000, "max_output_tokens": 1600}
-const r = await tools.write_stdin({
-  session_id: 24719,
-  chars: "",
-  yield_time_ms: 21600000,
-  max_output_tokens: 1600
-});
-text(JSON.stringify(r));`
-
 func TestCustomExecWriteStdinWaitsNormalize(t *testing.T) {
 	start := time.Date(2026, 9, 19, 2, 0, 0, 0, time.UTC)
 	at := start.Add(time.Minute)
@@ -23,7 +14,7 @@ func TestCustomExecWriteStdinWaitsNormalize(t *testing.T) {
 		analysisCustomWaitRequestLine(t, at, "custom-short", analysisObservedDirectWaitSource(46866, 30000, 16000)),
 		analysisCustomWaitRequestLine(t, at.Add(time.Minute), "custom-bounded", analysisObservedDirectWaitSource(46866, 300000, 20000)),
 		analysisCustomWaitReturnLine(t, at.Add(2*time.Minute), "custom-bounded"),
-		analysisCustomWaitRequestLine(t, at.Add(3*time.Minute), "custom-long", analysisObservedPragmaWaitSource),
+		analysisCustomWaitRequestLine(t, at.Add(3*time.Minute), "custom-long", analysisObservedPragmaWaitSource()),
 	}
 	waits := analysisWaitCallsFromLines(t, start, start.Add(time.Hour), lines)
 	if waits.Status != analysisStatusCounted || waits.Count != 3 || len(waits.DuplicateCallIDs) != 0 {
@@ -42,22 +33,17 @@ func TestCustomExecWriteStdinWaitsNormalize(t *testing.T) {
 func TestCustomExecWriteStdinWaitRejectsNonCanonicalShapes(t *testing.T) {
 	start := time.Date(2026, 9, 19, 2, 0, 0, 0, time.UTC)
 	at := start.Add(time.Minute)
-	loopWrapper := `// @exec: {"yield-time_ms": 21600000, "max_output_tokens": 20000}
-let combined = "";
-while (true) {
-  const r = await tools.write_stdin({session_id: 46866, chars: "", yield_time_ms: 300000, max_output_tokens: 20000});
-  if (r.output) combined += r.output;
-  if (r.exit_code !== undefined) break;
-}`
+	loopWrapper := fmt.Sprintf("// @exec: {%q: 21600000, %q: 20000}\nlet combined = %q;\nwhile (true) {\n  const r = await tools.write_stdin({session_id: 46866, chars: %q, yield_time_ms: 300000, max_output_tokens: 20000});\n  if (r.output) combined += r.output;\n  if (r.exit_code !== undefined) break;\n}",
+		"yield-time_ms", "max_output_tokens", "", "")
 	lines := []string{
-		analysisCustomExecLine(t, at, "exec-command", `const r = await tools.exec_command({cmd:"echo tools.write_stdin",yield_time_ms:300000}); text(r);`),
-		analysisCustomExecLine(t, at.Add(time.Minute), "string-only", `text("tools.write_stdin({session_id:46866,yield_time_ms:300000})");`),
-		analysisCustomExecLine(t, at.Add(2*time.Minute), "shape-mismatch", `const r = await tools.write_stdin(session); text(r);`),
-		analysisCustomExecLine(t, at.Add(3*time.Minute), "writes-input", `const r = await tools.write_stdin({session_id:46866,chars:"x",yield_time_ms:300000,max_output_tokens:20000}); text(r);`),
-		analysisCustomExecLine(t, at.Add(4*time.Minute), "writes-whitespace", `const r = await tools.write_stdin({session_id:46866,chars:" ",yield_time_ms:300000,max_output_tokens:20000}); text(r);`),
-		analysisCustomExecLine(t, at.Add(5*time.Minute), "extra-code", analysisObservedDirectWaitSource(46866, 300000, 20000)+` text("extra");`),
-		analysisCustomExecLine(t, at.Add(6*time.Minute), "dynamic-session", `const r = await tools.write_stdin({session_id:sid,chars:"",yield_time_ms:300000,max_output_tokens:20000}); text(r);`),
-		analysisCustomExecLine(t, at.Add(7*time.Minute), "missing-chars", `const r = await tools.write_stdin({session_id:46866,yield_time_ms:300000,max_output_tokens:20000}); text(r);`),
+		analysisCustomExecLine(t, at, "exec-command", fmt.Sprintf("const r = await tools.exec_command({cmd:%q,yield_time_ms:300000}); text(r);", "echo tools.write_stdin")),
+		analysisCustomExecLine(t, at.Add(time.Minute), "string-only", fmt.Sprintf("text(%q);", "tools.write_stdin({session_id:46866,yield_time_ms:300000})")),
+		analysisCustomExecLine(t, at.Add(2*time.Minute), "shape-mismatch", "const r = await tools.write_stdin(session); text(r);"),
+		analysisCustomExecLine(t, at.Add(3*time.Minute), "writes-input", fmt.Sprintf("const r = await tools.write_stdin({session_id:46866,chars:%q,yield_time_ms:300000,max_output_tokens:20000}); text(r);", "x")),
+		analysisCustomExecLine(t, at.Add(4*time.Minute), "writes-whitespace", fmt.Sprintf("const r = await tools.write_stdin({session_id:46866,chars:%q,yield_time_ms:300000,max_output_tokens:20000}); text(r);", " ")),
+		analysisCustomExecLine(t, at.Add(5*time.Minute), "extra-code", analysisObservedDirectWaitSource(46866, 300000, 20000)+fmt.Sprintf(" text(%q);", "extra")),
+		analysisCustomExecLine(t, at.Add(6*time.Minute), "dynamic-session", fmt.Sprintf("const r = await tools.write_stdin({session_id:sid,chars:%q,yield_time_ms:300000,max_output_tokens:20000}); text(r);", "")),
+		analysisCustomExecLine(t, at.Add(7*time.Minute), "missing-chars", "const r = await tools.write_stdin({session_id:46866,yield_time_ms:300000,max_output_tokens:20000}); text(r);"),
 		analysisCustomExecLine(t, at.Add(8*time.Minute), "loop-wrapper", loopWrapper),
 		analysisCustomToolLine(t, at.Add(9*time.Minute), "wrong-tool", "other", analysisObservedDirectWaitSource(46866, 300000, 20000)),
 	}
@@ -109,7 +95,7 @@ func TestCustomExecWriteStdinWaitMalformedAndConflictFailClosed(t *testing.T) {
 	start := time.Date(2026, 9, 19, 2, 0, 0, 0, time.UTC)
 	at := start.Add(time.Minute)
 	t.Run("malformed-yield-is-unknown", func(t *testing.T) {
-		input := `const r = await tools.write_stdin({session_id:46866,chars:"",yield_time_ms:"300000",max_output_tokens:20000}); text(r);`
+		input := fmt.Sprintf("const r = await tools.write_stdin({session_id:46866,chars:%q,yield-time_ms:%q,max_output_tokens:20000}); text(r);", "", "300000")
 		waits := analysisWaitCallsFromLines(t, start, start.Add(time.Hour), []string{
 			analysisCustomWaitRequestLine(t, at, "malformed", input),
 		})
@@ -123,9 +109,8 @@ func TestCustomExecWriteStdinWaitMalformedAndConflictFailClosed(t *testing.T) {
 	})
 
 	t.Run("pragma-yield-conflict-is-unknown", func(t *testing.T) {
-		input := `// @exec: {"yield-time_ms":30000,"max_output_tokens":20000}
-const r = await tools.write_stdin({session_id:46866,chars:"",yield_time_ms:300000,max_output_tokens:20000});
-text(r);`
+		input := fmt.Sprintf("// @exec: {%q:30000,%q:20000}\nconst r = await tools.write_stdin({session_id:46866,chars:%q,yield-time_ms:300000,max_output_tokens:20000});\ntext(r);",
+			"yield-time_ms", "max_output_tokens", "")
 		waits := analysisWaitCallsFromLines(t, start, start.Add(time.Hour), []string{
 			analysisCustomWaitRequestLine(t, at, "pragma-conflict", input),
 		})
@@ -184,8 +169,13 @@ func TestCustomExecWriteStdinWaitBundleLikeUndercountRegression(t *testing.T) {
 }
 
 func analysisObservedDirectWaitSource(sessionID, yieldMS, maxOutputTokens int) string {
-	return fmt.Sprintf(`const r = await tools.write_stdin({session_id:%d, chars:"", yield_time_ms:%d, max_output_tokens:%d});
-text(r);`, sessionID, yieldMS, maxOutputTokens)
+	return fmt.Sprintf("const r = await tools.write_stdin({session_id:%d, chars:%q, yield-time_ms:%d, max_output_tokens:%d});\ntext(r);",
+		sessionID, "", yieldMS, maxOutputTokens)
+}
+
+func analysisObservedPragmaWaitSource() string {
+	return fmt.Sprintf("// @exec: {%q: 21600000, %q: 1600}\nconst r = await tools.write_stdin({\n  session_id: 24719,\n  chars: %q,\n  yield-time_ms: 21600000,\n  max_output_tokens: 1600\n});\ntext(JSON.stringify(r));",
+		"yield-time_ms", "max_output_tokens", "")
 }
 
 func analysisWaitCallsFromLines(t *testing.T, start, end time.Time, lines []string) bundleAnalysisWaitCalls {
@@ -209,7 +199,7 @@ func analysisWaitCallsByID(calls []bundleAnalysisWaitCall) map[string]bundleAnal
 }
 
 func analysisLegacyWaitArguments(yieldMS int) string {
-	return fmt.Sprintf("{\"yield-time_ms\":%d}", yieldMS)
+	return fmt.Sprintf("{%q:%d}", "yield-time_ms", yieldMS)
 }
 
 func analysisCustomWaitRequestLine(t *testing.T, timestamp time.Time, callID, input string) string {
