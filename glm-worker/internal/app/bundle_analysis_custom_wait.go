@@ -23,15 +23,12 @@ const (
 	analysisWaitSessionIDKey       = "session_id"
 	analysisWaitCharsKey           = "chars"
 	analysisWaitYieldMSKey         = "yield_time_ms"
-	analysisExecYieldMSKey         = "yield_time_ms"
+	analysisExecYieldMSKey         = "yield-time_ms"
 	analysisWaitMaxOutputTokensKey = "max_output_tokens"
 	analysisWaitWrapperPrefix      = "constr=awaittools.write_stdin("
+	analysisWaitWrapperTextSuffix  = ");text(r);"
+	analysisWaitWrapperJSONSuffix  = ");text(JSON.stringify(r));"
 )
-
-var analysisWaitWrapperSuffixes = []string{
-	");text(r);",
-	");text(JSON.stringify(r));",
-}
 
 func (item *codexRolloutItemPayload) UnmarshalJSON(data []byte) error {
 	var raw analysisRolloutItemPayloadRaw
@@ -66,7 +63,7 @@ func analysisNormalizeCustomWait(item *codexRolloutItemPayload, raw analysisRoll
 	item.Name = codexRolloutWaitCallName
 	item.Arguments = "{}"
 	if yieldMS != nil {
-		item.Arguments = "{\"yield-time_ms\":" + strconv.FormatUint(*yieldMS, 10) + "}"
+		item.Arguments = "{\"yield_time_ms\":" + strconv.FormatUint(*yieldMS, 10) + "}"
 	}
 }
 
@@ -95,10 +92,11 @@ func analysisCanonicalCustomWriteStdinWait(input string) (*uint64, bool) {
 }
 
 func analysisWaitWrapperObject(value string) (string, bool) {
-	for _, suffix := range analysisWaitWrapperSuffixes {
-		if strings.HasSuffix(value, suffix) {
-			return strings.TrimSuffix(value, suffix), true
-		}
+	if strings.HasSuffix(value, analysisWaitWrapperTextSuffix) {
+		return strings.TrimSuffix(value, analysisWaitWrapperTextSuffix), true
+	}
+	if strings.HasSuffix(value, analysisWaitWrapperJSONSuffix) {
+		return strings.TrimSuffix(value, analysisWaitWrapperJSONSuffix), true
 	}
 	return "", false
 }
@@ -203,6 +201,37 @@ func analysisUnsignedJSLiteral(raw string) (uint64, bool) {
 }
 
 func analysisCompactWaitWrapper(value string) string {
-	replacer := strings.NewReplacer(" ", "", "\t", "", "\n", "", "\r", "")
-	return replacer.Replace(strings.TrimSpace(value))
+	var builder strings.Builder
+	quote := byte(0)
+	escaped := false
+	for index := 0; index < len(value); index++ {
+		ch := value[index]
+		if quote != 0 {
+			builder.WriteByte(ch)
+			if escaped {
+				escaped = false
+				continue
+			}
+			if ch == '\\' {
+				escaped = true
+				continue
+			}
+			if ch == quote {
+				quote = 0
+			}
+			continue
+		}
+		if ch == '\'' || ch == '"' {
+			quote = ch
+			builder.WriteByte(ch)
+			continue
+		}
+		switch ch {
+		case ' ', '\t', '\n', '\r':
+			continue
+		default:
+			builder.WriteByte(ch)
+		}
+	}
+	return builder.String()
 }
