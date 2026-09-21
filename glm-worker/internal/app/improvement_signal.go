@@ -106,7 +106,7 @@ func CurrentImprovementSignal(st *state.StateStore) (*state.ImprovementSignal, e
 		if signal == nil {
 			return nil, nil
 		}
-		disposed, err := st.ImprovementSignalDisposed(signal.Kind)
+		disposed, err := st.ImprovementSignalDisposed(*signal)
 		if err != nil {
 			return nil, err
 		}
