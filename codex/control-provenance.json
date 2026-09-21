@@ -87,7 +87,7 @@
       "classification": "partial",
       "purpose": "Track repository-side execution-permission state without claiming ownership of external approval decisions.",
       "residual_parent_judgment": "The parent interprets external execution denials and chooses an allowed next action.",
-      "boundary": "Machine state is available locally, but the external approval reviewer or sandbox decision is not repository-owned here."
+      "boundary": "Machine state is available locally, but the external approval reviewer or sandbox decision is not repository-owned."
     },
     {
       "id": "external-feasibility-admission",
