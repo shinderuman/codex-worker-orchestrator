@@ -116,17 +116,8 @@ func qualityToolWiringChecks() []qualityWiringCheck {
 				"shfmt:",
 			},
 		},
-		{
-			path: ".github/workflows/quality.yml",
-			tokens: []string{
-				"quality-tools.yml",
-				"quality-tools.outputs.go_version",
-				"QUALITY_TOOLS_BIN_DIR",
-				"$GITHUB_ENV",
-				"./install-quality-tools.sh",
-				"./tests/install_quality_tools_smoke.sh",
-			},
-		},
+		ciWorkflowWiringCheck(),
+		installSmokeWorkflowWiringCheck(),
 		{
 			path: "install-quality-tools.sh",
 			tokens: []string{
@@ -152,6 +143,37 @@ func qualityToolWiringChecks() []qualityWiringCheck {
 				"codex-worker-orchestrator-shfmt-3.13.2",
 				"quality tool collision:",
 			},
+		},
+	}
+}
+
+func ciWorkflowWiringCheck() qualityWiringCheck {
+	return qualityWiringCheck{
+		path: ".github/workflows/ci.yml",
+		tokens: []string{
+			"quality-tools.yml",
+			"quality-tools.outputs.go_version",
+			"QUALITY_TOOLS_BIN_DIR",
+			"$GITHUB_ENV",
+			"./install-quality-tools.sh",
+			"./tests/install_quality_tools_smoke.sh",
+			"./.github/workflows/install-smoke.yml",
+		},
+	}
+}
+
+func installSmokeWorkflowWiringCheck() qualityWiringCheck {
+	return qualityWiringCheck{
+		path: ".github/workflows/install-smoke.yml",
+		tokens: []string{
+			"workflow_call:",
+			"quality-tools.yml",
+			"quality-tools.outputs.go_version",
+			"QUALITY_TOOLS_BIN_DIR",
+			"$GITHUB_ENV",
+			"./install-quality-tools.sh",
+			"./tests/install_smoke.sh",
+			"./tests/install_detached_runtime_identity_smoke.sh",
 		},
 	}
 }

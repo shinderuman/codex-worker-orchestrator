@@ -385,7 +385,8 @@ func activateMultiRepoRepositoryHarness(t *testing.T, repoRoot, qualityBin strin
 	sourceRoot := multiRepoSourceRepositoryRoot(t)
 	for _, path := range []string{
 		".golangci.yml",
-		".github/workflows/quality.yml",
+		".github/workflows/ci.yml",
+		".github/workflows/install-smoke.yml",
 		".githooks/post-merge",
 		"harnesslint",
 		"install.sh",

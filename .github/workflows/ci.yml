@@ -1,0 +1,87 @@
+name: Repository Lint
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - 'web-gpt/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: repository-lint-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  basic:
+    if: ${{ github.event_name != 'pull_request' || !startsWith(github.head_ref, 'web-gpt/') }}
+    name: basic (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - name: quality
+            mode: quality
+          - name: test
+            mode: test
+    steps:
+      - uses: actions/checkout@v6
+      - name: Read quality tool contract
+        id: quality-tools
+        run: |
+          GO_VERSION=$(awk -F': ' '$1 == "go" { print $2 }' quality-tools.yml)
+          printf 'go_version=%s\n' "$GO_VERSION" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ steps.quality-tools.outputs.go_version }}
+          cache: false
+      - name: Cache quality tools
+        if: ${{ matrix.mode == 'quality' }}
+        continue-on-error: true
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/codex-worker-orchestrator-quality-tools
+          key: quality-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('quality-tools.yml', 'install-quality-tools.sh') }}
+      - name: Install quality tools
+        if: ${{ matrix.mode == 'quality' }}
+        run: |
+          quality_bin="$RUNNER_TEMP/codex-worker-orchestrator-quality-tools"
+          printf 'QUALITY_TOOLS_BIN_DIR=%s\n' "$quality_bin" >> "$GITHUB_ENV"
+          QUALITY_TOOLS_BIN_DIR="$quality_bin" ./install-quality-tools.sh
+      - name: Quality tool ownership smoke
+        if: ${{ matrix.mode == 'quality' }}
+        run: sh ./tests/install_quality_tools_smoke.sh
+      - name: Repository lint gate
+        if: ${{ matrix.mode == 'quality' }}
+        run: ./harnesslint
+      - name: Go vet gate
+        if: ${{ matrix.mode == 'quality' }}
+        run: ./goquality vet
+      - name: Go build gate
+        if: ${{ matrix.mode == 'quality' }}
+        run: ./goquality build
+      - name: Full Go test suite
+        if: ${{ matrix.mode == 'test' }}
+        working-directory: glm-worker
+        run: go test ./...
+
+  lint:
+    if: ${{ always() && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'web-gpt/')) }}
+    needs:
+      - basic
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require basic validation
+        env:
+          BASIC_RESULT: ${{ needs.basic.result }}
+        run: test "$BASIC_RESULT" = success
+
+  install-smoke:
+    if: ${{ (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/web-gpt/')) || github.event_name == 'workflow_dispatch' }}
+    needs:
+      - lint
+    uses: ./.github/workflows/install-smoke.yml

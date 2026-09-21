@@ -80,7 +80,7 @@ go vet ./...
 go build ./...
 ```
 
-固定tool version、quality threshold、CI wiringは`quality-tools.yml`、`.golangci.yml`、`.github/workflows/quality.yml`を正とします。sandbox等で通常のfull test実行に追加能力が必要な場合の入口は`glm-worker --help`と`codex/instructions/quality-gate-capability.md`から確認します。
+固定tool version、quality threshold、CI wiringは`quality-tools.yml`、`.golangci.yml`、`.github/workflows/ci.yml`、`.github/workflows/install-smoke.yml`を正とします。sandbox等で通常のfull test実行に追加能力が必要な場合の入口は`glm-worker --help`と`codex/instructions/quality-gate-capability.md`から確認します。
 
 ## State and evidence
 

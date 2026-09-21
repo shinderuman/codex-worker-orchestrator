@@ -1,22 +1,27 @@
-name: Repository Lint
+name: Install Smoke
 
 on:
-  pull_request:
-  push:
-    branches:
-      - main
-  workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
 
 concurrency:
-  group: repository-lint-${{ github.event.pull_request.number || github.ref }}
+  group: install-smoke-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  lint:
+  validation:
+    name: validation (${{ matrix.name }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: installer
+            command: ./tests/install_smoke.sh
+          - name: detached-runtime-identity
+            command: ./tests/install_detached_runtime_identity_smoke.sh
     steps:
       - uses: actions/checkout@v6
       - name: Read quality tool contract
@@ -28,19 +33,16 @@ jobs:
         with:
           go-version: ${{ steps.quality-tools.outputs.go_version }}
           cache: false
+      - name: Cache quality tools
+        continue-on-error: true
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/codex-worker-orchestrator-quality-tools
+          key: quality-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('quality-tools.yml', 'install-quality-tools.sh') }}
       - name: Install quality tools
         run: |
           quality_bin="$RUNNER_TEMP/codex-worker-orchestrator-quality-tools"
           printf 'QUALITY_TOOLS_BIN_DIR=%s\n' "$quality_bin" >> "$GITHUB_ENV"
           QUALITY_TOOLS_BIN_DIR="$quality_bin" ./install-quality-tools.sh
-      - name: Quality tool ownership smoke
-        run: sh ./tests/install_quality_tools_smoke.sh
-      - name: Repository lint gate
-        run: ./harnesslint
-      - name: Go vet gate
-        run: ./goquality vet
-      - name: Go build gate
-        run: ./goquality build
-      - name: Full Go test suite
-        working-directory: glm-worker
-        run: go test ./...
+      - name: Run validation
+        run: ${{ matrix.command }}
