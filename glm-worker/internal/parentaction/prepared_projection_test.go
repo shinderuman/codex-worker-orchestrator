@@ -36,28 +36,48 @@ func TestPreparedProjection(t *testing.T) {
 	}
 }
 
-func TestPreparedProjectionFixExposesPayloadSlotAndNextCommand(t *testing.T) {
-	prepared := Prepared{Action: string(ActionFix), Token: "fedcba9876543210fedcba9876543210", Path: "/tmp/fix.txt"}
-	raw, err := json.Marshal(prepared)
-	if err != nil {
-		t.Fatal(err)
+func TestPreparedProjectionPayloadActionsExposePayloadSlotAndNextCommand(t *testing.T) {
+	cases := map[Action]string{
+		ActionFix:              "fedcba9876543210fedcba9876543210",
+		ActionStartMilestones:  "11111111111111111111111111111111",
+		ActionReviseMilestones: "22222222222222222222222222222222",
 	}
-	var decoded struct {
-		Status      string         `json:"status"`
-		Slots       []PreparedSlot `json:"slots"`
-		NextCommand []string       `json:"next_command"`
+	if got, want := len(payloadActions), len(cases)+1; got != want {
+		t.Fatalf("payload action family changed: got %d actions, regression covers %d", got, want)
 	}
-	if err := json.Unmarshal(raw, &decoded); err != nil {
-		t.Fatal(err)
-	}
-	if decoded.Status != "prepared" {
-		t.Fatalf("status = %q want prepared", decoded.Status)
-	}
-	if !reflect.DeepEqual(decoded.NextCommand, []string{"glm-parent-action", "fix", prepared.Token}) {
-		t.Fatalf("next command = %#v", decoded.NextCommand)
-	}
-	want := []PreparedSlot{{Name: "payload", Placeholder: "__GLM_PARENT_ACTION_PAYLOAD__"}}
-	if !reflect.DeepEqual(decoded.Slots, want) {
-		t.Fatalf("slots = %#v want %#v", decoded.Slots, want)
+
+	for action := range payloadActions {
+		if action == ActionDecision {
+			continue
+		}
+		token, ok := cases[action]
+		if !ok {
+			t.Fatalf("payload action %q lacks no-reread projection regression", action)
+		}
+		t.Run(string(action), func(t *testing.T) {
+			prepared := Prepared{Action: string(action), Token: token, Path: "/tmp/" + string(action) + ".txt"}
+			raw, err := json.Marshal(prepared)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var decoded struct {
+				Status      string         `json:"status"`
+				Slots       []PreparedSlot `json:"slots"`
+				NextCommand []string       `json:"next_command"`
+			}
+			if err := json.Unmarshal(raw, &decoded); err != nil {
+				t.Fatal(err)
+			}
+			if decoded.Status != "prepared" {
+				t.Fatalf("status = %q want prepared", decoded.Status)
+			}
+			if !reflect.DeepEqual(decoded.NextCommand, []string{"glm-parent-action", string(action), prepared.Token}) {
+				t.Fatalf("next command = %#v", decoded.NextCommand)
+			}
+			want := []PreparedSlot{{Name: "payload", Placeholder: "__GLM_PARENT_ACTION_PAYLOAD__"}}
+			if !reflect.DeepEqual(decoded.Slots, want) {
+				t.Fatalf("slots = %#v want %#v", decoded.Slots, want)
+			}
+		})
 	}
 }
