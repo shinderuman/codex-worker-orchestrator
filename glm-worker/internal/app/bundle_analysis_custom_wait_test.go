@@ -54,11 +54,12 @@ while (true) {
 		analysisCustomExecLine(t, at.Add(time.Minute), "string-only", `text("tools.write_stdin({session_id:46866,yield_time_ms:300000})");`),
 		analysisCustomExecLine(t, at.Add(2*time.Minute), "shape-mismatch", `const r = await tools.write_stdin(session); text(r);`),
 		analysisCustomExecLine(t, at.Add(3*time.Minute), "writes-input", `const r = await tools.write_stdin({session_id:46866,chars:"x",yield_time_ms:300000,max_output_tokens:20000}); text(r);`),
-		analysisCustomExecLine(t, at.Add(4*time.Minute), "extra-code", analysisObservedDirectWaitSource(46866, 300000, 20000)+` text("extra");`),
-		analysisCustomExecLine(t, at.Add(5*time.Minute), "dynamic-session", `const r = await tools.write_stdin({session_id:sid,chars:"",yield_time_ms:300000,max_output_tokens:20000}); text(r);`),
-		analysisCustomExecLine(t, at.Add(6*time.Minute), "missing-chars", `const r = await tools.write_stdin({session_id:46866,yield_time_ms:300000,max_output_tokens:20000}); text(r);`),
-		analysisCustomExecLine(t, at.Add(7*time.Minute), "loop-wrapper", loopWrapper),
-		analysisCustomToolLine(t, at.Add(8*time.Minute), "wrong-tool", "other", analysisObservedDirectWaitSource(46866, 300000, 20000)),
+		analysisCustomExecLine(t, at.Add(4*time.Minute), "writes-whitespace", `const r = await tools.write_stdin({session_id:46866,chars:" ",yield_time_ms:300000,max_output_tokens:20000}); text(r);`),
+		analysisCustomExecLine(t, at.Add(5*time.Minute), "extra-code", analysisObservedDirectWaitSource(46866, 300000, 20000)+` text("extra");`),
+		analysisCustomExecLine(t, at.Add(6*time.Minute), "dynamic-session", `const r = await tools.write_stdin({session_id:sid,chars:"",yield_time_ms:300000,max_output_tokens:20000}); text(r);`),
+		analysisCustomExecLine(t, at.Add(7*time.Minute), "missing-chars", `const r = await tools.write_stdin({session_id:46866,yield_time_ms:300000,max_output_tokens:20000}); text(r);`),
+		analysisCustomExecLine(t, at.Add(8*time.Minute), "loop-wrapper", loopWrapper),
+		analysisCustomToolLine(t, at.Add(9*time.Minute), "wrong-tool", "other", analysisObservedDirectWaitSource(46866, 300000, 20000)),
 	}
 	waits := analysisWaitCallsFromLines(t, start, start.Add(time.Hour), lines)
 	if waits.Status != analysisStatusCounted || waits.Count != 0 || len(waits.Calls) != 0 || len(waits.DuplicateCallIDs) != 0 {
@@ -208,7 +209,7 @@ func analysisWaitCallsByID(calls []bundleAnalysisWaitCall) map[string]bundleAnal
 }
 
 func analysisLegacyWaitArguments(yieldMS int) string {
-	return fmt.Sprintf(`{"yield-time_ms":%d}`, yieldMS)
+	return fmt.Sprintf("{\"yield-time_ms\":%d}", yieldMS)
 }
 
 func analysisCustomWaitRequestLine(t *testing.T, timestamp time.Time, callID, input string) string {
