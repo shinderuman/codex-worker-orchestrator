@@ -8,11 +8,10 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## ACTIVE
 
-- `IMPLEMENTATION_TASKS/forward-only-compatibility-regression.md`
+- `IMPLEMENTATION_TASKS/machine-negative-result-authority.md`
 
 ## NEXT（優先順）
 
-- `IMPLEMENTATION_TASKS/machine-negative-result-authority.md`
 - `IMPLEMENTATION_TASKS/canonical-authority-bootstrap-enforcement.md`
 - `IMPLEMENTATION_TASKS/staged-parent-action-no-reread-regression.md`
 - `IMPLEMENTATION_TASKS/system-one-dogfood-evidence-shadow-eval.md`
