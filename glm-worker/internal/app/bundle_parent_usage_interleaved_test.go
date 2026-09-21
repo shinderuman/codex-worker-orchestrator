@@ -66,3 +66,60 @@ func TestInterleavedUnattributedTurnFailsClosedAcrossParentUsage(t *testing.T) {
 		t.Fatalf("compact activity aggregate = %#v", usage.TaskExecution)
 	}
 }
+
+func TestSameTurnInterleavedUserMessageFailsClosedAcrossParentUsage(t *testing.T) {
+	task := newAnalysisTerminalTask(t)
+	turnStart := task.start.Add(-2 * time.Minute)
+	turnComplete := task.completeAt.Add(2 * time.Minute)
+
+	lines := []string{
+		analysisTurnLine(t, turnStart, codexRolloutTaskStartedType, analysisOwningTurnID),
+		analysisUserMessageLine(t, task.start.Add(-90*time.Second)),
+		parentUsageTokenCountLine(t, task.start.Add(-time.Second), 100, 50, 10, 5, 115),
+		parentUsageToolCallLine(t, task.start.Add(time.Minute), "task-tool"),
+		analysisUserMessageLine(t, task.start.Add(5*time.Minute)),
+		parentUsageTokenCountLine(t, task.completeAt.Add(-time.Second), 1000, 500, 160, 80, 1500),
+		analysisTurnLine(t, turnComplete, codexRolloutTaskCompleteType, analysisOwningTurnID),
+	}
+	writeAnalysisRollout(t, task.codexHome, analysisRolloutRel(), codexTestParentThreadID,
+		task.start.Add(-3*time.Hour), lines)
+
+	report := runParentUsageReport(t, task.cfg)
+	execution := report.Intervals.TaskExecution
+	if execution.Tokens.Status != codexStatusAmbiguous || execution.Tokens.Reason != parentUsageReasonSameTurnInterleaved ||
+		execution.Tokens.InputTokens != 0 || execution.Tokens.CachedInputTokens != 0 {
+		t.Fatalf("execution tokens = %#v", execution.Tokens)
+	}
+	if execution.Activity.Status != codexStatusAmbiguous || execution.Activity.Reason != parentUsageReasonSameTurnInterleaved ||
+		execution.Activity.ModelTurns != 0 || execution.Activity.ToolCalls != 0 {
+		t.Fatalf("execution activity = %#v", execution.Activity)
+	}
+
+	index := runAnalysisBundle(t, task.cfg, "")
+	if index.TokenDelta.Status != codexStatusAmbiguous || index.TokenDelta.InputTokens != 0 || index.TokenDelta.CachedInputTokens != 0 {
+		t.Fatalf("analysis execution token delta = %#v", index.TokenDelta)
+	}
+	if index.Intervals.SubsequentRequests.Status != analysisStatusAvailable || len(index.Intervals.SubsequentRequests.Turns) != 0 {
+		t.Fatalf("subsequent requests = %#v", index.Intervals.SubsequentRequests)
+	}
+
+	stats, err := task.st.AllTaskStats()
+	if err != nil {
+		t.Fatal(err)
+	}
+	usage := buildTelemetryCompactParentUsage(task.cfg, task.st, stats)
+	if usage.Available != 0 || usage.TaskExecution.Tokens.TasksSummed != 0 || usage.TaskExecution.Activity.TasksCounted != 0 ||
+		usage.TaskExecution.TokensExcludedByReason[parentUsageReasonSameTurnInterleaved] != 1 ||
+		usage.TaskExecution.ActivityExcludedByReason[parentUsageReasonSameTurnInterleaved] != 1 {
+		t.Fatalf("compact parent usage = %#v", usage)
+	}
+}
+
+func analysisUserMessageLine(t *testing.T, timestamp time.Time) string {
+	t.Helper()
+	return analysisRolloutLine(t, timestamp, "event_msg", map[string]any{
+		"type":    codexRolloutUserMessageType,
+		"message": "opaque-user-message",
+		"kind":    "plain",
+	})
+}
