@@ -14,9 +14,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  smoke:
+  validation:
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.created == false }}
-    name: smoke (${{ matrix.name }})
+    name: validation (${{ matrix.name }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -42,5 +42,5 @@ jobs:
           quality_bin="$RUNNER_TEMP/codex-worker-orchestrator-quality-tools"
           printf 'QUALITY_TOOLS_BIN_DIR=%s\n' "$quality_bin" >> "$GITHUB_ENV"
           QUALITY_TOOLS_BIN_DIR="$quality_bin" ./install-quality-tools.sh
-      - name: Run Web GPT smoke
+      - name: Run validation
         run: ${{ matrix.command }}
