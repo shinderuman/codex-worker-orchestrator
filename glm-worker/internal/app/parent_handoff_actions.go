@@ -156,7 +156,8 @@ func parentActionSpec(action string, requiredParameters map[string]string) (pare
 
 func improvementDispositionActionSpec(requiredParameters map[string]string) (parentHandoffActionSpec, bool) {
 	signalKind := requiredParameters[improvementSignalKindParameter]
-	if signalKind == "" {
+	sourceCallID := requiredParameters[improvementSignalCallIDParameter]
+	if signalKind == "" || sourceCallID == "" {
 		return parentHandoffActionSpec{}, false
 	}
 	parameters := make(map[string]string, len(requiredParameters))
@@ -164,8 +165,15 @@ func improvementDispositionActionSpec(requiredParameters map[string]string) (par
 		parameters[key] = value
 	}
 	return parentHandoffActionSpec{
-		Kind:               "bounded-choice",
-		Command:            []string{"glm-parent-action", string(state.ParentActionImprovementDisposition), "--signal-kind", signalKind},
+		Kind: "bounded-choice",
+		Command: []string{
+			"glm-parent-action",
+			string(state.ParentActionImprovementDisposition),
+			"--signal-kind",
+			signalKind,
+			"--source-call-id",
+			sourceCallID,
+		},
 		Parameters:         parameters,
 		RequiredParameters: []string{"--disposition"},
 		OptionalParameters: []string{"--task"},
