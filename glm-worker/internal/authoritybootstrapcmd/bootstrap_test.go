@@ -44,6 +44,43 @@ func TestBuildBootstrapProjectsCanonicalAuthorityFromOneSnapshot(t *testing.T) {
 	}
 }
 
+func TestSameSnapshotRejectsMixedAuthorityReads(t *testing.T) {
+	base := snapshot{
+		rules:      []byte("rules\n"),
+		plan:       []byte("plan\n"),
+		active:     []byte("task\n"),
+		activePath: "IMPLEMENTATION_TASKS/current.md",
+	}
+	if !sameSnapshot(base, snapshot{
+		rules:      []byte("rules\n"),
+		plan:       []byte("plan\n"),
+		active:     []byte("task\n"),
+		activePath: "IMPLEMENTATION_TASKS/current.md",
+	}) {
+		t.Fatal("identical authority reads were rejected")
+	}
+	for name, changed := range map[string]snapshot{
+		"rules": {
+			rules: []byte("rules-2\n"), plan: []byte("plan\n"), active: []byte("task\n"), activePath: "IMPLEMENTATION_TASKS/current.md",
+		},
+		"plan": {
+			rules: []byte("rules\n"), plan: []byte("plan-2\n"), active: []byte("task\n"), activePath: "IMPLEMENTATION_TASKS/current.md",
+		},
+		"active": {
+			rules: []byte("rules\n"), plan: []byte("plan\n"), active: []byte("task-2\n"), activePath: "IMPLEMENTATION_TASKS/current.md",
+		},
+		"active path": {
+			rules: []byte("rules\n"), plan: []byte("plan\n"), active: []byte("task\n"), activePath: "IMPLEMENTATION_TASKS/other.md",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if sameSnapshot(base, changed) {
+				t.Fatalf("mixed %s authority read was accepted", name)
+			}
+		})
+	}
+}
+
 func TestBuildCommandBootstrapRequiresActiveRepositoryHarness(t *testing.T) {
 	root := t.TempDir()
 	initTestRepository(t, root)
