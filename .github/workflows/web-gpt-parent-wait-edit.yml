@@ -17,7 +17,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           ref: web-gpt/remove-parent-wait-legacy-transport-compatibility
-          fetch-depth: 3
+          fetch-depth: 4
       - uses: actions/setup-go@v7
         with:
           go-version-file: glm-worker/go.mod
@@ -27,7 +27,7 @@ jobs:
           python3 - <<'PY'
           import subprocess
 
-          raw = subprocess.check_output(["git", "show", "HEAD~2:.github/workflows/web-gpt-parent-wait-edit.yml"], text=True)
+          raw = subprocess.check_output(["git", "show", "HEAD~3:.github/workflows/web-gpt-parent-wait-edit.yml"], text=True)
           start = raw.index("          from pathlib import Path\n")
           end = raw.index("          PY\n", start)
           script = "\n".join(line[10:] if line.startswith("          ") else line for line in raw[start:end].splitlines())
@@ -39,8 +39,13 @@ jobs:
               '\\t\\t\\t\\tanalysisCustomWaitRequestLine': '\\t\\t\\tanalysisCustomWaitRequestLine',
               '\\t\\t\\t})': '\\t\\t})',
               '\\t\\tinput := fmt.Sprintf("const r = await tools.write_stdin({session_id:46866,chars:%q,yield_time_ms:%q,max_output_tokens:20000}); text(r);", "", "unknown")': '\\t\\tinput := `const r = await tools.write_stdin({session_id:46866,chars:"",yield_time_ms:"unknown",max_output_tokens:20000}); text(r);`',
+              '\\tvar fields map[string]uint64': '\\tvar fields map[string]json.RawMessage',
+              '\\tyieldMS, ok := fields[analysisWaitYieldMSKey]': '\\tyieldValue, ok := fields[analysisWaitYieldMSKey]',
+              '\\treturn analysisCustomWaitRequestLine(t, timestamp, callID, analysisObservedDirectWaitSource(46866, int(yieldMS), 20000))': '\\tinput := `const r = await tools.write_stdin({session_id:46866,chars:"",yield_time_ms:` + string(yieldValue) + `,max_output_tokens:20000}); text(r);`\\n\\treturn analysisCustomWaitRequestLine(t, timestamp, callID, input)',
           }
           for old, new in replacements.items():
+              if old not in script:
+                  raise SystemExit(f"guard source missing replacement: {old}")
               script = script.replace(old, new)
           exec(compile(script, "guarded-edit", "exec"))
           PY
