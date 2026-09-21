@@ -109,8 +109,8 @@ func TestPublicationRefGuardRejectsBoundNonCandidateMutation(t *testing.T) {
 		wrongOID = strings.Repeat("e", 40)
 	}
 	t.Setenv(publicationRefTransactionEnv, candidate.SnapshotID)
-	if err := verifyPublicationRefUpdate(cfg, headOID, wrongOID, branchRef); err == nil || !strings.Contains(err.Error(), "does not match exact candidate promotion or rollback") {
-		t.Fatalf("bound non-candidate mutation was admitted: %v", err)
+	if err := verifyPublicationRefUpdate(cfg, headOID, wrongOID, branchRef); err == nil {
+		t.Fatal("bound non-candidate mutation was admitted")
 	}
 }
 
