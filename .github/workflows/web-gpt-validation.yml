@@ -1,9 +1,7 @@
 name: Web GPT Validation
 
 on:
-  push:
-    branches:
-      - 'web-gpt/**'
+  workflow_call:
   workflow_dispatch:
 
 permissions:
@@ -15,7 +13,6 @@ concurrency:
 
 jobs:
   validation:
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.created == false }}
     name: validation (${{ matrix.name }})
     runs-on: ubuntu-latest
     strategy:
@@ -37,6 +34,11 @@ jobs:
         with:
           go-version: ${{ steps.quality-tools.outputs.go_version }}
           cache: false
+      - name: Cache quality tools
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/codex-worker-orchestrator-quality-tools
+          key: quality-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('quality-tools.yml', 'install-quality-tools.sh') }}
       - name: Install quality tools
         run: |
           quality_bin="$RUNNER_TEMP/codex-worker-orchestrator-quality-tools"
