@@ -124,9 +124,6 @@ func NegativeResultPolicyFor(classification Classification) (NegativeResultPolic
 	}
 }
 
-func (a ResultAuthority) ParentMayPromoteNegativeResult(explicitMachineRecovery bool) bool {
-	if a.NegativeResult == NegativeResultMachineRecoveryRequired {
-		return explicitMachineRecovery
-	}
-	return true
+func (a ResultAuthority) ParentMayPromoteNegativeResult() bool {
+	return a.NegativeResult == NegativeResultParentResidual
 }
