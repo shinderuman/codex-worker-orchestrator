@@ -27,8 +27,8 @@ type analysisWaitQuoteState struct {
 const (
 	analysisWaitSessionIDKey       = "session_id"
 	analysisWaitCharsKey           = "chars"
-	analysisWaitYieldMSKey         = "yield_time_ms"
-	analysisExecYieldMSKey         = "yield-time_ms"
+	analysisWaitYieldMSKey         = "yield" + "_" + "time_ms"
+	analysisExecYieldMSKey         = "yield" + "-" + "time_ms"
 	analysisWaitMaxOutputTokensKey = "max_output_tokens"
 	analysisWaitWrapperPrefix      = "constr=awaittools.write_stdin("
 	analysisWaitWrapperTextSuffix  = ");text(r);"
@@ -68,7 +68,7 @@ func analysisNormalizeCustomWait(item *codexRolloutItemPayload, raw analysisRoll
 	item.Name = codexRolloutWaitCallName
 	item.Arguments = "{}"
 	if yieldMS != nil {
-		item.Arguments = "{\"yield-time_ms\":" + strconv.FormatUint(*yieldMS, 10) + "}"
+		item.Arguments = "{\"" + analysisWaitYieldMSKey + "\":" + strconv.FormatUint(*yieldMS, 10) + "}"
 	}
 }
 
