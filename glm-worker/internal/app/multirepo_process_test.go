@@ -651,7 +651,7 @@ func parseStateJSON(t *testing.T, stateDir string, name string) map[string]any {
 	t.Helper()
 	var value map[string]any
 	if err := json.Unmarshal([]byte(readStateFile(t, stateDir, name)), &value); err != nil {
-		t.Fatalf("state file %s/%sをJSONとして読めません: %v: %q", stateDir, name, err, readStateFile(t, stateDir, name))
+		t.Fatalf("state file %s/%sをJSONとして読めません: %v", stateDir, name, err)
 	}
 	return value
 }
