@@ -14,9 +14,9 @@ func TestBuildBootstrapProjectsCanonicalAuthorityFromOneSnapshot(t *testing.T) {
 	writeTestFile(t, root, planFile, "# Plan\n\n## ACTIVE\n\n- `IMPLEMENTATION_TASKS/current.md`\n")
 	writeTestFile(t, root, "IMPLEMENTATION_TASKS/current.md", "task-body\n")
 
-	output, err := BuildBootstrapFromRoot(root)
+	output, err := buildBootstrapFromRoot(root)
 	if err != nil {
-		t.Fatalf("BuildBootstrapFromRoot: %v", err)
+		t.Fatalf("buildBootstrapFromRoot: %v", err)
 	}
 	if output.AuthoritySnapshotSHA256 == "" {
 		t.Fatal("authority snapshot hash is empty")
