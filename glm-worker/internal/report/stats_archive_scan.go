@@ -26,7 +26,7 @@ func PrintStatsWithArchiveScan(cfg config.AppConfig, st *state.StateStore, query
 		return err
 	}
 	return machinecli.WriteJSON(stdout, statsOutputWithArchiveScan{
-		StatsOutput:           buildStatsOutput(st, result.Stats, query),
+		StatsOutput:          buildStatsOutput(st, result.Stats, query),
 		TaskStatsArchiveScan: result.ArchiveScan,
 	})
 }
