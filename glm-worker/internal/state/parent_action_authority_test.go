@@ -76,7 +76,8 @@ func writeParentActionAuthorityFixture(t *testing.T, st *StateStore, classificat
 	if err := os.MkdirAll(filepath.Join(repoRoot, "codex"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	registry := fmt.Sprintf(`{"version":1,"controls":[{"id":%q,"classification":%q,"purpose":"test authority","residual_parent_judgment":"test residual"}]}`,
+	registry := fmt.Sprintf(`{"version":1}`, classification)
+	registry = fmt.Sprintf(`{"version":1,"controls":[{"id":%q,"classification":%q,"purpose":"test authority","residual_parent_judgment":"test residual"}]}`,
 		parentActionAdmissionControlID, classification)
 	if err := os.WriteFile(filepath.Join(repoRoot, filepath.FromSlash(controlprovenance.RegistryPath)), []byte(registry), 0o600); err != nil {
 		t.Fatal(err)
