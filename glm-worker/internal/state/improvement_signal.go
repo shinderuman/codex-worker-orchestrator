@@ -138,8 +138,8 @@ func (s *StateStore) ImprovementSignalDisposed(signal ImprovementSignal) (bool, 
 }
 
 func (s *StateStore) RecordImprovementSignalDisposition(signal ImprovementSignal, disposition, targetTask string) (ImprovementSignalDispositionRecord, bool, error) {
-	if signal.Kind == "" || signal.Count <= 0 || signal.SourceCallID == "" {
-		return ImprovementSignalDispositionRecord{}, false, fmt.Errorf("improvement signal identity is invalid")
+	if err := validateImprovementSignalIdentity(signal); err != nil {
+		return ImprovementSignalDispositionRecord{}, false, err
 	}
 	resolved, err := validateImprovementDispositionRequest(disposition, targetTask)
 	if err != nil {
@@ -149,15 +149,15 @@ func (s *StateStore) RecordImprovementSignalDisposition(signal ImprovementSignal
 	if err != nil {
 		return ImprovementSignalDispositionRecord{}, false, err
 	}
-	if existing, found, err := matchingImprovementDisposition(records, signal, resolved, targetTask); found || err != nil {
-		return existing, false, err
-	}
-	current, err := s.PendingImprovementSignal()
+	existing, found, err := matchingImprovementDisposition(records, signal, resolved, targetTask)
 	if err != nil {
 		return ImprovementSignalDispositionRecord{}, false, err
 	}
-	if current == nil || current.Kind != signal.Kind || current.SourceCallID != signal.SourceCallID {
-		return ImprovementSignalDispositionRecord{}, false, fmt.Errorf("improvement signal %s/%s is not the current machine-visible pending signal", signal.Kind, signal.SourceCallID)
+	if found {
+		return existing, false, nil
+	}
+	if err := s.requireCurrentImprovementSignal(signal); err != nil {
+		return ImprovementSignalDispositionRecord{}, false, err
 	}
 	record, err := s.newImprovementDispositionRecord(signal, resolved, targetTask)
 	if err != nil {
@@ -168,6 +168,24 @@ func (s *StateStore) RecordImprovementSignalDisposition(signal ImprovementSignal
 		return ImprovementSignalDispositionRecord{}, false, err
 	}
 	return record, true, nil
+}
+
+func validateImprovementSignalIdentity(signal ImprovementSignal) error {
+	if signal.Kind == "" || signal.Count <= 0 || signal.SourceCallID == "" {
+		return fmt.Errorf("improvement signal identity is invalid")
+	}
+	return nil
+}
+
+func (s *StateStore) requireCurrentImprovementSignal(signal ImprovementSignal) error {
+	current, err := s.PendingImprovementSignal()
+	if err != nil {
+		return err
+	}
+	if current == nil || current.Kind != signal.Kind || current.SourceCallID != signal.SourceCallID {
+		return fmt.Errorf("improvement signal %s/%s is not the current machine-visible pending signal", signal.Kind, signal.SourceCallID)
+	}
+	return nil
 }
 
 func validateImprovementDispositionRequest(disposition, targetTask string) (ImprovementSignalDisposition, error) {
