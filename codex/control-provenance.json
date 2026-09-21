@@ -9,6 +9,52 @@
       "boundary": "The decisive state and operation live outside the repository and wrapper process."
     },
     {
+      "id": "canonical-authority-bootstrap",
+      "classification": "machine-enforced",
+      "purpose": "Project rules, plan, and ACTIVE task from one stable repository snapshot for fresh and resume parent bootstrap, failing closed if authority changes while it is being projected.",
+      "machine_owners": [
+        {
+          "path": "glm-worker/internal/authoritybootstrapcmd/bootstrap.go",
+          "symbol": "BuildCommand"
+        },
+        {
+          "path": "glm-worker/internal/authoritybootstrapcmd/run.go",
+          "symbol": "loadSnapshot"
+        }
+      ],
+      "tests": [
+        {
+          "path": "glm-worker/internal/authoritybootstrapcmd/bootstrap_test.go",
+          "symbol": "TestBuildBootstrapProjectsCanonicalAuthorityFromOneSnapshot"
+        },
+        {
+          "path": "glm-worker/internal/harnesslint/authority_bootstrap_instruction_test.go",
+          "symbol": "TestCanonicalAuthorityBootstrapPrecedesRepositoryReadsAndRestoresWaitContract"
+        }
+      ],
+      "postconditions": [
+        {
+          "path": "glm-worker/internal/authoritybootstrapcmd/bootstrap.go",
+          "symbol": "projectBootstrap"
+        },
+        {
+          "path": "glm-worker/internal/authoritybootstrapcmd/run.go",
+          "symbol": "sameSnapshot"
+        }
+      ],
+      "projection_guards": [
+        {
+          "path": "codex/AGENTS.md",
+          "forbidden_tokens": [
+            "glm-worker --authority rules",
+            "glm-worker --authority plan",
+            "glm-worker --authority active"
+          ]
+        }
+      ],
+      "residual_parent_judgment": "The parent reads and semantically interprets the projected authority content after the machine proves source selection and snapshot coherence."
+    },
+    {
       "id": "codex-auto-resume-automation-transaction",
       "classification": "partial",
       "purpose": "Track the boundary between repository-side Codex auto-resume transaction checks and the external automation write.",
@@ -41,7 +87,7 @@
       "classification": "partial",
       "purpose": "Track repository-side execution-permission state without claiming ownership of external approval decisions.",
       "residual_parent_judgment": "The parent interprets external execution denials and chooses an allowed next action.",
-      "boundary": "Machine state is available locally, but the external approval reviewer or sandbox decision is not repository-owned."
+      "boundary": "Machine state is available locally, but the external approval reviewer or sandbox decision is not repository-owned here."
     },
     {
       "id": "external-feasibility-admission",
