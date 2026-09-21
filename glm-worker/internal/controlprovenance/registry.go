@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 	"strings"
 )
 
@@ -40,12 +38,6 @@ type ProjectionGuard struct {
 
 type NegativeResultPolicy string
 
-type ResultAuthority struct {
-	ControlID      string               `json:"control_id"`
-	Classification Classification       `json:"classification"`
-	NegativeResult NegativeResultPolicy `json:"negative_result"`
-}
-
 const RegistryPath = "codex/control-provenance.json"
 
 const (
@@ -77,42 +69,6 @@ func Decode(data []byte) (Registry, error) {
 	return registry, nil
 }
 
-func Load(repoRoot string) (Registry, error) {
-	if strings.TrimSpace(repoRoot) == "" {
-		return Registry{}, fmt.Errorf("repository root is unavailable")
-	}
-	data, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(RegistryPath)))
-	if err != nil {
-		return Registry{}, fmt.Errorf("read %s: %w", RegistryPath, err)
-	}
-	return Decode(data)
-}
-
-func (r Registry) Lookup(controlID string) (Control, bool) {
-	for _, control := range r.Controls {
-		if control.ID == controlID {
-			return control, true
-		}
-	}
-	return Control{}, false
-}
-
-func (r Registry) ResultAuthority(controlID string) (ResultAuthority, error) {
-	control, ok := r.Lookup(controlID)
-	if !ok {
-		return ResultAuthority{}, fmt.Errorf("control %q is not registered", controlID)
-	}
-	policy, err := NegativeResultPolicyFor(control.Classification)
-	if err != nil {
-		return ResultAuthority{}, fmt.Errorf("control %q: %w", controlID, err)
-	}
-	return ResultAuthority{
-		ControlID:      control.ID,
-		Classification: control.Classification,
-		NegativeResult: policy,
-	}, nil
-}
-
 func NegativeResultPolicyFor(classification Classification) (NegativeResultPolicy, error) {
 	switch classification {
 	case ClassificationMachine:
@@ -124,9 +80,13 @@ func NegativeResultPolicyFor(classification Classification) (NegativeResultPolic
 	}
 }
 
-func (a ResultAuthority) ParentMayPromoteNegativeResult(explicitMachineRecovery bool) bool {
-	if a.NegativeResult == NegativeResultMachineRecoveryRequired {
-		return explicitMachineRecovery
+func ParentMayPromoteNegativeResult(classification Classification, explicitMachineRecovery bool) (bool, error) {
+	policy, err := NegativeResultPolicyFor(classification)
+	if err != nil {
+		return false, err
 	}
-	return true
+	if policy == NegativeResultMachineRecoveryRequired {
+		return explicitMachineRecovery, nil
+	}
+	return true, nil
 }
