@@ -112,20 +112,7 @@ func parentActionSpec(action string, requiredParameters map[string]string) (pare
 			PrepareCommand: []string{"glm-parent-action", "prepare", action},
 		}, true
 	case state.ParentActionFix:
-		prepareCommand := []string{"glm-parent-action", "prepare", action}
-		optionalParameters := []string{"--origin", "--cause", "--accepted-scope"}
-		var parameters map[string]string
-		if acceptedScope := requiredParameters["accepted-scope"]; acceptedScope != "" {
-			prepareCommand = append(prepareCommand, "--accepted-scope", acceptedScope)
-			parameters = map[string]string{"accepted-scope": acceptedScope}
-			optionalParameters = []string{"--origin", "--cause"}
-		}
-		return parentHandoffActionSpec{
-			Kind:               "staged",
-			PrepareCommand:     prepareCommand,
-			Parameters:         parameters,
-			OptionalParameters: optionalParameters,
-		}, true
+		return parentFixActionSpec(requiredParameters), true
 	case state.ParentActionApproveSurface:
 		acceptedScope := requiredParameters["accepted-scope"]
 		if acceptedScope == "" {
@@ -147,10 +134,7 @@ func parentActionSpec(action string, requiredParameters map[string]string) (pare
 			Parameters: map[string]string{"task": taskPath},
 		}, true
 	case state.ParentActionReopen:
-		return parentHandoffActionSpec{
-			Kind:    "direct",
-			Command: []string{"glm-parent-action", "reopen"},
-		}, true
+		return parentHandoffActionSpec{Kind: "direct", Command: []string{"glm-parent-action", "reopen"}}, true
 	case state.ParentActionAccept,
 		state.ParentActionComplete,
 		state.ParentActionInstall,
@@ -158,11 +142,25 @@ func parentActionSpec(action string, requiredParameters map[string]string) (pare
 		state.ParentActionPark,
 		state.ParentActionUnpark,
 		state.ParentActionNoGo:
-		return parentHandoffActionSpec{
-			Kind:    "direct",
-			Command: []string{"glm-parent-action", action},
-		}, true
+		return parentHandoffActionSpec{Kind: "direct", Command: []string{"glm-parent-action", action}}, true
 	default:
 		return parentHandoffActionSpec{}, false
+	}
+}
+
+func parentFixActionSpec(requiredParameters map[string]string) parentHandoffActionSpec {
+	prepareCommand := []string{"glm-parent-action", "prepare", string(state.ParentActionFix)}
+	optionalParameters := []string{"--origin", "--cause", "--accepted-scope"}
+	var parameters map[string]string
+	if acceptedScope := requiredParameters["accepted-scope"]; acceptedScope != "" {
+		prepareCommand = append(prepareCommand, "--accepted-scope", acceptedScope)
+		parameters = map[string]string{"accepted-scope": acceptedScope}
+		optionalParameters = []string{"--origin", "--cause"}
+	}
+	return parentHandoffActionSpec{
+		Kind:               "staged",
+		PrepareCommand:     prepareCommand,
+		Parameters:         parameters,
+		OptionalParameters: optionalParameters,
 	}
 }
