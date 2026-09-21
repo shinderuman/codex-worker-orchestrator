@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "normal_action_family": [
+    "decision",
+    "fix",
+    "start-milestones",
+    "revise-milestones"
+  ],
+  "normal_sequence": [
+    "prepare",
+    "validate",
+    "apply_patch",
+    "action"
+  ],
+  "forbidden_fresh_stage_reads": [
+    "sed -n .glm-worker-parent-actions/...",
+    "cat .glm-worker-parent-actions/...",
+    "read-tool .glm-worker-parent-actions/..."
+  ],
+  "read_exceptions": [
+    "debug",
+    "recovery"
+  ],
+  "semantic_owner": "parent",
+  "transport_owner": "machine",
+  "standard_edit_boundary": "apply_patch",
+  "extra_model_calls": 0
+}
