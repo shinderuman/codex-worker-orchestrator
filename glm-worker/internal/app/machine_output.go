@@ -55,7 +55,7 @@ func runAuthorityBootstrap(args []string, stdout io.Writer) (bool, error) {
 	if len(args) == 0 || args[0] != "--authority" {
 		return false, nil
 	}
-	output, err := authoritybootstrapcmd.Build(args[1:])
+	output, err := authoritybootstrapcmd.BuildCommand(args[1:])
 	if err != nil {
 		return true, err
 	}
