@@ -7,15 +7,15 @@ import (
 )
 
 type ExecutionProgressProjection struct {
-	Status             string                    `json:"status"`
-	Band               string                    `json:"band,omitempty"`
-	Basis              string                    `json:"basis"`
-	Precision          string                    `json:"precision"`
-	Reason             string                    `json:"reason,omitempty"`
-	PhaseStage         string                    `json:"phase_stage,omitempty"`
-	CompletedMilestones []string                  `json:"completed_milestones,omitempty"`
-	CurrentMilestone   *ExecutionProgressMilestone `json:"current_milestone,omitempty"`
-	PendingMilestones  []string                  `json:"pending_milestones,omitempty"`
+	Status              string                      `json:"status"`
+	Band                string                      `json:"band,omitempty"`
+	Basis               string                      `json:"basis"`
+	Precision           string                      `json:"precision"`
+	Reason              string                      `json:"reason,omitempty"`
+	PhaseStage          string                      `json:"phase_stage,omitempty"`
+	CompletedMilestones []string                    `json:"completed_milestones,omitempty"`
+	CurrentMilestone    *ExecutionProgressMilestone `json:"current_milestone,omitempty"`
+	PendingMilestones   []string                    `json:"pending_milestones,omitempty"`
 }
 
 type ExecutionProgressMilestone struct {
