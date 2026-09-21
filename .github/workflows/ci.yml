@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   basic:
-    if: ${{ github.event_name != 'pull_request' || !startsWith(github.head_ref, 'web-gpt/') }}
+    if: ${{ (github.event_name != 'push' || github.event.created == false) && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'web-gpt/')) }}
     name: basic (${{ matrix.name }})
     runs-on: ubuntu-latest
     strategy:
@@ -70,7 +70,7 @@ jobs:
         run: go test ./...
 
   lint:
-    if: ${{ always() && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'web-gpt/')) }}
+    if: ${{ always() && (github.event_name != 'push' || github.event.created == false) && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'web-gpt/')) }}
     needs:
       - basic
     runs-on: ubuntu-latest
@@ -81,7 +81,7 @@ jobs:
         run: test "$BASIC_RESULT" = success
 
   install-smoke:
-    if: ${{ (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/web-gpt/')) || github.event_name == 'workflow_dispatch' }}
+    if: ${{ (github.event_name == 'push' && github.event.created == false && startsWith(github.ref, 'refs/heads/web-gpt/')) || github.event_name == 'workflow_dispatch' }}
     needs:
       - lint
     uses: ./.github/workflows/install-smoke.yml
