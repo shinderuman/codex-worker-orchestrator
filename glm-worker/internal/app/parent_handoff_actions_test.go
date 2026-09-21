@@ -19,14 +19,29 @@ func TestParentHandoffActionSpecs(t *testing.T) {
 	if got := specs[string(state.ParentActionDecision)]; got.Kind != "staged" || !reflect.DeepEqual(got.PrepareCommand, []string{"glm-parent-action", "prepare", "decision"}) {
 		t.Fatalf("decision spec = %#v", got)
 	}
-	if got := specs[string(state.ParentActionFix)]; got.Kind != "staged" || !reflect.DeepEqual(got.PrepareCommand, []string{"glm-parent-action", "prepare", "fix"}) {
-		t.Fatalf("fix spec = %#v", got)
+	fix := specs[string(state.ParentActionFix)]
+	if fix.Kind != "staged" || !reflect.DeepEqual(fix.PrepareCommand, []string{"glm-parent-action", "prepare", "fix", "--accepted-scope", "current-diff"}) {
+		t.Fatalf("fix spec = %#v", fix)
+	}
+	if !reflect.DeepEqual(fix.Parameters, map[string]string{"accepted-scope": "current-diff"}) || !reflect.DeepEqual(fix.OptionalParameters, []string{"origin", "cause"}) {
+		t.Fatalf("fix parameters = %#v optional=%#v", fix.Parameters, fix.OptionalParameters)
 	}
 	if got := specs[string(state.ParentActionResume)]; got.Kind != "direct" || !reflect.DeepEqual(got.Command, []string{"glm-parent-action", "resume"}) {
 		t.Fatalf("resume spec = %#v", got)
 	}
 	if got := specs[string(state.ParentActionApproveSurface)]; got.Kind != "direct" || !reflect.DeepEqual(got.Command, []string{"glm-parent-action", "approve-surface", "--accepted-scope", "current-diff"}) {
 		t.Fatalf("approve spec = %#v", got)
+	}
+}
+
+func TestParentHandoffFixWithoutRequiredScopeDeclaresAllOptionalMetadata(t *testing.T) {
+	specs := parentActionSpecs([]string{string(state.ParentActionFix)}, nil)
+	fix := specs[string(state.ParentActionFix)]
+	if !reflect.DeepEqual(fix.PrepareCommand, []string{"glm-parent-action", "prepare", "fix"}) {
+		t.Fatalf("fix prepare command = %#v", fix.PrepareCommand)
+	}
+	if len(fix.Parameters) != 0 || !reflect.DeepEqual(fix.OptionalParameters, []string{"origin", "cause", "accepted-scope"}) {
+		t.Fatalf("fix parameters = %#v optional=%#v", fix.Parameters, fix.OptionalParameters)
 	}
 }
 
