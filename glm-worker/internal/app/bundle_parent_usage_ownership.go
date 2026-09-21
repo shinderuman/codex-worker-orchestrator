@@ -28,6 +28,46 @@ func analysisExecutionUsageComparability(scan bundleRolloutScan, ownership analy
 	return analysisUsageComparability{status: analysisStatusAvailable}
 }
 
+func analysisExecutionTokenDeltaForOwnership(association codexAssociation, scan bundleRolloutScan, scanErr error, start time.Time, execution analysisExecutionBoundary, collectionEnd time.Time, ownership analysisTaskOwnership) bundleAnalysisTokenDelta {
+	delta := analysisExecutionTokenDelta(association, scan, scanErr, start, execution, collectionEnd)
+	if delta.Status != analysisStatusAvailable && delta.Status != analysisStatusOpen {
+		return delta
+	}
+	endBound := collectionEnd
+	if execution.status == analysisStatusAvailable {
+		endBound = execution.end
+	}
+	comparability := analysisExecutionUsageComparability(scan, ownership, start, endBound)
+	if comparability.status != analysisStatusAvailable {
+		return bundleAnalysisTokenDelta{Status: comparability.status}
+	}
+	return delta
+}
+
+func parentUsageExecutionIntervalForOwnership(association codexAssociation, scan bundleRolloutScan, scanErr error, start time.Time, execution analysisExecutionBoundary, collectionEnd time.Time, ownership analysisTaskOwnership) parentUsageInterval {
+	interval := parentUsageExecutionInterval(association, scan, scanErr, start, execution, collectionEnd)
+	if association.ParentStatus != codexStatusIncluded || scanErr != nil || execution.status == analysisStatusUnknown {
+		return interval
+	}
+	endBound := collectionEnd
+	if execution.status == analysisStatusAvailable {
+		endBound = execution.end
+	}
+	comparability := analysisExecutionUsageComparability(scan, ownership, start, endBound)
+	if comparability.status == analysisStatusAvailable {
+		return interval
+	}
+	if interval.Tokens.Status == analysisStatusAvailable || interval.Tokens.Status == analysisStatusOpen {
+		interval.Tokens.Status = comparability.status
+		interval.Tokens.Reason = comparability.reason
+	}
+	if interval.Activity.Status == analysisStatusCounted || interval.Activity.Status == analysisStatusOpen {
+		interval.Activity.Status = comparability.status
+		interval.Activity.Reason = comparability.reason
+	}
+	return interval
+}
+
 func analysisUsageTurnOverlaps(turn *analysisRolloutTurn, start, end time.Time) bool {
 	if !turn.HasStart || turn.StartedAt.After(end) {
 		return false
