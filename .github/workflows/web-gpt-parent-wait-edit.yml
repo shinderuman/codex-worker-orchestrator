@@ -17,6 +17,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           ref: web-gpt/remove-parent-wait-legacy-transport-compatibility
+          fetch-depth: 2
       - uses: actions/setup-go@v7
         with:
           go-version-file: glm-worker/go.mod
@@ -24,193 +25,23 @@ jobs:
       - name: Apply guarded edits
         run: |
           python3 - <<'PY'
-          from pathlib import Path
-          import re
+          import subprocess
 
-          def replace_once(path, old, new):
-              p = Path(path)
-              text = p.read_text()
-              count = text.count(old)
-              if count != 1:
-                  raise SystemExit(f"{path}: expected one exact match, got {count}")
-              p.write_text(text.replace(old, new, 1))
-
-          custom = "glm-worker/internal/app/bundle_analysis_custom_wait.go"
-          replace_once(custom, '''type analysisRolloutItemPayloadRaw struct {
-          \tType      string `json:"type"`
-          \tName      string `json:"name"`
-          \tCallID    string `json:"call_id"`
-          \tArguments string `json:"arguments"`
-          \tInput     string `json:"input"`
+          raw = subprocess.check_output(["git", "show", "HEAD^:.github/workflows/web-gpt-parent-wait-edit.yml"], text=True)
+          start = raw.index("          from pathlib import Path\n")
+          end = raw.index("          PY\n", start)
+          script = "\n".join(line[10:] if line.startswith("          ") else line for line in raw[start:end].splitlines())
+          replacements = {
+              '\\t\\tt.Run("conflicting-transports-stay-conflicted"': '\\tt.Run("conflicting-transports-stay-conflicted"',
+              '\\t\\tt.Run("conflicting-current-waits-stay-conflicted"': '\\tt.Run("conflicting-current-waits-stay-conflicted"',
+              '\\t\\t\\twaits := analysisWaitCallsFromLines': '\\t\\twaits := analysisWaitCallsFromLines',
+              '\\t\\t\\t\\tanalysisWaitRequestLine': '\\t\\t\\tanalysisWaitRequestLine',
+              '\\t\\t\\t\\tanalysisCustomWaitRequestLine': '\\t\\t\\tanalysisCustomWaitRequestLine',
+              '\\t\\t\\t})': '\\t\\t})',
           }
-
-          ''', '')
-          p = Path(custom)
-          text = p.read_text()
-          pattern = re.compile(r'''func \(item \*codexRolloutItemPayload\) UnmarshalJSON\(data \[\]byte\) error \{.*?\n\}\n\nfunc analysisNormalizeCustomWait\(item \*codexRolloutItemPayload, raw analysisRolloutItemPayloadRaw\) \{.*?\n\}\n\n''', re.S)
-          text, count = pattern.subn('', text, count=1)
-          if count != 1:
-              raise SystemExit(f"{custom}: normalization block match={count}")
-          marker = 'func analysisWaitWrapperObject(value string) (string, bool) {'
-          helper = '''func analysisCustomWaitRequestedYield(input string) (*float64, bool) {
-          \tyieldMS, recognized := analysisCanonicalCustomWriteStdinWait(input)
-          \tif !recognized || yieldMS == nil {
-          \t\treturn nil, recognized
-          \t}
-          \tvalue := float64(*yieldMS)
-          \treturn &value, true
-          }
-
-          '''
-          if text.count(marker) != 1:
-              raise SystemExit(f"{custom}: helper marker mismatch")
-          p.write_text(text.replace(marker, helper + marker, 1))
-
-          main = "glm-worker/internal/app/bundle_analysis.go"
-          replace_once(main, '''type codexRolloutItemPayload struct {
-          \tType      string `json:"type"`
-          \tName      string `json:"name"`
-          \tCallID    string `json:"call_id"`
-          \tArguments string `json:"arguments"`
-          }
-          ''', '''type codexRolloutItemPayload struct {
-          \tType      string `json:"type"`
-          \tName      string `json:"name"`
-          \tCallID    string `json:"call_id"`
-          \tArguments string `json:"arguments"`
-          \tInput     string `json:"input"`
-          }
-          ''')
-          p = Path(main)
-          text = p.read_text()
-          observer = re.compile(r'''func observeAnalysisRolloutWait\(scan \*bundleRolloutScan, payload json\.RawMessage, timestamp time\.Time, lineNumber int\) \{.*?\n\}\n\nfunc observeAnalysisRolloutToolActivity''', re.S)
-          new_observer = '''func observeAnalysisRolloutWait(scan *bundleRolloutScan, payload json.RawMessage, timestamp time.Time, lineNumber int) {
-          \tvar item codexRolloutItemPayload
-          \tif err := json.Unmarshal(payload, &item); err != nil {
-          \t\treturn
-          \t}
-          \tswitch item.Type {
-          \tcase codexRolloutCustomToolCallType:
-          \t\tif item.Name != "exec" {
-          \t\t\treturn
-          \t\t}
-          \t\tyieldMS, recognized := analysisCustomWaitRequestedYield(item.Input)
-          \t\tif !recognized {
-          \t\t\treturn
-          \t\t}
-          \t\tscan.waits = append(scan.waits, analysisRolloutWaitRequest{
-          \t\t\tCallID:  item.CallID,
-          \t\t\tLine:    lineNumber,
-          \t\t\tAt:      timestamp,
-          \t\t\tYieldMS: yieldMS,
-          \t\t})
-          \tcase codexRolloutCustomToolCallOutputType:
-          \t\tif item.CallID == "" {
-          \t\t\treturn
-          \t\t}
-          \t\tscan.waitReturns = append(scan.waitReturns, analysisRolloutWaitReturn{CallID: item.CallID, Line: lineNumber})
-          \t}
-          }
-
-          func observeAnalysisRolloutToolActivity'''
-          text, count = observer.subn(new_observer, text, count=1)
-          if count != 1:
-              raise SystemExit(f"{main}: wait observer match={count}")
-          unused = re.compile(r'''\nfunc analysisWaitRequestedYield\(arguments string\) \*float64 \{.*?\n\}\n''', re.S)
-          text, count = unused.subn('\n', text, count=1)
-          if count != 1:
-              raise SystemExit(f"{main}: legacy yield parser match={count}")
-          p.write_text(text)
-
-          test = "glm-worker/internal/app/bundle_analysis_custom_wait_test.go"
-          p = Path(test)
-          text = p.read_text()
-          text = text.replace('func TestCustomExecWriteStdinWaitsNormalize(t *testing.T) {', 'func TestCustomExecWriteStdinWaitsObserved(t *testing.T) {', 1)
-          legacy = re.compile(r'''func TestCustomExecWriteStdinWaitPreservesLegacySemantics\(t \*testing\.T\) \{.*?\n\}\n\n''', re.S)
-          legacy_test = '''func TestLegacyFunctionWaitIsIgnored(t *testing.T) {
-          \tstart := time.Date(2026, 9, 19, 2, 0, 0, 0, time.UTC)
-          \tat := start.Add(time.Minute)
-          \tlines := []string{
-          \t\tanalysisRolloutLine(t, at, "response_item", map[string]any{"type": codexRolloutFunctionCallType, "name": codexRolloutWaitCallName, "call_id": "legacy", "arguments": fmt.Sprintf("{%q:%d}", "yield"+"_"+"time_ms", 300000)}),
-          \t\tanalysisRolloutLine(t, at.Add(time.Second), "response_item", map[string]any{"type": codexRolloutFunctionCallOutputType, "call_id": "legacy"}),
-          \t}
-          \twaits := analysisWaitCallsFromLines(t, start, start.Add(time.Hour), lines)
-          \tif waits.Count != 0 || len(waits.Calls) != 0 || len(waits.DuplicateCallIDs) != 0 {
-          \t\tt.Fatalf("legacy waits = %#v", waits)
-          \t}
-          }
-
-          '''
-          text, count = legacy.subn(legacy_test, text, count=1)
-          if count != 1:
-              raise SystemExit(f"{test}: legacy test match={count}")
-          mixed = re.compile(r'''func TestCustomExecWriteStdinWaitMixedTransportDeduplicatesByCallIdentity\(t \*testing\.T\) \{.*?\n\}\n\n''', re.S)
-          text, count = mixed.subn('', text, count=1)
-          if count != 1:
-              raise SystemExit(f"{test}: mixed test match={count}")
-          old_conflict = '''\t\tt.Run("conflicting-transports-stay-conflicted", func(t *testing.T) {
-          \t\t\twaits := analysisWaitCallsFromLines(t, start, start.Add(time.Hour), []string{
-          \t\t\t\tanalysisWaitRequestLine(t, at, "conflict", analysisLegacyWaitArguments(30000)),
-          \t\t\t\tanalysisCustomWaitRequestLine(t, at.Add(time.Second), "conflict", analysisObservedDirectWaitSource(46866, 300000, 20000)),
-          \t\t\t})'''
-          new_conflict = '''\t\tt.Run("conflicting-current-waits-stay-conflicted", func(t *testing.T) {
-          \t\t\twaits := analysisWaitCallsFromLines(t, start, start.Add(time.Hour), []string{
-          \t\t\t\tanalysisCustomWaitRequestLine(t, at, "conflict", analysisObservedDirectWaitSource(46866, 30000, 16000)),
-          \t\t\t\tanalysisCustomWaitRequestLine(t, at.Add(time.Second), "conflict", analysisObservedDirectWaitSource(46866, 300000, 20000)),
-          \t\t\t})'''
-          if old_conflict not in text:
-              raise SystemExit(f"{test}: conflict block missing")
-          text = text.replace(old_conflict, new_conflict, 1)
-          old_bundle = 'lines := []string{analysisWaitRequestLine(t, at, "legacy", analysisLegacyWaitArguments(300000))}'
-          new_bundle = 'lines := []string{analysisCustomWaitRequestLine(t, at, "initial", analysisObservedDirectWaitSource(46866, 300000, 20000))}'
-          if old_bundle not in text:
-              raise SystemExit(f"{test}: bundle seed missing")
-          text = text.replace(old_bundle, new_bundle, 1)
-          legacy_helper = re.compile(r'''\nfunc analysisLegacyWaitArguments\(yieldMS int\) string \{.*?\n\}\n''', re.S)
-          text, count = legacy_helper.subn('\n', text, count=1)
-          if count != 1:
-              raise SystemExit(f"{test}: legacy helper match={count}")
-          p.write_text(text)
-
-          bundle_test = "glm-worker/internal/app/bundle_analysis_test.go"
-          p = Path(bundle_test)
-          text = p.read_text()
-          raw = re.compile(r'''analysisRolloutLine\(t, ([^,\n]+), "response_item", map\[string\]any\{"type": "function_call", "name": "wait"\}\)''')
-          text, count = raw.subn(r'analysisWaitRequestLine(t, \1, "", "")', text)
-          if count != 4:
-              raise SystemExit(f"{bundle_test}: raw legacy wait count={count}, want 4")
-          request = re.compile(r'''func analysisWaitRequestLine\(t \*testing\.T, timestamp time\.Time, callID, arguments string\) string \{.*?\n\}\n\nfunc analysisWaitReturnLine''', re.S)
-          new_request = '''func analysisWaitRequestLine(t *testing.T, timestamp time.Time, callID, arguments string) string {
-          \tt.Helper()
-          \tif arguments == "" {
-          \t\tinput := fmt.Sprintf("const r = await tools.write_stdin({session_id:46866,chars:%q,yield_time_ms:%q,max_output_tokens:20000}); text(r);", "", "unknown")
-          \t\treturn analysisCustomWaitRequestLine(t, timestamp, callID, input)
-          \t}
-          \tvar fields map[string]uint64
-          \tif err := json.Unmarshal([]byte(arguments), &fields); err != nil {
-          \t\tt.Fatal(err)
-          \t}
-          \tyieldMS, ok := fields[analysisWaitYieldMSKey]
-          \tif !ok {
-          \t\tt.Fatalf("wait arguments = %s", arguments)
-          \t}
-          \treturn analysisCustomWaitRequestLine(t, timestamp, callID, analysisObservedDirectWaitSource(46866, int(yieldMS), 20000))
-          }
-
-          func analysisWaitReturnLine'''
-          text, count = request.subn(new_request, text, count=1)
-          if count != 1:
-              raise SystemExit(f"{bundle_test}: request helper match={count}")
-          return_fn = re.compile(r'''func analysisWaitReturnLine\(t \*testing\.T, timestamp time\.Time, callID string\) string \{.*?\n\}\n''', re.S)
-          new_return = '''func analysisWaitReturnLine(t *testing.T, timestamp time.Time, callID string) string {
-          \tt.Helper()
-          \treturn analysisCustomWaitReturnLine(t, timestamp, callID)
-          }
-          '''
-          text, count = return_fn.subn(new_return, text, count=1)
-          if count != 1:
-              raise SystemExit(f"{bundle_test}: return helper match={count}")
-          p.write_text(text)
+          for old, new in replacements.items():
+              script = script.replace(old, new)
+          exec(compile(script, "guarded-edit", "exec"))
           PY
           gofmt -w glm-worker/internal/app/bundle_analysis.go glm-worker/internal/app/bundle_analysis_custom_wait.go glm-worker/internal/app/bundle_analysis_custom_wait_test.go glm-worker/internal/app/bundle_analysis_test.go
           cd glm-worker
