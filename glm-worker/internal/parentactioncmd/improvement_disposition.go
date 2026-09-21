@@ -6,6 +6,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/app"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repolock"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
@@ -36,7 +37,7 @@ func requireImprovementSignalDisposition(cfg config.AppConfig, action string) er
 	if err != nil {
 		return err
 	}
-	signal, err := st.PendingImprovementSignal()
+	signal, err := app.CurrentImprovementSignal(st)
 	if err != nil {
 		return fmt.Errorf("improvement signal state is unreadable: %w", err)
 	}
@@ -64,7 +65,7 @@ func executeImprovementDisposition(cfg config.AppConfig, args []string, stdout i
 	}
 	defer func() { _ = lock.Close() }()
 
-	signal, err := st.PendingImprovementSignal()
+	signal, err := app.CurrentImprovementSignal(st)
 	if err != nil {
 		return err
 	}
