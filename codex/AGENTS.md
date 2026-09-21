@@ -10,7 +10,7 @@
 
 - ユーザー依頼の範囲だけを扱い、機能追加・修正・改善・設定変更を勝手に拡張しない。重要な不足情報もリポジトリや既存資料で解決できない場合だけ確認する。
 - リポジトリルートに`AGENTS.local.md`があれば作業前に読む。Git管理しないプロジェクト固有指示として扱う。リポジトリ内の`AGENTS.md`も該当スコープで従う。
-- `.glm-worker-repository-harness`がactiveなrepositoryでは、fresh parent bootstrapおよび`IMPLEMENTATION_RULES.md`の再読境界（fresh session、ContextCompaction、provider/session interruption、long stop/resume）で、`glm-worker --authority bootstrap`を最初のrepository authority readとして1回実行する。返されたrules / plan / activeは同一`authority_snapshot_sha256`へmachine側でbind済みのため各本文を1回だけ読み、conversation/compaction memoryだけで続行しない。bootstrap失敗時は停止し、authority path探索・disk直読・`wc`等のsize probe・条件付きinstruction先読みをfallback successとして扱わない。compaction/resume後にrunning workerのwaitへ戻る場合もbootstrap成功後に`glm-execution.md`のlong-blocking parent wait contractを再接続してから進み、親が明示的なshort-yield overrideへ退行しない。
+- `.glm-worker-repository-harness` active時、fresh session / `ContextCompaction` / provider/session interruption / long stop/resumeでは`control:canonical-authority-bootstrap`の`glm-worker --authority bootstrap`を最初のrepository authority readにする。rules / plan / activeは同一`authority_snapshot_sha256`へbind済みとして各1回だけ読み、conversation/compaction memoryだけで続行しない。失敗時は停止しauthority path探索・disk直読をfallback successとして扱わない。resume後のrunning worker待機前に`glm-execution.md`のlong-blocking parent wait contractを再取得し、short-yield overrideしない。
 
 ## 3. GLM Git restriction
 
