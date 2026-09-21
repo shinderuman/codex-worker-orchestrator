@@ -99,7 +99,7 @@ func executeReadOnlyInspection(cmd Command, cfg config.AppConfig, stdout io.Writ
 	case ModeHandoff:
 		return executeHandoffInspection(cmd, cfg, st, stdout)
 	case ModeStats:
-		return report.PrintStats(cfg, st, cmd.Query, printTelemetryCompactSummary, stdout)
+		return report.PrintStatsWithArchiveScan(cfg, st, cmd.Query, printTelemetryCompactSummary, stdout)
 	case ModeCodexLimit:
 		return printCodexLimit(cfg, stdout)
 	case ModePacketCheck:
