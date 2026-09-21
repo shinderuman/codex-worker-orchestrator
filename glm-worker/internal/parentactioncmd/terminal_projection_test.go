@@ -244,8 +244,8 @@ func representativeHandoff(t *testing.T, baselineDetail, validationDetail string
 		"parent_request": map[string]any{
 			"completion_admitted": false,
 			"stop_admitted":       false,
-			"continuation":         map[string]any{"required": true, "reason": "waiting-sol-review"},
-			"task_attribution":     map[string]any{"authority_task": "IMPLEMENTATION_TASKS/example.md", "handover": false},
+			"continuation":        map[string]any{"required": true, "reason": "waiting-sol-review"},
+			"task_attribution":    map[string]any{"authority_task": "IMPLEMENTATION_TASKS/example.md", "handover": false},
 		},
 		"action_specs": map[string]any{
 			"decision": map[string]any{"kind": "staged", "prepare_command": []string{"glm-parent-action", "prepare", "decision"}},
