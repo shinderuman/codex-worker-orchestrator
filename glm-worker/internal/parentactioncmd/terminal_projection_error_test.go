@@ -106,6 +106,46 @@ func TestWriteFailedTerminalActionFailsClosedForOversizedWorkerError(t *testing.
 	assertHandoffRequiredActionSpecPreserved(t, envelope.Handoff)
 }
 
+func TestWriteTerminalHandoffFailureBoundsOversizedTerminal(t *testing.T) {
+	terminal := mustJSONRaw(t, map[string]any{
+		"status":         "NEEDS_SOL_DECISION",
+		"risk":           "HIGH",
+		"decision":       strings.Repeat("decision-detail-", 600),
+		"options":        "retry handoff or stop",
+		"recommendation": "stop because canonical authority is unavailable",
+	})
+	handoffErr := errors.New(strings.Repeat("canonical-handoff-failure-", 100))
+	var stdout bytes.Buffer
+
+	err := writeTerminalHandoffFailure(&stdout, terminal, handoffErr)
+	if !errors.Is(err, handoffErr) {
+		t.Fatalf("error = %v, want handoff error", err)
+	}
+	if stdout.Len() > parentActionTerminalBudgetBytes {
+		t.Fatalf("handoff failure stdout exceeds budget: bytes=%d budget=%d", stdout.Len(), parentActionTerminalBudgetBytes)
+	}
+	machineJSON, err := decodeSingleMachineJSON(stdout.Bytes(), "bounded handoff failure")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var envelope parentActionTerminalEnvelopePayload
+	if err := json.Unmarshal(machineJSON, &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if envelope.Status != "parent_action_terminal_handoff_failed" {
+		t.Fatalf("status = %q", envelope.Status)
+	}
+	if envelope.Projection == nil || !envelope.Projection.Overflow || envelope.Projection.HandoffMode != "unavailable" {
+		t.Fatalf("handoff failure projection = %+v", envelope.Projection)
+	}
+	assertJSONFieldEqual(t, terminal, envelope.Terminal, "status")
+	assertJSONFieldEqual(t, terminal, envelope.Terminal, "risk")
+	assertJSONFieldAbsent(t, envelope.Terminal, "decision")
+	if len([]rune(envelope.HandoffError)) > 161 {
+		t.Fatalf("handoff diagnostic was not bounded: %d runes", len([]rune(envelope.HandoffError)))
+	}
+}
+
 func assertProcessErrorIdentity(t *testing.T, raw json.RawMessage, kind, message string) {
 	t.Helper()
 	var object map[string]json.RawMessage
