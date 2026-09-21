@@ -73,18 +73,17 @@ func improvementSignalFromRecoveryMaterial(material *parentHandoffRecoveryMateri
 }
 
 func invalidPacketImprovementSignal(callID *string, rejectReason string) *state.ImprovementSignal {
+	if callID == nil || *callID == "" {
+		return nil
+	}
 	reason := rejectReason
 	if reason == "" {
 		reason = state.ImprovementSignalInvalidPacket
 	}
-	sourceCallID := ""
-	if callID != nil {
-		sourceCallID = *callID
-	}
 	return &state.ImprovementSignal{
 		Kind:         state.ImprovementSignalInvalidPacket,
 		Count:        1,
-		SourceCallID: sourceCallID,
+		SourceCallID: *callID,
 		Reason:       reason,
 	}
 }
