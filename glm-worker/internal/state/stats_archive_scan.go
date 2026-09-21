@@ -8,17 +8,12 @@ import (
 	"sort"
 )
 
-// TaskStatsArchiveScan reports bounded coverage for the archive files considered
-// by aggregate task-stats consumers. It intentionally does not expose file names
-// or rejected archive contents.
 type TaskStatsArchiveScan struct {
 	FilesConsidered                    int `json:"files_considered"`
 	FilesAccepted                      int `json:"files_accepted"`
 	UnsupportedSchemaOrRevisionSkipped int `json:"unsupported_schema_or_revision_skipped"`
 }
 
-// AllTaskStatsScanResult keeps the aggregate task set together with the archive
-// coverage produced by the same scan.
 type AllTaskStatsScanResult struct {
 	Stats       []TaskStats
 	ArchiveScan TaskStatsArchiveScan
@@ -52,15 +47,11 @@ func (s *StateStore) scanTaskStatsArchives() ([]TaskStats, TaskStatsArchiveScan,
 	return stats, scan, nil
 }
 
-// ScanTaskStatsArchives reports archive coverage using the same decoder boundary
-// as aggregate task-stats reads.
 func (s *StateStore) ScanTaskStatsArchives() (TaskStatsArchiveScan, error) {
 	_, scan, err := s.scanTaskStatsArchives()
 	return scan, err
 }
 
-// AllTaskStatsWithArchiveScan preserves AllTaskStats aggregate semantics while
-// binding coverage to the exact archive traversal that produced the aggregate.
 func (s *StateStore) AllTaskStatsWithArchiveScan() (AllTaskStatsScanResult, error) {
 	stats, scan, err := s.scanTaskStatsArchives()
 	if err != nil {
