@@ -17,6 +17,19 @@
     "cat .glm-worker-parent-actions/...",
     "read-tool .glm-worker-parent-actions/..."
   ],
+  "fail_closed_before_action": [
+    "malformed-prepare",
+    "path-mismatch",
+    "token-mismatch",
+    "placeholder-replacement-failure"
+  ],
+  "preserved_staging_safety": [
+    "one-shot-consume",
+    "regular-path-no-symlink",
+    "payload-size-limit",
+    "token-binding",
+    "standard-apply-patch"
+  ],
   "read_exceptions": [
     "debug",
     "recovery"
