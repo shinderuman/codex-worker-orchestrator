@@ -59,7 +59,7 @@ func TestCustomExecWriteStdinWaitMixedTransportDeduplicatesByCallIdentity(t *tes
 	start := time.Date(2026, 9, 17, 7, 0, 0, 0, time.UTC)
 	at := start.Add(time.Minute)
 	lines := []string{
-		analysisWaitRequestLine(t, at, "shared", "{\"yield-time_ms\":300000}"),
+		analysisWaitRequestLine(t, at, "shared", `{"yield-time_ms":300000}`),
 		analysisCustomWaitRequestLine(t, at.Add(time.Second), "shared", `await tools.write_stdin({session_id: 101, chars: "", yield_time_ms: 300000});`),
 		analysisCustomWaitReturnLine(t, at.Add(2*time.Second), "shared"),
 	}
@@ -107,7 +107,7 @@ await tools.write_stdin({session_id: 101, chars: "", yield_time_ms: 300000});`
 
 	t.Run("conflicting-yields-stay-conflicted", func(t *testing.T) {
 		waits := analysisWaitCallsFromLines(t, start, start.Add(time.Hour), []string{
-			analysisWaitRequestLine(t, at, "conflict", "{\"yield-time_ms\":30000}"),
+			analysisWaitRequestLine(t, at, "conflict", `{"yield-time_ms":30000}`),
 			analysisCustomWaitRequestLine(t, at.Add(time.Second), "conflict", `await tools.write_stdin({session_id: 101, chars: "", yield_time_ms: 300000});`),
 		})
 		if waits.Count != 0 || len(waits.Calls) != 0 || len(waits.DuplicateCallIDs) != 1 {
@@ -123,7 +123,7 @@ await tools.write_stdin({session_id: 101, chars: "", yield_time_ms: 300000});`
 func TestCustomExecWriteStdinWaitBundleLikeUndercountRegression(t *testing.T) {
 	start := time.Date(2026, 9, 17, 7, 0, 0, 0, time.UTC)
 	at := start.Add(time.Minute)
-	lines := []string{analysisWaitRequestLine(t, at, "legacy", "{\"yield-time_ms\":300000}")}
+	lines := []string{analysisWaitRequestLine(t, at, "legacy", `{"yield-time_ms":300000}`)}
 	for index := 0; index < 2; index++ {
 		lines = append(lines, analysisCustomWaitRequestLine(t, at.Add(time.Duration(index+1)*time.Minute), fmt.Sprintf("startup-%d", index),
 			`await tools.write_stdin({session_id: 101, chars: "", yield_time_ms: 30000});`))
