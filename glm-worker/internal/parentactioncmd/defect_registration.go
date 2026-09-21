@@ -25,9 +25,9 @@ type defectRegistrationOutput struct {
 }
 
 const (
-	actionRecordDefectFinding = "record-defect-finding"
-	actionBindDefectTask      = "bind-defect-task"
-	defectTaskOption          = "--task"
+	actionRecordDefectFinding  = "record-defect-finding"
+	actionBindDefectTask       = "bind-defect-task"
+	defectTaskOption           = "--task"
 	parentActionStatusRecorded = "recorded"
 )
 
