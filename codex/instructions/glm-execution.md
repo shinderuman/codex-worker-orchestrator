@@ -24,6 +24,7 @@
 ## 親action surface
 
 - lifecycleの正規入口はcanonical handoffである。`control:parent-action-staging-admission`とmachineが返す`consistent`・`required_action`・`allowed_actions`・`action_specs`を次操作のtransport authorityとする。packet本文や記憶した手順からcommandを再構成しない。
+- `machine-enforced` controlが`reject` / `blocked` / `failed` / `not-admitted`を返したoperation/state transitionは、同じmachine ownerが明示したrecovery/override transitionなしに親のsemantic判断だけで`success` / `admitted`へ昇格しない。`partial` / `semantic-parent-only` controlのresidual judgmentと、machine-admitted候補間のsemantic選択は維持する。
 - 親Codexが行うのは、machine-admitted actionからsemanticに適切なものを選ぶことと、decision/fix等のsemantic payloadを確定することだけである。
 - `action_specs[action].kind:"direct"`なら同specの`command`をlosslessに実行する。引数・順序・required parameterを親で補完しない。
 - `kind:"staged"`なら同specの`prepare_command`を実行し、返されたexact staging pathに対してmachine-declared `slots`だけをsemantic値へ置換する。staging file全体の再解釈、path/token/header/placeholder名の推測をしない。編集成功後は返された`next_command`を正とする。

@@ -1,53 +1,32 @@
 package harnesslint
 
 import (
-	"encoding/json"
 	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"io"
 	"os"
 	"path"
 	"path/filepath"
 	"strings"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/controlprovenance"
 )
 
-type controlProvenanceRegistry struct {
-	Version  int                        `json:"version"`
-	Controls []controlProvenanceControl `json:"controls"`
-}
+type controlProvenanceRegistry = controlprovenance.Registry
+type controlProvenanceControl = controlprovenance.Control
+type controlProvenanceLocator = controlprovenance.Locator
+type controlProvenanceProjectionGuard = controlprovenance.ProjectionGuard
+type controlProvenanceClassification = controlprovenance.Classification
 
-type controlProvenanceControl struct {
-	ID                     string                             `json:"id"`
-	Classification         string                             `json:"classification"`
-	Purpose                string                             `json:"purpose"`
-	MachineOwners          []controlProvenanceLocator         `json:"machine_owners,omitempty"`
-	Tests                  []controlProvenanceLocator         `json:"tests,omitempty"`
-	Postconditions         []controlProvenanceLocator         `json:"postconditions,omitempty"`
-	ProjectionGuards       []controlProvenanceProjectionGuard `json:"projection_guards,omitempty"`
-	ResidualParentJudgment string                             `json:"residual_parent_judgment"`
-	Boundary               string                             `json:"boundary,omitempty"`
-}
-
-type controlProvenanceLocator struct {
-	Path   string `json:"path"`
-	Symbol string `json:"symbol"`
-}
-
-type controlProvenanceProjectionGuard struct {
-	Path            string   `json:"path"`
-	ForbiddenTokens []string `json:"forbidden_tokens"`
-}
-
-const controlProvenanceRegistryPath = "codex/control-provenance.json"
+const controlProvenanceRegistryPath = controlprovenance.RegistryPath
 
 const (
-	controlClassificationMachine            = "machine-enforced"
-	controlClassificationPartial            = "partial"
-	controlClassificationProse              = "prose-only"
-	controlClassificationSemanticParent     = "semantic-parent-only"
-	controlClassificationExternalUnenforced = "external-unenforceable"
+	controlClassificationMachine            = controlprovenance.ClassificationMachine
+	controlClassificationPartial            = controlprovenance.ClassificationPartial
+	controlClassificationProse              = controlprovenance.ClassificationProse
+	controlClassificationSemanticParent     = controlprovenance.ClassificationSemanticParent
+	controlClassificationExternalUnenforced = controlprovenance.ClassificationExternalUnenforced
 )
 
 func controlProvenanceViolations(root string) ([]Violation, error) {
@@ -69,17 +48,9 @@ func controlProvenanceViolations(root string) ([]Violation, error) {
 }
 
 func decodeControlProvenanceRegistry(data []byte) (controlProvenanceRegistry, error) {
-	var registry controlProvenanceRegistry
-	decoder := json.NewDecoder(strings.NewReader(string(data)))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&registry); err != nil {
-		return controlProvenanceRegistry{}, fmt.Errorf("invalid control provenance registry: %w", err)
-	}
-	if err := decoder.Decode(&struct{}{}); err != io.EOF {
-		if err == nil {
-			return controlProvenanceRegistry{}, fmt.Errorf("invalid control provenance registry: multiple JSON values")
-		}
-		return controlProvenanceRegistry{}, fmt.Errorf("invalid control provenance registry: %w", err)
+	registry, err := controlprovenance.Decode(data)
+	if err != nil {
+		return controlProvenanceRegistry{}, fmt.Errorf("decode control provenance registry: %w", err)
 	}
 	return registry, nil
 }
