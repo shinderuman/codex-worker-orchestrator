@@ -47,11 +47,6 @@ func (s *StateStore) scanTaskStatsArchives() ([]TaskStats, TaskStatsArchiveScan,
 	return stats, scan, nil
 }
 
-func (s *StateStore) ScanTaskStatsArchives() (TaskStatsArchiveScan, error) {
-	_, scan, err := s.scanTaskStatsArchives()
-	return scan, err
-}
-
 func (s *StateStore) AllTaskStatsWithArchiveScan() (AllTaskStatsScanResult, error) {
 	stats, scan, err := s.scanTaskStatsArchives()
 	if err != nil {
