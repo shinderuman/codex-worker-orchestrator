@@ -12,10 +12,12 @@ import (
 )
 
 type parentActionTerminalEnvelopePayload struct {
-	Status       string          `json:"status"`
-	Terminal     json.RawMessage `json:"terminal"`
-	Handoff      json.RawMessage `json:"handoff,omitempty"`
-	HandoffError string          `json:"handoff_error,omitempty"`
+	Status          string                               `json:"status"`
+	Terminal        json.RawMessage                      `json:"terminal"`
+	Handoff         json.RawMessage                      `json:"handoff,omitempty"`
+	HandoffError    string                               `json:"handoff_error,omitempty"`
+	ProjectionError string                               `json:"projection_error,omitempty"`
+	Projection      *parentActionTerminalProjectionStats `json:"projection,omitempty"`
 }
 
 const (
@@ -63,7 +65,22 @@ func executeWithTerminalEnvelope(cfg config.AppConfig, args []string, stdout, st
 		return writeTerminalHandoffFailure(stdout, terminalJSON, err)
 	}
 
-	return json.NewEncoder(stdout).Encode(parentActionTerminalEnvelope(terminalJSON, handoffJSON))
+	envelope, err := projectParentActionTerminalEnvelope(terminalJSON, handoffJSON)
+	if err != nil {
+		projectionErr, ok := err.(*parentActionTerminalProjectionError)
+		if !ok {
+			return err
+		}
+		failure, failureErr := writeTerminalProjectionFailurePayload(terminalJSON, handoffJSON, projectionErr)
+		if failureErr != nil {
+			return fmt.Errorf("%w; encode projection overflow payload: %v", err, failureErr)
+		}
+		if encodeErr := json.NewEncoder(stdout).Encode(failure); encodeErr != nil {
+			return fmt.Errorf("%w; encode projection overflow envelope: %v", err, encodeErr)
+		}
+		return err
+	}
+	return json.NewEncoder(stdout).Encode(envelope)
 }
 
 func executeTerminalAction(cfg config.AppConfig, args []string, stdout, stderr io.Writer) error {
