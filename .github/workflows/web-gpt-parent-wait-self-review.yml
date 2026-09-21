@@ -1,0 +1,68 @@
+name: Web GPT Parent Wait Self Review
+
+on:
+  push:
+    branches:
+      - web-gpt/remove-parent-wait-legacy-transport-compatibility
+    paths:
+      - .github/workflows/web-gpt-parent-wait-self-review.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: web-gpt/remove-parent-wait-legacy-transport-compatibility
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: glm-worker/go.mod
+          cache: false
+      - name: Apply exact fixes
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected 1 match, got {count}: {old!r}")
+              p.write_text(text.replace(old, new, 1))
+
+          replace_once(
+              "glm-worker/internal/app/bundle_analysis.go",
+              '\tArguments string `json:"arguments"`\n',
+              "",
+          )
+          replace_once(
+              "glm-worker/internal/app/bundle_analysis.go",
+              'const codexRolloutWaitCallName = "wait"\n\n',
+              "",
+          )
+          replace_once(
+              "glm-worker/internal/app/bundle_analysis_custom_wait_test.go",
+              '"name": codexRolloutWaitCallName',
+              '"name": "wait"',
+          )
+          replace_once(
+              "glm-worker/internal/app/bundle_analysis_test.go",
+              'input := `const r = await tools.write_stdin({session_id:46866,chars:"",yield_time_ms:"unknown",max_output_tokens:20000}); text(r);`',
+              'input := `const r = await tools.write_stdin({session_id:46866,chars:"",max_output_tokens:20000}); text(r);`',
+          )
+          PY
+          gofmt -w glm-worker/internal/app/bundle_analysis.go glm-worker/internal/app/bundle_analysis_custom_wait_test.go glm-worker/internal/app/bundle_analysis_test.go
+          cd glm-worker
+          go test ./internal/app ./internal/harnesslint
+      - name: Commit fixes
+        run: |
+          rm .github/workflows/web-gpt-parent-wait-self-review.yml
+          git config user.name shinderuman
+          git config user.email shinderuman@gmail.com
+          git add -A
+          git commit -m "Tighten parent wait current transport contract"
+          git push origin HEAD:web-gpt/remove-parent-wait-legacy-transport-compatibility
