@@ -11,6 +11,11 @@ type shellVersionedState struct {
 	line    int
 }
 
+type shellStateAssignment struct {
+	value string
+	line  int
+}
+
 var (
 	shellSimpleAssignmentPattern = regexp.MustCompile(`^[\t ]*([A-Za-z_][A-Za-z0-9_]*)=(.*)$`)
 	shellStateVersionPattern     = regexp.MustCompile(`\bversion=([0-9]+)\b`)
@@ -37,8 +42,8 @@ func scanForwardOnlyShellStateCompatibility(root string, paths []string) ([]Viol
 
 func forwardOnlyShellStateCompatibilityViolations(path string, data []byte) []Violation {
 	lines := strings.Split(string(data), "\n")
-	versions, legacyPathVariables, stateAssignments := shellStateAssignments(lines)
-	legacyProvenanceStates := shellLegacyProvenanceStates(stateAssignments, legacyPathVariables)
+	versions, legacyPathVariables, assignments := shellStateAssignments(lines)
+	legacyProvenanceStates := shellLegacyProvenanceStates(assignments, legacyPathVariables)
 
 	var violations []Violation
 	for variable, line := range legacyProvenanceStates {
@@ -71,16 +76,10 @@ func forwardOnlyShellStateCompatibilityViolations(path string, data []byte) []Vi
 	return violations
 }
 
-func shellStateAssignments(lines []string) (map[string]shellVersionedState, map[string]bool, map[string]struct {
-	value string
-	line  int
-}) {
+func shellStateAssignments(lines []string) (map[string]shellVersionedState, map[string]bool, map[string]shellStateAssignment) {
 	versions := map[string]shellVersionedState{}
 	legacyPathVariables := map[string]bool{}
-	assignments := map[string]struct {
-		value string
-		line  int
-	}{}
+	assignments := map[string]shellStateAssignment{}
 	for index, line := range lines {
 		match := shellSimpleAssignmentPattern.FindStringSubmatch(line)
 		if len(match) != 3 {
@@ -88,10 +87,7 @@ func shellStateAssignments(lines []string) (map[string]shellVersionedState, map[
 		}
 		variable := match[1]
 		value := strings.TrimSpace(match[2])
-		assignments[variable] = struct {
-			value string
-			line  int
-		}{value: value, line: index + 1}
+		assignments[variable] = shellStateAssignment{value: value, line: index + 1}
 		if shellLiteralValue(value) == ".githooks" {
 			legacyPathVariables[variable] = true
 		}
@@ -115,10 +111,7 @@ func shellLiteralValue(value string) string {
 	return value
 }
 
-func shellLegacyProvenanceStates(assignments map[string]struct {
-	value string
-	line  int
-}, legacyPathVariables map[string]bool) map[string]int {
+func shellLegacyProvenanceStates(assignments map[string]shellStateAssignment, legacyPathVariables map[string]bool) map[string]int {
 	result := map[string]int{}
 	for variable, assignment := range assignments {
 		for legacyPathVariable := range legacyPathVariables {
@@ -216,41 +209,17 @@ func shellCaseArmContainsKind(line, kind string) bool {
 
 func shellOldStateAcceptanceTestViolations(path string, lines []string) []Violation {
 	writtenVersions := map[string]shellVersionedState{}
-	for index, line := range lines {
-		if !strings.Contains(line, "printf") || !strings.Contains(line, ">") {
-			continue
-		}
-		versionMatch := shellStateVersionPattern.FindStringSubmatch(line)
-		if len(versionMatch) != 2 {
-			continue
-		}
-		variable := shellRedirectVariable(line)
-		if variable == "" {
-			continue
-		}
-		version, err := strconv.Atoi(versionMatch[1])
-		if err != nil {
-			continue
-		}
-		writtenVersions[variable] = shellVersionedState{version: version, line: index + 1}
-	}
-
 	var violations []Violation
 	for index, line := range lines {
-		if !strings.Contains(line, "test") || !strings.Contains(line, "cat") {
-			continue
+		if variable, version, ok := shellWrittenStateVersion(line); ok {
+			writtenVersions[variable] = shellVersionedState{version: version, line: index + 1}
 		}
-		versionMatch := shellStateVersionPattern.FindStringSubmatch(line)
-		catMatch := shellCatVariablePattern.FindStringSubmatch(line)
-		if len(versionMatch) != 2 || len(catMatch) != 2 {
-			continue
-		}
-		written, ok := writtenVersions[catMatch[1]]
+		variable, expected, ok := shellExpectedStateVersion(line)
 		if !ok {
 			continue
 		}
-		expected, err := strconv.Atoi(versionMatch[1])
-		if err != nil || expected <= written.version {
+		written, exists := writtenVersions[variable]
+		if !exists || expected <= written.version {
 			continue
 		}
 		violations = append(violations, shellStateCompatibilityViolation(
@@ -260,6 +229,42 @@ func shellOldStateAcceptanceTestViolations(path string, lines []string) []Violat
 		))
 	}
 	return violations
+}
+
+func shellWrittenStateVersion(line string) (string, int, bool) {
+	if !strings.Contains(line, "printf") || !strings.Contains(line, ">") {
+		return "", 0, false
+	}
+	version, ok := shellVersionLiteral(line)
+	if !ok {
+		return "", 0, false
+	}
+	variable := shellRedirectVariable(line)
+	return variable, version, variable != ""
+}
+
+func shellExpectedStateVersion(line string) (string, int, bool) {
+	if !strings.Contains(line, "test") || !strings.Contains(line, "cat") {
+		return "", 0, false
+	}
+	version, ok := shellVersionLiteral(line)
+	if !ok {
+		return "", 0, false
+	}
+	match := shellCatVariablePattern.FindStringSubmatch(line)
+	if len(match) != 2 {
+		return "", 0, false
+	}
+	return match[1], version, true
+}
+
+func shellVersionLiteral(line string) (int, bool) {
+	match := shellStateVersionPattern.FindStringSubmatch(line)
+	if len(match) != 2 {
+		return 0, false
+	}
+	version, err := strconv.Atoi(match[1])
+	return version, err == nil
 }
 
 func shellRedirectVariable(line string) string {
