@@ -9,7 +9,19 @@ import (
 
 func TestCustomWaitExtensionPreservesLegacyWaitDecode(t *testing.T) {
 	arguments := analysisLegacyWaitArguments(300000)
-	assertAnalysisWaitYield(t, "direct", analysisWaitRequestedYield(arguments), 300000)
+	if !json.Valid([]byte(arguments)) {
+		t.Fatalf("legacy arguments are not JSON: %q", arguments)
+	}
+	var direct struct {
+		YieldTimeMS *float64 `json:"yield-time_ms"`
+	}
+	if err := json.Unmarshal([]byte(arguments), &direct); err != nil {
+		t.Fatalf("direct unmarshal failed for %q: %v", arguments, err)
+	}
+	assertAnalysisWaitYield(t, "manual-direct", direct.YieldTimeMS, 300000)
+	if yield := analysisWaitRequestedYield(arguments); yield == nil || *yield != 300000 {
+		t.Fatalf("helper direct yield = %#v arguments=%q", yield, arguments)
+	}
 
 	at := time.Date(2026, 9, 17, 7, 1, 0, 0, time.UTC)
 	line := analysisWaitRequestLine(t, at, "legacy-decode", arguments)
