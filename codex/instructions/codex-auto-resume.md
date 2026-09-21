@@ -46,4 +46,4 @@ scheduler発火後のwake taskは次だけを行い、repository実装・review�
 - `glm-worker --codex-limit`はrate-limit情報のread-only projectionだけを行う。
 - Codex wake transactionはidentity・limit evidence・schedule・retry・postconditionをmachine-ownedとするが、Codex app writeとtask間送信そのものはexternal-unenforceableである。
 - GLM provider 5h recoveryをこのschedulerへ統合しない。Greptile schedulerのownershipを変更しない。
-- repository固有Plan/task lifecycleをwake schedulerへ結合しない。wake後の親実装taskは、次のrepository actionを選ぶ前に`codex/AGENTS.md`のcanonical authority bootstrap contractへ戻り、`glm-worker --authority bootstrap`成功後だけ既存lifecycleを継続する。
+- repository固有Plan/task lifecycleをwake schedulerへ結合しない。wake後の親実装taskは、次のrepository actionを選ぶ前に注入済みのcanonical authority bootstrap contractへ戻り、repository上のAGENTS sourceをdisk再読せず、`glm-worker --authority bootstrap`成功後だけ既存lifecycleを継続する。
