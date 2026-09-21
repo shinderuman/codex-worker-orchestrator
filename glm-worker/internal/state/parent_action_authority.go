@@ -10,10 +10,6 @@ import (
 
 const parentActionAdmissionControlID = "parent-action-staging-admission"
 
-// AdmitParentActionByAuthority applies the canonical control classification to
-// parent-action admission. Machine-admitted actions remain selectable by the
-// parent, but a negative admission cannot be promoted unless the canonical
-// classification leaves residual parent authority.
 func (s *StateStore) AdmitParentActionByAuthority(action ParentAction) (ParentActionPlan, bool, error) {
 	plan, err := s.ParentActionPlan()
 	if err != nil {
@@ -33,9 +29,6 @@ func (s *StateStore) AdmitParentActionByAuthority(action ParentAction) (ParentAc
 }
 
 func (s *StateStore) parentActionAuthorityAdmits(plan ParentActionPlan, action ParentAction) (bool, error) {
-	// A machine-admitted action is a positive machine transition, not a parent
-	// override of a negative result. This preserves semantic choice among the
-	// machine-admitted candidates.
 	if plan.Allows(action) {
 		return true, nil
 	}
@@ -45,8 +38,6 @@ func (s *StateStore) parentActionAuthorityAdmits(plan ParentActionPlan, action P
 		return false, err
 	}
 	if authority == nil {
-		// Without canonical classification evidence there is no basis for a
-		// semantic promotion. Preserve the machine-negative result fail closed.
 		return false, nil
 	}
 	if !authority.ParentMayPromoteNegativeResult() {
@@ -55,10 +46,6 @@ func (s *StateStore) parentActionAuthorityAdmits(plan ParentActionPlan, action P
 	return plan.AdmitsCommand(action), nil
 }
 
-// ParentActionResultAuthority projects the canonical classification that owns
-// negative parent-action admission. Repositories without the provenance
-// registry remain fail-closed for negative-result promotion; a present but
-// malformed registry is an authority error rather than a semantic fallback.
 func (s *StateStore) ParentActionResultAuthority() (*controlprovenance.ResultAuthority, error) {
 	repoRoot := s.ReadOr("repo-root", "")
 	if repoRoot == "" {
