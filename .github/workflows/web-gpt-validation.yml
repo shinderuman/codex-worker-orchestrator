@@ -35,7 +35,7 @@ jobs:
           go-version: ${{ steps.quality-tools.outputs.go_version }}
           cache: false
       - name: Cache quality tools
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}/codex-worker-orchestrator-quality-tools
           key: quality-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('quality-tools.yml', 'install-quality-tools.sh') }}
