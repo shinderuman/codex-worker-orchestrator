@@ -94,6 +94,7 @@ func writeExistingImprovementDisposition(st *state.StateStore, kind, disposition
 		if record.Disposition != resolved || record.TargetTask != targetTask {
 			return fmt.Errorf("improvement signal %s already has disposition %s", kind, record.Disposition)
 		}
+		recordImprovementDispositionEvent(st, record)
 		plan, err := st.ParentActionPlan()
 		if err != nil {
 			return err
