@@ -33,6 +33,9 @@ func (s *StateStore) AdmitParentActionByAuthority(action ParentAction) (ParentAc
 }
 
 func (s *StateStore) parentActionAuthorityAdmits(plan ParentActionPlan, action ParentAction) (bool, error) {
+	// A machine-admitted action is a positive machine transition, not a parent
+	// override of a negative result. This preserves semantic choice among the
+	// machine-admitted candidates.
 	if plan.Allows(action) {
 		return true, nil
 	}
@@ -46,7 +49,7 @@ func (s *StateStore) parentActionAuthorityAdmits(plan ParentActionPlan, action P
 		// semantic promotion. Preserve the machine-negative result fail closed.
 		return false, nil
 	}
-	if !authority.ParentMayPromoteNegativeResult(false) {
+	if !authority.ParentMayPromoteNegativeResult() {
 		return false, nil
 	}
 	return plan.AdmitsCommand(action), nil
