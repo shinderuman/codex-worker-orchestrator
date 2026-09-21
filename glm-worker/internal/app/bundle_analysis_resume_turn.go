@@ -133,11 +133,15 @@ func analysisOwnershipHasSameTurnInterleavedUserMessage(scan bundleRolloutScan, 
 		if observation.Command != analysisUserMessageObservation {
 			continue
 		}
-		if _, owned := ownership.owned[observation.TurnID]; !owned {
+		turnID, ok := analysisTurnContainingTimestamp(scan.turns, observation.At)
+		if !ok {
 			continue
 		}
-		seenByTurn[observation.TurnID]++
-		if seenByTurn[observation.TurnID] == 1 {
+		if _, owned := ownership.owned[turnID]; !owned {
+			continue
+		}
+		seenByTurn[turnID]++
+		if seenByTurn[turnID] == 1 {
 			continue
 		}
 		if observation.At.Before(start) || observation.At.After(end) {
@@ -148,7 +152,34 @@ func analysisOwnershipHasSameTurnInterleavedUserMessage(scan bundleRolloutScan, 
 	return false
 }
 
+func analysisTurnContainingTimestamp(turns []analysisRolloutTurn, at time.Time) (string, bool) {
+	turnID := ""
+	for index := range turns {
+		turn := &turns[index]
+		if !turn.HasStart || at.Before(turn.StartedAt) {
+			continue
+		}
+		if turn.HasComplete && at.After(turn.CompletedAt) {
+			continue
+		}
+		if turnID != "" {
+			return "", false
+		}
+		turnID = turn.TurnID
+	}
+	return turnID, turnID != ""
+}
+
 func analysisResumeCommandFromPayload(payload json.RawMessage) (string, string, string, bool) {
+	var header struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal(payload, &header); err != nil {
+		return "", "", "", false
+	}
+	if header.Type == codexRolloutUserMessageType {
+		return "", analysisUserMessageObservation, "", true
+	}
 	var event analysisRolloutCompletedEvent
 	if err := json.Unmarshal(payload, &event); err != nil || event.Type != codexRolloutItemCompletedType || event.TurnID == "" || event.Item == nil {
 		return "", "", "", false
@@ -329,49 +360,4 @@ func analysisTaskFinalizationTokenDelta(association codexAssociation, scan bundl
 
 func analysisSingleOwnedTurn(ownership analysisTaskOwnership) bool {
 	return ownership.status == analysisStatusAvailable && ownership.initial != nil && ownership.final == ownership.initial
-}
-
-func analysisObserveRolloutResumeCommand(scan *bundleRolloutScan, payload json.RawMessage, timestamp time.Time) {
-	if analysisObserveRolloutUserMessage(scan, payload, timestamp) {
-		return
-	}
-	turnID, command, stdout, ok := analysisResumeCommandFromPayload(payload)
-	if !ok {
-		return
-	}
-	scan.resumeCommands = append(scan.resumeCommands, analysisRolloutResumeCommand{
-		TurnID:  turnID,
-		Command: command,
-		Stdout:  stdout,
-		At:      timestamp,
-	})
-}
-
-func analysisObserveRolloutUserMessage(scan *bundleRolloutScan, payload json.RawMessage, timestamp time.Time) bool {
-	var event struct {
-		Type string `json:"type"`
-	}
-	if err := json.Unmarshal(payload, &event); err != nil || event.Type != codexRolloutUserMessageType {
-		return false
-	}
-	turnID, ok := analysisCurrentOpenTurnID(scan)
-	if !ok {
-		return true
-	}
-	scan.resumeCommands = append(scan.resumeCommands, analysisRolloutResumeCommand{
-		TurnID:  turnID,
-		Command: analysisUserMessageObservation,
-		At:      timestamp,
-	})
-	return true
-}
-
-func analysisCurrentOpenTurnID(scan *bundleRolloutScan) (string, bool) {
-	for index := len(scan.turns) - 1; index >= 0; index-- {
-		turn := &scan.turns[index]
-		if turn.HasStart && !turn.HasComplete {
-			return turn.TurnID, true
-		}
-	}
-	return "", false
 }
