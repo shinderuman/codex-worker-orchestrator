@@ -19,10 +19,15 @@ type analysisExecPragma struct {
 	hasYield bool
 }
 
+type analysisWaitQuoteState struct {
+	quote   byte
+	escaped bool
+}
+
 const (
 	analysisWaitSessionIDKey       = "session_id"
 	analysisWaitCharsKey           = "chars"
-	analysisWaitYieldMSKey         = "yield_time_ms"
+	analysisWaitYieldMSKey         = "yield-time_ms"
 	analysisExecYieldMSKey         = "yield-time_ms"
 	analysisWaitMaxOutputTokensKey = "max_output_tokens"
 	analysisWaitWrapperPrefix      = "constr=awaittools.write_stdin("
@@ -202,27 +207,14 @@ func analysisUnsignedJSLiteral(raw string) (uint64, bool) {
 
 func analysisCompactWaitWrapper(value string) string {
 	var builder strings.Builder
-	quote := byte(0)
-	escaped := false
+	state := analysisWaitQuoteState{}
 	for index := 0; index < len(value); index++ {
 		ch := value[index]
-		if quote != 0 {
-			builder.WriteByte(ch)
-			if escaped {
-				escaped = false
-				continue
-			}
-			if ch == '\\' {
-				escaped = true
-				continue
-			}
-			if ch == quote {
-				quote = 0
-			}
+		if state.consumeQuoted(&builder, ch) {
 			continue
 		}
 		if ch == '\'' || ch == '"' {
-			quote = ch
+			state.quote = ch
 			builder.WriteByte(ch)
 			continue
 		}
@@ -234,4 +226,23 @@ func analysisCompactWaitWrapper(value string) string {
 		}
 	}
 	return builder.String()
+}
+
+func (state *analysisWaitQuoteState) consumeQuoted(builder *strings.Builder, ch byte) bool {
+	if state.quote == 0 {
+		return false
+	}
+	builder.WriteByte(ch)
+	if state.escaped {
+		state.escaped = false
+		return true
+	}
+	if ch == '\\' {
+		state.escaped = true
+		return true
+	}
+	if ch == state.quote {
+		state.quote = 0
+	}
+	return true
 }
