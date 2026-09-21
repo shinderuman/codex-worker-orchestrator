@@ -1091,7 +1091,7 @@ func writeAnalysisRetryModelCalls(t *testing.T, st *state.StateStore, taskID, se
 func analysisWaitRequestLine(t *testing.T, timestamp time.Time, callID, arguments string) string {
 	t.Helper()
 	if arguments == "" {
-		input := `const r = await tools.write_stdin({session_id:46866,chars:"",yield_time_ms:"unknown",max_output_tokens:20000}); text(r);`
+		input := `const r = await tools.write_stdin({session_id:46866,chars:"",max_output_tokens:20000}); text(r);`
 		return analysisCustomWaitRequestLine(t, timestamp, callID, input)
 	}
 	var fields map[string]json.RawMessage

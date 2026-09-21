@@ -306,11 +306,10 @@ type codexRolloutTokenUsage struct {
 }
 
 type codexRolloutItemPayload struct {
-	Type      string `json:"type"`
-	Name      string `json:"name"`
-	CallID    string `json:"call_id"`
-	Arguments string `json:"arguments"`
-	Input     string `json:"input"`
+	Type   string `json:"type"`
+	Name   string `json:"name"`
+	CallID string `json:"call_id"`
+	Input  string `json:"input"`
 }
 
 type codexRolloutToolPayload struct {
@@ -415,8 +414,6 @@ const analysisWaitYieldClassLong = "long"
 const codexRolloutTaskStartedType = "task_started"
 
 const codexRolloutTaskCompleteType = "task_complete"
-
-const codexRolloutWaitCallName = "wait"
 
 const codexRolloutFunctionCallType = "function_call"
 

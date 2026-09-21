@@ -57,7 +57,7 @@ func TestLegacyFunctionWaitIsIgnored(t *testing.T) {
 	start := time.Date(2026, 9, 19, 2, 0, 0, 0, time.UTC)
 	at := start.Add(time.Minute)
 	lines := []string{
-		analysisRolloutLine(t, at, "response_item", map[string]any{"type": codexRolloutFunctionCallType, "name": codexRolloutWaitCallName, "call_id": "legacy", "arguments": fmt.Sprintf("{%q:%d}", "yield"+"_"+"time_ms", 300000)}),
+		analysisRolloutLine(t, at, "response_item", map[string]any{"type": codexRolloutFunctionCallType, "name": "wait", "call_id": "legacy", "arguments": fmt.Sprintf("{%q:%d}", "yield"+"_"+"time_ms", 300000)}),
 		analysisRolloutLine(t, at.Add(time.Second), "response_item", map[string]any{"type": codexRolloutFunctionCallOutputType, "call_id": "legacy"}),
 	}
 	waits := analysisWaitCallsFromLines(t, start, start.Add(time.Hour), lines)
