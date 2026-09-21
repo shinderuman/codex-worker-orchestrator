@@ -72,6 +72,25 @@ func TestCanonicalAuthorityBootstrapPrecedesRepositoryReadsAndRestoresWaitContra
 		t.Error("goal-mode resume still permits direct authority reread before canonical bootstrap")
 	}
 
+	codexResumeData, err := os.ReadFile(filepath.Join(root, "codex", "instructions", "codex-auto-resume.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	codexResumeOwnership, ok := markdownSection(string(codexResumeData), "## ownership")
+	if !ok {
+		t.Fatal("codex-auto-resume.md missing ownership section")
+	}
+	for _, token := range []string{
+		"次のrepository actionを選ぶ前",
+		"canonical authority bootstrap contract",
+		"glm-worker --authority bootstrap",
+		"成功後だけ既存lifecycleを継続",
+	} {
+		if !strings.Contains(codexResumeOwnership, token) {
+			t.Errorf("Codex-limit resume contract missing %q", token)
+		}
+	}
+
 	executionData, err := os.ReadFile(filepath.Join(root, "codex", "instructions", "glm-execution.md"))
 	if err != nil {
 		t.Fatal(err)
