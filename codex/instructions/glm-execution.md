@@ -27,7 +27,7 @@
 - `machine-enforced` controlが`reject` / `blocked` / `failed` / `not-admitted`を返したoperation/state transitionは、同じmachine ownerが明示したrecovery/override transitionなしに親のsemantic判断だけで`success` / `admitted`へ昇格しない。`partial` / `semantic-parent-only` controlのresidual judgmentと、machine-admitted候補間のsemantic選択は維持する。
 - 親Codexが行うのは、machine-admitted actionからsemanticに適切なものを選ぶことと、decision/fix等のsemantic payloadを確定することだけである。
 - `action_specs[action].kind:"direct"`なら同specの`command`をlosslessに実行する。引数・順序・required parameterを親で補完しない。
-- `kind:"staged"`なら同specの`prepare_command`を実行し、返されたexact staging pathに対してmachine-declared `slots`だけをsemantic値へ置換する。staging file全体の再解釈、path/token/header/placeholder名の推測をしない。編集成功後は返された`next_command`を正とする。
+- `kind:"staged"`なら同specの`prepare_command`を正とする。`optional_parameters`がある場合だけ、その名前に対応するCLI optionを親がsemanticに確定した値で`prepare_command`末尾へ追加してよい。`parameters`はmachine固定値であり、既に`prepare_command`へ反映済みなので親で再構成・上書きしない。prepare後は返されたexact staging pathに対してmachine-declared `slots`だけをsemantic値へ置換し、staging file全体の再解釈、path/token/header/placeholder名の推測をしない。編集成功後は返された`next_command`を正とする。
 - decisionの`execution_unit`だけはsemantic判断であり、`single`または`milestones`を選ぶ。`milestones`なら同じ自然停止境界で残作業を2〜8個のbounded scope/acceptanceへ分ける。token量・file数だけでは決めない。既存pending milestone authorityはbypassしない。
 - fixのorigin/cause/accepted-scopeは観測・semantic metadataである。起点と原因層は一次証拠から親が決め、GLMへ追加推定させない。machine contractが受理するsurface以外を作らない。
 - machine projectionに必要なaction spec/slot/next commandが欠落・矛盾している場合はfail closedし、旧stdin transport、shell quoting、独自path探索へfallbackしない。
