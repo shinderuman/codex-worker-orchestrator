@@ -44,40 +44,32 @@ func TestBuildBootstrapProjectsCanonicalAuthorityFromOneSnapshot(t *testing.T) {
 	}
 }
 
-func TestSameSnapshotRejectsMixedAuthorityReads(t *testing.T) {
-	base := snapshot{
+func TestLoadStableSnapshotRejectsMixedAuthorityReads(t *testing.T) {
+	first := snapshot{
 		rules:      []byte("rules\n"),
 		plan:       []byte("plan\n"),
 		active:     []byte("task\n"),
 		activePath: "IMPLEMENTATION_TASKS/current.md",
 	}
-	if !sameSnapshot(base, snapshot{
+	second := snapshot{
 		rules:      []byte("rules\n"),
-		plan:       []byte("plan\n"),
+		plan:       []byte("plan-2\n"),
 		active:     []byte("task\n"),
 		activePath: "IMPLEMENTATION_TASKS/current.md",
-	}) {
-		t.Fatal("identical authority reads were rejected")
 	}
-	for name, changed := range map[string]snapshot{
-		"rules": {
-			rules: []byte("rules-2\n"), plan: []byte("plan\n"), active: []byte("task\n"), activePath: "IMPLEMENTATION_TASKS/current.md",
-		},
-		"plan": {
-			rules: []byte("rules\n"), plan: []byte("plan-2\n"), active: []byte("task\n"), activePath: "IMPLEMENTATION_TASKS/current.md",
-		},
-		"active": {
-			rules: []byte("rules\n"), plan: []byte("plan\n"), active: []byte("task-2\n"), activePath: "IMPLEMENTATION_TASKS/current.md",
-		},
-		"active path": {
-			rules: []byte("rules\n"), plan: []byte("plan\n"), active: []byte("task\n"), activePath: "IMPLEMENTATION_TASKS/other.md",
-		},
-	} {
-		t.Run(name, func(t *testing.T) {
-			if sameSnapshot(base, changed) {
-				t.Fatalf("mixed %s authority read was accepted", name)
-			}
-		})
+	reads := 0
+	_, err := loadStableSnapshot("unused", func(string) (snapshot, error) {
+		reads++
+		if reads == 1 {
+			return first, nil
+		}
+		return second, nil
+	})
+	if err == nil || !strings.Contains(err.Error(), "changed while reading snapshot") {
+		t.Fatalf("mixed snapshot error = %v", err)
+	}
+	if reads != 2 {
+		t.Fatalf("snapshot reads = %d, want 2", reads)
 	}
 }
 
