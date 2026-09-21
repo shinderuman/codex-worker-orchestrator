@@ -9,6 +9,8 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
+const improvementDispositionTestCallID = "44444444-4444-4444-8444-444444444444"
+
 func TestImprovementSignalBlocksOtherParentActionsUntilDisposition(t *testing.T) {
 	cfg, st := newImprovementDispositionTestState(t)
 	if err := requireImprovementSignalDisposition(cfg, actionAccept); err == nil {
@@ -22,6 +24,7 @@ func TestImprovementSignalBlocksOtherParentActionsUntilDisposition(t *testing.T)
 	if err := executeImprovementDisposition(cfg, []string{
 		actionImprovementDisposition,
 		improvementSignalKindOption, state.ImprovementSignalInvalidPacket,
+		improvementSignalCallIDOption, improvementDispositionTestCallID,
 		improvementDispositionOption, string(state.ImprovementSignalDispositionReject),
 	}, &out); err != nil {
 		t.Fatal(err)
@@ -38,6 +41,39 @@ func TestImprovementSignalBlocksOtherParentActionsUntilDisposition(t *testing.T)
 	}
 }
 
+func TestImprovementSignalRejectsReplacedSourceCall(t *testing.T) {
+	cfg, st := newImprovementDispositionTestState(t)
+	taskID := st.ReadOr("task.id", "")
+	now := time.Now().UTC()
+	newCallID := "55555555-5555-4555-8555-555555555555"
+	st.RecordModelCallLog(state.ModelCallLog{
+		TaskID:             taskID,
+		CallType:           state.CallTypeTask,
+		CallID:             newCallID,
+		StartedAt:          now,
+		CompletedAt:        now,
+		Outcome:            "invalid_packet",
+		PacketRejectReason: "targets-none",
+	})
+
+	if err := executeImprovementDisposition(cfg, []string{
+		actionImprovementDisposition,
+		improvementSignalKindOption, state.ImprovementSignalInvalidPacket,
+		improvementSignalCallIDOption, improvementDispositionTestCallID,
+		improvementDispositionOption, string(state.ImprovementSignalDispositionReject),
+	}, &bytes.Buffer{}); err == nil {
+		t.Fatal("stale source call disposition was accepted after signal replacement")
+	}
+	if err := executeImprovementDisposition(cfg, []string{
+		actionImprovementDisposition,
+		improvementSignalKindOption, state.ImprovementSignalInvalidPacket,
+		improvementSignalCallIDOption, newCallID,
+		improvementDispositionOption, string(state.ImprovementSignalDispositionReject),
+	}, &bytes.Buffer{}); err != nil {
+		t.Fatalf("current source call disposition failed: %v", err)
+	}
+}
+
 func TestRecoveredInvalidPacketDoesNotBecomeStaleActionGate(t *testing.T) {
 	cfg, st := newImprovementDispositionTestState(t)
 	taskID := st.ReadOr("task.id", "")
@@ -45,7 +81,7 @@ func TestRecoveredInvalidPacketDoesNotBecomeStaleActionGate(t *testing.T) {
 	st.RecordModelCallLog(state.ModelCallLog{
 		TaskID:      taskID,
 		CallType:    state.CallTypeTask,
-		CallID:      "55555555-5555-4555-8555-555555555555",
+		CallID:      "66666666-6666-4666-8666-666666666666",
 		StartedAt:   now,
 		CompletedAt: now,
 		Outcome:     "success",
@@ -57,6 +93,7 @@ func TestRecoveredInvalidPacketDoesNotBecomeStaleActionGate(t *testing.T) {
 	if err := executeImprovementDisposition(cfg, []string{
 		actionImprovementDisposition,
 		improvementSignalKindOption, state.ImprovementSignalInvalidPacket,
+		improvementSignalCallIDOption, improvementDispositionTestCallID,
 		improvementDispositionOption, string(state.ImprovementSignalDispositionReject),
 	}, &bytes.Buffer{}); err == nil {
 		t.Fatal("stale historical invalid packet accepted a new disposition")
@@ -65,8 +102,12 @@ func TestRecoveredInvalidPacketDoesNotBecomeStaleActionGate(t *testing.T) {
 
 func TestImprovementSignalIdempotentReplayRepairsDispositionEvent(t *testing.T) {
 	cfg, st := newImprovementDispositionTestState(t)
+	signal, err := st.PendingImprovementSignal()
+	if err != nil || signal == nil {
+		t.Fatalf("pending signal = %#v err=%v", signal, err)
+	}
 	if _, created, err := st.RecordImprovementSignalDisposition(
-		state.ImprovementSignalInvalidPacket,
+		*signal,
 		string(state.ImprovementSignalDispositionReject),
 		"",
 	); err != nil || !created {
@@ -76,6 +117,7 @@ func TestImprovementSignalIdempotentReplayRepairsDispositionEvent(t *testing.T) 
 	if err := executeImprovementDisposition(cfg, []string{
 		actionImprovementDisposition,
 		improvementSignalKindOption, state.ImprovementSignalInvalidPacket,
+		improvementSignalCallIDOption, signal.SourceCallID,
 		improvementDispositionOption, string(state.ImprovementSignalDispositionReject),
 	}, &bytes.Buffer{}); err != nil {
 		t.Fatal(err)
@@ -97,6 +139,7 @@ func TestImprovementSignalAdoptConnectsExistingDefectRegistrationLifecycle(t *te
 	if err := executeImprovementDisposition(cfg, []string{
 		actionImprovementDisposition,
 		improvementSignalKindOption, state.ImprovementSignalInvalidPacket,
+		improvementSignalCallIDOption, improvementDispositionTestCallID,
 		improvementDispositionOption, string(state.ImprovementSignalDispositionAdopt),
 		improvementTaskOption, target,
 	}, &out); err != nil {
@@ -129,6 +172,7 @@ func TestImprovementSignalNonAdoptDispositionsDoNotRegisterTasks(t *testing.T) {
 			args := []string{
 				actionImprovementDisposition,
 				improvementSignalKindOption, state.ImprovementSignalInvalidPacket,
+				improvementSignalCallIDOption, improvementDispositionTestCallID,
 				improvementDispositionOption, string(disposition),
 			}
 			if state.ImprovementDispositionNeedsTask(disposition) {
@@ -162,7 +206,7 @@ func newImprovementDispositionTestState(t *testing.T) (config.AppConfig, *state.
 	st.RecordModelCallLog(state.ModelCallLog{
 		TaskID:             taskID,
 		CallType:           state.CallTypeTask,
-		CallID:             "44444444-4444-4444-8444-444444444444",
+		CallID:             improvementDispositionTestCallID,
 		StartedAt:          now,
 		CompletedAt:        now,
 		Outcome:            "invalid_packet",
