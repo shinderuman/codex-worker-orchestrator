@@ -15,10 +15,11 @@ type analysisResumeTurnEvidence struct {
 }
 
 type analysisTaskOwnership struct {
-	status  string
-	initial *analysisRolloutTurn
-	final   *analysisRolloutTurn
-	owned   map[string]struct{}
+	status              string
+	initial             *analysisRolloutTurn
+	final               *analysisRolloutTurn
+	owned               map[string]struct{}
+	sameTurnInterleaved bool
 }
 
 type analysisRolloutCompletedEvent struct {
@@ -47,9 +48,13 @@ const codexRolloutItemCompletedType = "item_completed"
 
 const codexRolloutCommandExecutionType = "CommandExecution"
 
+const codexRolloutUserMessageType = "user_message"
+
 const analysisWorkerStatusCommand = "glm-worker --status"
 
 const analysisParentResumeCommand = "glm-parent-action resume"
+
+const analysisUserMessageObservation = "user-message-observation"
 
 func resolveAnalysisTaskOwnership(scan bundleRolloutScan, taskStart, collectionEnd time.Time, taskID string) analysisTaskOwnership {
 	turns := scan.turns
@@ -73,6 +78,7 @@ func resolveAnalysisTaskOwnership(scan bundleRolloutScan, taskStart, collectionE
 			return analysisTaskOwnership{status: analysisStatusUnknown}
 		}
 	}
+	ownership.sameTurnInterleaved = analysisOwnershipHasSameTurnInterleavedUserMessage(scan, ownership, taskStart, collectionEnd)
 	return ownership
 }
 
@@ -105,6 +111,9 @@ func analysisResumeEvidenceTouchesTask(evidence *analysisResumeTurnEvidence, tas
 func analysisResumeTurnEvidenceFromScan(scan bundleRolloutScan, start, end time.Time) map[string]*analysisResumeTurnEvidence {
 	evidence := map[string]*analysisResumeTurnEvidence{}
 	for _, resumeCommand := range scan.resumeCommands {
+		if resumeCommand.Command == analysisUserMessageObservation {
+			continue
+		}
 		if resumeCommand.At.Before(start) || resumeCommand.At.After(end) {
 			continue
 		}
@@ -118,7 +127,59 @@ func analysisResumeTurnEvidenceFromScan(scan bundleRolloutScan, start, end time.
 	return evidence
 }
 
+func analysisOwnershipHasSameTurnInterleavedUserMessage(scan bundleRolloutScan, ownership analysisTaskOwnership, start, end time.Time) bool {
+	seenByTurn := map[string]int{}
+	for _, observation := range scan.resumeCommands {
+		if observation.Command != analysisUserMessageObservation {
+			continue
+		}
+		turnID, ok := analysisTurnContainingTimestamp(scan.turns, observation.At)
+		if !ok {
+			continue
+		}
+		if _, owned := ownership.owned[turnID]; !owned {
+			continue
+		}
+		seenByTurn[turnID]++
+		if seenByTurn[turnID] == 1 {
+			continue
+		}
+		if observation.At.Before(start) || observation.At.After(end) {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+func analysisTurnContainingTimestamp(turns []analysisRolloutTurn, at time.Time) (string, bool) {
+	turnID := ""
+	for index := range turns {
+		turn := &turns[index]
+		if !turn.HasStart || at.Before(turn.StartedAt) {
+			continue
+		}
+		if turn.HasComplete && at.After(turn.CompletedAt) {
+			continue
+		}
+		if turnID != "" {
+			return "", false
+		}
+		turnID = turn.TurnID
+	}
+	return turnID, turnID != ""
+}
+
 func analysisResumeCommandFromPayload(payload json.RawMessage) (string, string, string, bool) {
+	var header struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal(payload, &header); err != nil {
+		return "", "", "", false
+	}
+	if header.Type == codexRolloutUserMessageType {
+		return "", analysisUserMessageObservation, "", true
+	}
 	var event analysisRolloutCompletedEvent
 	if err := json.Unmarshal(payload, &event); err != nil || event.Type != codexRolloutItemCompletedType || event.TurnID == "" || event.Item == nil {
 		return "", "", "", false

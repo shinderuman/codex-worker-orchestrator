@@ -87,6 +87,12 @@ func accumulateTelemetryCompactIntervalForTest(total *telemetryCompactParentUsag
 	for status, count := range one.ActivityExcludedByStatus {
 		total.ActivityExcludedByStatus[status] += count
 	}
+	for reason, count := range one.TokensExcludedByReason {
+		total.TokensExcludedByReason[reason] += count
+	}
+	for reason, count := range one.ActivityExcludedByReason {
+		total.ActivityExcludedByReason[reason] += count
+	}
 }
 
 func sumStatusCounts(counts map[string]int) int {

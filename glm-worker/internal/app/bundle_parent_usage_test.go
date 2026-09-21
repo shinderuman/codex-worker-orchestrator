@@ -151,22 +151,21 @@ func TestParentUsageSharedBoundaryPartition(t *testing.T) {
 		t.Fatalf("execution interval = %#v", execution)
 	}
 	executionActivity := execution.Activity
-	if executionActivity.Status != analysisStatusCounted ||
-		executionActivity.ModelTurns != 4 || executionActivity.ToolCalls != 2 ||
-		executionActivity.ToolResults != 1 || executionActivity.Compactions != 1 ||
-		executionActivity.ToolOutputBytes != 10 {
+	if executionActivity.Status != codexStatusAmbiguous ||
+		executionActivity.Reason != parentUsageReasonInterleavedUnattributed ||
+		executionActivity.ModelTurns != 0 || executionActivity.ToolCalls != 0 ||
+		executionActivity.ToolResults != 0 || executionActivity.Compactions != 0 ||
+		executionActivity.ToolOutputBytes != 0 {
 		t.Fatalf("execution activity = %#v", executionActivity)
 	}
 	executionTokens := execution.Tokens
-	if executionTokens.Status != analysisStatusAvailable ||
-		executionTokens.InputTokens != 1000 || executionTokens.CachedInputTokens != 500 ||
-		executionTokens.OutputTokens != 160 || executionTokens.ReasoningTokens != 80 ||
-		executionTokens.TotalTokens != 1500 {
+	if executionTokens.Status != codexStatusAmbiguous ||
+		executionTokens.Reason != parentUsageReasonInterleavedUnattributed ||
+		executionTokens.InputTokens != 0 || executionTokens.CachedInputTokens != 0 ||
+		executionTokens.OutputTokens != 0 || executionTokens.ReasoningTokens != 0 ||
+		executionTokens.TotalTokens != 0 || executionTokens.BaselineAt != "" || executionTokens.EndAt != "" ||
+		executionTokens.BaselineSource != "" || executionTokens.EndSource != "" {
 		t.Fatalf("execution tokens = %#v", executionTokens)
-	}
-	if executionTokens.EndAt != boundary.Format(time.RFC3339Nano) ||
-		executionTokens.EndSource != parentUsageSourceLocator(analysisRolloutRel(), 10) {
-		t.Fatalf("execution token anchors = %#v", executionTokens)
 	}
 
 	finalization := report.Intervals.ParentFinalization
@@ -182,9 +181,6 @@ func TestParentUsageSharedBoundaryPartition(t *testing.T) {
 		finalizationActivity.ToolOutputBytes != 4 {
 		t.Fatalf("finalization activity = %#v", finalizationActivity)
 	}
-	if executionActivity.ModelTurns+finalizationActivity.ModelTurns != 5 {
-		t.Fatalf("model turn partition = %#v / %#v", executionActivity, finalizationActivity)
-	}
 	finalizationTokens := finalization.Tokens
 	if finalizationTokens.Status != analysisStatusAvailable ||
 		finalizationTokens.InputTokens != 600 || finalizationTokens.CachedInputTokens != 300 ||
@@ -193,7 +189,7 @@ func TestParentUsageSharedBoundaryPartition(t *testing.T) {
 		t.Fatalf("finalization tokens = %#v", finalizationTokens)
 	}
 	if finalizationTokens.BaselineAt != boundary.Format(time.RFC3339Nano) ||
-		finalizationTokens.BaselineSource != executionTokens.EndSource ||
+		finalizationTokens.BaselineSource != parentUsageSourceLocator(analysisRolloutRel(), 10) ||
 		finalizationTokens.EndSource != parentUsageSourceLocator(analysisRolloutRel(), 18) {
 		t.Fatalf("finalization token anchors = %#v", finalizationTokens)
 	}

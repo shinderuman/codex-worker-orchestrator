@@ -118,6 +118,8 @@ type telemetryCompactParentUsageInterval struct {
 	Activity                 telemetryCompactParentUsageActivity `json:"activity"`
 	TokensExcludedByStatus   map[string]int                      `json:"tokens_excluded_by_status"`
 	ActivityExcludedByStatus map[string]int                      `json:"activity_excluded_by_status"`
+	TokensExcludedByReason   map[string]int                      `json:"tokens_excluded_by_reason,omitempty"`
+	ActivityExcludedByReason map[string]int                      `json:"activity_excluded_by_reason,omitempty"`
 }
 
 type telemetryCompactParentUsageTokens struct {
@@ -437,6 +439,8 @@ func newTelemetryCompactParentUsageInterval() telemetryCompactParentUsageInterva
 	return telemetryCompactParentUsageInterval{
 		TokensExcludedByStatus:   make(map[string]int),
 		ActivityExcludedByStatus: make(map[string]int),
+		TokensExcludedByReason:   make(map[string]int),
+		ActivityExcludedByReason: make(map[string]int),
 	}
 }
 
@@ -450,9 +454,15 @@ func (interval *telemetryCompactParentUsageInterval) accumulate(parent parentUsa
 		interval.Tokens.TotalTokens += parent.Tokens.TotalTokens
 	} else {
 		interval.TokensExcludedByStatus[parentUsageTokenExclusionStatus(parent.Tokens)]++
+		if reason := parentUsageTokenExclusionReason(parent.Tokens); reason != "" {
+			interval.TokensExcludedByReason[reason]++
+		}
 	}
 	if parent.Activity.Status != analysisStatusCounted {
 		interval.ActivityExcludedByStatus[parent.Activity.Status]++
+		if parent.Activity.Reason != "" {
+			interval.ActivityExcludedByReason[parent.Activity.Reason]++
+		}
 		return
 	}
 	interval.Activity.TasksCounted++
@@ -472,4 +482,14 @@ func parentUsageTokenExclusionStatus(tokens parentUsageTokens) string {
 		return telemetryCompactParentUsageMissingTokenField
 	}
 	return tokens.Status
+}
+
+func parentUsageTokenExclusionReason(tokens parentUsageTokens) string {
+	if tokens.Reason != "" {
+		return tokens.Reason
+	}
+	if tokens.Status == analysisStatusAvailable && len(tokens.UnknownFields) != 0 {
+		return telemetryCompactParentUsageMissingTokenField
+	}
+	return ""
 }

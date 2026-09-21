@@ -311,7 +311,7 @@ func TestBundleAnalysisBoundaryEvidenceMissing(t *testing.T) {
 				}
 			},
 			executionStatus: analysisStatusAvailable, finalizationStatus: analysisStatusUnknown,
-			subsequentStatus: analysisStatusUnknown, tokenDeltaStatus: analysisStatusAvailable,
+			subsequentStatus: analysisStatusUnknown, tokenDeltaStatus: analysisStatusUnknown,
 			waitCallsStatus: analysisStatusCounted,
 		},
 		{
@@ -325,7 +325,7 @@ func TestBundleAnalysisBoundaryEvidenceMissing(t *testing.T) {
 				}
 			},
 			executionStatus: analysisStatusAvailable, finalizationStatus: analysisStatusUnknown,
-			subsequentStatus: analysisStatusUnknown, tokenDeltaStatus: analysisStatusAvailable,
+			subsequentStatus: analysisStatusUnknown, tokenDeltaStatus: analysisStatusUnknown,
 			waitCallsStatus: analysisStatusCounted,
 		},
 		{

@@ -486,7 +486,7 @@ func buildBundleAnalysisIndex(st *state.StateStore, task bundleTask, collector *
 		ParentSession:  analysisParentSession(association),
 		RolloutWindow:  analysisRolloutWindow(association, rolloutScan, rolloutScanErr, start),
 		WaitCalls:      analysisWaitCalls(association, rolloutScan, rolloutScanErr, start, execution, collectionEnd),
-		TokenDelta:     analysisExecutionTokenDelta(association, rolloutScan, rolloutScanErr, start, execution, collectionEnd),
+		TokenDelta:     analysisExecutionTokenDeltaForOwnership(association, rolloutScan, rolloutScanErr, start, execution, collectionEnd, ownership),
 		Finalization:   analysisTaskFinalizationTokenDelta(association, rolloutScan, rolloutScanErr, execution, ownership, finalizationInterval),
 		ValidationRuns: validations,
 		Retries:        analysisRetries(task, eventRuns, validations.Runs, telemetry),
