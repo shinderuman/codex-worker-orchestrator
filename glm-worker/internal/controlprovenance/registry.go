@@ -9,17 +9,7 @@ import (
 	"strings"
 )
 
-const RegistryPath = "codex/control-provenance.json"
-
 type Classification = string
-
-const (
-	ClassificationMachine            Classification = "machine-enforced"
-	ClassificationPartial            Classification = "partial"
-	ClassificationProse              Classification = "prose-only"
-	ClassificationSemanticParent     Classification = "semantic-parent-only"
-	ClassificationExternalUnenforced Classification = "external-unenforceable"
-)
 
 type Registry struct {
 	Version  int       `json:"version"`
@@ -50,16 +40,26 @@ type ProjectionGuard struct {
 
 type NegativeResultPolicy string
 
-const (
-	NegativeResultMachineRecoveryRequired NegativeResultPolicy = "machine-recovery-required"
-	NegativeResultParentResidual          NegativeResultPolicy = "parent-residual"
-)
-
 type ResultAuthority struct {
 	ControlID      string               `json:"control_id"`
 	Classification Classification       `json:"classification"`
 	NegativeResult NegativeResultPolicy `json:"negative_result"`
 }
+
+const RegistryPath = "codex/control-provenance.json"
+
+const (
+	ClassificationMachine            Classification = "machine-enforced"
+	ClassificationPartial            Classification = "partial"
+	ClassificationProse              Classification = "prose-only"
+	ClassificationSemanticParent     Classification = "semantic-parent-only"
+	ClassificationExternalUnenforced Classification = "external-unenforceable"
+)
+
+const (
+	NegativeResultMachineRecoveryRequired NegativeResultPolicy = "machine-recovery-required"
+	NegativeResultParentResidual          NegativeResultPolicy = "parent-residual"
+)
 
 func Decode(data []byte) (Registry, error) {
 	var registry Registry
