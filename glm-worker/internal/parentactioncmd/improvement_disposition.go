@@ -23,11 +23,11 @@ type improvementDispositionOutput struct {
 }
 
 const (
-	actionImprovementDisposition = "improvement-disposition"
-	improvementSignalKindOption  = "--signal-kind"
+	actionImprovementDisposition  = "improvement-disposition"
+	improvementSignalKindOption   = "--signal-kind"
 	improvementSignalCallIDOption = "--source-call-id"
-	improvementDispositionOption = "--disposition"
-	improvementTaskOption        = "--task"
+	improvementDispositionOption  = "--disposition"
+	improvementTaskOption         = "--task"
 )
 
 func requireImprovementSignalDisposition(cfg config.AppConfig, action string) error {
@@ -147,36 +147,58 @@ func recordImprovementDisposition(st *state.StateStore, signal state.Improvement
 }
 
 func parseImprovementDispositionArgs(args []string) (string, string, string, string, error) {
-	if len(args) != 7 && len(args) != 9 {
-		return "", "", "", "", improvementDispositionUsageError()
-	}
-	if args[0] != actionImprovementDisposition || args[1] != improvementSignalKindOption || args[3] != improvementSignalCallIDOption || args[5] != improvementDispositionOption {
-		return "", "", "", "", improvementDispositionUsageError()
+	if err := validateImprovementDispositionArgShape(args); err != nil {
+		return "", "", "", "", err
 	}
 	kind := args[2]
 	sourceCallID := args[4]
 	disposition := args[6]
-	targetTask := ""
 	if kind == "" || sourceCallID == "" {
 		return "", "", "", "", improvementDispositionUsageError()
 	}
-	if len(args) == 9 {
-		if args[7] != improvementTaskOption {
-			return "", "", "", "", improvementDispositionUsageError()
-		}
-		targetTask = args[8]
+	targetTask, err := improvementDispositionTargetArg(args)
+	if err != nil {
+		return "", "", "", "", err
 	}
 	resolved := state.ImprovementSignalDisposition(disposition)
 	if !resolved.Valid() {
 		return "", "", "", "", fmt.Errorf("unknown improvement signal disposition %q", disposition)
 	}
-	if state.ImprovementDispositionNeedsTask(resolved) != (targetTask != "") {
-		if state.ImprovementDispositionNeedsTask(resolved) {
-			return "", "", "", "", fmt.Errorf("improvement signal disposition %s requires --task", disposition)
-		}
-		return "", "", "", "", fmt.Errorf("improvement signal disposition %s does not accept --task", disposition)
+	if err := validateImprovementDispositionTarget(resolved, targetTask); err != nil {
+		return "", "", "", "", err
 	}
 	return kind, sourceCallID, disposition, targetTask, nil
+}
+
+func validateImprovementDispositionArgShape(args []string) error {
+	if len(args) != 7 && len(args) != 9 {
+		return improvementDispositionUsageError()
+	}
+	if args[0] != actionImprovementDisposition || args[1] != improvementSignalKindOption || args[3] != improvementSignalCallIDOption || args[5] != improvementDispositionOption {
+		return improvementDispositionUsageError()
+	}
+	return nil
+}
+
+func improvementDispositionTargetArg(args []string) (string, error) {
+	if len(args) == 7 {
+		return "", nil
+	}
+	if args[7] != improvementTaskOption {
+		return "", improvementDispositionUsageError()
+	}
+	return args[8], nil
+}
+
+func validateImprovementDispositionTarget(disposition state.ImprovementSignalDisposition, targetTask string) error {
+	needsTask := state.ImprovementDispositionNeedsTask(disposition)
+	if needsTask && targetTask == "" {
+		return fmt.Errorf("improvement signal disposition %s requires --task", disposition)
+	}
+	if !needsTask && targetTask != "" {
+		return fmt.Errorf("improvement signal disposition %s does not accept --task", disposition)
+	}
+	return nil
 }
 
 func improvementDispositionUsageError() error {
