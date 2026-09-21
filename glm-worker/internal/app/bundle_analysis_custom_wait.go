@@ -38,7 +38,8 @@ type analysisWaitJSParser struct {
 const (
 	analysisWaitSessionIDKey       = "session_id"
 	analysisWaitCharsKey           = "chars"
-	analysisWaitYieldMSKey         = "yield-time_ms"
+	analysisWaitCustomYieldMSKey   = "yield_time_ms"
+	analysisWaitLegacyYieldMSKey   = "yield-time_ms"
 	analysisWaitMaxOutputTokensKey = "max_output_tokens"
 )
 
@@ -75,7 +76,7 @@ func analysisNormalizeCustomWait(item *codexRolloutItemPayload, raw analysisRoll
 	item.Name = codexRolloutWaitCallName
 	item.Arguments = "{}"
 	if yieldMS != nil {
-		item.Arguments = `{"` + analysisWaitYieldMSKey + `":` + strconv.FormatUint(*yieldMS, 10) + `}`
+		item.Arguments = `{"` + analysisWaitLegacyYieldMSKey + `":` + strconv.FormatUint(*yieldMS, 10) + `}`
 	}
 }
 
@@ -186,14 +187,14 @@ func analysisStripExecPragma(input string) (string, analysisExecPragma, bool) {
 		return "", pragma, false
 	}
 	for key, value := range fields {
-		if key != analysisWaitYieldMSKey && key != analysisWaitMaxOutputTokensKey {
+		if key != analysisWaitLegacyYieldMSKey && key != analysisWaitMaxOutputTokensKey {
 			return "", pragma, false
 		}
 		var number uint64
 		if err := json.Unmarshal(value, &number); err != nil {
 			return "", pragma, false
 		}
-		if key == analysisWaitYieldMSKey {
+		if key == analysisWaitLegacyYieldMSKey {
 			pragma.yieldMS = number
 			pragma.hasYield = true
 		}
@@ -238,7 +239,7 @@ func (state *analysisWriteStdinFields) apply(field string) bool {
 }
 
 func (state *analysisWriteStdinFields) applyDuplicate(key string) bool {
-	if key != analysisWaitYieldMSKey {
+	if key != analysisWaitCustomYieldMSKey {
 		return false
 	}
 	state.yieldMS = nil
@@ -249,11 +250,10 @@ func (state *analysisWriteStdinFields) applyDuplicate(key string) bool {
 func (state *analysisWriteStdinFields) applyUnique(key, value string) bool {
 	switch key {
 	case analysisWaitSessionIDKey:
-		_, ok := analysisUnsignedJSLiteral(value)
-		return ok
+		return analysisCanonicalSessionID(value)
 	case analysisWaitCharsKey:
 		return analysisEmptyJSString(value)
-	case analysisWaitYieldMSKey:
+	case analysisWaitCustomYieldMSKey:
 		return state.applyYield(value)
 	case analysisWaitMaxOutputTokensKey:
 		_, ok := analysisUnsignedJSLiteral(value)
@@ -278,7 +278,7 @@ func analysisWaitPropertyKey(raw string) (string, bool) {
 	for _, key := range []string{
 		analysisWaitSessionIDKey,
 		analysisWaitCharsKey,
-		analysisWaitYieldMSKey,
+		analysisWaitCustomYieldMSKey,
 		analysisWaitMaxOutputTokensKey,
 	} {
 		if raw == key || raw == `"`+key+`"` || raw == `'`+key+`'` {
@@ -286,6 +286,26 @@ func analysisWaitPropertyKey(raw string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+func analysisCanonicalSessionID(raw string) bool {
+	raw = strings.TrimSpace(raw)
+	if _, ok := analysisUnsignedJSLiteral(raw); ok {
+		return true
+	}
+	identifier, property, ok := strings.Cut(raw, ".")
+	if !ok || property != analysisWaitSessionIDKey || identifier == "" {
+		return false
+	}
+	if !analysisJSIdentifierStartByte(identifier[0]) {
+		return false
+	}
+	for index := 1; index < len(identifier); index++ {
+		if !analysisJSIdentifierByte(identifier[index]) {
+			return false
+		}
+	}
+	return true
 }
 
 func analysisUnsignedJSLiteral(raw string) (uint64, bool) {
