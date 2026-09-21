@@ -48,7 +48,11 @@ func controlProvenanceViolations(root string) ([]Violation, error) {
 }
 
 func decodeControlProvenanceRegistry(data []byte) (controlProvenanceRegistry, error) {
-	return controlprovenance.Decode(data)
+	registry, err := controlprovenance.Decode(data)
+	if err != nil {
+		return controlProvenanceRegistry{}, fmt.Errorf("decode control provenance registry: %w", err)
+	}
+	return registry, nil
 }
 
 func validateControlProvenanceRegistry(root string, registry controlProvenanceRegistry) ([]Violation, error) {
