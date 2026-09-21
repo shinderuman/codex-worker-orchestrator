@@ -79,19 +79,16 @@ func executionProgressPhaseStage(currentPhase, currentRole string) string {
 	if currentRole == string(state.ReviewerRole) || strings.HasPrefix(currentPhase, "reviewer-") {
 		return "review"
 	}
-	switch state.WorkerPhaseCategory(currentPhase) {
-	case state.WorkerPhaseCategoryNew,
-		state.WorkerPhaseCategoryExplicitFix,
-		state.WorkerPhaseCategoryAutoFix:
-		return "implementation"
-	case state.WorkerPhaseCategoryDecision:
+	if state.WorkerPhaseCategory(currentPhase) == state.WorkerPhaseCategoryDecision {
 		return "decision"
-	default:
-		if currentPhase == "" {
-			return "unknown"
-		}
-		return "other"
 	}
+	if currentRole == string(state.WorkerRole) || strings.HasPrefix(currentPhase, "worker-") {
+		return "implementation"
+	}
+	if currentPhase == "" {
+		return "unknown"
+	}
+	return "other"
 }
 
 func executionProgressBand(currentIndex, milestoneCount int, phaseStage string, taskStatus state.TaskStatus) string {
