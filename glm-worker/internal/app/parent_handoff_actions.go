@@ -8,10 +8,11 @@ import (
 )
 
 type parentHandoffActionSpec struct {
-	Kind           string            `json:"kind"`
-	Command        []string          `json:"command,omitempty"`
-	PrepareCommand []string          `json:"prepare_command,omitempty"`
-	Parameters     map[string]string `json:"parameters,omitempty"`
+	Kind               string            `json:"kind"`
+	Command            []string          `json:"command,omitempty"`
+	PrepareCommand     []string          `json:"prepare_command,omitempty"`
+	Parameters         map[string]string `json:"parameters,omitempty"`
+	OptionalParameters []string          `json:"optional_parameters,omitempty"`
 }
 
 type parentHandoffOutputAlias parentHandoffOutput
@@ -105,10 +106,25 @@ func parentActionSpec(action string, requiredParameters map[string]string) (pare
 	}
 
 	switch state.ParentAction(action) {
-	case state.ParentActionDecision, state.ParentActionFix:
+	case state.ParentActionDecision:
 		return parentHandoffActionSpec{
 			Kind:           "staged",
 			PrepareCommand: []string{"glm-parent-action", "prepare", action},
+		}, true
+	case state.ParentActionFix:
+		prepareCommand := []string{"glm-parent-action", "prepare", action}
+		optionalParameters := []string{"origin", "cause", "accepted-scope"}
+		var parameters map[string]string
+		if acceptedScope := requiredParameters["accepted-scope"]; acceptedScope != "" {
+			prepareCommand = append(prepareCommand, "--accepted-scope", acceptedScope)
+			parameters = map[string]string{"accepted-scope": acceptedScope}
+			optionalParameters = []string{"origin", "cause"}
+		}
+		return parentHandoffActionSpec{
+			Kind:               "staged",
+			PrepareCommand:     prepareCommand,
+			Parameters:         parameters,
+			OptionalParameters: optionalParameters,
 		}, true
 	case state.ParentActionApproveSurface:
 		acceptedScope := requiredParameters["accepted-scope"]
