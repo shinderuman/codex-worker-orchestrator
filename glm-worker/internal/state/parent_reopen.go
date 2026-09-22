@@ -7,6 +7,9 @@ import (
 )
 
 func (s *StateStore) ReopenAcceptedParentCompletion() error {
+	if _, err := s.RecoverInterruptedParentReopen(); err != nil {
+		return err
+	}
 	completion, finding, err := s.reopenableParentCompletion()
 	if err != nil {
 		return err
@@ -15,12 +18,22 @@ func (s *StateStore) ReopenAcceptedParentCompletion() error {
 	if err != nil {
 		return err
 	}
+	candidate, err := s.LoadPublicationCandidate()
+	if err != nil {
+		return err
+	}
 	snapshots, err := s.snapshotReopenStateFiles()
 	if err != nil {
 		return err
 	}
-	if err := s.applyReopenTransition(*completion, snapshots); err != nil {
+	if err := s.saveParentReopenTransaction(snapshots); err != nil {
 		return err
+	}
+	if err := s.applyReopenTransition(*completion, candidate); err != nil {
+		return s.rollbackParentReopenTransaction(err)
+	}
+	if err := s.Remove(parentReopenTransactionStateFile); err != nil {
+		return fmt.Errorf("parent reopen transition committed state but could not clear recovery record: %w", err)
 	}
 	s.recordReopenedParentOutcome(taskID, finding.Origin, finding.Cause, *completion)
 	return nil
@@ -48,14 +61,7 @@ func (s *StateStore) reopenableParentCompletion() (*ParentCompletionOutcome, *Pu
 }
 
 func (s *StateStore) snapshotReopenStateFiles() ([]lifecycleFileSnapshot, error) {
-	names := []string{
-		parentReviewStateFile,
-		"task.status",
-		publicationCandidateStateFile,
-		runtimeInstallEvidenceFile,
-		publicationReopenLineageStateFile,
-		publicationInvalidatingFindingStateFile,
-	}
+	names := parentReopenSnapshotStateFiles()
 	snapshots := make([]lifecycleFileSnapshot, 0, len(names))
 	for _, name := range names {
 		snapshot, err := s.snapshotLifecycleFile(name)
@@ -67,28 +73,24 @@ func (s *StateStore) snapshotReopenStateFiles() ([]lifecycleFileSnapshot, error)
 	return snapshots, nil
 }
 
-func (s *StateStore) applyReopenTransition(completion ParentCompletionOutcome, snapshots []lifecycleFileSnapshot) error {
-	candidate, err := s.LoadPublicationCandidate()
-	if err != nil {
-		return s.rollbackLifecycleFiles(err, snapshots...)
-	}
+func (s *StateStore) applyReopenTransition(completion ParentCompletionOutcome, candidate PublicationCandidate) error {
 	if err := s.CapturePublicationReopenLineage(candidate); err != nil {
-		return s.rollbackLifecycleFiles(err, snapshots...)
+		return err
 	}
 	if err := s.ClearPublicationCandidate(); err != nil {
-		return s.rollbackLifecycleFiles(err, snapshots...)
+		return err
 	}
 	if err := s.ClearRuntimeInstallEvidence(); err != nil {
-		return s.rollbackLifecycleFiles(err, snapshots...)
+		return err
 	}
 	if err := s.ClearPublicationInvalidatingFinding(); err != nil {
-		return s.rollbackLifecycleFiles(err, snapshots...)
+		return err
 	}
 	if err := s.openParentReviewState(string(packet.StatusNeedsSolReview), completion.Risk, ParentReviewProducer{}, false); err != nil {
-		return s.rollbackLifecycleFiles(err, snapshots...)
+		return err
 	}
 	if err := s.SetTaskStatus(TaskStatusWaitingSolReview); err != nil {
-		return s.rollbackLifecycleFiles(err, snapshots...)
+		return err
 	}
 	return nil
 }
