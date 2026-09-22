@@ -4,13 +4,14 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 	"io"
 	"os"
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
 func runQualityGate(payload string, st *state.StateStore, stdout io.Writer) error {
