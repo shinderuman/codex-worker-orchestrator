@@ -94,14 +94,9 @@ jobs:
         with:
           ref: web-gpt/review-fix/91cc885-6682699
           fetch-depth: 0
-      - name: Extract and apply validated fixes
+      - name: Apply validated fixes
         run: |
-          awk '
-            /python3 - <<'\''PY'\''/ { capture=1; next }
-            capture && /^          PY$/ { exit }
-            capture { sub(/^          /, ""); print }
-          ' .github/workflows/web-gpt-review-fix.yml > /tmp/web-gpt-review-fix.py
-          python3 /tmp/web-gpt-review-fix.py
+          python3 .github/web-gpt-review-fix.py
           gofmt -w \
             glm-worker/internal/parentactioncmd/publication_pretool.go \
             glm-worker/internal/parentactioncmd/publication_pretool_test.go \
@@ -137,7 +132,7 @@ jobs:
       - name: Commit validated fixes and remove temporary machinery
         run: |
           git checkout 6682699886e49d8aa3e98f1c26723b114afa3f6f -- .github/workflows/ci.yml
-          git rm .github/workflows/web-gpt-review-fix.yml
+          git rm .github/workflows/web-gpt-review-fix.yml .github/web-gpt-review-fix.py
           git config user.name 'web-gpt-review-fix'
           git config user.email 'web-gpt-review-fix@users.noreply.github.com'
           git add -A
