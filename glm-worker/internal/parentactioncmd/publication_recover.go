@@ -9,19 +9,19 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/app"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/publicationsequence"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
 )
 
 type publicationRecoverOutput struct {
-	Status        string                      `json:"status"`
-	Candidate     *state.PublicationCandidate `json:"candidate,omitempty"`
-	Safety        string                      `json:"safety,omitempty"`
-	HistoryImpact string                      `json:"history_impact,omitempty"`
-	NextAction    *app.PublicationActionSpec  `json:"next_action,omitempty"`
-	Failure       *finalizationFailure        `json:"failure,omitempty"`
+	Status        string                                     `json:"status"`
+	Candidate     *state.PublicationCandidate                `json:"candidate,omitempty"`
+	Safety        string                                     `json:"safety,omitempty"`
+	HistoryImpact string                                     `json:"history_impact,omitempty"`
+	NextAction    *publicationsequence.PublicationActionSpec `json:"next_action,omitempty"`
+	Failure       *finalizationFailure                       `json:"failure,omitempty"`
 }
 
 const publicationRecoverSubcommand = "re" + "cover"
@@ -71,7 +71,7 @@ func recoverPublicationCandidate(cfg config.AppConfig, st *state.StateStore) pub
 		Candidate:     &candidate,
 		Safety:        publicationRecoverSafety,
 		HistoryImpact: "commit " + candidate.CommitOID + " remains exactly as committed; no reset or rewrite occurs",
-		NextAction:    app.ProjectPublicationSequence(cfg.RepoRoot, st).NextAction,
+		NextAction:    publicationsequence.ProjectPublicationSequence(cfg.RepoRoot, st).NextAction,
 	}
 }
 
