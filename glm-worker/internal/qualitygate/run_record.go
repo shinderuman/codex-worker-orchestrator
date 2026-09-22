@@ -83,7 +83,14 @@ func Read(st *state.StateStore, runID string) (RunRecord, error) {
 	if err != nil {
 		return RunRecord{}, err
 	}
-	return Decode(data)
+	record, err := Decode(data)
+	if err != nil {
+		return RunRecord{}, err
+	}
+	if record.ValidationRunID != runID {
+		return RunRecord{}, fmt.Errorf("quality gate run record identity mismatch")
+	}
+	return record, nil
 }
 
 func VerifyTerminalPass(record RunRecord) error {
