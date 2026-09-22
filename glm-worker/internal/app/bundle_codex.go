@@ -1,12 +1,9 @@
 package app
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path"
@@ -16,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/codexrollout"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
@@ -31,40 +29,7 @@ type bundleCodexSource struct {
 	Detail           string   `json:"detail,omitempty"`
 }
 
-type codexRollout struct {
-	AbsolutePath   string
-	HomeRelative   string
-	ID             string
-	ParentThreadID string
-	GuardianSource bool
-	FirstTimestamp time.Time
-	LastTimestamp  time.Time
-	Cwd            string
-	Originator     string
-	SourceRaw      string
-}
-
-type codexSessionMeta struct {
-	Timestamp string                  `json:"timestamp"`
-	Type      string                  `json:"type"`
-	Payload   codexSessionMetaPayload `json:"payload"`
-}
-
-type codexSessionMetaPayload struct {
-	ID             string          `json:"id"`
-	ParentThreadID string          `json:"parent_thread_id"`
-	Cwd            string          `json:"cwd"`
-	Originator     string          `json:"originator"`
-	Source         json.RawMessage `json:"source"`
-}
-
-type codexRolloutSource struct {
-	Subagent *codexRolloutSubagent `json:"subagent"`
-}
-
-type codexRolloutSubagent struct {
-	Other string `json:"other"`
-}
+type codexRollout = codexrollout.Rollout
 
 type codexLogRow struct {
 	TS              int64   `json:"ts"`
@@ -136,17 +101,6 @@ func (association codexAssociation) parentSourceLabel() string {
 	return strings.Join(association.parentSources(), ";")
 }
 
-func codexSourceIsGuardian(raw json.RawMessage) bool {
-	if len(raw) == 0 {
-		return false
-	}
-	var source codexRolloutSource
-	if err := json.Unmarshal(raw, &source); err != nil {
-		return false
-	}
-	return source.Subagent != nil && source.Subagent.Other == "guardian"
-}
-
 func (c *bundleCollector) collectCodexEvidence(cfg config.AppConfig, task bundleTask) (codexAssociation, []bundleCodexSource) {
 	association := resolveCodexAssociation(cfg.CodexConfigDir, task)
 	threads := c.addCodexRolloutEvidence(association)
@@ -182,13 +136,7 @@ func resolveCodexAssociationWithScan(codexHome string, task bundleTask, scan fun
 }
 
 func matchingCodexRollouts(rollouts []codexRollout, threadID string) []codexRollout {
-	matches := make([]codexRollout, 0, 1)
-	for _, rollout := range rollouts {
-		if rollout.ID == threadID {
-			matches = append(matches, rollout)
-		}
-	}
-	return matches
+	return codexrollout.Matching(rollouts, threadID)
 }
 
 func buildCodexAssociation(matches, rollouts []codexRollout, basis string, task bundleTask) codexAssociation {
@@ -262,7 +210,7 @@ func selectCodexGuardianChildren(rollouts []codexRollout, parent codexRollout, s
 		if rollout.ParentThreadID != parent.ID || !rollout.GuardianSource {
 			continue
 		}
-		last, ok := codexRolloutLastTimestamp(rollout.AbsolutePath)
+		last, ok := codexrollout.LastTimestamp(rollout.AbsolutePath)
 		if !ok || rollout.FirstTimestamp.After(end) || last.Before(start) {
 			continue
 		}
@@ -278,143 +226,11 @@ func selectCodexGuardianChildren(rollouts []codexRollout, parent codexRollout, s
 }
 
 func scanCodexRollouts(codexHome string) ([]codexRollout, error) {
-	rollouts := make([]codexRollout, 0)
-	for _, root := range []string{filepath.Join(codexHome, "sessions"), filepath.Join(codexHome, "archived_sessions")} {
-		collected, err := scanCodexRolloutRoot(codexHome, root)
-		if err != nil {
-			return nil, err
-		}
-		rollouts = append(rollouts, collected...)
-	}
-	return rollouts, nil
-}
-
-func scanCodexRolloutRoot(codexHome, root string) ([]codexRollout, error) {
-	info, err := os.Lstat(root)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-		return nil, nil
-	}
-	rollouts := make([]codexRollout, 0)
-	err = filepath.WalkDir(root, func(filePath string, entry os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if entry.IsDir() || !entry.Type().IsRegular() || filepath.Ext(entry.Name()) != ".jsonl" {
-			return nil
-		}
-		if rollout, ok := readCodexRolloutMeta(codexHome, filePath); ok {
-			rollouts = append(rollouts, rollout)
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	return rollouts, nil
-}
-
-func readCodexRolloutMeta(codexHome, filePath string) (codexRollout, bool) {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return codexRollout{}, false
-	}
-	defer func() { _ = file.Close() }()
-
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
-	if !scanner.Scan() {
-		return codexRollout{}, false
-	}
-	var meta codexSessionMeta
-	if err := json.Unmarshal(scanner.Bytes(), &meta); err != nil || meta.Type != "session_meta" {
-		return codexRollout{}, false
-	}
-	first, err := time.Parse(time.RFC3339Nano, meta.Timestamp)
-	if err != nil {
-		first = time.Time{}
-	}
-	rel, relErr := filepath.Rel(codexHome, filePath)
-	if relErr != nil {
-		return codexRollout{}, false
-	}
-	return codexRollout{
-		AbsolutePath:   filePath,
-		HomeRelative:   filepath.ToSlash(rel),
-		ID:             meta.Payload.ID,
-		ParentThreadID: meta.Payload.ParentThreadID,
-		GuardianSource: codexSourceIsGuardian(meta.Payload.Source),
-		FirstTimestamp: first,
-		Cwd:            meta.Payload.Cwd,
-		Originator:     meta.Payload.Originator,
-		SourceRaw:      codexCompactRawJSON(meta.Payload.Source),
-	}, true
-}
-
-func codexCompactRawJSON(raw json.RawMessage) string {
-	if len(raw) == 0 {
-		return ""
-	}
-	var buffer bytes.Buffer
-	if err := json.Compact(&buffer, raw); err != nil {
-		return string(raw)
-	}
-	return buffer.String()
-}
-
-func codexRolloutLastTimestamp(filePath string) (time.Time, bool) {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return time.Time{}, false
-	}
-	defer func() { _ = file.Close() }()
-	info, err := file.Stat()
-	if err != nil || info.Size() == 0 {
-		return time.Time{}, false
-	}
-	const tailSize = 16 * 1024
-	buffer := make([]byte, tailSize)
-	offset := info.Size() - tailSize
-	if offset < 0 {
-		offset = 0
-	}
-	read, err := file.ReadAt(buffer, offset)
-	if err != nil && !errors.Is(err, io.EOF) {
-		return time.Time{}, false
-	}
-	return lastTimestampFromTail(buffer[:read])
-}
-
-func lastTimestampFromTail(tail []byte) (time.Time, bool) {
-	lines := bytes.Split(tail, []byte("\n"))
-	for index := len(lines) - 1; index >= 0; index-- {
-		line := bytes.TrimSpace(lines[index])
-		if len(line) == 0 || line[0] != '{' {
-			continue
-		}
-		var record struct {
-			Timestamp string `json:"timestamp"`
-		}
-		if err := json.Unmarshal(line, &record); err != nil || record.Timestamp == "" {
-			continue
-		}
-		parsed, err := time.Parse(time.RFC3339Nano, record.Timestamp)
-		if err != nil {
-			continue
-		}
-		return parsed, true
-	}
-	return time.Time{}, false
+	return codexrollout.Scan(codexHome)
 }
 
 func codexDirExists(dir string) bool {
-	info, err := os.Stat(dir)
-	return err == nil && info.IsDir()
+	return codexrollout.DirExists(dir)
 }
 
 func (c *bundleCollector) addCodexRolloutEvidence(association codexAssociation) []string {
