@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentevidence"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/reposearch"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
@@ -206,9 +207,9 @@ func TestPrintRepoSearchDuplicateWithinDecisionLeaseIsRejected(t *testing.T) {
 	if err == nil {
 		t.Fatalf("second identical projection succeeded: %s", second.String())
 	}
-	var duplicate *DuplicateParentProjectionError
+	var duplicate *parentevidence.DuplicateProjectionError
 	if !errors.As(err, &duplicate) {
-		t.Fatalf("second projection error = %T, want DuplicateParentProjectionError", err)
+		t.Fatalf("second projection error = %T, want parentevidence.DuplicateProjectionError", err)
 	}
 	if duplicate.Surface != state.ParentEvidenceSurfaceSearch {
 		t.Fatalf("duplicate surface = %q", duplicate.Surface)
@@ -259,7 +260,7 @@ func TestPrintRepoSearchRefinementIsDeduplicatedWithinDecisionLease(t *testing.T
 	}
 	var second bytes.Buffer
 	err := printRepoSearch(request, cfg, st, &second)
-	var duplicate *DuplicateParentProjectionError
+	var duplicate *parentevidence.DuplicateProjectionError
 	if !errors.As(err, &duplicate) || second.Len() != 0 {
 		t.Fatalf("duplicate refinement error=%v stdout=%s", err, second.String())
 	}
