@@ -48,6 +48,25 @@ jobs:
           ''',
           )
 
+          replace(
+              "glm-worker/internal/parentactioncmd/publication_pretool.go",
+              '''\tfor index := 0; index < len(argv); index++ {
+          \t\tvalue := argv[index].Value
+          \t\tif value == "--" {
+          ''',
+              '''\tfor index := 0; index < len(argv); index++ {
+          \t\tvalue := argv[index].Value
+          \t\tif redirection, next, unavailable := publicationLeadingRedirection(argv, index); redirection {
+          \t\t\tif unavailable {
+          \t\t\t\treturn ""
+          \t\t\t}
+          \t\t\tindex = next - 1
+          \t\t\tcontinue
+          \t\t}
+          \t\tif value == "--" {
+          ''',
+          )
+
           builtins = '''func publicationGitBuiltinSubcommand(value string) bool {
           \tswitch value {
           \tcase "add", "am", "annotate", "apply", "archive", "bisect", "blame", "branch", "bugreport", "bundle",
