@@ -105,12 +105,6 @@ const telemetryQueryUsage = "[current|history] [--task <task-id>] [--since <rfc3
 const verifyCodexWakeUsage = "usage: glm-worker --verify-codex-wake <wake-task-thread-id> <wake-at-rfc3339>"
 
 var commandParsers = map[string]commandParser{
-	"--decision": func([]string) (Command, error) {
-		return Command{}, machinecli.UsageErrorf("usage: glm-worker --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix-stdin <payload-bytes> [--sha256 <hex>] %s", fixOriginUsage)
-	},
-	"--fix": func([]string) (Command, error) {
-		return Command{}, machinecli.UsageErrorf("usage: glm-worker --decision-stdin <payload-bytes> [--sha256 <hex>] | --fix-stdin <payload-bytes> [--sha256 <hex>] %s", fixOriginUsage)
-	},
 	"--decision-stdin": func(args []string) (Command, error) {
 		return stdinPayloadCommand(ModeDecision, args, "usage: glm-worker --decision-stdin <payload-bytes> [--sha256 <hex>]", false)
 	},
@@ -211,6 +205,9 @@ func ParseCommand(args []string) (Command, error) {
 	}
 	if parser, ok := commandParsers[args[0]]; ok {
 		return parser(args)
+	}
+	if strings.HasPrefix(args[0], "--") {
+		return Command{}, machinecli.UsageErrorf("unknown command %q; run glm-worker --help for command list", args[0])
 	}
 	return Command{Mode: ModeNewTask, Payload: strings.Join(args, " ")}, nil
 }
