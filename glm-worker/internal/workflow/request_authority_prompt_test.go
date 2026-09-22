@@ -12,8 +12,8 @@ func TestResolvedActiveTaskPromptsOmitFallbackRequestAuthority(t *testing.T) {
 	activeTaskPath := "IMPLEMENTATION_TASKS/task.md"
 
 	prompts := map[string]string{
-		"new task":    newTaskPrompt(request, activeTaskPath),
-		"decision":    decisionPrompt(request, "decision-delta", activeTaskPath),
+		"new task":     newTaskPrompt(request, activeTaskPath),
+		"decision":     decisionPrompt(request, "decision-delta", activeTaskPath),
 		"explicit fix": explicitFixPrompt(request, "decision-delta", "previous-review", "review-feedback", activeTaskPath),
 		"reviewer": reviewerPrompt(
 			request,
