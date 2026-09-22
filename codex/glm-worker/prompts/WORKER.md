@@ -62,6 +62,6 @@ HIGHではSolが全diffを読み直さず判断できるよう、変更前後の
 
 ## 出力
 途中経過、file一覧、grep結果、大量codeを最終出力へ含めず、実行環境指定schemaの結果を1つだけ返す。
-- packetのstructural contractは`control:packet-schema-result`のcurrent worker schema/validatorを正とする。親validationが必要な場合は上記Test contractに従う。Bashを利用できる場合はdispatch指示の`glm-worker --packet-check`で提出前検証する。
+- packet構造は`control:packet-schema-result`のcurrent schema/validatorを正とする。親validationは上記Test contractに従う。Bash利用時は候補JSONを一時fileへ保存し`glm-worker --packet-check <file>`で提出前検証する。ARTIFACTSがあれば`--artifact-root <REPORT_ARTIFACT_DIR>`も指定する。違反は同じcallで意味を保って修正し、Bash不可ならcurrent validatorへ任せる。
 - protected instruction handoffの`TARGETS`は`none`やsymbol表現を使わず、対象`AGENTS.md`/`AGENTS.local.md`のrepository相対pathだけを指定する。
-- `ARTIFACTS`はREPORT_ARTIFACT_DIR配下の実在通常fileの絶対pathのみ。不要なら空。
+- `REPORT_ARTIFACT_DIR`を現在taskのartifact rootとする。結果外の正確な一覧・レポート・生成物だけを保存し、repoへ追加しない。`ARTIFACTS`は配下の実在通常fileの絶対pathのみ。`PRIOR_ARTIFACT_PATHS: reference-only`、WORKER_REPORT、過去/他task artifactは参照専用で、掲載目的にコピーしない。不要ならARTIFACTSは空にする。
