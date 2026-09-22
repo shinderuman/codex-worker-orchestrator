@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/app"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/publicationsequence"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -33,7 +33,7 @@ func TestPublicationSequenceUsesActualRemoteWhenTrackingRefIsStale(t *testing.T)
 	}
 	runFinalizationGit(t, fixture.repo, "push", "-q", "origin", "main")
 
-	sequence := app.ProjectPublicationSequence(fixture.repo, fixture.st)
+	sequence := publicationsequence.ProjectPublicationSequence(fixture.repo, fixture.st)
 	if sequence.Stage != "complete" || sequence.NextAction == nil {
 		t.Fatalf("initial sequence = %#v", sequence)
 	}
@@ -51,7 +51,7 @@ func TestPublicationSequenceUsesActualRemoteWhenTrackingRefIsStale(t *testing.T)
 	if trackingOID != candidate.CommitOID {
 		t.Fatalf("tracking ref unexpectedly refreshed: %s != %s", trackingOID, candidate.CommitOID)
 	}
-	sequence = app.ProjectPublicationSequence(fixture.repo, fixture.st)
+	sequence = publicationsequence.ProjectPublicationSequence(fixture.repo, fixture.st)
 	if sequence.Stage != "blocked" || sequence.Failure == nil || sequence.Failure.Reason != "publication_remote_diverged" {
 		t.Fatalf("stale tracking sequence = %#v", sequence)
 	}

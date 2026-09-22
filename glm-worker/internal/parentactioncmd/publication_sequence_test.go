@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/app"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/publicationsequence"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskdiff"
@@ -26,7 +26,7 @@ func TestPublicationSequenceDrivesCanonicalHandoffToCompletion(t *testing.T) {
 	writePushBindingFile(t, fixture.repo, "IMPLEMENTATION_PLAN.local.md", completePromotedPlan())
 	writePushBindingFile(t, fixture.repo, "impl.txt", "published\n")
 
-	sequence := app.ProjectPublicationSequence(fixture.repo, fixture.st)
+	sequence := publicationsequence.ProjectPublicationSequence(fixture.repo, fixture.st)
 	if sequence.Stage != "prepare" || sequence.NextAction == nil || sequence.NextAction.Stage != "prepare" {
 		t.Fatalf("dirty handoff sequence = %#v", sequence)
 	}
@@ -44,7 +44,7 @@ func TestPublicationSequenceDrivesCanonicalHandoffToCompletion(t *testing.T) {
 		t.Fatalf("prepare failed: %#v", failure)
 	}
 
-	sequence = app.ProjectPublicationSequence(fixture.repo, fixture.st)
+	sequence = publicationsequence.ProjectPublicationSequence(fixture.repo, fixture.st)
 	if sequence.Stage != "promote" || sequence.NextAction == nil || sequence.NextAction.Stage != "promote" {
 		t.Fatalf("prepared sequence = %#v", sequence)
 	}
@@ -54,13 +54,13 @@ func TestPublicationSequenceDrivesCanonicalHandoffToCompletion(t *testing.T) {
 		t.Fatalf("promotion = %#v", promotion)
 	}
 
-	sequence = app.ProjectPublicationSequence(fixture.repo, fixture.st)
+	sequence = publicationsequence.ProjectPublicationSequence(fixture.repo, fixture.st)
 	if sequence.Stage != "push" || sequence.NextAction == nil || sequence.NextAction.Stage != "push" {
 		t.Fatalf("promoted sequence = %#v", sequence)
 	}
 	runFinalizationGit(t, fixture.repo, "push", "-q", "origin", "main")
 
-	sequence = app.ProjectPublicationSequence(fixture.repo, fixture.st)
+	sequence = publicationsequence.ProjectPublicationSequence(fixture.repo, fixture.st)
 	if sequence.Stage != "complete" || sequence.NextAction == nil || sequence.NextAction.Stage != "complete" {
 		t.Fatalf("pushed sequence = %#v", sequence)
 	}
@@ -69,7 +69,7 @@ func TestPublicationSequenceDrivesCanonicalHandoffToCompletion(t *testing.T) {
 	if output.Status != completeStatusComplete || !output.Completed {
 		t.Fatalf("completion = %#v", output)
 	}
-	sequence = app.ProjectPublicationSequence(fixture.repo, fixture.st)
+	sequence = publicationsequence.ProjectPublicationSequence(fixture.repo, fixture.st)
 	if sequence.Stage != "complete" || sequence.NextAction != nil {
 		t.Fatalf("completed sequence = %#v", sequence)
 	}
@@ -99,7 +99,7 @@ func TestPublicationSequencePromotesAfterInstallEvidenceForMixedRuntimePaths(t *
 	if failure != nil {
 		t.Fatalf("prepare failed: %#v", failure)
 	}
-	sequence := app.ProjectPublicationSequence(fixture.repo, fixture.st)
+	sequence := publicationsequence.ProjectPublicationSequence(fixture.repo, fixture.st)
 	if sequence.Stage != "install-candidate" || sequence.NextAction == nil {
 		t.Fatalf("pre-evidence sequence = %#v", sequence)
 	}
@@ -127,7 +127,7 @@ func TestPublicationSequencePromotesAfterInstallEvidenceForMixedRuntimePaths(t *
 	}); err != nil {
 		t.Fatal(err)
 	}
-	sequence = app.ProjectPublicationSequence(fixture.repo, fixture.st)
+	sequence = publicationsequence.ProjectPublicationSequence(fixture.repo, fixture.st)
 	if sequence.Stage != "promote" || sequence.NextAction == nil {
 		t.Fatalf("post-evidence sequence = %#v", sequence)
 	}
@@ -253,7 +253,7 @@ func TestPublicationSequenceDirectsRecoveryForCommittedStateWithoutCandidate(t *
 	}
 	fixture.commitParentMetadataSync(t)
 
-	sequence := app.ProjectPublicationSequence(fixture.repo, fixture.st)
+	sequence := publicationsequence.ProjectPublicationSequence(fixture.repo, fixture.st)
 	if sequence.Stage != "recover" || sequence.NextAction == nil || sequence.NextAction.Stage != "recover" {
 		t.Fatalf("committed sequence = %#v", sequence)
 	}
@@ -269,7 +269,7 @@ func TestPublicationSequenceFailsClosedWhenUpstreamIsUnconfigured(t *testing.T) 
 	runFinalizationGit(t, fixture.repo, "config", "--unset", "branch.main.remote")
 	ensureCompleteFixturePublicationAuthority(t, fixture)
 
-	sequence := app.ProjectPublicationSequence(fixture.repo, fixture.st)
+	sequence := publicationsequence.ProjectPublicationSequence(fixture.repo, fixture.st)
 	if sequence.Stage != "blocked" || sequence.Failure == nil || sequence.Failure.Reason != "publication_upstream_unconfigured" {
 		t.Fatalf("unconfigured upstream sequence = %#v", sequence)
 	}
@@ -293,7 +293,7 @@ func TestPublicationSequenceOffersTrackedHookModeRepair(t *testing.T) {
 	}
 	publicationGit(t, cfg.RepoRoot, "config", "core.hooksPath", ".githooks")
 
-	sequence := app.ProjectPublicationSequence(cfg.RepoRoot, st)
+	sequence := publicationsequence.ProjectPublicationSequence(cfg.RepoRoot, st)
 	if sequence.Stage != "blocked" || sequence.Failure == nil || sequence.Failure.Reason != "publication_guard_setup_invalid" {
 		t.Fatalf("tracked-mode sequence = %#v", sequence)
 	}
@@ -325,7 +325,7 @@ func TestPublicationPushCommandTargetsConfiguredUpstreamRef(t *testing.T) {
 		t.Fatalf("promotion = %#v", promotion)
 	}
 
-	sequence := app.ProjectPublicationSequence(fixture.repo, fixture.st)
+	sequence := publicationsequence.ProjectPublicationSequence(fixture.repo, fixture.st)
 	if sequence.Stage != "push" || sequence.NextAction == nil || sequence.NextAction.Stage != "push" {
 		t.Fatalf("upstream push sequence = %#v", sequence)
 	}
