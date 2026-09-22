@@ -51,7 +51,7 @@ func TestParentEvidenceLedgerLockSerializesConcurrentReads(t *testing.T) {
 		t.Fatal(err)
 	}
 	err := <-secondErr
-	var duplicate *DuplicateParentProjectionError
+	var duplicate *parentevidence.DuplicateProjectionError
 	if !errors.As(err, &duplicate) {
 		t.Fatalf("second read error = %v, want duplicate rejection after serialization", err)
 	}
@@ -77,15 +77,15 @@ func TestEvidenceBatchDegradesPartsAlreadyDeliveredByStandaloneRead(t *testing.T
 		t.Fatal(err)
 	}
 
-	result := runParentEvidence(t, fixture, parentEvidenceManifest{
+	result := runParentEvidence(t, fixture, parentevidence.Manifest{
 		Version: 1,
 		Reason:  "batch after standalone status read",
-		Status:  &parentEvidenceStatusRequest{},
-		Search: []parentEvidenceSearchRequest{
+		Status:  &parentevidence.StatusRequest{},
+		Search: []parentevidence.SearchRequest{
 			{Question: "park lifecycle owner", Scopes: []string{"docs"}, BudgetBytes: 4096},
 		},
 	})
-	var statusPart *parentEvidencePart
+	var statusPart *parentevidence.Part
 	for index := range result.Output.Parts {
 		if result.Output.Parts[index].Kind == "status" {
 			statusPart = &result.Output.Parts[index]
@@ -97,7 +97,7 @@ func TestEvidenceBatchDegradesPartsAlreadyDeliveredByStandaloneRead(t *testing.T
 	if len(statusPart.StatusRead) != 0 {
 		t.Fatal("already delivered status body was projected again")
 	}
-	if statusPart.Reason != parentEvidenceUnchangedReason {
+	if statusPart.Reason != parentevidence.UnchangedReason {
 		t.Fatalf("degraded status reason = %q", statusPart.Reason)
 	}
 
@@ -106,7 +106,7 @@ func TestEvidenceBatchDegradesPartsAlreadyDeliveredByStandaloneRead(t *testing.T
 		Scopes:      []string{"docs"},
 		BudgetBytes: 4096,
 	}, fixture.cfg, fixture.st, io.Discard)
-	var duplicate *DuplicateParentProjectionError
+	var duplicate *parentevidence.DuplicateProjectionError
 	if !errors.As(err, &duplicate) {
 		t.Fatalf("standalone repeat after evidence batch = %v, want duplicate rejection", err)
 	}
@@ -118,12 +118,12 @@ func TestEvidenceBatchMergesLedgerWithoutLosingStandaloneClaims(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	result := runParentEvidence(t, fixture, parentEvidenceManifest{
+	result := runParentEvidence(t, fixture, parentevidence.Manifest{
 		Version: 1,
 		Reason:  "batch claim merge",
-		Status:  &parentEvidenceStatusRequest{},
+		Status:  &parentevidence.StatusRequest{},
 	})
-	if result.Output.Status == parentEvidenceStatusError {
+	if result.Output.Status == parentevidence.StatusError {
 		t.Fatalf("batch failed: %s", result.Raw)
 	}
 	if _, delivered, err := fixture.st.ParentEvidenceDelivered(state.ParentEvidenceSurfaceSearch, "standalone-digest"); err != nil || !delivered {
@@ -137,10 +137,10 @@ func TestEvidenceBatchMergesLedgerWithoutLosingStandaloneClaims(t *testing.T) {
 
 func TestEvidenceBatchRenderFailureLeavesNoLedgerClaim(t *testing.T) {
 	fixture := newParentEvidenceFixture(t)
-	manifest := parentEvidenceManifest{
+	manifest := parentevidence.Manifest{
 		Version: 1,
 		Reason:  "batch render failure",
-		Status:  &parentEvidenceStatusRequest{},
+		Status:  &parentevidence.StatusRequest{},
 	}
 	data, err := json.Marshal(manifest)
 	if err != nil {
