@@ -7,35 +7,47 @@ import (
 	"testing"
 )
 
-func TestWorkerDispatchRoutesPacketPrecheck(t *testing.T) {
-	prompt := withArtifactContext("implementation instruction", "/tmp/artifacts")
-	for _, want := range []string{"glm-worker --packet-check", "--artifact-root", "同じcall内で修正", "Bashを利用できない"} {
-		if !strings.Contains(prompt, want) {
-			t.Fatalf("worker dispatchのartifact contextに%qがありません: %s", want, prompt)
-		}
+func TestRuntimeArtifactContextCarriesOnlyDynamicProjection(t *testing.T) {
+	worker := withArtifactContext("implementation instruction", "/tmp/artifacts")
+	wantWorker := "implementation instruction\n\nREPORT_ARTIFACT_DIR: /tmp/artifacts\n" + priorArtifactReferenceMarker + "\n"
+	if worker != wantWorker {
+		t.Fatalf("worker artifact projection = %q want %q", worker, wantWorker)
 	}
-	if reviewer := withReviewerArtifactContext("review instruction", "/tmp/artifacts"); strings.Contains(reviewer, "--packet-check") {
-		t.Fatal("reviewerはread-onlyでBashを持たないため、pre-check指示を配線してはいけません")
+	if strings.Contains(worker, "--packet-check") {
+		t.Fatalf("stable packet procedure leaked into runtime artifact projection: %s", worker)
+	}
+
+	reviewer := withReviewerArtifactContext("review instruction", "/tmp/artifacts")
+	wantReviewer := "review instruction\n\nCURRENT_TASK_ARTIFACT_DIR: /tmp/artifacts\n" + priorArtifactReferenceMarker + "\n"
+	if reviewer != wantReviewer {
+		t.Fatalf("reviewer artifact projection = %q want %q", reviewer, wantReviewer)
 	}
 }
 
-func TestProductionWorkerPromptRoutesPacketPrecheck(t *testing.T) {
+func TestProductionPromptsOwnStableArtifactProcedure(t *testing.T) {
 	root := scenarioRepoRoot(t)
 	worker, err := os.ReadFile(filepath.Join(root, "codex", "glm-worker", "prompts", "WORKER.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	workerPrompt := string(worker)
-	for _, want := range []string{"glm-worker --packet-check", "提出前検証"} {
+	for _, want := range []string{"glm-worker --packet-check", "REPORT_ARTIFACT_DIR", "PRIOR_ARTIFACT_PATHS: reference-only"} {
 		if !strings.Contains(workerPrompt, want) {
-			t.Fatalf("production WORKER.mdに%qがありません", want)
+			t.Fatalf("production WORKER.mdにartifact contract marker %qがありません", want)
 		}
 	}
+
 	reviewer, err := os.ReadFile(filepath.Join(root, "codex", "glm-worker", "prompts", "REVIEWER.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(reviewer), "--packet-check") {
+	reviewerPrompt := string(reviewer)
+	for _, want := range []string{"CURRENT_TASK_ARTIFACT_DIR", "PRIOR_ARTIFACT_PATHS: reference-only"} {
+		if !strings.Contains(reviewerPrompt, want) {
+			t.Fatalf("production REVIEWER.mdにartifact contract marker %qがありません", want)
+		}
+	}
+	if strings.Contains(reviewerPrompt, "--packet-check") {
 		t.Fatal("reviewer sessionはBashを持たないため、REVIEWER.mdへpre-check指示を配線してはいけません")
 	}
 }
