@@ -117,7 +117,7 @@ func (c *bundleCollector) collectCodexEvidence(cfg config.AppConfig, task bundle
 }
 
 func resolveCodexAssociation(codexHome string, task bundleTask) codexAssociation {
-	return resolveCodexAssociationWithScan(codexHome, task, scanCodexRollouts)
+	return resolveCodexAssociationWithScan(codexHome, task, codexrollout.Scan)
 }
 
 func resolveCodexAssociationWithScan(codexHome string, task bundleTask, scan func(string) ([]codexRollout, error)) codexAssociation {
@@ -125,18 +125,14 @@ func resolveCodexAssociationWithScan(codexHome string, task bundleTask, scan fun
 	if threadID == "" {
 		return codexAssociation{ParentStatus: codexStatusMissing, Detail: "parent Codex identity is not recorded for this task"}
 	}
-	if !codexDirExists(codexHome) {
+	if !codexrollout.DirExists(codexHome) {
 		return codexAssociation{ParentStatus: codexStatusUnavailable, Basis: codexAssociationBasis, Detail: "codex home is not present"}
 	}
 	rollouts, err := scan(codexHome)
 	if err != nil {
 		return codexAssociation{ParentStatus: codexStatusUnavailable, Basis: codexAssociationBasis, Detail: "codex rollout enumeration failed: " + err.Error()}
 	}
-	return buildCodexAssociation(matchingCodexRollouts(rollouts, threadID), rollouts, codexAssociationBasis, task)
-}
-
-func matchingCodexRollouts(rollouts []codexRollout, threadID string) []codexRollout {
-	return codexrollout.Matching(rollouts, threadID)
+	return buildCodexAssociation(codexrollout.Matching(rollouts, threadID), rollouts, codexAssociationBasis, task)
 }
 
 func buildCodexAssociation(matches, rollouts []codexRollout, basis string, task bundleTask) codexAssociation {
@@ -146,7 +142,7 @@ func buildCodexAssociation(matches, rollouts []codexRollout, basis string, task 
 	case 1:
 		return includedCodexAssociation(matches[0], rollouts, basis, task)
 	default:
-		chain, reason := resolveCodexRolloutChain(matches)
+		chain, reason := codexrollout.ResolveChain(matches)
 		if reason != "" {
 			return ambiguousCodexChainAssociation(matches, basis, reason)
 		}
@@ -223,14 +219,6 @@ func selectCodexGuardianChildren(rollouts []codexRollout, parent codexRollout, s
 	}
 	sort.Slice(children, func(i, j int) bool { return children[i].ID < children[j].ID })
 	return children, qualifying
-}
-
-func scanCodexRollouts(codexHome string) ([]codexRollout, error) {
-	return codexrollout.Scan(codexHome)
-}
-
-func codexDirExists(dir string) bool {
-	return codexrollout.DirExists(dir)
 }
 
 func (c *bundleCollector) addCodexRolloutEvidence(association codexAssociation) []string {
