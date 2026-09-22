@@ -49,7 +49,22 @@ post-105-codex-efficiency-reevaluation.mdを定期的にやってほしいんだ
 あとローテーションのしすぎによるトークン過剰消費の可能性を次回の評価時に行え
 ````
 
+### 2026-09-22
+
+````text
+GLMは使わずこのリポジトリの総合的なレビューしてほしい
+特にCodex Reductionに貢献できそうな施策とか考えてほしい
+後方互換性を持たせないとかそういうルールはちゃんと確認して厳守しろ
+````
+
+````text
+glm-workerの責務がリポジトリのルールを実装してないか
+逆はないかとか総合的に考えてほしい
+````
+
 ## Resolved references
+
+- 2026-09-22の総合レビューは親Codex自身がGLMを使用せず実施する。実装変更や既存ACTIVEの実行を含めず、現行schema限定・後方互換性禁止を含む適用規則に照らして問題とCodex Reduction施策を評価する。
 
 - 前回checkpointのbounded reportとpriority decisionは、`codex-efficiency-feedback-loop-checkpoint.md`を削除する直前のGit locatorから回収する
 - 次回は`session-rotation-continuation-preflight.md`と`parent-usage-compact-token-totals.md`の完了、およびtask-stats archive skip observabilityに対応するcurrent-tree changeの統合後に実行する。false-complete、正規復旧不能、大きな重複model消費があれば前倒しする
