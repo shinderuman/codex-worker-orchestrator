@@ -6,13 +6,13 @@ import (
 	"io"
 	"strings"
 
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/app"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/publicationsequence"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repolock"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryproject"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryprojecthead"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/sessionrotation"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -111,7 +111,7 @@ func runComplete(cfg config.AppConfig, stdout io.Writer) error {
 		})
 	}
 	completed, err := st.CompleteParentAwaiting(func(acceptedRisk string) (*state.SessionRotationEvaluation, error) {
-		return app.EvaluateCanonicalSessionRotationTerminal(cfg, st, terminal, acceptedRisk)
+		return sessionrotation.EvaluateTerminal(cfg, st, terminal, acceptedRisk)
 	})
 	if err != nil {
 		return err
