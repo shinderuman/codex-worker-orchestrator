@@ -10,8 +10,8 @@ import (
 
 func TestParentActionEnvelopeMatrix(t *testing.T) {
 	tests := []struct {
-		action          string
-		terminal        bool
+		action           string
+		terminal         bool
 		inProcessHandoff bool
 	}{
 		{action: "start", terminal: true},
@@ -45,16 +45,20 @@ func TestParentActionEnvelopeMatrix(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.action, func(t *testing.T) {
-			if got := terminalEnvelopeAction(tt.action); got != tt.terminal {
-				t.Fatalf("terminalEnvelopeAction(%q) = %v, want %v", tt.action, got, tt.terminal)
+			descriptor, ok := lookupParentActionCommand(tt.action)
+			if !ok {
+				t.Fatalf("lookupParentActionCommand(%q) = not found", tt.action)
+			}
+			if descriptor.TerminalEnvelope != tt.terminal {
+				t.Fatalf("TerminalEnvelope for %q = %v, want %v", tt.action, descriptor.TerminalEnvelope, tt.terminal)
 			}
 			if got := parentActionUsesInProcessHandoff(tt.action); got != tt.inProcessHandoff {
 				t.Fatalf("parentActionUsesInProcessHandoff(%q) = %v, want %v", tt.action, got, tt.inProcessHandoff)
 			}
 		})
 	}
-	if terminalEnvelopeAction("unknown-action") {
-		t.Fatal("unknown action must not participate in terminal envelope")
+	if _, ok := lookupParentActionCommand("unknown-action"); ok {
+		t.Fatal("unknown action must not be registered")
 	}
 }
 
