@@ -13,6 +13,7 @@ func TestParseCommandModes(t *testing.T) {
 		payload string
 	}{
 		{name: "new task", args: []string{"調査して", "実装する"}, mode: ModeNewTask, payload: "調査して 実装する"},
+		{name: "new task with later option-shaped token", args: []string{"調査して", "--unknown"}, mode: ModeNewTask, payload: "調査して --unknown"},
 		{name: "resume", args: []string{"--resume"}, mode: ModeResume},
 		{name: "stop", args: []string{"--stop"}, mode: ModeStop},
 		{name: "isolate", args: []string{"--isolate"}, mode: ModeIsolate},
@@ -59,6 +60,14 @@ func TestGLMProviderAutoResumeCommandsAreRetired(t *testing.T) {
 	} {
 		if _, ok := commandParsers[name]; ok {
 			t.Fatalf("retired provider auto-resume command remains registered: %s", name)
+		}
+	}
+}
+
+func TestDecisionFixArgvCommandsAreRetired(t *testing.T) {
+	for _, name := range []string{"--decision", "--fix"} {
+		if _, ok := commandParsers[name]; ok {
+			t.Fatalf("retired argv command remains registered: %s", name)
 		}
 	}
 }
@@ -128,23 +137,25 @@ func TestParseCommandRejectsInvalidStdinArguments(t *testing.T) {
 	}
 }
 
-func TestParseCommandRejectsArgvDecisionFix(t *testing.T) {
+func TestParseCommandRejectsUnknownCommandShapedFirstToken(t *testing.T) {
 	for _, args := range [][]string{
+		{"--unknown"},
+		{"--unknown", "payload"},
 		{"--decision", "A案で進める"},
-		{"--decision"},
 		{"--fix", "指摘を修正"},
-		{"--fix"},
-		{"--fix", "--origin", "codex-review", "指摘を修正"},
 	} {
 		command, err := ParseCommand(args)
 		if err == nil {
-			t.Fatalf("argv埋込みを受理しました: %#v", args)
+			t.Fatalf("unknown command-shaped argvを受理しました: %#v", args)
 		}
 		if command.Payload != "" {
-			t.Fatalf("argv埋込み本文をcommandへ解釈しています: %#v", command)
+			t.Fatalf("unknown command-shaped argvをnew-task payloadへ解釈しています: %#v", command)
 		}
-		if !strings.Contains(err.Error(), "--decision-stdin") || !strings.Contains(err.Error(), "--fix-stdin") {
-			t.Fatalf("stdin modeへの案内がありません: %v", err)
+		if !strings.Contains(err.Error(), "unknown command") || !strings.Contains(err.Error(), "glm-worker --help") {
+			t.Fatalf("generic unknown-command usage errorではありません: %v", err)
+		}
+		if strings.Contains(err.Error(), "--decision-stdin") || strings.Contains(err.Error(), "--fix-stdin") {
+			t.Fatalf("retired command-specific migration hintが残っています: %v", err)
 		}
 	}
 }
@@ -152,9 +163,6 @@ func TestParseCommandRejectsArgvDecisionFix(t *testing.T) {
 func TestParseCommandRejectsInvalidArguments(t *testing.T) {
 	tests := [][]string{
 		nil,
-		{"--decision"},
-		{"--decision", "   "},
-		{"--fix"},
 		{"--resume", "extra"},
 		{"--stop", "extra"},
 		{"--isolate", "extra"},
