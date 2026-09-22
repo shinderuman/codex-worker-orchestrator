@@ -17,6 +17,7 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/sessionrotation"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
 )
@@ -173,7 +174,7 @@ func TestExecuteStatsReportsEmptyState(t *testing.T) {
 		t.Fatalf("空状態のstats出力 = %#v: %q", output, out.String())
 	}
 	if len(output.ModelCallsByAlias) != 0 || len(output.RateLimitsByAlias) != 0 {
-		t.Fatalf("空状態のmodel別stats出力 = %#v: %q", output, out.String())
+		t.Fatalf("空状態のmodel別stats出力 = %#v: %q", output.ModelCallsByAlias)
 	}
 	if output.TelemetryDir == "" {
 		t.Fatalf("telemetry保存先がありません: %q", out.String())
@@ -330,7 +331,7 @@ func TestExecuteAcquiresAndReleasesLock(t *testing.T) {
 		t.Fatal("lock解放後の次task開始前にparent reviewを解決できませんでした")
 	}
 	if _, err := st.CompleteParentAwaiting(func(acceptedRisk string) (*state.SessionRotationEvaluation, error) {
-		return EvaluateCanonicalSessionRotationTerminal(cfg, st, state.SessionRotationTerminalAccept, acceptedRisk)
+		return sessionrotation.EvaluateTerminal(cfg, st, state.SessionRotationTerminalAccept, acceptedRisk)
 	}); err != nil {
 		t.Fatal(err)
 	}
