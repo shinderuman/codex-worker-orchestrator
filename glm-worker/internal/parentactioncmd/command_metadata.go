@@ -12,6 +12,15 @@ type parentActionExecutionKind uint8
 
 type parentActionHandoffKind uint8
 
+type parentActionCommandDescriptor struct {
+	Action           string
+	Execute          parentActionExecutionKind
+	TerminalExecute  parentActionExecutionKind
+	TerminalEnvelope bool
+	Handoff          parentActionHandoffKind
+	Payload          parentaction.PayloadAction
+}
+
 const (
 	parentActionExecutionUnsupported parentActionExecutionKind = iota
 	parentActionExecutionPayload
@@ -35,27 +44,18 @@ const (
 	parentActionHandoffInProcess
 )
 
-type parentActionCommandDescriptor struct {
-	Action            string
-	Execute           parentActionExecutionKind
-	TerminalExecute   parentActionExecutionKind
-	TerminalEnvelope  bool
-	Handoff           parentActionHandoffKind
-	Payload           parentaction.PayloadAction
-}
-
 var parentActionCommands = map[string]parentActionCommandDescriptor{
 	"rotation-claim": {
-		Action:   "rotation-claim",
-		Execute:  parentActionExecutionSessionRotation,
+		Action:  "rotation-claim",
+		Execute: parentActionExecutionSessionRotation,
 	},
 	"rotation-bind": {
-		Action:   "rotation-bind",
-		Execute:  parentActionExecutionSessionRotation,
+		Action:  "rotation-bind",
+		Execute: parentActionExecutionSessionRotation,
 	},
 	"rotation-fail": {
-		Action:   "rotation-fail",
-		Execute:  parentActionExecutionSessionRotation,
+		Action:  "rotation-fail",
+		Execute: parentActionExecutionSessionRotation,
 	},
 	"no-go": {
 		Action:           "no-go",
@@ -73,24 +73,24 @@ var parentActionCommands = map[string]parentActionCommandDescriptor{
 		TerminalEnvelope: true,
 	},
 	"complete": {
-		Action:   "complete",
-		Execute:  parentActionExecutionComplete,
+		Action:  "complete",
+		Execute: parentActionExecutionComplete,
 	},
 	"install": {
-		Action:   "install",
-		Execute:  parentActionExecutionInstall,
+		Action:  "install",
+		Execute: parentActionExecutionInstall,
 	},
 	"wait": {
-		Action:   "wait",
-		Execute:  parentActionExecutionWait,
+		Action:  "wait",
+		Execute: parentActionExecutionWait,
 	},
 	actionContinuationStopHook: {
-		Action:   actionContinuationStopHook,
-		Execute:  parentActionExecutionContinuationOrApprove,
+		Action:  actionContinuationStopHook,
+		Execute: parentActionExecutionContinuationOrApprove,
 	},
 	actionContinuationMetadataGuard: {
-		Action:   actionContinuationMetadataGuard,
-		Execute:  parentActionExecutionContinuationOrApprove,
+		Action:  actionContinuationMetadataGuard,
+		Execute: parentActionExecutionContinuationOrApprove,
 	},
 	actionApprove: {
 		Action:           actionApprove,
@@ -123,16 +123,16 @@ var parentActionCommands = map[string]parentActionCommandDescriptor{
 		TerminalEnvelope: true,
 	},
 	"evidence": {
-		Action:   "evidence",
-		Execute:  parentActionExecutionReadOrPark,
+		Action:  "evidence",
+		Execute: parentActionExecutionReadOrPark,
 	},
 	"finalize-check": {
-		Action:   "finalize-check",
-		Execute:  parentActionExecutionGitEvidence,
+		Action:  "finalize-check",
+		Execute: parentActionExecutionGitEvidence,
 	},
 	"push-binding": {
-		Action:   "push-binding",
-		Execute:  parentActionExecutionGitEvidence,
+		Action:  "push-binding",
+		Execute: parentActionExecutionGitEvidence,
 	},
 	actionReviewEvidence: {
 		Action:           actionReviewEvidence,
@@ -193,27 +193,54 @@ func executeParentActionCommand(
 	if terminal {
 		execution = descriptor.TerminalExecute
 	}
+	if err, handled := executeStandardParentAction(cfg, descriptor, execution, args, stdout, stderr); handled {
+		return err
+	}
+	return executeSpecialParentAction(cfg, execution, args, stdout, stderr)
+}
+
+func executeStandardParentAction(
+	cfg config.AppConfig,
+	descriptor parentActionCommandDescriptor,
+	execution parentActionExecutionKind,
+	args []string,
+	stdout io.Writer,
+	stderr io.Writer,
+) (error, bool) {
 	switch execution {
 	case parentActionExecutionPayload:
-		return executeStagedPayloadAction(cfg, descriptor.Payload, args, stdout, stderr)
+		return executeStagedPayloadAction(cfg, descriptor.Payload, args, stdout, stderr), true
 	case parentActionExecutionSessionRotation:
-		return executeSessionRotationAction(cfg, args, stdout)
+		return executeSessionRotationAction(cfg, args, stdout), true
 	case parentActionExecutionLifecycle:
-		return executeParentLifecycleAction(cfg, args, stdout)
+		return executeParentLifecycleAction(cfg, args, stdout), true
 	case parentActionExecutionComplete:
-		return executeComplete(cfg, args, stdout)
+		return executeComplete(cfg, args, stdout), true
 	case parentActionExecutionInstall:
-		return executeInstall(cfg, args, stdout, stderr)
+		return executeInstall(cfg, args, stdout, stderr), true
 	case parentActionExecutionWait:
-		return executeParentWait(cfg, args, stdout, stderr)
+		return executeParentWait(cfg, args, stdout, stderr), true
 	case parentActionExecutionContinuationOrApprove:
-		return executeContinuationOrApproveAction(cfg, descriptor.Action, args, stdout, stderr)
+		return executeContinuationOrApproveAction(cfg, descriptor.Action, args, stdout, stderr), true
 	case parentActionExecutionDirectWorker:
-		return executeDirectWorkerAction(cfg, descriptor.Action, args, stdout, stderr)
+		return executeDirectWorkerAction(cfg, descriptor.Action, args, stdout, stderr), true
 	case parentActionExecutionReadOrPark:
-		return executeParentReadOrParkAction(cfg, args, stdout, stderr)
+		return executeParentReadOrParkAction(cfg, args, stdout, stderr), true
 	case parentActionExecutionGitEvidence:
-		return executeGitEvidenceAction(cfg, args, stdout)
+		return executeGitEvidenceAction(cfg, args, stdout), true
+	default:
+		return nil, false
+	}
+}
+
+func executeSpecialParentAction(
+	cfg config.AppConfig,
+	execution parentActionExecutionKind,
+	args []string,
+	stdout io.Writer,
+	stderr io.Writer,
+) error {
+	switch execution {
 	case parentActionExecutionReviewEvidence:
 		return executeParentReviewEvidence(cfg, args, stdout)
 	case parentActionExecutionPreflightDecision:
