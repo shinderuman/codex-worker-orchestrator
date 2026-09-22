@@ -103,6 +103,11 @@ func observeActivityLine(line []byte, lineNumber int, start, end time.Time, turn
 	if at.Before(start) || at.After(end) {
 		return nil
 	}
+	observeWindowedActivity(record, activity)
+	return nil
+}
+
+func observeWindowedActivity(record rolloutScanLine, activity *Activity) {
 	if record.Type == "response_item" {
 		var item rolloutItemPayload
 		if err := json.Unmarshal(record.Payload, &item); err == nil {
@@ -115,7 +120,6 @@ func observeActivityLine(line []byte, lineNumber int, start, end time.Time, turn
 	if record.Type == rolloutCompactedType {
 		activity.Compactions++
 	}
-	return nil
 }
 
 func observeActivityEvent(raw json.RawMessage, at time.Time, turns map[string]*activityTurn) {
