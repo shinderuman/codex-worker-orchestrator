@@ -89,17 +89,18 @@ func writeExistingImprovementDisposition(st *state.StateStore, kind, sourceCallI
 }
 
 func applyImprovementDisposition(st *state.StateStore, disposition state.ImprovementSignalDisposition, targetTask string) error {
+	if !state.ImprovementDispositionNeedsTask(disposition) {
+		return nil
+	}
 	sourceActive := st.ReadOr("active-task", "")
 	if sourceActive == "" {
-		return fmt.Errorf("improvement signal disposition requires a current ACTIVE task binding")
+		return fmt.Errorf("improvement signal disposition %s requires a current ACTIVE task binding", disposition)
 	}
 	if err := taskcontract.ValidateActiveTaskPath(sourceActive); err != nil {
 		return fmt.Errorf("current ACTIVE task binding is invalid: %w", err)
 	}
-	if state.ImprovementDispositionNeedsTask(disposition) {
-		if err := taskcontract.ValidateActiveTaskPath(targetTask); err != nil {
-			return err
-		}
+	if err := taskcontract.ValidateActiveTaskPath(targetTask); err != nil {
+		return err
 	}
 	if disposition != state.ImprovementSignalDispositionAdopt {
 		return nil
