@@ -75,6 +75,17 @@ func Decode(data []byte) (RunRecord, error) {
 	return record, nil
 }
 
+func Read(st *state.StateStore, runID string) (RunRecord, error) {
+	if !ValidRunID(runID) {
+		return RunRecord{}, fmt.Errorf("invalid validation run id")
+	}
+	data, err := os.ReadFile(st.Path(RunRelativePath(runID)))
+	if err != nil {
+		return RunRecord{}, err
+	}
+	return Decode(data)
+}
+
 func VerifyTerminalPass(record RunRecord) error {
 	if record.Status != StatusPass || record.CompletedAt == nil || record.ExitCode != 0 || record.ExitSource != state.ValidationExitSourceTarget {
 		return fmt.Errorf("quality gate run did not complete with target-process PASS")
