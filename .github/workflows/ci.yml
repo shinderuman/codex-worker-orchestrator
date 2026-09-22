@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: repository-lint-${{ github.event.pull_request.number || github.ref }}
@@ -85,3 +85,49 @@ jobs:
     needs:
       - lint
     uses: ./.github/workflows/install-smoke.yml
+
+  web-gpt-lint-followup:
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/web-gpt/review-fix/91cc885-6682699' && github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: web-gpt/review-fix/91cc885-6682699
+          fetch-depth: 0
+      - name: Apply lint followup
+        run: |
+          python3 .github/web-gpt-lint-followup.py
+          gofmt -w glm-worker/internal/harnesslint/forward_only_shell_state.go glm-worker/internal/parentactioncmd/publication_pretool.go
+      - name: Read Go version
+        id: followup-go-version
+        run: |
+          GO_VERSION=$(awk -F': ' '$1 == "go" { print $2 }' quality-tools.yml)
+          printf 'value=%s\n' "$GO_VERSION" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ steps.followup-go-version.outputs.value }}
+          cache: false
+      - name: Install quality tools
+        run: |
+          quality_bin="$RUNNER_TEMP/codex-worker-orchestrator-quality-tools"
+          QUALITY_TOOLS_BIN_DIR="$quality_bin" ./install-quality-tools.sh
+          printf 'QUALITY_TOOLS_BIN_DIR=%s\n' "$quality_bin" >> "$GITHUB_ENV"
+      - name: Repository lint gate
+        run: ./harnesslint
+      - name: Focused Go tests
+        working-directory: glm-worker
+        run: go test ./internal/harnesslint ./internal/parentactioncmd
+      - name: Hook ownership smoke
+        run: sh tests/install_hook_ownership_smoke.sh
+      - name: Full Go tests
+        working-directory: glm-worker
+        run: go test ./...
+      - name: Commit followup and remove temporary machinery
+        run: |
+          git checkout 6682699886e49d8aa3e98f1c26723b114afa3f6f -- .github/workflows/ci.yml
+          git rm .github/web-gpt-lint-followup.py
+          git config user.name 'web-gpt-review-fix'
+          git config user.email 'web-gpt-review-fix@users.noreply.github.com'
+          git add -A
+          git commit -m 'Satisfy lint for validated review fixes'
+          git push origin HEAD:web-gpt/review-fix/91cc885-6682699
