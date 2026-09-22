@@ -17,6 +17,12 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskview"
 )
 
+var (
+	newValidationRunID         = qualitygate.NewRunID
+	validValidationRunID       = qualitygate.ValidRunID
+	qualityGateRunRelativePath = qualitygate.RunRelativePath
+)
+
 func reconcileQualityGateRun(st *state.StateStore, runID string) (qualityGateRunRecord, error) {
 	lock, err := acquireQualityGateRunStateLock(st, runID)
 	if err != nil {
@@ -139,12 +145,6 @@ func qualityGateRepositoryRoot(workingDir string) (string, error) {
 	}
 	return filepath.Clean(strings.TrimSpace(string(out))), nil
 }
-
-var (
-	newValidationRunID          = qualitygate.NewRunID
-	validValidationRunID        = qualitygate.ValidRunID
-	qualityGateRunRelativePath  = qualitygate.RunRelativePath
-)
 
 func writeQualityGateRun(st *state.StateStore, record qualityGateRunRecord) error {
 	if !validValidationRunID(record.ValidationRunID) {
