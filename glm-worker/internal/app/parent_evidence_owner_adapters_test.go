@@ -16,14 +16,6 @@ func buildParentReviewEvidenceManifest(st *state.StateStore) (parentEvidenceMani
 	return parentevidence.BuildReviewManifest(st)
 }
 
-func parentReviewEvidenceTarget(target string) (string, string, error) {
-	return parentevidence.ReviewTarget(target)
-}
-
-func parentReviewNumericRange(locator string) (int, int, bool) {
-	return parentevidence.NumericRange(locator)
-}
-
 func parentReviewEvidenceClaims(targets []string, parts []parentEvidencePart) ([]state.ParentReviewEvidenceClaim, bool) {
 	return parentevidence.ReviewClaims(targets, parts)
 }
