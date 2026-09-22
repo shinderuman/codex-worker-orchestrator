@@ -3,6 +3,7 @@ package state
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"strings"
 	"testing"
@@ -10,7 +11,7 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 )
 
-func TestResetWithDispositionRecoversLegacyPartialResetProvenance(t *testing.T) {
+func TestResetRequestRejectsLegacyOrphanWithoutDurableDispositionEvenWithStatsArchive(t *testing.T) {
 	st := &StateStore{dir: t.TempDir()}
 	taskID, err := st.StartNewTask()
 	if err != nil {
@@ -21,43 +22,25 @@ func TestResetWithDispositionRecoversLegacyPartialResetProvenance(t *testing.T) 
 	}
 
 	st.ArchiveCurrentStats()
+	if _, err := os.Stat(st.TaskStatsArchivePath(taskID)); err != nil {
+		t.Fatal(err)
+	}
 	if err := st.Remove("task.id", "task.status"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.CurrentTaskStats(); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("legacy partial reset simulation left current stats: %v", err)
-	}
-	if got := st.TaskStatus(); got != TaskStatusNone {
-		t.Fatalf("legacy partial reset simulation left task status %q", got)
-	}
 
-	if err := st.ValidateResetRequest(""); err == nil || !strings.Contains(err.Error(), "explicit disposition") {
-		t.Fatalf("orphaned unfinished task accepted generic reset: %v", err)
+	if err := st.ValidateResetRequest(string(TaskDispositionAbandon)); err == nil || !strings.Contains(err.Error(), "no durable reset disposition") {
+		t.Fatalf("legacy orphan was recovered from observational TaskStats: %v", err)
 	}
-	if err := st.ValidateResetRequest(string(TaskDispositionAbandon)); err != nil {
-		t.Fatalf("orphaned task provenance did not admit explicit abandon: %v", err)
+	if _, err := st.ResetWithDisposition(string(TaskDispositionAbandon)); err == nil || !strings.Contains(err.Error(), "no durable reset disposition") {
+		t.Fatalf("legacy orphan reset used observational TaskStats: %v", err)
 	}
-	disposition, err := st.ResetWithDisposition(string(TaskDispositionAbandon))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if disposition != TaskDispositionAbandon {
-		t.Fatalf("disposition = %q", disposition)
-	}
-
-	record, err := st.CurrentTaskDisposition()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if record.TaskID != taskID || record.FromStatus != string(TaskStatusAwaitingParentCompletion) || record.Disposition != TaskDispositionAbandon {
-		t.Fatalf("recovered disposition record = %#v", record)
-	}
-	if err := st.ValidateResetDispositionForNewTask(); err != nil {
-		t.Fatalf("recovered stale reset provenance is not admissible: %v", err)
+	if _, err := st.CurrentTaskDisposition(); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("rejected orphan reset created disposition: %v", err)
 	}
 }
 
-func TestResetRequestRejectsConflictingOrphanedTaskIdentity(t *testing.T) {
+func TestResetRequestRejectsOrphanedTaskIdentityWithoutDurableDisposition(t *testing.T) {
 	st := &StateStore{dir: t.TempDir()}
 	if _, err := st.StartNewTask(); err != nil {
 		t.Fatal(err)
@@ -74,8 +57,8 @@ func TestResetRequestRejectsConflictingOrphanedTaskIdentity(t *testing.T) {
 	}
 
 	err = st.ValidateResetRequest(string(TaskDispositionAbandon))
-	if err == nil || !strings.Contains(err.Error(), "does not match parent review task") {
-		t.Fatalf("conflicting orphaned task identity was accepted: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "no durable reset disposition") {
+		t.Fatalf("orphaned task identity without canonical disposition was accepted: %v", err)
 	}
 }
 
@@ -107,7 +90,7 @@ func TestResetParentReviewUsesCanonicalStructuralDecoder(t *testing.T) {
 	}
 }
 
-func TestResetRequestRequiresDispositionForOrphanedCompleteWithPendingPass(t *testing.T) {
+func TestResetRequestRejectsOrphanedCompleteWithPendingPassWithoutDurableDisposition(t *testing.T) {
 	st := &StateStore{dir: t.TempDir()}
 	if _, err := st.StartNewTask(); err != nil {
 		t.Fatal(err)
@@ -124,28 +107,35 @@ func TestResetRequestRequiresDispositionForOrphanedCompleteWithPendingPass(t *te
 		t.Fatal(err)
 	}
 
-	if err := st.ValidateResetRequest(""); err == nil || !strings.Contains(err.Error(), "explicit disposition") {
-		t.Fatalf("orphaned complete task with pending PASS accepted generic reset: %v", err)
+	if err := st.ValidateResetRequest(""); err == nil || !strings.Contains(err.Error(), "no durable reset disposition") {
+		t.Fatalf("orphaned complete task accepted generic reset: %v", err)
 	}
-	if err := st.ValidateResetRequest(string(TaskDispositionAbandon)); err != nil {
-		t.Fatalf("orphaned complete task did not admit explicit abandon: %v", err)
+	if err := st.ValidateResetRequest(string(TaskDispositionAbandon)); err == nil || !strings.Contains(err.Error(), "no durable reset disposition") {
+		t.Fatalf("orphaned complete task was reconstructed from TaskStats: %v", err)
 	}
 }
 
-func TestResetRequestRejectsUnsupportedCurrentStatsBeforeFallback(t *testing.T) {
+func TestResetDispositionIgnoresCorruptCurrentTaskStats(t *testing.T) {
 	st := &StateStore{dir: t.TempDir()}
 	if _, err := st.StartNewTask(); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.Remove("task.id"); err != nil {
+	if err := st.SetTaskStatus(TaskStatusAwaitingParentCompletion); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(st.Path(currentStatsFile), []byte(`{"version":999,"schema_revision":1}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	restoreWarnings := RedirectStatsWarnings(io.Discard)
+	defer restoreWarnings()
 
-	err := st.ValidateResetRequest(string(TaskDispositionAbandon))
-	if !errors.Is(err, errUnsupportedTaskStatsVersion) {
-		t.Fatalf("unsupported current task stats did not fail closed: %v", err)
+	if err := st.ValidateResetRequest(string(TaskDispositionAbandon)); err != nil {
+		t.Fatalf("corrupt observational TaskStats blocked reset admission: %v", err)
+	}
+	if _, err := st.ResetWithDisposition(string(TaskDispositionAbandon)); err != nil {
+		t.Fatalf("corrupt observational TaskStats blocked reset transition: %v", err)
+	}
+	if err := st.ValidateResetDispositionForNewTask(); err != nil {
+		t.Fatalf("corrupt observational TaskStats blocked new-task admission: %v", err)
 	}
 }
