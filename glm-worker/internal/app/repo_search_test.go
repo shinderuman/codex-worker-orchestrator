@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/reposearch"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -128,6 +130,48 @@ func TestPrintRepoSearchReturnsRefinementRequiredInsteadOfTruncation(t *testing.
 	}
 }
 
+func TestPrintRepoSearchRejectsScopeChangeBeforeDelivery(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skipf("git commandがないため実binary testをskipします: %v", err)
+	}
+	t.Setenv("GLM_WORKER_HOME", t.TempDir())
+	repoRoot := newRepoSearchGitRepo(t, "stalecorpus")
+	cfg := config.AppConfig{RepoRoot: repoRoot, RepoSearch: true}
+	st, storeErr := state.NewStateStore(config.AppConfig{
+		StateBase: filepath.Join(t.TempDir(), "state"),
+		RepoHash:  "stalesearch",
+		RepoRoot:  repoRoot,
+	})
+	if storeErr != nil {
+		t.Fatal(storeErr)
+	}
+	if err := st.SetTaskStatus(state.TaskStatusWaitingSolReview); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Write("task.id", "task-before-search"); err != nil {
+		t.Fatal(err)
+	}
+	search := func(ctx context.Context, root string, query string, opts reposearch.Options) (reposearch.Report, error) {
+		report, err := reposearch.Search(ctx, root, query, opts)
+		if err != nil {
+			return report, err
+		}
+		if err := st.Write("task.id", "task-after-search"); err != nil {
+			return report, err
+		}
+		return report, nil
+	}
+	request := repoSearchRequest{Question: "stalecorpus unique corpus", Scopes: []string{"corpus.md"}, BudgetBytes: 4096}
+	var stdout bytes.Buffer
+	err := printRepoSearchWithSearch(request, cfg, st, &stdout, search)
+	if err == nil {
+		t.Fatal("scope-changing search succeeded")
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("stale search was delivered: %s", stdout.String())
+	}
+}
+
 func TestPrintRepoSearchDuplicateWithinDecisionLeaseIsRejected(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skipf("git commandがないため実binary testをskipします: %v", err)
@@ -168,6 +212,56 @@ func TestPrintRepoSearchDuplicateWithinDecisionLeaseIsRejected(t *testing.T) {
 	}
 	if duplicate.Surface != state.ParentEvidenceSurfaceSearch {
 		t.Fatalf("duplicate surface = %q", duplicate.Surface)
+	}
+	if second.Len() != 0 {
+		t.Fatalf("duplicate projection wrote stdout: %s", second.String())
+	}
+
+	if err := st.AdvanceParentEvidenceLease(); err != nil {
+		t.Fatal(err)
+	}
+	var third bytes.Buffer
+	if err := printRepoSearch(request, cfg, st, &third); err != nil {
+		t.Fatalf("fresh lease projection failed: %v", err)
+	}
+	var thirdOutput repoSearchOutput
+	if err := json.Unmarshal(third.Bytes(), &thirdOutput); err != nil || thirdOutput.Status != "executed" {
+		t.Fatalf("fresh lease projection = %s err = %v", third.String(), err)
+	}
+}
+
+func TestPrintRepoSearchRefinementIsDeduplicatedWithinDecisionLease(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skipf("git commandがないため実binary testをskipします: %v", err)
+	}
+	t.Setenv("GLM_WORKER_HOME", t.TempDir())
+	repoRoot := newRepoSearchGitRepo(t, "refinementlease")
+	cfg := config.AppConfig{RepoRoot: repoRoot, RepoSearch: true}
+	st, storeErr := state.NewStateStore(config.AppConfig{
+		StateBase: filepath.Join(t.TempDir(), "state"),
+		RepoHash:  "refinementlease",
+		RepoRoot:  repoRoot,
+	})
+	if storeErr != nil {
+		t.Fatal(storeErr)
+	}
+	if err := st.SetTaskStatus(state.TaskStatusWaitingSolReview); err != nil {
+		t.Fatal(err)
+	}
+	request := repoSearchRequest{Question: "refinementlease unique corpus", Scopes: []string{"corpus.md"}, BudgetBytes: 8}
+	var first bytes.Buffer
+	if err := printRepoSearch(request, cfg, st, &first); err != nil {
+		t.Fatal(err)
+	}
+	var output repoSearchOutput
+	if err := json.Unmarshal(first.Bytes(), &output); err != nil || output.Status != repoSearchResultRequired {
+		t.Fatalf("refinement projection = %s err = %v", first.String(), err)
+	}
+	var second bytes.Buffer
+	err := printRepoSearch(request, cfg, st, &second)
+	var duplicate *DuplicateParentProjectionError
+	if !errors.As(err, &duplicate) || second.Len() != 0 {
+		t.Fatalf("duplicate refinement error=%v stdout=%s", err, second.String())
 	}
 }
 

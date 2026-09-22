@@ -42,6 +42,8 @@ type repoSearchRequest struct {
 	BudgetBytes int
 }
 
+type repoSearchQueryFunc func(context.Context, string, string, reposearch.Options) (reposearch.Report, error)
+
 const (
 	repoSearchResultDisabled = "disabled"
 	repoSearchResultEmpty    = "empty"
@@ -75,10 +77,18 @@ func (r repoSearchRequest) symbols() []string {
 }
 
 func printRepoSearch(request repoSearchRequest, cfg config.AppConfig, st *state.StateStore, stdout io.Writer) error {
+	return printRepoSearchWithSearch(request, cfg, st, stdout, reposearch.Search)
+}
+
+func printRepoSearchWithSearch(request repoSearchRequest, cfg config.AppConfig, st *state.StateStore, stdout io.Writer, search repoSearchQueryFunc) error {
 	if !cfg.RepoSearch {
 		return machinecli.WriteJSON(stdout, repoSearchOutput{Status: repoSearchResultDisabled, Result: repoSearchResultDisabled, Results: []repoSearchResult{}})
 	}
-	report, err := reposearch.Search(context.Background(), cfg.RepoRoot, request.Question, reposearch.Options{
+	scope, err := captureParentEvidenceReadScope(st)
+	if err != nil {
+		return err
+	}
+	report, err := search(context.Background(), cfg.RepoRoot, request.Question, reposearch.Options{
 		DisableCache: true,
 		MaxResults:   workflow.RepoSearchMaxResults,
 		PathPrefixes: request.pathPrefixes(),
@@ -94,52 +104,29 @@ func printRepoSearch(request repoSearchRequest, cfg config.AppConfig, st *state.
 		fmt.Sprintf("%v", request.Scopes),
 		repoSearchResultsDigest(results),
 	)
-	return withParentEvidenceLedgerLock(st, func() error {
-		return serveRepoSearchResult(st, request, report, results, digest, stdout)
+	output := buildRepoSearchOutput(request, report, results)
+	return finishParentReadInScopeResult(st, scope, state.ParentEvidenceSurfaceSearch, digest, func() (parentReadRenderResult, error) {
+		return renderRepoSearchResult(output, stdout)
 	})
 }
 
-func serveRepoSearchResult(st *state.StateStore, request repoSearchRequest, report reposearch.Report, results []repoSearchResult, digest string, stdout io.Writer) error {
-	decision, entry, decisionErr := decideParentRead(st, state.ParentEvidenceSurfaceSearch, digest)
-	if decisionErr != nil {
-		return decisionErr
-	}
-	if decision == parentReadDuplicate {
-		recordParentEvidence(st, state.ParentEvidenceRecord{
-			Surface: state.ParentEvidenceSurfaceSearch, Origin: state.ParentEvidenceOriginStandalone,
-			Digest: digest, Outcome: state.ParentEvidenceOutcomeDuplicate,
-			Reason: parentEvidenceUnchangedReason, OwnerCallID: entry.OwnerCallID,
-		})
-		return &DuplicateParentProjectionError{Surface: state.ParentEvidenceSurfaceSearch, Digest: digest, OwnerCallID: entry.OwnerCallID}
-	}
-	output := buildRepoSearchOutput(request, report, results)
+func renderRepoSearchResult(output repoSearchOutput, stdout io.Writer) (parentReadRenderResult, error) {
 	if output.Status == repoSearchResultRequired {
 		if writeErr := machinecli.WriteJSON(stdout, output); writeErr != nil {
-			return writeErr
+			return parentReadRenderResult{}, writeErr
 		}
-		if err := saveParentEvidenceLedger(st, state.ParentEvidenceSurfaceSearch, digest, state.ParentEvidenceOriginStandalone, ""); err != nil {
-			return err
+		rendered, marshalErr := json.Marshal(output)
+		if marshalErr != nil {
+			return parentReadRenderResult{}, marshalErr
 		}
-		rendered, _ := json.Marshal(output)
-		recordParentEvidence(st, state.ParentEvidenceRecord{
-			Surface: state.ParentEvidenceSurfaceSearch, Origin: state.ParentEvidenceOriginStandalone,
-			Digest: digest, Bytes: len(rendered), Outcome: state.ParentEvidenceOutcomeRefinement,
-			Reason: output.Reason,
-		})
-		return nil
+		return parentReadRenderResult{
+			bytes:   len(rendered),
+			outcome: state.ParentEvidenceOutcomeRefinement,
+			reason:  output.Reason,
+		}, nil
 	}
 	written, writeErr := writeMeasuredJSON(stdout, output)
-	if writeErr != nil {
-		return writeErr
-	}
-	if err := saveParentEvidenceLedger(st, state.ParentEvidenceSurfaceSearch, digest, state.ParentEvidenceOriginStandalone, ""); err != nil {
-		return err
-	}
-	recordParentEvidence(st, state.ParentEvidenceRecord{
-		Surface: state.ParentEvidenceSurfaceSearch, Origin: state.ParentEvidenceOriginStandalone,
-		Digest: digest, Bytes: written, Outcome: state.ParentEvidenceOutcomeProjected,
-	})
-	return nil
+	return parentReadRenderResult{bytes: written, outcome: state.ParentEvidenceOutcomeProjected}, writeErr
 }
 
 func buildRepoSearchOutput(request repoSearchRequest, report reposearch.Report, results []repoSearchResult) repoSearchOutput {
