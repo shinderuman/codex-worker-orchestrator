@@ -261,19 +261,19 @@ func verifyRuntimeInstallCompletion(cfg config.AppConfig, st *state.StateStore) 
 	if !active {
 		return nil
 	}
-	decision, err := repositoryharness.Evaluate(cfg.RepoRoot)
-	if err != nil {
-		return runtimeInstallFailure(runtimeInstallFailureClassification, err.Error())
-	}
-	if !decision.Active {
-		return runtimeInstallFailure(runtimeInstallFailureClassification, decision.Reason)
-	}
 	requirement, err := runtimeInstallRequirementForTask(cfg.RepoRoot, st)
 	if err != nil {
 		return runtimeInstallFailure(runtimeInstallFailureClassification, err.Error())
 	}
 	if !requirement.Required {
 		return nil
+	}
+	decision, err := repositoryharness.Evaluate(cfg.RepoRoot)
+	if err != nil {
+		return runtimeInstallFailure(runtimeInstallFailureClassification, err.Error())
+	}
+	if !decision.Active {
+		return runtimeInstallFailure(runtimeInstallFailureClassification, decision.Reason)
 	}
 	evidence, failure := matchingRuntimeInstallEvidence(st, requirement)
 	if failure != nil {
