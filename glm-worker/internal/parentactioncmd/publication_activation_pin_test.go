@@ -11,6 +11,7 @@ import (
 
 func TestTaskScopedParentActionsDoNotLateOptInPinnedInactiveHarness(t *testing.T) {
 	cfg, st := newInstallActionRepo(t)
+	writeInstallActionScript(t, cfg.RepoRoot, "#!/bin/sh\n# task runtime edit\nexit 0\n", 0o755)
 	if err := st.Write("active-task", ""); err != nil {
 		t.Fatal(err)
 	}
@@ -31,6 +32,7 @@ func TestTaskScopedParentActionsDoNotLateOptInPinnedInactiveHarness(t *testing.T
 
 func TestTaskScopedParentActionsFailClosedOnPinnedActiveMarkerRemoval(t *testing.T) {
 	cfg, st := newInstallActionRepo(t)
+	writeInstallActionScript(t, cfg.RepoRoot, "#!/bin/sh\n# task runtime edit\nexit 0\n", 0o755)
 	if err := st.Write(repositoryharness.ActivationStateKey, repositoryharness.ActivationActiveValue); err != nil {
 		t.Fatal(err)
 	}
