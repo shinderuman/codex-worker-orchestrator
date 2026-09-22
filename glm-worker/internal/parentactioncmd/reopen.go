@@ -64,19 +64,23 @@ func executeReopen(cfg config.AppConfig, args []string, stdout io.Writer) error 
 	if err != nil {
 		return err
 	}
-	output := reopenOutput{
-		Status:         "reopened",
-		TaskStatus:     string(st.TaskStatus()),
-		RequiredAction: string(after.RequiredAction),
-		AllowedActions: []string{},
-	}
-	for _, action := range after.AllowedActions {
-		output.AllowedActions = append(output.AllowedActions, string(action))
-	}
-	return json.NewEncoder(stdout).Encode(output)
+	return writeReopenOutput(stdout, st, after)
 }
 
 func recoverReopenBeforeAdmission(st *state.StateStore) error {
 	_, err := st.RecoverInterruptedParentReopen()
 	return err
+}
+
+func writeReopenOutput(stdout io.Writer, st *state.StateStore, plan state.ParentActionPlan) error {
+	output := reopenOutput{
+		Status:         "reopened",
+		TaskStatus:     string(st.TaskStatus()),
+		RequiredAction: string(plan.RequiredAction),
+		AllowedActions: []string{},
+	}
+	for _, action := range plan.AllowedActions {
+		output.AllowedActions = append(output.AllowedActions, string(action))
+	}
+	return json.NewEncoder(stdout).Encode(output)
 }
