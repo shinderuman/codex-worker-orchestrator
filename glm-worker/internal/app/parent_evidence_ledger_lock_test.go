@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentevidence"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -113,7 +114,7 @@ func TestEvidenceBatchDegradesPartsAlreadyDeliveredByStandaloneRead(t *testing.T
 
 func TestEvidenceBatchMergesLedgerWithoutLosingStandaloneClaims(t *testing.T) {
 	fixture := newParentEvidenceFixture(t)
-	if err := saveParentEvidenceLedger(fixture.st, state.ParentEvidenceSurfaceSearch, "standalone-digest", state.ParentEvidenceOriginStandalone, ""); err != nil {
+	if err := parentevidence.SaveLedger(fixture.st, state.ParentEvidenceSurfaceSearch, "standalone-digest", state.ParentEvidenceOriginStandalone, ""); err != nil {
 		t.Fatal(err)
 	}
 
