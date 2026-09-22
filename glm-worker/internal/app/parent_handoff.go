@@ -13,25 +13,25 @@ import (
 )
 
 type parentHandoffOutput struct {
-	Version                  int                                     `json:"version"`
-	Consistent               bool                                    `json:"consistent"`
-	Inconsistency            *string                                 `json:"inconsistency"`
-	TaskID                   *string                                 `json:"task_id"`
-	TaskStatus               *string                                 `json:"task_status"`
-	RequiredAction           *string                                 `json:"required_action"`
-	AllowedActions           []string                                `json:"allowed_actions"`
-	RequiredActionParameters map[string]string                       `json:"required_action_parameters,omitempty"`
-	ResumeKind               *string                                 `json:"resume_kind"`
-	PendingDecision          bool                                    `json:"pending_decision"`
-	ParentReviewOpen         *string                                 `json:"parent_review_open"`
-	Baseline                 *state.GitBaselineEvidence              `json:"baseline"`
-	Snapshot                 *state.SnapshotDigest                   `json:"snapshot"`
-	ArtifactDir              *string                                 `json:"artifact_dir"`
-	LastMaterial             *parentHandoffMaterial                  `json:"last_material"`
-	Validations              []parentHandoffValidation               `json:"validations"`
-	RoutingEvidence          []parentHandoffRoutingEvidence          `json:"routing_evidence"`
-	SessionRotation          *state.SessionRotationProjection        `json:"session_rotation"`
-	ParentRequest            *ParentRequestCompletionProjection      `json:"parent_request"`
+	Version                  int                                      `json:"version"`
+	Consistent               bool                                     `json:"consistent"`
+	Inconsistency            *string                                  `json:"inconsistency"`
+	TaskID                   *string                                  `json:"task_id"`
+	TaskStatus               *string                                  `json:"task_status"`
+	RequiredAction           *string                                  `json:"required_action"`
+	AllowedActions           []string                                 `json:"allowed_actions"`
+	RequiredActionParameters map[string]string                        `json:"required_action_parameters,omitempty"`
+	ResumeKind               *string                                  `json:"resume_kind"`
+	PendingDecision          bool                                     `json:"pending_decision"`
+	ParentReviewOpen         *string                                  `json:"parent_review_open"`
+	Baseline                 *state.GitBaselineEvidence               `json:"baseline"`
+	Snapshot                 *state.SnapshotDigest                    `json:"snapshot"`
+	ArtifactDir              *string                                  `json:"artifact_dir"`
+	LastMaterial             *parentHandoffMaterial                   `json:"last_material"`
+	Validations              []parentHandoffValidation                `json:"validations"`
+	RoutingEvidence          []parentHandoffRoutingEvidence           `json:"routing_evidence"`
+	SessionRotation          *state.SessionRotationProjection         `json:"session_rotation"`
+	ParentRequest            *ParentRequestCompletionProjection       `json:"parent_request"`
 	Publication              *publicationsequence.PublicationSequence `json:"publication,omitempty"`
 }
 
