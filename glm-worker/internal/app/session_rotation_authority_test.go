@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/sessionrotation"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -40,7 +41,7 @@ func TestCanonicalSessionRotationEvaluationDoesNotRequireTaskStats(t *testing.T)
 				}
 			}
 
-			evaluation, err := EvaluateCanonicalSessionRotationTerminal(cfg, st, state.SessionRotationTerminalAccept, "LOW")
+			evaluation, err := sessionrotation.EvaluateTerminal(cfg, st, state.SessionRotationTerminalAccept, "LOW")
 			if err != nil {
 				t.Fatal(err)
 			}

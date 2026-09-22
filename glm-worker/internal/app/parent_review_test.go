@@ -10,6 +10,7 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/sessionrotation"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -373,7 +374,7 @@ func TestExecuteNewTaskRejectsOpenParentReviewUntilAccepted(t *testing.T) {
 	}
 
 	if _, err := st.CompleteParentAwaiting(func(acceptedRisk string) (*state.SessionRotationEvaluation, error) {
-		return EvaluateCanonicalSessionRotationTerminal(cfg, st, state.SessionRotationTerminalAccept, acceptedRisk)
+		return sessionrotation.EvaluateTerminal(cfg, st, state.SessionRotationTerminalAccept, acceptedRisk)
 	}); err != nil {
 		t.Fatal(err)
 	}

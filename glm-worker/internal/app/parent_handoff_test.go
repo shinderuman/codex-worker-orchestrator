@@ -12,6 +12,7 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/sessionrotation"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -643,7 +644,7 @@ func seedSessionRotationAccept(t *testing.T) (config.AppConfig, *state.StateStor
 		t.Fatal("open reviewをacceptできませんでした")
 	}
 	if _, err := st.CompleteParentAwaiting(func(acceptedRisk string) (*state.SessionRotationEvaluation, error) {
-		return EvaluateCanonicalSessionRotationTerminal(cfg, st, state.SessionRotationTerminalAccept, acceptedRisk)
+		return sessionrotation.EvaluateTerminal(cfg, st, state.SessionRotationTerminalAccept, acceptedRisk)
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -746,7 +747,7 @@ func TestSessionRotationCompletionFailsClosedWithoutParentIdentity(t *testing.T)
 		t.Fatal(err)
 	}
 	_, err = st.CompleteParentAwaiting(func(acceptedRisk string) (*state.SessionRotationEvaluation, error) {
-		return EvaluateCanonicalSessionRotationTerminal(cfg, st, state.SessionRotationTerminalAccept, acceptedRisk)
+		return sessionrotation.EvaluateTerminal(cfg, st, state.SessionRotationTerminalAccept, acceptedRisk)
 	})
 	if err == nil || !strings.Contains(err.Error(), "session rotation") {
 		t.Fatalf("identity欠損のcompletionがfail closedしませんでした: %v", err)

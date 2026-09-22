@@ -1,4 +1,4 @@
-package app
+package codexrollout
 
 import (
 	"bufio"
@@ -12,14 +12,37 @@ import (
 	"time"
 )
 
-type codexRolloutCounterSignal struct {
+type rolloutCounterSignal struct {
 	HasAnchor bool
 	Total     *int64
 	LastTotal *int64
 }
 
-func resolveCodexRolloutChain(matches []codexRollout) ([]codexRollout, string) {
-	ordered := append([]codexRollout(nil), matches...)
+type rolloutScanLine struct {
+	Timestamp string          `json:"timestamp"`
+	Type      string          `json:"type"`
+	Payload   json.RawMessage `json:"payload"`
+}
+
+type rolloutEventPayload struct {
+	Type   string               `json:"type"`
+	TurnID string               `json:"turn_id"`
+	Info   *rolloutTokenPayload `json:"info"`
+}
+
+type rolloutTokenPayload struct {
+	TotalTokenUsage *rolloutTokenUsage `json:"total_token_usage"`
+	LastTokenUsage  *rolloutTokenUsage `json:"last_token_usage"`
+}
+
+type rolloutTokenUsage struct {
+	TotalTokens *int64 `json:"total_tokens"`
+}
+
+const rolloutTokenCountType = "token_count"
+
+func ResolveChain(matches []Rollout) ([]Rollout, string) {
+	ordered := append([]Rollout(nil), matches...)
 	sort.Slice(ordered, func(i, j int) bool {
 		if ordered[i].FirstTimestamp.Equal(ordered[j].FirstTimestamp) {
 			return ordered[i].AbsolutePath < ordered[j].AbsolutePath
@@ -31,29 +54,29 @@ func resolveCodexRolloutChain(matches []codexRollout) ([]codexRollout, string) {
 			return nil, "rollout chain candidate has an unreadable session metadata timestamp: " + member.HomeRelative
 		}
 	}
-	if reason := codexChainDuplicateContent(ordered); reason != "" {
+	if reason := duplicateContent(ordered); reason != "" {
 		return nil, reason
 	}
-	if reason := codexChainIdentityMismatch(ordered); reason != "" {
+	if reason := identityMismatch(ordered); reason != "" {
 		return nil, reason
 	}
-	if reason := codexChainOverlappingRanges(ordered); reason != "" {
+	if reason := overlappingRanges(ordered); reason != "" {
 		return nil, reason
 	}
-	if reason := codexChainCounterBoundaries(ordered); reason != "" {
+	if reason := counterBoundaries(ordered); reason != "" {
 		return nil, reason
 	}
 	return ordered, ""
 }
 
-func codexChainDuplicateContent(ordered []codexRollout) string {
-	sizes, reason := codexChainRolloutSizes(ordered)
+func duplicateContent(ordered []Rollout) string {
+	sizes, reason := rolloutSizes(ordered)
 	if reason != "" {
 		return reason
 	}
 	for i := range ordered {
 		for j := i + 1; j < len(ordered); j++ {
-			if reason := codexChainDuplicatePair(ordered[i], ordered[j], sizes[i], sizes[j]); reason != "" {
+			if reason := duplicatePair(ordered[i], ordered[j], sizes[i], sizes[j]); reason != "" {
 				return reason
 			}
 		}
@@ -61,7 +84,7 @@ func codexChainDuplicateContent(ordered []codexRollout) string {
 	return ""
 }
 
-func codexChainRolloutSizes(ordered []codexRollout) ([]int64, string) {
+func rolloutSizes(ordered []Rollout) ([]int64, string) {
 	sizes := make([]int64, len(ordered))
 	for i, member := range ordered {
 		info, err := os.Stat(member.AbsolutePath)
@@ -73,11 +96,11 @@ func codexChainRolloutSizes(ordered []codexRollout) ([]int64, string) {
 	return sizes, ""
 }
 
-func codexChainDuplicatePair(left, right codexRollout, leftSize, rightSize int64) string {
+func duplicatePair(left, right Rollout, leftSize, rightSize int64) string {
 	if leftSize != rightSize {
 		return ""
 	}
-	equal, err := codexRolloutFilesIdentical(left.AbsolutePath, right.AbsolutePath)
+	equal, err := filesIdentical(left.AbsolutePath, right.AbsolutePath)
 	if err != nil {
 		return "rollout chain candidate cannot be read for duplicate comparison: " + left.HomeRelative + ": " + err.Error()
 	}
@@ -87,19 +110,19 @@ func codexChainDuplicatePair(left, right codexRollout, leftSize, rightSize int64
 	return "rollout chain candidates duplicate identical content: " + left.HomeRelative + ", " + right.HomeRelative
 }
 
-func codexRolloutFilesIdentical(left, right string) (bool, error) {
-	leftSum, err := codexRolloutFileDigest(left)
+func filesIdentical(left, right string) (bool, error) {
+	leftSum, err := fileDigest(left)
 	if err != nil {
 		return false, err
 	}
-	rightSum, err := codexRolloutFileDigest(right)
+	rightSum, err := fileDigest(right)
 	if err != nil {
 		return false, err
 	}
 	return leftSum == rightSum, nil
 }
 
-func codexRolloutFileDigest(path string) ([sha256.Size]byte, error) {
+func fileDigest(path string) ([sha256.Size]byte, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return [sha256.Size]byte{}, err
@@ -114,7 +137,7 @@ func codexRolloutFileDigest(path string) ([sha256.Size]byte, error) {
 	return sum, nil
 }
 
-func codexChainIdentityMismatch(ordered []codexRollout) string {
+func identityMismatch(ordered []Rollout) string {
 	for _, member := range ordered[1:] {
 		if member.Cwd == ordered[0].Cwd && member.Originator == ordered[0].Originator && member.SourceRaw == ordered[0].SourceRaw {
 			continue
@@ -133,9 +156,9 @@ func codexChainIdentityMismatch(ordered []codexRollout) string {
 	return ""
 }
 
-func codexChainOverlappingRanges(ordered []codexRollout) string {
+func overlappingRanges(ordered []Rollout) string {
 	for i, member := range ordered {
-		last, ok := codexRolloutLastTimestamp(member.AbsolutePath)
+		last, ok := LastTimestamp(member.AbsolutePath)
 		if !ok || last.Before(member.FirstTimestamp) {
 			return "rollout chain candidate has no readable event range: " + member.HomeRelative
 		}
@@ -149,21 +172,21 @@ func codexChainOverlappingRanges(ordered []codexRollout) string {
 	return ""
 }
 
-func codexChainCounterBoundaries(ordered []codexRollout) string {
-	if reason := codexChainRequireCounterAnchors(ordered); reason != "" {
+func counterBoundaries(ordered []Rollout) string {
+	if reason := requireCounterAnchors(ordered); reason != "" {
 		return reason
 	}
 	for i := 1; i < len(ordered); i++ {
-		if reason := codexChainCounterBoundaryReason(ordered[i-1], ordered[i]); reason != "" {
+		if reason := counterBoundaryReason(ordered[i-1], ordered[i]); reason != "" {
 			return reason
 		}
 	}
 	return ""
 }
 
-func codexChainRequireCounterAnchors(ordered []codexRollout) string {
+func requireCounterAnchors(ordered []Rollout) string {
 	for _, member := range ordered {
-		lastTotal, err := codexRolloutLastCounterTotal(member.AbsolutePath)
+		lastTotal, err := lastCounterTotal(member.AbsolutePath)
 		if err != nil {
 			return "rollout chain candidate cannot be read: " + member.HomeRelative + ": " + err.Error()
 		}
@@ -174,28 +197,28 @@ func codexChainRequireCounterAnchors(ordered []codexRollout) string {
 	return ""
 }
 
-func codexChainCounterBoundaryReason(previous, current codexRollout) string {
-	signal, err := codexRolloutFirstCounterSignal(current.AbsolutePath)
+func counterBoundaryReason(previous, current Rollout) string {
+	signal, err := firstCounterSignal(current.AbsolutePath)
 	if err != nil {
 		return "rollout chain candidate cannot be read: " + current.HomeRelative + ": " + err.Error()
 	}
 	if !signal.HasAnchor {
 		return "rollout chain candidate has no usable token counter anchor: " + current.HomeRelative
 	}
-	if codexChainCounterRestarted(signal, nil) {
+	if counterRestarted(signal, nil) {
 		return ""
 	}
-	previousTotal, err := codexRolloutLastCounterTotal(previous.AbsolutePath)
+	previousTotal, err := lastCounterTotal(previous.AbsolutePath)
 	if err != nil {
 		return "rollout chain candidate cannot be read: " + previous.HomeRelative + ": " + err.Error()
 	}
-	if !codexChainCounterRestarted(signal, previousTotal) {
+	if !counterRestarted(signal, previousTotal) {
 		return "rollout chain boundary does not restart a self-contained token counter: " + current.HomeRelative
 	}
 	return ""
 }
 
-func codexChainCounterRestarted(signal codexRolloutCounterSignal, previousTotal *int64) bool {
+func counterRestarted(signal rolloutCounterSignal, previousTotal *int64) bool {
 	if signal.Total != nil && signal.LastTotal != nil && *signal.Total == *signal.LastTotal {
 		return true
 	}
@@ -205,21 +228,21 @@ func codexChainCounterRestarted(signal codexRolloutCounterSignal, previousTotal 
 	return false
 }
 
-func codexRolloutFirstCounterSignal(path string) (codexRolloutCounterSignal, error) {
-	var first codexRolloutCounterSignal
-	err := codexRolloutScanCounterSignals(path, func(signal codexRolloutCounterSignal) bool {
+func firstCounterSignal(path string) (rolloutCounterSignal, error) {
+	var first rolloutCounterSignal
+	err := scanCounterSignals(path, func(signal rolloutCounterSignal) bool {
 		first = signal
 		return true
 	})
 	if err != nil {
-		return codexRolloutCounterSignal{}, err
+		return rolloutCounterSignal{}, err
 	}
 	return first, nil
 }
 
-func codexRolloutLastCounterTotal(path string) (*int64, error) {
+func lastCounterTotal(path string) (*int64, error) {
 	var lastTotal *int64
-	err := codexRolloutScanCounterSignals(path, func(signal codexRolloutCounterSignal) bool {
+	err := scanCounterSignals(path, func(signal rolloutCounterSignal) bool {
 		if signal.Total != nil {
 			total := *signal.Total
 			lastTotal = &total
@@ -232,7 +255,7 @@ func codexRolloutLastCounterTotal(path string) (*int64, error) {
 	return lastTotal, nil
 }
 
-func codexRolloutScanCounterSignals(path string, observe func(codexRolloutCounterSignal) bool) error {
+func scanCounterSignals(path string, observe func(rolloutCounterSignal) bool) error {
 	file, err := os.Open(path)
 	if err != nil {
 		return err
@@ -242,7 +265,7 @@ func codexRolloutScanCounterSignals(path string, observe func(codexRolloutCounte
 	for {
 		line, readErr := reader.ReadBytes('\n')
 		if len(line) > 0 {
-			stop, observeErr := codexRolloutObserveCounterLine(line, observe)
+			stop, observeErr := observeCounterLine(line, observe)
 			if observeErr != nil {
 				return observeErr
 			}
@@ -259,43 +282,42 @@ func codexRolloutScanCounterSignals(path string, observe func(codexRolloutCounte
 	}
 }
 
-func codexRolloutObserveCounterLine(line []byte, observe func(codexRolloutCounterSignal) bool) (bool, error) {
-	signal, matched, parseErr := codexRolloutLineCounterSignal(line)
+func observeCounterLine(line []byte, observe func(rolloutCounterSignal) bool) (bool, error) {
+	signal, matched, parseErr := lineCounterSignal(line)
 	if parseErr != nil {
 		return false, parseErr
 	}
 	return matched && observe(signal), nil
 }
 
-func codexRolloutLineCounterSignal(line []byte) (codexRolloutCounterSignal, bool, error) {
+func lineCounterSignal(line []byte) (rolloutCounterSignal, bool, error) {
 	trimmed := string(line)
 	if len(trimmed) > 0 && trimmed[len(trimmed)-1] == '\n' {
 		trimmed = trimmed[:len(trimmed)-1]
 	}
 	if trimmed == "" {
-		return codexRolloutCounterSignal{}, false, nil
+		return rolloutCounterSignal{}, false, nil
 	}
-	var record codexRolloutScanLine
+	var record rolloutScanLine
 	if err := json.Unmarshal([]byte(trimmed), &record); err != nil {
-		return codexRolloutCounterSignal{}, false, fmt.Errorf("rollout JSON行の解析に失敗しました: %w", err)
+		return rolloutCounterSignal{}, false, fmt.Errorf("rollout JSON行の解析に失敗しました: %w", err)
 	}
 	if _, err := time.Parse(time.RFC3339Nano, record.Timestamp); err != nil {
-		return codexRolloutCounterSignal{}, false, fmt.Errorf("rollout timestampの解析に失敗しました: %w", err)
+		return rolloutCounterSignal{}, false, fmt.Errorf("rollout timestampの解析に失敗しました: %w", err)
 	}
 	if record.Type != "event_msg" {
-		return codexRolloutCounterSignal{}, false, nil
+		return rolloutCounterSignal{}, false, nil
 	}
-	var payload codexRolloutEventPayload
+	var payload rolloutEventPayload
 	if err := json.Unmarshal(record.Payload, &payload); err != nil {
-		return codexRolloutCounterSignal{}, false, nil
+		return rolloutCounterSignal{}, false, nil
 	}
-	if payload.Type != codexRolloutTokenCountType || payload.Info == nil {
-		return codexRolloutCounterSignal{}, false, nil
+	if payload.Type != rolloutTokenCountType || payload.Info == nil {
+		return rolloutCounterSignal{}, false, nil
 	}
-	signal := codexRolloutCounterSignal{HasAnchor: true}
+	signal := rolloutCounterSignal{HasAnchor: true}
 	if payload.Info.TotalTokenUsage != nil {
-		total := payload.Info.TotalTokenUsage.TotalTokens
-		signal.Total = total
+		signal.Total = payload.Info.TotalTokenUsage.TotalTokens
 	}
 	if payload.Info.LastTokenUsage != nil {
 		signal.LastTotal = payload.Info.LastTokenUsage.TotalTokens
