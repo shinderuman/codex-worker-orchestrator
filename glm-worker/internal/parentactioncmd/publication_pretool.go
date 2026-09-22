@@ -222,7 +222,7 @@ func publicationShellWrapperNext(segment []publicationShellWord, index int) (int
 	case "time":
 		next, unavailable := publicationTimeWrapperNext(segment, index+1)
 		return next, true, unavailable
-	case "coproc":
+	case "coproc", "nohup", "setsid", "nice", "ionice", "stdbuf", "timeout", "xargs", "flock", "script":
 		return index, true, true
 	}
 	return index, false, false
@@ -569,7 +569,11 @@ func publicationClassifyGit(segment []publicationShellWord, commandIndex int) (s
 			return publicationGitClassificationCode, publicationGitClassificationReason
 		}
 	}
-	if publicationGitNoVerify(segment[commandIndex+1:]) {
+	argv := segment[commandIndex+1:]
+	if subcommand := publicationGitSubcommand(argv); subcommand != "" && !publicationGitBuiltinSubcommand(subcommand) {
+		return publicationGitClassificationCode, publicationGitClassificationReason
+	}
+	if publicationGitNoVerify(argv) {
 		return publicationGitGuardBypassCode, publicationGitNoVerifyReason
 	}
 	if publicationGitHooksPathBypass(segment) {
@@ -862,9 +866,83 @@ func (lexer *publicationShellLexer) flushSegment() {
 	lexer.current = nil
 }
 
+func publicationGitBuiltinSubcommand(value string) bool {
+	switch value {
+	case "add", "am", "annotate", "apply", "archive", "bisect", "blame", "branch", "bugreport", "bundle",
+		"cat-file", "check-attr", "check-ignore", "check-mailmap", "check-ref-format", "checkout", "checkout--worker", "checkout-index",
+		"cherry", "cherry-pick", "clean", "clone", "column", "commit", "commit-graph", "commit-tree", "config", "count-objects",
+		"credential", "credential-cache", "credential-cache--daemon", "credential-store", "describe", "diagnose", "diff", "diff-files",
+		"diff-index", "diff-tree", "difftool", "fast-export", "fast-import", "fetch", "fetch-pack", "fmt-merge-msg", "for-each-ref",
+		"for-each-repo", "format-patch", "fsck", "fsck-objects", "fsmonitor--daemon", "gc", "get-tar-commit-id", "grep", "hash-object",
+		"help", "hook", "index-pack", "init", "init-db", "interpret-trailers", "log", "ls-files", "ls-remote", "ls-tree", "mailinfo",
+		"mailsplit", "maintenance", "merge", "merge-base", "merge-file", "merge-index", "merge-ours", "merge-recursive",
+		"merge-recursive-ours", "merge-recursive-theirs", "merge-subtree", "merge-tree", "mktag", "mktree", "multi-pack-index", "mv",
+		"name-rev", "notes", "pack-objects", "pack-redundant", "pack-refs", "patch-id", "pickaxe", "prune", "prune-packed", "pull",
+		"push", "range-diff", "read-tree", "rebase", "receive-pack", "reflog", "refs", "remote", "remote-ext", "remote-fd", "repack",
+		"replace", "replay", "rerere", "reset", "restore", "rev-list", "rev-parse", "revert", "rm", "send-pack", "shortlog", "show",
+		"show-branch", "show-index", "show-ref", "sparse-checkout", "stage", "stash", "status", "stripspace", "submodule--helper", "switch",
+		"symbolic-ref", "tag", "unpack-file", "unpack-objects", "update-index", "update-ref", "update-server-info", "upload-archive",
+		"upload-archive--writer", "upload-pack", "var", "verify-commit", "verify-pack", "verify-tag", "version", "whatchanged", "worktree", "write-tree":
+		return true
+	default:
+		return false
+	}
+}
+
 func publicationGitNoVerify(argv []publicationShellWord) bool {
+	subcommand := publicationGitSubcommand(argv)
 	for _, token := range argv {
-		if token.Value == "--no-verify" {
+		if token.Value == "--no-verify" || subcommand == "commit" && token.Value == "-n" {
+			return true
+		}
+	}
+	return false
+}
+
+func publicationGitSubcommand(argv []publicationShellWord) string {
+	for index := 0; index < len(argv); index++ {
+		value := argv[index].Value
+		if redirection, next, unavailable := publicationLeadingRedirection(argv, index); redirection {
+			if unavailable {
+				return ""
+			}
+			index = next - 1
+			continue
+		}
+		if value == "--" {
+			return publicationGitSubcommandAfterSeparator(argv, index)
+		}
+		if publicationGitGlobalOptionConsumesValue(value) {
+			index++
+			continue
+		}
+		if publicationGitInlineGlobalOption(value) || strings.HasPrefix(value, "-") {
+			continue
+		}
+		return value
+	}
+	return ""
+}
+
+func publicationGitSubcommandAfterSeparator(argv []publicationShellWord, index int) string {
+	if index+1 >= len(argv) {
+		return ""
+	}
+	return argv[index+1].Value
+}
+
+func publicationGitGlobalOptionConsumesValue(value string) bool {
+	switch value {
+	case "-C", "-c", "--git-dir", "--work-tree", "--namespace", "--super-prefix", "--config-env":
+		return true
+	default:
+		return false
+	}
+}
+
+func publicationGitInlineGlobalOption(value string) bool {
+	for _, prefix := range []string{"-C", "-c", "--git-dir=", "--work-tree=", "--namespace=", "--super-prefix=", "--config-env="} {
+		if strings.HasPrefix(value, prefix) {
 			return true
 		}
 	}

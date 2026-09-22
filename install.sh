@@ -84,7 +84,11 @@ verify_go_toolchain() {
 runtime_build_ldflags() {
 	revision=$(git -C "$repo_root" rev-parse --verify 'HEAD^{commit}')
 	modified=false
-	if [ -n "$(git -C "$repo_root" status --porcelain=v1 --untracked-files=all)" ]; then
+	if ! status_output=$(git -C "$repo_root" status --porcelain=v1 --untracked-files=all); then
+		printf '%s\n' 'failed to determine runtime build worktree state' >&2
+		return 1
+	fi
+	if [ -n "$status_output" ]; then
 		modified=true
 	fi
 	printf '%s\n' "-X $runtime_build_package.buildVCSRevision=$revision -X $runtime_build_package.buildVCSModified=$modified"
@@ -137,7 +141,7 @@ merge_claude_settings() {
 }
 
 install_pull_hook() {
-	sh "$repo_root/scripts/manage-pull-hook.sh" install "$repo_root"
+	sh "$repo_root/scripts/manage-pull-hook.sh" install "$repo_root" "$bin_dir/glm-parent-action"
 }
 
 require git

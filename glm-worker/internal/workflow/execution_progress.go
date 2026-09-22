@@ -35,7 +35,8 @@ func ProjectExecutionProgress(st *state.StateStore, currentPhase, currentRole st
 	if plan == nil || len(plan.Milestones) == 0 {
 		return indeterminateExecutionProgress(phaseStage, "single-or-untracked-execution-unit", "no-execution-milestones")
 	}
-	if reason := executionProgressPlanInconsistency(st, plan); reason != "" {
+	taskStatus := st.TaskStatus()
+	if reason := executionProgressPlanInconsistency(st, plan, taskStatus); reason != "" {
 		return indeterminateExecutionProgress(phaseStage, "machine-state", reason)
 	}
 
@@ -60,8 +61,8 @@ func ProjectExecutionProgress(st *state.StateStore, currentPhase, currentRole st
 		}
 	}
 
-	projection.Band = executionProgressBand(plan.CurrentIndex, len(plan.Milestones), phaseStage, st.TaskStatus())
-	if st.TaskStatus() == state.TaskStatusComplete {
+	projection.Band = executionProgressBand(plan.CurrentIndex, len(plan.Milestones), phaseStage, taskStatus)
+	if taskStatus == state.TaskStatusComplete {
 		projection.Status = "complete"
 		projection.Precision = "exact"
 	}
@@ -78,14 +79,14 @@ func indeterminateExecutionProgress(phaseStage, basis, reason string) ExecutionP
 	}
 }
 
-func executionProgressPlanInconsistency(st *state.StateStore, plan *executionMilestonePlan) string {
+func executionProgressPlanInconsistency(st *state.StateStore, plan *executionMilestonePlan, taskStatus state.TaskStatus) string {
 	if taskID := st.ReadOr("task.id", ""); taskID != "" && plan.TaskID != taskID {
 		return "milestone-task-mismatch"
 	}
 	if len(plan.Milestones) < 2 || !executionProgressMilestonesConsistent(plan) {
 		return invalidMilestoneProgressStateReason
 	}
-	if st.TaskStatus() == state.TaskStatusComplete && plan.CurrentIndex != len(plan.Milestones) {
+	if taskStatus == state.TaskStatusComplete && plan.CurrentIndex != len(plan.Milestones) {
 		return "lifecycle-milestone-inconsistent"
 	}
 	return ""

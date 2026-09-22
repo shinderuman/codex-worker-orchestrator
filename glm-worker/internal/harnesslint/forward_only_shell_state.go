@@ -19,7 +19,8 @@ type shellStateAssignment struct {
 var (
 	shellSimpleAssignmentPattern = regexp.MustCompile(`^[\t ]*([A-Za-z_][A-Za-z0-9_]*)=(.*)$`)
 	shellStateVersionPattern     = regexp.MustCompile(`\bversion=([0-9]+)\b`)
-	shellStateKindPattern        = regexp.MustCompile(`^[\t ]*"?\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?"?\)[\t ]*state_kind=([A-Za-z0-9_-]+)`)
+	shellCaseVariablePattern     = regexp.MustCompile(`^[\t ]*"?\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?"?\)`)
+	shellStateKindPattern        = regexp.MustCompile(`\bstate_kind=(?:"([A-Za-z0-9_-]+)"|'([A-Za-z0-9_-]+)'|([A-Za-z0-9_-]+))`)
 	shellWriteStatePattern       = regexp.MustCompile(`\bwrite_state[\t ]+"?\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?"?`)
 	shellVariablePattern         = regexp.MustCompile(`\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?`)
 	shellCatVariablePattern      = regexp.MustCompile(`\bcat[\t ]+"?\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?"?`)
@@ -154,10 +155,43 @@ func highestShellStateVersion(states map[string]shellVersionedState) int {
 }
 
 func shellStateKindForVariable(lines []string, variable string) string {
-	for _, line := range lines {
-		match := shellStateKindPattern.FindStringSubmatch(strings.TrimSpace(line))
-		if len(match) == 3 && match[1] == variable {
-			return match[2]
+	for index, line := range lines {
+		if shellCaseVariable(line) != variable {
+			continue
+		}
+		return shellStateKindForArm(lines, index)
+	}
+	return ""
+}
+
+func shellCaseVariable(line string) string {
+	match := shellCaseVariablePattern.FindStringSubmatch(strings.TrimSpace(line))
+	if len(match) != 2 {
+		return ""
+	}
+	return match[1]
+}
+
+func shellStateKindForArm(lines []string, index int) string {
+	for arm := index; arm < len(lines); arm++ {
+		if kind := shellStateKindFromLine(lines[arm]); kind != "" {
+			return kind
+		}
+		if strings.Contains(lines[arm], ";;") {
+			return ""
+		}
+	}
+	return ""
+}
+
+func shellStateKindFromLine(line string) string {
+	match := shellStateKindPattern.FindStringSubmatch(line)
+	if len(match) != 4 {
+		return ""
+	}
+	for _, kind := range match[1:] {
+		if kind != "" {
+			return kind
 		}
 	}
 	return ""

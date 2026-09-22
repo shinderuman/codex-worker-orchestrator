@@ -331,6 +331,8 @@ func TestClaudeRunnerPlainStdoutFailureClassification(t *testing.T) {
 			line: "API Error: Request rejected (429) · [1308][Usage limit reached for 5 hour. Your limit will reset at 2026-07-22 14:06:34]",
 			want: ProviderFailureClass{
 				Kind:          ProviderFailureZaiFiveHour,
+				Detail:        "zai-code:1308",
+				BusinessCode:  "1308",
 				FiveHourLimit: ZaiFiveHourLimit{ResetAtCST: "2026-07-22 14:06:34", ResetAtRFC3339: "2026-07-22T14:06:34+08:00"},
 			},
 		},

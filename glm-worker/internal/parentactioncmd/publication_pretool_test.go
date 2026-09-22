@@ -12,6 +12,7 @@ func TestPublicationPreToolUseBlocksGitGuardBypass(t *testing.T) {
 		"git push --no-verify origin main",
 		"git push origin main --no-verify",
 		"git commit --no-verify -m bypass",
+		"git commit -n -m bypass",
 		"cd repo && /usr/bin/git push origin main --no-verify",
 		"bash -lc 'git push origin main --no-verify'",
 		"bash --norc -c 'git push origin main --no-verify'",
@@ -71,6 +72,18 @@ func TestPublicationPreToolUseFailsClosedForDynamicGitClassification(t *testing.
 		"time --unknown git push origin main --no-verify",
 		"coproc git push origin main --no-verify",
 		"coproc worker git push origin main --no-verify",
+		"nohup git push origin main --no-verify",
+		"timeout 10 git commit --no-verify -m bypass",
+		"setsid git push origin main --no-verify",
+		"nice git push origin main --no-verify",
+		"ionice git push origin main --no-verify",
+		"stdbuf -o0 git push origin main --no-verify",
+		"xargs git push origin main --no-verify",
+		"flock /tmp/lock git push origin main --no-verify",
+		"script -c 'git push origin main --no-verify' /dev/null",
+		"git escape",
+		"git -c alias.escape='commit -n' escape -m bypass",
+		"GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=alias.escape GIT_CONFIG_VALUE_0='commit -n' git escape -m bypass",
 	}
 	for _, command := range commands {
 		t.Run(command, func(t *testing.T) {
@@ -86,6 +99,9 @@ func TestPublicationPreToolUseAllowsManagedPushAndUnrelatedCommands(t *testing.T
 	commands := []string{
 		"git push origin main",
 		"git push -n origin main",
+		"git status --short",
+		"git rev-parse HEAD",
+		"git commit -m safe",
 		"command git push origin main",
 		"command -p git push origin main",
 		"command -- git push origin main",
