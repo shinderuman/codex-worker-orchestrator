@@ -21,7 +21,7 @@ type completeOutput struct {
 	Completed     bool                                                 `json:"completed"`
 	RemoteSync    *completeRemoteSyncSummary                           `json:"remote_sync,omitempty"`
 	ParentRequest *repositoryproject.ParentRequestCompletionProjection `json:"parent_request,omitempty"`
-	NextAction    *publicationsequence.PublicationActionSpec            `json:"next_action,omitempty"`
+	NextAction    *publicationsequence.PublicationActionSpec           `json:"next_action,omitempty"`
 	Failure       *finalizationFailure                                 `json:"failure,omitempty"`
 }
 
