@@ -2,10 +2,11 @@ package app
 
 import (
 	"errors"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 	"io"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/autoresume"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentevidence"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/runner"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
@@ -68,7 +69,7 @@ func buildInputProcessError(err error) (processErrorBody, bool) {
 	var notFound *machinecli.NotFoundError
 	var stdinPayload *machinecli.StdinPayloadError
 	var outputViolation *MachineOutputViolationError
-	var duplicateProjection *DuplicateParentProjectionError
+	var duplicateProjection *parentevidence.DuplicateProjectionError
 
 	switch {
 	case errors.As(err, &usage):
@@ -85,7 +86,7 @@ func buildInputProcessError(err error) (processErrorBody, bool) {
 				"surface":       duplicateProjection.Surface,
 				"digest":        duplicateProjection.Digest,
 				"owner_call_id": duplicateProjection.OwnerCallID,
-				"batch_command": parentEvidenceBatchCommand,
+				"batch_command": parentevidence.BatchCommand,
 			},
 		}, true
 	case errors.Is(err, ErrRepoLockHeld):
