@@ -128,9 +128,9 @@ var parentActionCommands = map[string]parentActionCommandDescriptor{
 		Execute: parentActionExecutionGitEvidence,
 	},
 	actionReviewEvidence: {
-		Action:            actionReviewEvidence,
-		TerminalExecute:   parentActionExecutionReviewEvidence,
-		TerminalEnvelope:  true,
+		Action:           actionReviewEvidence,
+		TerminalExecute:  parentActionExecutionReviewEvidence,
+		TerminalEnvelope: true,
 		InProcessHandoff: true,
 	},
 	actionRecordDefectFinding: {
