@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/app"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskdiff"
 )
@@ -107,8 +108,8 @@ func TestPublicationSequencePromotesAfterInstallEvidenceForMixedRuntimePaths(t *
 	if err != nil || !available {
 		t.Fatalf("changed paths available=%v err=%v", available, err)
 	}
-	runtimePaths := taskdiff.RuntimeChangedPaths(changed)
-	digest, err := taskdiff.RuntimeSourceDigest(fixture.repo, runtimePaths)
+	runtimePaths := taskdiff.SelectedPaths(changed, repositoryharness.RuntimeInstallPath)
+	digest, err := taskdiff.SourceDigest(fixture.repo, runtimePaths)
 	if err != nil {
 		t.Fatal(err)
 	}
