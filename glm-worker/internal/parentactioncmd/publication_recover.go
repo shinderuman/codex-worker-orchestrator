@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/publicationguard"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/publicationsequence"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
 )
 
 type publicationRecoverOutput struct {
@@ -83,7 +83,7 @@ func publicationRecoverAdmission(cfg config.AppConfig, st *state.StateStore) *fi
 		failure.Stage = "recovery"
 		return failure
 	}
-	if err := workflow.VerifyPublicationGuardSetup(cfg.RepoRoot); err != nil {
+	if err := publicationguard.VerifyPublicationGuardSetup(cfg.RepoRoot); err != nil {
 		return publicationRecoverFailure(publicationFailureRecoverGuard, err.Error())
 	}
 	if _, err := st.LoadPublicationCandidate(); err == nil {

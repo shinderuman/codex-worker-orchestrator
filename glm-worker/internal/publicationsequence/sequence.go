@@ -8,10 +8,10 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/publicationguard"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskdiff"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
 )
 
 type PublicationActionSpec struct {
@@ -79,7 +79,7 @@ func publicationSequenceAdmission(repoRoot string, st *state.StateStore) *Public
 		blocked := publicationSequenceBlocked("publication_repository_state_unavailable", "repository root is unavailable")
 		return &blocked
 	}
-	harnessActive, err := workflow.RepositoryHarnessActive(repoRoot, st)
+	harnessActive, err := repositoryharness.RuntimeActive(repoRoot, st)
 	if err != nil {
 		blocked := publicationSequenceBlocked("publication_repository_harness_inactive", err.Error())
 		return &blocked
@@ -95,7 +95,7 @@ func publicationSequenceAdmission(repoRoot string, st *state.StateStore) *Public
 }
 
 func publicationSequenceGuardAdmission(repoRoot string) *PublicationSequence {
-	report, err := workflow.InspectPublicationGuardSetup(repoRoot)
+	report, err := publicationguard.InspectPublicationGuardSetup(repoRoot)
 	if err != nil {
 		blocked := publicationSequenceBlocked("publication_guard_setup_invalid", err.Error())
 		return &blocked
@@ -128,7 +128,7 @@ func publicationSequenceHead(repoRoot string) (state.GitHeadAuthority, bool) {
 	return head, true
 }
 
-func publicationSequenceGuardSetupBlocked(repoRoot string, report workflow.PublicationGuardSetupReport) PublicationSequence {
+func publicationSequenceGuardSetupBlocked(repoRoot string, report publicationguard.PublicationGuardSetupReport) PublicationSequence {
 	details := make([]string, 0, len(report.Defects))
 	for _, defect := range report.Defects {
 		details = append(details, defect.Hook+" "+defect.Defect+" at "+defect.Path)
@@ -141,7 +141,7 @@ func publicationSequenceGuardSetupBlocked(repoRoot string, report workflow.Publi
 	tracked := make([]string, 0, len(report.Defects)+1)
 	for _, defect := range report.Defects {
 		tracked = append(tracked, ".githooks/"+defect.Hook)
-		if defect.Defect != workflow.PublicationGuardHookNotExecutable {
+		if defect.Defect != publicationguard.PublicationGuardHookNotExecutable {
 			continue
 		}
 		repairs = append(repairs, []string{"chmod", "+x", defect.Path})
