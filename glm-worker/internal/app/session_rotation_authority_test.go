@@ -5,8 +5,18 @@ import (
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/sessionrotation"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
+
+func EvaluateCanonicalSessionRotationTerminal(
+	cfg config.AppConfig,
+	st *state.StateStore,
+	terminal string,
+	acceptedRisk string,
+) (*state.SessionRotationEvaluation, error) {
+	return sessionrotation.EvaluateTerminal(cfg, st, terminal, acceptedRisk)
+}
 
 func TestCanonicalSessionRotationEvaluationDoesNotRequireTaskStats(t *testing.T) {
 	for _, fixture := range []string{"missing", "corrupt"} {
