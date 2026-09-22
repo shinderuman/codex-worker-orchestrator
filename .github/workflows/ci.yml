@@ -116,7 +116,9 @@ jobs:
             glm-worker/internal/harnesslint/forward_only_shell_state_test.go
       - name: Read Go version
         id: repair-go-version
-        run: echo "value=$(awk -F': ' '$1 == \"go\" { print $2 }' quality-tools.yml)" >> "$GITHUB_OUTPUT"
+        run: |
+          GO_VERSION=$(awk -F': ' '$1 == "go" { print $2 }' quality-tools.yml)
+          printf 'value=%s\n' "$GO_VERSION" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-go@v7
         with:
           go-version: ${{ steps.repair-go-version.outputs.value }}
