@@ -28,8 +28,6 @@ type qualityGateOutput struct {
 	Log             string `json:"log"`
 }
 
-type qualityGateRunRecord = qualitygate.RunRecord
-
 type qualityGateStartedEvent struct {
 	Type            string `json:"type"`
 	Event           string `json:"event"`
@@ -39,7 +37,7 @@ type qualityGateStartedEvent struct {
 
 type qualityGateRunnerWait func() error
 
-type qualityGateRunnerLauncher func(*state.StateStore, qualityGateRunRecord) (qualityGateRunnerWait, error)
+type qualityGateRunnerLauncher func(*state.StateStore, qualitygate.RunRecord) (qualityGateRunnerWait, error)
 
 type qualityGateStartIdentity struct {
 	Form       string
@@ -51,14 +49,7 @@ type qualityGateStartIdentity struct {
 }
 
 const (
-	qualityGateRunDirectory       = qualitygate.RunDirectory
-	qualityGateRunFile            = qualitygate.RunFile
-	qualityGateRunLog             = qualitygate.RunLog
 	qualityGateRunStateLock       = "state.lock"
-	qualityGateStatusRunning      = qualitygate.StatusRunning
-	qualityGateStatusPass         = qualitygate.StatusPass
-	qualityGateStatusFail         = qualitygate.StatusFail
-	qualityGateStatusInterrupted  = qualitygate.StatusInterrupted
 	qualityGateRunnerStartupGrace = 30 * time.Second
 )
 
