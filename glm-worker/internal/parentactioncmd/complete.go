@@ -8,6 +8,7 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/app"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/publicationsequence"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repolock"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryproject"
@@ -20,7 +21,7 @@ type completeOutput struct {
 	Completed     bool                                                 `json:"completed"`
 	RemoteSync    *completeRemoteSyncSummary                           `json:"remote_sync,omitempty"`
 	ParentRequest *repositoryproject.ParentRequestCompletionProjection `json:"parent_request,omitempty"`
-	NextAction    *app.PublicationActionSpec                           `json:"next_action,omitempty"`
+	NextAction    *publicationsequence.PublicationActionSpec            `json:"next_action,omitempty"`
 	Failure       *finalizationFailure                                 `json:"failure,omitempty"`
 }
 
@@ -95,7 +96,7 @@ func runComplete(cfg config.AppConfig, stdout io.Writer) error {
 			Completed:     false,
 			RemoteSync:    verification.remoteSync,
 			ParentRequest: parentRequest,
-			NextAction:    app.ProjectPublicationSequence(cfg.RepoRoot, st).NextAction,
+			NextAction:    publicationsequence.ProjectPublicationSequence(cfg.RepoRoot, st).NextAction,
 			Failure:       verification.failure,
 		})
 	}
@@ -105,7 +106,7 @@ func runComplete(cfg config.AppConfig, stdout io.Writer) error {
 			Status:        completeStatusAwaiting,
 			Completed:     false,
 			ParentRequest: parentRequest,
-			NextAction:    app.ProjectPublicationSequence(cfg.RepoRoot, st).NextAction,
+			NextAction:    publicationsequence.ProjectPublicationSequence(cfg.RepoRoot, st).NextAction,
 			Failure:       failure,
 		})
 	}
