@@ -114,21 +114,12 @@ func (s *StateStore) rawParentReviewStateForReset() (ParentReviewState, error) {
 	if err != nil {
 		return ParentReviewState{}, err
 	}
-	var state ParentReviewState
-	if err := json.Unmarshal(data, &state); err != nil {
-		return ParentReviewState{}, fmt.Errorf("orphaned parent review state is unreadable: %w", err)
+	state, err := decodeParentReviewState(data)
+	if err != nil {
+		return ParentReviewState{}, fmt.Errorf("orphaned parent review state is invalid: %w", err)
 	}
-	if state.Version != parentReviewStateVersion || !ValidGeneratedUUID(state.TaskID) {
+	if !ValidGeneratedUUID(state.TaskID) {
 		return ParentReviewState{}, fmt.Errorf("orphaned parent review state cannot prove task provenance")
-	}
-	if state.Open != nil && !validParentReviewPacketStatus(state.Open.PacketStatus) {
-		return ParentReviewState{}, fmt.Errorf("orphaned parent review state has invalid packet status %s", state.Open.PacketStatus)
-	}
-	if err := validateParentReviewBindingState(state); err != nil {
-		return ParentReviewState{}, err
-	}
-	if err := validateParentCompletionState(state); err != nil {
-		return ParentReviewState{}, err
 	}
 	return state, nil
 }

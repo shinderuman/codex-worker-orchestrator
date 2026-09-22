@@ -39,15 +39,26 @@ func (s *StateStore) loadParentReviewState() (ParentReviewState, error) {
 	if err != nil {
 		return ParentReviewState{}, err
 	}
-	var state ParentReviewState
-	if err := json.Unmarshal(data, &state); err != nil {
-		return ParentReviewState{}, fmt.Errorf("parent review stateを読めません: %w", err)
+	state, err := decodeParentReviewState(data)
+	if err != nil {
+		return ParentReviewState{}, err
 	}
 	taskID, err := s.TaskID()
 	if err != nil {
 		return ParentReviewState{}, err
 	}
-	if state.Version != parentReviewStateVersion || state.TaskID == "" || state.TaskID != taskID {
+	if state.TaskID != taskID {
+		return ParentReviewState{}, fmt.Errorf("parent review stateのschemaが不正です")
+	}
+	return state, nil
+}
+
+func decodeParentReviewState(data []byte) (ParentReviewState, error) {
+	var state ParentReviewState
+	if err := json.Unmarshal(data, &state); err != nil {
+		return ParentReviewState{}, fmt.Errorf("parent review stateを読めません: %w", err)
+	}
+	if state.Version != parentReviewStateVersion || state.TaskID == "" {
 		return ParentReviewState{}, fmt.Errorf("parent review stateのschemaが不正です")
 	}
 	if state.Open != nil && !validParentReviewPacketStatus(state.Open.PacketStatus) {
