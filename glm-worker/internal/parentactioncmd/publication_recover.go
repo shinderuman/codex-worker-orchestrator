@@ -16,12 +16,12 @@ import (
 )
 
 type publicationRecoverOutput struct {
-	Status        string                              `json:"status"`
-	Candidate     *state.PublicationCandidate         `json:"candidate,omitempty"`
-	Safety        string                              `json:"safety,omitempty"`
-	HistoryImpact string                              `json:"history_impact,omitempty"`
+	Status        string                                     `json:"status"`
+	Candidate     *state.PublicationCandidate                `json:"candidate,omitempty"`
+	Safety        string                                     `json:"safety,omitempty"`
+	HistoryImpact string                                     `json:"history_impact,omitempty"`
 	NextAction    *publicationsequence.PublicationActionSpec `json:"next_action,omitempty"`
-	Failure       *finalizationFailure                `json:"failure,omitempty"`
+	Failure       *finalizationFailure                       `json:"failure,omitempty"`
 }
 
 const publicationRecoverSubcommand = "re" + "cover"
