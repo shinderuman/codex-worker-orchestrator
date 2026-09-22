@@ -28,13 +28,15 @@ func (output parentHandoffOutput) MarshalJSON() ([]byte, error) {
 		output.PendingDecision,
 		output.AllowedActions,
 	)
-	projectImprovementSignal(&projected)
+	improvementSignal := projectImprovementSignal(&projected)
 	return json.Marshal(struct {
 		parentHandoffOutputAlias
-		ActionSpecs map[string]parentHandoffActionSpec `json:"action_specs"`
+		ActionSpecs       map[string]parentHandoffActionSpec `json:"action_specs"`
+		ImprovementSignal *parentHandoffImprovementSignal    `json:"improvement_signal,omitempty"`
 	}{
 		parentHandoffOutputAlias: parentHandoffOutputAlias(projected),
 		ActionSpecs:              parentActionSpecs(projected.AllowedActions, projected.RequiredActionParameters),
+		ImprovementSignal:        improvementSignal,
 	})
 }
 
@@ -46,13 +48,15 @@ func (output parentHandoffRecoveryOutput) MarshalJSON() ([]byte, error) {
 		output.PendingDecision,
 		output.AllowedActions,
 	)
-	projectRecoveryImprovementSignal(&projected)
+	improvementSignal := projectRecoveryImprovementSignal(&projected)
 	return json.Marshal(struct {
 		parentHandoffRecoveryOutputAlias
-		ActionSpecs map[string]parentHandoffActionSpec `json:"action_specs"`
+		ActionSpecs       map[string]parentHandoffActionSpec `json:"action_specs"`
+		ImprovementSignal *parentHandoffImprovementSignal    `json:"improvement_signal,omitempty"`
 	}{
 		parentHandoffRecoveryOutputAlias: parentHandoffRecoveryOutputAlias(projected),
 		ActionSpecs:                      parentActionSpecs(projected.AllowedActions, projected.RequiredActionParameters),
+		ImprovementSignal:                improvementSignal,
 	})
 }
 

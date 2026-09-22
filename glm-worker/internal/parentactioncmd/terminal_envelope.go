@@ -35,9 +35,6 @@ func executeWithTerminalEnvelope(cfg config.AppConfig, args []string, stdout, st
 	if len(args) == 0 {
 		return execute(cfg, args, stdout, stderr)
 	}
-	if err := requireImprovementSignalDisposition(cfg, args[0]); err != nil {
-		return err
-	}
 	if !terminalEnvelopeAction(args[0]) {
 		return execute(cfg, args, stdout, stderr)
 	}

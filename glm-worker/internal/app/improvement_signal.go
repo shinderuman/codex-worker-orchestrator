@@ -6,6 +6,11 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
+type parentHandoffImprovementSignal struct {
+	Signal     state.ImprovementSignal `json:"signal"`
+	ActionSpec parentHandoffActionSpec `json:"action_spec"`
+}
+
 const (
 	improvementSignalKindParameter   = "signal-kind"
 	improvementSignalCountParameter  = "signal-count"
@@ -14,33 +19,32 @@ const (
 	invalidPacketOutcome             = "invalid_packet"
 )
 
-func projectImprovementSignal(output *parentHandoffOutput) {
+func projectImprovementSignal(output *parentHandoffOutput) *parentHandoffImprovementSignal {
 	if output == nil {
-		return
+		return nil
 	}
-	signal := improvementSignalFromMaterial(output.LastMaterial)
-	if signal == nil {
-		return
-	}
-	projectImprovementSignalAction(&output.RequiredAction, &output.AllowedActions, &output.RequiredActionParameters, *signal)
+	return improvementSignalAdvisory(improvementSignalFromMaterial(output.LastMaterial))
 }
 
-func projectRecoveryImprovementSignal(output *parentHandoffRecoveryOutput) {
+func projectRecoveryImprovementSignal(output *parentHandoffRecoveryOutput) *parentHandoffImprovementSignal {
 	if output == nil {
-		return
+		return nil
 	}
-	signal := improvementSignalFromRecoveryMaterial(output.LastMaterial)
-	if signal == nil {
-		return
-	}
-	projectImprovementSignalAction(&output.RequiredAction, &output.AllowedActions, &output.RequiredActionParameters, *signal)
+	return improvementSignalAdvisory(improvementSignalFromRecoveryMaterial(output.LastMaterial))
 }
 
-func projectImprovementSignalAction(required **string, allowed *[]string, parameters *map[string]string, signal state.ImprovementSignal) {
-	action := string(state.ParentActionImprovementDisposition)
-	*required = &action
-	*allowed = []string{action}
-	*parameters = improvementSignalParameters(signal)
+func improvementSignalAdvisory(signal *state.ImprovementSignal) *parentHandoffImprovementSignal {
+	if signal == nil {
+		return nil
+	}
+	spec, ok := improvementDispositionActionSpec(improvementSignalParameters(*signal))
+	if !ok {
+		return nil
+	}
+	return &parentHandoffImprovementSignal{
+		Signal:     *signal,
+		ActionSpec: spec,
+	}
 }
 
 func improvementSignalParameters(signal state.ImprovementSignal) map[string]string {

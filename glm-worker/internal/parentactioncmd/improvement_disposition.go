@@ -30,24 +30,6 @@ const (
 	improvementTaskOption         = "--task"
 )
 
-func requireImprovementSignalDisposition(cfg config.AppConfig, action string) error {
-	if action == actionImprovementDisposition {
-		return nil
-	}
-	st, err := state.NewStateStore(cfg)
-	if err != nil {
-		return err
-	}
-	signal, err := app.CurrentImprovementSignal(st)
-	if err != nil {
-		return fmt.Errorf("improvement signal state is unreadable: %w", err)
-	}
-	if signal == nil {
-		return nil
-	}
-	return fmt.Errorf("machine-visible improvement signal %s/%s requires parent disposition before %s", signal.Kind, signal.SourceCallID, action)
-}
-
 func executeImprovementDisposition(cfg config.AppConfig, args []string, stdout io.Writer) error {
 	kind, sourceCallID, disposition, targetTask, err := parseImprovementDispositionArgs(args)
 	if err != nil {
@@ -107,17 +89,18 @@ func writeExistingImprovementDisposition(st *state.StateStore, kind, sourceCallI
 }
 
 func applyImprovementDisposition(st *state.StateStore, disposition state.ImprovementSignalDisposition, targetTask string) error {
+	if !state.ImprovementDispositionNeedsTask(disposition) {
+		return nil
+	}
 	sourceActive := st.ReadOr("active-task", "")
 	if sourceActive == "" {
-		return fmt.Errorf("improvement signal disposition requires a current ACTIVE task binding")
+		return fmt.Errorf("improvement signal disposition %s requires a current ACTIVE task binding", disposition)
 	}
 	if err := taskcontract.ValidateActiveTaskPath(sourceActive); err != nil {
 		return fmt.Errorf("current ACTIVE task binding is invalid: %w", err)
 	}
-	if state.ImprovementDispositionNeedsTask(disposition) {
-		if err := taskcontract.ValidateActiveTaskPath(targetTask); err != nil {
-			return err
-		}
+	if err := taskcontract.ValidateActiveTaskPath(targetTask); err != nil {
+		return err
 	}
 	if disposition != state.ImprovementSignalDispositionAdopt {
 		return nil
