@@ -7,12 +7,8 @@ import (
 )
 
 type projectContinuationObligation struct {
-	State          string                         `json:"state"`
-	Task           string                         `json:"task,omitempty"`
-	RequiredAction string                         `json:"required_action,omitempty"`
-	Reason         string                         `json:"reason"`
-	Blocker        *projectStateBlocker           `json:"blocker,omitempty"`
-	Automation     *projectContinuationAutomation `json:"automation,omitempty"`
+	repositoryproject.Continuation
+	Automation *projectContinuationAutomation `json:"automation,omitempty"`
 }
 
 const (
@@ -111,23 +107,11 @@ func goalTerminalCompatible(status state.TaskStatus, pinned string, planKnown bo
 }
 
 func projectContinuationFromPolicy(continuation repositoryproject.Continuation) projectContinuationObligation {
-	return projectContinuationObligation{
-		State:          continuation.State,
-		Task:           continuation.Task,
-		RequiredAction: continuation.RequiredAction,
-		Reason:         continuation.Reason,
-		Blocker:        cloneProjectBlocker(continuation.Blocker),
-	}
+	return projectContinuationObligation{Continuation: continuation}
 }
 
 func projectContinuationToPolicy(continuation projectContinuationObligation) repositoryproject.Continuation {
-	return repositoryproject.Continuation{
-		State:          continuation.State,
-		Task:           continuation.Task,
-		RequiredAction: continuation.RequiredAction,
-		Reason:         continuation.Reason,
-		Blocker:        cloneProjectBlocker(continuation.Blocker),
-	}
+	return continuation.Continuation
 }
 
 func cloneProjectBlockers(blockers []projectStateBlocker) []repositoryproject.Blocker {
@@ -137,15 +121,6 @@ func cloneProjectBlockers(blockers []projectStateBlocker) []repositoryproject.Bl
 		cloned[i].Outstanding = append([]string(nil), blockers[i].Outstanding...)
 	}
 	return cloned
-}
-
-func cloneProjectBlocker(blocker *repositoryproject.Blocker) *projectStateBlocker {
-	if blocker == nil {
-		return nil
-	}
-	cloned := *blocker
-	cloned.Outstanding = append([]string(nil), blocker.Outstanding...)
-	return &cloned
 }
 
 func cloneStringPointer(value *string) *string {
