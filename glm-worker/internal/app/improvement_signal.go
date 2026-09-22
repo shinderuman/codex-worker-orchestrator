@@ -8,7 +8,7 @@ import (
 
 type parentHandoffImprovementSignal struct {
 	Signal     state.ImprovementSignal `json:"signal"`
-	ActionSpec parentHandoffActionSpec  `json:"action_spec"`
+	ActionSpec parentHandoffActionSpec `json:"action_spec"`
 }
 
 const (
