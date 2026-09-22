@@ -36,9 +36,6 @@ func TestHelpCommandInventoryCoversParserRegistry(t *testing.T) {
 		visible[command] = true
 	}
 	for command := range commandParsers {
-		if command == "--decision" || command == "--fix" {
-			continue
-		}
 		if !visible[command] {
 			t.Errorf("parser registry command %q is missing from --help", command)
 		}
