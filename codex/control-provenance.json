@@ -314,8 +314,8 @@
       "purpose": "Project parent-visible evidence under a scoped lease and suppress duplicate bodies without losing the canonical claim boundary.",
       "machine_owners": [
         {
-          "path": "glm-worker/internal/app/parent_evidence.go",
-          "symbol": "commitParentEvidenceProjectionLocked"
+          "path": "glm-worker/internal/parentevidence/projector.go",
+          "symbol": "Projector.commitLocked"
         }
       ],
       "tests": [
@@ -330,12 +330,12 @@
       ],
       "postconditions": [
         {
-          "path": "glm-worker/internal/app/parent_evidence.go",
-          "symbol": "degradeDuplicateParentEvidenceParts"
+          "path": "glm-worker/internal/parentevidence/projector.go",
+          "symbol": "Projector.degradeDuplicateParts"
         },
         {
-          "path": "glm-worker/internal/app/parent_evidence.go",
-          "symbol": "saveSurvivingParentEvidenceClaims"
+          "path": "glm-worker/internal/parentevidence/projector.go",
+          "symbol": "Projector.saveSurvivingClaims"
         }
       ],
       "projection_guards": [

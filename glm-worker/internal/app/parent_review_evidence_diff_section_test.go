@@ -1,13 +1,17 @@
 package app
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentevidence"
+)
 
 func TestParentReviewDiffCoversQuotedPath(t *testing.T) {
 	diff := parentEvidenceDiffBody{
 		Body:  "diff --git \"a/q\\\"x.go\" \"b/q\\\"x.go\"\n--- \"a/q\\\"x.go\"\n+++ \"b/q\\\"x.go\"\n@@ -1 +1 @@\n-old\n+new\n",
 		Files: []parentEvidenceDiffFile{{Path: "q\"x.go", Status: "M", HeadBlob: "blob", WorktreeSHA: "sha"}},
 	}
-	if !parentReviewDiffCoversTarget("q\"x.go:1", diff) {
+	if !parentevidence.ReviewDiffCoversTarget("q\"x.go:1", diff) {
 		t.Fatal("quoted diff path did not cover matching line target")
 	}
 }
@@ -17,7 +21,7 @@ func TestParentReviewDiffCoversGitOctalQuotedPath(t *testing.T) {
 		Body:  "diff --git \"a/\\346\\227\\245\\346\\234\\254\\350\\252\\236.go\" \"b/\\346\\227\\245\\346\\234\\254\\350\\252\\236.go\"\n--- \"a/\\346\\227\\245\\346\\234\\254\\350\\252\\236.go\"\n+++ \"b/\\346\\227\\245\\346\\234\\254\\350\\252\\236.go\"\n@@ -1 +1 @@\n-old\n+new\n",
 		Files: []parentEvidenceDiffFile{{Path: "日本語.go", Status: "M", HeadBlob: "blob", WorktreeSHA: "sha"}},
 	}
-	if !parentReviewDiffCoversTarget("日本語.go:1", diff) {
+	if !parentevidence.ReviewDiffCoversTarget("日本語.go:1", diff) {
 		t.Fatal("octal-quoted diff path did not cover matching line target")
 	}
 }
@@ -27,7 +31,7 @@ func TestParentReviewDiffCoversUnquotedPathWithSpaces(t *testing.T) {
 		Body:  "diff --git a/hello world.go b/hello world.go\n--- a/hello world.go\n+++ b/hello world.go\n@@ -1 +1 @@\n-old\n+new\n",
 		Files: []parentEvidenceDiffFile{{Path: "hello world.go", Status: "M", HeadBlob: "blob", WorktreeSHA: "sha"}},
 	}
-	if !parentReviewDiffCoversTarget("hello world.go:1", diff) {
+	if !parentevidence.ReviewDiffCoversTarget("hello world.go:1", diff) {
 		t.Fatal("unquoted diff path with spaces did not cover matching line target")
 	}
 }
@@ -38,10 +42,10 @@ func TestParentReviewDiffCoversUnquotedRenameWithSpaces(t *testing.T) {
 		Body:  body,
 		Files: []parentEvidenceDiffFile{{Path: "new name.go", Status: "R", HeadBlob: "blob", WorktreeSHA: "sha"}},
 	}
-	if !parentReviewDiffCoversTarget("new name.go:1", diff) {
+	if !parentevidence.ReviewDiffCoversTarget("new name.go:1", diff) {
 		t.Fatal("unquoted renamed path with spaces did not cover matching line target")
 	}
-	if section := parentReviewDiffFileSection(body, "old name.go"); section == "" {
+	if section := parentevidence.ReviewDiffFileSection(body, "old name.go"); section == "" {
 		t.Fatal("unquoted rename old path with spaces did not resolve its diff section")
 	}
 }
@@ -51,7 +55,7 @@ func TestParentReviewDiffBarePathRequiresVisibleSection(t *testing.T) {
 		Body:  "diff --git a/other.go b/other.go\n--- a/other.go\n+++ b/other.go\n@@ -1 +1 @@\n-old\n+new\n",
 		Files: []parentEvidenceDiffFile{{Path: "symbol.go", Status: "M", HeadBlob: "blob", WorktreeSHA: "sha"}},
 	}
-	if parentReviewDiffCoversTarget("symbol.go", diff) {
+	if parentevidence.ReviewDiffCoversTarget("symbol.go", diff) {
 		t.Fatal("bare path without a visible diff section counted as proof")
 	}
 }
@@ -62,7 +66,7 @@ func TestParentReviewDiffRejectsUnsupportedTargetSuffix(t *testing.T) {
 		Files: []parentEvidenceDiffFile{{Path: "symbol.go", Status: "M", HeadBlob: "blob", WorktreeSHA: "sha"}},
 	}
 	for _, target := range []string{"symbol.go OtherSymbol", "symbol.go,OtherSymbol"} {
-		if parentReviewDiffCoversTarget(target, diff) {
+		if parentevidence.ReviewDiffCoversTarget(target, diff) {
 			t.Fatalf("unsupported target suffix counted as proof: %q", target)
 		}
 	}

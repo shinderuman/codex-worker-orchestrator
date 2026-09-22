@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"testing"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentevidence"
 )
 
 func TestPrintParentReviewEvidenceBuildsFromOpenBinding(t *testing.T) {
@@ -11,7 +13,7 @@ func TestPrintParentReviewEvidenceBuildsFromOpenBinding(t *testing.T) {
 	openParentEvidenceReview(t, st, snapshot, "review.go:2-3(exact target)")
 
 	var stdout bytes.Buffer
-	if err := PrintParentReviewEvidence(cfg, st, &stdout); err != nil {
+	if err := parentevidence.PrintReviewEvidence(cfg.RepoRoot, st, &stdout); err != nil {
 		t.Fatal(err)
 	}
 	var output parentEvidenceOutput
@@ -35,7 +37,7 @@ func TestBuildParentReviewEvidenceManifestUsesDiffForSymbolTarget(t *testing.T) 
 	_, st, snapshot := newParentEvidenceReviewStore(t)
 	openParentEvidenceReview(t, st, snapshot, "review.go:target")
 
-	manifest, err := buildParentReviewEvidenceManifest(st)
+	manifest, err := parentevidence.BuildReviewManifest(st)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +51,7 @@ func TestBuildParentReviewEvidenceManifestUsesDiffForSymbolTarget(t *testing.T) 
 
 func TestBuildParentReviewEvidenceManifestRequiresOpenReview(t *testing.T) {
 	_, st, _ := newParentEvidenceReviewStore(t)
-	if _, err := buildParentReviewEvidenceManifest(st); err == nil {
+	if _, err := parentevidence.BuildReviewManifest(st); err == nil {
 		t.Fatal("review evidence builder accepted a missing open review")
 	}
 }
@@ -57,7 +59,7 @@ func TestBuildParentReviewEvidenceManifestRequiresOpenReview(t *testing.T) {
 func TestBuildParentReviewEvidenceManifestRejectsAmbiguousTarget(t *testing.T) {
 	_, st, snapshot := newParentEvidenceReviewStore(t)
 	openParentEvidenceReview(t, st, snapshot, "inspect-current-review")
-	if _, err := buildParentReviewEvidenceManifest(st); err == nil {
+	if _, err := parentevidence.BuildReviewManifest(st); err == nil {
 		t.Fatal("review evidence builder accepted a target without path:locator")
 	}
 }

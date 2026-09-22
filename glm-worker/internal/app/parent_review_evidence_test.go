@@ -12,6 +12,7 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentevidence"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -187,24 +188,24 @@ func TestParentReviewEvidenceClaimCoverage(t *testing.T) {
 			},
 		},
 	}
-	claims, ok := parentReviewEvidenceClaims([]string{"review.go:10-12", "symbol.go:TargetSymbol"}, parts)
+	claims, ok := parentevidence.ReviewClaims([]string{"review.go:10-12", "symbol.go:TargetSymbol"}, parts)
 	if !ok || len(claims) != 2 || claims[0].Kind != "source" || claims[1].Kind != "diff" {
 		t.Fatalf("claims = %#v complete=%v", claims, ok)
 	}
-	if _, ok := parentReviewEvidenceClaims([]string{"review.go:16"}, parts); ok {
+	if _, ok := parentevidence.ReviewClaims([]string{"review.go:16"}, parts); ok {
 		t.Fatal("source outside requested target range counted as proof")
 	}
-	if _, ok := parentReviewEvidenceClaims([]string{"symbol.go:OtherSymbol"}, parts); ok {
+	if _, ok := parentevidence.ReviewClaims([]string{"symbol.go:OtherSymbol"}, parts); ok {
 		t.Fatal("unrelated same-file diff counted as symbol proof")
 	}
-	if !parentReviewDiffCoversTarget("symbol.go:10-12", *parts[1].Diff) {
+	if !parentevidence.ReviewDiffCoversTarget("symbol.go:10-12", *parts[1].Diff) {
 		t.Fatal("visible diff hunk did not cover numeric target")
 	}
-	if parentReviewDiffCoversTarget("symbol.go:20", *parts[1].Diff) {
+	if parentevidence.ReviewDiffCoversTarget("symbol.go:20", *parts[1].Diff) {
 		t.Fatal("unrelated same-file diff counted as line proof")
 	}
 	parts[0].Source.Content = ""
-	if _, ok := parentReviewEvidenceClaims([]string{"review.go:10"}, parts); ok {
+	if _, ok := parentevidence.ReviewClaims([]string{"review.go:10"}, parts); ok {
 		t.Fatal("non-model-visible source counted as proof")
 	}
 }
