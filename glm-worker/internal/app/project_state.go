@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryproject"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryprojecttree"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
@@ -168,7 +169,7 @@ func projectStateEvidenceUnmet(cfg config.AppConfig, st *state.StateStore, compl
 
 func projectStateValidationPass(validations []parentHandoffValidation) bool {
 	for _, validation := range validations {
-		if validation.Status == qualityGateStatusPass {
+		if validation.Status == qualitygate.StatusPass {
 			return true
 		}
 	}
