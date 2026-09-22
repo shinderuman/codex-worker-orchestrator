@@ -3,10 +3,6 @@ package app
 import (
 	"errors"
 	"fmt"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskview"
 	"io"
 	"os"
 	"os/exec"
@@ -14,6 +10,11 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskview"
 )
 
 func reconcileQualityGateRun(st *state.StateStore, runID string) (qualityGateRunRecord, error) {
@@ -139,17 +140,11 @@ func qualityGateRepositoryRoot(workingDir string) (string, error) {
 	return filepath.Clean(strings.TrimSpace(string(out))), nil
 }
 
-func newValidationRunID() (string, error) {
-	return qualitygate.NewRunID()
-}
-
-func validValidationRunID(runID string) bool {
-	return qualitygate.ValidRunID(runID)
-}
-
-func qualityGateRunRelativePath(runID string) string {
-	return qualitygate.RunRelativePath(runID)
-}
+var (
+	newValidationRunID          = qualitygate.NewRunID
+	validValidationRunID        = qualitygate.ValidRunID
+	qualityGateRunRelativePath  = qualitygate.RunRelativePath
+)
 
 func writeQualityGateRun(st *state.StateStore, record qualityGateRunRecord) error {
 	if !validValidationRunID(record.ValidationRunID) {
