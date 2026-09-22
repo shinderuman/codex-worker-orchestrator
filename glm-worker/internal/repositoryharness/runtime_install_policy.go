@@ -5,9 +5,6 @@ import (
 	"strings"
 )
 
-// RuntimeInstallPath reports whether a repository path belongs to the installed
-// runtime surface for this repository. The path inventory is repository policy;
-// callers should keep diff enumeration and digest mechanics separate.
 func RuntimeInstallPath(path string) bool {
 	path = filepath.ToSlash(filepath.Clean(path))
 	switch path {
