@@ -152,6 +152,13 @@ func persistPublicationCandidate(repoRoot string, st *state.StateStore, source p
 }
 
 func publicationCandidateAdmission(cfg config.AppConfig, st *state.StateStore) *finalizationFailure {
+	active, err := repositoryharness.RuntimeActive(cfg.RepoRoot, st)
+	if err != nil {
+		return publicationCandidateFailure(publicationFailureHarnessInactive, err.Error())
+	}
+	if !active {
+		return publicationCandidateFailure(publicationFailureHarnessInactive, "repository harness activation pin is inactive")
+	}
 	decision, err := repositoryharness.Evaluate(cfg.RepoRoot)
 	if err != nil {
 		return publicationCandidateFailure(publicationFailureHarnessInactive, err.Error())

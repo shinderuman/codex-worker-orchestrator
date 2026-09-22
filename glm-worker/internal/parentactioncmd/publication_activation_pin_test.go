@@ -9,6 +9,48 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
+func TestTaskScopedParentActionsDoNotLateOptInPinnedInactiveHarness(t *testing.T) {
+	cfg, st := newInstallActionRepo(t)
+	writeInstallActionScript(t, cfg.RepoRoot, "#!/bin/sh\n# task runtime edit\nexit 0\n", 0o755)
+	if err := st.Write("active-task", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Write(repositoryharness.ActivationStateKey, repositoryharness.ActivationInactiveValue); err != nil {
+		t.Fatal(err)
+	}
+
+	if failure := publicationCandidateAdmission(cfg, st); failure == nil || failure.Reason != publicationFailureHarnessInactive {
+		t.Fatalf("pinned inactive task admitted publication candidate: %#v", failure)
+	}
+	if failure := installRepositoryGuard(cfg.RepoRoot, st); failure == nil || failure.Reason != "repository_harness_inactive" {
+		t.Fatalf("pinned inactive task admitted runtime install: %#v", failure)
+	}
+	if failure := verifyRuntimeInstallCompletion(cfg, st); failure != nil {
+		t.Fatalf("pinned inactive task applied repository runtime completion policy: %#v", failure)
+	}
+}
+
+func TestTaskScopedParentActionsFailClosedOnPinnedActiveMarkerRemoval(t *testing.T) {
+	cfg, st := newInstallActionRepo(t)
+	writeInstallActionScript(t, cfg.RepoRoot, "#!/bin/sh\n# task runtime edit\nexit 0\n", 0o755)
+	if err := st.Write(repositoryharness.ActivationStateKey, repositoryharness.ActivationActiveValue); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(cfg.RepoRoot, repositoryharness.MarkerPath)); err != nil {
+		t.Fatal(err)
+	}
+
+	if failure := publicationCandidateAdmission(cfg, st); failure == nil || failure.Reason != publicationFailureHarnessInactive {
+		t.Fatalf("pinned active task admitted publication candidate after marker removal: %#v", failure)
+	}
+	if failure := installRepositoryGuard(cfg.RepoRoot, st); failure == nil || failure.Reason != "repository_harness_inactive" {
+		t.Fatalf("pinned active task admitted runtime install after marker removal: %#v", failure)
+	}
+	if failure := verifyRuntimeInstallCompletion(cfg, st); failure == nil || failure.Reason != runtimeInstallFailureClassification {
+		t.Fatalf("pinned active task skipped runtime completion marker failure: %#v", failure)
+	}
+}
+
 func TestPublicationGuardsStayActiveAfterPinnedHarnessMarkerRemoval(t *testing.T) {
 	cfg, st := newInstallActionRepo(t)
 	if err := st.SetTaskStatus(state.TaskStatusAwaitingParentCompletion); err != nil {

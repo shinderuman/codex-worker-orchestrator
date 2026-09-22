@@ -254,11 +254,11 @@ func persistRuntimeInstallCompletionAfterSmoke(cfg config.AppConfig, st *state.S
 }
 
 func verifyRuntimeInstallCompletion(cfg config.AppConfig, st *state.StateStore) *finalizationFailure {
-	decision, err := repositoryharness.Evaluate(cfg.RepoRoot)
+	active, err := repositoryharness.RuntimeActive(cfg.RepoRoot, st)
 	if err != nil {
 		return runtimeInstallFailure(runtimeInstallFailureClassification, err.Error())
 	}
-	if !decision.Active {
+	if !active {
 		return nil
 	}
 	requirement, err := runtimeInstallRequirementForTask(cfg.RepoRoot, st)
@@ -267,6 +267,13 @@ func verifyRuntimeInstallCompletion(cfg config.AppConfig, st *state.StateStore) 
 	}
 	if !requirement.Required {
 		return nil
+	}
+	decision, err := repositoryharness.Evaluate(cfg.RepoRoot)
+	if err != nil {
+		return runtimeInstallFailure(runtimeInstallFailureClassification, err.Error())
+	}
+	if !decision.Active {
+		return runtimeInstallFailure(runtimeInstallFailureClassification, decision.Reason)
 	}
 	evidence, failure := matchingRuntimeInstallEvidence(st, requirement)
 	if failure != nil {

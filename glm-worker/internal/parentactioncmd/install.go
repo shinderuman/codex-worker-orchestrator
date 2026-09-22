@@ -72,7 +72,7 @@ func runRuntimeInstallAttemptLocked(cfg config.AppConfig, st *state.StateStore, 
 	if !plan.Allows(state.ParentActionInstall) {
 		return runtimeInstallAttempt{}, fmt.Errorf("install is not admitted for the current task (required action %s)", plan.RequiredAction)
 	}
-	if failure := installRepositoryGuard(cfg.RepoRoot); failure != nil {
+	if failure := installRepositoryGuard(cfg.RepoRoot, st); failure != nil {
 		return runtimeInstallAttempt{output: installOutput{Status: installStatusGuardRejected, Failure: failure}}, nil
 	}
 	script, failure := installScriptGuard(cfg.RepoRoot)
@@ -141,7 +141,14 @@ func validateRuntimeInstallPostSmoke(st *state.StateStore, expectedTaskID string
 	return nil
 }
 
-func installRepositoryGuard(repoRoot string) *finalizationFailure {
+func installRepositoryGuard(repoRoot string, st *state.StateStore) *finalizationFailure {
+	active, err := repositoryharness.RuntimeActive(repoRoot, st)
+	if err != nil {
+		return &finalizationFailure{Stage: "install", Reason: "repository_harness_unavailable", Detail: compactFinalizationDiagnostic(err.Error())}
+	}
+	if !active {
+		return &finalizationFailure{Stage: "install", Reason: "repository_harness_inactive", Detail: "repository harness activation pin is inactive"}
+	}
 	decision, err := repositoryharness.Evaluate(repoRoot)
 	if err != nil {
 		return &finalizationFailure{Stage: "install", Reason: "repository_harness_unavailable", Detail: compactFinalizationDiagnostic(err.Error())}
