@@ -108,14 +108,14 @@ func (p *Projector) markReviewProof(parts []Part) error {
 	if binding == nil {
 		return nil
 	}
-	claims, complete := reviewClaims(binding.Targets, parts)
+	claims, complete := ReviewClaims(binding.Targets, parts)
 	if !complete {
 		return nil
 	}
 	return p.st.MarkParentReviewEvidence(binding.ID, p.ownerCallID, claims)
 }
 
-func reviewClaims(targets []string, parts []Part) ([]state.ParentReviewEvidenceClaim, bool) {
+func ReviewClaims(targets []string, parts []Part) ([]state.ParentReviewEvidenceClaim, bool) {
 	claims := make([]state.ParentReviewEvidenceClaim, 0, len(targets))
 	seen := make(map[string]struct{})
 	for _, target := range targets {
@@ -141,7 +141,7 @@ func reviewClaimForTarget(target string, parts []Part) (state.ParentReviewEviden
 		if part.Source != nil && part.Source.Content != "" && reviewSourceCoversTarget(target, *part.Source) {
 			return state.ParentReviewEvidenceClaim{Kind: "source", Digest: part.Digest, Locator: part.Locator}, true
 		}
-		if part.Diff != nil && part.Diff.Body != "" && reviewDiffCoversTarget(target, *part.Diff) {
+		if part.Diff != nil && part.Diff.Body != "" && ReviewDiffCoversTarget(target, *part.Diff) {
 			return state.ParentReviewEvidenceClaim{Kind: "diff", Digest: part.Digest, Locator: part.Locator}, true
 		}
 	}
@@ -161,7 +161,7 @@ func reviewSourceCoversTarget(target string, source SourceBody) bool {
 	return ok && source.LineStart <= start && source.LineEnd >= end
 }
 
-func reviewDiffCoversTarget(target string, diff DiffBody) bool {
+func ReviewDiffCoversTarget(target string, diff DiffBody) bool {
 	target = strings.TrimSpace(target)
 	for _, file := range diff.Files {
 		if reviewDiffFileCoversTarget(target, file, diff.Body) {
@@ -178,7 +178,7 @@ func reviewDiffFileCoversTarget(target string, file DiffFile, body string) bool 
 	if file.HeadBlob == "" && file.IndexBlob == "" && file.WorktreeSHA == "" {
 		return false
 	}
-	section := reviewDiffFileSection(body, file.Path)
+	section := ReviewDiffFileSection(body, file.Path)
 	if section == "" {
 		return false
 	}
@@ -196,7 +196,7 @@ func reviewDiffFileCoversTarget(target string, file DiffFile, body string) bool 
 	return locator != "" && strings.Contains(section, locator)
 }
 
-func reviewDiffFileSection(body, path string) string {
+func ReviewDiffFileSection(body, path string) string {
 	if body == "" || path == "" {
 		return ""
 	}
