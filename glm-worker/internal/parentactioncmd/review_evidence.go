@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/app"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentevidence"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -19,5 +19,5 @@ func executeParentReviewEvidence(cfg config.AppConfig, args []string, stdout io.
 	if err != nil {
 		return err
 	}
-	return app.PrintParentReviewEvidence(cfg, st, stdout)
+	return parentevidence.PrintReviewEvidence(cfg.RepoRoot, st, stdout)
 }
