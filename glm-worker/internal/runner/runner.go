@@ -538,13 +538,12 @@ func streamResultSummary(parsed claudeJSONResult, parseErr error) string {
 
 func classifyPlainStdoutFailure(plain string) ProviderFailureClass {
 	class := ClassifyProviderFailureText(plain)
-	if class.Kind == ProviderFailureZaiFiveHour {
-		return ProviderFailureClass{Kind: class.Kind, FiveHourLimit: class.FiveHourLimit}
-	}
-	if class.Kind == ProviderFailureTransient {
+	switch class.Kind {
+	case ProviderFailureZaiFiveHour, ProviderFailureZaiLongQuota, ProviderFailureZaiActionRequired, ProviderFailureZaiUnknownSafeStop, ProviderFailureTransient:
 		return class
+	default:
+		return ProviderFailureClass{}
 	}
-	return ProviderFailureClass{}
 }
 
 func writeResultOutput(outputPath string, response string, summary string, stderrPath string) error {

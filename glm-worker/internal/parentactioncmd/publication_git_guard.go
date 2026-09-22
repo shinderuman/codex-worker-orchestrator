@@ -80,7 +80,7 @@ func verifyPublicationRefTransaction(cfg config.AppConfig, st *state.StateStore,
 	exactPromotion := publicationExactCandidatePromotion(candidate, oldOID, newOID)
 	exactRollback := publicationExactPromotionRollback(candidate, oldOID, newOID)
 	if authority == "" {
-		if exactPromotion || exactRollback {
+		if oldOID == candidate.CommitOID || newOID == candidate.CommitOID {
 			return fmt.Errorf("publication ref update rejected: transaction authority missing")
 		}
 		return nil

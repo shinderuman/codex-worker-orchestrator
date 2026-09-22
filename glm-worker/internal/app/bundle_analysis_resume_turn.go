@@ -15,11 +15,10 @@ type analysisResumeTurnEvidence struct {
 }
 
 type analysisTaskOwnership struct {
-	status              string
-	initial             *analysisRolloutTurn
-	final               *analysisRolloutTurn
-	owned               map[string]struct{}
-	sameTurnInterleaved bool
+	status  string
+	initial *analysisRolloutTurn
+	final   *analysisRolloutTurn
+	owned   map[string]struct{}
 }
 
 type analysisRolloutCompletedEvent struct {
@@ -78,7 +77,6 @@ func resolveAnalysisTaskOwnership(scan bundleRolloutScan, taskStart, collectionE
 			return analysisTaskOwnership{status: analysisStatusUnknown}
 		}
 	}
-	ownership.sameTurnInterleaved = analysisOwnershipHasSameTurnInterleavedUserMessage(scan, ownership, taskStart, collectionEnd)
 	return ownership
 }
 

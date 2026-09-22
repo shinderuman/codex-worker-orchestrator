@@ -3,6 +3,7 @@ package runner
 import (
 	"fmt"
 	"regexp"
+	"strings"
 	"time"
 )
 
@@ -55,7 +56,8 @@ func DetectZaiFiveHourLimitText(output string) (ZaiFiveHourLimit, bool) {
 	}
 
 	limit := ZaiFiveHourLimit{}
-	match := zaiResetPattern.FindStringSubmatch(output)
+	record := zaiBusinessCodeRecord(output, code)
+	match := zaiResetPattern.FindStringSubmatch(record)
 	if len(match) != 2 {
 		return limit, true
 	}
@@ -72,6 +74,19 @@ func DetectZaiFiveHourLimitText(output string) (ZaiFiveHourLimit, bool) {
 	}
 
 	return limit, true
+}
+
+func zaiBusinessCodeRecord(output, code string) string {
+	for _, line := range strings.Split(output, "\n") {
+		for _, pattern := range []*regexp.Regexp{zaiJSONBusinessCodePattern, zaiBracketedBusinessCodePattern} {
+			for _, match := range pattern.FindAllStringSubmatchIndex(line, -1) {
+				if len(match) >= 4 && line[match[2]:match[3]] == code {
+					return line[match[1]:]
+				}
+			}
+		}
+	}
+	return ""
 }
 
 func FormatZaiResetAtCST(resetAtRFC3339 string) string {

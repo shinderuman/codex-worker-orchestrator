@@ -2,6 +2,32 @@
 set -eu
 
 remote_name=${1:-}
+case "$0" in
+  */*) hook_dir=${0%/*} ;;
+  *) hook_dir=. ;;
+esac
+hook_dir=$(CDPATH='' cd -- "$hook_dir" && pwd)
+guard_path_file="$hook_dir/glm-parent-action.path"
+if [ ! -f "$guard_path_file" ] || [ -L "$guard_path_file" ]; then
+  printf '%s\n' 'publication guard rejected: configured glm-parent-action path unavailable' >&2
+  exit 1
+fi
+if ! IFS= read -r glm_parent_action <"$guard_path_file"; then
+  printf '%s\n' 'publication guard rejected: configured glm-parent-action path unreadable' >&2
+  exit 1
+fi
+case "$glm_parent_action" in
+/*) ;;
+*)
+  printf '%s\n' 'publication guard rejected: configured glm-parent-action path is not absolute' >&2
+  exit 1
+  ;;
+esac
+if [ ! -x "$glm_parent_action" ]; then
+  printf '%s\n' 'publication guard rejected: configured glm-parent-action is not executable' >&2
+  exit 1
+fi
+
 if [ -z "$remote_name" ]; then
   printf '%s\n' 'publication push rejected: remote identity unavailable' >&2
   exit 1
@@ -10,11 +36,7 @@ fi
 while IFS=' ' read -r local_ref local_oid remote_ref remote_oid; do
   case "$remote_ref" in
   refs/heads/*)
-    if ! command -v glm-parent-action >/dev/null 2>&1; then
-      printf '%s\n' 'publication push rejected: glm-parent-action unavailable' >&2
-      exit 1
-    fi
-    if ! glm-parent-action push-binding push-guard \
+    if ! "$glm_parent_action" push-binding push-guard \
       --remote-name "$remote_name" \
       --local-ref "$local_ref" \
       --local-oid "$local_oid" \

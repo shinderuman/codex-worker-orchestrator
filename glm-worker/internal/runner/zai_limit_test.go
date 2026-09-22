@@ -57,6 +57,22 @@ func TestDetectZaiFiveHourLimitDoesNotDependOnEnglishMessage(t *testing.T) {
 	}
 }
 
+func TestDetectZaiFiveHourLimitUsesResetFromMatchingProviderRecord(t *testing.T) {
+	content := "log 2026-07-22 01:02:03\nAPI Error · [1308][quota][2026-07-22 14:06:34]"
+	limit, ok := DetectZaiFiveHourLimitText(content)
+	if !ok {
+		t.Fatal("expected Z.ai 5h limit")
+	}
+	if limit.ResetAtRFC3339 != "2026-07-22T14:06:34+08:00" {
+		t.Fatalf("reset = %q", limit.ResetAtRFC3339)
+	}
+	sameLine := "2026-07-22 01:02:03 prefix [1308][quota][2026-07-22 14:06:34]"
+	limit, ok = DetectZaiFiveHourLimitText(sameLine)
+	if !ok || limit.ResetAtRFC3339 != "2026-07-22T14:06:34+08:00" {
+		t.Fatalf("same-line reset = %#v, detected=%v", limit, ok)
+	}
+}
+
 func TestDetectZaiFiveHourLimitKeepsInvalidResetUnschedulable(t *testing.T) {
 	content := "API Error: Request rejected (429) · [1308][quota][2026-99-99 14:06:34]\n"
 	limit, ok := DetectZaiFiveHourLimitText(content)

@@ -222,7 +222,7 @@ func publicationShellWrapperNext(segment []publicationShellWord, index int) (int
 	case "time":
 		next, unavailable := publicationTimeWrapperNext(segment, index+1)
 		return next, true, unavailable
-	case "coproc":
+	case "coproc", "nohup", "setsid", "nice", "ionice", "stdbuf", "timeout", "xargs", "flock", "script":
 		return index, true, true
 	}
 	return index, false, false
@@ -863,12 +863,40 @@ func (lexer *publicationShellLexer) flushSegment() {
 }
 
 func publicationGitNoVerify(argv []publicationShellWord) bool {
+	subcommand := publicationGitSubcommand(argv)
 	for _, token := range argv {
-		if token.Value == "--no-verify" {
+		if token.Value == "--no-verify" || subcommand == "commit" && token.Value == "-n" {
 			return true
 		}
 	}
 	return false
+}
+
+func publicationGitSubcommand(argv []publicationShellWord) string {
+	for index := 0; index < len(argv); index++ {
+		value := argv[index].Value
+		if value == "--" {
+			if index+1 < len(argv) {
+				return argv[index+1].Value
+			}
+			return ""
+		}
+		switch value {
+		case "-C", "-c", "--git-dir", "--work-tree", "--namespace", "--super-prefix", "--config-env":
+			index++
+			continue
+		}
+		if strings.HasPrefix(value, "-C") && value != "-C" || strings.HasPrefix(value, "-c") && value != "-c" ||
+			strings.HasPrefix(value, "--git-dir=") || strings.HasPrefix(value, "--work-tree=") ||
+			strings.HasPrefix(value, "--namespace=") || strings.HasPrefix(value, "--super-prefix=") || strings.HasPrefix(value, "--config-env=") {
+			continue
+		}
+		if strings.HasPrefix(value, "-") {
+			continue
+		}
+		return value
+	}
+	return ""
 }
 
 func publicationGitHooksPathBypass(segment []publicationShellWord) bool {

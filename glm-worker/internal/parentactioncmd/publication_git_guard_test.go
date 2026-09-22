@@ -89,6 +89,33 @@ func TestPublicationRefGuardRejectsUnboundExactCandidatePromotion(t *testing.T) 
 	}
 }
 
+func TestPublicationRefGuardRejectsUnboundCandidateEndpointTransitions(t *testing.T) {
+	cfg, st := newInstallActionRepo(t)
+	if err := st.SetTaskStatus(state.TaskStatusAwaitingParentCompletion); err != nil {
+		t.Fatal(err)
+	}
+	writePushBindingFile(t, cfg.RepoRoot, "README.md", "guard candidate\n")
+	publicationGit(t, cfg.RepoRoot, "add", "README.md")
+	candidate, failure := preparePublicationCandidate(cfg, st, "guard publication")
+	if failure != nil {
+		t.Fatalf("prepare failed: %#v", failure)
+	}
+	t.Setenv(publicationRefTransactionEnv, "")
+	branchRef, _, headFailure := publicationPromotionHead(cfg.RepoRoot)
+	if headFailure != nil {
+		t.Fatalf("head = %#v", headFailure)
+	}
+	intermediateOID := strings.Repeat("f", 40)
+	if intermediateOID == candidate.CommitOID {
+		intermediateOID = strings.Repeat("e", 40)
+	}
+	for _, transition := range [][2]string{{intermediateOID, candidate.CommitOID}, {candidate.CommitOID, intermediateOID}} {
+		if err := verifyPublicationRefUpdate(cfg, transition[0], transition[1], branchRef); err == nil || !strings.Contains(err.Error(), "transaction authority missing") {
+			t.Fatalf("unbound candidate endpoint transition was admitted: %s -> %s: %v", transition[0], transition[1], err)
+		}
+	}
+}
+
 func TestPublicationRefGuardRejectsBoundNonCandidateMutation(t *testing.T) {
 	cfg, st := newInstallActionRepo(t)
 	if err := st.SetTaskStatus(state.TaskStatusAwaitingParentCompletion); err != nil {

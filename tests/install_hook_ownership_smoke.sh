@@ -7,6 +7,13 @@ tmp=$(mktemp -d "${TMPDIR:-/tmp}/hook-ownership-smoke.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT HUP INT TERM
 real_git=$(command -v git)
 real_mv=$(command -v mv)
+real_cmp=$(command -v cmp)
+mkdir -p "$tmp/bin"
+guard_bin="$tmp/bin/glm-parent-action"
+printf '#!/bin/sh\nexit 0\n' >"$guard_bin"
+chmod 755 "$guard_bin"
+PATH="$tmp/bin:$PATH"
+export PATH
 
 new_repo() {
 	target=$1
@@ -48,6 +55,7 @@ assert_managed_hooks() {
 	repo=$1
 	managed=$(managed_hooks_path "$repo")
 	test "$(git -C "$repo" config --local --get-all core.hooksPath)" = "$managed"
+	test "$(cat "$managed/glm-parent-action.path")" = "$guard_bin"
 	for hook in post-merge pre-commit reference-transaction pre-push; do
 		test -f "$managed/$hook"
 		test ! -L "$managed/$hook"
@@ -76,6 +84,24 @@ EOF_FAKE_GIT
 	chmod 755 "$fakebin/git"
 	if PATH="$fakebin:$PATH" REAL_GIT="$real_git" FAIL_HOOK_CONFIG=1 sh "$helper" install "$repo" >"$fakebin/install.stdout" 2>"$fakebin/install.stderr"; then
 		printf '%s\n' 'injected git config failure unexpectedly succeeded' >&2
+		exit 1
+	fi
+}
+
+install_with_verification_failure() {
+	repo=$1
+	fakebin=$2
+	mkdir -p "$fakebin"
+	cat >"$fakebin/cmp" <<'EOF_FAKE_CMP'
+#!/bin/sh
+if [ "${FAIL_MANAGED_VERIFY:-0}" = 1 ]; then
+	exit 75
+fi
+exec "$REAL_CMP" "$@"
+EOF_FAKE_CMP
+	chmod 755 "$fakebin/cmp"
+	if PATH="$fakebin:$PATH" REAL_CMP="$real_cmp" FAIL_MANAGED_VERIFY=1 sh "$helper" install "$repo" >"$fakebin/install.stdout" 2>"$fakebin/install.stderr"; then
+		printf '%s\n' 'injected managed snapshot verification failure unexpectedly succeeded' >&2
 		exit 1
 	fi
 }
@@ -157,12 +183,30 @@ done
 sh "$helper" install "$repo"
 assert_managed_hooks "$repo"
 
+repo="$tmp/verification-rollback"
+new_repo "$repo"
+sh "$helper" install "$repo"
+managed=$(managed_hooks_path "$repo")
+before="$tmp/verification-before"
+cp -R "$managed" "$before"
+printf '#!/bin/sh\nexit 66\n' >"$repo/.githooks/pre-push"
+chmod 755 "$repo/.githooks/pre-push"
+git -C "$repo" add .githooks/pre-push
+git -C "$repo" commit -qm 'change hook before verification failure'
+install_with_verification_failure "$repo" "$tmp/fakecmp-verification"
+for hook in post-merge pre-commit reference-transaction pre-push; do
+	cmp "$before/$hook" "$managed/$hook"
+done
+test "$(cat "$managed/glm-parent-action.path")" = "$guard_bin"
+
 repo="$tmp/detached-first"
 new_repo "$repo"
 git -C "$repo" checkout -q --detach HEAD
 sh "$helper" install "$repo" >"$tmp/detached-first.stdout" 2>"$tmp/detached-first.stderr"
 assert_managed_hooks "$repo"
 grep -Fq 'enabled installer-owned snapshot hooks' "$tmp/detached-first.stdout"
+managed=$(managed_hooks_path "$repo")
+printf '%s %s %s\n' "$(git -C "$repo" rev-parse HEAD)" "$(git -C "$repo" rev-parse HEAD)" refs/heads/main | PATH=/usr/bin:/bin "$managed/reference-transaction" prepared
 
 repo="$tmp/detached-refresh"
 new_repo "$repo"

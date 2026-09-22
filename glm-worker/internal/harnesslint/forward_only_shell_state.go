@@ -19,7 +19,8 @@ type shellStateAssignment struct {
 var (
 	shellSimpleAssignmentPattern = regexp.MustCompile(`^[\t ]*([A-Za-z_][A-Za-z0-9_]*)=(.*)$`)
 	shellStateVersionPattern     = regexp.MustCompile(`\bversion=([0-9]+)\b`)
-	shellStateKindPattern        = regexp.MustCompile(`^[\t ]*"?\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?"?\)[\t ]*state_kind=([A-Za-z0-9_-]+)`)
+	shellCaseVariablePattern     = regexp.MustCompile(`^[\t ]*"?\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?"?\)`)
+	shellStateKindPattern        = regexp.MustCompile(`\bstate_kind=(?:"([A-Za-z0-9_-]+)"|'([A-Za-z0-9_-]+)'|([A-Za-z0-9_-]+))`)
 	shellWriteStatePattern       = regexp.MustCompile(`\bwrite_state[\t ]+"?\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?"?`)
 	shellVariablePattern         = regexp.MustCompile(`\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?`)
 	shellCatVariablePattern      = regexp.MustCompile(`\bcat[\t ]+"?\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?"?`)
@@ -154,10 +155,23 @@ func highestShellStateVersion(states map[string]shellVersionedState) int {
 }
 
 func shellStateKindForVariable(lines []string, variable string) string {
-	for _, line := range lines {
-		match := shellStateKindPattern.FindStringSubmatch(strings.TrimSpace(line))
-		if len(match) == 3 && match[1] == variable {
-			return match[2]
+	for index := 0; index < len(lines); index++ {
+		selector := shellCaseVariablePattern.FindStringSubmatch(strings.TrimSpace(lines[index]))
+		if len(selector) != 2 || selector[1] != variable {
+			continue
+		}
+		for arm := index; arm < len(lines); arm++ {
+			match := shellStateKindPattern.FindStringSubmatch(lines[arm])
+			if len(match) == 4 {
+				for _, kind := range match[1:] {
+					if kind != "" {
+						return kind
+					}
+				}
+			}
+			if strings.Contains(lines[arm], ";;") {
+				break
+			}
 		}
 	}
 	return ""

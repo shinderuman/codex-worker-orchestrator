@@ -109,6 +109,21 @@ func TestClassifyProviderFailureTextByZaiBusinessCode(t *testing.T) {
 	}
 }
 
+func TestClassifyPlainStdoutFailurePreservesTerminalZaiClassification(t *testing.T) {
+	for _, text := range []string{
+		`[1308][quota][2026-07-22 14:06:34]`,
+		`[1310][long quota]`,
+		`[1113][action required]`,
+		`[1999][unknown safe stop]`,
+	} {
+		want := ClassifyProviderFailureText(text)
+		got := classifyPlainStdoutFailure(text)
+		if got != want {
+			t.Fatalf("plain stdout classification = %#v, want %#v", got, want)
+		}
+	}
+}
+
 func TestClassifyProviderFailureTextFallbackSignals(t *testing.T) {
 	tests := []struct {
 		name       string

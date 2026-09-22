@@ -26,6 +26,25 @@ esac
 `,
 		},
 		{
+			name: "multiline quoted old ownership state promotion",
+			path: "scripts/manage-hooks.sh",
+			source: `#!/bin/sh
+old_state='version=1 baseline=absent value=.githooks'
+current_state='version=2 baseline=absent value=/managed/hooks'
+case "$(cat "$state_path")" in
+"$old_state")
+	state_kind="old-owned"
+	;;
+"$current_state") state_kind=current-owned ;;
+esac
+case "$state_kind" in
+old-owned)
+	write_state "$current_state"
+	;;
+esac
+`,
+		},
+		{
 			name: "preexisting hook layout adoption",
 			path: "scripts/manage-hooks.sh",
 			source: `#!/bin/sh

@@ -2,6 +2,32 @@
 set -eu
 
 phase=${1:-}
+case "$0" in
+  */*) hook_dir=${0%/*} ;;
+  *) hook_dir=. ;;
+esac
+hook_dir=$(CDPATH='' cd -- "$hook_dir" && pwd)
+guard_path_file="$hook_dir/glm-parent-action.path"
+if [ ! -f "$guard_path_file" ] || [ -L "$guard_path_file" ]; then
+  printf '%s\n' 'publication guard rejected: configured glm-parent-action path unavailable' >&2
+  exit 1
+fi
+if ! IFS= read -r glm_parent_action <"$guard_path_file"; then
+  printf '%s\n' 'publication guard rejected: configured glm-parent-action path unreadable' >&2
+  exit 1
+fi
+case "$glm_parent_action" in
+/*) ;;
+*)
+  printf '%s\n' 'publication guard rejected: configured glm-parent-action path is not absolute' >&2
+  exit 1
+  ;;
+esac
+if [ ! -x "$glm_parent_action" ]; then
+  printf '%s\n' 'publication guard rejected: configured glm-parent-action is not executable' >&2
+  exit 1
+fi
+
 if [ "$phase" != prepared ]; then
   exit 0
 fi
@@ -9,11 +35,7 @@ fi
 while IFS=' ' read -r old_oid new_oid ref_name; do
   case "$ref_name" in
   refs/heads/*)
-    if ! command -v glm-parent-action >/dev/null 2>&1; then
-      printf '%s\n' 'publication ref update rejected: glm-parent-action unavailable' >&2
-      exit 1
-    fi
-    if ! glm-parent-action push-binding ref-guard --old "$old_oid" --new "$new_oid" --ref "$ref_name" >/dev/null; then
+    if ! "$glm_parent_action" push-binding ref-guard --old "$old_oid" --new "$new_oid" --ref "$ref_name" >/dev/null; then
       printf 'publication ref update rejected: %s\n' "$ref_name" >&2
       exit 1
     fi

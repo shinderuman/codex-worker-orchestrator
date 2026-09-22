@@ -115,6 +115,26 @@ func TestSameTurnInterleavedUserMessageFailsClosedAcrossParentUsage(t *testing.T
 	}
 }
 
+func TestSameTurnInterleavingAfterExecutionDoesNotInvalidateExecutionInterval(t *testing.T) {
+	task := newAnalysisTerminalTask(t)
+	turnStart := task.start.Add(-2 * time.Minute)
+	turnComplete := task.completeAt.Add(4 * time.Minute)
+	lines := []string{
+		analysisTurnLine(t, turnStart, codexRolloutTaskStartedType, analysisOwningTurnID),
+		analysisUserMessageLine(t, task.start.Add(-90*time.Second)),
+		parentUsageTokenCountLine(t, task.start.Add(-time.Second), 100, 50, 10, 5, 115),
+		parentUsageToolCallLine(t, task.start.Add(time.Minute), "task-tool"),
+		parentUsageTokenCountLine(t, task.completeAt.Add(-time.Second), 1000, 500, 160, 80, 1500),
+		analysisUserMessageLine(t, task.completeAt.Add(time.Minute)),
+		analysisTurnLine(t, turnComplete, codexRolloutTaskCompleteType, analysisOwningTurnID),
+	}
+	writeAnalysisRollout(t, task.codexHome, analysisRolloutRel(), codexTestParentThreadID, task.start.Add(-3*time.Hour), lines)
+	report := runParentUsageReport(t, task.cfg)
+	if report.Intervals.TaskExecution.Tokens.Status != analysisStatusAvailable || report.Intervals.TaskExecution.Activity.Status != analysisStatusCounted {
+		t.Fatalf("execution interval = %#v", report.Intervals.TaskExecution)
+	}
+}
+
 func analysisUserMessageLine(t *testing.T, timestamp time.Time) string {
 	t.Helper()
 	return analysisRolloutLine(t, timestamp, "event_msg", map[string]any{

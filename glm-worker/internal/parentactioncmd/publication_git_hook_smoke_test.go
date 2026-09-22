@@ -18,6 +18,7 @@ func TestPublicationReferenceTransactionAllowsOrdinaryCommit(t *testing.T) {
 	runContinuationHookGit(t, repo, "config", "core.hooksPath", hooks)
 
 	bin, calls := publicationGuardStub(t, true)
+	bindPublicationHookGuard(t, hooks, bin)
 	if err := os.WriteFile(filepath.Join(repo, "code.txt"), []byte("ordinary\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -53,6 +54,7 @@ func TestPublicationReferenceTransactionAllowsOrdinaryFastForward(t *testing.T) 
 	copyPublicationHook(t, "reference-transaction", hooks)
 	runContinuationHookGit(t, repo, "config", "core.hooksPath", hooks)
 	bin, calls := publicationGuardStub(t, true)
+	bindPublicationHookGuard(t, hooks, bin)
 	cmd := exec.Command("git", "merge", "--ff-only", ahead)
 	cmd.Dir = repo
 	cmd.Env = publicationHookEnv(bin, calls)
@@ -88,6 +90,7 @@ func TestPublicationReferenceTransactionCarriesOwnerAuthority(t *testing.T) {
 	copyPublicationHook(t, "reference-transaction", hooks)
 	runContinuationHookGit(t, cfg.RepoRoot, "config", "core.hooksPath", hooks)
 	bin, calls := publicationGuardStub(t, true)
+	bindPublicationHookGuard(t, hooks, bin)
 	t.Setenv("PATH", bin)
 	t.Setenv("HOOK_CALLS", calls)
 	if err := updatePublicationRef(cfg.RepoRoot, candidate, branchRef, candidate.CommitOID, candidate.BaseHead); err != nil {
@@ -110,6 +113,7 @@ func TestPublicationReferenceTransactionFailsClosedWhenGuardRejects(t *testing.T
 	runContinuationHookGit(t, repo, "config", "core.hooksPath", hooks)
 
 	bin, calls := publicationGuardStub(t, false)
+	bindPublicationHookGuard(t, hooks, bin)
 	if err := os.WriteFile(filepath.Join(repo, "blocked.txt"), []byte("blocked\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -133,13 +137,16 @@ func TestPublicationReferenceTransactionFailsClosedWhenGuardRejects(t *testing.T
 }
 
 func TestPublicationPrePushDelegatesAndFailsClosed(t *testing.T) {
-	hook := continuationHookPath(t, ".githooks", "pre-push")
+	hooks := t.TempDir()
+	copyPublicationHook(t, "pre-push", hooks)
+	hook := filepath.Join(hooks, "pre-push")
 	oldOID := strings.Repeat("1", 40)
 	newOID := strings.Repeat("2", 40)
 	input := "refs/heads/main " + newOID + " refs/heads/main " + oldOID + "\n"
 
 	t.Run("delegates", func(t *testing.T) {
 		bin, calls := publicationGuardStub(t, true)
+		bindPublicationHookGuard(t, hooks, bin)
 		cmd := exec.Command("sh", hook, "origin", "unused")
 		cmd.Stdin = strings.NewReader(input)
 		cmd.Env = publicationHookEnv(bin, calls)
@@ -159,6 +166,7 @@ func TestPublicationPrePushDelegatesAndFailsClosed(t *testing.T) {
 
 	t.Run("fails-closed", func(t *testing.T) {
 		bin, _ := publicationGuardStub(t, false)
+		bindPublicationHookGuard(t, hooks, bin)
 		cmd := exec.Command("sh", hook, "origin", "unused")
 		cmd.Stdin = strings.NewReader(input)
 		cmd.Env = publicationHookEnv(bin, filepath.Join(t.TempDir(), "calls"))
@@ -176,6 +184,14 @@ func copyPublicationHook(t *testing.T, name, destination string) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(destination, name), data, 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func bindPublicationHookGuard(t *testing.T, hooks, bin string) {
+	t.Helper()
+	guard := filepath.Join(bin, "glm-parent-action")
+	if err := os.WriteFile(filepath.Join(hooks, "glm-parent-action.path"), []byte(guard+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 }

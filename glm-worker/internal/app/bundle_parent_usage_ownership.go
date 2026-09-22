@@ -17,7 +17,7 @@ func analysisExecutionUsageComparability(scan bundleRolloutScan, ownership analy
 	if ownership.status != analysisStatusAvailable || ownership.initial == nil || len(ownership.owned) == 0 {
 		return analysisUsageComparability{status: analysisStatusUnknown, reason: parentUsageReasonOwnershipUnknown}
 	}
-	if ownership.sameTurnInterleaved {
+	if analysisOwnershipHasSameTurnInterleavedUserMessage(scan, ownership, start, end) {
 		return analysisUsageComparability{status: codexStatusAmbiguous, reason: parentUsageReasonSameTurnInterleaved}
 	}
 	for index := range scan.turns {

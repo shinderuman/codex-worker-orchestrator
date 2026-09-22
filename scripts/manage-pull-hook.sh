@@ -3,6 +3,7 @@ set -eu
 
 mode=${1:-}
 repo_root=${2:-}
+glm_parent_action_path=${3:-}
 required_hooks='post-merge pre-commit reference-transaction pre-push'
 
 if [ "$mode" != install ] && [ "$mode" != retire ]; then
@@ -12,6 +13,22 @@ fi
 if [ -z "$repo_root" ]; then
 	printf '%s\n' 'repository path is required' >&2
 	exit 2
+fi
+if [ "$mode" = install ] && [ -z "$glm_parent_action_path" ]; then
+	glm_parent_action_path=$(command -v glm-parent-action || true)
+fi
+if [ "$mode" = install ]; then
+	case "$glm_parent_action_path" in
+	/*) ;;
+	*)
+		printf '%s\n' 'git hook: absolute glm-parent-action path is required' >&2
+		exit 1
+		;;
+	esac
+	if [ ! -x "$glm_parent_action_path" ]; then
+		printf 'git hook: glm-parent-action is not executable: %s\n' "$glm_parent_action_path" >&2
+		exit 1
+	fi
 fi
 
 unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES
@@ -71,11 +88,15 @@ write_state() {
 	state_dir=${state_path%/*}
 	mkdir -p "$state_dir"
 	tmp_state="$state_path.tmp.$$"
-	trap 'rm -f "$tmp_state"' EXIT HUP INT TERM
 	umask 077
-	printf '%s\n' "$value" >"$tmp_state"
-	mv "$tmp_state" "$state_path"
-	trap - EXIT HUP INT TERM
+	if ! printf '%s\n' "$value" >"$tmp_state"; then
+		rm -f "$tmp_state"
+		return 1
+	fi
+	if ! mv "$tmp_state" "$state_path"; then
+		rm -f "$tmp_state"
+		return 1
+	fi
 }
 
 managed_path_unclaimed() {
@@ -86,48 +107,57 @@ managed_path_unclaimed() {
 	return 0
 }
 
+staging_hooks_path=
+backup_hooks_path=
+had_active=0
+
+cleanup_snapshot_work() {
+	if [ -e "$backup_hooks_path" ] || [ -L "$backup_hooks_path" ]; then
+		rm -rf "$managed_hooks_path"
+		if ! mv "$backup_hooks_path" "$managed_hooks_path"; then
+			printf 'git hook: failed to restore previous managed snapshot; backup retained at %s\n' "$backup_hooks_path" >&2
+			return 1
+		fi
+	fi
+	rm -rf "$staging_hooks_path"
+}
+
+finalize_managed_hooks() {
+	rm -rf "$staging_hooks_path" "$backup_hooks_path"
+	trap - EXIT HUP INT TERM
+}
+
 install_managed_hooks() {
 	staging_hooks_path="$managed_hooks_path.stage.$$"
 	backup_hooks_path="$managed_hooks_path.backup.$$"
-	cleanup_snapshot_work() {
-		if [ -e "$backup_hooks_path" ] || [ -L "$backup_hooks_path" ]; then
-			if [ ! -e "$managed_hooks_path" ] && [ ! -L "$managed_hooks_path" ]; then
-				mv "$backup_hooks_path" "$managed_hooks_path" || return 1
-			else
-				rm -rf "$backup_hooks_path"
-			fi
-		fi
-		rm -rf "$staging_hooks_path"
-	}
+	had_active=0
 	trap 'cleanup_snapshot_work' EXIT HUP INT TERM
 	rm -rf "$staging_hooks_path" "$backup_hooks_path"
 	mkdir -p "$staging_hooks_path"
+
+	printf '%s\n' "$glm_parent_action_path" >"$staging_hooks_path/glm-parent-action.path"
+	chmod 600 "$staging_hooks_path/glm-parent-action.path"
 
 	for hook in $required_hooks; do
 		staged_hook="$staging_hooks_path/$hook"
 		if ! git -C "$repo_root" show "HEAD:.githooks/$hook" >"$staged_hook"; then
 			printf 'git hook: committed source missing: .githooks/%s\n' "$hook" >&2
-			cleanup_snapshot_work
 			exit 1
 		fi
 		chmod 755 "$staged_hook"
 		if [ ! -s "$staged_hook" ] || [ ! -x "$staged_hook" ]; then
 			printf 'git hook: staged snapshot is not executable and non-empty: .githooks/%s\n' "$hook" >&2
-			cleanup_snapshot_work
 			exit 1
 		fi
 	done
 
-	had_active=0
 	if [ -e "$managed_hooks_path" ] || [ -L "$managed_hooks_path" ]; then
 		if [ ! -d "$managed_hooks_path" ] || [ -L "$managed_hooks_path" ]; then
 			printf 'git hook: managed snapshot path is not an installer-owned directory: %s\n' "$managed_hooks_path" >&2
-			cleanup_snapshot_work
 			exit 1
 		fi
 		if ! mv "$managed_hooks_path" "$backup_hooks_path"; then
 			printf '%s\n' 'git hook: failed to stage existing managed snapshot for replacement' >&2
-			cleanup_snapshot_work
 			exit 1
 		fi
 		had_active=1
@@ -135,19 +165,8 @@ install_managed_hooks() {
 
 	if ! mv "$staging_hooks_path" "$managed_hooks_path"; then
 		printf '%s\n' 'git hook: failed to activate validated managed snapshot' >&2
-		if [ "$had_active" -eq 1 ] && [ ! -e "$managed_hooks_path" ] && [ ! -L "$managed_hooks_path" ]; then
-			if ! mv "$backup_hooks_path" "$managed_hooks_path"; then
-				printf 'git hook: failed to restore previous managed snapshot; backup retained at %s\n' "$backup_hooks_path" >&2
-				trap - EXIT HUP INT TERM
-				exit 1
-			fi
-		fi
-		cleanup_snapshot_work
 		exit 1
 	fi
-
-	rm -rf "$backup_hooks_path"
-	trap - EXIT HUP INT TERM
 }
 
 remove_managed_hooks() {
@@ -166,6 +185,11 @@ verify_managed_install() {
 	fi
 	if [ "$current_hooks_path" != "$managed_hooks_path" ]; then
 		printf 'git hook: managed core.hooksPath postcondition mismatch: %s\n' "$current_hooks_path" >&2
+		exit 1
+	fi
+	guard_path_file="$managed_hooks_path/glm-parent-action.path"
+	if [ ! -f "$guard_path_file" ] || [ -L "$guard_path_file" ] || [ "$(cat "$guard_path_file")" != "$glm_parent_action_path" ]; then
+		printf '%s\n' 'git hook: glm-parent-action path postcondition failed' >&2
 		exit 1
 	fi
 	for hook in $required_hooks; do
@@ -209,6 +233,7 @@ if [ "$state_present" -eq 1 ]; then
 		fi
 		install_managed_hooks
 		verify_managed_install "$managed_state"
+		finalize_managed_hooks
 		printf '%s\n' 'git hook: refreshed installer-owned snapshot hooks'
 		exit 0
 		;;
@@ -226,6 +251,7 @@ if [ "$state_present" -eq 1 ]; then
 		fi
 		write_state "$managed_state"
 		verify_managed_install "$managed_state"
+		finalize_managed_hooks
 		printf '%s\n' 'git hook: recovered interrupted installer-owned snapshot hooks activation'
 		exit 0
 		;;
@@ -246,4 +272,5 @@ if ! git -C "$repo_root" config --local core.hooksPath "$managed_hooks_path"; th
 fi
 write_state "$managed_state"
 verify_managed_install "$managed_state"
+finalize_managed_hooks
 printf '%s\n' 'git hook: enabled installer-owned snapshot hooks'
