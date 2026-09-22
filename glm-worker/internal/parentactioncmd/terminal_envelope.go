@@ -188,11 +188,6 @@ func boundTerminalDiagnostic(value string, maxRunes int) string {
 	return string(runes[:maxRunes]) + "…"
 }
 
-func terminalEnvelopeAction(action string) bool {
-	descriptor, ok := lookupParentActionCommand(action)
-	return ok && descriptor.TerminalEnvelope
-}
-
 func decodeSingleMachineJSON(raw []byte, label string) (json.RawMessage, error) {
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	var value json.RawMessage
