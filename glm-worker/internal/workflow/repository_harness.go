@@ -21,10 +21,6 @@ func (w *Workflow) repositoryHarnessActive() (bool, error) {
 	return repositoryharness.RuntimeActive(w.config.RepoRoot, w.state)
 }
 
-func RepositoryHarnessActive(repoRoot string, st *state.StateStore) (bool, error) {
-	return repositoryharness.RuntimeActive(repoRoot, st)
-}
-
 func (w *Workflow) captureRepositoryHarnessBoundary() (repositoryharness.MarkerGuard, bool, bool, error) {
 	harnessActive, err := w.repositoryHarnessActive()
 	if err != nil {

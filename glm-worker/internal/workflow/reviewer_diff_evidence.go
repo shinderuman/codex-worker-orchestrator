@@ -12,7 +12,7 @@ func (w *Workflow) reviewerNavigationContext(request, activeTaskPath string, rev
 	if err != nil {
 		return "", err
 	}
-	parentMetadataFilterActive, err := RepositoryHarnessActive(w.config.RepoRoot, w.state)
+	parentMetadataFilterActive, err := w.repositoryHarnessActive()
 	if err != nil {
 		return "", err
 	}

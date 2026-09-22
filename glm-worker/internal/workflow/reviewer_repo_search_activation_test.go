@@ -12,7 +12,7 @@ import (
 )
 
 func (w *Workflow) reviewerDiffFirstContext(request string, reviewNumber int) string {
-	parentMetadataFilterActive, err := RepositoryHarnessActive(w.config.RepoRoot, w.state)
+	parentMetadataFilterActive, err := w.repositoryHarnessActive()
 	if err != nil {
 		panic(err)
 	}
