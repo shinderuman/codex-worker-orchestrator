@@ -3,6 +3,7 @@ package app
 import (
 	"testing"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryproject"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -28,7 +29,7 @@ func TestParentContinuationFatalActiveWithoutActionIsInconsistent(t *testing.T) 
 		RequiredAction: &none,
 		AllowedActions: []string{},
 		ParentRequest: &ParentRequestCompletionProjection{
-			Continuation: ProjectContinuation{State: projectContinuationContinueNow},
+			Continuation: ProjectContinuation{Continuation: repositoryproject.Continuation{State: projectContinuationContinueNow}},
 		},
 	}
 
@@ -67,7 +68,7 @@ func TestParentContinuationHealthyActiveWithoutActionRemainsConsistent(t *testin
 		RequiredAction: &none,
 		AllowedActions: []string{},
 		ParentRequest: &ParentRequestCompletionProjection{
-			Continuation: ProjectContinuation{State: projectContinuationContinueNow},
+			Continuation: ProjectContinuation{Continuation: repositoryproject.Continuation{State: projectContinuationContinueNow}},
 		},
 	}
 
