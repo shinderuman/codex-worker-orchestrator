@@ -27,6 +27,7 @@ var taskBoundStatePolicies = []taskBoundStatePolicy{
 	{name: "last-decision", lifetime: taskBoundStateFreshTaskClear},
 	{name: "pending-decision", lifetime: taskBoundStateFreshTaskClear},
 	{name: parentActionBeginStateFile, lifetime: taskBoundStateFreshTaskClear},
+	{name: parentReopenTransactionStateFile, lifetime: taskBoundStateFreshTaskClear},
 	{name: parentReviewStateFile, lifetime: taskBoundStateFreshTaskClear},
 	{name: "last-review", lifetime: taskBoundStateFreshTaskClear},
 	{name: "baseline-status", lifetime: taskBoundStateFreshTaskClear},

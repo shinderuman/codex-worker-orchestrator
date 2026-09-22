@@ -47,6 +47,9 @@ func executeReopen(cfg config.AppConfig, args []string, stdout io.Writer) error 
 	}
 	defer func() { _ = lock.Close() }()
 
+	if err := recoverReopenBeforeAdmission(st); err != nil {
+		return err
+	}
 	plan, admitted, err := st.AdmitParentAction(state.ParentActionReopen)
 	if err != nil {
 		return err
@@ -61,13 +64,22 @@ func executeReopen(cfg config.AppConfig, args []string, stdout io.Writer) error 
 	if err != nil {
 		return err
 	}
+	return writeReopenOutput(stdout, st, after)
+}
+
+func recoverReopenBeforeAdmission(st *state.StateStore) error {
+	_, err := st.RecoverInterruptedParentReopen()
+	return err
+}
+
+func writeReopenOutput(stdout io.Writer, st *state.StateStore, plan state.ParentActionPlan) error {
 	output := reopenOutput{
 		Status:         "reopened",
 		TaskStatus:     string(st.TaskStatus()),
-		RequiredAction: string(after.RequiredAction),
+		RequiredAction: string(plan.RequiredAction),
 		AllowedActions: []string{},
 	}
-	for _, action := range after.AllowedActions {
+	for _, action := range plan.AllowedActions {
 		output.AllowedActions = append(output.AllowedActions, string(action))
 	}
 	return json.NewEncoder(stdout).Encode(output)
