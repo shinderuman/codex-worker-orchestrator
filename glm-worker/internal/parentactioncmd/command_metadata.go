@@ -10,14 +10,12 @@ import (
 
 type parentActionExecutionKind uint8
 
-type parentActionHandoffKind uint8
-
 type parentActionCommandDescriptor struct {
 	Action           string
 	Execute          parentActionExecutionKind
 	TerminalExecute  parentActionExecutionKind
 	TerminalEnvelope bool
-	Handoff          parentActionHandoffKind
+	InProcessHandoff bool
 	Payload          parentaction.PayloadAction
 }
 
@@ -37,11 +35,6 @@ const (
 	parentActionExecutionPreflightDecision
 	parentActionExecutionDefectRegistration
 	parentActionExecutionImprovementDisposition
-)
-
-const (
-	parentActionHandoffWorker parentActionHandoffKind = iota
-	parentActionHandoffInProcess
 )
 
 var parentActionCommands = map[string]parentActionCommandDescriptor{
@@ -135,10 +128,10 @@ var parentActionCommands = map[string]parentActionCommandDescriptor{
 		Execute: parentActionExecutionGitEvidence,
 	},
 	actionReviewEvidence: {
-		Action:           actionReviewEvidence,
-		TerminalExecute:  parentActionExecutionReviewEvidence,
-		TerminalEnvelope: true,
-		Handoff:          parentActionHandoffInProcess,
+		Action:            actionReviewEvidence,
+		TerminalExecute:   parentActionExecutionReviewEvidence,
+		TerminalEnvelope:  true,
+		InProcessHandoff: true,
 	},
 	actionRecordDefectFinding: {
 		Action:           actionRecordDefectFinding,
@@ -256,5 +249,5 @@ func executeSpecialParentAction(
 
 func parentActionUsesInProcessHandoff(action string) bool {
 	descriptor, ok := lookupParentActionCommand(action)
-	return ok && descriptor.Handoff == parentActionHandoffInProcess
+	return ok && descriptor.InProcessHandoff
 }
