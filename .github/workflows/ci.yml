@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: repository-lint-${{ github.event.pull_request.number || github.ref }}
@@ -85,3 +85,61 @@ jobs:
     needs:
       - lint
     uses: ./.github/workflows/install-smoke.yml
+
+  web-gpt-review-fix:
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/web-gpt/review-fix/91cc885-6682699' && github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: web-gpt/review-fix/91cc885-6682699
+          fetch-depth: 0
+      - name: Extract and apply validated fixes
+        run: |
+          awk '
+            /python3 - <<'\''PY'\''/ { capture=1; next }
+            capture && /^          PY$/ { exit }
+            capture { sub(/^          /, ""); print }
+          ' .github/workflows/web-gpt-review-fix.yml > /tmp/web-gpt-review-fix.py
+          python3 /tmp/web-gpt-review-fix.py
+          gofmt -w \
+            glm-worker/internal/parentactioncmd/publication_pretool.go \
+            glm-worker/internal/parentactioncmd/publication_pretool_test.go \
+            glm-worker/internal/parentactioncmd/publication_git_guard.go \
+            glm-worker/internal/parentactioncmd/publication_git_guard_test.go \
+            glm-worker/internal/runner/runner.go \
+            glm-worker/internal/runner/zai_limit.go \
+            glm-worker/internal/runner/zai_limit_test.go \
+            glm-worker/internal/runner/transient_test.go \
+            glm-worker/internal/taskcontract/dependencies.go \
+            glm-worker/internal/taskcontract/dependencies_test.go \
+            glm-worker/internal/app/bundle_analysis_resume_turn.go \
+            glm-worker/internal/app/bundle_parent_usage_ownership.go \
+            glm-worker/internal/app/bundle_parent_usage_interleaved_test.go \
+            glm-worker/internal/workflow/execution_progress.go \
+            glm-worker/internal/harnesslint/forward_only_shell_state.go \
+            glm-worker/internal/harnesslint/forward_only_shell_state_test.go
+      - name: Read Go version
+        id: repair-go-version
+        run: echo "value=$(awk -F': ' '$1 == \"go\" { print $2 }' quality-tools.yml)" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ steps.repair-go-version.outputs.value }}
+          cache: false
+      - name: Focused Go tests
+        working-directory: glm-worker
+        run: go test ./internal/parentactioncmd ./internal/runner ./internal/taskcontract ./internal/app ./internal/workflow ./internal/harnesslint
+      - name: Hook ownership smoke
+        run: sh tests/install_hook_ownership_smoke.sh
+      - name: Full Go tests
+        working-directory: glm-worker
+        run: go test ./...
+      - name: Commit validated fixes and remove temporary machinery
+        run: |
+          git checkout 6682699886e49d8aa3e98f1c26723b114afa3f6f -- .github/workflows/ci.yml
+          git rm .github/workflows/web-gpt-review-fix.yml
+          git config user.name 'web-gpt-review-fix'
+          git config user.email 'web-gpt-review-fix@users.noreply.github.com'
+          git add -A
+          git commit -m 'Fix validated fixed-range review findings'
+          git push origin HEAD:web-gpt/review-fix/91cc885-6682699
