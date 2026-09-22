@@ -116,26 +116,6 @@ func loadParentEvidenceManifest(path string) (parentEvidenceManifest, error) {
 	return parentevidence.DecodeManifest(data)
 }
 
-func validateParentEvidenceManifest(manifest parentEvidenceManifest) error {
-	return parentevidence.ValidateManifest(manifest)
-}
-
-func parentEvidencePartCount(manifest parentEvidenceManifest) int {
-	return parentevidence.PartCount(manifest)
-}
-
-func parentEvidenceRelativePath(path string) bool {
-	return parentevidence.RelativePath(path)
-}
-
-func parentReviewEvidenceClaims(targets []string, parts []parentEvidencePart) ([]state.ParentReviewEvidenceClaim, bool) {
-	return parentevidence.ReviewClaims(targets, parts)
-}
-
-func parentReviewDiffCoversTarget(target string, diff parentEvidenceDiffBody) bool {
-	return parentevidence.ReviewDiffCoversTarget(target, diff)
-}
-
 func parentEvidenceProviders(cfg config.AppConfig, st *state.StateStore) parentevidence.Providers {
 	return parentevidence.Providers{
 		Authority: func(request parentevidence.AuthorityRequest) parentevidence.Part {
