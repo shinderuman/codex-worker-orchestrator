@@ -130,6 +130,9 @@ func (s *StateStore) CurrentParentReview() (*ParentReviewOpenState, error) {
 }
 
 func (s *StateStore) CurrentParentReviewLabel() (string, error) {
+	if s.Exists(parentReopenTransactionStateFile) {
+		return "", fmt.Errorf("parent reopen transition recovery is pending")
+	}
 	open, err := s.CurrentParentReview()
 	if err != nil {
 		return "", err
