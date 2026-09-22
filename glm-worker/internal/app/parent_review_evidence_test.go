@@ -24,10 +24,10 @@ func TestExecuteAcceptRequiresProjectedReviewEvidence(t *testing.T) {
 		t.Fatalf("accept without projected evidence = %v", err)
 	}
 
-	manifestPath := writeParentReviewEvidenceManifest(t, parentEvidenceManifest{
-		Version: parentEvidenceManifestVersion,
+	manifestPath := writeParentReviewEvidenceManifest(t, parentevidence.Manifest{
+		Version: parentevidence.ManifestVersion,
 		Reason:  "inspect exact review target",
-		Source: []parentEvidenceSourceRequest{{
+		Source: []parentevidence.SourceRequest{{
 			Question:    "inspect target",
 			Path:        "review.go",
 			LineStart:   1,
@@ -55,10 +55,10 @@ func TestParentEvidenceMatchingSourceEnablesReviewAccept(t *testing.T) {
 	cfg, st, snapshot := newParentEvidenceReviewStore(t)
 	openParentEvidenceReview(t, st, snapshot, "review.go:2")
 
-	manifestPath := writeParentReviewEvidenceManifest(t, parentEvidenceManifest{
-		Version: parentEvidenceManifestVersion,
+	manifestPath := writeParentReviewEvidenceManifest(t, parentevidence.Manifest{
+		Version: parentevidence.ManifestVersion,
 		Reason:  "inspect exact review target",
-		Source: []parentEvidenceSourceRequest{{
+		Source: []parentevidence.SourceRequest{{
 			Question:    "inspect target",
 			Path:        "review.go",
 			LineStart:   1,
@@ -90,10 +90,10 @@ func TestParentEvidenceUnrelatedSourceDoesNotProveReview(t *testing.T) {
 	cfg, st, snapshot := newParentEvidenceReviewStore(t)
 	openParentEvidenceReview(t, st, snapshot, "review.go:2")
 
-	manifestPath := writeParentReviewEvidenceManifest(t, parentEvidenceManifest{
-		Version: parentEvidenceManifestVersion,
+	manifestPath := writeParentReviewEvidenceManifest(t, parentevidence.Manifest{
+		Version: parentevidence.ManifestVersion,
 		Reason:  "inspect unrelated source",
-		Source: []parentEvidenceSourceRequest{{
+		Source: []parentevidence.SourceRequest{{
 			Question:    "unrelated",
 			Path:        "other.go",
 			LineStart:   1,
@@ -120,10 +120,10 @@ func TestParentEvidenceSourceMustCoverTargetRange(t *testing.T) {
 	cfg, st, snapshot := newParentEvidenceReviewStore(t)
 	openParentEvidenceReview(t, st, snapshot, "review.go:3")
 
-	manifestPath := writeParentReviewEvidenceManifest(t, parentEvidenceManifest{
-		Version: parentEvidenceManifestVersion,
+	manifestPath := writeParentReviewEvidenceManifest(t, parentevidence.Manifest{
+		Version: parentevidence.ManifestVersion,
 		Reason:  "inspect too narrow source",
-		Source: []parentEvidenceSourceRequest{{
+		Source: []parentevidence.SourceRequest{{
 			Question:    "too narrow",
 			Path:        "review.go",
 			LineStart:   1,
@@ -150,10 +150,10 @@ func TestParentEvidenceSnapshotChangeCannotCreateProof(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	manifestPath := writeParentReviewEvidenceManifest(t, parentEvidenceManifest{
-		Version: parentEvidenceManifestVersion,
+	manifestPath := writeParentReviewEvidenceManifest(t, parentevidence.Manifest{
+		Version: parentevidence.ManifestVersion,
 		Reason:  "stale snapshot",
-		Source: []parentEvidenceSourceRequest{{
+		Source: []parentevidence.SourceRequest{{
 			Question:    "stale",
 			Path:        "review.go",
 			LineStart:   1,
@@ -174,17 +174,17 @@ func TestParentEvidenceSnapshotChangeCannotCreateProof(t *testing.T) {
 }
 
 func TestParentReviewEvidenceClaimCoverage(t *testing.T) {
-	parts := []parentEvidencePart{
+	parts := []parentevidence.Part{
 		{
 			Kind: "source", Digest: "source-digest", Locator: "review.go:8-15",
-			Source: &parentEvidenceSourceBody{Path: "review.go", LineStart: 8, LineEnd: 15, Content: "body"},
+			Source: &parentevidence.SourceBody{Path: "review.go", LineStart: 8, LineEnd: 15, Content: "body"},
 		},
 		{
 			Kind: "diff", Digest: "diff-digest", Locator: "git diff HEAD -- symbol.go",
-			Diff: &parentEvidenceDiffBody{
+			Diff: &parentevidence.DiffBody{
 				Paths: []string{"symbol.go"},
 				Body:  "diff --git a/symbol.go b/symbol.go\n--- a/symbol.go\n+++ b/symbol.go\n@@ -8,6 +8,6 @@ func TargetSymbol() {\n context\n-old\n+new\n context\n",
-				Files: []parentEvidenceDiffFile{{Path: "symbol.go", Status: "M", HeadBlob: "blob", WorktreeSHA: "sha"}},
+				Files: []parentevidence.DiffFile{{Path: "symbol.go", Status: "M", HeadBlob: "blob", WorktreeSHA: "sha"}},
 			},
 		},
 	}
@@ -254,7 +254,7 @@ func openParentEvidenceReview(t *testing.T, st *state.StateStore, snapshot state
 	}
 }
 
-func writeParentReviewEvidenceManifest(t *testing.T, manifest parentEvidenceManifest) string {
+func writeParentReviewEvidenceManifest(t *testing.T, manifest parentevidence.Manifest) string {
 	t.Helper()
 	data, err := json.Marshal(manifest)
 	if err != nil {
