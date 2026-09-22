@@ -46,4 +46,4 @@ source commentは`commentlint`のmachine policyを正とし、自然言語commen
 ## 出力
 途中経過、大量diff、test全文を出さず、実行環境指定schemaの結果を1つだけ返す。
 STATUSは`PASS`、`FIX_REQUIRED`、`NEEDS_SOL_REVIEW`。PASSのRISKはLOW、NEEDS_SOL_REVIEWはHIGH。field構成、TARGETS、改行・size等の構造制約は`control:packet-schema-result`とcurrent machine schema/validatorを正とする。
-- `ARTIFACTS`は必要な実在通常fileの絶対pathだけ。不要なら空。
+- runtimeが提示する`CURRENT_TASK_ARTIFACT_DIR`を現在taskの既存artifact rootとする。reviewerはread-onlyであり、このdirectoryを含めartifact fileを新規作成・変更・コピーしない。`ARTIFACTS`はその配下に既に存在する実在通常fileの絶対pathのみ。`PRIOR_ARTIFACT_PATHS: reference-only`、WORKER_REPORT、過去artifact、他task由来のartifact pathは参照証拠であり、ARTIFACTSへ載せるために現在rootへコピーしない。現在taskで報告すべき既存artifactがなければARTIFACTSは空にする。
