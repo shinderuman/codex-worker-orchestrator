@@ -7,9 +7,9 @@ import (
 )
 
 func TestParentReviewDiffCoversQuotedPath(t *testing.T) {
-	diff := parentEvidenceDiffBody{
+	diff := parentevidence.DiffBody{
 		Body:  "diff --git \"a/q\\\"x.go\" \"b/q\\\"x.go\"\n--- \"a/q\\\"x.go\"\n+++ \"b/q\\\"x.go\"\n@@ -1 +1 @@\n-old\n+new\n",
-		Files: []parentEvidenceDiffFile{{Path: "q\"x.go", Status: "M", HeadBlob: "blob", WorktreeSHA: "sha"}},
+		Files: []parentevidence.DiffFile{{Path: "q\"x.go", Status: "M", HeadBlob: "blob", WorktreeSHA: "sha"}},
 	}
 	if !parentevidence.ReviewDiffCoversTarget("q\"x.go:1", diff) {
 		t.Fatal("quoted diff path did not cover matching line target")
@@ -17,9 +17,9 @@ func TestParentReviewDiffCoversQuotedPath(t *testing.T) {
 }
 
 func TestParentReviewDiffCoversGitOctalQuotedPath(t *testing.T) {
-	diff := parentEvidenceDiffBody{
+	diff := parentevidence.DiffBody{
 		Body:  "diff --git \"a/\\346\\227\\245\\346\\234\\254\\350\\252\\236.go\" \"b/\\346\\227\\245\\346\\234\\254\\350\\252\\236.go\"\n--- \"a/\\346\\227\\245\\346\\234\\254\\350\\252\\236.go\"\n+++ \"b/\\346\\227\\245\\346\\234\\254\\350\\252\\236.go\"\n@@ -1 +1 @@\n-old\n+new\n",
-		Files: []parentEvidenceDiffFile{{Path: "日本語.go", Status: "M", HeadBlob: "blob", WorktreeSHA: "sha"}},
+		Files: []parentevidence.DiffFile{{Path: "日本語.go", Status: "M", HeadBlob: "blob", WorktreeSHA: "sha"}},
 	}
 	if !parentevidence.ReviewDiffCoversTarget("日本語.go:1", diff) {
 		t.Fatal("octal-quoted diff path did not cover matching line target")
@@ -27,9 +27,9 @@ func TestParentReviewDiffCoversGitOctalQuotedPath(t *testing.T) {
 }
 
 func TestParentReviewDiffCoversUnquotedPathWithSpaces(t *testing.T) {
-	diff := parentEvidenceDiffBody{
+	diff := parentevidence.DiffBody{
 		Body:  "diff --git a/hello world.go b/hello world.go\n--- a/hello world.go\n+++ b/hello world.go\n@@ -1 +1 @@\n-old\n+new\n",
-		Files: []parentEvidenceDiffFile{{Path: "hello world.go", Status: "M", HeadBlob: "blob", WorktreeSHA: "sha"}},
+		Files: []parentevidence.DiffFile{{Path: "hello world.go", Status: "M", HeadBlob: "blob", WorktreeSHA: "sha"}},
 	}
 	if !parentevidence.ReviewDiffCoversTarget("hello world.go:1", diff) {
 		t.Fatal("unquoted diff path with spaces did not cover matching line target")
@@ -38,9 +38,9 @@ func TestParentReviewDiffCoversUnquotedPathWithSpaces(t *testing.T) {
 
 func TestParentReviewDiffCoversUnquotedRenameWithSpaces(t *testing.T) {
 	body := "diff --git a/old name.go b/new name.go\nsimilarity index 80%\n--- a/old name.go\n+++ b/new name.go\n@@ -1 +1 @@\n-old\n+new\n"
-	diff := parentEvidenceDiffBody{
+	diff := parentevidence.DiffBody{
 		Body:  body,
-		Files: []parentEvidenceDiffFile{{Path: "new name.go", Status: "R", HeadBlob: "blob", WorktreeSHA: "sha"}},
+		Files: []parentevidence.DiffFile{{Path: "new name.go", Status: "R", HeadBlob: "blob", WorktreeSHA: "sha"}},
 	}
 	if !parentevidence.ReviewDiffCoversTarget("new name.go:1", diff) {
 		t.Fatal("unquoted renamed path with spaces did not cover matching line target")
@@ -51,9 +51,9 @@ func TestParentReviewDiffCoversUnquotedRenameWithSpaces(t *testing.T) {
 }
 
 func TestParentReviewDiffBarePathRequiresVisibleSection(t *testing.T) {
-	diff := parentEvidenceDiffBody{
+	diff := parentevidence.DiffBody{
 		Body:  "diff --git a/other.go b/other.go\n--- a/other.go\n+++ b/other.go\n@@ -1 +1 @@\n-old\n+new\n",
-		Files: []parentEvidenceDiffFile{{Path: "symbol.go", Status: "M", HeadBlob: "blob", WorktreeSHA: "sha"}},
+		Files: []parentevidence.DiffFile{{Path: "symbol.go", Status: "M", HeadBlob: "blob", WorktreeSHA: "sha"}},
 	}
 	if parentevidence.ReviewDiffCoversTarget("symbol.go", diff) {
 		t.Fatal("bare path without a visible diff section counted as proof")
@@ -61,9 +61,9 @@ func TestParentReviewDiffBarePathRequiresVisibleSection(t *testing.T) {
 }
 
 func TestParentReviewDiffRejectsUnsupportedTargetSuffix(t *testing.T) {
-	diff := parentEvidenceDiffBody{
+	diff := parentevidence.DiffBody{
 		Body:  "diff --git a/symbol.go b/symbol.go\n--- a/symbol.go\n+++ b/symbol.go\n@@ -1 +1 @@ TargetSymbol\n-old\n+new\n",
-		Files: []parentEvidenceDiffFile{{Path: "symbol.go", Status: "M", HeadBlob: "blob", WorktreeSHA: "sha"}},
+		Files: []parentevidence.DiffFile{{Path: "symbol.go", Status: "M", HeadBlob: "blob", WorktreeSHA: "sha"}},
 	}
 	for _, target := range []string{"symbol.go OtherSymbol", "symbol.go,OtherSymbol"} {
 		if parentevidence.ReviewDiffCoversTarget(target, diff) {
