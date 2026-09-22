@@ -10,6 +10,7 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/autoresume"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentevidence"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskview"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
@@ -147,7 +148,7 @@ func printStatus(st *state.StateStore, stdout io.Writer) error {
 }
 
 func printStatusLeased(st *state.StateStore, stdout io.Writer) error {
-	scope, err := captureParentEvidenceReadScope(st)
+	scope, err := parentevidence.CaptureReadScope(st)
 	if err != nil {
 		return err
 	}
@@ -155,8 +156,8 @@ func printStatusLeased(st *state.StateStore, stdout io.Writer) error {
 	logs, logErr := taskview.ReadStatusTelemetry(st, taskID)
 	output := buildStatusOutput(st, taskID, logs, logErr)
 	digest := parentStatusReadDigest(st)
-	return finishParentReadInScope(st, scope, state.ParentEvidenceSurfaceStatus, digest, func() (int, error) {
-		return writeMeasuredJSON(stdout, output)
+	return parentevidence.FinishReadInScope(st, scope, state.ParentEvidenceSurfaceStatus, digest, func() (int, error) {
+		return parentevidence.WriteMeasuredJSON(stdout, output)
 	})
 }
 
@@ -170,7 +171,7 @@ func parentStatusReadDigest(st *state.StateStore) string {
 	if record, err := st.LoadIsolationRecord(); err == nil {
 		isolation = record.IsolationID + record.Branch + record.OriginHead
 	}
-	return parentEvidenceStringDigest(
+	return parentevidence.StringDigest(
 		st.ReadOr("task.id", ""),
 		string(st.TaskStatus()),
 		st.ReadOr("worker.id", ""),
