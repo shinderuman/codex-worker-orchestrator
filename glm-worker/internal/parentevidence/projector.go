@@ -18,16 +18,16 @@ import (
 )
 
 type Manifest struct {
-	Version     int                  `json:"version"`
-	Reason      string               `json:"reason"`
-	Authority   []AuthorityRequest   `json:"authority"`
-	Handoff     *HandoffRequest      `json:"handoff"`
-	Status      *StatusRequest       `json:"status"`
-	Validations *ValidationsRequest  `json:"validations"`
-	Telemetry   *TelemetryRequest    `json:"telemetry"`
-	Search      []SearchRequest      `json:"search"`
-	Diff        []DiffRequest        `json:"diff"`
-	Source      []SourceRequest      `json:"source"`
+	Version     int                 `json:"version"`
+	Reason      string              `json:"reason"`
+	Authority   []AuthorityRequest  `json:"authority"`
+	Handoff     *HandoffRequest     `json:"handoff"`
+	Status      *StatusRequest      `json:"status"`
+	Validations *ValidationsRequest `json:"validations"`
+	Telemetry   *TelemetryRequest   `json:"telemetry"`
+	Search      []SearchRequest     `json:"search"`
+	Diff        []DiffRequest       `json:"diff"`
+	Source      []SourceRequest     `json:"source"`
 }
 
 type AuthorityRequest struct {
