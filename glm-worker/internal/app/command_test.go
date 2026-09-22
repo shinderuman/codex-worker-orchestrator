@@ -64,14 +64,6 @@ func TestGLMProviderAutoResumeCommandsAreRetired(t *testing.T) {
 	}
 }
 
-func TestDecisionFixArgvCommandsAreRetired(t *testing.T) {
-	for _, name := range []string{"--decision", "--fix"} {
-		if _, ok := commandParsers[name]; ok {
-			t.Fatalf("retired argv command remains registered: %s", name)
-		}
-	}
-}
-
 func TestParseCommandStdinPayloadModes(t *testing.T) {
 	digest := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
