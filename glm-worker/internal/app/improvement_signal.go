@@ -6,6 +6,11 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
+type parentHandoffImprovementSignal struct {
+	Signal     state.ImprovementSignal `json:"signal"`
+	ActionSpec parentHandoffActionSpec  `json:"action_spec"`
+}
+
 const (
 	improvementSignalKindParameter   = "signal-kind"
 	improvementSignalCountParameter  = "signal-count"
@@ -13,11 +18,6 @@ const (
 	improvementSignalReasonParameter = "reason"
 	invalidPacketOutcome             = "invalid_packet"
 )
-
-type parentHandoffImprovementSignal struct {
-	Signal     state.ImprovementSignal `json:"signal"`
-	ActionSpec parentHandoffActionSpec  `json:"action_spec"`
-}
 
 func projectImprovementSignal(output *parentHandoffOutput) *parentHandoffImprovementSignal {
 	if output == nil {
