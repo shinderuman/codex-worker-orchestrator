@@ -447,20 +447,19 @@ func (w *Workflow) ruleActivationCorrectionCheckpoint(
 	if err != nil {
 		return state.ResumeCheckpoint{}, err
 	}
-	primaryAuthority := activeTaskPromptBlock(w.readActiveTaskState())
+	activeTaskPath := w.readActiveTaskState()
+	primaryAuthority := activeTaskPromptBlock(activeTaskPath)
+	requestAuthority := modelRequestAuthorityBlock("ORIGINAL_USER_REQUEST", parent.Request, activeTaskPath)
 	prompt := fmt.Sprintf(`MODE: APPLY_DETERMINISTIC_RULES
 
-ORIGINAL_USER_REQUEST:
-%s
-
-PREVIOUS_SOL_DECISION:
+%sPREVIOUS_SOL_DECISION:
 %s
 
 %s%s
 実diffに対してwrapperが必要contractの未適用を検出しました。
 上記contract本文を現在のworking treeへ適用し、違反があれば修正してください。
 タスク範囲を広げず、必要なtest/lint/buildと自己確認を行い、通常のworker結果を返してください。
-`, parent.Request, parent.Decision, primaryAuthority, block)
+`, requestAuthority, parent.Decision, primaryAuthority, block)
 	correction := parent
 	activated := checkpointActivatedRules(correction)
 	for _, rule := range rules {
