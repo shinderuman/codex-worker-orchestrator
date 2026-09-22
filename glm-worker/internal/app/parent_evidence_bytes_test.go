@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentevidence"
 )
 
 func TestParentEvidenceBytesMeasureProjectedBodies(t *testing.T) {
@@ -19,10 +21,10 @@ func TestParentEvidenceBytesMeasureProjectedBodies(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	authority := runParentEvidence(t, fixture, parentEvidenceManifest{
+	authority := runParentEvidence(t, fixture, parentevidence.Manifest{
 		Version: 1,
 		Reason:  "measure authority body",
-		Authority: []parentEvidenceAuthorityRequest{
+		Authority: []parentevidence.AuthorityRequest{
 			{Kind: "active", BudgetBytes: 16 * 1024},
 		},
 	})
@@ -34,10 +36,10 @@ func TestParentEvidenceBytesMeasureProjectedBodies(t *testing.T) {
 		t.Fatalf("authority bytes = %d, want projected body bytes %d", authorityPart.Bytes, len(authorityPart.Authority.Content))
 	}
 
-	telemetry := runParentEvidence(t, fixture, parentEvidenceManifest{
+	telemetry := runParentEvidence(t, fixture, parentevidence.Manifest{
 		Version:   1,
 		Reason:    "measure telemetry body",
-		Telemetry: &parentEvidenceTelemetryRequest{},
+		Telemetry: &parentevidence.TelemetryRequest{},
 	})
 	telemetryPart := telemetry.Output.Parts[0]
 	if telemetryPart.Telemetry == nil {
