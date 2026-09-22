@@ -62,7 +62,25 @@ glm-workerの責務がリポジトリのルールを実装してないか
 逆はないかとか総合的に考えてほしい
 ````
 
+### 2026-09-22 追加の横断レビュー
+
+````text
+他に総合チェック的な観点はないのか
+````
+
+````text
+じゃあ全部やれ
+````
+
+### 2026-09-22 再開
+
+````text
+作業再開して
+````
+
 ## Resolved references
+
+- 「全部」は直前に提示した12観点、すなわち正常taskの親介入、機械化の費用対効果、状態の正本と重複、境界間整合性、中断・再実行・並行実行、証拠の有効範囲、要求保存と契約の乖離、テストの証明力、source/runtime整合、権限とdata境界、rule増殖と廃止、実消費の帰属をすべてレビューする指示。GLM不使用を継続し、確認済み不具合・改善候補・未検証事項を区別する。レビューであり修正実装の開始を意味しない。
 
 - 2026-09-22の総合レビューは親Codex自身がGLMを使用せず実施する。実装変更や既存ACTIVEの実行を含めず、現行schema限定・後方互換性禁止を含む適用規則に照らして問題とCodex Reduction施策を評価する。
 
@@ -84,6 +102,7 @@ status: not-applicable
 
 - 親Codexだけが追加AI callなしで実行し、GLM modelへ分析・採否・priority判断を委譲しない
 - parent-only例外は既存evidenceの評価・採否・Plan priority更新までに限定する
+- 2026-09-22の総合レビュー指示に限り、上記の既存evidence限定を拡張し、親Codexによるsource読取、対象を限定した既存test、一時fixtureでの再現検証を含める。production変更・本番model実行は含めない。
 - 前回checkpointのGit locator以後のCodex/GLM telemetry、parent usage、review/fix/validation、停止/recovery、未Task化Findingを既存bounded machine projectionで比較する
 - 前回locator以後のtracked Markdown差分と未解決authority候補だけを確認する
 - session rotationとparent finalizationがCodex token / tool outputを増やしていないかをbounded evidenceで評価する

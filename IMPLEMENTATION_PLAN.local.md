@@ -12,8 +12,12 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## NEXT（優先順）
 
+- `IMPLEMENTATION_TASKS/codex-install-concurrent-edit-protection.md`
 - `IMPLEMENTATION_TASKS/quality-fixer-review-snapshot-boundary.md`
+- `IMPLEMENTATION_TASKS/codex-install-interruption-recovery.md`
 - `IMPLEMENTATION_TASKS/reviewed-ledger-current-schema.md`
+- `IMPLEMENTATION_TASKS/quality-gate-single-validation-pass.md`
+- `IMPLEMENTATION_TASKS/final-verification-policy-ownership.md`
 - `IMPLEMENTATION_TASKS/codex-efficiency-intermediate-checkpoint.md`
 - `IMPLEMENTATION_TASKS/post-105-codex-efficiency-reevaluation.md`
 - `IMPLEMENTATION_TASKS/022-final-verification.md`
