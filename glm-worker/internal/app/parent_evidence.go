@@ -1,207 +1,67 @@
 package app
 
 import (
-	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskview"
 	"io"
 	"os"
-	"os/exec"
-	"path/filepath"
-	"strconv"
-	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/authoritybootstrapcmd"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentevidence"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/reposearch"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskview"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
 )
 
-type parentEvidenceManifest struct {
-	Version     int                               `json:"version"`
-	Reason      string                            `json:"reason"`
-	Authority   []parentEvidenceAuthorityRequest  `json:"authority"`
-	Handoff     *parentEvidenceHandoffRequest     `json:"handoff"`
-	Status      *parentEvidenceStatusRequest      `json:"status"`
-	Validations *parentEvidenceValidationsRequest `json:"validations"`
-	Telemetry   *parentEvidenceTelemetryRequest   `json:"telemetry"`
-	Search      []parentEvidenceSearchRequest     `json:"search"`
-	Diff        []parentEvidenceDiffRequest       `json:"diff"`
-	Source      []parentEvidenceSourceRequest     `json:"source"`
-}
-
-type parentEvidenceAuthorityRequest struct {
-	Kind               string `json:"kind"`
-	KnownContentSHA256 string `json:"known_content_sha256"`
-	BudgetBytes        int    `json:"budget_bytes"`
-}
-
-type parentEvidenceHandoffRequest struct {
-	KnownDigest string `json:"known_digest"`
-	Force       bool   `json:"force"`
-}
-
-type parentEvidenceStatusRequest struct{}
-
-type parentEvidenceValidationsRequest struct{}
-
-type parentEvidenceTelemetryRequest struct{}
-
-type parentEvidenceSearchRequest struct {
-	Question    string   `json:"question"`
-	Scopes      []string `json:"scopes"`
-	BudgetBytes int      `json:"budget_bytes"`
-}
-
-type parentEvidenceDiffRequest struct {
-	Question    string   `json:"question"`
-	Paths       []string `json:"paths"`
-	BudgetBytes int      `json:"budget_bytes"`
-}
-
-type parentEvidenceSourceRequest struct {
-	Question    string `json:"question"`
-	Path        string `json:"path"`
-	LineStart   int    `json:"line_start"`
-	LineEnd     int    `json:"line_end"`
-	BudgetBytes int    `json:"budget_bytes"`
-}
-
-type parentEvidenceOutput struct {
-	Version     int                         `json:"version"`
-	Status      string                      `json:"status"`
-	OwnerCallID string                      `json:"owner_call_id"`
-	Reason      string                      `json:"reason"`
-	TaskID      string                      `json:"task_id,omitempty"`
-	TaskStatus  string                      `json:"task_status,omitempty"`
-	Parts       []parentEvidencePart        `json:"parts"`
-	Summary     state.ParentEvidenceSummary `json:"evidence_summary"`
-}
-
-type parentEvidencePart struct {
-	Kind        string                       `json:"kind"`
-	Detail      string                       `json:"detail,omitempty"`
-	Status      string                       `json:"status"`
-	Digest      string                       `json:"digest,omitempty"`
-	Bytes       int                          `json:"bytes"`
-	TokenProxy  int                          `json:"token_proxy"`
-	Reason      string                       `json:"reason,omitempty"`
-	Locator     string                       `json:"locator,omitempty"`
-	Authority   *parentEvidenceAuthorityBody `json:"authority,omitempty"`
-	Handoff     json.RawMessage              `json:"handoff,omitempty"`
-	StatusRead  json.RawMessage              `json:"status_read,omitempty"`
-	Validations []parentHandoffValidation    `json:"validations,omitempty"`
-	Telemetry   *parentEvidenceTelemetryBody `json:"telemetry,omitempty"`
-	Search      *parentEvidenceSearchBody    `json:"search,omitempty"`
-	Diff        *parentEvidenceDiffBody      `json:"diff,omitempty"`
-	Source      *parentEvidenceSourceBody    `json:"source,omitempty"`
-
-	ledgerSurface string `json:"-"`
-}
-
-type parentEvidenceAuthorityBody struct {
-	Kind           string `json:"kind"`
-	SnapshotSHA256 string `json:"authority_snapshot_sha256"`
-	ActiveTask     string `json:"active_task"`
-	ContentSHA256  string `json:"content_sha256"`
-	Content        string `json:"content,omitempty"`
-}
-
-type parentEvidenceTelemetryBody struct {
-	Records    int                         `json:"records"`
-	ModelCalls int                         `json:"model_calls"`
-	Summary    state.ParentEvidenceSummary `json:"summary"`
-}
-
-type parentEvidenceSearchBody struct {
-	Question    string             `json:"question"`
-	Scopes      []string           `json:"scopes"`
-	Candidates  int                `json:"candidates"`
-	ResultCount int                `json:"result_count"`
-	Results     []repoSearchResult `json:"results"`
-}
-
-type parentEvidenceDiffFile struct {
-	Path        string `json:"path"`
-	Status      string `json:"status"`
-	HeadBlob    string `json:"head_blob"`
-	IndexBlob   string `json:"index_blob"`
-	WorktreeSHA string `json:"worktree_sha256"`
-	Additions   int    `json:"additions"`
-	Deletions   int    `json:"deletions"`
-}
-
-type parentEvidenceDiffBody struct {
-	Question string                   `json:"question"`
-	Paths    []string                 `json:"paths"`
-	Files    []parentEvidenceDiffFile `json:"files"`
-	Body     string                   `json:"body,omitempty"`
-}
-
-type parentEvidenceSourceBody struct {
-	Question  string `json:"question"`
-	Path      string `json:"path"`
-	LineStart int    `json:"line_start"`
-	LineEnd   int    `json:"line_end"`
-	Content   string `json:"content,omitempty"`
-}
+type parentEvidenceManifest = parentevidence.Manifest
+type parentEvidenceAuthorityRequest = parentevidence.AuthorityRequest
+type parentEvidenceHandoffRequest = parentevidence.HandoffRequest
+type parentEvidenceStatusRequest = parentevidence.StatusRequest
+type parentEvidenceValidationsRequest = parentevidence.ValidationsRequest
+type parentEvidenceTelemetryRequest = parentevidence.TelemetryRequest
+type parentEvidenceSearchRequest = parentevidence.SearchRequest
+type parentEvidenceDiffRequest = parentevidence.DiffRequest
+type parentEvidenceSourceRequest = parentevidence.SourceRequest
+type parentEvidenceOutput = parentevidence.Output
+type parentEvidencePart = parentevidence.Part
+type parentEvidenceAuthorityBody = parentevidence.AuthorityBody
+type parentEvidenceTelemetryBody = parentevidence.TelemetryBody
+type parentEvidenceSearchBody = parentevidence.SearchBody
+type parentEvidenceDiffFile = parentevidence.DiffFile
+type parentEvidenceDiffBody = parentevidence.DiffBody
+type parentEvidenceSourceBody = parentevidence.SourceBody
 
 type parentEvidenceProjector struct {
-	cfg           config.AppConfig
-	st            *state.StateStore
-	ownerCallID   string
-	output        parentEvidenceOutput
-	pendingClaims []state.ParentEvidenceLedgerEntry
-	leaseEpoch    int64
-	leaseErr      error
+	cfg         config.AppConfig
+	st          *state.StateStore
+	ownerCallID string
+	inner       *parentevidence.Projector
+	output      parentEvidenceOutput
 }
 
 const (
-	parentEvidenceStatusOK         = "ok"
-	parentEvidenceStatusRequired   = "refinement_required"
-	parentEvidenceStatusError      = "error"
-	parentEvidencePartProjected    = "projected"
-	parentEvidencePartUnchanged    = "unchanged"
-	parentEvidencePartChanged      = "changed"
-	parentEvidencePartUnknown      = "unknown"
-	parentEvidencePartRefinement   = "refinement_required"
-	parentEvidencePartError        = "error"
-	parentEvidencePartDisabled     = "disabled"
-	parentEvidenceManifestVersion  = 1
-	parentEvidenceManifestMaxBytes = 64 * 1024
-	parentEvidenceMaxOutputBytes   = 96 * 1024
-	parentEvidenceMaxDiffPaths     = 32
-	parentEvidenceMaxSourceLines   = 2000
-	parentEvidenceMaxBudgetBytes   = 256 * 1024
-	parentEvidenceTelemetryFile    = "parent-evidence.jsonl"
+	parentEvidenceStatusOK         = parentevidence.StatusOK
+	parentEvidenceStatusRequired   = parentevidence.StatusRequired
+	parentEvidenceStatusError      = parentevidence.StatusError
+	parentEvidencePartProjected    = parentevidence.PartProjected
+	parentEvidencePartUnchanged    = parentevidence.PartUnchanged
+	parentEvidencePartChanged      = parentevidence.PartChanged
+	parentEvidencePartUnknown      = parentevidence.PartUnknown
+	parentEvidencePartRefinement   = parentevidence.PartRefinement
+	parentEvidencePartError        = parentevidence.PartError
+	parentEvidencePartDisabled     = parentevidence.PartDisabled
+	parentEvidenceManifestVersion  = parentevidence.ManifestVersion
+	parentEvidenceManifestMaxBytes = parentevidence.ManifestMaxBytes
+	parentEvidenceMaxOutputBytes   = parentevidence.MaxOutputBytes
+	parentEvidenceMaxDiffPaths     = parentevidence.MaxDiffPaths
+	parentEvidenceMaxSourceLines   = parentevidence.MaxSourceLines
+	parentEvidenceMaxBudgetBytes   = parentevidence.MaxBudgetBytes
+	parentEvidenceTelemetryFile    = parentevidence.TelemetryFile
 )
-
-var parentEvidenceBodyStrippers = []func(*parentEvidencePart) bool{
-	func(part *parentEvidencePart) bool {
-		return part.Authority != nil && part.Authority.Content != ""
-	},
-	func(part *parentEvidencePart) bool {
-		return len(part.Handoff) > 0
-	},
-	func(part *parentEvidencePart) bool {
-		return len(part.StatusRead) > 0
-	},
-	func(part *parentEvidencePart) bool {
-		return part.Search != nil && len(part.Search.Results) > 0
-	},
-	func(part *parentEvidencePart) bool {
-		return part.Diff != nil && part.Diff.Body != ""
-	},
-	func(part *parentEvidencePart) bool {
-		return part.Source != nil && part.Source.Content != ""
-	},
-}
 
 func printParentEvidence(cmd Command, cfg config.AppConfig, st *state.StateStore, stdout io.Writer) error {
 	manifest, err := loadParentEvidenceManifest(cmd.EvidenceManifest)
@@ -217,106 +77,19 @@ func printParentEvidence(cmd Command, cfg config.AppConfig, st *state.StateStore
 	return commitParentEvidenceProjection(projector, stdout, manifest.Reason)
 }
 
+func (p *parentEvidenceProjector) project(manifest parentEvidenceManifest) {
+	p.inner = parentevidence.NewProjector(p.cfg.RepoRoot, p.st, p.ownerCallID, parentEvidenceProviders(p.cfg, p.st))
+	p.inner.Project(manifest)
+	p.output = p.inner.Output()
+}
+
 func commitParentEvidenceProjection(p *parentEvidenceProjector, stdout io.Writer, reason string) error {
-	return withParentEvidenceLedgerLock(p.st, func() error {
-		return commitParentEvidenceProjectionLocked(p, stdout, reason)
-	})
-}
-
-func commitParentEvidenceProjectionLocked(p *parentEvidenceProjector, stdout io.Writer, reason string) error {
-	if err := validateParentEvidenceProjectionScope(p); err != nil {
-		return err
+	if p.inner == nil {
+		return fmt.Errorf("parent evidence projector is not initialized")
 	}
-	if parentEvidenceLeaseActive(p.st) {
-		if err := degradeDuplicateParentEvidenceParts(p); err != nil {
-			return err
-		}
-	}
-	output := p.output
-	applyParentEvidenceTotalBudget(&output)
-	written, err := writeMeasuredJSON(stdout, output)
-	if err != nil {
-		return err
-	}
-	if err := markParentReviewEvidenceProof(p, output.Parts); err != nil {
-		return err
-	}
-	if err := saveSurvivingParentEvidenceClaims(p, output.Parts); err != nil {
-		return err
-	}
-	recordParentEvidence(p.st, state.ParentEvidenceRecord{
-		Surface: state.ParentEvidenceSurfaceEvidenceTelemetry, Origin: state.ParentEvidenceOriginEvidence,
-		OwnerCallID: p.ownerCallID, Bytes: written, Outcome: state.ParentEvidenceOutcomeProjected,
-		Reason: reason, Locator: p.st.Path(parentEvidenceTelemetryFile),
-	})
-	return nil
-}
-
-func validateParentEvidenceProjectionScope(p *parentEvidenceProjector) error {
-	if p.leaseErr != nil {
-		return p.leaseErr
-	}
-	epoch, err := p.st.ParentEvidenceLeaseEpoch()
-	if err != nil {
-		return err
-	}
-	if epoch != p.leaseEpoch || p.st.ReadOr("task.id", "") != p.output.TaskID || string(p.st.TaskStatus()) != p.output.TaskStatus {
-		return fmt.Errorf("parent evidence scope changed during projection; request fresh evidence")
-	}
-	return nil
-}
-
-func saveSurvivingParentEvidenceClaims(p *parentEvidenceProjector, parts []parentEvidencePart) error {
-	for _, claim := range p.pendingClaims {
-		if !parentEvidenceClaimSurvivesBudget(parts, claim) {
-			continue
-		}
-		if err := saveParentEvidenceLedger(p.st, claim.Surface, claim.Digest, claim.Origin, claim.OwnerCallID); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func parentEvidenceClaimSurvivesBudget(parts []parentEvidencePart, claim state.ParentEvidenceLedgerEntry) bool {
-	for _, part := range parts {
-		if part.ledgerSurface == claim.Surface && part.Digest == claim.Digest && part.Status != parentEvidencePartRefinement {
-			return true
-		}
-	}
-	return false
-}
-
-func degradeDuplicateParentEvidenceParts(p *parentEvidenceProjector) error {
-	claimed := make(map[string]bool, len(p.pendingClaims))
-	for index := range p.output.Parts {
-		part := &p.output.Parts[index]
-		if part.Digest == "" {
-			continue
-		}
-		key := part.ledgerSurface + "\x00" + part.Digest
-		_, delivered, err := p.st.ParentEvidenceDelivered(part.ledgerSurface, part.Digest)
-		if err != nil {
-			return err
-		}
-		if !delivered && !claimed[key] {
-			claimed[key] = true
-			continue
-		}
-		hadBody := parentEvidencePartHasBody(part)
-		clearParentEvidencePartBody(part)
-		part.Reason = parentEvidenceUnchangedReason
-		if hadBody {
-			part.Bytes = 0
-			part.TokenProxy = 0
-		}
-		recordParentEvidence(p.st, state.ParentEvidenceRecord{
-			Surface: part.ledgerSurface, Origin: state.ParentEvidenceOriginEvidence,
-			OwnerCallID: p.ownerCallID, Digest: part.Digest, Outcome: state.ParentEvidenceOutcomeDuplicate,
-			Reason: parentEvidenceUnchangedReason, Locator: part.Locator,
-		})
-	}
-	return nil
+	err := p.inner.Commit(stdout, reason)
+	p.output = p.inner.Output()
+	return err
 }
 
 func loadParentEvidenceManifest(path string) (parentEvidenceManifest, error) {
@@ -340,218 +113,61 @@ func loadParentEvidenceManifest(path string) (parentEvidenceManifest, error) {
 	if err != nil {
 		return parentEvidenceManifest{}, fmt.Errorf("evidence manifestを読めません: %w", err)
 	}
-	var manifest parentEvidenceManifest
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&manifest); err != nil {
-		return parentEvidenceManifest{}, machinecli.UsageErrorf("evidence manifestのschemaが不正です: " + err.Error())
-	}
-	if manifest.Version != parentEvidenceManifestVersion {
-		return parentEvidenceManifest{}, machinecli.UsageErrorf("evidence manifestのversionは1だけを受理します")
-	}
-	if strings.TrimSpace(manifest.Reason) == "" {
-		return parentEvidenceManifest{}, machinecli.UsageErrorf("evidence manifestにはreasonが必要です")
-	}
-	if err := validateParentEvidenceManifest(manifest); err != nil {
-		return parentEvidenceManifest{}, err
-	}
-	return manifest, nil
+	return parentevidence.DecodeManifest(data)
 }
 
 func validateParentEvidenceManifest(manifest parentEvidenceManifest) error {
-	if parentEvidencePartCount(manifest) == 0 {
-		return machinecli.UsageErrorf("evidence manifestは少なくとも1つのprojection partを指定してください")
-	}
-	for _, request := range manifest.Authority {
-		if err := validateParentEvidenceAuthorityPart(request); err != nil {
-			return err
-		}
-	}
-	for _, request := range manifest.Search {
-		if err := validateParentEvidenceSearchPart(request); err != nil {
-			return err
-		}
-	}
-	for _, request := range manifest.Diff {
-		if err := validateParentEvidenceDiffPart(request); err != nil {
-			return err
-		}
-	}
-	for _, request := range manifest.Source {
-		if err := validateParentEvidenceSourcePart(request); err != nil {
-			return err
-		}
-	}
-	return nil
+	return parentevidence.ValidateManifest(manifest)
 }
 
 func parentEvidencePartCount(manifest parentEvidenceManifest) int {
-	partCount := len(manifest.Authority) + len(manifest.Search) + len(manifest.Diff) + len(manifest.Source)
-	for _, present := range []bool{
-		manifest.Handoff != nil,
-		manifest.Status != nil,
-		manifest.Validations != nil,
-		manifest.Telemetry != nil,
-	} {
-		if present {
-			partCount++
-		}
-	}
-	return partCount
-}
-
-func validateParentEvidenceAuthorityPart(request parentEvidenceAuthorityRequest) error {
-	if request.Kind != "rules" && request.Kind != "plan" && request.Kind != "active" {
-		return machinecli.UsageErrorf("evidence manifestのauthority kindはrules|plan|activeだけを受理します")
-	}
-	if request.BudgetBytes <= 0 || request.BudgetBytes > parentEvidenceMaxBudgetBytes {
-		return machinecli.UsageErrorf("evidence manifestのauthority budget_bytesは1..262144で指定してください")
-	}
-	return nil
-}
-
-func validateParentEvidenceSearchPart(request parentEvidenceSearchRequest) error {
-	if strings.TrimSpace(request.Question) == "" || len(request.Scopes) == 0 || request.BudgetBytes <= 0 || request.BudgetBytes > repoSearchMaxBudgetBytes {
-		return machinecli.UsageErrorf("evidence manifestのsearch partはquestion・scopes・budget_bytes(1..65536)を必須とします")
-	}
-	return nil
-}
-
-func validateParentEvidenceDiffPart(request parentEvidenceDiffRequest) error {
-	if strings.TrimSpace(request.Question) == "" || len(request.Paths) == 0 || len(request.Paths) > parentEvidenceMaxDiffPaths {
-		return machinecli.UsageErrorf("evidence manifestのdiff partはquestionと1..32個のpathsを必須とします")
-	}
-	if request.BudgetBytes <= 0 || request.BudgetBytes > parentEvidenceMaxBudgetBytes {
-		return machinecli.UsageErrorf("evidence manifestのdiff budget_bytesは1..262144で指定してください")
-	}
-	for _, path := range request.Paths {
-		if !parentEvidenceRelativePath(path) {
-			return machinecli.UsageErrorf("evidence manifestのdiff pathsはrepository相対pathだけを受理します: " + path)
-		}
-	}
-	return nil
-}
-
-func validateParentEvidenceSourcePart(request parentEvidenceSourceRequest) error {
-	if strings.TrimSpace(request.Question) == "" || !parentEvidenceRelativePath(request.Path) {
-		return machinecli.UsageErrorf("evidence manifestのsource partはquestionとrepository相対pathを必須とします")
-	}
-	if request.LineStart < 1 || request.LineEnd < request.LineStart || request.LineEnd-request.LineStart+1 > parentEvidenceMaxSourceLines {
-		return machinecli.UsageErrorf("evidence manifestのsource行範囲は1..2000行で指定してください")
-	}
-	if request.BudgetBytes <= 0 || request.BudgetBytes > parentEvidenceMaxBudgetBytes {
-		return machinecli.UsageErrorf("evidence manifestのsource budget_bytesは1..262144で指定してください")
-	}
-	return nil
+	return parentevidence.PartCount(manifest)
 }
 
 func parentEvidenceRelativePath(path string) bool {
-	clean := filepath.ToSlash(filepath.Clean(path))
-	if clean == "" || clean == "." || clean == ".." || strings.HasPrefix(clean, "../") || strings.HasPrefix(clean, "/") {
-		return false
-	}
-	return true
+	return parentevidence.RelativePath(path)
 }
 
-func (p *parentEvidenceProjector) project(manifest parentEvidenceManifest) {
-	p.leaseEpoch, p.leaseErr = p.st.ParentEvidenceLeaseEpoch()
-	p.output = parentEvidenceOutput{
-		Version:     parentEvidenceManifestVersion,
-		OwnerCallID: p.ownerCallID,
-		Reason:      manifest.Reason,
-		TaskID:      p.st.ReadOr("task.id", ""),
-		TaskStatus:  string(p.st.TaskStatus()),
-		Parts:       []parentEvidencePart{},
-	}
-	for _, request := range manifest.Authority {
-		p.output.Parts = append(p.output.Parts, p.projectAuthority(request))
-	}
-	if manifest.Handoff != nil {
-		p.output.Parts = append(p.output.Parts, p.projectHandoff(*manifest.Handoff))
-	}
-	if manifest.Status != nil {
-		p.output.Parts = append(p.output.Parts, p.projectStatus())
-	}
-	if manifest.Validations != nil {
-		p.output.Parts = append(p.output.Parts, p.projectValidations())
-	}
-	if manifest.Telemetry != nil {
-		p.output.Parts = append(p.output.Parts, p.projectTelemetry())
-	}
-	for _, request := range manifest.Search {
-		p.output.Parts = append(p.output.Parts, p.projectSearch(request))
-	}
-	for _, request := range manifest.Diff {
-		p.output.Parts = append(p.output.Parts, p.projectDiff(request))
-	}
-	for _, request := range manifest.Source {
-		p.output.Parts = append(p.output.Parts, p.projectSource(request))
-	}
-	p.output.Status = parentEvidenceAggregateStatus(p.output.Parts)
-	p.output.Summary = p.evidenceSummary()
+func parentReviewEvidenceClaims(targets []string, parts []parentEvidencePart) ([]state.ParentReviewEvidenceClaim, bool) {
+	return parentevidence.ReviewClaims(targets, parts)
 }
 
-func parentEvidenceAggregateStatus(parts []parentEvidencePart) string {
-	status := parentEvidenceStatusOK
-	for _, part := range parts {
-		switch part.Status {
-		case parentEvidencePartError:
-			return parentEvidenceStatusError
-		case parentEvidencePartRefinement:
-			status = parentEvidenceStatusRequired
-		}
-	}
-	return status
+func parentReviewDiffCoversTarget(target string, diff parentEvidenceDiffBody) bool {
+	return parentevidence.ReviewDiffCoversTarget(target, diff)
 }
 
-func (p *parentEvidenceProjector) evidenceSummary() state.ParentEvidenceSummary {
-	records, err := p.st.ReadParentEvidence()
+func parentEvidenceProviders(cfg config.AppConfig, st *state.StateStore) parentevidence.Providers {
+	return parentevidence.Providers{
+		Authority: func(request parentevidence.AuthorityRequest) parentevidence.Part {
+			return projectParentEvidenceAuthority(cfg, request)
+		},
+		Handoff: func(request parentevidence.HandoffRequest) parentevidence.Part {
+			return projectParentEvidenceHandoff(cfg, st, request)
+		},
+		Status: func() parentevidence.Part {
+			return projectParentEvidenceStatus(st)
+		},
+		Validations: func() parentevidence.Part {
+			return projectParentEvidenceValidations(st)
+		},
+		Telemetry: func() parentevidence.Part {
+			return projectParentEvidenceTelemetry(st)
+		},
+		Search: func(request parentevidence.SearchRequest) parentevidence.Part {
+			return projectParentEvidenceSearch(cfg, request)
+		},
+	}
+}
+
+func projectParentEvidenceAuthority(cfg config.AppConfig, request parentevidence.AuthorityRequest) parentevidence.Part {
+	output, err := authoritybootstrapcmd.BuildFromRoot(cfg.RepoRoot, request.Kind, request.KnownContentSHA256)
+	part := parentevidence.Part{Kind: "authority", Detail: request.Kind}
 	if err != nil {
-		return state.ParentEvidenceSummary{}
-	}
-	return state.SummarizeParentEvidence(records)
-}
-
-func (p *parentEvidenceProjector) recordPart(part parentEvidencePart, surface string) parentEvidencePart {
-	if part.Bytes == 0 {
-		part.Bytes = len(part.Digest)
-	}
-	if part.TokenProxy == 0 {
-		part.TokenProxy = state.ParentEvidenceTokenProxy(part.Bytes)
-	}
-	part.ledgerSurface = surface
-	recordParentEvidence(p.st, state.ParentEvidenceRecord{
-		Surface: surface, Origin: state.ParentEvidenceOriginEvidence,
-		OwnerCallID: p.ownerCallID, Digest: part.Digest, Bytes: part.Bytes,
-		TokenProxy: part.TokenProxy, Outcome: part.Status, Reason: part.Reason, Locator: part.Locator,
-	})
-	if part.Digest != "" {
-		p.appendPendingClaim(surface, part.Digest)
-	}
-	return part
-}
-
-func (p *parentEvidenceProjector) appendPendingClaim(surface, digest string) {
-	for _, claim := range p.pendingClaims {
-		if claim.Surface == surface && claim.Digest == digest {
-			return
-		}
-	}
-	p.pendingClaims = append(p.pendingClaims, state.ParentEvidenceLedgerEntry{
-		Surface: surface, Digest: digest, Origin: state.ParentEvidenceOriginEvidence, OwnerCallID: p.ownerCallID,
-	})
-}
-
-func (p *parentEvidenceProjector) projectAuthority(request parentEvidenceAuthorityRequest) parentEvidencePart {
-	surface := state.ParentEvidenceSurfaceAuthority + ":" + request.Kind
-	output, err := authoritybootstrapcmd.BuildFromRoot(p.cfg.RepoRoot, request.Kind, request.KnownContentSHA256)
-	part := parentEvidencePart{Kind: "authority", Detail: request.Kind}
-	if err != nil {
-		part.Status = parentEvidencePartError
+		part.Status = parentevidence.PartError
 		part.Reason = err.Error()
-		return p.recordPart(part, surface)
+		return part
 	}
-	body := parentEvidenceAuthorityBody{
+	body := parentevidence.AuthorityBody{
 		Kind:           output.AuthorityKind,
 		SnapshotSHA256: output.AuthoritySnapshotSHA256,
 		ActiveTask:     output.ActiveTask,
@@ -560,16 +176,16 @@ func (p *parentEvidenceProjector) projectAuthority(request parentEvidenceAuthori
 	part.Digest = output.ContentSHA256
 	switch output.ContentMatch {
 	case authoritybootstrapcmd.ContentMatchUnchanged:
-		part.Status = parentEvidencePartUnchanged
+		part.Status = parentevidence.PartUnchanged
 	case authoritybootstrapcmd.ContentMatchChanged:
-		part.Status = parentEvidencePartChanged
+		part.Status = parentevidence.PartChanged
 		body.Content = output.Content
 	default:
-		part.Status = parentEvidencePartProjected
+		part.Status = parentevidence.PartProjected
 		body.Content = output.Content
 	}
 	if body.Content != "" && len(body.Content) > request.BudgetBytes {
-		part.Status = parentEvidencePartRefinement
+		part.Status = parentevidence.PartRefinement
 		part.Reason = fmt.Sprintf(
 			"changed authority body needs %d bytes but the budget is %d; raise budget_bytes for kind %s instead of receiving a truncated body",
 			len(body.Content), request.BudgetBytes, request.Kind,
@@ -582,63 +198,63 @@ func (p *parentEvidenceProjector) projectAuthority(request parentEvidenceAuthori
 	}
 	part.Locator = "authority:" + request.Kind
 	part.Authority = &body
-	return p.recordPart(part, surface)
+	return part
 }
 
-func (p *parentEvidenceProjector) projectHandoff(request parentEvidenceHandoffRequest) parentEvidencePart {
-	value := buildParentHandoffWithConfig(p.cfg, p.st)
+func projectParentEvidenceHandoff(cfg config.AppConfig, st *state.StateStore, request parentevidence.HandoffRequest) parentevidence.Part {
+	value := buildParentHandoffWithConfig(cfg, st)
 	digest, _ := parentEvidenceDigest(value)
-	part := parentEvidencePart{Kind: "handoff", Digest: digest, Locator: "handoff:current-state"}
+	part := parentevidence.Part{Kind: "handoff", Digest: digest, Locator: "handoff:current-state"}
 	if !request.Force && request.KnownDigest != "" && request.KnownDigest == digest {
-		part.Status = parentEvidencePartUnchanged
-		return p.recordPart(part, state.ParentEvidenceSurfaceHandoff)
+		part.Status = parentevidence.PartUnchanged
+		return part
 	}
 	data, err := json.Marshal(value)
 	if err != nil {
-		part.Status = parentEvidencePartError
+		part.Status = parentevidence.PartError
 		part.Reason = err.Error()
-		return p.recordPart(part, state.ParentEvidenceSurfaceHandoff)
+		return part
 	}
-	part.Status = parentEvidencePartProjected
+	part.Status = parentevidence.PartProjected
 	part.Handoff = json.RawMessage(data)
 	part.Bytes = len(data)
 	part.TokenProxy = state.ParentEvidenceTokenProxy(part.Bytes)
-	return p.recordPart(part, state.ParentEvidenceSurfaceHandoff)
+	return part
 }
 
-func (p *parentEvidenceProjector) projectStatus() parentEvidencePart {
-	taskID := p.st.ReadOr("task.id", "")
-	logs, logErr := taskview.ReadStatusTelemetry(p.st, taskID)
-	value := buildStatusOutput(p.st, taskID, logs, logErr)
+func projectParentEvidenceStatus(st *state.StateStore) parentevidence.Part {
+	taskID := st.ReadOr("task.id", "")
+	logs, logErr := taskview.ReadStatusTelemetry(st, taskID)
+	value := buildStatusOutput(st, taskID, logs, logErr)
 	data, err := json.Marshal(value)
-	part := parentEvidencePart{Kind: "status", Detail: "status_read"}
+	part := parentevidence.Part{Kind: "status", Detail: "status_read"}
 	if err != nil {
-		part.Status = parentEvidencePartError
+		part.Status = parentevidence.PartError
 		part.Reason = err.Error()
-		return p.recordPart(part, state.ParentEvidenceSurfaceStatus)
+		return part
 	}
-	part.Digest = parentStatusReadDigest(p.st)
-	part.Status = parentEvidencePartProjected
+	part.Digest = parentStatusReadDigest(st)
+	part.Status = parentevidence.PartProjected
 	part.StatusRead = json.RawMessage(data)
 	part.Bytes = len(data)
 	part.TokenProxy = state.ParentEvidenceTokenProxy(part.Bytes)
 	part.Locator = "status:current-state"
-	return p.recordPart(part, state.ParentEvidenceSurfaceStatus)
+	return part
 }
 
-func (p *parentEvidenceProjector) projectValidations() parentEvidencePart {
-	part := parentEvidencePart{Kind: "validations", Locator: "quality-gate-runs"}
-	repoRoot := p.st.ReadOr("repo-root", "")
+func projectParentEvidenceValidations(st *state.StateStore) parentevidence.Part {
+	part := parentevidence.Part{Kind: "validations", Locator: "quality-gate-runs"}
+	repoRoot := st.ReadOr("repo-root", "")
 	if repoRoot == "" {
-		part.Status = parentEvidencePartUnknown
+		part.Status = parentevidence.PartUnknown
 		part.Reason = "repository root is unavailable"
-		return p.recordPart(part, state.ParentEvidenceSurfaceValidations)
+		return part
 	}
 	snapshot, err := state.CaptureGitSnapshot(repoRoot)
 	if err != nil {
-		part.Status = parentEvidencePartError
+		part.Status = parentevidence.PartError
 		part.Reason = err.Error()
-		return p.recordPart(part, state.ParentEvidenceSurfaceValidations)
+		return part
 	}
 	digest := &state.SnapshotDigest{
 		Head:                          snapshot.Head,
@@ -646,44 +262,56 @@ func (p *parentEvidenceProjector) projectValidations() parentEvidencePart {
 		WorktreeDigest:                snapshot.WorktreeDigest,
 		WorktreeDigestExcludingParent: snapshot.WorktreeDigestExcludingParent,
 	}
-	records := currentParentValidations(p.st, repoRoot, digest)
-	routing := currentParentRoutingEvidence(p.st, repoRoot, p.st.ReadOr("task.id", ""), digest)
-	part.Validations = records
+	records := currentParentValidations(st, repoRoot, digest)
+	routing := currentParentRoutingEvidence(st, repoRoot, st.ReadOr("task.id", ""), digest)
+	part.Validations = make([]parentevidence.Validation, 0, len(records))
+	for _, record := range records {
+		part.Validations = append(part.Validations, parentevidence.Validation{
+			ValidationRunID: record.ValidationRunID,
+			Form:            record.Form,
+			Status:          record.Status,
+			WorkingDir:      record.WorkingDir,
+			Log:             record.Log,
+			Head:            record.Head,
+			IndexDigest:     record.IndexDigest,
+			WorktreeDigest:  record.WorktreeDigest,
+		})
+	}
 	part.Detail = fmt.Sprintf("%d runs, routing %d", len(records), len(routing))
 	if len(records) == 0 {
-		part.Status = parentEvidencePartUnknown
+		part.Status = parentevidence.PartUnknown
 		part.Reason = "no validation run matches the current snapshot"
 	} else {
 		rendered, marshalErr := json.Marshal(records)
 		if marshalErr != nil {
-			part.Status = parentEvidencePartError
+			part.Status = parentevidence.PartError
 			part.Reason = marshalErr.Error()
-			return p.recordPart(part, state.ParentEvidenceSurfaceValidations)
+			return part
 		}
-		part.Status = parentEvidencePartProjected
+		part.Status = parentevidence.PartProjected
 		part.Bytes = len(rendered)
 		part.TokenProxy = state.ParentEvidenceTokenProxy(part.Bytes)
 	}
 	part.Digest = parentEvidenceStringDigest(fmt.Sprintf("%v", records))
-	return p.recordPart(part, state.ParentEvidenceSurfaceValidations)
+	return part
 }
 
-func (p *parentEvidenceProjector) projectTelemetry() parentEvidencePart {
-	part := parentEvidencePart{Kind: "telemetry", Locator: p.st.Path(parentEvidenceTelemetryFile)}
-	records, err := p.st.ReadParentEvidence()
+func projectParentEvidenceTelemetry(st *state.StateStore) parentevidence.Part {
+	part := parentevidence.Part{Kind: "telemetry", Locator: st.Path(parentEvidenceTelemetryFile)}
+	records, err := st.ReadParentEvidence()
 	if err != nil {
-		part.Status = parentEvidencePartError
+		part.Status = parentevidence.PartError
 		part.Reason = err.Error()
-		return p.recordPart(part, state.ParentEvidenceSurfaceEvidenceTelemetry)
+		return part
 	}
-	logs, logErr := taskview.ReadStatusTelemetry(p.st, p.st.ReadOr("task.id", ""))
+	logs, logErr := taskview.ReadStatusTelemetry(st, st.ReadOr("task.id", ""))
 	if logErr != nil && len(logs) == 0 {
-		part.Status = parentEvidencePartUnknown
+		part.Status = parentevidence.PartUnknown
 		part.Reason = "model call telemetry is unavailable"
 	} else {
-		part.Status = parentEvidencePartProjected
+		part.Status = parentevidence.PartProjected
 	}
-	body := parentEvidenceTelemetryBody{
+	body := parentevidence.TelemetryBody{
 		Records:    len(records),
 		ModelCalls: len(logs),
 		Summary:    state.SummarizeParentEvidence(records),
@@ -691,34 +319,34 @@ func (p *parentEvidenceProjector) projectTelemetry() parentEvidencePart {
 	part.Telemetry = &body
 	rendered, marshalErr := json.Marshal(body)
 	if marshalErr != nil {
-		part.Status = parentEvidencePartError
+		part.Status = parentevidence.PartError
 		part.Reason = marshalErr.Error()
-		return p.recordPart(part, state.ParentEvidenceSurfaceEvidenceTelemetry)
+		return part
 	}
 	part.Bytes = len(rendered)
 	part.TokenProxy = state.ParentEvidenceTokenProxy(part.Bytes)
 	part.Digest = parentEvidenceStringDigest(fmt.Sprintf("%d:%d", body.Records, body.ModelCalls))
-	return p.recordPart(part, state.ParentEvidenceSurfaceEvidenceTelemetry)
+	return part
 }
 
-func (p *parentEvidenceProjector) projectSearch(request parentEvidenceSearchRequest) parentEvidencePart {
-	part := parentEvidencePart{Kind: "search", Detail: request.Question}
-	if !p.cfg.RepoSearch {
-		part.Status = parentEvidencePartDisabled
+func projectParentEvidenceSearch(cfg config.AppConfig, request parentevidence.SearchRequest) parentevidence.Part {
+	part := parentevidence.Part{Kind: "search", Detail: request.Question}
+	if !cfg.RepoSearch {
+		part.Status = parentevidence.PartDisabled
 		part.Reason = "repo search is disabled for this repository"
-		return p.recordPart(part, state.ParentEvidenceSurfaceSearch)
+		return part
 	}
-	scoped := repoSearchRequest(request)
-	report, err := reposearch.Search(context.Background(), p.cfg.RepoRoot, request.Question, reposearch.Options{
+	scoped := repoSearchRequest{Question: request.Question, Scopes: request.Scopes, BudgetBytes: request.BudgetBytes}
+	report, err := reposearch.Search(context.Background(), cfg.RepoRoot, request.Question, reposearch.Options{
 		DisableCache: true,
 		MaxResults:   workflow.RepoSearchMaxResults,
 		PathPrefixes: scoped.pathPrefixes(),
 		Symbols:      scoped.symbols(),
 	})
 	if err != nil {
-		part.Status = parentEvidencePartError
+		part.Status = parentevidence.PartError
 		part.Reason = err.Error()
-		return p.recordPart(part, state.ParentEvidenceSurfaceSearch)
+		return part
 	}
 	results := repoSearchResults(report.Results)
 	output := buildRepoSearchOutput(scoped, report, results)
@@ -726,492 +354,26 @@ func (p *parentEvidenceProjector) projectSearch(request parentEvidenceSearchRequ
 		state.ParentEvidenceSurfaceSearch, request.Question,
 		fmt.Sprintf("%v", request.Scopes), repoSearchResultsDigest(results),
 	)
-	body := parentEvidenceSearchBody{
+	body := parentevidence.SearchBody{
 		Question:    request.Question,
 		Scopes:      request.Scopes,
 		Candidates:  report.Candidates,
 		ResultCount: len(results),
-		Results:     []repoSearchResult{},
+		Results:     []parentevidence.SearchResult{},
 	}
 	if output.Status == repoSearchResultRequired {
-		part.Status = parentEvidencePartRefinement
+		part.Status = parentevidence.PartRefinement
 		part.Reason = output.Reason
 	} else {
-		part.Status = parentEvidencePartProjected
-		body.Results = results
+		part.Status = parentevidence.PartProjected
+		for _, result := range results {
+			body.Results = append(body.Results, parentevidence.SearchResult{Path: result.Path, Line: result.Line, Score: result.Score})
+		}
 		rendered, _ := json.Marshal(results)
 		part.Bytes = len(rendered)
 		part.TokenProxy = state.ParentEvidenceTokenProxy(part.Bytes)
 	}
 	part.Search = &body
 	part.Locator = "reposearch:" + request.Question
-	return p.recordPart(part, state.ParentEvidenceSurfaceSearch)
-}
-
-func (p *parentEvidenceProjector) projectDiff(request parentEvidenceDiffRequest) parentEvidencePart {
-	part := parentEvidencePart{Kind: "diff", Detail: request.Question}
-	files, body, err := captureParentEvidenceDiff(p.cfg.RepoRoot, request.Paths)
-	if err != nil {
-		part.Status = parentEvidencePartError
-		part.Reason = err.Error()
-		return p.recordPart(part, state.ParentEvidenceSurfaceDiff)
-	}
-	identity := make([]string, 0, len(files)*2)
-	for _, file := range files {
-		identity = append(identity, file.Path, file.HeadBlob, file.IndexBlob, file.WorktreeSHA)
-	}
-	part.Digest = parentEvidenceStringDigest(append([]string{request.Question}, identity...)...)
-	diffBody := parentEvidenceDiffBody{
-		Question: request.Question,
-		Paths:    request.Paths,
-		Files:    files,
-	}
-	if len(body) > request.BudgetBytes {
-		part.Status = parentEvidencePartRefinement
-		part.Reason = fmt.Sprintf(
-			"diff body needs %d bytes but the budget is %d; narrow paths or raise budget_bytes; per-file identity is preserved",
-			len(body), request.BudgetBytes,
-		)
-	} else {
-		part.Status = parentEvidencePartProjected
-		diffBody.Body = body
-		part.Bytes = len(body)
-		part.TokenProxy = state.ParentEvidenceTokenProxy(part.Bytes)
-	}
-	part.Diff = &diffBody
-	part.Locator = "git diff HEAD -- " + strings.Join(request.Paths, " ")
-	return p.recordPart(part, state.ParentEvidenceSurfaceDiff)
-}
-
-func captureParentEvidenceDiff(repoRoot string, paths []string) ([]parentEvidenceDiffFile, string, error) {
-	body, err := gitOutputIn(repoRoot, append([]string{"diff", "HEAD", "--no-ext-diff", "--no-renames", "--"}, paths...)...)
-	if err != nil {
-		return nil, "", fmt.Errorf("git diff HEAD: %w", err)
-	}
-	numstat, err := gitOutputIn(repoRoot, append([]string{"diff", "HEAD", "--numstat", "--no-renames", "--"}, paths...)...)
-	if err != nil {
-		return nil, "", fmt.Errorf("git diff HEAD --numstat: %w", err)
-	}
-	status, err := gitOutputIn(repoRoot, append([]string{"status", "--porcelain=v1", "-z", "--untracked-files=all", "--"}, paths...)...)
-	if err != nil {
-		return nil, "", fmt.Errorf("git status: %w", err)
-	}
-	files := make([]parentEvidenceDiffFile, 0, len(paths))
-	for _, path := range paths {
-		file := parentEvidenceDiffFile{Path: path, Status: diffFileStatusLetter(string(status), path)}
-		file.HeadBlob, err = gitTrimmedOutput(repoRoot, "rev-parse", "--verify", "HEAD:"+path)
-		if err != nil {
-			file.HeadBlob = ""
-		}
-		file.IndexBlob = diffIndexBlob(repoRoot, path)
-		file.WorktreeSHA = diffWorktreeSHA(repoRoot, path)
-		file.Additions, file.Deletions = diffNumstat(string(numstat), path)
-		files = append(files, file)
-	}
-	return files, string(body), nil
-}
-
-func diffFileStatusLetter(statusOutput string, path string) string {
-	for _, record := range strings.Split(strings.TrimRight(statusOutput, "\x00"), "\x00") {
-		if record == "" {
-			continue
-		}
-		if len(record) > 3 && record[3:] == path {
-			return string(record[0])
-		}
-	}
-	return "unknown"
-}
-
-func diffIndexBlob(repoRoot string, path string) string {
-	output, err := gitOutputIn(repoRoot, "ls-files", "-s", "--", path)
-	if err != nil {
-		return ""
-	}
-	fields := strings.Fields(strings.TrimSpace(string(output)))
-	if len(fields) < 2 {
-		return ""
-	}
-	return fields[1]
-}
-
-func diffWorktreeSHA(repoRoot string, path string) string {
-	abs, err := parentEvidenceJoinRoot(repoRoot, path)
-	if err != nil {
-		return ""
-	}
-	content, err := os.ReadFile(abs)
-	if err != nil {
-		return ""
-	}
-	sum := sha256.Sum256(content)
-	return hex.EncodeToString(sum[:])
-}
-
-func diffNumstat(numstatOutput string, path string) (int, int) {
-	for _, line := range strings.Split(strings.TrimRight(numstatOutput, "\n"), "\n") {
-		fields := strings.SplitN(line, "\t", 3)
-		if len(fields) != 3 || fields[2] != path {
-			continue
-		}
-		additions, addErr := strconv.Atoi(fields[0])
-		deletions, delErr := strconv.Atoi(fields[1])
-		if addErr != nil || delErr != nil {
-			return 0, 0
-		}
-		return additions, deletions
-	}
-	return 0, 0
-}
-
-func (p *parentEvidenceProjector) projectSource(request parentEvidenceSourceRequest) parentEvidencePart {
-	part := parentEvidencePart{
-		Kind:    "source",
-		Detail:  request.Path,
-		Locator: fmt.Sprintf("%s:%d-%d", request.Path, request.LineStart, request.LineEnd),
-	}
-	abs, err := parentEvidenceJoinRoot(p.cfg.RepoRoot, request.Path)
-	if err != nil {
-		part.Status = parentEvidencePartError
-		part.Reason = err.Error()
-		return p.recordPart(part, state.ParentEvidenceSurfaceSource)
-	}
-	content, err := os.ReadFile(abs)
-	if err != nil {
-		part.Status = parentEvidencePartError
-		part.Reason = err.Error()
-		return p.recordPart(part, state.ParentEvidenceSurfaceSource)
-	}
-	lines := strings.Split(string(content), "\n")
-	if request.LineEnd > len(lines) {
-		part.Status = parentEvidencePartError
-		part.Reason = fmt.Sprintf("requested range ends at line %d but the file has %d lines", request.LineEnd, len(lines))
-		return p.recordPart(part, state.ParentEvidenceSurfaceSource)
-	}
-	extracted := strings.Join(lines[request.LineStart-1:request.LineEnd], "\n")
-	sum := sha256.Sum256([]byte(extracted))
-	part.Digest = hex.EncodeToString(sum[:])
-	body := parentEvidenceSourceBody{
-		Question:  request.Question,
-		Path:      request.Path,
-		LineStart: request.LineStart,
-		LineEnd:   request.LineEnd,
-	}
-	if len(extracted) > request.BudgetBytes {
-		part.Status = parentEvidencePartRefinement
-		part.Reason = fmt.Sprintf(
-			"source range needs %d bytes but the budget is %d; narrow the line range or raise budget_bytes",
-			len(extracted), request.BudgetBytes,
-		)
-	} else {
-		part.Status = parentEvidencePartProjected
-		body.Content = extracted
-		part.Bytes = len(extracted)
-		part.TokenProxy = state.ParentEvidenceTokenProxy(part.Bytes)
-	}
-	part.Source = &body
-	return p.recordPart(part, state.ParentEvidenceSurfaceSource)
-}
-
-func parentEvidenceJoinRoot(repoRoot string, rel string) (string, error) {
-	root, err := filepath.EvalSymlinks(repoRoot)
-	if err != nil {
-		return "", fmt.Errorf("repository rootを解決できません: %w", err)
-	}
-	abs := filepath.Join(root, filepath.FromSlash(rel))
-	canonical, err := filepath.EvalSymlinks(abs)
-	if err != nil {
-		return "", fmt.Errorf("対象file %sを解決できません: %w", rel, err)
-	}
-	if canonical != root && !strings.HasPrefix(canonical, root+string(filepath.Separator)) {
-		return "", fmt.Errorf("対象file %sがrepository境界を越えています", rel)
-	}
-	info, err := os.Lstat(canonical)
-	if err != nil || !info.Mode().IsRegular() {
-		return "", fmt.Errorf("対象file %sは通常fileではありません", rel)
-	}
-	return canonical, nil
-}
-
-func markParentReviewEvidenceProof(p *parentEvidenceProjector, parts []parentEvidencePart) error {
-	binding, err := p.st.CurrentParentReviewBinding()
-	if err != nil {
-		return err
-	}
-	if binding == nil {
-		return nil
-	}
-	claims, complete := parentReviewEvidenceClaims(binding.Targets, parts)
-	if !complete {
-		return nil
-	}
-	return p.st.MarkParentReviewEvidence(binding.ID, p.ownerCallID, claims)
-}
-
-func parentReviewEvidenceClaims(targets []string, parts []parentEvidencePart) ([]state.ParentReviewEvidenceClaim, bool) {
-	claims := make([]state.ParentReviewEvidenceClaim, 0, len(targets))
-	seen := make(map[string]struct{})
-	for _, target := range targets {
-		claim, ok := parentReviewEvidenceClaimForTarget(target, parts)
-		if !ok {
-			return nil, false
-		}
-		key := claim.Kind + "\x00" + claim.Digest + "\x00" + claim.Locator
-		if _, exists := seen[key]; exists {
-			continue
-		}
-		seen[key] = struct{}{}
-		claims = append(claims, claim)
-	}
-	return claims, len(claims) > 0
-}
-
-func parentReviewEvidenceClaimForTarget(target string, parts []parentEvidencePart) (state.ParentReviewEvidenceClaim, bool) {
-	for _, part := range parts {
-		if part.Digest == "" {
-			continue
-		}
-		if part.Source != nil && part.Source.Content != "" && parentReviewSourceCoversTarget(target, *part.Source) {
-			return state.ParentReviewEvidenceClaim{Kind: "source", Digest: part.Digest, Locator: part.Locator}, true
-		}
-		if part.Diff != nil && part.Diff.Body != "" && parentReviewDiffCoversTarget(target, *part.Diff) {
-			return state.ParentReviewEvidenceClaim{Kind: "diff", Digest: part.Digest, Locator: part.Locator}, true
-		}
-	}
-	return state.ParentReviewEvidenceClaim{}, false
-}
-
-func parentReviewSourceCoversTarget(target string, source parentEvidenceSourceBody) bool {
-	if !parentReviewTargetMatchesPath(target, source.Path) {
-		return false
-	}
-	suffix := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(target), source.Path))
-	if !strings.HasPrefix(suffix, ":") {
-		return false
-	}
-	locator := strings.TrimSpace(strings.TrimPrefix(suffix, ":"))
-	start, end, ok := parentReviewNumericRange(locator)
-	return ok && source.LineStart <= start && source.LineEnd >= end
-}
-
-func parentReviewDiffCoversTarget(target string, diff parentEvidenceDiffBody) bool {
-	target = strings.TrimSpace(target)
-	for _, file := range diff.Files {
-		if parentReviewDiffFileCoversTarget(target, file, diff.Body) {
-			return true
-		}
-	}
-	return false
-}
-
-func parentReviewDiffFileCoversTarget(target string, file parentEvidenceDiffFile, body string) bool {
-	if !parentReviewTargetMatchesPath(target, file.Path) || file.Status == analysisStatusUnknown {
-		return false
-	}
-	if file.HeadBlob == "" && file.IndexBlob == "" && file.WorktreeSHA == "" {
-		return false
-	}
-	section := parentReviewDiffFileSection(body, file.Path)
-	if section == "" {
-		return false
-	}
-	suffix := strings.TrimSpace(strings.TrimPrefix(target, file.Path))
-	if suffix == "" {
-		return true
-	}
-	if !strings.HasPrefix(suffix, ":") {
-		return false
-	}
-	locator := strings.TrimSpace(strings.TrimPrefix(suffix, ":"))
-	if start, end, ok := parentReviewNumericRange(locator); ok {
-		return parentReviewDiffSectionCoversLines(section, start, end)
-	}
-	return locator != "" && strings.Contains(section, locator)
-}
-
-func parentReviewDiffFileSection(body, path string) string {
-	if body == "" || path == "" {
-		return ""
-	}
-	return parentReviewQuotedDiffFileSection(body, path)
-}
-
-func parentReviewDiffSectionCoversLines(section string, start, end int) bool {
-	for _, line := range strings.Split(section, "\n") {
-		hunkStart, hunkEnd, ok := parentReviewDiffHunkCurrentRange(line)
-		if ok && start >= hunkStart && end <= hunkEnd {
-			return true
-		}
-	}
-	return false
-}
-
-func parentReviewDiffHunkCurrentRange(line string) (int, int, bool) {
-	if !strings.HasPrefix(line, "@@ ") {
-		return 0, 0, false
-	}
-	fields := strings.Fields(line)
-	if len(fields) < 3 || !strings.HasPrefix(fields[2], "+") {
-		return 0, 0, false
-	}
-	value := strings.TrimPrefix(fields[2], "+")
-	parts := strings.SplitN(value, ",", 2)
-	start, ok := parentReviewPositiveLine(parts[0])
-	if !ok {
-		return 0, 0, false
-	}
-	count := 1
-	if len(parts) == 2 {
-		parsed, err := strconv.Atoi(parts[1])
-		if err != nil || parsed <= 0 {
-			return 0, 0, false
-		}
-		count = parsed
-	}
-	return start, start + count - 1, true
-}
-
-func parentReviewTargetMatchesPath(target, path string) bool {
-	target = strings.TrimSpace(target)
-	if target == path {
-		return true
-	}
-	for _, separator := range []string{":", " ", ","} {
-		if strings.HasPrefix(target, path+separator) {
-			return true
-		}
-	}
-	return false
-}
-
-func parentReviewNumericRange(locator string) (int, int, bool) {
-	token := parentReviewNumericRangeToken(locator)
-	if token == "" {
-		return 0, 0, false
-	}
-	values := strings.Split(token, "-")
-	if len(values) > 2 || values[0] == "" {
-		return 0, 0, false
-	}
-	start, ok := parentReviewPositiveLine(values[0])
-	if !ok {
-		return 0, 0, false
-	}
-	if len(values) == 1 {
-		return start, start, true
-	}
-	end, ok := parentReviewPositiveLine(values[1])
-	if !ok || end < start {
-		return 0, 0, false
-	}
-	return start, end, true
-}
-
-func parentReviewNumericRangeToken(locator string) string {
-	end := 0
-	for end < len(locator) {
-		c := locator[end]
-		if (c < '0' || c > '9') && c != '-' {
-			break
-		}
-		end++
-	}
-	return locator[:end]
-}
-
-func parentReviewPositiveLine(value string) (int, bool) {
-	line, err := strconv.Atoi(value)
-	return line, err == nil && line > 0
-}
-
-func applyParentEvidenceTotalBudget(output *parentEvidenceOutput) {
-	for parentEvidenceOutputSize(*output) > parentEvidenceMaxOutputBytes {
-		if !stripParentEvidenceBody(output) {
-			return
-		}
-	}
-	output.Status = parentEvidenceAggregateStatus(output.Parts)
-}
-
-func parentEvidenceOutputSize(output parentEvidenceOutput) int {
-	data, err := json.Marshal(output)
-	if err != nil {
-		return parentEvidenceMaxOutputBytes + 1
-	}
-	return len(data)
-}
-
-func stripParentEvidenceBody(output *parentEvidenceOutput) bool {
-	for index := len(output.Parts) - 1; index >= 0; index-- {
-		if !stripParentEvidencePartBody(&output.Parts[index]) {
-			continue
-		}
-		return true
-	}
-	return false
-}
-
-func stripParentEvidencePartBody(part *parentEvidencePart) bool {
-	stripped := false
-	for _, strip := range parentEvidenceBodyStrippers {
-		if strip(part) {
-			stripped = true
-			break
-		}
-	}
-	if !stripped {
-		return false
-	}
-	clearParentEvidencePartBody(part)
-	part.Status = parentEvidencePartRefinement
-	part.Reason = "total evidence output budget exceeded; body omitted while counts, digests and locators are preserved"
-	part.Bytes = 0
-	part.TokenProxy = 0
-	return true
-}
-
-func parentEvidencePartHasBody(part *parentEvidencePart) bool {
-	for _, strip := range parentEvidenceBodyStrippers {
-		if strip(part) {
-			return true
-		}
-	}
-	return false
-}
-
-func clearParentEvidencePartBody(part *parentEvidencePart) {
-	switch {
-	case part.Authority != nil && part.Authority.Content != "":
-		part.Authority.Content = ""
-	case len(part.Handoff) > 0:
-		part.Handoff = nil
-	case len(part.StatusRead) > 0:
-		part.StatusRead = nil
-	case part.Search != nil && len(part.Search.Results) > 0:
-		part.Search.Results = nil
-	case part.Diff != nil && part.Diff.Body != "":
-		part.Diff.Body = ""
-	case part.Source != nil && part.Source.Content != "":
-		part.Source.Content = ""
-	}
-}
-
-func gitOutputIn(dir string, args ...string) ([]byte, error) {
-	command := exec.Command("git", args...)
-	command.Dir = dir
-	var stderr bytes.Buffer
-	command.Stderr = &stderr
-	output, err := command.Output()
-	if err != nil {
-		return nil, fmt.Errorf("git %s: %w: %s", args[0], err, strings.TrimSpace(stderr.String()))
-	}
-	return output, nil
-}
-
-func gitTrimmedOutput(dir string, args ...string) (string, error) {
-	output, err := gitOutputIn(dir, args...)
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(string(output)), nil
+	return part
 }
