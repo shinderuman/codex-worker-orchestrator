@@ -4,12 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 	"io"
 	"strconv"
 	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentevidence"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/reposearch"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
@@ -84,7 +85,7 @@ func printRepoSearchWithSearch(request repoSearchRequest, cfg config.AppConfig, 
 	if !cfg.RepoSearch {
 		return machinecli.WriteJSON(stdout, repoSearchOutput{Status: repoSearchResultDisabled, Result: repoSearchResultDisabled, Results: []repoSearchResult{}})
 	}
-	scope, err := captureParentEvidenceReadScope(st)
+	scope, err := parentevidence.CaptureReadScope(st)
 	if err != nil {
 		return err
 	}
@@ -98,35 +99,35 @@ func printRepoSearchWithSearch(request repoSearchRequest, cfg config.AppConfig, 
 		return fmt.Errorf("repo searchが失敗しました: %w", err)
 	}
 	results := repoSearchResults(report.Results)
-	digest := parentEvidenceStringDigest(
+	digest := parentevidence.StringDigest(
 		state.ParentEvidenceSurfaceSearch,
 		request.Question,
 		fmt.Sprintf("%v", request.Scopes),
 		repoSearchResultsDigest(results),
 	)
 	output := buildRepoSearchOutput(request, report, results)
-	return finishParentReadInScopeResult(st, scope, state.ParentEvidenceSurfaceSearch, digest, func() (parentReadRenderResult, error) {
+	return parentevidence.FinishReadInScopeResult(st, scope, state.ParentEvidenceSurfaceSearch, digest, func() (parentevidence.RenderResult, error) {
 		return renderRepoSearchResult(output, stdout)
 	})
 }
 
-func renderRepoSearchResult(output repoSearchOutput, stdout io.Writer) (parentReadRenderResult, error) {
+func renderRepoSearchResult(output repoSearchOutput, stdout io.Writer) (parentevidence.RenderResult, error) {
 	if output.Status == repoSearchResultRequired {
 		if writeErr := machinecli.WriteJSON(stdout, output); writeErr != nil {
-			return parentReadRenderResult{}, writeErr
+			return parentevidence.RenderResult{}, writeErr
 		}
 		rendered, marshalErr := json.Marshal(output)
 		if marshalErr != nil {
-			return parentReadRenderResult{}, marshalErr
+			return parentevidence.RenderResult{}, marshalErr
 		}
-		return parentReadRenderResult{
-			bytes:   len(rendered),
-			outcome: state.ParentEvidenceOutcomeRefinement,
-			reason:  output.Reason,
+		return parentevidence.RenderResult{
+			Bytes:   len(rendered),
+			Outcome: state.ParentEvidenceOutcomeRefinement,
+			Reason:  output.Reason,
 		}, nil
 	}
-	written, writeErr := writeMeasuredJSON(stdout, output)
-	return parentReadRenderResult{bytes: written, outcome: state.ParentEvidenceOutcomeProjected}, writeErr
+	written, writeErr := parentevidence.WriteMeasuredJSON(stdout, output)
+	return parentevidence.RenderResult{Bytes: written, Outcome: state.ParentEvidenceOutcomeProjected}, writeErr
 }
 
 func buildRepoSearchOutput(request repoSearchRequest, report reposearch.Report, results []repoSearchResult) repoSearchOutput {
@@ -174,7 +175,7 @@ func repoSearchResultsDigest(results []repoSearchResult) string {
 	for _, result := range results {
 		parts = append(parts, result.Path, strconv.Itoa(result.Line))
 	}
-	return parentEvidenceStringDigest(parts...)
+	return parentevidence.StringDigest(parts...)
 }
 
 func repoSearchResults(results []reposearch.Result) []repoSearchResult {
