@@ -11,6 +11,18 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
+func TestPublicationReferenceTransactionNonPreparedPhaseDoesNotRequireGuardPath(t *testing.T) {
+	hooks := t.TempDir()
+	copyPublicationHook(t, "reference-transaction", hooks)
+	hook := filepath.Join(hooks, "reference-transaction")
+	for _, phase := range []string{"committed", "aborted"} {
+		cmd := exec.Command("sh", hook, phase)
+		if output, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("reference transaction %s phase required guard path: %v: %s", phase, err, output)
+		}
+	}
+}
+
 func TestPublicationReferenceTransactionAllowsOrdinaryCommit(t *testing.T) {
 	repo := continuationHookRepo(t)
 	hooks := t.TempDir()

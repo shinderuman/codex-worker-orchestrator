@@ -109,8 +109,6 @@ managed_path_unclaimed() {
 
 staging_hooks_path=
 backup_hooks_path=
-had_active=0
-
 cleanup_snapshot_work() {
 	if [ -e "$backup_hooks_path" ] || [ -L "$backup_hooks_path" ]; then
 		rm -rf "$managed_hooks_path"
@@ -130,7 +128,6 @@ finalize_managed_hooks() {
 install_managed_hooks() {
 	staging_hooks_path="$managed_hooks_path.stage.$$"
 	backup_hooks_path="$managed_hooks_path.backup.$$"
-	had_active=0
 	trap 'cleanup_snapshot_work' EXIT HUP INT TERM
 	rm -rf "$staging_hooks_path" "$backup_hooks_path"
 	mkdir -p "$staging_hooks_path"
@@ -160,7 +157,6 @@ install_managed_hooks() {
 			printf '%s\n' 'git hook: failed to stage existing managed snapshot for replacement' >&2
 			exit 1
 		fi
-		had_active=1
 	fi
 
 	if ! mv "$staging_hooks_path" "$managed_hooks_path"; then

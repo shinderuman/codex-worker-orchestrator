@@ -155,23 +155,43 @@ func highestShellStateVersion(states map[string]shellVersionedState) int {
 }
 
 func shellStateKindForVariable(lines []string, variable string) string {
-	for index := 0; index < len(lines); index++ {
-		selector := shellCaseVariablePattern.FindStringSubmatch(strings.TrimSpace(lines[index]))
-		if len(selector) != 2 || selector[1] != variable {
+	for index, line := range lines {
+		if shellCaseVariable(line) != variable {
 			continue
 		}
-		for arm := index; arm < len(lines); arm++ {
-			match := shellStateKindPattern.FindStringSubmatch(lines[arm])
-			if len(match) == 4 {
-				for _, kind := range match[1:] {
-					if kind != "" {
-						return kind
-					}
-				}
-			}
-			if strings.Contains(lines[arm], ";;") {
-				break
-			}
+		return shellStateKindForArm(lines, index)
+	}
+	return ""
+}
+
+func shellCaseVariable(line string) string {
+	match := shellCaseVariablePattern.FindStringSubmatch(strings.TrimSpace(line))
+	if len(match) != 2 {
+		return ""
+	}
+	return match[1]
+}
+
+func shellStateKindForArm(lines []string, index int) string {
+	for arm := index; arm < len(lines); arm++ {
+		if kind := shellStateKindFromLine(lines[arm]); kind != "" {
+			return kind
+		}
+		if strings.Contains(lines[arm], ";;") {
+			return ""
+		}
+	}
+	return ""
+}
+
+func shellStateKindFromLine(line string) string {
+	match := shellStateKindPattern.FindStringSubmatch(line)
+	if len(match) != 4 {
+		return ""
+	}
+	for _, kind := range match[1:] {
+		if kind != "" {
+			return kind
 		}
 	}
 	return ""

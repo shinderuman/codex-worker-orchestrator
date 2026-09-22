@@ -2,6 +2,10 @@
 set -eu
 
 phase=${1:-}
+if [ "$phase" != prepared ]; then
+  exit 0
+fi
+
 case "$0" in
   */*) hook_dir=${0%/*} ;;
   *) hook_dir=. ;;
@@ -26,10 +30,6 @@ esac
 if [ ! -x "$glm_parent_action" ]; then
   printf '%s\n' 'publication guard rejected: configured glm-parent-action is not executable' >&2
   exit 1
-fi
-
-if [ "$phase" != prepared ]; then
-  exit 0
 fi
 
 while IFS=' ' read -r old_oid new_oid ref_name; do

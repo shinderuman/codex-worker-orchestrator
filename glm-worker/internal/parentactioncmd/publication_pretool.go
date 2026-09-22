@@ -876,27 +876,43 @@ func publicationGitSubcommand(argv []publicationShellWord) string {
 	for index := 0; index < len(argv); index++ {
 		value := argv[index].Value
 		if value == "--" {
-			if index+1 < len(argv) {
-				return argv[index+1].Value
-			}
-			return ""
+			return publicationGitSubcommandAfterSeparator(argv, index)
 		}
-		switch value {
-		case "-C", "-c", "--git-dir", "--work-tree", "--namespace", "--super-prefix", "--config-env":
+		if publicationGitGlobalOptionConsumesValue(value) {
 			index++
 			continue
 		}
-		if strings.HasPrefix(value, "-C") && value != "-C" || strings.HasPrefix(value, "-c") && value != "-c" ||
-			strings.HasPrefix(value, "--git-dir=") || strings.HasPrefix(value, "--work-tree=") ||
-			strings.HasPrefix(value, "--namespace=") || strings.HasPrefix(value, "--super-prefix=") || strings.HasPrefix(value, "--config-env=") {
-			continue
-		}
-		if strings.HasPrefix(value, "-") {
+		if publicationGitInlineGlobalOption(value) || strings.HasPrefix(value, "-") {
 			continue
 		}
 		return value
 	}
 	return ""
+}
+
+func publicationGitSubcommandAfterSeparator(argv []publicationShellWord, index int) string {
+	if index+1 >= len(argv) {
+		return ""
+	}
+	return argv[index+1].Value
+}
+
+func publicationGitGlobalOptionConsumesValue(value string) bool {
+	switch value {
+	case "-C", "-c", "--git-dir", "--work-tree", "--namespace", "--super-prefix", "--config-env":
+		return true
+	default:
+		return false
+	}
+}
+
+func publicationGitInlineGlobalOption(value string) bool {
+	for _, prefix := range []string{"-C", "-c", "--git-dir=", "--work-tree=", "--namespace=", "--super-prefix=", "--config-env="} {
+		if strings.HasPrefix(value, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func publicationGitHooksPathBypass(segment []publicationShellWord) bool {
