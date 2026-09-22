@@ -21,9 +21,6 @@ func runHelp(args []string, stdout io.Writer) (bool, error) {
 	}
 	commands := make([]string, 0, len(commandParsers)+2)
 	for name := range commandParsers {
-		if name == "--decision" || name == "--fix" {
-			continue
-		}
 		commands = append(commands, name)
 	}
 	commands = append(commands, "--authority", "--help")

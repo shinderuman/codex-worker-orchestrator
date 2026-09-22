@@ -66,6 +66,10 @@ func TestDispatchCommandMachineOutputContract(t *testing.T) {
 		name := strings.Join(args, " ")
 		t.Run("early "+name, func(t *testing.T) {
 			outcome := runBinaryForMachineContract(t, binary, args, false, true)
+			if outcome.runErr == nil {
+				requireExactlyOneJSONStdout(t, name, outcome.stdout)
+				return
+			}
 			requireMachineProcessContract(t, args, outcome)
 		})
 	}
