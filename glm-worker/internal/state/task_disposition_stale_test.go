@@ -1,6 +1,7 @@
 package state
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"strings"
@@ -75,6 +76,34 @@ func TestResetRequestRejectsConflictingOrphanedTaskIdentity(t *testing.T) {
 	err = st.ValidateResetRequest(string(TaskDispositionAbandon))
 	if err == nil || !strings.Contains(err.Error(), "does not match parent review task") {
 		t.Fatalf("conflicting orphaned task identity was accepted: %v", err)
+	}
+}
+
+func TestResetParentReviewUsesCanonicalStructuralDecoder(t *testing.T) {
+	st := &StateStore{dir: t.TempDir()}
+	taskID, err := st.StartNewTask()
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := ParentReviewState{
+		Version: parentReviewStateVersion,
+		TaskID:  taskID,
+		Open:    &ParentReviewOpenState{PacketStatus: "invalid"},
+	}
+	data, err := json.Marshal(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(st.Path(parentReviewStateFile), append(data, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Remove("task.id"); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = st.rawParentReviewStateForReset()
+	if err == nil || !strings.Contains(err.Error(), "parent review stateのpacket statusが不正です") {
+		t.Fatalf("reset reader bypassed canonical parent-review decoder: %v", err)
 	}
 }
 
