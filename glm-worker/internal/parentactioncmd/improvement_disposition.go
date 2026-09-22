@@ -30,24 +30,6 @@ const (
 	improvementTaskOption         = "--task"
 )
 
-func requireImprovementSignalDisposition(cfg config.AppConfig, action string) error {
-	if action == actionImprovementDisposition {
-		return nil
-	}
-	st, err := state.NewStateStore(cfg)
-	if err != nil {
-		return err
-	}
-	signal, err := app.CurrentImprovementSignal(st)
-	if err != nil {
-		return fmt.Errorf("improvement signal state is unreadable: %w", err)
-	}
-	if signal == nil {
-		return nil
-	}
-	return fmt.Errorf("machine-visible improvement signal %s/%s requires parent disposition before %s", signal.Kind, signal.SourceCallID, action)
-}
-
 func executeImprovementDisposition(cfg config.AppConfig, args []string, stdout io.Writer) error {
 	kind, sourceCallID, disposition, targetTask, err := parseImprovementDispositionArgs(args)
 	if err != nil {
