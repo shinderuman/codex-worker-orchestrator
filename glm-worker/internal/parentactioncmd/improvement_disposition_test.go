@@ -11,8 +11,11 @@ import (
 
 const improvementDispositionTestCallID = "44444444-4444-4444-8444-444444444444"
 
-func TestImprovementSignalRejectDispositionDoesNotRegisterTask(t *testing.T) {
+func TestImprovementSignalRejectDispositionDoesNotRequireRepositoryTaskBinding(t *testing.T) {
 	cfg, st := newImprovementDispositionTestState(t)
+	if err := st.Remove("active-task"); err != nil {
+		t.Fatal(err)
+	}
 
 	var out bytes.Buffer
 	if err := executeImprovementDisposition(cfg, []string{
