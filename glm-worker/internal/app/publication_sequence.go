@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskdiff"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
@@ -417,11 +418,11 @@ func publicationRuntimeInstallSatisfied(repoRoot string, st *state.StateStore, c
 	if !available {
 		return false, fmt.Errorf("runtime install task baseline is unavailable")
 	}
-	runtimePaths := taskdiff.RuntimeChangedPaths(paths)
+	runtimePaths := taskdiff.SelectedPaths(paths, repositoryharness.RuntimeInstallPath)
 	if len(runtimePaths) == 0 {
 		return true, nil
 	}
-	digest, err := taskdiff.RuntimeSourceDigest(repoRoot, runtimePaths)
+	digest, err := taskdiff.SourceDigest(repoRoot, runtimePaths)
 	if err != nil {
 		return false, err
 	}

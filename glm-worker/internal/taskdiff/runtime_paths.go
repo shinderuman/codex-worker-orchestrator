@@ -8,36 +8,20 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 )
 
-func RuntimeInstallPath(path string) bool {
-	path = filepath.ToSlash(filepath.Clean(path))
-	switch path {
-	case "install.sh", "quality-tools.yml", "claude/settings-managed.json":
-		return true
-	}
-	if strings.HasPrefix(path, "codex/") {
-		return true
-	}
-	if !strings.HasPrefix(path, "glm-worker/") || strings.HasSuffix(path, "_test.go") {
-		return false
-	}
-	return path == "glm-worker/go.mod" || path == "glm-worker/go.sum" || strings.HasSuffix(path, ".go")
-}
-
-func RuntimeChangedPaths(paths []string) []string {
-	runtimePaths := make([]string, 0, len(paths))
+func SelectedPaths(paths []string, include func(string) bool) []string {
+	selected := make([]string, 0, len(paths))
 	for _, path := range paths {
-		if RuntimeInstallPath(path) {
-			runtimePaths = append(runtimePaths, filepath.ToSlash(filepath.Clean(path)))
+		if include(path) {
+			selected = append(selected, filepath.ToSlash(filepath.Clean(path)))
 		}
 	}
-	sort.Strings(runtimePaths)
-	return runtimePaths
+	sort.Strings(selected)
+	return selected
 }
 
-func RuntimeSourceDigest(repoRoot string, paths []string) (string, error) {
+func SourceDigest(repoRoot string, paths []string) (string, error) {
 	hash := sha256.New()
 	for _, path := range paths {
 		data, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(path)))

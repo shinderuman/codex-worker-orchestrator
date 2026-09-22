@@ -2,16 +2,10 @@ package parentactioncmd
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
-	"os"
 	"os/exec"
-	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
@@ -58,13 +52,7 @@ func runtimeInstallRequirementForTask(repoRoot string, st *state.StateStore) (ru
 	if !available {
 		return runtimeInstallRequirement{}, fmt.Errorf("runtime install task baseline is unavailable")
 	}
-	runtimePaths := make([]string, 0, len(paths))
-	for _, path := range paths {
-		if runtimeInstallPath(path) {
-			runtimePaths = append(runtimePaths, filepath.ToSlash(filepath.Clean(path)))
-		}
-	}
-	sort.Strings(runtimePaths)
+	runtimePaths := taskdiff.SelectedPaths(paths, repositoryharness.RuntimeInstallPath)
 	if len(runtimePaths) == 0 {
 		return runtimeInstallRequirement{}, nil
 	}
@@ -72,7 +60,7 @@ func runtimeInstallRequirementForTask(repoRoot string, st *state.StateStore) (ru
 	if err != nil {
 		return runtimeInstallRequirement{}, fmt.Errorf("runtime install HEAD: %w", err)
 	}
-	digest, err := runtimeSourceDigest(repoRoot, runtimePaths)
+	digest, err := taskdiff.SourceDigest(repoRoot, runtimePaths)
 	if err != nil {
 		return runtimeInstallRequirement{}, err
 	}
@@ -82,38 +70,6 @@ func runtimeInstallRequirementForTask(repoRoot string, st *state.StateStore) (ru
 		SourceDigest: digest,
 		Paths:        runtimePaths,
 	}, nil
-}
-
-func runtimeInstallPath(path string) bool {
-	path = filepath.ToSlash(filepath.Clean(path))
-	switch path {
-	case "install.sh", "quality-tools.yml", "claude/settings-managed.json":
-		return true
-	}
-	if strings.HasPrefix(path, "codex/") {
-		return true
-	}
-	if !strings.HasPrefix(path, "glm-worker/") || strings.HasSuffix(path, "_test.go") {
-		return false
-	}
-	return path == "glm-worker/go.mod" || path == "glm-worker/go.sum" || strings.HasSuffix(path, ".go")
-}
-
-func runtimeSourceDigest(repoRoot string, paths []string) (string, error) {
-	hash := sha256.New()
-	for _, path := range paths {
-		data, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(path)))
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				_, _ = fmt.Fprintf(hash, "%s\x00missing\n", path)
-				continue
-			}
-			return "", fmt.Errorf("runtime source %s: %w", path, err)
-		}
-		content := sha256.Sum256(data)
-		_, _ = fmt.Fprintf(hash, "%s\x00%s\n", path, hex.EncodeToString(content[:]))
-	}
-	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
 func runtimeChangedBetween(repoRoot, fromHead, toHead string) (bool, error) {
@@ -126,7 +82,7 @@ func runtimeChangedBetween(repoRoot, fromHead, toHead string) (bool, error) {
 		return false, fmt.Errorf("runtime install head comparison: %w", err)
 	}
 	for _, raw := range bytes.Split(output, []byte{0}) {
-		if len(raw) != 0 && runtimeInstallPath(string(raw)) {
+		if len(raw) != 0 && repositoryharness.RuntimeInstallPath(string(raw)) {
 			return true, nil
 		}
 	}

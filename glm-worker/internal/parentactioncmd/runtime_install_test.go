@@ -32,8 +32,8 @@ func TestRuntimeInstallPathClassification(t *testing.T) {
 		{path: "IMPLEMENTATION_TASKS/example.md", want: false},
 	}
 	for _, tc := range cases {
-		if got := runtimeInstallPath(tc.path); got != tc.want {
-			t.Fatalf("runtimeInstallPath(%q) = %v want %v", tc.path, got, tc.want)
+		if got := repositoryharness.RuntimeInstallPath(tc.path); got != tc.want {
+			t.Fatalf("RuntimeInstallPath(%q) = %v want %v", tc.path, got, tc.want)
 		}
 	}
 }
