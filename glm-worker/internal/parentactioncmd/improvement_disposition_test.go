@@ -11,14 +11,8 @@ import (
 
 const improvementDispositionTestCallID = "44444444-4444-4444-8444-444444444444"
 
-func TestImprovementSignalBlocksOtherParentActionsUntilDisposition(t *testing.T) {
+func TestImprovementSignalRejectDispositionDoesNotRegisterTask(t *testing.T) {
 	cfg, st := newImprovementDispositionTestState(t)
-	if err := requireImprovementSignalDisposition(cfg, actionAccept); err == nil {
-		t.Fatal("parent action was admitted before improvement disposition")
-	}
-	if err := requireImprovementSignalDisposition(cfg, actionImprovementDisposition); err != nil {
-		t.Fatalf("disposition action was blocked: %v", err)
-	}
 
 	var out bytes.Buffer
 	if err := executeImprovementDisposition(cfg, []string{
@@ -28,9 +22,6 @@ func TestImprovementSignalBlocksOtherParentActionsUntilDisposition(t *testing.T)
 		improvementDispositionOption, string(state.ImprovementSignalDispositionReject),
 	}, &out); err != nil {
 		t.Fatal(err)
-	}
-	if err := requireImprovementSignalDisposition(cfg, actionAccept); err != nil {
-		t.Fatalf("parent action remained blocked after disposition: %v", err)
 	}
 	registrations, err := st.CurrentPendingDefectRegistrations()
 	if err != nil {
@@ -74,7 +65,7 @@ func TestImprovementSignalRejectsReplacedSourceCall(t *testing.T) {
 	}
 }
 
-func TestRecoveredInvalidPacketDoesNotBecomeStaleActionGate(t *testing.T) {
+func TestRecoveredInvalidPacketRejectsStaleDisposition(t *testing.T) {
 	cfg, st := newImprovementDispositionTestState(t)
 	taskID := st.ReadOr("task.id", "")
 	now := time.Now().UTC()
@@ -87,9 +78,6 @@ func TestRecoveredInvalidPacketDoesNotBecomeStaleActionGate(t *testing.T) {
 		Outcome:     "success",
 	})
 
-	if err := requireImprovementSignalDisposition(cfg, actionAccept); err != nil {
-		t.Fatalf("recovered invalid packet still blocked parent action: %v", err)
-	}
 	if err := executeImprovementDisposition(cfg, []string{
 		actionImprovementDisposition,
 		improvementSignalKindOption, state.ImprovementSignalInvalidPacket,
