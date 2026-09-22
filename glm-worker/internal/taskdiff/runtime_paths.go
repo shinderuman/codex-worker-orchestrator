@@ -8,36 +8,26 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 )
 
-func RuntimeInstallPath(path string) bool {
-	path = filepath.ToSlash(filepath.Clean(path))
-	switch path {
-	case "install.sh", "quality-tools.yml", "claude/settings-managed.json":
-		return true
+func SelectedPaths(paths []string, include func(string) bool) []string {
+	selected := make([]string, 0, len(paths))
+	for _, path := range paths {
+		if include(path) {
+			selected = append(selected, filepath.ToSlash(filepath.Clean(path)))
+		}
 	}
-	if strings.HasPrefix(path, "codex/") {
-		return true
-	}
-	if !strings.HasPrefix(path, "glm-worker/") || strings.HasSuffix(path, "_test.go") {
-		return false
-	}
-	return path == "glm-worker/go.mod" || path == "glm-worker/go.sum" || strings.HasSuffix(path, ".go")
+	sort.Strings(selected)
+	return selected
 }
 
 func RuntimeChangedPaths(paths []string) []string {
-	runtimePaths := make([]string, 0, len(paths))
-	for _, path := range paths {
-		if RuntimeInstallPath(path) {
-			runtimePaths = append(runtimePaths, filepath.ToSlash(filepath.Clean(path)))
-		}
-	}
-	sort.Strings(runtimePaths)
-	return runtimePaths
+	return SelectedPaths(paths, repositoryharness.RuntimeInstallPath)
 }
 
-func RuntimeSourceDigest(repoRoot string, paths []string) (string, error) {
+func SourceDigest(repoRoot string, paths []string) (string, error) {
 	hash := sha256.New()
 	for _, path := range paths {
 		data, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(path)))
@@ -52,4 +42,8 @@ func RuntimeSourceDigest(repoRoot string, paths []string) (string, error) {
 		_, _ = fmt.Fprintf(hash, "%s\x00%s\n", path, hex.EncodeToString(content[:]))
 	}
 	return hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+func RuntimeSourceDigest(repoRoot string, paths []string) (string, error) {
+	return SourceDigest(repoRoot, paths)
 }
