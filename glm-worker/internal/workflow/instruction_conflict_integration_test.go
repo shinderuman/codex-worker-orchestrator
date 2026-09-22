@@ -51,6 +51,9 @@ func TestRuleActivationCorrectionPreservesPinnedPrimaryAuthority(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if strings.Contains(got.Prompt, parent.Request) {
+		t.Fatalf("rule correction must not re-project fallback request beside ACTIVE task authority: %s", got.Prompt)
+	}
 	if !strings.Contains(got.Prompt, "ACTIVE_TASK_FILE: IMPLEMENTATION_TASKS/task.md") {
 		t.Fatalf("rule correction lost pinned primary authority: %s", got.Prompt)
 	}
@@ -59,5 +62,29 @@ func TestRuleActivationCorrectionPreservesPinnedPrimaryAuthority(t *testing.T) {
 	}
 	if strings.Index(got.Prompt, "ACTIVE_TASK_FILE:") > strings.Index(got.Prompt, "--- cli.md ---") {
 		t.Fatalf("primary authority must precede generic rule text: %s", got.Prompt)
+	}
+}
+
+func TestRuleActivationCorrectionPreservesUnboundRequestAuthority(t *testing.T) {
+	root, baseline := newRuleActivationRepo(t)
+	cfg, st := newRuleActivationWorkflowConfig(t, root, baseline)
+	writeRuleFile(t, cfg.CodexConfigDir, "cli.md", "CLI CONTRACT")
+
+	workflow := NewWorkflow(cfg, st, nil, io.Discard)
+	parent := state.ResumeCheckpoint{
+		Phase:          "worker",
+		Request:        "semantic unbound request",
+		Decision:       "none",
+		OriginalPrompt: "old prompt",
+	}
+	got, err := workflow.ruleActivationCorrectionCheckpoint(parent, []workerRule{ruleCLI}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got.Prompt, parent.Request) {
+		t.Fatalf("unbound rule correction lost request authority: %s", got.Prompt)
+	}
+	if strings.Contains(got.Prompt, "ACTIVE_TASK_FILE:") {
+		t.Fatalf("unbound rule correction must not invent ACTIVE task authority: %s", got.Prompt)
 	}
 }
