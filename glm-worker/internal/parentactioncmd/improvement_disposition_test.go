@@ -17,13 +17,7 @@ func TestImprovementSignalRejectDispositionDoesNotRequireRepositoryTaskBinding(t
 		t.Fatal(err)
 	}
 
-	var out bytes.Buffer
-	if err := executeImprovementDisposition(cfg, []string{
-		actionImprovementDisposition,
-		improvementSignalKindOption, state.ImprovementSignalInvalidPacket,
-		improvementSignalCallIDOption, improvementDispositionTestCallID,
-		improvementDispositionOption, string(state.ImprovementSignalDispositionReject),
-	}, &out); err != nil {
+	if err := runImprovementDispositionTest(cfg, improvementDispositionTestCallID, state.ImprovementSignalDispositionReject, ""); err != nil {
 		t.Fatal(err)
 	}
 	registrations, err := st.CurrentPendingDefectRegistrations()
@@ -50,20 +44,10 @@ func TestImprovementSignalRejectsReplacedSourceCall(t *testing.T) {
 		PacketRejectReason: "targets-none",
 	})
 
-	if err := executeImprovementDisposition(cfg, []string{
-		actionImprovementDisposition,
-		improvementSignalKindOption, state.ImprovementSignalInvalidPacket,
-		improvementSignalCallIDOption, improvementDispositionTestCallID,
-		improvementDispositionOption, string(state.ImprovementSignalDispositionReject),
-	}, &bytes.Buffer{}); err == nil {
+	if err := runImprovementDispositionTest(cfg, improvementDispositionTestCallID, state.ImprovementSignalDispositionReject, ""); err == nil {
 		t.Fatal("stale source call disposition was accepted after signal replacement")
 	}
-	if err := executeImprovementDisposition(cfg, []string{
-		actionImprovementDisposition,
-		improvementSignalKindOption, state.ImprovementSignalInvalidPacket,
-		improvementSignalCallIDOption, newCallID,
-		improvementDispositionOption, string(state.ImprovementSignalDispositionReject),
-	}, &bytes.Buffer{}); err != nil {
+	if err := runImprovementDispositionTest(cfg, newCallID, state.ImprovementSignalDispositionReject, ""); err != nil {
 		t.Fatalf("current source call disposition failed: %v", err)
 	}
 }
@@ -81,12 +65,7 @@ func TestRecoveredInvalidPacketRejectsStaleDisposition(t *testing.T) {
 		Outcome:     "success",
 	})
 
-	if err := executeImprovementDisposition(cfg, []string{
-		actionImprovementDisposition,
-		improvementSignalKindOption, state.ImprovementSignalInvalidPacket,
-		improvementSignalCallIDOption, improvementDispositionTestCallID,
-		improvementDispositionOption, string(state.ImprovementSignalDispositionReject),
-	}, &bytes.Buffer{}); err == nil {
+	if err := runImprovementDispositionTest(cfg, improvementDispositionTestCallID, state.ImprovementSignalDispositionReject, ""); err == nil {
 		t.Fatal("stale historical invalid packet accepted a new disposition")
 	}
 }
@@ -105,12 +84,7 @@ func TestImprovementSignalIdempotentReplayRepairsDispositionEvent(t *testing.T) 
 		t.Fatalf("seed durable disposition: created=%t err=%v", created, err)
 	}
 
-	if err := executeImprovementDisposition(cfg, []string{
-		actionImprovementDisposition,
-		improvementSignalKindOption, state.ImprovementSignalInvalidPacket,
-		improvementSignalCallIDOption, signal.SourceCallID,
-		improvementDispositionOption, string(state.ImprovementSignalDispositionReject),
-	}, &bytes.Buffer{}); err != nil {
+	if err := runImprovementDispositionTest(cfg, signal.SourceCallID, state.ImprovementSignalDispositionReject, ""); err != nil {
 		t.Fatal(err)
 	}
 	logs, err := st.ReadModelCallLogs(st.ReadOr("task.id", ""))
@@ -126,14 +100,7 @@ func TestImprovementSignalIdempotentReplayRepairsDispositionEvent(t *testing.T) 
 func TestImprovementSignalAdoptConnectsExistingDefectRegistrationLifecycle(t *testing.T) {
 	cfg, st := newImprovementDispositionTestState(t)
 	target := "IMPLEMENTATION_TASKS/adopted-improvement.md"
-	var out bytes.Buffer
-	if err := executeImprovementDisposition(cfg, []string{
-		actionImprovementDisposition,
-		improvementSignalKindOption, state.ImprovementSignalInvalidPacket,
-		improvementSignalCallIDOption, improvementDispositionTestCallID,
-		improvementDispositionOption, string(state.ImprovementSignalDispositionAdopt),
-		improvementTaskOption, target,
-	}, &out); err != nil {
+	if err := runImprovementDispositionTest(cfg, improvementDispositionTestCallID, state.ImprovementSignalDispositionAdopt, target); err != nil {
 		t.Fatal(err)
 	}
 	registrations, err := st.CurrentPendingDefectRegistrations()
@@ -160,16 +127,11 @@ func TestImprovementSignalNonAdoptDispositionsDoNotRegisterTasks(t *testing.T) {
 	} {
 		t.Run(string(disposition), func(t *testing.T) {
 			cfg, st := newImprovementDispositionTestState(t)
-			args := []string{
-				actionImprovementDisposition,
-				improvementSignalKindOption, state.ImprovementSignalInvalidPacket,
-				improvementSignalCallIDOption, improvementDispositionTestCallID,
-				improvementDispositionOption, string(disposition),
-			}
+			target := ""
 			if state.ImprovementDispositionNeedsTask(disposition) {
-				args = append(args, improvementTaskOption, "IMPLEMENTATION_TASKS/existing-owner.md")
+				target = "IMPLEMENTATION_TASKS/existing-owner.md"
 			}
-			if err := executeImprovementDisposition(cfg, args, &bytes.Buffer{}); err != nil {
+			if err := runImprovementDispositionTest(cfg, improvementDispositionTestCallID, disposition, target); err != nil {
 				t.Fatal(err)
 			}
 			registrations, err := st.CurrentPendingDefectRegistrations()
@@ -181,6 +143,19 @@ func TestImprovementSignalNonAdoptDispositionsDoNotRegisterTasks(t *testing.T) {
 			}
 		})
 	}
+}
+
+func runImprovementDispositionTest(cfg config.AppConfig, sourceCallID string, disposition state.ImprovementSignalDisposition, targetTask string) error {
+	args := []string{
+		actionImprovementDisposition,
+		improvementSignalKindOption, state.ImprovementSignalInvalidPacket,
+		improvementSignalCallIDOption, sourceCallID,
+		improvementDispositionOption, string(disposition),
+	}
+	if targetTask != "" {
+		args = append(args, improvementTaskOption, targetTask)
+	}
+	return executeImprovementDisposition(cfg, args, &bytes.Buffer{})
 }
 
 func newImprovementDispositionTestState(t *testing.T) (config.AppConfig, *state.StateStore) {
