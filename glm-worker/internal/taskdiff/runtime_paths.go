@@ -8,8 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 )
 
 func SelectedPaths(paths []string, include func(string) bool) []string {
@@ -21,10 +19,6 @@ func SelectedPaths(paths []string, include func(string) bool) []string {
 	}
 	sort.Strings(selected)
 	return selected
-}
-
-func RuntimeChangedPaths(paths []string) []string {
-	return SelectedPaths(paths, repositoryharness.RuntimeInstallPath)
 }
 
 func SourceDigest(repoRoot string, paths []string) (string, error) {
@@ -42,8 +36,4 @@ func SourceDigest(repoRoot string, paths []string) (string, error) {
 		_, _ = fmt.Fprintf(hash, "%s\x00%s\n", path, hex.EncodeToString(content[:]))
 	}
 	return hex.EncodeToString(hash.Sum(nil)), nil
-}
-
-func RuntimeSourceDigest(repoRoot string, paths []string) (string, error) {
-	return SourceDigest(repoRoot, paths)
 }
