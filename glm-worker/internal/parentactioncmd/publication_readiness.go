@@ -7,11 +7,10 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repolock"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
@@ -33,22 +32,6 @@ type publicationReadinessOutput struct {
 	Gates        []publicationGateProjection `json:"gates"`
 	Installation *publicationInstallOutput   `json:"installation,omitempty"`
 	Failure      *finalizationFailure        `json:"failure,omitempty"`
-}
-
-type publicationQualityRunRecord struct {
-	ValidationRunID               string     `json:"validation_run_id"`
-	Form                          string     `json:"form"`
-	Repository                    string     `json:"repository"`
-	Head                          string     `json:"head"`
-	IndexDigest                   string     `json:"index_digest"`
-	WorktreeDigest                string     `json:"worktree_digest"`
-	WorktreeDigestExcludingParent string     `json:"worktree_digest_excluding_parent,omitempty"`
-	TaskID                        string     `json:"task_id,omitempty"`
-	CompletedAt                   *time.Time `json:"completed_at,omitempty"`
-	Status                        string     `json:"status"`
-	ExitCode                      int        `json:"exit_code,omitempty"`
-	ExitSource                    string     `json:"exit_source,omitempty"`
-	Log                           string     `json:"log,omitempty"`
 }
 
 const (
@@ -310,7 +293,7 @@ func verifyPublicationQualityRun(st *state.StateStore, repoRoot string, candidat
 	if err := verifyPublicationQualityRunIdentity(record, repoRoot, candidate, form, runID); err != nil {
 		return err
 	}
-	return verifyPublicationQualityRunResult(record)
+	return qualitygate.VerifyTerminalPass(record)
 }
 
 func verifyPublicationQualityRunForSnapshot(st *state.StateStore, repoRoot string, candidate state.PublicationCandidate, form, runID, snapshotID string, snapshot state.SnapshotDigest) error {
@@ -321,29 +304,21 @@ func verifyPublicationQualityRunForSnapshot(st *state.StateStore, repoRoot strin
 	if err := verifyPublicationQualityRunSnapshotIdentity(record, repoRoot, candidate.TaskID, form, runID, snapshotID, snapshot); err != nil {
 		return err
 	}
-	return verifyPublicationQualityRunResult(record)
+	return qualitygate.VerifyTerminalPass(record)
 }
 
-func loadPublicationQualityRun(st *state.StateStore, runID string) (publicationQualityRunRecord, error) {
-	if !validPublicationValidationRunID(runID) {
-		return publicationQualityRunRecord{}, fmt.Errorf("quality gate run identity is invalid")
+func loadPublicationQualityRun(st *state.StateStore, runID string) (qualitygate.RunRecord, error) {
+	if !qualitygate.ValidRunID(runID) {
+		return qualitygate.RunRecord{}, fmt.Errorf("quality gate run identity is invalid")
 	}
-	data, err := os.ReadFile(st.Path(filepath.Join("quality-gate-runs", runID, "run.json")))
-	if err != nil {
-		return publicationQualityRunRecord{}, err
-	}
-	var record publicationQualityRunRecord
-	if err := json.Unmarshal(data, &record); err != nil {
-		return publicationQualityRunRecord{}, err
-	}
-	return record, nil
+	return qualitygate.Read(st, runID)
 }
 
-func verifyPublicationQualityRunIdentity(record publicationQualityRunRecord, repoRoot string, candidate state.PublicationCandidate, form, runID string) error {
+func verifyPublicationQualityRunIdentity(record qualitygate.RunRecord, repoRoot string, candidate state.PublicationCandidate, form, runID string) error {
 	return verifyPublicationQualityRunSnapshotIdentity(record, repoRoot, candidate.TaskID, form, runID, candidate.SnapshotID, candidate.Snapshot)
 }
 
-func verifyPublicationQualityRunSnapshotIdentity(record publicationQualityRunRecord, repoRoot, taskID, form, runID, snapshotID string, snapshot state.SnapshotDigest) error {
+func verifyPublicationQualityRunSnapshotIdentity(record qualitygate.RunRecord, repoRoot, taskID, form, runID, snapshotID string, snapshot state.SnapshotDigest) error {
 	if record.ValidationRunID != runID || record.Form != form || record.Repository != repoRoot || record.TaskID != taskID {
 		return fmt.Errorf("quality gate run authority does not match publication candidate")
 	}
@@ -353,19 +328,6 @@ func verifyPublicationQualityRunSnapshotIdentity(record publicationQualityRunRec
 	}
 	if state.ValidationSnapshotID(record.Head, record.IndexDigest, record.WorktreeDigest) != snapshotID {
 		return fmt.Errorf("quality gate run snapshot identity does not match validation event")
-	}
-	return nil
-}
-
-func verifyPublicationQualityRunResult(record publicationQualityRunRecord) error {
-	if record.Status != publicationGatePass || record.CompletedAt == nil || record.ExitCode != 0 || record.ExitSource != state.ValidationExitSourceTarget {
-		return fmt.Errorf("quality gate run did not complete with target-process PASS")
-	}
-	if record.Log == "" {
-		return fmt.Errorf("quality gate run PASS has no log evidence")
-	}
-	if _, err := os.Stat(record.Log); err != nil {
-		return fmt.Errorf("quality gate log evidence is unavailable: %w", err)
 	}
 	return nil
 }
@@ -412,18 +374,6 @@ func publicationRuntimeInstallGates(cfg config.AppConfig, st *state.StateStore, 
 	}
 	smokeGate.Status = publicationGatePass
 	return []publicationGateProjection{installGate, smokeGate}, nil
-}
-
-func validPublicationValidationRunID(value string) bool {
-	if len(value) != 32 {
-		return false
-	}
-	for _, char := range value {
-		if (char < '0' || char > '9') && (char < 'a' || char > 'f') {
-			return false
-		}
-	}
-	return true
 }
 
 func publicationReadinessFailure(reason, detail string) *finalizationFailure {
