@@ -94,33 +94,11 @@ func encodePreparedProjection(stdout io.Writer, prepared parentaction.Prepared, 
 }
 
 func execute(cfg config.AppConfig, args []string, stdout, stderr io.Writer) error {
-	action := args[0]
-	if descriptor, ok := parentaction.LookupPayloadAction(action); ok {
-		return executeStagedPayloadAction(cfg, descriptor, args, stdout, stderr)
-	}
-
-	switch action {
-	case "rotation-claim", "rotation-bind", "rotation-fail":
-		return executeSessionRotationAction(cfg, args, stdout)
-	case "no-go", "reopen", actionRecordPublicationFinding:
-		return executeParentLifecycleAction(cfg, args, stdout)
-	case "complete":
-		return executeComplete(cfg, args, stdout)
-	case "install":
-		return executeInstall(cfg, args, stdout, stderr)
-	case "wait":
-		return executeParentWait(cfg, args, stdout, stderr)
-	case actionContinuationStopHook, actionContinuationMetadataGuard, actionApprove:
-		return executeContinuationOrApproveAction(cfg, action, args, stdout, stderr)
-	case actionStart, actionAccept, actionResume:
-		return executeDirectWorkerAction(cfg, action, args, stdout, stderr)
-	case actionPark, actionUnpark, "evidence":
-		return executeParentReadOrParkAction(cfg, args, stdout, stderr)
-	case "finalize-check", "push-binding":
-		return executeGitEvidenceAction(cfg, args, stdout)
-	default:
+	descriptor, ok := lookupParentActionCommand(args[0])
+	if !ok {
 		return fmt.Errorf("%s", usage)
 	}
+	return executeParentActionCommand(cfg, descriptor, args, stdout, stderr, false)
 }
 
 func executeContinuationOrApproveAction(cfg config.AppConfig, action string, args []string, stdout, stderr io.Writer) error {

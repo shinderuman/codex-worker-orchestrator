@@ -9,7 +9,6 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/app"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentaction"
 )
 
 type parentActionTerminalEnvelopePayload struct {
@@ -35,12 +34,13 @@ func executeWithTerminalEnvelope(cfg config.AppConfig, args []string, stdout, st
 	if len(args) == 0 {
 		return execute(cfg, args, stdout, stderr)
 	}
-	if !terminalEnvelopeAction(args[0]) {
+	descriptor, ok := lookupParentActionCommand(args[0])
+	if !ok || !descriptor.TerminalEnvelope {
 		return execute(cfg, args, stdout, stderr)
 	}
 
 	var terminal bytes.Buffer
-	terminalErr := executeTerminalAction(cfg, args, &terminal, stderr)
+	terminalErr := executeParentActionCommand(cfg, descriptor, args, &terminal, stderr, true)
 	if terminalErr != nil {
 		return writeFailedTerminalAction(stdout, terminal.Bytes(), terminalErr, func() (json.RawMessage, error) {
 			return readTerminalHandoff(cfg, args[0], stderr, true)
@@ -94,7 +94,7 @@ func readTerminalHandoff(cfg config.AppConfig, action string, stderr io.Writer, 
 	switch {
 	case recovery:
 		err = runWorker(cfg.RepoRoot, []string{"--handoff", "recovery"}, nil, &handoff, stderr, nil)
-	case action == actionReviewEvidence:
+	case parentActionUsesInProcessHandoff(action):
 		err = app.Execute(app.Command{Mode: app.ModeHandoff}, cfg, nil, &handoff, stderr)
 	default:
 		err = runWorker(cfg.RepoRoot, []string{"--handoff"}, nil, &handoff, stderr, nil)
@@ -130,21 +130,6 @@ func writeProjectedTerminalEnvelopeMode(stdout io.Writer, terminalJSON, handoffJ
 		return fmt.Errorf("%w; encode projection overflow envelope: %w", err, encodeErr)
 	}
 	return err
-}
-
-func executeTerminalAction(cfg config.AppConfig, args []string, stdout, stderr io.Writer) error {
-	switch args[0] {
-	case actionReviewEvidence:
-		return executeParentReviewEvidence(cfg, args, stdout)
-	case string(parentaction.ActionDecision):
-		return executePreflightedDecision(cfg, args, stdout, stderr)
-	case actionRecordDefectFinding, actionBindDefectTask:
-		return executeDefectRegistrationAction(cfg, args, stdout)
-	case actionImprovementDisposition:
-		return executeImprovementDisposition(cfg, args, stdout)
-	default:
-		return execute(cfg, args, stdout, stderr)
-	}
 }
 
 func parentActionTerminalEnvelope(terminalJSON, handoffJSON json.RawMessage) parentActionTerminalEnvelopePayload {
@@ -201,18 +186,6 @@ func boundTerminalDiagnostic(value string, maxRunes int) string {
 		return value
 	}
 	return string(runes[:maxRunes]) + "…"
-}
-
-func terminalEnvelopeAction(action string) bool {
-	if descriptor, ok := parentaction.LookupPayloadAction(action); ok {
-		return descriptor.Action != parentaction.ActionReviseMilestones
-	}
-	switch action {
-	case actionStart, actionApprove, actionAccept, actionResume, "no-go", actionRecordPublicationFinding, actionRecordDefectFinding, actionBindDefectTask, actionImprovementDisposition, actionReopen, actionPark, actionUnpark, actionReviewEvidence:
-		return true
-	default:
-		return false
-	}
 }
 
 func decodeSingleMachineJSON(raw []byte, label string) (json.RawMessage, error) {

@@ -8,16 +8,62 @@ import (
 	"testing"
 )
 
-func TestTerminalEnvelopeActionCoversParentLifecycleActions(t *testing.T) {
-	for _, action := range []string{"start", "decision", "fix", "start-milestones", "approve-surface", "accept", "resume", "no-go", actionRecordPublicationFinding, actionRecordDefectFinding, actionBindDefectTask, "reopen", "park", "unpark", "review-evidence"} {
-		if !terminalEnvelopeAction(action) {
-			t.Fatalf("action %q must return a machine terminal envelope", action)
-		}
+func TestParentActionCommandMetadataPreservesTerminalEnvelopeMatrix(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		action      string
+		terminal    bool
+		inProcess   bool
+		wantPresent bool
+	}{
+		{action: "start", terminal: true, wantPresent: true},
+		{action: "approve-surface", terminal: true, wantPresent: true},
+		{action: "accept", terminal: true, wantPresent: true},
+		{action: "resume", terminal: true, wantPresent: true},
+		{action: "no-go", terminal: true, wantPresent: true},
+		{action: actionRecordPublicationFinding, terminal: true, wantPresent: true},
+		{action: actionRecordDefectFinding, terminal: true, wantPresent: true},
+		{action: actionBindDefectTask, terminal: true, wantPresent: true},
+		{action: actionImprovementDisposition, terminal: true, wantPresent: true},
+		{action: "reopen", terminal: true, wantPresent: true},
+		{action: "park", terminal: true, wantPresent: true},
+		{action: "unpark", terminal: true, wantPresent: true},
+		{action: actionReviewEvidence, terminal: true, inProcess: true, wantPresent: true},
+		{action: "decision", terminal: true, wantPresent: true},
+		{action: "fix", terminal: true, wantPresent: true},
+		{action: "start-milestones", terminal: true, wantPresent: true},
+		{action: "revise-milestones", terminal: false, wantPresent: true},
+		{action: "rotation-claim", terminal: false, wantPresent: true},
+		{action: "rotation-bind", terminal: false, wantPresent: true},
+		{action: "rotation-fail", terminal: false, wantPresent: true},
+		{action: "complete", terminal: false, wantPresent: true},
+		{action: "install", terminal: false, wantPresent: true},
+		{action: "wait", terminal: false, wantPresent: true},
+		{action: actionContinuationStopHook, terminal: false, wantPresent: true},
+		{action: actionContinuationMetadataGuard, terminal: false, wantPresent: true},
+		{action: "evidence", terminal: false, wantPresent: true},
+		{action: "finalize-check", terminal: false, wantPresent: true},
+		{action: "push-binding", terminal: false, wantPresent: true},
+		{action: "definitely-unknown", terminal: false, wantPresent: false},
 	}
-	for _, action := range []string{"prepare", "revise-milestones", "complete", "install", "wait", "evidence", "finalize-check", "push-binding"} {
-		if terminalEnvelopeAction(action) {
-			t.Fatalf("action %q already owns a different output contract", action)
-		}
+
+	for _, tt := range tests {
+		t.Run(tt.action, func(t *testing.T) {
+			descriptor, ok := lookupParentActionCommand(tt.action)
+			if ok != tt.wantPresent {
+				t.Fatalf("lookupParentActionCommand(%q) present=%v want %v", tt.action, ok, tt.wantPresent)
+			}
+			if !ok {
+				return
+			}
+			if descriptor.TerminalEnvelope != tt.terminal {
+				t.Fatalf("lookupParentActionCommand(%q).TerminalEnvelope=%v want %v", tt.action, descriptor.TerminalEnvelope, tt.terminal)
+			}
+			if descriptor.InProcessHandoff != tt.inProcess {
+				t.Fatalf("lookupParentActionCommand(%q).InProcessHandoff=%v want %v", tt.action, descriptor.InProcessHandoff, tt.inProcess)
+			}
+		})
 	}
 }
 
