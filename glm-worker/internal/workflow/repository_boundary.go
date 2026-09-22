@@ -1,9 +1,12 @@
 package workflow
 
-import "github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
+import (
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
+)
 
 func (w *Workflow) captureRepositoryBoundary() (state.GitSnapshot, error) {
-	_, pinned, err := readRepositoryHarnessActivationPin(w.state)
+	pinned, err := repositoryharness.RuntimeActivationPinned(w.state)
 	if err != nil {
 		return state.GitSnapshot{}, err
 	}
