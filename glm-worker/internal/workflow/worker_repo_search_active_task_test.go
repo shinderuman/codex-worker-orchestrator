@@ -56,7 +56,10 @@ func TestNewWorkerTaskPromptSearchesLauncherFromActiveTaskSeed(t *testing.T) {
 	}
 
 	prompt := w.newWorkerTaskPrompt(request, activeTaskPath)
-	if !strings.Contains(prompt, request) || !strings.Contains(prompt, "CANDIDATE: commentlint:1") {
+	if strings.Contains(prompt, request) {
+		t.Fatalf("fixed parent transport leaked into managed prompt: %s", prompt)
+	}
+	if !strings.Contains(prompt, "ACTIVE_TASK_FILE: "+activeTaskPath) || !strings.Contains(prompt, "CANDIDATE: commentlint:1") {
 		t.Fatalf("prompt = %s", prompt)
 	}
 	stats, err := st.CurrentTaskStats()
