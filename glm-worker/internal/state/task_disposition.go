@@ -188,7 +188,11 @@ func decodeTaskDisposition(data []byte) (TaskDispositionRecord, error) {
 	if err := json.Unmarshal(data, &record); err != nil {
 		return TaskDispositionRecord{}, fmt.Errorf("task disposition is unreadable: %w", err)
 	}
-	if record.Version != taskDispositionVersion || record.TaskID == "" || record.FromStatus == "" || !record.Disposition.Valid() || record.RecordedAt.IsZero() {
+	fromStatus := TaskStatus(record.FromStatus)
+	if record.Version != taskDispositionVersion || !ValidGeneratedUUID(record.TaskID) || !fromStatus.Known() || fromStatus == TaskStatusNone || !record.Disposition.Valid() || record.RecordedAt.IsZero() {
+		return TaskDispositionRecord{}, fmt.Errorf("task disposition is invalid")
+	}
+	if record.Disposition == TaskDispositionRecovery && !resetRecoveryStatus(fromStatus) {
 		return TaskDispositionRecord{}, fmt.Errorf("task disposition is invalid")
 	}
 	return record, nil
@@ -222,16 +226,6 @@ func (s *StateStore) ValidateResetDispositionForNewTask() error {
 	}
 	if !recorded {
 		return fmt.Errorf("new task admission cannot verify reset lifecycle: disposition transition is missing")
-	}
-	evidence, err := s.ArchivedTaskStatsEvidence(record.TaskID)
-	if err != nil {
-		return fmt.Errorf("new task admission cannot verify archived reset task stats: %w", err)
-	}
-	if !evidence.Proven {
-		return fmt.Errorf("new task admission cannot verify archived reset task stats: archive evidence is unproven")
-	}
-	if string(evidence.Status) != record.FromStatus {
-		return fmt.Errorf("reset disposition status %s does not match archived task status %s", record.FromStatus, evidence.Status)
 	}
 	return nil
 }
