@@ -48,35 +48,33 @@ func reviewerActiveTaskBlock(activeTaskPath string) string {
 	return renderActiveTaskPromptContract(newActiveTaskPromptContract(activeTaskPath, activeTaskAudienceReviewer))
 }
 
+func modelRequestAuthorityBlock(label string, request string, activeTaskPath string) string {
+	if activeTaskPath != "" {
+		return ""
+	}
+	return fmt.Sprintf("%s:\n%s\n\n", label, request)
+}
+
 func newTaskPrompt(request string, activeTaskPath string) string {
 	return fmt.Sprintf(`MODE: NEW_TASK
 
-USER_REQUEST:
-%s
-
-%s`, request, activeTaskPromptBlock(activeTaskPath))
+%s%s`, modelRequestAuthorityBlock("USER_REQUEST", request, activeTaskPath), activeTaskPromptBlock(activeTaskPath))
 }
 
 func decisionPrompt(request string, decision string, activeTaskPath string) string {
 	return fmt.Sprintf(`MODE: CONTINUE_WITH_SOL_DECISION
 
-ORIGINAL_USER_REQUEST:
-%s
-
-SOL_DECISION:
+%sSOL_DECISION:
 %s
 
 %s直前の同一タスクの調査文脈を利用し、この判断に従って作業を継続してください。
-`, request, decision, activeTaskPromptBlock(activeTaskPath))
+`, modelRequestAuthorityBlock("ORIGINAL_USER_REQUEST", request, activeTaskPath), decision, activeTaskPromptBlock(activeTaskPath))
 }
 
 func explicitFixPrompt(request string, decision string, previousReview string, instruction string, activeTaskPath string) string {
 	return fmt.Sprintf(`MODE: APPLY_REVIEW_FIX
 
-ORIGINAL_USER_REQUEST:
-%s
-
-PREVIOUS_SOL_DECISION:
+%sPREVIOUS_SOL_DECISION:
 %s
 
 PREVIOUS_REVIEW:
@@ -86,17 +84,14 @@ REVIEW_FEEDBACK:
 %s
 
 %s同一タスクの既存文脈を利用し、指摘範囲を修正してください。
-`, request, decision, previousReview, instruction, activeTaskPromptBlock(activeTaskPath))
+`, modelRequestAuthorityBlock("ORIGINAL_USER_REQUEST", request, activeTaskPath), decision, previousReview, instruction, activeTaskPromptBlock(activeTaskPath))
 }
 
 func reviewerPrompt(request string, decision string, workerReport string, reviewNumber int, baseline string, reviewNavigation string, activeTaskPath string) string {
 	workerReport, validationContext := reconcileReviewerWorkerReport(workerReport)
 	return fmt.Sprintf(`REVIEW_MODE: INDEPENDENT_REVIEW
 
-USER_REQUEST:
-%s
-
-SOL_DECISION:
+%sSOL_DECISION:
 %s
 
 WORKER_REPORT:
@@ -116,7 +111,7 @@ REVIEW_CURRENT_TASK_DIFFのREAD_FIRSTがtrueなら、そのPATCHをReadしてact
 INDEPENDENT_SEARCHがperformedの場合も候補はnavigation-onlyであり、worker search結果やworker reportをauthorityとして採用せず、現在のコードで独立検証してください。
 過去sessionの記憶より現在のコードを優先してください。
 PRE_TASK_BASELINEのファイルはworker開始前の状態です。既存未コミット変更と今回変更を区別する必要がある場合に参照してください。
-`, request, decision, workerReport, validationContext, reviewNumber, baseline, reviewNavigation, reviewerActiveTaskBlock(activeTaskPath))
+`, modelRequestAuthorityBlock("USER_REQUEST", request, activeTaskPath), decision, workerReport, validationContext, reviewNumber, baseline, reviewNavigation, reviewerActiveTaskBlock(activeTaskPath))
 }
 
 func reviewerHighRiskFloorPrompt(source string) string {
@@ -130,10 +125,7 @@ RISK_FLOOR_SOURCE: %s
 func automaticFixPrompt(request string, decision string, reviewReport string, activeTaskPath string) string {
 	return fmt.Sprintf(`MODE: APPLY_REVIEW_FIX
 
-ORIGINAL_USER_REQUEST:
-%s
-
-PREVIOUS_SOL_DECISION:
+%sPREVIOUS_SOL_DECISION:
 %s
 
 INDEPENDENT_REVIEW:
@@ -142,16 +134,13 @@ INDEPENDENT_REVIEW:
 %s独立reviewerの指摘を修正してください。
 新しい要求を追加せず、元要求・既存Sol判断・レビュー指摘の範囲だけを変更してください。
 修正後に必要なテスト・lint・build・自己レビューまで行ってください。
-`, request, decision, reviewReport, activeTaskPromptBlock(activeTaskPath))
+`, modelRequestAuthorityBlock("ORIGINAL_USER_REQUEST", request, activeTaskPath), decision, reviewReport, activeTaskPromptBlock(activeTaskPath))
 }
 
 func reportOnlyFixPrompt(request string, decision string, reviewReport string, activeTaskPath string) string {
 	return fmt.Sprintf(`MODE: APPLY_REVIEW_FIX
 
-ORIGINAL_USER_REQUEST:
-%s
-
-PREVIOUS_SOL_DECISION:
+%sPREVIOUS_SOL_DECISION:
 %s
 
 INDEPENDENT_REVIEW:
@@ -159,7 +148,7 @@ INDEPENDENT_REVIEW:
 
 %s独立reviewerはコードとdiffを正しいと確認し、報告へ圧縮された意味情報だけを不足と指摘しています。
 実装・working tree変更・追加調査・test/lint/build/self-reviewをやり直さず、現在の作業結果とdiffに基づいて報告だけを再出力してください。
-`, request, decision, reviewReport, activeTaskPromptBlock(activeTaskPath))
+`, modelRequestAuthorityBlock("ORIGINAL_USER_REQUEST", request, activeTaskPath), decision, reviewReport, activeTaskPromptBlock(activeTaskPath))
 }
 
 func resultCorrectionPrompt(reason string) string {
