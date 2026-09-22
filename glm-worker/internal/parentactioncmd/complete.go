@@ -9,10 +9,10 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/app"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repolock"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryproject"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryprojecthead"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
 )
 
 type completeOutput struct {
@@ -144,7 +144,7 @@ func verifyParentCompletion(repoRoot string, st *state.StateStore) completionVer
 	if !pushBindingTreeClean(repoRoot) {
 		return completionVerification{failure: &finalizationFailure{Stage: "git", Reason: "tree_not_clean"}}
 	}
-	repositoryHarnessActive, err := workflow.RepositoryHarnessActive(repoRoot, st)
+	repositoryHarnessActive, err := repositoryharness.RuntimeActive(repoRoot, st)
 	if err != nil {
 		return completionVerification{failure: &finalizationFailure{
 			Stage: "metadata", Reason: "completion_transition_invalid", Detail: compactFinalizationDiagnostic(err.Error()),
