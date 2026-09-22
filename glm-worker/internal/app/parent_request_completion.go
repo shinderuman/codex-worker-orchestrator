@@ -35,7 +35,7 @@ func BuildCurrentParentRequestCompletionProjection(cfg config.AppConfig, st *sta
 			projection.TaskAttribution, err = repositoryprojecttree.BuildTaskAttribution(
 				cfg.RepoRoot,
 				st.ReadOr("active-task", ""),
-				projectContinuationToPolicy(output.Continuation),
+				output.Continuation.Continuation,
 			)
 		}
 	}
@@ -74,7 +74,7 @@ func parentRequestProjectionFromPolicy(projection repositoryproject.ParentReques
 
 func parentRequestProjection(continuation ProjectContinuation) ParentRequestCompletionProjection {
 	policy := repositoryproject.ParentRequestProjection(
-		projectContinuationToPolicy(continuation),
+		continuation.Continuation,
 		continuation.Reason != string(state.TaskStatusRateLimited),
 	)
 	projection := parentRequestProjectionFromPolicy(policy)
