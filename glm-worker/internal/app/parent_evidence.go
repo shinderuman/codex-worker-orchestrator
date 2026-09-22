@@ -17,48 +17,13 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
 )
 
-type parentEvidenceManifest = parentevidence.Manifest
-type parentEvidenceAuthorityRequest = parentevidence.AuthorityRequest
-type parentEvidenceHandoffRequest = parentevidence.HandoffRequest
-type parentEvidenceStatusRequest = parentevidence.StatusRequest
-type parentEvidenceValidationsRequest = parentevidence.ValidationsRequest
-type parentEvidenceTelemetryRequest = parentevidence.TelemetryRequest
-type parentEvidenceSearchRequest = parentevidence.SearchRequest
-type parentEvidenceDiffRequest = parentevidence.DiffRequest
-type parentEvidenceSourceRequest = parentevidence.SourceRequest
-type parentEvidenceOutput = parentevidence.Output
-type parentEvidencePart = parentevidence.Part
-type parentEvidenceDiffFile = parentevidence.DiffFile
-type parentEvidenceDiffBody = parentevidence.DiffBody
-type parentEvidenceSourceBody = parentevidence.SourceBody
-
 type parentEvidenceProjector struct {
 	cfg         config.AppConfig
 	st          *state.StateStore
 	ownerCallID string
 	inner       *parentevidence.Projector
-	output      parentEvidenceOutput
+	output      parentevidence.Output
 }
-
-const (
-	parentEvidenceStatusOK         = parentevidence.StatusOK
-	parentEvidenceStatusRequired   = parentevidence.StatusRequired
-	parentEvidenceStatusError      = parentevidence.StatusError
-	parentEvidencePartProjected    = parentevidence.PartProjected
-	parentEvidencePartUnchanged    = parentevidence.PartUnchanged
-	parentEvidencePartChanged      = parentevidence.PartChanged
-	parentEvidencePartUnknown      = parentevidence.PartUnknown
-	parentEvidencePartRefinement   = parentevidence.PartRefinement
-	parentEvidencePartError        = parentevidence.PartError
-	parentEvidencePartDisabled     = parentevidence.PartDisabled
-	parentEvidenceManifestVersion  = parentevidence.ManifestVersion
-	parentEvidenceManifestMaxBytes = parentevidence.ManifestMaxBytes
-	parentEvidenceMaxOutputBytes   = parentevidence.MaxOutputBytes
-	parentEvidenceMaxDiffPaths     = parentevidence.MaxDiffPaths
-	parentEvidenceMaxSourceLines   = parentevidence.MaxSourceLines
-	parentEvidenceMaxBudgetBytes   = parentevidence.MaxBudgetBytes
-	parentEvidenceTelemetryFile    = parentevidence.TelemetryFile
-)
 
 func printParentEvidence(cmd Command, cfg config.AppConfig, st *state.StateStore, stdout io.Writer) error {
 	manifest, err := loadParentEvidenceManifest(cmd.EvidenceManifest)
@@ -74,7 +39,7 @@ func printParentEvidence(cmd Command, cfg config.AppConfig, st *state.StateStore
 	return commitParentEvidenceProjection(projector, stdout, manifest.Reason)
 }
 
-func (p *parentEvidenceProjector) project(manifest parentEvidenceManifest) {
+func (p *parentEvidenceProjector) project(manifest parentevidence.Manifest) {
 	p.inner = parentevidence.NewProjector(p.cfg.RepoRoot, p.st, p.ownerCallID, parentEvidenceProviders(p.cfg, p.st))
 	p.inner.Project(manifest)
 	p.output = p.inner.Output()
@@ -89,26 +54,26 @@ func commitParentEvidenceProjection(p *parentEvidenceProjector, stdout io.Writer
 	return err
 }
 
-func loadParentEvidenceManifest(path string) (parentEvidenceManifest, error) {
+func loadParentEvidenceManifest(path string) (parentevidence.Manifest, error) {
 	if path == "" {
-		return parentEvidenceManifest{}, machinecli.UsageErrorf("usage: glm-worker --evidence <manifest.json>")
+		return parentevidence.Manifest{}, machinecli.UsageErrorf("usage: glm-worker --evidence <manifest.json>")
 	}
 	info, err := os.Lstat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return parentEvidenceManifest{}, &machinecli.NotFoundError{Message: "evidence manifest file is not found: " + path}
+			return parentevidence.Manifest{}, &machinecli.NotFoundError{Message: "evidence manifest file is not found: " + path}
 		}
-		return parentEvidenceManifest{}, fmt.Errorf("evidence manifestを確認できません: %w", err)
+		return parentevidence.Manifest{}, fmt.Errorf("evidence manifestを確認できません: %w", err)
 	}
 	if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
-		return parentEvidenceManifest{}, machinecli.UsageErrorf("evidence manifestは通常fileだけを指定できます: " + path)
+		return parentevidence.Manifest{}, machinecli.UsageErrorf("evidence manifestは通常fileだけを指定できます: " + path)
 	}
-	if info.Size() > parentEvidenceManifestMaxBytes {
-		return parentEvidenceManifest{}, machinecli.UsageErrorf("evidence manifestが上限を超えています")
+	if info.Size() > parentevidence.ManifestMaxBytes {
+		return parentevidence.Manifest{}, machinecli.UsageErrorf("evidence manifestが上限を超えています")
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return parentEvidenceManifest{}, fmt.Errorf("evidence manifestを読めません: %w", err)
+		return parentevidence.Manifest{}, fmt.Errorf("evidence manifestを読めません: %w", err)
 	}
 	return parentevidence.DecodeManifest(data)
 }
@@ -180,7 +145,7 @@ func projectParentEvidenceAuthority(cfg config.AppConfig, request parentevidence
 
 func projectParentEvidenceHandoff(cfg config.AppConfig, st *state.StateStore, request parentevidence.HandoffRequest) parentevidence.Part {
 	value := buildParentHandoffWithConfig(cfg, st)
-	digest, _ := parentEvidenceDigest(value)
+	digest, _ := parentevidence.Digest(value)
 	part := parentevidence.Part{Kind: "handoff", Digest: digest, Locator: "handoff:current-state"}
 	if !request.Force && request.KnownDigest != "" && request.KnownDigest == digest {
 		part.Status = parentevidence.PartUnchanged
@@ -269,12 +234,12 @@ func projectParentEvidenceValidations(st *state.StateStore) parentevidence.Part 
 		part.Bytes = len(rendered)
 		part.TokenProxy = state.ParentEvidenceTokenProxy(part.Bytes)
 	}
-	part.Digest = parentEvidenceStringDigest(fmt.Sprintf("%v", records))
+	part.Digest = parentevidence.StringDigest(fmt.Sprintf("%v", records))
 	return part
 }
 
 func projectParentEvidenceTelemetry(st *state.StateStore) parentevidence.Part {
-	part := parentevidence.Part{Kind: "telemetry", Locator: st.Path(parentEvidenceTelemetryFile)}
+	part := parentevidence.Part{Kind: "telemetry", Locator: st.Path(parentevidence.TelemetryFile)}
 	records, err := st.ReadParentEvidence()
 	if err != nil {
 		part.Status = parentevidence.PartError
@@ -302,7 +267,7 @@ func projectParentEvidenceTelemetry(st *state.StateStore) parentevidence.Part {
 	}
 	part.Bytes = len(rendered)
 	part.TokenProxy = state.ParentEvidenceTokenProxy(part.Bytes)
-	part.Digest = parentEvidenceStringDigest(fmt.Sprintf("%d:%d", body.Records, body.ModelCalls))
+	part.Digest = parentevidence.StringDigest(fmt.Sprintf("%d:%d", body.Records, body.ModelCalls))
 	return part
 }
 
@@ -327,7 +292,7 @@ func projectParentEvidenceSearch(cfg config.AppConfig, request parentevidence.Se
 	}
 	results := repoSearchResults(report.Results)
 	output := buildRepoSearchOutput(scoped, report, results)
-	part.Digest = parentEvidenceStringDigest(
+	part.Digest = parentevidence.StringDigest(
 		state.ParentEvidenceSurfaceSearch, request.Question,
 		fmt.Sprintf("%v", request.Scopes), repoSearchResultsDigest(results),
 	)
