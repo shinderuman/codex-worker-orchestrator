@@ -3,6 +3,7 @@ package parentactioncmd
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -66,52 +67,55 @@ func TestParentActionCommandMetadataPreservesTerminalEnvelopeMatrix(t *testing.T
 	}
 }
 
-func TestDecodeSingleMachineJSON(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name    string
-		raw     string
-		wantErr bool
-	}{
-		{name: "single object", raw: `{"status":"ok"}`},
-		{name: "single array", raw: `[1,2]`},
-		{name: "empty", raw: `` , wantErr: true},
-		{name: "null", raw: `null`, wantErr: true},
-		{name: "multiple", raw: `{} {}`, wantErr: true},
-		{name: "trailing junk", raw: `{} nope`, wantErr: true},
+func TestDecodeSingleMachineJSONRejectsAmbiguousOutput(t *testing.T) {
+	if _, err := decodeSingleMachineJSON([]byte(`{"ok":true}`), "result"); err != nil {
+		t.Fatalf("single JSON rejected: %v", err)
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			_, err := decodeSingleMachineJSON([]byte(tt.raw), "test")
-			if (err != nil) != tt.wantErr {
-				t.Fatalf("decodeSingleMachineJSON() error=%v wantErr=%v", err, tt.wantErr)
-			}
-		})
+	for _, raw := range []string{"", "null", `{"a":1}\n{"b":2}`, `{"a":1} trailing`} {
+		if _, err := decodeSingleMachineJSON([]byte(raw), "result"); err == nil {
+			t.Fatalf("ambiguous machine output accepted: %q", raw)
+		}
 	}
 }
 
-func TestWriteProjectedTerminalEnvelope(t *testing.T) {
-	t.Parallel()
+func TestExecuteWithTerminalEnvelope(t *testing.T) {
+	envelope := parentActionTerminalEnvelope(
+		json.RawMessage(`{"status":"PASS"}`),
+		json.RawMessage(`{"consistent":true,"required_action":"accept"}`),
+	)
+	raw, err := json.Marshal(envelope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(raw)
+	for _, want := range []string{`"status":"parent_action_terminal"`, `"terminal":{"status":"PASS"}`, `"handoff":{"consistent":true,"required_action":"accept"}`} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("terminal envelope missing %s: %s", want, text)
+		}
+	}
+}
 
-	terminal := json.RawMessage(`{"status":"accepted"}`)
-	handoff := json.RawMessage(`{"state":"active"}`)
-	var out bytes.Buffer
-	if err := writeProjectedTerminalEnvelope(&out, terminal, handoff); err != nil {
-		t.Fatalf("writeProjectedTerminalEnvelope() error = %v", err)
+func TestWriteTerminalHandoffFailurePreservesTerminalResult(t *testing.T) {
+	var stdout bytes.Buffer
+	handoffErr := errors.New("handoff unavailable")
+	err := writeTerminalHandoffFailure(&stdout, json.RawMessage(`{"status":"PASS"}`), handoffErr)
+	if !errors.Is(err, handoffErr) {
+		t.Fatalf("error = %v, want %v", err, handoffErr)
 	}
-	var got parentActionTerminalEnvelopePayload
-	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
-		t.Fatalf("decode output: %v", err)
+	var envelope parentActionTerminalEnvelopePayload
+	if err := json.Unmarshal(stdout.Bytes(), &envelope); err != nil {
+		t.Fatal(err)
 	}
-	if got.Status != "parent_action_terminal" {
-		t.Fatalf("Status = %q, want parent_action_terminal", got.Status)
+	if envelope.Status != "parent_action_terminal_handoff_failed" {
+		t.Fatalf("status = %q", envelope.Status)
 	}
-	if strings.TrimSpace(string(got.Terminal)) != string(terminal) {
-		t.Fatalf("Terminal = %s, want %s", got.Terminal, terminal)
+	if string(envelope.Terminal) != `{"status":"PASS"}` {
+		t.Fatalf("terminal = %s", envelope.Terminal)
 	}
-	if strings.TrimSpace(string(got.Handoff)) != string(handoff) {
-		t.Fatalf("Handoff = %s, want %s", got.Handoff, handoff)
+	if envelope.HandoffError != handoffErr.Error() {
+		t.Fatalf("handoff error = %q", envelope.HandoffError)
+	}
+	if len(envelope.Handoff) != 0 {
+		t.Fatalf("handoff must be absent on failure: %s", envelope.Handoff)
 	}
 }
