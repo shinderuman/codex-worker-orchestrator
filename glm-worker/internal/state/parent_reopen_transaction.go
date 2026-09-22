@@ -8,13 +8,6 @@ import (
 	"strings"
 )
 
-const (
-	parentReopenTransactionStateFile = "parent-reopen-transaction.json"
-	parentReopenTransactionVersion   = 1
-)
-
-var errNoParentReopenTransaction = errors.New("parent reopen transition is not pending")
-
 type parentReopenTransactionSnapshot struct {
 	Name   string `json:"name"`
 	Exists bool   `json:"exists"`
@@ -27,6 +20,13 @@ type parentReopenTransactionRecord struct {
 	SourceStatus TaskStatus                        `json:"source_status"`
 	Snapshots    []parentReopenTransactionSnapshot `json:"snapshots"`
 }
+
+const (
+	parentReopenTransactionStateFile = "parent-reopen-transaction.json"
+	parentReopenTransactionVersion   = 1
+)
+
+var errNoParentReopenTransaction = errors.New("parent reopen transition is not pending")
 
 func parentReopenSnapshotStateFiles() []string {
 	return []string{
