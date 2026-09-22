@@ -1,30 +1,18 @@
 package app
 
 import (
-	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
-	"fmt"
 	"io"
 
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repolock"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentevidence"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-type DuplicateParentProjectionError struct {
-	Surface     string
-	Digest      string
-	OwnerCallID string
-}
+type DuplicateParentProjectionError = parentevidence.DuplicateProjectionError
 
-type parentReadDecision int
+type parentReadDecision = parentevidence.ReadDecision
 
 type parentEvidenceReadScope struct {
-	storePresent bool
-	taskID       string
-	taskStatus   state.TaskStatus
-	leaseEpoch   int64
+	inner parentevidence.ReadScope
 }
 
 type parentReadRenderResult struct {
@@ -33,204 +21,75 @@ type parentReadRenderResult struct {
 	reason  string
 }
 
-const parentEvidenceBatchCommand = "glm-parent-action evidence <manifest.json>"
+const parentEvidenceBatchCommand = parentevidence.BatchCommand
 
-const parentEvidenceUnchangedReason = "identical projection was already delivered within this decision lease"
+const parentEvidenceUnchangedReason = parentevidence.UnchangedReason
 
 const (
-	parentReadServe parentReadDecision = iota
-	parentReadDuplicate
+	parentReadServe     = parentevidence.ReadServe
+	parentReadDuplicate = parentevidence.ReadDuplicate
 )
 
-func (e *DuplicateParentProjectionError) Error() string {
-	return fmt.Sprintf(
-		"parent projection for surface %q was already delivered by evidence owner call %s; use %s instead of repeating the fine-grained read",
-		e.Surface, e.OwnerCallID, parentEvidenceBatchCommand,
-	)
-}
-
 func parentEvidenceLeaseActive(st *state.StateStore) bool {
-	return parentEvidenceStatusHasLease(st.TaskStatus())
+	return parentevidence.LeaseActive(st)
 }
 
 func parentEvidenceStatusHasLease(status state.TaskStatus) bool {
-	switch status {
-	case state.TaskStatusWaitingDecision, state.TaskStatusWaitingSolReview, state.TaskStatusParked:
-		return true
-	default:
-		return false
-	}
+	return parentevidence.StatusHasLease(status)
 }
 
 func captureParentEvidenceReadScope(st *state.StateStore) (parentEvidenceReadScope, error) {
-	if !parentEvidenceStorePresent(st) {
-		return parentEvidenceReadScope{}, nil
-	}
-	epoch, err := st.ParentEvidenceLeaseEpoch()
-	if err != nil {
-		return parentEvidenceReadScope{}, err
-	}
-	return parentEvidenceReadScope{
-		storePresent: true,
-		taskID:       st.ReadOr("task.id", ""),
-		taskStatus:   st.TaskStatus(),
-		leaseEpoch:   epoch,
-	}, nil
+	scope, err := parentevidence.CaptureReadScope(st)
+	return parentEvidenceReadScope{inner: scope}, err
 }
 
 func validateParentEvidenceReadScope(st *state.StateStore, scope parentEvidenceReadScope) error {
-	present := parentEvidenceStorePresent(st)
-	if present != scope.storePresent {
-		return fmt.Errorf("parent evidence scope changed during projection; request fresh evidence")
-	}
-	if !present {
-		return nil
-	}
-	epoch, err := st.ParentEvidenceLeaseEpoch()
-	if err != nil {
-		return err
-	}
-	if epoch != scope.leaseEpoch || st.ReadOr("task.id", "") != scope.taskID || st.TaskStatus() != scope.taskStatus {
-		return fmt.Errorf("parent evidence scope changed during projection; request fresh evidence")
-	}
-	return nil
+	return parentevidence.ValidateReadScope(st, scope.inner)
 }
 
 func parentEvidenceDigest(value any) (string, int) {
-	var buf bytes.Buffer
-	encoder := json.NewEncoder(&buf)
-	encoder.SetEscapeHTML(false)
-	if err := encoder.Encode(value); err != nil {
-		sum := sha256.Sum256([]byte(err.Error()))
-		return hex.EncodeToString(sum[:]), 0
-	}
-	data := buf.Bytes()
-	sum := sha256.Sum256(data)
-	return hex.EncodeToString(sum[:]), len(data)
+	return parentevidence.Digest(value)
 }
 
 func parentEvidenceStringDigest(parts ...string) string {
-	hasher := sha256.New()
-	for _, part := range parts {
-		hasher.Write([]byte(part))
-		hasher.Write([]byte{0})
-	}
-	return hex.EncodeToString(hasher.Sum(nil))
+	return parentevidence.StringDigest(parts...)
 }
 
 func parentEvidenceStorePresent(st *state.StateStore) bool {
-	return st != nil && st.Present()
+	return parentevidence.StorePresent(st)
 }
 
 func recordParentEvidence(st *state.StateStore, record state.ParentEvidenceRecord) {
-	if !parentEvidenceStorePresent(st) {
-		return
-	}
-	if record.TaskID == "" {
-		record.TaskID = st.ReadOr("task.id", "")
-	}
-	st.RecordParentEvidence(record)
+	parentevidence.Record(st, record)
 }
 
 func decideParentRead(st *state.StateStore, surface, digest string) (parentReadDecision, state.ParentEvidenceLedgerEntry, error) {
-	if !parentEvidenceStorePresent(st) || !parentEvidenceLeaseActive(st) {
-		return parentReadServe, state.ParentEvidenceLedgerEntry{}, nil
-	}
-	entry, delivered, err := st.ParentEvidenceDelivered(surface, digest)
-	if err != nil {
-		return parentReadServe, entry, err
-	}
-	if !delivered {
-		return parentReadServe, state.ParentEvidenceLedgerEntry{}, nil
-	}
-	return parentReadDuplicate, entry, nil
+	return parentevidence.DecideRead(st, surface, digest)
 }
 
 func withParentEvidenceLedgerLock(st *state.StateStore, body func() error) error {
-	if !parentEvidenceStorePresent(st) || !parentEvidenceLeaseActive(st) {
-		return body()
-	}
-	lock, err := repolock.AcquireWait(st.Path(state.ParentEvidenceLedgerLockFile))
-	if err != nil {
-		return fmt.Errorf("parent evidence ledger lockを取得できません: %w", err)
-	}
-	defer func() { _ = lock.Close() }()
-	return body()
+	return parentevidence.WithLedgerLock(st, body)
 }
 
 func withParentEvidenceReadScopeLock(st *state.StateStore, scope parentEvidenceReadScope, body func() error) error {
-	if !parentEvidenceStorePresent(st) || (!parentEvidenceStatusHasLease(scope.taskStatus) && !parentEvidenceLeaseActive(st)) {
-		return body()
-	}
-	lock, err := repolock.AcquireWait(st.Path(state.ParentEvidenceLedgerLockFile))
-	if err != nil {
-		return fmt.Errorf("parent evidence ledger lockを取得できません: %w", err)
-	}
-	defer func() { _ = lock.Close() }()
-	return body()
+	return parentevidence.WithReadScopeLock(st, scope.inner, body)
 }
 
 func writeMeasuredJSON(stdout io.Writer, value any) (int, error) {
-	var buf bytes.Buffer
-	encoder := json.NewEncoder(&buf)
-	encoder.SetEscapeHTML(false)
-	if err := encoder.Encode(value); err != nil {
-		return 0, err
-	}
-	data := buf.Bytes()
-	if _, err := stdout.Write(data); err != nil {
-		return 0, err
-	}
-	return len(data), nil
+	return parentevidence.WriteMeasuredJSON(stdout, value)
 }
 
 func saveParentEvidenceLedger(st *state.StateStore, surface, digest, origin, ownerCallID string) error {
-	if !parentEvidenceStorePresent(st) || !parentEvidenceLeaseActive(st) {
-		return nil
-	}
-	if err := st.SaveParentEvidenceLedgerEntry(state.ParentEvidenceLedgerEntry{
-		Surface: surface, Digest: digest, Origin: origin, OwnerCallID: ownerCallID,
-	}); err != nil {
-		return fmt.Errorf("parent evidence delivery claimを保存できません: %w", err)
-	}
-	return nil
+	return parentevidence.SaveLedger(st, surface, digest, origin, ownerCallID)
 }
 
 func finishParentReadInScope(st *state.StateStore, scope parentEvidenceReadScope, surface, digest string, render func() (int, error)) error {
-	return finishParentReadInScopeResult(st, scope, surface, digest, func() (parentReadRenderResult, error) {
-		written, err := render()
-		return parentReadRenderResult{bytes: written, outcome: state.ParentEvidenceOutcomeProjected}, err
-	})
+	return parentevidence.FinishReadInScope(st, scope.inner, surface, digest, render)
 }
 
 func finishParentReadInScopeResult(st *state.StateStore, scope parentEvidenceReadScope, surface, digest string, render func() (parentReadRenderResult, error)) error {
-	return withParentEvidenceReadScopeLock(st, scope, func() error {
-		if err := validateParentEvidenceReadScope(st, scope); err != nil {
-			return err
-		}
-		decision, entry, err := decideParentRead(st, surface, digest)
-		if err != nil {
-			return err
-		}
-		if decision == parentReadDuplicate {
-			recordParentEvidence(st, state.ParentEvidenceRecord{
-				Surface: surface, Origin: state.ParentEvidenceOriginStandalone,
-				Digest: digest, Outcome: state.ParentEvidenceOutcomeDuplicate,
-				Reason: parentEvidenceUnchangedReason, OwnerCallID: entry.OwnerCallID,
-			})
-			return &DuplicateParentProjectionError{Surface: surface, Digest: digest, OwnerCallID: entry.OwnerCallID}
-		}
-		rendered, renderErr := render()
-		if renderErr != nil {
-			return renderErr
-		}
-		if err := saveParentEvidenceLedger(st, surface, digest, state.ParentEvidenceOriginStandalone, ""); err != nil {
-			return err
-		}
-		recordParentEvidence(st, state.ParentEvidenceRecord{
-			Surface: surface, Origin: state.ParentEvidenceOriginStandalone,
-			Digest: digest, Bytes: rendered.bytes, Outcome: rendered.outcome, Reason: rendered.reason,
-		})
-		return nil
+	return parentevidence.FinishReadInScopeResult(st, scope.inner, surface, digest, func() (parentevidence.RenderResult, error) {
+		result, err := render()
+		return parentevidence.RenderResult{Bytes: result.bytes, Outcome: result.outcome, Reason: result.reason}, err
 	})
 }
