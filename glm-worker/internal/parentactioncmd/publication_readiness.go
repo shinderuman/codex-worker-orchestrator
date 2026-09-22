@@ -311,15 +311,7 @@ func loadPublicationQualityRun(st *state.StateStore, runID string) (qualitygate.
 	if !qualitygate.ValidRunID(runID) {
 		return qualitygate.RunRecord{}, fmt.Errorf("quality gate run identity is invalid")
 	}
-	data, err := os.ReadFile(st.Path(qualitygate.RunRelativePath(runID)))
-	if err != nil {
-		return qualitygate.RunRecord{}, err
-	}
-	record, err := qualitygate.Decode(data)
-	if err != nil {
-		return qualitygate.RunRecord{}, err
-	}
-	return record, nil
+	return qualitygate.Read(st, runID)
 }
 
 func verifyPublicationQualityRunIdentity(record qualitygate.RunRecord, repoRoot string, candidate state.PublicationCandidate, form, runID string) error {
