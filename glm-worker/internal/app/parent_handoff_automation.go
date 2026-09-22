@@ -6,6 +6,7 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/autoresume"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentevidence"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -26,28 +27,28 @@ func buildParentHandoffWithConfig(cfg config.AppConfig, st *state.StateStore) pa
 }
 
 func printParentHandoffLeasedWithConfig(cfg config.AppConfig, st *state.StateStore, stdout io.Writer) error {
-	scope, err := captureParentEvidenceReadScope(st)
+	scope, err := parentevidence.CaptureReadScope(st)
 	if err != nil {
 		return err
 	}
 	value := buildParentHandoffWithConfig(cfg, st)
-	digest, _ := parentEvidenceDigest(value)
-	return finishParentReadInScope(st, scope, state.ParentEvidenceSurfaceHandoff, digest, func() (int, error) {
-		return writeMeasuredJSON(stdout, value)
+	digest, _ := parentevidence.Digest(value)
+	return parentevidence.FinishReadInScope(st, scope, state.ParentEvidenceSurfaceHandoff, digest, func() (int, error) {
+		return parentevidence.WriteMeasuredJSON(stdout, value)
 	})
 }
 
 func printParentHandoffRecoveryLeasedWithConfig(cfg config.AppConfig, st *state.StateStore, stdout io.Writer) error {
-	scope, err := captureParentEvidenceReadScope(st)
+	scope, err := parentevidence.CaptureReadScope(st)
 	if err != nil {
 		return err
 	}
 	value := projectParentHandoffRecovery(buildParentHandoffWithConfig(cfg, st))
 	applyParentGuardRecovery(st, &value)
 	applyParentQualityGateRecovery(st, &value)
-	digest, _ := parentEvidenceDigest(value)
-	return finishParentReadInScope(st, scope, state.ParentEvidenceSurfaceHandoffRecovery, digest, func() (int, error) {
-		return writeMeasuredJSON(stdout, value)
+	digest, _ := parentevidence.Digest(value)
+	return parentevidence.FinishReadInScope(st, scope, state.ParentEvidenceSurfaceHandoffRecovery, digest, func() (int, error) {
+		return parentevidence.WriteMeasuredJSON(stdout, value)
 	})
 }
 

@@ -16,7 +16,7 @@ func TestPrintParentReviewEvidenceBuildsFromOpenBinding(t *testing.T) {
 	if err := parentevidence.PrintReviewEvidence(cfg.RepoRoot, st, &stdout); err != nil {
 		t.Fatal(err)
 	}
-	var output parentEvidenceOutput
+	var output parentevidence.Output
 	if err := json.Unmarshal(stdout.Bytes(), &output); err != nil {
 		t.Fatal(err)
 	}

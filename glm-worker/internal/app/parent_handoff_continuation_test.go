@@ -65,11 +65,11 @@ func TestParentHandoffCarriesPostLocalContinuation(t *testing.T) {
 		t.Fatalf("recovery parent request = %#v", recovery.ParentRequest)
 	}
 	var recoveryOutput bytes.Buffer
-	if err := printParentHandoffRecoveryLeased(st, &recoveryOutput); err != nil {
-		t.Fatalf("legacy recovery handoff = %v", err)
+	if err := printParentHandoffRecoveryLeasedWithConfig(cfg, st, &recoveryOutput); err != nil {
+		t.Fatalf("recovery handoff = %v", err)
 	}
 	if !strings.Contains(recoveryOutput.String(), `"projection":"recovery"`) {
-		t.Fatalf("legacy recovery output = %s", recoveryOutput.String())
+		t.Fatalf("recovery output = %s", recoveryOutput.String())
 	}
 }
 

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentevidence"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -38,7 +39,7 @@ func TestParentStatusLedgerSaveFailureFailsClosed(t *testing.T) {
 		t.Fatal("retry after failed claim save produced no status output")
 	}
 
-	var duplicate *DuplicateParentProjectionError
+	var duplicate *parentevidence.DuplicateProjectionError
 	if err := printStatusLeased(fixture.st, &bytes.Buffer{}); err == nil || !errors.As(err, &duplicate) {
 		t.Fatalf("same-lease duplicate err=%v", err)
 	}
@@ -54,10 +55,10 @@ func TestParentStatusLedgerSaveFailureFailsClosed(t *testing.T) {
 func TestEvidenceBatchLedgerSaveFailureFailsClosed(t *testing.T) {
 	fixture := newParentEvidenceFixture(t)
 	manifestPath := filepath.Join(t.TempDir(), "evidence-manifest.json")
-	manifest, err := json.Marshal(parentEvidenceManifest{
-		Version: parentEvidenceManifestVersion,
+	manifest, err := json.Marshal(parentevidence.Manifest{
+		Version: parentevidence.ManifestVersion,
 		Reason:  "ledger failure",
-		Status:  &parentEvidenceStatusRequest{},
+		Status:  &parentevidence.StatusRequest{},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -75,7 +76,7 @@ func TestEvidenceBatchLedgerSaveFailureFailsClosed(t *testing.T) {
 	if failedOutput.Len() == 0 {
 		t.Fatal("ledger save failure must occur after the model-visible batch output is written")
 	}
-	var failed parentEvidenceOutput
+	var failed parentevidence.Output
 	if err := jsonUnmarshalParentEvidence(failedOutput.Bytes(), &failed); err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +124,7 @@ func TestRepoSearchLedgerSaveFailureFailsClosed(t *testing.T) {
 	if err := printRepoSearch(request, fixture.cfg, fixture.st, &bytes.Buffer{}); err != nil {
 		t.Fatalf("retry after failed repo-search claim save: %v", err)
 	}
-	var duplicate *DuplicateParentProjectionError
+	var duplicate *parentevidence.DuplicateProjectionError
 	if err := printRepoSearch(request, fixture.cfg, fixture.st, &bytes.Buffer{}); err == nil || !errors.As(err, &duplicate) {
 		t.Fatalf("same-lease repo-search duplicate err=%v", err)
 	}
@@ -145,7 +146,7 @@ func blockParentEvidenceLedgerSave(t *testing.T, st *state.StateStore) func() {
 	stateDir := filepath.Dir(st.Path(parentEvidenceLedgerFailureTestPath))
 	for _, path := range []string{
 		st.Path(state.ParentEvidenceLedgerLockFile),
-		st.Path(parentEvidenceTelemetryFile),
+		st.Path(parentevidence.TelemetryFile),
 	} {
 		file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
 		if err != nil {
@@ -168,7 +169,7 @@ func blockParentEvidenceLedgerSave(t *testing.T, st *state.StateStore) func() {
 	}
 }
 
-func jsonUnmarshalParentEvidence(data []byte, output *parentEvidenceOutput) error {
+func jsonUnmarshalParentEvidence(data []byte, output *parentevidence.Output) error {
 	if err := json.Unmarshal(data, output); err != nil {
 		return fmt.Errorf("evidence output is not valid JSON: %w: %s", err, string(data))
 	}

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentevidence"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -21,19 +22,19 @@ func TestParentEvidenceReplayReducesModelVisibleBytesAndReturns(t *testing.T) {
 	}
 	fixture := newParentEvidenceFixture(t)
 
-	fullManifest := func() parentEvidenceManifest {
-		return parentEvidenceManifest{
+	fullManifest := func() parentevidence.Manifest {
+		return parentevidence.Manifest{
 			Version: 1,
 			Reason:  "incident replay",
-			Authority: []parentEvidenceAuthorityRequest{
+			Authority: []parentevidence.AuthorityRequest{
 				{Kind: "rules", BudgetBytes: 8192},
 				{Kind: "plan", BudgetBytes: 8192},
 				{Kind: "active", BudgetBytes: 8192},
 			},
-			Handoff:   &parentEvidenceHandoffRequest{},
-			Status:    &parentEvidenceStatusRequest{},
-			Telemetry: &parentEvidenceTelemetryRequest{},
-			Search: []parentEvidenceSearchRequest{
+			Handoff:   &parentevidence.HandoffRequest{},
+			Status:    &parentevidence.StatusRequest{},
+			Telemetry: &parentevidence.TelemetryRequest{},
+			Search: []parentevidence.SearchRequest{
 				{Question: "park lifecycle owner", Scopes: []string{"docs"}, BudgetBytes: 4096},
 			},
 		}
@@ -45,26 +46,26 @@ func TestParentEvidenceReplayReducesModelVisibleBytesAndReturns(t *testing.T) {
 	if err := json.Unmarshal(naive.Output.Parts[3].Handoff, &handoffValue); err != nil {
 		t.Fatal(err)
 	}
-	_, handoffBytes := parentEvidenceDigest(handoffValue)
+	_, handoffBytes := parentevidence.Digest(handoffValue)
 	naiveBytes += 2 * handoffBytes
 
-	known := parentEvidenceManifest{
+	known := parentevidence.Manifest{
 		Version: 1,
 		Reason:  "bounded incident replay with known digests",
-		Authority: []parentEvidenceAuthorityRequest{
+		Authority: []parentevidence.AuthorityRequest{
 			{Kind: "rules", KnownContentSHA256: naive.Output.Parts[0].Digest, BudgetBytes: 8192},
 			{Kind: "plan", KnownContentSHA256: naive.Output.Parts[1].Digest, BudgetBytes: 8192},
 			{Kind: "active", KnownContentSHA256: naive.Output.Parts[2].Digest, BudgetBytes: 8192},
 		},
-		Handoff:   &parentEvidenceHandoffRequest{KnownDigest: naive.Output.Parts[3].Digest},
-		Telemetry: &parentEvidenceTelemetryRequest{},
+		Handoff:   &parentevidence.HandoffRequest{KnownDigest: naive.Output.Parts[3].Digest},
+		Telemetry: &parentevidence.TelemetryRequest{},
 	}
 	bounded := runParentEvidence(t, fixture, known)
 	boundedBytes := len(bounded.Raw)
 
 	var rejected bytes.Buffer
-	duplicateErr := printParentHandoffLeased(fixture.st, &rejected)
-	var duplicate *DuplicateParentProjectionError
+	duplicateErr := printParentHandoffLeasedWithConfig(fixture.cfg, fixture.st, &rejected)
+	var duplicate *parentevidence.DuplicateProjectionError
 	if !errors.As(duplicateErr, &duplicate) {
 		t.Fatalf("duplicate poll was not rejected: %v stdout = %s", duplicateErr, rejected.String())
 	}
@@ -103,7 +104,7 @@ func TestParentEvidenceReplayReducesModelVisibleBytesAndReturns(t *testing.T) {
 	if summary.ProjectedTokenProxy <= 0 {
 		t.Fatalf("projected token proxy missing: %#v", summary)
 	}
-	if !strings.Contains(duplicate.Error(), parentEvidenceBatchCommand) {
+	if !strings.Contains(duplicate.Error(), parentevidence.BatchCommand) {
 		t.Fatalf("duplicate rejection does not point at the batch entry: %q", duplicate.Error())
 	}
 }

@@ -10,6 +10,7 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentevidence"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/sessionrotation"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
@@ -178,7 +179,7 @@ func TestExecuteParentReviewOpensOpportunity(t *testing.T) {
 
 	var duplicateOut bytes.Buffer
 	repeatErr := Execute(Command{Mode: ModeStatus}, cfg, nil, &duplicateOut, io.Discard)
-	var duplicate *DuplicateParentProjectionError
+	var duplicate *parentevidence.DuplicateProjectionError
 	if !errors.As(repeatErr, &duplicate) || duplicate.Surface != state.ParentEvidenceSurfaceStatus {
 		t.Fatalf("review待ち中の同一status再読はduplicate projectionとして拒否される必要があります: %v", repeatErr)
 	}

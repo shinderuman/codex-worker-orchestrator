@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
-
 	"io"
 	"os"
 	"os/exec"
@@ -14,6 +12,8 @@ import (
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentevidence"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -24,7 +24,7 @@ type parentEvidenceFixture struct {
 }
 
 type parentEvidenceResult struct {
-	Output parentEvidenceOutput
+	Output parentevidence.Output
 	Raw    string
 }
 
@@ -34,29 +34,29 @@ func TestPrintParentEvidenceBatchesIndependentReadsIntoOneOwnerCall(t *testing.T
 	}
 	fixture := newParentEvidenceFixture(t)
 
-	first := runParentEvidence(t, fixture, parentEvidenceManifest{
+	first := runParentEvidence(t, fixture, parentevidence.Manifest{
 		Version: 1,
 		Reason:  "first anchor",
-		Authority: []parentEvidenceAuthorityRequest{
+		Authority: []parentevidence.AuthorityRequest{
 			{Kind: "rules", BudgetBytes: 4096},
 			{Kind: "plan", BudgetBytes: 4096},
 			{Kind: "active", BudgetBytes: 4096},
 		},
-		Handoff:     &parentEvidenceHandoffRequest{},
-		Status:      &parentEvidenceStatusRequest{},
-		Validations: &parentEvidenceValidationsRequest{},
-		Telemetry:   &parentEvidenceTelemetryRequest{},
-		Search: []parentEvidenceSearchRequest{
+		Handoff:     &parentevidence.HandoffRequest{},
+		Status:      &parentevidence.StatusRequest{},
+		Validations: &parentevidence.ValidationsRequest{},
+		Telemetry:   &parentevidence.TelemetryRequest{},
+		Search: []parentevidence.SearchRequest{
 			{Question: "park lifecycle owner", Scopes: []string{"docs"}, BudgetBytes: 4096},
 		},
-		Diff: []parentEvidenceDiffRequest{
+		Diff: []parentevidence.DiffRequest{
 			{Question: "what changed in tracked file", Paths: []string{"tracked.md"}, BudgetBytes: 4096},
 		},
-		Source: []parentEvidenceSourceRequest{
+		Source: []parentevidence.SourceRequest{
 			{Question: "exact retention rule text", Path: "docs/guide.md", LineStart: 1, LineEnd: 3, BudgetBytes: 4096},
 		},
 	})
-	if first.Output.Status != parentEvidenceStatusOK {
+	if first.Output.Status != parentevidence.StatusOK {
 		t.Fatalf("first output status = %q parts = %s", first.Output.Status, first.Raw)
 	}
 	if len(first.Output.Parts) != 10 {
@@ -64,12 +64,12 @@ func TestPrintParentEvidenceBatchesIndependentReadsIntoOneOwnerCall(t *testing.T
 	}
 	authorityParts := first.Output.Parts[0:3]
 	for _, part := range authorityParts {
-		if part.Status != parentEvidencePartProjected || part.Authority == nil || part.Authority.Content == "" {
+		if part.Status != parentevidence.PartProjected || part.Authority == nil || part.Authority.Content == "" {
 			t.Fatalf("first authority part = %#v", part)
 		}
 	}
 	handoffPart := first.Output.Parts[3]
-	if handoffPart.Status != parentEvidencePartProjected || len(handoffPart.Handoff) == 0 || handoffPart.Digest == "" {
+	if handoffPart.Status != parentevidence.PartProjected || len(handoffPart.Handoff) == 0 || handoffPart.Digest == "" {
 		t.Fatalf("handoff part = %#v", handoffPart)
 	}
 	searchPart := first.Output.Parts[7]
@@ -99,35 +99,35 @@ func TestPrintParentEvidenceBatchesIndependentReadsIntoOneOwnerCall(t *testing.T
 	}
 
 	var stdout bytes.Buffer
-	err := printParentHandoffLeased(fixture.st, &stdout)
-	var duplicate *DuplicateParentProjectionError
+	err := printParentHandoffLeasedWithConfig(fixture.cfg, fixture.st, &stdout)
+	var duplicate *parentevidence.DuplicateProjectionError
 	if !errors.As(err, &duplicate) {
 		t.Fatalf("standalone handoff after evidence batch = %v stdout = %s", err, stdout.String())
 	}
 
-	second := runParentEvidence(t, fixture, parentEvidenceManifest{
+	second := runParentEvidence(t, fixture, parentevidence.Manifest{
 		Version: 1,
 		Reason:  "re-anchor with known digests",
-		Authority: []parentEvidenceAuthorityRequest{
+		Authority: []parentevidence.AuthorityRequest{
 			{Kind: "rules", KnownContentSHA256: authorityParts[0].Digest, BudgetBytes: 4096},
 			{Kind: "plan", KnownContentSHA256: authorityParts[1].Digest, BudgetBytes: 4096},
 			{Kind: "active", KnownContentSHA256: authorityParts[2].Digest, BudgetBytes: 4096},
 		},
-		Handoff: &parentEvidenceHandoffRequest{KnownDigest: handoffPart.Digest},
+		Handoff: &parentevidence.HandoffRequest{KnownDigest: handoffPart.Digest},
 	})
-	if second.Output.Status != parentEvidenceStatusOK {
+	if second.Output.Status != parentevidence.StatusOK {
 		t.Fatalf("second output status = %q parts = %s", second.Output.Status, second.Raw)
 	}
 	for index := 0; index < 3; index++ {
 		part := second.Output.Parts[index]
-		if part.Status != parentEvidencePartUnchanged || part.Authority == nil || part.Authority.Content != "" {
+		if part.Status != parentevidence.PartUnchanged || part.Authority == nil || part.Authority.Content != "" {
 			t.Fatalf("unchanged authority part = %#v", part)
 		}
 		if len(part.Authority.Content) != 0 || part.Bytes != len(part.Digest) {
 			t.Fatalf("unchanged authority part still carries body: %#v", part)
 		}
 	}
-	if second.Output.Parts[3].Status != parentEvidencePartUnchanged || len(second.Output.Parts[3].Handoff) != 0 {
+	if second.Output.Parts[3].Status != parentevidence.PartUnchanged || len(second.Output.Parts[3].Handoff) != 0 {
 		t.Fatalf("unchanged handoff part = %#v", second.Output.Parts[3])
 	}
 	if bytes.Contains([]byte(second.Raw), []byte("authority bootstrap")) {
@@ -140,27 +140,27 @@ func TestPrintParentEvidenceReturnsRefinementInsteadOfTruncatedBodies(t *testing
 		t.Skipf("git commandがないため実binary testをskipします: %v", err)
 	}
 	fixture := newParentEvidenceFixture(t)
-	result := runParentEvidence(t, fixture, parentEvidenceManifest{
+	result := runParentEvidence(t, fixture, parentevidence.Manifest{
 		Version: 1,
 		Reason:  "budgets force refinement",
-		Authority: []parentEvidenceAuthorityRequest{
+		Authority: []parentevidence.AuthorityRequest{
 			{Kind: "active", BudgetBytes: 2},
 		},
-		Search: []parentEvidenceSearchRequest{
+		Search: []parentevidence.SearchRequest{
 			{Question: "park lifecycle owner", Scopes: []string{"docs"}, BudgetBytes: 2},
 		},
-		Diff: []parentEvidenceDiffRequest{
+		Diff: []parentevidence.DiffRequest{
 			{Question: "tracked change", Paths: []string{"tracked.md"}, BudgetBytes: 2},
 		},
-		Source: []parentEvidenceSourceRequest{
+		Source: []parentevidence.SourceRequest{
 			{Question: "guide head", Path: "docs/guide.md", LineStart: 1, LineEnd: 3, BudgetBytes: 2},
 		},
 	})
-	if result.Output.Status != parentEvidenceStatusRequired {
+	if result.Output.Status != parentevidence.StatusRequired {
 		t.Fatalf("status = %q, want refinement_required: %s", result.Output.Status, result.Raw)
 	}
 	for _, part := range result.Output.Parts {
-		if part.Status != parentEvidencePartRefinement {
+		if part.Status != parentevidence.PartRefinement {
 			t.Fatalf("part %s status = %q, want refinement_required", part.Kind, part.Status)
 		}
 		if part.Reason == "" {
@@ -216,7 +216,7 @@ func TestExecuteParentEvidenceFromArgv(t *testing.T) {
 	}
 	fixture := newParentEvidenceFixture(t)
 	modelCalls := &fakeRunner{}
-	executeManifest := func(manifestPath string) (parentEvidenceOutput, string) {
+	executeManifest := func(manifestPath string) (parentevidence.Output, string) {
 		t.Helper()
 		command, err := ParseCommand([]string{"--evidence", manifestPath})
 		if err != nil {
@@ -226,7 +226,7 @@ func TestExecuteParentEvidenceFromArgv(t *testing.T) {
 		if err := Execute(command, fixture.cfg, modelCalls.factory(), &stdout, io.Discard); err != nil {
 			t.Fatalf("Execute(--evidence %s): %v stdout=%s", manifestPath, err, stdout.String())
 		}
-		var output parentEvidenceOutput
+		var output parentevidence.Output
 		if err := json.Unmarshal(stdout.Bytes(), &output); err != nil {
 			t.Fatalf("evidence出力がmachine JSONではありません: %v: %s", err, stdout.String())
 		}
@@ -240,7 +240,7 @@ func TestExecuteParentEvidenceFromArgv(t *testing.T) {
 		}
 		return path
 	}
-	manifestBody := func(request parentEvidenceManifest) string {
+	manifestBody := func(request parentevidence.Manifest) string {
 		t.Helper()
 		data, err := json.Marshal(request)
 		if err != nil {
@@ -253,13 +253,13 @@ func TestExecuteParentEvidenceFromArgv(t *testing.T) {
 		t.Fatal("manifest pathなしの--evidenceはusage errorである必要があります")
 	}
 
-	first, firstRaw := executeManifest(writeManifest(manifestBody(parentEvidenceManifest{
+	first, firstRaw := executeManifest(writeManifest(manifestBody(parentevidence.Manifest{
 		Version:   1,
 		Reason:    "argv entrance",
-		Authority: []parentEvidenceAuthorityRequest{{Kind: "active", BudgetBytes: 4096}},
-		Status:    &parentEvidenceStatusRequest{},
+		Authority: []parentevidence.AuthorityRequest{{Kind: "active", BudgetBytes: 4096}},
+		Status:    &parentevidence.StatusRequest{},
 	})))
-	if first.Status != parentEvidenceStatusOK {
+	if first.Status != parentevidence.StatusOK {
 		t.Fatalf("argv入口のstatus = %q raw=%s", first.Status, firstRaw)
 	}
 	if len(first.Parts) != 2 || first.Parts[0].Authority == nil || first.Parts[0].Authority.Content == "" {
@@ -269,27 +269,27 @@ func TestExecuteParentEvidenceFromArgv(t *testing.T) {
 		t.Fatalf("argv入口のstatus part = %#v raw=%s", first.Parts[1], firstRaw)
 	}
 
-	known, knownRaw := executeManifest(writeManifest(manifestBody(parentEvidenceManifest{
+	known, knownRaw := executeManifest(writeManifest(manifestBody(parentevidence.Manifest{
 		Version: 1,
 		Reason:  "known digest re-fetch",
-		Authority: []parentEvidenceAuthorityRequest{
+		Authority: []parentevidence.AuthorityRequest{
 			{Kind: "active", KnownContentSHA256: first.Parts[0].Digest, BudgetBytes: 4096},
 		},
 	})))
 	knownPart := known.Parts[0]
-	if knownPart.Status != parentEvidencePartUnchanged || knownPart.Authority == nil || knownPart.Authority.Content != "" {
+	if knownPart.Status != parentevidence.PartUnchanged || knownPart.Authority == nil || knownPart.Authority.Content != "" {
 		t.Fatalf("既知digest再取得 = %#v raw=%s", knownPart, knownRaw)
 	}
 	if strings.Contains(knownRaw, "active task body") {
 		t.Fatalf("既知digest再取得が既知本文を再出力しました: %s", knownRaw)
 	}
 
-	refined, refinedRaw := executeManifest(writeManifest(manifestBody(parentEvidenceManifest{
+	refined, refinedRaw := executeManifest(writeManifest(manifestBody(parentevidence.Manifest{
 		Version:   1,
 		Reason:    "budget overrun",
-		Authority: []parentEvidenceAuthorityRequest{{Kind: "active", BudgetBytes: 1}},
+		Authority: []parentevidence.AuthorityRequest{{Kind: "active", BudgetBytes: 1}},
 	})))
-	if refined.Status != parentEvidenceStatusRequired || refined.Parts[0].Status != parentEvidencePartRefinement || refined.Parts[0].Reason == "" {
+	if refined.Status != parentevidence.StatusRequired || refined.Parts[0].Status != parentevidence.PartRefinement || refined.Parts[0].Reason == "" {
 		t.Fatalf("budget超過 = %q %#v raw=%s", refined.Status, refined.Parts[0], refinedRaw)
 	}
 	if refined.Parts[0].Authority != nil && refined.Parts[0].Authority.Content != "" {
@@ -318,10 +318,10 @@ func TestPrintParentEvidenceRecordsTelemetrySummary(t *testing.T) {
 		t.Skipf("git commandがないため実binary testをskipします: %v", err)
 	}
 	fixture := newParentEvidenceFixture(t)
-	runParentEvidence(t, fixture, parentEvidenceManifest{
+	runParentEvidence(t, fixture, parentevidence.Manifest{
 		Version:   1,
 		Reason:    "telemetry coverage",
-		Telemetry: &parentEvidenceTelemetryRequest{},
+		Telemetry: &parentevidence.TelemetryRequest{},
 	})
 	records, err := fixture.st.ReadParentEvidence()
 	if err != nil {
@@ -336,7 +336,7 @@ func TestPrintParentEvidenceRecordsTelemetrySummary(t *testing.T) {
 	}
 }
 
-func runParentEvidence(t *testing.T, fixture *parentEvidenceFixture, manifest parentEvidenceManifest) parentEvidenceResult {
+func runParentEvidence(t *testing.T, fixture *parentEvidenceFixture, manifest parentevidence.Manifest) parentEvidenceResult {
 	t.Helper()
 	manifestPath := filepath.Join(t.TempDir(), "evidence-manifest.json")
 	data, err := json.Marshal(manifest)
@@ -351,7 +351,7 @@ func runParentEvidence(t *testing.T, fixture *parentEvidenceFixture, manifest pa
 	if err := printParentEvidence(Command{Mode: ModeEvidence, EvidenceManifest: manifestPath}, fixture.cfg, fixture.st, &stdout); err != nil {
 		t.Fatalf("printParentEvidence: %v", err)
 	}
-	var output parentEvidenceOutput
+	var output parentevidence.Output
 	if err := json.Unmarshal(stdout.Bytes(), &output); err != nil {
 		t.Fatalf("evidence output is not valid JSON: %v: %s", err, stdout.String())
 	}
@@ -429,7 +429,7 @@ func TestParentEvidenceHandoffPartCarriesSessionRotation(t *testing.T) {
 	if err := printParentEvidence(Command{Mode: ModeEvidence, EvidenceManifest: manifestPath}, cfg, st, &stdout); err != nil {
 		t.Fatalf("printParentEvidence: %v", err)
 	}
-	var output parentEvidenceOutput
+	var output parentevidence.Output
 	if err := json.Unmarshal(stdout.Bytes(), &output); err != nil {
 		t.Fatalf("evidence output is not valid JSON: %v: %s", err, stdout.String())
 	}
