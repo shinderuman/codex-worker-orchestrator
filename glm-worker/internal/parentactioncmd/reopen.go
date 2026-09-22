@@ -47,6 +47,9 @@ func executeReopen(cfg config.AppConfig, args []string, stdout io.Writer) error 
 	}
 	defer func() { _ = lock.Close() }()
 
+	if _, err := st.RecoverInterruptedParentReopen(); err != nil {
+		return err
+	}
 	plan, admitted, err := st.AdmitParentAction(state.ParentActionReopen)
 	if err != nil {
 		return err
