@@ -9,15 +9,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-func EvaluateCanonicalSessionRotationTerminal(
-	cfg config.AppConfig,
-	st *state.StateStore,
-	terminal string,
-	acceptedRisk string,
-) (*state.SessionRotationEvaluation, error) {
-	return sessionrotation.EvaluateTerminal(cfg, st, terminal, acceptedRisk)
-}
-
 func TestCanonicalSessionRotationEvaluationDoesNotRequireTaskStats(t *testing.T) {
 	for _, fixture := range []string{"missing", "corrupt"} {
 		t.Run(fixture, func(t *testing.T) {
@@ -50,7 +41,7 @@ func TestCanonicalSessionRotationEvaluationDoesNotRequireTaskStats(t *testing.T)
 				}
 			}
 
-			evaluation, err := EvaluateCanonicalSessionRotationTerminal(cfg, st, state.SessionRotationTerminalAccept, "LOW")
+			evaluation, err := sessionrotation.EvaluateTerminal(cfg, st, state.SessionRotationTerminalAccept, "LOW")
 			if err != nil {
 				t.Fatal(err)
 			}
