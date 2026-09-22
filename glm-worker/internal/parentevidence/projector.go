@@ -18,16 +18,16 @@ import (
 )
 
 type Manifest struct {
-	Version     int                   `json:"version"`
-	Reason      string                `json:"reason"`
-	Authority   []AuthorityRequest    `json:"authority"`
-	Handoff     *HandoffRequest       `json:"handoff"`
-	Status      *StatusRequest        `json:"status"`
-	Validations *ValidationsRequest   `json:"validations"`
-	Telemetry   *TelemetryRequest     `json:"telemetry"`
-	Search      []SearchRequest       `json:"search"`
-	Diff        []DiffRequest         `json:"diff"`
-	Source      []SourceRequest       `json:"source"`
+	Version     int                  `json:"version"`
+	Reason      string               `json:"reason"`
+	Authority   []AuthorityRequest   `json:"authority"`
+	Handoff     *HandoffRequest      `json:"handoff"`
+	Status      *StatusRequest       `json:"status"`
+	Validations *ValidationsRequest  `json:"validations"`
+	Telemetry   *TelemetryRequest    `json:"telemetry"`
+	Search      []SearchRequest      `json:"search"`
+	Diff        []DiffRequest        `json:"diff"`
+	Source      []SourceRequest      `json:"source"`
 }
 
 type AuthorityRequest struct {
@@ -79,22 +79,22 @@ type Output struct {
 }
 
 type Part struct {
-	Kind        string         `json:"kind"`
-	Detail      string         `json:"detail,omitempty"`
-	Status      string         `json:"status"`
-	Digest      string         `json:"digest,omitempty"`
-	Bytes       int            `json:"bytes"`
-	TokenProxy  int            `json:"token_proxy"`
-	Reason      string         `json:"reason,omitempty"`
-	Locator     string         `json:"locator,omitempty"`
-	Authority   *AuthorityBody `json:"authority,omitempty"`
+	Kind        string          `json:"kind"`
+	Detail      string          `json:"detail,omitempty"`
+	Status      string          `json:"status"`
+	Digest      string          `json:"digest,omitempty"`
+	Bytes       int             `json:"bytes"`
+	TokenProxy  int             `json:"token_proxy"`
+	Reason      string          `json:"reason,omitempty"`
+	Locator     string          `json:"locator,omitempty"`
+	Authority   *AuthorityBody  `json:"authority,omitempty"`
 	Handoff     json.RawMessage `json:"handoff,omitempty"`
 	StatusRead  json.RawMessage `json:"status_read,omitempty"`
-	Validations []Validation   `json:"validations,omitempty"`
-	Telemetry   *TelemetryBody `json:"telemetry,omitempty"`
-	Search      *SearchBody    `json:"search,omitempty"`
-	Diff        *DiffBody      `json:"diff,omitempty"`
-	Source      *SourceBody    `json:"source,omitempty"`
+	Validations []Validation    `json:"validations,omitempty"`
+	Telemetry   *TelemetryBody  `json:"telemetry,omitempty"`
+	Search      *SearchBody     `json:"search,omitempty"`
+	Diff        *DiffBody       `json:"diff,omitempty"`
+	Source      *SourceBody     `json:"source,omitempty"`
 
 	Surface string `json:"-"`
 }
@@ -196,14 +196,14 @@ const (
 	PartError      = "error"
 	PartDisabled   = "disabled"
 
-	ManifestVersion  = 1
-	ManifestMaxBytes = 64 * 1024
-	MaxOutputBytes   = 96 * 1024
-	MaxDiffPaths     = 32
-	MaxSourceLines   = 2000
-	MaxBudgetBytes   = 256 * 1024
+	ManifestVersion      = 1
+	ManifestMaxBytes     = 64 * 1024
+	MaxOutputBytes       = 96 * 1024
+	MaxDiffPaths         = 32
+	MaxSourceLines       = 2000
+	MaxBudgetBytes       = 256 * 1024
 	SearchMaxBudgetBytes = 64 * 1024
-	TelemetryFile    = "parent-evidence.jsonl"
+	TelemetryFile        = "parent-evidence.jsonl"
 )
 
 var bodyStrippers = []func(*Part) bool{
