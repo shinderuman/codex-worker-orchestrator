@@ -45,6 +45,11 @@ func RuntimeActive(repoRoot string, st *state.StateStore) (bool, error) {
 	return decision.Active, nil
 }
 
+func RuntimeActivationPinned(st *state.StateStore) (bool, error) {
+	_, pinned, err := readActivationPin(st)
+	return pinned, err
+}
+
 func readActivationPin(st *state.StateStore) (string, bool, error) {
 	data, err := os.ReadFile(st.Path(ActivationStateKey))
 	if errors.Is(err, os.ErrNotExist) {
