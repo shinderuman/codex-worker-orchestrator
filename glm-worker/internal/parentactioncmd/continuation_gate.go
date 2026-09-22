@@ -1,7 +1,6 @@
 package parentactioncmd
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,11 +11,7 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryproject"
 )
 
-type continuationGateHandoff struct {
-	Consistent    bool                                   `json:"consistent"`
-	Inconsistency *string                                `json:"inconsistency"`
-	ParentRequest *app.ParentRequestCompletionProjection `json:"parent_request"`
-}
+type continuationGateHandoff = app.ParentContinuationProjection
 
 type continuationStopHookOutput struct {
 	Decision string `json:"decision"`
@@ -48,15 +43,7 @@ func executeContinuationGate(cfg config.AppConfig, args []string, stdout io.Writ
 }
 
 func loadContinuationGateHandoff(cfg config.AppConfig) (continuationGateHandoff, error) {
-	var raw bytes.Buffer
-	if err := app.Execute(app.Command{Mode: app.ModeHandoff}, cfg, nil, &raw, io.Discard); err != nil {
-		return continuationGateHandoff{}, fmt.Errorf("canonical handoff unavailable: %w", err)
-	}
-	var handoff continuationGateHandoff
-	if err := json.Unmarshal(raw.Bytes(), &handoff); err != nil {
-		return continuationGateHandoff{}, fmt.Errorf("canonical handoff is not valid JSON: %w", err)
-	}
-	return handoff, nil
+	return app.BuildParentContinuationProjection(cfg), nil
 }
 
 func continuationStopBlockReason(handoff continuationGateHandoff, loadErr error) string {
