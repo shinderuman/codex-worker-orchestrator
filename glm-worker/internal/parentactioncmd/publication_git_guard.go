@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
 )
 
 type publicationGuardOutput struct {
@@ -237,7 +237,7 @@ func verifyPublicationPushRemoteOID(binding pushBindingOutput, remoteOID string)
 }
 
 func publicationGitGuardActive(cfg config.AppConfig) (bool, error) {
-	return workflow.RepositoryHarnessActive(cfg.RepoRoot, state.AttachStateStore(cfg))
+	return repositoryharness.RuntimeActive(cfg.RepoRoot, state.AttachStateStore(cfg))
 }
 
 func publicationRefGuardRequired(status state.TaskStatus) bool {

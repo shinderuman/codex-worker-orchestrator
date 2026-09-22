@@ -1,9 +1,7 @@
 package workflow
 
 import (
-	"errors"
 	"fmt"
-	"os"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
@@ -20,60 +18,11 @@ var repositoryHarnessGuardSurface = guardSurface{
 }
 
 func (w *Workflow) repositoryHarnessActive() (bool, error) {
-	return RepositoryHarnessActive(w.config.RepoRoot, w.state)
+	return repositoryharness.RuntimeActive(w.config.RepoRoot, w.state)
 }
 
 func RepositoryHarnessActive(repoRoot string, st *state.StateStore) (bool, error) {
-	activation, pinned, err := readRepositoryHarnessActivationPin(st)
-	if err != nil {
-		return false, err
-	}
-	if pinned {
-		switch activation {
-		case repositoryharness.ActivationActiveValue:
-			return true, nil
-		case repositoryharness.ActivationInactiveValue:
-			if !st.Exists(activeTaskStateKey) {
-				return false, nil
-			}
-			activeTask, err := st.Read(activeTaskStateKey)
-			if err != nil {
-				return false, fmt.Errorf("ACTIVE task pinを読み込めません: %w", err)
-			}
-			if activeTask != "" {
-				return false, fmt.Errorf("repository harness activation pinがinactiveですがACTIVE task %sが固定されています", activeTask)
-			}
-			return false, nil
-		default:
-			return false, fmt.Errorf("repository harness activation pinが不正です: %q", activation)
-		}
-	}
-	if st.Exists(activeTaskStateKey) {
-		return false, fmt.Errorf("repository harness activation pinが欠落しています")
-	}
-	decision, err := repositoryharness.Evaluate(repoRoot)
-	if err != nil {
-		return false, err
-	}
-	return decision.Active, nil
-}
-
-func readRepositoryHarnessActivationPin(st *state.StateStore) (string, bool, error) {
-	data, err := os.ReadFile(st.Path(repositoryharness.ActivationStateKey))
-	if errors.Is(err, os.ErrNotExist) {
-		return "", false, nil
-	}
-	if err != nil {
-		return "", false, fmt.Errorf("repository harness activation pinを読み込めません: %w", err)
-	}
-	switch string(data) {
-	case repositoryharness.ActivationActiveValue + "\n":
-		return repositoryharness.ActivationActiveValue, true, nil
-	case repositoryharness.ActivationInactiveValue + "\n":
-		return repositoryharness.ActivationInactiveValue, true, nil
-	default:
-		return "", false, fmt.Errorf("repository harness activation pinが不正です: %q", string(data))
-	}
+	return repositoryharness.RuntimeActive(repoRoot, st)
 }
 
 func (w *Workflow) captureRepositoryHarnessBoundary() (repositoryharness.MarkerGuard, bool, bool, error) {

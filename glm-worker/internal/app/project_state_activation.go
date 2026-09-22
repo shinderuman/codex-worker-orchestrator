@@ -1,16 +1,16 @@
 package app
 
 import (
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 	"io"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
 )
 
 func executeProjectStateInspection(cmd Command, cfg config.AppConfig, st *state.StateStore, stdout io.Writer) error {
-	active, err := workflow.RepositoryHarnessActive(cfg.RepoRoot, st)
+	active, err := repositoryharness.RuntimeActive(cfg.RepoRoot, st)
 	if err != nil {
 		return err
 	}

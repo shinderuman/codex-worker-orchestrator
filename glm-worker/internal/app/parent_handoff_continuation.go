@@ -2,17 +2,17 @@ package app
 
 import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryproject"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskview"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
 )
 
 func applyParentRequestCompletion(repoRoot string, st *state.StateStore, output *parentHandoffOutput) {
 	if repoRoot == "" {
 		return
 	}
-	active, err := workflow.RepositoryHarnessActive(repoRoot, st)
+	active, err := repositoryharness.RuntimeActive(repoRoot, st)
 	if err != nil {
 		markHandoffInconsistent(output, "repository harness activation is unavailable: "+err.Error())
 		return
