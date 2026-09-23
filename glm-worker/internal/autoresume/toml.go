@@ -6,25 +6,48 @@ import (
 )
 
 func parseAutomationTOML(data []byte) (AutomationTOML, error) {
+	values, bare, err := parseAutomationValues(data)
+	if err != nil {
+		return AutomationTOML{}, err
+	}
+	if err := validateAutomationFields(values, bare); err != nil {
+		return AutomationTOML{}, err
+	}
+	return automationTOMLFromValues(values), nil
+}
+
+func parseAutomationInventoryTOML(data []byte) (AutomationTOML, error) {
+	values, bare, err := parseAutomationValues(data)
+	if err != nil {
+		return AutomationTOML{}, err
+	}
+	if _, exists := values["target_thread_id"]; exists && bare["target_thread_id"] {
+		return AutomationTOML{}, fmt.Errorf("field %q must be a quoted string, got bare value", "target_thread_id")
+	}
+	return automationTOMLFromValues(values), nil
+}
+
+func parseAutomationValues(data []byte) (map[string]string, map[string]bool, error) {
 	values := make(map[string]string)
 	bare := make(map[string]bool)
 	for i, rawLine := range strings.Split(string(data), "\n") {
 		key, value, isBare, skip, err := parseAutomationLine(rawLine, i+1)
 		if err != nil {
-			return AutomationTOML{}, err
+			return nil, nil, err
 		}
 		if skip {
 			continue
 		}
 		if _, exists := values[key]; exists {
-			return AutomationTOML{}, fmt.Errorf("duplicate key %q", key)
+			return nil, nil, fmt.Errorf("duplicate key %q", key)
 		}
 		values[key] = value
 		bare[key] = isBare
 	}
-	if err := validateAutomationFields(values, bare); err != nil {
-		return AutomationTOML{}, err
-	}
+	return values, bare, nil
+}
+
+func automationTOMLFromValues(values map[string]string) AutomationTOML {
 	return AutomationTOML{
 		ID:             values["id"],
 		Name:           values["name"],
@@ -32,7 +55,7 @@ func parseAutomationTOML(data []byte) (AutomationTOML, error) {
 		Rrule:          values["rrule"],
 		TargetThreadID: values["target_thread_id"],
 		Prompt:         values["prompt"],
-	}, nil
+	}
 }
 
 func parseAutomationLine(rawLine string, lineNumber int) (string, string, bool, bool, error) {
