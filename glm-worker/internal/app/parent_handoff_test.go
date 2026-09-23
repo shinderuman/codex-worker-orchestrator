@@ -89,7 +89,7 @@ func TestParentHandoffPassRequiresAcceptThenBecomesNoAction(t *testing.T) {
 	if err != nil || !accepted {
 		t.Fatalf("accept = %v err=%v", accepted, err)
 	}
-	output = buildParentHandoff(st)
+	output = buildParentHandoffWithConfig(cfg, st)
 	if !output.Consistent || output.RequiredAction == nil || *output.RequiredAction != string(state.ParentActionComplete) || output.ParentReviewOpen != nil {
 		t.Fatalf("awaiting handoff = %#v", output)
 	}
@@ -100,7 +100,7 @@ func TestParentHandoffPassRequiresAcceptThenBecomesNoAction(t *testing.T) {
 	if _, err := st.CompleteParentAwaiting(nil); err != nil {
 		t.Fatal(err)
 	}
-	output = buildParentHandoff(st)
+	output = buildParentHandoffWithConfig(cfg, st)
 	if !output.Consistent || output.RequiredAction == nil || *output.RequiredAction != string(state.ParentActionNone) || output.ParentReviewOpen != nil {
 		t.Fatalf("completed handoff = %#v", output)
 	}
@@ -358,7 +358,7 @@ func TestParentHandoffFailsClosedOnLifecycleContradiction(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	output := buildParentHandoff(st)
+	output := buildParentHandoffWithConfig(cfg, st)
 	if output.Consistent || output.Inconsistency == nil || output.RequiredAction != nil || len(output.AllowedActions) != 0 {
 		t.Fatalf("contradictory handoff = %#v", output)
 	}
@@ -408,7 +408,7 @@ func TestParentHandoffValidationReferencesMatchCurrentSnapshot(t *testing.T) {
 		}
 	}
 
-	output := buildParentHandoff(st)
+	output := buildParentHandoffWithConfig(cfg, st)
 	if !output.Consistent || len(output.Validations) != 2 {
 		t.Fatalf("validations = %#v", output.Validations)
 	}
@@ -525,7 +525,7 @@ func TestParentHandoffRoutingEvidenceMatchesImplementationSnapshot(t *testing.T)
 				t.Fatal(err)
 			}
 
-			output := buildParentHandoff(st)
+			output := buildParentHandoffWithConfig(cfg, st)
 			if !output.Consistent {
 				t.Fatalf("handoff = %#v", output)
 			}
@@ -887,11 +887,11 @@ func TestSessionRotationPendingOnOtherThreadAllowsOrdinaryStartAndRetiresRecomme
 }
 
 func TestSessionRotationHandoffSurvivesUnreadableStatsMirror(t *testing.T) {
-	_, st, threadID := seedSessionRotationAccept(t)
+	cfg, st, threadID := seedSessionRotationAccept(t)
 	if err := os.WriteFile(st.CurrentTaskStatsPath(), []byte("{"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	output := buildParentHandoff(st)
+	output := buildParentHandoffWithConfig(cfg, st)
 	if output.SessionRotation == nil || output.SessionRotation.ParentThreadID != threadID || output.SessionRotation.State != state.SessionRotationProjectionPending {
 		t.Fatalf("rotation disappeared with stats mirror: %#v", output.SessionRotation)
 	}

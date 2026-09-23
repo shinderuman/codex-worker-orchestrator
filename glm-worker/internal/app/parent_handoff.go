@@ -1,12 +1,12 @@
 package app
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"sort"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentcontinuation"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/publicationsequence"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
@@ -165,31 +165,44 @@ func applyParentQualityGateRecovery(st *state.StateStore, output *parentHandoffR
 	output.QualityGateFailure = checkpoint.QualityGateFailure
 }
 
-func buildParentHandoff(st *state.StateStore) parentHandoffOutput {
+func buildParentHandoffFromContinuation(st *state.StateStore, continuation parentcontinuation.Projection) parentHandoffOutput {
 	taskID := st.ReadOr("task.id", "")
 	taskStatus := st.TaskStatus()
 	repoRoot := st.ReadOr("repo-root", "")
 	output := parentHandoffOutput{
 		Version:          parentHandoffVersion,
-		Consistent:       true,
+		Consistent:       continuation.Consistent,
+		Inconsistency:    continuation.Inconsistency,
 		TaskID:           machinecli.StringPtr(taskID),
 		TaskStatus:       machinecli.TaskStatusPtr(taskStatus),
 		AllowedActions:   []string{},
 		PendingDecision:  st.Exists("pending-decision"),
 		ParentReviewOpen: parentReviewPtr(st.OpenParentReviewLabel()),
 		Baseline:         st.BaselineEvidence(),
+		Snapshot:         continuation.Snapshot,
 		Validations:      []parentHandoffValidation{},
 		RoutingEvidence:  []parentHandoffRoutingEvidence{},
-		SessionRotation:  &state.SessionRotationProjection{State: state.SessionRotationProjectionUnavailable},
+		SessionRotation:  continuation.SessionRotation,
 	}
 	if taskID != "" {
 		output.ArtifactDir = machinecli.StringPtr(st.ArtifactDir(taskID))
 	}
-	applyParentActionPlan(st, &output)
-	applyParentRequestCompletion(repoRoot, st, &output)
-	applyParentSnapshot(repoRoot, &output)
+	if continuation.ParentRequest != nil {
+		request := parentRequestProjectionFromFocused(*continuation.ParentRequest)
+		output.ParentRequest = &request
+	}
+	if continuation.Consistent && continuation.ActionPlan != nil {
+		required := string(continuation.ActionPlan.RequiredAction)
+		output.RequiredAction = &required
+		for _, action := range continuation.ActionPlan.AllowedActions {
+			output.AllowedActions = append(output.AllowedActions, string(action))
+		}
+		if len(continuation.ActionPlan.RequiredActionParameters) != 0 {
+			output.RequiredActionParameters = continuation.ActionPlan.RequiredActionParameters
+		}
+		output.ResumeKind = machinecli.StringPtr(continuation.ActionPlan.ResumeKind)
+	}
 	applyParentLastMaterial(st, taskID, &output)
-	applyParentSessionRotation(st, &output)
 	output.Validations = currentParentValidations(st, repoRoot, output.Snapshot)
 	output.RoutingEvidence = currentParentRoutingEvidence(st, repoRoot, taskID, output.Snapshot)
 	if output.Consistent && (taskStatus == state.TaskStatusAwaitingParentCompletion || taskStatus == state.TaskStatusComplete) {
@@ -197,57 +210,6 @@ func buildParentHandoff(st *state.StateStore) parentHandoffOutput {
 		output.Publication = &sequence
 	}
 	return output
-}
-
-func applyParentSessionRotation(st *state.StateStore, output *parentHandoffOutput) {
-	threadID := ""
-	if identity, err := st.CurrentParentCodexIdentity(); err == nil {
-		threadID = identity.ThreadID
-	} else if !errors.Is(err, os.ErrNotExist) {
-		markHandoffInconsistent(output, "parent Codex identity is unavailable: "+err.Error())
-		return
-	}
-	projection, err := st.ProjectSessionRotation(threadID)
-	if err != nil {
-		markHandoffInconsistent(output, "session rotation projection is unavailable: "+err.Error())
-		return
-	}
-	output.SessionRotation = &projection
-}
-
-func applyParentActionPlan(st *state.StateStore, output *parentHandoffOutput) {
-	plan, err := st.ParentActionPlan()
-	if err != nil {
-		markHandoffInconsistent(output, err.Error())
-		return
-	}
-	required := string(plan.RequiredAction)
-	output.RequiredAction = &required
-	for _, action := range plan.AllowedActions {
-		output.AllowedActions = append(output.AllowedActions, string(action))
-	}
-	if len(plan.RequiredActionParameters) != 0 {
-		output.RequiredActionParameters = plan.RequiredActionParameters
-	}
-	output.ResumeKind = machinecli.StringPtr(plan.ResumeKind)
-}
-
-func applyParentSnapshot(repoRoot string, output *parentHandoffOutput) {
-	if repoRoot == "" {
-		markHandoffInconsistent(output, "repository root is unavailable")
-		return
-	}
-	snapshot, err := state.CaptureGitSnapshot(repoRoot)
-	if err != nil {
-		markHandoffInconsistent(output, "current repository snapshot is unavailable: "+err.Error())
-		return
-	}
-	output.Snapshot = &state.SnapshotDigest{
-		Head:                          snapshot.Head,
-		IndexDigest:                   snapshot.IndexDigest,
-		WorktreeDigest:                snapshot.WorktreeDigest,
-		WorktreeDigestExcludingParent: snapshot.WorktreeDigestExcludingParent,
-	}
 }
 
 func applyParentLastMaterial(st *state.StateStore, taskID string, output *parentHandoffOutput) {
@@ -409,16 +371,4 @@ func parentReviewPtr(label string) *string {
 		return nil
 	}
 	return &label
-}
-
-func markHandoffInconsistent(output *parentHandoffOutput, detail string) {
-	output.Consistent = false
-	if output.Inconsistency == nil {
-		output.Inconsistency = machinecli.StringPtr(detail)
-	}
-	output.RequiredAction = nil
-	output.AllowedActions = []string{}
-	output.RequiredActionParameters = nil
-	output.ResumeKind = nil
-	output.Publication = nil
 }

@@ -20,7 +20,7 @@ func TestParentHandoffIgnoresMarkerlessForeignProjectProtocol(t *testing.T) {
 	}
 	st := startParentHandoffTask(t, cfg)
 
-	output := buildParentHandoff(st)
+	output := buildParentHandoffWithConfig(cfg, st)
 	if !output.Consistent || output.ParentRequest != nil || output.TaskID == nil || output.TaskStatus == nil {
 		t.Fatalf("markerless handoff = %#v", output)
 	}
@@ -33,7 +33,7 @@ func TestParentHandoffFailsClosedWhenTaskPinLacksActivationPin(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	output := buildParentHandoff(st)
+	output := buildParentHandoffWithConfig(cfg, st)
 	if output.Consistent || output.Inconsistency == nil || output.ParentRequest != nil {
 		t.Fatalf("inconsistent activation handoff = %#v", output)
 	}
@@ -49,7 +49,7 @@ func TestParentHandoffCarriesPostLocalContinuation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	output := buildParentHandoff(st)
+	output := buildParentHandoffWithConfig(cfg, st)
 	if output.Version != parentHandoffVersion || !output.Consistent || output.ParentRequest == nil {
 		t.Fatalf("handoff = %#v", output)
 	}
@@ -88,7 +88,7 @@ func TestParentHandoffAdmitsNonGoalPostCompletionStopWithoutStart(t *testing.T) 
 		t.Fatal(err)
 	}
 
-	output := buildParentHandoff(st)
+	output := buildParentHandoffWithConfig(cfg, st)
 	if !output.Consistent || output.ParentRequest == nil {
 		t.Fatalf("handoff = %#v", output)
 	}
@@ -115,7 +115,7 @@ func TestParentHandoffDeniesNonGoalPreSyncCompletionStop(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	output := buildParentHandoff(st)
+	output := buildParentHandoffWithConfig(cfg, st)
 	if !output.Consistent || output.ParentRequest == nil {
 		t.Fatalf("handoff = %#v", output)
 	}
@@ -138,7 +138,7 @@ func TestParentHandoffCarriesBlockedOnlyStop(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	output := buildParentHandoff(st)
+	output := buildParentHandoffWithConfig(cfg, st)
 	if !output.Consistent || output.ParentRequest == nil || output.ParentRequest.CompletionAdmitted || !output.ParentRequest.StopAdmitted ||
 		output.ParentRequest.Continuation.State != repositoryproject.ContinuationBlocked || output.ParentRequest.Continuation.Task != blocked {
 		t.Fatalf("handoff parent request = %#v consistent=%v", output.ParentRequest, output.Consistent)
@@ -161,7 +161,7 @@ func TestParentHandoffCarriesRateLimitStopFromCanonicalLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	output := buildParentHandoff(st)
+	output := buildParentHandoffWithConfig(cfg, st)
 	if !output.Consistent || output.ParentRequest == nil || output.ParentRequest.CompletionAdmitted || output.ParentRequest.StopAdmitted {
 		t.Fatalf("handoff = %#v", output)
 	}
@@ -178,7 +178,7 @@ func TestParentHandoffFailsClosedOnInvalidProjectTerminal(t *testing.T) {
 	writeProjectContinuationTask(t, cfg, active)
 	st := startActivatedParentHandoffTask(t, cfg)
 
-	output := buildParentHandoff(st)
+	output := buildParentHandoffWithConfig(cfg, st)
 	if output.Consistent || output.Inconsistency == nil || !strings.Contains(*output.Inconsistency, "project continuation projection") {
 		t.Fatalf("handoff = %#v", output)
 	}

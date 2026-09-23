@@ -1,10 +1,8 @@
 package app
 
 import (
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentcontinuation"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryproject"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryprojecttree"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
 type ParentRequestCompletionProjection struct {
@@ -14,63 +12,21 @@ type ParentRequestCompletionProjection struct {
 	TaskAttribution    repositoryproject.TaskAttribution `json:"task_attribution"`
 }
 
-func BuildCurrentParentRequestCompletionProjection(cfg config.AppConfig, st *state.StateStore) (ParentRequestCompletionProjection, error) {
-	status := st.TaskStatus()
-	var projection ParentRequestCompletionProjection
-	var err error
-	if status == state.TaskStatusAwaitingParentCompletion || status == state.TaskStatusComplete {
-		projection, err = BuildParentRequestCompletionProjection(cfg, st.ReadOr("active-task", ""))
-	} else {
-		var output projectStateOutput
-		output, err = buildProjectState(cfg, st)
-		if err == nil {
-			projection = parentRequestProjection(output.Continuation)
-			projection.TaskAttribution, err = repositoryprojecttree.BuildTaskAttribution(
-				cfg.RepoRoot,
-				st.ReadOr("active-task", ""),
-				output.Continuation.Continuation,
-			)
+func parentRequestProjectionFromFocused(request parentcontinuation.Request) ParentRequestCompletionProjection {
+	projection := ParentRequestCompletionProjection{
+		CompletionAdmitted: request.CompletionAdmitted,
+		StopAdmitted:       request.StopAdmitted,
+		Continuation:       projectContinuationFromPolicy(request.Continuation),
+		TaskAttribution:    request.TaskAttribution,
+	}
+	if request.Automation != nil {
+		projection.Continuation.Automation = &projectContinuationAutomation{
+			AutomationID: request.Automation.AutomationID,
+			ParentThread: request.Automation.ParentThread,
+			WakeThread:   request.Automation.WakeThread,
+			ResumeAtUTC:  request.Automation.ResumeAtUTC,
+			WakeAtUTC:    request.Automation.WakeAtUTC,
 		}
 	}
-	if err != nil {
-		return ParentRequestCompletionProjection{}, err
-	}
-	if authorityTask, authorityErr := st.CurrentTaskAuthorityPath(); authorityErr == nil {
-		projection.TaskAttribution = repositoryproject.BindTaskAuthority(projection.TaskAttribution, authorityTask)
-	} else if projection.TaskAttribution.Handover {
-		projection.TaskAttribution = repositoryproject.BindTaskAuthority(projection.TaskAttribution, "")
-	}
-	return projection, nil
-}
-
-func BuildParentRequestCompletionProjection(cfg config.AppConfig, completedTask string) (ParentRequestCompletionProjection, error) {
-	policyProjection, err := repositoryprojecttree.BuildParentRequestCompletionProjection(cfg.RepoRoot, completedTask)
-	if err != nil {
-		return ParentRequestCompletionProjection{}, err
-	}
-	projection := parentRequestProjectionFromPolicy(policyProjection)
-	attribution, err := repositoryprojecttree.BuildTaskAttribution(cfg.RepoRoot, completedTask, policyProjection.Continuation)
-	if err != nil {
-		return ParentRequestCompletionProjection{}, err
-	}
-	projection.TaskAttribution = attribution
-	return projection, nil
-}
-
-func parentRequestProjectionFromPolicy(projection repositoryproject.ParentRequestCompletionProjection) ParentRequestCompletionProjection {
-	return ParentRequestCompletionProjection{
-		CompletionAdmitted: projection.CompletionAdmitted,
-		StopAdmitted:       projection.StopAdmitted,
-		Continuation:       projectContinuationFromPolicy(projection.Continuation),
-	}
-}
-
-func parentRequestProjection(continuation projectContinuationProjection) ParentRequestCompletionProjection {
-	policy := repositoryproject.ParentRequestProjection(
-		continuation.Continuation,
-		continuation.Reason != string(state.TaskStatusRateLimited),
-	)
-	projection := parentRequestProjectionFromPolicy(policy)
-	projection.Continuation.Automation = continuation.Automation
 	return projection
 }

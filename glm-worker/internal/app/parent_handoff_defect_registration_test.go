@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentcontinuation"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryproject"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
@@ -29,13 +30,7 @@ func TestPendingDefectRegistrationBlocksParentRequestStopBeforeTaskPlanBinding(t
 	target := "IMPLEMENTATION_TASKS/follow-up.md"
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", projectContinuationPlan("active", []string{active}, nil, nil))
 	writeProjectContinuationTask(t, cfg, active)
-	st, err := state.NewStateStore(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := st.StartNewTask(); err != nil {
-		t.Fatal(err)
-	}
+	st := startActivatedParentHandoffTask(t, cfg)
 	if err := st.Write("active-task", active); err != nil {
 		t.Fatal(err)
 	}
@@ -43,10 +38,11 @@ func TestPendingDefectRegistrationBlocksParentRequestStopBeforeTaskPlanBinding(t
 		t.Fatalf("record pending defect registration: created=%t err=%v", created, err)
 	}
 
-	projection, err := BuildCurrentParentRequestCompletionProjection(cfg, st)
-	if err != nil {
-		t.Fatal(err)
+	gate := parentcontinuation.Build(cfg, st)
+	if !gate.Consistent || gate.ParentRequest == nil {
+		t.Fatalf("focused continuation projection = %#v", gate)
 	}
+	projection := gate.ParentRequest
 	if projection.CompletionAdmitted || projection.StopAdmitted {
 		t.Fatalf("pending defect registration admitted completion/stop: %#v", projection)
 	}

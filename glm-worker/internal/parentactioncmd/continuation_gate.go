@@ -6,12 +6,13 @@ import (
 	"io"
 	"strings"
 
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/app"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentcontinuation"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryproject"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-type continuationGateHandoff = app.ParentContinuationProjection
+type continuationGateHandoff = parentcontinuation.Projection
 
 type continuationStopHookOutput struct {
 	Decision string `json:"decision"`
@@ -43,7 +44,7 @@ func executeContinuationGate(cfg config.AppConfig, args []string, stdout io.Writ
 }
 
 func loadContinuationGateHandoff(cfg config.AppConfig) (continuationGateHandoff, error) {
-	return app.BuildParentContinuationProjection(cfg), nil
+	return parentcontinuation.Build(cfg, state.AttachStateStore(cfg)), nil
 }
 
 func continuationStopBlockReason(handoff continuationGateHandoff, loadErr error) string {

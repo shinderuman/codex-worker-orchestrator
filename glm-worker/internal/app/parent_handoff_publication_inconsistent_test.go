@@ -28,7 +28,7 @@ func TestParentHandoffDoesNotProjectPublicationWhenInconsistent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	output := buildParentHandoff(st)
+	output := buildParentHandoffWithConfig(cfg, st)
 	if output.Consistent {
 		t.Fatalf("handoff unexpectedly consistent: %#v", output)
 	}

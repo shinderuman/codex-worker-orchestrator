@@ -1,103 +1,14 @@
 package app
 
-import (
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryproject"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskcontract"
-)
+import "github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryproject"
 
 type projectContinuationProjection struct {
 	repositoryproject.Continuation
 	Automation *projectContinuationAutomation `json:"automation,omitempty"`
 }
 
-func deriveProjectContinuation(output projectStateOutput, st *state.StateStore) projectContinuationProjection {
-	project := repositoryproject.ContinuationProjectView{PlanPresent: output.PlanPresent}
-	if output.Goal != nil && output.Schedule != nil {
-		project.ProjectReady = true
-		project.GoalPresent = output.Goal.Present
-		project.GoalCompleted = output.Goal.Present && output.Goal.Status == taskcontract.GoalStatusCompleted
-		project.Active = append([]string(nil), output.Schedule.Active...)
-		project.NextRunnable = cloneStringPointer(output.NextRunnable)
-		project.Blockers = cloneProjectBlockers(output.Blockers)
-		if output.Completion != nil {
-			project.Completion = &repositoryproject.CompletionView{
-				Ready: output.Completion.Ready,
-				Unmet: append([]string(nil), output.Completion.Unmet...),
-			}
-		}
-	}
-	return projectContinuationFromPolicy(repositoryproject.DeriveContinuation(project, continuationLifecycle(st)))
-}
-
-func continuationLifecycle(st *state.StateStore) repositoryproject.ContinuationLifecycle {
-	status := st.TaskStatus()
-	pinned := st.ReadOr("active-task", "")
-	lifecycle := repositoryproject.ContinuationLifecycle{
-		Interrupted:  status == state.TaskStatusInterrupted,
-		PinnedTask:   pinned,
-		TaskAbsent:   status == state.TaskStatusNone,
-		TaskComplete: status == state.TaskStatusComplete,
-	}
-	plan, planErr := st.ParentActionPlan()
-	planKnown := planErr == nil
-	if planKnown {
-		lifecycle.ParentActionKnown = true
-		lifecycle.RequiredAction = string(plan.RequiredAction)
-		lifecycle.NoRequiredAction = plan.RequiredAction == state.ParentActionNone
-	}
-	lifecycle.InterruptedResumeValid = interruptedResumeValid(st, status, planKnown, plan.RequiredAction)
-	lifecycle.TemporaryBlockReason = continuationTemporaryBlockReason(status)
-	lifecycle.GoalTerminalCompatible = goalTerminalCompatible(status, pinned, planKnown, plan.RequiredAction)
-	return lifecycle
-}
-
-func interruptedResumeValid(st *state.StateStore, status state.TaskStatus, planKnown bool, action state.ParentAction) bool {
-	if status != state.TaskStatusInterrupted || !planKnown || action != state.ParentActionResume {
-		return false
-	}
-	checkpoint, err := st.LoadResumeCheckpoint()
-	return err == nil && checkpoint.StopKind == state.ResumeStopInterrupted
-}
-
-func continuationTemporaryBlockReason(status state.TaskStatus) string {
-	switch status {
-	case state.TaskStatusRateLimited, state.TaskStatusProviderUnavailable:
-		return string(status)
-	default:
-		return ""
-	}
-}
-
-func goalTerminalCompatible(status state.TaskStatus, pinned string, planKnown bool, action state.ParentAction) bool {
-	if status != state.TaskStatusNone && status != state.TaskStatusComplete {
-		return false
-	}
-	if status == state.TaskStatusNone && pinned != "" {
-		return false
-	}
-	return planKnown && action == state.ParentActionNone
-}
-
 func projectContinuationFromPolicy(continuation repositoryproject.Continuation) projectContinuationProjection {
 	return projectContinuationProjection{Continuation: continuation}
-}
-
-func cloneProjectBlockers(blockers []repositoryproject.Blocker) []repositoryproject.Blocker {
-	cloned := make([]repositoryproject.Blocker, len(blockers))
-	for i := range blockers {
-		cloned[i] = blockers[i]
-		cloned[i].Outstanding = append([]string(nil), blockers[i].Outstanding...)
-	}
-	return cloned
-}
-
-func cloneStringPointer(value *string) *string {
-	if value == nil {
-		return nil
-	}
-	cloned := *value
-	return &cloned
 }
 
 func unknownProjectContinuation(reason string) projectContinuationProjection {
