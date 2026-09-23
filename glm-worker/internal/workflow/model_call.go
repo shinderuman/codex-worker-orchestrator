@@ -15,6 +15,10 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
+type recoveryDeadlineProbeRunner interface {
+	ProbeWithDeadline(model string, deadline time.Time) (runner.ProbeResult, error)
+}
+
 func (w *Workflow) runModel(checkpoint state.ResumeCheckpoint) (packet.Result, error) {
 	checkpoint, outputPath, guardBefore, err := w.prepareModelCall(checkpoint)
 	if err != nil {
@@ -656,10 +660,6 @@ func (w *Workflow) runRecoveryAttempt(
 	}
 	recovered, result, startedAt, completedAt, err := onProbeSuccess()
 	return recovered || err != nil, recovered, result, startedAt, completedAt, classification, err
-}
-
-type recoveryDeadlineProbeRunner interface {
-	ProbeWithDeadline(model string, deadline time.Time) (runner.ProbeResult, error)
 }
 
 func (w *Workflow) invokeRecoveryProbe(model string, deadline time.Time) (runner.ProbeResult, error) {
