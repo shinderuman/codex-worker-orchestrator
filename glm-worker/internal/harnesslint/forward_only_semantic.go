@@ -43,6 +43,10 @@ const (
 	forwardOnlyTransportWalkLimit = 4
 )
 
+const forwardOnlyOldWaitName = "wait"
+
+const forwardOnlyCurrentWaitInput = "tools.write_stdin"
+
 func scanForwardOnlySemanticCompatibility(root string, paths []string) ([]Violation, error) {
 	packages, err := parseForwardOnlySemanticPackages(root, paths)
 	if err != nil {
@@ -135,16 +139,25 @@ func forwardOnlySemanticCollectConstants(pkg *forwardOnlySemanticPackage, file *
 		if !ok || general.Tok != token.CONST {
 			continue
 		}
-		for _, spec := range general.Specs {
-			value, ok := spec.(*ast.ValueSpec)
-			if !ok || len(value.Names) != len(value.Values) {
-				continue
-			}
-			for index, name := range value.Names {
-				if resolved, ok := forwardOnlySemanticStringValue(pkg, value.Values[index]); ok {
-					pkg.constants[name.Name] = resolved
-				}
-			}
+		forwardOnlySemanticCollectConstantSpecs(pkg, general.Specs)
+	}
+}
+
+func forwardOnlySemanticCollectConstantSpecs(pkg *forwardOnlySemanticPackage, specs []ast.Spec) {
+	for _, spec := range specs {
+		value, ok := spec.(*ast.ValueSpec)
+		if !ok || len(value.Names) != len(value.Values) {
+			continue
+		}
+		forwardOnlySemanticCollectConstantValues(pkg, value)
+	}
+}
+
+func forwardOnlySemanticCollectConstantValues(pkg *forwardOnlySemanticPackage, value *ast.ValueSpec) {
+	for index, name := range value.Names {
+		resolved, ok := forwardOnlySemanticStringValue(pkg, value.Values[index])
+		if ok {
+			pkg.constants[name.Name] = resolved
 		}
 	}
 }
@@ -188,30 +201,47 @@ func forwardOnlySemanticDualWaitReader(pkg *forwardOnlySemanticPackage, function
 func forwardOnlySemanticTransportArms(pkg *forwardOnlySemanticPackage, body *ast.BlockStmt) []forwardOnlyTransportArm {
 	var arms []forwardOnlyTransportArm
 	ast.Inspect(body, func(node ast.Node) bool {
-		switch typed := node.(type) {
-		case *ast.SwitchStmt:
-			if !forwardOnlySemanticTypeExpression(typed.Tag) {
-				return true
-			}
-			for _, statement := range typed.Body.List {
-				clause, ok := statement.(*ast.CaseClause)
-				if !ok {
-					continue
-				}
-				kind := forwardOnlySemanticTransportExpressions(pkg, clause.List)
-				if kind == 0 {
-					continue
-				}
-				arms = append(arms, forwardOnlyTransportArm{kind: kind, node: &ast.BlockStmt{List: clause.Body}})
-			}
-		case *ast.IfStmt:
-			if kind := forwardOnlySemanticConditionTransport(pkg, typed.Cond); kind != 0 {
-				arms = append(arms, forwardOnlyTransportArm{kind: kind, node: typed.Body})
-			}
-		}
+		arms = append(arms, forwardOnlySemanticTransportNodeArms(pkg, node)...)
 		return true
 	})
 	return arms
+}
+
+func forwardOnlySemanticTransportNodeArms(pkg *forwardOnlySemanticPackage, node ast.Node) []forwardOnlyTransportArm {
+	switch typed := node.(type) {
+	case *ast.SwitchStmt:
+		return forwardOnlySemanticSwitchTransportArms(pkg, typed)
+	case *ast.IfStmt:
+		return forwardOnlySemanticIfTransportArms(pkg, typed)
+	default:
+		return nil
+	}
+}
+
+func forwardOnlySemanticSwitchTransportArms(pkg *forwardOnlySemanticPackage, statement *ast.SwitchStmt) []forwardOnlyTransportArm {
+	if !forwardOnlySemanticTypeExpression(statement.Tag) {
+		return nil
+	}
+	var arms []forwardOnlyTransportArm
+	for _, item := range statement.Body.List {
+		clause, ok := item.(*ast.CaseClause)
+		if !ok {
+			continue
+		}
+		kind := forwardOnlySemanticTransportExpressions(pkg, clause.List)
+		if kind != 0 {
+			arms = append(arms, forwardOnlyTransportArm{kind: kind, node: &ast.BlockStmt{List: clause.Body}})
+		}
+	}
+	return arms
+}
+
+func forwardOnlySemanticIfTransportArms(pkg *forwardOnlySemanticPackage, statement *ast.IfStmt) []forwardOnlyTransportArm {
+	kind := forwardOnlySemanticConditionTransport(pkg, statement.Cond)
+	if kind == 0 {
+		return nil
+	}
+	return []forwardOnlyTransportArm{{kind: kind, node: statement.Body}}
 }
 
 func forwardOnlySemanticTypeExpression(expression ast.Expr) bool {
@@ -303,7 +333,7 @@ func forwardOnlySemanticDirectWaitMarkers(pkg *forwardOnlySemanticPackage, node 
 			markers |= forwardOnlySemanticWaitComparison(pkg, typed)
 		case *ast.CallExpr:
 			for _, argument := range typed.Args {
-				if value, ok := forwardOnlySemanticStringValue(pkg, argument); ok && strings.Contains(value, "tools.write_stdin") {
+				if value, ok := forwardOnlySemanticStringValue(pkg, argument); ok && strings.Contains(value, forwardOnlyCurrentWaitInput) {
 					markers |= forwardOnlyCurrentWait
 				}
 			}
@@ -319,27 +349,25 @@ func forwardOnlySemanticWaitComparison(pkg *forwardOnlySemanticPackage, expressi
 	if expression.Op != token.EQL && expression.Op != token.NEQ {
 		return 0
 	}
-	if forwardOnlySemanticNamedField(expression.X, "Name") {
-		if value, ok := forwardOnlySemanticStringValue(pkg, expression.Y); ok && value == "wait" {
-			return forwardOnlyOldWait
-		}
+	if marker := forwardOnlySemanticWaitFieldComparison(pkg, expression.X, expression.Y); marker != 0 {
+		return marker
 	}
-	if forwardOnlySemanticNamedField(expression.Y, "Name") {
-		if value, ok := forwardOnlySemanticStringValue(pkg, expression.X); ok && value == "wait" {
-			return forwardOnlyOldWait
-		}
+	return forwardOnlySemanticWaitFieldComparison(pkg, expression.Y, expression.X)
+}
+
+func forwardOnlySemanticWaitFieldComparison(pkg *forwardOnlySemanticPackage, field, value ast.Expr) uint8 {
+	resolved, ok := forwardOnlySemanticStringValue(pkg, value)
+	if !ok {
+		return 0
 	}
-	if forwardOnlySemanticNamedField(expression.X, "Input") {
-		if value, ok := forwardOnlySemanticStringValue(pkg, expression.Y); ok && strings.Contains(value, "tools.write_stdin") {
-			return forwardOnlyCurrentWait
-		}
+	switch {
+	case forwardOnlySemanticNamedField(field, "Name") && resolved == forwardOnlyOldWaitName:
+		return forwardOnlyOldWait
+	case forwardOnlySemanticNamedField(field, "Input") && strings.Contains(resolved, forwardOnlyCurrentWaitInput):
+		return forwardOnlyCurrentWait
+	default:
+		return 0
 	}
-	if forwardOnlySemanticNamedField(expression.Y, "Input") {
-		if value, ok := forwardOnlySemanticStringValue(pkg, expression.X); ok && strings.Contains(value, "tools.write_stdin") {
-			return forwardOnlyCurrentWait
-		}
-	}
-	return 0
 }
 
 func forwardOnlySemanticNamedField(expression ast.Expr, name string) bool {
@@ -350,10 +378,10 @@ func forwardOnlySemanticNamedField(expression ast.Expr, name string) bool {
 func forwardOnlySemanticCompositeWaitMarkers(pkg *forwardOnlySemanticPackage, literal *ast.CompositeLit) uint8 {
 	fields := forwardOnlySemanticCompositeFields(pkg, literal)
 	var markers uint8
-	if fields["Name"] == "wait" || fields["name"] == "wait" {
+	if fields["Name"] == forwardOnlyOldWaitName || fields["name"] == forwardOnlyOldWaitName {
 		markers |= forwardOnlyOldWait
 	}
-	if strings.Contains(fields["Input"], "tools.write_stdin") || strings.Contains(fields["input"], "tools.write_stdin") {
+	if strings.Contains(fields["Input"], forwardOnlyCurrentWaitInput) || strings.Contains(fields["input"], forwardOnlyCurrentWaitInput) {
 		markers |= forwardOnlyCurrentWait
 	}
 	return markers
@@ -416,24 +444,45 @@ func forwardOnlySemanticSinks(pkg *forwardOnlySemanticPackage, function *forward
 func forwardOnlySemanticDirectSinks(node ast.Node) map[string]bool {
 	sinks := make(map[string]bool)
 	ast.Inspect(node, func(current ast.Node) bool {
-		switch typed := current.(type) {
-		case *ast.CallExpr:
-			identifier, ok := forwardOnlyUnparen(typed.Fun).(*ast.Ident)
-			if ok && identifier.Name == "append" && len(typed.Args) > 0 {
-				if selector, ok := forwardOnlyUnparen(typed.Args[0]).(*ast.SelectorExpr); ok {
-					sinks["append:"+selector.Sel.Name] = true
-				}
-			}
-		case *ast.ReturnStmt:
-			for _, result := range typed.Results {
-				if identifier, ok := forwardOnlyUnparen(result).(*ast.Ident); ok && identifier.Name == "true" {
-					sinks["return:true"] = true
-				}
-			}
-		}
+		forwardOnlySemanticRecordSink(sinks, current)
 		return true
 	})
 	return sinks
+}
+
+func forwardOnlySemanticRecordSink(sinks map[string]bool, node ast.Node) {
+	switch typed := node.(type) {
+	case *ast.CallExpr:
+		if sink := forwardOnlySemanticAppendSink(typed); sink != "" {
+			sinks[sink] = true
+		}
+	case *ast.ReturnStmt:
+		if forwardOnlySemanticReturnsTrue(typed) {
+			sinks["return:true"] = true
+		}
+	}
+}
+
+func forwardOnlySemanticAppendSink(call *ast.CallExpr) string {
+	identifier, ok := forwardOnlyUnparen(call.Fun).(*ast.Ident)
+	if !ok || identifier.Name != "append" || len(call.Args) == 0 {
+		return ""
+	}
+	selector, ok := forwardOnlyUnparen(call.Args[0]).(*ast.SelectorExpr)
+	if !ok {
+		return ""
+	}
+	return "append:" + selector.Sel.Name
+}
+
+func forwardOnlySemanticReturnsTrue(statement *ast.ReturnStmt) bool {
+	for _, result := range statement.Results {
+		identifier, ok := forwardOnlyUnparen(result).(*ast.Ident)
+		if ok && identifier.Name == "true" {
+			return true
+		}
+	}
+	return false
 }
 
 func forwardOnlySemanticNormalizesCurrentWait(pkg *forwardOnlySemanticPackage, function *forwardOnlySemanticFunction) bool {
@@ -484,34 +533,50 @@ func forwardOnlySemanticSameObjectOldWaitRewrite(pkg *forwardOnlySemanticPackage
 	writes := make(map[string]uint8)
 	ast.Inspect(node, func(current ast.Node) bool {
 		assignment, ok := current.(*ast.AssignStmt)
-		if !ok {
-			return true
-		}
-		for index, target := range assignment.Lhs {
-			if index >= len(assignment.Rhs) {
-				continue
-			}
-			selector, ok := forwardOnlyUnparen(target).(*ast.SelectorExpr)
-			if !ok {
-				continue
-			}
-			base := forwardOnlySemanticObjectBase(selector.X)
-			if base == "" {
-				continue
-			}
-			switch selector.Sel.Name {
-			case "Type":
-				if forwardOnlySemanticTransportExpression(pkg, assignment.Rhs[index]) == forwardOnlyOldTransport {
-					writes[base] |= forwardOnlyOldTransport
-				}
-			case "Name":
-				if value, ok := forwardOnlySemanticStringValue(pkg, assignment.Rhs[index]); ok && value == "wait" {
-					writes[base] |= forwardOnlyOldWait
-				}
-			}
+		if ok {
+			forwardOnlySemanticRecordRewriteAssignment(pkg, writes, assignment)
 		}
 		return true
 	})
+	return forwardOnlySemanticHasOldWaitRewrite(writes)
+}
+
+func forwardOnlySemanticRecordRewriteAssignment(pkg *forwardOnlySemanticPackage, writes map[string]uint8, assignment *ast.AssignStmt) {
+	for index, target := range assignment.Lhs {
+		if index >= len(assignment.Rhs) {
+			continue
+		}
+		base, flag := forwardOnlySemanticRewriteTargetFlag(pkg, target, assignment.Rhs[index])
+		if base != "" && flag != 0 {
+			writes[base] |= flag
+		}
+	}
+}
+
+func forwardOnlySemanticRewriteTargetFlag(pkg *forwardOnlySemanticPackage, target, value ast.Expr) (string, uint8) {
+	selector, ok := forwardOnlyUnparen(target).(*ast.SelectorExpr)
+	if !ok {
+		return "", 0
+	}
+	base := forwardOnlySemanticObjectBase(selector.X)
+	if base == "" {
+		return "", 0
+	}
+	switch selector.Sel.Name {
+	case "Type":
+		if forwardOnlySemanticTransportExpression(pkg, value) == forwardOnlyOldTransport {
+			return base, forwardOnlyOldTransport
+		}
+	case "Name":
+		resolved, ok := forwardOnlySemanticStringValue(pkg, value)
+		if ok && resolved == forwardOnlyOldWaitName {
+			return base, forwardOnlyOldWait
+		}
+	}
+	return "", 0
+}
+
+func forwardOnlySemanticHasOldWaitRewrite(writes map[string]uint8) bool {
 	for _, flags := range writes {
 		if flags&(forwardOnlyOldTransport|forwardOnlyOldWait) == forwardOnlyOldTransport|forwardOnlyOldWait {
 			return true
