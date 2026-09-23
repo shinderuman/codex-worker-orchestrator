@@ -31,8 +31,9 @@ type forwardOnlySemanticPackage struct {
 }
 
 type forwardOnlyTransportArm struct {
-	kind uint8
-	node ast.Node
+	kind    uint8
+	node    ast.Node
+	markers uint8
 }
 
 const (
@@ -186,7 +187,7 @@ func forwardOnlySemanticDualWaitReader(pkg *forwardOnlySemanticPackage, function
 	arms := forwardOnlySemanticTransportArms(pkg, function.decl.Body)
 	var oldSinks, currentSinks map[string]bool
 	for _, arm := range arms {
-		markers := forwardOnlySemanticWaitMarkers(pkg, function, arm.node, forwardOnlyTransportWalkLimit, nil)
+		markers := arm.markers | forwardOnlySemanticWaitMarkers(pkg, function, arm.node, forwardOnlyTransportWalkLimit, nil)
 		sinks := forwardOnlySemanticSinks(pkg, function, arm.node, forwardOnlyTransportWalkLimit, nil)
 		switch {
 		case arm.kind == forwardOnlyOldTransport && markers&forwardOnlyOldWait != 0:
@@ -241,7 +242,11 @@ func forwardOnlySemanticIfTransportArms(pkg *forwardOnlySemanticPackage, stateme
 	if kind == 0 {
 		return nil
 	}
-	return []forwardOnlyTransportArm{{kind: kind, node: statement.Body}}
+	return []forwardOnlyTransportArm{{
+		kind:    kind,
+		node:    statement.Body,
+		markers: forwardOnlySemanticDirectWaitMarkers(pkg, statement.Cond),
+	}}
 }
 
 func forwardOnlySemanticTypeExpression(expression ast.Expr) bool {
@@ -490,7 +495,8 @@ func forwardOnlySemanticNormalizesCurrentWait(pkg *forwardOnlySemanticPackage, f
 		if arm.kind != forwardOnlyCurrentTransport {
 			continue
 		}
-		if forwardOnlySemanticWaitMarkers(pkg, function, arm.node, forwardOnlyTransportWalkLimit, nil)&forwardOnlyCurrentWait == 0 {
+		markers := arm.markers | forwardOnlySemanticWaitMarkers(pkg, function, arm.node, forwardOnlyTransportWalkLimit, nil)
+		if markers&forwardOnlyCurrentWait == 0 {
 			continue
 		}
 		if forwardOnlySemanticNodeHasOldWaitRewrite(pkg, function, arm.node, forwardOnlyTransportWalkLimit, nil) {
@@ -519,10 +525,9 @@ func forwardOnlySemanticNodeHasOldWaitRewrite(pkg *forwardOnlySemanticPackage, f
 			continue
 		}
 		seen[callee] = true
-		markers := forwardOnlySemanticFunctionWaitMarkers(pkg, callee, remaining-1, nil)
 		rewrites := forwardOnlySemanticNodeHasOldWaitRewrite(pkg, callee, callee.decl.Body, remaining-1, seen)
 		delete(seen, callee)
-		if markers&forwardOnlyCurrentWait != 0 && rewrites {
+		if rewrites {
 			return true
 		}
 	}
