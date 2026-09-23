@@ -58,13 +58,13 @@ while :; do sleep 0.2; done
 	w.temp = t.TempDir()
 
 	checkpoint := state.ResumeCheckpoint{
-		Stage:                             state.ResumeStageWorker,
-		Phase:                             "worker-new",
-		Role:                              state.WorkerRole,
-		Model:                             "opus",
-		ProviderUnavailableClassification: "http-503",
+		Stage: state.ResumeStageWorker,
+		Phase: "worker-new",
+		Role:  state.WorkerRole,
+		Model: "opus",
 	}
 	checkpoint.SetStopKind(state.ResumeStopProviderUnavailable)
+	checkpoint.ProviderUnavailableClassification = "http-503"
 	if err := st.EnterStop(checkpoint); err != nil {
 		t.Fatal(err)
 	}
