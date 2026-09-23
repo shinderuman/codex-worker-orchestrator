@@ -15,7 +15,6 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 - `IMPLEMENTATION_TASKS/task-diff-preexisting-untracked-baseline.md`
 - `IMPLEMENTATION_TASKS/quality-surface-implicit-tool-config.md`
 - `IMPLEMENTATION_TASKS/codex-efficiency-intermediate-checkpoint.md`
-- `IMPLEMENTATION_TASKS/quality-fixer-review-snapshot-boundary.md`
 - `IMPLEMENTATION_TASKS/parent-evidence-locator-identity.md`
 - `IMPLEMENTATION_TASKS/parent-review-evidence-coverage-accumulation.md`
 - `IMPLEMENTATION_TASKS/parent-review-target-evidence-coverage.md`
