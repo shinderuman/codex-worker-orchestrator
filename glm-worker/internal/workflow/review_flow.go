@@ -18,11 +18,7 @@ func (w *Workflow) reviewUntilStable(
 	autoFixes int,
 	workerPhase string,
 ) error {
-	workerEnd, stopped, err := w.captureWorkerEndSnapshot()
-	if err != nil || stopped {
-		return err
-	}
-	handled, err := w.handleRepositoryQualityViolation(request, workerResult, reviewNumber, autoFixes, workerPhase)
+	workerEnd, handled, err := w.prepareReviewInputSnapshot(request, workerResult, reviewNumber, autoFixes, workerPhase)
 	if err != nil || handled {
 		return err
 	}
@@ -52,6 +48,37 @@ func (w *Workflow) reviewUntilStable(
 		return err
 	}
 	return w.handleReviewResult(request, workerResult, reviewResult, reviewNumber, autoFixes)
+}
+
+func (w *Workflow) prepareReviewInputSnapshot(
+	request string,
+	workerResult packet.Result,
+	reviewNumber int,
+	autoFixes int,
+	workerPhase string,
+) (state.GitSnapshot, bool, error) {
+	workerEnd, stopped, err := w.captureWorkerEndSnapshot()
+	if err != nil || stopped {
+		return workerEnd, true, err
+	}
+	parentBefore, err := state.CaptureParentFileStates(w.config.RepoRoot)
+	if err != nil {
+		return workerEnd, true, w.failClosedSnapshot(
+			state.SnapshotStageWorkerEnd,
+			workerEnd,
+			state.GitSnapshot{},
+			"quality gate開始前parent-managed metadata取得失敗",
+			err,
+		)
+	}
+	handled, qualityReport, err := w.handleRepositoryQualityViolation(request, workerResult, reviewNumber, autoFixes, workerPhase)
+	if err != nil || handled {
+		return workerEnd, true, err
+	}
+	if qualityReport.Fixed == 0 {
+		return workerEnd, false, nil
+	}
+	return w.acceptQualityFixSnapshot(workerEnd, parentBefore, qualityReport.Fixed)
 }
 
 func (w *Workflow) buildReviewCheckpoint(
@@ -138,25 +165,67 @@ func (w *Workflow) runReviewModel(checkpoint state.ResumeCheckpoint) (packet.Res
 	return reviewResult, false, nil
 }
 
+func (w *Workflow) acceptQualityFixSnapshot(workerEnd state.GitSnapshot, parentBefore state.ParentFileStates, fixed int) (state.GitSnapshot, bool, error) {
+	reviewInput, err := w.captureSnapshot(w.config.RepoRoot)
+	if err != nil {
+		return reviewInput, true, w.failClosedSnapshot(
+			state.SnapshotStageReviewStart,
+			workerEnd,
+			state.GitSnapshot{},
+			"machine quality fixer後snapshot取得失敗",
+			err,
+		)
+	}
+	parentAfter, err := state.CaptureParentFileStates(w.config.RepoRoot)
+	if err != nil {
+		return reviewInput, true, w.failClosedSnapshot(
+			state.SnapshotStageReviewStart,
+			workerEnd,
+			reviewInput,
+			"machine quality fixer後parent-managed metadata取得失敗",
+			err,
+		)
+	}
+	if !state.SameParentFileStates(parentBefore, parentAfter) {
+		return reviewInput, true, w.failClosedSnapshot(
+			state.SnapshotStageReviewStart,
+			workerEnd,
+			reviewInput,
+			fmt.Sprintf("machine quality fixer実行中にparent-managed metadataが変化しました(fixed=%d)", fixed),
+			nil,
+		)
+	}
+	if err := w.state.SaveWorkerEndSnapshot(reviewInput); err != nil {
+		return reviewInput, true, w.failClosedSnapshot(
+			state.SnapshotStageReviewStart,
+			workerEnd,
+			reviewInput,
+			"machine quality fixer後worker-end snapshot保存失敗",
+			err,
+		)
+	}
+	return reviewInput, false, nil
+}
+
 func (w *Workflow) handleRepositoryQualityViolation(
 	request string,
 	workerResult packet.Result,
 	reviewNumber int,
 	autoFixes int,
 	workerPhase string,
-) (bool, error) {
+) (bool, harnesslint.Report, error) {
 	qualityReport, err := w.qualityGate(w.config.RepoRoot)
 	if err != nil {
-		return true, w.saveQualityGateStop(request, workerResult, reviewNumber, autoFixes, workerPhase, err)
+		return true, harnesslint.Report{}, w.saveQualityGateStop(request, workerResult, reviewNumber, autoFixes, workerPhase, err)
 	}
 	if !harnesslint.IsViolation(qualityReport) {
-		return false, nil
+		return false, qualityReport, nil
 	}
 	result := qualityGateFixResult(qualityReport)
 	if err := w.writeLastReview(result); err != nil {
-		return true, err
+		return true, qualityReport, err
 	}
-	return true, w.handleReviewResult(request, workerResult, result, reviewNumber, autoFixes)
+	return true, qualityReport, w.handleReviewResult(request, workerResult, result, reviewNumber, autoFixes)
 }
 
 func (w *Workflow) handleReviewResult(
