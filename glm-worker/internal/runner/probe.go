@@ -2,11 +2,13 @@ package runner
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 type ProbeResult struct {
@@ -24,11 +26,18 @@ type ProbeInvalidResponseError struct {
 	Reason error
 }
 
-const ProbeSentinel = "GLM_WORKER_PROBE_OK"
+const (
+	ProbeSentinel = "GLM_WORKER_PROBE_OK"
+	ProbePrompt   = "Reply with exactly GLM_WORKER_PROBE_OK and nothing else."
+)
 
-const ProbePrompt = "Reply with exactly GLM_WORKER_PROBE_OK and nothing else."
+var ErrProbeDeadlineExceeded = errors.New("probe recovery deadline exceeded")
 
 func (r *ClaudeRunner) Probe(model string) (ProbeResult, error) {
+	return r.ProbeWithDeadline(model, time.Time{})
+}
+
+func (r *ClaudeRunner) ProbeWithDeadline(model string, deadline time.Time) (ProbeResult, error) {
 	if model == "" {
 		return ProbeResult{}, fmt.Errorf("probe modelを指定してください")
 	}
@@ -56,7 +65,7 @@ func (r *ClaudeRunner) Probe(model string) (ProbeResult, error) {
 	}
 	defer func() { _ = devNull.Close() }()
 
-	command := exec.Command(r.config.ClaudeBin, args...)
+	command := newProcessGroupCmd(r.config.ClaudeBin, args...)
 	command.Dir = probeDir
 	command.Stdin = devNull
 	command.Stdout = output
@@ -65,7 +74,7 @@ func (r *ClaudeRunner) Probe(model string) (ProbeResult, error) {
 	additions["CLAUDE_CONFIG_DIR"] = r.config.ClaudeConfigDir
 	command.Env = buildChildEnv(r.config.EnvAllowlist, settingEnv, additions, envDeletes)
 
-	runErr := closeProbeOutputs(command.Run(), output, stderr)
+	runErr := closeProbeOutputs(r.runProbeCommand(command, deadline), output, stderr)
 	result, parseErr := readProbeResult(rawOutputPath)
 	if runErr != nil {
 		stderrText, _ := os.ReadFile(stderrPath)
@@ -78,6 +87,90 @@ func (r *ClaudeRunner) Probe(model string) (ProbeResult, error) {
 		return result, &ProbeInvalidResponseError{Model: model, Reason: err}
 	}
 	return result, nil
+}
+
+func (r *ClaudeRunner) runProbeCommand(command *exec.Cmd, deadline time.Time) error {
+	if err := r.probeCommandPreflight(deadline); err != nil {
+		return err
+	}
+	if r.stop == nil && deadline.IsZero() {
+		return command.Run()
+	}
+	if err := command.Start(); err != nil {
+		return err
+	}
+	waitDone := make(chan error, 1)
+	go func() {
+		waitDone <- command.Wait()
+	}()
+
+	stopRequested := r.probeStopRequested()
+	deadlineReached, stopTimer := probeDeadlineChannel(deadline)
+	defer stopTimer()
+
+	select {
+	case err := <-waitDone:
+		return err
+	case <-stopRequested:
+		return finishInterruptedProbeCommand(command, waitDone)
+	case <-deadlineReached:
+		return finishDeadlineProbeCommand(command, waitDone)
+	}
+}
+
+func (r *ClaudeRunner) probeCommandPreflight(deadline time.Time) error {
+	if r.stop != nil && r.stop.StopRequested() {
+		return &InterruptedCallError{}
+	}
+	if !deadline.IsZero() && !time.Now().Before(deadline) {
+		return ErrProbeDeadlineExceeded
+	}
+	return nil
+}
+
+func (r *ClaudeRunner) probeStopRequested() <-chan struct{} {
+	if r.stop == nil {
+		return nil
+	}
+	return r.stop.Requested()
+}
+
+func probeDeadlineChannel(deadline time.Time) (<-chan time.Time, func()) {
+	if deadline.IsZero() {
+		return nil, func() {}
+	}
+	timer := time.NewTimer(time.Until(deadline))
+	return timer.C, func() { timer.Stop() }
+}
+
+func finishInterruptedProbeCommand(command *exec.Cmd, waitDone <-chan error) error {
+	if err, completed := completedProbeCommand(waitDone); completed {
+		return err
+	}
+	warning := terminateProcessGroup(command.Process.Pid, stopTermGrace)
+	<-waitDone
+	return &InterruptedCallError{CleanupWarning: warning}
+}
+
+func finishDeadlineProbeCommand(command *exec.Cmd, waitDone <-chan error) error {
+	if err, completed := completedProbeCommand(waitDone); completed {
+		return err
+	}
+	warning := terminateProcessGroup(command.Process.Pid, stopTermGrace)
+	<-waitDone
+	if warning != "" {
+		return fmt.Errorf("%w: %s", ErrProbeDeadlineExceeded, warning)
+	}
+	return ErrProbeDeadlineExceeded
+}
+
+func completedProbeCommand(waitDone <-chan error) (error, bool) {
+	select {
+	case err := <-waitDone:
+		return err, true
+	default:
+		return nil, false
+	}
 }
 
 func probeArgs(model, isolationArgs string) []string {

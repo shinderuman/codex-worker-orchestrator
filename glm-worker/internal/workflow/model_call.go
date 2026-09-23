@@ -15,6 +15,10 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
+type recoveryDeadlineProbeRunner interface {
+	ProbeWithDeadline(model string, deadline time.Time) (runner.ProbeResult, error)
+}
+
 func (w *Workflow) runModel(checkpoint state.ResumeCheckpoint) (packet.Result, error) {
 	checkpoint, outputPath, guardBefore, err := w.prepareModelCall(checkpoint)
 	if err != nil {
@@ -601,9 +605,12 @@ func (w *Workflow) recoveryLoop(
 		sleeps = nextSleeps
 
 		probes++
-		done, recovered, result, startedAt, completedAt, nextClassification, err := w.runRecoveryAttempt(checkpoint, probes, onProbeSuccess)
+		done, recovered, result, startedAt, completedAt, nextClassification, err := w.runRecoveryAttempt(checkpoint, probes, deadline, onProbeSuccess)
 		if nextClassification != "" {
 			exhaustClassification = nextClassification
+		}
+		if errors.Is(err, runner.ErrProbeDeadlineExceeded) {
+			break
 		}
 		if err != nil {
 			return false, result, startedAt, completedAt, err
@@ -644,9 +651,10 @@ func (w *Workflow) waitForRecoveryProbe(
 func (w *Workflow) runRecoveryAttempt(
 	checkpoint state.ResumeCheckpoint,
 	attempt int,
+	deadline time.Time,
 	onProbeSuccess func() (bool, runner.RunResult, time.Time, time.Time, error),
 ) (bool, bool, runner.RunResult, time.Time, time.Time, string, error) {
-	success, classification, startedAt, completedAt, err := w.runRecoveryProbe(checkpoint, attempt)
+	success, classification, startedAt, completedAt, err := w.runRecoveryProbe(checkpoint, attempt, deadline)
 	if err != nil || !success {
 		return false, false, runner.RunResult{}, startedAt, completedAt, classification, err
 	}
@@ -654,9 +662,16 @@ func (w *Workflow) runRecoveryAttempt(
 	return recovered || err != nil, recovered, result, startedAt, completedAt, classification, err
 }
 
-func (w *Workflow) runRecoveryProbe(checkpoint state.ResumeCheckpoint, attempt int) (bool, string, time.Time, time.Time, error) {
+func (w *Workflow) invokeRecoveryProbe(model string, deadline time.Time) (runner.ProbeResult, error) {
+	if deadlineRunner, ok := w.runner.(recoveryDeadlineProbeRunner); ok {
+		return deadlineRunner.ProbeWithDeadline(model, deadline)
+	}
+	return w.runner.Probe(model)
+}
+
+func (w *Workflow) runRecoveryProbe(checkpoint state.ResumeCheckpoint, attempt int, deadline time.Time) (bool, string, time.Time, time.Time, error) {
 	startedAt := w.now().UTC()
-	probeResult, probeErr := w.runner.Probe(checkpoint.Model)
+	probeResult, probeErr := w.invokeRecoveryProbe(checkpoint.Model, deadline)
 	completedAt := w.now().UTC()
 	if probeErr == nil {
 		if contractErr := runner.ValidateProbeResult(probeResult); contractErr != nil {
@@ -666,6 +681,13 @@ func (w *Workflow) runRecoveryProbe(checkpoint state.ResumeCheckpoint, attempt i
 	w.recordProbeCall(checkpoint, probeResult, attempt, startedAt, completedAt, probeErr)
 	if probeErr == nil {
 		return true, "", startedAt, completedAt, nil
+	}
+	var interrupted *runner.InterruptedCallError
+	if errors.As(probeErr, &interrupted) {
+		return false, "", time.Time{}, time.Time{}, probeErr
+	}
+	if errors.Is(probeErr, runner.ErrProbeDeadlineExceeded) {
+		return false, "", startedAt, completedAt, probeErr
 	}
 
 	class := runner.ClassifyProviderFailureText(probeErr.Error())

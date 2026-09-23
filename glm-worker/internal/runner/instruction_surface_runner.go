@@ -2,6 +2,7 @@ package runner
 
 import (
 	"errors"
+	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
@@ -68,6 +69,10 @@ func (r *InstructionSurfaceGuardRunner) Run(
 
 func (r *InstructionSurfaceGuardRunner) Probe(model string) (ProbeResult, error) {
 	return r.base.Probe(model)
+}
+
+func (r *InstructionSurfaceGuardRunner) ProbeWithDeadline(model string, deadline time.Time) (ProbeResult, error) {
+	return r.base.ProbeWithDeadline(model, deadline)
 }
 
 func (r *InstructionSurfaceGuardRunner) invalidateSessions() {
