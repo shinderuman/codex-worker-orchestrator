@@ -23,7 +23,7 @@ func TestParentHandoffCarriesLegalPostCompletionTaskHandover(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	output := buildParentHandoff(st)
+	output := buildParentHandoffWithConfig(cfg, st)
 	if !output.Consistent || output.ParentRequest == nil {
 		t.Fatalf("handoff = %#v", output)
 	}
@@ -45,7 +45,7 @@ func TestParentHandoffFailsClosedOnUnrelatedStaleTaskAttribution(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	output := buildParentHandoff(st)
+	output := buildParentHandoffWithConfig(cfg, st)
 	if output.Consistent || output.ParentRequest == nil || output.Inconsistency == nil {
 		t.Fatalf("handoff = %#v", output)
 	}
@@ -74,7 +74,7 @@ func TestParentHandoffRejectsFalseHandoverFromStaleStateTask(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	output := buildParentHandoff(st)
+	output := buildParentHandoffWithConfig(cfg, st)
 	if output.Consistent || output.ParentRequest == nil || output.Inconsistency == nil {
 		t.Fatalf("handoff = %#v", output)
 	}
@@ -103,7 +103,7 @@ func TestParentHandoffRejectsLifecycleReboundToCurrentActive(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	output := buildParentHandoff(st)
+	output := buildParentHandoffWithConfig(cfg, st)
 	if output.Consistent || output.ParentRequest == nil || output.Inconsistency == nil {
 		t.Fatalf("handoff = %#v", output)
 	}
@@ -128,7 +128,7 @@ func TestParentHandoffRotationPendingKeepsTaskOwnersAndRecoveryDirective(t *test
 		t.Fatal(err)
 	}
 
-	output := buildParentHandoff(st)
+	output := buildParentHandoffWithConfig(cfg, st)
 	if !output.Consistent || output.ParentRequest == nil || output.SessionRotation == nil ||
 		output.SessionRotation.State != state.SessionRotationProjectionPending || output.SessionRotation.Directive == nil {
 		t.Fatalf("handoff = %#v", output)
