@@ -10,12 +10,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-type ExecutionMilestoneDefinition = executionunit.MilestoneDefinition
-type ExecutionMilestoneRevision = executionmilestone.Revision
-type executionMilestoneCompletion = executionmilestone.Completion
-type executionMilestoneRecord = executionmilestone.Record
-type executionMilestonePlan = executionmilestone.Plan
-
 type executionMilestonePrompt struct {
 	TaskAuthority      string                              `json:"task_authority"`
 	TaskContractSHA256 string                              `json:"task_contract_sha256"`
@@ -38,34 +32,18 @@ type executionMilestoneDecisionContext struct {
 }
 
 const (
-	executionMilestonePlanVersion = executionmilestone.PlanVersion
-	executionMilestonePending     = executionmilestone.StatusPending
-	executionMilestoneComplete    = executionmilestone.StatusComplete
-
 	executionMilestonePromptBegin = "BEGIN_EXECUTION_MILESTONE_JSON"
 	executionMilestonePromptEnd   = "END_EXECUTION_MILESTONE_JSON"
 )
 
-func ParseExecutionTaskPlanPayload(payload string) (string, []ExecutionMilestoneDefinition, error) {
-	return executionunit.ParseTaskPlanPayload(payload)
-}
-
-func ParseExecutionMilestonePayload(payload string) ([]ExecutionMilestoneDefinition, error) {
-	return executionunit.ParseMilestonePayload(payload)
-}
-
-func validateExecutionMilestoneDefinitions(definitions []ExecutionMilestoneDefinition) error {
-	return executionunit.ValidateMilestoneDefinitions(definitions)
-}
-
-func executionMilestonePromptBlock(plan *executionMilestonePlan) (string, error) {
+func executionMilestonePromptBlock(plan *executionmilestone.Plan) (string, error) {
 	prompt := executionMilestonePrompt{
 		TaskAuthority:      plan.ActiveTaskPath,
 		TaskContractSHA256: plan.TaskContractSHA256,
 		Current:            plan.Milestones[plan.CurrentIndex].MilestoneDefinition,
 	}
 	for _, record := range plan.Milestones[:plan.CurrentIndex] {
-		if record.Status != executionMilestoneComplete || record.Completion == nil {
+		if record.Status != executionmilestone.StatusComplete || record.Completion == nil {
 			return "", fmt.Errorf("completed execution milestone %q has no completion evidence", record.ID)
 		}
 		prompt.Completed = append(prompt.Completed, executionMilestoneCompletedPrompt{
