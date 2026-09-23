@@ -67,11 +67,6 @@ func build(cfg config.AppConfig, st *state.StateStore, readDB autoresume.DBReade
 	return projection
 }
 
-func BuildCurrentRequest(repoRoot string, st *state.StateStore) (Request, error) {
-	plan, planErr := st.ParentActionPlan()
-	return buildCurrentRequest(repoRoot, st, plan, planErr)
-}
-
 func BuildPostCompletionRequest(repoRoot, completedTask string) (Request, error) {
 	policy, err := repositoryprojecttree.BuildParentRequestCompletionProjection(repoRoot, completedTask)
 	if err != nil {
