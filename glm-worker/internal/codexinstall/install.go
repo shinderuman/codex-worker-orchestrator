@@ -8,17 +8,30 @@ import (
 )
 
 type installPreparation struct {
-	codexDir   string
-	filePlan   fileInstallPlan
-	configPlan configInstallPlan
+	codexDir    string
+	filePlan    fileInstallPlan
+	configPlan  configInstallPlan
+	state       installState
+	stateExists bool
+	stateBackup installBackup
 }
 
 func Install(repoRoot, codexDir string, stdout io.Writer) error {
-	preparation, err := prepareInstall(repoRoot, codexDir)
+	repoRoot = filepath.Clean(repoRoot)
+	codexDir = filepath.Clean(codexDir)
+	if repoRoot == "." || codexDir == "." {
+		return fmt.Errorf("repo root and Codex directory must be explicit paths")
+	}
+	lock, err := acquireInstallLock(codexDir)
 	if err != nil {
 		return err
 	}
-	return applyInstall(preparation, stdout)
+	preparation, prepareErr := prepareInstall(repoRoot, codexDir)
+	if prepareErr != nil {
+		return joinInstallLockError(prepareErr, lock.Close())
+	}
+	installErr := applyInstall(preparation, stdout)
+	return joinInstallLockError(installErr, lock.Close())
 }
 
 func prepareInstall(repoRoot, codexDir string) (installPreparation, error) {
@@ -27,7 +40,7 @@ func prepareInstall(repoRoot, codexDir string) (installPreparation, error) {
 	if repoRoot == "." || codexDir == "." {
 		return installPreparation{}, fmt.Errorf("repo root and Codex directory must be explicit paths")
 	}
-	state, stateExists, err := loadState(codexDir)
+	state, stateExists, stateBackup, err := loadInstallStateSnapshot(codexDir)
 	if err != nil {
 		return installPreparation{}, err
 	}
@@ -39,7 +52,10 @@ func prepareInstall(repoRoot, codexDir string) (installPreparation, error) {
 	if err != nil {
 		return installPreparation{}, err
 	}
-	return installPreparation{codexDir: codexDir, filePlan: filePlan, configPlan: configPlan}, nil
+	return installPreparation{
+		codexDir: codexDir, filePlan: filePlan, configPlan: configPlan,
+		state: state, stateExists: stateExists, stateBackup: stateBackup,
+	}, nil
 }
 
 func applyInstall(preparation installPreparation, stdout io.Writer) error {
