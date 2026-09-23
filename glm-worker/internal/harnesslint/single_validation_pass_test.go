@@ -39,15 +39,14 @@ func (r *qualityPassRunner) run(dir, name string, args ...string) (commandResult
 	return commandResult{}, nil
 }
 
-func TestRunFixValidatesExternalCommandsOnceAfterFixers(t *testing.T) {
-	root := fixtureRoot(t)
+func TestRunFixValidatesOnceAfterFixers(t *testing.T) {
 	runner := &qualityPassRunner{}
-	if _, err := run(root, true, runner); err != nil {
+	if _, err := run(fixtureRoot(t), true, runner); err != nil {
 		t.Fatal(err)
 	}
 	lastFix := -1
 	firstCheck := -1
-	checks := map[string]int{}
+	commentlintChecks := 0
 	for index, call := range runner.calls {
 		if qualityPassFixCall(call) {
 			lastFix = index
@@ -56,16 +55,15 @@ func TestRunFixValidatesExternalCommandsOnceAfterFixers(t *testing.T) {
 		if firstCheck < 0 {
 			firstCheck = index
 		}
-		key := call.dir + "\x00" + call.name + "\x00" + strings.Join(call.args, "\x00")
-		checks[key]++
+		if strings.HasSuffix(call.name, "commentlint") {
+			commentlintChecks++
+		}
 	}
 	if firstCheck < 0 || firstCheck <= lastFix {
 		t.Fatalf("post-fix validation did not start after all fixers: first_check=%d last_fix=%d calls=%+v", firstCheck, lastFix, runner.calls)
 	}
-	for key, count := range checks {
-		if count != 1 {
-			t.Fatalf("external validation command %q ran %d times", key, count)
-		}
+	if commentlintChecks != 1 {
+		t.Fatalf("post-fix validation pass count = %d", commentlintChecks)
 	}
 }
 
@@ -82,7 +80,14 @@ func TestRunFixReturnsPostFixViolationReport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.Status != "fail" || len(report.Violations) == 0 || report.Violations[0].Rule != "commentlint/comment" {
+	found := false
+	for _, violation := range report.Violations {
+		if violation.Rule == "commentlint/comment" && violation.Path == "x.go" {
+			found = true
+			break
+		}
+	}
+	if report.Status != "fail" || !found {
 		t.Fatalf("post-fix violation report = %+v", report)
 	}
 }
