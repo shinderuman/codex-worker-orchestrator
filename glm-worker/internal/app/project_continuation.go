@@ -6,39 +6,12 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskcontract"
 )
 
-type projectContinuationObligation struct {
+type ProjectContinuationProjection struct {
 	repositoryproject.Continuation
 	Automation *projectContinuationAutomation `json:"automation,omitempty"`
 }
 
-const (
-	projectContinuationContinueNow                  = repositoryproject.ContinuationContinueNow
-	projectContinuationBlocked                      = repositoryproject.ContinuationBlocked
-	projectContinuationTerminal                     = repositoryproject.ContinuationTerminal
-	projectContinuationExplicitStop                 = repositoryproject.ContinuationExplicitStop
-	projectContinuationDeferredByVerifiedAutomation = repositoryproject.ContinuationDeferredByVerifiedAutomation
-	projectContinuationUnknown                      = repositoryproject.ContinuationUnknown
-)
-
-const (
-	projectContinuationReasonPlanAbsent                  = repositoryproject.ReasonPlanAbsent
-	projectContinuationReasonProjectStateIncomplete      = repositoryproject.ReasonProjectStateIncomplete
-	projectContinuationReasonLifecycleInconsistent       = repositoryproject.ReasonLifecycleInconsistent
-	projectContinuationReasonUserInterruption            = repositoryproject.ReasonUserInterruption
-	projectContinuationReasonGoalCompleted               = repositoryproject.ReasonGoalCompleted
-	projectContinuationReasonGoalLifecycleInconsistent   = repositoryproject.ReasonGoalLifecycleInconsistent
-	projectContinuationReasonActiveTaskUnresolved        = repositoryproject.ReasonActiveTaskUnresolved
-	projectContinuationReasonActiveTaskNotStarted        = repositoryproject.ReasonActiveTaskNotStarted
-	projectContinuationReasonActiveTaskMismatch          = repositoryproject.ReasonActiveTaskMismatch
-	projectContinuationReasonCurrentTask                 = repositoryproject.ReasonCurrentTask
-	projectContinuationReasonContinuationScopeUnbound    = repositoryproject.ReasonContinuationScopeUnbound
-	projectContinuationReasonNextRunnable                = repositoryproject.ReasonNextRunnable
-	projectContinuationReasonScheduleExhausted           = repositoryproject.ReasonScheduleExhausted
-	projectContinuationReasonGoalAcceptancePending       = repositoryproject.ReasonGoalAcceptancePending
-	projectContinuationReasonCompletionStateInconsistent = repositoryproject.ReasonCompletionStateInconsistent
-)
-
-func deriveProjectContinuation(output projectStateOutput, st *state.StateStore) projectContinuationObligation {
+func deriveProjectContinuation(output projectStateOutput, st *state.StateStore) ProjectContinuationProjection {
 	project := repositoryproject.ContinuationProjectView{PlanPresent: output.PlanPresent}
 	if output.Goal != nil && output.Schedule != nil {
 		project.ProjectReady = true
@@ -106,11 +79,11 @@ func goalTerminalCompatible(status state.TaskStatus, pinned string, planKnown bo
 	return planKnown && action == state.ParentActionNone
 }
 
-func projectContinuationFromPolicy(continuation repositoryproject.Continuation) projectContinuationObligation {
-	return projectContinuationObligation{Continuation: continuation}
+func projectContinuationFromPolicy(continuation repositoryproject.Continuation) ProjectContinuationProjection {
+	return ProjectContinuationProjection{Continuation: continuation}
 }
 
-func cloneProjectBlockers(blockers []projectStateBlocker) []repositoryproject.Blocker {
+func cloneProjectBlockers(blockers []repositoryproject.Blocker) []repositoryproject.Blocker {
 	cloned := make([]repositoryproject.Blocker, len(blockers))
 	for i := range blockers {
 		cloned[i] = blockers[i]
@@ -127,6 +100,6 @@ func cloneStringPointer(value *string) *string {
 	return &cloned
 }
 
-func unknownProjectContinuation(reason string) projectContinuationObligation {
+func unknownProjectContinuation(reason string) ProjectContinuationProjection {
 	return projectContinuationFromPolicy(repositoryproject.UnknownContinuation(reason))
 }

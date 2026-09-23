@@ -7,6 +7,7 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/autoresume"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentevidence"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryproject"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -54,7 +55,7 @@ func printParentHandoffRecoveryLeasedWithConfig(cfg config.AppConfig, st *state.
 
 func applyVerifiedAutomationDeferral(cfg config.AppConfig, st *state.StateStore, output *parentHandoffOutput, readDB autoresume.DBReader) {
 	if output.ParentRequest == nil ||
-		output.ParentRequest.Continuation.State != projectContinuationBlocked ||
+		output.ParentRequest.Continuation.State != repositoryproject.ContinuationBlocked ||
 		output.ParentRequest.Continuation.Reason != string(state.TaskStatusRateLimited) {
 		return
 	}
@@ -63,7 +64,7 @@ func applyVerifiedAutomationDeferral(cfg config.AppConfig, st *state.StateStore,
 	if !ok {
 		return
 	}
-	output.ParentRequest.Continuation.State = projectContinuationDeferredByVerifiedAutomation
+	output.ParentRequest.Continuation.State = repositoryproject.ContinuationDeferredByVerifiedAutomation
 	output.ParentRequest.Continuation.Reason = projectContinuationReasonVerifiedAutomation
 	output.ParentRequest.Continuation.Automation = &proof
 	output.ParentRequest.StopAdmitted = true
