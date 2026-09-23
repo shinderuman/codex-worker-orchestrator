@@ -8,14 +8,6 @@ import (
 	"path/filepath"
 )
 
-func Check(root string) (Report, error) {
-	runner, err := newRealCommandRunner(root)
-	if err != nil {
-		return Report{}, err
-	}
-	return run(root, false, runner)
-}
-
 func Run(root string, fix bool) (Report, error) {
 	runner, err := newRealCommandRunner(root)
 	if err != nil {
