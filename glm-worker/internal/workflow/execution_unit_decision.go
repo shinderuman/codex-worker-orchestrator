@@ -3,6 +3,7 @@ package workflow
 import (
 	"fmt"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/executionmilestone"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/executionunit"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
@@ -12,7 +13,11 @@ func (w *Workflow) ExecuteDecisionWithExecutionUnitPayload(payload string) error
 		return w.ExecuteDecisionWithExecutionMilestones(payload)
 	}
 
-	input, active, err := executionunit.Preflight(w.config, w.state, payload)
+	input, err := executionunit.Parse(payload)
+	if err != nil {
+		return err
+	}
+	active, err := executionmilestone.Preflight(w.config, w.state, input)
 	if err != nil {
 		return err
 	}
@@ -28,14 +33,13 @@ func (w *Workflow) ExecuteDecisionWithExecutionUnitPayload(payload string) error
 }
 
 func (w *Workflow) executeMilestoneExecutionUnitDecision(input executionunit.Decision, active bool) error {
-	definitions := workflowMilestoneDefinitions(input.Milestones)
-	if len(definitions) > 0 {
+	if len(input.Milestones) > 0 {
 		activating := !active
-		revision, err := ReviseExecutionMilestones(w.config, w.state, definitions, w.now().UTC())
+		revision, err := executionmilestone.Revise(w.config, w.state, input.Milestones, w.now().UTC())
 		if err != nil {
 			return err
 		}
-		if activating && definitions[revision.CurrentIndex].FreshWorker {
+		if activating && input.Milestones[revision.CurrentIndex].FreshWorker {
 			if err := w.state.InvalidateSession(state.WorkerRole); err != nil {
 				return err
 			}
@@ -46,17 +50,4 @@ func (w *Workflow) executeMilestoneExecutionUnitDecision(input executionunit.Dec
 		return fmt.Errorf("execution-unit milestones requires 2-8 milestone definitions or an existing pending milestone plan")
 	}
 	return w.ExecuteDecisionWithExecutionMilestones(input.Decision)
-}
-
-func workflowMilestoneDefinitions(definitions []executionunit.MilestoneDefinition) []ExecutionMilestoneDefinition {
-	result := make([]ExecutionMilestoneDefinition, len(definitions))
-	for index, definition := range definitions {
-		result[index] = ExecutionMilestoneDefinition{
-			ID:          definition.ID,
-			Scope:       definition.Scope,
-			Acceptance:  definition.Acceptance,
-			FreshWorker: definition.FreshWorker,
-		}
-	}
-	return result
 }

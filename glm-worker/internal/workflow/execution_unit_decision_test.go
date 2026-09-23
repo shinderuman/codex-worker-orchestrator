@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/executionmilestone"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/executionunit"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
@@ -48,7 +49,7 @@ func TestExecutionUnitDecisionActivatesMilestonesAtNaturalBoundary(t *testing.T)
 	if len(runner.prompts) < 3 || !strings.Contains(runner.prompts[1], `"id":"first"`) || !strings.Contains(runner.prompts[2], `"id":"second"`) {
 		t.Fatalf("milestone prompts were not activated at the decision boundary: %#v", runner.prompts)
 	}
-	plan, err := loadExecutionMilestonePlan(st)
+	plan, err := executionmilestone.Load(st)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,11 +122,11 @@ func TestExecutionUnitDecisionSingleCanReconsiderIntoMilestones(t *testing.T) {
 		t.Fatalf("single path model calls = %d", len(runner.prompts))
 	}
 
-	definitions := []ExecutionMilestoneDefinition{
+	definitions := []executionunit.MilestoneDefinition{
 		{ID: "remaining-a", Scope: "finish first remaining responsibility", Acceptance: "first remaining responsibility complete"},
 		{ID: "remaining-b", Scope: "finish second remaining responsibility", Acceptance: "second remaining responsibility complete"},
 	}
-	revision, err := ReviseExecutionMilestones(w.config, st, definitions, w.now().UTC())
+	revision, err := executionmilestone.Revise(w.config, st, definitions, w.now().UTC())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +155,7 @@ func TestExecutionUnitDecisionSingleCanReconsiderIntoMilestones(t *testing.T) {
 	if !reflect.DeepEqual(runner.phases, wantPhases) {
 		t.Fatalf("phases = %v want %v", runner.phases, wantPhases)
 	}
-	plan, err := loadExecutionMilestonePlan(st)
+	plan, err := executionmilestone.Load(st)
 	if err != nil {
 		t.Fatal(err)
 	}

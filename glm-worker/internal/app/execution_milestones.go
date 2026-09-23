@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/executionmilestone"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/executionunit"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
 )
@@ -32,11 +34,11 @@ func executeExecutionMilestoneRevision(
 	st *state.StateStore,
 	stdout io.Writer,
 ) error {
-	definitions, err := workflow.ParseExecutionMilestonePayload(cmd.Payload)
+	definitions, err := executionunit.ParseMilestonePayload(cmd.Payload)
 	if err != nil {
 		return err
 	}
-	result, err := workflow.ReviseExecutionMilestones(cfg, st, definitions, time.Now().UTC())
+	result, err := executionmilestone.Revise(cfg, st, definitions, time.Now().UTC())
 	if err != nil {
 		return err
 	}
@@ -47,7 +49,7 @@ func executeNewTaskCommand(wf *workflow.Workflow, cmd Command) error {
 	if !cmd.ExecutionMilestones {
 		return wf.ExecuteNewTask(cmd.Payload)
 	}
-	request, definitions, err := workflow.ParseExecutionTaskPlanPayload(cmd.Payload)
+	request, definitions, err := executionunit.ParseTaskPlanPayload(cmd.Payload)
 	if err != nil {
 		return err
 	}
