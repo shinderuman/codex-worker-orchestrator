@@ -186,7 +186,7 @@ func (w *Workflow) acceptQualityFixSnapshot(workerEnd state.GitSnapshot, parentB
 			err,
 		)
 	}
-	if !sameParentAuthority(parentBefore, parentAfter) {
+	if !state.SameParentFileStates(parentBefore, parentAfter) {
 		return reviewInput, true, w.failClosedSnapshot(
 			state.SnapshotStageReviewStart,
 			workerEnd,
@@ -205,10 +205,6 @@ func (w *Workflow) acceptQualityFixSnapshot(workerEnd state.GitSnapshot, parentB
 		)
 	}
 	return reviewInput, false, nil
-}
-
-func sameParentAuthority(before, after state.ParentFileStates) bool {
-	return state.SameParentFileStates(before, after)
 }
 
 func (w *Workflow) handleRepositoryQualityViolation(
