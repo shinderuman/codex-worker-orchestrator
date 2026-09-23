@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
@@ -14,7 +15,16 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskcontract"
 )
 
-func continuationCompletionView(repoRoot string, st *state.StateStore, loaded repositoryprojecttree.ProjectState) (*repositoryproject.CompletionView, error) {
+type CompletionEvidence struct {
+	View           repositoryproject.CompletionView
+	ActiveTask     string
+	TaskStatus     state.TaskStatus
+	RequiredAction state.ParentAction
+	Validations    []qualitygate.RunRecord
+	TreeClean      *bool
+}
+
+func BuildCompletionEvidence(repoRoot string, st *state.StateStore, loaded repositoryprojecttree.ProjectState) (*CompletionEvidence, error) {
 	if !loaded.Plan.Goal.Present || loaded.Plan.Goal.Status != taskcontract.GoalStatusActive {
 		return nil, nil
 	}
@@ -30,20 +40,37 @@ func continuationCompletionView(repoRoot string, st *state.StateStore, loaded re
 	if err != nil {
 		return nil, err
 	}
-	unmet = append(unmet, continuationLifecycleUnmet(st, activeTask)...)
-	unmet = append(unmet, continuationEvidenceUnmet(repoRoot, st)...)
-	return &repositoryproject.CompletionView{Ready: len(unmet) == 0, Unmet: unmet}, nil
+	evidence := &CompletionEvidence{
+		ActiveTask:  activeTask,
+		TaskStatus:  st.TaskStatus(),
+		Validations: []qualitygate.RunRecord{},
+	}
+	unmet = append(unmet, completionLifecycleUnmet(st, activeTask, evidence)...)
+	unmet = append(unmet, completionEvidenceUnmet(repoRoot, st, evidence)...)
+	evidence.View = repositoryproject.CompletionView{Ready: len(unmet) == 0, Unmet: unmet}
+	return evidence, nil
 }
 
-func continuationLifecycleUnmet(st *state.StateStore, activeTask string) []string {
+func continuationCompletionView(repoRoot string, st *state.StateStore, loaded repositoryprojecttree.ProjectState) (*repositoryproject.CompletionView, error) {
+	evidence, err := BuildCompletionEvidence(repoRoot, st, loaded)
+	if err != nil || evidence == nil {
+		return nil, err
+	}
+	view := evidence.View
+	return &view, nil
+}
+
+func completionLifecycleUnmet(st *state.StateStore, activeTask string, evidence *CompletionEvidence) []string {
 	unmet := []string{}
-	if st.TaskStatus() != state.TaskStatusComplete {
+	if evidence.TaskStatus != state.TaskStatusComplete {
 		unmet = append(unmet, "task_not_complete")
 	}
 	plan, planErr := st.ParentActionPlan()
 	if planErr != nil {
-		unmet = append(unmet, "lifecycle_inconsistent")
-	} else if plan.RequiredAction != state.ParentActionNone {
+		return append(unmet, "lifecycle_inconsistent")
+	}
+	evidence.RequiredAction = plan.RequiredAction
+	if plan.RequiredAction != state.ParentActionNone {
 		unmet = append(unmet, "pending_parent_action")
 	}
 	if pinned := st.ReadOr("active-task", ""); pinned != activeTask {
@@ -52,30 +79,49 @@ func continuationLifecycleUnmet(st *state.StateStore, activeTask string) []strin
 	return unmet
 }
 
-func continuationEvidenceUnmet(repoRoot string, st *state.StateStore) []string {
+func completionEvidenceUnmet(repoRoot string, st *state.StateStore, evidence *CompletionEvidence) []string {
 	unmet := []string{}
 	snapshot, snapshotErr := state.CaptureGitSnapshot(repoRoot)
 	if snapshotErr != nil {
 		unmet = append(unmet, "snapshot_unavailable")
-	} else if !continuationValidationPass(st, repoRoot, snapshot) {
-		unmet = append(unmet, "validation_not_current")
+	} else {
+		evidence.Validations = continuationValidationRuns(st, repoRoot, snapshot)
+		if !continuationValidationPass(evidence.Validations) {
+			unmet = append(unmet, "validation_not_current")
+		}
 	}
 	clean, cleanErr := continuationTreeClean(repoRoot)
 	if cleanErr != nil {
-		unmet = append(unmet, "tree_status_unavailable")
-	} else if !clean {
+		return append(unmet, "tree_status_unavailable")
+	}
+	evidence.TreeClean = &clean
+	if !clean {
 		unmet = append(unmet, "tree_not_clean")
 	}
 	return unmet
 }
 
-func continuationValidationPass(st *state.StateStore, repoRoot string, snapshot state.GitSnapshot) bool {
-	for _, record := range latestContinuationValidationRuns(st, repoRoot, snapshot) {
+func continuationValidationPass(validations []qualitygate.RunRecord) bool {
+	for _, record := range validations {
 		if record.Status == qualitygate.StatusPass {
 			return true
 		}
 	}
 	return false
+}
+
+func continuationValidationRuns(st *state.StateStore, repoRoot string, snapshot state.GitSnapshot) []qualitygate.RunRecord {
+	latestByForm := latestContinuationValidationRuns(st, repoRoot, snapshot)
+	forms := make([]string, 0, len(latestByForm))
+	for form := range latestByForm {
+		forms = append(forms, form)
+	}
+	sort.Strings(forms)
+	validations := make([]qualitygate.RunRecord, 0, len(forms))
+	for _, form := range forms {
+		validations = append(validations, latestByForm[form])
+	}
+	return validations
 }
 
 func latestContinuationValidationRuns(st *state.StateStore, repoRoot string, snapshot state.GitSnapshot) map[string]qualitygate.RunRecord {
