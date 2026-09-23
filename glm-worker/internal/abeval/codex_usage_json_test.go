@@ -72,8 +72,14 @@ func TestExplicitZeroCodexUsageRemainsObserved(t *testing.T) {
 }
 
 func TestCodexUsageJSONRejectsNestedUnknownField(t *testing.T) {
+	data := marshalOrFatal(t, map[string]any{
+		"source":        CodexUsageSourceAppExport,
+		"input_tokens":  1,
+		"output_tokens": 1,
+		"extra":         1,
+	})
 	var usage CodexUsage
-	if err := json.Unmarshal([]byte(`{"source":"codex-app-usage-export","input_tokens":1,"output_tokens":1,"extra":1}`), &usage); err == nil {
+	if err := json.Unmarshal(data, &usage); err == nil {
 		t.Fatal("codex_usageの未知fieldが受理されました")
 	}
 }
