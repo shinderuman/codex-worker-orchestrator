@@ -16,14 +16,6 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-const (
-	PlanVersion    = 1
-	StatusPending  = "pending"
-	StatusComplete = "complete"
-
-	activeTaskStateKey = "active-task"
-)
-
 type Completion struct {
 	CompletedAt        time.Time         `json:"completed_at"`
 	CallID             string            `json:"call_id,omitempty"`
@@ -62,6 +54,14 @@ type revisionAuthority struct {
 	activeTaskPath string
 	digest         string
 }
+
+const (
+	PlanVersion    = 1
+	StatusPending  = "pending"
+	StatusComplete = "complete"
+
+	activeTaskStateKey = "active-task"
+)
 
 func NewPlan(
 	taskID string,
