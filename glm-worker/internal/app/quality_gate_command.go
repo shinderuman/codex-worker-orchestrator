@@ -1,10 +1,11 @@
 package app
 
 import (
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
-)
+	"strings"
 
-import "strings"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
+)
 
 const (
 	qualityGateActionSeparator = ":"
@@ -19,7 +20,7 @@ func qualityGateRecoveryCommand(args []string) (Command, error) {
 	if len(args) == 2 && qualityGateForms[args[1]] != nil {
 		return Command{Mode: ModeQualityGate, Payload: args[1]}, nil
 	}
-	if len(args) == 3 && validQualityGateAction(args[1]) && validValidationRunID(args[2]) {
+	if len(args) == 3 && validQualityGateAction(args[1]) && qualitygate.ValidRunID(args[2]) {
 		return Command{Mode: ModeQualityGate, Payload: args[1] + qualityGateActionSeparator + args[2]}, nil
 	}
 	return Command{}, machinecli.UsageErrorf("%s", qualityGateCommandUsage)
@@ -36,7 +37,7 @@ func validQualityGateAction(action string) bool {
 
 func splitQualityGateAction(payload string) (string, string, bool) {
 	action, runID, ok := strings.Cut(payload, qualityGateActionSeparator)
-	if !ok || !validQualityGateAction(action) || !validValidationRunID(runID) {
+	if !ok || !validQualityGateAction(action) || !qualitygate.ValidRunID(runID) {
 		return "", "", false
 	}
 	return action, runID, true
