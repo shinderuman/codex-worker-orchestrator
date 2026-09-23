@@ -14,16 +14,27 @@ type qualityPassCall struct {
 
 type qualityPassRunner struct {
 	calls         []qualityPassCall
+	failFix       bool
 	failPostCheck bool
+	postViolation bool
 }
 
+var errQualityPassFix = errors.New("quality fixer failed")
 var errQualityPassCheck = errors.New("post-fix validation failed")
 
 func (r *qualityPassRunner) run(dir, name string, args ...string) (commandResult, error) {
 	copied := append([]string(nil), args...)
-	r.calls = append(r.calls, qualityPassCall{dir: dir, name: name, args: copied})
-	if r.failPostCheck && strings.HasSuffix(name, "commentlint") && !qualityPassFixCall(r.calls[len(r.calls)-1]) {
+	call := qualityPassCall{dir: dir, name: name, args: copied}
+	r.calls = append(r.calls, call)
+	fix := qualityPassFixCall(call)
+	if r.failFix && fix && strings.HasSuffix(name, "commentlint") {
+		return commandResult{}, errQualityPassFix
+	}
+	if r.failPostCheck && !fix && strings.HasSuffix(name, "commentlint") {
 		return commandResult{}, errQualityPassCheck
+	}
+	if r.postViolation && !fix && strings.HasSuffix(name, "commentlint") {
+		return commandResult{output: `{"status":"fail","violations":[{"path":"x.go","line":1,"column":1,"kind":"comment","message":"bad"}]}`, exitCode: 1}, nil
 	}
 	return commandResult{}, nil
 }
@@ -55,6 +66,24 @@ func TestRunFixValidatesExternalCommandsOnceAfterFixers(t *testing.T) {
 		if count != 1 {
 			t.Fatalf("external validation command %q ran %d times", key, count)
 		}
+	}
+}
+
+func TestRunFixPropagatesFixerFailure(t *testing.T) {
+	runner := &qualityPassRunner{failFix: true}
+	if _, err := run(fixtureRoot(t), true, runner); !errors.Is(err, errQualityPassFix) {
+		t.Fatalf("fixer error = %v", err)
+	}
+}
+
+func TestRunFixReturnsPostFixViolationReport(t *testing.T) {
+	runner := &qualityPassRunner{postViolation: true}
+	report, err := run(fixtureRoot(t), true, runner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Status != "fail" || len(report.Violations) == 0 || report.Violations[0].Rule != "commentlint/comment" {
+		t.Fatalf("post-fix violation report = %+v", report)
 	}
 }
 
