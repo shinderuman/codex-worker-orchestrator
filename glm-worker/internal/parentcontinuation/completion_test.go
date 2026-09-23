@@ -27,14 +27,14 @@ func TestContinuationCompletionViewPreservesProjectCompletionEvidence(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	completion, err := continuationCompletionView(repoRoot, st, loaded)
+	evidence, err := BuildCompletionEvidence(repoRoot, st, loaded)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if completion == nil || completion.Ready {
-		t.Fatalf("completion = %#v", completion)
+	if evidence == nil || evidence.View.Ready {
+		t.Fatalf("completion evidence = %#v", evidence)
 	}
-	unmet := strings.Join(completion.Unmet, ",")
+	unmet := strings.Join(evidence.View.Unmet, ",")
 	for _, want := range []string{"task_not_complete", "active_task_mismatch", "validation_not_current"} {
 		if !strings.Contains(unmet, want) {
 			t.Fatalf("unmet = %q", unmet)
