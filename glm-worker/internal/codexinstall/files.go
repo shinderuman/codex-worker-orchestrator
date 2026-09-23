@@ -79,13 +79,7 @@ func addDesiredFile(repoRoot, sourcePath, destinationPath string, files *[]desir
 	if err != nil {
 		return fmt.Errorf("read managed Codex source %s: %w", sourcePath, err)
 	}
-	*files = append(*files, desiredFile{
-		Path:       destinationPath,
-		SourcePath: sourcePath,
-		Content:    content,
-		Mode:       info.Mode().Perm(),
-		SHA256:     digestBytes(content),
-	})
+	*files = append(*files, desiredFile{Path: destinationPath, SourcePath: sourcePath, Content: content, Mode: info.Mode().Perm(), SHA256: digestBytes(content)})
 	return nil
 }
 
@@ -188,19 +182,40 @@ func planObsoleteStateFiles(codexDir string, records map[string]managedFileRecor
 	sort.Strings(plan.Preserved)
 }
 
-func applyFileInstallPlan(codexDir string, plan fileInstallPlan, output func(string, ...any)) ([]managedFileRecord, error) {
+func applyFileInstallPlan(codexDir string, plan fileInstallPlan, state installState, stateExists bool, recordMutation func(string) error, output func(string, ...any)) ([]managedFileRecord, error) {
 	for _, path := range plan.Preserved {
 		output("preserved user-modified obsolete Codex file: %s\n", filepath.Join(codexDir, filepath.FromSlash(path)))
 	}
+	records := stateFileMap(state)
 	for _, path := range plan.Remove {
 		target := filepath.Join(codexDir, filepath.FromSlash(path))
+		record, owned := records[path]
+		if !owned {
+			return nil, fmt.Errorf("obsolete Codex file lost ownership state after preparation: %s", path)
+		}
+		actual, err := digestRegularFile(target)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("inspect obsolete managed Codex file %s before removal: %w", path, err)
+		}
+		if actual != record.SHA256 {
+			return nil, fmt.Errorf("obsolete managed Codex file changed after preparation; refusing to remove: %s", path)
+		}
 		if err := os.Remove(target); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return nil, fmt.Errorf("remove obsolete managed Codex file %s: %w", path, err)
 		}
+		if err := recordMutation(target); err != nil {
+			return nil, err
+		}
 		output("removed managed Codex file: %s\n", target)
 	}
-	records := make([]managedFileRecord, 0, len(plan.Desired))
+	result := make([]managedFileRecord, 0, len(plan.Desired))
 	for _, file := range plan.Desired {
+		if err := requireCurrentPathOwnership(codexDir, file, records, stateExists); err != nil {
+			return nil, fmt.Errorf("managed Codex file changed after preparation: %w", err)
+		}
 		target := filepath.Join(codexDir, filepath.FromSlash(file.Path))
 		current, err := os.ReadFile(target)
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -210,18 +225,31 @@ func applyFileInstallPlan(codexDir string, plan fileInstallPlan, output func(str
 			if err := writeAtomic(target, file.Content, file.Mode); err != nil {
 				return nil, fmt.Errorf("install managed Codex file %s: %w", file.Path, err)
 			}
+			if err := recordMutation(target); err != nil {
+				return nil, err
+			}
 			output("updated: %s\n", target)
 		}
-		records = append(records, managedFileRecord{Path: file.Path, SHA256: file.SHA256})
+		result = append(result, managedFileRecord{Path: file.Path, SHA256: file.SHA256})
 	}
-	return records, nil
+	return result, nil
 }
 
-func digestBytes(data []byte) string {
-	sum := sha256.Sum256(data)
-	return hex.EncodeToString(sum[:])
+func validateManagedFilesForStateCommit(codexDir string, records []managedFileRecord) error {
+	for _, record := range records {
+		target := filepath.Join(codexDir, filepath.FromSlash(record.Path))
+		actual, err := digestRegularFile(target)
+		if err != nil {
+			return fmt.Errorf("managed Codex file changed before state commit %s: %w", record.Path, err)
+		}
+		if actual != record.SHA256 {
+			return fmt.Errorf("managed Codex file changed before state commit: %s", record.Path)
+		}
+	}
+	return nil
 }
 
+func digestBytes(data []byte) string { sum := sha256.Sum256(data); return hex.EncodeToString(sum[:]) }
 func digestFile(path string) (string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -229,7 +257,6 @@ func digestFile(path string) (string, error) {
 	}
 	return digestBytes(data), nil
 }
-
 func digestRegularFile(path string) (string, error) {
 	info, err := os.Lstat(path)
 	if err != nil {
