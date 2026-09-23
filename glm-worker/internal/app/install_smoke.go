@@ -16,6 +16,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -166,7 +167,7 @@ func saveInstallSmokeEvidence(st *state.StateStore, capture *installSmokeCapture
 		raw = []byte(strings.TrimSpace(runErr.Error()) + "\n" + string(raw))
 	}
 	content := boundInstallSmokeEvidence(sanitizeInstallSmokeEvidence(raw))
-	runID, err := newValidationRunID()
+	runID, err := qualitygate.NewRunID()
 	if err != nil {
 		return "", installSmokeEvidenceWarning("run id生成", err)
 	}
@@ -193,7 +194,7 @@ func boundInstallSmokeEvidence(text string) string {
 }
 
 func writeInstallSmokeEvidence(st *state.StateStore, runID, content string) (string, error) {
-	if !validValidationRunID(runID) {
+	if !qualitygate.ValidRunID(runID) {
 		return "", fmt.Errorf("invalid validation run id")
 	}
 	path := st.Path(filepath.Join(installSmokeRunDirectory, runID, installSmokeEvidenceLog))
