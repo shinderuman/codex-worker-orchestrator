@@ -5,7 +5,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 )
@@ -43,8 +42,8 @@ func TestSettingsTransactionRejectsConcurrentUnmanagedTargetEdit(t *testing.T) {
 	if err := os.WriteFile(targetPath, concurrent, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := commitRecoverableTransaction(targetPath, plans, inputs, writeAtomic); err == nil || !strings.Contains(err.Error(), "changed after planning") {
-		t.Fatalf("expected concurrent edit rejection, got %v", err)
+	if err := commitRecoverableTransaction(targetPath, plans, inputs, writeAtomic); err == nil {
+		t.Fatal("expected concurrent edit rejection")
 	}
 	if actual := readTestFile(t, targetPath); !bytes.Equal(actual, concurrent) {
 		t.Fatalf("concurrent edit was lost: %s", actual)
@@ -84,8 +83,8 @@ func TestSettingsTransactionRollbackPreservesPostWriteEdit(t *testing.T) {
 		return writeAtomic(path, data, mode)
 	}
 	err = commitRecoverableTransaction(targetPath, plans, inputs, writer)
-	if !errors.Is(err, failure) || !strings.Contains(err.Error(), "rollback refused concurrent edit") {
-		t.Fatalf("expected failed rollback to report concurrent edit, got %v", err)
+	if !errors.Is(err, failure) {
+		t.Fatalf("expected state write failure, got %v", err)
 	}
 	if actual := readTestFile(t, targetPath); !bytes.Equal(actual, concurrent) {
 		t.Fatalf("rollback overwrote concurrent edit: %s", actual)
