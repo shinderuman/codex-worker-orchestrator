@@ -65,6 +65,8 @@ while :; do sleep 0.2; done
 	}
 	checkpoint.SetStopKind(state.ResumeStopProviderUnavailable)
 	checkpoint.ProviderUnavailableClassification = "http-503"
+	checkpoint.ProviderUnavailableProbes = 1
+	checkpoint.ProviderUnavailableStartedAt = time.Now().UTC()
 	if err := st.EnterStop(checkpoint); err != nil {
 		t.Fatal(err)
 	}
