@@ -2,7 +2,6 @@ package parentcontinuation
 
 import (
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 
@@ -60,7 +59,7 @@ func build(cfg config.AppConfig, st *state.StateStore, readDB autoresume.DBReade
 	}
 
 	repoRoot := st.ReadOr("repo-root", "")
-	applyRequest(repoRoot, st, plan, planErr, &projection)
+	applyRequest(repoRoot, st, plan, &projection)
 	applySnapshot(repoRoot, &projection)
 	applySessionRotation(st, &projection)
 	applyVerifiedAutomation(cfg, st, &projection, readDB)
@@ -79,7 +78,20 @@ func BuildPostCompletionRequest(repoRoot, completedTask string) (Request, error)
 	}, nil
 }
 
-func applyRequest(repoRoot string, st *state.StateStore, plan state.ParentActionPlan, planErr error, projection *Projection) {
+func BuildProjectContinuation(repoRoot string, st *state.StateStore, loaded repositoryprojecttree.ProjectState) (repositoryproject.Continuation, *CompletionEvidence, error) {
+	project := continuationProjectView(loaded)
+	evidence, err := BuildCompletionEvidence(repoRoot, st, loaded)
+	if err != nil {
+		return repositoryproject.Continuation{}, nil, err
+	}
+	if evidence != nil {
+		view := evidence.View
+		project.Completion = &view
+	}
+	return repositoryproject.DeriveContinuation(project, continuationLifecycle(st)), evidence, nil
+}
+
+func applyRequest(repoRoot string, st *state.StateStore, plan state.ParentActionPlan, projection *Projection) {
 	if repoRoot == "" {
 		return
 	}
@@ -91,7 +103,7 @@ func applyRequest(repoRoot string, st *state.StateStore, plan state.ParentAction
 	if !active {
 		return
 	}
-	request, err := buildCurrentRequest(repoRoot, st, plan, planErr)
+	request, err := buildCurrentRequest(repoRoot, st)
 	if err != nil {
 		markInconsistent(projection, "project continuation projection is unavailable: "+err.Error())
 		return
@@ -106,7 +118,7 @@ func applyRequest(repoRoot string, st *state.StateStore, plan state.ParentAction
 	}
 }
 
-func buildCurrentRequest(repoRoot string, st *state.StateStore, plan state.ParentActionPlan, planErr error) (Request, error) {
+func buildCurrentRequest(repoRoot string, st *state.StateStore) (Request, error) {
 	status := st.TaskStatus()
 	var request Request
 	if status == state.TaskStatusAwaitingParentCompletion || status == state.TaskStatusComplete {
@@ -120,18 +132,10 @@ func buildCurrentRequest(repoRoot string, st *state.StateStore, plan state.Paren
 		if err != nil {
 			return Request{}, err
 		}
-		project, err := continuationProjectView(loaded)
+		continuation, _, err := BuildProjectContinuation(repoRoot, st, loaded)
 		if err != nil {
 			return Request{}, err
 		}
-		project.Completion, err = continuationCompletionView(repoRoot, st, loaded)
-		if err != nil {
-			return Request{}, err
-		}
-		continuation := repositoryproject.DeriveContinuation(
-			project,
-			continuationLifecycle(st, plan, planErr == nil),
-		)
 		policy := repositoryproject.ParentRequestProjection(
 			continuation,
 			continuation.Reason != string(state.TaskStatusRateLimited),
@@ -159,10 +163,10 @@ func buildCurrentRequest(repoRoot string, st *state.StateStore, plan state.Paren
 	return request, nil
 }
 
-func continuationProjectView(loaded repositoryprojecttree.ProjectState) (repositoryproject.ContinuationProjectView, error) {
+func continuationProjectView(loaded repositoryprojecttree.ProjectState) repositoryproject.ContinuationProjectView {
 	view := repositoryproject.ContinuationProjectView{PlanPresent: loaded.PlanPresent}
 	if !loaded.PlanPresent {
-		return view, nil
+		return view
 	}
 	view.ProjectReady = true
 	view.GoalPresent = loaded.Plan.Goal.Present
@@ -170,33 +174,22 @@ func continuationProjectView(loaded repositoryprojecttree.ProjectState) (reposit
 	view.Active = append([]string(nil), loaded.Plan.Active...)
 	view.NextRunnable = loaded.Graph.NextRunnable(loaded.Plan.Next)
 	view.Blockers = loaded.Graph.Blockers(loaded.Plan.Next, loaded.Plan.Blocked)
-	if loaded.Plan.Goal.Present && loaded.Plan.Goal.Status == taskcontract.GoalStatusActive {
-		if len(loaded.Plan.Active) != 1 {
-			return repositoryproject.ContinuationProjectView{}, fmt.Errorf("Goal進行中のcompletion評価には単一ACTIVE taskが必要です(active=%d)", len(loaded.Plan.Active))
-		}
-		activeTask := loaded.Plan.Active[0]
-		content, ok := loaded.Graph.TaskContent(activeTask)
-		if !ok {
-			return repositoryproject.ContinuationProjectView{}, fmt.Errorf("ACTIVE task %sのdependency状態を解決できません", activeTask)
-		}
-		if _, err := repositoryproject.CompletionScheduleUnmet(loaded.Plan.Next, loaded.Plan.Blocked, activeTask, content); err != nil {
-			return repositoryproject.ContinuationProjectView{}, err
-		}
-	}
-	return view, nil
+	return view
 }
 
-func continuationLifecycle(st *state.StateStore, plan state.ParentActionPlan, planKnown bool) repositoryproject.ContinuationLifecycle {
+func continuationLifecycle(st *state.StateStore) repositoryproject.ContinuationLifecycle {
 	status := st.TaskStatus()
 	pinned := st.ReadOr("active-task", "")
 	lifecycle := repositoryproject.ContinuationLifecycle{
-		Interrupted:       status == state.TaskStatusInterrupted,
-		PinnedTask:        pinned,
-		TaskAbsent:        status == state.TaskStatusNone,
-		TaskComplete:      status == state.TaskStatusComplete,
-		ParentActionKnown: planKnown,
+		Interrupted:  status == state.TaskStatusInterrupted,
+		PinnedTask:   pinned,
+		TaskAbsent:   status == state.TaskStatusNone,
+		TaskComplete: status == state.TaskStatusComplete,
 	}
+	plan, planErr := st.ParentActionPlan()
+	planKnown := planErr == nil
 	if planKnown {
+		lifecycle.ParentActionKnown = true
 		lifecycle.RequiredAction = string(plan.RequiredAction)
 		lifecycle.NoRequiredAction = plan.RequiredAction == state.ParentActionNone
 	}
