@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -51,7 +52,7 @@ func startQualityGate(form string, st *state.StateStore, stdout, diagnostics io.
 	if err != nil {
 		return err
 	}
-	if existing, found := findRunningQualityGateRun(st, identity.Form, identity.Repository, identity.Snapshot); found {
+	if existing, found := findRunningQualityGateRun(st, identity.Form, identity.Repository, identity.WorkingDir, identity.Snapshot); found {
 		_ = lock.Close()
 		_ = emitQualityGateStarted(diagnostics, existing.ValidationRunID, true)
 		final, err := waitQualityGateRun(st, existing.ValidationRunID)
@@ -93,6 +94,11 @@ func prepareQualityGateStart(form string, st *state.StateStore) (qualityGateStar
 	if err != nil {
 		return qualityGateStartIdentity{}, fmt.Errorf("quality gateの作業dirを取得できません: %w", err)
 	}
+	workingDir, err = filepath.EvalSymlinks(workingDir)
+	if err != nil {
+		return qualityGateStartIdentity{}, fmt.Errorf("quality gateの作業dirを解決できません: %w", err)
+	}
+	workingDir = filepath.Clean(workingDir)
 	repository, err := qualityGateRepositoryRoot(workingDir)
 	if err != nil {
 		return qualityGateStartIdentity{}, err

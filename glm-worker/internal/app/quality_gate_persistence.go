@@ -79,7 +79,7 @@ func markQualityGateInterruptedLocked(st *state.StateStore, record qualitygate.R
 	return record, nil
 }
 
-func findRunningQualityGateRun(st *state.StateStore, form, repository string, snapshot state.GitSnapshot) (qualitygate.RunRecord, bool) {
+func findRunningQualityGateRun(st *state.StateStore, form, repository, workingDir string, snapshot state.GitSnapshot) (qualitygate.RunRecord, bool) {
 	entries, err := os.ReadDir(st.Path(qualitygate.RunDirectory))
 	if err != nil {
 		return qualitygate.RunRecord{}, false
@@ -92,19 +92,35 @@ func findRunningQualityGateRun(st *state.StateStore, form, repository string, sn
 		if err != nil || record.Status != qualitygate.StatusRunning {
 			continue
 		}
-		if sameQualityGateSnapshot(record, form, repository, snapshot) {
+		if sameQualityGateSnapshot(record, form, repository, workingDir, snapshot) {
 			return record, true
 		}
 	}
 	return qualitygate.RunRecord{}, false
 }
 
-func sameQualityGateSnapshot(record qualitygate.RunRecord, form, repository string, snapshot state.GitSnapshot) bool {
+func sameQualityGateSnapshot(record qualitygate.RunRecord, form, repository, workingDir string, snapshot state.GitSnapshot) bool {
 	return record.Form == form &&
 		record.Repository == repository &&
+		sameQualityGateWorkingDir(record.WorkingDir, workingDir) &&
 		record.Head == snapshot.Head &&
 		record.IndexDigest == snapshot.IndexDigest &&
 		record.WorktreeDigest == snapshot.WorktreeDigest
+}
+
+func sameQualityGateWorkingDir(left, right string) bool {
+	if left == "" || right == "" {
+		return false
+	}
+	resolvedLeft, err := filepath.EvalSymlinks(left)
+	if err != nil {
+		return false
+	}
+	resolvedRight, err := filepath.EvalSymlinks(right)
+	if err != nil {
+		return false
+	}
+	return filepath.Clean(resolvedLeft) == filepath.Clean(resolvedRight)
 }
 
 func acquireQualityGateStartLock(st *state.StateStore) (*RepoLock, error) {
@@ -137,7 +153,11 @@ func qualityGateRepositoryRoot(workingDir string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("quality gate repository identityを取得できません: %w", err)
 	}
-	return filepath.Clean(strings.TrimSpace(string(out))), nil
+	resolved, err := filepath.EvalSymlinks(filepath.Clean(strings.TrimSpace(string(out))))
+	if err != nil {
+		return "", fmt.Errorf("quality gate repository identityを解決できません: %w", err)
+	}
+	return filepath.Clean(resolved), nil
 }
 
 func writeQualityGateRun(st *state.StateStore, record qualitygate.RunRecord) error {
