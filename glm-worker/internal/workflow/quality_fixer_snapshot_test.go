@@ -14,7 +14,7 @@ func TestQualityFixSnapshotFeedsReviewer(t *testing.T) {
 	st := newStateStoreT(t)
 	r := &scriptedRunner{steps: []runnerStep{
 		{structured: implementedPacket("initial")},
-		{structured: needsSolReviewPacket()},
+		{structured: passPacket()},
 	}}
 	w := newWorkflowT(t, st, r)
 	path := filepath.Join(w.config.RepoRoot, "fixture.go")
@@ -90,14 +90,12 @@ func TestQualityPassWithoutFixDoesNotRebaseExternalChange(t *testing.T) {
 }
 
 func TestSameParentAuthorityRequiresIdenticalParentFiles(t *testing.T) {
-	beforeParents := state.ParentFileStates{{Path: state.ParentPlanFile, Exists: true, SHA256: "before"}}
-	afterParents := state.ParentFileStates{{Path: state.ParentPlanFile, Exists: true, SHA256: "after"}}
-	before := state.GitSnapshot{ParentFiles: &beforeParents}
-	after := state.GitSnapshot{ParentFiles: &afterParents}
+	before := state.ParentFileStates{{Path: state.ParentPlanFile, Exists: true, SHA256: "before"}}
+	after := state.ParentFileStates{{Path: state.ParentPlanFile, Exists: true, SHA256: "after"}}
 	if sameParentAuthority(before, after) {
 		t.Fatal("parent-managed metadataの変更をmachine fixer由来として受理しています")
 	}
-	after.ParentFiles = &beforeParents
+	after = before
 	if !sameParentAuthority(before, after) {
 		t.Fatal("同一parent-managed metadataを不一致扱いしています")
 	}
