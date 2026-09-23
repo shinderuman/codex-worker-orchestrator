@@ -6,12 +6,12 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskcontract"
 )
 
-type ProjectContinuationProjection struct {
+type projectContinuationProjection struct {
 	repositoryproject.Continuation
 	Automation *projectContinuationAutomation `json:"automation,omitempty"`
 }
 
-func deriveProjectContinuation(output projectStateOutput, st *state.StateStore) ProjectContinuationProjection {
+func deriveProjectContinuation(output projectStateOutput, st *state.StateStore) projectContinuationProjection {
 	project := repositoryproject.ContinuationProjectView{PlanPresent: output.PlanPresent}
 	if output.Goal != nil && output.Schedule != nil {
 		project.ProjectReady = true
@@ -79,8 +79,8 @@ func goalTerminalCompatible(status state.TaskStatus, pinned string, planKnown bo
 	return planKnown && action == state.ParentActionNone
 }
 
-func projectContinuationFromPolicy(continuation repositoryproject.Continuation) ProjectContinuationProjection {
-	return ProjectContinuationProjection{Continuation: continuation}
+func projectContinuationFromPolicy(continuation repositoryproject.Continuation) projectContinuationProjection {
+	return projectContinuationProjection{Continuation: continuation}
 }
 
 func cloneProjectBlockers(blockers []repositoryproject.Blocker) []repositoryproject.Blocker {
@@ -100,6 +100,6 @@ func cloneStringPointer(value *string) *string {
 	return &cloned
 }
 
-func unknownProjectContinuation(reason string) ProjectContinuationProjection {
+func unknownProjectContinuation(reason string) projectContinuationProjection {
 	return projectContinuationFromPolicy(repositoryproject.UnknownContinuation(reason))
 }

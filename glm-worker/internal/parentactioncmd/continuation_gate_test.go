@@ -53,27 +53,23 @@ func TestContinuationStopBlockReason(t *testing.T) {
 		},
 		{
 			name: "active task mismatch",
-			handoff: continuationGateHandoff{Consistent: true, ParentRequest: &app.ParentRequestCompletionProjection{
-				Continuation: app.ProjectContinuationProjection{Continuation: repositoryproject.Continuation{
-					State:          repositoryproject.ContinuationUnknown,
-					Reason:         repositoryproject.ReasonActiveTaskMismatch,
-					Task:           "IMPLEMENTATION_TASKS/current.md",
-					RequiredAction: repositoryproject.ActionStart,
-				}},
-			}},
+			handoff: continuationGateHandoff{Consistent: true, ParentRequest: projectionWithContinuation(repositoryproject.Continuation{
+				State:          repositoryproject.ContinuationUnknown,
+				Reason:         repositoryproject.ReasonActiveTaskMismatch,
+				Task:           "IMPLEMENTATION_TASKS/current.md",
+				RequiredAction: repositoryproject.ActionStart,
+			}, false, false)},
 			wantBlock: true,
 			wantText:  "reason=active-task-mismatch",
 		},
 		{
 			name: "continue now",
-			handoff: continuationGateHandoff{Consistent: true, ParentRequest: &app.ParentRequestCompletionProjection{
-				Continuation: app.ProjectContinuationProjection{Continuation: repositoryproject.Continuation{
-					State:          repositoryproject.ContinuationContinueNow,
-					Reason:         repositoryproject.ReasonNextRunnable,
-					Task:           "IMPLEMENTATION_TASKS/next.md",
-					RequiredAction: repositoryproject.ActionStart,
-				}},
-			}},
+			handoff: continuationGateHandoff{Consistent: true, ParentRequest: projectionWithContinuation(repositoryproject.Continuation{
+				State:          repositoryproject.ContinuationContinueNow,
+				Reason:         repositoryproject.ReasonNextRunnable,
+				Task:           "IMPLEMENTATION_TASKS/next.md",
+				RequiredAction: repositoryproject.ActionStart,
+			}, false, false)},
 			wantBlock: true,
 			wantText:  "required_action=start",
 		},
@@ -199,14 +195,16 @@ func TestContinuationMetadataGuardFailure(t *testing.T) {
 }
 
 func projection(state, reason string, completionAdmitted, stopAdmitted bool) *app.ParentRequestCompletionProjection {
-	return &app.ParentRequestCompletionProjection{
+	return projectionWithContinuation(repositoryproject.Continuation{State: state, Reason: reason}, completionAdmitted, stopAdmitted)
+}
+
+func projectionWithContinuation(continuation repositoryproject.Continuation, completionAdmitted, stopAdmitted bool) *app.ParentRequestCompletionProjection {
+	projection := &app.ParentRequestCompletionProjection{
 		CompletionAdmitted: completionAdmitted,
 		StopAdmitted:       stopAdmitted,
-		Continuation: app.ProjectContinuationProjection{Continuation: repositoryproject.Continuation{
-			State:  state,
-			Reason: reason,
-		}},
 	}
+	projection.Continuation.Continuation = continuation
+	return projection
 }
 
 func stringPointer(value string) *string {

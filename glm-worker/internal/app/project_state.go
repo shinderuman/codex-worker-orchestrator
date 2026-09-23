@@ -24,7 +24,7 @@ type projectStateOutput struct {
 	NextRunnable *string                        `json:"next_runnable"`
 	Blockers     []repositoryproject.Blocker    `json:"blockers"`
 	Completion   *projectStateCompletion        `json:"completion,omitempty"`
-	Continuation ProjectContinuationProjection  `json:"continuation"`
+	Continuation projectContinuationProjection  `json:"continuation"`
 }
 
 type projectStateGoal struct {

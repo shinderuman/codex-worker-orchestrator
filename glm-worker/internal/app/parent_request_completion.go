@@ -10,7 +10,7 @@ import (
 type ParentRequestCompletionProjection struct {
 	CompletionAdmitted bool                              `json:"completion_admitted"`
 	StopAdmitted       bool                              `json:"stop_admitted"`
-	Continuation       ProjectContinuationProjection     `json:"continuation"`
+	Continuation       projectContinuationProjection     `json:"continuation"`
 	TaskAttribution    repositoryproject.TaskAttribution `json:"task_attribution"`
 }
 
@@ -65,7 +65,7 @@ func parentRequestProjectionFromPolicy(projection repositoryproject.ParentReques
 	}
 }
 
-func parentRequestProjection(continuation ProjectContinuationProjection) ParentRequestCompletionProjection {
+func parentRequestProjection(continuation projectContinuationProjection) ParentRequestCompletionProjection {
 	policy := repositoryproject.ParentRequestProjection(
 		continuation.Continuation,
 		continuation.Reason != string(state.TaskStatusRateLimited),

@@ -224,7 +224,7 @@ func TestProjectStateJSONIncludesCanonicalContinuation(t *testing.T) {
 		t.Fatal(err)
 	}
 	var output struct {
-		Continuation ProjectContinuationProjection `json:"continuation"`
+		Continuation projectContinuationProjection `json:"continuation"`
 	}
 	if err := json.Unmarshal(stdout.Bytes(), &output); err != nil {
 		t.Fatal(err)
