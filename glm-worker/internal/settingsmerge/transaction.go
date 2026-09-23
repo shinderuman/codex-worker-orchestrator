@@ -55,7 +55,7 @@ func commitRecoverableTransaction(targetPath string, plans []plannedWrite, input
 	if err := validateMergeInputSnapshots(inputs); err != nil {
 		return err
 	}
-	journal, err := newMergeTransactionJournalFromInputs(plans, inputs)
+	journal, err := newMergeTransactionJournal(plans, inputs)
 	if err != nil {
 		return err
 	}
@@ -132,19 +132,27 @@ func removeMergeTransactionJournal(path, operation string) error {
 	return nil
 }
 
-func newMergeTransactionJournal(plans []plannedWrite) (mergeTransactionJournal, error) {
-	inputs := make(map[string]fileRestore, len(plans))
-	for _, plan := range plans {
-		pre, err := captureMergeTransactionFile(plan.path)
-		if err != nil {
-			return mergeTransactionJournal{}, err
-		}
-		inputs[plan.path] = pre
+func newMergeTransactionJournal(plans []plannedWrite, provided ...map[string]fileRestore) (mergeTransactionJournal, error) {
+	if len(provided) > 1 {
+		return mergeTransactionJournal{}, fmt.Errorf("multiple settings transaction preimage sets")
 	}
-	return newMergeTransactionJournalFromInputs(plans, inputs)
+	var inputs map[string]fileRestore
+	if len(provided) == 1 {
+		inputs = provided[0]
+	} else {
+		inputs = make(map[string]fileRestore, len(plans))
+		for _, plan := range plans {
+			pre, err := captureMergeTransactionFile(plan.path)
+			if err != nil {
+				return mergeTransactionJournal{}, err
+			}
+			inputs[plan.path] = pre
+		}
+	}
+	return buildMergeTransactionJournal(plans, inputs)
 }
 
-func newMergeTransactionJournalFromInputs(plans []plannedWrite, inputs map[string]fileRestore) (mergeTransactionJournal, error) {
+func buildMergeTransactionJournal(plans []plannedWrite, inputs map[string]fileRestore) (mergeTransactionJournal, error) {
 	journal := mergeTransactionJournal{Version: mergeTransactionVersion, Files: make([]mergeTransactionFile, 0, len(plans))}
 	seen := make(map[string]bool, len(plans))
 	for _, plan := range plans {
@@ -272,30 +280,34 @@ func fileRestoreMatches(left, right fileRestore) bool {
 func restoreMergeTransaction(journal mergeTransactionJournal, writeFn writeFileFunc) error {
 	var errs []error
 	for i := len(journal.Files) - 1; i >= 0; i-- {
-		file := journal.Files[i]
-		current, err := captureMergeTransactionFile(file.Path)
-		if err != nil {
+		if err := restoreMergeTransactionFile(journal.Files[i], writeFn); err != nil {
 			errs = append(errs, err)
-			continue
-		}
-		if !mergeTransactionMatchesPre(current, file) && !mergeTransactionMatchesPost(current, file) {
-			errs = append(errs, fmt.Errorf("settings transaction rollback refused concurrent edit: %s", file.Path))
-			continue
-		}
-		if mergeTransactionMatchesPre(current, file) {
-			continue
-		}
-		if !file.PreExisted {
-			if err := os.Remove(file.Path); err != nil && !errors.Is(err, os.ErrNotExist) {
-				errs = append(errs, fmt.Errorf("remove %s: %w", file.Path, err))
-			}
-			continue
-		}
-		if err := writeFn(file.Path, file.PreData, file.PreMode); err != nil {
-			errs = append(errs, fmt.Errorf("restore %s: %w", file.Path, err))
 		}
 	}
 	return errors.Join(errs...)
+}
+
+func restoreMergeTransactionFile(file mergeTransactionFile, writeFn writeFileFunc) error {
+	current, err := captureMergeTransactionFile(file.Path)
+	if err != nil {
+		return err
+	}
+	if mergeTransactionMatchesPre(current, file) {
+		return nil
+	}
+	if !mergeTransactionMatchesPost(current, file) {
+		return fmt.Errorf("settings transaction rollback refused concurrent edit: %s", file.Path)
+	}
+	if !file.PreExisted {
+		if err := os.Remove(file.Path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("remove %s: %w", file.Path, err)
+		}
+		return nil
+	}
+	if err := writeFn(file.Path, file.PreData, file.PreMode); err != nil {
+		return fmt.Errorf("restore %s: %w", file.Path, err)
+	}
+	return nil
 }
 
 func normalizedFileMode(mode os.FileMode) os.FileMode {
