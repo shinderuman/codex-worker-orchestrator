@@ -28,7 +28,8 @@ jobs:
       - name: Apply fixes
         run: |
           python3 .github/web-gpt-review-fix.txt
-          rm .github/web-gpt-review-fix.txt .github/workflows/web-gpt-fixed-range-fix.yml
+          python3 .github/web-gpt-review-fix-lint.txt
+          rm .github/web-gpt-review-fix.txt .github/web-gpt-review-fix-lint.txt .github/workflows/web-gpt-fixed-range-fix.yml
           gofmt -w \
             glm-worker/internal/autoresume/codex_wake_transaction.go \
             glm-worker/internal/harnesslint/forward_only_semantic.go \
