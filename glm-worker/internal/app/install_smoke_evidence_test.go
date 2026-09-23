@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -349,7 +350,7 @@ func TestInstallSmokeEvidenceRetentionKeepsRecentRuns(t *testing.T) {
 	}
 	runs := 0
 	for _, entry := range entries {
-		if entry.IsDir() && validValidationRunID(entry.Name()) {
+		if entry.IsDir() && qualitygate.ValidRunID(entry.Name()) {
 			runs++
 		}
 	}
