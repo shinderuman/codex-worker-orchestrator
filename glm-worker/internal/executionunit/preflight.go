@@ -28,21 +28,6 @@ type Decision struct {
 	Milestones    []MilestoneDefinition
 }
 
-const (
-	ExecutionUnitSingle     = "single"
-	ExecutionUnitMilestones = "milestones"
-
-	executionUnitPrefix  = "EXECUTION_UNIT: "
-	milestonesJSONPrefix = "MILESTONES_JSON: "
-	decisionMarker       = "DECISION:"
-
-	milestonePlanVersion  = 1
-	milestoneMaxCount     = 8
-	milestoneMaxIDBytes   = 64
-	milestoneMaxTextBytes = 2048
-	activeTaskStateKey    = "active-task"
-)
-
 type milestoneInput struct {
 	Milestones []MilestoneDefinition `json:"milestones"`
 }
@@ -59,6 +44,21 @@ type milestonePlan struct {
 	CurrentIndex       int               `json:"current_index"`
 	Milestones         []milestoneRecord `json:"milestones"`
 }
+
+const (
+	ExecutionUnitSingle     = "single"
+	ExecutionUnitMilestones = "milestones"
+
+	executionUnitPrefix  = "EXECUTION_UNIT: "
+	milestonesJSONPrefix = "MILESTONES_JSON: "
+	decisionMarker       = "DECISION:"
+
+	milestonePlanVersion  = 1
+	milestoneMaxCount     = 8
+	milestoneMaxIDBytes   = 64
+	milestoneMaxTextBytes = 2048
+	activeTaskStateKey    = "active-task"
+)
 
 func IsPayload(payload string) bool {
 	return strings.HasPrefix(payload, executionUnitPrefix)
@@ -239,6 +239,15 @@ func validateMilestoneRevision(cfg config.AppConfig, st *state.StateStore, defin
 	if err != nil {
 		return err
 	}
+	return validateMilestoneRevisionAgainstPlan(cfg, st, definitions, plan)
+}
+
+func validateMilestoneRevisionAgainstPlan(
+	cfg config.AppConfig,
+	st *state.StateStore,
+	definitions []MilestoneDefinition,
+	plan *milestonePlan,
+) error {
 	taskID, err := st.TaskID()
 	if err != nil {
 		return err
@@ -259,12 +268,19 @@ func validateMilestoneRevision(cfg config.AppConfig, st *state.StateStore, defin
 	if len(definitions) <= plan.CurrentIndex {
 		return fmt.Errorf("revised execution milestones must preserve all completed milestones and one current milestone")
 	}
+	if err := validateCompletedMilestones(plan, definitions); err != nil {
+		return err
+	}
+	return validateStoppedMilestone(st, plan, definitions)
+}
+
+func validateCompletedMilestones(plan *milestonePlan, definitions []MilestoneDefinition) error {
 	for index := 0; index < plan.CurrentIndex; index++ {
 		if plan.Milestones[index].MilestoneDefinition != definitions[index] {
 			return fmt.Errorf("completed execution milestone %q is immutable", plan.Milestones[index].ID)
 		}
 	}
-	return validateStoppedMilestone(st, plan, definitions)
+	return nil
 }
 
 func validateStoppedMilestone(st *state.StateStore, plan *milestonePlan, definitions []MilestoneDefinition) error {
