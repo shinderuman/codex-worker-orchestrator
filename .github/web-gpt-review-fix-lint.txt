@@ -28,7 +28,7 @@ replace_once(
 \t\tmatches = append(matches, candidate.ID)
 ''',
 )
-anchor = '''func resolveCodexWakeAutomation(automationRoot, wakeThreadID string) (string, bool, error) {\n'''
+anchor = '''func resolveCodexWakeAutomation(dir, wakeThreadID string) (string, bool, error) {\n'''
 helper = '''func readWakeTOMLForThread(path, entryName, wakeThreadID string) (wakeAutomation, string) {
 \tcandidate, problem := readWakeTOML(path, entryName)
 \tif problem != "" {
