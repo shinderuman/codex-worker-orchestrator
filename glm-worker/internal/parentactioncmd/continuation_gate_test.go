@@ -54,7 +54,7 @@ func TestContinuationStopBlockReason(t *testing.T) {
 		{
 			name: "active task mismatch",
 			handoff: continuationGateHandoff{Consistent: true, ParentRequest: &app.ParentRequestCompletionProjection{
-				Continuation: app.ProjectContinuation{Continuation: repositoryproject.Continuation{
+				Continuation: app.ProjectContinuationProjection{Continuation: repositoryproject.Continuation{
 					State:          repositoryproject.ContinuationUnknown,
 					Reason:         repositoryproject.ReasonActiveTaskMismatch,
 					Task:           "IMPLEMENTATION_TASKS/current.md",
@@ -67,7 +67,7 @@ func TestContinuationStopBlockReason(t *testing.T) {
 		{
 			name: "continue now",
 			handoff: continuationGateHandoff{Consistent: true, ParentRequest: &app.ParentRequestCompletionProjection{
-				Continuation: app.ProjectContinuation{Continuation: repositoryproject.Continuation{
+				Continuation: app.ProjectContinuationProjection{Continuation: repositoryproject.Continuation{
 					State:          repositoryproject.ContinuationContinueNow,
 					Reason:         repositoryproject.ReasonNextRunnable,
 					Task:           "IMPLEMENTATION_TASKS/next.md",
@@ -202,7 +202,7 @@ func projection(state, reason string, completionAdmitted, stopAdmitted bool) *ap
 	return &app.ParentRequestCompletionProjection{
 		CompletionAdmitted: completionAdmitted,
 		StopAdmitted:       stopAdmitted,
-		Continuation: app.ProjectContinuation{Continuation: repositoryproject.Continuation{
+		Continuation: app.ProjectContinuationProjection{Continuation: repositoryproject.Continuation{
 			State:  state,
 			Reason: reason,
 		}},

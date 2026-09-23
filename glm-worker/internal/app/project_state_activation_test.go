@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryproject"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -35,7 +36,7 @@ func TestProjectStateIngressIgnoresMarkerlessForeignPlan(t *testing.T) {
 	if output.PlanPresent || output.Goal != nil || output.Schedule != nil || output.NextRunnable != nil || output.Completion != nil {
 		t.Fatalf("inactive project-state = %#v", output)
 	}
-	if output.Version != projectStateVersion || len(output.Dependencies) != 0 || len(output.Blockers) != 0 || output.Continuation.Reason != projectContinuationReasonPlanAbsent {
+	if output.Version != projectStateVersion || len(output.Dependencies) != 0 || len(output.Blockers) != 0 || output.Continuation.Reason != repositoryproject.ReasonPlanAbsent {
 		t.Fatalf("inactive project-state contract = %#v", output)
 	}
 }

@@ -10,7 +10,7 @@ import (
 type ParentRequestCompletionProjection struct {
 	CompletionAdmitted bool                              `json:"completion_admitted"`
 	StopAdmitted       bool                              `json:"stop_admitted"`
-	Continuation       ProjectContinuationProjection      `json:"continuation"`
+	Continuation       ProjectContinuationProjection     `json:"continuation"`
 	TaskAttribution    repositoryproject.TaskAttribution `json:"task_attribution"`
 }
 

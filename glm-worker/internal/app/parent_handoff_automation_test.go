@@ -9,6 +9,7 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/autoresume"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryproject"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -27,7 +28,7 @@ func TestRateLimitedParentRequestRequiresVerifiedAutomationForStop(t *testing.T)
 	applyVerifiedAutomationDeferral(cfg, st, &output, func(string, string) (autoresume.DBRow, error) {
 		return autoresume.DBRow{}, autoresume.ErrRowNotFound
 	})
-	if output.ParentRequest.StopAdmitted || output.ParentRequest.Continuation.State != projectContinuationBlocked {
+	if output.ParentRequest.StopAdmitted || output.ParentRequest.Continuation.State != repositoryproject.ContinuationBlocked {
 		t.Fatalf("missing automation authorized stop = %#v", output.ParentRequest)
 	}
 }
@@ -47,7 +48,7 @@ func TestRateLimitedParentRequestAcceptsExactVerifiedWakeDeferral(t *testing.T) 
 	})
 	request := output.ParentRequest
 	if request == nil || request.CompletionAdmitted || !request.StopAdmitted ||
-		request.Continuation.State != projectContinuationDeferredByVerifiedAutomation ||
+		request.Continuation.State != repositoryproject.ContinuationDeferredByVerifiedAutomation ||
 		request.Continuation.Reason != projectContinuationReasonVerifiedAutomation ||
 		request.Continuation.Automation == nil {
 		t.Fatalf("verified parent request = %#v", request)

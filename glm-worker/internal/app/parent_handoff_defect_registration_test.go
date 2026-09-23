@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryproject"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -49,7 +50,7 @@ func TestPendingDefectRegistrationBlocksParentRequestStopBeforeTaskPlanBinding(t
 	if projection.CompletionAdmitted || projection.StopAdmitted {
 		t.Fatalf("pending defect registration admitted completion/stop: %#v", projection)
 	}
-	if projection.Continuation.State != projectContinuationContinueNow || projection.Continuation.Task != active || projection.Continuation.RequiredAction != string(state.ParentActionBindDefectTask) {
+	if projection.Continuation.State != repositoryproject.ContinuationContinueNow || projection.Continuation.Task != active || projection.Continuation.RequiredAction != string(state.ParentActionBindDefectTask) {
 		t.Fatalf("pending defect continuation = %#v", projection.Continuation)
 	}
 }

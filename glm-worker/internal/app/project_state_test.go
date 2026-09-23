@@ -10,6 +10,7 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryproject"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -88,7 +89,7 @@ func TestProjectStateLegacyPlanWithoutGoal(t *testing.T) {
 	}
 }
 
-func projectStateDependencyOf(t *testing.T, dependencies []projectStateDependency, task string) projectStateDependency {
+func projectStateDependencyOf(t *testing.T, dependencies []repositoryproject.Dependency, task string) repositoryproject.Dependency {
 	t.Helper()
 	for _, dependency := range dependencies {
 		if dependency.Task == task {
@@ -96,7 +97,7 @@ func projectStateDependencyOf(t *testing.T, dependencies []projectStateDependenc
 		}
 	}
 	t.Fatalf("dependency %s not found in %#v", task, dependencies)
-	return projectStateDependency{}
+	return repositoryproject.Dependency{}
 }
 
 func TestProjectStateGoalActiveCompletionUnmet(t *testing.T) {
