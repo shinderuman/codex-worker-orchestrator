@@ -22,7 +22,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-go@v7
         with:
-          go-version-file: glm-worker/go.mod
+          go-version: '1.25.4'
           cache: false
       - name: Apply fixes
         run: |
@@ -35,6 +35,11 @@ jobs:
           end = raw.index('\n          PY', start)
           block = raw[start:end]
           block = '\n'.join(line[10:] if line.startswith('          ') else line for line in block.splitlines()) + '\n'
+          old = "if '/private/tmp/' in text or '/Users/shinderumanm/' in text:\n    raise SystemExit('Review.md still contains machine-local links')\nreview.write_text(text)"
+          new = "text = text.replace('/Users/shinderumanm/src/codex-worker-orchestrator/', '')\ntext = re.sub(r']\\(([^)\\s]+):(\\d+)\\)', lambda m: f']({m.group(1)}#L{m.group(2)})', text)\ntext = re.sub(r']\\(/private/tmp/[^)]+\\)', '](review-evidence/README.md)', text)\nif '/private/tmp/' in text or '/Users/shinderumanm/' in text:\n    raise SystemExit('Review.md still contains machine-local links')\nreview.write_text(text)"
+          if old not in block:
+              raise SystemExit('review cleanup patch anchor missing')
+          block = block.replace(old, new, 1)
           Path('/tmp/web-gpt-fix.py').write_text(block)
           subprocess.run(['python3', '/tmp/web-gpt-fix.py'], check=True)
           PY
