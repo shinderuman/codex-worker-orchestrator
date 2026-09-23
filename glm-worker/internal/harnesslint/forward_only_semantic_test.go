@@ -23,6 +23,25 @@ func observe(s *scan, v item) {
 	requireRulePath(t, ruleViolations(t, root), forwardOnlyCompatibilityRule, path)
 }
 
+func TestForwardOnlySemanticRejectsDualParentWaitReaderInIfConditions(t *testing.T) {
+	root := fixtureRoot(t)
+	path := "glm-worker/internal/example/transport.go"
+	writeFixture(t, root, path, `package example
+
+type item struct { Type, Name, Input string }
+func observe(v item) bool {
+	if v.Type == "function_call" && v.Name == "wait" {
+		return true
+	}
+	if v.Type == "custom_tool_call" && v.Input == "tools.write_stdin" {
+		return true
+	}
+	return false
+}
+`)
+	requireRulePath(t, ruleViolations(t, root), forwardOnlyCompatibilityRule, path)
+}
+
 func TestForwardOnlySemanticRejectsCurrentToOldNormalizationAcrossNeutralHelper(t *testing.T) {
 	root := fixtureRoot(t)
 	path := "glm-worker/internal/example/transport.go"
@@ -35,6 +54,27 @@ func consume(v item) item {
 }
 func reshape(v item) item {
 	if v.Input != "tools.write_stdin" { return v }
+	v.Type = "function_call"
+	v.Name = "wait"
+	return v
+}
+`)
+	requireRulePath(t, ruleViolations(t, root), forwardOnlyCompatibilityRule, path)
+}
+
+func TestForwardOnlySemanticRejectsCallerEstablishedCurrentWaitNormalization(t *testing.T) {
+	root := fixtureRoot(t)
+	path := "glm-worker/internal/example/transport.go"
+	writeFixture(t, root, path, `package example
+
+type item struct { Type, Name, Input string }
+func consume(v item) item {
+	if v.Type == "custom_tool_call" && v.Input == "tools.write_stdin" {
+		return reshape(v)
+	}
+	return v
+}
+func reshape(v item) item {
 	v.Type = "function_call"
 	v.Name = "wait"
 	return v
