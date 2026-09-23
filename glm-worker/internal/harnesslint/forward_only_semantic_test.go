@@ -102,7 +102,7 @@ esac
 	requireRulePath(t, ruleViolations(t, root), forwardOnlyCompatibilityRule, path)
 }
 
-func TestForwardOnlySemanticAllowsCurrentAcceptedLegacyIgnoredInSameTest(t *testing.T) {
+func TestForwardOnlySemanticAllowsCurrentAcceptedRejectsLegacyInSameTest(t *testing.T) {
 	root := fixtureRoot(t)
 	writeFixture(t, root, "glm-worker/internal/example/transport.go", `package example
 type item struct { Type, Name, Input string }
@@ -111,7 +111,7 @@ func observe([]item) result { return result{} }
 `)
 	writeFixture(t, root, "glm-worker/internal/example/transport_test.go", `package example
 import "testing"
-func TestCurrentAcceptedLegacyIgnored(t *testing.T) {
+func TestCurrentAcceptedRejectsLegacy(t *testing.T) {
 	got := observe([]item{
 		{Type: "function_call", Name: "wait"},
 		{Type: "custom_tool_call", Name: "exec", Input: "tools.write_stdin"},
