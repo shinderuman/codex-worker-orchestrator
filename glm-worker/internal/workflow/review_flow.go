@@ -18,19 +18,9 @@ func (w *Workflow) reviewUntilStable(
 	autoFixes int,
 	workerPhase string,
 ) error {
-	workerEnd, stopped, err := w.captureReviewWorkerEndSnapshot()
-	if err != nil || stopped {
-		return err
-	}
-	handled, qualityReport, err := w.handleRepositoryQualityViolation(request, workerResult, reviewNumber, autoFixes, workerPhase)
+	workerEnd, handled, err := w.prepareReviewInputSnapshot(request, workerResult, reviewNumber, autoFixes, workerPhase)
 	if err != nil || handled {
 		return err
-	}
-	if qualityReport.Fixed > 0 {
-		workerEnd, stopped, err = w.acceptQualityFixSnapshot(workerEnd, qualityReport.Fixed)
-		if err != nil || stopped {
-			return err
-		}
 	}
 	w.recordConvergenceRound(reviewNumber, autoFixes, workerPhase, workerEnd)
 
@@ -58,6 +48,47 @@ func (w *Workflow) reviewUntilStable(
 		return err
 	}
 	return w.handleReviewResult(request, workerResult, reviewResult, reviewNumber, autoFixes)
+}
+
+func (w *Workflow) prepareReviewInputSnapshot(
+	request string,
+	workerResult packet.Result,
+	reviewNumber int,
+	autoFixes int,
+	workerPhase string,
+) (state.GitSnapshot, bool, error) {
+	workerEnd, stopped, err := w.captureWorkerEndSnapshot()
+	if err != nil || stopped {
+		return workerEnd, true, err
+	}
+	workerBoundary, err := w.captureRepositoryBoundary()
+	if err != nil {
+		return workerEnd, true, w.failClosedSnapshot(
+			state.SnapshotStageWorkerEnd,
+			workerEnd,
+			state.GitSnapshot{},
+			"quality gate開始前repository boundary取得失敗",
+			err,
+		)
+	}
+	comparison := state.CompareGitSnapshot(workerEnd, workerBoundary, state.SnapshotStageWorkerEnd, "")
+	if !comparison.Matched {
+		return workerBoundary, true, w.failClosedSnapshot(
+			state.SnapshotStageWorkerEnd,
+			workerEnd,
+			workerBoundary,
+			"worker-end snapshot取得後からquality gate開始前までにrepository状態が変化しています",
+			nil,
+		)
+	}
+	handled, qualityReport, err := w.handleRepositoryQualityViolation(request, workerResult, reviewNumber, autoFixes, workerPhase)
+	if err != nil || handled {
+		return workerEnd, true, err
+	}
+	if qualityReport.Fixed == 0 {
+		return workerEnd, false, nil
+	}
+	return w.acceptQualityFixSnapshot(workerBoundary, qualityReport.Fixed)
 }
 
 func (w *Workflow) buildReviewCheckpoint(
@@ -142,29 +173,6 @@ func (w *Workflow) runReviewModel(checkpoint state.ResumeCheckpoint) (packet.Res
 		return packet.Result{}, stopped, err
 	}
 	return reviewResult, false, nil
-}
-
-func (w *Workflow) captureReviewWorkerEndSnapshot() (state.GitSnapshot, bool, error) {
-	workerEnd, err := w.captureRepositoryBoundary()
-	if err != nil {
-		return workerEnd, true, w.failClosedSnapshot(
-			state.SnapshotStageWorkerEnd,
-			workerEnd,
-			state.GitSnapshot{},
-			"worker-end repository boundary取得失敗",
-			err,
-		)
-	}
-	if err := w.state.SaveWorkerEndSnapshot(workerEnd); err != nil {
-		return workerEnd, true, w.failClosedSnapshot(
-			state.SnapshotStageWorkerEnd,
-			workerEnd,
-			state.GitSnapshot{},
-			"worker-end snapshot保存失敗",
-			err,
-		)
-	}
-	return workerEnd, false, nil
 }
 
 func (w *Workflow) acceptQualityFixSnapshot(workerEnd state.GitSnapshot, fixed int) (state.GitSnapshot, bool, error) {
