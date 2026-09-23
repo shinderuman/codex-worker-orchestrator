@@ -1,0 +1,66 @@
+name: Web GPT Fixed Range Fix
+
+on:
+  push:
+    branches:
+      - 'web-gpt/review-fix/5eb816d-c2b6893'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Read Go version
+        id: quality-tools
+        run: |
+          GO_VERSION=$(awk -F': ' '$1 == "go" { print $2 }' quality-tools.yml)
+          printf 'go_version=%s\n' "$GO_VERSION" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ steps.quality-tools.outputs.go_version }}
+          cache: false
+      - name: Apply fixes
+        run: |
+          python3 .github/web-gpt-review-fix.txt
+          rm .github/web-gpt-review-fix.txt .github/workflows/web-gpt-fixed-range-fix.yml
+          gofmt -w \
+            glm-worker/internal/autoresume/codex_wake_transaction.go \
+            glm-worker/internal/harnesslint/forward_only_semantic.go \
+            glm-worker/internal/harnesslint/forward_only_semantic_contract.go \
+            glm-worker/internal/harnesslint/quality_surface.go \
+            glm-worker/internal/harnesslint/fixed_range_review_regression_test.go \
+            glm-worker/internal/publicationguard/setup.go \
+            glm-worker/internal/publicationguard/setup_test.go \
+            glm-worker/internal/workflow/reviewer_boundary.go \
+            glm-worker/internal/workflow/reviewer_boundary_schema_test.go
+      - name: Install quality tools
+        run: |
+          quality_bin="$RUNNER_TEMP/codex-worker-orchestrator-quality-tools"
+          printf 'QUALITY_TOOLS_BIN_DIR=%s\n' "$quality_bin" >> "$GITHUB_ENV"
+          QUALITY_TOOLS_BIN_DIR="$quality_bin" ./install-quality-tools.sh
+      - name: Format shell
+        run: |
+          "$QUALITY_TOOLS_BIN_DIR/shfmt" -w scripts/manage-pull-hook.sh tests/install_hook_ownership_smoke.sh
+      - name: Focused Go tests
+        working-directory: glm-worker
+        run: go test ./internal/autoresume ./internal/harnesslint ./internal/publicationguard ./internal/runner ./internal/workflow
+      - name: Hook ownership smoke
+        run: sh tests/install_hook_ownership_smoke.sh
+      - name: Repository lint
+        run: ./harnesslint
+      - name: Full Go tests
+        working-directory: glm-worker
+        run: go test ./...
+      - name: Commit fixes
+        run: |
+          git config user.name shinderuman
+          git config user.email shinderuman@gmail.com
+          git add -A
+          git commit -m 'Fix validated fixed-range review findings'
+          git push origin HEAD:web-gpt/review-fix/5eb816d-c2b6893
