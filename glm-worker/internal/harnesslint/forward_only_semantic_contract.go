@@ -6,6 +6,11 @@ import (
 	"strconv"
 )
 
+type forwardOnlySemanticCountCandidate struct {
+	old     int
+	current int
+}
+
 func forwardOnlySemanticTestViolations(pkg *forwardOnlySemanticPackage) []Violation {
 	var violations []Violation
 	for _, functions := range pkg.functions {
@@ -27,30 +32,72 @@ func stringsHasTestPrefix(name string) bool {
 }
 
 func forwardOnlySemanticTestAcceptsBothByCount(pkg *forwardOnlySemanticPackage, function *forwardOnlySemanticFunction) bool {
-	oldInputs, currentInputs := forwardOnlySemanticWaitInputCounts(pkg, function.decl.Body)
-	if oldInputs == 0 || currentInputs == 0 {
+	candidates := forwardOnlySemanticCountCandidates(pkg, function.decl.Body)
+	if len(candidates) == 0 {
 		return false
 	}
-	expected, ok := forwardOnlySemanticAcceptedCount(function.decl.Body)
-	return ok && expected == oldInputs+currentInputs && expected > currentInputs
-}
-
-func forwardOnlySemanticWaitInputCounts(pkg *forwardOnlySemanticPackage, node ast.Node) (int, int) {
-	oldInputs := 0
-	currentInputs := 0
-	ast.Inspect(node, func(current ast.Node) bool {
-		literal, ok := current.(*ast.CompositeLit)
+	accepted := false
+	ast.Inspect(function.decl.Body, func(node ast.Node) bool {
+		branch, ok := node.(*ast.IfStmt)
+		if !ok || !forwardOnlySemanticTestingFailure(branch.Body) {
+			return true
+		}
+		subject, expected, ok := forwardOnlySemanticCountExpectation(branch.Cond)
 		if !ok {
 			return true
 		}
-		switch forwardOnlySemanticWaitInputKind(pkg, literal) {
-		case forwardOnlyOldTransport:
-			oldInputs++
-		case forwardOnlyCurrentTransport:
-			currentInputs++
+		candidate, ok := candidates[subject]
+		if ok && candidate.old > 0 && candidate.current > 0 && expected == candidate.old+candidate.current {
+			accepted = true
+			return false
 		}
 		return true
 	})
+	return accepted
+}
+
+func forwardOnlySemanticCountCandidates(pkg *forwardOnlySemanticPackage, body *ast.BlockStmt) map[string]forwardOnlySemanticCountCandidate {
+	candidates := make(map[string]forwardOnlySemanticCountCandidate)
+	ast.Inspect(body, func(node ast.Node) bool {
+		assignment, ok := node.(*ast.AssignStmt)
+		if !ok || len(assignment.Lhs) != 1 || len(assignment.Rhs) != 1 {
+			return true
+		}
+		name, ok := forwardOnlyUnparen(assignment.Lhs[0]).(*ast.Ident)
+		if !ok {
+			return true
+		}
+		call, ok := forwardOnlyUnparen(assignment.Rhs[0]).(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		oldInputs, currentInputs := forwardOnlySemanticCallWaitInputCounts(pkg, call)
+		if oldInputs > 0 && currentInputs > 0 {
+			candidates[name.Name] = forwardOnlySemanticCountCandidate{old: oldInputs, current: currentInputs}
+		}
+		return true
+	})
+	return candidates
+}
+
+func forwardOnlySemanticCallWaitInputCounts(pkg *forwardOnlySemanticPackage, call *ast.CallExpr) (int, int) {
+	oldInputs := 0
+	currentInputs := 0
+	for _, argument := range call.Args {
+		ast.Inspect(argument, func(node ast.Node) bool {
+			literal, ok := node.(*ast.CompositeLit)
+			if !ok {
+				return true
+			}
+			switch forwardOnlySemanticWaitInputKind(pkg, literal) {
+			case forwardOnlyOldTransport:
+				oldInputs++
+			case forwardOnlyCurrentTransport:
+				currentInputs++
+			}
+			return true
+		})
+	}
 	return oldInputs, currentInputs
 }
 
@@ -87,56 +134,46 @@ func containsWriteStdin(value string) bool {
 	return false
 }
 
-func forwardOnlySemanticAcceptedCount(body *ast.BlockStmt) (int, bool) {
-	expected := 0
-	found := false
-	ast.Inspect(body, func(node ast.Node) bool {
-		branch, ok := node.(*ast.IfStmt)
-		if !ok || !forwardOnlySemanticTestingFailure(branch.Body) {
-			return true
-		}
-		if value, ok := forwardOnlySemanticCountExpectation(branch.Cond); ok {
-			expected = value
-			found = true
-			return false
-		}
-		return true
-	})
-	return expected, found
-}
-
-func forwardOnlySemanticCountExpectation(expression ast.Expr) (int, bool) {
+func forwardOnlySemanticCountExpectation(expression ast.Expr) (string, int, bool) {
 	binary, ok := forwardOnlyUnparen(expression).(*ast.BinaryExpr)
 	if !ok {
-		return 0, false
+		return "", 0, false
 	}
 	if binary.Op == token.LAND || binary.Op == token.LOR {
-		if value, ok := forwardOnlySemanticCountExpectation(binary.X); ok {
-			return value, true
+		if subject, value, ok := forwardOnlySemanticCountExpectation(binary.X); ok {
+			return subject, value, true
 		}
 		return forwardOnlySemanticCountExpectation(binary.Y)
 	}
 	if binary.Op != token.NEQ {
-		return 0, false
+		return "", 0, false
 	}
-	if forwardOnlySemanticCountExpression(binary.X) {
-		return forwardOnlySemanticInteger(binary.Y)
+	if subject := forwardOnlySemanticCountSubject(binary.X); subject != "" {
+		value, ok := forwardOnlySemanticInteger(binary.Y)
+		return subject, value, ok
 	}
-	if forwardOnlySemanticCountExpression(binary.Y) {
-		return forwardOnlySemanticInteger(binary.X)
+	if subject := forwardOnlySemanticCountSubject(binary.Y); subject != "" {
+		value, ok := forwardOnlySemanticInteger(binary.X)
+		return subject, value, ok
 	}
-	return 0, false
+	return "", 0, false
 }
 
-func forwardOnlySemanticCountExpression(expression ast.Expr) bool {
+func forwardOnlySemanticCountSubject(expression ast.Expr) string {
 	switch typed := forwardOnlyUnparen(expression).(type) {
 	case *ast.SelectorExpr:
-		return typed.Sel.Name == "Count"
+		if typed.Sel.Name != "Count" {
+			return ""
+		}
+		return forwardOnlySemanticObjectBase(typed.X)
 	case *ast.CallExpr:
 		identifier, ok := forwardOnlyUnparen(typed.Fun).(*ast.Ident)
-		return ok && identifier.Name == "len" && len(typed.Args) == 1
+		if !ok || identifier.Name != "len" || len(typed.Args) != 1 {
+			return ""
+		}
+		return forwardOnlySemanticObjectBase(typed.Args[0])
 	default:
-		return false
+		return ""
 	}
 }
 
