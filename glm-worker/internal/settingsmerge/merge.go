@@ -3,7 +3,6 @@ package settingsmerge
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -38,12 +37,12 @@ type fileRestore struct {
 }
 
 type preparedMerge struct {
-	target           map[string]any
-	targetMode       os.FileMode
-	fragment         map[string]any
-	override         claudeoverride.EnvOverride
-	previousOverride overrideState
-	previousManaged  managedState
+	target            map[string]any
+	targetMode        os.FileMode
+	fragment          map[string]any
+	override          claudeoverride.EnvOverride
+	previousOverride  overrideState
+	previousManaged   managedState
 	overrideStatePath string
 	managedStatePath  string
 	inputs            map[string]fileRestore
