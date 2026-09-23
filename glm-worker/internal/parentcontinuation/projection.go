@@ -124,6 +124,10 @@ func buildCurrentRequest(repoRoot string, st *state.StateStore, plan state.Paren
 		if err != nil {
 			return Request{}, err
 		}
+		project.Completion, err = continuationCompletionView(repoRoot, st, loaded)
+		if err != nil {
+			return Request{}, err
+		}
 		continuation := repositoryproject.DeriveContinuation(
 			project,
 			continuationLifecycle(st, plan, planErr == nil),
