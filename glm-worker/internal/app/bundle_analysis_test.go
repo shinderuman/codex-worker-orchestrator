@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -1114,7 +1115,7 @@ func analysisWaitReturnLine(t *testing.T, timestamp time.Time, callID string) st
 func writeAnalysisRun(t *testing.T, st *state.StateStore, runID, form, status string, startedAt, completedAt time.Time, snapshot state.GitSnapshot) {
 	t.Helper()
 	completed := completedAt.UTC()
-	record := qualityGateRunRecord{
+	record := qualitygate.RunRecord{
 		ValidationRunID: runID,
 		Form:            form,
 		Repository:      "/repo",
@@ -1130,7 +1131,7 @@ func writeAnalysisRun(t *testing.T, st *state.StateStore, runID, form, status st
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeBundleFile(t, st.Path(filepath.Join(qualityGateRunDirectory, runID, qualityGateRunFile)), string(encoded)+"\n")
+	writeBundleFile(t, st.Path(filepath.Join(qualitygate.RunDirectory, runID, qualitygate.RunFile)), string(encoded)+"\n")
 }
 
 func readAnalysisGuardedFiles(t *testing.T, st *state.StateStore, taskID string) []byte {
