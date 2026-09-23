@@ -30,13 +30,11 @@ func TestForwardOnlySemanticRejectsCurrentToOldNormalizationAcrossNeutralHelper(
 
 type item struct { Type, Name, Input string }
 func consume(v item) item {
-	if v.Type == "custom_tool_call" {
-		if v.Name != "exec" || v.Input != "tools.write_stdin" { return v }
-		return reshape(v)
-	}
+	if v.Type == "custom_tool_call" { return reshape(v) }
 	return v
 }
 func reshape(v item) item {
+	if v.Input != "tools.write_stdin" { return v }
 	v.Type = "function_call"
 	v.Name = "wait"
 	return v
@@ -54,13 +52,11 @@ type item struct { Type, Name, Input string }
 type normalizer struct{}
 func consume(v item) item {
 	n := normalizer{}
-	if v.Type == "custom_tool_call" {
-		if v.Name != "exec" || v.Input != "tools.write_stdin" { return v }
-		return n.reshape(v)
-	}
+	if v.Type == "custom_tool_call" { return n.reshape(v) }
 	return v
 }
 func (normalizer) reshape(v item) item {
+	if v.Input != "tools.write_stdin" { return v }
 	v.Type = "function_call"
 	v.Name = "wait"
 	return v
@@ -73,15 +69,18 @@ func TestForwardOnlySemanticRejectsMixedTransportSuccessContract(t *testing.T) {
 	root := fixtureRoot(t)
 	path := "glm-worker/internal/example/transport_test.go"
 	writeFixture(t, root, "glm-worker/internal/example/transport.go", `package example
-
 type item struct { Type, Name, Input string }
-func accepted(item) bool { return true }
+type result struct { Count int }
+func observe([]item) result { return result{} }
 `)
 	writeFixture(t, root, path, `package example
 import "testing"
 func TestBothRepresentationsAccepted(t *testing.T) {
-	if !accepted(item{Type: "function_call", Name: "wait"}) { t.Fatal("legacy rejected") }
-	if !accepted(item{Type: "custom_tool_call", Name: "exec", Input: "tools.write_stdin"}) { t.Fatal("current rejected") }
+	got := observe([]item{
+		{Type: "function_call", Name: "wait"},
+		{Type: "custom_tool_call", Name: "exec", Input: "tools.write_stdin"},
+	})
+	if got.Count != 2 { t.Fatal(got.Count) }
 }
 `)
 	requireRulePath(t, ruleViolations(t, root), forwardOnlyCompatibilityRule, path)
@@ -106,15 +105,18 @@ esac
 func TestForwardOnlySemanticAllowsCurrentAcceptedLegacyIgnoredInSameTest(t *testing.T) {
 	root := fixtureRoot(t)
 	writeFixture(t, root, "glm-worker/internal/example/transport.go", `package example
-
 type item struct { Type, Name, Input string }
-func accepted(v item) bool { return v.Type == "custom_tool_call" }
+type result struct { Count int }
+func observe([]item) result { return result{} }
 `)
 	writeFixture(t, root, "glm-worker/internal/example/transport_test.go", `package example
 import "testing"
 func TestCurrentAcceptedLegacyIgnored(t *testing.T) {
-	if !accepted(item{Type: "custom_tool_call", Name: "exec", Input: "tools.write_stdin"}) { t.Fatal("current rejected") }
-	if accepted(item{Type: "function_call", Name: "wait"}) { t.Fatal("legacy accepted") }
+	got := observe([]item{
+		{Type: "function_call", Name: "wait"},
+		{Type: "custom_tool_call", Name: "exec", Input: "tools.write_stdin"},
+	})
+	if got.Count != 1 { t.Fatal(got.Count) }
 }
 `)
 	assertNoForwardOnlyViolations(t, ruleViolations(t, root))
@@ -179,7 +181,7 @@ func TestForwardOnlySemanticAllowsUnrelatedRewriteAssignments(t *testing.T) {
 
 type item struct { Type, Name, Input string }
 func consume(current, other item) item {
-	if current.Type == "custom_tool_call" && current.Name == "exec" && current.Input == "tools.write_stdin" {
+	if current.Type == "custom_tool_call" && current.Input == "tools.write_stdin" {
 		current.Type = "function_call"
 		other.Name = "wait"
 	}
