@@ -6,7 +6,6 @@ import (
 	"io"
 	"time"
 
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/app"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repolock"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
@@ -48,9 +47,12 @@ func executeImprovementDisposition(cfg config.AppConfig, args []string, stdout i
 	}
 	defer func() { _ = lock.Close() }()
 
-	signal, err := app.CurrentImprovementSignal(st)
+	signal, err := st.PendingImprovementSignal()
 	if err != nil {
 		return err
+	}
+	if signal != nil && signal.SourceCallID == "" {
+		signal = nil
 	}
 	if signal == nil {
 		return writeExistingImprovementDisposition(st, kind, sourceCallID, disposition, targetTask, stdout)
