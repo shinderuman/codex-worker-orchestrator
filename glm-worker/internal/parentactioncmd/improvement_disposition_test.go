@@ -2,6 +2,8 @@ package parentactioncmd
 
 import (
 	"bytes"
+	"encoding/json"
+	"os"
 	"testing"
 	"time"
 
@@ -111,15 +113,31 @@ func TestImprovementSignalEmptySourceKeepsRecordedReplayPath(t *testing.T) {
 		t.Fatalf("seed durable disposition: created=%t err=%v", created, err)
 	}
 
+	taskID := st.ReadOr("task.id", "")
 	now := time.Now().UTC().Add(time.Second)
-	st.RecordModelCallLog(state.ModelCallLog{
-		TaskID:             st.ReadOr("task.id", ""),
+	raw, err := json.Marshal(state.ModelCallLog{
+		Version:            state.ModelCallLogVersion,
+		TaskID:             taskID,
 		CallType:           state.CallTypeTask,
 		StartedAt:          now,
 		CompletedAt:        now,
 		Outcome:            "invalid_packet",
 		PacketRejectReason: "schema-invalid",
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := os.OpenFile(st.ModelCallLogPath(taskID), os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := file.Write(append(raw, '\n')); err != nil {
+		_ = file.Close()
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
 
 	if err := runImprovementDispositionTest(cfg, signal.SourceCallID, state.ImprovementSignalDispositionReject, ""); err != nil {
 		t.Fatalf("empty-source pending signal blocked idempotent replay: %v", err)
