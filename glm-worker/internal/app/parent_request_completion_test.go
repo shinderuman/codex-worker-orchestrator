@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryproject"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryprojecttree"
 )
 
 const completedNonGoalTask = "IMPLEMENTATION_TASKS/active.md"
@@ -15,7 +16,7 @@ func TestParentRequestCompletionProjectionRequiresImmediateNextTask(t *testing.T
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", projectContinuationPlan("active", []string{next}, nil, nil))
 	writeProjectContinuationTask(t, cfg, next)
 
-	projection, err := BuildParentRequestCompletionProjection(cfg, completedNonGoalTask)
+	projection, err := repositoryprojecttree.BuildParentRequestCompletionProjection(cfg.RepoRoot, completedNonGoalTask)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,7 +35,7 @@ func TestParentRequestCompletionProjectionAllowsBlockedStopWithoutCompletion(t *
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", projectContinuationPlan("active", nil, nil, []string{blocked}))
 	writeProjectContinuationTask(t, cfg, blocked)
 
-	projection, err := BuildParentRequestCompletionProjection(cfg, completedNonGoalTask)
+	projection, err := repositoryprojecttree.BuildParentRequestCompletionProjection(cfg.RepoRoot, completedNonGoalTask)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +51,7 @@ func TestParentRequestCompletionProjectionAdmitsCompletedGoalOnly(t *testing.T) 
 	cfg := newAppConfig(t)
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", projectContinuationPlan("completed", nil, nil, nil))
 
-	projection, err := BuildParentRequestCompletionProjection(cfg, completedNonGoalTask)
+	projection, err := repositoryprojecttree.BuildParentRequestCompletionProjection(cfg.RepoRoot, completedNonGoalTask)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +68,7 @@ func TestParentRequestCompletionProjectionAdmitsNonGoalPromotedActiveWithoutStar
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", nonGoalProjectContinuationPlan([]string{promoted}, nil, nil))
 	writeProjectContinuationTask(t, cfg, promoted)
 
-	projection, err := BuildParentRequestCompletionProjection(cfg, completedNonGoalTask)
+	projection, err := repositoryprojecttree.BuildParentRequestCompletionProjection(cfg.RepoRoot, completedNonGoalTask)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +87,7 @@ func TestParentRequestCompletionProjectionAdmitsNonGoalBlockedOnlyCompletion(t *
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", nonGoalProjectContinuationPlan(nil, nil, []string{blocked}))
 	writeProjectContinuationTask(t, cfg, blocked)
 
-	projection, err := BuildParentRequestCompletionProjection(cfg, completedNonGoalTask)
+	projection, err := repositoryprojecttree.BuildParentRequestCompletionProjection(cfg.RepoRoot, completedNonGoalTask)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +104,7 @@ func TestParentRequestCompletionProjectionAdmitsNonGoalExhaustedSchedule(t *test
 	cfg := newAppConfig(t)
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", nonGoalProjectContinuationPlan(nil, nil, nil))
 
-	projection, err := BuildParentRequestCompletionProjection(cfg, completedNonGoalTask)
+	projection, err := repositoryprojecttree.BuildParentRequestCompletionProjection(cfg.RepoRoot, completedNonGoalTask)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +149,7 @@ func TestParentRequestCompletionProjectionDeniesNonGoalPreSyncSchedule(t *testin
 				writeProjectContinuationTask(t, cfg, path)
 			}
 
-			projection, err := BuildParentRequestCompletionProjection(cfg, completedNonGoalTask)
+			projection, err := repositoryprojecttree.BuildParentRequestCompletionProjection(cfg.RepoRoot, completedNonGoalTask)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -169,7 +170,7 @@ func TestParentRequestCompletionProjectionRejectsNonGoalPromotionGap(t *testing.
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", nonGoalProjectContinuationPlan(nil, []string{next}, nil))
 	writeProjectContinuationTask(t, cfg, next)
 
-	_, err := BuildParentRequestCompletionProjection(cfg, completedNonGoalTask)
+	_, err := repositoryprojecttree.BuildParentRequestCompletionProjection(cfg.RepoRoot, completedNonGoalTask)
 	if err == nil || !strings.Contains(err.Error(), "ACTIVE昇格済み") {
 		t.Fatalf("err = %v", err)
 	}
@@ -181,7 +182,7 @@ func TestParentRequestCompletionProjectionRejectsCompletedGoalWithRemainingSched
 	writeProjectStateRepoFile(t, cfg.RepoRoot, "IMPLEMENTATION_PLAN.local.md", projectContinuationPlan("completed", []string{active}, nil, nil))
 	writeProjectContinuationTask(t, cfg, active)
 
-	_, err := BuildParentRequestCompletionProjection(cfg, completedNonGoalTask)
+	_, err := repositoryprojecttree.BuildParentRequestCompletionProjection(cfg.RepoRoot, completedNonGoalTask)
 	if err == nil || !strings.Contains(err.Error(), "空にする必要があります") {
 		t.Fatalf("err = %v", err)
 	}
