@@ -2,54 +2,40 @@ package workflow
 
 import (
 	"fmt"
-	"strings"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/executionunit"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-type executionUnitDecision struct {
-	Decision      string
-	ExecutionUnit string
-	Milestones    []ExecutionMilestoneDefinition
-}
-
-const (
-	executionUnitSingle     = "single"
-	executionUnitMilestones = "milestones"
-
-	executionUnitPrefix  = "EXECUTION_UNIT: "
-	milestonesJSONPrefix = "MILESTONES_JSON: "
-	decisionMarker       = "DECISION:"
-)
-
 func (w *Workflow) ExecuteDecisionWithExecutionUnitPayload(payload string) error {
-	if !strings.HasPrefix(payload, executionUnitPrefix) {
+	if !executionunit.IsPayload(payload) {
 		return w.ExecuteDecisionWithExecutionMilestones(payload)
 	}
 
-	input, active, err := w.validateDecisionExecutionUnitPayload(payload)
+	input, active, err := executionunit.Preflight(w.config, w.state, payload)
 	if err != nil {
 		return err
 	}
 
 	switch input.ExecutionUnit {
-	case executionUnitSingle:
+	case executionunit.ExecutionUnitSingle:
 		return w.ExecuteDecision(input.Decision)
-	case executionUnitMilestones:
+	case executionunit.ExecutionUnitMilestones:
 		return w.executeMilestoneExecutionUnitDecision(input, active)
 	default:
 		return fmt.Errorf("unsupported execution-unit disposition %q", input.ExecutionUnit)
 	}
 }
 
-func (w *Workflow) executeMilestoneExecutionUnitDecision(input executionUnitDecision, active bool) error {
-	if len(input.Milestones) > 0 {
+func (w *Workflow) executeMilestoneExecutionUnitDecision(input executionunit.Decision, active bool) error {
+	definitions := workflowMilestoneDefinitions(input.Milestones)
+	if len(definitions) > 0 {
 		activating := !active
-		revision, err := ReviseExecutionMilestones(w.config, w.state, input.Milestones, w.now().UTC())
+		revision, err := ReviseExecutionMilestones(w.config, w.state, definitions, w.now().UTC())
 		if err != nil {
 			return err
 		}
-		if activating && input.Milestones[revision.CurrentIndex].FreshWorker {
+		if activating && definitions[revision.CurrentIndex].FreshWorker {
 			if err := w.state.InvalidateSession(state.WorkerRole); err != nil {
 				return err
 			}
@@ -62,53 +48,15 @@ func (w *Workflow) executeMilestoneExecutionUnitDecision(input executionUnitDeci
 	return w.ExecuteDecisionWithExecutionMilestones(input.Decision)
 }
 
-func parseExecutionUnitDecision(payload string) (executionUnitDecision, error) {
-	parts := strings.SplitN(payload, "\n", 4)
-	if len(parts) != 4 || !strings.HasPrefix(parts[0], executionUnitPrefix) ||
-		!strings.HasPrefix(parts[1], milestonesJSONPrefix) || parts[2] != decisionMarker {
-		return executionUnitDecision{}, fmt.Errorf("decision payload must use the machine-owned execution-unit template")
-	}
-
-	input := executionUnitDecision{
-		ExecutionUnit: strings.TrimSpace(strings.TrimPrefix(parts[0], executionUnitPrefix)),
-		Decision:      strings.TrimSpace(parts[3]),
-	}
-	if input.Decision == "" {
-		return executionUnitDecision{}, fmt.Errorf("decision payload is empty")
-	}
-
-	milestones, err := parseExecutionUnitMilestones(parts[1])
-	if err != nil {
-		return executionUnitDecision{}, err
-	}
-	input.Milestones = milestones
-	if err := validateExecutionUnitDecision(input); err != nil {
-		return executionUnitDecision{}, err
-	}
-	return input, nil
-}
-
-func parseExecutionUnitMilestones(line string) ([]ExecutionMilestoneDefinition, error) {
-	var input executionMilestoneInput
-	payload := strings.TrimSpace(strings.TrimPrefix(line, milestonesJSONPrefix))
-	if err := decodeExecutionMilestoneJSON(payload, &input); err != nil {
-		return nil, err
-	}
-	return input.Milestones, nil
-}
-
-func validateExecutionUnitDecision(input executionUnitDecision) error {
-	switch input.ExecutionUnit {
-	case executionUnitSingle:
-		if len(input.Milestones) != 0 {
-			return fmt.Errorf("execution-unit single cannot include milestone definitions")
+func workflowMilestoneDefinitions(definitions []executionunit.MilestoneDefinition) []ExecutionMilestoneDefinition {
+	result := make([]ExecutionMilestoneDefinition, len(definitions))
+	for index, definition := range definitions {
+		result[index] = ExecutionMilestoneDefinition{
+			ID:          definition.ID,
+			Scope:       definition.Scope,
+			Acceptance:  definition.Acceptance,
+			FreshWorker: definition.FreshWorker,
 		}
-	case executionUnitMilestones:
-		if len(input.Milestones) > 0 {
-			return validateExecutionMilestoneDefinitions(input.Milestones)
-		}
-	default:
-		return fmt.Errorf("execution unit must be %q or %q", executionUnitSingle, executionUnitMilestones)
 	}
-	return nil
+	return result
 }
