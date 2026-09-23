@@ -63,6 +63,9 @@ func (w *Workflow) loadReviewedBlobRounds() ([]reviewBlobRound, error) {
 		if err := json.Unmarshal([]byte(line), &round); err != nil {
 			return nil, fmt.Errorf("reviewed blob ledgerを読めません: %w", err)
 		}
+		if round.Version != reviewedBlobsVersion {
+			continue
+		}
 		rounds = append(rounds, round)
 	}
 	return rounds, nil
@@ -79,6 +82,9 @@ func (w *Workflow) promoteLastReviewBlobs(nextReviewNumber int) error {
 	var previous reviewBlobRound
 	if err := json.Unmarshal(raw, &previous); err != nil {
 		return fmt.Errorf("前review roundのblob記録を読めません: %w", err)
+	}
+	if previous.Version != reviewedBlobsVersion {
+		return nil
 	}
 	if len(previous.Files) == 0 || previous.ReviewNumber >= nextReviewNumber {
 		return nil
