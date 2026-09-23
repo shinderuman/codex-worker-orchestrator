@@ -29,7 +29,7 @@ func TestParentContinuationFatalActiveWithoutActionIsInconsistent(t *testing.T) 
 		RequiredAction: &none,
 		AllowedActions: []string{},
 		ParentRequest: &ParentRequestCompletionProjection{
-			Continuation: ProjectContinuation{Continuation: repositoryproject.Continuation{State: projectContinuationContinueNow}},
+			Continuation: projectContinuationProjection{Continuation: repositoryproject.Continuation{State: repositoryproject.ContinuationContinueNow}},
 		},
 	}
 
@@ -68,7 +68,7 @@ func TestParentContinuationHealthyActiveWithoutActionRemainsConsistent(t *testin
 		RequiredAction: &none,
 		AllowedActions: []string{},
 		ParentRequest: &ParentRequestCompletionProjection{
-			Continuation: ProjectContinuation{Continuation: repositoryproject.Continuation{State: projectContinuationContinueNow}},
+			Continuation: projectContinuationProjection{Continuation: repositoryproject.Continuation{State: repositoryproject.ContinuationContinueNow}},
 		},
 	}
 

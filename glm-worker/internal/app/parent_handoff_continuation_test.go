@@ -9,6 +9,7 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryproject"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -54,14 +55,14 @@ func TestParentHandoffCarriesPostLocalContinuation(t *testing.T) {
 	}
 	continuation := output.ParentRequest.Continuation
 	if output.ParentRequest.CompletionAdmitted || output.ParentRequest.StopAdmitted ||
-		continuation.State != projectContinuationContinueNow || continuation.Task != next ||
-		continuation.RequiredAction != projectContinuationActionStart {
+		continuation.State != repositoryproject.ContinuationContinueNow || continuation.Task != next ||
+		continuation.RequiredAction != repositoryproject.ActionStart {
 		t.Fatalf("parent request = %#v", output.ParentRequest)
 	}
 
 	recovery := projectParentHandoffRecovery(output)
 	if recovery.ParentRequest == nil || recovery.ParentRequest.Continuation.Task != next ||
-		recovery.ParentRequest.Continuation.RequiredAction != projectContinuationActionStart {
+		recovery.ParentRequest.Continuation.RequiredAction != repositoryproject.ActionStart {
 		t.Fatalf("recovery parent request = %#v", recovery.ParentRequest)
 	}
 	var recoveryOutput bytes.Buffer
@@ -92,10 +93,10 @@ func TestParentHandoffAdmitsNonGoalPostCompletionStopWithoutStart(t *testing.T) 
 		t.Fatalf("handoff = %#v", output)
 	}
 	if !output.ParentRequest.CompletionAdmitted || !output.ParentRequest.StopAdmitted ||
-		output.ParentRequest.Continuation.State != projectContinuationContinueNow ||
+		output.ParentRequest.Continuation.State != repositoryproject.ContinuationContinueNow ||
 		output.ParentRequest.Continuation.Task != promoted ||
-		output.ParentRequest.Continuation.RequiredAction != projectContinuationActionStart ||
-		output.ParentRequest.Continuation.Reason != projectContinuationReasonPostCompletionActive {
+		output.ParentRequest.Continuation.RequiredAction != repositoryproject.ActionStart ||
+		output.ParentRequest.Continuation.Reason != repositoryproject.ReasonPostCompletionActive {
 		t.Fatalf("parent request = %#v", output.ParentRequest)
 	}
 }
@@ -119,8 +120,8 @@ func TestParentHandoffDeniesNonGoalPreSyncCompletionStop(t *testing.T) {
 		t.Fatalf("handoff = %#v", output)
 	}
 	if output.ParentRequest.CompletionAdmitted || output.ParentRequest.StopAdmitted ||
-		output.ParentRequest.Continuation.State != projectContinuationUnknown ||
-		output.ParentRequest.Continuation.Reason != projectContinuationReasonContinuationScopeUnbound ||
+		output.ParentRequest.Continuation.State != repositoryproject.ContinuationUnknown ||
+		output.ParentRequest.Continuation.Reason != repositoryproject.ReasonContinuationScopeUnbound ||
 		output.ParentRequest.Continuation.Task != "" ||
 		output.ParentRequest.Continuation.RequiredAction != "" {
 		t.Fatalf("parent request = %#v", output.ParentRequest)
@@ -139,7 +140,7 @@ func TestParentHandoffCarriesBlockedOnlyStop(t *testing.T) {
 
 	output := buildParentHandoff(st)
 	if !output.Consistent || output.ParentRequest == nil || output.ParentRequest.CompletionAdmitted || !output.ParentRequest.StopAdmitted ||
-		output.ParentRequest.Continuation.State != projectContinuationBlocked || output.ParentRequest.Continuation.Task != blocked {
+		output.ParentRequest.Continuation.State != repositoryproject.ContinuationBlocked || output.ParentRequest.Continuation.Task != blocked {
 		t.Fatalf("handoff parent request = %#v consistent=%v", output.ParentRequest, output.Consistent)
 	}
 }
@@ -165,7 +166,7 @@ func TestParentHandoffCarriesRateLimitStopFromCanonicalLifecycle(t *testing.T) {
 		t.Fatalf("handoff = %#v", output)
 	}
 	continuation := output.ParentRequest.Continuation
-	if continuation.State != projectContinuationBlocked || continuation.Reason != string(state.TaskStatusRateLimited) || continuation.RequiredAction == "" {
+	if continuation.State != repositoryproject.ContinuationBlocked || continuation.Reason != string(state.TaskStatusRateLimited) || continuation.RequiredAction == "" {
 		t.Fatalf("rate-limit continuation = %#v", continuation)
 	}
 }

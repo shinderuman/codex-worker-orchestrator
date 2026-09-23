@@ -3,6 +3,8 @@ package app
 import (
 	"strings"
 	"testing"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryproject"
 )
 
 const completedNonGoalTask = "IMPLEMENTATION_TASKS/active.md"
@@ -18,10 +20,10 @@ func TestParentRequestCompletionProjectionRequiresImmediateNextTask(t *testing.T
 		t.Fatal(err)
 	}
 	if projection.CompletionAdmitted || projection.StopAdmitted ||
-		projection.Continuation.State != projectContinuationContinueNow ||
+		projection.Continuation.State != repositoryproject.ContinuationContinueNow ||
 		projection.Continuation.Task != next ||
-		projection.Continuation.RequiredAction != projectContinuationActionStart ||
-		projection.Continuation.Reason != projectContinuationReasonPostCompletionActive {
+		projection.Continuation.RequiredAction != repositoryproject.ActionStart ||
+		projection.Continuation.Reason != repositoryproject.ReasonPostCompletionActive {
 		t.Fatalf("projection = %#v", projection)
 	}
 }
@@ -37,7 +39,7 @@ func TestParentRequestCompletionProjectionAllowsBlockedStopWithoutCompletion(t *
 		t.Fatal(err)
 	}
 	if projection.CompletionAdmitted || !projection.StopAdmitted ||
-		projection.Continuation.State != projectContinuationBlocked ||
+		projection.Continuation.State != repositoryproject.ContinuationBlocked ||
 		projection.Continuation.Task != blocked || projection.Continuation.Blocker == nil ||
 		projection.Continuation.Blocker.Task != blocked {
 		t.Fatalf("projection = %#v", projection)
@@ -53,8 +55,8 @@ func TestParentRequestCompletionProjectionAdmitsCompletedGoalOnly(t *testing.T) 
 		t.Fatal(err)
 	}
 	if !projection.CompletionAdmitted || !projection.StopAdmitted ||
-		projection.Continuation.State != projectContinuationTerminal ||
-		projection.Continuation.Reason != projectContinuationReasonGoalCompleted {
+		projection.Continuation.State != repositoryproject.ContinuationTerminal ||
+		projection.Continuation.Reason != repositoryproject.ReasonGoalCompleted {
 		t.Fatalf("projection = %#v", projection)
 	}
 }
@@ -70,10 +72,10 @@ func TestParentRequestCompletionProjectionAdmitsNonGoalPromotedActiveWithoutStar
 		t.Fatal(err)
 	}
 	if !projection.CompletionAdmitted || !projection.StopAdmitted ||
-		projection.Continuation.State != projectContinuationContinueNow ||
+		projection.Continuation.State != repositoryproject.ContinuationContinueNow ||
 		projection.Continuation.Task != promoted ||
-		projection.Continuation.RequiredAction != projectContinuationActionStart ||
-		projection.Continuation.Reason != projectContinuationReasonPostCompletionActive {
+		projection.Continuation.RequiredAction != repositoryproject.ActionStart ||
+		projection.Continuation.Reason != repositoryproject.ReasonPostCompletionActive {
 		t.Fatalf("projection = %#v", projection)
 	}
 }
@@ -89,7 +91,7 @@ func TestParentRequestCompletionProjectionAdmitsNonGoalBlockedOnlyCompletion(t *
 		t.Fatal(err)
 	}
 	if !projection.CompletionAdmitted || !projection.StopAdmitted ||
-		projection.Continuation.State != projectContinuationBlocked ||
+		projection.Continuation.State != repositoryproject.ContinuationBlocked ||
 		projection.Continuation.Task != blocked || projection.Continuation.Blocker == nil ||
 		projection.Continuation.Blocker.Task != blocked ||
 		projection.Continuation.RequiredAction != "" {
@@ -106,8 +108,8 @@ func TestParentRequestCompletionProjectionAdmitsNonGoalExhaustedSchedule(t *test
 		t.Fatal(err)
 	}
 	if !projection.CompletionAdmitted || !projection.StopAdmitted ||
-		projection.Continuation.State != projectContinuationTerminal ||
-		projection.Continuation.Reason != projectContinuationReasonScheduleExhausted {
+		projection.Continuation.State != repositoryproject.ContinuationTerminal ||
+		projection.Continuation.Reason != repositoryproject.ReasonScheduleExhausted {
 		t.Fatalf("projection = %#v", projection)
 	}
 }
@@ -151,8 +153,8 @@ func TestParentRequestCompletionProjectionDeniesNonGoalPreSyncSchedule(t *testin
 				t.Fatal(err)
 			}
 			if projection.CompletionAdmitted || projection.StopAdmitted ||
-				projection.Continuation.State != projectContinuationUnknown ||
-				projection.Continuation.Reason != projectContinuationReasonContinuationScopeUnbound ||
+				projection.Continuation.State != repositoryproject.ContinuationUnknown ||
+				projection.Continuation.Reason != repositoryproject.ReasonContinuationScopeUnbound ||
 				projection.Continuation.Task != "" ||
 				projection.Continuation.RequiredAction != "" {
 				t.Fatalf("projection = %#v", projection)

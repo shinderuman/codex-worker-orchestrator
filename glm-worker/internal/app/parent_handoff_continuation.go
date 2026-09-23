@@ -48,7 +48,7 @@ func fatalActiveContinuationWithoutAction(output *parentHandoffOutput) bool {
 		output.TaskStatus != nil && *output.TaskStatus == string(state.TaskStatusActive) &&
 		output.RequiredAction != nil && *output.RequiredAction == string(state.ParentActionNone) &&
 		len(output.AllowedActions) == 0 &&
-		output.ParentRequest != nil && output.ParentRequest.Continuation.State == projectContinuationContinueNow
+		output.ParentRequest != nil && output.ParentRequest.Continuation.State == repositoryproject.ContinuationContinueNow
 }
 
 func latestParentMaterialOutcome(st *state.StateStore) string {

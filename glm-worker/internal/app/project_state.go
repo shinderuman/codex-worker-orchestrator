@@ -2,12 +2,12 @@ package app
 
 import (
 	"fmt"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 	"io"
 	"os/exec"
 	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryproject"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryprojecttree"
@@ -16,15 +16,15 @@ import (
 )
 
 type projectStateOutput struct {
-	Version      int                           `json:"version"`
-	PlanPresent  bool                          `json:"plan_present"`
-	Goal         *projectStateGoal             `json:"goal,omitempty"`
-	Schedule     *projectStateSchedule         `json:"schedule,omitempty"`
-	Dependencies []projectStateDependency      `json:"dependencies"`
-	NextRunnable *string                       `json:"next_runnable"`
-	Blockers     []projectStateBlocker         `json:"blockers"`
-	Completion   *projectStateCompletion       `json:"completion,omitempty"`
-	Continuation projectContinuationObligation `json:"continuation"`
+	Version      int                            `json:"version"`
+	PlanPresent  bool                           `json:"plan_present"`
+	Goal         *projectStateGoal              `json:"goal,omitempty"`
+	Schedule     *projectStateSchedule          `json:"schedule,omitempty"`
+	Dependencies []repositoryproject.Dependency `json:"dependencies"`
+	NextRunnable *string                        `json:"next_runnable"`
+	Blockers     []repositoryproject.Blocker    `json:"blockers"`
+	Completion   *projectStateCompletion        `json:"completion,omitempty"`
+	Continuation projectContinuationProjection  `json:"continuation"`
 }
 
 type projectStateGoal struct {
@@ -37,9 +37,6 @@ type projectStateSchedule struct {
 	Next    []string `json:"next"`
 	Blocked []string `json:"blocked"`
 }
-
-type projectStateDependency = repositoryproject.Dependency
-type projectStateBlocker = repositoryproject.Blocker
 
 type projectStateCompletion struct {
 	Ready          bool                      `json:"ready"`
@@ -71,9 +68,9 @@ func executeStatelessProjection(cmd Command, cfg config.AppConfig, stdout io.Wri
 func buildProjectState(cfg config.AppConfig, st *state.StateStore) (projectStateOutput, error) {
 	output := projectStateOutput{
 		Version:      projectStateVersion,
-		Dependencies: []projectStateDependency{},
-		Blockers:     []projectStateBlocker{},
-		Continuation: unknownProjectContinuation(projectContinuationReasonPlanAbsent),
+		Dependencies: []repositoryproject.Dependency{},
+		Blockers:     []repositoryproject.Blocker{},
+		Continuation: unknownProjectContinuation(repositoryproject.ReasonPlanAbsent),
 	}
 	loaded, err := repositoryprojecttree.LoadProjectState(cfg.RepoRoot)
 	if err != nil {

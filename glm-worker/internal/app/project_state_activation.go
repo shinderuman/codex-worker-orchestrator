@@ -6,6 +6,7 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryproject"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -19,8 +20,8 @@ func executeProjectStateInspection(cmd Command, cfg config.AppConfig, st *state.
 	}
 	return machinecli.WriteJSON(stdout, projectStateOutput{
 		Version:      projectStateVersion,
-		Dependencies: []projectStateDependency{},
-		Blockers:     []projectStateBlocker{},
-		Continuation: unknownProjectContinuation(projectContinuationReasonPlanAbsent),
+		Dependencies: []repositoryproject.Dependency{},
+		Blockers:     []repositoryproject.Blocker{},
+		Continuation: unknownProjectContinuation(repositoryproject.ReasonPlanAbsent),
 	})
 }

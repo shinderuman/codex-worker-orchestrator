@@ -7,19 +7,12 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-type ProjectContinuation = projectContinuationObligation
-
 type ParentRequestCompletionProjection struct {
 	CompletionAdmitted bool                              `json:"completion_admitted"`
 	StopAdmitted       bool                              `json:"stop_admitted"`
-	Continuation       ProjectContinuation               `json:"continuation"`
+	Continuation       projectContinuationProjection     `json:"continuation"`
 	TaskAttribution    repositoryproject.TaskAttribution `json:"task_attribution"`
 }
-
-const (
-	projectContinuationReasonPostCompletionActive = repositoryproject.ReasonPostCompletionActive
-	projectContinuationActionStart                = repositoryproject.ActionStart
-)
 
 func BuildCurrentParentRequestCompletionProjection(cfg config.AppConfig, st *state.StateStore) (ParentRequestCompletionProjection, error) {
 	status := st.TaskStatus()
@@ -72,7 +65,7 @@ func parentRequestProjectionFromPolicy(projection repositoryproject.ParentReques
 	}
 }
 
-func parentRequestProjection(continuation ProjectContinuation) ParentRequestCompletionProjection {
+func parentRequestProjection(continuation projectContinuationProjection) ParentRequestCompletionProjection {
 	policy := repositoryproject.ParentRequestProjection(
 		continuation.Continuation,
 		continuation.Reason != string(state.TaskStatusRateLimited),
