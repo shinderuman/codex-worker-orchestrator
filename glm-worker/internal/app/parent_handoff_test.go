@@ -12,6 +12,7 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/sessionrotation"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
@@ -377,7 +378,7 @@ func TestParentHandoffValidationReferencesMatchCurrentSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	matching := qualityGateRunRecord{
+	matching := qualitygate.RunRecord{
 		ValidationRunID: strings.Repeat("a", 32),
 		Form:            "go-test",
 		Repository:      cfg.RepoRoot,
@@ -386,7 +387,7 @@ func TestParentHandoffValidationReferencesMatchCurrentSnapshot(t *testing.T) {
 		IndexDigest:     snapshot.IndexDigest,
 		WorktreeDigest:  snapshot.WorktreeDigest,
 		StartedAt:       now,
-		Status:          qualityGateStatusPass,
+		Status:          qualitygate.StatusPass,
 		Log:             "/evidence/current/gate.log",
 	}
 	stale := matching
@@ -399,9 +400,9 @@ func TestParentHandoffValidationReferencesMatchCurrentSnapshot(t *testing.T) {
 	race.ValidationRunID = strings.Repeat("c", 32)
 	race.Form = "go-test-race"
 	race.StartedAt = now.Add(2 * time.Minute)
-	race.Status = qualityGateStatusRunning
+	race.Status = qualitygate.StatusRunning
 	race.Log = "/evidence/race/gate.log"
-	for _, record := range []qualityGateRunRecord{matching, stale, race} {
+	for _, record := range []qualitygate.RunRecord{matching, stale, race} {
 		if err := writeQualityGateRun(st, record); err != nil {
 			t.Fatal(err)
 		}
@@ -428,19 +429,19 @@ func TestParentHandoffRoutingEvidenceMatchesImplementationSnapshot(t *testing.T)
 	const routingEvidenceTaskID = "12345678-1111-2222-3333-444444444444"
 	cases := []struct {
 		name        string
-		mutate      func(record *qualityGateRunRecord)
+		mutate      func(record *qualitygate.RunRecord)
 		wantMatches bool
 		wantMatch   string
 	}{
 		{
 			name:        "exact snapshot match stays routing evidence",
-			mutate:      func(_ *qualityGateRunRecord) {},
+			mutate:      func(_ *qualitygate.RunRecord) {},
 			wantMatches: true,
 			wantMatch:   routingSnapshotMatchExact,
 		},
 		{
 			name: "parent metadata drift stays routing evidence",
-			mutate: func(record *qualityGateRunRecord) {
+			mutate: func(record *qualitygate.RunRecord) {
 				record.WorktreeDigest = "parent-metadata-drift"
 			},
 			wantMatches: true,
@@ -448,7 +449,7 @@ func TestParentHandoffRoutingEvidenceMatchesImplementationSnapshot(t *testing.T)
 		},
 		{
 			name: "legacy record without parent-excluded digest matches exact only",
-			mutate: func(record *qualityGateRunRecord) {
+			mutate: func(record *qualitygate.RunRecord) {
 				record.WorktreeDigestExcludingParent = ""
 			},
 			wantMatches: true,
@@ -456,7 +457,7 @@ func TestParentHandoffRoutingEvidenceMatchesImplementationSnapshot(t *testing.T)
 		},
 		{
 			name: "implementation drift drops routing evidence",
-			mutate: func(record *qualityGateRunRecord) {
+			mutate: func(record *qualitygate.RunRecord) {
 				record.WorktreeDigest = "parent-metadata-drift"
 				record.WorktreeDigestExcludingParent = "implementation-drift"
 			},
@@ -464,29 +465,29 @@ func TestParentHandoffRoutingEvidenceMatchesImplementationSnapshot(t *testing.T)
 		},
 		{
 			name: "head change drops routing evidence",
-			mutate: func(record *qualityGateRunRecord) {
+			mutate: func(record *qualitygate.RunRecord) {
 				record.Head = "other-head"
 			},
 			wantMatches: false,
 		},
 		{
 			name: "index change drops routing evidence",
-			mutate: func(record *qualityGateRunRecord) {
+			mutate: func(record *qualitygate.RunRecord) {
 				record.IndexDigest = "other-index"
 			},
 			wantMatches: false,
 		},
 		{
 			name: "task change drops routing evidence",
-			mutate: func(record *qualityGateRunRecord) {
+			mutate: func(record *qualitygate.RunRecord) {
 				record.TaskID = "12345678-9999-8888-7777-666666666666"
 			},
 			wantMatches: false,
 		},
 		{
 			name: "failed validation is not routing evidence",
-			mutate: func(record *qualityGateRunRecord) {
-				record.Status = qualityGateStatusFail
+			mutate: func(record *qualitygate.RunRecord) {
+				record.Status = qualitygate.StatusFail
 			},
 			wantMatches: false,
 		},
@@ -506,7 +507,7 @@ func TestParentHandoffRoutingEvidenceMatchesImplementationSnapshot(t *testing.T)
 			if err != nil {
 				t.Fatal(err)
 			}
-			record := qualityGateRunRecord{
+			record := qualitygate.RunRecord{
 				ValidationRunID:               strings.Repeat("a", 32),
 				Form:                          "go-test",
 				Repository:                    cfg.RepoRoot,
@@ -517,7 +518,7 @@ func TestParentHandoffRoutingEvidenceMatchesImplementationSnapshot(t *testing.T)
 				WorktreeDigestExcludingParent: snapshot.WorktreeDigestExcludingParent,
 				TaskID:                        routingEvidenceTaskID,
 				StartedAt:                     time.Now().UTC(),
-				Status:                        qualityGateStatusPass,
+				Status:                        qualitygate.StatusPass,
 			}
 			tc.mutate(&record)
 			if err := writeQualityGateRun(st, record); err != nil {
@@ -556,7 +557,7 @@ func TestParentHandoffRejectsRoutingEvidenceWithoutTaskID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	record := qualityGateRunRecord{
+	record := qualitygate.RunRecord{
 		ValidationRunID:               strings.Repeat("b", 32),
 		Form:                          "go-test",
 		Repository:                    cfg.RepoRoot,
@@ -566,7 +567,7 @@ func TestParentHandoffRejectsRoutingEvidenceWithoutTaskID(t *testing.T) {
 		WorktreeDigest:                snapshot.WorktreeDigest,
 		WorktreeDigestExcludingParent: snapshot.WorktreeDigestExcludingParent,
 		StartedAt:                     time.Now().UTC(),
-		Status:                        qualityGateStatusPass,
+		Status:                        qualitygate.StatusPass,
 	}
 	if err := writeQualityGateRun(st, record); err != nil {
 		t.Fatal(err)
