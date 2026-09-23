@@ -15,7 +15,7 @@ func TestQualityWiringRequiresReviewerGate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(violations) != 13 {
+	if len(violations) != 12 {
 		t.Fatalf("violations = %+v", violations)
 	}
 }
@@ -52,36 +52,33 @@ func TestQualityWiringPackageAllowsResponsibilitySplit(t *testing.T) {
 	}
 }
 
-func TestQualityWiringRejectsCheckBeforeFix(t *testing.T) {
+func TestQualityWiringAcceptsSingleFixAndValidationPass(t *testing.T) {
 	root := t.TempDir()
 	check := qualityWiringChecks()[0]
-	writeQualityFile(t, root, check.path, "package workflow\nfunc gate() { harnesslint.Check(root); harnesslint.Run(root, true); captureQualitySurfaceDigest(root) }\n")
+	writeQualityFile(t, root, check.path, "package workflow\nfunc gate() { harnesslint.Run(root, true); captureQualitySurfaceDigest(root) }\n")
 
 	violations, err := qualityWiringCheckViolations(root, map[string]bool{check.path: true}, check)
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertQualityWiringOrderViolation(t, violations)
+	if len(violations) != 0 {
+		t.Fatalf("single validation pass was rejected: %+v", violations)
+	}
 }
 
-func TestQualityWiringRejectsCommentedFixBeforeExecutableCheck(t *testing.T) {
+func TestQualityWiringRejectsDuplicateValidationPass(t *testing.T) {
 	root := t.TempDir()
 	check := qualityWiringChecks()[0]
-	writeQualityFile(t, root, check.path, "package workflow\nfunc gate() { /* harnesslint.Run(root, true) */ harnesslint.Check(root); harnesslint.Run(root, true); captureQualitySurfaceDigest(root) }\n")
+	writeQualityFile(t, root, check.path, "package workflow\nfunc gate() { harnesslint.Run(root, true); harnesslint.Check(root); captureQualitySurfaceDigest(root) }\n")
 
 	violations, err := qualityWiringCheckViolations(root, map[string]bool{check.path: true}, check)
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertQualityWiringOrderViolation(t, violations)
-}
-
-func assertQualityWiringOrderViolation(t *testing.T, violations []Violation) {
-	t.Helper()
 	for _, violation := range violations {
-		if strings.Contains(violation.Message, "wiring order is invalid") {
+		if strings.Contains(violation.Message, "forbidden quality-gate wiring is present") {
 			return
 		}
 	}
-	t.Fatalf("check-before-fix ordering was not rejected: %+v", violations)
+	t.Fatalf("duplicate validation pass was not rejected: %+v", violations)
 }
