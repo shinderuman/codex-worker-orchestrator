@@ -46,6 +46,20 @@ esac
 managed_hooks_path="$common_dir/codex-worker-orchestrator/hooks"
 managed_state="version=2 baseline=absent value=$managed_hooks_path"
 pending_state="version=2 baseline=absent pending=$managed_hooks_path"
+install_lock_dir="$common_dir/codex-worker-orchestrator/hooks-install.lock"
+mkdir -p "${install_lock_dir%/*}"
+if ! mkdir "$install_lock_dir" 2>/dev/null; then
+	printf 'git hook: another installer owns hook activation: %s\n' "$install_lock_dir" >&2
+	exit 1
+fi
+lock_owned=1
+release_install_lock() {
+	if [ "$lock_owned" -eq 1 ]; then
+		rmdir "$install_lock_dir" 2>/dev/null || true
+		lock_owned=0
+	fi
+}
+trap 'release_install_lock' EXIT HUP INT TERM
 
 state_path=$(git -C "$repo_root" rev-parse --git-path codex-worker-orchestrator/hooks-path.state)
 case "$state_path" in
@@ -83,6 +97,14 @@ else
 	fi
 fi
 
+initial_state_present=$state_present
+initial_state_value=
+if [ "$state_present" -eq 1 ]; then
+	initial_state_value=$(cat "$state_path")
+fi
+initial_hooks_path_present=$hooks_path_present
+initial_hooks_path=$hooks_path
+
 write_state() {
 	value=$1
 	state_dir=${state_path%/*}
@@ -110,25 +132,79 @@ managed_path_unclaimed() {
 staging_hooks_path=
 backup_hooks_path=
 cleanup_snapshot_work() {
-	if [ -e "$backup_hooks_path" ] || [ -L "$backup_hooks_path" ]; then
+	if [ -n "$backup_hooks_path" ] && { [ -e "$backup_hooks_path" ] || [ -L "$backup_hooks_path" ]; }; then
 		rm -rf "$managed_hooks_path"
 		if ! mv "$backup_hooks_path" "$managed_hooks_path"; then
 			printf 'git hook: failed to restore previous managed snapshot; backup retained at %s\n' "$backup_hooks_path" >&2
 			return 1
 		fi
 	fi
-	rm -rf "$staging_hooks_path"
+	if [ -n "$staging_hooks_path" ]; then
+		rm -rf "$staging_hooks_path"
+	fi
+}
+
+restore_install_baseline() {
+	if [ -n "$backup_hooks_path" ] && { [ -e "$backup_hooks_path" ] || [ -L "$backup_hooks_path" ]; }; then
+		rm -rf "$managed_hooks_path"
+		if ! mv "$backup_hooks_path" "$managed_hooks_path"; then
+			printf 'git hook: failed to restore previous managed snapshot; backup retained at %s\n' "$backup_hooks_path" >&2
+			return 1
+		fi
+	else
+		rm -rf "$managed_hooks_path"
+	fi
+	if [ -n "$staging_hooks_path" ]; then
+		rm -rf "$staging_hooks_path"
+	fi
+	staging_hooks_path=
+	backup_hooks_path=
+	if [ "$initial_hooks_path_present" -eq 1 ]; then
+		if ! git -C "$repo_root" config --local core.hooksPath "$initial_hooks_path"; then
+			printf '%s\n' 'git hook: failed to restore previous core.hooksPath' >&2
+			return 1
+		fi
+	else
+		git -C "$repo_root" config --local --unset-all core.hooksPath >/dev/null 2>&1 || true
+		if git -C "$repo_root" config --local --get-all core.hooksPath >/dev/null 2>&1; then
+			printf '%s\n' 'git hook: failed to restore absent core.hooksPath baseline' >&2
+			return 1
+		fi
+	fi
+	if [ "$initial_state_present" -eq 1 ]; then
+		if ! write_state "$initial_state_value"; then
+			printf '%s\n' 'git hook: failed to restore previous ownership state' >&2
+			return 1
+		fi
+	else
+		rm -f "$state_path"
+	fi
+	trap 'release_install_lock' EXIT HUP INT TERM
+	return 0
+}
+
+verify_or_rollback() {
+	expected_state=$1
+	if verify_managed_install "$expected_state"; then
+		return 0
+	fi
+	if ! restore_install_baseline; then
+		printf '%s\n' 'git hook: failed to restore install baseline after verification failure' >&2
+	fi
+	return 1
 }
 
 finalize_managed_hooks() {
 	rm -rf "$staging_hooks_path" "$backup_hooks_path"
-	trap - EXIT HUP INT TERM
+	staging_hooks_path=
+	backup_hooks_path=
+	trap 'release_install_lock' EXIT HUP INT TERM
 }
 
 install_managed_hooks() {
 	staging_hooks_path="$managed_hooks_path.stage.$$"
 	backup_hooks_path="$managed_hooks_path.backup.$$"
-	trap 'cleanup_snapshot_work' EXIT HUP INT TERM
+	trap 'cleanup_snapshot_work; release_install_lock' EXIT HUP INT TERM
 	rm -rf "$staging_hooks_path" "$backup_hooks_path"
 	mkdir -p "$staging_hooks_path"
 
@@ -173,30 +249,30 @@ verify_managed_install() {
 	expected_state=$1
 	if [ ! -f "$state_path" ] || [ -L "$state_path" ] || [ "$(cat "$state_path")" != "$expected_state" ]; then
 		printf '%s\n' 'git hook: managed ownership state postcondition failed' >&2
-		exit 1
+		return 1
 	fi
 	if ! current_hooks_path=$(git -C "$repo_root" config --local --get-all core.hooksPath); then
 		printf '%s\n' 'git hook: managed core.hooksPath postcondition is missing' >&2
-		exit 1
+		return 1
 	fi
 	if [ "$current_hooks_path" != "$managed_hooks_path" ]; then
 		printf 'git hook: managed core.hooksPath postcondition mismatch: %s\n' "$current_hooks_path" >&2
-		exit 1
+		return 1
 	fi
 	guard_path_file="$managed_hooks_path/glm-parent-action.path"
 	if [ ! -f "$guard_path_file" ] || [ -L "$guard_path_file" ] || [ "$(cat "$guard_path_file")" != "$glm_parent_action_path" ]; then
 		printf '%s\n' 'git hook: glm-parent-action path postcondition failed' >&2
-		exit 1
+		return 1
 	fi
 	for hook in $required_hooks; do
 		active_hook="$managed_hooks_path/$hook"
 		if [ ! -f "$active_hook" ] || [ -L "$active_hook" ] || [ ! -s "$active_hook" ] || [ ! -x "$active_hook" ]; then
 			printf 'git hook: managed snapshot postcondition failed: %s\n' "$active_hook" >&2
-			exit 1
+			return 1
 		fi
 		if ! git -C "$repo_root" show "HEAD:.githooks/$hook" | cmp -s - "$active_hook"; then
 			printf 'git hook: managed snapshot differs from committed source: .githooks/%s\n' "$hook" >&2
-			exit 1
+			return 1
 		fi
 	done
 }
@@ -228,7 +304,9 @@ if [ "$state_present" -eq 1 ]; then
 			exit 1
 		fi
 		install_managed_hooks
-		verify_managed_install "$managed_state"
+		if ! verify_or_rollback "$managed_state"; then
+			exit 1
+		fi
 		finalize_managed_hooks
 		printf '%s\n' 'git hook: refreshed installer-owned snapshot hooks'
 		exit 0
@@ -246,7 +324,9 @@ if [ "$state_present" -eq 1 ]; then
 			fi
 		fi
 		write_state "$managed_state"
-		verify_managed_install "$managed_state"
+		if ! verify_or_rollback "$managed_state"; then
+			exit 1
+		fi
 		finalize_managed_hooks
 		printf '%s\n' 'git hook: recovered interrupted installer-owned snapshot hooks activation'
 		exit 0
@@ -267,6 +347,8 @@ if ! git -C "$repo_root" config --local core.hooksPath "$managed_hooks_path"; th
 	exit 1
 fi
 write_state "$managed_state"
-verify_managed_install "$managed_state"
+if ! verify_or_rollback "$managed_state"; then
+	exit 1
+fi
 finalize_managed_hooks
 printf '%s\n' 'git hook: enabled installer-owned snapshot hooks'

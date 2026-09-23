@@ -776,10 +776,7 @@ func (p *Projector) degradeDuplicateParts() error {
 }
 
 func applyTotalBudget(output *Output) {
-	for outputSize(*output) > MaxOutputBytes {
-		if !stripBody(output) {
-			return
-		}
+	for outputSize(*output) > MaxOutputBytes && stripBody(output) {
 	}
 	output.Status = aggregateStatus(output.Parts)
 }

@@ -278,7 +278,7 @@ func TestPublicationSequenceFailsClosedWhenUpstreamIsUnconfigured(t *testing.T) 
 	}
 }
 
-func TestPublicationSequenceOffersTrackedHookModeRepair(t *testing.T) {
+func TestPublicationSequenceRejectsTrackedHookModeWithoutBinding(t *testing.T) {
 	cfg, st := newInstallActionRepo(t)
 	if err := st.SetTaskStatus(state.TaskStatusAwaitingParentCompletion); err != nil {
 		t.Fatal(err)
@@ -297,8 +297,11 @@ func TestPublicationSequenceOffersTrackedHookModeRepair(t *testing.T) {
 	if sequence.Stage != "blocked" || sequence.Failure == nil || sequence.Failure.Reason != "publication_guard_setup_invalid" {
 		t.Fatalf("tracked-mode sequence = %#v", sequence)
 	}
-	if sequence.NextAction == nil || sequence.NextAction.Stage != "repair-guard-setup" {
-		t.Fatalf("tracked-mode repair = %#v", sequence.NextAction)
+	if sequence.NextAction != nil {
+		t.Fatalf("tracked mode without executable binding returned repair action: %#v", sequence.NextAction)
+	}
+	if !strings.Contains(sequence.Failure.Detail, "glm-parent-action.path") {
+		t.Fatalf("tracked-mode failure detail = %q", sequence.Failure.Detail)
 	}
 }
 
@@ -352,6 +355,13 @@ func configureCompleteFixturePublicationGuards(t *testing.T, fixture *completeFi
 		if err := os.WriteFile(filepath.Join(hooksDir, name), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 			t.Fatal(err)
 		}
+	}
+	guardPath := filepath.Join(t.TempDir(), "glm-parent-action")
+	if err := os.WriteFile(guardPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(hooksDir, "glm-parent-action.path"), []byte(guardPath+"\n"), 0o600); err != nil {
+		t.Fatal(err)
 	}
 	runFinalizationGit(t, fixture.repo, "config", "core.hooksPath", ".githooks")
 	runFinalizationGit(t, fixture.repo, "add", ".githooks")
