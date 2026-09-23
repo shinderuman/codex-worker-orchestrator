@@ -176,6 +176,9 @@ func rateLimitedAutomationFixture(t *testing.T) (config.AppConfig, *state.StateS
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := st.StartNewTask(); err != nil {
+		t.Fatal(err)
+	}
 	if err := st.SetParentCodexIdentity(testParentThread, testParentThread, nil); err != nil {
 		t.Fatal(err)
 	}
