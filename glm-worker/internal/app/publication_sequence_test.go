@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentcontinuation"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
@@ -41,7 +42,7 @@ func TestParentHandoffIncludesPublicationSequenceSection(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	output := buildParentHandoff(st)
+	output := buildParentHandoffWithConfig(cfg, st)
 	if output.Version != parentHandoffVersion {
 		t.Fatalf("handoff version = %d", output.Version)
 	}
@@ -56,9 +57,13 @@ func TestParentHandoffIncludesPublicationSequenceSection(t *testing.T) {
 		t.Fatalf("publication section = %#v", output.Publication)
 	}
 
-	markHandoffInconsistent(&output, "probe")
-	if output.Publication != nil {
-		t.Fatalf("inconsistent handoff kept publication section: %#v", output.Publication)
+	detail := "probe"
+	inconsistent := buildParentHandoffFromContinuation(st, parentcontinuation.Projection{
+		Consistent:    false,
+		Inconsistency: &detail,
+	})
+	if inconsistent.Publication != nil {
+		t.Fatalf("inconsistent handoff kept publication section: %#v", inconsistent.Publication)
 	}
 }
 
