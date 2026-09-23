@@ -1,6 +1,7 @@
 package codexinstall
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -16,12 +17,14 @@ type configAssignment struct {
 }
 
 type configInstallPlan struct {
-	Path      string
-	Mode      os.FileMode
-	Next      []byte
-	Changed   bool
-	Record    *managedConfigRecord
-	Preserved bool
+	Path         string
+	Mode         os.FileMode
+	Before       []byte
+	BeforeExists bool
+	Next         []byte
+	Changed      bool
+	Record       *managedConfigRecord
+	Preserved    bool
 }
 
 const managedConfigKey = "background_terminal_max_timeout"
@@ -37,7 +40,7 @@ func buildConfigInstallPlan(repoRoot, codexDir string, state installState) (conf
 		return configInstallPlan{}, fmt.Errorf("managed Codex config: %w", err)
 	}
 	path := filepath.Join(codexDir, "config.toml")
-	data, mode, err := readOptionalFile(path)
+	data, mode, exists, err := readOptionalFileSnapshot(path)
 	if err != nil {
 		return configInstallPlan{}, err
 	}
@@ -46,7 +49,10 @@ func buildConfigInstallPlan(repoRoot, codexDir string, state installState) (conf
 		return configInstallPlan{}, fmt.Errorf("installed Codex config: %w", err)
 	}
 	previous, previouslyOwned := state.Config[managedConfigKey]
-	plan := configInstallPlan{Path: path, Mode: mode, Next: data}
+	plan := configInstallPlan{
+		Path: path, Mode: mode, Before: append([]byte(nil), data...), BeforeExists: exists,
+		Next: append([]byte(nil), data...),
+	}
 	if previouslyOwned {
 		return planPreviouslyOwnedConfig(plan, data, current, currentFound, managedAssignment, managedFound, previous)
 	}
@@ -96,36 +102,69 @@ func planUnownedConfig(plan configInstallPlan, data []byte, current configAssign
 	return plan, nil
 }
 
-func applyConfigInstallPlan(plan configInstallPlan, output func(string, ...any)) error {
+func applyConfigInstallPlan(plan configInstallPlan, recordMutation func(string) error, output func(string, ...any)) error {
 	if plan.Preserved {
 		output("preserved user-modified retired Codex config key: %s\n", managedConfigKey)
 	}
 	if !plan.Changed {
 		return nil
 	}
+	current, mode, exists, err := readOptionalFileSnapshot(plan.Path)
+	if err != nil {
+		return err
+	}
+	if exists != plan.BeforeExists || !bytes.Equal(current, plan.Before) || (exists && mode != plan.Mode) {
+		return fmt.Errorf("Codex config changed after preparation; refusing to overwrite: %s", plan.Path)
+	}
 	if err := writeAtomic(plan.Path, plan.Next, plan.Mode); err != nil {
 		return fmt.Errorf("write Codex config: %w", err)
+	}
+	if err := recordMutation(plan.Path); err != nil {
+		return err
 	}
 	output("updated: %s\n", plan.Path)
 	return nil
 }
 
+func validateConfigForStateCommit(plan configInstallPlan) error {
+	if plan.Record == nil {
+		return nil
+	}
+	data, _, err := readOptionalFile(plan.Path)
+	if err != nil {
+		return err
+	}
+	current, found, err := findTopLevelAssignment(data, managedConfigKey)
+	if err != nil {
+		return fmt.Errorf("installed Codex config changed before state commit: %w", err)
+	}
+	if !found || current.Value != plan.Record.Value || digestBytes([]byte(current.Line)) != plan.Record.LineSHA256 {
+		return fmt.Errorf("installed Codex config changed before state commit: %s", managedConfigKey)
+	}
+	return nil
+}
+
 func readOptionalFile(path string) ([]byte, os.FileMode, error) {
+	data, mode, _, err := readOptionalFileSnapshot(path)
+	return data, mode, err
+}
+
+func readOptionalFileSnapshot(path string) ([]byte, os.FileMode, bool, error) {
 	info, err := os.Lstat(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return nil, 0o644, nil
+		return nil, 0o644, false, nil
 	}
 	if err != nil {
-		return nil, 0, fmt.Errorf("stat Codex config: %w", err)
+		return nil, 0, false, fmt.Errorf("stat Codex config: %w", err)
 	}
 	if !info.Mode().IsRegular() {
-		return nil, 0, fmt.Errorf("codex config is not a regular file: %s", path)
+		return nil, 0, false, fmt.Errorf("codex config is not a regular file: %s", path)
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, 0, fmt.Errorf("read Codex config: %w", err)
+		return nil, 0, false, fmt.Errorf("read Codex config: %w", err)
 	}
-	return data, info.Mode().Perm(), nil
+	return data, info.Mode().Perm(), true, nil
 }
 
 func findTopLevelAssignment(data []byte, key string) (configAssignment, bool, error) {
