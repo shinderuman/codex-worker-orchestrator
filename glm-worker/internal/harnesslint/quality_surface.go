@@ -8,9 +8,10 @@ import (
 )
 
 type qualityWiringCheck struct {
-	path          string
-	tokens        []string
-	orderedTokens []string
+	path            string
+	tokens          []string
+	forbiddenTokens []string
+	orderedTokens   []string
 }
 
 func scanQualitySurface(root string, paths []string) ([]Violation, error) {
@@ -57,11 +58,9 @@ func qualityWiringChecks() []qualityWiringCheck {
 			path: "glm-worker/internal/workflow/quality_gate.go",
 			tokens: []string{
 				"harnesslint.Run(root, true)",
-				"harnesslint.Check(root)",
 				"captureQualitySurfaceDigest",
 			},
-			orderedTokens: []string{
-				"harnesslint.Run(root, true)",
+			forbiddenTokens: []string{
 				"harnesslint.Check(root)",
 			},
 		},
@@ -234,6 +233,15 @@ func qualityWiringCheckViolations(root string, present map[string]bool, check qu
 		violations = append(violations, Violation{
 			Rule: "quality-wiring", Path: check.path, Line: 1, Column: 1,
 			Message: "required quality-gate wiring is missing: " + token,
+		})
+	}
+	for _, token := range check.forbiddenTokens {
+		if !strings.Contains(text, token) {
+			continue
+		}
+		violations = append(violations, Violation{
+			Rule: "quality-wiring", Path: check.path, Line: 1, Column: 1,
+			Message: "forbidden quality-gate wiring is present: " + token,
 		})
 	}
 	orderViolations, err := qualityWiringOrderViolations(check, data)
