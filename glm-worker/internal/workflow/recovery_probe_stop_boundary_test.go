@@ -58,10 +58,10 @@ while :; do sleep 0.2; done
 	w.temp = t.TempDir()
 
 	checkpoint := state.ResumeCheckpoint{
-		Stage:                            state.ResumeStageWorker,
-		Phase:                            "worker-new",
-		Role:                             state.WorkerRole,
-		Model:                            "opus",
+		Stage:                             state.ResumeStageWorker,
+		Phase:                             "worker-new",
+		Role:                              state.WorkerRole,
+		Model:                             "opus",
 		ProviderUnavailableClassification: "http-503",
 	}
 	checkpoint.SetStopKind(state.ResumeStopProviderUnavailable)
