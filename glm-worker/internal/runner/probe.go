@@ -26,11 +26,12 @@ type ProbeInvalidResponseError struct {
 	Reason error
 }
 
+const (
+	ProbeSentinel = "GLM_WORKER_PROBE_OK"
+	ProbePrompt   = "Reply with exactly GLM_WORKER_PROBE_OK and nothing else."
+)
+
 var ErrProbeDeadlineExceeded = errors.New("probe recovery deadline exceeded")
-
-const ProbeSentinel = "GLM_WORKER_PROBE_OK"
-
-const ProbePrompt = "Reply with exactly GLM_WORKER_PROBE_OK and nothing else."
 
 func (r *ClaudeRunner) Probe(model string) (ProbeResult, error) {
 	return r.ProbeWithDeadline(model, time.Time{})
@@ -89,11 +90,8 @@ func (r *ClaudeRunner) ProbeWithDeadline(model string, deadline time.Time) (Prob
 }
 
 func (r *ClaudeRunner) runProbeCommand(command *exec.Cmd, deadline time.Time) error {
-	if r.stop != nil && r.stop.StopRequested() {
-		return &InterruptedCallError{}
-	}
-	if !deadline.IsZero() && !time.Now().Before(deadline) {
-		return ErrProbeDeadlineExceeded
+	if err := r.probeCommandPreflight(deadline); err != nil {
+		return err
 	}
 	if r.stop == nil && deadline.IsZero() {
 		return command.Run()
@@ -106,42 +104,72 @@ func (r *ClaudeRunner) runProbeCommand(command *exec.Cmd, deadline time.Time) er
 		waitDone <- command.Wait()
 	}()
 
-	var stopRequested <-chan struct{}
-	if r.stop != nil {
-		stopRequested = r.stop.Requested()
-	}
-	var deadlineReached <-chan time.Time
-	var timer *time.Timer
-	if !deadline.IsZero() {
-		timer = time.NewTimer(time.Until(deadline))
-		defer timer.Stop()
-		deadlineReached = timer.C
-	}
+	stopRequested := r.probeStopRequested()
+	deadlineReached, stopTimer := probeDeadlineChannel(deadline)
+	defer stopTimer()
 
 	select {
 	case err := <-waitDone:
 		return err
 	case <-stopRequested:
-		select {
-		case err := <-waitDone:
-			return err
-		default:
-		}
-		warning := terminateProcessGroup(command.Process.Pid, stopTermGrace)
-		<-waitDone
-		return &InterruptedCallError{CleanupWarning: warning}
+		return finishInterruptedProbeCommand(command, waitDone)
 	case <-deadlineReached:
-		select {
-		case err := <-waitDone:
-			return err
-		default:
-		}
-		warning := terminateProcessGroup(command.Process.Pid, stopTermGrace)
-		<-waitDone
-		if warning != "" {
-			return fmt.Errorf("%w: %s", ErrProbeDeadlineExceeded, warning)
-		}
+		return finishDeadlineProbeCommand(command, waitDone)
+	}
+}
+
+func (r *ClaudeRunner) probeCommandPreflight(deadline time.Time) error {
+	if r.stop != nil && r.stop.StopRequested() {
+		return &InterruptedCallError{}
+	}
+	if !deadline.IsZero() && !time.Now().Before(deadline) {
 		return ErrProbeDeadlineExceeded
+	}
+	return nil
+}
+
+func (r *ClaudeRunner) probeStopRequested() <-chan struct{} {
+	if r.stop == nil {
+		return nil
+	}
+	return r.stop.Requested()
+}
+
+func probeDeadlineChannel(deadline time.Time) (<-chan time.Time, func()) {
+	if deadline.IsZero() {
+		return nil, func() {}
+	}
+	timer := time.NewTimer(time.Until(deadline))
+	return timer.C, func() { timer.Stop() }
+}
+
+func finishInterruptedProbeCommand(command *exec.Cmd, waitDone <-chan error) error {
+	if err, completed := completedProbeCommand(waitDone); completed {
+		return err
+	}
+	warning := terminateProcessGroup(command.Process.Pid, stopTermGrace)
+	<-waitDone
+	return &InterruptedCallError{CleanupWarning: warning}
+}
+
+func finishDeadlineProbeCommand(command *exec.Cmd, waitDone <-chan error) error {
+	if err, completed := completedProbeCommand(waitDone); completed {
+		return err
+	}
+	warning := terminateProcessGroup(command.Process.Pid, stopTermGrace)
+	<-waitDone
+	if warning != "" {
+		return fmt.Errorf("%w: %s", ErrProbeDeadlineExceeded, warning)
+	}
+	return ErrProbeDeadlineExceeded
+}
+
+func completedProbeCommand(waitDone <-chan error) (error, bool) {
+	select {
+	case err := <-waitDone:
+		return err, true
+	default:
+		return nil, false
 	}
 }
 
