@@ -341,6 +341,7 @@ func forwardOnlySemanticDirectWaitMarkers(pkg *forwardOnlySemanticPackage, node 
 				if value, ok := forwardOnlySemanticStringValue(pkg, argument); ok && strings.Contains(value, forwardOnlyCurrentWaitInput) {
 					markers |= forwardOnlyCurrentWait
 				}
+			}
 		case *ast.CompositeLit:
 			markers |= forwardOnlySemanticCompositeWaitMarkers(pkg, typed)
 		}
