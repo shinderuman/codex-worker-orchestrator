@@ -12,8 +12,6 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## NEXT（優先順）
 
-- `IMPLEMENTATION_TASKS/codex-install-concurrent-edit-protection.md`
-- `IMPLEMENTATION_TASKS/claude-settings-concurrent-edit-protection.md`
 - `IMPLEMENTATION_TASKS/task-diff-preexisting-untracked-baseline.md`
 - `IMPLEMENTATION_TASKS/quality-surface-implicit-tool-config.md`
 - `IMPLEMENTATION_TASKS/recovery-probe-stop-boundary.md`
