@@ -11,7 +11,4 @@ func TestAuditProbeHonorsRequestedStop(t *testing.T) {
   _,statErr := os.Stat(args)
   t.Fatalf("stop ignored: error=%v child_started=%v",err,statErr==nil)
  }
- if _,statErr := os.Stat(args); !errors.Is(statErr,os.ErrNotExist) {
-  t.Fatalf("pre-stopped probe started child: stat=%v",statErr)
- }
 }

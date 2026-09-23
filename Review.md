@@ -40,10 +40,10 @@ review回数削減・impact test選択・compaction thresholdのproduction変更
 
 | 優先度 | 問題と発生条件 | 影響・根拠 |
 |---|---|---|
-| P1 | installer事前確認後に管理外config keyが編集される | prepare時に保存した全体をapplyが置換し、成功したまま編集を消す。[config.go](glm-worker/internal/codexinstall/config.go#L106)。今回の一時testで再現 |
-| P1 | 正規quality fixerがfileを変更する | worker-end snapshotはfix前、review-startはfix後のため、正常な変換でreviewerを呼ばず親review待ちへ停止する。[review_flow.go](glm-worker/internal/workflow/review_flow.go#L21)。前回のproduction workflow fixtureで再現 |
-| P2 | installerがfile/config更新後、ownership state保存前に終了する | メモリ上のrollback情報が失われ、再実行が自身の更新をユーザー変更として拒否する。[transaction.go](glm-worker/internal/codexinstall/transaction.go#L31)。今回の子process終了testで再現 |
-| P2 | reviewed blob ledgerへ非現行versionを渡す | version 0/999を既review証拠へ取り込める。[reviewer_boundary.go](glm-worker/internal/workflow/reviewer_boundary.go#L49)。前回の一時testで両readerを確認。実際のmodelがreviewを省略したという観測ではない |
+| P1 | installer事前確認後に管理外config keyが編集される | prepare時に保存した全体をapplyが置換し、成功したまま編集を消す。[config.go](/Users/shinderumanm/src/codex-worker-orchestrator/glm-worker/internal/codexinstall/config.go:106)。今回の一時testで再現 |
+| P1 | 正規quality fixerがfileを変更する | worker-end snapshotはfix前、review-startはfix後のため、正常な変換でreviewerを呼ばず親review待ちへ停止する。[review_flow.go](/Users/shinderumanm/src/codex-worker-orchestrator/glm-worker/internal/workflow/review_flow.go:21)。前回のproduction workflow fixtureで再現 |
+| P2 | installerがfile/config更新後、ownership state保存前に終了する | メモリ上のrollback情報が失われ、再実行が自身の更新をユーザー変更として拒否する。[transaction.go](/Users/shinderumanm/src/codex-worker-orchestrator/glm-worker/internal/codexinstall/transaction.go:31)。今回の子process終了testで再現 |
+| P2 | reviewed blob ledgerへ非現行versionを渡す | version 0/999を既review証拠へ取り込める。[reviewer_boundary.go](/Users/shinderumanm/src/codex-worker-orchestrator/glm-worker/internal/workflow/reviewer_boundary.go:49)。前回の一時testで両readerを確認。実際のmodelがreviewを省略したという観測ではない |
 
 installerの再現は一時repository・一時配置先だけで実施した。process終了はstate writer直前のos.Exitであり、OS電源断・fsync耐性まで証明したものではない。競合testはprepare/apply間の決定的なinterleavingであり、実editorとの確率的race testではない。
 
@@ -51,8 +51,8 @@ installerの再現は一時repository・一時配置先だけで実施した。p
 
 | 観点 | 確認したowner・証拠 | 結論・限界 |
 |---|---|---|
-| 1. 正常taskの親介入 | [publication sequence](glm-worker/internal/publicationsequence/sequence.go#L51)、parentactioncmd/publication*、23 test/subtest成功 | machineは次actionをprojectionできるが、実行sequenceそのものではない。意味判断が不要な隣接stageの親tool往復をまとめる候補。tool call数をそのままmodel turn数とは数えない。remote writeと意味判断は親に残す |
-| 2. 機械化の費用対効果 | [quality gate](glm-worker/internal/workflow/quality_gate.go#L31)と[harnesslint runner](glm-worker/internal/harnesslint/run.go#L57)、control-provenance | Run(fix=true)内の検査の後にCheckで同じ検査を再実行。重複は確定。wall-clockとtoken効果は未測定。新guard追加よりこの重複解消を優先 |
+| 1. 正常taskの親介入 | [publication sequence](/Users/shinderumanm/src/codex-worker-orchestrator/glm-worker/internal/publicationsequence/sequence.go:51)、parentactioncmd/publication*、23 test/subtest成功 | machineは次actionをprojectionできるが、実行sequenceそのものではない。意味判断が不要な隣接stageの親tool往復をまとめる候補。tool call数をそのままmodel turn数とは数えない。remote writeと意味判断は親に残す |
+| 2. 機械化の費用対効果 | [quality gate](/Users/shinderumanm/src/codex-worker-orchestrator/glm-worker/internal/workflow/quality_gate.go:31)と[harnesslint runner](/Users/shinderumanm/src/codex-worker-orchestrator/glm-worker/internal/harnesslint/run.go:57)、control-provenance | Run(fix=true)内の検査の後にCheckで同じ検査を再実行。重複は確定。wall-clockとtoken効果は未測定。新guard追加よりこの重複解消を優先 |
 | 3. 状態の正本・重複 | state/task_state_lifetime.go、parent_complete.go、parent_action.go、state対象66 test/subtest成功 | task-bound stateの寿命表とcanonical completionがある。statsをcompletion authorityにしないnegative testもある。単にfile数が多いという理由で集約DBを追加しない |
 | 4. 境界間の整合 | review_flow→quality gate→snapshot、codexinstall files/config→ownership state | 個別機能の正しさでは足りず、合成時に2種類の停止不具合を再現。追加すべきtestは実際の変換・process終了を含む境界test |
 | 5. 中断・再試行・並行実行 | state/parent_action_begin.go、parent_reopen_transaction.go、settingsmerge/transaction.go、cliinstall/serialization.go、codexinstall/transaction.go | 親action/settings mergeにはdurable記録、CLI installerにはlockがある。Codex installerは同等の復旧・競合保護がなく、新規2件として登録。全state write地点のcrash matrixを網羅したわけではない |
@@ -71,7 +71,7 @@ installerの再現は一時repository・一時配置先だけで実施した。p
 - 親Codex：要求の意味、architecture、Go/No-Go、risk、最終採否、remote write。
 - repository instruction：ownerと意味contractを示す。machineが返すschema・command順序・thresholdの第二正本を増やさない。
 
-[022 policy](glm-worker/internal/taskcontract/final_verification.go#L3)は上記の境界を越える具体例。ただしconsumerはharnesslintであり、無関係な全repositoryへ無条件適用される障害とまでは確認していない。markerなし／不正marker／moduleだけ存在／foreign Planの境界testを確認した。
+[022 policy](/Users/shinderumanm/src/codex-worker-orchestrator/glm-worker/internal/taskcontract/final_verification.go:3)は上記の境界を越える具体例。ただしconsumerはharnesslintであり、無関係な全repositoryへ無条件適用される障害とまでは確認していない。markerなし／不正marker／moduleだけ存在／foreign Planの境界testを確認した。
 
 逆方向では、evidenceのdedup/leaseやpublicationの現物検証を親の手動再計算へ戻すべきではない。現行instructionはcontrol ownerを参照しており、その整理を維持する。reviewや原要求の意味比較はmachineへ移してよい決定的ruleではない。
 
@@ -112,11 +112,11 @@ Planでは既存ACTIVEとBLOCKEDを維持し、NEXTをユーザーdata保護→�
 
 新規installer再現testは2件とも期待する安全動作を満たさずFAILした。既存test群にはFAIL/SKIPなし。前回のsnapshot/schema再現testはこの377件には含めない。
 
-- [実行条件・対象regex](review-evidence/README.md)
-- [集計](review-evidence/reproductions.json)
-- [再現コード](review-evidence/install_audit_test.go.txt)
-- [再現log](review-evidence/reproductions.json)：失敗diagnosticは4行目と9行目。
-- [保存済みレビュー証拠の説明](review-evidence/README.md)
+- [実行条件・対象regex](/private/tmp/codex-repository-review-extended/run_checks.py)
+- [集計](/private/tmp/codex-repository-review-extended/test-summary.json)
+- [再現コード](/private/tmp/codex-repository-review-extended/install_audit_test.go)
+- [再現log](/private/tmp/codex-repository-review-extended/install-reproduction.jsonl)：失敗diagnosticは4行目と9行目。
+- [前回詳細・残る2不具合](/private/tmp/codex-repository-review/review.md)
 - suite別JSONLは上記集計のsource locatorを参照。
 
 Go 1.25.4、canonical cache、GOPROXY=offを使用した。実model/API call、全Go suite、race detector、live provider検証、本番install、実Codex A/Bは未実行。12観点を横断して調査した結果であり、全source行・全crash地点・全security経路を網羅した保証ではない。raw token量から利用枠の消費率を推定していない。
@@ -127,7 +127,7 @@ Go 1.25.4、canonical cache、GOPROXY=offを使用した。実model/API call、�
 
 - 追加確認：repository全体のharnesslint・go vet・go buildが成功。protocol解析、process停止、復旧loop、lock、installerの依存/tool取得経路も確認した。これらは本番外部サービスの成立性の証明ではない。
 - 新規P1 finding：runner/probe.goは通常Runの停止処理を使わず同期command.Runを呼ぶ。停止要求済みcontrollerでも子processを起動して成功することをfake CLIで再現した。復旧probe中の停止とdeadlineの責務を `IMPLEMENTATION_TASKS/recovery-probe-stop-boundary.md` へ固定した。
-- 再現証拠：review-evidence/README.md `stop ignored: error=<nil> child_started=true`。実model呼出しなし。
+- 再現証拠：/private/tmp/codex-repository-review-extended/probe_audit_test.go、probe-reproduction.jsonl:4。診断は `stop ignored: error=<nil> child_started=true`。実model呼出しなし。
 - 計画化：不具合5件と改善2件を独立7 taskとし、Plan NEXTへ優先順で配置した。実消費の比較が必要なpublication連続処理・rotation・usage粒度の評価は既存効率checkpointへ明記した。
 - 未測定：実運用cohortのCodex Reduction、live provider挙動、OS電源断耐性。静的レビューの完了とこれらの実証完了を区別する。全Goテストの終了待ちを計画化の条件にしない。
 
@@ -144,7 +144,7 @@ Go 1.25.4、canonical cache、GOPROXY=offを使用した。実model/API call、�
 - 原因: staged replacementとbackupはあるが、適用済みbinaryと旧manifestの組合せを次回Installが復旧するdurable transaction記録がない。排他lockはprocess終了で解放されても、この不整合を修復しない。
 - 影響: 次回Installが自身の更新を `installer-owned binary content changed externally` と判定し拒否する。運用CLIの更新を正常経路で完了できず、手動修復が必要になる。
 - 再現: 一時build/binでv1をInstall。子processでproductionのplanInstall → stageActions → commitActionsを呼び、manifest保存前相当でexit 77。親から通常Installを呼ぶと上記errorになる。全Install入口への非同期killではなく、実際のmutation関数を用いたdurable prefix再現である。
-- 証拠: `review-evidence/README.md` の `TestAuditCLIInterruptedUpgradeCanRetry`、`installer-extended.jsonl:5`。
+- 証拠: `/private/tmp/codex-repository-review-extended/cli_audit_test.go` の `TestAuditCLIInterruptedUpgradeCanRetry`、`installer-extended.jsonl:5`。
 - 修正方向: current transactionの中断を所有権付きで復旧する。旧schema互換や、manifest削除による無条件上書きは追加しない。
 
 ### F7 / P2: CLI配置検証がowned executableのmode異常を成功扱いする
@@ -163,7 +163,7 @@ Go 1.25.4、canonical cache、GOPROXY=offを使用した。実model/API call、�
 - 再現: targetを `{"user_key":"initial"}`、fragmentを `{"managed_key":"new"}` とする。production write callbackの直前にtargetを `{"user_key":"concurrent"}` へ変更し、通常writeAtomicを継続するとmergeは成功しuser_keyがinitialへ戻る。
 - 原因: durable journalは中断後の復旧を保護するが、通常applyでは現在のtargetと計画作成時の内容を比較せず、古い全体を置換する。journalがあることだけでは通常実行中の編集保護にならない。
 - 影響: installer管理外のClaude設定が失われる。Codex TOML installerの既存F1と同じinvariant違反だが、修正owner・呼出経路は独立する。
-- 証拠: `review-evidence/README.md` の `TestAuditMergePreservesConcurrentUnmanagedEdit`、`installer-extended.jsonl:18`。
+- 証拠: `/private/tmp/codex-repository-review-extended/merge_audit_test.go` の `TestAuditMergePreservesConcurrentUnmanagedEdit`、`installer-extended.jsonl:18`。
 - 修正方向: normal apply・rollback・recoveryで外部編集を保護し、同一targetへの並行mergeを直列化する。lockだけで任意のeditorとのraceが消えるとは扱わない。
 
 上記3testは実model・本番設定を使わず、一時directory内で期待する安全動作に対してFAILした。現在は既存5件と合わせて8件の具体的不具合を保存済み。追加3件の個別Task化は後回しとし、この記録を一次Findingとして保持する。
@@ -174,7 +174,7 @@ Go 1.25.4、canonical cache、GOPROXY=offを使用した。実model/API call、�
 - 原因: sourceのDigestは抽出文字列のSHA256だけで、path・line rangeを含まない。dedup keyもsource surfaceとDigestだけ。同じbyte列を持つ別の位置が同一証拠とみなされる。
 - 再現: `review.go:1` と `other.go:1` が両方 `package review` で、両pathをreview targetとする。両sourceを同じmanifestで要求すると2つ目のContentが消され、target全件のproofを生成できない。
 - 影響: 正しい別位置の証拠を一度ずつ求めてもreview acceptanceへ進めない。回避のために不要な周辺行を増やす等の親作業・token消費を発生させる。本文転送の重複排除と、証拠が対象をカバーするidentityを同一視している。
-- 証拠: `review-evidence/README.md` の `TestAuditIdenticalSourceAtDifferentPathsProvesBothTargets`。`evidence-reproduction.jsonl:4` に `two distinct source targets were requested but content dedup leaves no proof`。
+- 証拠: `/private/tmp/codex-repository-review-extended/evidence_audit_test.go` の `TestAuditIdenticalSourceAtDifferentPathsProvesBothTargets`。`evidence-reproduction.jsonl:4` に `two distinct source targets were requested but content dedup leaves no proof`。
 - 修正方向: locator/snapshotを含む証拠identityを保持する。同じ本文の再転送を省くなら、配信済み本文への参照を各対象のproofとして機械的に検証する。review guardの単純削除・旧ledger互換は行わない。
 
 ### F10 / P1: 分割配信したreview証拠を合算できず、再取得もdedupされる
@@ -195,7 +195,7 @@ F9/F10はproductionのprintParentEvidenceから既存review fixtureへ通す一�
 - 再現A: 新規untracked `new.go` に `func NewAPI() {}` を置き、targetを `new.go:NewAPI` とする。自動evidenceはsymbolをdiffへ変換するが `git diff HEAD` はuntracked fileを含まない。追加で全sourceを配信しても、sourceのcoverage判定がnumeric locatorしか認めず、accept-readyはfalseのまま。
 - 再現B: tracked `review.go` を削除し、targetを `review.go:2` とする。自動evidenceは存在しないcurrent sourceを要求する。追加で削除diff全体を配信しても、coverageがnew-sideのhunk行範囲だけを評価し、全削除の `+0,0` を拒否するためaccept-readyはfalseのまま。
 - 影響: 新規APIや削除の意味判断という通常の高リスクreviewで、必要な証拠を読んでも機械上の採否へ進めない。targetを書き直したpacketの再発行等、不要なmodel/親往復が必要になる。意味判断を省いてacceptさせる修正では解決しない。
-- 証拠: `review-evidence/README.md`。`targets-usage.jsonl:22` は `TestAuditReviewUntrackedSymbolCanBeProven`、27行目は `TestAuditReviewDeletedNumericTargetCanBeProven` の再現診断。既存fixtureで変更後snapshotにreviewをbindし、production evidence入口とParentReviewAcceptReadyを通した。
+- 証拠: `/private/tmp/codex-repository-review-extended/target_audit_test.go`。`targets-usage.jsonl:22` は `TestAuditReviewUntrackedSymbolCanBeProven`、27行目は `TestAuditReviewDeletedNumericTargetCanBeProven` の再現診断。既存fixtureで変更後snapshotにreviewをbindし、production evidence入口とParentReviewAcceptReadyを通した。
 - 修正方向: target locatorの意味とevidenceのold/current sideを明確にし、untracked sourceと削除diffを正規proofへ結び付ける。証明不能なlocatorを受理したまま親へ無限に再読を要求しない。旧schema互換や推測によるacceptは追加しない。
 
 ### F12 / P2: A/B評価が欠落・nullのtoken値を「実測100%削減」と報告する
@@ -204,7 +204,7 @@ F9/F10はproductionのprintParentEvidenceから既存review fixtureへ通す一�
 - 原因: input/outputを非pointer整数へdecodeするため、欠落・nullと明示0を区別できない。Knownはsource文字列の有無だけを調べ、validationもtoken fieldの存在を要求しない。
 - 再現: validOrchestratedRecordのcodex_usageを `{"source":"codex-app-usage-export"}` に置換する。input_tokens/output_tokensを両方nullにした場合も同じ。LoadRecord→ValidatePairが成功し、正常なdirect記録とのBuildReportはstatus=actual、input/output reduction=100となる。
 - 影響: 未観測値がCodex Reductionの改善として計上され、最上位評価を誤らせる。実運用の評価結果が既に汚染されたとは確認していない。
-- 証拠: `review-evidence/README.md` の `TestAuditMissingUsageCannotBecomeActualReduction`、`targets-usage.jsonl:9,14`。診断は `unobserved token fields accepted: status=actual input_reduction=100 output_reduction=100`。
+- 証拠: `/private/tmp/codex-repository-review-extended/usage_audit_test.go` の `TestAuditMissingUsageCannotBecomeActualReduction`、`targets-usage.jsonl:9,14`。診断は `unobserved token fields accepted: status=actual input_reduction=100 output_reduction=100`。
 - 修正方向: current schemaでknown usageの数値fieldの存在・非nullを検証し、不完全な記録を拒否またはunknownとして保持する。明示0との区別を保ち、既存の欠落記録を0へ補完する互換処理は入れない。cache/reasoning粒度を拡張する議論とは独立に修正可能。
 
 再開時の追加確認: Codexのinstalled instruction参照は `codexinstall/files.go:31` で `codex/AGENTS.md` から明示配置されていた。source treeに同名instructionが無いことだけを欠損Findingにはしていない。追加の3 top-level test（A/Bはmissing/nullの2 subtest）が期待する正常動作に対してFAILし、具体的不具合は12件となった。GLM・他モデル・Git作業・production修正は行っていない。
@@ -215,7 +215,7 @@ F9/F10はproductionのprintParentEvidenceから既存review fixtureへ通す一�
 - 原因: quality surfaceを固定のpath/prefixで列挙する一方、ShellCheckは `-f gcc <path>` で実行し、自動検出される `.shellcheckrc` を無効化も保護対象化もしていない。
 - 再現: markerを有効にした一時repositoryで `#!/bin/sh\necho $1\n` にShellCheck 0.11.0がSC2086を報告することを確認。`.shellcheckrc` に `disable=SC2086` を追加すると同じcommandが成功するが、productionのquality surface digestは変更前後で一致した。
 - 影響: 通常workerが品質判定設定を変えた際の親承認境界を経ず、実際のlint判定を弱められる。後段の独立reviewやcritical-path判定まで全て回避したという証明ではない。保護対象の列挙とexternal toolの暗黙入力が一致していない責務上の欠落である。
-- 証拠: `review-evidence/README.md`、`gate-boundary.jsonl:5`。実際に配置済みのversion固定ShellCheckを一時fileへ実行し、digestはproduction関数を使用。
+- 証拠: `/private/tmp/codex-repository-review-extended/quality_surface_audit_test.go`、`gate-boundary.jsonl:5`。実際に配置済みのversion固定ShellCheckを一時fileへ実行し、digestはproduction関数を使用。
 - 修正方向: 許容するtool設定入力を決め、実際のconfig探索範囲と保護scopeを揃える。必要に応じ暗黙設定探索を無効にする。単に1つのfilenameを追加して全external toolの入力が保護されたとは扱わない。新しいLLM guardは不要。
 
 ### F14 / P2: quality gateの重複実行抑制が異なるGo moduleの検証を取り違える
@@ -224,7 +224,7 @@ F9/F10はproductionのprintParentEvidenceから既存review fixtureへ通す一�
 - 原因: 同時実行をまとめるidentityはform・repository・HEAD・index/worktree digestだけで、実際の `go test ./...` の対象を決めるWorkingDirを含まない。
 - 再現: 同一repositoryにmodule-a/module-bを用意し、module-aのrunning記録を保存する。同じsnapshotのmodule-bをcwdとしてproduction startQualityGateへ要求するとmodule-aへattachする。Aの終了を通知するとBの要求はstatus=pass・working_dir=module-aとして成功し、Bのrunnerは起動しない。
 - 影響: 複数moduleや異なるpackage directoryの並行検証で要求対象のtestが実行されない。worker parent-validation経路は返却WorkingDirを後段で再検証するためそこで拒否できるが、startQualityGate自体は誤った成功を返し、少なくとも正常な検証の完了を妨げる。
-- 証拠: `review-evidence/README.md`、`gate-boundary.jsonl:13`。fixtureのrunner終了だけを置換し、productionのstart・persist・coalesce・outputを実行した。実Go suiteを2本走らせた再現ではない。
+- 証拠: `/private/tmp/codex-repository-review-extended/gate_identity_audit_test.go`、`gate-boundary.jsonl:13`。fixtureのrunner終了だけを置換し、productionのstart・persist・coalesce・outputを実行した。実Go suiteを2本走らせた再現ではない。
 - 修正方向: 正規化したWorkingDirを実行identityへ含め、同じcommandの同じ対象だけを共有する。現行snapshot/対象の完全一致を維持し、曖昧な別moduleのPASSをfallbackにしない。
 
 具体的不具合14件を保存。今回の再現はGuard通過を目的とした実行ではなく、レビュー対象の判定関数・CLI経路の局所検証である。
@@ -236,7 +236,7 @@ F9/F10はproductionのprintParentEvidenceから既存review fixtureへ通す一�
 - 再現A: 別threadをtargetに持つ `daily-check/automation.toml` のnameを `Daily checks` にする。BuildCodexWakeTransactionはnameとdirectoryの不一致でerrorとなる。
 - 再現B: 無関係なcron形式としてtarget_thread_idを持たないautomationを置くと、同入口がmissing required fieldでerrorとなる。空inventoryでは既存testどおりwake準備が可能。
 - 影響: 当該wakeの重複や不整合がなくても再開予約の準備ができず、Limit時の親作業・復帰を妨げる。実schedulerへのwrite・予約・削除は行っていない。
-- 証拠: `review-evidence/README.md` の `TestAuditUnrelatedAutomationDoesNotBlockWake`、`wake-boundary.jsonl:6,11`。正規reset fixtureとproductionのBuild入口を使用。
+- 証拠: `/private/tmp/codex-repository-review-extended/wake_audit_test.go` の `TestAuditUnrelatedAutomationDoesNotBlockWake`、`wake-boundary.jsonl:6,11`。正規reset fixtureとproductionのBuild入口を使用。
 - 修正方向: 汎用inventoryから対象を識別する読取と、当該wakeに必要な厳密identity検証を分ける。同じtargetへの重複は検知しつつ、無関係なユーザーautomationへwakeの命名規則を要求しない。旧automation形式を推測して受理する互換層ではなく、所有scopeの修正とする。
 
 具体的不具合15件を保存済み。今回再開分はF11〜F15の5件で、計6 top-level test・4 subtestの再現診断を保存した。後続モデルが記録をコミットする場合もレビュー自体を委譲しないという範囲を維持する。
@@ -247,7 +247,7 @@ F9/F10はproductionのprintParentEvidenceから既存review fixtureへ通す一�
 - 原因: baselineはuntracked fileのpath集合だけを記録し、内容・modeを保存しない。task diffはその集合に含まれるpathを一律除外するため、開始後に変更されたかを判定できない。
 - 再現: tracked seedに加え、開始前からuntrackedの `preexisting.go` を置いてproduction CaptureGitBaselineを呼ぶ。そのfileの関数を変更、またはfileを削除すると、ChangedPathsは空集合、Captureはavailable=trueで0 byteのdiffを返す。どちらも既存test fixtureのproduction経路で確認した。
 - 影響: reviewerへ「wrapper-baseline-to-review-start」の正本として渡すpatchから、実際にworkerが行った変更が抜ける。workflowの保守的なpath追加はまだ存在するuntracked fileを拾えるが、正確なpatchを復元できず、削除されたuntracked fileはその追加列挙にも現れない。reviewerが実際に見逃したというmodel実験ではない。
-- 証拠: `review-evidence/README.md`、`taskdiff-boundary.jsonl:6,11`。診断は両caseで `paths=[] diff_bytes=0`。
+- 証拠: `/private/tmp/codex-repository-review-extended/taskdiff_audit_test.go`、`taskdiff-boundary.jsonl:6,11`。診断は両caseで `paths=[] diff_bytes=0`。
 - 修正方向: 開始時untrackedの必要な内容・種別・modeを正規baselineとしてbindし、その後の変更・削除を比較する。開始前からの無変更fileはtask差分へ混入させない。既存baselineに情報がない場合に推測復元する旧schema互換は入れず、未証明状態を明示する。
 
 具体的不具合16件を保存済み。今回再開分F11〜F16は6件、再現は7 top-level test・6 subtest。総合レビューの12観点を扱っているが、全source行・全crash地点・全外部環境の検証完了を意味しない。
