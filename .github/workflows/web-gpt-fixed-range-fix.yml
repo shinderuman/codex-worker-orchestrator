@@ -42,11 +42,25 @@ jobs:
           block = block.replace(old, new, 1)
           Path('/tmp/web-gpt-fix.py').write_text(block)
           subprocess.run(['python3', '/tmp/web-gpt-fix.py'], check=True)
+
+          path = Path('glm-worker/internal/parentactioncmd/publication_sequence_test.go')
+          text = path.read_text()
+          old = '''\tfor _, name := range []string{"reference-transaction", "pre-push"} {\n\t\tif err := os.WriteFile(filepath.Join(hooksDir, name), []byte("#!/bin/sh\\nexit 0\\n"), 0o755); err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t}\n\trunFinalizationGit(t, fixture.repo, "config", "core.hooksPath", ".githooks")\n'''
+          new = '''\tfor _, name := range []string{"reference-transaction", "pre-push"} {\n\t\tif err := os.WriteFile(filepath.Join(hooksDir, name), []byte("#!/bin/sh\\nexit 0\\n"), 0o755); err != nil {\n\t\t\tt.Fatal(err)\n\t\t}\n\t}\n\tguardPath := filepath.Join(t.TempDir(), "glm-parent-action")\n\tif err := os.WriteFile(guardPath, []byte("#!/bin/sh\\nexit 0\\n"), 0o755); err != nil {\n\t\tt.Fatal(err)\n\t}\n\tif err := os.WriteFile(filepath.Join(hooksDir, "glm-parent-action.path"), []byte(guardPath+"\\n"), 0o600); err != nil {\n\t\tt.Fatal(err)\n\t}\n\trunFinalizationGit(t, fixture.repo, "config", "core.hooksPath", ".githooks")\n'''
+          if text.count(old) != 1:
+              raise SystemExit('publication fixture guard anchor missing')
+          text = text.replace(old, new, 1)
+          text = text.replace('func TestPublicationSequenceOffersTrackedHookModeRepair(t *testing.T) {', 'func TestPublicationSequenceRejectsTrackedHookModeWithoutBinding(t *testing.T) {', 1)
+          old = '''\tif sequence.NextAction == nil || sequence.NextAction.Stage != "repair-guard-setup" {\n\t\tt.Fatalf("tracked-mode repair = %#v", sequence.NextAction)\n\t}\n'''
+          new = '''\tif sequence.NextAction != nil {\n\t\tt.Fatalf("tracked mode without executable binding returned repair action: %#v", sequence.NextAction)\n\t}\n\tif !strings.Contains(sequence.Failure.Detail, "glm-parent-action.path") {\n\t\tt.Fatalf("tracked-mode failure detail = %q", sequence.Failure.Detail)\n\t}\n'''
+          if text.count(old) != 1:
+              raise SystemExit('tracked-mode expectation anchor missing')
+          path.write_text(text.replace(old, new, 1))
           PY
-          gofmt -w glm-worker/internal/parentevidence/projector.go glm-worker/internal/parentevidence/projector_budget_test.go glm-worker/internal/publicationguard/setup.go glm-worker/internal/publicationguard/setup_test.go
+          gofmt -w glm-worker/internal/parentevidence/projector.go glm-worker/internal/parentevidence/projector_budget_test.go glm-worker/internal/publicationguard/setup.go glm-worker/internal/publicationguard/setup_test.go glm-worker/internal/parentactioncmd/publication_sequence_test.go
       - name: Focused Go tests
         working-directory: glm-worker
-        run: go test ./internal/parentevidence ./internal/publicationguard
+        run: go test ./internal/parentevidence ./internal/publicationguard ./internal/parentactioncmd
       - name: Hook ownership smoke
         run: sh ./tests/install_hook_ownership_smoke.sh
       - name: Full Go test suite
