@@ -16,6 +16,7 @@ type installBackup struct {
 	Content []byte
 	Mode    os.FileMode
 }
+
 type installStateWriter func(string, installState) error
 
 type installMutationTracker struct {
@@ -68,7 +69,7 @@ func requireInstallStateUnchanged(preparation installPreparation) error {
 		return err
 	}
 	if !same {
-		return fmt.Errorf("Codex install state changed after preparation; refusing to continue")
+		return fmt.Errorf("codex install state changed after preparation; refusing to continue")
 	}
 	return nil
 }
@@ -103,6 +104,7 @@ func captureInstallBackups(preparation installPreparation) ([]installBackup, err
 	}
 	return backups, nil
 }
+
 func installMutationPaths(preparation installPreparation) []string {
 	unique := map[string]bool{statePath(preparation.codexDir): true}
 	for _, file := range preparation.filePlan.Desired {
@@ -121,6 +123,7 @@ func installMutationPaths(preparation installPreparation) []string {
 	sort.Strings(paths)
 	return paths
 }
+
 func captureInstallBackup(path string) (installBackup, error) {
 	info, err := os.Lstat(path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -138,6 +141,7 @@ func captureInstallBackup(path string) (installBackup, error) {
 	}
 	return installBackup{Path: path, Exists: true, Content: content, Mode: info.Mode().Perm()}, nil
 }
+
 func restoreInstallBackup(backup installBackup) error {
 	if backup.Exists {
 		if err := writeAtomic(backup.Path, backup.Content, backup.Mode); err != nil {
@@ -158,6 +162,7 @@ func newInstallMutationTracker(backups []installBackup) *installMutationTracker 
 	}
 	return &installMutationTracker{backups: m, written: map[string]installBackup{}}
 }
+
 func (t *installMutationTracker) record(path string) error {
 	snapshot, err := captureInstallBackup(path)
 	if err != nil {
@@ -169,6 +174,7 @@ func (t *installMutationTracker) record(path string) error {
 	t.written[path] = snapshot
 	return nil
 }
+
 func (t *installMutationTracker) rollback(cause error) error {
 	errs := []error{cause}
 	for i := len(t.order) - 1; i >= 0; i-- {
@@ -194,6 +200,7 @@ func (t *installMutationTracker) rollback(cause error) error {
 	}
 	return errors.Join(errs...)
 }
+
 func installBackupMatchesCurrent(expected installBackup) (bool, error) {
 	current, err := captureInstallBackup(expected.Path)
 	if err != nil {
