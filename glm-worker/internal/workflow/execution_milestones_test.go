@@ -9,12 +9,14 @@ import (
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/executionmilestone"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/executionunit"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
 func TestParseExecutionTaskPlanPayloadRejectsAmbiguousMilestones(t *testing.T) {
-	_, _, err := ParseExecutionTaskPlanPayload(`{"request":"work","milestones":[{"id":"same","scope":"a","acceptance":"a"},{"id":"same","scope":"b","acceptance":"b"}]}`)
+	_, _, err := executionunit.ParseTaskPlanPayload(`{"request":"work","milestones":[{"id":"same","scope":"a","acceptance":"a"},{"id":"same","scope":"b","acceptance":"b"}]}`)
 	if err == nil || !strings.Contains(err.Error(), "duplicate execution milestone id") {
 		t.Fatalf("error = %v", err)
 	}
@@ -30,7 +32,7 @@ func TestExecutionMilestonesAdvanceBeforeSingleFinalReview(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	definitions := []ExecutionMilestoneDefinition{
+	definitions := []executionunit.MilestoneDefinition{
 		{ID: "capture", Scope: "implement capture boundary", Acceptance: "capture tests pass"},
 		{ID: "index", Scope: "implement index boundary", Acceptance: "index tests pass", FreshWorker: true},
 	}
@@ -49,7 +51,7 @@ func TestExecutionMilestonesAdvanceBeforeSingleFinalReview(t *testing.T) {
 	if !strings.Contains(runner.prompts[1], `"id":"index"`) {
 		t.Fatalf("second milestone prompt does not identify current milestone: %s", runner.prompts[1])
 	}
-	plan, err := loadExecutionMilestonePlan(st)
+	plan, err := executionmilestone.Load(st)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +59,7 @@ func TestExecutionMilestonesAdvanceBeforeSingleFinalReview(t *testing.T) {
 		t.Fatalf("plan = %#v", plan)
 	}
 	for index, record := range plan.Milestones {
-		if record.Status != executionMilestoneComplete || record.Completion == nil || record.Completion.Snapshot != fixedSnapshot {
+		if record.Status != executionmilestone.StatusComplete || record.Completion == nil || record.Completion.Snapshot != fixedSnapshot {
 			t.Fatalf("milestone %d = %#v", index, record)
 		}
 		if record.Completion.TaskContractSHA256 == "" {
@@ -82,7 +84,7 @@ func TestExecutionMilestoneAuthorityFailsClosedOnTaskContractChange(t *testing.T
 	if err := st.Write(activeTaskStateKey, relative); err != nil {
 		t.Fatal(err)
 	}
-	definitions := []ExecutionMilestoneDefinition{
+	definitions := []executionunit.MilestoneDefinition{
 		{ID: "one", Scope: "one", Acceptance: "one"},
 		{ID: "two", Scope: "two", Acceptance: "two"},
 	}
@@ -126,11 +128,11 @@ func TestReviseExecutionMilestonesBindsStoppedResumeCheckpoint(t *testing.T) {
 	if err := st.SaveResumeCheckpoint(checkpoint); err != nil {
 		t.Fatal(err)
 	}
-	definitions := []ExecutionMilestoneDefinition{
+	definitions := []executionunit.MilestoneDefinition{
 		{ID: "remaining-a", Scope: "finish a", Acceptance: "a complete"},
 		{ID: "remaining-b", Scope: "finish b", Acceptance: "b complete"},
 	}
-	result, err := ReviseExecutionMilestones(w.config, st, definitions, testFixedTime)
+	result, err := executionmilestone.Revise(w.config, st, definitions, testFixedTime)
 	if err != nil {
 		t.Fatal(err)
 	}
