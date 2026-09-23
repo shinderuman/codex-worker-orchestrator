@@ -3,7 +3,6 @@ package settingsmerge
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -37,6 +36,18 @@ type fileRestore struct {
 	mode    os.FileMode
 }
 
+type preparedMerge struct {
+	target            map[string]any
+	targetMode        os.FileMode
+	fragment          map[string]any
+	override          claudeoverride.EnvOverride
+	previousOverride  overrideState
+	previousManaged   managedState
+	overrideStatePath string
+	managedStatePath  string
+	inputs            map[string]fileRestore
+}
+
 const overrideStateFile = ".codex-config-claude-env-state.json"
 const overrideStateVersion = 1
 
@@ -45,51 +56,41 @@ func MergeFiles(targetPath, fragmentPath, overridePath string) (bool, error) {
 }
 
 func mergeFilesWithWriter(targetPath, fragmentPath, overridePath string, writeFn writeFileFunc) (bool, error) {
+	lock, err := acquireSettingsMergeLock(targetPath)
+	if err != nil {
+		return false, err
+	}
+	changed, mergeErr := mergeFilesUnlocked(targetPath, fragmentPath, overridePath, writeFn)
+	return changed, joinSettingsMergeLockError(mergeErr, lock.Close())
+}
+
+func mergeFilesUnlocked(targetPath, fragmentPath, overridePath string, writeFn writeFileFunc) (bool, error) {
 	if err := recoverSettingsTransaction(targetPath, writeFn); err != nil {
 		return false, err
 	}
-	target, targetMode, err := readObjectOrEmpty(targetPath)
-	if err != nil {
-		return false, fmt.Errorf("target JSON: %w", err)
-	}
-	fragment, _, err := readObject(fragmentPath)
-	if err != nil {
-		return false, fmt.Errorf("fragment JSON: %w", err)
-	}
-	override, err := claudeoverride.Load(overridePath)
-	if err != nil {
-		return false, fmt.Errorf("env override: %w", err)
-	}
-	overrideStatePath := statePathFor(targetPath)
-	previousOverride, err := loadOverrideState(overrideStatePath)
-	if err != nil {
-		return false, fmt.Errorf("env override state: %w", err)
-	}
-	managedStatePath := ManagedStatePath(targetPath)
-	previousManaged, err := loadManagedState(managedStatePath)
-	if err != nil {
-		return false, fmt.Errorf("managed state: %w", err)
-	}
-
-	before := cloneMap(target)
-	restoreEnvBaselines(target, previousOverride)
-	nextManaged, err := reconcileManagedValues(target, previousManaged, fragment)
+	prepared, err := prepareMergeInputs(targetPath, fragmentPath, overridePath)
 	if err != nil {
 		return false, err
 	}
-	nextOverride := snapshotEnvBaselines(target, override)
-	applyEnvPatch(target, override)
+	before := cloneMap(prepared.target)
+	restoreEnvBaselines(prepared.target, prepared.previousOverride)
+	nextManaged, err := reconcileManagedValues(prepared.target, prepared.previousManaged, prepared.fragment)
+	if err != nil {
+		return false, err
+	}
+	nextOverride := snapshotEnvBaselines(prepared.target, prepared.override)
+	applyEnvPatch(prepared.target, prepared.override)
 	plans, targetChanged, err := planWrites(
 		targetPath,
-		overrideStatePath,
-		managedStatePath,
-		targetMode,
-		target,
+		prepared.overrideStatePath,
+		prepared.managedStatePath,
+		prepared.targetMode,
+		prepared.target,
 		nextOverride,
 		nextManaged,
 		before,
-		previousOverride,
-		previousManaged,
+		prepared.previousOverride,
+		prepared.previousManaged,
 	)
 	if err != nil {
 		return false, err
@@ -97,10 +98,139 @@ func mergeFilesWithWriter(targetPath, fragmentPath, overridePath string, writeFn
 	if len(plans) == 0 {
 		return false, nil
 	}
-	if err := commitRecoverableTransaction(targetPath, plans, writeFn); err != nil {
+	if err := commitRecoverableTransaction(targetPath, plans, prepared.inputs, writeFn); err != nil {
 		return false, err
 	}
 	return targetChanged, nil
+}
+
+func prepareMergeInputs(targetPath, fragmentPath, overridePath string) (preparedMerge, error) {
+	targetSnapshot, err := captureMergeTransactionFile(targetPath)
+	if err != nil {
+		return preparedMerge{}, fmt.Errorf("target JSON: %w", err)
+	}
+	target, targetMode, err := objectFromSnapshot(targetSnapshot)
+	if err != nil {
+		return preparedMerge{}, fmt.Errorf("target JSON: %w", err)
+	}
+	fragment, _, err := readObject(fragmentPath)
+	if err != nil {
+		return preparedMerge{}, fmt.Errorf("fragment JSON: %w", err)
+	}
+	override, err := claudeoverride.Load(overridePath)
+	if err != nil {
+		return preparedMerge{}, fmt.Errorf("env override: %w", err)
+	}
+	overrideStatePath := statePathFor(targetPath)
+	overrideSnapshot, err := captureMergeTransactionFile(overrideStatePath)
+	if err != nil {
+		return preparedMerge{}, fmt.Errorf("env override state: %w", err)
+	}
+	previousOverride, err := overrideStateFromSnapshot(overrideSnapshot)
+	if err != nil {
+		return preparedMerge{}, fmt.Errorf("env override state: %w", err)
+	}
+	managedStatePath := ManagedStatePath(targetPath)
+	managedSnapshot, err := captureMergeTransactionFile(managedStatePath)
+	if err != nil {
+		return preparedMerge{}, fmt.Errorf("managed state: %w", err)
+	}
+	previousManaged, err := managedStateFromSnapshot(managedSnapshot)
+	if err != nil {
+		return preparedMerge{}, fmt.Errorf("managed state: %w", err)
+	}
+	return preparedMerge{
+		target:            target,
+		targetMode:        targetMode,
+		fragment:          fragment,
+		override:          override,
+		previousOverride:  previousOverride,
+		previousManaged:   previousManaged,
+		overrideStatePath: overrideStatePath,
+		managedStatePath:  managedStatePath,
+		inputs: map[string]fileRestore{
+			targetPath:        targetSnapshot,
+			overrideStatePath: overrideSnapshot,
+			managedStatePath:  managedSnapshot,
+		},
+	}, nil
+}
+
+func objectFromSnapshot(snapshot fileRestore) (map[string]any, os.FileMode, error) {
+	if !snapshot.existed {
+		return map[string]any{}, 0o600, nil
+	}
+	object, err := decodeObjectBytes(snapshot.data)
+	if err != nil {
+		return nil, 0, err
+	}
+	return object, snapshot.mode.Perm(), nil
+}
+
+func overrideStateFromSnapshot(snapshot fileRestore) (overrideState, error) {
+	empty := overrideState{Version: overrideStateVersion, Env: map[string]envBaseline{}}
+	if !snapshot.existed {
+		return empty, nil
+	}
+	var state overrideState
+	if err := decodeSingleJSON(snapshot.data, &state); err != nil {
+		return overrideState{}, fmt.Errorf("state JSON: %w", err)
+	}
+	if state.Version != overrideStateVersion {
+		return overrideState{}, fmt.Errorf("state version %dは未対応 (期待 %d)", state.Version, overrideStateVersion)
+	}
+	if state.Env == nil {
+		state.Env = map[string]envBaseline{}
+	}
+	return state, nil
+}
+
+func managedStateFromSnapshot(snapshot fileRestore) (managedState, error) {
+	empty := managedState{Version: managedStateVersion, Values: []managedValueState{}}
+	if !snapshot.existed {
+		return empty, nil
+	}
+	var state managedState
+	if err := decodeSingleJSON(snapshot.data, &state); err != nil {
+		return managedState{}, fmt.Errorf("state JSON: %w", err)
+	}
+	if state.Version != managedStateVersion {
+		return managedState{}, fmt.Errorf("managed state version %d is unsupported (expected %d)", state.Version, managedStateVersion)
+	}
+	if state.Values == nil {
+		state.Values = []managedValueState{}
+	}
+	if err := validateManagedState(state); err != nil {
+		return managedState{}, err
+	}
+	return state, nil
+}
+
+func decodeObjectBytes(data []byte) (map[string]any, error) {
+	var object map[string]any
+	if err := decodeSingleJSON(data, &object); err != nil {
+		return nil, err
+	}
+	if object == nil {
+		return nil, fmt.Errorf("top-level value must be an object")
+	}
+	return object, nil
+}
+
+func decodeSingleJSON(data []byte, destination any) error {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	if err := decoder.Decode(destination); err != nil {
+		return err
+	}
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		if err == nil {
+			return fmt.Errorf("multiple JSON values")
+		}
+		return err
+	}
+	return nil
 }
 
 func planWrites(
@@ -151,14 +281,6 @@ func marshalObject(value any) ([]byte, error) {
 	return append(data, '\n'), nil
 }
 
-func readObjectOrEmpty(path string) (map[string]any, os.FileMode, error) {
-	object, mode, err := readObject(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return map[string]any{}, 0o600, nil
-	}
-	return object, mode, err
-}
-
 func readObject(path string) (map[string]any, os.FileMode, error) {
 	file, err := os.Open(path)
 	if err != nil {
@@ -169,21 +291,13 @@ func readObject(path string) (map[string]any, os.FileMode, error) {
 	if err != nil {
 		return nil, 0, err
 	}
-	decoder := json.NewDecoder(file)
-	decoder.UseNumber()
-	var object map[string]any
-	if err := decoder.Decode(&object); err != nil {
+	data, err := io.ReadAll(file)
+	if err != nil {
 		return nil, 0, err
 	}
-	var extra any
-	if err := decoder.Decode(&extra); err != io.EOF {
-		if err == nil {
-			return nil, 0, fmt.Errorf("multiple JSON values")
-		}
+	object, err := decodeObjectBytes(data)
+	if err != nil {
 		return nil, 0, err
-	}
-	if object == nil {
-		return nil, 0, fmt.Errorf("top-level value must be an object")
 	}
 	return object, stat.Mode().Perm(), nil
 }
@@ -227,38 +341,6 @@ func ensureEnvMap(target map[string]any) map[string]any {
 
 func statePathFor(targetPath string) string {
 	return filepath.Join(filepath.Dir(targetPath), overrideStateFile)
-}
-
-func loadOverrideState(path string) (overrideState, error) {
-	empty := overrideState{Version: overrideStateVersion, Env: map[string]envBaseline{}}
-	file, err := os.Open(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return empty, nil
-	}
-	if err != nil {
-		return overrideState{}, err
-	}
-	defer func() { _ = file.Close() }()
-	decoder := json.NewDecoder(file)
-	decoder.UseNumber()
-	var state overrideState
-	if err := decoder.Decode(&state); err != nil {
-		return overrideState{}, fmt.Errorf("state JSON: %w", err)
-	}
-	var extra any
-	if err := decoder.Decode(&extra); err != io.EOF {
-		if err == nil {
-			return overrideState{}, fmt.Errorf("state: multiple JSON values")
-		}
-		return overrideState{}, fmt.Errorf("state JSON: %w", err)
-	}
-	if state.Version != overrideStateVersion {
-		return overrideState{}, fmt.Errorf("state version %dは未対応 (期待 %d)", state.Version, overrideStateVersion)
-	}
-	if state.Env == nil {
-		state.Env = map[string]envBaseline{}
-	}
-	return state, nil
 }
 
 func restoreEnvBaselines(target map[string]any, state overrideState) {
