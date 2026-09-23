@@ -164,13 +164,19 @@ func resolveCodexWakeAutomation(dir, wakeThreadID string) (string, bool, error) 
 		if !entry.IsDir() {
 			continue
 		}
-		toml, problem := readWakeTOML(filepath.Join(dir, entry.Name(), "automation.toml"), entry.Name())
+		path := filepath.Join(dir, entry.Name(), "automation.toml")
+		inventory, problem := readAutomationInventoryTOML(path)
 		if problem != "" {
 			return "", false, fmt.Errorf("automation inventory is not safely readable: %s", problem)
 		}
-		if toml.TargetThreadID == wakeThreadID {
-			matches = append(matches, toml.ID)
+		if inventory.TargetThreadID != wakeThreadID {
+			continue
 		}
+		candidate, problem := readWakeTOML(path, entry.Name())
+		if problem != "" {
+			return "", false, fmt.Errorf("wake automation candidate is not valid: %s", problem)
+		}
+		matches = append(matches, candidate.ID)
 	}
 	if len(matches) > 1 {
 		return "", false, fmt.Errorf("multiple automations target wake thread %s: %d", wakeThreadID, len(matches))
@@ -179,6 +185,18 @@ func resolveCodexWakeAutomation(dir, wakeThreadID string) (string, bool, error) 
 		return "", false, nil
 	}
 	return matches[0], true, nil
+}
+
+func readAutomationInventoryTOML(path string) (AutomationTOML, string) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return AutomationTOML{}, "automation entity unreadable: " + path
+	}
+	toml, err := parseAutomationInventoryTOML(data)
+	if err != nil {
+		return AutomationTOML{}, fmt.Sprintf("automation TOML invalid (%s): %v", path, err)
+	}
+	return toml, ""
 }
 
 func codexWakeCreateSpec(transaction codexWakeTransaction) CodexWakeWriteSpec {
