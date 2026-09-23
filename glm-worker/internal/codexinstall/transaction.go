@@ -16,34 +16,79 @@ type installBackup struct {
 	Content []byte
 	Mode    os.FileMode
 }
-
 type installStateWriter func(string, installState) error
 
+type installMutationTracker struct {
+	backups map[string]installBackup
+	written map[string]installBackup
+	order   []string
+}
+
 func applyInstallWithStateWriter(preparation installPreparation, stdout io.Writer, writeStateFn installStateWriter) error {
+	if err := requireInstallStateUnchanged(preparation); err != nil {
+		return err
+	}
 	backups, err := captureInstallBackups(preparation)
 	if err != nil {
 		return err
 	}
+	tracker := newInstallMutationTracker(backups)
 	var pendingOutput bytes.Buffer
-	output := func(format string, args ...any) {
-		_, _ = fmt.Fprintf(&pendingOutput, format, args...)
-	}
-	files, err := applyFileInstallPlan(preparation.codexDir, preparation.filePlan, output)
+	output := func(format string, args ...any) { _, _ = fmt.Fprintf(&pendingOutput, format, args...) }
+	files, err := applyFileInstallPlan(preparation.codexDir, preparation.filePlan, preparation.state, preparation.stateExists, tracker.record, output)
 	if err != nil {
-		return rollbackInstall(backups, err)
+		return tracker.rollback(err)
 	}
-	if err := applyConfigInstallPlan(preparation.configPlan, output); err != nil {
-		return rollbackInstall(backups, err)
+	if err := applyConfigInstallPlan(preparation.configPlan, tracker.record, output); err != nil {
+		return tracker.rollback(err)
+	}
+	if err := validateManagedFilesForStateCommit(preparation.codexDir, files); err != nil {
+		return tracker.rollback(err)
+	}
+	if err := validateConfigForStateCommit(preparation.configPlan); err != nil {
+		return tracker.rollback(err)
+	}
+	if err := requireInstallStateUnchanged(preparation); err != nil {
+		return tracker.rollback(err)
 	}
 	next := installState{Version: stateVersion, Files: files, Config: map[string]managedConfigRecord{}}
 	if preparation.configPlan.Record != nil {
 		next.Config[managedConfigKey] = *preparation.configPlan.Record
 	}
 	if err := writeStateFn(preparation.codexDir, next); err != nil {
-		return rollbackInstall(backups, err)
+		return tracker.rollback(err)
 	}
 	_, _ = io.Copy(stdout, &pendingOutput)
 	return nil
+}
+
+func requireInstallStateUnchanged(preparation installPreparation) error {
+	same, err := installBackupMatchesCurrent(preparation.stateBackup)
+	if err != nil {
+		return err
+	}
+	if !same {
+		return fmt.Errorf("Codex install state changed after preparation; refusing to continue")
+	}
+	return nil
+}
+
+func loadInstallStateSnapshot(codexDir string) (installState, bool, installBackup, error) {
+	if err := validateManagedPathAncestors(codexDir, stateRelativePath); err != nil {
+		return installState{}, false, installBackup{}, err
+	}
+	backup, err := captureInstallBackup(statePath(codexDir))
+	if err != nil {
+		return installState{}, false, installBackup{}, err
+	}
+	if !backup.Exists {
+		return installState{Version: stateVersion, Config: map[string]managedConfigRecord{}}, false, backup, nil
+	}
+	state, err := decodeInstallState(backup.Content)
+	if err != nil {
+		return installState{}, false, installBackup{}, err
+	}
+	return state, true, backup, nil
 }
 
 func captureInstallBackups(preparation installPreparation) ([]installBackup, error) {
@@ -58,7 +103,6 @@ func captureInstallBackups(preparation installPreparation) ([]installBackup, err
 	}
 	return backups, nil
 }
-
 func installMutationPaths(preparation installPreparation) []string {
 	unique := map[string]bool{statePath(preparation.codexDir): true}
 	for _, file := range preparation.filePlan.Desired {
@@ -77,7 +121,6 @@ func installMutationPaths(preparation installPreparation) []string {
 	sort.Strings(paths)
 	return paths
 }
-
 func captureInstallBackup(path string) (installBackup, error) {
 	info, err := os.Lstat(path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -95,17 +138,6 @@ func captureInstallBackup(path string) (installBackup, error) {
 	}
 	return installBackup{Path: path, Exists: true, Content: content, Mode: info.Mode().Perm()}, nil
 }
-
-func rollbackInstall(backups []installBackup, cause error) error {
-	errs := []error{cause}
-	for index := len(backups) - 1; index >= 0; index-- {
-		if err := restoreInstallBackup(backups[index]); err != nil {
-			errs = append(errs, err)
-		}
-	}
-	return errors.Join(errs...)
-}
-
 func restoreInstallBackup(backup installBackup) error {
 	if backup.Exists {
 		if err := writeAtomic(backup.Path, backup.Content, backup.Mode); err != nil {
@@ -117,4 +149,55 @@ func restoreInstallBackup(backup installBackup) error {
 		return fmt.Errorf("remove newly-created install surface %s during rollback: %w", backup.Path, err)
 	}
 	return nil
+}
+
+func newInstallMutationTracker(backups []installBackup) *installMutationTracker {
+	m := make(map[string]installBackup, len(backups))
+	for _, b := range backups {
+		m[b.Path] = b
+	}
+	return &installMutationTracker{backups: m, written: map[string]installBackup{}}
+}
+func (t *installMutationTracker) record(path string) error {
+	snapshot, err := captureInstallBackup(path)
+	if err != nil {
+		return fmt.Errorf("capture installed surface after mutation %s: %w", path, err)
+	}
+	if _, seen := t.written[path]; !seen {
+		t.order = append(t.order, path)
+	}
+	t.written[path] = snapshot
+	return nil
+}
+func (t *installMutationTracker) rollback(cause error) error {
+	errs := []error{cause}
+	for i := len(t.order) - 1; i >= 0; i-- {
+		path := t.order[i]
+		written := t.written[path]
+		same, err := installBackupMatchesCurrent(written)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		if !same {
+			errs = append(errs, fmt.Errorf("install rollback skipped concurrently modified surface: %s", path))
+			continue
+		}
+		backup, ok := t.backups[path]
+		if !ok {
+			errs = append(errs, fmt.Errorf("install rollback backup missing for surface: %s", path))
+			continue
+		}
+		if err := restoreInstallBackup(backup); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
+func installBackupMatchesCurrent(expected installBackup) (bool, error) {
+	current, err := captureInstallBackup(expected.Path)
+	if err != nil {
+		return false, err
+	}
+	return current.Exists == expected.Exists && current.Mode == expected.Mode && bytes.Equal(current.Content, expected.Content), nil
 }
