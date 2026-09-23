@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentcontinuation"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/publicationsequence"
@@ -164,11 +163,6 @@ func applyParentQualityGateRecovery(st *state.StateStore, output *parentHandoffR
 		return
 	}
 	output.QualityGateFailure = checkpoint.QualityGateFailure
-}
-
-func buildParentHandoff(st *state.StateStore) parentHandoffOutput {
-	repoRoot := st.ReadOr("repo-root", "")
-	return buildParentHandoffFromContinuation(st, parentcontinuation.Build(config.AppConfig{RepoRoot: repoRoot}, st))
 }
 
 func buildParentHandoffFromContinuation(st *state.StateStore, continuation parentcontinuation.Projection) parentHandoffOutput {
@@ -377,16 +371,4 @@ func parentReviewPtr(label string) *string {
 		return nil
 	}
 	return &label
-}
-
-func markHandoffInconsistent(output *parentHandoffOutput, detail string) {
-	output.Consistent = false
-	if output.Inconsistency == nil {
-		output.Inconsistency = machinecli.StringPtr(detail)
-	}
-	output.RequiredAction = nil
-	output.AllowedActions = []string{}
-	output.RequiredActionParameters = nil
-	output.ResumeKind = nil
-	output.Publication = nil
 }
