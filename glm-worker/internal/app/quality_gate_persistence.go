@@ -293,4 +293,3 @@ func qualityGateSessionTransportEnv(entry string) bool {
 	}
 	return false
 }
-
