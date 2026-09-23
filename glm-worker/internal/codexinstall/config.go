@@ -114,7 +114,7 @@ func applyConfigInstallPlan(plan configInstallPlan, recordMutation func(string) 
 		return err
 	}
 	if exists != plan.BeforeExists || !bytes.Equal(current, plan.Before) || (exists && mode != plan.Mode) {
-		return fmt.Errorf("Codex config changed after preparation; refusing to overwrite: %s", plan.Path)
+		return fmt.Errorf("codex config changed after preparation; refusing to overwrite: %s", plan.Path)
 	}
 	if err := writeAtomic(plan.Path, plan.Next, plan.Mode); err != nil {
 		return fmt.Errorf("write Codex config: %w", err)
