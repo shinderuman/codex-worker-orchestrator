@@ -28,10 +28,7 @@ func runRepositoryQualityGate(root string) (harnesslint.Report, error) {
 	if !qualityToolsApply {
 		return harnesslint.Report{Status: "pass", Violations: []harnesslint.Violation{}}, nil
 	}
-	if _, err := harnesslint.Run(root, true); err != nil {
-		return harnesslint.Report{}, err
-	}
-	return harnesslint.Check(root)
+	return harnesslint.Run(root, true)
 }
 
 func captureQualitySurfaceDigest(root string) (string, error) {
