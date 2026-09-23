@@ -21,7 +21,7 @@ func TestParentHandoffRotationPendingMismatchKeepsRecoveryDirective(t *testing.T
 		t.Fatal(err)
 	}
 
-	output := buildParentHandoff(st)
+	output := buildParentHandoffWithConfig(cfg, st)
 	if output.Consistent || output.Inconsistency == nil || output.ParentRequest == nil || output.SessionRotation == nil ||
 		output.SessionRotation.State != state.SessionRotationProjectionPending || output.SessionRotation.Directive == nil {
 		t.Fatalf("handoff = %#v", output)
