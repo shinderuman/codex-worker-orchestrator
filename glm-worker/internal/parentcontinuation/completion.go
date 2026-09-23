@@ -30,6 +30,13 @@ func continuationCompletionView(repoRoot string, st *state.StateStore, loaded re
 	if err != nil {
 		return nil, err
 	}
+	unmet = append(unmet, continuationLifecycleUnmet(st, activeTask)...)
+	unmet = append(unmet, continuationEvidenceUnmet(repoRoot, st)...)
+	return &repositoryproject.CompletionView{Ready: len(unmet) == 0, Unmet: unmet}, nil
+}
+
+func continuationLifecycleUnmet(st *state.StateStore, activeTask string) []string {
+	unmet := []string{}
 	if st.TaskStatus() != state.TaskStatusComplete {
 		unmet = append(unmet, "task_not_complete")
 	}
@@ -42,7 +49,11 @@ func continuationCompletionView(repoRoot string, st *state.StateStore, loaded re
 	if pinned := st.ReadOr("active-task", ""); pinned != activeTask {
 		unmet = append(unmet, "active_task_mismatch")
 	}
+	return unmet
+}
 
+func continuationEvidenceUnmet(repoRoot string, st *state.StateStore) []string {
+	unmet := []string{}
 	snapshot, snapshotErr := state.CaptureGitSnapshot(repoRoot)
 	if snapshotErr != nil {
 		unmet = append(unmet, "snapshot_unavailable")
@@ -55,22 +66,30 @@ func continuationCompletionView(repoRoot string, st *state.StateStore, loaded re
 	} else if !clean {
 		unmet = append(unmet, "tree_not_clean")
 	}
-	return &repositoryproject.CompletionView{Ready: len(unmet) == 0, Unmet: unmet}, nil
+	return unmet
 }
 
 func continuationValidationPass(st *state.StateStore, repoRoot string, snapshot state.GitSnapshot) bool {
+	for _, record := range latestContinuationValidationRuns(st, repoRoot, snapshot) {
+		if record.Status == qualitygate.StatusPass {
+			return true
+		}
+	}
+	return false
+}
+
+func latestContinuationValidationRuns(st *state.StateStore, repoRoot string, snapshot state.GitSnapshot) map[string]qualitygate.RunRecord {
+	latestByForm := map[string]qualitygate.RunRecord{}
 	entries, err := os.ReadDir(st.Path(qualitygate.RunDirectory))
 	if err != nil {
-		return false
+		return latestByForm
 	}
-	latestByForm := map[string]qualitygate.RunRecord{}
 	for _, entry := range entries {
 		if !entry.IsDir() || !qualitygate.ValidRunID(entry.Name()) {
 			continue
 		}
 		record, err := qualitygate.Read(st, entry.Name())
-		if err != nil || filepath.Clean(record.Repository) != filepath.Clean(repoRoot) ||
-			record.Head != snapshot.Head || record.IndexDigest != snapshot.IndexDigest || record.WorktreeDigest != snapshot.WorktreeDigest {
+		if err != nil || !continuationValidationMatches(record, repoRoot, snapshot) {
 			continue
 		}
 		previous, found := latestByForm[record.Form]
@@ -78,12 +97,14 @@ func continuationValidationPass(st *state.StateStore, repoRoot string, snapshot 
 			latestByForm[record.Form] = record
 		}
 	}
-	for _, record := range latestByForm {
-		if record.Status == qualitygate.StatusPass {
-			return true
-		}
-	}
-	return false
+	return latestByForm
+}
+
+func continuationValidationMatches(record qualitygate.RunRecord, repoRoot string, snapshot state.GitSnapshot) bool {
+	return filepath.Clean(record.Repository) == filepath.Clean(repoRoot) &&
+		record.Head == snapshot.Head &&
+		record.IndexDigest == snapshot.IndexDigest &&
+		record.WorktreeDigest == snapshot.WorktreeDigest
 }
 
 func continuationTreeClean(repoRoot string) (bool, error) {
