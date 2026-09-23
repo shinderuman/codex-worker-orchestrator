@@ -66,6 +66,91 @@ func TestRateLimitedRequestAcceptsExactVerifiedWakeDeferral(t *testing.T) {
 	}
 }
 
+func TestActiveContinuationActionabilityPreservesTerminalErrorSignal(t *testing.T) {
+	st := activeContinuationFixture(t)
+	taskID, err := st.TaskID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.RecordModelCallLog(state.ModelCallLog{
+		CallID:   "fatal-active",
+		CallType: state.CallTypeTask,
+		TaskID:   taskID,
+		Phase:    "worker-new",
+		Outcome:  "error",
+	})
+	st.RecordModelCallLog(state.ModelCallLog{
+		CallID:   "probe-after-error",
+		CallType: state.CallTypeProbe,
+		TaskID:   taskID,
+		Phase:    "probe",
+		Outcome:  "success",
+	})
+	projection := activeContinuationProjection()
+	plan := state.ParentActionPlan{RequiredAction: state.ParentActionNone, AllowedActions: []state.ParentAction{}}
+
+	if !fatalActiveContinuationWithoutAction(st, plan, &projection) {
+		t.Fatal("fatal active continuation was not recognized")
+	}
+	if got := latestParentMaterialOutcome(st); got != "error" {
+		t.Fatalf("latest material outcome = %q want error", got)
+	}
+}
+
+func TestActiveContinuationActionabilityDoesNotTreatSuccessAsTerminalError(t *testing.T) {
+	st := activeContinuationFixture(t)
+	taskID, err := st.TaskID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.RecordModelCallLog(state.ModelCallLog{
+		CallID:   "healthy-active",
+		CallType: state.CallTypeTask,
+		TaskID:   taskID,
+		Phase:    "worker-new",
+		Outcome:  "success",
+	})
+	projection := activeContinuationProjection()
+	plan := state.ParentActionPlan{RequiredAction: state.ParentActionNone, AllowedActions: []state.ParentAction{}}
+
+	if !fatalActiveContinuationWithoutAction(st, plan, &projection) {
+		t.Fatal("active continuation precondition changed")
+	}
+	if got := latestParentMaterialOutcome(st); got != "success" {
+		t.Fatalf("latest material outcome = %q want success", got)
+	}
+}
+
+func activeContinuationProjection() Projection {
+	return Projection{
+		Consistent: true,
+		ParentRequest: &Request{
+			Continuation: repositoryproject.Continuation{State: repositoryproject.ContinuationContinueNow},
+		},
+	}
+}
+
+func activeContinuationFixture(t *testing.T) *state.StateStore {
+	t.Helper()
+	repoRoot := t.TempDir()
+	cfg := config.AppConfig{
+		RepoRoot:  repoRoot,
+		RepoHash:  config.RepoHashFor(repoRoot),
+		StateBase: t.TempDir(),
+	}
+	st, err := state.NewStateStore(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.StartNewTask(); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetTaskStatus(state.TaskStatusActive); err != nil {
+		t.Fatal(err)
+	}
+	return st
+}
+
 func rateLimitedProjection() Projection {
 	return Projection{
 		Consistent: true,
