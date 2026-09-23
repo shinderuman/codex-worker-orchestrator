@@ -1,4 +1,4 @@
-package workflow
+package executionmilestone
 
 import (
 	"testing"
@@ -6,21 +6,22 @@ import (
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-func TestExecutionMilestoneRevisionAllowsNaturalParentBoundaries(t *testing.T) {
+func TestRevisionStatusAllowsNaturalParentBoundaries(t *testing.T) {
 	for _, status := range []state.TaskStatus{
 		state.TaskStatusWaitingDecision,
 		state.TaskStatusWaitingSolReview,
 		state.TaskStatusRateLimited,
 		state.TaskStatusProviderUnavailable,
 		state.TaskStatusGuardRecoverable,
+		state.TaskStatusQualityGateRecoverable,
 		state.TaskStatusInterrupted,
 	} {
-		if !executionMilestoneRevisionStatusAllowed(status) {
+		if !revisionStatusAllowed(status) {
 			t.Fatalf("natural parent boundary %q rejected", status)
 		}
 	}
 	for _, status := range []state.TaskStatus{state.TaskStatusActive, state.TaskStatusComplete, state.TaskStatusNone} {
-		if executionMilestoneRevisionStatusAllowed(status) {
+		if revisionStatusAllowed(status) {
 			t.Fatalf("non-boundary status %q accepted", status)
 		}
 	}

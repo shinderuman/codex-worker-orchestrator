@@ -26,8 +26,10 @@ const (
 	PublicationGuardHookNotRegular    = "is not a regular file"
 	PublicationGuardHookEmpty         = "is empty"
 	PublicationGuardHookNotExecutable = "is not executable"
+	PublicationGuardBindingInvalid    = "does not name an absolute executable regular file"
 
 	publicationTrackedHooksPath = ".githooks"
+	publicationGuardBindingName = "glm-parent-action.path"
 )
 
 var publicationGuardHookNames = []string{"reference-transaction", "pre-push"}
@@ -57,8 +59,35 @@ func InspectPublicationGuardSetup(repoRoot string) (PublicationGuardSetupReport,
 			report.Defects = append(report.Defects, *defect)
 		}
 	}
+	if defect := publicationGuardBindingDefect(resolved); defect != nil {
+		report.Defects = append(report.Defects, *defect)
+	}
 	report.Defects = publicationGuardPrimaryDefects(report.Defects)
 	return report, nil
+}
+
+func publicationGuardBindingDefect(hooksDir string) *PublicationGuardHookDefect {
+	path := filepath.Join(hooksDir, publicationGuardBindingName)
+	info, err := os.Lstat(path)
+	if err != nil {
+		return &PublicationGuardHookDefect{Hook: publicationGuardBindingName, Path: path, Defect: PublicationGuardHookMissing}
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return &PublicationGuardHookDefect{Hook: publicationGuardBindingName, Path: path, Defect: PublicationGuardHookNotRegular}
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || len(data) == 0 {
+		return &PublicationGuardHookDefect{Hook: publicationGuardBindingName, Path: path, Defect: PublicationGuardHookEmpty}
+	}
+	target := strings.TrimSpace(string(data))
+	if !filepath.IsAbs(target) {
+		return &PublicationGuardHookDefect{Hook: publicationGuardBindingName, Path: path, Defect: PublicationGuardBindingInvalid}
+	}
+	targetInfo, err := os.Stat(target)
+	if err != nil || !targetInfo.Mode().IsRegular() || targetInfo.Mode().Perm()&0o111 == 0 {
+		return &PublicationGuardHookDefect{Hook: publicationGuardBindingName, Path: path, Defect: PublicationGuardBindingInvalid}
+	}
+	return nil
 }
 
 func publicationGuardPrimaryDefects(defects []PublicationGuardHookDefect) []PublicationGuardHookDefect {

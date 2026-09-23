@@ -3,12 +3,14 @@ package workflow
 import (
 	"fmt"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/executionmilestone"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/executionunit"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
-func (w *Workflow) ExecuteNewTaskWithMilestones(request string, definitions []ExecutionMilestoneDefinition) error {
-	if err := validateExecutionMilestoneDefinitions(definitions); err != nil {
+func (w *Workflow) ExecuteNewTaskWithMilestones(request string, definitions []executionunit.MilestoneDefinition) error {
+	if err := executionunit.ValidateMilestoneDefinitions(definitions); err != nil {
 		return err
 	}
 	return quietWhenTerminalResultEmitted(w.withTemp(func() error {
@@ -16,7 +18,7 @@ func (w *Workflow) ExecuteNewTaskWithMilestones(request string, definitions []Ex
 	}))
 }
 
-func (w *Workflow) executeNewTaskWithMilestones(request string, definitions []ExecutionMilestoneDefinition) error {
+func (w *Workflow) executeNewTaskWithMilestones(request string, definitions []executionunit.MilestoneDefinition) error {
 	if err := w.validateNewTaskStart(); err != nil {
 		return err
 	}
@@ -335,14 +337,14 @@ func (w *Workflow) newExecutionMilestoneCheckpoint(
 }
 
 func (w *Workflow) decorateExecutionMilestoneCheckpoint(checkpoint state.ResumeCheckpoint) (state.ResumeCheckpoint, error) {
-	plan, err := loadExecutionMilestonePlan(w.state)
+	plan, err := executionmilestone.Load(w.state)
 	if err != nil {
 		return checkpoint, err
 	}
 	if plan == nil || plan.CurrentIndex >= len(plan.Milestones) {
 		return checkpoint, fmt.Errorf("no pending execution milestone is available")
 	}
-	if err := w.validateExecutionMilestoneAuthority(plan); err != nil {
+	if err := executionmilestone.ValidateAuthority(w.config, w.state, plan); err != nil {
 		return checkpoint, err
 	}
 	current := plan.Milestones[plan.CurrentIndex]
@@ -369,14 +371,14 @@ func (w *Workflow) advanceExecutionMilestone(
 	if checkpoint.ExecutionMilestoneID == "" {
 		return false, fmt.Errorf("execution milestone result has no checkpoint identity")
 	}
-	plan, err := loadExecutionMilestonePlan(w.state)
+	plan, err := executionmilestone.Load(w.state)
 	if err != nil {
 		return false, err
 	}
-	if err := w.validateExecutionMilestoneAuthority(plan); err != nil {
+	if err := executionmilestone.ValidateAuthority(w.config, w.state, plan); err != nil {
 		return false, err
 	}
-	if err := validateCurrentExecutionMilestone(plan, checkpoint.ExecutionMilestoneID); err != nil {
+	if err := executionmilestone.ValidateCurrent(plan, checkpoint.ExecutionMilestoneID); err != nil {
 		return false, err
 	}
 	if err := w.completeCurrentExecutionMilestone(plan, result); err != nil {
@@ -391,7 +393,7 @@ func (w *Workflow) advanceExecutionMilestone(
 func (w *Workflow) startNextExecutionMilestone(
 	request string,
 	previous state.ResumeCheckpoint,
-	plan *executionMilestonePlan,
+	plan *executionmilestone.Plan,
 ) error {
 	current := plan.Milestones[plan.CurrentIndex]
 	if current.FreshWorker {
@@ -424,62 +426,19 @@ func (w *Workflow) startNextExecutionMilestone(
 }
 
 func (w *Workflow) hasPendingExecutionMilestone() (bool, error) {
-	plan, err := loadExecutionMilestonePlan(w.state)
-	if err != nil || plan == nil {
-		return false, err
-	}
-	if plan.CurrentIndex >= len(plan.Milestones) {
-		return false, nil
-	}
-	return true, w.validateExecutionMilestoneAuthority(plan)
+	return executionmilestone.HasPending(w.config, w.state)
 }
 
 func (w *Workflow) validateExecutionMilestoneCheckpointAuthority(checkpoint state.ResumeCheckpoint) error {
 	if checkpoint.ExecutionMilestoneID == "" {
 		return &WorkerError{Phase: checkpoint.Phase, Message: "execution milestone checkpoint has no milestone identity"}
 	}
-	plan, err := loadExecutionMilestonePlan(w.state)
+	plan, err := executionmilestone.Load(w.state)
 	if err != nil {
 		return err
 	}
-	if err := w.validateExecutionMilestoneAuthority(plan); err != nil {
+	if err := executionmilestone.ValidateAuthority(w.config, w.state, plan); err != nil {
 		return err
 	}
-	return validateCurrentExecutionMilestone(plan, checkpoint.ExecutionMilestoneID)
-}
-
-func (w *Workflow) validateExecutionMilestoneAuthority(plan *executionMilestonePlan) error {
-	if plan == nil {
-		return fmt.Errorf("execution milestone plan is missing")
-	}
-	taskID, err := w.state.TaskID()
-	if err != nil {
-		return err
-	}
-	if taskID != plan.TaskID {
-		return fmt.Errorf("execution milestone task identity changed: plan=%q current=%q", plan.TaskID, taskID)
-	}
-	activeTaskPath := w.state.ReadOr(activeTaskStateKey, "")
-	if activeTaskPath != plan.ActiveTaskPath {
-		return fmt.Errorf("execution milestone ACTIVE task changed: plan=%q current=%q", plan.ActiveTaskPath, activeTaskPath)
-	}
-	digest, err := executionTaskContractDigest(w.config.RepoRoot, activeTaskPath)
-	if err != nil {
-		return err
-	}
-	if digest != plan.TaskContractSHA256 {
-		return fmt.Errorf("execution milestone task contract changed; revise milestones at the parent boundary before continuing")
-	}
-	return nil
-}
-
-func validateCurrentExecutionMilestone(plan *executionMilestonePlan, milestoneID string) error {
-	if plan == nil || plan.CurrentIndex >= len(plan.Milestones) {
-		return fmt.Errorf("execution milestone %q has no active durable plan", milestoneID)
-	}
-	current := plan.Milestones[plan.CurrentIndex]
-	if current.ID != milestoneID || current.Status != executionMilestonePending {
-		return fmt.Errorf("execution milestone state mismatch: checkpoint=%q current=%q status=%q", milestoneID, current.ID, current.Status)
-	}
-	return nil
+	return executionmilestone.ValidateCurrent(plan, checkpoint.ExecutionMilestoneID)
 }
