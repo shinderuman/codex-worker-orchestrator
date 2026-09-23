@@ -1,0 +1,139 @@
+from pathlib import Path
+
+
+def replace_once(path, old, new):
+    p = Path(path)
+    text = p.read_text()
+    count = text.count(old)
+    if count != 1:
+        raise SystemExit(f"{path}: replacement count {count}, want 1")
+    p.write_text(text.replace(old, new, 1))
+
+
+replace_once(
+    "glm-worker/internal/autoresume/codex_wake_transaction.go",
+    '''\t\tcandidate, problem := readWakeTOML(path, entry.Name())
+\t\tif problem != "" {
+\t\t\treturn "", false, fmt.Errorf("wake automation candidate is not valid: %s", problem)
+\t\t}
+\t\tif candidate.TargetThreadID != wakeThreadID {
+\t\t\treturn "", false, fmt.Errorf("wake automation candidate target changed during inventory: %s", candidate.ID)
+\t\t}
+\t\tmatches = append(matches, candidate.ID)
+''',
+    '''\t\tcandidate, problem := readWakeTOMLForThread(path, entry.Name(), wakeThreadID)
+\t\tif problem != "" {
+\t\t\treturn "", false, fmt.Errorf("wake automation candidate is not valid: %s", problem)
+\t\t}
+\t\tmatches = append(matches, candidate.ID)
+''',
+)
+anchor = '''func resolveCodexWakeAutomation(automationRoot, wakeThreadID string) (string, bool, error) {\n'''
+helper = '''func readWakeTOMLForThread(path, entryName, wakeThreadID string) (wakeAutomation, string) {
+\tcandidate, problem := readWakeTOML(path, entryName)
+\tif problem != "" {
+\t\treturn candidate, problem
+\t}
+\tif candidate.TargetThreadID != wakeThreadID {
+\t\treturn candidate, "target thread changed during inventory"
+\t}
+\treturn candidate, ""
+}
+
+'''
+replace_once("glm-worker/internal/autoresume/codex_wake_transaction.go", anchor, helper + anchor)
+
+old = '''func qualityWiringForbiddenCalls(check qualityWiringCheck, data []byte) ([]string, error) {
+\tif len(check.forbiddenTokens) == 0 {
+\t\treturn nil, nil
+\t}
+\tif !strings.HasSuffix(check.path, ".go") {
+\t\tvar found []string
+\t\ttext := string(data)
+\t\tfor _, value := range check.forbiddenTokens {
+\t\t\tif strings.Contains(text, value) {
+\t\t\t\tfound = append(found, value)
+\t\t\t}
+\t\t}
+\t\treturn found, nil
+\t}
+\tset := token.NewFileSet()
+\tfile, err := parser.ParseFile(set, check.path, data, 0)
+\tif err != nil {
+\t\treturn nil, err
+\t}
+\tfound := false
+\tast.Inspect(file, func(node ast.Node) bool {
+\t\tcall, ok := node.(*ast.CallExpr)
+\t\tif !ok {
+\t\t\treturn true
+\t\t}
+\t\tselector, ok := call.Fun.(*ast.SelectorExpr)
+\t\tif !ok || selector.Sel.Name != "Check" {
+\t\t\treturn true
+\t\t}
+\t\tpkg, ok := selector.X.(*ast.Ident)
+\t\tif ok && pkg.Name == "harnesslint" {
+\t\t\tfound = true
+\t\t}
+\t\treturn true
+\t})
+\tif found {
+\t\treturn []string{"harnesslint.Check"}, nil
+\t}
+\treturn nil, nil
+}
+'''
+new = '''func qualityWiringForbiddenCalls(check qualityWiringCheck, data []byte) ([]string, error) {
+\tif len(check.forbiddenTokens) == 0 {
+\t\treturn nil, nil
+\t}
+\tif !strings.HasSuffix(check.path, ".go") {
+\t\treturn qualityWiringForbiddenText(check.forbiddenTokens, data), nil
+\t}
+\treturn qualityWiringForbiddenGo(check.path, data)
+}
+
+func qualityWiringForbiddenText(values []string, data []byte) []string {
+\tvar found []string
+\ttext := string(data)
+\tfor _, value := range values {
+\t\tif strings.Contains(text, value) {
+\t\t\tfound = append(found, value)
+\t\t}
+\t}
+\treturn found
+}
+
+func qualityWiringForbiddenGo(path string, data []byte) ([]string, error) {
+\tfile, err := parser.ParseFile(token.NewFileSet(), path, data, 0)
+\tif err != nil {
+\t\treturn nil, err
+\t}
+\tfound := false
+\tast.Inspect(file, func(node ast.Node) bool {
+\t\tif qualityWiringIsHarnessCheck(node) {
+\t\t\tfound = true
+\t\t}
+\t\treturn true
+\t})
+\tif found {
+\t\treturn []string{"harnesslint.Check"}, nil
+\t}
+\treturn nil, nil
+}
+
+func qualityWiringIsHarnessCheck(node ast.Node) bool {
+\tcall, ok := node.(*ast.CallExpr)
+\tif !ok {
+\t\treturn false
+\t}
+\tselector, ok := call.Fun.(*ast.SelectorExpr)
+\tif !ok || selector.Sel.Name != "Check" {
+\t\treturn false
+\t}
+\tpkg, ok := selector.X.(*ast.Ident)
+\treturn ok && pkg.Name == "harnesslint"
+}
+'''
+replace_once("glm-worker/internal/harnesslint/quality_surface.go", old, new)
