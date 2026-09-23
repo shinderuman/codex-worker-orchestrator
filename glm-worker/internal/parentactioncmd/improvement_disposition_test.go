@@ -97,6 +97,35 @@ func TestImprovementSignalIdempotentReplayRepairsDispositionEvent(t *testing.T) 
 	}
 }
 
+func TestImprovementSignalEmptySourceKeepsRecordedReplayPath(t *testing.T) {
+	cfg, st := newImprovementDispositionTestState(t)
+	signal, err := st.PendingImprovementSignal()
+	if err != nil || signal == nil {
+		t.Fatalf("pending signal = %#v err=%v", signal, err)
+	}
+	if _, created, err := st.RecordImprovementSignalDisposition(
+		*signal,
+		string(state.ImprovementSignalDispositionReject),
+		"",
+	); err != nil || !created {
+		t.Fatalf("seed durable disposition: created=%t err=%v", created, err)
+	}
+
+	now := time.Now().UTC().Add(time.Second)
+	st.RecordModelCallLog(state.ModelCallLog{
+		TaskID:             st.ReadOr("task.id", ""),
+		CallType:           state.CallTypeTask,
+		StartedAt:          now,
+		CompletedAt:        now,
+		Outcome:            "invalid_packet",
+		PacketRejectReason: "schema-invalid",
+	})
+
+	if err := runImprovementDispositionTest(cfg, signal.SourceCallID, state.ImprovementSignalDispositionReject, ""); err != nil {
+		t.Fatalf("empty-source pending signal blocked idempotent replay: %v", err)
+	}
+}
+
 func TestImprovementSignalAdoptConnectsExistingDefectRegistrationLifecycle(t *testing.T) {
 	cfg, st := newImprovementDispositionTestState(t)
 	target := "IMPLEMENTATION_TASKS/adopted-improvement.md"
