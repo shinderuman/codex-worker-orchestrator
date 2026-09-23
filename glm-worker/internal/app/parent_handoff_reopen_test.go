@@ -70,10 +70,10 @@ func handoffAllowsAction(actions []string, action string) bool {
 }
 
 func TestParentHandoffAwaitingParentCompletionProjectsMachineDecision(t *testing.T) {
-	_, st := newAwaitingParentCompletionHandoff(t)
+	cfg, st := newAwaitingParentCompletionHandoff(t)
 	saveHandoffPublicationCandidate(t, st)
 
-	before := buildParentHandoff(st)
+	before := buildParentHandoffWithConfig(cfg, st)
 	if !before.Consistent {
 		t.Fatalf("awaiting handoff inconsistent: %#v", before)
 	}
@@ -94,7 +94,7 @@ func TestParentHandoffAwaitingParentCompletionProjectsMachineDecision(t *testing
 	); err != nil {
 		t.Fatal(err)
 	}
-	after := buildParentHandoff(st)
+	after := buildParentHandoffWithConfig(cfg, st)
 	if !after.Consistent {
 		t.Fatalf("finding-backed handoff inconsistent: %#v", after)
 	}
@@ -117,7 +117,7 @@ func TestParentHandoffAwaitingParentCompletionProjectsMachineDecision(t *testing
 }
 
 func TestParentHandoffAfterReopenProjectsWaitingSolReviewWithFixAction(t *testing.T) {
-	_, st := newAwaitingParentCompletionHandoff(t)
+	cfg, st := newAwaitingParentCompletionHandoff(t)
 	saveHandoffPublicationCandidate(t, st)
 	if _, err := st.RecordPublicationInvalidatingFinding(
 		state.ParentOriginCodexReview,
@@ -129,7 +129,7 @@ func TestParentHandoffAfterReopenProjectsWaitingSolReviewWithFixAction(t *testin
 		t.Fatal(err)
 	}
 
-	output := buildParentHandoff(st)
+	output := buildParentHandoffWithConfig(cfg, st)
 	if !output.Consistent {
 		t.Fatalf("reopened handoff inconsistent: %#v", output)
 	}
