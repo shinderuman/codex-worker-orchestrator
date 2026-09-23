@@ -57,7 +57,7 @@ func TestProjectContinuationNoRuntimeTaskUsesCurrentActiveTask(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	obligation := deriveProjectContinuation(output, state.AttachStateStore(cfg))
+	obligation := output.Continuation
 	if obligation.State != repositoryproject.ContinuationContinueNow || obligation.Task != active || obligation.Reason != repositoryproject.ReasonActiveTaskNotStarted {
 		t.Fatalf("continuation = %#v", obligation)
 	}
@@ -84,7 +84,7 @@ func TestProjectContinuationCurrentRuntimeTaskStaysCurrent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	obligation := deriveProjectContinuation(output, st)
+	obligation := output.Continuation
 	if obligation.State != repositoryproject.ContinuationContinueNow || obligation.Task != active || obligation.Reason != repositoryproject.ReasonCurrentTask {
 		t.Fatalf("continuation = %#v", obligation)
 	}
@@ -103,7 +103,7 @@ func TestProjectContinuationUsesCanonicalNextRunnableAfterCurrentCompletion(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	obligation := deriveProjectContinuation(output, st)
+	obligation := output.Continuation
 	if output.NextRunnable == nil || obligation.State != repositoryproject.ContinuationContinueNow || obligation.Task != *output.NextRunnable || obligation.Reason != repositoryproject.ReasonNextRunnable {
 		t.Fatalf("continuation = %#v next=%v", obligation, output.NextRunnable)
 	}
@@ -122,7 +122,7 @@ func TestProjectContinuationBlockedOnlyUsesCanonicalBlocker(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	obligation := deriveProjectContinuation(output, st)
+	obligation := output.Continuation
 	if obligation.State != repositoryproject.ContinuationBlocked || obligation.Task != blocked || obligation.Reason != "blocked-section" || obligation.Blocker == nil || obligation.Blocker.Task != blocked {
 		t.Fatalf("continuation = %#v blockers=%#v", obligation, output.Blockers)
 	}
@@ -139,7 +139,7 @@ func TestProjectContinuationTerminalRequiresCompletedGoalAndSettledLifecycle(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	obligation := deriveProjectContinuation(output, st)
+	obligation := output.Continuation
 	if obligation.State != repositoryproject.ContinuationTerminal || obligation.Reason != repositoryproject.ReasonGoalCompleted {
 		t.Fatalf("continuation = %#v", obligation)
 	}
@@ -147,7 +147,11 @@ func TestProjectContinuationTerminalRequiresCompletedGoalAndSettledLifecycle(t *
 	if _, err := st.StartNewTask(); err != nil {
 		t.Fatal(err)
 	}
-	obligation = deriveProjectContinuation(output, st)
+	output, err = buildProjectState(cfg, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	obligation = output.Continuation
 	if obligation.State != repositoryproject.ContinuationUnknown || obligation.Reason != repositoryproject.ReasonGoalLifecycleInconsistent {
 		t.Fatalf("active runtime with completed goal = %#v", obligation)
 	}
@@ -185,7 +189,7 @@ func TestProjectContinuationInterruptedTaskIsExplicitStop(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	obligation := deriveProjectContinuation(output, st)
+	obligation := output.Continuation
 	if obligation.State != repositoryproject.ContinuationExplicitStop || obligation.Task != active || obligation.RequiredAction != string(state.ParentActionResume) || obligation.Reason != repositoryproject.ReasonUserInterruption {
 		t.Fatalf("continuation = %#v", obligation)
 	}
@@ -208,7 +212,7 @@ func TestProjectContinuationLegacyNextDoesNotCreateContinuationScope(t *testing.
 	if output.NextRunnable == nil || *output.NextRunnable != next {
 		t.Fatalf("next_runnable = %v", output.NextRunnable)
 	}
-	obligation := deriveProjectContinuation(output, st)
+	obligation := output.Continuation
 	if obligation.State != repositoryproject.ContinuationUnknown || obligation.Task != "" || obligation.Reason != repositoryproject.ReasonContinuationScopeUnbound {
 		t.Fatalf("continuation = %#v", obligation)
 	}
@@ -248,7 +252,7 @@ func TestProjectContinuationTerminalRejectsStaleRuntimeTask(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	obligation := deriveProjectContinuation(output, st)
+	obligation := output.Continuation
 	if obligation.State != repositoryproject.ContinuationUnknown || obligation.Reason != repositoryproject.ReasonGoalLifecycleInconsistent {
 		t.Fatalf("stale runtime task with completed goal = %#v", obligation)
 	}
