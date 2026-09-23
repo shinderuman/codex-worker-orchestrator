@@ -21,6 +21,11 @@ func scanForwardOnlyCompatibilityRule(root string, paths []string) ([]Violation,
 		return nil, err
 	}
 	violations = append(violations, shellStateViolations...)
+	semanticViolations, err := scanForwardOnlySemanticCompatibility(root, paths)
+	if err != nil {
+		return nil, err
+	}
+	violations = append(violations, semanticViolations...)
 	testSurfaceViolations, err := scanForwardOnlyTestCompatibilitySurfaces(root, paths)
 	if err != nil {
 		return nil, err
