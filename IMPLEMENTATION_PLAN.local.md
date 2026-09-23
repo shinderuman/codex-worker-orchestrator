@@ -12,9 +12,28 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 
 ## NEXT（優先順）
 
-- `IMPLEMENTATION_TASKS/quality-fixer-review-snapshot-boundary.md`
-- `IMPLEMENTATION_TASKS/reviewed-ledger-current-schema.md`
+- `IMPLEMENTATION_TASKS/codex-install-concurrent-edit-protection.md`
+- `IMPLEMENTATION_TASKS/claude-settings-concurrent-edit-protection.md`
+- `IMPLEMENTATION_TASKS/task-diff-preexisting-untracked-baseline.md`
+- `IMPLEMENTATION_TASKS/quality-surface-implicit-tool-config.md`
+- `IMPLEMENTATION_TASKS/recovery-probe-stop-boundary.md`
 - `IMPLEMENTATION_TASKS/codex-efficiency-intermediate-checkpoint.md`
+- `IMPLEMENTATION_TASKS/quality-fixer-review-snapshot-boundary.md`
+- `IMPLEMENTATION_TASKS/parent-evidence-locator-identity.md`
+- `IMPLEMENTATION_TASKS/parent-review-evidence-coverage-accumulation.md`
+- `IMPLEMENTATION_TASKS/parent-review-target-evidence-coverage.md`
+- `IMPLEMENTATION_TASKS/ab-eval-usage-field-presence.md`
+- `IMPLEMENTATION_TASKS/codex-install-interruption-recovery.md`
+- `IMPLEMENTATION_TASKS/cli-install-interruption-recovery.md`
+- `IMPLEMENTATION_TASKS/cli-install-owned-mode-verification.md`
+- `IMPLEMENTATION_TASKS/reviewed-ledger-current-schema.md`
+- `IMPLEMENTATION_TASKS/quality-gate-working-directory-identity.md`
+- `IMPLEMENTATION_TASKS/codex-wake-inventory-ownership.md`
+- `IMPLEMENTATION_TASKS/quality-gate-single-validation-pass.md`
+- `IMPLEMENTATION_TASKS/final-verification-policy-ownership.md`
+- `IMPLEMENTATION_TASKS/publication-sequence-roundtrip-evaluation.md`
+- `IMPLEMENTATION_TASKS/parent-session-rotation-cost-evaluation.md`
+- `IMPLEMENTATION_TASKS/codex-usage-comparability-evaluation.md`
 - `IMPLEMENTATION_TASKS/post-105-codex-efficiency-reevaluation.md`
 - `IMPLEMENTATION_TASKS/022-final-verification.md`
 

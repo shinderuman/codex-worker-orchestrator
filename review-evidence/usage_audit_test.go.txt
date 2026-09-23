@@ -1,0 +1,32 @@
+package abeval
+
+import (
+ "encoding/json"
+ "os"
+ "path/filepath"
+ "testing"
+)
+
+func TestAuditMissingUsageCannotBecomeActualReduction(t *testing.T) {
+ for _, nullValues := range []bool{false,true} {
+  name := "missing"; if nullValues { name="null" }
+  t.Run(name,func(t *testing.T) {
+   spec := validSpec()
+   data, err := json.Marshal(validOrchestratedRecord(spec)); if err != nil { t.Fatal(err) }
+   var raw map[string]any; if err:=json.Unmarshal(data,&raw); err!=nil { t.Fatal(err) }
+   usage:=map[string]any{"source":CodexUsageSourceAppExport}
+   if nullValues { usage["input_tokens"]=nil; usage["output_tokens"]=nil }
+   raw["codex_usage"]=usage
+   data,err=json.Marshal(raw); if err!=nil { t.Fatal(err) }
+   path:=filepath.Join(t.TempDir(),"orchestrated.json")
+   if err:=os.WriteFile(path,data,0600); err!=nil { t.Fatal(err) }
+   record,err:=LoadRecord(path); if err!=nil { return }
+   direct:=validDirectRecord(spec)
+   if err:=ValidatePair(spec,direct,record); err!=nil { return }
+   report:=BuildReport(Compare(spec,direct,record))
+   if report.CodexReduction.Status==codexReductionActual {
+    t.Fatalf("unobserved token fields accepted: status=%s input_reduction=%v output_reduction=%v",report.CodexReduction.Status,*report.CodexReduction.InputPercent,*report.CodexReduction.OutputPercent)
+   }
+  })
+ }
+}

@@ -1,0 +1,28 @@
+package workflow
+
+import (
+ "os"
+ "os/exec"
+ "path/filepath"
+ "strings"
+ "testing"
+ "github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryharness"
+)
+
+func TestAuditShellcheckConfigurationIsProtected(t *testing.T) {
+ root:=t.TempDir(); runQualityGateGit(t,root,"init")
+ writeQualityGateFile(t,root,"glm-worker/go.mod","module github.com/shinderuman/codex-worker-orchestrator/glm-worker\n")
+ writeQualityGateFile(t,root,repositoryharness.MarkerPath,repositoryharness.MarkerContent)
+ writeQualityGateFile(t,root,"audit.sh","#!/bin/sh\necho $1\n")
+ runQualityGateGit(t,root,"add",".")
+ home,err:=os.UserHomeDir();if err!=nil {t.Fatal(err)}
+ binary:=filepath.Join(home,".local/share/codex-worker-orchestrator/quality-tools/bin/codex-worker-orchestrator-shellcheck-0.11.0")
+ command:=func()([]byte,error){cmd:=exec.Command(binary,"-f","gcc","audit.sh");cmd.Dir=root;return cmd.CombinedOutput()}
+ beforeOutput,beforeErr:=command()
+ if beforeErr==nil||!strings.Contains(string(beforeOutput),"SC2086") {t.Fatalf("fixture requires actual SC2086 diagnostic: %s error=%v",beforeOutput,beforeErr)}
+ before,err:=captureQualitySurfaceDigest(root);if err!=nil {t.Fatal(err)}
+ writeQualityGateFile(t,root,".shellcheckrc","disable=SC2086\n")
+ after,err:=captureQualitySurfaceDigest(root);if err!=nil {t.Fatal(err)}
+ afterOutput,afterErr:=command();if afterErr!=nil {t.Fatalf("fixture suppression failed: %s error=%v",afterOutput,afterErr)}
+ if before==after {t.Fatal("shellcheck changed from SC2086 failure to PASS, but quality surface digest is unchanged after adding .shellcheckrc")}
+}

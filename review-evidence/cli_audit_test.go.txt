@@ -1,0 +1,28 @@
+package cliinstall
+import("testing";"os";"os/exec";"path/filepath")
+func TestAuditCLIInterruptedUpgradeCanRetry(t *testing.T){
+ if os.Getenv("AUDIT_CLI_CHILD")=="1" {
+  build,bin:=os.Getenv("AUDIT_CLI_BUILD"),os.Getenv("AUDIT_CLI_BIN")
+  st,err:=loadState(ownershipStatePath(bin));if err!=nil{t.Fatal(err)}
+  actions,_,err:=planInstall(build,bin,st);if err!=nil{t.Fatal(err)}
+  staged,err:=stageActions(changedActions(actions));if err!=nil{t.Fatal(err)}
+  if _,err=commitActions(staged);err!=nil{t.Fatal(err)}
+  os.Exit(77)
+ }
+ build,bin:=t.TempDir(),t.TempDir();writeBuildSet(t,build,"v1")
+ if _,err:=Install(build,bin);err!=nil{t.Fatal(err)}
+ writeBuildSet(t,build,"v2")
+ cmd:=exec.Command(os.Args[0],"-test.run=^TestAuditCLIInterruptedUpgradeCanRetry$")
+ cmd.Env=append(os.Environ(),"AUDIT_CLI_CHILD=1","AUDIT_CLI_BUILD="+build,"AUDIT_CLI_BIN="+bin)
+ output,err:=cmd.CombinedOutput();exit,ok:=err.(*exec.ExitError)
+ if !ok||exit.ExitCode()!=77{t.Fatalf("child: %v %s",err,output)}
+ if _,err:=Install(build,bin);err!=nil{t.Fatalf("retry cannot recover own interrupted update: %v",err)}
+}
+func TestAuditCLIVerifyRejectsOwnedModeDrift(t *testing.T){
+ build,bin:=t.TempDir(),t.TempDir();writeBuildSet(t,build,"v1")
+ if _,err:=Install(build,bin);err!=nil{t.Fatal(err)}
+ if err:=os.Chmod(filepath.Join(bin,"glm-worker"),0777);err!=nil{t.Fatal(err)}
+ verificationErr:=Verify(bin)
+ _,installationErr:=Install(build,bin)
+ if verificationErr==nil{t.Fatalf("Verify accepted owned mode 0777; Install rejects same state: %v",installationErr)}
+}

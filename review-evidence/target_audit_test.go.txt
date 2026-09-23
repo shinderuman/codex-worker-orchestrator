@@ -1,0 +1,33 @@
+package app
+
+import (
+ "bytes"
+ "os"
+ "path/filepath"
+ "testing"
+ "github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
+)
+
+func TestAuditReviewUntrackedSymbolCanBeProven(t *testing.T) {
+ cfg, st, _ := newParentEvidenceReviewStore(t)
+ if err := os.WriteFile(filepath.Join(cfg.RepoRoot, "new.go"), []byte("package review\nfunc NewAPI() {}\n"), 0600); err != nil { t.Fatal(err) }
+ snap, err := state.CaptureGitSnapshot(cfg.RepoRoot); if err != nil { t.Fatal(err) }
+ openParentEvidenceReview(t, st, state.SnapshotDigest{Head:snap.Head, IndexDigest:snap.IndexDigest, WorktreeDigest:snap.WorktreeDigest}, "new.go:NewAPI")
+ if err := PrintParentReviewEvidence(cfg, st, &bytes.Buffer{}); err != nil { t.Fatal(err) }
+ manifest := parentEvidenceManifest{Version:parentEvidenceManifestVersion, Reason:"inspect new API source", Source:[]parentEvidenceSourceRequest{{Question:"review new API",Path:"new.go",LineStart:1,LineEnd:2,BudgetBytes:4096}}}
+ if err := printParentEvidence(Command{EvidenceManifest:writeParentReviewEvidenceManifest(t,manifest)}, cfg, st, &bytes.Buffer{}); err != nil { t.Fatal(err) }
+ ready, err := st.ParentReviewAcceptReady(); if err != nil { t.Fatal(err) }
+ if !ready { t.Fatal("new file symbol target remains unproven after auto evidence and full current source delivery") }
+}
+
+func TestAuditReviewDeletedNumericTargetCanBeProven(t *testing.T) {
+ cfg, st, _ := newParentEvidenceReviewStore(t)
+ if err := os.Remove(filepath.Join(cfg.RepoRoot,"review.go")); err != nil { t.Fatal(err) }
+ snap, err := state.CaptureGitSnapshot(cfg.RepoRoot); if err != nil { t.Fatal(err) }
+ openParentEvidenceReview(t, st, state.SnapshotDigest{Head:snap.Head, IndexDigest:snap.IndexDigest, WorktreeDigest:snap.WorktreeDigest}, "review.go:2")
+ if err := PrintParentReviewEvidence(cfg, st, &bytes.Buffer{}); err != nil { t.Fatal(err) }
+ manifest := parentEvidenceManifest{Version:parentEvidenceManifestVersion, Reason:"inspect deleted line", Diff:[]parentEvidenceDiffRequest{{Question:"review deletion",Paths:[]string{"review.go"},BudgetBytes:4096}}}
+ if err := printParentEvidence(Command{EvidenceManifest:writeParentReviewEvidenceManifest(t,manifest)}, cfg, st, &bytes.Buffer{}); err != nil { t.Fatal(err) }
+ ready, err := st.ParentReviewAcceptReady(); if err != nil { t.Fatal(err) }
+ if !ready { t.Fatal("deleted file numeric target remains unproven after automatic evidence and complete deletion diff delivery") }
+}
