@@ -4,6 +4,8 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/executionmilestone"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/executionunit"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -33,7 +35,7 @@ func TestExecutionMilestoneExplicitFixCompletesCurrentUnitBeforeFinalReview(t *t
 	if err := st.Write("last-review", "quality surface requires semantic fix"); err != nil {
 		t.Fatal(err)
 	}
-	definitions := []ExecutionMilestoneDefinition{
+	definitions := []executionunit.MilestoneDefinition{
 		{ID: "first", Scope: "finish first bounded unit", Acceptance: "first unit complete"},
 		{ID: "second", Scope: "finish second bounded unit", Acceptance: "second unit complete"},
 	}
@@ -51,7 +53,7 @@ func TestExecutionMilestoneExplicitFixCompletesCurrentUnitBeforeFinalReview(t *t
 	if !reflect.DeepEqual(runner.phases, wantPhases) {
 		t.Fatalf("phases = %v want %v", runner.phases, wantPhases)
 	}
-	plan, err := loadExecutionMilestonePlan(st)
+	plan, err := executionmilestone.Load(st)
 	if err != nil {
 		t.Fatal(err)
 	}
