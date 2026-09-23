@@ -18,13 +18,19 @@ func (w *Workflow) reviewUntilStable(
 	autoFixes int,
 	workerPhase string,
 ) error {
-	workerEnd, stopped, err := w.captureWorkerEndSnapshot()
+	workerEnd, stopped, err := w.captureReviewWorkerEndSnapshot()
 	if err != nil || stopped {
 		return err
 	}
-	handled, err := w.handleRepositoryQualityViolation(request, workerResult, reviewNumber, autoFixes, workerPhase)
+	handled, qualityReport, err := w.handleRepositoryQualityViolation(request, workerResult, reviewNumber, autoFixes, workerPhase)
 	if err != nil || handled {
 		return err
+	}
+	if qualityReport.Fixed > 0 {
+		workerEnd, stopped, err = w.acceptQualityFixSnapshot(workerEnd, qualityReport.Fixed)
+		if err != nil || stopped {
+			return err
+		}
 	}
 	w.recordConvergenceRound(reviewNumber, autoFixes, workerPhase, workerEnd)
 
@@ -138,25 +144,87 @@ func (w *Workflow) runReviewModel(checkpoint state.ResumeCheckpoint) (packet.Res
 	return reviewResult, false, nil
 }
 
+func (w *Workflow) captureReviewWorkerEndSnapshot() (state.GitSnapshot, bool, error) {
+	workerEnd, err := w.captureRepositoryBoundary()
+	if err != nil {
+		return workerEnd, true, w.failClosedSnapshot(
+			state.SnapshotStageWorkerEnd,
+			workerEnd,
+			state.GitSnapshot{},
+			"worker-end repository boundary取得失敗",
+			err,
+		)
+	}
+	if err := w.state.SaveWorkerEndSnapshot(workerEnd); err != nil {
+		return workerEnd, true, w.failClosedSnapshot(
+			state.SnapshotStageWorkerEnd,
+			workerEnd,
+			state.GitSnapshot{},
+			"worker-end snapshot保存失敗",
+			err,
+		)
+	}
+	return workerEnd, false, nil
+}
+
+func (w *Workflow) acceptQualityFixSnapshot(workerEnd state.GitSnapshot, fixed int) (state.GitSnapshot, bool, error) {
+	reviewInput, err := w.captureRepositoryBoundary()
+	if err != nil {
+		return reviewInput, true, w.failClosedSnapshot(
+			state.SnapshotStageReviewStart,
+			workerEnd,
+			state.GitSnapshot{},
+			"machine quality fixer後snapshot取得失敗",
+			err,
+		)
+	}
+	if !sameParentAuthority(workerEnd, reviewInput) {
+		return reviewInput, true, w.failClosedSnapshot(
+			state.SnapshotStageReviewStart,
+			workerEnd,
+			reviewInput,
+			fmt.Sprintf("machine quality fixer実行中にparent-managed metadataが変化しました(fixed=%d)", fixed),
+			nil,
+		)
+	}
+	if err := w.state.SaveWorkerEndSnapshot(reviewInput); err != nil {
+		return reviewInput, true, w.failClosedSnapshot(
+			state.SnapshotStageReviewStart,
+			workerEnd,
+			reviewInput,
+			"machine quality fixer後worker-end snapshot保存失敗",
+			err,
+		)
+	}
+	return reviewInput, false, nil
+}
+
+func sameParentAuthority(before, after state.GitSnapshot) bool {
+	if before.ParentFiles == nil || after.ParentFiles == nil {
+		return before.ParentFiles == nil && after.ParentFiles == nil
+	}
+	return state.SameParentFileStates(*before.ParentFiles, *after.ParentFiles)
+}
+
 func (w *Workflow) handleRepositoryQualityViolation(
 	request string,
 	workerResult packet.Result,
 	reviewNumber int,
 	autoFixes int,
 	workerPhase string,
-) (bool, error) {
+) (bool, harnesslint.Report, error) {
 	qualityReport, err := w.qualityGate(w.config.RepoRoot)
 	if err != nil {
-		return true, w.saveQualityGateStop(request, workerResult, reviewNumber, autoFixes, workerPhase, err)
+		return true, harnesslint.Report{}, w.saveQualityGateStop(request, workerResult, reviewNumber, autoFixes, workerPhase, err)
 	}
 	if !harnesslint.IsViolation(qualityReport) {
-		return false, nil
+		return false, qualityReport, nil
 	}
 	result := qualityGateFixResult(qualityReport)
 	if err := w.writeLastReview(result); err != nil {
-		return true, err
+		return true, qualityReport, err
 	}
-	return true, w.handleReviewResult(request, workerResult, result, reviewNumber, autoFixes)
+	return true, qualityReport, w.handleReviewResult(request, workerResult, result, reviewNumber, autoFixes)
 }
 
 func (w *Workflow) handleReviewResult(
