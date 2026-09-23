@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -18,7 +19,7 @@ func TestRecordQualityGateValidationPreservesRunAndSnapshotIdentity(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	record := qualityGateRunRecord{
+	record := qualitygate.RunRecord{
 		ValidationRunID: "0123456789abcdef0123456789abcdef",
 		Form:            "go-test",
 		Head:            "head",
