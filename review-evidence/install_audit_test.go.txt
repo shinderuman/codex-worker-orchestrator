@@ -1,0 +1,42 @@
+package codexinstall
+
+import (
+ "bytes"
+ "io"
+ "os"
+ "os/exec"
+ "path/filepath"
+ "testing"
+)
+
+func TestAuditInterruptedInstallCanRetry(t *testing.T) {
+ if os.Getenv("REVIEW_INSTALL_CHILD") == "1" {
+  prep, err := prepareInstall(os.Getenv("REVIEW_INSTALL_REPO"), os.Getenv("REVIEW_INSTALL_DEST"))
+  if err != nil { t.Fatal(err) }
+  _ = applyInstallWithStateWriter(prep, io.Discard, func(string, installState) error { os.Exit(77); return nil })
+  t.Fatal("child did not exit at durable boundary")
+ }
+ repo := initInstallFixtureRepo(t)
+ dest := t.TempDir()
+ runInstall(t, repo, dest)
+ writeTestFile(t, filepath.Join(repo,"codex","instructions","test.md"), []byte("updated instruction\n"))
+ cmd := exec.Command(os.Args[0], "-test.run=^TestAuditInterruptedInstallCanRetry$")
+ cmd.Env = append(os.Environ(), "REVIEW_INSTALL_CHILD=1", "REVIEW_INSTALL_REPO="+repo, "REVIEW_INSTALL_DEST="+dest)
+ output, err := cmd.CombinedOutput()
+ exited, ok := err.(*exec.ExitError)
+ if !ok || exited.ExitCode()!=77 { t.Fatalf("unexpected child outcome %v %s",err,output) }
+ if err := Install(repo,dest,io.Discard); err != nil { t.Fatalf("normal retry cannot recover interrupted current install: %v",err) }
+}
+
+func TestAuditInstallPreservesConfigEditAfterPreflight(t *testing.T) {
+ repo := initInstallFixtureRepo(t)
+ dest := t.TempDir()
+ configPath := filepath.Join(dest,"config.toml")
+ writeTestFile(t,configPath,[]byte("local_key = \"initial\"\n"))
+ prep,err := prepareInstall(repo,dest)
+ if err != nil { t.Fatal(err) }
+ writeTestFile(t,configPath,[]byte("local_key = \"changed-during-install\"\n"))
+ err = applyInstall(prep,io.Discard)
+ actual := readTestFile(t,configPath)
+ if !bytes.Contains(actual,[]byte("changed-during-install")) { t.Fatalf("user change was lost: install_error=%v config=%q",err,actual) }
+}

@@ -1,0 +1,203 @@
+{
+  "fixtures": [
+    {
+      "file": "workflow_audit_test.go.txt",
+      "package": "workflow",
+      "tests": [
+        "TestAuditQualityFixShouldReachReviewer",
+        "TestAuditReviewedLedgerRejectsNonCurrentVersion"
+      ]
+    },
+    {
+      "file": "cli_audit_test.go.txt",
+      "package": "cliinstall",
+      "tests": [
+        "TestAuditCLIInterruptedUpgradeCanRetry",
+        "TestAuditCLIVerifyRejectsOwnedModeDrift"
+      ]
+    },
+    {
+      "file": "evidence_audit_test.go.txt",
+      "package": "app",
+      "tests": [
+        "TestAuditIdenticalSourceAtDifferentPathsProvesBothTargets",
+        "TestAuditEvidenceReadAcrossBatchesCanCompleteReview"
+      ]
+    },
+    {
+      "file": "gate_identity_audit_test.go.txt",
+      "package": "app",
+      "tests": [
+        "TestAuditGateCoalescingPreservesWorkingDirectory"
+      ]
+    },
+    {
+      "file": "install_audit_test.go.txt",
+      "package": "codexinstall",
+      "tests": [
+        "TestAuditInterruptedInstallCanRetry",
+        "TestAuditInstallPreservesConfigEditAfterPreflight"
+      ]
+    },
+    {
+      "file": "merge_audit_test.go.txt",
+      "package": "settingsmerge",
+      "tests": [
+        "TestAuditMergePreservesConcurrentUnmanagedEdit"
+      ]
+    },
+    {
+      "file": "probe_audit_test.go.txt",
+      "package": "runner",
+      "tests": [
+        "TestAuditProbeHonorsRequestedStop"
+      ]
+    },
+    {
+      "file": "quality_surface_audit_test.go.txt",
+      "package": "workflow",
+      "tests": [
+        "TestAuditShellcheckConfigurationIsProtected"
+      ]
+    },
+    {
+      "file": "target_audit_test.go.txt",
+      "package": "app",
+      "tests": [
+        "TestAuditReviewUntrackedSymbolCanBeProven",
+        "TestAuditReviewDeletedNumericTargetCanBeProven"
+      ]
+    },
+    {
+      "file": "taskdiff_audit_test.go.txt",
+      "package": "taskdiff",
+      "tests": [
+        "TestAuditPreexistingUntrackedChangeIsInTaskDiff"
+      ]
+    },
+    {
+      "file": "usage_audit_test.go.txt",
+      "package": "abeval",
+      "tests": [
+        "TestAuditMissingUsageCannotBecomeActualReduction"
+      ]
+    },
+    {
+      "file": "wake_audit_test.go.txt",
+      "package": "autoresume",
+      "tests": [
+        "TestAuditUnrelatedAutomationDoesNotBlockWake"
+      ]
+    }
+  ],
+  "diagnostics": [
+    {
+      "source": "install-reproduction.jsonl",
+      "line": 4,
+      "test": "TestAuditInterruptedInstallCanRetry",
+      "diagnostic": "zz_review_audit_test.go:28: normal retry cannot recover interrupted current install: managed Codex file was modified after install; refusing to overwrite: instructions/test.md"
+    },
+    {
+      "source": "install-reproduction.jsonl",
+      "line": 9,
+      "test": "TestAuditInstallPreservesConfigEditAfterPreflight",
+      "diagnostic": "zz_review_audit_test.go:41: user change was lost: install_error=<nil> config=\"background_terminal_max_timeout = 21600000\\nlocal_key = \\\"initial\\\"\\n\""
+    },
+    {
+      "source": "probe-reproduction.jsonl",
+      "line": 4,
+      "test": "TestAuditProbeHonorsRequestedStop",
+      "diagnostic": "zz_review_probe_audit_test.go:12: stop ignored: error=<nil> child_started=true"
+    },
+    {
+      "source": "installer-extended.jsonl",
+      "line": 5,
+      "test": "TestAuditCLIInterruptedUpgradeCanRetry",
+      "diagnostic": "zz_review_cli_audit_test.go:19: retry cannot recover own interrupted update: repository CLI collision: /var/folders/cs/llk6553d77ncz3hgjjtnttmh0000gn/T/TestAuditCLIInterruptedUpgradeCanRetry2710462848/002/glm-worker: installer-owned binary content changed externally; preserve or move the existing executable before installing"
+    },
+    {
+      "source": "installer-extended.jsonl",
+      "line": 10,
+      "test": "TestAuditCLIVerifyRejectsOwnedModeDrift",
+      "diagnostic": "zz_review_cli_audit_test.go:27: Verify accepted owned mode 0777; Install rejects same state: repository CLI collision: /var/folders/cs/llk6553d77ncz3hgjjtnttmh0000gn/T/TestAuditCLIVerifyRejectsOwnedModeDrift1900767771/002/glm-worker: installer-owned binary shape or mode changed externally; preserve or move the existing executable before installing"
+    },
+    {
+      "source": "installer-extended.jsonl",
+      "line": 18,
+      "test": "TestAuditMergePreservesConcurrentUnmanagedEdit",
+      "diagnostic": "zz_review_merge_audit_test.go:13: concurrent user edit lost: merge_error=<nil> data={"
+    },
+    {
+      "source": "evidence-reproduction.jsonl",
+      "line": 4,
+      "test": "TestAuditIdenticalSourceAtDifferentPathsProvesBothTargets",
+      "diagnostic": "zz_review_evidence_audit_test.go:13: two distinct source targets were requested but content dedup leaves no proof"
+    },
+    {
+      "source": "evidence-reproduction.jsonl",
+      "line": 9,
+      "test": "TestAuditEvidenceReadAcrossBatchesCanCompleteReview",
+      "diagnostic": "zz_review_evidence_audit_test.go:29: both targets delivered in same lease, combined retry deduplicated, review proof still missing"
+    },
+    {
+      "source": "targets-usage.jsonl",
+      "line": 9,
+      "test": "TestAuditMissingUsageCannotBecomeActualReduction/missing",
+      "diagnostic": "review_audit_test.go:28: unobserved token fields accepted: status=actual input_reduction=100 output_reduction=100"
+    },
+    {
+      "source": "targets-usage.jsonl",
+      "line": 14,
+      "test": "TestAuditMissingUsageCannotBecomeActualReduction/null",
+      "diagnostic": "review_audit_test.go:28: unobserved token fields accepted: status=actual input_reduction=100 output_reduction=100"
+    },
+    {
+      "source": "targets-usage.jsonl",
+      "line": 22,
+      "test": "TestAuditReviewUntrackedSymbolCanBeProven",
+      "diagnostic": "review_audit_test.go:20: new file symbol target remains unproven after auto evidence and full current source delivery"
+    },
+    {
+      "source": "targets-usage.jsonl",
+      "line": 27,
+      "test": "TestAuditReviewDeletedNumericTargetCanBeProven",
+      "diagnostic": "review_audit_test.go:32: deleted file numeric target remains unproven after automatic evidence and complete deletion diff delivery"
+    },
+    {
+      "source": "gate-boundary.jsonl",
+      "line": 5,
+      "test": "TestAuditShellcheckConfigurationIsProtected",
+      "diagnostic": "review_audit_test.go:27: shellcheck changed from SC2086 failure to PASS, but quality surface digest is unchanged after adding .shellcheckrc"
+    },
+    {
+      "source": "gate-boundary.jsonl",
+      "line": 13,
+      "test": "TestAuditGateCoalescingPreservesWorkingDirectory",
+      "diagnostic": "review_audit_test.go:43: requested=/var/folders/cs/llk6553d77ncz3hgjjtnttmh0000gn/T/TestAuditGateCoalescingPreservesWorkingDirectory3503486644/001/module-b returned=/private/var/folders/cs/llk6553d77ncz3hgjjtnttmh0000gn/T/TestAuditGateCoalescingPreservesWorkingDirectory3503486644/001/module-a status=pass; distinct module was not run"
+    },
+    {
+      "source": "wake-boundary.jsonl",
+      "line": 6,
+      "test": "TestAuditUnrelatedAutomationDoesNotBlockWake/heartbeat-custom-name",
+      "diagnostic": "review_audit_test.go:22: unrelated user automation blocks wake preparation: automation inventory is not safely readable: wake automation name \"Daily checks\" does not match its directory \"daily-check\""
+    },
+    {
+      "source": "wake-boundary.jsonl",
+      "line": 11,
+      "test": "TestAuditUnrelatedAutomationDoesNotBlockWake/cron-no-target-thread",
+      "diagnostic": "review_audit_test.go:22: unrelated user automation blocks wake preparation: automation inventory is not safely readable: wake automation TOML invalid (/var/folders/cs/llk6553d77ncz3hgjjtnttmh0000gn/T/TestAuditUnrelatedAutomationDoesNotBlockWakecron-no-target-thre3587151894/001/daily-check/automation.toml): missing required field \"target_thread_id\""
+    },
+    {
+      "source": "taskdiff-boundary.jsonl",
+      "line": 6,
+      "test": "TestAuditPreexistingUntrackedChangeIsInTaskDiff/modified",
+      "diagnostic": "review_audit_test.go:28: modified preexisting untracked file missing from exact task evidence: paths=[] diff_bytes=0"
+    },
+    {
+      "source": "taskdiff-boundary.jsonl",
+      "line": 11,
+      "test": "TestAuditPreexistingUntrackedChangeIsInTaskDiff/deleted",
+      "diagnostic": "review_audit_test.go:28: deleted preexisting untracked file missing from exact task evidence: paths=[] diff_bytes=0"
+    }
+  ]
+}

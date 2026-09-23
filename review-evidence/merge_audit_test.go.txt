@@ -1,0 +1,14 @@
+package settingsmerge
+import("testing";"os";"path/filepath";"bytes")
+func TestAuditMergePreservesConcurrentUnmanagedEdit(t *testing.T){
+ dir:=t.TempDir();target,fragment:=filepath.Join(dir,"settings.json"),filepath.Join(dir,"managed.json")
+ writeTestFile(t,target,`{"user_key":"initial"}`)
+ writeTestFile(t,fragment,`{"managed_key":"new"}`)
+ injected:=false
+ _,err:=mergeFilesWithWriter(target,fragment,"",func(path string,data []byte,mode os.FileMode)error{
+  if path==target && !injected {injected=true;writeTestFile(t,target,`{"user_key":"concurrent"}`)}
+  return writeAtomic(path,data,mode)
+ })
+ actual,readErr:=os.ReadFile(target);if readErr!=nil{t.Fatal(readErr)}
+ if !bytes.Contains(actual,[]byte("concurrent")){t.Fatalf("concurrent user edit lost: merge_error=%v data=%s",err,actual)}
+}

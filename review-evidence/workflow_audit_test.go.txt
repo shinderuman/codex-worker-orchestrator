@@ -1,0 +1,47 @@
+package workflow
+
+import (
+ "fmt"
+ "go/format"
+ "os"
+ "path/filepath"
+ "testing"
+ "github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/harnesslint"
+)
+
+func TestAuditQualityFixShouldReachReviewer(t *testing.T) {
+ repo := newRetentionGitRepo(t)
+ sourcePath := filepath.Join(repo, "audit-format.go")
+ if err := os.WriteFile(sourcePath, []byte("package fixture\n\nfunc example( ) { }\n"), 0600); err != nil { t.Fatal(err) }
+ runRetentionGit(t, repo, "add", "audit-format.go")
+ runRetentionGit(t, repo, "commit", "-q", "-m", "format fixture")
+ st := newGitStateStoreT(t, repo)
+ r := &scriptedRunner{steps: []runnerStep{{structured: implementedPacket("implemented")}, {structured: passPacket()}}}
+ w := newGitWorkflowT(t, st, r, repo)
+ w.collectChangedPaths = func(string, string) ([]string, error) { return nil, nil }
+ w.qualityGate = func(string) (harnesslint.Report, error) {
+  source, err := os.ReadFile(sourcePath)
+  if err != nil { return harnesslint.Report{}, err }
+  formatted, err := format.Source(source)
+  if err != nil { return harnesslint.Report{}, err }
+  err = os.WriteFile(sourcePath, formatted, 0600)
+  return harnesslint.Report{Status: "pass", Fixed: 1}, err
+ }
+ err := w.ExecuteNewTask("request")
+ if len(r.phases) != 2 {
+  t.Fatalf("quality fixer completed but reviewer not reached: phases=%v status=%s error=%v", r.phases, st.TaskStatus(), err)
+ }
+}
+
+func TestAuditReviewedLedgerRejectsNonCurrentVersion(t *testing.T) {
+ for _, version := range []int{0, 999} {
+  t.Run(fmt.Sprint(version), func(t *testing.T) {
+   st := newStateStoreT(t)
+   w := newWorkflowT(t, st, &scriptedRunner{})
+   raw := fmt.Sprintf("{\"version\":%d,\"review_number\":1,\"files\":[]}\n", version)
+   if err := os.WriteFile(st.Path(reviewedBlobsFile), []byte(raw), 0600); err != nil { t.Fatal(err) }
+   rounds, err := w.loadReviewedBlobRounds()
+   if err == nil && len(rounds) != 0 { t.Fatalf("non-current version accepted as review evidence: version=%d records=%d", version,len(rounds)) }
+  })
+ }
+}

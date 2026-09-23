@@ -1,0 +1,44 @@
+package app
+
+import (
+ "bytes"
+ "encoding/json"
+ "os"
+ "path/filepath"
+ "strings"
+ "testing"
+ "time"
+ "github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
+)
+
+func TestAuditGateCoalescingPreservesWorkingDirectory(t *testing.T) {
+ cfg, st, _ := newParentEvidenceReviewStore(t)
+ for _, name := range []string{"module-a","module-b"} {
+  dir:=filepath.Join(cfg.RepoRoot,name)
+  if err:=os.MkdirAll(dir,0700);err!=nil {t.Fatal(err)}
+  if err:=os.WriteFile(filepath.Join(dir,"go.mod"),[]byte("module example.invalid/"+name+"\n"),0600);err!=nil {t.Fatal(err)}
+ }
+ t.Chdir(filepath.Join(cfg.RepoRoot,"module-b"))
+ identity,err:=prepareQualityGateStart("go-test",st);if err!=nil {t.Fatal(err)}
+ record,err:=newQualityGateRunRecord(identity);if err!=nil {t.Fatal(err)}
+ record.WorkingDir=filepath.Join(identity.Repository,"module-a")
+ record.RunnerPID=os.Getpid()
+ if err:=writeQualityGateRun(st,record);err!=nil {t.Fatal(err)}
+ old:=launchQualityGateRunner
+ launchQualityGateRunner=func(st *state.StateStore,r qualityGateRunRecord)(qualityGateRunnerWait,error){
+  return func()error {now:=time.Now();r.Status=qualityGateStatusPass;r.CompletedAt=&now;return writeQualityGateRun(st,r)},nil
+ }
+ defer func(){launchQualityGateRunner=old}()
+ diagnostic:=newQualityGateSignalWriter()
+ var output bytes.Buffer
+ done:=make(chan error,1)
+ go func(){done<-startQualityGate("go-test",st,&output,diagnostic)}()
+ select {case <-diagnostic.wrote:case <-time.After(5*time.Second):t.Fatal("gate did not announce run")}
+ if strings.Contains(diagnostic.String(),`"attached":true`) {
+  now:=time.Now();record.Status=qualityGateStatusPass;record.CompletedAt=&now
+  if err:=writeQualityGateRun(st,record);err!=nil {t.Fatal(err)}
+ }
+ select {case err:=<-done:if err!=nil {t.Fatal(err)};case <-time.After(5*time.Second):t.Fatal("gate did not complete")}
+ var got qualityGateOutput;if err:=json.Unmarshal(output.Bytes(),&got);err!=nil {t.Fatal(err)}
+ if got.WorkingDir!=identity.WorkingDir {t.Fatalf("requested=%s returned=%s status=%s; distinct module was not run",identity.WorkingDir,got.WorkingDir,got.Status)}
+}

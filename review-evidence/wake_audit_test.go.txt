@@ -1,0 +1,25 @@
+package autoresume
+
+import (
+ "fmt"
+ "os"
+ "path/filepath"
+ "testing"
+ "time"
+)
+
+func TestAuditUnrelatedAutomationDoesNotBlockWake(t *testing.T) {
+ for _,cron:=range []bool{false,true} {
+  label:="heartbeat-custom-name";if cron {label="cron-no-target-thread"}
+  t.Run(label,func(t *testing.T){
+   dir:=t.TempDir();item:=filepath.Join(dir,"daily-check")
+   if err:=os.MkdirAll(item,0700);err!=nil {t.Fatal(err)}
+   body:="id = \"daily-check\"\nname = \"Daily checks\"\nstatus = \"ACTIVE\"\nrrule = \"RRULE:FREQ=DAILY\"\nprompt = \"Check build results\"\n"
+   if !cron {body+=fmt.Sprintf("target_thread_id = %q\n",testOtherWakeThread)}
+   if err:=os.WriteFile(filepath.Join(item,"automation.toml"),[]byte(body),0600);err!=nil {t.Fatal(err)}
+   now:=time.Date(2026,9,23,0,0,0,0,time.UTC)
+   _,err:=BuildCodexWakeTransaction(testCodexWakeSnapshot(now.Add(time.Hour)),testCodexWakeThread,"",dir,now)
+   if err!=nil {t.Fatalf("unrelated user automation blocks wake preparation: %v",err)}
+  })
+ }
+}

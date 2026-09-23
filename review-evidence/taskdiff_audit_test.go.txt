@@ -1,0 +1,31 @@
+package taskdiff
+
+import (
+ "bytes"
+ "os"
+ "path/filepath"
+ "strings"
+ "testing"
+ "github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+ "github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
+)
+
+func TestAuditPreexistingUntrackedChangeIsInTaskDiff(t *testing.T) {
+ for _,remove:=range []bool{false,true} {
+  name:="modified";if remove {name="deleted"}
+  t.Run(name,func(t *testing.T){
+   root:=t.TempDir();runGit(t,root,"init","-q")
+   writeFile(t,filepath.Join(root,"tracked.txt"),"baseline\n")
+   runGit(t,root,"add","tracked.txt")
+   runGit(t,root,"-c","user.name=review","-c","user.email=review@example.invalid","commit","-qm","baseline")
+   path:=filepath.Join(root,"preexisting.go");writeFile(t,path,"package p\nfunc UserAPI() {}\n")
+   cfg:=config.AppConfig{RepoRoot:root,RepoHash:strings.Repeat("c",64),StateBase:t.TempDir()}
+   st,err:=state.NewStateStore(cfg);if err!=nil {t.Fatal(err)}
+   if err:=state.CaptureGitBaseline(cfg,st);err!=nil {t.Fatal(err)}
+   if remove {if err:=os.Remove(path);err!=nil {t.Fatal(err)}} else {writeFile(t,path,"package p\nfunc UserAPI() { panic(\"changed\") }\n")}
+   paths,available,err:=ChangedPaths(root,st);if err!=nil||!available {t.Fatalf("paths unavailable: %v",err)}
+   diff,available,err:=Capture(root,st);if err!=nil||!available {t.Fatalf("diff unavailable: %v",err)}
+   if !pathSet(paths)["preexisting.go"]||!bytes.Contains(diff,[]byte("preexisting.go")) {t.Fatalf("%s preexisting untracked file missing from exact task evidence: paths=%v diff_bytes=%d",name,paths,len(diff))}
+  })
+ }
+}

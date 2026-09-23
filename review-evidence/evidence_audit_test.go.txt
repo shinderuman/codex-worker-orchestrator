@@ -1,0 +1,30 @@
+package app
+import("testing";"bytes";"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/packet";"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state")
+func TestAuditIdenticalSourceAtDifferentPathsProvesBothTargets(t *testing.T){
+ cfg,st,snapshot:=newParentEvidenceReviewStore(t)
+ result:=packet.Result{Status:packet.StatusNeedsSolReview,Risk:packet.RiskHigh,SolQuestion:"inspect both source targets",Targets:[]string{"review.go:1","other.go:1"}}
+ if err:=st.RecordSolResultWithReviewSnapshot(result,state.ParentReviewProducer{Role:string(state.ReviewerRole),Model:"fixture"},snapshot);err!=nil{t.Fatal(err)}
+ manifest:=parentEvidenceManifest{Version:parentEvidenceManifestVersion,Reason:"both files",Source:[]parentEvidenceSourceRequest{
+ {Question:"review first",Path:"review.go",LineStart:1,LineEnd:1,BudgetBytes:4096},
+ {Question:"review second",Path:"other.go",LineStart:1,LineEnd:1,BudgetBytes:4096}}}
+ var out bytes.Buffer
+ if err:=printParentEvidence(Command{EvidenceManifest:writeParentReviewEvidenceManifest(t,manifest)},cfg,st,&out);err!=nil{t.Fatal(err)}
+ binding,err:=st.CurrentParentReviewBinding();if err!=nil{t.Fatal(err)}
+ if binding==nil||binding.Proof==nil{t.Fatalf("two distinct source targets were requested but content dedup leaves no proof")}
+}
+func TestAuditEvidenceReadAcrossBatchesCanCompleteReview(t *testing.T){
+ cfg,st,snapshot:=newParentEvidenceReviewStore(t)
+ result:=packet.Result{Status:packet.StatusNeedsSolReview,Risk:packet.RiskHigh,SolQuestion:"inspect both source targets",Targets:[]string{"review.go:2","other.go:2"}}
+ if err:=st.RecordSolResultWithReviewSnapshot(result,state.ParentReviewProducer{Role:string(state.ReviewerRole),Model:"fixture"},snapshot);err!=nil{t.Fatal(err)}
+ requests:=[]parentEvidenceSourceRequest{
+ {Question:"first target",Path:"review.go",LineStart:2,LineEnd:2,BudgetBytes:4096},
+ {Question:"second target",Path:"other.go",LineStart:2,LineEnd:2,BudgetBytes:4096}}
+ for _,request:=range requests{
+  manifest:=parentEvidenceManifest{Version:parentEvidenceManifestVersion,Reason:"bounded target read",Source:[]parentEvidenceSourceRequest{request}}
+  if err:=printParentEvidence(Command{EvidenceManifest:writeParentReviewEvidenceManifest(t,manifest)},cfg,st,&bytes.Buffer{});err!=nil{t.Fatal(err)}
+ }
+ manifest:=parentEvidenceManifest{Version:parentEvidenceManifestVersion,Reason:"combine inspected targets",Source:requests}
+ if err:=printParentEvidence(Command{EvidenceManifest:writeParentReviewEvidenceManifest(t,manifest)},cfg,st,&bytes.Buffer{});err!=nil{t.Fatal(err)}
+ binding,err:=st.CurrentParentReviewBinding();if err!=nil{t.Fatal(err)}
+ if binding==nil||binding.Proof==nil{t.Fatalf("both targets delivered in same lease, combined retry deduplicated, review proof still missing")}
+}
