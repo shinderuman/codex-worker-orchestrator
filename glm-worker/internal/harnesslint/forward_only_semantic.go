@@ -10,12 +10,6 @@ import (
 	"strings"
 )
 
-const (
-	forwardOnlyOldTransport uint8 = 1 << iota
-	forwardOnlyCurrentTransport
-	forwardOnlyTransportWalkLimit = 4
-)
-
 type forwardOnlySemanticFunction struct {
 	path             string
 	set              *token.FileSet
@@ -30,6 +24,12 @@ type forwardOnlySemanticFunction struct {
 type forwardOnlySemanticPackage struct {
 	functions map[string]*forwardOnlySemanticFunction
 }
+
+const (
+	forwardOnlyOldTransport uint8 = 1 << iota
+	forwardOnlyCurrentTransport
+	forwardOnlyTransportWalkLimit = 4
+)
 
 func scanForwardOnlySemanticCompatibility(root string, paths []string) ([]Violation, error) {
 	packages, err := parseForwardOnlySemanticPackages(root, paths)
@@ -49,30 +49,41 @@ func parseForwardOnlySemanticPackages(root string, paths []string) (map[string]*
 		if !strings.HasSuffix(filePath, ".go") || forwardOnlyFixturePath(filePath) {
 			continue
 		}
-		data, err := readRegularFile(root, filePath)
+		key, functions, err := parseForwardOnlySemanticFile(root, filePath)
 		if err != nil {
 			return nil, err
 		}
-		set := token.NewFileSet()
-		file, err := parser.ParseFile(set, filePath, data, 0)
-		if err != nil {
-			return nil, fmt.Errorf("parse %s: %w", filePath, err)
-		}
-		key := path.Dir(filePath) + "\x00" + file.Name.Name
 		pkg := packages[key]
 		if pkg == nil {
 			pkg = &forwardOnlySemanticPackage{functions: make(map[string]*forwardOnlySemanticFunction)}
 			packages[key] = pkg
 		}
-		for _, declaration := range file.Decls {
-			function, ok := declaration.(*ast.FuncDecl)
-			if !ok || function.Body == nil || function.Recv != nil {
-				continue
-			}
-			pkg.functions[function.Name.Name] = forwardOnlySemanticFunctionFacts(filePath, set, function)
+		for name, function := range functions {
+			pkg.functions[name] = function
 		}
 	}
 	return packages, nil
+}
+
+func parseForwardOnlySemanticFile(root, filePath string) (string, map[string]*forwardOnlySemanticFunction, error) {
+	data, err := readRegularFile(root, filePath)
+	if err != nil {
+		return "", nil, err
+	}
+	set := token.NewFileSet()
+	file, err := parser.ParseFile(set, filePath, data, 0)
+	if err != nil {
+		return "", nil, fmt.Errorf("parse %s: %w", filePath, err)
+	}
+	functions := make(map[string]*forwardOnlySemanticFunction)
+	for _, declaration := range file.Decls {
+		function, ok := declaration.(*ast.FuncDecl)
+		if !ok || function.Body == nil || function.Recv != nil {
+			continue
+		}
+		functions[function.Name.Name] = forwardOnlySemanticFunctionFacts(filePath, set, function)
+	}
+	return path.Dir(filePath) + "\x00" + file.Name.Name, functions, nil
 }
 
 func forwardOnlySemanticFunctionFacts(filePath string, set *token.FileSet, function *ast.FuncDecl) *forwardOnlySemanticFunction {
