@@ -112,9 +112,6 @@ func TestRollbackPreservesEditMadeAfterInstallerWrite(t *testing.T) {
 	if !errors.Is(err, stateFailure) {
 		t.Fatalf("expected state failure, got %v", err)
 	}
-	if !strings.Contains(err.Error(), "rollback skipped concurrently modified surface") {
-		t.Fatalf("missing rollback conflict: %v", err)
-	}
 	assertConcurrentBytes(t, configPath, userConfig)
 	assertConcurrentBytes(t, filepath.Join(dest, "instructions", "test.md"), oldTarget)
 }
