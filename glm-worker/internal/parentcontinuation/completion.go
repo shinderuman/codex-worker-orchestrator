@@ -51,15 +51,6 @@ func BuildCompletionEvidence(repoRoot string, st *state.StateStore, loaded repos
 	return evidence, nil
 }
 
-func continuationCompletionView(repoRoot string, st *state.StateStore, loaded repositoryprojecttree.ProjectState) (*repositoryproject.CompletionView, error) {
-	evidence, err := BuildCompletionEvidence(repoRoot, st, loaded)
-	if err != nil || evidence == nil {
-		return nil, err
-	}
-	view := evidence.View
-	return &view, nil
-}
-
 func completionLifecycleUnmet(st *state.StateStore, activeTask string, evidence *CompletionEvidence) []string {
 	unmet := []string{}
 	if evidence.TaskStatus != state.TaskStatusComplete {
