@@ -20,7 +20,6 @@ Sol High相当の品質をできるだけ維持しながらCodex / Sol側の実�
 - `IMPLEMENTATION_TASKS/parent-review-target-evidence-coverage.md`
 - `IMPLEMENTATION_TASKS/codex-install-interruption-recovery.md`
 - `IMPLEMENTATION_TASKS/cli-install-interruption-recovery.md`
-- `IMPLEMENTATION_TASKS/final-verification-policy-ownership.md`
 - `IMPLEMENTATION_TASKS/publication-sequence-roundtrip-evaluation.md`
 - `IMPLEMENTATION_TASKS/parent-session-rotation-cost-evaluation.md`
 - `IMPLEMENTATION_TASKS/codex-usage-comparability-evaluation.md`

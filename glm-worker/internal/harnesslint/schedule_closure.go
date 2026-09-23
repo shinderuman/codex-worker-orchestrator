@@ -7,6 +7,7 @@ import (
 )
 
 const scheduleClosureRule = "task-schedule-closure"
+const finalVerificationTaskPath = taskcontract.TasksDir + "/022-final-verification.md"
 
 func taskScheduleClosureViolations(root string, paths []string) ([]Violation, error) {
 	if !containsPath(paths, implementationPlanPath) {
@@ -43,12 +44,8 @@ func taskScheduleClosureViolations(root string, paths []string) ([]Violation, er
 }
 
 func finalVerificationOrderingViolations(root string, schedule taskcontract.PlanSchedule) ([]Violation, error) {
-	candidates, err := schedule.TasksScheduledAfterFinalVerification()
-	if err != nil {
-		return nil, err
-	}
 	var violations []Violation
-	for _, path := range candidates {
+	for _, path := range tasksScheduledAfterFinalVerification(schedule) {
 		task, err := readRegularFile(root, path)
 		if err != nil {
 			return nil, err
@@ -65,10 +62,22 @@ func finalVerificationOrderingViolations(root string, schedule taskcontract.Plan
 			Path:    implementationPlanPath,
 			Line:    1,
 			Column:  1,
-			Message: fmt.Sprintf("final verification task %sより後ろにrunnable unblocked task %sがあります", taskcontract.FinalVerificationTaskPath, path),
+			Message: fmt.Sprintf("final verification task %sより後ろにrunnable unblocked task %sがあります", finalVerificationTaskPath, path),
 		})
 	}
 	return violations, nil
+}
+
+func tasksScheduledAfterFinalVerification(schedule taskcontract.PlanSchedule) []string {
+	if containsPath(schedule.Active, finalVerificationTaskPath) {
+		return append([]string(nil), schedule.Next...)
+	}
+	for index, path := range schedule.Next {
+		if path == finalVerificationTaskPath {
+			return append([]string(nil), schedule.Next[index+1:]...)
+		}
+	}
+	return nil
 }
 
 func scheduleClosureViolationPath(failure taskcontract.ScheduleClosureFailure) string {

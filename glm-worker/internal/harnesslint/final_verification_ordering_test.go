@@ -3,8 +3,6 @@ package harnesslint
 import (
 	"strings"
 	"testing"
-
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskcontract"
 )
 
 func TestFinalVerificationOrderingViolations(t *testing.T) {
@@ -13,7 +11,7 @@ func TestFinalVerificationOrderingViolations(t *testing.T) {
 		semanticPath = "IMPLEMENTATION_TASKS/exhaustive-search-query-persistence-review.md"
 		blockedPath  = "IMPLEMENTATION_TASKS/prerequisite.md"
 	)
-	finalPath := taskcontract.FinalVerificationTaskPath
+	finalPath := finalVerificationTaskPath
 	noDependencies := "# task\n\n## Dependencies\n\nnone\n"
 	cases := []struct {
 		name          string
@@ -37,6 +35,14 @@ func TestFinalVerificationOrderingViolations(t *testing.T) {
 			files: map[string]string{
 				activePath:   "# active\n",
 				finalPath:    noDependencies,
+				semanticPath: noDependencies,
+			},
+		},
+		{
+			name: "unrelated plan without final verification",
+			plan: planSchedule(activePath, []string{semanticPath}, nil),
+			files: map[string]string{
+				activePath:   "# active\n",
 				semanticPath: noDependencies,
 			},
 		},
