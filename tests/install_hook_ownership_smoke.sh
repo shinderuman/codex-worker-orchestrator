@@ -234,6 +234,35 @@ assert_managed_hooks "$repo"
 test "$(cat "$state")" = "version=2 baseline=absent value=$managed"
 grep -Fq 'recovered interrupted installer-owned snapshot hooks activation' "$tmp/interrupted.stdout"
 
+repo="$tmp/fresh-verification-rollback"
+new_repo "$repo"
+managed=$(managed_hooks_path "$repo")
+install_with_verification_failure "$repo" "$tmp/fakecmp-fresh-verification"
+if git -C "$repo" config --local --get-all core.hooksPath >/dev/null 2>&1; then
+	printf '%s\n' 'failed fresh verification left core.hooksPath active' >&2
+	exit 1
+fi
+assert_no_state "$repo"
+test ! -e "$managed"
+
+repo="$tmp/install-lock"
+new_repo "$repo"
+common=$(git -C "$repo" rev-parse --git-common-dir)
+case "$common" in
+/*) ;;
+*) common="$repo/$common" ;;
+esac
+lock="$common/codex-worker-orchestrator/hooks-install.lock"
+mkdir -p "$lock"
+if sh "$helper" install "$repo" "$guard_bin" >"$tmp/install-lock.stdout" 2>"$tmp/install-lock.stderr"; then
+	printf '%s\n' 'concurrent hook installer unexpectedly bypassed activation lock' >&2
+	exit 1
+fi
+grep -Fq 'another installer owns hook activation' "$tmp/install-lock.stderr"
+rmdir "$lock"
+sh "$helper" install "$repo" "$guard_bin"
+assert_managed_hooks "$repo"
+
 repo="$tmp/preexisting-tracked"
 new_repo "$repo"
 git -C "$repo" config --local core.hooksPath .githooks
