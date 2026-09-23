@@ -36,7 +36,7 @@ jobs:
           block = raw[start:end]
           block = '\n'.join(line[10:] if line.startswith('          ') else line for line in block.splitlines()) + '\n'
           old = "if '/private/tmp/' in text or '/Users/shinderumanm/' in text:\n    raise SystemExit('Review.md still contains machine-local links')\nreview.write_text(text)"
-          new = "text = text.replace('/Users/shinderumanm/src/codex-worker-orchestrator/', '')\ntext = re.sub(r']\\(([^)\\s]+):(\\d+)\\)', lambda m: f']({m.group(1)}#L{m.group(2)})', text)\ntext = re.sub(r']\\(/private/tmp/[^)]+\\)', '](review-evidence/README.md)', text)\nif '/private/tmp/' in text or '/Users/shinderumanm/' in text:\n    raise SystemExit('Review.md still contains machine-local links')\nreview.write_text(text)"
+          new = "text = re.sub(r'/Users/shinderumanm/[^)\\s`]+', 'review-evidence/README.md', text)\ntext = re.sub(r'/private/tmp/[^)\\s`]+', 'review-evidence/README.md', text)\nif '/private/tmp/' in text or '/Users/shinderumanm/' in text:\n    raise SystemExit('Review.md still contains machine-local links')\nreview.write_text(text)"
           if old not in block:
               raise SystemExit('review cleanup patch anchor missing')
           block = block.replace(old, new, 1)
