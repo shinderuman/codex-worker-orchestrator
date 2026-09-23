@@ -61,24 +61,14 @@ func (w *Workflow) prepareReviewInputSnapshot(
 	if err != nil || stopped {
 		return workerEnd, true, err
 	}
-	workerBoundary, err := w.captureRepositoryBoundary()
+	parentBefore, err := state.CaptureParentFileStates(w.config.RepoRoot)
 	if err != nil {
 		return workerEnd, true, w.failClosedSnapshot(
 			state.SnapshotStageWorkerEnd,
 			workerEnd,
 			state.GitSnapshot{},
-			"quality gate開始前repository boundary取得失敗",
+			"quality gate開始前parent-managed metadata取得失敗",
 			err,
-		)
-	}
-	comparison := state.CompareGitSnapshot(workerEnd, workerBoundary, state.SnapshotStageWorkerEnd, "")
-	if !comparison.Matched {
-		return workerBoundary, true, w.failClosedSnapshot(
-			state.SnapshotStageWorkerEnd,
-			workerEnd,
-			workerBoundary,
-			"worker-end snapshot取得後からquality gate開始前までにrepository状態が変化しています",
-			nil,
 		)
 	}
 	handled, qualityReport, err := w.handleRepositoryQualityViolation(request, workerResult, reviewNumber, autoFixes, workerPhase)
@@ -88,7 +78,7 @@ func (w *Workflow) prepareReviewInputSnapshot(
 	if qualityReport.Fixed == 0 {
 		return workerEnd, false, nil
 	}
-	return w.acceptQualityFixSnapshot(workerBoundary, qualityReport.Fixed)
+	return w.acceptQualityFixSnapshot(workerEnd, parentBefore, qualityReport.Fixed)
 }
 
 func (w *Workflow) buildReviewCheckpoint(
@@ -175,8 +165,8 @@ func (w *Workflow) runReviewModel(checkpoint state.ResumeCheckpoint) (packet.Res
 	return reviewResult, false, nil
 }
 
-func (w *Workflow) acceptQualityFixSnapshot(workerEnd state.GitSnapshot, fixed int) (state.GitSnapshot, bool, error) {
-	reviewInput, err := w.captureRepositoryBoundary()
+func (w *Workflow) acceptQualityFixSnapshot(workerEnd state.GitSnapshot, parentBefore state.ParentFileStates, fixed int) (state.GitSnapshot, bool, error) {
+	reviewInput, err := w.captureSnapshot(w.config.RepoRoot)
 	if err != nil {
 		return reviewInput, true, w.failClosedSnapshot(
 			state.SnapshotStageReviewStart,
@@ -186,7 +176,17 @@ func (w *Workflow) acceptQualityFixSnapshot(workerEnd state.GitSnapshot, fixed i
 			err,
 		)
 	}
-	if !sameParentAuthority(workerEnd, reviewInput) {
+	parentAfter, err := state.CaptureParentFileStates(w.config.RepoRoot)
+	if err != nil {
+		return reviewInput, true, w.failClosedSnapshot(
+			state.SnapshotStageReviewStart,
+			workerEnd,
+			reviewInput,
+			"machine quality fixer後parent-managed metadata取得失敗",
+			err,
+		)
+	}
+	if !sameParentAuthority(parentBefore, parentAfter) {
 		return reviewInput, true, w.failClosedSnapshot(
 			state.SnapshotStageReviewStart,
 			workerEnd,
@@ -207,11 +207,8 @@ func (w *Workflow) acceptQualityFixSnapshot(workerEnd state.GitSnapshot, fixed i
 	return reviewInput, false, nil
 }
 
-func sameParentAuthority(before, after state.GitSnapshot) bool {
-	if before.ParentFiles == nil || after.ParentFiles == nil {
-		return before.ParentFiles == nil && after.ParentFiles == nil
-	}
-	return state.SameParentFileStates(*before.ParentFiles, *after.ParentFiles)
+func sameParentAuthority(before, after state.ParentFileStates) bool {
+	return state.SameParentFileStates(before, after)
 }
 
 func (w *Workflow) handleRepositoryQualityViolation(
