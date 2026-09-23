@@ -26,7 +26,8 @@ func verifyExpectedBinary(binDir string, state installState, name string) error 
 	if !ok {
 		return fmt.Errorf("repository CLI expected identity is missing: %s", name)
 	}
-	if owned, ok := state.Binaries[name]; ok && owned != expected {
+	owned, isOwned := state.Binaries[name]
+	if isOwned && owned != expected {
 		return fmt.Errorf("repository CLI ownership state is stale for expected identity: %s", name)
 	}
 	target := filepath.Join(binDir, name)
@@ -34,7 +35,13 @@ func verifyExpectedBinary(binDir string, state installState, name string) error 
 	if err != nil {
 		return err
 	}
-	if !exists || !isRegularExecutable(info) {
+	if !exists {
+		return fmt.Errorf("repository CLI is missing or not executable: %s", target)
+	}
+	if isOwned {
+		return requireOwnedTarget(target, info, owned)
+	}
+	if !isRegularExecutable(info) {
 		return fmt.Errorf("repository CLI is missing or not executable: %s", target)
 	}
 	observed, err := hashFile(target)

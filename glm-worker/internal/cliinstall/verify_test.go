@@ -27,6 +27,30 @@ func TestVerifyChecksCompleteOwnedCLISurface(t *testing.T) {
 	}
 }
 
+func TestVerifyRejectsOwnedModeDrift(t *testing.T) {
+	buildDir := t.TempDir()
+	binDir := t.TempDir()
+	for _, name := range managedNames {
+		writeVerifyCLI(t, filepath.Join(buildDir, name), "#!/bin/sh\nprintf '%s\\n' "+name+"\n")
+	}
+	if _, err := Install(buildDir, binDir); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(binDir, "glm-worker")
+	if err := os.Chmod(target, 0o777); err != nil {
+		t.Fatal(err)
+	}
+	if err := Verify(binDir); err == nil {
+		t.Fatal("owned CLI mode drift was accepted")
+	}
+	if err := os.Chmod(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := Verify(binDir); err != nil {
+		t.Fatalf("restored owned CLI mode rejected: %v", err)
+	}
+}
+
 func TestVerifyChecksUnownedCLIIdentityWithoutClaimingOwnership(t *testing.T) {
 	buildDir := t.TempDir()
 	binDir := t.TempDir()
