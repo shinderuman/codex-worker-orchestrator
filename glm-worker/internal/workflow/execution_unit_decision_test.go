@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/executionunit"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -184,7 +185,7 @@ func TestParseExecutionUnitDecisionFailsClosed(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if _, err := parseExecutionUnitDecision(tc.payload); err == nil {
+			if _, err := executionunit.Parse(tc.payload); err == nil {
 				t.Fatalf("invalid payload accepted: %q", tc.payload)
 			}
 		})
