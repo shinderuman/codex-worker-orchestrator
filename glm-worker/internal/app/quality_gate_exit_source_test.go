@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -22,10 +23,10 @@ func TestQualityGateProcessOutcomeClassifiesExitSource(t *testing.T) {
 		wantStatus string
 		wantSource string
 	}{
-		{name: "pass", runErr: nil, wantStatus: qualityGateStatusPass, wantSource: state.ValidationExitSourceTarget},
-		{name: "target-failure", runErr: targetExitError(t, 0), wantStatus: qualityGateStatusFail, wantSource: state.ValidationExitSourceTarget},
-		{name: "interrupted", runErr: interruptedExitError(t), wantStatus: qualityGateStatusInterrupted, wantSource: state.ValidationExitSourceUnknown},
-		{name: "launch-failure", runErr: errors.New("fork/exec /go: no such file or directory"), wantStatus: qualityGateStatusFail, wantSource: state.ValidationExitSourceWrapper},
+		{name: "pass", runErr: nil, wantStatus: qualitygate.StatusPass, wantSource: state.ValidationExitSourceTarget},
+		{name: "target-failure", runErr: targetExitError(t, 0), wantStatus: qualitygate.StatusFail, wantSource: state.ValidationExitSourceTarget},
+		{name: "interrupted", runErr: interruptedExitError(t), wantStatus: qualitygate.StatusInterrupted, wantSource: state.ValidationExitSourceUnknown},
+		{name: "launch-failure", runErr: errors.New("fork/exec /go: no such file or directory"), wantStatus: qualitygate.StatusFail, wantSource: state.ValidationExitSourceWrapper},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -72,23 +73,23 @@ func TestQualityGateLogWriteFailureKeepsTargetExitSource(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			_, st := newQualityGateEnv(t)
 			runID := strings.Repeat("c", 32)
-			if err := os.MkdirAll(filepath.Join(st.Path(qualityGateRunDirectory), runID, qualityGateRunLog), 0o700); err != nil {
+			if err := os.MkdirAll(filepath.Join(st.Path(qualitygate.RunDirectory), runID, qualitygate.RunLog), 0o700); err != nil {
 				t.Fatal(err)
 			}
-			record := qualityGateRunRecord{
+			record := qualitygate.RunRecord{
 				ValidationRunID: runID,
 				Form:            "go-test",
 				Repository:      "/repo",
 				StartedAt:       time.Now().Add(-time.Second).UTC(),
-				Status:          qualityGateStatusRunning,
+				Status:          qualitygate.StatusRunning,
 			}
 
 			final, err := completeQualityGateRun(st, record, []byte("gate output\n"), tc.runErr)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if final.Status != qualityGateStatusFail {
-				t.Fatalf("status = %s want %s", final.Status, qualityGateStatusFail)
+			if final.Status != qualitygate.StatusFail {
+				t.Fatalf("status = %s want %s", final.Status, qualitygate.StatusFail)
 			}
 			if final.ExitCode != tc.wantExitCode {
 				t.Fatalf("exit code = %d want %d", final.ExitCode, tc.wantExitCode)
@@ -143,10 +144,10 @@ func TestQualityGateValidationEventCarriesTargetExitSource(t *testing.T) {
 	if len(events) != 2 {
 		t.Fatalf("validation events = %#v", events)
 	}
-	if events[0].Result != qualityGateStatusPass || events[0].ExitSource != state.ValidationExitSourceTarget || events[0].ExitCode != 0 {
+	if events[0].Result != qualitygate.StatusPass || events[0].ExitSource != state.ValidationExitSourceTarget || events[0].ExitCode != 0 {
 		t.Fatalf("pass event = %#v", events[0])
 	}
-	if events[1].Result != qualityGateStatusFail || events[1].ExitSource != state.ValidationExitSourceTarget || events[1].ExitCode == 0 {
+	if events[1].Result != qualitygate.StatusFail || events[1].ExitSource != state.ValidationExitSourceTarget || events[1].ExitCode == 0 {
 		t.Fatalf("fail event = %#v", events[1])
 	}
 }
@@ -154,12 +155,12 @@ func TestQualityGateValidationEventCarriesTargetExitSource(t *testing.T) {
 func TestQualityGateInterruptedReconcileMarksExitSourceUnknown(t *testing.T) {
 	_, st := newQualityGateEnv(t)
 	runID := strings.Repeat("5", 32)
-	record := qualityGateRunRecord{
+	record := qualitygate.RunRecord{
 		ValidationRunID: runID,
 		Form:            "go-test",
 		Repository:      "/repo",
 		StartedAt:       time.Now().Add(-time.Second).UTC(),
-		Status:          qualityGateStatusRunning,
+		Status:          qualitygate.StatusRunning,
 		RunnerPID:       2147483647,
 	}
 	if err := writeQualityGateRun(st, record); err != nil {
@@ -169,11 +170,11 @@ func TestQualityGateInterruptedReconcileMarksExitSourceUnknown(t *testing.T) {
 	if err := printQualityGateRun(st, runID, false, &stdout); err != nil {
 		t.Fatal(err)
 	}
-	var got qualityGateRunRecord
+	var got qualitygate.RunRecord
 	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.Status != qualityGateStatusInterrupted || got.ExitCode != -1 {
+	if got.Status != qualitygate.StatusInterrupted || got.ExitCode != -1 {
 		t.Fatalf("record = %+v", got)
 	}
 	if got.ExitSource != state.ValidationExitSourceUnknown {

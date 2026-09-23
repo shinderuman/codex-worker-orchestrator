@@ -8,6 +8,7 @@ import (
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/publicationsequence"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/taskview"
 )
@@ -297,14 +298,14 @@ func currentParentValidations(st *state.StateStore, repoRoot string, snapshot *s
 	return validations
 }
 
-func latestCurrentValidationRuns(st *state.StateStore, repoRoot string, snapshot *state.SnapshotDigest) map[string]qualityGateRunRecord {
-	latestByForm := make(map[string]qualityGateRunRecord, len(qualityGateForms))
-	entries, err := os.ReadDir(st.Path(qualityGateRunDirectory))
+func latestCurrentValidationRuns(st *state.StateStore, repoRoot string, snapshot *state.SnapshotDigest) map[string]qualitygate.RunRecord {
+	latestByForm := make(map[string]qualitygate.RunRecord, len(qualityGateForms))
+	entries, err := os.ReadDir(st.Path(qualitygate.RunDirectory))
 	if err != nil {
 		return latestByForm
 	}
 	for _, entry := range entries {
-		if !entry.IsDir() || !validValidationRunID(entry.Name()) {
+		if !entry.IsDir() || !qualitygate.ValidRunID(entry.Name()) {
 			continue
 		}
 		record, err := readQualityGateRun(st, entry.Name())
@@ -319,7 +320,7 @@ func latestCurrentValidationRuns(st *state.StateStore, repoRoot string, snapshot
 	return latestByForm
 }
 
-func parentHandoffValidationFromRun(record qualityGateRunRecord) parentHandoffValidation {
+func parentHandoffValidationFromRun(record qualitygate.RunRecord) parentHandoffValidation {
 	return parentHandoffValidation{
 		ValidationRunID: record.ValidationRunID,
 		Form:            record.Form,
@@ -332,7 +333,7 @@ func parentHandoffValidationFromRun(record qualityGateRunRecord) parentHandoffVa
 	}
 }
 
-func qualityGateMatchesHandoff(record qualityGateRunRecord, repoRoot string, snapshot *state.SnapshotDigest) bool {
+func qualityGateMatchesHandoff(record qualitygate.RunRecord, repoRoot string, snapshot *state.SnapshotDigest) bool {
 	return filepath.Clean(record.Repository) == filepath.Clean(repoRoot) &&
 		record.Head == snapshot.Head &&
 		record.IndexDigest == snapshot.IndexDigest &&
@@ -362,18 +363,18 @@ func currentParentRoutingEvidence(st *state.StateStore, repoRoot, taskID string,
 	return evidence
 }
 
-func latestRoutingEvidenceRuns(st *state.StateStore, repoRoot, taskID string, snapshot *state.SnapshotDigest) map[string]qualityGateRunRecord {
-	latestByForm := make(map[string]qualityGateRunRecord, len(qualityGateForms))
-	entries, err := os.ReadDir(st.Path(qualityGateRunDirectory))
+func latestRoutingEvidenceRuns(st *state.StateStore, repoRoot, taskID string, snapshot *state.SnapshotDigest) map[string]qualitygate.RunRecord {
+	latestByForm := make(map[string]qualitygate.RunRecord, len(qualityGateForms))
+	entries, err := os.ReadDir(st.Path(qualitygate.RunDirectory))
 	if err != nil {
 		return latestByForm
 	}
 	for _, entry := range entries {
-		if !entry.IsDir() || !validValidationRunID(entry.Name()) {
+		if !entry.IsDir() || !qualitygate.ValidRunID(entry.Name()) {
 			continue
 		}
 		record, err := readQualityGateRun(st, entry.Name())
-		if err != nil || record.Status != qualityGateStatusPass || record.TaskID != taskID {
+		if err != nil || record.Status != qualitygate.StatusPass || record.TaskID != taskID {
 			continue
 		}
 		if routingSnapshotMatch(record, repoRoot, snapshot) == "" {
@@ -387,7 +388,7 @@ func latestRoutingEvidenceRuns(st *state.StateStore, repoRoot, taskID string, sn
 	return latestByForm
 }
 
-func routingSnapshotMatch(record qualityGateRunRecord, repoRoot string, snapshot *state.SnapshotDigest) string {
+func routingSnapshotMatch(record qualitygate.RunRecord, repoRoot string, snapshot *state.SnapshotDigest) string {
 	if filepath.Clean(record.Repository) != filepath.Clean(repoRoot) ||
 		record.Head != snapshot.Head ||
 		record.IndexDigest != snapshot.IndexDigest {

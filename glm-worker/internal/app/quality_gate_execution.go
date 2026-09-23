@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -100,7 +101,7 @@ func prepareQualityGateStart(form string, st *state.StateStore) (qualityGateStar
 	if err != nil {
 		return qualityGateStartIdentity{}, fmt.Errorf("quality gate snapshotを取得できません: %w", err)
 	}
-	if err := os.MkdirAll(st.Path(qualityGateRunDirectory), 0o700); err != nil {
+	if err := os.MkdirAll(st.Path(qualitygate.RunDirectory), 0o700); err != nil {
 		return qualityGateStartIdentity{}, fmt.Errorf("quality gate run directoryを作成できません: %w", err)
 	}
 	return qualityGateStartIdentity{
@@ -113,12 +114,12 @@ func prepareQualityGateStart(form string, st *state.StateStore) (qualityGateStar
 	}, nil
 }
 
-func newQualityGateRunRecord(identity qualityGateStartIdentity) (qualityGateRunRecord, error) {
-	runID, err := newValidationRunID()
+func newQualityGateRunRecord(identity qualityGateStartIdentity) (qualitygate.RunRecord, error) {
+	runID, err := qualitygate.NewRunID()
 	if err != nil {
-		return qualityGateRunRecord{}, err
+		return qualitygate.RunRecord{}, err
 	}
-	return qualityGateRunRecord{
+	return qualitygate.RunRecord{
 		ValidationRunID:               runID,
 		Form:                          identity.Form,
 		Repository:                    identity.Repository,
@@ -129,11 +130,11 @@ func newQualityGateRunRecord(identity qualityGateStartIdentity) (qualityGateRunR
 		WorktreeDigestExcludingParent: identity.Snapshot.WorktreeDigestExcludingParent,
 		TaskID:                        identity.TaskID,
 		StartedAt:                     time.Now().UTC(),
-		Status:                        qualityGateStatusRunning,
+		Status:                        qualitygate.StatusRunning,
 	}, nil
 }
 
-func launchQualityGateRunnerProcess(_ *state.StateStore, record qualityGateRunRecord) (qualityGateRunnerWait, error) {
+func launchQualityGateRunnerProcess(_ *state.StateStore, record qualitygate.RunRecord) (qualityGateRunnerWait, error) {
 	executable, err := os.Executable()
 	if err != nil {
 		return nil, fmt.Errorf("glm-worker executableを解決できません: %w", err)
@@ -159,38 +160,38 @@ func executeQualityGateRun(st *state.StateStore, runID string) error {
 	if err != nil {
 		return err
 	}
-	if final.Status != qualityGateStatusPass {
+	if final.Status != qualitygate.StatusPass {
 		return qualityGateErrorFromRecord(final)
 	}
 	return nil
 }
 
-func beginQualityGateRun(st *state.StateStore, runID string) (qualityGateRunRecord, []string, bool, error) {
+func beginQualityGateRun(st *state.StateStore, runID string) (qualitygate.RunRecord, []string, bool, error) {
 	lock, err := acquireQualityGateRunStateLock(st, runID)
 	if err != nil {
-		return qualityGateRunRecord{}, nil, false, err
+		return qualitygate.RunRecord{}, nil, false, err
 	}
 	defer func() { _ = lock.Close() }()
 
 	record, err := readQualityGateRun(st, runID)
 	if err != nil {
-		return qualityGateRunRecord{}, nil, false, err
+		return qualitygate.RunRecord{}, nil, false, err
 	}
-	if record.Status != qualityGateStatusRunning {
+	if record.Status != qualitygate.StatusRunning {
 		return record, nil, false, nil
 	}
 	goArgs, ok := qualityGateForms[record.Form]
 	if !ok {
-		return qualityGateRunRecord{}, nil, false, fmt.Errorf("quality gate run %s has unknown form %q", runID, record.Form)
+		return qualitygate.RunRecord{}, nil, false, fmt.Errorf("quality gate run %s has unknown form %q", runID, record.Form)
 	}
 	record.RunnerPID = os.Getpid()
 	if err := writeQualityGateRun(st, record); err != nil {
-		return qualityGateRunRecord{}, nil, false, err
+		return qualitygate.RunRecord{}, nil, false, err
 	}
 	return record, goArgs, true, nil
 }
 
-func runQualityGateProcess(record qualityGateRunRecord, goArgs []string) ([]byte, error) {
+func runQualityGateProcess(record qualitygate.RunRecord, goArgs []string) ([]byte, error) {
 	var gateLog bytes.Buffer
 	gate := exec.Command("go", goArgs...)
 	gate.Dir = record.WorkingDir
@@ -201,17 +202,17 @@ func runQualityGateProcess(record qualityGateRunRecord, goArgs []string) ([]byte
 	return gateLog.Bytes(), err
 }
 
-func completeQualityGateRun(st *state.StateStore, record qualityGateRunRecord, gateLog []byte, runErr error) (qualityGateRunRecord, error) {
+func completeQualityGateRun(st *state.StateStore, record qualitygate.RunRecord, gateLog []byte, runErr error) (qualitygate.RunRecord, error) {
 	lock, err := acquireQualityGateRunStateLock(st, record.ValidationRunID)
 	if err != nil {
-		return qualityGateRunRecord{}, err
+		return qualitygate.RunRecord{}, err
 	}
 	defer func() { _ = lock.Close() }()
 
 	status, exitCode, exitSource := qualityGateProcessOutcome(runErr)
 	logPath, logErr := writeQualityGateRunLog(st, record.ValidationRunID, gateLog)
 	if logErr != nil {
-		status = qualityGateStatusFail
+		status = qualitygate.StatusFail
 		if exitCode == 0 {
 			exitCode = 1
 			exitSource = state.ValidationExitSourceWrapper
@@ -226,7 +227,7 @@ func completeQualityGateRun(st *state.StateStore, record qualityGateRunRecord, g
 	record.DurationMS = completed.Sub(record.StartedAt).Milliseconds()
 	record.Log = logPath
 	if err := writeQualityGateRun(st, record); err != nil {
-		return qualityGateRunRecord{}, err
+		return qualitygate.RunRecord{}, err
 	}
 	recordQualityGateValidation(st, record)
 	return record, nil
@@ -234,29 +235,29 @@ func completeQualityGateRun(st *state.StateStore, record qualityGateRunRecord, g
 
 func qualityGateProcessOutcome(runErr error) (string, int, string) {
 	if runErr == nil {
-		return qualityGateStatusPass, 0, state.ValidationExitSourceTarget
+		return qualitygate.StatusPass, 0, state.ValidationExitSourceTarget
 	}
 	var exitErr *exec.ExitError
 	if !errors.As(runErr, &exitErr) {
-		return qualityGateStatusFail, 1, state.ValidationExitSourceWrapper
+		return qualitygate.StatusFail, 1, state.ValidationExitSourceWrapper
 	}
 	exitCode := exitErr.ExitCode()
 	if exitCode < 0 {
-		return qualityGateStatusInterrupted, exitCode, state.ValidationExitSourceUnknown
+		return qualitygate.StatusInterrupted, exitCode, state.ValidationExitSourceUnknown
 	}
-	return qualityGateStatusFail, exitCode, state.ValidationExitSourceTarget
+	return qualitygate.StatusFail, exitCode, state.ValidationExitSourceTarget
 }
 
-func reconcileQualityGateAfterWait(st *state.StateStore, runID string) (qualityGateRunRecord, error) {
+func reconcileQualityGateAfterWait(st *state.StateStore, runID string) (qualitygate.RunRecord, error) {
 	final, err := reconcileQualityGateRun(st, runID)
-	if err != nil || final.Status != qualityGateStatusRunning {
+	if err != nil || final.Status != qualitygate.StatusRunning {
 		return final, err
 	}
 	return markQualityGateInterrupted(st, runID, "quality gate runner exited before persisting a terminal result")
 }
 
-func finishQualityGateCommand(record qualityGateRunRecord, goArgs []string, stdout io.Writer) error {
-	if record.Status != qualityGateStatusPass {
+func finishQualityGateCommand(record qualitygate.RunRecord, goArgs []string, stdout io.Writer) error {
+	if record.Status != qualitygate.StatusPass {
 		return qualityGateErrorFromRecord(record)
 	}
 	return machinecli.WriteJSON(stdout, qualityGateOutput{
@@ -270,7 +271,7 @@ func finishQualityGateCommand(record qualityGateRunRecord, goArgs []string, stdo
 	})
 }
 
-func qualityGateErrorFromRecord(record qualityGateRunRecord) *QualityGateError {
+func qualityGateErrorFromRecord(record qualitygate.RunRecord) *QualityGateError {
 	return &QualityGateError{
 		ValidationRunID: record.ValidationRunID,
 		Form:            record.Form,
@@ -293,10 +294,10 @@ func printQualityGateRun(st *state.StateStore, runID string, watch bool, stdout 
 	return machinecli.WriteJSON(stdout, record)
 }
 
-func waitQualityGateRun(st *state.StateStore, runID string) (qualityGateRunRecord, error) {
+func waitQualityGateRun(st *state.StateStore, runID string) (qualitygate.RunRecord, error) {
 	for {
 		record, err := reconcileQualityGateRun(st, runID)
-		if err != nil || record.Status != qualityGateStatusRunning {
+		if err != nil || record.Status != qualitygate.StatusRunning {
 			return record, err
 		}
 		time.Sleep(500 * time.Millisecond)

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -26,11 +27,11 @@ func TestQualityGateRecordsTaskValidationEvidence(t *testing.T) {
 	}
 	record := readSingleValidationEvent(t, st, taskID)
 	if record.Validation.Source != "quality-gate" || record.Validation.Form != "go-test" ||
-		record.Validation.Result != qualityGateStatusPass || record.Validation.Attribution != "task" {
+		record.Validation.Result != qualitygate.StatusPass || record.Validation.Attribution != "task" {
 		t.Fatalf("validation = %#v", record.Validation)
 	}
 	parts := strings.Split(record.Validation.Evidence, "/")
-	if len(parts) != 3 || parts[0] != qualityGateRunDirectory || !validValidationRunID(parts[1]) || parts[2] != qualityGateRunLog {
+	if len(parts) != 3 || parts[0] != qualitygate.RunDirectory || !qualitygate.ValidRunID(parts[1]) || parts[2] != qualitygate.RunLog {
 		t.Fatalf("evidence = %q", record.Validation.Evidence)
 	}
 }

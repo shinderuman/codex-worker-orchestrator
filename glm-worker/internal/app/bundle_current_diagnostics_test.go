@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -55,14 +56,14 @@ func TestBundleCurrentDiagnosticsIgnoreUnrelatedHistory(t *testing.T) {
 	}
 	archive := readBundleArchive(t, output.ArchivePath)
 	for _, runID := range []string{linkedRun, matchedRun, unmatchedRun} {
-		archivePath := filepath.ToSlash(filepath.Join("current-state", "diagnostics", qualityGateRunDirectory, runID, qualityGateRunFile))
+		archivePath := filepath.ToSlash(filepath.Join("current-state", "diagnostics", qualitygate.RunDirectory, runID, qualitygate.RunFile))
 		if _, ok := archive[archivePath]; !ok {
 			t.Fatalf("relevant validation run missing: %s", archivePath)
 		}
 	}
 	for index := 0; index < 24; index++ {
 		runID := fmt.Sprintf("%032x", index+1)
-		archivePath := filepath.ToSlash(filepath.Join("current-state", "diagnostics", qualityGateRunDirectory, runID, qualityGateRunFile))
+		archivePath := filepath.ToSlash(filepath.Join("current-state", "diagnostics", qualitygate.RunDirectory, runID, qualitygate.RunFile))
 		if _, ok := archive[archivePath]; ok {
 			t.Fatalf("unrelated historical validation included: %s", archivePath)
 		}
@@ -70,7 +71,7 @@ func TestBundleCurrentDiagnosticsIgnoreUnrelatedHistory(t *testing.T) {
 			t.Fatalf("receipt enumerates unrelated historical validation: %s", archivePath)
 		}
 	}
-	unmatchedPath := filepath.ToSlash(filepath.Join("current-state", "diagnostics", qualityGateRunDirectory, unmatchedRun, qualityGateRunFile))
+	unmatchedPath := filepath.ToSlash(filepath.Join("current-state", "diagnostics", qualitygate.RunDirectory, unmatchedRun, qualitygate.RunFile))
 	if !slices.Contains(output.Unattributed, unmatchedPath) {
 		t.Fatalf("in-window unmatched validation lost conservative attribution: %v", output.Unattributed)
 	}

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -1310,11 +1311,11 @@ func analysisRunArchiveEntries(collector *bundleCollector) map[string]bundleEntr
 		if !strings.HasPrefix(archivePath, bundleAnalysisRunsArchivePrefix) {
 			continue
 		}
-		if !strings.HasSuffix(archivePath, "/"+qualityGateRunFile) {
+		if !strings.HasSuffix(archivePath, "/"+qualitygate.RunFile) {
 			continue
 		}
-		relative := strings.TrimSuffix(strings.TrimPrefix(archivePath, bundleAnalysisRunsArchivePrefix), "/"+qualityGateRunFile)
-		if validValidationRunID(relative) {
+		relative := strings.TrimSuffix(strings.TrimPrefix(archivePath, bundleAnalysisRunsArchivePrefix), "/"+qualitygate.RunFile)
+		if qualitygate.ValidRunID(relative) {
 			runEntries[relative] = entry
 		}
 	}
@@ -1361,9 +1362,9 @@ func validationEventRunID(evidence string) string {
 	if evidence == "" {
 		return ""
 	}
-	relative := strings.TrimPrefix(filepath.ToSlash(evidence), qualityGateRunDirectory+"/")
+	relative := strings.TrimPrefix(filepath.ToSlash(evidence), qualitygate.RunDirectory+"/")
 	runID, _, found := strings.Cut(relative, "/")
-	if !found || !validValidationRunID(runID) {
+	if !found || !qualitygate.ValidRunID(runID) {
 		return ""
 	}
 	return runID
@@ -1432,7 +1433,7 @@ func analysisRunRecord(runID string, entry bundleEntry, eventRuns map[string]ana
 	return run
 }
 
-func analysisRunOverlapsWindow(record qualityGateRunRecord, start, end time.Time) bool {
+func analysisRunOverlapsWindow(record qualitygate.RunRecord, start, end time.Time) bool {
 	if record.StartedAt.IsZero() || record.StartedAt.After(end) {
 		return false
 	}
@@ -1442,14 +1443,14 @@ func analysisRunOverlapsWindow(record qualityGateRunRecord, start, end time.Time
 	return !record.CompletedAt.Before(start)
 }
 
-func readAnalysisRunRecord(sourcePath string) (qualityGateRunRecord, error) {
+func readAnalysisRunRecord(sourcePath string) (qualitygate.RunRecord, error) {
 	data, err := os.ReadFile(sourcePath)
 	if err != nil {
-		return qualityGateRunRecord{}, err
+		return qualitygate.RunRecord{}, err
 	}
-	var record qualityGateRunRecord
+	var record qualitygate.RunRecord
 	if err := json.Unmarshal(data, &record); err != nil {
-		return qualityGateRunRecord{}, err
+		return qualitygate.RunRecord{}, err
 	}
 	return record, nil
 }
@@ -1659,7 +1660,7 @@ func analysisExternalRunEvidence(externalRuns map[string]struct{}) []bundleAnaly
 	refs := make([]bundleAnalysisEvidenceRef, 0, len(externalRuns))
 	for runID := range externalRuns {
 		refs = append(refs, bundleAnalysisEvidenceRef{
-			ArchivePath: path.Join(bundleAnalysisRunsArchivePrefix, runID, qualityGateRunFile),
+			ArchivePath: path.Join(bundleAnalysisRunsArchivePrefix, runID, qualitygate.RunFile),
 			Basis:       analysisBasisOutsideWindow,
 		})
 	}

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -27,7 +28,7 @@ func (c *bundleCollector) collectCurrentValidationDiagnostics(st *state.StateSto
 
 	eventRuns := analysisTaskEventValidationRuns(st, stats.TaskID)
 	roundSeqByDigest := analysisRoundDigestSeqs(st, stats.TaskID)
-	entries, err := os.ReadDir(st.Path(qualityGateRunDirectory))
+	entries, err := os.ReadDir(st.Path(qualitygate.RunDirectory))
 	if err != nil {
 		return
 	}
@@ -35,17 +36,17 @@ func (c *bundleCollector) collectCurrentValidationDiagnostics(st *state.StateSto
 	end := time.Now().UTC()
 	for _, entry := range entries {
 		runID := entry.Name()
-		if !entry.IsDir() || !validValidationRunID(runID) {
+		if !entry.IsDir() || !qualitygate.ValidRunID(runID) {
 			continue
 		}
-		sourceRoot := st.Path(filepath.Join(qualityGateRunDirectory, runID))
-		archiveRoot := path.Join("current-state", "diagnostics", qualityGateRunDirectory, runID)
+		sourceRoot := st.Path(filepath.Join(qualitygate.RunDirectory, runID))
+		archiveRoot := path.Join("current-state", "diagnostics", qualitygate.RunDirectory, runID)
 		if _, linked := eventRuns[runID]; linked {
 			c.addTreeIfPresent(sourceRoot, archiveRoot)
 			continue
 		}
 
-		record, err := readAnalysisRunRecord(filepath.Join(sourceRoot, qualityGateRunFile))
+		record, err := readAnalysisRunRecord(filepath.Join(sourceRoot, qualitygate.RunFile))
 		if err != nil {
 			continue
 		}

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -197,7 +198,7 @@ func prepareCompletedGoalTaskState(t *testing.T, cfg config.AppConfig, taskPath 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := writeQualityGateRun(st, qualityGateRunRecord{
+	if err := writeQualityGateRun(st, qualitygate.RunRecord{
 		ValidationRunID: strings.Repeat("a", 32),
 		Form:            "go-test",
 		Repository:      cfg.RepoRoot,
@@ -206,7 +207,7 @@ func prepareCompletedGoalTaskState(t *testing.T, cfg config.AppConfig, taskPath 
 		IndexDigest:     snapshot.IndexDigest,
 		WorktreeDigest:  snapshot.WorktreeDigest,
 		StartedAt:       time.Now().UTC(),
-		Status:          qualityGateStatusPass,
+		Status:          qualitygate.StatusPass,
 	}); err != nil {
 		t.Fatal(err)
 	}

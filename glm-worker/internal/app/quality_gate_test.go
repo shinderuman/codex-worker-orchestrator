@@ -4,13 +4,14 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/machinecli"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/qualitygate"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -56,7 +57,7 @@ func newQualityGateEnv(t *testing.T) (config.AppConfig, *state.StateStore) {
 func useInlineQualityGateRunner(t *testing.T) {
 	t.Helper()
 	previous := launchQualityGateRunner
-	launchQualityGateRunner = func(st *state.StateStore, record qualityGateRunRecord) (qualityGateRunnerWait, error) {
+	launchQualityGateRunner = func(st *state.StateStore, record qualitygate.RunRecord) (qualityGateRunnerWait, error) {
 		return func() error { return executeQualityGateRun(st, record.ValidationRunID) }, nil
 	}
 	t.Cleanup(func() { launchQualityGateRunner = previous })
@@ -200,7 +201,7 @@ func TestQualityGateRunsFixedArgv(t *testing.T) {
 			if err := json.Unmarshal(stdout.Bytes(), &out); err != nil {
 				t.Fatalf("stdoutが単一JSON objectではありません: %v: %s", err, stdout.String())
 			}
-			if out.Status != qualityGateStatusPass || out.Form != tc.form {
+			if out.Status != qualitygate.StatusPass || out.Form != tc.form {
 				t.Fatalf("結果JSONが想定と異なります: %+v", out)
 			}
 			if out.Command != "go "+tc.wantArgv {
@@ -256,7 +257,7 @@ func TestQualityGateFailureIsStructuredProcessError(t *testing.T) {
 	if !errors.As(err, &gateFail) {
 		t.Fatalf("QualityGateError以外が返りました: %v", err)
 	}
-	if gateFail.ExitCode != 3 || gateFail.Form != "go-test" || !validValidationRunID(gateFail.ValidationRunID) {
+	if gateFail.ExitCode != 3 || gateFail.Form != "go-test" || !qualitygate.ValidRunID(gateFail.ValidationRunID) {
 		t.Fatalf("失敗detailが想定と異なります: %+v", gateFail)
 	}
 	if _, statErr := os.Stat(gateFail.LogPath); statErr != nil {
