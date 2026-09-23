@@ -2,6 +2,7 @@ package parentcontinuation
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -124,8 +125,12 @@ func buildCurrentRequest(repoRoot string, st *state.StateStore, plan state.Paren
 		if err != nil {
 			return Request{}, err
 		}
+		project, err := continuationProjectView(loaded)
+		if err != nil {
+			return Request{}, err
+		}
 		continuation := repositoryproject.DeriveContinuation(
-			continuationProjectView(loaded),
+			project,
 			continuationLifecycle(st, plan, planErr == nil),
 		)
 		policy := repositoryproject.ParentRequestProjection(
@@ -155,10 +160,10 @@ func buildCurrentRequest(repoRoot string, st *state.StateStore, plan state.Paren
 	return request, nil
 }
 
-func continuationProjectView(loaded repositoryprojecttree.ProjectState) repositoryproject.ContinuationProjectView {
+func continuationProjectView(loaded repositoryprojecttree.ProjectState) (repositoryproject.ContinuationProjectView, error) {
 	view := repositoryproject.ContinuationProjectView{PlanPresent: loaded.PlanPresent}
 	if !loaded.PlanPresent {
-		return view
+		return view, nil
 	}
 	view.ProjectReady = true
 	view.GoalPresent = loaded.Plan.Goal.Present
@@ -166,7 +171,20 @@ func continuationProjectView(loaded repositoryprojecttree.ProjectState) reposito
 	view.Active = append([]string(nil), loaded.Plan.Active...)
 	view.NextRunnable = loaded.Graph.NextRunnable(loaded.Plan.Next)
 	view.Blockers = loaded.Graph.Blockers(loaded.Plan.Next, loaded.Plan.Blocked)
-	return view
+	if loaded.Plan.Goal.Present && loaded.Plan.Goal.Status == taskcontract.GoalStatusActive {
+		if len(loaded.Plan.Active) != 1 {
+			return repositoryproject.ContinuationProjectView{}, fmt.Errorf("Goal進行中のcompletion評価には単一ACTIVE taskが必要です(active=%d)", len(loaded.Plan.Active))
+		}
+		activeTask := loaded.Plan.Active[0]
+		content, ok := loaded.Graph.TaskContent(activeTask)
+		if !ok {
+			return repositoryproject.ContinuationProjectView{}, fmt.Errorf("ACTIVE task %sのdependency状態を解決できません", activeTask)
+		}
+		if _, err := repositoryproject.CompletionScheduleUnmet(loaded.Plan.Next, loaded.Plan.Blocked, activeTask, content); err != nil {
+			return repositoryproject.ContinuationProjectView{}, err
+		}
+	}
+	return view, nil
 }
 
 func continuationLifecycle(st *state.StateStore, plan state.ParentActionPlan, planKnown bool) repositoryproject.ContinuationLifecycle {
