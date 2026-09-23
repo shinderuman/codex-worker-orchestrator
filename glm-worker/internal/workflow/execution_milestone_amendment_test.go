@@ -3,30 +3,33 @@ package workflow
 import (
 	"strings"
 	"testing"
+
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/executionmilestone"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/executionunit"
 )
 
 func TestExecutionMilestonePromptDistinguishesExplicitAmendmentFromRedo(t *testing.T) {
-	plan := &executionMilestonePlan{
-		Version:            executionMilestonePlanVersion,
+	plan := &executionmilestone.Plan{
+		Version:            executionmilestone.PlanVersion,
 		TaskID:             "task",
 		ActiveTaskPath:     "IMPLEMENTATION_TASKS/large.md",
 		TaskContractSHA256: "new-task-hash",
 		CurrentIndex:       1,
-		Milestones: []executionMilestoneRecord{
+		Milestones: []executionmilestone.Record{
 			{
-				ExecutionMilestoneDefinition: ExecutionMilestoneDefinition{
+				MilestoneDefinition: executionunit.MilestoneDefinition{
 					ID: "completed", Scope: "original bounded scope", Acceptance: "original acceptance",
 				},
-				Status: executionMilestoneComplete,
-				Completion: &executionMilestoneCompletion{
+				Status: executionmilestone.StatusComplete,
+				Completion: &executionmilestone.Completion{
 					Summary: "completed before amendment", TaskContractSHA256: "old-task-hash",
 				},
 			},
 			{
-				ExecutionMilestoneDefinition: ExecutionMilestoneDefinition{
+				MilestoneDefinition: executionunit.MilestoneDefinition{
 					ID: "amendment", Scope: "apply explicit semantic delta to completed behavior", Acceptance: "amended behavior passes",
 				},
-				Status: executionMilestonePending,
+				Status: executionmilestone.StatusPending,
 			},
 		},
 	}

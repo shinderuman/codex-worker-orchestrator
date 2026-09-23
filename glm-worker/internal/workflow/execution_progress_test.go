@@ -4,6 +4,8 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/executionmilestone"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/executionunit"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -34,7 +36,7 @@ func TestProjectExecutionProgressUsesMilestonePositionAndPhaseBand(t *testing.T)
 	if err := st.Write(activeTaskStateKey, taskPath); err != nil {
 		t.Fatal(err)
 	}
-	definitions := []ExecutionMilestoneDefinition{
+	definitions := []executionunit.MilestoneDefinition{
 		{ID: "one", Scope: "one", Acceptance: "one"},
 		{ID: "two", Scope: "two", Acceptance: "two"},
 		{ID: "three", Scope: "three", Acceptance: "three"},
@@ -114,18 +116,18 @@ func TestProjectExecutionProgressFailsClosedOnStaleMilestoneTask(t *testing.T) {
 	if err := st.Write(activeTaskStateKey, taskPath); err != nil {
 		t.Fatal(err)
 	}
-	if err := w.initializeExecutionMilestones([]ExecutionMilestoneDefinition{
+	if err := w.initializeExecutionMilestones([]executionunit.MilestoneDefinition{
 		{ID: "one", Scope: "one", Acceptance: "one"},
 		{ID: "two", Scope: "two", Acceptance: "two"},
 	}, taskPath); err != nil {
 		t.Fatal(err)
 	}
-	plan, err := loadExecutionMilestonePlan(st)
+	plan, err := executionmilestone.Load(st)
 	if err != nil {
 		t.Fatal(err)
 	}
 	plan.TaskID = "stale-task"
-	if err := saveExecutionMilestonePlan(st, plan); err != nil {
+	if err := executionmilestone.Save(st, plan); err != nil {
 		t.Fatal(err)
 	}
 
@@ -144,7 +146,7 @@ func TestProjectExecutionProgressMarksCompletedMilestonePlanExactlyComplete(t *t
 	if err := st.Write(activeTaskStateKey, taskPath); err != nil {
 		t.Fatal(err)
 	}
-	definitions := []ExecutionMilestoneDefinition{
+	definitions := []executionunit.MilestoneDefinition{
 		{ID: "one", Scope: "one", Acceptance: "one"},
 		{ID: "two", Scope: "two", Acceptance: "two"},
 	}
@@ -170,7 +172,7 @@ func TestProjectExecutionProgressMarksCompletedMilestonePlanExactlyComplete(t *t
 
 func setExecutionProgressIndex(t *testing.T, st *state.StateStore, currentIndex int) {
 	t.Helper()
-	plan, err := loadExecutionMilestonePlan(st)
+	plan, err := executionmilestone.Load(st)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,19 +180,19 @@ func setExecutionProgressIndex(t *testing.T, st *state.StateStore, currentIndex 
 	for index := range plan.Milestones {
 		milestone := &plan.Milestones[index]
 		if index < currentIndex {
-			milestone.Status = executionMilestoneComplete
-			milestone.Completion = &executionMilestoneCompletion{
+			milestone.Status = executionmilestone.StatusComplete
+			milestone.Completion = &executionmilestone.Completion{
 				CompletedAt:        testFixedTime,
 				Summary:            "complete",
 				TaskContractSHA256: plan.TaskContractSHA256,
 				Snapshot:           fixedSnapshot,
 			}
 		} else {
-			milestone.Status = executionMilestonePending
+			milestone.Status = executionmilestone.StatusPending
 			milestone.Completion = nil
 		}
 	}
-	if err := saveExecutionMilestonePlan(st, plan); err != nil {
+	if err := executionmilestone.Save(st, plan); err != nil {
 		t.Fatal(err)
 	}
 }

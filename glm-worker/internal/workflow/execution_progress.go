@@ -3,6 +3,7 @@ package workflow
 import (
 	"strings"
 
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/executionmilestone"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
 )
 
@@ -28,7 +29,7 @@ const invalidMilestoneProgressStateReason = "invalid-milestone-state"
 
 func ProjectExecutionProgress(st *state.StateStore, currentPhase, currentRole string) ExecutionProgressProjection {
 	phaseStage := executionProgressPhaseStage(currentPhase, currentRole)
-	plan, err := loadExecutionMilestonePlan(st)
+	plan, err := executionmilestone.Load(st)
 	if err != nil {
 		return indeterminateExecutionProgress(phaseStage, "machine-state", "milestone-state-unavailable")
 	}
@@ -79,7 +80,7 @@ func indeterminateExecutionProgress(phaseStage, basis, reason string) ExecutionP
 	}
 }
 
-func executionProgressPlanInconsistency(st *state.StateStore, plan *executionMilestonePlan, taskStatus state.TaskStatus) string {
+func executionProgressPlanInconsistency(st *state.StateStore, plan *executionmilestone.Plan, taskStatus state.TaskStatus) string {
 	if taskID := st.ReadOr("task.id", ""); taskID != "" && plan.TaskID != taskID {
 		return "milestone-task-mismatch"
 	}
@@ -92,18 +93,18 @@ func executionProgressPlanInconsistency(st *state.StateStore, plan *executionMil
 	return ""
 }
 
-func executionProgressMilestonesConsistent(plan *executionMilestonePlan) bool {
+func executionProgressMilestonesConsistent(plan *executionmilestone.Plan) bool {
 	for index, milestone := range plan.Milestones {
 		if strings.TrimSpace(milestone.ID) == "" {
 			return false
 		}
 		if index < plan.CurrentIndex {
-			if milestone.Status != executionMilestoneComplete || milestone.Completion == nil {
+			if milestone.Status != executionmilestone.StatusComplete || milestone.Completion == nil {
 				return false
 			}
 			continue
 		}
-		if milestone.Status != executionMilestonePending || milestone.Completion != nil {
+		if milestone.Status != executionmilestone.StatusPending || milestone.Completion != nil {
 			return false
 		}
 	}
