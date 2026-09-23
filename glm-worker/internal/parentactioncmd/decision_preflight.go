@@ -6,9 +6,9 @@ import (
 	"io"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/executionunit"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentaction"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
-	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/workflow"
 )
 
 func executePreflightedDecision(cfg config.AppConfig, args []string, stdout, stderr io.Writer) error {
@@ -31,7 +31,7 @@ func executePreflightedDecision(cfg config.AppConfig, args []string, stdout, std
 		if err != nil {
 			return err
 		}
-		if err := workflow.ValidateDecisionExecutionUnitPayload(cfg, state.AttachStateStore(cfg), string(payload)); err != nil {
+		if _, _, err := executionunit.Preflight(cfg, state.AttachStateStore(cfg), string(payload)); err != nil {
 			return err
 		}
 		payload, err = parentaction.ConsumeExpected(cfg.RepoRoot, string(descriptor.Action), args[1], payload)
