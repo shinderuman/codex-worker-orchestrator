@@ -89,14 +89,13 @@ func TestQualityPassWithoutFixDoesNotRebaseExternalChange(t *testing.T) {
 	}
 }
 
-func TestSameParentAuthorityRequiresIdenticalParentFiles(t *testing.T) {
+func TestParentFileStatesRequireExactMatch(t *testing.T) {
 	before := state.ParentFileStates{{Path: state.ParentPlanFile, Exists: true, SHA256: "before"}}
 	after := state.ParentFileStates{{Path: state.ParentPlanFile, Exists: true, SHA256: "after"}}
-	if sameParentAuthority(before, after) {
-		t.Fatal("parent-managed metadataの変更をmachine fixer由来として受理しています")
+	if state.SameParentFileStates(before, after) {
+		t.Fatal("parent-managed metadataの変更を同一扱いしています")
 	}
-	after = before
-	if !sameParentAuthority(before, after) {
+	if !state.SameParentFileStates(before, before) {
 		t.Fatal("同一parent-managed metadataを不一致扱いしています")
 	}
 }
