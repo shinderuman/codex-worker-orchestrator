@@ -20,195 +20,23 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - name: Read Go version
-        id: quality-tools
-        run: |
-          GO_VERSION=$(awk -F': ' '$1 == "go" { print $2 }' quality-tools.yml)
-          printf 'go_version=%s\n' "$GO_VERSION" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-go@v7
         with:
-          go-version: ${{ steps.quality-tools.outputs.go_version }}
+          go-version-file: glm-worker/go.mod
           cache: false
-      - name: Apply validated fixed-range findings
+      - name: Apply fixes
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          import re
-
-          def replace_once(path, old, new):
-              p = Path(path)
-              text = p.read_text()
-              count = text.count(old)
-              if count != 1:
-                  raise SystemExit(f"{path}: expected exactly one match, found {count}")
-              p.write_text(text.replace(old, new, 1))
-
-          # 1. Parent evidence total budget must always recompute aggregate status.
-          replace_once(
-              "glm-worker/internal/parentevidence/projector.go",
-              '''func applyTotalBudget(output *Output) {\n\tfor outputSize(*output) > MaxOutputBytes {\n\t\tif !stripBody(output) {\n\t\t\treturn\n\t\t}\n\t}\n\toutput.Status = aggregateStatus(output.Parts)\n}\n''',
-              '''func applyTotalBudget(output *Output) {\n\tfor outputSize(*output) > MaxOutputBytes && stripBody(output) {\n\t}\n\toutput.Status = aggregateStatus(output.Parts)\n}\n''',
-          )
-
-          # 2. Publication guard setup must validate the executable binding consumed by hooks.
-          replace_once(
-              "glm-worker/internal/publicationguard/setup.go",
-              '''\tPublicationGuardHookEmpty         = "is empty"\n\tPublicationGuardHookNotExecutable = "is not executable"\n\n\tpublicationTrackedHooksPath = ".githooks"\n)\n\nvar publicationGuardHookNames = []string{"reference-transaction", "pre-push"}\n''',
-              '''\tPublicationGuardHookEmpty         = "is empty"\n\tPublicationGuardHookNotExecutable = "is not executable"\n\tPublicationGuardBindingInvalid     = "does not name an absolute executable regular file"\n\n\tpublicationTrackedHooksPath = ".githooks"\n\tpublicationGuardBindingName = "glm-parent-action.path"\n)\n\nvar publicationGuardHookNames = []string{"reference-transaction", "pre-push"}\n''',
-          )
-          replace_once(
-              "glm-worker/internal/publicationguard/setup.go",
-              '''\tfor _, name := range publicationGuardHookNames {\n\t\tif defect := publicationGuardHookDefect(resolved, name); defect != nil {\n\t\t\treport.Defects = append(report.Defects, *defect)\n\t\t}\n\t}\n\treport.Defects = publicationGuardPrimaryDefects(report.Defects)\n''',
-              '''\tfor _, name := range publicationGuardHookNames {\n\t\tif defect := publicationGuardHookDefect(resolved, name); defect != nil {\n\t\t\treport.Defects = append(report.Defects, *defect)\n\t\t}\n\t}\n\tif defect := publicationGuardBindingDefect(resolved); defect != nil {\n\t\treport.Defects = append(report.Defects, *defect)\n\t}\n\treport.Defects = publicationGuardPrimaryDefects(report.Defects)\n''',
-          )
-          marker = '''func publicationGuardPrimaryDefects(defects []PublicationGuardHookDefect) []PublicationGuardHookDefect {\n'''
-          helper = '''func publicationGuardBindingDefect(hooksDir string) *PublicationGuardHookDefect {\n\tpath := filepath.Join(hooksDir, publicationGuardBindingName)\n\tinfo, err := os.Lstat(path)\n\tif err != nil {\n\t\treturn &PublicationGuardHookDefect{Hook: publicationGuardBindingName, Path: path, Defect: PublicationGuardHookMissing}\n\t}\n\tif info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {\n\t\treturn &PublicationGuardHookDefect{Hook: publicationGuardBindingName, Path: path, Defect: PublicationGuardHookNotRegular}\n\t}\n\tdata, err := os.ReadFile(path)\n\tif err != nil || len(data) == 0 {\n\t\treturn &PublicationGuardHookDefect{Hook: publicationGuardBindingName, Path: path, Defect: PublicationGuardHookEmpty}\n\t}\n\ttarget := strings.TrimSpace(string(data))\n\tif !filepath.IsAbs(target) {\n\t\treturn &PublicationGuardHookDefect{Hook: publicationGuardBindingName, Path: path, Defect: PublicationGuardBindingInvalid}\n\t}\n\ttargetInfo, err := os.Stat(target)\n\tif err != nil || !targetInfo.Mode().IsRegular() || targetInfo.Mode().Perm()&0o111 == 0 {\n\t\treturn &PublicationGuardHookDefect{Hook: publicationGuardBindingName, Path: path, Defect: PublicationGuardBindingInvalid}\n\t}\n\treturn nil\n}\n\n'''
-          replace_once("glm-worker/internal/publicationguard/setup.go", marker, helper + marker)
-
-          Path("glm-worker/internal/publicationguard/setup_test.go").write_text(r'''package publicationguard
-
-import (
-    "os"
-    "os/exec"
-    "path/filepath"
-    "testing"
-)
-
-func TestInspectPublicationGuardSetupRequiresBinding(t *testing.T) {
-    repo := newPublicationGuardTestRepo(t)
-    report, err := InspectPublicationGuardSetup(repo)
-    if err != nil {
-        t.Fatal(err)
-    }
-    if len(report.Defects) != 1 || report.Defects[0].Hook != publicationGuardBindingName || report.Defects[0].Defect != PublicationGuardHookMissing {
-        t.Fatalf("defects = %#v", report.Defects)
-    }
-    if err := VerifyPublicationGuardSetup(repo); err == nil {
-        t.Fatal("tracked hooks without glm-parent-action binding were admitted")
-    }
-}
-
-func TestInspectPublicationGuardSetupAcceptsExecutableBinding(t *testing.T) {
-    repo := newPublicationGuardTestRepo(t)
-    target := filepath.Join(t.TempDir(), "glm-parent-action")
-    if err := os.WriteFile(target, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-        t.Fatal(err)
-    }
-    if err := os.WriteFile(filepath.Join(repo, ".githooks", publicationGuardBindingName), []byte(target+"\n"), 0o600); err != nil {
-        t.Fatal(err)
-    }
-    report, err := InspectPublicationGuardSetup(repo)
-    if err != nil {
-        t.Fatal(err)
-    }
-    if len(report.Defects) != 0 {
-        t.Fatalf("defects = %#v", report.Defects)
-    }
-}
-
-func newPublicationGuardTestRepo(t *testing.T) string {
-    t.Helper()
-    repo := t.TempDir()
-    runPublicationGuardGit(t, repo, "init", "-q")
-    hooks := filepath.Join(repo, ".githooks")
-    if err := os.MkdirAll(hooks, 0o755); err != nil {
-        t.Fatal(err)
-    }
-    for _, name := range publicationGuardHookNames {
-        if err := os.WriteFile(filepath.Join(hooks, name), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-            t.Fatal(err)
-        }
-    }
-    runPublicationGuardGit(t, repo, "config", "core.hooksPath", publicationTrackedHooksPath)
-    return repo
-}
-
-func runPublicationGuardGit(t *testing.T, repo string, args ...string) {
-    t.Helper()
-    commandArgs := append([]string{"-C", repo}, args...)
-    command := exec.Command("git", commandArgs...)
-    if output, err := command.CombinedOutput(); err != nil {
-        t.Fatalf("git %v: %v: %s", args, err, output)
-    }
-}
-''')
-
-          # 3. Serialize managed-hook updates and roll back the whole activated state on postcondition failure.
-          script = Path("scripts/manage-pull-hook.sh")
-          text = script.read_text()
-          old = '''managed_hooks_path="$common_dir/codex-worker-orchestrator/hooks"\nmanaged_state="version=2 baseline=absent value=$managed_hooks_path"\npending_state="version=2 baseline=absent pending=$managed_hooks_path"\n\nstate_path=$(git -C "$repo_root" rev-parse --git-path codex-worker-orchestrator/hooks-path.state)\n'''
-          new = '''managed_hooks_path="$common_dir/codex-worker-orchestrator/hooks"\nmanaged_state="version=2 baseline=absent value=$managed_hooks_path"\npending_state="version=2 baseline=absent pending=$managed_hooks_path"\ninstall_lock_dir="$common_dir/codex-worker-orchestrator/hooks-install.lock"\nmkdir -p "${install_lock_dir%/*}"\nif ! mkdir "$install_lock_dir" 2>/dev/null; then\n\tprintf 'git hook: another installer owns hook activation: %s\\n' "$install_lock_dir" >&2\n\texit 1\nfi\nlock_owned=1\nrelease_install_lock() {\n\tif [ "$lock_owned" -eq 1 ]; then\n\t\trmdir "$install_lock_dir" 2>/dev/null || true\n\t\tlock_owned=0\n\tfi\n}\ntrap 'release_install_lock' EXIT HUP INT TERM\n\nstate_path=$(git -C "$repo_root" rev-parse --git-path codex-worker-orchestrator/hooks-path.state)\n'''
-          if text.count(old) != 1:
-              raise SystemExit("manage-pull-hook.sh: lock insertion anchor mismatch")
-          text = text.replace(old, new, 1)
-          old = '''if hooks_path=$(git -C "$repo_root" config --local --get-all core.hooksPath); then\n\thooks_path_present=1\nelse\n\tstatus=$?\n\tif [ "$status" -ne 1 ]; then\n\t\tprintf '%s\\n' 'git hook: failed to read repository core.hooksPath' >&2\n\t\texit "$status"\n\tfi\nfi\n\nwrite_state() {\n'''
-          new = '''if hooks_path=$(git -C "$repo_root" config --local --get-all core.hooksPath); then\n\thooks_path_present=1\nelse\n\tstatus=$?\n\tif [ "$status" -ne 1 ]; then\n\t\tprintf '%s\\n' 'git hook: failed to read repository core.hooksPath' >&2\n\t\texit "$status"\n\tfi\nfi\n\ninitial_state_present=$state_present\ninitial_state_value=\nif [ "$state_present" -eq 1 ]; then\n\tinitial_state_value=$(cat "$state_path")\nfi\ninitial_hooks_path_present=$hooks_path_present\ninitial_hooks_path=$hooks_path\n\nwrite_state() {\n'''
-          if text.count(old) != 1:
-              raise SystemExit("manage-pull-hook.sh: baseline anchor mismatch")
-          text = text.replace(old, new, 1)
-          old = '''cleanup_snapshot_work() {\n\tif [ -e "$backup_hooks_path" ] || [ -L "$backup_hooks_path" ]; then\n\t\trm -rf "$managed_hooks_path"\n\t\tif ! mv "$backup_hooks_path" "$managed_hooks_path"; then\n\t\t\tprintf 'git hook: failed to restore previous managed snapshot; backup retained at %s\\n' "$backup_hooks_path" >&2\n\t\t\treturn 1\n\t\tfi\n\tfi\n\trm -rf "$staging_hooks_path"\n}\n\nfinalize_managed_hooks() {\n\trm -rf "$staging_hooks_path" "$backup_hooks_path"\n\ttrap - EXIT HUP INT TERM\n}\n'''
-          new = '''cleanup_snapshot_work() {\n\tif [ -n "$backup_hooks_path" ] && { [ -e "$backup_hooks_path" ] || [ -L "$backup_hooks_path" ]; }; then\n\t\trm -rf "$managed_hooks_path"\n\t\tif ! mv "$backup_hooks_path" "$managed_hooks_path"; then\n\t\t\tprintf 'git hook: failed to restore previous managed snapshot; backup retained at %s\\n' "$backup_hooks_path" >&2\n\t\t\treturn 1\n\t\tfi\n\tfi\n\tif [ -n "$staging_hooks_path" ]; then\n\t\trm -rf "$staging_hooks_path"\n\tfi\n}\n\nrestore_install_baseline() {\n\tif [ -n "$backup_hooks_path" ] && { [ -e "$backup_hooks_path" ] || [ -L "$backup_hooks_path" ]; }; then\n\t\trm -rf "$managed_hooks_path"\n\t\tif ! mv "$backup_hooks_path" "$managed_hooks_path"; then\n\t\t\tprintf 'git hook: failed to restore previous managed snapshot; backup retained at %s\\n' "$backup_hooks_path" >&2\n\t\t\treturn 1\n\t\tfi\n\telse\n\t\trm -rf "$managed_hooks_path"\n\tfi\n\tif [ -n "$staging_hooks_path" ]; then\n\t\trm -rf "$staging_hooks_path"\n\tfi\n\tstaging_hooks_path=\n\tbackup_hooks_path=\n\tif [ "$initial_hooks_path_present" -eq 1 ]; then\n\t\tif ! git -C "$repo_root" config --local core.hooksPath "$initial_hooks_path"; then\n\t\t\tprintf '%s\\n' 'git hook: failed to restore previous core.hooksPath' >&2\n\t\t\treturn 1\n\t\tfi\n\telse\n\t\tgit -C "$repo_root" config --local --unset-all core.hooksPath >/dev/null 2>&1 || true\n\t\tif git -C "$repo_root" config --local --get-all core.hooksPath >/dev/null 2>&1; then\n\t\t\tprintf '%s\\n' 'git hook: failed to restore absent core.hooksPath baseline' >&2\n\t\t\treturn 1\n\t\tfi\n\tfi\n\tif [ "$initial_state_present" -eq 1 ]; then\n\t\tif ! write_state "$initial_state_value"; then\n\t\t\tprintf '%s\\n' 'git hook: failed to restore previous ownership state' >&2\n\t\t\treturn 1\n\t\tfi\n\telse\n\t\trm -f "$state_path"\n\tfi\n\ttrap 'release_install_lock' EXIT HUP INT TERM\n\treturn 0\n}\n\nverify_or_rollback() {\n\texpected_state=$1\n\tif verify_managed_install "$expected_state"; then\n\t\treturn 0\n\tfi\n\tif ! restore_install_baseline; then\n\t\tprintf '%s\\n' 'git hook: failed to restore install baseline after verification failure' >&2\n\tfi\n\treturn 1\n}\n\nfinalize_managed_hooks() {\n\trm -rf "$staging_hooks_path" "$backup_hooks_path"\n\tstaging_hooks_path=\n\tbackup_hooks_path=\n\ttrap 'release_install_lock' EXIT HUP INT TERM\n}\n'''
-          if text.count(old) != 1:
-              raise SystemExit("manage-pull-hook.sh: cleanup block mismatch")
-          text = text.replace(old, new, 1)
-          text = text.replace("trap 'cleanup_snapshot_work' EXIT HUP INT TERM", "trap 'cleanup_snapshot_work; release_install_lock' EXIT HUP INT TERM", 1)
-          old = '''\tif [ ! -f "$state_path" ] || [ -L "$state_path" ] || [ "$(cat "$state_path")" != "$expected_state" ]; then\n\t\tprintf '%s\\n' 'git hook: managed ownership state postcondition failed' >&2\n\t\texit 1\n\tfi\n'''
-          new = '''\tif [ ! -f "$state_path" ] || [ -L "$state_path" ] || [ "$(cat "$state_path")" != "$expected_state" ]; then\n\t\tprintf '%s\\n' 'git hook: managed ownership state postcondition failed' >&2\n\t\treturn 1\n\tfi\n'''
-          if text.count(old) != 1:
-              raise SystemExit("manage-pull-hook.sh: verify state mismatch")
-          text = text.replace(old, new, 1)
-          for old_msg in [
-              "\t\texit 1\n\tfi\n\tif [ \"$current_hooks_path\" != \"$managed_hooks_path\" ]; then",
-              "\t\texit 1\n\tfi\n\tguard_path_file=",
-              "\t\texit 1\n\tfi\n\tfor hook in $required_hooks; do",
-          ]:
-              if old_msg not in text:
-                  raise SystemExit("manage-pull-hook.sh: verify return conversion anchor missing")
-              text = text.replace(old_msg, old_msg.replace("exit 1", "return 1"), 1)
-          # Two failures live inside the loop and must also return to the rollback wrapper.
-          loop_old = '''\t\tif [ ! -f "$active_hook" ] || [ -L "$active_hook" ] || [ ! -s "$active_hook" ] || [ ! -x "$active_hook" ]; then\n\t\t\tprintf 'git hook: managed snapshot postcondition failed: %s\\n' "$active_hook" >&2\n\t\t\texit 1\n\t\tfi\n\t\tif ! git -C "$repo_root" show "HEAD:.githooks/$hook" | cmp -s - "$active_hook"; then\n\t\t\tprintf 'git hook: managed snapshot differs from committed source: .githooks/%s\\n' "$hook" >&2\n\t\t\texit 1\n\t\tfi\n'''
-          loop_new = loop_old.replace("\t\t\texit 1", "\t\t\treturn 1")
-          if text.count(loop_old) != 1:
-              raise SystemExit("manage-pull-hook.sh: verify loop mismatch")
-          text = text.replace(loop_old, loop_new, 1)
-          text = text.replace('''\t\tverify_managed_install "$managed_state"\n\t\tfinalize_managed_hooks\n''', '''\t\tif ! verify_or_rollback "$managed_state"; then\n\t\t\texit 1\n\t\tfi\n\t\tfinalize_managed_hooks\n''', 1)
-          text = text.replace('''\t\twrite_state "$managed_state"\n\t\tverify_managed_install "$managed_state"\n\t\tfinalize_managed_hooks\n''', '''\t\twrite_state "$managed_state"\n\t\tif ! verify_or_rollback "$managed_state"; then\n\t\t\texit 1\n\t\tfi\n\t\tfinalize_managed_hooks\n''', 1)
-          text = text.replace('''write_state "$managed_state"\nverify_managed_install "$managed_state"\nfinalize_managed_hooks\n''', '''write_state "$managed_state"\nif ! verify_or_rollback "$managed_state"; then\n\texit 1\nfi\nfinalize_managed_hooks\n''', 1)
-          script.write_text(text)
-
-          # Add fresh-install rollback and lock serialization smoke coverage.
-          smoke = Path("tests/install_hook_ownership_smoke.sh")
-          text = smoke.read_text()
-          anchor = '''repo="$tmp/preexisting-tracked"\n'''
-          addition = '''repo="$tmp/fresh-verification-rollback"\nnew_repo "$repo"\nmanaged=$(managed_hooks_path "$repo")\ninstall_with_verification_failure "$repo" "$tmp/fakecmp-fresh-verification"\nif git -C "$repo" config --local --get-all core.hooksPath >/dev/null 2>&1; then\n\tprintf '%s\\n' 'failed fresh verification left core.hooksPath active' >&2\n\texit 1\nfi\nassert_no_state "$repo"\ntest ! -e "$managed"\n\nrepo="$tmp/install-lock"\nnew_repo "$repo"\ncommon=$(git -C "$repo" rev-parse --git-common-dir)\ncase "$common" in\n/*) ;;\n*) common="$repo/$common" ;;\nesac\nlock="$common/codex-worker-orchestrator/hooks-install.lock"\nmkdir -p "$lock"\nif sh "$helper" install "$repo" "$guard_bin" >"$tmp/install-lock.stdout" 2>"$tmp/install-lock.stderr"; then\n\tprintf '%s\\n' 'concurrent hook installer unexpectedly bypassed activation lock' >&2\n\texit 1\nfi\ngrep -Fq 'another installer owns hook activation' "$tmp/install-lock.stderr"\nrmdir "$lock"\nsh "$helper" install "$repo" "$guard_bin"\nassert_managed_hooks "$repo"\n\n'''
-          if text.count(anchor) != 1:
-              raise SystemExit("install hook smoke insertion anchor mismatch")
-          smoke.write_text(text.replace(anchor, addition + anchor, 1))
-
-          # 4. Replace machine-local Review.md links with repository-stable references.
-          review = Path("Review.md")
-          text = review.read_text()
-          text = re.sub(
-              r'\]\(/Users/shinderumanm/src/codex-worker-orchestrator/([^):]+):(\d+)\)',
-              lambda m: f']({m.group(1)}#L{m.group(2)})',
-              text,
-          )
-          text = text.replace('](/private/tmp/codex-repository-review-extended/test-summary.json)', '](review-evidence/reproductions.json)')
-          text = text.replace('](/private/tmp/codex-repository-review-extended/install_audit_test.go)', '](review-evidence/install_audit_test.go.txt)')
-          text = text.replace('](/private/tmp/codex-repository-review-extended/install-reproduction.jsonl)', '](review-evidence/reproductions.json)')
-          text = text.replace('[前回詳細・残る2不具合](/private/tmp/codex-repository-review/review.md)', '[保存済みレビュー証拠の説明](review-evidence/README.md)')
-          if '/private/tmp/' in text or '/Users/shinderumanm/' in text:
-              raise SystemExit('Review.md still contains machine-local links')
-          review.write_text(text)
-
-          # 5. Probe evidence must prove a pre-stopped probe never launched its child.
-          probe = Path("review-evidence/probe_audit_test.go.txt")
-          text = probe.read_text()
-          old = ''' if !errors.As(err,&interrupted) {\n  _,statErr := os.Stat(args)\n  t.Fatalf("stop ignored: error=%v child_started=%v",err,statErr==nil)\n }\n}\n'''
-          new = ''' if !errors.As(err,&interrupted) {\n  _,statErr := os.Stat(args)\n  t.Fatalf("stop ignored: error=%v child_started=%v",err,statErr==nil)\n }\n if _,statErr := os.Stat(args); !errors.Is(statErr,os.ErrNotExist) {\n  t.Fatalf("pre-stopped probe started child: stat=%v",statErr)\n }\n}\n'''
-          if text.count(old) != 1:
-              raise SystemExit("probe fixture assertion anchor mismatch")
-          probe.write_text(text.replace(old, new, 1))
+          import subprocess
+          raw = Path('.github/web-gpt-fixed-range-fix-script.txt').read_text()
+          marker = "          python3 - <<'PY'\n"
+          start = raw.index(marker) + len(marker)
+          end = raw.index('\n          PY', start)
+          block = raw[start:end]
+          block = '\n'.join(line[10:] if line.startswith('          ') else line for line in block.splitlines()) + '\n'
+          Path('/tmp/web-gpt-fix.py').write_text(block)
+          subprocess.run(['python3', '/tmp/web-gpt-fix.py'], check=True)
           PY
           gofmt -w glm-worker/internal/parentevidence/projector.go glm-worker/internal/parentevidence/projector_budget_test.go glm-worker/internal/publicationguard/setup.go glm-worker/internal/publicationguard/setup_test.go
       - name: Focused Go tests
@@ -219,9 +47,9 @@ func runPublicationGuardGit(t *testing.T, repo string, args ...string) {
       - name: Full Go test suite
         working-directory: glm-worker
         run: go test ./...
-      - name: Remove validation workflow and commit
+      - name: Commit fixes
         run: |
-          git rm .github/workflows/web-gpt-fixed-range-fix.yml
+          git rm .github/workflows/web-gpt-fixed-range-fix.yml .github/web-gpt-fixed-range-fix-script.txt
           git config user.name 'web-gpt-review-fix'
           git config user.email 'web-gpt-review-fix@users.noreply.github.com'
           git add -A
