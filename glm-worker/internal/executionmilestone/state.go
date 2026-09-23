@@ -40,12 +40,12 @@ type Record struct {
 }
 
 type Plan struct {
-	Version            int      `json:"version"`
-	TaskID             string   `json:"task_id"`
-	ActiveTaskPath     string   `json:"active_task_path"`
-	TaskContractSHA256 string   `json:"task_contract_sha256"`
-	CurrentIndex       int      `json:"current_index"`
-	Milestones         []Record `json:"milestones"`
+	Version            int       `json:"version"`
+	TaskID             string    `json:"task_id"`
+	ActiveTaskPath     string    `json:"active_task_path"`
+	TaskContractSHA256 string    `json:"task_contract_sha256"`
+	CurrentIndex       int       `json:"current_index"`
+	Milestones         []Record  `json:"milestones"`
 	UpdatedAt          time.Time `json:"updated_at"`
 }
 
@@ -55,6 +55,12 @@ type Revision struct {
 	CurrentIndex   int    `json:"current_index"`
 	MilestoneCount int    `json:"milestone_count"`
 	CurrentID      string `json:"current_id,omitempty"`
+}
+
+type revisionAuthority struct {
+	taskID         string
+	activeTaskPath string
+	digest         string
 }
 
 func NewPlan(
@@ -126,22 +132,17 @@ func ValidateAuthority(cfg config.AppConfig, st *state.StateStore, plan *Plan) e
 	if plan == nil {
 		return fmt.Errorf("execution milestone plan is missing")
 	}
-	taskID, err := st.TaskID()
+	authority, err := currentAuthority(cfg, st)
 	if err != nil {
 		return err
 	}
-	if taskID != plan.TaskID {
-		return fmt.Errorf("execution milestone task identity changed: plan=%q current=%q", plan.TaskID, taskID)
+	if authority.taskID != plan.TaskID {
+		return fmt.Errorf("execution milestone task identity changed: plan=%q current=%q", plan.TaskID, authority.taskID)
 	}
-	activeTaskPath := st.ReadOr(activeTaskStateKey, "")
-	if activeTaskPath != plan.ActiveTaskPath {
-		return fmt.Errorf("execution milestone ACTIVE task changed: plan=%q current=%q", plan.ActiveTaskPath, activeTaskPath)
+	if authority.activeTaskPath != plan.ActiveTaskPath {
+		return fmt.Errorf("execution milestone ACTIVE task changed: plan=%q current=%q", plan.ActiveTaskPath, authority.activeTaskPath)
 	}
-	digest, err := TaskContractDigest(cfg.RepoRoot, activeTaskPath)
-	if err != nil {
-		return err
-	}
-	if digest != plan.TaskContractSHA256 {
+	if authority.digest != plan.TaskContractSHA256 {
 		return fmt.Errorf("execution milestone task contract changed; revise milestones at the parent boundary before continuing")
 	}
 	return nil
@@ -228,39 +229,56 @@ func prepareRevision(
 	if err != nil {
 		return nil, err
 	}
-	taskID, err := st.TaskID()
-	if err != nil {
-		return nil, err
-	}
-	activeTaskPath := st.ReadOr(activeTaskStateKey, "")
-	digest, err := TaskContractDigest(cfg.RepoRoot, activeTaskPath)
+	authority, err := currentAuthority(cfg, st)
 	if err != nil {
 		return nil, err
 	}
 	if plan == nil {
-		return NewPlan(taskID, activeTaskPath, digest, definitions, now), nil
+		return NewPlan(authority.taskID, authority.activeTaskPath, authority.digest, definitions, now), nil
 	}
-	if plan.TaskID != taskID || plan.ActiveTaskPath != activeTaskPath {
-		return nil, fmt.Errorf("execution milestone plan does not belong to the active task")
-	}
-	if plan.CurrentIndex >= len(plan.Milestones) {
-		return nil, fmt.Errorf("all execution milestones are already complete")
-	}
-	if len(definitions) <= plan.CurrentIndex {
-		return nil, fmt.Errorf("revised execution milestones must preserve all completed milestones and one current milestone")
-	}
-	if err := validateCompleted(plan, definitions); err != nil {
-		return nil, err
-	}
-	if err := preserveStopped(st, plan, definitions); err != nil {
+	if err := validateRevisionPlan(st, plan, authority, definitions); err != nil {
 		return nil, err
 	}
 	plan.Milestones = revisedRecords(plan, definitions)
-	plan.TaskContractSHA256 = digest
+	plan.TaskContractSHA256 = authority.digest
 	if !now.IsZero() {
 		plan.UpdatedAt = now
 	}
 	return plan, nil
+}
+
+func currentAuthority(cfg config.AppConfig, st *state.StateStore) (revisionAuthority, error) {
+	taskID, err := st.TaskID()
+	if err != nil {
+		return revisionAuthority{}, err
+	}
+	activeTaskPath := st.ReadOr(activeTaskStateKey, "")
+	digest, err := TaskContractDigest(cfg.RepoRoot, activeTaskPath)
+	if err != nil {
+		return revisionAuthority{}, err
+	}
+	return revisionAuthority{taskID: taskID, activeTaskPath: activeTaskPath, digest: digest}, nil
+}
+
+func validateRevisionPlan(
+	st *state.StateStore,
+	plan *Plan,
+	authority revisionAuthority,
+	definitions []executionunit.MilestoneDefinition,
+) error {
+	if plan.TaskID != authority.taskID || plan.ActiveTaskPath != authority.activeTaskPath {
+		return fmt.Errorf("execution milestone plan does not belong to the active task")
+	}
+	if plan.CurrentIndex >= len(plan.Milestones) {
+		return fmt.Errorf("all execution milestones are already complete")
+	}
+	if len(definitions) <= plan.CurrentIndex {
+		return fmt.Errorf("revised execution milestones must preserve all completed milestones and one current milestone")
+	}
+	if err := validateCompleted(plan, definitions); err != nil {
+		return err
+	}
+	return preserveStopped(st, plan, definitions)
 }
 
 func validateCompleted(plan *Plan, definitions []executionunit.MilestoneDefinition) error {
