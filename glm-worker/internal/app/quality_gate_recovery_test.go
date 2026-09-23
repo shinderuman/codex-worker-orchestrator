@@ -60,12 +60,13 @@ func TestQualityGateRecoveryCommandParsesRunSurfaces(t *testing.T) {
 func TestQualityGateRunningIdentityMatchesOnlyExactSnapshot(t *testing.T) {
 	_, st := newQualityGateEnv(t)
 	runID := strings.Repeat("b", 32)
+	workingDir := t.TempDir()
 	snapshot := state.GitSnapshot{Head: "head-a", IndexDigest: "index-a", WorktreeDigest: "worktree-a"}
 	record := qualitygate.RunRecord{
 		ValidationRunID: runID,
 		Form:            "go-test",
 		Repository:      "/repo",
-		WorkingDir:      "/repo/glm-worker",
+		WorkingDir:      workingDir,
 		Head:            snapshot.Head,
 		IndexDigest:     snapshot.IndexDigest,
 		WorktreeDigest:  snapshot.WorktreeDigest,
@@ -75,28 +76,33 @@ func TestQualityGateRunningIdentityMatchesOnlyExactSnapshot(t *testing.T) {
 	if err := writeQualityGateRun(st, record); err != nil {
 		t.Fatal(err)
 	}
-	got, found := findRunningQualityGateRun(st, "go-test", "/repo", snapshot)
+	got, found := findRunningQualityGateRun(st, "go-test", "/repo", workingDir, snapshot)
 	if !found || got.ValidationRunID != runID {
 		t.Fatalf("same snapshot running gate not found: found=%v record=%+v", found, got)
 	}
 	changed := snapshot
 	changed.WorktreeDigest = "worktree-b"
-	if _, found := findRunningQualityGateRun(st, "go-test", "/repo", changed); found {
+	if _, found := findRunningQualityGateRun(st, "go-test", "/repo", workingDir, changed); found {
 		t.Fatal("changed snapshot reused a running gate")
 	}
-	if _, found := findRunningQualityGateRun(st, "go-test-race", "/repo", snapshot); found {
+	if _, found := findRunningQualityGateRun(st, "go-test-race", "/repo", workingDir, snapshot); found {
 		t.Fatal("different form reused a running gate")
+	}
+	if _, found := findRunningQualityGateRun(st, "go-test", "/repo", t.TempDir(), snapshot); found {
+		t.Fatal("different working directory reused a running gate")
 	}
 }
 
 func TestQualityGateCompletedRunIsNotReused(t *testing.T) {
 	_, st := newQualityGateEnv(t)
 	runID := strings.Repeat("c", 32)
+	workingDir := t.TempDir()
 	snapshot := state.GitSnapshot{Head: "head", IndexDigest: "index", WorktreeDigest: "worktree"}
 	record := qualitygate.RunRecord{
 		ValidationRunID: runID,
 		Form:            "go-test",
 		Repository:      "/repo",
+		WorkingDir:      workingDir,
 		Head:            snapshot.Head,
 		IndexDigest:     snapshot.IndexDigest,
 		WorktreeDigest:  snapshot.WorktreeDigest,
@@ -106,7 +112,7 @@ func TestQualityGateCompletedRunIsNotReused(t *testing.T) {
 	if err := writeQualityGateRun(st, record); err != nil {
 		t.Fatal(err)
 	}
-	if _, found := findRunningQualityGateRun(st, "go-test", "/repo", snapshot); found {
+	if _, found := findRunningQualityGateRun(st, "go-test", "/repo", workingDir, snapshot); found {
 		t.Fatal("completed validation must not be reused as a running attachment")
 	}
 }
