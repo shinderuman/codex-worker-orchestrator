@@ -68,12 +68,10 @@ func TestClaudeProviderCredentialLiveNoAI(t *testing.T) {
 			if err := os.MkdirAll(configDir, 0o700); err != nil {
 				t.Fatal(err)
 			}
-			settingEnv := map[string]string{
-				tc.credentialKey:                         credential,
-				"ANTHROPIC_BASE_URL":                   server.URL + "/api/anthropic",
-				"ANTHROPIC_DEFAULT_OPUS_MODEL":         "glm-canary",
-				"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
-			}
+			settingEnv := map[string]string{tc.credentialKey: credential}
+			settingEnv["ANTHROPIC_BASE_URL"] = server.URL + "/api/anthropic"
+			settingEnv["ANTHROPIC_DEFAULT_OPUS_MODEL"] = "glm-canary"
+			settingEnv["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] = "1"
 			additions := claudeInvocationEnvDefaults()
 			additions["CLAUDE_CONFIG_DIR"] = configDir
 
@@ -95,13 +93,22 @@ func TestClaudeProviderCredentialLiveNoAI(t *testing.T) {
 			got := observation
 			mu.Unlock()
 			if got.method == "" {
-				t.Fatalf("Claude Code did not reach the configured provider endpoint: run_error=%T category=%s", runErr, claudeCanaryFailureCategory(output.Bytes()))
+				t.Fatalf("Claude Code did not reach the configured provider endpoint: run_error=%T output=%q", runErr, sanitizedClaudeCanaryOutput(output.Bytes(), credential))
 			}
 			if !got.expectedCredential {
 				t.Fatalf("provider credential missing: method=%s path=%s authorization_header=%t api_key_header=%t", got.method, got.path, got.authorizationHeader, got.apiKeyHeader)
 			}
 		})
 	}
+}
+
+func sanitizedClaudeCanaryOutput(output []byte, credential string) string {
+	const max = 2000
+	text := strings.ReplaceAll(string(output), credential, "[REDACTED]")
+	if len(text) > max {
+		return text[:max] + "..."
+	}
+	return text
 }
 
 func requestHeaderContainsCredential(r *http.Request, key, credential string) bool {
