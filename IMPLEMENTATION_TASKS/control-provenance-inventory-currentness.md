@@ -22,6 +22,10 @@ none
 
 Reconcile `codex/control-provenance.json` and its validation with current evidence-backed machine controls that are missing from the provenance index, without changing production behavior or creating a second behavior authority.
 
+## External feasibility
+
+status: not-applicable
+
 ## Contract
 
 - Production control code remains authoritative; `codex/control-provenance.json` remains provenance/index only.
