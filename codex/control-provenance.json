@@ -139,6 +139,38 @@
       "boundary": "Known artifact boundaries are machine-controlled, but arbitrary semantic confidentiality is not."
     },
     {
+      "id": "forward-only-compatibility",
+      "classification": "machine-enforced",
+      "purpose": "Reject concrete backward-compatibility, migration, and retired-surface reintroduction patterns through the shared repository lint gate.",
+      "machine_owners": [
+        {
+          "path": "glm-worker/internal/harnesslint/run.go",
+          "symbol": "checkRules"
+        },
+        {
+          "path": "glm-worker/internal/harnesslint/forward_only_test_surface_usage.go",
+          "symbol": "scanForwardOnlyCompatibilityRule"
+        }
+      ],
+      "tests": [
+        {
+          "path": "glm-worker/internal/harnesslint/forward_only_semantic_test.go",
+          "symbol": "TestForwardOnlySemanticRejectsDualParentWaitReader"
+        },
+        {
+          "path": "glm-worker/internal/harnesslint/forward_only_shell_state_test.go",
+          "symbol": "TestForwardOnlyCompatibilityRejectsShellStateCompatibility"
+        }
+      ],
+      "postconditions": [
+        {
+          "path": "glm-worker/internal/harnesslint/forward_only.go",
+          "symbol": "forwardOnlyViolation"
+        }
+      ],
+      "residual_parent_judgment": "The parent decides whether a requested compatibility change is semantically justified; the machine gate only rejects the concrete backward patterns it owns."
+    },
+    {
       "id": "goal-task-review-semantic-disposition",
       "classification": "semantic-parent-only",
       "purpose": "Keep goal/task review disposition as an explicit semantic parent responsibility.",
@@ -262,6 +294,10 @@
           "symbol": "Consume"
         },
         {
+          "path": "glm-worker/internal/executionunit/preflight.go",
+          "symbol": "Parse"
+        },
+        {
           "path": "glm-worker/internal/state/parent_action.go",
           "symbol": "StateStore.AdmitParentAction"
         }
@@ -270,6 +306,10 @@
         {
           "path": "glm-worker/internal/parentaction/parentaction_test.go",
           "symbol": "TestConsumeRejectsUnwrittenOrForgedSlots"
+        },
+        {
+          "path": "glm-worker/internal/parentaction/parentaction_test.go",
+          "symbol": "TestConsumeDecisionPreservesSlotOnSemanticValidationFailure"
         },
         {
           "path": "glm-worker/internal/state/parent_action_test.go",
@@ -441,6 +481,34 @@
         }
       ],
       "residual_parent_judgment": "The parent interprets the recovered handoff semantically and decides the next admitted action."
+    },
+    {
+      "id": "publication-guard-setup",
+      "classification": "machine-enforced",
+      "purpose": "Fail closed when the local publication guard hooks or bound glm-parent-action executable are not demonstrably effective.",
+      "machine_owners": [
+        {
+          "path": "glm-worker/internal/publicationguard/setup.go",
+          "symbol": "InspectPublicationGuardSetup"
+        }
+      ],
+      "tests": [
+        {
+          "path": "glm-worker/internal/publicationguard/setup_test.go",
+          "symbol": "TestInspectPublicationGuardSetupRequiresBinding"
+        },
+        {
+          "path": "glm-worker/internal/publicationguard/setup_test.go",
+          "symbol": "TestInspectPublicationGuardSetupAcceptsExecutableBinding"
+        }
+      ],
+      "postconditions": [
+        {
+          "path": "glm-worker/internal/publicationguard/setup.go",
+          "symbol": "VerifyPublicationGuardSetup"
+        }
+      ],
+      "residual_parent_judgment": "The parent decides when and how to repair or reinstall the publication guard; the machine only proves the local setup before publication admission."
     },
     {
       "id": "quality-snapshot-binding",
