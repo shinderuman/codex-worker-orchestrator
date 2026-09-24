@@ -61,6 +61,9 @@ func runClaudeSubprocessEnvScrubCanary(t *testing.T, claudeBin, credentialKey st
 	defer server.Close()
 
 	configDir := filepath.Join(dir, "claude-config")
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
 	settings, err := isolationSettings(configDir, &gitBashSandboxPolicy{allowWrite: []string{dir}})
 	if err != nil {
 		t.Fatal(err)
