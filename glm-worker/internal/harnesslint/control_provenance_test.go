@@ -144,6 +144,39 @@ func TestControlProvenanceRejectsMachineLocatorsOnNonMachineControl(t *testing.T
 	}
 }
 
+func TestControlProvenanceRequiresKnownCurrentMachineControls(t *testing.T) {
+	for _, tc := range []struct {
+		id        string
+		ownerPath string
+	}{
+		{id: forwardOnlyCompatibilityRule, ownerPath: "glm-worker/internal/harnesslint/forward_only_test_surface_usage.go"},
+		{id: publicationGuardSetupControlID, ownerPath: "glm-worker/internal/publicationguard/setup.go"},
+	} {
+		t.Run(tc.id, func(t *testing.T) {
+			root := t.TempDir()
+			writeControlProvenanceGo(t, root, tc.ownerPath, "package fixture\nfunc owner() {}\n")
+			writeControlProvenanceRegistry(t, root, controlProvenanceRegistry{
+				Version: 1,
+				Controls: []controlProvenanceControl{{
+					ID:                     "placeholder",
+					Classification:         controlClassificationSemanticParent,
+					Purpose:                "placeholder purpose",
+					ResidualParentJudgment: "semantic disposition",
+					Boundary:               "semantic boundary",
+				}},
+			})
+
+			violations, err := controlProvenanceViolations(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !hasControlProvenanceViolation(violations, controlProvenanceRegistryPath, "current machine control", tc.id, "missing from provenance registry") {
+				t.Fatalf("violations = %#v", violations)
+			}
+		})
+	}
+}
+
 func TestControlProvenanceRejectsLineNumberSchema(t *testing.T) {
 	root := t.TempDir()
 	registryPath := filepath.Join(root, filepath.FromSlash(controlProvenanceRegistryPath))
