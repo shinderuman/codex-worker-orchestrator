@@ -336,6 +336,10 @@
       ],
       "postconditions": [
         {
+          "path": "glm-worker/internal/parentactiongrammar/grammar.go",
+          "symbol": "Project"
+        },
+        {
           "path": "glm-worker/internal/app/parent_handoff_actions.go",
           "symbol": "parentActionSpec"
         },
