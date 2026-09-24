@@ -81,8 +81,8 @@ func TestClaudeProviderCredentialLiveNoAI(t *testing.T) {
 			defer cancel()
 			command := exec.CommandContext(ctx, resolved,
 				"-p", "--setting-sources", "", "--no-session-persistence",
-				"--model", "opus", "--output-format", "json", "--disable-slash-commands",
-				"--tools", "", "reply with ok",
+				"--model", "opus", "--output-format", "json", "--tools", "",
+				"--disable-slash-commands", "reply with ok",
 			)
 			command.Dir = "."
 			command.Env = buildChildEnv(nil, settingEnv, additions, nil)
