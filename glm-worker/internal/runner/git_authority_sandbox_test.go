@@ -41,7 +41,13 @@ func TestGitAuthoritySandboxSettingsProtectMetadataAndOwnedTemp(t *testing.T) {
 			AutoAllowBashIfSandboxed bool     `json:"autoAllowBashIfSandboxed"`
 			AllowUnsandboxedCommands bool     `json:"allowUnsandboxedCommands"`
 			ExcludedCommands         []string `json:"excludedCommands"`
-			Filesystem               struct {
+			Credentials              struct {
+				EnvVars []struct {
+					Name string `json:"name"`
+					Mode string `json:"mode"`
+				} `json:"envVars"`
+			} `json:"credentials"`
+			Filesystem struct {
 				AllowWrite []string `json:"allowWrite"`
 				DenyWrite  []string `json:"denyWrite"`
 			} `json:"filesystem"`
@@ -62,6 +68,22 @@ func TestGitAuthoritySandboxSettingsProtectMetadataAndOwnedTemp(t *testing.T) {
 	}
 	if settings.Sandbox.AllowUnsandboxedCommands || len(settings.Sandbox.ExcludedCommands) != 0 {
 		t.Fatalf("sandbox escape = %#v", settings.Sandbox)
+	}
+	wantCredentialEnv := []struct {
+		name string
+		mode string
+	}{
+		{name: providerAuthTokenEnvKey, mode: "deny"},
+		{name: providerAPIKeyEnvKey, mode: "deny"},
+	}
+	if len(settings.Sandbox.Credentials.EnvVars) != len(wantCredentialEnv) {
+		t.Fatalf("credential env rules = %#v", settings.Sandbox.Credentials.EnvVars)
+	}
+	for i, want := range wantCredentialEnv {
+		got := settings.Sandbox.Credentials.EnvVars[i]
+		if got.Name != want.name || got.Mode != want.mode {
+			t.Fatalf("credential env rule[%d] = %#v, want name=%q mode=%q", i, got, want.name, want.mode)
+		}
 	}
 	if len(settings.Sandbox.Filesystem.AllowWrite) != 1 || settings.Sandbox.Filesystem.AllowWrite[0] != filepath.ToSlash(guard.workerTempDir) {
 		t.Fatalf("filesystem allowWrite = %#v", settings.Sandbox.Filesystem.AllowWrite)
