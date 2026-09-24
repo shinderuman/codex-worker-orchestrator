@@ -31,7 +31,7 @@ const (
 )
 
 func executeImprovementDisposition(cfg config.AppConfig, args []string, stdout io.Writer) error {
-	kind, sourceCallID, disposition, targetTask, err := parseImprovementDispositionArgs(args)
+	kind, sourceCallID, disposition, targetTask, err := parentactiongrammar.ParseImprovementDispositionArgs(args)
 	if err != nil {
 		return err
 	}
@@ -130,10 +130,6 @@ func recordImprovementDisposition(st *state.StateStore, signal state.Improvement
 		status = parentActionStatusRecorded
 	}
 	return writeImprovementDispositionOutput(stdout, status, signal, record, plan)
-}
-
-func parseImprovementDispositionArgs(args []string) (string, string, string, string, error) {
-	return parentactiongrammar.ParseImprovementDispositionArgs(args)
 }
 
 func recordImprovementDispositionEvent(st *state.StateStore, record state.ImprovementSignalDispositionRecord) {
