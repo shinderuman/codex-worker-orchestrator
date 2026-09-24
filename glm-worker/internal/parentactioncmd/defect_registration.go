@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/config"
+	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/parentactiongrammar"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repolock"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/repositoryproject"
 	"github.com/shinderuman/codex-worker-orchestrator/glm-worker/internal/state"
@@ -25,9 +26,9 @@ type defectRegistrationOutput struct {
 }
 
 const (
-	actionRecordDefectFinding  = "record-defect-finding"
+	actionRecordDefectFinding  = parentactiongrammar.RecordDefectFindingAction
 	actionBindDefectTask       = "bind-defect-task"
-	defectTaskOption           = "--task"
+	defectTaskOption           = parentactiongrammar.TaskOption
 	parentActionStatusRecorded = "recorded"
 )
 
@@ -130,13 +131,14 @@ func executeBindDefectTask(cfg config.AppConfig, st *state.StateStore, sourceAct
 }
 
 func parseDefectRegistrationArgs(args []string) (string, string, error) {
-	if len(args) != 3 || (args[0] != actionRecordDefectFinding && args[0] != actionBindDefectTask) || args[1] != defectTaskOption {
+	action, taskPath, ok := parentactiongrammar.ParseDefectRegistrationArgs(args)
+	if !ok {
 		return "", "", fmt.Errorf("usage: glm-parent-action <record-defect-finding|bind-defect-task> --task <IMPLEMENTATION_TASKS/...md>")
 	}
-	if err := taskcontract.ValidateActiveTaskPath(args[2]); err != nil {
+	if err := taskcontract.ValidateActiveTaskPath(taskPath); err != nil {
 		return "", "", err
 	}
-	return args[0], args[2], nil
+	return action, taskPath, nil
 }
 
 func defectTaskBindingDeclared(repoRoot, sourceActive, taskPath string) (bool, error) {
