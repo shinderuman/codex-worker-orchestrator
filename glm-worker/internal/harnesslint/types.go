@@ -2,6 +2,8 @@ package harnesslint
 
 import "sort"
 
+const FixProvenanceIsolatedPostimageV1 = "isolated-postimage-v1"
+
 type Violation struct {
 	Rule    string `json:"rule"`
 	Path    string `json:"path"`
@@ -11,10 +13,22 @@ type Violation struct {
 	Fixable bool   `json:"fixable"`
 }
 
+type FixInputSnapshot struct {
+	Head           string `json:"head"`
+	IndexDigest    string `json:"index_digest"`
+	WorktreeDigest string `json:"worktree_digest"`
+}
+
+type FixEvidence struct {
+	Method string            `json:"method"`
+	Input  *FixInputSnapshot `json:"input,omitempty"`
+}
+
 type Report struct {
-	Status     string      `json:"status"`
-	Fixed      int         `json:"fixed"`
-	Violations []Violation `json:"violations"`
+	Status      string       `json:"status"`
+	Fixed       int          `json:"fixed"`
+	Violations  []Violation  `json:"violations"`
+	FixEvidence *FixEvidence `json:"fix_evidence,omitempty"`
 }
 
 func makeReport(fixed int, violations []Violation) Report {
