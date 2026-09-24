@@ -66,7 +66,7 @@ func runClaudeSubprocessEnvScrubCanary(t *testing.T, claudeBin, credentialKey st
 		t.Fatal(err)
 	}
 	settingEnv := map[string]string{
-		credentialKey:       credentialValue,
+		credentialKey:        credentialValue,
 		"ANTHROPIC_BASE_URL": server.URL + "/api/anthropic",
 	}
 	additions := claudeInvocationEnvDefaults()
@@ -94,7 +94,7 @@ func runClaudeSubprocessEnvScrubCanary(t *testing.T, claudeBin, credentialKey st
 		t.Fatal("subprocess scrub changed the configured bypass permission mode")
 	}
 	if runErr != nil {
-		t.Fatalf("claude subprocess scrub canary failed: %T", runErr)
+		t.Fatalf("claude subprocess scrub canary failed: type=%T requests=%d parent_credential=%t category=%s", runErr, requestCount.Load(), parentCredentialSeen.Load(), claudeCanaryFailureCategory(output.Bytes()))
 	}
 	if !parentCredentialSeen.Load() {
 		t.Fatal("configured provider credential was not observed on the parent Claude provider request")
@@ -103,6 +103,26 @@ func runClaudeSubprocessEnvScrubCanary(t *testing.T, claudeBin, credentialKey st
 		t.Fatalf("provider request count = %d, want at least 2", requestCount.Load())
 	}
 	assertScrubCanaryReport(t, reportPath)
+}
+
+func claudeCanaryFailureCategory(output []byte) string {
+	for _, candidate := range []struct {
+		needle   string
+		category string
+	}{
+		{needle: "Not logged in", category: "not-logged-in"},
+		{needle: "Invalid API key", category: "invalid-api-key"},
+		{needle: "Connection refused", category: "connection-refused"},
+		{needle: "ECONNREFUSED", category: "connection-refused"},
+		{needle: "API Error", category: "api-error"},
+		{needle: "tool_use", category: "tool-use-protocol"},
+		{needle: "safe mode", category: "safe-mode"},
+	} {
+		if bytes.Contains(output, []byte(candidate.needle)) {
+			return candidate.category
+		}
+	}
+	return "unclassified"
 }
 
 func requestHasCredential(r *http.Request, credential string) bool {
